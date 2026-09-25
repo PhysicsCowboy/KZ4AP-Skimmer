@@ -828,6 +828,362 @@ Commit message: `Add synthetic CW recording generator`
 
 ---
 
+### Task 2b: Full Morse character set with prosign tokens
+
+Added after Task 2, at the user's request. The Morse table grows from 44 entries to 62:
+- the 26 letters and 10 digits;
+- 14 punctuation marks: `. , ; : ? ! ' " ) / - $ @ _`;
+- 12 prosigns, written as `<XX>` tokens: `<AA> <AR> <AS> <BK> <BT> <CL> <HH> <KA> <KN> <SK> <SN> <SOS>`.
+
+Some prosigns share their code with a character: `<BT>` with `=`, `<AR>` with `+`, `<AS>` with `&`, and `<KN>` with `(`. The prosign always wins, so those four characters are not in the table. `<HH>`, the error signal, is decoded from eight *or more* dits. English letters only: no Ä, Ö, Ü, É, Ñ or CH. Decoded output is now a sequence of *symbols* (a character or a prosign token), so `morse::decode` returns a string.
+
+**Files:**
+- Modify: `engine/include/kz4ap/morse.hpp`, `engine/src/morse.cpp`, `engine/tests/morse_test.cpp`
+- Modify: `training/kz4ap_synth/morse.py`, `training/tests/test_morse.py`
+
+**Interfaces:**
+- Consumes: Task 1's Morse table and Task 2's generator.
+- Produces (replacing Task 1's `encode(char)` / `char decode(...)`):
+  ```cpp
+  std::string_view kz4ap::morse::encode(std::string_view symbol);   // "A", "?", "<SK>"; case-insensitive; empty if no code
+  std::string_view kz4ap::morse::decode(std::string_view pattern);  // "A", "?", "<SK>", "<HH>" for >= 8 dits; empty if unknown
+  std::vector<std::string_view> kz4ap::morse::symbols(std::string_view word);  // "K1<KN>" -> {"K","1","<KN>"}
+  ```
+  Python: `CODES` maps symbols (including `"<SK>"`-style keys) to patterns; `symbols(word)` splits a word the same way; `keying_intervals` treats a prosign token as one symbol, so there are no character gaps inside it. The Python test parses `engine/src/morse.cpp` and requires the two tables to be identical.
+
+- [ ] **Step 1: Write the failing C++ tests**
+
+Replace `engine/tests/morse_test.cpp` with:
+```cpp
+#include "kz4ap/morse.hpp"
+
+#include <gtest/gtest.h>
+
+#include <set>
+#include <string_view>
+#include <vector>
+
+using namespace kz4ap;
+
+TEST(Morse, EncodesLettersCaseInsensitively) {
+    EXPECT_EQ(morse::encode("A"), ".-");
+    EXPECT_EQ(morse::encode("a"), ".-");
+    EXPECT_EQ(morse::encode("K"), "-.-");
+}
+
+TEST(Morse, EncodesDigitsAndPunctuation) {
+    EXPECT_EQ(morse::encode("5"), ".....");
+    EXPECT_EQ(morse::encode("0"), "-----");
+    EXPECT_EQ(morse::encode("/"), "-..-.");
+    EXPECT_EQ(morse::encode("?"), "..--..");
+    EXPECT_EQ(morse::encode("!"), "-.-.--");
+    EXPECT_EQ(morse::encode("\""), ".-..-.");
+    EXPECT_EQ(morse::encode(")"), "-.--.-");
+    EXPECT_EQ(morse::encode("_"), "..--.-");
+    EXPECT_EQ(morse::encode("$"), "...-..-");
+    EXPECT_EQ(morse::encode("@"), ".--.-.");
+}
+
+TEST(Morse, EncodesProsignTokens) {
+    EXPECT_EQ(morse::encode("<SK>"), "...-.-");
+    EXPECT_EQ(morse::encode("<sk>"), "...-.-");
+    EXPECT_EQ(morse::encode("<KN>"), "-.--.");
+    EXPECT_EQ(morse::encode("<SOS>"), "...---...");
+    EXPECT_EQ(morse::encode("<CL>"), "-.-..-..");
+    EXPECT_EQ(morse::encode("<HH>"), "........");
+}
+
+TEST(Morse, NoCodeForUnknownOrExcludedSymbols) {
+    for (std::string_view s : {"#", " ", "", "(", "=", "+", "&", "<XX>", "<SK", "AB"}) {
+        EXPECT_TRUE(morse::encode(s).empty()) << s;
+    }
+}
+
+TEST(Morse, DecodesPatterns) {
+    EXPECT_EQ(morse::decode("-.-"), "K");
+    EXPECT_EQ(morse::decode("...--"), "3");
+    EXPECT_EQ(morse::decode("-.--."), "<KN>");  // not '('
+    EXPECT_EQ(morse::decode("-...-"), "<BT>");  // not '='
+    EXPECT_EQ(morse::decode(".-.-."), "<AR>");  // not '+'
+    EXPECT_EQ(morse::decode(".-..."), "<AS>");  // not '&'
+    EXPECT_TRUE(morse::decode("..--").empty());  // U-umlaut: non-English, excluded
+    EXPECT_TRUE(morse::decode("").empty());
+}
+
+TEST(Morse, EightOrMoreDitsIsTheErrorSignal) {
+    EXPECT_EQ(morse::decode("........"), "<HH>");
+    EXPECT_EQ(morse::decode(".........."), "<HH>");
+    EXPECT_TRUE(morse::decode(".......").empty());  // seven dits is not a code
+}
+
+TEST(Morse, EveryCodeRoundTripsAndIsUnique) {
+    const std::vector<std::string_view> all = {
+        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
+        "T", "U", "V", "W", "X", "Y", "Z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+        ".", ",", ";", ":", "?", "!", "'", "\"", ")", "/", "-", "$", "@", "_",
+        "<AA>", "<AR>", "<AS>", "<BK>", "<BT>", "<CL>", "<HH>", "<KA>", "<KN>", "<SK>", "<SN>", "<SOS>"};
+    ASSERT_EQ(all.size(), 62u);
+    std::set<std::string_view> patterns;
+    for (auto s : all) {
+        const auto pattern = morse::encode(s);
+        ASSERT_FALSE(pattern.empty()) << s;
+        EXPECT_EQ(morse::decode(pattern), s) << s;
+        EXPECT_TRUE(patterns.insert(pattern).second) << "duplicate pattern for " << s;
+    }
+}
+
+TEST(Morse, SplitsWordsIntoSymbols) {
+    using V = std::vector<std::string_view>;
+    EXPECT_EQ(morse::symbols("K1ABC<KN>"), (V{"K", "1", "A", "B", "C", "<KN>"}));
+    EXPECT_EQ(morse::symbols("<SK>"), (V{"<SK>"}));
+    EXPECT_EQ(morse::symbols("A<B"), (V{"A", "<", "B"}));  // unclosed token: plain characters
+    EXPECT_TRUE(morse::symbols("").empty());
+}
+```
+
+Replace `engine/include/kz4ap/morse.hpp` with:
+```cpp
+#pragma once
+
+#include <string_view>
+#include <vector>
+
+namespace kz4ap::morse {
+
+// A symbol is one character ("A", "5", "?") or a prosign token ("<SK>").
+
+// Dot/dash pattern for a symbol (case-insensitive), e.g. ".-" for "A".
+// Returns an empty view for symbols that have no Morse code.
+std::string_view encode(std::string_view symbol);
+
+// Symbol for a dot/dash pattern. Eight or more dits decode as "<HH>" (error).
+// Returns an empty view if the pattern is not a known code.
+std::string_view decode(std::string_view pattern);
+
+// Splits a word into symbols, keeping "<...>" prosign tokens whole.
+std::vector<std::string_view> symbols(std::string_view word);
+
+}  // namespace kz4ap::morse
+```
+
+Replace `engine/src/morse.cpp` with a stub so the tests compile:
+```cpp
+#include "kz4ap/morse.hpp"
+
+namespace kz4ap::morse {
+
+std::string_view encode(std::string_view) { return {}; }
+std::string_view decode(std::string_view) { return {}; }
+std::vector<std::string_view> symbols(std::string_view) { return {}; }
+
+}  // namespace kz4ap::morse
+```
+
+- [ ] **Step 2: Build and run — expect failures**
+
+```powershell
+cmake --build --preset windows
+ctest --preset windows -R Morse
+```
+Expected: every Morse test except `NoCodeForUnknownOrExcludedSymbols` FAILS.
+
+- [ ] **Step 3: Implement the C++ table**
+
+`engine/src/morse.cpp`:
+```cpp
+#include "kz4ap/morse.hpp"
+
+#include <cctype>
+
+namespace kz4ap::morse {
+namespace {
+
+struct Code {
+    std::string_view symbol;
+    std::string_view pattern;
+};
+
+// Prosigns are written as <XX> tokens. Four of them share a code with a
+// character (<BT> '=', <AR> '+', <AS> '&', <KN> '('); the prosign wins, so
+// those characters are not in the table. Must stay identical to
+// training/kz4ap_synth/morse.py (a Python test compares them).
+constexpr Code kCodes[] = {
+    {"A", ".-"},    {"B", "-..."},  {"C", "-.-."},  {"D", "-.."},   {"E", "."},
+    {"F", "..-."},  {"G", "--."},   {"H", "...."},  {"I", ".."},    {"J", ".---"},
+    {"K", "-.-"},   {"L", ".-.."},  {"M", "--"},    {"N", "-."},    {"O", "---"},
+    {"P", ".--."},  {"Q", "--.-"},  {"R", ".-."},   {"S", "..."},   {"T", "-"},
+    {"U", "..-"},   {"V", "...-"},  {"W", ".--"},   {"X", "-..-"},  {"Y", "-.--"},
+    {"Z", "--.."},
+    {"0", "-----"}, {"1", ".----"}, {"2", "..---"}, {"3", "...--"}, {"4", "....-"},
+    {"5", "....."}, {"6", "-...."}, {"7", "--..."}, {"8", "---.."}, {"9", "----."},
+    {".", ".-.-.-"}, {",", "--..--"}, {";", "-.-.-."}, {":", "---..."}, {"?", "..--.."},
+    {"!", "-.-.--"}, {"'", ".----."}, {"\"", ".-..-."}, {")", "-.--.-"}, {"/", "-..-."},
+    {"-", "-....-"}, {"$", "...-..-"}, {"@", ".--.-."}, {"_", "..--.-"},
+    {"<AA>", ".-.-"},     {"<AR>", ".-.-."},     {"<AS>", ".-..."},  {"<BK>", "-...-.-"},
+    {"<BT>", "-...-"},    {"<CL>", "-.-..-.."},  {"<HH>", "........"}, {"<KA>", "-.-.-"},
+    {"<KN>", "-.--."},    {"<SK>", "...-.-"},    {"<SN>", "...-."},  {"<SOS>", "...---..."},
+};
+
+bool same_ignoring_case(std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (std::toupper(static_cast<unsigned char>(a[i])) != std::toupper(static_cast<unsigned char>(b[i])))
+            return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+std::string_view encode(std::string_view symbol) {
+    for (const auto& code : kCodes) {
+        if (same_ignoring_case(code.symbol, symbol)) return code.pattern;
+    }
+    return {};
+}
+
+std::string_view decode(std::string_view pattern) {
+    // Operators send the error signal as eight dits or more.
+    if (pattern.size() >= 8 && pattern.find_first_not_of('.') == std::string_view::npos) return "<HH>";
+    for (const auto& code : kCodes) {
+        if (code.pattern == pattern) return code.symbol;
+    }
+    return {};
+}
+
+std::vector<std::string_view> symbols(std::string_view word) {
+    std::vector<std::string_view> out;
+    std::size_t i = 0;
+    while (i < word.size()) {
+        if (word[i] == '<') {
+            const auto close = word.find('>', i);
+            if (close != std::string_view::npos) {
+                out.push_back(word.substr(i, close - i + 1));
+                i = close + 1;
+                continue;
+            }
+        }
+        out.push_back(word.substr(i, 1));
+        ++i;
+    }
+    return out;
+}
+
+}  // namespace kz4ap::morse
+```
+
+- [ ] **Step 4: Build and run — expect pass**
+
+```powershell
+cmake --build --preset windows
+ctest --preset windows -R Morse
+```
+Expected: 8 Morse tests pass.
+
+- [ ] **Step 5: Write the failing Python tests**
+
+In `training/tests/test_morse.py`, change the import line to
+```python
+import re
+from pathlib import Path
+
+import pytest
+
+from kz4ap_synth.morse import CODES, dit_seconds, keying_intervals, symbols
+```
+replace `test_table_matches_engine_table` with
+```python
+def test_table_matches_engine_table():
+    assert len(CODES) == 62
+    source = (Path(__file__).resolve().parents[2] / "engine" / "src" / "morse.cpp").read_text()
+    engine = {s.replace('\\"', '"'): p for s, p in re.findall(r'\{"((?:\\"|[^"])+)",\s*"([.-]+)"\}', source)}
+    assert engine == CODES
+```
+and add
+```python
+def test_prosign_is_one_symbol_without_character_gaps():
+    # <SK> is ...-.- sent as one symbol: only 1-dit gaps between its elements.
+    assert flat(keying_intervals("<SK>", 20)) == pytest.approx(
+        [0.0, 0.06, 0.12, 0.18, 0.24, 0.30, 0.36, 0.54, 0.60, 0.66, 0.72, 0.90])
+    assert keying_intervals("<SK>", 20) != keying_intervals("SK", 20)
+
+
+def test_characters_sharing_a_prosign_code_are_not_in_the_table():
+    for c in "(=+&":
+        assert c not in CODES
+    assert keying_intervals("E(", 20) == keying_intervals("E", 20)
+
+
+def test_symbols_keeps_prosign_tokens_whole():
+    assert symbols("K1ABC<KN>") == ["K", "1", "A", "B", "C", "<KN>"]
+    assert symbols("A<B") == ["A", "<", "B"]
+```
+
+Run `.venv\Scripts\python -m pytest training -q`. Expected: the new and changed tests FAIL (ImportError for `symbols` fails the whole module).
+
+- [ ] **Step 6: Implement the Python table**
+
+In `training/kz4ap_synth/morse.py`, replace `CODES` and the docstring, add `symbols`, and use it in `keying_intervals`:
+```python
+"""Morse code table and PARIS-standard keying timing.
+
+Symbols are single characters ("A", "?") or prosign tokens ("<SK>"). Must stay
+identical to engine/src/morse.cpp; tests/test_morse.py compares them.
+"""
+
+import re
+
+CODES = {
+    "A": ".-", "B": "-...", "C": "-.-.", "D": "-..", "E": ".", "F": "..-.",
+    "G": "--.", "H": "....", "I": "..", "J": ".---", "K": "-.-", "L": ".-..",
+    "M": "--", "N": "-.", "O": "---", "P": ".--.", "Q": "--.-", "R": ".-.",
+    "S": "...", "T": "-", "U": "..-", "V": "...-", "W": ".--", "X": "-..-",
+    "Y": "-.--", "Z": "--..",
+    "0": "-----", "1": ".----", "2": "..---", "3": "...--", "4": "....-",
+    "5": ".....", "6": "-....", "7": "--...", "8": "---..", "9": "----.",
+    ".": ".-.-.-", ",": "--..--", ";": "-.-.-.", ":": "---...", "?": "..--..",
+    "!": "-.-.--", "'": ".----.", '"': ".-..-.", ")": "-.--.-", "/": "-..-.",
+    "-": "-....-", "$": "...-..-", "@": ".--.-.", "_": "..--.-",
+    "<AA>": ".-.-", "<AR>": ".-.-.", "<AS>": ".-...", "<BK>": "-...-.-",
+    "<BT>": "-...-", "<CL>": "-.-..-..", "<HH>": "........", "<KA>": "-.-.-",
+    "<KN>": "-.--.", "<SK>": "...-.-", "<SN>": "...-.", "<SOS>": "...---...",
+}
+
+_SYMBOL = re.compile(r"<[^<>]*>|.")
+
+
+def symbols(word: str) -> list[str]:
+    """Split a word into symbols, keeping "<...>" prosign tokens whole."""
+    return _SYMBOL.findall(word)
+```
+and in `keying_intervals` change
+```python
+        patterns = [CODES[c] for c in word if c in CODES]
+```
+to
+```python
+        patterns = [CODES[s] for s in symbols(word) if s in CODES]
+```
+(`keying_intervals` already uppercases the text before splitting it into words.)
+
+- [ ] **Step 7: Run everything — expect pass**
+
+```powershell
+.venv\Scripts\python -m pytest training -q
+cmake --build --preset windows
+ctest --preset windows
+```
+Expected: all Python tests pass (20) and all C++ tests pass.
+
+- [ ] **Step 8: Commit on the `milestone-1` branch**
+
+```powershell
+git add engine/include/kz4ap/morse.hpp engine/src/morse.cpp engine/tests/morse_test.cpp training/kz4ap_synth/morse.py training/tests/test_morse.py
+```
+Commit message: `Expand Morse table to full punctuation and prosign tokens`
+
+---
+
 ### Task 3: I/Q WAV reader
 
 **Files:**
@@ -2289,11 +2645,11 @@ The baseline decoder. From a channel's baseband it takes the magnitude, smooths 
 - Test: `engine/tests/classical_decoder_test.cpp`
 
 **Interfaces:**
-- Consumes: `kz4ap::Sample`, `kz4ap::morse::decode`, `kz4ap::morse::encode` (test helper).
+- Consumes: `kz4ap::Sample`, `kz4ap::morse::decode` (returns a symbol string; `"<HH>"` for 8+ dits), `kz4ap::morse::encode` and `kz4ap::morse::symbols` (test helper) — all from Task 2b.
 - Produces:
   ```cpp
-  struct DecodedChar { char ch; float probability; double start_s; double end_s; };   // ' ' = word space, '*' = unknown pattern
-  struct DecodeUpdate { std::vector<DecodedChar> chars; float wpm = 0; float confidence = 0; };
+  struct DecodedSymbol { std::string text; float probability; double start_s; double end_s; };   // "A", "<SK>"; " " = word space, "*" = unknown pattern
+  struct DecodeUpdate { std::vector<DecodedSymbol> chars; float wpm = 0; float confidence = 0; };
   class Decoder { virtual DecodeUpdate process(std::span<const Sample> samples, double t0_s) = 0;
                   virtual DecodeUpdate flush() = 0; virtual void reset() = 0; };
   struct ClassicalDecoderConfig { double initial_wpm = 25; double min_wpm = 5; double max_wpm = 60; double attack_s = 0.004;
@@ -2341,8 +2697,8 @@ inline std::vector<std::pair<double, double>> keying(const std::string& text, do
     double t = start_s;
     for (std::size_t wi = 0; wi < words.size(); ++wi) {
         std::vector<std::string_view> codes;
-        for (char c : words[wi]) {
-            const auto p = morse::encode(c);
+        for (const auto symbol : morse::symbols(words[wi])) {
+            const auto p = morse::encode(symbol);
             if (!p.empty()) codes.push_back(p);
         }
         for (std::size_t ci = 0; ci < codes.size(); ++ci) {
@@ -2419,8 +2775,8 @@ namespace {
 
 constexpr double kRate = 1500.0;
 
-std::vector<DecodedChar> decode_all(ClassicalDecoder& d, const std::vector<Sample>& x, std::size_t chunk = 256) {
-    std::vector<DecodedChar> chars;
+std::vector<DecodedSymbol> decode_all(ClassicalDecoder& d, const std::vector<Sample>& x, std::size_t chunk = 256) {
+    std::vector<DecodedSymbol> chars;
     for (std::size_t i = 0; i < x.size(); i += chunk) {
         const auto n = std::min(chunk, x.size() - i);
         auto u = d.process(std::span<const Sample>(x).subspan(i, n), static_cast<double>(i) / kRate);
@@ -2432,11 +2788,11 @@ std::vector<DecodedChar> decode_all(ClassicalDecoder& d, const std::vector<Sampl
 }
 
 // Uppercase text with runs of spaces collapsed and ends trimmed.
-std::string text(const std::vector<DecodedChar>& chars) {
+std::string text(const std::vector<DecodedSymbol>& chars) {
     std::string out;
     for (const auto& c : chars) {
-        if (c.ch == ' ' && (out.empty() || out.back() == ' ')) continue;
-        out += c.ch;
+        if (c.text == " " && (out.empty() || out.back() == ' ')) continue;
+        out += c.text;
     }
     while (!out.empty() && out.back() == ' ') out.pop_back();
     return out;
@@ -2459,7 +2815,7 @@ TEST(ClassicalDecoder, CleanSignalHasHighProbabilities) {
     ClassicalDecoder d(kRate);
     const std::string msg = "CQ TEST K1ABC";
     for (const auto& c : decode_all(d, keyed_signal(msg, 25, kRate, duration_for(msg, 25)))) {
-        if (c.ch != ' ') EXPECT_GT(c.probability, 0.9f) << c.ch;
+        if (c.text != " ") EXPECT_GT(c.probability, 0.9f) << c.text;
     }
 }
 
@@ -2467,7 +2823,7 @@ TEST(ClassicalDecoder, ReportsCharacterTimes) {
     ClassicalDecoder d(kRate);
     const auto chars = decode_all(d, keyed_signal("E", 25, kRate, 2.0));
     ASSERT_FALSE(chars.empty());
-    EXPECT_EQ(chars[0].ch, 'E');
+    EXPECT_EQ(chars[0].text, "E");
     EXPECT_NEAR(chars[0].start_s, 0.5, 0.02);
     EXPECT_NEAR(chars[0].end_s, 0.5 + 0.048, 0.02);
 }
@@ -2510,20 +2866,44 @@ TEST(ClassicalDecoder, PauseDecodesNothingThenResumes) {
     EXPECT_EQ(text(decode_all(d, x)), "CQ K1ABC TU");
 }
 
-TEST(ClassicalDecoder, UnknownPatternBecomesAsterisk) {
-    ClassicalDecoder d(kRate);
-    // Eight dits in a row ("HH" with no character gap) is not a Morse character.
+namespace {
+
+// Baseband keyed with the given element lengths (in dits), one dit apart, at 25 wpm.
+std::vector<Sample> keyed_elements(const std::vector<int>& dits) {
     std::vector<Sample> x(static_cast<std::size_t>(3.0 * kRate));
     const double dit = 1.2 / 25;
-    for (int k = 0; k < 8; ++k) {
-        const auto i0 = static_cast<std::size_t>((0.5 + 2 * k * dit) * kRate);
-        const auto i1 = static_cast<std::size_t>((0.5 + (2 * k + 1) * dit) * kRate);
+    double t = 0.5;
+    for (int n : dits) {
+        const auto i0 = static_cast<std::size_t>(t * kRate);
+        const auto i1 = static_cast<std::size_t>((t + n * dit) * kRate);
         for (std::size_t i = i0; i < i1; ++i) x[i] = Sample(1.0f, 0.0f);
+        t += (n + 1) * dit;
     }
-    const auto chars = decode_all(d, x);
+    return x;
+}
+
+}  // namespace
+
+TEST(ClassicalDecoder, UnknownPatternBecomesAsterisk) {
+    ClassicalDecoder d(kRate);
+    // ..-- (U-umlaut) is not in the English-only table.
+    const auto chars = decode_all(d, keyed_elements({1, 1, 3, 3}));
     ASSERT_FALSE(chars.empty());
-    EXPECT_EQ(chars[0].ch, '*');
+    EXPECT_EQ(chars[0].text, "*");
     EXPECT_EQ(chars[0].probability, 0.0f);
+}
+
+TEST(ClassicalDecoder, EightDitsDecodeAsErrorSignal) {
+    ClassicalDecoder d(kRate);
+    const auto chars = decode_all(d, keyed_elements({1, 1, 1, 1, 1, 1, 1, 1}));
+    ASSERT_FALSE(chars.empty());
+    EXPECT_EQ(chars[0].text, "<HH>");
+}
+
+TEST(ClassicalDecoder, DecodesProsigns) {
+    ClassicalDecoder d(kRate);
+    const std::string msg = "CQ DE K1ABC <KN>";
+    EXPECT_EQ(text(decode_all(d, keyed_signal(msg, 25, kRate, duration_for(msg, 25)))), msg);
 }
 
 TEST(ClassicalDecoder, ChunkSizeDoesNotChangeOutput) {
@@ -2534,7 +2914,7 @@ TEST(ClassicalDecoder, ChunkSizeDoesNotChangeOutput) {
     const auto cb = decode_all(b, x, 1000);
     ASSERT_EQ(ca.size(), cb.size());
     for (std::size_t i = 0; i < ca.size(); ++i) {
-        EXPECT_EQ(ca[i].ch, cb[i].ch);
+        EXPECT_EQ(ca[i].text, cb[i].text);
         EXPECT_EQ(ca[i].probability, cb[i].probability);
         EXPECT_EQ(ca[i].start_s, cb[i].start_s);
     }
@@ -2558,19 +2938,20 @@ Note on `ChunkSizeDoesNotChangeOutput`: `t0_s` for each chunk is computed as `i 
 #include "kz4ap/types.hpp"
 
 #include <span>
+#include <string>
 #include <vector>
 
 namespace kz4ap {
 
-struct DecodedChar {
-    char ch;            // ' ' marks a word space, '*' a pattern that is not a Morse character
+struct DecodedSymbol {
+    std::string text;   // "A", "?", "<SK>"; " " marks a word space, "*" a pattern with no Morse code
     float probability;  // the decoder's belief that ch is right, 0..1
     double start_s;
     double end_s;
 };
 
 struct DecodeUpdate {
-    std::vector<DecodedChar> chars;
+    std::vector<DecodedSymbol> chars;
     float wpm = 0;
     float confidence = 0;  // running average of recent character probabilities
 };
@@ -2636,7 +3017,7 @@ private:
     void key_down(double t);
     void key_up(double t);
     void finish_char(DecodeUpdate& out);
-    void emit(DecodeUpdate& out, char ch, float probability, double start_s, double end_s);
+    void emit(DecodeUpdate& out, std::string_view text, float probability, double start_s, double end_s);
     void update_speed();
 
     double rate_;
@@ -2678,7 +3059,7 @@ void ClassicalDecoder::step(float, double, DecodeUpdate&) {}
 void ClassicalDecoder::key_down(double) {}
 void ClassicalDecoder::key_up(double) {}
 void ClassicalDecoder::finish_char(DecodeUpdate&) {}
-void ClassicalDecoder::emit(DecodeUpdate&, char, float, double, double) {}
+void ClassicalDecoder::emit(DecodeUpdate&, std::string_view, float, double, double) {}
 void ClassicalDecoder::update_speed() {}
 
 }  // namespace kz4ap
@@ -2782,7 +3163,7 @@ void ClassicalDecoder::step(float magnitude, double t, DecodeUpdate& out) {
         const double gap = t - up_t_;
         if (char_open_ && gap > 2.0 * dit_s_) finish_char(out);
         if (word_open_ && !char_open_ && gap > 5.0 * dit_s_) {
-            emit(out, ' ', 1.0f, up_t_, t);
+            emit(out, " ", 1.0f, up_t_, t);
             word_open_ = false;
         }
     }
@@ -2822,17 +3203,17 @@ void ClassicalDecoder::finish_char(DecodeUpdate& out) {
         pattern += e.dah ? '-' : '.';
         probability *= e.confidence;
     }
-    const char ch = morse::decode(pattern);
-    emit(out, ch != '\0' ? ch : '*', ch != '\0' ? probability : 0.0f, elements_.front().start_s,
+    const auto symbol = morse::decode(pattern);
+    emit(out, symbol.empty() ? "*" : symbol, symbol.empty() ? 0.0f : probability, elements_.front().start_s,
          elements_.back().end_s);
     elements_.clear();
     char_open_ = false;
     word_open_ = true;
 }
 
-void ClassicalDecoder::emit(DecodeUpdate& out, char ch, float probability, double start_s, double end_s) {
-    out.chars.push_back({ch, probability, start_s, end_s});
-    if (ch != ' ') confidence_ += 0.2f * (probability - confidence_);
+void ClassicalDecoder::emit(DecodeUpdate& out, std::string_view text, float probability, double start_s, double end_s) {
+    out.chars.push_back({std::string(text), probability, start_s, end_s});
+    if (text != " ") confidence_ += 0.2f * (probability - confidence_);
 }
 
 void ClassicalDecoder::update_speed() {
@@ -2891,11 +3272,11 @@ Commit message: `Add decoder interface and classical decoder`
 - Test: `engine/tests/engine_test.cpp`
 
 **Interfaces:**
-- Consumes: `SpectrumAnalyzer`, `SignalDetector`/`Track`/`DetectorConfig`, `Channelizer`/`ChannelizerConfig`, `Decoder`/`DecodeUpdate`/`DecodedChar`, `ClassicalDecoder`/`ClassicalDecoderConfig`.
+- Consumes: `SpectrumAnalyzer`, `SignalDetector`/`Track`/`DetectorConfig`, `Channelizer`/`ChannelizerConfig`, `Decoder`/`DecodeUpdate`/`DecodedSymbol`, `ClassicalDecoder`/`ClassicalDecoderConfig`.
 - Produces:
   ```cpp
   struct TrackEvent { enum class Kind { Born, Died }; Kind kind; Track track; };
-  struct DecodedTextEvent { std::uint32_t track_id; double freq_hz; std::vector<DecodedChar> chars; float wpm; float confidence; };
+  struct DecodedTextEvent { std::uint32_t track_id; double freq_hz; std::vector<DecodedSymbol> chars; float wpm; float confidence; };
   using Event = std::variant<SpectrumFrame, TrackEvent, DecodedTextEvent>;
   class EventBus { using Handler = std::function<void(const Event&)>; void subscribe(Handler); void publish(const Event&) const; };
   struct EngineConfig { int sample_rate = 192000; int fft_size = 8192; int channel_bins = 64; double channel_cutoff_hz = 150.0;
@@ -2938,7 +3319,7 @@ Result run(const std::vector<Sample>& x, std::size_t chunk) {
     bus.subscribe([&](const Event& e) {
         if (const auto* t = std::get_if<TrackEvent>(&e); t && t->kind == TrackEvent::Kind::Born) r.born.push_back(t->track);
         if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
-            for (const auto& c : d->chars) r.text[d->track_id] += c.ch;
+            for (const auto& c : d->chars) r.text[d->track_id] += c.text;
         }
     });
     Engine engine(EngineConfig{}, bus);
@@ -3011,7 +3392,7 @@ struct TrackEvent {
 struct DecodedTextEvent {
     std::uint32_t track_id;
     double freq_hz;
-    std::vector<DecodedChar> chars;
+    std::vector<DecodedSymbol> chars;
     float wpm;
     float confidence;
 };
@@ -3706,7 +4087,7 @@ int main(int argc, char** argv) {
             if (const auto* t = std::get_if<TrackEvent>(&e); t && t->kind == TrackEvent::Kind::Born) {
                 tracks[t->track.id] = {t->track.id, t->track.freq_hz, ""};
             } else if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
-                for (const auto& c : d->chars) tracks[d->track_id].text += c.ch;
+                for (const auto& c : d->chars) tracks[d->track_id].text += c.text;
             }
         });
 
