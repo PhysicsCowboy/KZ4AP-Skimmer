@@ -64,7 +64,8 @@ WavIqReader::WavIqReader(const std::filesystem::path& path) : file_(path, std::i
                 if (channels != 2)
                     throw std::runtime_error("needs 2 channels (I and Q), found " + std::to_string(channels));
                 if (bits != 16) throw std::runtime_error("needs 16-bit samples, found " + std::to_string(bits) + "-bit");
-                file_.seekg(static_cast<std::streamoff>(size - consumed + (size & 1)), std::ios::cur);
+                file_.seekg(static_cast<std::streamoff>(static_cast<std::uint64_t>(size) - consumed + (size & 1)),
+                            std::ios::cur);
                 have_format = true;
             } else if (id == "data") {
                 if (!have_format) throw std::runtime_error("data chunk comes before format chunk");
@@ -75,7 +76,8 @@ WavIqReader::WavIqReader(const std::filesystem::path& path) : file_(path, std::i
                 total_samples_ = std::min<std::uint64_t>(size, available) / 4;
                 return;
             } else {
-                file_.seekg(static_cast<std::streamoff>(size + (size & 1)), std::ios::cur);
+                file_.seekg(static_cast<std::streamoff>(static_cast<std::uint64_t>(size) + (size & 1)),
+                            std::ios::cur);
             }
         }
     } catch (const std::runtime_error& e) {
