@@ -1,7 +1,10 @@
 """Morse code table and PARIS-standard keying timing.
 
-Must stay in step with engine/src/morse.cpp.
+Symbols are single characters ("A", "?") or prosign tokens ("<SK>"). Must stay
+identical to engine/src/morse.cpp; tests/test_morse.py compares them.
 """
+
+import re
 
 CODES = {
     "A": ".-", "B": "-...", "C": "-.-.", "D": "-..", "E": ".", "F": "..-.",
@@ -11,9 +14,20 @@ CODES = {
     "Y": "-.--", "Z": "--..",
     "0": "-----", "1": ".----", "2": "..---", "3": "...--", "4": "....-",
     "5": ".....", "6": "-....", "7": "--...", "8": "---..", "9": "----.",
-    "/": "-..-.", "?": "..--..", ".": ".-.-.-", ",": "--..--",
-    "=": "-...-", "+": ".-.-.", "-": "-....-", "(": "-.--.",
+    ".": ".-.-.-", ",": "--..--", ";": "-.-.-.", ":": "---...", "?": "..--..",
+    "!": "-.-.--", "'": ".----.", '"': ".-..-.", ")": "-.--.-", "/": "-..-.",
+    "-": "-....-", "$": "...-..-", "@": ".--.-.", "_": "..--.-",
+    "<AA>": ".-.-", "<AR>": ".-.-.", "<AS>": ".-...", "<BK>": "-...-.-",
+    "<BT>": "-...-", "<CL>": "-.-..-..", "<HH>": "........", "<KA>": "-.-.-",
+    "<KN>": "-.--.", "<SK>": "...-.-", "<SN>": "...-.", "<SOS>": "...---...",
 }
+
+_SYMBOL = re.compile(r"<[^<>]*>|.")
+
+
+def symbols(word: str) -> list[str]:
+    """Split a word into symbols, keeping "<...>" prosign tokens whole."""
+    return _SYMBOL.findall(word)
 
 
 def dit_seconds(wpm: float) -> float:
@@ -25,14 +39,14 @@ def keying_intervals(text: str, wpm: float) -> list[tuple[float, float]]:
     """Key-down intervals (start_s, end_s) for text, starting at time 0.
 
     Gaps: 1 dit between elements, 3 between characters, 7 between words.
-    Characters with no Morse code are skipped.
+    Symbols with no Morse code are skipped.
     """
     dit = dit_seconds(wpm)
     intervals = []
     t = 0.0
     words = text.upper().split()
     for wi, word in enumerate(words):
-        patterns = [CODES[c] for c in word if c in CODES]
+        patterns = [CODES[s] for s in symbols(word) if s in CODES]
         for ci, pattern in enumerate(patterns):
             for ei, element in enumerate(pattern):
                 length = dit if element == "." else 3 * dit
