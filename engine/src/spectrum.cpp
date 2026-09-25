@@ -6,15 +6,27 @@
 #include <numbers>
 #include <stdexcept>
 
+namespace {
+
+// Validates the analyzer's parameters and returns fft_size as a size_t.
+// Runs before any vector is sized, so an invalid fft_size (e.g. negative)
+// throws std::invalid_argument instead of being reinterpreted as a huge
+// unsigned allocation size.
+std::size_t ValidatedFftSize(int sample_rate, int fft_size, int hop) {
+    if (sample_rate <= 0 || fft_size <= 0 || hop <= 0 || hop > fft_size)
+        throw std::invalid_argument("invalid spectrum analyzer parameters");
+    return static_cast<std::size_t>(fft_size);
+}
+
+}  // namespace
+
 namespace kz4ap {
 
 SpectrumAnalyzer::SpectrumAnalyzer(int sample_rate, int fft_size, int hop)
     : sample_rate_(sample_rate), fft_size_(fft_size), hop_(hop),
-      window_(static_cast<std::size_t>(fft_size)),
+      window_(ValidatedFftSize(sample_rate, fft_size, hop)),
       fft_in_(static_cast<std::size_t>(fft_size)),
       fft_out_(static_cast<std::size_t>(fft_size)) {
-    if (sample_rate <= 0 || fft_size <= 0 || hop <= 0 || hop > fft_size)
-        throw std::invalid_argument("invalid spectrum analyzer parameters");
     double sum = 0;
     for (int n = 0; n < fft_size; ++n) {
         window_[static_cast<std::size_t>(n)] =

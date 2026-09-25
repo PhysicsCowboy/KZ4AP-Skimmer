@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
 #include <vector>
 
 using namespace kz4ap;
@@ -50,6 +51,14 @@ TEST(SpectrumAnalyzer, FrameCountAndTimes) {
     ASSERT_EQ(frames.size(), 5u);
     EXPECT_DOUBLE_EQ(frames[0].time_s, double(kN) / kRate);
     EXPECT_DOUBLE_EQ(frames[1].time_s, double(kN + kN / 2) / kRate);
+}
+
+TEST(SpectrumAnalyzer, RejectsInvalidParameters) {
+    EXPECT_THROW(SpectrumAnalyzer(kRate, -1, kN / 2), std::invalid_argument);
+    EXPECT_THROW(SpectrumAnalyzer(kRate, 0, kN / 2), std::invalid_argument);
+    EXPECT_THROW(SpectrumAnalyzer(kRate, kN, 0), std::invalid_argument);
+    EXPECT_THROW(SpectrumAnalyzer(kRate, kN, kN + 1), std::invalid_argument);
+    EXPECT_THROW(SpectrumAnalyzer(0, kN, kN / 2), std::invalid_argument);
 }
 
 TEST(SpectrumAnalyzer, ChunkingDoesNotChangeFrames) {
