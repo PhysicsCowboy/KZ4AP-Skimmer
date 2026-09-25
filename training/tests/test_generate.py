@@ -90,3 +90,15 @@ def test_band_scenario_writes_labels(tmp_path):
         assert 0 <= s["start_s"] < s["end_s"] <= 10.0
     with wave.open(str(out), "rb") as w:
         assert w.getnframes() == 480000
+
+
+def test_single_scenario_duration_too_short_errors(tmp_path):
+    out = tmp_path / "short.wav"
+    with pytest.raises(SystemExit):
+        main(["--scenario", "single", "--duration", "5", "--out", str(out)])
+
+
+def test_band_scenario_too_many_signals_errors_instead_of_hanging(tmp_path):
+    out = tmp_path / "toomany.wav"
+    with pytest.raises(SystemExit):
+        main(["--scenario", "band", "--signals", "100", "--sample-rate", "8000", "--out", str(out)])

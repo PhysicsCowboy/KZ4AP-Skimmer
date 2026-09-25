@@ -95,12 +95,16 @@ def write_wav(path, iq: np.ndarray, sample_rate: int) -> None:
         w.writeframes(stereo.tobytes())
 
 
+def signal_end_s(spec: SignalSpec) -> float:
+    """Time the signal's keying finishes, relative to the recording start."""
+    intervals = keying_intervals(spec.text, spec.wpm)
+    return spec.start_s + (intervals[-1][1] if intervals else 0.0)
+
+
 def labels(signals, sample_rate: int, duration_s: float) -> dict:
     entries = []
     for s in signals:
-        intervals = keying_intervals(s.text, s.wpm)
-        end = s.start_s + (intervals[-1][1] if intervals else 0.0)
-        entries.append({**asdict(s), "end_s": round(end, 3)})
+        entries.append({**asdict(s), "end_s": round(signal_end_s(s), 3)})
     return {
         "sample_rate": sample_rate,
         "duration_s": duration_s,
@@ -134,7 +138,10 @@ def scenario_band(rng, count: int, duration_s: float, sample_rate: int) -> list[
     """count signals spread over 80% of the span, at least 1 kHz apart."""
     span = 0.4 * sample_rate
     specs: list[SignalSpec] = []
-    while len(specs) < count:
+    max_attempts = 1000 * count
+    for _attempt in range(max_attempts):
+        if len(specs) >= count:
+            break
         freq = round(float(rng.uniform(-span, span)), 1)
         if any(abs(freq - s.freq_offset_hz) < 1000 for s in specs):
             continue
@@ -144,6 +151,10 @@ def scenario_band(rng, count: int, duration_s: float, sample_rate: int) -> list[
         message = MESSAGES[rng.integers(len(MESSAGES))].format(c=random_callsign(rng))
         text = fill_text(message, wpm, duration_s - start - 1.0)
         specs.append(SignalSpec(text, freq, wpm, snr, start))
+    if len(specs) < count:
+        raise ValueError(
+            f"cannot place {count} signals at least 1 kHz apart within +/-{span:.0f} Hz"
+        )
     return specs
 
 
@@ -162,7 +173,19 @@ def main(argv=None) -> None:
     if args.scenario == "single":
         specs = scenario_single()
     else:
-        specs = scenario_band(rng, args.signals, args.duration, args.sample_rate)
+        try:
+            specs = scenario_band(rng, args.signals, args.duration, args.sample_rate)
+        except ValueError as exc:
+            parser.error(str(exc))
+
+    for spec in specs:
+        end = signal_end_s(spec)
+        if end > args.duration:
+            parser.error(
+                f"signal {spec.text!r} needs at least {end:.3f}s of recording "
+                f"but --duration is {args.duration}s"
+            )
+
     iq = generate(specs, args.sample_rate, args.duration, seed=args.seed + 1)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     write_wav(args.out, iq, args.sample_rate)
