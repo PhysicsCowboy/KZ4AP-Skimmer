@@ -46,6 +46,7 @@ private:
     void finish_char(DecodeUpdate& out);
     void emit(DecodeUpdate& out, std::string_view text, float probability, double start_s, double end_s);
     void update_speed();
+    bool counts_for_speed(double duration) const;
 
     double rate_;
     ClassicalDecoderConfig config_;

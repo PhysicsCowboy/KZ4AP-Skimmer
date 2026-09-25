@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace kz4ap;
@@ -227,4 +229,58 @@ TEST(ClassicalDecoder, FlushDuringMarkAfterDropoutEmitsNothing) {
     EXPECT_TRUE(d.process(x, 0.0).chars.empty());
     // No element has been completed, so there is no character to emit.
     EXPECT_TRUE(d.flush().chars.empty());
+}
+
+namespace {
+
+// Hand-keyed baseband: text at wpm with dahs of dah_dits dits (standard 1/3/7 dit
+// spacing) and hard key edges, beginning at 0.5 s.
+std::vector<Sample> hand_keyed(const std::string& msg, double wpm, double dah_dits, double tail_s = 1.5) {
+    const double dit = 1.2 / wpm;
+    std::vector<std::pair<double, double>> marks;
+    double t = 0.5;
+    std::size_t start = 0;
+    while (start < msg.size()) {
+        auto end = msg.find(' ', start);
+        if (end == std::string::npos) end = msg.size();
+        const auto symbols = morse::symbols(std::string_view(msg).substr(start, end - start));
+        for (std::size_t si = 0; si < symbols.size(); ++si) {
+            const auto code = morse::encode(symbols[si]);
+            for (std::size_t ei = 0; ei < code.size(); ++ei) {
+                const double len = code[ei] == '.' ? dit : dah_dits * dit;
+                marks.emplace_back(t, t + len);
+                t += len + (ei + 1 < code.size() ? dit : 0.0);
+            }
+            if (si + 1 < symbols.size()) t += 3 * dit;
+        }
+        t += 7 * dit;
+        start = end + 1;
+    }
+    std::vector<Sample> x(static_cast<std::size_t>((t + tail_s) * kRate));
+    for (auto [on, off] : marks) {
+        for (auto i = static_cast<std::size_t>(on * kRate); i < static_cast<std::size_t>(off * kRate); ++i)
+            x[i] = Sample(1.0f, 0.0f);
+    }
+    return x;
+}
+
+}  // namespace
+
+TEST(ClassicalDecoder, TuneUpCarrierDoesNotDerailSpeed) {
+    // A 1 s tune-up carrier (longer than a four-dit dah at the 5 wpm minimum),
+    // then CW at 25 wpm from 2 s.
+    ClassicalDecoder d(kRate);
+    const std::string msg = "CQ TEST K1ABC DE K1ABC K";
+    auto x = keyed_signal(msg, 25, kRate, kz4ap::test::keying(msg, 25, 2.0).back().second + 1.5, 0, 1.0, 0.0, 1, 2.0);
+    for (auto i = static_cast<std::size_t>(0.5 * kRate); i < static_cast<std::size_t>(1.5 * kRate); ++i)
+        x[i] = Sample(1.0f, 0.0f);
+    const auto got = text(decode_all(d, x, 32));
+    EXPECT_TRUE(ends_with(got, msg)) << got;
+    EXPECT_NEAR(d.wpm(), 25.0, 2.5);
+}
+
+TEST(ClassicalDecoder, DecodesHeavyHandKeying) {
+    // 20 wpm with four-dit dahs, as a heavy-handed operator might send.
+    ClassicalDecoder d(kRate);
+    EXPECT_EQ(text(decode_all(d, hand_keyed("CQ TEST K1ABC", 20, 4.0), 32)), "CQ TEST K1ABC");
 }

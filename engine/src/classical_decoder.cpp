@@ -14,6 +14,15 @@ namespace {
 constexpr double kLog2 = 0.6931471805599453;
 constexpr double kDahSlope = 0.08;  // width of the dit/dah decision, in log-duration units
 constexpr std::size_t kSpeedWindow = 24;
+// Marks longer than a dah of this many dits at min_wpm are not Morse elements
+// (a tune-up carrier, say) and are kept out of the speed estimate.
+constexpr double kLongestElementDits = 4.0;
+// Keying edges shorten every mark by about the same time, which raises the
+// dah/dit ratio above 3. Measured with 5 ms raised-cosine edges: 2.91-3.22 at
+// 5-25 wpm, up to 3.52 at 45 wpm and 3.75 at 60 wpm. Heavy hand keying with
+// four-dit dahs measures 3.95-4.32. Above this bound the ratio is taken as the
+// sender's weighting, not edge shortening.
+constexpr double kMaxShortenedRatio = 3.85;
 
 float alpha_for(double tau_s, double rate) {
     return static_cast<float>(1.0 - std::exp(-1.0 / (tau_s * rate)));
@@ -128,9 +137,10 @@ void ClassicalDecoder::key_down(double t) {
     key_ = true;
     if (char_open_ && !elements_.empty() && t - up_t_ < config_.glitch_dits * dit_s_) {
         // The key-up was a dropout inside one element: merge it back into that element.
+        const Element merged = elements_.back();
         elements_.pop_back();
         char_open_ = !elements_.empty();  // flush() must not finish a character with no elements
-        if (!recent_marks_.empty()) recent_marks_.pop_back();
+        if (counts_for_speed(merged.end_s - merged.start_s) && !recent_marks_.empty()) recent_marks_.pop_back();
         down_t_ = prev_down_t_;
         return;
     }
@@ -147,9 +157,14 @@ void ClassicalDecoder::key_up(double t) {
     prev_down_t_ = down_t_;
     up_t_ = t;
     char_open_ = true;
+    if (!counts_for_speed(duration)) return;
     recent_marks_.push_back(duration);
     if (recent_marks_.size() > kSpeedWindow) recent_marks_.pop_front();
     update_speed();
+}
+
+bool ClassicalDecoder::counts_for_speed(double duration) const {
+    return duration <= kLongestElementDits * 1.2 / config_.min_wpm;
 }
 
 void ClassicalDecoder::finish_char(DecodeUpdate& out) {
@@ -187,14 +202,24 @@ void ClassicalDecoder::update_speed() {
     }
     double dit = dit_s_;
     if (best >= 1.8) {
-        // Two clusters: dits below the split, dahs (three dits each) above it. A
-        // dah outlasts a dit by two dits however much the keying edges shorten
-        // every mark (about 5 ms for 5 ms raised-cosine edges), so the speed comes
-        // from the difference of the cluster means, not from their levels.
+        // Two clusters: dits below the split, dahs (three dits each) above it.
         const auto mid = d.begin() + static_cast<std::ptrdiff_t>(split);
-        const double mean_dit = std::accumulate(d.begin(), mid, 0.0) / static_cast<double>(split);
-        const double mean_dah = std::accumulate(mid, d.end(), 0.0) / static_cast<double>(d.size() - split);
-        dit = (mean_dah - mean_dit) / 2.0;
+        const auto n_dits = static_cast<double>(split);
+        const auto n_dahs = static_cast<double>(d.size() - split);
+        const double mean_dit = std::accumulate(d.begin(), mid, 0.0) / n_dits;
+        const double mean_dah = std::accumulate(mid, d.end(), 0.0) / n_dahs;
+        const double ratio = mean_dah / mean_dit;
+        if (ratio >= 3.0 && ratio <= kMaxShortenedRatio) {
+            // Keying edges shorten every mark by about the same time (about 5 ms
+            // for 5 ms raised-cosine edges), but a dah still outlasts a dit by
+            // two dits, so the difference of the cluster means is unbiased. The
+            // two estimates agree at a ratio of exactly 3.
+            dit = (mean_dah - mean_dit) / 2.0;
+        } else {
+            // A ratio outside the band is the sender's weighting (or a stray long
+            // mark), which the difference would amplify: average the clusters.
+            dit = (mean_dit * n_dits + mean_dah / 3.0 * n_dahs) / static_cast<double>(d.size());
+        }
     } else {
         // All recent marks look alike: they are dits or dahs by the current estimate.
         const double mean = std::accumulate(d.begin(), d.end(), 0.0) / static_cast<double>(d.size());
