@@ -3,6 +3,7 @@ add_library(kz4ap_engine
   src/wav_reader.cpp
   src/spectrum.cpp
   src/channelizer.cpp
+  src/signal_detector.cpp
 )
 add_library(kz4ap::engine ALIAS kz4ap_engine)
 target_include_directories(kz4ap_engine PUBLIC include PRIVATE src)
@@ -20,6 +21,7 @@ add_executable(kz4ap_engine_tests
   tests/wav_reader_test.cpp
   tests/spectrum_test.cpp
   tests/channelizer_test.cpp
+  tests/signal_detector_test.cpp
 )
 target_link_libraries(kz4ap_engine_tests PRIVATE kz4ap::engine GTest::gtest_main)
 gtest_discover_tests(kz4ap_engine_tests)
