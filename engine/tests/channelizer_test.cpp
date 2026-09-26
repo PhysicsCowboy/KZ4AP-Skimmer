@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <limits>
 #include <map>
 #include <numbers>
 #include <stdexcept>
@@ -126,4 +127,11 @@ TEST(Channelizer, RejectsInvalidParameters) {
     EXPECT_THROW(Channelizer({.channel_bins = 0}), std::invalid_argument);
     EXPECT_THROW(Channelizer({.fft_size = 8192, .channel_bins = 100}), std::invalid_argument);
     EXPECT_THROW(Channelizer({.sample_rate = 0}), std::invalid_argument);
+    // Default output rate is 1500 Hz, so the cutoff must lie in (0, 750).
+    EXPECT_THROW(Channelizer({.cutoff_hz = 0.0}), std::invalid_argument);
+    EXPECT_THROW(Channelizer({.cutoff_hz = -10.0}), std::invalid_argument);
+    EXPECT_THROW(Channelizer({.cutoff_hz = 750.0}), std::invalid_argument);
+    EXPECT_THROW(Channelizer({.cutoff_hz = std::numeric_limits<double>::quiet_NaN()}), std::invalid_argument);
+    EXPECT_THROW(Channelizer({.cutoff_hz = std::numeric_limits<double>::infinity()}), std::invalid_argument);
+    EXPECT_NO_THROW(Channelizer({.cutoff_hz = 700.0}));
 }

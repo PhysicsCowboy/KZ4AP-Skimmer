@@ -16,6 +16,9 @@ Channelizer::Channelizer(const ChannelizerConfig& config) : config_(config) {
         throw std::invalid_argument("invalid channelizer parameters");
     hop_ = n / 2;
     decimation_ = n / m;
+    const double nyquist = static_cast<double>(config.sample_rate) / decimation_ / 2;
+    if (!std::isfinite(config.cutoff_hz) || config.cutoff_hz <= 0 || config.cutoff_hz >= nyquist)
+        throw std::invalid_argument("channelizer cutoff must be between 0 and half the output rate");
 
     // Windowed-sinc low-pass, as long as overlap-save allows (fft_size - hop + 1 taps).
     const int taps = n - hop_ + 1;
