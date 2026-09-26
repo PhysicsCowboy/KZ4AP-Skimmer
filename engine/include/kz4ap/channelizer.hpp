@@ -14,7 +14,10 @@ struct ChannelizerConfig {
     int sample_rate = 192000;
     int fft_size = 8192;       // input FFT size; the hop is fft_size / 2
     int channel_bins = 64;     // bins kept per channel; output rate = sample_rate * channel_bins / fft_size
-    double cutoff_hz = 150.0;  // channel low-pass cutoff (-6 dB point); 0 < cutoff_hz < output rate / 2
+    // Channel low-pass cutoff (-6 dB point). Must be > 0, and cutoff_hz plus half the
+    // filter's transition width (about 5.5 * sample_rate / (fft_size / 2 + 1) Hz) must
+    // not exceed output rate / 2: at most about 621 Hz with the other defaults.
+    double cutoff_hz = 150.0;
 };
 
 // Splits a wideband I/Q stream into narrow, decimated baseband streams, one per

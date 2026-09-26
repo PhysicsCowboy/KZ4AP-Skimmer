@@ -16,12 +16,21 @@ Channelizer::Channelizer(const ChannelizerConfig& config) : config_(config) {
         throw std::invalid_argument("invalid channelizer parameters");
     hop_ = n / 2;
     decimation_ = n / m;
-    const double nyquist = static_cast<double>(config.sample_rate) / decimation_ / 2;
-    if (!std::isfinite(config.cutoff_hz) || config.cutoff_hz <= 0 || config.cutoff_hz >= nyquist)
-        throw std::invalid_argument("channelizer cutoff must be between 0 and half the output rate");
-
     // Windowed-sinc low-pass, as long as overlap-save allows (fft_size - hop + 1 taps).
     const int taps = n - hop_ + 1;
+
+    // The channel keeps only the channel_bins bins around its center, i.e. frequencies
+    // within half the output rate. The filter's whole transition band must fit inside
+    // that, or part of the response is cut off (the cutoff is the -6 dB point, not the
+    // stopband edge). A Blackman window's transition width is about 5.5 / (filter length
+    // in seconds): 258 Hz for 4097 taps at 192 kHz.
+    const double half_output_rate = static_cast<double>(config.sample_rate) / decimation_ / 2;
+    const double transition_hz = 5.5 * config.sample_rate / taps;
+    if (!std::isfinite(config.cutoff_hz) || config.cutoff_hz <= 0 ||
+        config.cutoff_hz + transition_hz / 2 > half_output_rate)
+        throw std::invalid_argument(
+            "channelizer cutoff plus half the filter's transition width must not exceed half the output rate");
+
     const double fc = config.cutoff_hz / config.sample_rate;
     const double mid = (taps - 1) / 2.0;
     std::vector<double> h(static_cast<std::size_t>(taps));
