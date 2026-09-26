@@ -10,7 +10,7 @@ namespace kz4ap {
 
 struct DecodedSymbol {
     std::string text;   // "A", "?", "<SK>"; " " marks a word space, "*" a pattern with no Morse code
-    float probability;  // the decoder's belief that ch is right, 0..1
+    float probability;  // the decoder's belief that text is right, 0..1
     double start_s;
     double end_s;
 };
