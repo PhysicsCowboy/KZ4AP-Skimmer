@@ -21,13 +21,13 @@ struct SignalScore {
     LabeledSignal label;
     std::optional<std::uint32_t> track_id;  // empty if no track matched
     std::string decoded;                    // normalized
-    std::size_t edits;
+    std::size_t edits;                      // symbol edits (a prosign counts as one)
     double cer;
 };
 
 struct Score {
     std::vector<SignalScore> signals;
-    double cer = 0;                // total edits / total reference characters
+    double cer = 0;                // total edits / total reference symbols
     std::size_t detected = 0;      // labeled signals matched to a track
     std::size_t false_tracks = 0;  // unmatched tracks that decoded some text
 };
@@ -35,11 +35,16 @@ struct Score {
 // Uppercase, whitespace runs collapsed to one space, ends trimmed.
 std::string normalize_text(std::string_view s);
 
-// Levenshtein distance.
+// Levenshtein distance over characters.
 std::size_t edit_distance(std::string_view a, std::string_view b);
 
+// Levenshtein distance over symbols, as split by kz4ap::morse::symbols() (a
+// prosign token such as "<SK>" counts as one edit, not one per character).
+std::size_t edit_distance(const std::vector<std::string_view>& a, const std::vector<std::string_view>& b);
+
 // Matches each labeled signal to the track within match_tolerance_hz that
-// decoded the most text, and scores the character error rate.
+// decoded the most text, and scores the symbol error rate (a prosign counts
+// as one symbol, same as space between words).
 Score score(const std::vector<LabeledSignal>& labels, const std::vector<DecodedTrack>& tracks,
             double match_tolerance_hz = 50.0);
 

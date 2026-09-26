@@ -1,11 +1,34 @@
 #include "scoring.hpp"
 
+#include <kz4ap/morse.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <set>
 
 namespace kz4ap::bench {
+
+namespace {
+
+// Levenshtein distance over any random-access sequence of equality-comparable
+// elements (characters or symbols).
+template <typename Seq>
+std::size_t levenshtein(const Seq& a, const Seq& b) {
+    std::vector<std::size_t> prev(b.size() + 1), cur(b.size() + 1);
+    for (std::size_t j = 0; j <= b.size(); ++j) prev[j] = j;
+    for (std::size_t i = 1; i <= a.size(); ++i) {
+        cur[0] = i;
+        for (std::size_t j = 1; j <= b.size(); ++j) {
+            const std::size_t substitute = prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1);
+            cur[j] = std::min({prev[j] + 1, cur[j - 1] + 1, substitute});
+        }
+        std::swap(prev, cur);
+    }
+    return prev[b.size()];
+}
+
+}  // namespace
 
 std::string normalize_text(std::string_view s) {
     std::string out;
@@ -20,18 +43,10 @@ std::string normalize_text(std::string_view s) {
     return out;
 }
 
-std::size_t edit_distance(std::string_view a, std::string_view b) {
-    std::vector<std::size_t> prev(b.size() + 1), cur(b.size() + 1);
-    for (std::size_t j = 0; j <= b.size(); ++j) prev[j] = j;
-    for (std::size_t i = 1; i <= a.size(); ++i) {
-        cur[0] = i;
-        for (std::size_t j = 1; j <= b.size(); ++j) {
-            const std::size_t substitute = prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1);
-            cur[j] = std::min({prev[j] + 1, cur[j - 1] + 1, substitute});
-        }
-        std::swap(prev, cur);
-    }
-    return prev[b.size()];
+std::size_t edit_distance(std::string_view a, std::string_view b) { return levenshtein(a, b); }
+
+std::size_t edit_distance(const std::vector<std::string_view>& a, const std::vector<std::string_view>& b) {
+    return levenshtein(a, b);
 }
 
 Score score(const std::vector<LabeledSignal>& labels, const std::vector<DecodedTrack>& tracks,
@@ -39,7 +54,7 @@ Score score(const std::vector<LabeledSignal>& labels, const std::vector<DecodedT
     Score result;
     std::set<std::uint32_t> used;
     std::size_t total_edits = 0;
-    std::size_t total_chars = 0;
+    std::size_t total_symbols = 0;
     for (const auto& label : labels) {
         const std::string reference = normalize_text(label.text);
         const DecodedTrack* best = nullptr;
@@ -61,13 +76,17 @@ Score score(const std::vector<LabeledSignal>& labels, const std::vector<DecodedT
             s.decoded = normalize_text(best->text);
             ++result.detected;
         }
-        s.edits = edit_distance(reference, s.decoded);
-        s.cer = reference.empty() ? 0.0 : static_cast<double>(s.edits) / static_cast<double>(reference.size());
+        const auto reference_symbols = kz4ap::morse::symbols(reference);
+        const auto decoded_symbols = kz4ap::morse::symbols(s.decoded);
+        s.edits = edit_distance(reference_symbols, decoded_symbols);
+        s.cer = reference_symbols.empty()
+                    ? 0.0
+                    : static_cast<double>(s.edits) / static_cast<double>(reference_symbols.size());
         total_edits += s.edits;
-        total_chars += reference.size();
+        total_symbols += reference_symbols.size();
         result.signals.push_back(std::move(s));
     }
-    result.cer = total_chars == 0 ? 0.0 : static_cast<double>(total_edits) / static_cast<double>(total_chars);
+    result.cer = total_symbols == 0 ? 0.0 : static_cast<double>(total_edits) / static_cast<double>(total_symbols);
     for (const auto& t : tracks) {
         if (!used.count(t.id) && !normalize_text(t.text).empty()) ++result.false_tracks;
     }
