@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            preset: windows
+          - os: ubuntu-latest
+            preset: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Ninja
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Python dependencies
+        run: python -m pip install -r training/requirements.txt
+
+      - name: Python tests
+        run: python -m pytest training -q
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: C++ tests
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: Benchmark smoke test
+        shell: bash
+        run: bash bench/smoke.sh build/${{ matrix.preset }}
