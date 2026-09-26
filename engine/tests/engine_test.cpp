@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <map>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -22,7 +23,7 @@ struct Result {
     std::map<std::uint32_t, std::string> text;
 };
 
-Result run(const std::vector<Sample>& x, std::size_t chunk) {
+Result run(const std::vector<Sample>& x, std::size_t chunk, int sample_rate = static_cast<int>(kRate)) {
     EventBus bus;
     Result r;
     bus.subscribe([&](const Event& e) {
@@ -31,7 +32,9 @@ Result run(const std::vector<Sample>& x, std::size_t chunk) {
             for (const auto& c : d->chars) r.text[d->track_id] += c.text;
         }
     });
-    Engine engine(EngineConfig{}, bus);
+    EngineConfig config;
+    config.sample_rate = sample_rate;
+    Engine engine(config, bus);
     for (std::size_t i = 0; i < x.size(); i += chunk) {
         engine.process(std::span<const Sample>(x).subspan(i, std::min(chunk, x.size() - i)));
     }
@@ -57,6 +60,43 @@ TEST(Engine, FindsAndDecodesTwoSignals) {
     const auto high = std::next(low);
     EXPECT_NEAR(low->first, -30000.0, 25.0);
     EXPECT_NEAR(high->first, 12000.0, 25.0);
+    EXPECT_NE(low->second.find("CQ W9XYZ"), std::string::npos) << low->second;
+    EXPECT_NE(high->second.find("CQ K1ABC"), std::string::npos) << high->second;
+}
+
+TEST(Engine, ChoosesFftSizeFromSampleRate) {
+    // Largest power of two keeping bins at least 20 Hz wide (23.4 Hz at each of these rates).
+    EXPECT_EQ(choose_fft_size(48000), 2048);
+    EXPECT_EQ(choose_fft_size(96000), 4096);
+    EXPECT_EQ(choose_fft_size(192000), 8192);
+    EXPECT_EQ(choose_fft_size(768000), 32768);
+}
+
+TEST(Engine, RejectsUnusableSampleRates) {
+    EXPECT_THROW(choose_fft_size(0), std::invalid_argument);
+    EXPECT_THROW(choose_fft_size(7999), std::invalid_argument);
+    EventBus bus;
+    EngineConfig config;
+    config.sample_rate = 4000;
+    EXPECT_THROW(Engine(config, bus), std::invalid_argument);
+}
+
+TEST(Engine, FindsAndDecodesTwoSignalsAt48kHz) {
+    // Same 20 dB SNR in 500 Hz as at 192 kHz: a quarter of the bandwidth needs half the noise sigma.
+    constexpr double rate = 48000;
+    constexpr double sigma = kNoiseSigma / 2;
+    auto x = keyed_signal("VVV CQ K1ABC", 25, rate, 9.0, 8000.0, kAmplitude20dB, sigma, 21);
+    const auto y = keyed_signal("VVV CQ W9XYZ", 22, rate, 9.0, -12000.0, kAmplitude20dB, 0.0, 22);
+    for (std::size_t i = 0; i < x.size(); ++i) x[i] += y[i];
+
+    const auto r = run(x, 16384, static_cast<int>(rate));
+    ASSERT_EQ(r.born.size(), 2u);
+    std::map<double, std::string> by_freq;
+    for (const auto& t : r.born) by_freq[t.freq_hz] = r.text.count(t.id) ? r.text.at(t.id) : "";
+    const auto low = by_freq.begin();
+    const auto high = std::next(low);
+    EXPECT_NEAR(low->first, -12000.0, 25.0);
+    EXPECT_NEAR(high->first, 8000.0, 25.0);
     EXPECT_NE(low->second.find("CQ W9XYZ"), std::string::npos) << low->second;
     EXPECT_NE(high->second.find("CQ K1ABC"), std::string::npos) << high->second;
 }

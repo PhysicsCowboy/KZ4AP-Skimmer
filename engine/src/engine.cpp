@@ -1,9 +1,24 @@
 #include "kz4ap/engine.hpp"
 
+#include <stdexcept>
 #include <utility>
 
 namespace kz4ap {
+
+int choose_fft_size(int sample_rate) {
+    if (sample_rate < 8000) throw std::invalid_argument("sample rate must be at least 8000 Hz");
+    int n = 1;
+    while (sample_rate / (2.0 * n) >= 20.0) n *= 2;
+    return n;
+}
+
 namespace {
+
+EngineConfig resolved(EngineConfig c) {
+    const int automatic = choose_fft_size(c.sample_rate);  // also validates the sample rate
+    if (c.fft_size == 0) c.fft_size = automatic;
+    return c;
+}
 
 DetectorConfig detector_config(const EngineConfig& c) {
     DetectorConfig d = c.detector;
@@ -16,13 +31,13 @@ DetectorConfig detector_config(const EngineConfig& c) {
 }  // namespace
 
 Engine::Engine(const EngineConfig& config, EventBus& bus)
-    : config_(config),
+    : config_(resolved(config)),
       bus_(bus),
-      hop_(config.fft_size / 2),
-      spectrum_(config.sample_rate, config.fft_size, config.fft_size / 2),
-      detector_(detector_config(config)),
-      channelizer_(ChannelizerConfig{config.sample_rate, config.fft_size, config.channel_bins,
-                                     config.channel_cutoff_hz}) {
+      hop_(config_.fft_size / 2),
+      spectrum_(config_.sample_rate, config_.fft_size, config_.fft_size / 2),
+      detector_(detector_config(config_)),
+      channelizer_(ChannelizerConfig{config_.sample_rate, config_.fft_size, config_.channel_bins,
+                                     config_.channel_cutoff_hz}) {
     pending_.reserve(static_cast<std::size_t>(hop_));
 }
 

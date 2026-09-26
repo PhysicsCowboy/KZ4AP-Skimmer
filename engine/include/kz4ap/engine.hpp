@@ -14,9 +14,14 @@
 
 namespace kz4ap {
 
+// The FFT size the engine uses when EngineConfig::fft_size is 0: the largest power
+// of two with sample_rate / fft_size >= 20 Hz, so bins stay about 23 Hz wide at
+// 48, 96, 192 or 768 kHz. Throws std::invalid_argument for sample rates below 8000 Hz.
+int choose_fft_size(int sample_rate);
+
 struct EngineConfig {
     int sample_rate = 192000;
-    int fft_size = 8192;
+    int fft_size = 0;  // 0 = choose automatically: the largest power of two with sample_rate / fft_size >= 20 Hz
     int channel_bins = 64;
     double channel_cutoff_hz = 150.0;
     DetectorConfig detector;  // sample_rate, fft_size and hop are overwritten by the engine
@@ -27,6 +32,7 @@ struct EngineConfig {
 // identical however the input is split across calls to process().
 class Engine {
 public:
+    // Throws std::invalid_argument if config.sample_rate is below 8000 Hz.
     Engine(const EngineConfig& config, EventBus& bus);
     ~Engine();
 
@@ -45,7 +51,7 @@ private:
     void close_channel(std::uint32_t id);
     void publish_update(std::uint32_t id, DecodeUpdate&& update);
 
-    EngineConfig config_;
+    EngineConfig config_;  // fft_size resolved to the size in use
     EventBus& bus_;
     int hop_;
     SpectrumAnalyzer spectrum_;
