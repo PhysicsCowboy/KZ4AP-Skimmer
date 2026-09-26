@@ -8,3 +8,8 @@
   derived, measured or heuristic. Treat a stale description as a bug.
 - Any agent doing implementation work on this project must be told the rule
   above.
+- **Units:** every displayed, logged or documented quantity carries an
+  explicit unit. Every dB value names its reference (dBFS, dB SNR in a stated
+  bandwidth, dB relative to the passband, etc.); a bare "dB" is a bug. Linear
+  signal values are in FS (amplitude, full scale) and FS² (power) unless
+  calibrated. See `docs/signal-processing.md`, section 0.
