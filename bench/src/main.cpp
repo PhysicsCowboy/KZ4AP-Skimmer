@@ -141,7 +141,12 @@ int main(int argc, char** argv) {
                 }
             }
         }
-        if (args.json) std::ofstream(*args.json) << out.dump(2) << '\n';
+        if (args.json) {
+            std::ofstream f(*args.json);
+            f << out.dump(2) << '\n';
+            f.close();
+            if (!f) throw std::runtime_error("cannot write " + args.json->string());
+        }
         return exit_code;
     } catch (const std::exception& e) {
         std::cerr << "kz4ap-bench: " << e.what() << '\n';
