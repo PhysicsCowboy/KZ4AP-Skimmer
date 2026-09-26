@@ -15,7 +15,7 @@ struct ClassicalDecoderConfig {
     double max_wpm = 60.0;
     double attack_s = 0.004;       // how fast mark/space levels follow a new extreme
     double decay_s = 3.0;          // how fast they relax back
-    float squelch_ratio = 3.0f;    // mark level must exceed space level by this factor to key
+    float squelch_ratio = 3.0f;    // mark level must be at least this factor times the space level to key
     double smoothing_dits = 0.25;  // envelope smoothing time constant, in dits
     double glitch_dits = 0.3;      // marks and dropouts shorter than this are ignored
 };

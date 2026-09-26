@@ -15,8 +15,19 @@ decoder: an HMM with Viterbi decoding, or a beam search, over key states and
 characters, with likelihoods computed from the measured signal and noise
 levels and an optional text/callsign prior, and no hard thresholds.
 
-Research survey: `docs/research/decoder-survey.md` (in progress; notes so far
-under `docs/research/`).
+Research survey: `docs/research/decoder-survey.md` (notes under
+`docs/research/research_notes/`). Its ranked recommendation, in order of
+evidence per CPU cycle, is:
+1. a pre-detection filter matched to the dit, with soft (likelihood) output,
+   on the existing baseline; this is also stage 2 of "Channel filtering, two
+   stages" below;
+2. a small streaming CNN+LSTM network trained with CTC, following VE3NEA's
+   DeepCW;
+3. a Bell-style explicit-duration HMM with beam search and Kalman amplitude
+   tracking;
+4. hybrids of 2 and 3.
+See the survey's "Rank the candidates by evidence per CPU cycle" for the
+evidence and costs.
 
 Optional, later: once the software suite works, offer several classical
 decoders as a user choice.
@@ -25,12 +36,13 @@ decoders as a user choice.
 
 Start by adding benchmark scenarios that expose each problem below, then fix
 against the numbers. Several of these were found by review but are invisible
-to the current benchmark, which only has clean, well-separated, 10–30 dB
-signals.
+to the current benchmark, which only has clean, well-separated signals of
+10–30 dB SNR (500 Hz, key-down).
 
 ### Benchmark scenarios to add first
 
-- **Strong signals:** SNR up to 60 dB (the generator stops at 30).
+- **Strong signals:** SNR up to 60 dB (500 Hz) (the generator stops at
+  30 dB).
 - **Stations that stop and pause:** a transmission, then several seconds of
   silence, then another — as between CQs.
 - **Stations present from the first sample** of a recording.
@@ -93,9 +105,9 @@ decoding gates off within a second or two of silence.
 
 ### Ghost tracks beside very strong signals
 
-Around 60 dB SNR, extra tracks appear a few hundred Hz either side of a
+Around 60 dB SNR (500 Hz), extra tracks appear a few hundred Hz either side of a
 station and decode runs of `E` and `I`. Fix idea: reject a peak that sits
-inside a much stronger track's skirt (more than X dB below a track within
+inside a much stronger track's skirt (more than X dB below that track's level within
 ±N Hz).
 
 ### Express the detector's bin-counted settings in Hz
@@ -171,15 +183,20 @@ Spectrum frames are stored in dBFS and the detector converts every bin back
 to linear power to average it. Store linear power (FS²) and convert to dB
 only where it is needed: locally for peak interpolation, and in the display.
 
-### SNR definition compatible with CW Skimmer / the RBN
+### SNR calibration against CW Skimmer / the RBN
 
-The detector reports SNR per bin (35 Hz), the generator in 500 Hz. Find out
-exactly how CW Skimmer and the Reverse Beacon Network define the SNR they
-report: the nominal bandwidth; whether it is an equivalent noise bandwidth or
-a nominal filter width (the filter's shape matters); how noise is estimated
-(mean, median, percentile); and how signal power is measured (key-down or
-averaged over keying, about 3 dB apart at 50% duty cycle). Fallback: fit the
-offset empirically from simultaneous recordings and RBN spots.
+The detector reports SNR per bin (35 Hz), the generator in 500 Hz. The
+definition is now known (`docs/research/decoder-survey.md`, "One SNR
+yardstick"): CW Skimmer reports key-down signal power, measured through a
+50 Hz filter with key-up and transition samples discarded and a Rayleigh
+fading model, divided by the noise density × a nominal rectangular 500 Hz,
+with the density estimated from the flat part of the whole receiver span.
+For clean, non-fading signals that is the same quantity as our synthetic
+SNR. What remains is calibration: how each side *estimates* signal and noise
+from real audio (CW Skimmer's band-wide floor reads high in crowded
+segments; our median floor and per-bin averages differ again). Report an SNR
+in that convention from the engine, then check the offset against
+simultaneous recordings and RBN spots.
 
 ## Smaller items worth keeping
 

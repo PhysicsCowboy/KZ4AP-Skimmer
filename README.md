@@ -49,8 +49,8 @@ if decoding gets worse than `bench/baselines/smoke.json`.
 
 - The first character or two of a transmission may be lost or wrong while the
   station is being detected.
-- Very strong signals (around 60 dB SNR) can produce extra "ghost" tracks
-  beside them.
+- Very strong signals (around 60 dB SNR in 500 Hz) can produce extra "ghost"
+  tracks beside them.
 - After a station stops, a few stray E's can be decoded from noise before its
   track is dropped.
 

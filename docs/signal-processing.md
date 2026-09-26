@@ -20,8 +20,9 @@ value scales with the sample rate, the scaling is given.
 to volts or dBm at the antenna.
 
 - **FS (full scale):** linear amplitude unit. The input WAV holds 16-bit
-  integers; the engine divides them by 32768, so an I or Q value of 1 FS is
-  the largest the file can hold. The WAV is the SDR software's output, not raw
+  integers; the engine divides them by 32768, so I and Q each lie in
+  [−1, 32767/32768] FS: 1 FS itself is just beyond the largest positive value
+  the file can hold. The WAV is the SDR software's output, not raw
   ADC counts, and the gain from the antenna to it is unknown.
 - **FS²:** power unit (squared amplitude, e.g. |x|² of one complex sample).
 - **dBFS:** power in dB relative to 1 FS². 0 dBFS is the power of a complex
@@ -39,7 +40,8 @@ to volts or dBm at the antenna.
 | fs | input sample rate (complex samples per second) | 192 000 Hz |
 | N | FFT size: samples per transform, and number of frequency bins | 8192 |
 | Δf | bin width, fs / N | 23.4 Hz |
-| hop | samples between successive transforms, N/2 | 4096 (21.3 ms) |
+| hop | samples between successive transforms, N/2 | 4096 |
+| t_hop | hop duration, hop / fs, s | 21.3 ms |
 | n | sample index within one transform, 0 … N−1 | |
 | k | bin index | |
 | w[n] | spectrum window (periodic Hann), ½ − ½·cos(2πn/N) | |
@@ -49,12 +51,20 @@ to volts or dBm at the antenna.
 | σ² | noise power per complex sample, FS² (σ: its RMS amplitude, FS) | synthetic recordings: σ = 0.02 FS |
 | A | amplitude of a complex tone, FS | |
 | τ | time constant of a first-order (exponential) filter, s | |
-| α | per-step update weight of such a filter, 1 − exp(−step/τ) | |
-| T | averaging time (general) | |
+| α | per-update weight of such a filter, 1 − exp(−Δt/τ), where Δt is the time between updates, s | |
+| T_avg | averaging time of the detector's power average, s | τ = 1 s (exponential) |
+| T_el | duration of one Morse element (mark), s | dit = 48 ms at 25 WPM |
+| B, B₁, B₂ | a bandwidth, Hz (noise bandwidth for SNR; filter width in 0.44/B) | |
+| R | a station's averaged SNR per bin as a linear power ratio (dimensionless) | |
+| H(f) | channel filter's frequency response at offset f (dimensionless, 1 at 0 Hz) | |
+| y[n] | channel output sample, complex, FS | |
+| e[n] | decoder's smoothed envelope, FS | |
+| M, S | decoder's mark and space levels, FS | |
 | channel_bins | FFT bins kept per station channel | 64 |
 | D | decimation factor, N / channel_bins | 128 |
 | r | channel (decoder input) sample rate, fs / D | 1500 Hz |
 | dit | duration of one Morse dit, 1.2 s / WPM (PARIS timing) | 48 ms at 25 WPM |
+| j | exponent in "48 kHz × 2^j" (j = 0, 1, 2, …): the rates 48, 96, 192, 384, 768 kHz | |
 
 ## Overview
 
@@ -116,8 +126,8 @@ N = 8192 at 192 kHz (Δf = 23.4 Hz) was the original first guess, never
 measured. When the engine was made to choose N from the sample rate, the
 "≥ 20 Hz" rule was written only to reproduce that 23.4 Hz at other rates.
 Because N moves in factors of two, any threshold between 11.7 Hz and 23.4 Hz
-gives the same N at 48 kHz × 2^k; 20 Hz is just a number in that range. The
-real parameter is "bins about 23 Hz wide". (At rates that aren't 48 kHz × 2^k
+gives the same N at 48 kHz × 2^j; 20 Hz is just a number in that range. The
+real parameter is "bins about 23 Hz wide". (At rates that aren't 48 kHz × 2^j
 the threshold does matter: at 44.1 kHz it gives 21.5 Hz bins.)
 
 The idea behind ~23 Hz was: narrow enough to separate stations a few tens of
@@ -135,19 +145,21 @@ channelizer FFT per hop. (The spectrum analyzer's first transform comes when
 N samples have arrived, i.e. after two hops; the channelizer starts after one
 hop with N/2 samples of zeros as history.)
 
-Why 50% (**derived** for both uses):
+Why 50% (**status: standard choice**; what follows from it is derived):
 - **Spectrum:** periodic Hann windows shifted by N/2 add up to a constant
   (w[n] + w[n + N/2] = 1), so across frames every input sample is weighted
-  equally: nothing between the windows' tapered ends is under-counted.
-  Successive frames are then nearly independent for noise: the correlation of
-  the noise power in a bin between neighboring frames is
-  (Σ w[n]·w[n+N/2] / Σw²)² = (1/6)² ≈ 3%, the sum running over the
-  overlapping half, n = 0 … N/2 − 1.
-- **Channelizer:** overlap-save fast convolution with an L-tap filter needs
-  L − 1 samples of history in front of each block of new samples. With
-  N-point transforms and N/2 new samples per hop, the history is N/2 samples,
-  which allows at most N/2 + 1 taps. That is why the channel filter is
-  exactly N/2 + 1 taps long (section 7).
+  equally: nothing between the windows' tapered ends is under-counted. N/2 is
+  the *largest* hop with that property; smaller hops such as N/4 (75%
+  overlap) have it too, at twice the computation. Successive frames at 50% are
+  nearly independent for noise: the correlation of the noise power in a bin
+  between neighboring frames is (Σ w[n]·w[n+N/2] / Σw²)² = (1/6)² ≈ 3%, the
+  sum running over the overlapping half, n = 0 … N/2 − 1.
+- **Channelizer:** it shares the spectrum's hop so the two stay in lockstep.
+  Given that hop, the filter length follows (**derived**): overlap-save fast
+  convolution with an L-tap filter needs L − 1 samples of history in front of
+  each block of new samples. With N-point transforms and N/2 new samples per
+  hop, the history is N/2 samples, which allows at most L = N/2 + 1 taps. That
+  is why the channel filter is exactly N/2 + 1 taps long (section 7).
 
 ## 4. Spectrum analyzer (for detection)
 
@@ -165,7 +177,7 @@ window). Its sums: Σw = N/2 and Σw² = 3N/8.
 **What a tone reads.** A complex tone of amplitude A FS exactly on a bin
 gives |X[k]| = A·Σw, so P[k] = A², i.e. 20·log₁₀A dBFS. Dividing by (Σw)²
 corrects for the window's coherent gain. A tone of amplitude 0.0102 FS (the
-synthetic 20 dB SNR signal of section 5) reads −39.8 dBFS key-down.
+synthetic 20 dB SNR (500 Hz) signal of section 5) reads −39.8 dBFS key-down.
 
 **What noise reads.** White noise of σ² FS² per sample gives an average
 |X[k]|² of σ²·Σw², so
@@ -209,17 +221,29 @@ Two conventions are in use in this project:
 - **Detector (tracks, `Track::snr_db`):** per bin, i.e. SNR in the Hann ENBW
   of **35.2 Hz**. It is the averaged power (section 6), so it is the key-down
   power times the keying duty cycle: about 3 dB below key-down for a signal
-  on half the time (10·log₁₀ 0.5 = −3.0 dB). It is also reduced by up to
-  1.42 dB when the station sits between bins.
+  on half the time (10·log₁₀ 0.5 = −3.0 dB). It drops by more than the duty
+  cycle alone because keying spreads the signal: at 25 WPM a dit (48 ms) is
+  about as long as one Hann frame (42.7 ms), so the keying sidebands put part
+  of the power outside the 35 Hz ENBW of the peak bin. It is also reduced by
+  up to 1.42 dB when the station sits between bins.
 - **Synthetic recordings and the benchmark:** key-down carrier power over
-  noise power in **500 Hz**. This is one convention, not a standard: WSJT-X
-  reports SNR in 2500 Hz, C/N₀ uses 1 Hz, and CW Skimmer's / the Reverse
-  Beacon Network's definition is being researched (backlog).
+  noise power in **500 Hz**. This is one convention, not a universal
+  standard (WSJT-X reports SNR in 2500 Hz, C/N₀ uses 1 Hz), but it is the one
+  CW Skimmer and the Reverse Beacon Network (RBN) use. Per its author's
+  description, CW Skimmer takes the signal through a 50 Hz filter, discards
+  key-up and transition samples, and estimates key-down power under a
+  Rayleigh fading model; it divides that by the noise density × a nominal
+  rectangular 500 Hz, with the noise density estimated from the flat part of
+  the whole receiver span (`docs/research/decoder-survey.md`, "One SNR
+  yardstick"). For clean, non-fading signals our synthetic SNR is the same
+  quantity. How each side *estimates* signal and noise from real audio
+  differs, and matching them remains a calibration item (backlog).
 
 Conversion, 500 Hz → per bin: +10·log₁₀(500/35.2) = **+11.5 dB**. Example: the
 engine tests' 20 dB SNR (500 Hz) signal is 31.5 dB SNR per bin key-down, and
 its averaged track SNR is about 27 dB per bin (keying duty cycle a little
-under 50%, and the text's word spaces).
+under 50% including the text's word spaces, plus the keying sidebands that
+fall outside the peak bin).
 
 ## 6. Signal detector
 
@@ -243,9 +267,9 @@ which is correct for each use:
 ### Averaging
 
 Each bin's linear power P is averaged over time with a first-order
-(exponential) filter, one update per frame (hop = 21.3 ms):
+(exponential) filter, one update per frame (every t_hop = hop/fs = 21.3 ms):
 
-  P̄ ← P̄ + a·(P − P̄), a = max(α, 1/m), α = 1 − exp(−hop/τ), τ = **1 s**
+  P̄ ← P̄ + a·(P − P̄), a = max(α, 1/m), α = 1 − exp(−t_hop/τ), τ = **1 s**
 
 where m counts the frames so far. So the first frames get a plain running
 mean (a = 1/m) until 1/m falls below α = 0.0211, after about 47 frames (1 s),
@@ -259,10 +283,11 @@ Why average, and how much:
 - Averaging shrinks the noise fluctuation in each bin. A single frame's noise
   power in a bin is exponentially distributed: its standard deviation equals
   its mean. An exponential average has the same noise variance as a plain
-  (boxcar) mean over (2 − α)/α ≈ 2τ/hop ≈ **94 frames** (2 s). That cuts the
+  (boxcar) mean over (2 − α)/α ≈ 2τ/t_hop ≈ **94 frames** (2 s). That cuts the
   relative fluctuation to about 1/√94 ≈ 10% (≈ ±0.45 dB). Even the largest of
   8192 such bins stays well under the 6 dB detection threshold (roughly 4
-  standard deviations, 1.5 dB above the mean noise power), so noise alone almost never creates a track.
+  standard deviations, 1.5 dB above the mean noise power), so noise alone
+  almost never creates a track.
 - The cost is latency: a new station takes about 0.5–1.5 s to become a track
   (averaging plus the 0.5 s persistence), and a track outlives its station by
   several seconds while its average decays.
@@ -270,16 +295,18 @@ Why average, and how much:
 **How long the average takes to forget a station.** After a station stops,
 its contribution to P̄ decays as exp(−t/τ). The track stays alive while its
 level is ≥ 3 dB above the floor, i.e. until the leftover signal power falls to
-about the noise power. Starting from an averaged SNR of S (linear ratio), that
-takes about t = τ·ln S: for S = 27 dB SNR per bin (a ratio of 500), 6.2 τ =
-6.2 s. (A straight dB
-slope of 4.34 dB per τ gives (27 − 3)/4.34 = 5.5 τ, but that ignores the
-noise added to the leftover signal.) **Measured** in the engine tests: a
-20 dB SNR (500 Hz) station's track died 7.8 s after its last mark with a 1 s
-timeout, i.e. about 6.8 s of decay.
+about the noise power. Starting from an averaged SNR per bin of R (a linear
+power ratio), that takes about t = τ·ln R: for 27 dB SNR per bin (R = 500),
+6.2 τ = 6.2 s. (A straight dB slope of 4.34 dB per τ gives (27 − 3)/4.34 =
+5.5 τ, but that ignores the noise added to the leftover signal.)
+**Measured once**, while writing the engine test
+`EventsFollowTrackLifecycle` (recorded in a comment there, not asserted by
+any test): a 20 dB SNR (500 Hz) station's track died 7.8 s after its last
+mark with a 1 s timeout, i.e. about 6.8 s of decay.
 
 **Status of τ = 1 s: heuristic.** It is a round number that seemed a sensible
-compromise. It *should* be derived from three requirements: a false-alarm rate
+compromise. The averaging time T_avg *should* be derived from three
+requirements: a false-alarm rate
 (how often the largest of N noise bins crosses the threshold), an averaging
 time covering several characters at the slowest speed of interest (so the
 duty cycle averages out), and acceptable detection latency. The backlog has
@@ -400,7 +427,7 @@ So the channel filter is applied **after** the frequency shift and
 ### Decimation
 
 D = N / channel_bins = 8192 / 64 = **128**, so the decoder's rate is
-r = fs / D = **1500 complex samples/s** at every 48 kHz × 2^k rate (N scales
+r = fs / D = **1500 complex samples/s** at every 48 kHz × 2^j rate (N scales
 with fs), and 1378 samples/s at 44.1 kHz (N = 2048, D = 32).
 
 Its purpose is **computational**: the decoder handles 128× fewer samples, and
@@ -413,7 +440,8 @@ the filter's stopband begins at about ±280 Hz (measured, below).
 
 The bounds that constrain channel_bins (**derived**):
 - r/2 must be at least the filter's stopband edge, cutoff + ½·transition
-  width (≈ 150 + 129 = 279 Hz). The code enforces this (below).
+  width (150 + 129 = 279 Hz with the 258 Hz estimate). The code enforces this
+  (below).
 - Timing resolution 1/r = 0.67 ms must be far below the shortest element,
   a 20 ms dit at 60 WPM.
 - channel_bins must be even and divide N (the code rejects anything else).
@@ -451,13 +479,22 @@ independent hand derivation in review).
 
   | offset | 0–30 Hz | 50 Hz | 75 Hz | 100 Hz | 125 Hz | 150 Hz | 200 Hz | 250 Hz | 280 Hz | 290–400 Hz |
   |---|---|---|---|---|---|---|---|---|---|---|
-  | response | 0.00 dB | −0.05 dB | −0.34 dB | −1.2 dB | −2.9 dB | −6.0 dB | −18 dB | −44 dB | −75 dB | −79 to −84 dB |
+  | response | 0.00 dB | −0.05 dB | −0.34 dB | −1.17 dB | −2.93 dB | −6.02 dB | −18.0 dB | −43.9 dB | −75.5 dB | −79 to −84 dB |
 
-  The transition from passband to stopband spans about 258 Hz (75 → 280 Hz),
-  matching the Blackman estimate of 5.5 / (filter length in seconds)
-  = 5.5 / 21.3 ms.
-- Its noise bandwidth (∫|H(f)|² df, computed from the taps) is **252 Hz**:
-  that is the bandwidth of the noise the decoder sees.
+  The same values follow from the tap formula directly (computed
+  independently in review).
+- **Transition band (computed from the taps):** by the Blackman window's own
+  criteria, the passband (response within 0.0017 of 1, i.e. 0.015 dB) runs to
+  about **39 Hz**, and the stopband (at least 74 dB below the passband) starts
+  at about **279 Hz**: a transition band about **240 Hz** wide. The usual
+  Blackman estimate, 5.5 / (filter length in seconds) = 5.5 / 21.3 ms =
+  **258 Hz**, is slightly wider, so it is a safe bound. The code uses that
+  estimate as ±129 Hz around the cutoff; it puts the stopband edge at
+  150 + 129 = 279 Hz, which matches the computed edge. (The computed passband
+  edge sits at 150 − 111 Hz, so the band is not exactly symmetric about the
+  cutoff.)
+- Its noise bandwidth, ∫|H(f)|² df over all f, computed from the taps, is
+  **252 Hz**. That is the bandwidth of the noise the decoder sees.
 
 **Aliasing check (derived).** The channel keeps only bins within r/2 = ±750 Hz
 of its center, so the filter's whole transition band must fit inside that.
@@ -499,15 +536,15 @@ is τ·ln 9 ≈ 26 ms, eight times the channel filter's.
 
 **Status: heuristic.** It was sized for fast code, about 60 WPM: 20 ms dits
 need several keying harmonics (tens of Hz each) to keep their edges. The
-principle that *should* set it is speed: for detecting an element of duration
-T, a filter matched to it has a bandwidth of about 1/T; for timing its edges,
-somewhat wider. A fixed ±150 Hz (252 Hz noise bandwidth) is about 4× wider
-than the ±30 Hz that the backlog roughly estimates is enough at 15 WPM (an
+principle that *should* set it is speed: for detecting an element of
+duration T_el, a filter matched to it has a bandwidth of about 1/T_el; for
+timing its edges, somewhat wider. A fixed ±150 Hz (252 Hz noise bandwidth)
+is about 4× wider than the ±30 Hz that the backlog roughly estimates is enough at 15 WPM (an
 estimate, not measured), so slow stations get about 6 dB more noise than they
 need.
 
 The cutoff is set in Hz and the filter length N/2 + 1 scales with fs (N ∝ fs),
-so the filter's response in Hz is the same at every 48 kHz × 2^k rate. (At
+so the filter's response in Hz is the same at every 48 kHz × 2^j rate. (At
 44.1 kHz the filter is 23.2 ms long and its transition band about 237 Hz.)
 
 This stage-1 filter is meant to stay fixed and wide; narrowing per station is
@@ -589,7 +626,7 @@ research is under way (`docs/research/`).
    symbol's probability is the product of its elements' confidences.
 10. **Speed.** Re-estimated after every mark from the last **24 marks**,
     sorted by duration and split into dits and dahs at the largest ratio
-    between neighbors (if it exceeds 1.8).
+    between neighbors (if that ratio is at least 1.8).
     - If the dah/dit ratio is between 3.0 and 3.85, dit =
       (mean dah − mean dit) / 2. That cancels the constant shortening every
       mark gets from the keying edges. (**Measured:** it fixed 45 WPM reading
@@ -628,20 +665,22 @@ research is under way (`docs/research/`).
 | Parameter | Value | Where | Status |
 |---|---|---|---|
 | Bin width Δf | ~23 Hz (rule: largest power-of-two N with Δf ≥ 20 Hz) | `choose_fft_size` (engine.cpp) | heuristic |
-| Hop / overlap | N/2, 50% | engine.cpp | derived |
+| Hop / overlap | N/2, 50% (largest hop keeping Hann constant-sum) | engine.cpp | standard choice |
 | Spectrum window | periodic Hann (ENBW 1.5 bins = 35.2 Hz) | spectrum.cpp | standard choice |
 | Power average τ | 1 s (≈ 94-frame boxcar) | `DetectorConfig::average_s` | heuristic |
 | Detection threshold / hysteresis | 6 dB / 3 dB SNR per bin (35.2 Hz) | `DetectorConfig` | heuristic |
 | Noise floor | median of all bins | signal_detector.cpp | heuristic |
+| Detection warm-up | 1 s from the first frame (equal to the average's τ) | `DetectorConfig::average_s` | heuristic |
 | Persistence before a track | 0.5 s | `DetectorConfig::birth_s` | heuristic |
+| Candidate tracking | may move ±1 bin (±23 Hz) between frames | signal_detector.cpp | heuristic |
 | Track timeout | 10 s | `DetectorConfig::death_s` | heuristic |
 | Min station separation | 3 bins (70 Hz) | `DetectorConfig::min_separation_bins` | heuristic |
 | Peak neighborhood | ±2 bins (±47 Hz) | signal_detector.cpp | heuristic |
 | Track level neighborhood | ±1 bin (±23 Hz) | signal_detector.cpp | heuristic |
 | Max tracks | 200 | `DetectorConfig::max_tracks` | heuristic |
 | Channel bins / decimation | 64 / D = N ÷ 64 (r = 1500 Hz) | `EngineConfig::channel_bins` | heuristic within derived bounds |
-| Channel filter cutoff | ±150 Hz (−6 dB) | `EngineConfig::channel_cutoff_hz` | heuristic |
-| Channel filter | Blackman-windowed sinc, N/2+1 taps (21.3 ms) | channelizer.cpp | standard choice; length derived |
+| Channel filter cutoff | ±150 Hz (−6 dB relative to the passband) | `EngineConfig::channel_cutoff_hz` | heuristic |
+| Channel filter | Blackman-windowed sinc, N/2+1 taps (21.3 ms) | channelizer.cpp | standard choice; length derived from the hop |
 | Cutoff limit | cutoff + ½·5.5·fs/taps ≤ r/2 | channelizer.cpp | derived |
 | Envelope smoothing | ¼ dit | `ClassicalDecoderConfig::smoothing_dits` | heuristic |
 | Level attack / decay | 4 ms / 3 s | `ClassicalDecoderConfig` | heuristic, test-confirmed |
