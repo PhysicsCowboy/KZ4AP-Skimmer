@@ -23,7 +23,8 @@ Clang 17+, CMake 3.25+, Ninja.
 ## Benchmark
 
 `kz4ap-bench` runs the engine over an I/Q recording and, given the labels file
-the synthetic generator writes, scores the decoded text:
+the synthetic generator writes, scores the decoded text. On Windows
+(PowerShell):
 
     python -m venv .venv
     .venv\Scripts\python -m pip install -r training/requirements.txt
@@ -31,8 +32,27 @@ the synthetic generator writes, scores the decoded text:
     .venv\Scripts\python -m kz4ap_synth.generate --scenario band --signals 8 --out build/synth/band.wav
     build\windows\bench\Release\kz4ap-bench.exe build/synth/band.wav --labels build/synth/band.json
 
+On Linux:
+
+    python3 -m venv .venv
+    .venv/bin/python -m pip install -r training/requirements.txt
+    PYTHONPATH=training .venv/bin/python -m kz4ap_synth.generate --scenario band --signals 8 --out build/synth/band.wav
+    build/linux/bench/kz4ap-bench build/synth/band.wav --labels build/synth/band.json
+
+The generator's Python tests run with `python -m pytest training -q` (using the
+venv's Python).
+
 Every push runs the same check on Windows and Linux (`bench/smoke.sh`) and fails
 if decoding gets worse than `bench/baselines/smoke.json`.
+
+## Known limitations
+
+- The first character or two of a transmission may be lost or wrong while the
+  station is being detected.
+- Very strong signals (around 60 dB SNR) can produce extra "ghost" tracks
+  beside them.
+- After a station stops, a few stray E's can be decoded from noise before its
+  track is dropped.
 
 ## License
 
