@@ -4,6 +4,23 @@ Work deliberately deferred from milestone 1, so it isn't forgotten. Each item
 says what's wrong, why it was deferred, and how to measure a fix. The design
 spec (`docs/design/`) remains the authority; this is a to-do list.
 
+## Top priority: research, then implement a probabilistic decoder
+
+The classical decoder is a hard-decision baseline (see
+`docs/signal-processing.md`, section 8): it keys each sample against
+thresholds, then times and classifies elements. It does not yet do what the
+design spec asks, find the most probable character sequence given timing
+statistics and a prior over likely text. Replace it with a probabilistic
+decoder: an HMM with Viterbi decoding, or a beam search, over key states and
+characters, with likelihoods computed from the measured signal and noise
+levels and an optional text/callsign prior, and no hard thresholds.
+
+Research survey: `docs/research/decoder-survey.md` (in progress; notes so far
+under `docs/research/`).
+
+Optional, later: once the software suite works, offer several classical
+decoders as a user choice.
+
 ## Next milestone: decoder robustness
 
 Start by adding benchmark scenarios that expose each problem below, then fix
@@ -60,11 +77,19 @@ envelope fluctuates more. Tune the squelch against channel-filtered noise and
 add an engine-level test: signal, then 10 s of noise, then no text after the
 last real character. Tune together with the next item.
 
-### Tracks outlive their stations
+### Tracks outlive their stations; separate station identity from decoding
 
 A track is dropped about 8 s after its station stops even with a 1 s timeout,
 because the detector's one-second power average takes that long to decay.
-The longer a track lingers, the more noise it can decode.
+The longer a track lingers, the more noise it can decode. At the same time,
+pauses longer than about 16 s (average decay plus the 10 s default timeout)
+end the track, so a station that resumes gets a new track and a decoder that
+has forgotten its speed. Both lifetimes are accidents of the current
+parameters.
+
+Separate the two: a station's identity (track) should survive long pauses,
+a minute or more, and re-attach when it resumes on the same frequency, while
+decoding gates off within a second or two of silence.
 
 ### Ghost tracks beside very strong signals
 
@@ -73,20 +98,88 @@ station and decode runs of `E` and `I`. Fix idea: reject a peak that sits
 inside a much stronger track's skirt (more than X dB below a track within
 ±N Hz).
 
+### Express the detector's bin-counted settings in Hz
+
+The detector's neighborhoods are counted in bins: minimum station separation
+3 bins (70 Hz), peak neighborhood ±2 bins (±47 Hz), track level ±1 bin
+(±23 Hz). Changing the bin width silently changes them too. Restate them in
+Hz (and convert to bins from the actual bin width) *before* sweeping bin
+width, so bin width is the only variable.
+
 ### Choose the FFT bin width and channel filter by measurement
 
 Both are guesses. Bins are ~23 Hz (the FFT size is now chosen from the sample
 rate to keep that width), and every channel uses a ±150 Hz filter sized for
 fast code. Sweep bin width (e.g. 12, 23, 47 Hz) and channel bandwidth against
-the scenarios above and pick values by results.
+the scenarios above and pick values by results. Prerequisite: the detector's
+settings expressed in Hz (previous item).
 
-### Channel filters that adapt to each station's speed
+### Channel filtering, two stages
 
 The best decoding bandwidth depends on speed: roughly ±30 Hz is enough at
-15 WPM, while 50 WPM needs ±100–150 Hz. Start each channel wide, then narrow
-it once that station's speed is estimated; combine with the replay so
-buffered audio is re-decoded through the narrower filter. Should help weak,
-slow signals and crowded bands most.
+15 WPM (an estimate), while 50 WPM needs ±100–150 Hz; the fixed ±150 Hz
+gives slow stations about 6 dB more noise than they need. Split the
+filtering in two:
+1. The shared FFT channelizer stays fixed and wide enough for the fastest
+   code (±150 Hz, or a user setting), with a fixed decimation sized for that
+   widest filter.
+2. An optional per-station narrow filter at 1500 samples/s, *before*
+   magnitude detection, chosen from the station's estimated speed (possibly
+   a filter matched to the dit). Combine with the replay so buffered signal
+   is re-decoded through the narrower filter.
+
+Should help weak, slow signals and crowded bands most.
+
+### Detector: averaging, noise floor and detection theory
+
+All of the detector's parameters are heuristics (see
+`docs/signal-processing.md`, section 6).
+- **Averaging:** compare a boxcar mean over T = 1–2 s with the current
+  exponential average (τ = 1 s): false tracks, detection delay, time to drop
+  a track. Derive T from the false-alarm rate across N bins, an averaging time
+  covering several characters at the slowest speed of interest, and latency.
+- **Noise floor:** compare a local floor (median or a low percentile over
+  ±2–5 kHz) and minimum statistics (Martin's method) against today's global
+  median, using real SDRplay recordings (non-flat passband, DC spike, band
+  edges).
+- **Detection-theory analysis** of the parameters: the threshold from the
+  false-alarm and detection probabilities; neighborhoods from the window's
+  main lobe plus the keying bandwidth at the fastest speed; persistence set
+  jointly with T.
+
+### Track frequency drift
+
+A track's frequency is fixed at birth; drift is tolerated only passively
+(about ±35 Hz before the track's level drops noticeably). Re-center tracks on
+their peak each frame, move the channel with them, and update the reported
+frequency.
+
+### Speed window
+
+The decoder estimates speed from the last 24 marks (a heuristic; about 4 s at
+25 WPM). Evaluate other window sizes and a window measured in time.
+
+### max_tracks
+
+`DetectorConfig::max_tracks` = 200 is a guess at a CPU guard, not exposed to
+users. Measure throughput against the number of tracks (on this PC and on a
+Raspberry Pi), set the default with margin, and expose it in the app.
+
+### Spectrum frames in linear power
+
+Spectrum frames are stored in dBFS and the detector converts every bin back
+to linear power to average it. Store linear power (FS²) and convert to dB
+only where it is needed: locally for peak interpolation, and in the display.
+
+### SNR definition compatible with CW Skimmer / the RBN
+
+The detector reports SNR per bin (35 Hz), the generator in 500 Hz. Find out
+exactly how CW Skimmer and the Reverse Beacon Network define the SNR they
+report: the nominal bandwidth; whether it is an equivalent noise bandwidth or
+a nominal filter width (the filter's shape matters); how noise is estimated
+(mean, median, percentile); and how signal power is measured (key-down or
+averaged over keying, about 3 dB apart at 50% duty cycle). Fallback: fit the
+offset empirically from simultaneous recordings and RBN spots.
 
 ## Smaller items worth keeping
 
