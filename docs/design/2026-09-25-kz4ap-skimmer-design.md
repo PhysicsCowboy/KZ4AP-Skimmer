@@ -33,13 +33,13 @@ The project serves four goals, all of which matter:
 | Topic | Decision | Why |
 |---|---|---|
 | First release | A native desktop app with a live, single-band, waterfall-style operator view (like CW Skimmer), delivered as a sequence of milestones (§3.1). Multi-band RBN spotting is not a current goal. | The operator-facing skimmer is what the author wants to use first. |
-| Development order after milestone 1 | (1) decoder robustness; (2) GUI and live display; (3) callsign matching; (4) telnet spot server for local logging programs. RBN upload: maybe later (§3.1) | The owner wants decoded text displayed well before busted-callsign handling. |
+| Development order after milestone 1 | (1) decoder robustness; (2) GUI and live display; (3) receiver-audio input; (4) callsign matching; (5) telnet spot server for local logging programs. RBN upload: maybe later (§3.1) | The owner wants decoded text displayed well before busted-callsign handling. |
 | Platforms | Windows and Linux (macOS likely follows cheaply) | Cross-platform from day one is far cheaper than porting later. |
 | Language and GUI | C++20 with Qt 6 | The most proven cross-platform path for radio desktop apps (e.g. gqrx). |
 | Engine / GUI split | The engine is a C++ library with **no Qt dependency** | Makes the later headless server a small step instead of a rewrite. |
 | License | GPL-3.0, plus an additional permission (linking exception) for closed-source SDR driver libraries | Keeps the project and its forks open, matches ham-SDR norms, and explicitly permits use of the proprietary SDRplay API. |
 | Radio input, first release | SDRplay via SDRplay API 3.x, and playback of I/Q recording files | The author's hardware; recording playback makes decoding testable and lets people try the app without an SDRplay. |
-| Receiver-audio input | Planned after the live display: a receiver's audio output into a sound card, decoded through the same detector, channelizer and decoders (§3.3) | Lets the decoder copy whatever the operator is listening to on his own receiver; it needs the live-input plumbing the live display brings. |
+| Receiver-audio input | Directly after the live display (owner's decision, 2026-09-27): a receiver's audio output into a sound card, decoded through the same detector, channelizer and decoders (§3.3) | Lets the decoder copy whatever the operator is listening to on his own receiver; it needs the live-input plumbing the live display brings. |
 | Relationship to manta | Evaluate manta (HagaleTechnologies/manta) and consider integrating parts of it into the decoder and any later RBN server; later decide between building KZ4AP's own RBN server and contributing to manta (§3.2) | manta may serve the same purpose in a more collaborative spirit, and its MIT-or-Apache-2.0 license lets KZ4AP reuse its code (§3.2). |
 | Decoder | Three user-selectable modes: Classical, Neural, Hybrid (see §5) | Lets users trade CPU for accuracy, and lets the benchmark decide what works. |
 | Names | Display name "KZ4AP Skimmer"; GitHub repository `KZ4AP-Skimmer`; program file name `kz4ap-skimmer` | Identifiers cannot contain spaces; lowercase-hyphenated is the Linux convention for program names. |
@@ -62,6 +62,9 @@ in that order; the letters below name features, not their order.
 - **A. Core skimming.** Waterfall over the full SDR span (default 192 kHz,
   configurable); many decoders running at once; decoded text for the
   selected signal.
+- **G. Receiver-audio input** (§3.3). Comes directly after the live display,
+  which provides the live-input plumbing it needs, and before callsign
+  matching.
 - **B. Callsign extraction.** Callsigns pulled from decoded text and
   validated (rules still open, see §6); spot list and band map.
 - **D. Telnet spot server.** Spots served in DX-cluster format so local
@@ -71,9 +74,6 @@ in that order; the letters below name features, not their order.
 
 ### Next release
 
-- **G. Receiver-audio input** (§3.3). Placed after the live display because
-  it needs the live-input plumbing; it could be pulled forward once that
-  exists.
 - **C. Listening and tuning.** Audio of the selected signal through the local
   sound card, and click-to-tune via radio control (OmniRig on Windows,
   Hamlib on Linux).
@@ -104,12 +104,13 @@ in this order (owner's decision, 2026-09-27):
 1. **Decoder robustness**, measured on the benchmark (`docs/backlog.md`).
 2. **GUI and live display** (A): live input, waterfall, and decoded text for
    the selected signal.
-3. **Callsign matching** (B, §6). Decoded text is to be displayed well
+3. **Receiver-audio input** (G, §3.3), directly after the live display.
+4. **Callsign matching** (B, §6). Decoded text is to be displayed well
    before busted-callsign handling is designed.
-4. **Telnet spot server** (D), for local logging programs, not the RBN.
+5. **Telnet spot server** (D), for local logging programs, not the RBN.
 
-RBN upload (F) may follow later. The receiver-audio input (G) follows the
-live display (§3.3).
+RBN upload (F) may follow later; whether it is KZ4AP's own server or a
+contribution to manta is decided later (§3.2).
 
 ### 3.2 Relationship to manta
 
@@ -367,5 +368,5 @@ New failure cases found during the build follow the same pattern.
    at once; the benchmark will answer this.
 7. Whether KZ4AP builds its own RBN server or contributes to manta, and
    whether a merge or fork follows (§3.2).
-8. Where the receiver-audio input (§3.3) falls relative to callsign matching
-   and the telnet spot server.
+8. *Resolved 2026-09-27:* the receiver-audio input (§3.3) comes directly
+   after the live display, before callsign matching (§3.1).

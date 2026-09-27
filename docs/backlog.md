@@ -5,10 +5,10 @@ says what's wrong, why it was deferred, and how to measure a fix. The design
 spec (`docs/design/`) remains the authority; this is a to-do list.
 
 Sections follow the development order after milestone 1 (design spec §3.1;
-owner's decision, 2026-09-27): (1) decoder robustness; (2) GUI and live
-display, then the receiver-audio input; (3) callsign matching; (4) telnet
-spot server for local logging programs. RBN upload and the decision about
-manta come later.
+owner's decisions, 2026-09-27): (1) decoder robustness; (2) GUI and live
+display; (3) receiver-audio input; (4) callsign matching; (5) telnet spot
+server for local logging programs. RBN upload, and whether it is KZ4AP's
+own server or a contribution to manta, are decided later.
 
 ## 1. Decoder robustness (next milestone)
 
@@ -446,13 +446,13 @@ signal (design spec §3, feature A; §4.1). This is the owner's first goal: a
 live, single-band, waterfall-style operator view like CW Skimmer's. It gets
 its own plan. Related item above: "Spectrum frames in linear power".
 
-### Then: receiver-audio input
+## 3. Receiver-audio input (directly after the live display)
 
 Design spec §3.3. Decode whatever the operator is listening to on his own
-receiver, from its audio output through a sound card. Placed after the live
-display because it reuses the live-input plumbing (a sound-card source
-feeding the same ring buffer); its place relative to sections 3 and 4 is
-not yet set (spec §9, open question 8).
+receiver, from its audio output through a sound card. It comes directly after
+the live display, before callsign matching (owner's decision, 2026-09-27),
+because it reuses the live-input plumbing (a sound-card source feeding the
+same ring buffer).
 
 - **Analytic signal.** The input is real, sampled at f_a (typically
   48 kHz), with content only in the receiver's audio passband (typically
@@ -479,7 +479,7 @@ not yet set (spec §9, open question 8).
 - **Test:** record receiver audio and SDR I/Q of the same stations at the
   same time and compare decodes and SNRs.
 
-## 3. Callsign matching
+## 4. Callsign matching
 
 Needs its design session first (spec §6). Items from milestone 1's review
 that must land before it are in section 1 ("Wrong or missing first
@@ -506,7 +506,7 @@ Cautionary example: the beacon exemption produced 29 garbage spots in one
 overnight run. manta bundles `cty.dat`, `MASTER.SCP` and a DXCC table; check
 their own terms (its `SOURCES.md`) before reusing them.
 
-## 4. Telnet spot server
+## 5. Telnet spot server
 
 Spots in DX-cluster format for local logging and contest programs (spec §3,
 feature D). Not an RBN feed. Needs spots, so it follows section 3. manta's
