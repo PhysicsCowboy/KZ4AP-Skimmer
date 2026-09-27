@@ -3,6 +3,10 @@
 - **Author:** Kenton Randolph Brown, KZ4AP
 - **Date:** 2026-09-25
 - **Status:** Draft for review
+- **Revised 2026-09-27:** owner's decisions on the development order after
+  milestone 1 (§3.1), a live single-band operator view first with
+  multi-band RBN spotting not a current goal (§2, §3), a receiver-audio
+  input (§3.3), and the relationship to manta (§3.2).
 
 ## 1. Purpose
 
@@ -17,7 +21,8 @@ The project serves four goals, all of which matter:
 1. **Own it.** A skimmer that can be run, read, and fixed by anyone, on more
    than one operating system.
 2. **Feed the Reverse Beacon Network.** Eventually run unattended as a
-   headless skimmer server that uploads spots.
+   headless skimmer server that uploads spots. (Not a current goal; see
+   §3 and §3.2.)
 3. **Push decoding forward.** Use modern machine-learning methods alongside
    classical signal processing, and measure which works better.
 4. **Community.** Something other hams will adopt, contribute to, and learn
@@ -27,12 +32,15 @@ The project serves four goals, all of which matter:
 
 | Topic | Decision | Why |
 |---|---|---|
-| First release | A native desktop app with a user interface | The operator-facing skimmer is what the author wants to use first. |
+| First release | A native desktop app with a live, single-band, waterfall-style operator view (like CW Skimmer), delivered as a sequence of milestones (§3.1). Multi-band RBN spotting is not a current goal. | The operator-facing skimmer is what the author wants to use first. |
+| Development order after milestone 1 | (1) decoder robustness; (2) GUI and live display; (3) callsign matching; (4) telnet spot server for local logging programs. RBN upload: maybe later (§3.1) | The owner wants decoded text displayed well before busted-callsign handling. |
 | Platforms | Windows and Linux (macOS likely follows cheaply) | Cross-platform from day one is far cheaper than porting later. |
 | Language and GUI | C++20 with Qt 6 | The most proven cross-platform path for radio desktop apps (e.g. gqrx). |
 | Engine / GUI split | The engine is a C++ library with **no Qt dependency** | Makes the later headless server a small step instead of a rewrite. |
 | License | GPL-3.0, plus an additional permission (linking exception) for closed-source SDR driver libraries | Keeps the project and its forks open, matches ham-SDR norms, and explicitly permits use of the proprietary SDRplay API. |
 | Radio input, first release | SDRplay via SDRplay API 3.x, and playback of I/Q recording files | The author's hardware; recording playback makes decoding testable and lets people try the app without an SDRplay. |
+| Receiver-audio input | Planned after the live display: a receiver's audio output into a sound card, decoded through the same detector, channelizer and decoders (§3.3) | Lets the decoder copy whatever the operator is listening to on his own receiver; it needs the live-input plumbing the live display brings. |
+| Relationship to manta | Evaluate manta (HagaleTechnologies/manta) and consider integrating parts of it into the decoder and any later RBN server; later decide between building KZ4AP's own RBN server and contributing to manta (§3.2) | manta may serve the same purpose in a more collaborative spirit, and its MIT-or-Apache-2.0 license lets KZ4AP reuse its code (§3.2). |
 | Decoder | Three user-selectable modes: Classical, Neural, Hybrid (see §5) | Lets users trade CPU for accuracy, and lets the benchmark decide what works. |
 | Names | Display name "KZ4AP Skimmer"; GitHub repository `KZ4AP-Skimmer`; program file name `kz4ap-skimmer` | Identifiers cannot contain spaces; lowercase-hyphenated is the Linux convention for program names. |
 | Hosting | GitHub, repository owned by the PhysicsCowboy account | Free automated builds on Windows and Linux (§8); personal ownership. |
@@ -46,16 +54,26 @@ training; GoogleTest for C++ tests; pytest for Python tests.
 
 ### First release
 
+The emphasis is a live, single-band, waterfall-style operator view, like CW
+Skimmer's; multi-band spotting for the Reverse Beacon Network (RBN) is not a
+current goal. The first release is reached through the milestones of §3.1,
+in that order; the letters below name features, not their order.
+
 - **A. Core skimming.** Waterfall over the full SDR span (default 192 kHz,
   configurable); many decoders running at once; decoded text for the
   selected signal.
 - **B. Callsign extraction.** Callsigns pulled from decoded text and
   validated (rules still open, see §6); spot list and band map.
-- **D. Telnet spot server.** Spots served in DX-cluster format so logging and
-  contest programs can use them.
+- **D. Telnet spot server.** Spots served in DX-cluster format so local
+  logging and contest programs can use them (not an RBN feed). Under the
+  order of §3.1 it now comes after callsign matching, as the last milestone
+  of the first release.
 
 ### Next release
 
+- **G. Receiver-audio input** (§3.3). Placed after the live display because
+  it needs the live-input plumbing; it could be pulled forward once that
+  exists.
 - **C. Listening and tuning.** Audio of the selected signal through the local
   sound card, and click-to-tune via radio control (OmniRig on Windows,
   Hamlib on Linux).
@@ -64,8 +82,11 @@ training; GoogleTest for C++ tests; pytest for Python tests.
 
 - **E.** Recording I/Q to file from inside the app (playback is already in
   the first release).
-- **F.** Uploading spots to the Reverse Beacon Network.
+- **F.** Uploading spots to the Reverse Beacon Network: maybe, later. It may
+  instead come through manta (§3.2).
 - A headless server build of the engine (enabled by the engine/GUI split).
+  Whether KZ4AP builds its own RBN server or contributes to manta is decided
+  later (§3.2).
 - More radio sources (SoapySDR, sound-card I/Q, others) behind the same
   source interface.
 
@@ -73,6 +94,78 @@ training; GoogleTest for C++ tests; pytest for Python tests.
 
 - A browser-based user interface. It was considered and rejected in favor of
   a native app; the engine/GUI split keeps it possible later.
+
+### 3.1 Development order
+
+Milestone 1 (the decoding pipeline and benchmark,
+`docs/plans/2026-09-25-milestone-1-decoding-pipeline.md`) is built. After it,
+in this order (owner's decision, 2026-09-27):
+
+1. **Decoder robustness**, measured on the benchmark (`docs/backlog.md`).
+2. **GUI and live display** (A): live input, waterfall, and decoded text for
+   the selected signal.
+3. **Callsign matching** (B, §6). Decoded text is to be displayed well
+   before busted-callsign handling is designed.
+4. **Telnet spot server** (D), for local logging programs, not the RBN.
+
+RBN upload (F) may follow later. The receiver-audio input (G) follows the
+live display (§3.3).
+
+### 3.2 Relationship to manta
+
+manta (github.com/HagaleTechnologies/manta; `docs/research/manta-notes.md`)
+is a headless Rust CW skimmer daemon with callsign validation, a DX-cluster
+telnet server and an RBN uplink client, but no waterfall or operator view.
+The plan (owner's decision, 2026-09-27):
+
+- **Evaluate** manta, and consider integrating parts of it into KZ4AP's
+  decoder and into any later RBN server.
+- **Later, decide** between building KZ4AP's own RBN server and contributing
+  to manta instead, which might serve the same purpose in a more
+  collaborative spirit.
+- **Owner's idea:** if KZ4AP's decoder outperforms manta's on manta's own
+  tests (its real-recording oracle and golden vectors), a merge or a fork
+  could produce the RBN tool.
+
+**License facts** (not legal advice). manta is licensed MIT OR Apache-2.0,
+at the recipient's option. So:
+
+- KZ4AP (GPL-3.0) may copy or port manta code, keeping its copyright and
+  license notices.
+- Contributing KZ4AP code upstream to manta would require the owner, as
+  copyright holder of his own code, to license that code under MIT or
+  Apache-2.0.
+- A GPL-3.0 fork of manta is allowed.
+
+### 3.3 Receiver-audio input
+
+A source that takes a ham receiver's audio output into a sound card, so the
+decoder can copy whatever the operator is listening to on his own receiver.
+
+- **Signal.** A real-valued signal x(t), sampled at the sound card's rate
+  f_a (typically 48 kHz), spanning the receiver's audio passband (typically
+  about 300–3000 Hz, depending on the receiver's filter). The engine forms
+  the analytic (complex) signal internally, by a Hilbert transform or by
+  complex mixing to 0 Hz with low-pass filtering, and treats it as a narrow
+  span, so the same detector, channelizer and decoders apply. At a complex
+  rate of 48 kHz the FFT-size rule of `docs/signal-processing.md` §2 gives
+  N = 2048 and 23.4 Hz bins, and the channel rate stays 1500 samples/s.
+- **The receiver shapes what the decoder sees.** Its automatic gain control
+  (AGC) changes the gain between and during elements, so key-up and key-down
+  levels are not those at the antenna; its filters narrow and color the
+  noise, so the noise is not white across the span, and the detector's
+  noise floor must be estimated inside the passband, not across the
+  otherwise empty bins; and its beat-frequency oscillator (BFO) sets the
+  audio tone, so a station's audio frequency is its offset from the dial
+  frequency plus the BFO/tone offset (sign set by the sideband). Converting
+  to RF frequency needs the dial frequency and sideband.
+- **SNR is not comparable.** An SNR measured on receiver audio, after the
+  receiver's AGC and filters, is not directly comparable with one measured
+  from an SDR I/Q stream, even when both are stated in the same bandwidth
+  (e.g. dB SNR in 500 Hz). Reported values must say which input they came
+  from.
+- **Units.** dBFS on this input is relative to the sound card's full scale,
+  which bears no fixed relation to the SDR input's full scale.
 
 ## 4. Architecture
 
@@ -272,3 +365,7 @@ New failure cases found during the build follow the same pattern.
    both).
 6. Whether the Neural decoder can keep up on the CPU with hundreds of tracks
    at once; the benchmark will answer this.
+7. Whether KZ4AP builds its own RBN server or contributes to manta, and
+   whether a merge or fork follows (§3.2).
+8. Where the receiver-audio input (§3.3) falls relative to callsign matching
+   and the telnet spot server.
