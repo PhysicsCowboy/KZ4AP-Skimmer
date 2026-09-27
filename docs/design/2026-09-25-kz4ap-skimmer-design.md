@@ -6,7 +6,11 @@
 - **Revised 2026-09-27:** owner's decisions on the development order after
   milestone 1 (§3.1), a live single-band operator view first with
   multi-band RBN spotting not a current goal (§2, §3), a receiver-audio
-  input (§3.3), and the relationship to manta (§3.2).
+  input (§3.3), and the relationship to manta (§3.2). Also revised
+  2026-09-27: §5 rewritten to record the research-backed decoder plan
+  (`docs/research/decoder-survey.md`): the development order inside the
+  decoder-robustness milestone, morseformer and nn-morse as benchmark-only
+  reference decoders, and the rule that the benchmark decides.
 
 ## 1. Purpose
 
@@ -101,7 +105,8 @@ Milestone 1 (the decoding pipeline and benchmark,
 `docs/plans/2026-09-25-milestone-1-decoding-pipeline.md`) is built. After it,
 in this order (owner's decision, 2026-09-27):
 
-1. **Decoder robustness**, measured on the benchmark (`docs/backlog.md`).
+1. **Decoder robustness**, measured on the benchmark (`docs/backlog.md`):
+   the decoder plan and its internal order are in §5.
 2. **GUI and live display** (A): live input, waterfall, and decoded text for
    the selected signal.
 3. **Receiver-audio input** (G, §3.3), directly after the live display.
@@ -236,24 +241,122 @@ seeds any randomness.
 ## 5. Decoders
 
 All decoders sit behind one decoder interface and return the decode result
-described in §4.1. The user chooses the mode in the app.
+described in §4.1. The user chooses the mode in the app. The evidence behind
+this section is in `docs/research/decoder-survey.md` (section "Rank the
+candidates by evidence per CPU cycle"); the work items are in
+`docs/backlog.md`, section 1.
+
+Symbols and conventions used below:
+
+- T: dit duration, s; T = 1.2/w for a speed of w WPM (PARIS timing), so
+  T = 48 ms at 25 WPM and 60 ms at 20 WPM.
+- Δf: offset of a station's carrier from its channel's center, Hz.
+- B: noise bandwidth of a filter, Hz.
+- S₅₀₀: the project's SNR convention, key-on (key-down) carrier power over
+  noise power in a 500 Hz bandwidth, dB. Every SNR in this section and in
+  benchmark results uses it unless another reference is named.
+- CER: character error rate, the Levenshtein edit distance between decoded
+  and reference text divided by the reference length (dimensionless).
+- Losses of signal power in dB are relative to the same station exactly
+  centered in its channel.
+
+### 5.1 Modes (decided)
 
 | Mode | How it works | CPU cost |
 |---|---|---|
-| **Classical** | Statistical decoding: detect the signal's on/off envelope, estimate speed, and find the most probable character sequence given timing statistics and a prior over likely text. Same family as CW Skimmer's Bayesian decoder. | Lowest |
-| **Neural** | A small neural network reads a narrow spectrogram strip for each track and outputs characters directly. It is trained with CTC (connectionist temporal classification), the standard speech-recognition technique for learning to output text from audio without hand-aligned labels. | Highest |
+| **Classical** | Statistical decoding: soft likelihoods from the front end (§5.2, step 1) feed an explicit-duration hidden Markov model (HMM) that finds the most probable character sequence given timing statistics and a prior over likely text. Same family as CW Skimmer's Bayesian decoder and Bell 1977. | Lowest (estimated 2–3 million floating-point operations per channel-second; not yet measured) |
+| **Neural** | A small streaming neural network reads a narrow spectrogram strip for each track and outputs characters directly. It is trained with CTC (connectionist temporal classification), the standard speech-recognition technique for learning to output text from audio without hand-aligned labels. | Highest (estimated 15–20 million multiply-accumulates (MAC) per channel-second; not yet measured) |
 | **Hybrid** | A cascade: Classical decodes every track; only results whose confidence falls below a threshold are re-decoded by the neural network. | Between the two, depending on how many tracks are handed over |
-
-**Training data** for the neural decoder is generated synthetically in
-unlimited quantity: Morse with varied speeds, sloppy "fist" timing, fading
-(QSB), noise, and interfering signals. The model is trained in Python and
-exported to ONNX; the engine runs it with ONNX Runtime.
 
 **Hybrid depends on trustworthy confidence.** If the Classical decoder is
 confidently wrong, the network never sees the signal. The benchmark measures
 how well Classical confidence predicts correctness.
 
-**Considered and not shipped (benchmark experiments only):**
+The current hard-decision decoder (threshold keying, then element timing;
+`docs/signal-processing.md`, section 8) stays in the code as the
+**baseline** that every new decoder is measured against.
+
+### 5.2 Development order (decided)
+
+Inside the decoder-robustness milestone (§3.1, item 1), in this order,
+following the survey's ranking:
+
+1. **Front end: dit-matched filter and soft likelihoods.** A complex filter
+   matched to the current dit estimate (B ≈ 1/T, about 21 Hz at 25 WPM)
+   runs *before* envelope detection, and the envelope is turned into a
+   log-likelihood ratio from Rician (key down) versus Rayleigh (key up)
+   densities.
+   - **Prerequisite: precise frequency re-centering** of each channel, with
+     drift tracking. Correlating a tone offset by Δf against a template of
+     duration T scales its amplitude by |sinc(Δf·T)|. Today's FFT-bin
+     rounding leaves Δf up to ±11.7 Hz, which through a filter with
+     B ≈ 1/T costs up to 5.1 dB of signal power at 25 WPM and 8.8 dB at
+     20 WPM. The target is a small fraction of 1/T (for example ±2 Hz, a
+     0.2 dB loss at 20 WPM).
+   - **Two stages:** the shared FFT channelizer stays fixed and wide enough
+     for the fastest code; the narrow filter is a per-station second stage
+     at 1500 samples/s (backlog, "Channel filtering, two stages").
+   - **Correlated samples:** successive samples of the narrow-filtered
+     envelope are strongly correlated, so per-sample likelihoods must be
+     scaled down, or decimated to about one sample per 1/B, before a
+     sequence decoder sums them.
+
+   The front end is useful on its own, in front of the baseline, and it is
+   the input to the Classical HMM (step 3) and the hybrids (step 4).
+2. **Neural: a small streaming CNN+LSTM+CTC network** (a convolutional
+   front end, then a long short-term memory recurrent layer, trained with
+   CTC) following VE3NEA's DeepCW recipe. DeepCW is MIT-licensed, so the
+   project may start from his code, with attribution. The network is
+   trained in Python (PyTorch) on the project's own signal generator,
+   exported to ONNX, and run in the engine with ONNX Runtime; the app ships
+   only the exported model file.
+3. **Classical: an explicit-duration (semi-Markov) HMM with beam search,**
+   in the style of Bell 1977: Kalman tracking of the key-down amplitude and
+   discrete speed states. It starts from Bell 1977's parameters and the
+   lessons of manta's `hsmm` decoder (backlog, "Top priority", option 3).
+4. **Hybrids,** once both 2 and 3 exist.
+
+**Training data** for the neural decoder is generated synthetically in
+unlimited quantity: Morse with varied speeds, sloppy "fist" timing, fading
+(QSB), noise, and interfering signals.
+
+### 5.3 Reference decoders (decided: benchmark only)
+
+- **morseformer** (sderhy; Apache-2.0 for code and weights) runs in the
+  benchmark as a ready-trained neural reference. It is not a shipped mode
+  unless that is decided later on benchmark evidence: it costs about
+  2.1 GMAC (10⁹ multiply-accumulates) per channel-second, roughly 100–140×
+  the Neural mode's estimate, does not stream, and lags the audio by up to 4 s.
+- **nn-morse** (pd0wm; MIT) is an optional no-convolution baseline, useful
+  only if retrained on the project's generator.
+
+### 5.4 The benchmark decides
+
+**No decoder replaces the baseline unless it beats the baseline on the
+benchmark.** What is decided above is the order of work and the three
+user-facing modes; how well each performs, and whether any candidate below
+ships at all, is left to the benchmark.
+
+- **Synthetic scenarios** (survey, last table; backlog, "Benchmark
+  scenarios to add first"): VE3NEA's fading and keying grid, reproduced as
+  an external anchor; speed changes; interference; tuning error; strong
+  signals (up to S₅₀₀ = 60 dB); stations that stop and pause; tune-up
+  carriers; crowded bands; separate scoring of each transmission's first
+  word.
+- **Real recordings,** scored with manta's oracle method: for each RBN spot
+  by a reference skimmer, decode a window of our own I/Q recording at the
+  spotted frequency and time, bypassing the detector, and score whether the
+  call appears (backlog, "Real-recording scoring: manta's oracle").
+- **Metrics:** CER, with each prosign counted as one symbol and word spaces
+  scored separately from characters; S₅₀₀ as generated; and CPU time per
+  channel-second on a desktop and on a Raspberry Pi 5.
+
+**Benchmark candidates, not shipped.** Each would need a change to this
+spec to enter the app:
+
+- *Neural emissions into the HMM* (the survey's alternative hybrid): the
+  network's per-frame key-on probabilities replace the front end's
+  likelihoods as the Classical HMM's emission probabilities.
 - *Neural rescorer:* Classical proposes its top readings and the network
   picks or corrects one. Costs nearly as much CPU as Neural, and cannot
   recover a reading Classical never proposed.
@@ -262,8 +365,8 @@ how well Classical confidence predicts correctness.
   Neural alone; its one plausible advantage is long-range timing context
   across a whole transmission.
 
-Either can enter the app only if the benchmark shows a real gain over
-Neural alone.
+The rescorer and the conditioned decoder can be proposed only if the
+benchmark shows a real gain over Neural alone.
 
 ## 6. Callsign matching — open design topic
 
