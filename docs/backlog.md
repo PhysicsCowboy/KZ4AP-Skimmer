@@ -4,7 +4,20 @@ Work deliberately deferred from milestone 1, so it isn't forgotten. Each item
 says what's wrong, why it was deferred, and how to measure a fix. The design
 spec (`docs/design/`) remains the authority; this is a to-do list.
 
-## Top priority: research, then implement a probabilistic decoder
+Sections follow the development order after milestone 1 (design spec §3.1;
+owner's decision, 2026-09-27): (1) decoder robustness; (2) GUI and live
+display, then the receiver-audio input; (3) callsign matching; (4) telnet
+spot server for local logging programs. RBN upload and the decision about
+manta come later.
+
+## 1. Decoder robustness (next milestone)
+
+Start by adding benchmark scenarios that expose each problem below, then fix
+against the numbers. Several of these were found by review but are invisible
+to the current benchmark, which only has clean, well-separated signals of
+10–30 dB SNR (500 Hz, key-down).
+
+### Top priority: research, then implement a probabilistic decoder
 
 The classical decoder is a hard-decision baseline (see
 `docs/signal-processing.md`, section 8): it keys each sample against
@@ -62,7 +75,39 @@ evidence per CPU cycle, is:
      2–3 Mflop/s per channel at about 200 samples/s.
    Change from Bell: feed it option 1's matched-filter likelihoods instead
    of his 100 Hz filter's envelope, work in log probabilities, and add an
-   interference/impulse state (his field failures came from interference);
+   interference/impulse state (his field failures came from interference).
+   **Lessons from manta's `hsmm` decoder**, a built and tested
+   explicit-duration decoder of this kind (`docs/research/manta-notes.md`,
+   sections 3–5):
+   - it models element durations as **log-normal** (standard deviation of
+     ln(duration) 0.22, durations admitted only within 0.6–1.5 × nominal),
+     not Laplacian as Bell does; compare the two on benchmark category C
+     (poor fists);
+   - **one speed per hypothesis:** each token carries its own dit length,
+     updated by an exponential average (weight 0.2 per element) within
+     8–60 WPM and seeded at 5 speeds (about 12–50 WPM); tokens merge on
+     (tree node, phase, quantized dit length);
+   - **beam of 12 tokens** (Bell: at most 25 paths);
+   - its likelihood is **Gaussian** on an amplitude normalized between the
+     noise and mark levels, with a fixed spread (0.30 of the mark-to-noise
+     difference), **not Rician**; ours should use option 1's Rician LLR,
+     whose spread depends on SNR;
+   - it **sums correlated samples without decimation:** per-sample LLRs at
+     375 samples/s from a channel of 82.2 Hz noise bandwidth, whose noise
+     correlation time is about 1/(82.2 Hz) ≈ 12 ms ≈ 4.6 samples, so its
+     evidence is overweighted by a factor of about 4–5 against its duration
+     and type priors (the caveat under option 1 above);
+   - **results:** on manta's real-recording oracle (see "Real-recording
+     scoring: manta's oracle" below), the call appeared as a whole decoded
+     word in **56.1%** of 221 windows around K5TR's RBN spots, against
+     26.7% for manta's threshold-keyed `legacy` decoder; it still failed its
+     own acceptance gate (3 of 9 "real-conditions" synthetic vectors);
+   - **CPU:** about 3.5 ms of CPU per track-second (Apple M4 Pro),
+     **4.25× over its own budget**, and 3.9× the CPU of `legacy` on the
+     real recording. Its anchor-based segmentation, in which cost scales
+     with the number of keying edges rather than samples, is worth copying.
+   manta is MIT OR Apache-2.0, so its code may be ported with its notices
+   kept (design spec §3.2);
 4. hybrids of 2 and 3.
 See the survey's "Rank the candidates by evidence per CPU cycle" for the
 evidence and costs. Verification of the survey's sources against Bell 1977
@@ -80,6 +125,9 @@ and scores 28.6% CER on its one held-out real operator (the 17.75%
 headline includes an operator it was fine-tuned on). It becomes a
 reference decoder ("Integrate morseformer as a reference decoder" below),
 not a ranked option. The three repositories publish no CER results.
+A fourth check, of manta (`docs/research/manta-notes.md`), left the ranking
+unchanged too: its `hsmm` decoder is a worked example of option 3, not
+evidence that reorders the options (survey, "Rank the candidates").
 
 The one paper from the survey still unread, the CNKI *Radio Engineering*
 (无线电工程) 3D-CNN + bidirectional ConvLSTM paper, was deliberately
@@ -88,13 +136,6 @@ to-do list.
 
 Optional, later: once the software suite works, offer several classical
 decoders as a user choice.
-
-## Next milestone: decoder robustness
-
-Start by adding benchmark scenarios that expose each problem below, then fix
-against the numbers. Several of these were found by review but are invisible
-to the current benchmark, which only has clean, well-separated signals of
-10–30 dB SNR (500 Hz, key-down).
 
 ### Benchmark scenarios to add first
 
@@ -110,6 +151,38 @@ to the current benchmark, which only has clean, well-separated signals of
 - **Speed range:** 10–60 WPM, including very different speeds side by side.
 - **Scoring of the first word** of each transmission, since that is where
   wrong characters currently concentrate.
+
+### Real-recording scoring: manta's oracle
+
+A cheap real-signal benchmark that tests the decoder apart from the detector
+(`docs/research/manta-notes.md`, sections 4 and 5, item 2). Take a real I/Q
+recording made while a reference skimmer was spotting to the RBN. For each
+of that skimmer's spots, open a channel at the spotted frequency and decode a
+window of the recording around the spot time (manta: 40 s), without the
+detector. Score each window by whether the spotted call appears:
+- **as_word:** as a whole decoded word;
+- **framed:** as a whole word following `CQ`, `DE` or `TEST`;
+- **substring:** anywhere in the decoded text.
+
+manta's run: 15 min of 192 kS/s I/Q from the 2025 CQ WW CW contest, 40 m
+near 7.080 MHz, 221 windows around spots by the skimmer K5TR. as_word /
+framed / substring: `legacy` 26.7 / 13.1 / 48.0%, `hsmm` 56.1 / 31.7 /
+58.8%. By the RBN-reported SNR of each spot (< 15, 15–25, ≥ 25 dB; the
+reference is presumably CW Skimmer's dB SNR in 500 Hz, key-down, though
+manta does not state it), `hsmm` as_word was 24, 58 and 65%. Because K5TR
+copied every one of these calls, the score is a recall relative to CW
+Skimmer at a different receiver, not an absolute one.
+
+Work items: record our own contest I/Q with the SDRplay while RBN spots are
+logged (manta's recording is not redistributable); add an oracle mode to
+`bench/` that takes (time, frequency, call) triples; report the three scores
+by SNR bucket, with the SNR convention stated. Before any spot-level scoring
+against the RBN, adopt manta's critique of it (no time matching, mismatched
+counting units, a union of all RBN skimmers taken as truth). This is a
+concrete method for benchmark category H (`decoder-survey.md`) and for spec
+§8.3's "labeled approximately from RBN spots" (spec §9, open question 5).
+Running KZ4AP's decoder on manta's own oracle is also the comparison the
+manta decision needs ("Later: RBN upload and the manta decision" below).
 
 ### Integrate morseformer as a reference decoder
 
@@ -302,7 +375,17 @@ All of the detector's parameters are heuristics (see
 - **Noise floor:** compare a local floor (median or a low percentile over
   ±2–5 kHz) and minimum statistics (Martin's method) against today's global
   median, using real SDRplay recordings (non-flat passband, DC spike, band
-  edges).
+  edges). Include manta's two estimates (`docs/research/manta-notes.md`,
+  section 5, items 3–4):
+  - its per-station **running minimum** (minimum statistics): the minimum
+    over 1.5 s of the channel power smoothed over 40 ms, raised by a
+    measured **+2.16 dB** (a power ratio, mean noise power over the
+    expected minimum) to remove the minimum's low bias. That correction was
+    measured for manta's channel (82.2 Hz noise bandwidth, 375 samples/s)
+    and must be re-measured for any other bandwidth, smoothing or window;
+  - its detector floor: the 25th percentile of each channel's power over
+    10 s, capped at the median of a block of 32 channels + 3 dB (power
+    ratio), because a CW duty cycle of 50–60% inflates a median.
 - **Detection-theory analysis** of the parameters: the threshold from the
   false-alarm and detection probabilities; neighborhoods from the window's
   main lobe plus the keying bandwidth at the fastest speed; persistence set
@@ -354,6 +437,97 @@ from real audio (CW Skimmer's band-wide floor reads high in crowded
 segments; our median floor and per-bin averages differ again). Report an SNR
 in that convention from the engine, then check the offset against
 simultaneous recordings and RBN spots.
+
+## 2. GUI and live display
+
+The Qt app with live input: SDRplay source, ring buffer, worker threads and
+status events, a waterfall over one band, and decoded text for the selected
+signal (design spec §3, feature A; §4.1). This is the owner's first goal: a
+live, single-band, waterfall-style operator view like CW Skimmer's. It gets
+its own plan. Related item above: "Spectrum frames in linear power".
+
+### Then: receiver-audio input
+
+Design spec §3.3. Decode whatever the operator is listening to on his own
+receiver, from its audio output through a sound card. Placed after the live
+display because it reuses the live-input plumbing (a sound-card source
+feeding the same ring buffer); its place relative to sections 3 and 4 is
+not yet set (spec §9, open question 8).
+
+- **Analytic signal.** The input is real, sampled at f_a (typically
+  48 kHz), with content only in the receiver's audio passband (typically
+  about 300–3000 Hz). Form the complex signal by a Hilbert transform or by
+  mixing the passband center to 0 Hz and low-pass filtering, then run the
+  existing engine on it. At a complex rate of 48 kHz,
+  `choose_fft_size` gives N = 2048 and 23.4 Hz bins, and the channel rate
+  stays r = 1500 samples/s (`docs/signal-processing.md` §2, §7).
+- **Noise floor.** Most of the span lies outside the receiver's filter and
+  holds almost no noise, so today's median of all bins would sit far below
+  the in-band noise. Restrict the floor to the passband, or mix and
+  decimate the span down to it (see "Detector: averaging, noise floor and
+  detection theory" above).
+- **Receiver effects to test:** AGC (gain changing between and during
+  elements, which moves the decoder's mark and space levels), the
+  receiver's filter shape (colored noise; stations near the filter edges
+  attenuated), and the BFO/tone offset (audio frequency = RF offset from
+  the dial frequency plus the tone offset, sign set by the sideband; RF
+  frequency needs the dial frequency from radio control).
+- **SNR and units.** Label SNRs from this input as receiver-audio values:
+  they are not comparable with SNRs from SDR I/Q even in the same bandwidth
+  (e.g. dB SNR in 500 Hz). dBFS here is relative to the sound card's full
+  scale.
+- **Test:** record receiver audio and SDR I/Q of the same stations at the
+  same time and compare decodes and SNRs.
+
+## 3. Callsign matching
+
+Needs its design session first (spec §6). Items from milestone 1's review
+that must land before it are in section 1 ("Wrong or missing first
+characters").
+
+### Input to the design session: manta's callsign acceptance rules
+
+manta's `manta-spot` crate (`docs/research/manta-notes.md`, section 3, last
+rows, and section 5, item 6) is a worked, tested set of rules to compare
+against spec §6's candidates:
+- parse the context: `CQ`, `DE`, `TEST` and beacon patterns;
+- a callsign-grammar prefilter;
+- `cty.dat` allocation check: a call whose prefix is not allocated is
+  **rejected**;
+- `MASTER.SCP` only **raises confidence**, never gates (one answer to
+  spec §6's "soft prior, hard filter, or not at all");
+- the call must **repeat as a distinct message within 90 s** before its
+  first spot (beacons and an operator allowlist are exempt);
+- **variant arbitration:** a weaker rival call confusable with a stronger
+  one is withheld;
+- **dedupe** on (call, frequency bucket); re-spot after 10 min unless the
+  SNR improves or the spot type changes.
+Cautionary example: the beacon exemption produced 29 garbage spots in one
+overnight run. manta bundles `cty.dat`, `MASTER.SCP` and a DXCC table; check
+their own terms (its `SOURCES.md`) before reusing them.
+
+## 4. Telnet spot server
+
+Spots in DX-cluster format for local logging and contest programs (spec §3,
+feature D). Not an RBN feed. Needs spots, so it follows section 3. manta's
+DX-cluster telnet server (port 7300, RBN `DX de` line format) is a reference
+for the line format and client handling.
+
+## Later: RBN upload and the manta decision
+
+- **RBN upload** (spec §3, feature F): maybe, later. Not a current goal.
+- **Decide: KZ4AP's own RBN server, or contribute to manta** (spec §3.2,
+  §9 open question 7). Evaluate manta first and consider integrating parts
+  of it into the decoder and any later RBN server. The owner's idea: if
+  KZ4AP's decoder outperforms manta's on manta's own tests (its oracle and
+  golden vectors), a merge or a fork could produce the RBN tool. License
+  facts: manta is MIT OR Apache-2.0, so KZ4AP (GPL-3.0) may copy or port
+  from it, keeping its notices; contributing KZ4AP code upstream would
+  require the owner to license that code MIT or Apache-2.0; a GPL-3.0 fork
+  of manta is allowed. Obstacles noted in manta-notes.md section 6: Rust
+  versus C++20, and a different channel format (375 samples/s magnitude
+  from 93.75 Hz-spaced channels versus 1500 samples/s complex from a
+  ±150 Hz channel).
 
 ## Smaller items worth keeping
 
