@@ -66,15 +66,16 @@ evidence per CPU cycle, is:
 4. hybrids of 2 and 3.
 See the survey's "Rank the candidates by evidence per CPU cycle" for the
 evidence and costs. Verification of the survey's sources against Bell 1977
-and Proakis & Salehi left the ranking unchanged.
+and Proakis & Salehi, and then against a second batch of six documents
+(Gold 1959, the IEEE 2023 LSTM-CTC paper, AG1LE's 2012 eHam article, Wang
+et al. 2018, YFDM 2023 and G4ILO's 2012 blog post), left the ranking
+unchanged: none of the six is a decoder benchmark comparable to the ones
+the ranking rests on. Notes: `docs/research/gold-1959-notes.md`,
+`neural-papers-notes.md`, `wang-yfdm-notes.md`, `g4ilo-2012-notes.md`.
 
-Optional papers still unread: Gold 1959 (MAUDE; paywalled at IEEE), and
-several free neural-decoder papers that blocked automated download (the
-YFDM paper on PMC behind a CAPTCHA, Wang, Zhao et al. 2018 on Atlantis
-Press whose PDF did not extract, and the eHam article "CW Decoding Using
-Neural Networks", which returned HTTP 403). See
-`docs/research/research_notes/`. None is expected to change the ranking (a
-judgment, not a finding).
+The one paper from the survey still unread, the CNKI *Radio Engineering*
+(无线电工程) 3D-CNN + bidirectional ConvLSTM paper, was deliberately
+skipped by the owner; it is not on the to-do list.
 
 Optional, later: once the software suite works, offer several classical
 decoders as a user choice.
