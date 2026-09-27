@@ -111,7 +111,7 @@ E. L. Bell, at the Naval Postgraduate School, is the key classical reference.
 - **[inference]** Tracking one Kalman amplitude filter per surviving path gives natural QSB (fading) tracking. Per-channel cost is roughly (paths kept) × (successors per path) × (a scalar or 2×2 Kalman update) per sample. With aggressive pruning and decimation to around 100–200 S/s, which is still several samples per dit at 40 WPM, this should be feasible for many channels on modern CPUs, unlike Bell's 1975 hardware.
 
 ### Gaps
-- The exact trellis size, pruning rule, number of speed states, and speed-change probabilities in Bell 1977 and in AG1LE's code were not verified here. They would need to come from the dissertation's Section VIII or from the bmorse/fldigi source.
+- The exact trellis size, pruning rule, number of speed states, and speed-change probabilities in Bell 1977 and in AG1LE's code were not verified here. They would need to come from the dissertation's Section VIII or from the bmorse/fldigi source. [Resolved 2026-09-27 for Bell 1977: integer speeds 10–60 WPM changing only at element boundaries with Table X step probabilities; pruning keeps the best path per element type, then paths up to 0.9 cumulative probability, at most 25 paths × 30 successors — see ../../bell-1977-notes.md line 11 and lines 93–106 (§2.2), §4. AG1LE's code was not checked.]
 - I found no independent, peer-reviewed benchmark of Bell-style decoders against human operators or against CW Skimmer.
 
 ---
@@ -148,7 +148,7 @@ The verified classical Bayesian lineage is Bell (1975, 1977), followed by AG1LE'
 Textbook theory says to filter before envelope detection with a filter matched to the element length, and to use noncoherent detection unless the carrier phase can be tracked. Bell's experiments support this empirically: filtering before detection bought him roughly 7 dB or more over filtering after it.
 
 ### Cited Findings
-- **[secondhand]** For noncoherent (envelope) detection of OOK/ASK, the envelope follows a Rayleigh distribution when no signal is sent and a Rician distribution when the signal is present. The optimum threshold is where the two densities cross, and detection probability is expressed with the Marcum Q-function. — [Academia.edu: Noncoherent envelope detection of ASK](https://www.academia.edu/12903043/Analysis_of_the_Probability_of_Error_in_Noncoherent_Envelope_Detection_of_an_ASK_Waveform); [Univ. of Michigan EECS 555, Ch. 5 Noncoherent Receivers](http://www.eecs.umich.edu/courses/eecs555/chap5.pdf) (identified by search, not read in full)
+- **[secondhand]** For noncoherent (envelope) detection of OOK/ASK, the envelope follows a Rayleigh distribution when no signal is sent and a Rician distribution when the signal is present. The optimum threshold is where the two densities cross, and detection probability is expressed with the Marcum Q-function. [Resolved 2026-09-27: Rayleigh/Rician envelopes and the Marcum Q form are confirmed in Proakis (pp. 47–50, 217); the threshold-crossing rule is confirmed with a qualifier — it holds for equal priors, and with unequal priors the prior-weighted densities cross instead (eq. 4.5–21, p. 213) — see ../../proakis-ook-notes.md §3 items 1–3] — [Academia.edu: Noncoherent envelope detection of ASK](https://www.academia.edu/12903043/Analysis_of_the_Probability_of_Error_in_Noncoherent_Envelope_Detection_of_an_ASK_Waveform); [Univ. of Michigan EECS 555, Ch. 5 Noncoherent Receivers](http://www.eecs.umich.edu/courses/eecs555/chap5.pdf) (identified by search, not read in full)
 - **[fact]** Bell's own comparison of filtering before and after detection:
   - Post-detection filtering with smoothing, 2 kHz input: about 10% letter error at around +6 dB.
   - The same with a 100 Hz pre-filter: about 10% letter error at around −7 dB.
@@ -157,12 +157,12 @@ Textbook theory says to filter before envelope detection with a filter matched t
   All SNRs are measured in 2 kHz. — [Bell 1975](https://archive.org/stream/processingofmanu00bellpdf/processingofmanu00bell_djvu.txt)
 
 ### Inferences
-- **[inference]** Why filtering before detection matters: an envelope or square-law detector at low input SNR suffers a "small-signal suppression" loss, because the noise × noise term dominates the output. Narrowing the bandwidth before detection raises SNR at the detector input and reduces this loss. Bell's results fit that picture.
+- **[inference]** Why filtering before detection matters: an envelope or square-law detector at low input SNR suffers a "small-signal suppression" loss, because the noise × noise term dominates the output. Narrowing the bandwidth before detection raises SNR at the detector input and reduces this loss. Bell's results fit that picture. [Checked 2026-09-27: small-signal suppression is NOT analyzed in Proakis, so this mechanism remains inference; Proakis's own argument for filtering before detection is the matched-filter-then-envelope optimum receiver (eqs. 4.5–23/24, p. 214) — see ../../proakis-ook-notes.md §3 item 6]
 - **[inference]** Matched-filter bandwidth by speed, using the PARIS dit length T = 1.2/WPM seconds:
   - 20 WPM: T = 60 ms, noise bandwidth about 1/T ≈ 17 Hz.
   - 40 WPM: T = 30 ms, about 33 Hz.
 
-  Relative to a 2.5 kHz reference bandwidth, a matched dit filter at 20 WPM gains about 10·log10(2500/17) ≈ 21.7 dB. So "−15 dB in 2.5 kHz" is about +7 dB per dit (Es/N0 in the dit bandwidth). A coherent OOK detector needs roughly 11–13 dB Es/N0 for about 1e-3 symbol error, and a noncoherent one needs slightly more. A human-quality decode of about 1–5% CER at −15 dB/2.5 kHz and 20 WPM therefore relies on soft sequence decoding and priors, not on per-dit hard decisions. (These are standard textbook numbers from memory; check them against Proakis or Van Trees before quoting.)
+  Relative to a 2.5 kHz reference bandwidth, a matched dit filter at 20 WPM gains about 10·log10(2500/17) ≈ 21.7 dB. So "−15 dB in 2.5 kHz" is about +7 dB per dit (Es/N0 in the dit bandwidth). A coherent OOK detector needs roughly 11–13 dB Es/N0 for about 1e-3 symbol error, and a noncoherent one needs slightly more. A human-quality decode of about 1–5% CER at −15 dB/2.5 kHz and 20 WPM therefore relies on soft sequence decoding and priors, not on per-dit hard decisions. (These are standard textbook numbers from memory; check them against Proakis or Van Trees before quoting.) [Resolved 2026-09-27: confirmed against Proakis. Coherent OOK needs 12.8 dB key-on E_s/N₀ (per-element energy over one-sided noise density) for 10⁻³ error; noncoherent needs 13.5 dB with the optimum threshold (+0.7 dB), more at 10⁻² to 10⁻¹; the 21.7 dB matched-filter gain and the ≈ +7 dB per dit (6.8 dB) arithmetic check — see ../../proakis-ook-notes.md §3 items 9–12]
 - **[inference]** Coherent detection needs carrier phase tracking. Hand-keyed signals with chirp, drift, and ionospheric phase variation make that fragile. Bell's I/Q Kalman filter is a partly coherent tracker: its a, b states follow the slowly varying in-phase and quadrature components. On 1500 S/s complex input, a practical front end could be:
   1. A complex filter matched to the dit, a few tens of Hz wide, possibly a bank of filters for different speeds.
   2. |·|² or |·| detection.
@@ -170,7 +170,7 @@ Textbook theory says to filter before envelope detection with a filter matched t
   4. An HMM/trellis over key states.
 
 ### Gaps
-- I did not retrieve the specific Van Trees or Proakis pages, so the textbook error-rate formulas above are from memory and labeled inference. A closed-form "SNR limit for CW at N WPM" was not found in the Morse literature itself.
+- I did not retrieve the specific Van Trees or Proakis pages, so the textbook error-rate formulas above are from memory and labeled inference. [Resolved 2026-09-27: the Proakis pages have now been checked (eqs. 4.2–37, p. 175; 4.5–21, p. 213) — see ../../proakis-ook-notes.md §2.4–2.6 and §3 items 9–12] A closed-form "SNR limit for CW at N WPM" was not found in the Morse literature itself.
 
 ---
 

@@ -75,7 +75,8 @@ the ranking rests on. Notes: `docs/research/gold-1959-notes.md`,
 
 The one paper from the survey still unread, the CNKI *Radio Engineering*
 (无线电工程) 3D-CNN + bidirectional ConvLSTM paper, was deliberately
-skipped by the owner; it is not on the to-do list.
+skipped by the owner (owner's decision, 2026-09-27); it is not on the
+to-do list.
 
 Optional, later: once the software suite works, offer several classical
 decoders as a user choice.
