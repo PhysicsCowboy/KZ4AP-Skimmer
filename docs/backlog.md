@@ -20,14 +20,61 @@ Research survey: `docs/research/decoder-survey.md` (notes under
 evidence per CPU cycle, is:
 1. a pre-detection filter matched to the dit, with soft (likelihood) output,
    on the existing baseline; this is also stage 2 of "Channel filtering, two
-   stages" below;
+   stages" below.
+   - **Prerequisite: precise frequency re-centering.** A dit-matched filter
+     is only about 1/T wide (T the dit duration, s), so a station off
+     center by Δf (Hz) loses a factor |sinc(Δf·T)| in amplitude. The
+     channelizer's bin rounding alone leaves up to ±11.7 Hz, which costs up
+     to 5.1 dB at 25 WPM and 8.8 dB at 20 WPM (signal power, relative to a
+     centered station), half or more of the filter's expected gain. Each
+     channel must track drift and be re-centered on a fine frequency
+     estimate (for example to ±2 Hz, a 0.2 dB loss at 20 WPM) before any
+     narrow filter ("Track frequency drift" below;
+     `docs/research/proakis-ook-notes.md`, item 15).
+   - **Soft likelihoods are correlated.** The log-likelihood ratio
+     −a²/2 + ln I₀(a·x) (x the envelope and a the key-down amplitude, both
+     normalized by the noise RMS per real component) is exact for one
+     matched-filter output per element. Consecutive samples of a
+     narrow-filtered envelope at 1500 samples/s are strongly correlated, so
+     summing per-sample values overcounts the evidence. Scale them, or
+     decimate to about one sample per 1/B (B the filter's noise bandwidth,
+     Hz), before a sequence decoder sums them (proakis-ook-notes.md,
+     item 13).
 2. a small streaming CNN+LSTM network trained with CTC, following VE3NEA's
    DeepCW;
 3. a Bell-style explicit-duration HMM with beam search and Kalman amplitude
-   tracking;
+   tracking. Start from Bell 1977's verified design
+   (`docs/research/bell-1977-notes.md`, sections 2.2 and 4):
+   - speed states 10–60 WPM (integers), changing only at element boundaries,
+     in steps of ±2/±4 WPM after marks and element spaces, ±5/±10 after word
+     spaces and ±10/±20 after pauses;
+   - element durations normalized by the dit length at the hypothesized
+     speed, with a Laplacian (two-sided exponential) density about the
+     nominal 1, 3, 7 or 14 dits, applied as a hazard (transition
+     probability given the time already spent in the element);
+   - pruning: keep the best path for each of the 6 element types, then add
+     paths in decreasing probability until they hold 0.9 of the total;
+   - at most 25 paths, each extended into at most 30 successors (6 element
+     types × 5 speed steps) per sample;
+   - characters released at the common ancestor of all paths, forced at a
+     1 s decision delay;
+   - one scalar amplitude Kalman filter per path; estimated cost about
+     2–3 Mflop/s per channel at about 200 samples/s.
+   Change from Bell: feed it option 1's matched-filter likelihoods instead
+   of his 100 Hz filter's envelope, work in log probabilities, and add an
+   interference/impulse state (his field failures came from interference);
 4. hybrids of 2 and 3.
 See the survey's "Rank the candidates by evidence per CPU cycle" for the
-evidence and costs.
+evidence and costs. Verification of the survey's sources against Bell 1977
+and Proakis & Salehi left the ranking unchanged.
+
+Optional papers still unread: Gold 1959 (MAUDE; paywalled at IEEE), and
+several free neural-decoder papers that blocked automated download (the
+YFDM paper on PMC behind a CAPTCHA, Wang, Zhao et al. 2018 on Atlantis
+Press whose PDF did not extract, and the eHam article "CW Decoding Using
+Neural Networks", which returned HTTP 403). See
+`docs/research/research_notes/`. None is expected to change the ranking (a
+judgment, not a finding).
 
 Optional, later: once the software suite works, offer several classical
 decoders as a user choice.
@@ -138,7 +185,11 @@ filtering in two:
 2. An optional per-station narrow filter at 1500 samples/s, *before*
    magnitude detection, chosen from the station's estimated speed (possibly
    a filter matched to the dit). Combine with the replay so buffered signal
-   is re-decoded through the narrower filter.
+   is re-decoded through the narrower filter. **Prerequisite:** precise
+   frequency re-centering of each channel ("Track frequency drift" below).
+   A filter about 1/T wide loses up to 5.1 dB at 25 WPM and 8.8 dB at
+   20 WPM (signal power, relative to a centered station) to today's
+   ±11.7 Hz bin-rounding offset.
 
 Should help weak, slow signals and crowded bands most.
 
@@ -165,6 +216,14 @@ A track's frequency is fixed at birth; drift is tolerated only passively
 (about ±35 Hz before the track's level drops noticeably). Re-center tracks on
 their peak each frame, move the channel with them, and update the reported
 frequency.
+
+This is a prerequisite of the pre-detection matched filter (top-priority
+item 1 and "Channel filtering, two stages"), and for that it must be finer
+than whole bins. The channel must be shifted by the fractional offset too,
+so the station sits within a small fraction of 1/T of 0 Hz (for example
+±2 Hz), with drift tracked continuously, before any narrow filter. The
+wide ±150 Hz channel filter does not need this; a dit-matched one does
+(`docs/research/proakis-ook-notes.md`, section 2.7 and item 15).
 
 ### Speed window
 

@@ -537,7 +537,8 @@ is τ·ln 9 ≈ 26 ms, eight times the channel filter's.
 **Status: heuristic.** It was sized for fast code, about 60 WPM: 20 ms dits
 need several keying harmonics (tens of Hz each) to keep their edges. The
 principle that *should* set it is speed: for detecting an element of
-duration T_el, a filter matched to it has a bandwidth of about 1/T_el; for
+duration T_el, a filter matched to it has a noise bandwidth of 1/T_el
+(exact for a rectangular element, derived; proakis-ook-notes.md section 2.7); for
 timing its edges, somewhat wider. A fixed ±150 Hz (252 Hz noise bandwidth)
 is about 4× wider than the ±30 Hz that the backlog roughly estimates is enough at 15 WPM (an
 estimate, not measured), so slow stations get about 6 dB more noise than they
@@ -556,6 +557,17 @@ stages").
 Because f_c is rounded to a bin, a station can sit up to ±11.7 Hz from 0 Hz in
 its channel, well inside the flat passband. The offset appears as slow phase
 rotation, which the decoder ignores (it uses only the magnitude).
+
+That is harmless **only because the channel filter is wide**. A filter
+matched to an element of duration T_el (noise bandwidth exactly 1/T_el for
+a rectangular element) scales a tone offset by Δf (Hz) by |sinc(Δf·T_el)|
+in amplitude, where sinc(x) = sin(πx)/(πx) (**derived**, from Proakis &
+Salehi, *Digital Communications*, 5th ed., eq. 4.5–28;
+`docs/research/proakis-ook-notes.md`, section 2.7). At ±11.7 Hz a
+dit-matched filter would lose 5.1 dB at 25 WPM and 8.8 dB at 20 WPM (signal
+power, relative to a centered station). So the planned narrow second-stage
+filter (backlog: "Channel filtering, two stages") needs each station
+re-centered to a fraction of a bin first; the current code does not do this.
 
 A channel opens when its track is born and closes when it dies. It starts
 with the current block, so the decoder never sees the signal from before the
@@ -577,8 +589,9 @@ prior over likely text". A probabilistic decoder is the key next step; decoder
 research is under way (`docs/research/`).
 
 1. **Envelope detection.** Take the magnitude |y[n]| (FS). This is
-   non-coherent AM detection: it needs no carrier recovery, and the residual
-   frequency offset and phase don't matter. There is no audio tone (BFO)
+   non-coherent AM detection: it needs no carrier recovery, and the carrier
+   phase and, with the current wide channel filter, the residual frequency
+   offset don't matter (section 7, "Residual frequency offset"). There is no audio tone (BFO)
    anywhere in the decoding path.
 2. **Smoothing.** A first-order low-pass on the magnitude:
    e[n] = e[n−1] + α_s·(|y[n]| − e[n−1]), α_s = 1 − exp(−1/(τ_s·r)), with
@@ -602,6 +615,17 @@ research is under way (`docs/research/`).
 5. **Keying decision** with hysteresis: key down when e rises above
    S + 0.6·(M − S) (60% of the way from space to mark); key up when it falls
    below S + 0.4·(M − S) (40%).
+   **Compared with theory (derived, not measured here):** for a hard
+   on/off decision the optimum threshold is where the prior-weighted
+   Rayleigh (key-up) and Rician (key-down) envelope densities cross. For
+   equal priors and a matched filter it sits about 44–45% of the way from
+   the key-up mean to the key-down mean at E/N₀ = 10–14 dB (key-on energy
+   per element over one-sided noise density, dB re 1), and it moves with
+   SNR. The 40% and 60% thresholds straddle it. A fixed 60% would raise the
+   per-element error from 0.027 to 0.047 at E/N₀ = 10 dB; 50% would cost
+   little. This assumes M and S sit at the true means, which the
+   fast-rise/slow-fall followers only approximate
+   (`docs/research/proakis-ook-notes.md`, section 2.3).
    **Squelch:** no keying (and any mark ends) unless M ≥ 3·S and M > S. The
    factor 3 is a 9.5 dB amplitude ratio (20·log₁₀3); in noise alone M/S
    measures about 1.45. It also means weak signals are not decoded at all:
