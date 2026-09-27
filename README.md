@@ -11,6 +11,19 @@ Created by Kenton Randolph Brown, KZ4AP.
 recorded I/Q files; there is no user interface or live radio support yet.
 See `docs/design/` for the design.
 
+## Project documents
+
+| Document | Role |
+|---|---|
+| `docs/design/2026-09-25-kz4ap-skimmer-design.md` | What we are building and why: the decisions, including the development order (§3.1) and the decoder plan (§5). The authority; changes need the owner's approval. |
+| `docs/plans/` | One implementation plan per milestone: how to build it, task by task. Written from the approved design before the milestone starts, and approved before any code is written. |
+| `docs/backlog.md` | Deferred work and to-dos, in milestone order. Items move into plans as milestones start. |
+| `docs/signal-processing.md` | What the engine's signal processing actually does now, with every parameter and whether it was derived, measured or chosen heuristically. Updated in the same commit as any signal-processing change. |
+| `docs/research/` | The evidence behind decisions. `decoder-survey.md` is the synthesis (glossary, decoder ranking, benchmark scenarios); verification notes for each source sit beside it; `research_notes/` holds the original research record, annotated rather than rewritten. |
+
+Work happens on feature branches; merging into `main` and pushing require the
+owner's approval.
+
 ## Building
 
 Windows: Visual Studio Build Tools 2026 (C++ workload). Linux: GCC 13+ or

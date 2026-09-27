@@ -1,6 +1,19 @@
 # KZ4AP Skimmer — project instructions
 
-- Design spec: `docs/design/`. Deferred work: `docs/backlog.md`.
+- **Project documents and their roles:**
+  - `docs/design/2026-09-25-kz4ap-skimmer-design.md`: *what* and *why*. The
+    authority for decisions; changing it needs the owner's approval.
+  - `docs/plans/`: one implementation plan per milestone (*how*), written
+    from the approved spec before the milestone starts, approved by the owner
+    before any code.
+  - `docs/backlog.md`: deferred work in milestone order; items move into plans.
+  - `docs/signal-processing.md`: what the code actually does now (rule below).
+  - `docs/research/`: evidence. `decoder-survey.md` is the synthesis (glossary,
+    ranking, benchmark scenarios); per-source verification notes sit beside
+    it; `research_notes/` is the original record, annotated, never rewritten.
+- **Branches:** work on feature branches. Merging into `main` and pushing need
+  the owner's approval. Never rewrite commits (no `--amend`, rebase, or
+  resetting commits); fix mistakes with a new commit.
 - **`docs/signal-processing.md` describes the engine's signal processing as it
   actually is.** Any change to signal processing — a parameter value, an
   algorithm, the order of stages, a new stage — must update that document in
