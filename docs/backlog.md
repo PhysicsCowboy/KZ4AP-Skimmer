@@ -75,7 +75,7 @@ the ranking rests on. Notes: `docs/research/gold-1959-notes.md`,
 A third check, of morseformer (`docs/research/morseformer-notes.md`) and
 three GitHub repositories (`docs/research/github-repos-notes.md`), also
 left the ranking unchanged. morseformer has ready weights but costs about
-100× option 2 per channel, does not stream, was trained on 16–28 WPM only,
+100–140× option 2 per channel, does not stream, was trained on 16–28 WPM only,
 and scores 28.6% CER on its one held-out real operator (the 17.75%
 headline includes an operator it was fine-tuned on). It becomes a
 reference decoder ("Integrate morseformer as a reference decoder" below),
@@ -173,7 +173,7 @@ Work items:
   reference outputs; another 1–2 weeks to score it on categories A–I.
 
 Risks, most serious first:
-1. **CPU:** about 2.1 GMAC per channel-second, roughly 100× option 2;
+1. **CPU:** about 2.1 GMAC per channel-second, roughly 100–140× option 2;
    measured 7–20 channels per performance core (ONNX Runtime, fp32, one
    thread, i7-12700H), and an estimated 8–20 channels per Raspberry Pi 5.
 2. **Speed range:** trained on 16–28 WPM only; contest speeds above about
