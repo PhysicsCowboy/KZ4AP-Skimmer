@@ -116,7 +116,7 @@ Most hobbyist decoders (CwGet, MRP40, Arduino/Goertzel, simple Python tools) are
 
 **Deep-learning decoders on GitHub**
 - [documented fact] DeepCW (e04/web-deep-cw-decoder): browser-based real-time neural decoder (model distributed as ONNX in deepcw-engine, AGPL-3.0). Benchmark in AWGN with SNR from time-averaged signal power (~50% duty cycle) in a 2,500 Hz noise bandwidth: 0.00% error from 0 to -4 dB at all tested speeds, near error-free at -6 dB, under 1.5% at -8 dB, under 8% at -10 dB. Also compared against CW Skimmer, fldigi, and ggmorse on short YouTube QSO clips with reference transcripts, claiming better accuracy. Architecture and training data are not documented in the README. — [e04/web-deep-cw-decoder README](https://raw.githubusercontent.com/e04/web-deep-cw-decoder/main/README.md); [e04/deepcw-engine](https://github.com/e04/deepcw-engine)
-- [documented fact] CW-LAB is a fork of DeepCW described as CRNN + CTC running in ONNX Runtime Web, adapted as a learning tool; no metrics. — [lucpaysan/CW-LAB](https://github.com/lucpaysan/CW-LAB)
+- [documented fact] CW-LAB is a fork of DeepCW described as CRNN + CTC running in ONNX Runtime Web, adapted as a learning tool; no metrics. — [lucpaysan/CW-LAB](https://github.com/lucpaysan/CW-LAB) [Resolved 2026-09-27: the "DeepCW" it forks is e04/web-deep-cw-decoder (CW-LAB is GPL-3.0, created 2026-03-23), not VE3NEA's DeepCW. CW-LAB is unrelated to bg4xsd/cwlab ("CW Lab", MIT, 2022–23), a lightly modified copy of pd0wm/nn-morse; only the names resemble each other — see ../../github-repos-notes.md §2]
 - [documented fact] MorseAngel (F4EXB): two stacked LSTM layers plus a linear layer on envelope samples, outputting 7 streams (signal, separators, 5 element positions); needs manual WPM setting (22-27 WPM typical), limited to 5-element characters, degrades on weak signals; author says it "shows signs of working." — [f4exb/morseangel](https://github.com/f4exb/morseangel)
 - [documented fact] MorseNet: research project using recurrent networks with CTC on raw audio. MaorAssayag's project uses object detection on spectrograms to find Morse in noisy, interference-laden data. — [netom/MorseNet](https://github.com/netom/MorseNet); [MaorAssayag/morse-deep-learning-detect-and-decode](https://github.com/MaorAssayag/morse-deep-learning-detect-and-decode)
 
@@ -153,5 +153,5 @@ Only AG1LE (fldigi legacy, Bell port, neural nets) and DeepCW publish CER-vs-SNR
 
 ### Gaps
 - No quantitative poor-fist, QSB, or QRM results were found for any open decoder.
-- No per-channel CPU measurements found for fldigi, the Bell port, ggmorse, or the neural decoders.
+- No per-channel CPU measurements found for fldigi, the Bell port, ggmorse, or the neural decoders. [Resolved in part 2026-09-27: morseformer was timed here at about 7–20 channels per performance core (ONNX Runtime, fp32, one thread), and nn-morse's cost was computed from its code as about 37 million MAC/s per channel — see ../../morseformer-notes.md §7 and ../../github-repos-notes.md §1]
 - No independent (third-party) reproduction of DeepCW's or AG1LE's numbers was found.

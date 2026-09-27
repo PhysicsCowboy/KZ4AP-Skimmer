@@ -72,6 +72,14 @@ et al. 2018, YFDM 2023 and G4ILO's 2012 blog post), left the ranking
 unchanged: none of the six is a decoder benchmark comparable to the ones
 the ranking rests on. Notes: `docs/research/gold-1959-notes.md`,
 `neural-papers-notes.md`, `wang-yfdm-notes.md`, `g4ilo-2012-notes.md`.
+A third check, of morseformer (`docs/research/morseformer-notes.md`) and
+three GitHub repositories (`docs/research/github-repos-notes.md`), also
+left the ranking unchanged. morseformer has ready weights but costs about
+100× option 2 per channel, does not stream, was trained on 16–28 WPM only,
+and scores 28.6% CER on its one held-out real operator (the 17.75%
+headline includes an operator it was fine-tuned on). It becomes a
+reference decoder ("Integrate morseformer as a reference decoder" below),
+not a ranked option. The three repositories publish no CER results.
 
 The one paper from the survey still unread, the CNKI *Radio Engineering*
 (无线电工程) 3D-CNN + bidirectional ConvLSTM paper, was deliberately
@@ -102,6 +110,94 @@ to the current benchmark, which only has clean, well-separated signals of
 - **Speed range:** 10–60 WPM, including very different speeds side by side.
 - **Scoring of the first word** of each transmission, since that is where
   wrong characters currently concentrate.
+
+### Integrate morseformer as a reference decoder
+
+Plan and evidence: `docs/research/morseformer-notes.md` (sections 8–9).
+morseformer (sderhy, v0.6.4) is a 4.13M-parameter bidirectional Conformer
+with an RNN-T head, Apache-2.0 for code and weights. It is the only neural
+Morse decoder with ready weights and some real-audio evidence, so it gives
+the benchmark a neural baseline before option 2 is trained. **It does not
+replace option 2 and is not scheduled ahead of it.** It comes after the
+benchmark scenarios above, because its value is its scores on them.
+
+Two stages:
+1. **Now: reference decoder in the evaluation harness.** Score it on the
+   survey's benchmark categories A–I (`decoder-survey.md`, last table),
+   especially H (real recordings).
+2. **Later, only if the benchmark shows it beats option 2 on the stations
+   where it would run:** an opt-in, channel-capped "second-opinion"
+   decoder for low-confidence stations (survey option 4, arbitration),
+   for example at most about 10 stations on a desktop and none on a Pi.
+
+Work items:
+- **Runtime:** export the encoder plus CTC head once to ONNX (15.9 MB,
+  standard operators, already verified against PyTorch) and run it with
+  ONNX Runtime, in a Python benchmark harness for stage 1 or in the C++
+  engine for stage 2. Ship the converted `.onnx`, never the PyTorch pickle.
+  Stagger each channel's window phase to spread the load over the 2 s hop.
+- **Feature front end from the complex channel:** per 6 s window of 9000
+  complex samples at 1500 samples/s: a zero-phase 4th-order Butterworth
+  low-pass at 100 Hz (run forward and backward over the window), magnitude,
+  ln(|y| + 10⁻⁶), a 3-sample box mean to 500 frames/s (3000 frames), then
+  per-window zero mean and unit variance. This matched the author's 8 kHz
+  audio path with correlation 0.994–0.999 and identical decodes on one
+  synthetic message; re-check on the benchmark. No 600 Hz tone needs to be
+  synthesized.
+- **Decoding loop:** RNN-T greedy decoding (the path the author shipped and
+  benchmarked): a hand-coded LSTM(128) prediction step and joint network
+  (about 0.22M parameters), up to 5 emissions per encoder frame, with the
+  0.6 confidence gate (0.9 for digits). Beam search is optional later. CTC
+  greedy decoding is simpler and could take the callsign prior later, but
+  needs its own scoring. Sliding window: 6 s, re-decoded every 2 s,
+  committing only tokens in each window's central 2 s; `flush` decodes the
+  last partial window.
+- **Symbol mapping to `DecodedSymbol`:** A–Z, 0–9 and `. , ? / - ! '` pass
+  through; the explicit space token becomes a word space; `=` → `<BT>`,
+  `+` → `<AR>`. **Prosign limitation:** SK, KN and BK arrive as ordinary
+  letter pairs, indistinguishable from the same letters sent with a
+  character gap; fusing them needs an unvalidated timing rule. `É` and `À`
+  map through their Morse patterns. Times: each emission's encoder frame
+  (8 ms resolution) marks roughly the start of a character. Probability:
+  the joint softmax value of the emitted token, calibrated on the
+  benchmark. There is no speed output, so `wpm` must be estimated from
+  token spacing or left at 0.
+- **Apache-2.0 obligations:** keep the copyright and attribution (cite the
+  GitHub handle `sderhy`; the author's given name differs between the
+  README and the model card), include the Apache-2.0 license text with the
+  weights and any ported code, and mark modified files as changed. There is
+  no NOTICE file to carry. Apache-2.0 code and weights may be combined into
+  the GPL-3.0 engine.
+- **Effort:** 1–2 developer-weeks for the export script, front end, RNN-T
+  greedy loop, windowing, symbol mapping and unit tests against the Python
+  reference outputs; another 1–2 weeks to score it on categories A–I.
+
+Risks, most serious first:
+1. **CPU:** about 2.1 GMAC per channel-second, roughly 100× option 2;
+   measured 7–20 channels per performance core (ONNX Runtime, fp32, one
+   thread, i7-12700H), and an estimated 8–20 channels per Raspberry Pi 5.
+2. **Speed range:** trained on 16–28 WPM only; contest speeds above about
+   30 WPM are out of distribution.
+3. **Latency:** up to 4 s, fixed 6 s window; the model is not robust to
+   other window lengths.
+4. **Weak real-audio evidence:** 28.6% CER on one held-out operator, an
+   unpublished corpus, no SNR curve for the shipped checkpoint, and an SNR
+   definition (white noise over 0–4000 Hz, duty-dependent signal estimate)
+   that converts to S₅₀₀ (key-on, 500 Hz) only within a band about 10 dB
+   wide.
+5. **False characters on noise:** about 1 per 6 s of pure noise in the
+   author's gate test, multiplied across channels.
+6. **Prosign ambiguity** (SK/KN/BK as letter pairs).
+7. **Single maintainer, dormant since June 2026;** the shipped file is a
+   mid-training checkpoint.
+
+**Optional baseline: pd0wm/nn-morse** (MIT; `docs/research/github-repos-notes.md`).
+A Dense×4 → LSTM(256) → CTC network with no convolution, about 740,000
+parameters and about 37 million MAC/s per channel. Retrained on the
+project generator (down to S₅₀₀ ≤ 0 dB, key-on, 500 Hz, and with fading),
+it would be a cheap no-convolution ablation of option 2. Its shipped weights
+never saw anything below S₅₀₀ = +1 dB and are useful only as a smoke test.
+Low priority.
 
 ### Wrong or missing first characters
 
