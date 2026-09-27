@@ -615,17 +615,22 @@ research is under way (`docs/research/`).
 5. **Keying decision** with hysteresis: key down when e rises above
    S + 0.6·(M − S) (60% of the way from space to mark); key up when it falls
    below S + 0.4·(M − S) (40%).
-   **Compared with theory (derived, not measured here):** for a hard
-   on/off decision the optimum threshold is where the prior-weighted
-   Rayleigh (key-up) and Rician (key-down) envelope densities cross. For
-   equal priors and a matched filter it sits about 44–45% of the way from
-   the key-up mean to the key-down mean at E/N₀ = 10–14 dB (key-on energy
-   per element over one-sided noise density, dB re 1), and it moves with
-   SNR. The 40% and 60% thresholds straddle it. A fixed 60% would raise the
-   per-element error from 0.027 to 0.047 at E/N₀ = 10 dB; 50% would cost
-   little. This assumes M and S sit at the true means, which the
-   fast-rise/slow-fall followers only approximate
-   (`docs/research/proakis-ook-notes.md`, section 2.3).
+   **Compared with theory (qualitative only):** for a hard on/off decision
+   the optimum threshold is where the prior-weighted Rayleigh (key-up) and
+   Rician (key-down) envelope densities cross. It is not at 50% of the way
+   from the key-up level to the key-down level, and it moves with SNR
+   (`docs/research/proakis-ook-notes.md`, section 2.3; derived there from
+   Proakis & Salehi). The notes' figure of about 44–45% (equal priors,
+   E/N₀ = 10–14 dB re 1, key-on energy per element over one-sided noise
+   density) is for an envelope taken after a filter matched to the element,
+   and it does **not** carry over to this decoder quantitatively: here the
+   envelope is formed after the 252 Hz channel filter, where the SNR is far
+   lower, and only then smoothed. The one-pole smoother with τ_s = ¼ dit
+   has a noise bandwidth of 1/(4τ_s) = 1/dit on the (real, one-sided)
+   envelope, but smoothing after detection does not give the envelope
+   statistics that filtering before detection would. So the 40% and 60%
+   thresholds are not shown to be near the optimum for this decoder; that
+   would need a measurement.
    **Squelch:** no keying (and any mark ends) unless M ≥ 3·S and M > S. The
    factor 3 is a 9.5 dB amplitude ratio (20·log₁₀3); in noise alone M/S
    measures about 1.45. It also means weak signals are not decoded at all:

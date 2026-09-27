@@ -11,7 +11,7 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
 - Bell's decoder is a **multiple-hypothesis tracker**. The discrete state is (letter/trie state, Morse element type, key state, time spent in the current element, speed). Each hypothesis carries its own **scalar Kalman filter on the received signal amplitude**, and the Kalman innovation gives that hypothesis's measurement likelihood. Paths are extended every 5 ms sample and pruned M-path style. At most 25 paths are kept, and each extends into at most 30 successors [fact, pp. 119–123; code pp. 167–181].
 - The measurement is **not I/Q**. It is the output of a real-valued envelope detector behind a 100 Hz band-pass filter, sampled at 200 samples/s. The mean of the noise floor is subtracted, and the result is then treated as if it were zero-mean white Gaussian noise [fact, pp. 110–114, 123–124].
 - The only text model actually coded and tested is **independent, equally likely letters** [fact, p. 106]. Bell says the biggest remaining gain lies in better text (language) models [fact, pp. 106–108, 146].
-- Headline results. Simulated hand-keyed Morse with a "fair" fist (10% of letters mis-sent) at 20 wpm gives 4% letter error at SNR 9 dB in 100 Hz. The error rises to 8% at 4 dB and 34% at 3 dB (same bandwidth) [fact, Table XVI, p. 134]. On real off-air recordings at 16–22 dB SNR in 100 Hz, letter error was 1–10% (keyboard senders) and 3–15% (hand senders) [fact, Tables XXI–XXII, pp. 141–142]. None of Bell's results, and none of his lower bounds, gets anywhere near 10⁻⁵ letter error.
+- Headline results. Simulated hand-keyed Morse with a "fair" fist (10% of letters mis-sent) at 20 wpm gives 4% letter error at S₁₀₀ = 9 dB (key-on, 100 Hz). The error rises to 8% at S₁₀₀ = 4 dB and 34% at S₁₀₀ = 3 dB [fact, Table XVI, p. 134]. On real off-air recordings at S₁₀₀ = 16–22 dB, letter error was 1–10% (keyboard senders) and 3–15% (hand senders) [fact, Tables XXI–XXII, pp. 141–142]. None of Bell's results, and none of his lower bounds, gets anywhere near 10⁻⁵ letter error.
 
 ## 1. Symbols and units
 
@@ -321,8 +321,8 @@ Off-air tape recordings, 4 kHz IF, about 50 s per cut, context-free text, high S
 
 ### 6.6 Human operators (Section II.C, pp. 17–23)
 
-- Fig. 1 (p. 19): field operators on an LF communications link (Watt et al. [1]), 5-letter code groups, 12/16/20 wpm, SNR in 100 Hz. About 2–4% error at 8–10 dB and about 30% near 0 dB (SNR in 100 Hz) for 20 wpm [fact; values uncertain, read by eye].
-- Fig. 2 (p. 20): laboratory results [2], 35 and 25 wpm, with 20 wpm extrapolated using Lane's speed-adjustment Table II (p. 21). For example, 25 wpm reaches about 2% at 5–8 dB SNR in 100 Hz [fact; values uncertain, read by eye].
+- Fig. 1 (p. 19): field operators on an LF communications link (Watt et al. [1]), 5-letter code groups, 12/16/20 wpm, SNR in 100 Hz; Bell does not state whether the signal power is key-on or averaged over keying. About 2–4% error at 8–10 dB and about 30% near 0 dB for 20 wpm [fact; values uncertain, read by eye].
+- Fig. 2 (p. 20): laboratory results [2], 35 and 25 wpm, with 20 wpm extrapolated using Lane's speed-adjustment Table II (p. 21). For example, 25 wpm reaches about 2% at 5–8 dB SNR in 100 Hz (key-on versus average power not stated) [fact; values uncertain, read by eye].
 - Table II (p. 21), Lane's adjustment in dB added to the abscissa: 10 wpm −5.0, 12 wpm −3.6, 14 wpm −2.3, 15 wpm −1.8, 16 wpm −1.4, 18 wpm −0.6, 20 wpm 0, 25 wpm +1.6, 30 wpm +2.6 [fact, p. 21; the 20 wpm entry is blank in the scan, 0 dB by inference].
 
 ### 6.7 Verdicts on the four secondhand claims
