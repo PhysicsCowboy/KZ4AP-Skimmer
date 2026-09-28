@@ -438,6 +438,20 @@ segments; our median floor and per-bin averages differ again). Report an SNR
 in that convention from the engine, then check the offset against
 simultaneous recordings and RBN spots.
 
+### Measure where answering stations really are
+
+The synthetic two-station QSOs (milestone 2, part 1, group H) put the
+answering station 0–200 Hz from the caller, with offsets drawn toward small
+values: |Δf| in 0–10 Hz with probability 0.40, 10–50 Hz 0.30, 50–100 Hz
+0.15 and 100–200 Hz 0.15. That distribution is a guess (heuristic):
+zero-beating by ear leaves a few to tens of Hz, while a sidetone pitch that
+differs from the rig's CW offset, or RIT, leaves 100–200 Hz. Once the
+owner's SDRplay recordings exist, measure the real distribution of |Δf|
+between a CQ and the stations that answer it, and replace
+`ANSWER_OFFSET_BANDS_HZ` in `training/kz4ap_synth/generate.py` with it. It
+matters because the detector hears stations within about 47 Hz as one
+track, from about 70 Hz as two, and either in between.
+
 ## 2. GUI and live display
 
 The Qt app with live input: SDRplay source, ring buffer, worker threads and
