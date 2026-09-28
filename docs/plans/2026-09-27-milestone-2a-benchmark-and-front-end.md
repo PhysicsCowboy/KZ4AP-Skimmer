@@ -4,20 +4,22 @@
 
 **Goal:** Extend the synthetic benchmark so it exposes the decoder's known weaknesses, then build step 1 of the decoder plan (spec §5.2): per-station frequency re-centering with drift tracking, and a dit-matched pre-detection filter whose envelope becomes a Rician-versus-Rayleigh log-likelihood ratio that the existing baseline decoder can key from, selectable against the old path and measured against it.
 
-**Architecture:** The Python generator (`training/kz4ap_synth`) gains signal options (pauses, tune-up carriers, drift, keying styles, speed changes, Rayleigh fading, interferers, crowding) and named suites with a runner that calls `kz4ap-bench` and summarizes results. `kz4ap-bench` gains an oracle mode (channels at labeled frequencies, detector bypassed), separate scoring of word spaces and of each transmission's first word, and CPU time per channel-second. In the engine, two new per-station components run at the channel rate r = 1500 samples/s inside the Classical decoder when `FrontEnd::Matched` is selected: a `FrequencyTracker` (numerically controlled oscillator plus a lag-product frequency discriminator) and a `MatchedFrontEnd` (boxcar filter matched to the dit, running noise and amplitude estimates, per-sample LLR). The baseline path (`FrontEnd::Envelope`) stays the default and stays bit-identical.
+**Architecture:** The Python generator (`training/kz4ap_synth`) gains a message-text module (CQ calls, contest exchanges, whole ragchew QSOs with prosigns in their operating positions, and filler text with VE3NEA's on-air statistics), signal options (pauses, tune-up carriers, drift, VE3NEA's keying styles, speed changes, Rayleigh fading with a Gaussian or VE3NEA's Butterworth Doppler spectrum, interferers, crowding), two-station QSOs whose alternating overs share one frequency, and named suites with a runner that calls `kz4ap-bench` and summarizes results. `kz4ap-bench` gains an oracle mode (channels at labeled frequencies, detector bypassed), separate scoring of word spaces and of each transmission's first word, and CPU time per channel-second. In the engine, two new per-station components run at the channel rate r = 1500 samples/s inside the Classical decoder when `FrontEnd::Matched` is selected: a `FrequencyTracker` (numerically controlled oscillator plus a lag-product frequency discriminator) and a `MatchedFrontEnd` (boxcar filter matched to the dit, running noise and amplitude estimates, per-sample LLR). The baseline path (`FrontEnd::Envelope`) stays the default and stays bit-identical.
 
 **Tech Stack:** C++20, CMake ≥ 3.25, GoogleTest 1.17.0, nlohmann/json 3.12.0, Python 3.12 with numpy and pytest, GitHub Actions. No new dependencies.
 
-**Spec:** `docs/design/2026-09-25-kz4ap-skimmer-design.md` (binding), especially §3.1 (development order), §5.2 step 1 (front end and its prerequisite, re-centering), §5.4 (the benchmark decides). Supporting documents: `docs/signal-processing.md` (what the code does now), `docs/backlog.md` section 1, `docs/research/decoder-survey.md` (option 1 and the benchmark scenario table), `docs/research/proakis-ook-notes.md`.
+**Spec:** `docs/design/2026-09-25-kz4ap-skimmer-design.md` (binding), especially §3.1 (development order), §5.2 step 1 (front end and its prerequisite, re-centering), §5.4 (the benchmark decides). Supporting documents: `docs/signal-processing.md` (what the code does now), `docs/backlog.md` section 1, `docs/research/decoder-survey.md` (option 1 and the benchmark scenario table), `docs/research/proakis-ook-notes.md`, `docs/research/deepcw-generator-notes.md` (VE3NEA's DeepCW generator: keying styles, fading spectrum, SNR convention, text statistics; MIT).
 
 ## Scope of this plan
 
 Implements, from the spec and backlog:
 
-- **A. Benchmark scenarios** (spec §5.4; backlog "Benchmark scenarios to add first"; survey scenarios A–F): pauses between transmissions, stations present from the first sample, tune-up carriers, carrier offset and slow drift, hand-keying timing models, speed changes, Rayleigh fading with a Doppler-spread parameter (VE3NEA's grid reproduced as an external anchor), interferers at a stated relative power and spacing, strong signals up to S₅₀₀ = 60 dB, a configurable minimum station spacing down to zero, and a 10–60 WPM speed range. `kz4ap-bench` scores word spaces separately from characters, scores each transmission's first word separately, reports CPU time per channel-second, and stays deterministic. Named suites: `smoke` (CI, unchanged) and `full` (local).
+- **A. Benchmark scenarios** (spec §5.4; backlog "Benchmark scenarios to add first"; survey scenarios A–F): pauses between transmissions, stations present from the first sample, tune-up carriers, carrier offset and slow drift, keying styles with VE3NEA's timing parameters and per-operator imbalance, speed changes, Rayleigh fading with a Doppler-spread parameter (VE3NEA's spectrum shape, f_D grid, SNR points and style mix reproduced as an external anchor), realistic message text (CQ calls, contest exchanges and whole ragchew QSOs; owner decision 2026-09-27: test transmissions must include full ragchews, not only CQs and contest exchanges), two-station QSOs whose overs alternate on one frequency with each operator's own speed, style and imbalance, interferers at a stated relative power and spacing, strong signals up to S₅₀₀ = 60 dB, a configurable minimum station spacing down to zero, and a 10–60 WPM speed range. `kz4ap-bench` scores word spaces separately from characters, scores each transmission's first word separately, reports CPU time per channel-second, and stays deterministic. Named suites: `smoke` (CI, unchanged) and `full` (local).
 - **B. Frequency re-centering and drift tracking** (spec §5.2 step 1, prerequisite; backlog "Track frequency drift").
 - **C. The dit-matched front end with soft likelihoods** (spec §5.2 step 1; survey option 1; backlog "Channel filtering, two stages", stage 2), consumed by the existing baseline decoder through LLR keying, with the old path kept selectable.
 - **D. Measurement** of the baseline against the new front end on the new suites, written into the documents, and a CI guard for the new path.
+
+**Deferred by the owner until Task 14's measurements exist (decision 2026-09-27):** whether the Matched front end becomes the default, and any tuning of its parameters (β, τ_n, τ_a, a_min, h, the noise guard, when the filter starts following the speed). This plan does not pre-decide either: `FrontEnd::Envelope` stays the default in every task, the parameter values below stay labeled heuristic, and Task 14 only measures, records the numbers, and hands both questions to the owner.
 
 Deliberately **not** in this plan (each gets its own plan later):
 
@@ -28,6 +30,8 @@ Deliberately **not** in this plan (each gets its own plan later):
 - Moving a channel's center bin as a station drifts (the channelizer stays where the track was born; the NCO covers ±75 Hz around it), replay of the first seconds of a transmission ("Wrong or missing first characters"), the tune-up-carrier speed bug, ghost tracks beside strong signals, and separating station identity from decoding. The new scenarios *measure* all of these; fixing them is later work.
 - Restating the detector's bin-counted settings in Hz (backlog). Decision: **not needed for this plan**, because no task changes the FFT bin width; the item's purpose is to make a bin-width sweep change only one variable. It stays on the backlog, ahead of that sweep.
 - Impulsive noise (QRN), chirp, and CPU measurements on a Raspberry Pi 5 (no Pi in the loop yet).
+- Making the Matched front end the default, and tuning its parameters: deferred by the owner until Task 14's numbers exist (see above).
+- A ragchew clip in the `smoke` suite: `smoke` must stay exactly the recording `bench/smoke.sh` makes, so its baseline (`bench/baselines/smoke.json`) and CI behavior do not change. A clip would either change the CI recording (and so its baseline) or make `smoke` differ from what CI runs, so `smoke` is left unchanged. Ragchews and two-station QSOs are in `full` only.
 
 ## Global Constraints
 
@@ -96,11 +100,17 @@ Every symbol used in this plan and in the code comments it asks for. Where a sym
 | τ_n, τ_a | time constants of the noise and amplitude estimates, counted in samples of weight 1 | 2 s, 0.5 s |
 | S₅₀₀ | key-down carrier power over noise power in 500 Hz | dB |
 | E/N₀ | key-on energy per element over one-sided noise density (Proakis) | dB re 1 |
-| f_D | Rayleigh-fading frequency spread (2σ of a Gaussian Doppler spectrum) | Hz |
+| f_D | Rayleigh-fading frequency spread: 2σ of a Gaussian Doppler spectrum, or 2σ of the Gaussian least-squares fit to VE3NEA's Butterworth spectrum (1.01·f_D for his filter, so the same f_D to about 1%) | Hz |
+| f_c | −3 dB cutoff of VE3NEA's fading spectrum, S(f) ∝ 1/(1 + (f/f_c)⁴), f_c = 0.625·f_D | Hz |
+| ρ | VE3NEA's SNR: fading-averaged key-down signal power over noise power in 3 kHz (0 to 3 kHz, real audio); S₅₀₀ = ρ + 10·log₁₀(3000/500) = ρ + 7.78 dB for white noise | dB |
+| μ, σ_ln | mean and standard deviation of ln(duration / T) of one element or space (log-normal keying) | 1 (natural-log units) |
+| δ | one operator's key-on/key-off imbalance: added to every mark, subtracted from every space; `imbalance_dits` = δ/T | s; VE3NEA: δ ~ N(0, (0.1·T)²) |
+| Δf_B | carrier offset of the answering station from the calling station in a two-station QSO | Hz; 0, 10, 25, 50 in the suite |
+| t_turn | silence between one over's last key-up and the next over's first key-down | s; uniform 0.5–2.0 |
 
 ## Design decisions
 
-Each choice is labeled **derived** (follows from the math, with its source), **heuristic** (a judgment call), or **to be measured** (Task 12 measures it). All numbers assume r = 1500 samples/s.
+Each choice is labeled **derived** (follows from the math, with its source), **heuristic** (a judgment call), or **to be measured** (Task 14 measures it). All numbers assume r = 1500 samples/s.
 
 ### Where the new stages sit
 
@@ -121,7 +131,7 @@ Each choice is labeled **derived** (follows from the math, with its source), **h
 - **±75 Hz clamp** (heuristic): the channel filter loses 0.34 dB relative to the passband at 75 Hz (measured, signal-processing.md §7). Beyond that the channel itself would have to move (out of scope).
 - **Why on v, not on u:** v is only B_v = r/K wide (about 26 Hz at 25 WPM), so the estimate sees about 10 dB less noise than on the 252 Hz channel, and a neighbor 100 Hz away is attenuated by the boxcar's sinc response (for example 29.7 dB relative to the passband at 25 WPM, K = 58: |sinc(100 Hz · 58/1500 s)| = 0.033). Pull-in is limited to the boxcar's main lobe, ±r/K; that is why the filter starts wide (60 WPM, ±62.5 Hz) until the speed estimate is trusted (below).
 - **Expected accuracy (derived, approximate; to be measured):** with the phase noise of each product set by the per-sample SNR in B_v, and about B_v independent products per second of key-down, the RMS error at 25 WPM is roughly 0.5 Hz at S₅₀₀ = 0 dB and 0.9 Hz at S₅₀₀ = −5 dB. The lag behind a linear drift of rate ḟ (Hz/s) is about ḟ·τ_f/P₁ (derived for a first-order average of a phasor whose frequency ramps, updated only during key-down): 1.1 Hz at 1 Hz/s.
-- **Test target (spec §5.2):** residual |f̂ − Δf| ≤ 2 Hz after 5 s of keying at S₅₀₀ = 10 dB, 20 WPM, from an initial error of 11 Hz (Task 10). Through a filter of length T that is a loss of |sinc(2 Hz · 60 ms)|² = 0.2 dB relative to a centered station (derived); through this plan's βT = 0.8T filter it is 0.13 dB.
+- **Test target (spec §5.2):** residual |f̂ − Δf| ≤ 2 Hz after 5 s of keying at S₅₀₀ = 10 dB, 20 WPM, from an initial error of 11 Hz (Task 12). Through a filter of length T that is a loss of |sinc(2 Hz · 60 ms)|² = 0.2 dB relative to a centered station (derived); through this plan's βT = 0.8T filter it is 0.13 dB.
 
 ### C. The matched front end
 
@@ -140,31 +150,36 @@ Each choice is labeled **derived** (follows from the math, with its source), **h
 
 ### A. Benchmark design
 
-- **Oracle mode** (heuristic, following manta's oracle idea): for the sensitivity, fading, fist, speed, interference and tuning suites, channels open at the labeled frequencies *rounded to the FFT bin* from the first sample, and the detector is bypassed. Reason: the detector's 6 dB-per-bin threshold stops at about S₅₀₀ ≈ 0 dB, so without an oracle the front end's gain below that would be invisible. Rounding to the bin (and starting the NCO at 0) leaves the tracker the full ±11.7 Hz to find, which is the worst case. The end-to-end suites (band, crowded, strong, pauses, tune-up, first sample) keep the detector.
+- **Oracle mode** (heuristic, following manta's oracle idea): for the sensitivity, fading, fist, speed, interference, tuning and ragchew suites, channels open at the labeled frequencies *rounded to the FFT bin* from the first sample, and the detector is bypassed. Reason: the detector's 6 dB-per-bin threshold stops at about S₅₀₀ ≈ 0 dB, so without an oracle the front end's gain below that would be invisible. Rounding to the bin (and starting the NCO at 0) leaves the tracker the full ±11.7 Hz to find, which is the worst case. The end-to-end suites (band, crowded, strong, pauses, tune-up, first sample, two-station QSO) keep the detector.
 - **Word spaces and first words** (spec §5.4): one minimum-edit alignment of decoded against reference symbols; each edit is charged to one reference symbol; an edit that involves a word space on either side is a space edit, the rest are character edits. Character CER = character edits / reference characters; space error rate = space edits / reference word spaces; first-word CER = edits charged to the first word of each transmission / that word's symbols. Total edits are unchanged (same Levenshtein optimum), so the existing CER stays comparable.
 - **CPU time per channel-second:** process CPU time over the whole run divided by the total duration of channel output delivered to decoders (an upper bound, since it includes the shared FFT and detector), plus the time spent inside decoders per channel-second (steady clock, single thread).
-- **Fading model:** complex Gaussian gain, E|g|² = 1, Gaussian Doppler power spectrum with frequency spread f_D = 2σ (the Watterson / CCIR 520 HF convention). S₅₀₀ with fading is the *mean* key-down power over the noise in 500 Hz. Whether VE3NEA used the same spread convention is an open question (it affects how exactly his numbers anchor ours).
-- **Keying styles** (heuristic except where noted): element and space durations are log-normal, with medians at the nominal 1, 3, 1, 3, 7 dit units and a standard deviation of ln(duration) per style. Only the hand-key dah (median e^1.5 ≈ 4.48 dits, σ = 0.3) comes from VE3NEA's generator (research notes, `neural_decoders.md`); the other values are this project's, pending a transcription of VE3NEA's per-style table.
+- **Fading model:** complex Gaussian gain, E|g|² = 1, with a choice of Doppler power spectrum: Gaussian with frequency spread f_D = 2σ (the Watterson / CCIR 520 HF convention; the default), or VE3NEA's 2nd-order Butterworth, S(f) ∝ 1/(1 + (f/f_c)⁴) with f_c = 0.625·f_D (research notes `deepcw-generator-notes.md` §2). His notebook fits a Gaussian to that spectrum and gets 2σ = 1.01·f_D, so his f_D and ours are the same spread to about 1% (factor ≈ 1); the Butterworth has heavier f⁻⁴ tails (0.9% of the power beyond 2·f_D, against 6×10⁻⁵ for the Gaussian, derived), so it fades somewhat faster and rougher at the same f_D. S₅₀₀ with fading is the *mean* key-down power over the noise in 500 Hz, which is also how he defines his SNR (in 3 kHz).
+- **The VE3NEA-anchored group (group B)** uses his spectrum shape, his f_D grid {0.1, 0.3, 1, 3} Hz, his ten SNR points converted with S₅₀₀ = ρ + 7.78 dB (−8.22 … 57.78 dB), his styles with a per-operator imbalance, his random-text statistics, and (in one recording) his style mix and speed range, so his published CER curves are a true external reference. Remaining differences, stated in Task 9: our oracle channel sits on the nearest FFT bin rather than his ±30 Hz pitch error, our noise is complex I/Q rather than real audio (the same S₅₀₀ either way), and we draw each character and word space once rather than as his sum of several draws (same medians, slightly less spread).
+- **Keying styles** (VE3NEA's values except "machine"): element and space durations are log-normal, T·exp(N(μ, σ_ln²)) with T = 1.2 s / WPM, with his μ and σ_ln per element for his styles Computer, Paddle, Vibroplex (a bug) and HandKey (`deepcw-generator-notes.md` §1.2). "machine" (exact PARIS timing) is this project's and stays the default, so milestone-1 recordings do not change. His only per-operator variation, the imbalance δ ~ N(0, (0.1·T)²), is drawn once per operator. His training mix is HandKey 0.25, Paddle 0.50, Computer 0.25 (Vibroplex is defined but never drawn). His speed range is ambiguous: 12–48 WPM in the committed `training_settings.py`, 8–50 WPM in the notebook cell that writes it; the anchored group uses 12–48 WPM and says so.
+- **Message text** (heuristic; owner decision 2026-09-27): the suites send realistic text, not only CQs and contest exchanges. A ragchew QSO follows the usual order (CQ, answer, RST and name and QTH, rig and power and antenna and weather, optional chat, closing), with the usual abbreviations (FB, OM, TNX, UR, HR, ES, WX, RIG, ANT, PWR, 73, GL, HPE CUAGN), `<BT>` between thoughts, `<AR>` and `<KN>` at the end of each over, and `<SK>` at the end of each station's last over. Templates and callsigns are this project's; only the filler text for the VE3NEA-anchored group uses his character-frequency table and word-length distribution (MIT, with his copyright notice in the code).
+- **Two-station QSOs** (heuristic): both stations of a QSO are one labeled signal, because a listener's decoder sees them as one channel. Each over is keyed at its sender's own speed, style and imbalance, on its sender's carrier (the answering station Δf_B = 0–50 Hz from the caller) and level, after a silence t_turn; the label records sender, speed, style, imbalance, offset and level per over (as a transmission), so the bench scores the first word of every over and the suite summary scores each over.
 
 ## Review Focus
 
 Inputs the spec implies but does not spell out, most likely to bite first. Each has a test in the owning task.
 
-1. **Strong signals (S₅₀₀ up to 60 dB):** the noise estimate must not be inflated by the filter's ramps at key-up and key-down, and the decoder must decode exactly — Task 9 (`StrongSignalKeepsNoiseEstimate`), Task 10 (`MatchedDecodesStrongSignal`).
-2. **Drifting carriers:** the tracker follows a 1 Hz/s drift within 2 Hz, the reported frequency follows the station, and the detector keeps one track as the station moves across bins — Task 8 (`FollowsSlowDrift`), Task 11 (`MatchedReportsDriftingFrequency`, `SignalDetector.RetuneMovesTrackBin`).
-3. **Speed changes mid-transmission (20 → 35 WPM):** the matched filter shortens with the speed estimate and decoding continues after the change — Task 10 (`MatchedFollowsSpeedChange`).
-4. **Pauses and stations that stop:** the frequency and amplitude estimates hold through 10 s of noise, and no text is decoded from noise after a station stops (the "stray E's" of the backlog) — Task 8 (`ZeroWeightFreezesEstimate`), Task 10 (`MatchedHoldsThroughPause`, `MatchedNoiseAfterStationStopsDecodesNothing`).
-5. **Closely spaced stations:** a station 10 dB stronger 100 Hz away inside the same ±150 Hz channel must not capture the frequency tracker, and the wanted station must still decode — Task 10 (`MatchedIgnoresStrongerNeighbor`).
+1. **Strong signals (S₅₀₀ up to 60 dB):** the noise estimate must not be inflated by the filter's ramps at key-up and key-down, and the decoder must decode exactly — Task 11 (`StrongSignalKeepsNoiseEstimate`), Task 12 (`MatchedDecodesStrongSignal`).
+2. **Drifting carriers:** the tracker follows a 1 Hz/s drift within 2 Hz, the reported frequency follows the station, and the detector keeps one track as the station moves across bins — Task 10 (`FollowsSlowDrift`), Task 13 (`MatchedReportsDriftingFrequency`, `SignalDetector.RetuneMovesTrackBin`).
+3. **Speed changes mid-transmission (20 → 35 WPM):** the matched filter shortens with the speed estimate and decoding continues after the change — Task 12 (`MatchedFollowsSpeedChange`).
+4. **Pauses and stations that stop:** the frequency and amplitude estimates hold through 10 s of noise, and no text is decoded from noise after a station stops (the "stray E's" of the backlog) — Task 10 (`ZeroWeightFreezesEstimate`), Task 12 (`MatchedHoldsThroughPause`, `MatchedNoiseAfterStationStopsDecodesNothing`).
+5. **Closely spaced stations:** a station 10 dB stronger 100 Hz away inside the same ±150 Hz channel must not capture the frequency tracker, and the wanted station must still decode — Task 12 (`MatchedIgnoresStrongerNeighbor`).
+6. **Two stations taking turns on one frequency:** within one track, every over may change speed, keying style, imbalance, level and (by up to 50 Hz) carrier. The generator must key and label each over with its own sender's settings — Task 6 (`test_qso_overs_alternate_with_each_senders_speed_and_a_turn_gap`, `test_each_station_keys_on_its_own_carrier_and_level`, `test_qso_labels_record_sender_speed_and_style_of_every_over`). How the decoders cope is measured, not asserted: group H's first-word CER (the first word of every over) and per-over CER in Task 14.
 
 ## File map
 
 | File | Responsibility |
 |---|---|
-| `training/kz4ap_synth/keying.py` (new) | Keying styles: log-normal timing, imbalance, speed changes |
-| `training/kz4ap_synth/fading.py` (new) | Rayleigh fading gain with a Gaussian Doppler spectrum |
-| `training/kz4ap_synth/generate.py` | Signal options, interval planning, labels with transmissions, band-scenario settings |
-| `training/kz4ap_synth/suites.py` (new) | Named suites, recording generation, bench runner, summaries |
-| `training/tests/test_keying.py`, `test_fading.py`, `test_suites.py` (new); `test_generate.py` | Tests for the above |
+| `training/kz4ap_synth/messages.py` (new) | Message text: callsigns, operators, CQ calls, contest exchanges, ragchew QSOs, VE3NEA-statistics filler (MIT tables with notice) |
+| `training/kz4ap_synth/keying.py` (new) | Keying styles (exact "machine" plus VE3NEA's four): log-normal timing, imbalance, style mix, speed changes |
+| `training/kz4ap_synth/fading.py` (new) | Rayleigh fading gain with a Gaussian or VE3NEA's Butterworth Doppler spectrum |
+| `training/kz4ap_synth/generate.py` | Signal options, interval planning, labels with transmissions, band-scenario settings, two-station QSOs (`Sender`, `qso_spec`) |
+| `training/kz4ap_synth/suites.py` (new) | Named suites, recording generation, bench runner, summaries, per-over scoring |
+| `training/tests/test_messages.py`, `test_keying.py`, `test_fading.py`, `test_suites.py` (new); `test_generate.py` | Tests for the above |
 | `bench/src/labels.*` | Labels with transmissions and a `score` flag |
 | `bench/src/scoring.*` | Alignment, character/space/first-word error rates, match by order |
 | `bench/src/cpu_time.*` (new) | Portable process CPU time |
@@ -177,29 +192,446 @@ Inputs the spec implies but does not spell out, most likely to bite first. Each 
 | `engine/include/kz4ap/signal_detector.hpp`, `engine/src/signal_detector.cpp` | `retune()` |
 | `engine/include/kz4ap/engine.hpp`, `engine/src/engine.cpp` | Oracle channels, statistics, initial offset, refined frequency, retune |
 | `engine/tests/*` | New and extended tests; `test_signals.hpp` gains carrier drift |
-| `bench/smoke.sh`, `bench/baselines/smoke-matched.json` (new) | Smoke check of the matched front end (Task 12) |
+| `bench/smoke.sh`, `bench/baselines/smoke-matched.json` (new) | Smoke check of the matched front end (Task 14) |
 | `docs/signal-processing.md`, `docs/backlog.md`, `docs/research/decoder-survey.md`, `README.md` | Documentation |
 
 ## Tasks
 
-- Task 1: Generator — transmissions with pauses, tune-up carriers, carrier drift (smoke recording guarded)
-- Task 2: Generator — keying styles, key imbalance, speed changes
-- Task 3: Generator — Rayleigh fading
-- Task 4: Generator — band-scenario settings, interferers, tags
-- Task 5: Bench — word spaces and first words scored separately
-- Task 6: Engine and bench — oracle channels and CPU time per channel-second
-- Task 7: Benchmark suites and runner
-- Task 8: Frequency tracker
-- Task 9: Matched front end
-- Task 10: Classical decoder — the Matched mode
-- Task 11: Engine — re-centering from the detector, refined frequency, drift retune, `--front-end`
-- Task 12: Measure, document, and guard the new path in CI
+- Task 1: Message text — CQ calls, contest exchanges, ragchew QSOs, VE3NEA-statistics filler
+- Task 2: Generator — transmissions with pauses, tune-up carriers, carrier drift (smoke recording guarded)
+- Task 3: Generator — keying styles (VE3NEA's), key imbalance, speed changes
+- Task 4: Generator — Rayleigh fading, Gaussian or VE3NEA's Butterworth Doppler spectrum
+- Task 5: Generator — band-scenario settings, interferers, tags
+- Task 6: Generator — two-station QSOs: alternating overs on one frequency
+- Task 7: Bench — word spaces and first words scored separately
+- Task 8: Engine and bench — oracle channels and CPU time per channel-second
+- Task 9: Benchmark suites and runner
+- Task 10: Frequency tracker
+- Task 11: Matched front end
+- Task 12: Classical decoder — the Matched mode
+- Task 13: Engine — re-centering from the detector, refined frequency, drift retune, `--front-end`
+- Task 14: Measure, document, and guard the new path in CI
 
 ---
 
-### Task 1: Generator — transmissions with pauses, tune-up carriers, carrier drift
+### Task 1: Message text — CQ calls, contest exchanges, ragchew QSOs, VE3NEA-statistics filler
 
-A signal can now send its text several times with pauses between (as between CQs), start with an unkeyed tune-up carrier, start at the very first sample, and drift in frequency. The labels file lists each transmission, so the bench can score each one's first word (Task 5). Random keying (Task 2) and fading (Task 3) will draw from per-signal generators, so this task also restructures interval planning around them. **The milestone-1 output must not change**: a test compares the new generator against a frozen copy of the old one.
+The owner's decision of 2026-09-27: test transmissions must include whole ragchew exchanges, not only CQ calls and contest exchanges. This task writes the text side only, as a pure module with no signal code: plausible callsigns, operators (name, QTH, rig, antenna, power), CQ calls, contest exchanges, whole ragchew QSOs as a list of overs with the sending station of each, and statistical filler text. Task 6 keys a QSO's overs at each station's own speed and style; Task 9's suites use all of it.
+
+**Content rules (heuristic, from operating practice):**
+- A ragchew runs: station 0 calls CQ; station 1 answers; then they alternate overs: RST report, name and QTH; rig, power, antenna and weather; `chat_rounds` rounds of chat; and the closing. Each over after the answer starts with the other station's call, DE, its own call.
+- `<BT>` separates thoughts inside an over and is never first, last, or doubled. Every over between the CQ and the closing ends by handing over: `<AR> {other} DE {me} <KN>` (the answer ends with `<AR>`). The CQ ends with K. Each station's closing over ends with `<SK>`, and `<SK>` appears nowhere else.
+- The usual abbreviations appear in fixed places, so a test can find them: FB, OM, TNX, UR, HR, ES, WX, RIG, ANT, PWR, 73, GL, HPE CUAGN, plus RST, NAME, QTH, FER, R, GM/GA/GE, HW CPY?.
+- Callsigns: US 1×2, 1×3, 2×1, 2×2 and 2×3 formats and 20 DX prefixes, one in 20 portable (/P). A DX operator's QTH is a city in that prefix's country; a US operator's is a US city and state.
+- **Filler text** uses VE3NEA's on-air tables (41 characters with integer weights summing to 2688; word lengths 1–16 characters, mean 3.06), copied from DeepCW under the MIT license with his copyright and permission notice in the code (`deepcw-generator-notes.md` §4). His "=" is written `<BT>`. Drawing a word length from his normalized distribution is the same as his end-of-word hazard loop (derived: the hazard p_L/Σ_{j≥L} p_j reproduces p_L). Only the filler uses his tables; every template is ours.
+- Every function draws only from the numpy `Generator` it is given, so the same generator state gives the same text.
+
+**Files:**
+- Create: `training/kz4ap_synth/messages.py`
+- Test: `training/tests/test_messages.py` (new)
+- Modify: `docs/signal-processing.md` (§11)
+
+**Interfaces:**
+- Consumes: `kz4ap_synth.morse.CODES`, `symbols` (tests only).
+- Produces (Python, `kz4ap_synth.messages`):
+  - `Operator(call: str, name: str, qth: str, rig: str, antenna: str, power_w: int)` (frozen dataclass).
+  - `Over(sender: int, text: str)` (frozen dataclass; sender 0 called CQ, 1 answered).
+  - `callsign(rng) -> str`; `prefix(call: str) -> str`; `random_operator(rng) -> Operator`.
+  - `cq_call(rng, call: str) -> str`; `contest_exchange(rng, call: str, other: str) -> str`.
+  - `ragchew(rng, a: Operator, b: Operator, chat_rounds: int = 0) -> list[Over]` (8 + 2·chat_rounds overs).
+  - `random_text(rng, words: int) -> str`.
+  - `VE3NEA_CHAR_WEIGHTS: dict[str, int]`, `VE3NEA_WORD_LENGTH_PROBS: list[float]`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `training/tests/test_messages.py`:
+
+```python
+import re
+
+import numpy as np
+import pytest
+
+from kz4ap_synth.messages import (
+    VE3NEA_CHAR_WEIGHTS,
+    VE3NEA_WORD_LENGTH_PROBS,
+    callsign,
+    contest_exchange,
+    cq_call,
+    ragchew,
+    random_operator,
+    random_text,
+)
+from kz4ap_synth.morse import CODES, symbols
+
+CALL_PATTERN = re.compile(r"^[A-Z]{1,2}\d[A-Z]{1,3}(/P)?$")
+
+
+def _qso(seed, chat_rounds=0):
+    rng = np.random.default_rng(seed)
+    return ragchew(rng, random_operator(rng), random_operator(rng), chat_rounds)
+
+
+def _words(over):
+    return over.text.split()
+
+
+def test_callsigns_look_real():
+    rng = np.random.default_rng(1)
+    calls = [callsign(rng) for _ in range(500)]
+    assert all(CALL_PATTERN.match(c) for c in calls)
+    assert len(set(calls)) > 450
+    assert any(c.endswith("/P") for c in calls)
+
+
+def test_the_same_seed_gives_the_same_text():
+    assert _qso(3, chat_rounds=1) == _qso(3, chat_rounds=1)
+    assert _qso(3) != _qso(4)
+    assert random_text(np.random.default_rng(5), 50) == random_text(np.random.default_rng(5), 50)
+
+
+def test_every_symbol_can_be_keyed():
+    texts = [o.text for o in _qso(6, chat_rounds=2)]
+    rng = np.random.default_rng(7)
+    texts += [cq_call(rng, "K1ABC"), random_text(rng, 300)]
+    texts += [contest_exchange(rng, "K1ABC", "W9XYZ") for _ in range(50)]
+    for text in texts:
+        for word in text.split():
+            assert all(s in CODES for s in symbols(word)), word
+
+
+def test_overs_alternate_starting_with_the_cq():
+    overs = _qso(8, chat_rounds=2)
+    assert len(overs) == 8 + 2 * 2
+    assert [o.sender for o in overs] == [0, 1] * 6
+    assert _words(overs[0])[:2] == ["CQ", "CQ"]
+    assert _words(overs[0])[-1] == "K"
+
+
+def test_prosigns_sit_where_operators_send_them():
+    overs = _qso(9, chat_rounds=1)
+    for over in overs[1:-2]:
+        assert _words(over)[-1] in ("<AR>", "<KN>")
+    for over in overs[-2:]:
+        assert _words(over)[-1] == "<SK>"
+    assert all("<SK>" not in _words(o) for o in overs[:-2])
+    for over in overs:
+        words = _words(over)
+        bt = [i for i, w in enumerate(words) if w == "<BT>"]
+        assert all(0 < i < len(words) - 1 for i in bt)            # never first or last
+        assert all(b - a > 1 for a, b in zip(bt, bt[1:]))          # never two in a row
+
+
+def test_a_ragchew_carries_the_usual_content_and_abbreviations():
+    rng = np.random.default_rng(10)
+    a, b = random_operator(rng), random_operator(rng)
+    text = " ".join(o.text for o in ragchew(rng, a, b))
+    words = set(text.split())
+    for abbreviation in ("FB", "OM", "TNX", "UR", "HR", "ES", "WX", "RIG", "ANT", "PWR", "73", "GL", "RST",
+                         "NAME", "QTH"):
+        assert abbreviation in words, abbreviation
+    assert "HPE CUAGN" in text
+    for fact in (a.call, b.call, a.name, b.name, a.qth, b.qth, a.rig, b.rig, a.antenna, b.antenna,
+                 f"{a.power_w}W", f"{b.power_w}W"):
+        assert fact in text, fact
+
+
+def test_contest_exchanges_include_cq_reports_and_tu():
+    rng = np.random.default_rng(11)
+    texts = [contest_exchange(rng, "K1ABC", "W9XYZ") for _ in range(200)]
+    assert any(t.startswith("CQ TEST K1ABC") for t in texts)
+    assert any(t.startswith("W9XYZ 5NN ") for t in texts)
+    assert "TU K1ABC" in texts
+
+
+def test_random_text_follows_ve3nea_statistics():
+    words = random_text(np.random.default_rng(12), 20000).split()
+    p = np.array(VE3NEA_WORD_LENGTH_PROBS) / sum(VE3NEA_WORD_LENGTH_PROBS)
+    lengths = np.array([len(symbols(w)) for w in words])
+    assert np.mean(lengths) == pytest.approx(np.sum(np.arange(len(p)) * p), abs=0.05)  # 3.06 characters
+    chars = [s for w in words for s in symbols(w)]
+    total = sum(VE3NEA_CHAR_WEIGHTS.values())
+    for c in ("E", "T", "N", "<BT>", "/"):
+        assert chars.count(c) / len(chars) == pytest.approx(VE3NEA_CHAR_WEIGHTS[c] / total, abs=0.004), c
+    assert min(lengths) >= 1 and max(lengths) <= 16
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `.venv\Scripts\python -m pytest training/tests/test_messages.py -q`
+Expected: collection error, `ModuleNotFoundError: No module named 'kz4ap_synth.messages'`.
+
+- [ ] **Step 3: Implement**
+
+Create `training/kz4ap_synth/messages.py`. Before committing, open DeepCW's `LICENSE` at commit `2c8fdac01bb2bf07d80989b0e5aabfe8cb87d76b` and confirm the notice below matches it word for word (it is the standard MIT text with his copyright line); if it differs, copy his.
+
+```python
+"""Message text for synthetic CW: CQ calls, contest exchanges, ragchew QSOs,
+and statistical filler text.
+
+The templates, callsigns, names, places and the order of a QSO are this
+project's own. The filler text (random_text) draws characters and word
+lengths from VE3NEA's on-air tables, reproduced below under the MIT license.
+Every function takes a numpy Generator and draws only from it, so the same
+generator state always gives the same text.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+import numpy as np
+
+# VE3NEA_CHAR_WEIGHTS and VE3NEA_WORD_LENGTH_PROBS are copied from VE3NEA's
+# DeepCW (https://github.com/VE3NEA/DeepCW, commit
+# 2c8fdac01bb2bf07d80989b0e5aabfe8cb87d76b, data_generation.ipynb cell 3,
+# morse_code.py), where they are said to be "collected from a large number of
+# CW messages decoded with CW Skimmer on the Ham bands". His "=" (-...-) is
+# written "<BT>" here. Notes: docs/research/deepcw-generator-notes.md §4.
+#
+# MIT License
+#
+# Copyright (c) 2024 Alex Shovkoplyas
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+VE3NEA_CHAR_WEIGHTS = {
+    "1": 13, "2": 14, "3": 33, "4": 43, "5": 41, "6": 8, "7": 14, "8": 10, "9": 14, "0": 11,
+    "A": 127, "B": 62, "C": 69, "D": 84, "E": 321, "F": 55, "G": 43, "H": 68, "I": 130,
+    "J": 8, "K": 117, "L": 100, "M": 76, "N": 168, "O": 126, "P": 57, "Q": 68, "R": 95,
+    "S": 159, "T": 236, "U": 61, "V": 23, "W": 95, "X": 16, "Y": 40, "Z": 12,
+    "/": 19, ".": 12, ",": 9, "?": 16, "<BT>": 15,
+}
+VE3NEA_WORD_LENGTH_PROBS = [0.0, 0.1672, 0.2569, 0.1939, 0.1745, 0.0921, 0.025, 0.008, 0.006,
+                            0.004, 0.003, 0.003, 0.002, 0.002, 0.002, 0.001, 0.001]  # index = characters
+# End of the material copied from DeepCW.
+
+LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+US_PREFIXES_1 = ("K", "N", "W")
+US_PREFIXES_2 = ("AA", "AB", "AC", "AD", "AE", "AF", "AG", "AI", "AJ", "AK", "KA", "KB", "KC", "KD",
+                 "KE", "KF", "KG", "KI", "KJ", "KK", "KN", "KO", "NA", "NB", "NC", "WA", "WB", "WD")
+DX_QTHS = {"DL": "MUNICH", "G": "LEEDS", "F": "LYON", "JA": "OSAKA", "VE": "OTTAWA", "EA": "MADRID",
+           "I": "ROME", "OH": "HELSINKI", "SM": "UPPSALA", "UA": "MOSCOW", "PY": "RIO", "VK": "PERTH",
+           "ZL": "AUCKLAND", "LU": "CORDOBA", "ON": "GHENT", "PA": "UTRECHT", "OK": "BRNO",
+           "SP": "KRAKOW", "HA": "BUDAPEST", "YO": "CLUJ"}
+US_QTHS = ("BOSTON MA", "AUSTIN TX", "DENVER CO", "TULSA OK", "OMAHA NE", "RENO NV", "MACON GA",
+           "BANGOR ME", "FRESNO CA", "DAYTON OH", "BOISE ID", "SALEM OR")
+NAMES = ("JOHN", "BOB", "JIM", "TOM", "BILL", "MIKE", "DAVE", "STEVE", "ED", "AL", "DON", "JOE",
+         "KEN", "RON", "PAT", "SUE", "ANN", "MARY", "HANS", "PETE")
+RIGS = ("K3", "IC7300", "FT991", "TS590", "KX3", "FT710", "IC705", "HOMEBREW")
+ANTENNAS = ("DIPOLE", "VERTICAL", "3 EL YAGI", "EFHW", "LOOP", "INV VEE", "LONG WIRE")
+POWERS_W = (5, 10, 50, 100, 500)
+WEATHER = ("SUNNY", "CLOUDY", "RAIN", "SNOW", "WINDY", "FOGGY", "CLEAR")
+STATES = ("MA", "TX", "CO", "OK", "NE", "NV", "GA", "ME", "CA", "OH", "ID", "OR")
+CHAT_LINES = ("BEEN LICENSED {years} YRS", "UR SIGS FB HR", "SOME QSB ON UR SIG", "BAND CONDX GUD TDY",
+              "RETIRED NW ES ENJOY CW", "AGE HR {age}", "QRM HR BUT UR OK")
+
+_CALL = re.compile(r"^([A-Z]+)\d[A-Z]{1,3}(/P)?$")
+
+
+@dataclass(frozen=True)
+class Operator:
+    """Who sends: the facts a ragchew exchanges. Speed and keying belong to the generator."""
+    call: str
+    name: str
+    qth: str
+    rig: str
+    antenna: str     # includes the height where one is sent, e.g. "DIPOLE UP 40 FT"
+    power_w: int     # transmitter output power, W
+
+
+@dataclass(frozen=True)
+class Over:
+    """One station's turn in a QSO, from its first key-down to the hand-over."""
+    sender: int      # 0: the station that called CQ; 1: the station that answered
+    text: str
+
+
+def _pick(rng, options):
+    return options[int(rng.integers(len(options)))]
+
+
+def _letters(rng, count: int) -> str:
+    return "".join(LETTERS[int(i)] for i in rng.integers(26, size=count))
+
+
+def callsign(rng) -> str:
+    """A plausible amateur callsign: a US 1x2, 1x3, 2x1, 2x2 or 2x3 call, or a DX prefix,
+    digit and 1-3 letters; one call in 20 is portable (/P)."""
+    kind = int(rng.integers(6))
+    digit = str(int(rng.integers(10)))
+    if kind == 0:
+        call = _pick(rng, US_PREFIXES_1) + digit + _letters(rng, 2)
+    elif kind == 1:
+        call = _pick(rng, US_PREFIXES_1) + digit + _letters(rng, 3)
+    elif kind == 2:
+        call = _pick(rng, US_PREFIXES_2) + digit + _letters(rng, int(rng.integers(1, 4)))
+    else:
+        call = _pick(rng, tuple(DX_QTHS)) + digit + _letters(rng, int(rng.integers(1, 4)))
+    return call + ("/P" if rng.random() < 0.05 else "")
+
+
+def prefix(call: str) -> str:
+    """The letters before the call's digit."""
+    match = _CALL.match(call)
+    if not match:
+        raise ValueError(f"not a callsign: {call!r}")
+    return match.group(1)
+
+
+def random_operator(rng) -> Operator:
+    call = callsign(rng)
+    qth = DX_QTHS.get(prefix(call)) or _pick(rng, US_QTHS)
+    antenna = _pick(rng, ANTENNAS)
+    if rng.random() < 0.5:
+        antenna += f" UP {int(rng.integers(3, 16)) * 5} FT"
+    return Operator(call, _pick(rng, NAMES), qth, _pick(rng, RIGS), antenna, int(_pick(rng, POWERS_W)))
+
+
+def cq_call(rng, call: str) -> str:
+    """A general call: CQ two or three times, DE, the call two or three times, K."""
+    cq = " ".join(["CQ"] * int(rng.integers(2, 4)))
+    calls = " ".join([call] * int(rng.integers(2, 4)))
+    return f"{cq} DE {calls} K"
+
+
+def contest_exchange(rng, call: str, other: str) -> str:
+    """One contest transmission by call, working other: a CQ, a report with a serial
+    number, zone or state, or a TU."""
+    kind = int(rng.integers(5))
+    if kind == 0:
+        return f"CQ TEST {call} {call}"
+    if kind == 1:
+        return f"{other} 5NN {int(rng.integers(1, 1000))}"
+    if kind == 2:
+        return f"{other} 5NN {int(rng.integers(1, 41)):02d}"
+    if kind == 3:
+        return f"{other} 5NN {_pick(rng, STATES)}"
+    return f"TU {call}"
+
+
+def _rst(rng) -> str:
+    return f"{int(rng.integers(3, 6))}{int(rng.integers(3, 10))}9"
+
+
+def _greeting(rng) -> str:
+    return _pick(rng, ("GM", "GA", "GE"))
+
+
+def _temperature(rng, qth: str) -> str:
+    if qth in DX_QTHS.values():
+        return f"TEMP {int(rng.integers(0, 36))}C"
+    return f"TEMP {int(rng.integers(32, 96))}F"
+
+
+def _chat(rng) -> str:
+    """Two different lines of chat, separated by <BT>."""
+    first, second = rng.choice(len(CHAT_LINES), size=2, replace=False)
+    return " <BT> ".join(CHAT_LINES[int(i)].format(years=int(rng.integers(2, 60)), age=int(rng.integers(16, 90)))
+                         for i in (first, second))
+
+
+def ragchew(rng, a: Operator, b: Operator, chat_rounds: int = 0) -> list[Over]:
+    """A whole ragchew QSO: a calls CQ, b answers, then they alternate overs: reports
+    and names and QTHs, rigs, antennas, power and weather, chat_rounds rounds of chat,
+    and the closing. <BT> separates thoughts inside an over; every over before the
+    closing ends by handing over with <AR> or <KN>; each closing over ends with <SK>."""
+    ga, gb = _greeting(rng), _greeting(rng)
+    rst_a, rst_b = _rst(rng), _rst(rng)
+    overs = [
+        Over(0, cq_call(rng, a.call)),
+        Over(1, f"{a.call} DE {b.call} {b.call} <AR>"),
+        Over(0, f"{b.call} DE {a.call} <BT> {ga} OM ES TNX FER CALL <BT> UR RST {rst_b} {rst_b} "
+                f"<BT> NAME HR {a.name} {a.name} <BT> QTH {a.qth} {a.qth} <BT> HW CPY? "
+                f"<AR> {b.call} DE {a.call} <KN>"),
+        Over(1, f"{a.call} DE {b.call} <BT> R R {gb} {a.name} TNX FER RPT <BT> UR RST {rst_a} {rst_a} "
+                f"<BT> NAME HR {b.name} {b.name} <BT> QTH {b.qth} {b.qth} <BT> HW? "
+                f"<AR> {a.call} DE {b.call} <KN>"),
+        Over(0, f"{b.call} DE {a.call} <BT> R FB {b.name} TNX FER RPT ES INFO <BT> RIG HR {a.rig} "
+                f"ES PWR {a.power_w}W <BT> ANT {a.antenna} <BT> WX HR {_pick(rng, WEATHER)} ES "
+                f"{_temperature(rng, a.qth)} <AR> {b.call} DE {a.call} <KN>"),
+        Over(1, f"{a.call} DE {b.call} <BT> FB OM {a.name} <BT> RIG HR {b.rig} ES PWR {b.power_w}W "
+                f"<BT> ANT {b.antenna} <BT> WX HR {_pick(rng, WEATHER)} {_temperature(rng, b.qth)} "
+                f"<AR> {a.call} DE {b.call} <KN>"),
+    ]
+    for _ in range(chat_rounds):
+        for sender, me, other in ((0, a, b), (1, b, a)):
+            overs.append(Over(sender, f"{other.call} DE {me.call} <BT> {_chat(rng)} "
+                                      f"<AR> {other.call} DE {me.call} <KN>"))
+    overs += [
+        Over(0, f"{b.call} DE {a.call} <BT> OK {b.name} TNX FER FB QSO ES HPE CUAGN <BT> 73 ES GL "
+                f"{b.call} DE {a.call} <SK>"),
+        Over(1, f"{a.call} DE {b.call} <BT> TNX {a.name} FER QSO <BT> 73 GL OM {a.call} DE {b.call} <SK>"),
+    ]
+    return overs
+
+
+def random_text(rng, words: int) -> str:
+    """words words of i.i.d. characters from VE3NEA's on-air character frequencies, with
+    word lengths from his word-length distribution (mean 3.06 characters)."""
+    lengths_p = np.array(VE3NEA_WORD_LENGTH_PROBS) / np.sum(VE3NEA_WORD_LENGTH_PROBS)
+    lengths = rng.choice(len(lengths_p), size=words, p=lengths_p)
+    chars = list(VE3NEA_CHAR_WEIGHTS)
+    weights = np.array([VE3NEA_CHAR_WEIGHTS[c] for c in chars], dtype=float)
+    drawn = rng.choice(len(chars), size=int(np.sum(lengths)), p=weights / np.sum(weights))
+    out, pos = [], 0
+    for n in lengths:
+        out.append("".join(chars[int(i)] for i in drawn[pos:pos + n]))
+        pos += n
+    return " ".join(out)
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `.venv\Scripts\python -m pytest training -q`
+Expected: all pass (the existing tests plus 8 new). A full ragchew with `chat_rounds=0` is about 150 words; at 25 WPM its overs take about 300 s of keying (measured on five seeds: 285–309 s), which is why Task 9 sizes those recordings from the plan rather than using a fixed 60 s.
+
+- [ ] **Step 5: Document**
+
+In `docs/signal-processing.md`, section 11, add at the end:
+
+```markdown
+- **Message text** (synthetic recordings, `training/kz4ap_synth/messages.py`):
+  CQ calls, contest exchanges, and whole ragchew QSOs as a list of overs,
+  each with its sending station: CQ, answer, RST and name and QTH, rig and
+  power and antenna and weather, optional chat, closing. `<BT>` separates
+  thoughts inside an over; every over before the closing ends with `<AR>` and
+  `<KN>` (the answer with `<AR>`); each station's closing over ends with `<SK>`.
+  Templates and callsigns are this project's (heuristic). Filler text draws
+  i.i.d. characters and word lengths from VE3NEA's on-air tables (DeepCW,
+  MIT; E is 11.9% of characters, mean word length 3.06 characters).
+```
+
+- [ ] **Step 6: Commit on the `milestone-2` branch**
+
+```powershell
+git add training/kz4ap_synth/messages.py training/tests/test_messages.py docs/signal-processing.md
+```
+```powershell
+git commit -m "Add message text: CQ calls, contest exchanges, ragchew QSOs and filler text"
+```
+
+---
+
+### Task 2: Generator — transmissions with pauses, tune-up carriers, carrier drift
+
+A signal can now send its text several times with pauses between (as between CQs), start with an unkeyed tune-up carrier, start at the very first sample, and drift in frequency. The labels file lists each transmission, so the bench can score each one's first word (Task 7). Random keying (Task 3) and fading (Task 4) will draw from per-signal generators, so this task also restructures interval planning around them. **The milestone-1 output must not change**: a test compares the new generator against a frozen copy of the old one.
 
 **Files:**
 - Modify: `training/kz4ap_synth/generate.py` (whole file shown below)
@@ -211,7 +643,7 @@ A signal can now send its text several times with pauses between (as between CQs
   - `SignalSpec` gains `repeats: int = 1`, `pause_s: float = 0.0`, `tune_s: float = 0.0`, `drift_hz_per_s: float = 0.0`.
   - `TUNE_GAP_S = 0.5` (s of silence between a tune-up carrier and the first element).
   - `SignalPlan(intervals: list[tuple[float, float]], transmissions: list[tuple[float, float]])`, times in s from `spec.start_s`.
-  - `sending_intervals(spec: SignalSpec, rng: np.random.Generator) -> list[tuple[float, float]]` (key-down intervals of one sending of `spec.text`, from 0 s; Task 2 replaces its body).
+  - `sending_intervals(spec: SignalSpec, rng: np.random.Generator) -> list[tuple[float, float]]` (key-down intervals of one sending of `spec.text`, from 0 s; Task 3 replaces its body).
   - `plan_signal(spec, rng) -> SignalPlan`; `plan_intervals(signals, seed: int) -> list[SignalPlan]` (signal i uses `np.random.default_rng([seed, i, 2])`).
   - `reference_text(spec) -> str` (the text repeated `repeats` times, space-separated).
   - `signal_end_s(spec, plan) -> float`.
@@ -602,7 +1034,7 @@ Expected: all tests pass (the existing ones plus 6 new).
 - [ ] **Step 5: Confirm the smoke check is unaffected**
 
 Build if needed (`cmake --build --preset windows`), then in Git Bash: `bash bench/smoke.sh build/windows`
-Expected: `smoke test passed`, with the same `CER …, detected 8 of 8 …` line as before this task. Write that CER value down and pass it to the reviewer: Tasks 4–12 compare against it.
+Expected: `smoke test passed`, with the same `CER …, detected 8 of 8 …` line as before this task. Write that CER value down and pass it to the reviewer: Tasks 5–14 compare against it.
 
 - [ ] **Step 6: Document the definitions**
 
@@ -634,9 +1066,18 @@ git commit -m "Add transmissions with pauses, tune-up carriers and drift to the 
 
 ---
 
-### Task 2: Generator — keying styles, key imbalance, speed changes
+### Task 3: Generator — keying styles (VE3NEA's), key imbalance, speed changes
 
-Senders other than a keyer: element and space durations drawn from log-normal distributions per keying style (survey scenario C), a key-on/off imbalance, and speed changes inside a message, as a step or a ramp (scenario D).
+Senders other than a keyer: element and space durations drawn from log-normal distributions per keying style (survey scenario C), a key-on/off imbalance, and speed changes inside a message, as a step or a ramp (scenario D). The four random styles are VE3NEA's DeepCW styles with his parameters (`deepcw-generator-notes.md` §1): every duration is T·exp(N(μ, σ_ln²)), T = 1.2 s / WPM, with his μ and σ_ln per element:
+
+| Style (his name) | μ: dit, dah, element space, character space, word space | σ_ln: same order |
+|---|---|---|
+| computer (Computer) | 0, 1.10, 0, 1.10, 1.94 | 0.05, 0.016, 0.05, 0.016, 0.008 |
+| paddle (Paddle) | 0, 1.10, 0, 1.10, 1.94 | 0.05, 0.016, 0.05, 0.2, 0.2 |
+| bug (Vibroplex) | 0, 1.10, 0, 1.10, 1.94 | 0.05, 0.2, 0.05, 0.2, 0.2 |
+| hand (HandKey) | 0, 1.50, 0, 1.50, 2.0 | 0.15, 0.3, 0.2, 0.3, 0.2 |
+
+Medians exp(μ) are 1, 3.00, 1, 3.00 and 6.96 dits (the standard ratios) except for the hand key: dah and character space 4.48 dits, word space 7.39 dits. "machine" (exact PARIS timing, σ_ln = 0) is this project's own and stays the default, so milestone-1 recordings do not change. His only per-operator variation is the imbalance δ ~ N(0, (0.1·T)²), drawn once per operator (`draw_imbalance_dits`), added to every mark and subtracted from every space. His training mix is hand 0.25, paddle 0.50, computer 0.25 (`draw_style`; he never draws Vibroplex). His speed range is ambiguous: `'wpm': {'low':12, 'high':48}` in the committed `R/model/training_settings.py`, but `{'low':8, 'high':50}` in the notebook cell (MOD cell 2) that writes that file, so which range trained his published weights is unknown; `VE3NEA_WPM_RANGE` uses 12–48 WPM and its comment says so. Differences kept on purpose (heuristic): character and word spaces are drawn once each from their own distributions (he sums several independent draws: the same medians, slightly less spread here), and no duration is shorter than 0.2 dit.
 
 **Files:**
 - Create: `training/kz4ap_synth/keying.py`
@@ -645,9 +1086,11 @@ Senders other than a keyer: element and space durations drawn from log-normal di
 - Modify: `docs/signal-processing.md` (§11)
 
 **Interfaces:**
-- Consumes: `kz4ap_synth.morse.CODES`, `symbols`, `keying_intervals`; `generate.SignalSpec`, `plan_intervals` (Task 1).
+- Consumes: `kz4ap_synth.morse.CODES`, `symbols`, `keying_intervals`; `generate.SignalSpec`, `plan_intervals` (Task 2).
 - Produces (Python):
-  - `kz4ap_synth.keying.STYLES: dict[str, KeyingStyle]` with keys `"machine"`, `"paddle"`, `"bug"`, `"hand"`; `Duration(median_dits: float, sigma: float)`; `KeyingStyle(dit, dah, element_gap, char_gap, word_gap)`; `MIN_DITS = 0.2`.
+  - `kz4ap_synth.keying.STYLES: dict[str, KeyingStyle]` with keys `"machine"`, `"computer"`, `"paddle"`, `"bug"`, `"hand"`; `Duration(median_dits: float, sigma: float)`; `KeyingStyle(dit, dah, element_gap, char_gap, word_gap)`; `MIN_DITS = 0.2`.
+  - `VE3NEA_STYLE_MIX = (("hand", 0.25), ("paddle", 0.50), ("computer", 0.25))`; `VE3NEA_IMBALANCE_SIGMA_DITS = 0.1`; `VE3NEA_WPM_RANGE = (12.0, 48.0)`.
+  - `draw_style(rng: np.random.Generator) -> str`; `draw_imbalance_dits(rng: np.random.Generator) -> float`.
   - `timed_intervals(text: str, wpm: float, style: str = "machine", rng: np.random.Generator | None = None, wpm_end: float | None = None, profile: str = "step", imbalance_dits: float = 0.0) -> list[tuple[float, float]]`.
   - `SignalSpec` gains `keying: str = "machine"`, `wpm_end: float | None = None`, `speed_profile: str = "step"`, `imbalance_dits: float = 0.0`. These appear in the labels file automatically.
 
@@ -661,7 +1104,7 @@ import math
 import numpy as np
 import pytest
 
-from kz4ap_synth.keying import STYLES, timed_intervals
+from kz4ap_synth.keying import STYLES, Duration, draw_imbalance_dits, draw_style, timed_intervals
 from kz4ap_synth.morse import keying_intervals
 
 
@@ -677,17 +1120,24 @@ def test_machine_style_is_exact_paris_timing():
     assert timed_intervals("PARIS CQ", 20.0) == keying_intervals("PARIS CQ", 20.0)
 
 
-def test_paddle_elements_are_exact_and_character_spaces_vary():
+def test_styles_are_ve3nea_table():
+    assert STYLES["paddle"].dah == Duration(math.exp(1.10), 0.016)
+    assert STYLES["paddle"].char_gap == Duration(math.exp(1.10), 0.2)
+    assert STYLES["computer"].word_gap == Duration(math.exp(1.94), 0.008)
+    assert STYLES["bug"].dah == Duration(math.exp(1.10), 0.2)
+    assert STYLES["hand"].dit == Duration(1.0, 0.15)
+    assert STYLES["hand"].word_gap == Duration(math.exp(2.0), 0.2)
+
+
+def test_paddle_dahs_are_steadier_than_its_character_spaces():
     rng = np.random.default_rng(1)
-    iv = timed_intervals(" ".join(["CQ"] * 30), 20.0, "paddle", rng)
+    iv = timed_intervals(" ".join(["TT"] * 300), 20.0, "paddle", rng)
     dit = 1.2 / 20.0
-    for m in marks(iv):
-        assert m == pytest.approx(dit) or m == pytest.approx(3 * dit)
-    gaps = spaces(iv)
-    element_gaps = [g for g in gaps if g < 1.5 * dit]
-    assert all(g == pytest.approx(dit) for g in element_gaps)
-    long_gaps = [g for g in gaps if g >= 1.5 * dit]
-    assert np.std(long_gaps) > 0.05 * dit
+    dahs = np.array(marks(iv)) / dit
+    char_gaps = np.array(spaces(iv))[0::2] / dit  # T T | T T | ...: character and word spaces alternate
+    assert np.median(dahs) == pytest.approx(math.exp(1.10), rel=0.01)
+    assert np.std(np.log(dahs)) == pytest.approx(0.016, abs=0.004)
+    assert np.std(np.log(char_gaps)) == pytest.approx(0.2, abs=0.03)
 
 
 def test_hand_key_dah_median_and_spread_follow_ve3nea():
@@ -725,6 +1175,17 @@ def test_imbalance_lengthens_marks_and_shortens_spaces():
     assert spaces(iv) == pytest.approx([2.9 * 0.06])
 
 
+def test_style_mix_and_imbalance_follow_ve3nea():
+    rng = np.random.default_rng(3)
+    styles = [draw_style(rng) for _ in range(4000)]
+    assert set(styles) == {"hand", "paddle", "computer"}
+    assert styles.count("hand") / 4000 == pytest.approx(0.25, abs=0.03)
+    assert styles.count("paddle") / 4000 == pytest.approx(0.50, abs=0.03)
+    imbalances = [draw_imbalance_dits(rng) for _ in range(4000)]
+    assert np.std(imbalances) == pytest.approx(0.1, abs=0.01)
+    assert np.mean(imbalances) == pytest.approx(0.0, abs=0.01)
+
+
 def test_unknown_style_or_profile_raises():
     with pytest.raises(ValueError):
         timed_intervals("E", 20.0, "straight")
@@ -738,7 +1199,7 @@ def test_random_style_without_a_generator_raises():
 
 
 def test_every_style_is_defined():
-    assert set(STYLES) == {"machine", "paddle", "bug", "hand"}
+    assert set(STYLES) == {"machine", "computer", "paddle", "bug", "hand"}
 ```
 
 Append to `training/tests/test_generate.py`:
@@ -769,11 +1230,17 @@ Create `training/kz4ap_synth/keying.py`:
 ```python
 """Keying timing: how long each element and space lasts for a given sender.
 
-Machine keying is exact PARIS timing. The other styles draw every duration
-from a log-normal distribution around its nominal length, as VE3NEA's DeepCW
-generator does. Only the hand-key dah (median e^1.5 = 4.48 dits, standard
-deviation of ln(duration) 0.3) is VE3NEA's published value; every other
-parameter here is this project's own (heuristic), pending his per-style table.
+"machine" is exact PARIS timing (this project's; it keeps milestone-1
+recordings unchanged). "computer", "paddle", "bug" and "hand" are VE3NEA's
+DeepCW styles Computer, Paddle, Vibroplex and HandKey: every duration is
+T * exp(N(mu, sigma^2)), T = 1.2 s / WPM, with his mu and sigma per element
+(DeepCW data_generation.ipynb cell 9, keying_stats.py, commit 2c8fdac, MIT;
+docs/research/deepcw-generator-notes.md §1). His one per-operator variation
+is a key-on/key-off imbalance delta ~ N(0, (0.1 T)^2), added to every mark
+and subtracted from every space (draw_imbalance_dits). His training mix is
+hand 0.25, paddle 0.50, computer 0.25 (draw_style); his speed range is
+12-48 WPM in the committed training_settings.py but 8-50 WPM in the notebook
+cell that writes it, so which trained his published model is unknown.
 """
 
 from __future__ import annotations
@@ -786,11 +1253,14 @@ import numpy as np
 from .morse import CODES, keying_intervals, symbols
 
 MIN_DITS = 0.2  # no element or space is drawn shorter than this, dits
+VE3NEA_STYLE_MIX = (("hand", 0.25), ("paddle", 0.50), ("computer", 0.25))
+VE3NEA_IMBALANCE_SIGMA_DITS = 0.1           # standard deviation of the per-operator imbalance, dits
+VE3NEA_WPM_RANGE = (12.0, 48.0)             # committed training_settings.py; the notebook says 8-50
 
 
 @dataclass(frozen=True)
 class Duration:
-    median_dits: float  # median duration, dits
+    median_dits: float  # median duration, dits (exp(mu))
     sigma: float        # standard deviation of ln(duration); 0 = exact
 
 
@@ -803,19 +1273,36 @@ class KeyingStyle:
     word_gap: Duration     # space between words
 
 
+def _ve3nea(mu, sigma) -> KeyingStyle:
+    """A style from VE3NEA's (dot, dash, intra, char, word) mu and sigma columns."""
+    return KeyingStyle(*(Duration(math.exp(m), s) for m, s in zip(mu, sigma)))
+
+
 STYLES = {
-    # An electronic keyer or a computer: exact.
+    # Exact PARIS timing (this project's default; not a VE3NEA style).
     "machine": KeyingStyle(Duration(1, 0), Duration(3, 0), Duration(1, 0), Duration(3, 0), Duration(7, 0)),
-    # An iambic keyer: elements and element spaces exact, the operator spaces characters and words.
-    "paddle": KeyingStyle(Duration(1, 0), Duration(3, 0), Duration(1, 0), Duration(3, 0.15), Duration(7, 0.25)),
-    # A semi-automatic key: machine-made dits, hand-made dahs, somewhat heavy.
-    "bug": KeyingStyle(Duration(1, 0.05), Duration(3.3, 0.15), Duration(1, 0.1), Duration(3, 0.2), Duration(7, 0.3)),
-    # A straight key: everything by hand; dah from VE3NEA's generator.
-    "hand": KeyingStyle(Duration(1, 0.2), Duration(math.exp(1.5), 0.3), Duration(1, 0.25), Duration(3, 0.3),
-                        Duration(7, 0.3)),
+    # VE3NEA's Computer: "all timing is accurate", yet dots and element spaces vary by 5%.
+    "computer": _ve3nea((0, 1.10, 0, 1.10, 1.94), (0.05, 0.016, 0.05, 0.016, 0.008)),
+    # VE3NEA's Paddle: character and word spaces are the operator's.
+    "paddle": _ve3nea((0, 1.10, 0, 1.10, 1.94), (0.05, 0.016, 0.05, 0.2, 0.2)),
+    # VE3NEA's Vibroplex (a bug): dashes and spaces are the operator's.
+    "bug": _ve3nea((0, 1.10, 0, 1.10, 1.94), (0.05, 0.2, 0.05, 0.2, 0.2)),
+    # VE3NEA's HandKey: everything by hand, heavy dashes (median e^1.5 = 4.48 dits), wide spacing.
+    "hand": _ve3nea((0, 1.50, 0, 1.50, 2.0), (0.15, 0.3, 0.2, 0.3, 0.2)),
 }
 
 SPEED_PROFILES = ("step", "ramp")
+
+
+def draw_style(rng: np.random.Generator) -> str:
+    """A keying style drawn with VE3NEA's training mix (hand 0.25, paddle 0.50, computer 0.25)."""
+    names = [name for name, _ in VE3NEA_STYLE_MIX]
+    return names[int(rng.choice(len(names), p=[p for _, p in VE3NEA_STYLE_MIX]))]
+
+
+def draw_imbalance_dits(rng: np.random.Generator) -> float:
+    """One operator's key-on/key-off imbalance, dits: N(0, 0.1^2), as VE3NEA draws it."""
+    return float(VE3NEA_IMBALANCE_SIGMA_DITS * rng.standard_normal())
 
 
 def word_wpm(index: int, count: int, wpm: float, wpm_end: float | None, profile: str) -> float:
@@ -837,7 +1324,9 @@ def timed_intervals(text: str, wpm: float, style: str = "machine", rng: np.rando
     wpm_end: the speed at the end (None = constant); profile "step" switches at
     the middle word, "ramp" changes linearly from word to word. imbalance_dits:
     every mark is longer, and every space shorter, by this many dits (a
-    transmitter that keys on and off at different speeds). With machine keying,
+    transmitter that keys on and off at different speeds). Character and word
+    spaces are drawn directly from their own distributions (VE3NEA assembles
+    them from several draws; the medians are the same). With machine keying,
     constant speed and no imbalance the result is exactly keying_intervals().
     """
     if style not in STYLES:
@@ -899,26 +1388,29 @@ Expected: all pass, including `test_default_signals_match_milestone_1_generator`
 
 - [ ] **Step 5: Document the keying styles**
 
-In `docs/signal-processing.md`, section 11, after the **Drift** bullet added in Task 1, insert:
+In `docs/signal-processing.md`, section 11, after the **Drift** bullet added in Task 2, insert:
 
 ```markdown
 - **Keying styles** (synthetic recordings, `keying`): every element and
-  space duration is drawn as median × exp(σ·N(0, 1)) dits, never below
-  0.2 dit. Medians are the nominal 1 (dit), 3 (dah), 1 (element space),
-  3 (character space) and 7 (word space) dits, except where stated:
+  space duration is T·exp(N(μ, σ_ln²)), T = 1.2 s / WPM, never below
+  0.2 dit. "machine" is exact PARIS timing (σ_ln = 0; the default). The
+  others are VE3NEA's DeepCW styles with his parameters (MIT; notes in
+  `docs/research/deepcw-generator-notes.md` §1):
 
-  | Style | dit σ | dah median, σ | element space σ | character space σ | word space σ |
-  |---|---|---|---|---|---|
-  | machine | 0 | 3, 0 | 0 | 0 | 0 |
-  | paddle | 0 | 3, 0 | 0 | 0.15 | 0.25 |
-  | bug | 0.05 | 3.3, 0.15 | 0.1 | 0.2 | 0.3 |
-  | hand | 0.2 | 4.48, 0.3 | 0.25 | 0.3 | 0.3 |
+  | Style (his name) | μ: dit, dah, element space, character space, word space | σ_ln: same order |
+  |---|---|---|
+  | computer (Computer) | 0, 1.10, 0, 1.10, 1.94 | 0.05, 0.016, 0.05, 0.016, 0.008 |
+  | paddle (Paddle) | 0, 1.10, 0, 1.10, 1.94 | 0.05, 0.016, 0.05, 0.2, 0.2 |
+  | bug (Vibroplex) | 0, 1.10, 0, 1.10, 1.94 | 0.05, 0.2, 0.05, 0.2, 0.2 |
+  | hand (HandKey) | 0, 1.50, 0, 1.50, 2.0 | 0.15, 0.3, 0.2, 0.3, 0.2 |
 
-  The hand-key dah (median e^1.5 ≈ 4.48 dits, σ = 0.3) is VE3NEA's DeepCW
-  value; all other values are **heuristic**. `imbalance_dits` lengthens
-  every mark and shortens every space by that many dits. `wpm_end` changes
-  the speed within a sending: `step` switches at the middle word, `ramp`
-  changes linearly from word to word.
+  Medians exp(μ): 1, 3.00, 1, 3.00, 6.96 dits; hand key 1, 4.48, 1, 4.48,
+  7.39 dits. Character and word spaces are one draw each (VE3NEA sums
+  several draws; same medians). `imbalance_dits` = δ/T lengthens every mark
+  and shortens every space; VE3NEA draws δ ~ N(0, (0.1·T)²) once per
+  operator, and his training mix is hand 0.25, paddle 0.50, computer 0.25.
+  `wpm_end` changes the speed within a sending: `step` switches at the
+  middle word, `ramp` changes linearly from word to word.
 ```
 
 - [ ] **Step 6: Commit on the `milestone-2` branch**
@@ -932,11 +1424,16 @@ git commit -m "Add keying styles, key imbalance and speed changes to the generat
 
 ---
 
-### Task 3: Generator — Rayleigh fading
+### Task 4: Generator — Rayleigh fading, Gaussian or VE3NEA's Butterworth Doppler spectrum
 
-Flat Rayleigh fading (QSB) with a Doppler-spread parameter f_D, so VE3NEA's grid (f_D = 0.1–3 Hz; survey scenario B) can be reproduced as an external anchor.
+Flat Rayleigh fading (QSB) with a Doppler-spread parameter f_D and a choice of Doppler spectrum, so VE3NEA's grid (f_D = 0.1–3 Hz; survey scenario B) can be reproduced as an external anchor with his own spectrum shape.
 
-**Model (derived from the definition; the spread convention is a choice):** the carrier is multiplied by a complex Gaussian gain g(t) with E|g|² = 1, whose Doppler power spectrum is Gaussian, S(f) ∝ exp(−f²/(2σ_D²)), with frequency spread f_D = 2σ_D (the Watterson / CCIR 520 HF convention). The process is synthesized at 50 samples/s by filtering white complex Gaussian noise in the frequency domain (amplitude response √S(f), scaled so the expected power is exactly 1), then linearly interpolated to the recording's rate. At 50 samples/s and f_D ≤ 3 Hz the spectrum is negligible beyond ±9 Hz (6σ_D), well inside ±25 Hz, and linear interpolation loses at most 0.04 dB of power between points (derived: adjacent-sample correlation ≥ 0.982 at f_D = 3 Hz). S₅₀₀ of a fading signal is its **mean** key-down power over the noise in 500 Hz.
+**Model (derived from the definition; the spread convention and the shapes are choices):** the carrier is multiplied by a complex Gaussian gain g(t) with E|g|² = 1. Its Doppler power spectrum S(f) is either
+
+- **Gaussian** (default): S(f) ∝ exp(−f²/(2σ_D²)), frequency spread f_D = 2σ_D (the Watterson / CCIR 520 HF convention); or
+- **Butterworth** (VE3NEA's, `deepcw-generator-notes.md` §2): S(f) ∝ 1/(1 + (f/f_c)⁴), f_c = 0.625·f_D, the power response of his 2nd-order Butterworth low-pass per quadrature. His notebook fits a Gaussian to this spectrum and gets 2σ_D = 1.01·f_D, so f_D names the same spread in both shapes to about 1% (conversion factor ≈ 1). The shapes differ in the tails: beyond 2·f_D the Butterworth holds 0.92% of the power, the Gaussian 6.3×10⁻⁵ (derived; Step 1 tests both).
+
+The process is synthesized at 50 samples/s by shaping white complex Gaussian noise in the frequency domain (amplitude response √S(f), scaled so the expected power is exactly 1), then linearly interpolated to the recording's rate. This reproduces his spectrum, not his time-domain filter's exact sample sequence. At 50 samples/s and f_D ≤ 3 Hz the Gaussian is negligible beyond ±9 Hz (6σ_D) and the Butterworth holds 1.3×10⁻⁴ of its power beyond ±25 Hz (derived), where the synthesis cuts it off. Linear interpolation loses at most 0.04 dB (Gaussian) or 0.06 dB (Butterworth) of power relative to the unfaded mean midway between points at f_D = 3 Hz (derived: adjacent-sample correlation ≥ 0.982 and ≥ 0.972; the Butterworth's second-moment spread is f_c). S₅₀₀ of a fading signal is its **mean** key-down power over the noise in 500 Hz, as VE3NEA's SNR is a fading-averaged power. The synthesis is split into `slow_gain` (the 50 samples/s process) and `gain_at` (interpolation), so Task 6 can give each station of a QSO one continuous fading path without holding it at the recording's full sample rate.
 
 **Files:**
 - Create: `training/kz4ap_synth/fading.py`
@@ -945,7 +1442,8 @@ Flat Rayleigh fading (QSB) with a Doppler-spread parameter f_D, so VE3NEA's grid
 - Modify: `docs/signal-processing.md` (§11)
 
 **Interfaces:**
-- Produces: `kz4ap_synth.fading.rayleigh_gain(n: int, sample_rate: int, spread_hz: float, rng: np.random.Generator) -> np.ndarray` (complex, length n); `FADING_RATE_HZ = 50.0`. `SignalSpec` gains `fading_hz: float = 0.0` (f_D, Hz; 0 = no fading). Signal i's fading draws from `np.random.default_rng([seed, i, 1])`.
+- Produces (Python, `kz4ap_synth.fading`): `FADING_RATE_HZ = 50.0`; `BUTTERWORTH_CUTOFF_PER_SPREAD = 0.625`; `SHAPES = ("gaussian", "butterworth")`; `slow_gain(duration_s: float, spread_hz: float, rng: np.random.Generator, shape: str = "gaussian") -> np.ndarray` (complex, at `FADING_RATE_HZ`, ceil(duration_s · 50) + 2 samples); `gain_at(slow: np.ndarray, t_s: np.ndarray) -> np.ndarray`; `rayleigh_gain(n: int, sample_rate: int, spread_hz: float, rng: np.random.Generator, shape: str = "gaussian") -> np.ndarray` (complex, length n). An unknown shape or spread_hz ≤ 0 raises `ValueError`.
+- `SignalSpec` gains `fading_hz: float = 0.0` (f_D, Hz; 0 = no fading) and `fading_shape: str = "gaussian"`. Signal i's fading draws from `np.random.default_rng([seed, i, 1])`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -958,13 +1456,15 @@ import pytest
 from kz4ap_synth.fading import rayleigh_gain
 
 
-def test_mean_power_is_one():
-    g = rayleigh_gain(600 * 200, 200, 3.0, np.random.default_rng(1))
+@pytest.mark.parametrize("shape", ["gaussian", "butterworth"])
+def test_mean_power_is_one(shape):
+    g = rayleigh_gain(600 * 200, 200, 3.0, np.random.default_rng(1), shape)
     assert np.mean(np.abs(g) ** 2) == pytest.approx(1.0, rel=0.1)
 
 
-def test_power_is_exponentially_distributed():
-    g = rayleigh_gain(600 * 200, 200, 3.0, np.random.default_rng(2))
+@pytest.mark.parametrize("shape", ["gaussian", "butterworth"])
+def test_power_is_exponentially_distributed(shape):
+    g = rayleigh_gain(600 * 200, 200, 3.0, np.random.default_rng(2), shape)
     power = np.abs(g) ** 2 / np.mean(np.abs(g) ** 2)
     # Rayleigh envelope: P(|g|^2 < 0.1 mean) = 1 - exp(-0.1) = 0.095
     assert np.mean(power < 0.1) == pytest.approx(0.095, abs=0.02)
@@ -982,10 +1482,26 @@ def test_correlation_time_matches_the_spread():
     assert abs(rho) == pytest.approx(0.5, abs=0.1)
 
 
+@pytest.mark.parametrize("shape, expected", [("gaussian", 6.3e-5), ("butterworth", 0.0092)])
+def test_power_beyond_twice_the_spread_follows_the_shape(shape, expected):
+    # Gaussian, sigma = f_D/2: P(|f| > 2 f_D) = P(|z| > 4) = 6.3e-5. Butterworth, f_c = 0.625 f_D:
+    # the f^-4 tail beyond 3.2 f_c holds 0.0092 of the power (VE3NEA's spectrum is not Gaussian).
+    fs = 200
+    g = rayleigh_gain(1200 * fs, fs, 1.0, np.random.default_rng(5), shape)
+    power = np.abs(np.fft.fft(g)) ** 2
+    freqs = np.fft.fftfreq(len(g), 1 / fs)
+    assert power[np.abs(freqs) > 2.0].sum() / power.sum() == pytest.approx(expected, rel=0.3)
+
+
 def test_same_generator_state_gives_the_same_fading():
     a = rayleigh_gain(1000, 100, 1.0, np.random.default_rng(4))
     b = rayleigh_gain(1000, 100, 1.0, np.random.default_rng(4))
     assert np.array_equal(a, b)
+
+
+def test_unknown_shape_raises():
+    with pytest.raises(ValueError):
+        rayleigh_gain(1000, 100, 1.0, np.random.default_rng(5), "jakes")
 ```
 
 Append to `training/tests/test_generate.py`:
@@ -1007,6 +1523,15 @@ def test_faded_signal_keeps_its_mean_key_down_power():
     assert np.mean(power_at(300.0)) == pytest.approx(a2, rel=0.01)
     assert np.mean(power_at(-300.0)) == pytest.approx(a2, rel=0.15)
     assert np.std(power_at(-300.0)) > 0.5 * a2  # exponentially distributed power: std = mean
+
+
+def test_fading_shape_reaches_the_generator():
+    base = dict(text="E", freq_offset_hz=300.0, wpm=5.0, snr_db=20.0, start_s=0.0, tune_s=10.0, fading_hz=1.0)
+    a = generate([SignalSpec(**base)], 2000, 11.0, seed=1, add_noise=False)
+    b = generate([SignalSpec(**base, fading_shape="butterworth")], 2000, 11.0, seed=1, add_noise=False)
+    assert not np.allclose(a, b)
+    entry = labels([SignalSpec(**base, fading_shape="butterworth")], 2000, 11.0, seed=1)["signals"][0]
+    assert entry["fading_shape"] == "butterworth"
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1021,9 +1546,21 @@ Create `training/kz4ap_synth/fading.py`:
 ```python
 """Flat Rayleigh fading (QSB) for synthetic signals.
 
-The gain g(t) is complex Gaussian with E|g|^2 = 1 and a Gaussian Doppler power
-spectrum S(f) ~ exp(-f^2 / (2 sigma^2)). The frequency spread is 2 sigma (the
-Watterson / CCIR 520 HF convention), so spread_hz = f_D = 2 sigma.
+The gain g(t) is complex Gaussian with E|g|^2 = 1. Its Doppler power spectrum
+S(f) has one of two shapes, both parameterized by the frequency spread
+f_D = spread_hz, Hz:
+
+- "gaussian": S(f) ~ exp(-f^2 / (2 sigma^2)) with f_D = 2 sigma (the
+  Watterson / CCIR 520 HF convention).
+- "butterworth": S(f) ~ 1 / (1 + (f / f_c)^4), f_c = 0.625 f_D: the spectrum of
+  VE3NEA's DeepCW fading generator (a 2nd-order Butterworth low-pass per
+  quadrature, cutoff 1.25 f_D / 2). A Gaussian least-squares fit to it gives
+  2 sigma = 1.01 f_D, so f_D means the same spread in both shapes to about 1%;
+  the Butterworth has heavier f^-4 tails. (DeepCW data_generation.ipynb
+  cells 17, 21, 25, commit 2c8fdac, MIT; docs/research/deepcw-generator-notes.md §2.)
+
+Both are synthesized at FADING_RATE_HZ by shaping white complex Gaussian
+noise in the frequency domain, then linearly interpolated.
 """
 
 from __future__ import annotations
@@ -1031,28 +1568,47 @@ from __future__ import annotations
 import numpy as np
 
 FADING_RATE_HZ = 50.0  # rate the fading process is synthesized at before interpolation, samples/s
+BUTTERWORTH_CUTOFF_PER_SPREAD = 0.625  # f_c / f_D of VE3NEA's fading filter
+SHAPES = ("gaussian", "butterworth")
 
 
-def rayleigh_gain(n: int, sample_rate: int, spread_hz: float, rng: np.random.Generator) -> np.ndarray:
-    """n samples of complex fading gain at sample_rate, frequency spread spread_hz (Hz)."""
+def slow_gain(duration_s: float, spread_hz: float, rng: np.random.Generator,
+              shape: str = "gaussian") -> np.ndarray:
+    """The fading gain at FADING_RATE_HZ, covering duration_s (plus two samples)."""
     if spread_hz <= 0:
         raise ValueError("spread_hz must be positive")
-    m = int(np.ceil(n / sample_rate * FADING_RATE_HZ)) + 2
+    if shape not in SHAPES:
+        raise ValueError(f"unknown fading shape {shape!r}")
+    m = int(np.ceil(duration_s * FADING_RATE_HZ)) + 2
     freqs = np.fft.fftfreq(m, 1.0 / FADING_RATE_HZ)
-    sigma = spread_hz / 2.0
-    shape = np.exp(-freqs**2 / (4.0 * sigma**2))  # amplitude response: sqrt of the Gaussian power spectrum
-    shape *= np.sqrt(m / np.sum(shape**2))        # expected power of the output is exactly 1
+    if shape == "gaussian":
+        sigma = spread_hz / 2.0
+        response = np.exp(-freqs**2 / (4.0 * sigma**2))  # amplitude response: sqrt of the power spectrum
+    else:
+        cutoff = BUTTERWORTH_CUTOFF_PER_SPREAD * spread_hz
+        response = 1.0 / np.sqrt(1.0 + (freqs / cutoff) ** 4)
+    response *= np.sqrt(m / np.sum(response**2))  # expected power of the output is exactly 1
     white = (rng.standard_normal(m) + 1j * rng.standard_normal(m)) / np.sqrt(2.0)
-    slow = np.fft.ifft(white * shape, norm="ortho")
-    t_slow = np.arange(m) / FADING_RATE_HZ
-    t = np.arange(n) / sample_rate
-    return np.interp(t, t_slow, slow.real) + 1j * np.interp(t, t_slow, slow.imag)
+    return np.fft.ifft(white * response, norm="ortho")
+
+
+def gain_at(slow: np.ndarray, t_s: np.ndarray) -> np.ndarray:
+    """The gain at times t_s (s from the start of slow), linearly interpolated."""
+    t_slow = np.arange(len(slow)) / FADING_RATE_HZ
+    return np.interp(t_s, t_slow, slow.real) + 1j * np.interp(t_s, t_slow, slow.imag)
+
+
+def rayleigh_gain(n: int, sample_rate: int, spread_hz: float, rng: np.random.Generator,
+                  shape: str = "gaussian") -> np.ndarray:
+    """n samples of complex fading gain at sample_rate, frequency spread spread_hz (Hz)."""
+    return gain_at(slow_gain(n / sample_rate, spread_hz, rng, shape), np.arange(n) / sample_rate)
 ```
 
-In `training/kz4ap_synth/generate.py`, add `from .fading import rayleigh_gain`, add the field at the end of `SignalSpec`:
+In `training/kz4ap_synth/generate.py`, add `from .fading import rayleigh_gain`, add the fields at the end of `SignalSpec`:
 
 ```python
     fading_hz: float = 0.0           # Rayleigh fading frequency spread f_D (2 sigma), Hz; 0 = none
+    fading_shape: str = "gaussian"   # Doppler spectrum: "gaussian" or "butterworth" (VE3NEA's)
 ```
 
 and in `generate`, change the loop header and the last line of the loop body to:
@@ -1064,7 +1620,7 @@ and in `generate`, change the loop header and the last line of the loop body to:
         signal = amplitude_for_snr(s.snr_db, sample_rate) * env * np.exp(1j * angle)
         if s.fading_hz > 0:
             signal = signal * rayleigh_gain(i1 - i0, sample_rate, s.fading_hz,
-                                            np.random.default_rng([seed, index, 1]))
+                                            np.random.default_rng([seed, index, 1]), s.fading_shape)
         iq[i0:i1] += signal
 ```
 
@@ -1080,13 +1636,18 @@ Expected: all pass.
 In `docs/signal-processing.md`, section 11, change the **SNR** bullet's first sentence to "key-down carrier power A² (for a fading signal, its mean) over the noise power in a **500 Hz** bandwidth, σ²·500 Hz / fs." and, after the **Keying styles** bullet, insert:
 
 ```markdown
-- **Fading** (synthetic recordings, `fading_hz`): flat Rayleigh fading. The
-  carrier is multiplied by a complex Gaussian gain g(t) with E|g|² = 1 and a
-  Gaussian Doppler power spectrum; `fading_hz` is the frequency spread
-  f_D = 2σ of that spectrum, Hz (the Watterson / CCIR 520 HF convention;
-  whether VE3NEA's f_D uses the same convention is not established). The
-  gain is synthesized at 50 samples/s and linearly interpolated (at most
-  0.04 dB of power lost between points at f_D = 3 Hz, derived).
+- **Fading** (synthetic recordings, `fading_hz`, `fading_shape`): flat
+  Rayleigh fading. The carrier is multiplied by a complex Gaussian gain
+  g(t) with E|g|² = 1. `fading_hz` is the frequency spread f_D, Hz. The
+  Doppler power spectrum is Gaussian with f_D = 2σ (`gaussian`, the
+  default; the Watterson / CCIR 520 HF convention) or VE3NEA's DeepCW
+  spectrum S(f) ∝ 1/(1 + (f/f_c)⁴), f_c = 0.625·f_D (`butterworth`), whose
+  Gaussian least-squares fit has 2σ = 1.01·f_D, so f_D means the same
+  spread to about 1%. The Butterworth has heavier tails (0.92% of the
+  power beyond 2·f_D, against 6.3×10⁻⁵). The gain is synthesized at
+  50 samples/s and linearly interpolated (at most 0.04 dB, Gaussian, or
+  0.06 dB, Butterworth, of power lost relative to the mean between points
+  at f_D = 3 Hz, derived).
 ```
 
 - [ ] **Step 6: Commit on the `milestone-2` branch**
@@ -1100,9 +1661,9 @@ git commit -m "Add Rayleigh fading with a Doppler-spread setting to the generato
 
 ---
 
-### Task 4: Generator — band-scenario settings, interferers, tags
+### Task 5: Generator — band-scenario settings, interferers, tags
 
-Crowded bands need a minimum station spacing that can go down to zero and a narrower span; strong signals need S₅₀₀ up to 60 dB; the speed range must reach 10–60 WPM. Interferers are labeled signals that are not scored. A `tag` names each signal's condition for the suite summaries (Task 7).
+Crowded bands need a minimum station spacing that can go down to zero and a narrower span; strong signals need S₅₀₀ up to 60 dB; the speed range must reach 10–60 WPM. Interferers are labeled signals that are not scored. A `tag` names each signal's condition for the suite summaries (Task 9).
 
 **Files:**
 - Modify: `training/kz4ap_synth/generate.py` (`SignalSpec`, `scenario_band`, new `with_interferer`, `main`)
@@ -1302,7 +1863,301 @@ git commit -m "Add band spacing, span, speed and SNR settings and unscored inter
 
 ---
 
-### Task 5: Bench — word spaces and first words scored separately
+### Task 6: Generator — two-station QSOs: alternating overs on one frequency
+
+A ragchew as a listener hears it: two stations near one frequency taking turns. Both are **one labeled signal**, because the receiver gives them one channel and one track; each over changes the speed, keying style, imbalance, level and (by Δf_B, 0–50 Hz) the carrier within that track. The label lists every over as a transmission with its sender, speed, style, imbalance, offset and level, so the bench's first-word CER (Task 7) scores the first word after every change of station, and the suite summary (Task 9) scores each over.
+
+**Model (heuristic):** over k is keyed with `timed_intervals` at its sender's `wpm`, `keying` and `imbalance_dits`, from the signal's per-signal generator (`[seed, i, 2]`, as all keying); a silence t_turn, uniform in `turn_s` (default 0.5–2.0 s), separates the last key-up of one over from the first key-down of the next. Each sender has its own carrier f = `freq_offset_hz` + `offset_hz`, its own key-down level S₅₀₀ = `snr_db` + `relative_db` (dB, noise in 500 Hz), a carrier phase drawn once per sender from `[seed, i, 3]` (so each station's carrier is phase-continuous across its overs), and, when `fading_hz` > 0, its own fading path from `[seed, i, 1, k]` (k = sender index) with the signal's `fading_shape`, one continuous process per station across the whole QSO. Drift (`drift_hz_per_s`) applies to both stations. For a QSO signal, `text` is the whole QSO, `wpm` and `keying` are the first sender's (they label the signal in summaries), and `repeats`, `pause_s`, `tune_s`, `wpm_end`, `speed_profile` and `imbalance_dits` of the `SignalSpec` are not used. Single-sender signals are untouched: they take the old path, so `test_default_signals_match_milestone_1_generator` still holds.
+
+**Files:**
+- Modify: `training/kz4ap_synth/generate.py` (`Sender`, `SignalSpec`, `SignalPlan`, `plan_signal`, new `plan_overs`, `generate`, new `add_overs`, `reference_text`, `labels`, new `qso_spec`)
+- Test: `training/tests/test_generate.py`
+- Modify: `docs/signal-processing.md` (§11)
+
+**Interfaces:**
+- Consumes: `kz4ap_synth.messages.Over` (Task 1); `SignalPlan`, `plan_intervals`, `keying_envelope`, `amplitude_for_snr` (Task 2); `timed_intervals` (Task 3); `slow_gain`, `gain_at` (Task 4); `score`, `tag` (Task 5).
+- Produces (Python, `kz4ap_synth.generate`):
+  - `Sender(call: str, wpm: float, keying: str = "machine", imbalance_dits: float = 0.0, offset_hz: float = 0.0, relative_db: float = 0.0)` (dataclass).
+  - `SignalSpec` gains `senders: list[Sender]` and `overs: list[Over]` (both default empty) and `turn_s: tuple[float, float] = (0.5, 2.0)`.
+  - `SignalPlan` gains `senders: list[int]` (default empty): the sender index of each transmission of a QSO.
+  - `plan_overs(spec, rng) -> SignalPlan` (raises `ValueError` for an over with nothing to key); `add_overs(iq, spec, plan, sample_rate, seed, index) -> None`.
+  - `qso_spec(overs: list[Over], senders: list[Sender], freq_offset_hz: float, snr_db: float, start_s: float, **options) -> SignalSpec`.
+  - Labels: a QSO signal's `transmissions` entries add `sender` (call), `wpm`, `keying`, `imbalance_dits`, `offset_hz`, `relative_db`; its `text` is the overs joined by word spaces. The bench reads only `text`, `start_s` and `end_s` of each transmission, so it needs no change.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `training/tests/test_generate.py`, add `Sender` and `qso_spec` to the `kz4ap_synth.generate` import list, add `from kz4ap_synth.messages import Over` below it, and append:
+
+```python
+def _two_station_qso(**options):
+    senders = [Sender("K1ABC", 20.0), Sender("W9XYZ", 40.0, offset_hz=30.0, relative_db=-6.0)]
+    overs = [Over(0, "CQ DE K1ABC K"), Over(1, "K1ABC DE W9XYZ <AR>"), Over(0, "W9XYZ DE K1ABC <KN>")]
+    return qso_spec(overs, senders, 500.0, 20.0, 0.5, **options)
+
+
+def test_qso_overs_alternate_with_each_senders_speed_and_a_turn_gap():
+    spec = _two_station_qso(turn_s=(1.0, 2.0))
+    plan = plan_intervals([spec], seed=1)[0]
+    assert plan.senders == [0, 1, 0]
+    assert len(plan.transmissions) == 3
+    for (on, off), wpm in zip(plan.transmissions, (20.0, 40.0, 20.0)):
+        dits = min(b - a for a, b in plan.intervals if on <= a and b <= off)
+        assert dits == pytest.approx(1.2 / wpm)
+    for (_, end), (start, _) in zip(plan.transmissions, plan.transmissions[1:]):
+        assert 1.0 <= start - end <= 2.0
+
+
+def test_qso_labels_record_sender_speed_and_style_of_every_over():
+    spec = _two_station_qso()
+    entry = labels([spec], 8000, 30.0, seed=1)["signals"][0]
+    assert entry["text"] == "CQ DE K1ABC K K1ABC DE W9XYZ <AR> W9XYZ DE K1ABC <KN>"
+    assert " ".join(t["text"] for t in entry["transmissions"]) == entry["text"]
+    assert [t["sender"] for t in entry["transmissions"]] == ["K1ABC", "W9XYZ", "K1ABC"]
+    assert [t["wpm"] for t in entry["transmissions"]] == [20.0, 40.0, 20.0]
+    assert [t["keying"] for t in entry["transmissions"]] == ["machine"] * 3
+    assert entry["transmissions"][1]["offset_hz"] == 30.0
+    assert entry["wpm"] == 20.0
+
+
+def test_each_station_keys_on_its_own_carrier_and_level():
+    fs = 8000
+    spec = _two_station_qso()
+    plan = plan_intervals([spec], seed=1)[0]
+    iq = generate([spec], fs, 30.0, seed=1, add_noise=False)
+
+    def first_mark(over):
+        on, off = next((a, b) for a, b in plan.intervals if plan.transmissions[over][0] <= a)
+        i = int((spec.start_s + (on + off) / 2) * fs)
+        return iq[i], np.angle(iq[i + 1] * np.conj(iq[i])) * fs / (2 * np.pi)
+
+    value, freq = first_mark(0)
+    assert abs(value) == pytest.approx(amplitude_for_snr(20.0, fs), rel=1e-6)
+    assert freq == pytest.approx(500.0, abs=0.1)
+    value, freq = first_mark(1)
+    assert abs(value) == pytest.approx(amplitude_for_snr(14.0, fs), rel=1e-6)
+    assert freq == pytest.approx(530.0, abs=0.1)
+
+
+def test_qso_is_reproducible_and_each_station_fades_on_its_own():
+    spec = _two_station_qso(fading_hz=1.0)
+    a = generate([spec], 8000, 30.0, seed=3)
+    b = generate([spec], 8000, 30.0, seed=3)
+    assert np.array_equal(a, b)
+    assert plan_intervals([spec], seed=3)[0].intervals == plan_intervals([spec], seed=3)[0].intervals
+    still = generate([_two_station_qso()], 8000, 30.0, seed=3, add_noise=False)
+    faded = generate([spec], 8000, 30.0, seed=3, add_noise=False)
+    assert not np.allclose(still, faded)
+
+
+def test_an_over_with_nothing_to_key_is_rejected():
+    spec = qso_spec([Over(0, "CQ"), Over(1, "   ")], [Sender("K1ABC", 20.0), Sender("W9XYZ", 20.0)],
+                    500.0, 20.0, 0.5)
+    with pytest.raises(ValueError):
+        plan_intervals([spec], seed=1)
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `.venv\Scripts\python -m pytest training/tests/test_generate.py -q`
+Expected: collection error, `ImportError: cannot import name 'Sender'`.
+
+- [ ] **Step 3: Implement**
+
+In `training/kz4ap_synth/generate.py`:
+
+Change the imports to
+
+```python
+from dataclasses import asdict, dataclass, field
+```
+```python
+from .fading import gain_at, rayleigh_gain, slow_gain
+from .keying import timed_intervals
+from .messages import Over
+from .morse import keying_intervals
+```
+
+Add, above `SignalSpec`:
+
+```python
+@dataclass
+class Sender:
+    """One station of a multi-sender signal (a QSO heard on one frequency)."""
+    call: str
+    wpm: float
+    keying: str = "machine"        # keying style, a key of keying.STYLES
+    imbalance_dits: float = 0.0    # this operator's marks longer and spaces shorter by this, dits
+    offset_hz: float = 0.0         # carrier offset from the signal's freq_offset_hz, Hz
+    relative_db: float = 0.0       # key-down power relative to the signal's S500, dB
+```
+
+Add these fields at the end of `SignalSpec`:
+
+```python
+    senders: list[Sender] = field(default_factory=list)  # a QSO's stations (empty: one sender)
+    overs: list[Over] = field(default_factory=list)      # a QSO's overs, in order (empty: send text)
+    turn_s: tuple[float, float] = (0.5, 2.0)             # silence before each over after the first, s (uniform)
+```
+
+and this field at the end of `SignalPlan`:
+
+```python
+    senders: list[int] = field(default_factory=list)  # a QSO: the sender of each transmission
+```
+
+At the top of `plan_signal`'s body (before `intervals: list[...] = []`) insert
+
+```python
+    if spec.overs:
+        return plan_overs(spec, rng)
+```
+
+and add, above `plan_intervals`:
+
+```python
+def plan_overs(spec: SignalSpec, rng: np.random.Generator) -> SignalPlan:
+    """A QSO: each over at its sender's speed, keying and imbalance, each after a
+    silence drawn uniformly from spec.turn_s (none before the first)."""
+    plan = SignalPlan([], [], [])
+    t = 0.0
+    for over in spec.overs:
+        who = spec.senders[over.sender]
+        sent = timed_intervals(over.text, who.wpm, who.keying, rng, imbalance_dits=who.imbalance_dits)
+        if not sent:
+            raise ValueError(f"over {over.text!r} has nothing to key")
+        if plan.transmissions:
+            t = plan.transmissions[-1][1] + float(rng.uniform(*spec.turn_s))
+        plan.intervals.extend((t + on, t + off) for on, off in sent)
+        plan.transmissions.append((t + sent[0][0], t + sent[-1][1]))
+        plan.senders.append(over.sender)
+    return plan
+```
+
+In `generate`, right after `phase = rng.uniform(0, 2 * np.pi)` (the phase is still drawn for every signal, so the draws for later single-sender signals keep their order), insert
+
+```python
+        if s.overs:
+            add_overs(iq, s, plan, sample_rate, seed, index)
+            continue
+```
+
+and add, above `write_wav`:
+
+```python
+def add_overs(iq: np.ndarray, spec: SignalSpec, plan: SignalPlan, sample_rate: int, seed: int,
+              index: int) -> None:
+    """Adds a QSO to iq: each over at its sender's carrier (freq_offset_hz + offset_hz),
+    level (snr_db + relative_db) and phase, faded by that sender's own fading path."""
+    if not plan.intervals:
+        return
+    n = len(iq)
+    phases = np.random.default_rng([seed, index, 3]).uniform(0, 2 * np.pi, size=len(spec.senders))
+    paths = {}
+    if spec.fading_hz > 0:
+        for k in sorted(set(plan.senders)):
+            paths[k] = slow_gain(plan.intervals[-1][1] + 1.0, spec.fading_hz,
+                                 np.random.default_rng([seed, index, 1, k]), spec.fading_shape)
+    for (on, off), k in zip(plan.transmissions, plan.senders):
+        who = spec.senders[k]
+        i0 = max(0, int((spec.start_s + on) * sample_rate))
+        i1 = min(n, int(np.ceil((spec.start_s + off) * sample_rate)) + 1)
+        if i1 <= i0:
+            continue
+        part = [iv for iv in plan.intervals if on <= iv[0] and iv[1] <= off]
+        env = keying_envelope(part, spec.start_s - i0 / sample_rate, i1 - i0, sample_rate)
+        t = np.arange(i0, i1) / sample_rate
+        angle = 2 * np.pi * (spec.freq_offset_hz + who.offset_hz) * t + phases[k]
+        if spec.drift_hz_per_s:
+            angle = angle + np.pi * spec.drift_hz_per_s * (t - spec.start_s) ** 2
+        signal = amplitude_for_snr(spec.snr_db + who.relative_db, sample_rate) * env * np.exp(1j * angle)
+        if k in paths:
+            signal = signal * gain_at(paths[k], t - spec.start_s)
+        iq[i0:i1] += signal
+```
+
+(Rendering over by over keeps the temporary arrays at one over's length, at most about 60 s, even when a whole QSO lasts six minutes.)
+
+Replace `reference_text`'s body with
+
+```python
+    """What a perfect decoder would print for the whole signal."""
+    if spec.overs:
+        return " ".join(o.text for o in spec.overs)
+    return " ".join([spec.text] * spec.repeats)
+```
+
+Replace the loop in `labels` with
+
+```python
+    for s, plan in zip(signals, plan_intervals(signals, seed)):
+        if s.overs:
+            texts = [o.text for o in s.overs]
+            extra = [{"sender": s.senders[k].call, "wpm": s.senders[k].wpm, "keying": s.senders[k].keying,
+                      "imbalance_dits": s.senders[k].imbalance_dits, "offset_hz": s.senders[k].offset_hz,
+                      "relative_db": s.senders[k].relative_db} for k in plan.senders]
+        else:
+            texts = [s.text] * len(plan.transmissions)
+            extra = [{}] * len(plan.transmissions)
+        entries.append({
+            **asdict(s),
+            "text": reference_text(s),
+            "end_s": round(signal_end_s(s, plan), 3),
+            "transmissions": [
+                {"text": text, "start_s": round(s.start_s + on, 3), "end_s": round(s.start_s + off, 3), **more}
+                for text, (on, off), more in zip(texts, plan.transmissions, extra)
+            ],
+        })
+```
+
+(Single-sender entries are exactly as before.) Add, above `random_callsign`:
+
+```python
+def qso_spec(overs: list[Over], senders: list[Sender], freq_offset_hz: float, snr_db: float, start_s: float,
+             **options) -> SignalSpec:
+    """A QSO as one signal. Its text is the whole QSO; its wpm and keying are the first
+    sender's (for summaries); options are further SignalSpec fields (fading_hz, tag, ...)."""
+    return SignalSpec(" ".join(o.text for o in overs), freq_offset_hz, senders[0].wpm, snr_db, start_s,
+                      keying=senders[0].keying, senders=list(senders), overs=list(overs), **options)
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `.venv\Scripts\python -m pytest training -q`
+Expected: all pass, including `test_default_signals_match_milestone_1_generator` and `test_band_defaults_match_milestone_1` (single-sender signals take the unchanged path).
+
+- [ ] **Step 5: Confirm the smoke check is unaffected**
+
+In Git Bash: `bash bench/smoke.sh build/windows`
+Expected: `smoke test passed` with the same CER line as in Task 2, Step 5.
+
+- [ ] **Step 6: Document**
+
+In `docs/signal-processing.md`, section 11, after the **Interferers and tags** bullet, insert:
+
+```markdown
+- **Two-station QSOs** (synthetic recordings, `senders`, `overs`): the two
+  stations of a QSO are one labeled signal, as a receiver hears them on one
+  channel. Over k is keyed at its sender's speed, keying style and
+  imbalance, on its sender's carrier (`freq_offset_hz` + `offset_hz`, Hz)
+  at its sender's level (S₅₀₀ + `relative_db`, dB, noise in 500 Hz), with
+  its sender's own carrier phase and fading path; a silence drawn uniformly
+  from `turn_s` (default 0.5–2.0 s) separates two overs. The labels list
+  each over as a transmission with its sender, speed, style, imbalance,
+  offset and level, so the first word of every over is scored.
+```
+
+- [ ] **Step 7: Commit on the `milestone-2` branch**
+
+```powershell
+git add training/kz4ap_synth/generate.py training/tests/test_generate.py docs/signal-processing.md
+```
+```powershell
+git commit -m "Add two-station QSOs with alternating overs on one frequency to the generator"
+```
+
+---
+
+### Task 7: Bench — word spaces and first words scored separately
 
 Spec §5.4 asks for word spaces to be scored separately from characters, and the backlog for each transmission's first word, where wrong characters concentrate today. One minimum-edit alignment gives all three; the total edit count stays exactly the Levenshtein distance, so the existing CER (and the smoke baseline) keep their meaning.
 
@@ -1320,7 +2175,7 @@ Spec §5.4 asks for word spaces to be scored separately from characters, and the
 - Modify: `docs/signal-processing.md` (§11)
 
 **Interfaces:**
-- Consumes: the labels file of Tasks 1 and 4 (`transmissions`, `score`).
+- Consumes: the labels file of Tasks 2, 5 and 6 (`transmissions`, `score`; a QSO lists each over as a transmission, with extra keys the bench ignores).
 - Produces (C++, namespace `kz4ap::bench`):
   - `struct Transmission { std::string text; double start_s; double end_s; };`
   - `LabeledSignal` gains `std::vector<Transmission> transmissions;` (empty: the whole text is one transmission) and `bool score = true;`.
@@ -1784,9 +2639,9 @@ git commit -m "Score word spaces and each transmission's first word separately i
 
 ---
 
-### Task 6: Engine and bench — oracle channels and CPU time per channel-second
+### Task 8: Engine and bench — oracle channels and CPU time per channel-second
 
-Two measurement tools. **Oracle mode** opens a channel at each labeled frequency, rounded to the FFT bin, from the first sample, and bypasses the detector, so the decoder can be measured below the detector's threshold (about S₅₀₀ = 0 dB) and apart from detection errors; the rounding leaves the frequency tracker (Task 8) the whole ±11.7 Hz bin-rounding offset to find. **CPU time per channel-second** (spec §5.4) is process CPU time divided by the total duration of channel output the decoders received; a second figure counts only the time spent inside decoders.
+Two measurement tools. **Oracle mode** opens a channel at each labeled frequency, rounded to the FFT bin, from the first sample, and bypasses the detector, so the decoder can be measured below the detector's threshold (about S₅₀₀ = 0 dB) and apart from detection errors; the rounding leaves the frequency tracker (Task 10) the whole ±11.7 Hz bin-rounding offset to find. **CPU time per channel-second** (spec §5.4) is process CPU time divided by the total duration of channel output the decoders received; a second figure counts only the time spent inside decoders.
 
 **Files:**
 - Modify: `engine/include/kz4ap/engine.hpp`, `engine/src/engine.cpp`
@@ -1796,11 +2651,11 @@ Two measurement tools. **Oracle mode** opens a channel at each labeled frequency
 - Modify: `docs/signal-processing.md` (§6, §11)
 
 **Interfaces:**
-- Consumes: `score()`, `LabeledSignal` (Task 5).
+- Consumes: `score()`, `LabeledSignal` (Task 7).
 - Produces:
   - `EngineConfig::oracle_frequencies_hz` (`std::vector<double>`, Hz; empty = normal operation). In oracle mode the engine publishes a `Born` event for each frequency from its constructor, with track ids 1, 2, … in order and `freq_hz` = the bin center; no track ever dies; the detector is not run.
   - `struct EngineStats { std::uint64_t channel_samples = 0; double channel_seconds = 0; double decoder_seconds = 0; };` and `EngineStats Engine::stats() const`.
-  - `struct Engine::Channel` gains `int bin` (the channel's center bin; Task 11 uses it).
+  - `struct Engine::Channel` gains `int bin` (the channel's center bin; Task 13 uses it).
   - `double kz4ap::bench::process_cpu_seconds();`
   - `score(labels, tracks, double match_tolerance_hz = 50.0, bool match_by_order = false)`: with `match_by_order`, label i matches the track with id i + 1.
   - `kz4ap-bench --oracle` (needs `--labels`). JSON output gains `channel_seconds` (always) and, unless `--no-timing`, `timing: {wall_s, cpu_s, cpu_ms_per_channel_s, decoder_ms_per_channel_s}`.
@@ -2199,26 +3054,34 @@ git commit -m "Add oracle channels and CPU time per channel-second to the engine
 
 ---
 
-### Task 7: Benchmark suites and runner
+### Task 9: Benchmark suites and runner
 
-Named suites turn the generator's options into a fixed, seeded set of recordings; a runner scores each with `kz4ap-bench` for each front end; a summary reports, per scenario and condition: CER, character CER, space error rate, first-word CER, detections, the S₅₀₀ at which CER crosses 0.10 and 0.05, and CPU time per channel-second.
+Named suites turn the generator's options into a fixed, seeded set of recordings; a runner scores each with `kz4ap-bench` for each front end; a summary reports, per scenario and condition: CER, character CER, space error rate, first-word CER, detections, the S₅₀₀ at which CER crosses 0.10 and 0.05, and CPU time per channel-second; and, for QSOs, the CER of each over by the sending station's keying style.
 
 **Suites.** `smoke` is exactly the recording `bench/smoke.sh` makes (band scenario, 8 signals, 30 s, seed 1, 192 kHz); CI keeps using `smoke.sh`. `full` is for local runs; `--seeds N` repeats it with N seeds. Single-station scenarios run at 48 kHz (the engine then uses N = 2048, the same 23.4 Hz bins and r = 1500 samples/s) with many stations per recording, 1.2–5 kHz apart, so one recording covers a whole S₅₀₀ sweep:
 
 | Group | Recordings (per seed) | Bench mode | What varies |
 |---|---|---|---|
 | A sensitivity | 12, 25, 40 WPM; 60 s | oracle | S₅₀₀ −10 … +20 dB in 2 dB steps (16 stations), machine keying |
-| B fading | paddle 24 WPM f_D 0.1/0.3/1/3 Hz; hand 24 WPM f_D 0.1/3 Hz; paddle 12 WPM f_D 0.1 Hz; 60 s | oracle | S₅₀₀ at VE3NEA's points 1.8, 7.8, 13.8, 17.8, 27.8 dB, 3 stations each |
-| C fists | machine, paddle, bug, hand at 25 WPM; 60 s | oracle | S₅₀₀ 5, 10, 20 dB × imbalance 0, +0.1, −0.1 dit |
+| B fading (VE3NEA-anchored) | paddle and hand at 24 WPM × f_D 0.1/0.3/1/3 Hz; paddle 12 and 40 WPM at f_D 0.1 Hz; one "VE3NEA mix" recording; 60 s each (11 recordings) | oracle | S₅₀₀ at all ten of VE3NEA's points, −8.22 … 57.78 dB, 2 stations each; his Butterworth spectrum, his random-text statistics, δ drawn per station; the mix recording draws style (hand 0.25, paddle 0.50, computer 0.25), speed (12–48 WPM) and f_D (his grid) per station |
+| C fists | machine, computer, paddle, bug, hand at 25 WPM; 60 s | oracle | S₅₀₀ 5, 10, 20 dB × imbalance 0, +0.1, −0.1 dit |
 | D speed | one recording, 60 s | oracle | steps 20→35 and 35→20 WPM, ramps 15→30 and 30→15 WPM, 10 WPM, 60 WPM; S₅₀₀ 15 dB |
 | E interference | one recording, 60 s | oracle | wanted 25 WPM at S₅₀₀ 10 dB; unscored interferer at 30 WPM, Δf = 20/50/100/150 Hz, −10/0/+10/+20 dB relative (key-down power) |
 | F tuning | offsets 0/2.9/5.9/8.8/11.7 Hz from the bin center × 20, 25 WPM × S₅₀₀ 0, 5 dB (60 s); drift 0.2/0.5/1/2 Hz/s at 25 WPM, S₅₀₀ 5 dB (30 s) | oracle | carrier offset and drift |
+| G ragchew | one recording of 12 whole ragchew QSOs, both stations at 25 WPM, paddle, on one carrier; length fitted to the QSOs (about 6 min) | oracle | S₅₀₀ 0, 4, 8, 12, 16, 20 dB, 2 QSOs each: plain-language text, prosigns, abbreviations, and the pauses between overs |
+| H two-station QSO | one recording of 12 whole QSOs; length fitted (about 6 min) | detector | Δf_B = 0, 10, 25, 50 Hz, 3 QSOs each; each operator 20–32 WPM, style from VE3NEA's mix, own δ; the answering station −6 … +6 dB relative to the caller's S₅₀₀ = 15 dB; scored per over |
 | strong | S₅₀₀ 30, 40, 50, 60 dB; 30 s | detector | ghost tracks (false tracks), CER |
 | pauses | a CQ sent 3 times with 2, 5, 10, 20 s pauses; S₅₀₀ 15 dB; 80 s | detector | track lifetime, first words |
 | tune-up | 0.3, 0.6, 1.0, 2.0 s carriers before keying; S₅₀₀ 15 dB; 30 s | detector | the speed-estimate bug |
 | first sample | 4 stations keying from 0 s; 20 s | detector | stations present at the start |
 | crowded | 25 stations within ±5 kHz at minimum spacing 200, 100, 50, 0 Hz; 10–60 WPM; 40 s | detector | crowding, very different speeds side by side |
 | band | 20 stations over 192 kHz, 10–60 WPM, S₅₀₀ 10–60 dB; 30 s | detector | the whole pipeline |
+
+**Group B against VE3NEA's published numbers.** His CER is Levenshtein distance with spaces removed (`deepcw-generator-notes.md` §6), so compare his curves with the **character CER** column, not the CER. What still differs from his benchmark: the oracle channel sits on the nearest FFT bin (the tracker must find up to ±11.7 Hz) where his pitch error is ±30 Hz inside a spectrogram strip; our noise is complex I/Q, his real audio (the same S₅₀₀ for white noise); character and word spaces are one draw each (Task 3); the group has 2 stations per point for 60 s, about 140 characters (spaces excluded) per point at 24 WPM (70 at 12 WPM, 230 at 40 WPM; counted from the generated text), against his 30 000, so a CER near 0.01 rests on one or two errors and its crossings scatter more: compare trends and crossings, not single points, and add seeds (`--seeds`) where a comparison is close.
+
+**Ragchews and QSOs (groups G, H).** A whole QSO at 20–32 WPM takes about 4–8 minutes, so these recordings are sized from the plan of their signals (`_fitted_duration`: the latest end plus 2 s, rounded up to whole seconds) instead of a fixed length. Each is about 70 MB (48 kHz, 16-bit stereo) and takes about 40 s to generate. Group G isolates the text: both stations send at one speed and style on one carrier, so its difference from group A at 25 WPM is the effect of real text and over gaps. Group H is the listener's view of a real QSO and runs through the detector, because whether the pipeline keeps one track when the other station answers 0–50 Hz away is part of what it measures (the bench's match tolerance is 50 Hz from the caller's frequency).
+
+**Per-over scoring.** Each over of a QSO is a transmission in the labels (Task 6), so the bench's first-word CER already scores the first word after every change of station. The summary adds the CER of each over: the runner re-aligns the bench's `reference` and `decoded` strings with the bench's own rule (`charged_edits`, a copy of `align()` in `scoring.cpp`, Task 7) and sums the edits charged to each over's symbols; the word space between two overs belongs to neither. It pools overs by (front end, group, keying style of the sender).
 
 **Crossing S₅₀₀ (definition, written to signal-processing.md §11):** for a condition with at least three S₅₀₀ points, CER is computed per point (edits over symbols, pooled across stations); scanning down from the highest S₅₀₀, the first point whose CER exceeds the threshold and the point above it bracket the crossing, which is interpolated linearly in dB. If the top point already fails, there is no crossing; if no point fails, the lowest point is reported (an upper bound).
 
@@ -2228,8 +3091,8 @@ Named suites turn the generator's options into a fixed, seeded set of recordings
 - Modify: `README.md` (Benchmark section), `docs/signal-processing.md` (§11)
 
 **Interfaces:**
-- Consumes: `SignalSpec`, `generate`, `labels`, `plan_intervals`, `signal_end_s`, `scenario_band`, `with_interferer`, `fill_text`, `random_callsign`, `MESSAGES`, `write_wav` (Tasks 1–4); `kz4ap-bench --oracle` and its JSON fields (Tasks 5–6); `--front-end` (Task 11; the runner passes it only for front ends other than `baseline`).
-- Produces (Python, `kz4ap_synth.suites`): `Recording(name, group, sample_rate, duration_s, noise_seed, oracle, specs)`; `SUITES: dict[str, Callable[[int], list[Recording]]]` with `"smoke"` and `"full"`; `check_recording(rec) -> None` (raises `ValueError`); `write_suite(recordings, out_dir, suite_name) -> None`; `run_suite(out_dir, bench, front_ends) -> None`; `crossing_snr(points, threshold) -> float | None`; `aggregate(rows) -> dict[tuple[str, str, str], dict]`; `write_summary(out_dir) -> None` (writes `summary.json` and `summary.md`). CLI: `python -m kz4ap_synth.suites generate|run|summarize`.
+- Consumes: `ragchew`, `random_operator`, `random_text` (Task 1); `SignalSpec`, `generate`, `labels`, `plan_intervals`, `signal_end_s`, `write_wav` (Task 2); `draw_style`, `draw_imbalance_dits`, `VE3NEA_WPM_RANGE` (Task 3); `fading_shape` (Task 4); `scenario_band`, `with_interferer`, `fill_text`, `random_callsign`, `MESSAGES` (Task 5); `Sender`, `qso_spec` (Task 6); `kz4ap-bench --oracle` and its JSON fields, including each signal's `reference` and `decoded` (Tasks 7–8); `--front-end` (Task 13; the runner passes it only for front ends other than `baseline`); `kz4ap_synth.morse.keying_intervals`, `symbols`.
+- Produces (Python, `kz4ap_synth.suites`): `Recording(name, group, sample_rate, duration_s, noise_seed, oracle, specs)`; `SUITES: dict[str, Callable[[int], list[Recording]]]` with `"smoke"` and `"full"`; `VE3NEA_RHO_DB`, `RHO_TO_S500_DB`, `VE3NEA_SNR_DB`, `VE3NEA_SPREADS_HZ`; `check_recording(rec) -> None` (raises `ValueError`); `write_suite(recordings, out_dir, suite_name) -> None`; `run_suite(out_dir, bench, front_ends) -> None`; `crossing_snr(points, threshold) -> float | None`; `aggregate(rows) -> dict[tuple[str, str, str], dict]`; `charged_edits(reference: list[str], decoded: list[str]) -> list[int]`; `over_rows(out_dir) -> list[dict]`; `aggregate_overs(rows) -> dict[tuple[str, str, str], dict]`; `write_summary(out_dir) -> None` (writes `summary.json`, with `groups`, `overs` and `cpu`, and `summary.md`, ending with a "Per over" section when the suite has QSOs). CLI: `python -m kz4ap_synth.suites generate|run|summarize`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2241,14 +3104,17 @@ import json
 import numpy as np
 import pytest
 
-from kz4ap_synth.generate import SignalSpec, scenario_band
+from kz4ap_synth.generate import Sender, SignalSpec, qso_spec, scenario_band
+from kz4ap_synth.messages import Over
 from kz4ap_synth.suites import (
     SUITES,
     VE3NEA_SNR_DB,
     Recording,
     aggregate,
+    charged_edits,
     check_recording,
     crossing_snr,
+    over_rows,
     write_suite,
     write_summary,
 )
@@ -2268,7 +3134,7 @@ def test_full_suite_recordings_are_valid_and_uniquely_named():
         check_recording(r)
     assert {r.group for r in recs} == {
         "A sensitivity", "B fading", "C fists", "D speed", "E interference", "F tuning",
-        "strong", "pauses", "tune-up", "first sample", "crowded", "band"}
+        "G ragchew", "H two-station QSO", "strong", "pauses", "tune-up", "first sample", "crowded", "band"}
 
 
 def test_full_suite_covers_the_scenarios():
@@ -2277,7 +3143,12 @@ def test_full_suite_covers_the_scenarios():
     assert min(s.snr_db for s in specs) == -10.0
     assert set(VE3NEA_SNR_DB) <= {s.snr_db for s in specs if s.fading_hz > 0}
     assert {s.fading_hz for s in specs} >= {0.1, 0.3, 1.0, 3.0}
-    assert {s.keying for s in specs} == {"machine", "paddle", "bug", "hand"}
+    assert {s.keying for s in specs} == {"machine", "computer", "paddle", "bug", "hand"}
+    assert {s.fading_shape for s in specs if s.fading_hz > 0} == {"butterworth"}
+    qsos = [s for s in specs if s.overs]
+    assert {s.senders[1].offset_hz for s in qsos} == {0.0, 10.0, 25.0, 50.0}
+    assert any(s.senders[0].wpm != s.senders[1].wpm for s in qsos)
+    assert all(s.overs[-1].text.endswith("<SK>") for s in qsos)
     assert any(not s.score for s in specs)
     assert {s.pause_s for s in specs if s.repeats > 1} == {2.0, 5.0, 10.0, 20.0}
     assert {s.tune_s for s in specs if s.tune_s > 0} == {0.3, 0.6, 1.0, 2.0}
@@ -2348,6 +3219,47 @@ def test_write_suite_and_summary_round_trip(tmp_path):
     assert "## A sensitivity" in text
     assert "| 25 wpm | baseline | 1 | 1 | 0.500 |" in text
     assert "| baseline | 3.0 | 10.000 | 1.000 |" in text
+
+
+def test_ve3nea_points_are_his_3_khz_snr_plus_7_78_db():
+    assert VE3NEA_SNR_DB[0] == -8.22
+    assert VE3NEA_SNR_DB[-1] == 57.78
+    assert len(VE3NEA_SNR_DB) == 10
+
+
+def _charged(reference, decoded):
+    return charged_edits(list(reference), list(decoded))
+
+
+def test_charged_edits_follow_the_bench_rule():
+    assert _charged("CQ", "RQ") == [1, 0]
+    assert _charged("AB", "AXB") == [0, 1]
+    assert _charged("AB", "ABX") == [0, 1]
+    assert _charged("AB", "XAB") == [1, 0]
+    assert sum(_charged("KITTEN", "SITTING")) == 3
+    assert sum(_charged("", "ABC")) == 0 and _charged("ABC", "") == [1, 1, 1]
+
+
+def test_over_rows_split_a_qso_by_over(tmp_path):
+    senders = [Sender("K1ABC", 25.0, "paddle"), Sender("W9XYZ", 30.0, "hand")]
+    spec = qso_spec([Over(0, "CQ K1ABC"), Over(1, "K1ABC <KN>")], senders, 1000.0, 10.0, 0.5, tag="offset 0 Hz",
+                    turn_s=(0.5, 0.5))
+    rec = Recording("qso", "H two-station QSO", 8000, 12.0, 5, False, [spec])
+    write_suite([rec], tmp_path, "test")
+    results = tmp_path / "results" / "baseline"
+    results.mkdir(parents=True)
+    (results / "qso.json").write_text(json.dumps({
+        "score": {"signals": [{"index": 0, "snr_db": 10.0, "wpm": 25.0, "scored": True, "track_id": 1,
+                               "reference": "CQ K1ABC K1ABC <KN>", "decoded": "CQ K1ABC K1AEC <KN>",
+                               "symbols": 19, "edits": 1, "chars": 16, "char_edits": 1, "spaces": 3,
+                               "space_edits": 0, "first_word_symbols": 7, "first_word_edits": 0}]}}))
+    rows = over_rows(tmp_path)
+    assert [(r["sender"], r["keying"], r["symbols"], r["edits"]) for r in rows] == [
+        ("K1ABC", "paddle", 8, 0), ("W9XYZ", "hand", 7, 1)]
+    write_summary(tmp_path)
+    text = (tmp_path / "summary.md").read_text(encoding="utf-8")
+    assert "## Per over" in text
+    assert "| H two-station QSO | hand | baseline | 1 | 0.143 |" in text
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -2371,31 +3283,48 @@ scores each with kz4ap-bench, and a summary.
 "smoke" is the recording bench/smoke.sh makes (the CI check); "full" is for
 local runs. S500 everywhere: key-down carrier power over noise power in
 500 Hz, dB.
+
+Group B is anchored to VE3NEA's DeepCW benchmark: his Butterworth fading
+spectrum and f_D grid, his SNR points converted to S500 (his key-on SNR in
+3 kHz + 7.78 dB), his keying styles with a per-operator imbalance, his style
+mix and speed range (one recording), and filler text with his statistics.
+Groups G and H send whole ragchew QSOs (G: one speed and style for both
+stations; H: two operators near one frequency); the summary also scores
+each over.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
-from .generate import (MESSAGES, SignalSpec, fill_text, generate, labels, plan_intervals, random_callsign,
-                       scenario_band, signal_end_s, with_interferer, write_wav)
+from .generate import (MESSAGES, Sender, SignalSpec, fill_text, generate, labels, plan_intervals, qso_spec,
+                       random_callsign, scenario_band, signal_end_s, with_interferer, write_wav)
+from .keying import VE3NEA_WPM_RANGE, draw_imbalance_dits, draw_style
+from .messages import ragchew as ragchew_overs
+from .messages import random_operator, random_text
+from .morse import keying_intervals, symbols
 
 BIN_HZ = 48000 / 2048  # the engine's FFT bin width at 48 kHz (and at 192 kHz), Hz
 SWEEP_SNR_DB = [float(x) for x in range(-10, 22, 2)]  # S500 sweep: -10 ... +20 dB
-VE3NEA_SNR_DB = [1.8, 7.8, 13.8, 17.8, 27.8]         # VE3NEA's grid as S500 (his 3 kHz key-on SNR + 7.8 dB)
+VE3NEA_RHO_DB = (-16.0, -12.0, -6.0, -3.0, 0.0, 6.0, 10.0, 20.0, 30.0, 50.0)  # his key-on SNR, noise in 3 kHz, dB
+RHO_TO_S500_DB = 10 * math.log10(3000.0 / 500.0)  # 7.78 dB: the same white noise measured in 500 Hz, not 3 kHz
+VE3NEA_SNR_DB = [round(r + RHO_TO_S500_DB, 2) for r in VE3NEA_RHO_DB]  # S500: -8.22 ... 57.78 dB
+VE3NEA_SPREADS_HZ = (0.1, 0.3, 1.0, 3.0)  # his f_D grid, Hz
 CER_THRESHOLDS = (0.05, 0.10)
 FRONT_ENDS = ("baseline", "matched")
 COUNT_KEYS = ("symbols", "edits", "chars", "char_edits", "spaces", "space_edits",
               "first_word_symbols", "first_word_edits")
 
-FADING_ROWS = [("paddle", 24.0, 0.1), ("paddle", 24.0, 0.3), ("paddle", 24.0, 1.0), ("paddle", 24.0, 3.0),
-               ("hand", 24.0, 0.1), ("hand", 24.0, 3.0), ("paddle", 12.0, 0.1)]  # (keying, WPM, f_D Hz)
+FADING_ROWS = ([(keying, 24.0, f_d) for keying in ("paddle", "hand") for f_d in VE3NEA_SPREADS_HZ]
+               + [("paddle", 12.0, 0.1), ("paddle", 40.0, 0.1)])  # (keying, WPM, f_D Hz)
+FIST_STYLES = ("machine", "computer", "paddle", "bug", "hand")
 SPEED_CASES = [(20.0, 35.0, "step", "step 20->35"), (35.0, 20.0, "step", "step 35->20"),
                (15.0, 30.0, "ramp", "ramp 15->30"), (30.0, 15.0, "ramp", "ramp 30->15"),
                (10.0, None, "step", "10 wpm"), (60.0, None, "step", "60 wpm")]
@@ -2406,6 +3335,9 @@ DRIFT_HZ_PER_S = (0.2, 0.5, 1.0, 2.0)
 PAUSES_S = (2.0, 5.0, 10.0, 20.0)
 TUNE_UP_S = (0.3, 0.6, 1.0, 2.0)
 CROWDED_SPACING_HZ = (200.0, 100.0, 50.0, 0.0)
+RAGCHEW_SNR_DB = (0.0, 4.0, 8.0, 12.0, 16.0, 20.0)
+QSO_OFFSETS_HZ = (0.0, 10.0, 25.0, 50.0)  # the answering station's carrier offset from the caller's, Hz
+QSO_WPM_RANGE = (20.0, 32.0)
 
 
 @dataclass
@@ -2426,6 +3358,26 @@ def _message(rng) -> str:
 def _text(rng, wpm: float, available_s: float, keying: str = "machine") -> str:
     """A repeated contest message that fits available_s; random keying runs longer, so it gets 30% slack."""
     return fill_text(_message(rng), wpm, available_s * (1.0 if keying == "machine" else 0.7))
+
+
+def _filler(rng, wpm: float, available_s: float) -> str:
+    """VE3NEA-statistics random text (messages.random_text) that fits 70% of available_s
+    at exact timing, leaving 30% for random keying to run long."""
+    words = random_text(rng, 400).split()
+    lo, hi = 1, len(words)
+    while lo < hi:  # the longest prefix that fits
+        mid = (lo + hi + 1) // 2
+        if keying_intervals(" ".join(words[:mid]), wpm)[-1][1] <= 0.7 * available_s:
+            lo = mid
+        else:
+            hi = mid - 1
+    return " ".join(words[:lo])
+
+
+def _fitted_duration(specs: list[SignalSpec], noise_seed: int) -> float:
+    """The recording length that holds every signal, plus 2 s, rounded up to whole seconds."""
+    ends = [signal_end_s(s, p) for s, p in zip(specs, plan_intervals(specs, noise_seed))]
+    return float(math.ceil(max(ends) + 2.0))
 
 
 def _start(rng) -> float:
@@ -2458,23 +3410,37 @@ def sensitivity(seed: int) -> list[Recording]:
 
 
 def fading(seed: int) -> list[Recording]:
+    """VE3NEA-anchored: his Butterworth fading spectrum and f_D grid, his SNR points (as S500),
+    his keying styles with a per-operator imbalance, and his random-text statistics."""
     recs = []
+    points = [snr for snr in VE3NEA_SNR_DB for _ in range(2)]
     for code, (keying, wpm, f_d) in enumerate(FADING_ROWS):
         rng = np.random.default_rng([seed, 2, code])
-        points = [snr for snr in VE3NEA_SNR_DB for _ in range(3)]
         specs = []
         for f, snr in zip(_slots(len(points), 1200.0, rng, BIN_HZ / 2), points):
             start = _start(rng)
-            specs.append(SignalSpec(_text(rng, wpm, 58.0 - start, keying), f, wpm, snr, start, keying=keying,
-                                    fading_hz=f_d, tag=f"{keying} {wpm:g} wpm fD {f_d:g} Hz"))
+            specs.append(SignalSpec(_filler(rng, wpm, 58.0 - start), f, wpm, snr, start, keying=keying,
+                                    imbalance_dits=round(draw_imbalance_dits(rng), 3), fading_hz=f_d,
+                                    fading_shape="butterworth", tag=f"{keying} {wpm:g} wpm fD {f_d:g} Hz"))
         recs.append(Recording(f"B-fading-{keying}-{wpm:g}wpm-{f_d:g}Hz-s{seed}", "B fading", 48000, 60.0,
                               1000 * seed + 20 + code, True, specs))
+    rng = np.random.default_rng([seed, 2, len(FADING_ROWS)])
+    specs = []
+    for f, snr in zip(_slots(len(points), 1200.0, rng, BIN_HZ / 2), points):
+        start = _start(rng)
+        wpm = round(float(rng.uniform(*VE3NEA_WPM_RANGE)), 1)
+        f_d = float(rng.choice(VE3NEA_SPREADS_HZ))
+        specs.append(SignalSpec(_filler(rng, wpm, 58.0 - start), f, wpm, snr, start, keying=draw_style(rng),
+                                imbalance_dits=round(draw_imbalance_dits(rng), 3), fading_hz=f_d,
+                                fading_shape="butterworth", tag="VE3NEA mix"))
+    recs.append(Recording(f"B-fading-mix-s{seed}", "B fading", 48000, 60.0, 1000 * seed + 20 + len(FADING_ROWS),
+                          True, specs))
     return recs
 
 
 def fists(seed: int) -> list[Recording]:
     recs = []
-    for code, keying in enumerate(("machine", "paddle", "bug", "hand")):
+    for code, keying in enumerate(FIST_STYLES):
         rng = np.random.default_rng([seed, 3, code])
         combos = [(snr, imb) for snr in (5.0, 10.0, 20.0) for imb in (0.0, 0.1, -0.1)]
         specs = []
@@ -2591,6 +3557,39 @@ def band(seed: int) -> list[Recording]:
     return [Recording(f"band-s{seed}", "band", 192000, 30.0, 1000 * seed + 120, False, specs)]
 
 
+def ragchew(seed: int) -> list[Recording]:
+    """Whole ragchew QSOs, both sides on one frequency at one speed and style, so only the
+    text (prosigns, abbreviations, overs and the pauses between them) differs from group A."""
+    rng = np.random.default_rng([seed, 13])
+    points = [snr for snr in RAGCHEW_SNR_DB for _ in range(2)]
+    specs = []
+    for f, snr in zip(_slots(len(points), 1500.0, rng, BIN_HZ / 2), points):
+        a, b = random_operator(rng), random_operator(rng)
+        senders = [Sender(a.call, 25.0, "paddle"), Sender(b.call, 25.0, "paddle")]
+        specs.append(qso_spec(ragchew_overs(rng, a, b), senders, f, snr, _start(rng), tag="ragchew 25 wpm"))
+    noise_seed = 1000 * seed + 130
+    return [Recording(f"G-ragchew-s{seed}", "G ragchew", 48000, _fitted_duration(specs, noise_seed), noise_seed,
+                      True, specs)]
+
+
+def two_station_qso(seed: int) -> list[Recording]:
+    """Whole ragchew QSOs as a listener hears them: two operators near one frequency, each
+    with their own speed, keying style (VE3NEA's mix), imbalance and level, taking turns."""
+    rng = np.random.default_rng([seed, 14])
+    offsets = [df for df in QSO_OFFSETS_HZ for _ in range(3)]
+    specs = []
+    for f, df in zip(_slots(len(offsets), 2400.0, rng, BIN_HZ / 2), offsets):
+        a, b = random_operator(rng), random_operator(rng)
+        senders = [Sender(op.call, round(float(rng.uniform(*QSO_WPM_RANGE)), 1), draw_style(rng),
+                          round(draw_imbalance_dits(rng), 3)) for op in (a, b)]
+        senders[1].offset_hz = df
+        senders[1].relative_db = round(float(rng.uniform(-6.0, 6.0)), 1)
+        specs.append(qso_spec(ragchew_overs(rng, a, b), senders, f, 15.0, _start(rng), tag=f"offset {df:g} Hz"))
+    noise_seed = 1000 * seed + 140
+    return [Recording(f"H-qso-s{seed}", "H two-station QSO", 48000, _fitted_duration(specs, noise_seed),
+                      noise_seed, False, specs)]
+
+
 def smoke_suite(seeds: int = 1) -> list[Recording]:
     """The recording bench/smoke.sh makes: band scenario, 8 signals, 30 s, seed 1 (noise seed 2)."""
     specs = scenario_band(np.random.default_rng(1), 8, 30.0, 192000)
@@ -2600,8 +3599,8 @@ def smoke_suite(seeds: int = 1) -> list[Recording]:
 def full_suite(seeds: int = 1) -> list[Recording]:
     recs = []
     for seed in range(1, seeds + 1):
-        for build in (sensitivity, fading, fists, speed, interference, tuning, strong, pauses, tune_up,
-                      first_sample, crowded, band):
+        for build in (sensitivity, fading, fists, speed, interference, tuning, ragchew, two_station_qso, strong,
+                      pauses, tune_up, first_sample, crowded, band):
             recs += build(seed)
     return recs
 
@@ -2731,6 +3730,92 @@ def load_results(out_dir: Path):
     return rows, timings
 
 
+def charged_edits(reference: list[str], decoded: list[str]) -> list[int]:
+    """Edits charged to each reference symbol, by the bench's rule (scoring.cpp align()):
+    one minimum-edit alignment, ties broken from the end as match or substitution, then
+    deletion, then insertion; an insertion is charged to the reference symbol it precedes
+    (the last one after the end)."""
+    n, m = len(reference), len(decoded)
+    d = np.zeros((n + 1, m + 1), dtype=np.int64)
+    d[0] = np.arange(m + 1)
+    cols = np.arange(m + 1)
+    dec = np.array(decoded, dtype=object)
+    for i in range(1, n + 1):
+        base = np.empty(m + 1, dtype=np.int64)
+        base[0] = i
+        base[1:] = np.minimum(d[i - 1, 1:] + 1, d[i - 1, :-1] + (dec != reference[i - 1]))
+        d[i] = np.minimum.accumulate(base - cols) + cols  # the insertions along the row
+    charged = [0] * n
+    i, j = n, m
+    while i > 0 or j > 0:
+        if i > 0 and j > 0:
+            same = reference[i - 1] == decoded[j - 1]
+            if d[i, j] == d[i - 1, j - 1] + (0 if same else 1):
+                if not same:
+                    charged[i - 1] += 1
+                i, j = i - 1, j - 1
+                continue
+        if i > 0 and d[i, j] == d[i - 1, j] + 1:
+            charged[i - 1] += 1
+            i -= 1
+            continue
+        if n > 0:
+            charged[min(i, n - 1)] += 1
+        j -= 1
+    return charged
+
+
+def over_rows(out_dir: Path) -> list[dict]:
+    """One row per over of every scored QSO signal (labels whose transmissions name a sender):
+    the over's reference symbols and the edits charged to them. The word space between two
+    overs belongs to neither."""
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    rows = []
+    for fe_dir in sorted(p for p in (out_dir / "results").iterdir() if p.is_dir()):
+        for rec in manifest["recordings"]:
+            path = fe_dir / f"{rec['name']}.json"
+            if not path.exists():
+                continue
+            label_signals = json.loads((out_dir / rec["labels"]).read_text())["signals"]
+            for sig in json.loads(path.read_text())["score"]["signals"]:
+                label = label_signals[sig["index"]]
+                overs = label.get("transmissions", [])
+                if not sig["scored"] or not overs or "sender" not in overs[0]:
+                    continue
+                charged = charged_edits(symbols(sig["reference"]), symbols(sig["decoded"]))
+                pos = 0
+                for k, over in enumerate(overs):
+                    count = len(symbols(over["text"]))
+                    rows.append({"front_end": fe_dir.name, "group": rec["group"], "tag": label.get("tag", ""),
+                                 "over": k, "sender": over["sender"], "keying": over["keying"],
+                                 "wpm": over["wpm"], "symbols": count, "edits": sum(charged[pos:pos + count])})
+                    pos += count + 1
+    return rows
+
+
+def aggregate_overs(rows) -> dict:
+    """Per-over CER pooled by (front end, group, keying style of the over's sender)."""
+    groups: dict = {}
+    for r in rows:
+        g = groups.setdefault((r["front_end"], r["group"], r["keying"]), {"overs": 0, "symbols": 0, "edits": 0})
+        g["overs"] += 1
+        g["symbols"] += r["symbols"]
+        g["edits"] += r["edits"]
+    return {k: {**g, "cer": _ratio(g["edits"], g["symbols"])} for k, g in groups.items()}
+
+
+def format_overs_markdown(agg: dict) -> str:
+    if not agg:
+        return ""
+    lines = ["## Per over", "",
+             "CER of each over (from its first to its last symbol) pooled by the sending station's "
+             "keying style; the first-word CER above already scores the first word of every over.", "",
+             "| group | keying | front end | overs | CER |", "|---|---|---|---|---|"]
+    for (fe, group, keying), v in sorted(agg.items(), key=lambda kv: (kv[0][1], kv[0][2], kv[0][0])):
+        lines.append(f"| {group} | {keying} | {fe} | {v['overs']} | {v['cer']:.3f} |")
+    return "\n".join(lines) + "\n"
+
+
 def cpu_summary(timings) -> dict:
     out: dict = {}
     for t in timings:
@@ -2778,9 +3863,13 @@ def write_summary(out_dir: Path) -> None:
     rows, timings = load_results(out_dir)
     agg = aggregate(rows)
     cpu = cpu_summary(timings)
+    overs = aggregate_overs(over_rows(out_dir))
     groups = [{"front_end": fe, "group": g, "tag": tag, **v} for (fe, g, tag), v in sorted(agg.items())]
-    (out_dir / "summary.json").write_text(json.dumps({"groups": groups, "cpu": cpu}, indent=2) + "\n")
-    (out_dir / "summary.md").write_text(format_markdown(agg, cpu), encoding="utf-8")
+    per_over = [{"front_end": fe, "group": g, "keying": k, **v} for (fe, g, k), v in sorted(overs.items())]
+    (out_dir / "summary.json").write_text(json.dumps({"groups": groups, "overs": per_over, "cpu": cpu}, indent=2)
+                                          + "\n")
+    (out_dir / "summary.md").write_text(format_markdown(agg, cpu) + "\n" + format_overs_markdown(overs),
+                                        encoding="utf-8")
     print(f"wrote {out_dir / 'summary.md'}")
 
 
@@ -2813,7 +3902,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `.venv\Scripts\python -m pytest training -q`
-Expected: all pass. If `test_full_suite_recordings_are_valid_and_uniquely_named` reports a signal that runs past the end (random keying ran long), shorten that builder's `available_s` by 2 s and re-run; do not lengthen the recording.
+Expected: all pass. If `test_full_suite_recordings_are_valid_and_uniquely_named` reports a signal that runs past the end (random keying ran long), shorten that builder's `available_s` by 2 s and re-run; do not lengthen the recording. (Groups G and H cannot run past the end: their length is fitted to their signals.)
 
 - [ ] **Step 5: Run the full suite once with the baseline**
 
@@ -2823,7 +3912,7 @@ $env:PYTHONPATH = "training"
 .venv\Scripts\python -m kz4ap_synth.suites run --out build/suite/full --bench build/windows/bench/Release/kz4ap-bench.exe --front-end baseline
 .venv\Scripts\python -m kz4ap_synth.suites summarize --out build/suite/full
 ```
-Expected: one `baseline <name>: CER …` line per recording (about 30), then `wrote build\suite\full\summary.md`. Open it: every group has a table; group A has S₅₀₀ crossings for 12, 25 and 40 WPM. These are the baseline's numbers before any front-end work; keep the file (it is under `build/`, not committed) for Task 12.
+Expected: one `baseline <name>: CER …` line per recording (34), then `wrote build\suite\full\summary.md`. Open it: every group has a table; group A has S₅₀₀ crossings for 12, 25 and 40 WPM; group B has one row per f_D and style plus "VE3NEA mix"; the file ends with a "Per over" table for groups G and H. The suite needs about 0.4 GB of disk (the G and H recordings are about 70 MB each). These are the baseline's numbers before any front-end work; keep the file (it is under `build/`, not committed) for Task 14.
 
 - [ ] **Step 6: Document**
 
@@ -2832,9 +3921,18 @@ In `docs/signal-processing.md`, section 11, add at the end:
 ```markdown
 - **Suites** (`training/kz4ap_synth/suites.py`): `smoke` is the CI
   recording; `full` covers sensitivity (oracle, S₅₀₀ −10 … +20 dB at 12, 25
-  and 40 WPM), fading (VE3NEA's grid), fists, speed changes, interference,
-  tuning offsets and drift, strong signals, pauses, tune-up carriers,
-  stations present from the first sample, crowded bands and a whole band.
+  and 40 WPM), fading anchored to VE3NEA's DeepCW benchmark (his
+  Butterworth spectrum, f_D grid 0.1, 0.3, 1, 3 Hz, his ten SNR points as
+  S₅₀₀ = his 3 kHz key-on SNR + 7.78 dB, his styles, imbalance, style mix
+  and text statistics; compare his curves with character CER, since his CER
+  ignores spaces), fists, speed changes, interference, tuning offsets and
+  drift, whole ragchew QSOs (one station's speed and style for both sides),
+  two-station QSOs 0–50 Hz apart with each operator's own speed, style,
+  imbalance and level, strong signals, pauses, tune-up carriers, stations
+  present from the first sample, crowded bands and a whole band.
+  **Per-over CER** (QSOs): the edits charged to an over's reference
+  symbols by the benchmark's alignment, over those symbols; the word space
+  between two overs belongs to neither.
   **S₅₀₀ at a CER threshold:** for a condition with at least three S₅₀₀
   points, CER per point is pooled over its stations; scanning down from the
   highest S₅₀₀, the first point above the threshold and the one above it
@@ -2867,9 +3965,9 @@ git commit -m "Add named benchmark suites with a runner and summary"
 
 ---
 
-### Task 8: Frequency tracker
+### Task 10: Frequency tracker
 
-The prerequisite of spec §5.2 step 1: re-center each station finely and follow its drift. `FrequencyTracker` is a numerically controlled oscillator (NCO) plus a lag-product frequency discriminator, as specified under "Design decisions, B". This task builds and tests it on its own; Task 10 puts it in front of the matched filter.
+The prerequisite of spec §5.2 step 1: re-center each station finely and follow its drift. `FrequencyTracker` is a numerically controlled oscillator (NCO) plus a lag-product frequency discriminator, as specified under "Design decisions, B". This task builds and tests it on its own; Task 12 puts it in front of the matched filter.
 
 **Files:**
 - Create: `engine/include/kz4ap/frequency_tracker.hpp`, `engine/src/frequency_tracker.cpp`
@@ -3241,9 +4339,9 @@ git commit -m "Add a per-station frequency tracker: NCO and lag-product discrimi
 
 ---
 
-### Task 9: Matched front end
+### Task 11: Matched front end
 
-Spec §5.2 step 1 proper: a complex filter matched to the current dit estimate, before envelope detection, and a Rician-versus-Rayleigh log-likelihood ratio from running estimates of the noise and the key-down amplitude, as specified under "Design decisions, C". This task builds and tests `MatchedFrontEnd` on its own; Task 10 wires it into the decoder.
+Spec §5.2 step 1 proper: a complex filter matched to the current dit estimate, before envelope detection, and a Rician-versus-Rayleigh log-likelihood ratio from running estimates of the noise and the key-down amplitude, as specified under "Design decisions, C". This task builds and tests `MatchedFrontEnd` on its own; Task 12 wires it into the decoder.
 
 **Files:**
 - Create: `engine/include/kz4ap/matched_front_end.hpp`, `engine/src/matched_front_end.cpp`
@@ -3841,7 +4939,7 @@ git commit -m "Add the dit-matched front end with Rician/Rayleigh log-likelihood
 
 ---
 
-### Task 10: Classical decoder — the Matched mode
+### Task 12: Classical decoder — the Matched mode
 
 The minimal way for the baseline decoder to consume the front end (Design decisions, C): in `FrontEnd::Matched` each sample goes through the tracker's NCO, then the matched filter; the tracker observes the filter's output weighted by the key-down posterior; the key goes down when the posterior log-odds g exceeds +h and up when it falls below −h (h = 1 nat), and never goes down while a < a_min. The envelope smoother, the 40%/60% thresholds, the mark/space followers, the warm-up and the M ≥ 3·S squelch are not used in this mode; glitch rejection, element classification, gaps, symbols and speed estimation are shared. `FrontEnd::Envelope` stays the default and must produce exactly what it produced before (the existing tests and the smoke CER pin it).
 
@@ -3852,7 +4950,7 @@ The minimal way for the baseline decoder to consume the front end (Design decisi
 - Modify: `docs/signal-processing.md` (§8, §8b, §9, §10)
 
 **Interfaces:**
-- Consumes: `FrequencyTracker`, `FrequencyTrackerConfig` (Task 8); `MatchedFrontEnd`, `MatchedFrontEndConfig`, `FrontEndSample` (Task 9).
+- Consumes: `FrequencyTracker`, `FrequencyTrackerConfig` (Task 10); `MatchedFrontEnd`, `MatchedFrontEndConfig`, `FrontEndSample` (Task 11).
 - Produces:
   - `DecodeUpdate` gains `std::optional<double> freq_offset_hz;` — the decoder's estimate of the station's offset from its channel center, Hz; set only by decoders that track frequency.
   - `enum class FrontEnd { Envelope, Matched };`
@@ -4214,7 +5312,7 @@ git commit -m "Add a Matched front-end mode to the classical decoder, keying on 
 
 ---
 
-### Task 11: Engine — re-centering from the detector, refined frequency, drift retune, `--front-end`
+### Task 13: Engine — re-centering from the detector, refined frequency, drift retune, `--front-end`
 
 Wires the Matched mode into the pipeline. The decoder of a new track starts its NCO at the detector's residual (track frequency minus channel center), so the tracker starts within a few Hz instead of ±11.7 Hz. In Matched mode the engine publishes the tracked frequency (channel center plus the decoder's estimate) in every `DecodedTextEvent`, and moves the detector's track to it (`SignalDetector::retune`), so a drifting station keeps its one track and its level is read where it now is. `kz4ap-bench --front-end matched` selects the mode.
 
@@ -4226,7 +5324,7 @@ Wires the Matched mode into the pipeline. The decoder of a new track starts its 
 - Modify: `docs/signal-processing.md` (§6, §7)
 
 **Interfaces:**
-- Consumes: `EngineConfig::decoder.front_end`, `ClassicalDecoder(double, ClassicalDecoderConfig, double initial_offset_hz)`, `DecodeUpdate::freq_offset_hz` (Task 10); `Engine::Channel::bin`, `open_channel`, oracle mode (Task 6).
+- Consumes: `EngineConfig::decoder.front_end`, `ClassicalDecoder(double, ClassicalDecoderConfig, double initial_offset_hz)`, `DecodeUpdate::freq_offset_hz` (Task 12); `Engine::Channel::bin`, `open_channel`, oracle mode (Task 8).
 - Produces:
   - `void SignalDetector::retune(std::uint32_t id, double freq_hz);` — moves an active track to `freq_hz` (Hz from the span's center): its bin becomes the nearest bin and its `freq_hz` the given value; unknown ids are ignored.
   - Engine behavior: decoders are created with `initial_offset_hz = track.freq_hz − bin_to_hz(bin)`; when an update carries `freq_offset_hz`, the channel's track frequency becomes `bin_to_hz(bin) + *freq_offset_hz`, which `DecodedTextEvent::freq_hz` and the `Died` event then report, and (outside oracle mode) the detector's track is retuned to it.
@@ -4451,7 +5549,7 @@ In Git Bash:
 bash bench/smoke.sh build/windows
 build/windows/bench/Release/kz4ap-bench.exe build/windows/smoke/band.wav --labels build/windows/smoke/band.json --front-end matched --no-timing
 ```
-Expected: `smoke test passed` with the baseline's usual CER; the second command prints a `CER …` line for the matched front end (write it down for Task 12) and `detected 8 of 8`.
+Expected: `smoke test passed` with the baseline's usual CER; the second command prints a `CER …` line for the matched front end (write it down for Task 14) and `detected 8 of 8`.
 
 - [ ] **Step 8: Document**
 
@@ -4481,9 +5579,9 @@ git commit -m "Re-center stations from the detector's estimate, publish and trac
 
 ---
 
-### Task 12: Measure, document, and guard the new path in CI
+### Task 14: Measure, document, and guard the new path in CI
 
-Spec §5.4: "No decoder replaces the baseline unless it beats the baseline on the benchmark." This task runs the full suite on both front ends, adds the one missing measurement (how far the tracked frequency is from the truth), writes the numbers into the documents, and adds a CI smoke check for the Matched path. It does **not** change the default front end: that is the owner's decision, made on these numbers.
+Spec §5.4: "No decoder replaces the baseline unless it beats the baseline on the benchmark." This task runs the full suite on both front ends, adds the one missing measurement (how far the tracked frequency is from the truth), writes the numbers into the documents, and adds a CI smoke check for the Matched path. It does **not** change the default front end and does **not** tune the Matched front end's parameters: the owner decided on 2026-09-27 to defer both decisions until these measurements exist, so this task measures, records, and hands both questions to the owner with the numbers. No step below may edit `ClassicalDecoderConfig`'s defaults or a Matched parameter value.
 
 **Files:**
 - Modify: `bench/src/scoring.hpp` (`DecodedTrack::last_freq_hz`), `bench/src/main.cpp`
@@ -4555,7 +5653,7 @@ $env:PYTHONPATH = "training"
 .venv\Scripts\python -m kz4ap_synth.suites run --out build/suite/full2 --bench build/windows/bench/Release/kz4ap-bench.exe --front-end baseline --front-end matched
 .venv\Scripts\python -m kz4ap_synth.suites summarize --out build/suite/full2
 ```
-Expected: about 60 recordings, each scored twice; `build\suite\full2\summary.md` has a baseline and a matched row for every condition, and a CPU table with both front ends. Close other heavy programs while it runs, since CPU time is being measured.
+Expected: 68 recordings, each scored twice (the two ragchew and two QSO recordings take the longest: about 6 min of audio each); `build\suite\full2\summary.md` has a baseline and a matched row for every condition, and a CPU table with both front ends. Close other heavy programs while it runs, since CPU time is being measured.
 
 Also record the machine: `Get-CimInstance Win32_Processor | Select-Object -ExpandProperty Name`.
 
@@ -4564,7 +5662,7 @@ Also record the machine: `Get-CimInstance Win32_Processor | Select-Object -Expan
 Read `summary.md` and check, before trusting it:
 - Group A: the baseline's S₅₀₀ at CER 0.10 should be in the region the detector-free baseline can reach (a few dB above 0 dB S₅₀₀; the squelch alone stops it near +6 dB by estimate). A matched crossing *higher* than the baseline's means a bug, not a result: debug it (superpowers:systematic-debugging) before going on.
 - Group F: the matched front end's CER should not depend on the offset (0 to 11.7 Hz) by more than the run-to-run spread between offsets of the same S₅₀₀; its median frequency error should be within the ±2 Hz target at S₅₀₀ = 5 dB.
-- The smoke recording's baseline CER (run `bash bench/smoke.sh build/windows`) must equal the value written down in Task 1, Step 5: if it moved, the baseline was changed by accident — find and fix that first.
+- The smoke recording's baseline CER (run `bash bench/smoke.sh build/windows`) must equal the value written down in Task 2, Step 5: if it moved, the baseline was changed by accident — find and fix that first.
 
 - [ ] **Step 6: Write the measured results into `docs/signal-processing.md`**
 
@@ -4575,7 +5673,7 @@ At the end of section 8b add a subsection, filling every cell from `build/suite/
 
 Full suite, 2 seeds, synthetic recordings (`kz4ap_synth.suites`), on
 <processor>. S₅₀₀: key-down carrier power over noise power in 500 Hz, dB.
-Groups A–F use oracle channels (detector bypassed, channel on the nearest
+Groups A–G use oracle channels (detector bypassed, channel on the nearest
 bin); the rest run the whole pipeline.
 
 | Condition | Envelope: S₅₀₀ at CER 0.10 / 0.05 (dB) | Matched: S₅₀₀ at CER 0.10 / 0.05 (dB) |
@@ -4586,7 +5684,18 @@ bin); the rest run the whole pipeline.
 
 | Condition | Envelope: CER / character CER / space error rate / first-word CER | Matched: same |
 |---|---|---|
-| (one row per tag of groups B–F and of strong, pauses, tune-up, first sample, crowded, band, copied from summary.md) | … | … |
+| (one row per tag of groups B–H and of strong, pauses, tune-up, first sample, crowded, band, copied from summary.md) | … | … |
+
+| Per over (groups G and H, from the "Per over" table) | Envelope: CER | Matched: CER |
+|---|---|---|
+| (one row per group and keying style of the sending station) | … | … |
+
+| Group B against VE3NEA (character CER; his CER ignores spaces) | VE3NEA DeepCW | CW Skimmer (his measurement) | Envelope | Matched |
+|---|---|---|---|---|
+| Paddle, 24 WPM, f_D 0.1 Hz, S₅₀₀ 1.78 / 7.78 / 17.78 / 57.78 dB | 0.373 / 0.137 / 0.025 / 0.005 | 0.364 / 0.101 / 0.022 / 0.011 | … | … |
+| HandKey, 24 WPM, f_D 0.1 Hz, S₅₀₀ 1.78 / 7.78 / 17.78 / 57.78 dB | 0.412 / 0.186 / 0.082 / 0.063 | 0.429 / 0.188 / 0.091 / 0.083 | … | … |
+
+(VE3NEA's values are from `docs/research/deepcw-generator-notes.md` §6, his ρ = −6, 0, 10, 50 dB. Read the Envelope and Matched cells from `build/suite/full2/results/<front end>/B-fading-*-24wpm-0.1Hz-s*.json`: pool `char_edits` over `chars` of the signals whose `snr_db` is that point, over both seeds. Note beside the table how few characters each of our points holds.)
 
 | | Envelope | Matched |
 |---|---|---|
@@ -4595,7 +5704,7 @@ bin); the rest run the whole pipeline.
 | Median frequency error, group F offsets, Hz | … | … |
 ```
 
-Then update the status of every parameter this measurement settles, in §7 ("Frequency re-centering") and §8b and the §10 rows: the tracker's accuracy becomes **measured** with the median error; leave β, τ_a, τ_n, the squelch and the hysteresis **heuristic** unless a sweep was run (none is in this plan).
+Then update the status of every parameter this measurement settles, in §7 ("Frequency re-centering") and §8b and the §10 rows: the tracker's accuracy becomes **measured** with the median error; leave β, τ_a, τ_n, the squelch and the hysteresis **heuristic** (no sweep is in this plan, and tuning them is deferred to the owner's decision after these numbers).
 
 - [ ] **Step 7: Guard the Matched path in CI**
 
@@ -4658,7 +5767,7 @@ Expected: two `CER …` summary lines, then `smoke test passed`.
 - [ ] **Step 8: Update the backlog and the survey**
 
 In `docs/backlog.md`, section 1:
-- Under **Top priority**, option 1: add a line "**Built** (milestone 2, part 1): `FrontEnd::Matched`; measured against the baseline in `docs/signal-processing.md` §8b. Whether it becomes the default is the owner's decision (spec §5.4)." followed by the one-line result for group A at 25 WPM (both crossings) and the CPU cost per channel-second of each.
+- Under **Top priority**, option 1: add a line "**Built** (milestone 2, part 1): `FrontEnd::Matched`; measured against the baseline in `docs/signal-processing.md` §8b. Whether it becomes the default, and how its parameters are tuned, are the owner's decisions, deferred until these measurements (2026-09-27; spec §5.4)." followed by the one-line result for group A at 25 WPM (both crossings) and the CPU cost per channel-second of each.
 - **Benchmark scenarios to add first:** replace the list with "Done in milestone 2, part 1 (`training/kz4ap_synth/suites.py`)."
 - **Channel filtering, two stages:** add "Stage 2 is built as the Matched front end (a boxcar of 0.8 dit); stage 1 is unchanged."
 - **Track frequency drift:** add "Done within ±75 Hz of the channel's center in Matched mode (re-centering NCO, detector retune). Still open: moving the channel's center bin for larger drifts, and drift in Envelope mode."
@@ -4668,6 +5777,8 @@ In `docs/backlog.md`, section 1:
 ```markdown
 ### Tune the Matched front end by measurement
 
+Deferred by the owner until the milestone-2 part 1 measurements exist
+(decision 2026-09-27); the owner decides whether and how, on those numbers.
 Its parameters are heuristic (signal-processing.md §8b): the filter length
 β = 0.8 dit (sweep 0.6, 0.8, 1.0), the amplitude and noise time constants
 (0.5 s, 2 s; the fading group is the test), the squelch a ≥ 3, the keying
@@ -4676,12 +5787,16 @@ filter starts following the speed (8 marks). The amplitude estimate is
 biased low by the filter's ramps (about 11% at high SNR, derived); measure
 whether that matters.
 
-### VE3NEA's keying and fading conventions
+### Close the remaining gaps to VE3NEA's benchmark
 
-The generator's hand-key dah comes from VE3NEA's DeepCW generator; the other
-keying-style parameters are this project's. Transcribe his per-style table,
-and establish whether his f_D is the 2σ frequency spread the generator uses,
-so group B anchors to his numbers exactly.
+Group B uses VE3NEA's keying styles, Butterworth fading spectrum, f_D grid,
+SNR points and text statistics (docs/research/deepcw-generator-notes.md).
+Still different: our oracle channel sits on the nearest FFT bin rather than
+his ±30 Hz pitch error; we draw character and word spaces once rather than
+as his sums of draws; we score about 140 characters per point (24 WPM)
+against his 30 000; and which speed range trained his published model
+(12–48 or 8–50 WPM) is unknown. Decide which of these matter once group B's
+numbers are in.
 ```
 
 In `docs/research/decoder-survey.md`, at the end of the paragraph **1. Soft, pre-filtered front end on the existing baseline**, add one sentence: "Built in this project as the Matched front end (milestone 2, part 1); its measured gain over the baseline on the synthetic suite is in signal-processing.md §8b [measured]." Do not change the ranking.
@@ -4697,7 +5812,7 @@ git commit -m "Record the Matched front end's measured results and guard it in t
 
 - [ ] **Step 10: Report to the owner**
 
-Summarize for the owner, in a few lines: the group-A crossings for both front ends, the fading and fist results next to VE3NEA's anchor rows, the pause/strong/tune-up findings, the CPU cost, the tracker's measured accuracy, and the open question for the owner: whether the Matched front end should become the default. Do not push.
+Summarize for the owner, in a few lines: the group-A crossings for both front ends, the fading and fist results next to VE3NEA's anchor rows, the pause/strong/tune-up findings, the CPU cost, the tracker's measured accuracy, and the ragchew and two-station-QSO results (group G against group A at 25 WPM; group H's first-word and per-over CER by offset and style), and the two questions the owner deferred to these numbers (decision 2026-09-27): whether the Matched front end should become the default, and whether and how to tune its parameters. Recommend nothing that pre-empts either; present the numbers. Do not push.
 
 ---
 
@@ -4707,25 +5822,28 @@ Summarize for the owner, in a few lines: the group-A crossings for both front en
 
 | Spec requirement | Where |
 |---|---|
-| §3.1 item 1: decoder robustness, measured on the benchmark | Tasks 1–7 (benchmark), 12 (measurement) |
-| §5.2 step 1: filter matched to the current dit, before envelope detection | Task 9 (boxcar, B = r/K ≈ 1.25/T), Task 10 (follows the speed estimate) |
-| §5.2 step 1: envelope → Rician-versus-Rayleigh LLR | Task 9 (`envelope_llr`, noise and amplitude estimates) |
-| §5.2 prerequisite: precise re-centering with drift tracking, target ≈ ±2 Hz | Task 8 (tracker), Task 10 (`MatchedTracksTheResidualOffset`), Task 11 (detector's initial estimate, retune, published frequency), Task 12 (measured median error) |
-| §5.2: two stages, the channelizer unchanged | Tasks 8–11 run at r on the channelizer's output; `channelizer.cpp` is not touched |
-| §5.2: correlated samples scaled or decimated | Task 9 (`weight = 1/K`, autocorrelation test) |
-| §5.2: front end useful on its own in front of the baseline | Task 10 (LLR keying), Task 12 (measured against the baseline) |
-| §5.1: the baseline stays in the code | `FrontEnd::Envelope` is the default and bit-identical (Tasks 1, 4, 5, 10, 12 check it) |
-| §5.4: VE3NEA's grid, speed changes, interference, tuning error, strong signals up to S₅₀₀ = 60 dB, stations that stop and pause, tune-up carriers, crowded bands, first words | Tasks 1–4 (generator), 7 (suites), 5 (first words) |
-| §5.4: CER with prosigns as one symbol and word spaces scored separately | Task 5 |
-| §5.4: S₅₀₀ as generated; CPU time per channel-second | Tasks 1–4 (labels), 6 (CPU), 7 (summaries); Raspberry Pi 5: deferred |
-| §5.4: real recordings with manta's oracle | Deferred (scope section); Task 6 builds the oracle mechanism |
+| §3.1 item 1: decoder robustness, measured on the benchmark | Tasks 1–9 (benchmark), 14 (measurement) |
+| §5.2 step 1: filter matched to the current dit, before envelope detection | Task 11 (boxcar, B = r/K ≈ 1.25/T), Task 12 (follows the speed estimate) |
+| §5.2 step 1: envelope → Rician-versus-Rayleigh LLR | Task 11 (`envelope_llr`, noise and amplitude estimates) |
+| §5.2 prerequisite: precise re-centering with drift tracking, target ≈ ±2 Hz | Task 10 (tracker), Task 12 (`MatchedTracksTheResidualOffset`), Task 13 (detector's initial estimate, retune, published frequency), Task 14 (measured median error) |
+| §5.2: two stages, the channelizer unchanged | Tasks 10–13 run at r on the channelizer's output; `channelizer.cpp` is not touched |
+| §5.2: correlated samples scaled or decimated | Task 11 (`weight = 1/K`, autocorrelation test) |
+| §5.2: front end useful on its own in front of the baseline | Task 12 (LLR keying), Task 14 (measured against the baseline) |
+| §5.1: the baseline stays in the code | `FrontEnd::Envelope` is the default and bit-identical (Tasks 2, 5, 6, 7, 12, 14 check it) |
+| §5.4: VE3NEA's grid, speed changes, interference, tuning error, strong signals up to S₅₀₀ = 60 dB, stations that stop and pause, tune-up carriers, crowded bands, first words | Tasks 2–6 (generator), 9 (suites), 7 (first words) |
+| §5.4: VE3NEA's grid as a true external anchor | Task 3 (his keying styles, imbalance, style mix, speed range), Task 4 (his Butterworth spectrum), Task 1 (his text statistics), Task 9 (group B: his f_D grid, SNR points as S₅₀₀ = ρ + 7.78 dB, character CER to compare), Task 14 (side-by-side table) |
+| §5.4: CER with prosigns as one symbol and word spaces scored separately | Task 7 |
+| §5.4: S₅₀₀ as generated; CPU time per channel-second | Tasks 2–6 (labels), 8 (CPU), 9 (summaries); Raspberry Pi 5: deferred |
+| Owner decision 2026-09-27: test transmissions include full ragchews | Task 1 (ragchew text, prosign positions, abbreviations), Task 6 (two stations alternating on one frequency, labeled per over), Task 9 (groups G and H, per-over CER), Task 14 (results) |
+| Owner decision 2026-09-27: default front end and parameter tuning deferred until Task 14's numbers | Scope section; Task 14 intro, Steps 6, 8 and 10; no task changes a default or a Matched parameter |
+| §5.4: real recordings with manta's oracle | Deferred (scope section); Task 8 builds the oracle mechanism |
 | §4.1: determinism | Per-sample stages inside the decoder; `MatchedChunkSizeDoesNotChangeOutput`, `MatchedChunkingDoesNotChangeResults`; the smoke check compares two runs of each front end |
 | Project rule: signal-processing.md in the same commit | Every task that changes signal processing or benchmark definitions has a "Document" step |
 
-**Placeholder scan.** The only unfilled values are measurements that exist only after running the code: the smoke CER noted in Task 1, the Matched smoke CER and its baseline file in Task 12, and the results table in Task 12, each with the exact command that produces it and the file it comes from.
+**Placeholder scan.** The only unfilled values are measurements that exist only after running the code: the smoke CER noted in Task 2, the Matched smoke CER and its baseline file in Task 14, and the results tables in Task 14 (including the Envelope and Matched cells of the VE3NEA comparison), each with the exact command or file it comes from. The code of Tasks 1, 3, 4, 6 and 9 as amended on 2026-09-27 was run in a scratch copy of `training/` (Tasks 2–6 and 9 applied in order): all Python tests pass, and the G and H recordings generate (about 6 min each).
 
-**Type consistency.** Checked across tasks: `SignalSpec` fields (Tasks 1–4) and the labels keys the bench parses (Task 5) and the suites read (Tasks 7, 12); `Score`/`SignalScore` fields and the bench JSON keys the suites consume; `EngineStats`, `Engine::Channel::bin`, `open_channel` (Task 6) and their use in Task 11; `FrequencyTracker` and `MatchedFrontEnd` signatures (Tasks 8–9) and their use in Task 10; `DecodeUpdate::freq_offset_hz` (Task 10) and its use in Task 11; `FrontEnd` (Task 10) in the bench (Task 11).
+**Type consistency.** Checked across tasks: `Operator`, `Over`, `ragchew`, `random_operator`, `random_text` (Task 1) and their use in Tasks 6 and 9; `STYLES` keys, `draw_style`, `draw_imbalance_dits`, `VE3NEA_WPM_RANGE` (Task 3) and their use in Tasks 6 and 9; `slow_gain`, `gain_at`, `rayleigh_gain(..., shape)` and `fading_shape` (Task 4) and their use in Task 6; `Sender`, `qso_spec`, `SignalPlan.senders` and the per-over label keys (`sender`, `wpm`, `keying`) (Task 6) and their use in Task 9's `over_rows`; `SignalSpec` fields (Tasks 2–6) and the labels keys the bench parses (Task 7) and the suites read (Tasks 9, 14); the bench JSON's `reference` and `decoded` (Task 7) and `charged_edits`, a copy of `align()` (Task 9); `Score`/`SignalScore` fields and the bench JSON keys the suites consume; `EngineStats`, `Engine::Channel::bin`, `open_channel` (Task 8) and their use in Task 13; `FrequencyTracker` and `MatchedFrontEnd` signatures (Tasks 10–11) and their use in Task 12; `DecodeUpdate::freq_offset_hz` (Task 12) and its use in Task 13; `FrontEnd` (Task 12) in the bench (Task 13).
 
-**Review Focus.** Each of the five items has its test in the owning task (Tasks 8–11), named in the Review Focus section.
+**Review Focus.** Each of the six items has its test in the owning task (Tasks 6 and 10–13), named in the Review Focus section.
 
-**Known risks for the executor.** The Matched tests for speed changes and the stronger neighbor exercise behavior that was derived, not yet measured; if they fail, that is a finding about the design, to be debugged and recorded, not a tolerance to relax. Random keying may make a suite recording run long; Task 7 says how to fix that.
+**Known risks for the executor.** The Matched tests for speed changes and the stronger neighbor exercise behavior that was derived, not yet measured; if they fail, that is a finding about the design, to be debugged and recorded, not a tolerance to relax. Random keying may make a suite recording run long; Task 9 says how to fix that. `charged_edits` (Python) must stay a faithful copy of the bench's `align()` (C++); its test repeats the bench's charging cases, and a change to one needs the same change to the other. Group B's points hold about 140 characters each, far fewer than VE3NEA's 30 000, so compare trends against his curves, not single points.
