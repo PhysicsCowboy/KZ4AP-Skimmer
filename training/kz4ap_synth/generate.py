@@ -47,6 +47,8 @@ class SignalSpec:
     edges_centered: bool = False     # False: edges inside each mark (milestone 1); True: centered on its ends
     fading_hz: float = 0.0           # Rayleigh fading frequency spread f_D (2 sigma), Hz; 0 = none
     fading_shape: str = "gaussian"   # Doppler spectrum: "gaussian" or "butterworth" (VE3NEA's)
+    score: bool = True               # False: an interferer, left out of the score
+    tag: str = ""                    # the condition this signal represents, for summaries
 
 
 @dataclass
@@ -213,28 +215,41 @@ def scenario_single() -> list[SignalSpec]:
     return [SignalSpec("CQ TEST K1ABC K1ABC", 1000.0, 25.0, 20.0, 0.5)]
 
 
-def scenario_band(rng, count: int, duration_s: float, sample_rate: int) -> list[SignalSpec]:
-    """count signals spread over 80% of the span, at least 1 kHz apart."""
-    span = 0.4 * sample_rate
+def scenario_band(rng, count: int, duration_s: float, sample_rate: int, min_spacing_hz: float = 1000.0,
+                  span_hz: float | None = None, wpm_range: tuple[float, float] = (18.0, 36.0),
+                  snr_range: tuple[float, float] = (10.0, 30.0)) -> list[SignalSpec]:
+    """count signals within +/-span_hz (default: 80% of the recording's span), at least
+    min_spacing_hz apart (0 allows any overlap), with speeds and S500 drawn uniformly
+    from the given ranges."""
+    span = 0.4 * sample_rate if span_hz is None else span_hz
     specs: list[SignalSpec] = []
     max_attempts = 1000 * count
     for _attempt in range(max_attempts):
         if len(specs) >= count:
             break
         freq = round(float(rng.uniform(-span, span)), 1)
-        if any(abs(freq - s.freq_offset_hz) < 1000 for s in specs):
+        if any(abs(freq - s.freq_offset_hz) < min_spacing_hz for s in specs):
             continue
-        wpm = round(float(rng.uniform(18, 36)), 1)
-        snr = round(float(rng.uniform(10, 30)), 1)
+        wpm = round(float(rng.uniform(*wpm_range)), 1)
+        snr = round(float(rng.uniform(*snr_range)), 1)
         start = round(float(rng.uniform(0, 2)), 3)
         message = MESSAGES[rng.integers(len(MESSAGES))].format(c=random_callsign(rng))
         text = fill_text(message, wpm, duration_s - start - 1.0)
         specs.append(SignalSpec(text, freq, wpm, snr, start))
     if len(specs) < count:
         raise ValueError(
-            f"cannot place {count} signals at least 1 kHz apart within +/-{span:.0f} Hz"
+            f"cannot place {count} signals at least {min_spacing_hz:.0f} Hz apart within +/-{span:.0f} Hz"
         )
     return specs
+
+
+def with_interferer(wanted: SignalSpec, offset_hz: float, relative_db: float, wpm: float,
+                    text: str) -> list[SignalSpec]:
+    """The wanted signal plus an unscored interferer offset_hz from it, relative_db dB
+    stronger in key-down power, at its own speed, starting at the same time."""
+    interferer = SignalSpec(text, wanted.freq_offset_hz + offset_hz, wpm, wanted.snr_db + relative_db,
+                            wanted.start_s, score=False, tag=wanted.tag)
+    return [wanted, interferer]
 
 
 def main(argv=None) -> None:
@@ -244,6 +259,14 @@ def main(argv=None) -> None:
     parser.add_argument("--duration", type=float, default=30.0)
     parser.add_argument("--sample-rate", type=int, default=192000)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--min-spacing", type=float, default=1000.0,
+                        help="band: minimum spacing between stations, Hz (0 allows overlap)")
+    parser.add_argument("--span", type=float, default=None,
+                        help="band: stations lie within +/- this many Hz (default: 0.4 x sample rate)")
+    parser.add_argument("--wpm-min", type=float, default=18.0)
+    parser.add_argument("--wpm-max", type=float, default=36.0)
+    parser.add_argument("--snr-min", type=float, default=10.0, help="band: lowest S500, dB")
+    parser.add_argument("--snr-max", type=float, default=30.0, help="band: highest S500, dB")
     parser.add_argument("--out", type=Path, required=True,
                         help="output .wav file; the labels go next to it as .json")
     args = parser.parse_args(argv)
@@ -253,7 +276,10 @@ def main(argv=None) -> None:
         specs = scenario_single()
     else:
         try:
-            specs = scenario_band(rng, args.signals, args.duration, args.sample_rate)
+            specs = scenario_band(rng, args.signals, args.duration, args.sample_rate,
+                                  min_spacing_hz=args.min_spacing, span_hz=args.span,
+                                  wpm_range=(args.wpm_min, args.wpm_max),
+                                  snr_range=(args.snr_min, args.snr_max))
         except ValueError as exc:
             parser.error(str(exc))
 

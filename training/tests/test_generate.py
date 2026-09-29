@@ -6,15 +6,19 @@ import pytest
 
 from kz4ap_synth.generate import (
     DEFAULT_NOISE_SIGMA,
+    MESSAGES,
     TUNE_GAP_S,
     SignalSpec,
     amplitude_for_snr,
+    fill_text,
     generate,
     keying_envelope,
     labels,
     main,
     plan_intervals,
+    random_callsign,
     scenario_band,
+    with_interferer,
     write_wav,
 )
 from kz4ap_synth.morse import keying_intervals
@@ -249,3 +253,75 @@ def test_fading_shape_reaches_the_generator():
     assert not np.allclose(a, b)
     entry = labels([SignalSpec(**base, fading_shape="butterworth")], 2000, 11.0, seed=1)["signals"][0]
     assert entry["fading_shape"] == "butterworth"
+
+
+def _milestone1_scenario_band(rng, count, duration_s, sample_rate):
+    """Frozen copy of milestone 1's band scenario."""
+    span = 0.4 * sample_rate
+    specs = []
+    for _attempt in range(1000 * count):
+        if len(specs) >= count:
+            break
+        freq = round(float(rng.uniform(-span, span)), 1)
+        if any(abs(freq - s.freq_offset_hz) < 1000 for s in specs):
+            continue
+        wpm = round(float(rng.uniform(18, 36)), 1)
+        snr = round(float(rng.uniform(10, 30)), 1)
+        start = round(float(rng.uniform(0, 2)), 3)
+        message = MESSAGES[rng.integers(len(MESSAGES))].format(c=random_callsign(rng))
+        text = fill_text(message, wpm, duration_s - start - 1.0)
+        specs.append(SignalSpec(text, freq, wpm, snr, start))
+    return specs
+
+
+def test_band_defaults_match_milestone_1():
+    assert scenario_band(np.random.default_rng(1), 8, 30.0, 192000) == \
+        _milestone1_scenario_band(np.random.default_rng(1), 8, 30.0, 192000)
+
+
+def test_band_spacing_can_go_down_to_zero():
+    specs = scenario_band(np.random.default_rng(2), 30, 20.0, 48000, min_spacing_hz=0.0, span_hz=500.0)
+    freqs = sorted(s.freq_offset_hz for s in specs)
+    assert len(freqs) == 30
+    assert all(-500.0 <= f <= 500.0 for f in freqs)
+    assert min(b - a for a, b in zip(freqs, freqs[1:])) < 50.0
+
+
+def test_band_spacing_is_respected():
+    specs = scenario_band(np.random.default_rng(3), 20, 20.0, 48000, min_spacing_hz=200.0, span_hz=5000.0)
+    freqs = sorted(s.freq_offset_hz for s in specs)
+    assert min(b - a for a, b in zip(freqs, freqs[1:])) >= 200.0
+
+
+def test_band_speed_and_snr_ranges():
+    specs = scenario_band(np.random.default_rng(4), 12, 30.0, 48000, min_spacing_hz=500.0,
+                          wpm_range=(10.0, 60.0), snr_range=(30.0, 60.0))
+    assert all(10.0 <= s.wpm <= 60.0 for s in specs)
+    assert all(30.0 <= s.snr_db <= 60.0 for s in specs)
+    assert max(s.wpm for s in specs) > 40.0
+
+
+def test_interferer_is_offset_stronger_and_unscored():
+    wanted = SignalSpec("CQ K1ABC", 1000.0, 25.0, 10.0, 0.5, tag="qrm")
+    pair = with_interferer(wanted, 100.0, 10.0, 30.0, "TU W9XYZ")
+    assert pair[0] is wanted
+    assert pair[1].freq_offset_hz == 1100.0
+    assert pair[1].snr_db == 20.0
+    assert pair[1].wpm == 30.0
+    assert pair[1].score is False
+    assert pair[1].tag == "qrm"
+
+
+def test_cli_band_settings_reach_the_labels(tmp_path):
+    out = tmp_path / "band.wav"
+    main(["--scenario", "band", "--signals", "5", "--sample-rate", "48000", "--duration", "20",
+          "--min-spacing", "100", "--span", "3000", "--wpm-min", "10", "--wpm-max", "60",
+          "--snr-min", "30", "--snr-max", "60", "--out", str(out)])
+    signals = json.loads(out.with_suffix(".json").read_text())["signals"]
+    assert len(signals) == 5
+    for s in signals:
+        assert -3000.0 <= s["freq_offset_hz"] <= 3000.0
+        assert 10.0 <= s["wpm"] <= 60.0
+        assert 30.0 <= s["snr_db"] <= 60.0
+        assert s["score"] is True
+        assert s["tag"] == ""

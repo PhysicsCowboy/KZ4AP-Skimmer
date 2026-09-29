@@ -772,6 +772,11 @@ research is under way (`docs/research/`).
   50 samples/s and linearly interpolated (at most 0.04 dB, Gaussian, or
   0.06 dB, Butterworth, of power lost relative to the mean between points
   at f_D = 3 Hz, derived).
+- **Interferers and tags:** a labeled signal with `score: false` is an
+  interferer. The benchmark matches it to its track (so that track is not
+  counted as a false track) but leaves it out of every error rate and of
+  detection recall. `tag` names the condition a signal represents
+  (for example `df 100 Hz, +10 dB re wanted key-down power`), and suite summaries group by it.
 - **Keying edges** (synthetic recordings, `edge_s`, `edges_centered`):
   raised-cosine rise and fall of `edge_s` (default 5 ms). By default each
   edge lies inside its mark, so a mark is `edge_s` shorter, and a space
