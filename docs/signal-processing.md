@@ -802,6 +802,25 @@ research is under way (`docs/research/`).
   deletions and substitutions to turn the decoded text into the reference,
   divided by the number of reference symbols. A prosign token counts as one
   symbol, and word spaces count as symbols.
+- **Where the edits are** (spec §5.4): the benchmark takes one minimum-edit
+  alignment (ties broken, from the end, as match or substitution, then
+  deletion, then insertion) and charges each edit to one reference symbol:
+  a substitution or deletion to its own symbol, an insertion to the
+  reference symbol it precedes (the last one after the end). An edit that
+  involves a word space on either side is a **space edit**; the rest are
+  **character edits**. Reported alongside CER, each summed over scored
+  signals before dividing:
+  - **character CER** = character edits / reference symbols that are not
+    word spaces;
+  - **space error rate** = space edits / reference word spaces;
+  - **first-word CER** = edits charged to the first word of each
+    transmission / the symbols of those words.
+  Character and space edits add up to the CER's edit count. The benchmark
+  also reports these counts for each transmission (for a QSO, each over).
+- **No-space CER** (VE3NEA's metric): the Levenshtein distance between
+  reference and decoded symbols with every word space removed, over the
+  reference symbols that are not word spaces. It differs from character
+  CER when a character and a word space trade places.
 - **Message text** (synthetic recordings, `training/kz4ap_synth/messages.py`):
   CQ calls, contest exchanges, and whole ragchew QSOs as a list of overs,
   each with its sending station: CQ, answer, RST and name and QTH, rig and
