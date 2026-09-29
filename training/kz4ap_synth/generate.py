@@ -19,6 +19,7 @@ from .morse import keying_intervals
 SNR_BANDWIDTH_HZ = 500.0
 DEFAULT_NOISE_SIGMA = 0.02
 RISE_S = 0.005
+TUNE_GAP_S = 0.5  # silence between a tune-up carrier and the first element, s
 
 CALL_PREFIXES = ["K", "W", "N", "AA", "KB", "DL", "G", "F", "JA", "VE",
                  "EA", "I", "OH", "SM", "UA", "PY", "VK", "ZL"]
@@ -28,10 +29,20 @@ MESSAGES = ["CQ TEST {c} {c}", "CQ CQ DE {c} {c} K", "TU {c}", "{c} 5NN 14", "CQ
 @dataclass
 class SignalSpec:
     text: str
-    freq_offset_hz: float
+    freq_offset_hz: float        # carrier offset from the recording's center at start_s, Hz
     wpm: float
-    snr_db: float
+    snr_db: float                # S500: key-down carrier power over noise power in 500 Hz, dB
     start_s: float
+    repeats: int = 1             # the text is sent this many times
+    pause_s: float = 0.0         # silence between sendings, s
+    tune_s: float = 0.0          # unkeyed carrier before the first sending, s (0 = none)
+    drift_hz_per_s: float = 0.0  # carrier frequency change from start_s on, Hz/s
+
+
+@dataclass
+class SignalPlan:
+    intervals: list[tuple[float, float]]      # every key-down interval, s from start_s
+    transmissions: list[tuple[float, float]]  # (first key-down, last key-up) of each sending, s from start_s
 
 
 def amplitude_for_snr(snr_db: float, sample_rate: int) -> float:
@@ -58,6 +69,36 @@ def keying_envelope(intervals, offset_s: float, n: int, sample_rate: int) -> np.
     return env
 
 
+def sending_intervals(spec: SignalSpec, rng: np.random.Generator) -> list[tuple[float, float]]:
+    """Key-down intervals of one sending of spec.text, from 0 s."""
+    return keying_intervals(spec.text, spec.wpm)
+
+
+def plan_signal(spec: SignalSpec, rng: np.random.Generator) -> SignalPlan:
+    """All key-down intervals of one signal: the tune-up carrier, then each sending."""
+    intervals: list[tuple[float, float]] = []
+    transmissions: list[tuple[float, float]] = []
+    t = 0.0
+    if spec.tune_s > 0:
+        intervals.append((0.0, spec.tune_s))
+        t = spec.tune_s + TUNE_GAP_S
+    for _ in range(spec.repeats):
+        sent = sending_intervals(spec, rng)
+        if not sent:
+            break
+        if transmissions:
+            t = transmissions[-1][1] + spec.pause_s
+        intervals.extend((t + on, t + off) for on, off in sent)
+        transmissions.append((t + sent[0][0], t + sent[-1][1]))
+    return SignalPlan(intervals, transmissions)
+
+
+def plan_intervals(signals, seed: int) -> list[SignalPlan]:
+    """Plans every signal. Random timing for signal i comes from its own generator,
+    seeded by (seed, i), so a random feature of one signal never changes another."""
+    return [plan_signal(s, np.random.default_rng([seed, i, 2])) for i, s in enumerate(signals)]
+
+
 def generate(signals, sample_rate: int, duration_s: float, seed: int, add_noise: bool = True) -> np.ndarray:
     """Complex I/Q samples containing the given signals plus white noise."""
     rng = np.random.default_rng(seed)
@@ -65,9 +106,9 @@ def generate(signals, sample_rate: int, duration_s: float, seed: int, add_noise:
     iq = np.zeros(n, dtype=np.complex128)
     if add_noise:
         iq += (rng.standard_normal(n) + 1j * rng.standard_normal(n)) * (DEFAULT_NOISE_SIGMA / np.sqrt(2))
-    for s in signals:
+    for s, plan in zip(signals, plan_intervals(signals, seed)):
         phase = rng.uniform(0, 2 * np.pi)
-        intervals = keying_intervals(s.text, s.wpm)
+        intervals = plan.intervals
         if not intervals:
             continue
         i0 = max(0, int(s.start_s * sample_rate))
@@ -76,8 +117,10 @@ def generate(signals, sample_rate: int, duration_s: float, seed: int, add_noise:
             continue
         env = keying_envelope(intervals, s.start_s - i0 / sample_rate, i1 - i0, sample_rate)
         t = np.arange(i0, i1) / sample_rate
-        carrier = np.exp(1j * (2 * np.pi * s.freq_offset_hz * t + phase))
-        iq[i0:i1] += amplitude_for_snr(s.snr_db, sample_rate) * env * carrier
+        angle = 2 * np.pi * s.freq_offset_hz * t + phase
+        if s.drift_hz_per_s:
+            angle = angle + np.pi * s.drift_hz_per_s * (t - s.start_s) ** 2
+        iq[i0:i1] += amplitude_for_snr(s.snr_db, sample_rate) * env * np.exp(1j * angle)
     return iq
 
 
@@ -95,16 +138,29 @@ def write_wav(path, iq: np.ndarray, sample_rate: int) -> None:
         w.writeframes(stereo.tobytes())
 
 
-def signal_end_s(spec: SignalSpec) -> float:
+def reference_text(spec: SignalSpec) -> str:
+    """What a perfect decoder would print for the whole signal."""
+    return " ".join([spec.text] * spec.repeats)
+
+
+def signal_end_s(spec: SignalSpec, plan: SignalPlan) -> float:
     """Time the signal's keying finishes, relative to the recording start."""
-    intervals = keying_intervals(spec.text, spec.wpm)
-    return spec.start_s + (intervals[-1][1] if intervals else 0.0)
+    return spec.start_s + (plan.intervals[-1][1] if plan.intervals else 0.0)
 
 
-def labels(signals, sample_rate: int, duration_s: float) -> dict:
+def labels(signals, sample_rate: int, duration_s: float, seed: int) -> dict:
+    """Labels for a recording; seed must be the one passed to generate()."""
     entries = []
-    for s in signals:
-        entries.append({**asdict(s), "end_s": round(signal_end_s(s), 3)})
+    for s, plan in zip(signals, plan_intervals(signals, seed)):
+        entries.append({
+            **asdict(s),
+            "text": reference_text(s),
+            "end_s": round(signal_end_s(s, plan), 3),
+            "transmissions": [
+                {"text": s.text, "start_s": round(s.start_s + on, 3), "end_s": round(s.start_s + off, 3)}
+                for on, off in plan.transmissions
+            ],
+        })
     return {
         "sample_rate": sample_rate,
         "duration_s": duration_s,
@@ -178,19 +234,20 @@ def main(argv=None) -> None:
         except ValueError as exc:
             parser.error(str(exc))
 
-    for spec in specs:
-        end = signal_end_s(spec)
+    noise_seed = args.seed + 1
+    for spec, plan in zip(specs, plan_intervals(specs, noise_seed)):
+        end = signal_end_s(spec, plan)
         if end > args.duration:
             parser.error(
                 f"signal {spec.text!r} needs at least {end:.3f}s of recording "
                 f"but --duration is {args.duration}s"
             )
 
-    iq = generate(specs, args.sample_rate, args.duration, seed=args.seed + 1)
+    iq = generate(specs, args.sample_rate, args.duration, seed=noise_seed)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     write_wav(args.out, iq, args.sample_rate)
     args.out.with_suffix(".json").write_text(
-        json.dumps(labels(specs, args.sample_rate, args.duration), indent=2) + "\n")
+        json.dumps(labels(specs, args.sample_rate, args.duration, seed=noise_seed), indent=2) + "\n")
 
 
 if __name__ == "__main__":

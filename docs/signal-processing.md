@@ -727,6 +727,18 @@ research is under way (`docs/research/`).
   power in a **500 Hz** bandwidth, σ²·500 Hz / fs. The generator adds complex
   white noise across the whole sampled span with σ = 0.02 FS. See section 5
   for converting to the detector's per-bin SNR.
+- **Transmissions** (synthetic recordings): a signal may send its text
+  several times (`repeats`), with `pause_s` seconds of silence between the
+  last key-up of one sending and the first key-down of the next. The labels
+  file lists each sending as a transmission with its start and end time, s;
+  the signal's reference text is the sendings joined by word spaces. A
+  signal may start at 0 s, the first sample of the recording.
+- **Tune-up carrier:** an unkeyed carrier of `tune_s` seconds before the
+  first sending, followed by 0.5 s of silence. It is not part of the
+  reference text.
+- **Drift:** the carrier's frequency changes linearly at `drift_hz_per_s`
+  (Hz/s) from `freq_offset_hz` at the signal's start time t₀; its phase is
+  2π·(f·t + ½·ḟ·(t − t₀)²).
 - **Character error rate (CER):** the minimum number of symbol insertions,
   deletions and substitutions to turn the decoded text into the reference,
   divided by the number of reference symbols. A prosign token counts as one
