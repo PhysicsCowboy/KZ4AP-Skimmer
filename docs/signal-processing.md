@@ -723,8 +723,9 @@ research is under way (`docs/research/`).
 
 ## 11. Definitions used in tests and the benchmark
 
-- **SNR** (synthetic recordings): key-down carrier power A² over the noise
-  power in a **500 Hz** bandwidth, σ²·500 Hz / fs. The generator adds complex
+- **SNR** (synthetic recordings): key-down carrier power A² (for a fading
+  signal, its mean) over the noise power in a **500 Hz** bandwidth,
+  σ²·500 Hz / fs. The generator adds complex
   white noise across the whole sampled span with σ = 0.02 FS. See section 5
   for converting to the detector's per-bin SNR.
 - **Transmissions** (synthetic recordings): a signal may send its text
@@ -759,6 +760,18 @@ research is under way (`docs/research/`).
   operator, and his training mix is hand 0.25, paddle 0.50, computer 0.25.
   `wpm_end` changes the speed within a sending: `step` switches at the
   middle word, `ramp` changes linearly from word to word.
+- **Fading** (synthetic recordings, `fading_hz`, `fading_shape`): flat
+  Rayleigh fading. The carrier is multiplied by a complex Gaussian gain
+  g(t) with E|g|² = 1. `fading_hz` is the frequency spread f_D, Hz. The
+  Doppler power spectrum is Gaussian with f_D = 2σ (`gaussian`, the
+  default; the Watterson / CCIR 520 HF convention) or VE3NEA's DeepCW
+  spectrum S(f) ∝ 1/(1 + (f/f_c)⁴), f_c = 0.625·f_D (`butterworth`), whose
+  Gaussian least-squares fit has 2σ = 1.01·f_D, so f_D means the same
+  spread to about 1%. The Butterworth has heavier tails (0.92% of the
+  power beyond 2·f_D, against 6.3×10⁻⁵). The gain is synthesized at
+  50 samples/s and linearly interpolated (at most 0.04 dB, Gaussian, or
+  0.06 dB, Butterworth, of power lost relative to the mean between points
+  at f_D = 3 Hz, derived).
 - **Keying edges** (synthetic recordings, `edge_s`, `edges_centered`):
   raised-cosine rise and fall of `edge_s` (default 5 ms). By default each
   edge lies inside its mark, so a mark is `edge_s` shorter, and a space

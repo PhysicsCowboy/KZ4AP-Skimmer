@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .fading import rayleigh_gain
 from .keying import timed_intervals
 from .morse import keying_intervals
 
@@ -44,6 +45,8 @@ class SignalSpec:
     imbalance_dits: float = 0.0      # marks longer and spaces shorter by this, dits
     edge_s: float = RISE_S           # raised-cosine rise and fall time, s
     edges_centered: bool = False     # False: edges inside each mark (milestone 1); True: centered on its ends
+    fading_hz: float = 0.0           # Rayleigh fading frequency spread f_D (2 sigma), Hz; 0 = none
+    fading_shape: str = "gaussian"   # Doppler spectrum: "gaussian" or "butterworth" (VE3NEA's)
 
 
 @dataclass
@@ -120,7 +123,7 @@ def generate(signals, sample_rate: int, duration_s: float, seed: int, add_noise:
     iq = np.zeros(n, dtype=np.complex128)
     if add_noise:
         iq += (rng.standard_normal(n) + 1j * rng.standard_normal(n)) * (DEFAULT_NOISE_SIGMA / np.sqrt(2))
-    for s, plan in zip(signals, plan_intervals(signals, seed)):
+    for index, (s, plan) in enumerate(zip(signals, plan_intervals(signals, seed))):
         phase = rng.uniform(0, 2 * np.pi)
         intervals = plan.intervals
         if not intervals:
@@ -136,7 +139,11 @@ def generate(signals, sample_rate: int, duration_s: float, seed: int, add_noise:
         angle = 2 * np.pi * s.freq_offset_hz * t + phase
         if s.drift_hz_per_s:
             angle = angle + np.pi * s.drift_hz_per_s * (t - s.start_s) ** 2
-        iq[i0:i1] += amplitude_for_snr(s.snr_db, sample_rate) * env * np.exp(1j * angle)
+        signal = amplitude_for_snr(s.snr_db, sample_rate) * env * np.exp(1j * angle)
+        if s.fading_hz > 0:
+            signal = signal * rayleigh_gain(i1 - i0, sample_rate, s.fading_hz,
+                                            np.random.default_rng([seed, index, 1]), s.fading_shape)
+        iq[i0:i1] += signal
     return iq
 
 

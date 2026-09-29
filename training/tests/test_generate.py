@@ -222,3 +222,30 @@ def test_centered_edges_reach_the_signal():
     iq = generate([spec], fs, 1.0, seed=1, add_noise=False)
     level = np.abs(iq) / amplitude_for_snr(20.0, fs)
     assert np.sum(level >= 0.5) / fs == pytest.approx(0.06, abs=2 / fs)  # one 20 WPM dit at 50% amplitude
+
+
+def test_faded_signal_keeps_its_mean_key_down_power():
+    fs = 2000
+    still = SignalSpec("E", 300.0, 5.0, 20.0, 0.0, tune_s=300.0)
+    faded = SignalSpec("E", -300.0, 5.0, 20.0, 0.0, tune_s=300.0, fading_hz=3.0)
+    iq = generate([still, faded], fs, 302.0, seed=1, add_noise=False)
+    t = np.arange(len(iq)) / fs
+    kernel = np.ones(40) / 40  # 20 ms boxcar: its nulls at multiples of 50 Hz remove the other carrier, 600 Hz away
+
+    def power_at(freq):
+        base = np.convolve(iq * np.exp(-2j * np.pi * freq * t), kernel, mode="valid")
+        return np.abs(base[fs:299 * fs]) ** 2  # inside the 300 s carriers
+
+    a2 = amplitude_for_snr(20.0, fs) ** 2
+    assert np.mean(power_at(300.0)) == pytest.approx(a2, rel=0.01)
+    assert np.mean(power_at(-300.0)) == pytest.approx(a2, rel=0.15)
+    assert np.std(power_at(-300.0)) > 0.5 * a2  # exponentially distributed power: std = mean
+
+
+def test_fading_shape_reaches_the_generator():
+    base = dict(text="E", freq_offset_hz=300.0, wpm=5.0, snr_db=20.0, start_s=0.0, tune_s=10.0, fading_hz=1.0)
+    a = generate([SignalSpec(**base)], 2000, 11.0, seed=1, add_noise=False)
+    b = generate([SignalSpec(**base, fading_shape="butterworth")], 2000, 11.0, seed=1, add_noise=False)
+    assert not np.allclose(a, b)
+    entry = labels([SignalSpec(**base, fading_shape="butterworth")], 2000, 11.0, seed=1)["signals"][0]
+    assert entry["fading_shape"] == "butterworth"
