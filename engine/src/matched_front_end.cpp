@@ -11,7 +11,9 @@ namespace {
 constexpr std::size_t kResumEvery = 4096;             // recompute the running sum this often, samples
 constexpr double kMinNoiseVar = 1e-20;                // FS^2 (-200 dBFS): keeps x and a finite on noise-free input
 constexpr double kWarmupNoiseQuantile = 0.2;           // the warm-up's noise estimate uses this quantile of |v|^2
-constexpr double kLiftWeight = 16;                     // noise weight left after the floor lifts sigma^2
+// Noise weight left after the floor lifts sigma^2, as a duration of per-sample updates, s
+// (16 samples at 1500 samples/s).
+constexpr double kLiftWeightS = 16.0 / 1500.0;
 
 // Validates the parameters and returns sample_rate. Runs as rate_'s initializer,
 // before anything divides by them.
@@ -27,6 +29,11 @@ double validated_rate(double sample_rate, const MatchedFrontEndConfig& c) {
 }
 
 double alpha_for(double tau_s, double rate) { return 1.0 - std::exp(-1.0 / (tau_s * rate)); }
+
+// A filter of duration_s at rate, samples (at least 1).
+int samples_for(double duration_s, double rate) {
+    return std::max(1, static_cast<int>(std::lround(duration_s * rate)));
+}
 
 double logistic(double g) { return 1.0 / (1.0 + std::exp(-std::clamp(g, -50.0, 50.0))); }
 
@@ -62,21 +69,23 @@ MatchedFrontEnd::MatchedFrontEnd(double sample_rate, MatchedFrontEndConfig confi
       // fraction c, it is at most noise's (q/c)-quantile, 2 sigma^2 (-ln(1 - q/c)): dividing by that
       // (and a margin for sampling spread) keeps the floor below sigma^2.
       floor_divisor_(-2.0 * std::log(1.0 - config.floor_quantile / config.floor_min_clean) * config.floor_margin),
-      max_length_(std::max(1, static_cast<int>(std::lround(config.length_dits * 1.2 / config.min_wpm * sample_rate)))),
-      acquisition_length_(0) {
-    acquisition_length_ = length_for(1.2 / config_.initial_wpm);
+      lift_weight_(kLiftWeightS * sample_rate),
+      max_length_(samples_for(config.length_dits * 1.2 / config.min_wpm, sample_rate)),
+      acquisition_length_(samples_for(config.length_dits * 1.2 / config.initial_wpm, sample_rate)) {
     reset();
 }
 
 int MatchedFrontEnd::length_for(double dit_s) const {
-    const long k = std::lround(config_.length_dits * dit_s * rate_);
-    return static_cast<int>(std::clamp<long>(k, 1, max_length_));
+    // Clamped before rounding, so a huge dit cannot overflow the conversion.
+    const double k = std::clamp(config_.length_dits * dit_s * rate_, static_cast<double>(acquisition_length_),
+                                static_cast<double>(max_length_));
+    return static_cast<int>(std::lround(k));
 }
 
 void MatchedFrontEnd::reset() {
     ring_.assign(static_cast<std::size_t>(max_length_), Sample{});
     head_ = 0;
-    length_ = length_for(1.2 / config_.initial_wpm);
+    length_ = acquisition_length_;
     sum_ = {};
     since_resum_ = 0;
     power_ring_.assign(2 * static_cast<std::size_t>(max_length_) + 1, 0.0);
@@ -110,6 +119,7 @@ void MatchedFrontEnd::resum() {
 }
 
 void MatchedFrontEnd::set_dit(double dit_s) {
+    if (!std::isfinite(dit_s) || !(dit_s > 0)) return;
     if (warmup_left_ > 0) {  // the warm-up always runs at the acquisition width
         pending_dit_ = dit_s;
         return;
@@ -123,6 +133,7 @@ void MatchedFrontEnd::apply_length(int k) {
     const double scale = static_cast<double>(length_) / k;
     noise_var_ = std::max(kMinNoiseVar, noise_var_ * scale);
     for (auto& x : floor_ring_) x *= scale;
+    for (auto& x : power_ring_) x *= scale;  // so the guard compares like with like
     length_ = k;
     resum();
 }
@@ -178,7 +189,7 @@ void MatchedFrontEnd::update_floor(double power) {
     if (noise_var_ < floor) {
         const bool stuck_low = floor > config_.floor_restart_ratio * noise_var_;
         noise_var_ = floor;
-        noise_weight_ = std::min(noise_weight_, kLiftWeight);
+        noise_weight_ = std::min(noise_weight_, lift_weight_);
         if (stuck_low) {
             amp2_ = 0;
             amplitude_weight_ = 0;

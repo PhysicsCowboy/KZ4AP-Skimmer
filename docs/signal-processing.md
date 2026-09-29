@@ -68,8 +68,8 @@ to volts or dBm at the antenna.
 | K | matched-filter (boxcar) length, round(β·dit·r) | samples |
 | β | matched-filter length as a fraction of the dit | 0.8 |
 | v[n] | matched-filter output | FS |
-| σ, s | noise RMS per real component of v, and v's key-down amplitude | FS |
-| x, a | normalized envelope \|v\|/σ and amplitude s/σ | dimensionless |
+| σ_v, s | noise RMS per real component of v (the complex noise power of v is 2σ_v²), and v's key-down amplitude | FS |
+| x, a | normalized envelope \|v\|/σ_v and amplitude s/σ_v | dimensionless |
 | Λ | log-likelihood ratio, key-down over key-up: −a²/2 + ln I₀(a·x) | nats |
 | g, p | posterior log-odds Λ + ln(P₁/P₀), and the posterior probability of key-down | nats, 0…1 |
 | P₁ | prior probability of key-down | 0.44 |
@@ -716,21 +716,26 @@ this section describes the component as implemented and tested on its own.
 - **Following speed (heuristic):** K starts at 60 WPM (K = 24, 62.5 Hz),
   the widest filter, and follows the dit passed to `set_dit` (when the
   speed estimate is trusted enough to pass is the caller's choice; no
-  caller exists yet); K is clamped to 288 (5 WPM). When K changes, σ̂² is
+  caller exists yet); K is clamped between the acquisition width
+  (β·1.2 s/60 = 16 ms, K = 24) and the 5 WPM width (β·1.2 s/5 = 192 ms,
+  K = 288), both computed from durations; a dit that is not finite or
+  not positive is ignored. When K changes, σ̂_v² is
   scaled by K_old/K_new (derived for white noise at r; the channel filter
   removes the boxcar's sidelobes beyond ±150 Hz, keeping about 0.92 of the
   boxcar's noise power at K = 24 and 0.965 at K = 58, so the rescale and
-  the a² formula below are off by about 0.2 dB relative to the true
-  noise power, derived).
+  the a² formula below are off by 0.36 dB at K = 24 and 0.15 dB at
+  K = 58, dB relative to the true noise power, derived). The last 2K + 1
+  values of |v|² that the noise guard compares (below) and the floor's
+  samples are rescaled by the same factor.
 - **Likelihood (derived; Proakis eq. 4.5–21):** Λ = −a²/2 + ln I₀(a·x),
-  x = |v|/σ̂, a = ŝ/σ̂, in nats; ln I₀ from Abramowitz & Stegun 9.8.1–9.8.2
+  x = |v|/σ̂_v, a = ŝ/σ̂_v, in nats; ln I₀ from Abramowitz & Stegun 9.8.1–9.8.2
   without overflow. g = Λ + ln(P₁/P₀) with P₁ = 0.44 (derived from PARIS:
   key-down 22 of 50 dit units); p = 1/(1 + e^(−g)). For noise flat across
   the filter, a² = 2·S₅₀₀·(500 Hz)·K/r, S₅₀₀ as a linear ratio (derived):
   a = 6.2 at S₅₀₀ = 0 dB and 25 WPM.
 - **Amplitude estimate (heuristic running form of an EM update):**
-  ŝ² ← max(0, ŝ² + p·max(α_a, 1/W_a)·(|v|² − 2σ̂² − ŝ²)), the Rician mean
-  square being 2σ² + s²; τ_a = 0.5 s of key-down weight. Samples on the
+  ŝ² ← max(0, ŝ² + p·max(α_a, 1/W_a)·(|v|² − 2σ̂_v² − ŝ²)), the Rician mean
+  square being 2σ_v² + s²; τ_a = 0.5 s of key-down weight. Samples on the
   filter's ramps bias ŝ low: 0.79 of s for dits alone (derived, noise-free
   trapezoid at K = 58), 0.85–0.88 of s for PARIS at 25 WPM, S₅₀₀ 0–60 dB
   (simulated). The decision point near ŝ/2 then lengthens each mark by
@@ -738,41 +743,43 @@ this section describes the component as implemented and tested on its own.
 - **Noise estimate (heuristic form; derived bias correction):** three
   taps K apart, v[n], v[n−K] and v[n−2K], share no inputs, so in white
   noise they are independent. The middle one updates
-  σ̂² ← σ̂² + max(α_n, 1/W_n)·(|v[n−K]|²/(2·m(κ)) − σ̂²), τ_n = 2 s of
-  updates, only if it has |v|²/(2σ̂²) < κ = 1.75 and its two neighbors
+  σ̂_v² ← σ̂_v² + max(α_n, 1/W_n)·(|v[n−K]|²/(2·m(κ)) − σ̂_v²), τ_n = 2 s of
+  updates, only if it has |v|²/(2σ̂_v²) < κ = 1.75 and its two neighbors
   < κ_n = 4. A mark or
   a filter ramp within K of the middle tap lifts some tap above that (at
-  S₅₀₀ = 60 dB by orders of magnitude). In noise, y = |v|²/(2σ²) is
+  S₅₀₀ = 60 dB by orders of magnitude). In noise, η = |v|²/(2σ_v²) is
   exponential with mean 1 (Proakis eq. 2.3–43), and the accepted middle
-  tap is y truncated at κ, with mean m(κ) = 1 − κ·e^(−κ)/(1 − e^(−κ)) =
+  tap is η truncated at κ, with mean m(κ) = 1 − κ·e^(−κ)/(1 − e^(−κ)) =
   0.632 at κ = 1.75 (derived), which the update divides out. The estimate
-  never reads p, g or ŝ. In noise alone its only fixed point is σ̂ = σ,
-  and it is stable (derived: the map r ↦ m(κr)/m(κ) has slope
-  κ·m′(κ)/m(κ) = 0.651 < 1 at r = 1 and slope κ/(2m(κ)) > 1 near 0, so
-  it cannot settle low). Its climb back from a low r is slow, though:
-  at r it accepts a fraction (1 − e^(−κr))(1 − e^(−κ_n r))² of the
-  samples, so from r = 0.25 (a 6 dB rise in the noise) the expected
-  return to 0.9 takes about 43 s (derived by integrating
-  dr/dt = (m(κr)/m(κ) − r)·acceptance(r)/τ_n); the relaxed neighbor
+  never reads p, g or ŝ. With ρ = σ̂_v²/σ_v², in noise alone its only
+  stable fixed point is ρ = 1 (derived: the map ρ ↦ m(κρ)/m(κ) has slope
+  κ·m′(κ)/m(κ) = 0.651 < 1 at ρ = 1 and slope κ/(2m(κ)) > 1 near 0, so
+  ρ = 0 is an unstable fixed point and it cannot settle low). Its climb
+  back from a low ρ is slow, though: at ρ it accepts a fraction
+  (1 − e^(−κρ))(1 − e^(−κ_n ρ))² of the samples, so from ρ = 0.25 (a rise
+  in the noise of 6 dB relative to the previous noise power) the expected
+  return to ρ = 0.9 takes about 43 s (derived by integrating
+  dρ/dt = (m(κρ)/m(κ) − ρ)·acceptance(ρ)/τ_n); the relaxed neighbor
   guard κ_n = 4 cuts it from 98 s (κ_n = κ) to 43 s (derived the same
   way). This replaces a guard on the posterior, which selected quiet
-  stretches, biased σ̂ low and in noise alone settled at σ̂ = 0.53–0.57·σ
+  stretches, biased σ̂_v low and in noise alone settled at σ̂_v = 0.53–0.57·σ_v
   in 7 of 10 seeds, keying noise (plan review 2026-09-27; simulated).
   With the floor and warm-up below (simulated, numpy seeds, final check
-  2026-09-28): noise alone (40 seeds × 120 s) σ̂/σ has mean 1.00 and
+  2026-09-28): noise alone (40 seeds × 120 s) σ̂_v/σ_v has mean 1.00 and
   standard deviation 0.020 at K = 24 and 0.032 at K = 58 (0.080 at
   K = 288, 20 seeds, re-review), with no signal flag; with continuous
-  PARIS σ̂ is 0.98–1.06·σ at S₅₀₀ 0–60 dB and 25 WPM (0.90–1.11·σ at
-  12 WPM), and the leak of weak marks lifts it to 1.16–1.23·σ at −5 dB
-  and 1.22–1.30·σ at −8 dB (25 WPM); after a 6 dB rise in the noise the
-  last signal flag came at most 16 s later and σ̂ returned to 0.9·σ within
+  PARIS σ̂_v is 0.98–1.06·σ_v at S₅₀₀ 0–60 dB and 25 WPM (0.90–1.11·σ_v at
+  12 WPM), and the leak of weak marks lifts it to 1.16–1.23·σ_v at
+  S₅₀₀ = −5 dB and 1.22–1.30·σ_v at S₅₀₀ = −8 dB (25 WPM); after a rise in
+  the noise of 6 dB relative to the previous noise power the
+  last signal flag came at most 16 s later and σ̂_v returned to 0.9·σ_v within
   24–41 s at K = 24 (40 seeds), 25–51 s at K = 58 and 24–56 s at K = 288
   (20 seeds each), in line with the derived 43 s.
 - **Floor (heuristic; its bound derived):** every K samples the 10th
   percentile Q of the last 64 samples of |v|² taken K apart gives a
   floor F = Q / (2·(−ln(1 − 0.1/c))·2.5), c = 0.25. In noise Q is
-  2σ²·(−ln 0.9); with a station leaving a clean fraction of at least c of
-  those samples, Q is at most noise's (0.1/c)-quantile, so F ≤ σ²/2.5
+  2σ_v²·(−ln 0.9); with a station leaving a clean fraction of at least c of
+  those samples, Q is at most noise's (0.1/c)-quantile, so F ≤ σ_v²/2.5
   (derived), and the factor 2.5 covers the sampling spread of a
   64-sample quantile (heuristic). **Why c = 0.25 (inputs derived,
   rounding heuristic):** a sample is clean when its K-sample window lies
@@ -783,35 +790,40 @@ this section describes the component as implemented and tested on its own.
   (K = one dit); c = 0.25 rounds the lower end down. Solid digits
   ("0000 9999", 0.18) and two stations keying at once are not covered;
   an earlier c = 0.4 was above continuous PARIS's 0.34 and made the floor
-  lift routinely under strong text (final check 2026-09-28). If σ̂² falls
-  below F, σ̂² ← F and the noise weight drops to 16 (so the next updates
-  count for more); ŝ restarts only if F > 4·σ̂² (the factor
-  **heuristic**), the stuck-low case in which the low σ̂ has let ŝ grow on
+  lift routinely under strong text (final check 2026-09-28). If σ̂_v² falls
+  below F, σ̂_v² ← F and the noise weight W_n drops to at most the number
+  of samples in 10.67 ms (16 at r = 1500 samples/s; heuristic), so the
+  next updates count for more; ŝ restarts only if F > 4·σ̂_v² (the factor
+  **heuristic**), the stuck-low case in which the low σ̂_v has let ŝ grow on
   noise. A smaller lift is the quantile's spread or a second station, and
   restarting ŝ there refit it from a few samples on a filter ramp and
   merged dits (simulated: 38 edits in 7140 characters at S₅₀₀ = 60 dB
   with c = 0.4 and every lift restarting ŝ, 0 now; a neighbor 100 Hz
   away keying at the same time, +10 dB re the wanted station's key-down
   power, garbled the wanted station in 12 of 100 seeds, 2 now). In
-  noise F = 0.0825·σ², so the floor acts when σ̂ < 0.29·σ and restarts ŝ
-  when σ̂ < 0.14·σ (derived). This removes the stuck-low state (a start or
-  a noise rise that leaves σ̂ that low) and bounds large rises: after a
-  10 or 20 dB rise it lifted in every seed and σ̂ was back within 0.9·σ
-  in 11–38 s (20 seeds, K = 24). It does not act after a 6 dB rise, whose
+  noise F = 0.0825·σ_v², so the floor acts when σ̂_v < 0.29·σ_v and restarts ŝ
+  when σ̂_v < 0.14·σ_v (derived). This removes the stuck-low state (a start or
+  a noise rise that leaves σ̂_v that low) and bounds large rises: after a
+  rise of 10 or 20 dB relative to the previous noise power it lifted in
+  every seed and σ̂_v was back within 0.9·σ_v in 11–38 s (20 seeds,
+  K = 24). It does not act after a rise of 6 dB relative to the previous
+  noise power, whose
   recovery is the guard's climb (above). During the climb noise can be
   flagged as signal for up to about 16 s (simulated).
 - **Warm-up (heuristic):** the first 0.32 s only collect |v|², always at
   the acquisition width (K = 24; a `set_dit` meanwhile takes effect when
   the warm-up ends, and restarts ŝ). 0.32 s is 20 filter lengths, about 20
-  independent samples. Then σ̂² = (20th percentile)/(2·(−ln 0.8)) (derived
-  for noise alone) and ŝ² = max(0, 90th percentile − 2σ̂²), and the
+  independent samples. Then σ̂_v² = (20th percentile)/(2·(−ln 0.8)) (derived
+  for noise alone) and ŝ² = max(0, 90th percentile − 2σ̂_v²), and the
   warm-up counts as 0.1 times its length in both noise and amplitude
   weight. (The earlier 5th percentile of 0.2 s, about 12 independent
-  samples at K = 24 and 1 at K = 288, often started σ̂ at 0.2–0.5·σ.)
-- **Squelch (heuristic value; its K-scaling derived):** p is forced to 0
-  while a < a_min(K) = 3·(K/24)^(1/4). In noise alone â² is a p-weighted
-  mean over about τ_a·r/K independent samples, so its spread grows as √K,
-  and a_min ∝ K^(1/4) keeps the chance that noise alone passes the
+  samples at K = 24 and 1 at K = 288, often started σ̂_v at 0.2–0.5·σ_v.)
+- **Squelch (heuristic value; its scaling with the filter duration
+  derived):** p is forced to 0 while a < a_min = 3·(T_v/16 ms)^(1/4),
+  T_v = K/r the filter's duration and 16 ms the acquisition filter's
+  (K = 24 at r = 1500 samples/s, so a_min = 3·(K/24)^(1/4) there). In
+  noise alone â² is a p-weighted mean over about τ_a·r/K independent
+  samples, so its spread grows as √K, and a_min ∝ T_v^(1/4) keeps the chance that noise alone passes the
   squelch the same at every K (derived, Gaussian approximation); a flat
   a_min = 3 would pass noise more often at long K. With a² =
   2·S₅₀₀·(500 Hz)·K/r the squelch is S₅₀₀ = −2.5 dB at K = 24 (any speed),
@@ -821,13 +833,16 @@ this section describes the component as implemented and tested on its own.
   keyed at the acquisition width**, so the sensitivity floor for
   acquiring one is S₅₀₀ = −2.5 dB derived at every speed; in simulation
   (continuous PARIS, 10 seeds) 0%, 3%, 45% and 80% of marks were keyed
-  at −4, −3, −2 and −1 dB at 25 WPM, and 19%, 33% and 95% at −4, −3 and
-  −2 dB at 12 WPM, so 50% is reached near −1.8 dB and −2.6 dB. The lower
+  at S₅₀₀ = −4, −3, −2 and −1 dB at 25 WPM, and 19%, 33% and 95% at
+  S₅₀₀ = −4, −3 and −2 dB at 12 WPM, so 50% is reached near S₅₀₀ = −1.8 dB
+  and −2.6 dB. The lower
   figures hold only for a station already acquired and narrowed to. In
-  noise alone, with σ̂
-  correct, the amplitude update shrinks a² by about P₀ = 0.56 per time
-  constant (derived for small a), so a decays toward 0; this holds only
-  because σ̂ does not depend on a (above).
+  noise alone, with σ̂_v correct, the amplitude update multiplies ŝ² by
+  about e^(−P₁) = 0.64 per τ_a of key-down weight W_a (derived to first
+  order in a²: E[p·(|v|² − 2σ_v² − ŝ²)] ≈ −P₁²·ŝ², and W_a grows by P₁ per
+  sample); in wall-clock time, with p ≈ P₁, that is e^(−P₁²) = 0.82 per
+  0.5 s. So a decays toward 0; this holds only because σ̂_v does not
+  depend on a (above).
 - **Correlated samples (heuristic):** successive outputs of a K-sample
   boxcar share inputs; their noise autocorrelation is triangular and sums
   to K (derived). Each `FrontEndSample` carries weight 1/K, the factor a
@@ -880,12 +895,12 @@ this section describes the component as implemented and tested on its own.
 | Character / word gap | > 2 / > 5 dits | classical_decoder.cpp | standard midpoints |
 | Speed window / range | 24 marks, 5–60 WPM | classical_decoder.cpp | heuristic |
 | Edge-shortening ratio band | 3.0–3.85 | classical_decoder.cpp | measured |
-| Matched filter | boxcar, K = round(0.8·dit·r), starts at 60 WPM, max 288 samples | `MatchedFrontEndConfig` | derived shape; β and start heuristic |
+| Matched filter | boxcar, K = round(0.8·dit·r), starts at 60 WPM (16 ms, K = 24), clamped to 16–192 ms (60–5 WPM; K = 24–288) | `MatchedFrontEndConfig` | derived shape; β and start heuristic |
 | Likelihood | Λ = −a²/2 + ln I₀(a·x); prior P₁ = 0.44 | matched_front_end.cpp | derived |
 | Amplitude / noise estimates | τ_a = 0.5 s (EM, p-weighted) / τ_n = 2 s (middle tap below κ = 1.75, neighbors below κ_n = 4, truncation mean 0.632 divided out) | `MatchedFrontEndConfig` | heuristic; the truncation correction derived |
-| Noise floor | 10th percentile of 64 samples of \|v\|² taken K apart, over 2·(−ln(1 − 0.1/0.25))·2.5; a lift restarts ŝ only if the floor exceeds 4·σ̂² | `MatchedFrontEndConfig::floor_*` | heuristic; the occupancy bound derived, c = 0.25 from computed clean fractions of continuous text |
+| Noise floor | 10th percentile of 64 samples of \|v\|² taken K apart, over 2·(−ln(1 − 0.1/0.25))·2.5; a lift caps W_n at 10.67 ms of samples and restarts ŝ only if the floor exceeds 4·σ̂_v² | `MatchedFrontEndConfig::floor_*` | heuristic; the occupancy bound derived, c = 0.25 from computed clean fractions of continuous text |
 | Front-end warm-up | 0.32 s at K = 24; 20th / 90th percentiles, weight 0.1 × its length | `MatchedFrontEndConfig::warmup_s` | heuristic |
-| Front-end squelch | a ≥ 3·(K/24)^(1/4) | `MatchedFrontEndConfig::squelch_a`, `squelch_exponent` | 3 heuristic; the K-scaling derived |
+| Front-end squelch | a ≥ 3·(T_v/16 ms)^(1/4), T_v = K/r the filter duration (3·(K/24)^(1/4) at r = 1500 samples/s) | `MatchedFrontEndConfig::squelch_a`, `squelch_exponent` | 3 heuristic; the duration scaling derived |
 
 ## 11. Definitions used in tests and the benchmark
 

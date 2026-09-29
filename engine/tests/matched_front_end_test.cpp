@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <limits>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -72,6 +73,24 @@ TEST(MatchedFrontEnd, FilterLengthFollowsTheDit) {
     EXPECT_EQ(fe.length(), 58);  // ...and then takes the dit: 0.8 x 48 ms x 1500 samples/s = 57.6
     fe.set_dit(10.0);
     EXPECT_EQ(fe.length(), 288);  // clamped at 5 WPM
+}
+
+TEST(MatchedFrontEnd, IgnoresInvalidDitsAndClampsToTheAcquisitionWidth) {
+    MatchedFrontEnd fe(kRate);
+    fe.set_dit(std::nan(""));  // ignored during the warm-up too: 0.048 s must survive
+    fe.set_dit(0.048);
+    fe.set_dit(-1.0);
+    run(fe, white_noise(480, 1.0, 13));
+    EXPECT_EQ(fe.length(), 58);
+    for (const double bad : {0.0, -0.048, std::nan(""), std::numeric_limits<double>::infinity(),
+                             -std::numeric_limits<double>::infinity()}) {
+        fe.set_dit(bad);
+        EXPECT_EQ(fe.length(), 58) << bad;
+    }
+    fe.set_dit(0.001);  // faster than 60 WPM: clamped to the acquisition width (16 ms)
+    EXPECT_EQ(fe.length(), 24);
+    fe.set_dit(1e300);  // clamped to the 5 WPM width (192 ms)
+    EXPECT_EQ(fe.length(), 288);
 }
 
 TEST(MatchedFrontEnd, SquelchScalesWithTheFilterLength) {

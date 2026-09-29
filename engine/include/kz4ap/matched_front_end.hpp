@@ -11,7 +11,7 @@ namespace kz4ap {
 
 // ln I0(z), I0 the modified Bessel function of the first kind, order zero, for
 // any z >= 0 without overflow. Abramowitz & Stegun 9.8.1 (z < 3.75) and 9.8.2;
-// relative error in I0 below 2e-7.
+// relative error in I0 below 5e-7 (up to 4.7e-7 for z >= 3.75).
 double log_bessel_i0(double z);
 
 // Log-likelihood ratio, nats, of key-down (Rician envelope) against key-up
@@ -60,7 +60,9 @@ public:
     explicit MatchedFrontEnd(double sample_rate, MatchedFrontEndConfig config = {});
 
     FrontEndSample step(Sample u);
-    void set_dit(double dit_s);  // follows the decoder's dit estimate, s
+    // Follows the decoder's dit estimate, s. A dit that is not finite or not positive is
+    // ignored; K is clamped between the acquisition width (initial_wpm) and min_wpm's width.
+    void set_dit(double dit_s);
     // After a long silence: back to the acquisition width (initial_wpm), a fresh
     // amplitude estimate; the noise estimate is kept (rescaled to the new width).
     void reacquire();
@@ -86,8 +88,9 @@ private:
     double log_prior_odds_;
     double guard_mean_;                 // E[y | y < kappa] for y ~ Exp(1): undoes the guard's truncation
     double floor_divisor_;              // the floor's quantile of |v|^2 over this is at most sigma^2
-    int max_length_;
-    int acquisition_length_;            // K at initial_wpm
+    double lift_weight_;                // noise weight left after the floor lifts sigma^2, samples
+    int max_length_;                    // K at min_wpm, the narrowest filter
+    int acquisition_length_;            // K at initial_wpm, the widest filter
     int length_ = 1;
     std::vector<Sample> ring_;          // the last max_length_ inputs, circular
     std::size_t head_ = 0;              // where the next input goes
