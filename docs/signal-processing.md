@@ -103,6 +103,13 @@ power (detection and, later, the waterfall), and an **unwindowed** one used
 only as a fast-convolution filter bank (the channelizer). Both use the same
 size N and the same hop N/2, so they stay in lockstep.
 
+The decoder box shows the Envelope front end (`--front-end envelope`, the
+milestone-1 pipeline). The default, the Matched front end, replaces
+|y| → smoothing → keying with frequency re-centering, a dit-matched filter
+and keying on the posterior log-odds (sections 7 and 8b), and the engine
+gives each channel's decoder the detector's current frequency for its track
+before every block (section 6, "Channel distance").
+
 ## 1. Input
 
 - A 16-bit PCM stereo WAV: left channel = I (real part), right = Q
@@ -346,12 +353,18 @@ every frame.
 ### New tracks
 
 A bin becomes a candidate when its averaged power is at least **6 dB** above
-the floor (6 dB SNR per bin) *and* it is a local maximum within **±2 bins**
-(±47 Hz; ties go to the lower bin). A candidate must be seen in every frame (moving by at most
-±1 bin between frames) for **0.5 s**, and nothing is detected during the
-first 1 s of a recording (the averages settle first). A peak less than
-**3 bins** (70 Hz) from an existing track, i.e. at most 2 bins away, is
-attributed to that track instead. **Status: all heuristic.**
+the floor (6 dB SNR per bin) *and* it is the maximum within **±47 Hz**
+(±2 bins at 23.4 Hz; ties go to the lower bin). A candidate must be seen in
+every frame (moving by at most **23 Hz**, 1 bin, between frames) for
+**0.5 s**, and nothing is detected during the first 1 s of a recording (the
+averages settle first). A peak whose interpolated frequency is within the
+**channel distance D = 47 Hz** of an existing track's *current* frequency
+is attributed to that track instead (below, "Channel distance"). The
+milestone-1 rule, a peak less than **3 bins** (70 Hz) from a track's bin,
+is still selectable (`Attribution::Bins`) and is what the Envelope path
+(`--front-end envelope`) uses. The neighborhoods are stated in Hz and
+converted to bins from the actual bin width (`DetectorConfig`
+`peak_radius_hz`, `candidate_step_hz`). **Status: all heuristic.**
 
 ### Why neighboring bins come up at all
 
@@ -367,14 +380,22 @@ proportion to bin width (a 3× wider bin gives 10·log₁₀3 = 4.8 dB lower SNR
 bin for the same signal), and two stations closer than a bin could no longer
 be told apart.
 
-Note that these rules are counted **in bins**, so their width in Hz changes if
-the bin width changes. Sweeping bin width without first restating them in Hz
-would change two things at once (backlog).
+These rules are stated in Hz and converted to bins at the point of use, so a
+different bin width keeps their width in Hz (the 3-bin rule of
+`Attribution::Bins` is still counted in bins). The conversion is
+`std::lround(Hz / Δf)`: 47 Hz rounds to 2 bins and 23 Hz to 1 bin for bin
+widths from 18.8 to 31.3 Hz, which covers every usual rate (8, 11.025, 32,
+44.1, 48, 96, 192 and 768 kHz give 20–31.25 Hz bins with
+`choose_fft_size`), so the Envelope path stays bit-identical to milestone 1
+there; at rates whose bins are wider than 31.3 Hz (for example 33–40.9 kHz)
+the peak neighborhood rounds to 1 bin (derived; nothing rejects such a
+rate).
 
 ### Existing tracks
 
-A track's level is the maximum of its bin and the two neighbors (±1 bin,
-±23 Hz). Its SNR is that level minus the floor. It stays active while the SNR
+A track's level is the maximum over its bin's neighborhood of ±23 Hz (±1 bin
+at 23.4 Hz; `DetectorConfig::level_radius_hz`), the bin being the track's
+current peak bin. Its SNR is that level minus the floor. It stays active while the SNR
 is at least **6 − 3 = 3 dB** per bin (hysteresis), and dies after **10 s** without
 being active. **Status: heuristic.**
 
@@ -395,8 +416,20 @@ A new track's frequency is refined by parabolic interpolation over the peak
 bin and its neighbors in dB (offset clamped to ±½ bin): typically accurate to
 a few Hz. **Measured:** a station at +1000.0 Hz is reported at +999.8 Hz.
 
-The frequency is then **fixed** for the track's life: it is not re-measured,
-and the channel stays where it was put. Tolerance to drift is passive:
+With the Envelope path (`Attribution::Bins`) the frequency is then
+**fixed** for the track's life: it is not re-measured, and the channel stays
+where it was put. With the Matched path (the default; `Attribution::Distance`)
+each track follows its own spectral peak (below, "Channel distance"), so a
+drifting station keeps one track and its level is read where it now is;
+the decoder re-centers within ±12 Hz of the track's frequency (section 7),
+and the engine reports the channel center plus the decoder's estimate. The
+channel itself does not move; the decoder's NCO covers ±75 Hz around it.
+Only slow drift is in scope (owner, 2026-09-29): simulated at 1 Hz/s, one
+track, the reported frequency 1.49–1.63 Hz behind the carrier and the
+track's own 0.94–1.23 Hz behind (a 1 s average of a ramp lags ḟ·1 s,
+derived).
+
+On the Envelope path, tolerance to drift is passive:
 - the track's level is taken over ±1 bin, so a drift of up to about ±1.5 bins
   (±35 Hz) costs at most 1.42 dB of level (scalloping). Beyond that the loss
   grows fast (derived from the Hann response, for a steady tone): 6 dB at
@@ -410,6 +443,59 @@ and the channel stays where it was put. Tolerance to drift is passive:
 
 The **speed**, in contrast, is tracked continuously (the last 24 marks,
 section 8).
+
+### Channel distance
+
+One distance, **D = 47 Hz** (`EngineConfig::channel_distance_hz`;
+**heuristic**, owner decisions 2026-09-29, "option 1"), decides with the
+Matched path which station each channel follows. The detector alone
+decides:
+
+1. **Following:** every frame, before its level is read, each track moves
+   to the strongest bin that is a peak by the birth rule (the maximum
+   within ±47 Hz), stands at least 3 dB above the floor (the keep-alive
+   level), and whose interpolated frequency is within D of the track's
+   current frequency. With none, it holds its frequency.
+2. **Attribution:** a new peak within D of a track's current frequency is
+   that track's (above); one farther away can become a track of its own.
+3. **The channel's tracker fine-tunes** within ±12 Hz of the detector's
+   frequency for its track (section 7); the engine passes it before every
+   channel block. So in a QSO turnover within D the channel retunes to the
+   answering station when the detector's peak moves there, and back.
+   Channels are never merged.
+
+Why 47 Hz: about the half-width of the detector's Hann main lobe, 2/T_w
+for its 42.7 ms window (46.9 Hz); a peak closer than that to a station can
+be that station's own spread. Stated in Hz, it does not change with the
+FFT size.
+
+Simulated (plan, 2026-09-29; A at S₅₀₀ = 15 dB, 25 WPM; B answering at
+18 WPM, its level in dB re A's key-down power; 30 seeds each): within D
+(0–40 Hz) at −6 dB or stronger, A's channel followed B, decoded it and
+came back, with one channel; 60–200 Hz away B had its own channel,
+decoded in 30 of 30 from −6 dB up; channels were never merged.
+**Limits (stated, not fixed):**
+- **Retune delay.** The detector's peak moves to an answering station
+  only when its 1 s power average overtakes the first station's decaying
+  one: 1.3–1.8 s into B's over at 10–25 Hz, 2.3 s at 40 Hz and −10 dB
+  (simulated; 2.6 s after A's last mark derived at −10 dB). It matters
+  only when the answering station is on a different frequency from the
+  one the channel is tuned to (a station that pauses and resumes on its
+  own frequency loses nothing). Median characters of B lost at the start
+  of its over: 0 at 10 Hz; at 25, 40 and 50 Hz, 1, 3 and 3 at −10 dB, 0,
+  1 and 2 at −6 dB, 0 at 0 and +6 dB.
+- **A neighbor 60–70 Hz away at A's level or stronger** leaks through the
+  matched filter's first sidelobe (−18.7 dB relative to a centered station
+  at 60 Hz and K = 58; −19.6 dB at 70 Hz through the 16 ms acquisition
+  filter; derived), is keyed in fragments and corrupts the speed estimate:
+  A's next over exact in 6 and 0 of 30 at 60 Hz, 0 and +6 dB (its last
+  three words intact in 26 and 30). The fix belongs in the filter's design.
+- **Oracle mode** (benchmark only) has no detector, so the anchor is fixed
+  at the labeled frequency the oracle channel was opened for, and the
+  tracker covers ±12 Hz around it: a station that drifts more than 12 Hz
+  from its label, or a QSO's answering station more than 12 Hz from the
+  label, cannot be followed there; the benchmark marks such oracle rows as
+  not meaningful for the Matched front end.
 
 ### Cap
 
@@ -602,19 +688,24 @@ Used only when the decoder's front end is `Matched` (section 8b); the
 Envelope pipeline does not re-center. `FrequencyTracker`
 (frequency_tracker.cpp) runs per station at r = 1500 samples/s inside the
 classical decoder, on the channel stream, ahead of section 8b's filter.
-The decoder passes on the anchor its caller gives it
-(`Decoder::set_frequency_anchor_hz`); nothing in the engine calls it yet
-(milestone 2, part 1, Task 13 does).
+The engine sets the anchor before every channel block to the detector's
+current frequency for the track minus the channel center (section 6,
+"Channel distance").
 
 - **NCO (derived):** u[n] = y[n]·e^(−jφ[n]), φ advancing by 2π·f̂/r per
-  sample. f̂ starts at the initial offset its owner gives it (meant to be
-  the detector's residual, track frequency minus the channel's center;
+  sample. f̂ starts at the initial offset its owner gives it (the
+  detector's residual, track frequency minus the channel's center;
   about 0.2 Hz error measured for a clean station) and is clamped to
   ±75 Hz, where the channel filter is 0.34 dB down relative to the
   passband (**heuristic**; beyond it the channel itself would have to
   move, which the code does not do). φ runs on through every change of f̂
   (the tracker's updates, `set_anchor` jumps, `reacquire`); only `reset`
   sets it to 0.
+- The engine starts each new track's NCO at the detector's residual, track
+  frequency minus channel center (in oracle mode, 0 Hz: the channel sits
+  on the bin nearest the labeled frequency and the tracker must find the
+  rest; its anchor is the labeled frequency itself, so it fine-tunes
+  within ±12 Hz of the label).
 - **Discriminator (derived):** on the narrow-filtered, re-centered stream
   v[n], the product z = v[n]·conj(v[n − τ_L·r]) has phase
   2π·(f_off − f̂)·τ_L for a station at f_off. Rotating it by
@@ -638,8 +729,8 @@ The decoder passes on the anchor its caller gives it
 - **Fine-tuning around the detector's frequency (heuristic; owner
   decisions 2026-09-29, option 1):** the tracker does not decide which
   station it follows. Its anchor f_a is set by its owner (`set_anchor`;
-  meant to be where the detector says the station is, minus the channel
-  center, set before every channel block); the anchor never follows the
+  the engine sets it to where the detector says the station is, minus the
+  channel center, before every channel block); the anchor never follows the
   tracker's own estimates. An estimate is accepted only within
   ±12 Hz of f_a (**heuristic**, the owner's value; it must exceed the
   detector's interpolation error, 0.2 Hz measured, clamped to ±11.7 Hz,
@@ -709,9 +800,9 @@ prior over likely text". A probabilistic decoder is the key next step; decoder
 research is under way (`docs/research/`).
 
 **Two front ends.** `ClassicalDecoderConfig::front_end` selects how samples
-become key-down and key-up. `Envelope` (the default, steps 1–5 below) is
-the baseline. `Matched` replaces steps 1–5 with section 7's re-centering and
-section 8b's matched filter and likelihood: the key goes down when the
+become key-down and key-up. `Envelope` (steps 1–5 below) is the baseline;
+`Matched` is the default (owner decision 2026-09-29). `Matched` replaces
+steps 1–5 with section 7's re-centering and section 8b's matched filter and likelihood: the key goes down when the
 posterior log-odds g exceeds +1 nat and up when it falls below −1 nat
 (**heuristic** hysteresis), and never goes down while a < a_min(K) (section
 8b, "Squelch"). Steps 6–10
@@ -744,7 +835,10 @@ which station it follows: its frequency tracker fine-tunes within ±12 Hz
 of the anchor its caller gives it (`Decoder::set_frequency_anchor_hz`;
 section 7), so on its own it follows only a station within ±12 Hz of that
 anchor; a station farther away is followed only when the caller moves the
-anchor to it.
+anchor to it: the engine sets the anchor to the detector's frequency for the
+track (section 6, "Channel distance"), so a station answering within 47 Hz
+is followed once the detector's track moves to it (with the retune delay
+stated there), and one farther away gets its own track.
 Simulated at decoder level (an earlier tracker design whose estimate
 never left 0.2 Hz of the first station in these runs; levels in dB re
 the first station's key-down power; 100 seeds each): a station answering
@@ -847,10 +941,10 @@ its first few noise samples.
     seconds to follow. A window measured in time rather than marks is an
     alternative (backlog).
 
-## 8b. Matched front end (optional, per station)
+## 8b. Matched front end (the default, per station)
 
-Used when the classical decoder's front end is `Matched`
-(`ClassicalDecoderConfig::front_end`; section 8, "Two front ends").
+Used when the classical decoder's front end is `Matched` (the default;
+owner decision 2026-09-29) (`ClassicalDecoderConfig::front_end`; section 8, "Two front ends").
 `MatchedFrontEnd` (matched_front_end.cpp) runs per station at
 r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
 (section 7, "Frequency re-centering"), before any envelope is taken.
@@ -1040,11 +1134,13 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
 | Noise floor | median of all bins | signal_detector.cpp | heuristic |
 | Detection warm-up | 1 s from the first frame (equal to the average's τ) | `DetectorConfig::average_s` | heuristic |
 | Persistence before a track | 0.5 s | `DetectorConfig::birth_s` | heuristic |
-| Candidate tracking | may move ±1 bin (±23 Hz) between frames | signal_detector.cpp | heuristic |
+| Candidate tracking | may move ±23 Hz (1 bin at 23.4 Hz) between frames | `DetectorConfig::candidate_step_hz` | heuristic |
 | Track timeout | 10 s | `DetectorConfig::death_s` | heuristic |
-| Min station separation | 3 bins (70 Hz) | `DetectorConfig::min_separation_bins` | heuristic |
-| Peak neighborhood | ±2 bins (±47 Hz) | signal_detector.cpp | heuristic |
-| Track level neighborhood | ±1 bin (±23 Hz) | signal_detector.cpp | heuristic |
+| Track following and attribution (Matched path) | each track follows its own peak within D = 47 Hz (at least 3 dB above the floor); a new peak within D of a track's current frequency belongs to it | `DetectorConfig::attribution`, `attribution_distance_hz` (set from `EngineConfig::channel_distance_hz`) | heuristic (owner decisions 2026-09-29, option 1) |
+| Attribution (Envelope path) | frequency fixed at birth; peaks less than 3 bins (70 Hz) from a track's bin belong to it | `DetectorConfig::min_separation_bins` | heuristic (milestone 1) |
+| Peak neighborhood | ±47 Hz (±2 bins at 23.4 Hz) | `DetectorConfig::peak_radius_hz` | heuristic |
+| Track level neighborhood | ±23 Hz (±1 bin at 23.4 Hz) | `DetectorConfig::level_radius_hz` | heuristic |
+| Tracker anchor (Matched path) | the detector's current frequency for the track, set before every channel block; the tracker fine-tunes within ±12 Hz of it | `Decoder::set_frequency_anchor_hz`; `FrequencyTrackerConfig::fine_tune_hz` | heuristic (owner decisions 2026-09-29, option 1) |
 | Max tracks | 200 | `DetectorConfig::max_tracks` | heuristic |
 | Channel bins / decimation | 64 / D = N ÷ 64 (r = 1500 Hz) | `EngineConfig::channel_bins` | heuristic within derived bounds |
 | Channel filter cutoff | ±150 Hz (−6 dB relative to the passband) | `EngineConfig::channel_cutoff_hz` | heuristic |
@@ -1059,7 +1155,7 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
 | Character / word gap | > 2 / > 5 dits | classical_decoder.cpp | standard midpoints |
 | Speed window / range | 24 marks, 5–60 WPM | classical_decoder.cpp | heuristic |
 | Edge-shortening ratio band | 3.0–3.85 | classical_decoder.cpp | measured |
-| Front end | Envelope (default) or Matched | `ClassicalDecoderConfig::front_end` | — |
+| Front end | Matched (default) or Envelope | `ClassicalDecoderConfig::front_end`; `--front-end` | owner decision 2026-09-29 |
 | LLR keying hysteresis (Matched) | g > +1 nat down, g < −1 nat up | `ClassicalDecoderConfig::llr_hysteresis` | heuristic |
 | Filter follows speed after (Matched) | 8 marks in the speed window (8 new ones after a re-acquisition) | `ClassicalDecoderConfig::follow_after_marks` | heuristic |
 | Dit-estimate growth bound (Matched) | at most ×1.25 per mark while the filter follows the speed; the filter's own dit also grows at most ×1.25 per mark from its first follow step (from the 20 ms acquisition dit) | `ClassicalDecoderConfig::max_dit_growth` | heuristic (owner decisions 2026-09-29) |

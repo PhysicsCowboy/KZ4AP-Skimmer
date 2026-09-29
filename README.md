@@ -69,8 +69,13 @@ one seed with the bench took 37 s:
 
     $env:PYTHONPATH = "training"
     .venv\Scripts\python -m kz4ap_synth.suites generate --suite full --seeds 3 --out build/suite/full
-    .venv\Scripts\python -m kz4ap_synth.suites run --out build/suite/full --bench build\windows\bench\Release\kz4ap-bench.exe --front-end baseline
+    .venv\Scripts\python -m kz4ap_synth.suites run --out build/suite/full --bench build\windows\bench\Release\kz4ap-bench.exe --front-end baseline --front-end matched
     .venv\Scripts\python -m kz4ap_synth.suites summarize --out build/suite/full
+
+`--front-end matched` (the default) selects the dit-matched front end with
+frequency re-centering, each channel following the station the signal
+detector assigns it (see `docs/signal-processing.md`, sections 6 and 8b);
+`--front-end envelope` (also `baseline`) selects the milestone-1 pipeline.
 
 ## Known limitations
 

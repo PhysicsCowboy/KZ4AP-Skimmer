@@ -26,7 +26,7 @@ struct ClassicalDecoderConfig {
     float squelch_ratio = 3.0f;    // mark level must be at least this factor times the space level to key
     double smoothing_dits = 0.25;  // envelope smoothing time constant, in dits
     double glitch_dits = 0.3;      // marks and dropouts shorter than this are ignored
-    FrontEnd front_end = FrontEnd::Envelope;
+    FrontEnd front_end = FrontEnd::Matched;  // owner decision 2026-09-29; Envelope stays selectable
     double llr_hysteresis = 1.0;          // Matched: key down above +this, up below -this (posterior log-odds, nats)
     std::size_t follow_after_marks = 8;   // Matched: the filter follows the speed once the window holds this many marks
     double max_dit_growth = 1.25;         // Matched, while the filter follows: the dit estimate grows at most this factor per mark

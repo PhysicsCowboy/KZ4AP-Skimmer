@@ -32,11 +32,12 @@ struct Args {
     std::optional<std::filesystem::path> baseline;
     bool timing = true;
     bool oracle = false;
+    FrontEnd front_end = FrontEnd::Matched;
 };
 
 constexpr const char* kUsage =
     "usage: kz4ap-bench RECORDING.wav [--labels LABELS.json] [--json OUT.json]\n"
-    "                   [--no-timing] [--baseline BASELINE.json] [--oracle]\n";
+    "                   [--no-timing] [--baseline BASELINE.json] [--oracle] [--front-end envelope|matched]\n";
 
 Args parse_args(int argc, char** argv) {
     Args args;
@@ -51,6 +52,12 @@ Args parse_args(int argc, char** argv) {
         else if (a == "--baseline") args.baseline = value();
         else if (a == "--no-timing") args.timing = false;
         else if (a == "--oracle") args.oracle = true;
+        else if (a == "--front-end") {
+            const auto v = value().string();
+            if (v == "envelope" || v == "baseline") args.front_end = FrontEnd::Envelope;
+            else if (v == "matched") args.front_end = FrontEnd::Matched;
+            else throw std::runtime_error("--front-end must be envelope or matched\n" + std::string(kUsage));
+        }
         else if (!a.empty() && a[0] == '-') throw std::runtime_error("unknown option " + a + "\n" + kUsage);
         else if (args.recording.empty()) args.recording = a;
         else throw std::runtime_error(std::string("more than one recording given\n") + kUsage);
@@ -87,6 +94,7 @@ int main(int argc, char** argv) {
 
         EngineConfig config;
         config.sample_rate = reader.sample_rate();
+        if (args.front_end == FrontEnd::Envelope) config = with_envelope_path(config);
         if (args.oracle) {
             for (const auto& s : labels->signals) config.oracle_frequencies_hz.push_back(s.freq_offset_hz);
         }
@@ -104,6 +112,7 @@ int main(int argc, char** argv) {
         nlohmann::json out;
         out["recording"] = args.recording.filename().string();
         out["duration_s"] = duration_s;
+        out["front_end"] = args.front_end == FrontEnd::Matched ? "matched" : "envelope";
         out["tracks"] = nlohmann::json::array();
         std::vector<DecodedTrack> track_list;
         for (const auto& [id, t] : tracks) {

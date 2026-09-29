@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Benchmark smoke test: generate a synthetic band, score it against the stored
-# baseline, and check that two runs produce identical results.
+# baseline on the milestone-1 (Envelope) path, and check that two runs produce
+# identical results.
 # Usage: bench/smoke.sh BUILD_DIR   (run from the repository root)
 set -euo pipefail
 
@@ -42,8 +43,8 @@ PYTHONPATH=training "$PYTHON" -m kz4ap_synth.generate --scenario band --signals 
     --duration 30 --seed 1 --out "$WORK/band.wav"
 
 "$BENCH" "$WORK/band.wav" --labels "$WORK/band.json" --json "$WORK/run1.json" \
-    --no-timing --baseline bench/baselines/smoke.json
-"$BENCH" "$WORK/band.wav" --labels "$WORK/band.json" --json "$WORK/run2.json" --no-timing
+    --no-timing --baseline bench/baselines/smoke.json --front-end envelope
+"$BENCH" "$WORK/band.wav" --labels "$WORK/band.json" --json "$WORK/run2.json" --no-timing --front-end envelope
 if ! cmp -s "$WORK/run1.json" "$WORK/run2.json"; then
     echo "FAIL: two runs over the same recording produced different results" >&2
     exit 1

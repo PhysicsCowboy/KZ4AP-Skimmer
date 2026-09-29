@@ -32,7 +32,20 @@ struct EngineConfig {
     // from the first sample, with track ids 1, 2, ... in this order, and the signal
     // detector is bypassed: no other track is born and none dies.
     std::vector<double> oracle_frequencies_hz;
+
+    // D, Hz (owner decisions 2026-09-29, option 1): each detector track follows its own spectral peak
+    // within D of its current frequency, and a new peak within D of a track belongs to it; a channel's
+    // frequency tracker fine-tunes around the detector's frequency (FrequencyTrackerConfig::fine_tune_hz).
+    double channel_distance_hz = 47.0;
 };
+
+// The milestone-1 pipeline, bit for bit (kept selectable and pinned by CI; owner, 2026-09-29):
+// the Envelope decoder and the milestone-1 detector rules (frequency fixed at birth, bin attribution).
+inline EngineConfig with_envelope_path(EngineConfig config) {
+    config.decoder.front_end = FrontEnd::Envelope;
+    config.detector.attribution = Attribution::Bins;
+    return config;
+}
 
 struct EngineStats {
     std::uint64_t channel_samples = 0;  // channel samples delivered to decoders, summed over channels
@@ -44,7 +57,8 @@ struct EngineStats {
 // identical however the input is split across calls to process().
 class Engine {
 public:
-    // Throws std::invalid_argument if config.sample_rate is below 8000 Hz.
+    // Throws std::invalid_argument if config.sample_rate is below 8000 Hz or
+    // config.channel_distance_hz is not positive.
     Engine(const EngineConfig& config, EventBus& bus);
     ~Engine();
 
@@ -60,6 +74,7 @@ private:
         Track track;
         int bin;  // the channel's center bin
         std::unique_ptr<Decoder> decoder;
+        double detector_freq_hz = 0;  // the detector's current frequency for this track, Hz from the span's center
     };
 
     void process_hop(std::span<const Sample> hop);

@@ -48,17 +48,24 @@ bool ends_with(const std::string& s, const std::string& suffix) {
     return s.size() >= suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
+// The milestone-1 decoder (the Matched front end is the default from milestone 2 on).
+ClassicalDecoderConfig envelope() {
+    ClassicalDecoderConfig c;
+    c.front_end = FrontEnd::Envelope;
+    return c;
+}
+
 }  // namespace
 
 TEST(ClassicalDecoder, DecodesCleanSignal) {
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     const std::string msg = "CQ TEST K1ABC";
     EXPECT_EQ(text(decode_all(d, keyed_signal(msg, 25, kRate, duration_for(msg, 25)))), msg);
     EXPECT_NEAR(d.wpm(), 25.0, 2.5);
 }
 
 TEST(ClassicalDecoder, CleanSignalHasHighProbabilities) {
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     const std::string msg = "CQ TEST K1ABC";
     for (const auto& c : decode_all(d, keyed_signal(msg, 25, kRate, duration_for(msg, 25)))) {
         if (c.text != " ") EXPECT_GT(c.probability, 0.9f) << c.text;
@@ -66,7 +73,7 @@ TEST(ClassicalDecoder, CleanSignalHasHighProbabilities) {
 }
 
 TEST(ClassicalDecoder, ReportsCharacterTimes) {
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     const auto chars = decode_all(d, keyed_signal("E", 25, kRate, 2.0));
     ASSERT_FALSE(chars.empty());
     EXPECT_EQ(chars[0].text, "E");
@@ -76,20 +83,20 @@ TEST(ClassicalDecoder, ReportsCharacterTimes) {
 
 TEST(ClassicalDecoder, DecodesWithModerateNoise) {
     // 15 dB SNR in 500 Hz: white noise over 1500 Hz with total power 3 * 10^(-1.5).
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     const std::string msg = "CQ TEST K1ABC";
     const auto x = keyed_signal(msg, 25, kRate, duration_for(msg, 25), 0, 1.0, 0.31, 7);
     EXPECT_EQ(text(decode_all(d, x)), msg);
 }
 
 TEST(ClassicalDecoder, NoiseAloneDecodesNothing) {
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     const auto chars = decode_all(d, keyed_signal("", 25, kRate, 10.0, 0, 0.0, 0.3, 3));
     EXPECT_EQ(text(chars), "");
 }
 
 TEST(ClassicalDecoder, AdaptsToSlowSpeed) {
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     const std::string msg = "PARIS PARIS CQ K1ABC";
     const auto got = text(decode_all(d, keyed_signal(msg, 12, kRate, duration_for(msg, 12))));
     EXPECT_TRUE(ends_with(got, "CQ K1ABC")) << got;
@@ -97,7 +104,7 @@ TEST(ClassicalDecoder, AdaptsToSlowSpeed) {
 }
 
 TEST(ClassicalDecoder, AdaptsToFastSpeed) {
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     const std::string msg = "PARIS PARIS CQ K1ABC";
     const auto got = text(decode_all(d, keyed_signal(msg, 45, kRate, duration_for(msg, 45))));
     EXPECT_TRUE(ends_with(got, "CQ K1ABC")) << got;
@@ -105,7 +112,7 @@ TEST(ClassicalDecoder, AdaptsToFastSpeed) {
 }
 
 TEST(ClassicalDecoder, PauseDecodesNothingThenResumes) {
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     auto x = keyed_signal("CQ K1ABC", 25, kRate, 14.5, 0, 1.0, 0.2, 5, 0.5);
     const auto later = keyed_signal("TU", 25, kRate, 14.5, 0, 1.0, 0.0, 1, 12.0);
     for (std::size_t i = 0; i < x.size(); ++i) x[i] += later[i];
@@ -131,7 +138,7 @@ std::vector<Sample> keyed_elements(const std::vector<int>& dits) {
 }  // namespace
 
 TEST(ClassicalDecoder, UnknownPatternBecomesAsterisk) {
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     // ..-- (U-umlaut) is not in the English-only table.
     const auto chars = decode_all(d, keyed_elements({1, 1, 3, 3}));
     ASSERT_FALSE(chars.empty());
@@ -140,14 +147,14 @@ TEST(ClassicalDecoder, UnknownPatternBecomesAsterisk) {
 }
 
 TEST(ClassicalDecoder, EightDitsDecodeAsErrorSignal) {
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     const auto chars = decode_all(d, keyed_elements({1, 1, 1, 1, 1, 1, 1, 1}));
     ASSERT_FALSE(chars.empty());
     EXPECT_EQ(chars[0].text, "<HH>");
 }
 
 TEST(ClassicalDecoder, DecodesProsigns) {
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     const std::string msg = "CQ DE K1ABC <KN>";
     EXPECT_EQ(text(decode_all(d, keyed_signal(msg, 25, kRate, duration_for(msg, 25)))), msg);
 }
@@ -167,7 +174,7 @@ TEST(ClassicalDecoder, ChunkSizeDoesNotChangeOutput) {
 }
 
 TEST(ClassicalDecoder, ResetRestoresInitialSpeed) {
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     const std::string msg = "PARIS PARIS";
     decode_all(d, keyed_signal(msg, 45, kRate, duration_for(msg, 45)));
     d.reset();
@@ -175,10 +182,10 @@ TEST(ClassicalDecoder, ResetRestoresInitialSpeed) {
 }
 
 TEST(ClassicalDecoder, RejectsInvalidConfig) {
-    EXPECT_THROW(ClassicalDecoder d(0.0), std::invalid_argument);
-    EXPECT_THROW(ClassicalDecoder d(-1500.0), std::invalid_argument);
+    EXPECT_THROW(ClassicalDecoder d(0.0, envelope()), std::invalid_argument);
+    EXPECT_THROW(ClassicalDecoder d(-1500.0, envelope()), std::invalid_argument);
     auto bad = [](auto mutate) {
-        ClassicalDecoderConfig c;
+        auto c = envelope();
         mutate(c);
         EXPECT_THROW(ClassicalDecoder d(kRate, c), std::invalid_argument);
     };
@@ -201,14 +208,14 @@ TEST(ClassicalDecoder, RejectsInvalidConfig) {
     bad([](ClassicalDecoderConfig& c) { c.smoothing_dits = -0.25; });
     bad([](ClassicalDecoderConfig& c) { c.glitch_dits = -0.1; });
     // Boundary values that are valid.
-    ClassicalDecoderConfig ok;
+    auto ok = envelope();
     ok.glitch_dits = 0;
     ok.min_wpm = ok.max_wpm = ok.initial_wpm = 25;
     EXPECT_NO_THROW(ClassicalDecoder d(kRate, ok));
 }
 
 TEST(ClassicalDecoder, TimeJumpBetweenChunksRestartsTheClock) {
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     const auto x = keyed_signal("E", 25, kRate, 2.0);  // E keyed at 0.5 s
     const auto split = static_cast<std::size_t>(0.25 * kRate);
     const auto first = d.process(std::span<const Sample>(x).first(split), 0.0);
@@ -223,7 +230,7 @@ TEST(ClassicalDecoder, TimeJumpBetweenChunksRestartsTheClock) {
 TEST(ClassicalDecoder, FlushDuringMarkAfterDropoutEmitsNothing) {
     // A dit-long mark, a 12 ms dropout (long enough to key up, short enough to be
     // merged back as a glitch), then key-down until the input ends mid-mark.
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     std::vector<Sample> x(static_cast<std::size_t>(0.7 * kRate));
     for (std::size_t i = static_cast<std::size_t>(0.5 * kRate); i < x.size(); ++i) x[i] = Sample(1.0f, 0.0f);
     for (std::size_t i = static_cast<std::size_t>(0.548 * kRate); i < static_cast<std::size_t>(0.560 * kRate); ++i)
@@ -271,7 +278,7 @@ std::vector<Sample> hand_keyed(const std::string& msg, double wpm, double dah_di
 TEST(ClassicalDecoder, TuneUpCarrierDoesNotDerailSpeed) {
     // A 1 s tune-up carrier (longer than a four-dit dah at the 5 wpm minimum),
     // then CW at 25 wpm from 2 s.
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     const std::string msg = "CQ TEST K1ABC DE K1ABC K";
     auto x = keyed_signal(msg, 25, kRate, kz4ap::test::keying(msg, 25, 2.0).back().second + 1.5, 0, 1.0, 0.0, 1, 2.0);
     for (auto i = static_cast<std::size_t>(0.5 * kRate); i < static_cast<std::size_t>(1.5 * kRate); ++i)
@@ -283,7 +290,7 @@ TEST(ClassicalDecoder, TuneUpCarrierDoesNotDerailSpeed) {
 
 TEST(ClassicalDecoder, DecodesHeavyHandKeying) {
     // 20 wpm with four-dit dahs, as a heavy-handed operator might send.
-    ClassicalDecoder d(kRate);
+    ClassicalDecoder d(kRate, envelope());
     EXPECT_EQ(text(decode_all(d, hand_keyed("CQ TEST K1ABC", 20, 4.0), 32)), "CQ TEST K1ABC");
 }
 
@@ -331,7 +338,7 @@ Tally count_passes(unsigned first_seed, Run&& run) {
 }  // namespace
 
 TEST(ClassicalDecoder, EnvelopeModeTracksNoFrequency) {
-    ClassicalDecoder d(kRate, {}, 3.0);
+    ClassicalDecoder d(kRate, envelope(), 3.0);
     const auto u = d.process(keyed_signal("E", 25, kRate, 1.0), 0.0);
     EXPECT_FALSE(u.freq_offset_hz.has_value());
     EXPECT_EQ(d.filter_length(), 0);
