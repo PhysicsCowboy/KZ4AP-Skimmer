@@ -9,8 +9,9 @@
 namespace kz4ap {
 
 struct FrequencyTrackerConfig {
-    double lag_s = 0.00533;             // time between the two samples of each phase difference, s (8 samples
-                                        // at 1500 samples/s; unambiguous range +/- 1 / (2 lag) = +/- 93.75 Hz)
+    double lag_s = 0.00533;             // time between the two samples of each phase difference, s; rounded to
+                                        // whole samples: tau_L = 8/r = 5.333 ms at r = 1500 samples/s, whose
+                                        // unambiguous range is +/- 1 / (2 tau_L) = +/- 93.75 Hz
     double tau_s = 0.5;                 // time constant of the average, s at weight 1
     double min_weight = 0.6;            // the average must hold this much weight (0..1) before it moves the NCO
     double max_offset_hz = 75.0;        // the NCO frequency (and the anchor) are clamped to +/- this, Hz
@@ -33,9 +34,10 @@ struct FrequencyTrackerConfig {
 // fine-tunes within +/- fine_tune_hz of it.
 class FrequencyTracker {
 public:
-    // Throws std::invalid_argument for a non-positive sample rate, an invalid config (including a
-    // lag or update interval that rounds to 0 samples), or a max_offset_hz outside the unambiguous
-    // range +/- 1 / (2 lag).
+    // Throws std::invalid_argument for a non-positive sample rate, a non-finite initial offset, an
+    // invalid config (including a lag or update interval that rounds to 0 samples), or a
+    // max_offset_hz or fine_tune_hz not below the unambiguous range 1 / (2 tau_L), where tau_L is
+    // the lag rounded to whole samples.
     FrequencyTracker(double sample_rate, double initial_offset_hz, FrequencyTrackerConfig config = {});
 
     // Mixes one channel sample down by the current offset and advances the NCO.
@@ -47,12 +49,14 @@ public:
 
     // Where the station is, Hz from the channel center (clamped to the NCO range). If
     // it is more than fine_tune_hz from the NCO, the NCO jumps there and the average
-    // starts afresh; otherwise fine-tuning continues around it.
+    // starts afresh; otherwise fine-tuning continues around it. A non-finite value is
+    // ignored (the previous anchor, offset and average are kept).
     void set_anchor(double anchor_hz);
 
     double offset_hz() const { return offset_hz_; }  // the NCO frequency, Hz
     double anchor_hz() const { return anchor_hz_; }  // Hz
-    // Sets the offset and the anchor to initial_offset_hz and starts afresh.
+    // Sets the offset and the anchor to initial_offset_hz and starts afresh. A non-finite
+    // value is ignored (nothing changes).
     void reset(double initial_offset_hz);
     // Starts a fresh average (weight 0) but keeps the offset, the anchor and the NCO
     // phase: after a long silence the next station may be a different one.

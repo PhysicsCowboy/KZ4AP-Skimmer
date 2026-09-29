@@ -73,10 +73,11 @@ to volts or dBm at the antenna.
 | Λ | log-likelihood ratio, key-down over key-up: −a²/2 + ln I₀(a·x) | nats |
 | g, p | posterior log-odds Λ + ln(P₁/P₀), and the posterior probability of key-down | nats, 0…1 |
 | P₁ | prior probability of key-down | 0.44 |
-| f̂ | frequency tracker's estimate of a station's residual offset from its channel center, and the NCO frequency | Hz |
+| f_s | a station's (carrier's) offset from its channel's center | Hz |
+| f̂ | frequency tracker's estimate of f_s, and the NCO frequency | Hz |
 | f_a | the tracker's anchor: where the station is, as the detector says (its frequency for the track minus the channel center) | Hz |
-| τ_L | lag of the frequency discriminator | 5.33 ms (8 samples at 1500 samples/s) |
-| τ_f | time constant of the frequency average, counted in samples of weight 1 | 0.5 s |
+| τ_L | lag of the frequency discriminator, rounded to whole samples; unambiguous range ±1/(2τ_L) | τ_L = 8/r = 5.333 ms (±93.75 Hz) |
+| τ_f | time constant of the frequency average, s of key-down weight 1 | 0.5 s |
 
 ## Overview
 
@@ -582,7 +583,7 @@ rotation, which the decoder ignores (it uses only the magnitude).
 
 That is harmless **only because the channel filter is wide**. A filter
 matched to an element of duration T_el (noise bandwidth exactly 1/T_el for
-a rectangular element) scales a tone offset by Δf (Hz) by |sinc(Δf·T_el)|
+a rectangular element) scales a tone offset by f_s (Hz) by |sinc(f_s·T_el)|
 in amplitude, where sinc(x) = sin(πx)/(πx) (**derived**, from Proakis &
 Salehi, *Digital Communications*, 5th ed., eq. 4.5–28;
 `docs/research/proakis-ook-notes.md`, section 2.7). At ±11.7 Hz a
@@ -606,24 +607,32 @@ component as implemented and tested on its own.
 - **NCO (derived):** u[n] = y[n]·e^(−jφ[n]), φ advancing by 2π·f̂/r per
   sample. f̂ starts at the initial offset its owner gives it (meant to be
   the detector's residual, track frequency minus the channel's center;
-  about 0.2 Hz error measured for a clean station) and is clamped to ±75 Hz, where the channel filter is 0.34 dB down relative
-  to the passband (**heuristic**; beyond it the channel itself would have to
-  move, which the code does not do).
+  about 0.2 Hz error measured for a clean station) and is clamped to
+  ±75 Hz, where the channel filter is 0.34 dB down relative to the
+  passband (**heuristic**; beyond it the channel itself would have to
+  move, which the code does not do). φ runs on through every change of f̂
+  (the tracker's updates, `set_anchor` jumps, `reacquire`); only `reset`
+  sets it to 0.
 - **Discriminator (derived):** on the narrow-filtered, re-centered stream
-  v[n], the product z = v[n]·conj(v[n−L]) has phase 2π·(Δf − f̂)·L/r for a
-  station at Δf. Rotating it by e^(j2π·f̂·L/r) makes it a measurement of Δf
-  itself, so the average below does not depend on the NCO and there is no
-  loop to stabilize (to first order: v averages samples mixed under the
-  last K/32 NCO settings while each product is rotated by the current f̂,
-  a small coupling while f̂ moves, harmless because τ_f·r = 750 samples is
-  much longer than K/2). The lag τ_L = 5.33 ms (8 samples at r) gives an
-  unambiguous range of ±1/(2τ_L) = ±93.75 Hz (**derived**; the value is
-  **heuristic**; it is converted to samples from the physical value).
-- **Average (heuristic):** Z̄ ← Z̄ + α·p·(rotated z − Z̄), α = 1 − e^(−1/(τ_f·r)),
-  τ_f = 0.5 s, weighted by p, the front end's key-down probability, so
-  key-up and pauses leave it unchanged. Every 32 samples (21.3 ms)
-  f̂ ← arg(Z̄)·r/(2πL), once the average holds weight 0.6 or more and is
-  coherent (|Z̄| ≥ 0.3 × the same average of |z|).
+  v[n], the product z = v[n]·conj(v[n − τ_L·r]) has phase
+  2π·(f_s − f̂)·τ_L for a station at f_s. Rotating it by e^(j2π·f̂·τ_L)
+  makes it a measurement of f_s itself, so the average below does not
+  depend on the NCO and there is no loop to stabilize (to first order: v
+  averages samples mixed under the last K/32 NCO settings while each
+  product is rotated by the current f̂, a small coupling while f̂ moves,
+  harmless because τ_f·r = 750 samples is much longer than K/2). The lag
+  is configured as 5.33 ms and rounded to whole samples,
+  τ_L = 8/r = 5.333 ms, which gives an unambiguous range of
+  ±1/(2τ_L) = ±93.75 Hz (**derived**; the value is **heuristic**; it is
+  converted to samples from the physical value). The NCO range (±75 Hz)
+  and the fine-tuning range (±12 Hz) must both lie below it; the
+  constructor rejects a configuration where they do not.
+- **Average (heuristic):** Z̄ ← Z̄ + α·p·(rotated z − Z̄),
+  α = 1 − e^(−1/(τ_f·r)), τ_f = 0.5 s, weighted by p, the front end's
+  key-down probability, so key-up and pauses leave it unchanged. Every
+  32 samples (21.3 ms) f̂ ← arg(Z̄)/(2π·τ_L), once the average holds
+  weight 0.6 or more and is coherent (|Z̄| > 0.3 × the same average of
+  |z|; strictly greater).
 - **Fine-tuning around the detector's frequency (heuristic; owner
   decisions 2026-09-29, option 1):** the tracker does not decide which
   station it follows. Its anchor f_a is set by its owner (`set_anchor`;
@@ -637,23 +646,42 @@ component as implemented and tested on its own.
   f̂ (the detector's track moved to another station's peak in a QSO
   turnover, or drifted), f̂ jumps to f_a and the average restarts. So the
   channel's station is followed through slow drift as far as the
-  detector's peak goes (a 1 s power average lags a ramp of ḟ Hz/s by
-  ḟ·1 s, derived), and a station more than 12 Hz from the detector's
-  frequency can never pull the tracker toward it (as long as the owner
-  keeps the anchor there).
+  detector's peak goes, and a station more than 12 Hz from the
+  detector's frequency can never pull the tracker toward it (as long as
+  the owner keeps the anchor there). How far the detector's peak lags a
+  ramp of ḟ Hz/s: its 1 s power average lags by ḟ·1 s (**derived**,
+  exact for the power-weighted centroid of the averaged spectrum); the
+  interpolated peak equals the centroid when ḟ·1 s is small compared with
+  the Hann kernel's width (about one bin, 23.4 Hz), which holds at
+  1 Hz/s. A non-finite anchor, or a non-finite value given to `reset`, is
+  ignored (the previous state is kept); a non-finite initial offset is
+  rejected by the constructor.
+- **Fresh average after a jump (derived; a note for the wiring task):**
+  after a `set_anchor` jump or a rejection, f̂ changes at once, but the
+  next τ_L·r + K − 1 products still contain samples of v that were mixed
+  at the old f̂ (the boxcar spans K samples and the product reaches back
+  τ_L·r = 8 samples), so they measure f_s off by the size of the jump and
+  bias the fresh average slightly. Their share of the average when it
+  first reaches the 0.6 gate weight (at weight 1, all of those products
+  counted as fully stale, so an upper bound) is
+  (1 − e^(−m/(τ_f·r)))·e^(−(n₆ − m)/(τ_f·r))/0.6 with m = τ_L·r + K − 1
+  and n₆ = τ_f·r·ln 2.5 = 687 samples: 2.8% at K = 24 (60 WPM), 6.0% at
+  K = 58 (25 WPM) and 32% at K = 288 (5 WPM), decaying with τ_f
+  afterward. Task 12, which puts the tracker in front of the matched
+  filter, decides whether to hold off the average for those samples.
 - **Expected accuracy:** about 0.5 Hz RMS at S₅₀₀ = 0 dB and 0.9 Hz at
-  −5 dB, 25 WPM (derived, an upper bound); a simulation of the whole chain
-  (NCO, K = 58 boxcar, posterior weights, 60 s of PARIS, 4 seeds; plan
-  review, 2026-09-27) gave 0.08, 0.27 and 0.55 Hz RMS at S₅₀₀ = +10, 0 and −5 dB
-  (simulated), valid once a station has been acquired, which needs
-  S₅₀₀ ≥ −2.5 dB (derived) at any speed, in simulation 50% of marks keyed
-  near S₅₀₀ = −1.8 dB at 25 WPM (section 8b, "Squelch"); Task 14 measures
-  it in the benchmark; a linear drift of
-  ḟ Hz/s is followed with a lag of about ḟ·τ_f/P₁ (1.1 Hz at 1 Hz/s,
-  P₁ = 0.44, derived; 1.49–1.63 Hz simulated at the end of the last mark
-  through the whole engine). Target (spec §5.2): within ±2 Hz, a loss of
-  0.2 dB relative to a centered station at 20 WPM through a filter of
-  length T.
+  S₅₀₀ = −5 dB, 25 WPM (derived, an upper bound); a simulation of the
+  whole chain (NCO, K = 58 boxcar, posterior weights, 60 s of PARIS,
+  4 seeds; plan review, 2026-09-27) gave 0.08, 0.27 and 0.55 Hz RMS at
+  S₅₀₀ = +10, 0 and −5 dB (simulated), valid once a station has been
+  acquired, which needs S₅₀₀ ≥ −2.5 dB (derived) at any speed, in
+  simulation 50% of marks keyed near S₅₀₀ = −1.8 dB at 25 WPM
+  (section 8b, "Squelch"); Task 14 measures it in the benchmark; a linear
+  drift of ḟ Hz/s is followed with a lag of about ḟ·τ_f/P₁ (1.1 Hz at
+  1 Hz/s, P₁ = 0.44, derived; 1.49–1.63 Hz simulated at the end of the
+  last mark through the whole engine). Target (spec §5.2): within ±2 Hz,
+  a loss of 0.2 dB relative to a centered station at 20 WPM through a
+  filter of length T.
 
 ## 8. Classical decoder (per station)
 
@@ -965,8 +993,8 @@ this section describes the component as implemented and tested on its own.
 | Noise floor | 10th percentile of 64 samples of \|v\|² taken K apart, over 2·(−ln(1 − 0.1/0.25))·2.5; a lift caps W_n at 10.67 ms of samples and restarts ŝ only if the floor exceeds 4·σ̂_v² | `MatchedFrontEndConfig::floor_*` | heuristic; the occupancy bound derived, c = 0.25 from computed clean fractions of continuous text |
 | Front-end warm-up | 0.32 s at K = 24; 20th / 90th percentiles, weight 0.1 × its length | `MatchedFrontEndConfig::warmup_s` | heuristic |
 | Front-end squelch | a ≥ 3·(T_v/16 ms)^(1/4), T_v = K/r the filter duration (3·(K/24)^(1/4) at r = 1500 samples/s) | `MatchedFrontEndConfig::squelch_a`, `squelch_exponent` | 3 heuristic; the duration scaling derived |
-| Frequency discriminator lag | 5.33 ms (8 samples at 1500 samples/s; ±93.75 Hz unambiguous) | `FrequencyTrackerConfig::lag_s` | heuristic within derived range |
-| Frequency average | τ_f = 0.5 s of key-down weight; moves the NCO at weight ≥ 0.6 and coherence ≥ 0.3, every 21.3 ms | `FrequencyTrackerConfig` (`tau_s`, `min_weight`, `min_coherence`, `update_interval_s`) | heuristic |
+| Frequency discriminator lag | τ_L = 8/r = 5.333 ms (`lag_s` = 5.33 ms rounded to whole samples at r = 1500 samples/s); unambiguous range ±1/(2τ_L) = ±93.75 Hz | `FrequencyTrackerConfig::lag_s` | heuristic within derived range |
+| Frequency average | τ_f = 0.5 s of key-down weight; moves the NCO at weight ≥ 0.6 and coherence > 0.3, every 21.3 ms | `FrequencyTrackerConfig` (`tau_s`, `min_weight`, `min_coherence`, `update_interval_s`) | heuristic |
 | Fine-tuning range | ±12 Hz around the anchor (the detector's frequency for the track); farther estimates are discarded; the NCO jumps to an anchor more than 12 Hz away | `FrequencyTrackerConfig::fine_tune_hz` | heuristic (owner decision 2026-09-29, option 1) |
 | NCO range | ±75 Hz | `FrequencyTrackerConfig::max_offset_hz` | heuristic |
 

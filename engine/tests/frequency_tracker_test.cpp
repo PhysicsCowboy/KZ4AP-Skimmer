@@ -196,4 +196,67 @@ TEST(FrequencyTracker, RejectsInvalidConfig) {
     c = {};
     c.update_interval_s = 0.0;
     EXPECT_THROW(FrequencyTracker(kRate, 0.0, c), std::invalid_argument);
+    c = {};
+    c.fine_tune_hz = 94.0;  // not below the +/-93.75 Hz unambiguous range
+    EXPECT_THROW(FrequencyTracker(kRate, 0.0, c), std::invalid_argument);
+    EXPECT_THROW(FrequencyTracker(kRate, std::nan("")), std::invalid_argument);
+    EXPECT_THROW(FrequencyTracker(kRate, INFINITY), std::invalid_argument);
+}
+
+TEST(FrequencyTracker, IgnoresNonFiniteAnchorAndReset) {
+    FrequencyTracker tracker(kRate, 0.0);
+    tracker.set_anchor(5.0);
+    tracker.set_anchor(std::nan(""));
+    EXPECT_EQ(tracker.anchor_hz(), 5.0);
+    EXPECT_EQ(tracker.offset_hz(), 0.0);
+    tracker.set_anchor(-INFINITY);
+    EXPECT_EQ(tracker.anchor_hz(), 5.0);
+    tracker.reset(std::nan(""));
+    EXPECT_EQ(tracker.anchor_hz(), 5.0);
+    EXPECT_EQ(tracker.offset_hz(), 0.0);
+}
+
+TEST(FrequencyTracker, IncoherentAverageDoesNotMoveTheNco) {
+    // Two equal tones at +/-46.875 Hz: over the 8-sample lag (5.333 ms) their products turn by
+    // +/-pi/2, so the average of products tends to j + (-j) = 0 (the cross terms turn by pi/8 per
+    // sample and average out), while the average of |products| is 4/pi FS^2 (derived). The
+    // coherence gate (0.3) stays shut, so neither an update nor a rejection happens: the offset
+    // stays at 0 Hz although the anchor, 5 Hz, is where a rejection would send it.
+    FrequencyTracker tracker(kRate, 0.0);
+    tracker.set_anchor(5.0);
+    ASSERT_EQ(tracker.offset_hz(), 0.0);
+    const Tone up{46.875}, down{-46.875};
+    for (std::size_t n = 0; n < seconds(3.0); ++n) tracker.observe(tracker.mix(up.at(n) + down.at(n)), 1.0f);
+    EXPECT_EQ(tracker.offset_hz(), 0.0);
+    // Control: one of the tones alone is coherent, 41.9 Hz from the anchor, so it is rejected.
+    feed(tracker, up, seconds(3.0), seconds(3.0), 1.0f);
+    EXPECT_EQ(tracker.offset_hz(), 5.0);
+}
+
+TEST(FrequencyTracker, MixIsPhaseContinuousAcrossOffsetChanges) {
+    // mix(y) = y e^(-j phi[n]) with phi[n+1] = phi[n] + 2 pi f[n] / r, f[n] the offset when sample n
+    // is mixed: the NCO phase carries on through the tracker's own updates and through a
+    // set_anchor jump, never restarting.
+    FrequencyTracker tracker(kRate, 0.0);
+    const Tone tone{9.0};
+    double phi = 0;
+    bool moved = false;
+    auto step = [&](std::size_t n) {
+        const Sample y = tone.at(n);
+        const double f = tracker.offset_hz();
+        const Sample u = tracker.mix(y);
+        const std::complex<double> err =
+            std::complex<double>(u) / std::complex<double>(y) * std::polar(1.0, phi);
+        ASSERT_LT(std::abs(std::arg(err)), 1e-4) << n;
+        phi = std::remainder(phi + 2 * std::numbers::pi * f / kRate, 2 * std::numbers::pi);
+        tracker.observe(u, 1.0f);
+        if (tracker.offset_hz() != f) moved = true;
+    };
+    std::size_t n = 0;
+    for (; n < seconds(3.0) && !HasFatalFailure(); ++n) step(n);
+    EXPECT_TRUE(moved);  // the tracker's own estimates changed the offset
+    EXPECT_NEAR(tracker.offset_hz(), 9.0, 0.05);
+    tracker.set_anchor(40.0);  // a jump
+    ASSERT_EQ(tracker.offset_hz(), 40.0);
+    for (const std::size_t end = n + seconds(1.0); n < end && !HasFatalFailure(); ++n) step(n);
 }

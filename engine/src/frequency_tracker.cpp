@@ -11,7 +11,9 @@ namespace {
 constexpr double kTwoPi = 2 * std::numbers::pi;
 
 // A physical duration in samples (owner's rule: convert only at the point of use).
-int samples_for(double seconds, double sample_rate) { return static_cast<int>(std::lround(seconds * sample_rate)); }
+int samples_for(double seconds, double sample_rate) {
+    return static_cast<int>(std::lround(seconds * sample_rate));
+}
 
 // Validates the parameters and returns sample_rate. Runs as rate_'s initializer,
 // before alpha_ divides by them.
@@ -21,9 +23,18 @@ double validated_rate(double sample_rate, const FrequencyTrackerConfig& c) {
         samples_for(c.update_interval_s, sample_rate) < 1 || !(c.fine_tune_hz > 0) ||
         !(c.min_coherence >= 0) || !(c.min_coherence < 1))
         throw std::invalid_argument("invalid frequency tracker config");
-    if (!(c.max_offset_hz < sample_rate / (2.0 * samples_for(c.lag_s, sample_rate))))
+    const double unambiguous_hz = sample_rate / (2.0 * samples_for(c.lag_s, sample_rate));
+    if (!(c.max_offset_hz < unambiguous_hz))
         throw std::invalid_argument("frequency tracker max_offset_hz must be below 1 / (2 lag)");
+    if (!(c.fine_tune_hz < unambiguous_hz))
+        throw std::invalid_argument("frequency tracker fine_tune_hz must be below 1 / (2 lag)");
     return sample_rate;
+}
+
+// Validates the initial offset and returns it; a non-finite value has no previous one to fall back on.
+double validated_offset(double offset_hz) {
+    if (!std::isfinite(offset_hz)) throw std::invalid_argument("frequency tracker initial offset must be finite");
+    return offset_hz;
 }
 
 }  // namespace
@@ -34,7 +45,7 @@ FrequencyTracker::FrequencyTracker(double sample_rate, double initial_offset_hz,
       lag_(samples_for(config.lag_s, sample_rate)),
       update_every_(samples_for(config.update_interval_s, sample_rate)),
       alpha_(1.0 - std::exp(-1.0 / (config.tau_s * sample_rate))) {
-    reset(initial_offset_hz);
+    reset(validated_offset(initial_offset_hz));
 }
 
 void FrequencyTracker::clear_average() {
@@ -44,6 +55,7 @@ void FrequencyTracker::clear_average() {
 }
 
 void FrequencyTracker::reset(double initial_offset_hz) {
+    if (!std::isfinite(initial_offset_hz)) return;  // ignored: keep the previous state
     offset_hz_ = std::clamp(initial_offset_hz, -config_.max_offset_hz, config_.max_offset_hz);
     anchor_hz_ = offset_hz_;
     phase_ = 0;
@@ -57,6 +69,7 @@ void FrequencyTracker::reset(double initial_offset_hz) {
 void FrequencyTracker::reacquire() { clear_average(); }
 
 void FrequencyTracker::set_anchor(double anchor_hz) {
+    if (!std::isfinite(anchor_hz)) return;  // ignored: keep the previous anchor, offset and average
     anchor_hz_ = std::clamp(anchor_hz, -config_.max_offset_hz, config_.max_offset_hz);
     if (std::abs(anchor_hz_ - offset_hz_) > config_.fine_tune_hz) {
         // The detector's track moved to another peak (a turnover within the channel distance) or
