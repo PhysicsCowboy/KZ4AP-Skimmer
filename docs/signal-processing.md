@@ -816,7 +816,29 @@ research is under way (`docs/research/`).
   - **first-word CER** = edits charged to the first word of each
     transmission / the symbols of those words.
   Character and space edits add up to the CER's edit count. The benchmark
-  also reports these counts for each transmission (for a QSO, each over).
+  also reports, for each transmission (for a QSO, each over): its reference
+  symbols and the edits charged to them, and the same pair for its first
+  word.
+  **Where an edit lands when the alignment is ambiguous is a heuristic, and
+  it biases first-word and per-transmission rates upward.** Walking the
+  trace back from the end and preferring a match or substitution over a
+  deletion or insertion (the tie-break above) means that among several
+  minimum-edit alignments, matches are pushed as late as possible and
+  deletions/insertions as early as possible — so an ambiguous edit is always
+  charged to the *earliest* reference symbol it could belong to, never a
+  later one. Two consequences: (1) when the reference text repeats (for
+  example a CQ sent twice) and a later repetition is the one actually lost,
+  the missing symbols are still charged to the first occurrence, so
+  first-word CER for that transmission can read 100% even though the first
+  word was copied correctly; first-word and per-transmission CER are
+  therefore an **upper bound**, not an exact attribution, whenever the text
+  repeats or whole words are dropped. (2) An insertion decoded before a
+  transmission's own start (for example noise the decoder read as characters
+  before the true key-down) is charged to that transmission's first
+  reference symbol, i.e. counted against its first word, because insertions
+  are charged to the reference symbol they precede. Because insertions can
+  outnumber a short first word's own symbols, first-word CER (and the
+  per-transmission and space rates, by the same mechanism) can exceed 1.
 - **No-space CER** (VE3NEA's metric): the Levenshtein distance between
   reference and decoded symbols with every word space removed, over the
   reference symbols that are not word spaces. It differs from character

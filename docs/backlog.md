@@ -683,6 +683,15 @@ for the line format and client handling.
 - **Benchmark matching** of labeled signals to tracks is greedy in file order;
   fine at 1 kHz spacing, but needs a proper assignment once crowded scenarios
   exist.
+- **Neutral attribution of ambiguous edits in first-word scoring:** the
+  bench's alignment traceback charges an ambiguous edit to the earliest
+  reference symbol it could belong to (`docs/signal-processing.md` §11),
+  which biases first-word and per-transmission CER upward when text repeats
+  or a whole word is dropped. Among the alignment's optimal paths, split an
+  ambiguous edit's charge (for example half to each candidate symbol), or
+  also report the forward-traceback figure as a bracket around the current
+  one. Until then, treat first-word CER as an upper bound, not an exact
+  attribution.
 - **Determinism check** in CI runs the same block size twice; add a bench
   option to vary the block size and compare.
 - **Test gaps** noted in review: detector hysteresis band and equal-power peak

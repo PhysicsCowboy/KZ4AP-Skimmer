@@ -6,9 +6,33 @@ set -euo pipefail
 
 BUILD_DIR="$1"
 PYTHON="${PYTHON:-python}"
-BENCH=$(find "$BUILD_DIR" -type f \( -name kz4ap-bench -o -name kz4ap-bench.exe \) | head -n 1)
-if [ -z "$BENCH" ]; then
+
+# Multi-config generators (Windows) put both a Debug and a Release binary
+# under BUILD_DIR; single-config generators (the Linux CI layout, Ninja with
+# CMAKE_BUILD_TYPE=Release) put just one. Prefer a uniquely-identified
+# Release binary; otherwise, if there is exactly one candidate at all, use
+# it; otherwise the choice is ambiguous and this fails rather than silently
+# picking a stale binary (`find | head -n 1` used to pick whichever sorted
+# first, which could be an old Debug build).
+CANDIDATES=$(find "$BUILD_DIR" -type f \( -name kz4ap-bench -o -name kz4ap-bench.exe \))
+if [ -z "$CANDIDATES" ]; then
     echo "kz4ap-bench not found under $BUILD_DIR" >&2
+    exit 2
+fi
+RELEASE_CANDIDATES=$(printf '%s\n' "$CANDIDATES" | grep '/Release/' || true)
+TOTAL_COUNT=$(printf '%s\n' "$CANDIDATES" | wc -l | tr -d ' ')
+if [ -z "$RELEASE_CANDIDATES" ]; then
+    RELEASE_COUNT=0
+else
+    RELEASE_COUNT=$(printf '%s\n' "$RELEASE_CANDIDATES" | wc -l | tr -d ' ')
+fi
+if [ "$RELEASE_COUNT" -eq 1 ]; then
+    BENCH="$RELEASE_CANDIDATES"
+elif [ "$TOTAL_COUNT" -eq 1 ]; then
+    BENCH="$CANDIDATES"
+else
+    echo "kz4ap-bench: ambiguous binary under $BUILD_DIR (no single Release build, and more than one candidate):" >&2
+    printf '%s\n' "$CANDIDATES" >&2
     exit 2
 fi
 

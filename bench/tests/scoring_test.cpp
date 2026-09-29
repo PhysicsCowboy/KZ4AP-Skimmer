@@ -197,3 +197,21 @@ TEST(Scoring, NoSpaceCerIsVe3neasMetric) {
     EXPECT_EQ(t.signals[0].nospace_edits, 1u);
     EXPECT_DOUBLE_EQ(t.nospace_cer, 1.0 / 6.0);
 }
+
+TEST(Scoring, AmbiguousEditsAreChargedToTheEarliestPosition) {
+    // The decoder lost the *second* "CQ", not the first, but the traceback (ties broken from
+    // the end toward match/substitution before deletion/insertion) charges all 3 deletions --
+    // C, Q, and the word space between the two words -- to the earliest reference symbols: the
+    // first word itself, then the word space. Nothing is charged to the second "CQ".
+    const auto a = align_text("CQ CQ", "CQ");
+    EXPECT_EQ(a.counts.total(), 3u);
+    EXPECT_EQ(a.counts.char_edits, 2u);   // the first C and Q
+    EXPECT_EQ(a.counts.space_edits, 1u);  // the word space between the two words
+    EXPECT_EQ(a.charged, (std::vector<std::size_t>{1, 1, 1, 0, 0}));
+
+    const auto label = make_label("CQ CQ", 1000.0);
+    const auto s = score({label}, {{1, 1000.0, "CQ"}});
+    EXPECT_EQ(s.signals[0].first_word_symbols, 2u);
+    EXPECT_EQ(s.signals[0].first_word_edits, 2u);  // both edits charged to "CQ", though it decoded correctly
+    EXPECT_DOUBLE_EQ(s.first_word_cer, 1.0);
+}
