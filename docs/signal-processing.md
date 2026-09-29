@@ -598,11 +598,13 @@ detector noticed it: see "first characters" in the backlog.
 
 ### Frequency re-centering (Matched front end only)
 
-Not yet wired into the decoder: nothing in the engine calls it, and the
-default decoder (section 8) does not re-center. `FrequencyTracker`
-(frequency_tracker.cpp) is built to run per station at r = 1500 samples/s
-on a station's channel stream (section 7); this section describes the
-component as implemented and tested on its own.
+Used only when the decoder's front end is `Matched` (section 8b); the
+Envelope pipeline does not re-center. `FrequencyTracker`
+(frequency_tracker.cpp) runs per station at r = 1500 samples/s inside the
+classical decoder, on the channel stream, ahead of section 8b's filter.
+The decoder passes on the anchor its caller gives it
+(`Decoder::set_frequency_anchor_hz`); nothing in the engine calls it yet
+(milestone 2, part 1, Task 13 does).
 
 - **NCO (derived):** u[n] = y[n]·e^(−jφ[n]), φ advancing by 2π·f̂/r per
   sample. f̂ starts at the initial offset its owner gives it (meant to be
@@ -656,7 +658,7 @@ component as implemented and tested on its own.
   1 Hz/s. A non-finite anchor, or a non-finite value given to `reset`, is
   ignored (the previous state is kept); a non-finite initial offset is
   rejected by the constructor.
-- **Fresh average after a jump (derived; a note for the wiring task):**
+- **Fresh average after a jump (derived):**
   after a `set_anchor` jump or a rejection, f̂ changes at once, but the
   next τ_L·r + K − 1 products still contain samples of v that were mixed
   at the old f̂ (the boxcar spans K samples and the product reaches back
@@ -668,8 +670,10 @@ component as implemented and tested on its own.
   (1 − e^(−m/(τ_f·r)))·e^(−(n₆ − m)/(τ_f·r))/0.6 with m = τ_L·r + K − 1
   and n₆ = τ_f·r·ln 2.5 = 687 samples: 2.8% at K = 24 (60 WPM), 6.0% at
   K = 58 (25 WPM) and 32% at K = 288 (5 WPM), decaying with τ_f
-  afterward. Task 12, which puts the tracker in front of the matched
-  filter, decides whether to hold off the average for those samples.
+  afterward. The classical decoder (section 8, "Two front ends"), which
+  puts the tracker in front of the matched filter, does not hold off the
+  average for those samples; the bias is left at this bound (not
+  measured).
 - **Expected accuracy:** about 0.5 Hz RMS at S₅₀₀ = 0 dB and 0.9 Hz at
   S₅₀₀ = −5 dB, 25 WPM (derived, an upper bound); a simulation of the
   whole chain (NCO, K = 58 boxcar, posterior weights, 60 s of PARIS,
@@ -683,6 +687,11 @@ component as implemented and tested on its own.
   last mark through the whole engine). Target (spec §5.2): within ±2 Hz,
   a loss of 0.2 dB relative to a centered station at 20 WPM through a
   filter of length T.
+- **Re-acquisition (heuristic):** after a silence (section 8) the decoder
+  calls `reacquire()`: the average starts afresh (weight 0) from the last
+  f̂, so the next station, if it is within ±12 Hz of the anchor, is found
+  within about 0.5 s of key-down weight (the average needs weight 0.6);
+  one farther away is reached when the detector moves the anchor.
 
 ## 8. Classical decoder (per station)
 
@@ -698,6 +707,55 @@ It does **not** yet do what the design spec asks of the classical decoder,
 finding "the most probable character sequence given timing statistics and a
 prior over likely text". A probabilistic decoder is the key next step; decoder
 research is under way (`docs/research/`).
+
+**Two front ends.** `ClassicalDecoderConfig::front_end` selects how samples
+become key-down and key-up. `Envelope` (the default, steps 1–5 below) is
+the baseline. `Matched` replaces steps 1–5 with section 7's re-centering and
+section 8b's matched filter and likelihood: the key goes down when the
+posterior log-odds g exceeds +1 nat and up when it falls below −1 nat
+(**heuristic** hysteresis), and never goes down while a < a_min(K) (section
+8b, "Squelch"). Steps 6–10
+(glitches, elements, gaps, symbols, speed) are the same in both. In
+`Matched` mode the filter follows the speed estimate once its window holds
+8 marks (**heuristic**), and every decode result reports the tracker's
+frequency estimate. While the filter follows, each speed
+update may raise the dit estimate by at most ×1.25 (**heuristic**, owner
+decision 2026-09-29): it stops a runaway after a sudden speed change, and a
+real slowdown takes ln(ratio)/ln 1.25 marks to follow (5 marks from 35 to
+12 WPM, derived). The same bound holds for the filter's own dit from its
+first follow step after an acquisition or re-acquisition (owner decision
+2026-09-29, option 1): it grows from the 20 ms acquisition dit by at most
+×1.25 per mark until it reaches the estimate (4 marks to reach 25 WPM,
+8 to reach 12 WPM, derived), because the estimate at that step may rest on
+up to 7 unbounded marks (in simulation a truncated first mark gave a
+110 ms estimate, the filter jumped from K = 24 to 146 samples and ran
+away; the bound's effect on that case is not yet measured).
+**Re-acquisition (heuristic):** once the key has been
+up for max(0.5 s, 12 dits), the Matched decoder assumes the next station
+may be a different one (a QSO turnover): section 8b's filter returns to
+the 60 WPM width and its amplitude estimate restarts, section 7's
+frequency average restarts from the last estimate, the speed window of
+step 10 is set aside and a new one starts (so the next station's marks are
+not mixed with this one's), and the filter follows the speed again after 8
+new marks; if nothing is keyed within 2 s, the set-aside speed window comes
+back and the filter returns to the width it had (a weak station that pauses
+is then not held at the acquisition floor). The decoder does not decide
+which station it follows: its frequency tracker fine-tunes within ±12 Hz
+of the anchor its caller gives it (`Decoder::set_frequency_anchor_hz`;
+section 7), so on its own it follows only a station within ±12 Hz of that
+anchor; a station farther away is followed only when the caller moves the
+anchor to it.
+Simulated at decoder level (an earlier tracker design whose estimate
+never left 0.2 Hz of the first station in these runs; levels in dB re
+the first station's key-down power; 100 seeds each): a station answering
+50 Hz away at −10 dB (not keyed), 70 Hz away at −6 dB, or 100 Hz away at
+−6 or +10 dB left the first station's next over intact in 99–100 of 100.
+**Limits:** a neighbor 60–70 Hz away at the first station's level or
+stronger leaks through the filter's first sidelobe (−18.7 dB relative to a
+centered station at 60 Hz and K = 58, derived) and can be keyed in
+fragments that corrupt the speed estimate (simulated). After a silence in noise alone, noise was keyed as a
+stray character in about 1% of cases (4 of 400), because ŝ restarts from
+its first few noise samples.
 
 1. **Envelope detection.** Take the magnitude |y[n]| (FS). This is
    non-coherent AM detection: it needs no carrier recovery, and the carrier
@@ -791,11 +849,11 @@ research is under way (`docs/research/`).
 
 ## 8b. Matched front end (optional, per station)
 
-Not yet wired into the decoder: nothing in the engine calls it, and the
-default decoder (section 8) does not use it. `MatchedFrontEnd`
-(matched_front_end.cpp) is built to run per station at r = 1500 samples/s
-on a station's channel stream (section 7), before any envelope is taken;
-this section describes the component as implemented and tested on its own.
+Used when the classical decoder's front end is `Matched`
+(`ClassicalDecoderConfig::front_end`; section 8, "Two front ends").
+`MatchedFrontEnd` (matched_front_end.cpp) runs per station at
+r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
+(section 7, "Frequency re-centering"), before any envelope is taken.
 
 - **Filter (derived):** a boxcar (moving average) of K samples, normalized
   to unity gain. A boxcar of duration T is the matched filter of a
@@ -807,9 +865,10 @@ this section describes the component as implemented and tested on its own.
   25 WPM (K = 58), 10·log₁₀(252/25.9) = 9.9 dB less noise than the channel
   filter passes (derived).
 - **Following speed (heuristic):** K starts at 60 WPM (K = 24, 62.5 Hz),
-  the widest filter, and follows the dit passed to `set_dit` (when the
-  speed estimate is trusted enough to pass is the caller's choice; no
-  caller exists yet); K is clamped between the acquisition width
+  the widest filter, and follows the dit passed to `set_dit`; the Matched
+  decoder passes it once its speed window holds 8 marks (8 new ones after
+  a re-acquisition), the filter's dit growing at most ×1.25 per mark from
+  the 20 ms acquisition dit (section 8, "Two front ends"); K is clamped between the acquisition width
   (β·1.2 s/60 = 16 ms, K = 24) and the 5 WPM width (β·1.2 s/5 = 192 ms,
   K = 288), both computed from durations; a dit that is not finite or
   not positive is ignored. When K changes, σ̂_v² is
@@ -820,6 +879,17 @@ this section describes the component as implemented and tested on its own.
   K = 58, dB relative to the true noise power, derived). The last 2K + 1
   values of |v|² that the noise guard compares (below) and the floor's
   samples are rescaled by the same factor.
+- **Re-acquisition (heuristic):** after a silence (section 8) the decoder
+  calls `reacquire()`: K returns to 24 (60 WPM, main lobe ±62.5 Hz), ŝ²
+  and its weight return to 0, and σ̂_v² is kept (rescaled); if nothing is
+  keyed within 2 s the width returns to what it was. Without it the
+  filter stays at the last station's width (±21–26 Hz main lobe, nulls
+  near 25 and 50 Hz) and ŝ at its level, and a station answering there,
+  or 6 dB weaker (re the first station's key-down power), is never keyed
+  (simulated). After it, a station Δf away loses |sinc(Δf·24/1500 s)|² at
+  K = 24 (−2.4 dB relative to a centered station at 25 Hz, derived) and
+  must pass the acquisition squelch, so it needs about S₅₀₀ ≥ 0 dB at
+  25 Hz.
 - **Likelihood (derived; Proakis eq. 4.5–21):** Λ = −a²/2 + ln I₀(a·x),
   x = |v|/σ̂_v, a = ŝ/σ̂_v, in nats; ln I₀ from Abramowitz & Stegun 9.8.1–9.8.2
   without overflow. g = Λ + ln(P₁/P₀) with P₁ = 0.44 (derived from PARIS:
@@ -943,8 +1013,8 @@ this section describes the component as implemented and tested on its own.
   0.67 ms timing resolution. Scaling a nonlinear per-sample LLR by the
   correlation length is an approximation (the sufficient statistic for one
   element is one matched-filter sample); the HMM plan may decimate at a
-  stride of K instead. A decoder that keys from g sample by sample does
-  not sum, and can ignore the weight.
+  stride of K instead. The classical decoder keys from g sample by sample
+  and does not sum, so it ignores the weight.
 
 ## 9. Timing and latency
 
@@ -954,6 +1024,7 @@ this section describes the component as implemented and tested on its own.
 | Detection | 1 s warm-up at recording start; then ~0.5–1.5 s for a new station (averaging + 0.5 s persistence) |
 | Channel filter group delay | 10.7 ms |
 | Decoder smoothing | ~¼ dit (τ_s) |
+| Matched filter group delay (Matched only) | (K − 1)/2 samples: 19 ms at 25 WPM |
 | Character emitted | after a 2-dit gap follows it |
 | Track removed | average decay (~6–7 s for a 20 dB SNR (500 Hz) station) plus the 10 s timeout |
 
@@ -988,6 +1059,11 @@ this section describes the component as implemented and tested on its own.
 | Character / word gap | > 2 / > 5 dits | classical_decoder.cpp | standard midpoints |
 | Speed window / range | 24 marks, 5–60 WPM | classical_decoder.cpp | heuristic |
 | Edge-shortening ratio band | 3.0–3.85 | classical_decoder.cpp | measured |
+| Front end | Envelope (default) or Matched | `ClassicalDecoderConfig::front_end` | — |
+| LLR keying hysteresis (Matched) | g > +1 nat down, g < −1 nat up | `ClassicalDecoderConfig::llr_hysteresis` | heuristic |
+| Filter follows speed after (Matched) | 8 marks in the speed window (8 new ones after a re-acquisition) | `ClassicalDecoderConfig::follow_after_marks` | heuristic |
+| Dit-estimate growth bound (Matched) | at most ×1.25 per mark while the filter follows the speed; the filter's own dit also grows at most ×1.25 per mark from its first follow step (from the 20 ms acquisition dit) | `ClassicalDecoderConfig::max_dit_growth` | heuristic (owner decisions 2026-09-29) |
+| Re-acquisition (Matched) | after max(0.5 s, 12 dits) of key-up: filter back to 60 WPM, ŝ, the frequency average and the speed window restart; the old speed window and the narrow filter come back if nothing is keyed within 2 s | `ClassicalDecoderConfig::reacquire_after_dits`, `reacquire_min_s`, `reacquire_window_s` | heuristic |
 | Matched filter | boxcar, K = round(0.8·dit·r), starts at 60 WPM (16 ms, K = 24), clamped to 16–192 ms (60–5 WPM; K = 24–288) | `MatchedFrontEndConfig` | derived shape; β and start heuristic |
 | Likelihood | Λ = −a²/2 + ln I₀(a·x); prior P₁ = 0.44 | matched_front_end.cpp | derived |
 | Amplitude / noise estimates | τ_a = 0.5 s (EM, p-weighted) / τ_n = 2 s (middle tap below κ = 1.75, neighbors below κ_n = 4, truncation mean 0.632 divided out) | `MatchedFrontEndConfig` | heuristic; the truncation correction derived |

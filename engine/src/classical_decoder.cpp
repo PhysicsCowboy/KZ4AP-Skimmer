@@ -7,6 +7,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace kz4ap {
 namespace {
@@ -37,18 +38,25 @@ float logistic(double x) { return static_cast<float>(1.0 / (1.0 + std::exp(-x)))
 double validated_rate(double sample_rate, const ClassicalDecoderConfig& c) {
     if (!(sample_rate > 0) || !(c.min_wpm > 0) || !(c.max_wpm >= c.min_wpm) || !(c.initial_wpm >= c.min_wpm) ||
         !(c.initial_wpm <= c.max_wpm) || !(c.attack_s > 0) || !(c.decay_s > 0) || !(c.squelch_ratio > 1.0f) ||
-        !(c.smoothing_dits > 0) || !(c.glitch_dits >= 0))
+        !(c.smoothing_dits > 0) || !(c.glitch_dits >= 0) || !(c.llr_hysteresis >= 0) || c.follow_after_marks < 2 ||
+        !(c.max_dit_growth >= 1) || !(c.reacquire_after_dits > 0) || !(c.reacquire_min_s >= 0) ||
+        !(c.reacquire_window_s >= 0))
         throw std::invalid_argument("invalid classical decoder config");
     return sample_rate;
 }
 
 }  // namespace
 
-ClassicalDecoder::ClassicalDecoder(double sample_rate, ClassicalDecoderConfig config)
+ClassicalDecoder::ClassicalDecoder(double sample_rate, ClassicalDecoderConfig config, double initial_offset_hz)
     : rate_(validated_rate(sample_rate, config)),
       config_(config),
       attack_alpha_(alpha_for(config.attack_s, sample_rate)),
-      decay_alpha_(alpha_for(config.decay_s, sample_rate)) {
+      decay_alpha_(alpha_for(config.decay_s, sample_rate)),
+      initial_offset_hz_(initial_offset_hz) {
+    if (config_.front_end == FrontEnd::Matched) {
+        tracker_.emplace(sample_rate, initial_offset_hz, config_.tracker);
+        front_end_.emplace(sample_rate, config_.matched);
+    }
     reset();
 }
 
@@ -67,6 +75,16 @@ void ClassicalDecoder::reset() {
     elements_.clear();
     recent_marks_.clear();
     confidence_ = 0;
+    if (tracker_) tracker_->reset(initial_offset_hz_);
+    if (front_end_) front_end_->reset();
+    last_key_t_ = 0;
+    heard_since_reacquire_ = false;
+    marks_since_reacquire_ = 0;
+    reacquire_until_ = -1;
+    was_following_ = false;
+    set_aside_marks_.clear();
+    filter_dit_s_ = 1.2 / config_.matched.initial_wpm;  // the acquisition dit, 20 ms at 60 WPM
+    set_aside_filter_dit_s_ = filter_dit_s_;
 }
 
 DecodeUpdate ClassicalDecoder::process(std::span<const Sample> samples, double t0_s) {
@@ -81,11 +99,14 @@ DecodeUpdate ClassicalDecoder::process(std::span<const Sample> samples, double t
         anchored_ = true;
     }
     for (const auto& sample : samples) {
-        step(std::abs(sample), origin_s_ + static_cast<double>(count_) / rate_, out);
+        const double t = origin_s_ + static_cast<double>(count_) / rate_;
+        if (front_end_) step_matched(sample, t, out);
+        else step(std::abs(sample), t, out);
         ++count_;
     }
     out.wpm = static_cast<float>(wpm());
     out.confidence = confidence_;
+    if (tracker_) out.freq_offset_hz = tracker_->offset_hz();
     return out;
 }
 
@@ -94,6 +115,7 @@ DecodeUpdate ClassicalDecoder::flush() {
     if (char_open_) finish_char(out);
     out.wpm = static_cast<float>(wpm());
     out.confidence = confidence_;
+    if (tracker_) out.freq_offset_hz = tracker_->offset_hz();
     return out;
 }
 
@@ -122,15 +144,72 @@ void ClassicalDecoder::step(float magnitude, double t, DecodeUpdate& out) {
     } else if (key_ && (squelched || env < space_ + 0.4f * span)) {
         key_up(t);
     }
+    check_gaps(t, out);
+}
 
-    if (!key_) {
-        const double gap = t - up_t_;
-        if (char_open_ && gap > 2.0 * dit_s_) finish_char(out);
-        if (word_open_ && !char_open_ && gap > 5.0 * dit_s_) {
-            emit(out, " ", 1.0f, up_t_, t);
-            word_open_ = false;
-        }
+void ClassicalDecoder::check_gaps(double t, DecodeUpdate& out) {
+    if (key_) return;
+    const double gap = t - up_t_;
+    if (char_open_ && gap > 2.0 * dit_s_) finish_char(out);
+    if (word_open_ && !char_open_ && gap > 5.0 * dit_s_) {
+        emit(out, " ", 1.0f, up_t_, t);
+        word_open_ = false;
     }
+}
+
+void ClassicalDecoder::step_matched(Sample y, double t, DecodeUpdate& out) {
+    const FrontEndSample f = front_end_->step(tracker_->mix(y));
+    if (!f.ready) return;
+    tracker_->observe(f.filtered, f.p_key_down);
+    const double h = config_.llr_hysteresis;
+    if (!key_ && f.signal && f.log_odds > h) {
+        key_down(t);
+        heard_since_reacquire_ = true;
+    } else if (key_ && (!f.signal || f.log_odds < -h)) {
+        key_up(t);
+    }
+    if (key_) last_key_t_ = t;
+    // A long silence may be a turnover to another station (at another level, or at another
+    // frequency, which the detector will report through the anchor): widen the filter, restart the
+    // amplitude and frequency averages, and start a new speed window, so the next station's marks
+    // are not mixed with this one's (heuristic).
+    if (!key_ && heard_since_reacquire_ &&
+        t - last_key_t_ > std::max(config_.reacquire_min_s, config_.reacquire_after_dits * dit_s_)) {
+        was_following_ = marks_since_reacquire_ >= config_.follow_after_marks;
+        front_end_->reacquire();
+        tracker_->reacquire();
+        heard_since_reacquire_ = false;
+        marks_since_reacquire_ = 0;
+        reacquire_until_ = t + config_.reacquire_window_s;
+        set_aside_marks_ = std::move(recent_marks_);
+        recent_marks_.clear();
+        set_aside_filter_dit_s_ = filter_dit_s_;
+        filter_dit_s_ = 1.2 / config_.matched.initial_wpm;  // the filter is back at the acquisition width
+    }
+    // Nothing keyed within the window: the same station is probably pausing (or none is there).
+    // Bring back its speed window, and the narrow filter it had, which is more sensitive than the
+    // acquisition width.
+    if (reacquire_until_ >= 0 && t > reacquire_until_) {
+        reacquire_until_ = -1;
+        if (!heard_since_reacquire_) {
+            recent_marks_ = std::move(set_aside_marks_);
+            if (was_following_) {
+                filter_dit_s_ = set_aside_filter_dit_s_;  // the width it had (a return, not a follow step)
+                front_end_->set_dit(filter_dit_s_);
+                marks_since_reacquire_ = config_.follow_after_marks;
+            }
+        }
+        set_aside_marks_.clear();
+    }
+    check_gaps(t, out);
+}
+
+double ClassicalDecoder::frequency_offset_hz() const { return tracker_ ? tracker_->offset_hz() : initial_offset_hz_; }
+
+int ClassicalDecoder::filter_length() const { return front_end_ ? front_end_->length() : 0; }
+
+void ClassicalDecoder::set_frequency_anchor_hz(double offset_hz) {
+    if (tracker_) tracker_->set_anchor(offset_hz);  // Envelope: nothing changes (bit-identical)
 }
 
 void ClassicalDecoder::key_down(double t) {
@@ -159,6 +238,7 @@ void ClassicalDecoder::key_up(double t) {
     char_open_ = true;
     if (!counts_for_speed(duration)) return;
     recent_marks_.push_back(duration);
+    ++marks_since_reacquire_;
     if (recent_marks_.size() > kSpeedWindow) recent_marks_.pop_front();
     update_speed();
 }
@@ -225,8 +305,26 @@ void ClassicalDecoder::update_speed() {
         const double mean = std::accumulate(d.begin(), d.end(), 0.0) / static_cast<double>(d.size());
         dit = mean > 2.0 * dit_s_ ? mean / 3.0 : mean;
     }
+    // Matched: while the filter follows the speed, the dit estimate may grow by at most
+    // max_dit_growth per mark (owner decision 2026-09-29). A jump of x2 in one update, while the
+    // window holds two speeds, made the filter outgrow the element spaces, merge marks and run away
+    // (final check F-2); a real slowdown now takes ln(ratio) / ln(max_dit_growth) marks to follow.
+    const bool following = front_end_ && recent_marks_.size() >= config_.follow_after_marks &&
+                           marks_since_reacquire_ >= config_.follow_after_marks;
+    if (following) dit = std::min(dit, config_.max_dit_growth * dit_s_);
     dit_s_ = std::clamp(dit, 1.2 / config_.max_wpm, 1.2 / config_.min_wpm);
     smooth_alpha_ = alpha_for(std::max(config_.smoothing_dits * dit_s_, 1.0 / rate_), rate_);
+    // The matched filter follows the speed once the estimate rests on enough marks, and
+    // after a re-acquisition only once enough of them are new. Its own dit grows at most
+    // max_dit_growth per mark, from its first follow step on (owner decision 3 of option 1,
+    // 2026-09-29): the estimate may rest on up to 7 unbounded marks, and a jump from the 20 ms
+    // acquisition dit straight to a wrong 110 ms estimate made the filter outgrow the element
+    // spaces and run away in simulation. Decreases are not bounded.
+    if (front_end_ && recent_marks_.size() >= config_.follow_after_marks &&
+        marks_since_reacquire_ >= config_.follow_after_marks) {
+        filter_dit_s_ = std::min(dit_s_, config_.max_dit_growth * filter_dit_s_);
+        front_end_->set_dit(filter_dit_s_);
+    }
 }
 
 }  // namespace kz4ap

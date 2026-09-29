@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -14,6 +15,7 @@
 using namespace kz4ap;
 using kz4ap::test::duration_for;
 using kz4ap::test::keyed_signal;
+using kz4ap::test::keying;
 
 namespace {
 
@@ -283,4 +285,378 @@ TEST(ClassicalDecoder, DecodesHeavyHandKeying) {
     // 20 wpm with four-dit dahs, as a heavy-handed operator might send.
     ClassicalDecoder d(kRate);
     EXPECT_EQ(text(decode_all(d, hand_keyed("CQ TEST K1ABC", 20, 4.0), 32)), "CQ TEST K1ABC");
+}
+
+namespace {
+
+ClassicalDecoderConfig matched() {
+    ClassicalDecoderConfig c;
+    c.front_end = FrontEnd::Matched;
+    return c;
+}
+
+// Noise RMS (total, complex) giving s500_db for a unit-amplitude carrier in a
+// white 1500 samples/s stream: S500 = A^2 / (sigma^2 * 500 Hz / 1500 Hz).
+double sigma_for_s500(double s500_db) { return std::sqrt(3.0 / std::pow(10.0, s500_db / 10.0)); }
+
+std::vector<Sample> add(std::vector<Sample> a, const std::vector<Sample>& b) {
+    for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) a[i] += b[i];
+    return a;
+}
+
+// Owner decision 2026-09-29: a test whose simulated pass rate is below 100% runs 20 fixed seeds
+// and asserts a pass count t, the smallest with P(X < t) <= 0.002 for X ~ Binomial(20, simulated
+// rate). Deterministic, and still catches a regression. `run` returns true on a pass and may
+// describe a failure in `why`; seeds are first_seed, first_seed + 10, ... (each run may use
+// seed, seed + 1, seed + 2).
+constexpr unsigned kSeeds = 20;
+
+struct Tally {
+    int passed = 0;
+    std::string failures;
+};
+
+template <class Run>
+Tally count_passes(unsigned first_seed, Run&& run) {
+    Tally tally;
+    for (unsigned i = 0; i < kSeeds; ++i) {
+        const unsigned seed = first_seed + 10 * i;
+        std::string why;
+        if (run(seed, why)) ++tally.passed;
+        else tally.failures += "seed " + std::to_string(seed) + ": " + why + "\n";
+    }
+    return tally;
+}
+
+}  // namespace
+
+TEST(ClassicalDecoder, EnvelopeModeTracksNoFrequency) {
+    ClassicalDecoder d(kRate, {}, 3.0);
+    const auto u = d.process(keyed_signal("E", 25, kRate, 1.0), 0.0);
+    EXPECT_FALSE(u.freq_offset_hz.has_value());
+    EXPECT_EQ(d.filter_length(), 0);
+    EXPECT_EQ(d.frequency_offset_hz(), 3.0);
+    d.set_frequency_anchor_hz(20.0);  // ignored on the Envelope path (bit-identical to milestone 1)
+    EXPECT_EQ(d.frequency_offset_hz(), 3.0);
+}
+
+TEST(ClassicalDecoder, MatchedFollowsTheAnchorItIsGiven) {
+    // Option 1 (owner decisions 2026-09-29): the detector decides where the station is; the engine
+    // passes it as the anchor before every block. An anchor 30 Hz from the NCO (more than the
+    // tracker's 12 Hz) moves the NCO there at once, so a station at 30 Hz decodes as if the decoder
+    // had started there (the case of MatchedDecodesCleanSignal, derived; not separately simulated).
+    ClassicalDecoder d(kRate, matched(), 0.0);
+    d.set_frequency_anchor_hz(30.0);
+    EXPECT_EQ(d.frequency_offset_hz(), 30.0);
+    const std::string msg = "CQ TEST K1ABC";
+    EXPECT_EQ(text(decode_all(d, keyed_signal(msg, 25, kRate, duration_for(msg, 25), 30.0, 1.0,
+                                              sigma_for_s500(30), 43))), msg);
+    EXPECT_NEAR(d.frequency_offset_hz(), 30.0, 2.0);
+}
+
+TEST(ClassicalDecoder, MatchedFilterGrowsAtMostTheBoundPerMark) {
+    // Owner decision 3 of option 1 (2026-09-29): the x1.25 growth bound applies from the filter's
+    // first follow step. A clean 12 WPM station (T = 100 ms): the decoder's estimate is near 100 ms
+    // after 7 unbounded marks, but the filter must grow from the 20 ms acquisition dit (K = 24) by
+    // at most x1.25 per mark: 24, 30, 38, 47, 59, 73, 92, 114, 120 samples (derived), each step at
+    // most 1.25 K + 1.125 (both K rounded). Before this bound, K jumped 24 -> 120 in one step.
+    // Deterministic apart from the noise at S500 = 30 dB; not simulated.
+    const std::string msg = "PARIS PARIS PARIS";
+    const double end = keying(msg, 12, 0.5).back().second;
+    const auto x = keyed_signal(msg, 12, kRate, end + 0.3, 0, 1.0, sigma_for_s500(30), 44);
+    ClassicalDecoder d(kRate, matched());
+    std::vector<DecodedSymbol> chars;
+    int k = d.filter_length();
+    int steps = 0;
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        auto u = d.process(std::span<const Sample>(x).subspan(i, 1), static_cast<double>(i) / kRate);
+        chars.insert(chars.end(), u.chars.begin(), u.chars.end());
+        const int now = d.filter_length();
+        if (now > k) {
+            ++steps;
+            EXPECT_LE(now, 1.25 * k + 1.125) << "K " << k << " -> " << now << " at " << static_cast<double>(i) / kRate << " s";
+        }
+        k = now;
+    }
+    auto f = d.flush();
+    chars.insert(chars.end(), f.chars.begin(), f.chars.end());
+    EXPECT_GE(steps, 7);  // ln(100 ms / 20 ms) / ln 1.25 = 7.2 (derived)
+    EXPECT_NEAR(k, std::lround(0.8 * 0.1 * kRate), 12);
+    EXPECT_TRUE(ends_with(text(chars), "PARIS")) << text(chars);
+}
+
+TEST(ClassicalDecoder, MatchedDecodesCleanSignal) {
+    ClassicalDecoder d(kRate, matched());
+    const std::string msg = "CQ TEST K1ABC";
+    EXPECT_EQ(text(decode_all(d, keyed_signal(msg, 25, kRate, duration_for(msg, 25), 0, 1.0,
+                                              sigma_for_s500(30), 21))), msg);
+}
+
+TEST(ClassicalDecoder, MatchedDecodesAtThreeDbS500) {
+    // Simulated (whole decoder, numpy seeds): "K1ABC DE W9XYZ" found in 81 of 100 (final check) and
+    // 79 of 100 (2026-09-29, with the growth bound); the failures are errors in the first words
+    // while the speed estimate and the filter settle. 20 seeds; at 0.79, t = 10. Not re-simulated
+    // with the first-step growth bound: if below 10, stop and report (Task 12 intro).
+    const std::string msg = "CQ TEST K1ABC DE W9XYZ";
+    const auto tally = count_passes(22, [&](unsigned seed, std::string& why) {
+        ClassicalDecoder d(kRate, matched());
+        why = text(decode_all(d, keyed_signal(msg, 25, kRate, duration_for(msg, 25), 0, 1.0,
+                                              sigma_for_s500(3), seed)));
+        return why.find("K1ABC DE W9XYZ") != std::string::npos;
+    });
+    EXPECT_GE(tally.passed, 10) << tally.failures;
+}
+
+TEST(ClassicalDecoder, MatchedDecodesStrongSignal) {
+    ClassicalDecoder d(kRate, matched());
+    const std::string msg = "CQ TEST K1ABC";
+    EXPECT_EQ(text(decode_all(d, keyed_signal(msg, 25, kRate, duration_for(msg, 25), 0, 1.0,
+                                              sigma_for_s500(60), 23))), msg);
+}
+
+TEST(ClassicalDecoder, MatchedFollowsSpeedChange) {
+    // K is read 0.3 s after the last mark, before the 0.5 s re-acquisition silence puts it back to
+    // 24 (final check F-2). Without the growth bound, 2 of 100 simulated seeds ran away (the dit
+    // estimate jumped from 41 to 81 ms in one update, K 105). With the x1.25 bound (owner decision
+    // 2026-09-29), simulated over 100 numpy seeds: K = 41 +/- 5 samples (27.3 ms) and the text ends
+    // in K1ABC in 98; one ended with a stray E, one garbled the last call while K was still 61.
+    // 20 seeds; at 0.98, t = 17. Not re-simulated with the first-step growth bound: if below 17,
+    // stop and report (Task 12 intro).
+    const std::string first = "CQ CQ CQ";
+    const std::string second = "TEST K1ABC K1ABC";
+    const double start2 = keying(first, 20, 0.5).back().second + 7 * 1.2 / 20;
+    const double end2 = keying(second, 35, start2).back().second;
+    const double total = end2 + 1.5;
+    const auto tally = count_passes(24, [&](unsigned seed, std::string& why) {
+        const auto x = add(keyed_signal(first, 20, kRate, total, 0, 1.0, sigma_for_s500(20), seed),
+                           keyed_signal(second, 35, kRate, total, 0, 1.0, 0.0, seed + 1, start2));
+        ClassicalDecoder d(kRate, matched());
+        const auto split = static_cast<std::size_t>((end2 + 0.3) * kRate);
+        std::vector<DecodedSymbol> chars;
+        auto a = d.process(std::span<const Sample>(x).subspan(0, split), 0.0);
+        chars.insert(chars.end(), a.chars.begin(), a.chars.end());
+        const int k = d.filter_length();
+        auto b = d.process(std::span<const Sample>(x).subspan(split), static_cast<double>(split) / kRate);
+        chars.insert(chars.end(), b.chars.begin(), b.chars.end());
+        auto f = d.flush();
+        chars.insert(chars.end(), f.chars.begin(), f.chars.end());
+        why = text(chars) + " (K " + std::to_string(k) + ")";
+        return ends_with(text(chars), "K1ABC") && std::abs(k - std::lround(0.8 * 1.2 / 35 * kRate)) <= 5;
+    });
+    EXPECT_GE(tally.passed, 17) << tally.failures;
+}
+
+TEST(ClassicalDecoder, MatchedTracksTheResidualOffset) {
+    // Spec 5.2 target: within 2 Hz, starting 11 Hz off, as bin rounding alone can leave a station.
+    // The station is 11 Hz from the anchor (0 Hz), 1 Hz inside the tracker's +/-12 Hz: a noisy early
+    // estimate beyond 12 Hz is rejected (average emptied, NCO back to 0 Hz) and the average rebuilds;
+    // such transient rejections are possible and harmless to the final assertion.
+    const std::string msg = "PARIS PARIS PARIS PARIS PARIS PARIS";
+    ClassicalDecoder d(kRate, matched(), 0.0);
+    const auto t = text(decode_all(d, keyed_signal(msg, 20, kRate, duration_for(msg, 20), 11.0, 1.0,
+                                                   sigma_for_s500(10), 26)));
+    EXPECT_NEAR(d.frequency_offset_hz(), 11.0, 2.0);
+    EXPECT_NE(t.find("PARIS PARIS"), std::string::npos) << t;
+}
+
+TEST(ClassicalDecoder, MatchedHoldsThroughPause) {
+    const std::string msg = "CQ TEST K1ABC";
+    const double end1 = keying(msg, 25, 0.5).back().second;
+    const double start2 = end1 + 10.0;
+    const double total = keying(msg, 25, start2).back().second + 1.5;
+    const auto x = add(keyed_signal(msg, 25, kRate, total, 6.0, 1.0, sigma_for_s500(20), 27),
+                       keyed_signal(msg, 25, kRate, total, 6.0, 1.0, 0.0, 28, start2));
+    ClassicalDecoder d(kRate, matched());
+    const auto split = static_cast<std::size_t>((start2 - 0.1) * kRate);
+    std::vector<DecodedSymbol> chars;
+    for (std::size_t i = 0; i < x.size(); i += 256) {
+        const auto n = std::min<std::size_t>(256, x.size() - i);
+        if (i <= split && split < i + n) {
+            // Process up to the resume point, then compare the estimate with the one before the pause.
+            auto a = d.process(std::span<const Sample>(x).subspan(i, split - i), static_cast<double>(i) / kRate);
+            chars.insert(chars.end(), a.chars.begin(), a.chars.end());
+            const double after_pause = d.frequency_offset_hz();
+            EXPECT_NEAR(after_pause, 6.0, 2.0);
+            auto b = d.process(std::span<const Sample>(x).subspan(split, i + n - split), static_cast<double>(split) / kRate);
+            chars.insert(chars.end(), b.chars.begin(), b.chars.end());
+            continue;
+        }
+        auto u = d.process(std::span<const Sample>(x).subspan(i, n), static_cast<double>(i) / kRate);
+        chars.insert(chars.end(), u.chars.begin(), u.chars.end());
+    }
+    auto f = d.flush();
+    chars.insert(chars.end(), f.chars.begin(), f.chars.end());
+    EXPECT_EQ(text(chars), msg + " " + msg);
+    EXPECT_NEAR(d.frequency_offset_hz(), 6.0, 2.0);
+}
+
+TEST(ClassicalDecoder, MatchedNoiseAfterStationStopsDecodesNothing) {
+    const std::string msg = "CQ TEST K1ABC";
+    const double end = keying(msg, 25, 0.5).back().second;
+    ClassicalDecoder d(kRate, matched());
+    const auto chars = decode_all(d, keyed_signal(msg, 25, kRate, end + 10.0, 0, 1.0, sigma_for_s500(20), 29));
+    EXPECT_EQ(text(chars), msg);
+    for (const auto& c : chars) {
+        if (c.text != " ") EXPECT_LT(c.start_s, end + 0.2) << c.text << " at " << c.start_s;
+    }
+}
+
+TEST(ClassicalDecoder, MatchedIgnoresStrongerNeighbor) {
+    // Wanted at 0 Hz, S500 = 15 dB; a neighbor 100 Hz away inside the same channel,
+    // 10 dB stronger (re the wanted station's key-down power), at another speed, keying at the
+    // same time. Simulated (100 numpy seeds): f-hat within 2 Hz in all 100; K1ABC decoded in 98
+    // (final check's port) and 88 (the 2026-09-29 port, the same with the 35 Hz pull-in and without
+    // the growth bound, so the difference is between the ports). 20 seeds; at 0.88, t = 13. Not
+    // re-simulated with the first-step growth bound: if below 13, stop and report (Task 12 intro).
+    const std::string msg = "CQ TEST K1ABC K1ABC K1ABC";
+    const double total = duration_for(msg, 25);
+    const auto tally = count_passes(30, [&](unsigned seed, std::string& why) {
+        const auto x = add(keyed_signal(msg, 25, kRate, total, 0.0, 1.0, sigma_for_s500(15), seed),
+                           keyed_signal("TU W9XYZ 5NN TU W9XYZ 5NN TU W9XYZ", 30, kRate, total, 100.0,
+                                        std::sqrt(10.0), 0.0, seed + 1, 0.3));
+        ClassicalDecoder d(kRate, matched(), 0.0);
+        why = text(decode_all(d, x));
+        why += " (f " + std::to_string(d.frequency_offset_hz()) + " Hz)";
+        return std::abs(d.frequency_offset_hz()) <= 2.0 && why.find("K1ABC") != std::string::npos;
+    });
+    EXPECT_GE(tally.passed, 13) << tally.failures;
+}
+
+namespace {
+
+// A (25 WPM, 0 Hz, S500 = 15 dB), 1 s of silence, B (18 WPM, offset_hz away, relative_db re A's
+// key-down power), 1 s of silence, A again. Returns the text and f-hat just before A's second over.
+// There is no detector here, so the tracker's anchor stays on A (0 Hz) throughout.
+struct Turnover {
+    std::string text;
+    double f_before_second_over;
+};
+
+Turnover turnover(double offset_hz, double relative_db, unsigned seed) {
+    const std::string a = "PARIS PARIS PARIS PARIS";
+    const std::string b = "DE W9XYZ PARIS PARIS PARIS";
+    const double b0 = keying(a, 25, 0.5).back().second + 1.0;
+    const double a0 = keying(b, 18, b0).back().second + 1.0;
+    const double total = keying(a, 25, a0).back().second + 1.5;
+    auto x = add(keyed_signal(a, 25, kRate, total, 0.0, 1.0, sigma_for_s500(15), seed),
+                 keyed_signal(b, 18, kRate, total, offset_hz, std::pow(10.0, relative_db / 20.0), 0.0, seed + 1, b0));
+    x = add(x, keyed_signal(a, 25, kRate, total, 0.0, 1.0, 0.0, seed + 2, a0));
+    ClassicalDecoder d(kRate, matched());
+    const auto split = static_cast<std::size_t>((a0 - 0.1) * kRate);
+    std::vector<DecodedSymbol> chars;
+    auto first = d.process(std::span<const Sample>(x).subspan(0, split), 0.0);
+    chars.insert(chars.end(), first.chars.begin(), first.chars.end());
+    const double f_before = d.frequency_offset_hz();
+    auto rest = d.process(std::span<const Sample>(x).subspan(split), static_cast<double>(split) / kRate);
+    chars.insert(chars.end(), rest.chars.begin(), rest.chars.end());
+    auto f = d.flush();
+    chars.insert(chars.end(), f.chars.begin(), f.chars.end());
+    return {text(chars), f_before};
+}
+
+}  // namespace
+
+TEST(ClassicalDecoder, MatchedIgnoresAWeakStation50HzAway) {
+    // B 50 Hz away, 10 dB weaker (re A's key-down power), is 12.6 dB further down at the 16 ms
+    // acquisition width (|sinc(50 Hz * 16 ms)|^2, derived), so it is not keyed and leaves A alone.
+    // Simulated with the first design (100 numpy seeds): f-hat within 0.2 Hz of A and A's second
+    // over intact in 99; option 1's tracker (+/-12 Hz around an anchor held on A) accepts a subset of
+    // what that tracker accepted, so the rate carries over (argued; Task 12 intro). Whether B's
+    // station gets the channel is the detector's decision (Task 13). 20 seeds; t = 18.
+    const auto tally = count_passes(36, [](unsigned seed, std::string& why) {
+        const auto r = turnover(50.0, -10.0, seed);
+        why = r.text + " (f " + std::to_string(r.f_before_second_over) + " Hz)";
+        return std::abs(r.f_before_second_over) <= 2.0 && ends_with(r.text, "PARIS PARIS PARIS PARIS");
+    });
+    EXPECT_GE(tally.passed, 18) << tally.failures;
+}
+
+TEST(ClassicalDecoder, MatchedIgnoresAStation70HzAway) {
+    // Beyond D = 47 Hz the answering station has its own track and this channel, its anchor held on
+    // A, ignores it. B 70 Hz away, 6 dB weaker (re A's key-down power): simulated with the first
+    // design over 100 numpy seeds, f-hat within 0.2 Hz of A and A's second over intact in 99; the rate
+    // carries over to option 1 (argued; Task 12 intro). (At A's level or stronger, 60-70 Hz away, B
+    // leaks through the boxcar's sidelobe and corrupts the speed estimate: stated limit (a), not
+    // asserted.) 20 seeds; t = 18.
+    const auto tally = count_passes(37, [](unsigned seed, std::string& why) {
+        const auto r = turnover(70.0, -6.0, seed);
+        why = r.text + " (f " + std::to_string(r.f_before_second_over) + " Hz)";
+        return std::abs(r.f_before_second_over) <= 2.0 && ends_with(r.text, "PARIS PARIS PARIS PARIS");
+    });
+    EXPECT_GE(tally.passed, 18) << tally.failures;
+}
+
+TEST(ClassicalDecoder, MatchedIgnoresANeighbor100HzAwayInASilence) {
+    // Re-review finding I-4: at equal level the earlier design let B, aliased to -87.5 Hz, pull
+    // f-hat to the -75 Hz clamp during A's silence. Simulated with the first design (2026-09-29, 100
+    // numpy seeds per level; the rates carry over to option 1, argued in the Task 12 intro): f-hat
+    // within 0.2 Hz of A; A's second over intact in 99 of 100 at -6 dB and 100 of 100
+    // at +10 dB re A's key-down power (the +10 dB level was not re-simulated with the first-step
+    // growth bound: if below its count, stop and report; Task 12 intro). At A's level B sits at the acquisition squelch's edge and cost
+    // A's second over in 13 of 60 seeds (final check): a stated failure, not asserted. 20 seeds per
+    // level; t = 18.
+    for (const double relative_db : {-6.0, 10.0}) {
+        const auto tally = count_passes(39, [&](unsigned seed, std::string& why) {
+            const auto r = turnover(100.0, relative_db, seed);
+            why = r.text + " (f " + std::to_string(r.f_before_second_over) + " Hz)";
+            return std::abs(r.f_before_second_over) <= 2.0 && ends_with(r.text, "PARIS PARIS PARIS PARIS");
+        });
+        EXPECT_GE(tally.passed, 18) << relative_db << " dB:\n" << tally.failures;
+    }
+}
+
+TEST(ClassicalDecoder, MatchedReturnsToTheNarrowFilterWhenNothingAnswers) {
+    // After a re-acquisition finds nothing within 2 s, the filter goes back to the station's width
+    // (and the speed window comes back). Simulated: K back at 58 +/- 5 samples (38.7 ms) in 196 of
+    // 200 (final check) and 199 of 200 (2026-09-29). In the others noise was keyed as a stray E right
+    // after the re-acquisition (s-hat restarts from its first few noise samples), which counts as
+    // an answer: postponed to the backlog, about 1% of silences. 20 seeds; at 0.98, t = 17.
+    const std::string msg = "CQ TEST K1ABC CQ TEST K1ABC";
+    const double end = keying(msg, 25, 0.5).back().second;
+    const auto tally = count_passes(40, [&](unsigned seed, std::string& why) {
+        ClassicalDecoder d(kRate, matched());
+        decode_all(d, keyed_signal(msg, 25, kRate, end + 4.0, 0, 1.0, sigma_for_s500(20), seed));
+        why = "K " + std::to_string(d.filter_length());
+        return std::abs(d.filter_length() - std::lround(0.8 * 1.2 / 25 * kRate)) <= 5;
+    });
+    EXPECT_GE(tally.passed, 17) << tally.failures;
+}
+
+TEST(ClassicalDecoder, MatchedChunkSizeDoesNotChangeOutput) {
+    const std::string msg = "CQ TEST K1ABC";
+    const auto x = keyed_signal(msg, 25, kRate, duration_for(msg, 25), 7.0, 1.0, sigma_for_s500(10), 32);
+    std::vector<std::vector<DecodedSymbol>> runs;
+    for (const std::size_t chunk : {std::size_t{1}, std::size_t{7}, std::size_t{256}}) {
+        ClassicalDecoder d(kRate, matched());
+        runs.push_back(decode_all(d, x, chunk));
+    }
+    for (std::size_t r = 1; r < runs.size(); ++r) {
+        ASSERT_EQ(runs[r].size(), runs[0].size());
+        for (std::size_t i = 0; i < runs[0].size(); ++i) {
+            EXPECT_EQ(runs[r][i].text, runs[0][i].text);
+            EXPECT_EQ(runs[r][i].start_s, runs[0][i].start_s);
+            EXPECT_EQ(runs[r][i].end_s, runs[0][i].end_s);
+        }
+    }
+}
+
+TEST(ClassicalDecoder, MatchedModeRejectsInvalidSettings) {
+    auto c = matched();
+    c.llr_hysteresis = -1.0;
+    EXPECT_THROW(ClassicalDecoder d(kRate, c), std::invalid_argument);
+    c = matched();
+    c.follow_after_marks = 1;
+    EXPECT_THROW(ClassicalDecoder d(kRate, c), std::invalid_argument);
+    c = matched();
+    c.max_dit_growth = 0.9;  // must be at least 1
+    EXPECT_THROW(ClassicalDecoder d(kRate, c), std::invalid_argument);
+    c = matched();
+    c.reacquire_after_dits = 0.0;
+    EXPECT_THROW(ClassicalDecoder d(kRate, c), std::invalid_argument);
+    c = matched();
+    c.reacquire_min_s = -1.0;
+    EXPECT_THROW(ClassicalDecoder d(kRate, c), std::invalid_argument);
+    c = matched();
+    c.reacquire_window_s = -1.0;
+    EXPECT_THROW(ClassicalDecoder d(kRate, c), std::invalid_argument);
 }
