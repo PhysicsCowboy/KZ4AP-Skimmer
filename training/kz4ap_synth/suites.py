@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import subprocess
 import zlib
 from dataclasses import dataclass
@@ -53,6 +54,12 @@ FRONT_ENDS = ("baseline", "matched")
 COUNT_KEYS = ("symbols", "edits", "chars", "char_edits", "spaces", "space_edits",
               "first_word_symbols", "first_word_edits", "nospace_symbols", "nospace_edits")
 BOOTSTRAP_RESAMPLES = 1000
+MIN_SIGNALS_FOR_INTERVAL = 2  # a bootstrap over one signal has no spread: no interval is printed
+MIN_SIGNALS_PER_POINT = 2     # an S500 crossing is computed only if every point holds this many signals
+# The oracle channel's response relative to its passband (measured, docs/signal-processing.md
+# section 7): -1.17 dB at 100 Hz from its center, -6.02 dB at 150 Hz, -18.0 dB at 200 Hz. An
+# oracle QSO label (channel on the caller) holds the answering station below the -6 dB point.
+ORACLE_CHANNEL_CUTOFF_HZ = 150.0
 PLANNED_SEEDS = 3  # the full suite's per-point sizes below assume --seeds 3
 
 FADING_ROWS = ([(keying, 24.0, f_d) for keying in ("paddle", "hand") for f_d in VE3NEA_SPREADS_HZ]
@@ -454,7 +461,11 @@ def run_suite(out_dir: Path, bench: Path, front_ends) -> None:
                 done = subprocess.run(cmd, capture_output=True, text=True)
                 if done.returncode != 0:
                     raise RuntimeError(f"kz4ap-bench failed on {result} ({fe}):\n{done.stderr}")
-                print(f"{fe:9s} {result}: {done.stdout.strip().splitlines()[-1]}")
+                out_lines = done.stdout.strip().splitlines()
+                if not out_lines:
+                    raise RuntimeError(f"kz4ap-bench printed nothing on {result} ({fe}) although it exited 0; "
+                                       f"stderr:\n{done.stderr}")
+                print(f"{fe:9s} {result}: {out_lines[-1]}")
 
 
 def crossing_snr(points, threshold: float) -> float | None:
@@ -536,12 +547,15 @@ def aggregate(rows) -> dict:
         rng = _rng_for(key)
         points = [(snr, _ratio(sum(e for e, _ in sig), sum(s for _, s in sig)))
                   for snr, sig in sorted(g["by_snr"].items())]
-        crossing = len(points) >= 3
+        # A crossing needs a designed sweep: at least three S500 points, each with at least
+        # MIN_SIGNALS_PER_POINT signals (groups that draw S500 per signal have one per point).
+        crossing = len(points) >= 3 and all(len(sig) >= MIN_SIGNALS_PER_POINT for sig in g["by_snr"].values())
         out[key] = {
             "signals": g["signals"],
             "detected": g["detected"],
             "cer": _ratio(g["edits"], g["symbols"]),
-            "cer_interval": bootstrap_cer([s for sig in g["by_snr"].values() for s in sig], rng),
+            "cer_interval": (bootstrap_cer([s for sig in g["by_snr"].values() for s in sig], rng)
+                             if g["signals"] >= MIN_SIGNALS_FOR_INTERVAL else None),
             "char_cer": _ratio(g["char_edits"], g["chars"]),
             "space_error_rate": _ratio(g["space_edits"], g["spaces"]),
             "first_word_cer": _ratio(g["first_word_edits"], g["first_word_symbols"]),
@@ -551,6 +565,9 @@ def aggregate(rows) -> dict:
             "snr_at_cer": {f"{t:g}": crossing_snr(points, t) for t in CER_THRESHOLDS} if crossing else {},
             "snr_at_cer_interval": ({f"{t:g}": bootstrap_crossing(g["by_snr"], t, rng) for t in CER_THRESHOLDS}
                                     if crossing else {}),
+            # True where no point fails: the reported crossing is the lowest point, an upper bound
+            "snr_at_cer_upper_bound": ({f"{t:g}": all(c <= t for _, c in points) for t in CER_THRESHOLDS}
+                                       if crossing else {}),
             "freq_error_hz_median": float(np.median(g["freq_errors"])) if g["freq_errors"] else None,
         }
     return out
@@ -573,7 +590,8 @@ def paired_differences(rows) -> dict:
         values = np.array(d)
         picks = _rng_for(key).integers(len(values), size=(BOOTSTRAP_RESAMPLES, len(values)))
         out[key] = {"signals": len(values), "mean": float(values.mean()),
-                    "interval": _interval([float(values[p].mean()) for p in picks])}
+                    "interval": (_interval([float(values[p].mean()) for p in picks])
+                                 if len(values) >= MIN_SIGNALS_FOR_INTERVAL else None)}
     return out
 
 
@@ -679,12 +697,27 @@ def cpu_summary(timings) -> dict:
             for fe, c in out.items()}
 
 
+def _tag_offset_hz(tag: str) -> float | None:
+    """The answering station's offset named in a group-H tag ("..., offset 100 Hz"), Hz."""
+    m = re.search(r"offset (-?\d+(?:\.\d+)?) Hz", tag)
+    return float(m.group(1)) if m else None
+
+
 def view_fits(group: str, tag: str) -> bool:
-    """Whether a group-H scoring view fits the QSO's regime: labels per QSO for a QSO heard as one
-    track, labels per station for one heard as two; ambiguous QSOs fit both."""
+    """Whether a group-H scoring view fits the QSO. Through the detector, by its regime
+    (qso_regime): labels per QSO for a QSO heard as one track, labels per station for one
+    heard as two; ambiguous QSOs fit both. With oracle channels (one opened per label), by
+    the channel's passband: the QSO label's channel, on the caller, holds the answering
+    station when |offset| < ORACLE_CHANNEL_CUTOFF_HZ (its -6 dB point, measured), so the QSO
+    view fits there and the station view fits otherwise."""
     if not group.startswith("H two-station QSO"):
         return True
-    if group.endswith("(per station)"):
+    per_station = group.endswith("(per station)")
+    offset = _tag_offset_hz(tag)
+    if ", oracle" in group and offset is not None:
+        inside = abs(offset) < ORACLE_CHANNEL_CUTOFF_HZ
+        return not inside if per_station else inside
+    if per_station:
         return not tag.startswith("same-track")
     return not tag.startswith("separate-track")
 
@@ -701,17 +734,36 @@ def _with_interval(value, interval, fmt: str) -> str:
     return f"{value:{fmt}} ({interval[0]:{fmt}}–{interval[1]:{fmt}})"
 
 
+def _crossing_cell(v: dict, threshold: str) -> str:
+    """A crossing with its interval, or "≤ x" where no point fails (the lowest point, an upper bound)."""
+    value = v["snr_at_cer"].get(threshold)
+    if value is not None and v.get("snr_at_cer_upper_bound", {}).get(threshold):
+        return f"≤ {value:.1f}"
+    return _with_interval(value, v["snr_at_cer_interval"].get(threshold), ".1f")
+
+
 def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dict | None = None,
                     splits: dict | None = None) -> str:
     lines = ["# Benchmark summary", "",
              "S₅₀₀: key-down carrier power over noise power in 500 Hz, dB. CER counts word spaces; "
              "character CER and space error rate split its edits; first-word CER scores the first word "
              "of each transmission (each over, for a QSO); no-space CER is VE3NEA's metric (Levenshtein "
-             "distance with spaces removed). Parentheses: bootstrap 95% interval over signals. "
-             "— : not reached, or fewer than three S₅₀₀ points. † : this group-H view does not fit the "
-             "QSO's regime (labels per station for a same-track QSO, where both match one track and each "
-             "is charged the other's text; labels per QSO for a separate-track QSO, where the caller's "
-             "track lacks the answering station's overs); read the other view.", ""]
+             "distance with spaces removed). First-word CER (and the per-over CER below) is an upper "
+             "bound, not an exact attribution: an edit the alignment could place in more than one "
+             "position is charged to the earliest, and insertions decoded before a transmission are "
+             "charged to its first word, so it can exceed 1 (docs/signal-processing.md, section 11). "
+             "Parentheses: bootstrap 95% interval over signals; none is printed for a row with fewer "
+             "than 2 signals. S₅₀₀ at a CER threshold is computed only for a sweep of at least three "
+             "S₅₀₀ points with at least 2 signals each; groups that draw S₅₀₀ per signal (band, crowded) "
+             "have one signal per point and show —. ≤ x : no point fails, so x, the lowest point, is an "
+             "upper bound. — : not reached, or no sweep. † : this group-H view does not fit the QSO. "
+             "Through the detector, by its regime: labels per station for a same-track QSO, where both "
+             "match one track and each is charged the other's text; labels per QSO for a separate-track "
+             "QSO, where the caller's track lacks the answering station's overs. With oracle channels, by "
+             "the channel's passband (measured: −1.17 dB relative to the passband at 100 Hz from its "
+             "center, −6.02 dB at 150 Hz, −18.0 dB at 200 Hz): labels per QSO fit when the answering "
+             "station is less than 150 Hz from the caller (inside the −6 dB point), labels per station "
+             "otherwise. Read the other view.", ""]
     for group in sorted({k[1] for k in agg}):
         lines += [f"## {group}", "",
                   "| tag | front end | signals | detected | CER | character CER | space error rate | "
@@ -721,14 +773,12 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
         for (fe, g, tag), v in sorted(agg.items(), key=lambda kv: (kv[0][2], kv[0][0])):
             if g != group:
                 continue
-            at, at_i = v["snr_at_cer"], v["snr_at_cer_interval"]
             mark = "" if view_fits(g, tag) else " †"
             lines.append(f"| {tag}{mark} | {fe} | {v['signals']} | {v['detected']} | "
                          f"{_with_interval(v['cer'], v['cer_interval'], '.3f')} | "
                          f"{v['char_cer']:.3f} | {v['space_error_rate']:.3f} | {v['first_word_cer']:.3f} | "
                          f"{v['nospace_cer']:.3f} | {v['min_symbols_per_point']} | "
-                         f"{_with_interval(at.get('0.1'), at_i.get('0.1'), '.1f')} | "
-                         f"{_with_interval(at.get('0.05'), at_i.get('0.05'), '.1f')} | "
+                         f"{_crossing_cell(v, '0.1')} | {_crossing_cell(v, '0.05')} | "
                          f"{_db(v['freq_error_hz_median'])} |")
         lines.append("")
     if paired:
@@ -742,7 +792,9 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
     if overs:
         lines += ["## Per over", "",
                   "CER of each over (from its first to its last symbol) pooled by the sending station's "
-                  "keying style.", "",
+                  "keying style. An upper bound, like first-word CER: ambiguous edits are charged to the "
+                  "earliest position and insertions before an over to its first word, so it can exceed 1 "
+                  "(docs/signal-processing.md, section 11).", "",
                   "| group | keying | front end | overs | CER |", "|---|---|---|---|---|"]
         for (fe, group, keying), v in sorted(overs.items(), key=lambda kv: (kv[0][1], kv[0][2], kv[0][0])):
             lines.append(f"| {group} | {keying} | {fe} | {v['overs']} | {v['cer']:.3f} |")
@@ -750,7 +802,8 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
     if splits:
         lines += ["## Tracks per QSO (group H, detector)", "",
                   "Tracks that decoded text within 25 Hz of either station's carrier; 1 = one track for the "
-                  "QSO, 2 = one per station.", "",
+                  "QSO, 2 = one per station. Values above 2 mean a station's track dropped and was re-born "
+                  "(about once per over), not false tracks.", "",
                   "| tag | front end | QSOs | mean tracks |", "|---|---|---|---|"]
         for (fe, tag), v in sorted(splits.items(), key=lambda kv: (kv[0][1], kv[0][0])):
             lines.append(f"| {tag} | {fe} | {v['qsos']} | {v['mean_tracks']:.2f} |")

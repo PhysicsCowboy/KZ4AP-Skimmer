@@ -1,4 +1,5 @@
 import json
+import subprocess
 from collections import defaultdict
 
 import numpy as np
@@ -14,9 +15,11 @@ from kz4ap_synth.suites import (
     aggregate,
     check_recording,
     crossing_snr,
+    format_markdown,
     over_rows,
     paired_differences,
     qso_regime,
+    run_suite,
     view_fits,
     track_splits,
     write_suite,
@@ -106,6 +109,13 @@ def test_views_that_do_not_fit_the_regime_are_marked():
     assert not view_fits("H two-station QSO, oracle", "separate-track, offset 200 Hz")
     assert view_fits("H two-station QSO", "ambiguous, offset 50 Hz")
     assert view_fits("A sensitivity", "separate-track")
+    # Oracle channels: judged by the channel's passband (-6 dB at 150 Hz, measured), not the detector's bins.
+    assert view_fits("H two-station QSO, oracle", "separate-track, offset 100 Hz")
+    assert not view_fits("H two-station QSO, oracle (per station)", "separate-track, offset 100 Hz")
+    assert view_fits("H two-station QSO, oracle (per station)", "separate-track, offset 200 Hz")
+    assert not view_fits("H two-station QSO, oracle (per station)", "same-track, offset 0 Hz")
+    assert view_fits("H two-station QSO, oracle", "ambiguous, offset 50 Hz")
+    assert not view_fits("H two-station QSO, oracle (per station)", "ambiguous, offset 50 Hz")
 
 
 def test_check_rejects_a_signal_that_runs_past_the_end():
@@ -160,6 +170,37 @@ def test_bootstrap_interval_brackets_the_estimate_and_is_reproducible():
     assert low <= first["snr_at_cer"]["0.1"] <= high
 
 
+def test_no_crossing_when_a_point_holds_a_single_signal():
+    # band and crowded draw S500 per signal: every point is one signal, so no crossing
+    rows = [_row(float(snr), 100, e, index=i) for i, (snr, e) in enumerate(((0, 50), (2, 20), (4, 5), (6, 0)))]
+    v = aggregate(rows)[("baseline", "A", "25 wpm")]
+    assert v["snr_at_cer"] == {} and v["snr_at_cer_interval"] == {}
+
+
+def test_no_interval_for_a_single_signal():
+    v = aggregate([_row(0.0, 10, 5)])[("baseline", "A", "25 wpm")]
+    assert v["cer_interval"] is None
+
+
+def test_a_crossing_at_the_lowest_point_is_printed_as_an_upper_bound(tmp_path):
+    rows = [_row(float(snr), 100, e, index=i) for i, (snr, e) in
+            enumerate((s, e) for s in (0, 2, 4) for e in (8, 12))]  # CER 0.10 at every point
+    v = aggregate(rows)[("baseline", "A", "25 wpm")]
+    assert v["snr_at_cer"]["0.1"] == 0.0 and v["snr_at_cer_upper_bound"]["0.1"] is True
+    assert v["snr_at_cer_upper_bound"]["0.05"] is False
+    text = format_markdown(aggregate(rows), {})
+    row = next(line for line in text.splitlines() if line.startswith("| 25 wpm |"))
+    assert "| ≤ 0.0 |" in row and "(0.0–0.0)" not in row
+
+
+def test_run_reports_a_bench_that_prints_nothing(tmp_path, monkeypatch):
+    (tmp_path / "manifest.json").write_text(json.dumps({"suite": "t", "recordings": [
+        {"name": "x", "group": "g", "oracle": False, "wav": "x.wav", "labels": "x.json", "station_labels": None}]}))
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
+    with pytest.raises(RuntimeError, match="printed nothing"):
+        run_suite(tmp_path, tmp_path / "kz4ap-bench", ["baseline"])
+
+
 def test_aggregate_reports_the_median_frequency_error():
     rows = [_row(0.0, 10, 0, freq_error=1.0), _row(2.0, 10, 0, index=1, freq_error=3.0),
             _row(4.0, 10, 0, index=2)]
@@ -199,7 +240,8 @@ def test_write_suite_and_summary_round_trip(tmp_path):
     write_summary(tmp_path)
     text = (tmp_path / "summary.md").read_text(encoding="utf-8")
     assert "## A sensitivity" in text
-    assert "| 25 wpm | baseline | 1 | 1 | 0.500 (0.500–0.500) | 0.500 | 0.000 | 0.500 | 0.500 | 2 |" in text
+    # One signal: no bootstrap interval
+    assert "| 25 wpm | baseline | 1 | 1 | 0.500 | 0.500 | 0.000 | 0.500 | 0.500 | 2 |" in text
     assert "| baseline | 3.0 | 10.000 | 1.000 |" in text
 
 

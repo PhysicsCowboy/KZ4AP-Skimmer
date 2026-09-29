@@ -62,7 +62,10 @@ Named suites generate many recordings at once, score them, and summarize
 CER, character and word-space errors, first-word errors, VE3NEA's no-space
 CER, the S₅₀₀ where CER crosses 0.10 and 0.05 (each with a bootstrap 95%
 interval), and CPU time per channel-second. The full suite is sized for
-three seeds (about 3.2 GB of recordings):
+three seeds: its recordings take about 1.06 GB measured for one seed (about
+3.2 GB for three), and generating them took 19 min measured for one seed on
+this project's development desktop (about 57 min for three, scaled); scoring
+one seed with the bench took 37 s:
 
     $env:PYTHONPATH = "training"
     .venv\Scripts\python -m kz4ap_synth.suites generate --suite full --seeds 3 --out build/suite/full

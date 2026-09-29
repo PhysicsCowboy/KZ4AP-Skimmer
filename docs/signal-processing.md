@@ -892,7 +892,20 @@ research is under way (`docs/research/`).
   **QSO regimes** (group H): same-track for an answering station within
   2 FFT bins (46.9 Hz) of the caller, ambiguous below 3 bins (70.3 Hz, the
   detector's minimum peak separation), separate-track beyond; each QSO is
-  scored with one label for the QSO and with one label per station.
+  scored with one label for the QSO and with one label per station. The
+  summary marks with † the view that does not fit: through the detector,
+  by the regime (labels per station for same-track, labels per QSO for
+  separate-track); with oracle channels, by the channel's passband, whose
+  response relative to the passband is −1.17 dB at 100 Hz from its center,
+  −6.02 dB at 150 Hz and −18.0 dB at 200 Hz (measured, section 7): labels
+  per QSO fit when the answering station is less than 150 Hz from the
+  caller, labels per station otherwise.
+  **Summary precision:** no bootstrap interval is printed for a row with
+  fewer than 2 signals, and an S₅₀₀ crossing is computed only when every
+  S₅₀₀ point holds at least 2 signals (groups that draw S₅₀₀ per signal,
+  band and crowded, have one per point and get none). A crossing at the
+  lowest point, where no point fails, is printed "≤ x dB". First-word and
+  per-over CER are upper bounds (see "Where the edits are" above).
   **S₅₀₀ at a CER threshold:** for a condition with at least three S₅₀₀
   points, CER per point is pooled over its stations; scanning down from the
   highest S₅₀₀, the first point above the threshold and the one above it
