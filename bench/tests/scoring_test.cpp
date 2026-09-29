@@ -215,3 +215,11 @@ TEST(Scoring, AmbiguousEditsAreChargedToTheEarliestPosition) {
     EXPECT_EQ(s.signals[0].first_word_edits, 2u);  // both edits charged to "CQ", though it decoded correctly
     EXPECT_DOUBLE_EQ(s.first_word_cer, 1.0);
 }
+
+TEST(Scoring, MatchByOrderIgnoresFrequencyAndLength) {
+    const std::vector<LabeledSignal> labels{{"CQ", 1000.0, 25, 20, 0, 5}, {"CQ TEST", 1020.0, 25, 20, 0, 5}};
+    const std::vector<DecodedTrack> tracks{{1, 1000.0, "E"}, {2, 1020.0, "CQ TEST CQ TEST"}};
+    const auto s = score(labels, tracks, 50.0, true);
+    EXPECT_EQ(s.signals[0].track_id, 1u);
+    EXPECT_EQ(s.signals[1].track_id, 2u);
+}

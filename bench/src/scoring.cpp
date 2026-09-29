@@ -137,22 +137,29 @@ double ratio(std::size_t num, std::size_t den) {
 }  // namespace
 
 Score score(const std::vector<LabeledSignal>& labels, const std::vector<DecodedTrack>& tracks,
-            double match_tolerance_hz) {
+            double match_tolerance_hz, bool match_by_order) {
     Score result;
     std::set<std::uint32_t> used;
     SignalScore totals{LabeledSignal{}, std::nullopt, "", 0, 0.0};
-    for (const auto& label : labels) {
+    for (std::size_t li = 0; li < labels.size(); ++li) {
+        const auto& label = labels[li];
         const std::string reference = normalize_text(label.text);
         const DecodedTrack* best = nullptr;
         std::size_t best_len = 0;
-        for (const auto& t : tracks) {
-            if (used.count(t.id) || std::abs(t.freq_hz - label.freq_offset_hz) > match_tolerance_hz) continue;
-            const std::size_t len = normalize_text(t.text).size();
-            if (!best || len > best_len ||
-                (len == best_len && std::abs(t.freq_hz - label.freq_offset_hz) <
-                                        std::abs(best->freq_hz - label.freq_offset_hz))) {
-                best = &t;
-                best_len = len;
+        if (match_by_order) {
+            for (const auto& t : tracks) {
+                if (t.id == li + 1 && !used.count(t.id)) best = &t;
+            }
+        } else {
+            for (const auto& t : tracks) {
+                if (used.count(t.id) || std::abs(t.freq_hz - label.freq_offset_hz) > match_tolerance_hz) continue;
+                const std::size_t len = normalize_text(t.text).size();
+                if (!best || len > best_len ||
+                    (len == best_len && std::abs(t.freq_hz - label.freq_offset_hz) <
+                                            std::abs(best->freq_hz - label.freq_offset_hz))) {
+                    best = &t;
+                    best_len = len;
+                }
             }
         }
         SignalScore s{label, std::nullopt, "", 0, 0.0};

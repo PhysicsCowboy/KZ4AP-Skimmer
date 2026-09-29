@@ -94,9 +94,10 @@ std::vector<std::pair<std::size_t, std::size_t>> first_word_ranges(const Labeled
 std::vector<std::pair<std::size_t, std::size_t>> transmission_ranges(const LabeledSignal& label);
 
 // Matches each labeled signal to the track within match_tolerance_hz that
-// decoded the most text, and scores the symbol error rate (a prosign counts
+// decoded the most text or, with match_by_order, label i to the track with
+// id i + 1 (oracle mode), and scores the symbol error rate (a prosign counts
 // as one symbol, same as space between words).
 Score score(const std::vector<LabeledSignal>& labels, const std::vector<DecodedTrack>& tracks,
-            double match_tolerance_hz = 50.0);
+            double match_tolerance_hz = 50.0, bool match_by_order = false);
 
 }  // namespace kz4ap::bench

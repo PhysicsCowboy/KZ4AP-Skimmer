@@ -407,6 +407,16 @@ heuristic**, a guard against CPU overload, not a measured limit. For scale:
 the physical ceiling with 3-bin separation is about fs / 70 Hz ≈ 2700 tracks
 at 192 kHz, and a busy contest can put more than 100 stations in 192 kHz.
 
+### Oracle mode (benchmark only)
+
+`EngineConfig::oracle_frequencies_hz` (`kz4ap-bench --oracle`) bypasses the
+detector: a channel is opened at each given frequency, rounded to the nearest
+FFT bin, from the first sample, and stays open to the end. It measures the
+decoder apart from detection, including below the detector's threshold
+(roughly S₅₀₀ = 0 dB for a keyed station), and leaves the station up to
+±½ bin (±11.7 Hz) off its channel's center, the worst case for frequency
+re-centering. Normal operation never uses it.
+
 ## 7. Channelizer: one stream per station
 
 For each track, the channelizer produces a narrow complex baseband stream
@@ -852,3 +862,10 @@ research is under way (`docs/research/`).
   Templates and callsigns are this project's (heuristic). Filler text draws
   i.i.d. characters and word lengths from VE3NEA's on-air tables (DeepCW,
   MIT; E is 11.9% of characters, mean word length 3.06 characters).
+- **CPU time per channel-second:** the process's CPU time (user plus
+  kernel) for the whole run divided by the total duration of channel output
+  delivered to decoders, summed over channels, in ms per channel-second. It
+  includes the shared FFTs and the detector, so it is an upper bound on the
+  per-channel cost; `decoder_ms_per_channel_s` counts only steady-clock time
+  inside decoders (the engine runs on one thread). Measured on a desktop; a
+  Raspberry Pi 5 is not yet measured.

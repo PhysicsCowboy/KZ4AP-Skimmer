@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -185,4 +186,43 @@ TEST(Engine, EventsFollowTrackLifecycle) {
 TEST(Engine, NoiseAloneMakesNoTracks) {
     const auto r = run(keyed_signal("", 25, kRate, 4.0, 0, 0.0, kNoiseSigma, 13), 65536);
     EXPECT_TRUE(r.born.empty());
+}
+
+TEST(Engine, OracleOpensChannelsAtTheGivenFrequencies) {
+    EventBus bus;
+    std::vector<Track> born;
+    std::map<std::uint32_t, std::string> text;
+    bus.subscribe([&](const Event& e) {
+        if (const auto* t = std::get_if<TrackEvent>(&e); t && t->kind == TrackEvent::Kind::Born) born.push_back(t->track);
+        if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
+            for (const auto& c : d->chars) text[d->track_id] += c.text;
+        }
+    });
+    EngineConfig config;
+    config.oracle_frequencies_hz = {12003.0, -30000.0};
+    Engine engine(config, bus);
+    ASSERT_EQ(born.size(), 2u);  // published by the constructor
+    EXPECT_EQ(born[0].id, 1u);
+    EXPECT_DOUBLE_EQ(born[0].freq_hz, 512 * 23.4375);  // 12003 Hz rounded to its bin
+    EXPECT_EQ(born[1].id, 2u);
+    EXPECT_DOUBLE_EQ(born[1].freq_hz, -30000.0);
+    const auto x = band(9.0);
+    engine.process(x);
+    engine.finish();
+    EXPECT_EQ(born.size(), 2u);  // the detector made no tracks of its own
+    EXPECT_NE(text[1].find("CQ K1ABC"), std::string::npos) << text[1];
+    EXPECT_NE(text[2].find("CQ W9XYZ"), std::string::npos) << text[2];
+    EXPECT_NEAR(engine.stats().channel_seconds, 2 * 9.0, 0.05);
+}
+
+TEST(Engine, StatsCountChannelTimeOfDetectedTracks) {
+    EventBus bus;
+    EngineConfig config;
+    Engine engine(config, bus);
+    engine.process(band(9.0));
+    engine.finish();
+    // Two stations, each tracked from about 1.5 s to the end.
+    EXPECT_GT(engine.stats().channel_seconds, 2 * 6.0);
+    EXPECT_LT(engine.stats().channel_seconds, 2 * 9.0);
+    EXPECT_GE(engine.stats().decoder_seconds, 0.0);
 }

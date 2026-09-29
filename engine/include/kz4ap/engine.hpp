@@ -26,6 +26,18 @@ struct EngineConfig {
     double channel_cutoff_hz = 150.0;
     DetectorConfig detector;  // sample_rate, fft_size and hop are overwritten by the engine
     ClassicalDecoderConfig decoder;
+
+    // Oracle mode, for the benchmark: when not empty, a channel is opened at each of
+    // these frequencies (Hz from the span's center, rounded to the nearest FFT bin)
+    // from the first sample, with track ids 1, 2, ... in this order, and the signal
+    // detector is bypassed: no other track is born and none dies.
+    std::vector<double> oracle_frequencies_hz;
+};
+
+struct EngineStats {
+    std::uint64_t channel_samples = 0;  // channel samples delivered to decoders, summed over channels
+    double channel_seconds = 0;         // the same, in s of channel output
+    double decoder_seconds = 0;         // steady-clock time spent inside decoders, s
 };
 
 // Runs the decoding pipeline synchronously on the caller's thread. Output is
@@ -41,13 +53,17 @@ public:
     // End of input: processes buffered samples and flushes partly decoded characters.
     void finish();
 
+    EngineStats stats() const;
+
 private:
     struct Channel {
         Track track;
+        int bin;  // the channel's center bin
         std::unique_ptr<Decoder> decoder;
     };
 
     void process_hop(std::span<const Sample> hop);
+    void open_channel(const Track& track, int bin);
     void close_channel(std::uint32_t id);
     void publish_update(std::uint32_t id, DecodeUpdate&& update);
 
@@ -59,6 +75,9 @@ private:
     Channelizer channelizer_;
     std::vector<Sample> pending_;
     std::map<std::uint32_t, Channel> channels_;
+    bool oracle_ = false;
+    std::uint64_t channel_samples_ = 0;
+    double decoder_seconds_ = 0;
 };
 
 }  // namespace kz4ap

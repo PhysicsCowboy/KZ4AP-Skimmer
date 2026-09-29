@@ -1,4 +1,5 @@
 add_library(kz4ap_bench_lib
+  src/cpu_time.cpp
   src/labels.cpp
   src/scoring.cpp
 )
@@ -14,6 +15,7 @@ add_executable(kz4ap-bench src/main.cpp)
 target_link_libraries(kz4ap-bench PRIVATE kz4ap_bench_lib)
 
 add_executable(kz4ap_bench_tests
+  tests/cpu_time_test.cpp
   tests/labels_test.cpp
   tests/scoring_test.cpp
 )

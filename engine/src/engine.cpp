@@ -1,5 +1,6 @@
 #include "kz4ap/engine.hpp"
 
+#include <chrono>
 #include <stdexcept>
 #include <utility>
 
@@ -39,9 +40,25 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
       channelizer_(ChannelizerConfig{config_.sample_rate, config_.fft_size, config_.channel_bins,
                                      config_.channel_cutoff_hz}) {
     pending_.reserve(static_cast<std::size_t>(hop_));
+    oracle_ = !config_.oracle_frequencies_hz.empty();
+    for (std::size_t i = 0; i < config_.oracle_frequencies_hz.size(); ++i) {
+        const int bin = channelizer_.hz_to_bin(config_.oracle_frequencies_hz[i]);
+        Track track;
+        track.id = static_cast<std::uint32_t>(i + 1);
+        track.freq_hz = channelizer_.bin_to_hz(bin);
+        open_channel(track, bin);
+    }
 }
 
 Engine::~Engine() = default;
+
+EngineStats Engine::stats() const {
+    EngineStats s;
+    s.channel_samples = channel_samples_;
+    s.channel_seconds = static_cast<double>(channel_samples_) / channelizer_.output_rate();
+    s.decoder_seconds = decoder_seconds_;
+    return s;
+}
 
 void Engine::process(std::span<const Sample> samples) {
     // Work in whole hops so the spectrum analyzer and channelizer stay in lockstep,
@@ -66,22 +83,29 @@ void Engine::finish() {
 
 void Engine::process_hop(std::span<const Sample> hop) {
     for (auto& frame : spectrum_.push(hop)) {
-        const auto update = detector_.process(frame);
+        DetectorUpdate update;
+        if (!oracle_) update = detector_.process(frame);
         bus_.publish(Event{std::move(frame)});
         for (const auto id : update.died) close_channel(id);
-        for (const auto& track : update.born) {
-            channelizer_.add_channel(track.id, channelizer_.hz_to_bin(track.freq_hz));
-            channels_.emplace(track.id, Channel{track, std::make_unique<ClassicalDecoder>(
-                                                           channelizer_.output_rate(), config_.decoder)});
-            bus_.publish(Event{TrackEvent{TrackEvent::Kind::Born, track}});
-        }
+        for (const auto& track : update.born) open_channel(track, channelizer_.hz_to_bin(track.freq_hz));
     }
     channelizer_.push(hop, [this](std::uint32_t id, std::uint64_t first_index, std::span<const Sample> s) {
         const auto it = channels_.find(id);
         if (it == channels_.end()) return;
         const double t0 = static_cast<double>(first_index) / channelizer_.output_rate();
-        publish_update(id, it->second.decoder->process(s, t0));
+        const auto started = std::chrono::steady_clock::now();
+        auto update = it->second.decoder->process(s, t0);
+        decoder_seconds_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+        channel_samples_ += s.size();
+        publish_update(id, std::move(update));
     });
+}
+
+void Engine::open_channel(const Track& track, int bin) {
+    channelizer_.add_channel(track.id, bin);
+    channels_.emplace(track.id, Channel{track, bin, std::make_unique<ClassicalDecoder>(
+                                                        channelizer_.output_rate(), config_.decoder)});
+    bus_.publish(Event{TrackEvent{TrackEvent::Kind::Born, track}});
 }
 
 void Engine::close_channel(std::uint32_t id) {
