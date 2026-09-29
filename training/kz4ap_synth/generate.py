@@ -9,13 +9,14 @@ from __future__ import annotations
 import argparse
 import json
 import wave
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import numpy as np
 
-from .fading import rayleigh_gain
+from .fading import gain_at, rayleigh_gain, slow_gain
 from .keying import timed_intervals
+from .messages import Over
 from .morse import keying_intervals
 
 SNR_BANDWIDTH_HZ = 500.0
@@ -26,6 +27,17 @@ TUNE_GAP_S = 0.5  # silence between a tune-up carrier and the first element, s
 CALL_PREFIXES = ["K", "W", "N", "AA", "KB", "DL", "G", "F", "JA", "VE",
                  "EA", "I", "OH", "SM", "UA", "PY", "VK", "ZL"]
 MESSAGES = ["CQ TEST {c} {c}", "CQ CQ DE {c} {c} K", "TU {c}", "{c} 5NN 14", "CQ {c} {c} TEST"]
+
+
+@dataclass
+class Sender:
+    """One station of a multi-sender signal (a QSO heard on one frequency)."""
+    call: str
+    wpm: float
+    keying: str = "machine"        # keying style, a key of keying.STYLES
+    imbalance_dits: float = 0.0    # this operator's marks longer and spaces shorter by this, dits
+    offset_hz: float = 0.0         # carrier offset from the signal's freq_offset_hz, Hz
+    relative_db: float = 0.0       # key-down power relative to the signal's S500, dB
 
 
 @dataclass
@@ -49,12 +61,16 @@ class SignalSpec:
     fading_shape: str = "gaussian"   # Doppler spectrum: "gaussian" or "butterworth" (VE3NEA's)
     score: bool = True               # False: an interferer, left out of the score
     tag: str = ""                    # the condition this signal represents, for summaries
+    senders: list[Sender] = field(default_factory=list)  # a QSO's stations (empty: one sender)
+    overs: list[Over] = field(default_factory=list)      # a QSO's overs, in order (empty: send text)
+    turn_s: tuple[float, float] = (0.5, 2.0)             # silence before each over after the first, s (uniform)
 
 
 @dataclass
 class SignalPlan:
     intervals: list[tuple[float, float]]      # every key-down interval, s from start_s
     transmissions: list[tuple[float, float]]  # (first key-down, last key-up) of each sending, s from start_s
+    senders: list[int] = field(default_factory=list)  # a QSO: the sender of each transmission
 
 
 def amplitude_for_snr(snr_db: float, sample_rate: int) -> float:
@@ -95,6 +111,8 @@ def sending_intervals(spec: SignalSpec, rng: np.random.Generator) -> list[tuple[
 
 def plan_signal(spec: SignalSpec, rng: np.random.Generator) -> SignalPlan:
     """All key-down intervals of one signal: the tune-up carrier, then each sending."""
+    if spec.overs:
+        return plan_overs(spec, rng)
     intervals: list[tuple[float, float]] = []
     transmissions: list[tuple[float, float]] = []
     t = 0.0
@@ -112,6 +130,24 @@ def plan_signal(spec: SignalSpec, rng: np.random.Generator) -> SignalPlan:
     return SignalPlan(intervals, transmissions)
 
 
+def plan_overs(spec: SignalSpec, rng: np.random.Generator) -> SignalPlan:
+    """A QSO: each over at its sender's speed, keying and imbalance, each after a
+    silence drawn uniformly from spec.turn_s (none before the first)."""
+    plan = SignalPlan([], [], [])
+    t = 0.0
+    for over in spec.overs:
+        who = spec.senders[over.sender]
+        sent = timed_intervals(over.text, who.wpm, who.keying, rng, imbalance_dits=who.imbalance_dits)
+        if not sent:
+            raise ValueError(f"over {over.text!r} has nothing to key")
+        if plan.transmissions:
+            t = plan.transmissions[-1][1] + float(rng.uniform(*spec.turn_s))
+        plan.intervals.extend((t + on, t + off) for on, off in sent)
+        plan.transmissions.append((t + sent[0][0], t + sent[-1][1]))
+        plan.senders.append(over.sender)
+    return plan
+
+
 def plan_intervals(signals, seed: int) -> list[SignalPlan]:
     """Plans every signal. Random timing for signal i comes from its own generator,
     seeded by (seed, i), so a random feature of one signal never changes another."""
@@ -127,6 +163,9 @@ def generate(signals, sample_rate: int, duration_s: float, seed: int, add_noise:
         iq += (rng.standard_normal(n) + 1j * rng.standard_normal(n)) * (DEFAULT_NOISE_SIGMA / np.sqrt(2))
     for index, (s, plan) in enumerate(zip(signals, plan_intervals(signals, seed))):
         phase = rng.uniform(0, 2 * np.pi)
+        if s.overs:
+            add_overs(iq, s, plan, sample_rate, seed, index)
+            continue
         intervals = plan.intervals
         if not intervals:
             continue
@@ -149,6 +188,39 @@ def generate(signals, sample_rate: int, duration_s: float, seed: int, add_noise:
     return iq
 
 
+def add_overs(iq: np.ndarray, spec: SignalSpec, plan: SignalPlan, sample_rate: int, seed: int,
+              index: int) -> None:
+    """Adds a QSO to iq: each over at its sender's carrier (freq_offset_hz + offset_hz),
+    level (snr_db + relative_db) and phase, faded by that sender's own fading path."""
+    if not plan.intervals:
+        return
+    n = len(iq)
+    phases = np.random.default_rng([seed, index, 3]).uniform(0, 2 * np.pi, size=len(spec.senders))
+    paths = {}
+    if spec.fading_hz > 0:
+        for k in sorted(set(plan.senders)):
+            paths[k] = slow_gain(plan.intervals[-1][1] + 1.0, spec.fading_hz,
+                                 np.random.default_rng([seed, index, 1, k]), spec.fading_shape)
+    for (on, off), k in zip(plan.transmissions, plan.senders):
+        who = spec.senders[k]
+        tail = spec.edge_s / 2 if spec.edges_centered else 0.0
+        i0 = max(0, int((spec.start_s + on - tail) * sample_rate))
+        i1 = min(n, int(np.ceil((spec.start_s + off + tail) * sample_rate)) + 1)
+        if i1 <= i0:
+            continue
+        part = [iv for iv in plan.intervals if on <= iv[0] and iv[1] <= off]
+        env = keying_envelope(part, spec.start_s - i0 / sample_rate, i1 - i0, sample_rate, spec.edge_s,
+                              spec.edges_centered)
+        t = np.arange(i0, i1) / sample_rate
+        angle = 2 * np.pi * (spec.freq_offset_hz + who.offset_hz) * t + phases[k]
+        if spec.drift_hz_per_s:
+            angle = angle + np.pi * spec.drift_hz_per_s * (t - spec.start_s) ** 2
+        signal = amplitude_for_snr(spec.snr_db + who.relative_db, sample_rate) * env * np.exp(1j * angle)
+        if k in paths:
+            signal = signal * gain_at(paths[k], t - spec.start_s)
+        iq[i0:i1] += signal
+
+
 def write_wav(path, iq: np.ndarray, sample_rate: int) -> None:
     """Write I/Q as 16-bit stereo PCM, scaling everything down if needed to avoid clipping."""
     peak = max(float(np.max(np.abs(iq.real))), float(np.max(np.abs(iq.imag))), 1e-12)
@@ -165,6 +237,8 @@ def write_wav(path, iq: np.ndarray, sample_rate: int) -> None:
 
 def reference_text(spec: SignalSpec) -> str:
     """What a perfect decoder would print for the whole signal."""
+    if spec.overs:
+        return " ".join(o.text for o in spec.overs)
     return " ".join([spec.text] * spec.repeats)
 
 
@@ -177,13 +251,22 @@ def labels(signals, sample_rate: int, duration_s: float, seed: int) -> dict:
     """Labels for a recording; seed must be the one passed to generate()."""
     entries = []
     for s, plan in zip(signals, plan_intervals(signals, seed)):
+        if s.overs:
+            texts = [o.text for o in s.overs]
+            extra = [{"sender": s.senders[k].call, "sender_index": k, "wpm": s.senders[k].wpm,
+                      "keying": s.senders[k].keying, "imbalance_dits": s.senders[k].imbalance_dits,
+                      "offset_hz": s.senders[k].offset_hz, "relative_db": s.senders[k].relative_db}
+                     for k in plan.senders]
+        else:
+            texts = [s.text] * len(plan.transmissions)
+            extra = [{}] * len(plan.transmissions)
         entries.append({
             **asdict(s),
             "text": reference_text(s),
             "end_s": round(signal_end_s(s, plan), 3),
             "transmissions": [
-                {"text": s.text, "start_s": round(s.start_s + on, 3), "end_s": round(s.start_s + off, 3)}
-                for on, off in plan.transmissions
+                {"text": text, "start_s": round(s.start_s + on, 3), "end_s": round(s.start_s + off, 3), **more}
+                for text, (on, off), more in zip(texts, plan.transmissions, extra)
             ],
         })
     return {
@@ -192,6 +275,55 @@ def labels(signals, sample_rate: int, duration_s: float, seed: int) -> dict:
         "snr_bandwidth_hz": SNR_BANDWIDTH_HZ,
         "signals": entries,
     }
+
+
+def station_labels(signals, sample_rate: int, duration_s: float, seed: int) -> dict:
+    """labels(), but with each QSO split into one entry per station: that station's overs
+    only, at its own carrier (freq_offset_hz + offset_hz) and level (snr_db + relative_db),
+    so a station the receiver hears as its own track is scored against its own frequency.
+    Other signals are as in labels(). Each station entry names its QSO (qso_index)."""
+    base = labels(signals, sample_rate, duration_s, seed)
+    entries = []
+    for i, (s, entry) in enumerate(zip(signals, base["signals"])):
+        if not s.overs:
+            entries.append(entry)
+            continue
+        for k, who in enumerate(s.senders):
+            # offset_hz 0: these transmissions are at the entry's own frequency
+            mine = [{**t, "offset_hz": 0.0} for t in entry["transmissions"] if t["sender_index"] == k]
+            if not mine:
+                continue
+            entries.append({
+                "text": " ".join(t["text"] for t in mine),
+                "freq_offset_hz": round(s.freq_offset_hz + who.offset_hz, 3),
+                "wpm": who.wpm, "snr_db": round(s.snr_db + who.relative_db, 3),
+                "start_s": mine[0]["start_s"], "end_s": mine[-1]["end_s"],
+                "keying": who.keying, "imbalance_dits": who.imbalance_dits, "drift_hz_per_s": s.drift_hz_per_s,
+                "score": s.score, "tag": s.tag, "qso_index": i, "sender": who.call, "transmissions": mine,
+            })
+    return {**base, "signals": entries}
+
+
+# Where an answering station's carrier lands relative to the caller's (heuristic: no
+# measured distribution yet). Zero-beating by ear leaves a few to tens of Hz; a sidetone
+# pitch that differs from the rig's CW offset, or RIT, leaves 100-200 Hz.
+ANSWER_OFFSET_BANDS_HZ = ((0.0, 10.0, 0.40), (10.0, 50.0, 0.30), (50.0, 100.0, 0.15), (100.0, 200.0, 0.15))
+
+
+def draw_answer_offset_hz(rng) -> float:
+    """An answering station's carrier offset from the caller's, Hz: a band from
+    ANSWER_OFFSET_BANDS_HZ by its probability, uniform within it, either sign."""
+    band = int(rng.choice(len(ANSWER_OFFSET_BANDS_HZ), p=[p for _, _, p in ANSWER_OFFSET_BANDS_HZ]))
+    low, high, _ = ANSWER_OFFSET_BANDS_HZ[band]
+    return round(float(rng.uniform(low, high)) * (1.0 if rng.random() < 0.5 else -1.0), 1)
+
+
+def qso_spec(overs: list[Over], senders: list[Sender], freq_offset_hz: float, snr_db: float, start_s: float,
+             **options) -> SignalSpec:
+    """A QSO as one signal. Its text is the whole QSO; its wpm and keying are the first
+    sender's (for summaries); options are further SignalSpec fields (fading_hz, tag, ...)."""
+    return SignalSpec(" ".join(o.text for o in overs), freq_offset_hz, senders[0].wpm, snr_db, start_s,
+                      keying=senders[0].keying, senders=list(senders), overs=list(overs), **options)
 
 
 def random_callsign(rng) -> str:

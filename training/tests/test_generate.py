@@ -8,19 +8,24 @@ from kz4ap_synth.generate import (
     DEFAULT_NOISE_SIGMA,
     MESSAGES,
     TUNE_GAP_S,
+    Sender,
     SignalSpec,
     amplitude_for_snr,
+    draw_answer_offset_hz,
     fill_text,
     generate,
     keying_envelope,
     labels,
     main,
     plan_intervals,
+    qso_spec,
     random_callsign,
     scenario_band,
+    station_labels,
     with_interferer,
     write_wav,
 )
+from kz4ap_synth.messages import Over
 from kz4ap_synth.morse import keying_intervals
 
 
@@ -325,3 +330,92 @@ def test_cli_band_settings_reach_the_labels(tmp_path):
         assert 30.0 <= s["snr_db"] <= 60.0
         assert s["score"] is True
         assert s["tag"] == ""
+
+
+def _two_station_qso(**options):
+    senders = [Sender("K1ABC", 20.0), Sender("W9XYZ", 40.0, offset_hz=150.0, relative_db=-6.0)]
+    overs = [Over(0, "CQ DE K1ABC K"), Over(1, "K1ABC DE W9XYZ <AR>"), Over(0, "W9XYZ DE K1ABC <KN>")]
+    return qso_spec(overs, senders, 500.0, 20.0, 0.5, **options)
+
+
+def test_qso_overs_alternate_with_each_senders_speed_and_a_turn_gap():
+    spec = _two_station_qso(turn_s=(1.0, 2.0))
+    plan = plan_intervals([spec], seed=1)[0]
+    assert plan.senders == [0, 1, 0]
+    assert len(plan.transmissions) == 3
+    for (on, off), wpm in zip(plan.transmissions, (20.0, 40.0, 20.0)):
+        dits = min(b - a for a, b in plan.intervals if on <= a and b <= off)
+        assert dits == pytest.approx(1.2 / wpm)
+    for (_, end), (start, _) in zip(plan.transmissions, plan.transmissions[1:]):
+        assert 1.0 <= start - end <= 2.0
+
+
+def test_qso_labels_record_sender_speed_and_style_of_every_over():
+    spec = _two_station_qso()
+    entry = labels([spec], 8000, 30.0, seed=1)["signals"][0]
+    assert entry["text"] == "CQ DE K1ABC K K1ABC DE W9XYZ <AR> W9XYZ DE K1ABC <KN>"
+    assert " ".join(t["text"] for t in entry["transmissions"]) == entry["text"]
+    assert [t["sender"] for t in entry["transmissions"]] == ["K1ABC", "W9XYZ", "K1ABC"]
+    assert [t["wpm"] for t in entry["transmissions"]] == [20.0, 40.0, 20.0]
+    assert [t["keying"] for t in entry["transmissions"]] == ["machine"] * 3
+    assert [t["sender_index"] for t in entry["transmissions"]] == [0, 1, 0]
+    assert entry["transmissions"][1]["offset_hz"] == 150.0
+    assert entry["wpm"] == 20.0
+
+
+def test_each_station_keys_on_its_own_carrier_and_level():
+    fs = 8000
+    spec = _two_station_qso()
+    plan = plan_intervals([spec], seed=1)[0]
+    iq = generate([spec], fs, 30.0, seed=1, add_noise=False)
+
+    def first_mark(over):
+        on, off = next((a, b) for a, b in plan.intervals if plan.transmissions[over][0] <= a)
+        i = int((spec.start_s + (on + off) / 2) * fs)
+        return iq[i], np.angle(iq[i + 1] * np.conj(iq[i])) * fs / (2 * np.pi)
+
+    value, freq = first_mark(0)
+    assert abs(value) == pytest.approx(amplitude_for_snr(20.0, fs), rel=1e-6)
+    assert freq == pytest.approx(500.0, abs=0.1)
+    value, freq = first_mark(1)
+    assert abs(value) == pytest.approx(amplitude_for_snr(14.0, fs), rel=1e-6)
+    assert freq == pytest.approx(650.0, abs=0.1)
+
+
+def test_qso_is_reproducible_and_each_station_fades_on_its_own():
+    spec = _two_station_qso(fading_hz=1.0)
+    a = generate([spec], 8000, 30.0, seed=3)
+    b = generate([spec], 8000, 30.0, seed=3)
+    assert np.array_equal(a, b)
+    assert plan_intervals([spec], seed=3)[0].intervals == plan_intervals([spec], seed=3)[0].intervals
+    still = generate([_two_station_qso()], 8000, 30.0, seed=3, add_noise=False)
+    faded = generate([spec], 8000, 30.0, seed=3, add_noise=False)
+    assert not np.allclose(still, faded)
+
+
+def test_an_over_with_nothing_to_key_is_rejected():
+    spec = qso_spec([Over(0, "CQ"), Over(1, "   ")], [Sender("K1ABC", 20.0), Sender("W9XYZ", 20.0)],
+                    500.0, 20.0, 0.5)
+    with pytest.raises(ValueError):
+        plan_intervals([spec], seed=1)
+
+
+def test_station_labels_score_each_station_at_its_own_frequency():
+    spec = _two_station_qso()
+    whole = labels([spec], 8000, 30.0, seed=1)["signals"][0]
+    a, b = station_labels([spec], 8000, 30.0, seed=1)["signals"]
+    assert (a["sender"], a["freq_offset_hz"], a["snr_db"], a["wpm"]) == ("K1ABC", 500.0, 20.0, 20.0)
+    assert (b["sender"], b["freq_offset_hz"], b["snr_db"], b["wpm"]) == ("W9XYZ", 650.0, 14.0, 40.0)
+    assert a["text"] == "CQ DE K1ABC K W9XYZ DE K1ABC <KN>"
+    assert b["text"] == "K1ABC DE W9XYZ <AR>"
+    assert a["transmissions"] == [dict(t, offset_hz=0.0) for t in whole["transmissions"] if t["sender_index"] == 0]
+    assert a["qso_index"] == b["qso_index"] == 0
+
+
+def test_answer_offsets_favor_small_values():
+    rng = np.random.default_rng(12)
+    offsets = np.array([draw_answer_offset_hz(rng) for _ in range(4000)])
+    assert np.all(np.abs(offsets) <= 200.0)
+    assert np.mean(np.abs(offsets) < 10.0) == pytest.approx(0.40, abs=0.03)
+    assert np.mean(np.abs(offsets) >= 100.0) == pytest.approx(0.15, abs=0.03)
+    assert np.mean(offsets < 0) == pytest.approx(0.5, abs=0.03)

@@ -777,6 +777,20 @@ research is under way (`docs/research/`).
   counted as a false track) but leaves it out of every error rate and of
   detection recall. `tag` names the condition a signal represents
   (for example `df 100 Hz, +10 dB re wanted key-down power`), and suite summaries group by it.
+- **Two-station QSOs** (synthetic recordings, `senders`, `overs`): the two
+  stations of a QSO are one labeled signal, as a receiver hears them on one
+  channel when they are close; `station_labels` also labels each station
+  as its own signal at its own carrier, for stations heard as two tracks.
+  The answering station's offset is drawn, where a suite draws it, with
+  |Δf_B| in 0–10 Hz with probability 0.40, 10–50 Hz 0.30, 50–100 Hz 0.15
+  and 100–200 Hz 0.15 (**heuristic**: zero-beat by ear versus sidetone and
+  RIT mismatch; no measured distribution yet). Over k is keyed at its sender's speed, keying style and
+  imbalance, on its sender's carrier (`freq_offset_hz` + `offset_hz`, Hz)
+  at its sender's level (S₅₀₀ + `relative_db`, dB, noise in 500 Hz), with
+  its sender's own carrier phase and fading path; a silence drawn uniformly
+  from `turn_s` (default 0.5–2.0 s) separates two overs. The labels list
+  each over as a transmission with its sender, speed, style, imbalance,
+  offset and level, so the first word of every over is scored.
 - **Keying edges** (synthetic recordings, `edge_s`, `edges_centered`):
   raised-cosine rise and fall of `edge_s` (default 5 ms). By default each
   edge lies inside its mark, so a mark is `edge_s` shorter, and a space
