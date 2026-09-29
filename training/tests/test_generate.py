@@ -193,3 +193,32 @@ def test_signal_can_start_at_the_first_sample():
     assert abs(iq[0]) > 0.0
     assert abs(iq[int(0.05 * fs)]) == pytest.approx(amplitude_for_snr(20.0, fs), rel=1e-6)
     assert labels([spec], fs, 2.0, seed=1)["signals"][0]["transmissions"][0]["start_s"] == 0.0
+
+
+def test_hand_keyed_signal_is_reproducible_and_independent_of_its_neighbors():
+    a = SignalSpec("CQ TEST K1ABC", 1000.0, 25.0, 20.0, 0.5, keying="hand")
+    b = SignalSpec("CQ TEST W9XYZ", 3000.0, 22.0, 20.0, 0.5, keying="hand")
+    other = SignalSpec("TU", 1000.0, 25.0, 20.0, 0.5, keying="paddle")
+    first = plan_intervals([a, b], seed=7)
+    again = plan_intervals([a, b], seed=7)
+    assert first[1].intervals == again[1].intervals
+    assert plan_intervals([other, b], seed=7)[1].intervals == first[1].intervals
+    entry = labels([a, b], 8000, 10.0, seed=7)["signals"][0]
+    assert entry["keying"] == "hand"
+    assert entry["end_s"] == pytest.approx(0.5 + first[0].intervals[-1][1], abs=1e-3)
+
+
+def test_centered_edges_keep_the_marked_length_at_half_amplitude():
+    fs = 48000
+    inside = keying_envelope([(0.1, 0.2)], 0.0, fs // 2, fs)
+    centered = keying_envelope([(0.1, 0.2)], 0.0, fs // 2, fs, rise_s=0.002, centered=True)
+    assert np.sum(inside >= 0.5) / fs == pytest.approx(0.1 - 0.005, abs=2 / fs)  # milestone 1: 5 ms short
+    assert np.sum(centered >= 0.5) / fs == pytest.approx(0.1, abs=2 / fs)
+
+
+def test_centered_edges_reach_the_signal():
+    fs = 8000
+    spec = SignalSpec("E", 500.0, 20.0, 20.0, 0.5, edge_s=0.002, edges_centered=True)
+    iq = generate([spec], fs, 1.0, seed=1, add_noise=False)
+    level = np.abs(iq) / amplitude_for_snr(20.0, fs)
+    assert np.sum(level >= 0.5) / fs == pytest.approx(0.06, abs=2 / fs)  # one 20 WPM dit at 50% amplitude

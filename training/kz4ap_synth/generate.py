@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .keying import timed_intervals
 from .morse import keying_intervals
 
 SNR_BANDWIDTH_HZ = 500.0
@@ -37,6 +38,12 @@ class SignalSpec:
     pause_s: float = 0.0         # silence between sendings, s
     tune_s: float = 0.0          # unkeyed carrier before the first sending, s (0 = none)
     drift_hz_per_s: float = 0.0  # carrier frequency change from start_s on, Hz/s
+    keying: str = "machine"          # keying style, a key of keying.STYLES
+    wpm_end: float | None = None     # speed at the end of each sending; None = constant
+    speed_profile: str = "step"      # "step" (at the middle word) or "ramp" (linear per word)
+    imbalance_dits: float = 0.0      # marks longer and spaces shorter by this, dits
+    edge_s: float = RISE_S           # raised-cosine rise and fall time, s
+    edges_centered: bool = False     # False: edges inside each mark (milestone 1); True: centered on its ends
 
 
 @dataclass
@@ -51,14 +58,20 @@ def amplitude_for_snr(snr_db: float, sample_rate: int) -> float:
     return float(np.sqrt(10 ** (snr_db / 10) * noise_in_band))
 
 
-def keying_envelope(intervals, offset_s: float, n: int, sample_rate: int) -> np.ndarray:
-    """0..1 envelope with raised-cosine edges; intervals are shifted by offset_s."""
+def keying_envelope(intervals, offset_s: float, n: int, sample_rate: int, rise_s: float = RISE_S,
+                    centered: bool = False) -> np.ndarray:
+    """0..1 envelope with raised-cosine edges rise_s long; intervals are shifted by offset_s.
+    By default (milestone 1) each edge lies inside its interval, so a mark is rise_s shorter,
+    and a space rise_s longer, at 50% amplitude than the interval says. centered: each edge
+    is centered on the interval's end, so the 50%-amplitude duration is the interval's
+    (VE3NEA's convention)."""
     env = np.zeros(n)
-    ramp_len = max(1, int(round(RISE_S * sample_rate)))
+    ramp_len = max(1, int(round(rise_s * sample_rate)))
     ramp = 0.5 - 0.5 * np.cos(np.pi * (np.arange(ramp_len) + 0.5) / ramp_len)
+    shift = rise_s / 2 if centered else 0.0
     for on, off in intervals:
-        i0 = max(0, int(round((offset_s + on) * sample_rate)))
-        i1 = min(n, int(round((offset_s + off) * sample_rate)))
+        i0 = max(0, int(round((offset_s + on - shift) * sample_rate)))
+        i1 = min(n, int(round((offset_s + off + shift) * sample_rate)))
         if i1 <= i0:
             continue
         env[i0:i1] = 1.0
@@ -71,7 +84,8 @@ def keying_envelope(intervals, offset_s: float, n: int, sample_rate: int) -> np.
 
 def sending_intervals(spec: SignalSpec, rng: np.random.Generator) -> list[tuple[float, float]]:
     """Key-down intervals of one sending of spec.text, from 0 s."""
-    return keying_intervals(spec.text, spec.wpm)
+    return timed_intervals(spec.text, spec.wpm, spec.keying, rng, spec.wpm_end, spec.speed_profile,
+                           spec.imbalance_dits)
 
 
 def plan_signal(spec: SignalSpec, rng: np.random.Generator) -> SignalPlan:
@@ -111,11 +125,13 @@ def generate(signals, sample_rate: int, duration_s: float, seed: int, add_noise:
         intervals = plan.intervals
         if not intervals:
             continue
-        i0 = max(0, int(s.start_s * sample_rate))
-        i1 = min(n, int(np.ceil((s.start_s + intervals[-1][1]) * sample_rate)) + 1)
+        tail = s.edge_s / 2 if s.edges_centered else 0.0  # a centered edge reaches this far past an interval
+        i0 = max(0, int((s.start_s - tail) * sample_rate))
+        i1 = min(n, int(np.ceil((s.start_s + intervals[-1][1] + tail) * sample_rate)) + 1)
         if i1 <= i0:
             continue
-        env = keying_envelope(intervals, s.start_s - i0 / sample_rate, i1 - i0, sample_rate)
+        env = keying_envelope(intervals, s.start_s - i0 / sample_rate, i1 - i0, sample_rate, s.edge_s,
+                              s.edges_centered)
         t = np.arange(i0, i1) / sample_rate
         angle = 2 * np.pi * s.freq_offset_hz * t + phase
         if s.drift_hz_per_s:

@@ -739,6 +739,33 @@ research is under way (`docs/research/`).
 - **Drift:** the carrier's frequency changes linearly at `drift_hz_per_s`
   (Hz/s) from `freq_offset_hz` at the signal's start time t₀; its phase is
   2π·(f·t + ½·ḟ·(t − t₀)²).
+- **Keying styles** (synthetic recordings, `keying`): every element and
+  space duration is T·exp(N(μ, σ_ln²)), T = 1.2 s / WPM, never below
+  0.2 dit. "machine" is exact PARIS timing (σ_ln = 0; the default). The
+  others are VE3NEA's DeepCW styles with his parameters (MIT; notes in
+  `docs/research/deepcw-generator-notes.md` §1):
+
+  | Style (his name) | μ: dit, dah, element space, character space, word space | σ_ln: same order |
+  |---|---|---|
+  | computer (Computer) | 0, 1.10, 0, 1.10, 1.94 | 0.05, 0.016, 0.05, 0.016, 0.008 |
+  | paddle (Paddle) | 0, 1.10, 0, 1.10, 1.94 | 0.05, 0.016, 0.05, 0.2, 0.2 |
+  | bug (Vibroplex) | 0, 1.10, 0, 1.10, 1.94 | 0.05, 0.2, 0.05, 0.2, 0.2 |
+  | hand (HandKey) | 0, 1.50, 0, 1.50, 2.0 | 0.15, 0.3, 0.2, 0.3, 0.2 |
+
+  Medians exp(μ): 1, 3.00, 1, 3.00, 6.96 dits; hand key 1, 4.48, 1, 4.48,
+  7.39 dits. Character and word spaces are one draw each (VE3NEA sums
+  several draws; same medians). `imbalance_dits` = δ/T lengthens every mark
+  and shortens every space; VE3NEA draws δ ~ N(0, (0.1·T)²) once per
+  operator, and his training mix is hand 0.25, paddle 0.50, computer 0.25.
+  `wpm_end` changes the speed within a sending: `step` switches at the
+  middle word, `ramp` changes linearly from word to word.
+- **Keying edges** (synthetic recordings, `edge_s`, `edges_centered`):
+  raised-cosine rise and fall of `edge_s` (default 5 ms). By default each
+  edge lies inside its mark, so a mark is `edge_s` shorter, and a space
+  `edge_s` longer, at 50% amplitude than its nominal length: an imbalance
+  of −5 ms/T, −0.10 dit at 24 WPM (derived). With `edges_centered`, edges
+  are centered on the mark's ends and the 50%-amplitude length is the
+  nominal one (VE3NEA's convention; he uses 2 ms edges).
 - **Character error rate (CER):** the minimum number of symbol insertions,
   deletions and substitutions to turn the decoded text into the reference,
   divided by the number of reference symbols. A prosign token counts as one
