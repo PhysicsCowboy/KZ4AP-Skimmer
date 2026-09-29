@@ -731,3 +731,12 @@ research is under way (`docs/research/`).
   deletions and substitutions to turn the decoded text into the reference,
   divided by the number of reference symbols. A prosign token counts as one
   symbol, and word spaces count as symbols.
+- **Message text** (synthetic recordings, `training/kz4ap_synth/messages.py`):
+  CQ calls, contest exchanges, and whole ragchew QSOs as a list of overs,
+  each with its sending station: CQ, answer, RST and name and QTH, rig and
+  power and antenna and weather, optional chat, closing. `<BT>` separates
+  thoughts inside an over; every over before the closing ends with `<AR>` and
+  `<KN>` (the answer with `<AR>`); each station's closing over ends with `<SK>`.
+  Templates and callsigns are this project's (heuristic). Filler text draws
+  i.i.d. characters and word lengths from VE3NEA's on-air tables (DeepCW,
+  MIT; E is 11.9% of characters, mean word length 3.06 characters).
