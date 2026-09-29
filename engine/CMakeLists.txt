@@ -7,6 +7,7 @@ add_library(kz4ap_engine
   src/classical_decoder.cpp
   src/engine.cpp
   src/matched_front_end.cpp
+  src/frequency_tracker.cpp
 )
 add_library(kz4ap::engine ALIAS kz4ap_engine)
 target_include_directories(kz4ap_engine PUBLIC include PRIVATE src)
@@ -28,6 +29,7 @@ add_executable(kz4ap_engine_tests
   tests/classical_decoder_test.cpp
   tests/engine_test.cpp
   tests/matched_front_end_test.cpp
+  tests/frequency_tracker_test.cpp
 )
 target_link_libraries(kz4ap_engine_tests PRIVATE kz4ap::engine GTest::gtest_main)
 gtest_discover_tests(kz4ap_engine_tests)
