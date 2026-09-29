@@ -289,6 +289,25 @@ Fix, in two parts:
 
 Must land before callsign matching.
 
+**Also covers the retune delay after a QSO turnover** (milestone 2, part 1,
+option 1; owner, 2026-09-29). When the answering station is on a different
+frequency, within 47 Hz, from the one the channel is tuned to, the channel
+moves to it only when the detector's 1 s power average says the peak has
+moved: 1.3–1.8 s into the answer at 10–25 Hz, 2.3 s at 40 Hz for a station
+10 dB weaker than the caller (simulated; 2.6 s after the caller stops,
+derived). A station that pauses and resumes on its own frequency loses
+nothing. Median characters of the answering station lost at the start of
+its over (simulated, 30 runs each; levels re the caller's key-down power):
+0 at 10 Hz; at 25, 40 and 50 Hz, 1, 3 and 3 at −10 dB, 0, 1 and 2 at −6 dB,
+0 at 0 and +6 dB. Replay would feed the retuned channel its first seconds
+again. **Tried and rejected:** a faster 0.2 s spectrum average during the
+decoder's re-acquisition window found the answering station within 0.04 s
+and lost nothing at 25–40 Hz, but at 50 Hz its quick swings carried the
+channel across the 47 Hz boundary (the caller's next over exact in only
+15–20 of 30 runs, and a new track for the caller), and in 2 of 60 runs a
+channel jumped 21–25 Hz to a noise peak (the short average is noisier:
+about 23% spread per bin, against 10% for the 1 s one).
+
 ### Speed estimate derailed by a short tune-up carrier
 
 An unkeyed carrier of about 0.5–0.95 s pins the classical decoder's speed
@@ -480,8 +499,9 @@ owner's SDRplay recordings exist, measure the real distribution of |Δf|
 between a CQ and the stations that answer it, and replace
 `ANSWER_OFFSET_BANDS_HZ` in `training/kz4ap_synth/generate.py` with it. It
 matters because the pipeline treats a station within the channel distance
-D = 47 Hz of a channel's station as the same channel (its tracker follows
-it, up to 57 Hz), and one farther away as a separate track (milestone 2,
+D = 47 Hz of a channel's station as the same channel (the detector's track
+moves to its peak and the channel follows), and one farther away as a
+separate track (milestone 2,
 part 1, Design decisions B); the milestone-1 detector heard stations within
 about 47 Hz as one track, from about 70 Hz as two, and either in between.
 
@@ -497,10 +517,10 @@ the fading group is the test), the squelch a_min = 3·(T_v/16 ms)^(1/4)
 (T_v the filter's duration), the keying hysteresis ±1 nat, the noise guards
 κ = 1.75 and κ_n = 4, the noise floor's margin (2.5), clean fraction (0.25)
 and restart ratio (4), the re-acquisition silence (max(0.5 s, 12 dits)) and
-window (2 s), the tracker's anchor time constant (10 s) and minimum weight
-(0.6), when the filter starts following the speed (8 marks), the
-dit-estimate growth bound (×1.25 per mark), and the channel distance
-(D = 47 Hz) with its follow margin (10 Hz). The amplitude estimate is biased
+window (2 s), the tracker's fine-tuning range (±12 Hz around the
+detector's frequency) and minimum weight (0.6), when the filter starts following the speed (8 marks), the
+dit-estimate growth bound (×1.25 per mark, also from the filter's first
+follow step), and the channel distance (D = 47 Hz). The amplitude estimate is biased
 low by the filter's ramps (0.85–0.88 of the true amplitude for PARIS at
 25 WPM, simulated), which lengthens marks by about 7 ms at 25 WPM; measure
 whether that matters.
@@ -547,6 +567,24 @@ amplitude estimate, in case the next over is from another station. In
 about 1% of silences in noise alone (4 of 400 simulated), the restarted
 estimate latched onto noise and one stray character was decoded. One
 option: give the restart a prior weight, as the warm-up has.
+
+#### A strong neighbor 60–70 Hz away leaks through the matched filter (stated limit)
+
+The matched filter is a boxcar (a plain moving average). Its frequency
+response has sidelobes: a station 60 Hz from the channel's station comes
+through the 25 WPM filter only 18.7 dB down (relative to a centered
+station), and one 70 Hz away through the short acquisition filter 19.6 dB
+down (derived). If that neighbor is as strong as the channel's station or
+stronger, its marks are keyed in fragments in the wrong channel, and those
+fragments corrupt the speed estimate. Simulated (milestone 2, part 1,
+option 1; 30 runs each; levels re the channel's station's key-down power):
+with the neighbor answering 60 Hz away, the first station's next over came
+through exactly in 6 of 30 at equal level and 0 of 30 at +6 dB (its last
+three words were intact in 26 and 30; typically "FARIS" for "PARIS"); at
+70 Hz and +6 dB, 19 of 30, with the filter running away to a slow speed in
+6. The neighbor itself was decoded in every run, on its own channel in all but one (at 70 Hz and +6 dB, once by the first station's channel). The fix
+belongs in the filter's design, for example a tapered filter with lower
+sidelobes; take it up with the co-channel item below (owner, 2026-09-29).
 
 #### Two stations keying at the same time within a few tens of Hz (postponed)
 
