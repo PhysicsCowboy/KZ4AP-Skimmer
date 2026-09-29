@@ -4,7 +4,7 @@
 
 **Goal:** Extend the synthetic benchmark so it exposes the decoder's known weaknesses, then build step 1 of the decoder plan (spec §5.2): per-station frequency re-centering with drift tracking, and a dit-matched pre-detection filter whose envelope becomes a Rician-versus-Rayleigh log-likelihood ratio that the existing baseline decoder can key from, selectable against the old path and measured against it.
 
-**Architecture:** The Python generator (`training/kz4ap_synth`) gains a message-text module (CQ calls, contest exchanges, whole ragchew QSOs with prosigns in their operating positions, and filler text with VE3NEA's on-air statistics), signal options (pauses, tune-up carriers, drift, VE3NEA's keying styles, speed changes, Rayleigh fading with a Gaussian or VE3NEA's Butterworth Doppler spectrum, interferers, crowding), two-station QSOs whose alternating overs share one frequency, and named suites with a runner that calls `kz4ap-bench` and summarizes results. `kz4ap-bench` gains an oracle mode (channels at labeled frequencies, detector bypassed), separate scoring of word spaces and of each transmission's first word, and CPU time per channel-second. In the engine, two new per-station components run at the channel rate r = 1500 samples/s inside the Classical decoder when `FrontEnd::Matched` is selected: a `FrequencyTracker` (numerically controlled oscillator plus a lag-product frequency discriminator) and a `MatchedFrontEnd` (boxcar filter matched to the dit, running noise and amplitude estimates, per-sample LLR). The baseline path (`FrontEnd::Envelope`) stays the default and stays bit-identical.
+**Architecture:** The Python generator (`training/kz4ap_synth`) gains a message-text module (CQ calls, contest exchanges, whole ragchew QSOs with prosigns in their operating positions, and filler text with VE3NEA's on-air statistics), signal options (pauses, tune-up carriers, drift, VE3NEA's keying styles, speed changes, Rayleigh fading with a Gaussian or VE3NEA's Butterworth Doppler spectrum, interferers, crowding), two-station QSOs whose alternating overs share one frequency, and named suites with a runner that calls `kz4ap-bench` and summarizes results. `kz4ap-bench` gains an oracle mode (channels at labeled frequencies, detector bypassed), separate scoring of word spaces and of each transmission's first word, and CPU time per channel-second. In the engine, two new per-station components run at the channel rate r = 1500 samples/s inside the Classical decoder when `FrontEnd::Matched` is selected: a `FrequencyTracker` (numerically controlled oscillator plus a lag-product frequency discriminator) and a `MatchedFrontEnd` (boxcar filter matched to the dit, running noise and amplitude estimates, per-sample LLR). One channel distance D (Hz) ties the detector, the tracker and the engine together: the detector attributes a new peak to a track within D of the track's current (tracked) frequency, a channel's tracker may follow a station within D (plus a margin) of its own station, and the engine merges two channels whose frequencies come within D. `FrontEnd::Matched` becomes the default in Task 13 (owner, 2026-09-29); the baseline path (`FrontEnd::Envelope` with the milestone-1 detector rules, `--front-end envelope`) stays selectable and bit-identical, and CI keeps pinning it.
 
 **Tech Stack:** C++20, CMake ≥ 3.25, GoogleTest 1.17.0, nlohmann/json 3.12.0, Python 3.12 with numpy and pytest, GitHub Actions. No new dependencies.
 
@@ -19,7 +19,16 @@ Implements, from the spec and backlog:
 - **C. The dit-matched front end with soft likelihoods** (spec §5.2 step 1; survey option 1; backlog "Channel filtering, two stages", stage 2), consumed by the existing baseline decoder through LLR keying, with the old path kept selectable.
 - **D. Measurement** of the baseline against the new front end on the new suites, written into the documents, and a CI guard for the new path.
 
-**Deferred by the owner until Task 14's measurements exist (decision 2026-09-27):** whether the Matched front end becomes the default, and any tuning of its parameters (β, τ_n, τ_a, a_min, h, the noise guard, when the filter starts following the speed). This plan does not pre-decide either: `FrontEnd::Envelope` stays the default in every task, the parameter values below stay labeled heuristic, and Task 14 only measures, records the numbers, and hands both questions to the owner.
+**Stop point (2026-09-29).** The channel-distance design (decision 1 below) was simulated as the owner asked, and **it fails where a station 60–100 Hz away is at the channel's station's level or stronger** (Design decisions B, "Where it fails"): at 60 Hz the channel's station's next over survived in 7 of 30 runs at equal level and 1 of 30 at +6 dB re its key-down power. As instructed, no parameter was changed to make it pass. Tasks 1–9 and 11 can proceed; Tasks 10, 12 and 13 wait for the owner's decision.
+
+**Owner decisions of 2026-09-29** (they replace the 2026-09-27 deferral of the default):
+1. **One channel distance D, in Hz, used in three places** (Design decisions, B; Tasks 10, 12, 13). It replaces the tracker's ±35 Hz pull-in and the 35–70 Hz gap that pull-in left.
+2. **`FrontEnd::Matched` becomes the default in Task 13.** `--front-end envelope` stays selectable; CI keeps the milestone-1 smoke regression on Envelope (bit-identical pin) and adds a Matched smoke check (Task 14). If Task 14 finds Matched worse than Envelope in any regime, the implementer reports it to the owner and does not revert the default.
+3. **Speed-estimate growth limit:** while the matched filter follows the speed, the dit estimate may grow by at most ×1.25 per mark (Task 12).
+4. **Tests with a simulated pass rate below 100%** run 20 fixed seeds and assert a pass count with a wide binomial margin below the simulated rate (Tasks 12, 13). They are deterministic and still catch regressions.
+5. **Postponed to the backlog, with the explanation:** the acquisition floor, the noise-rise recovery, stray noise after a silence, a co-channel station keying at the same time within a few tens of Hz, and relabeling a channel's callsign after a turnover (GUI and callsign matching).
+6. **No parameter tuning** without strong evidence: the benchmark exists to find better values. Tuning stays deferred to the benchmark results; the parameter values below stay labeled heuristic.
+7. **Physical units (standing rule):** parameters and calculations are in Hz, s, FS and dB with a named reference, never in units tied to an implementation choice (FFT bins, samples, decimation). Conversion to bins or samples happens only at the point of use, derived from the physical value, so changing the bin width or a sample rate keeps the physics the same. Config fields are named for their unit (`attribution_distance_hz`, not `..._bins`). Every milestone-1 bin- or sample-counted setting this plan touches is restated in Hz; the ones it does not touch are listed in one backlog item.
 
 Deliberately **not** in this plan (each gets its own plan later):
 
@@ -28,9 +37,9 @@ Deliberately **not** in this plan (each gets its own plan later):
 - Callsign matching (spec §6), the telnet server, and the GUI and live display (spec §3.1 items 2–5).
 - Real-recording scoring with manta's oracle method. This plan builds the oracle *mechanism* (channels at given frequencies, detector bypassed) for synthetic recordings; running it on real recordings needs recordings and RBN spot files and is later work.
 - Moving a channel's center bin as a station drifts (the channelizer stays where the track was born; the NCO covers ±75 Hz around it), replay of the first seconds of a transmission ("Wrong or missing first characters"), the tune-up-carrier speed bug, ghost tracks beside strong signals, and separating station identity from decoding. The new scenarios *measure* all of these; fixing them is later work.
-- Restating the detector's bin-counted settings in Hz (backlog). Decision: **not needed for this plan**, because no task changes the FFT bin width; the item's purpose is to make a bin-width sweep change only one variable. It stays on the backlog, ahead of that sweep.
+- Restating the milestone-1 settings this plan does not touch in physical units (FFT size, hop, channel bins, candidate persistence counted in frames, and the rest listed in the backlog item "Express the remaining bin- and sample-counted settings in physical units"). The detector settings this plan touches (the attribution rule, the peak neighborhood, the track-level neighborhood and the candidate step) are restated in Hz in Task 13.
 - Impulsive noise (QRN), chirp, and CPU measurements on a Raspberry Pi 5 (no Pi in the loop yet).
-- Making the Matched front end the default, and tuning its parameters: deferred by the owner until Task 14's numbers exist (see above). This includes the limits the plan states rather than fixes (re-review and final check, 2026-09-27/28): the acquisition floor, S₅₀₀ = −2.5 dB derived at every speed and 50% of marks keyed near −1.8 dB (25 WPM) and −2.6 dB (12 WPM) simulated; the 43 s recovery (derived) of the noise estimate after a 6 dB rise in the noise; answering stations 35–70 Hz away, which neither the caller's channel nor a separate track reliably covers, and which at −6 dB re the caller's key-down power or stronger also cost the caller's next over in about half the simulated turnovers; a neighbor 100 Hz away at the caller's level, which cost the caller's next over in 13 of 60 simulated turnovers; a runaway of the filter length after a sudden speed change (2 of 100 simulated); and stray noise keyed after about 1% of re-acquisitions in noise alone.
+- Tuning the Matched front end's parameters: deferred to the benchmark results (owner, 2026-09-27 and 2026-09-29). The limits the plan states rather than fixes are postponed to the backlog with their explanations (owner, 2026-09-29): the acquisition floor (S₅₀₀ = −2.5 dB derived at every speed; 50% of marks keyed near −1.8 dB at 25 WPM and −2.6 dB at 12 WPM, simulated); the noise-rise recovery (about 43 s after a sustained 6 dB rise, derived); stray noise keyed after about 1% of silences; and a second station keying at the same time within a few tens of Hz of the channel's station.
 - A ragchew clip in the `smoke` suite: `smoke` must stay exactly the recording `bench/smoke.sh` makes, so its baseline (`bench/baselines/smoke.json`) and CI behavior do not change. A clip would either change the CI recording (and so its baseline) or make `smoke` differ from what CI runs, so `smoke` is left unchanged. Ragchews and two-station QSOs are in `full` only.
 
 ## Global Constraints
@@ -38,7 +47,8 @@ Deliberately **not** in this plan (each gets its own plan later):
 - C++20; CMake minimum 3.25; the engine must not depend on Qt; no new third-party dependencies.
 - Namespace `kz4ap`; public headers in `engine/include/kz4ap/`, sources in `engine/src/`, tests in `engine/tests/`; bench code in `bench/src/`, `bench/tests/`; Python in `training/kz4ap_synth/`, `training/tests/`.
 - Determinism (spec §4.1): the same recording and settings must produce identical output, regardless of how input is split into calls. Every new per-sample stage runs sample by sample inside the decoder, so chunking cannot change it; every random draw in the generator comes from a seeded generator.
-- **The baseline stays bit-identical.** With default settings (`FrontEnd::Envelope`, no oracle), the engine's output and the `smoke` recording's bytes must not change. `bench/baselines/smoke.json` is not edited by any task.
+- **The baseline stays bit-identical.** With the Envelope path (`FrontEnd::Envelope`, the milestone-1 bin attribution rule, no channel merging, no oracle; the defaults until Task 13, and `--front-end envelope` from Task 13 on), the engine's output and the `smoke` recording's bytes must not change. `bench/baselines/smoke.json` is not edited by any task.
+- **Physical units (owner's standing rule, 2026-09-29).** Parameters and calculations are stated in physical units (Hz, s, FS, FS², dB with a named reference), never in units tied to an implementation choice (FFT bins, samples, decimation factors). Convert to bins or samples only at the point of use, from the physical value (for example `std::lround(distance_hz / bin_hz)`), so a different bin width or sample rate keeps the physics the same. Name config fields for their unit (`attribution_distance_hz`, `lag_s`). Counts of physical things (marks, dits, independent samples of a filter) are fine. (Every implementer of this plan must be told this rule, together with the signal-processing.md rule below.)
 - **`docs/signal-processing.md` describes the engine's signal processing as it actually is.** Any change to signal processing — a parameter value, an algorithm, the order of stages, a new stage — updates that document in the same commit, including its parameter table and whether each choice is derived, measured or heuristic. Treat a stale description as a bug. (Every implementer of this plan must be told this rule.)
 - **Units** (project `CLAUDE.md`): every displayed, logged or documented quantity carries an explicit unit. Every dB value names its reference (dBFS, dB SNR in a stated bandwidth, dB relative to a centered station, etc.); a bare "dB" is a bug. Linear signal values are in FS (amplitude) and FS² (power). S₅₀₀ always means key-down carrier power over noise power in 500 Hz, dB.
 - American spelling in code, comments and docs.
@@ -75,10 +85,10 @@ Every symbol used in this plan and in the code comments it asks for. Where a sym
 | f̂ | the tracker's estimate of Δf, which is also the NCO frequency | Hz |
 | φ[n] | NCO phase | rad |
 | u[n] | re-centered sample, y[n]·e^(−jφ[n]) | FS |
-| L | lag of the frequency discriminator | 8 samples |
+| τ_L | lag of the frequency discriminator (L = τ_L·r samples at the point of use) | 5.33 ms (8 samples at r = 1500 samples/s); unambiguous range ±1/(2τ_L) = ±93.75 Hz |
 | z[n] | lag product v[n]·conj(v[n−L]) | FS² |
 | Z̄ | weighted average of lag products, rotated to absolute offset | FS² |
-| τ_f | time constant of that average, counted in samples of weight 1 | 0.5 s |
+| τ_f | time constant of that average, in seconds of weight 1 | 0.5 s |
 | T, T̂ | dit duration and the decoder's estimate of it (T = 1.2 s / WPM) | s |
 | β | matched-filter length as a fraction of T̂ | 0.8 |
 | K | matched-filter (boxcar) length, round(β·T̂·r) | samples |
@@ -94,13 +104,14 @@ Every symbol used in this plan and in the code comments it asks for. Where a sym
 | g | posterior log-odds, Λ + ln(P₁/P₀) | nats |
 | p | posterior probability of key-down, 1/(1 + e^(−g)) | 0…1 |
 | h | keying hysteresis on g | 1.0 nats |
-| a_min | squelch: no key-down unless a ≥ a_min(K) = 3·(K/24)^(1/4) | 3.0 at K = 24; 3.74 at 58; 5.58 at 288 |
+| a_min | squelch: no key-down unless a ≥ a_min = 3·(T_v/T_acq)^(1/4), T_v = K/r the filter's duration and T_acq = 16 ms the acquisition filter's (0.8 × the 20 ms dit of 60 WPM); in samples, 3·(K/24)^(1/4) at r = 1500 samples/s | 3.0 at 16 ms (K = 24); 3.74 at 38.7 ms (K = 58); 5.58 at 192 ms (K = 288) |
 | κ, κ_n | noise guard: σ̂² is updated from v[n−K] only if \|v[n−K]\|²/(2σ̂²) < κ and \|v\|²/(2σ̂²) < κ_n at n and n−2K | 1.75, 4 |
 | m(κ) | mean of an exponential of mean 1 truncated at κ, 1 − κ·e^(−κ)/(1 − e^(−κ)); the noise update divides it out | 0.632 at κ = 1.75 |
 | — | re-acquisition silence: key up for longer than max(0.5 s, 12 dits); window before returning to the narrow filter (and to the previous speed window) | s; window 2 s |
 | F, c | noise floor: 10th percentile of 64 samples of \|v\|² taken K apart, over 2·(−ln(1 − 0.1/c))·2.5 = 2·(−ln 0.6)·2.5; c = 0.25 the smallest fraction of those samples one station is assumed to leave clean | FS²; c dimensionless |
-| f_a, Δf_pull | tracker anchor (the channel's station frequency, following with τ = 10 s) and pull-in range around it | Hz; ±35 Hz |
-| τ_n, τ_a | time constants of the noise and amplitude estimates, counted in updates (noise) and samples of weight 1 (amplitude) | 2 s, 0.5 s |
+| D | channel distance: the detector attributes a new peak to a track within D of the track's current frequency; the engine merges two channels whose frequencies come within D | 47 Hz (heuristic) |
+| f_a, D_f | tracker anchor (the channel's station frequency, following with τ = 10 s) and the follow distance around it, D_f = D + 10 Hz | Hz; ±57 Hz |
+| τ_n, τ_a | time constants of the noise and amplitude estimates: seconds of noise updates (noise) and seconds of key-down weight (amplitude) | 2 s, 0.5 s |
 | S₅₀₀ | key-down carrier power over noise power in 500 Hz | dB |
 | E/N₀ | key-on energy per element over one-sided noise density (Proakis) | dB re 1 |
 | f_D | Rayleigh-fading frequency spread: 2σ of a Gaussian Doppler spectrum, or 2σ of the Gaussian least-squares fit to VE3NEA's Butterworth spectrum (1.01·f_D for his filter, so the same f_D to about 1%) | Hz |
@@ -119,7 +130,7 @@ Each choice is labeled **derived** (follows from the math, with its source), **h
 
 - **Inside the Classical decoder, per sample** (heuristic, for determinism and simplicity). The decoder already owns the dit estimate the filter must follow and already processes sample by sample; putting the tracker and the front end there keeps the output independent of chunking and lets the filter follow speed changes on the very sample the estimate changes. The decoder reports its frequency estimate in each `DecodeUpdate`, so the engine can publish the refined frequency and retune the detector's track.
 - **Two-stage filtering** (spec §5.2): the channelizer's ±150 Hz filter is unchanged; the narrow filter is a second stage at r.
-- **Selectable:** `ClassicalDecoderConfig::front_end` is `FrontEnd::Envelope` (today's path, default) or `FrontEnd::Matched`. `kz4ap-bench --front-end baseline|matched` selects it.
+- **Selectable:** `ClassicalDecoderConfig::front_end` is `FrontEnd::Envelope` (today's path) or `FrontEnd::Matched`; Envelope is the default until Task 13, which makes Matched the default (owner, 2026-09-29). `kz4ap-bench --front-end envelope|matched` selects it (`baseline` is accepted as another name for `envelope`, because the suites of Task 9 use it); `envelope` also selects the milestone-1 detector attribution and turns channel merging off, so it reproduces milestone 1 bit for bit.
 
 ### B. Frequency re-centering
 
@@ -127,12 +138,78 @@ Each choice is labeled **derived** (follows from the math, with its source), **h
 - **NCO:** u[n] = y[n]·e^(−jφ[n]), φ[n+1] = φ[n] + 2π·f̂/r, wrapped to [−π, π) (derived: a complex frequency shift).
 - **Estimator: a lag-product (phase-increment) discriminator on the matched-filter output**, gated by the front end's key-down posterior (heuristic choice among standard estimators; the discriminator itself is derived). For a tone at Δf, v is still a tone at Δf − f̂ (any linear filter passes a tone unchanged in frequency), so arg(v[n]·conj(v[n−L])) = 2π(Δf − f̂)·L/r. Rotating each product by e^(+j2π·f̂·L/r) turns it into a measurement of the absolute Δf, independent of the NCO setting, so there is no feedback loop to stabilize (to first order: v averages samples mixed under the last K/32 NCO settings while each product is rotated by the current f̂, a small coupling while f̂ moves, harmless because τ_f·r = 750 samples ≫ K/2; review finding M3):
   - Z̄ ← Z̄ + α·p·(z·e^(j2π·f̂·L/r) − Z̄), α = 1 − e^(−1/(τ_f·r));
-  - every 32 samples (one channelizer block, 21.3 ms), if the average holds enough weight (below), f̂ ← arg(Z̄)·r/(2πL), clamped to ±75 Hz.
+  - every 21.3 ms (`update_interval_s`; 32 samples at r, one channelizer block), if the average holds enough weight (below), f̂ ← arg(Z̄)/(2π·τ_L), clamped to ±75 Hz.
   - Weighting by p freezes the estimate during key-up and pauses (derived: a zero-weight update changes nothing), so it holds through gaps between transmissions.
   - The estimate moves the NCO only once the accumulated weight W (W ← W + α·p·(1 − W), from 0 toward 1) reaches 0.6 (heuristic; 0.3 in an earlier draft let a mixture of two stations' products move it), so the first few noisy products cannot throw away the detector's initial estimate.
-- **L = 8 samples** (heuristic within derived bounds): the unambiguous range is ±r/(2L) = ±93.75 Hz (derived), which covers the ±11.7 Hz bin rounding plus drift up to the ±75 Hz clamp. A larger L would lower the noise (the error scales as 1/L) but narrow the range.
+- **Lag τ_L = 5.33 ms** (`lag_s`; L = τ_L·r = 8 samples at r; heuristic within derived bounds): the unambiguous range is ±1/(2τ_L) = ±93.75 Hz (derived), which covers the ±11.7 Hz bin rounding plus drift up to the ±75 Hz clamp. A larger L would lower the noise (the error scales as 1/L) but narrow the range.
 - **±75 Hz clamp** (heuristic): the channel filter loses 0.34 dB relative to the passband at 75 Hz (measured, signal-processing.md §7). Beyond that the channel itself would have to move (out of scope).
-- **Why on v, not on u:** v is only B_v = r/K wide (about 26 Hz at 25 WPM), so the estimate sees about 10 dB less noise than on the 252 Hz channel, and a neighbor 100 Hz away is attenuated by the boxcar's sinc response (for example 29.7 dB relative to the passband at 25 WPM, K = 58: |sinc(100 Hz · 58/1500 s)| = 0.033). Pull-in is limited to the boxcar's main lobe, ±r/K, and, since the re-review (findings I-3, I-4), to ±35 Hz around an anchor (the channel's station frequency, which follows accepted estimates with a 10 s time constant): an estimate farther away, or an incoherent average (|Z̄| below 0.3 of the average |z|, as while it passes from one station to another), moves nothing, and a far one empties the average and returns f̂ to the anchor; the update also waits for weight 0.6 rather than 0.3. Stations farther apart belong to their own tracks; slow drift up to 35 Hz/10 s = 3.5 Hz/s is followed (derived; simulated: a 3 Hz/s drift over 19 s followed within 3.1 Hz). The filter starts wide (60 WPM, ±62.5 Hz) until the speed estimate is trusted, and returns to that width after a long silence (re-acquisition, C). While K = 24, a neighbor 100 Hz away is only 14.5 dB down (|sinc(100 Hz · 24/1500 s)| = 0.19, derived) and lies beyond the ±93.75 Hz unambiguous range, so it aliases to −87.5 Hz: in a simulation of `MatchedIgnoresStrongerNeighbor` (3 seeds; plan review) with the earlier tracker, f̂ swung to −9 … −11 Hz in the first second before K narrowed (review finding M4); with the anchor, pull-in and coherence checks it swung at most 1.9 Hz and ended at 0 ± 0.05 Hz, with all of the wanted station's marks keyed (4 seeds, simulated); over 100 seeds with the whole decoder (final check, 2026-09-28) f̂ ended within 0.34 Hz of the wanted station in all 100. **What the capture range does not stop (final check, simulated):** the ±35 Hz window moves with the anchor, so a station 35–70 Hz away that keeps sending can still walk f̂ toward it. The mixture of its lag products with the noise products (which the boxcar makes coherent at f̂) stays coherent enough to pass the 0.3 test, each accepted estimate moves the anchor a little, and the window follows. In a turnover with B 50 Hz away, f̂ stayed within 0.2 Hz of A with B at −10 dB re A's key-down power (100 seeds), but reached 35 Hz (median) to 42 Hz (maximum) with B at 0 dB re A (60 seeds). With a neighbor keying at the same time as A at +10 dB re A's key-down power, f̂ ended at 40 Hz with the neighbor at 40 Hz (10 of 10 seeds), 1.5–16 Hz at 50 Hz, and up to 36.5 Hz at 60 Hz (final check, 10 seeds each). A neighbor 100 Hz away left f̂ within 0.2 Hz at −6 and +10 dB re A (100 seeds each) and within 1 Hz in 54 of 60 seeds at 0 dB re A (maximum 18.7 Hz). So "a station 35–70 Hz away is not followed" holds only for one weaker than about −10 dB re the channel's station; group E and H measure the rest.
+- **Why on v, not on u:** v is only B_v = r/K wide (about 26 Hz at 25 WPM), so the estimate sees about 10 dB less noise than on the 252 Hz channel, and a neighbor 100 Hz away is attenuated by the boxcar's sinc response (for example 29.7 dB relative to the passband at 25 WPM, K = 58: |sinc(100 Hz · 58/1500 s)| = 0.033). The tracker's follow distance, and how it fits the detector and the engine, is the next bullet (owner decision 2026-09-29; it replaces the ±35 Hz pull-in of the re-review). The filter starts wide (60 WPM, main lobe ±62.5 Hz) until the speed estimate is trusted, and returns to that width after a long silence (re-acquisition, C). While K = 24 (a 16 ms filter), a neighbor 100 Hz away is only 14.5 dB down relative to a centered station (|sinc(100 Hz · 16 ms)| = 0.19, derived) and lies beyond the ±93.75 Hz unambiguous range, so it aliases to −87.5 Hz; in a simulation of `MatchedIgnoresStrongerNeighbor` (3 seeds; plan review) with the earlier tracker, f̂ swung to −9 … −11 Hz in the first second before K narrowed (review finding M4); with the anchor, follow-distance and coherence checks it swung at most 1.9 Hz and ended at 0 ± 0.05 Hz.
+- **Channel distance D = 47 Hz (heuristic; owner decision 2026-09-29).** One distance, in Hz, used in three places:
+  1. **Detector attribution** (Task 13): a new spectral peak belongs to an existing track when its parabolically interpolated frequency is within D of the track's *current* frequency. With the Matched front end the current frequency follows the channel's published (tracked) frequency (`SignalDetector::retune` after every channel block) instead of staying at its birth value. The milestone-1 rule (a peak less than 3 bins from the track's bin) stays selectable (`Attribution::Bins`), for comparison and for the bit-identical Envelope path.
+  2. **Tracker follow distance** (Task 10): a channel's tracker may follow any station within D_f = D + 10 Hz = 57 Hz of its anchor. The 10 Hz margin (heuristic) makes the ranges overlap, so a rounding difference between the tracked frequency and the detector's interpolated peak (a station 47–57 Hz away) gives a duplicate, a track of its own while this channel also follows it, rather than a station that no channel decodes.
+  3. **Channel merge** (Task 13): when the published frequencies of two channels come within D, the engine keeps the older channel (lower track id) and closes the younger one (its `Died` event is published and its track is removed from the detector). Why the older (heuristic): its track id, birth time and text have been published longest, so a display line or a spot stays continuous; when two channels meet, both decoders are on the same station, and the older has the longer speed history.
+
+  **Why 47 Hz (heuristic, with a physical rationale; not measured):** it is about the half-width of the detector's Hann main lobe, 2/T_w for its window of T_w = 42.7 ms (2 × 23.4 Hz = 46.9 Hz). A peak closer than that to a station can be that station's own spread (main lobe, keying sidebands), so the detector cannot separate two stations there in any case. D is stated in Hz and does not change if the FFT changes (only its rationale would). **Intended result:** in a turnover within D the channel retunes to the answering station B and back to A; beyond D, B has its own channel and A's channel ignores it.
+
+- **Channel distance, simulated (2026-09-29).** Method: a Python port of Tasks 10–13 as revised, at engine level: the detector (a complex span at 6000 samples/s with a 256-point periodic Hann FFT, which gives the engine's 23.4 Hz bins and 21.3 ms hop; 1 s power average, 6 dB threshold per bin, 0.5 s persistence, 10 s timeout, distance attribution, retune after every channel block), the channelizer (mix to the bin center, Blackman-windowed sinc with −6 dB at ±150 Hz and 21.3 ms length, decimation to 1500 samples/s), channels opened at track birth with the detector's residual as the initial offset, the Matched decoder on a port of the milestone-1 decoder's own element and speed logic (the decoder estimates the dit itself) with the ×1.25 growth bound (Task 12), D_f = 57 Hz, and merging within D keeping the older channel. The port reproduces the final check's decoder-level numbers with the earlier parameters (30 seeds each: B 25 Hz away at −6 dB re A 30/30 passes, against 100/100; 100 Hz at 0 dB 23/30, against 47/60; `MatchedDecodesAtThreeDbS500` 40/50, against 81/100). Scene: A at S₅₀₀ = 15 dB, 25 WPM, "PARIS PARIS PARIS PARIS"; 1 s of silence; B at 18 WPM, "DE W9XYZ PARIS" (9.4 s), Δf_B above A, its level in dB re A's key-down power; 1 s; A again. White noise, 30 numpy seeds per case (rates carry over to other seeds, not particular results). Columns: *B decoded* counts runs where a channel's text during B's over is within CER 0.3 of B's text, split by whether that channel is A's or a track of B's own; *B's marks keyed* is the fraction of B's marks keyed at their middle and not merged with the next mark, in the best channel (B's own track loses the marks before its birth, about 0.6 s); *A's next over intact* counts runs where some channel's text during A's second over is exactly "PARIS PARIS PARIS PARIS"; *B frequency error* is the published frequency of the channel decoding B, just before A resumes, minus B's carrier. Duplicate decodes (two channels decoding the same over) occurred in **0 runs of every case**: each duplicate was merged first. A's frequency error at the end of its next over was at most 0.12 Hz in every run where it was intact.
+
+| Δf_B (Hz) | B (dB re A) | B decoded: in A's channel / own track (of 30) | B's marks keyed, median (min) | A's next over intact (of 30) | tracks, median (max) | merges (30 runs) | B frequency error, median / max (Hz) |
+|---|---|---|---|---|---|---|---|
+| 0 | −10 | 27 / 0 | 1.00 (0.32) | 27 | 1 (1) | 0 | 0.08 / 0.20 |
+| 0 | −6 | 30 / 0 | 1.00 (1.00) | 30 | 1 (1) | 0 | 0.04 / 0.15 |
+| 0 | 0 | 30 / 0 | 1.00 (1.00) | 30 | 1 (1) | 0 | 0.02 / 0.07 |
+| 0 | +6 | 30 / 0 | 1.00 (1.00) | 30 | 1 (1) | 0 | 0.01 / 0.04 |
+| 10 | −10 | 25 / 0 | 1.00 (0.37) | 25 | 1 (1) | 0 | 0.09 / 0.25 |
+| 10 | −6 | 30 / 0 | 1.00 (1.00) | 30 | 1 (1) | 0 | 0.06 / 0.16 |
+| 10 | 0 | 30 / 0 | 1.00 (1.00) | 30 | 1 (1) | 0 | 0.03 / 0.08 |
+| 10 | +6 | 30 / 0 | 1.00 (1.00) | 30 | 1 (1) | 0 | 0.02 / 0.04 |
+| 25 | −10 | 26 / 0 | 0.97 (0.97) | 30 | 1 (1) | 0 | 0.06 / 0.26 |
+| 25 | −6 | 30 / 0 | 1.00 (1.00) | 30 | 1 (1) | 0 | 0.06 / 0.17 |
+| 25 | 0 | 30 / 0 | 1.00 (1.00) | 30 | 1 (1) | 0 | 0.03 / 0.09 |
+| 25 | +6 | 30 / 0 | 1.00 (1.00) | 30 | 1 (1) | 0 | 0.01 / 0.04 |
+| 40 | −10 | 3 / 0 | 0.00 (0.00) | 29 | 1 (1) | 0 | 0.13 / 0.20 |
+| 40 | −6 | 22 / 0 | 0.97 (0.32) | 28 | 1 (1) | 0 | 0.05 / 0.11 |
+| 40 | 0 | 30 / 0 | 1.00 (1.00) | 30 | 1 (1) | 0 | 0.03 / 0.08 |
+| 40 | +6 | 30 / 0 | 1.00 (1.00) | 30 | 1 (1) | 0 | 0.02 / 0.04 |
+| 50 | −10 | 0 / 3 | 0.76 (0.00) | 30 | 2 (2) | 25 | 0.14 / 0.23 |
+| 50 | −6 | 1 / 26 | 0.82 (0.39) | 27 | 2 (3) | 34 | 0.05 / 0.21 |
+| 50 | 0 | 24 / 0 | 1.00 (0.34) | 22 | 2 (3) | 31 | 0.03 / 0.09 |
+| 50 | +6 | 30 / 0 | 1.00 (1.00) | 24 | 2 (2) | 30 | 0.02 / 0.05 |
+| 60 | −10 | 0 / 2 | 0.78 (0.00) | 30 | 2 (2) | 23 | 0.06 / 0.09 |
+| 60 | −6 | 0 / 30 | 0.82 (0.82) | 30 | 2 (2) | 30 | 0.05 / 0.15 |
+| 60 | 0 | 0 / 6 | 0.49 (0.32) | 7 | 4 (6) | 75 | 0.02 / 0.07 |
+| 60 | +6 | 0 / 0 | 0.50 (0.39) | 1 | 3 (4) | 64 | — |
+| 70 | −10 | 0 / 30 | 0.89 (0.87) | 30 | 2 (2) | 29 | 0.11 / 0.38 |
+| 70 | −6 | 0 / 30 | 0.89 (0.89) | 30 | 2 (2) | 29 | 0.07 / 0.24 |
+| 70 | 0 | 0 / 25 | 0.89 (0.18) | 27 | 2 (6) | 41 | 0.03 / 0.08 |
+| 70 | +6 | 0 / 0 | 0.37 (0.24) | 23 | 6 (7) | 123 | — |
+| 80 | −10 | 0 / 30 | 0.89 (0.89) | 30 | 2 (2) | 19 | 0.07 / 0.34 |
+| 80 | −6 | 0 / 30 | 0.89 (0.89) | 30 | 2 (2) | 19 | 0.05 / 0.22 |
+| 80 | 0 | 0 / 27 | 0.89 (0.45) | 24 | 2 (3) | 27 | 0.03 / 0.11 |
+| 80 | +6 | 0 / 30 | 0.89 (0.89) | 30 | 2 (2) | 21 | 0.01 / 0.06 |
+| 100 | −10 | 0 / 30 | 0.89 (0.89) | 30 | 2 (2) | 0 | 0.08 / 0.29 |
+| 100 | −6 | 0 / 30 | 0.89 (0.89) | 30 | 2 (2) | 0 | 0.05 / 0.19 |
+| 100 | 0 | 0 / 30 | 0.89 (0.89) | 23 | 2 (2) | 0 | 0.02 / 0.10 |
+| 100 | +6 | 0 / 30 | 0.89 (0.89) | 29 | 2 (2) | 0 | 0.01 / 0.05 |
+| 200 | −10 | 0 / 30 | 0.89 (0.89) | 30 | 2 (2) | 0 | 0.09 / 0.24 |
+| 200 | −6 | 0 / 30 | 0.89 (0.89) | 30 | 2 (2) | 0 | 0.06 / 0.15 |
+| 200 | 0 | 0 / 30 | 0.89 (0.89) | 30 | 2 (2) | 0 | 0.03 / 0.08 |
+| 200 | +6 | 0 / 30 | 0.89 (0.89) | 30 | 2 (2) | 0 | 0.01 / 0.04 |
+
+  **Reading the table.** Merges beyond D with B weaker than A (for example 29 in 30 runs at 70 Hz, −6 dB) came after B's over: when A resumed, 6–10 dB stronger than B, B's channel walked to A and was merged into A's channel; B's text was complete by then, but B's next over would need a new track. At 50 and 60 Hz with B at −10 dB re A, B's own track was born 2.0 s into its 9.4 s over (median; 0.6 s at 100 Hz), because B's peak is not the maximum within ±47 Hz until A's decaying power average (τ = 1 s) falls below B's; so B's text missed the CER 0.3 mark (B decoded in 3 and 2 of 30), a detector latency, not the channel distance.
+
+  **Where it works (simulated):** within D (0, 10, 25, 40 Hz) at −6 dB re A or stronger, A's channel follows B, decodes it (30 of 30 at 0–25 Hz, and at 40 Hz from 0 dB up; 22 of 30 at 40 Hz and −6 dB) and comes back for A's next over (28–30 of 30), with one track and no merge. Beyond D, with B weaker than A (−10 and −6 dB re A at 60–200 Hz), B has its own track and A's channel ignores it (A intact 30 of 30; 27 of 30 at 50 Hz −6 dB). At 50 Hz, in the overlap between D and D_f, B's own track is born and merged about 0.7 s later into A's channel, which then decodes B (30 of 30 at +6 dB; 24 of 30 at 0 dB), as intended.
+
+  **Where it fails (stated plainly; the owner decides before Tasks 10, 12 and 13 are implemented; no parameter was changed to make it pass):**
+  1. **B 60 Hz away at A's level or stronger.** A's next over intact in 7 of 30 runs at 0 dB re A and 1 of 30 at +6 dB; B decoded in 6 of 30 and 0 of 30; 3–6 tracks per run. Mechanism (traced): after the 2 s re-acquisition window, A's channel is back at A's width (K = 58, a 38.7 ms filter at 25 WPM) and hears B through the filter's first sidelobe (|sinc(60 Hz · 38.7 ms)| = 0.116, −18.7 dB relative to a centered station, derived), which puts B near the squelch (about S₅₀₀ −3.7 dB against the −4.4 dB squelch at K = 58), so B is keyed in fragments. The tracker's average of those fragments' lag products, mixed with the noise products that the boxcar makes coherent at f̂, points between A and B (36 Hz in the traced run), inside D_f of the anchor, so it is accepted and f̂ jumps there; the published frequency then comes within D of B's own channel, and the merge rule closes B's channel. B's peak is then more than D from A's track once A's channel returns to its anchor, a new track is born for B, and the cycle repeats. A diagnostic with merging turned off (not a proposal): B decoded by its own track in 30 of 30, but A's next over intact in only 4 of 30 (0 dB) and 0 of 30 (+6 dB) (its last three words intact in 30 of 30: A's channel had walked toward B, so A's first word went to a third track). So the root cause is the tracker walking past D_f on a strong neighbor's sidelobe leakage (the final check's finding m-A, now just beyond 57 Hz instead of beyond 35 Hz), and merging on the instantaneous published frequency turns a brief walk into the loss of B's channel.
+  2. **B 70–100 Hz away at 0 or +6 dB re A.** A's next over intact in 23 of 30 (70 Hz, +6 dB), 24 of 30 (80 Hz, 0 dB), 23 of 30 (100 Hz, 0 dB; the final check saw 47 of 60 with the earlier design, so unchanged there). At 70 Hz and +6 dB re A, B was decoded in 0 of 30 (up to 7 tracks and 123 merges in 30 runs): the same walk-and-merge cycle.
+  3. **A weak B within D, off center.** At 40 Hz and −10 dB re A, B was decoded in 3 of 30 (marks keyed: median 0.00). At the acquisition width B is 20·log₁₀|sinc(40 Hz · 16 ms)| = −6.9 dB relative to a centered station, so about S₅₀₀ −1.9 dB, at the acquisition floor; within D it gets no track of its own. (B at 0–25 Hz and −10 dB: decoded in 25–27 of 30.)
+  4. **Separate, from milestone 1 (not caused by D):** with B's over 16 s long (Task 12's text, "DE W9XYZ PARIS PARIS PARIS"), A's track died during B's over in every run at 200 Hz, and at 100 Hz at −10 and −6 dB re A: a track at S₅₀₀ = 15 dB lives about 15 s after its station stops (the power average's decay plus the 10 s timeout, signal-processing.md §6). A's next over then went to a new track that lost its first word (intact 0 of 30). Real overs are often longer than 16 s. Backlog: "Tracks outlive their stations; separate station identity from decoding".
+
+  Candidate directions for the owner (none tried or tuned): merge only when two channels stay within D for a sustained time, or compare anchors instead of instantaneous frequencies; bound how far a channel's anchor may move from its birth station's frequency; accept a frequency estimate only from marks that the decoder assigns to the channel's current station.
+
+  **Also re-checked at engine level (30 seeds each; levels re A's key-down power):** a steady neighbor 100 Hz away keying at the same time (A "CQ TEST K1ABC …" at 25 WPM, S₅₀₀ 15 dB; neighbor at 30 WPM): at 0 dB, A's last three calls decoded in 30 of 30 and A's published frequency within 0.3 Hz throughout; at −6 dB 30 of 30 (neighbor decoded by its own track in 26); at +10 dB A's channel decoded only fragments in 30 of 30 runs, and the result is identical with the milestone-1 attribution rule and the earlier 35 Hz pull-in, so it predates D (the decoder-level `MatchedIgnoresStrongerNeighbor`, whose channel is open before either station keys, passes 88 of 100 in this port). A 3 Hz/s drift over 19 s (S₅₀₀ = 20 dB): one track in 30 of 30, published frequency 3.1–3.2 Hz behind the carrier at the last symbol (derived lag ḟ·τ_f/P₁ = 3.4 Hz), moved at least 52 Hz from its birth frequency, text intact in 30 of 30. **A neighbor keying at the same time 40–60 Hz away** (postponed to the backlog; reported only): at −6 dB re A, A decoded in 30 of 30 at 40, 50 and 60 Hz, the neighbor in 0 of 30 (within D, or its peak is not a local maximum within ±47 Hz of A's stronger one); at 0 dB, A in 0 (40 Hz; the channel settled between the two, near 14 Hz, and decoded nothing), 13 (50 Hz) and 28 (60 Hz) of 30, the neighbor in 0, 30 and 30; at +6 dB, A in 0 of 30 at each offset (the channel moves to the neighbor), the neighbor in 30 of 30.
+
 - **Expected accuracy (derived upper bound; simulated; to be measured):** with the phase noise of each product set by the per-sample SNR in B_v, and about B_v independent products per second of key-down, the RMS error at 25 WPM is at most roughly 0.5 Hz at S₅₀₀ = 0 dB and 0.9 Hz at S₅₀₀ = −5 dB; a simulation of the whole chain (60 s of PARIS, 4 seeds; plan review) gave 0.08, 0.27 and 0.55 Hz RMS at +10, 0 and −5 dB (review finding M2). The lag behind a linear drift of rate ḟ (Hz/s) is about ḟ·τ_f/P₁ (derived for a first-order average of a phasor whose frequency ramps, updated only during key-down): 1.1 Hz at 1 Hz/s.
 - **Test target (spec §5.2):** residual |f̂ − Δf| ≤ 2 Hz after 5 s of keying at S₅₀₀ = 10 dB, 20 WPM, from an initial error of 11 Hz (Task 12). Through a filter of length T that is a loss of |sinc(2 Hz · 60 ms)|² = 0.2 dB relative to a centered station (derived); through this plan's βT = 0.8T filter it is 0.13 dB.
 
@@ -140,15 +217,15 @@ Each choice is labeled **derived** (follows from the math, with its source), **h
 
 - **Filter: a boxcar (moving average) of K = round(β·T̂·r) samples, normalized by 1/K**, run before envelope detection. A boxcar of duration T is the matched filter for a rectangular element of duration T and has noise bandwidth exactly 1/T (derived: Proakis §4.2–2, proakis-ook-notes.md §2.7). Its cost is O(1) per sample (running sum over a ring buffer, recomputed exactly every 4096 samples and whenever K changes, to stop rounding drift).
 - **β = 0.8** (heuristic; to be measured against 0.6 and 1.0): a filter slightly shorter than the dit costs 10·log₁₀(1/0.8) = 0.97 dB of output SNR relative to the matched filter (derived), and keeps the filter shorter than an element space even when the speed estimate is 25% too slow or a hand-keyed space is short. A filter longer than the gaps would merge successive dits, the speed estimate would then lock onto the merged marks, and the filter would never recover.
-- **Following speed** (heuristic): the filter starts at the fastest code, 60 WPM (T = 20 ms, K = 24, B_v = 62.5 Hz), and follows the decoder's dit estimate once the decoder's speed window holds at least 8 marks; before that the estimate can be far off (it starts at 25 WPM). It then changes K every time the estimate changes, which happens only after a mark. K is clamped to [1, round(β · 1.2/5 · r)] = [1, 288] (5 WPM). When K changes, σ̂² is rescaled by K_old/K_new (derived for noise white at r: the boxcar's output noise power is then proportional to 1/K; the channel filter removes the boxcar's sidelobes beyond ±150 Hz, keeping about 0.92 of its noise power at K = 24 and 0.965 at K = 58, so the rescale, and a² below, are off by about 0.2 dB relative to the true noise power, derived; review finding M6); ŝ is unchanged (a centered tone passes a normalized boxcar at unity gain).
-- **Re-acquisition after a silence** (heuristic; review finding C2, re-review I-2 to I-4, final check F-1; Task 12): the filter narrows to the current station's dit and ŝ settles at its level, so a station that answers 25 Hz away (near the narrow filter's first null, main lobe ±21–26 Hz at 20–25 WPM) or 6 dB weaker (re the first station's key-down power) never raises p, and neither the tracker nor ŝ ever moves to it. Hold-through-pause is right for one station that pauses and wrong for two taking turns. So when the key has been up for longer than max(0.5 s, 12 dits), the decoder puts K back to 24 (the 60 WPM acquisition width), sets ŝ² and its weight to 0, restarts the frequency average from the last f̂, keeps σ̂² (rescaled), **starts a new speed window** (the old one is set aside), and lets the filter follow the speed again only after 8 new marks; if nothing is keyed within 2 s it restores the set-aside speed window and returns to the width it had, so a weak station that pauses is not held at the acquisition floor (below). The new speed window is the final check's fix (F-1): with the window kept, the fragments of a station keyed only partly through the wide filter (a neighbor 50 Hz away, say) entered the same 24-mark window as the caller's marks, the filter followed the mixed estimate, and a filter longer than the caller's element spaces merged its marks; the estimate then locked onto the merged marks and K ran to 288, the runaway the β rationale above warns about. Until two new marks exist the decoder still classifies elements with the previous station's dit. 12 dits exceeds all but about 1% of word spaces (0.77% of VE3NEA's hand-key word spaces, derived from their log-normal); the 0.5 s floor matters only above 28.8 WPM. It reaches only stations within the tracker's ±35 Hz pull-in, and a station answering there must also pass the acquisition squelch after the K = 24 boxcar's loss |sinc(Δf·24/1500 s)|² (−2.4 dB relative to a centered station at 25 Hz), about S₅₀₀ ≥ 0 dB at 25 Hz. **Simulated (final check, 2026-09-28):** a Python port of Tasks 10–12 on the milestone-1 decoder's own element and speed logic (dropout merge, glitch rule, dah decision, cluster split, gap timing), with the decoder estimating the dit itself; Task 12's turnover (A at S₅₀₀ 15 dB, 25 WPM; 1 s of silence; B at 18 WPM; 1 s; A again), white noise, numpy seeds. B 25 Hz away at −6 dB re A's key-down power: B's "DE W9XYZ PARIS" decoded, f̂ 24.80–25.23 Hz before A's second over, and A's second over intact in 100 of 100 seeds (23 of 30 without the new speed window). B 50 Hz away at −10 dB re A: A's second over intact and f̂ within 0.2 Hz of A in 100 of 100. B 100 Hz away at −6 and +10 dB re A: A's second over intact in 99 and 100 of 100, f̂ within 0.2 Hz. **Limits (stated, not fixed):** B 50 Hz away at −6 … +10 dB re A is keyed in fragments, its text comes out as garbage in A's channel, f̂ walks toward it (above: up to 42 Hz), and A passed (second over intact, f̂ within 2 Hz of A) in only 7 of 30 seeds at −6 dB, 15 of 60 at 0 dB, 15 of 30 at +6 dB and 16 of 30 at +10 dB re A (4 of 30 at 0 dB re A without the new speed window); B 100 Hz away at A's level (0 dB re A) sits at the acquisition squelch's edge and cost A's second over in 13 of 60 seeds (A passed 10 of 30 without the new speed window). Gating the speed window further did not help those cases (simulated, 30 seeds each): bounding the filter's growth to ×1.25 per mark, bounding the dit estimate's growth to ×1.25 per mark, counting only marks whose peak log-odds exceeded 8 nats, and taking the re-acquisition silence from the dit before the turnover left 50 Hz at 0 dB re A at 3–10 of 30 passes (8 of 30 with the new speed window alone) and 100 Hz at 0 dB re A at 11–24 of 30 (about 22 of 30 with the window alone). Keeping a partly keyed neighbor out of a channel needs a way to tell which station a mark came from, which is a design decision (owner's list). **The 2 s window:** re-measured, a single station at S₅₀₀ = −2 dB pausing 15 dits every 3 words kept on average 0.47 of its marks with the window and 0.39 without at 25 WPM, and 0.81 against 0.73 at 12 WPM (20 seeds, the same seeds both ways); the per-seed spread (0.00–0.92 at 25 WPM) is much larger than the difference, so the window's benefit is small. (An earlier figure of 74% against 41% came from a keyer given the true dit and is withdrawn.)
+- **Following speed** (heuristic): the filter starts at the fastest code, 60 WPM (T = 20 ms, K = 24, B_v = 62.5 Hz), and follows the decoder's dit estimate once the decoder's speed window holds at least 8 marks; before that the estimate can be far off (it starts at 25 WPM). It then changes K every time the estimate changes, which happens only after a mark. **While the filter follows, the dit estimate may grow by at most ×1.25 per mark** (owner decision 2026-09-29; final check F-2): in 2 of 100 simulated 20 → 35 WPM changes the estimate jumped ×2 in one update while the speed window held both speeds, the filter outgrew the element spaces, merged marks and ran away. The bound costs a real slowdown ln(ratio)/ln 1.25 marks to follow: 5 marks from 35 to 12 WPM (derived); the owner accepts losing a few marks. (Re-simulated with the bound, `MatchedFollowsSpeedChange` passed 98 of 100 in this port, no run reaching the runaway's K = 105: one ended with a stray E after the last call (K = 41 samples, as expected), one garbled the last call while K was still at 61 samples, a 40.7 ms filter, on its way down.) K is clamped to [1, round(β · 1.2/5 · r)] = [1, 288] (5 WPM). When K changes, σ̂² is rescaled by K_old/K_new (derived for noise white at r: the boxcar's output noise power is then proportional to 1/K; the channel filter removes the boxcar's sidelobes beyond ±150 Hz, keeping about 0.92 of its noise power at K = 24 and 0.965 at K = 58, so the rescale, and a² below, are off by about 0.2 dB relative to the true noise power, derived; review finding M6); ŝ is unchanged (a centered tone passes a normalized boxcar at unity gain).
+- **Re-acquisition after a silence** (heuristic; review finding C2, re-review I-2 to I-4, final check F-1; Task 12): the filter narrows to the current station's dit and ŝ settles at its level, so a station that answers 25 Hz away (near the narrow filter's first null, main lobe ±21–26 Hz at 20–25 WPM) or 6 dB weaker (re the first station's key-down power) never raises p, and neither the tracker nor ŝ ever moves to it. Hold-through-pause is right for one station that pauses and wrong for two taking turns. So when the key has been up for longer than max(0.5 s, 12 dits), the decoder puts K back to 24 (the 60 WPM acquisition width), sets ŝ² and its weight to 0, restarts the frequency average from the last f̂, keeps σ̂² (rescaled), **starts a new speed window** (the old one is set aside), and lets the filter follow the speed again only after 8 new marks; if nothing is keyed within 2 s it restores the set-aside speed window and returns to the width it had, so a weak station that pauses is not held at the acquisition floor (below). The new speed window is the final check's fix (F-1): with the window kept, the fragments of a station keyed only partly through the wide filter (a neighbor 50 Hz away, say) entered the same 24-mark window as the caller's marks, the filter followed the mixed estimate, and a filter longer than the caller's element spaces merged its marks; the estimate then locked onto the merged marks and K ran to 288, the runaway the β rationale above warns about. Until two new marks exist the decoder still classifies elements with the previous station's dit. 12 dits exceeds all but about 1% of word spaces (0.77% of VE3NEA's hand-key word spaces, derived from their log-normal); the 0.5 s floor matters only above 28.8 WPM. It reaches only stations within the tracker's follow distance D_f = 57 Hz (Design decisions, B, "Channel distance"), and a station answering there must also pass the acquisition squelch after the K = 24 boxcar's loss |sinc(Δf · 16 ms)|² (−2.4 dB relative to a centered station at 25 Hz, −6.9 dB at 40 Hz, derived), about S₅₀₀ ≥ 0 dB at 25 Hz. **Simulated (2026-09-29; decoder level, Task 12's turnover with B's 16 s over, D_f = 57 Hz and the ×1.25 growth bound, 100 numpy seeds each; levels in dB re A's key-down power):** B 25 Hz away at −6 dB: B's text decoded, f̂ 24.6–25.2 Hz before A's next over, and A's next over intact in 100 of 100; B 40 Hz away at 0 dB: the same in 100 of 100 (f̂ 39.9–40.1 Hz); B 40 Hz away at −6 dB: f̂ on B (39.8–40.2 Hz) but B's "DE W9XYZ PARIS" decoded in 26 and A's next over intact in 73 of 100; B 50 Hz away at −10 dB: too weak to be keyed at the acquisition width, f̂ within 0.2 Hz of A and A intact in 99 of 100; B 70 Hz away at −6 dB, 100 Hz away at −6 and +10 dB: f̂ within 0.2 Hz of A, A intact in 99, 99 and 100 of 100. The engine-level behavior, with the detector and merging, and where the design fails, are in Design decisions, B. **The 2 s window:** re-measured, a single station at S₅₀₀ = −2 dB pausing 15 dits every 3 words kept on average 0.47 of its marks with the window and 0.39 without at 25 WPM, and 0.81 against 0.73 at 12 WPM (20 seeds, the same seeds both ways); the per-seed spread (0.00–0.92 at 25 WPM) is much larger than the difference, so the window's benefit is small. (An earlier figure of 74% against 41% came from a keyer given the true dit and is withdrawn.)
 - **LLR (derived: Proakis eq. 4.5–21, OOK case; proakis-ook-notes.md §2.2):** Λ = −a²/2 + ln I₀(a·x), with x = |v|/σ̂ and a = ŝ/σ̂, in nats. ln I₀ is computed without overflow from Abramowitz & Stegun 9.8.1–9.8.2 (relative error below 2×10⁻⁷ in I₀): the power series below 3.75, and ln I₀(z) = z − ½·ln z + ln(poly(3.75/z)) above. The relation to S₅₀₀ (derived, for noise flat across B_v): a² = 2·S₅₀₀·(500 Hz)·K/r, where S₅₀₀ is a linear power ratio here. At 25 WPM (K = 58) and S₅₀₀ = 0 dB, a = 6.2. The noise-bandwidth reduction from the 252 Hz channel to B_v is 10·log₁₀(252/25.9) = 9.9 dB at 25 WPM (derived); how much CER that buys is to be measured.
 - **Prior P₁ = 0.44** (derived from PARIS timing: key-down 22 of 50 dit units). The posterior log-odds is g = Λ + ln(P₁/P₀).
 - **Amplitude estimate: an online EM update for the Rician component** (derived from the densities; the running form is heuristic). Per sample, with p the posterior: ŝ² ← max(0, ŝ² + p·max(α_a, 1/W_a)·(|v|² − 2σ̂² − ŝ²)), using the Rician mean square 2σ² + s² (Proakis eq. 2.3–58). W_a accumulates the weights p, so the estimate is a weighted running mean at first and an exponential average (α_a = 1 − e^(−1/(τ_a·r))) afterwards, as the detector's power average is. Samples on the boxcar's ramps (a mark entering or leaving the window) with p ≈ 1 pull ŝ low: to 0.79 of s for 25 WPM dits alone (derived for a noise-free trapezoid at K = 58: the RMS over |v| > s/2), and to 0.85–0.88 of s for PARIS at 25 WPM, S₅₀₀ 0–60 dB (simulated). Through the decision threshold (near ŝ/2, about 0.43·s, at high SNR) that lengthens each mark by about 7 ms at 25 WPM (3.5 ms per edge; simulated in the plan review; review finding M1); to be measured.
 - **Noise estimate: a guard on |v|² alone, independent of the keying decision** (heuristic form; its bias correction and stability derived; review finding C1). A plain EM update for σ̂² fails on the boxcar's ramps: while a mark enters or leaves the window, |v| rises through the noise level toward s, those samples have p ≈ 0 until |v| nears s/2, and at 25 WPM and S₅₀₀ ≈ 5 dB they would inflate σ̂² about 2× (derived), at S₅₀₀ = 60 dB by orders of magnitude. An earlier draft guarded the update with the posterior (no update within 2K samples of g > +1 nat); but g is computed from σ̂, so that guard selected quiet stretches and biased σ̂ low, which raised â, which blocked more updates: in noise alone it settled at σ̂ = 0.53–0.57·σ with â ≈ 3 in 7 of 10 seeds and keyed noise (simulated, reproducing the plan review). The estimate now reads only |v|² and its own σ̂²: three taps K apart, v[n], v[n−K] and v[n−2K], share no inputs (independent in white noise), and the middle one updates σ̂² ← σ̂² + max(α_n, 1/W_n)·(|v[n−K]|²/(2·m(κ)) − σ̂²) only if |v[n−K]|²/(2σ̂²) < κ = 1.75 and the two neighbors are below κ_n = 4 (a mark or ramp next to the middle tap lifts one of them; κ_n > κ lets the estimate climb faster without letting more marks in, simulated), W_n counting the updates. In noise, y = |v|²/(2σ²) is exponential with mean 1 (Proakis eq. 2.3–43), so the accepted middle tap is y truncated at κ, with mean m(κ) = 1 − κ·e^(−κ)/(1 − e^(−κ)) = 0.632, which the update divides out (derived). With r = σ̂²/σ², the update's fixed points solve r = m(κr)/m(κ): r = 1 is one, with slope κ·m′(κ)/m(κ) = 0.651 < 1 there (stable), and the slope near r = 0 is κ/(2·m(κ)) = 1.38 > 1, so the estimate cannot settle low (derived). With a station present, any mark or ramp within K of the middle tap lifts a tap above κ except at low SNR, where some marks leak in and bias σ̂ high; a larger κ lets more leak in, and at κ = 4 the leak made a second, high fixed point (σ̂ ≈ 1.6·σ at S₅₀₀ = −5 dB, squelching the station; simulated), which is why κ is small. **Recovery from a low estimate (re-review finding I-1).** The guard's acceptance falls as (1 − e^(−κr))(1 − e^(−κ_n r))² when σ̂ is low, so its climb back is slow: from r = 0.25, a 6 dB rise in the noise, integrating dr/dt = (m(κr)/m(κ) − r)·acceptance(r)/τ_n gives 43 s to r = 0.9 (derived). Two additions bound the damage. The warm-up now runs 0.32 s at the acquisition width (about 20 independent samples) and uses the 20th percentile, so it rarely starts low; and a **floor** lifts σ̂² whenever it falls below F = Q/(2·(−ln(1 − 0.1/c))·2.5), Q the 10th percentile of the last 64 samples of |v|² taken K apart (independent). A station that leaves a fraction c of those samples clean cannot lift Q above noise's (0.1/c)-quantile, so F ≤ σ²/2.5 (derived), and the 2.5 covers the quantile's sampling spread (heuristic; with 1.3 or 1.5 instead, the floor lifted σ̂ to as much as 1.5–2·σ under continuous PARIS at low SNR, simulated). **c = 0.25 (final check F-3; the inputs derived, the rounding heuristic).** A sample taken K apart is clean when its K-sample window lies wholly inside a space; a gap of g dits then leaves g − β dits clean. Computed from the keyed envelopes (5 ms edges) of continuous text at the dit-matched K = 0.8·T: PARIS 0.33 (0.336 exactly, without edges: (9 × 0.2 + 4 × 2.2 + 6.2)/50), a CQ call 0.29, a contest exchange 0.31, a pangram 0.31; with the speed estimate 25% slow (K = T, the tolerance β = 0.8 is chosen for) 0.24–0.28. c = 0.25 rounds the lower end down. It does not cover text of solid digits ("0000 9999": 0.18 at K = 0.8·T), where F can reach about 0.64·σ² in expectation (derived), still below σ². The earlier c = 0.4 exceeded continuous PARIS's 0.34, so under strong continuous text the floor lifted routinely (in 199 of 400 seeds of `StrongSignalKeepsNoiseEstimate`) and each lift restarted ŝ (next point). **A lift restarts ŝ only if F > 4·σ̂²** (heuristic factor; final check F-3): a large lift is the stuck-low case, where a low σ̂ has let ŝ grow on noise; a small one is the quantile's spread, or a second station in the channel leaving fewer clean samples than c (not covered by c), and restarting ŝ there refit it from a few samples on a filter ramp, dropped the threshold and merged dits (simulated). In noise F = 2σ²·(−ln 0.9)/(2·(−ln 0.6)·2.5) = 0.0825·σ², so the floor acts when σ̂ < 0.29·σ (derived; with c = 0.4 it was σ̂ < 0.38·σ), and it restarts ŝ when σ̂ < 0.14·σ. It removes the stuck-low state (the case the re-review saw at K = 288) and bounds large noise rises: after a rise of 10 or 20 dB it lifted in 20 of 20 seeds and σ̂ was back within 0.9 of the new σ in 11–38 s (K = 24, simulated). It no longer acts after a 6 dB rise (0 of 80 seeds): that recovery is the guard's own, 43 s derived. Simulated (numpy seeds; final check 2026-09-28): noise alone, 40 seeds × 120 s, σ̂/σ has mean 1.00 and standard deviation 0.020 at K = 24 and 0.032 at K = 58 (0.080 at K = 288, 20 seeds, re-review), with no signal flag and no floor lift at any K; continuous PARIS (60 s, 6 seeds; mean of the last 30 s) gives 0.98–1.06·σ at S₅₀₀ 0–60 dB and 25 WPM, 0.90–1.11·σ at 12 WPM, and the leak of weak marks lifts it to 1.16–1.23·σ at −5 dB and 1.22–1.30·σ at −8 dB (25 WPM); after a 6 dB rise the estimate was back within 0.9 of the new σ in 24–41 s at K = 24 (40 seeds), 25–51 s at K = 58 and 24–56 s at K = 288 (20 seeds each; the earlier floor's lifts made some seeds faster, 1.4–39 s at K = 24, and the final check saw up to 60.5 s at K = 288), the last signal flag came at most 16 s after the rise, and σ̂ ended at 0.95–1.03 (K = 24). A faster rise would need to tell a rise in the noise from a station that occupies most of the samples, and every order statistic tried (a censored estimator, a fraction test) either leaked by 1.5–2× under weak continuous text or did not separate the two (simulated), so the 43 s stands and is stated. This is a Review Focus item.
 - **Time constants τ_n = 2 s and τ_a = 0.5 s** (heuristic; to be measured on the fading suite): noise is stationary, so it can be averaged longer; the amplitude must follow fading (f_D up to 3 Hz) but still average several elements.
 - **Warm-up (heuristic):** for the first 0.32 s the front end only collects |v|², always at the acquisition width (K = 24; a speed set meanwhile takes effect when the warm-up ends, and restarts ŝ, measured at the wrong width): 20 filter lengths, about 20 independent samples. It then starts σ̂² at the 20th percentile divided by 2·(−ln 0.8) (the q-quantile of an exponential with mean 2σ² is 2σ²·(−ln(1 − q)), derived) and ŝ² at max(0, 90th percentile − 2σ̂²). Starting ŝ above zero matters when σ̂ is also unknown: the mixture fit started from equal components never separates them. The warm-up then counts as weight W_n = W_a = 0.1 times its sample count, so the samples after it soon outweigh it. Nothing is keyed during warm-up. (The earlier 0.2 s at the 5th percentile held about 12 independent samples at K = 24 and 1 at K = 288, and often started σ̂ at 0.2–0.5·σ; re-review finding I-1.)
-- **Squelch a_min(K) = 3·(K/24)^(1/4)** (the 3 heuristic, its K-scaling derived; re-review finding I-2): at K = 24, E/N₀ = a²/2 = 4.5 (6.5 dB re 1) for a matched filter (proakis-ook-notes.md §2.1), where a hard per-element decision already errs about 10% of the time (§2.6). In noise alone â² is a p-weighted mean over about τ_a·r/K independent samples, so its spread grows as √K; a_min ∝ K^(1/4) keeps the chance that noise alone passes the squelch the same at every K (derived, Gaussian approximation), where a flat 3 would pass noise more often at long K. From a² = 2·S₅₀₀·(500 Hz)·K/r the squelch sits at S₅₀₀ = −2.5 dB at K = 24 (any speed), −4.4 dB at K = 58 (25 WPM), −6.0 dB at K = 120 (12 WPM) and −7.9 dB at K = 288 (5 WPM) (derived), and up to 1.4 dB higher with ŝ's ramp bias (ŝ = 0.85·s: 20·log₁₀(1/0.85) = 1.4 dB, derived). **A station is first keyed at the acquisition width, so the floor for acquiring one is S₅₀₀ = −2.5 dB derived at every speed, and 50% of marks were keyed near −1.8 dB at 25 WPM and −2.6 dB at 12 WPM (simulated)**; the lower figures hold only for a station already acquired and narrowed to (simulated with the whole decoder, continuous PARIS, 10 seeds, final check 2026-09-28: 0%, 3%, 45% and 80% of marks keyed at −4, −3, −2 and −1 dB at 25 WPM; 19%, 33% and 95% at −4, −3 and −2 dB at 12 WPM). Group A's Matched curve will therefore stop between about S₅₀₀ −2.6 and −1.8 dB, not at the dit-matched figures; lowering the floor (acquiring at a longer filter, keying at K = 24 without the squelch but requiring several consistent marks, or squelching on the a the dit-matched filter would have) trades pull-in, fast-CW handling or false keying, and is an owner decision after Task 14. Analysis of the noise-only fixed point (for small a, the p-weighted mean of |v|² − 2σ² is about P₀·a²·σ², so each time constant multiplies a² by about P₀ = 0.56) says noise alone drives a toward 0, **provided σ̂ is right**; the posterior-guarded noise estimate of an earlier draft broke that proviso (C1 above), the |v|²-only guard keeps it.
+- **Squelch a_min(K) = 3·(K/24)^(1/4)** (the 3 heuristic, its K-scaling derived; re-review finding I-2): at K = 24, E/N₀ = a²/2 = 4.5 (6.5 dB re 1) for a matched filter (proakis-ook-notes.md §2.1), where a hard per-element decision already errs about 10% of the time (§2.6). In noise alone â² is a p-weighted mean over about τ_a·r/K independent samples, so its spread grows as √K; a_min ∝ K^(1/4) keeps the chance that noise alone passes the squelch the same at every K (derived, Gaussian approximation), where a flat 3 would pass noise more often at long K. From a² = 2·S₅₀₀·(500 Hz)·K/r the squelch sits at S₅₀₀ = −2.5 dB at K = 24 (any speed), −4.4 dB at K = 58 (25 WPM), −6.0 dB at K = 120 (12 WPM) and −7.9 dB at K = 288 (5 WPM) (derived), and up to 1.4 dB higher with ŝ's ramp bias (ŝ = 0.85·s: 20·log₁₀(1/0.85) = 1.4 dB, derived). **A station is first keyed at the acquisition width, so the floor for acquiring one is S₅₀₀ = −2.5 dB derived at every speed, and 50% of marks were keyed near −1.8 dB at 25 WPM and −2.6 dB at 12 WPM (simulated)**; the lower figures hold only for a station already acquired and narrowed to (simulated with the whole decoder, continuous PARIS, 10 seeds, final check 2026-09-28: 0%, 3%, 45% and 80% of marks keyed at −4, −3, −2 and −1 dB at 25 WPM; 19%, 33% and 95% at −4, −3 and −2 dB at 12 WPM). Group A's Matched curve will therefore stop between about S₅₀₀ −2.6 and −1.8 dB, not at the dit-matched figures; lowering the floor (acquiring at a longer filter, keying at K = 24 without the squelch but requiring several consistent marks, or squelching on the a the dit-matched filter would have) trades pull-in, fast-CW handling or false keying; the owner postponed it to the backlog (2026-09-29, "Acquisition floor"). Analysis of the noise-only fixed point (for small a, the p-weighted mean of |v|² − 2σ² is about P₀·a²·σ², so each time constant multiplies a² by about P₀ = 0.56) says noise alone drives a toward 0, **provided σ̂ is right**; the posterior-guarded noise estimate of an earlier draft broke that proviso (C1 above), the |v|²-only guard keeps it.
 - **Correlated samples (heuristic; the autocorrelation derived):** the boxcar's output noise autocorrelation is triangular over ±(K − 1) samples and sums to exactly K (derived). So per-sample LLRs overcount the evidence by roughly a factor K; every `FrontEndSample` carries `weight = 1/K`, a factor a sequence decoder may multiply each Λ by before summing (scaling, not decimation, so 0.67 ms timing resolution is kept for the edges). Scaling a nonlinear per-sample LLR by the correlation length is an approximation: the sufficient statistic for one element is one matched-filter sample, and the HMM plan may prefer to decimate at a stride of K (review finding M5). The baseline decoder does not sum LLRs, so it ignores the weight. A unit test checks the sum of the autocorrelation.
 - **How the baseline decoder consumes it (heuristic):** key down when g > +h, key up when g < −h, h = 1 nat, replacing the 40%/60% thresholds, the envelope smoother, the warm-up and the mark/space squelch; key up and no key-down while a < a_min. Everything after keying (glitch rejection, element classification, gaps, speed estimation) is unchanged. At high SNR the decision point on x is near a/2 (proakis-ook-notes.md §2.3), so both edges are delayed by about K/2 samples and mark lengths are preserved; at lower SNR the threshold rises (b/a = 0.61 at E/N₀ = 10 dB re 1) and marks shorten by about (2b/a − 1)·K samples. The decoder's existing edge-shortening correction (dah/dit ratio 3.0–3.85) absorbs that. Decoded times include the filter's group delay, (K − 1)/2 samples.
 
@@ -172,8 +249,8 @@ Inputs the spec implies but does not spell out, most likely to bite first. Each 
 2. **Drifting carriers:** the tracker follows a 1 Hz/s drift within 2 Hz, the reported frequency follows a 3 Hz/s drift (57 Hz, 2.4 bins, over the message) within its derived 3.4 Hz lag plus 2 Hz, and the detector keeps one track as the station moves across bins — Task 10 (`FollowsSlowDrift`), Task 13 (`MatchedReportsDriftingFrequency`, `SignalDetector.RetuneMovesTrackBin`).
 3. **Speed changes mid-transmission (20 → 35 WPM):** the matched filter shortens with the speed estimate and decoding continues after the change — Task 12 (`MatchedFollowsSpeedChange`).
 4. **Pauses and stations that stop:** the frequency and amplitude estimates hold through 10 s of noise, and no text is decoded from noise after a station stops (the "stray E's" of the backlog) — Task 10 (`ZeroWeightFreezesEstimate`), Task 12 (`MatchedHoldsThroughPause`, `MatchedNoiseAfterStationStopsDecodesNothing`).
-5. **Closely spaced stations:** a station 10 dB stronger (re the wanted station's key-down power) 100 Hz away inside the same ±150 Hz channel must not capture the frequency tracker, and the wanted station must still decode — Task 12 (`MatchedIgnoresStrongerNeighbor`).
-6. **Two stations taking turns:** within one track, every over may change speed, keying style, imbalance, level and carrier (up to 200 Hz). The generator must key and label each over with its own sender's settings — Task 6 (`test_qso_overs_alternate_with_each_senders_speed_and_a_turn_gap`, `test_each_station_keys_on_its_own_carrier_and_level`, `test_qso_labels_record_sender_speed_and_style_of_every_over`, `test_station_labels_score_each_station_at_its_own_frequency`); the Matched decoder must re-acquire a station that answers 25 Hz away and 6 dB weaker (re the caller's key-down power), ignore one 50 Hz away and 10 dB weaker, and never let one 100 Hz away capture its tracker at 6 dB weaker or 10 dB stronger (all re the caller's key-down power; a 50 Hz station at −6 dB or more, and a 100 Hz one at the caller's level, are stated limits) — Task 10 (`AnotherStationCannotCaptureTheChannel`), Task 12 (`MatchedReacquiresAnAnsweringStation`, `MatchedIgnoresAWeakStation50HzAway`, `MatchedIgnoresANeighbor100HzAwayInASilence`, `MatchedReturnsToTheNarrowFilterWhenNothingAnswers`); the benchmark must score each regime against the right frequency — Task 9 (`test_qsos_are_scored_per_over_per_station_and_for_track_splits`). How well the decoders cope is measured, not asserted: group H in Task 14.
+5. **Closely spaced stations:** a station 10 dB stronger (re the wanted station's key-down power) 100 Hz away inside the same ±150 Hz channel must not capture the frequency tracker, and the wanted station must still decode — Task 12 (`MatchedIgnoresStrongerNeighbor`, 20 seeds). At engine level, with the channel opened while both key, the wanted station was not decoded in 30 of 30 simulated runs, with the milestone-1 rules as well (Design decisions B); group E measures it.
+6. **Two stations taking turns:** within one track, every over may change speed, keying style, imbalance, level and carrier (up to 200 Hz). The generator must key and label each over with its own sender's settings — Task 6 (`test_qso_overs_alternate_with_each_senders_speed_and_a_turn_gap`, `test_each_station_keys_on_its_own_carrier_and_level`, `test_qso_labels_record_sender_speed_and_style_of_every_over`, `test_station_labels_score_each_station_at_its_own_frequency`). With the channel distance D = 47 Hz (owner decision 2026-09-29), the Matched decoder must follow a station that answers within D and come back (25 Hz at −6 dB and 40 Hz at 0 dB re the caller's key-down power), ignore one 50 Hz away and 10 dB weaker, one 70 Hz away and 6 dB weaker, and one 100 Hz away at 6 dB weaker or 10 dB stronger; the engine must keep a turnover within D on one track, give a station beyond D its own track, and merge a duplicate into the older channel — Task 10 (`FollowsOnlyStationsWithinTheFollowDistance`), Task 12 (`MatchedReacquiresAnAnsweringStation`, `MatchedFollowsAnAnsweringStationWithinTheChannelDistance`, `MatchedIgnoresAWeakStation50HzAway`, `MatchedIgnoresAStationBeyondTheFollowDistance`, `MatchedIgnoresANeighbor100HzAwayInASilence`, `MatchedReturnsToTheNarrowFilterWhenNothingAnswers`), Task 13 (`TurnoverWithinTheChannelDistanceStaysOnOneTrack`, `TurnoverBeyondTheChannelDistanceGetsItsOwnTrack`, `MergesADuplicateIntoTheOlderChannel`). A station 60–100 Hz away at the caller's level or stronger is the design's stated failure (Design decisions B), not asserted. The benchmark must score each regime against the right frequency — Task 9 (`test_qsos_are_scored_per_over_per_station_and_for_track_splits`). How well the decoders cope is measured, not asserted: group H in Task 14.
 7. **Noise alone, noise rises and weak signals:** the noise estimate must not depend on the keying decision, must stay unbiased in noise alone at every filter length, must recover from a 6 dB rise in the noise within 60 s and stop keying by then, and must show its known leak at S₅₀₀ = −5 dB; the squelch must scale with K — Task 11 (`NoiseAloneKeepsTheNoiseEstimateAndNeverKeys`, `NoiseEstimateRecoversFromANoiseStep`, `NoiseEstimateAtMinusFiveDbS500HasItsKnownLeak`, `SquelchScalesWithTheFilterLength`), each over 10–20 seeds with bands from the simulated spread.
 
 ## File map
@@ -195,10 +272,10 @@ Inputs the spec implies but does not spell out, most likely to bite first. Each 
 | `engine/include/kz4ap/matched_front_end.hpp`, `engine/src/matched_front_end.cpp` (new) | ln I₀, LLR, boxcar filter, noise and amplitude estimates, re-acquisition |
 | `engine/include/kz4ap/classical_decoder.hpp`, `engine/src/classical_decoder.cpp` | `FrontEnd::Matched` mode, re-acquisition after a silence |
 | `engine/include/kz4ap/decoder.hpp` | `DecodeUpdate::freq_offset_hz` |
-| `engine/include/kz4ap/signal_detector.hpp`, `engine/src/signal_detector.cpp` | `retune()` |
-| `engine/include/kz4ap/engine.hpp`, `engine/src/engine.cpp` | Oracle channels, statistics, initial offset, refined frequency, retune |
+| `engine/include/kz4ap/signal_detector.hpp`, `engine/src/signal_detector.cpp` | `retune()`, `remove()`, distance attribution, neighborhoods in Hz |
+| `engine/include/kz4ap/engine.hpp`, `engine/src/engine.cpp` | Oracle channels, statistics, initial offset, refined frequency, retune, channel distance and merging, `with_envelope_path` |
 | `engine/tests/*` | New and extended tests; `test_signals.hpp` gains carrier drift |
-| `bench/smoke.sh`, `bench/baselines/smoke-matched.json` (new) | Smoke check of the matched front end (Task 14) |
+| `bench/smoke.sh`, `bench/baselines/smoke-matched.json` (new) | Smoke check pinned to the Envelope path (Task 13) and of the Matched path (Task 14) |
 | `docs/signal-processing.md`, `docs/backlog.md`, `docs/research/decoder-survey.md`, `README.md` | Documentation |
 
 ## Tasks
@@ -3324,7 +3401,7 @@ Named suites turn the generator's options into a fixed, seeded set of recordings
 
 **Ragchews and QSOs (groups G, H).** A whole QSO at 20–32 WPM takes about 4–8 minutes, so these recordings are sized from the plan of their signals (`_fitted_duration`: the latest end plus 2 s, rounded up to whole seconds) instead of a fixed length. Each is about 70 MB and takes about 40 s to generate. Group G isolates the text: both stations send at one speed and style on one carrier, so its difference from group A at 25 WPM is the effect of real text and over gaps.
 
-**Group H's three regimes (owner, 2026-09-27; review finding I5).** `qso_regime(Δf_B)` classifies a QSO by how the detector must see it, derived from its 23.4 Hz bins and 3-bin minimum peak separation (70.3 Hz): **same-track** for |Δf_B| ≤ 2 bins (46.9 Hz; both peaks always within 2 bins, one track; the turnover happens inside one channel, which exercises Task 12's re-acquisition, and the Matched channel follows the answering station only within its tracker's ±35 Hz pull-in, so 35–47 Hz is a gap the drawn offsets measure), **ambiguous** below 3 bins (46.9–70.3 Hz; 2 or 3 bins apart depending on where the stations fall within their bins, so one track or two), and **separate-track** from 3 bins (each station its own track). Every H recording is scored twice, and `summary.md` marks with † each row whose view does not fit its regime (re-review finding m-2). Against its **QSO labels** (one signal per QSO, frequency = the caller's), which is the right view for same-track QSOs; the bench's 50 Hz match tolerance then finds the track the caller's CQ was born on. Against its **station labels** (`station_labels`: one signal per station at its own carrier), which is the right view for separate-track QSOs: each station is matched within 50 Hz of its own frequency. Ambiguous QSOs are reported both ways, and the "Tracks per QSO" table shows directly whether each QSO stayed one track or split. The frequency error is measured against the carrier of the station that sent the last over for a QSO label (that is where the latest decoded text came from), and against the station's own carrier for a station label. The oracle copy of the grid recording opens channels at the labeled frequencies, so it measures the front end's turnover apart from detection; with QSO labels its separate-track rows are not meaningful (the answering station lies 100–200 Hz off the channel's center, at or beyond its ±150 Hz edge), which the summary's per-station rows cover.
+**Group H's three regimes (owner, 2026-09-27; review finding I5).** `qso_regime(Δf_B)` classifies a QSO by how the detector must see it, derived from its 23.4 Hz bins and 3-bin minimum peak separation (70.3 Hz): **same-track** for |Δf_B| ≤ 2 bins (46.9 Hz; both peaks always within 2 bins, one track; the turnover happens inside one channel, which exercises Task 12's re-acquisition, and the Matched channel follows the answering station within its tracker's follow distance, D + 10 Hz = 57 Hz, Task 10), **ambiguous** below 3 bins (46.9–70.3 Hz; 2 or 3 bins apart depending on where the stations fall within their bins, so one track or two), and **separate-track** from 3 bins (each station its own track). Every H recording is scored twice, and `summary.md` marks with † each row whose view does not fit its regime (re-review finding m-2). Against its **QSO labels** (one signal per QSO, frequency = the caller's), which is the right view for same-track QSOs; the bench's 50 Hz match tolerance then finds the track the caller's CQ was born on. Against its **station labels** (`station_labels`: one signal per station at its own carrier), which is the right view for separate-track QSOs: each station is matched within 50 Hz of its own frequency. Ambiguous QSOs are reported both ways, and the "Tracks per QSO" table shows directly whether each QSO stayed one track or split. The frequency error is measured against the carrier of the station that sent the last over for a QSO label (that is where the latest decoded text came from), and against the station's own carrier for a station label. The oracle copy of the grid recording opens channels at the labeled frequencies, so it measures the front end's turnover apart from detection; with QSO labels its separate-track rows are not meaningful (the answering station lies 100–200 Hz off the channel's center, at or beyond its ±150 Hz edge), which the summary's per-station rows cover. (These boundaries are the milestone-1 detector's, which the Envelope path keeps. On the Matched path, with the channel distance D = 47 Hz of Task 13, the boundaries are D = 47 Hz, where attribution changes, and D + 10 Hz = 57 Hz, where following stops; "ambiguous" there is 47–57 Hz, where a duplicate track is born and merged, and the 50 Hz grid point lies in both. Restating `qso_regime` in D waits for the owner's decision on the channel distance, Design decisions B.)
 
 **Per-over scoring.** Each over of a QSO is a transmission in the labels (Task 6), so the bench's first-word CER already scores the first word after every change of station, and the bench reports each transmission's symbols and charged edits (Task 7). The summary pools them by (front end, group, keying style of the sender). (This replaces a Python re-alignment in an earlier draft of this plan; review finding M7.)
 
@@ -4495,6 +4572,8 @@ git commit -m "Add named benchmark suites with a runner and summary"
 
 ### Task 10: Frequency tracker
 
+> **Stop point (2026-09-29).** This task's follow distance (D + 10 Hz) belongs to the channel-distance design, which failed in simulation where a station 60–100 Hz away at the channel's station's level or stronger answers or keys (Design decisions B, "Where it fails"). Do not implement Tasks 10, 12 and 13 until the owner has decided how to proceed; Tasks 1–9 and 11 do not depend on it.
+
 The prerequisite of spec §5.2 step 1: re-center each station finely and follow its drift. `FrequencyTracker` is a numerically controlled oscillator (NCO) plus a lag-product frequency discriminator, as specified under "Design decisions, B". This task builds and tests it on its own; Task 12 puts it in front of the matched filter.
 
 **Files:**
@@ -4504,9 +4583,9 @@ The prerequisite of spec §5.2 step 1: re-center each station finely and follow 
 
 **Interfaces:**
 - Produces (C++, namespace `kz4ap`):
-  - `struct FrequencyTrackerConfig { int lag = 8; double tau_s = 0.5; double min_weight = 0.6; double max_offset_hz = 75.0; int update_every = 32; double pull_in_hz = 35.0; double anchor_tau_s = 10.0; double min_coherence = 0.3; };`
+  - `struct FrequencyTrackerConfig { double lag_s = 0.00533; double tau_s = 0.5; double min_weight = 0.6; double max_offset_hz = 75.0; double update_interval_s = 0.0213; double follow_distance_hz = 57.0; double anchor_tau_s = 10.0; double min_coherence = 0.3; };` (all in physical units, owner's rule of 2026-09-29: the lag and the update interval are converted to samples in the constructor, `std::lround(lag_s * sample_rate)` = 8 and `std::lround(update_interval_s * sample_rate)` = 32 at 1500 samples/s)
   - `class FrequencyTracker` with `FrequencyTracker(double sample_rate, double initial_offset_hz, FrequencyTrackerConfig config = {})`, `Sample mix(Sample y)`, `void observe(Sample v, float weight)`, `double offset_hz() const`, `void reset(double initial_offset_hz)`, `void reacquire()`.
-  - Contract: `mix` returns y·e^(−jφ) and advances φ by 2π·offset_hz()/sample_rate. `observe` takes the narrow-filtered output of the mixed stream and a weight in [0, 1] (the key-down probability); a weight of 0 changes nothing. The offset is updated every `update_every` calls to `observe`, only once the average holds at least `min_weight`, and is clamped to ±`max_offset_hz`. `reacquire()` empties the average (weight 0) but keeps the offset and the NCO phase: after a long silence the next station's products start a fresh average, from the last offset (Task 12 calls it; review finding C2). **Capture range (re-review findings I-3, I-4):** the tracker follows only its own station. It keeps an *anchor*, the frequency of this channel's station, which starts at the initial offset and follows every accepted estimate with time constant `anchor_tau_s` (10 s). An estimate is accepted only if it lies within ±`pull_in_hz` (35 Hz) of the anchor and the average is coherent (|average of products| ≥ `min_coherence` × average of |products|, 0.3); otherwise the average belongs to another station (or to two at once), so it is emptied and the offset returns to the anchor. A station 100 Hz away (which lag 8 aliases to −87.5 Hz) or 50 Hz away therefore cannot capture the channel, while slow drift up to about `pull_in_hz`/`anchor_tau_s` = 3.5 Hz/s is followed (derived: the anchor lags a ramp of ḟ by ḟ·τ).
+  - Contract: `mix` returns y·e^(−jφ) and advances φ by 2π·offset_hz()/sample_rate. `observe` takes the narrow-filtered output of the mixed stream and a weight in [0, 1] (the key-down probability); a weight of 0 changes nothing. The offset is updated every `update_interval_s` (21.3 ms; 32 calls to `observe` at 1500 samples/s), only once the average holds at least `min_weight`, and is clamped to ±`max_offset_hz`. `reacquire()` empties the average (weight 0) but keeps the offset and the NCO phase: after a long silence the next station's products start a fresh average, from the last offset (Task 12 calls it; review finding C2). **Follow distance (re-review findings I-3, I-4; owner decision 2026-09-29):** the tracker follows its own station and any station within the channel distance D of it, plus a margin. It keeps an *anchor*, the frequency of this channel's station, which starts at the initial offset and follows every accepted estimate with time constant `anchor_tau_s` (10 s). An estimate is accepted only if it lies within ±`follow_distance_hz` of the anchor and the average is coherent (|average of products| ≥ `min_coherence` × average of |products|, 0.3); otherwise the average belongs to another station (or to two at once), so it is emptied and the offset returns to the anchor. The engine sets `follow_distance_hz` = D + 10 Hz = 57 Hz (Task 13; the 10 Hz margin is heuristic: it makes the ranges of the detector and the tracker overlap, so a rounding difference between the tracked frequency and the detector's interpolated peak produces a duplicate, which the engine merges, rather than a station that no channel decodes). So a station answering within D of the channel's station is followed (and the channel comes back when the first station resumes), and one 60 Hz or more away (100 Hz, which the 5.33 ms lag aliases to −87.5 Hz) is left to its own track, while slow drift up to about `follow_distance_hz`/`anchor_tau_s` = 5.7 Hz/s is followed (derived: the anchor lags a ramp of ḟ by ḟ·τ). The window moves with the anchor, so a strong station just outside it can still walk the channel toward it (Design decisions, B, "Simulated").
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4611,17 +4690,22 @@ TEST(FrequencyTracker, ClampsToTheMaximumOffset) {
     EXPECT_DOUBLE_EQ(tracker.offset_hz(), 75.0);
 }
 
-TEST(FrequencyTracker, AnotherStationCannotCaptureTheChannel) {
-    // Re-review finding I-4: a station 100 Hz away (aliased to -87.5 Hz by lag 8) or 50 Hz away,
-    // alone and at full weight, is rejected; a station 20 Hz away is followed.
+TEST(FrequencyTracker, FollowsOnlyStationsWithinTheFollowDistance) {
+    // Owner decision 2026-09-29: the channel follows a station within D + 10 Hz = 57 Hz of its
+    // anchor and ignores one farther away. Alone and at full weight, stations 100 Hz (aliased to
+    // -87.5 Hz by the 5.33 ms lag), 70 Hz and 60 Hz away are rejected; one 50 Hz away is followed.
+    // Simulated (Python port, 2026-09-29): -0.05 Hz after each of 100, 70 and 60 Hz; 50.00 Hz after
+    // 50 Hz. (A tone at 57.5 Hz is followed, to 57.43 Hz: the average passes through accepted
+    // intermediate estimates that move the anchor. Not asserted; it is the walking effect of
+    // Design decisions, B.)
     FrequencyTracker tracker(kRate, 0.0);
     auto n = feed(tracker, Tone{0.0}, 0, seconds(3.0), 1.0f);
-    n = feed(tracker, Tone{100.0}, n, seconds(3.0), 1.0f);
-    EXPECT_NEAR(tracker.offset_hz(), 0.0, 0.5);
-    n = feed(tracker, Tone{50.0}, n, seconds(3.0), 1.0f);
-    EXPECT_NEAR(tracker.offset_hz(), 0.0, 0.5);
-    feed(tracker, Tone{20.0}, n, seconds(3.0), 1.0f);
-    EXPECT_NEAR(tracker.offset_hz(), 20.0, 0.1);
+    for (const double away_hz : {100.0, 70.0, 60.0}) {
+        n = feed(tracker, Tone{away_hz}, n, seconds(3.0), 1.0f);
+        EXPECT_NEAR(tracker.offset_hz(), 0.0, 0.5) << away_hz << " Hz";
+    }
+    feed(tracker, Tone{50.0}, n, seconds(3.0), 1.0f);
+    EXPECT_NEAR(tracker.offset_hz(), 50.0, 0.1);
 }
 
 TEST(FrequencyTracker, EstimateIsAccurateInNoise) {
@@ -4656,7 +4740,7 @@ TEST(FrequencyTracker, ResetReturnsToTheGivenOffset) {
 TEST(FrequencyTracker, RejectsInvalidConfig) {
     EXPECT_THROW(FrequencyTracker(0.0, 0.0), std::invalid_argument);
     FrequencyTrackerConfig c;
-    c.lag = 0;
+    c.lag_s = 0.0001;  // rounds to 0 samples at 1500 samples/s
     EXPECT_THROW(FrequencyTracker(kRate, 0.0, c), std::invalid_argument);
     c = {};
     c.tau_s = 0;
@@ -4665,10 +4749,10 @@ TEST(FrequencyTracker, RejectsInvalidConfig) {
     c.min_weight = 1.0;
     EXPECT_THROW(FrequencyTracker(kRate, 0.0, c), std::invalid_argument);
     c = {};
-    c.max_offset_hz = 100.0;  // beyond the +/-93.75 Hz unambiguous range of lag 8 at 1500 samples/s
+    c.max_offset_hz = 100.0;  // beyond the +/-93.75 Hz unambiguous range of the 5.33 ms lag
     EXPECT_THROW(FrequencyTracker(kRate, 0.0, c), std::invalid_argument);
     c = {};
-    c.pull_in_hz = 0.0;
+    c.follow_distance_hz = 0.0;
     EXPECT_THROW(FrequencyTracker(kRate, 0.0, c), std::invalid_argument);
     c = {};
     c.anchor_tau_s = 0.0;
@@ -4677,7 +4761,7 @@ TEST(FrequencyTracker, RejectsInvalidConfig) {
     c.min_coherence = 1.0;
     EXPECT_THROW(FrequencyTracker(kRate, 0.0, c), std::invalid_argument);
     c = {};
-    c.update_every = 0;
+    c.update_interval_s = 0.0;
     EXPECT_THROW(FrequencyTracker(kRate, 0.0, c), std::invalid_argument);
 }
 ```
@@ -4705,14 +4789,16 @@ Create `engine/include/kz4ap/frequency_tracker.hpp`:
 namespace kz4ap {
 
 struct FrequencyTrackerConfig {
-    int lag = 8;                  // L, samples between the two samples of each phase difference
-    double tau_s = 0.5;           // time constant of the average, s at weight 1
-    double min_weight = 0.6;      // the average must hold this much weight (0..1) before it moves the NCO
-    double max_offset_hz = 75.0;  // the NCO frequency is clamped to +/- this, Hz
-    int update_every = 32;        // samples between NCO frequency updates
-    double pull_in_hz = 35.0;     // estimates farther than this from the anchor belong to another station, Hz
-    double anchor_tau_s = 10.0;   // the anchor (this station's frequency) follows accepted estimates this slowly, s
-    double min_coherence = 0.3;   // |average of products| / average of |products| needed to move the NCO
+    double lag_s = 0.00533;             // time between the two samples of each phase difference, s (8 samples
+                                        // at 1500 samples/s; unambiguous range +/- 1 / (2 lag) = +/- 93.75 Hz)
+    double tau_s = 0.5;                 // time constant of the average, s at weight 1
+    double min_weight = 0.6;            // the average must hold this much weight (0..1) before it moves the NCO
+    double max_offset_hz = 75.0;        // the NCO frequency is clamped to +/- this, Hz
+    double update_interval_s = 0.0213;  // time between NCO frequency updates, s (32 samples at 1500 samples/s)
+    double follow_distance_hz = 57.0;   // estimates farther than this from the anchor belong to another
+                                        // station, Hz; the engine sets it to D + 10 Hz (Task 13)
+    double anchor_tau_s = 10.0;         // the anchor (this station's frequency) follows accepted estimates this slowly, s
+    double min_coherence = 0.3;         // |average of products| / average of |products| needed to move the NCO
 };
 
 // Re-centers one station's channel on its carrier. A numerically controlled
@@ -4724,8 +4810,9 @@ struct FrequencyTrackerConfig {
 // result is averaged with the key-down probability as weight.
 class FrequencyTracker {
 public:
-    // Throws std::invalid_argument for a non-positive sample rate, an invalid config,
-    // or a max_offset_hz outside the unambiguous range +/- sample_rate / (2 lag).
+    // Throws std::invalid_argument for a non-positive sample rate, an invalid config (including a
+    // lag or update interval that rounds to 0 samples), or a max_offset_hz outside the unambiguous
+    // range +/- 1 / (2 lag).
     FrequencyTracker(double sample_rate, double initial_offset_hz, FrequencyTrackerConfig config = {});
 
     // Mixes one channel sample down by the current offset and advances the NCO.
@@ -4744,6 +4831,8 @@ public:
 private:
     double rate_;
     FrequencyTrackerConfig config_;
+    int lag_;                         // lag_s in samples, converted here from the physical value
+    int update_every_;                // update_interval_s in samples
     double alpha_;
     double offset_hz_ = 0;
     double phase_ = 0;                // NCO phase, rad, kept in [-pi, pi)
@@ -4778,13 +4867,17 @@ constexpr double kTwoPi = 2 * std::numbers::pi;
 
 // Validates the parameters and returns sample_rate. Runs as rate_'s initializer,
 // before alpha_ divides by them.
+// A physical duration in samples (owner's rule: convert only at the point of use).
+int samples_for(double seconds, double sample_rate) { return static_cast<int>(std::lround(seconds * sample_rate)); }
+
 double validated_rate(double sample_rate, const FrequencyTrackerConfig& c) {
-    if (!(sample_rate > 0) || c.lag < 1 || !(c.tau_s > 0) || !(c.min_weight >= 0) || !(c.min_weight < 1) ||
-        !(c.max_offset_hz > 0) || c.update_every < 1 || !(c.pull_in_hz > 0) || !(c.anchor_tau_s > 0) ||
-        !(c.min_coherence >= 0) || !(c.min_coherence < 1))
+    if (!(sample_rate > 0) || !(c.lag_s > 0) || samples_for(c.lag_s, sample_rate) < 1 || !(c.tau_s > 0) ||
+        !(c.min_weight >= 0) || !(c.min_weight < 1) || !(c.max_offset_hz > 0) || !(c.update_interval_s > 0) ||
+        samples_for(c.update_interval_s, sample_rate) < 1 || !(c.follow_distance_hz > 0) ||
+        !(c.anchor_tau_s > 0) || !(c.min_coherence >= 0) || !(c.min_coherence < 1))
         throw std::invalid_argument("invalid frequency tracker config");
-    if (!(c.max_offset_hz < sample_rate / (2.0 * c.lag)))
-        throw std::invalid_argument("frequency tracker max_offset_hz must be below sample_rate / (2 lag)");
+    if (!(c.max_offset_hz < sample_rate / (2.0 * samples_for(c.lag_s, sample_rate))))
+        throw std::invalid_argument("frequency tracker max_offset_hz must be below 1 / (2 lag)");
     return sample_rate;
 }
 
@@ -4793,8 +4886,10 @@ double validated_rate(double sample_rate, const FrequencyTrackerConfig& c) {
 FrequencyTracker::FrequencyTracker(double sample_rate, double initial_offset_hz, FrequencyTrackerConfig config)
     : rate_(validated_rate(sample_rate, config)),
       config_(config),
+      lag_(samples_for(config.lag_s, sample_rate)),
+      update_every_(samples_for(config.update_interval_s, sample_rate)),
       alpha_(1.0 - std::exp(-1.0 / (config.tau_s * sample_rate))),
-      anchor_alpha_(1.0 - std::exp(-config.update_every / (config.anchor_tau_s * sample_rate))) {
+      anchor_alpha_(1.0 - std::exp(-update_every_ / (config.anchor_tau_s * sample_rate))) {
     reset(initial_offset_hz);
 }
 
@@ -4802,13 +4897,13 @@ void FrequencyTracker::reset(double initial_offset_hz) {
     offset_hz_ = std::clamp(initial_offset_hz, -config_.max_offset_hz, config_.max_offset_hz);
     anchor_hz_ = offset_hz_;
     phase_ = 0;
-    history_.assign(static_cast<std::size_t>(config_.lag), Sample{});
+    history_.assign(static_cast<std::size_t>(lag_), Sample{});
     head_ = 0;
     seen_ = 0;
     average_ = {};
     magnitude_ = 0;
     weight_ = 0;
-    until_update_ = config_.update_every;
+    until_update_ = update_every_;
 }
 
 void FrequencyTracker::reacquire() {
@@ -4837,23 +4932,24 @@ void FrequencyTracker::observe(Sample v, float weight) {
         // NCO's own advance turns it into a measurement of the absolute offset, so
         // the average does not depend on where the NCO happens to be.
         const std::complex<double> z = std::complex<double>(v) * std::conj(std::complex<double>(old));
-        const std::complex<double> absolute = z * std::polar(1.0, kTwoPi * offset_hz_ * config_.lag / rate_);
+        const std::complex<double> absolute = z * std::polar(1.0, kTwoPi * offset_hz_ * lag_ / rate_);
         const double a = alpha_ * w;
         average_ += a * (absolute - average_);
         magnitude_ += a * (std::abs(absolute) - magnitude_);
         weight_ += a * (1.0 - weight_);
     }
     if (--until_update_ == 0) {
-        until_update_ = config_.update_every;
+        until_update_ = update_every_;
         // A coherent average (one station) moves the NCO; while the average changes from one
         // station to another its phasors cancel and it waits.
         if (weight_ >= config_.min_weight && std::abs(average_) > config_.min_coherence * magnitude_) {
-            const double estimate = std::arg(average_) * rate_ / (kTwoPi * config_.lag);
-            if (std::abs(estimate - anchor_hz_) <= config_.pull_in_hz) {
+            const double estimate = std::arg(average_) * rate_ / (kTwoPi * lag_);
+            if (std::abs(estimate - anchor_hz_) <= config_.follow_distance_hz) {
                 offset_hz_ = std::clamp(estimate, -config_.max_offset_hz, config_.max_offset_hz);
                 anchor_hz_ += anchor_alpha_ * (offset_hz_ - anchor_hz_);
             } else {
-                // Another station's products: forget them and return to this channel's station.
+                // A station beyond the follow distance (it has its own track): forget its products
+                // and return to this channel's station.
                 average_ = {};
                 magnitude_ = 0;
                 weight_ = 0;
@@ -4872,7 +4968,7 @@ void FrequencyTracker::observe(Sample v, float weight) {
 cmake --build --preset windows
 ctest --preset windows -R FrequencyTracker
 ```
-Expected: 12 tests pass. If `EstimateIsAccurateInNoise` fails, do not widen its tolerance: print the error and compare it with the derived estimate in "Design decisions, B" (about 0.25 Hz RMS here); a large disagreement means a bug in the rotation or the averaging. If a test fails because a parameter value (not the code) is wrong, stop and report the measurement to the owner; do not change the value (the owner deferred all tuning until Task 14's numbers).
+Expected: 12 tests pass. If `EstimateIsAccurateInNoise` fails, do not widen its tolerance: print the error and compare it with the derived estimate in "Design decisions, B" (about 0.25 Hz RMS here); a large disagreement means a bug in the rotation or the averaging. If a test fails because a parameter value (not the code) is wrong, stop and report the measurement to the owner; do not change the value (parameter tuning is deferred to the benchmark results; owner, 2026-09-27 and 2026-09-29).
 
 - [ ] **Step 5: Document**
 
@@ -4880,7 +4976,7 @@ In `docs/signal-processing.md`, add to the symbols table in section 0:
 
 ```markdown
 | f̂ | frequency tracker's estimate of a station's residual offset from its channel center, and the NCO frequency | Hz |
-| L | lag of the frequency discriminator | 8 samples |
+| τ_L | lag of the frequency discriminator | 5.33 ms (8 samples at 1500 samples/s) |
 | τ_f | time constant of the frequency average, counted in samples of weight 1 | 0.5 s |
 ```
 
@@ -4906,29 +5002,36 @@ default pipeline does not re-center. `FrequencyTracker`
   loop to stabilize (to first order: v averages samples mixed under the
   last K/32 NCO settings while each product is rotated by the current f̂,
   a small coupling while f̂ moves, harmless because τ_f·r = 750 samples is
-  much longer than K/2). L = 8 gives an unambiguous range of ±r/(2L) =
-  ±93.75 Hz (**derived**; the value 8 is **heuristic**).
+  much longer than K/2). The lag τ_L = 5.33 ms (8 samples at r) gives an
+  unambiguous range of ±1/(2τ_L) = ±93.75 Hz (**derived**; the value is
+  **heuristic**; it is converted to samples from the physical value).
 - **Average (heuristic):** Z̄ ← Z̄ + α·p·(rotated z − Z̄), α = 1 − e^(−1/(τ_f·r)),
   τ_f = 0.5 s, weighted by p, the front end's key-down probability, so
   key-up and pauses leave it unchanged. Every 32 samples (21.3 ms)
   f̂ ← arg(Z̄)·r/(2πL), once the average holds weight 0.6 or more and is
   coherent (|Z̄| ≥ 0.3 × the same average of |z|).
-- **Capture range (heuristic):** f̂ may move only within ±35 Hz of an
-  anchor, this channel's station frequency, which starts at the
-  detector's estimate and follows accepted estimates with a 10 s time
-  constant; an average that points farther away belongs to another
-  station, so it is emptied and f̂ returns to the anchor. Stations 35 Hz
-  or more away belong to their own tracks (the detector separates peaks
-  3 bins, 70.3 Hz, apart). Slow drift up to about 35 Hz / 10 s = 3.5 Hz/s
-  is followed (derived). The window moves with the anchor, so a station
-  35–70 Hz away that keeps sending can walk f̂ toward it (the mixture of
-  its lag products with the noise's stays coherent enough). Simulated with
-  the whole Matched decoder (Task 12's turnover, final check 2026-09-28;
-  levels in dB re the wanted station's key-down power): a station 100 Hz
-  away at −6 or +10 dB moved f̂ at most 0.2 Hz (100 seeds each), one at
-  0 dB up to 18.7 Hz (within 1 Hz in 54 of 60 seeds); a station 50 Hz
-  away at −10 dB moved it at most 0.2 Hz, one at 0 dB 35 Hz (median) to
-  42 Hz (60 seeds).
+- **Follow distance (heuristic; owner decision 2026-09-29):** f̂ may move
+  only within ±D_f of an anchor, this channel's station frequency, which
+  starts at the detector's estimate and follows accepted estimates with a
+  10 s time constant; an average that points farther away belongs to
+  another station, so it is emptied and f̂ returns to the anchor. D_f =
+  D + 10 Hz = 57 Hz, where D = 47 Hz is the engine's channel distance
+  (section 6, "Channel distance"): a station within D of the channel's
+  station is heard as the same track, so this channel follows it (a QSO
+  turnover) and comes back; one farther away gets its own track. The
+  10 Hz margin (heuristic) makes the two ranges overlap, so a rounding
+  difference gives a duplicate, which the engine merges, rather than a
+  station nobody decodes. Slow drift up to about 57 Hz / 10 s = 5.7 Hz/s
+  is followed (derived). The window moves with the anchor, so a strong
+  station just outside it can still walk f̂ toward it (the mixture of its
+  lag products with the noise's stays coherent enough). Simulated
+  (2026-09-29; levels in dB re the channel's station's key-down power):
+  with the whole Matched decoder, a station answering 70 Hz away at
+  −6 dB, or 100 Hz away at −6 or +10 dB, left f̂ within 0.2 Hz (100 seeds
+  each); with the whole engine, one answering 60 Hz away at 0 or +6 dB
+  walked f̂ toward it and cost the first station's next over in 23 and
+  29 of 30 runs, a stated failure of this design (owner's decision
+  pending; plan, Design decisions B).
 - **Expected accuracy:** about 0.5 Hz RMS at S₅₀₀ = 0 dB and 0.9 Hz at
   −5 dB, 25 WPM (derived, an upper bound); a simulation of the whole chain
   (NCO, K = 58 boxcar, posterior weights, 60 s of PARIS, 4 seeds; plan
@@ -4945,9 +5048,9 @@ default pipeline does not re-center. `FrequencyTracker`
 In section 10, add rows:
 
 ```markdown
-| Frequency discriminator lag | L = 8 samples (±93.75 Hz unambiguous) | `FrequencyTrackerConfig::lag` | heuristic within derived range |
-| Frequency average | τ_f = 0.5 s of key-down weight; moves the NCO at weight ≥ 0.6 and coherence ≥ 0.3, every 32 samples | `FrequencyTrackerConfig` | heuristic |
-| Capture range | ±35 Hz around an anchor that follows with τ = 10 s; farther estimates are discarded | `FrequencyTrackerConfig::pull_in_hz`, `anchor_tau_s` | heuristic; drift limit 3.5 Hz/s derived |
+| Frequency discriminator lag | 5.33 ms (8 samples at 1500 samples/s; ±93.75 Hz unambiguous) | `FrequencyTrackerConfig::lag_s` | heuristic within derived range |
+| Frequency average | τ_f = 0.5 s of key-down weight; moves the NCO at weight ≥ 0.6 and coherence ≥ 0.3, every 21.3 ms | `FrequencyTrackerConfig` (`tau_s`, `min_weight`, `min_coherence`, `update_interval_s`) | heuristic |
+| Follow distance | ±(D + 10 Hz) = ±57 Hz around an anchor that follows with τ = 10 s; farther estimates are discarded | `FrequencyTrackerConfig::follow_distance_hz` (set by the engine from `EngineConfig::channel_distance_hz` and `follow_margin_hz`), `anchor_tau_s` | heuristic; drift limit 5.7 Hz/s derived |
 | NCO range | ±75 Hz | `FrequencyTrackerConfig::max_offset_hz` | heuristic |
 ```
 
@@ -4978,7 +5081,7 @@ Spec §5.2 step 1 proper: a complex filter matched to the current dit estimate, 
   - `struct MatchedFrontEndConfig { double initial_wpm = 60.0; double min_wpm = 5.0; double length_dits = 0.8; double warmup_s = 0.32; double noise_tau_s = 2.0; double amplitude_tau_s = 0.5; double noise_guard = 1.75; double neighbor_guard = 4.0; double floor_quantile = 0.1; int floor_samples = 64; double floor_min_clean = 0.25; double floor_margin = 2.5; double floor_restart_ratio = 4.0; double prior_key_down = 0.44; double squelch_a = 3.0; double squelch_exponent = 0.25; };`
   - `struct FrontEndSample { Sample filtered; float llr; float log_odds; float p_key_down; float weight; bool ready; bool signal; };`
   - `class MatchedFrontEnd` with `explicit MatchedFrontEnd(double sample_rate, MatchedFrontEndConfig config = {})`, `FrontEndSample step(Sample u)`, `void set_dit(double dit_s)`, `void reacquire()`, `void reset()`, `int length() const`, `double noise_sigma() const`, `double amplitude() const`, `double squelch() const`.
-  - Contract: `filtered` is the mean of the last K inputs (FS); `llr` is Λ (nats); `log_odds` is Λ + ln(P₁/P₀); `p_key_down` is the posterior, forced to 0 while `signal` is false; `weight` is 1/K; `ready` is false during warm-up, when only `filtered` and `weight` are valid. The noise estimate never reads the posterior, the log-odds or ŝ (review finding C1): it uses only |v|² and its own σ̂² (Design decisions, C). `reacquire()` puts K back to the acquisition width (rescaling σ̂²), sets ŝ² and its weight to 0, and keeps σ̂² (review finding C2). The warm-up always runs at the acquisition width: a `set_dit` during it takes effect when it ends, and then restarts ŝ² (re-review finding I-1). `squelch()` is a_min for the current K, 3·(K/24)^(1/4) (re-review finding I-2). A floor keeps σ̂² from staying far below the noise (re-review finding I-1); it assumes a station leaves at least c = 0.25 of its samples clean, and a lift restarts ŝ only if the floor exceeds 4·σ̂² (final check F-3).
+  - Contract: `filtered` is the mean of the last K inputs (FS); `llr` is Λ (nats); `log_odds` is Λ + ln(P₁/P₀); `p_key_down` is the posterior, forced to 0 while `signal` is false; `weight` is 1/K; `ready` is false during warm-up, when only `filtered` and `weight` are valid. The noise estimate never reads the posterior, the log-odds or ŝ (review finding C1): it uses only |v|² and its own σ̂² (Design decisions, C). `reacquire()` puts K back to the acquisition width (rescaling σ̂²), sets ŝ² and its weight to 0, and keeps σ̂² (review finding C2). The warm-up always runs at the acquisition width: a `set_dit` during it takes effect when it ends, and then restarts ŝ² (re-review finding I-1). `squelch()` is a_min for the current filter, 3·(T_v/16 ms)^(1/4) with T_v = K/r its duration, which is 3·(K/24)^(1/4) at 1500 samples/s (re-review finding I-2; the code takes the ratio of K to the acquisition length, so it is a ratio of durations). A floor keeps σ̂² from staying far below the noise (re-review finding I-1); it assumes a station leaves at least c = 0.25 of its samples clean, and a lift restarts ŝ only if the floor exceeds 4·σ̂² (final check F-3).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -5356,8 +5459,9 @@ struct MatchedFrontEndConfig {
     double floor_margin = 2.5;          // ...and dividing by this for sampling spread
     double floor_restart_ratio = 4.0;   // a lift restarts s-hat only if the floor exceeds this times sigma^2
     double prior_key_down = 0.44;       // P1: PARIS keys down 22 of 50 dit units
-    double squelch_a = 3.0;             // key-down evidence is ignored while a = s / sigma is below this at K = 24...
-    double squelch_exponent = 0.25;     // ...times (K / 24)^this at other filter lengths
+    double squelch_a = 3.0;             // key-down evidence is ignored while a = s / sigma is below this with the
+                                        // acquisition filter (16 ms: 0.8 of the 60 WPM dit)...
+    double squelch_exponent = 0.25;     // ...times (filter duration / 16 ms)^this at other filter lengths
 };
 
 struct FrontEndSample {
@@ -5694,7 +5798,7 @@ FrontEndSample MatchedFrontEnd::step(Sample u) {
 cmake --build --preset windows
 ctest --preset windows -R MatchedFrontEnd
 ```
-Expected: 17 tests pass (several of them loop over 10–20 seeds and take a few seconds). These tests pin behavior the design derived and a Python port simulated; if one fails, find out why before touching a tolerance (superpowers:systematic-debugging). In particular, `EstimatesNoiseAndAmplitude` and `StrongSignalKeepsNoiseEstimate` fail if the three-tap guard lets filter ramps through, `NoiseAloneKeepsTheNoiseEstimateAndNeverKeys` fails if the estimate is biased or the amplitude does not decay in noise alone, `NoiseEstimateRecoversFromANoiseStep` fails if the floor or the relaxed neighbor guard is wrong, and `NoiseEstimateAtMinusFiveDbS500HasItsKnownLeak` fails if marks leak into the noise estimate more (or less) than simulated. Each multi-seed test states its per-seed band and a band for the mean, both from the simulation of this code (several standard deviations wide). If the cause is a code bug, fix it. If the cause is a parameter value (κ, a time constant, the squelch), **stop and report the measurement to the owner; do not change the value**: the owner deferred all tuning until Task 14's numbers exist (decision 2026-09-27).
+Expected: 17 tests pass (several of them loop over 10–20 seeds and take a few seconds). These tests pin behavior the design derived and a Python port simulated; if one fails, find out why before touching a tolerance (superpowers:systematic-debugging). In particular, `EstimatesNoiseAndAmplitude` and `StrongSignalKeepsNoiseEstimate` fail if the three-tap guard lets filter ramps through, `NoiseAloneKeepsTheNoiseEstimateAndNeverKeys` fails if the estimate is biased or the amplitude does not decay in noise alone, `NoiseEstimateRecoversFromANoiseStep` fails if the floor or the relaxed neighbor guard is wrong, and `NoiseEstimateAtMinusFiveDbS500HasItsKnownLeak` fails if marks leak into the noise estimate more (or less) than simulated. Each multi-seed test states its per-seed band and a band for the mean, both from the simulation of this code (several standard deviations wide). If the cause is a code bug, fix it. If the cause is a parameter value (κ, a time constant, the squelch), **stop and report the measurement to the owner; do not change the value**: parameter tuning is deferred to the benchmark results (owner, 2026-09-27 and 2026-09-29).
 
 - [ ] **Step 5: Document**
 
@@ -5880,9 +5984,15 @@ git commit -m "Add the dit-matched front end with Rician/Rayleigh log-likelihood
 
 ### Task 12: Classical decoder — the Matched mode
 
+> **Stop point (2026-09-29).** See Task 10: this task waits for the owner's decision on the channel-distance design.
+
 The minimal way for the baseline decoder to consume the front end (Design decisions, C): in `FrontEnd::Matched` each sample goes through the tracker's NCO, then the matched filter; the tracker observes the filter's output weighted by the key-down posterior; the key goes down when the posterior log-odds g exceeds +h and up when it falls below −h (h = 1 nat), and never goes down while a < a_min. The envelope smoother, the 40%/60% thresholds, the mark/space followers, the warm-up and the M ≥ 3·S squelch are not used in this mode; glitch rejection, element classification, gaps, symbols and speed estimation are shared. `FrontEnd::Envelope` stays the default and must produce exactly what it produced before (the existing tests and the smoke CER pin it).
 
-**Re-acquisition (review finding C2, re-review I-2 to I-4, final check F-1; heuristic).** The filter narrows to the current station's dit and ŝ settles at its level, so a station that answers 25 Hz away (near the narrow filter's nulls) or 6 dB weaker (re the first station's key-down power) never raises the posterior, and neither estimate ever moves to it: in a simulation of the earlier code (A at 0 Hz, S₅₀₀ = 15 dB, 25 WPM; 1 s of silence; B, 112 marks), none of B's marks were keyed at 25, 40 or 50 Hz and −6 or 0 dB re A's key-down power. So when the key has been up for longer than max(`reacquire_min_s` = 0.5 s, `reacquire_after_dits` = 12 dits), the decoder calls `MatchedFrontEnd::reacquire()` (K back to 24 samples, the 60 WPM width; ŝ² and its weight to 0; σ̂² kept) and `FrequencyTracker::reacquire()` (a fresh frequency average from the last f̂), once per silence, sets its speed window aside and starts a new one, and the filter follows the speed again only after `follow_after_marks` new marks. If nothing is keyed within `reacquire_window_s` = 2 s, the station was probably just pausing (or none is there): the set-aside speed window comes back and the filter returns to the dit-matched width it had, which is more sensitive than the acquisition width (section 8b, "Squelch"). The new speed window is the final check's fix F-1: a neighbor keyed only in fragments through the wide filter put its fragments in the same window as the caller's marks, the filter followed the mixed estimate, grew longer than the caller's element spaces and merged its marks, and K ran to 288. Until two new marks exist, elements are still classified with the previous station's dit. 12 dits exceeds all but about 1% of word spaces (7 dits nominal; 0.77% of VE3NEA's hand-key word spaces, log-normal with median 7.39 dits and σ_ln = 0.2, exceed 12 dits, derived; one spurious re-acquisition per about 1300 word spaces was simulated, with no marks lost); the 0.5 s floor applies only above 28.8 WPM, where 12 dits is shorter than 0.5 s. **What it reaches:** only stations within the tracker's ±35 Hz pull-in (Task 10); a station farther away belongs to its own track (the detector separates peaks 70.3 Hz apart), and a station 35–70 Hz away (the ambiguous regime) is neither followed nor, below 70.3 Hz, reliably given its own track. After a re-acquisition B at Δf is also attenuated by the K = 24 boxcar, |sinc(Δf·24/1500 s)|² (−2.4 dB relative to a centered station at 25 Hz, derived), and must be keyed at the acquisition width, so it needs roughly S₅₀₀ ≥ 0 dB at 25 Hz. **Simulated (final check, 2026-09-28; a Python port of Tasks 10–12 on the milestone-1 decoder's own element and speed logic, with the decoder estimating the dit itself; this test's turnover, white noise, numpy seeds; levels in dB re A's key-down power):** B 25 Hz away at −6 dB: B's text decoded, f̂ 24.8–25.2 Hz, A's next over intact in 100 of 100 (23 of 30 without the new speed window). B 50 Hz away at −10 dB: f̂ within 0.2 Hz of A, A intact in 100 of 100. B 100 Hz away at −6 and +10 dB: f̂ within 0.2 Hz, A intact in 99 and 100 of 100. **Limits, stated and not asserted by the tests:** B 50 Hz away at −6 … +10 dB is keyed in fragments, comes out as garbage in A's channel, walks f̂ toward it (to 35–42 Hz at 0 dB) and A passed in only 7–16 of 30 seeds; B 100 Hz away at A's level sits at the acquisition squelch's edge and cost A's next over in 13 of 60. Further gates on the speed window (bounding the growth of K or of the dit estimate to ×1.25 per mark, counting only marks whose peak log-odds exceeded 8 nats, taking the re-acquisition silence from the dit before the turnover) did not help those cases (simulated, 30 seeds each); telling which station a mark came from is a design decision on the owner's list. The first marks of B are lost while the filter and ŝ settle (group H's first-word CER measures it). A single weak station pausing for 15 dits every 3 words at S₅₀₀ = −2 dB kept on average 0.47 of its marks with the 2 s window and 0.39 without (25 WPM; 0.81 and 0.73 at 12 WPM; 20 seeds, per-seed spread 0.00–0.92): a small benefit.
+**Re-acquisition (review finding C2, re-review I-2 to I-4, final check F-1; heuristic).** The filter narrows to the current station's dit and ŝ settles at its level, so a station that answers 25 Hz away (near the narrow filter's nulls) or 6 dB weaker (re the first station's key-down power) never raises the posterior, and neither estimate ever moves to it: in a simulation of the earlier code (A at 0 Hz, S₅₀₀ = 15 dB, 25 WPM; 1 s of silence; B, 112 marks), none of B's marks were keyed at 25, 40 or 50 Hz and −6 or 0 dB re A's key-down power. So when the key has been up for longer than max(`reacquire_min_s` = 0.5 s, `reacquire_after_dits` = 12 dits), the decoder calls `MatchedFrontEnd::reacquire()` (K back to 24 samples, the 60 WPM width; ŝ² and its weight to 0; σ̂² kept) and `FrequencyTracker::reacquire()` (a fresh frequency average from the last f̂), once per silence, sets its speed window aside and starts a new one, and the filter follows the speed again only after `follow_after_marks` new marks. If nothing is keyed within `reacquire_window_s` = 2 s, the station was probably just pausing (or none is there): the set-aside speed window comes back and the filter returns to the dit-matched width it had, which is more sensitive than the acquisition width (section 8b, "Squelch"). The new speed window is the final check's fix F-1: a neighbor keyed only in fragments through the wide filter put its fragments in the same window as the caller's marks, the filter followed the mixed estimate, grew longer than the caller's element spaces and merged its marks, and K ran to 288. Until two new marks exist, elements are still classified with the previous station's dit. 12 dits exceeds all but about 1% of word spaces (7 dits nominal; 0.77% of VE3NEA's hand-key word spaces, log-normal with median 7.39 dits and σ_ln = 0.2, exceed 12 dits, derived; one spurious re-acquisition per about 1300 word spaces was simulated, with no marks lost); the 0.5 s floor applies only above 28.8 WPM, where 12 dits is shorter than 0.5 s. **What it reaches:** stations within the tracker's follow distance D_f = D + 10 Hz = 57 Hz (Task 10; D is the channel distance, Design decisions B); a station farther away belongs to its own track (Task 13 attributes peaks within D = 47 Hz of a track's current frequency to it). After a re-acquisition B at Δf is also attenuated by the 16 ms (K = 24) boxcar, |sinc(Δf · 16 ms)|² (−2.4 dB relative to a centered station at 25 Hz, −6.9 dB at 40 Hz, derived), and must be keyed at the acquisition width, so it needs roughly S₅₀₀ ≥ 0 dB at 25 Hz. **Simulated (2026-09-29; a Python port of Tasks 10–12 as revised, on the milestone-1 decoder's own element and speed logic, the decoder estimating the dit itself, with D_f = 57 Hz and the ×1.25 growth bound; this test's turnover, white noise, 100 numpy seeds each; levels in dB re A's key-down power):** B 25 Hz away at −6 dB, and 40 Hz away at 0 dB: B's text decoded, f̂ on B (24.6–25.2 Hz; 39.9–40.1 Hz) before A's next over, A's next over intact, in 100 of 100. B 40 Hz away at −6 dB: f̂ on B, but B's text decoded in 26 and A's next over intact in 73 of 100 (not asserted). B 50 Hz away at −10 dB: not keyed, f̂ within 0.2 Hz of A, A intact in 99 of 100. B 70 Hz away at −6 dB, 100 Hz away at −6 and +10 dB: f̂ within 0.2 Hz of A, A intact in 99, 99 and 100 of 100. **Where the design fails** (engine level: a station 60–100 Hz away at A's level or stronger walks A's channel toward it; a weak station within D but off center is not decoded) is stated in Design decisions B and waits for the owner's decision; these tests do not assert it. The first marks of B are lost while the filter and ŝ settle (group H's first-word CER measures it). A single weak station pausing for 15 dits every 3 words at S₅₀₀ = −2 dB kept on average 0.47 of its marks with the 2 s window and 0.39 without (25 WPM; 0.81 and 0.73 at 12 WPM; 20 seeds, per-seed spread 0.00–0.92; final check): a small benefit.
+
+**Speed-estimate growth bound (owner decision 2026-09-29):** while the filter follows the speed (the window holds `follow_after_marks` marks, all new since the last re-acquisition), each speed update may raise the dit estimate by at most `max_dit_growth` = ×1.25. It removes the runaway the final check found after a sudden speed change (the estimate jumped ×2 in one update, the filter outgrew the element spaces and merged marks); a real slowdown then takes ln(ratio)/ln 1.25 marks to follow, 5 marks from 35 to 12 WPM (derived). Before the filter follows, the estimate is unbounded, as in milestone 1.
+
+**Tests with a simulated pass rate below 100% (owner decision 2026-09-29)** run 20 fixed seeds and assert a pass count: the smallest count t with P(X < t) ≤ 0.002 for X ~ Binomial(20, simulated rate) (a wide margin, derived from the binomial). They are deterministic and still catch a regression. Tests that passed every simulated seed keep one seed.
 
 **Files:**
 - Modify: `engine/include/kz4ap/decoder.hpp` (`DecodeUpdate::freq_offset_hz`)
@@ -5895,7 +6005,7 @@ The minimal way for the baseline decoder to consume the front end (Design decisi
 - Produces:
   - `DecodeUpdate` gains `std::optional<double> freq_offset_hz;` — the decoder's estimate of the station's offset from its channel center, Hz; set only by decoders that track frequency.
   - `enum class FrontEnd { Envelope, Matched };`
-  - `ClassicalDecoderConfig` gains `FrontEnd front_end = FrontEnd::Envelope;`, `double llr_hysteresis = 1.0;` (nats), `std::size_t follow_after_marks = 8;`, `double reacquire_after_dits = 12.0;`, `double reacquire_min_s = 0.5;` (s), `double reacquire_window_s = 2.0;` (s), `MatchedFrontEndConfig matched;`, `FrequencyTrackerConfig tracker;`.
+  - `ClassicalDecoderConfig` gains `FrontEnd front_end = FrontEnd::Envelope;` (Task 13 makes `Matched` the default), `double llr_hysteresis = 1.0;` (nats), `std::size_t follow_after_marks = 8;`, `double max_dit_growth = 1.25;` (factor per mark), `double reacquire_after_dits = 12.0;`, `double reacquire_min_s = 0.5;` (s), `double reacquire_window_s = 2.0;` (s), `MatchedFrontEndConfig matched;`, `FrequencyTrackerConfig tracker;`.
   - `explicit ClassicalDecoder(double sample_rate, ClassicalDecoderConfig config = {}, double initial_offset_hz = 0.0);`
   - `double ClassicalDecoder::frequency_offset_hz() const;` (Matched: the tracker's f̂; Envelope: the initial offset) and `int ClassicalDecoder::filter_length() const;` (Matched: K; Envelope: 0).
   - In Matched mode every `DecodeUpdate` from `process` and `flush` carries `freq_offset_hz`.
@@ -5922,6 +6032,30 @@ std::vector<Sample> add(std::vector<Sample> a, const std::vector<Sample>& b) {
     return a;
 }
 
+// Owner decision 2026-09-29: a test whose simulated pass rate is below 100% runs 20 fixed seeds
+// and asserts a pass count t, the smallest with P(X < t) <= 0.002 for X ~ Binomial(20, simulated
+// rate). Deterministic, and still catches a regression. `run` returns true on a pass and may
+// describe a failure in `why`; seeds are first_seed, first_seed + 10, ... (each run may use
+// seed, seed + 1, seed + 2).
+constexpr unsigned kSeeds = 20;
+
+struct Tally {
+    int passed = 0;
+    std::string failures;
+};
+
+template <class Run>
+Tally count_passes(unsigned first_seed, Run&& run) {
+    Tally tally;
+    for (unsigned i = 0; i < kSeeds; ++i) {
+        const unsigned seed = first_seed + 10 * i;
+        std::string why;
+        if (run(seed, why)) ++tally.passed;
+        else tally.failures += "seed " + std::to_string(seed) + ": " + why + "\n";
+    }
+    return tally;
+}
+
 }  // namespace
 
 TEST(ClassicalDecoder, EnvelopeModeTracksNoFrequency) {
@@ -5940,14 +6074,17 @@ TEST(ClassicalDecoder, MatchedDecodesCleanSignal) {
 }
 
 TEST(ClassicalDecoder, MatchedDecodesAtThreeDbS500) {
-    // Simulated (final check, 100 numpy seeds, whole decoder): "K1ABC DE W9XYZ" found in 81; the
-    // failures are errors in the first words while the speed estimate and the filter settle.
-    // This assertion predates the final check and was not changed; see Step 5.
-    ClassicalDecoder d(kRate, matched());
+    // Simulated (whole decoder, numpy seeds): "K1ABC DE W9XYZ" found in 81 of 100 (final check) and
+    // 79 of 100 (2026-09-29, with the growth bound); the failures are errors in the first words
+    // while the speed estimate and the filter settle. 20 seeds; at 0.79, t = 10.
     const std::string msg = "CQ TEST K1ABC DE W9XYZ";
-    const auto t = text(decode_all(d, keyed_signal(msg, 25, kRate, duration_for(msg, 25), 0, 1.0,
-                                                   sigma_for_s500(3), 22)));
-    EXPECT_NE(t.find("K1ABC DE W9XYZ"), std::string::npos) << t;
+    const auto tally = count_passes(22, [&](unsigned seed, std::string& why) {
+        ClassicalDecoder d(kRate, matched());
+        why = text(decode_all(d, keyed_signal(msg, 25, kRate, duration_for(msg, 25), 0, 1.0,
+                                              sigma_for_s500(3), seed)));
+        return why.find("K1ABC DE W9XYZ") != std::string::npos;
+    });
+    EXPECT_GE(tally.passed, 10) << tally.failures;
 }
 
 TEST(ClassicalDecoder, MatchedDecodesStrongSignal) {
@@ -5959,29 +6096,33 @@ TEST(ClassicalDecoder, MatchedDecodesStrongSignal) {
 
 TEST(ClassicalDecoder, MatchedFollowsSpeedChange) {
     // K is read 0.3 s after the last mark, before the 0.5 s re-acquisition silence puts it back to
-    // 24 (final check F-2: read after the 1.5 s tail it was 24 in every seed). Simulated (100 numpy
-    // seeds, whole decoder): K = 41 +/- 5 and the text ends in K1ABC in 98. In the other 2 the
-    // speed estimate jumped from 41 to 81 ms in one update while the window held both speeds, the
-    // filter outgrew the element spaces, merged marks and ran away (K 105): a stated limit.
+    // 24 (final check F-2). Without the growth bound, 2 of 100 simulated seeds ran away (the dit
+    // estimate jumped from 41 to 81 ms in one update, K 105). With the x1.25 bound (owner decision
+    // 2026-09-29), simulated over 100 numpy seeds: K = 41 +/- 5 samples (27.3 ms) and the text ends
+    // in K1ABC in 98; one ended with a stray E, one garbled the last call while K was still 61.
+    // 20 seeds; at 0.98, t = 17.
     const std::string first = "CQ CQ CQ";
     const std::string second = "TEST K1ABC K1ABC";
     const double start2 = keying(first, 20, 0.5).back().second + 7 * 1.2 / 20;
     const double end2 = keying(second, 35, start2).back().second;
     const double total = end2 + 1.5;
-    const auto x = add(keyed_signal(first, 20, kRate, total, 0, 1.0, sigma_for_s500(20), 24),
-                       keyed_signal(second, 35, kRate, total, 0, 1.0, 0.0, 25, start2));
-    ClassicalDecoder d(kRate, matched());
-    const auto split = static_cast<std::size_t>((end2 + 0.3) * kRate);
-    std::vector<DecodedSymbol> chars;
-    auto a = d.process(std::span<const Sample>(x).subspan(0, split), 0.0);
-    chars.insert(chars.end(), a.chars.begin(), a.chars.end());
-    const int k = d.filter_length();
-    auto b = d.process(std::span<const Sample>(x).subspan(split), static_cast<double>(split) / kRate);
-    chars.insert(chars.end(), b.chars.begin(), b.chars.end());
-    auto f = d.flush();
-    chars.insert(chars.end(), f.chars.begin(), f.chars.end());
-    EXPECT_TRUE(ends_with(text(chars), "K1ABC")) << text(chars);
-    EXPECT_NEAR(k, std::lround(0.8 * 1.2 / 35 * kRate), 5);
+    const auto tally = count_passes(24, [&](unsigned seed, std::string& why) {
+        const auto x = add(keyed_signal(first, 20, kRate, total, 0, 1.0, sigma_for_s500(20), seed),
+                           keyed_signal(second, 35, kRate, total, 0, 1.0, 0.0, seed + 1, start2));
+        ClassicalDecoder d(kRate, matched());
+        const auto split = static_cast<std::size_t>((end2 + 0.3) * kRate);
+        std::vector<DecodedSymbol> chars;
+        auto a = d.process(std::span<const Sample>(x).subspan(0, split), 0.0);
+        chars.insert(chars.end(), a.chars.begin(), a.chars.end());
+        const int k = d.filter_length();
+        auto b = d.process(std::span<const Sample>(x).subspan(split), static_cast<double>(split) / kRate);
+        chars.insert(chars.end(), b.chars.begin(), b.chars.end());
+        auto f = d.flush();
+        chars.insert(chars.end(), f.chars.begin(), f.chars.end());
+        why = text(chars) + " (K " + std::to_string(k) + ")";
+        return ends_with(text(chars), "K1ABC") && std::abs(k - std::lround(0.8 * 1.2 / 35 * kRate)) <= 5;
+    });
+    EXPECT_GE(tally.passed, 17) << tally.failures;
 }
 
 TEST(ClassicalDecoder, MatchedTracksTheResidualOffset) {
@@ -6039,17 +6180,21 @@ TEST(ClassicalDecoder, MatchedNoiseAfterStationStopsDecodesNothing) {
 TEST(ClassicalDecoder, MatchedIgnoresStrongerNeighbor) {
     // Wanted at 0 Hz, S500 = 15 dB; a neighbor 100 Hz away inside the same channel,
     // 10 dB stronger (re the wanted station's key-down power), at another speed, keying at the
-    // same time. Simulated (final check, 100 numpy seeds): f-hat within 0.34 Hz in all 100 and
-    // K1ABC decoded in 98 (in 88 with the earlier floor, which restarted s-hat at every lift).
+    // same time. Simulated (100 numpy seeds): f-hat within 2 Hz in all 100; K1ABC decoded in 98
+    // (final check's port) and 88 (the 2026-09-29 port, the same with the 35 Hz pull-in and without
+    // the growth bound, so the difference is between the ports). 20 seeds; at 0.88, t = 13.
     const std::string msg = "CQ TEST K1ABC K1ABC K1ABC";
     const double total = duration_for(msg, 25);
-    const auto x = add(keyed_signal(msg, 25, kRate, total, 0.0, 1.0, sigma_for_s500(15), 30),
-                       keyed_signal("TU W9XYZ 5NN TU W9XYZ 5NN TU W9XYZ", 30, kRate, total, 100.0,
-                                    std::sqrt(10.0), 0.0, 31, 0.3));
-    ClassicalDecoder d(kRate, matched(), 0.0);
-    const auto t = text(decode_all(d, x));
-    EXPECT_NEAR(d.frequency_offset_hz(), 0.0, 2.0);
-    EXPECT_NE(t.find("K1ABC"), std::string::npos) << t;
+    const auto tally = count_passes(30, [&](unsigned seed, std::string& why) {
+        const auto x = add(keyed_signal(msg, 25, kRate, total, 0.0, 1.0, sigma_for_s500(15), seed),
+                           keyed_signal("TU W9XYZ 5NN TU W9XYZ 5NN TU W9XYZ", 30, kRate, total, 100.0,
+                                        std::sqrt(10.0), 0.0, seed + 1, 0.3));
+        ClassicalDecoder d(kRate, matched(), 0.0);
+        why = text(decode_all(d, x));
+        why += " (f " + std::to_string(d.frequency_offset_hz()) + " Hz)";
+        return std::abs(d.frequency_offset_hz()) <= 2.0 && why.find("K1ABC") != std::string::npos;
+    });
+    EXPECT_GE(tally.passed, 13) << tally.failures;
 }
 
 namespace {
@@ -6088,52 +6233,86 @@ Turnover turnover(double offset_hz, double relative_db, unsigned seed) {
 TEST(ClassicalDecoder, MatchedReacquiresAnAnsweringStation) {
     // Review finding C2: B 25 Hz away and 6 dB weaker (re A's key-down power). Without
     // re-acquisition the filter, narrowed to A's speed, never keys B. With it and with the speed
-    // window restarted (final check F-1), simulated over 100 numpy seeds with the whole decoder:
-    // B's "DE W9XYZ PARIS" decoded, f-hat 24.8-25.2 Hz before A's second over, and A's second over
-    // intact, in all 100 (with the window kept, A's second over was lost in 7 of 30).
+    // window restarted (final check F-1), simulated over 100 numpy seeds with the whole decoder
+    // (2026-09-29, follow distance 57 Hz, growth bound): B's "DE W9XYZ PARIS" decoded, f-hat
+    // 24.6-25.2 Hz before A's second over, and A's second over intact, in all 100. One seed.
     const auto r = turnover(25.0, -6.0, 33);
     EXPECT_NE(r.text.find("DE W9XYZ PARIS"), std::string::npos) << r.text;
     EXPECT_NEAR(r.f_before_second_over, 25.0, 2.0) << r.text;
     EXPECT_TRUE(ends_with(r.text, "PARIS PARIS PARIS PARIS")) << r.text;
 }
 
-TEST(ClassicalDecoder, MatchedIgnoresAWeakStation50HzAway) {
-    // Re-review finding I-3, final check F-1: 50 Hz is beyond the tracker's 35 Hz pull-in. B 10 dB
-    // weaker (re A's key-down power) is not keyed and leaves A alone: simulated over 100 numpy seeds,
-    // f-hat within 0.2 Hz of A throughout and A's second over intact in all 100. At -6 dB re A or
-    // stronger, B is keyed in fragments, f-hat walks toward it (up to 42 Hz) and A passed only
-    // 7-16 of 30 seeds: a stated limit (Design decisions, C), not asserted here. Decoding B is the
-    // detector's job (group H measures it).
-    const auto r = turnover(50.0, -10.0, 36);
-    EXPECT_NEAR(r.f_before_second_over, 0.0, 2.0) << r.text;
+TEST(ClassicalDecoder, MatchedFollowsAnAnsweringStationWithinTheChannelDistance) {
+    // Owner decision 2026-09-29: within the channel distance D = 47 Hz the channel follows the
+    // answering station and comes back. B 40 Hz away at A's level (0 dB re A's key-down power):
+    // simulated over 100 numpy seeds, B's text decoded, f-hat 39.9-40.1 Hz before A's second over,
+    // and A's second over intact, in all 100. (At -6 dB re A: f-hat on B, but B decoded in 26 and A
+    // intact in 73 of 100; at -10 dB B is at the acquisition floor. Not asserted.) One seed.
+    const auto r = turnover(40.0, 0.0, 34);
+    EXPECT_NE(r.text.find("DE W9XYZ PARIS"), std::string::npos) << r.text;
+    EXPECT_NEAR(r.f_before_second_over, 40.0, 2.0) << r.text;
     EXPECT_TRUE(ends_with(r.text, "PARIS PARIS PARIS PARIS")) << r.text;
+}
+
+TEST(ClassicalDecoder, MatchedIgnoresAWeakStation50HzAway) {
+    // 50 Hz is within the follow distance (57 Hz) but B, 10 dB weaker (re A's key-down power), is
+    // 12.6 dB further down at the 16 ms acquisition width (|sinc(50 Hz * 16 ms)|^2, derived), so it
+    // is not keyed and leaves A alone: simulated over 100 numpy seeds, f-hat within 0.2 Hz of A and
+    // A's second over intact in 99. Decoding B is its own track's job (Task 13). 20 seeds; t = 18.
+    const auto tally = count_passes(36, [](unsigned seed, std::string& why) {
+        const auto r = turnover(50.0, -10.0, seed);
+        why = r.text + " (f " + std::to_string(r.f_before_second_over) + " Hz)";
+        return std::abs(r.f_before_second_over) <= 2.0 && ends_with(r.text, "PARIS PARIS PARIS PARIS");
+    });
+    EXPECT_GE(tally.passed, 18) << tally.failures;
+}
+
+TEST(ClassicalDecoder, MatchedIgnoresAStationBeyondTheFollowDistance) {
+    // Owner decision 2026-09-29: beyond D + 10 Hz = 57 Hz the answering station has its own track and
+    // this channel ignores it. B 70 Hz away, 6 dB weaker (re A's key-down power): simulated over 100
+    // numpy seeds, f-hat within 0.2 Hz of A and A's second over intact in 99. (At A's level or
+    // stronger, 60-100 Hz away, B walks the channel toward it: the stated failure of Design
+    // decisions B, not asserted.) 20 seeds; t = 18.
+    const auto tally = count_passes(37, [](unsigned seed, std::string& why) {
+        const auto r = turnover(70.0, -6.0, seed);
+        why = r.text + " (f " + std::to_string(r.f_before_second_over) + " Hz)";
+        return std::abs(r.f_before_second_over) <= 2.0 && ends_with(r.text, "PARIS PARIS PARIS PARIS");
+    });
+    EXPECT_GE(tally.passed, 18) << tally.failures;
 }
 
 TEST(ClassicalDecoder, MatchedIgnoresANeighbor100HzAwayInASilence) {
     // Re-review finding I-4: at equal level the earlier design let B, aliased to -87.5 Hz, pull
-    // f-hat to the -75 Hz clamp during A's silence. Simulated now (final check, 100 numpy seeds per
-    // level, whole decoder): f-hat within 0.2 Hz of A; A's second over intact in 99 of 100 at -6 dB
-    // and in 100 of 100 at +10 dB re A's key-down power. At A's level (0 dB re A) B sits at the
-    // acquisition squelch's edge, is keyed in fragments and cost A's second over in 13 of 60
-    // seeds (f-hat up to 18.7 Hz off): a stated limit, not asserted here.
+    // f-hat to the -75 Hz clamp during A's silence. Simulated (2026-09-29, 100 numpy seeds per
+    // level): f-hat within 0.2 Hz of A; A's second over intact in 99 of 100 at -6 dB and 100 of 100
+    // at +10 dB re A's key-down power. At A's level B sits at the acquisition squelch's edge and cost
+    // A's second over in 13 of 60 seeds (final check): a stated failure, not asserted. 20 seeds per
+    // level; t = 18.
     for (const double relative_db : {-6.0, 10.0}) {
-        const auto r = turnover(100.0, relative_db, 39);
-        EXPECT_NEAR(r.f_before_second_over, 0.0, 2.0) << relative_db << " dB: " << r.text;
-        EXPECT_TRUE(ends_with(r.text, "PARIS PARIS PARIS PARIS")) << relative_db << " dB: " << r.text;
+        const auto tally = count_passes(39, [&](unsigned seed, std::string& why) {
+            const auto r = turnover(100.0, relative_db, seed);
+            why = r.text + " (f " + std::to_string(r.f_before_second_over) + " Hz)";
+            return std::abs(r.f_before_second_over) <= 2.0 && ends_with(r.text, "PARIS PARIS PARIS PARIS");
+        });
+        EXPECT_GE(tally.passed, 18) << relative_db << " dB:\n" << tally.failures;
     }
 }
 
 TEST(ClassicalDecoder, MatchedReturnsToTheNarrowFilterWhenNothingAnswers) {
     // After a re-acquisition finds nothing within 2 s, the filter goes back to the station's width
-    // (and the speed window comes back). Simulated (final check, 200 numpy seeds): K back at 58 +/- 5
-    // in 196. In the other 4, noise was keyed as a stray E right after the re-acquisition (s-hat
-    // restarts from its first few noise samples), which counts as an answer: a stated limit, about
-    // 1% of re-acquisitions in noise alone (0 of 200 in MatchedNoiseAfterStationStopsDecodesNothing).
+    // (and the speed window comes back). Simulated: K back at 58 +/- 5 samples (38.7 ms) in 196 of
+    // 200 (final check) and 199 of 200 (2026-09-29). In the others noise was keyed as a stray E right
+    // after the re-acquisition (s-hat restarts from its first few noise samples), which counts as
+    // an answer: postponed to the backlog, about 1% of silences. 20 seeds; at 0.98, t = 17.
     const std::string msg = "CQ TEST K1ABC CQ TEST K1ABC";
     const double end = keying(msg, 25, 0.5).back().second;
-    ClassicalDecoder d(kRate, matched());
-    decode_all(d, keyed_signal(msg, 25, kRate, end + 4.0, 0, 1.0, sigma_for_s500(20), 40));
-    EXPECT_NEAR(d.filter_length(), std::lround(0.8 * 1.2 / 25 * kRate), 5);
+    const auto tally = count_passes(40, [&](unsigned seed, std::string& why) {
+        ClassicalDecoder d(kRate, matched());
+        decode_all(d, keyed_signal(msg, 25, kRate, end + 4.0, 0, 1.0, sigma_for_s500(20), seed));
+        why = "K " + std::to_string(d.filter_length());
+        return std::abs(d.filter_length() - std::lround(0.8 * 1.2 / 25 * kRate)) <= 5;
+    });
+    EXPECT_GE(tally.passed, 17) << tally.failures;
 }
 
 TEST(ClassicalDecoder, MatchedChunkSizeDoesNotChangeOutput) {
@@ -6160,6 +6339,9 @@ TEST(ClassicalDecoder, MatchedModeRejectsInvalidSettings) {
     EXPECT_THROW(ClassicalDecoder d(kRate, c), std::invalid_argument);
     c = matched();
     c.follow_after_marks = 1;
+    EXPECT_THROW(ClassicalDecoder d(kRate, c), std::invalid_argument);
+    c = matched();
+    c.max_dit_growth = 0.9;  // must be at least 1
     EXPECT_THROW(ClassicalDecoder d(kRate, c), std::invalid_argument);
     c = matched();
     c.reacquire_after_dits = 0.0;
@@ -6203,6 +6385,7 @@ add to the end of `ClassicalDecoderConfig`
     FrontEnd front_end = FrontEnd::Envelope;
     double llr_hysteresis = 1.0;          // Matched: key down above +this, up below -this (posterior log-odds, nats)
     std::size_t follow_after_marks = 8;   // Matched: the filter follows the speed once the window holds this many marks
+    double max_dit_growth = 1.25;         // Matched, while the filter follows: the dit estimate grows at most this factor per mark
     double reacquire_after_dits = 12.0;   // Matched: re-acquire after the key has been up this many dits...
     double reacquire_min_s = 0.5;         // ...and at least this long, s
     double reacquire_window_s = 2.0;      // Matched: if nothing is keyed this long after, back to the narrow filter, s
@@ -6241,7 +6424,7 @@ and add private members (after `float confidence_ = 0;`):
 
 In `engine/src/classical_decoder.cpp`:
 
-- extend `validated_rate`'s condition with `|| !(c.llr_hysteresis >= 0) || c.follow_after_marks < 2 || !(c.reacquire_after_dits > 0) || !(c.reacquire_min_s >= 0) || !(c.reacquire_window_s >= 0)`;
+- extend `validated_rate`'s condition with `|| !(c.llr_hysteresis >= 0) || c.follow_after_marks < 2 || !(c.max_dit_growth >= 1) || !(c.reacquire_after_dits > 0) || !(c.reacquire_min_s >= 0) || !(c.reacquire_window_s >= 0)`;
 - change the constructor to
 
 ```cpp
@@ -6351,7 +6534,19 @@ double ClassicalDecoder::frequency_offset_hz() const { return tracker_ ? tracker
 int ClassicalDecoder::filter_length() const { return front_end_ ? front_end_->length() : 0; }
 ```
 
-- at the end of `update_speed()` add
+- in `update_speed()`, just before `dit_s_ = std::clamp(dit, ...)`, insert
+
+```cpp
+    // Matched: while the filter follows the speed, the dit estimate may grow by at most
+    // max_dit_growth per mark (owner decision 2026-09-29). A jump of x2 in one update, while the
+    // window holds two speeds, made the filter outgrow the element spaces, merge marks and run away
+    // (final check F-2); a real slowdown now takes ln(ratio) / ln(max_dit_growth) marks to follow.
+    const bool following = front_end_ && recent_marks_.size() >= config_.follow_after_marks &&
+                           marks_since_reacquire_ >= config_.follow_after_marks;
+    if (following) dit = std::min(dit, config_.max_dit_growth * dit_s_);
+```
+
+  (In Envelope mode `front_end_` is empty, so the milestone-1 estimate is unchanged.) At the end of `update_speed()` add
 
 ```cpp
     // The matched filter follows the speed once the estimate rests on enough marks, and
@@ -6367,7 +6562,7 @@ int ClassicalDecoder::filter_length() const { return front_end_ ? front_end_->le
 cmake --build --preset windows
 ctest --preset windows -R ClassicalDecoder
 ```
-Expected: every `ClassicalDecoder.*` test passes, the milestone-1 ones unchanged. The Matched tests are the Review Focus tests for strong signals, speed changes, pauses, closely spaced stations and turnovers; if one fails, debug it (superpowers:systematic-debugging). If the cause is a code bug, fix it. If the cause is a parameter value, **stop and report the measurement to the owner; do not change the value or the test's tolerance**: the owner deferred all tuning until Task 14's numbers exist (decision 2026-09-27). Five tests state in their comments a simulated pass rate below 100% for a known design limit: `MatchedDecodesAtThreeDbS500` (81 of 100 seeds), `MatchedFollowsSpeedChange` (98 of 100), `MatchedIgnoresStrongerNeighbor` (98 of 100), `MatchedIgnoresANeighbor100HzAwayInASilence` (99 of 100 at −6 dB re A), and `MatchedReturnsToTheNarrowFilterWhenNothingAnswers` (196 of 200). The simulations used numpy seeds, so these rates, not particular seeds, carry over to the C++ tests' mt19937 seeds. If one of them fails with the mechanism its comment names, that is the stated limit, not a bug: record the seed and the output and report it to the owner; do not change the seed, the level or the tolerance.
+Expected: every `ClassicalDecoder.*` test passes, the milestone-1 ones unchanged. The Matched tests are the Review Focus tests for strong signals, speed changes, pauses, closely spaced stations and turnovers; if one fails, debug it (superpowers:systematic-debugging). If the cause is a code bug, fix it. If the cause is a parameter value, **stop and report the measurement to the owner; do not change the value, the seed count or the pass count**: parameter tuning is deferred to the benchmark results (owner, 2026-09-27 and 2026-09-29). Seven tests run 20 seeds and assert a pass count below 20, from simulated rates below 100% (owner decision 2026-09-29): `MatchedDecodesAtThreeDbS500` (79–81 of 100; at least 10 of 20), `MatchedFollowsSpeedChange` (98 of 100; 17), `MatchedIgnoresStrongerNeighbor` (88–98 of 100; 13), `MatchedIgnoresAWeakStation50HzAway` (99 of 100; 18), `MatchedIgnoresAStationBeyondTheFollowDistance` (99 of 100; 18), `MatchedIgnoresANeighbor100HzAwayInASilence` (99 and 100 of 100; 18 per level) and `MatchedReturnsToTheNarrowFilterWhenNothingAnswers` (196–199 of 200; 17). The simulations used numpy seeds, so the rates, not particular seeds, carry over to the C++ tests' mt19937 seeds. If one of them fails, print its failures (the test does), compare them with the mechanism its comment names, and report to the owner; do not change the seeds, levels, tolerances or counts.
 
 - [ ] **Step 6: Confirm the baseline is unchanged**
 
@@ -6392,7 +6587,11 @@ posterior log-odds g exceeds +1 nat and up when it falls below −1 nat
 (glitches, elements, gaps, symbols, speed) are the same in both. In
 `Matched` mode the filter follows the speed estimate once its window holds
 8 marks (**heuristic**), and every decode result reports the tracker's
-frequency estimate. **Re-acquisition (heuristic):** once the key has been
+frequency estimate. While the filter follows, each speed
+update may raise the dit estimate by at most ×1.25 (**heuristic**, owner
+decision 2026-09-29): it stops a runaway after a sudden speed change, and a
+real slowdown takes ln(ratio)/ln 1.25 marks to follow (5 marks from 35 to
+12 WPM, derived). **Re-acquisition (heuristic):** once the key has been
 up for max(0.5 s, 12 dits), the Matched decoder assumes the next station
 may be a different one (a QSO turnover): section 8b's filter returns to
 the 60 WPM width and its amplitude estimate restarts, section 7's
@@ -6401,20 +6600,19 @@ step 10 is set aside and a new one starts (so the next station's marks are
 not mixed with this one's), and the filter follows the speed again after 8
 new marks; if nothing is keyed within 2 s, the set-aside speed window comes
 back and the filter returns to the width it had (a weak station that pauses
-is then not held at the acquisition floor). It reaches only stations within
-the tracker's ±35 Hz pull-in (section 7); a station farther away belongs to
-its own track. Simulated (levels in dB re the first station's key-down
-power; 100 seeds unless stated): a station answering 25 Hz away at −6 dB
-was never keyed without this and was decoded with it, and the first
-station's next over stayed intact, in all 100 (in 23 of 30 with the speed
-window kept); one 50 Hz away at −10 dB, or 100 Hz away at −6 or +10 dB,
-left f̂ within 0.2 Hz and the first station's next over intact in 99–100
-of 100. **Limits:** one 50 Hz away at −6 dB or stronger is keyed in
-fragments, walks f̂ toward it (to 35–42 Hz at 0 dB) and cost the first
-station's next over in about half the seeds (7–16 of 30 passed); one
-100 Hz away at 0 dB cost it in 13 of 60. After a re-acquisition in noise
-alone, noise was keyed as a stray character in about 1% of cases (4 of
-400), because ŝ restarts from its first few noise samples.
+is then not held at the acquisition floor). It reaches stations within the
+tracker's follow distance, D + 10 Hz = 57 Hz (section 7); a station farther
+away belongs to its own track (section 6, "Channel distance"). Simulated
+(levels in dB re the first station's key-down power; 100 seeds each): a
+station answering 25 Hz away at −6 dB, or 40 Hz away at 0 dB, was never
+keyed without this and was decoded with it, and the first station's next
+over stayed intact, in all 100; one 50 Hz away at −10 dB (not keyed), 70 Hz
+away at −6 dB, or 100 Hz away at −6 or +10 dB left f̂ within 0.2 Hz and the
+first station's next over intact in 99–100 of 100. **Limits:** see section
+6, "Channel distance" (a station 60–100 Hz away at the first station's
+level or stronger). After a silence in noise alone, noise was keyed as a
+stray character in about 1% of cases (4 of 400), because ŝ restarts from
+its first few noise samples.
 ```
 
 In section 7, at the end of "Frequency re-centering (Matched front end only)", add:
@@ -6422,8 +6620,9 @@ In section 7, at the end of "Frequency re-centering (Matched front end only)", a
 ```markdown
 - **Re-acquisition (heuristic):** after a silence (section 8) the decoder
   calls `reacquire()`: the average starts afresh (weight 0) from the last
-  f̂, so the next station, if it is within the ±35 Hz pull-in, is found
-  within about 0.5 s of key-down weight (the average needs weight 0.6).
+  f̂, so the next station, if it is within the follow distance (57 Hz), is
+  found within about 0.5 s of key-down weight (the average needs weight
+  0.6).
 ```
 
 In section 8b, after the **Following speed** bullet, add:
@@ -6450,6 +6649,7 @@ In section 10, add rows:
 | Front end | Envelope (default) or Matched | `ClassicalDecoderConfig::front_end` | — |
 | LLR keying hysteresis (Matched) | g > +1 nat down, g < −1 nat up | `ClassicalDecoderConfig::llr_hysteresis` | heuristic |
 | Filter follows speed after (Matched) | 8 marks in the speed window (8 new ones after a re-acquisition) | `ClassicalDecoderConfig::follow_after_marks` | heuristic |
+| Dit-estimate growth bound (Matched) | at most ×1.25 per mark while the filter follows the speed | `ClassicalDecoderConfig::max_dit_growth` | heuristic (owner decision 2026-09-29) |
 | Re-acquisition (Matched) | after max(0.5 s, 12 dits) of key-up: filter back to 60 WPM, ŝ, the frequency average and the speed window restart; the old speed window and the narrow filter come back if nothing is keyed within 2 s | `ClassicalDecoderConfig::reacquire_after_dits`, `reacquire_min_s`, `reacquire_window_s` | heuristic |
 ```
 
@@ -6464,24 +6664,32 @@ git commit -m "Add a Matched front-end mode to the classical decoder, keying on 
 
 ---
 
-### Task 13: Engine — re-centering from the detector, refined frequency, drift retune, `--front-end`
+### Task 13: Engine — channel distance, re-centering from the detector, refined frequency, drift retune, merging, the Matched default, `--front-end`
 
-Wires the Matched mode into the pipeline. The decoder of a new track starts its NCO at the detector's residual (track frequency minus channel center), so the tracker starts within a few Hz instead of ±11.7 Hz. In Matched mode the engine publishes the tracked frequency (channel center plus the decoder's estimate) in every `DecodedTextEvent`, and moves the detector's track to it (`SignalDetector::retune`), so a drifting station keeps its one track and its level is read where it now is. `kz4ap-bench --front-end matched` selects the mode.
+> **Stop point (2026-09-29).** This task carries the channel-distance design (owner decision 2026-09-29, Design decisions B), which failed in simulation where a station 60–100 Hz away at the channel's station's level or stronger answers or keys (Design decisions B, "Where it fails"). Do not implement it until the owner has decided how to proceed; Tasks 1–9 and 11 do not depend on it.
+
+Wires the Matched mode into the pipeline and makes it the default (owner decision 2026-09-29). The decoder of a new track starts its NCO at the detector's residual (track frequency minus channel center), so the tracker starts within a few Hz instead of ±11.7 Hz. In Matched mode the engine publishes the tracked frequency (channel center plus the decoder's estimate) in every `DecodedTextEvent`, and moves the detector's track to it (`SignalDetector::retune`), so a drifting station keeps its one track and its level is read where it now is. **One channel distance D = 47 Hz** (Design decisions B) is used in three places: the detector attributes a new peak to a track within D of the track's current frequency; the engine sets each decoder's tracker follow distance to D + 10 Hz; and the engine merges two channels whose published frequencies come within D, keeping the older. The detector's neighborhoods that milestone 1 counted in bins (the peak neighborhood, the track-level neighborhood, the candidate step) are restated in Hz and converted to bins at the point of use (owner's physical-units rule). The milestone-1 attribution rule stays selectable, and `with_envelope_path` (bench: `--front-end envelope`) reproduces milestone 1 bit for bit, which CI keeps pinning. `kz4ap-bench --front-end` selects the path; `matched` is the default.
 
 **Files:**
-- Modify: `engine/include/kz4ap/signal_detector.hpp`, `engine/src/signal_detector.cpp` (`retune`)
-- Modify: `engine/src/engine.cpp`
-- Modify: `engine/tests/test_signals.hpp` (carrier drift), `engine/tests/signal_detector_test.cpp`, `engine/tests/engine_test.cpp`
-- Modify: `bench/src/main.cpp`, `README.md`
-- Modify: `docs/signal-processing.md` (§6, §7)
+- Modify: `engine/include/kz4ap/signal_detector.hpp`, `engine/src/signal_detector.cpp` (`Attribution`, the neighborhoods in Hz, `retune`, `remove`)
+- Modify: `engine/include/kz4ap/engine.hpp`, `engine/src/engine.cpp` (channel distance, merging, `with_envelope_path`)
+- Modify: `engine/include/kz4ap/classical_decoder.hpp` (default `FrontEnd::Matched`)
+- Modify: `engine/tests/test_signals.hpp` (carrier drift), `engine/tests/signal_detector_test.cpp`, `engine/tests/engine_test.cpp`, `engine/tests/classical_decoder_test.cpp` (milestone-1 tests pinned to the Envelope path)
+- Modify: `bench/src/main.cpp`, `bench/smoke.sh` (pinned check on `--front-end envelope`), `README.md`
+- Modify: `docs/signal-processing.md` (§6, §7, §8, §10)
 
 **Interfaces:**
-- Consumes: `EngineConfig::decoder.front_end`, `ClassicalDecoder(double, ClassicalDecoderConfig, double initial_offset_hz)`, `DecodeUpdate::freq_offset_hz` (Task 12); `Engine::Channel::bin`, `open_channel`, oracle mode (Task 8).
+- Consumes: `EngineConfig::decoder.front_end`, `ClassicalDecoder(double, ClassicalDecoderConfig, double initial_offset_hz)`, `DecodeUpdate::freq_offset_hz` (Task 12); `FrequencyTrackerConfig::follow_distance_hz` (Task 10); `Engine::Channel::bin`, `open_channel`, oracle mode (Task 8).
 - Produces:
+  - `enum class Attribution { Bins, Distance };` and `DetectorConfig` gains `Attribution attribution = Attribution::Distance;`, `double attribution_distance_hz = 47.0;`, `double peak_radius_hz = 47.0;`, `double level_radius_hz = 23.0;`, `double candidate_step_hz = 23.0;` (Hz; `min_separation_bins` stays, used only by `Attribution::Bins`). At the engine's 23.4375 Hz bins these convert (`std::lround(hz / bin_hz)`) to 2, 1 and 1 bins, milestone 1's values, so the Envelope path stays bit-identical.
   - `void SignalDetector::retune(std::uint32_t id, double freq_hz);` — moves an active track to `freq_hz` (Hz from the span's center): its bin becomes the nearest bin and its `freq_hz` the given value; unknown ids are ignored.
-  - Engine behavior: decoders are created with `initial_offset_hz = track.freq_hz − bin_to_hz(bin)`; when an update carries `freq_offset_hz`, the channel's track frequency becomes `bin_to_hz(bin) + *freq_offset_hz`, which `DecodedTextEvent::freq_hz` and the `Died` event then report, and (outside oracle mode) the detector's track is retuned to it.
+  - `void SignalDetector::remove(std::uint32_t id);` — drops an active track without reporting it in `DetectorUpdate::died` (the engine publishes its `Died` event); unknown ids are ignored.
+  - `EngineConfig` gains `double channel_distance_hz = 47.0;` (D), `double follow_margin_hz = 10.0;` and `bool merge_channels = true;`. The engine sets `detector.attribution_distance_hz = D` and `decoder.tracker.follow_distance_hz = D + follow_margin_hz`, and throws `std::invalid_argument` for D ≤ 0 or a negative margin.
+  - `EngineConfig with_envelope_path(EngineConfig config);` — the milestone-1 pipeline: `FrontEnd::Envelope`, `Attribution::Bins`, no merging.
+  - `ClassicalDecoderConfig::front_end` defaults to `FrontEnd::Matched`.
+  - Engine behavior: decoders are created with `initial_offset_hz = track.freq_hz − bin_to_hz(bin)`; when an update carries `freq_offset_hz`, the channel's track frequency becomes `bin_to_hz(bin) + *freq_offset_hz`, which `DecodedTextEvent::freq_hz` and the `Died` event then report, and (outside oracle mode) the detector's track is retuned to it. After each hop, outside oracle mode and with `merge_channels`, two channels whose track frequencies differ by less than D are merged: the younger (higher id) is flushed and closed (`Died` event) and removed from the detector.
   - `kz4ap::test::keyed_signal(..., double start_s = 0.5, double drift_hz_per_s = 0.0)`.
-  - `kz4ap-bench --front-end baseline|matched` (default `baseline`); JSON output gains `"front_end"`.
+  - `kz4ap-bench --front-end envelope|matched` (`baseline` is accepted as another name for `envelope`, for Task 9's suites; default `matched`); `envelope` applies `with_envelope_path`. JSON output gains `"front_end"` (`"envelope"` or `"matched"`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -6494,6 +6702,11 @@ In `engine/tests/test_signals.hpp`, give `keyed_signal` a last parameter `double
 ```
 
 (The unchanged first term keeps every existing test signal bit-identical.)
+
+**Pin the milestone-1 tests to the milestone-1 path** (they test it, and the defaults change in this task):
+- In `engine/tests/signal_detector_test.cpp`, `config()` gains `c.attribution = Attribution::Bins; c.peak_radius_hz = 200.0; c.level_radius_hz = 100.0; c.candidate_step_hz = 100.0;` — milestone 1's ±2-bin, ±1-bin and 1-bin neighborhoods at this test's 100 Hz bins, now stated in Hz.
+- In `engine/tests/classical_decoder_test.cpp`, add `ClassicalDecoderConfig envelope() { ClassicalDecoderConfig c; c.front_end = FrontEnd::Envelope; return c; }` to the anonymous namespace and construct every milestone-1 decoder (`ClassicalDecoder d(kRate)`, and Task 12's `EnvelopeModeTracksNoFrequency`) with `envelope()`; `RejectsInvalidConfig` builds its configs from `envelope()`.
+- In `engine/tests/engine_test.cpp`, every milestone-1 test's `EngineConfig` goes through `with_envelope_path` (in `run()` and wherever a test builds its own config).
 
 Append to `engine/tests/signal_detector_test.cpp`:
 
@@ -6520,9 +6733,57 @@ TEST(SignalDetector, RetuneIgnoresUnknownTracks) {
     ASSERT_EQ(d.tracks().size(), 1u);
     EXPECT_DOUBLE_EQ(d.tracks()[0].freq_hz, (100 - kN / 2) * 100.0);
 }
+
+TEST(SignalDetector, DistanceAttributionUsesTheTracksCurrentFrequency) {
+    // Owner decision 2026-09-29: a peak whose interpolated frequency is within the attribution
+    // distance of a track's current (retuned) frequency belongs to that track. Here the distance
+    // is 250 Hz, 2.5 of this test's 100 Hz bins.
+    auto c = config();
+    c.attribution = Attribution::Distance;
+    c.attribution_distance_hz = 250.0;
+    SignalDetector d(c);
+    int i = 0;
+    for (; i < 200; ++i) d.process(frame(frame_time(i), {{100, -70.0f}}));
+    ASSERT_EQ(d.tracks().size(), 1u);
+    d.retune(d.tracks()[0].id, (103 - kN / 2) * 100.0);  // the channel followed a station 300 Hz up
+    std::size_t born = 0;
+    // The followed station keeps the track alive; a stronger peak 200 Hz from the track's current
+    // frequency belongs to it...
+    for (; i < 400; ++i) born += d.process(frame(frame_time(i), {{103, -70.0f}, {105, -60.0f}})).born.size();
+    EXPECT_EQ(born, 0u);
+    // ...and one 400 Hz away is a station of its own.
+    for (; i < 600; ++i) born += d.process(frame(frame_time(i), {{103, -70.0f}, {107, -60.0f}})).born.size();
+    EXPECT_EQ(born, 1u);
+}
+
+TEST(SignalDetector, RemoveDropsATrackWithoutReportingItsDeath) {
+    SignalDetector d(config());
+    int i = 0;
+    for (; i < 200; ++i) d.process(frame(frame_time(i), {{100, -70.0f}}));
+    ASSERT_EQ(d.tracks().size(), 1u);
+    d.remove(d.tracks()[0].id);
+    EXPECT_TRUE(d.tracks().empty());
+    EXPECT_TRUE(d.process(frame(frame_time(i), {{100, -70.0f}})).died.empty());  // the engine reports it
+    d.remove(999);  // unknown ids are ignored
+}
+
+TEST(SignalDetector, RejectsInvalidDistances) {
+    auto c = config();
+    c.attribution_distance_hz = 0.0;
+    EXPECT_THROW(SignalDetector d(c), std::invalid_argument);
+    c = config();
+    c.peak_radius_hz = 0.0;
+    EXPECT_THROW(SignalDetector d(c), std::invalid_argument);
+    c = config();
+    c.level_radius_hz = -1.0;
+    EXPECT_THROW(SignalDetector d(c), std::invalid_argument);
+    c = config();
+    c.candidate_step_hz = -1.0;
+    EXPECT_THROW(SignalDetector d(c), std::invalid_argument);
+}
 ```
 
-In `engine/tests/engine_test.cpp`, add a second result type that also records each track's latest published frequency, and a runner that takes a whole `EngineConfig` (keep the existing `Result` and `run` as they are):
+In `engine/tests/engine_test.cpp`, add `using kz4ap::test::keying;`, a result type that also records each track's latest published frequency and the tracks that died, and a runner that takes a whole `EngineConfig` (keep the existing `Result` and `run` as they are, apart from `with_envelope_path`):
 
 ```cpp
 struct TextLog {
@@ -6530,13 +6791,17 @@ struct TextLog {
     std::map<std::uint32_t, double> last_freq;      // DecodedTextEvent::freq_hz of the latest event
     std::map<std::uint32_t, double> last_end_s;     // end time of the latest symbol
     std::vector<Track> born;
+    std::vector<std::uint32_t> died;                // Died events before finish(): expiry or a merge
 };
 
 TextLog run_with(const EngineConfig& config, const std::vector<Sample>& x, std::size_t chunk = 65536) {
     EventBus bus;
     TextLog log;
     bus.subscribe([&](const Event& e) {
-        if (const auto* t = std::get_if<TrackEvent>(&e); t && t->kind == TrackEvent::Kind::Born) log.born.push_back(t->track);
+        if (const auto* t = std::get_if<TrackEvent>(&e)) {
+            if (t->kind == TrackEvent::Kind::Born) log.born.push_back(t->track);
+            else log.died.push_back(t->track.id);
+        }
         if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
             for (const auto& c : d->chars) log.text[d->track_id] += c.text;
             log.last_freq[d->track_id] = d->freq_hz;
@@ -6553,15 +6818,44 @@ TextLog run_with(const EngineConfig& config, const std::vector<Sample>& x, std::
 
 EngineConfig matched_config(int sample_rate = static_cast<int>(kRate)) {
     EngineConfig c;
-    c.sample_rate = sample_rate;
-    c.decoder.front_end = FrontEnd::Matched;
+    c.sample_rate = sample_rate;  // the Matched path is the default
     return c;
 }
 
 constexpr double kAmplitude20dB48k = 0.0204;  // 20 dB SNR in 500 Hz against kNoiseSigma at 48 kHz
+
+// Key-down amplitude giving s500_db (key-down power over the noise in 500 Hz, dB) against kNoiseSigma at 48 kHz.
+double amplitude_48k(double s500_db) { return kNoiseSigma * std::sqrt(500.0 / 48000.0) * std::pow(10.0, s500_db / 20.0); }
+
+void add_to(std::vector<Sample>& a, const std::vector<Sample>& b) {
+    for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) a[i] += b[i];
+}
+
+bool ends_with(const std::string& s, const std::string& tail) {
+    return s.size() >= tail.size() && s.compare(s.size() - tail.size(), tail.size(), tail) == 0;
+}
+
+// A two-station turnover at 48 kHz: A (12010 Hz, S500 = 15 dB, 25 WPM, "PARIS PARIS PARIS PARIS"),
+// 1 s of silence, B (offset_hz above A, relative_db re A's key-down power, 18 WPM, "DE W9XYZ PARIS",
+// 9.4 s), 1 s, A again, then 3 s of noise: the scene of the Design decisions B simulation (there A sat
+// 7.8 Hz below its bin's center; here 10 Hz above).
+TextLog engine_turnover(double offset_hz, double relative_db, unsigned seed) {
+    const std::string a = "PARIS PARIS PARIS PARIS";
+    const std::string b = "DE W9XYZ PARIS";
+    const double fa = 12010.0;
+    const double amp = amplitude_48k(15.0);
+    const double b0 = keying(a, 25, 0.5).back().second + 1.0;
+    const double a0 = keying(b, 18, b0).back().second + 1.0;
+    const double total = keying(a, 25, a0).back().second + 3.0;
+    auto x = keyed_signal(a, 25, 48000.0, total, fa, amp, kNoiseSigma, seed);
+    add_to(x, keyed_signal(b, 18, 48000.0, total, fa + offset_hz, amp * std::pow(10.0, relative_db / 20.0), 0.0,
+                           seed + 1, b0));
+    add_to(x, keyed_signal(a, 25, 48000.0, total, fa, amp, 0.0, seed + 2, a0));
+    return run_with(matched_config(48000), x);
+}
 ```
 
-(put these inside the file's anonymous namespace, after `band()`), and append the tests:
+(put these inside the file's anonymous namespace, after `band()`; drop `ends_with` if the file already has one), and append the tests:
 
 ```cpp
 TEST(Engine, MatchedFrontEndDecodesTwoSignals) {
@@ -6574,10 +6868,11 @@ TEST(Engine, MatchedFrontEndDecodesTwoSignals) {
 }
 
 TEST(Engine, MatchedReportsDriftingFrequency) {
-    // A station at 12003 Hz (3 Hz above its bin's center) drifting +3 Hz/s, 57 Hz (2.4 bins) over the
-    // 19 s message, ending 60 Hz off the channel's center, inside the +/-75 Hz NCO range: without
-    // the retune the detector's peak would leave the track's bin; the published frequency follows it,
-    // one track throughout. (At 1 Hz/s, 17 Hz, one track would survive without the retune.)
+    // A station at 12003 Hz (3 Hz above its bin's center) drifting +3 Hz/s, 57 Hz over the 19 s
+    // message, ending 60 Hz off the channel's center, inside the +/-75 Hz NCO range: without the
+    // retune the detector's peak would leave the track's attribution distance; the published
+    // frequency follows it, one track throughout. Simulated (2026-09-29, engine level, 30 seeds):
+    // one track in 30, published frequency 3.1-3.2 Hz behind the carrier at the last symbol.
     const std::string msg = "CQ TEST K1ABC K1ABC CQ TEST K1ABC K1ABC";
     const double f0 = 12003.0;
     const auto x = keyed_signal(msg, 25, 48000.0, kz4ap::test::duration_for(msg, 25), f0, kAmplitude20dB48k,
@@ -6614,25 +6909,144 @@ TEST(Engine, MatchedChunkingDoesNotChangeResults) {
     EXPECT_EQ(a.text, b.text);
     EXPECT_EQ(a.last_freq, b.last_freq);
 }
+
+TEST(Engine, TurnoverWithinTheChannelDistanceStaysOnOneTrack) {
+    // Owner decision 2026-09-29: B 25 Hz away (within D = 47 Hz), at A's level. Simulated (engine
+    // level, 30 numpy seeds): one track in 30, B decoded by A's channel in 30, A's next over intact
+    // in 30, no merge. One seed.
+    const auto log = engine_turnover(25.0, 0.0, 51);
+    ASSERT_EQ(log.born.size(), 1u);
+    const auto& t = log.text.at(log.born[0].id);
+    EXPECT_NE(t.find("W9XYZ PARIS"), std::string::npos) << t;
+    EXPECT_TRUE(ends_with(t, "PARIS PARIS PARIS PARIS")) << t;
+}
+
+TEST(Engine, TurnoverBeyondTheChannelDistanceGetsItsOwnTrack) {
+    // Owner decision 2026-09-29: B 100 Hz away, 6 dB weaker (re A's key-down power), has its own
+    // track, and A's channel ignores it. Simulated (engine level, 30 numpy seeds): two tracks in 30,
+    // B decoded by its own track in 30 (its first 0.6 s lost to the detector's persistence), A's
+    // next over intact in A's channel in 30, no merge. One seed.
+    const auto log = engine_turnover(100.0, -6.0, 52);
+    ASSERT_EQ(log.born.size(), 2u);
+    EXPECT_TRUE(log.died.empty());
+    const auto& a = log.text.at(log.born[0].id);
+    const auto& b = log.text.at(log.born[1].id);
+    EXPECT_TRUE(ends_with(a, "PARIS PARIS PARIS PARIS")) << a;
+    EXPECT_EQ(a.find("W9XYZ"), std::string::npos) << a;
+    EXPECT_NE(b.find("W9XYZ"), std::string::npos) << b;
+}
+
+TEST(Engine, MergesADuplicateIntoTheOlderChannel) {
+    // Owner decision 2026-09-29: B 50 Hz away (beyond D = 47 Hz, within the follow distance 57 Hz),
+    // 6 dB stronger than A (re A's key-down power), is born as a track of its own while A's channel
+    // follows it; when their frequencies come within D the younger is closed. Simulated (engine
+    // level, 30 numpy seeds): two tracks born and one merge in 30 (about 0.7 s after B's track was
+    // born), B decoded by A's channel in 30; A's next over intact in 24 (not asserted). One seed.
+    const auto log = engine_turnover(50.0, 6.0, 53);
+    ASSERT_EQ(log.born.size(), 2u);
+    ASSERT_EQ(log.died.size(), 1u);
+    EXPECT_EQ(log.died[0], log.born[1].id);
+    const auto& a = log.text.at(log.born[0].id);
+    EXPECT_NE(a.find("W9XYZ PARIS"), std::string::npos) << a;
+}
+
+TEST(Engine, RejectsAnInvalidChannelDistance) {
+    EventBus bus;
+    auto c = matched_config();
+    c.channel_distance_hz = 0.0;
+    EXPECT_THROW(Engine(c, bus), std::invalid_argument);
+    c = matched_config();
+    c.follow_margin_hz = -1.0;
+    EXPECT_THROW(Engine(c, bus), std::invalid_argument);
+}
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `cmake --build --preset windows`
-Expected: compile error, `retune` is not a member of `SignalDetector`.
+Expected: compile errors (`retune`, `remove`, `Attribution`, `channel_distance_hz`, `with_envelope_path` unknown).
 
-- [ ] **Step 3: Implement `retune`**
+- [ ] **Step 3: The detector: neighborhoods in Hz, attribution, `retune`, `remove`**
 
-In `engine/include/kz4ap/signal_detector.hpp`, add to the public part of `SignalDetector`:
+In `engine/include/kz4ap/signal_detector.hpp`, before `struct DetectorConfig` add
+
+```cpp
+// How a new spectral peak is attributed to an existing track.
+enum class Attribution {
+    Bins,      // milestone 1: a peak less than min_separation_bins from the track's bin belongs to it
+    Distance,  // a peak whose interpolated frequency is within attribution_distance_hz of the track's
+               // current frequency belongs to it (owner decision 2026-09-29)
+};
+```
+
+and add to `DetectorConfig`, after `min_separation_bins`:
+
+```cpp
+    Attribution attribution = Attribution::Distance;
+    double attribution_distance_hz = 47.0;  // D, Hz (the engine sets it from EngineConfig::channel_distance_hz)
+    // Neighborhoods, Hz, converted to bins at the point of use (std::lround(hz / bin width)); at 23.4 Hz
+    // bins they are milestone 1's 2, 1 and 1 bins.
+    double peak_radius_hz = 47.0;           // a new peak must be the maximum within +/- this
+    double level_radius_hz = 23.0;          // a track's level is the maximum within +/- this of its bin
+    double candidate_step_hz = 23.0;        // a candidate may move this far between frames
+```
+
+(and change `min_separation_bins`'s comment to "Attribution::Bins only: peaks closer than this to a track's bin belong to it"). Add to the public part of `SignalDetector`:
 
 ```cpp
     // Moves an active track to freq_hz (Hz from the span's center), e.g. to a
     // decoder's refined estimate: its level is then read around the nearest bin,
-    // and new peaks near that bin belong to it. Unknown ids are ignored.
+    // and new peaks near it belong to it. Unknown ids are ignored.
     void retune(std::uint32_t id, double freq_hz);
+    // Drops an active track without reporting its death (the caller reports it,
+    // e.g. when merging two channels). Unknown ids are ignored.
+    void remove(std::uint32_t id);
 ```
 
-In `engine/src/signal_detector.cpp`, add:
+and private members `int peak_bins_ = 2; int level_bins_ = 1; int step_bins_ = 1;`.
+
+In `engine/src/signal_detector.cpp`:
+- extend `ValidatedConfig`'s condition with `|| !(config.attribution_distance_hz > 0) || !(config.peak_radius_hz > 0) || !(config.level_radius_hz >= 0) || !(config.candidate_step_hz >= 0)`;
+- in the constructor body, convert the neighborhoods from Hz:
+
+```cpp
+    const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
+    peak_bins_ = std::max(1, static_cast<int>(std::lround(config_.peak_radius_hz / bin_hz)));
+    level_bins_ = static_cast<int>(std::lround(config_.level_radius_hz / bin_hz));
+    step_bins_ = static_cast<int>(std::lround(config_.candidate_step_hz / bin_hz));
+```
+
+- replace the three lines computing an existing track's `level` with
+
+```cpp
+        float level = avg_db[it->bin];
+        for (int d = -level_bins_; d <= level_bins_; ++d) {
+            const int b = it->bin + d;
+            if (b >= 0 && b <= last) level = std::max(level, avg_db[b]);
+        }
+```
+
+- replace `constexpr int kRadius = 2;` with `const int kRadius = peak_bins_;`;
+- replace the `near_track` computation with
+
+```cpp
+        bool near_track = false;
+        if (config_.attribution == Attribution::Bins) {
+            near_track = std::any_of(active_.begin(), active_.end(), [&](const Active& t) {
+                return std::abs(t.bin - i) < config_.min_separation_bins;
+            });
+        } else {
+            // Owner decision 2026-09-29: within D of the track's current frequency, which follows the
+            // channel's tracked frequency (retune), the peak is that track's station or its spread.
+            const double f = refined_freq(avg_db, i);
+            near_track = std::any_of(active_.begin(), active_.end(), [&](const Active& t) {
+                return std::abs(t.track.freq_hz - f) < config_.attribution_distance_hz;
+            });
+        }
+```
+
+- in the candidate search, replace `std::abs(k.bin - i) <= 1` with `std::abs(k.bin - i) <= step_bins_`;
+- add
 
 ```cpp
 void SignalDetector::retune(std::uint32_t id, double freq_hz) {
@@ -6644,11 +7058,51 @@ void SignalDetector::retune(std::uint32_t id, double freq_hz) {
         return;
     }
 }
+
+void SignalDetector::remove(std::uint32_t id) {
+    std::erase_if(active_, [id](const Active& a) { return a.track.id == id; });
+}
 ```
 
 - [ ] **Step 4: Wire the engine**
 
-In `engine/src/engine.cpp`, in `open_channel`, create the decoder with the detector's residual:
+In `engine/include/kz4ap/engine.hpp`, add to `EngineConfig`:
+
+```cpp
+    // D, Hz (owner decision 2026-09-29): a new peak within D of a track's current frequency belongs
+    // to it; a channel's tracker follows stations within D + follow_margin_hz of its own; two
+    // channels whose published frequencies come within D are merged (the older is kept).
+    double channel_distance_hz = 47.0;
+    double follow_margin_hz = 10.0;  // Hz: the tracker's range overlaps the detector's, so a rounding
+                                     // difference gives a duplicate (merged), not a station nobody decodes
+    bool merge_channels = true;
+```
+
+and after the struct:
+
+```cpp
+// The milestone-1 pipeline, bit for bit (kept selectable and pinned by CI; owner, 2026-09-29):
+// the Envelope decoder, the bin attribution rule, no channel merging.
+inline EngineConfig with_envelope_path(EngineConfig config) {
+    config.decoder.front_end = FrontEnd::Envelope;
+    config.detector.attribution = Attribution::Bins;
+    config.merge_channels = false;
+    return config;
+}
+```
+
+and the private member `void merge_close_channels();`.
+
+In `engine/src/engine.cpp`, at the end of `resolved()` (before `return c;`):
+
+```cpp
+    if (!(c.channel_distance_hz > 0) || !(c.follow_margin_hz >= 0))
+        throw std::invalid_argument("channel distance must be positive and the follow margin not negative");
+    c.detector.attribution_distance_hz = c.channel_distance_hz;
+    c.decoder.tracker.follow_distance_hz = c.channel_distance_hz + c.follow_margin_hz;
+```
+
+In `open_channel`, create the decoder with the detector's residual:
 
 ```cpp
 void Engine::open_channel(const Track& track, int bin) {
@@ -6660,7 +7114,7 @@ void Engine::open_channel(const Track& track, int bin) {
 }
 ```
 
-and in the channelizer sink in `process_hop`, between `channel_samples_ += s.size();` and `publish_update(...)`, insert:
+In the channelizer sink in `process_hop`, between `channel_samples_ += s.size();` and `publish_update(...)`, insert:
 
 ```cpp
         if (update.freq_offset_hz) {
@@ -6671,24 +7125,54 @@ and in the channelizer sink in `process_hop`, between `channel_samples_ += s.siz
         }
 ```
 
-(`publish_update` already reports `channel.track.freq_hz`. In Envelope mode `freq_offset_hz` is empty, so nothing changes.)
+(`publish_update` already reports `channel.track.freq_hz`. In Envelope mode `freq_offset_hz` is empty, so nothing changes.) At the end of `process_hop`, after `channelizer_.push(...)`, add `if (config_.merge_channels && !oracle_) merge_close_channels();` and:
 
-- [ ] **Step 5: Add `--front-end` to `kz4ap-bench`**
+```cpp
+void Engine::merge_close_channels() {
+    // Two channels whose published frequencies are within the channel distance D decode the same
+    // station (one tracker followed it, or drift brought them together). Keep the older (lower
+    // track id): its identity and text have been published longest, and it has the longer speed
+    // history. Close the younger and drop its track from the detector, so the station's peak is
+    // attributed to the older track from now on (owner decision 2026-09-29; which one: heuristic).
+    std::vector<std::uint32_t> younger;
+    const auto merged = [&](std::uint32_t id) { return std::find(younger.begin(), younger.end(), id) != younger.end(); };
+    for (auto a = channels_.begin(); a != channels_.end(); ++a) {
+        if (merged(a->first)) continue;
+        for (auto b = std::next(a); b != channels_.end(); ++b) {
+            if (!merged(b->first) &&
+                std::abs(a->second.track.freq_hz - b->second.track.freq_hz) < config_.channel_distance_hz)
+                younger.push_back(b->first);
+        }
+    }
+    for (const auto id : younger) {
+        detector_.remove(id);
+        close_channel(id);
+    }
+}
+```
 
-In `bench/src/main.cpp`: add `FrontEnd front_end = FrontEnd::Envelope;` to `Args`; parse
+(`channels_` is a `std::map` ordered by track id, so `a` is always the older; add `#include <algorithm>`, `<cmath>` and `<iterator>`.) Oracle channels are never merged: the oracle defines them.
+
+In `engine/include/kz4ap/classical_decoder.hpp`, change `FrontEnd front_end = FrontEnd::Envelope;` to `FrontEnd front_end = FrontEnd::Matched;  // owner decision 2026-09-29; Envelope stays selectable`.
+
+- [ ] **Step 5: Add `--front-end` to `kz4ap-bench`, and keep the smoke check on the Envelope path**
+
+In `bench/src/main.cpp`: add `FrontEnd front_end = FrontEnd::Matched;` to `Args`; parse
 
 ```cpp
         else if (a == "--front-end") {
             const auto v = value().string();
-            if (v == "baseline") args.front_end = FrontEnd::Envelope;
+            if (v == "envelope" || v == "baseline") args.front_end = FrontEnd::Envelope;
             else if (v == "matched") args.front_end = FrontEnd::Matched;
-            else throw std::runtime_error("--front-end must be baseline or matched\n" + std::string(kUsage));
+            else throw std::runtime_error("--front-end must be envelope or matched\n" + std::string(kUsage));
         }
 ```
 
-extend `kUsage`'s last line to `"                   [--no-timing] [--baseline BASELINE.json] [--oracle] [--front-end baseline|matched]\n"`, set `config.decoder.front_end = args.front_end;` after `config.sample_rate`, and add `out["front_end"] = args.front_end == FrontEnd::Matched ? "matched" : "baseline";` after `out["duration_s"]`.
+extend `kUsage`'s last line to `"                   [--no-timing] [--baseline BASELINE.json] [--oracle] [--front-end envelope|matched]\n"`, after `config.sample_rate` is set add `if (args.front_end == FrontEnd::Envelope) config = with_envelope_path(config);`, and add `out["front_end"] = args.front_end == FrontEnd::Matched ? "matched" : "envelope";` after `out["duration_s"]`.
 
-In `README.md`, change the suite `run` line to end with `--front-end baseline --front-end matched`, and add after the code block: "`--front-end matched` selects the dit-matched front end with frequency re-centering (see `docs/signal-processing.md`, section 8b); `baseline` is the default."
+In `bench/smoke.sh`, add `--front-end envelope` to both `"$BENCH"` commands, and change the header comment to "score it against the stored baseline on the milestone-1 (Envelope) path". The stored `bench/baselines/smoke.json` is unchanged, and so must the CER be.
+
+In `README.md`, change the suite `run` line to end with `--front-end baseline --front-end matched`, and add after the code block: "`--front-end matched` (the default) selects the dit-matched front end with frequency re-centering and the channel distance (see `docs/signal-processing.md`, sections 6 and 8b); `--front-end envelope` (also `baseline`) selects the milestone-1 pipeline."
 
 - [ ] **Step 6: Build and run all tests**
 
@@ -6696,7 +7180,7 @@ In `README.md`, change the suite `run` line to end with `--front-end baseline --
 cmake --build --preset windows
 ctest --preset windows
 ```
-Expected: all pass, including `SignalDetector.RetuneMovesTrackBin`, `SignalDetector.RetuneIgnoresUnknownTracks`, `Engine.MatchedFrontEndDecodesTwoSignals`, `Engine.MatchedReportsDriftingFrequency`, `Engine.OracleMatchedFindsTheResidualFromTheBinCenter`, `Engine.MatchedChunkingDoesNotChangeResults`, and every milestone-1 engine test unchanged.
+Expected: all pass, including the new `SignalDetector` and `Engine` tests above, and every milestone-1 test unchanged apart from its pin to the Envelope path. The engine turnover tests use one seed each because every simulated seed passed (30 of 30); if one fails, print the tracks' texts and compare them with Design decisions B before anything else, and report to the owner; do not change a parameter or the scene.
 
 - [ ] **Step 7: Smoke check, both front ends**
 
@@ -6705,39 +7189,112 @@ In Git Bash:
 bash bench/smoke.sh build/windows
 build/windows/bench/Release/kz4ap-bench.exe build/windows/smoke/band.wav --labels build/windows/smoke/band.json --front-end matched --no-timing
 ```
-Expected: `smoke test passed` with the baseline's usual CER; the second command prints a `CER …` line for the matched front end (write it down for Task 14) and `detected 8 of 8`.
+Expected: `smoke test passed` with the baseline's usual CER (the Envelope path is bit-identical); the second command prints a `CER …` line for the matched front end (write it down for Task 14) and `detected 8 of 8`.
 
 - [ ] **Step 8: Document**
 
-In `docs/signal-processing.md`, section 6, subsection **Frequency and drift**, replace "The frequency is then **fixed** for the track's life: it is not re-measured, and the channel stays where it was put." with:
+In `docs/signal-processing.md`, section 6:
+- In **New tracks**, replace the paragraph with:
 
 ```markdown
-With the default (Envelope) decoder the frequency is then **fixed** for the
-track's life: it is not re-measured, and the channel stays where it was put.
-With the Matched decoder (section 8b) the decoder re-centers on the carrier
-(section 7) and the engine moves the track with it after every channel
-block (`SignalDetector::retune`): the track's reported frequency is the
-channel center plus the decoder's estimate, and its level is read around
-the nearest bin to that, so a drifting station keeps one track. The channel
-itself does not move; the decoder's NCO covers ±75 Hz around it.
+A bin becomes a candidate when its averaged power is at least **6 dB** above
+the floor (6 dB SNR per bin) *and* it is the maximum within **±47 Hz**
+(±2 bins at 23.4 Hz; ties go to the lower bin). A candidate must be seen in
+every frame (moving by at most **23 Hz**, 1 bin, between frames) for
+**0.5 s**, and nothing is detected during the first 1 s of a recording (the
+averages settle first). A peak whose interpolated frequency is within the
+**channel distance D = 47 Hz** of an existing track's *current* frequency
+is attributed to that track instead (below, "Channel distance"). The
+milestone-1 rule, a peak less than **3 bins** (70 Hz) from a track's bin,
+is still selectable (`Attribution::Bins`) and is what the Envelope path
+(`--front-end envelope`) uses. The neighborhoods are stated in Hz and
+converted to bins from the actual bin width (`DetectorConfig`
+`peak_radius_hz`, `candidate_step_hz`). **Status: all heuristic.**
 ```
 
-In section 7, in **Frequency re-centering (Matched front end only)**, add after the NCO bullet: "The engine starts each new track's NCO at the detector's residual, track frequency minus channel center (in oracle mode, 0 Hz: the channel sits on the bin nearest the given frequency and the tracker must find the rest)."
+- In **Why neighboring bins come up at all**, replace the last paragraph ("Note that these rules are counted **in bins** …") with: "These rules are stated in Hz and converted to bins at the point of use, so a different bin width keeps their width in Hz (the 3-bin rule of `Attribution::Bins` is still counted in bins)."
+- In **Existing tracks**, replace "the maximum of its bin and the two neighbors (±1 bin, ±23 Hz)" with "the maximum over its bin's neighborhood of ±23 Hz (±1 bin at 23.4 Hz; `DetectorConfig::level_radius_hz`), the bin being the one nearest the track's current frequency".
+- In **Frequency and drift**, replace "The frequency is then **fixed** for the track's life: it is not re-measured, and the channel stays where it was put." with:
+
+```markdown
+With the Envelope decoder the frequency is then **fixed** for the track's
+life: it is not re-measured, and the channel stays where it was put. With
+the Matched decoder (the default; section 8b) the decoder re-centers on the
+carrier (section 7) and the engine moves the track with it after every
+channel block (`SignalDetector::retune`): the track's reported frequency is
+the channel center plus the decoder's estimate, its level is read around
+the nearest bin to that, and new peaks are attributed by distance from it,
+so a drifting station keeps one track. The channel itself does not move;
+the decoder's NCO covers ±75 Hz around it.
+```
+
+- Add a subsection after **Frequency and drift**:
+
+```markdown
+### Channel distance
+
+One distance, **D = 47 Hz** (`EngineConfig::channel_distance_hz`;
+**heuristic**, owner decision 2026-09-29), is used in three places with the
+Matched decoder:
+
+1. **Attribution:** a new peak within D of a track's current frequency is
+   that track's (above).
+2. **Following:** each channel's frequency tracker follows any station
+   within D + 10 Hz = 57 Hz of its own station (section 7), so in a QSO
+   turnover within D the channel retunes to the answering station and back.
+   The 10 Hz margin (**heuristic**) makes the two ranges overlap, so a
+   rounding difference gives a duplicate (merged, next item) rather than a
+   station no channel decodes.
+3. **Merging:** when the published frequencies of two channels come within
+   D, the engine keeps the older (lower track id; its identity and text
+   have been published longest, and it has the longer speed history) and
+   closes the younger, removing its track from the detector.
+
+Why 47 Hz: about the half-width of the detector's Hann main lobe, 2/T_w
+for its 42.7 ms window (46.9 Hz); a peak closer than that to a station can
+be that station's own spread. Stated in Hz, it does not change with the
+FFT size. Simulated (plan, 2026-09-29; levels in dB re the first station's
+key-down power, 30 seeds each): within D (0–40 Hz) at −6 dB or stronger
+the first station's channel followed the answering station, decoded it
+and came back, with one track; beyond D, a weaker answering station got
+its own track and the first station's channel ignored it. **It fails**
+where a station 60–100 Hz away is at the first station's level or
+stronger: the first station's channel hears it through the matched
+filter's sidelobes in fragments, its frequency average walks toward it,
+and merging then closes the second station's own channel (first
+station's next over intact in 7 and 1 of 30 at 60 Hz, 0 and +6 dB).
+```
+
+(If the owner changes the design, this subsection records what was built instead.)
+
+In section 7, in **Frequency re-centering (Matched front end only)**, add after the NCO bullet: "The engine starts each new track's NCO at the detector's residual, track frequency minus channel center (in oracle mode, 0 Hz: the channel sits on the bin nearest the given frequency and the tracker must find the rest)." In section 8, **Two front ends**, change "`Envelope` (the default, steps 1–5 below) is the baseline" to "`Envelope` (steps 1–5 below) is the baseline; `Matched` is the default (owner decision 2026-09-29)", and change section 10's front-end row to `| Front end | Matched (default) or Envelope | `ClassicalDecoderConfig::front_end`; `--front-end` | owner decision 2026-09-29 |`.
+
+In section 10, replace the rows **Candidate tracking**, **Min station separation**, **Peak neighborhood** and **Track level neighborhood** with:
+
+```markdown
+| Candidate tracking | may move ±23 Hz (1 bin at 23.4 Hz) between frames | `DetectorConfig::candidate_step_hz` | heuristic |
+| Attribution (Matched path) | a new peak within D = 47 Hz of a track's current frequency belongs to it | `DetectorConfig::attribution`, `attribution_distance_hz` (set from `EngineConfig::channel_distance_hz`) | heuristic (owner decision 2026-09-29) |
+| Attribution (Envelope path) | peaks less than 3 bins (70 Hz) from a track's bin belong to it | `DetectorConfig::min_separation_bins` | heuristic (milestone 1) |
+| Peak neighborhood | ±47 Hz (±2 bins at 23.4 Hz) | `DetectorConfig::peak_radius_hz` | heuristic |
+| Track level neighborhood | ±23 Hz (±1 bin at 23.4 Hz) | `DetectorConfig::level_radius_hz` | heuristic |
+| Channel merging (Matched path) | two channels within D = 47 Hz: the younger is closed | `EngineConfig::merge_channels`, `channel_distance_hz` | heuristic (owner decision 2026-09-29) |
+| Tracker follow margin | D + 10 Hz = 57 Hz | `EngineConfig::follow_margin_hz` | heuristic |
+```
 
 - [ ] **Step 9: Commit on the `milestone-2` branch**
 
 ```powershell
-git add engine/include/kz4ap/signal_detector.hpp engine/src/signal_detector.cpp engine/src/engine.cpp engine/tests/test_signals.hpp engine/tests/signal_detector_test.cpp engine/tests/engine_test.cpp bench/src/main.cpp README.md docs/signal-processing.md
+git add engine/include/kz4ap/signal_detector.hpp engine/src/signal_detector.cpp engine/include/kz4ap/engine.hpp engine/src/engine.cpp engine/include/kz4ap/classical_decoder.hpp engine/tests/test_signals.hpp engine/tests/signal_detector_test.cpp engine/tests/engine_test.cpp engine/tests/classical_decoder_test.cpp bench/src/main.cpp bench/smoke.sh README.md docs/signal-processing.md
 ```
 ```powershell
-git commit -m "Re-center stations from the detector's estimate, publish and track the refined frequency"
+git commit -m "Add the channel distance, re-center from the detector, merge duplicates, and make Matched the default"
 ```
 
 ---
 
 ### Task 14: Measure, document, and guard the new path in CI
 
-Spec §5.4: "No decoder replaces the baseline unless it beats the baseline on the benchmark." This task runs the full suite on both front ends, adds the one missing measurement (how far the tracked frequency is from the truth), writes the numbers into the documents, and adds a CI smoke check for the Matched path. It does **not** change the default front end and does **not** tune the Matched front end's parameters: the owner decided on 2026-09-27 to defer both decisions until these measurements exist, so this task measures, records, and hands both questions to the owner with the numbers. No step below may edit `ClassicalDecoderConfig`'s defaults or a Matched parameter value.
+Spec §5.4: "No decoder replaces the baseline unless it beats the baseline on the benchmark." This task runs the full suite on both front ends, adds the one missing measurement (how far the tracked frequency is from the truth), writes the numbers into the documents, and adds a CI smoke check for the Matched path. `FrontEnd::Matched` is already the default (Task 13; owner decision 2026-09-29). This task does **not** tune its parameters: tuning is deferred to the benchmark results and needs strong evidence (owner, 2026-09-27 and 2026-09-29), so this task measures, records, and hands the numbers to the owner. **If Matched is worse than Envelope in any regime** (a paired Matched − Envelope difference whose 95% interval excludes 0 in Envelope's favor, or a crossing worse by more than its interval), report it to the owner with the numbers; **do not revert the default**. No step below may edit a default or a Matched parameter value.
 
 **Files:**
 - Modify: `bench/src/scoring.hpp` (`DecodedTrack::last_freq_hz`), `bench/src/main.cpp`
@@ -6862,7 +7419,7 @@ intervals over signals.
 | Median frequency error, group F offsets, Hz | … | … |
 ```
 
-Then update the status of every parameter this measurement settles, in §7 ("Frequency re-centering") and §8b and the §10 rows: the tracker's accuracy becomes **measured** with the median error; leave β, τ_a, τ_n, the squelch and the hysteresis **heuristic** (no sweep is in this plan, and tuning them is deferred to the owner's decision after these numbers).
+Then update the status of every parameter this measurement settles, in §7 ("Frequency re-centering") and §8b and the §10 rows: the tracker's accuracy becomes **measured** with the median error; leave β, τ_a, τ_n, the squelch and the hysteresis **heuristic** (no sweep is in this plan, and tuning is deferred to the benchmark results; owner, 2026-09-29).
 
 - [ ] **Step 7: Guard the Matched path in CI**
 
@@ -6885,7 +7442,8 @@ Replace `bench/smoke.sh` with:
 ```bash
 #!/usr/bin/env bash
 # Benchmark smoke test: generate a synthetic band, score it against the stored
-# baselines with both front ends, and check that two runs produce identical results.
+# baselines on the milestone-1 (Envelope) path, which must stay bit-identical, and on the
+# Matched path (the default), and check that two runs of each produce identical results.
 # Usage: bench/smoke.sh BUILD_DIR   (run from the repository root)
 set -euo pipefail
 
@@ -6914,7 +7472,7 @@ check() {  # check NAME BASELINE [bench options...]
     fi
 }
 
-check baseline bench/baselines/smoke.json
+check baseline bench/baselines/smoke.json --front-end envelope
 check matched bench/baselines/smoke-matched.json --front-end matched
 echo "smoke test passed"
 ```
@@ -6925,83 +7483,13 @@ Expected: two `CER …` summary lines, then `smoke test passed`.
 - [ ] **Step 8: Update the backlog and the survey**
 
 In `docs/backlog.md`, section 1:
-- Under **Top priority**, option 1: add a line "**Built** (milestone 2, part 1): `FrontEnd::Matched`; measured against the baseline in `docs/signal-processing.md` §8b. Whether it becomes the default, and how its parameters are tuned, are the owner's decisions, deferred until these measurements (2026-09-27; spec §5.4)." followed by the one-line result for group A at 25 WPM (both crossings) and the CPU cost per channel-second of each.
+- Under **Top priority**, option 1: add a line "**Built** (milestone 2, part 1): `FrontEnd::Matched`, the default since the owner's decision of 2026-09-29; measured against the baseline in `docs/signal-processing.md` §8b. Tuning its parameters waits for evidence from these measurements." followed by the one-line result for group A at 25 WPM (both crossings) and the CPU cost per channel-second of each.
 - **Benchmark scenarios to add first:** replace the list with "Done in milestone 2, part 1 (`training/kz4ap_synth/suites.py`)."
 - **Channel filtering, two stages:** add "Stage 2 is built as the Matched front end (a boxcar of 0.8 dit); stage 1 is unchanged."
 - **Track frequency drift:** add "Done within ±75 Hz of the channel's center in Matched mode (re-centering NCO, detector retune). Still open: moving the channel's center bin for larger drifts, and drift in Envelope mode."
 - **Measure where answering stations really are** (added to the backlog with this plan's revision, 2026-09-27): add group H's tracks-per-QSO result by regime, which shows how much the real offset distribution matters.
 - **Stray E's after a station stops:** add the Matched front end's result on the `pauses` and `strong` groups (CER and first-word CER from the tables) and whether `MatchedNoiseAfterStationStopsDecodesNothing` covers the case.
-- Add new items at the end of section 1:
-
-```markdown
-### Tune the Matched front end by measurement
-
-Deferred by the owner until the milestone-2 part 1 measurements exist
-(decision 2026-09-27); the owner decides whether and how, on those numbers.
-Its parameters are heuristic (signal-processing.md §8b): the filter length
-β = 0.8 dit (sweep 0.6, 0.8, 1.0), the amplitude and noise time constants
-(0.5 s, 2 s; the fading group is the test), the squelch a_min(K) =
-3·(K/24)^(1/4), the keying
-hysteresis ±1 nat, the noise guards κ = 1.75 and κ_n = 4, the noise
-floor's margin (2.5), clean fraction (0.25) and restart ratio (4), the
-re-acquisition silence (max(0.5 s, 12 dits))
-and window (2 s), the tracker's pull-in (±35 Hz), anchor time constant
-(10 s) and minimum weight (0.6), and when the filter starts following
-the speed (8 marks). The amplitude estimate is biased low by the
-filter's ramps (0.85–0.88 of the true amplitude for PARIS at 25 WPM,
-simulated), which lengthens marks by about 7 ms at 25 WPM; measure
-whether that matters. Three behaviors the owner asked to see before
-deciding (re-review 2026-09-27):
-- **Acquisition floor:** a station is first keyed at the 60 WPM
-  acquisition width, so the Matched front end cannot acquire one below
-  S₅₀₀ = −2.5 dB at any speed (derived; up to 1.4 dB higher with the
-  amplitude estimate's ramp bias; simulated, 50% of marks keyed near
-  −1.8 dB at 25 WPM and −2.6 dB at 12 WPM); the dit-matched figures
-  (−4.4 dB at 25 WPM, −6.0 dB at 12 WPM) apply only after acquisition.
-  Options: acquire at a longer
-  filter (costs fast CW and pull-in), key at the acquisition width
-  without the squelch but require several consistent marks, or squelch
-  on the a the dit-matched filter would have (raises false keying).
-- **Noise-rise recovery:** after the band noise rises 6 dB, σ̂ climbs
-  back in about 43 s (derived; 24–56 s simulated at K = 24–288), and
-  noise can be flagged as signal for up to about 16 s of it (simulated).
-  A faster rise would need to tell a noise rise from a station occupying
-  most samples.
-- **Ambiguous QSO offsets:** a station answering 35–70 Hz away is
-  followed neither by the caller's channel (±35 Hz pull-in) nor reliably
-  by a track of its own (the detector separates peaks 70.3 Hz apart).
-  At −6 dB re the caller's key-down power or stronger it is keyed in
-  fragments in the caller's channel, walks the tracker toward it, and
-  cost the caller's next over in about half of simulated turnovers at
-  50 Hz; a station 100 Hz away at the caller's level cost it in 13 of 60.
-  Keeping such fragments out needs a way to tell which station a mark
-  came from (final check 2026-09-28).
-- **Filter runaway after a sudden speed change:** in 2 of 100 simulated
-  20 → 35 WPM changes the decoder's speed estimate jumped ×2 in one
-  update, the filter outgrew the element spaces, merged marks and ran
-  away. Bounding the dit estimate's growth to ×1.25 per mark while the
-  filter follows removed it (100 of 100, simulated), but a real slowdown
-  then takes ln(ratio)/ln 1.25 marks to follow (5 marks from 35 to
-  12 WPM, derived); the owner decides.
-- **Stray noise after a re-acquisition:** ŝ restarts from its first few
-  noise samples, and in about 1% of re-acquisitions in noise alone (4 of
-  400 simulated) noise was keyed as one stray character. Giving the
-  restart a prior weight, as the warm-up has, is one option.
-
-### Close the remaining gaps to VE3NEA's benchmark
-
-Group B uses VE3NEA's keying styles, Butterworth fading spectrum, f_D grid,
-SNR points and text statistics (docs/research/deepcw-generator-notes.md).
-It also matches his keying edges (2 ms, centered) and reports his metric
-(no-space CER). Still different: our oracle channel sits on the nearest
-FFT bin rather than his ±30 Hz pitch error; we draw character and word
-spaces once rather than as his sums of draws; we score at least 1000
-characters per point over 3 seeds against his 30 000; and which speed range
-trained his published model (12–48 or 8–50 WPM) is unknown. Outside group
-B the generator keeps milestone 1's 5 ms edges inside each mark, which
-shorten every mark by 5 ms at 50% amplitude. Decide which of these matter
-once group B's numbers are in.
-```
+- **Tune the Matched front end by measurement** and the four postponed limits under it (added 2026-09-29): add the measured numbers that bear on each (group A's crossings for the acquisition floor; the pauses, strong and first-sample groups for the noise recovery and stray noise; group H's regime table and group E for the channel distance and co-channel stations).
 
 In `docs/research/decoder-survey.md`, at the end of the paragraph **1. Soft, pre-filtered front end on the existing baseline**, add one sentence: "Built in this project as the Matched front end (milestone 2, part 1); its measured gain over the baseline on the synthetic suite is in signal-processing.md §8b [measured]." Do not change the ranking.
 
@@ -7016,7 +7504,7 @@ git commit -m "Record the Matched front end's measured results and guard it in t
 
 - [ ] **Step 10: Report to the owner**
 
-Summarize for the owner, in a few lines: the group-A crossings for both front ends, the fading and fist results next to VE3NEA's anchor rows, the pause/strong/tune-up findings, the CPU cost, the tracker's measured accuracy, and the ragchew and two-station-QSO results (group G against group A at 25 WPM; group H by regime: tracks per QSO, QSO-label and station-label CER, first-word and per-over CER, with the oracle copy beside the detector run), the paired Matched − Envelope differences whose intervals exclude 0, and the two questions the owner deferred to these numbers (decision 2026-09-27): whether the Matched front end should become the default, and whether and how to tune its parameters, including the design limits the backlog item "Tune the Matched front end by measurement" lists (the acquisition floor, S₅₀₀ = −2.5 dB derived and about −2.6 to −1.8 dB simulated; the 43 s recovery after a 6 dB noise rise; the 35–70 Hz QSO gap and partly keyed neighbors; the filter runaway after a sudden speed change; stray noise after a re-acquisition). Recommend nothing that pre-empts either; present the numbers. Do not push.
+Summarize for the owner, in a few lines: the group-A crossings for both front ends, the fading and fist results next to VE3NEA's anchor rows, the pause/strong/tune-up findings, the CPU cost, the tracker's measured accuracy, and the ragchew and two-station-QSO results (group G against group A at 25 WPM; group H by regime: tracks per QSO, QSO-label and station-label CER, first-word and per-over CER, with the oracle copy beside the detector run), the paired Matched − Envelope differences whose intervals exclude 0, and, plainly, **every regime where Matched is worse than Envelope** (the default stays Matched; the owner decides). Present the numbers that bear on the backlog item "Tune the Matched front end by measurement" and its postponed limits (the acquisition floor, S₅₀₀ = −2.5 dB derived and about −2.6 to −1.8 dB simulated; the noise-rise recovery; stray noise after a silence; co-channel stations; the channel distance's failure where a station 60–100 Hz away is at least as strong as the channel's station). Recommend no tuning; present the numbers. Do not push.
 
 ---
 
@@ -7041,15 +7529,16 @@ Summarize for the owner, in a few lines: the group-A crossings for both front en
 | Owner decision 2026-09-27: test transmissions include full ragchews | Task 1 (ragchew text, prosign positions, abbreviations), Task 6 (two stations alternating, labeled per over and per station), Task 12 (re-acquisition at a turnover), Task 9 (groups G and H, per-over CER), Task 14 (results) |
 | Owner, 2026-09-27: answering stations 0–200 Hz away, three regimes, each station scored at its own frequency; backlog item to measure the real offsets | Task 6 (`station_labels`, `draw_answer_offset_hz`), Task 9 (`qso_regime`, group H grid 0/10/25/50/100/200 Hz and drawn offsets, QSO and station labels, tracks per QSO), Task 14 (regime table); `docs/backlog.md` item "Measure where answering stations really are" (added with this revision) |
 | Plan review 2026-09-27 (C1, C2, I1–I5, M1–M12) | Resolutions listed in the review file; the changes are in Tasks 3, 6, 7, 9–14 and Design decisions |
-| Owner decision 2026-09-27: default front end and parameter tuning deferred until Task 14's numbers | Scope section; Tasks 10–12 Step "Build and run" (a failing parameter is reported, not changed); Task 14 intro and Steps 5, 6, 8 and 10; no task changes a default or a Matched parameter |
+| Owner decisions 2026-09-29: one channel distance D in Hz (detector attribution, tracker follow distance, channel merging); Matched the default in Task 13 with Envelope selectable and pinned in CI; ×1.25 dit-growth bound; 20-seed pass counts; postponed limits to the backlog; physical units | Scope section (with the stop point); Design decisions B ("Channel distance", its simulation and its failure) and C; Task 10 (`follow_distance_hz`, `lag_s`, `update_interval_s`); Task 12 (`max_dit_growth`, `count_passes`); Task 13 (`Attribution`, the neighborhoods in Hz, `remove`, `channel_distance_hz`, merging, the default, `with_envelope_path`, `--front-end envelope`); Task 14 (Envelope pin and Matched check in the smoke test; a regime where Matched is worse is reported, the default is not reverted); `docs/backlog.md` |
+| Owner decision 2026-09-27 and 2026-09-29: parameter tuning deferred to the benchmark results | Tasks 10–12 Step "Build and run" (a failing parameter is reported, not changed); Task 14 intro and Steps 5, 6, 8 and 10 |
 | §5.4: real recordings with manta's oracle | Deferred (scope section); Task 8 builds the oracle mechanism |
 | §4.1: determinism | Per-sample stages inside the decoder; `MatchedChunkSizeDoesNotChangeOutput`, `MatchedChunkingDoesNotChangeResults`; the smoke check compares two runs of each front end |
 | Project rule: signal-processing.md in the same commit | Every task that changes signal processing or benchmark definitions has a "Document" step |
 
-**Placeholder scan.** The only unfilled values are measurements that exist only after running the code: the smoke CER noted in Task 2, the Matched smoke CER and its baseline file in Task 14, and the results tables in Task 14 (including the Envelope and Matched cells of the VE3NEA comparison), each with the exact command or file it comes from. The Python code of Tasks 1–6 and 9, as revised on 2026-09-27, was run in a scratch copy of `training/` (applied in order): all Python tests pass, and the G and H recordings generate (about 6 min each). The C++ changes for the review's C1 and C2 and the re-review's I-1 to I-4 (Tasks 10–12: noise estimate with floor and warm-up, K-scaled squelch, re-acquisition with its window, the tracker's anchor, pull-in and coherence checks) were ported to Python line for line and simulated; every multi-seed test's bands come from those simulations. The C++ itself is not compiled here, so its tests are the first check of the port. Since the final check (2026-09-28) the decoder-level tests of Task 12 are simulated on a port of the milestone-1 decoder's own element and speed logic, with the decoder estimating the dit itself, over 30–200 numpy seeds per test; the Task 11 tests over 40–400.
+**Placeholder scan.** The only unfilled values are measurements that exist only after running the code: the smoke CER noted in Task 2, the Matched smoke CER and its baseline file in Task 14, and the results tables in Task 14 (including the Envelope and Matched cells of the VE3NEA comparison), each with the exact command or file it comes from. The Python code of Tasks 1–6 and 9, as revised on 2026-09-27, was run in a scratch copy of `training/` (applied in order): all Python tests pass, and the G and H recordings generate (about 6 min each). The C++ changes for the review's C1 and C2 and the re-review's I-1 to I-4 (Tasks 10–12: noise estimate with floor and warm-up, K-scaled squelch, re-acquisition with its window, the tracker's anchor, capture range and coherence checks; on 2026-09-29 the follow distance, the growth bound and, at engine level, the detector's distance attribution and channel merging) were ported to Python line for line and simulated; every multi-seed test's bands come from those simulations. The C++ itself is not compiled here, so its tests are the first check of the port. Since the final check (2026-09-28) the decoder-level tests of Task 12 are simulated on a port of the milestone-1 decoder's own element and speed logic, with the decoder estimating the dit itself, over 30–200 numpy seeds per test; the Task 11 tests over 40–400.
 
-**Type consistency.** Checked across tasks: `Operator`, `Over`, `ragchew`, `random_operator`, `random_text` (Task 1) and their use in Tasks 6 and 9; `STYLES` keys, `draw_style`, `draw_imbalance_dits`, `VE3NEA_WPM_RANGE` (Task 3) and their use in Tasks 6 and 9; `slow_gain`, `gain_at`, `rayleigh_gain(..., shape)` and `fading_shape` (Task 4) and their use in Task 6; `edge_s`, `edges_centered` (Task 3) and their use in Tasks 6 and 9; `Sender`, `qso_spec`, `station_labels`, `draw_answer_offset_hz`, `SignalPlan.senders` and the per-over label keys (`sender`, `sender_index`, `wpm`, `keying`, `offset_hz`) (Task 6) and their use in Task 9 (`over_rows`, `track_splits`, `_label_truth_hz`); `SignalSpec` fields (Tasks 2–6) and the labels keys the bench parses (Task 7) and the suites read (Tasks 9, 14); the bench JSON's `nospace_*`, `transmissions` and `tracks` (Task 7 and milestone 1) and `tracked_freq_hz` (Task 14) in Task 9; `FrequencyTracker::reacquire`, `MatchedFrontEnd::reacquire` and `MatchedFrontEnd::squelch` (Tasks 10–11) in Task 12, and the new config fields (`pull_in_hz`, `anchor_tau_s`, `min_coherence`; `neighbor_guard`, `floor_*`, `squelch_exponent`; `reacquire_window_s`) with their validation tests; `view_fits` (Task 9) in `format_markdown` and its test; `Score`/`SignalScore` fields and the bench JSON keys the suites consume; `EngineStats`, `Engine::Channel::bin`, `open_channel` (Task 8) and their use in Task 13; `FrequencyTracker` and `MatchedFrontEnd` signatures (Tasks 10–11) and their use in Task 12; `DecodeUpdate::freq_offset_hz` (Task 12) and its use in Task 13; `FrontEnd` (Task 12) in the bench (Task 13).
+**Type consistency.** Checked across tasks: `Operator`, `Over`, `ragchew`, `random_operator`, `random_text` (Task 1) and their use in Tasks 6 and 9; `STYLES` keys, `draw_style`, `draw_imbalance_dits`, `VE3NEA_WPM_RANGE` (Task 3) and their use in Tasks 6 and 9; `slow_gain`, `gain_at`, `rayleigh_gain(..., shape)` and `fading_shape` (Task 4) and their use in Task 6; `edge_s`, `edges_centered` (Task 3) and their use in Tasks 6 and 9; `Sender`, `qso_spec`, `station_labels`, `draw_answer_offset_hz`, `SignalPlan.senders` and the per-over label keys (`sender`, `sender_index`, `wpm`, `keying`, `offset_hz`) (Task 6) and their use in Task 9 (`over_rows`, `track_splits`, `_label_truth_hz`); `SignalSpec` fields (Tasks 2–6) and the labels keys the bench parses (Task 7) and the suites read (Tasks 9, 14); the bench JSON's `nospace_*`, `transmissions` and `tracks` (Task 7 and milestone 1) and `tracked_freq_hz` (Task 14) in Task 9; `FrequencyTracker::reacquire`, `MatchedFrontEnd::reacquire` and `MatchedFrontEnd::squelch` (Tasks 10–11) in Task 12, and the new config fields (`follow_distance_hz`, `lag_s`, `update_interval_s`, `anchor_tau_s`, `min_coherence`; `max_dit_growth`; `channel_distance_hz`, `follow_margin_hz`, `merge_channels`, `Attribution`, `attribution_distance_hz`, `peak_radius_hz`, `level_radius_hz`, `candidate_step_hz`; `neighbor_guard`, `floor_*`, `squelch_exponent`; `reacquire_window_s`) with their validation tests; `view_fits` (Task 9) in `format_markdown` and its test; `Score`/`SignalScore` fields and the bench JSON keys the suites consume; `EngineStats`, `Engine::Channel::bin`, `open_channel` (Task 8) and their use in Task 13; `FrequencyTracker` and `MatchedFrontEnd` signatures (Tasks 10–11) and their use in Task 12; `DecodeUpdate::freq_offset_hz` (Task 12) and its use in Task 13; `FrontEnd` (Task 12) in the bench (Task 13).
 
 **Review Focus.** Each of the seven items has its tests in the owning tasks (Tasks 6, 9 and 10–13), named in the Review Focus section.
 
-**Known risks for the executor.** Several design limits are stated, not fixed, and go to the owner with Task 14's numbers: the acquisition floor (S₅₀₀ = −2.5 dB derived, about −2.6 to −1.8 dB simulated), the 43 s recovery after a 6 dB noise rise, the 35–70 Hz QSO gap and partly keyed neighbors, the filter runaway after a sudden speed change, and stray noise after about 1% of re-acquisitions. Five Task 12 tests state a simulated pass rate below 100% (Task 12, Step 5); if one fails with its stated mechanism, record and report it, and do not change a seed, level or tolerance. Random keying may make a suite recording run long; Task 9 says how to fix that. The turnover tests were simulated with the decoder's own speed logic (final check); if one fails other than as its comment states, debug it, and if the cause is a parameter, report it to the owner. The noise estimate comes down slowly from a high start (a station keying from the first sample); the "first sample" group measures it. Group B holds at least 1000 characters per point over 3 seeds, still far fewer than VE3NEA's 30 000, so compare trends and intervals against his curves, not single points. The full suite at 3 seeds is about 3.2 GB of recordings.
+**Known risks for the executor.** **Tasks 10, 12 and 13 wait for the owner's decision on the channel distance** (stop point, Scope; Design decisions B): as specified, the design fails where a station 60–100 Hz away is at least as strong as the channel's station. Several design limits are postponed to the backlog, not fixed: the acquisition floor (S₅₀₀ = −2.5 dB derived, about −2.6 to −1.8 dB simulated), the noise-rise recovery (about 43 s after a sustained 6 dB rise), stray noise after about 1% of silences, and co-channel stations keying at the same time within a few tens of Hz. Seven Task 12 tests assert a 20-seed pass count below 20 (Task 12, Step 5); if one fails, report it with its printed failures, and do not change a seed, level, tolerance or count. Random keying may make a suite recording run long; Task 9 says how to fix that. The turnover tests were simulated with the decoder's own speed logic; the engine-level tests of Task 13 with a port of the detector, channelizer and merging at 6000 samples/s (the engine's bin width and hop), so their C++ results may differ in detail; if one fails other than as its comment states, debug it, and if the cause is a parameter, report it to the owner. The noise estimate comes down slowly from a high start (a station keying from the first sample); the "first sample" group measures it. Group B holds at least 1000 characters per point over 3 seeds, still far fewer than VE3NEA's 30 000, so compare trends and intervals against his curves, not single points. The full suite at 3 seeds is about 3.2 GB of recordings.

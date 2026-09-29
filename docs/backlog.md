@@ -321,6 +321,14 @@ Separate the two: a station's identity (track) should survive long pauses,
 a minute or more, and re-attach when it resumes on the same frequency, while
 decoding gates off within a second or two of silence.
 
+This also matters in QSOs (simulated, milestone 2 part 1 plan, 2026-09-29):
+when the answering station has its own track (more than 47 Hz away) and
+sends a 16 s over, the caller is silent for 18 s and its track (S₅₀₀ =
+15 dB) dies before it resumes; its next over goes to a new track that loses
+its first word (every run at 200 Hz, and at 100 Hz with the answering
+station 6–10 dB weaker than the caller's key-down power). Real overs are
+often longer.
+
 ### Ghost tracks beside very strong signals
 
 Around 60 dB SNR (500 Hz), extra tracks appear a few hundred Hz either side of a
@@ -328,21 +336,43 @@ station and decode runs of `E` and `I`. Fix idea: reject a peak that sits
 inside a much stronger track's skirt (more than X dB below that track's level within
 ±N Hz).
 
-### Express the detector's bin-counted settings in Hz
+### Express the remaining bin- and sample-counted settings in physical units
 
-The detector's neighborhoods are counted in bins: minimum station separation
-3 bins (70 Hz), peak neighborhood ±2 bins (±47 Hz), track level ±1 bin
-(±23 Hz). Changing the bin width silently changes them too. Restate them in
-Hz (and convert to bins from the actual bin width) *before* sweeping bin
-width, so bin width is the only variable.
+Owner's standing rule (2026-09-29): parameters and calculations are in
+physical units (Hz, s, FS, dB with a named reference), never in units tied
+to an implementation choice (FFT bins, samples, decimation); conversion to
+bins or samples happens only at the point of use, from the physical value,
+so changing the bin width or a sample rate keeps the physics the same.
+The milestone-2 part 1 plan restates the settings it touches: the
+detector's peak neighborhood (±47 Hz), track-level neighborhood (±23 Hz)
+and candidate step (23 Hz), the new channel distance (47 Hz), and the
+frequency tracker's lag (5.33 ms) and update interval (21.3 ms). Still
+counted in bins or samples, and not touched by that plan:
+- `EngineConfig::fft_size` / the analyzer's N: state the bin width (Hz) or
+  the window duration (42.7 ms) instead; `choose_fft_size`'s rule is
+  already in Hz (bins of at least 20 Hz).
+- The hop, N/2 samples: state it as 21.3 ms (50% overlap).
+- `EngineConfig::channel_bins` = 64: state the channel output rate
+  (1500 samples/s) or bandwidth instead.
+- The channel filter's length, N/2 + 1 taps: state it as 21.3 ms.
+- `DetectorConfig::min_separation_bins` = 3 (70 Hz): kept only for the
+  milestone-1 attribution rule (`Attribution::Bins`), which stays for
+  comparison; if that rule stays, state it in Hz.
+- The detector's warm-up and persistence are already in seconds, but the
+  averaging is updated per frame (α from the hop): check that a hop change
+  keeps τ = 1 s.
+
+Do this before sweeping the bin width ("Choose the FFT bin width and
+channel filter by measurement", next item), so bin width is the only
+variable.
 
 ### Choose the FFT bin width and channel filter by measurement
 
 Both are guesses. Bins are ~23 Hz (the FFT size is now chosen from the sample
 rate to keep that width), and every channel uses a ±150 Hz filter sized for
 fast code. Sweep bin width (e.g. 12, 23, 47 Hz) and channel bandwidth against
-the scenarios above and pick values by results. Prerequisite: the detector's
-settings expressed in Hz (previous item).
+the scenarios above and pick values by results. Prerequisite: the remaining
+settings expressed in physical units (previous item).
 
 ### Channel filtering, two stages
 
@@ -449,8 +479,99 @@ differs from the rig's CW offset, or RIT, leaves 100–200 Hz. Once the
 owner's SDRplay recordings exist, measure the real distribution of |Δf|
 between a CQ and the stations that answer it, and replace
 `ANSWER_OFFSET_BANDS_HZ` in `training/kz4ap_synth/generate.py` with it. It
-matters because the detector hears stations within about 47 Hz as one
-track, from about 70 Hz as two, and either in between.
+matters because the pipeline treats a station within the channel distance
+D = 47 Hz of a channel's station as the same channel (its tracker follows
+it, up to 57 Hz), and one farther away as a separate track (milestone 2,
+part 1, Design decisions B); the milestone-1 detector heard stations within
+about 47 Hz as one track, from about 70 Hz as two, and either in between.
+
+### Tune the Matched front end by measurement
+
+Tuning waits for evidence from the benchmark (owner, 2026-09-27 and
+2026-09-29: only with strong evidence; the benchmark exists to find better
+values). The Matched front end is the default from milestone 2, part 1
+(owner decision 2026-09-29). Its parameters are heuristic
+(`docs/signal-processing.md` §7, §8, §8b): the filter length β = 0.8 dit
+(sweep 0.6, 0.8, 1.0), the amplitude and noise time constants (0.5 s, 2 s;
+the fading group is the test), the squelch a_min = 3·(T_v/16 ms)^(1/4)
+(T_v the filter's duration), the keying hysteresis ±1 nat, the noise guards
+κ = 1.75 and κ_n = 4, the noise floor's margin (2.5), clean fraction (0.25)
+and restart ratio (4), the re-acquisition silence (max(0.5 s, 12 dits)) and
+window (2 s), the tracker's anchor time constant (10 s) and minimum weight
+(0.6), when the filter starts following the speed (8 marks), the
+dit-estimate growth bound (×1.25 per mark), and the channel distance
+(D = 47 Hz) with its follow margin (10 Hz). The amplitude estimate is biased
+low by the filter's ramps (0.85–0.88 of the true amplitude for PARIS at
+25 WPM, simulated), which lengthens marks by about 7 ms at 25 WPM; measure
+whether that matters.
+
+The four limits below were postponed by the owner on 2026-09-29. Each is a
+known limitation of the Matched front end as planned.
+
+#### Acquisition floor (postponed)
+
+A station is first heard through a short "acquisition" filter (16 ms, set
+for 60 WPM), because the decoder does not know its speed yet. That filter
+lets in more noise than the dit-matched filter used later, so a weak
+station cannot be caught at all below about S₅₀₀ = −2.5 dB (derived, any
+speed); in simulation half its marks were caught near −1.8 dB at 25 WPM and
+−2.6 dB at 12 WPM. Once caught and narrowed, it could be followed down to
+−4.4 dB (25 WPM) or −6.0 dB (12 WPM), but it has to be caught first.
+Options: (1) acquire with a longer filter (costs fast CW and the range of
+frequencies it can pull in); (2) key at the acquisition width without the
+squelch, but require several consistent marks before trusting them;
+(3) squelch on the level the dit-matched filter would have (raises false
+keying on noise). The detector has a similar floor of its own, which
+matters in the full pipeline (not in oracle mode): its 6 dB threshold per
+bin, in the Hann window's 35.2 Hz noise bandwidth, for a keyed station
+down 44% of the time, is reached at about S₅₀₀ = 6 − 11.5 + 3.6 ≈ −1.9 dB
+(a rough estimate: 10·log₁₀(500/35.2) = 11.5 dB, 10·log₁₀(1/0.44) = 3.6 dB;
+not measured, and up to 1.4 dB worse for a station between bins).
+
+#### Noise-rise recovery (postponed; affects accuracy)
+
+If the band noise rises and stays up (a sustained rise of 6 dB, in power),
+the front end's noise estimate climbs back slowly: about 43 s (derived;
+24–56 s simulated). Until it has caught up, noise can look like signal, and
+stray characters can be decoded for up to about 16 s. Brief noise bursts
+are not affected (the estimate does not chase them), and a fall in the
+noise is followed within a few seconds. A faster climb would need to tell a
+real noise rise from a station that fills most of the channel, and every
+method tried either did not separate the two or let weak stations inflate
+the estimate.
+
+#### Stray noise after a silence (postponed)
+
+After each silence of max(0.5 s, 12 dits) the front end restarts its
+amplitude estimate, in case the next over is from another station. In
+about 1% of silences in noise alone (4 of 400 simulated), the restarted
+estimate latched onto noise and one stray character was decoded. One
+option: give the restart a prior weight, as the warm-up has.
+
+#### Two stations keying at the same time within a few tens of Hz (postponed)
+
+A second station keying at the same time as the channel's station, a few
+tens of Hz away, cannot be separated by the Matched front end: both pass
+its filter, and the frequency tracker settles on the stronger or between
+the two. Simulated (engine level, 30 runs each; levels in dB re the
+channel's station's key-down power): 6 dB weaker at 40–60 Hz, the
+channel's station decoded in 30 of 30 and the other in 0 (no track of its
+own); at equal level, the channel's station decoded in 0 (40 Hz: the
+tracker settled between them), 13 (50 Hz) and 28 (60 Hz) of 30; 6 dB
+stronger, the channel moved to the other station in 30 of 30. Candidate
+mitigations to explore: hold the tracker when its average stops being
+coherent (a sign of two tones); choose the filter length so the other
+station sits on one of its nulls (at multiples of 1/T_v); estimate each
+mark's own frequency and assign marks to stations; run a second tracker
+and decoder in the channel for the second tone; a finer detector
+spectrum (a longer FFT) to see both peaks; or a probabilistic decoder that
+models two stations (top-priority item).
+
+### VE3NEA's pitch error in group B
+
+Add VE3NEA's ±30 Hz pitch-error option to the benchmark's group B only if
+we compare with his published curve directly or test his published model
+(owner, 2026-09-29).
 
 ## 2. GUI and live display
 
@@ -459,6 +580,13 @@ status events, a waterfall over one band, and decoded text for the selected
 signal (design spec §3, feature A; §4.1). This is the owner's first goal: a
 live, single-band, waterfall-style operator view like CW Skimmer's. It gets
 its own plan. Related item above: "Spectrum frames in linear power".
+
+- **A channel that follows a QSO turnover** (owner, 2026-09-29): with the
+  channel distance (milestone 2, part 1), one channel follows both stations
+  of a QSO within 47 Hz of each other. When it decodes "DE <call>", its
+  displayed callsign should change to that call, and change back when the
+  other station's call is decoded. The same rule belongs in callsign
+  matching (section 4).
 
 ## 3. Receiver-audio input (directly after the live display)
 
@@ -497,7 +625,9 @@ same ring buffer).
 
 Needs its design session first (spec §6). Items from milestone 1's review
 that must land before it are in section 1 ("Wrong or missing first
-characters").
+characters"). A channel that follows a QSO turnover carries two stations'
+calls in turn; relabel it when it decodes "DE <call>" (section 2, owner
+2026-09-29).
 
 ### Input to the design session: manta's callsign acceptance rules
 
