@@ -73,8 +73,8 @@ to volts or dBm at the antenna.
 | Λ | log-likelihood ratio, key-down over key-up: −a²/2 + ln I₀(a·x) | nats |
 | g, p | posterior log-odds Λ + ln(P₁/P₀), and the posterior probability of key-down | nats, 0…1 |
 | P₁ | prior probability of key-down | 0.44 |
-| f_s | a station's (carrier's) offset from its channel's center | Hz |
-| f̂ | frequency tracker's estimate of f_s, and the NCO frequency | Hz |
+| f_off | a station's (carrier's) offset from its channel's center | Hz |
+| f̂ | frequency tracker's estimate of f_off, and the NCO frequency | Hz |
 | f_a | the tracker's anchor: where the station is, as the detector says (its frequency for the track minus the channel center) | Hz |
 | τ_L | lag of the frequency discriminator, rounded to whole samples; unambiguous range ±1/(2τ_L) | τ_L = 8/r = 5.333 ms (±93.75 Hz) |
 | τ_f | time constant of the frequency average, s of key-down weight 1 | 0.5 s |
@@ -583,8 +583,8 @@ rotation, which the decoder ignores (it uses only the magnitude).
 
 That is harmless **only because the channel filter is wide**. A filter
 matched to an element of duration T_el (noise bandwidth exactly 1/T_el for
-a rectangular element) scales a tone offset by f_s (Hz) by |sinc(f_s·T_el)|
-in amplitude, where sinc(x) = sin(πx)/(πx) (**derived**, from Proakis &
+a rectangular element) scales a tone offset by f_off (Hz) by
+|sinc(f_off·T_el)| in amplitude, where sinc(x) = sin(πx)/(πx) (**derived**, from Proakis &
 Salehi, *Digital Communications*, 5th ed., eq. 4.5–28;
 `docs/research/proakis-ook-notes.md`, section 2.7). At ±11.7 Hz a
 dit-matched filter would lose 5.1 dB at 25 WPM and 8.8 dB at 20 WPM (signal
@@ -615,8 +615,8 @@ component as implemented and tested on its own.
   sets it to 0.
 - **Discriminator (derived):** on the narrow-filtered, re-centered stream
   v[n], the product z = v[n]·conj(v[n − τ_L·r]) has phase
-  2π·(f_s − f̂)·τ_L for a station at f_s. Rotating it by e^(j2π·f̂·τ_L)
-  makes it a measurement of f_s itself, so the average below does not
+  2π·(f_off − f̂)·τ_L for a station at f_off. Rotating it by
+  e^(j2π·f̂·τ_L) makes it a measurement of f_off itself, so the average below does not
   depend on the NCO and there is no loop to stabilize (to first order: v
   averages samples mixed under the last K/32 NCO settings while each
   product is rotated by the current f̂, a small coupling while f̂ moves,
@@ -660,10 +660,11 @@ component as implemented and tested on its own.
   after a `set_anchor` jump or a rejection, f̂ changes at once, but the
   next τ_L·r + K − 1 products still contain samples of v that were mixed
   at the old f̂ (the boxcar spans K samples and the product reaches back
-  τ_L·r = 8 samples), so they measure f_s off by the size of the jump and
-  bias the fresh average slightly. Their share of the average when it
-  first reaches the 0.6 gate weight (at weight 1, all of those products
-  counted as fully stale, so an upper bound) is
+  τ_L·r = 8 samples), so their measurement of f_off is wrong by up to the
+  size of the jump, and they bias the fresh average slightly. Their share
+  of the average when it first reaches the 0.6 gate weight (**derived**,
+  an upper bound: weight 1, all of those products counted as fully
+  stale) is
   (1 − e^(−m/(τ_f·r)))·e^(−(n₆ − m)/(τ_f·r))/0.6 with m = τ_L·r + K − 1
   and n₆ = τ_f·r·ln 2.5 = 687 samples: 2.8% at K = 24 (60 WPM), 6.0% at
   K = 58 (25 WPM) and 32% at K = 288 (5 WPM), decaying with τ_f
