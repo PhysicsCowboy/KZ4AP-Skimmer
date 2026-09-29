@@ -58,6 +58,17 @@ venv's Python).
 Every push runs the same check on Windows and Linux (`bench/smoke.sh`) and fails
 if decoding gets worse than `bench/baselines/smoke.json`.
 
+Named suites generate many recordings at once, score them, and summarize
+CER, character and word-space errors, first-word errors, VE3NEA's no-space
+CER, the S₅₀₀ where CER crosses 0.10 and 0.05 (each with a bootstrap 95%
+interval), and CPU time per channel-second. The full suite is sized for
+three seeds (about 3.2 GB of recordings):
+
+    $env:PYTHONPATH = "training"
+    .venv\Scripts\python -m kz4ap_synth.suites generate --suite full --seeds 3 --out build/suite/full
+    .venv\Scripts\python -m kz4ap_synth.suites run --out build/suite/full --bench build\windows\bench\Release\kz4ap-bench.exe --front-end baseline
+    .venv\Scripts\python -m kz4ap_synth.suites summarize --out build/suite/full
+
 ## Known limitations
 
 - The first character or two of a transmission may be lost or wrong while the

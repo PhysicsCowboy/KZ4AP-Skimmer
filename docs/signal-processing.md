@@ -869,3 +869,33 @@ research is under way (`docs/research/`).
   per-channel cost; `decoder_ms_per_channel_s` counts only steady-clock time
   inside decoders (the engine runs on one thread). Measured on a desktop; a
   Raspberry Pi 5 is not yet measured.
+- **Suites** (`training/kz4ap_synth/suites.py`): `smoke` is the CI
+  recording; `full` covers sensitivity (oracle, S₅₀₀ −10 … +20 dB at 12, 25
+  and 40 WPM), fading anchored to VE3NEA's DeepCW benchmark (his
+  Butterworth spectrum, f_D grid 0.1, 0.3, 1, 3 Hz, his ten SNR points as
+  S₅₀₀ = his 3 kHz key-on SNR + 7.78 dB, his styles, imbalance, style mix
+  and text statistics, and his 2 ms centered edges; compare his curves
+  with the no-space CER, his metric), fists, speed changes, interference,
+  tuning offsets and drift, whole ragchew QSOs (one station's speed and
+  style for both sides), two-station QSOs 0–200 Hz apart with each
+  operator's own speed, style, imbalance and level, strong signals, pauses, tune-up carriers, stations
+  present from the first sample, crowded bands and a whole band.
+  **Per-over CER** (QSOs): the edits charged to an over's reference
+  symbols by the benchmark's alignment, over those symbols; the word space
+  between two overs belongs to neither.
+  **Intervals:** every rate and crossing in the summary carries a
+  bootstrap 95% interval over signals (1000 resamples; errors cluster
+  within a signal, so signals are the units), and front ends are compared
+  signal by signal on the same recordings. The full suite is sized for
+  3 seeds: at least 1000 characters per S₅₀₀ point in groups A–C, and at
+  least 100 fade times per point at f_D = 0.1 Hz.
+  **QSO regimes** (group H): same-track for an answering station within
+  2 FFT bins (46.9 Hz) of the caller, ambiguous below 3 bins (70.3 Hz, the
+  detector's minimum peak separation), separate-track beyond; each QSO is
+  scored with one label for the QSO and with one label per station.
+  **S₅₀₀ at a CER threshold:** for a condition with at least three S₅₀₀
+  points, CER per point is pooled over its stations; scanning down from the
+  highest S₅₀₀, the first point above the threshold and the one above it
+  bracket the crossing, interpolated linearly in dB. No crossing is
+  reported if the highest point already fails; if none fails, the lowest
+  point is reported (an upper bound).
