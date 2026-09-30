@@ -30,9 +30,8 @@ struct ClassicalDecoderConfig {
     double llr_hysteresis = 1.0;          // Matched: key down above +this, up below -this (posterior log-odds, nats)
     std::size_t follow_after_marks = 8;   // Matched: the filter follows the speed once the window holds this many marks
     double max_dit_growth = 1.25;         // Matched, while the filter follows: the dit estimate may grow at most this factor
-                                          // per mark (owner's decision); as coded it is applied per speed update, which a
-                                          // dropout merge can repeat on one mark (known defect; docs/signal-processing.md
-                                          // section 8, backlog "Growth bound per mark")
+                                          // per mark (owner's decision); a mark re-opened by a dropout merge is re-measured
+                                          // from the speed state before it, so the bound applies once per physical mark
     double reacquire_after_dits = 12.0;   // Matched: re-acquire after the key has been up this many dits...
     double reacquire_min_s = 0.5;         // ...and at least this long, s
     double reacquire_window_s = 2.0;      // Matched: if nothing is keyed this long after, back to the narrow filter, s
@@ -58,6 +57,8 @@ public:
     double wpm() const { return 1.2 / dit_s_; }
     double frequency_offset_hz() const;  // Matched: the tracker's estimate; Envelope: the initial offset, Hz
     int filter_length() const;           // Matched: the matched filter's length K, samples; Envelope: 0
+    // Matched: marks counted for speed since the last re-acquisition (or reset); Envelope: counted but unused.
+    std::size_t marks_since_reacquire() const { return marks_since_reacquire_; }
     // Matched: the tracker fine-tunes within +/- tracker.fine_tune_hz of this (Task 10); Envelope: ignored.
     void set_frequency_anchor_hz(double offset_hz) override;
 
@@ -76,6 +77,7 @@ private:
     void emit(DecodeUpdate& out, std::string_view text, float probability, double start_s, double end_s);
     void update_speed();
     bool counts_for_speed(double duration) const;
+    void restore_speed_state();
 
     double rate_;
     ClassicalDecoderConfig config_;
@@ -114,11 +116,20 @@ private:
     double reacquire_until_ = -1;                 // Matched: end of the re-acquisition window, s (-1: none)
     bool was_following_ = false;                  // Matched: the filter followed the speed before it
     std::deque<double> set_aside_marks_;          // Matched: the speed window before it, back if nothing answers
-    double filter_dit_s_ = 0.02;                  // Matched: the dit the matched filter is set to, s (decided: grows
-                                                  // at most max_dit_growth per mark, from the acquisition dit; as
-                                                  // coded, per speed update: known defect, backlog "Growth bound
-                                                  // per mark")
+    double filter_dit_s_ = 0.02;                  // Matched: the dit the matched filter is set to, s (grows at most
+                                                  // max_dit_growth per mark, from the acquisition dit)
     double set_aside_filter_dit_s_ = 0.02;        // Matched: the filter's dit before the re-acquisition, s
+    // Matched: the speed state just before the last element's key-up updated it, so a dropout merge that
+    // re-opens that element can undo the update (the growth bound then applies once per physical mark).
+    struct SpeedState {
+        bool counted = false;  // the last element counted for speed; the fields below are valid
+        double dit_s = 0;
+        float smooth_alpha = 1;
+        double filter_dit_s = 0;
+        std::size_t marks_since_reacquire = 0;
+        std::deque<double> recent_marks;
+    };
+    SpeedState before_last_element_;
 };
 
 }  // namespace kz4ap

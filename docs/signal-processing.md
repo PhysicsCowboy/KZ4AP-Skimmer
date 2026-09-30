@@ -870,24 +870,30 @@ acquisition dit by at most ×1.25 per mark, because the estimate at that
 step may rest on up to 7 unbounded marks (in simulation a truncated first
 mark gave a 110 ms estimate, the filter jumped from K = 24 to 146 samples
 and ran away).
-**Defect, reported to the owner; not fixed in this milestone (measured,
-milestone 2, part 1, Task 14): the code applies both bounds per speed
-update, not per mark, against the owner's decision.** The bound is applied
-in `update_speed()`, which runs at every key-up counted for speed. When the
-filter widens at a key-up, the wider boxcar's window still covers the mark
-that just ended, so its output rises again and the key goes down within
-0.3 dit. The dropout merge in `key_down()` (step 6) then pops the last mark
-from the speed window but does not restore `dit_s_` or `filter_dit_s_`, so
-the next key-up re-measures the longer mark and applies ×1.25 again. In
-instrumented runs (debug prints, not committed) this happened 7 times on
-one mark: the filter's dit went 20 → 25 → 31.2 → 39.1 → 48.8 → 61.0 →
-76.3 → 95.4 ms (20 ms × 1.25⁷ = 95.4 ms) within 35 ms. The speed window
-then holds the stretched mark, not the true one. The merge also does not
-decrement `marks_since_reacquire_`, so one physical mark can count twice
-toward the 8 marks before the filter follows. Where the estimate is right
-the effect is small; where it is wrong the filter jumps to the wrong width
-at once. Section 8b, "Measured: Matched against Envelope", gives the cases
-and their numbers; the fix is a backlog item ("Growth bound per mark").
+**Once per physical mark (Task 15, milestone 2, part 1).** The bound is
+applied in `update_speed()`, at every key-up counted for speed. Until
+Task 15 it acted per speed update, against the owner's decision: when the
+filter widened at a key-up, the wider boxcar still covered the mark just
+ended, the key went down again within 0.3 dit, the dropout merge (step 6)
+popped the mark but kept the updated `dit_s_` and `filter_dit_s_`, and
+the next key-up applied ×1.25 again (measured, Task 14: 7 times on one
+mark, the filter's dit 20 → 95.4 ms within 35 ms); the merge also left
+the mark counted twice toward the 8 before the filter follows. Now each
+key-up counted for speed saves the state its update starts from (the dit
+estimate, the filter's dit and length, the count of marks since the last
+re-acquisition, the speed window), and a merge that re-opens that element
+restores it, so the re-measured mark gets one update, bounded once. The
+widened filter can still re-open the mark it was widened at; each re-open
+is merged and undone, and it stops about (T_v,new − T_v,old)/2 after
+the first key-up (T_v the filter's duration), at most 0.125·T_v,old =
+0.1 of the old dit, since T_v,new ≤ 1.25·T_v,old (derived for a boxcar
+and a strong signal: its falling edge passes half amplitude half the
+length change later; an upper bound, the ±1 nat hysteresis ends it
+slightly earlier), for example 4.8 ms at 25 WPM (T_v,old = 38.7 ms): the
+mark is timed through the new filter, up to that much longer, and grows
+the estimate at most ×1.25. The Envelope path's merge
+is unchanged (it pops the mark from the window and keeps the updated
+estimate, as in milestone 1; it has no growth bound).
 **Re-acquisition (heuristic):** once the key has been
 up for max(0.5 s, 12 dits), the Matched decoder assumes the next station
 may be a different one (a QSO turnover): section 8b's filter returns to
@@ -1028,11 +1034,9 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
 - **Following speed (heuristic):** K starts at 60 WPM (K = 24, 62.5 Hz),
   the widest filter, and follows the dit passed to `set_dit`; the Matched
   decoder passes it once its speed window holds 8 marks (8 new ones after
-  a re-acquisition), the filter's dit meant to grow at most ×1.25 per mark
-  from the 20 ms acquisition dit (owner decision); as coded the bound is
-  applied per speed update, and a widening that re-opens the mark just
-  ended adds updates within that mark (a defect, measured and reported,
-  section 8, "Two front ends"); K is clamped between the acquisition width
+  a re-acquisition), the filter's dit growing at most ×1.25 per
+  physical mark from the 20 ms acquisition dit (owner decision; a merge
+  undoes the merged mark's update, section 8, "Two front ends"); K is clamped between the acquisition width
   (β·1.2 s/60 = 16 ms, K = 24) and the 5 WPM width (β·1.2 s/5 = 192 ms,
   K = 288), both computed from durations; a dit that is not finite or
   not positive is ignored. When K changes, σ̂_v² is
@@ -1487,8 +1491,8 @@ oracle runs, which skip the detector (section 11 splits the figures).
   poorly at 50 Hz on both paths (0.947 Envelope, 0.953 Matched, all 12
   station labels), so these runs do not show how well Matched decodes the
   answering station on its own track, nor whether the dit-estimate
-  runaway (the growth bound acts per update as coded, a defect, section
-  8, "Two front ends"), which the design simulation's 12 of 30 failures
+  runaway (in these runs the growth bound acted per update, a defect
+  fixed since by Task 15, section 8, "Two front ends"), which the design simulation's 12 of 30 failures
   before the first-step bound came from, still contributes. Separate-track
   QSOs: Matched is worse per station (paired +0.057, +0.039 to +0.075,
   drawn; +0.029, +0.011 to +0.047, 200 Hz). In the oracle copy, which
@@ -1617,7 +1621,7 @@ not in the repository; nothing was changed):
   stretches the mark just ended; (3) with one mark of intermediate length
   in the window, no neighbor ratio reaches 1.8, the estimator takes the
   mean of dits and dahs as the dit (section 8, step 10), about twice the
-  true dit, and the bound, applied ×1.25 per update (the defect), lets it grow there within
+  true dit, and the bound, applied ×1.25 per update (the defect, fixed by Task 15), lets it grow there within
   one mark. Cases: A, 25 WPM (dit 48 ms), S₅₀₀ 10 dB, +6606.5 Hz in
   `A-awgn-25wpm-1-s1`: first mark 100.7 ms (a 144 ms dah keyed late),
   estimate correct (45.7 ms) for 8 marks, then the cascade stretched a
@@ -1629,7 +1633,9 @@ not in the repository; nothing was changed):
   to 287–503 ms, the estimate to 210 ms, and decoding stopped (CER 0.981;
   the bound slowed the runaway, it did not stop it). The 18.5 WPM
   late-opening case above that read "DE K****V" followed the same chain
-  from a 113.3 ms fragment.
+  from a 113.3 ms fragment. Step (2) of this chain, the cascade within one
+  mark, is removed by Task 15 (section 8, "Two front ends"); the figures
+  above are from before it (Task 17 re-measures them).
 - **Tune-up carriers of 1 s or more.** Cutting `tune-up-s1` so that an
   oracle channel opens during a 2 s carrier (at 1.2 or 2.0 s) or a 1 s
   carrier (at 1.6 s) gave no Matched text at all (CER 1.000); opening in
@@ -1697,7 +1703,7 @@ not in the repository; nothing was changed):
 | Front end | Matched (default) or Envelope | `ClassicalDecoderConfig::front_end`; `--front-end` | owner decision 2026-09-29 |
 | LLR keying hysteresis (Matched) | g > +1 nat down, g < −1 nat up | `ClassicalDecoderConfig::llr_hysteresis` | heuristic |
 | Filter follows speed after (Matched) | 8 marks in the speed window (8 new ones after a re-acquisition) | `ClassicalDecoderConfig::follow_after_marks` | heuristic |
-| Dit-estimate growth bound (Matched) | decided: at most ×1.25 per mark while the filter follows the speed, and the filter's own dit at most ×1.25 per mark from its first follow step (from the 20 ms acquisition dit). As coded: ×1.25 per speed update in `update_speed()`; a dropout merge in `key_down()` pops the last mark without restoring `dit_s_`/`filter_dit_s_` or decrementing `marks_since_reacquire_`, so a mark re-opened by the widening filter is bounded again at each re-measure (7 updates on one mark measured, 20 → 95.4 ms) | `ClassicalDecoderConfig::max_dit_growth` | heuristic value (owner decisions 2026-09-29); **defect** in its application, measured, reported to the owner, not fixed in this milestone (section 8, "Two front ends") |
+| Dit-estimate growth bound (Matched) | decided: at most ×1.25 per mark while the filter follows the speed, and the filter's own dit at most ×1.25 per mark from its first follow step (from the 20 ms acquisition dit). Applied at each key-up counted for speed; a dropout merge restores the state before the merged mark's update, so each physical mark is bounded once (Task 15) | `ClassicalDecoderConfig::max_dit_growth` | heuristic value (owner decisions 2026-09-29); applied per physical mark (derived from the code, Task 15; its measured effect in section 8b) |
 | Re-acquisition (Matched) | after max(0.5 s, 12 dits) of key-up: filter back to 60 WPM, ŝ, the frequency average and the speed window restart; the old speed window and the narrow filter come back if nothing is keyed within 2 s | `ClassicalDecoderConfig::reacquire_after_dits`, `reacquire_min_s`, `reacquire_window_s` | heuristic |
 | Matched filter | boxcar, K = round(0.8·dit·r), starts at 60 WPM (16 ms, K = 24), clamped to 16–192 ms (60–5 WPM; K = 24–288) | `MatchedFrontEndConfig` | derived shape; β and start heuristic |
 | Likelihood | Λ = −a²/2 + ln I₀(a·x); prior P₁ = 0.44 | matched_front_end.cpp | derived |

@@ -85,6 +85,7 @@ void ClassicalDecoder::reset() {
     set_aside_marks_.clear();
     filter_dit_s_ = 1.2 / config_.matched.initial_wpm;  // the acquisition dit, 20 ms at 60 WPM
     set_aside_filter_dit_s_ = filter_dit_s_;
+    before_last_element_ = {};
 }
 
 DecodeUpdate ClassicalDecoder::process(std::span<const Sample> samples, double t0_s) {
@@ -219,7 +220,13 @@ void ClassicalDecoder::key_down(double t) {
         const Element merged = elements_.back();
         elements_.pop_back();
         char_open_ = !elements_.empty();  // flush() must not finish a character with no elements
-        if (counts_for_speed(merged.end_s - merged.start_s) && !recent_marks_.empty()) recent_marks_.pop_back();
+        if (front_end_) {
+            // Matched: undo the merged element's speed update, so the mark gets one bounded update when
+            // it is re-measured (owner decision 2026-09-29: at most max_dit_growth per mark).
+            if (before_last_element_.counted) restore_speed_state();
+        } else if (counts_for_speed(merged.end_s - merged.start_s) && !recent_marks_.empty()) {
+            recent_marks_.pop_back();  // Envelope: milestone 1's merge, unchanged (bit-identical)
+        }
         down_t_ = prev_down_t_;
         return;
     }
@@ -236,7 +243,13 @@ void ClassicalDecoder::key_up(double t) {
     prev_down_t_ = down_t_;
     up_t_ = t;
     char_open_ = true;
+    if (front_end_) before_last_element_ = {};  // Matched: nothing to undo unless this element counts
     if (!counts_for_speed(duration)) return;
+    if (front_end_) {
+        // Matched: the state this key-up's speed update starts from, restored if a dropout merge
+        // re-opens this element.
+        before_last_element_ = {true, dit_s_, smooth_alpha_, filter_dit_s_, marks_since_reacquire_, recent_marks_};
+    }
     recent_marks_.push_back(duration);
     ++marks_since_reacquire_;
     if (recent_marks_.size() > kSpeedWindow) recent_marks_.pop_front();
@@ -245,6 +258,19 @@ void ClassicalDecoder::key_up(double t) {
 
 bool ClassicalDecoder::counts_for_speed(double duration) const {
     return duration <= kLongestElementDits * 1.2 / config_.min_wpm;
+}
+
+void ClassicalDecoder::restore_speed_state() {
+    SpeedState& s = before_last_element_;
+    dit_s_ = s.dit_s;
+    smooth_alpha_ = s.smooth_alpha;
+    marks_since_reacquire_ = s.marks_since_reacquire;
+    recent_marks_ = std::move(s.recent_marks);
+    if (filter_dit_s_ != s.filter_dit_s) {
+        filter_dit_s_ = s.filter_dit_s;
+        front_end_->set_dit(filter_dit_s_);  // back to the length before the update (rescales sigma^2 back)
+    }
+    s = {};
 }
 
 void ClassicalDecoder::finish_char(DecodeUpdate& out) {
@@ -306,12 +332,11 @@ void ClassicalDecoder::update_speed() {
         dit = mean > 2.0 * dit_s_ ? mean / 3.0 : mean;
     }
     // Matched: while the filter follows the speed, the dit estimate may grow by at most
-    // max_dit_growth per mark (owner decision 2026-09-29). As coded the bound is applied here, per
-    // speed update; a dropout merge in key_down() re-opens the mark without restoring dit_s_, so one
-    // mark can be bounded several times (known defect, not fixed: docs/signal-processing.md section 8,
-    // backlog "Growth bound per mark"). A jump of x2 in one update, while the
-    // window holds two speeds, made the filter outgrow the element spaces, merge marks and run away
-    // (final check F-2); a real slowdown now takes ln(ratio) / ln(max_dit_growth) marks to follow.
+    // max_dit_growth per mark (owner decision 2026-09-29). The bound is applied here, at each key-up
+    // counted for speed; a dropout merge in key_down() restores the state before the merged mark's
+    // update, so each physical mark is bounded once. A jump of x2 in one update, while the window held
+    // two speeds, made the filter outgrow the element spaces, merge marks and run away (final check
+    // F-2); a real slowdown takes ln(ratio) / ln(max_dit_growth) marks to follow.
     const bool following = front_end_ && recent_marks_.size() >= config_.follow_after_marks &&
                            marks_since_reacquire_ >= config_.follow_after_marks;
     if (following) dit = std::min(dit, config_.max_dit_growth * dit_s_);
@@ -320,8 +345,7 @@ void ClassicalDecoder::update_speed() {
     // The matched filter follows the speed once the estimate rests on enough marks, and
     // after a re-acquisition only once enough of them are new. Its own dit may grow at most
     // max_dit_growth per mark, from its first follow step on (owner decision 3 of option 1,
-    // 2026-09-29; as coded, per speed update: the same known defect as above): the estimate may
-    // rest on up to 7 unbounded marks, and a jump from the 20 ms
+    // 2026-09-29): the estimate may rest on up to 7 unbounded marks, and a jump from the 20 ms
     // acquisition dit straight to a wrong 110 ms estimate made the filter outgrow the element
     // spaces and run away in simulation. Decreases are not bounded.
     if (front_end_ && recent_marks_.size() >= config_.follow_after_marks &&

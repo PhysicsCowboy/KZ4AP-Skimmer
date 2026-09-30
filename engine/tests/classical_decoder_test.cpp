@@ -335,6 +335,37 @@ Tally count_passes(unsigned first_seed, Run&& run) {
     return tally;
 }
 
+// K (samples) and the count of marks for speed, read just before the sample at each physical mark's
+// keyed start (keying() times), and once more after the input: between one mark's last key event and
+// the next mark's first. At 12 WPM a mark's key-up, and any dropout merge after it (within 0.3 dit),
+// come before the next mark's start, one dit (100 ms) after the mark's end (derived: the key-up lags the
+// mark's end by about half the filter, at most 0.4 dit).
+struct BetweenMarks {
+    std::vector<int> k;
+    std::vector<std::size_t> counted;
+    std::vector<DecodedSymbol> chars;
+};
+
+BetweenMarks decode_between_marks(ClassicalDecoder& d, const std::vector<Sample>& x,
+                                  const std::vector<std::pair<double, double>>& marks) {
+    BetweenMarks out;
+    std::size_t next = 0;
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        if (next < marks.size() && i == static_cast<std::size_t>(std::ceil(marks[next].first * kRate))) {
+            out.k.push_back(d.filter_length());
+            out.counted.push_back(d.marks_since_reacquire());
+            ++next;
+        }
+        auto u = d.process(std::span<const Sample>(x).subspan(i, 1), static_cast<double>(i) / kRate);
+        out.chars.insert(out.chars.end(), u.chars.begin(), u.chars.end());
+    }
+    auto f = d.flush();
+    out.chars.insert(out.chars.end(), f.chars.begin(), f.chars.end());
+    out.k.push_back(d.filter_length());
+    out.counted.push_back(d.marks_since_reacquire());
+    return out;
+}
+
 }  // namespace
 
 TEST(ClassicalDecoder, EnvelopeModeTracksNoFrequency) {
@@ -363,36 +394,61 @@ TEST(ClassicalDecoder, MatchedFollowsTheAnchorItIsGiven) {
 
 TEST(ClassicalDecoder, MatchedFilterGrowsAtMostTheBoundPerMark) {
     // Owner decision 3 of option 1 (2026-09-29): the x1.25 growth bound applies from the filter's
-    // first follow step, per mark. This test checks each increase of K, that is per speed update, not
-    // per mark, so it passes despite the known defect (a dropout merge lets one mark be bounded
-    // several times; backlog "Growth bound per mark"). The name states the decision, not what is
-    // checked. A clean 12 WPM station (T = 100 ms): the decoder's estimate is near 100 ms
-    // after 7 unbounded marks, but the filter must grow from the 20 ms acquisition dit (K = 24) by
-    // at most x1.25 per mark: 24, 30, 38, 47, 59, 73, 92, 114, 120 samples (derived), each step at
-    // most 1.25 K + 1.125 (both K rounded). Before this bound, K jumped 24 -> 120 in one step.
+    // first follow step, per mark. Checked per physical mark (Task 15): K is read between marks, at
+    // each mark's keyed start, so every update within one mark (a dropout merge and its re-measure)
+    // counts as one step. A clean 12 WPM station (T = 100 ms): the decoder's estimate is near 100 ms
+    // after 7 unbounded marks, but the filter must grow from the 20 ms acquisition dit (K = 24) by at
+    // most x1.25 per mark: 24, 30, 38, 47, 59, 73, 92, 114, 120 samples (derived), each step at most
+    // 1.25 K + 1.125 (both K rounded). Before Task 15 the bound held per speed update only, and a
+    // widening that re-opened the mark could apply it several times within one mark (Task 14).
     // Deterministic apart from the noise at S500 = 30 dB; not simulated.
     const std::string msg = "PARIS PARIS PARIS";
-    const double end = keying(msg, 12, 0.5).back().second;
-    const auto x = keyed_signal(msg, 12, kRate, end + 0.3, 0, 1.0, sigma_for_s500(30), 44);
+    const auto marks = keying(msg, 12, 0.5);
+    const auto x = keyed_signal(msg, 12, kRate, marks.back().second + 0.3, 0, 1.0, sigma_for_s500(30), 44);
     ClassicalDecoder d(kRate, matched());
-    std::vector<DecodedSymbol> chars;
-    int k = d.filter_length();
+    const auto got = decode_between_marks(d, x, marks);
     int steps = 0;
-    for (std::size_t i = 0; i < x.size(); ++i) {
-        auto u = d.process(std::span<const Sample>(x).subspan(i, 1), static_cast<double>(i) / kRate);
-        chars.insert(chars.end(), u.chars.begin(), u.chars.end());
-        const int now = d.filter_length();
-        if (now > k) {
-            ++steps;
-            EXPECT_LE(now, 1.25 * k + 1.125) << "K " << k << " -> " << now << " at " << static_cast<double>(i) / kRate << " s";
-        }
-        k = now;
+    for (std::size_t m = 0; m + 1 < got.k.size(); ++m) {
+        if (got.k[m + 1] > got.k[m]) ++steps;
+        EXPECT_LE(got.k[m + 1], 1.25 * got.k[m] + 1.125) << "mark " << m << ": K " << got.k[m] << " -> " << got.k[m + 1];
     }
-    auto f = d.flush();
-    chars.insert(chars.end(), f.chars.begin(), f.chars.end());
     EXPECT_GE(steps, 7);  // ln(100 ms / 20 ms) / ln 1.25 = 7.2 (derived)
-    EXPECT_NEAR(k, std::lround(0.8 * 0.1 * kRate), 12);
-    EXPECT_TRUE(ends_with(text(chars), "PARIS")) << text(chars);
+    EXPECT_NEAR(got.k.back(), std::lround(0.8 * 0.1 * kRate), 12);
+    EXPECT_TRUE(ends_with(text(got.chars), "PARIS")) << text(got.chars);
+}
+
+TEST(ClassicalDecoder, MatchedMergedDropoutIsOneMarkForSpeed) {
+    // Task 15. A dropout merged back into its mark must not update the speed twice: the count of
+    // marks for speed rises by at most 1 per physical mark, and K by at most x1.25 (+1.125 for
+    // rounding both K). A clean 12 WPM station (T = 100 ms) at S500 = 30 dB, with a 20 ms hard dropout
+    // in the middle of every dah from the sixth mark (A's dah) on. "PAR MMM ...": the filter starts
+    // following after 8 or 9 marks (Task 16 may leave the first one uncounted), so the dahs of MMM
+    // arrive while K <= 59 samples. Derived for a strong signal (Lambda ~ a^2 (x/a - 1/2)): the key
+    // goes up where the boxcar holds less than half the carrier, so a 20 ms (30-sample) gap keys it
+    // up while K < 60, and the key goes down again 20 ms later, within 0.3 dit (30 ms at a 100 ms
+    // estimate), so the decoder merges it. Before Task 15, A's and R's dahs (marks 5 and 7) count
+    // twice, and a merged dah while following grows K by up to 1.25^2 (derived from the code).
+    // Deterministic apart from the noise; not simulated.
+    const std::string msg = "PAR MMM PARIS PARIS";
+    const auto marks = keying(msg, 12, 0.5);
+    const double duration = marks.back().second + 0.3;
+    auto x = keyed_signal(msg, 12, kRate, duration, 0, 1.0, 0.0);
+    for (std::size_t m = 5; m < marks.size(); ++m) {
+        const auto [on, off] = marks[m];
+        if (off - on < 0.2) continue;  // dits are 0.1 s, dahs 0.3 s
+        const double mid = 0.5 * (on + off);
+        for (auto i = static_cast<std::size_t>((mid - 0.010) * kRate); i < static_cast<std::size_t>((mid + 0.010) * kRate); ++i)
+            x[i] = Sample(0.0f, 0.0f);
+    }
+    x = add(std::move(x), keyed_signal("", 12, kRate, duration, 0, 1.0, sigma_for_s500(30), 47));  // noise only
+    ClassicalDecoder d(kRate, matched());
+    const auto got = decode_between_marks(d, x, marks);
+    for (std::size_t m = 0; m + 1 < got.k.size(); ++m) {
+        EXPECT_LE(got.counted[m + 1], got.counted[m] + 1)
+            << "mark " << m << ": count " << got.counted[m] << " -> " << got.counted[m + 1];
+        EXPECT_LE(got.k[m + 1], 1.25 * got.k[m] + 1.125) << "mark " << m << ": K " << got.k[m] << " -> " << got.k[m + 1];
+    }
+    EXPECT_TRUE(ends_with(text(got.chars), "PARIS")) << text(got.chars);
 }
 
 TEST(ClassicalDecoder, MatchedDecodesCleanSignal) {
