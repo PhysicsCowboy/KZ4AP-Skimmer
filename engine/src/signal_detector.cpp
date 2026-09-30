@@ -90,7 +90,7 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
                 return std::abs(t.bin - i) < config_.min_separation_bins;
             });
         } else {
-            // Within D of a track's current frequency (which follows its own peak), the peak is that
+            // Within D_ch of a track's current frequency (which follows its own peak), the peak is that
             // track's station or its spread.
             const double f = refined_freq(avg_db, i);
             near_track = std::any_of(active_.begin(), active_.end(), [&](const Active& t) {
@@ -160,9 +160,11 @@ bool SignalDetector::is_peak(const std::vector<float>& avg_db, int i) const {
 void SignalDetector::follow_peaks(const std::vector<float>& avg_db, float floor_db) {
     // Owner decisions 2026-09-29, option 1: the detector alone decides which station a channel
     // follows. Each track moves to the strongest peak (by the birth rule) that stands at least the
-    // keep-alive level above the floor and whose interpolated frequency is within D of the track's
+    // keep-alive level above the floor and whose interpolated frequency is within D_ch of the track's
     // current frequency; with none (the station is silent, or only a stronger neighbor's skirt is
-    // there, which is not a local maximum) it holds. A peak beyond D can become a track of its own.
+    // there, which is not a local maximum) it holds. A peak beyond D_ch can become a track of its own.
+    // It does not check whether another track already holds the peak, so two tracks could converge on
+    // one station (derived, not observed; backlog "Tracks converging on one peak").
     const float keep_alive_db = config_.threshold_db - config_.hysteresis_db;
     const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
     const int reach = static_cast<int>(std::ceil(config_.attribution_distance_hz / bin_hz)) + 1;

@@ -470,7 +470,7 @@ wide ±150 Hz channel filter does not need this; a dit-matched one does
 (`docs/research/proakis-ook-notes.md`, section 2.7 and item 15).
 
 Done within ±75 Hz of the channel's center in Matched mode (each detector
-track follows its own peak within D = 47 Hz; the channel's NCO fine-tunes
+track follows its own peak within the channel distance D_ch = 47 Hz; the channel's NCO fine-tunes
 within ±12 Hz of it; slow drift only, owner 2026-09-29). Still open: moving
 the channel's center bin for larger drifts, drift in Envelope mode, and
 drift in oracle mode (no detector; the tracker covers ±12 Hz of the
@@ -524,11 +524,14 @@ owner's SDRplay recordings exist, measure the real distribution of |Δf|
 between a CQ and the stations that answer it, and replace
 `ANSWER_OFFSET_BANDS_HZ` in `training/kz4ap_synth/generate.py` with it. It
 matters because the pipeline treats a station within the channel distance
-D = 47 Hz of a channel's station as the same channel (the detector's track
-moves to its peak and the channel follows), and one farther away as a
-separate track (milestone 2,
-part 1, Design decisions B); the milestone-1 detector heard stations within
-about 47 Hz as one track, from about 70 Hz as two, and either in between.
+D_ch = 47 Hz of a channel's station as the same channel (the detector's track
+moves to its peak and the channel's decoder re-centers on it), and one
+farther away as a separate track (milestone 2, part 1, Design decisions B),
+with an ambiguous band from 47 Hz to about 94 Hz where the interpolated
+frequencies it compares can read closer than D_ch (derived bound;
+`docs/signal-processing.md` §11, "QSO regimes"); the milestone-1 detector
+(the Envelope path) hears stations within about 47 Hz as one track, from
+about 70 Hz as two, and either in between.
 
 Measured on group H (milestone 2, part 1, 3 seeds, through the detector;
 `docs/signal-processing.md` §8b): tracks per QSO, Envelope / Matched, were
@@ -536,9 +539,12 @@ Measured on group H (milestone 2, part 1, 3 seeds, through the detector;
 separate-track (18; each station's track dies during the other's over and
 is re-born). QSO-label CER was 0.118 / 0.197 same-track and 0.085 / 0.297
 ambiguous; station-label CER 0.616 / 0.620 separate-track. So the regime
-decides the result: the ambiguous band (47–70 Hz) is where Matched does
-worst (2 of 6 grid QSOs at 50 Hz above CER 0.4), and separate-track QSOs
-are dominated by track turnover on both paths. How many real answers fall
+decides the result: the ambiguous band (47–70 Hz on the Envelope path,
+47–94 Hz on the Matched path; the suite's QSOs there are at 50–70.2 Hz) is
+where Matched does worst on the QSO label (2 of 6 grid QSOs at 50 Hz above
+CER 0.4: exactly the two that split into two tracks on the Matched path,
+whose caller channel does not pass the answering station; §8b), and
+separate-track QSOs are dominated by track turnover on both paths. How many real answers fall
 in each band therefore matters.
 
 ### Tune the Matched front end by measurement
@@ -557,7 +563,7 @@ window (2 s), the tracker's fine-tuning range (±12 Hz around the
 detector's frequency) and minimum weight (0.6), when the filter starts following the speed (8 marks), the
 dit-estimate growth bound (decided ×1.25 per mark, also from the filter's
 first follow step; as coded it acts per speed update, a defect, see "Growth
-bound per mark" below), and the channel distance (D = 47 Hz). The amplitude estimate is biased
+bound per mark" below), and the channel distance (D_ch = 47 Hz). The amplitude estimate is biased
 low by the filter's ramps (0.85–0.88 of the true amplitude for PARIS at
 25 WPM, simulated), which lengthens marks by about 7 ms at 25 WPM; measure
 whether that matters.
@@ -670,14 +676,22 @@ sidelobes; take it up with the co-channel item below (owner, 2026-09-29).
 Measured bearing (group E, oracle, 3 stations per row): a neighbor 50 Hz
 away at +0 dB re the wanted station's key-down power, Matched CER 0.064
 against Envelope's 0.857; at +10 and +20 dB, 0.814 and 1.123 (Envelope
-0.787 and 0.855). Group H through the detector at 50 Hz (ambiguous): 2 of
-6 grid QSOs above CER 0.4 with Matched, none with Envelope; the answering
-station's first-word CER 0.444 (Envelope 0.032). The retune delay (see
+0.787 and 0.855). Group H through the detector at 50 Hz (ambiguous on
+both paths): 2 of 6 grid QSOs above CER 0.4 with Matched on the QSO label,
+none with Envelope; the answering station's first-word CER 0.444 (Envelope
+0.032). Those two are the QSOs that split into two tracks on the Matched
+path, so the QSO label, which does not fit a split QSO, charges the
+answering station's overs (on its own track, not passed by the caller's
+re-centered channel) as missing; in the 4 that stayed one track Matched
+read 0.032–0.154 (`docs/signal-processing.md` §8b). This is not the 60–70 Hz
+sidelobe leak of this item. The retune delay (see
 "Wrong or missing first characters"): the answering station's first-word
 CER with Matched was 0.235, 0.147 and 0.181 at 0, 10 and 25 Hz (Envelope
 0.199, 0.213, 0.422; an upper bound). Whether the first-step growth bound
-removed the 50 Hz runaway: not removed (2 of 6 here against 12 of 30 in
-the simulation before it; as coded the bound acts per update, a defect, above).
+removed the 50 Hz runaway (12 of 30 failures in the simulation before it):
+not shown by these runs, since the 2 failures are the split QSOs and the
+per-station view reads poorly at 50 Hz on both paths (0.947 Envelope,
+0.953 Matched); as coded the bound acts per update, a defect, below.
 
 #### Two stations keying at the same time within a few tens of Hz (postponed)
 
@@ -720,6 +734,26 @@ gets one bounded update; then re-run the suite (the start-up runaways and
 group H's 50 Hz rows in `docs/signal-processing.md` §8b are the cases to
 check). This is a code fix to meet a decision already made, not a
 parameter change, but the owner decides when.
+
+### Tracks converging on one peak (possible limit; derived from the code, not observed)
+
+With `Attribution::Distance` (the Matched path), `SignalDetector::follow_peaks`
+(engine/src/signal_detector.cpp) moves each track to the strongest
+qualifying peak within D_ch = 47 Hz of its own frequency without checking
+whether another track already holds that peak, and channels are never
+merged. Two tracks born just over D_ch apart could both end on one
+station's peak when the other station falls silent, and then two decoders
+print the same text until one track dies. The bench cannot show it yet:
+a converged track is still matched to its own label by its birth
+frequency (so it is not a false track), and the results record only birth
+frequencies. Group H's drawn QSO at 53.9 Hz (seed 1) may be a case: the
+caller's track ended on the answering station's carrier, and that station
+also had a track born at its own carrier (whether both were alive at once
+is not recorded; `docs/signal-processing.md` §11, "QSO regimes"). To do: record each track's
+frequency history (or last frequency) in the bench's results, count
+tracks that share a peak, check the crowded group at 50 Hz spacing, and,
+if it happens, decide the rule (for example, a track may not move onto a
+peak another track holds). Owner's decision; not a parameter change.
 
 ### VE3NEA's pitch error in group B
 

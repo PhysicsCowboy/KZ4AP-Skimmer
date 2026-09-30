@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Benchmark smoke test: generate a synthetic band, score it against the stored
-# baselines on the milestone-1 (Envelope) path, which must stay bit-identical, and on the
+# baselines (CER and detection recall limits) on the milestone-1 (Envelope) path and on the
 # Matched path (the default), and check that two runs of each produce identical results.
+# This bounds the Envelope CER; it does not pin bit-identity with milestone 1 (see
+# docs/signal-processing.md, section 11, "Smoke check", for that evidence and how the limits
+# were chosen).
 # Usage: bench/smoke.sh BUILD_DIR   (run from the repository root)
 set -euo pipefail
 

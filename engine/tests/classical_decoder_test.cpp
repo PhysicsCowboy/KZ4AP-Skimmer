@@ -363,7 +363,10 @@ TEST(ClassicalDecoder, MatchedFollowsTheAnchorItIsGiven) {
 
 TEST(ClassicalDecoder, MatchedFilterGrowsAtMostTheBoundPerMark) {
     // Owner decision 3 of option 1 (2026-09-29): the x1.25 growth bound applies from the filter's
-    // first follow step. A clean 12 WPM station (T = 100 ms): the decoder's estimate is near 100 ms
+    // first follow step, per mark. This test checks each increase of K, that is per speed update, not
+    // per mark, so it passes despite the known defect (a dropout merge lets one mark be bounded
+    // several times; backlog "Growth bound per mark"). The name states the decision, not what is
+    // checked. A clean 12 WPM station (T = 100 ms): the decoder's estimate is near 100 ms
     // after 7 unbounded marks, but the filter must grow from the 20 ms acquisition dit (K = 24) by
     // at most x1.25 per mark: 24, 30, 38, 47, 59, 73, 92, 114, 120 samples (derived), each step at
     // most 1.25 K + 1.125 (both K rounded). Before this bound, K jumped 24 -> 120 in one step.
@@ -579,7 +582,7 @@ TEST(ClassicalDecoder, MatchedIgnoresAWeakStation50HzAway) {
 }
 
 TEST(ClassicalDecoder, MatchedIgnoresAStation70HzAway) {
-    // Beyond D = 47 Hz the answering station has its own track and this channel, its anchor held on
+    // Beyond D_ch = 47 Hz the answering station has its own track and this channel, its anchor held on
     // A, ignores it. B 70 Hz away, 6 dB weaker (re A's key-down power): simulated with the first
     // design over 100 numpy seeds, f-hat within 0.2 Hz of A and A's second over intact in 99; the rate
     // carries over to option 1 (argued; Task 12 intro). (At A's level or stronger, 60-70 Hz away, B

@@ -130,7 +130,7 @@ TEST(FrequencyTracker, SetAnchorJumpsOnlyBeyondTheFineTuneRange) {
     tracker.set_anchor(5.0);
     EXPECT_EQ(tracker.anchor_hz(), 5.0);
     EXPECT_EQ(tracker.offset_hz(), locked);
-    // The detector's track moved to another peak (a turnover within D): the NCO jumps there.
+    // The detector's track moved to another peak (a turnover within D_ch): the NCO jumps there.
     tracker.set_anchor(30.0);
     EXPECT_EQ(tracker.offset_hz(), 30.0);
     n = feed(tracker, Tone{31.0}, n, seconds(3.0), 1.0f);

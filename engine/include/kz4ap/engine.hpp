@@ -24,7 +24,8 @@ struct EngineConfig {
     int fft_size = 0;  // 0 = choose automatically: the largest power of two with sample_rate / fft_size >= 20 Hz
     int channel_bins = 64;
     double channel_cutoff_hz = 150.0;
-    DetectorConfig detector;  // sample_rate, fft_size and hop are overwritten by the engine
+    DetectorConfig detector;  // sample_rate, fft_size, hop and attribution_distance_hz (from
+                              // channel_distance_hz) are overwritten by the engine
     ClassicalDecoderConfig decoder;
 
     // Oracle mode, for the benchmark: when not empty, a channel is opened at each of
@@ -33,14 +34,19 @@ struct EngineConfig {
     // detector is bypassed: no other track is born and none dies.
     std::vector<double> oracle_frequencies_hz;
 
-    // D, Hz (owner decisions 2026-09-29, option 1): each detector track follows its own spectral peak
-    // within D of its current frequency, and a new peak within D of a track belongs to it; a channel's
+    // D_ch, Hz (owner decisions 2026-09-29, option 1; Matched path, Attribution::Distance): each detector
+    // track follows its own spectral peak within D_ch of its current frequency, and a new peak within
+    // D_ch of a track belongs to it; a channel's
     // frequency tracker fine-tunes around the detector's frequency (FrequencyTrackerConfig::fine_tune_hz).
     double channel_distance_hz = 47.0;
 };
 
-// The milestone-1 pipeline, bit for bit (kept selectable and pinned by CI; owner, 2026-09-29):
-// the Envelope decoder and the milestone-1 detector rules (frequency fixed at birth, bin attribution).
+// The milestone-1 pipeline (kept selectable; owner, 2026-09-29): the Envelope decoder and the
+// milestone-1 detector rules (frequency fixed at birth, bin attribution). CI (bench/smoke.sh) bounds its
+// smoke CER at 0.09 and checks that two runs agree; it does not pin bit-identity with milestone 1. That
+// rests on the generator's frozen-copy tests (training/tests/test_generate.py), reading this path, and
+// its smoke CER, 34 edits in 964 symbols, unchanged since Task 2 (docs/signal-processing.md, section 11,
+// "Smoke check").
 inline EngineConfig with_envelope_path(EngineConfig config) {
     config.decoder.front_end = FrontEnd::Envelope;
     config.detector.attribution = Attribution::Bins;

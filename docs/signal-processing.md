@@ -65,19 +65,21 @@ to volts or dBm at the antenna.
 | r | channel (decoder input) sample rate, fs / D | 1500 Hz |
 | dit | duration of one Morse dit, 1.2 s / WPM (PARIS timing) | 48 ms at 25 WPM |
 | j | exponent in "48 kHz × 2^j" (j = 0, 1, 2, …): the rates 48, 96, 192, 384, 768 kHz | |
-| K | matched-filter (boxcar) length, round(β·dit·r) | samples |
+| K | matched-filter (boxcar) length, round(β·dit·r), samples | 58 at 25 WPM |
 | β | matched-filter length as a fraction of the dit | 0.8 |
-| v[n] | matched-filter output | FS |
-| σ_v, s | noise RMS per real component of v (the complex noise power of v is 2σ_v²), and v's key-down amplitude | FS |
-| x, a | normalized envelope \|v\|/σ_v and amplitude s/σ_v | dimensionless |
-| Λ | log-likelihood ratio, key-down over key-up: −a²/2 + ln I₀(a·x) | nats |
-| g, p | posterior log-odds Λ + ln(P₁/P₀), and the posterior probability of key-down | nats, 0…1 |
+| v[n] | matched-filter output, complex, FS | |
+| σ_v, s | noise RMS per real component of v (the complex noise power of v is 2σ_v²), and v's key-down amplitude, FS | |
+| x, a | normalized envelope \|v\|/σ_v and amplitude s/σ_v (dimensionless) | |
+| Λ | log-likelihood ratio, key-down over key-up: −a²/2 + ln I₀(a·x), nats | |
+| g, p | posterior log-odds Λ + ln(P₁/P₀), nats, and the posterior probability of key-down, 0…1 | |
 | P₁ | prior probability of key-down | 0.44 |
-| f_off | a station's (carrier's) offset from its channel's center | Hz |
-| f̂ | frequency tracker's estimate of f_off, and the NCO frequency | Hz |
-| f_a | the tracker's anchor: where the station is, as the detector says (its frequency for the track minus the channel center) | Hz |
-| τ_L | lag of the frequency discriminator, rounded to whole samples; unambiguous range ±1/(2τ_L) | τ_L = 8/r = 5.333 ms (±93.75 Hz) |
+| f_off | a station's (carrier's) offset from its channel's center, Hz | |
+| f̂ | frequency tracker's estimate of f_off, and the NCO frequency, Hz | |
+| f_a | the tracker's anchor: where the station is, as the detector says (its frequency for the track minus the channel center), Hz | |
+| τ_L | lag of the frequency discriminator, s, rounded to whole samples; unambiguous range ±1/(2τ_L) | τ_L = 8/r = 5.333 ms (±93.75 Hz) |
 | τ_f | time constant of the frequency average, s of key-down weight 1 | 0.5 s |
+| D_ch | channel distance: a detector track follows its own peak within D_ch of its current frequency, and a new peak within D_ch of a track belongs to it (Matched path, `Attribution::Distance`), Hz | 47 Hz |
+| f_sep | separation of two stations' carriers (for example an answering station's offset from the caller), Hz | |
 
 ## Overview
 
@@ -358,7 +360,7 @@ the floor (6 dB SNR per bin) *and* it is the maximum within **±47 Hz**
 every frame (moving by at most **23 Hz**, 1 bin, between frames) for
 **0.5 s**, and nothing is detected during the first 1 s of a recording (the
 averages settle first). A peak whose interpolated frequency is within the
-**channel distance D = 47 Hz** of an existing track's *current* frequency
+**channel distance D_ch = 47 Hz** of an existing track's *current* frequency
 is attributed to that track instead (below, "Channel distance"). The
 milestone-1 rule, a peak less than **3 bins** (70 Hz) from a track's bin,
 is still selectable (`Attribution::Bins`) and is what the Envelope path
@@ -369,11 +371,16 @@ converted to bins from the actual bin width (`DetectorConfig`
 ### Why neighboring bins come up at all
 
 Averaging is per bin and never merges bins. Neighbors enter only the decision
-"is this a new station?" (the ±2-bin peak rule, the 3-bin attribution rule)
-and the level of an existing track (its bin ±1, below). These rules undo
-spreading: one station puts power in 2–4 adjacent bins because of the Hann
-window's main lobe, its position between bins, and its keying sidebands.
-Without them, one station would become several tracks.
+"is this a new station?" (the ±47 Hz peak rule, ±2 bins at 23.4 Hz, on both
+paths; then the attribution rule, which differs by path: the 3-bin rule on the
+Envelope path, `Attribution::Bins`, and the channel distance D_ch = 47 Hz
+between interpolated frequencies on the default Matched path,
+`Attribution::Distance`), the level of an existing track (its bin ±1, below)
+and, on the Matched path only, which peak a track follows (below, "Channel
+distance"). These rules undo spreading: one station puts power in 2–4
+adjacent bins because of the Hann window's main lobe, its position between
+bins, and its keying sidebands. Without them, one station would become
+several tracks.
 
 Using larger bins instead would be worse on two counts: noise per bin grows in
 proportion to bin width (a 3× wider bin gives 10·log₁₀3 = 4.8 dB lower SNR per
@@ -446,7 +453,7 @@ section 8).
 
 ### Channel distance
 
-One distance, **D = 47 Hz** (`EngineConfig::channel_distance_hz`;
+One distance, **D_ch = 47 Hz** (`EngineConfig::channel_distance_hz`;
 **heuristic**, owner decisions 2026-09-29, "option 1"), decides with the
 Matched path which station each channel follows. The detector alone
 decides:
@@ -454,15 +461,16 @@ decides:
 1. **Following:** every frame, before its level is read, each track moves
    to the strongest bin that is a peak by the birth rule (the maximum
    within ±47 Hz), stands at least 3 dB above the floor (the keep-alive
-   level), and whose interpolated frequency is within D of the track's
+   level), and whose interpolated frequency is within D_ch of the track's
    current frequency. With none, it holds its frequency.
-2. **Attribution:** a new peak within D of a track's current frequency is
+2. **Attribution:** a new peak within D_ch of a track's current frequency is
    that track's (above); one farther away can become a track of its own.
 3. **The channel's tracker fine-tunes** within ±12 Hz of the detector's
    frequency for its track (section 7); the engine passes it before every
-   channel block. So in a QSO turnover within D the channel retunes to the
-   answering station when the detector's peak moves there, and back.
-   Channels are never merged.
+   channel block. So in a QSO turnover within D_ch, when the detector's
+   peak moves to the answering station, the decoder's anchor and NCO move
+   there, and back; the channel itself (its center, the bin nearest the
+   track's birth frequency) does not move. Channels are never merged.
 
 Why 47 Hz: about the half-width of the detector's Hann main lobe, 2/T_w
 for its 42.7 ms window (46.9 Hz); a peak closer than that to a station can
@@ -470,7 +478,7 @@ be that station's own spread. Stated in Hz, it does not change with the
 FFT size.
 
 Simulated (plan, 2026-09-29; A at S₅₀₀ = 15 dB, 25 WPM; B answering at
-18 WPM, its level in dB re A's key-down power; 30 seeds each): within D
+18 WPM, its level in dB re A's key-down power; 30 seeds each): within D_ch
 (0–40 Hz) at −6 dB or stronger, A's channel followed B, decoded it and
 came back, with one channel; 60–200 Hz away B had its own channel,
 decoded in 30 of 30 from −6 dB up; channels were never merged.
@@ -496,15 +504,34 @@ decoded in 30 of 30 from −6 dB up; channels were never merged.
   from its label, or a QSO's answering station more than 12 Hz from the
   label, cannot be followed there; the benchmark marks such oracle rows as
   not meaningful for the Matched front end.
+- **Two tracks can converge on one peak (possible; derived from the code,
+  not observed).** Following (item 1, `SignalDetector::follow_peaks`)
+  moves each track to the strongest qualifying peak within D_ch of its
+  own frequency without checking whether another track already holds
+  that peak, and channels are never merged. Two tracks born just over
+  D_ch apart (for example stations at the crowded group's 50 Hz spacing)
+  could both move onto one station's peak if the other station falls
+  silent and its track's frequency lies within D_ch of that peak (a keyed
+  station's interpolated frequency moves from frame to frame; by how much
+  has not been measured); they
+  would then follow the same station, with two decoders printing the same
+  text, until one dies. No benchmark run has been checked for it: the
+  crowded group's Matched runs report 0 false tracks (all 12 recordings,
+  3 seeds), but that count would not show it, since each converged track
+  was matched to its own label by its birth frequency, the only frequency
+  the results record. Group H's drawn QSO at 53.9 Hz may be a case
+  (section 11, "QSO regimes"). Backlog: "Tracks converging on one peak".
 
 ### Cap
 
 At most **200** tracks (`DetectorConfig::max_tracks`, a config parameter not
 yet exposed to users). When the cap is reached, a new candidate replaces the
 weakest track if it is stronger; otherwise it is ignored. **Status:
-heuristic**, a guard against CPU overload, not a measured limit. For scale:
-the physical ceiling with 3-bin separation is about fs / 70 Hz ≈ 2700 tracks
-at 192 kHz, and a busy contest can put more than 100 stations in 192 kHz.
+heuristic**, a guard against CPU overload, not a measured limit. For scale
+(derived): the physical ceiling is set by the attribution rule, about
+fs / D_ch = 192 000 Hz / 47 Hz ≈ 4090 tracks at 192 kHz on the default
+Matched path, and fs / 70.3 Hz ≈ 2730 with the Envelope path's 3-bin rule
+(3 × 23.4 Hz); a busy contest can put more than 100 stations in 192 kHz.
 
 ### Oracle mode (benchmark only)
 
@@ -664,19 +691,30 @@ stages").
 ### Residual frequency offset
 
 Because f_c is rounded to a bin, a station can sit up to ±11.7 Hz from 0 Hz in
-its channel, well inside the flat passband. The offset appears as slow phase
-rotation, which the decoder ignores (it uses only the magnitude).
+its channel, well inside the flat passband. The two front ends treat that
+offset differently:
 
-That is harmless **only because the channel filter is wide**. A filter
+- **Envelope path** (`--front-end envelope`): the offset appears as slow
+  phase rotation, which this decoder ignores (it uses only the magnitude).
+- **Matched path** (the default): the decoder's frequency tracker
+  re-centers the station before the dit-matched filter (next subsection,
+  "Frequency re-centering"; median residual 0.11 Hz measured in group F,
+  S₅₀₀ = 5 dB).
+
+Ignoring it on the Envelope path is harmless **only because the channel
+filter is wide**. A filter
 matched to an element of duration T_el (noise bandwidth exactly 1/T_el for
 a rectangular element) scales a tone offset by f_off (Hz) by
 |sinc(f_off·T_el)| in amplitude, where sinc(x) = sin(πx)/(πx) (**derived**, from Proakis &
 Salehi, *Digital Communications*, 5th ed., eq. 4.5–28;
 `docs/research/proakis-ook-notes.md`, section 2.7). At ±11.7 Hz a
 dit-matched filter would lose 5.1 dB at 25 WPM and 8.8 dB at 20 WPM (signal
-power, relative to a centered station). So the planned narrow second-stage
-filter (backlog: "Channel filtering, two stages") needs each station
-re-centered to a fraction of a bin first; the current code does not do this.
+power, relative to a centered station). So a narrow filter needs each
+station re-centered to a fraction of a bin first: the Matched path does
+this with its tracker ahead of its dit-matched filter (next subsection);
+the Envelope path does not re-center, and the planned narrow second-stage
+filter (backlog: "Channel filtering, two stages") would need the same
+re-centering in front of it.
 
 A channel opens when its track is born and closes when it dies. It starts
 with the current block, so the decoder never sees the signal from before the
@@ -763,8 +801,8 @@ current frequency for the track minus the channel center (section 6,
   K = 58 (25 WPM) and 32% at K = 288 (5 WPM), decaying with τ_f
   afterward. The classical decoder (section 8, "Two front ends"), which
   puts the tracker in front of the matched filter, does not hold off the
-  average for those samples; the bias is left at this bound (not
-  measured).
+  average for those samples; the bias is bounded by the figures above
+  (derived) and has not been measured.
 - **Expected accuracy:** about 0.5 Hz RMS at S₅₀₀ = 0 dB and 0.9 Hz at
   S₅₀₀ = −5 dB, 25 WPM (derived, an upper bound); a simulation of the
   whole chain (NCO, K = 58 boxcar, posterior weights, 60 s of PARIS,
@@ -1012,7 +1050,7 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
   filter stays at the last station's width (±21–26 Hz main lobe, nulls
   near 25 and 50 Hz) and ŝ at its level, and a station answering there,
   or 6 dB weaker (re the first station's key-down power), is never keyed
-  (simulated). After it, a station Δf away loses |sinc(Δf·24/1500 s)|² at
+  (simulated). After it, a station f_sep away loses |sinc(f_sep·24/1500 s)|² at
   K = 24 (−2.4 dB relative to a centered station at 25 Hz, derived) and
   must pass the acquisition squelch, so it needs about S₅₀₀ ≥ 0 dB at
   25 Hz.
@@ -1158,7 +1196,9 @@ S₅₀₀ values) unless it names another reference. Groups A–G and the "H, o
 bypassed, channel on the nearest bin); the rest run the whole pipeline.
 Parentheses: bootstrap 95% intervals over signals (1000 resamples); none
 for a row of one signal. "Envelope" is the milestone-1 path
-(`--front-end envelope`, bit-identical to milestone 1); "Matched" is the
+(`--front-end envelope`, unchanged from milestone 1 by the evidence in
+section 11, "Smoke check"; CI bounds its smoke CER, it does not pin bit
+identity); "Matched" is the
 default. No parameter was tuned for these runs (owner, 2026-09-29).
 Source: `build/suite/full3/summary.md` (not in the repository; rerun
 with the commands in section 11, "Suites").
@@ -1353,7 +1393,7 @@ measured.
 
 | | Envelope | Matched |
 |---|---|---|
-| CPU per channel-second (whole process), ms/s | 0.202 | 0.381 |
+| CPU per channel-second (process, over the bench's timed window; section 11), ms/s | 0.202 | 0.381 |
 | Decoders per channel-second, ms/s | 0.014 | 0.177 |
 | Median frequency error, group F offsets, Hz | 5.9 (bin rounding; no re-centering) | 0.11 at S₅₀₀ = 5 dB, 0.13 at 0 dB (30 signals each) |
 
@@ -1361,7 +1401,11 @@ CPU is over 384 495 channel-seconds (Envelope) and 384 661 (Matched), on
 the machine above; the Matched front end adds 0.163 ms of decoder time per
 channel-second, 11.6 times the Envelope decoder's time (the Matched decoders'
 total, 0.177 ms, is 12.6 times it), and nearly doubles the
-whole process (the shared FFTs and detector dominate Envelope's).
+whole process: outside the decoders (WAV reading, the shared FFTs, the
+detector in the detector runs only, the bench's event subscriber;
+section 11, "CPU time per channel-second") Envelope's process spends
+0.202 − 0.014 = 0.188 ms/s. Most channel-seconds (340 465) come from
+oracle runs, which skip the detector (section 11 splits the figures).
 
 **Reading the results.**
 
@@ -1417,14 +1461,35 @@ whole process (the shared FFTs and detector dominate Envelope's).
   median of 0–1 character lost at 10–25 Hz for answering stations at −6 to
   +6 dB re the caller, consistent with these rates for 3–5 character
   first words (a first-word CER of 0.15–0.25 is one character in 4–7; an
-  upper bound). At 50 Hz (ambiguous) Matched loses the answering station
-  much more often (first word 0.444, over 0.345, against 0.032 and 0.044):
-  per QSO label the Matched CER was 0.533, 0.154, 0.046, 0.415, 0.032 and
-  0.040 (Envelope 0.023–0.140), so **2 of 6 grid QSOs at 50 Hz still
-  failed** (CER > 0.4) with the first-step growth bound in place, against
-  12 of 30 in the design simulation before it (not the same measure; as
-  coded the bound acts per update, a defect, section 8, "Two front
-  ends"). Separate-track
+  upper bound). At 50 Hz (ambiguous on both paths; on the Matched path it
+  is 3 Hz beyond D_ch = 47 Hz, inside the band where interpolated
+  frequencies can read closer than D_ch; section 11, "QSO regimes")
+  Matched loses the answering station much more often on the QSO label
+  (first word 0.444, over 0.345, against 0.032 and 0.044): per QSO label
+  the Matched CER was 0.533, 0.154, 0.046, 0.415, 0.032 and 0.040
+  (Envelope 0.023–0.140), so **2 of 6 grid QSOs at 50 Hz failed**
+  (CER > 0.4). Those two are exactly the QSOs that **split into two
+  tracks** on the Matched path (the other 4 stayed one track, the
+  caller's track following the answering station to 49.8–50.0 Hz; tracks
+  within 25 Hz of either carrier in
+  `build/suite/full3/results/matched/H-qso-s*.json`): in them the caller's
+  track stayed on the caller (last frequency 0.9 and 1.0 Hz from it) and
+  the answering station's overs read CER 0.936 on it (first word 0.636),
+  because the Matched channel is re-centered on the caller behind the
+  dit-matched filter, whose main lobe is ±r/K = ±21–33 Hz at 20–32 WPM
+  (derived); the Envelope caller channel (±150 Hz, no re-centering)
+  decoded the answering station in its own 3 split QSOs (QSO-label CER
+  0.023, 0.140, 0.028). In the 4 one-track QSOs Matched read 0.032–0.154
+  on the QSO label (answering station's overs 0.044, first word 0.338, the
+  retune delay; Envelope's 3 one-track QSOs 0.073 and 0.067). So the
+  QSO-label loss at 50 Hz is the split, a QSO read through the view that
+  does not fit it; the per-station view, which fits a split QSO, reads
+  poorly at 50 Hz on both paths (0.947 Envelope, 0.953 Matched, all 12
+  station labels), so these runs do not show how well Matched decodes the
+  answering station on its own track, nor whether the dit-estimate
+  runaway (the growth bound acts per update as coded, a defect, section
+  8, "Two front ends"), which the design simulation's 12 of 30 failures
+  before the first-step bound came from, still contributes. Separate-track
   QSOs: Matched is worse per station (paired +0.057, +0.039 to +0.075,
   drawn; +0.029, +0.011 to +0.047, 200 Hz). In the oracle copy, which
   shows the turnover apart from detection, the rows within ±12 Hz of the
@@ -1591,6 +1656,7 @@ not in the repository; nothing was changed):
 | Detection | 1 s warm-up at recording start; then ~0.5–1.5 s for a new station (averaging + 0.5 s persistence) |
 | Channel filter group delay | 10.7 ms |
 | Decoder smoothing | ~¼ dit (τ_s) |
+| Front-end warm-up (Matched only) | the first 0.32 s of each channel key nothing (section 8b, "Warm-up"); a mark that ends just after it can be timed as a fragment (section 8b, "A channel that opens mid-transmission") |
 | Matched filter group delay (Matched only) | (K − 1)/2 samples: 19 ms at 25 WPM |
 | Character emitted | after a 2-dit gap follows it |
 | Track removed | average decay (~6–7 s for a 20 dB SNR (500 Hz) station) plus the 10 s timeout |
@@ -1609,7 +1675,7 @@ not in the repository; nothing was changed):
 | Persistence before a track | 0.5 s | `DetectorConfig::birth_s` | heuristic |
 | Candidate tracking | may move ±23 Hz (1 bin at 23.4 Hz) between frames | `DetectorConfig::candidate_step_hz` | heuristic |
 | Track timeout | 10 s | `DetectorConfig::death_s` | heuristic |
-| Track following and attribution (Matched path) | each track follows its own peak within D = 47 Hz (at least 3 dB above the floor); a new peak within D of a track's current frequency belongs to it | `DetectorConfig::attribution`, `attribution_distance_hz` (set from `EngineConfig::channel_distance_hz`) | heuristic (owner decisions 2026-09-29, option 1) |
+| Track following and attribution (Matched path) | each track follows its own peak within D_ch = 47 Hz (at least 3 dB above the floor); a new peak within D_ch of a track's current frequency belongs to it | `DetectorConfig::attribution`, `attribution_distance_hz` (set from `EngineConfig::channel_distance_hz`) | heuristic (owner decisions 2026-09-29, option 1) |
 | Attribution (Envelope path) | frequency fixed at birth; peaks less than 3 bins (70 Hz) from a track's bin belong to it | `DetectorConfig::min_separation_bins` | heuristic (milestone 1) |
 | Peak neighborhood | ±47 Hz (±2 bins at 23.4 Hz) | `DetectorConfig::peak_radius_hz` | heuristic |
 | Track level neighborhood | ±23 Hz (±1 bin at 23.4 Hz) | `DetectorConfig::level_radius_hz` | heuristic |
@@ -1688,10 +1754,18 @@ not in the repository; nothing was changed):
   g(t) with E|g|² = 1. `fading_hz` is the frequency spread f_D, Hz. The
   Doppler power spectrum is Gaussian with f_D = 2σ (`gaussian`, the
   default; the Watterson / CCIR 520 HF convention) or VE3NEA's DeepCW
-  spectrum S(f) ∝ 1/(1 + (f/f_c)⁴), f_c = 0.625·f_D (`butterworth`), whose
-  Gaussian least-squares fit has 2σ = 1.01·f_D, so f_D means the same
-  spread to about 1%. The Butterworth has heavier tails (0.92% of the
-  power beyond 2·f_D, against 6.3×10⁻⁵). The gain is synthesized at
+  spectrum S(f) ∝ 1/(1 + (f/f_c)⁴), f_c = 0.625·f_D (`butterworth`;
+  VE3NEA's parameter, taken from his code, not derived or measured here),
+  whose Gaussian least-squares fit has 2σ = 1.01·f_D (measured by VE3NEA:
+  his notebook fits a periodogram of one hour of simulated gain at
+  f_D = 1 Hz and prints 2σ = 1.012 Hz; a fit to the analytic spectrum over
+  ±20 Hz gives 1.016 Hz, computed; `docs/research/deepcw-generator-notes.md`),
+  so f_D means the same spread to about 1–2%. The Butterworth has heavier
+  tails: 0.91% of the power beyond 2·f_D, against 6.3×10⁻⁵ for the Gaussian
+  (both derived, by integrating the two spectra; 2·f_D is 3.2·f_c and 4σ;
+  the f⁻⁴ tail approximation gives 0.92%, the value `test_fading.py` checks
+  within ±30%).
+  The gain is synthesized at
   50 samples/s and linearly interpolated (at most 0.04 dB, Gaussian, or
   0.06 dB, Butterworth, of power lost relative to the mean between points
   at f_D = 3 Hz, derived).
@@ -1705,7 +1779,7 @@ not in the repository; nothing was changed):
   channel when they are close; `station_labels` also labels each station
   as its own signal at its own carrier, for stations heard as two tracks.
   The answering station's offset is drawn, where a suite draws it, with
-  |Δf_B| in 0–10 Hz with probability 0.40, 10–50 Hz 0.30, 50–100 Hz 0.15
+  |f_sep| in 0–10 Hz with probability 0.40, 10–50 Hz 0.30, 50–100 Hz 0.15
   and 100–200 Hz 0.15 (**heuristic**: zero-beat by ear versus sidetone and
   RIT mismatch; no measured distribution yet). Over k is keyed at its sender's speed, keying style and
   imbalance, on its sender's carrier (`freq_offset_hz` + `offset_hz`, Hz)
@@ -1776,12 +1850,50 @@ not in the repository; nothing was changed):
   i.i.d. characters and word lengths from VE3NEA's on-air tables (DeepCW,
   MIT; E is 11.9% of characters, mean word length 3.06 characters).
 - **CPU time per channel-second:** the process's CPU time (user plus
-  kernel) for the whole run divided by the total duration of channel output
-  delivered to decoders, summed over channels, in ms per channel-second. It
-  includes the shared FFTs and the detector, so it is an upper bound on the
-  per-channel cost; `decoder_ms_per_channel_s` counts only steady-clock time
-  inside decoders (the engine runs on one thread). Measured on a desktop; a
-  Raspberry Pi 5 is not yet measured.
+  kernel) over the bench's timed window divided by the total duration of
+  channel output delivered to decoders, summed over channels, in ms per
+  channel-second. The timed window (`bench/src/main.cpp`, `cpu_started` to
+  `cpu_s`) starts after the labels are read and the engine is built, and
+  covers reading the WAV file block by block, the engine (the shared FFTs,
+  the channels, the decoders and, except in oracle mode, the detector) and
+  the bench's own event subscriber, which collects the decoded text; it
+  ends after `finish()`. In oracle mode (`--oracle`; groups A–G and
+  "H, oracle") the detector is skipped, though the windowed spectrum FFT
+  still runs. So it is an upper bound on the per-channel cost, and oracle
+  and detector runs are not comparable; `decoder_ms_per_channel_s` counts
+  only steady-clock time inside decoders (the engine runs on one thread).
+  Measured (full suite, 3 seeds, `build/suite/full3`, each recording's
+  results file; section 8b's machine): over all recordings 0.202 ms/s
+  (Envelope) and 0.381 ms/s (Matched); in the oracle runs (340 465
+  channel-seconds) 0.163 and 0.324 ms/s, in the detector runs (44 031 and
+  44 196 channel-seconds) 0.501 and 0.816 ms/s; decoders alone 0.014 and
+  0.174 ms/s (oracle), 0.015 and 0.196 ms/s (detector). A Raspberry Pi 5 is
+  not yet measured.
+- **Smoke check** (`bench/smoke.sh`; CI runs it on Windows and Linux):
+  generates the `smoke` recording (band scenario, 8 stations, 30 s,
+  192 kHz, seed 1) and scores it twice on each path. The Envelope path
+  (`--front-end envelope`) must meet `bench/baselines/smoke.json` (CER
+  ≤ 0.09, detection recall ≥ 0.875) and the Matched path
+  `bench/baselines/smoke-matched.json` (CER ≤ 0.07, recall ≥ 0.875); the
+  two runs of each path must write byte-identical results (run-to-run
+  determinism on one platform). **CI therefore bounds the Envelope CER; it
+  does not pin bit-identity with milestone 1.** What establishes that the
+  Envelope path is unchanged: the generator's frozen-copy tests
+  (`test_default_signals_match_milestone_1_generator`,
+  `test_band_defaults_match_milestone_1` in `training/tests/test_generate.py`:
+  the band scenario and the generator's default output match frozen copies
+  of milestone 1's code), reading the
+  engine's Envelope path (final branch review, 2026-09-30), and its smoke
+  CER, 34 edits in 964 symbols (0.0353, measured), the same as at Task 2,
+  before any engine change. The Matched limit 0.07 (**heuristic**) is the
+  measured 0.0622 = 60/964 (Windows) plus a margin of 3/482 = 6/964
+  (0.0685), rounded up to two decimals: the check fails from 68 edits, a
+  margin of 7 edits over the measured 60 (Envelope's 0.09 fails from 87
+  edits, a margin of 52 over its 34). The Matched figure is dominated by one station's
+  start-up (CER 0.234; section 8b, "A channel that opens
+  mid-transmission"), which a platform difference that moves the channel's
+  opening by one hop could change by tens of edits; the Linux value has
+  not been measured yet (the branch has not run on CI).
 - **Suites** (`training/kz4ap_synth/suites.py`): `smoke` is the CI
   recording; `full` covers sensitivity (oracle, S₅₀₀ −10 … +20 dB at 12, 25
   and 40 WPM), fading anchored to VE3NEA's DeepCW benchmark (his
@@ -1802,13 +1914,48 @@ not in the repository; nothing was changed):
   signal by signal on the same recordings. The full suite is sized for
   3 seeds: at least 1000 characters per S₅₀₀ point in groups A–C, and at
   least 100 fade times per point at f_D = 0.1 Hz.
-  **QSO regimes** (group H): same-track for an answering station within
-  2 FFT bins (46.9 Hz) of the caller, ambiguous below 3 bins (70.3 Hz, the
-  detector's minimum peak separation), separate-track beyond; each QSO is
-  scored with one label for the QSO and with one label per station. The
-  summary marks with † the view that does not fit: through the detector,
-  by the regime (labels per station for same-track, labels per QSO for
-  separate-track); with oracle channels, by the channel's passband, whose
+  **QSO regimes** (group H): how the detector sorts a QSO's two stations
+  into tracks depends on the front end's attribution rule (section 6), so
+  the regime is judged per path (`suites.qso_regime`):
+  - **Envelope path** (`Attribution::Bins`, the milestone-1 rule; derived
+    from the 3-bin minimum peak separation at 23.4 Hz bins): same-track
+    for an answering station within 2 bins (46.9 Hz) of the caller,
+    ambiguous below 3 bins (70.3 Hz; it depends on where the stations fall
+    within their bins), separate-track from 70.3 Hz. This is the regime
+    word in every group-H tag (written when the recording is generated).
+  - **Matched path** (`Attribution::Distance`, the default): same-track
+    below D_ch = 47 Hz; ambiguous from D_ch up to D_ch + 2 bins = 93.9 Hz;
+    separate-track from 93.9 Hz. The code has no band of its own: it
+    tests whether a peak's interpolated frequency is strictly less than
+    D_ch from the track's current frequency (itself an interpolated peak
+    frequency). The band is the derived bound on how far those can read
+    from the carriers: each interpolated frequency is clamped to ±½ bin
+    around its peak bin, and a clean tone's peak bin lies within ½ bin of
+    its carrier, so each can be up to one bin (23.4 Hz) off, and carriers
+    up to D_ch + 2 bins apart can read closer than D_ch (a bound for one
+    step; a track that followed intermediate peaks over several frames
+    could go farther, which the code allows and no run has shown). Measured (full
+    suite, 3 seeds; `build/suite/full3/results/matched/H-qso-s*.json` and
+    `H-qso-drawn-s*.json`, tracks within 25 Hz of either carrier): at
+    50 Hz, 4 of 6 grid QSOs stayed one track, the caller's track ending on
+    the answering station (its last frequency 49.8–50.0 Hz from the
+    caller), and 2 split into two tracks; of the drawn QSOs at 53.9, 57.9
+    and 70.2 Hz, the one at 53.9 Hz ended with the caller's track on the
+    answering station (that station also had a track born at its own
+    carrier; whether both were alive at once is not recorded) and the
+    other two stayed apart. Every QSO below 47 Hz (up to 42.8 Hz)
+    stayed one track, and every one from 94.6 Hz up split into at least
+    two.
+  In the full suite's QSOs (grid 0, 10, 25, 50, 100, 200 Hz; drawn offsets
+  up to 42.8 Hz, 53.9–70.2 Hz and from 94.6 Hz) the two rules put every
+  QSO in the same regime. Each QSO is scored with one label for the QSO
+  and with one label per station. The summary marks with † the view that
+  does not fit: through the detector, by the QSO's regime on the row's own
+  path (labels per station do not fit a row whose QSOs are all
+  same-track, labels per QSO one whose QSOs are all separate-track;
+  ambiguous rows and rows that mix regimes fit both; a row whose QSOs fall
+  in another regime on its path than its tag's word says so, "on this
+  path: …"); with oracle channels, by the channel's passband, whose
   response relative to the passband is −1.17 dB at 100 Hz from its center,
   −6.02 dB at 150 Hz and −18.0 dB at 200 Hz (measured, section 7): labels
   per QSO fit when the answering station is less than 150 Hz from the

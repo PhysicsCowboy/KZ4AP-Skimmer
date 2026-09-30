@@ -102,6 +102,60 @@ def test_qso_regimes_follow_the_detector_bins():
     assert [qso_regime(df) for df in (71.0, 100.0, -200.0)] == ["separate-track"] * 3
 
 
+def test_qso_regimes_follow_the_front_ends_attribution_rule():
+    # Matched: the channel distance D_ch = 47 Hz; ambiguous up to D_ch + 2 bins (93.875 Hz),
+    # where interpolated frequencies, each up to one bin from its carrier, can read closer than D_ch.
+    assert [qso_regime(df, "matched") for df in (0.0, 25.0, 46.9, -46.99)] == ["same-track"] * 4
+    assert [qso_regime(df, "matched") for df in (47.0, 50.0, -70.2, 93.8)] == ["ambiguous"] * 4
+    assert [qso_regime(df, "matched") for df in (93.9, 100.0, -200.0)] == ["separate-track"] * 3
+    # The Envelope path keeps milestone 1's 3-bin rule (and is the default, as in the tags).
+    assert [qso_regime(df, "baseline") for df in (46.9, 80.0)] == ["ambiguous", "separate-track"]
+    assert qso_regime(80.0) == "separate-track"
+    with pytest.raises(ValueError):
+        qso_regime(10.0, "neural")
+
+
+def test_views_are_judged_by_the_regimes_on_the_rows_path():
+    assert not view_fits("H two-station QSO", "separate-track, drawn offset", ["separate-track"])
+    assert view_fits("H two-station QSO", "separate-track, drawn offset", ["ambiguous"])
+    assert not view_fits("H two-station QSO (per station)", "ambiguous, drawn offset", ["same-track"])
+    # A row mixing regimes fits both views, like an ambiguous one.
+    assert view_fits("H two-station QSO", "ambiguous, drawn offset", ["same-track", "separate-track"])
+    assert view_fits("H two-station QSO (per station)", "ambiguous, drawn offset",
+                     ["same-track", "separate-track"])
+
+
+def test_summary_marks_group_h_views_by_each_front_ends_regime(tmp_path):
+    # 80 Hz: separate-track on the Envelope path (3 bins = 70.3 Hz), ambiguous on the Matched
+    # path (below 93.9 Hz). 46.95 Hz: ambiguous on Envelope (above 2 bins = 46.875 Hz),
+    # same-track on Matched (below 47 Hz).
+    rec = Recording("qso", "H two-station QSO", 8000, 12.0, 5, False, [_two_station(80.0), _two_station(46.95)],
+                    True)
+    write_suite([rec], tmp_path, "test")
+    for fe in ("baseline", "matched"):
+        results = tmp_path / "results" / fe
+        results.mkdir(parents=True)
+        (results / "qso.json").write_text(json.dumps({"score": {"signals": [_fake_signal(0), _fake_signal(1)]}}))
+        (results / "qso.stations.json").write_text(json.dumps({"score": {"signals": [
+            _fake_signal(i) for i in range(4)]}}))
+    write_summary(tmp_path)
+    lines = (tmp_path / "summary.md").read_text(encoding="utf-8").splitlines()
+    qso_rows = lines[lines.index("## H two-station QSO"):lines.index("## H two-station QSO (per station)")]
+    start = lines.index("## H two-station QSO (per station)")
+    station_rows = lines[start:next(i for i in range(start + 1, len(lines)) if lines[i].startswith("## "))]
+    assert any(line.startswith("| separate-track, offset 80 Hz † | baseline |") for line in qso_rows)
+    assert any(line.startswith("| separate-track, offset 80 Hz (on this path: ambiguous) | matched |")
+               for line in qso_rows)
+    assert any(line.startswith("| ambiguous, offset 46.95 Hz | baseline |") for line in station_rows)
+    assert any(line.startswith("| ambiguous, offset 46.95 Hz † (on this path: same-track) | matched |")
+               for line in station_rows)
+    groups = {(g["group"], g["front_end"], g["tag"]): g for g in json.loads((tmp_path / "summary.json").read_text())[
+        "groups"]}
+    assert groups[("H two-station QSO", "matched", "separate-track, offset 80 Hz")]["regimes"] == ["ambiguous"]
+    assert groups[("H two-station QSO", "baseline", "separate-track, offset 80 Hz")]["regimes"] == [
+        "separate-track"]
+
+
 def test_views_that_do_not_fit_the_regime_are_marked():
     assert not view_fits("H two-station QSO (per station)", "same-track, offset 0 Hz")
     assert view_fits("H two-station QSO (per station)", "separate-track, offset 100 Hz")

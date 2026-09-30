@@ -427,7 +427,7 @@ TEST(Engine, MatchedChunkingDoesNotChangeResults) {
 }
 
 TEST(Engine, TurnoverWithinTheChannelDistanceFollowsTheAnsweringStation) {
-    // Option 1: B 25 Hz away (within D = 47 Hz), 6 dB weaker (re A's key-down power). The detector's
+    // Option 1: B 25 Hz away (within D_ch = 47 Hz), 6 dB weaker (re A's key-down power). The detector's
     // track moves to B's peak (1.80 s into B's over, median) and back; A's channel follows. Simulated
     // (engine level, 30 numpy seeds): one channel in 30, B decoded (CER <= 0.3) by A's channel in 30
     // (at least 11 of 12 characters in 30), A's next over exact in 30, B's published frequency before
@@ -472,7 +472,7 @@ TEST(Engine, TurnoverBeyondTheChannelDistanceGetsItsOwnTrack) {
 }
 
 TEST(Engine, StrongerStation60HzAwayKeepsItsOwnTrack) {
-    // B 60 Hz away (beyond D), 6 dB stronger than A (re A's key-down power): the first design's
+    // B 60 Hz away (beyond D_ch), 6 dB stronger than A (re A's key-down power): the first design's
     // walk-and-merge case (B decoded 0 of 30 there). Simulated with option 1 (engine level, 30 numpy
     // seeds): two channels in 30, B decoded by its own track in 30, no merge, A's next over's last
     // three words intact in 30. Not asserted: A's next over exact (0 of 30; B leaks through A's

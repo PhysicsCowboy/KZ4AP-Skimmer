@@ -42,7 +42,21 @@ from .messages import random_operator, random_text
 from .morse import keying_intervals
 
 BIN_HZ = 48000 / 2048  # the engine's FFT bin width at 48 kHz (and at 192 kHz), Hz
-DETECTOR_SEPARATION_BINS = 3  # the detector's min_separation_bins: closer peaks become one track
+# How the detector sorts a QSO's two stations into tracks depends on the front end's attribution
+# rule (docs/signal-processing.md section 6). Envelope path (Attribution::Bins): the milestone-1
+# min_separation_bins, a peak closer than 3 bins to a track's bin is that track's.
+ENVELOPE_SEPARATION_BINS = 3
+# Matched path (Attribution::Distance, the default): a peak whose interpolated frequency is within
+# the channel distance D_ch of a track's current frequency is that track's, and a track follows its
+# own peak within D_ch (EngineConfig::channel_distance_hz).
+CHANNEL_DISTANCE_HZ = 47.0
+# The detector compares interpolated frequencies, each clamped to +/-1/2 bin around its peak bin,
+# and a clean tone's peak bin is within 1/2 bin of its carrier: each interpolated frequency can be
+# up to one bin from its carrier (derived bound), so two carriers up to D_ch + 2 bins apart
+# (93.9 Hz) can read closer than D_ch. Measured (full suite, 3 seeds): at 50 Hz, 4 of 6 grid QSOs
+# stayed one track on the Matched path, and the drawn QSO at 53.9 Hz ended with the caller's track
+# on the answering station.
+MATCHED_AMBIGUOUS_BELOW_HZ = CHANNEL_DISTANCE_HZ + 2 * BIN_HZ
 SWEEP_SNR_DB = [float(x) for x in range(-10, 22, 2)]  # S500 sweep: -10 ... +20 dB
 VE3NEA_RHO_DB = (-16.0, -12.0, -6.0, -3.0, 0.0, 6.0, 10.0, 20.0, 30.0, 50.0)  # his key-on SNR, noise in 3 kHz, dB
 RHO_TO_S500_DB = 10 * math.log10(3000.0 / 500.0)  # 7.78 dB: the same white noise measured in 500 Hz, not 3 kHz
@@ -99,17 +113,39 @@ class Recording:
     station_labels: bool = False  # also score against one label per QSO station (generate.station_labels)
 
 
-def qso_regime(offset_hz: float) -> str:
-    """How the detector sees a QSO whose stations are offset_hz apart (derived from its
-    3-bin minimum peak separation and 23.4 Hz bins): within 2 bins the two peaks are always
-    closer than 3 bins (one track); from 3 bins on they never are (two tracks); between,
-    it depends on where the stations fall within their bins."""
+def qso_regime(offset_hz: float, front_end: str = "baseline") -> str:
+    """How the detector of front_end's path sees a QSO whose stations are offset_hz apart.
+
+    "baseline" (the Envelope path, and the regime written into group H's tags when the
+    recordings are generated): the 3-bin rule at 23.4 Hz bins (derived): within 2 bins
+    (46.9 Hz) the two peaks are always closer than 3 bins (one track); from 3 bins (70.3 Hz)
+    on they never are (two tracks); between, it depends on where the stations fall within
+    their bins.
+
+    "matched" (the default path): below D_ch = 47 Hz one track; from D_ch up to
+    MATCHED_AMBIGUOUS_BELOW_HZ (D_ch + 2 bins, 93.9 Hz) ambiguous, because the detector
+    compares interpolated frequencies that can each be up to one bin from their carriers
+    (derived bound; see MATCHED_AMBIGUOUS_BELOW_HZ); from there on, two tracks."""
     df = abs(offset_hz)
-    if df <= (DETECTOR_SEPARATION_BINS - 1) * BIN_HZ:
+    if front_end == "matched":
+        if df < CHANNEL_DISTANCE_HZ:
+            return "same-track"
+        if df < MATCHED_AMBIGUOUS_BELOW_HZ:
+            return "ambiguous"
+        return "separate-track"
+    if front_end != "baseline":
+        raise ValueError(f"unknown front end {front_end!r}")
+    if df <= (ENVELOPE_SEPARATION_BINS - 1) * BIN_HZ:
         return "same-track"
-    if df < DETECTOR_SEPARATION_BINS * BIN_HZ:
+    if df < ENVELOPE_SEPARATION_BINS * BIN_HZ:
         return "ambiguous"
     return "separate-track"
+
+
+def _answer_offset_hz(label: dict) -> float | None:
+    """A QSO label's answering-station offset from the caller, Hz (None for other labels)."""
+    senders = label.get("senders") or []
+    return max(abs(s.get("offset_hz", 0.0)) for s in senders) if len(senders) > 1 else None
 
 
 def _message(rng) -> str:
@@ -540,8 +576,11 @@ def aggregate(rows) -> dict:
             continue
         key = (r["front_end"], r["group"], r["tag"])
         g = groups.setdefault(key, {"signals": 0, "detected": 0, "by_snr": {}, "freq_errors": [],
-                                    "beyond_oracle_anchor": False, **{k: 0 for k in COUNT_KEYS}})
+                                    "beyond_oracle_anchor": False, "regimes": set(),
+                                    **{k: 0 for k in COUNT_KEYS}})
         g["signals"] += 1
+        if r.get("regime"):
+            g["regimes"].add(r["regime"])
         g["beyond_oracle_anchor"] |= bool(r.get("beyond_oracle_anchor"))
         g["detected"] += int(r["detected"])
         for k in COUNT_KEYS:
@@ -577,6 +616,8 @@ def aggregate(rows) -> dict:
                                        if crossing else {}),
             "freq_error_hz_median": float(np.median(g["freq_errors"])) if g["freq_errors"] else None,
             "beyond_oracle_anchor": g["beyond_oracle_anchor"],
+            # Group H through the detector, QSO labels only: the QSOs' regimes on this row's path
+            "regimes": sorted(g["regimes"]),
         }
     return out
 
@@ -629,6 +670,15 @@ def _anchor_limited(front_end: str, v: dict) -> bool:
     return front_end == "matched" and v.get("beyond_oracle_anchor", False)
 
 
+def _row_regime(oracle: bool, label: dict, front_end: str) -> str | None:
+    """A QSO label's regime on front_end's path through the detector (None with oracle
+    channels, for other labels, or for a results directory that names no front end)."""
+    offset = _answer_offset_hz(label)
+    if oracle or offset is None or front_end not in FRONT_ENDS:
+        return None
+    return qso_regime(offset, front_end)
+
+
 def load_results(out_dir: Path):
     """Per-signal rows and per-recording timings from every results/<front end>/ directory."""
     manifest = json.loads((out_dir / "manifest.json").read_text())
@@ -650,6 +700,7 @@ def load_results(out_dir: Path):
                                  "tag": label.get("tag", ""), "index": sig["index"], "snr_db": sig["snr_db"],
                                  "scored": sig["scored"], "detected": sig["track_id"] is not None,
                                  "freq_error_hz": freq_error,
+                                 "regime": _row_regime(rec["oracle"], label, fe_dir.name),
                                  "beyond_oracle_anchor": beyond_oracle_anchor(rec["oracle"], label),
                                  **{k: sig[k] for k in COUNT_KEYS}})
                 if result_name == rec["name"]:
@@ -737,13 +788,21 @@ def _tag_offset_hz(tag: str) -> float | None:
     return float(m.group(1)) if m else None
 
 
-def view_fits(group: str, tag: str) -> bool:
-    """Whether a group-H scoring view fits the QSO. Through the detector, by its regime
-    (qso_regime): labels per QSO for a QSO heard as one track, labels per station for one
-    heard as two; ambiguous QSOs fit both. With oracle channels (one opened per label), by
-    the channel's passband: the QSO label's channel, on the caller, holds the answering
-    station when |offset| < ORACLE_CHANNEL_CUTOFF_HZ (its -6 dB point, measured), so the QSO
-    view fits there and the station view fits otherwise."""
+def _tag_regime(tag: str) -> str | None:
+    """The regime word a group-H tag starts with: the Envelope path's (qso_regime's default),
+    written when the recording was generated."""
+    return next((r for r in ("same-track", "ambiguous", "separate-track") if tag.startswith(r)), None)
+
+
+def view_fits(group: str, tag: str, regimes=None) -> bool:
+    """Whether a group-H scoring view fits the QSO. Through the detector, by the regimes of
+    the row's QSOs on the row's own path (`regimes`: qso_regime with the row's front end, from
+    aggregate), or by the tag's regime word (the Envelope path's) when they are not given:
+    labels per QSO fit unless every QSO is separate-track, labels per station unless every
+    QSO is same-track (ambiguous QSOs, and rows mixing regimes, fit both). With oracle
+    channels (one opened per label), by the channel's passband: the QSO label's channel, on
+    the caller, holds the answering station when |offset| < ORACLE_CHANNEL_CUTOFF_HZ (its
+    -6 dB point, measured), so the QSO view fits there and the station view fits otherwise."""
     if not group.startswith("H two-station QSO"):
         return True
     per_station = group.endswith("(per station)")
@@ -751,9 +810,14 @@ def view_fits(group: str, tag: str) -> bool:
     if ", oracle" in group and offset is not None:
         inside = abs(offset) < ORACLE_CHANNEL_CUTOFF_HZ
         return not inside if per_station else inside
-    if per_station:
-        return not tag.startswith("same-track")
-    return not tag.startswith("separate-track")
+    found = set(regimes) if regimes else {_tag_regime(tag)}
+    return found != {"same-track" if per_station else "separate-track"}
+
+
+def _qso_regimes(agg: dict, fe: str, group: str, tag: str) -> list[str]:
+    """The regimes on front end fe of a group-H row's QSOs, from its QSO-label row (station
+    labels carry no offsets; they share the QSO label's tag and recordings)."""
+    return agg.get((fe, group.removesuffix(" (per station)"), tag), {}).get("regimes", [])
 
 
 def _db(x) -> str:
@@ -795,9 +859,16 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
              f"{ORACLE_ANCHOR_RANGE_HZ:g} Hz from its labeled frequency (a drift over the signal's length, or a "
              "QSO's answering station): with no detector, the tracker's anchor is the label and it fine-tunes "
              f"only within ±{ORACLE_ANCHOR_RANGE_HZ:g} Hz of it. † : this group-H view does not fit the QSO. "
-             "Through the detector, by its regime: labels per station for a same-track QSO, where both "
-             "match one track and each is charged the other's text; labels per QSO for a separate-track "
-             "QSO, where the caller's track lacks the answering station's overs. With oracle channels, by "
+             "Through the detector, by the QSO's regime on the row's own path: labels per station for a "
+             "same-track QSO, where both match one track and each is charged the other's text; labels per "
+             "QSO for a separate-track QSO, where the caller's track lacks the answering station's overs. "
+             "A group-H tag's regime word is the Envelope path's (3-bin rule: same-track up to 46.9 Hz, "
+             "ambiguous below 70.3 Hz, separate-track from 70.3 Hz); on the Matched path the rule is the "
+             f"channel distance D_ch = {CHANNEL_DISTANCE_HZ:g} Hz (same-track below it; ambiguous below "
+             f"{MATCHED_AMBIGUOUS_BELOW_HZ:.1f} Hz, D_ch plus two bins, because interpolated frequencies "
+             "can each read up to one bin from their carriers; separate-track from there on), and a row "
+             "whose QSOs fall in another regime on its path says so (\"on this path: …\"). "
+             "With oracle channels, by "
              "the channel's passband (measured: −1.17 dB relative to the passband at 100 Hz from its "
              "center, −6.02 dB at 150 Hz, −18.0 dB at 200 Hz): labels per QSO fit when the answering "
              "station is less than 150 Hz from the caller (inside the −6 dB point), labels per station "
@@ -811,7 +882,11 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
         for (fe, g, tag), v in sorted(agg.items(), key=lambda kv: (kv[0][2], kv[0][0])):
             if g != group:
                 continue
-            mark = ("" if view_fits(g, tag) else " †") + (f" ({ANCHOR_NOTE})" if _anchor_limited(fe, v) else "")
+            regimes = _qso_regimes(agg, fe, g, tag)
+            mark = "" if view_fits(g, tag, regimes) else " †"
+            if regimes and set(regimes) != {_tag_regime(tag)}:
+                mark += f" (on this path: {', '.join(regimes)})"
+            mark += f" ({ANCHOR_NOTE})" if _anchor_limited(fe, v) else ""
             lines.append(f"| {tag}{mark} | {fe} | {v['signals']} | {v['detected']} | "
                          f"{_with_interval(v['cer'], v['cer_interval'], '.3f')} | "
                          f"{v['char_cer']:.3f} | {v['space_error_rate']:.3f} | {v['first_word_cer']:.3f} | "

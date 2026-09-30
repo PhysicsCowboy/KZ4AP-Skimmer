@@ -37,7 +37,7 @@ struct DetectorConfig {
     std::size_t max_tracks = 200;
     int min_separation_bins = 3;     // Attribution::Bins only: peaks closer than this to a track's bin belong to it
     Attribution attribution = Attribution::Distance;
-    double attribution_distance_hz = 47.0;  // D, Hz (the engine sets it from EngineConfig::channel_distance_hz)
+    double attribution_distance_hz = 47.0;  // D_ch, Hz (the engine sets it from EngineConfig::channel_distance_hz)
     // Neighborhoods, Hz, converted to bins at the point of use (std::lround(hz / bin width)); at 23.4 Hz
     // bins they are milestone 1's 2, 1 and 1 bins. The Envelope path's bit-identity to milestone 1
     // rests on that rounding: lround(47 Hz / b) = 2 and lround(23 Hz / b) = 1 for bin widths b from

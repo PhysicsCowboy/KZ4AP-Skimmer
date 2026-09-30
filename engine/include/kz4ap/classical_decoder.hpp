@@ -29,7 +29,10 @@ struct ClassicalDecoderConfig {
     FrontEnd front_end = FrontEnd::Matched;  // owner decision 2026-09-29; Envelope stays selectable
     double llr_hysteresis = 1.0;          // Matched: key down above +this, up below -this (posterior log-odds, nats)
     std::size_t follow_after_marks = 8;   // Matched: the filter follows the speed once the window holds this many marks
-    double max_dit_growth = 1.25;         // Matched, while the filter follows: the dit estimate grows at most this factor per mark
+    double max_dit_growth = 1.25;         // Matched, while the filter follows: the dit estimate may grow at most this factor
+                                          // per mark (owner's decision); as coded it is applied per speed update, which a
+                                          // dropout merge can repeat on one mark (known defect; docs/signal-processing.md
+                                          // section 8, backlog "Growth bound per mark")
     double reacquire_after_dits = 12.0;   // Matched: re-acquire after the key has been up this many dits...
     double reacquire_min_s = 0.5;         // ...and at least this long, s
     double reacquire_window_s = 2.0;      // Matched: if nothing is keyed this long after, back to the narrow filter, s
@@ -37,8 +40,11 @@ struct ClassicalDecoderConfig {
     FrequencyTrackerConfig tracker;       // Matched only
 };
 
-// Baseline statistical decoder: envelope keying against adaptive levels, speed
-// from the dit/dah split of recent marks, probabilities from timing margins.
+// Classical statistical decoder with two front ends (ClassicalDecoderConfig::front_end): Matched (the
+// default) re-centers the station's frequency, filters with a dit-matched boxcar and keys on the
+// posterior log-odds; Envelope (the milestone-1 path) keys the smoothed envelope against adaptive mark
+// and space levels. Both then take the speed from the dit/dah split of recent marks and probabilities
+// from timing margins.
 class ClassicalDecoder final : public Decoder {
 public:
     // initial_offset_hz: the station's offset from its channel's center as the detector
@@ -108,8 +114,10 @@ private:
     double reacquire_until_ = -1;                 // Matched: end of the re-acquisition window, s (-1: none)
     bool was_following_ = false;                  // Matched: the filter followed the speed before it
     std::deque<double> set_aside_marks_;          // Matched: the speed window before it, back if nothing answers
-    double filter_dit_s_ = 0.02;                  // Matched: the dit the matched filter is set to, s (grows at most
-                                                  // max_dit_growth per mark, from the acquisition dit)
+    double filter_dit_s_ = 0.02;                  // Matched: the dit the matched filter is set to, s (decided: grows
+                                                  // at most max_dit_growth per mark, from the acquisition dit; as
+                                                  // coded, per speed update: known defect, backlog "Growth bound
+                                                  // per mark")
     double set_aside_filter_dit_s_ = 0.02;        // Matched: the filter's dit before the re-acquisition, s
 };
 

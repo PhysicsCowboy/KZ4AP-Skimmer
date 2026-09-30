@@ -306,7 +306,10 @@ void ClassicalDecoder::update_speed() {
         dit = mean > 2.0 * dit_s_ ? mean / 3.0 : mean;
     }
     // Matched: while the filter follows the speed, the dit estimate may grow by at most
-    // max_dit_growth per mark (owner decision 2026-09-29). A jump of x2 in one update, while the
+    // max_dit_growth per mark (owner decision 2026-09-29). As coded the bound is applied here, per
+    // speed update; a dropout merge in key_down() re-opens the mark without restoring dit_s_, so one
+    // mark can be bounded several times (known defect, not fixed: docs/signal-processing.md section 8,
+    // backlog "Growth bound per mark"). A jump of x2 in one update, while the
     // window holds two speeds, made the filter outgrow the element spaces, merge marks and run away
     // (final check F-2); a real slowdown now takes ln(ratio) / ln(max_dit_growth) marks to follow.
     const bool following = front_end_ && recent_marks_.size() >= config_.follow_after_marks &&
@@ -315,9 +318,10 @@ void ClassicalDecoder::update_speed() {
     dit_s_ = std::clamp(dit, 1.2 / config_.max_wpm, 1.2 / config_.min_wpm);
     smooth_alpha_ = alpha_for(std::max(config_.smoothing_dits * dit_s_, 1.0 / rate_), rate_);
     // The matched filter follows the speed once the estimate rests on enough marks, and
-    // after a re-acquisition only once enough of them are new. Its own dit grows at most
+    // after a re-acquisition only once enough of them are new. Its own dit may grow at most
     // max_dit_growth per mark, from its first follow step on (owner decision 3 of option 1,
-    // 2026-09-29): the estimate may rest on up to 7 unbounded marks, and a jump from the 20 ms
+    // 2026-09-29; as coded, per speed update: the same known defect as above): the estimate may
+    // rest on up to 7 unbounded marks, and a jump from the 20 ms
     // acquisition dit straight to a wrong 110 ms estimate made the filter outgrow the element
     // spaces and run away in simulation. Decreases are not bounded.
     if (front_end_ && recent_marks_.size() >= config_.follow_after_marks &&

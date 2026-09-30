@@ -55,17 +55,25 @@ On Linux:
 The generator's Python tests run with `python -m pytest training -q` (using the
 venv's Python).
 
-Every push runs the same check on Windows and Linux (`bench/smoke.sh`) and fails
-if decoding gets worse than `bench/baselines/smoke.json`.
+Every push runs the same check on Windows and Linux (`bench/smoke.sh`). It
+decodes one synthetic recording on both paths and fails if the milestone-1
+(Envelope) path gets worse than `bench/baselines/smoke.json` (CER above 0.09,
+or fewer than 7 of 8 stations detected), if the default (Matched) path gets
+worse than `bench/baselines/smoke-matched.json` (CER above 0.07, or fewer than
+7 of 8 detected), or if two runs of the same path differ. Measured on Windows:
+Envelope CER 0.0353 (34 edits in 964 symbols), Matched 0.0622 (60 edits), so
+the Matched limit leaves a margin of 7 edits; how both limits were chosen is in
+`docs/signal-processing.md`, section 11, "Smoke check".
 
 Named suites generate many recordings at once, score them, and summarize
 CER, character and word-space errors, first-word errors, VE3NEA's no-space
 CER, the S₅₀₀ where CER crosses 0.10 and 0.05 (each with a bootstrap 95%
 interval), and CPU time per channel-second. The full suite is sized for
-three seeds: its recordings take about 1.06 GB measured for one seed (about
-3.2 GB for three), and generating them took 19 min measured for one seed on
-this project's development desktop (about 57 min for three, scaled); scoring
-one seed with the bench took 37 s:
+three seeds: 117 recordings, 4.55 h of audio and 3.20 GB (measured). On this
+project's development desktop (12th Gen Intel Core i7-12700H) generating them
+took 60 min, with another job sharing the machine for part of it, and scoring
+them with both front ends took 5.0 min (measured; `docs/signal-processing.md`,
+section 8b):
 
     $env:PYTHONPATH = "training"
     .venv\Scripts\python -m kz4ap_synth.suites generate --suite full --seeds 3 --out build/suite/full
@@ -85,6 +93,19 @@ detector assigns it (see `docs/signal-processing.md`, sections 6 and 8b);
   tracks beside them.
 - After a station stops, a few stray E's can be decoded from noise before its
   track is dropped.
+- Default (Matched) path, measured on synthetic recordings
+  (`docs/signal-processing.md`, section 8b, "Limits measured"):
+  - an unkeyed tune-up carrier of 1 s or more before the first sending can
+    stop the station from being decoded at all (CER 0.542 after 1 s and 0.909
+    after 2 s, against 0.000 and 0.029 on the Envelope path);
+  - a channel that opens in the middle of a transmission can time a fragment
+    of a mark as the first dit and misread the station's first words (one
+    smoke-test station at CER 0.234); a misleading first mark can also make
+    the speed estimate run away at start-up;
+  - it is worse than the Envelope path in several conditions: slow fading
+    with paddle or hand keying at high SNR, some fists, a strong interferer
+    20 Hz away, and a QSO's answering station 50 Hz from the caller when the
+    two are split into two tracks.
 
 ## License
 
