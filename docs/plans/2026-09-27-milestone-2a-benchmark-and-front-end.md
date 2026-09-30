@@ -7891,7 +7891,7 @@ Task 14 measured two decoder defects on the Matched path (`docs/signal-processin
 
 **Fix.** At every key-up counted for speed (Matched only), save the speed state the update starts from: `dit_s_`, `smooth_alpha_` (derived from `dit_s_`), `filter_dit_s_` (and so the filter length set through `set_dit`), `marks_since_reacquire_`, and the speed window `recent_marks_` (whole, so a mark the window dropped from its front comes back too). When a dropout merge re-opens that element, restore the saved state (and the filter length, if it changed). The re-measured mark then gets one update, bounded once from the state before it. The Envelope merge stays exactly as it is.
 
-**What remains, derived (to state in the docs):** the widened filter can still re-open the mark it was widened at. Each re-open is now merged and undone, and the mark re-measured from the saved state, so the filter goes back and forth between the old and the new length a few times; for a strong signal and a boxcar this stops once the new filter's falling edge has passed half amplitude, about (K_new − K_old)/2 samples after the first key-up, which is at most 0.125·K_old samples since K_new ≤ 1.25·K_old: 0.125 × 38.7 ms = 4.8 ms at 25 WPM (K_old = 58). The mark is then timed through the new filter, up to that much longer than through the old one. No growth beyond ×1.25 per mark results. (Not restoring the length at a merge would avoid the back-and-forth; the owner's approved fix restores it, so this plan does.)
+**What remains, derived (to state in the docs):** the widened filter can still re-open the mark it was widened at. Each re-open is now merged and undone, and the mark re-measured from the saved state, so the filter goes back and forth between the old and the new length a few times; for a strong signal and a boxcar this stops once the new filter's falling edge has passed half amplitude, about (T_v,new − T_v,old)/2 after the first key-up (T_v = K/r, the filter's duration), which is at most 0.125·T_v,old since T_v,new ≤ 1.25·T_v,old, that is 0.1 of the old dit (T_v = 0.8 dit): 0.125 × 38.7 ms = 4.8 ms at 25 WPM. (The hysteresis, key-down only above g = +1 nat, ends it slightly earlier; this is an upper bound.) The mark is then timed through the new filter, up to that much longer than through the old one. No growth beyond ×1.25 per mark results. (Not restoring the length at a merge would avoid the back-and-forth; the owner's approved fix restores it, so this plan does.)
 
 **Files:**
 - Modify: `engine/include/kz4ap/classical_decoder.hpp`, `engine/src/classical_decoder.cpp`
@@ -8112,7 +8112,7 @@ void ClassicalDecoder::restore_speed_state() {
 }
 ```
 
-Why the snapshot always belongs to the merged element (derived from the code; put it in the commit message body, not in a comment): a merge pops `elements_.back()`, the last element pushed; `before_last_element_` is rewritten at every push and cleared after a restore; after a merge the key is down, and its next key-up pushes again (the merged mark is longer than the element it replaced, which passed the glitch test at the same restored `dit_s_`), so no second merge can reach an older element. A re-acquisition cannot fall between a key-up and its merge (it needs at least 0.5 s of key-up; a merge, less than 0.3 dit).
+Why the snapshot always belongs to the merged element (derived from the code; it goes into the commit message body in Step 6, not into a comment): a merge pops `elements_.back()`, the last element pushed; `before_last_element_` is rewritten at every push and cleared after a restore; after a merge the key is down, and its next key-up pushes again (the merged mark is longer than the element it replaced, which passed the glitch test at the same restored `dit_s_`), so no second merge can reach an older element. A re-acquisition cannot fall between a key-up and its merge (it needs at least 0.5 s of key-up; a merge, less than 0.3 dit).
 
 In `update_speed()`, replace the comment that begins "Matched: while the filter follows the speed, the dit estimate may grow" with:
 
@@ -8165,12 +8165,14 @@ estimate, the filter's dit and length, the count of marks since the last
 re-acquisition, the speed window), and a merge that re-opens that element
 restores it, so the re-measured mark gets one update, bounded once. The
 widened filter can still re-open the mark it was widened at; each re-open
-is merged and undone, and it stops about (K_new − K_old)/2 samples after
-the first key-up, at most 0.125·K_old since K_new ≤ 1.25·K_old (derived
-for a boxcar and a strong signal: its falling edge passes half amplitude
-half the length change later), for example 4.8 ms at 25 WPM (K_old = 58,
-38.7 ms): the mark is timed through the new filter, up to that much
-longer, and grows the estimate at most ×1.25. The Envelope path's merge
+is merged and undone, and it stops about (T_v,new − T_v,old)/2 after
+the first key-up (T_v the filter's duration), at most 0.125·T_v,old =
+0.1 of the old dit, since T_v,new ≤ 1.25·T_v,old (derived for a boxcar
+and a strong signal: its falling edge passes half amplitude half the
+length change later; an upper bound, the ±1 nat hysteresis ends it
+slightly earlier), for example 4.8 ms at 25 WPM (T_v,old = 38.7 ms): the
+mark is timed through the new filter, up to that much longer, and grows
+the estimate at most ×1.25. The Envelope path's merge
 is unchanged (it pops the mark from the window and keeps the updated
 estimate, as in milestone 1; it has no growth bound).
 ```
@@ -8187,20 +8189,21 @@ Do not touch the measured tables or `docs/backlog.md` here (Task 17 re-measures 
 git add engine/include/kz4ap/classical_decoder.hpp engine/src/classical_decoder.cpp engine/tests/classical_decoder_test.cpp docs/signal-processing.md
 ```
 ```powershell
-git commit -m "Apply the dit growth bound once per physical mark" -m "A dropout merge now restores the speed state saved at the merged element's key-up (dit estimate, filter dit and length, marks since re-acquisition, speed window), so the re-measured mark gets one bounded update and counts once. The Envelope merge is unchanged."
+git commit -m "Apply the dit growth bound once per physical mark" -m "A dropout merge now restores the speed state saved at the merged element's key-up (dit estimate, filter dit and length, marks since re-acquisition, speed window), so the re-measured mark gets one bounded update and counts once. The Envelope merge is unchanged." -m "The snapshot always belongs to the merged element: a merge pops elements_.back(), the last element pushed; the snapshot is rewritten at every push and cleared after a restore; after a merge the key is down and its next key-up pushes again (the merged mark is longer than the element it replaced, which passed the glitch test at the same restored dit), so no second merge can reach an older element. A re-acquisition cannot fall between a key-up and its merge (it needs at least 0.5 s of key-up; a merge, less than 0.3 dit)."
 ```
 
 ### Task 16: Do not count for speed a mark whose key-down was not observed
 
 **Defect (measured, Task 14).** A channel that opens mid-transmission: the front end's 0.32 s warm-up keys nothing, and when it ends inside a mark the decoder keys that mark at once and times only its end. On the smoke recording (+7617.6 Hz station, 18.5 WPM, T = 64.9 ms, S₅₀₀ 25.1 dB) the warm-up ended inside U's 195 ms dah, the first timed mark was a 15.3 ms fragment (over the 14.4 ms glitch limit, 0.3 × the 48 ms initial dit), the speed estimate took it as the whole dit cluster (dit 17.8 ms, clamped to 20 ms), and the text was garbled until the fragment left the 24-mark window (CER 0.234). Reproduced by cutting the recording at 1.600 s with an oracle channel.
 
-**When a key-down is not observed (the rule).** Keying is possible on a sample where the front end is ready (its warm-up is over, `FrontEndSample::ready`) and the squelch is open (`FrontEndSample::signal`, a ≥ a_min). A key-down on the **first such sample** since the decoder's reset or its last re-acquisition was not observed: the carrier may have been up before it, while keying was impossible, so the mark's duration may be a fragment's. That mark is decoded as usual (element, character, probability) but not counted for speed: it does not enter the speed window, does not update the estimate, and does not count toward the 8 marks before the filter follows. Every later key-down comes after a sample on which keying was possible with the key up (the key cannot go down before the first keyable sample, and on every keyable sample before a key-down the key stayed up), so it was observed. A dropout merge keeps the merged mark's flag.
+**When a key-down is not observed (the rule).** Keying is possible on a sample where the front end is ready (its warm-up is over, `FrontEndSample::ready`) and the squelch is open (`FrontEndSample::signal`, a ≥ a_min). A key-down counts as **observed** only if, since the last sample on which keying was impossible (the warm-up, or any sample with the squelch closed), there has been a keyable sample with the key up and g = `log_odds` < −h (h = 1 nat, the key-up threshold): evidence that the carrier was off, seen by the decoder, before the mark began. Otherwise the carrier may have been up before the key-down, while keying was impossible or while g sat between −h and +h, so the mark's duration may be a fragment's. That mark is decoded as usual (element, character, probability) but not counted for speed: it does not enter the speed window, does not update the estimate, and does not count toward the 8 marks before the filter follows. The flag (`key_up_seen_`) starts false at reset, is cleared on every ready sample with the squelch closed (`!f.signal`), and is set on every keyable sample with the key up and g < −h; every key-up by the LLR (g < −h with the squelch open) therefore sets it, so in steady keying every mark is observed. A dropout merge keeps the merged mark's flag. This closes two holes of a "first keyable sample" rule (review of 2026-09-30): the carrier already on at the first keyable sample with −h ≤ g ≤ +h (keyed one sample later), and the squelch closing again later (the floor's stuck-low restart sets ŝ² = 0, `matched_front_end.cpp` `update_floor`; ŝ decaying in noise; σ̂ rising), after which the next mark is keyed when the squelch re-opens.
 
 Where it applies (checked in the code):
-- **After the warm-up:** yes (the measured case). It also covers a warm-up that ends inside a mark with the squelch still closed (for example when the warm-up's 20th percentile of |v|² falls on a filter ramp and σ̂ starts high), where the mark is keyed later, when a passes a_min.
-- **A channel that opens in noise:** after a warm-up in noise alone, a ≈ 1.6 (ŝ² = 2σ²·ln 10 − 2σ² = 2.6σ² from the warm-up's 90th and 20th percentiles, derived for exponential |v|²), below a_min = 3, so the squelch is closed until the first mark lifts ŝ, and that mark is keyed on the first keyable sample: it is not counted either. It was keyed late (Task 14's "first mark keyed late while ŝ rises", 100.7 ms of a 144 ms dah), so this is the rule working, but it costs such a channel one mark of speed evidence; the filter follows after 9 physical marks there.
-- **After a re-acquisition:** yes, in the squelch form. `MatchedFrontEnd::reacquire()` does not restart the warm-up (the front end stays ready), and a re-acquisition needs the key up for max(0.5 s, 12 dits), so no mark is in progress at it; but it sets ŝ² = 0, so a = 0 < a_min and keying is impossible until the next station's first mark lifts ŝ (on the same sample, since with a small amplitude weight ŝ² follows |v|² − 2σ̂² almost at once, derived from the update). That first mark is keyed after its start; the rule leaves it uncounted. The flag is reset at re-acquisition. (Noise alone can open the squelch in the silence first; then the next mark counts. Not simulated.)
-- **The Envelope path:** not changed (bit-identical). Derived from its code, not measured: its warm-up (one dit at 25 WPM, 48 ms) sets the mark and space levels to the running mean of |y|; a mark in progress when it ends holds the envelope at the mark level, so M < 3·S and the squelch stays closed until the mark ends (the key never goes down for it), unless the mark began in about the warm-up's last third, where the mean stays below a third of the carrier (about 16 ms of 48 ms, for a carrier far above the noise; the smoother's lag ignored). So Envelope times its first mark at most about 16 ms short, never as a short fragment. That is a stated limit of the Envelope path, not fixed.
+- **After the warm-up:** yes (the measured case). It also covers a warm-up that ends inside a mark with the squelch still closed (for example when the warm-up's 20th percentile of |v|² falls on a filter ramp and σ̂ starts high), where the mark is keyed when a passes a_min.
+- **A channel that opens in noise:** after a warm-up in noise alone, a ≈ 1.6 (ŝ² = 2σ²·ln 10 − 2σ² = 2.6σ² from the warm-up's 90th and 20th percentiles, derived for exponential |v|²), below a_min = 3, so the squelch is closed until the first mark lifts ŝ; it opens on the sample after ŝ first lifts a past a_min (ŝ² is updated after `signal` is decided, `MatchedFrontEnd::step`), and the key goes down there or soon after, with no key-up sample in between: that mark is not counted. Its keyed start is off in either direction (derived from the update): at high S₅₀₀ the squelch opens early on the filter's rising ramp with â well below the true a, g crosses +h early and the mark is timed long; at low S₅₀₀ it is keyed late (Task 14's "first mark keyed late while ŝ rises", 100.7 ms of a 144 ms dah, at S₅₀₀ 10 dB). Either way its start was not observed. It costs such a channel one mark of speed evidence; the filter follows after 9 physical marks there.
+- **After a re-acquisition:** yes, with no special code. `MatchedFrontEnd::reacquire()` does not restart the warm-up (the front end stays ready), and a re-acquisition needs the key up for max(0.5 s, 12 dits), so no mark is in progress at it; but it sets ŝ² = 0, so a = 0 < a_min on the next sample, which clears the flag. The next station's first mark lifts ŝ and opens the squelch as above (early at high S₅₀₀, late at low), so it is not counted. (Noise alone can open the squelch in the silence first and give a key-up sample with g < −h; then the next mark counts. Not simulated.)
+- **Anywhere else the squelch closes and re-opens** (the stuck-low restart, ŝ decaying or σ̂ rising at a weak station): the next mark counts only if the decoder saw the key up with g < −h after the re-opening.
+- **The Envelope path:** not changed (bit-identical). Derived from its code, not measured: its warm-up (one dit at 25 WPM, 48 ms) sets the mark and space levels to the running mean of |y|; a mark in progress when it ends holds the envelope near the mark level, so M < 3·S and the squelch stays closed until the mark ends, unless the mark began late enough in the warm-up that the mean S = f·A (f the fraction of the warm-up it filled, A the carrier's envelope) is below A/3. Then the squelch opens only when the smoothed envelope reaches 3fA, which the 12 ms smoother (τ_s = 0.25 × 48 ms) takes τ_s·ln((1 − f)/(1 − 3f)) plus about 4 ms of attack: at f ≈ 0.28 about 22 ms after the warm-up ends, 35 ms after the mark began, so a 48 ms dit is timed at about 19 ms, short enough to form a dit cluster of its own as in the smoke case. So Envelope can time its first mark short, by up to most of a dit, and a fragment is possible in a narrow window of opening phase (a few ms wide; derived, not measured; rare). That is a stated limit of the Envelope path, not fixed.
 
 **Files:**
 - Modify: `engine/include/kz4ap/classical_decoder.hpp`, `engine/src/classical_decoder.cpp`
@@ -8252,9 +8255,11 @@ TEST(ClassicalDecoder, MatchedChannelOpeningInsideADahCountsNoFragment) {
 }
 
 TEST(ClassicalDecoder, MatchedFirstMarkAfterReacquisitionIsNotCounted) {
-    // Task 16. After a re-acquisition the amplitude estimate restarts at 0 (a = 0 < a_min), so keying
-    // is impossible until the next station's first mark lifts it past the squelch; that mark is keyed
-    // on the first keyable sample, after its start (derived from the code, section 8b,
+    // Task 16, the squelch closing and re-opening mid-stream. After a re-acquisition the amplitude
+    // estimate restarts at 0 (a = 0 < a_min), which closes the squelch and clears the decoder's
+    // key-up evidence (no re-acquisition-specific code); the next station's first mark lifts s-hat and
+    // opens the squelch, and is keyed with no key-up sample (g < -1 nat) seen since, so its start was not
+    // observed (keyed early on its ramp at this S500, derived from the code, section 8b,
     // "Re-acquisition"). It is decoded but not counted for speed. 1.5 s of silence at 25 WPM: the
     // re-acquisition comes 0.576 s after the last key-up (12 dits), and the second over starts within
     // its 2 s window, so nothing set aside comes back. "K1ABC" has 18 marks; 17 count. Noise alone could
@@ -8272,34 +8277,36 @@ TEST(ClassicalDecoder, MatchedFirstMarkAfterReacquisitionIsNotCounted) {
 }
 ```
 
+No separate test for the other two holes the rule closes (the carrier already on at the first keyable sample with −h ≤ g ≤ +h, and a squelch closing by the floor's stuck-low restart, ŝ decay or σ̂ rise). Why: none can be placed deterministically without simulating the front end first. The dead band needs a at the first keyable sample within a few tenths of a_min, which depends on the warm-up's percentiles of noise. The stuck-low restart needs the floor above 4·σ̂², that is a rise in the noise of at least 16.9 dB relative to the previous noise power (derived: in noise F = 0.0825·σ_v², so F > 4σ̂² needs σ̂² < 0.0206·σ_v²), and it fires when the floor's 64-sample 10th percentile has moved, about 58 floor samples after the rise, one filter duration apart (about 2.2 s at 25 WPM, T_v = 38.7 ms), at a point in the keying that the noise decides. The re-acquisition test above exercises the same code path (the flag cleared by a squelched sample and set only by an observed key-up), since the rule has no re-acquisition-specific code; it fails on the current code.
+
 - [ ] **Step 2: Run them and watch them fail**
 
 ```powershell
 cmake --build --preset windows
 ctest --preset windows -R "MatchedChannelOpeningInsideADahCountsNoFragment|MatchedFirstMarkAfterReacquisitionIsNotCounted" --output-on-failure
 ```
-Expected: `MatchedChannelOpeningInsideADahCountsNoFragment` FAILS, listing the cuts whose first E is a 14.4–21.6 ms fragment with garbled later words (word spaces inside "UA7L" and "TU", as in the smoke text "E ETT TT 7 L T U U A 7L"); `MatchedFirstMarkAfterReacquisitionIsNotCounted` FAILS with 18 against 17. If the first passes on the current code, or fails only with "the case is not exercised", stop and report (to see every cut's first mark and text, temporarily make the `failures +=` line unconditional; remove it afterwards). Do not change the message, level, seed or cut range to force a failure.
+Expected: `MatchedChannelOpeningInsideADahCountsNoFragment` FAILS, listing the cuts whose first E is a 14.4–21.6 ms fragment with garbled later words (word spaces inside "UA7L" and "TU", as in the smoke text "E ETT TT 7 L T U U A 7L"); `MatchedFirstMarkAfterReacquisitionIsNotCounted` FAILS with 18 against 17. If the first passes on the current code, or fails only with "the case is not exercised", stop and report (to see every cut's first mark and text, temporarily make the `failures +=` line unconditional; remove it afterwards). Do not change the message, level, seed or cut range to force a failure. If the case is not exercised, check first whether σ̂ started high from the warm-up's ramps: a 0.32 s warm-up ending in U's dah holds only about 49 ms of clean noise (15%) plus three 16 ms filter ramps (the acquisition filter), so the 20th percentile of |v|² can fall on a ramp and leave a below a_min at the first ready sample, and the dah is then keyed late or not at all; report the first ready sample's σ̂_v and a for a few cuts (temporary print, removed afterwards).
 
 - [ ] **Step 3: Implement**
 
 In `engine/include/kz4ap/classical_decoder.hpp`, change `void key_down(double t);` to
 
 ```cpp
-    void key_down(double t, bool observed = true);  // observed: false if keying became possible on this sample (Matched)
+    void key_down(double t, bool observed = true);  // observed: false if the key-up before it was not seen (Matched)
 ```
 
 and after `SpeedState before_last_element_;` add:
 
 ```cpp
-    bool keyable_seen_ = false;       // Matched: keying was possible (ready, squelch open) on some sample since the reset or
-                                      // the last re-acquisition
-    bool mark_observed_ = true;       // the current mark's key-down came after a sample on which keying was possible
+    bool key_up_seen_ = false;        // Matched: since the last sample on which keying was impossible (warm-up, squelch
+                                      // closed), a keyable sample had the key up with log-odds below -llr_hysteresis
+    bool mark_observed_ = true;       // the current mark's key-down came after such a sample
     bool prev_mark_observed_ = true;  // the same for the last element; a dropout merge brings it back
 ```
 
 In `engine/src/classical_decoder.cpp`:
 
-In `reset()`, after `before_last_element_ = {};`, add `keyable_seen_ = false;`, `mark_observed_ = true;` and `prev_mark_observed_ = true;`.
+In `reset()`, after `before_last_element_ = {};`, add `key_up_seen_ = false;`, `mark_observed_ = true;` and `prev_mark_observed_ = true;`.
 
 In `step_matched()`, replace
 
@@ -8307,23 +8314,33 @@ In `step_matched()`, replace
     const double h = config_.llr_hysteresis;
     if (!key_ && f.signal && f.log_odds > h) {
         key_down(t);
+        heard_since_reacquire_ = true;
+    } else if (key_ && (!f.signal || f.log_odds < -h)) {
+        key_up(t);
+    }
 ```
 
 with
 
 ```cpp
     const double h = config_.llr_hysteresis;
-    // Keying is possible where the front end is ready and the squelch is open (f.signal). A key-down on
-    // the first such sample since the reset (the warm-up) or the last re-acquisition (which restarts
-    // s-hat, closing the squelch) was not observed: the mark may have begun while keying was
-    // impossible, and its duration may be a fragment's. It is decoded but not counted for speed.
-    const bool first_keyable = f.signal && !keyable_seen_;
-    if (f.signal) keyable_seen_ = true;
+    // A key-down is observed only if, since the last sample on which keying was impossible (the warm-up
+    // returns above; here, the squelch closed), the decoder saw the key up with log-odds below -h:
+    // evidence that the carrier was off before the mark began. Otherwise the mark may have begun while
+    // keying was impossible or while the log-odds sat between -h and +h, and its duration may be a
+    // fragment's: it is decoded but not counted for speed. A re-acquisition needs no code of its own:
+    // it restarts s-hat at 0, which closes the squelch on the next sample.
+    if (!f.signal) key_up_seen_ = false;
     if (!key_ && f.signal && f.log_odds > h) {
-        key_down(t, !first_keyable);
+        key_down(t, key_up_seen_);
+        heard_since_reacquire_ = true;
+    } else if (key_ && (!f.signal || f.log_odds < -h)) {
+        key_up(t);
+    }
+    if (!key_ && f.signal && f.log_odds < -h) key_up_seen_ = true;
 ```
 
-and in the re-acquisition block, after `tracker_->reacquire();`, add `keyable_seen_ = false;  // s-hat restarts at 0: a = 0 < a_min until a mark lifts it`.
+(The warm-up needs no line either: `key_up_seen_` starts false at reset, and warm-up samples return before this point.)
 
 Replace `key_down()` (as left by Task 15) with:
 
@@ -8386,38 +8403,54 @@ In `docs/signal-processing.md`:
 - §8 "Two front ends", after the Task 15 paragraph ("**Once per physical mark …**"), add:
 
 ```markdown
-**Marks keyed before keying was possible (Matched; Task 16).** Keying is
+**Marks whose start was not observed (Matched; Task 16).** Keying is
 possible on a sample where the front end is ready (its 0.32 s warm-up is
-over) and the squelch is open (a ≥ a_min). A key-down on the first such
-sample since the reset or the last re-acquisition was not observed: the
-carrier may have been up before it, so the mark's duration may be a
-fragment's (Task 14: a 15.3 ms fragment of a 195 ms dah on the smoke
-recording pinned the dit at 20 ms). Such a mark is decoded but not
-counted for speed: it does not enter the speed window or count toward
-the 8 marks before the filter follows. Later key-downs follow a sample
-on which keying was possible with the key up, so they were observed; a
+over) and the squelch is open (a ≥ a_min). A key-down counts as observed
+only if, since the last sample on which keying was impossible, the
+decoder saw a keyable sample with the key up and g < −1 nat (the key-up
+threshold): evidence that the carrier was off before the mark began.
+Otherwise the carrier may have been up before the key-down, while keying
+was impossible or while g sat between −1 and +1 nat, so the mark's
+duration may be a fragment's (Task 14: a 15.3 ms fragment of a 195 ms
+dah on the smoke recording pinned the dit at 20 ms). Such a mark is
+decoded but not counted for speed: it does not enter the speed window or
+count toward the 8 marks before the filter follows. Every key-up by the
+log-odds sets the evidence, so in steady keying every mark counts; a
 dropout merge keeps the merged mark's flag. (Rule derived from what the
 decoder can observe; no parameter; its effect measured in section 8b.)
-It applies after the warm-up (a channel opening mid-mark), to the first
+It applies after the warm-up (a channel opening mid-mark); to the first
 mark of a channel that opens in noise (after the warm-up, a ≈ 1.6 in
 noise alone, below a_min = 3, derived: ŝ² = 2σ²·ln 10 − 2σ² from the
-warm-up's percentiles, so that mark opens the squelch and is keyed late),
-and after a re-acquisition (ŝ restarts at 0, so a = 0 < a_min until the
-next station's first mark lifts it). Each such channel or over loses one
-mark of speed evidence; the filter follows after 9 physical marks there.
-The Envelope path is unchanged: its warm-up (48 ms) sets both levels to
-the mean envelope, so a mark in progress when it ends holds M < 3·S and
-is never keyed, unless it began in about the warm-up's last 16 ms (a
-third of 48 ms, for a carrier far above the noise; derived from the
-squelch factor 3, smoother lag ignored, not measured); its first timed
-mark is at most about that much short (a stated limit).
+warm-up's percentiles); after a re-acquisition (ŝ restarts at 0, so
+a = 0 < a_min); and wherever else the squelch closes and re-opens (the
+floor's stuck-low restart of ŝ, ŝ decaying or σ̂ rising at a weak
+station). In the last three the squelch re-opens on the sample after the
+next mark lifts ŝ past a_min (ŝ is updated after the squelch is
+decided), and that mark's keyed start is off in either direction:
+early at high S₅₀₀, where the squelch opens on the filter's rising ramp
+with â well below the true a, and late at low S₅₀₀ (Task 14: 100.7 ms of
+a 144 ms dah at S₅₀₀ 10 dB) (derived from the update). Each such channel
+or over loses one mark of speed evidence; the filter follows after 9
+physical marks there.
+The Envelope path is unchanged: its warm-up (one dit at 25 WPM, 48 ms)
+sets both levels to the mean envelope, so a mark in progress when it
+ends keeps M < 3·S and is not keyed, unless it began late enough that
+the mean S = f·A (A the carrier's envelope, f the fraction of the
+warm-up the mark filled) is below A/3. Then the squelch opens when the
+smoothed envelope reaches 3fA, τ_s·ln((1 − f)/(1 − 3f)) plus about
+4 ms of attack after the warm-up ends (τ_s = 0.25 × 48 ms = 12 ms): at
+f ≈ 0.28 about 22 ms, so a 48 ms dit is timed at about 19 ms, short
+enough to form a dit cluster of its own. So its first timed mark can be
+short by up to most of a dit, and a fragment can happen, rarely, in a
+window of opening phase a few ms wide (derived, not measured; a stated
+limit, not fixed).
 ```
 
-- §8b "Warm-up": append "A mark in progress when the warm-up ends is decoded but not counted for speed (section 8, "Marks keyed before keying was possible")."
-- §8b "Re-acquisition": append "The first mark after it, keyed when it lifts ŝ past the squelch, is not counted for speed (section 8, same paragraph)."
-- §8b "A channel that opens mid-transmission": add at the start of the item "**Fixed in Task 16** (section 8, "Marks keyed before keying was possible"); the numbers below are from before the fix, re-measured in Task 17." (Task 17 replaces them.)
-- §9, the row "Front-end warm-up (Matched only)": replace "a mark that ends just after it can be timed as a fragment (…)" with "a mark in progress when it ends is decoded but not counted for speed (section 8, "Marks keyed before keying was possible")".
-- §10: add a row "Marks not counted for speed (Matched) | a mark keyed on the first sample on which keying is possible (front end ready, squelch open) since the reset or the last re-acquisition | `ClassicalDecoder::step_matched`, `keyable_seen_` | derived rule, no parameter (Task 16)".
+- §8b "Warm-up": append "A mark in progress when the warm-up ends is decoded but not counted for speed (section 8, "Marks whose start was not observed")."
+- §8b "Re-acquisition": append "The first mark after it, keyed when it lifts ŝ past the squelch (early on its ramp at high S₅₀₀, late at low S₅₀₀), is not counted for speed (section 8, same paragraph)."
+- §8b "A channel that opens mid-transmission": add at the start of the item "**Fixed in Task 16** (section 8, "Marks whose start was not observed"); the numbers below are from before the fix, re-measured in Task 17." (Task 17 replaces them.)
+- §9, the row "Front-end warm-up (Matched only)": replace "a mark that ends just after it can be timed as a fragment (…)" with "a mark in progress when it ends is decoded but not counted for speed (section 8, "Marks whose start was not observed")".
+- §10: add a row "Marks not counted for speed (Matched) | a mark whose key-down came with no keyable key-up sample (log-odds below −1 nat) seen since the last sample on which keying was impossible (warm-up, squelch closed) | `ClassicalDecoder::step_matched`, `key_up_seen_` | derived rule, no parameter (Task 16)".
 
 - [ ] **Step 6: Commit**
 
@@ -8425,7 +8458,7 @@ mark is at most about that much short (a stated limit).
 git add engine/include/kz4ap/classical_decoder.hpp engine/src/classical_decoder.cpp engine/tests/classical_decoder_test.cpp docs/signal-processing.md
 ```
 ```powershell
-git commit -m "Do not count for speed a mark keyed on the first keyable sample" -m "A key-down on the first sample on which the Matched decoder could key (front end ready, squelch open) since the reset or a re-acquisition was not observed: the mark may be a fragment. It is decoded but kept out of the speed estimate. The Envelope path is unchanged."
+git commit -m "Do not count for speed a mark whose start the decoder did not observe" -m "A Matched key-down counts as observed only if, since the last sample on which keying was impossible (warm-up, squelch closed), a keyable sample had the key up with log-odds below -1 nat. Otherwise the mark may be a fragment (a channel opening mid-mark, the first mark after a re-acquisition or a noise opening): it is decoded but kept out of the speed estimate. The Envelope path is unchanged."
 ```
 
 ### Task 17: Re-measure Matched after the fixes
@@ -8434,7 +8467,7 @@ Measure only; no code, parameter, threshold or default changes. The recordings e
 
 **Files:**
 - Modify: `docs/signal-processing.md` (§8b "Measured: Matched against Envelope", "Where Matched is worse than Envelope", "Limits measured"; the §8 Task 15/16 paragraphs' "measured" pointers; §11 "Smoke check" if the Matched smoke value changes), `README.md` (smoke figures, "Known limitations"), `docs/backlog.md` ("Growth bound per mark", "Wrong or missing first characters", and the "Measured bearing" bullets under "Tune the Matched front end by measurement")
-- Modify only if the Matched smoke CER changed and is lower: `bench/baselines/smoke-matched.json`
+- Modify only if the Matched smoke CER is lower on both CI platforms (Step 7): `bench/baselines/smoke-matched.json`
 
 - [ ] **Step 1: Build, test, smoke**
 
@@ -8490,7 +8523,7 @@ From the new `summary.md` against `build/suite/full3-task14-summary.md`, and fro
 
 - [ ] **Step 7: Update the Matched smoke baseline only if the rule says so**
 
-If the Matched smoke CER of Step 1 differs from 0.0622 (60/964) and is **lower**, set `bench/baselines/smoke-matched.json` `max_cer` by the documented rule (§11, "Smoke check"): measured CER + 3/482 (= 6/964), rounded up to two decimals; keep `"min_detection_recall": 0.875`. Write the rule and the arithmetic (edits, symbols, margin) into §11 "Smoke check" and the README paragraph on the smoke check, and note that the Linux value is still unmeasured if CI has not run. If it is **higher** than 0.0622, do not edit the baseline (that would widen it): report it to the owner. If unchanged, leave the file.
+The baseline is never widened. It is tightened only if the new Matched smoke CER is lower than 0.0622 (60/964) on **both** CI platforms, Windows and Linux: the Linux value has never been measured, and a platform difference that moves a channel's opening by one hop can change it by tens of edits (§11, "Smoke check"). Read both values from the CI run's smoke output after the owner pushes the branch (pushing needs the owner's approval; this task does not push). If both are lower, set `bench/baselines/smoke-matched.json` `max_cer` by the documented rule (§11, "Smoke check"): the higher of the two measured CERs + 3/482 (= 6/964), rounded up to two decimals; keep `"min_detection_recall": 0.875`; write the rule and the arithmetic (edits, symbols, margin, both platforms' values) into §11 "Smoke check" and the README paragraph on the smoke check. If the CI values are not available when this task is done, leave the baseline unchanged and say so in §11 and in the report (with the Windows value from Step 1). If the Windows value is **higher** than 0.0622, report it to the owner.
 
 - [ ] **Step 8: Write the results**
 
@@ -8522,4 +8555,4 @@ git commit -m "Re-measure the Matched front end after the growth-bound and late-
 
 A few lines: the Matched smoke CER before/after (and the baseline file's state), group A crossings before/after, the two runaway cases, group H at 50 Hz, the late-open table, which "worse than Envelope" rows remain or are new, the tune-up regime (changed or not; cause still inferred), and the confirmation that the Envelope results are identical (Step 4) and its smoke CER is 0.0353. Recommend no tuning. Do not push or merge.
 
-**Decisions left to the owner by this addendum:** (1) Task 16 applies the rule after a re-acquisition and to a channel that opens in noise, because the code shows keying is impossible there too (the squelch is closed); that removes one mark of speed evidence per channel and per over. If the owner wants the rule only for the warm-up, drop the `keyable_seen_ = false` line at re-acquisition. (2) Task 15 restores the filter length at a merge, as approved; the widened filter then re-opens the mark a few times before settling (bounded, derived above); not restoring the length would avoid that and is the alternative.
+**Decisions left to the owner by this addendum:** (1) Task 16's rule (as ruled after the 2026-09-30 review: a key-down is observed only after a keyable key-up sample with log-odds below −1 nat since the squelch last closed) covers the warm-up, a channel that opens in noise, a re-acquisition and any other squelch closing; that removes one mark of speed evidence per channel and per over. Limiting it to the warm-up would need a different rule and reopens the holes the review found. (2) Task 15 restores the filter length at a merge, as approved; the widened filter then re-opens the mark a few times before settling (bounded, derived above); not restoring the length would avoid that and is the alternative.
