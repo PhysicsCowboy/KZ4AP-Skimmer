@@ -1967,6 +1967,16 @@ not in the repository; nothing was changed):
   operator, and his training mix is hand 0.25, paddle 0.50, computer 0.25.
   `wpm_end` changes the speed within a sending: `step` switches at the
   middle word, `ramp` changes linearly from word to word.
+- **Farnsworth spacing** (synthetic recordings, `farnsworth_wpm`): elements
+  and element spaces at the character speed c (T = 1.2 s / c); character
+  and word gaps drawn on the gap timebase T_g = (60/s − 37.2/c)/19 s instead
+  of T, for an overall speed s (the ARRL standard, Bloom 1990: the added
+  time per PARIS over its 19 gap units), so one PARIS takes 60/s s
+  (derived). Random keying styles draw the gaps with their own σ_ln in
+  units of T_g; an imbalance keeps its length in seconds. Suite group I:
+  (c, s) = (18, 5), (18, 10), (25, 13), (25, 18) WPM (T_g/T = 7.84, 3.11,
+  3.43, 2.02), machine and paddle keying, S₅₀₀ 5, 10, 20 dB. Labels carry
+  `farnsworth_wpm` only when it is set.
 - **Fading** (synthetic recordings, `fading_hz`, `fading_shape`): flat
   Rayleigh fading. The carrier is multiplied by a complex Gaussian gain
   g(t) with E|g|² = 1. `fading_hz` is the frequency spread f_D, Hz. The

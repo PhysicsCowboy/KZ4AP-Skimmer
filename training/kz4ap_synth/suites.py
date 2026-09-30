@@ -99,6 +99,9 @@ CROWDED_SPACING_HZ = (200.0, 100.0, 50.0, 0.0)
 RAGCHEW_SNR_DB = (0.0, 4.0, 8.0, 12.0, 16.0, 20.0)
 QSO_OFFSETS_HZ = (0.0, 10.0, 25.0, 50.0, 100.0, 200.0)  # the answering station's carrier offset from the caller's, Hz
 QSO_WPM_RANGE = (20.0, 32.0)
+FARNSWORTH_ROWS = ((18.0, 5.0), (18.0, 10.0), (25.0, 13.0), (25.0, 18.0))  # (character, overall) speed, WPM
+FARNSWORTH_SNR_DB = (5.0, 10.0, 20.0)
+FARNSWORTH_KEYING = ("machine", "paddle")
 
 
 @dataclass
@@ -423,6 +426,28 @@ def two_station_qso(seed: int) -> list[Recording]:
     return [grid, oracle, drawn]
 
 
+def farnsworth(seed: int) -> list[Recording]:
+    """Farnsworth spacing (keying.farnsworth_gap_s): character and word gaps stretched to the
+    overall speed, elements at the character speed. Two stations per (speeds, S500) point, one
+    recording per keying style, filler text, 180 s. T_g/T = 7.84, 3.11, 3.43, 2.02 for the rows
+    (derived)."""
+    recs = []
+    for code, keying in enumerate(FARNSWORTH_KEYING):
+        rng = np.random.default_rng([seed, 16, code])
+        combos = [(c, s, snr) for c, s in FARNSWORTH_ROWS for snr in FARNSWORTH_SNR_DB for _ in range(2)]
+        specs = []
+        for f, (c, s, snr) in zip(_slots(len(combos), 1200.0, rng, BIN_HZ / 2), combos):
+            start = _start(rng)
+            # Sized at the overall speed: VE3NEA text has about PARIS's ratio of gap to element units
+            # (4.31 to 7.08 per character against 19 to 31), so it runs about 60/s s per PARIS word;
+            # the paddle slack (0.7) covers the rest.
+            specs.append(SignalSpec(_filler(rng, s, 178.0 - start, "paddle"), f, c, snr, start, keying=keying,
+                                    farnsworth_wpm=s, tag=f"farnsworth {c:g}/{s:g} wpm {keying}"))
+        recs.append(Recording(f"I-farnsworth-{keying}-s{seed}", "I Farnsworth", 48000, 180.0,
+                              1000 * seed + 150 + code, True, specs))
+    return recs
+
+
 def smoke_suite(seeds: int = 1) -> list[Recording]:
     """The recording bench/smoke.sh makes: band scenario, 8 signals, 30 s, seed 1 (noise seed 2)."""
     specs = scenario_band(np.random.default_rng(1), 8, 30.0, 192000)
@@ -432,8 +457,8 @@ def smoke_suite(seeds: int = 1) -> list[Recording]:
 def full_suite(seeds: int = 1) -> list[Recording]:
     recs = []
     for seed in range(1, seeds + 1):
-        for build in (sensitivity, fading, fists, speed, interference, tuning, ragchew, two_station_qso, strong,
-                      pauses, tune_up, first_sample, crowded, band):
+        for build in (sensitivity, fading, fists, speed, interference, tuning, ragchew, two_station_qso, farnsworth,
+                      strong, pauses, tune_up, first_sample, crowded, band):
             recs += build(seed)
     return recs
 
@@ -453,25 +478,32 @@ def check_recording(rec: Recording) -> None:
             raise ValueError(f"{rec.name}: signal at {spec.freq_offset_hz} Hz is outside the span")
 
 
-def write_suite(recordings: list[Recording], out_dir: Path, suite_name: str) -> None:
-    """Writes every recording (WAV plus labels) and manifest.json into out_dir."""
+def write_suite(recordings: list[Recording], out_dir: Path, suite_name: str, only: str | None = None) -> None:
+    """Writes every recording (WAV plus labels) and manifest.json into out_dir. only: a regular
+    expression; a recording whose name does not match it is not rewritten (its files must already
+    be in out_dir from an earlier run of the same suite), but the manifest lists every recording."""
     out_dir.mkdir(parents=True, exist_ok=True)
     entries = []
     for rec in recordings:
         check_recording(rec)
         wav = out_dir / f"{rec.name}.wav"
+        stations = out_dir / f"{rec.name}.stations.json"
+        entries.append({"name": rec.name, "group": rec.group, "oracle": rec.oracle, "wav": wav.name,
+                        "labels": wav.with_suffix(".json").name,
+                        "station_labels": stations.name if rec.station_labels else None})
+        if only is not None and not re.search(only, rec.name):
+            needed = [wav, wav.with_suffix(".json")] + ([stations] if rec.station_labels else [])
+            missing = [p.name for p in needed if not p.exists()]
+            if missing:
+                raise FileNotFoundError(f"{', '.join(missing)} missing from {out_dir}: generate without --only first")
+            continue
         write_wav(wav, generate(rec.specs, rec.sample_rate, rec.duration_s, seed=rec.noise_seed), rec.sample_rate)
         extra = {"recording": rec.name, "group": rec.group, "oracle": rec.oracle}
         lab = labels(rec.specs, rec.sample_rate, rec.duration_s, seed=rec.noise_seed)
         wav.with_suffix(".json").write_text(json.dumps({**lab, **extra}, indent=2) + "\n")
-        entry = {"name": rec.name, "group": rec.group, "oracle": rec.oracle, "wav": wav.name,
-                 "labels": wav.with_suffix(".json").name, "station_labels": None}
         if rec.station_labels:
             per_station = station_labels(rec.specs, rec.sample_rate, rec.duration_s, seed=rec.noise_seed)
-            path = out_dir / f"{rec.name}.stations.json"
-            path.write_text(json.dumps({**per_station, **extra}, indent=2) + "\n")
-            entry["station_labels"] = path.name
-        entries.append(entry)
+            stations.write_text(json.dumps({**per_station, **extra}, indent=2) + "\n")
         print(f"wrote {wav.name}")
     (out_dir / "manifest.json").write_text(json.dumps({"suite": suite_name, "recordings": entries}, indent=2) + "\n")
 
@@ -484,9 +516,10 @@ def _scorings(rec: dict) -> list[tuple[str, str, str]]:
     return out
 
 
-def run_suite(out_dir: Path, bench: Path, front_ends) -> None:
-    """Scores every recording of the manifest with kz4ap-bench, once per front end (and
-    once more per front end against per-station labels where the manifest has them)."""
+def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None) -> None:
+    """Scores every recording of the manifest (or those whose names match `only`, a regular
+    expression) with kz4ap-bench, once per front end (and once more per front end against
+    per-station labels where the manifest has them)."""
     manifest = json.loads((out_dir / "manifest.json").read_text())
     for fe in front_ends:
         if fe not in FRONT_ENDS:
@@ -494,6 +527,8 @@ def run_suite(out_dir: Path, bench: Path, front_ends) -> None:
         results = out_dir / "results" / fe
         results.mkdir(parents=True, exist_ok=True)
         for rec in manifest["recordings"]:
+            if only is not None and not re.search(only, rec["name"]):
+                continue
             for label_file, result, _group in _scorings(rec):
                 cmd = [str(bench), str(out_dir / rec["wav"]), "--labels", str(out_dir / label_file),
                        "--json", str(results / f"{result}.json")]
@@ -967,17 +1002,20 @@ def main(argv=None) -> None:
     g.add_argument("--suite", choices=sorted(SUITES), required=True)
     g.add_argument("--seeds", type=int, default=1)
     g.add_argument("--out", type=Path, required=True)
+    g.add_argument("--only", default=None, help="regular expression: write only matching recordings (the others "
+                                                "must exist)")
     r = sub.add_parser("run", help="score every recording with kz4ap-bench")
     r.add_argument("--out", type=Path, required=True)
     r.add_argument("--bench", type=Path, required=True)
     r.add_argument("--front-end", dest="front_ends", action="append", choices=FRONT_ENDS)
+    r.add_argument("--only", default=None, help="regular expression: score only matching recordings")
     s = sub.add_parser("summarize", help="write summary.json and summary.md")
     s.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.command == "generate":
-        write_suite(SUITES[args.suite](args.seeds), args.out, args.suite)
+        write_suite(SUITES[args.suite](args.seeds), args.out, args.suite, only=args.only)
     elif args.command == "run":
-        run_suite(args.out, args.bench, args.front_ends or ["baseline"])
+        run_suite(args.out, args.bench, args.front_ends or ["baseline"], only=args.only)
     else:
         write_summary(args.out)
 

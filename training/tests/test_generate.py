@@ -419,3 +419,13 @@ def test_answer_offsets_favor_small_values():
     assert np.mean(np.abs(offsets) < 10.0) == pytest.approx(0.40, abs=0.03)
     assert np.mean(np.abs(offsets) >= 100.0) == pytest.approx(0.15, abs=0.03)
     assert np.mean(offsets < 0) == pytest.approx(0.5, abs=0.03)
+
+
+def test_farnsworth_signal_is_keyed_and_labeled_with_its_overall_speed():
+    from kz4ap_synth.generate import SignalSpec, labels, plan_signal
+    spec = SignalSpec("PARIS PARIS", 1000.0, 25.0, 20.0, 0.5, farnsworth_wpm=13.0)
+    plan = plan_signal(spec, np.random.default_rng(0))
+    assert plan.intervals[14][0] - plan.intervals[0][0] == pytest.approx(60.0 / 13.0)
+    assert labels([spec], 48000, 10.0, seed=1)["signals"][0]["farnsworth_wpm"] == 13.0
+    plain = labels([SignalSpec("CQ", 1000.0, 25.0, 20.0, 0.5)], 48000, 10.0, seed=1)["signals"][0]
+    assert "farnsworth_wpm" not in plain  # existing labels files stay byte-identical

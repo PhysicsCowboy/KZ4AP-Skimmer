@@ -36,13 +36,13 @@ def test_smoke_suite_is_the_smoke_script_recording():
 def test_full_suite_recordings_are_valid_and_uniquely_named():
     recs = SUITES["full"](1)
     names = [r.name for r in recs]
-    assert len(names) == len(set(names)) == 39
+    assert len(names) == len(set(names)) == 41
     for r in recs:
         check_recording(r)
     assert {r.group for r in recs} == {
         "A sensitivity", "B fading", "C fists", "D speed", "E interference", "F tuning",
-        "G ragchew", "H two-station QSO", "H two-station QSO, oracle", "strong", "pauses", "tune-up",
-        "first sample", "crowded", "band"}
+        "G ragchew", "H two-station QSO", "H two-station QSO, oracle", "I Farnsworth", "strong", "pauses",
+        "tune-up", "first sample", "crowded", "band"}
 
 
 def test_full_suite_covers_the_scenarios():
@@ -420,3 +420,43 @@ def test_summary_json_flags_the_oracle_anchor_only_on_matched_rows(tmp_path):
     assert groups[("matched", "drift 2 Hz/s")]["beyond_oracle_anchor"] is True
     assert groups[("baseline", "drift 2 Hz/s")]["beyond_oracle_anchor"] is False
     assert groups[("matched", "drift 0.2 Hz/s")]["beyond_oracle_anchor"] is False
+
+
+def test_farnsworth_group_uses_its_overall_speeds():
+    recs = [r for r in SUITES["full"](1) if r.group == "I Farnsworth"]
+    assert [r.name for r in recs] == ["I-farnsworth-machine-s1", "I-farnsworth-paddle-s1"]
+    specs = [s for r in recs for s in r.specs]
+    assert {(s.wpm, s.farnsworth_wpm) for s in specs} == {(18.0, 5.0), (18.0, 10.0), (25.0, 13.0), (25.0, 18.0)}
+    assert {s.snr_db for s in specs} == {5.0, 10.0, 20.0}
+    assert all(r.oracle for r in recs)
+    assert {s.keying for s in recs[0].specs} == {"machine"} and {s.keying for s in recs[1].specs} == {"paddle"}
+
+
+def test_generate_only_rewrites_matching_recordings_and_lists_every_one(tmp_path):
+    a = Recording("keep", "A sensitivity", 8000, 3.0, 5, True, [SignalSpec("CQ", 1000.0, 25.0, 10.0, 0.5)])
+    b = Recording("redo", "A sensitivity", 8000, 3.0, 6, True, [SignalSpec("TU", 1000.0, 25.0, 10.0, 0.5)])
+    with pytest.raises(FileNotFoundError, match="keep.wav"):
+        write_suite([a, b], tmp_path, "test", only="^redo$")
+    write_suite([a, b], tmp_path, "test")
+    kept = (tmp_path / "keep.wav").stat().st_mtime_ns
+    (tmp_path / "redo.wav").unlink()
+    write_suite([a, b], tmp_path, "test", only="^redo$")
+    assert (tmp_path / "redo.wav").exists()
+    assert (tmp_path / "keep.wav").stat().st_mtime_ns == kept
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert [r["name"] for r in manifest["recordings"]] == ["keep", "redo"]
+
+
+def test_run_only_scores_matching_recordings(tmp_path, monkeypatch):
+    (tmp_path / "manifest.json").write_text(json.dumps({"suite": "t", "recordings": [
+        {"name": n, "group": "g", "oracle": False, "wav": f"{n}.wav", "labels": f"{n}.json", "station_labels": None}
+        for n in ("x", "y")]}))
+    calls = []
+
+    def fake_run(cmd, *a, **k):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "CER 0.0\n", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    run_suite(tmp_path, tmp_path / "kz4ap-bench", ["baseline"], only="^y$")
+    assert [c[1] for c in calls] == [str(tmp_path / "y.wav")]

@@ -64,6 +64,7 @@ class SignalSpec:
     senders: list[Sender] = field(default_factory=list)  # a QSO's stations (empty: one sender)
     overs: list[Over] = field(default_factory=list)      # a QSO's overs, in order (empty: send text)
     turn_s: tuple[float, float] = (0.5, 2.0)             # silence before each over after the first, s (uniform)
+    farnsworth_wpm: float | None = None  # overall speed with Farnsworth spacing, WPM (keying.farnsworth_gap_s); None = standard
 
 
 @dataclass
@@ -106,7 +107,7 @@ def keying_envelope(intervals, offset_s: float, n: int, sample_rate: int, rise_s
 def sending_intervals(spec: SignalSpec, rng: np.random.Generator) -> list[tuple[float, float]]:
     """Key-down intervals of one sending of spec.text, from 0 s."""
     return timed_intervals(spec.text, spec.wpm, spec.keying, rng, spec.wpm_end, spec.speed_profile,
-                           spec.imbalance_dits)
+                           spec.imbalance_dits, farnsworth_wpm=spec.farnsworth_wpm)
 
 
 def plan_signal(spec: SignalSpec, rng: np.random.Generator) -> SignalPlan:
@@ -251,6 +252,9 @@ def labels(signals, sample_rate: int, duration_s: float, seed: int) -> dict:
     """Labels for a recording; seed must be the one passed to generate()."""
     entries = []
     for s, plan in zip(signals, plan_intervals(signals, seed)):
+        fields = asdict(s)
+        if fields["farnsworth_wpm"] is None:
+            del fields["farnsworth_wpm"]  # standard spacing: the labels stay exactly as before
         if s.overs:
             texts = [o.text for o in s.overs]
             extra = [{"sender": s.senders[k].call, "sender_index": k, "wpm": s.senders[k].wpm,
@@ -261,7 +265,7 @@ def labels(signals, sample_rate: int, duration_s: float, seed: int) -> dict:
             texts = [s.text] * len(plan.transmissions)
             extra = [{}] * len(plan.transmissions)
         entries.append({
-            **asdict(s),
+            **fields,
             "text": reference_text(s),
             "end_s": round(signal_end_s(s, plan), 3),
             "transmissions": [

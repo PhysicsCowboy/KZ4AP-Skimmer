@@ -86,39 +86,62 @@ def word_wpm(index: int, count: int, wpm: float, wpm_end: float | None, profile:
     return wpm + (wpm_end - wpm) * index / (count - 1)
 
 
+def farnsworth_gap_s(char_wpm: float, overall_wpm: float) -> float:
+    """Gap timebase T_g, s, for Farnsworth spacing: characters at char_wpm, overall speed
+    overall_wpm (PARIS). The ARRL standard (J. Bloom, KE3Z, "A Standard for Morse Timing Using
+    the Farnsworth Technique", QEX, April 1990) spreads the added time 60/s - 37.2/c seconds per
+    PARIS over its 19 gap units (four character gaps of 3, one word gap of 7): T_g = that / 19.
+    At s = c it is the dit, 1.2 s / c."""
+    if not 0 < overall_wpm <= char_wpm:
+        raise ValueError(f"Farnsworth overall speed {overall_wpm} WPM must be positive and at most "
+                         f"the character speed {char_wpm} WPM")
+    return (60.0 / overall_wpm - 37.2 / char_wpm) / 19.0
+
+
 def timed_intervals(text: str, wpm: float, style: str = "machine", rng: np.random.Generator | None = None,
                     wpm_end: float | None = None, profile: str = "step",
-                    imbalance_dits: float = 0.0) -> list[tuple[float, float]]:
+                    imbalance_dits: float = 0.0, farnsworth_wpm: float | None = None) -> list[tuple[float, float]]:
     """Key-down intervals (start_s, end_s) for text, from 0 s.
 
     wpm_end: the speed at the end (None = constant); profile "step" switches at
     the middle word, "ramp" changes linearly from word to word. imbalance_dits:
     every mark is longer, and every space shorter, by this many dits (a
-    transmitter that keys on and off at different speeds). Character and word
-    spaces are drawn directly from their own distributions (VE3NEA assembles
-    them from several draws; the medians are the same). With machine keying,
-    constant speed and no imbalance the result is exactly keying_intervals().
+    transmitter that keys on and off at different speeds). farnsworth_wpm: the
+    overall speed with Farnsworth spacing: character and word gaps are drawn on
+    the timebase farnsworth_gap_s(character speed, farnsworth_wpm) instead of the
+    dit (elements and element spaces stay at the character speed); None =
+    standard spacing. Character and word spaces are drawn directly from their
+    own distributions (VE3NEA assembles them from several draws; the medians are
+    the same). With machine keying, constant speed, no imbalance and standard
+    spacing the result is exactly keying_intervals().
     """
     if style not in STYLES:
         raise ValueError(f"unknown keying style {style!r}")
     if profile not in SPEED_PROFILES:
         raise ValueError(f"unknown speed profile {profile!r}")
-    if style == "machine" and wpm_end is None and imbalance_dits == 0.0:
+    if farnsworth_wpm is not None:
+        farnsworth_gap_s(min(wpm, wpm_end if wpm_end is not None else wpm), farnsworth_wpm)  # validates
+    if style == "machine" and wpm_end is None and imbalance_dits == 0.0 and farnsworth_wpm is None:
         return keying_intervals(text, wpm)
     k = STYLES[style]
     if rng is None and any(d.sigma > 0 for d in (k.dit, k.dah, k.element_gap, k.char_gap, k.word_gap)):
         raise ValueError(f"keying style {style!r} needs a random generator")
 
-    def length(d: Duration, dit_s: float, extra_dits: float) -> float:
-        dits = d.median_dits if d.sigma == 0 else d.median_dits * math.exp(d.sigma * rng.standard_normal())
-        return max(dits + extra_dits, MIN_DITS) * dit_s
+    def length(d: Duration, unit_s: float, extra_units: float) -> float:
+        units = d.median_dits if d.sigma == 0 else d.median_dits * math.exp(d.sigma * rng.standard_normal())
+        return max(units + extra_units, MIN_DITS) * unit_s
 
     words = [[CODES[s] for s in symbols(w) if s in CODES] for w in text.upper().split()]
     words = [w for w in words if w]
     out: list[tuple[float, float]] = []
     t = 0.0
     for wi, patterns in enumerate(words):
-        dit_s = 1.2 / word_wpm(wi, len(words), wpm, wpm_end, profile)
+        char_wpm = word_wpm(wi, len(words), wpm, wpm_end, profile)
+        dit_s = 1.2 / char_wpm
+        gap_s = dit_s if farnsworth_wpm is None else farnsworth_gap_s(char_wpm, farnsworth_wpm)
+        # the same imbalance, s, in units of the gap timebase (exactly imbalance_dits with standard spacing,
+        # so existing recordings draw bit-identical durations)
+        gap_imbalance = imbalance_dits if farnsworth_wpm is None else imbalance_dits * dit_s / gap_s
         for ci, pattern in enumerate(patterns):
             for ei, element in enumerate(pattern):
                 mark = length(k.dit if element == "." else k.dah, dit_s, imbalance_dits)
@@ -127,7 +150,7 @@ def timed_intervals(text: str, wpm: float, style: str = "machine", rng: np.rando
                 if ei < len(pattern) - 1:
                     t += length(k.element_gap, dit_s, -imbalance_dits)
             if ci < len(patterns) - 1:
-                t += length(k.char_gap, dit_s, -imbalance_dits)
+                t += length(k.char_gap, gap_s, -gap_imbalance)
         if wi < len(words) - 1:
-            t += length(k.word_gap, dit_s, -imbalance_dits)
+            t += length(k.word_gap, gap_s, -gap_imbalance)
     return out

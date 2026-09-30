@@ -3,7 +3,7 @@ import math
 import numpy as np
 import pytest
 
-from kz4ap_synth.keying import STYLES, Duration, draw_imbalance_dits, draw_style, timed_intervals
+from kz4ap_synth.keying import STYLES, Duration, draw_imbalance_dits, draw_style, farnsworth_gap_s, timed_intervals
 from kz4ap_synth.morse import keying_intervals
 
 
@@ -99,3 +99,45 @@ def test_random_style_without_a_generator_raises():
 
 def test_every_style_is_defined():
     assert set(STYLES) == {"machine", "computer", "paddle", "bug", "hand"}
+
+
+def test_farnsworth_gap_timebase_follows_the_arrl_formula():
+    # T_g = (60/s - 37.2/c) / 19: the added time per PARIS spread over its 19 gap units.
+    assert farnsworth_gap_s(18.0, 5.0) == pytest.approx((60.0 / 5.0 - 37.2 / 18.0) / 19.0)
+    assert farnsworth_gap_s(18.0, 5.0) == pytest.approx(0.52281, abs=1e-5)
+    assert farnsworth_gap_s(25.0, 25.0) == pytest.approx(1.2 / 25.0)  # no stretch: the dit
+    with pytest.raises(ValueError):
+        farnsworth_gap_s(18.0, 20.0)
+    with pytest.raises(ValueError):
+        farnsworth_gap_s(18.0, 0.0)
+
+
+def test_farnsworth_stretches_only_character_and_word_gaps():
+    c, s = 18.0, 10.0
+    dit, tg = 1.2 / c, farnsworth_gap_s(c, s)
+    iv = timed_intervals("AN IT", c, farnsworth_wpm=s)
+    marks = [b - a for a, b in iv]
+    spaces = [iv[i + 1][0] - iv[i][1] for i in range(len(iv) - 1)]
+    assert marks == pytest.approx([dit, 3 * dit, 3 * dit, dit, dit, dit, 3 * dit])
+    # .- | -. || .. | -  : element, character, element, word, element, character
+    assert spaces == pytest.approx([dit, 3 * tg, dit, 7 * tg, dit, 3 * tg])
+
+
+def test_one_paris_takes_sixty_seconds_over_the_overall_speed():
+    # PARIS: 31 units at T and 19 at T_g; 31 * 1.2/c + (60/s - 37.2/c) = 60/s (derived).
+    iv = timed_intervals("PARIS PARIS", 25.0, farnsworth_wpm=13.0)
+    assert iv[14][0] == pytest.approx(60.0 / 13.0)  # PARIS has 14 elements
+
+
+def test_farnsworth_at_the_character_speed_is_standard_spacing():
+    assert timed_intervals("CQ TEST", 20.0, farnsworth_wpm=20.0) == pytest.approx(keying_intervals("CQ TEST", 20.0))
+
+
+def test_farnsworth_with_random_keying_scales_the_gap_medians():
+    rng = np.random.default_rng(3)
+    c, s = 20.0, 8.0
+    tg = farnsworth_gap_s(c, s)
+    iv = timed_intervals(" ".join(["TEST"] * 200), c, "paddle", rng, farnsworth_wpm=s)
+    spaces = np.array([iv[i + 1][0] - iv[i][1] for i in range(len(iv) - 1)])
+    words = spaces[spaces > 5 * tg]
+    assert np.median(words) == pytest.approx(np.exp(1.94) * tg, rel=0.05)  # paddle word gap median e^1.94 units
