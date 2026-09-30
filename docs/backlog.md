@@ -151,13 +151,16 @@ decoders as a user choice.
 The filter-bank redesign (`docs/design/2026-09-30-filter-bank-speed-estimator-design.md`)
 is prototyped in stage 1 on oracle channels and on the channels the Matched
 path's detector opens (group H through the detector, band, crowded, late
-openings; owner, 2026-09-30). What stage 1 leaves out is **the detector's own
-measures: detection recall, false tracks and tracks per QSO.** The detector is
-untouched, so they cannot change; they are measured when the bank runs as C++
-(`--front-end bank`) behind the real detector, with the tracker in the loop,
-on the 3-seed full suite, against the current Matched and Envelope paths, with
-intervals (spec §7, stage 2: a required part of the evaluation). No acceptance
-gate: the owner decides from the comparison.
+openings; owner, 2026-09-30), and it reports **detection recall, false tracks
+and tracks per QSO** there for the prototype beside Matched and Envelope: as
+the bench counts them (a track counts only if it decoded text) they depend on
+the decoder. Stage 1 mixes by the detector's frequency without the frequency
+tracker, on recorded channels. **Stage 2 confirms these measures** when the
+bank runs as C++ (`--front-end bank`) behind the live detector, with the
+tracker in the loop, on the 3-seed full suite, against the current Matched and
+Envelope paths, with intervals (spec §7, stage 2: a required part of the
+evaluation). Which tracks the detector opens is unchanged by the redesign. No
+acceptance gate: the owner decides from the comparison.
 
 ### Benchmark scenarios to add first
 

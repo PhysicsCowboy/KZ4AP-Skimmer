@@ -21,7 +21,7 @@ Implements spec §7, stage 1:
 5. **A runner** over the 3-seed full suite that scores through the bench and summarizes against Matched and Envelope (Task 12), with oracle copies of the detector-only groups so every regime is compared, and **the detector path** (Task 11b: record the detector's channels, score tracks by frequency; Task 12 runs it) for group H through the detector, band, crowded and the late-opening case (owner, 2026-09-30).
 6. **Experiments** that settle the §6 placeholders by measurement (Tasks 13–14), and **a final evaluation** that writes the measured values into the spec and gives the owner the full comparison — group A crossings, R1, R2, the start-up runaways, and every regime better, worse or unchanged beyond its interval, by how much — with no pass/fail gate (Task 15). The experiments' pre-registered rules choose parameters; they are not the verdict.
 
-Deliberately **not** in this plan: the C++ bank (`--front-end bank`, stage 2); corrections in the engine's text events and in the bench's scoring (stage 2: here the prototype applies its corrections itself and the bench scores the final text); any change to the engine's signal processing; tuning the Envelope or current Matched paths; the detector's own measures — detection recall, false tracks and tracks per QSO. The redesign does not change the detector, so they cannot change; they are measured in stage 2, when the bank runs as C++ behind the real detector (spec §7; backlog "Stage-2 evaluation of the filter bank through the detector"). Stage 1 does decode through the detector (Task 11b), without the tracker's fine-tuning.
+Deliberately **not** in this plan: the C++ bank (`--front-end bank`, stage 2); corrections in the engine's text events and in the bench's scoring (stage 2: here the prototype applies its corrections itself and the bench scores the final text); any change to the engine's signal processing; tuning the Envelope or current Matched paths; confirming the detection measures (detection recall, false tracks, tracks per QSO) behind the live detector with the frequency tracker: stage 1 reports them on the recorded channels of the Matched path's detector (as the bench counts them they depend on the decoder), and stage 2 confirms them in C++ (spec §7; backlog "Stage-2 evaluation of the filter bank through the detector"). Which tracks the detector opens is unchanged by the redesign.
 
 **Stage 1 changes no engine signal processing.** The engine gains one observation hook (`Engine::set_channel_tap`) that copies nothing into and changes nothing in the decoding path; the bench additions and the prototype are tooling. `docs/signal-processing.md` still gets its benchmark definitions (§11: recorded channel streams, externally decoded text, Farnsworth spacing) in the same commits, because §11 describes the benchmark.
 
@@ -234,7 +234,7 @@ Inputs the spec implies but does not spell out, most likely to bite first. Each 
 
 Also pinned: every correction reaches back at most 20 s (Task 11, `test_corrections_never_reach_back_more_than_20_s`).
 
-**On the suite, too:** items 1, 3 and 4 are also measured on the oracle copies of the first-sample, tune-up and pauses groups and on their detector-path runs (Tasks 11b, 12), against Envelope and Matched; the detector path adds the late-opening case (a channel that opens partway through a transmission). Only the detector's own measures are stage 2's (spec §7).
+**On the suite, too:** items 1, 3 and 4 are also measured on the oracle copies of the first-sample, tune-up and pauses groups and on their detector-path runs (Tasks 11b, 12), against Envelope and Matched; the detector path adds the late-opening case (a channel that opens partway through a transmission). Stage 1 also reports detection recall, false tracks and tracks per QSO there; stage 2 confirms them behind the live detector with the tracker (spec §7).
 
 ## File map
 
@@ -4656,7 +4656,7 @@ git commit -m "Record and score the channels the detector opens, with the detect
 ---
 ### Task 12: Runner — record, decode, score, report
 
-Stage 1's pipeline over `build/suite/full3` (spec §7 item 5): record every oracle scoring's channel streams with the bench (Task 2), decode each channel with the prototype in parallel worker processes, score the text with `kz4ap-bench --score-decoded` (Task 3) into `results/bank-proto/`, and report against the Matched and Envelope results already in `results/` — reusing `suites.load_results`, `aggregate`, `paired_differences` and the bootstrap. The report is the full comparison the owner decides on (owner, 2026-09-30: no acceptance gate): group A crossings at each speed, R1, R2 and the start-up runaway cases, and every regime better, worse or unchanged beyond its interval against Matched and against Envelope, with the prototype's own speed, switching, over-start and false-character statistics. **Every regime is covered:** the detector-only groups (pauses, strong, tune-up, first sample, band, crowded) are scored again with oracle channels from the existing recordings — by Envelope and the current Matched path (`kz4ap-bench --oracle`) and by the prototype — as `<recording>.oracle` in groups `<group>, oracle`. **And through the detector** (Task 11b; owner, 2026-09-30): every non-oracle recording (group H through the detector, band, crowded, pauses, strong, tune-up, first sample) is recorded once more with the Matched path's detector (`--front-end matched`, no `--oracle`); the prototype decodes each channel the detector opened, from its opening, mixed by the detector's frequency block by block; its tracks are scored with `--score-decoded` by frequency under the very result names the engine's detector-path runs have (`H-qso-s1`, `H-qso-s1.stations`, `band-s1`, …), so its rows pair signal by signal with Matched's and Envelope's existing detector-path results. That covers the late-opening case too. Experiment runs (Tasks 13–14) go to `experiments/results/`, so the suite's own summary is not cluttered.
+Stage 1's pipeline over `build/suite/full3` (spec §7 item 5): record every oracle scoring's channel streams with the bench (Task 2), decode each channel with the prototype in parallel worker processes, score the text with `kz4ap-bench --score-decoded` (Task 3) into `results/bank-proto/`, and report against the Matched and Envelope results already in `results/` — reusing `suites.load_results`, `aggregate`, `paired_differences` and the bootstrap. The report is the full comparison the owner decides on (owner, 2026-09-30: no acceptance gate): group A crossings at each speed, R1, R2 and the start-up runaway cases, and every regime better, worse or unchanged beyond its interval against Matched and against Envelope, with the prototype's own speed, switching, over-start and false-character statistics. **Every regime is covered:** the detector-only groups (pauses, strong, tune-up, first sample, band, crowded) are scored again with oracle channels from the existing recordings — by Envelope and the current Matched path (`kz4ap-bench --oracle`) and by the prototype — as `<recording>.oracle` in groups `<group>, oracle`. **And through the detector** (Task 11b; owner, 2026-09-30): every non-oracle recording (group H through the detector, band, crowded, pauses, strong, tune-up, first sample) is recorded once more with the Matched path's detector (`--front-end matched`, no `--oracle`); the prototype decodes each channel the detector opened, from its opening, mixed by the detector's frequency block by block; its tracks are scored with `--score-decoded` by frequency under the very result names the engine's detector-path runs have (`H-qso-s1`, `H-qso-s1.stations`, `band-s1`, …), so its rows pair signal by signal with Matched's and Envelope's existing detector-path results. That covers the late-opening case too. **How the detector path compares** (controller ruling, 2026-09-30): the channels are the Matched path's detector's (option 1, D_ch = 47 Hz), the detector the redesign will sit behind, so the prototype is compared with Matched **per track** (the same tracks) and with Envelope **per label** (Envelope's bin-attribution detector opens its own tracks). The report also gives, for the prototype, Matched and Envelope side by side, the bench's **detection recall, false tracks and tracks per QSO** on the detector path: as the bench counts them (a track counts only if it decoded text) they depend on the decoder, so stage 1 measures them; stage 2 confirms them in C++ behind the live detector with the frequency tracker. Which tracks the detector opens is unchanged by the redesign. Experiment runs (Tasks 13–14) go to `experiments/results/`, so the suite's own summary is not cluttered.
 
 **Files:**
 - Modify: `training/kz4ap_synth/suites.py` (`ORACLE_COPY_GROUPS`, `oracle_copies(rec)`, `load_results(out_dir, results_dirs=None, front_ends=None)` reading the copies, `paired_differences(rows, a="baseline", b="matched")`)
@@ -4670,7 +4670,7 @@ Stage 1's pipeline over `build/suite/full3` (spec §7 item 5): record every orac
   - `runner.DEFAULT_NAME = "bank-proto"`; `runner.oracle_scorings(out_dir, only=None) -> list[dict]` (keys `result`, `group`, `wav`, `labels`; the oracle recordings' scorings and the oracle copies); `runner.detector_jobs(out_dir, only=None) -> list[dict]` (keys `result` = `<name>.detector`, `wav`, `labels`, `scorings`: the recording's (labels, result, group) scorings; one per non-oracle recording, filtered by `only` on the scorings' result names); `record`, `decode` and `score` also handle the detector jobs (files `channels/<name>.detector/`, `proto/<name>/<name>.detector.decoded.json` in the `"tracks"` form, `results/<name>/<result>.json` for each scoring); `runner.score_engine_copies(out_dir, bench, front_ends=("baseline", "matched"), only=None)` (CLI `engine-copies`); `runner.record(out_dir, bench, only=None)`; `runner.decode(out_dir, name=DEFAULT_NAME, values=None, only=None, jobs=None, keep_p1=False)`; `runner.score(out_dir, bench, name=DEFAULT_NAME, only=None, results_root=None)`; CLI `record | decode | score | report`.
   - Files: `channels/<result>/` (Task 2's format), `proto/<name>/<result>.decoded.json` (`front_end`, `recording`, `labels`, `config`, `texts`, `channels`: each channel's `ChannelResult.to_json()` plus `label_index`, `rate_hz`, `cpu_s`, `channel_s`), `proto/<name>/p1/<result>/<label index>.npy` (with `keep_p1`), `results/<name>/<result>.json` (the bench's JSON).
   - `metrics.iter_channels(out_dir, name, only=None)` (yields `(job, label, channel, config)`), `metrics.true_dit_s(label)`, `metrics.transmissions(label, pad_s=0.0)`, `metrics.bootstrap_ratio(units, key)`, `metrics.speed_errors(...)`, `metrics.switch_stats(...)`, `metrics.spurious_over_starts(...)`, `metrics.false_characters(...)`, `metrics.cpu_per_channel_second(...)`, `metrics.periodicity_points(out_dir, name, cfg, only=None, groups=..., min_snr_db=0.0, jobs=None)`, `metrics.evaluate_rule(points, windows_s, subset, threshold)`, `metrics.calibrate(points, windows_s, subset, target=0.95)`.
-  - `report.RUNAWAY_CASES`, `report.DETECTOR_PATH_GROUPS`, `report.comparable_rows(out_dir, name, results_dirs=None, only=None)`, `report.not_comparable(group, tag) -> str | None`, `report.verdict(interval) -> str`, `report.comparison(rows, name, out_dir, results_dirs=None) -> dict`, `report.DETECTOR_GAP` (the stated gap), `report.write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path`.
+  - `report.RUNAWAY_CASES`, `report.DETECTOR_PATH_GROUPS`, `report.detector_measures(out_dir, name, results_dirs=None, only=None) -> dict` (per front end and detector-path group: `scored`, `detected`, `detection_recall`, `false_tracks`, `recordings`; and `tracks_per_qso` from `suites.track_splits`), `report.comparable_rows(out_dir, name, results_dirs=None, only=None)`, `report.not_comparable(group, tag) -> str | None`, `report.verdict(interval) -> str`, `report.comparison(rows, name, out_dir, results_dirs=None) -> dict`, `report.DETECTOR_GAP` (the stated gap), `report.write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4811,6 +4811,19 @@ def test_detector_path_is_recorded_decoded_as_tracks_and_scored_under_the_engine
     assert [(c[c.index("--labels") + 1], c[c.index("--json") + 1]) for c in calls] == [
         (str(tmp_path / "h.json"), str(tmp_path / "results" / "t-proto" / "h.json")),
         (str(tmp_path / "h.stations.json"), str(tmp_path / "results" / "t-proto" / "h.stations.json"))]
+
+
+def test_detector_measures_sum_the_bench_counts_per_front_end(tmp_path):
+    from kz4ap_proto.report import detector_measures
+    manifest(tmp_path, [{**rec("band-s1", False), "group": "band"}, rec("a", True)])
+    for fe, (scored, detected, false) in (("bank-proto", (20, 19, 2)), ("matched", (20, 18, 3)), ("baseline", (20, 17, 5))):
+        (tmp_path / "results" / fe).mkdir(parents=True)
+        (tmp_path / "results" / fe / "band-s1.json").write_text(json.dumps(
+            {"tracks": [], "score": {"scored": scored, "detected": detected, "false_tracks": false, "signals": []}}))
+    m = detector_measures(tmp_path, "bank-proto")["by_front_end"]
+    assert m["bank-proto"]["band"] == {"recordings": 1, "scored": 20, "detected": 19, "false_tracks": 2,
+                                       "detection_recall": 0.95}
+    assert m["baseline"]["band"]["false_tracks"] == 5 and "A sensitivity" not in m["matched"]
 
 
 def test_score_hands_each_decoded_file_to_the_bench(tmp_path, monkeypatch):
@@ -5494,16 +5507,48 @@ def _signal_cer(out_dir, results_dirs, fe, recording, freq_hz):
     return None
 
 
-# What stage 1 leaves to stage 2 (owner, 2026-09-30; spec section 7; backlog).
-DETECTOR_GAP = ("Left to stage 2: the detector's own measures, detection recall, false tracks and tracks per QSO. The "
-                "detector is untouched, so they cannot change; stage 2 measures them with the bank in C++ behind the "
-                "real detector. Stage 1 does compare decoding through the detector: group H, band, crowded, pauses, "
-                "strong, tune-up and first sample on the channels the Matched path's detector opens (late openings "
-                "included), mixed by the detector's frequency without the tracker's fine-tuning.")
+# What stage 1 leaves to stage 2 (owner and controller, 2026-09-30; spec section 7; backlog).
+DETECTOR_GAP = ("Which tracks the detector opens is unchanged by the redesign. Detection recall, false tracks and tracks "
+                "per QSO as the bench counts them (tracks that decoded text) depend on the decoder, and stage 1 reports "
+                "them for the prototype on the recorded channels of the Matched path's detector, beside Matched and "
+                "Envelope. Stage 2 confirms them in C++ behind the live detector, with the frequency tracker in the "
+                "loop (stage 1 mixes by the detector's frequency without the tracker's fine-tuning).")
 # Detector-path groups: the prototype decodes the Matched path's detector channels; Envelope's detector (bin
 # attribution) opens its own tracks, so against Envelope these rows compare per label, not per track.
 DETECTOR_PATH_GROUPS = ("H two-station QSO", "H two-station QSO (per station)", "strong", "pauses", "tune-up",
                         "first sample", "crowded", "band")
+
+
+def detector_measures(out_dir, name, results_dirs=None, only=None) -> dict:
+    """The bench's detection measures on the detector path, per front end (the prototype, Matched, Envelope) and
+    group: scored labels, detected labels, detection recall, and false tracks (tracks that decoded text and matched
+    no label), summed over the non-oracle recordings' main scorings; plus tracks per QSO (group H, suites.track_splits).
+    As the bench counts them they depend on the decoder (a track counts only if it decoded text)."""
+    out_dir = Path(out_dir)
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    roots = results_dirs or [out_dir / "results"]
+    out: dict = {}
+    for fe in (name, *REFERENCES):
+        for rec in manifest["recordings"]:
+            if rec["oracle"] or (only and not re.search(only, rec["name"])):
+                continue
+            path = next((Path(r) / fe / f"{rec['name']}.json" for r in roots
+                         if (Path(r) / fe / f"{rec['name']}.json").exists()), None)
+            if path is None:
+                continue
+            s = json.loads(path.read_text())["score"]
+            g = out.setdefault(fe, {}).setdefault(rec["group"], {"recordings": 0, "scored": 0, "detected": 0,
+                                                                  "false_tracks": 0})
+            g["recordings"] += 1
+            for k in ("scored", "detected", "false_tracks"):
+                g[k] += s[k]
+    for groups in out.values():
+        for g in groups.values():
+            g["detection_recall"] = g["detected"] / g["scored"] if g["scored"] else None
+    splits = suites.track_splits(out_dir)
+    return {"by_front_end": out,
+            "tracks_per_qso": {f"{fe} | {tag}": v for (fe, tag), v in sorted(splits.items())
+                               if fe in (name, *REFERENCES)}}
 
 
 def verdict(interval) -> str:
@@ -5611,6 +5656,17 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
         cells = [f"{_fmt(e[ref]['mean'], e[ref]['interval'], '+.3f')} {e[ref]['verdict']}" if e[ref] else "—"
                  for ref in REFERENCES]
         lines.append(f"| {e['group']} | {e['tag']} | {cells[0]} | {cells[1]} | {e['note'] or ''} |")
+    measures = detector_measures(out_dir, name, results_dirs, only)
+    lines += ["", "Detection measures on the detector path (the Matched path's detector; as the bench counts them, a "
+              "track counts only if it decoded text):", "",
+              "| group | front end | recordings | labels scored | detected | detection recall | false tracks |",
+              "|---|---|---|---|---|---|---|"]
+    for fe, groups in measures["by_front_end"].items():
+        for g, v in sorted(groups.items()):
+            lines.append(f"| {g} | {names[fe]} | {v['recordings']} | {v['scored']} | {v['detected']} | "
+                         f"{_fmt(v['detection_recall'], None, '.3f')} | {v['false_tracks']} |")
+    lines += ["", "| front end and group-H tag | QSOs | tracks per QSO |", "|---|---|---|"]
+    lines += [f"| {k} | {v['qsos']} | {v['mean_tracks']:.2f} |" for k, v in measures["tracks_per_qso"].items()]
     lines += ["", f"**Stated gap.** {comp['detector_gap']}", ""]
     lines += ["", f"## {name}'s own statistics", ""]
     speed = metrics.speed_errors(out_dir, name, only)
@@ -5633,7 +5689,7 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
               "channel-second (Python prototype; not comparable with the engine's C++)."]
     path = out_dir / f"report-{name}{('-' + suffix) if suffix else ''}.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    (path.with_suffix(".json")).write_text(json.dumps({"comparison": comp, "speed": speed, "switches": switches,
+    (path.with_suffix(".json")).write_text(json.dumps({"comparison": comp, "detector_measures": measures, "speed": speed, "switches": switches,
                                                        "over_starts": overs, "false_characters": false},
                                                       indent=2, default=str) + "\n")
     return path
@@ -6300,7 +6356,8 @@ Section 5: the comparison, plainly and without a verdict of our own (the owner d
 - group A crossings (S₅₀₀ at CER 0.10 and 0.05) at every speed for the prototype, Matched and Envelope, with intervals, and the differences in dB of S₅₀₀;
 - R1 (group D step 20 → 35 WPM CER), R2 (group A 12 WPM first-word CER at S₅₀₀ 6–20 dB) and the two start-up runaway cases, for all three, with numbers; and the prototype's lock-ins at S₅₀₀ ≥ 6 dB from the speed table (a selected speed off by more than ×1.5 for 3 s or longer);
 - every regime (group and tag, the oracle copies and the detector-path groups included) against Matched and against Envelope: better, worse or unchanged beyond its interval, by how much, with the counts of each; the not-comparable rows marked (F drift, H oracle QSO labels with an offset); on the detector path the prototype decodes Matched's tracks, so against Envelope (its own tracks) those rows compare per label; the late-opening case (channels opened partway through a transmission) is read from the detector-path first-word CER;
-- **the stated gap:** the detector's own measures — detection recall, false tracks and tracks per QSO — are not measured in stage 1; the detector is untouched, so they cannot change, and stage 2 measures them with the bank in C++ behind the real detector (spec §7; backlog "Stage-2 evaluation of the filter bank through the detector"). Also stated: on the detector path the prototype mixes by the detector's frequency without the tracker's fine-tuning (±12 Hz), which Matched has.
+- **detection measures on the detector path**, the prototype beside Matched and Envelope: detection recall, false tracks and tracks per QSO per group, as the bench counts them (a track counts only if it decoded text, so they depend on the decoder); the prototype is compared with Matched per track (the same detector channels) and with Envelope per label;
+- **the stated gap:** which tracks the detector opens is unchanged by the redesign; stage 2 confirms the detection measures in C++ behind the live detector with the frequency tracker in the loop (spec §7; backlog "Stage-2 evaluation of the filter bank through the detector"); on the detector path stage 1's prototype mixes by the detector's frequency without the tracker's fine-tuning (±12 Hz), which Matched has.
 State that this compares the Python prototype on oracle streams, not the C++ bank.
 
 Section 6: open items for the owner: the comb-on-2T change (if not already answered), the tracker's input in stage 2 (which branch's v and p), every "no setting met the criterion" and every finding reported during Tasks 11–15, the placeholders kept unmeasured, the T_P prior's reinterpretation (a gate at the confidence threshold instead of a weight by the confidence, because the arms' confidences are on different scales); that on the detector path the prototype lacks the tracker's fine-tuning (the tracker is stage 2's); and the spec §8 questions this stage did not measure: 5 WPM keying against fading (the suite has no slow fading recording below 12 WPM), the outlier class's shape, the noise spectrum's FFT size, averaging and guard (only compared with the fallback, E10), and the choices this plan made heuristically (listed in its Parameters table).
@@ -6318,8 +6375,9 @@ In `docs/design/2026-09-30-filter-bank-speed-estimator-design.md`:
 Prototype on the recorded oracle channel streams of the 3-seed full suite
 (`docs/plans/2026-09-30-milestone-2b-stage-1-results.md`). <One paragraph each: group A crossings, R1, R2
 and the runaways, and the counts of regimes better / worse / unchanged against Matched and against Envelope,
-with the largest differences and their intervals; no verdict (the owner decides).> <One sentence: the stated
-gap — the detector's own measures (detection recall, false tracks, tracks per QSO) are stage 2's.> <One paragraph: the settled parameters and the changes to
+with the largest differences and their intervals; no verdict (the owner decides).> <One paragraph: detection recall, false tracks and tracks per QSO on the detector path for the prototype,
+Matched and Envelope.> <One sentence: what stage 2 confirms — these measures in C++ behind the live detector,
+with the tracker.> <One paragraph: the settled parameters and the changes to
 this design found in stage 1: which periodicity arm and noise arm won; the unknown-amplitude test is a per-sample threshold on x, calibrated
 by measurement.> <One sentence: what stage 2 must decide that stage 1 did not (the tracker's input).>
 ```
@@ -6339,7 +6397,7 @@ git commit -m "Record stage 1 of the filter-bank redesign: final evaluation and 
 
 - [ ] **Step 8: Report to the owner**
 
-In a few lines, without a verdict: the group-A crossings against Matched and Envelope, R1, R2, the runaways, and how many regimes are better, worse and unchanged against each (with the largest differences), the stated gap (the detector's own measures), the settled parameter values and which stayed placeholders, the findings reported along the way (comb on 2T; tracker input; any rule no setting met), the prototype's CPU (Python, for scale only), and that the spec's §6 and §10 were changed on the branch for the owner's review. Do not push or merge.
+In a few lines, without a verdict: the group-A crossings against Matched and Envelope, R1, R2, the runaways, and how many regimes are better, worse and unchanged against each (with the largest differences), the detection measures (recall, false tracks, tracks per QSO) for all three, the stated gap (stage 2 confirms them behind the live detector with the tracker), the settled parameter values and which stayed placeholders, the findings reported along the way (comb on 2T; tracker input; any rule no setting met), the prototype's CPU (Python, for scale only), and that the spec's §6 and §10 were changed on the branch for the owner's review. Do not push or merge.
 
 ---
 ## Self-review (plan author's check against the spec)

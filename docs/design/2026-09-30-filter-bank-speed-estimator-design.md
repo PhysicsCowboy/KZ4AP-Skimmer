@@ -289,7 +289,13 @@ filter was redesigned):
   decodes them mixed by that frequency (no tracker fine-tuning, stage 2's),
   and its tracks are scored by frequency exactly as the engine's detector
   path is. That covers group H through the detector, the band and crowded
-  groups as the detector sees them, and the late-opening case.
+  groups as the detector sees them, and the late-opening case. The prototype is
+  compared with Matched per track (the same detector channels) and with
+  Envelope per label (its detector opens its own tracks). Stage 1 also
+  reports detection recall, false tracks and tracks per QSO for the
+  prototype beside Matched and Envelope: as the bench counts them (a track
+  counts only if it decoded text) they depend on the decoder. Which tracks
+  the detector opens is unchanged by the redesign.
 - **No acceptance gate (owner, 2026-09-30).** Stage 1 ends with a full
   comparison for the owner's decision: the prototype against the current
   Matched and Envelope paths on the same signals (oracle channels and the
@@ -308,12 +314,12 @@ filter was redesigned):
   comparison against the current Matched and Envelope paths on the 3-seed
   full suite, for the owner's decision (owner, 2026-09-30); Envelope
   unchanged.
-- **Required part of the stage-2 evaluation: the detector's own measures**,
-  which stage 1 leaves out: detection recall, false tracks and tracks per
-  QSO. The detector is untouched by this redesign, so they cannot change;
-  stage 2 measures them with the bank in C++ behind the real detector, and
-  with the tracker in the loop (backlog: "Stage-2 evaluation of the filter
-  bank through the detector").
+- **Required part of the stage-2 evaluation: confirm the detection
+  measures** stage 1 reports on recorded detector channels (detection recall,
+  false tracks, tracks per QSO) in C++ behind the live detector, with the
+  frequency tracker in the loop (backlog: "Stage-2 evaluation of the filter
+  bank through the detector"). Detection itself, which tracks the detector
+  opens, is unchanged by this redesign.
 
 ## 8. Still open (settled in stage 1)
 
