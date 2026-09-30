@@ -7868,3 +7868,658 @@ Summarize for the owner, in a few lines: the group-A crossings for both front en
 **Review Focus.** Each of the seven items has its tests in the owning tasks (Tasks 6, 9 and 10–13), named in the Review Focus section.
 
 **Known risks for the executor.** Tasks 10, 12 and 13 implement option 1 (owner decisions 2026-09-29): its stated limits (the retune delay after a turnover to another frequency within D, a neighbor 60–70 Hz away at the channel's station's level or stronger leaking through the boxcar, and the oracle-mode drift limit) are not asserted, and the first-step growth bound's effect on the 50 Hz runaway was not simulated; Task 14 measures and reports them. Several design limits are postponed to the backlog, not fixed: the acquisition floor (S₅₀₀ = −2.5 dB derived, about −2.6 to −1.8 dB simulated), the noise-rise recovery (about 43 s after a sustained 6 dB rise), stray noise after about 1% of silences, and co-channel stations keying at the same time within a few tens of Hz. Seven Task 12 tests assert a 20-seed pass count below 20 (Task 12, Step 5); if one fails, report it with its printed failures, and do not change a seed, level, tolerance or count. Random keying may make a suite recording run long; Task 9 says how to fix that. The turnover tests were simulated with the decoder's own speed logic; the engine-level tests of Task 13 with a port of the detector (with option 1's peak following), channelizer and decoder at 6000 samples/s (the engine's bin width and hop), so their C++ results may differ in detail; if one fails other than as its comment states, debug it, and if the cause is a parameter, report it to the owner. The noise estimate comes down slowly from a high start (a station keying from the first sample); the "first sample" group measures it. Group B holds at least 1000 characters per point over 3 seeds, still far fewer than VE3NEA's 30 000, so compare trends and intervals against his curves, not single points. The full suite at 3 seeds is about 3.2 GB of recordings and takes about 57 min to generate (19 min and 1.06 GB measured for one seed).
+
+---
+
+## Addendum (2026-09-30): defect fixes before merge
+
+Task 14 measured two decoder defects on the Matched path (`docs/signal-processing.md` §8, the paragraph "Defect, reported to the owner", and §8b, "Limits measured"; the Task 14 report's diagnoses 1 and 2). The owner approved fixing both before `milestone-2` is merged (2026-09-30). Tasks 15 and 16 fix them; Task 17 re-measures. Do them in order: Task 16's code is written on top of Task 15's, and Task 17 measures both.
+
+**Rules for Tasks 15–17** (every implementer must be told all of them, with the Global Constraints above):
+
+- **Physical units.** Parameters and calculations in Hz, s, FS, FS² and dB with a named reference; nothing counted in samples in a parameter or a documented quantity (samples only at the point of use, derived from a duration). Counts of physical things (marks) are fine.
+- **Every dB names its reference** (S₅₀₀, dB re a station's key-down power, dBFS, …); a bare "dB" is a bug.
+- **`docs/signal-processing.md` is updated in the same commit as any signal-processing change**, and every choice in it is labeled derived, measured or heuristic.
+- **The Envelope path stays bit-identical.** `key_down()` and `key_up()` are shared with it: every new branch is guarded by `front_end_` (Matched only) or has a default that leaves Envelope's arithmetic unchanged. `bash bench/smoke.sh build/windows` must still print Envelope CER 0.0353 (34 edits in 964 symbols); `bench/baselines/smoke.json` is not edited.
+- **No parameter tuning.** No default, threshold or Matched parameter value changes in these tasks. These are code fixes that make the code do what the owner decided (Task 15) and stop the speed estimate from using a mark the decoder did not see begin (Task 16).
+- **If a test of the existing suite changes outcome** (a C++ test other than the ones these tasks name or rewrite, a 20-seed pass count, a pytest, or the smoke check), stop and report it with its output. Do not edit a threshold, a seed, a count or a baseline to make it pass.
+- Git: work on `milestone-2`; one git command per call (`git add …`, then `git commit -m "…"`), no chaining, no `git -C`, no attribution lines; never amend, rebase, reset, push or merge.
+
+### Task 15: Apply the growth bound once per physical mark
+
+**Defect (measured, Task 14).** The owner's decision (2026-09-29; option 1, decision 3) bounds the Matched decoder's dit estimate, and the filter's own dit from its first follow step, to ×1.25 growth **per mark**. The code applies the bound in `update_speed()`, which runs at every key-up counted for speed. The dropout merge in `key_down()` (`engine/src/classical_decoder.cpp`, the `if (char_open_ && …)` block) pops the merged mark from `recent_marks_` but does not restore `dit_s_` or `filter_dit_s_`, so the next key-up re-measures the longer mark and applies ×1.25 again: 7 times on one mark in Task 14's instrumented run, the filter's dit 20 → 95.4 ms (20 ms × 1.25⁷) within 35 ms. The trigger is usually the widening itself: the wider boxcar still covers the mark just ended, its output rises, and the key goes down again within 0.3 dit, which the decoder takes as a dropout. The merge also does not undo `++marks_since_reacquire_`, so one physical mark counts twice. (Derived from the code: the double count could change when the filter starts following only after a re-acquisition window that brought back a window without following, because `update_speed()` also requires the window itself, whose count was right, to hold 8 marks. It is fixed anyway.)
+
+**Fix.** At every key-up counted for speed (Matched only), save the speed state the update starts from: `dit_s_`, `smooth_alpha_` (derived from `dit_s_`), `filter_dit_s_` (and so the filter length set through `set_dit`), `marks_since_reacquire_`, and the speed window `recent_marks_` (whole, so a mark the window dropped from its front comes back too). When a dropout merge re-opens that element, restore the saved state (and the filter length, if it changed). The re-measured mark then gets one update, bounded once from the state before it. The Envelope merge stays exactly as it is.
+
+**What remains, derived (to state in the docs):** the widened filter can still re-open the mark it was widened at. Each re-open is now merged and undone, and the mark re-measured from the saved state, so the filter goes back and forth between the old and the new length a few times; for a strong signal and a boxcar this stops once the new filter's falling edge has passed half amplitude, about (K_new − K_old)/2 samples after the first key-up, which is at most 0.125·K_old samples since K_new ≤ 1.25·K_old: 0.125 × 38.7 ms = 4.8 ms at 25 WPM (K_old = 58). The mark is then timed through the new filter, up to that much longer than through the old one. No growth beyond ×1.25 per mark results. (Not restoring the length at a merge would avoid the back-and-forth; the owner's approved fix restores it, so this plan does.)
+
+**Files:**
+- Modify: `engine/include/kz4ap/classical_decoder.hpp`, `engine/src/classical_decoder.cpp`
+- Test: `engine/tests/classical_decoder_test.cpp`
+- Docs: `docs/signal-processing.md` (§8 "Two front ends", §8b "Following speed" and "Start-up runaway", §10 growth-bound row)
+
+- [ ] **Step 1: Add the test accessor, a helper, the new failing test, and rewrite the per-mark test**
+
+In `engine/include/kz4ap/classical_decoder.hpp`, after `int filter_length() const;`, add:
+
+```cpp
+    // Matched: marks counted for speed since the last re-acquisition (or reset); Envelope: counted but unused.
+    std::size_t marks_since_reacquire() const { return marks_since_reacquire_; }
+```
+
+In `engine/tests/classical_decoder_test.cpp`, in the anonymous namespace that defines `matched()`, before its closing `}  // namespace`, add:
+
+```cpp
+// K (samples) and the count of marks for speed, read just before the sample at each physical mark's
+// keyed start (keying() times), and once more after the input: between one mark's last key event and
+// the next mark's first. At 12 WPM a mark's key-up, and any dropout merge after it (within 0.3 dit),
+// come before the next mark's start, one dit (100 ms) after the mark's end (derived: the key-up lags the
+// mark's end by about half the filter, at most 0.4 dit).
+struct BetweenMarks {
+    std::vector<int> k;
+    std::vector<std::size_t> counted;
+    std::vector<DecodedSymbol> chars;
+};
+
+BetweenMarks decode_between_marks(ClassicalDecoder& d, const std::vector<Sample>& x,
+                                  const std::vector<std::pair<double, double>>& marks) {
+    BetweenMarks out;
+    std::size_t next = 0;
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        if (next < marks.size() && i == static_cast<std::size_t>(std::ceil(marks[next].first * kRate))) {
+            out.k.push_back(d.filter_length());
+            out.counted.push_back(d.marks_since_reacquire());
+            ++next;
+        }
+        auto u = d.process(std::span<const Sample>(x).subspan(i, 1), static_cast<double>(i) / kRate);
+        out.chars.insert(out.chars.end(), u.chars.begin(), u.chars.end());
+    }
+    auto f = d.flush();
+    out.chars.insert(out.chars.end(), f.chars.begin(), f.chars.end());
+    out.k.push_back(d.filter_length());
+    out.counted.push_back(d.marks_since_reacquire());
+    return out;
+}
+```
+
+Replace the whole test `MatchedFilterGrowsAtMostTheBoundPerMark` with:
+
+```cpp
+TEST(ClassicalDecoder, MatchedFilterGrowsAtMostTheBoundPerMark) {
+    // Owner decision 3 of option 1 (2026-09-29): the x1.25 growth bound applies from the filter's
+    // first follow step, per mark. Checked per physical mark (Task 15): K is read between marks, at
+    // each mark's keyed start, so every update within one mark (a dropout merge and its re-measure)
+    // counts as one step. A clean 12 WPM station (T = 100 ms): the decoder's estimate is near 100 ms
+    // after 7 unbounded marks, but the filter must grow from the 20 ms acquisition dit (K = 24) by at
+    // most x1.25 per mark: 24, 30, 38, 47, 59, 73, 92, 114, 120 samples (derived), each step at most
+    // 1.25 K + 1.125 (both K rounded). Before Task 15 the bound held per speed update only, and a
+    // widening that re-opened the mark could apply it several times within one mark (Task 14).
+    // Deterministic apart from the noise at S500 = 30 dB; not simulated.
+    const std::string msg = "PARIS PARIS PARIS";
+    const auto marks = keying(msg, 12, 0.5);
+    const auto x = keyed_signal(msg, 12, kRate, marks.back().second + 0.3, 0, 1.0, sigma_for_s500(30), 44);
+    ClassicalDecoder d(kRate, matched());
+    const auto got = decode_between_marks(d, x, marks);
+    int steps = 0;
+    for (std::size_t m = 0; m + 1 < got.k.size(); ++m) {
+        if (got.k[m + 1] > got.k[m]) ++steps;
+        EXPECT_LE(got.k[m + 1], 1.25 * got.k[m] + 1.125) << "mark " << m << ": K " << got.k[m] << " -> " << got.k[m + 1];
+    }
+    EXPECT_GE(steps, 7);  // ln(100 ms / 20 ms) / ln 1.25 = 7.2 (derived)
+    EXPECT_NEAR(got.k.back(), std::lround(0.8 * 0.1 * kRate), 12);
+    EXPECT_TRUE(ends_with(text(got.chars), "PARIS")) << text(got.chars);
+}
+```
+
+After it, add:
+
+```cpp
+TEST(ClassicalDecoder, MatchedMergedDropoutIsOneMarkForSpeed) {
+    // Task 15. A dropout merged back into its mark must not update the speed twice: the count of
+    // marks for speed rises by at most 1 per physical mark, and K by at most x1.25 (+1.125 for
+    // rounding both K). A clean 12 WPM station (T = 100 ms) at S500 = 30 dB, with a 20 ms hard dropout
+    // in the middle of every dah from the sixth mark (A's dah) on. "PAR MMM ...": the filter starts
+    // following after 8 or 9 marks (Task 16 may leave the first one uncounted), so the dahs of MMM
+    // arrive while K <= 59 samples. Derived for a strong signal (Lambda ~ a^2 (x/a - 1/2)): the key
+    // goes up where the boxcar holds less than half the carrier, so a 20 ms (30-sample) gap keys it
+    // up while K < 60, and the key goes down again 20 ms later, within 0.3 dit (30 ms at a 100 ms
+    // estimate), so the decoder merges it. Before Task 15, A's and R's dahs (marks 5 and 7) count
+    // twice, and a merged dah while following grows K by up to 1.25^2 (derived from the code).
+    // Deterministic apart from the noise; not simulated.
+    const std::string msg = "PAR MMM PARIS PARIS";
+    const auto marks = keying(msg, 12, 0.5);
+    const double duration = marks.back().second + 0.3;
+    auto x = keyed_signal(msg, 12, kRate, duration, 0, 1.0, 0.0);
+    for (std::size_t m = 5; m < marks.size(); ++m) {
+        const auto [on, off] = marks[m];
+        if (off - on < 0.2) continue;  // dits are 0.1 s, dahs 0.3 s
+        const double mid = 0.5 * (on + off);
+        for (auto i = static_cast<std::size_t>((mid - 0.010) * kRate); i < static_cast<std::size_t>((mid + 0.010) * kRate); ++i)
+            x[i] = Sample(0.0f, 0.0f);
+    }
+    x = add(std::move(x), keyed_signal("", 12, kRate, duration, 0, 1.0, sigma_for_s500(30), 47));  // noise only
+    ClassicalDecoder d(kRate, matched());
+    const auto got = decode_between_marks(d, x, marks);
+    for (std::size_t m = 0; m + 1 < got.k.size(); ++m) {
+        EXPECT_LE(got.counted[m + 1], got.counted[m] + 1)
+            << "mark " << m << ": count " << got.counted[m] << " -> " << got.counted[m + 1];
+        EXPECT_LE(got.k[m + 1], 1.25 * got.k[m] + 1.125) << "mark " << m << ": K " << got.k[m] << " -> " << got.k[m + 1];
+    }
+    EXPECT_TRUE(ends_with(text(got.chars), "PARIS")) << text(got.chars);
+}
+```
+
+- [ ] **Step 2: Run the two tests and watch them fail**
+
+```powershell
+cmake --build --preset windows
+ctest --preset windows -R "MatchedMergedDropoutIsOneMarkForSpeed|MatchedFilterGrowsAtMostTheBoundPerMark" --output-on-failure
+```
+Expected: `MatchedMergedDropoutIsOneMarkForSpeed` FAILS with at least `mark 5: count … -> …` and `mark 7: …` (a rise of 2), and probably a `K … -> …` step above 1.25 K + 1.125 on a merged dah of MMM. `MatchedFilterGrowsAtMostTheBoundPerMark` may fail too (if the widening cascade occurs on the clean signal); record whether it does. If `MatchedMergedDropoutIsOneMarkForSpeed` passes on the current code, stop and report: the test does not reproduce the defect.
+
+- [ ] **Step 3: Implement the snapshot and the restore**
+
+In `engine/include/kz4ap/classical_decoder.hpp`:
+
+Replace the comment of `max_dit_growth` with:
+
+```cpp
+    double max_dit_growth = 1.25;         // Matched, while the filter follows: the dit estimate may grow at most this factor
+                                          // per mark (owner's decision); a mark re-opened by a dropout merge is re-measured
+                                          // from the speed state before it, so the bound applies once per physical mark
+```
+
+In the private section, after `bool counts_for_speed(double duration) const;`, add `void restore_speed_state();`. Replace the comment of `filter_dit_s_` with `// Matched: the dit the matched filter is set to, s (grows at most max_dit_growth per mark, from the acquisition dit)`, and after `set_aside_filter_dit_s_` add:
+
+```cpp
+    // Matched: the speed state just before the last element's key-up updated it, so a dropout merge that
+    // re-opens that element can undo the update (the growth bound then applies once per physical mark).
+    struct SpeedState {
+        bool counted = false;  // the last element counted for speed; the fields below are valid
+        double dit_s = 0;
+        float smooth_alpha = 1;
+        double filter_dit_s = 0;
+        std::size_t marks_since_reacquire = 0;
+        std::deque<double> recent_marks;
+    };
+    SpeedState before_last_element_;
+```
+
+In `engine/src/classical_decoder.cpp`:
+
+In `reset()`, after `set_aside_filter_dit_s_ = filter_dit_s_;`, add `before_last_element_ = {};`.
+
+Replace `key_down()` with:
+
+```cpp
+void ClassicalDecoder::key_down(double t) {
+    key_ = true;
+    if (char_open_ && !elements_.empty() && t - up_t_ < config_.glitch_dits * dit_s_) {
+        // The key-up was a dropout inside one element: merge it back into that element.
+        const Element merged = elements_.back();
+        elements_.pop_back();
+        char_open_ = !elements_.empty();  // flush() must not finish a character with no elements
+        if (front_end_) {
+            // Matched: undo the merged element's speed update, so the mark gets one bounded update when
+            // it is re-measured (owner decision 2026-09-29: at most max_dit_growth per mark).
+            if (before_last_element_.counted) restore_speed_state();
+        } else if (counts_for_speed(merged.end_s - merged.start_s) && !recent_marks_.empty()) {
+            recent_marks_.pop_back();  // Envelope: milestone 1's merge, unchanged (bit-identical)
+        }
+        down_t_ = prev_down_t_;
+        return;
+    }
+    down_t_ = t;
+}
+```
+
+In `key_up()`, replace
+
+```cpp
+    char_open_ = true;
+    if (!counts_for_speed(duration)) return;
+    recent_marks_.push_back(duration);
+```
+
+with
+
+```cpp
+    char_open_ = true;
+    if (front_end_) before_last_element_ = {};  // Matched: nothing to undo unless this element counts
+    if (!counts_for_speed(duration)) return;
+    if (front_end_) {
+        // Matched: the state this key-up's speed update starts from, restored if a dropout merge
+        // re-opens this element.
+        before_last_element_ = {true, dit_s_, smooth_alpha_, filter_dit_s_, marks_since_reacquire_, recent_marks_};
+    }
+    recent_marks_.push_back(duration);
+```
+
+After `counts_for_speed()`, add:
+
+```cpp
+void ClassicalDecoder::restore_speed_state() {
+    SpeedState& s = before_last_element_;
+    dit_s_ = s.dit_s;
+    smooth_alpha_ = s.smooth_alpha;
+    marks_since_reacquire_ = s.marks_since_reacquire;
+    recent_marks_ = std::move(s.recent_marks);
+    if (filter_dit_s_ != s.filter_dit_s) {
+        filter_dit_s_ = s.filter_dit_s;
+        front_end_->set_dit(filter_dit_s_);  // back to the length before the update (rescales sigma^2 back)
+    }
+    s = {};
+}
+```
+
+Why the snapshot always belongs to the merged element (derived from the code; put it in the commit message body, not in a comment): a merge pops `elements_.back()`, the last element pushed; `before_last_element_` is rewritten at every push and cleared after a restore; after a merge the key is down, and its next key-up pushes again (the merged mark is longer than the element it replaced, which passed the glitch test at the same restored `dit_s_`), so no second merge can reach an older element. A re-acquisition cannot fall between a key-up and its merge (it needs at least 0.5 s of key-up; a merge, less than 0.3 dit).
+
+In `update_speed()`, replace the comment that begins "Matched: while the filter follows the speed, the dit estimate may grow" with:
+
+```cpp
+    // Matched: while the filter follows the speed, the dit estimate may grow by at most
+    // max_dit_growth per mark (owner decision 2026-09-29). The bound is applied here, at each key-up
+    // counted for speed; a dropout merge in key_down() restores the state before the merged mark's
+    // update, so each physical mark is bounded once. A jump of x2 in one update, while the window held
+    // two speeds, made the filter outgrow the element spaces, merge marks and run away (final check
+    // F-2); a real slowdown takes ln(ratio) / ln(max_dit_growth) marks to follow.
+```
+
+and the comment that begins "The matched filter follows the speed once the estimate rests on enough marks" with:
+
+```cpp
+    // The matched filter follows the speed once the estimate rests on enough marks, and
+    // after a re-acquisition only once enough of them are new. Its own dit may grow at most
+    // max_dit_growth per mark, from its first follow step on (owner decision 3 of option 1,
+    // 2026-09-29): the estimate may rest on up to 7 unbounded marks, and a jump from the 20 ms
+    // acquisition dit straight to a wrong 110 ms estimate made the filter outgrow the element
+    // spaces and run away in simulation. Decreases are not bounded.
+```
+
+- [ ] **Step 4: Build and run everything**
+
+```powershell
+cmake --build --preset windows
+ctest --preset windows --output-on-failure
+```
+Expected: all pass, including the two tests of Step 1. Then in Git Bash: `bash bench/smoke.sh build/windows` → Envelope `CER 0.0353` (34/964, unchanged), a Matched CER (record it; it may differ from 0.0622), `smoke test passed`. If any other test changes outcome, or the Matched smoke check fails, stop and report (rules above).
+
+- [ ] **Step 5: Document**
+
+In `docs/signal-processing.md`:
+
+- §8 "Two front ends": replace the paragraph that starts "**Defect, reported to the owner; not fixed in this milestone" (through "…the fix is a backlog item ("Growth bound per mark").") with:
+
+```markdown
+**Once per physical mark (Task 15, milestone 2, part 1).** The bound is
+applied in `update_speed()`, at every key-up counted for speed. Until
+Task 15 it acted per speed update, against the owner's decision: when the
+filter widened at a key-up, the wider boxcar still covered the mark just
+ended, the key went down again within 0.3 dit, the dropout merge (step 6)
+popped the mark but kept the updated `dit_s_` and `filter_dit_s_`, and
+the next key-up applied ×1.25 again (measured, Task 14: 7 times on one
+mark, the filter's dit 20 → 95.4 ms within 35 ms); the merge also left
+the mark counted twice toward the 8 before the filter follows. Now each
+key-up counted for speed saves the state its update starts from (the dit
+estimate, the filter's dit and length, the count of marks since the last
+re-acquisition, the speed window), and a merge that re-opens that element
+restores it, so the re-measured mark gets one update, bounded once. The
+widened filter can still re-open the mark it was widened at; each re-open
+is merged and undone, and it stops about (K_new − K_old)/2 samples after
+the first key-up, at most 0.125·K_old since K_new ≤ 1.25·K_old (derived
+for a boxcar and a strong signal: its falling edge passes half amplitude
+half the length change later), for example 4.8 ms at 25 WPM (K_old = 58,
+38.7 ms): the mark is timed through the new filter, up to that much
+longer, and grows the estimate at most ×1.25. The Envelope path's merge
+is unchanged (it pops the mark from the window and keeps the updated
+estimate, as in milestone 1; it has no growth bound).
+```
+
+- §8b "Following speed": replace "the filter's dit meant to grow at most ×1.25 per mark from the 20 ms acquisition dit (owner decision); as coded the bound is applied per speed update, and a widening that re-opens the mark just ended adds updates within that mark (a defect, measured and reported, section 8, "Two front ends");" with "the filter's dit growing at most ×1.25 per physical mark from the 20 ms acquisition dit (owner decision; a merge undoes the merged mark's update, section 8, "Two front ends");".
+- §10, the row "Dit-estimate growth bound (Matched)": replace its "As coded: …" sentence with "Applied at each key-up counted for speed; a dropout merge restores the state before the merged mark's update, so each physical mark is bounded once (Task 15)", and its last cell with "heuristic value (owner decisions 2026-09-29); applied per physical mark (derived from the code, Task 15; its measured effect in section 8b)".
+- §8b "Start-up runaway": add at its end: "Step (2) of this chain, the cascade within one mark, is removed by Task 15 (section 8, "Two front ends"); the figures above are from before it (Task 17 re-measures them)."
+
+Do not touch the measured tables or `docs/backlog.md` here (Task 17 re-measures and updates them).
+
+- [ ] **Step 6: Commit**
+
+```powershell
+git add engine/include/kz4ap/classical_decoder.hpp engine/src/classical_decoder.cpp engine/tests/classical_decoder_test.cpp docs/signal-processing.md
+```
+```powershell
+git commit -m "Apply the dit growth bound once per physical mark" -m "A dropout merge now restores the speed state saved at the merged element's key-up (dit estimate, filter dit and length, marks since re-acquisition, speed window), so the re-measured mark gets one bounded update and counts once. The Envelope merge is unchanged."
+```
+
+### Task 16: Do not count for speed a mark whose key-down was not observed
+
+**Defect (measured, Task 14).** A channel that opens mid-transmission: the front end's 0.32 s warm-up keys nothing, and when it ends inside a mark the decoder keys that mark at once and times only its end. On the smoke recording (+7617.6 Hz station, 18.5 WPM, T = 64.9 ms, S₅₀₀ 25.1 dB) the warm-up ended inside U's 195 ms dah, the first timed mark was a 15.3 ms fragment (over the 14.4 ms glitch limit, 0.3 × the 48 ms initial dit), the speed estimate took it as the whole dit cluster (dit 17.8 ms, clamped to 20 ms), and the text was garbled until the fragment left the 24-mark window (CER 0.234). Reproduced by cutting the recording at 1.600 s with an oracle channel.
+
+**When a key-down is not observed (the rule).** Keying is possible on a sample where the front end is ready (its warm-up is over, `FrontEndSample::ready`) and the squelch is open (`FrontEndSample::signal`, a ≥ a_min). A key-down on the **first such sample** since the decoder's reset or its last re-acquisition was not observed: the carrier may have been up before it, while keying was impossible, so the mark's duration may be a fragment's. That mark is decoded as usual (element, character, probability) but not counted for speed: it does not enter the speed window, does not update the estimate, and does not count toward the 8 marks before the filter follows. Every later key-down comes after a sample on which keying was possible with the key up (the key cannot go down before the first keyable sample, and on every keyable sample before a key-down the key stayed up), so it was observed. A dropout merge keeps the merged mark's flag.
+
+Where it applies (checked in the code):
+- **After the warm-up:** yes (the measured case). It also covers a warm-up that ends inside a mark with the squelch still closed (for example when the warm-up's 20th percentile of |v|² falls on a filter ramp and σ̂ starts high), where the mark is keyed later, when a passes a_min.
+- **A channel that opens in noise:** after a warm-up in noise alone, a ≈ 1.6 (ŝ² = 2σ²·ln 10 − 2σ² = 2.6σ² from the warm-up's 90th and 20th percentiles, derived for exponential |v|²), below a_min = 3, so the squelch is closed until the first mark lifts ŝ, and that mark is keyed on the first keyable sample: it is not counted either. It was keyed late (Task 14's "first mark keyed late while ŝ rises", 100.7 ms of a 144 ms dah), so this is the rule working, but it costs such a channel one mark of speed evidence; the filter follows after 9 physical marks there.
+- **After a re-acquisition:** yes, in the squelch form. `MatchedFrontEnd::reacquire()` does not restart the warm-up (the front end stays ready), and a re-acquisition needs the key up for max(0.5 s, 12 dits), so no mark is in progress at it; but it sets ŝ² = 0, so a = 0 < a_min and keying is impossible until the next station's first mark lifts ŝ (on the same sample, since with a small amplitude weight ŝ² follows |v|² − 2σ̂² almost at once, derived from the update). That first mark is keyed after its start; the rule leaves it uncounted. The flag is reset at re-acquisition. (Noise alone can open the squelch in the silence first; then the next mark counts. Not simulated.)
+- **The Envelope path:** not changed (bit-identical). Derived from its code, not measured: its warm-up (one dit at 25 WPM, 48 ms) sets the mark and space levels to the running mean of |y|; a mark in progress when it ends holds the envelope at the mark level, so M < 3·S and the squelch stays closed until the mark ends (the key never goes down for it), unless the mark began in about the warm-up's last third, where the mean stays below a third of the carrier (about 16 ms of 48 ms, for a carrier far above the noise; the smoother's lag ignored). So Envelope times its first mark at most about 16 ms short, never as a short fragment. That is a stated limit of the Envelope path, not fixed.
+
+**Files:**
+- Modify: `engine/include/kz4ap/classical_decoder.hpp`, `engine/src/classical_decoder.cpp`
+- Test: `engine/tests/classical_decoder_test.cpp`
+- Docs: `docs/signal-processing.md` (§8 "Two front ends", §8b "Warm-up", "Re-acquisition", "A channel that opens mid-transmission", §9, §10)
+
+- [ ] **Step 1: Write the failing tests**
+
+In `engine/tests/classical_decoder_test.cpp`, after `MatchedMergedDropoutIsOneMarkForSpeed`, add:
+
+```cpp
+TEST(ClassicalDecoder, MatchedChannelOpeningInsideADahCountsNoFragment) {
+    // Task 14 (docs/signal-processing.md section 8b, "A channel that opens mid-transmission"): on the
+    // smoke recording an 18.5 WPM station (T = 64.9 ms) at S500 = 25.1 dB, whose channel opened so that
+    // the front end's 0.32 s warm-up ended inside the dah of U, timed a 15.3 ms fragment as its first
+    // mark; the speed estimate took it as the whole dit cluster (dit clamped to 20 ms) and garbled the
+    // next words until it left the 24-mark window. Here the input starts at cut times such that the
+    // warm-up ends lead_s before U's dah ends, lead_s = -10 ... +40 ms in 1 ms steps. A fragment of
+    // 14.4 ms (the glitch limit, 0.3 x the 48 ms initial dit) to 21.6 ms (a third of the 64.9 ms dit,
+    // below which 65 ms / fragment exceeds the dit-dah ratio of 3 and the fragment is a cluster of its
+    // own; derived from section 8, step 10) derails the estimate before Task 16. After it the fragment
+    // is decoded (as E) but not counted for speed, so every word after the first, which the cut
+    // shortens, decodes exactly. Deterministic; not simulated.
+    const double wpm = 18.5;
+    const std::string msg = "UA7L TU UA7L TU UA7L K";
+    const auto marks = keying(msg, wpm, 0.5);
+    const double dah_end = marks[2].second;  // U is ..-: its dah is the third mark
+    const auto x = keyed_signal(msg, wpm, kRate, marks.back().second + 1.5, 0, 1.0, sigma_for_s500(25), 45);
+    int fragments = 0;
+    std::string failures;
+    for (int i = 0; i <= 50; ++i) {
+        const double lead_s = -0.010 + 0.001 * i;
+        const auto first = static_cast<std::ptrdiff_t>(std::lround((dah_end - 0.32 - lead_s) * kRate));
+        const std::vector<Sample> y(x.begin() + first, x.end());
+        ClassicalDecoder d(kRate, matched());
+        const auto chars = decode_all(d, y);
+        const std::string got = text(chars);
+        std::string first_e = "none";
+        if (!chars.empty() && chars[0].text == "E") {
+            const double len = chars[0].end_s - chars[0].start_s;
+            first_e = std::to_string(len * 1000.0) + " ms";
+            if (len > 0.3 * 1.2 / 25 && len < 1.2 / wpm / 3) ++fragments;
+        }
+        if (!ends_with(got, " TU UA7L TU UA7L K"))
+            failures += "lead " + std::to_string(lead_s * 1000.0) + " ms, first E " + first_e + ": " + got + "\n";
+    }
+    EXPECT_GE(fragments, 1) << "no cut timed a 14.4-21.6 ms fragment: the case is not exercised";
+    EXPECT_TRUE(failures.empty()) << failures;
+}
+
+TEST(ClassicalDecoder, MatchedFirstMarkAfterReacquisitionIsNotCounted) {
+    // Task 16. After a re-acquisition the amplitude estimate restarts at 0 (a = 0 < a_min), so keying
+    // is impossible until the next station's first mark lifts it past the squelch; that mark is keyed
+    // on the first keyable sample, after its start (derived from the code, section 8b,
+    // "Re-acquisition"). It is decoded but not counted for speed. 1.5 s of silence at 25 WPM: the
+    // re-acquisition comes 0.576 s after the last key-up (12 dits), and the second over starts within
+    // its 2 s window, so nothing set aside comes back. "K1ABC" has 18 marks; 17 count. Noise alone could
+    // open the squelch in the silence first (then 18); not simulated: if this reads 18, report it with
+    // the seed rather than changing the seed.
+    const std::string first = "CQ TEST";
+    const std::string second = "K1ABC";
+    const double start2 = keying(first, 25, 0.5).back().second + 1.5;
+    const double end2 = keying(second, 25, start2).back().second;
+    const auto x = add(keyed_signal(first, 25, kRate, end2 + 0.3, 0, 1.0, sigma_for_s500(30), 48),
+                       keyed_signal(second, 25, kRate, end2 + 0.3, 0, 1.0, 0.0, 49, start2));
+    ClassicalDecoder d(kRate, matched());
+    EXPECT_EQ(text(decode_all(d, x)), first + " " + second);
+    EXPECT_EQ(d.marks_since_reacquire(), 17u);
+}
+```
+
+- [ ] **Step 2: Run them and watch them fail**
+
+```powershell
+cmake --build --preset windows
+ctest --preset windows -R "MatchedChannelOpeningInsideADahCountsNoFragment|MatchedFirstMarkAfterReacquisitionIsNotCounted" --output-on-failure
+```
+Expected: `MatchedChannelOpeningInsideADahCountsNoFragment` FAILS, listing the cuts whose first E is a 14.4–21.6 ms fragment with garbled later words (word spaces inside "UA7L" and "TU", as in the smoke text "E ETT TT 7 L T U U A 7L"); `MatchedFirstMarkAfterReacquisitionIsNotCounted` FAILS with 18 against 17. If the first passes on the current code, or fails only with "the case is not exercised", stop and report (to see every cut's first mark and text, temporarily make the `failures +=` line unconditional; remove it afterwards). Do not change the message, level, seed or cut range to force a failure.
+
+- [ ] **Step 3: Implement**
+
+In `engine/include/kz4ap/classical_decoder.hpp`, change `void key_down(double t);` to
+
+```cpp
+    void key_down(double t, bool observed = true);  // observed: false if keying became possible on this sample (Matched)
+```
+
+and after `SpeedState before_last_element_;` add:
+
+```cpp
+    bool keyable_seen_ = false;       // Matched: keying was possible (ready, squelch open) on some sample since the reset or
+                                      // the last re-acquisition
+    bool mark_observed_ = true;       // the current mark's key-down came after a sample on which keying was possible
+    bool prev_mark_observed_ = true;  // the same for the last element; a dropout merge brings it back
+```
+
+In `engine/src/classical_decoder.cpp`:
+
+In `reset()`, after `before_last_element_ = {};`, add `keyable_seen_ = false;`, `mark_observed_ = true;` and `prev_mark_observed_ = true;`.
+
+In `step_matched()`, replace
+
+```cpp
+    const double h = config_.llr_hysteresis;
+    if (!key_ && f.signal && f.log_odds > h) {
+        key_down(t);
+```
+
+with
+
+```cpp
+    const double h = config_.llr_hysteresis;
+    // Keying is possible where the front end is ready and the squelch is open (f.signal). A key-down on
+    // the first such sample since the reset (the warm-up) or the last re-acquisition (which restarts
+    // s-hat, closing the squelch) was not observed: the mark may have begun while keying was
+    // impossible, and its duration may be a fragment's. It is decoded but not counted for speed.
+    const bool first_keyable = f.signal && !keyable_seen_;
+    if (f.signal) keyable_seen_ = true;
+    if (!key_ && f.signal && f.log_odds > h) {
+        key_down(t, !first_keyable);
+```
+
+and in the re-acquisition block, after `tracker_->reacquire();`, add `keyable_seen_ = false;  // s-hat restarts at 0: a = 0 < a_min until a mark lifts it`.
+
+Replace `key_down()` (as left by Task 15) with:
+
+```cpp
+void ClassicalDecoder::key_down(double t, bool observed) {
+    key_ = true;
+    if (char_open_ && !elements_.empty() && t - up_t_ < config_.glitch_dits * dit_s_) {
+        // The key-up was a dropout inside one element: merge it back into that element.
+        const Element merged = elements_.back();
+        elements_.pop_back();
+        char_open_ = !elements_.empty();  // flush() must not finish a character with no elements
+        if (front_end_) {
+            // Matched: undo the merged element's speed update, so the mark gets one bounded update when
+            // it is re-measured (owner decision 2026-09-29: at most max_dit_growth per mark).
+            if (before_last_element_.counted) restore_speed_state();
+        } else if (counts_for_speed(merged.end_s - merged.start_s) && !recent_marks_.empty()) {
+            recent_marks_.pop_back();  // Envelope: milestone 1's merge, unchanged (bit-identical)
+        }
+        mark_observed_ = prev_mark_observed_;  // the mark continues, with its own start
+        down_t_ = prev_down_t_;
+        return;
+    }
+    mark_observed_ = observed;  // Envelope: always true
+    down_t_ = t;
+}
+```
+
+In `key_up()`, replace
+
+```cpp
+    char_open_ = true;
+    if (front_end_) before_last_element_ = {};  // Matched: nothing to undo unless this element counts
+    if (!counts_for_speed(duration)) return;
+```
+
+with
+
+```cpp
+    char_open_ = true;
+    prev_mark_observed_ = mark_observed_;
+    if (front_end_) before_last_element_ = {};  // Matched: nothing to undo unless this element counts
+    // A mark whose key-down was not observed (Matched) is decoded but kept out of the speed estimate.
+    if (!counts_for_speed(duration) || !mark_observed_) return;
+```
+
+Envelope: `step()` calls `key_down(t)`, so `mark_observed_` is always true there and its arithmetic is unchanged.
+
+- [ ] **Step 4: Build and run everything**
+
+```powershell
+cmake --build --preset windows
+ctest --preset windows --output-on-failure
+```
+Expected: all pass. Then `bash bench/smoke.sh build/windows` (Git Bash): Envelope `CER 0.0353` unchanged; record the Matched CER (Task 14: 0.0622; the +7617.6 Hz station's start-up was most of it, so it should fall); `smoke test passed`. The rule removes the first mark from the speed estimate in most tests (a channel opening in noise), so a 20-seed pass count may move: if any existing test changes outcome, stop and report (rules above).
+
+- [ ] **Step 5: Document**
+
+In `docs/signal-processing.md`:
+
+- §8 "Two front ends", after the Task 15 paragraph ("**Once per physical mark …**"), add:
+
+```markdown
+**Marks keyed before keying was possible (Matched; Task 16).** Keying is
+possible on a sample where the front end is ready (its 0.32 s warm-up is
+over) and the squelch is open (a ≥ a_min). A key-down on the first such
+sample since the reset or the last re-acquisition was not observed: the
+carrier may have been up before it, so the mark's duration may be a
+fragment's (Task 14: a 15.3 ms fragment of a 195 ms dah on the smoke
+recording pinned the dit at 20 ms). Such a mark is decoded but not
+counted for speed: it does not enter the speed window or count toward
+the 8 marks before the filter follows. Later key-downs follow a sample
+on which keying was possible with the key up, so they were observed; a
+dropout merge keeps the merged mark's flag. (Rule derived from what the
+decoder can observe; no parameter; its effect measured in section 8b.)
+It applies after the warm-up (a channel opening mid-mark), to the first
+mark of a channel that opens in noise (after the warm-up, a ≈ 1.6 in
+noise alone, below a_min = 3, derived: ŝ² = 2σ²·ln 10 − 2σ² from the
+warm-up's percentiles, so that mark opens the squelch and is keyed late),
+and after a re-acquisition (ŝ restarts at 0, so a = 0 < a_min until the
+next station's first mark lifts it). Each such channel or over loses one
+mark of speed evidence; the filter follows after 9 physical marks there.
+The Envelope path is unchanged: its warm-up (48 ms) sets both levels to
+the mean envelope, so a mark in progress when it ends holds M < 3·S and
+is never keyed, unless it began in about the warm-up's last 16 ms (a
+third of 48 ms, for a carrier far above the noise; derived from the
+squelch factor 3, smoother lag ignored, not measured); its first timed
+mark is at most about that much short (a stated limit).
+```
+
+- §8b "Warm-up": append "A mark in progress when the warm-up ends is decoded but not counted for speed (section 8, "Marks keyed before keying was possible")."
+- §8b "Re-acquisition": append "The first mark after it, keyed when it lifts ŝ past the squelch, is not counted for speed (section 8, same paragraph)."
+- §8b "A channel that opens mid-transmission": add at the start of the item "**Fixed in Task 16** (section 8, "Marks keyed before keying was possible"); the numbers below are from before the fix, re-measured in Task 17." (Task 17 replaces them.)
+- §9, the row "Front-end warm-up (Matched only)": replace "a mark that ends just after it can be timed as a fragment (…)" with "a mark in progress when it ends is decoded but not counted for speed (section 8, "Marks keyed before keying was possible")".
+- §10: add a row "Marks not counted for speed (Matched) | a mark keyed on the first sample on which keying is possible (front end ready, squelch open) since the reset or the last re-acquisition | `ClassicalDecoder::step_matched`, `keyable_seen_` | derived rule, no parameter (Task 16)".
+
+- [ ] **Step 6: Commit**
+
+```powershell
+git add engine/include/kz4ap/classical_decoder.hpp engine/src/classical_decoder.cpp engine/tests/classical_decoder_test.cpp docs/signal-processing.md
+```
+```powershell
+git commit -m "Do not count for speed a mark keyed on the first keyable sample" -m "A key-down on the first sample on which the Matched decoder could key (front end ready, squelch open) since the reset or a re-acquisition was not observed: the mark may be a fragment. It is decoded but kept out of the speed estimate. The Envelope path is unchanged."
+```
+
+### Task 17: Re-measure Matched after the fixes
+
+Measure only; no code, parameter, threshold or default changes. The recordings exist in `build/suite/full3` (117 recordings, 3 seeds): do **not** regenerate them. Every figure written down carries its seeds and its bootstrap 95% interval (or says why it has none), and every dB names its reference (S₅₀₀ unless stated).
+
+**Files:**
+- Modify: `docs/signal-processing.md` (§8b "Measured: Matched against Envelope", "Where Matched is worse than Envelope", "Limits measured"; the §8 Task 15/16 paragraphs' "measured" pointers; §11 "Smoke check" if the Matched smoke value changes), `README.md` (smoke figures, "Known limitations"), `docs/backlog.md` ("Growth bound per mark", "Wrong or missing first characters", and the "Measured bearing" bullets under "Tune the Matched front end by measurement")
+- Modify only if the Matched smoke CER changed and is lower: `bench/baselines/smoke-matched.json`
+
+- [ ] **Step 1: Build, test, smoke**
+
+```powershell
+cmake --build --preset windows
+ctest --preset windows
+```
+Then in Git Bash `bash bench/smoke.sh build/windows`. Expected: all tests pass; Envelope CER 0.0353 (34/964); record the Matched CER and edits (edits = CER × 964 symbols).
+
+- [ ] **Step 2: Keep Task 14's results for the before/after comparison**
+
+```powershell
+Copy-Item -Recurse build/suite/full3/results build/suite/full3-task14-results
+Copy-Item build/suite/full3/summary.md build/suite/full3-task14-summary.md
+Copy-Item build/suite/full3/summary.json build/suite/full3-task14-summary.json
+```
+
+- [ ] **Step 3: Re-score both front ends and summarize**
+
+```powershell
+$env:PYTHONPATH = "training"
+.venv\Scripts\python -m kz4ap_synth.suites run --out build/suite/full3 --bench build/windows/bench/Release/kz4ap-bench.exe --front-end baseline --front-end matched
+.venv\Scripts\python -m kz4ap_synth.suites summarize --out build/suite/full3
+```
+Record the wall-clock time of `run` (Task 14: 5.0 min) and close other heavy programs (CPU time is measured).
+
+- [ ] **Step 4: Check that the Envelope results did not change**
+
+```powershell
+.venv\Scripts\python -c "import json, pathlib; a = pathlib.Path('build/suite/full3-task14-results/baseline'); b = pathlib.Path('build/suite/full3/results/baseline'); fs = sorted(p.name for p in a.glob('*.json')); load = lambda p: {k: json.loads(p.read_text())[k] for k in ('score', 'tracks')}; d = [f for f in fs if load(a / f) != load(b / f)]; print(len(fs), 'files,', len(d), 'differ', d[:5])"
+```
+Expected: `126 files, 0 differ`. Any difference is a bug in Task 15 or 16 (the Envelope path must be bit-identical): stop and report.
+
+- [ ] **Step 5: Re-run Task 14's focused diagnoses** (scripts in `build/t14diag/`, not in the repository; their seeds are fixed in the scripts)
+
+```powershell
+.venv\Scripts\python build/t14diag/cut.py 1.600 1.620
+.venv\Scripts\python build/t14diag/late_open.py 25 20
+.venv\Scripts\python build/t14diag/late_open.py 10 20
+```
+`cut.py`: the smoke recording cut at 1.600 and 1.620 s, the +7617.6 Hz station with an oracle channel (Task 14: at 1.600 s the Matched text began "E ETT TT 7 L T U U A 7L"; at 1.620 s, 3 edits). `late_open.py`: 4 stations per speed at 12, 18.5, 25 and 40 WPM, machine keying, noise seeds 700–703, 20 random cuts in 2–6 s (80 openings per speed), at S₅₀₀ 25 and 10 dB; it prints, per speed, the number of openings where Matched had at least 5 more edits than Envelope and at least 5 fewer (Task 14: 5/0, 6/0, 0/0, 0/16 of 80 at 25 dB; 12/0, 3/1, 2/0, 1/78 at 10 dB). Also re-run the tune-up cuts: find the signals of `tune-up-s1` with `tune_s` 1 and 2 (`build/suite/full3/tune-up-s1.json`) and run `.venv\Scripts\python build/t14diag/cut_any.py tune-up-s1 <index> <cuts>` for the 2 s carrier at 1.2 and 2.0 s and the 1 s carrier at 1.6 s (Task 14: Matched CER 1.000 at every such cut, Envelope 0.000–0.103). If a script is missing, say so in the results and do not reconstruct it.
+
+- [ ] **Step 6: Read the numbers before writing them**
+
+From the new `summary.md` against `build/suite/full3-task14-summary.md`, and from the per-signal results:
+- Group A crossings (S₅₀₀ at CER 0.10 and 0.05, Matched, 12/25/40 WPM) with intervals, before and after.
+- The start-up runaway cases of §8b, "Start-up runaway": `A-awgn-25wpm-1-s1` at +6606.5 Hz (Matched CER 0.464 before) and `A-awgn-25wpm-0-s2` at −2991.9 Hz (0.981 before), from `results/matched/<recording>.json` (`score.signals`, the matching `freq_offset_hz`).
+- Group H by regime (tracks per QSO, QSO-label and station-label CER, the answering station's first-word CER at 0, 10, 25 and 50 Hz, and the 50 Hz grid QSOs that failed: 2 of 6 before, CER 0.533 and 0.415), before and after.
+- Every row of "Where Matched is worse than Envelope": still worse (interval excludes 0), no longer worse, or newly worse; and the count of S₅₀₀ points favoring each (31 Envelope, 73 Matched of 209 before).
+- **Tune-up carriers** (1 s: paired +0.562; 2 s: +0.899 before; and the cut runs): changed or not. Their cause was only inferred in Task 14 (warm-up and noise floor taking the carrier as noise), and neither fix touches the noise estimate, so no change is expected; if they changed, say so and say that the mechanism is still not instrumented.
+- The CPU per channel-second of both front ends (Task 14: Envelope 0.202, Matched 0.381 ms/s; decoders 0.014 and 0.177 ms/s): Envelope's should be the same within run-to-run spread.
+- Any Matched row that got worse beyond its interval: report it; do not change anything to move it.
+
+- [ ] **Step 7: Update the Matched smoke baseline only if the rule says so**
+
+If the Matched smoke CER of Step 1 differs from 0.0622 (60/964) and is **lower**, set `bench/baselines/smoke-matched.json` `max_cer` by the documented rule (§11, "Smoke check"): measured CER + 3/482 (= 6/964), rounded up to two decimals; keep `"min_detection_recall": 0.875`. Write the rule and the arithmetic (edits, symbols, margin) into §11 "Smoke check" and the README paragraph on the smoke check, and note that the Linux value is still unmeasured if CI has not run. If it is **higher** than 0.0622, do not edit the baseline (that would widen it): report it to the owner. If unchanged, leave the file.
+
+- [ ] **Step 8: Write the results**
+
+In `docs/signal-processing.md`:
+- "Measured: Matched against Envelope": replace the Matched cells with the new ones (same table layout, intervals, "3 seeds"); state that the recordings are Task 14's (not regenerated), that the Envelope cells were re-scored and are identical (Step 4), and the machine and the `run` time. Keep one sentence naming the commits the Task 14 numbers came from (bb48b01, c9a2aa4) for the before values quoted elsewhere.
+- "Where Matched is worse than Envelope": rewrite from the new summary; for each Task 14 row that changed, give before → after.
+- "Limits measured": in "A channel that opens mid-transmission", replace Task 16's "numbers below are from before the fix" note with the before/after results (the smoke station's CER through the detector and the 1.600 s cut text; the late-open table with a before and an after column per S₅₀₀), and say plainly whether any late-opening loss remains and of which shape. In "Start-up runaway", give the two cases' Matched CER before → after and say which steps of the chain remain (step 1, a misleading first mark from merged elements at low S₅₀₀, and step 3, the estimator's mean-of-both-clusters branch, are not addressed by these fixes). In "Tune-up carriers of 1 s or more", add the re-measured figures and whether they changed (cause still inferred, not instrumented).
+- §8, the Task 15 and Task 16 paragraphs: add one sentence each pointing to the measured effect ("measured in section 8b: …", with the main before/after figure).
+
+In `README.md`: update the smoke figures if they changed, and the "Known limitations" bullets on a channel that opens mid-transmission (the speed estimate fixed by Task 16: say what remains, with the measured figure) and on start-up runaways (per the new numbers).
+
+In `docs/backlog.md`:
+- "Growth bound per mark (defect; …)": retitle "Growth bound per mark (fixed in milestone 2, part 1, Task 15)", keep the description as the record, and add the fix and the measured before/after (group A crossings, the two runaway cases, group H at 50 Hz). Update the bullet "The growth bound acts per speed update, not per mark" under "Tune the Matched front end by measurement" and the phrase in its parameter list ("as coded it acts per speed update, a defect") to say it is fixed.
+- "Wrong or missing first characters": add a paragraph "Matched, a channel that opens mid-mark (milestone 2, part 1, Task 16): the partial mark is no longer counted for speed; measured before/after: …". The item stays open (replay is still the fix for the late opening and the lost first characters). Update the bullet "A misleading first mark" under "Tune the Matched front end by measurement" the same way.
+
+Every new sentence: units on every quantity, dB with its reference, and derived/measured/heuristic/inferred labels where it states a cause.
+
+- [ ] **Step 9: Commit**
+
+```powershell
+git add docs/signal-processing.md README.md docs/backlog.md
+```
+(add `bench/baselines/smoke-matched.json` to that same `git add` only if Step 7 changed it)
+```powershell
+git commit -m "Re-measure the Matched front end after the growth-bound and late-opening fixes"
+```
+
+- [ ] **Step 10: Report to the owner**
+
+A few lines: the Matched smoke CER before/after (and the baseline file's state), group A crossings before/after, the two runaway cases, group H at 50 Hz, the late-open table, which "worse than Envelope" rows remain or are new, the tune-up regime (changed or not; cause still inferred), and the confirmation that the Envelope results are identical (Step 4) and its smoke CER is 0.0353. Recommend no tuning. Do not push or merge.
+
+**Decisions left to the owner by this addendum:** (1) Task 16 applies the rule after a re-acquisition and to a channel that opens in noise, because the code shows keying is impossible there too (the squelch is closed); that removes one mark of speed evidence per channel and per over. If the owner wants the rule only for the warm-up, drop the `keyable_seen_ = false` line at re-acquisition. (2) Task 15 restores the filter length at a merge, as approved; the widened filter then re-opens the mark a few times before settling (bounded, derived above); not restoring the length would avoid that and is the alternative.
