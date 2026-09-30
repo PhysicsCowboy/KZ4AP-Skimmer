@@ -61,8 +61,10 @@ decodes one synthetic recording on both paths and fails if the milestone-1
 or fewer than 7 of 8 stations detected), if the default (Matched) path gets
 worse than `bench/baselines/smoke-matched.json` (CER above 0.07, or fewer than
 7 of 8 detected), or if two runs of the same path differ. Measured on Windows:
-Envelope CER 0.0353 (34 edits in 964 symbols), Matched 0.0622 (60 edits), so
-the Matched limit leaves a margin of 7 edits; how both limits were chosen is in
+Envelope CER 0.0353 (34 edits in 964 symbols), Matched 0.0436 (42 edits;
+0.0622, 60 edits, before the growth-bound and late-opening fixes). The Matched
+limit was set from the 0.0622 and fails from 68 edits; it is tightened only
+once the Linux CI value is measured too; how both limits were chosen is in
 `docs/signal-processing.md`, section 11, "Smoke check".
 
 Named suites generate many recordings at once, score them, and summarize
@@ -98,14 +100,21 @@ detector assigns it (see `docs/signal-processing.md`, sections 6 and 8b);
   - an unkeyed tune-up carrier of 1 s or more before the first sending can
     stop the station from being decoded at all (CER 0.542 after 1 s and 0.909
     after 2 s, against 0.000 and 0.029 on the Envelope path);
-  - a channel that opens in the middle of a transmission can time a fragment
-    of a mark as the first dit and misread the station's first words (one
-    smoke-test station at CER 0.234); a misleading first mark can also make
-    the speed estimate run away at start-up;
+  - a channel that opens in the middle of a transmission loses or garbles
+    the first word, sent partly before the opening; a fragment of a mark no
+    longer misleads the speed estimate (the smoke-test station that read at
+    CER 0.234 now reads 0.043), but a station slower than 12.5 WPM often
+    has its first characters read as a string of T's (12 WPM, 6–20 dB SNR
+    in 500 Hz: first-word CER 0.985, against 0.591 before that fix);
+  - the start-up runaways measured before the growth-bound fix are gone
+    (CER 0.464 and 0.981 before, 0.000 and 0.015 after), but a speed-up
+    from 20 to 35 WPM now loses the text after the step in 5 of 6 signals
+    (CER 0.394, against 0.113 before that fix; not yet diagnosed);
   - it is worse than the Envelope path in several conditions: slow fading
-    with paddle or hand keying at high SNR, some fists, a strong interferer
-    20 Hz away, and a QSO's answering station 50 Hz from the caller when the
-    two are split into two tracks.
+    with paddle or hand keying at high SNR, some fists (bug, hand, positive
+    imbalance), a strong interferer 20 Hz away, stations at 10 WPM, and a
+    QSO's answering station 50 Hz from the caller when the two are split
+    into two tracks.
 
 ## License
 

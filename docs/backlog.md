@@ -287,6 +287,21 @@ Fix, in two parts:
 
 Must land before callsign matching.
 
+**Matched, a channel that opens mid-mark (milestone 2, part 1, Task 16):**
+the partial mark is no longer counted for speed (`docs/signal-processing.md`
+§8, "Marks whose start was not observed"); measured before/after (Task 17;
+§8b, "A channel that opens mid-transmission"): the smoke recording's
+Matched CER 0.0622 → 0.0436 (60 → 42 edits in 964 symbols), its
++7617.6 Hz station 0.234 → 0.043; in a focused run of 80 oracle openings
+per speed (machine keying, S₅₀₀ 25 and 10 dB), openings worse than
+Envelope by at least 5 edits went 6 → 0 and 3 → 0 at 18.5 WPM, 0 → 0
+and 2 → 1 at 25 WPM, and 5 → 6 and 12 → 15 at 12 WPM, where a milder
+loss is new (the first characters read as T's; §8, cause inferred), and
+every opening that had lost the rest of its text now decodes after its
+first word (one channel at 25 WPM, S₅₀₀ 10 dB, still decodes nothing;
+not diagnosed). This item stays open: replay is still the fix for the
+late opening itself and for the lost first word.
+
 **Also covers the retune delay after a QSO turnover** (milestone 2, part 1,
 option 1; owner, 2026-09-29). When the answering station is on a different
 frequency, within 47 Hz, from the one the channel is tuned to, the channel
@@ -538,14 +553,17 @@ Measured on group H (milestone 2, part 1, 3 seeds, through the detector;
 1.00 / 1.00 same-track (45 QSOs), 1.56 / 1.67 ambiguous (9) and 6.78 / 6.78
 separate-track (18; each station's track dies during the other's over and
 is re-born). QSO-label CER was 0.118 / 0.197 same-track and 0.085 / 0.297
-ambiguous; station-label CER 0.616 / 0.620 separate-track. So the regime
+ambiguous; station-label CER 0.616 / 0.620 separate-track (Task 14; after
+Tasks 15 and 16 the Matched figures are 0.212, 0.334 and 0.633, each
+interval overlapping Task 14's). So the regime
 decides the result: the ambiguous band (47–70 Hz on the Envelope path,
 47–94 Hz on the Matched path; the suite's QSOs there are at 50–70.2 Hz) is
 where Matched does worst on the QSO label (2 of 6 grid QSOs at 50 Hz above
-CER 0.4: exactly the two that split into two tracks on the Matched path,
-whose caller channel does not pass the answering station; §8b), and
-separate-track QSOs are dominated by track turnover on both paths. How many real answers fall
-in each band therefore matters.
+CER 0.4 in Task 14, 0.533 and 0.415, and still the two worst after Tasks
+15 and 16, 0.557 and 0.374: exactly the two that split into two tracks on
+the Matched path; §8b), and separate-track QSOs are dominated by track
+turnover on both paths. How many real answers fall in each band
+therefore matters.
 
 ### Tune the Matched front end by measurement
 
@@ -560,10 +578,11 @@ the fading group is the test), the squelch a_min = 3·(T_v/16 ms)^(1/4)
 κ = 1.75 and κ_n = 4, the noise floor's margin (2.5), clean fraction (0.25)
 and restart ratio (4), the re-acquisition silence (max(0.5 s, 12 dits)) and
 window (2 s), the tracker's fine-tuning range (±12 Hz around the
-detector's frequency) and minimum weight (0.6), when the filter starts following the speed (8 marks), the
-dit-estimate growth bound (decided ×1.25 per mark, also from the filter's
-first follow step; as coded it acts per speed update, a defect, see "Growth
-bound per mark" below), and the channel distance (D_ch = 47 Hz). The amplitude estimate is biased
+detector's frequency) and minimum weight (0.6), when the filter starts
+following the speed (8 marks), the dit-estimate growth bound (decided
+×1.25 per mark, also from the filter's first follow step; applied once
+per physical mark since Task 15, see "Growth bound per mark" below), and
+the channel distance (D_ch = 47 Hz). The amplitude estimate is biased
 low by the filter's ramps (0.85–0.88 of the true amplitude for PARIS at
 25 WPM, simulated), which lengthens marks by about 7 ms at 25 WPM; measure
 whether that matters.
@@ -572,34 +591,59 @@ The four limits below were postponed by the owner on 2026-09-29. Each is a
 known limitation of the Matched front end as planned.
 
 **Measured bearing (milestone 2, part 1, full suite, 3 seeds;
-`docs/signal-processing.md` §8b, "Measured: Matched against Envelope").**
-Matched is better than Envelope in most conditions and at low S₅₀₀, and
-**worse** in these (paired CER difference, interval excluding 0): slow
-fading (f_D 0.1–0.3 Hz) at high S₅₀₀ with paddle or hand keying (+0.09 to
-+0.34 per point at 17.78–57.78 dB); fists with a positive imbalance or hand
-keying at 10–20 dB (bug +0.1: +0.317 over the condition); a 20 Hz
-interferer 10 dB above the wanted station's key-down power (+0.349);
-group H through the detector (same-track QSO label +0.078, ambiguous
-+0.352, separate-track per station +0.029 to +0.057); strong stations
-(+0.018 to +0.020); tune-up carriers of 1 s (+0.562) and 2 s (+0.899).
-Three mechanisms were diagnosed (not fixed):
-- **The growth bound acts per speed update, not per mark** (a defect
-  against the owner's decision; "Growth bound per mark" below). Widening the
-  filter at a key-up re-opens the mark just ended; the decoder merges the
-  "dropout", re-measures a longer mark and widens again, so the filter
-  reached its target within one mark (20 → 95 ms in 35 ms, measured). With
-  a wrong estimate it jumps to the wrong width at once.
+`docs/signal-processing.md` §8b, "Measured: Matched against Envelope";
+re-measured in Task 17 after Tasks 15 and 16, Task 14's figure after
+"was").** Matched is better than Envelope in most conditions and at low
+S₅₀₀, and **worse** in these (paired CER difference, interval excluding
+0): slow fading (f_D 0.1 Hz) at high S₅₀₀ with paddle or hand keying
+(+0.07 to +0.22 per point at 13.78–57.78 dB, 7 points, plus 2 low
+points at f_D 1 and 3 Hz; was f_D 0.1–0.3 Hz, +0.09 to +0.34, 18
+points); fists with bug or hand keying or a positive
+imbalance at 5–20 dB (bug +0.1: +0.349 over the condition, was +0.317;
+bug +0.0: +0.239 and hand +0.1: +0.157, newly worse); a 20 Hz
+interferer 10 dB above the wanted station's key-down power (+0.221, was
++0.349); group H through the detector (same-track QSO label +0.104,
+was +0.078; ambiguous +0.442, was +0.352; separate-track per station
++0.034 to +0.055, was +0.029 to +0.057; same-track at 10 Hz +0.043,
+newly worse); group D at 10 WPM (+0.061, newly worse); strong stations
+(+0.018 to +0.020); tune-up carriers of 1 s (+0.562) and 2 s (+0.899),
+unchanged. Group D's speed step from 20 to 35 WPM is not worse than
+Envelope but got worse with Task 15 (Matched CER 0.113 → 0.394, the
+text stopping after the step in 5 of 6 signals; not diagnosed).
+Three mechanisms were diagnosed in Task 14; one is fixed, one partly:
+- **The growth bound acted per speed update, not per mark** (a defect
+  against the owner's decision; **fixed by Task 15**, "Growth bound per
+  mark" below). Widening the filter at a key-up re-opened the mark just
+  ended; the decoder merged the "dropout", re-measured a longer mark and
+  widened again, so the filter reached its target within one mark (20 →
+  95 ms in 35 ms, measured). With a wrong estimate it jumped to the wrong
+  width at once. Measured after the fix: the two start-up runaways of
+  §8b read Matched CER 0.000 and 0.015 (were 0.464 and 0.981), and group
+  A's CER-0.10 crossing at 25 WPM is 1.1 dB (0.4 to 1.4 dB; was 2.7 dB,
+  −0.0 to 10.4 dB).
 - **A misleading first mark** (the front end's 0.32 s warm-up ending inside
   a mark, a first mark keyed late while ŝ rises, or merged elements at low
-  S₅₀₀) derails the speed estimate: a 15 ms fragment pinned the dit at
+  S₅₀₀) derailed the speed estimate: a 15 ms fragment pinned the dit at
   20 ms (the smoke recording's +7617.6 Hz station, CER 0.234), and a mark
   between dit and dah length made the estimator take the mean of dits and
-  dahs as the dit (runaways to dits of 94–210 ms, 12.8–5.7 WPM, measured). In a focused run of 80 late
-  openings per speed, Matched lost at least 5 more characters than
-  Envelope in 4–15% of openings at 12–18.5 WPM and in 0–3% at 25–40 WPM.
+  dahs as the dit (runaways to dits of 94–210 ms, 12.8–5.7 WPM,
+  measured). In a focused run of 80 late openings per speed, Matched lost
+  at least 5 more characters than Envelope in 4–15% of openings at
+  12–18.5 WPM and in 0–3% at 25–40 WPM. **Task 16** keeps a mark whose
+  start was not observed (the first two causes) out of the speed
+  estimate; merged elements at low S₅₀₀ are not addressed. Measured
+  after it: the +7617.6 Hz station reads CER 0.043 and the smoke
+  recording 0.0436 (was 0.0622); at 18.5 WPM no late opening is worse
+  than Envelope any more (was 6 and 3 of 80 at S₅₀₀ 25 and 10 dB), but
+  at 12 WPM 6 and 15 of 80 are (was 5 and 12), now by a milder loss: the
+  first characters of a station slower than 12.5 WPM read as a string of
+  T's (group A, 12 WPM, first-word CER 0.591 → 0.985 at S₅₀₀ 6–20 dB;
+  cause inferred in §8, "Marks whose start was not observed", not
+  instrumented).
 - **Tune-up carriers of 1 s or more** leave the Matched channel silent when
   the channel opens during the carrier (measured by cutting the recording;
-  a 2 s carrier also when the channel is open before it). Likely cause, not
+  a 2 s carrier also when the channel is open before it; unchanged by
+  Tasks 15 and 16, re-measured in Task 17). Likely cause, not
   instrumented: the warm-up and the noise floor (a 1.02 s window at the
   acquisition width) take the carrier as noise, and the station's own
   marks then hold σ̂_v up.
@@ -613,12 +657,16 @@ station cannot be caught at all below about S₅₀₀ = −2.5 dB (derived, any
 speed); in simulation half its marks were caught near −1.8 dB at 25 WPM and
 −2.6 dB at 12 WPM. Once caught and narrowed, it could be followed down to
 −4.4 dB (25 WPM) or −6.0 dB (12 WPM), but it has to be caught first.
-**Measured** (group A, filler text, machine keying, oracle, 3 seeds): the
-Matched CER at S₅₀₀ = −4, −2, 0, 2 and 4 dB was 0.811, 0.324, 0.106, 0.055
-and 0.021 at 12 WPM, 1.000, 0.711, 0.122, 0.151 and 0.006 at 25 WPM, and
-0.986, 0.857, 0.612, 0.199 and 0.021 at 40 WPM; CER 0.10 is crossed at
-0.2, 2.7 and 3.1 dB, above the expected −2.6 to 0 dB (the start-up
-failures above add to it at 25 and 40 WPM).
+**Measured** (group A, filler text, machine keying, oracle, 3 seeds;
+after Tasks 15 and 16, Task 17): the Matched CER at S₅₀₀ = −4, −2, 0, 2
+and 4 dB was 0.881, 0.384, 0.077, 0.030 and 0.036 at 12 WPM, 1.000,
+0.670, 0.185, 0.024 and 0.003 at 25 WPM, and 0.992, 0.892, 0.644, 0.158
+and 0.027 at 40 WPM; CER 0.10 is crossed at −0.2, 1.1 and 2.9 dB
+(intervals −0.5 to 0.7, 0.4 to 1.4 and 2.2 to 3.3 dB), still above the
+expected −2.6 to 0 dB at 25 and 40 WPM. Task 14 (before the fixes):
+0.811, 0.324, 0.106, 0.055, 0.021; 1.000, 0.711, 0.122, 0.151, 0.006;
+0.986, 0.857, 0.612, 0.199, 0.021; crossings 0.2, 2.7 and 3.1 dB, the
+start-up runaways adding to them at 25 and 40 WPM.
 Options: (1) acquire with a longer filter (costs fast CW and the range of
 frequencies it can pull in); (2) key at the acquisition width without the
 squelch, but require several consistent marks before trusting them;
@@ -673,25 +721,31 @@ three words were intact in 26 and 30; typically "FARIS" for "PARIS"); at
 6. The neighbor itself was decoded in every run, on its own channel in all but one (at 70 Hz and +6 dB, once by the first station's channel). The fix
 belongs in the filter's design, for example a tapered filter with lower
 sidelobes; take it up with the co-channel item below (owner, 2026-09-29).
-Measured bearing (group E, oracle, 3 stations per row): a neighbor 50 Hz
-away at +0 dB re the wanted station's key-down power, Matched CER 0.064
-against Envelope's 0.857; at +10 and +20 dB, 0.814 and 1.123 (Envelope
-0.787 and 0.855). Group H through the detector at 50 Hz (ambiguous on
-both paths): 2 of 6 grid QSOs above CER 0.4 with Matched on the QSO label,
-none with Envelope; the answering station's first-word CER 0.444 (Envelope
-0.032). Those two are the QSOs that split into two tracks on the Matched
-path, so the QSO label, which does not fit a split QSO, charges the
-answering station's overs (on its own track, not passed by the caller's
-re-centered channel) as missing; in the 4 that stayed one track Matched
-read 0.032–0.154 (`docs/signal-processing.md` §8b). This is not the 60–70 Hz
-sidelobe leak of this item. The retune delay (see
-"Wrong or missing first characters"): the answering station's first-word
-CER with Matched was 0.235, 0.147 and 0.181 at 0, 10 and 25 Hz (Envelope
-0.199, 0.213, 0.422; an upper bound). Whether the first-step growth bound
-removed the 50 Hz runaway (12 of 30 failures in the simulation before it):
-not shown by these runs, since the 2 failures are the split QSOs and the
-per-station view reads poorly at 50 Hz on both paths (0.947 Envelope,
-0.953 Matched); as coded the bound acts per update, a defect, below.
+Measured bearing (group E, oracle, 3 stations per row; Task 17, after
+Tasks 15 and 16, Task 14's figure after "was"): a neighbor 50 Hz away at
++0 dB re the wanted station's key-down power, Matched CER 0.090 (was
+0.064) against Envelope's 0.857; at +10 and +20 dB, 0.817 and 1.031 (was
+0.814 and 1.123; Envelope 0.787 and 0.855). Group H through the detector
+at 50 Hz (ambiguous on both paths): per QSO label Matched read 0.557,
+0.234, 0.046, 0.374, 0.025 and 0.043 (was 0.533, 0.154, 0.046, 0.415,
+0.032, 0.040; Envelope 0.023–0.140); the two worst, the only ones above
+0.3, are the QSOs that split into two tracks on the Matched path, so the
+QSO label, which does not fit a split QSO, charges one station's overs
+as missing (the answering station's in Task 14, on its own track and not
+passed by the caller's re-centered channel; in one of the two now the
+caller's, not diagnosed); in the 4 that stayed one track Matched read
+0.025–0.234 (`docs/signal-processing.md` §8b). The answering station's
+first-word CER was 0.379 (was 0.444; Envelope 0.032). This is not the
+60–70 Hz sidelobe leak of this item. The retune delay (see "Wrong or
+missing first characters"): the answering station's first-word CER with
+Matched was 0.287, 0.110 and 0.190 at 0, 10 and 25 Hz (was 0.235, 0.147
+and 0.181; Envelope 0.199, 0.213, 0.422; an upper bound, no interval).
+Whether the first-step growth bound removed the 50 Hz runaway (12 of 30
+failures in the simulation before it): with the bound now applied per
+mark (Task 15) the two split QSOs still read worst, so a runaway is not
+what fails them in these runs (inferred); the per-station view, which
+would show the answering station on its own track, reads poorly at 50 Hz
+on both paths (0.947 Envelope, 0.977 Matched, was 0.953).
 
 #### Two stations keying at the same time within a few tens of Hz (postponed)
 
@@ -705,9 +759,10 @@ own); at equal level, the channel's station decoded in 0 (40 Hz: the
 tracker settled between them), 13 (50 Hz) and 28 (60 Hz) of 30; 6 dB
 stronger, the channel moved to the other station in 30 of 30. Candidate
 mitigations to explore (measured bearing: group E, a 20 Hz interferer
-at +10 dB re the wanted station's key-down power gave Matched CER 0.885
-against Envelope's 0.544, paired +0.349, +0.112 to +0.480; at +0 dB 0.872
-and 0.793; 3 stations each): hold the tracker when its average stops being
+at +10 dB re the wanted station's key-down power gave Matched CER 0.765
+against Envelope's 0.544, paired +0.221, +0.088 to +0.352, after Tasks
+15 and 16 (Task 14: 0.885, +0.349); at +0 dB 0.786 (Task 14: 0.872) and
+0.793; 3 stations each): hold the tracker when its average stops being
 coherent (a sign of two tones); choose the filter length so the other
 station sits on one of its nulls (at multiples of 1/T_v); estimate each
 mark's own frequency and assign marks to stations; run a second tracker
@@ -715,7 +770,7 @@ and decoder in the channel for the second tone; a finer detector
 spectrum (a longer FFT) to see both peaks; or a probabilistic decoder that
 models two stations (top-priority item).
 
-### Growth bound per mark (defect; reported 2026-09-30, not fixed in milestone 2, part 1)
+### Growth bound per mark (fixed in milestone 2, part 1, Task 15)
 
 The owner's decision of 2026-09-29 bounds the Matched decoder's dit
 estimate, and the filter's own dit from its first follow step, to ×1.25
@@ -734,6 +789,43 @@ gets one bounded update; then re-run the suite (the start-up runaways and
 group H's 50 Hz rows in `docs/signal-processing.md` §8b are the cases to
 check). This is a code fix to meet a decision already made, not a
 parameter change, but the owner decides when.
+
+**Fixed (Task 15, commit 59cd450):** each key-up counted for speed saves
+the dit estimate, the filter's dit and length, the count of marks since
+the last re-acquisition and the speed window, and a dropout merge that
+re-opens that mark restores them, so each physical mark is bounded once
+(`docs/signal-processing.md` §8, "Once per physical mark"). **Measured
+before → after** (Task 17; full suite, 3 seeds, the same recordings;
+the after figures include Task 16; Task 15 alone was also scored, and
+its figures are given where they differ): group A, Matched S₅₀₀ at CER 0.10
+(dB): 0.2 (−0.5 to 2.2) → −0.2 (−0.5 to 0.7) at 12 WPM, 2.7 (−0.0 to
+10.4) → 1.1 (0.4 to 1.4) at 25 WPM, 3.1 (2.0 to 3.6) → 2.9 (2.2 to 3.3)
+at 40 WPM; the two start-up runaways of §8b, Matched CER 0.464 → 0.000
+(`A-awgn-25wpm-1-s1`, +6606.5 Hz, S₅₀₀ 10 dB) and 0.981 → 0.015
+(`A-awgn-25wpm-0-s2`, −2991.9 Hz, S₅₀₀ 2 dB; 0.074 with Task 15 alone);
+a regression from Task 15 alone, group D's speed step from 20 to 35 WPM,
+0.113 → 0.394, the text stopping after the step in 5 of 6 signals (not
+diagnosed; §8b, "Where Matched is worse"); group H through the
+detector at 50 Hz (grid, 6 QSOs), QSO-label CER 0.533, 0.154, 0.046,
+0.415, 0.032, 0.040 → 0.557, 0.234, 0.046, 0.374, 0.025, 0.043: the two
+QSOs that split into two tracks (the same two; tracks per QSO 1.33 before
+and after) still read worst, consistent with the split, not a runaway,
+failing them (inferred; §8b, "Groups G and H").
+
+### A mark whose key-up the squelch forces (possible limit; derived from the code, not observed)
+
+The end-of-mark counterpart of Task 16's rule (`docs/signal-processing.md`
+§8, "Marks whose start was not observed"). In the Matched decoder a mark
+ends either by the log-odds (g < −1 nat) or because keying becomes
+impossible: the squelch closes (a < a_min), for example when the noise
+floor's stuck-low restart sets ŝ back to 0 in the middle of a mark, or ŝ
+decays or σ̂_v rises at a weak station. A key-up forced that way still
+counts the mark for speed, with a duration truncated where the squelch
+closed, which can mislead the speed estimate the way a fragment at the
+start did. Not observed in the suite; how often the squelch closes
+inside a mark is not measured. A fix in the spirit of Task 16: count a
+mark for speed only if its key-up came from the log-odds (no new
+parameter). Owner's decision.
 
 ### Tracks converging on one peak (possible limit; derived from the code, not observed)
 
