@@ -20,8 +20,16 @@ class ProtoConfig:
     # Noise (spec 4.2)
     noise_method: str = "spectrum"         # "spectrum": three-tap level x spectrum ratios; "spectrum-level": spectrum
                                            # level / mask_bias; "branch": the fallback; open, decided by E10 (owner)
-    mask_bias: float = 0.979               # masked periodogram power / true noise power, white noise; measured
-                                           # (review; Task 5 Step 5 replaces it with this code's own value)
+    mask_bias: tuple[float, ...] = (       # b_mask,k, one per branch (arm "spectrum-level"): branch k's sigma_v,k^2
+        0.8370, 0.8293, 0.8263, 0.8213,    # from the masked, smoothed spectrum (flat mean of the accepted masked
+        0.8171, 0.8136, 0.8095, 0.8074,    # periodograms) / its true sigma_v,k^2. Measured (Task 5): white noise,
+        0.8047, 0.8025, 0.8008, 0.7988,    # 1 FS^2, seeds 101-110, 60 s each, 2362 of 3500 segments accepted;
+        0.7973, 0.7958, 0.7945, 0.7935,    # per-seed scatter 2.6% (k=1) to 4.5% (k=32), so the 10-seed mean is
+        0.7924, 0.7914, 0.7907, 0.7899,    # good to about 0.8-1.4%. Valid for the default ladder, segment, guard
+        0.7892, 0.7885, 0.7880, 0.7875,    # and smoothing at 1500 samples/s. In channel-shaped noise the same
+        0.7871, 0.7867, 0.7864, 0.7861,    # ratios are 2.9% (k=1) to 5.9% (k=32) higher (Task 5 report).
+        0.7858, 0.7856, 0.7854, 0.7852,    # (The whole-band masked power reads 0.9745 of the truth, white noise,
+    )                                      # seed 8, 60 s: the mask removes mostly low-frequency power.)
     noise_tau_s: float = 2.0               # tau_n, s of noise updates (milestone 2)
     noise_warmup_s: float = 0.32           # first estimate: 20% quantile of |v|^2 over this, s (milestone 2)
     noise_guard: float = 1.75              # kappa (milestone 2)
