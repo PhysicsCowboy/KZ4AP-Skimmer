@@ -82,9 +82,9 @@ Where a symbol exists in `docs/signal-processing.md` §0 it means the same here:
 | P₁ | prior probability of key-down | 0.44 |
 | h | keying hysteresis on g | 1 nat |
 | a_min,k | squelch: key-down only if a_k ≥ 3·(L_k/16 ms)^(1/4) | dimensionless |
-| x_on,k, x_off | unknown-amplitude test (start of an over): key down when x > x_on,k = √(−2 ln(R_fa·L_k)), up when x < x_off = √(−2 ln 0.3) = 1.55 | dimensionless |
-| R_fa | false key-downs per second that noise alone causes in the unknown-amplitude test, per branch | 0.01 /s (placeholder) |
-| W_min | key-down weight (Σp/r) after an over's first mark before its start is re-keyed with the full LLR | 0.4 s (placeholder) |
+| x_on,k, x_off | unknown-amplitude test (start of an over): key down when x > x_on,k, up when x < x_off = √(−2 ln 0.3) = 1.55; x_on,k nominally √(−2 ln(R_fa·L_k)), calibrated by measurement in E9 | dimensionless |
+| R_fa | target rate of false key-downs that noise alone causes in the unknown-amplitude test, per branch | 0.01 /s (heuristic target; the nominal formula gives 0.07–0.10 /s, simulated in review) |
+| W_min | keyed time (samples the unknown-amplitude test keys down, / r) in an over before its start is re-keyed with the full LLR | 0.4 s (placeholder) |
 | κ, κ_n | three-tap noise guard (milestone 2) | 1.75, 4 |
 | T_seg | noise-spectrum segment | 256/1500 s = 170.7 ms (bin 5.86 Hz) |
 | τ_n, τ_a | noise and amplitude time constants | 2 s, 0.5 s |
@@ -99,6 +99,7 @@ Where a symbol exists in `docs/signal-processing.md` §0 it means the same here:
 | Q_k | fit quality: weighted mean log-likelihood per element | nats per element |
 | T_P, c_P | periodicity estimate and its confidence | s; comb: dimensionless, spectrum: nats |
 | Π | the comb's period: a dit and its element space, 2T | s |
+| e[n] | signed edge signal of p, p[n] − p[n−1] (the edge comb, third arm of E1) | 1 per sample |
 | M | switch persistence: selection instants in a row | 4 (placeholder) |
 | ε_Q | a quality tie: Q within ε_Q of the best | 0.05 nats per element (placeholder) |
 | T_new | new-over silence threshold, max(0.5 s, 12·T_g) | s |
@@ -130,16 +131,18 @@ Elements and element spaces at the character speed c (T = 1.2 s/c); character an
 
 L_k = 9.6 ms × 1.1^(k−1), k = 1…32 (owner). At r = 1500 samples/s, N_k = 14, 16, 17, 19, 21, 23, 26, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 117, 129, 142, 156, 172, 189, 208, 228, 251, 276 samples (derived; all distinct because consecutive lengths differ by at least 0.1 × 14.4 = 1.44 samples). The realized length N_k/r (9.33 ms … 184.0 ms) is used everywhere after the point of use (eligibility, timing resolution, group delay). Each branch is the engine's boxcar (causal running mean, unity gain); its group delay (N_k − 1)/(2r) is subtracted from every time the branch reports, so times of different branches line up (derived: a symmetric FIR has linear phase).
 
-### Noise: branch 1's level from the three-tap guard, every branch's from the spectrum's shape
+### Noise: the level is decided by measurement (owner, 2026-09-30)
 
-The channel's noise is **not white**: the channel filter passes about ±150 Hz of the 1500 Hz stream (§7), so the in-band density is about 5× the white-noise density σ²/r, and the white-noise formula σ²/(2N_k) underestimates the short branches' noise by about 4.5× (derived: branch 1's main lobe, ±107 Hz, lies inside the passband; Task 5's colored-noise test checks it). So each branch needs σ_v,k² = ½∫S_n(f)|H_k(f)|² df.
+The channel's noise is **not white**: the channel filter passes about ±150 Hz of the 1500 Hz stream (§7), so the in-band density is about 5× the white-noise density σ²/r, and the white-noise formula σ²/(2N_k) underestimates **every** branch's noise, by 4.79× (N = 14) to 5.19× (N = 276) in Task 5's channel-shaped noise (review check). The spectrum's *shape* correction across the ladder is only about 8% there; it matters mainly when a neighbor leaks into the short branches. So each branch needs σ_v,k² = ½∫S_n(f)|H_k(f)|² df, and what matters most is its absolute level.
 
-The prototype estimates it in two parts:
-- **Level:** branch 1's σ_v,1² from the milestone-2 three-tap guard, unchanged (κ = 1.75, κ_n = 4, the truncated-exponential correction m(κ) = 0.632, τ_n = 2 s, warm-up 0.32 s at the 20% quantile; §8b). Branch 1 has about 1/L_1 = 107 independent samples per second, so over τ_n its estimate scatters about 7% (derived, rough; spec §4.2).
-- **Shape:** Ŝ, an exponential average (τ_n) of Hann-windowed periodograms of u over segments of T_seg = 170.7 ms, each masked: a sample of u is left out if any |v_1|² sample that contains it (the next N_1 − 1 samples) or lies within 20 ms of it exceeds κ_n·2σ_v,1². A segment enters only if at least half of it is left in (heuristic). Then σ_v,k² = σ_v,1² · (W_k·Ŝ)/(W_1·Ŝ), with W_k[m] the mean of |H_k(f)|² over bin m (16 points per bin). For white noise the ratio is N_1/N_k exactly (Parseval, derived). The periodogram is smoothed over ±25 Hz before use, because the longest branches see only 2–3 bins near 0 Hz and would otherwise scatter as much as the per-branch fallback (derived: the degrees of freedom are B·τ either way; smoothing assumes the noise is smooth on a 25 Hz scale — heuristic). Until the three-tap warm-up is over, no segment enters and the shape is white.
-- **Fallback (selectable, spec §4.2):** every branch runs its own three-tap estimate. Experiment E10 compares them.
+Common parts:
+- **Shape:** Ŝ, an exponential average (τ_n) of Hann-windowed periodograms of u over segments of T_seg = 170.7 ms, each masked: a sample of u is left out if any |v_1|² sample that contains it (the next N_1 − 1 samples) or lies within 20 ms of it exceeds κ_n·2σ_v,1². A segment enters only if at least half of it is left in (heuristic). W_k[m] is the mean of |H_k(f)|² over bin m (16 points per bin); for white noise (W_k·Ŝ)/(W_1·Ŝ) = N_1/N_k exactly (Parseval, derived). Ŝ is smoothed over ±25 Hz before use, because the longest branches see only 2–3 bins near 0 Hz (derived: the degrees of freedom are B·τ either way; smoothing assumes the noise is smooth on a 25 Hz scale — heuristic). Until branch 1's three-tap warm-up is over, no segment enters and the shape is white. **The mask is not neutral:** in white noise it keeps only 63% of noise-only samples, and the kept samples' power reads 2.1% low (review, 3·10⁶ samples); Task 5 measures both numbers and the segment acceptance rate on the prototype's own code.
+- **The mask's reference:** branch 1's three-tap estimate (below), in every arm.
 
-This reading of spec §4.2 (the spectrum supplies the shape, branch 1 the level) is a choice of this plan: an unguarded or self-referenced spectrum level has a stuck-high fixed point when a station keys from the first sample (derived: a segment estimate inflated by marks raises its own guard threshold above the marks). The three-tap guard is the one already measured in the engine.
+The arms of **E10** (owner, 2026-09-30: measure both levels and decide by a pre-registered rule; spec §4.2 and §5 now say so):
+- **(a) `spectrum` — three-tap level, spectrum ratios:** σ_v,1² from the milestone-2 three-tap guard, unchanged (κ = 1.75, κ_n = 4, the truncation correction m(κ) = 0.632, τ_n = 2 s, warm-up 0.32 s at the 20% quantile; §8b; branch 1 has about 107 independent samples per second, so about 7% scatter over τ_n, derived, rough), and σ_v,k² = σ_v,1²·(W_k·Ŝ)/(W_1·Ŝ). The mask's bias cancels in the ratio.
+- **(b) `spectrum-level` — spectrum level, bias-corrected:** σ_v,k² = ½·(W_k·Ŝ)/(M·b_mask), with M the segment length in samples and b_mask the ratio of the masked periodogram's mean power to the true noise power in white noise (0.979 in review; Task 5 measures the prototype's own value, stored as `mask_bias`, status measured). Before the first segment enters, arm (a)'s value is used.
+- **(c) `branch` — the recorded fallback** (spec §4.2): every branch runs its own three-tap estimate.
 
 ### Keying per branch
 
@@ -147,9 +150,11 @@ Kept from milestone 2, per branch: the p-weighted online-EM amplitude (τ_a = 0.
 
 ### The first marks of an over: the unknown-amplitude test is a threshold on x
 
-Spec §4.7 offers a generalized likelihood ratio maximized over the amplitude, or a threshold on |v|/σ_v. **They are the same test family:** max over a of (−a²/2 + ln I₀(a·x)) is increasing in x (derived: ∂Λ/∂x = a·I₁(ax)/I₀(ax) ≥ 0 for every a ≥ 0, so the maximum over a is nondecreasing in x), so a threshold on the GLRT is a threshold on x. The only choice is the threshold. The prototype states it physically: noise alone gives about 1/L_k independent envelope samples per second, each exceeding x with probability e^(−x²/2) (Rayleigh), so x_on,k = √(−2 ln(R_fa·L_k)) holds false key-downs near R_fa per second in every branch (derived, approximately; R_fa placeholder 0.01/s: x_on = 4.31 in branch 1, 3.54 in branch 32). Release at x < x_off = 1.55 (noise exceeds it 30% of the time; heuristic).
+Spec §4.7 offers a generalized likelihood ratio maximized over the amplitude, or a threshold on |v|/σ_v. **Per sample they are one test family:** max over a ≥ 0 of (−a²/2 + ln I₀(a·x)) is 0 for x ≤ √2 (the derivative at a = 0 is a(x²/2 − 1)) and strictly increasing in x above (derived; checked numerically in review), so a threshold on the per-sample GLRT is a threshold on x = |v|/σ_v. This holds per sample only: a GLRT that fits one amplitude over a whole mark or block (summing over its samples) is not a per-sample threshold on x. The prototype uses the per-sample reading; the only choice is the threshold.
 
-The over's first marks are keyed with this test at once. When the fresh amplitude estimate holds W_min = 0.4 s of key-down weight counted from the over's first mark (placeholder), the stretch from the over's start (at most 20 s back) is re-keyed with the full LLR; each candidate amplitude (the fresh one, and the previous over's) and each candidate fit (fresh, and the previous over's continued) is tried, and the combination whose fit explains the re-keyed marks and spaces best (mean log-likelihood per element) wins (spec §4.7: "a comparison of two fits, not a feedback loop"). The stretch is decoded again with the winning fit and the difference is issued as a correction.
+Nominally x_on,k = √(−2 ln(R_fa·L_k)): noise alone gives about 1/L_k independent envelope samples per second, each above x with probability e^(−x²/2) (Rayleigh). **That formula is heuristic, not derived:** it ignores the envelope's upcrossings between independent samples (Rice), and the review simulated 0.070 /s at 9.3 ms, 0.099 /s at 40 ms and 0.097 /s at 184 ms against the 0.01 /s target, 7–10× too many. So **E9 first calibrates x_on,k by measurement** (pre-registered: per branch, the threshold at which channel-shaped noise alone keys down R_fa times per second; `experiments calibrate-x-on`), stores it as `x_on_values` (status measured), and only then compares R_fa targets. Release at x < x_off = 1.55 (noise exceeds it 30% of the time; heuristic).
+
+The over's first marks are keyed with this test at once. **While the amplitude is unknown, only keyed samples count** (review I5: a reset amplitude makes p = P₁ = 0.44 on every sample, so a p-weight would fill about 0.9 s after the first mark whatever the marks): the fresh amplitude is seeded as the mean of |v|² − 2σ_v² over the samples the unknown test keys down, and W_min = 0.4 s (placeholder) is counted in keyed time. When it is reached, the stretch from the over's start (at most 20 s back) is re-keyed with the full LLR; each candidate amplitude (the seeded one, and the previous over's) and each candidate fit (fresh, and the previous over's continued) is tried, and the combination whose fit explains the re-keyed marks and spaces best (mean log-likelihood per element) wins (spec §4.7: "a comparison of two fits, not a feedback loop"). The stretch is decoded again with the winning fit and the difference is issued as a correction. From then on the amplitude follows the milestone-2 p-weighted EM.
 
 A new over starts when the key has been up for longer than T_new = max(0.5 s, 12·T_g) since a key-up (spec §4.7, placeholder). A branch without a fit uses T_g = 1.2 s / 5 WPM, the slowest standard dit (T_new = 2.88 s, derived from the spec's formula).
 
@@ -159,21 +164,27 @@ Model (spec §4.5): marks: dit T + w, dah qT + w; spaces: element T − w, chara
 
 **Class priors are derived** from VE3NEA's tables (`messages.VE3NEA_CHAR_WEIGHTS`, `VE3NEA_WORD_LENGTH_PROBS`, MIT): per character 1.618 dits and 1.212 dahs, so marks are dits with probability 0.5716; per character 1.830 element spaces, 0.673 character gaps and 0.327 word gaps (mean word length 3.062 characters), so spaces are element spaces 0.6467, character gaps 0.2379, word gaps 0.1154 (computed while planning).
 
-**Memory by recursion:** every observation multiplies both likelihood tables by λ = e^(−1/N_mem) and adds its log-likelihood to one of them, so the tables hold the exponentially weighted log-likelihood exactly at every grid point (derived). Marks are tabulated over (T, q, w) and spaces over (T, w, T_g); the joint maximum is max over (T, w) of [max_q marks + max_(T_g) spaces] + the T_P prior. Grid: T log-spaced at 1% over 12–240 ms (302 points), q ∈ {3, 3.5, 4, 4.5, 5}, w/T ∈ {−0.4 … 1.0} in steps of 0.2, T_g/T ∈ {1, 1.26, 1.59, 2, 2.52, 3.17, 4, 5.04, 6.35, 8} (placeholders; w reaches +1.0·T because a branch longer than the ideal lengthens marks by up to its own length). **Local refinement:** two iterations of weighted least squares in the durations themselves, (T, w, qT, T_g) linear in every class mean, with the class responsibilities of the current point and a weak prior (standard deviation 0.2·T per parameter) toward it, over the last 4·N_mem observations weighted λ^age. The T_P prior adds −(ln T − ln T_P)²/(2·0.1²) to the grid's log-likelihood (heuristic width) whenever T_P is confident, and nothing otherwise: "weighted by its confidence" (spec §4.5) is read as a gate at the confidence threshold, because the comb's and the spectrum's confidences are on different scales (heuristic).
+**Memory by recursion:** every observation multiplies both likelihood tables by λ = e^(−1/N_mem) and adds its log-likelihood to one of them, so the tables hold the exponentially weighted log-likelihood exactly at every grid point (derived). Marks are tabulated over (T, q, w) and spaces over (T, w, T_g); the joint maximum is max over (T, w) of [max_q marks + max_(T_g) spaces] + the T_P prior. Grid: T log-spaced at 1% over 12–240 ms (302 points), q ∈ {3, 3.5, 4, 4.5, 5}, w/T ∈ {−0.4 … 1.0} in steps of 0.2, T_g/T ∈ {1, 1.26, 1.59, 2, 2.52, 3.17, 4, 5.04, 6.35, 8} (placeholders; w reaches +1.0·T because a branch longer than the ideal lengthens marks by up to its own length). **Local refinement:** two iterations of weighted least squares in the durations themselves, (T, w, qT, T_g) linear in every class mean, with the class responsibilities of the current point and a weak prior (standard deviation 0.2·T per parameter) toward it, over the last 4·N_mem observations weighted λ^age. The T_P prior adds −(ln T − ln T_P)²/(2·0.1²) to the grid's log-likelihood (heuristic width) whenever T_P is confident, and nothing otherwise: "weighted by its confidence" (spec §4.5) is **reinterpreted** as a gate at the confidence threshold, because the three methods' confidences are on different scales (heuristic; listed for the owner in the results' open items).
 
 **Checked while planning** (a scratch numpy port of the grid step, not committed): the grid maximum gives T within 0.4% for machine keying at 25 WPM; T = 99.9 ms for "HI" at 12 WPM (the R2 case: all marks dits, the element spaces decide), where the dahs reading T = 33 ms loses because element spaces (prior 0.647) beat character gaps (0.238) four times and dits beat dahs six times; T_g/T = 3.17 (grid) for Farnsworth 18/10 (true 3.11) and 8.0 (grid edge) for 18/5 (true 7.84); q = 4.5 for HandKey; w/T = 0.2 for a 0.2-dit imbalance; after a 20 → 35 WPM step, T = 34.5 ms (true 34.3) after 72 new observations and 37.3 ms after 36.
 
-### Periodicity estimator: both methods, and a correction to the comb
+### Periodicity estimator: three arms, the comb on 2T the default (owner, 2026-09-30)
 
 Input: branch 1's squelched posterior p (0 while squelched), averaged down to 750 samples/s (Nyquist 375 Hz, above the third null of the fastest dit, 3/12 ms = 250 Hz; heuristic). Windows 2, 5 and 10 s run in parallel (placeholders); the confident estimate with the shortest window is used; T_P is recomputed every 0.25 s (heuristic).
 
-- **Comb.** As spec §4.4 literally describes it (teeth at T, 2T, 3T, 4T, negative teeth halfway), **the comb peaks at 2T, not T, on every keying style tried** (checked while planning on random VE3NEA text, 10 s windows: comb score at T/2, T, 2T, 3T = −0.011, −0.025, 0.315, −0.035 at 25 WPM machine; −0.029, 0.217 at T and 2T for paddle; −0.021, 0.096 for Farnsworth 18/10). The reason (derived): the autocorrelation of a keying on a T lattice is piecewise linear between lattice points, so the comb's contrast at kT is −¼ of the lattice autocorrelation's second difference there; Morse alternates a dit with its element space, so the lattice autocorrelation is low at odd and high at even lags and is convex at odd lags. **The prototype therefore applies the spec's comb to Π = 2T** (teeth at 2kT, negative teeth at (2k ± 1)T) and reports T_P = Π/2. Checked: within 2% of T for machine keying at 12, 25, 40 and 100 WPM (every window) and at 5 WPM (windows ≥ 5 s), paddle at 25 WPM, and Farnsworth 18/10 and 18/5; wrong for HandKey at 24 WPM and for bug keying with windows below 10 s. **This departs from the spec's text; it is flagged to the owner** (Task 9's first step) and the experiment compares it with the spectrum method.
-- **Spectrum-shape fit.** p is piecewise constant on a T lattice, so every mark's spectrum carries sinc(f·d) with d a multiple of T, and the power spectrum has nulls at f = k/T whatever the marks' positions (derived). Score(T) = mean over k = 1…3 of ln(power in [(k − ½)/T, (k + ½)/T] / power within ±0.075/T of k/T), from a Hann-windowed periodogram zero-padded 4×; T_P is the maximum. Checked: within 1% for machine keying at 25–100 WPM, 1–6% at 12 WPM (6% with the 2 s window), within 4% for paddle and Farnsworth; wrong for HandKey. A rule preferring the longest T near the maximum (to avoid T/2) was tried and rejected: it picked 3T for paddle keying (the score at T was the maximum in every case tried).
-- **Confidence:** the comb's score (dimensionless) or the spectrum's (nats); thresholds 0.03 and 1.5 are placeholders calibrated in E1 (while planning, noise alone scored 0.019 and 1.03, keying 0.04–0.38 and 1.5–4.4).
+- **Why the literal comb lands on 2T.** The comb as first written in spec §4.4 (positive teeth at T, 2T, 3T, 4T, negative teeth halfway) peaks at 2T on every keying style tried (planning check: comb score at T/2, T, 2T, 3T = −0.011, −0.025, 0.315, −0.035 at 25 WPM machine; review: 0 of 3 seeds right in every case, median ratio 2.00). Consecutive keying edges T apart have opposite signs (a dit's key-down and key-up), so p's structure repeats at 2T, not T: the autocorrelation of mean-removed p is low at odd and high at even multiples of T (derived: between lattice points it is piecewise linear, so a tooth's contrast at kT is −¼ of the lattice autocorrelation's second difference). The spec's §4.4 now says so (owner, 2026-09-30).
+- **Comb (default, `comb`; owner).** On mean-removed p, the comb runs on the period Π = 2T of a dit and its element space: 4 teeth at 2T, 4T, 6T, 8T, negative teeth halfway (at T, 3T, 5T, 7T), each the mean of the normalized autocorrelation within **±15% of T (±0.075 Π)** of its lag, and T_P = Π/2. Its last tooth is at 8T and it reads lags up to (4 + 0.5 + 0.075)·2T ≈ 9.2T. Farnsworth still does not disturb it: its stretched gaps are 3·T_g ≥ 3T long and fall at no fixed multiple of 2T, so they add no tooth-locked structure, while the elements inside characters keep their 2T lattice. Measured (review, 3 seeds, clean and at S₅₀₀ = 10 and 3 dB): within 5% of T for machine, paddle and computer keying at 12–100 WPM in every window, for Farnsworth 18/10 and 25/13 (18/5: 2 of 3 at 2 and 5 s), and at 5 WPM with windows ≥ 5 s even at S₅₀₀ = 3 dB; it misses HandKey (1.13–1.22 T) and bug keying with 2 s windows. The ±0.075 Π width gave the same hit rates as ±0.15 Π in review.
+- **Sign-weighted edge comb (third arm, `edge`).** On the signed edges e[n] = p[n] − p[n−1]: teeth at kT, k = 1…4, weighted −1 at odd and +1 at even k (key-down and key-up alternate), each within ±15% of T of its lag, on the normalized autocorrelation of e. Review: best on HandKey and bug keying at S₅₀₀ ≥ 10 dB, but at 3 dB it fails 5 WPM in every window and 12 WPM at 2 s (differencing whitens the noise; slow keying has little edge energy).
+- **Spectrum-shape fit (`spectrum`).** p is piecewise constant on a T lattice, so every mark's spectrum carries sinc(f·d) with d a multiple of T, and the power spectrum has nulls at f = k/T whatever the marks' positions (derived). Score(T) = mean over k = 1…3 of ln(power in [(k − ½)/T, (k + ½)/T] / power within ±0.075/T of k/T), from a Hann-windowed periodogram zero-padded 4×; T_P is the maximum. Checked while planning: within 1% for machine keying at 25–100 WPM, 1–6% at 12 WPM, within 4% for paddle and Farnsworth; wrong for HandKey. (A rule preferring the longest T near the maximum picked 3T for paddle keying and was rejected.) Its null width is its own parameter (`spectrum_null_width` = 0.15 T), separate from the comb's tooth width, so E3 varies them independently.
+- **Confidence:** each method's score (comb and edge comb dimensionless, spectrum in nats); the thresholds are placeholders, calibrated in E1 to 95% precision.
 
 ### Branch selection, corrections
 
-As spec §4.6: eligibility |ln(L_k/(0.8·T_k))| ≤ ln 1.1, and only once the fit's memory holds at least 8 elements of weight (heuristic); among eligible branches the highest Q_k; ties (within ε_Q) by the mean text log-probability of the last 10 characters (ties there within 0.1 nats per character; heuristic), then the longer branch; none eligible: the text log-probability if the best exceeds the second by at least 1 nat per character (heuristic "clearly separates"), else the branch nearest 0.8·T_P if T_P is confident, else branch 1. Selection instants are branch 1's key-ups (it resolves every mark); a switch needs M = 4 instants in a row (placeholder). After a switch the new branch's text replaces the old from the start of the character that contains the time the new branch's current eligible run began, at most 20 s back (owner). The prototype publishes each selected-branch character when it is decided, applies its corrections, logs each correction with its reach, and hands the final text to the bench.
+As spec §4.6: eligibility |ln(L_k/(0.8·T_k))| ≤ ln 1.1, and only once the fit's memory holds at least 8 elements of weight (heuristic); among eligible branches the highest Q_k; ties (within ε_Q) by the mean text log-probability of the last 10 characters (ties there within 0.1 nats per character; heuristic), then the longer branch; none eligible: the text log-probability if the best exceeds the second by at least 1 nat per character (heuristic "clearly separates"), else the branch nearest 0.8·T_P if T_P is confident, else branch 1. Selection instants are branch 1's key-ups (it resolves every mark); a switch needs the same other branch to be the best **eligible** branch for M = 4 instants in a row (placeholder; spec §4.6). When no branch is eligible, the fallback pick is counted separately (M instants in a row of the same fallback pick), so fallback instants never complete an eligible run or the other way round. After a switch the new branch's text replaces the old from the start of the character that contains the time the new branch's current eligible run began, at most 20 s back (owner). The prototype publishes each selected-branch character when it is decided, applies its corrections, logs each correction with its reach, and hands the final text to the bench.
+
+### Compute budget, and runs in the background
+
+The review timed the plan's fit at 1.49 ms per observation (add + best) on the default grid and 22.9 ms on E5's finest; at 25 WPM each branch sees about 10.6 observations per second, so **a keyed channel costs about 0.3–0.5 s of CPU per channel-second** (Task 11 Step 5 times a keyed stream to confirm it on this machine). The development set holds about 80 000 channel-seconds, so one development run takes about 25–30 min on 14 workers; Tasks 13–14 need about 28 runs, so **the experiments take about 12–14 h of wall time on 14 workers, or more** (E5's finest grids cost about 15× a run and use a smaller subset, `experiments.DEV_E5`, about 20% of the development set), plus about 2 h for the final three-seed pass (Task 15). Every long run is started as a **background process** (the harness's `run_in_background`), writing its log to `build/suite/full3/experiments/logs/<name>.log` and a short summary to `build/suite/full3/experiments/summary-<name>.md` when it ends; the executing agent starts it, does not poll, is notified when it finishes, and reads only the summary file (and the compare file it names).
 
 ### Development set, held-out seeds and decision rules
 
@@ -187,22 +198,24 @@ Experiments run on **seed 1** of the oracle recordings of groups A, C, D, E, F, 
 | Ladder | 9.6 ms × 1.1^(k−1), 32 branches | owner; loss derived | — |
 | Branch length relative to the dit | 0.8 | heuristic | — |
 | Estimate update block | 21.3 ms | heuristic | — |
-| Noise method | spectrum shape × three-tap level | open | E10 |
+| Noise method | (a) three-tap level × spectrum ratios; (b) spectrum level ÷ mask bias; (c) per-branch three-tap | open; owner: decided by measurement | E10 |
+| Mask bias b_mask | 0.979 in review; the prototype's own value | measured | Task 5 |
 | T_seg; smoothing; guard reach; clean fraction | 170.7 ms; ±25 Hz; 20 ms; 0.5 | heuristic | — |
 | Three-tap guard κ, κ_n; τ_n; warm-up | 1.75, 4; 2 s; 0.32 s | milestone 2 (heuristic) | — |
 | τ_a; P₁; h | 0.5 s; 0.44; 1 nat | milestone 2 (heuristic) | — |
 | Squelch | 3·(L/16 ms)^(1/4) | scaling derived, constant heuristic | — |
-| R_fa; x_off | 0.01 /s; 1.55 | placeholder; heuristic | E9 |
-| W_min | 0.4 s | placeholder | E9 |
+| R_fa (target); x_on per branch; x_off | 0.01 /s; calibrated to the target; 1.55 | heuristic target; measured; heuristic | E9 |
+| W_min (keyed time) | 0.4 s | placeholder | E9 |
 | Fit memory N_mem | 24 | placeholder | E4 |
 | Grid: T step; q; w/T; T_g/T | 1%; 5 values; 8 values; 10 values | placeholder | E5 |
 | σ_ln (marks, spaces); ε; outlier range | 0.15, 0.25; 0.05; 1 ms–10 s | heuristic | — |
 | T_P prior width | 0.1 in ln T | heuristic | — |
 | Minimum fit weight | 8 elements | heuristic | — |
-| Periodicity method | comb on Π = 2T, or spectrum | open | E1 |
+| Periodicity method | comb on Π = 2T (default, owner); edge comb; spectrum | open (default set by owner) | E1 |
 | Windows | 2, 5, 10 s | placeholder | E2 |
-| Comb teeth / width; spectrum nulls | 4, ±15% of Π; 3 | placeholder | E3 |
-| Confidence thresholds | comb 0.03; spectrum 1.5 nats | placeholder | E1 |
+| Comb teeth / tooth width / lag reach | 4 teeth on Π (last at 8T) / ±15% of T (±0.075 Π) / about 9.2T | placeholder / placeholder / follows from the teeth | E3 |
+| Edge-comb teeth; spectrum nulls / null width | 4 at kT, weights (−1)^k; 3 / ±0.075/T | placeholder | E3 |
+| Confidence thresholds | comb 0.03; edge comb 0.03; spectrum 1.5 nats | placeholder | E1 |
 | Eligibility tolerance | ln 1.1 | heuristic (one ladder step) | — |
 | M | 4 | placeholder | E6 |
 | ε_Q; text window; text tie; separation | 0.05 nats/element; 10 characters; 0.1; 1 nat/character | placeholder; placeholder; heuristic; heuristic | E8 |
@@ -214,12 +227,14 @@ Experiments run on **seed 1** of the oracle recordings of groups A, C, D, E, F, 
 Inputs the spec implies but does not spell out, most likely to bite first. Each has a test in the owning task.
 
 1. **A station keying from the first sample** (no noise-only start): the noise level must come down from the marks-inflated warm-up and the shape must not take the marks in; the first over is still decoded — Task 5 (`test_spectrum_keeps_marks_out_when_a_station_keys_from_the_first_sample`), Task 11 (`test_decodes_a_station_from_the_first_sample`).
-2. **Noise alone and long silences:** no text survives in the final output, and the unknown-amplitude test's false key-downs stay near R_fa — Task 6 (`test_unknown_amplitude_test_keys_noise_rarely`), Task 11 (`test_noise_alone_leaves_no_text`).
+2. **Noise alone and long silences:** no text survives in the final output, and the unknown-amplitude test's false key-downs are counted (the nominal threshold is known to key 7–10× more than R_fa; E9 calibrates it) — Task 6 (`test_unknown_amplitude_test_keys_noise_rarely`, `test_an_unknown_amplitude_counts_only_keyed_samples`), Task 11 (`test_noise_alone_leaves_no_text`).
 3. **Farnsworth word gaps (7·T_g, up to 3.7 s at 18/5 WPM) must not start a new over** — Task 11 (`test_farnsworth_word_gaps_do_not_start_a_new_over`).
 4. **A long carrier (tune-up) or a stuck key** must go to the outlier class and leave the speed intact — Task 7 (`test_a_tune_up_carrier_is_an_outlier`), Task 11 (`test_a_tune_up_carrier_does_not_derail_decoding`).
 5. **Speed changes and slow starts** (regressions R1 and R2): a slow station's first dits are not read as dahs, and a 15 → 30 WPM step is followed within about 10 marks — Task 7 (`test_slow_first_dits_are_not_read_as_dahs`, `test_the_fit_follows_a_speed_step_within_its_memory`), Task 11 (`test_follows_a_speed_step_within_ten_marks`).
 
 Also pinned: every correction reaches back at most 20 s (Task 11, `test_corrections_never_reach_back_more_than_20_s`).
+
+**Limit of these checks:** the suite's non-oracle groups (first sample, pauses, tune-up, strong, crowded, band) never reach the prototype, which has no detector, so items 1, 3 and 4 rest on the synthetic tests above only; the results document lists this among its open items (Task 15).
 
 ## File map
 
@@ -793,6 +808,8 @@ TEST(ChannelRecorder, RejectsGapsUnknownChannelsAndMovedCenters) {
     EXPECT_THROW(rec.write({1, 5, 0.0, a}), std::runtime_error);   // samples 4 and 5 missing
     EXPECT_THROW(rec.write({2, 0, 0.0, a}), std::runtime_error);   // no such channel
     EXPECT_THROW(rec.write({1, 4, 23.4, a}), std::runtime_error);  // the channel's center moved
+    rec.finish("x.wav", "x.json");  // closes the file, so the directory can go
+    std::filesystem::remove_all(dir);
 }
 ```
 
@@ -1741,7 +1758,10 @@ class ProtoConfig:
     length_dits: float = 0.8               # heuristic
     block_s: float = 32 / 1500             # estimates advance once per block (the engine's channel block), s; heuristic
     # Noise (spec 4.2)
-    noise_method: str = "spectrum"         # "spectrum" (shape x branch 1's level) or "branch" (the fallback); open (E10)
+    noise_method: str = "spectrum"         # "spectrum": three-tap level x spectrum ratios; "spectrum-level": spectrum
+                                           # level / mask_bias; "branch": the fallback; open, decided by E10 (owner)
+    mask_bias: float = 0.979               # masked periodogram power / true noise power, white noise; measured
+                                           # (review; Task 5 Step 5 replaces it with this code's own value)
     noise_tau_s: float = 2.0               # tau_n, s of noise updates (milestone 2)
     noise_warmup_s: float = 0.32           # first estimate: 20% quantile of |v|^2 over this, s (milestone 2)
     noise_guard: float = 1.75              # kappa (milestone 2)
@@ -1757,9 +1777,11 @@ class ProtoConfig:
     squelch_a: float = 3.0                 # a_min at squelch_ref_s (milestone 2; heuristic)
     squelch_ref_s: float = 0.016           # s
     squelch_exponent: float = 0.25         # a_min proportional to L^(1/4) (derived scaling)
-    false_marks_per_s: float = 0.01        # R_fa, per branch, noise alone; placeholder (E9)
+    false_marks_per_s: float = 0.01        # R_fa target, per branch, noise alone; heuristic (E9)
+    x_on_values: tuple[float, ...] = ()    # x_on per branch, calibrated to R_fa by measurement (E9); () = the
+                                           # nominal sqrt(-2 ln(R_fa L_k)), heuristic (keys 7-10x more than R_fa)
     release_probability: float = 0.3       # key up where noise alone exceeds x this often (x_off = 1.55); heuristic
-    rekey_after_s: float = 0.4             # W_min, s of key-down weight after an over's first mark; placeholder (E9)
+    rekey_after_s: float = 0.4             # W_min, s of keyed time while the amplitude is unknown; placeholder (E9)
     # Duration fit (spec 4.5)
     fit_memory: float = 24.0               # N_mem, marks and spaces; placeholder (E4)
     t_grid_step: float = 0.01              # relative step of the T grid; placeholder (E5)
@@ -1774,14 +1796,17 @@ class ProtoConfig:
     refine_iterations: int = 2             # weighted-least-squares steps after the grid; heuristic
     min_fit_weight: float = 8.0            # elements of memory weight before a fit counts for eligibility; heuristic
     # Periodicity (spec 4.4)
-    periodicity_method: str = "comb"       # "comb" (on Pi = 2T) or "spectrum"; open (E1)
+    periodicity_method: str = "comb"       # "comb" (on Pi = 2T; default, owner), "edge" or "spectrum"; E1
     periodicity_windows_s: tuple[float, ...] = (2.0, 5.0, 10.0)   # placeholder (E2)
     periodicity_update_s: float = 0.25     # heuristic
     periodicity_rate_hz: float = 750.0     # p is averaged down to this rate, samples/s; heuristic
-    comb_teeth: int = 4                    # placeholder (E3)
-    comb_width: float = 0.15               # tooth half-width, fraction of Pi (comb) or null width x T (spectrum); placeholder (E3)
+    comb_teeth: int = 4                    # teeth at k Pi (comb) or k T (edge comb); placeholder (E3)
+    comb_width: float = 0.075              # comb tooth half-width, fraction of Pi (0.075 Pi = 15% of T; the edge comb
+                                           # uses 2 x this, fraction of T); placeholder (E3)
     spectrum_nulls: int = 3                # placeholder (E3)
+    spectrum_null_width: float = 0.15      # null band width x T (+/- half of it around k/T); placeholder (E3)
     comb_confidence_min: float = 0.03      # placeholder (E1)
+    edge_confidence_min: float = 0.03      # placeholder (E1)
     spectrum_confidence_min: float = 1.5   # nats; placeholder (E1)
     # Selection (spec 4.6)
     eligibility_tolerance: float = math.log(1.1)   # heuristic (one ladder step)
@@ -1963,9 +1988,9 @@ git commit -m "Start the filter-bank prototype: parameters, recorded streams, th
 
 ---
 
-### Task 5: Noise — the three-tap level and the shared spectrum
+### Task 5: Noise — the three-tap level, the shared spectrum, and both level arms
 
-Each branch's σ_v,k² (Design decisions, "Noise"): branch 1's level by the milestone-2 three-tap guard, every branch's by the ratio of the masked, smoothed noise spectrum weighted by the branches' power responses; and the recorded fallback, a three-tap estimate per branch. Tests use white noise, channel-shaped noise (where the white formula is off by more than 2×) and a strong station keying from the first sample.
+Each branch's σ_v,k² (Design decisions, "Noise"), in the three arms E10 compares (owner: the absolute level is decided by measurement): (a) `spectrum`, branch 1's level by the milestone-2 three-tap guard and every branch's by the ratio of the masked, smoothed noise spectrum weighted by the branches' power responses; (b) `spectrum-level`, the spectrum's own level divided by the mask's measured bias; (c) `branch`, the recorded fallback, a three-tap estimate per branch. Tests use white noise, channel-shaped noise (where the white formula is off by 4.8–5.2× for every branch) and a strong station keying from the first sample; a measurement step records the mask's kept fraction, its bias and the segment acceptance rate.
 
 **Files:**
 - Create: `training/kz4ap_proto/noise.py`
@@ -1976,8 +2001,8 @@ Each branch's σ_v,k² (Design decisions, "Noise"): branch 1's level by the mile
 - Produces:
   - `noise.guard_mean(kappa: float) -> float`
   - `noise.ThreeTapNoise(cfg, rate_hz, branch_n)`: `.update(P, n0, n1)`, `.var` (K,) FS² per real component, `.started: bool`
-  - `noise.SpectrumNoise(cfg, rate_hz, branch_n)` and `noise.BranchNoise(cfg, rate_hz, branch_n)`: `.update(u, P, n0, n1)`, `.sigma2() -> np.ndarray` (K,) FS² per real component
-  - `noise.make_noise(cfg, rate_hz, branch_n)` (by `cfg.noise_method`)
+  - `noise.SpectrumNoise(cfg, rate_hz, branch_n, level="three-tap")` (`level="spectrum"` for arm (b)) and `noise.BranchNoise(cfg, rate_hz, branch_n)`: `.update(u, P, n0, n1)`, `.sigma2() -> np.ndarray` (K,) FS² per real component; `SpectrumNoise` also counts `segments_offered`, `segments` (accepted), `kept_fraction_sum` (Σ over offered segments of the fraction left in) and `masked_power_sum` (Σ over accepted segments of the masked periodogram's mean power)
+  - `noise.make_noise(cfg, rate_hz, branch_n)` (by `cfg.noise_method`: `spectrum`, `spectrum-level`, `branch`)
   - Convention: `P` is the (K, N) array of |v_k|² for the whole stream (float32 is fine); `update` reads only samples before `n1`; call `update` before `sigma2` in each block.
 
 - [ ] **Step 1: Write the failing tests**
@@ -2038,16 +2063,35 @@ def test_guard_mean_is_the_truncated_exponential_mean():
 
 
 def test_three_tap_estimate_is_unbiased_in_white_noise():
+    # 60 s averaged over the last 50 s: branch 32 (184 ms) has about 270 independent |v|^2 samples there, so its
+    # scatter is about 6% (derived, rough); 15% leaves room for it without hiding a bias of the guard's size.
     ns = N[[0, 15, 31]]
-    u = white(int(30 * RATE), 1)
+    u = white(int(60 * RATE), 1)
     est = BranchNoise(CFG, RATE, ns)
-    assert averaged(est, u, powers(u, ns), 10.0) == pytest.approx(0.5 / ns, rel=0.1)
+    assert averaged(est, u, powers(u, ns), 10.0) == pytest.approx(0.5 / ns, rel=0.15)
 
 
 def test_spectrum_gives_one_over_n_in_white_noise():
     u = white(int(20 * RATE), 2)
     est = SpectrumNoise(CFG, RATE, N)
     assert averaged(est, u, powers(u, N), 10.0) == pytest.approx(0.5 / N, rel=0.1)
+
+
+def test_spectrum_level_arm_corrects_the_mask_bias_in_white_noise():
+    u = white(int(20 * RATE), 7)
+    est = SpectrumNoise(CFG, RATE, N, level="spectrum")
+    assert averaged(est, u, powers(u, N), 10.0) == pytest.approx(0.5 / N, rel=0.1)
+
+
+def test_the_mask_keeps_most_noise_and_reads_it_slightly_low():
+    # Measured in review: the mask keeps 63% of noise-only samples, whose power reads 2.1% low (white noise).
+    u = white(int(60 * RATE), 8)
+    est = SpectrumNoise(CFG, RATE, N)
+    averaged(est, u, powers(u, N), 0.0)
+    kept = est.kept_fraction_sum / est.segments_offered
+    bias = est.masked_power_sum / est.segments  # true power per sample is 1 FS^2
+    print(f"kept fraction {kept:.3f}, accepted segments {est.segments}/{est.segments_offered}, mask bias {bias:.4f}")
+    assert 0.5 < kept < 0.8 and 0.95 < bias < 1.0
 
 
 def test_spectrum_follows_channel_shaped_noise():
@@ -2178,7 +2222,11 @@ class SpectrumNoise:
 
     SUBSAMPLES = 16  # points per bin for W_k
 
-    def __init__(self, cfg, rate_hz: float, branch_n):
+    def __init__(self, cfg, rate_hz: float, branch_n, level: str = "three-tap"):
+        if level not in ("three-tap", "spectrum"):
+            raise ValueError(f"unknown noise level source {level!r}")
+        self.level = level
+        self.mask_bias = cfg.mask_bias
         self.n = np.asarray(branch_n, dtype=int)
         self.ref = ThreeTapNoise(cfg, rate_hz, self.n[:1])
         self.m = max(16, int(round(cfg.segment_s * rate_hz)))
@@ -2194,7 +2242,10 @@ class SpectrumNoise:
         self.beta = 1.0 - math.exp(-cfg.segment_s / cfg.noise_tau_s)
         self.shape = None       # periodogram average, FS^2 per bin
         self.ratio = None       # (W_k . S) / (W_1 . S), cached
-        self.segments = 0
+        self.segments = 0              # accepted
+        self.segments_offered = 0      # after the warm-up
+        self.kept_fraction_sum = 0.0   # fraction of each offered segment left in by the mask
+        self.masked_power_sum = 0.0    # mean power per sample of each accepted masked periodogram, FS^2
         self.next_start = 0
 
     def update(self, u, P, n0: int, n1: int) -> None:
@@ -2206,6 +2257,8 @@ class SpectrumNoise:
             if not self.ref.started:
                 continue
             clean = self._clean(P[0], s)
+            self.segments_offered += 1
+            self.kept_fraction_sum += float(clean.mean())
             if clean.mean() >= self.min_clean:
                 self._accept(np.asarray(u[s:s + self.m]), clean)
 
@@ -2227,6 +2280,7 @@ class SpectrumNoise:
             return
         periodogram = np.abs(np.fft.fft(seg * w)) ** 2 / norm  # mean over bins = power per sample, FS^2
         self.segments += 1
+        self.masked_power_sum += float(periodogram.mean())
         if self.shape is None:
             self.shape = periodogram
         else:
@@ -2246,12 +2300,17 @@ class SpectrumNoise:
         if self.ratio is None:
             k = self.bin_weights @ self._smoothed()
             self.ratio = k / k[0]
-        return level * self.ratio
+            # arm (b): complex power of v_k is (1/M) sum_m I_m W_k[m]; per real component half of it, and the
+            # masked periodogram reads mask_bias of the true power (measured)
+            self.absolute = 0.5 * k / self.m / self.mask_bias
+        return self.absolute.copy() if self.level == "spectrum" else level * self.ratio
 
 
 def make_noise(cfg, rate_hz: float, branch_n):
     if cfg.noise_method == "spectrum":
         return SpectrumNoise(cfg, rate_hz, branch_n)
+    if cfg.noise_method == "spectrum-level":
+        return SpectrumNoise(cfg, rate_hz, branch_n, level="spectrum")
     if cfg.noise_method == "branch":
         return BranchNoise(cfg, rate_hz, branch_n)
     raise ValueError(f"unknown noise method {cfg.noise_method!r}")
@@ -2260,12 +2319,16 @@ def make_noise(cfg, rate_hz: float, branch_n):
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `.venv\Scripts\python -m pytest training/tests/test_proto_noise.py -q`
-Expected: all pass. The tolerances come from the estimators' scatter (7% for branch 1 over τ_n, derived; the shape averaged over 10 s) and a small low bias of the three-tap guard in correlated (channel-shaped) noise, where taps N_1 apart are not quite independent. If a test fails by a few percent beyond its tolerance, report the measured ratio; do not widen the tolerance. If `test_spectrum_keeps_marks_out_…` fails by more, the mask lets marks in: debug `_clean` first.
+Expected: all pass (run once with `-s` to see the mask's printed numbers). The tolerances come from the estimators' scatter (7% for branch 1 over τ_n, derived; the shape averaged over 10 s) and a small low bias of the three-tap guard in correlated (channel-shaped) noise, where taps N_1 apart are not quite independent. If a test fails by a few percent beyond its tolerance, report the measured ratio; do not widen the tolerance. If `test_spectrum_keeps_marks_out_…` fails by more, the mask lets marks in: debug `_clean` first.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Measure the mask on this code and store its bias**
+
+Run `.venv\Scripts\python -m pytest training/tests/test_proto_noise.py -q -s -k mask` and read the printed kept fraction, accepted segments and mask bias (review: 63% kept, 2.1% low). Set `ProtoConfig.mask_bias` to the printed bias (four decimals) with the comment "measured (Task 5, white noise, 60 s)", and note all three numbers for the results document (Task 13, section 1). If the kept fraction or the acceptance rate is far below the review's (for example fewer than half the offered segments accepted), report it: arm (a)'s shape and arm (b)'s level would rest on few segments.
+
+- [ ] **Step 6: Commit**
 
 ```powershell
-git add training/kz4ap_proto/noise.py training/tests/test_proto_noise.py
+git add training/kz4ap_proto/noise.py training/tests/test_proto_noise.py training/kz4ap_proto/params.py
 ```
 ```powershell
 git commit -m "Add the prototype's noise estimates: three-tap level and shared spectrum shape"
@@ -2275,7 +2338,7 @@ git commit -m "Add the prototype's noise estimates: three-tap level and shared s
 
 ### Task 6: Keying — amplitude, LLR keying, squelch, unknown-amplitude test, re-keying
 
-All branches keyed at once, one block at a time (Design decisions, "Keying per branch" and "The first marks of an over"): the p-weighted amplitude, the LLR with ±1 nat hysteresis and each branch's squelch; the unknown-amplitude test (a threshold on x) for an over's first marks; and `rekey`, the full-LLR keying of a stored stretch. The key test checks the derived claim that a keyed rectangular mark keeps its length through a matched branch at high SNR.
+All branches keyed at once, one block at a time (Design decisions, "Keying per branch" and "The first marks of an over"): the p-weighted amplitude, the LLR with ±1 nat hysteresis and each branch's squelch; the unknown-amplitude test (a threshold on x, the nominal or the calibrated one) for an over's first marks, during which the amplitude is seeded from, and the re-key weight counted in, keyed samples only; and `rekey`, the full-LLR keying of a stored stretch. The key test checks the derived claim that a keyed rectangular mark keeps its length through a matched branch at high SNR.
 
 **Files:**
 - Create: `training/kz4ap_proto/keying.py`
@@ -2286,7 +2349,7 @@ All branches keyed at once, one block at a time (Design decisions, "Keying per b
 - Produces:
   - `keying.hysteresis(down, up, initial) -> np.ndarray` ((K, n) bool; up wins)
   - `keying.edges(key, before, n0) -> list[list[tuple[int, bool]]]` (per branch: sample index and the key state after it)
-  - `keying.BankKeyer(cfg, rate_hz, lengths_s)`: attributes `amp2`, `weight` (samples of key-down weight), `prev_amp2` (NaN if none), `unknown`, `key` (all (K,)), `a_min`, `x_on` ((K,)), `x_off`, `rekey_weight` (samples); methods `step(P, sigma2) -> (key (K, n), p (K, n; 0 where squelched), before (K,), a (K,))`, `start_over(k)`, `finish_over_start(k, amp2, key_now)`.
+  - `keying.BankKeyer(cfg, rate_hz, lengths_s)`: attributes `amp2`, `weight` (samples: keyed samples while `unknown`, p-weight after), `prev_amp2` (NaN if none), `unknown`, `key` (all (K,)), `a_min`, `x_on` ((K,); `cfg.x_on_values` when given), `x_off`, `rekey_weight` (samples); method `ready_to_rekey() -> np.ndarray` (bool (K,)); methods `step(P, sigma2) -> (key (K, n), p (K, n; 0 where squelched), before (K,), a (K,))`, `start_over(k)`, `finish_over_start(k, amp2, key_now)`.
   - `keying.rekey(P, sigma2, amp2, cfg, a_min) -> np.ndarray` (bool key state over the stretch, from key up).
 
 - [ ] **Step 1: Write the failing tests**
@@ -2379,9 +2442,38 @@ def test_the_squelch_keeps_noise_out_without_an_amplitude():
     assert not key.any() and not p.any()
 
 
+def test_calibrated_thresholds_replace_the_nominal_ones():
+    keyer = BankKeyer(CFG.with_values(x_on_values=[5.0, 4.0]), RATE, np.array([14 / RATE, 276 / RATE]))
+    assert keyer.x_on.tolist() == [5.0, 4.0]
+    with pytest.raises(ValueError):
+        BankKeyer(CFG.with_values(x_on_values=[5.0]), RATE, np.array([14 / RATE, 276 / RATE]))
+
+
+def test_an_unknown_amplitude_counts_only_keyed_samples():
+    # Review I5: with a reset amplitude p = 0.44 on every sample, so a p-weight fills whatever the key does.
+    # Noise alone: (almost) nothing is keyed, so the re-key weight stays near 0 after 10 s.
+    n = int(10 * RATE)
+    P = (np.abs(boxcar(noise(n, 1.0, 12), 60)) ** 2)[None, :]
+    keyer = BankKeyer(CFG, RATE, np.array([60 / RATE]))
+    keyer.step(P, np.array([0.5 / 60]))
+    assert keyer.weight[0] < 0.05 * RATE and not keyer.ready_to_rekey()[0]
+    # A keyed 1 FS carrier: the weight is the keyed time and the amplitude is seeded from the keyed samples
+    # (T and S's dah and dits give flat tops on more than 10% of the keyed samples through a 40 ms boxcar).
+    iv = keying_intervals("TEST TEST", 25.0)
+    n = int(4 * RATE)
+    u = rectangles(iv, n, 0.5) + noise(n, 1e-3, 13)
+    P = (np.abs(boxcar(u, 60)) ** 2)[None, :]
+    keyer = BankKeyer(CFG, RATE, np.array([60 / RATE]))
+    key, _, _, _ = keyer.step(P, np.array([0.5 * 1e-3 / 60]))
+    assert keyer.weight[0] == pytest.approx(key.sum())
+    assert keyer.amp2[0] == pytest.approx(1.0, rel=0.1)  # the 0.9 quantile sits on the marks' flat tops
+    assert keyer.ready_to_rekey()[0] == (key.sum() >= 0.4 * RATE)
+
+
 def test_unknown_amplitude_test_keys_noise_rarely():
-    # Noise alone: about R_fa = 0.01 key-downs per second by the independent-sample argument (2 in 200 s);
-    # Rice's upcrossing rate for a smooth Rayleigh envelope is a few times higher at x = 4.3 (derived, rough).
+    # Noise alone with the nominal threshold: the independent-sample argument says R_fa = 0.01 /s (2 in 200 s), but
+    # the envelope's upcrossings make it 7-10x more (review: 0.070 /s at 9.3 ms, 9-18 here over seeds). E9
+    # calibrates x_on by measurement; this test only bounds the nominal rate and records it.
     n = int(200 * RATE)
     P = (np.abs(boxcar(noise(n, 1.0, 3), 14)) ** 2)[None, :]
     keyer = BankKeyer(CFG, RATE, np.array([14 / RATE]))
@@ -2420,9 +2512,11 @@ def test_start_over_keeps_the_established_amplitude_as_fallback():
     keyer = BankKeyer(CFG, RATE, np.array([14 / RATE, 60 / RATE]))
     keyer.unknown[:] = False
     keyer.amp2[:] = [2.0, 3.0]
+    keyer.weight[:] = 100.0
     keyer.start_over(1)
     assert keyer.unknown.tolist() == [False, True]
-    assert keyer.amp2[1] == 0.0 and keyer.prev_amp2[1] == 3.0 and math.isnan(keyer.prev_amp2[0])
+    assert keyer.amp2[1] == 0.0 and keyer.weight[1] == 0.0 and keyer.prev_amp2[1] == 3.0
+    assert math.isnan(keyer.prev_amp2[0])
     keyer.finish_over_start(1, 2.5, True)
     assert not keyer.unknown[1] and keyer.amp2[1] == 2.5 and keyer.key[1]
 ```
@@ -2490,15 +2584,23 @@ class BankKeyer:
         # grows as sqrt(L_k) and a_min as L_k^(1/4) (milestone 2's principle with each branch's own sigma_v).
         self.a_min = cfg.squelch_a * (lengths_s / cfg.squelch_ref_s) ** cfg.squelch_exponent
         # Unknown amplitude: about 1/L_k independent envelope samples per second in noise alone, each above x
-        # with probability exp(-x^2/2) (Rayleigh): x_on,k = sqrt(-2 ln(R_fa L_k)) (derived, approximately).
-        self.x_on = np.sqrt(-2.0 * np.log(np.minimum(0.5, cfg.false_marks_per_s * lengths_s)))
+        # with probability exp(-x^2/2) (Rayleigh): x_on,k = sqrt(-2 ln(R_fa L_k)), nominally.
+        # (heuristic: the envelope's upcrossings make it 7-10x more; E9 calibrates x_on_values by measurement)
+        if cfg.x_on_values:
+            if len(cfg.x_on_values) != len(lengths_s):
+                raise ValueError("x_on_values needs one threshold per branch")
+            self.x_on = np.asarray(cfg.x_on_values, float)
+        else:
+            self.x_on = np.sqrt(-2.0 * np.log(np.minimum(0.5, cfg.false_marks_per_s * lengths_s)))
         self.x_off = math.sqrt(-2.0 * math.log(cfg.release_probability))
-        self.rekey_weight = cfg.rekey_after_s * rate_hz  # samples of key-down weight
+        self.rekey_weight = cfg.rekey_after_s * rate_hz  # samples of keyed time (W_min)
         k = len(lengths_s)
         self.amp2 = np.zeros(k)          # s_k^2, FS^2
-        self.weight = np.zeros(k)        # key-down weight behind it, samples
+        self.weight = np.zeros(k)        # behind it, samples: keyed samples while unknown, p-weight after
         self.prev_amp2 = np.full(k, np.nan)
         self.unknown = np.ones(k, bool)  # the stream's start is an over's start
+        self.keyed: list[list[np.ndarray]] = [[] for _ in range(k)]  # |v|^2 of keyed samples while unknown
+        self.keyed_cap = max(1, int(round(4 * self.rekey_weight)))    # at most this many kept, samples
         self.key = np.zeros(k, bool)
 
     def step(self, P, sigma2):
@@ -2517,19 +2619,32 @@ class BankKeyer:
         before = self.key.copy()
         key = hysteresis(down, up, before)
         self.key = key[:, -1].copy() if key.shape[1] else before
-        self._update_amplitude(P, p, sigma2)
+        self._update_amplitude(P, p, sigma2, key)
         return key, p * signal, before, a
 
-    def _update_amplitude(self, P, p, sigma2) -> None:
+    def _update_amplitude(self, P, p, sigma2, key) -> None:
         """Online EM for the Rician component (milestone 2): mean square 2 sigma^2 + s^2, p-weighted, one step
-        per block: the block's weighted mean pulls s^2 by 1 - (1 - alpha)^(sum p), or by sum p / W early on."""
-        wp = p.sum(axis=1)
+        per block: the block's weighted mean pulls s^2 by 1 - (1 - alpha)^(sum p), or by sum p / W early on.
+        While a branch's amplitude is unknown (review I5) only its keyed samples count: W is their number, so
+        W_min is keyed time, and s^2 is seeded as their 0.9 quantile of |v|^2 minus 2 sigma^2 (milestone 2 seeds
+        from the 0.9 quantile too; a mean would be pulled down by the boxcar's ramps, which the test keys)."""
+        known = ~self.unknown
+        wp = np.where(known, p.sum(axis=1), 0.0)
         has = wp > 0
         mean_p = (p * P).sum(axis=1) / np.maximum(wp, 1e-300)
         self.weight += wp
         step = np.minimum(1.0, np.maximum(1.0 - (1.0 - self.alpha) ** wp, wp / np.maximum(self.weight, 1e-300)))
         target = mean_p - 2.0 * sigma2
         self.amp2 = np.where(has, np.maximum(0.0, self.amp2 + step * (target - self.amp2)), self.amp2)
+        for k in np.nonzero(self.unknown & key.any(axis=1))[0]:
+            self.keyed[k].append(P[k][key[k]])
+            samples = np.concatenate(self.keyed[k])[-self.keyed_cap:]
+            self.keyed[k] = [samples]
+            self.weight[k] += float(key[k].sum())
+            self.amp2[k] = max(0.0, float(np.quantile(samples, 0.9)) - 2.0 * sigma2[k])
+
+    def ready_to_rekey(self) -> np.ndarray:
+        return self.unknown & (self.weight >= self.rekey_weight)
 
     def start_over(self, k: int) -> None:
         """A possible new over (spec 4.7): a fresh amplitude and the unknown-amplitude test; an established
@@ -2538,11 +2653,13 @@ class BankKeyer:
             self.prev_amp2[k] = self.amp2[k]
         self.amp2[k] = 0.0
         self.weight[k] = 0.0
+        self.keyed[k] = []
         self.unknown[k] = True
 
     def finish_over_start(self, k: int, amp2: float, key_now: bool) -> None:
-        """After the re-keying: the winning amplitude, the full LLR from now on."""
+        """After the re-keying: the winning amplitude, the full LLR (and the p-weighted EM) from now on."""
         self.amp2[k] = amp2
+        self.keyed[k] = []
         self.unknown[k] = False
         self.key[k] = key_now
 
@@ -3091,7 +3208,7 @@ git commit -m "Add Morse character decoding and the text log-probability model"
 
 ### Task 9: Periodicity estimator
 
-T_P from branch 1's keying probability (spec §4.4) with **both** methods and parallel windows (Design decisions, "Periodicity estimator"). The comb is the spec's comb applied to the dit-plus-space period Π = 2T, because the literal comb peaks at 2T (checked while planning) — **Step 0 tells the owner before this task's code is written.**
+T_P from branch 1's keying probability (spec §4.4) with **three** arms and parallel windows (Design decisions, "Periodicity estimator"): the comb on mean-removed p applied to the dit-plus-space period Π = 2T, then halved (the default; owner, 2026-09-30), its teeth ±15% of T (±0.075 Π) wide; the sign-weighted edge comb on e[n] = p[n] − p[n−1]; and the spectrum-shape fit.
 
 **Files:**
 - Create: `training/kz4ap_proto/periodicity.py`
@@ -3102,12 +3219,9 @@ T_P from branch 1's keying probability (spec §4.4) with **both** methods and pa
 - Produces:
   - `periodicity.t_grid(cfg) -> np.ndarray` (1% steps, 12–240 ms)
   - `periodicity.comb_estimate(p, rate_hz, t_grid, teeth, width) -> (T s | None, score)`
-  - `periodicity.spectrum_estimate(p, rate_hz, t_grid, nulls, width) -> (T s | None, score nats)`
+  - `periodicity.edge_comb_estimate(p, rate_hz, t_grid, teeth, width) -> (T s | None, score)` (width: fraction of T)
+  - `periodicity.spectrum_estimate(p, rate_hz, t_grid, nulls, width) -> (T s | None, score nats)` (width: null band × T)
   - `periodicity.Periodicity(cfg, rate_hz)`: `push(p)` (p at the channel rate r), `update(force=False) -> (T_P s | None, confidence, window s | None, updated: bool)`; attribute `per_window: list[tuple[float | None, float]]` (the last update's (T, score) per window, shortest first; None where the window was not yet full).
-
-- [ ] **Step 0: Tell the owner about the comb**
-
-Before writing code, report to the owner (one paragraph, from Design decisions, "Periodicity estimator"): spec §4.4's comb with teeth at T, 2T, 3T, 4T peaks at 2T on every keying style tried while planning; this plan applies it to Π = 2T and halves the result; E1 compares it with the spectrum method. Continue unless the owner says otherwise; record the owner's answer in the results document (Task 13).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3123,7 +3237,7 @@ from kz4ap_synth.keying import timed_intervals
 from kz4ap_synth.messages import random_text
 
 RATE = 1500.0
-OPEN = dict(comb_confidence_min=0.0, spectrum_confidence_min=0.0)  # every estimate counts as confident
+OPEN = dict(comb_confidence_min=0.0, edge_confidence_min=0.0, spectrum_confidence_min=0.0)  # all confident
 
 
 def keyed_p(intervals, duration_s):
@@ -3142,14 +3256,17 @@ def ten_seconds(wpm, style="machine", farnsworth=None):
     return keyed_p(iv, iv[-1][1] + 1.0)[int(RATE):int(11 * RATE)]
 
 
-@pytest.mark.parametrize("method", ["comb", "spectrum"])
+@pytest.mark.parametrize("method", ["comb", "edge", "spectrum"])
 @pytest.mark.parametrize("wpm,style,farnsworth", [(5.0, "machine", None), (12.0, "machine", None),
                                                   (25.0, "machine", None), (40.0, "machine", None),
                                                   (100.0, "machine", None), (25.0, "paddle", None),
                                                   (18.0, "machine", 10.0)])
 def test_periodicity_finds_the_dit(method, wpm, style, farnsworth):
+    if method == "edge" and (wpm == 5.0 or farnsworth):
+        pytest.skip("the edge comb is checked only where the review found it working (E1 measures the rest)")
     # Checked while planning (10 s windows): comb within 0.3% (paddle 0.7%, Farnsworth 0.7%), spectrum
-    # within 1.1% (Farnsworth 1.7%); expected value T = 1.2 s / WPM (derived).
+    # within 1.1% (Farnsworth 1.7%); the review found the comb within 5% with teeth +/-0.075 Pi wide as well.
+    # Expected value T = 1.2 s / WPM (derived).
     per = Periodicity(ProtoConfig(periodicity_method=method, periodicity_windows_s=(10.0,), **OPEN), RATE)
     per.push(ten_seconds(wpm, style, farnsworth))
     t, _, window, updated = per.update(force=True)
@@ -3215,23 +3332,28 @@ def t_grid(cfg) -> np.ndarray:
     return t_min * 1.01 ** np.arange(int(math.ceil(math.log(t_max / t_min) / math.log(1.01))) + 1)
 
 
+def _normalized_acf(x):
+    n = len(x)
+    size = 1 << int(math.ceil(math.log2(2 * n)))
+    spec = np.fft.rfft(x, size)
+    return np.fft.irfft(spec * np.conj(spec), size)[:n] / float(x @ x)
+
+
 def comb_estimate(p, rate_hz: float, grid, teeth: int, width: float):
-    """(T, score). Spec 4.4's comb applied to the period Pi of a dit and its element space: teeth at k Pi
-    (k = 1..teeth), negative teeth halfway between, each the mean of the normalized autocorrelation within
-    +/- width Pi of its lag; score = mean over teeth of tooth - (left + right)/2. The autocorrelation of
-    keying on a T lattice is piecewise linear between lattice points, so a tooth's contrast at kT is -1/4
-    of the lattice autocorrelation's second difference; Morse alternates dits with element spaces, which
-    makes it convex at odd and concave at even multiples of T: the comb with teeth at kT peaks at 2T
-    (derived; checked while planning), so the comb runs on Pi = 2T and T = Pi / 2. Candidates whose last
-    tooth lies beyond half the window are skipped (heuristic). (None, 0) when p does not vary."""
+    """(T, score). The comb of spec 4.4 (as corrected 2026-09-30) on mean-removed p, applied to the period Pi of a
+    dit and its element space: teeth at k Pi (k = 1..teeth: 2T ... 8T), negative teeth halfway between, each the
+    mean of the normalized autocorrelation within +/- width Pi of its lag (0.075 Pi = 15% of T); score = mean over
+    teeth of tooth - (left + right)/2. Consecutive keying edges T apart have opposite signs, so p's structure
+    repeats at 2T: its autocorrelation is low at odd and high at even multiples of T, and a comb with teeth at kT
+    peaks at 2T (derived; checked while planning and in review); so the comb runs on Pi = 2T and T = Pi / 2.
+    Lags reach (teeth + 1/2 + width) Pi, about 9.2 T; candidates whose reach passes half the window are skipped
+    (heuristic). (None, 0) when p does not vary."""
     x = np.asarray(p, float) - float(np.mean(p))
     n = len(x)
     c0 = float(x @ x)
     if n < 16 or c0 <= 1e-12 * n:
         return None, 0.0
-    size = 1 << int(math.ceil(math.log2(2 * n)))
-    spec = np.fft.rfft(x, size)
-    acf = np.fft.irfft(spec * np.conj(spec), size)[:n] / c0
+    acf = _normalized_acf(x)
     cs = np.concatenate(([0.0], np.cumsum(acf)))
     period = 2.0 * np.asarray(grid) * rate_hz  # Pi in samples
     half = width * period[:, None]
@@ -3244,6 +3366,32 @@ def comb_estimate(p, rate_hz: float, grid, teeth: int, width: float):
 
     contrast = band(k * period[:, None]) - 0.5 * (band((k - 0.5) * period[:, None]) + band((k + 0.5) * period[:, None]))
     score = np.where((teeth + 0.5 + width) * period <= (n - 1) / 2, contrast.mean(axis=1), -np.inf)
+    i = int(np.argmax(score))
+    return (float(grid[i]), float(score[i])) if np.isfinite(score[i]) else (None, 0.0)
+
+
+def edge_comb_estimate(p, rate_hz: float, grid, teeth: int, width: float):
+    """(T, score). The sign-weighted edge comb (E1's third arm): on the signed edges e[n] = p[n] - p[n-1], teeth at
+    k T (k = 1..teeth) weighted (-1)^k, because key-down and key-up edges alternate, so edges an odd number of dits
+    apart tend to have opposite signs and an even number the same sign; each tooth is the mean of e's normalized
+    autocorrelation within +/- width T of its lag; score = mean of the weighted teeth. Review: best on hand and
+    bug keying at S500 >= 10 dB, but it fails slow keying at 3 dB (differencing whitens the noise). (None, 0)
+    when e does not vary."""
+    x = np.diff(np.asarray(p, float), prepend=float(p[0]) if len(p) else 0.0)
+    n = len(x)
+    if n < 16 or float(x @ x) <= 1e-12 * n:
+        return None, 0.0
+    acf = _normalized_acf(x)
+    cs = np.concatenate(([0.0], np.cumsum(acf)))
+    t = np.asarray(grid) * rate_hz  # T in samples
+    half = width * t[:, None]
+    k = np.arange(1, teeth + 1)[None, :]
+    center = k * t[:, None]
+    lo = np.clip(np.floor(center - half), 0, n - 1).astype(int)
+    hi = np.clip(np.ceil(center + half), 0, n - 1).astype(int)
+    teeth_mean = (cs[hi + 1] - cs[lo]) / (hi - lo + 1)
+    score = np.where((teeth + width) * t <= (n - 1) / 2, np.mean(np.where(k % 2 == 0, 1.0, -1.0) * teeth_mean, axis=1),
+                     -np.inf)
     i = int(np.argmax(score))
     return (float(grid[i]), float(score[i])) if np.isfinite(score[i]) else (None, 0.0)
 
@@ -3294,9 +3442,14 @@ class Periodicity:
         if cfg.periodicity_method == "comb":
             self.threshold = cfg.comb_confidence_min
             self._estimate = lambda x: comb_estimate(x, self.rate, self.grid, cfg.comb_teeth, cfg.comb_width)
+        elif cfg.periodicity_method == "edge":
+            self.threshold = cfg.edge_confidence_min
+            # the edge comb's teeth are the comb's width in T: 2 x comb_width (a fraction of Pi = 2T)
+            self._estimate = lambda x: edge_comb_estimate(x, self.rate, self.grid, cfg.comb_teeth, 2.0 * cfg.comb_width)
         elif cfg.periodicity_method == "spectrum":
             self.threshold = cfg.spectrum_confidence_min
-            self._estimate = lambda x: spectrum_estimate(x, self.rate, self.grid, cfg.spectrum_nulls, cfg.comb_width)
+            self._estimate = lambda x: spectrum_estimate(x, self.rate, self.grid, cfg.spectrum_nulls,
+                                                         cfg.spectrum_null_width)
         else:
             raise ValueError(f"unknown periodicity method {cfg.periodicity_method!r}")
         self.buffer = np.zeros(0)
@@ -3337,7 +3490,7 @@ class Periodicity:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `.venv\Scripts\python -m pytest training/tests/test_proto_periodicity.py -q`
-Expected: all pass. The planning check used a centered 7-sample smoother at 750 samples/s; this module averages a causal 14-sample boxcar down to 750 samples/s, so the numbers may differ slightly. If a case fails, report the estimate and score for it (the method's limits are E1's subject); do not widen 5%.
+Expected: all pass. The planning check used a centered 7-sample smoother at 750 samples/s; this module averages a causal 14-sample boxcar down to 750 samples/s, so the numbers may differ slightly. The edge comb was never run on these exact cases: if an edge case fails, mark it `xfail(strict=True)` with the measured estimate (its limits are E1's subject). If a comb or spectrum case fails, report the estimate and score; do not widen 5%.
 
 - [ ] **Step 5: Commit**
 
@@ -3345,13 +3498,13 @@ Expected: all pass. The planning check used a centered 7-sample smoother at 750 
 git add training/kz4ap_proto/periodicity.py training/tests/test_proto_periodicity.py
 ```
 ```powershell
-git commit -m "Add the periodicity estimator: comb on the dit-plus-space period, and spectrum nulls"
+git commit -m "Add the periodicity estimator: comb on the dit-plus-space period, edge comb, spectrum nulls"
 ```
 
 ---
 ### Task 10: Branch selection
 
-Spec §4.6 as a small state machine (Design decisions, "Branch selection, corrections"): eligibility by the fitted dit against the branch's own length; the best Q among eligible branches; ties by text log-probability, then the longer branch; fallbacks when none is eligible; a switch only after M selection instants in a row; and the time each branch's current eligible run began (for the correction's start).
+Spec §4.6 as a small state machine (Design decisions, "Branch selection, corrections"): eligibility by the fitted dit against the branch's own length; the best Q among eligible branches; ties by text log-probability, then the longer branch; fallbacks when none is eligible; a switch only after the same branch has been the best **eligible** one for M selection instants in a row (fallback picks are counted separately and never complete an eligible run); and the time each branch's current eligible run began (for the correction's start).
 
 **Files:**
 - Create: `training/kz4ap_proto/select.py`
@@ -3361,7 +3514,7 @@ Spec §4.6 as a small state machine (Design decisions, "Branch selection, correc
 - Consumes: `fit.Fit`, `bank.realized_lengths_s`, `ProtoConfig`.
 - Produces:
   - `select.BranchView(index: int, length_s: float, fit: Fit | None, text_logprob: float | None)` (frozen; index 0-based, ladder order)
-  - `select.Selector(cfg, lengths_s)`: `eligible(view) -> bool`, `best(views, prior_t_s: float | None) -> int`, `update(views, instants: int, t_now: float, prior_t_s: float | None) -> int`; attributes `current: int`, `eligible_since: list[float | None]`.
+  - `select.Selector(cfg, lengths_s)`: `eligible(view) -> bool`, `best(views, prior_t_s: float | None) -> tuple[int, bool]` (the branch, and whether it was chosen among eligible branches), `update(views, instants: int, t_now: float, prior_t_s: float | None) -> int`; attributes `current: int`, `eligible_since: list[float | None]`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3403,23 +3556,23 @@ def test_a_branch_is_eligible_when_its_fitted_dit_matches_its_length():
 
 def test_the_best_eligible_quality_wins():
     v = views({14: fit_for(14, -1.0), 15: fit_for(15, -0.5), 20: fit_for(20, 0.0, scale=1.5)})
-    assert Selector(CFG, L).best(v, None) == 15  # branch 20 fits better but is not eligible
+    assert Selector(CFG, L).best(v, None) == (15, True)  # branch 20 fits better but is not eligible
 
 
 def test_quality_ties_go_to_the_likelier_text_then_to_the_longer_branch():
     sel = Selector(CFG, L)
     fits = {14: fit_for(14, -0.50), 15: fit_for(15, -0.52)}  # within 0.05 nats per element: a tie
-    assert sel.best(views(fits, {14: -2.0, 15: -3.5}), None) == 14
-    assert sel.best(views(fits, {14: -2.0, 15: -2.05}), None) == 15  # texts tie too: the longer branch
-    assert sel.best(views(fits), None) == 15                          # no text: the longer branch
+    assert sel.best(views(fits, {14: -2.0, 15: -3.5}), None) == (14, True)
+    assert sel.best(views(fits, {14: -2.0, 15: -2.05}), None) == (15, True)  # texts tie too: the longer branch
+    assert sel.best(views(fits), None) == (15, True)                          # no text: the longer branch
 
 
 def test_without_an_eligible_branch_text_then_periodicity_then_the_shortest():
     sel = Selector(CFG, L)
-    assert sel.best(views(texts={3: -2.0, 20: -4.0}), None) == 3        # the text clearly separates
+    assert sel.best(views(texts={3: -2.0, 20: -4.0}), None) == (3, False)        # the text clearly separates
     nearest = int(np.argmin(np.abs(np.log(L / (0.8 * 0.048)))))
-    assert sel.best(views(texts={3: -2.0, 20: -2.5}), 0.048) == nearest  # no clear text: nearest 0.8 T_P
-    assert sel.best(views(), None) == 0
+    assert sel.best(views(texts={3: -2.0, 20: -2.5}), 0.048) == (nearest, False)  # no clear text: nearest 0.8 T_P
+    assert sel.best(views(), None) == (0, False)
 
 
 def test_a_switch_needs_m_instants_in_a_row():
@@ -3430,6 +3583,17 @@ def test_a_switch_needs_m_instants_in_a_row():
     assert sel.update(v16, 1, 4.0, None) == 0         # the run is broken
     assert sel.update(v16, 3, 5.0, None) == 16        # three more instants in one update: four in a row
     assert sel.eligible_since[16] == 4.0 and sel.eligible_since[15] is None
+
+
+def test_fallback_picks_do_not_complete_an_eligible_run():
+    # Spec 4.6: the best *eligible* branch for M instants in a row. Branch 16 as a fallback pick (text only)
+    # twice, then eligible twice: no switch yet with M = 4.
+    sel = Selector(CFG, L)
+    fallback16 = views(texts={16: -2.0, 20: -4.0})
+    eligible16 = views({16: fit_for(16, -0.5)})
+    assert [sel.update(fallback16, 1, t, None) for t in (1.0, 2.0)] == [0, 0]
+    assert [sel.update(eligible16, 1, t, None) for t in (3.0, 4.0)] == [0, 0]
+    assert sel.update(eligible16, 2, 5.0, None) == 16
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -3467,7 +3631,7 @@ class Selector:
         self.cfg = cfg
         self.lengths = np.asarray(lengths_s, float)
         self.current = 0
-        self.candidate: int | None = None
+        self.candidate: tuple[int, bool] | None = None  # (branch, chosen among eligible branches)
         self.count = 0
         self.eligible_since: list[float | None] = [None] * len(self.lengths)
 
@@ -3478,7 +3642,8 @@ class Selector:
         return (f is not None and f.weight >= self.cfg.min_fit_weight and f.t_s > 0
                 and abs(math.log(view.length_s / (self.cfg.length_dits * f.t_s))) <= self.cfg.eligibility_tolerance)
 
-    def best(self, views, prior_t_s: float | None) -> int:
+    def best(self, views, prior_t_s: float | None) -> tuple[int, bool]:
+        """(branch, chosen among eligible branches)."""
         cfg = self.cfg
         eligible = [v for v in views if self.eligible(v)]
         if eligible:
@@ -3487,32 +3652,33 @@ class Selector:
             texts = [v.text_logprob if v.text_logprob is not None else -math.inf for v in tied]
             if len(tied) > 1 and math.isfinite(max(texts)):
                 tied = [v for v, t in zip(tied, texts) if t >= max(texts) - cfg.text_tie_nats]
-            return max(v.index for v in tied)  # the longer branch (better SNR)
+            return max(v.index for v in tied), True  # the longer branch (better SNR)
         texts = sorted((v.text_logprob, v.index) for v in views if v.text_logprob is not None)
         if len(texts) >= 2 and texts[-1][0] - texts[-2][0] >= cfg.text_separation_nats:
-            return texts[-1][1]
+            return texts[-1][1], False
         if prior_t_s is not None:
-            return int(np.argmin(np.abs(np.log(self.lengths / (cfg.length_dits * prior_t_s)))))
-        return 0
+            return int(np.argmin(np.abs(np.log(self.lengths / (cfg.length_dits * prior_t_s))))), False
+        return 0, False
 
     def update(self, views, instants: int, t_now: float, prior_t_s: float | None) -> int:
         """One more selection (instants: how many selection instants it stands for). A switch needs the same
-        other branch best for switch_persistence instants in a row."""
+        other branch best for switch_persistence instants in a row, all as the best eligible branch or all as
+        the fallback pick (spec 4.6: "the best eligible one for M marks in a row")."""
         for v in views:
             if self.eligible(v):
                 if self.eligible_since[v.index] is None:
                     self.eligible_since[v.index] = t_now
             else:
                 self.eligible_since[v.index] = None
-        b = self.best(views, prior_t_s)
+        b, from_eligible = self.best(views, prior_t_s)
         if b == self.current:
             self.candidate, self.count = None, 0
-        elif b == self.candidate:
+        elif self.candidate == (b, from_eligible):
             self.count += instants
         else:
-            self.candidate, self.count = b, instants
+            self.candidate, self.count = (b, from_eligible), instants
         if self.candidate is not None and self.count >= self.cfg.switch_persistence:
-            self.current, self.candidate, self.count = self.candidate, None, 0
+            self.current, self.candidate, self.count = self.candidate[0], None, 0
         return self.current
 ```
 
@@ -3534,7 +3700,7 @@ git commit -m "Add branch selection: eligibility, quality, text tie-break, fallb
 
 ### Task 11: Channel decoder — branches, new overs, re-keying, corrections
 
-Everything per channel (spec §3–4): the bank's outputs, the noise estimate, the keyer, the periodicity estimate, 32 branches each timing its marks and spaces (group delay removed), feeding its fit and decoding its own text; new overs (silence > T_new) with fresh fits and amplitudes and the previous ones as fallback; re-keying of an over's start once W_min of key-down weight is in; selection at branch 1's key-ups; and the channel's output with corrections, at most 20 s back. The tests are the Review Focus cases on synthetic baseband streams.
+Everything per channel (spec §3–4): the bank's outputs, the noise estimate, the keyer, the periodicity estimate, 32 branches each timing its marks and spaces (group delay removed), feeding its fit and decoding its own text; new overs (silence > T_new) with fresh fits and amplitudes and the previous ones as fallback; re-keying of an over's start once W_min of keyed time is in (only keyed samples count while the amplitude is unknown); selection at branch 1's key-ups; and the channel's output with corrections, at most 20 s back. The tests are the Review Focus cases on synthetic baseband streams.
 
 **Files:**
 - Create: `training/kz4ap_proto/channel.py`
@@ -3796,7 +3962,6 @@ class Branch:
         self.over_start_n = 0
         self.over_obs: list[tuple[bool, float, float]] = []
         self.marks_in_over = 0
-        self.first_mark_weight: float | None = None  # the keyer's amplitude weight at this over's first mark
 
     def time(self, n: int) -> float:
         return n / self.rate - self.delay_s
@@ -3877,7 +4042,6 @@ class Branch:
         self.over_start_n = n_now
         self.over_obs = []
         self.marks_in_over = 0
-        self.first_mark_weight = None
         self.down_at = self.up_at = None
 
     def _observations(self, key, n0: int, var_t: float):
@@ -4017,15 +4181,13 @@ class ChannelDecoder:
             for k, br in enumerate(branches):
                 if changes[k]:
                     br.on_edges(changes[k], float(a[k]), prior)
-                    if br.marks_in_over and br.first_mark_weight is None:
-                        br.first_mark_weight = float(keyer.weight[k])
                 if br.new_over_due(t_now, bool(keyer.key[k])):
                     keyer.start_over(k)
                     br.start_over(n1)
                     if k == selector.current:
                         result.over_starts.append(t_now)
-                elif (keyer.unknown[k] and br.first_mark_weight is not None
-                      and keyer.weight[k] - br.first_mark_weight >= keyer.rekey_weight):
+                elif keyer.unknown[k] and br.marks_in_over and keyer.weight[k] >= keyer.rekey_weight:
+                    # W_min of keyed time since the over started (keyer: only keyed samples count while unknown)
                     s = max(br.over_start_n, n1 - reach)
                     candidates = [float(keyer.amp2[k])]
                     if math.isfinite(keyer.prev_amp2[k]):
@@ -4066,12 +4228,14 @@ class ChannelDecoder:
 Run: `.venv\Scripts\python -m pytest training/tests/test_proto_channel.py -q -s`
 Expected: all pass; note the printed "followed … s and … marks after the step" for the results document. These are the first tests of the whole chain, written before any of it ran: when one fails, debug it (superpowers:systematic-debugging) and fix code defects. If the cause is the design or a parameter (for example the step is followed only after 14 marks, or a Farnsworth word gap starts an over because the fit's T_g is too small after the first word), **report the measured numbers to the owner and leave the test failing with a `pytest.mark.xfail(reason=..., strict=True)` naming the finding**; do not change a threshold, a tolerance or a placeholder to make it pass (placeholders are set only by the experiments of Tasks 13–14).
 
-- [ ] **Step 5: Time one channel**
+- [ ] **Step 5: Time a keyed channel**
+
+Noise alone is not representative (the branches are squelched and the fit is almost never called), so time a keyed stream: 60 s of 25 WPM filler text at S₅₀₀ = 10 dB.
 
 ```powershell
-.venv\Scripts\python -c "import time, numpy as np; from kz4ap_proto.channel import ChannelDecoder; from kz4ap_proto.params import ProtoConfig; rng = np.random.default_rng(1); u = (rng.standard_normal(90000) + 1j * rng.standard_normal(90000)) * 0.1; t = time.process_time(); ChannelDecoder(ProtoConfig(), 1500.0).run(u); print(f'{(time.process_time() - t) / 60.0:.3f} s of CPU per channel-second')"
+.venv\Scripts\python -c "import time; import numpy as np; from kz4ap_proto.channel import ChannelDecoder; from kz4ap_proto.experiments import stream; from kz4ap_proto.params import ProtoConfig; from kz4ap_synth.messages import random_text; from kz4ap_synth.morse import keying_intervals; iv = [x for x in keying_intervals(random_text(np.random.default_rng(1), 80), 25.0) if x[1] < 59.0]; u = stream(iv, 0.5, 60.0, 10.0, 1); t = time.process_time(); ChannelDecoder(ProtoConfig(), 1500.0).run(u); print(f'{(time.process_time() - t) / 60.0:.3f} s of CPU per channel-second')"
 ```
-Record the number (60 s of noise). A full pass over the suite's oracle recordings is about 370 000 channel-seconds (340 465 measured for the oracle runs in milestone 2a, results §3.3, plus group I's 26 000) and the development set about 80 000, so a pass takes that number × the channel-seconds / (worker processes). If a development pass would exceed about 1 h on this machine with 16 workers, report it with a profile of the slowest functions (`.venv\Scripts\python -m cProfile -s cumtime …`) before Task 12; speed-ups that keep every result bit-identical (vectorizing, caching) are fine, changing a parameter for speed is not.
+(`experiments.stream` is written in Task 13; until then paste its body from Task 13 Step 3 into a scratch file in `build/` and import it from there.) Record the number; the review's estimate from timing the fit alone (1.49 ms per observation, about 10.6 observations per branch per second at 25 WPM) is 0.3–0.5 s of CPU per channel-second. A full pass over the suite's oracle recordings is about 370 000 channel-seconds (340 465 measured for the oracle runs in milestone 2a, results §3.3, plus group I's 26 000) and the development set about 80 000, so a pass takes that number × the channel-seconds / (worker processes). Update the plan's budget (Design decisions, "Compute budget": about 12–14 h of experiments on 14 workers, plus about 2 h for the final pass) with the measured number in the results document; if a development run would exceed about 1 h on 14 workers, report it with a profile of the slowest functions (`.venv\Scripts\python -m cProfile -s cumtime …`) before Task 12. Speed-ups that keep every result bit-identical (vectorizing, caching) are fine; changing a parameter for speed is not.
 
 - [ ] **Step 6: Commit**
 
@@ -4878,7 +5042,7 @@ Expected: all pass.
 .venv\Scripts\python -m kz4ap_proto.runner decode --out build/suite/full3 --name smoke-proto --only "^D-speed-s1$"
 .venv\Scripts\python -m kz4ap_proto.runner score --out build/suite/full3 --bench build/windows/bench/Release/kz4ap-bench.exe --name smoke-proto --only "^D-speed-s1$"
 ```
-Expected: `recorded …` for each of the 93 oracle scorings (90 oracle recordings, 30 per seed with group I's two, plus the three H-oracle recordings once more against their station labels); about 3–4 GB in `build/suite/full3/channels/` (370 000 channel-seconds × 12 kB/s); record the time taken. Then `decoded D-speed-s1` and one `smoke-proto D-speed-s1: CER …` line. Delete `build/suite/full3/results/smoke-proto` and `build/suite/full3/proto/smoke-proto` afterwards (they are not a result).
+Expected: `recorded …` for each of the 93 oracle scorings (90 oracle recordings, 30 per seed with group I's two, plus the three H-oracle recordings once more against their station labels); about 4.4 GB in `build/suite/full3/channels/` (370 000 channel-seconds × 12 kB/s; the three `.stations` scorings record the same WAVs again, at the station frequencies); record the time taken. Then `decoded D-speed-s1` and one `smoke-proto D-speed-s1: CER …` line. Delete `build/suite/full3/results/smoke-proto` and `build/suite/full3/proto/smoke-proto` afterwards (they are not a result).
 
 - [ ] **Step 9: Commit**
 
@@ -4894,6 +5058,8 @@ git commit -m "Add the prototype runner, its metrics and the report against Matc
 
 The experiment tooling, the results document, the development reference run, and the first four experiments (Design decisions, "Development set, held-out seeds and decision rules"). E1–E3 are evaluated **offline** on branch 1's stored posterior (`--keep-p1`): the periodicity estimate never feeds back into it, so every method, window set and comb setting is evaluated exactly from one decode. **Each experiment's procedure, metric and decision rule below are fixed before it runs; the outcome is whatever the rule gives, recorded with its numbers.** If no setting meets a rule's criterion, keep the placeholder, record "no setting met the criterion", and report to the owner.
 
+**How runs are executed (compute budget: Design decisions).** Every `experiments run`, `experiments batch` and `experiments calibrate-x-on` below is started as a **background process** (`run_in_background`), with its output redirected to `build/suite/full3/experiments/logs/<name>.log`. The executing agent starts it, **does not poll**, is notified when it ends, and then reads only the summary file the run writes (`build/suite/full3/experiments/summary-<name>.md`) and the compare files it names. Several variants of one experiment go into one `batch` (a JSON file under `build/suite/full3/experiments/`), which runs them one after another, compares each with the base, and writes one summary.
+
 **Files:**
 - Create: `training/kz4ap_proto/experiments.py`, `training/tests/test_proto_experiments.py`
 - Create: `docs/plans/2026-09-30-milestone-2b-stage-1-results.md`
@@ -4901,7 +5067,7 @@ The experiment tooling, the results document, the development reference run, and
 
 **Interfaces:**
 - Consumes: `runner.decode`, `runner.score`, `runner.parse_values`; `metrics.*`; `suites.load_results`, `aggregate`, `_interval`, `_rng_for`, `BOOTSTRAP_RESAMPLES`; `channel.ChannelDecoder`; `bank.realized_lengths_s`; `generate.keying_envelope`; `keying.timed_intervals`.
-- Produces: `experiments.DEV` (regular expression: the development set), `experiments.EXPERIMENT_RESULTS` (`experiments/results` under the suite), `experiments.run(out_dir, bench, name, values, keep_p1=False, jobs=None, only=DEV)`, `experiments.pooled_paired(rows, a, b, edits="edits", symbols="symbols") -> dict` (by group and `"all"`: `signals`, `mean`, `interval`), `experiments.compare(out_dir, base, variant) -> Path`, `experiments.periodicity_table(out_dir, name, values, subsets, target=0.95, jobs=None) -> Path`, `experiments.stream(intervals, start_s, duration_s, s500_db, seed, rate_hz=1500.0)`, `experiments.follow_marks(cfg, seeds) -> list[int | None]`; CLI `run | compare | periodicity | follow`.
+- Produces: `experiments.DEV` (regular expression: the development set), `experiments.DEV_E5` (E5's subset), `experiments.EXPERIMENT_RESULTS` (`experiments/results` under the suite), `experiments.run(out_dir, bench, name, values, keep_p1=False, jobs=None, only=DEV) -> Path` (writes `experiments/summary-<name>.md`), `experiments.batch(out_dir, bench, spec_path, jobs=None) -> Path`, `experiments.lowpass(rate_hz=1500.0)`, `experiments.calibrate_x_on(cfg, rate_hz=1500.0, events=20, seed=1, chunk_s=2000.0) -> list[float]`, `experiments.pooled_paired(rows, a, b, edits="edits", symbols="symbols") -> dict` (by group and `"all"`: `signals`, `mean`, `interval`), `experiments.compare(out_dir, base, variant) -> Path`, `experiments.periodicity_table(out_dir, name, values, subsets, target=0.95, jobs=None) -> Path`, `experiments.stream(intervals, start_s, duration_s, s500_db, seed, rate_hz=1500.0)`, `experiments.follow_marks(cfg, seeds) -> list[int | None]`; CLI `run | batch | compare | periodicity | follow | calibrate-x-on`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4938,6 +5104,27 @@ def test_pooled_paired_differences_by_group_and_overall():
     assert d["D speed"]["interval"] is None  # one signal: no interval
 
 
+def test_calibrated_thresholds_make_noise_key_at_the_target_rate():
+    # Calibrated at 0.5 key-downs per second (fast to measure); fresh channel-shaped noise must then key branch 1
+    # near that rate: 100 expected in 200 s (Poisson spread about 10).
+    import numpy as np
+    from kz4ap_proto.bank import boxcar
+    from kz4ap_proto.keying import BankKeyer, edges
+    cfg = ProtoConfig(false_marks_per_s=0.5)
+    x_on = experiments.calibrate_x_on(cfg, events=200)
+    assert len(x_on) == 32 and all(1.55 < x < 7.0 for x in x_on)
+    rng = np.random.default_rng(99)
+    n = int(200 * 1500)
+    h = experiments.lowpass()
+    u = np.convolve((rng.standard_normal(n) + 1j * rng.standard_normal(n)) / np.sqrt(2), h, mode="same")
+    sigma2 = 0.5 * np.sum(np.convolve(h, np.ones(14) / 14) ** 2)
+    keyer = BankKeyer(cfg.with_values(x_on_values=x_on), 1500.0, np.array([14 / 1500] + [0.1] * 31))
+    P = np.abs(boxcar(u, 14)) ** 2
+    key, _, _, _ = keyer.step(np.vstack([P] * 32)[:, :], np.full(32, sigma2))
+    downs = sum(1 for _, down in edges(key[:1], np.zeros(1, bool), 0)[0] if down)
+    assert 60 <= downs <= 150
+
+
 def test_follow_marks_counts_marks_until_a_matched_branch_is_selected():
     counts = experiments.follow_marks(ProtoConfig(), [1])
     assert len(counts) == 1 and (counts[0] is None or 0 <= counts[0] <= 40)
@@ -4961,12 +5148,17 @@ evaluated offline on stored branch-1 posteriors; and the synthetic speed-step fo
     python -m kz4ap_proto.experiments compare --out build/suite/full3 --base exp-ref --variant exp-E10-branch
     python -m kz4ap_proto.experiments periodicity --out build/suite/full3 --name exp-ref [--set KEY=VALUE ...] --subsets "2,5,10;1,2,5,10"
     python -m kz4ap_proto.experiments follow [--set KEY=VALUE ...] [--seeds 10]
+    python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench PATH --spec build/suite/full3/experiments/E4.json
+    python -m kz4ap_proto.experiments calibrate-x-on [--set KEY=VALUE ...] [--events 20]
+Start run, batch and calibrate-x-on in the background; each writes experiments/summary-<name>.md when done.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import math
+import time
 from pathlib import Path
 
 import numpy as np
@@ -4976,7 +5168,7 @@ from kz4ap_synth.keying import timed_intervals
 from kz4ap_synth.suites import BOOTSTRAP_RESAMPLES, _interval, _rng_for, _with_interval, aggregate, load_results
 
 from . import metrics, runner
-from .bank import realized_lengths_s
+from .bank import boxcar, branch_lengths_s, branch_samples, realized_lengths_s
 from .channel import ChannelDecoder
 from .params import ProtoConfig
 
@@ -4984,12 +5176,98 @@ from .params import ProtoConfig
 # mixed-style recording stays in.
 DEV = (r"^(A-awgn-.*|B-fading-mix|C-fists-.*|D-speed|E-qrm|F-offset|F-drift|G-ragchew|H-qso-oracle|"
        r"I-farnsworth-.*)-s1(\.stations)?$")
+# E5's finest grids cost about 15x a run: they use this subset (about 20% of DEV), base included.
+DEV_E5 = r"^(A-awgn-25wpm-.*|C-fists-.*|D-speed|I-farnsworth-.*)-s1$"
+SUBSETS = {"dev": DEV, "e5": DEV_E5}
 EXPERIMENT_RESULTS = Path("experiments") / "results"
 
 
-def run(out_dir, bench, name: str, values: dict, keep_p1: bool = False, jobs=None, only: str = DEV) -> None:
+def run(out_dir, bench, name: str, values: dict, keep_p1: bool = False, jobs=None, only: str = DEV) -> Path:
+    """Decodes and scores the subset, then writes experiments/summary-<name>.md: the settings, the signals
+    scored, the pooled CER, the wall time and the decoding CPU (the only file the agent reads afterwards)."""
+    out_dir = Path(out_dir)
+    started = time.monotonic()
     runner.decode(out_dir, name, values, only, jobs, keep_p1)
-    runner.score(out_dir, bench, name, only, results_root=Path(out_dir) / EXPERIMENT_RESULTS)
+    runner.score(out_dir, bench, name, only, results_root=out_dir / EXPERIMENT_RESULTS)
+    rows, _ = load_results(out_dir, [out_dir / EXPERIMENT_RESULTS], [name])
+    scored = [r for r in rows if r["scored"]]
+    edits, symbols = sum(r["edits"] for r in scored), sum(r["symbols"] for r in scored)
+    path = out_dir / "experiments" / f"summary-{name}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"# {name}\n\nSettings: {json.dumps(values)}; subset: `{only}`.\n\n"
+                    f"Signals scored: {len(scored)}; pooled CER {edits / symbols if symbols else float('nan'):.4f}.\n"
+                    f"Wall time {(time.monotonic() - started) / 60.0:.1f} min; decoding CPU "
+                    f"{1000 * metrics.cpu_per_channel_second(out_dir, name, only):.1f} ms per channel-second.\n",
+                    encoding="utf-8")
+    return path
+
+
+def batch(out_dir, bench, spec_path, jobs=None) -> Path:
+    """Runs the variants a JSON file lists, one after another, and compares each with the base:
+    {"name": NAME, "base": BASE, "subset": "dev" | "e5", "runs": [{"name": ..., "set": {...}}, ...],
+    "follow": [{"set": {...}}, ...]} ("follow": optional speed-step follow tests, 10 seeds each). Writes
+    experiments/summary-<NAME>.md listing each run's pooled CER, its paired CER against the base and the files."""
+    out_dir = Path(out_dir)
+    spec = json.loads(Path(spec_path).read_text())
+    only = SUBSETS[spec.get("subset", "dev")]
+    lines = [f"# Batch {spec['name']} (base {spec['base']}, subset {spec.get('subset', 'dev')})", ""]
+    for item in spec["runs"]:
+        summary = run(out_dir, bench, item["name"], item.get("set", {}), jobs=jobs, only=only)
+        report = compare(out_dir, spec["base"], item["name"]) if item["name"] != spec["base"] else None
+        rows, _ = load_results(out_dir, [out_dir / EXPERIMENT_RESULTS], [spec["base"], item["name"]])
+        pooled = pooled_paired(rows, spec["base"], item["name"]).get("all", {})
+        lines.append(f"- {item['name']} {json.dumps(item.get('set', {}))}: paired CER against the base "
+                     f"{_with_interval(pooled.get('mean'), pooled.get('interval'), '+.4f')}; {summary.name}"
+                     + (f"; {report.name}" if report else ""))
+    for item in spec.get("follow", []):
+        counts = follow_marks(ProtoConfig().with_values(**item.get("set", {})), range(1, 11))
+        found = [c for c in counts if c is not None]
+        lines.append(f"- follow {json.dumps(item.get('set', {}))}: marks per seed {counts}; median "
+                     f"{np.median(found) if found else None}; never followed in {counts.count(None)} of 10")
+    path = out_dir / "experiments" / f"summary-{spec['name']}.md"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def lowpass(rate_hz: float = 1500.0) -> np.ndarray:
+    """A 129-tap Blackman-windowed sinc, -6 dB relative to the passband at +/-150 Hz, unity gain at 0 Hz: the
+    channel filter's shape (as Task 5's tests)."""
+    k = np.arange(129) - 64
+    h = np.sinc(2 * 150.0 / rate_hz * k) * np.blackman(129)
+    return h / h.sum()
+
+
+def calibrate_x_on(cfg, rate_hz: float = 1500.0, events: int = 20, seed: int = 1, chunk_s: float = 2000.0) -> list:
+    """Per branch, the x_on at which channel-shaped noise alone keys the unknown-amplitude test down
+    cfg.false_marks_per_s times per second (review I4: the nominal formula keys 7-10x more). Each excursion of x
+    above x_off gives exactly one key-down if its maximum exceeds x_on (release needs x < x_off, which ends the
+    excursion), so x_on is the (R_fa x duration)-th largest excursion maximum: exact for the simulated noise. The
+    noise lasts events / R_fa seconds (about `events` key-downs); sigma_v,k^2 is exact (derived from the filters)."""
+    lengths = branch_samples(branch_lengths_s(cfg), rate_hz)
+    h = lowpass(rate_hz)
+    x_off = math.sqrt(-2.0 * math.log(cfg.release_probability))
+    total_s = events / cfg.false_marks_per_s
+    skip = len(h) + int(lengths[-1])
+    rng = np.random.default_rng(seed)
+    maxima: list = [[] for _ in lengths]
+    used_s = 0.0
+    while used_s < total_s:
+        n = int(min(chunk_s, total_s - used_s + 1.0) * rate_hz) + skip
+        u = np.convolve((rng.standard_normal(n) + 1j * rng.standard_normal(n)) / math.sqrt(2.0), h, mode="same")
+        for k, nk in enumerate(lengths):
+            sigma2 = 0.5 * float(np.sum(np.convolve(h, np.ones(int(nk)) / nk) ** 2))
+            x = np.abs(boxcar(u, int(nk)))[skip:] / math.sqrt(sigma2)
+            ids = np.cumsum(x < x_off)
+            m = np.full(int(ids[-1]) + 1, -np.inf)
+            np.maximum.at(m, ids, x)
+            maxima[k].append(m)
+        used_s += (n - skip) / rate_hz
+    out = []
+    for m in maxima:
+        m = np.sort(np.concatenate(m))[::-1]
+        rank = max(1, int(round(cfg.false_marks_per_s * used_s)))
+        out.append(float(m[min(rank, len(m) - 1)]))
+    return out
 
 
 def pooled_paired(rows, a: str, b: str, edits: str = "edits", symbols: str = "symbols") -> dict:
@@ -5069,7 +5347,8 @@ def periodicity_table(out_dir, name: str, values: dict, subsets, target: float =
     cfg = ProtoConfig().with_values(**values)
     windows = sorted(cfg.periodicity_windows_s)
     points = metrics.periodicity_points(out_dir, name, cfg, only=DEV, jobs=jobs)
-    configured = cfg.comb_confidence_min if cfg.periodicity_method == "comb" else cfg.spectrum_confidence_min
+    configured = {"comb": cfg.comb_confidence_min, "edge": cfg.edge_confidence_min,
+                  "spectrum": cfg.spectrum_confidence_min}[cfg.periodicity_method]
     tag = "-".join(f"{k}={v}" for k, v in sorted(values.items())).replace(" ", "")
     lines = [f"# Periodicity, offline, on {name}'s posteriors ({tag})", "",
              f"{len(points)} update points inside transmissions (groups {', '.join(metrics.PERIODICITY_GROUPS)}; "
@@ -5128,15 +5407,21 @@ def main(argv=None) -> None:
     c = sub.add_parser("compare")
     p = sub.add_parser("periodicity")
     f = sub.add_parser("follow")
-    for s in (r, c, p):
+    b = sub.add_parser("batch")
+    x = sub.add_parser("calibrate-x-on")
+    for s in (r, c, p, b):
         s.add_argument("--out", type=Path, required=True)
-    for s in (r, p, f):
+    for s in (r, p, f, x):
         s.add_argument("--set", dest="values", action="append", help="KEY=VALUE: a ProtoConfig value")
-    for s in (r, p):
+    for s in (r, p, b):
         s.add_argument("--jobs", type=int, default=None)
-    r.add_argument("--bench", type=Path, required=True)
+    for s in (r, b):
+        s.add_argument("--bench", type=Path, required=True)
     r.add_argument("--name", required=True)
     r.add_argument("--keep-p1", action="store_true")
+    r.add_argument("--subset", choices=sorted(SUBSETS), default="dev")
+    b.add_argument("--spec", type=Path, required=True)
+    x.add_argument("--events", type=int, default=20)
     c.add_argument("--base", required=True)
     c.add_argument("--variant", required=True)
     p.add_argument("--name", required=True)
@@ -5145,7 +5430,12 @@ def main(argv=None) -> None:
     f.add_argument("--seeds", type=int, default=10)
     args = parser.parse_args(argv)
     if args.command == "run":
-        run(args.out, args.bench, args.name, runner.parse_values(args.values), args.keep_p1, args.jobs)
+        print(f"wrote {run(args.out, args.bench, args.name, runner.parse_values(args.values), args.keep_p1, args.jobs, SUBSETS[args.subset])}")
+    elif args.command == "batch":
+        print(f"wrote {batch(args.out, args.bench, args.spec, args.jobs)}")
+    elif args.command == "calibrate-x-on":
+        cfg = ProtoConfig().with_values(**runner.parse_values(args.values))
+        print(json.dumps([round(v, 4) for v in calibrate_x_on(cfg, events=args.events)]))
     elif args.command == "compare":
         print(f"wrote {compare(args.out, args.base, args.variant)}")
     elif args.command == "periodicity":
@@ -5197,13 +5487,21 @@ the periodicity and speed statistics). S₅₀₀: key-down carrier power over n
   views), I, and B's mixed-style recording. Held out: seeds 2 and 3.
 - Run times: group I generation <min> and scoring <min> (Task 1); recording the streams <min>
   (Task 12); decoding CPU <ms> per channel-second (Task 11).
-- Unknown-amplitude test, noise alone (Task 6): <count> false key-downs in 200 s at branch 1
-  (R_fa = 0.01 /s designed).
+- Unknown-amplitude test, noise alone, nominal threshold (Task 6): <count> false key-downs in 200 s at
+  branch 1 (R_fa = 0.01 /s targeted; review: 0.07–0.10 /s).
+- Noise mask (Task 5, white noise): kept fraction <…>, accepted segments <…> of <…>, mask bias <…>
+  (review: 63%, bias 0.979).
+- Decoding CPU on a keyed channel (Task 11 Step 5): <…> s per channel-second; experiment budget updated
+  to <…> h on 14 workers.
 - Speed step 15 → 30 WPM (Task 11 test, one seed): followed after <marks> marks.
 
-## 2. Owner's answers
+## 2. Owner's decisions (2026-09-30, after the plan review)
 
-- The comb on Π = 2T (Task 9, Step 0): <answer, date>.
+- Noise level: both measured (E10 arms a, b, c); spec §4.2 and §5 say it is decided by E10.
+- Periodicity: the comb on Π = 2T with teeth ±15% of T is the default; the edge comb is E1's third arm;
+  spec §4.4 and §6 corrected.
+- First-mark threshold calibrated by measurement (E9); keyed samples only while the amplitude is unknown.
+- The whole experiment list kept; runs in the background.
 
 ## 3. Experiments
 
@@ -5223,27 +5521,31 @@ the plan; its outcome; the value adopted and its status.)
 ```powershell
 .venv\Scripts\python -m kz4ap_proto.experiments run --out build/suite/full3 --bench build/windows/bench/Release/kz4ap-bench.exe --name exp-ref --keep-p1
 ```
-Expected: one `decoded …` and one `exp-ref … CER …` line per development scoring. Record the run's wall-clock time and the development set's size in section 1. `exp-ref` is the **current reference**; whenever a rule adopts a variant, that variant's run becomes the current reference for the experiments after it.
+Start it in the background with its output redirected to `build/suite/full3/experiments/logs/exp-ref.log`; when notified, read `summary-exp-ref.md`. Record the run's wall-clock time and the development set's size in section 1. `exp-ref` is the **current reference**; whenever a rule adopts a variant, that variant's run becomes the current reference for the experiments after it.
 
-- [ ] **Step 8: E10 — noise estimate: shared spectrum or per-branch fallback**
+- [ ] **Step 8: E10 — the noise level: three-tap level with spectrum ratios, spectrum level, or per-branch**
 
-Question (spec §8, "The noise-spectrum estimator"; §4.2's recorded fallback). Run and compare:
+Question (owner, 2026-09-30: measure both levels; spec §4.2, §5 and §8). Arms: (a) `spectrum` (the reference: three-tap level × spectrum ratios); (b) `spectrum-level` (the masked spectrum's own level ÷ the measured mask bias); (c) `branch` (per-branch three-tap, the spec's recorded fallback). Write `build/suite/full3/experiments/E10.json`:
 
-```powershell
-.venv\Scripts\python -m kz4ap_proto.experiments run --out build/suite/full3 --bench build/windows/bench/Release/kz4ap-bench.exe --name exp-E10-branch --set noise_method=branch
-.venv\Scripts\python -m kz4ap_proto.experiments compare --out build/suite/full3 --base exp-ref --variant exp-E10-branch
+```json
+{"name": "E10", "base": "exp-ref", "subset": "dev",
+ "runs": [{"name": "exp-E10-level", "set": {"noise_method": "spectrum-level"}},
+          {"name": "exp-E10-branch", "set": {"noise_method": "branch"}}]}
 ```
-Metric: paired CER (variant − reference) pooled over the development set and per group. **Rule:** adopt `branch` only if the pooled paired CER interval lies entirely below 0 and no group's paired interval lies entirely above 0; otherwise keep `spectrum`. Record the table and the outcome in section 3; if adopted, set `noise_method = "branch"` in `ProtoConfig` with the comment "measured (E10)".
+and start in the background: `.venv\Scripts\python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench build/windows/bench/Release/kz4ap-bench.exe --spec build/suite/full3/experiments/E10.json > build/suite/full3/experiments/logs/E10.log 2>&1`. When notified, read `summary-E10.md` and the two compare files.
+Metric: paired CER (arm − reference) pooled over the development set and per group; group E (a neighbor leaking into short branches) read separately.
+**Rule (pre-registered):** an arm qualifies if its pooled paired CER interval lies entirely below 0 and no group's paired interval lies entirely above 0; adopt the qualifying arm with the lower pooled mean; if none qualifies, keep (a). Record the table, the mask numbers of Task 5 and the outcome in section 3; if an arm is adopted, set `noise_method` in `ProtoConfig` with the comment "measured (E10)" and make its run the current reference. Write the outcome into spec §4.2's sentence "decided by measurement (E10)" in Task 15.
 
-- [ ] **Step 9: E1 — periodicity method: comb (on Π = 2T) or spectrum-shape fit**
+- [ ] **Step 9: E1 — periodicity method: comb on 2T (default), edge comb, or spectrum-shape fit**
 
-Question (spec §4.4, §8). Offline, on `exp-ref`'s posteriors, both methods with every logged window, and each method's threshold calibrated to 95% precision with the three default windows:
+Question (spec §4.4 as corrected, §8). Offline, on `exp-ref`'s posteriors, the three arms with every logged window, each arm's threshold calibrated to 95% precision with the three default windows (each command in the background; each writes `experiments/periodicity-exp-ref-….md`):
 
 ```powershell
 .venv\Scripts\python -m kz4ap_proto.experiments periodicity --out build/suite/full3 --name exp-ref --set periodicity_method=comb --set "periodicity_windows_s=[1,2,3,5,10]" --subsets "2,5,10"
+.venv\Scripts\python -m kz4ap_proto.experiments periodicity --out build/suite/full3 --name exp-ref --set periodicity_method=edge --set "periodicity_windows_s=[1,2,3,5,10]" --subsets "2,5,10"
 .venv\Scripts\python -m kz4ap_proto.experiments periodicity --out build/suite/full3 --name exp-ref --set periodicity_method=spectrum --set "periodicity_windows_s=[1,2,3,5,10]" --subsets "2,5,10"
 ```
-Metric: at each method's calibrated threshold, coverage (fraction of update points inside transmissions with a confident estimate) and median time from a transmission's start to its first confident estimate; precision is ≥ 0.95 by calibration. **Rule:** choose the method with the higher coverage; if the coverage intervals overlap, the one with the shorter median time to confident; if that is within 0.25 s (one update), keep the comb (the spec's first-named method). If neither method reaches 0.95 precision at any threshold, keep both selectable, record "no setting met the criterion", and report to the owner. Also record each method's precision at its current placeholder threshold (the "configured" rows). The planning check found both methods wrong for HandKey and for bug keying with windows below 10 s; the pooled points include group C's hand and bug stations, so those failures count against both methods alike.
+Metric: at each arm's calibrated threshold, coverage (fraction of update points inside transmissions with a confident estimate) and median time from a transmission's start to its first confident estimate; precision is ≥ 0.95 by calibration. **Rule (pre-registered):** the comb stays unless another arm's coverage exceeds the comb's with non-overlapping intervals; among arms that do, the higher coverage; ties on coverage (overlapping intervals) go to the shorter median time to confident, then to the comb (owner's default). If no arm reaches 0.95 precision at any threshold, keep the comb, record "no setting met the criterion", and report to the owner. Also record each arm's precision at its placeholder threshold (the "configured" rows). The pooled points include group C's hand and bug stations, where the review found the comb wrong (hand: 1.13–1.22 T) and the edge comb best at S₅₀₀ ≥ 10 dB; record group C's rows separately in the results if the tables show them apart, otherwise say that the pooled table mixes them.
 
 - [ ] **Step 10: E2 — periodicity windows**
 
@@ -5252,25 +5554,23 @@ With E1's method, offline:
 ```powershell
 .venv\Scripts\python -m kz4ap_proto.experiments periodicity --out build/suite/full3 --name exp-ref --set periodicity_method=<E1's method> --set "periodicity_windows_s=[1,2,3,5,10]" --subsets "2,5,10;1,2,5,10;2,5;5,10;2,3,5,10;1,2,3,5,10"
 ```
+(in the background, like every command of this task).
 Metric: each subset at its own calibrated threshold (precision ≥ 0.95): coverage and median time to confident. **Rule:** among subsets whose coverage is within 0.02 of the best coverage, choose the one with the shortest median time to confident; ties within 0.25 s go to the fewest windows, then to (2, 5, 10). Adopt it only if it differs from (2, 5, 10) under this rule.
 
-- [ ] **Step 11: E3 — comb teeth and width (or spectrum nulls and width)**
+- [ ] **Step 11: E3 — teeth and widths of the chosen method**
 
-With E1's method and E2's windows, offline, one command per setting (comb: `comb_teeth` ∈ {3, 4, 5} × `comb_width` ∈ {0.10, 0.15, 0.20}; spectrum: `spectrum_nulls` ∈ {2, 3, 4} × `comb_width` ∈ {0.10, 0.15, 0.20}), for example:
+With E1's method and E2's windows, offline, one command per setting (in the background): comb or edge comb: `comb_teeth` ∈ {3, 4, 5} × `comb_width` ∈ {0.05, 0.075, 0.10} (fractions of Π = 2T: ±10%, ±15%, ±20% of T; the edge comb uses the same widths in T); spectrum: `spectrum_nulls` ∈ {2, 3, 4} × `spectrum_null_width` ∈ {0.10, 0.15, 0.20} (× T). For example:
 
 ```powershell
-.venv\Scripts\python -m kz4ap_proto.experiments periodicity --out build/suite/full3 --name exp-ref --set periodicity_method=comb --set "periodicity_windows_s=[1,2,3,5,10]" --set comb_teeth=3 --set comb_width=0.1 --subsets "<E2's windows>"
+.venv\Scripts\python -m kz4ap_proto.experiments periodicity --out build/suite/full3 --name exp-ref --set periodicity_method=comb --set "periodicity_windows_s=[1,2,3,5,10]" --set comb_teeth=3 --set comb_width=0.05 --subsets "<E2's windows>"
 ```
-Metric: coverage at the calibrated threshold. **Rule:** adopt a setting other than (4, 0.15) (or (3, 0.15)) only if its coverage exceeds the default's by more than 0.02 and the intervals do not overlap; among several, the highest coverage.
+Metric: coverage at the calibrated threshold. **Rule:** adopt a setting other than the default (4 teeth, 0.075; spectrum: 3 nulls, 0.15) only if its coverage exceeds the default's by more than 0.02 with non-overlapping intervals; among several, the highest coverage. Record the lag reach of the adopted comb, (teeth + 0.5 + width)·2T, for spec §6.
 
 - [ ] **Step 12: Adopt E1–E3 and confirm end to end**
 
 Set in `ProtoConfig` the method, windows, teeth/nulls and width the rules chose, and the chosen method's confidence threshold to its calibrated value (status "measured (E1–E3)"). Then:
 
-```powershell
-.venv\Scripts\python -m kz4ap_proto.experiments run --out build/suite/full3 --bench build/windows/bench/Release/kz4ap-bench.exe --name exp-E1-3
-.venv\Scripts\python -m kz4ap_proto.experiments compare --out build/suite/full3 --base <current reference> --variant exp-E1-3
-```
+a batch `E1-3.json` with base = the current reference and one run `exp-E1-3` with no `set` (the new defaults), started in the background; read `summary-E1-3.md`.
 **Rule:** exp-E1-3 becomes the current reference unless its pooled paired CER interval lies entirely above 0; in that case revert the periodicity defaults, keep the current reference, record it, and report to the owner (a better T_P that makes decoding worse is a design finding). Run `.venv\Scripts\python -m pytest training -q` (tests use explicit settings, so they must still pass).
 
 - [ ] **Step 13: Record and commit**
@@ -5288,14 +5588,14 @@ git commit -m "Record the noise and periodicity experiments of stage 1"
 
 ### Task 14: Fit, over-start and selection experiments (E4, E5, E9, E7, E6, E8)
 
-Six more placeholders, one group at a time, each against the current reference, in this order (each adopted value is in the reference for the next). Every run uses the development set; every rule was written before the runs. For each: run the variants with `experiments run --name exp-E#-<value> --set …`, compare each with the current reference (`experiments compare`), apply the rule, record everything in section 3 of the results document, and, if a value is adopted, set it in `ProtoConfig` with the status "measured (E#)" and make that run the current reference.
+Six more placeholders, one group at a time, each against the current reference, in this order (each adopted value is in the reference for the next). Every run uses the development set; every rule was written before the runs. For each: write a batch file `build/suite/full3/experiments/E#.json` (base = the current reference; one run per variant, named `exp-E#-<value>`, with its `set`), start `experiments batch` in the background with its log redirected, and when notified read only `summary-E#.md` and the compare files it names; apply the rule, record everything in section 3 of the results document, and, if a value is adopted, set it in `ProtoConfig` with the status "measured (E#)" and make that run the current reference. Budget: about 28 development runs in Tasks 13–14, about 25–30 min each on 14 workers (Design decisions, "Compute budget"; Task 11 Step 5's measured cost replaces the estimate).
 
 **Files:**
 - Modify: `training/kz4ap_proto/params.py` (adopted defaults only), `docs/plans/2026-09-30-milestone-2b-stage-1-results.md`
 
 **Interfaces:**
 - Consumes: `experiments run | compare | follow` (Task 13).
-- Produces: settled defaults in `ProtoConfig` for `fit_memory`, the grid, `false_marks_per_s`, `rekey_after_s`, `new_over_gaps`, `new_over_min_s`, `switch_persistence`, `quality_tie_nats`, `text_window_chars`.
+- Produces: settled defaults in `ProtoConfig` for `fit_memory`, the grid, `x_on_values`, `false_marks_per_s`, `rekey_after_s`, `new_over_gaps`, `new_over_min_s`, `switch_persistence`, `quality_tie_nats`, `text_window_chars`.
 
 - [ ] **Step 1: E4 — fit memory N_mem**
 
@@ -5305,15 +5605,17 @@ Metrics: pooled and per-group paired CER; group D's rows; the selected-speed err
 
 - [ ] **Step 2: E5 — grid steps**
 
-Variants: `t_grid_step` = 0.005 and 0.02; "fine": `q_grid=[3,3.25,3.5,3.75,4,4.25,4.5,4.75,5]`, `w_grid=[-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0]`, `tg_grid=[1,1.12,1.26,1.41,1.59,1.78,2,2.24,2.52,2.83,3.17,3.56,4,4.49,5.04,5.66,6.35,7.13,8]`; "coarse": `q_grid=[3,4,5]`, `w_grid=[-0.4,0,0.4,0.8]`, `tg_grid=[1,1.59,2.52,4,6.35]`. (The finest run is `t_grid_step=0.005` with the fine coarse-grids: run it as `exp-E5-finest`.)
+Variants: `t_grid_step` = 0.005 and 0.02; "fine": `q_grid=[3,3.25,3.5,3.75,4,4.25,4.5,4.75,5]`, `w_grid=[-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0]`, `tg_grid=[1,1.12,1.26,1.41,1.59,1.78,2,2.24,2.52,2.83,3.17,3.56,4,4.49,5.04,5.66,6.35,7.13,8]`; "coarse": `q_grid=[3,4,5]`, `w_grid=[-0.4,0,0.4,0.8]`, `tg_grid=[1,1.59,2.52,4,6.35]`. (The finest run is `t_grid_step=0.005` with the fine coarse-grids: `exp-E5-finest`.) The finest grids cost about 15× a run (review: 22.9 ms per fit update against 1.49 ms), so **E5 runs on `DEV_E5`** (`"subset": "e5"` in its batch: seed 1 of group A at 25 WPM, C, D and I, about 20% of the development set), with the reference re-run on the same subset as `exp-E5-ref`; the batch's base is `exp-E5-finest`, listed first.
 Metrics: pooled paired CER of every variant against `exp-E5-finest`; decoding CPU per channel-second (compare's last line).
 **Rule:** among the variants (including the reference) whose pooled paired CER against the finest has an interval that does not lie entirely above 0, adopt the one with the lowest CPU per channel-second. Record the CPU of each.
 
-- [ ] **Step 3: E9 — the unknown-amplitude test and when to re-key**
+- [ ] **Step 3: E9 — calibrate the unknown-amplitude threshold, then R_fa and when to re-key**
 
-Variants, one parameter at a time: `false_marks_per_s` = 0.001 and 0.1 (/s); then, with the outcome, `rekey_after_s` = 0.2 and 0.8 (s).
+(a) **Calibration (pre-registered, adopted as a measurement):** in the background, `.venv\Scripts\python -m kz4ap_proto.experiments calibrate-x-on --set false_marks_per_s=0.01 > build/suite/full3/experiments/logs/E9-calibrate.log`; it prints 32 thresholds (one per branch) at which channel-shaped noise alone keys down 0.01 times per second. Set them as `ProtoConfig.x_on_values` with the comment "measured (E9a, channel-shaped noise, R_fa 0.01 /s)" and record them beside the nominal ones (4.31 … 3.55) in section 3. Run the reference with them (`exp-E9-calibrated`, batch against the current reference) and record the comparison; it becomes the current reference unless its pooled paired CER interval lies entirely above 0, in which case keep it anyway (a measured threshold replaces a wrong formula) but report the loss to the owner.
+
+(b) Variants of the target, each with its own calibration (run `calibrate-x-on --set false_marks_per_s=<R>` first and put the printed list in the variant's `set` as `x_on_values`): `false_marks_per_s` = 0.001 and 0.1 (/s); then, with the outcome, `rekey_after_s` = 0.2 and 0.8 (s of keyed time).
 Metrics: paired first-word CER pooled over groups A, G, H (oracle, both views) and I; false characters per minute outside transmissions; pooled paired CER.
-**Rule:** adopt a value only if the pooled paired first-word CER interval lies entirely below 0, the false characters per minute do not exceed the reference's by more than 50% in any group, and the pooled paired CER interval does not lie entirely above 0. Otherwise keep the reference's value. (The spec's two candidate tests, GLRT and threshold, are one family — Design decisions — so this experiment sets the threshold; record that.)
+**Rule:** adopt a value only if the pooled paired first-word CER interval lies entirely below 0, the false characters per minute do not exceed the reference's by more than 50% in any group, and the pooled paired CER interval does not lie entirely above 0. Otherwise keep the reference's value. (Per sample, the spec's two candidate tests, GLRT and threshold, are one family — Design decisions — so this experiment sets the threshold; record that.)
 
 - [ ] **Step 4: E7 — the new-over silence threshold**
 
@@ -5323,11 +5625,7 @@ Metrics: over starts inside transmissions per transmission (all groups, group I 
 
 - [ ] **Step 5: E6 — switch persistence M**
 
-Variants: `switch_persistence` = 1, 2, 6, 8 (the reference has 4). For each value (and 4), also:
-
-```powershell
-.venv\Scripts\python -m kz4ap_proto.experiments follow --set switch_persistence=<M> --seeds 10
-```
+Variants: `switch_persistence` = 1, 2, 6, 8 (the reference has 4). The batch file also lists `"follow": [{"set": {"switch_persistence": M}}, …]` for M = 1, 2, 4, 6, 8, so the speed-step follow test (10 seeds) runs in the same background process.
 Metrics: marks to follow the 15 → 30 WPM step (median and maximum over 10 seeds; spec §4.6: "within about 10 marks"); switches and alternations per minute; pooled paired CER.
 **Rule:** consider only values whose median follow is at most 10 marks and that were never "not followed"; among them adopt the one with the fewest alternations per minute unless its pooled paired CER interval lies entirely above 0; ties keep 4. If no value meets the follow criterion, keep 4 and report to the owner with the follow counts.
 
@@ -5365,6 +5663,8 @@ The settled configuration on all three seeds, reported against Matched and Envel
 
 - [ ] **Step 1: Decode and score every oracle recording**
 
+Start the decode (about 2 h on 14 workers) in the background with its log redirected, and the rest when notified:
+
 ```powershell
 .venv\Scripts\python -m kz4ap_proto.runner decode --out build/suite/full3 --name bank-proto
 .venv\Scripts\python -m kz4ap_proto.runner score --out build/suite/full3 --bench build/windows/bench/Release/kz4ap-bench.exe --name bank-proto
@@ -5393,12 +5693,13 @@ Section 5: each proposed criterion with its measured answer, plainly:
 - (d) Envelope unchanged (Step 2).
 State that these are stage-2 criteria judged here on the prototype and the oracle streams, not on the C++ bank.
 
-Section 6: open items for the owner: the comb-on-2T change (if not already answered), the tracker's input in stage 2 (which branch's v and p), every "no setting met the criterion" and every finding reported during Tasks 11–15, the placeholders kept unmeasured, and the spec §8 questions this stage did not measure: 5 WPM keying against fading (the suite has no slow fading recording below 12 WPM), the outlier class's shape, the noise spectrum's FFT size, averaging and guard (only compared with the fallback, E10), and the choices this plan made heuristically (listed in its Parameters table).
+Section 6: open items for the owner: the comb-on-2T change (if not already answered), the tracker's input in stage 2 (which branch's v and p), every "no setting met the criterion" and every finding reported during Tasks 11–15, the placeholders kept unmeasured, the T_P prior's reinterpretation (a gate at the confidence threshold instead of a weight by the confidence, because the arms' confidences are on different scales); that the suite's non-oracle groups (first sample, pauses, tune-up, strong, crowded, band) never reached the prototype, so Review Focus items 1, 3 and 4 rest on synthetic tests only; and the spec §8 questions this stage did not measure: 5 WPM keying against fading (the suite has no slow fading recording below 12 WPM), the outlier class's shape, the noise spectrum's FFT size, averaging and guard (only compared with the fallback, E10), and the choices this plan made heuristically (listed in its Parameters table).
 
 - [ ] **Step 5: Write the values back into the spec**
 
 In `docs/design/2026-09-30-filter-bank-speed-estimator-design.md`:
-- §6: for every row an experiment settled, replace the value with the adopted one and the status "placeholder" with "measured (stage 1, E#; results §3)"; for rows kept, write "kept (stage 1, E#: no setting met the rule)" where that is what happened. Add rows for the prototype's settled parameters the table lacks: noise method (E10), unknown-amplitude test R_fa and W_min (E9), confidence thresholds (E1). Leave owner and heuristic rows as they are.
+- §4.2: replace "decided by measurement (E10)" with the arm E10 adopted and its numbers.
+- §6: for every row an experiment settled, replace the value with the adopted one and the status "placeholder" with "measured (stage 1, E#; results §3)"; for rows kept, write "kept (stage 1, E#: no setting met the rule)" where that is what happened. Add rows for the prototype's settled parameters the table lacks: noise method (E10) and mask bias (Task 5), the unknown-amplitude thresholds, R_fa and W_min (E9), confidence thresholds (E1). Leave owner and heuristic rows as they are.
 - Add a section after §9:
 
 ```markdown
@@ -5407,9 +5708,8 @@ In `docs/design/2026-09-30-filter-bank-speed-estimator-design.md`:
 Prototype on the recorded oracle channel streams of the 3-seed full suite
 (`docs/plans/2026-09-30-milestone-2b-stage-1-results.md`). <One paragraph per proposed criterion (a)–(d):
 met or not, with the numbers and intervals.> <One paragraph: the settled parameters and the changes to
-this design found in stage 1: the comb runs on Π = 2T; the unknown-amplitude test is a threshold on x
-(the GLRT is the same family); the noise spectrum supplies the shape and branch 1's three-tap estimate
-the level.> <One sentence: what stage 2 must decide that stage 1 did not (the tracker's input).>
+this design found in stage 1: which periodicity arm and noise arm won; the unknown-amplitude test is a per-sample threshold on x, calibrated
+by measurement.> <One sentence: what stage 2 must decide that stage 1 did not (the tracker's input).>
 ```
 
 - [ ] **Step 6: Update the backlog**
@@ -5441,9 +5741,9 @@ In a few lines: whether each proposed criterion (a)–(d) is met on the oracle s
 | Scoring with exactly the bench's scoring | Task 3 (`report.cpp` shared by both paths; end-to-end identity check) |
 | §7: Farnsworth-spaced text in the generator, tested, in a full-suite group; smoke unchanged | Task 1 (`farnsworth_gap_s`, group I, labels unchanged when unset, smoke check) |
 | §4.1 bank: 32 fixed boxcars, 9.6 ms × 1.1^(k−1) | Task 4 (ladder, samples, boxcar, response; tests) |
-| §4.2 shared noise spectrum, σ_v,k² = ∫S_n\|H_k\|² df, mark guard; per-branch fallback, selectable | Task 5 (shape × three-tap level; `noise_method`), E10 |
+| §4.2 shared noise spectrum, σ_v,k² = ∫S_n\|H_k\|² df, mark guard; per-branch fallback, selectable; the level decided by measurement (owner) | Task 5 (three arms; mask bias measured), E10 |
 | §4.3 amplitude, LLR, ±1 nat hysteresis, per-branch squelch, timing | Task 6 (keyer, squelch scaling, length-preservation test), Task 11 (timing with group delay removed) |
-| §4.4 periodicity: branch 1's soft p, comb vs spectrum-shape fit, parallel windows, shortest confident; only a prior and a fallback | Task 9 (both methods; comb on Π = 2T, flagged), Task 7 (prior), Task 10 (fallback), E1–E3 |
+| §4.4 periodicity (as corrected 2026-09-30): comb on 2T (default), edge comb and spectrum-shape fit, parallel windows, shortest confident; only a prior and a fallback | Task 9 (three arms), Task 7 (prior), Task 10 (fallback), E1–E3 |
 | §4.5 fit: classes, log-normal plus resolution term, outliers, ~24-element memory, global grid then local refinement, T_P prior, outputs and thresholds | Task 7 (derived priors and resolution term; recursive tables; WLS refinement; `classify_*`), E4, E5 |
 | §4.6 selection: eligibility, Q, text tie-break (VE3NEA weights, invalid codes very unlikely), longer branch, fallbacks, stickiness M; follow a jump within ~10 marks | Task 8 (text model), Task 10, Task 11 (`test_follows_a_speed_step_within_ten_marks`), E6, E8 |
 | §4.7 silences: nothing else resets; new over at max(0.5 s, 12·T_g); fresh fit and amplitude with the previous as fallback; first marks with an unknown-amplitude test, then re-keyed with the full LLR as a correction | Task 6 (`start_over`, x-threshold test, `rekey`), Task 11 (`start_over`, `rekey_over`), E7, E9 |
@@ -5460,4 +5760,4 @@ In a few lines: whether each proposed criterion (a)–(d) is met on the oracle s
 
 **Review Focus.** Five items, each with its tests in the owning tasks (Tasks 5, 6, 7, 11), named in the Review Focus section; the 20 s correction reach is pinned too.
 
-**Known risks for the executor.** None of the Python or C++ here has been run; the numbers the tests expect are derived, and the periodicity estimator and the grid part of the fit were checked in a scratch numpy port while planning (Design decisions). Tasks 11's channel tests are the first run of the whole chain: debug code defects; report design findings with numbers and mark the test `xfail(strict=True)` rather than loosening it. Full passes are long (about 370 000 channel-seconds of Python); the development set is about 80 000; Task 11 Step 5 measures the cost before any pass. The recorded streams take 3–4 GB in `build/`. The comb departs from the spec's text (teeth on Π = 2T) and is flagged to the owner before it is written (Task 9, Step 0).
+**Known risks for the executor.** None of the Python or C++ here has been run; the numbers the tests expect are derived, and the periodicity estimator and the grid part of the fit were checked in a scratch numpy port while planning (Design decisions). Tasks 11's channel tests are the first run of the whole chain: debug code defects; report design findings with numbers and mark the test `xfail(strict=True)` rather than loosening it. Full passes are long (about 370 000 channel-seconds of Python); the development set is about 80 000; Task 11 Step 5 measures the cost before any pass. The recorded streams take about 4.4 GB in `build/`. The owner decided the open points on 2026-09-30 (comb on 2T as the default with the edge comb as a third E1 arm and ±15%-of-T teeth; both noise levels measured in E10; the first-mark threshold calibrated in E9; keyed-sample weighting while the amplitude is unknown), and the spec's §4.2, §4.4, §5 and §6 were corrected to match; no owner step remains in the tasks.

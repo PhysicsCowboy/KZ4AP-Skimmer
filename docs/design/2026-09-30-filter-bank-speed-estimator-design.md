@@ -75,11 +75,21 @@ u[n] (1500 complex samples/s, station at 0 Hz)
 - Each branch's noise power: σ_v,k² = ∫ S_n(f)·|sinc(f·L_k)|² df. In white
   noise this reduces to σ_in² / (L_k·r) (**derived**); the spectrum handles
   non-white noise, e.g. a neighbor leaking into short branches.
+- **Where the absolute level comes from is decided by measurement (owner,
+  2026-09-30; stage 1, experiment E10).** Two arms: (a) branch 1's absolute
+  level from the current three-tap guard, with the spectrum setting every
+  branch's level relative to branch 1's; (b) the absolute level from the
+  spectrum itself, corrected for the bias of its mark mask (the plan review
+  measured the mask keeping 63% of noise-only samples and reading their
+  power 2.1% low, **measured**). The rule is fixed before the run
+  (`docs/plans/2026-09-30-milestone-2b-stage-1-filter-bank-prototype.md`,
+  Task 13).
 - **Recorded fallback (owner):** per-branch noise estimates, if the spectrum
-  estimate proves hard to guard against marks. Not the default because a branch
-  of length L gives about 1/L independent noise samples per second (104/s at
-  9.6 ms, 5.4/s at 184 ms), so over a 2 s time constant long branches would
-  scatter about 32% against 7% (**derived, rough**).
+  estimate proves hard to guard against marks (E10's third arm). Not the
+  default because a branch of length L gives about 1/L independent noise
+  samples per second (104/s at 9.6 ms, 5.4/s at 184 ms), so over a 2 s time
+  constant long branches would scatter about 32% against 7% (**derived,
+  rough**).
 
 ### 4.3 Per branch: amplitude, log-likelihood ratio, squelch, keying, timing
 - Amplitude estimate per branch (a long branch smears dits and sees a lower
@@ -94,11 +104,31 @@ u[n] (1500 complex samples/s, station at 0 Hz)
 ### 4.4 Periodicity estimator (coarse speed T_P)
 - Input: branch 1's keying probability p[n] = 1/(1 + e^(−Λ[n])), soft, no
   keying decisions; branch 1 resolves every speed up to 100 WPM.
-- Method: **open** — an autocorrelation comb (teeth at T, 2T, 3T, 4T,
-  negative teeth halfway between, at lags up to about 4 T, which Farnsworth's
-  stretched gaps do not disturb) or a spectrum-shape fit. The two are related
-  by the Wiener–Khinchin theorem; they differ in the features they rely on.
-  The prototype stage compares them (section 7).
+- **Why a comb with positive teeth at T, 2T, 3T, 4T lands on 2T** (as first
+  written here; corrected 2026-09-30, owner). Consecutive keying edges T
+  apart have opposite signs (a dit's key-down and key-up), so p's structure
+  repeats at 2T, not T: the autocorrelation of mean-removed p is low at odd
+  and high at even multiples of T, and that comb peaks at 2T on every
+  keying style tried (planning check, and the plan review: 0 of 3 seeds
+  right in every case, **measured**).
+- **Default method (owner): the comb on the period 2T of a dit and its
+  element space**, on mean-removed p: 4 teeth at 2T, 4T, 6T, 8T, negative
+  teeth halfway between (at T, 3T, 5T, 7T), each ±15% of T wide; the
+  estimate is half the best period. Its last tooth is at 8T, so it reads
+  lags up to about 9.2T. Farnsworth's stretched gaps still do not disturb
+  it: they are 3·T_g ≥ 3T long and fall at no fixed multiple of 2T, so they
+  add no tooth-locked structure, while the elements inside each character
+  keep their 2T lattice. Measured in the plan review (3 seeds; clean and at
+  S₅₀₀ = 10 and 3 dB): within 5% of T for machine, paddle and computer
+  keying at 12–100 WPM, for Farnsworth spacing, and at 5 WPM with windows of
+  5 s or more even at S₅₀₀ = 3 dB; it misses hand keying (1.13–1.22 T).
+- Compared in stage 1 (section 7) against two other arms: a sign-weighted
+  comb on the signed edges e[n] = p[n] − p[n−1] (teeth at kT weighted
+  negative at odd and positive at even k; best on hand and bug keying at
+  S₅₀₀ ≥ 10 dB, but it fails 5 WPM at 3 dB, review), and a spectrum-shape
+  fit (nulls of the keying spectrum at k/T). The comb and the spectrum fit
+  are related by the Wiener–Khinchin theorem; they differ in the features
+  they rely on.
 - Windows (owner): several fixed windows in parallel (placeholders 2, 5 and
   10 s), each with its own estimate and confidence; the confident one with the
   shortest window is used. About 20 elements are needed: roughly 2 s at
@@ -205,7 +235,7 @@ filter was redesigned):
 | re-acquisition and the 2 s speed-window restore | replace (4.7) | fresh fit plus fallback fit |
 | warm-up at the acquisition width | replace | only the noise spectrum needs a start-up |
 | squelch ∝ (T_v / 16 ms)^(1/4) | re-derive per branch (4.3) | same principle, each branch's own σ_v |
-| three-tap noise guard, floor, clean fraction 0.25 | replace (4.2) | guard idea reused in the spectrum estimator |
+| three-tap noise guard, floor, clean fraction 0.25 | decided by E10 (4.2; owner, 2026-09-30) | the guard idea is reused as the spectrum's mark mask either way; whether the three-tap estimate keeps setting branch 1's absolute level, or the bias-corrected spectrum sets it, is measured in stage 1 |
 | amplitude estimate (p-weighted, 0.5 s) | keep, per branch | plus 4.7 |
 | log-likelihood ratio and ±1 nat hysteresis | keep, per branch | the decision rule |
 | front-end robustness (`590da5a`) | mostly drop | invalid-input guards stay where a speed is used |
@@ -221,7 +251,10 @@ filter was redesigned):
 | Ladder spacing | ×1.1 (32 branches) | owner; loss derived |
 | Branch length relative to the dit | 0.8 | heuristic |
 | Periodicity windows | 2, 5, 10 s | placeholder |
-| Comb teeth / tooth width | k = 1…4; ±15% of T | placeholder |
+| Comb teeth / tooth width | 4 teeth on the 2T period (at 2T, 4T, 6T, 8T; negative teeth halfway); ±15% of T | owner (2T period, 2026-09-30); placeholder (teeth, width) |
+| Comb lag reach | about 9.2T (last tooth at 8T) | follows from the teeth |
+| Periodicity method | comb on 2T (default); edge comb and spectrum fit compared | owner (default); stage 1 E1 |
+| Noise level source | three-tap level with spectrum ratios, or bias-corrected spectrum level | open: stage 1 E10 (owner) |
 | Fit memory | ~24 marks and spaces, exponential | placeholder |
 | Fit grid | ~1% in T; coarse in r, w, T_g | derived (cost), placeholder (steps) |
 | Eligibility tolerance | ln 1.1 | heuristic (one ladder step) |
