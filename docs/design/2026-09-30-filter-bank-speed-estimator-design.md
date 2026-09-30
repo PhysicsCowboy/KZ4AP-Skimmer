@@ -268,7 +268,9 @@ filter was redesigned):
 
 **Stage 1 — prototype the estimators in Python on real channel streams.**
 - Add to `kz4ap-bench` a way to record each oracle channel's complex stream
-  u[n] (after the tracker) to a file.
+  to a file: the channelizer's output, before the tracker, mixed to 0 Hz at
+  the labeled frequency in Python (the tracker is unchanged by this redesign;
+  the stage-1 plan gives the reasons).
 - In Python (numpy), on those streams from the benchmark recordings
   (`build/suite/full3`, 3 seeds): build the bank, the noise spectrum, the
   per-branch keying, the periodicity estimator (comb vs spectrum-shape fit),
@@ -277,15 +279,34 @@ filter was redesigned):
   measured.
 - Add Farnsworth-spaced text to the generator (not in the suite today), so the
   periodicity estimator and the fit are tested on it.
+- Cover every regime (owner, 2026-09-30): the detector-only groups (pauses,
+  strong, tune-up, first sample, band, crowded) are scored again with oracle
+  channels from the existing recordings, by Envelope, the current Matched
+  path and the prototype, so the comparison is like for like.
+- **No acceptance gate (owner, 2026-09-30).** Stage 1 ends with a full
+  comparison for the owner's decision: the prototype against the current
+  Matched and Envelope paths on the same oracle signals, with intervals —
+  group A crossings at each speed; regressions R1 (group D step 20 → 35 WPM)
+  and R2 (group A 12 WPM first-word CER) and the start-up runaway cases; and
+  every regime better, worse or unchanged beyond its interval, by how much.
+  The owner decides afterwards whether the redesign is better and whether
+  stage 2 is worth doing. The experiments' pre-registered rules only choose
+  parameters.
 
 **Stage 2 — C++, judged by the full suite.**
 - A new selectable front end `--front-end bank` beside Envelope and Matched;
   the corrections in the engine's text events and in the bench's scoring.
-- Proposed acceptance criteria (for the owner to confirm): on the 3-seed full
-  suite, (a) group A crossings within 0.5 dB of the current Matched at every
-  speed (the ladder's loss budget); (b) regressions R1 and R2 and the start-up
-  runaways gone; (c) no regime worse than Envelope beyond its interval except
-  limits the owner accepts and documents; (d) Envelope unchanged.
+- Judged the same way as stage 1, with no acceptance gate: the full
+  comparison against the current Matched and Envelope paths on the 3-seed
+  full suite, for the owner's decision (owner, 2026-09-30); Envelope
+  unchanged.
+- **Required part of the stage-2 evaluation: the measures stage 1 cannot
+  make**, because they depend on the detector, which this redesign does not
+  change: detection recall, false tracks, tracks per QSO, group H through the
+  detector, and the band and crowded groups as the detector sees them
+  (non-oracle). Stage 2 measures them with the bank in C++ behind the real
+  detector (backlog: "Stage-2 evaluation of the filter bank through the
+  detector").
 
 ## 8. Still open (settled in stage 1)
 

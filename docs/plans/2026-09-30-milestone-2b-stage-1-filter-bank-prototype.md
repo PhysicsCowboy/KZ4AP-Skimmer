@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Prototype, in Python on the engine's own recorded oracle channel streams, every estimator of the filter-bank design (32 fixed boxcars, shared noise spectrum, per-branch keying and duration fits, periodicity estimate, branch selection, new-over handling, corrections), score its text with the bench's own scoring, settle the design's placeholders by measurement, and state whether it meets the proposed stage-2 acceptance criteria.
+**Goal:** Prototype, in Python on the engine's own recorded oracle channel streams, every estimator of the filter-bank design (32 fixed boxcars, shared noise spectrum, per-branch keying and duration fits, periodicity estimate, branch selection, new-over handling, corrections), score its text with the bench's own scoring, settle the design's placeholders by measurement, and lay out a full comparison with the current Matched and Envelope paths on the same oracle signals, every regime included, for the owner to decide whether the redesign is better and whether stage 2 is worth doing (owner, 2026-09-30: no acceptance gate).
 
-**Architecture:** `kz4ap-bench` gains two tooling options: `--record-channels DIR` writes each oracle channel's complex stream (the channelizer's output, 1500 samples/s, before the frequency tracker) plus a manifest, through a new observation-only `Engine::set_channel_tap`; `--score-decoded FILE` scores externally decoded text per label with exactly the bench's scoring and JSON. The generator gains Farnsworth spacing and a full-suite group I. A new package `training/kz4ap_proto/` (numpy only) mixes each recorded stream to 0 Hz at its labeled frequency, runs the bank channel by channel, writes decoded text, has the bench score it into `build/suite/full3/results/bank-proto/`, and summarizes it against the Matched and Envelope results already there. Experiments on seed 1 (development) set the placeholders by stated decision rules; the final configuration is evaluated on all three seeds.
+**Architecture:** `kz4ap-bench` gains two tooling options: `--record-channels DIR` writes each oracle channel's complex stream (the channelizer's output, 1500 samples/s, before the frequency tracker) plus a manifest, through a new observation-only `Engine::set_channel_tap`; `--score-decoded FILE` scores externally decoded text per label with exactly the bench's scoring and JSON. The generator gains Farnsworth spacing and a full-suite group I. A new package `training/kz4ap_proto/` (numpy only) mixes each recorded stream to 0 Hz at its labeled frequency, runs the bank channel by channel, writes decoded text, has the bench score it into `build/suite/full3/results/bank-proto/`, and summarizes it against the Matched and Envelope results already there. The detector-only groups (pauses, strong, tune-up, first sample, band, crowded) are also scored with oracle channels — the existing recordings, not regenerated — by Envelope, the current Matched path and the prototype, so every regime is compared like for like. Experiments on seed 1 (development) set the placeholders by stated decision rules; the final configuration is evaluated on all three seeds.
 
 **Tech Stack:** C++20, CMake ≥ 3.25, GoogleTest 1.17.0, nlohmann/json 3.12.0 (engine and bench); Python 3.12 venv with numpy and pytest only (prototype, generator, runner). No new dependencies.
 
@@ -18,10 +18,10 @@ Implements spec §7, stage 1:
 2. **Scoring** externally decoded text with the bench's scoring, not a copy of it (Task 3).
 3. **Farnsworth spacing** in the generator, with a full-suite group (Task 1).
 4. **The Python prototype** of every component of spec §4, each with unit tests on synthetic signals whose expected values are derived (Tasks 4–11).
-5. **A runner** over the 3-seed full suite that scores through the bench and summarizes against Matched and Envelope (Task 12).
-6. **Experiments** that settle the §6 placeholders by measurement (Tasks 13–14), and **a final evaluation** that writes the measured values into the spec and states whether the prototype meets the proposed stage-2 acceptance criteria on the oracle streams (Task 15).
+5. **A runner** over the 3-seed full suite that scores through the bench and summarizes against Matched and Envelope (Task 12), with oracle copies of the detector-only groups so every regime is compared (owner, 2026-09-30).
+6. **Experiments** that settle the §6 placeholders by measurement (Tasks 13–14), and **a final evaluation** that writes the measured values into the spec and gives the owner the full comparison — group A crossings, R1, R2, the start-up runaways, and every regime better, worse or unchanged beyond its interval, by how much — with no pass/fail gate (Task 15). The experiments' pre-registered rules choose parameters; they are not the verdict.
 
-Deliberately **not** in this plan: the C++ bank (`--front-end bank`, stage 2); corrections in the engine's text events and in the bench's scoring (stage 2: here the prototype applies its corrections itself and the bench scores the final text); any change to the engine's signal processing; tuning the Envelope or current Matched paths; non-oracle recordings (the prototype has no detector).
+Deliberately **not** in this plan: the C++ bank (`--front-end bank`, stage 2); corrections in the engine's text events and in the bench's scoring (stage 2: here the prototype applies its corrections itself and the bench scores the final text); any change to the engine's signal processing; tuning the Envelope or current Matched paths; anything that depends on the detector — detection recall, false tracks, tracks per QSO, group H through the detector, and the band and crowded groups as the detector sees them. The redesign does not change the detector; these are measured in stage 2, when the bank runs as C++ behind the real detector (spec §7; backlog "Stage-2 evaluation of the filter bank through the detector"). Stage 1 scores the detector-only recordings with oracle channels instead.
 
 **Stage 1 changes no engine signal processing.** The engine gains one observation hook (`Engine::set_channel_tap`) that copies nothing into and changes nothing in the decoding path; the bench additions and the prototype are tooling. `docs/signal-processing.md` still gets its benchmark definitions (§11: recorded channel streams, externally decoded text, Farnsworth spacing) in the same commits, because §11 describes the benchmark.
 
@@ -184,7 +184,7 @@ As spec §4.6: eligibility |ln(L_k/(0.8·T_k))| ≤ ln 1.1, and only once the fi
 
 ### Compute budget, and runs in the background
 
-The review timed the plan's fit at 1.49 ms per observation (add + best) on the default grid and 22.9 ms on E5's finest; at 25 WPM each branch sees about 10.6 observations per second, so **a keyed channel costs about 0.3–0.5 s of CPU per channel-second** (Task 11 Step 5 times a keyed stream to confirm it on this machine). The development set holds about 80 000 channel-seconds, so one development run takes about 25–30 min on 14 workers; Tasks 13–14 need about 28 runs, so **the experiments take about 12–14 h of wall time on 14 workers, or more** (E5's finest grids cost about 15× a run and use a smaller subset, `experiments.DEV_E5`, about 20% of the development set), plus about 2 h for the final three-seed pass (Task 15). Every long run is started as a **background process** (the harness's `run_in_background`), writing its log to `build/suite/full3/experiments/logs/<name>.log` and a short summary to `build/suite/full3/experiments/summary-<name>.md` when it ends; the executing agent starts it, does not poll, is notified when it finishes, and reads only the summary file (and the compare file it names).
+The review timed the plan's fit at 1.49 ms per observation (add + best) on the default grid and 22.9 ms on E5's finest; at 25 WPM each branch sees about 10.6 observations per second, so **a keyed channel costs about 0.3–0.5 s of CPU per channel-second** (Task 11 Step 5 times a keyed stream to confirm it on this machine). The development set holds about 80 000 channel-seconds, so one development run takes about 25–30 min on 14 workers; Tasks 13–14 need about 28 runs, so **the experiments take about 12–14 h of wall time on 14 workers, or more** (E5's finest grids cost about 15× a run and use a smaller subset, `experiments.DEV_E5`, about 20% of the development set), plus about 2 h for the final three-seed pass (Task 15). The oracle copies of the detector-only groups add 27 recordings (9 per seed): recording their streams takes a few minutes and about 0.2 GB, the extra Envelope and Matched bench runs (54, with `--oracle`) about 2 min, and the prototype about 18 000 channel-seconds more, about 5% of the final pass. Every long run is started as a **background process** (the harness's `run_in_background`), writing its log to `build/suite/full3/experiments/logs/<name>.log` and a short summary to `build/suite/full3/experiments/summary-<name>.md` when it ends; the executing agent starts it, does not poll, is notified when it finishes, and reads only the summary file (and the compare file it names).
 
 ### Development set, held-out seeds and decision rules
 
@@ -234,7 +234,7 @@ Inputs the spec implies but does not spell out, most likely to bite first. Each 
 
 Also pinned: every correction reaches back at most 20 s (Task 11, `test_corrections_never_reach_back_more_than_20_s`).
 
-**Limit of these checks:** the suite's non-oracle groups (first sample, pauses, tune-up, strong, crowded, band) never reach the prototype, which has no detector, so items 1, 3 and 4 rest on the synthetic tests above only; the results document lists this among its open items (Task 15).
+**On the suite, too:** items 1, 3 and 4 are also measured on the oracle copies of the first-sample, tune-up and pauses groups (Task 12), against Envelope and Matched on the same channels. What they cannot show is the detector's part (a channel opened late, a track that dies); that is stage 2's (spec §7).
 
 ## File map
 
@@ -270,7 +270,7 @@ Also pinned: every correction reaches back at most 20 s (Task 11, `test_correcti
 - Task 12: Runner — record, decode, score, report
 - Task 13: Experiment harness; noise and periodicity experiments (E10, E1, E2, E3)
 - Task 14: Fit, over-start and selection experiments (E4, E5, E9, E7, E6, E8)
-- Task 15: Final evaluation, acceptance, write-back to the spec
+- Task 15: Final evaluation, the full comparison for the owner, write-back to the spec
 
 ---
 ### Task 1: Generator — Farnsworth spacing, suite group I, `--only`
@@ -4249,21 +4249,21 @@ git commit -m "Add the channel decoder: branches, new overs, re-keying, selectio
 ---
 ### Task 12: Runner — record, decode, score, report
 
-Stage 1's pipeline over `build/suite/full3` (spec §7 item 5): record every oracle scoring's channel streams with the bench (Task 2), decode each channel with the prototype in parallel worker processes, score the text with `kz4ap-bench --score-decoded` (Task 3) into `results/bank-proto/`, and report against the Matched and Envelope results already in `results/` — reusing `suites.load_results`, `aggregate`, `paired_differences` and the bootstrap. The report also measures the proposed stage-2 acceptance criteria (spec §7) as far as the oracle streams allow, and the prototype's own speed, switching, over-start and false-character statistics. Experiment runs (Tasks 13–14) go to `experiments/results/`, so the suite's own summary is not cluttered.
+Stage 1's pipeline over `build/suite/full3` (spec §7 item 5): record every oracle scoring's channel streams with the bench (Task 2), decode each channel with the prototype in parallel worker processes, score the text with `kz4ap-bench --score-decoded` (Task 3) into `results/bank-proto/`, and report against the Matched and Envelope results already in `results/` — reusing `suites.load_results`, `aggregate`, `paired_differences` and the bootstrap. The report is the full comparison the owner decides on (owner, 2026-09-30: no acceptance gate): group A crossings at each speed, R1, R2 and the start-up runaway cases, and every regime better, worse or unchanged beyond its interval against Matched and against Envelope, with the prototype's own speed, switching, over-start and false-character statistics. **Every regime is covered:** the detector-only groups (pauses, strong, tune-up, first sample, band, crowded) are scored again with oracle channels from the existing recordings — by Envelope and the current Matched path (`kz4ap-bench --oracle`) and by the prototype — as `<recording>.oracle` in groups `<group>, oracle`. Experiment runs (Tasks 13–14) go to `experiments/results/`, so the suite's own summary is not cluttered.
 
 **Files:**
-- Modify: `training/kz4ap_synth/suites.py` (`load_results(out_dir, results_dirs=None, front_ends=None)`, `paired_differences(rows, a="baseline", b="matched")`)
+- Modify: `training/kz4ap_synth/suites.py` (`ORACLE_COPY_GROUPS`, `oracle_copies(rec)`, `load_results(out_dir, results_dirs=None, front_ends=None)` reading the copies, `paired_differences(rows, a="baseline", b="matched")`)
 - Create: `training/kz4ap_proto/runner.py`, `metrics.py`, `report.py`
 - Test: `training/tests/test_suites.py`, `training/tests/test_proto_runner.py`, `training/tests/test_proto_metrics.py`
 
 **Interfaces:**
 - Consumes: `suites._scorings`, `load_results`, `aggregate`, `paired_differences`, `bootstrap_cer`, `_interval`, `_rng_for`, `_tag_offset_hz`, `BOOTSTRAP_RESAMPLES`; `streams.load_channel`, `read_manifest`; `channel.ChannelDecoder`; `periodicity.Periodicity`; `ProtoConfig`; the bench's `--record-channels` and `--score-decoded`.
 - Produces:
-  - `suites.load_results(out_dir, results_dirs: list[Path] | None = None, front_ends: list[str] | None = None)`; `suites.paired_differences(rows, a="baseline", b="matched")` (b − a; defaults unchanged)
-  - `runner.DEFAULT_NAME = "bank-proto"`; `runner.oracle_scorings(out_dir, only=None) -> list[dict]` (keys `result`, `group`, `wav`, `labels`); `runner.record(out_dir, bench, only=None)`; `runner.decode(out_dir, name=DEFAULT_NAME, values=None, only=None, jobs=None, keep_p1=False)`; `runner.score(out_dir, bench, name=DEFAULT_NAME, only=None, results_root=None)`; CLI `record | decode | score | report`.
+  - `suites.ORACLE_COPY_GROUPS = ("pauses", "strong", "tune-up", "first sample", "band", "crowded")`; `suites.oracle_copies(rec) -> list[tuple[str, str, str]]` ((labels, `<name>.oracle`, `<group>, oracle`) for a detector-only recording of those groups, else []); `suites.load_results(out_dir, results_dirs: list[Path] | None = None, front_ends: list[str] | None = None)` (also reads the copies' results, as oracle rows); `suites.paired_differences(rows, a="baseline", b="matched")` (b − a; defaults unchanged)
+  - `runner.DEFAULT_NAME = "bank-proto"`; `runner.oracle_scorings(out_dir, only=None) -> list[dict]` (keys `result`, `group`, `wav`, `labels`; the oracle recordings' scorings and the oracle copies); `runner.score_engine_copies(out_dir, bench, front_ends=("baseline", "matched"), only=None)` (CLI `engine-copies`); `runner.record(out_dir, bench, only=None)`; `runner.decode(out_dir, name=DEFAULT_NAME, values=None, only=None, jobs=None, keep_p1=False)`; `runner.score(out_dir, bench, name=DEFAULT_NAME, only=None, results_root=None)`; CLI `record | decode | score | report`.
   - Files: `channels/<result>/` (Task 2's format), `proto/<name>/<result>.decoded.json` (`front_end`, `recording`, `labels`, `config`, `texts`, `channels`: each channel's `ChannelResult.to_json()` plus `label_index`, `rate_hz`, `cpu_s`, `channel_s`), `proto/<name>/p1/<result>/<label index>.npy` (with `keep_p1`), `results/<name>/<result>.json` (the bench's JSON).
   - `metrics.iter_channels(out_dir, name, only=None)` (yields `(job, label, channel, config)`), `metrics.true_dit_s(label)`, `metrics.transmissions(label, pad_s=0.0)`, `metrics.bootstrap_ratio(units, key)`, `metrics.speed_errors(...)`, `metrics.switch_stats(...)`, `metrics.spurious_over_starts(...)`, `metrics.false_characters(...)`, `metrics.cpu_per_channel_second(...)`, `metrics.periodicity_points(out_dir, name, cfg, only=None, groups=..., min_snr_db=0.0, jobs=None)`, `metrics.evaluate_rule(points, windows_s, subset, threshold)`, `metrics.calibrate(points, windows_s, subset, target=0.95)`.
-  - `report.RUNAWAY_CASES`, `report.comparable_rows(out_dir, name, results_dirs=None, only=None)`, `report.not_comparable(group, tag) -> str | None`, `report.acceptance(rows, name, out_dir, results_dirs=None) -> dict`, `report.write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path`.
+  - `report.RUNAWAY_CASES`, `report.comparable_rows(out_dir, name, results_dirs=None, only=None)`, `report.not_comparable(group, tag) -> str | None`, `report.verdict(interval) -> str`, `report.comparison(rows, name, out_dir, results_dirs=None) -> dict`, `report.DETECTOR_GAP` (the stated gap), `report.write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4275,6 +4275,24 @@ def test_paired_differences_compare_any_two_front_ends():
     rows += [_row(0.0, 100, 20, front_end="bank-proto", index=i) for i in range(4)]
     d = paired_differences(rows, "matched", "bank-proto")[("A", "25 wpm")]
     assert d["mean"] == pytest.approx(0.10)
+
+
+def test_detector_only_groups_get_oracle_copies_that_load_as_oracle_rows(tmp_path):
+    from kz4ap_synth.suites import ORACLE_COPY_GROUPS, load_results, oracle_copies
+    rec = {"name": "pauses-s1", "group": "pauses", "oracle": False, "labels": "pauses-s1.json"}
+    assert oracle_copies(rec) == [("pauses-s1.json", "pauses-s1.oracle", "pauses, oracle")]
+    assert oracle_copies({**rec, "group": "A sensitivity", "oracle": True}) == []
+    assert oracle_copies({**rec, "group": "H two-station QSO"}) == []  # group H has its own oracle copy
+    assert set(ORACLE_COPY_GROUPS) == {"pauses", "strong", "tune-up", "first sample", "band", "crowded"}
+    spec = Recording("pauses-s1", "pauses", 8000, 3.0, 5, False, [SignalSpec("CQ", 1000.0, 25.0, 10.0, 0.5)])
+    write_suite([spec], tmp_path, "test")
+    (tmp_path / "results" / "matched").mkdir(parents=True)
+    for result in ("pauses-s1", "pauses-s1.oracle"):
+        (tmp_path / "results" / "matched" / f"{result}.json").write_text(
+            json.dumps({"score": {"signals": [_fake_signal(0)]}}))
+    rows, _ = load_results(tmp_path)
+    assert sorted((r["recording"], r["group"]) for r in rows) == [("pauses-s1", "pauses"),
+                                                                  ("pauses-s1.oracle", "pauses, oracle")]
 
 
 def test_load_results_reads_the_given_directories_and_front_ends(tmp_path):
@@ -4340,6 +4358,18 @@ def test_decode_writes_one_text_per_label_in_label_order(tmp_path):
     assert [c["label_index"] for c in decoded["channels"]] == [0, 1]
     assert decoded["channels"][0]["channel_s"] == 2.0 and decoded["channels"][0]["rate_hz"] == 1500.0
     assert np.load(tmp_path / "proto" / "t-proto" / "p1" / "a" / "1.npy").shape == (3000,)
+
+
+def test_oracle_copies_are_recorded_and_scored_by_the_engine_front_ends(tmp_path, monkeypatch):
+    manifest(tmp_path, [rec("a", True), {**rec("p", False), "group": "pauses"}, {**rec("h", False), "group": "H two-station QSO"}])
+    assert [j["result"] for j in runner.oracle_scorings(tmp_path)] == ["a", "p.oracle"]
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **k: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "CER 0\n", ""))
+    runner.score_engine_copies(tmp_path, tmp_path / "kz4ap-bench")
+    assert [(c[c.index("--front-end") + 1], c[c.index("--json") + 1]) for c in calls] == [
+        ("envelope", str(tmp_path / "results" / "baseline" / "p.oracle.json")),
+        ("matched", str(tmp_path / "results" / "matched" / "p.oracle.json"))]
+    assert all("--oracle" in c and c[1] == str(tmp_path / "p.wav") for c in calls)
 
 
 def test_score_hands_each_decoded_file_to_the_bench(tmp_path, monkeypatch):
@@ -4438,7 +4468,22 @@ def paired_differences(rows, a: str = "baseline", b: str = "matched") -> dict:
     base, matched = by_front_end.get(a, {}), by_front_end.get(b, {})
 ```
 
-(the rest of the function is unchanged; `matched` now names front end b). Change `load_results`'s head and its directory loop:
+(the rest of the function is unchanged; `matched` now names front end b). Add, after `_scorings`:
+
+```python
+# The detector-only groups, scored again with oracle channels for the filter-bank prototype (milestone 2b,
+# stage 1; owner, 2026-09-30), so every regime is compared like for like. Group H has its own oracle copy.
+ORACLE_COPY_GROUPS = ("pauses", "strong", "tune-up", "first sample", "band", "crowded")
+
+
+def oracle_copies(rec: dict) -> list[tuple[str, str, str]]:
+    """(labels file, result name, group) of a detector-only recording's oracle copy, or []."""
+    if rec["oracle"] or rec["group"] not in ORACLE_COPY_GROUPS:
+        return []
+    return [(rec["labels"], f"{rec['name']}.oracle", f"{rec['group']}, oracle")]
+```
+
+Change `load_results`'s head and its directory loop:
 
 ```python
 def load_results(out_dir: Path, results_dirs=None, front_ends=None):
@@ -4453,7 +4498,14 @@ def load_results(out_dir: Path, results_dirs=None, front_ends=None):
             continue
 ```
 
-(the loop body is unchanged).
+and in the loop body replace `for label_file, result_name, group in _scorings(rec):` with
+
+```python
+            scorings = [(s, rec["oracle"]) for s in _scorings(rec)] + [(s, True) for s in oracle_copies(rec)]
+            for (label_file, result_name, group), oracle in scorings:
+```
+
+and use `oracle` in place of `rec["oracle"]` in the two calls inside it (`_row_regime` and `beyond_oracle_anchor`); the rest is unchanged. (Nothing is written for the copies until a results file exists, so the suite's own summaries are unchanged until Task 12 Step 8 runs.)
 
 - [ ] **Step 4: Implement the runner**
 
@@ -4465,6 +4517,7 @@ the prototype, score the decoded text with kz4ap-bench --score-decoded, and repo
 results in the suite's results/ directory.
 
     python -m kz4ap_proto.runner record --out build/suite/full3 --bench PATH/kz4ap-bench [--only REGEX]
+    python -m kz4ap_proto.runner engine-copies --out build/suite/full3 --bench PATH/kz4ap-bench [--only REGEX]
     python -m kz4ap_proto.runner decode --out build/suite/full3 [--name bank-proto] [--set KEY=VALUE ...] [--only REGEX] [--jobs N]
     python -m kz4ap_proto.runner score --out build/suite/full3 --bench PATH/kz4ap-bench [--name bank-proto] [--only REGEX]
     python -m kz4ap_proto.runner report --out build/suite/full3 [--name bank-proto] [--only REGEX] [--suffix TEXT]
@@ -4484,7 +4537,7 @@ from pathlib import Path
 
 import numpy as np
 
-from kz4ap_synth.suites import _scorings
+from kz4ap_synth.suites import BENCH_FRONT_END, _scorings, oracle_copies
 
 from .channel import ChannelDecoder
 from .params import ProtoConfig
@@ -4494,13 +4547,12 @@ DEFAULT_NAME = "bank-proto"
 
 
 def oracle_scorings(out_dir: Path, only: str | None = None) -> list[dict]:
-    """Every (recording, labels file) of the manifest's oracle recordings, as the suite scores them."""
+    """Every (recording, labels file) scored with oracle channels: the oracle recordings' scorings, and the oracle
+    copies of the detector-only groups (suites.oracle_copies)."""
     manifest = json.loads((Path(out_dir) / "manifest.json").read_text())
     jobs = []
     for rec in manifest["recordings"]:
-        if not rec["oracle"]:
-            continue
-        for label_file, result, group in _scorings(rec):
+        for label_file, result, group in (_scorings(rec) if rec["oracle"] else oracle_copies(rec)):
             if only is None or re.search(only, result):
                 jobs.append({"result": result, "group": group, "wav": rec["wav"], "labels": label_file})
     return jobs
@@ -4519,6 +4571,30 @@ def record(out_dir: Path, bench: Path, only: str | None = None) -> None:
         if done.returncode != 0:
             raise RuntimeError(f"kz4ap-bench failed recording {job['result']}:\n{done.stderr}")
         print(f"recorded {job['result']}")
+
+
+def score_engine_copies(out_dir: Path, bench: Path, front_ends=("baseline", "matched"), only: str | None = None) -> None:
+    """Scores the oracle copies of the detector-only groups with the engine's own front ends
+    (kz4ap-bench --oracle --front-end envelope|matched) into results/<front end>/<name>.oracle.json, so the
+    prototype's rows there compare like for like. Existing results are kept."""
+    out_dir = Path(out_dir)
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    for rec in manifest["recordings"]:
+        for label_file, result, _ in oracle_copies(rec):
+            if only is not None and not re.search(only, result):
+                continue
+            for fe in front_ends:
+                target = out_dir / "results" / fe / f"{result}.json"
+                if target.exists():
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                cmd = [str(bench), str(out_dir / rec["wav"]), "--labels", str(out_dir / label_file), "--oracle",
+                       "--front-end", BENCH_FRONT_END[fe], "--json", str(target)]
+                done = subprocess.run(cmd, capture_output=True, text=True)
+                if done.returncode != 0:
+                    raise RuntimeError(f"kz4ap-bench failed on {result} ({fe}):\n{done.stderr}")
+                lines = done.stdout.strip().splitlines()
+                print(f"{fe:9s} {result}: {lines[-1] if lines else ''}")
 
 
 def _decode_one(work) -> dict:
@@ -4598,13 +4674,13 @@ def parse_values(pairs) -> dict:
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
-    for command in ("record", "decode", "score", "report"):
+    for command in ("record", "engine-copies", "decode", "score", "report"):
         p = sub.add_parser(command)
         p.add_argument("--out", type=Path, required=True)
         p.add_argument("--only", default=None, help="regular expression on result names")
-        if command in ("record", "score"):
+        if command in ("record", "engine-copies", "score"):
             p.add_argument("--bench", type=Path, required=True)
-        if command != "record":
+        if command not in ("record", "engine-copies"):
             p.add_argument("--name", default=DEFAULT_NAME)
         if command == "decode":
             p.add_argument("--set", dest="values", action="append", help="KEY=VALUE: a ProtoConfig value")
@@ -4615,6 +4691,8 @@ def main(argv=None) -> None:
     args = parser.parse_args(argv)
     if args.command == "record":
         record(args.out, args.bench, args.only)
+    elif args.command == "engine-copies":
+        score_engine_copies(args.out, args.bench, only=args.only)
     elif args.command == "decode":
         decode(args.out, args.name, parse_values(args.values), args.only, args.jobs, args.keep_p1)
     elif args.command == "score":
@@ -4873,8 +4951,9 @@ def calibrate(points, windows_s, subset, target: float = 0.95):
 Create `training/kz4ap_proto/report.py`:
 
 ```python
-"""The prototype against the engine's front ends on the same oracle signals, and the proposed stage-2
-acceptance criteria (spec section 7), from the suite's results (plan Task 12)."""
+"""The prototype against the engine's front ends on the same oracle signals, every regime included: the full
+comparison the owner decides on (spec section 7; owner, 2026-09-30: no acceptance gate), from the suite's
+results (plan Task 12)."""
 
 from __future__ import annotations
 
@@ -4927,33 +5006,59 @@ def _signal_cer(out_dir, results_dirs, fe, recording, freq_hz):
     return None
 
 
-def acceptance(rows, name, out_dir, results_dirs=None) -> dict:
-    """Spec section 7's proposed criteria, as far as oracle streams show them: (a) group A crossings within
-    0.5 dB of the current Matched at every speed; (b) R1, R2 and the start-up runaways; (c) conditions where the
-    prototype is worse than Envelope beyond the interval; (d) Envelope unchanged (checked by the smoke test)."""
+# What stage 1 cannot measure (owner, 2026-09-30; spec section 7; backlog): it needs the real detector.
+DETECTOR_GAP = ("Not measured in stage 1, because it depends on the detector, which this redesign does not change: "
+                "detection recall, false tracks, tracks per QSO, group H through the detector, and the band and crowded "
+                "groups as the detector sees them. Stage 2 measures them with the bank in C++ behind the real detector.")
+
+
+def verdict(interval) -> str:
+    """"better" or "worse" when the paired 95% interval (prototype minus reference, CER) excludes 0, else
+    "unchanged"; "no interval" for fewer than 2 signals."""
+    if interval is None:
+        return "no interval"
+    if interval[1] < 0:
+        return "better"
+    if interval[0] > 0:
+        return "worse"
+    return "unchanged"
+
+
+def comparison(rows, name, out_dir, results_dirs=None) -> dict:
+    """The full comparison, no gate (owner): (a) group A S500 at CER 0.10 and 0.05 at every speed for the prototype,
+    Matched and Envelope, with intervals and the differences; (b) R1 (group D step 20->35 WPM), R2 (group A 12 WPM
+    first-word CER at S500 6-20 dB) and the start-up runaway cases; (c) every (group, tag): the prototype against
+    Matched and against Envelope, paired, called better / worse / unchanged beyond its interval, by how much."""
     agg = suites.aggregate(rows)
-    a = []
+    crossings = []
     for tag in ("12 wpm", "25 wpm", "40 wpm"):
-        ours, ref = agg.get((name, "A sensitivity", tag)), agg.get(("matched", "A sensitivity", tag))
         for threshold in ("0.1", "0.05"):
-            x = ours["snr_at_cer"].get(threshold) if ours else None
-            y = ref["snr_at_cer"].get(threshold) if ref else None
-            a.append({"tag": tag, "cer": threshold, "prototype_db": x, "matched_db": y,
-                      "prototype_interval": ours["snr_at_cer_interval"].get(threshold) if ours else None,
-                      "matched_interval": ref["snr_at_cer_interval"].get(threshold) if ref else None,
-                      "difference_db": x - y if x is not None and y is not None else None,
-                      "within_0_5_db": x is not None and y is not None and x - y <= 0.5})
+            cell = {fe: (agg[(fe, "A sensitivity", tag)]["snr_at_cer"].get(threshold),
+                         agg[(fe, "A sensitivity", tag)]["snr_at_cer_interval"].get(threshold))
+                    if (fe, "A sensitivity", tag) in agg else (None, None) for fe in (name, *REFERENCES)}
+            ours = cell[name][0]
+            crossings.append({"tag": tag, "cer": threshold, **{fe: list(v) for fe, v in cell.items()},
+                              **{f"minus_{fe}_db": ours - cell[fe][0] if ours is not None and cell[fe][0] is not None
+                                 else None for fe in REFERENCES}})
     r1 = {fe: {k: agg.get((fe, "D speed", "step 20->35"), {}).get(k) for k in ("cer", "cer_interval")}
           for fe in (name, *REFERENCES)}
     r2 = {fe: _first_word(rows, fe, "A sensitivity", "12 wpm", 6.0, 20.0) for fe in (name, *REFERENCES)}
     runaways = [{"recording": rec, "freq_hz": f,
                  **{fe: _signal_cer(out_dir, results_dirs, fe, rec, f) for fe in (name, *REFERENCES)}}
                 for rec, f in RUNAWAY_CASES]
-    paired = suites.paired_differences(rows, "baseline", name)
-    worse = [{"group": g, "tag": t, **v, "not_comparable": not_comparable(g, t)}
-             for (g, t), v in sorted(paired.items()) if v["interval"] and v["interval"][0] > 0]
-    return {"a": a, "b": {"r1": r1, "r2": r2, "runaways": runaways}, "c": worse,
-            "d": "checked by bash bench/smoke.sh and bench/baselines being untouched (plan Tasks 2, 3, 15)"}
+    pairs = {ref: suites.paired_differences(rows, ref, name) for ref in REFERENCES}
+    regimes = []
+    for group, tag in sorted(set(pairs["matched"]) | set(pairs["baseline"])):
+        entry = {"group": group, "tag": tag, "not_comparable": not_comparable(group, tag)}
+        for ref in REFERENCES:
+            v = pairs[ref].get((group, tag))
+            entry[ref] = None if v is None else {"signals": v["signals"], "mean": v["mean"], "interval": v["interval"],
+                                                 "verdict": verdict(v["interval"])}
+        regimes.append(entry)
+    counts = {ref: {k: sum(1 for e in regimes if e[ref] and e[ref]["verdict"] == k and not e["not_comparable"])
+                    for k in ("better", "worse", "unchanged", "no interval")} for ref in REFERENCES}
+    return {"crossings": crossings, "r1": r1, "r2": r2, "runaways": runaways, "regimes": regimes, "counts": counts,
+            "detector_gap": DETECTOR_GAP}
 
 
 def _fmt(v, interval=None, fmt=".3f"):
@@ -4965,7 +5070,7 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
     rows = comparable_rows(out_dir, name, results_dirs, only)
     agg = suites.aggregate(rows)
     pairs = {ref: suites.paired_differences(rows, ref, name) for ref in REFERENCES}
-    acc = acceptance(rows, name, out_dir, results_dirs)
+    comp = comparison(rows, name, out_dir, results_dirs)
     lines = [f"# {name} against Matched and Envelope" + (f" ({suffix})" if suffix else ""), "",
              "Same oracle signals for all three. CER with bootstrap 95% intervals over signals; paired columns: "
              f"{name} minus the reference, signal by signal (negative favors {name}). S₅₀₀: key-down carrier power "
@@ -4985,25 +5090,33 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
                          f"{_fmt(p[0].get('mean'), p[0].get('interval'), '+.3f')} | "
                          f"{_fmt(p[1].get('mean'), p[1].get('interval'), '+.3f')} | {fw} |")
         lines.append("")
-    lines += ["## Proposed acceptance criteria (spec §7, stage 2), on the oracle streams", "",
-              "(a) Group A, S₅₀₀ at CER 0.10 and 0.05 (dB); within 0.5 dB of Matched:", "",
-              f"| tag | CER | {name} S500 (dB) | Matched S500 (dB) | difference (dB of S500) | within 0.5 dB of S500 |", "|---|---|---|---|---|---|"]
-    for row in acc["a"]:
-        lines.append(f"| {row['tag']} | {row['cer']} | {_fmt(row['prototype_db'], row['prototype_interval'], '.1f')} | "
-                     f"{_fmt(row['matched_db'], row['matched_interval'], '.1f')} | "
-                     f"{_fmt(row['difference_db'], None, '+.1f')} | {'yes' if row['within_0_5_db'] else 'no'} |")
-    r1, r2 = acc["b"]["r1"], acc["b"]["r2"]
-    lines += ["", "(b) Regression R1 (group D, step 20→35 WPM, CER; Matched 0.394 after Task 17, 0.113 at Task 14): " +
-              ", ".join(f"{fe} {_fmt(r1[fe]['cer'], r1[fe]['cer_interval'])}" for fe in r1) + ".",
+    names = {name: name, "matched": "Matched", "baseline": "Envelope"}
+    lines += ["## Comparison for the owner (no acceptance gate)", "",
+              "Group A, S₅₀₀ at CER 0.10 and 0.05 (dB), with intervals; differences in dB of S₅₀₀ (negative: the "
+              f"{name} needs less signal):", "",
+              f"| tag | CER | {name} | Matched | Envelope | {name} − Matched | {name} − Envelope |", "|---|---|---|---|---|---|---|"]
+    for c in comp["crossings"]:
+        lines.append(f"| {c['tag']} | {c['cer']} | " + " | ".join(_fmt(c[fe][0], c[fe][1], '.1f') for fe in (name, *REFERENCES))
+                     + f" | {_fmt(c['minus_matched_db'], None, '+.1f')} | {_fmt(c['minus_baseline_db'], None, '+.1f')} |")
+    r1, r2 = comp["r1"], comp["r2"]
+    lines += ["", "Regression R1 (group D, step 20→35 WPM, CER; Matched 0.394 after milestone-2a Task 17, 0.113 at Task 14): " +
+              ", ".join(f"{names[fe]} {_fmt(r1[fe]['cer'], r1[fe]['cer_interval'])}" for fe in r1) + ".",
               "Regression R2 (group A 12 WPM, first-word CER at S₅₀₀ 6–20 dB; Matched 0.985 after Task 17): " +
-              ", ".join(f"{fe} {_fmt(r2[fe]['cer'], r2[fe]['interval'])} ({r2[fe]['signals']} signals)" for fe in r2) + ".",
+              ", ".join(f"{names[fe]} {_fmt(r2[fe]['cer'], r2[fe]['interval'])} ({r2[fe]['signals']} signals)" for fe in r2) + ".",
               "Start-up runaway cases (CER): " + "; ".join(
                   f"{c['recording']} {c['freq_hz']:+.1f} Hz: " + ", ".join(
-                      f"{fe} {_fmt(c[fe])}" for fe in (name, *REFERENCES)) for c in acc["b"]["runaways"]) + ".", "",
-              f"(c) Conditions where {name} is worse than Envelope beyond the interval:", ""]
-    lines += [f"- {w['group']}, {w['tag']}: {_fmt(w['mean'], w['interval'], '+.3f')}"
-              + (f" (not comparable: {w['not_comparable']})" if w["not_comparable"] else "") for w in acc["c"]] or ["- none"]
-    lines += ["", f"(d) {acc['d']}.", "", f"## {name}'s own statistics", ""]
+                      f"{names[fe]} {_fmt(c[fe])}" for fe in (name, *REFERENCES)) for c in comp["runaways"]) + ".", "",
+              f"Every regime: {name} minus the reference, paired CER with its 95% interval; better / worse beyond the "
+              "interval, else unchanged. Comparable regimes: " + "; ".join(
+                  f"against {names[ref]}: " + ", ".join(f"{v} {k}" for k, v in comp["counts"][ref].items())
+                  for ref in REFERENCES) + ".", "",
+              "| group | tag | against Matched | against Envelope | note |", "|---|---|---|---|---|"]
+    for e in comp["regimes"]:
+        cells = [f"{_fmt(e[ref]['mean'], e[ref]['interval'], '+.3f')} {e[ref]['verdict']}" if e[ref] else "—"
+                 for ref in REFERENCES]
+        lines.append(f"| {e['group']} | {e['tag']} | {cells[0]} | {cells[1]} | {e['not_comparable'] or ''} |")
+    lines += ["", f"**Stated gap.** {comp['detector_gap']}", ""]
+    lines += ["", f"## {name}'s own statistics", ""]
     speed = metrics.speed_errors(out_dir, name, only)
     lines += ["Selected speed off the label's by more than ×1.5 (fraction of selection instants, from 3 s into each "
               "transmission, S₅₀₀ ≥ 6 dB, constant-speed labels) and lock-ins (3 s or longer):", "",
@@ -5024,7 +5137,7 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
               "channel-second (Python prototype; not comparable with the engine's C++)."]
     path = out_dir / f"report-{name}{('-' + suffix) if suffix else ''}.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    (path.with_suffix(".json")).write_text(json.dumps({"acceptance": acc, "speed": speed, "switches": switches,
+    (path.with_suffix(".json")).write_text(json.dumps({"comparison": comp, "speed": speed, "switches": switches,
                                                        "over_starts": overs, "false_characters": false},
                                                       indent=2, default=str) + "\n")
     return path
@@ -5035,14 +5148,15 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
 Run: `.venv\Scripts\python -m pytest training -q`
 Expected: all pass.
 
-- [ ] **Step 8: Record the suite's oracle streams and run the pipeline end to end on one recording**
+- [ ] **Step 8: Score the oracle copies with Envelope and Matched, record the suite's oracle streams, and run the pipeline end to end on one recording**
 
 ```powershell
+.venv\Scripts\python -m kz4ap_proto.runner engine-copies --out build/suite/full3 --bench build/windows/bench/Release/kz4ap-bench.exe
 .venv\Scripts\python -m kz4ap_proto.runner record --out build/suite/full3 --bench build/windows/bench/Release/kz4ap-bench.exe
 .venv\Scripts\python -m kz4ap_proto.runner decode --out build/suite/full3 --name smoke-proto --only "^D-speed-s1$"
 .venv\Scripts\python -m kz4ap_proto.runner score --out build/suite/full3 --bench build/windows/bench/Release/kz4ap-bench.exe --name smoke-proto --only "^D-speed-s1$"
 ```
-Expected: `recorded …` for each of the 93 oracle scorings (90 oracle recordings, 30 per seed with group I's two, plus the three H-oracle recordings once more against their station labels); about 4.4 GB in `build/suite/full3/channels/` (370 000 channel-seconds × 12 kB/s; the three `.stations` scorings record the same WAVs again, at the station frequencies); record the time taken. Then `decoded D-speed-s1` and one `smoke-proto D-speed-s1: CER …` line. Delete `build/suite/full3/results/smoke-proto` and `build/suite/full3/proto/smoke-proto` afterwards (they are not a result).
+Expected: first 54 `envelope`/`matched … CER …` lines for the oracle copies (27 detector-only recordings: per seed pauses, strong, tune-up, first sample, band and four crowded; about 2 min), then `recorded …` for each of the 120 oracle scorings (90 oracle recordings, 30 per seed with group I's two; the three H-oracle recordings once more against their station labels; and the 27 oracle copies); about 4.6 GB in `build/suite/full3/channels/` (about 390 000 channel-seconds × 12 kB/s; the three `.stations` scorings record the same WAVs again, at the station frequencies); record the time taken. Then `decoded D-speed-s1` and one `smoke-proto D-speed-s1: CER …` line. Delete `build/suite/full3/results/smoke-proto` and `build/suite/full3/proto/smoke-proto` afterwards (they are not a result).
 
 - [ ] **Step 9: Commit**
 
@@ -5482,7 +5596,7 @@ the periodicity and speed statistics). S₅₀₀: key-down carrier power over n
 
 - Machine: <processor>, Windows 11. Code: <commit>.
 - Suite: `build/suite/full3` (3 seeds; 123 recordings with group I). Prototype input: the oracle
-  channels' recorded streams (93 scorings), mixed to 0 Hz at the labeled frequency and drift.
+  channels' recorded streams (120 scorings, the 27 oracle copies of the detector-only groups included), mixed to 0 Hz at the labeled frequency and drift.
 - Development set (experiments): `experiments.DEV` — seed 1 of groups A, C, D, E, F, G, H (oracle, both
   views), I, and B's mixed-style recording. Held out: seeds 2 and 3.
 - Run times: group I generation <min> and scoring <min> (Task 1); recording the streams <min>
@@ -5511,7 +5625,7 @@ the plan; its outcome; the value adopted and its status.)
 
 ## 4. Final evaluation (Task 15)
 
-## 5. Proposed acceptance criteria (spec §7, stage 2) on the oracle streams
+## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure
 
 ## 6. Open items for the owner
 ```
@@ -5648,9 +5762,9 @@ git commit -m "Record the fit, over-start and selection experiments of stage 1"
 
 ---
 
-### Task 15: Final evaluation, acceptance, write-back to the spec
+### Task 15: Final evaluation, the full comparison for the owner, write-back to the spec
 
-The settled configuration on all three seeds, reported against Matched and Envelope (spec §7 item 5), the held-out seeds separately, the proposed stage-2 acceptance criteria evaluated on the oracle streams, and the measured values written into the spec's §6 and a new stage-1 results section (the write-back was asked for with this plan; the owner reviews it on the branch before merge).
+The settled configuration on all three seeds, reported against Matched and Envelope on the same oracle signals, every regime included (the oracle copies of the detector-only groups too), the held-out seeds separately, laid out as a full comparison for the owner's decision — there is no acceptance gate (owner, 2026-09-30) — with the stated gap of what only stage 2 can measure, and the measured values written into the spec's §6 and a new stage-1 results section (the write-back was asked for with this plan; the owner reviews it on the branch before merge).
 
 **Files:**
 - Modify: `docs/plans/2026-09-30-milestone-2b-stage-1-results.md` (sections 4–6)
@@ -5672,28 +5786,28 @@ Start the decode (about 2 h on 14 workers) in the background with its log redire
 .venv\Scripts\python -m kz4ap_proto.runner report --out build/suite/full3 --name bank-proto --only "-s[23](\.stations)?$" --suffix held-out
 .venv\Scripts\python -m kz4ap_synth.suites summarize --out build/suite/full3
 ```
-Expected: 93 decoded files, 93 scored, the two reports, and the suite's `summary.md` now with `bank-proto` rows beside `baseline` and `matched`. Record the wall-clock times.
+Expected: 120 decoded files, 120 scored (including the 27 oracle copies), the two reports, and the suite's `summary.md` now with `bank-proto` rows beside `baseline` and `matched`. Record the wall-clock times.
 
 - [ ] **Step 2: Check the references are untouched**
 
-In Git Bash: `bash bench/smoke.sh build/windows` → `smoke test passed`; and `git diff --stat main -- bench/baselines` → no output (criterion (d): Envelope unchanged; the Matched smoke CER 0.0436 unchanged too).
+In Git Bash: `bash bench/smoke.sh build/windows` → `smoke test passed`; and `git diff --stat main -- bench/baselines` → no output (Envelope and the current Matched path unchanged: Envelope smoke CER 0.0353, Matched 0.0436).
 
 - [ ] **Step 3: Read the numbers before writing them down**
 
-Check, before trusting them (these look for broken runs, not for a winner): every group has `bank-proto` rows with the same signal counts as `matched`; group A's prototype CER falls with S₅₀₀; the rows marked not comparable are the F drift rows and the H oracle QSO-label rows with an offset; the held-out report's group-A crossings are within their intervals of the development seed's (a large difference means the experiments tuned toward seed 1: report it). If something looks broken, debug (superpowers:systematic-debugging) before writing.
+Check, before trusting them (these look for broken runs, not for a winner): every group, including the six `…, oracle` copies, has `bank-proto` rows with the same signal counts as `matched` and `baseline`; group A's prototype CER falls with S₅₀₀; the rows marked not comparable are the F drift rows and the H oracle QSO-label rows with an offset; the held-out report's group-A crossings are within their intervals of the development seed's (a large difference means the experiments tuned toward seed 1: report it). If something looks broken, debug (superpowers:systematic-debugging) before writing.
 
 - [ ] **Step 4: Write sections 4–6 of the results document**
 
 Section 4: from `report-bank-proto.md` and the held-out report: every group's table (prototype, Matched and Envelope CER with intervals, the paired columns), the group-A crossings, the prototype's own statistics (speed errors and lock-ins, switches and alternations, over starts, false characters, CPU), and the corrections (count and reach distribution from the decoded files: `max`, median; all must be ≤ 20 s).
 
-Section 5: each proposed criterion with its measured answer, plainly:
-- (a) group A crossings (S₅₀₀ at CER 0.10 and 0.05) within 0.5 dB of S₅₀₀ of Matched's at every speed — yes/no per speed and threshold, with intervals;
-- (b) R1 (group D step 20 → 35 WPM CER), R2 (group A 12 WPM first-word CER at S₅₀₀ 6–20 dB) and the two start-up runaway cases, prototype against Matched (Task 17) — gone or not, with numbers; and the lock-ins at S₅₀₀ ≥ 6 dB from the speed table (the plan's operational reading of "runaways": a selected speed off by more than ×1.5 for 3 s or longer);
-- (c) every condition where the prototype is worse than Envelope beyond the interval, marking the not-comparable ones;
-- (d) Envelope unchanged (Step 2).
-State that these are stage-2 criteria judged here on the prototype and the oracle streams, not on the C++ bank.
+Section 5: the comparison, plainly and without a verdict of our own (the owner decides whether the prototype is better and whether stage 2 is worth doing):
+- group A crossings (S₅₀₀ at CER 0.10 and 0.05) at every speed for the prototype, Matched and Envelope, with intervals, and the differences in dB of S₅₀₀;
+- R1 (group D step 20 → 35 WPM CER), R2 (group A 12 WPM first-word CER at S₅₀₀ 6–20 dB) and the two start-up runaway cases, for all three, with numbers; and the prototype's lock-ins at S₅₀₀ ≥ 6 dB from the speed table (a selected speed off by more than ×1.5 for 3 s or longer);
+- every regime (group and tag, the oracle copies included) against Matched and against Envelope: better, worse or unchanged beyond its interval, by how much, with the counts of each; the not-comparable rows marked (F drift, H oracle QSO labels with an offset);
+- **the stated gap:** detection recall, false tracks, tracks per QSO, group H through the detector, and the band and crowded groups as the detector sees them are not measured in stage 1, because they depend on the detector, which the redesign does not change; stage 2 measures them with the bank in C++ behind the real detector (spec §7; backlog "Stage-2 evaluation of the filter bank through the detector").
+State that this compares the Python prototype on oracle streams, not the C++ bank.
 
-Section 6: open items for the owner: the comb-on-2T change (if not already answered), the tracker's input in stage 2 (which branch's v and p), every "no setting met the criterion" and every finding reported during Tasks 11–15, the placeholders kept unmeasured, the T_P prior's reinterpretation (a gate at the confidence threshold instead of a weight by the confidence, because the arms' confidences are on different scales); that the suite's non-oracle groups (first sample, pauses, tune-up, strong, crowded, band) never reached the prototype, so Review Focus items 1, 3 and 4 rest on synthetic tests only; and the spec §8 questions this stage did not measure: 5 WPM keying against fading (the suite has no slow fading recording below 12 WPM), the outlier class's shape, the noise spectrum's FFT size, averaging and guard (only compared with the fallback, E10), and the choices this plan made heuristically (listed in its Parameters table).
+Section 6: open items for the owner: the comb-on-2T change (if not already answered), the tracker's input in stage 2 (which branch's v and p), every "no setting met the criterion" and every finding reported during Tasks 11–15, the placeholders kept unmeasured, the T_P prior's reinterpretation (a gate at the confidence threshold instead of a weight by the confidence, because the arms' confidences are on different scales); that the detector-only groups reached the prototype only as oracle copies (the detector's part is stage 2's); and the spec §8 questions this stage did not measure: 5 WPM keying against fading (the suite has no slow fading recording below 12 WPM), the outlier class's shape, the noise spectrum's FFT size, averaging and guard (only compared with the fallback, E10), and the choices this plan made heuristically (listed in its Parameters table).
 
 - [ ] **Step 5: Write the values back into the spec**
 
@@ -5706,15 +5820,17 @@ In `docs/design/2026-09-30-filter-bank-speed-estimator-design.md`:
 ## 10. Stage 1 results (measured, <date of the final run>)
 
 Prototype on the recorded oracle channel streams of the 3-seed full suite
-(`docs/plans/2026-09-30-milestone-2b-stage-1-results.md`). <One paragraph per proposed criterion (a)–(d):
-met or not, with the numbers and intervals.> <One paragraph: the settled parameters and the changes to
+(`docs/plans/2026-09-30-milestone-2b-stage-1-results.md`). <One paragraph each: group A crossings, R1, R2
+and the runaways, and the counts of regimes better / worse / unchanged against Matched and against Envelope,
+with the largest differences and their intervals; no verdict (the owner decides).> <One sentence: the stated
+gap — the detector-dependent measures are stage 2's.> <One paragraph: the settled parameters and the changes to
 this design found in stage 1: which periodicity arm and noise arm won; the unknown-amplitude test is a per-sample threshold on x, calibrated
 by measurement.> <One sentence: what stage 2 must decide that stage 1 did not (the tracker's input).>
 ```
 
 - [ ] **Step 6: Update the backlog**
 
-In `docs/backlog.md`, under the milestone-2b heading (create it after the milestone-2 items if missing), add one line per stage-2 item found: the tracker's input from the bank; any criterion not met, with its numbers; any placeholder kept unmeasured.
+In `docs/backlog.md`, under the milestone-2b heading (create it after the milestone-2 items if missing), add one line per stage-2 item found: the tracker's input from the bank; every regime where the prototype was worse than Matched or Envelope, with its numbers; any placeholder kept unmeasured. (The item "Stage-2 evaluation of the filter bank through the detector" is already there.)
 
 - [ ] **Step 7: Commit**
 
@@ -5727,7 +5843,7 @@ git commit -m "Record stage 1 of the filter-bank redesign: final evaluation and 
 
 - [ ] **Step 8: Report to the owner**
 
-In a few lines: whether each proposed criterion (a)–(d) is met on the oracle streams (group-A crossings against Matched, R1, R2, the runaways, the conditions worse than Envelope), the settled parameter values and which stayed placeholders, the findings reported along the way (comb on 2T; tracker input; any rule no setting met), the prototype's CPU (Python, for scale only), and that the spec's §6 and §10 were changed on the branch for the owner's review. Do not push or merge.
+In a few lines, without a verdict: the group-A crossings against Matched and Envelope, R1, R2, the runaways, and how many regimes are better, worse and unchanged against each (with the largest differences), the stated detector gap, the settled parameter values and which stayed placeholders, the findings reported along the way (comb on 2T; tracker input; any rule no setting met), the prototype's CPU (Python, for scale only), and that the spec's §6 and §10 were changed on the branch for the owner's review. Do not push or merge.
 
 ---
 ## Self-review (plan author's check against the spec)
@@ -5749,7 +5865,7 @@ In a few lines: whether each proposed criterion (a)–(d) is met on the oracle s
 | §4.7 silences: nothing else resets; new over at max(0.5 s, 12·T_g); fresh fit and amplitude with the previous as fallback; first marks with an unknown-amplitude test, then re-keyed with the full LLR as a correction | Task 6 (`start_over`, x-threshold test, `rekey`), Task 11 (`start_over`, `rekey_over`), E7, E9 |
 | §4.8 corrections, reach 20 s, after a switch from the character where the new branch became eligible | Task 11 (`Output`, `_char_start_at`, `eligible_since`; reach test) |
 | §6 placeholders settled by measurement | Tasks 13–14 (E1–E10, rules written before running), Task 15 (write-back) |
-| §7 stage 2 proposed acceptance criteria, stated on the oracle streams | Task 12 (`report.acceptance`), Task 15 Step 4 section 5 |
+| §7 (owner, 2026-09-30): no acceptance gate; a full comparison for the owner, every regime included; the detector-dependent measures stated as stage 2's | Task 12 (`report.comparison`, oracle copies of the detector-only groups, `engine-copies`), Task 15 Step 4 section 5, backlog item |
 | §8 open questions | E1–E3 (method, windows, confidence), E5 (grid), E6 (M, alternations), E9 (unknown-amplitude test, re-key timing), E10 (noise estimator); the rest listed as open in Task 15 |
 | Runner reuses `suites.py`'s summary machinery | Task 12 (`load_results`, `aggregate`, `paired_differences`, bootstrap) |
 | Project rules: physical units; signal-processing.md; Envelope/Matched bit-identical; baselines untouched; git | Global Constraints; §11 updates in Tasks 1–3; smoke checks in Tasks 1, 2, 3, 15 |

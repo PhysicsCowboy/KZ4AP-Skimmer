@@ -146,6 +146,20 @@ to-do list.
 Optional, later: once the software suite works, offer several classical
 decoders as a user choice.
 
+### Stage-2 evaluation of the filter bank through the detector
+
+The filter-bank redesign (`docs/design/2026-09-30-filter-bank-speed-estimator-design.md`)
+is prototyped in stage 1 on oracle channel streams only: the prototype has no
+detector. So stage 1 cannot measure anything that depends on the detector:
+**detection recall, false tracks, tracks per QSO, group H through the
+detector, and the band and crowded groups as the detector sees them
+(non-oracle).** The redesign does not change the detector, but a front end
+changes what the detector's channels decode, so these must be measured when
+the bank runs as C++ (`--front-end bank`) behind the real detector, on the
+3-seed full suite, against the current Matched and Envelope paths, with
+intervals (owner, 2026-09-30; spec §7, stage 2: a required part of the
+evaluation). No acceptance gate: the owner decides from the comparison.
+
 ### Benchmark scenarios to add first
 
 Done in milestone 2, part 1 (`training/kz4ap_synth/suites.py`).
