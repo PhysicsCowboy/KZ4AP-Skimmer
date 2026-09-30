@@ -870,10 +870,13 @@ def write_summary(out_dir: Path) -> None:
     paired = paired_differences(rows)
     splits = track_splits(out_dir)
     summary = {
-        "groups": [{"front_end": fe, "group": g, "tag": tag, **_intervals_json(v)}
+        # beyond_oracle_anchor is a Matched limit: set only on Matched rows, as the markdown marks them
+        "groups": [{"front_end": fe, "group": g, "tag": tag, **_intervals_json(v),
+                    "beyond_oracle_anchor": _anchor_limited(fe, v)}
                    for (fe, g, tag), v in sorted(agg.items())],
         "paired": [{"group": g, "tag": tag, **v} for (g, tag), v in sorted(paired.items())],
-        "overs": [{"front_end": fe, "group": g, "keying": k, **v} for (fe, g, k), v in sorted(overs.items())],
+        "overs": [{"front_end": fe, "group": g, "keying": k, **v, "beyond_oracle_anchor": _anchor_limited(fe, v)}
+                  for (fe, g, k), v in sorted(overs.items())],
         "track_splits": [{"front_end": fe, "tag": tag, **v} for (fe, tag), v in sorted(splits.items())],
         "cpu": cpu,
     }

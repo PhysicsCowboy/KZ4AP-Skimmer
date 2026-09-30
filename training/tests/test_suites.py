@@ -357,3 +357,12 @@ def test_oracle_qso_labels_with_the_answer_beyond_the_anchor_are_marked(tmp_path
     assert by_group["H two-station QSO, oracle/same-track, offset 25 Hz/matched"]["beyond_oracle_anchor"]
     assert not by_group["H two-station QSO, oracle (per station)/same-track, offset 25 Hz/matched"][
         "beyond_oracle_anchor"]
+
+
+def test_summary_json_flags_the_oracle_anchor_only_on_matched_rows(tmp_path):
+    _drift_recording(tmp_path, oracle=True)
+    write_summary(tmp_path)
+    groups = {(g["front_end"], g["tag"]): g for g in json.loads((tmp_path / "summary.json").read_text())["groups"]}
+    assert groups[("matched", "drift 2 Hz/s")]["beyond_oracle_anchor"] is True
+    assert groups[("baseline", "drift 2 Hz/s")]["beyond_oracle_anchor"] is False
+    assert groups[("matched", "drift 0.2 Hz/s")]["beyond_oracle_anchor"] is False

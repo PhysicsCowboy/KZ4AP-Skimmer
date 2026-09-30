@@ -327,7 +327,7 @@ last real character. Tune together with the next item.
 Measured on the Matched front end (milestone 2, part 1, 3 seeds, through
 the detector): pauses of 2, 5, 10 and 20 s, CER 0.038, 0.039, 0.034 and
 0.707 (Envelope 0.050, 0.069, 0.144 and 0.644), first-word CER 0.333 at
-every pause (Envelope 0.167–0.833); strong stations at S₅₀₀ 30, 40, 50 and
+2–10 s and 1.000 at 20 s (Envelope 0.167–0.833); strong stations at S₅₀₀ 30, 40, 50 and
 60 dB, CER 0.053, 0.055, 0.045 and 0.048 (Envelope 0.034, 0.052, 0.028 and
 0.028), first-word CER 0.857–1.000 (Envelope 0.571–0.867). The benchmark
 charges stray characters after a station stops as insertions, so they are
@@ -555,8 +555,9 @@ the fading group is the test), the squelch a_min = 3·(T_v/16 ms)^(1/4)
 and restart ratio (4), the re-acquisition silence (max(0.5 s, 12 dits)) and
 window (2 s), the tracker's fine-tuning range (±12 Hz around the
 detector's frequency) and minimum weight (0.6), when the filter starts following the speed (8 marks), the
-dit-estimate growth bound (×1.25 per mark, also from the filter's first
-follow step), and the channel distance (D = 47 Hz). The amplitude estimate is biased
+dit-estimate growth bound (decided ×1.25 per mark, also from the filter's
+first follow step; as coded it acts per speed update, a defect, see "Growth
+bound per mark" below), and the channel distance (D = 47 Hz). The amplitude estimate is biased
 low by the filter's ramps (0.85–0.88 of the true amplitude for PARIS at
 25 WPM, simulated), which lengthens marks by about 7 ms at 25 WPM; measure
 whether that matters.
@@ -576,7 +577,8 @@ group H through the detector (same-track QSO label +0.078, ambiguous
 +0.352, separate-track per station +0.029 to +0.057); strong stations
 (+0.018 to +0.020); tune-up carriers of 1 s (+0.562) and 2 s (+0.899).
 Three mechanisms were diagnosed (not fixed):
-- **The growth bound acts per speed update, not per mark.** Widening the
+- **The growth bound acts per speed update, not per mark** (a defect
+  against the owner's decision; "Growth bound per mark" below). Widening the
   filter at a key-up re-opens the mark just ended; the decoder merges the
   "dropout", re-measures a longer mark and widens again, so the filter
   reached its target within one mark (20 → 95 ms in 35 ms, measured). With
@@ -675,7 +677,7 @@ station's first-word CER 0.444 (Envelope 0.032). The retune delay (see
 CER with Matched was 0.235, 0.147 and 0.181 at 0, 10 and 25 Hz (Envelope
 0.199, 0.213, 0.422; an upper bound). Whether the first-step growth bound
 removed the 50 Hz runaway: not removed (2 of 6 here against 12 of 30 in
-the simulation before it; the bound acts per update, above).
+the simulation before it; as coded the bound acts per update, a defect, above).
 
 #### Two stations keying at the same time within a few tens of Hz (postponed)
 
@@ -698,6 +700,26 @@ mark's own frequency and assign marks to stations; run a second tracker
 and decoder in the channel for the second tone; a finer detector
 spectrum (a longer FFT) to see both peaks; or a probabilistic decoder that
 models two stations (top-priority item).
+
+### Growth bound per mark (defect; reported 2026-09-30, not fixed in milestone 2, part 1)
+
+The owner's decision of 2026-09-29 bounds the Matched decoder's dit
+estimate, and the filter's own dit from its first follow step, to ×1.25
+growth **per mark**. The code applies the bound in `update_speed()` at
+every key-up counted for speed. When the filter widens at a key-up, the
+wider boxcar re-opens the mark that just ended; the dropout merge in
+`key_down()` pops that mark from the speed window but does not restore
+`dit_s_` or `filter_dit_s_`, so the next key-up re-measures the longer mark
+and applies ×1.25 again. Measured (Task 14, debug prints): 7 updates on
+one mark, the filter's dit 20 ms × 1.25⁷ = 95.4 ms within 35 ms. The merge
+also does not decrement `marks_since_reacquire_`, so one physical mark can
+count twice toward the 8 marks before the filter follows. Fix: save
+`dit_s_`, `filter_dit_s_` and the mark counters at each key-up and restore
+them when the next key-down merges into that mark, so a re-measured mark
+gets one bounded update; then re-run the suite (the start-up runaways and
+group H's 50 Hz rows in `docs/signal-processing.md` §8b are the cases to
+check). This is a code fix to meet a decision already made, not a
+parameter change, but the owner decides when.
 
 ### VE3NEA's pitch error in group B
 
