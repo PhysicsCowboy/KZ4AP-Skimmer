@@ -112,6 +112,71 @@ def test_classification_follows_the_fit():
     assert observations_loglik(f, obs, CFG) > observations_loglik(Fit(0.1, 3.0, 0.0, 0.1, 0.0, 1.0), obs, CFG)
 
 
+def model_durations(seed, words, wpm=25.0):
+    """Durations drawn from the fit's own model: machine-keyed medians (T, 3T, T, 3T, 7T) with log-normal
+    scatter sigma_ln (0.15 marks, 0.25 spaces), so the model's medians are the truth."""
+    rng = np.random.default_rng(seed)
+    iv = keying_intervals(random_text(rng, words), wpm)
+    out = []
+    for i, (a, b) in enumerate(iv):
+        if i:
+            out.append((False, (a - iv[i - 1][1]) * np.exp(CFG.sigma_ln_space * rng.standard_normal())))
+        out.append((True, (b - a) * np.exp(CFG.sigma_ln_mark * rng.standard_normal())))
+    return out
+
+
+def test_the_fit_is_unbiased_on_model_matched_durations():
+    # Review fix round 1: a least-squares refinement on raw durations estimates means, not the model's medians
+    # (T biased by about +2.2%, w by -0.0105 T, from exp(sigma_ln^2 / 2) = 1.011 marks, 1.032 spaces).
+    # N_mem = 1000 and about 3400 observations per seed give an effective count (sum lambda^k)^2 /
+    # sum lambda^2k = 1870; T and w come mostly from dits (T + w, 0.5 x 0.5716 of them) and element spaces
+    # (T - w, 0.5 x 0.6467), so sd(ln T) = sd(w / T) = 0.5 sqrt(0.15^2 / 535 + 0.25^2 / 605) = 0.0060 per
+    # seed, 0.0030 for the mean of 4 seeds (derived, first order). Bounds: 1% for T (3.3 sd) and 0.009 T
+    # (3 sd) for w.
+    cfg = CFG.with_values(fit_memory=1000.0)
+    t_err, w_rel = [], []
+    for seed in range(1, 5):
+        fit = DurationFit(cfg)
+        for is_mark, d in model_durations(seed, 200):
+            fit.add(is_mark, d, 1e-8)
+        f = fit.best()
+        t_err.append(f.t_s / 0.048 - 1.0)
+        w_rel.append(f.w_s / 0.048)
+    assert abs(np.mean(t_err)) < 0.01
+    assert abs(np.mean(w_rel)) < 0.009
+
+
+def test_refinement_never_lowers_the_weighted_loglik():
+    cases = [(durations(keying_intervals(text(), 25.0)), (None, 0.0)),
+             (durations(timed_intervals(text(words=60), 24.0, "hand", np.random.default_rng(2))), (None, 0.0)),
+             (durations(keying_intervals("HI", 12.0)), (None, 0.0)),
+             ([(True, 0.1), (True, 0.1)], (1.2 / 36, 1.0)),
+             (durations(keying_intervals(text(3), 20.0)) + durations(keying_intervals(text(4, 40), 35.0))[:36],
+              (0.04, 1.0))]
+    rng = np.random.default_rng(5)
+    cases += [([(m, float(d)) for (m, _), d in zip(cases[0][0], np.exp(rng.uniform(np.log(0.01), np.log(1.0),
+                                                                                    len(cases[0][0]))))], (None, 0.0))]
+    cases += [(model_durations(seed, 30), (None, 0.0)) for seed in range(1, 4)]
+    for obs, prior in cases:
+        fit = DurationFit(CFG)
+        for is_mark, d in obs:
+            fit.add(is_mark, d, 1e-8)
+        best = fit.best(*prior)
+        assert fit.weighted_loglik(best.theta(), *prior) >= fit.weighted_loglik(fit.grid_theta(*prior), *prior) - 1e-9
+
+
+def test_durations_must_be_positive_and_are_clamped_to_the_outlier_range():
+    f = Fit(0.048, 3.0, 0.0, 0.048, 0.0, 1.0)
+    with pytest.raises(ValueError):
+        observations_loglik(f, [(True, 0.0, 1e-8)], CFG)
+    with pytest.raises(ValueError):
+        classify_space(f, -0.1, 1e-8, CFG)
+    assert observations_loglik(f, [(False, 50.0, 1e-8)], CFG) == observations_loglik(f, [(False, 10.0, 1e-8)], CFG)
+    fit = DurationFit(CFG)
+    fit.add(True, 0.0, 1e-8)  # ignored
+    assert not fit.history
+
+
 def test_copy_is_independent_and_best_needs_an_observation():
     fit = DurationFit(CFG)
     assert fit.best() is None
