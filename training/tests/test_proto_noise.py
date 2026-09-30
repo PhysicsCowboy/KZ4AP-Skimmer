@@ -60,19 +60,21 @@ def test_three_tap_estimate_is_unbiased_in_white_noise():
 
 
 def test_spectrum_gives_one_over_n_in_white_noise():
-    u = white(int(20 * RATE), 2)
+    u = white(int(60 * RATE), 2)
     est = SpectrumNoise(CFG, RATE, N)
     assert averaged(est, u, powers(u, N), 10.0) == pytest.approx(0.5 / N, rel=0.1)
 
 
 def test_spectrum_level_arm_corrects_the_mask_bias_in_white_noise():
-    u = white(int(20 * RATE), 7)
+    u = white(int(60 * RATE), 7)
     est = SpectrumNoise(CFG, RATE, N, level="spectrum")
     assert averaged(est, u, powers(u, N), 10.0) == pytest.approx(0.5 / N, rel=0.1)
 
 
-def test_the_mask_keeps_most_noise_and_reads_it_slightly_low():
-    # Measured in review: the mask keeps 63% of noise-only samples, whose power reads 2.1% low (white noise).
+def test_the_mask_keeps_most_noise_and_its_whole_band_power_reads_low():
+    # White noise: the mask keeps about 2/3 of noise-only samples (Task 5: 67.2%, seed 8), whose whole-band power
+    # reads 0.9745 of the truth (Task 5); per branch, where the low frequencies weigh most, it reads 16-21% low
+    # (params.mask_bias).
     u = white(int(60 * RATE), 8)
     est = SpectrumNoise(CFG, RATE, N)
     averaged(est, u, powers(u, N), 0.0)
@@ -104,14 +106,18 @@ def test_spectrum_keeps_marks_out_when_a_station_starts_after_the_warm_up():
     # 1.0 s of noise alone first (about 3x the 0.32 s three-tap warm-up), then 12 s of keying; averaged over the
     # last 5 s, i.e. from 7 s after the station starts.
     u, truth = keyed_stream(1.0, 13.0)
-    est = SpectrumNoise(CFG, RATE, N)
-    assert averaged(est, u, powers(u, N), 8.0) == pytest.approx(truth, rel=0.3)
+    P = powers(u, N)
+    assert averaged(SpectrumNoise(CFG, RATE, N), u, P, 8.0) == pytest.approx(truth, rel=0.3)
+    assert averaged(SpectrumNoise(CFG, RATE, N, level="spectrum"), u, P, 8.0) == pytest.approx(truth, rel=0.3)
 
 
 def test_the_three_tap_level_decays_slowly_when_a_station_keys_from_the_first_sample():
-    # Pins a known limitation, not a goal: with a station keying from sample 0 the milestone-2 three-tap warm-up
-    # (20% quantile of |v_1|^2) starts at about 6.6x the true level and decays slowly, so arm (a)'s branch 1
-    # still reads 1.331x the truth averaged over 7-12 s (measured, Task 5). E10 compares this against arm (b).
+    # Pins a known limitation, not a goal: with a station keying from sample 0 the milestone-2 three-tap estimate
+    # starts at about 6.6x the true level (its warm-up takes the 20% quantile of |v_1|^2 over keyed signal) and
+    # decays slowly, so arm (a)'s branch 1 still reads 1.331x the truth averaged over 7-12 s (measured, Task 5).
+    # Why it decays so slowly is not established: a linearized relaxation from the warm-up gives about 5.7 s, the
+    # measured decay takes about 18 s; the running-mean phase of the update and ramp leakage past the guard may
+    # contribute. E10 compares this against arm (b).
     u, truth = keyed_stream(0.0, 12.0)
     est = SpectrumNoise(CFG, RATE, N)
     ratio = averaged(est, u, powers(u, N), 7.0)[0] / truth[0]
@@ -129,7 +135,9 @@ def test_the_per_branch_mask_bias_table_is_its_white_noise_measurement():
         averaged(est, u, powers(u, N), 0.0)
         num += est.masked_branch_power() * est.segments
         segments += est.segments
-    assert num / segments / (0.5 / N) == pytest.approx(np.array(CFG.mask_bias), abs=5e-5)
+    measured = num / segments / (0.5 / N)
+    table = ", ".join(f"{x:.4f}" for x in measured)
+    assert measured == pytest.approx(np.array(CFG.mask_bias), abs=1e-4), f"re-measured mask_bias: ({table})"
 
 
 def test_the_fallback_estimates_each_branch_on_its_own():

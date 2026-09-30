@@ -19,25 +19,33 @@ class ProtoConfig:
                                            # 32/1500 s because it equals the engine's channel block); heuristic
     # Noise (spec 4.2)
     noise_method: str = "spectrum"         # "spectrum": three-tap level x spectrum ratios; "spectrum-level": spectrum
-                                           # level / mask_bias; "branch": the fallback; open, decided by E10 (owner)
-    mask_bias: tuple[float, ...] = (       # b_mask,k, one per branch (arm "spectrum-level"): branch k's sigma_v,k^2
+                                           # level (both divide branch k by mask_bias[k]); "branch": the fallback;
+                                           # open, decided by E10 (owner)
+    mask_bias: tuple[float, ...] = (       # b_mask,k, one per branch (both spectrum arms): branch k's sigma_v,k^2
         0.8370, 0.8293, 0.8263, 0.8213,    # from the masked, smoothed spectrum (flat mean of the accepted masked
         0.8171, 0.8136, 0.8095, 0.8074,    # periodograms) / its true sigma_v,k^2. Measured (Task 5): white noise,
         0.8047, 0.8025, 0.8008, 0.7988,    # 1 FS^2, seeds 101-110, 60 s each, 2362 of 3500 segments accepted;
         0.7973, 0.7958, 0.7945, 0.7935,    # per-seed scatter 2.6% (k=1) to 4.5% (k=32), so the 10-seed mean is
-        0.7924, 0.7914, 0.7907, 0.7899,    # good to about 0.8-1.4%. Valid for the default ladder, segment, guard
-        0.7892, 0.7885, 0.7880, 0.7875,    # and smoothing at 1500 samples/s. In channel-shaped noise the same
-        0.7871, 0.7867, 0.7864, 0.7861,    # ratios are 2.9% (k=1) to 5.9% (k=32) higher (Task 5 report).
-        0.7858, 0.7856, 0.7854, 0.7852,    # (The whole-band masked power reads 0.9745 of the truth, white noise,
-    )                                      # seed 8, 60 s: the mask removes mostly low-frequency power.)
+        0.7924, 0.7914, 0.7907, 0.7899,    # good to about 0.8-1.4%. In channel-shaped noise the same ratios are
+        0.7892, 0.7885, 0.7880, 0.7875,    # 2.9% (k=1) to 5.9% (k=32) higher (Task 5 report). The whole-band
+        0.7871, 0.7867, 0.7864, 0.7861,    # masked power reads 0.9745 of the truth (seed 8, 60 s): the mask removes
+        0.7858, 0.7856, 0.7854, 0.7852,    # mostly low-frequency power. Valid ONLY for the defaults of the ladder,
+    )                                      # segment_s, spectrum_smoothing_hz, guard_margin_s, min_clean_fraction,
+                                           # neighbor_guard and the three-tap settings, at 1500 samples/s;
+                                           # re-measure (test_proto_noise's calibration test) if any changes.
     noise_tau_s: float = 2.0               # tau_n, s of noise updates (milestone 2)
     noise_warmup_s: float = 0.32           # first estimate: 20% quantile of |v|^2 over this, s (milestone 2)
     noise_guard: float = 1.75              # kappa (milestone 2)
-    neighbor_guard: float = 4.0            # kappa_n (milestone 2); also the spectrum's mark flag
-    segment_s: float = 256 / 1500          # T_seg, s (bins 5.86 Hz wide); heuristic
-    spectrum_smoothing_hz: float = 25.0    # the shape is averaged over +/- this, Hz; heuristic
-    guard_margin_s: float = 0.02           # the spectrum's mark flag reaches this far, s; heuristic
-    min_clean_fraction: float = 0.5        # a segment enters the spectrum only if this much of it is unflagged; heuristic
+    neighbor_guard: float = 4.0            # kappa_n (milestone 2); also the spectrum's mark flag;
+                                           # mask_bias measured with the default; re-measure it if this changes
+    segment_s: float = 256 / 1500          # T_seg, s (bins 5.86 Hz wide); heuristic;
+                                           # mask_bias measured with the default; re-measure it if this changes
+    spectrum_smoothing_hz: float = 25.0    # the shape is averaged over +/- this, Hz; heuristic;
+                                           # mask_bias measured with the default; re-measure it if this changes
+    guard_margin_s: float = 0.02           # the spectrum's mark flag reaches this far, s; heuristic;
+                                           # mask_bias measured with the default; re-measure it if this changes
+    min_clean_fraction: float = 0.5        # a segment enters the spectrum only if this much of it is unflagged; heuristic;
+                                           # mask_bias measured with the default; re-measure it if this changes
     # Keying (spec 4.3, 4.7)
     amplitude_tau_s: float = 0.5           # tau_a, s of key-down weight (milestone 2)
     prior_key_down: float = 0.44           # P1 (PARIS)

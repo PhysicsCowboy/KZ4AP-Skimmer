@@ -23,7 +23,9 @@ class ThreeTapNoise:
     v[n-N] updates sigma^2 only if |v[n-N]|^2/(2 sigma^2) < kappa and |v[n]|^2, |v[n-2N]|^2 are below
     kappa_n 2 sigma^2 (three taps N apart share no inputs); the mean of the accepted taps is divided by
     m(kappa). The first estimate is the 20% quantile of |v|^2 over the warm-up (a provisional one before).
-    Updated once per block with the block's starting sigma^2 (tau_n >> one block)."""
+    Updated once per block with the block's starting sigma^2 (tau_n >> one block). The engine's floor lift
+    (MatchedFrontEnd::update_floor: sigma^2 raised to a running quantile of every N-th |v|^2 when it falls
+    below it) is omitted here."""
 
     def __init__(self, cfg, rate_hz: float, branch_n):
         self.n = np.asarray(branch_n, dtype=int)
@@ -79,13 +81,17 @@ class BranchNoise:
 
 
 class SpectrumNoise:
-    """The shared noise spectrum (spec 4.2). sigma_v,k^2 = sigma_v,1^2 (W_k . S) / (W_1 . S): branch 1's level
-    from the three-tap guard, the ratio from S, an exponential average (tau_n) of Hann-windowed periodograms of
-    u over segments of T_seg, smoothed over +/- spectrum_smoothing_hz; W_k[m] is the mean of |H_k(f)|^2 over
-    bin m. A sample of u is left out of its segment if any |v_1|^2 that contains it, or lies within
-    guard_margin_s of it, reaches kappa_n 2 sigma_v,1^2; a segment enters only if at least min_clean_fraction
-    of it is left in. Until the three-tap warm-up is over no segment enters and the shape is white
-    (ratio N_1/N_k, exact for white noise by Parseval)."""
+    """The shared noise spectrum (spec 4.2). Arm (a), level "three-tap":
+    sigma_v,k^2 = sigma_v,1^2 [(W_k . S) / (W_1 . S)] [b_mask,1 / b_mask,k]: branch 1's level from the three-tap
+    guard, the ratio from S, an exponential average (tau_n) of Hann-windowed periodograms of u over segments of
+    T_seg, smoothed over +/- spectrum_smoothing_hz; W_k[m] is the mean of |H_k(f)|^2 over bin m. Arm (b), level
+    "spectrum": sigma_v,k^2 = 0.5 (W_k . S) / (M b_mask,k). A sample of u is left out of its segment if any
+    |v_1|^2 that contains it, or lies within guard_margin_s of it, reaches kappa_n 2 sigma_v,1^2; a segment
+    enters only if at least min_clean_fraction of it is left in. The mask removes mostly low-frequency power,
+    so its bias differs per branch (b_mask,k, cfg.mask_bias, measured in white noise) and does not cancel in
+    the ratio: both arms correct by the same table, so their relative levels agree and they differ only in
+    the source of the absolute level. Until the three-tap warm-up is over no segment enters and the shape is
+    white (ratio N_1/N_k, exact for white noise by Parseval, no correction)."""
 
     SUBSAMPLES = 16  # points per bin for W_k
 
@@ -94,11 +100,9 @@ class SpectrumNoise:
             raise ValueError(f"unknown noise level source {level!r}")
         self.level = level
         self.n = np.asarray(branch_n, dtype=int)
-        self.mask_bias = None
-        if level == "spectrum":
-            if len(cfg.mask_bias) != len(self.n):
-                raise ValueError(f"mask_bias has {len(cfg.mask_bias)} values for {len(self.n)} branches")
-            self.mask_bias = np.asarray(cfg.mask_bias, float)
+        if len(cfg.mask_bias) != len(self.n):
+            raise ValueError(f"mask_bias has {len(cfg.mask_bias)} values for {len(self.n)} branches")
+        self.mask_bias = np.asarray(cfg.mask_bias, float)
         self.ref = ThreeTapNoise(cfg, rate_hz, self.n[:1])
         self.m = max(16, int(round(cfg.segment_s * rate_hz)))
         self.window = 0.5 - 0.5 * np.cos(2.0 * np.pi * np.arange(self.m) / self.m)
@@ -112,7 +116,7 @@ class SpectrumNoise:
         self.min_clean = cfg.min_clean_fraction
         self.beta = 1.0 - math.exp(-cfg.segment_s / cfg.noise_tau_s)
         self.shape = None       # periodogram average, FS^2 per bin
-        self.ratio = None       # (W_k . S) / (W_1 . S), cached
+        self.ratio = None       # (W_k . S) / (W_1 . S) x b_mask,1 / b_mask,k, cached
         self.segments = 0              # accepted
         self.segments_offered = 0      # after the warm-up
         self.kept_fraction_sum = 0.0   # fraction of each offered segment left in by the mask
@@ -183,12 +187,12 @@ class SpectrumNoise:
         if self.shape is None:
             return level * self.n[0] / self.n
         if self.ratio is None:
-            k = self.bin_weights @ self._smoothed()
+            # through the mask, branch k reads mask_bias[k] of its true noise power (measured per branch, white
+            # noise), so both the ratio and the absolute level are divided by it
+            k = self.bin_weights @ self._smoothed() / self.mask_bias
             self.ratio = k / k[0]
-            # arm (b): complex power of v_k is (1/M) sum_m I_m W_k[m]; per real component half of it; through the
-            # mask, branch k reads mask_bias[k] of its true noise power (measured per branch, white noise)
-            if self.mask_bias is not None:
-                self.absolute = 0.5 * k / self.m / self.mask_bias
+            # arm (b): complex power of v_k is (1/M) sum_m I_m W_k[m]; per real component half of it
+            self.absolute = 0.5 * k / self.m
         return self.absolute.copy() if self.level == "spectrum" else level * self.ratio
 
 
