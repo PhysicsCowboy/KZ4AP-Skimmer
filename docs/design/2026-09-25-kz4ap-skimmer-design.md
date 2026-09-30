@@ -303,6 +303,15 @@ following the survey's ranking:
 
    The front end is useful on its own, in front of the baseline, and it is
    the input to the Classical HMM (step 3) and the hybrids (step 4).
+
+   **Amendment (2026-09-30, owner).** The single dit-matched filter whose
+   length follows the decoder's own speed estimate (built in milestone 2
+   part 1) is replaced by a bank of fixed-length matched filters with a
+   loop-free speed estimate (a periodicity estimate plus per-branch duration
+   fits) and branch selection by self-consistency, with the decoded text's
+   log-probability as a tie-breaker; the engine's text output gains
+   corrections reaching back up to 20 s. Design:
+   `docs/design/2026-09-30-filter-bank-speed-estimator-design.md`.
 2. **Neural: a small streaming CNN+LSTM+CTC network** (a convolutional
    front end, then a long short-term memory recurrent layer, trained with
    CTC) following VE3NEA's DeepCW recipe. DeepCW is MIT-licensed, so the

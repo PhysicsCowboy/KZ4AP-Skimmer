@@ -1,11 +1,11 @@
 # Filter bank and speed estimator for the Matched decoder — design
 
-Status: **proposed; awaiting the owner's review and approval.** Designed with
-the owner on 2026-09-30. Replaces the Matched front end's single dit-matched
+Status: **approved by the owner, 2026-09-30.** Designed with the owner on
+2026-09-30. Replaces the Matched front end's single dit-matched
 boxcar, whose length follows the decoder's own speed estimate (milestone 2
-part 1, Tasks 11–16). When approved, it amends §5.2 step 1 of the design
-document `docs/design/2026-09-25-kz4ap-skimmer-design.md` (proposed text in
-section 9 below). Branch: `milestone-2b-filter-bank`, from `milestone-2`.
+part 1, Tasks 11–16). It amends §5.2 step 1 of the design document
+`docs/design/2026-09-25-kz4ap-skimmer-design.md` (text in section 9 below,
+applied there). Branch: `milestone-2b-filter-bank`, from `milestone-2`.
 
 Conventions: S₅₀₀ is key-down carrier power over noise power in 500 Hz, in dB.
 T is the dit duration; WPM = 1.2 s / T (PARIS). Every value is marked
@@ -267,10 +267,10 @@ filter was redesigned):
 - The noise-spectrum estimator: FFT size, averaging, mark guard.
 - Per-branch squelch derivation.
 
-## 9. Proposed amendment to the design document (§5.2, step 1)
+## 9. Amendment to the design document (§5.2, step 1)
 
-To add after step 1 of §5.2 in `docs/design/2026-09-25-kz4ap-skimmer-design.md`,
-on the owner's approval:
+Added after step 1 of §5.2 in `docs/design/2026-09-25-kz4ap-skimmer-design.md`
+(owner, 2026-09-30):
 
 > **Amendment (2026-09-30).** The single dit-matched filter whose length
 > follows the decoder's speed estimate (built in milestone 2 part 1) is
