@@ -206,7 +206,8 @@ TEST(SignalDetector, TrackFollowsItsOwnPeakWithinTheDistance) {
     // its peak gone, holds its frequency (it dies only after death_s = 2 s).
     for (; i < 800; ++i) born += d.process(frame(frame_time(i), {{107, -70.0f}})).born.size();
     EXPECT_EQ(born, 1u);
-    const auto* old_track = find_track(d.tracks(), id);
+    const auto tracks = d.tracks();
+    const auto* old_track = find_track(tracks, id);
     ASSERT_NE(old_track, nullptr);
     EXPECT_DOUBLE_EQ(old_track->freq_hz, (104 - kN / 2) * 100.0);
 }
