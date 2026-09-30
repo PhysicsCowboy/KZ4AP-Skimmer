@@ -6,8 +6,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <limits>
 #include <map>
+#include <numbers>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -416,6 +418,58 @@ TEST(Engine, OracleAnchorsTheTrackerAtTheLabeledFrequency) {
     ASSERT_EQ(log.born.size(), 1u);
     EXPECT_DOUBLE_EQ(log.born[0].freq_hz, 12000.0);  // the channel itself sits on the bin center
     EXPECT_NEAR(log.last_freq.at(1), 12019.0, 2.0);
+}
+
+TEST(Engine, ChannelTapSeesEachOracleChannelWithoutChangingTheDecode) {
+    // Benchmark tooling (kz4ap-bench --record-channels): the tap sees every block of the channel as the
+    // channelizer delivers it, before the decoder, and the decoded text is the same with or without it.
+    const std::string msg = "CQ TEST K1ABC";
+    const auto x = keyed_signal(msg, 25, 48000.0, kz4ap::test::duration_for(msg, 25), 12009.0, 1.0, 0.0, 42);
+    auto config = matched_config(48000);
+    config.oracle_frequencies_hz = {12009.0};
+    const auto plain = run_with(config, x);
+
+    EventBus bus;
+    std::map<std::uint32_t, std::string> text;
+    bus.subscribe([&](const Event& e) {
+        if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
+            for (const auto& c : d->chars) text[d->track_id] += c.text;
+        }
+    });
+    Engine engine(config, bus);
+    std::vector<Sample> stream;
+    double center_hz = 0;
+    std::uint64_t next_index = 0;
+    bool contiguous = true;
+    engine.set_channel_tap([&](const ChannelBlock& b) {
+        EXPECT_EQ(b.track_id, 1u);
+        contiguous = contiguous && b.first_index == next_index;
+        next_index = b.first_index + b.samples.size();
+        center_hz = b.center_hz;
+        stream.insert(stream.end(), b.samples.begin(), b.samples.end());
+    });
+    for (std::size_t i = 0; i < x.size(); i += 65536) {
+        engine.process(std::span<const Sample>(x).subspan(i, std::min<std::size_t>(65536, x.size() - i)));
+    }
+    engine.finish();
+
+    EXPECT_EQ(text, plain.text);
+    EXPECT_TRUE(contiguous);
+    EXPECT_DOUBLE_EQ(engine.channel_rate(), 1500.0);
+    EXPECT_DOUBLE_EQ(center_hz, 12000.0);
+    EXPECT_EQ(stream.size(), engine.stats().channel_samples);
+    // The station sits at label - center = 9 Hz in the stream (the channelizer is a complex shift by the
+    // bin center, derived): mixed down by 9 Hz, consecutive key-down samples no longer rotate.
+    double peak = 0;
+    for (const auto& s : stream) peak = std::max(peak, static_cast<double>(std::abs(s)));
+    std::complex<double> sum{};
+    for (std::size_t n = 1; n < stream.size(); ++n) {
+        if (std::abs(stream[n]) < 0.5 * peak || std::abs(stream[n - 1]) < 0.5 * peak) continue;
+        const auto mix = [](std::size_t i) { return std::polar(1.0, -2.0 * std::numbers::pi * 9.0 * static_cast<double>(i) / 1500.0); };
+        sum += std::complex<double>(stream[n]) * mix(n) * std::conj(std::complex<double>(stream[n - 1]) * mix(n - 1));
+    }
+    const double residual_hz = std::arg(sum) * 1500.0 / (2.0 * std::numbers::pi);
+    EXPECT_LT(std::abs(residual_hz), 0.05);
 }
 
 TEST(Engine, MatchedChunkingDoesNotChangeResults) {

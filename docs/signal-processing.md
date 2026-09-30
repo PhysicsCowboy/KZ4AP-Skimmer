@@ -543,6 +543,12 @@ decoder apart from detection, including below the detector's threshold
 ±½ bin (±11.7 Hz) off its channel's center, the worst case for frequency
 re-centering. Normal operation never uses it.
 
+For the filter-bank prototype (milestone 2b, stage 1), `kz4ap-bench
+--record-channels DIR` (with `--oracle`) copies each oracle channel's
+stream to a file through `Engine::set_channel_tap`, as the channelizer
+delivers it and before the decoder sees it. The tap only observes: the
+decoded text is the same with or without it (tested).
+
 ## 7. Channelizer: one stream per station
 
 For each track, the channelizer produces a narrow complex baseband stream
@@ -2227,3 +2233,12 @@ not in the repository; nothing was changed):
   where the latest text came from); for a station label (group H), that
   station's carrier. Signals with drift are left out. Summaries report the
   median per condition.
+- **Recorded channel streams** (`kz4ap-bench --oracle --record-channels
+  DIR`): for each label i, `channel-(i+1).c64` holds oracle channel i + 1's
+  channelizer output (r = 1500 samples/s at 48 and 192 kHz; complex64, I
+  then Q, little-endian; FS), before the frequency tracker, so the station
+  sits at f_off = labeled frequency − channel center (up to ±½Δf =
+  ±11.7 Hz); `channels.json` gives each channel's label index, labeled
+  frequency, center (Hz from the span's center), first sample index and
+  sample count. The prototype mixes the stream down by f_off (and a
+  labeled drift) itself.

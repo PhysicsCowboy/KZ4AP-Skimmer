@@ -66,6 +66,8 @@ EngineStats Engine::stats() const {
     return s;
 }
 
+double Engine::channel_rate() const { return channelizer_.output_rate(); }
+
 void Engine::process(std::span<const Sample> samples) {
     // Work in whole hops so the spectrum analyzer and channelizer stay in lockstep,
     // whatever size the caller's chunks are.
@@ -108,6 +110,7 @@ void Engine::process_hop(std::span<const Sample> hop) {
         auto& channel = it->second;
         const double t0 = static_cast<double>(first_index) / channelizer_.output_rate();
         const double center_hz = channelizer_.bin_to_hz(channel.bin);
+        if (tap_) tap_(ChannelBlock{id, first_index, center_hz, s});
         channel.decoder->set_frequency_anchor_hz(channel.detector_freq_hz - center_hz);  // Envelope: ignored
         const auto started = std::chrono::steady_clock::now();
         auto update = channel.decoder->process(s, t0);

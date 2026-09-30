@@ -1,5 +1,6 @@
 // kz4ap-bench: runs the engine over an I/Q recording and scores the result.
 
+#include "channel_recorder.hpp"
 #include "cpu_time.hpp"
 #include "labels.hpp"
 #include "scoring.hpp"
@@ -33,11 +34,13 @@ struct Args {
     bool timing = true;
     bool oracle = false;
     FrontEnd front_end = FrontEnd::Matched;
+    std::optional<std::filesystem::path> record_channels;
 };
 
 constexpr const char* kUsage =
     "usage: kz4ap-bench RECORDING.wav [--labels LABELS.json] [--json OUT.json]\n"
-    "                   [--no-timing] [--baseline BASELINE.json] [--oracle] [--front-end envelope|matched]\n";
+    "                   [--no-timing] [--baseline BASELINE.json] [--oracle] [--front-end envelope|matched]\n"
+    "                   [--record-channels DIR]\n";
 
 Args parse_args(int argc, char** argv) {
     Args args;
@@ -52,6 +55,7 @@ Args parse_args(int argc, char** argv) {
         else if (a == "--baseline") args.baseline = value();
         else if (a == "--no-timing") args.timing = false;
         else if (a == "--oracle") args.oracle = true;
+        else if (a == "--record-channels") args.record_channels = value();
         else if (a == "--front-end") {
             const auto v = value().string();
             if (v == "envelope" || v == "baseline") args.front_end = FrontEnd::Envelope;
@@ -65,6 +69,7 @@ Args parse_args(int argc, char** argv) {
     if (args.recording.empty()) throw std::runtime_error(kUsage);
     if (args.baseline && !args.labels) throw std::runtime_error("--baseline needs --labels");
     if (args.oracle && !args.labels) throw std::runtime_error("--oracle needs --labels");
+    if (args.record_channels && !args.oracle) throw std::runtime_error("--record-channels needs --oracle");
     return args;
 }
 
@@ -100,11 +105,20 @@ int main(int argc, char** argv) {
             for (const auto& s : labels->signals) config.oracle_frequencies_hz.push_back(s.freq_offset_hz);
         }
         Engine engine(config, bus);
+        std::optional<ChannelRecorder> recorder;
+        if (args.record_channels) {
+            recorder.emplace(*args.record_channels, engine.channel_rate());
+            for (std::size_t i = 0; i < labels->signals.size(); ++i) {
+                recorder->add_channel(static_cast<std::uint32_t>(i + 1), i, labels->signals[i].freq_offset_hz);
+            }
+            engine.set_channel_tap([&](const ChannelBlock& b) { recorder->write(b); });
+        }
         std::vector<Sample> block(65536);
         const double cpu_started = process_cpu_seconds();
         const auto started = std::chrono::steady_clock::now();
         while (const auto n = reader.read(block)) engine.process(std::span<const Sample>(block).first(n));
         engine.finish();
+        if (recorder) recorder->finish(args.recording.filename().string(), args.labels->filename().string());
         const double wall_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
         const double cpu_s = process_cpu_seconds() - cpu_started;
         const EngineStats stats = engine.stats();

@@ -7,9 +7,11 @@
 #include "kz4ap/spectrum.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace kz4ap {
@@ -18,6 +20,16 @@ namespace kz4ap {
 // of two with sample_rate / fft_size >= 20 Hz, so bins stay about 23 Hz wide at
 // 48, 96, 192 or 768 kHz. Throws std::invalid_argument for sample rates below 8000 Hz.
 int choose_fft_size(int sample_rate);
+
+// Benchmark tooling (kz4ap-bench --record-channels): one channel block as the channelizer delivered it,
+// before the channel's decoder (and so before its frequency tracker) sees it. Observation only.
+struct ChannelBlock {
+    std::uint32_t track_id;
+    std::uint64_t first_index;        // index of samples[0] in the channelizer's output stream, from its start
+    double center_hz;                 // the channel's center (its FFT bin), Hz from the span's center
+    std::span<const Sample> samples;  // channelizer output at Engine::channel_rate(), FS
+};
+using ChannelTap = std::function<void(const ChannelBlock&)>;
 
 struct EngineConfig {
     int sample_rate = 192000;
@@ -75,6 +87,11 @@ public:
 
     EngineStats stats() const;
 
+    // Benchmark tooling: called with every channel block before the channel's decoder sees it. It
+    // observes only; decoding is the same with or without it. Set it before process().
+    void set_channel_tap(ChannelTap tap) { tap_ = std::move(tap); }
+    double channel_rate() const;  // the channelizer's output rate, samples/s
+
 private:
     struct Channel {
         Track track;
@@ -99,6 +116,7 @@ private:
     bool oracle_ = false;
     std::uint64_t channel_samples_ = 0;
     double decoder_seconds_ = 0;
+    ChannelTap tap_;
 };
 
 }  // namespace kz4ap
