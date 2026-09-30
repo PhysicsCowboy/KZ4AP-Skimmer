@@ -2,6 +2,7 @@ add_library(kz4ap_bench_lib
   src/channel_recorder.cpp
   src/cpu_time.cpp
   src/labels.cpp
+  src/report.cpp
   src/scoring.cpp
 )
 target_include_directories(kz4ap_bench_lib PUBLIC src)
@@ -19,6 +20,7 @@ add_executable(kz4ap_bench_tests
   tests/channel_recorder_test.cpp
   tests/cpu_time_test.cpp
   tests/labels_test.cpp
+  tests/report_test.cpp
   tests/scoring_test.cpp
 )
 target_link_libraries(kz4ap_bench_tests PRIVATE kz4ap_bench_lib GTest::gtest_main)

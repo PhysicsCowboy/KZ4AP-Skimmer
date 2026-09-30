@@ -2242,3 +2242,9 @@ not in the repository; nothing was changed):
   frequency, center (Hz from the span's center), first sample index and
   sample count. The prototype mixes the stream down by f_off (and a
   labeled drift) itself.
+- **Externally decoded text** (`kz4ap-bench --labels L --score-decoded
+  D.json`): one text per label, in the labels file's order, scored as
+  oracle tracks 1…n at the labels' frequencies by the same scoring and JSON
+  as an engine run (`bench/src/report.cpp`); `tracked_freq_hz` is null and
+  `channel_seconds` 0. Checked identical to an engine oracle run's own
+  texts on the smoke recording (apart from `tracked_freq_hz`).
