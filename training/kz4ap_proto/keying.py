@@ -24,7 +24,16 @@ def hysteresis(down, up, initial) -> np.ndarray:
 
 
 def edges(key, before, n0: int) -> list[list[tuple[int, bool]]]:
-    """Per branch, (sample index, key state after it) at every change of key state."""
+    """Per branch, (sample index, key state after it) at every change of key state.
+
+    Edges of marks keyed by the unknown-amplitude test (`BankKeyer.unknown`) are provisional until the
+    stretch is re-keyed (`rekey`): that test keys down when x rises past x_on and up when it falls below
+    x_off, low on the boxcar's ramps, so a mark comes out longer than the full-LLR keying makes it (which
+    crosses near x = a/2). Noise-free, the ramps are linear in x over L, so a rectangular mark of length
+    d >= L measures d + L*(1 - (x_on + x_off)/a) (derived): lengthened by up to L at high SNR. Noise adds a
+    random delay to the key-up (noise alone is above x_off 30% of the time, correlated over L), so a space
+    only a little longer than L can close up entirely (measured, Task 6 fix report: at 25 WPM through a
+    40 ms branch at a = 1.1e4, two of S's dits merged across their 48 ms element space)."""
     key = np.asarray(key, bool)
     prev = np.concatenate((np.asarray(before, bool)[:, None], key[:, :-1]), axis=1)
     rows, cols = np.nonzero(key != prev)
@@ -53,6 +62,8 @@ class BankKeyer:
         # Unknown amplitude: about 1/L_k independent envelope samples per second in noise alone, each above x
         # with probability exp(-x^2/2) (Rayleigh): x_on,k = sqrt(-2 ln(R_fa L_k)), nominally.
         # (heuristic: the envelope's upcrossings make it 7-10x more; E9 calibrates x_on_values by measurement)
+        # R_fa L_k is clamped at 0.5 (x_on >= sqrt(2 ln 2) = 1.18) so the formula stays real where R_fa L_k >= 1;
+        # a numerical guard, heuristic, never active at the defaults (R_fa L_k <= 0.01 /s x 0.184 s = 0.0018).
         if cfg.x_on_values:
             if len(cfg.x_on_values) != len(lengths_s):
                 raise ValueError("x_on_values needs one threshold per branch")
@@ -63,16 +74,21 @@ class BankKeyer:
         self.rekey_weight = cfg.rekey_after_s * rate_hz  # samples of keyed time (W_min)
         k = len(lengths_s)
         self.amp2 = np.zeros(k)          # s_k^2, FS^2
-        self.weight = np.zeros(k)        # behind it, samples: keyed samples while unknown, p-weight after
+        # W behind s_k^2, samples: the keyed-sample count while unknown; after finish_over_start that count stays
+        # and serves as the EM's W, and the p-weight is added to it from then on.
+        self.weight = np.zeros(k)
         self.prev_amp2 = np.full(k, np.nan)
         self.unknown = np.ones(k, bool)  # the stream's start is an over's start
         self.keyed: list[list[np.ndarray]] = [[] for _ in range(k)]  # |v|^2 of keyed samples while unknown
-        self.keyed_cap = max(1, int(round(4 * self.rekey_weight)))    # at most this many kept, samples
+        # At most this many kept (samples): seed_memory_rekeys x W_min of keyed time, 1.6 s by default; heuristic.
+        self.keyed_cap = max(1, int(round(cfg.seed_memory_rekeys * self.rekey_weight)))
         self.key = np.zeros(k, bool)
 
     def step(self, P, sigma2):
         """P: (K, n) |v_k|^2, FS^2; sigma2: (K,) sigma_v,k^2, FS^2. Returns the key state (K, n), the posterior
-        p (K, n; 0 where squelched), the key state before the block (K,) and a_k (K,) at the block's start."""
+        p (K, n; 0 where squelched), the key state before the block (K,) and a_k (K,) at the block's start.
+        Where a branch is `unknown`, its key comes from the unknown-amplitude test and its marks are provisional
+        and lengthened by up to L_k until re-keyed (see `edges`)."""
         P = np.asarray(P, float)
         sigma2 = np.asarray(sigma2, float)
         a = np.sqrt(self.amp2 / sigma2)
@@ -124,7 +140,9 @@ class BankKeyer:
         self.unknown[k] = True
 
     def finish_over_start(self, k: int, amp2: float, key_now: bool) -> None:
-        """After the re-keying: the winning amplitude, the full LLR (and the p-weighted EM) from now on."""
+        """After the re-keying: the winning amplitude, the full LLR (and the p-weighted EM) from now on.
+        `weight` keeps the keyed-sample count (W_min or more when called once `ready_to_rekey`) as the EM's W,
+        so the first steps after the switch pull s^2 by at most sum p / W rather than replacing it."""
         self.amp2[k] = amp2
         self.keyed[k] = []
         self.unknown[k] = False

@@ -74,13 +74,92 @@ def test_marks_through_a_matched_branch_keep_their_length():
     assert measured == pytest.approx(truth, abs=2.5 / RATE)
 
 
-def test_the_squelch_keeps_noise_out_without_an_amplitude():
-    n = int(20 * RATE)
-    P = (np.abs(boxcar(noise(n, 1.0, 2), 14)) ** 2)[None, :]
-    keyer = BankKeyer(CFG, RATE, np.array([14 / RATE]))
+def run_blocks(keyer, P, sigma2):
+    """Step the keyer through P (K, n) in the prototype's own blocks (cfg.block_s = 21.3 ms, 32 samples);
+    returns the key (K, n), p (K, n) and a-hat = s_k / sigma_v,k (K, blocks) after each block."""
+    nb = int(round(CFG.block_s * RATE))
+    keys, ps, ahat = [], [], []
+    for i in range(0, P.shape[1], nb):
+        key, p, _, _ = keyer.step(P[:, i:i + nb], sigma2)
+        keys.append(key)
+        ps.append(p)
+        ahat.append(np.sqrt(keyer.amp2 / sigma2))
+    return np.concatenate(keys, axis=1), np.concatenate(ps, axis=1), np.array(ahat).T
+
+
+def test_the_squelch_keeps_noise_out_with_the_amplitude_em_live():
+    # Noise alone, 30 s through the shortest, a middle and the longest branch in the real block size, with the
+    # p-weighted EM running: a-hat must stay below each branch's a_min (the squelch principle), so nothing is
+    # keyed and p is 0 throughout. Measured (seeds 1-5, 60 s): max a-hat / a_min = 0.24-0.35.
+    lengths = np.array([14, 60, 276])
+    n = int(30 * RATE)
+    w = noise(n, 1.0, 2)
+    P = np.stack([np.abs(boxcar(w, int(m))) ** 2 for m in lengths])
+    sigma2 = 0.5 / lengths  # sigma_v,k^2 of white noise, FS^2
+    keyer = BankKeyer(CFG, RATE, lengths / RATE)
     keyer.unknown[:] = False
-    key, p, _, _ = keyer.step(P, np.array([0.5 / 14]))
+    key, p, ahat = run_blocks(keyer, P, sigma2)
+    print(f"noise alone: max a-hat / a_min = {np.round(ahat.max(axis=1) / keyer.a_min, 3).tolist()}")
+    assert (ahat.max(axis=1) < keyer.a_min).all()
     assert not key.any() and not p.any()
+
+
+@pytest.mark.parametrize("a_true", [7.0, 10.0, 20.0])
+def test_the_amplitude_em_settles_on_milestone_2s_ramp_bias(a_true):
+    # Keyed PARIS at 25 WPM through a 40 ms branch, stepped in the real block size, the EM live from a wrong
+    # start, s^2 = 4 FS^2 for s = 1 FS, two ways: with no weight behind it (W = 0, so the first block's step
+    # sum p / W = 1 replaces it) and with an established weight (W = 1e6 samples, so only the recursion's
+    # 1 - (1 - alpha)^(sum p) acts; it reaches s-hat < 1 FS after 4.6-6.1 s, measured). Samples on the boxcar's
+    # ramps pull s-hat low: milestone 2 simulated 0.85-0.88 of s for PARIS at 25 WPM, S_500 0-60 dB
+    # (docs/signal-processing.md section 8b, "Amplitude estimate"). Measured here (time mean of s-hat over
+    # t >= 10 s of 30 PARIS words, seeds 1-10, either start): 0.869-0.886 at a = 7, 0.864-0.876 at a = 10,
+    # 0.859-0.865 at a = 20 (Task 6 report); the band is widened to 0.89 at the top to hold a = 7 (S_500 about
+    # +1 dB at 25 WPM), a heuristic margin on a measured spread.
+    n_box = 60
+    iv = keying_intervals(" ".join(["PARIS"] * 30), 25.0)
+    n = int(round((iv[-1][1] + 1.0) * RATE))
+    power = 2 * n_box / a_true ** 2  # complex noise power per sample, FS^2: sigma_v^2 = power / (2 N) = 1 / a^2
+    sigma2 = np.array([power / (2 * n_box)])
+    for seed in (1, 2, 3):
+        u = rectangles(iv, n, 0.5) + noise(n, power, seed)
+        P = (np.abs(boxcar(u, n_box)) ** 2)[None, :]
+        for weight in (0.0, 1e6):
+            keyer = BankKeyer(CFG, RATE, np.array([n_box / RATE]))
+            keyer.unknown[:] = False
+            keyer.amp2[:] = 4.0
+            keyer.weight[:] = weight
+            _, _, ahat = run_blocks(keyer, P, sigma2)
+            t = np.arange(ahat.shape[1]) * CFG.block_s
+            ratio = float((ahat[0][t >= 10.0] * math.sqrt(sigma2[0])).mean())
+            print(f"a = {a_true}, seed {seed}, W0 = {weight:g} samples: s-hat / s = {ratio:.4f}")
+            assert 0.85 <= ratio <= 0.89
+
+
+def test_an_unknown_amplitude_accumulates_keyed_samples_across_blocks_up_to_the_cap():
+    # PARIS x 4 at 25 WPM, 1 FS, 40 ms branch, unknown throughout, in the real block size: the re-key weight
+    # counts every keyed sample across blocks (not capped), while the seed's store keeps only the most recent
+    # keyed_cap = 4 x W_min x r = 2400 samples (1.6 s of keyed time), and the seed is their 0.9 quantile.
+    iv = keying_intervals("PARIS PARIS PARIS PARIS", 25.0)
+    n = int(round((iv[-1][1] + 1.0) * RATE))
+    u = rectangles(iv, n, 0.5) + noise(n, 1e-3, 14)
+    P = (np.abs(boxcar(u, 60)) ** 2)[None, :]
+    sigma2 = np.array([0.5 * 1e-3 / 60])
+    keyer = BankKeyer(CFG, RATE, np.array([60 / RATE]))
+    assert keyer.keyed_cap == 2400
+    nb = int(round(CFG.block_s * RATE))
+    total, stored = 0, []
+    for i in range(0, n, nb):
+        key, _, _, _ = keyer.step(P[:, i:i + nb], sigma2)
+        total += int(key.sum())
+        stored.append(P[0, i:i + nb][key[0]])
+        assert keyer.weight[0] == total
+        kept = np.concatenate(keyer.keyed[0]) if keyer.keyed[0] else np.zeros(0)
+        assert len(kept) == min(total, keyer.keyed_cap)
+    expected = np.concatenate(stored)[-keyer.keyed_cap:]
+    assert total > keyer.keyed_cap  # the cap was reached
+    assert np.array_equal(np.concatenate(keyer.keyed[0]), expected)
+    assert keyer.amp2[0] == pytest.approx(np.quantile(expected, 0.9) - 2 * sigma2[0])
+    assert keyer.ready_to_rekey()[0]
 
 
 def test_calibrated_thresholds_replace_the_nominal_ones():

@@ -58,6 +58,9 @@ class ProtoConfig:
                                            # nominal sqrt(-2 ln(R_fa L_k)), heuristic (keys 7-10x more than R_fa)
     release_probability: float = 0.3       # key up where noise alone exceeds x this often (x_off = 1.55); heuristic
     rekey_after_s: float = 0.4             # W_min, s of keyed time while the amplitude is unknown; placeholder (E9)
+    seed_memory_rekeys: float = 4.0        # while the amplitude is unknown, the seed (0.9 quantile of |v|^2) is taken
+                                           # over the most recent keyed samples, at most this x W_min of keyed time
+                                           # (1.6 s by default); heuristic (a bound on memory, several W_min long)
     # Duration fit (spec 4.5)
     fit_memory: float = 24.0               # N_mem, marks and spaces; placeholder (E4)
     t_grid_step: float = 0.01              # relative step of the T grid; placeholder (E5)
