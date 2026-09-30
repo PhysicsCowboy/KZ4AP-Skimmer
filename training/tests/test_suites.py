@@ -283,3 +283,77 @@ def test_qsos_are_scored_per_over_per_station_and_for_track_splits(tmp_path):
     text = (tmp_path / "summary.md").read_text(encoding="utf-8")
     assert "| H two-station QSO | hand | baseline | 1 | 0.143 |" in text
     assert "| separate-track, offset 100 Hz | baseline | 1 | 2.00 |" in text
+
+
+def test_run_passes_the_front_end_to_the_bench_for_every_front_end(tmp_path, monkeypatch):
+    # The bench's default is Matched, so the baseline must be asked for by name.
+    (tmp_path / "manifest.json").write_text(json.dumps({"suite": "t", "recordings": [
+        {"name": "x", "group": "g", "oracle": False, "wav": "x.wav", "labels": "x.json", "station_labels": None}]}))
+    calls = []
+
+    def fake_run(cmd, *a, **k):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "CER 0.0\n", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    run_suite(tmp_path, tmp_path / "kz4ap-bench", ["baseline", "matched"])
+    assert [c[c.index("--front-end") + 1] for c in calls] == ["envelope", "matched"]
+
+
+def _drift_recording(tmp_path, oracle):
+    specs = [SignalSpec("CQ CQ DE N8RA K", 1000.0, 25.0, 10.0, 0.5, drift_hz_per_s=d, tag=f"drift {d:g} Hz/s")
+             for d in (0.2, 2.0)]
+    rec = Recording("drift", "F tuning", 8000, 12.0, 5, oracle, specs)
+    write_suite([rec], tmp_path, "test")
+    for fe in ("baseline", "matched"):
+        results = tmp_path / "results" / fe
+        results.mkdir(parents=True)
+        (results / "drift.json").write_text(json.dumps({"score": {"signals": [_fake_signal(0), _fake_signal(1)]}}))
+
+
+def test_matched_rows_beyond_the_oracle_anchor_are_marked_not_meaningful(tmp_path):
+    # Oracle channels fix the tracker's anchor at the label; it covers +/-12 Hz. Over the
+    # signal's length, a 2 Hz/s drift leaves that range and a 0.2 Hz/s drift does not.
+    _drift_recording(tmp_path, oracle=True)
+    labels = json.loads((tmp_path / "drift.json").read_text())["signals"]
+    spans = [s["drift_hz_per_s"] * (s["end_s"] - s["start_s"]) for s in labels]
+    assert spans[0] < 12.0 < spans[1]
+    write_summary(tmp_path)
+    lines = (tmp_path / "summary.md").read_text(encoding="utf-8").splitlines()
+    marked = "| drift 2 Hz/s (not meaningful (oracle anchor)) | matched |"
+    assert any(line.startswith(marked) for line in lines)
+    assert any(line.startswith("| drift 2 Hz/s | baseline |") for line in lines)
+    assert any(line.startswith("| drift 0.2 Hz/s | matched |") for line in lines)
+    assert any(line.startswith("| F tuning | drift 2 Hz/s (not meaningful (oracle anchor)) | 1 |") for line in lines)
+    assert any(line.startswith("| F tuning | drift 0.2 Hz/s | 1 |") for line in lines)
+
+
+def test_the_anchor_limit_applies_only_to_oracle_recordings(tmp_path):
+    _drift_recording(tmp_path, oracle=False)
+    write_summary(tmp_path)
+    assert "(not meaningful (oracle anchor))" not in (tmp_path / "summary.md").read_text(encoding="utf-8")
+
+
+def test_oracle_qso_labels_with_the_answer_beyond_the_anchor_are_marked(tmp_path):
+    rec = Recording("qso", "H two-station QSO, oracle", 8000, 12.0, 5, True,
+                    [_two_station(10.0), _two_station(25.0)], True)
+    write_suite([rec], tmp_path, "test")
+    for fe in ("baseline", "matched"):
+        results = tmp_path / "results" / fe
+        results.mkdir(parents=True)
+        (results / "qso.json").write_text(json.dumps({"score": {"signals": [_fake_signal(0), _fake_signal(1)]}}))
+        (results / "qso.stations.json").write_text(json.dumps({"score": {"signals": [
+            _fake_signal(i) for i in range(4)]}}))
+    write_summary(tmp_path)
+    lines = (tmp_path / "summary.md").read_text(encoding="utf-8").splitlines()
+    marked = [line for line in lines if line.startswith("|") and "(not meaningful (oracle anchor))" in line]
+    # The QSO label's channel sits on the caller: the 25 Hz answer is beyond +/-12 Hz of it.
+    # Each station label's channel sits on that station, so the per-station view is meaningful.
+    assert any(line.startswith("| same-track, offset 25 Hz") and "| matched |" in line for line in marked)
+    assert not any("offset 10 Hz" in line for line in marked)
+    assert not any("| baseline |" in line for line in marked)
+    by_group = {g["group"] + "/" + g["tag"] + "/" + g["front_end"]: g
+                for g in json.loads((tmp_path / "summary.json").read_text())["groups"]}
+    assert by_group["H two-station QSO, oracle/same-track, offset 25 Hz/matched"]["beyond_oracle_anchor"]
+    assert not by_group["H two-station QSO, oracle (per station)/same-track, offset 25 Hz/matched"][
+        "beyond_oracle_anchor"]

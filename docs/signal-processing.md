@@ -1346,6 +1346,16 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
   band and crowded, have one per point and get none). A crossing at the
   lowest point, where no point fails, is printed "≤ x dB". First-word and
   per-over CER are upper bounds (see "Where the edits are" above).
+  **Not meaningful (oracle anchor):** with oracle channels there is no
+  detector, so the Matched tracker's anchor is the labeled frequency and it
+  fine-tunes only within ±12 Hz of it (section 7, "Frequency
+  re-centering"). A Matched row (and its paired difference, and its
+  per-over row) of an oracle recording is marked "not meaningful (oracle
+  anchor)" when some label in it gets more than 12 Hz from its labeled
+  frequency: a drift of ḟ Hz/s over the signal's length t_end − t_start,
+  |ḟ|·(t_end − t_start) > 12 Hz, or a QSO label whose answering station is
+  more than 12 Hz from the caller. A per-station label's channel sits on
+  that station, so the per-station view is not marked.
   **S₅₀₀ at a CER threshold:** for a condition with at least three S₅₀₀
   points, CER per point is pooled over its stations; scanning down from the
   highest S₅₀₀, the first point above the threshold and the one above it

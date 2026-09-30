@@ -51,6 +51,7 @@ VE3NEA_SPREADS_HZ = (0.1, 0.3, 1.0, 3.0)  # his f_D grid, Hz
 VE3NEA_EDGE_S = 0.002  # his raised-cosine keying edges, s, centered on each element's ends
 CER_THRESHOLDS = (0.05, 0.10)
 FRONT_ENDS = ("baseline", "matched")
+BENCH_FRONT_END = {"baseline": "envelope", "matched": "matched"}  # kz4ap-bench --front-end; its default is Matched
 COUNT_KEYS = ("symbols", "edits", "chars", "char_edits", "spaces", "space_edits",
               "first_word_symbols", "first_word_edits", "nospace_symbols", "nospace_edits")
 BOOTSTRAP_RESAMPLES = 1000
@@ -60,6 +61,12 @@ MIN_SIGNALS_PER_POINT = 2     # an S500 crossing is computed only if every point
 # section 7): -1.17 dB at 100 Hz from its center, -6.02 dB at 150 Hz, -18.0 dB at 200 Hz. An
 # oracle QSO label (channel on the caller) holds the answering station below the -6 dB point.
 ORACLE_CHANNEL_CUTOFF_HZ = 150.0
+# With oracle channels (no detector), the Matched tracker's anchor is the labeled frequency and it
+# fine-tunes only within +/-12 Hz of it (docs/signal-processing.md section 7, "Frequency
+# re-centering"): a carrier that drifts, or an answering station that sits, farther from the
+# label is out of its reach, so those Matched rows are "not meaningful (oracle anchor)".
+ORACLE_ANCHOR_RANGE_HZ = 12.0
+ANCHOR_NOTE = "not meaningful (oracle anchor)"
 PLANNED_SEEDS = 3  # the full suite's per-point sizes below assume --seeds 3
 
 FADING_ROWS = ([(keying, 24.0, f_d) for keying in ("paddle", "hand") for f_d in VE3NEA_SPREADS_HZ]
@@ -456,8 +463,7 @@ def run_suite(out_dir: Path, bench: Path, front_ends) -> None:
                        "--json", str(results / f"{result}.json")]
                 if rec["oracle"]:
                     cmd.append("--oracle")
-                if fe != "baseline":
-                    cmd += ["--front-end", fe]
+                cmd += ["--front-end", BENCH_FRONT_END[fe]]
                 done = subprocess.run(cmd, capture_output=True, text=True)
                 if done.returncode != 0:
                     raise RuntimeError(f"kz4ap-bench failed on {result} ({fe}):\n{done.stderr}")
@@ -534,8 +540,9 @@ def aggregate(rows) -> dict:
             continue
         key = (r["front_end"], r["group"], r["tag"])
         g = groups.setdefault(key, {"signals": 0, "detected": 0, "by_snr": {}, "freq_errors": [],
-                                    **{k: 0 for k in COUNT_KEYS}})
+                                    "beyond_oracle_anchor": False, **{k: 0 for k in COUNT_KEYS}})
         g["signals"] += 1
+        g["beyond_oracle_anchor"] |= bool(r.get("beyond_oracle_anchor"))
         g["detected"] += int(r["detected"])
         for k in COUNT_KEYS:
             g[k] += r[k]
@@ -569,6 +576,7 @@ def aggregate(rows) -> dict:
             "snr_at_cer_upper_bound": ({f"{t:g}": all(c <= t for _, c in points) for t in CER_THRESHOLDS}
                                        if crossing else {}),
             "freq_error_hz_median": float(np.median(g["freq_errors"])) if g["freq_errors"] else None,
+            "beyond_oracle_anchor": g["beyond_oracle_anchor"],
         }
     return out
 
@@ -582,14 +590,16 @@ def paired_differences(rows) -> dict:
             by_front_end.setdefault(r["front_end"], {})[(r["group"], r["tag"], r["recording"], r["index"])] = r
     base, matched = by_front_end.get("baseline", {}), by_front_end.get("matched", {})
     diffs: dict = {}
+    limited: dict = {}
     for key in sorted(set(base) & set(matched)):
         b, m = base[key], matched[key]
         diffs.setdefault(key[:2], []).append(_ratio(m["edits"], m["symbols"]) - _ratio(b["edits"], b["symbols"]))
+        limited[key[:2]] = limited.get(key[:2], False) or bool(m.get("beyond_oracle_anchor"))
     out = {}
     for key, d in diffs.items():
         values = np.array(d)
         picks = _rng_for(key).integers(len(values), size=(BOOTSTRAP_RESAMPLES, len(values)))
-        out[key] = {"signals": len(values), "mean": float(values.mean()),
+        out[key] = {"signals": len(values), "mean": float(values.mean()), "beyond_oracle_anchor": limited[key],
                     "interval": (_interval([float(values[p].mean()) for p in picks])
                                  if len(values) >= MIN_SIGNALS_FOR_INTERVAL else None)}
     return out
@@ -599,6 +609,24 @@ def _label_truth_hz(label: dict) -> float:
     """The frequency the latest text came from: a QSO's last over's sender's carrier."""
     transmissions = label.get("transmissions") or []
     return label["freq_offset_hz"] + (transmissions[-1].get("offset_hz", 0.0) if transmissions else 0.0)
+
+
+def _excursion_hz(label: dict) -> float:
+    """How far the label's sound gets from its labeled frequency, Hz: the drift over the
+    signal's length, or a QSO's answering station's offset."""
+    drift = abs(label.get("drift_hz_per_s") or 0.0) * (label.get("end_s", label["start_s"]) - label["start_s"])
+    offsets = [abs(s.get("offset_hz", 0.0)) for s in label.get("senders") or []]
+    return max([drift] + offsets)
+
+
+def beyond_oracle_anchor(oracle: bool, label: dict) -> bool:
+    """Whether an oracle channel's fixed anchor (the label, +/-ORACLE_ANCHOR_RANGE_HZ) cannot
+    reach the label's sound, so the Matched front end's result on it is not meaningful."""
+    return oracle and _excursion_hz(label) > ORACLE_ANCHOR_RANGE_HZ
+
+
+def _anchor_limited(front_end: str, v: dict) -> bool:
+    return front_end == "matched" and v.get("beyond_oracle_anchor", False)
 
 
 def load_results(out_dir: Path):
@@ -621,7 +649,9 @@ def load_results(out_dir: Path):
                     rows.append({"front_end": fe_dir.name, "recording": result_name, "group": group,
                                  "tag": label.get("tag", ""), "index": sig["index"], "snr_db": sig["snr_db"],
                                  "scored": sig["scored"], "detected": sig["track_id"] is not None,
-                                 "freq_error_hz": freq_error, **{k: sig[k] for k in COUNT_KEYS}})
+                                 "freq_error_hz": freq_error,
+                                 "beyond_oracle_anchor": beyond_oracle_anchor(rec["oracle"], label),
+                                 **{k: sig[k] for k in COUNT_KEYS}})
                 if result_name == rec["name"]:
                     timing = result.get("timing", {})
                     channel_s = result.get("channel_seconds", 0.0)
@@ -644,14 +674,16 @@ def over_rows(out_dir: Path) -> list[dict]:
                 continue
             label_signals = json.loads((out_dir / rec["labels"]).read_text())["signals"]
             for sig in json.loads(path.read_text())["score"]["signals"]:
-                overs = label_signals[sig["index"]].get("transmissions", [])
+                label = label_signals[sig["index"]]
+                overs = label.get("transmissions", [])
                 if not sig["scored"] or not overs or "sender" not in overs[0]:
                     continue
                 for k, (over, counts) in enumerate(zip(overs, sig["transmissions"])):
                     rows.append({"front_end": fe_dir.name, "group": rec["group"],
                                  "tag": label_signals[sig["index"]].get("tag", ""), "over": k,
                                  "sender": over["sender"], "keying": over["keying"], "wpm": over["wpm"],
-                                 "symbols": counts["symbols"], "edits": counts["edits"]})
+                                 "symbols": counts["symbols"], "edits": counts["edits"],
+                                 "beyond_oracle_anchor": beyond_oracle_anchor(rec["oracle"], label)})
     return rows
 
 
@@ -659,8 +691,10 @@ def aggregate_overs(rows) -> dict:
     """Per-over CER pooled by (front end, group, keying style of the over's sender)."""
     groups: dict = {}
     for r in rows:
-        g = groups.setdefault((r["front_end"], r["group"], r["keying"]), {"overs": 0, "symbols": 0, "edits": 0})
+        g = groups.setdefault((r["front_end"], r["group"], r["keying"]),
+                              {"overs": 0, "symbols": 0, "edits": 0, "beyond_oracle_anchor": False})
         g["overs"] += 1
+        g["beyond_oracle_anchor"] |= bool(r.get("beyond_oracle_anchor"))
         g["symbols"] += r["symbols"]
         g["edits"] += r["edits"]
     return {k: {**g, "cer": _ratio(g["edits"], g["symbols"])} for k, g in groups.items()}
@@ -756,7 +790,11 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
              "than 2 signals. S₅₀₀ at a CER threshold is computed only for a sweep of at least three "
              "S₅₀₀ points with at least 2 signals each; groups that draw S₅₀₀ per signal (band, crowded) "
              "have one signal per point and show —. ≤ x : no point fails, so x, the lowest point, is an "
-             "upper bound. — : not reached, or no sweep. † : this group-H view does not fit the QSO. "
+             "upper bound. — : not reached, or no sweep. "
+             f"{ANCHOR_NOTE}: a Matched row of an oracle recording in which some label's sound gets more than "
+             f"{ORACLE_ANCHOR_RANGE_HZ:g} Hz from its labeled frequency (a drift over the signal's length, or a "
+             "QSO's answering station): with no detector, the tracker's anchor is the label and it fine-tunes "
+             f"only within ±{ORACLE_ANCHOR_RANGE_HZ:g} Hz of it. † : this group-H view does not fit the QSO. "
              "Through the detector, by its regime: labels per station for a same-track QSO, where both "
              "match one track and each is charged the other's text; labels per QSO for a separate-track "
              "QSO, where the caller's track lacks the answering station's overs. With oracle channels, by "
@@ -773,7 +811,7 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
         for (fe, g, tag), v in sorted(agg.items(), key=lambda kv: (kv[0][2], kv[0][0])):
             if g != group:
                 continue
-            mark = "" if view_fits(g, tag) else " †"
+            mark = ("" if view_fits(g, tag) else " †") + (f" ({ANCHOR_NOTE})" if _anchor_limited(fe, v) else "")
             lines.append(f"| {tag}{mark} | {fe} | {v['signals']} | {v['detected']} | "
                          f"{_with_interval(v['cer'], v['cer_interval'], '.3f')} | "
                          f"{v['char_cer']:.3f} | {v['space_error_rate']:.3f} | {v['first_word_cer']:.3f} | "
@@ -787,7 +825,9 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
                   "Matched. An interval that contains 0 is no evidence either way.", "",
                   "| group | tag | signals | mean CER difference |", "|---|---|---|---|"]
         for (group, tag), v in sorted(paired.items()):
-            lines.append(f"| {group} | {tag} | {v['signals']} | {_with_interval(v['mean'], v['interval'], '+.3f')} |")
+            note = f" ({ANCHOR_NOTE})" if v.get("beyond_oracle_anchor") else ""
+            lines.append(f"| {group} | {tag}{note} | {v['signals']} | "
+                         f"{_with_interval(v['mean'], v['interval'], '+.3f')} |")
         lines.append("")
     if overs:
         lines += ["## Per over", "",
@@ -797,7 +837,8 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
                   "(docs/signal-processing.md, section 11).", "",
                   "| group | keying | front end | overs | CER |", "|---|---|---|---|---|"]
         for (fe, group, keying), v in sorted(overs.items(), key=lambda kv: (kv[0][1], kv[0][2], kv[0][0])):
-            lines.append(f"| {group} | {keying} | {fe} | {v['overs']} | {v['cer']:.3f} |")
+            note = f" ({ANCHOR_NOTE})" if _anchor_limited(fe, v) else ""
+            lines.append(f"| {group} | {keying}{note} | {fe} | {v['overs']} | {v['cer']:.3f} |")
         lines.append("")
     if splits:
         lines += ["## Tracks per QSO (group H, detector)", "",
