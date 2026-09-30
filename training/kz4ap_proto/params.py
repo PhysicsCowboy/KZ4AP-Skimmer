@@ -81,9 +81,16 @@ class ProtoConfig:
     periodicity_rate_hz: float = 750.0     # p is averaged down to this rate, samples/s; heuristic
     comb_teeth: int = 4                    # teeth at k Pi (comb) or k T (edge comb); placeholder (E3)
     comb_width: float = 0.075              # comb tooth half-width, fraction of Pi (0.075 Pi = 15% of T; the edge comb
-                                           # uses 2 x this, fraction of T); placeholder (E3)
+                                           # uses 2 x this, fraction of T); placeholder (E3). The edge comb has no
+                                           # teeth or width of its own: it reuses comb_teeth and 2 x comb_width
     spectrum_nulls: int = 3                # placeholder (E3)
     spectrum_null_width: float = 0.15      # null band width x T (+/- half of it around k/T); placeholder (E3)
+    spectrum_front_floor_db: float = -20.0 # the spectrum fit leaves out frequencies where the front end's |H(f)|^2
+                                           # (branch 1's boxcar, then the averaging to periodicity_rate_hz) is below
+                                           # this, dB relative to its DC power gain. With N_1 = 14 samples at 1500
+                                           # samples/s that leaves out 97.1-119.6 Hz, 192.4-245.3 Hz and 280.4-375 Hz
+                                           # (around the nulls at 107.1 and 214.3 Hz, and past the second sidelobe;
+                                           # computed); heuristic
     comb_confidence_min: float = 0.03      # placeholder (E1)
     edge_confidence_min: float = 0.03      # placeholder (E1)
     spectrum_confidence_min: float = 1.5   # nats; placeholder (E1)
