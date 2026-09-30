@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Benchmark smoke test: generate a synthetic band, score it against the stored
-# baseline on the milestone-1 (Envelope) path, and check that two runs produce
-# identical results.
+# baselines on the milestone-1 (Envelope) path, which must stay bit-identical, and on the
+# Matched path (the default), and check that two runs of each produce identical results.
 # Usage: bench/smoke.sh BUILD_DIR   (run from the repository root)
 set -euo pipefail
 
@@ -42,11 +42,18 @@ mkdir -p "$WORK"
 PYTHONPATH=training "$PYTHON" -m kz4ap_synth.generate --scenario band --signals 8 \
     --duration 30 --seed 1 --out "$WORK/band.wav"
 
-"$BENCH" "$WORK/band.wav" --labels "$WORK/band.json" --json "$WORK/run1.json" \
-    --no-timing --baseline bench/baselines/smoke.json --front-end envelope
-"$BENCH" "$WORK/band.wav" --labels "$WORK/band.json" --json "$WORK/run2.json" --no-timing --front-end envelope
-if ! cmp -s "$WORK/run1.json" "$WORK/run2.json"; then
-    echo "FAIL: two runs over the same recording produced different results" >&2
-    exit 1
-fi
+check() {  # check NAME BASELINE [bench options...]
+    local name="$1" baseline="$2"
+    shift 2
+    "$BENCH" "$WORK/band.wav" --labels "$WORK/band.json" --json "$WORK/$name-1.json" \
+        --no-timing --baseline "$baseline" "$@"
+    "$BENCH" "$WORK/band.wav" --labels "$WORK/band.json" --json "$WORK/$name-2.json" --no-timing "$@"
+    if ! cmp -s "$WORK/$name-1.json" "$WORK/$name-2.json"; then
+        echo "FAIL: two $name runs over the same recording produced different results" >&2
+        exit 1
+    fi
+}
+
+check baseline bench/baselines/smoke.json --front-end envelope
+check matched bench/baselines/smoke-matched.json --front-end matched
 echo "smoke test passed"

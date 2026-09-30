@@ -53,6 +53,15 @@ evidence per CPU cycle, is:
      decimate to about one sample per 1/B (B the filter's noise bandwidth,
      Hz), before a sequence decoder sums them (proakis-ook-notes.md,
      item 13).
+   - **Built** (milestone 2, part 1): `FrontEnd::Matched`, the default
+     since the owner's decision of 2026-09-29; measured against the
+     baseline in `docs/signal-processing.md` §8b. Tuning its parameters
+     waits for evidence from these measurements. Group A at 25 WPM (oracle,
+     3 seeds): S₅₀₀ at CER 0.10 = 5.1 dB (4.8 to 5.2 dB) Envelope, 2.7 dB
+     (−0.0 to 10.4 dB) Matched; at CER 0.05, 5.6 dB (5.5 to 5.7 dB) and
+     3.4 dB (1.7 to 11.2 dB). CPU per channel-second (whole process,
+     i7-12700H): 0.202 ms Envelope, 0.381 ms Matched (decoders alone
+     0.014 and 0.177 ms).
 2. a small streaming CNN+LSTM network trained with CTC, following VE3NEA's
    DeepCW;
 3. a Bell-style explicit-duration HMM with beam search and Kalman amplitude
@@ -139,18 +148,7 @@ decoders as a user choice.
 
 ### Benchmark scenarios to add first
 
-- **Strong signals:** SNR up to 60 dB (500 Hz) (the generator stops at
-  30 dB).
-- **Stations that stop and pause:** a transmission, then several seconds of
-  silence, then another — as between CQs.
-- **Stations present from the first sample** of a recording.
-- **Tune-up carriers:** an unkeyed carrier of 0.3–2 s before keying starts.
-- **Crowded bands:** make the generator's minimum station spacing a setting
-  (today it is fixed at 1 kHz) that can go down to zero, so stations 50–200 Hz
-  apart and overlapping stations can be tested.
-- **Speed range:** 10–60 WPM, including very different speeds side by side.
-- **Scoring of the first word** of each transmission, since that is where
-  wrong characters currently concentrate.
+Done in milestone 2, part 1 (`training/kz4ap_synth/suites.py`).
 
 ### Real-recording scoring: manta's oracle
 
@@ -326,6 +324,19 @@ envelope fluctuates more. Tune the squelch against channel-filtered noise and
 add an engine-level test: signal, then 10 s of noise, then no text after the
 last real character. Tune together with the next item.
 
+Measured on the Matched front end (milestone 2, part 1, 3 seeds, through
+the detector): pauses of 2, 5, 10 and 20 s, CER 0.038, 0.039, 0.034 and
+0.707 (Envelope 0.050, 0.069, 0.144 and 0.644), first-word CER 0.333 at
+every pause (Envelope 0.167–0.833); strong stations at S₅₀₀ 30, 40, 50 and
+60 dB, CER 0.053, 0.055, 0.045 and 0.048 (Envelope 0.034, 0.052, 0.028 and
+0.028), first-word CER 0.857–1.000 (Envelope 0.571–0.867). The benchmark
+charges stray characters after a station stops as insertions, so they are
+inside these numbers but not separated out. `MatchedNoiseAfterStationStopsDecodesNothing`
+covers the decoder alone (one seed, S₅₀₀ = 20 dB, 10 s of noise after the
+last character): it does not cover the engine, where the track lingers
+about 8 s, nor the ~1% stray character after a silence ("Stray noise after
+a silence" below).
+
 ### Tracks outlive their stations; separate station identity from decoding
 
 A track is dropped about 8 s after its station stops even with a 1 s timeout,
@@ -413,6 +424,9 @@ filtering in two:
 
 Should help weak, slow signals and crowded bands most.
 
+Stage 2 is built as the Matched front end (a boxcar of 0.8 dit); stage 1 is
+unchanged.
+
 ### Detector: averaging, noise floor and detection theory
 
 All of the detector's parameters are heuristics (see
@@ -454,6 +468,17 @@ so the station sits within a small fraction of 1/T of 0 Hz (for example
 ±2 Hz), with drift tracked continuously, before any narrow filter. The
 wide ±150 Hz channel filter does not need this; a dit-matched one does
 (`docs/research/proakis-ook-notes.md`, section 2.7 and item 15).
+
+Done within ±75 Hz of the channel's center in Matched mode (each detector
+track follows its own peak within D = 47 Hz; the channel's NCO fine-tunes
+within ±12 Hz of it; slow drift only, owner 2026-09-29). Still open: moving
+the channel's center bin for larger drifts, drift in Envelope mode, and
+drift in oracle mode (no detector; the tracker covers ±12 Hz of the
+labeled frequency). Measured (group F, oracle): the re-centered frequency
+is within a median of 0.11 Hz of the truth at S₅₀₀ = 5 dB (largest 0.51 Hz,
+30 signals); drifts of 1 and 2 Hz/s (19–51 Hz over the signal) lose the
+Matched decode in oracle mode (CER 0.486 and 0.777), as expected of the
+±12 Hz anchor; no suite group yet measures drift through the detector.
 
 ### Speed window
 
@@ -505,6 +530,17 @@ separate track (milestone 2,
 part 1, Design decisions B); the milestone-1 detector heard stations within
 about 47 Hz as one track, from about 70 Hz as two, and either in between.
 
+Measured on group H (milestone 2, part 1, 3 seeds, through the detector;
+`docs/signal-processing.md` §8b): tracks per QSO, Envelope / Matched, were
+1.00 / 1.00 same-track (45 QSOs), 1.56 / 1.67 ambiguous (9) and 6.78 / 6.78
+separate-track (18; each station's track dies during the other's over and
+is re-born). QSO-label CER was 0.118 / 0.197 same-track and 0.085 / 0.297
+ambiguous; station-label CER 0.616 / 0.620 separate-track. So the regime
+decides the result: the ambiguous band (47–70 Hz) is where Matched does
+worst (2 of 6 grid QSOs at 50 Hz above CER 0.4), and separate-track QSOs
+are dominated by track turnover on both paths. How many real answers fall
+in each band therefore matters.
+
 ### Tune the Matched front end by measurement
 
 Tuning waits for evidence from the benchmark (owner, 2026-09-27 and
@@ -528,6 +564,38 @@ whether that matters.
 The four limits below were postponed by the owner on 2026-09-29. Each is a
 known limitation of the Matched front end as planned.
 
+**Measured bearing (milestone 2, part 1, full suite, 3 seeds;
+`docs/signal-processing.md` §8b, "Measured: Matched against Envelope").**
+Matched is better than Envelope in most conditions and at low S₅₀₀, and
+**worse** in these (paired CER difference, interval excluding 0): slow
+fading (f_D 0.1–0.3 Hz) at high S₅₀₀ with paddle or hand keying (+0.09 to
++0.34 per point at 17.78–57.78 dB); fists with a positive imbalance or hand
+keying at 10–20 dB (bug +0.1: +0.317 over the condition); a 20 Hz
+interferer 10 dB above the wanted station's key-down power (+0.349);
+group H through the detector (same-track QSO label +0.078, ambiguous
++0.352, separate-track per station +0.029 to +0.057); strong stations
+(+0.018 to +0.020); tune-up carriers of 1 s (+0.562) and 2 s (+0.899).
+Three mechanisms were diagnosed (not fixed):
+- **The growth bound acts per speed update, not per mark.** Widening the
+  filter at a key-up re-opens the mark just ended; the decoder merges the
+  "dropout", re-measures a longer mark and widens again, so the filter
+  reached its target within one mark (20 → 95 ms in 35 ms, measured). With
+  a wrong estimate it jumps to the wrong width at once.
+- **A misleading first mark** (the front end's 0.32 s warm-up ending inside
+  a mark, a first mark keyed late while ŝ rises, or merged elements at low
+  S₅₀₀) derails the speed estimate: a 15 ms fragment pinned the dit at
+  20 ms (the smoke recording's +7617.6 Hz station, CER 0.234), and a mark
+  between dit and dah length made the estimator take the mean of dits and
+  dahs as the dit (runaways to dits of 94–210 ms, 12.8–5.7 WPM, measured). In a focused run of 80 late
+  openings per speed, Matched lost at least 5 more characters than
+  Envelope in 4–15% of openings at 12–18.5 WPM and in 0–3% at 25–40 WPM.
+- **Tune-up carriers of 1 s or more** leave the Matched channel silent when
+  the channel opens during the carrier (measured by cutting the recording;
+  a 2 s carrier also when the channel is open before it). Likely cause, not
+  instrumented: the warm-up and the noise floor (a 1.02 s window at the
+  acquisition width) take the carrier as noise, and the station's own
+  marks then hold σ̂_v up.
+
 #### Acquisition floor (postponed)
 
 A station is first heard through a short "acquisition" filter (16 ms, set
@@ -537,6 +605,12 @@ station cannot be caught at all below about S₅₀₀ = −2.5 dB (derived, any
 speed); in simulation half its marks were caught near −1.8 dB at 25 WPM and
 −2.6 dB at 12 WPM. Once caught and narrowed, it could be followed down to
 −4.4 dB (25 WPM) or −6.0 dB (12 WPM), but it has to be caught first.
+**Measured** (group A, filler text, machine keying, oracle, 3 seeds): the
+Matched CER at S₅₀₀ = −4, −2, 0, 2 and 4 dB was 0.811, 0.324, 0.106, 0.055
+and 0.021 at 12 WPM, 1.000, 0.711, 0.122, 0.151 and 0.006 at 25 WPM, and
+0.986, 0.857, 0.612, 0.199 and 0.021 at 40 WPM; CER 0.10 is crossed at
+0.2, 2.7 and 3.1 dB, above the expected −2.6 to 0 dB (the start-up
+failures above add to it at 25 and 40 WPM).
 Options: (1) acquire with a longer filter (costs fast CW and the range of
 frequencies it can pull in); (2) key at the acquisition width without the
 squelch, but require several consistent marks before trusting them;
@@ -558,7 +632,9 @@ are not affected (the estimate does not chase them), and a fall in the
 noise is followed within a few seconds. A faster climb would need to tell a
 real noise rise from a station that fills most of the channel, and every
 method tried either did not separate the two or let weak stations inflate
-the estimate.
+the estimate. Not measured by the suite (no group raises the noise). The
+related stuck-high case, a noise estimate lifted by a tune-up carrier, is
+measured above (tune-up 1 s and 2 s).
 
 #### Stray noise after a silence (postponed)
 
@@ -567,6 +643,10 @@ amplitude estimate, in case the next over is from another station. In
 about 1% of silences in noise alone (4 of 400 simulated), the restarted
 estimate latched onto noise and one stray character was decoded. One
 option: give the restart a prior weight, as the warm-up has.
+Measured bearing: pauses of 2–10 s decoded at CER 0.034–0.039 with Matched
+(first-word CER 0.333), better than Envelope; strong stations at S₅₀₀
+30–60 dB 0.045–0.055, slightly worse than Envelope (paired +0.004 to
++0.020); stray characters are not separated out in these numbers.
 
 #### A strong neighbor 60–70 Hz away leaks through the matched filter (stated limit)
 
@@ -585,6 +665,17 @@ three words were intact in 26 and 30; typically "FARIS" for "PARIS"); at
 6. The neighbor itself was decoded in every run, on its own channel in all but one (at 70 Hz and +6 dB, once by the first station's channel). The fix
 belongs in the filter's design, for example a tapered filter with lower
 sidelobes; take it up with the co-channel item below (owner, 2026-09-29).
+Measured bearing (group E, oracle, 3 stations per row): a neighbor 50 Hz
+away at +0 dB re the wanted station's key-down power, Matched CER 0.064
+against Envelope's 0.857; at +10 and +20 dB, 0.814 and 1.123 (Envelope
+0.787 and 0.855). Group H through the detector at 50 Hz (ambiguous): 2 of
+6 grid QSOs above CER 0.4 with Matched, none with Envelope; the answering
+station's first-word CER 0.444 (Envelope 0.032). The retune delay (see
+"Wrong or missing first characters"): the answering station's first-word
+CER with Matched was 0.235, 0.147 and 0.181 at 0, 10 and 25 Hz (Envelope
+0.199, 0.213, 0.422; an upper bound). Whether the first-step growth bound
+removed the 50 Hz runaway: not removed (2 of 6 here against 12 of 30 in
+the simulation before it; the bound acts per update, above).
 
 #### Two stations keying at the same time within a few tens of Hz (postponed)
 
@@ -597,7 +688,10 @@ channel's station decoded in 30 of 30 and the other in 0 (no track of its
 own); at equal level, the channel's station decoded in 0 (40 Hz: the
 tracker settled between them), 13 (50 Hz) and 28 (60 Hz) of 30; 6 dB
 stronger, the channel moved to the other station in 30 of 30. Candidate
-mitigations to explore: hold the tracker when its average stops being
+mitigations to explore (measured bearing: group E, a 20 Hz interferer
+at +10 dB re the wanted station's key-down power gave Matched CER 0.885
+against Envelope's 0.544, paired +0.349, +0.112 to +0.480; at +0 dB 0.872
+and 0.793; 3 stations each): hold the tracker when its average stops being
 coherent (a sign of two tones); choose the filter length so the other
 station sits on one of its nulls (at multiples of 1/T_v); estimate each
 mark's own frequency and assign marks to stations; run a second tracker

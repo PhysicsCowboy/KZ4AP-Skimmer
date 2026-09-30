@@ -772,12 +772,24 @@ current frequency for the track minus the channel center (section 6,
   S₅₀₀ = +10, 0 and −5 dB (simulated), valid once a station has been
   acquired, which needs S₅₀₀ ≥ −2.5 dB (derived) at any speed, in
   simulation 50% of marks keyed near S₅₀₀ = −1.8 dB at 25 WPM
-  (section 8b, "Squelch"); Task 14 measures it in the benchmark; a linear
+  (section 8b, "Squelch"); a linear
   drift of ḟ Hz/s is followed with a lag of about ḟ·τ_f/P₁ (1.1 Hz at
   1 Hz/s, P₁ = 0.44, derived; 1.49–1.63 Hz simulated at the end of the
   last mark through the whole engine). Target (spec §5.2): within ±2 Hz,
   a loss of 0.2 dB relative to a centered station at 20 WPM through a
   filter of length T.
+- **Measured accuracy (benchmark, milestone 2, part 1):** in group F
+  (oracle channels on the nearest bin, stations 0, 2.9, 5.9, 8.8 and
+  11.7 Hz from the bin center, 20 and 25 WPM, 3 seeds, 30 signals per
+  S₅₀₀ point; section 11, "Frequency error"), |f_tracked − f_true| had a
+  median of 0.11 Hz (90th percentile 0.21 Hz, largest 0.51 Hz) at
+  S₅₀₀ = 5 dB and 0.13 Hz (0.28 Hz, 0.57 Hz) at S₅₀₀ = 0 dB, within the
+  ±2 Hz target at every signal; the Envelope path, which does not
+  re-center, is off by the bin rounding (median 5.9 Hz, largest 11.7 Hz).
+  Through the detector (band, crowded, strong, pauses, tune-up, first
+  sample) the median per condition was 0.0–0.2 Hz. The re-centering's accuracy is
+  therefore **measured**; its parameters (τ_f, the gates, the lag) stay
+  heuristic.
 - **Re-acquisition (heuristic):** after a silence (section 8) the decoder
   calls `reacquire()`: the average starts afresh (weight 0) from the last
   f̂, so the next station, if it is within ±12 Hz of the anchor, is found
@@ -820,7 +832,20 @@ first follow step after an acquisition or re-acquisition (owner decision
 8 to reach 12 WPM, derived), because the estimate at that step may rest on
 up to 7 unbounded marks (in simulation a truncated first mark gave a
 110 ms estimate, the filter jumped from K = 24 to 146 samples and ran
-away; the bound's effect on that case is not yet measured).
+away). **Measured (milestone 2, part 1, Task 14): both bounds act per speed
+update, not per mark.** The code updates the speed at every key-up
+(step 10), and the filter is widened there. A wider boxcar's window still
+covers the mark that just ended, so its output rises again and the key
+goes down within 0.3 dit; step 6 merges that "dropout" into the previous
+element, and the next key-up re-measures a longer mark, updates the speed
+and widens the filter again. In instrumented runs (debug prints, not
+committed) the filter's dit went 20 → 25 → 31.2 → 39.1 → 48.8 → 61.0 →
+76.3 → 95.4 ms within 35 ms, all on one mark, so the filter reaches the
+estimate at its first follow step, and each stretched copy of the mark
+also enters the speed window. Where the estimate is right this is
+harmless; where it is wrong the filter jumps to the wrong width at once.
+Section 8b, "Measured: Matched against Envelope", gives the cases and
+their numbers.
 **Re-acquisition (heuristic):** once the key has been
 up for max(0.5 s, 12 dits), the Matched decoder assumes the next station
 may be a different one (a QSO turnover): section 8b's filter returns to
@@ -961,8 +986,10 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
 - **Following speed (heuristic):** K starts at 60 WPM (K = 24, 62.5 Hz),
   the widest filter, and follows the dit passed to `set_dit`; the Matched
   decoder passes it once its speed window holds 8 marks (8 new ones after
-  a re-acquisition), the filter's dit growing at most ×1.25 per mark from
-  the 20 ms acquisition dit (section 8, "Two front ends"); K is clamped between the acquisition width
+  a re-acquisition), the filter's dit growing at most ×1.25 per speed
+  update from the 20 ms acquisition dit (section 8, "Two front ends"; the
+  updates come at every key-up, and a widening that re-opens the mark just
+  ended adds updates within that mark, measured); K is clamped between the acquisition width
   (β·1.2 s/60 = 16 ms, K = 24) and the 5 WPM width (β·1.2 s/5 = 192 ms,
   K = 288), both computed from durations; a dit that is not finite or
   not positive is ignored. When K changes, σ̂_v² is
@@ -1093,7 +1120,11 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
   at S₅₀₀ = −4, −3, −2 and −1 dB at 25 WPM, and 19%, 33% and 95% at
   S₅₀₀ = −4, −3 and −2 dB at 12 WPM, so 50% is reached near S₅₀₀ = −1.8 dB
   and −2.6 dB. The lower
-  figures hold only for a station already acquired and narrowed to. In
+  figures hold only for a station already acquired and narrowed to.
+  (Measured on the benchmark's group A, filler text: CER 0.10 is reached
+  at S₅₀₀ = 0.2, 2.7 and 3.1 dB at 12, 25 and 40 WPM, above this
+  expectation; "Measured: Matched against Envelope" below. The squelch
+  value stays heuristic.) In
   noise alone, with σ̂_v correct, the amplitude update multiplies ŝ² by
   about e^(−P₁) = 0.64 per τ_a of key-down weight W_a (derived to first
   order in a²: E[p·(|v|² − 2σ_v² − ŝ²)] ≈ −P₁²·ŝ², and W_a grows by P₁ per
@@ -1109,6 +1140,428 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
   element is one matched-filter sample); the HMM plan may decimate at a
   stride of K instead. The classical decoder keys from g sample by sample
   and does not sum, so it ignores the weight.
+
+### Measured: Matched against Envelope (milestone 2, part 1)
+
+Full suite, 3 seeds, synthetic recordings (`kz4ap_synth.suites`, 117
+recordings, 4.55 h of audio, 3.20 GB), on a 12th Gen Intel Core i7-12700H
+(32 GB, Windows 11); generating took 60 min (another job shared the
+machine for part of it) and scoring both front ends 5.0 min (nothing
+else running). S₅₀₀: key-down carrier power over noise power in 500 Hz,
+dB; every dB value in this subsection is an S₅₀₀ (or a difference of
+S₅₀₀ values) unless it names another reference. Groups A–G and the "H, oracle" copy use oracle channels (detector
+bypassed, channel on the nearest bin); the rest run the whole pipeline.
+Parentheses: bootstrap 95% intervals over signals (1000 resamples); none
+for a row of one signal. "Envelope" is the milestone-1 path
+(`--front-end envelope`, bit-identical to milestone 1); "Matched" is the
+default. No parameter was tuned for these runs (owner, 2026-09-29).
+Source: `build/suite/full3/summary.md` (not in the repository; rerun
+with the commands in section 11, "Suites").
+
+| Condition | Envelope: S₅₀₀ at CER 0.10 / 0.05 (dB) | Matched: S₅₀₀ at CER 0.10 / 0.05 (dB) |
+|---|---|---|
+| A, 12 WPM | 7.2 (6.8 to 7.4) / 7.7 (7.5 to 7.8) | 0.2 (−0.5 to 2.2) / 2.3 (−0.0 to 3.4) |
+| A, 25 WPM | 5.1 (4.8 to 5.2) / 5.6 (5.5 to 5.7) | 2.7 (−0.0 to 10.4) / 3.4 (1.7 to 11.2) |
+| A, 40 WPM | 6.0 (5.9 to 15.2) / 14.8 (7.0 to 15.7) | 3.1 (2.0 to 3.6) / 3.7 (3.3 to 12.4) |
+
+Each row below is one tag of the summary; for group H the tag names the
+regime and the answering station's offset. † marks the group-H view that
+does not fit (section 11). A row pools every S₅₀₀ point of its condition
+(groups B, C and G sweep S₅₀₀), so a row can favor Matched while its
+high-S₅₀₀ points favor Envelope ("Where Matched is worse" below).
+
+| Condition | Envelope: CER (interval) / character CER / space error rate / first-word CER | Matched: same | Matched − Envelope, paired (interval) |
+|---|---|---|---|
+| B fading: VE3NEA mix | 0.927 (0.811 to 1.054) / 0.967 / 0.802 / 1.632 | 0.754 (0.725 to 0.783) / 0.786 / 0.653 / 0.708 | −0.191 (−0.297 to −0.085) |
+| B fading: hand 24 wpm fD 0.1 Hz | 0.697 (0.595 to 0.830) / 0.683 / 0.741 / 1.305 | 0.616 (0.579 to 0.658) / 0.597 / 0.674 / 0.582 | −0.084 (−0.206 to +0.006) |
+| B fading: hand 24 wpm fD 0.3 Hz | 0.758 (0.657 to 0.884) / 0.770 / 0.718 / 1.866 | 0.669 (0.642 to 0.698) / 0.680 / 0.635 / 0.636 | −0.088 (−0.197 to +0.002) |
+| B fading: hand 24 wpm fD 1 Hz | 0.937 (0.796 to 1.093) / 0.948 / 0.903 / 1.788 | 0.747 (0.728 to 0.768) / 0.775 / 0.663 / 0.698 | −0.192 (−0.345 to −0.070) |
+| B fading: hand 24 wpm fD 3 Hz | 1.147 (0.974 to 1.354) / 1.136 / 1.183 / 2.468 | 0.786 (0.768 to 0.806) / 0.821 / 0.678 / 0.826 | −0.365 (−0.533 to −0.205) |
+| B fading: paddle 12 wpm fD 0.1 Hz | 0.852 (0.558 to 1.220) / 0.881 / 0.759 / 1.694 | 0.543 (0.496 to 0.592) / 0.559 / 0.493 / 0.810 | −0.311 (−0.689 to −0.029) |
+| B fading: paddle 24 wpm fD 0.1 Hz | 0.615 (0.478 to 0.765) / 0.650 / 0.507 / 0.948 | 0.589 (0.538 to 0.640) / 0.598 / 0.563 / 0.491 | −0.025 (−0.139 to +0.084) |
+| B fading: paddle 24 wpm fD 0.3 Hz | 0.782 (0.647 to 0.940) / 0.832 / 0.629 / 1.538 | 0.653 (0.611 to 0.693) / 0.683 / 0.562 / 0.608 | −0.126 (−0.263 to −0.008) |
+| B fading: paddle 24 wpm fD 1 Hz | 1.013 (0.860 to 1.181) / 1.054 / 0.885 / 3.024 | 0.752 (0.731 to 0.776) / 0.797 / 0.611 / 0.659 | −0.263 (−0.436 to −0.118) |
+| B fading: paddle 24 wpm fD 3 Hz | 1.126 (0.966 to 1.312) / 1.123 / 1.134 / 2.225 | 0.816 (0.794 to 0.840) / 0.849 / 0.713 / 0.850 | −0.310 (−0.462 to −0.166) |
+| B fading: paddle 40 wpm fD 0.1 Hz | 0.766 (0.696 to 0.842) / 0.804 / 0.645 / 0.866 | 0.602 (0.545 to 0.655) / 0.612 / 0.570 / 0.681 | −0.164 (−0.233 to −0.099) |
+| C fists: bug imbalance +0.0 | 0.385 (0.286 to 0.513) / 0.402 / 0.328 / 0.174 | 0.505 (0.402 to 0.608) / 0.509 / 0.490 / 0.594 | +0.117 (−0.043 to +0.269) |
+| C fists: bug imbalance +0.1 | 0.396 (0.301 to 0.516) / 0.403 / 0.372 / 0.214 | 0.724 (0.627 to 0.810) / 0.732 / 0.700 / 0.900 | +0.317 (+0.158 to +0.450) |
+| C fists: bug imbalance -0.1 | 0.372 (0.269 to 0.487) / 0.375 / 0.358 / 0.453 | 0.304 (0.219 to 0.398) / 0.311 / 0.280 / 0.500 | −0.067 (−0.212 to +0.049) |
+| C fists: computer imbalance +0.0 | 0.106 (0.023 to 0.222) / 0.100 / 0.124 / 0.044 | 0.004 (0.001 to 0.009) / 0.003 / 0.005 / 0.221 | −0.096 (−0.202 to −0.021) |
+| C fists: computer imbalance +0.1 | 0.139 (0.030 to 0.255) / 0.135 / 0.152 / 0.017 | 0.037 (0.001 to 0.107) / 0.033 / 0.049 / 0.169 | −0.096 (−0.242 to +0.033) |
+| C fists: computer imbalance -0.1 | 0.288 (0.113 to 0.507) / 0.283 / 0.304 / 0.063 | 0.006 (0.001 to 0.014) / 0.007 / 0.004 / 0.111 | −0.285 (−0.524 to −0.106) |
+| C fists: hand imbalance +0.0 | 0.302 (0.261 to 0.351) / 0.184 / 0.729 / 0.250 | 0.314 (0.268 to 0.368) / 0.247 / 0.554 / 0.344 | +0.011 (−0.035 to +0.063) |
+| C fists: hand imbalance +0.1 | 0.351 (0.301 to 0.406) / 0.245 / 0.727 / 0.544 | 0.424 (0.359 to 0.496) / 0.348 / 0.694 / 0.574 | +0.069 (−0.017 to +0.156) |
+| C fists: hand imbalance -0.1 | 0.324 (0.282 to 0.371) / 0.154 / 0.899 / 0.351 | 0.269 (0.239 to 0.302) / 0.155 / 0.659 / 0.257 | −0.056 (−0.104 to −0.009) |
+| C fists: machine imbalance +0.0 | 0.017 (0.008 to 0.028) / 0.018 / 0.017 / 0.033 | 0.006 (0.001 to 0.016) / 0.006 / 0.005 / 0.167 | −0.012 (−0.021 to −0.005) |
+| C fists: machine imbalance +0.1 | 0.022 (0.008 to 0.041) / 0.021 / 0.027 / 0.000 | 0.103 (0.001 to 0.216) / 0.100 / 0.114 / 0.259 | +0.088 (−0.015 to +0.206) |
+| C fists: machine imbalance -0.1 | 0.046 (0.019 to 0.081) / 0.050 / 0.033 / 0.000 | 0.002 (0.001 to 0.004) / 0.002 / 0.001 / 0.132 | −0.044 (−0.076 to −0.019) |
+| C fists: paddle imbalance +0.0 | 0.106 (0.043 to 0.220) / 0.088 / 0.170 / 0.061 | 0.047 (0.042 to 0.053) / 0.039 / 0.077 / 0.136 | −0.058 (−0.160 to +0.004) |
+| C fists: paddle imbalance +0.1 | 0.106 (0.048 to 0.214) / 0.090 / 0.162 / 0.034 | 0.160 (0.087 to 0.248) / 0.156 / 0.172 / 0.241 | +0.060 (−0.080 to +0.179) |
+| C fists: paddle imbalance -0.1 | 0.089 (0.056 to 0.128) / 0.060 / 0.186 / 0.062 | 0.037 (0.026 to 0.053) / 0.026 / 0.075 / 0.547 | −0.055 (−0.097 to −0.016) |
+| D speed: 10 wpm | 0.052 (0.045 to 0.063) / 0.061 / 0.019 / 1.000 | 0.073 (0.046 to 0.121) / 0.072 / 0.077 / 1.333 | +0.021 (+0.000 to +0.064) |
+| D speed: 60 wpm | 0.133 (0.005 to 0.367) / 0.130 / 0.142 / 0.833 | 0.073 (0.004 to 0.217) / 0.077 / 0.056 / 0.750 | −0.071 (−0.311 to +0.147) |
+| D speed: ramp 15->30 | 0.202 (0.057 to 0.433) / 0.172 / 0.314 / 0.000 | 0.000 (0.000 to 0.000) / 0.000 / 0.000 / 0.000 | −0.192 (−0.411 to −0.059) |
+| D speed: ramp 30->15 | 0.000 (0.000 to 0.000) / 0.000 / 0.000 / 0.000 | 0.000 (0.000 to 0.000) / 0.000 / 0.000 / 0.000 | +0.000 (+0.000 to +0.000) |
+| D speed: step 20->35 | 0.525 (0.257 to 0.845) / 0.541 / 0.474 / 0.000 | 0.113 (0.058 to 0.163) / 0.121 / 0.088 / 0.000 | −0.412 (−0.694 to −0.140) |
+| D speed: step 35->20 | 0.114 (0.061 to 0.160) / 0.096 / 0.179 / 0.250 | 0.133 (0.108 to 0.162) / 0.120 / 0.179 / 0.417 | +0.020 (−0.023 to +0.055) |
+| E interference: df 100 Hz, +0 dB re wanted key-down power | 0.820 (0.808 to 0.837) / 0.901 / 0.547 / 1.000 | 0.006 (0.000 to 0.019) / 0.004 / 0.013 / 0.333 | −0.814 (−0.817 to −0.808) |
+| E interference: df 100 Hz, +10 dB re wanted key-down power | 0.943 (0.775 to 1.113) / 1.062 / 0.566 / 0.818 | 0.391 (0.062 to 0.982) / 0.394 / 0.382 / 1.000 | −0.570 (−1.052 to +0.018) |
+| E interference: df 100 Hz, +20 dB re wanted key-down power | 1.041 (0.940 to 1.155) / 1.171 / 0.559 / 1.900 | 0.794 (0.767 to 0.814) / 0.857 / 0.559 / 1.000 | −0.252 (−0.340 to −0.172) |
+| E interference: df 100 Hz, -10 dB re wanted key-down power | 0.036 (0.000 to 0.056) / 0.023 / 0.090 / 0.000 | 0.000 (0.000 to 0.000) / 0.000 / 0.000 / 0.000 | −0.037 (−0.056 to +0.000) |
+| E interference: df 150 Hz, +0 dB re wanted key-down power | 0.145 (0.027 to 0.331) / 0.152 / 0.120 / 0.000 | 0.000 (0.000 to 0.000) / 0.000 / 0.000 / 0.000 | −0.137 (−0.331 to −0.027) |
+| E interference: df 150 Hz, +10 dB re wanted key-down power | 0.824 (0.818 to 0.829) / 0.921 / 0.521 / 1.000 | 0.000 (0.000 to 0.000) / 0.000 / 0.000 / 0.000 | −0.824 (−0.829 to −0.818) |
+| E interference: df 150 Hz, +20 dB re wanted key-down power | 0.779 (0.491 to 1.008) / 0.860 / 0.521 / 2.333 | 0.548 (0.126 to 0.934) / 0.553 / 0.532 / 1.000 | −0.246 (−0.882 to +0.126) |
+| E interference: df 150 Hz, -10 dB re wanted key-down power | 0.011 (0.000 to 0.029) / 0.007 / 0.023 / 0.000 | 0.000 (0.000 to 0.000) / 0.000 / 0.000 / 0.000 | −0.010 (−0.029 to +0.000) |
+| E interference: df 20 Hz, +0 dB re wanted key-down power | 0.793 (0.654 to 1.101) / 0.846 / 0.600 / 0.667 | 0.872 (0.838 to 0.921) / 0.888 / 0.812 / 1.000 | +0.040 (−0.263 to +0.195) |
+| E interference: df 20 Hz, +10 dB re wanted key-down power | 0.544 (0.480 to 0.640) / 0.656 / 0.123 / 6.333 | 0.885 (0.752 to 0.960) / 0.928 / 0.726 / 1.000 | +0.349 (+0.112 to +0.480) |
+| E interference: df 20 Hz, +20 dB re wanted key-down power | 0.922 (0.822 to 1.131) / 0.979 / 0.707 / 2.667 | 0.788 (0.725 to 0.848) / 0.842 / 0.587 / 0.667 | −0.156 (−0.283 to +0.007) |
+| E interference: df 20 Hz, -10 dB re wanted key-down power | 0.044 (0.000 to 0.081) / 0.033 / 0.080 / 0.000 | 0.003 (0.000 to 0.009) / 0.004 / 0.000 / 0.167 | −0.043 (−0.081 to +0.009) |
+| E interference: df 50 Hz, +0 dB re wanted key-down power | 0.857 (0.807 to 0.930) / 0.912 / 0.651 / 1.833 | 0.064 (0.039 to 0.098) / 0.062 / 0.072 / 2.167 | −0.790 (−0.832 to −0.756) |
+| E interference: df 50 Hz, +10 dB re wanted key-down power | 0.787 (0.500 to 1.009) / 0.878 / 0.467 / 1.000 | 0.814 (0.744 to 0.881) / 0.840 / 0.720 / 1.167 | +0.037 (−0.128 to +0.327) |
+| E interference: df 50 Hz, +20 dB re wanted key-down power | 0.855 (0.640 to 1.040) / 0.867 / 0.813 / 1.000 | 1.123 (0.895 to 1.414) / 1.072 / 1.293 / 1.833 | +0.262 (−0.009 to +0.775) |
+| E interference: df 50 Hz, -10 dB re wanted key-down power | 0.005 (0.000 to 0.014) / 0.003 / 0.011 / 0.000 | 0.000 (0.000 to 0.000) / 0.000 / 0.000 / 0.000 | −0.005 (−0.014 to +0.000) |
+| F tuning: drift 0.2 Hz/s | 0.105 (0.038 to 0.168) / 0.106 / 0.100 / 0.000 | 0.071 (0.006 to 0.184) / 0.078 / 0.043 / 0.500 | −0.035 (−0.111 to +0.035) |
+| F tuning: drift 0.5 Hz/s (not meaningful (oracle anchor) for Matched) | 0.073 (0.006 to 0.173) / 0.056 / 0.130 / 0.133 | 0.028 (0.021 to 0.035) / 0.024 / 0.043 / 0.333 | −0.065 (−0.163 to +0.023) |
+| F tuning: drift 1 Hz/s (not meaningful (oracle anchor) for Matched) | 0.080 (0.014 to 0.171) / 0.078 / 0.086 / 0.267 | 0.486 (0.233 to 0.743) / 0.495 / 0.448 / 0.533 | +0.369 (+0.075 to +0.659) |
+| F tuning: drift 2 Hz/s (not meaningful (oracle anchor) for Matched) | 0.113 (0.046 to 0.186) / 0.086 / 0.210 / 0.000 | 0.777 (0.669 to 0.860) / 0.805 / 0.677 / 0.583 | +0.663 (+0.503 to +0.805) |
+| F tuning: offset 0 Hz 20 wpm | 0.416 (0.136 to 0.716) / 0.471 / 0.213 / 0.625 | 0.124 (0.023 to 0.250) / 0.136 / 0.082 / 0.812 | −0.304 (−0.605 to −0.005) |
+| F tuning: offset 0 Hz 25 wpm | 0.412 (0.189 to 0.623) / 0.475 / 0.218 / 0.500 | 0.145 (0.025 to 0.264) / 0.160 / 0.100 / 0.583 | −0.266 (−0.465 to −0.094) |
+| F tuning: offset 11.7 Hz 20 wpm | 0.404 (0.141 to 0.647) / 0.479 / 0.113 / 0.333 | 0.049 (0.017 to 0.095) / 0.037 / 0.094 / 0.667 | −0.333 (−0.593 to −0.095) |
+| F tuning: offset 11.7 Hz 25 wpm | 0.420 (0.161 to 0.670) / 0.469 / 0.219 / 0.300 | 0.309 (0.077 to 0.593) / 0.316 / 0.281 / 2.050 | −0.094 (−0.268 to +0.050) |
+| F tuning: offset 2.9 Hz 20 wpm | 0.486 (0.143 to 0.929) / 0.488 / 0.475 / 0.579 | 0.041 (0.003 to 0.112) / 0.044 / 0.033 / 0.789 | −0.479 (−0.922 to −0.137) |
+| F tuning: offset 2.9 Hz 25 wpm | 0.394 (0.131 to 0.692) / 0.429 / 0.276 / 0.533 | 0.089 (0.012 to 0.169) / 0.094 / 0.072 / 0.467 | −0.320 (−0.585 to −0.092) |
+| F tuning: offset 5.9 Hz 20 wpm | 0.393 (0.128 to 0.639) / 0.433 / 0.252 / 0.476 | 0.030 (0.006 to 0.069) / 0.039 / 0.000 / 0.286 | −0.354 (−0.612 to −0.108) |
+| F tuning: offset 5.9 Hz 25 wpm | 0.386 (0.148 to 0.598) / 0.439 / 0.206 / 0.312 | 0.203 (0.017 to 0.454) / 0.216 / 0.161 / 1.500 | −0.168 (−0.395 to +0.024) |
+| F tuning: offset 8.8 Hz 20 wpm | 0.492 (0.204 to 0.789) / 0.515 / 0.407 / 0.647 | 0.184 (0.008 to 0.417) / 0.187 / 0.176 / 0.294 | −0.333 (−0.690 to +0.132) |
+| F tuning: offset 8.8 Hz 25 wpm | 0.405 (0.148 to 0.631) / 0.471 / 0.138 / 0.400 | 0.167 (0.055 to 0.286) / 0.171 / 0.154 / 1.000 | −0.226 (−0.471 to +0.020) |
+| G ragchew: ragchew 25 wpm | 0.196 (0.111 to 0.284) / 0.203 / 0.174 / 0.240 | 0.103 (0.065 to 0.149) / 0.098 / 0.118 / 0.249 | −0.094 (−0.153 to −0.042) |
+| H two-station QSO: ambiguous, drawn offset | 0.130 (0.087 to 0.164) / 0.092 / 0.237 / 0.486 | 0.484 (0.405 to 0.619) / 0.526 / 0.364 / 0.811 | +0.352 (+0.270 to +0.455) |
+| H two-station QSO: ambiguous, offset 50 Hz | 0.062 (0.026 to 0.101) / 0.038 / 0.128 / 0.106 | 0.204 (0.058 to 0.370) / 0.195 / 0.232 / 0.392 | +0.142 (−0.020 to +0.325) |
+| H two-station QSO: same-track, drawn offset | 0.116 (0.087 to 0.146) / 0.075 / 0.231 / 0.247 | 0.194 (0.136 to 0.251) / 0.167 / 0.269 / 0.272 | +0.078 (+0.038 to +0.123) |
+| H two-station QSO: same-track, offset 0 Hz | 0.150 (0.074 to 0.216) / 0.099 / 0.298 / 0.261 | 0.252 (0.080 to 0.450) / 0.226 / 0.328 / 0.286 | +0.106 (−0.033 to +0.245) |
+| H two-station QSO: same-track, offset 10 Hz | 0.103 (0.036 to 0.176) / 0.067 / 0.208 / 0.246 | 0.132 (0.039 to 0.233) / 0.106 / 0.208 / 0.209 | +0.028 (−0.000 to +0.079) |
+| H two-station QSO: same-track, offset 25 Hz | 0.107 (0.035 to 0.216) / 0.067 / 0.221 / 0.377 | 0.218 (0.063 to 0.402) / 0.204 / 0.256 / 0.302 | +0.111 (−0.031 to +0.280) |
+| H two-station QSO: separate-track, drawn offset † | 0.723 (0.702 to 0.746) / 0.722 / 0.723 / 0.738 | 0.789 (0.782 to 0.797) / 0.790 / 0.787 / 0.801 | +0.067 (+0.052 to +0.081) |
+| H two-station QSO: separate-track, offset 100 Hz † | 0.428 (0.169 to 0.679) / 0.415 / 0.467 / 0.542 | 0.639 (0.492 to 0.769) / 0.656 / 0.591 / 0.750 | +0.213 (+0.086 to +0.345) |
+| H two-station QSO: separate-track, offset 200 Hz † | 0.786 (0.770 to 0.799) / 0.789 / 0.778 / 0.886 | 0.806 (0.794 to 0.816) / 0.806 / 0.808 / 0.905 | +0.021 (+0.010 to +0.033) |
+| H two-station QSO (per station): ambiguous, drawn offset | 0.992 (0.900 to 1.089) / 0.953 / 1.103 / 1.009 | 1.124 (0.738 to 1.569) / 1.121 / 1.134 / 3.342 | +0.131 (−0.220 to +0.532) |
+| H two-station QSO (per station): ambiguous, offset 50 Hz | 0.947 (0.878 to 1.007) / 0.931 / 0.994 / 1.576 | 0.953 (0.859 to 1.048) / 0.904 / 1.092 / 2.631 | +0.005 (−0.102 to +0.121) |
+| H two-station QSO (per station): same-track, drawn offset † | 0.973 (0.951 to 0.995) / 0.946 / 1.049 / 1.089 | 0.917 (0.882 to 0.951) / 0.920 / 0.906 / 1.044 | −0.053 (−0.086 to −0.024) |
+| H two-station QSO (per station): same-track, offset 0 Hz † | 0.971 (0.902 to 1.036) / 0.940 / 1.062 / 0.765 | 0.864 (0.779 to 0.942) / 0.876 / 0.829 / 0.836 | −0.102 (−0.191 to −0.030) |
+| H two-station QSO (per station): same-track, offset 10 Hz † | 0.960 (0.927 to 0.993) / 0.934 / 1.038 / 1.725 | 0.927 (0.872 to 0.978) / 0.921 / 0.945 / 1.160 | −0.031 (−0.072 to −0.000) |
+| H two-station QSO (per station): same-track, offset 25 Hz † | 0.979 (0.912 to 1.071) / 0.949 / 1.063 / 1.400 | 0.868 (0.770 to 0.954) / 0.877 / 0.842 / 0.912 | −0.104 (−0.209 to −0.001) |
+| H two-station QSO (per station): separate-track, drawn offset | 0.564 (0.548 to 0.582) / 0.575 / 0.533 / 0.715 | 0.620 (0.609 to 0.630) / 0.619 / 0.622 / 0.801 | +0.057 (+0.039 to +0.075) |
+| H two-station QSO (per station): separate-track, offset 100 Hz | 0.673 (0.593 to 0.778) / 0.679 / 0.653 / 1.368 | 0.598 (0.542 to 0.648) / 0.594 / 0.609 / 1.033 | −0.068 (−0.199 to +0.034) |
+| H two-station QSO (per station): separate-track, offset 200 Hz | 0.613 (0.603 to 0.623) / 0.619 / 0.597 / 0.725 | 0.641 (0.625 to 0.655) / 0.637 / 0.652 / 0.768 | +0.029 (+0.011 to +0.047) |
+| H two-station QSO, oracle: ambiguous, offset 50 Hz (not meaningful (oracle anchor) for Matched) | 0.357 (0.029 to 0.973) / 0.351 / 0.373 / 0.078 | 0.597 (0.505 to 0.708) / 0.617 / 0.541 / 0.885 | +0.240 (−0.446 to +0.657) |
+| H two-station QSO, oracle: same-track, offset 0 Hz | 0.322 (0.087 to 0.668) / 0.276 / 0.455 / 0.223 | 0.248 (0.076 to 0.449) / 0.219 / 0.331 / 0.223 | −0.069 (−0.538 to +0.239) |
+| H two-station QSO, oracle: same-track, offset 10 Hz | 0.101 (0.036 to 0.176) / 0.066 / 0.205 / 0.217 | 0.128 (0.039 to 0.216) / 0.101 / 0.207 / 0.164 | +0.026 (−0.004 to +0.078) |
+| H two-station QSO, oracle: same-track, offset 25 Hz (not meaningful (oracle anchor) for Matched) | 0.106 (0.033 to 0.211) / 0.064 / 0.222 / 0.335 | 0.476 (0.387 to 0.553) / 0.516 / 0.364 / 0.498 | +0.370 (+0.307 to +0.434) |
+| H two-station QSO, oracle: separate-track, offset 100 Hz (not meaningful (oracle anchor) for Matched) | 0.336 (0.072 to 0.712) / 0.314 / 0.397 / 0.311 | 0.507 (0.405 to 0.626) / 0.528 / 0.449 / 0.575 | +0.169 (−0.277 to +0.420) |
+| H two-station QSO, oracle: separate-track, offset 200 Hz † (not meaningful (oracle anchor) for Matched) | 0.468 (0.441 to 0.491) / 0.485 / 0.420 / 0.716 | 0.502 (0.479 to 0.532) / 0.497 / 0.518 / 0.588 | +0.035 (−0.006 to +0.066) |
+| H two-station QSO, oracle (per station): ambiguous, offset 50 Hz † | 1.490 (1.011 to 2.189) / 1.472 / 1.541 / 1.894 | 1.073 (0.912 to 1.226) / 0.974 / 1.352 / 3.378 | −0.415 (−1.023 to +0.033) |
+| H two-station QSO, oracle (per station): same-track, offset 0 Hz † | 1.461 (1.028 to 1.996) / 1.403 / 1.628 / 1.462 | 0.887 (0.782 to 0.997) / 0.906 / 0.834 / 1.660 | −0.581 (−1.104 to −0.189) |
+| H two-station QSO, oracle (per station): same-track, offset 10 Hz † | 1.055 (0.971 to 1.151) / 0.999 / 1.221 / 2.561 | 0.987 (0.891 to 1.086) / 0.975 / 1.024 / 1.488 | −0.067 (−0.131 to −0.017) |
+| H two-station QSO, oracle (per station): same-track, offset 25 Hz † | 1.115 (0.985 to 1.258) / 1.047 / 1.309 / 2.293 | 1.004 (0.835 to 1.192) / 0.979 / 1.075 / 2.098 | −0.109 (−0.325 to +0.080) |
+| H two-station QSO, oracle (per station): separate-track, offset 100 Hz † | 1.449 (1.023 to 2.046) / 1.418 / 1.534 / 2.057 | 0.603 (0.437 to 0.758) / 0.531 / 0.803 / 1.486 | −0.852 (−1.452 to −0.374) |
+| H two-station QSO, oracle (per station): separate-track, offset 200 Hz | 0.277 (0.178 to 0.384) / 0.232 / 0.402 / 1.223 | 0.076 (0.041 to 0.110) / 0.059 / 0.122 / 0.156 | −0.203 (−0.321 to −0.098) |
+| strong: S500 30 dB | 0.034 (0.023 to 0.048) / 0.037 / 0.019 / 0.571 | 0.053 (0.045 to 0.060) / 0.056 / 0.038 / 0.857 | +0.019 (+0.011 to +0.024) |
+| strong: S500 40 dB | 0.052 (0.047 to 0.056) / 0.050 / 0.056 / 0.867 | 0.055 (0.051 to 0.059) / 0.050 / 0.069 / 0.867 | +0.004 (+0.000 to +0.011) |
+| strong: S500 50 dB | 0.028 (0.020 to 0.038) / 0.032 / 0.015 / 0.583 | 0.045 (0.041 to 0.049) / 0.054 / 0.015 / 1.000 | +0.018 (+0.011 to +0.023) |
+| strong: S500 60 dB | 0.028 (0.023 to 0.037) / 0.036 / 0.000 / 0.583 | 0.048 (0.045 to 0.050) / 0.062 / 0.000 / 1.000 | +0.020 (+0.012 to +0.025) |
+| pauses: pause 10 s | 0.144 (0.096 to 0.211) / 0.115 / 0.273 / 0.222 | 0.034 (0.032 to 0.036) / 0.042 / 0.000 / 0.333 | −0.114 (−0.179 to −0.062) |
+| pauses: pause 2 s | 0.050 (0.023 to 0.092) / 0.048 / 0.061 / 0.167 | 0.038 (0.035 to 0.041) / 0.048 / 0.000 / 0.333 | −0.015 (−0.056 to +0.013) |
+| pauses: pause 20 s | 0.644 (0.632 to 0.655) / 0.656 / 0.591 / 0.833 | 0.707 (0.699 to 0.714) / 0.702 / 0.727 / 1.000 | +0.064 (+0.046 to +0.080) |
+| pauses: pause 5 s | 0.069 (0.035 to 0.112) / 0.067 / 0.076 / 0.222 | 0.039 (0.036 to 0.042) / 0.050 / 0.000 / 0.333 | −0.032 (−0.075 to +0.003) |
+| tune-up: tune-up 0.3 s | 0.007 (0.000 to 0.014) / 0.009 / 0.000 / 0.125 | 0.014 (0.000 to 0.027) / 0.013 / 0.017 / 0.250 | +0.006 (+0.000 to +0.013) |
+| tune-up: tune-up 0.6 s | 0.000 (0.000 to 0.000) / 0.000 / 0.000 / 0.000 | 0.032 (0.000 to 0.093) / 0.038 / 0.014 / 0.125 | +0.028 (+0.000 to +0.085) |
+| tune-up: tune-up 1 s | 0.000 (0.000 to 0.000) / 0.000 / 0.000 / 0.000 | 0.542 (0.258 to 0.835) / 0.536 / 0.559 / 0.833 | +0.562 (+0.280 to +0.839) |
+| tune-up: tune-up 2 s | 0.029 (0.006 to 0.067) / 0.018 / 0.068 / 0.000 | 0.909 (0.758 to 1.000) / 0.912 / 0.898 / 1.000 | +0.899 (+0.775 to +0.981) |
+| first sample: from the first sample | 0.119 (0.097 to 0.147) / 0.111 / 0.145 / 0.833 | 0.138 (0.122 to 0.157) / 0.143 / 0.120 / 0.900 | +0.018 (−0.001 to +0.033) |
+| crowded: spacing 0 Hz | 0.518 (0.409 to 0.620) / 0.531 / 0.469 / 1.370 | 0.249 (0.167 to 0.344) / 0.256 / 0.225 / 0.994 | −0.258 (−0.341 to −0.175) |
+| crowded: spacing 100 Hz | 0.326 (0.223 to 0.430) / 0.342 / 0.271 / 0.876 | 0.052 (0.038 to 0.073) / 0.054 / 0.046 / 0.847 | −0.244 (−0.334 to −0.159) |
+| crowded: spacing 200 Hz | 0.037 (0.030 to 0.047) / 0.039 / 0.030 / 0.749 | 0.082 (0.037 to 0.144) / 0.084 / 0.073 / 0.785 | +0.029 (−0.002 to +0.072) |
+| crowded: spacing 50 Hz | 0.394 (0.286 to 0.503) / 0.414 / 0.327 / 1.141 | 0.136 (0.072 to 0.220) / 0.138 / 0.130 / 0.885 | −0.276 (−0.403 to −0.168) |
+| band: band | 0.102 (0.041 to 0.177) / 0.107 / 0.084 / 0.808 | 0.054 (0.047 to 0.065) / 0.057 / 0.045 / 0.829 | −0.025 (−0.079 to +0.017) |
+
+| Per over (groups G and H, from the "Per over" table) | Envelope: CER | Matched: CER |
+|---|---|---|
+| G ragchew, paddle (288 overs) | 0.197 | 0.104 |
+| H two-station QSO, computer (120 overs) | 0.246 | 0.289 |
+| H two-station QSO, hand (144 overs) | 0.306 | 0.495 |
+| H two-station QSO, paddle (312 overs) | 0.218 | 0.301 |
+| H two-station QSO, oracle, computer (68 overs) (not meaningful (oracle anchor) for Matched) | 0.305 | 0.331 |
+| H two-station QSO, oracle, hand (68 overs) (not meaningful (oracle anchor) for Matched) | 0.296 | 0.590 |
+| H two-station QSO, oracle, paddle (152 overs) (not meaningful (oracle anchor) for Matched) | 0.266 | 0.366 |
+
+**Group H by regime** (detector run, grid and drawn offsets pooled by
+`qso_regime`; the oracle copy in the second block; QSO-label CER scores
+one label per QSO, station-label CER one label per station; the view that
+does not fit the regime is marked †, as in section 11):
+
+| Group H regime (tags) | Tracks per QSO, Envelope / Matched | QSO-label CER, Envelope / Matched | Station-label CER, Envelope / Matched |
+|---|---|---|---|
+| same-track (0, 10, 25 Hz; drawn), 45 QSOs | 1.00 / 1.00 | 0.118 (0.091 to 0.145) / 0.197 (0.149 to 0.251) | † 0.972 (0.951 to 0.992) / 0.904 (0.875 to 0.928) |
+| ambiguous (50 Hz; drawn), 9 QSOs | 1.56 / 1.67 | 0.085 (0.051 to 0.119) / 0.297 (0.162 to 0.439) | 0.962 (0.908 to 1.015) / 1.010 (0.872 to 1.180) |
+| separate-track (100, 200 Hz; drawn), 18 QSOs | 6.78 / 6.78 | † 0.646 (0.531 to 0.747) / 0.745 (0.683 to 0.799) | 0.616 (0.585 to 0.656) / 0.620 (0.597 to 0.636) |
+| oracle copy, same-track (0, 10, 25 Hz), 18 QSOs | — | 0.176 (0.080 to 0.316) / 0.283 (0.181 to 0.380); Matched not meaningful at 25 Hz (oracle anchor) | † 1.210 (1.057 to 1.433) / 0.960 (0.883 to 1.038) |
+| oracle copy, ambiguous (50 Hz), 6 QSOs | — | 0.357 (0.028 to 0.973) / 0.597 (0.501 to 0.701), Matched not meaningful (oracle anchor) | † 1.490 (0.991 to 2.182) / 1.073 (0.901 to 1.237) |
+| oracle copy, separate-track (100, 200 Hz), 12 QSOs | — | 0.402 (0.242 to 0.583) / 0.505 (0.448 to 0.557), Matched not meaningful (oracle anchor); † at 200 Hz | 0.861 (0.561 to 1.226) / 0.338 (0.211 to 0.473); † at 100 Hz |
+
+A separate-track QSO shows 6.78 tracks on both paths because each
+station's track dies during the other's over and is re-born (section 11,
+"Tracks per QSO"; backlog, "Tracks outlive their stations").
+
+**First word of each over** (group H through the detector, grid offsets;
+first-word CER is an upper bound, section 11; the answering station's
+level is drawn from −6 to +6 dB re the caller's key-down power):
+
+| Answering station's offset | Envelope: answer / caller first-word CER | Matched: answer / caller first-word CER | Matched: answer / caller over CER |
+|---|---|---|---|
+| 0 Hz (24 overs each) | 0.199 / 0.343 | 0.235 / 0.353 | 0.279 / 0.231 |
+| 10 Hz | 0.213 / 0.287 | 0.147 / 0.287 | 0.172 / 0.099 |
+| 25 Hz | 0.422 / 0.323 | 0.181 / 0.444 | 0.245 / 0.196 |
+| 50 Hz | 0.032 / 0.204 | 0.444 / 0.323 | 0.345 / 0.086 |
+
+Envelope's over CER for the same rows: answer 0.208, 0.124, 0.140, 0.044;
+caller 0.104, 0.085, 0.076, 0.079.
+
+| Group B against VE3NEA (no-space CER, his metric) | VE3NEA DeepCW | CW Skimmer (his measurement) | Envelope | Matched |
+|---|---|---|---|---|
+| Paddle, 24 WPM, f_D 0.1 Hz, S₅₀₀ 1.78 / 7.78 / 17.78 / 57.78 dB | 0.373 / 0.137 / 0.025 / 0.005 | 0.364 / 0.101 / 0.022 / 0.011 | 0.730 / 0.677 / 0.292 / 0.179 | 0.741 / 0.604 / 0.558 / 0.348 |
+| HandKey, 24 WPM, f_D 0.1 Hz, S₅₀₀ 1.78 / 7.78 / 17.78 / 57.78 dB | 0.412 / 0.186 / 0.082 / 0.063 | 0.429 / 0.188 / 0.091 / 0.083 | 0.805 / 0.541 / 0.369 / 0.295 | 0.658 / 0.530 / 0.485 / 0.519 |
+
+Pooled over 3 seeds, 9 stations per point: 1951, 1960, 1954 and 1932
+reference characters per point (paddle) and 1927, 1964, 1952 and 1922
+(hand key), the same for both front ends; VE3NEA's points hold 30 000.
+Remaining differences from his benchmark: bin-centered oracle channels
+instead of his ±30 Hz pitch error, complex I/Q noise instead of real
+audio, and one draw per character and word space (he sums several); the
+keying edges match his (2 ms, centered). Both of our decoders are far
+from his at every point, and the gap does not close at high S₅₀₀: at
+57.78 dB, where a fade to 30 dB below the mean power (probability 10⁻³
+for Rayleigh fading, derived) still leaves S₅₀₀ = 28 dB, Envelope reads
+0.179 and 0.295 and Matched 0.348 and 0.519. So the residual is not
+noise; that it is the hard-decision timing (speed estimate and fixed
+gap thresholds, section 8) under changing level is an inference, not
+measured.
+
+| | Envelope | Matched |
+|---|---|---|
+| CPU per channel-second (whole process), ms/s | 0.202 | 0.381 |
+| Decoders per channel-second, ms/s | 0.014 | 0.177 |
+| Median frequency error, group F offsets, Hz | 5.9 (bin rounding; no re-centering) | 0.11 at S₅₀₀ = 5 dB, 0.13 at 0 dB (30 signals each) |
+
+CPU is over 384 495 channel-seconds (Envelope) and 384 661 (Matched), on
+the machine above; the Matched front end adds 0.163 ms of decoder time per
+channel-second, 12.6 times the Envelope decoder's, and nearly doubles the
+whole process (the shared FFTs and detector dominate Envelope's).
+
+**Reading the results.**
+
+- **Group A (sensitivity, oracle).** Matched crosses CER 0.10 at S₅₀₀ =
+  0.2, 2.7 and 3.1 dB (12, 25, 40 WPM) against Envelope's 7.2, 5.1 and
+  6.0 dB: 2.4–7.0 dB better, and the paired differences favor Matched at
+  all three speeds (−0.588, −0.228, −0.086, intervals excluding 0).
+  Envelope's crossings sit near its squelch's estimated +6 dB (section 8,
+  step 5), as expected. Matched's are 0.2–3.1 dB, **above** the design's
+  expectation of about −2.6 to 0 dB (acquisition floor −2.5 dB derived;
+  "Squelch" above). Per point, the Matched CER at 25 WPM is 0.711 at
+  −2 dB, 0.122 at 0 dB, 0.151 at 2 dB and 0.006 at 4 dB, so the crossing
+  lies between 2 and 4 dB; 6 of 12 stations exceed CER 0.10 at 0 dB and
+  2 at 2 dB (40 WPM: 12 and 7 of 12). The wide interval at 25 WPM (−0.0
+  to 10.4 dB) comes from single stations that fail at high S₅₀₀ (1 of 12
+  at 10 dB, CER 0.464; also 1 of 12 at 6, 10 and 12 dB at 40 WPM): these
+  are the start-up failures described under "Limits measured" below. No
+  run or scoring fault was found: every result file names the front end
+  that made it, and the rebuilt bench reproduces the stored results
+  exactly (checked on `A-awgn-25wpm-1-s1`).
+- **Group F (tuning, oracle).** Matched's CER does not depend on the
+  offset from the bin center beyond the intervals (20 WPM: 0.124, 0.041,
+  0.030, 0.184, 0.049 at 0, 2.9, 5.9, 8.8, 11.7 Hz, every interval
+  overlapping; 25 WPM: 0.145, 0.089, 0.203, 0.167, 0.309, likewise);
+  Envelope's is 0.39–0.49 at every offset. The frequency error is within
+  the ±2 Hz target for every signal (section 7). The drift rows show the
+  **oracle-mode limit of option 1**: with no detector the anchor stays on
+  the labeled starting frequency and the tracker covers only ±12 Hz, so a
+  drift of 1 or 2 Hz/s over the 17.5–27 s signals (19–51 Hz) loses the
+  decode (Matched CER 0.486 and 0.777 against Envelope's 0.080 and 0.113;
+  "not meaningful (oracle anchor)"); at 0.5 Hz/s (up to 13.5 Hz) Matched
+  still read 0.028. Through the detector the anchor follows the drift
+  (Task 13's `MatchedReportsDriftingFrequency`); no suite group measures
+  that yet.
+- **Groups G and H (QSOs).** Ragchew (G, 25 WPM, oracle) crosses
+  CER 0.10 at 6.9 dB (Envelope) and 3.8 dB (Matched), 1.8 and 1.1 dB
+  above group A at 25 WPM: the QSO text (prosigns, abbreviations, pauses
+  between overs) costs about 1–2 dB on both. Two-station QSOs through the
+  detector: same-track QSOs stay one track on both paths (1.00), and
+  Matched is **worse** on the QSO label (0.197 against 0.118; paired
+  +0.078, +0.038 to +0.123, drawn offsets). The answering station's first
+  word, the retune delay's measure, is better with Matched at 10 and
+  25 Hz (0.147 and 0.181 against 0.213 and 0.422) and worse at 0 Hz (0.235
+  against 0.199); the option-1 simulation (Design decisions B) predicted a
+  median of 0–1 character lost at 10–25 Hz for answering stations at −6 to
+  +6 dB re the caller, consistent with these rates for 3–5 character
+  first words (a first-word CER of 0.15–0.25 is one character in 4–7; an
+  upper bound). At 50 Hz (ambiguous) Matched loses the answering station
+  much more often (first word 0.444, over 0.345, against 0.032 and 0.044):
+  per QSO label the Matched CER was 0.533, 0.154, 0.046, 0.415, 0.032 and
+  0.040 (Envelope 0.023–0.140), so **2 of 6 grid QSOs at 50 Hz still
+  failed** (CER > 0.4) with the first-step growth bound in place, against
+  12 of 30 in the design simulation before it (not the same measure; the
+  bound acts per update, section 8, "Two front ends"). Separate-track
+  QSOs: Matched is worse per station (paired +0.057, +0.039 to +0.075,
+  drawn; +0.029, +0.011 to +0.047, 200 Hz). In the oracle copy, which
+  shows the turnover apart from detection, the rows within ±12 Hz of the
+  label (0 and 10 Hz) show no difference beyond the intervals (paired
+  −0.069 and +0.026), and per station Matched is better wherever the view
+  fits (200 Hz: 0.076 against 0.277).
+- **Strong signals, pauses, tune-up, first sample (detector).** Strong
+  (S₅₀₀ 30–60 dB): Matched is slightly worse at every level (paired
+  +0.004 to +0.020, intervals excluding 0 at 30, 50 and 60 dB; CER
+  0.045–0.055 against 0.028–0.052), with first-word CER 0.857–1.000
+  against 0.571–0.867. Pauses: Matched is better after 10 s (0.034
+  against 0.144) and equal within the intervals at 2 and 5 s; after 20 s
+  both lose the station's track (0.707 and 0.644; paired +0.064, +0.046
+  to +0.080). First sample: no difference beyond the interval (+0.018,
+  −0.001 to +0.033). **Tune-up carriers of 1 s and 2 s break Matched**
+  (CER 0.542 and 0.909 against 0.000 and 0.029; 0.3 and 0.6 s carriers
+  are harmless); see "Limits measured".
+- **Crowded and band (detector).** Matched is better at 0, 50 and 100 Hz
+  spacing (paired −0.258, −0.276, −0.244) and not different beyond the
+  interval at 200 Hz (+0.029, −0.002 to +0.072) or on the band (−0.025).
+
+**Where Matched is worse than Envelope** (paired Matched − Envelope CER
+whose 95% interval excludes 0, or a crossing worse beyond its interval;
+the default stays Matched, owner decision 2026-09-29; no parameter was
+changed):
+
+- Per condition (summary.md): C fists, bug imbalance +0.1 (+0.317,
+  +0.158 to +0.450); E, 20 Hz interferer at +10 dB re the wanted
+  station's key-down power (+0.349, +0.112 to +0.480); H through the
+  detector: same-track drawn (+0.078), ambiguous drawn (+0.352, +0.270
+  to +0.455), separate-track per station (drawn +0.057, 200 Hz +0.029);
+  strong at 30, 50, 60 dB (+0.018 to +0.020); pauses 20 s (+0.064);
+  tune-up 1 s (+0.562) and 2 s (+0.899). C fists, paddle imbalance +0.1,
+  crosses CER 0.10 for Envelope at 8.4 dB (5.0 to 9.5 dB) and not at all
+  for Matched; machine imbalance +0.1 at ≤ 5.0 dB (Envelope) against
+  8.4 dB (5.0 to 9.2 dB, Matched). (F drift at 1 and 2 Hz/s and the
+  oracle H rows beyond ±12 Hz are worse too, but not meaningful: oracle
+  anchor.)
+- Per S₅₀₀ point (paired over the 9 stations of a point, 6 in group G;
+  31 of 209 points in groups A, B, C and G favor Envelope and 73 favor
+  Matched; at 95% about 10 of 209 would exclude 0 by chance, so single
+  points are weak evidence, a run of them is not): **group B at high
+  S₅₀₀ with slow fading and random timing** — paddle 24 WPM f_D 0.1 Hz at
+  17.78, 37.78 and 57.78 dB (+0.266, +0.137, +0.177), paddle 24 WPM
+  f_D 0.3 Hz at 27.78, 37.78 and 57.78 dB (+0.142, +0.228, +0.141), paddle
+  12 WPM f_D 0.1 Hz at 17.78–57.78 dB (+0.107 to +0.344), hand 24 WPM
+  f_D 0.1 Hz at 17.78 and 57.78 dB (+0.086, +0.184), f_D 0.3 Hz at 27.78
+  and 37.78 dB (+0.094, +0.108), the VE3NEA mix at 17.78 dB (+0.122); not
+  at f_D = 1 or 3 Hz or at 40 WPM. **Group C at 10–20 dB with positive
+  imbalance or hand keying** — bug +0.1 (+0.330 at 5 dB, +0.298 at
+  20 dB), hand +0.0 and +0.1 at 20 dB (+0.143, +0.169), paddle +0.1 at 10
+  and 20 dB (+0.033, +0.053). **Group G at 8–20 dB**, small (+0.013 to
+  +0.033). The pattern: Matched's advantage is at low S₅₀₀; at high S₅₀₀
+  with random keying timing it loses a few to 34 CER points. Its marks
+  are about 7 ms longer at 25 WPM (ŝ's ramp bias, "Amplitude estimate"
+  above) and a positive imbalance lengthens them further, shortening the
+  element spaces the character decisions rest on; that this causes the
+  loss is a hypothesis, not measured. The fading loss at high S₅₀₀ is not
+  diagnosed.
+
+**Limits measured** (diagnosed by focused runs and debug prints that are
+not in the repository; nothing was changed):
+
+- **A channel that opens mid-transmission.** On the smoke recording
+  (`bench/smoke.sh`) Matched reads CER 0.0622 against Envelope's 0.0353
+  and 0.0145 with oracle channels (Matched). One station, +7617.6 Hz,
+  18.5 WPM (dit 64.9 ms), S₅₀₀ 25.1 dB, keying from 1.076 s, decodes at
+  CER 0.234 through the detector: its channel opens at about 1.6 s, and
+  its text starts "E ETT TT 7 L T U U A 7L" for "UA7L TU UA7L" and then
+  recovers. Cutting the recording at 1.600 s and decoding that station
+  with an oracle channel (which opens at the cut) reproduces the same
+  text exactly, so the detector is not involved; cut at 1.620 s the
+  Matched decode loses only the first word, sent partly before the cut
+  (3 edits). Mechanism (from the code, confirmed with debug prints): the
+  front end's warm-up (0.32 s, "Warm-up" above) keys nothing; cut at
+  1.600 s it ended 15 ms before the end of the dah of U (1.725–1.919 s,
+  plus about 18 ms of filter delay), so the first mark the decoder timed
+  was a 15.3 ms fragment of it, longer than the 14.4 ms glitch limit
+  (0.3 × the 48 ms initial dit at 25 WPM); cut at 1.620 s the warm-up
+  ended just after that dah and no fragment was timed.
+  With marks {15.3, 60.7 ms} the speed estimate (section 8, step 10)
+  splits at the ratio 3.97, the fragment is the whole "dit" cluster, the
+  dah/dit ratio exceeds 3.85, and the averaged estimate, 17.8 ms, is
+  clamped to 20 ms (60 WPM). With a 20 ms dit, the station's 65 ms dits
+  read as dahs, its element spaces end characters and its 195 ms
+  character spaces read as word spaces. The fragment stays the only
+  member of the dit cluster for the next 24 marks: the estimate rose
+  through 29.8, 41.5 and 35–37 ms and the text recovered once the
+  fragment left the window. How general it is (focused run: 4 stations
+  per speed, machine keying, 30 s at 48 000 samples/s, noise seeds
+  700–703, each recording cut at 20 random times in 2–6 s, so 80 oracle
+  channels per speed open at random phases of the keying; stations whose
+  Matched decode had at least 5 more edits than Envelope's, and at least
+  5 fewer):
+
+  | Speed | S₅₀₀ 25 dB: Matched worse / better | S₅₀₀ 10 dB: Matched worse / better |
+  |---|---|---|
+  | 12 WPM | 5 / 0 of 80 | 12 / 0 of 80 |
+  | 18.5 WPM | 6 / 0 of 80 | 3 / 1 of 80 |
+  | 25 WPM | 0 / 0 of 80 | 2 / 0 of 80 |
+  | 40 WPM | 0 / 16 of 80 | 1 / 78 of 80 |
+
+  So a late-opening channel hurts Matched at 12–18.5 WPM, in 4–15% of
+  openings, and not at 25–40 WPM. Two failure shapes occur: the dit
+  estimate stuck low (above), and a runaway to a slow speed (next item).
+  In the suite's detector-path groups (band, crowded, strong, pauses,
+  first sample: every channel opens mid-transmission) Matched was worse
+  than Envelope by more than 0.1 CER for 3 of 36 stations at 10–15 WPM,
+  2 of 35 at 15–20, 4 of 144 at 20–30, 1 of 114 at 30–45 and 3 of 91 at
+  45–60 WPM, and better by more than 0.1 for 8, 4, 25, 20 and 30: a limit,
+  not the dominant effect. Envelope did not fail on these openings (its
+  warm-up lasts one dit, 48 ms; why its estimate survives was not
+  traced). Replay ("Wrong or missing first
+  characters", backlog) would remove the late opening itself.
+- **Start-up runaway.** Three runs showed the same chain: (1) the first
+  mark or two are misleading (a fragment, a first mark keyed late while
+  ŝ rises from the warm-up, or merged elements at low S₅₀₀ through the
+  16 ms acquisition filter); (2) at the 8th mark the filter starts
+  following, and the widening cascade (section 8, "Two front ends")
+  stretches the mark just ended; (3) with one mark of intermediate length
+  in the window, no neighbor ratio reaches 1.8, the estimator takes the
+  mean of dits and dahs as the dit (section 8, step 10), about twice the
+  true dit, and the bound of ×1.25 per update lets it grow there within
+  one mark. Cases: A, 25 WPM (dit 48 ms), S₅₀₀ 10 dB, +6606.5 Hz in
+  `A-awgn-25wpm-1-s1`: first mark 100.7 ms (a 144 ms dah keyed late),
+  estimate correct (45.7 ms) for 8 marks, then the cascade stretched a
+  dit to 62 ms and the estimate went 58.3 → 72.9 → 91.1 → 93.8 ms within
+  23 ms; CER 0.464, recovering later. A, 25 WPM, S₅₀₀ 2 dB, −2991.9 Hz in
+  `A-awgn-25wpm-0-s2`: merged elements gave an estimate of 105–120 ms
+  before following began, the cascade widened the filter from 20 to
+  119 ms within one mark, the 48 ms element spaces filled in, marks grew
+  to 287–503 ms, the estimate to 210 ms, and decoding stopped (CER 0.981;
+  the bound slowed the runaway, it did not stop it). The 18.5 WPM
+  late-opening case above that read "DE K****V" followed the same chain
+  from a 113.3 ms fragment.
+- **Tune-up carriers of 1 s or more.** Cutting `tune-up-s1` so that an
+  oracle channel opens during a 2 s carrier (at 1.2 or 2.0 s) or a 1 s
+  carrier (at 1.6 s) gave no Matched text at all (CER 1.000); opening in
+  the 0.5 s silence after the carrier gave CER 0.000; Envelope decoded
+  every cut (CER 0.000–0.103). With the channel open from the start of
+  the recording, the 1 s carrier did no harm (0.064) but the 2 s carrier
+  still did (0.974). Through the detector the channel opens at least
+  0.5 s after the station appears (section 6, persistence), so it likely
+  opens during a 1–2 s carrier. Likely mechanism
+  (from the code, not instrumented): a warm-up (0.32 s) that sees only
+  carrier sets σ̂_v² from the carrier's own power, and a carrier longer
+  than the noise floor's window (64 samples K apart, 1.02 s at K = 24)
+  lifts the floor to the carrier's level; with σ̂_v² near the station's
+  power, a = ŝ/σ̂_v stays below the squelch, and the station's own marks
+  (|v|²/(2σ̂_v²) below κ = 1.75) pass the noise guard and hold σ̂_v up.
+  Envelope's speed estimate excludes marks longer than 0.96 s (section 8,
+  step 10) and its levels are set by one dit.
 
 ## 9. Timing and latency
 
@@ -1158,7 +1611,7 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
 | Front end | Matched (default) or Envelope | `ClassicalDecoderConfig::front_end`; `--front-end` | owner decision 2026-09-29 |
 | LLR keying hysteresis (Matched) | g > +1 nat down, g < −1 nat up | `ClassicalDecoderConfig::llr_hysteresis` | heuristic |
 | Filter follows speed after (Matched) | 8 marks in the speed window (8 new ones after a re-acquisition) | `ClassicalDecoderConfig::follow_after_marks` | heuristic |
-| Dit-estimate growth bound (Matched) | at most ×1.25 per mark while the filter follows the speed; the filter's own dit also grows at most ×1.25 per mark from its first follow step (from the 20 ms acquisition dit) | `ClassicalDecoderConfig::max_dit_growth` | heuristic (owner decisions 2026-09-29) |
+| Dit-estimate growth bound (Matched) | at most ×1.25 per speed update while the filter follows the speed; the filter's own dit also grows at most ×1.25 per update from its first follow step (from the 20 ms acquisition dit). Updates come at every key-up, including the key-ups of a mark re-opened by the widening filter, so in practice the filter can reach the estimate within one mark (measured, section 8 "Two front ends") | `ClassicalDecoderConfig::max_dit_growth` | heuristic (owner decisions 2026-09-29); its per-update action measured |
 | Re-acquisition (Matched) | after max(0.5 s, 12 dits) of key-up: filter back to 60 WPM, ŝ, the frequency average and the speed window restart; the old speed window and the narrow filter come back if nothing is keyed within 2 s | `ClassicalDecoderConfig::reacquire_after_dits`, `reacquire_min_s`, `reacquire_window_s` | heuristic |
 | Matched filter | boxcar, K = round(0.8·dit·r), starts at 60 WPM (16 ms, K = 24), clamped to 16–192 ms (60–5 WPM; K = 24–288) | `MatchedFrontEndConfig` | derived shape; β and start heuristic |
 | Likelihood | Λ = −a²/2 + ln I₀(a·x); prior P₁ = 0.44 | matched_front_end.cpp | derived |
@@ -1167,7 +1620,7 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
 | Front-end warm-up | 0.32 s at K = 24; 20th / 90th percentiles, weight 0.1 × its length | `MatchedFrontEndConfig::warmup_s` | heuristic |
 | Front-end squelch | a ≥ 3·(T_v/16 ms)^(1/4), T_v = K/r the filter duration (3·(K/24)^(1/4) at r = 1500 samples/s) | `MatchedFrontEndConfig::squelch_a`, `squelch_exponent` | 3 heuristic; the duration scaling derived |
 | Frequency discriminator lag | τ_L = 8/r = 5.333 ms (`lag_s` = 5.33 ms rounded to whole samples at r = 1500 samples/s); unambiguous range ±1/(2τ_L) = ±93.75 Hz | `FrequencyTrackerConfig::lag_s` | heuristic within derived range |
-| Frequency average | τ_f = 0.5 s of key-down weight; moves the NCO at weight ≥ 0.6 and coherence > 0.3, every 21.3 ms | `FrequencyTrackerConfig` (`tau_s`, `min_weight`, `min_coherence`, `update_interval_s`) | heuristic |
+| Frequency average | τ_f = 0.5 s of key-down weight; moves the NCO at weight ≥ 0.6 and coherence > 0.3, every 21.3 ms | `FrequencyTrackerConfig` (`tau_s`, `min_weight`, `min_coherence`, `update_interval_s`) | heuristic; the resulting accuracy measured (median 0.11 Hz at S₅₀₀ = 5 dB, 0.13 Hz at 0 dB, group F, section 7) |
 | Fine-tuning range | ±12 Hz around the anchor (the detector's frequency for the track); farther estimates are discarded; the NCO jumps to an anchor more than 12 Hz away | `FrequencyTrackerConfig::fine_tune_hz` | heuristic (owner decision 2026-09-29, option 1) |
 | NCO range | ±75 Hz | `FrequencyTrackerConfig::max_offset_hz` | heuristic |
 
