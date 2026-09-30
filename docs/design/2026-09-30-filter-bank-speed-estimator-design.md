@@ -283,9 +283,17 @@ filter was redesigned):
   strong, tune-up, first sample, band, crowded) are scored again with oracle
   channels from the existing recordings, by Envelope, the current Matched
   path and the prototype, so the comparison is like for like.
+- Through the detector too (owner, 2026-09-30): the bench also records the
+  channels the Matched path's detector opens (no oracle), each from its
+  opening, with the detector's frequency block by block; the prototype
+  decodes them mixed by that frequency (no tracker fine-tuning, stage 2's),
+  and its tracks are scored by frequency exactly as the engine's detector
+  path is. That covers group H through the detector, the band and crowded
+  groups as the detector sees them, and the late-opening case.
 - **No acceptance gate (owner, 2026-09-30).** Stage 1 ends with a full
   comparison for the owner's decision: the prototype against the current
-  Matched and Envelope paths on the same oracle signals, with intervals —
+  Matched and Envelope paths on the same signals (oracle channels and the
+  detector's channels), with intervals —
   group A crossings at each speed; regressions R1 (group D step 20 → 35 WPM)
   and R2 (group A 12 WPM first-word CER) and the start-up runaway cases; and
   every regime better, worse or unchanged beyond its interval, by how much.
@@ -300,13 +308,12 @@ filter was redesigned):
   comparison against the current Matched and Envelope paths on the 3-seed
   full suite, for the owner's decision (owner, 2026-09-30); Envelope
   unchanged.
-- **Required part of the stage-2 evaluation: the measures stage 1 cannot
-  make**, because they depend on the detector, which this redesign does not
-  change: detection recall, false tracks, tracks per QSO, group H through the
-  detector, and the band and crowded groups as the detector sees them
-  (non-oracle). Stage 2 measures them with the bank in C++ behind the real
-  detector (backlog: "Stage-2 evaluation of the filter bank through the
-  detector").
+- **Required part of the stage-2 evaluation: the detector's own measures**,
+  which stage 1 leaves out: detection recall, false tracks and tracks per
+  QSO. The detector is untouched by this redesign, so they cannot change;
+  stage 2 measures them with the bank in C++ behind the real detector, and
+  with the tracker in the loop (backlog: "Stage-2 evaluation of the filter
+  bank through the detector").
 
 ## 8. Still open (settled in stage 1)
 

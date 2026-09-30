@@ -4,7 +4,7 @@
 
 **Goal:** Prototype, in Python on the engine's own recorded oracle channel streams, every estimator of the filter-bank design (32 fixed boxcars, shared noise spectrum, per-branch keying and duration fits, periodicity estimate, branch selection, new-over handling, corrections), score its text with the bench's own scoring, settle the design's placeholders by measurement, and lay out a full comparison with the current Matched and Envelope paths on the same oracle signals, every regime included, for the owner to decide whether the redesign is better and whether stage 2 is worth doing (owner, 2026-09-30: no acceptance gate).
 
-**Architecture:** `kz4ap-bench` gains two tooling options: `--record-channels DIR` writes each oracle channel's complex stream (the channelizer's output, 1500 samples/s, before the frequency tracker) plus a manifest, through a new observation-only `Engine::set_channel_tap`; `--score-decoded FILE` scores externally decoded text per label with exactly the bench's scoring and JSON. The generator gains Farnsworth spacing and a full-suite group I. A new package `training/kz4ap_proto/` (numpy only) mixes each recorded stream to 0 Hz at its labeled frequency, runs the bank channel by channel, writes decoded text, has the bench score it into `build/suite/full3/results/bank-proto/`, and summarizes it against the Matched and Envelope results already there. The detector-only groups (pauses, strong, tune-up, first sample, band, crowded) are also scored with oracle channels — the existing recordings, not regenerated — by Envelope, the current Matched path and the prototype, so every regime is compared like for like. Experiments on seed 1 (development) set the placeholders by stated decision rules; the final configuration is evaluated on all three seeds.
+**Architecture:** `kz4ap-bench` gains two tooling options: `--record-channels DIR` writes each oracle channel's complex stream (the channelizer's output, 1500 samples/s, before the frequency tracker) plus a manifest, through a new observation-only `Engine::set_channel_tap`; `--score-decoded FILE` scores externally decoded text per label with exactly the bench's scoring and JSON. The generator gains Farnsworth spacing and a full-suite group I. A new package `training/kz4ap_proto/` (numpy only) mixes each recorded stream to 0 Hz at its labeled frequency, runs the bank channel by channel, writes decoded text, has the bench score it into `build/suite/full3/results/bank-proto/`, and summarizes it against the Matched and Envelope results already there. The detector-only groups (pauses, strong, tune-up, first sample, band, crowded) are also scored with oracle channels — the existing recordings, not regenerated — by Envelope, the current Matched path and the prototype, so every regime is compared like for like. And every non-oracle recording is also decoded through the detector (Task 11b; owner, 2026-09-30): the bench records the channels the Matched path's detector opens, the prototype decodes them from their opening, and `--score-decoded` scores its tracks by frequency, as the engine's detector path is scored. Experiments on seed 1 (development) set the placeholders by stated decision rules; the final configuration is evaluated on all three seeds.
 
 **Tech Stack:** C++20, CMake ≥ 3.25, GoogleTest 1.17.0, nlohmann/json 3.12.0 (engine and bench); Python 3.12 venv with numpy and pytest only (prototype, generator, runner). No new dependencies.
 
@@ -18,10 +18,10 @@ Implements spec §7, stage 1:
 2. **Scoring** externally decoded text with the bench's scoring, not a copy of it (Task 3).
 3. **Farnsworth spacing** in the generator, with a full-suite group (Task 1).
 4. **The Python prototype** of every component of spec §4, each with unit tests on synthetic signals whose expected values are derived (Tasks 4–11).
-5. **A runner** over the 3-seed full suite that scores through the bench and summarizes against Matched and Envelope (Task 12), with oracle copies of the detector-only groups so every regime is compared (owner, 2026-09-30).
+5. **A runner** over the 3-seed full suite that scores through the bench and summarizes against Matched and Envelope (Task 12), with oracle copies of the detector-only groups so every regime is compared, and **the detector path** (Task 11b: record the detector's channels, score tracks by frequency; Task 12 runs it) for group H through the detector, band, crowded and the late-opening case (owner, 2026-09-30).
 6. **Experiments** that settle the §6 placeholders by measurement (Tasks 13–14), and **a final evaluation** that writes the measured values into the spec and gives the owner the full comparison — group A crossings, R1, R2, the start-up runaways, and every regime better, worse or unchanged beyond its interval, by how much — with no pass/fail gate (Task 15). The experiments' pre-registered rules choose parameters; they are not the verdict.
 
-Deliberately **not** in this plan: the C++ bank (`--front-end bank`, stage 2); corrections in the engine's text events and in the bench's scoring (stage 2: here the prototype applies its corrections itself and the bench scores the final text); any change to the engine's signal processing; tuning the Envelope or current Matched paths; anything that depends on the detector — detection recall, false tracks, tracks per QSO, group H through the detector, and the band and crowded groups as the detector sees them. The redesign does not change the detector; these are measured in stage 2, when the bank runs as C++ behind the real detector (spec §7; backlog "Stage-2 evaluation of the filter bank through the detector"). Stage 1 scores the detector-only recordings with oracle channels instead.
+Deliberately **not** in this plan: the C++ bank (`--front-end bank`, stage 2); corrections in the engine's text events and in the bench's scoring (stage 2: here the prototype applies its corrections itself and the bench scores the final text); any change to the engine's signal processing; tuning the Envelope or current Matched paths; the detector's own measures — detection recall, false tracks and tracks per QSO. The redesign does not change the detector, so they cannot change; they are measured in stage 2, when the bank runs as C++ behind the real detector (spec §7; backlog "Stage-2 evaluation of the filter bank through the detector"). Stage 1 does decode through the detector (Task 11b), without the tracker's fine-tuning.
 
 **Stage 1 changes no engine signal processing.** The engine gains one observation hook (`Engine::set_channel_tap`) that copies nothing into and changes nothing in the decoding path; the bench additions and the prototype are tooling. `docs/signal-processing.md` still gets its benchmark definitions (§11: recorded channel streams, externally decoded text, Farnsworth spacing) in the same commits, because §11 describes the benchmark.
 
@@ -184,7 +184,7 @@ As spec §4.6: eligibility |ln(L_k/(0.8·T_k))| ≤ ln 1.1, and only once the fi
 
 ### Compute budget, and runs in the background
 
-The review timed the plan's fit at 1.49 ms per observation (add + best) on the default grid and 22.9 ms on E5's finest; at 25 WPM each branch sees about 10.6 observations per second, so **a keyed channel costs about 0.3–0.5 s of CPU per channel-second** (Task 11 Step 5 times a keyed stream to confirm it on this machine). The development set holds about 80 000 channel-seconds, so one development run takes about 25–30 min on 14 workers; Tasks 13–14 need about 28 runs, so **the experiments take about 12–14 h of wall time on 14 workers, or more** (E5's finest grids cost about 15× a run and use a smaller subset, `experiments.DEV_E5`, about 20% of the development set), plus about 2 h for the final three-seed pass (Task 15). The oracle copies of the detector-only groups add 27 recordings (9 per seed): recording their streams takes a few minutes and about 0.2 GB, the extra Envelope and Matched bench runs (54, with `--oracle`) about 2 min, and the prototype about 18 000 channel-seconds more, about 5% of the final pass. Every long run is started as a **background process** (the harness's `run_in_background`), writing its log to `build/suite/full3/experiments/logs/<name>.log` and a short summary to `build/suite/full3/experiments/summary-<name>.md` when it ends; the executing agent starts it, does not poll, is notified when it finishes, and reads only the summary file (and the compare file it names).
+The review timed the plan's fit at 1.49 ms per observation (add + best) on the default grid and 22.9 ms on E5's finest; at 25 WPM each branch sees about 10.6 observations per second, so **a keyed channel costs about 0.3–0.5 s of CPU per channel-second** (Task 11 Step 5 times a keyed stream to confirm it on this machine). The development set holds about 80 000 channel-seconds, so one development run takes about 25–30 min on 14 workers; Tasks 13–14 need about 28 runs, so **the experiments take about 12–14 h of wall time on 14 workers, or more** (E5's finest grids cost about 15× a run and use a smaller subset, `experiments.DEV_E5`, about 20% of the development set), plus about 2 h for the final three-seed pass (Task 15). The oracle copies of the detector-only groups add 27 recordings (9 per seed): recording their streams takes a few minutes and about 0.2 GB, the extra Envelope and Matched bench runs (54, with `--oracle`) about 2 min, and the prototype about 18 000 channel-seconds more, about 5% of the final pass. The detector path (Task 11b) adds 33 recordings: recording the Matched path's detector channels takes a few minutes and about 0.5 GB, and the prototype decodes about 44 000 channel-seconds more (the detector runs' channel-seconds, milestone-2a results §3.3), about 12% of the final pass, about 15 min on 14 workers. Every long run is started as a **background process** (the harness's `run_in_background`), writing its log to `build/suite/full3/experiments/logs/<name>.log` and a short summary to `build/suite/full3/experiments/summary-<name>.md` when it ends; the executing agent starts it, does not poll, is notified when it finishes, and reads only the summary file (and the compare file it names).
 
 ### Development set, held-out seeds and decision rules
 
@@ -234,7 +234,7 @@ Inputs the spec implies but does not spell out, most likely to bite first. Each 
 
 Also pinned: every correction reaches back at most 20 s (Task 11, `test_corrections_never_reach_back_more_than_20_s`).
 
-**On the suite, too:** items 1, 3 and 4 are also measured on the oracle copies of the first-sample, tune-up and pauses groups (Task 12), against Envelope and Matched on the same channels. What they cannot show is the detector's part (a channel opened late, a track that dies); that is stage 2's (spec §7).
+**On the suite, too:** items 1, 3 and 4 are also measured on the oracle copies of the first-sample, tune-up and pauses groups and on their detector-path runs (Tasks 11b, 12), against Envelope and Matched; the detector path adds the late-opening case (a channel that opens partway through a transmission). Only the detector's own measures are stage 2's (spec §7).
 
 ## File map
 
@@ -246,7 +246,7 @@ Also pinned: every correction reaches back at most 20 s (Task 11, `test_correcti
 | `engine/include/kz4ap/engine.hpp`, `engine/src/engine.cpp` | `ChannelBlock`, `ChannelTap`, `Engine::set_channel_tap`, `Engine::channel_rate` (observation only) |
 | `bench/src/channel_recorder.{hpp,cpp}` (new) | Channel files and `channels.json` |
 | `bench/src/report.{hpp,cpp}` (new) | The bench's score JSON and printout (moved from `main.cpp`); decoded-text files |
-| `bench/src/main.cpp` | `--record-channels`, `--score-decoded` |
+| `bench/src/main.cpp` | `--record-channels` (oracle and, Task 11b, detector channels), `--score-decoded` (texts; Task 11b: tracks by frequency) |
 | `training/kz4ap_proto/` (new) | `params`, `streams`, `bank`, `detect`, `noise`, `keying`, `fit`, `text`, `periodicity`, `select`, `channel`, `runner`, `report`, `experiments` |
 | `training/tests/test_proto_*.py` (new); `test_keying.py`, `test_generate.py`, `test_suites.py` | Tests |
 | `engine/tests/engine_test.cpp`; `bench/tests/channel_recorder_test.cpp`, `report_test.cpp` (new) | Tests |
@@ -267,6 +267,7 @@ Also pinned: every correction reaches back at most 20 s (Task 11, `test_correcti
 - Task 9: Periodicity estimator
 - Task 10: Branch selection
 - Task 11: Channel decoder — branches, new overs, re-keying, corrections
+- Task 11b: Detector-opened channels — recording, scoring by frequency, anchored mixing (amendment, 2026-09-30)
 - Task 12: Runner — record, decode, score, report
 - Task 13: Experiment harness; noise and periodicity experiments (E10, E1, E2, E3)
 - Task 14: Fit, over-start and selection experiments (E4, E5, E9, E7, E6, E8)
@@ -4247,9 +4248,415 @@ git commit -m "Add the channel decoder: branches, new overs, re-keying, selectio
 ```
 
 ---
+### Task 11b: Detector-opened channels — recording, scoring by frequency, anchored mixing
+
+*Amendment (owner, 2026-09-30).* Stage 1 extends to the channels the detector opens, so the comparison also covers group H through the detector, the band and crowded groups as the detector sees them, and the late-opening case (a channel that opens partway through a transmission). Only the detector's own measures stay for stage 2. This task adds the tooling; Task 12 runs it over the suite.
+
+- **Recording (C++).** `kz4ap-bench --record-channels DIR` also works without `--oracle`: every channel the detector opens is recorded from its first block, with its track id, center, the detector's frequency at birth, the time (s) and first sample index at which it opened, and its close time if its track died. The engine's `ChannelBlock` gains one field, `anchor_hz`: the detector's current frequency for the track (in oracle mode the labeled frequency), which the engine already sets as the tracker's anchor before each block. It is observation only; the decoding path and the Envelope and Matched outputs stay bit-identical, and `bench/baselines` stay untouched.
+- **Scoring (C++).** `--score-decoded` accepts a second file form, `"tracks"`: one entry per track with its id, birth frequency, text and (optional) latest frequency. Such a file is scored exactly as the engine's detector path is: the same `score(..., match_by_order = false)` with the 50 Hz frequency rule, false tracks counted as today, and the same `score_json`/`print_score` in `report.cpp`. No second scoring path. An identity check re-scores the current Matched path's own detector-path text.
+- **Mixing (Python), decided here:** a detector channel is mixed by the **detector's frequency for the track, block by block** (the recorded anchors minus the channel's center), with a continuous phase. Why: (1) with no label there is no oracle frequency; (2) the channel's center alone leaves the station up to ±½Δf = ±11.7 Hz off, which through a 40 ms branch costs 10·log₁₀ |sinc(11.7 Hz × 40 ms)|² ≈ −2.7 dB of signal power relative to a centered station, and more for longer branches (derived) — a handicap the Matched path does not have; (3) the anchor is exactly what the Matched path's NCO starts from and follows (option 1), including the detector following its own peak through a drift or a turnover. The prototype lacks only the tracker's fine-tuning within ±12 Hz of the anchor; the detector's interpolation error is about 0.2 Hz for a clean station (milestone-2a plan, Design decisions B), so the difference is small where the peak is clean and is stated where it is not. The tracker is out of scope for stage 1 (it is unchanged by the redesign; which branch feeds it is stage 2's question).
+- **Which detector:** the Matched path's (`--front-end matched`: option 1, distance attribution), because the bank replaces the Matched front end and will sit behind that detector in stage 2. The prototype's detector-path rows are therefore paired with Matched's on **the same tracks**; Envelope's detector path uses bin attribution and opens its own tracks, so the comparison with Envelope there is per label, not per track (stated in the report).
+
+**Files:**
+- Modify: `engine/include/kz4ap/engine.hpp`, `engine/src/engine.cpp` (`ChannelBlock::anchor_hz`)
+- Modify: `bench/src/channel_recorder.hpp`, `bench/src/channel_recorder.cpp`, `bench/src/main.cpp`, `bench/src/report.hpp`, `bench/src/report.cpp`
+- Modify: `training/kz4ap_proto/streams.py`
+- Test: `engine/tests/engine_test.cpp`, `bench/tests/channel_recorder_test.cpp`, `bench/tests/report_test.cpp`, `training/tests/test_proto_streams.py`
+- Modify: `docs/signal-processing.md` (§6 "Oracle mode", §11: recorded streams and decoded text)
+
+**Interfaces:**
+- Consumes: Task 2's `ChannelBlock`, `ChannelTap`, `ChannelRecorder`; Task 3's `DecodedTexts`, `parse_decoded_texts`, `tracks_for`, `score_json`, `print_score`; the bus's `TrackEvent::Kind::Born`/`Died`; Task 4's `streams.ChannelStream`, `read_manifest`.
+- Produces:
+  - C++: `ChannelBlock::anchor_hz` (double, Hz from the span's center; default 0); `ChannelRecorder::open_track(std::uint32_t track_id, double birth_freq_hz)`, `ChannelRecorder::close_track(std::uint32_t track_id)`; `channels.json` entries gain `birth_freq_hz` (null for oracle channels), `open_s`, `close_s` (null unless the track died), `anchors` ([[first sample index, Hz], …] at every change), and `label_index`/`label_freq_hz` are null for detector channels; `DecodedTexts::detector` (bool) and `DecodedTexts::tracks` (`std::vector<DecodedTrack>`), parsed from `{"front_end", "recording", "tracks": [{"id", "freq_hz", "text", "last_freq_hz"?}]}`.
+  - Command line: `kz4ap-bench RECORDING [--labels L] --record-channels DIR` (no `--oracle`: the detector's channels); `kz4ap-bench --labels L --score-decoded D.json` with a `"tracks"` file (scored by frequency).
+  - Python: `streams.anchored_baseband(y, rate_hz, center_hz, anchors, first_sample_index=0) -> np.ndarray`; `streams.load_detector_channel(record_dir, position) -> ChannelStream` (`label_index` and `label` None; new fields `track_id`, `center_hz`, `birth_freq_hz`, `open_s`, `close_s`, `anchors`, all defaulted, and `baseband()` uses `anchored_baseband` when `label` is None).
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `engine/tests/engine_test.cpp`:
+
+```cpp
+TEST(Engine, ChannelTapReportsTheAnchorOfEachBlock) {
+    // Oracle mode: the anchor is the labeled frequency itself. Detector mode: the detector's current frequency
+    // for the track, which the Matched path gives the tracker; a clean station's is within 1 Hz of its carrier.
+    const std::string msg = "CQ TEST K1ABC";
+    const auto x = keyed_signal(msg, 25, 48000.0, kz4ap::test::duration_for(msg, 25), 12009.0, kAmplitude20dB48k,
+                                kNoiseSigma, 42);
+    for (const bool oracle : {true, false}) {
+        auto config = matched_config(48000);
+        if (oracle) config.oracle_frequencies_hz = {12009.0};
+        EventBus bus;
+        Engine engine(config, bus);
+        std::vector<double> anchors;
+        engine.set_channel_tap([&](const ChannelBlock& b) { anchors.push_back(b.anchor_hz); });
+        engine.process(x);
+        engine.finish();
+        ASSERT_FALSE(anchors.empty());
+        if (oracle) {
+            for (const double a : anchors) EXPECT_DOUBLE_EQ(a, 12009.0);
+        } else {
+            EXPECT_NEAR(anchors.back(), 12009.0, 1.0);
+        }
+    }
+}
+```
+
+Append to `bench/tests/channel_recorder_test.cpp`:
+
+```cpp
+TEST(ChannelRecorder, RecordsDetectorTracksWithOpeningClosingAndAnchors) {
+    const auto dir = fresh_dir("kz4ap_recorder_detector");
+    {
+        ChannelRecorder rec(dir, 1500.0);
+        rec.open_track(7, 1011.0);
+        const std::vector<Sample> a(32);
+        ChannelBlock b{7, 3000, 1000.0, a};
+        b.anchor_hz = 1011.0;
+        rec.write(b);
+        b.first_index = 3032;
+        b.anchor_hz = 1012.5;
+        rec.write(b);
+        rec.close_track(7);
+        EXPECT_THROW(rec.write(b), std::runtime_error);  // a closed track takes no more blocks
+        rec.open_track(9, -500.0);                         // opened, never fed: 0 samples
+        rec.finish("x.wav", "");
+    }
+    std::ifstream m(dir / "channels.json");
+    const auto j = nlohmann::json::parse(m);
+    const auto& c = j.at("channels").at(0);
+    EXPECT_EQ(c.at("track_id"), 7);
+    EXPECT_TRUE(c.at("label_index").is_null());
+    EXPECT_DOUBLE_EQ(c.at("birth_freq_hz").get<double>(), 1011.0);
+    EXPECT_EQ(c.at("first_sample_index"), 3000);
+    EXPECT_DOUBLE_EQ(c.at("open_s").get<double>(), 2.0);
+    EXPECT_DOUBLE_EQ(c.at("close_s").get<double>(), 3064.0 / 1500.0);
+    EXPECT_EQ(c.at("samples"), 64);
+    EXPECT_EQ(c.at("anchors"), nlohmann::json::parse("[[3000, 1011.0], [3032, 1012.5]]"));
+    EXPECT_TRUE(j.at("channels").at(1).at("close_s").is_null());
+    std::filesystem::remove_all(dir);
+}
+```
+
+Append to `bench/tests/report_test.cpp`:
+
+```cpp
+TEST(Report, DetectorTracksAreScoredByFrequencyWithFalseTracks) {
+    const auto d = parse_decoded_texts(R"({"front_end": "bank-proto", "recording": "x.wav", "tracks": [
+        {"id": 3, "freq_hz": 1010.0, "text": "CQ K1ABC", "last_freq_hz": 1001.0},
+        {"id": 4, "freq_hz": 2600.0, "text": "EE"},
+        {"id": 5, "freq_hz": 2000.0, "text": "TU"}]})");
+    ASSERT_TRUE(d.detector);
+    ASSERT_EQ(d.tracks.size(), 3u);
+    EXPECT_DOUBLE_EQ(d.tracks[0].last_freq_hz, 1001.0);
+    EXPECT_DOUBLE_EQ(d.tracks[1].last_freq_hz, 2600.0);  // defaults to the birth frequency
+    Labels labels;
+    labels.signals = {{"CQ K1ABC", 1000.0, 25, 10, 0, 1}, {"TU", 2000.0, 25, 10, 0, 1}};
+    const Score s = score(labels.signals, d.tracks, 50.0, false);  // the engine's detector-path rule
+    EXPECT_EQ(s.signals[0].track_id, 3u);
+    EXPECT_EQ(s.signals[1].track_id, 5u);
+    EXPECT_EQ(s.false_tracks, 1u);                                 // track 4 decoded text and matched nothing
+    EXPECT_THROW(parse_decoded_texts(R"({"front_end": "x", "texts": [], "tracks": []})"), std::runtime_error);
+    EXPECT_TRUE(parse_decoded_texts(R"({"front_end": "x", "tracks": []})").detector);  // no track opened
+}
+```
+
+Append to `training/tests/test_proto_streams.py`:
+
+```python
+def test_anchored_baseband_follows_the_detector_frequency_with_a_continuous_phase():
+    from kz4ap_proto.streams import anchored_baseband
+    rate, center = 1500.0, 1000.0
+    n = np.arange(3000)
+    f = np.where(n < 1500, 9.0, 11.0)                      # the station moves from +9 Hz to +11 Hz off center
+    y = np.exp(1j * (2 * np.pi * np.cumsum(f) / rate + 0.4))
+    u = anchored_baseband(y, rate, center, [(4000, center + 9.0), (5500, center + 11.0)], first_sample_index=4000)
+    assert np.allclose(u, u[0])                            # no rotation left, no phase jump at the change
+
+
+def test_load_detector_channel_reads_track_opening_and_anchors(tmp_path):
+    from kz4ap_proto.streams import load_detector_channel
+    y = (np.ones(64) + 0j).astype("<c8")
+    y.tofile(tmp_path / "channel-7.c64")
+    (tmp_path / "channels.json").write_text(json.dumps({
+        "recording": "x.wav", "labels": "", "sample_rate_hz": 1500.0, "format": "complex64",
+        "channels": [{"track_id": 7, "label_index": None, "label_freq_hz": None, "birth_freq_hz": 1011.0,
+                      "center_hz": 1000.0, "first_sample_index": 3000, "open_s": 2.0, "close_s": None,
+                      "samples": 64, "file": "channel-7.c64", "anchors": [[3000, 1011.0]]}]}))
+    ch = load_detector_channel(tmp_path, 0)
+    assert (ch.track_id, ch.label_index, ch.label, ch.birth_freq_hz, ch.open_s, ch.close_s) == (7, None, None, 1011.0, 2.0, None)
+    assert ch.first_sample_index == 3000 and ch.anchors == [(3000, 1011.0)]
+    # a DC input mixed down by anchor - center = 11 Hz, phase 0 at the first recorded sample
+    assert np.allclose(ch.baseband(), np.exp(-2j * np.pi * 11.0 * np.arange(64) / 1500.0))
+```
+
+- [ ] **Step 2: Build and run the tests to verify they fail**
+
+Run: `cmake --build --preset windows` → compile errors (`anchor_hz`, `open_track`, `close_track`, `DecodedTexts::detector` undeclared). `.venv\Scripts\python -m pytest training/tests/test_proto_streams.py -q` → `ImportError: cannot import name 'anchored_baseband'`.
+
+- [ ] **Step 3: Implement the engine field**
+
+In `engine/include/kz4ap/engine.hpp`, add as the last member of `ChannelBlock`:
+
+```cpp
+    double anchor_hz = 0;             // the detector's current frequency for the track (oracle: the label), Hz from
+                                      // the span's center: the anchor the Matched path gives the tracker
+```
+
+In `engine/src/engine.cpp`, change the tap call to `if (tap_) tap_(ChannelBlock{id, first_index, center_hz, s, channel.detector_freq_hz});`. (Aggregate initialization with four values still compiles: the new member has a default.)
+
+- [ ] **Step 4: Implement the recorder's detector mode**
+
+In `bench/src/channel_recorder.hpp`, update the class comment's first sentence to "Writes each recorded channel's stream (kz4ap-bench --record-channels): oracle channels (add_channel) or the channels the detector opens (open_track, close_track)", add after `add_channel`:
+
+```cpp
+    // A channel the detector opened (--record-channels without --oracle): no label; birth_freq_hz is the track's
+    // frequency at birth, Hz from the span's center. Throws std::runtime_error if the file cannot be opened.
+    void open_track(std::uint32_t track_id, double birth_freq_hz);
+
+    // The track died: its file is closed and its close time recorded; later blocks for it throw.
+    void close_track(std::uint32_t track_id);
+```
+
+and change `struct Channel`'s first two members and add three:
+
+```cpp
+        std::optional<std::size_t> label_index;   // oracle channels only
+        std::optional<double> label_freq_hz;      // oracle channels only
+        std::optional<double> birth_freq_hz;      // detector channels only
+        bool closed = false;
+        std::vector<std::pair<std::uint64_t, double>> anchors;  // (first sample index, Hz) at every change
+```
+
+(add `#include <utility>` and `#include <vector>`). In `bench/src/channel_recorder.cpp`, add:
+
+```cpp
+void ChannelRecorder::open_track(std::uint32_t track_id, double birth_freq_hz) {
+    Channel c;
+    c.birth_freq_hz = birth_freq_hz;
+    c.file = "channel-" + std::to_string(track_id) + ".c64";
+    c.out.open(dir_ / c.file, std::ios::binary | std::ios::trunc);
+    if (!c.out) throw std::runtime_error("cannot open " + (dir_ / c.file).string());
+    channels_.emplace(track_id, std::move(c));
+}
+
+void ChannelRecorder::close_track(std::uint32_t track_id) {
+    const auto it = channels_.find(track_id);
+    if (it == channels_.end()) return;  // a track the recorder never saw open (none in practice)
+    it->second.closed = true;
+    it->second.out.close();
+}
+```
+
+In `write`, after the unknown-channel check add `if (c.closed) throw std::runtime_error("block for closed channel " + std::to_string(block.track_id));`, and before `c.out.write(...)` add:
+
+```cpp
+    if (c.anchors.empty() || c.anchors.back().second != block.anchor_hz) c.anchors.emplace_back(block.first_index, block.anchor_hz);
+```
+
+In `finish`, close only open files (`if (c.out.is_open()) { c.out.close(); if (!c.out) throw …; }`) and replace the pushed object with:
+
+```cpp
+        const auto first = c.first_index ? *c.first_index : 0;
+        nlohmann::json anchors = nlohmann::json::array();
+        for (const auto& [index, hz] : c.anchors) anchors.push_back({index, hz});
+        j["channels"].push_back({{"track_id", id},
+                                 {"label_index", c.label_index ? nlohmann::json(*c.label_index) : nlohmann::json()},
+                                 {"label_freq_hz", c.label_freq_hz ? nlohmann::json(*c.label_freq_hz) : nlohmann::json()},
+                                 {"birth_freq_hz", c.birth_freq_hz ? nlohmann::json(*c.birth_freq_hz) : nlohmann::json()},
+                                 {"center_hz", c.center_hz ? nlohmann::json(*c.center_hz) : nlohmann::json()},
+                                 {"first_sample_index", first},
+                                 {"open_s", static_cast<double>(first) / rate_},
+                                 {"close_s", c.closed ? nlohmann::json(static_cast<double>(first + c.samples) / rate_)
+                                                      : nlohmann::json()},
+                                 {"samples", c.samples},
+                                 {"anchors", anchors},
+                                 {"file", c.file}});
+```
+
+(Task 2's recorder tests still pass: `label_index` and `label_freq_hz` keep their values for oracle channels.)
+
+In `bench/src/main.cpp`: delete the check `if (args.record_channels && !args.oracle) throw …`; move `std::optional<ChannelRecorder> recorder;` above `bus.subscribe(...)`; in the subscriber, extend the `Born` branch and add a `Died` branch:
+
+```cpp
+        if (const auto* t = std::get_if<TrackEvent>(&e); t && t->kind == TrackEvent::Kind::Born) {
+            tracks[t->track.id] = {t->track.id, t->track.freq_hz, "", t->track.freq_hz};
+            if (recorder && !args.oracle) recorder->open_track(t->track.id, t->track.freq_hz);
+        } else if (t && t->kind == TrackEvent::Kind::Died) {
+            if (recorder) recorder->close_track(t->track.id);
+        } else if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
+```
+
+(restructure so `t` is declared before the `if`: `const auto* t = std::get_if<TrackEvent>(&e);` then the three branches). Replace the recorder block after `Engine engine(config, bus);` with:
+
+```cpp
+    if (args.record_channels) {
+        recorder.emplace(*args.record_channels, engine.channel_rate());
+        if (args.oracle) {  // oracle channels were born in the constructor, before the recorder existed
+            for (std::size_t i = 0; i < labels->signals.size(); ++i) {
+                recorder->add_channel(static_cast<std::uint32_t>(i + 1), i, labels->signals[i].freq_offset_hz);
+            }
+        }
+        engine.set_channel_tap([&](const ChannelBlock& b) { recorder->write(b); });
+    }
+```
+
+(Detector tracks are born during `process()`, when the recorder exists; the Born event is published before the channel's first block, `Engine::open_channel`.) And `recorder->finish(args.recording->filename().string(), args.labels ? args.labels->filename().string() : std::string());`. Add `"--record-channels DIR (with --oracle: the oracle channels; without: the detector's)"` to the usage text.
+
+- [ ] **Step 5: Implement the decoded-tracks form**
+
+In `bench/src/report.hpp`, extend `DecodedTexts` and its comment:
+
+```cpp
+// Text decoded outside the engine (kz4ap-bench --score-decoded), in one of two forms: {"front_end", "recording",
+// "texts": [one per label, in the labels file's order]} (oracle channels, matched by order), or {"front_end",
+// "recording", "tracks": [{"id", "freq_hz" (birth), "text", "last_freq_hz" (optional)}]} (detector channels,
+// matched by frequency as the engine's detector path is). Other keys are ignored.
+struct DecodedTexts {
+    std::string front_end;
+    std::string recording;
+    std::vector<std::string> texts;
+    bool detector = false;
+    std::vector<DecodedTrack> tracks;
+};
+```
+
+In `report.cpp`, replace the `d.texts = …` line of `parse_decoded_texts` with:
+
+```cpp
+        const bool has_texts = j.contains("texts"), has_tracks = j.contains("tracks");
+        if (has_texts == has_tracks) throw std::runtime_error("bad decoded-text file: give either texts or tracks");
+        if (has_texts) {
+            d.texts = j.at("texts").get<std::vector<std::string>>();
+        } else {
+            d.detector = true;
+            for (const auto& t : j.at("tracks")) {
+                const double f = t.at("freq_hz").get<double>();
+                d.tracks.push_back({t.at("id").get<std::uint32_t>(), f, t.at("text").get<std::string>(),
+                                    t.value("last_freq_hz", f)});
+            }
+        }
+```
+
+In `bench/src/main.cpp`, `score_decoded` becomes:
+
+```cpp
+int score_decoded(const Args& args) {
+    const Labels labels = load_labels(*args.labels);
+    const DecodedTexts decoded = load_decoded_texts(*args.score_decoded);
+    // Oracle texts are matched by order; detector tracks by frequency (50 Hz), false tracks counted: the
+    // engine's own two rules, through the same score() and score_json().
+    const auto tracks = decoded.detector ? decoded.tracks : tracks_for(labels, decoded);
+    std::map<std::uint32_t, double> tracked_freq_hz;
+    if (decoded.detector) {
+        for (const auto& t : tracks) tracked_freq_hz[t.id] = t.last_freq_hz;
+    }
+    nlohmann::json out;
+    out["recording"] = decoded.recording;
+    out["duration_s"] = labels.duration_s;
+    out["front_end"] = decoded.front_end;
+    add_tracks(out, tracks);
+    out["channel_seconds"] = 0.0;  // no engine ran
+    const int exit_code = score_and_report(labels, tracks, tracked_freq_hz, !decoded.detector, args.baseline, out);
+    write_json(args.json, out);
+    return exit_code;
+}
+```
+
+- [ ] **Step 6: Implement anchored mixing and detector channels in Python**
+
+In `training/kz4ap_proto/streams.py`, add after `baseband`:
+
+```python
+def anchored_baseband(y, rate_hz: float, center_hz: float, anchors, first_sample_index: int = 0) -> np.ndarray:
+    """u[n]: y mixed down by the detector's frequency for the track minus the channel's center, as the engine gave
+    it block by block (anchors: [(first sample index, Hz from the span's center)], in order), with a continuous
+    phase across changes. This is the anchor the Matched path's NCO starts from and follows (option 1), without
+    the tracker's fine-tuning within +/-12 Hz of it (the tracker is out of scope for stage 1)."""
+    index = first_sample_index + np.arange(len(y))
+    starts = np.array([a[0] for a in anchors], dtype=np.int64)
+    offsets = np.array([a[1] for a in anchors], float) - center_hz
+    offset = offsets[np.maximum(np.searchsorted(starts, index, side="right") - 1, 0)]
+    phase = 2.0 * np.pi * (np.cumsum(offset) - offset) / rate_hz  # the phase before each sample's own advance
+    return np.asarray(y, np.complex128) * np.exp(-1j * phase)
+```
+
+Add to `ChannelStream` (after `label`, all with defaults so oracle construction is unchanged):
+
+```python
+    track_id: int | None = None           # detector channels: the track
+    center_hz: float | None = None        # the channel's center, Hz from the span's center
+    birth_freq_hz: float | None = None    # the detector's frequency at the track's birth, Hz
+    open_s: float | None = None           # when the channel opened, s
+    close_s: float | None = None          # when its track died, s (None: open to the end)
+    anchors: list | None = None           # [(first sample index, Hz)]: the detector's frequency by block
+```
+
+and make `baseband` choose:
+
+```python
+    def baseband(self) -> np.ndarray:
+        if self.label is None:  # a detector channel: no label, mixed by the detector's frequency
+            return anchored_baseband(self.y, self.rate_hz, self.center_hz, self.anchors, self.first_sample_index)
+        return baseband(self.y, self.rate_hz, self.f_off_hz, self.drift_hz_per_s, self.start_s,
+                        self.first_sample_index)
+```
+
+(`label_index: int | None`, `label: dict | None` in the annotations.) Add:
+
+```python
+def load_detector_channel(record_dir, position: int) -> ChannelStream:
+    """The position-th channel of a detector-path recording directory (kz4ap-bench --record-channels without
+    --oracle): no label; it starts where the channel opened."""
+    record_dir = Path(record_dir)
+    manifest = read_manifest(record_dir)
+    ch = manifest["channels"][position]
+    y = np.fromfile(record_dir / ch["file"], dtype="<c8").astype(np.complex128)
+    if len(y) != ch["samples"]:
+        raise ValueError(f"{ch['file']}: {len(y)} samples, the manifest says {ch['samples']}")
+    anchors = [(int(i), float(f)) for i, f in ch["anchors"]] or [(int(ch["first_sample_index"]), float(ch["birth_freq_hz"]))]
+    return ChannelStream(None, float(manifest["sample_rate_hz"]), y, int(ch["first_sample_index"]), 0.0, 0.0, 0.0,
+                         None, track_id=int(ch["track_id"]), center_hz=float(ch["center_hz"] or 0.0),
+                         birth_freq_hz=float(ch["birth_freq_hz"]), open_s=float(ch["open_s"]),
+                         close_s=None if ch["close_s"] is None else float(ch["close_s"]), anchors=anchors)
+```
+
+(If the committed `streams.py` differs in names from Task 4's text, add these beside what is there; the existing oracle functions and tests must not change behavior.)
+
+- [ ] **Step 7: Build and run the tests**
+
+Run: `cmake --build --preset windows`, `ctest --preset windows`, `.venv\Scripts\python -m pytest training -q` → all pass.
+
+- [ ] **Step 8: Check bit-identity and the scoring identity on the detector path**
+
+In Git Bash:
+
+```bash
+bash bench/smoke.sh build/windows
+build/windows/bench/Release/kz4ap-bench.exe build/windows/smoke/band.wav --labels build/windows/smoke/band.json --front-end matched --no-timing --json build/windows/smoke/detector.json
+build/windows/bench/Release/kz4ap-bench.exe build/windows/smoke/band.wav --labels build/windows/smoke/band.json --front-end matched --no-timing --json build/windows/smoke/detector-recorded.json --record-channels build/windows/smoke/detector-channels
+PYTHONPATH=training .venv/Scripts/python -c "import json; a = json.load(open('build/windows/smoke/detector.json')); b = json.load(open('build/windows/smoke/detector-recorded.json')); assert a == b, 'recording changed the output'; m = json.load(open('build/windows/smoke/detector-channels/channels.json')); assert len(m['channels']) == len(a['tracks']); json.dump({'front_end': 'matched-copy', 'recording': a['recording'], 'tracks': [{'id': t['id'], 'freq_hz': t['freq_hz'], 'text': t['text']} for t in a['tracks']]}, open('build/windows/smoke/detector-decoded.json', 'w')); print(len(a['tracks']), 'tracks recorded')"
+build/windows/bench/Release/kz4ap-bench.exe --labels build/windows/smoke/band.json --score-decoded build/windows/smoke/detector-decoded.json --json build/windows/smoke/detector-rescored.json
+PYTHONPATH=training .venv/Scripts/python -c "import json; a = json.load(open('build/windows/smoke/detector.json'))['score']; b = json.load(open('build/windows/smoke/detector-rescored.json'))['score']; [s.pop('tracked_freq_hz') for s in a['signals'] + b['signals']]; assert a == b, 'scores differ'; print('identical')"
+```
+Expected: `smoke test passed` (Envelope 0.0353 and Matched 0.0436 unchanged, `bench/baselines` untouched); the recorded run's JSON equal to the plain run's (recording changes no output); one recorded channel per track; `identical` (the detector-path text re-scored through `--score-decoded` reproduces the engine's score object; `tracked_freq_hz` differs only because the engine's JSON does not list each track's latest frequency). If `identical` fails, the two paths do not share one rule: fix that, do not paper over it.
+
+- [ ] **Step 9: Document**
+
+In `docs/signal-processing.md` §6, extend the "Oracle mode" paragraph added in Task 2: "Without `--oracle`, `--record-channels` records every channel the detector opens, from its first block to its track's death, with the detector's frequency for the track at every block (`ChannelBlock::anchor_hz`, the Matched path's tracker anchor); the tap still only observes." In §11, extend **Recorded channel streams** with the detector form (track id, birth frequency, open and close times, anchors; `label_index` null) and **Externally decoded text** with the `"tracks"` form: "scored as the engine's detector path is — tracks at their birth frequencies matched to labels within 50 Hz, false tracks counted — by the same code; checked identical on the smoke recording's Matched detector path (apart from `tracked_freq_hz`)."
+
+- [ ] **Step 10: Commit**
+
+```powershell
+git add engine/include/kz4ap/engine.hpp engine/src/engine.cpp engine/tests/engine_test.cpp bench/src/channel_recorder.hpp bench/src/channel_recorder.cpp bench/src/main.cpp bench/src/report.hpp bench/src/report.cpp bench/tests/channel_recorder_test.cpp bench/tests/report_test.cpp training/kz4ap_proto/streams.py training/tests/test_proto_streams.py docs/signal-processing.md
+```
+```powershell
+git commit -m "Record and score the channels the detector opens, with the detector's frequency by block"
+```
+
+---
 ### Task 12: Runner — record, decode, score, report
 
-Stage 1's pipeline over `build/suite/full3` (spec §7 item 5): record every oracle scoring's channel streams with the bench (Task 2), decode each channel with the prototype in parallel worker processes, score the text with `kz4ap-bench --score-decoded` (Task 3) into `results/bank-proto/`, and report against the Matched and Envelope results already in `results/` — reusing `suites.load_results`, `aggregate`, `paired_differences` and the bootstrap. The report is the full comparison the owner decides on (owner, 2026-09-30: no acceptance gate): group A crossings at each speed, R1, R2 and the start-up runaway cases, and every regime better, worse or unchanged beyond its interval against Matched and against Envelope, with the prototype's own speed, switching, over-start and false-character statistics. **Every regime is covered:** the detector-only groups (pauses, strong, tune-up, first sample, band, crowded) are scored again with oracle channels from the existing recordings — by Envelope and the current Matched path (`kz4ap-bench --oracle`) and by the prototype — as `<recording>.oracle` in groups `<group>, oracle`. Experiment runs (Tasks 13–14) go to `experiments/results/`, so the suite's own summary is not cluttered.
+Stage 1's pipeline over `build/suite/full3` (spec §7 item 5): record every oracle scoring's channel streams with the bench (Task 2), decode each channel with the prototype in parallel worker processes, score the text with `kz4ap-bench --score-decoded` (Task 3) into `results/bank-proto/`, and report against the Matched and Envelope results already in `results/` — reusing `suites.load_results`, `aggregate`, `paired_differences` and the bootstrap. The report is the full comparison the owner decides on (owner, 2026-09-30: no acceptance gate): group A crossings at each speed, R1, R2 and the start-up runaway cases, and every regime better, worse or unchanged beyond its interval against Matched and against Envelope, with the prototype's own speed, switching, over-start and false-character statistics. **Every regime is covered:** the detector-only groups (pauses, strong, tune-up, first sample, band, crowded) are scored again with oracle channels from the existing recordings — by Envelope and the current Matched path (`kz4ap-bench --oracle`) and by the prototype — as `<recording>.oracle` in groups `<group>, oracle`. **And through the detector** (Task 11b; owner, 2026-09-30): every non-oracle recording (group H through the detector, band, crowded, pauses, strong, tune-up, first sample) is recorded once more with the Matched path's detector (`--front-end matched`, no `--oracle`); the prototype decodes each channel the detector opened, from its opening, mixed by the detector's frequency block by block; its tracks are scored with `--score-decoded` by frequency under the very result names the engine's detector-path runs have (`H-qso-s1`, `H-qso-s1.stations`, `band-s1`, …), so its rows pair signal by signal with Matched's and Envelope's existing detector-path results. That covers the late-opening case too. Experiment runs (Tasks 13–14) go to `experiments/results/`, so the suite's own summary is not cluttered.
 
 **Files:**
 - Modify: `training/kz4ap_synth/suites.py` (`ORACLE_COPY_GROUPS`, `oracle_copies(rec)`, `load_results(out_dir, results_dirs=None, front_ends=None)` reading the copies, `paired_differences(rows, a="baseline", b="matched")`)
@@ -4257,13 +4664,13 @@ Stage 1's pipeline over `build/suite/full3` (spec §7 item 5): record every orac
 - Test: `training/tests/test_suites.py`, `training/tests/test_proto_runner.py`, `training/tests/test_proto_metrics.py`
 
 **Interfaces:**
-- Consumes: `suites._scorings`, `load_results`, `aggregate`, `paired_differences`, `bootstrap_cer`, `_interval`, `_rng_for`, `_tag_offset_hz`, `BOOTSTRAP_RESAMPLES`; `streams.load_channel`, `read_manifest`; `channel.ChannelDecoder`; `periodicity.Periodicity`; `ProtoConfig`; the bench's `--record-channels` and `--score-decoded`.
+- Consumes: Task 11b's `--record-channels` without `--oracle`, the `"tracks"` form of `--score-decoded`, and `streams.load_detector_channel`; `suites._scorings`, `load_results`, `aggregate`, `paired_differences`, `bootstrap_cer`, `_interval`, `_rng_for`, `_tag_offset_hz`, `BOOTSTRAP_RESAMPLES`; `streams.load_channel`, `read_manifest`; `channel.ChannelDecoder`; `periodicity.Periodicity`; `ProtoConfig`; the bench's `--record-channels` and `--score-decoded`.
 - Produces:
   - `suites.ORACLE_COPY_GROUPS = ("pauses", "strong", "tune-up", "first sample", "band", "crowded")`; `suites.oracle_copies(rec) -> list[tuple[str, str, str]]` ((labels, `<name>.oracle`, `<group>, oracle`) for a detector-only recording of those groups, else []); `suites.load_results(out_dir, results_dirs: list[Path] | None = None, front_ends: list[str] | None = None)` (also reads the copies' results, as oracle rows); `suites.paired_differences(rows, a="baseline", b="matched")` (b − a; defaults unchanged)
-  - `runner.DEFAULT_NAME = "bank-proto"`; `runner.oracle_scorings(out_dir, only=None) -> list[dict]` (keys `result`, `group`, `wav`, `labels`; the oracle recordings' scorings and the oracle copies); `runner.score_engine_copies(out_dir, bench, front_ends=("baseline", "matched"), only=None)` (CLI `engine-copies`); `runner.record(out_dir, bench, only=None)`; `runner.decode(out_dir, name=DEFAULT_NAME, values=None, only=None, jobs=None, keep_p1=False)`; `runner.score(out_dir, bench, name=DEFAULT_NAME, only=None, results_root=None)`; CLI `record | decode | score | report`.
+  - `runner.DEFAULT_NAME = "bank-proto"`; `runner.oracle_scorings(out_dir, only=None) -> list[dict]` (keys `result`, `group`, `wav`, `labels`; the oracle recordings' scorings and the oracle copies); `runner.detector_jobs(out_dir, only=None) -> list[dict]` (keys `result` = `<name>.detector`, `wav`, `labels`, `scorings`: the recording's (labels, result, group) scorings; one per non-oracle recording, filtered by `only` on the scorings' result names); `record`, `decode` and `score` also handle the detector jobs (files `channels/<name>.detector/`, `proto/<name>/<name>.detector.decoded.json` in the `"tracks"` form, `results/<name>/<result>.json` for each scoring); `runner.score_engine_copies(out_dir, bench, front_ends=("baseline", "matched"), only=None)` (CLI `engine-copies`); `runner.record(out_dir, bench, only=None)`; `runner.decode(out_dir, name=DEFAULT_NAME, values=None, only=None, jobs=None, keep_p1=False)`; `runner.score(out_dir, bench, name=DEFAULT_NAME, only=None, results_root=None)`; CLI `record | decode | score | report`.
   - Files: `channels/<result>/` (Task 2's format), `proto/<name>/<result>.decoded.json` (`front_end`, `recording`, `labels`, `config`, `texts`, `channels`: each channel's `ChannelResult.to_json()` plus `label_index`, `rate_hz`, `cpu_s`, `channel_s`), `proto/<name>/p1/<result>/<label index>.npy` (with `keep_p1`), `results/<name>/<result>.json` (the bench's JSON).
   - `metrics.iter_channels(out_dir, name, only=None)` (yields `(job, label, channel, config)`), `metrics.true_dit_s(label)`, `metrics.transmissions(label, pad_s=0.0)`, `metrics.bootstrap_ratio(units, key)`, `metrics.speed_errors(...)`, `metrics.switch_stats(...)`, `metrics.spurious_over_starts(...)`, `metrics.false_characters(...)`, `metrics.cpu_per_channel_second(...)`, `metrics.periodicity_points(out_dir, name, cfg, only=None, groups=..., min_snr_db=0.0, jobs=None)`, `metrics.evaluate_rule(points, windows_s, subset, threshold)`, `metrics.calibrate(points, windows_s, subset, target=0.95)`.
-  - `report.RUNAWAY_CASES`, `report.comparable_rows(out_dir, name, results_dirs=None, only=None)`, `report.not_comparable(group, tag) -> str | None`, `report.verdict(interval) -> str`, `report.comparison(rows, name, out_dir, results_dirs=None) -> dict`, `report.DETECTOR_GAP` (the stated gap), `report.write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path`.
+  - `report.RUNAWAY_CASES`, `report.DETECTOR_PATH_GROUPS`, `report.comparable_rows(out_dir, name, results_dirs=None, only=None)`, `report.not_comparable(group, tag) -> str | None`, `report.verdict(interval) -> str`, `report.comparison(rows, name, out_dir, results_dirs=None) -> dict`, `report.DETECTOR_GAP` (the stated gap), `report.write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4332,9 +4739,13 @@ def test_record_runs_the_bench_on_every_oracle_scoring(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(subprocess, "run", lambda cmd, **k: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", ""))
     runner.record(tmp_path, tmp_path / "kz4ap-bench")
-    assert [c[c.index("--record-channels") + 1] for c in calls] == [
+    oracle = [c for c in calls if "--oracle" in c]
+    assert [c[c.index("--record-channels") + 1] for c in oracle] == [
         str(tmp_path / "channels" / "a"), str(tmp_path / "channels" / "a.stations")]
-    assert all("--oracle" in c and c[c.index("--front-end") + 1] == "envelope" for c in calls)
+    assert all(c[c.index("--front-end") + 1] == "envelope" for c in oracle)
+    # b is not an oracle recording: its detector channels are recorded once (Task 11b)
+    assert [c[c.index("--record-channels") + 1] for c in calls if "--oracle" not in c] == [
+        str(tmp_path / "channels" / "b.detector")]
 
 
 def test_decode_writes_one_text_per_label_in_label_order(tmp_path):
@@ -4370,6 +4781,36 @@ def test_oracle_copies_are_recorded_and_scored_by_the_engine_front_ends(tmp_path
         ("envelope", str(tmp_path / "results" / "baseline" / "p.oracle.json")),
         ("matched", str(tmp_path / "results" / "matched" / "p.oracle.json"))]
     assert all("--oracle" in c and c[1] == str(tmp_path / "p.wav") for c in calls)
+
+
+def test_detector_path_is_recorded_decoded_as_tracks_and_scored_under_the_engine_names(tmp_path, monkeypatch):
+    manifest(tmp_path, [rec("a", True), {**rec("h", False, "h.stations.json"), "group": "H two-station QSO"}])
+    jobs = runner.detector_jobs(tmp_path)
+    assert [(j["result"], [s[1] for s in j["scorings"]]) for j in jobs] == [("h.detector", ["h", "h.stations"])]
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **k: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "CER 0\n", ""))
+    runner.record(tmp_path, tmp_path / "kz4ap-bench", only="^h")
+    (cmd,) = calls
+    assert "--oracle" not in cmd and cmd[cmd.index("--front-end") + 1] == "matched"
+    assert cmd[cmd.index("--record-channels") + 1] == str(tmp_path / "channels" / "h.detector")
+    # a detector recording with one track, decoded as a "tracks" file
+    record_dir = tmp_path / "channels" / "h.detector"
+    record_dir.mkdir(parents=True)
+    y = ((np.random.default_rng(2).standard_normal(3000) + 0j) * 0.1).astype("<c8")
+    y.tofile(record_dir / "channel-4.c64")
+    (record_dir / "channels.json").write_text(json.dumps({"sample_rate_hz": 1500.0, "channels": [
+        {"track_id": 4, "label_index": None, "label_freq_hz": None, "birth_freq_hz": 1011.0, "center_hz": 1000.0,
+         "first_sample_index": 1500, "open_s": 1.0, "close_s": 3.0, "samples": 3000, "file": "channel-4.c64",
+         "anchors": [[1500, 1011.0]]}]}))
+    runner.decode(tmp_path, "t-proto", only="^h", jobs=1)
+    decoded = json.loads((tmp_path / "proto" / "t-proto" / "h.detector.decoded.json").read_text())
+    assert "texts" not in decoded and [(t["id"], t["freq_hz"], t["last_freq_hz"]) for t in decoded["tracks"]] == [
+        (4, 1011.0, 1011.0)]
+    calls.clear()
+    runner.score(tmp_path, tmp_path / "kz4ap-bench", "t-proto", only="^h")
+    assert [(c[c.index("--labels") + 1], c[c.index("--json") + 1]) for c in calls] == [
+        (str(tmp_path / "h.json"), str(tmp_path / "results" / "t-proto" / "h.json")),
+        (str(tmp_path / "h.stations.json"), str(tmp_path / "results" / "t-proto" / "h.stations.json"))]
 
 
 def test_score_hands_each_decoded_file_to_the_bench(tmp_path, monkeypatch):
@@ -4541,7 +4982,7 @@ from kz4ap_synth.suites import BENCH_FRONT_END, _scorings, oracle_copies
 
 from .channel import ChannelDecoder
 from .params import ProtoConfig
-from .streams import load_channel, read_manifest
+from .streams import load_channel, load_detector_channel, read_manifest
 
 DEFAULT_NAME = "bank-proto"
 
@@ -4558,8 +4999,38 @@ def oracle_scorings(out_dir: Path, only: str | None = None) -> list[dict]:
     return jobs
 
 
+def detector_jobs(out_dir: Path, only: str | None = None) -> list[dict]:
+    """One job per non-oracle recording: its channels are the ones the Matched path's detector opens
+    (kz4ap-bench --record-channels without --oracle; Task 11b), recorded once and scored under each of the
+    recording's scorings (labels, and station labels where given), whose result names match the engine's own
+    detector-path results."""
+    manifest = json.loads((Path(out_dir) / "manifest.json").read_text())
+    jobs = []
+    for rec in manifest["recordings"]:
+        if rec["oracle"]:
+            continue
+        scorings = [s for s in _scorings(rec) if only is None or re.search(only, s[1])]
+        if scorings:
+            jobs.append({"result": f"{rec['name']}.detector", "wav": rec["wav"], "labels": rec["labels"],
+                         "scorings": scorings})
+    return jobs
+
+
 def record(out_dir: Path, bench: Path, only: str | None = None) -> None:
+    """Records the oracle scorings' channels (--oracle) and the detector's channels of every non-oracle recording
+    (the Matched path's detector: --front-end matched, no --oracle)."""
     out_dir = Path(out_dir)
+    for job in detector_jobs(out_dir, only):
+        target = out_dir / "channels" / job["result"]
+        if (target / "channels.json").exists():
+            continue
+        cmd = [str(bench), str(out_dir / job["wav"]), "--labels", str(out_dir / job["labels"]),
+               "--front-end", "matched", "--no-timing", "--record-channels", str(target),
+               "--json", str(target / "bench.json")]
+        done = subprocess.run(cmd, capture_output=True, text=True)
+        if done.returncode != 0:
+            raise RuntimeError(f"kz4ap-bench failed recording {job['result']}:\n{done.stderr}")
+        print(f"recorded {job['result']}")
     for job in oracle_scorings(out_dir, only):
         target = out_dir / "channels" / job["result"]
         if (target / "channels.json").exists():
@@ -4600,12 +5071,16 @@ def score_engine_copies(out_dir: Path, bench: Path, front_ends=("baseline", "mat
 def _decode_one(work) -> dict:
     record_dir, labels_path, position, values, p1_path = work
     cfg = ProtoConfig().with_values(**values)
-    ch = load_channel(record_dir, labels_path, position)
+    # labels_path None: a detector channel, decoded from its opening, mixed by the detector's frequency (Task 11b)
+    ch = load_channel(record_dir, labels_path, position) if labels_path else load_detector_channel(record_dir, position)
     started = time.process_time()
     result = ChannelDecoder(cfg, ch.rate_hz).run(ch.baseband(), keep_p1=p1_path is not None)
     out = result.to_json()
     out.update(label_index=ch.label_index, rate_hz=ch.rate_hz, cpu_s=time.process_time() - started,
                channel_s=len(ch.y) / ch.rate_hz)
+    if labels_path is None:
+        out.update(track_id=ch.track_id, birth_freq_hz=ch.birth_freq_hz, last_freq_hz=ch.anchors[-1][1],
+                   open_s=ch.open_s, close_s=ch.close_s)
     if p1_path is not None:
         Path(p1_path).parent.mkdir(parents=True, exist_ok=True)
         np.save(p1_path, result.p1)
@@ -4625,6 +5100,10 @@ def decode(out_dir: Path, name: str = DEFAULT_NAME, values: dict | None = None, 
         for i in range(len(read_manifest(record_dir)["channels"])):
             p1 = str(target / "p1" / job["result"] / f"{i}.npy") if keep_p1 else None
             work.append((job, (str(record_dir), str(out_dir / job["labels"]), i, values, p1)))
+    for job in detector_jobs(out_dir, only):
+        record_dir = out_dir / "channels" / job["result"]
+        for i in range(len(read_manifest(record_dir)["channels"])):
+            work.append((job, (str(record_dir), None, i, values, None)))
     results: dict = {}
     workers = jobs or max(1, (os.cpu_count() or 2) - 2)
     with ProcessPoolExecutor(max_workers=workers) as pool:
@@ -4632,10 +5111,16 @@ def decode(out_dir: Path, name: str = DEFAULT_NAME, values: dict | None = None, 
             results.setdefault(job["result"], (job, []))[1].append(channel)
     target.mkdir(parents=True, exist_ok=True)
     for result, (job, channels) in results.items():
-        channels.sort(key=lambda c: c["label_index"])
-        (target / f"{result}.decoded.json").write_text(json.dumps({
-            "front_end": name, "recording": job["wav"], "labels": job["labels"], "config": asdict(cfg),
-            "texts": [c["text"] for c in channels], "channels": channels}) + "\n")
+        common = {"front_end": name, "recording": job["wav"], "labels": job["labels"], "config": asdict(cfg)}
+        if "scorings" in job:  # detector channels: the "tracks" form, scored by frequency (Task 11b)
+            channels.sort(key=lambda c: c["track_id"])
+            tracks = [{"id": c["track_id"], "freq_hz": c["birth_freq_hz"], "last_freq_hz": c["last_freq_hz"],
+                       "text": c["text"]} for c in channels]
+            body = {**common, "tracks": tracks, "channels": channels}
+        else:
+            channels.sort(key=lambda c: c["label_index"])
+            body = {**common, "texts": [c["text"] for c in channels], "channels": channels}
+        (target / f"{result}.decoded.json").write_text(json.dumps(body) + "\n")
         print(f"decoded {result}")
 
 
@@ -4646,17 +5131,20 @@ def score(out_dir: Path, bench: Path, name: str = DEFAULT_NAME, only: str | None
     out_dir = Path(out_dir)
     results = Path(results_root or out_dir / "results") / name
     results.mkdir(parents=True, exist_ok=True)
-    for job in oracle_scorings(out_dir, only):
-        decoded = out_dir / "proto" / name / f"{job['result']}.decoded.json"
+    scorings = [(job["result"], job["labels"], job["result"]) for job in oracle_scorings(out_dir, only)]
+    scorings += [(job["result"], label_file, result) for job in detector_jobs(out_dir, only)
+                 for label_file, result, _ in job["scorings"]]
+    for decoded_name, label_file, result in scorings:
+        decoded = out_dir / "proto" / name / f"{decoded_name}.decoded.json"
         if not decoded.exists():
             continue
-        cmd = [str(bench), "--labels", str(out_dir / job["labels"]), "--score-decoded", str(decoded),
-               "--json", str(results / f"{job['result']}.json")]
+        cmd = [str(bench), "--labels", str(out_dir / label_file), "--score-decoded", str(decoded),
+               "--json", str(results / f"{result}.json")]
         done = subprocess.run(cmd, capture_output=True, text=True)
         if done.returncode != 0:
-            raise RuntimeError(f"kz4ap-bench failed scoring {job['result']} ({name}):\n{done.stderr}")
+            raise RuntimeError(f"kz4ap-bench failed scoring {result} ({name}):\n{done.stderr}")
         lines = done.stdout.strip().splitlines()
-        print(f"{name} {job['result']}: {lines[-1] if lines else ''}")
+        print(f"{name} {result}: {lines[-1] if lines else ''}")
 
 
 def parse_values(pairs) -> dict:
@@ -5006,10 +5494,16 @@ def _signal_cer(out_dir, results_dirs, fe, recording, freq_hz):
     return None
 
 
-# What stage 1 cannot measure (owner, 2026-09-30; spec section 7; backlog): it needs the real detector.
-DETECTOR_GAP = ("Not measured in stage 1, because it depends on the detector, which this redesign does not change: "
-                "detection recall, false tracks, tracks per QSO, group H through the detector, and the band and crowded "
-                "groups as the detector sees them. Stage 2 measures them with the bank in C++ behind the real detector.")
+# What stage 1 leaves to stage 2 (owner, 2026-09-30; spec section 7; backlog).
+DETECTOR_GAP = ("Left to stage 2: the detector's own measures, detection recall, false tracks and tracks per QSO. The "
+                "detector is untouched, so they cannot change; stage 2 measures them with the bank in C++ behind the "
+                "real detector. Stage 1 does compare decoding through the detector: group H, band, crowded, pauses, "
+                "strong, tune-up and first sample on the channels the Matched path's detector opens (late openings "
+                "included), mixed by the detector's frequency without the tracker's fine-tuning.")
+# Detector-path groups: the prototype decodes the Matched path's detector channels; Envelope's detector (bin
+# attribution) opens its own tracks, so against Envelope these rows compare per label, not per track.
+DETECTOR_PATH_GROUPS = ("H two-station QSO", "H two-station QSO (per station)", "strong", "pauses", "tune-up",
+                        "first sample", "crowded", "band")
 
 
 def verdict(interval) -> str:
@@ -5049,7 +5543,9 @@ def comparison(rows, name, out_dir, results_dirs=None) -> dict:
     pairs = {ref: suites.paired_differences(rows, ref, name) for ref in REFERENCES}
     regimes = []
     for group, tag in sorted(set(pairs["matched"]) | set(pairs["baseline"])):
-        entry = {"group": group, "tag": tag, "not_comparable": not_comparable(group, tag)}
+        entry = {"group": group, "tag": tag, "not_comparable": not_comparable(group, tag),
+                 "note": not_comparable(group, tag) or ("detector path: Matched's tracks; Envelope's detector opens "
+                                                        "its own" if group in DETECTOR_PATH_GROUPS else None)}
         for ref in REFERENCES:
             v = pairs[ref].get((group, tag))
             entry[ref] = None if v is None else {"signals": v["signals"], "mean": v["mean"], "interval": v["interval"],
@@ -5114,7 +5610,7 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
     for e in comp["regimes"]:
         cells = [f"{_fmt(e[ref]['mean'], e[ref]['interval'], '+.3f')} {e[ref]['verdict']}" if e[ref] else "—"
                  for ref in REFERENCES]
-        lines.append(f"| {e['group']} | {e['tag']} | {cells[0]} | {cells[1]} | {e['not_comparable'] or ''} |")
+        lines.append(f"| {e['group']} | {e['tag']} | {cells[0]} | {cells[1]} | {e['note'] or ''} |")
     lines += ["", f"**Stated gap.** {comp['detector_gap']}", ""]
     lines += ["", f"## {name}'s own statistics", ""]
     speed = metrics.speed_errors(out_dir, name, only)
@@ -5156,7 +5652,7 @@ Expected: all pass.
 .venv\Scripts\python -m kz4ap_proto.runner decode --out build/suite/full3 --name smoke-proto --only "^D-speed-s1$"
 .venv\Scripts\python -m kz4ap_proto.runner score --out build/suite/full3 --bench build/windows/bench/Release/kz4ap-bench.exe --name smoke-proto --only "^D-speed-s1$"
 ```
-Expected: first 54 `envelope`/`matched … CER …` lines for the oracle copies (27 detector-only recordings: per seed pauses, strong, tune-up, first sample, band and four crowded; about 2 min), then `recorded …` for each of the 120 oracle scorings (90 oracle recordings, 30 per seed with group I's two; the three H-oracle recordings once more against their station labels; and the 27 oracle copies); about 4.6 GB in `build/suite/full3/channels/` (about 390 000 channel-seconds × 12 kB/s; the three `.stations` scorings record the same WAVs again, at the station frequencies); record the time taken. Then `decoded D-speed-s1` and one `smoke-proto D-speed-s1: CER …` line. Delete `build/suite/full3/results/smoke-proto` and `build/suite/full3/proto/smoke-proto` afterwards (they are not a result).
+Expected: first 54 `envelope`/`matched … CER …` lines for the oracle copies (27 detector-only recordings: per seed pauses, strong, tune-up, first sample, band and four crowded; about 2 min), then `recorded …` for the 33 detector-path recordings (`….detector`: the 27 above plus group H's grid and drawn recordings, per seed) and for each of the 120 oracle scorings (90 oracle recordings, 30 per seed with group I's two; the three H-oracle recordings once more against their station labels; and the 27 oracle copies); about 5.1 GB in `build/suite/full3/channels/` (about 430 000 channel-seconds × 12 kB/s, the detector path's about 44 000 included; the three `.stations` scorings record the same WAVs again, at the station frequencies); record the time taken. Then `decoded D-speed-s1` and one `smoke-proto D-speed-s1: CER …` line. Delete `build/suite/full3/results/smoke-proto` and `build/suite/full3/proto/smoke-proto` afterwards (they are not a result).
 
 - [ ] **Step 9: Commit**
 
@@ -5786,7 +6282,7 @@ Start the decode (about 2 h on 14 workers) in the background with its log redire
 .venv\Scripts\python -m kz4ap_proto.runner report --out build/suite/full3 --name bank-proto --only "-s[23](\.stations)?$" --suffix held-out
 .venv\Scripts\python -m kz4ap_synth.suites summarize --out build/suite/full3
 ```
-Expected: 120 decoded files, 120 scored (including the 27 oracle copies), the two reports, and the suite's `summary.md` now with `bank-proto` rows beside `baseline` and `matched`. Record the wall-clock times.
+Expected: 153 decoded files (120 oracle scorings, the 27 oracle copies included, and 33 detector-path recordings), 159 scored (the six group-H detector recordings twice: labels per QSO and per station), the two reports, and the suite's `summary.md` now with `bank-proto` rows beside `baseline` and `matched`. Record the wall-clock times.
 
 - [ ] **Step 2: Check the references are untouched**
 
@@ -5794,7 +6290,7 @@ In Git Bash: `bash bench/smoke.sh build/windows` → `smoke test passed`; and `g
 
 - [ ] **Step 3: Read the numbers before writing them down**
 
-Check, before trusting them (these look for broken runs, not for a winner): every group, including the six `…, oracle` copies, has `bank-proto` rows with the same signal counts as `matched` and `baseline`; group A's prototype CER falls with S₅₀₀; the rows marked not comparable are the F drift rows and the H oracle QSO-label rows with an offset; the held-out report's group-A crossings are within their intervals of the development seed's (a large difference means the experiments tuned toward seed 1: report it). If something looks broken, debug (superpowers:systematic-debugging) before writing.
+Check, before trusting them (these look for broken runs, not for a winner): every group, including the six `…, oracle` copies and the detector-path groups (H, band, crowded, pauses, strong, tune-up, first sample), has `bank-proto` rows with the same signal counts as `matched` and `baseline`; group A's prototype CER falls with S₅₀₀; the rows marked not comparable are the F drift rows and the H oracle QSO-label rows with an offset; the held-out report's group-A crossings are within their intervals of the development seed's (a large difference means the experiments tuned toward seed 1: report it). If something looks broken, debug (superpowers:systematic-debugging) before writing.
 
 - [ ] **Step 4: Write sections 4–6 of the results document**
 
@@ -5803,11 +6299,11 @@ Section 4: from `report-bank-proto.md` and the held-out report: every group's ta
 Section 5: the comparison, plainly and without a verdict of our own (the owner decides whether the prototype is better and whether stage 2 is worth doing):
 - group A crossings (S₅₀₀ at CER 0.10 and 0.05) at every speed for the prototype, Matched and Envelope, with intervals, and the differences in dB of S₅₀₀;
 - R1 (group D step 20 → 35 WPM CER), R2 (group A 12 WPM first-word CER at S₅₀₀ 6–20 dB) and the two start-up runaway cases, for all three, with numbers; and the prototype's lock-ins at S₅₀₀ ≥ 6 dB from the speed table (a selected speed off by more than ×1.5 for 3 s or longer);
-- every regime (group and tag, the oracle copies included) against Matched and against Envelope: better, worse or unchanged beyond its interval, by how much, with the counts of each; the not-comparable rows marked (F drift, H oracle QSO labels with an offset);
-- **the stated gap:** detection recall, false tracks, tracks per QSO, group H through the detector, and the band and crowded groups as the detector sees them are not measured in stage 1, because they depend on the detector, which the redesign does not change; stage 2 measures them with the bank in C++ behind the real detector (spec §7; backlog "Stage-2 evaluation of the filter bank through the detector").
+- every regime (group and tag, the oracle copies and the detector-path groups included) against Matched and against Envelope: better, worse or unchanged beyond its interval, by how much, with the counts of each; the not-comparable rows marked (F drift, H oracle QSO labels with an offset); on the detector path the prototype decodes Matched's tracks, so against Envelope (its own tracks) those rows compare per label; the late-opening case (channels opened partway through a transmission) is read from the detector-path first-word CER;
+- **the stated gap:** the detector's own measures — detection recall, false tracks and tracks per QSO — are not measured in stage 1; the detector is untouched, so they cannot change, and stage 2 measures them with the bank in C++ behind the real detector (spec §7; backlog "Stage-2 evaluation of the filter bank through the detector"). Also stated: on the detector path the prototype mixes by the detector's frequency without the tracker's fine-tuning (±12 Hz), which Matched has.
 State that this compares the Python prototype on oracle streams, not the C++ bank.
 
-Section 6: open items for the owner: the comb-on-2T change (if not already answered), the tracker's input in stage 2 (which branch's v and p), every "no setting met the criterion" and every finding reported during Tasks 11–15, the placeholders kept unmeasured, the T_P prior's reinterpretation (a gate at the confidence threshold instead of a weight by the confidence, because the arms' confidences are on different scales); that the detector-only groups reached the prototype only as oracle copies (the detector's part is stage 2's); and the spec §8 questions this stage did not measure: 5 WPM keying against fading (the suite has no slow fading recording below 12 WPM), the outlier class's shape, the noise spectrum's FFT size, averaging and guard (only compared with the fallback, E10), and the choices this plan made heuristically (listed in its Parameters table).
+Section 6: open items for the owner: the comb-on-2T change (if not already answered), the tracker's input in stage 2 (which branch's v and p), every "no setting met the criterion" and every finding reported during Tasks 11–15, the placeholders kept unmeasured, the T_P prior's reinterpretation (a gate at the confidence threshold instead of a weight by the confidence, because the arms' confidences are on different scales); that on the detector path the prototype lacks the tracker's fine-tuning (the tracker is stage 2's); and the spec §8 questions this stage did not measure: 5 WPM keying against fading (the suite has no slow fading recording below 12 WPM), the outlier class's shape, the noise spectrum's FFT size, averaging and guard (only compared with the fallback, E10), and the choices this plan made heuristically (listed in its Parameters table).
 
 - [ ] **Step 5: Write the values back into the spec**
 
@@ -5823,7 +6319,7 @@ Prototype on the recorded oracle channel streams of the 3-seed full suite
 (`docs/plans/2026-09-30-milestone-2b-stage-1-results.md`). <One paragraph each: group A crossings, R1, R2
 and the runaways, and the counts of regimes better / worse / unchanged against Matched and against Envelope,
 with the largest differences and their intervals; no verdict (the owner decides).> <One sentence: the stated
-gap — the detector-dependent measures are stage 2's.> <One paragraph: the settled parameters and the changes to
+gap — the detector's own measures (detection recall, false tracks, tracks per QSO) are stage 2's.> <One paragraph: the settled parameters and the changes to
 this design found in stage 1: which periodicity arm and noise arm won; the unknown-amplitude test is a per-sample threshold on x, calibrated
 by measurement.> <One sentence: what stage 2 must decide that stage 1 did not (the tracker's input).>
 ```
@@ -5843,7 +6339,7 @@ git commit -m "Record stage 1 of the filter-bank redesign: final evaluation and 
 
 - [ ] **Step 8: Report to the owner**
 
-In a few lines, without a verdict: the group-A crossings against Matched and Envelope, R1, R2, the runaways, and how many regimes are better, worse and unchanged against each (with the largest differences), the stated detector gap, the settled parameter values and which stayed placeholders, the findings reported along the way (comb on 2T; tracker input; any rule no setting met), the prototype's CPU (Python, for scale only), and that the spec's §6 and §10 were changed on the branch for the owner's review. Do not push or merge.
+In a few lines, without a verdict: the group-A crossings against Matched and Envelope, R1, R2, the runaways, and how many regimes are better, worse and unchanged against each (with the largest differences), the stated gap (the detector's own measures), the settled parameter values and which stayed placeholders, the findings reported along the way (comb on 2T; tracker input; any rule no setting met), the prototype's CPU (Python, for scale only), and that the spec's §6 and §10 were changed on the branch for the owner's review. Do not push or merge.
 
 ---
 ## Self-review (plan author's check against the spec)
@@ -5865,7 +6361,7 @@ In a few lines, without a verdict: the group-A crossings against Matched and Env
 | §4.7 silences: nothing else resets; new over at max(0.5 s, 12·T_g); fresh fit and amplitude with the previous as fallback; first marks with an unknown-amplitude test, then re-keyed with the full LLR as a correction | Task 6 (`start_over`, x-threshold test, `rekey`), Task 11 (`start_over`, `rekey_over`), E7, E9 |
 | §4.8 corrections, reach 20 s, after a switch from the character where the new branch became eligible | Task 11 (`Output`, `_char_start_at`, `eligible_since`; reach test) |
 | §6 placeholders settled by measurement | Tasks 13–14 (E1–E10, rules written before running), Task 15 (write-back) |
-| §7 (owner, 2026-09-30): no acceptance gate; a full comparison for the owner, every regime included; the detector-dependent measures stated as stage 2's | Task 12 (`report.comparison`, oracle copies of the detector-only groups, `engine-copies`), Task 15 Step 4 section 5, backlog item |
+| §7 (owner, 2026-09-30): no acceptance gate; a full comparison for the owner, every regime included, through the detector too; only the detector's own measures stated as stage 2's | Task 11b (detector channels, tracks scored by frequency, anchored mixing), Task 12 (`report.comparison`, oracle copies, `engine-copies`, detector jobs), Task 15 Step 4 section 5, backlog item |
 | §8 open questions | E1–E3 (method, windows, confidence), E5 (grid), E6 (M, alternations), E9 (unknown-amplitude test, re-key timing), E10 (noise estimator); the rest listed as open in Task 15 |
 | Runner reuses `suites.py`'s summary machinery | Task 12 (`load_results`, `aggregate`, `paired_differences`, bootstrap) |
 | Project rules: physical units; signal-processing.md; Envelope/Matched bit-identical; baselines untouched; git | Global Constraints; §11 updates in Tasks 1–3; smoke checks in Tasks 1, 2, 3, 15 |
