@@ -86,9 +86,10 @@ int main(int argc, char** argv) {
         std::map<std::uint32_t, DecodedTrack> tracks;
         bus.subscribe([&](const Event& e) {
             if (const auto* t = std::get_if<TrackEvent>(&e); t && t->kind == TrackEvent::Kind::Born) {
-                tracks[t->track.id] = {t->track.id, t->track.freq_hz, ""};
+                tracks[t->track.id] = {t->track.id, t->track.freq_hz, "", t->track.freq_hz};
             } else if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
                 for (const auto& c : d->chars) tracks[d->track_id].text += c.text;
+                tracks[d->track_id].last_freq_hz = d->freq_hz;
             }
         });
 
@@ -158,6 +159,8 @@ int main(int argc, char** argv) {
                                    {"reference", normalize_text(sig.label.text)},
                                    {"decoded", sig.decoded},
                                    {"track_id", sig.track_id ? nlohmann::json(*sig.track_id) : nlohmann::json()},
+                                   {"tracked_freq_hz", sig.track_id ? nlohmann::json(tracks.at(*sig.track_id).last_freq_hz)
+                                                                    : nlohmann::json()},
                                    {"cer", sig.cer},
                                    {"symbols", sig.symbols},
                                    {"edits", sig.edits},

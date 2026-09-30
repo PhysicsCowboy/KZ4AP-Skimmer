@@ -1352,3 +1352,10 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
   bracket the crossing, interpolated linearly in dB. No crossing is
   reported if the highest point already fails; if none fails, the lowest
   point is reported (an upper bound).
+- **Frequency error:** for each matched label, |f_tracked − f_true|, Hz,
+  where f_tracked is the frequency of the track's latest decoded text
+  (its birth frequency until then) and f_true is the label's carrier; for a
+  QSO label, the carrier of the station that sent the last over (that is
+  where the latest text came from); for a station label (group H), that
+  station's carrier. Signals with drift are left out. Summaries report the
+  median per condition.

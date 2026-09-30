@@ -16,6 +16,7 @@ struct DecodedTrack {
     std::uint32_t id;
     double freq_hz;
     std::string text;
+    double last_freq_hz = 0;  // frequency of the latest decoded-text event, Hz (birth frequency until then)
 };
 
 struct TransmissionScore {
