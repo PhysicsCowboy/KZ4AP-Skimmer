@@ -86,6 +86,9 @@ void ClassicalDecoder::reset() {
     filter_dit_s_ = 1.2 / config_.matched.initial_wpm;  // the acquisition dit, 20 ms at 60 WPM
     set_aside_filter_dit_s_ = filter_dit_s_;
     before_last_element_ = {};
+    key_up_seen_ = false;
+    mark_observed_ = true;
+    prev_mark_observed_ = true;
 }
 
 DecodeUpdate ClassicalDecoder::process(std::span<const Sample> samples, double t0_s) {
@@ -163,12 +166,20 @@ void ClassicalDecoder::step_matched(Sample y, double t, DecodeUpdate& out) {
     if (!f.ready) return;
     tracker_->observe(f.filtered, f.p_key_down);
     const double h = config_.llr_hysteresis;
+    // A key-down is observed only if, since the last sample on which keying was impossible (the warm-up
+    // returns above; here, the squelch closed), the decoder saw the key up with log-odds below -h:
+    // evidence that the carrier was off before the mark began. Otherwise the mark may have begun while
+    // keying was impossible or while the log-odds sat between -h and +h, and its duration may be a
+    // fragment's: it is decoded but not counted for speed. A re-acquisition needs no code of its own:
+    // it restarts s-hat at 0, which closes the squelch on the next sample.
+    if (!f.signal) key_up_seen_ = false;
     if (!key_ && f.signal && f.log_odds > h) {
-        key_down(t);
+        key_down(t, key_up_seen_);
         heard_since_reacquire_ = true;
     } else if (key_ && (!f.signal || f.log_odds < -h)) {
         key_up(t);
     }
+    if (!key_ && f.signal && f.log_odds < -h) key_up_seen_ = true;
     if (key_) last_key_t_ = t;
     // A long silence may be a turnover to another station (at another level, or at another
     // frequency, which the detector will report through the anchor): widen the filter, restart the
@@ -213,7 +224,7 @@ void ClassicalDecoder::set_frequency_anchor_hz(double offset_hz) {
     if (tracker_) tracker_->set_anchor(offset_hz);  // Envelope: nothing changes (bit-identical)
 }
 
-void ClassicalDecoder::key_down(double t) {
+void ClassicalDecoder::key_down(double t, bool observed) {
     key_ = true;
     if (char_open_ && !elements_.empty() && t - up_t_ < config_.glitch_dits * dit_s_) {
         // The key-up was a dropout inside one element: merge it back into that element.
@@ -227,9 +238,11 @@ void ClassicalDecoder::key_down(double t) {
         } else if (counts_for_speed(merged.end_s - merged.start_s) && !recent_marks_.empty()) {
             recent_marks_.pop_back();  // Envelope: milestone 1's merge, unchanged (bit-identical)
         }
+        mark_observed_ = prev_mark_observed_;  // the mark continues, with its own start
         down_t_ = prev_down_t_;
         return;
     }
+    mark_observed_ = observed;  // Envelope: always true
     down_t_ = t;
 }
 
@@ -243,8 +256,10 @@ void ClassicalDecoder::key_up(double t) {
     prev_down_t_ = down_t_;
     up_t_ = t;
     char_open_ = true;
+    prev_mark_observed_ = mark_observed_;
     if (front_end_) before_last_element_ = {};  // Matched: nothing to undo unless this element counts
-    if (!counts_for_speed(duration)) return;
+    // A mark whose key-down was not observed (Matched) is decoded but kept out of the speed estimate.
+    if (!counts_for_speed(duration) || !mark_observed_) return;
     if (front_end_) {
         // Matched: the state this key-up's speed update starts from, restored if a dropout merge
         // re-opens this element.

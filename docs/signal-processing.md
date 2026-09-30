@@ -894,6 +894,47 @@ mark is timed through the new filter, up to that much longer, and grows
 the estimate at most ×1.25. The Envelope path's merge
 is unchanged (it pops the mark from the window and keeps the updated
 estimate, as in milestone 1; it has no growth bound).
+**Marks whose start was not observed (Matched; Task 16).** Keying is
+possible on a sample where the front end is ready (its 0.32 s warm-up is
+over) and the squelch is open (a ≥ a_min). A key-down counts as observed
+only if, since the last sample on which keying was impossible, the
+decoder saw a keyable sample with the key up and g < −1 nat (the key-up
+threshold): evidence that the carrier was off before the mark began.
+Otherwise the carrier may have been up before the key-down, while keying
+was impossible or while g sat between −1 and +1 nat, so the mark's
+duration may be a fragment's (Task 14: a 15.3 ms fragment of a 195 ms
+dah on the smoke recording pinned the dit at 20 ms). Such a mark is
+decoded but not counted for speed: it does not enter the speed window or
+count toward the 8 marks before the filter follows. Every key-up by the
+log-odds sets the evidence, so in steady keying every mark counts; a
+dropout merge keeps the merged mark's flag. (Rule derived from what the
+decoder can observe; no parameter; its effect measured in section 8b.)
+It applies after the warm-up (a channel opening mid-mark); to the first
+mark of a channel that opens in noise (after the warm-up, a ≈ 1.6 in
+noise alone, below a_min = 3, derived: ŝ² = 2σ²·ln 10 − 2σ² from the
+warm-up's percentiles); after a re-acquisition (ŝ restarts at 0, so
+a = 0 < a_min); and wherever else the squelch closes and re-opens (the
+floor's stuck-low restart of ŝ, ŝ decaying or σ̂ rising at a weak
+station). In the last three the squelch re-opens on the sample after the
+next mark lifts ŝ past a_min (ŝ is updated after the squelch is
+decided), and that mark's keyed start is off in either direction:
+early at high S₅₀₀, where the squelch opens on the filter's rising ramp
+with â well below the true a, and late at low S₅₀₀ (Task 14: 100.7 ms of
+a 144 ms dah at S₅₀₀ 10 dB) (derived from the update). Each such channel
+or over loses one mark of speed evidence; the filter follows after 9
+physical marks there.
+The Envelope path is unchanged: its warm-up (one dit at 25 WPM, 48 ms)
+sets both levels to the mean envelope, so a mark in progress when it
+ends keeps M < 3·S and is not keyed, unless it began late enough that
+the mean S = f·A (A the carrier's envelope, f the fraction of the
+warm-up the mark filled) is below A/3. Then the squelch opens when the
+smoothed envelope reaches 3fA, τ_s·ln((1 − f)/(1 − 3f)) plus about
+4 ms of attack after the warm-up ends (τ_s = 0.25 × 48 ms = 12 ms): at
+f ≈ 0.28 about 22 ms, so a 48 ms dit is timed at about 19 ms, short
+enough to form a dit cluster of its own. So its first timed mark can be
+short by up to most of a dit, and a fragment can happen, rarely, in a
+window of opening phase a few ms wide (derived, not measured; a stated
+limit, not fixed).
 **Re-acquisition (heuristic):** once the key has been
 up for max(0.5 s, 12 dits), the Matched decoder assumes the next station
 may be a different one (a QSO turnover): section 8b's filter returns to
@@ -1057,7 +1098,9 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
   (simulated). After it, a station f_sep away loses |sinc(f_sep·24/1500 s)|² at
   K = 24 (−2.4 dB relative to a centered station at 25 Hz, derived) and
   must pass the acquisition squelch, so it needs about S₅₀₀ ≥ 0 dB at
-  25 Hz.
+  25 Hz. The first mark after it, keyed when it lifts ŝ past the squelch
+  (early on its ramp at high S₅₀₀, late at low S₅₀₀), is not counted for
+  speed (section 8, same paragraph).
 - **Likelihood (derived; Proakis eq. 4.5–21):** Λ = −a²/2 + ln I₀(a·x),
   x = |v|/σ̂_v, a = ŝ/σ̂_v, in nats; ln I₀ from Abramowitz & Stegun 9.8.1–9.8.2
   without overflow. g = Λ + ln(P₁/P₀) with P₁ = 0.44 (derived from PARIS:
@@ -1149,6 +1192,8 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
   warm-up counts as 0.1 times its length in both noise and amplitude
   weight. (The earlier 5th percentile of 0.2 s, about 12 independent
   samples at K = 24 and 1 at K = 288, often started σ̂_v at 0.2–0.5·σ_v.)
+  A mark in progress when the warm-up ends is decoded but not counted for
+  speed (section 8, "Marks whose start was not observed").
 - **Squelch (heuristic value; its scaling with the filter duration
   derived):** p is forced to 0 while a < a_min = 3·(T_v/16 ms)^(1/4),
   T_v = K/r the filter's duration and 16 ms the acquisition filter's
@@ -1562,8 +1607,22 @@ changed):
 **Limits measured** (diagnosed by focused runs and debug prints that are
 not in the repository; nothing was changed):
 
-- **A channel that opens mid-transmission.** On the smoke recording
-  (`bench/smoke.sh`) Matched reads CER 0.0622 against Envelope's 0.0353
+- **A channel that opens mid-transmission.** **Fixed in Task 16**
+  (section 8, "Marks whose start was not observed"); the numbers below are
+  from before the fix, re-measured in Task 17. What is fixed: a fragment
+  timed from a mark in progress when the warm-up ends is decoded (as a
+  dit) but no longer enters the speed estimate; after Task 16 the smoke
+  recording reads Matched CER 0.0436 (Envelope unchanged at 0.0353), the
+  +7617.6 Hz station CER 0.043, and every cut of the test
+  `MatchedChannelOpeningInsideADahCountsNoFragment` (warm-up ending −10 to
+  +40 ms before the end of U's dah, 1 ms steps; 7 of them time a
+  14.7–20.7 ms fragment) decodes every word after the first exactly
+  (measured). What remains: the first word, sent partly before the
+  opening, is still lost or shortened (replay, backlog), and the other
+  start-up failure shape (next item) is untouched except where its first
+  misleading mark was one whose start was not observed.
+  On the smoke recording
+  (`bench/smoke.sh`) Matched read CER 0.0622 against Envelope's 0.0353
   and 0.0145 with oracle channels (Matched). One station, +7617.6 Hz,
   18.5 WPM (dit 64.9 ms), S₅₀₀ 25.1 dB, keying from 1.076 s, decodes at
   CER 0.234 through the detector: its channel opens at about 1.6 s, and
@@ -1662,7 +1721,7 @@ not in the repository; nothing was changed):
 | Detection | 1 s warm-up at recording start; then ~0.5–1.5 s for a new station (averaging + 0.5 s persistence) |
 | Channel filter group delay | 10.7 ms |
 | Decoder smoothing | ~¼ dit (τ_s) |
-| Front-end warm-up (Matched only) | the first 0.32 s of each channel key nothing (section 8b, "Warm-up"); a mark that ends just after it can be timed as a fragment (section 8b, "A channel that opens mid-transmission") |
+| Front-end warm-up (Matched only) | the first 0.32 s of each channel key nothing (section 8b, "Warm-up"); a mark in progress when it ends is decoded but not counted for speed (section 8, "Marks whose start was not observed") |
 | Matched filter group delay (Matched only) | (K − 1)/2 samples: 19 ms at 25 WPM |
 | Character emitted | after a 2-dit gap follows it |
 | Track removed | average decay (~6–7 s for a 20 dB SNR (500 Hz) station) plus the 10 s timeout |
@@ -1704,6 +1763,7 @@ not in the repository; nothing was changed):
 | LLR keying hysteresis (Matched) | g > +1 nat down, g < −1 nat up | `ClassicalDecoderConfig::llr_hysteresis` | heuristic |
 | Filter follows speed after (Matched) | 8 marks in the speed window (8 new ones after a re-acquisition) | `ClassicalDecoderConfig::follow_after_marks` | heuristic |
 | Dit-estimate growth bound (Matched) | decided: at most ×1.25 per mark while the filter follows the speed, and the filter's own dit at most ×1.25 per mark from its first follow step (from the 20 ms acquisition dit). Applied at each key-up counted for speed; a dropout merge restores the state before the merged mark's update, so each physical mark is bounded once (Task 15) | `ClassicalDecoderConfig::max_dit_growth` | heuristic value (owner decisions 2026-09-29); applied per physical mark (derived from the code, Task 15; its measured effect in section 8b) |
+| Marks not counted for speed (Matched) | a mark whose key-down came with no keyable key-up sample (log-odds below −1 nat) seen since the last sample on which keying was impossible (warm-up, squelch closed) | `ClassicalDecoder::step_matched`, `key_up_seen_` | derived rule, no parameter (Task 16) |
 | Re-acquisition (Matched) | after max(0.5 s, 12 dits) of key-up: filter back to 60 WPM, ŝ, the frequency average and the speed window restart; the old speed window and the narrow filter come back if nothing is keyed within 2 s | `ClassicalDecoderConfig::reacquire_after_dits`, `reacquire_min_s`, `reacquire_window_s` | heuristic |
 | Matched filter | boxcar, K = round(0.8·dit·r), starts at 60 WPM (16 ms, K = 24), clamped to 16–192 ms (60–5 WPM; K = 24–288) | `MatchedFrontEndConfig` | derived shape; β and start heuristic |
 | Likelihood | Λ = −a²/2 + ln I₀(a·x); prior P₁ = 0.44 | matched_front_end.cpp | derived |

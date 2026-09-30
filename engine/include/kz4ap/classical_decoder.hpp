@@ -71,7 +71,7 @@ private:
     };
 
     void step(float magnitude, double t, DecodeUpdate& out);
-    void key_down(double t);
+    void key_down(double t, bool observed = true);  // observed: false if the key-up before it was not seen (Matched)
     void key_up(double t);
     void finish_char(DecodeUpdate& out);
     void emit(DecodeUpdate& out, std::string_view text, float probability, double start_s, double end_s);
@@ -130,6 +130,10 @@ private:
         std::deque<double> recent_marks;
     };
     SpeedState before_last_element_;
+    bool key_up_seen_ = false;        // Matched: since the last sample on which keying was impossible (warm-up, squelch
+                                      // closed), a keyable sample had the key up with log-odds below -llr_hysteresis
+    bool mark_observed_ = true;       // the current mark's key-down came after such a sample
+    bool prev_mark_observed_ = true;  // the same for the last element; a dropout merge brings it back
 };
 
 }  // namespace kz4ap

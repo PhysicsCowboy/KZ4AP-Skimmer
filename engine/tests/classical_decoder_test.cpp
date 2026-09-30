@@ -451,6 +451,67 @@ TEST(ClassicalDecoder, MatchedMergedDropoutIsOneMarkForSpeed) {
     EXPECT_TRUE(ends_with(text(got.chars), "PARIS")) << text(got.chars);
 }
 
+TEST(ClassicalDecoder, MatchedChannelOpeningInsideADahCountsNoFragment) {
+    // Task 14 (docs/signal-processing.md section 8b, "A channel that opens mid-transmission"): on the
+    // smoke recording an 18.5 WPM station (T = 64.9 ms) at S500 = 25.1 dB, whose channel opened so that
+    // the front end's 0.32 s warm-up ended inside the dah of U, timed a 15.3 ms fragment as its first
+    // mark; the speed estimate took it as the whole dit cluster (dit clamped to 20 ms) and garbled the
+    // next words until it left the 24-mark window. Here the input starts at cut times such that the
+    // warm-up ends lead_s before U's dah ends, lead_s = -10 ... +40 ms in 1 ms steps. A fragment of
+    // 14.4 ms (the glitch limit, 0.3 x the 48 ms initial dit) to 21.6 ms (a third of the 64.9 ms dit,
+    // below which 65 ms / fragment exceeds the dit-dah ratio of 3 and the fragment is a cluster of its
+    // own; derived from section 8, step 10) derails the estimate before Task 16. After it the fragment
+    // is decoded (as E) but not counted for speed, so every word after the first, which the cut
+    // shortens, decodes exactly. Deterministic; not simulated.
+    const double wpm = 18.5;
+    const std::string msg = "UA7L TU UA7L TU UA7L K";
+    const auto marks = keying(msg, wpm, 0.5);
+    const double dah_end = marks[2].second;  // U is ..-: its dah is the third mark
+    const auto x = keyed_signal(msg, wpm, kRate, marks.back().second + 1.5, 0, 1.0, sigma_for_s500(25), 45);
+    int fragments = 0;
+    std::string failures;
+    for (int i = 0; i <= 50; ++i) {
+        const double lead_s = -0.010 + 0.001 * i;
+        const auto first = static_cast<std::ptrdiff_t>(std::lround((dah_end - 0.32 - lead_s) * kRate));
+        const std::vector<Sample> y(x.begin() + first, x.end());
+        ClassicalDecoder d(kRate, matched());
+        const auto chars = decode_all(d, y);
+        const std::string got = text(chars);
+        std::string first_e = "none";
+        if (!chars.empty() && chars[0].text == "E") {
+            const double len = chars[0].end_s - chars[0].start_s;
+            first_e = std::to_string(len * 1000.0) + " ms";
+            if (len > 0.3 * 1.2 / 25 && len < 1.2 / wpm / 3) ++fragments;
+        }
+        if (!ends_with(got, " TU UA7L TU UA7L K"))
+            failures += "lead " + std::to_string(lead_s * 1000.0) + " ms, first E " + first_e + ": " + got + "\n";
+    }
+    EXPECT_GE(fragments, 1) << "no cut timed a 14.4-21.6 ms fragment: the case is not exercised";
+    EXPECT_TRUE(failures.empty()) << failures;
+}
+
+TEST(ClassicalDecoder, MatchedFirstMarkAfterReacquisitionIsNotCounted) {
+    // Task 16, the squelch closing and re-opening mid-stream. After a re-acquisition the amplitude
+    // estimate restarts at 0 (a = 0 < a_min), which closes the squelch and clears the decoder's
+    // key-up evidence (no re-acquisition-specific code); the next station's first mark lifts s-hat and
+    // opens the squelch, and is keyed with no key-up sample (g < -1 nat) seen since, so its start was not
+    // observed (keyed early on its ramp at this S500, derived from the code, section 8b,
+    // "Re-acquisition"). It is decoded but not counted for speed. 1.5 s of silence at 25 WPM: the
+    // re-acquisition comes 0.576 s after the last key-up (12 dits), and the second over starts within
+    // its 2 s window, so nothing set aside comes back. "K1ABC" has 18 marks; 17 count. Noise alone could
+    // open the squelch in the silence first (then 18); not simulated: if this reads 18, report it with
+    // the seed rather than changing the seed.
+    const std::string first = "CQ TEST";
+    const std::string second = "K1ABC";
+    const double start2 = keying(first, 25, 0.5).back().second + 1.5;
+    const double end2 = keying(second, 25, start2).back().second;
+    const auto x = add(keyed_signal(first, 25, kRate, end2 + 0.3, 0, 1.0, sigma_for_s500(30), 48),
+                       keyed_signal(second, 25, kRate, end2 + 0.3, 0, 1.0, 0.0, 49, start2));
+    ClassicalDecoder d(kRate, matched());
+    EXPECT_EQ(text(decode_all(d, x)), first + " " + second);
+    EXPECT_EQ(d.marks_since_reacquire(), 17u);
+}
+
 TEST(ClassicalDecoder, MatchedDecodesCleanSignal) {
     ClassicalDecoder d(kRate, matched());
     const std::string msg = "CQ TEST K1ABC";
