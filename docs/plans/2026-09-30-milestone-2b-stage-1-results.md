@@ -34,19 +34,22 @@ the periodicity and speed statistics). S₅₀₀: key-down carrier power over n
 - **Suite**: `build/suite/full3`, 123 synthetic recordings with labels, 3 random **seeds** (independent
   draws of noise, text and timing) per condition. Groups A–I each test one condition (A white noise, B
   fading, C fists, D speed changes, E interference, F drift and offset, G ragchew, H QSO, I Farnsworth);
-  band, crowded, pauses, strong, tune-up and first-sample are scored through the detector
-  (**detector-only** recordings).
-- **Scoring**: decoding every station of a recording and comparing the text with the labels. **CER**
-  (character error rate) is the minimum number of symbol insertions, deletions and substitutions that turn the decoded text into the reference, divided by the number of reference symbols (a fraction; prosigns and word spaces count as symbols; `docs/signal-processing.md` section 11). A **scoring** is one recording
-  scored against one label file.
+  on band, crowded, pauses, strong, tune-up and first-sample the decoders are run through the detector
+  (the **detector path**: detector → channelizer → decoder → text), because what these recordings test
+  involves detection. A recording is only test material: it is never "scored"; a decoder is.
+- **Scoring a decoder**: running it on a recording, decoding every station, and comparing the text with
+  the labels. **CER**
+  (character error rate) is the minimum number of symbol insertions, deletions and substitutions that turn the decoded text into the reference, divided by the number of reference symbols (a fraction; prosigns and word spaces count as symbols; `docs/signal-processing.md` section 11). A **test case** is one recording paired with one label file (group H's recordings have
+  two: one label per QSO and one per station).
 - **Recorded channel streams**: the engine run once with a tap that writes each channel stream to disk
   (`build/suite/full3/channels/`, complex64 files) exactly as the channelizer delivers it, before any
   decoder. The prototype reads these files, so it and the C++ decoders see the same samples, and
   detection and channelizing are not repeated per experiment. **Oracle channels** are one per labeled
   station; **detector channels** are whatever the detector opened, false tracks included.
-- **Oracle copy**: a detector-only recording also scored on its oracle channels. **Engine copies**: the
-  Envelope and Matched scorings of those oracle copies (27 recordings × 2 decoders), so that the
-  prototype is compared with them on the same channels.
+- **Oracle copy**: for a recording normally decoded through the detector path, the extra test case in
+  which the decoders run on its oracle channels instead. **Engine copies**: Envelope's and Matched's
+  results on those oracle copies (27 recordings × 2 decoders), so that the prototype is compared with
+  them on the same channels.
 - **Channel-second**: one second of one channel's stream; the unit of decoding cost (CPU time per
   channel-second).
 
@@ -62,7 +65,7 @@ the periodicity and speed statistics). S₅₀₀: key-down carrier power over n
 - **Experiment** (E1…E10): one question about one parameter or method, from the plan's list.
 - **Variant**: one candidate answer to that question, meaning one setting. Each variant is a complete
   prototype **run**, a decoding of the development set with that one setting changed.
-- **Development set**: seed 1 of the suite (21 scorings, 525 channels, 74 748 channel-seconds, 509
+- **Development set**: seed 1 of the suite (21 test cases, 525 channels, 74 748 channel-seconds, 509
   signals). Seeds 2 and 3 are held out for the final evaluation, so that values chosen on seed 1 are
   judged on data they were not chosen on.
 - **Reference run** (`exp-ref`): the prototype with every default. Each variant is compared with it
@@ -91,12 +94,12 @@ the periodicity and speed statistics). S₅₀₀: key-down carrier power over n
   except the CPU times. So results from the two machines are interchangeable except CPU and wall
   time, and every CPU time in section 3 is from the Linux machine.
 - Suite: `build/suite/full3` (3 seeds; 123 recordings with group I). Prototype input: the oracle
-  channels' recorded streams (120 scorings, the 27 oracle copies of the detector-only groups included), mixed to 0 Hz at the labeled frequency and drift.
+  channels' recorded streams (120 test cases, including the 27 oracle copies of the recordings normally decoded through the detector path), mixed to 0 Hz at the labeled frequency and drift.
 - Development set (experiments): `experiments.DEV` — seed 1 of groups A, C, D, E, F, G, H (oracle, both
-  views), I, and B's mixed-style recording. Held out: seeds 2 and 3. It is 21 scorings, 525 channels,
+  views), I, and B's mixed-style recording. Held out: seeds 2 and 3. It is 21 test cases, 525 channels,
   74 748 channel-seconds, 79% of them inside transmissions (Task 11p's count). `experiments.DEV_E5`: 10
-  scorings, 259 channels.
-- Run times: group I generation 4 min 37 s and scoring 24 s (Task 1); recording the streams 158 s for
+  test cases, 259 channels.
+- Run times: group I generation 4 min 37 s and the decoders' scoring on it 24 s (Task 1); recording the streams 158 s for
   3 556 channels, 457 169 channel-seconds, 5.3 GB (Task 12); decoding CPU 2.61 s per channel-second
   (Task 11, throttled), 1.04 s per channel-second after Task 11p (14 workers, unthrottled, keyed
   stream at 25 WPM, S₅₀₀ = 10 dB), 0.506 s per channel-second on D-speed-s1 (Task 12, smoke run).
@@ -134,8 +137,8 @@ the plan; its outcome; the value adopted and its status.)
 .venv\Scripts\python -m kz4ap_proto.experiments run --out build/suite/full3 --bench build/windows/bench/Release/kz4ap-bench.exe --name exp-ref --keep-p1
 ```
 
-All defaults (`ProtoConfig()` at `6d610be`), branch 1's posteriors kept for E1–E3. 21 scorings, 525
-channels (74 748 channel-seconds); 509 signals scored. **Pooled CER 0.3060** (all groups pooled, S₅₀₀
+All defaults (`ProtoConfig()` at `6d610be`), branch 1's posteriors kept for E1–E3. 21 test cases, 525
+channels (74 748 channel-seconds); the prototype scored on 509 signals. **Pooled CER 0.3060** (all groups pooled, S₅₀₀
 from −10 dB up; per-group rows in the E10 compare files). Decoding CPU 317.7 ms per channel-second,
 wall time 40.1 min (Linux machine, 10 workers; the same command with
 `--bench build/linux/bench/kz4ap-bench --jobs 10`).
@@ -144,7 +147,7 @@ On the Windows machine the same run gave the same pooled CER, 750.2 ms of CPU pe
 about 71 min of wall time, run in two parts. The first part (18 workers, 01:23–02:04) decoded 14
 recordings and was then stopped by the agent harness because the machine ran low on memory (other
 applications held most of the 31.7 GB). The decode resumes, so the second part (10 workers, 30.3 min)
-decoded the other 7 and scored all 21. In the second part the prototype's processes used at most
+decoded the other 7 and scored the prototype on all 21 test cases. In the second part the prototype's processes used at most
 195 MB per worker (about 1 GB in total for 10 workers; 18 workers would take at most about 3.5 GB),
 and free memory stayed at 4.28 GB or more. Later runs use 10 workers and a watchdog that stops
 the run cleanly if free memory falls below 2 GB.
@@ -195,7 +198,7 @@ owner's default), the sign-weighted edge comb, and the spectrum-shape fit, each 
 or nulls and widths. Offline on `exp-ref`'s stored branch-1 posteriors (the estimate never feeds back
 into them, so this is exact for every variant), every window 1, 2, 3, 5, 10 s logged, the rule "the
 confident estimate with the shortest window" over the default windows (2, 5, 10) s. Points: every
-0.25 s update inside a transmission of a scored, constant-speed label at S₅₀₀ ≥ 0 dB in groups A, B
+0.25 s update inside a transmission of a constant-speed station whose label counts in the score at S₅₀₀ ≥ 0 dB in groups A, B
 (mixed style), C, G, H (per-station view) and I of the development set: **175 551 points**. Correct:
 within 5% of the true dit, 1.2 s / WPM. Precision: correct ÷ confident; coverage: confident ÷ points;
 intervals: bootstrap 95% over channels. Each variant's threshold is calibrated as the lowest of 100
