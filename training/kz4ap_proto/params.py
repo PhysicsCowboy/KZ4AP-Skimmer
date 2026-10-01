@@ -20,7 +20,8 @@ class ProtoConfig:
     # Noise (spec 4.2)
     noise_method: str = "spectrum"         # "spectrum": three-tap level x spectrum ratios; "spectrum-level": spectrum
                                            # level (both divide branch k by mask_bias[k]); "branch": the fallback;
-                                           # open, decided by E10 (owner)
+                                           # measured (E10): "spectrum", variant (a), kept; neither other variant
+                                           # qualified (results record, section 3.1)
     mask_bias: tuple[float, ...] = (       # b_mask,k, one per branch (both spectrum arms): branch k's sigma_v,k^2
         0.8370, 0.8293, 0.8263, 0.8213,    # from the masked, smoothed spectrum (flat mean of the accepted masked
         0.8171, 0.8136, 0.8095, 0.8074,    # periodograms) / its true sigma_v,k^2. Measured (Task 5): white noise,
