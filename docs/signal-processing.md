@@ -2303,11 +2303,23 @@ not in the repository; nothing was changed):
   result names, so on the detector path the prototype pairs with Matched
   per track (the same tracks) and with Envelope per label (Envelope's
   detector opens its own tracks). **Comparison** (no acceptance gate;
-  owner, 2026-09-30): for each (group, tag), the prototype's CER minus the
-  reference's, signal by signal, with a bootstrap 95% interval over
-  signals (1000 resamples); "better" if the interval's upper end is below
-  0, "worse" if its lower end is above 0, else "unchanged"; "no interval"
-  below 2 signals. Rows not comparable by construction are marked and not
+  owner, 2026-09-30): for each (group, tag), the mean over signals of the
+  per-signal CER difference (prototype minus reference, on the same
+  labels), with a paired bootstrap 95% interval; "better" if the
+  interval's upper end is below 0, "worse" if its lower end is above 0,
+  else "unchanged"; "no interval" below 2 signals. The CER columns beside
+  it are pooled (summed edits over summed symbols), so a paired mean and
+  the difference of two pooled CERs can differ, even in sign. **What the
+  statistics do and do not model:** the "interval excludes 0" verdict is
+  a convention (heuristic), not a derived decision rule. The bootstrap
+  unit is the signal (1000 resamples of signals within each group and
+  tag, the milestone-2 convention); signals of one recording share its
+  noise and keying draws, and that within-recording correlation is not
+  modeled, so intervals are likely too narrow where a regime has few
+  recordings (the report shows the number of recordings per regime).
+  There is no multiplicity correction: with R regimes compared, about
+  0.05·R that are truly unchanged are expected to read better or worse by
+  chance; the report prints that number beside its counts. Rows not comparable by construction are marked and not
   counted: group F drift (the oracle mix follows the labeled drift,
   favoring the prototype) and group H oracle QSO labels with a nonzero
   answering offset (the answering station is off the mix, handicapping

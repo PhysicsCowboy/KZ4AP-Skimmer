@@ -52,6 +52,51 @@ def test_decode_writes_one_text_per_label_in_label_order(tmp_path):
     assert np.load(tmp_path / "proto" / "t-proto" / "p1" / "a" / "1.npy").shape == (3000,)
 
 
+def two_channel_recording(tmp_path, samples=(3000, 3000)):
+    """Oracle recording "a": two labels, two 2 s noise channels at 1500 samples/s (the second's file holds
+    samples[1] samples while the manifest says 3000)."""
+    manifest(tmp_path, [rec("a", True)])
+    (tmp_path / "a.json").write_text(json.dumps({"signals": [
+        {"text": "E", "start_s": 0.5, "end_s": 1.0, "wpm": 25.0, "snr_db": 10.0},
+        {"text": "T", "start_s": 0.5, "end_s": 1.0, "wpm": 25.0, "snr_db": 10.0}]}))
+    record_dir = tmp_path / "channels" / "a"
+    record_dir.mkdir(parents=True)
+    rng = np.random.default_rng(3)
+    channels = []
+    for i, n in zip((1, 2), samples):
+        ((rng.standard_normal(n) + 1j * rng.standard_normal(n)) * 0.1).astype("<c8").tofile(record_dir / f"channel-{i}.c64")
+        channels.append({"track_id": i, "label_index": i - 1, "label_freq_hz": 0.0, "center_hz": 0.0,
+                         "first_sample_index": 0, "samples": 3000, "file": f"channel-{i}.c64"})
+    (record_dir / "channels.json").write_text(json.dumps({"sample_rate_hz": 1500.0, "channels": channels}))
+
+
+def test_decode_resumes_skipping_recordings_decoded_with_the_same_config(tmp_path, capsys):
+    two_channel_recording(tmp_path)
+    runner.decode(tmp_path, "t-proto", jobs=1)
+    path = tmp_path / "proto" / "t-proto" / "a.decoded.json"
+    decoded = json.loads(path.read_text())
+    path.write_text(json.dumps({**decoded, "marker": 1}))  # a file this run must leave alone
+    capsys.readouterr()
+    runner.decode(tmp_path, "t-proto", jobs=1)
+    assert json.loads(path.read_text())["marker"] == 1
+    assert "skipped 1 recordings" in capsys.readouterr().out
+    # another config value: decoded again
+    runner.decode(tmp_path, "t-proto", values={"correction_reach_s": 19.0}, jobs=1)
+    again = json.loads(path.read_text())
+    assert "marker" not in again and again["config"]["correction_reach_s"] == 19.0
+    # keep_p1 with the posteriors missing: decoded again, and the posteriors written
+    runner.decode(tmp_path, "t-proto", values={"correction_reach_s": 19.0}, jobs=1, keep_p1=True)
+    assert (tmp_path / "proto" / "t-proto" / "p1" / "a" / "1.npy").exists()
+
+
+def test_a_failing_channel_is_named_by_its_recording_and_position(tmp_path):
+    import pytest
+    two_channel_recording(tmp_path, samples=(3000, 2999))  # channel position 1 is one sample short
+    with pytest.raises(runner.ChannelFailed, match=r"channels.a, channel position 1 failed: ValueError"):
+        runner.decode(tmp_path, "t-proto", jobs=1)
+    assert not (tmp_path / "proto" / "t-proto" / "a.decoded.json").exists()  # no incomplete file
+
+
 def test_oracle_copies_are_recorded_and_scored_by_the_engine_front_ends(tmp_path, monkeypatch):
     manifest(tmp_path, [rec("a", True), {**rec("p", False), "group": "pauses"}, {**rec("h", False), "group": "H two-station QSO"}])
     assert [j["result"] for j in runner.oracle_scorings(tmp_path)] == ["a", "p.oracle"]
@@ -118,3 +163,14 @@ def test_score_hands_each_decoded_file_to_the_bench(tmp_path, monkeypatch):
     (cmd,) = calls
     assert cmd[cmd.index("--score-decoded") + 1] == str(tmp_path / "proto" / "t-proto" / "a.decoded.json")
     assert cmd[cmd.index("--json") + 1] == str(tmp_path / "results" / "t-proto" / "a.json")
+
+
+def test_score_says_how_many_scorings_and_labels_had_a_decoded_file(tmp_path, monkeypatch, capsys):
+    manifest(tmp_path, [rec("a", True), rec("b", True)])
+    for name, count in (("a", 2), ("b", 3)):
+        (tmp_path / f"{name}.json").write_text(json.dumps({"signals": [{}] * count}))
+    (tmp_path / "proto" / "t-proto").mkdir(parents=True)
+    (tmp_path / "proto" / "t-proto" / "b.decoded.json").write_text("{}")
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **k: subprocess.CompletedProcess(cmd, 0, "CER 0\n", ""))
+    runner.score(tmp_path, tmp_path / "kz4ap-bench", "t-proto")
+    assert "t-proto: scored 1 of 2 scorings (3 of 5 labels)" in capsys.readouterr().out

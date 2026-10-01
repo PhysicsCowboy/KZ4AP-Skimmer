@@ -497,3 +497,28 @@ def test_load_results_reads_the_given_directories_and_front_ends(tmp_path):
     assert {r["front_end"] for r in load_results(tmp_path)[0]} == {"baseline"}
     rows, _ = load_results(tmp_path, [tmp_path / "results", tmp_path / "experiments" / "results"], ["exp-a"])
     assert {r["front_end"] for r in rows} == {"exp-a"}
+
+
+def test_track_splits_honor_results_dirs_front_ends_and_only(tmp_path):
+    rec = Recording("qso", "H two-station QSO", 8000, 12.0, 5, False, [_two_station(100.0)], True)
+    write_suite([rec], tmp_path, "test")
+    tracks = {"tracks": [{"id": 1, "freq_hz": 1001.0, "text": "CQ"}, {"id": 2, "freq_hz": 1099.0, "text": "K1"}],
+              "score": {"signals": []}}
+    for root, fe in ((tmp_path / "results", "baseline"), (tmp_path / "exp", "exp-a")):
+        (root / fe).mkdir(parents=True)
+        (root / fe / "qso.json").write_text(json.dumps(tracks))
+    key = ("exp-a", "separate-track, offset 100 Hz")
+    assert key not in track_splits(tmp_path)  # default: out_dir/results only
+    assert set(track_splits(tmp_path, [tmp_path / "results", tmp_path / "exp"], ["exp-a"])) == {key}
+    assert track_splits(tmp_path, [tmp_path / "exp"], only="^other$") == {}
+
+
+def test_load_results_rejects_a_front_end_under_two_roots(tmp_path):
+    rec = Recording("tiny", "A sensitivity", 8000, 3.0, 5, True, [SignalSpec("CQ", 1000.0, 25.0, 10.0, 0.5)])
+    write_suite([rec], tmp_path, "test")
+    for root in (tmp_path / "results", tmp_path / "exp"):
+        (root / "matched").mkdir(parents=True)
+        (root / "matched" / "tiny.json").write_text(json.dumps({"score": {"signals": [_fake_signal(0)]}}))
+    from kz4ap_synth.suites import load_results
+    with pytest.raises(ValueError, match="matched"):
+        load_results(tmp_path, [tmp_path / "results", tmp_path / "exp"])

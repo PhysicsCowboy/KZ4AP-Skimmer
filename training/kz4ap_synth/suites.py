@@ -676,13 +676,13 @@ def paired_differences(rows, a: str = "baseline", b: str = "matched") -> dict:
     for r in rows:
         if r["scored"]:
             by_front_end.setdefault(r["front_end"], {})[(r["group"], r["tag"], r["recording"], r["index"])] = r
-    base, matched = by_front_end.get(a, {}), by_front_end.get(b, {})
+    rows_a, rows_b = by_front_end.get(a, {}), by_front_end.get(b, {})
     diffs: dict = {}
     limited: dict = {}
-    for key in sorted(set(base) & set(matched)):
-        b, m = base[key], matched[key]
-        diffs.setdefault(key[:2], []).append(_ratio(m["edits"], m["symbols"]) - _ratio(b["edits"], b["symbols"]))
-        limited[key[:2]] = limited.get(key[:2], False) or bool(m.get("beyond_oracle_anchor"))
+    for key in sorted(set(rows_a) & set(rows_b)):
+        ra, rb = rows_a[key], rows_b[key]
+        diffs.setdefault(key[:2], []).append(_ratio(rb["edits"], rb["symbols"]) - _ratio(ra["edits"], ra["symbols"]))
+        limited[key[:2]] = limited.get(key[:2], False) or bool(rb.get("beyond_oracle_anchor"))
     out = {}
     for key, d in diffs.items():
         values = np.array(d)
@@ -726,16 +726,25 @@ def _row_regime(oracle: bool, label: dict, front_end: str) -> str | None:
     return qso_regime(offset, front_end)
 
 
+def front_end_dirs(out_dir: Path, results_dirs=None, front_ends=None) -> list[Path]:
+    """The front-end directories under results_dirs (default: out_dir/results), sorted by name, or only those named
+    in front_ends. A front-end name found under two roots is an error: its results would be counted twice."""
+    roots = results_dirs if results_dirs is not None else [Path(out_dir) / "results"]
+    found = [p for root in roots if Path(root).exists() for p in Path(root).iterdir() if p.is_dir()
+             and (front_ends is None or p.name in front_ends)]
+    names = [p.name for p in found]
+    twice = sorted({n for n in names if names.count(n) > 1})
+    if twice:
+        raise ValueError(f"front end(s) {twice} found under more than one results directory")
+    return sorted(found, key=lambda p: p.name)
+
+
 def load_results(out_dir: Path, results_dirs=None, front_ends=None):
     """Per-signal rows and per-recording timings from every front-end directory in results_dirs (default:
     out_dir/results), or only those named in front_ends."""
     manifest = json.loads((out_dir / "manifest.json").read_text())
     rows, timings = [], []
-    roots = results_dirs if results_dirs is not None else [out_dir / "results"]
-    fe_dirs = sorted((p for root in roots if root.exists() for p in root.iterdir() if p.is_dir()), key=lambda p: p.name)
-    for fe_dir in fe_dirs:
-        if front_ends is not None and fe_dir.name not in front_ends:
-            continue
+    for fe_dir in front_end_dirs(out_dir, results_dirs, front_ends):
         for rec in manifest["recordings"]:
             scorings = [(s, rec["oracle"]) for s in _scorings(rec)] + [(s, True) for s in oracle_copies(rec)]
             for (label_file, result_name, group), oracle in scorings:
@@ -804,16 +813,19 @@ def aggregate_overs(rows) -> dict:
     return {k: {**g, "cer": _ratio(g["edits"], g["symbols"])} for k, g in groups.items()}
 
 
-def track_splits(out_dir: Path) -> dict:
+def track_splits(out_dir: Path, results_dirs=None, front_ends=None, only: str | None = None) -> dict:
     """Group H through the detector: for each QSO label, the tracks that decoded text within
     25 Hz of either station's carrier (birth frequency), averaged by (front end, tag).
-    1 means the QSO stayed one track; 2 means it split into one per station."""
+    1 means the QSO stayed one track; 2 means it split into one per station. results_dirs and
+    front_ends as in load_results; only: a regular expression on recording names."""
     manifest = json.loads((out_dir / "manifest.json").read_text())
     counts: dict = {}
-    for fe_dir in sorted(p for p in (out_dir / "results").iterdir() if p.is_dir()):
+    for fe_dir in front_end_dirs(out_dir, results_dirs, front_ends):
         for rec in manifest["recordings"]:
             path = fe_dir / f"{rec['name']}.json"
             if rec["oracle"] or not rec.get("station_labels") or not path.exists():
+                continue
+            if only is not None and not re.search(only, rec["name"]):
                 continue
             tracks = [t for t in json.loads(path.read_text()).get("tracks", []) if t["text"].strip()]
             for label in json.loads((out_dir / rec["labels"]).read_text())["signals"]:

@@ -1,6 +1,6 @@
-"""The prototype against the engine's front ends on the same oracle signals, every regime included: the full
-comparison the owner decides on (spec section 7; owner, 2026-09-30: no acceptance gate), from the suite's
-results (plan Task 12)."""
+"""The prototype against the engine's front ends on the same signals, every regime included (oracle channels, and
+the detector path: the Matched path's detector's channels): the full comparison the owner decides on (spec
+section 7; owner, 2026-09-30: no acceptance gate), from the suite's results (plan Task 12)."""
 
 from __future__ import annotations
 
@@ -11,10 +11,25 @@ from pathlib import Path
 from kz4ap_synth import suites
 
 from . import metrics
+from .runner import detector_jobs, oracle_scorings
 
 REFERENCES = ("matched", "baseline")
 # The start-up runaways of milestone 2 (docs/signal-processing.md 8b, "Start-up runaway"): recording, labeled Hz.
 RUNAWAY_CASES = (("A-awgn-25wpm-1-s1", 6606.5), ("A-awgn-25wpm-0-s2", -2991.9))
+# A verdict calls a regime better or worse when its paired bootstrap 95% interval excludes 0 (a convention, heuristic).
+# Each regime is one such test, with no multiplicity correction: a regime truly unchanged reads better or worse with
+# probability about 1 - 0.95 = 0.05.
+FALSE_CALL_RATE = 0.05
+STATISTICS_NOTE = (
+    "Statistics. CER columns are pooled: summed edits over summed symbols. The paired columns are the mean over "
+    "signals of the per-signal CER difference (front end minus reference, signal by signal on the same labels), so "
+    "a paired mean and the difference of two pooled CERs can differ, even in sign. Intervals are bootstrap 95% "
+    "intervals with the signal as the unit (1000 resamples of signals within each group and tag); signals of one "
+    "recording share its noise and its keying draws, and that within-recording correlation is not modeled, so the "
+    "intervals are likely too narrow where a regime has few recordings (the recordings column says how many). "
+    "\"better\" / \"worse\" means the paired interval excludes 0 (a convention, heuristic), with no correction for "
+    "the number of regimes compared: of R regimes that are truly unchanged, about 0.05·R are expected to read better "
+    "or worse by chance.")
 
 
 def comparable_rows(out_dir, name, results_dirs=None, only=None) -> list[dict]:
@@ -72,15 +87,14 @@ def detector_measures(out_dir, name, results_dirs=None, only=None) -> dict:
     As the bench counts them they depend on the decoder (a track counts only if it decoded text)."""
     out_dir = Path(out_dir)
     manifest = json.loads((out_dir / "manifest.json").read_text())
-    roots = results_dirs or [out_dir / "results"]
+    fe_dirs = {p.name: p for p in suites.front_end_dirs(out_dir, results_dirs, [name, *REFERENCES])}
     out: dict = {}
     for fe in (name, *REFERENCES):
         for rec in manifest["recordings"]:
-            if rec["oracle"] or (only and not re.search(only, rec["name"])):
+            if rec["oracle"] or (only and not re.search(only, rec["name"])) or fe not in fe_dirs:
                 continue
-            path = next((Path(r) / fe / f"{rec['name']}.json" for r in roots
-                         if (Path(r) / fe / f"{rec['name']}.json").exists()), None)
-            if path is None:
+            path = fe_dirs[fe] / f"{rec['name']}.json"
+            if not path.exists():
                 continue
             s = json.loads(path.read_text())["score"]
             g = out.setdefault(fe, {}).setdefault(rec["group"], {"recordings": 0, "scored": 0, "detected": 0,
@@ -91,10 +105,27 @@ def detector_measures(out_dir, name, results_dirs=None, only=None) -> dict:
     for groups in out.values():
         for g in groups.values():
             g["detection_recall"] = g["detected"] / g["scored"] if g["scored"] else None
-    splits = suites.track_splits(out_dir)
+    # the same directories and recordings as the detection counts above
+    splits = suites.track_splits(out_dir, results_dirs, [name, *REFERENCES], only)
     return {"by_front_end": out,
-            "tracks_per_qso": {f"{fe} | {tag}": v for (fe, tag), v in sorted(splits.items())
-                               if fe in (name, *REFERENCES)}}
+            "tracks_per_qso": {f"{fe} | {tag}": v for (fe, tag), v in sorted(splits.items())}}
+
+
+def coverage(out_dir, name, results_dirs=None, only=None) -> dict:
+    """How much of the suite the prototype's results cover: scorings (result files) and labels with a result for
+    `name`, out of those available (oracle scorings and the detector path's scorings; `only` on result names)."""
+    out_dir = Path(out_dir)
+    available = [(j["result"], j["labels"]) for j in oracle_scorings(out_dir, only)]
+    available += [(result, labels) for j in detector_jobs(out_dir, only) for labels, result, _ in j["scorings"]]
+    fe_dir = {p.name: p for p in suites.front_end_dirs(out_dir, results_dirs, [name])}.get(name)
+    out = {"scorings": 0, "scorings_available": len(available), "labels": 0, "labels_available": 0}
+    for result, labels in available:
+        count = len(json.loads((out_dir / labels).read_text())["signals"])
+        out["labels_available"] += count
+        if fe_dir is not None and (fe_dir / f"{result}.json").exists():
+            out["scorings"] += 1
+            out["labels"] += count
+    return out
 
 
 def verdict(interval) -> str:
@@ -107,6 +138,15 @@ def verdict(interval) -> str:
     if interval[0] > 0:
         return "worse"
     return "unchanged"
+
+
+def _recordings(rows, name) -> dict:
+    """(group, tag): the number of recordings (result names) among the prototype's scored rows."""
+    found: dict = {}
+    for r in rows:
+        if r["front_end"] == name and r["scored"]:
+            found.setdefault((r["group"], r["tag"]), set()).add(r["recording"])
+    return {k: len(v) for k, v in found.items()}
 
 
 def comparison(rows, name, out_dir, results_dirs=None) -> dict:
@@ -132,9 +172,11 @@ def comparison(rows, name, out_dir, results_dirs=None) -> dict:
                  **{fe: _signal_cer(out_dir, results_dirs, fe, rec, f) for fe in (name, *REFERENCES)}}
                 for rec, f in RUNAWAY_CASES]
     pairs = {ref: suites.paired_differences(rows, ref, name) for ref in REFERENCES}
+    recordings = _recordings(rows, name)
     regimes = []
     for group, tag in sorted(set(pairs["matched"]) | set(pairs["baseline"])):
-        entry = {"group": group, "tag": tag, "not_comparable": not_comparable(group, tag),
+        entry = {"group": group, "tag": tag, "recordings": recordings.get((group, tag), 0),
+                 "not_comparable": not_comparable(group, tag),
                  "note": not_comparable(group, tag) or ("detector path: Matched's tracks; Envelope's detector opens "
                                                         "its own" if group in DETECTOR_PATH_GROUPS else None)}
         for ref in REFERENCES:
@@ -144,8 +186,11 @@ def comparison(rows, name, out_dir, results_dirs=None) -> dict:
         regimes.append(entry)
     counts = {ref: {k: sum(1 for e in regimes if e[ref] and e[ref]["verdict"] == k and not e["not_comparable"])
                     for k in ("better", "worse", "unchanged", "no interval")} for ref in REFERENCES}
+    # With no multiplicity correction: the better-or-worse calls expected by chance if every compared regime (one
+    # with an interval) were truly unchanged
+    chance = {ref: FALSE_CALL_RATE * sum(c[k] for k in ("better", "worse", "unchanged")) for ref, c in counts.items()}
     return {"crossings": crossings, "r1": r1, "r2": r2, "runaways": runaways, "regimes": regimes, "counts": counts,
-            "detector_gap": DETECTOR_GAP}
+            "expected_by_chance": chance, "detector_gap": DETECTOR_GAP}
 
 
 def _fmt(v, interval=None, fmt=".3f"):
@@ -158,13 +203,23 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
     agg = suites.aggregate(rows)
     pairs = {ref: suites.paired_differences(rows, ref, name) for ref in REFERENCES}
     comp = comparison(rows, name, out_dir, results_dirs)
+    cover = coverage(out_dir, name, results_dirs, only)
+    recordings = _recordings(rows, name)
     lines = [f"# {name} against Matched and Envelope" + (f" ({suffix})" if suffix else ""), "",
-             "Same oracle signals for all three. CER with bootstrap 95% intervals over signals; paired columns: "
-             f"{name} minus the reference, signal by signal (negative favors {name}). S₅₀₀: key-down carrier power "
-             "over noise power in 500 Hz, dB. Rows marked * are not comparable (reason given).", ""]
+             f"The same labeled signals for all three, on the signals {name} has results for. Oracle groups (and the "
+             "`, oracle` copies): every front end decodes one oracle channel per label. Detector-path groups (group H "
+             f"through the detector, band, crowded, pauses, strong, tune-up, first sample): {name} decodes the "
+             "channels the Matched path's detector opened, so against Matched it is the same tracks, while "
+             "Envelope's detector opens its own tracks, so against Envelope it is the same labels only. Paired "
+             f"columns: {name} minus the reference (negative favors {name}). S₅₀₀: key-down carrier power over noise "
+             "power in 500 Hz, dB. Rows marked * are not comparable (reason given).", "",
+             f"Coverage: {name} has results for {cover['scorings']} of {cover['scorings_available']} scorings "
+             f"({cover['labels']} of {cover['labels_available']} labels).", "",
+             STATISTICS_NOTE, ""]
     for group in sorted({g for _, g, _ in agg}):
-        lines += [f"## {group}", "", f"| tag | signals | {name} CER | Matched CER | Envelope CER | {name} − Matched | "
-                  f"{name} − Envelope | first-word CER {name} / Matched / Envelope |", "|---|---|---|---|---|---|---|---|"]
+        lines += [f"## {group}", "", f"| tag | recordings | signals | {name} CER | Matched CER | Envelope CER | "
+                  f"{name} − Matched (paired mean) | {name} − Envelope (paired mean) | "
+                  f"first-word CER {name} / Matched / Envelope |", "|---|---|---|---|---|---|---|---|---|"]
         for tag in sorted({t for fe, g, t in agg if g == group}):
             v = {fe: agg.get((fe, group, tag)) for fe in (name, *REFERENCES)}
             if v[name] is None:
@@ -173,7 +228,8 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
             p = [pairs[ref].get((group, tag), {}) for ref in REFERENCES]
             cells = [_fmt(v[fe]["cer"], v[fe]["cer_interval"]) if v[fe] else "—" for fe in (name, *REFERENCES)]
             fw = " / ".join(f"{v[fe]['first_word_cer']:.3f}" if v[fe] else "—" for fe in (name, *REFERENCES))
-            lines.append(f"| {tag}{' *' + note if note else ''} | {v[name]['signals']} | {' | '.join(cells)} | "
+            lines.append(f"| {tag}{' *' + note if note else ''} | {recordings.get((group, tag), 0)} | "
+                         f"{v[name]['signals']} | {' | '.join(cells)} | "
                          f"{_fmt(p[0].get('mean'), p[0].get('interval'), '+.3f')} | "
                          f"{_fmt(p[1].get('mean'), p[1].get('interval'), '+.3f')} | {fw} |")
         lines.append("")
@@ -193,15 +249,20 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
               "Start-up runaway cases (CER): " + "; ".join(
                   f"{c['recording']} {c['freq_hz']:+.1f} Hz: " + ", ".join(
                       f"{names[fe]} {_fmt(c[fe])}" for fe in (name, *REFERENCES)) for c in comp["runaways"]) + ".", "",
-              f"Every regime: {name} minus the reference, paired CER with its 95% interval; better / worse beyond the "
-              "interval, else unchanged. Comparable regimes: " + "; ".join(
+              f"Every regime: {name} minus the reference, the per-signal mean CER difference with its paired bootstrap "
+              "95% interval (signals as the unit); better / worse when the interval excludes 0 (a convention, "
+              "heuristic), else unchanged; no correction for the number of regimes. Comparable regimes (not-comparable "
+              "rows left out): " + "; ".join(
                   f"against {names[ref]}: " + ", ".join(f"{v} {k}" for k, v in comp["counts"][ref].items())
+                  + f" (if all {sum(comp['counts'][ref][k] for k in ('better', 'worse', 'unchanged'))} with an "
+                  f"interval were truly unchanged, about {comp['expected_by_chance'][ref]:.1f} would read better or "
+                  "worse by chance)"
                   for ref in REFERENCES) + ".", "",
-              "| group | tag | against Matched | against Envelope | note |", "|---|---|---|---|---|"]
+              "| group | tag | recordings | against Matched | against Envelope | note |", "|---|---|---|---|---|---|"]
     for e in comp["regimes"]:
         cells = [f"{_fmt(e[ref]['mean'], e[ref]['interval'], '+.3f')} {e[ref]['verdict']}" if e[ref] else "—"
                  for ref in REFERENCES]
-        lines.append(f"| {e['group']} | {e['tag']} | {cells[0]} | {cells[1]} | {e['note'] or ''} |")
+        lines.append(f"| {e['group']} | {e['tag']} | {e['recordings']} | {cells[0]} | {cells[1]} | {e['note'] or ''} |")
     measures = detector_measures(out_dir, name, results_dirs, only)
     lines += ["", "Detection measures on the detector path (the Matched path's detector; as the bench counts them, a "
               "track counts only if it decoded text):", "",
@@ -211,9 +272,10 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
         for g, v in sorted(groups.items()):
             lines.append(f"| {g} | {names[fe]} | {v['recordings']} | {v['scored']} | {v['detected']} | "
                          f"{_fmt(v['detection_recall'], None, '.3f')} | {v['false_tracks']} |")
-    # the keys are "<front end> | <tag>", two cells
-    lines += ["", "| front end | group-H tag | QSOs | tracks per QSO |", "|---|---|---|---|"]
-    lines += [f"| {k} | {v['qsos']} | {v['mean_tracks']:.2f} |" for k, v in measures["tracks_per_qso"].items()]
+    if measures["tracks_per_qso"]:  # the keys are "<front end> | <tag>", two cells
+        lines += ["", "Tracks per QSO (group H through the detector, the same recordings as above):", "",
+                  "| front end | group-H tag | QSOs | tracks per QSO |", "|---|---|---|---|"]
+        lines += [f"| {k} | {v['qsos']} | {v['mean_tracks']:.2f} |" for k, v in measures["tracks_per_qso"].items()]
     lines += ["", f"**Stated gap.** {comp['detector_gap']}", ""]
     lines += ["", f"## {name}'s own statistics", ""]
     speed = metrics.speed_errors(out_dir, name, only)
@@ -236,7 +298,8 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
               "channel-second (Python prototype; not comparable with the engine's C++)."]
     path = out_dir / f"report-{name}{('-' + suffix) if suffix else ''}.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    (path.with_suffix(".json")).write_text(json.dumps({"comparison": comp, "detector_measures": measures, "speed": speed, "switches": switches,
+    (path.with_suffix(".json")).write_text(json.dumps({"comparison": comp, "coverage": cover, "detector_measures": measures,
+                                                       "speed": speed, "switches": switches,
                                                        "over_starts": overs, "false_characters": false},
                                                       indent=2, default=str) + "\n")
     return path
