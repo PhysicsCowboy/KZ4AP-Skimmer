@@ -78,6 +78,18 @@ the periodicity and speed statistics). S₅₀₀: key-down carrier power over n
 - Machine: 12th Gen Intel(R) Core(TM) i7-12700H (6 P-cores, 8 E-cores, 20 logical CPUs), Windows 11,
   on AC power. Every prototype process opts out of Windows power throttling
   (`kz4ap_proto.power.disable_power_throttling`, Task 11p). Code: `6d610be` (the experiment harness).
+  Used for Tasks 1–12 and for the first `exp-ref` and E10 runs.
+- From 2026-10-01 every experiment in section 3 is measured on a second machine: Linux (Ubuntu 22.04),
+  10-core Intel Xeon (Ice Lake), 125 GB RAM, g++ 11.4, Python 3.12, numpy 2.5.3, 10 workers. The
+  Windows machine's memory could not hold the runs alongside its other applications (section 3.0).
+  Reproduction check on the second machine (code `d8160f5`): the suite generated there is identical
+  to the Windows suite (all 123 WAV files bit for bit, all 133 label files after CRLF → LF); all
+  3 556 recorded channel streams are bit for bit identical; all 318 Envelope and Matched result files
+  agree in every decoded text and CER, and differ only in timing and in the detector's frequency
+  fields (relative difference about 10⁻¹⁰, which we attribute to compiler and math-library rounding,
+  not traced); the prototype's `exp-ref` and `exp-E10-level` reproduce the Windows runs line for line
+  except the CPU times. So results from the two machines are interchangeable except CPU and wall
+  time, and every CPU time in section 3 is from the Linux machine.
 - Suite: `build/suite/full3` (3 seeds; 123 recordings with group I). Prototype input: the oracle
   channels' recorded streams (120 scorings, the 27 oracle copies of the detector-only groups included), mixed to 0 Hz at the labeled frequency and drift.
 - Development set (experiments): `experiments.DEV` — seed 1 of groups A, C, D, E, F, G, H (oracle, both
@@ -124,9 +136,12 @@ the plan; its outcome; the value adopted and its status.)
 
 All defaults (`ProtoConfig()` at `6d610be`), branch 1's posteriors kept for E1–E3. 21 scorings, 525
 channels (74 748 channel-seconds); 509 signals scored. **Pooled CER 0.3060** (all groups pooled, S₅₀₀
-from −10 dB up; per-group rows in the E10 compare files). Decoding CPU 750.2 ms per channel-second.
+from −10 dB up; per-group rows in the E10 compare files). Decoding CPU 317.7 ms per channel-second,
+wall time 40.1 min (Linux machine, 10 workers; the same command with
+`--bench build/linux/bench/kz4ap-bench --jobs 10`).
 
-Wall time: about 71 min, run in two parts. The first part (18 workers, 01:23–02:04) decoded 14
+On the Windows machine the same run gave the same pooled CER, 750.2 ms of CPU per channel-second, and
+about 71 min of wall time, run in two parts. The first part (18 workers, 01:23–02:04) decoded 14
 recordings and was then stopped by the agent harness because the machine ran low on memory (other
 applications held most of the 31.7 GB). The decode resumes, so the second part (10 workers, 30.3 min)
 decoded the other 7 and scored all 21. In the second part the prototype's processes used at most
@@ -134,15 +149,39 @@ decoded the other 7 and scored all 21. In the second part the prototype's proces
 and free memory stayed at 4.28 GB or more. Later runs use 10 workers and a watchdog that stops
 the run cleanly if free memory falls below 2 GB.
 
-### 3.1 E10 — the noise level (in progress)
+### 3.1 E10 — the noise level
 
-Batch `build/suite/full3/experiments/E10.json` (the plan's spec), 10 workers. Variant (b),
-`exp-E10-level` (`noise_method = spectrum-level`), finished: 509 signals, pooled CER 0.3089, 71.5 min
-wall, 567.2 ms of CPU per channel-second; paired CER against `exp-ref` **+0.0020 (−0.0026 to +0.0072)**
-over all 509 signals; no group's paired interval lies entirely above or below 0 (group E: −0.0007
-(−0.0259 to +0.0181), 16 signals). Variant (c), `exp-E10-branch`, was stopped after 16 of 21 recordings
-(agent harness, low memory again at about 3.7 GB free); it resumes from there. The rule is applied when
-variant (c) is complete.
+Question: how each branch gets its noise power σ_v,k². Variants: (a) `spectrum`, the reference
+(branch 1's three-tap level × the shared spectrum's ratios); (b) `spectrum-level` (the masked
+spectrum's own level ÷ the measured mask bias); (c) `branch` (every branch its own three-tap
+estimate; the spec's recorded fallback). Development set: 509 signals, 74 748 channel-seconds.
+
+```
+.venv/bin/python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench build/linux/bench/kz4ap-bench --spec build/suite/full3/experiments/E10.json --jobs 10
+```
+
+| variant | pooled CER | paired CER against (a), all 509 signals | groups with interval entirely above 0 | CPU per channel-second | wall |
+|---|---|---|---|---|---|
+| (a) `spectrum` (`exp-ref`) | 0.3060 | — | — | 317.7 ms | 40.1 min |
+| (b) `spectrum-level` | 0.3089 | +0.0020 (−0.0026 to +0.0072) | none | 315.3 ms | 39.6 min |
+| (c) `branch` | 0.3144 | **+0.0104 (+0.0033 to +0.0204)** | A +0.0213 (+0.0046 to +0.0463), B +0.0251 (+0.0051 to +0.0473), F +0.0115 (+0.0052 to +0.0180), G +0.0009 (+0.0002 to +0.0015) | 327.3 ms | 41.1 min |
+
+Group E, read separately as the plan asks (a neighbor leaking into the short branches; 16 signals):
+(b) −0.0007 (−0.0259 to +0.0181), (c) −0.0006 (−0.0450 to +0.0372); neither differs from (a). The only
+interval entirely below 0 is variant (c) on group H, oracle view (12 signals): −0.0069 (−0.0148 to
+−0.0002). Full tables: `build/suite/full3/experiments/compare-exp-E10-level-vs-exp-ref.md` and
+`compare-exp-E10-branch-vs-exp-ref.md` (git-ignored).
+
+Rule (pre-registered): a variant qualifies if its pooled paired CER interval lies entirely below 0 and
+no group's paired interval lies entirely above 0; adopt the qualifying variant with the lower pooled
+mean; if none qualifies, keep (a). **Outcome: neither qualifies.** (b)'s interval contains 0; (c)'s
+lies entirely above 0, so (c) is measurably worse, mainly in groups A, B and F. **Kept: (a)
+`noise_method = "spectrum"`**, unchanged in `ProtoConfig`; `exp-ref` stays the reference. Status of
+the choice: measured (E10).
+
+The Windows runs of this batch, kept for the record: variant (b) gave the same table except CPU
+(567.2 ms per channel-second, 71.5 min wall); variant (c) was stopped after 16 of 21 recordings (the
+agent harness, low memory at about 3.7 GB free) and was completed only on the Linux machine.
 
 ## 4. Final evaluation (Task 15)
 
