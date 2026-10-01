@@ -162,6 +162,26 @@ Envelope paths, with intervals (spec §7, stage 2: a required part of the
 evaluation). Which tracks the detector opens is unchanged by the redesign. No
 acceptance gate: the owner decides from the comparison.
 
+### A validated offline measure for the speed estimate T_P (stage 2)
+
+Stage 1's E1 judged the periodicity methods offline, by precision and coverage
+inside transmissions of constant-speed stations at S₅₀₀ ≥ 0 dB, and that
+measure did not predict decoding. The edge comb won it (coverage 0.749 against
+the comb's 0.589 at precision 0.95) yet decoded worse: paired CER +0.0502
+(+0.0279 to +0.0742) against the reference
+(`docs/plans/2026-09-30-milestone-2b-stage-1-results.md`, sections 3.2 and
+3.6). Owner's decision 2026-10-01 (option A): stage 1 does not redesign the
+measure. For stage 2, build an offline measure that also counts:
+- confident T_P outside transmissions;
+- points under fading, interference and tuning;
+- the time to the first confident estimate.
+
+Validate it against decoding runs before using it to choose, so that speed-
+estimator tuning does not need a full decoding run (about 40 min of wall time)
+per candidate. Also measure the mechanism the stage-1 record leaves
+conjectured: whether the edge comb is confident and wrong outside
+transmissions, in fading gaps and under interference.
+
 ### Benchmark scenarios to add first
 
 Done in milestone 2, part 1 (`training/kz4ap_synth/suites.py`).
