@@ -183,8 +183,217 @@ The Windows runs of this batch, kept for the record: variant (b) gave the same t
 (567.2 ms per channel-second, 71.5 min wall); variant (c) was stopped after 16 of 21 recordings (the
 agent harness, low memory at about 3.7 GB free) and was completed only on the Linux machine.
 
+### 3.2 E1 — the periodicity method
+
+Question: which estimator gives T_P (spec §4.4 as corrected, §8). Variants: the comb on Π = 2T (the
+owner's default), the sign-weighted edge comb, and the spectrum-shape fit, each at its default teeth
+or nulls and widths. Offline on `exp-ref`'s stored branch-1 posteriors (the estimate never feeds back
+into them, so this is exact for every variant), every window 1, 2, 3, 5, 10 s logged, the rule "the
+confident estimate with the shortest window" over the default windows (2, 5, 10) s. Points: every
+0.25 s update inside a transmission of a scored, constant-speed label at S₅₀₀ ≥ 0 dB in groups A, B
+(mixed style), C, G, H (per-station view) and I of the development set: **175 551 points**. Correct:
+within 5% of the true dit, 1.2 s / WPM. Precision: correct ÷ confident; coverage: confident ÷ points;
+intervals: bootstrap 95% over channels. Each variant's threshold is calibrated as the lowest of 100
+quantiles of its scores at which precision reaches 0.95.
+
+```
+.venv/bin/python -m kz4ap_proto.experiments periodicity --out build/suite/full3 --name exp-ref --set periodicity_method=<comb|edge|spectrum> --set "periodicity_windows_s=[1,2,3,5,10]" --subsets "2,5,10" --jobs 10
+```
+
+| variant | threshold | precision | coverage | median time to first confident, s |
+|---|---|---|---|---|
+| comb (default) | calibrated 0.2506 | 0.950 (0.943–0.957) | **0.589 (0.549–0.628)** | 2.08 |
+| comb | configured 0.03 (placeholder) | 0.809 (0.786–0.832) | 0.994 (0.993–0.994) | 0.49 |
+| edge comb | calibrated 0.03232 | 0.951 (0.938–0.961) | **0.749 (0.712–0.783)** | 1.16 |
+| edge comb | configured 0.03 (placeholder) | 0.940 (0.926–0.953) | 0.795 (0.762–0.826) | 1.11 |
+| spectrum fit | calibrated: no threshold reaches 0.95 | — | — | — |
+| spectrum fit | configured 1.5 nats (placeholder) | 0.109 (0.086–0.131) | 0.758 (0.732–0.781) | 0.91 |
+
+Files: `build/suite/full3/experiments/periodicity-exp-ref-periodicity_method=<variant>-periodicity_windows_s=[1,2,3,5,10].md`
+on the Linux machine; local copies `build/suite/full3/experiments/linux/E1-<variant>.md` (git-ignored;
+the edge comb's file on the Linux machine was overwritten by E2's, whose first two rows are these).
+
+Rule (pre-registered): the comb stays unless another variant's coverage exceeds the comb's with
+non-overlapping intervals; among variants that do, the higher coverage; ties on coverage (overlapping
+intervals) go to the shorter median time to confident, then to the comb. If no variant reaches 0.95
+precision at any threshold, keep the comb and report. **Outcome: the edge comb.** Its coverage,
+0.749 (0.712–0.783), exceeds the comb's, 0.589 (0.549–0.628), with non-overlapping intervals, and it
+is also faster to its first confident estimate (1.16 s against 2.08 s). The spectrum fit reaches 0.95
+precision at no threshold (among the 100 quantiles of its scores), so it cannot qualify; at its
+placeholder threshold its precision is 0.109. **Chosen by the rule: the edge comb** (status
+measured, E1). It was not adopted: the end-to-end check (section 3.5) made decoding worse, so the
+periodicity defaults were reverted and `ProtoConfig` keeps the comb (the owner's default).
+
+The pooled points mix group C's hand and bug stations (where the review found the comb wrong and the
+edge comb best at S₅₀₀ ≥ 10 dB) with the other groups; the plan's table does not show group C apart.
+An observation-only split (not a decision rule) is in section 3.2.1.
+
+#### 3.2.1 Observation only: E1 split by group and by speed
+
+Not part of any rule; recorded because the review and Task 9 raised these questions. Same points and
+windows (2, 5, 10) s as E1; "at the pooled threshold" uses each variant's E1 threshold, "own" calibrates
+a threshold on the part alone (script `build/suite/full3/experiments/scripts/e1_split.py`, output
+`e1-split.md` on the Linux machine; both git-ignored). Fast: true dit T ≤ 31.5 ms (≥ 38.1 WPM).
+
+| variant | part | points (channels) | at the pooled threshold: precision, coverage | own threshold: precision, coverage |
+|---|---|---|---|---|
+| comb | C fists | 48 819 (135) | 0.942 (0.921–0.960), 0.539 (0.467–0.612) | 0.2875: 0.950, 0.418 (0.350–0.489) |
+| comb | all but C | 126 732 (240) | 0.953 (0.946–0.959), 0.608 (0.560–0.653) | 0.2422: 0.950, 0.632 (0.585–0.678) |
+| comb | fast | 22 076 (47) | 0.944 (0.935–0.951), 0.823 (0.731–0.905) | 0.2667: 0.951, 0.786 (0.685–0.869) |
+| comb | slow | 153 475 (328) | 0.951 (0.943–0.960), 0.555 (0.513–0.597) | 0.2454: 0.950, 0.570 (0.529–0.612) |
+| edge comb | C fists | 48 819 (135) | 0.950 (0.932–0.966), 0.743 (0.678–0.802) | 0.03283: 0.952, 0.735 (0.668–0.797) |
+| edge comb | all but C | 126 732 (240) | 0.952 (0.937–0.965), 0.751 (0.707–0.791) | 0.03212: 0.951, 0.756 (0.710–0.797) |
+| edge comb | fast | 22 076 (47) | 0.966 (0.940–0.988), 0.955 (0.916–0.983) | 0.02785: 0.955, 0.975 (0.948–0.991) |
+| edge comb | slow | 153 475 (328) | 0.949 (0.935–0.960), 0.719 (0.679–0.758) | 0.03288: 0.951, 0.707 (0.667–0.747) |
+| spectrum fit | every part | — | no threshold reaches 0.95 | no threshold reaches 0.95 |
+
+So the edge comb's advantage holds in group C and outside it alike, and in both speed ranges. Task 9
+suggested calibrating the spectrum fit's threshold separately for fast candidates (12–31.5 ms, which
+average 2 usable nulls against 3): split by the true speed, neither part reaches 0.95 precision at any
+threshold, so a speed-split threshold would not rescue the spectrum fit on this data. (The split is by
+the true dit, which a decoder does not know; a split by the candidate's T was not computed.)
+
+Where the spectrum fit goes wrong (script `scripts/e3_extra.py`, git-ignored; the shortest of the
+windows 2, 5, 10 s that gives an estimate, any score): its estimate ÷ the true dit falls in
+[0.95, 1.05) for 10.4% of points, [1.05, 1.4) for 21.0%, [2.8, 3.3) for 22.0% and ≥ 3.3 for 24.1%
+(below 0.95: 9.3%; elsewhere: 13.3%). So it most often locks on about 3T or longer, which matches
+Task 9's 3T finding for paddle keying, and its score does not separate right from wrong well: among
+estimates with a score at or above the 50%, 90%, 99% and 99.9% quantiles of its scores (1.638, 2.338,
+3.341 and 4.166 nats), 12.2%, 22.6%, 48.4% and 82.3% are within 5% of T. The calibration searches
+thresholds up to the 99% quantile only, but even the top 0.1% of scores falls short of 0.95.
+
+### 3.4 E3 — teeth and widths of the edge comb
+
+With E1's edge comb and E2's windows (5, 10) s, offline as in E1, one command per setting; the edge
+comb reads `comb_teeth` (teeth at kT, k = 1 … teeth, weighted (−1)^k) and a tooth half-width of
+2 × `comb_width` × T, so `comb_width` = 0.05, 0.075, 0.10 is ±10%, ±15%, ±20% of T:
+
+```
+.venv/bin/python -m kz4ap_proto.experiments periodicity --out build/suite/full3 --name exp-ref --set periodicity_method=edge --set "periodicity_windows_s=[1,2,3,5,10]" --set comb_teeth=<3|4|5> --set comb_width=<0.05|0.075|0.10> --subsets "5,10" --jobs 10
+```
+
+Coverage at each setting's own calibrated threshold (precision 0.950–0.953 in every row; files
+`periodicity-exp-ref-comb_teeth=…-comb_width=…-periodicity_method=edge-periodicity_windows_s=[1,2,3,5,10].md`
+on the Linux machine, git-ignored):
+
+| teeth \ tooth half-width | ±10% of T (0.05) | ±15% of T (0.075) | ±20% of T (0.10) |
+|---|---|---|---|
+| 3 | 0.692 (0.651–0.730), threshold 0.03821, 3.86 s | 0.586 (0.542–0.631), 0.0384, 4.02 s | 0.379 (0.339–0.420), 0.04221, 5.51 s |
+| 4 | 0.874 (0.849–0.897), 0.02345, 3.59 s | **0.865 (0.838–0.889), 0.02214, 3.60 s (default)** | 0.831 (0.802–0.856), 0.02142, 3.66 s |
+| 5 | 0.831 (0.802–0.860), 0.02455, 3.65 s | 0.831 (0.800–0.859), 0.02223, 3.68 s | 0.809 (0.778–0.838), 0.02054, 3.71 s |
+
+(Each cell: coverage with its interval, the calibrated threshold, the median time to the first confident
+estimate.)
+
+Rule (pre-registered): adopt a setting other than the default (4 teeth, 0.075) only if its coverage
+exceeds the default's by more than 0.02 with non-overlapping intervals; among several, the highest
+coverage. **Outcome: none does.** The best other setting, 4 teeth at ±10% of T, is +0.009 above the
+default with overlapping intervals. **Kept: `comb_teeth = 4`, `comb_width = 0.075`** (±15% of T for
+the edge comb; the defaults, unchanged in `ProtoConfig`), status of the choice measured (E3). Lag reach of the adopted edge comb (its teeth at kT, not on
+Π = 2T, so the comb's formula (teeth + 0.5 + width)·2T does not apply): (teeth + tooth half-width)·T
+= (4 + 0.15)·T = 4.15·T, so a T candidate is evaluated only when 4.15·T is at most half the window,
+T ≤ 0.6 s in the 5 s window — the whole grid (12–240 ms).
+
+Calibrated threshold for the adopted method and windows (E2's (5, 10) s row, unchanged by E3):
+0.022138968788232207 (printed 0.02214), precision 0.9503, coverage 0.8652.
+
+### 3.5 E1–E3 end to end: `exp-E1-3`
+
+The settings E1–E3's rules chose — the edge comb, windows (5, 10) s, 4 teeth at ±15% of T, and its
+calibrated threshold 0.022138968788232207 — decoded on the development set and compared with the
+current reference, `exp-ref`. The plan runs this with the new defaults in `ProtoConfig` and no `set`;
+it was run with the same values passed explicitly, which gives the identical configuration (the
+decoded files store it), so that `ProtoConfig` changed only if the rule kept them. Batch
+`build/suite/full3/experiments/E1-3.json` (git-ignored):
+
+```
+{"name": "E1-3", "base": "exp-ref", "subset": "dev", "runs": [{"name": "exp-E1-3", "set": {"periodicity_method": "edge", "periodicity_windows_s": [5.0, 10.0], "edge_confidence_min": 0.022138968788232207}}]}
+.venv/bin/python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench build/linux/bench/kz4ap-bench --spec build/suite/full3/experiments/E1-3.json --jobs 10
+```
+
+509 signals; **pooled CER 0.3356** (against 0.3060); 315.6 ms of CPU per channel-second; 39.6 min wall.
+
+| group | signals | paired CER, `exp-E1-3` − `exp-ref` | paired first-word CER |
+|---|---|---|---|
+| all | 509 | **+0.0476 (+0.0237 to +0.0726)** | +0.3247 (+0.1843 to +0.4873) |
+| A sensitivity | 192 | +0.0634 (+0.0270 to +0.1067) | +0.5220 (+0.2127 to +0.9067) |
+| B fading | 30 | +0.1715 (+0.0418 to +0.3338) | +1.0828 (+0.3694 to +2.0812) |
+| C fists | 135 | −0.0153 (−0.0305 to +0.0014) | +0.0733 (−0.0031 to +0.1589) |
+| D speed | 12 | −0.0515 (−0.1186 to −0.0030) | −0.0417 (−0.1250 to +0.0000) |
+| E interference | 16 | +0.3377 (+0.0973 to +0.6243) | +0.6312 (−0.1918 to +1.6879) |
+| F tuning | 28 | +0.1634 (+0.0762 to +0.2672) | +0.8839 (+0.4105 to +1.5092) |
+| G ragchew | 12 | +0.0703 (−0.0320 to +0.2193) | +0.0093 (−0.0615 to +0.1040) |
+| H two-station QSO, oracle | 12 | −0.0304 (−0.1090 to +0.0652) | −0.1777 (−0.3588 to −0.0005) |
+| H two-station QSO, oracle (per station) | 24 | −0.0159 (−0.2287 to +0.2134) | −0.6473 (−1.6326 to +0.2447) |
+| I Farnsworth | 48 | −0.0099 (−0.0272 to +0.0092) | +0.1219 (−0.0486 to +0.3545) |
+
+The prototype's own statistics move the other way from CER in most groups (`exp-ref` → `exp-E1-3`):
+selected speed off by more than ×1.5 at S₅₀₀ ≥ 6 dB, A 0.0248 → 0.0000, B 0.161 → 0.035, C 0.017 →
+0.004, I 0.032 → 0.007, but E 0.184 → 0.482 (lock-ins 3 → 8 of 16 transmissions); switches per
+minute fall in every group but F (C 7.8 → 2.6, G 10.8 → 4.9); false characters outside transmissions
+rise, A 5.4 → 8.1 per min, B 0.79 → 7.99, E 37.7 → 59.9, F 10.0 → 14.8. So the stronger T_P prior
+picks the right speed more often, yet the text gets worse where it was already noisy or interfered.
+This was not investigated further (it is a design finding, below). Full tables:
+`build/suite/full3/experiments/linux/compare-exp-E1-3-vs-exp-ref.md` (git-ignored).
+
+Rule (pre-registered): `exp-E1-3` becomes the current reference unless its pooled paired CER interval
+lies entirely above 0; in that case revert the periodicity defaults, keep the current reference,
+record it, and report to the owner (a better T_P that makes decoding worse is a design finding).
+**Outcome: the interval lies entirely above 0 (+0.0237 to +0.0726). Reverted.** `ProtoConfig` keeps
+the comb, windows (2, 5, 10) s, 4 teeth at ±15% of T and the placeholder thresholds (comb 0.03, edge
+comb 0.03, spectrum 1.5 nats); `exp-ref` stays the current reference. Status of the periodicity
+parameters: unchanged (placeholder), not rejected by measurement; the E1–E3 choices stand as measured
+estimator properties, and their failure end to end is reported to the owner (section 6).
+
+With the E1–E3 settings as defaults, four Python tests fail (`pytest training -q`: 4 failed, 244
+passed, 2 xfailed, local run): two strict expected failures now pass — Task 11's Farnsworth 18/10
+text ("CQ TEST K1ABC", which the comb's T_g lock broke) and the same-speed turnover's second over; one
+test written for the comb's threshold (`test_an_unconfident_estimate_is_not_used` sets only
+`comb_confidence_min`); and `test_two_overs_at_different_speeds` (25 then 15 WPM, S₅₀₀ = 20 dB, seed 7)
+reads "CQ DE K1ABC K K ETTTTABC DE W9XYZ K", CER 0.2 against the test's 0.1 (with the edge comb and
+windows (2, 5, 10) s it reads correctly). With the defaults reverted all tests pass as before.
+
+### 3.3 E2 — the periodicity windows
+
+With E1's edge comb, offline as in E1, each window subset at its own calibrated threshold:
+
+```
+.venv/bin/python -m kz4ap_proto.experiments periodicity --out build/suite/full3 --name exp-ref --set periodicity_method=edge --set "periodicity_windows_s=[1,2,3,5,10]" --subsets "2,5,10;1,2,5,10;2,5;5,10;2,3,5,10;1,2,3,5,10" --jobs 10
+```
+
+| windows, s | calibrated threshold | precision | coverage | median time to first confident, s |
+|---|---|---|---|---|
+| 2, 5, 10 (default) | 0.03232 | 0.951 (0.938–0.961) | 0.749 (0.712–0.783) | 1.16 |
+| 1, 2, 5, 10 | 0.04434 | 0.950 (0.938–0.960) | 0.572 (0.528–0.615) | 1.18 |
+| 2, 5 | 0.03232 | 0.951 (0.939–0.962) | 0.726 (0.687–0.757) | 1.16 |
+| **5, 10** | 0.02214 | 0.950 (0.935–0.964) | **0.865 (0.838–0.889)** | 3.60 |
+| 2, 3, 5, 10 | 0.03336 | 0.952 (0.940–0.963) | 0.737 (0.702–0.775) | 1.21 |
+| 1, 2, 3, 5, 10 | 0.04488 | 0.951 (0.939–0.962) | 0.568 (0.529–0.612) | 1.27 |
+
+(At the placeholder threshold 0.03 the same subsets give precision 0.940, 0.873, 0.939, 0.982, 0.936,
+0.871 and coverage 0.795, 0.841, 0.770, 0.736, 0.804, 0.847: file
+`build/suite/full3/experiments/linux/E2-edge.md`, git-ignored.)
+
+Rule (pre-registered): among subsets whose coverage is within 0.02 of the best coverage, choose the one
+with the shortest median time to confident; ties within 0.25 s go to the fewest windows, then to
+(2, 5, 10); adopt it only if it differs from (2, 5, 10). **Outcome: (5, 10) s.** The best coverage is
+0.865, from (5, 10); no other subset is within 0.02 of it (the next is 0.749), so the time criterion
+does not come into play. **Chosen by the rule: (5, 10) s** (status measured, E2); not adopted,
+reverted with E1's choice after section 3.5, so `ProtoConfig` keeps (2, 5, 10) s. The price the rule
+accepted, stated: the median time from a transmission's start to its first confident estimate rises
+from 1.16 s to 3.60 s, because the rule ranks coverage first.
+
 ## 4. Final evaluation (Task 15)
 
 ## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure
 
 ## 6. Open items for the owner
+
+- **E1–E3 (section 3.5): a better T_P made decoding worse.** Offline, the edge comb with windows
+  (5, 10) s gives a confident estimate at 86.5% of update points at 0.95 precision, against the comb's
+  58.9% with (2, 5, 10) s; end to end it cuts the selected-speed errors (group A 2.5% → 0%, B 16% → 3.5%)
+  yet raises the pooled CER by +0.048 (+0.024 to +0.073), most in groups B, E and F, with more false
+  characters outside transmissions. By the plan's rule the periodicity defaults were reverted. The spectrum fit
+  reached 0.95 precision at no threshold (it most often locks on about 3T). Open: whether the T_P prior's
+  use in the fit (a gate at the confidence threshold with width 0.1 in ln T, a reinterpretation of
+  "weighted by its confidence") or its effect on selection drives the regression.
