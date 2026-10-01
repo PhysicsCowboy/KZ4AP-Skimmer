@@ -21,9 +21,16 @@ _THROTTLING_EXECUTION_SPEED = 0x1
 def disable_power_throttling() -> bool:
     """Opts this process out of execution-speed throttling (SetProcessInformation, ProcessPowerThrottling with
     ControlMask = EXECUTION_SPEED and StateMask = 0, "always run at full speed"). Returns True if Windows
-    accepted it, False elsewhere or on failure."""
+    accepted it, False elsewhere or on failure (including a Windows without SetProcessInformation)."""
     if sys.platform != "win32":
         return False
+    try:
+        return _set_execution_speed_unthrottled()
+    except (AttributeError, OSError):
+        return False
+
+
+def _set_execution_speed_unthrottled() -> bool:
     import ctypes
     from ctypes import wintypes
 

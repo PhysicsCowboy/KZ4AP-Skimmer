@@ -185,3 +185,67 @@ def test_copy_is_independent_and_best_needs_an_observation():
     other.add(False, 0.048, 1e-8)
     assert len(fit.history) == 1 and len(other.history) == 2
     assert fit.weight == pytest.approx(1.0) and other.weight == pytest.approx(1.0 + np.exp(-1 / 24))
+
+
+def test_fast_paths_are_bit_identical_to_the_plain_formulas():
+    # Task 11p: the fit's speed-ups (in-place grid arithmetic, logaddexp by parts, history arrays, shared scores in
+    # best()) must give exactly the plain formulas' doubles, also after the history buffers wrap (> 2 x maxlen adds).
+    import math
+
+    import kz4ap_proto.fit as fm
+
+    def plain_grid_loglik(fit, is_mark, d, var_t):  # Task 7's DurationFit.add, verbatim
+        log_d = math.log(min(max(d, CFG.outlier_range_s[0]), CFG.outlier_range_s[1]))
+        if is_mark:
+            classes, priors, sigma = fit._marks, fit._mark_priors, CFG.sigma_ln_mark
+        else:
+            classes, priors, sigma = fit._spaces, fit._space_priors, CFG.sigma_ln_space
+        total = None
+        for (log_mu, inv_mu2, valid), lp in zip(classes, priors):
+            s2 = sigma * sigma + var_t * inv_mu2
+            z = log_d - log_mu
+            ll = np.where(valid, lp - 0.5 * z * z / s2 - 0.5 * np.log(s2) - fm.LOG_SQRT_2PI, -np.inf)
+            total = ll if total is None else np.logaddexp(total, ll)
+        return np.logaddexp(total, fit._log_outlier)
+
+    def bits(a):
+        return np.asarray(a, float).view(np.int64)
+
+    rng = np.random.default_rng(11)
+    fit = DurationFit(CFG)
+    marks = np.zeros_like(fit.mark_table)
+    spaces = np.zeros_like(fit.space_table)
+    n = 2 * fit.history.maxlen + 30
+    for i in range(n):
+        is_mark = i % 2 == 0
+        d = 0.05 * float(rng.choice([1, 3] if is_mark else [1, 3, 7])) * math.exp(0.2 * rng.standard_normal())
+        var_t = resolution_var_s2(float(rng.choice([0.0093, 0.04, 0.184])), float(rng.uniform(0.5, 50.0)), 1500.0)
+        expected = plain_grid_loglik(fit, is_mark, d, var_t)
+        assert np.array_equal(bits(fm._grid_loglik(fit, is_mark, d, var_t)), bits(expected))
+        fit.add(is_mark, d, var_t)
+        marks, spaces = marks * fit.lam, spaces * fit.lam
+        if is_mark:
+            marks = marks + expected
+        else:
+            spaces = spaces + expected
+    assert np.array_equal(bits(fit.mark_table), bits(marks)) and np.array_equal(bits(fit.space_table), bits(spaces))
+
+    h = list(fit.history)
+    age = fit.lam ** np.arange(len(h))
+
+    def plain_sum(theta):
+        _, total, _ = class_logliks_of(theta)
+        return np.sum(age * total)
+
+    def class_logliks_of(theta):
+        return fm.class_logliks(theta, [o[0] for o in h], [o[1] for o in h], [o[2] for o in h], CFG)
+
+    for prior in ((None, 0.0), (0.05, 1.0)):
+        grid = fit.grid_theta(*prior)
+        plain = float(plain_sum(grid)) + fit._prior_term(float(grid[0]), *prior)
+        assert fit.weighted_loglik(grid, *prior) == plain
+        best = fit.best(*prior)
+        r = fit._history_arrays()
+        refined = fit._refine(grid, *prior, r, fit._terms(grid, r))[0]
+        theta = next(c for c in (refined, grid) if (best.t_s, best.w_s, best.tg_s) == (c[0], c[1], c[3]))
+        assert best.quality == float(plain_sum(theta) / np.sum(age))

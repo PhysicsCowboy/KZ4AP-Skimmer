@@ -270,10 +270,6 @@ class DurationFit:
         self._buf_var[self._pos] = var_t
         self._retained = None
 
-    def _arrays(self):
-        r = self._history_arrays()
-        return r.is_mark, r.d, r.var_t, r.age
-
     def _history_arrays(self) -> _Retained:
         if self._retained is None:
             sl = slice(self._pos, self._pos + len(self.history))
@@ -368,7 +364,7 @@ class DurationFit:
             damping = 1.0 / (0.2 * theta[0]) ** 2
             new = theta + np.linalg.solve(m + damping * np.eye(4), b)
             t = max(float(new[0]), 1e-4)
-            # min(max(.)) is np.clip's value for a scalar (bounds positive multiples of t > 0), without its overhead
+            # min(max(.)) is np.clip's value for a scalar whenever lo <= hi (here lo < hi as t > 0), less overhead
             theta = np.array([t, min(max(new[1], -0.6 * t), 1.2 * t), min(max(new[2], 2.0 * t), 6.0 * t),
                               min(max(new[3], 0.8 * t), 10.0 * t)])
             terms = self._terms(theta, r)
@@ -434,10 +430,7 @@ def _logaddexp_by_parts(x, y) -> np.ndarray:
     np.negative(d, out=d)
     np.exp(d, out=d)
     np.log1p(d, out=d)
-    if d.shape == m.shape:
-        m += d
-    else:
-        m = m + d
+    m += d                 # d has m's (broadcast) shape
     if np.isnan(m).any():
         return np.logaddexp(x, y)
     return m
