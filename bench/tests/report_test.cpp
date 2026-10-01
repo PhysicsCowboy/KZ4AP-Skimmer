@@ -61,3 +61,22 @@ TEST(Report, RejectsMalformedOrMismatchedDecodedText) {
     labels.signals = {{"CQ", 0.0, 25, 10, 0, 1}};
     EXPECT_THROW(tracks_for(labels, DecodedTexts{"x", "", {}}), std::runtime_error);
 }
+
+TEST(Report, DetectorTracksAreScoredByFrequencyWithFalseTracks) {
+    const auto d = parse_decoded_texts(R"({"front_end": "bank-proto", "recording": "x.wav", "tracks": [
+        {"id": 3, "freq_hz": 1010.0, "text": "CQ K1ABC", "last_freq_hz": 1001.0},
+        {"id": 4, "freq_hz": 2600.0, "text": "EE"},
+        {"id": 5, "freq_hz": 2000.0, "text": "TU"}]})");
+    ASSERT_TRUE(d.detector);
+    ASSERT_EQ(d.tracks.size(), 3u);
+    EXPECT_DOUBLE_EQ(d.tracks[0].last_freq_hz, 1001.0);
+    EXPECT_DOUBLE_EQ(d.tracks[1].last_freq_hz, 2600.0);  // defaults to the birth frequency
+    Labels labels;
+    labels.signals = {{"CQ K1ABC", 1000.0, 25, 10, 0, 1}, {"TU", 2000.0, 25, 10, 0, 1}};
+    const Score s = score(labels.signals, d.tracks, 50.0, false);  // the engine's detector-path rule
+    EXPECT_EQ(s.signals[0].track_id, 3u);
+    EXPECT_EQ(s.signals[1].track_id, 5u);
+    EXPECT_EQ(s.false_tracks, 1u);                                 // track 4 decoded text and matched nothing
+    EXPECT_THROW(parse_decoded_texts(R"({"front_end": "x", "texts": [], "tracks": []})"), std::runtime_error);
+    EXPECT_TRUE(parse_decoded_texts(R"({"front_end": "x", "tracks": []})").detector);  // no track opened
+}

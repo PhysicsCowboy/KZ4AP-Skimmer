@@ -43,7 +43,7 @@ struct Args {
 constexpr const char* kUsage =
     "usage: kz4ap-bench RECORDING.wav [--labels LABELS.json] [--json OUT.json]\n"
     "                   [--no-timing] [--baseline BASELINE.json] [--oracle] [--front-end envelope|matched]\n"
-    "                   [--record-channels DIR]\n"
+    "                   [--record-channels DIR (with --oracle: the oracle channels; without: the detector's)]\n"
     "       kz4ap-bench --labels LABELS.json --score-decoded DECODED.json [--json OUT.json] [--baseline BASELINE.json]\n";
 
 Args parse_args(int argc, char** argv) {
@@ -82,7 +82,6 @@ Args parse_args(int argc, char** argv) {
     }
     if (!args.recording) throw std::runtime_error(kUsage);
     if (args.oracle && !args.labels) throw std::runtime_error("--oracle needs --labels");
-    if (args.record_channels && !args.oracle) throw std::runtime_error("--record-channels needs --oracle");
     return args;
 }
 
@@ -135,9 +134,14 @@ int run_engine(const Args& args) {
 
     EventBus bus;
     std::map<std::uint32_t, DecodedTrack> tracks;
+    std::optional<ChannelRecorder> recorder;
     bus.subscribe([&](const Event& e) {
-        if (const auto* t = std::get_if<TrackEvent>(&e); t && t->kind == TrackEvent::Kind::Born) {
+        const auto* t = std::get_if<TrackEvent>(&e);
+        if (t && t->kind == TrackEvent::Kind::Born) {
             tracks[t->track.id] = {t->track.id, t->track.freq_hz, "", t->track.freq_hz};
+            if (recorder && !args.oracle) recorder->open_track(t->track.id, t->track.freq_hz);
+        } else if (t && t->kind == TrackEvent::Kind::Died) {
+            if (recorder) recorder->close_track(t->track.id);
         } else if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
             for (const auto& c : d->chars) tracks[d->track_id].text += c.text;
             tracks[d->track_id].last_freq_hz = d->freq_hz;
@@ -151,11 +155,12 @@ int run_engine(const Args& args) {
         for (const auto& s : labels->signals) config.oracle_frequencies_hz.push_back(s.freq_offset_hz);
     }
     Engine engine(config, bus);
-    std::optional<ChannelRecorder> recorder;
     if (args.record_channels) {
         recorder.emplace(*args.record_channels, engine.channel_rate());
-        for (std::size_t i = 0; i < labels->signals.size(); ++i) {
-            recorder->add_channel(static_cast<std::uint32_t>(i + 1), i, labels->signals[i].freq_offset_hz);
+        if (args.oracle) {  // oracle channels were born in the constructor, before the recorder existed
+            for (std::size_t i = 0; i < labels->signals.size(); ++i) {
+                recorder->add_channel(static_cast<std::uint32_t>(i + 1), i, labels->signals[i].freq_offset_hz);
+            }
         }
         engine.set_channel_tap([&](const ChannelBlock& b) { recorder->write(b); });
     }
@@ -164,7 +169,10 @@ int run_engine(const Args& args) {
     const auto started = std::chrono::steady_clock::now();
     while (const auto n = reader.read(block)) engine.process(std::span<const Sample>(block).first(n));
     engine.finish();
-    if (recorder) recorder->finish(args.recording->filename().string(), args.labels->filename().string());
+    if (recorder) {
+        recorder->finish(args.recording->filename().string(),
+                         args.labels ? args.labels->filename().string() : std::string());
+    }
     const double wall_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
     const double cpu_s = process_cpu_seconds() - cpu_started;
     const EngineStats stats = engine.stats();
@@ -204,14 +212,20 @@ int run_engine(const Args& args) {
 int score_decoded(const Args& args) {
     const Labels labels = load_labels(*args.labels);
     const DecodedTexts decoded = load_decoded_texts(*args.score_decoded);
-    const auto tracks = tracks_for(labels, decoded);
+    // Oracle texts are matched by order; detector tracks by frequency (50 Hz), false tracks counted: the
+    // engine's own two rules, through the same score() and score_json().
+    const auto tracks = decoded.detector ? decoded.tracks : tracks_for(labels, decoded);
+    std::map<std::uint32_t, double> tracked_freq_hz;
+    if (decoded.detector) {
+        for (const auto& t : tracks) tracked_freq_hz[t.id] = t.last_freq_hz;
+    }
     nlohmann::json out;
     out["recording"] = decoded.recording;
     out["duration_s"] = labels.duration_s;
     out["front_end"] = decoded.front_end;
     add_tracks(out, tracks);
     out["channel_seconds"] = 0.0;  // no engine ran
-    const int exit_code = score_and_report(labels, tracks, {}, true, args.baseline, out);
+    const int exit_code = score_and_report(labels, tracks, tracked_freq_hz, !decoded.detector, args.baseline, out);
     write_json(args.json, out);
     return exit_code;
 }

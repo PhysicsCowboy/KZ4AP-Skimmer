@@ -110,7 +110,7 @@ void Engine::process_hop(std::span<const Sample> hop) {
         auto& channel = it->second;
         const double t0 = static_cast<double>(first_index) / channelizer_.output_rate();
         const double center_hz = channelizer_.bin_to_hz(channel.bin);
-        if (tap_) tap_(ChannelBlock{id, first_index, center_hz, s});
+        if (tap_) tap_(ChannelBlock{id, first_index, center_hz, s, channel.detector_freq_hz});
         channel.decoder->set_frequency_anchor_hz(channel.detector_freq_hz - center_hz);  // Envelope: ignored
         const auto started = std::chrono::steady_clock::now();
         auto update = channel.decoder->process(s, t0);

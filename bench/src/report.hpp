@@ -24,12 +24,16 @@ nlohmann::json score_json(const Labels& labels, const Score& s, const std::map<s
 // The per-label lines and the summary line kz4ap-bench prints.
 void print_score(const Score& s);
 
-// Text decoded outside the engine (kz4ap-bench --score-decoded): one string per label, in the labels
-// file's order: {"front_end": NAME, "recording": NAME, "texts": [...]}. Other keys are ignored.
+// Text decoded outside the engine (kz4ap-bench --score-decoded), in one of two forms: {"front_end", "recording",
+// "texts": [one per label, in the labels file's order]} (oracle channels, matched by order), or {"front_end",
+// "recording", "tracks": [{"id", "freq_hz" (birth), "text", "last_freq_hz" (optional)}]} (detector channels,
+// matched by frequency as the engine's detector path is). Other keys are ignored.
 struct DecodedTexts {
     std::string front_end;
     std::string recording;
     std::vector<std::string> texts;
+    bool detector = false;
+    std::vector<DecodedTrack> tracks;
 };
 
 // Throw std::runtime_error on bad input.

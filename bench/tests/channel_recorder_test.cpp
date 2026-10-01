@@ -68,3 +68,36 @@ TEST(ChannelRecorder, RejectsGapsUnknownChannelsAndMovedCenters) {
     rec.finish("x.wav", "x.json");  // closes the file, so the directory can go
     std::filesystem::remove_all(dir);
 }
+
+TEST(ChannelRecorder, RecordsDetectorTracksWithOpeningClosingAndAnchors) {
+    const auto dir = fresh_dir("kz4ap_recorder_detector");
+    {
+        ChannelRecorder rec(dir, 1500.0);
+        rec.open_track(7, 1011.0);
+        const std::vector<Sample> a(32);
+        ChannelBlock b{7, 3000, 1000.0, a};
+        b.anchor_hz = 1011.0;
+        rec.write(b);
+        b.first_index = 3032;
+        b.anchor_hz = 1012.5;
+        rec.write(b);
+        rec.close_track(7);
+        EXPECT_THROW(rec.write(b), std::runtime_error);  // a closed track takes no more blocks
+        rec.open_track(9, -500.0);                         // opened, never fed: 0 samples
+        rec.finish("x.wav", "");
+    }
+    std::ifstream m(dir / "channels.json");
+    const auto j = nlohmann::json::parse(m);
+    m.close();  // Windows: an open file keeps the directory from being removed
+    const auto& c = j.at("channels").at(0);
+    EXPECT_EQ(c.at("track_id"), 7);
+    EXPECT_TRUE(c.at("label_index").is_null());
+    EXPECT_DOUBLE_EQ(c.at("birth_freq_hz").get<double>(), 1011.0);
+    EXPECT_EQ(c.at("first_sample_index"), 3000);
+    EXPECT_DOUBLE_EQ(c.at("open_s").get<double>(), 2.0);
+    EXPECT_DOUBLE_EQ(c.at("close_s").get<double>(), 3064.0 / 1500.0);
+    EXPECT_EQ(c.at("samples"), 64);
+    EXPECT_EQ(c.at("anchors"), nlohmann::json::parse("[[3000, 1011.0], [3032, 1012.5]]"));
+    EXPECT_TRUE(j.at("channels").at(1).at("close_s").is_null());
+    std::filesystem::remove_all(dir);
+}

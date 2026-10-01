@@ -546,3 +546,27 @@ TEST(Engine, RejectsAnInvalidChannelDistance) {
     c.channel_distance_hz = 0.0;
     EXPECT_THROW(Engine(c, bus), std::invalid_argument);
 }
+
+TEST(Engine, ChannelTapReportsTheAnchorOfEachBlock) {
+    // Oracle mode: the anchor is the labeled frequency itself. Detector mode: the detector's current frequency
+    // for the track, which the Matched path gives the tracker; a clean station's is within 1 Hz of its carrier.
+    const std::string msg = "CQ TEST K1ABC";
+    const auto x = keyed_signal(msg, 25, 48000.0, kz4ap::test::duration_for(msg, 25), 12009.0, kAmplitude20dB48k,
+                                kNoiseSigma, 42);
+    for (const bool oracle : {true, false}) {
+        auto config = matched_config(48000);
+        if (oracle) config.oracle_frequencies_hz = {12009.0};
+        EventBus bus;
+        Engine engine(config, bus);
+        std::vector<double> anchors;
+        engine.set_channel_tap([&](const ChannelBlock& b) { anchors.push_back(b.anchor_hz); });
+        engine.process(x);
+        engine.finish();
+        ASSERT_FALSE(anchors.empty());
+        if (oracle) {
+            for (const double a : anchors) EXPECT_DOUBLE_EQ(a, 12009.0);
+        } else {
+            EXPECT_NEAR(anchors.back(), 12009.0, 1.0);
+        }
+    }
+}

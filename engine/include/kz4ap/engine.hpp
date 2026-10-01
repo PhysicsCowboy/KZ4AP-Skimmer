@@ -28,6 +28,8 @@ struct ChannelBlock {
     std::uint64_t first_index;        // index of samples[0] in the channelizer's output stream, from its start
     double center_hz;                 // the channel's center (its FFT bin), Hz from the span's center
     std::span<const Sample> samples;  // channelizer output at Engine::channel_rate(), FS
+    double anchor_hz = 0;             // the detector's current frequency for the track (oracle: the label), Hz from
+                                      // the span's center: the anchor the Matched path gives the tracker
 };
 using ChannelTap = std::function<void(const ChannelBlock&)>;
 

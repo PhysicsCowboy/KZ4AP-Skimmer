@@ -547,7 +547,16 @@ For the filter-bank prototype (milestone 2b, stage 1), `kz4ap-bench
 --record-channels DIR` (with `--oracle`) copies each oracle channel's
 stream to a file through `Engine::set_channel_tap`, as the channelizer
 delivers it and before the decoder sees it. The tap only observes: the
-decoded text is the same with or without it (tested).
+decoded text is the same with or without it (tested). Without `--oracle`,
+`--record-channels` records every channel the detector opens, from its
+first block to its track's death, with the detector's frequency for the
+track at every block (`ChannelBlock::anchor_hz`, the Matched path's
+tracker anchor); the tap still only observes. (`anchor_hz` is the value
+the engine already hands the decoder as its anchor before each block: the
+labeled frequency in oracle mode; with `--front-end matched` and no
+oracle, the detector's current frequency for the track; with the Envelope
+front end and no oracle, which never updates it, the track's birth
+frequency. Benchmark tooling only; it changes no signal processing.)
 
 ## 7. Channelizer: one stream per station
 
@@ -2242,9 +2251,38 @@ not in the repository; nothing was changed):
   frequency, center (Hz from the span's center), first sample index and
   sample count. The prototype mixes the stream down by f_off (and a
   labeled drift) itself.
+  **Detector form** (`--record-channels DIR` without `--oracle`, used with
+  `--front-end matched`): `channel-<track id>.c64` holds the channelizer
+  output of every channel the detector opens, from its first block to its
+  track's death (to the end if it never dies). `channels.json` gives each
+  one's track id, `birth_freq_hz` (the track's frequency at birth, Hz from
+  the span's center), center, first sample index, `open_s` (first sample
+  index / r, s), `close_s` (end of its last block, s; null unless the track
+  died), sample count, and `anchors`: [first sample index, Hz] at every
+  block where the detector's frequency for the track changed
+  (`ChannelBlock::anchor_hz`). `label_index` and `label_freq_hz` are null
+  (and `birth_freq_hz` is null for oracle channels, whose entries carry
+  `open_s`, `close_s` and `anchors` too). The prototype
+  (`streams.anchored_baseband`) mixes a detector channel down by
+  anchor − center, block by block, with a continuous phase: the anchor the
+  Matched path's NCO starts from and follows (option 1), without the
+  tracker's fine-tuning within ±12 Hz of it. Mixing at the channel's
+  center alone would leave the station up to ±½Δf = ±11.7 Hz off, which
+  through a 40 ms branch costs 10·log₁₀|sinc(11.7 Hz × 40 ms)|² ≈ −3.4 dB of
+  signal power relative to a centered station (derived), a handicap the
+  Matched path does not have.
 - **Externally decoded text** (`kz4ap-bench --labels L --score-decoded
   D.json`): one text per label, in the labels file's order, scored as
   oracle tracks 1…n at the labels' frequencies by the same scoring and JSON
   as an engine run (`bench/src/report.cpp`); `tracked_freq_hz` is null and
   `channel_seconds` 0. Checked identical to an engine oracle run's own
   texts on the smoke recording (apart from `tracked_freq_hz`).
+  **Tracks form**: `{"front_end", "recording", "tracks": [{"id",
+  "freq_hz" (birth, Hz from the span's center), "text", "last_freq_hz"
+  (optional; defaults to "freq_hz")}]}`, one entry per detector track,
+  scored as the engine's detector path is — tracks at their birth
+  frequencies matched to labels within 50 Hz, false tracks counted — by the
+  same code (`score(..., match_by_order = false)`, `score_json`,
+  `print_score`); `tracked_freq_hz` is each track's `last_freq_hz`. A file
+  must give either `texts` or `tracks`, not both. Checked identical on the
+  smoke recording's Matched detector path (apart from `tracked_freq_hz`).

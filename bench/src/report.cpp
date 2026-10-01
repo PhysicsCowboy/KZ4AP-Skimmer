@@ -77,7 +77,18 @@ DecodedTexts parse_decoded_texts(const std::string& json_text) {
         DecodedTexts d;
         d.front_end = j.at("front_end").get<std::string>();
         d.recording = j.value("recording", std::string());
-        d.texts = j.at("texts").get<std::vector<std::string>>();
+        const bool has_texts = j.contains("texts"), has_tracks = j.contains("tracks");
+        if (has_texts == has_tracks) throw std::runtime_error("bad decoded-text file: give either texts or tracks");
+        if (has_texts) {
+            d.texts = j.at("texts").get<std::vector<std::string>>();
+        } else {
+            d.detector = true;
+            for (const auto& t : j.at("tracks")) {
+                const double f = t.at("freq_hz").get<double>();
+                d.tracks.push_back({t.at("id").get<std::uint32_t>(), f, t.at("text").get<std::string>(),
+                                    t.value("last_freq_hz", f)});
+            }
+        }
         return d;
     } catch (const nlohmann::json::exception& e) {
         throw std::runtime_error(std::string("bad decoded-text file: ") + e.what());
