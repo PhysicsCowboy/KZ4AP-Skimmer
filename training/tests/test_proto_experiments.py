@@ -52,3 +52,28 @@ def test_calibrated_thresholds_make_noise_key_at_the_target_rate():
 def test_follow_marks_counts_marks_until_a_matched_branch_is_selected():
     counts = experiments.follow_marks(ProtoConfig(), [1])
     assert len(counts) == 1 and (counts[0] is None or 0 <= counts[0] <= 40)
+
+
+def test_compare_takes_its_statistics_over_the_batch_subset(tmp_path, monkeypatch):
+    # Review M9: an E5 batch (DEV_E5) must not compare the base's statistics over all of DEV.
+    import json
+    seen = []
+
+    def stat(out_dir, name, only=None, *args, **kwargs):
+        seen.append(only)
+        return {}
+
+    monkeypatch.setattr(experiments, "load_results", lambda *a, **k: ([], []))
+    for f in ("speed_errors", "switch_stats", "spurious_over_starts", "false_characters"):
+        monkeypatch.setattr(experiments.metrics, f, stat)
+    monkeypatch.setattr(experiments.metrics, "cpu_per_channel_second", lambda o, n, only=None: seen.append(only) or 0.0)
+    experiments.compare(tmp_path, "base", "variant", only=experiments.DEV_E5)
+    assert seen and all(o == experiments.DEV_E5 for o in seen)
+
+    seen.clear()
+    monkeypatch.setattr(experiments, "run", lambda out, bench, name, values, jobs=None, only=None: tmp_path / "s.md")
+    spec = tmp_path / "spec.json"
+    spec.write_text(json.dumps({"name": "B", "base": "base", "subset": "e5", "runs": [{"name": "v", "set": {}}]}))
+    (tmp_path / "experiments").mkdir(exist_ok=True)
+    experiments.batch(tmp_path, "bench", spec)
+    assert seen and all(o == experiments.DEV_E5 for o in seen)

@@ -72,7 +72,7 @@ def batch(out_dir, bench, spec_path, jobs=None) -> Path:
     lines = [f"# Batch {spec['name']} (base {spec['base']}, subset {spec.get('subset', 'dev')})", ""]
     for item in spec["runs"]:
         summary = run(out_dir, bench, item["name"], item.get("set", {}), jobs=jobs, only=only)
-        report = compare(out_dir, spec["base"], item["name"]) if item["name"] != spec["base"] else None
+        report = compare(out_dir, spec["base"], item["name"], only) if item["name"] != spec["base"] else None
         rows, _ = load_results(out_dir, [out_dir / EXPERIMENT_RESULTS], [spec["base"], item["name"]])
         pooled = pooled_paired(rows, spec["base"], item["name"]).get("all", {})
         lines.append(f"- {item['name']} {json.dumps(item.get('set', {}))}: paired CER against the base "
@@ -151,15 +151,16 @@ def _table(title, stats, columns):
     return lines + [""]
 
 
-def compare(out_dir, base: str, variant: str) -> Path:
+def compare(out_dir, base: str, variant: str, only: str = DEV) -> Path:
     """Writes experiments/compare-<variant>-vs-<base>.md: pooled and paired CER and first-word CER, and each
-    run's speed errors, switches, over starts, false characters and CPU."""
+    run's speed errors, switches, over starts, false characters and CPU, all over the subset `only` (a batch passes
+    its own, so a base decoded on all of DEV is not summarized over groups the variant never decoded)."""
     out_dir = Path(out_dir)
     rows, _ = load_results(out_dir, [out_dir / EXPERIMENT_RESULTS], [base, variant])
     agg = aggregate(rows)
     cer = pooled_paired(rows, base, variant)
     fw = pooled_paired(rows, base, variant, "first_word_edits", "first_word_symbols")
-    lines = [f"# {variant} against {base} (development set)", "",
+    lines = [f"# {variant} against {base} (subset `{only}`)", "",
              "Paired: variant minus base, signal by signal; bootstrap 95% intervals over signals.", "",
              "| group | signals | paired CER | paired first-word CER |", "|---|---|---|---|"]
     for group in sorted(cer, key=lambda g: (g != "all", g)):
@@ -173,17 +174,17 @@ def compare(out_dir, base: str, variant: str) -> Path:
     lines.append("")
     for name in (base, variant):
         lines += [f"## {name}", ""]
-        lines += _table("Selected speed off by more than x1.5 (S500 >= 6 dB)", metrics.speed_errors(out_dir, name, DEV),
+        lines += _table("Selected speed off by more than x1.5 (S500 >= 6 dB)", metrics.speed_errors(out_dir, name, only),
                         [("fraction", lambda v: _with_interval(v["error_fraction"], v["interval"], ".4f")),
                          ("lock-ins / transmissions", lambda v: f"{v['lock_ins']} / {v['transmissions']}")])
-        lines += _table("Switching", metrics.switch_stats(out_dir, name, DEV),
+        lines += _table("Switching", metrics.switch_stats(out_dir, name, only),
                         [("switches per min", lambda v: _with_interval(v["switches_per_min"], None, ".3f")),
                          ("alternations per min", lambda v: _with_interval(v["alternations_per_min"], None, ".3f"))])
-        lines += _table("Over starts inside transmissions", metrics.spurious_over_starts(out_dir, name, DEV),
+        lines += _table("Over starts inside transmissions", metrics.spurious_over_starts(out_dir, name, only),
                         [("per transmission", lambda v: _with_interval(v["per_transmission"], None, ".4f"))])
-        lines += _table("False characters outside transmissions", metrics.false_characters(out_dir, name, DEV),
+        lines += _table("False characters outside transmissions", metrics.false_characters(out_dir, name, only),
                         [("per min", lambda v: _with_interval(v["per_min"], None, ".4f"))])
-        lines += [f"Decoding CPU: {1000 * metrics.cpu_per_channel_second(out_dir, name, DEV):.2f} ms per channel-second.", ""]
+        lines += [f"Decoding CPU: {1000 * metrics.cpu_per_channel_second(out_dir, name, only):.2f} ms per channel-second.", ""]
     path = out_dir / "experiments" / f"compare-{variant}-vs-{base}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -265,6 +266,7 @@ def main(argv=None) -> None:
     x.add_argument("--events", type=int, default=20)
     c.add_argument("--base", required=True)
     c.add_argument("--variant", required=True)
+    c.add_argument("--subset", choices=sorted(SUBSETS), default="dev")
     p.add_argument("--name", required=True)
     p.add_argument("--subsets", required=True, help='window subsets, s: "2,5,10;1,2,5,10"')
     p.add_argument("--target", type=float, default=0.95)
@@ -278,7 +280,7 @@ def main(argv=None) -> None:
         cfg = ProtoConfig().with_values(**runner.parse_values(args.values))
         print(json.dumps([round(v, 4) for v in calibrate_x_on(cfg, events=args.events)]))
     elif args.command == "compare":
-        print(f"wrote {compare(args.out, args.base, args.variant)}")
+        print(f"wrote {compare(args.out, args.base, args.variant, SUBSETS[args.subset])}")
     elif args.command == "periodicity":
         subsets = [tuple(float(x) for x in s.split(",")) for s in args.subsets.split(";")]
         print(f"wrote {periodicity_table(args.out, args.name, runner.parse_values(args.values), subsets, args.target, args.jobs)}")
