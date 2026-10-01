@@ -4,6 +4,7 @@ import pytest
 from kz4ap_proto.bank import boxcar, branch_lengths_s, branch_samples
 from kz4ap_proto.noise import BranchNoise, SpectrumNoise, ThreeTapNoise, guard_mean
 from kz4ap_proto.params import ProtoConfig
+from kz4ap_proto.testsignals import lowpass
 from kz4ap_synth.generate import keying_envelope
 from kz4ap_synth.messages import random_text
 from kz4ap_synth.morse import keying_intervals
@@ -16,13 +17,6 @@ N = branch_samples(branch_lengths_s(CFG), RATE)
 def white(n, seed):
     rng = np.random.default_rng(seed)
     return (rng.standard_normal(n) + 1j * rng.standard_normal(n)) / np.sqrt(2)  # 1 FS^2 per sample
-
-
-def lowpass():
-    """A 129-tap Blackman-windowed sinc, -6 dB relative to the passband at +/-150 Hz, unity gain at 0 Hz: the channel filter's shape."""
-    k = np.arange(129) - 64
-    h = np.sinc(2 * 150.0 / RATE * k) * np.blackman(129)
-    return h / h.sum()
 
 
 def powers(u, ns):

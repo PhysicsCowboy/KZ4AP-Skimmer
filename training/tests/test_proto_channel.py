@@ -7,23 +7,12 @@ import pytest
 from kz4ap_proto.bank import realized_lengths_s
 from kz4ap_proto.channel import Char, ChannelDecoder, Output
 from kz4ap_proto.params import ProtoConfig
-from kz4ap_synth.generate import keying_envelope
+from kz4ap_proto.testsignals import stream
 from kz4ap_synth.keying import timed_intervals
 from kz4ap_synth.morse import keying_intervals
 
 RATE = 1500.0
 CFG = ProtoConfig()
-
-
-def stream(intervals, start_s, duration_s, s500_db, seed):
-    """A 1 FS carrier keyed by intervals (5 ms raised-cosine edges) from start_s, in white noise giving S500
-    = s500_db: noise power per complex sample 1 / (10^(S500/10) x 500 Hz / r) = 3 x 10^(-S500/10) FS^2."""
-    n = int(round(duration_s * RATE))
-    rng = np.random.default_rng(seed)
-    env = keying_envelope(intervals, start_s, n, int(RATE)) if intervals else np.zeros(n)
-    power = 3.0 * 10 ** (-s500_db / 10)
-    return env * np.exp(1j * rng.uniform(0, 2 * np.pi)) + (
-        rng.standard_normal(n) + 1j * rng.standard_normal(n)) * math.sqrt(power / 2)
 
 
 def norm(s):
