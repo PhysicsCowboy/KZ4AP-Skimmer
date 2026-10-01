@@ -76,6 +76,43 @@ the periodicity and speed statistics). S₅₀₀: key-down carrier power over n
 - **Batch**: several variants of one experiment run one after another and each compared with the
   reference (for example `E10.json`).
 
+**The speed estimate T_P and the variants tested, at a glance:**
+
+- **T_P**: the periodicity estimator's coarse, independent guess of the dit length. Each branch fits
+  its own dit length T to the marks and spaces it keys; T_P is used as a prior in that fit (pulling
+  the fitted T toward T_P) and in choosing which branch to use (the one whose filter length suits the
+  station's speed).
+- **How T_P is estimated**: from branch 1's posterior p(t). Morse timing is built from multiples of
+  the dit (dit 1T, dah 3T, gaps 1T, 3T, 7T), and each method looks for that regularity:
+  - **comb** (the owner's default): correlates p(t) with itself and scores each candidate period by
+    "teeth" at multiples of 2T (the dit-plus-space period); the best-scoring T wins;
+  - **edge comb**: uses the key-down and key-up edge times instead; intervals between edges should
+    fall on whole multiples of T, and the comb scores how well they do;
+  - **spectrum fit**: fits the power spectrum of p(t) to the shape Morse should produce. It never
+    reached the required reliability (E1).
+- **Windows**: each method runs in parallel on the last 2, 5 and 10 s (by default); the shortest
+  window that is confident supplies T_P. Short windows respond fast; long ones are steadier.
+- **Threshold**: each method also gives a confidence score (dimensionless for the two combs); below
+  the threshold no T_P is published. The reference's 0.03 is a placeholder from the spec, never
+  measured. A **calibrated** threshold is set so that 95% of the published T_P values are within 5%
+  of the true dit.
+- **Precision**: the fraction of published T_P values within 5% of the true dit. **Coverage**: the
+  fraction of moments inside transmissions (every 0.25 s) at which a T_P is published at all.
+- **First-word CER**: the CER of the first word of each transmission (each over, in a QSO), on the
+  final text, after every correction. It is an upper bound: false characters decoded in the silence
+  before a transmission are charged to its first word, so it can exceed 1.
+
+| run | method | windows | threshold | T_P precision / coverage / median time to first confident | in plain terms |
+|---|---|---|---|---|---|
+| `exp-ref` (the reference) | comb | 2, 5, 10 s | 0.03 (placeholder) | 0.809 / 0.994 / 0.49 s | almost always has a T_P, early, but 19% of them are wrong |
+| `exp-E1-3` (section 3.5) | edge comb | 5, 10 s | 0.02214 (calibrated) | 0.950 / 0.865 / 3.60 s | what E1–E3's rules chose; rarely wrong, but late; decoding got worse |
+| `exp-diag-comb-cal` (section 3.6) | comb | 2, 5, 10 s | 0.2506 (calibrated) | 0.950 / 0.589 / 2.08 s | the reference with only the threshold raised; rarely wrong, sparser and later; decoding better overall, first words and interference worse |
+| `exp-diag-edge-cal` (section 3.6) | edge comb | 2, 5, 10 s | 0.03232 (calibrated) | 0.951 / 0.749 / 1.16 s | the edge comb with the reference's windows; decoding worse, so the edge comb, not the windows, did the damage |
+
+E10's variants (section 3.1) are a separate question, how each branch gets its noise power: (a)
+`spectrum`, branch 1's three-tap level × the shared spectrum's ratios (kept); (b) `spectrum-level`, the
+spectrum's own level ÷ the measured mask bias; (c) `branch`, each branch its own three-tap estimate.
+
 ## 1. Conditions
 
 - Machine: 12th Gen Intel(R) Core(TM) i7-12700H (6 P-cores, 8 E-cores, 20 logical CPUs), Windows 11,
