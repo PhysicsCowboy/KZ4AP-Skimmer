@@ -409,6 +409,85 @@ test written for the comb's threshold (`test_an_unconfident_estimate_is_not_used
 reads "CQ DE K1ABC K K ETTTTABC DE W9XYZ K", CER 0.2 against the test's 0.1 (with the edge comb and
 windows (2, 5, 10) s it reads correctly). With the defaults reverted all tests pass as before.
 
+### 3.6 Diagnostic runs after E1–E3 (observations only; not pre-registered)
+
+Owner's decision, 2026-10-01: before Task 14, two runs that each change one thing against `exp-ref`, to
+separate the causes of section 3.5's regression. Neither was pre-registered, so **neither changes a
+setting**; they inform the owner's reading. Batch `build/suite/full3/experiments/diag-TP.json`
+(git-ignored), on the Linux machine at `651d57d`:
+
+```
+.venv/bin/python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench build/linux/bench/kz4ap-bench --spec build/suite/full3/experiments/diag-TP.json --jobs 10
+```
+
+- `exp-diag-comb-cal`: the default comb and windows (2, 5, 10) s, with only the threshold raised from the
+  placeholder 0.03 to E1's calibrated 0.2506 (as printed in E1's table, 4 significant figures).
+- `exp-diag-edge-cal`: the edge comb with the default windows (2, 5, 10) s at E1's calibrated threshold
+  0.03232 (4 significant figures).
+
+The T_P each run decoded with is E1's offline measurement on the same 175 551 update points (section
+3.2); the end-to-end numbers are on the development set (509 signals, 74 748 channel-seconds). Paired
+values are variant − `exp-ref`, per signal, mean over 509 signals, with bootstrap 95% intervals.
+
+| run | method, windows, threshold | T_P precision / coverage / median time to confident | pooled CER | paired CER | paired first-word CER |
+|---|---|---|---|---|---|
+| `exp-ref` | comb, (2, 5, 10) s, 0.03 | 0.809 / 0.994 / 0.49 s | 0.3060 | — | — |
+| `exp-diag-comb-cal` | comb, (2, 5, 10) s, 0.2506 | 0.950 / 0.589 / 2.08 s | 0.2872 | −0.0152 (−0.0280 to +0.0000) | +0.2612 (+0.1410 to +0.3906) |
+| `exp-diag-edge-cal` | edge comb, (2, 5, 10) s, 0.03232 | 0.951 / 0.749 / 1.16 s | 0.3317 | +0.0502 (+0.0279 to +0.0742) | +0.2486 (+0.1298 to +0.3693) |
+| `exp-E1-3` (section 3.5) | edge comb, (5, 10) s, 0.02214 | 0.950 / 0.865 / 3.60 s | 0.3356 | +0.0476 (+0.0237 to +0.0726) | (section 3.5) |
+
+Paired CER by group (variant − `exp-ref`):
+
+| group | signals | `exp-diag-comb-cal` | `exp-diag-edge-cal` |
+|---|---|---|---|
+| A sensitivity | 192 | −0.0283 (−0.0478 to −0.0100) | +0.0478 (+0.0236 to +0.0771) |
+| B fading | 30 | +0.0201 (−0.0060 to +0.0485) | +0.1265 (+0.0392 to +0.2403) |
+| C fists | 135 | −0.0153 (−0.0230 to −0.0081) | +0.0010 (−0.0192 to +0.0221) |
+| D speed | 12 | −0.0492 (−0.1214 to +0.0013) | −0.0503 (−0.1156 to −0.0003) |
+| E interference | 16 | +0.2222 (+0.0025 to +0.5082) | +0.5035 (+0.1123 to +0.9745) |
+| F tuning | 28 | +0.0247 (+0.0087 to +0.0456) | +0.1967 (+0.0934 to +0.3119) |
+| G ragchew | 12 | −0.0160 (−0.0262 to −0.0064) | +0.0651 (−0.0306 to +0.2031) |
+| H two-station QSO, oracle | 12 | −0.0483 (−0.0953 to −0.0133) | −0.0541 (−0.1099 to −0.0015) |
+| H two-station QSO, oracle (per station) | 24 | −0.0950 (−0.2489 to +0.0035) | −0.0599 (−0.2208 to +0.0564) |
+| I Farnsworth | 48 | −0.0297 (−0.0421 to −0.0180) | +0.0162 (−0.0000 to +0.0342) |
+
+Selected speed off by more than ×1.5 (fraction of selection instants, S₅₀₀ ≥ 6 dB) and false
+characters outside transmissions (per minute), for the groups where they move:
+
+| group | `exp-ref` | `exp-diag-comb-cal` | `exp-diag-edge-cal` |
+|---|---|---|---|
+| speed off ×1.5, A | 0.0248 | 0.0189 | 0.0000 |
+| speed off ×1.5, B | 0.1608 | 0.0650 | 0.0564 |
+| speed off ×1.5, E | 0.1842 | 0.4146 | 0.5007 |
+| speed off ×1.5, I | 0.0324 | 0.0043 | 0.0126 |
+| false characters, B (per min) | 0.79 | 1.86 | 7.03 |
+| false characters, E (per min) | 37.7 | 42.6 | 59.3 |
+| false characters, F (per min) | 9.97 | 9.97 | 21.3 |
+| false characters, H oracle (per min) | 4.44 | 0.22 | 0.22 |
+
+CPU: 315.0 and 316.4 ms per channel-second; wall 39.6 and 39.8 min. Full tables:
+`build/suite/full3/experiments/linux/compare-exp-diag-comb-cal-vs-exp-ref.md` and
+`compare-exp-diag-edge-cal-vs-exp-ref.md` (git-ignored).
+
+**Reading (measured, except where marked).**
+
+- Raising the comb's threshold alone, which makes T_P more precise but sparser and later, did **not**
+  make decoding worse overall: the paired CER is −0.0152 with an interval reaching 0, and groups A, C, G,
+  H (oracle) and I improve with intervals entirely below 0. It did make the first word worse
+  (+0.2612) and groups E (+0.2222) and F (+0.0247) worse.
+- The edge comb at the default windows is about as bad as `exp-E1-3` (+0.0502 against +0.0476, not
+  compared pairwise), so the change of windows is not what made section 3.5 worse; the edge comb is, in
+  groups A, B, E and F, with more false characters outside transmissions in B, E and F.
+- Both runs cut the selected-speed errors in groups A, B and I and raise them in group E.
+- So E1's offline measure (precision and coverage inside transmissions of constant-speed stations at
+  S₅₀₀ ≥ 0 dB) did not predict the end-to-end result: at equal precision 0.95 the edge comb covers more
+  points (0.749 against 0.589) yet decodes worse. Conjectured, not measured: the edge comb is confident
+  and wrong where E1 does not look — outside transmissions, in fading gaps, under interference and
+  during tuning — which E1's points exclude; and both higher thresholds hurt first words because
+  T_P arrives later.
+- These runs choose nothing. Whether the comb's threshold, or the E1 measure itself, should be
+  revisited is the owner's decision (section 6).
+
 ## 4. Final evaluation (Task 15)
 
 ## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure
@@ -430,3 +509,9 @@ windows (2, 5, 10) s it reads correctly). With the defaults reverted all tests p
   T_P prior's use in the fit (a gate at the confidence threshold with width 0.1 in ln T, a
   reinterpretation of "weighted by its confidence"); its effect on branch selection. Separately, the
   spectrum fit reached 0.95 precision at no threshold (it most often locks on about 3T).
+
+- **Diagnostic runs after E1–E3 (section 3.6).** The edge comb, not the windows, made `exp-E1-3`
+  worse. The default comb with its threshold raised from 0.03 to the calibrated 0.2506 gave paired CER
+  −0.0152 (−0.0280 to +0.0000) overall, better in A, C, G, H and I, but first-word CER +0.2612 and worse in
+  E and F. E1's offline measure did not predict decoding. Not pre-registered, so nothing was adopted;
+  `exp-ref` (threshold 0.03) stays the reference.
