@@ -340,7 +340,8 @@ class ChannelResult:
     # dimensionless for the combs ("comb", "edge") and in nats for the spectrum fit ("spectrum")
     periodicity: list = field(default_factory=list)
     # s, the selected branch's time base (group delay removed): where an over started, counted once its re-key
-    # keyed at least one mark (a silence followed only by noise starts no over)
+    # keyed at least one mark (a silence followed only by noise starts no over, though a lone noise excursion that
+    # keys at the previous over's amplitude can let the re-key time-out count one)
     over_starts: list = field(default_factory=list)
     switches: int = 0
     p1: np.ndarray | None = None                     # branch 1's squelched posterior at r (run(keep_p1=True) only)
@@ -448,7 +449,7 @@ class ChannelDecoder:
                     if reason is not None:
                         if marks and br.over_pending and k == selector.current:
                             result.over_starts.append(br.time(br.over_start_n))
-                        if marks is not None:
+                        if marks:  # a re-key that keyed no mark leaves the over unconfirmed
                             br.over_pending = False
                         if k == selector.current:
                             out.replace_from(from_s, br.chars, t_now, reason)
