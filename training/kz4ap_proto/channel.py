@@ -146,7 +146,8 @@ class Branch:
             return
         self.rival.add(is_mark, d, var_t)
         self.over_obs.append((is_mark, d, var_t))
-        fresh = self.rival.best(*prior)
+        # The rival's best is needed only once _fresh_wins can be true (lazily: the same value either way).
+        fresh = self.rival.best(*prior) if len(self.over_obs) >= self.cfg.fresh_fit_min_obs else None
         if self._fresh_wins(fresh, self.current, self.over_obs):
             self.fit, self.current, self.rival = self.rival, fresh, None
         elif len(self.over_obs) >= self.rival.history.maxlen:
@@ -261,16 +262,20 @@ class Branch:
             var_t = resolution_var_s2(self.length_s, math.sqrt(max(amp2, 0.0) / sigma2), self.rate)
             obs, down_at, up_at = self._observations(key, n0, var_t)
             obs3 = [o[:3] for o in obs]
+            # The fresh and the continued fit take each observation in turn, so the second add reuses the first's
+            # grid log-likelihoods (fit._grid_loglik); each fit sees the same sequence as when filled one by one.
             fresh = DurationFit(self.cfg)
+            cont = self.prev_fit.copy() if self.prev_fit is not None else None
             for is_mark, d, v in obs3:
                 fresh.add(is_mark, d, v)
-            fresh_result = fresh.best(*prior)
-            if self.prev_fit is None:
+                if cont is not None:
+                    cont.add(is_mark, d, v)
+            # The fresh fit's best is needed only if it decodes (no previous fit) or may win (lazily: same value).
+            need_fresh = cont is None or len(obs3) >= self.cfg.fresh_fit_min_obs
+            fresh_result = fresh.best(*prior) if need_fresh else None
+            if cont is None:
                 fit, result, rival = fresh, fresh_result, None
             else:
-                cont = self.prev_fit.copy()
-                for is_mark, d, v in obs3:
-                    cont.add(is_mark, d, v)
                 cont_result = cont.best(*prior)
                 if self._fresh_wins(fresh_result, cont_result, obs3):
                     fit, result, rival = fresh, fresh_result, None
