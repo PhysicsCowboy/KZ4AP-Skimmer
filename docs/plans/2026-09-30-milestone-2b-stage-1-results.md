@@ -525,6 +525,101 @@ CPU: 315.0 and 316.4 ms per channel-second; wall 39.6 and 39.8 min. Full tables:
 - These runs choose nothing. Whether the comb's threshold, or the E1 measure itself, should be
   revisited is the owner's decision (section 6).
 
+### 3.7 E4 — the fit memory N_mem
+
+Question: how many recent marks and spaces each branch's duration fit remembers. Every new mark or
+space multiplies the fit's likelihood tables by λ = e^(−1/N_mem) before adding its own, so an
+observation N_mem elements old counts e^(−1) ≈ 0.37 as much as the newest. A long memory gives a
+steadier fit; a short one follows a speed change sooner. Reference: N_mem = 24 elements (placeholder,
+λ = 0.959).
+
+Variants (each changes only `fit_memory`): `exp-E4-12` (N_mem = 12, λ = 0.920) and `exp-E4-48`
+(N_mem = 48, λ = 0.979). Against `exp-ref` (owner's option A, 2026-10-01: comb, threshold 0.03, windows
+(2, 5, 10) s). Development set: 509 signals, 74 748 channel-seconds. Batch
+`build/suite/full3/experiments/E4.json` (git-ignored), on the Linux machine at `651d57d`:
+
+```
+{"name": "E4", "base": "exp-ref", "subset": "dev", "runs": [{"name": "exp-E4-12", "set": {"fit_memory": 12.0}}, {"name": "exp-E4-48", "set": {"fit_memory": 48.0}}]}
+.venv/bin/python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench build/linux/bench/kz4ap-bench --spec build/suite/full3/experiments/E4.json --jobs 10
+```
+
+(Two other jobs, E9's single-process x_on calibration and an offline analysis
+with 6 processes shared the machine during part of this batch, so the CPU and wall times below are
+not comparable with other runs; E4's rule does not use them.)
+
+| run | N_mem | pooled CER | paired CER against `exp-ref`, all 509 signals | paired first-word CER | CPU per channel-second | wall |
+|---|---|---|---|---|---|---|
+| `exp-ref` | 24 | 0.3060 | — | — | 317.7 ms | 40.1 min |
+| `exp-E4-12` | 12 | 0.3351 | +0.0255 (+0.0172 to +0.0334) | −0.0424 (−0.0954 to +0.0113) | 303.3 ms | 38.2 min |
+| `exp-E4-48` | 48 | 0.2871 | **−0.0151 (−0.0252 to −0.0045)** | +0.0504 (−0.0239 to +0.1234) | 339.0 ms | 43.5 min |
+
+Paired CER by group (variant − `exp-ref`, per signal):
+
+| group | signals | `exp-E4-12` | `exp-E4-48` |
+|---|---|---|---|
+| A sensitivity | 192 | +0.0206 (+0.0148 to +0.0265) | −0.0188 (−0.0279 to −0.0108) |
+| B fading | 30 | +0.0183 (−0.0051 to +0.0432) | +0.0007 (−0.0244 to +0.0296) |
+| C fists | 135 | +0.0520 (+0.0416 to +0.0640) | −0.0223 (−0.0321 to −0.0140) |
+| D speed | 12 | +0.0148 (+0.0022 to +0.0347) | +0.0057 (−0.0015 to +0.0148) |
+| E interference | 16 | −0.1147 (−0.2576 to +0.0210) | +0.0485 (−0.0995 to +0.2082) |
+| F tuning | 28 | +0.0084 (−0.0009 to +0.0178) | −0.0079 (−0.0233 to +0.0043) |
+| G ragchew | 12 | +0.0800 (+0.0729 to +0.0878) | −0.0322 (−0.0405 to −0.0246) |
+| H two-station QSO, oracle | 12 | +0.0229 (−0.0195 to +0.0622) | −0.0319 (−0.1029 to +0.0476) |
+| H two-station QSO, oracle (per station) | 24 | −0.0140 (−0.1032 to +0.0880) | +0.0135 (−0.1549 to +0.1496) |
+| I Farnsworth | 48 | +0.0410 (+0.0292 to +0.0519) | −0.0264 (−0.0374 to −0.0171) |
+
+Group D's rows (CER of each condition; the speed changes are what a memory length trades against):
+
+| D condition | `exp-ref` (24) | `exp-E4-12` | `exp-E4-48` |
+|---|---|---|---|
+| 10 WPM | 0.3023 | 0.3023 | 0.3023 |
+| 60 WPM | 0.0072 | 0.0197 | 0.0072 |
+| ramp 15 → 30 WPM | 0.0000 | 0.0069 | 0.0000 |
+| ramp 30 → 15 WPM | 0.0075 | 0.0672 | 0.0224 |
+| step 20 → 35 WPM | 0.0349 | 0.0465 | 0.0407 |
+| step 35 → 20 WPM | 0.0301 | 0.0301 | 0.0422 |
+
+Selected speed off by more than ×1.5 (fraction of selection instants, S₅₀₀ ≥ 6 dB; compare's "Selected
+speed" table):
+
+| group | `exp-ref` (24) | `exp-E4-12` | `exp-E4-48` |
+|---|---|---|---|
+| A sensitivity | 0.0248 | 0.0529 | 0.0004 |
+| B fading | 0.1608 | 0.1959 | 0.0752 |
+| C fists | 0.0171 | 0.0722 | 0.0038 |
+| D speed | 0.0193 | 0.0193 | 0.0193 |
+| E interference | 0.1842 | 0.1330 | 0.3657 |
+| G ragchew | 0.0189 | 0.0843 | 0.0003 |
+| H two-station QSO, oracle (per station) | 0.0462 | 0.1097 | 0.0107 |
+| I Farnsworth | 0.0324 | 0.0926 | 0.0077 |
+
+Full tables: `build/suite/full3/experiments/linux/compare-exp-E4-12-vs-exp-ref.md`,
+`compare-exp-E4-48-vs-exp-ref.md`, `summary-E4.md` (git-ignored).
+
+Rule (pre-registered): adopt a value only if its pooled paired CER interval lies entirely below 0 and
+neither group D nor group I has a paired interval entirely above 0; if both 12 and 48 qualify, the one
+with the lower pooled mean. Otherwise keep 24. **Outcome: 48 qualifies, 12 does not.** 48: pooled
+−0.0151 (−0.0252 to −0.0045), entirely below 0; group D +0.0057 (−0.0015 to +0.0148) and group I
+−0.0264 (−0.0374 to −0.0171), neither entirely above 0. 12: pooled +0.0255 (+0.0172 to +0.0334),
+entirely above 0. **Adopted: `fit_memory = 48`** (status measured, E4); `exp-E4-48` is the current
+reference for E5.
+
+Observed, not part of the rule: with 48 the first-word CER rises in group A, +0.1276 (+0.0132 to
++0.2610), and the selected-speed errors in group E rise (0.184 → 0.366), while they fall in every
+other group with such instants. Group D's speed changes read slightly worse with 48 in three of four
+conditions (each condition is 2 signals; not tested separately).
+
+**Tests after the change** (`pytest training -q`, local): 3 failed, 244 passed, 4 xfailed with
+N_mem = 48. One asserted the default's decay by value (`test_copy_is_independent_and_best_needs_an_observation`,
+λ = e^(−1/24) written out); it now reads `CFG.fit_memory`. Two are findings, left failing and reported
+to the owner (section 6): `test_the_fit_follows_a_speed_step_within_its_memory` (20 → 35 WPM step,
+true dit 34.29 ms; the test expects T within 5% after 72 new marks and spaces, 3 × the old N_mem; the
+fit gives 37.50 ms after 72, 35.60 ms after 96, 34.88 ms after 120 and 34.58 ms after 144: it now
+needs about twice as many elements to follow a step) and the channel test
+`test_a_same_speed_turnover_keeps_the_previous_over_s_fit` (two overs at 25 WPM; it now reads
+"CCQ DE K1ABC K EE TT EE TT K1ABC": a spurious C before the first over's CQ, while the second over,
+which N_mem = 24 read as "… U1ABC", is now complete).
+
 ## 4. Final evaluation (Task 15)
 
 ## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure
@@ -552,3 +647,10 @@ CPU: 315.0 and 316.4 ms per channel-second; wall 39.6 and 39.8 min. Full tables:
   −0.0152 (−0.0280 to +0.0000) overall, better in A, C, G, H and I, but first-word CER +0.2612 and worse in
   E and F. E1's offline measure did not predict decoding. Not pre-registered, so nothing was adopted;
   `exp-ref` (threshold 0.03) stays the reference.
+
+- **E4 (section 3.7): N_mem = 48 adopted by the rule; two Python tests now fail.** The channel test
+  `test_a_same_speed_turnover_keeps_the_previous_over_s_fit` reads "CCQ DE K1ABC K EE TT EE TT K1ABC"
+  (a spurious leading C; the second over is now right), and the fit's speed-step test needs about 144
+  elements, not 72, to come within 5% of a 20 → 35 WPM step (37.50 ms after 72, true 34.29 ms). The
+  plan says a channel test that fails after an adopted change is reported, not reverted silently; the
+  adoption stands until the owner decides.

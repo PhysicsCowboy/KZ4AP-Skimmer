@@ -63,7 +63,8 @@ class ProtoConfig:
                                            # over the most recent keyed samples, at most this x W_min of keyed time
                                            # (1.6 s by default); heuristic (a bound on memory, several W_min long)
     # Duration fit (spec 4.5)
-    fit_memory: float = 24.0               # N_mem, marks and spaces; placeholder (E4)
+    fit_memory: float = 48.0               # N_mem, marks and spaces; measured (E4): 48 adopted over 24 and 12
+                                           # (results record, section 3.7)
     t_grid_step: float = 0.01              # relative step of the T grid; placeholder (E5)
     q_grid: tuple[float, ...] = (3.0, 3.5, 4.0, 4.5, 5.0)                                  # placeholder (E5)
     w_grid: tuple[float, ...] = (-0.4, -0.2, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0)                 # w/T; placeholder (E5)

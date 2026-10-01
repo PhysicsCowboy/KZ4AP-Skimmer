@@ -184,7 +184,7 @@ def test_copy_is_independent_and_best_needs_an_observation():
     other = fit.copy()
     other.add(False, 0.048, 1e-8)
     assert len(fit.history) == 1 and len(other.history) == 2
-    assert fit.weight == pytest.approx(1.0) and other.weight == pytest.approx(1.0 + np.exp(-1 / 24))
+    assert fit.weight == pytest.approx(1.0) and other.weight == pytest.approx(1.0 + np.exp(-1 / CFG.fit_memory))
 
 
 def test_fast_paths_are_bit_identical_to_the_plain_formulas():
