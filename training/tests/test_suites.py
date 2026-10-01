@@ -460,3 +460,40 @@ def test_run_only_scores_matching_recordings(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
     run_suite(tmp_path, tmp_path / "kz4ap-bench", ["baseline"], only="^y$")
     assert [c[1] for c in calls] == [str(tmp_path / "y.wav")]
+
+
+def test_paired_differences_compare_any_two_front_ends():
+    rows = [_row(0.0, 100, 10, front_end="matched", index=i) for i in range(4)]
+    rows += [_row(0.0, 100, 20, front_end="bank-proto", index=i) for i in range(4)]
+    d = paired_differences(rows, "matched", "bank-proto")[("A", "25 wpm")]
+    assert d["mean"] == pytest.approx(0.10)
+
+
+def test_detector_only_groups_get_oracle_copies_that_load_as_oracle_rows(tmp_path):
+    from kz4ap_synth.suites import ORACLE_COPY_GROUPS, load_results, oracle_copies
+    rec = {"name": "pauses-s1", "group": "pauses", "oracle": False, "labels": "pauses-s1.json"}
+    assert oracle_copies(rec) == [("pauses-s1.json", "pauses-s1.oracle", "pauses, oracle")]
+    assert oracle_copies({**rec, "group": "A sensitivity", "oracle": True}) == []
+    assert oracle_copies({**rec, "group": "H two-station QSO"}) == []  # group H has its own oracle copy
+    assert set(ORACLE_COPY_GROUPS) == {"pauses", "strong", "tune-up", "first sample", "band", "crowded"}
+    spec = Recording("pauses-s1", "pauses", 8000, 3.0, 5, False, [SignalSpec("CQ", 1000.0, 25.0, 10.0, 0.5)])
+    write_suite([spec], tmp_path, "test")
+    (tmp_path / "results" / "matched").mkdir(parents=True)
+    for result in ("pauses-s1", "pauses-s1.oracle"):
+        (tmp_path / "results" / "matched" / f"{result}.json").write_text(
+            json.dumps({"score": {"signals": [_fake_signal(0)]}}))
+    rows, _ = load_results(tmp_path)
+    assert sorted((r["recording"], r["group"]) for r in rows) == [("pauses-s1", "pauses"),
+                                                                  ("pauses-s1.oracle", "pauses, oracle")]
+
+
+def test_load_results_reads_the_given_directories_and_front_ends(tmp_path):
+    rec = Recording("tiny", "A sensitivity", 8000, 3.0, 5, True, [SignalSpec("CQ", 1000.0, 25.0, 10.0, 0.5)])
+    write_suite([rec], tmp_path, "test")
+    for root, fe in ((tmp_path / "results", "baseline"), (tmp_path / "experiments" / "results", "exp-a")):
+        (root / fe).mkdir(parents=True)
+        (root / fe / "tiny.json").write_text(json.dumps({"score": {"signals": [_fake_signal(0)]}}))
+    from kz4ap_synth.suites import load_results
+    assert {r["front_end"] for r in load_results(tmp_path)[0]} == {"baseline"}
+    rows, _ = load_results(tmp_path, [tmp_path / "results", tmp_path / "experiments" / "results"], ["exp-a"])
+    assert {r["front_end"] for r in rows} == {"exp-a"}

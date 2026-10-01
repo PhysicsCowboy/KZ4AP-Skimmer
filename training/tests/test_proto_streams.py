@@ -50,3 +50,10 @@ def test_load_detector_channel_reads_track_opening_and_anchors(tmp_path):
     assert ch.first_sample_index == 3000 and ch.anchors == [(3000, 1011.0)]
     # a DC input mixed down by anchor - center = 11 Hz, phase 0 at the first recorded sample
     assert np.allclose(ch.baseband(), np.exp(-2j * np.pi * 11.0 * np.arange(64) / 1500.0))
+    # from the manifest parsed once (the runner's path): the same stream
+    from kz4ap_proto.streams import detector_channel, read_manifest
+    manifest = read_manifest(tmp_path)
+    same = detector_channel(tmp_path, manifest["sample_rate_hz"], manifest["channels"][0])
+    assert same.__dict__.keys() == ch.__dict__.keys()
+    assert all(np.array_equal(v, ch.__dict__[k]) if isinstance(v, np.ndarray) else v == ch.__dict__[k]
+               for k, v in same.__dict__.items())

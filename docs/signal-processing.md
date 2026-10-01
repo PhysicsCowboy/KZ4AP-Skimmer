@@ -2286,3 +2286,50 @@ not in the repository; nothing was changed):
   `print_score`); `tracked_freq_hz` is each track's `last_freq_hz`. A file
   must give either `texts` or `tracks`, not both. Checked identical on the
   smoke recording's Matched detector path (apart from `tracked_freq_hz`).
+- **Stage-1 prototype runs** (`training/kz4ap_proto/runner.py`,
+  `metrics.py`, `report.py`; milestone 2b, stage 1; Python, not the
+  engine). **Oracle copies:** the detector-only groups (pauses, strong,
+  tune-up, first sample, band, crowded; `suites.ORACLE_COPY_GROUPS`) are
+  scored once more with oracle channels, as result `<recording>.oracle` in
+  group `<group>, oracle`, by Envelope and Matched (`kz4ap-bench --oracle`)
+  and by the prototype, so every regime has a like-for-like front-end
+  comparison; group H already has its own oracle copy. **Channels:** oracle
+  scorings are recorded with `--oracle --front-end envelope
+  --record-channels` and mixed at the label; every non-oracle recording is
+  recorded once more through the Matched path's detector (`--front-end
+  matched`, no `--oracle`, D_ch = 47 Hz) as `<recording>.detector`, each
+  channel decoded from its opening and mixed by the detector's frequency
+  block by block, and scored in the tracks form under the engine's own
+  result names, so on the detector path the prototype pairs with Matched
+  per track (the same tracks) and with Envelope per label (Envelope's
+  detector opens its own tracks). **Comparison** (no acceptance gate;
+  owner, 2026-09-30): for each (group, tag), the prototype's CER minus the
+  reference's, signal by signal, with a bootstrap 95% interval over
+  signals (1000 resamples); "better" if the interval's upper end is below
+  0, "worse" if its lower end is above 0, else "unchanged"; "no interval"
+  below 2 signals. Rows not comparable by construction are marked and not
+  counted: group F drift (the oracle mix follows the labeled drift,
+  favoring the prototype) and group H oracle QSO labels with a nonzero
+  answering offset (the answering station is off the mix, handicapping
+  it). **Detection measures** on the detector path, per front end and
+  group: labels scored, labels detected, detection recall (detected /
+  scored) and false tracks (tracks that decoded text and matched no
+  label), summed over the recordings' main scorings, and tracks per QSO
+  (group H, as in the suite summary); as the bench counts them they depend
+  on the decoder. **The prototype's own statistics** (oracle channels,
+  scored labels): *speed error* — at each selection instant from 3 s after
+  a transmission's start to its end, the selected branch's fitted dit T is
+  "off" if |ln(T/T_true)| > ln 1.5 or there is no fit, T_true = 1.2 s/WPM,
+  constant-speed labels only (no `wpm_end`; QSOs only if both senders share
+  a speed) at S₅₀₀ ≥ 6 dB; reported as the fraction of instants off, with a
+  bootstrap 95% interval over channels, and *lock-ins*, transmissions with
+  off instants for 3 s or longer in a row; *switches* of the selected
+  branch per minute of transmission time, and *alternations*, a switch
+  straight back to the previous branch within 5 s; *spurious over starts*,
+  over starts from 1 s after a transmission's start to its end, per
+  transmission; *false characters*, final characters other than word
+  spaces starting outside every transmission padded by 0.5 s, per minute
+  outside the padded transmissions; *decoding CPU*, process CPU time per
+  channel-second (s/s), Python, not comparable with the engine's C++. All
+  thresholds here (×1.5, 3 s, 5 s, 1 s, 0.5 s, 6 dB) are heuristic choices
+  of the report, not measured.

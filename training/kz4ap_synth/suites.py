@@ -516,6 +516,18 @@ def _scorings(rec: dict) -> list[tuple[str, str, str]]:
     return out
 
 
+# The detector-only groups, scored again with oracle channels for the filter-bank prototype (milestone 2b,
+# stage 1; owner, 2026-09-30), so every regime is compared like for like. Group H has its own oracle copy.
+ORACLE_COPY_GROUPS = ("pauses", "strong", "tune-up", "first sample", "band", "crowded")
+
+
+def oracle_copies(rec: dict) -> list[tuple[str, str, str]]:
+    """(labels file, result name, group) of a detector-only recording's oracle copy, or []."""
+    if rec["oracle"] or rec["group"] not in ORACLE_COPY_GROUPS:
+        return []
+    return [(rec["labels"], f"{rec['name']}.oracle", f"{rec['group']}, oracle")]
+
+
 def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None) -> None:
     """Scores every recording of the manifest (or those whose names match `only`, a regular
     expression) with kz4ap-bench, once per front end (and once more per front end against
@@ -657,14 +669,14 @@ def aggregate(rows) -> dict:
     return out
 
 
-def paired_differences(rows) -> dict:
-    """Matched minus baseline CER, signal by signal on the same recordings, pooled by
-    (group, tag): mean difference and its bootstrap 95% interval over signals."""
+def paired_differences(rows, a: str = "baseline", b: str = "matched") -> dict:
+    """b minus a CER, signal by signal on the same recordings, pooled by (group, tag): mean difference and
+    its bootstrap 95% interval over signals (defaults: Matched minus baseline)."""
     by_front_end: dict = {}
     for r in rows:
         if r["scored"]:
             by_front_end.setdefault(r["front_end"], {})[(r["group"], r["tag"], r["recording"], r["index"])] = r
-    base, matched = by_front_end.get("baseline", {}), by_front_end.get("matched", {})
+    base, matched = by_front_end.get(a, {}), by_front_end.get(b, {})
     diffs: dict = {}
     limited: dict = {}
     for key in sorted(set(base) & set(matched)):
@@ -714,13 +726,19 @@ def _row_regime(oracle: bool, label: dict, front_end: str) -> str | None:
     return qso_regime(offset, front_end)
 
 
-def load_results(out_dir: Path):
-    """Per-signal rows and per-recording timings from every results/<front end>/ directory."""
+def load_results(out_dir: Path, results_dirs=None, front_ends=None):
+    """Per-signal rows and per-recording timings from every front-end directory in results_dirs (default:
+    out_dir/results), or only those named in front_ends."""
     manifest = json.loads((out_dir / "manifest.json").read_text())
     rows, timings = [], []
-    for fe_dir in sorted(p for p in (out_dir / "results").iterdir() if p.is_dir()):
+    roots = results_dirs if results_dirs is not None else [out_dir / "results"]
+    fe_dirs = sorted((p for root in roots if root.exists() for p in root.iterdir() if p.is_dir()), key=lambda p: p.name)
+    for fe_dir in fe_dirs:
+        if front_ends is not None and fe_dir.name not in front_ends:
+            continue
         for rec in manifest["recordings"]:
-            for label_file, result_name, group in _scorings(rec):
+            scorings = [(s, rec["oracle"]) for s in _scorings(rec)] + [(s, True) for s in oracle_copies(rec)]
+            for (label_file, result_name, group), oracle in scorings:
                 path = fe_dir / f"{result_name}.json"
                 if not path.exists():
                     continue
@@ -735,8 +753,8 @@ def load_results(out_dir: Path):
                                  "tag": label.get("tag", ""), "index": sig["index"], "snr_db": sig["snr_db"],
                                  "scored": sig["scored"], "detected": sig["track_id"] is not None,
                                  "freq_error_hz": freq_error,
-                                 "regime": _row_regime(rec["oracle"], label, fe_dir.name),
-                                 "beyond_oracle_anchor": beyond_oracle_anchor(rec["oracle"], label),
+                                 "regime": _row_regime(oracle, label, fe_dir.name),
+                                 "beyond_oracle_anchor": beyond_oracle_anchor(oracle, label),
                                  **{k: sig[k] for k in COUNT_KEYS}})
                 if result_name == rec["name"]:
                     timing = result.get("timing", {})

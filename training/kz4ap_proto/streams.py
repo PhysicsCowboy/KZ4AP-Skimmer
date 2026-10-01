@@ -80,14 +80,20 @@ def load_channel(record_dir, labels_path, position: int) -> ChannelStream:
 def load_detector_channel(record_dir, position: int) -> ChannelStream:
     """The position-th channel of a detector-path recording directory (kz4ap-bench --record-channels without
     --oracle): no label; it starts where the channel opened."""
-    record_dir = Path(record_dir)
     manifest = read_manifest(record_dir)
-    ch = manifest["channels"][position]
+    return detector_channel(record_dir, float(manifest["sample_rate_hz"]), manifest["channels"][position])
+
+
+def detector_channel(record_dir, rate_hz: float, ch: dict) -> ChannelStream:
+    """load_detector_channel from a manifest already parsed: rate_hz is its sample_rate_hz, ch one of its channels
+    (parsing channels.json once per channel costs time quadratic in the channel count on a crowded recording, so a
+    runner parses it once per recording)."""
+    record_dir = Path(record_dir)
     y = np.fromfile(record_dir / ch["file"], dtype="<c8").astype(np.complex128)
     if len(y) != ch["samples"]:
         raise ValueError(f"{ch['file']}: {len(y)} samples, the manifest says {ch['samples']}")
     anchors = [(int(i), float(f)) for i, f in ch["anchors"]] or [(int(ch["first_sample_index"]), float(ch["birth_freq_hz"]))]
-    return ChannelStream(None, float(manifest["sample_rate_hz"]), y, int(ch["first_sample_index"]), 0.0, 0.0, 0.0,
+    return ChannelStream(None, float(rate_hz), y, int(ch["first_sample_index"]), 0.0, 0.0, 0.0,
                          None, track_id=int(ch["track_id"]), center_hz=float(ch["center_hz"] or 0.0),
                          birth_freq_hz=float(ch["birth_freq_hz"]), open_s=float(ch["open_s"]),
                          close_s=None if ch["close_s"] is None else float(ch["close_s"]), anchors=anchors)
