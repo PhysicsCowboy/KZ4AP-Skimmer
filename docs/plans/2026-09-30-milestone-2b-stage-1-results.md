@@ -5,6 +5,74 @@ Plan: `docs/plans/2026-09-30-milestone-2b-stage-1-filter-bank-prototype.md`. Spe
 marked otherwise; every interval is a bootstrap 95% interval (over signals for CER, over channels for
 the periodicity and speed statistics). S₅₀₀: key-down carrier power over noise power in 500 Hz, dB.
 
+## 0. Terms used in this record
+
+**The pipeline, in order** (`docs/signal-processing.md` has the details):
+
+- **Recording**: a WAV file holding a slice of the band, with many stations in it. The suite's recordings
+  are synthetic, so every station's true text (its **labels**) is known.
+- **Detector**: scans the spectrum, finds stations and opens a **track** for each.
+- **Channelizer**: for each track, mixes the station to 0 Hz, filters it to ±150 Hz and decimates it to
+  1500 complex samples per second. The result is that station's **channel** and its **channel
+  stream**.
+- **Decoder**: runs on each channel stream separately. Its first stage, the **front end**, turns samples
+  into key-down/key-up; the later stages (elements, letters, speed, text) are shared. "Front end" means
+  that first decoder stage, **not** the detector.
+- **Oracle mode** (benchmark only): skips the detector and opens a channel at each station's labeled
+  (true) frequency, from the first sample to the end. It measures the decoder apart from detection.
+
+**The decoders compared:**
+
+| Name | What it is | Where |
+|---|---|---|
+| Envelope (`baseline` in result folders) | Milestone 1: envelope smoother, adaptive threshold, hard decisions by duration | C++ engine (`--front-end envelope`) |
+| Matched | Milestone 2 part 1: one matched filter whose length follows the decoder's own speed estimate; the engine's current default, which this milestone replaces | C++ engine (`--front-end matched`) |
+| Prototype (filter bank) | The spec's design: 32 fixed boxcar branches, periodicity estimator, per-branch duration fit, branch selection | Python, `training/kz4ap_proto`; not in the engine (stage 2 would put it there) |
+
+**The test material:**
+
+- **Suite**: `build/suite/full3`, 123 synthetic recordings with labels, 3 random **seeds** (independent
+  draws of noise, text and timing) per condition. Groups A–I each test one condition (A white noise, B
+  fading, C fists, D speed changes, E interference, F drift and offset, G ragchew, H QSO, I Farnsworth);
+  band, crowded, pauses, strong, tune-up and first-sample are scored through the detector
+  (**detector-only** recordings).
+- **Scoring**: decoding every station of a recording and comparing the text with the labels. **CER**
+  (character error rate) is the minimum number of symbol insertions, deletions and substitutions that turn the decoded text into the reference, divided by the number of reference symbols (a fraction; prosigns and word spaces count as symbols; `docs/signal-processing.md` section 11). A **scoring** is one recording
+  scored against one label file.
+- **Recorded channel streams**: the engine run once with a tap that writes each channel stream to disk
+  (`build/suite/full3/channels/`, complex64 files) exactly as the channelizer delivers it, before any
+  decoder. The prototype reads these files, so it and the C++ decoders see the same samples, and
+  detection and channelizing are not repeated per experiment. **Oracle channels** are one per labeled
+  station; **detector channels** are whatever the detector opened, false tracks included.
+- **Oracle copy**: a detector-only recording also scored on its oracle channels. **Engine copies**: the
+  Envelope and Matched scorings of those oracle copies (27 recordings × 2 decoders), so that the
+  prototype is compared with them on the same channels.
+- **Channel-second**: one second of one channel's stream; the unit of decoding cost (CPU time per
+  channel-second).
+
+**Inside the prototype:**
+
+- **Branch k** (k = 1…32): one boxcar filter of length L_k = 9.6 ms × 1.1^(k−1) (9.6 ms to 184 ms)
+  with its own noise power, amplitude, likelihood ratio, squelch and keying.
+- **Posterior**: for each sample, the probability that the key is down given the observations. Branch
+  1's posterior is the input of the **periodicity estimator** (the coarse dit period T_P).
+
+**The experiments:**
+
+- **Experiment** (E1…E10): one question about one parameter or method, from the plan's list.
+- **Variant**: one candidate answer to that question, meaning one setting. Each variant is a complete
+  prototype **run**, a decoding of the development set with that one setting changed.
+- **Development set**: seed 1 of the suite (21 scorings, 525 channels, 74 748 channel-seconds, 509
+  signals). Seeds 2 and 3 are held out for the final evaluation, so that values chosen on seed 1 are
+  judged on data they were not chosen on.
+- **Reference run** (`exp-ref`): the prototype with every default. Each variant is compared with it
+  signal by signal: the **paired CER difference** (variant − reference, per signal, pooled) with its
+  bootstrap 95% interval.
+- **Pre-registered rule**: the decision rule for each experiment, written in the plan before its runs.
+  It decides whether a variant is adopted, so the choice is not made after seeing the numbers.
+- **Batch**: several variants of one experiment run one after another and each compared with the
+  reference (for example `E10.json`).
+
 ## 1. Conditions
 
 - Machine: 12th Gen Intel(R) Core(TM) i7-12700H (6 P-cores, 8 E-cores, 20 logical CPUs), Windows 11,
@@ -34,8 +102,8 @@ the periodicity and speed statistics). S₅₀₀: key-down carrier power over n
 
 ## 2. Owner's decisions (2026-09-30, after the plan review)
 
-- Noise level: both measured (E10 arms a, b, c); spec §4.2 and §5 say it is decided by E10.
-- Periodicity: the comb on Π = 2T with teeth ±15% of T is the default; the edge comb is E1's third arm;
+- Noise level: both measured (E10 variants a, b, c); spec §4.2 and §5 say it is decided by E10.
+- Periodicity: the comb on Π = 2T with teeth ±15% of T is the default; the edge comb is E1's third variant;
   spec §4.4 and §6 corrected.
 - First-mark threshold calibrated by measurement (E9); keyed samples only while the amplitude is unknown.
 - The whole experiment list kept; runs in the background.
@@ -68,13 +136,13 @@ the run cleanly if free memory falls below 2 GB.
 
 ### 3.1 E10 — the noise level (in progress)
 
-Batch `build/suite/full3/experiments/E10.json` (the plan's spec), 10 workers. Arm (b),
+Batch `build/suite/full3/experiments/E10.json` (the plan's spec), 10 workers. Variant (b),
 `exp-E10-level` (`noise_method = spectrum-level`), finished: 509 signals, pooled CER 0.3089, 71.5 min
 wall, 567.2 ms of CPU per channel-second; paired CER against `exp-ref` **+0.0020 (−0.0026 to +0.0072)**
 over all 509 signals; no group's paired interval lies entirely above or below 0 (group E: −0.0007
-(−0.0259 to +0.0181), 16 signals). Arm (c), `exp-E10-branch`, was stopped after 16 of 21 recordings
+(−0.0259 to +0.0181), 16 signals). Variant (c), `exp-E10-branch`, was stopped after 16 of 21 recordings
 (agent harness, low memory again at about 3.7 GB free); it resumes from there. The rule is applied when
-arm (c) is complete.
+variant (c) is complete.
 
 ## 4. Final evaluation (Task 15)
 
