@@ -41,8 +41,11 @@ class Selector:
         if eligible:
             q_best = max(v.fit.quality for v in eligible)
             tied = [v for v in eligible if v.fit.quality >= q_best - cfg.quality_tie_nats]
-            texts = [v.text_logprob if v.text_logprob is not None else -math.inf for v in tied]
-            if len(tied) > 1 and math.isfinite(max(texts)):
+            # The text step runs only when every tied branch has decoded text: a branch with none yet (just
+            # started an over, or never keyed) is not read as infinitely unlikely text, so the tie then goes
+            # straight to the longer branch (heuristic; Task 10 review).
+            texts = [v.text_logprob for v in tied]
+            if len(tied) > 1 and all(t is not None for t in texts):
                 tied = [v for v, t in zip(tied, texts) if t >= max(texts) - cfg.text_tie_nats]
             return max(v.index for v in tied), True  # the longer branch (better SNR)
         texts = sorted((v.text_logprob, v.index) for v in views if v.text_logprob is not None)
@@ -55,7 +58,11 @@ class Selector:
     def update(self, views, instants: int, t_now: float, prior_t_s: float | None) -> int:
         """One more selection (instants: how many selection instants it stands for). A switch needs the same
         other branch best for switch_persistence instants in a row, all as the best eligible branch or all as
-        the fallback pick (spec 4.6: "the best eligible one for M marks in a row")."""
+        the fallback pick (spec 4.6: "the best eligible one for M marks in a row"). instants == 0 (no selection
+        instant in this call) changes nothing, not even the eligibility times, and returns the current branch.
+        t_now: stream time, s; prior_t_s: T_P, s, only when the periodicity estimate is confident, else None."""
+        if instants <= 0:
+            return self.current
         for v in views:
             if self.eligible(v):
                 if self.eligible_since[v.index] is None:

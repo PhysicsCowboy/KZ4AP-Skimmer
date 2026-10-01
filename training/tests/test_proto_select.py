@@ -71,3 +71,24 @@ def test_fallback_picks_do_not_complete_an_eligible_run():
     assert [sel.update(fallback16, 1, t, None) for t in (1.0, 2.0)] == [0, 0]
     assert [sel.update(eligible16, 1, t, None) for t in (3.0, 4.0)] == [0, 0]
     assert sel.update(eligible16, 2, 5.0, None) == 16
+
+
+def test_a_quality_tie_skips_the_text_step_when_a_tied_branch_has_no_text_yet():
+    # Branch 15 has no decoded text yet (for example it just started an over): it is not read as infinitely
+    # unlikely text; the text step is skipped and the tie goes to the longer branch.
+    sel = Selector(CFG, L)
+    fits = {14: fit_for(14, -0.50), 15: fit_for(15, -0.52)}  # within 0.05 nats per element: a tie
+    assert sel.best(views(fits, {14: -2.0}), None) == (15, True)
+    assert sel.best(views(fits, {15: -2.0}), None) == (15, True)
+    assert sel.best(views(fits, {14: -2.0, 15: -3.5}), None) == (14, True)  # both have text: the text decides
+
+
+def test_an_update_without_selection_instants_changes_nothing():
+    sel = Selector(CFG, L)
+    v16 = views({16: fit_for(16, -0.5)})
+    assert sel.update(v16, 3, 1.0, None) == 0
+    assert sel.update(v16, 0, 2.0, None) == 0                       # no instant: no count, no switch
+    assert (sel.candidate, sel.count, sel.eligible_since[16]) == ((16, True), 3, 1.0)
+    assert sel.update(views(), 0, 3.0, None) == 0                   # nor does it clear the eligibility time
+    assert sel.eligible_since[16] == 1.0
+    assert sel.update(v16, 1, 4.0, None) == 16                      # the fourth instant in a row
