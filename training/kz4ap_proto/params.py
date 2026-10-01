@@ -104,6 +104,14 @@ class ProtoConfig:
     # Silences and output (spec 4.7, 4.8)
     new_over_min_s: float = 0.5            # placeholder (E7)
     new_over_gaps: float = 12.0            # x T_g; placeholder (E7)
+    rekey_timeout_s: float = 2.0           # channel time, s: if an over's amplitude is still unknown this long after it
+                                           # became unknown (W_min of keyed time not reached), what exists is re-keyed
+                                           # with the full LLR at the previous over's amplitude (no keying if there is
+                                           # none) and corrected; inside the 20 s correction reach; placeholder,
+                                           # heuristic (Task 11 review)
+    fresh_fit_min_obs: int = 8             # marks and spaces of this over a fresh fit needs before it may replace the
+                                           # previous over's (which it must also beat by 1/2 k ln n, BIC-style);
+                                           # placeholder, heuristic (Task 11 review)
     correction_reach_s: float = 20.0       # owner
 
     def with_values(self, **changes) -> "ProtoConfig":

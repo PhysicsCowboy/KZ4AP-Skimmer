@@ -32,7 +32,8 @@ class Correction:
     reach_s: float  # t_s - from_s, s (at most the correction reach)
     old: str
     new: str
-    reason: str     # "switch" (branch selection) or "rekey" (an over's first marks re-keyed)
+    reason: str     # "switch" (branch selection), "rekey" (an over's first marks re-keyed) or "timeout" (re-keyed
+                    # because the over's amplitude stayed unknown for rekey_timeout_s)
 
 
 class Output:
@@ -73,11 +74,15 @@ class Output:
         self.chars = kept + new
         old_text, new_text = "".join(c.text for c in old), "".join(c.text for c in new)
         if old_text != new_text:
-            first = min([cut] + [c.start_s for c in old])  # >= lo: the reach is at most reach_s
+            first = min(c.start_s for c in old) if old else cut  # >= lo: the reach is at most reach_s
             self.corrections.append(Correction(t_s, first, t_s - first, old_text, new_text, reason))
 
     def text(self) -> str:
         return "".join(c.text for c in self.chars)
+
+
+# The fresh fit's fitted parameters (T, w, q, T_g): k in the 1/2 k ln n penalty (Branch._fresh_wins).
+FIT_PARAMETERS = 4
 
 
 class Branch:
@@ -87,8 +92,10 @@ class Branch:
         self.index, self.length_s, self.rate, self.cfg = index, length_s, rate_hz, cfg
         self.delay_s = (n - 1) / (2.0 * rate_hz)  # a boxcar's group delay (linear phase), s
         self.text_model = text_model
-        self.fit = DurationFit(cfg)
-        self.prev_fit: DurationFit | None = None  # the previous over's, until this over's start is decided
+        self.fit = DurationFit(cfg)               # the fit that decodes (its best is `current`)
+        self.prev_fit: DurationFit | None = None  # the previous over's, until this over's start is re-keyed
+        self.rival: DurationFit | None = None     # after a re-key the previous fit won: this over's fresh fit
+        self.over_obs: list[tuple[bool, float, float]] = []  # this over's re-keyed and later (is_mark, d s, var s^2)
         self.current = None                       # the Fit that decodes
         self.chars: list[Char] = []
         self.elements = ""
@@ -97,7 +104,10 @@ class Branch:
         self.word_open = False
         self.down_at: float | None = None
         self.up_at: float | None = None           # this over's last key-up (None: none yet)
-        self.over_start_n = 0
+        self.over_start_n = 0                     # sample index of the latest over start
+        self.unknown_since_n = 0                  # sample index where the amplitude became unknown (the stream's start)
+        self.timeout_from_n = 0                   # the re-key time-out counts from this sample index
+        self.over_pending = False                 # an over started by a silence, not yet confirmed by a re-key
         self.marks_in_over = 0
 
     def time(self, n: int) -> float:
@@ -127,11 +137,38 @@ class Branch:
         durations (adding the provisional ones too would count the same marks twice). Until the re-keying the
         previous over's fit, if any, decodes them (start_over); with none they are not decoded, and the
         re-keying decodes the whole stretch. After the re-keying every duration is keyed by the full LLR and
-        enters the fit, which decodes."""
-        if provisional:
+        enters the decoding fit, and the rival fresh fit while there is one (see _fresh_wins)."""
+        if provisional or not d > 0:
             return
         self.fit.add(is_mark, d, var_t)
         self.current = self.fit.best(*prior)
+        if self.rival is None:
+            return
+        self.rival.add(is_mark, d, var_t)
+        self.over_obs.append((is_mark, d, var_t))
+        fresh = self.rival.best(*prior)
+        if self._fresh_wins(fresh, self.current, self.over_obs):
+            self.fit, self.current, self.rival = self.rival, fresh, None
+        elif len(self.over_obs) >= self.rival.history.maxlen:
+            # By now the previous over's memory weighs lambda^(4 N_mem) = e^-4 = 1.8% of the continued fit's
+            # (derived), so the two fits nearly agree: the competition ends and the continued fit stays.
+            self.rival = None
+
+    def _fresh_wins(self, fresh, old, obs) -> bool:
+        """Whether this over's fresh fit replaces the previous over's continued fit (controller ruling, Task 11
+        review). It needs at least fresh_fit_min_obs of this over's re-keyed (and later) marks and spaces, and
+        its log-likelihood on them must beat the continued fit's by 1/2 k ln n, nats: k = FIT_PARAMETERS = 4,
+        the parameters the fresh fit fits (T, w, q, T_g), n = len(obs). The form is the BIC's (derived, for n
+        independent observations); applying it with k counting only the fresh fit's parameters is heuristic.
+        Without it the fresh fit, fitted in-sample to 2-3 re-keyed durations, won almost every re-key (the
+        previous fit won 8 of 32 in the review's same-speed turnover) and could misread the over's speed."""
+        n = len(obs)
+        if fresh is None or n < self.cfg.fresh_fit_min_obs:
+            return False
+        if old is None:
+            return True
+        gain = n * (observations_loglik(fresh, obs, self.cfg) - observations_loglik(old, obs, self.cfg))
+        return gain > 0.5 * FIT_PARAMETERS * math.log(n)
 
     def _add_element(self, start: float, end: float, var_t: float, fit=None) -> None:
         fit = fit or self.current
@@ -171,18 +208,28 @@ class Branch:
         tg = self.current.tg_s if self.current is not None else 1.2 / self.cfg.min_wpm
         return max(self.cfg.new_over_min_s, self.cfg.new_over_gaps * tg)
 
-    def new_over_due(self, t_now: float, key_down: bool) -> bool:
-        return (not key_down) and self.up_at is not None and t_now - self.up_at > self.silence_limit_s()
+    def new_over_due(self, n_now: int, key_down: bool) -> bool:
+        """The key has been up for longer than T_new since the last key-up; both times on this branch's time
+        base (group delay removed), s."""
+        return (not key_down) and self.up_at is not None and self.time(n_now) - self.up_at > self.silence_limit_s()
 
-    def start_over(self, n_now: int) -> None:
-        """A possible new over (spec 4.7): a fresh fit, the previous over's kept as the fallback."""
+    def start_over(self, n_now: int, prior, was_unknown: bool) -> None:
+        """A possible new over (spec 4.7): a fresh fit, the previous over's kept as the fallback (its best with
+        the T_P prior decodes until the re-key). was_unknown: the amplitude was still unknown (an over that was
+        never re-keyed starts again), so the re-key and its time-out keep counting from where it became
+        unknown."""
         self._finish_char()
         self._word_space()
         if self.prev_fit is None and self.fit.history:
             self.prev_fit = self.fit
         self.fit = DurationFit(self.cfg)
-        self.current = self.prev_fit.best() if self.prev_fit is not None else None
+        self.rival = None
+        self.over_obs = []
+        self.current = self.prev_fit.best(*prior) if self.prev_fit is not None else None
         self.over_start_n = n_now
+        if not was_unknown:
+            self.unknown_since_n = self.timeout_from_n = n_now
+        self.over_pending = True
         self.marks_in_over = 0
         self.down_at = self.up_at = None
 
@@ -200,40 +247,73 @@ class Branch:
         return obs, down_at, up_at
 
     def rekey_over(self, P_stretch, n0: int, sigma2: float, amp_candidates, a_min: float, prior):
-        """Re-keys the stretch from sample n0 with the full LLR (spec 4.7): each candidate amplitude s^2 with
-        each candidate fit (fresh, and the previous over's continued); the combination whose fit explains the
-        re-keyed marks and spaces best (mean log-likelihood per element) wins, and the stretch's characters are
-        decoded again with it. Returns (s^2, key state at the end, the stretch's start time s)."""
+        """Re-keys the stretch from sample n0 with the full LLR (spec 4.7). For each candidate amplitude s^2
+        (FS^2), the re-keyed marks and spaces enter a fresh fit and the previous over's fit continued; the fresh
+        one is taken only if _fresh_wins, otherwise the continued one decodes and the fresh one stays its rival,
+        learning from every later mark and space. Among the amplitudes, the one whose taken fit explains its
+        re-keyed marks and spaces best (mean log-likelihood per element, nats) wins, and the stretch's
+        characters are decoded again with that fit. With no mark or space at any amplitude, the previous over's
+        fit continues. Returns (s^2 FS^2, key state at the end, the stretch's start time s, marks keyed)."""
         from_s = self.time(n0)
         best = None
         for amp2 in amp_candidates:
             key = rekey(P_stretch, sigma2, amp2, self.cfg, a_min)
             var_t = resolution_var_s2(self.length_s, math.sqrt(max(amp2, 0.0) / sigma2), self.rate)
             obs, down_at, up_at = self._observations(key, n0, var_t)
-            for base in [None] + ([self.prev_fit] if self.prev_fit is not None else []):
-                fit = DurationFit(self.cfg) if base is None else base.copy()
-                for is_mark, d, v, _, _ in obs:
-                    fit.add(is_mark, d, v)
-                result = fit.best(*prior)
-                score = observations_loglik(result, obs, self.cfg)
-                if best is None or score > best[0]:
-                    best = (score, amp2, key, fit, result, obs, down_at, up_at)
-        _, amp2, key, fit, result, obs, down_at, up_at = best
+            obs3 = [o[:3] for o in obs]
+            fresh = DurationFit(self.cfg)
+            for is_mark, d, v in obs3:
+                fresh.add(is_mark, d, v)
+            fresh_result = fresh.best(*prior)
+            if self.prev_fit is None:
+                fit, result, rival = fresh, fresh_result, None
+            else:
+                cont = self.prev_fit.copy()
+                for is_mark, d, v in obs3:
+                    cont.add(is_mark, d, v)
+                cont_result = cont.best(*prior)
+                if self._fresh_wins(fresh_result, cont_result, obs3):
+                    fit, result, rival = fresh, fresh_result, None
+                else:
+                    fit, result, rival = cont, cont_result, fresh
+            score = observations_loglik(result, obs3, self.cfg)
+            if best is None or score > best[0]:
+                best = (score, amp2, key, fit, result, rival, obs, down_at, up_at)
+        _, amp2, key, fit, result, rival, obs, down_at, up_at = best
         self.fit, self.prev_fit = fit, None
+        self.over_obs = [o[:3] for o in obs] if rival is not None else []
+        self.rival = rival if rival is not None and len(self.over_obs) < rival.history.maxlen else None
         if result is not None:
             self.current = result
+        self._redecode(from_s, obs, self.current)
+        marks = sum(1 for o in obs if o[0])
+        self.marks_in_over = marks
+        self.down_at, self.up_at = down_at, up_at
+        return amp2, bool(key[-1]) if len(key) else False, from_s, marks
+
+    def clear_over(self, n0: int) -> float:
+        """The re-key time-out with no amplitude to key with (no previous over): nothing in the stretch from
+        sample n0 is keyed, so its provisional characters are deleted; the amplitude stays unknown. Returns the
+        stretch's start time, s."""
+        from_s = self.time(n0)
+        self._redecode(from_s, [], None)
+        self.marks_in_over = 0
+        self.down_at = self.up_at = None
+        return from_s
+
+    def _redecode(self, from_s: float, obs, fit) -> None:
+        """Drops the characters from from_s (s) on and decodes obs (is_mark, d s, var s^2, start s, end s) with
+        fit (none: nothing is decoded)."""
         self.chars = [c for c in self.chars if c.start_s < from_s]
         self.word_open = bool(self.chars) and self.chars[-1].text != " "
         self.elements = ""
-        self.marks_in_over = sum(1 for o in obs if o[0])
-        if result is not None:
-            for is_mark, d, v, start, end in obs:
-                if is_mark:
-                    self._add_element(start, end, v, result)
-                else:
-                    self._end_space(d, v, result)
-        self.down_at, self.up_at = down_at, up_at
-        return amp2, bool(key[-1]) if len(key) else False, from_s
+        if fit is None:
+            return
+        for is_mark, d, v, start, end in obs:
+            if is_mark:
+                self._add_element(start, end, v, fit)
+            else:
+                self._end_space(d, v, fit)
 
     def text_logprob(self, window: int):
         recent = []
@@ -251,8 +331,12 @@ class ChannelResult:
     chars: list = field(default_factory=list)
     corrections: list = field(default_factory=list)
     selections: list = field(default_factory=list)   # (t s, branch index, its T s or NaN)
-    periodicity: list = field(default_factory=list)  # (t s, T_P s or NaN, confidence, window s or NaN, per window)
-    over_starts: list = field(default_factory=list)  # s, the selected branch's
+    # (t s, T_P s or NaN, confidence, window s or NaN, per window [(T s or None, score)]); confidence and scores are
+    # dimensionless for the combs ("comb", "edge") and in nats for the spectrum fit ("spectrum")
+    periodicity: list = field(default_factory=list)
+    # s, the selected branch's time base (group delay removed): where an over started, counted once its re-key
+    # keyed at least one mark (a silence followed only by noise starts no over)
+    over_starts: list = field(default_factory=list)
     switches: int = 0
     p1: np.ndarray | None = None                     # branch 1's squelched posterior at r (run(keep_p1=True) only)
 
@@ -303,6 +387,7 @@ class ChannelDecoder:
         result = ChannelResult("")
         block = max(1, int(round(cfg.block_s * rate)))
         reach = int(round(cfg.correction_reach_s * rate))
+        timeout = int(round(cfg.rekey_timeout_s * rate))
         prior = (None, 0.0)
         for n0 in range(0, total, block):
             n1 = min(n0 + block, total)
@@ -322,22 +407,46 @@ class ChannelDecoder:
             for k, br in enumerate(branches):
                 if changes[k]:
                     br.on_edges(changes[k], float(a[k]), prior, provisional=bool(keyer.unknown[k]))
-                if br.new_over_due(t_now, bool(keyer.key[k])):
+                if br.new_over_due(n1, bool(keyer.key[k])):
+                    br.start_over(n1, prior, was_unknown=bool(keyer.unknown[k]))
                     keyer.start_over(k)
-                    br.start_over(n1)
-                    if k == selector.current:
-                        result.over_starts.append(t_now)
-                elif keyer.unknown[k] and br.marks_in_over and keyer.weight[k] >= keyer.rekey_weight:
-                    # W_min of keyed time since the over started (keyer: only keyed samples count while unknown)
-                    s = max(br.over_start_n, n1 - reach)
-                    candidates = [float(keyer.amp2[k])]
-                    if math.isfinite(keyer.prev_amp2[k]):
-                        candidates.append(float(keyer.prev_amp2[k]))
-                    amp2, key_now, from_s = br.rekey_over(P[k, s:n1], s, float(sigma2[k]), candidates,
-                                                          float(keyer.a_min[k]), prior)
-                    keyer.finish_over_start(k, amp2, key_now)
-                    if k == selector.current:
-                        out.replace_from(from_s, br.chars, t_now, "rekey")
+                elif keyer.unknown[k]:
+                    # The re-keyed stretch starts where the amplitude became unknown (at most 20 s back), so it also
+                    # covers the provisional characters of overs restarted since then.
+                    s = max(br.unknown_since_n, n1 - reach)
+                    marks, from_s, reason = None, None, None
+                    if br.marks_in_over and keyer.weight[k] >= keyer.rekey_weight:
+                        # W_min of keyed time since the over started (keyer: only keyed samples count while unknown)
+                        candidates = [float(keyer.amp2[k])]
+                        if math.isfinite(keyer.prev_amp2[k]):
+                            candidates.append(float(keyer.prev_amp2[k]))
+                        amp2, key_now, from_s, marks = br.rekey_over(P[k, s:n1], s, float(sigma2[k]), candidates,
+                                                                     float(keyer.a_min[k]), prior)
+                        keyer.finish_over_start(k, amp2, key_now)
+                        reason = "rekey"
+                    elif n1 - br.timeout_from_n >= timeout:
+                        # W_min not reached within rekey_timeout_s: re-key what exists with the previous over's
+                        # amplitude. If there is none, or it keys nothing, nothing is keyed: the stretch's
+                        # provisional characters are deleted and the amplitude stays unknown (the time-out counts
+                        # again from now; the stretch still starts where the amplitude became unknown).
+                        prev2 = float(keyer.prev_amp2[k])
+                        if math.isfinite(prev2) and rekey(P[k, s:n1], float(sigma2[k]), prev2, cfg,
+                                                          float(keyer.a_min[k])).any():
+                            amp2, key_now, from_s, marks = br.rekey_over(
+                                P[k, s:n1], s, float(sigma2[k]), [prev2], float(keyer.a_min[k]), prior)
+                            keyer.finish_over_start(k, amp2, key_now)
+                        else:
+                            from_s = br.clear_over(s)
+                            br.timeout_from_n = n1
+                            keyer.start_over(k)  # still unknown: W_min of keyed time counts afresh from now
+                        reason = "timeout"
+                    if reason is not None:
+                        if marks and br.over_pending and k == selector.current:
+                            result.over_starts.append(br.time(br.over_start_n))
+                        if marks is not None:
+                            br.over_pending = False
+                        if k == selector.current:
+                            out.replace_from(from_s, br.chars, t_now, reason)
             instants = sum(1 for _, down in changes[0] if not down)
             if instants:
                 views = [BranchView(k, br.length_s, br.current, br.text_logprob(cfg.text_window_chars))
@@ -346,8 +455,9 @@ class ChannelDecoder:
                 new = selector.update(views, instants, t_now, prior[0])
                 if new != old:
                     result.switches += 1
-                    since = selector.eligible_since[new]
-                    start = _char_start_at(branches[new].chars, since if since is not None else t_now)
+                    since = selector.eligible_since[new]  # stream time, s: on the new branch's time base below
+                    start = _char_start_at(branches[new].chars,
+                                           (since if since is not None else t_now) - branches[new].delay_s)
                     out.replace_from(start, branches[new].chars, t_now, "switch")
                 current = branches[new].current
                 result.selections.append((t_now, new, current.t_s if current is not None else math.nan))
