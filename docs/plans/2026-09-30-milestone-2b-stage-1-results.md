@@ -969,6 +969,73 @@ WPM, S₅₀₀ = 20 dB, seed 1) now reads "Q TEST K1ABC K1ABC": the over's firs
 traced; following the owner's handling of E4's finding, it is a strict expected failure stating the
 finding (section 6). Then: 244 passed, 7 xfailed.
 
+### 3.10 E7 — the new-over silence threshold T_new
+
+Question: how long the key must stay up before the prototype decides a new over (a new transmission,
+possibly a different station) has started, and so forgets the amplitude and starts the unknown-amplitude
+test again. T_new = max(`new_over_min_s`, `new_over_gaps` · T_g), T_g the fitted gap timebase (a
+word gap is about 7·T_g); reference max(0.5 s, 12·T_g). Too short, and long word gaps (Farnsworth,
+group I) start overs inside a transmission; too long, and the next over's first word is decoded with
+the previous over's amplitude and fit.
+
+Variants, each changing one value: `exp-E7-gaps-8` (8·T_g), `exp-E7-gaps-16` (16·T_g),
+`exp-E7-min-0.3` (0.3 s), `exp-E7-min-1.0` (1.0 s). Against the current reference `exp-E9-rekey-0.8`.
+The plan runs the `new_over_min_s` variants after the `new_over_gaps` outcome; all four ran in one batch
+because the min_s runs would have been repeated only if a gaps value had been adopted, which none was
+(so all four are against the right reference). Development set, 509 signals, 74 748 channel-seconds.
+Batch `build/suite/full3/experiments/E7.json` (git-ignored), at `25c1db6`:
+
+```
+{"name": "E7", "base": "exp-E9-rekey-0.8", "subset": "dev", "runs": [{"name": "exp-E7-gaps-8", "set": {"new_over_gaps": 8.0}}, {"name": "exp-E7-gaps-16", "set": {"new_over_gaps": 16.0}}, {"name": "exp-E7-min-0.3", "set": {"new_over_min_s": 0.3}}, {"name": "exp-E7-min-1.0", "set": {"new_over_min_s": 1.0}}]}
+.venv/bin/python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench build/linux/bench/kz4ap-bench --spec build/suite/full3/experiments/E7.json --jobs 10
+```
+
+**Over starts inside transmissions** (the selected branch's over starts from 1 s after a transmission's
+start to its end, counted on scored labels; per transmission; counts from
+`metrics.spurious_over_starts` by `build/suite/full3/experiments/scripts/over_starts.py`, git-ignored):
+
+| run | T_new | all groups | group I | A | B | C | G | H oracle | H per station |
+|---|---|---|---|---|---|---|---|---|---|
+| `exp-E9-rekey-0.8` (reference) | max(0.5 s, 12·T_g) | 378 / 749 = 0.505 | **16 / 48 = 0.333** | 59/192 | 281/30 | 6/135 | 4/96 | 10/96 | 1/96 |
+| `exp-E7-gaps-8` | max(0.5 s, 8·T_g) | 891 / 749 = 1.190 | 265 / 48 = 5.521 | 69/192 | 421/30 | 72/135 | 26/96 | 27/96 | 10/96 |
+| `exp-E7-gaps-16` | max(0.5 s, 16·T_g) | 250 / 749 = 0.334 | 3 / 48 = 0.0625 | 38/192 | 202/30 | 0/135 | 0/96 | 6/96 | 0/96 |
+| `exp-E7-min-0.3` | max(0.3 s, 12·T_g) | 450 / 749 = 0.601 | 16 / 48 = 0.333 | 86/192 | 315/30 | 6/135 | 4/96 | 12/96 | 3/96 |
+| `exp-E7-min-1.0` | max(1.0 s, 12·T_g) | 165 / 749 = 0.220 | 15 / 48 = 0.3125 | 15/192 | 127/30 | 0/135 | 0/96 | 7/96 | 0/96 |
+
+(D, E and F: at most 5 over starts in any run.) Group B's fades dominate the all-groups count.
+
+| run | pooled CER | paired CER, all 509 | paired first-word CER over G and H, both views (48 signals) | CPU per channel-second | wall |
+|---|---|---|---|---|---|
+| `exp-E9-rekey-0.8` | 0.2799 | — | — | 184.3 ms | 23.2 min |
+| `exp-E7-gaps-8` | 0.2810 | +0.0017 (−0.0008 to +0.0047) | +0.0209 (−0.0069 to +0.0671) | 189.2 ms | 23.8 min |
+| `exp-E7-gaps-16` | 0.2806 | +0.0014 (−0.0014 to +0.0050) | −0.0039 (−0.0234 to +0.0203) | 182.4 ms | 22.9 min |
+| `exp-E7-min-0.3` | 0.2798 | +0.0003 (−0.0010 to +0.0017) | −0.0059 (−0.0260 to +0.0084) | 186.0 ms | 23.4 min |
+| `exp-E7-min-1.0` | 0.2783 | −0.0011 (−0.0033 to +0.0008) | −0.0139 (−0.0390 to +0.0069) | 181.1 ms | 22.7 min |
+
+(The G-and-H first-word value pools groups G, H oracle and H per station, computed with
+`scripts/pooled_groups.py` as in E9.) Full tables:
+`build/suite/full3/experiments/linux/compare-exp-E7-<variant>-vs-exp-E9-rekey-0.8.md`, `summary-E7.md`
+(git-ignored).
+
+Rule (pre-registered): first check the reference: if group I shows more than 0.05 over starts inside a
+transmission per transmission, report it to the owner with the numbers (Farnsworth word gaps are
+starting overs). Adopt a variant only if its paired first-word CER over G and H lies entirely below 0
+and group I's over starts per transmission stay at most 0.05. Otherwise keep max(0.5 s, 12·T_g).
+
+**Outcome of the check: it fires.** The reference has **0.333 over starts per transmission in group I**
+(16 in 48 transmissions), against 0.05; reported to the owner (section 6). For the record, the same
+measure in earlier references: `exp-ref` 1.604, `exp-E4-48` 1.521, `exp-E5-coarse-dev` 1.750,
+`exp-E9-calibrated` 1.146; W_min = 0.8 s brought it to 0.333.
+
+**Outcome of the rule: no variant qualifies.** No variant's first-word interval over G and H lies
+entirely below 0, and only `exp-E7-gaps-16` comes near the group I limit (0.0625, still above 0.05).
+**Kept: T_new = max(0.5 s, 12·T_g)** (placeholder, kept, not rejected by measurement);
+`exp-E9-rekey-0.8` stays the current reference.
+
+Observed, not part of the rule: 16·T_g removes almost all of group I's over starts (16 → 3) and all of
+C's, G's and per-station H's, with no measurable change in CER (+0.0014, −0.0014 to +0.0050); 8·T_g
+multiplies them (group I 265). `new_over_min_s` = 1.0 s lowers over starts in A and B most.
+
 ## 4. Final evaluation (Task 15)
 
 ## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure
@@ -1018,6 +1085,12 @@ finding (section 6). Then: 244 passed, 7 xfailed.
   expected failure stating the finding (owner not consulted; cause not traced). Group I's paired CER
   +0.0808 (+0.0306 to +0.1368) and group B's +0.0206 (+0.0071 to +0.0356) lie entirely above 0; the rule
   does not look at per-group CER.
+
+- **E7 (section 3.10): the pre-registered check fires — Farnsworth word gaps start overs.** The current
+  reference (`exp-E9-rekey-0.8`) has 0.333 over starts inside a transmission per transmission in group I
+  (16 in 48), against the rule's 0.05 (`exp-ref`: 1.604). No variant qualified, so T_new = max(0.5 s,
+  12·T_g) is kept. 16·T_g brings group I to 0.0625 (3 in 48) with no measurable CER change, but its
+  first-word CER over G and H (−0.0039, −0.0234 to +0.0203) is not below 0, so the rule does not adopt it.
 
 - **Extra configurations for the final evaluation (owner, 2026-10-01).** Task 15 evaluates, on the
   held-out seeds 2 and 3 and beside the prototype with every adopted value, two more configurations

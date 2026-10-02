@@ -115,8 +115,8 @@ class ProtoConfig:
     text_window_chars: int = 10            # placeholder (E8)
     text_separation_nats: float = 1.0      # "clearly separates" with none eligible, nats per character; heuristic
     # Silences and output (spec 4.7, 4.8)
-    new_over_min_s: float = 0.5            # placeholder (E7)
-    new_over_gaps: float = 12.0            # x T_g; placeholder (E7)
+    new_over_min_s: float = 0.5            # s; placeholder, kept by E7 (results record, section 3.10)
+    new_over_gaps: float = 12.0            # x T_g; placeholder; kept by E7
     rekey_timeout_s: float = 2.0           # channel time, s: if an over's amplitude is still unknown this long after it
                                            # became unknown (W_min of keyed time not reached), what exists is re-keyed
                                            # with the full LLR at the previous over's amplitude (no keying if there is
