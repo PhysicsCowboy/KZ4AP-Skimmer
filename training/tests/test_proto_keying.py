@@ -206,6 +206,26 @@ def test_unknown_amplitude_test_keys_noise_rarely():
     assert count <= 20
 
 
+def test_the_calibrated_threshold_keys_channel_shaped_noise_near_r_fa():
+    # Final review M2: the default x_on_values[0] (E9a) on branch 1 (N_1 = 14 samples, 9.33 ms) in channel-shaped
+    # noise (the 129-tap channel filter on white noise), with the exact sigma_v,1^2 as the calibration used. 1000 s
+    # at R_fa = 0.01 /s expects 10 key-downs (Poisson; 2-21 holds with probability 0.9988, derived; seed 41 gives 7), against
+    # 70-100 at the nominal threshold. A different seed from the calibration's (seed 1). The decoder's estimated
+    # sigma_v,1^2 is not tested here (see ProtoConfig.x_on_values).
+    from kz4ap_proto.testsignals import lowpass
+    cfg = ProtoConfig()
+    n1, duration_s = 14, 1000.0
+    h = lowpass(RATE)
+    u = np.convolve(noise(int(duration_s * RATE) + len(h), 1.0, 41), h, mode="same")[len(h):]
+    sigma2 = 0.5 * float(np.sum(np.convolve(h, np.ones(n1) / n1) ** 2))
+    P = (np.abs(boxcar(u, n1)) ** 2)[None, :]
+    keyer = BankKeyer(cfg.with_values(x_on_values=[cfg.x_on_values[0]]), RATE, np.array([n1 / RATE]))
+    key, _, _, _ = keyer.step(P, np.array([sigma2]))
+    count = len(marks_of(key[0]))
+    print(f"false key-downs in {duration_s:.0f} s of channel-shaped noise at x_on = {cfg.x_on_values[0]}: {count}")
+    assert 2 <= count <= 21
+
+
 def test_unknown_amplitude_test_keys_a_strong_station_at_once():
     iv = keying_intervals("TEST", 25.0)
     n = int(3 * RATE)

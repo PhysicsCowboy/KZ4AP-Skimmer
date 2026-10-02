@@ -2288,13 +2288,14 @@ not in the repository; nothing was changed):
   smoke recording's Matched detector path (apart from `tracked_freq_hz`).
 - **Stage-1 prototype runs** (`training/kz4ap_proto/runner.py`,
   `metrics.py`, `report.py`; milestone 2b, stage 1; Python, not the
-  engine). **Oracle copies:** the detector-only groups (pauses, strong,
-  tune-up, first sample, band, crowded; `suites.ORACLE_COPY_GROUPS`) are
-  scored once more with oracle channels, as result `<recording>.oracle` in
+  engine). **Oracle copies:** the recordings of the groups normally decoded
+  through the detector path (pauses, strong, tune-up, first sample, band,
+  crowded; `suites.ORACLE_COPY_GROUPS`) are decoded once more on oracle
+  channels, as result `<recording>.oracle` in
   group `<group>, oracle`, by Envelope and Matched (`kz4ap-bench --oracle`)
   and by the prototype, so every regime has a like-for-like front-end
-  comparison; group H already has its own oracle copy. **Channels:** oracle
-  scorings are recorded with `--oracle --front-end envelope
+  comparison; group H already has its own oracle copy. **Channels:** the
+  oracle test cases' channels are recorded with `--oracle --front-end envelope
   --record-channels` and mixed at the label; every non-oracle recording is
   recorded once more through the Matched path's detector (`--front-end
   matched`, no `--oracle`, D_ch = 47 Hz) as `<recording>.detector`, each
@@ -2326,7 +2327,7 @@ not in the repository; nothing was changed):
   it). **Detection measures** on the detector path, per front end and
   group: labels scored, labels detected, detection recall (detected /
   scored) and false tracks (tracks that decoded text and matched no
-  label), summed over the recordings' main scorings, and tracks per QSO
+  label), summed over each recording's main test case, and tracks per QSO
   (group H, as in the suite summary); as the bench counts them they depend
   on the decoder. **The prototype's own statistics** (oracle channels,
   scored labels): *speed error* — at each selection instant from 3 s after

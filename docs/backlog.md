@@ -254,6 +254,35 @@ section 4.3.1.
   separate-track 200 Hz +0.013 (+0.005 to +0.022); group H per station,
   separate-track drawn offset +0.049 (+0.032 to +0.065); pauses 20 s,
   +0.038 (+0.019 to +0.055).
+- **Score the provisional text and the corrections.** Stage 1 scored the
+  prototype on its final text, after corrections reaching back up to 20 s
+  (4.09 per channel-minute; reach median 1.544 s, 99th percentile
+  19.861 s), while Matched and Envelope publish text that only grows. What
+  a user reads before a correction is not measured (results §5, §5.6).
+  Stage 2's bench scoring of corrections (spec §7) must measure it, for
+  example the CER of the text as published and how long a wrong character
+  stays before it is corrected.
+- **Three regressions behind strict expected failures, causes not traced**
+  (results §6), if the owner does not have them traced in stage 1: an
+  over's first character lost since W_min = 0.8 s (25 WPM, S₅₀₀ = 20 dB:
+  "Q TEST K1ABC K1ABC"; conjectured to drive group C's +0.002 to +0.014
+  CER against Matched and part of group I's +0.0808); a spurious leading
+  "C" in the same-speed turnover test since N_mem = 48; T_g fitted 7.2% low
+  (192.2 ms against 207.0 ms) on Farnsworth 18/10 WPM with E5's coarse
+  grids.
+- **Re-decode an over when its fresh fit wins late?** The prototype does
+  not (controller ruling, Task 11): at a 15 → 30 WPM turnover "TEST" read
+  "5T" until a branch switch corrected it. Re-decoding would instead
+  corrupt the same-speed case with no element spaces ("EE TT …"), where
+  the fresh fit takes over at n = 12 (penalty 5.0 nats) with T = 102.4 ms
+  against the true 48 ms. Neither choice is measured; stage 2 must choose,
+  ideally by measuring both.
+- **No renormalization of the fit's class priors** (controller ruling,
+  Task 7): a class whose median is not positive is dropped without
+  renormalizing the others, a penalty of about −1.04 nats per space on a
+  reading with no element spaces; renormalizing broke regression R2
+  ("HI" at 12 WPM read as T = 49.8 ms). Carry it into C++ as is, or
+  revisit with a measurement (results §6).
 - **Placeholders still unsettled**: periodicity windows (2, 5, 10 s), comb
   teeth and width, and the three confidence thresholds (comb 0.03, edge
   comb 0.03, spectrum fit 1.5 nats), measured in stage 1 but not adopted
@@ -269,6 +298,13 @@ section 4.3.1.
   smoothing (±25 Hz), guard reach (20 ms) and clean fraction (0.5), the
   estimate block (21.3 ms), the squelch constant 3, the text tie
   (0.1 nats per character) and separation (1 nat per character).
+  Mechanisms added by controller rulings during implementation, never
+  varied (results §6): the fresh fit of a new over needs at least
+  `fresh_fit_min_obs` = 8 marks and spaces and must beat the previous
+  over's fit by ½·k·ln n nats (k = 4 fitted parameters, n = observations;
+  BIC-style); and the re-key time-out `rekey_timeout_s` = 2.0 s of channel
+  time, which caused 8 284 of the final evaluation's 31 158 corrections
+  (26.6%; results §4.4).
 
 ### Benchmark scenarios to add first
 

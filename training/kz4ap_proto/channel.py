@@ -462,6 +462,8 @@ class ChannelDecoder:
                 if new != old:
                     result.switches += 1
                     since = selector.eligible_since[new]  # stream time, s: on the new branch's time base below
+                    # A fallback pick was never eligible (since is None): its text replaces from t_now, the switch's
+                    # own time, rather than from the start of an eligible run (final review M3; see Selector.update).
                     start = _char_start_at(branches[new].chars,
                                            (since if since is not None else t_now) - branches[new].delay_s)
                     out.replace_from(start, branches[new].chars, t_now, "switch")

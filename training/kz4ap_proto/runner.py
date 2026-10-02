@@ -260,7 +260,7 @@ def score(out_dir: Path, bench: Path, name: str = DEFAULT_NAME, only: str | None
         labels_scored += labels
         lines = done.stdout.strip().splitlines()
         print(f"{name} {result}: {lines[-1] if lines else ''}")
-    print(f"{name}: scored {scored} of {len(scorings)} scorings ({labels_scored} of {labels_available} labels) "
+    print(f"{name}: scored {scored} of {len(scorings)} test cases ({labels_scored} of {labels_available} labels) "
           "that had a decoded file")
 
 

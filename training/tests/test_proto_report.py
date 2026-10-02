@@ -72,7 +72,7 @@ def test_write_report_states_coverage_statistics_and_the_detector_path(tmp_path)
     text = path.read_text(encoding="utf-8")
     assert "Same oracle signals" not in text and "Envelope's detector opens its own tracks" in text
     # available: a, band-s1 (detector path) and band-s1.oracle (band's oracle copy, no result here): 3 scorings, 4 labels
-    assert "Coverage: p has results for 2 of 3 scorings (3 of 4 labels)." in text
+    assert "Coverage: p has results for 2 of 3 test cases (3 of 4 labels)." in text
     assert "within-recording correlation is not modeled" in text and "about 0.05·R" in text
     assert "would read better or worse by chance" in text
     assert "| 25 wpm | 1 | 2 |" in text  # tag, recordings, signals

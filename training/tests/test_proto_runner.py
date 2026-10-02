@@ -173,4 +173,4 @@ def test_score_says_how_many_scorings_and_labels_had_a_decoded_file(tmp_path, mo
     (tmp_path / "proto" / "t-proto" / "b.decoded.json").write_text("{}")
     monkeypatch.setattr(subprocess, "run", lambda cmd, **k: subprocess.CompletedProcess(cmd, 0, "CER 0\n", ""))
     runner.score(tmp_path, tmp_path / "kz4ap-bench", "t-proto")
-    assert "t-proto: scored 1 of 2 scorings (3 of 5 labels)" in capsys.readouterr().out
+    assert "t-proto: scored 1 of 2 test cases (3 of 5 labels)" in capsys.readouterr().out

@@ -27,8 +27,8 @@ def iter_channels(out_dir, name: str, only: str | None = None):
         path = out_dir / "proto" / name / f"{job['result']}.decoded.json"
         if not path.exists():
             continue
-        decoded = json.loads(path.read_text())
-        labels = json.loads((out_dir / job["labels"]).read_text())["signals"]
+        decoded = json.loads(path.read_text(encoding="utf-8"))
+        labels = json.loads((out_dir / job["labels"]).read_text(encoding="utf-8"))["signals"]
         for ch in decoded["channels"]:
             yield job, labels[ch["label_index"]], ch, decoded["config"]
 

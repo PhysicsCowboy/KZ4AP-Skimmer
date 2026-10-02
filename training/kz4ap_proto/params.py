@@ -13,8 +13,10 @@ class ProtoConfig:
     # Filter bank (spec 4.1)
     min_wpm: float = 5.0                   # owner
     max_wpm: float = 100.0                 # owner
-    ladder_step: float = 1.1               # owner
-    length_dits: float = 0.8               # heuristic
+    ladder_step: float = 1.1               # owner;
+                                           # mask_bias measured with the default; re-measure it if this changes
+    length_dits: float = 0.8               # heuristic;
+                                           # mask_bias measured with the default; re-measure it if this changes
     block_s: float = 32 / 1500             # estimates advance once per block, s: a duration, 21.33 ms (written as
                                            # 32/1500 s because it equals the engine's channel block); heuristic
     # Noise (spec 4.2)
@@ -22,7 +24,7 @@ class ProtoConfig:
                                            # level (both divide branch k by mask_bias[k]); "branch": the fallback;
                                            # measured (E10): "spectrum", variant (a), kept; neither other variant
                                            # qualified (results record, section 3.1)
-    mask_bias: tuple[float, ...] = (       # b_mask,k, one per branch (both spectrum arms): branch k's sigma_v,k^2
+    mask_bias: tuple[float, ...] = (       # b_mask,k, one per branch (both spectrum variants): branch k's sigma_v,k^2
         0.8370, 0.8293, 0.8263, 0.8213,    # from the masked, smoothed spectrum (flat mean of the accepted masked
         0.8171, 0.8136, 0.8095, 0.8074,    # periodograms) / its true sigma_v,k^2. Measured (Task 5): white noise,
         0.8047, 0.8025, 0.8008, 0.7988,    # 1 FS^2, seeds 101-110, 60 s each, 2362 of 3500 segments accepted;
@@ -34,9 +36,12 @@ class ProtoConfig:
     )                                      # segment_s, spectrum_smoothing_hz, guard_margin_s, min_clean_fraction,
                                            # neighbor_guard and the three-tap settings, at 1500 samples/s;
                                            # re-measure (test_proto_noise's calibration test) if any changes.
-    noise_tau_s: float = 2.0               # tau_n, s of noise updates (milestone 2)
-    noise_warmup_s: float = 0.32           # first estimate: 20% quantile of |v|^2 over this, s (milestone 2)
-    noise_guard: float = 1.75              # kappa (milestone 2)
+    noise_tau_s: float = 2.0               # tau_n, s of noise updates (milestone 2);
+                                           # mask_bias measured with the default; re-measure it if this changes
+    noise_warmup_s: float = 0.32           # first estimate: 20% quantile of |v|^2 over this, s (milestone 2);
+                                           # mask_bias measured with the default; re-measure it if this changes
+    noise_guard: float = 1.75              # kappa (milestone 2);
+                                           # mask_bias measured with the default; re-measure it if this changes
     neighbor_guard: float = 4.0            # kappa_n (milestone 2); also the spectrum's mark flag;
                                            # mask_bias measured with the default; re-measure it if this changes
     segment_s: float = 256 / 1500          # T_seg, s (bins 5.86 Hz wide); heuristic;
@@ -62,10 +67,13 @@ class ProtoConfig:
         4.5548, 4.528, 4.5647, 4.5285,     # in k). Must match false_marks_per_s: re-calibrate if that changes.
         4.4602, 4.5024, 4.472, 4.4743,     # () = the nominal sqrt(-2 ln(R_fa L_k)), 4.31 ... 3.55, heuristic
         4.4149, 4.4676, 4.4935, 4.4207,    # (keys 7-10x more than R_fa)
-        4.3846, 4.2876, 4.3223, 4.3391,
-        4.3002, 4.3336, 4.2214, 4.2471,
-        4.2129, 4.2335, 4.2228, 4.2036,
-    )
+        4.3846, 4.2876, 4.3223, 4.3391,    # Valid for: the 129-tap channel filter's noise shape (testsignals.lowpass),
+        4.3002, 4.3336, 4.2214, 4.2471,    # the default ladder at 1500 samples/s, release_probability, and x measured
+        4.2129, 4.2335, 4.2228, 4.2036,    # with the EXACT sigma_v,k^2. The decoder divides by its ESTIMATED
+    )                                      # sigma_v,k^2, whose white-noise mask_bias is 2.9-5.9% off in
+                                           # channel-shaped noise (Task 5); a 5% low sigma^2 raises x by about 2.5%
+                                           # and the false key-down rate by about 1.6x (estimated, not measured).
+                                           # Tested on branch 1: test_proto_keying's channel-shaped-noise test.
     release_probability: float = 0.3       # key up where noise alone exceeds x this often (x_off = 1.55); heuristic
     rekey_after_s: float = 0.8             # W_min, s of keyed time while the amplitude is unknown; measured (E9b):
                                            # 0.8 adopted over 0.4 and 0.2 (results record, section 3.9)
@@ -85,7 +93,8 @@ class ProtoConfig:
     outlier_prior: float = 0.05            # epsilon; heuristic
     outlier_range_s: tuple[float, float] = (0.001, 10.0)   # log-uniform outlier class, s; heuristic
     prior_sigma_ln: float = 0.1            # width of the T_P prior in ln T; heuristic
-    refine_iterations: int = 2             # weighted-least-squares steps after the grid; heuristic
+    refine_iterations: int = 2             # Gauss-Newton steps in ln(duration) after the grid (Task 7 fix round 1);
+                                           # heuristic
     min_fit_weight: float = 8.0            # elements of memory weight before a fit counts for eligibility; heuristic
     # Periodicity (spec 4.4)
     periodicity_method: str = "comb"       # "comb" (on Pi = 2T; default, owner), "edge" or "spectrum"; E1

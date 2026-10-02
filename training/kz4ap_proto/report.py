@@ -213,7 +213,7 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
              "Envelope's detector opens its own tracks, so against Envelope it is the same labels only. Paired "
              f"columns: {name} minus the reference (negative favors {name}). S₅₀₀: key-down carrier power over noise "
              "power in 500 Hz, dB. Rows marked * are not comparable (reason given).", "",
-             f"Coverage: {name} has results for {cover['scorings']} of {cover['scorings_available']} scorings "
+             f"Coverage: {name} has results for {cover['scorings']} of {cover['scorings_available']} test cases "
              f"({cover['labels']} of {cover['labels_available']} labels).", "",
              STATISTICS_NOTE, ""]
     for group in sorted({g for _, g, _ in agg}):

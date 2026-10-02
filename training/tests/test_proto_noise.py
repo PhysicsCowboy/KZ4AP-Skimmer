@@ -108,14 +108,14 @@ def test_spectrum_keeps_marks_out_when_a_station_starts_after_the_warm_up():
 def test_the_three_tap_level_decays_slowly_when_a_station_keys_from_the_first_sample():
     # Pins a known limitation, not a goal: with a station keying from sample 0 the milestone-2 three-tap estimate
     # starts at about 6.6x the true level (its warm-up takes the 20% quantile of |v_1|^2 over keyed signal) and
-    # decays slowly, so arm (a)'s branch 1 still reads 1.331x the truth averaged over 7-12 s (measured, Task 5).
+    # decays slowly, so variant (a)'s branch 1 still reads 1.331x the truth averaged over 7-12 s (measured, Task 5).
     # Why it decays so slowly is not established: a linearized relaxation from the warm-up gives about 5.7 s, the
     # measured decay takes about 18 s; the running-mean phase of the update and ramp leakage past the guard may
-    # contribute. E10 compares this against arm (b).
+    # contribute. E10 compares this against variant (b).
     u, truth = keyed_stream(0.0, 12.0)
     est = SpectrumNoise(CFG, RATE, N)
     ratio = averaged(est, u, powers(u, N), 7.0)[0] / truth[0]
-    print(f"branch 1 arm (a) / truth, keyed from sample 0, 7-12 s: {ratio:.3f}")
+    print(f"branch 1 variant (a) / truth, keyed from sample 0, 7-12 s: {ratio:.3f}")
     assert 1.28 < ratio < 1.38
 
 

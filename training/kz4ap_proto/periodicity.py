@@ -63,7 +63,7 @@ def comb_estimate(p, rate_hz: float, grid, teeth: int, width: float):
 
 
 def edge_comb_estimate(p, rate_hz: float, grid, teeth: int, width: float):
-    """(T, score). The sign-weighted edge comb (E1's third arm): on the signed edges e[n] = p[n] - p[n-1], teeth at
+    """(T, score). The sign-weighted edge comb (E1's third variant): on the signed edges e[n] = p[n] - p[n-1], teeth at
     k T (k = 1..teeth) weighted (-1)^k, because key-down and key-up edges alternate, so edges an odd number of dits
     apart tend to have opposite signs and an even number the same sign; each tooth is the mean of e's normalized
     autocorrelation within +/- width T of its lag; score = mean of the weighted teeth. Review: best on hand and
@@ -102,7 +102,8 @@ def spectrum_estimate(p, rate_hz: float, grid, nulls: int, width: float, front_p
     214.3 Hz, ... for N_1 = 14 samples at 1500 samples/s) scored boxcar-filtered noise alone up to about 1.5 nats
     at T = (k/m) N_1/r, and a 20-sample boxcar about 3.5 nats at 13.3 ms (review; measured).
     So, given front_power(f) = the front end's |H(f)|^2 relative to its DC gain, the periodogram is divided by it
-    (whitening; derived), and frequencies where it is below floor_db (dB relative to the DC power gain; default
+    (whitening; derived for a linear front end, approximate for p, which the keying's
+    nonlinearity shapes), and frequencies where it is below floor_db (dB relative to the DC power gain; default
     -20 dB, heuristic) are left out: a null k contributes only if its whole null window is above the floor and at
     least half of its band window is (the band's mean is then over its bins above the floor; heuristic). A
     candidate with no contributing null is skipped. Measured on the unit tests' keying (10 s windows): a stricter

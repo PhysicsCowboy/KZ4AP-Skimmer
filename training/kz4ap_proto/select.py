@@ -35,7 +35,8 @@ class Selector:
                 and abs(math.log(view.length_s / (self.cfg.length_dits * f.t_s))) <= self.cfg.eligibility_tolerance)
 
     def best(self, views, prior_t_s: float | None) -> tuple[int, bool]:
-        """(branch, chosen among eligible branches)."""
+        """(branch, chosen among eligible branches). prior_t_s: T_P, s, only when the periodicity estimate is
+        confident, else None (any value that is not None is treated as confident)."""
         cfg = self.cfg
         eligible = [v for v in views if self.eligible(v)]
         if eligible:
@@ -60,7 +61,12 @@ class Selector:
         other branch best for switch_persistence instants in a row, all as the best eligible branch or all as
         the fallback pick (spec 4.6: "the best eligible one for M marks in a row"). instants == 0 (no selection
         instant in this call) changes nothing, not even the eligibility times, and returns the current branch.
-        t_now: stream time, s; prior_t_s: T_P, s, only when the periodicity estimate is confident, else None."""
+        t_now: stream time, s; prior_t_s: T_P, s, only when the periodicity estimate is confident, else None.
+        eligible_since[k]: stream time, s, at which branch k's current eligible run began, None while it is not
+        eligible. A branch that wins as a fallback pick was never eligible, so its eligible_since is None and the
+        caller replaces text from the switch's own time instead (ChannelDecoder.run; final review M3: spec 4.8
+        replaces "from the start of the character in which the new branch became eligible", which a fallback
+        pick has no counterpart of; documented behavior, not an owner decision)."""
         if instants <= 0:
             return self.current
         for v in views:

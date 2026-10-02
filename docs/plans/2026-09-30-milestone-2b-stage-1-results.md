@@ -151,6 +151,16 @@ spectrum's own level ÷ the measured mask bias; (c) `branch`, each branch its ow
   after Task 11p; experiment budget updated to 1.0–1.3 h per development run and 31–39 h for the
   experiment set on 14 workers (Task 11p, from the sets' mix; accepted by the owner 2026-10-01).
 - Speed step 15 → 30 WPM (Task 11 test, seeds 1–4): followed after 11 marks (1.73 s).
+- Analysis scripts (added 2026-10-02, final review I5): the tables in sections 3–5 that are not printed
+  by `kz4ap_proto.runner`, `experiments` or `report` come from the scripts in
+  `training/kz4ap_proto/analysis/` (observation and analysis only; each module's first docstring line
+  names the section it feeds). Run them from the repository root, for example
+  `PYTHONPATH=training python -m kz4ap_proto.analysis.overall`; `--help` prints the usage. They need the
+  decoded and result files under `build/suite/full3`, which are git-ignored (most were produced on the
+  Linux machine). The committed copies are the scripts that produced the numbers, changed only in
+  form: each body moved into `main()`, `--help` added, JSON read as UTF-8, and `group_tables` writes
+  UTF-8 to the console. The operational job scripts (run wrappers, a watchdog) are machine-specific and
+  are not committed.
 
 ## 2. Owner's decisions (2026-09-30, after the plan review)
 
@@ -279,8 +289,8 @@ An observation-only split (not a decision rule) is in section 3.2.1.
 
 Not part of any rule; recorded because the review and Task 9 raised these questions. Same points and
 windows (2, 5, 10) s as E1; "at the pooled threshold" uses each variant's E1 threshold, "own" calibrates
-a threshold on the part alone (script `build/suite/full3/experiments/scripts/e1_split.py`, output
-`e1-split.md` on the Linux machine; both git-ignored). Fast: true dit T ≤ 31.5 ms (≥ 38.1 WPM).
+a threshold on the part alone (script `training/kz4ap_proto/analysis/e1_split.py`, committed; output
+`e1-split.md` on the Linux machine, git-ignored). Fast: true dit T ≤ 31.5 ms (≥ 38.1 WPM).
 
 | variant | part | points (channels) | at the pooled threshold: precision, coverage | own threshold: precision, coverage |
 |---|---|---|---|---|
@@ -300,8 +310,8 @@ average 2 usable nulls against 3): split by the true speed, neither part reaches
 threshold, so a speed-split threshold would not rescue the spectrum fit on this data. (The split is by
 the true dit, which a decoder does not know; a split by the candidate's T was not computed.)
 
-Where the spectrum fit goes wrong (script `build/suite/full3/experiments/scripts/e3_extra.py`, output
-`e3-extra.md` on the Linux machine, local copy `build/suite/full3/experiments/linux/e3-extra.md`; all
+Where the spectrum fit goes wrong (script `training/kz4ap_proto/analysis/e3_extra.py`, committed; output
+`e3-extra.md` on the Linux machine, local copy `build/suite/full3/experiments/linux/e3-extra.md`; both
 git-ignored). Population 1, for the ratios: per point, the estimate of the shortest of the windows 2, 5,
 10 s that gives one, whatever its score — 174 616 of the 175 551 points have one. Its estimate ÷ the
 true dit falls in [0.95, 1.05) for 10.4% of them, [1.05, 1.4) for 21.0%, [2.8, 3.3) for 22.0% and ≥ 3.3
@@ -383,7 +393,7 @@ in the 2 s window, 273 ms in the 5 s window and 546 ms in the 10 s window (the l
 whole grid; derived).
 
 Calibrated threshold for the chosen method and windows (E2's (5, 10) s row, unchanged by E3), at full
-precision from `metrics.calibrate` called by `scripts/e3_extra.py` (output `build/suite/full3/experiments/e3-extra.md`
+precision from `metrics.calibrate` called by `training/kz4ap_proto/analysis/e3_extra.py` (committed; output `build/suite/full3/experiments/e3-extra.md`
 on the Linux machine, local copy `build/suite/full3/experiments/linux/e3-extra.md`; git-ignored):
 0.022138968788232207 (printed 0.02214), precision 0.9503, coverage 0.8652.
 
@@ -531,7 +541,7 @@ Owner's request, 2026-10-01, after choosing option A (Task 14 runs against `exp-
 0.2506 is evaluated on the held-out seeds in Task 15): the information option C would have given,
 where it is cheap.
 
-**Offline** (`build/suite/full3/experiments/tp_observe.py`, output `linux/tp-observe.md`, both
+**Offline** (`training/kz4ap_proto/analysis/tp_observe.py`, committed; output `build/suite/full3/experiments/linux/tp-observe.md`,
 git-ignored; exp-ref's branch-1 posteriors, no decoding). The comb's thresholds for precision 0.85 and
 0.90 on E1's points are 0.10230 and 0.14874 (dimensionless score). Measured:
 
@@ -743,7 +753,7 @@ reference grids.** The E5 subset holds all 48 group I signals of the development
 finest grids, coarse gives +0.0055 (−0.0017 to +0.0122) and the reference −0.0052 (−0.0101 to −0.0014);
 both are paired over the same 48 signals, so the adopted step, coarse − reference, has mean
 **+0.0107 (+0.0037 to +0.0175)** for group I, entirely above 0 (computed in Task 15 with
-`scripts/pooled_groups.py exp-E5-ref exp-E5-coarse I` on the Linux machine, no decoding; output
+`training/kz4ap_proto/analysis/pooled_groups.py exp-E5-ref exp-E5-coarse I` (committed) on the Linux machine, no decoding; output
 `build/suite/full3/experiments/pooled-groups-E5-I.txt`, git-ignored; first-word CER −0.0417 (−0.1303 to
 +0.0104)). By condition (CER,
 reference → coarse), the paddle conditions rise most: 18/10 WPM 0.0273 → 0.0446, 18/5 WPM 0.1454 →
@@ -875,7 +885,7 @@ outcome, so it is E9b's reference either way):
 ```
 
 The first-word metric pooled over groups A, G, H (oracle, both views) and I (288 signals) is computed
-with `build/suite/full3/experiments/scripts/pooled_groups.py` (git-ignored; `experiments.pooled_paired`
+with `training/kz4ap_proto/analysis/pooled_groups.py` (committed; `experiments.pooled_paired`
 on those groups' rows, the same bootstrap; its output, copied from the session's console:
 `build/suite/full3/experiments/linux/pooled-groups-E9.txt`, git-ignored).
 
@@ -1013,8 +1023,8 @@ Batch `build/suite/full3/experiments/E7.json` (git-ignored), at `25c1db6`:
 
 **Over starts inside transmissions** (the selected branch's over starts from 1 s after a transmission's
 start to its end, counted on the test cases' labels; per transmission; counts from
-`metrics.spurious_over_starts` by `build/suite/full3/experiments/scripts/over_starts.py`, git-ignored;
-output: `build/suite/full3/experiments/linux/pooled-groups-and-over-starts-E7.txt`):
+`metrics.spurious_over_starts` by `training/kz4ap_proto/analysis/over_starts.py`, committed;
+output (git-ignored): `build/suite/full3/experiments/linux/pooled-groups-and-over-starts-E7.txt`):
 
 | run | T_new | all groups | group I | A | B | C | G | H oracle | H per station |
 |---|---|---|---|---|---|---|---|---|---|
@@ -1035,7 +1045,7 @@ output: `build/suite/full3/experiments/linux/pooled-groups-and-over-starts-E7.tx
 | `exp-E7-min-1.0` | 0.2783 | −0.0011 (−0.0033 to +0.0008) | −0.0139 (−0.0390 to +0.0069) | 181.1 ms | 22.7 min |
 
 (The G-and-H first-word value pools groups G, H oracle and H per station, computed with
-`scripts/pooled_groups.py` as in E9; output in the same `.txt` file.) Full tables:
+`training/kz4ap_proto/analysis/pooled_groups.py` as in E9; output in the same `.txt` file.) Full tables:
 `build/suite/full3/experiments/linux/compare-exp-E7-<variant>-vs-exp-E9-rekey-0.8.md`, `summary-E7.md`
 (git-ignored).
 
@@ -1078,7 +1088,7 @@ matched to 30 WPM is selected). Development set, 509 signals, 74 748 channel-sec
 ```
 
 Switches and alternations per minute of transmission time, pooled over all groups (964.0 min; counts
-from `metrics.switch_stats` by `build/suite/full3/experiments/scripts/switches.py`, git-ignored; output:
+from `metrics.switch_stats` by `training/kz4ap_proto/analysis/switches.py`, committed; output (git-ignored):
 `build/suite/full3/experiments/linux/switches-E6.txt`):
 
 | M | marks to follow the 15 → 30 WPM step, seeds 1–10 | median | maximum | not followed | switches per min | alternations per min | pooled CER | paired CER against M = 4 |
@@ -1145,7 +1155,7 @@ channel-seconds. Batch `build/suite/full3/experiments/E8.json` (git-ignored), at
 ```
 
 Paired CER, variant − `exp-E9-rekey-0.8` (G and H: groups G, H oracle and H per station, 48 signals;
-filler text: groups A–F and I, 461 signals; both from `scripts/pooled_groups.py`; output:
+filler text: groups A–F and I, 461 signals; both from `training/kz4ap_proto/analysis/pooled_groups.py`; output:
 `build/suite/full3/experiments/linux/pooled-groups-E8.txt`, git-ignored):
 
 | run | pooled CER | paired CER, all 509 | G and H (48) | filler-text groups (461) | CPU per channel-second |
@@ -1208,7 +1218,7 @@ The prototype with every settled value (`ProtoConfig()` at `67f4d65`, the config
 lists; the later commits change documents and tests only), named `bank-proto`, decoded every test case of
 all three seeds: the 120 oracle test cases (the 27 oracle copies included) and the 33 recordings decoded
 through the detector path, 153 decoded files, 3 556 channels, 457 169 channel-seconds. Every decoded file
-stores the same configuration (checked). On the Linux machine, 10 workers:
+stores the same configuration (checked with `training/kz4ap_proto/analysis/check_config.py`, committed). On the Linux machine, 10 workers:
 
 ```
 .venv/bin/python -m kz4ap_proto.runner decode --out build/suite/full3 --name bank-proto --jobs 10
@@ -1303,8 +1313,8 @@ Held-out seeds 2 and 3 alone: against Matched 48 / 23 / 59 (and 1 row without an
 Envelope 75 / 15 / 40 (and 1). The same pattern by group: group E holds 8 of the 23 "worse" rows against
 Matched.
 
-Pooled over signals (file `build/suite/full3/experiments/overall-bank-proto.txt`, helper
-`experiments/scripts/overall.py`, both git-ignored; not-comparable rows left out; paired =
+Pooled over signals (file `build/suite/full3/experiments/overall-bank-proto.txt`, git-ignored, from
+`training/kz4ap_proto/analysis/overall.py`, committed; not-comparable rows left out; paired =
 prototype minus reference, mean over signals, bootstrap 95% interval over signals). These pools are
 dominated by groups A and B (576 + 990 of the 2 817 oracle signals) and include every S₅₀₀ down to
 −10 dB, so they are a summary, not a regime:
@@ -1325,8 +1335,8 @@ seeds, and −0.0451 (−0.0860 to −0.0041) on the held-out seeds; against Env
 
 #### 4.3.1 Every group's table (all three seeds)
 
-Generated from `build/suite/full3/summary.json` and `report-bank-proto.json` by the git-ignored helper
-`experiments/scripts/group_tables.py`; the same numbers as `report-bank-proto.md`. CER: pooled (summed
+Generated from `build/suite/full3/summary.json` and `report-bank-proto.json` by
+`training/kz4ap_proto/analysis/group_tables.py` (committed); the same numbers as `report-bank-proto.md`. CER: pooled (summed
 edits over summed symbols) with its bootstrap 95% interval over signals. Paired columns: prototype minus
 the reference, the mean over signals of the per-signal CER difference with its paired bootstrap 95%
 interval; **B** = better, **W** = worse (interval excludes 0), blank = unchanged. First-word CER: P =
@@ -1625,7 +1635,7 @@ other station's speed, not an error of the selection (per-station view: 0.006). 
 45.2 false characters per minute are the other station's keying on the channel, which per-station labels
 count as outside a transmission.
 
-**Corrections** (`experiments/scripts/corrections.py bank-proto` on the Linux machine, every decoded file,
+**Corrections** (`training/kz4ap_proto/analysis/corrections.py bank-proto` (committed) on the Linux machine, every decoded file,
 oracle and detector path; output copied to `build/suite/full3/corrections-bank-proto.txt`, git-ignored): 31 158 corrections in 457 169 channel-seconds (4.09 per channel-minute): 13 352 after a branch
 switch, 9 522 re-keyings of an over's first marks, 8 284 re-keyings after the amplitude stayed unknown
 too long. Reach (how far back a correction replaces text): median 1.544 s, 90% 5.437 s, 99% 19.861 s,
@@ -1639,6 +1649,16 @@ no setting was chosen. Intervals are bootstrap 95% intervals over signals. "Bett
 interval of the per-signal CER difference excludes 0 (a convention; of 131 regimes truly unchanged, about
 7 would read better or worse by chance). No verdict is given here: whether the prototype is better, and
 whether stage 2 is worth doing, is the owner's decision.
+
+**What the CER is measured on.** The prototype is scored on its **final** text, after every correction;
+its corrections reach back up to 20 s (section 4.4: 4.09 per channel-minute, reach median 1.544 s, 99th
+percentile 19.861 s, maximum 20.000 s). Matched and Envelope are scored on text that only grows: they
+never replace a character once it is published. So the prototype's CER, and above all its first-word CER,
+is the CER of its text after corrections, not of what a user would see at the moment it appears. **The
+provisional text a user would see before the corrections is not measured in stage 1.** This follows from
+the owner's design ("publish at once, correct later"), not from an unfairness in the comparison, but it
+is a limit of what stage 1 measures; stage 2 must score the provisional text and the corrections
+(spec §7).
 
 ### 5.0 The answer in brief
 
@@ -1672,6 +1692,9 @@ whether stage 2 is worth doing, is the owner's decision.
    rough speed estimate T_P), on the held-out seeds: both are worse than the settled prototype overall
    (+0.005 and +0.009 CER) and on first words (+0.12 and +0.23); they decode 12 WPM at S₅₀₀ = −2 dB, where
    the settled prototype fails. Measured (section 5.5).
+9. **What these CERs are of**: the prototype's final text, after corrections reaching back up to 20 s;
+   Matched's and Envelope's text only grows. The provisional text a user sees before the prototype's
+   corrections is not measured (section 5, introduction; section 5.6).
 
 ### 5.1 Sensitivity in white noise (group A): S₅₀₀ at CER 0.10 and 0.05
 
@@ -1817,8 +1840,8 @@ choice was made on. Neither is adopted by any rule.
 .venv/bin/python -m kz4ap_proto.runner decode --out build/suite/full3 --name bank-proto-comb0p1487 --set comb_confidence_min=0.14873606229535802 "--only=-s[23]" --jobs 10
 ```
 
-Then each scored, reported and compared with `bank-proto` by the git-ignored helper
-`build/suite/full3/experiments/scripts/final_extras.py` (`score`, `report`, `paired`; it scores into
+Then each scored, reported and compared with `bank-proto` by
+`training/kz4ap_proto/analysis/final_extras.py` (committed; `score`, `report`, `paired`; it scores into
 `experiments/results/` so that the suite summary holds only the three decoders; the paired comparison is
 `experiments.pooled_paired`, the same per-signal differences and bootstrap as `suites.paired_differences`,
 grouped by group). Outputs: `build/suite/full3/report-bank-proto-comb0p2506-held-out.md`,
@@ -1860,7 +1883,7 @@ Group A and the regressions, held-out:
 | lock-ins, group B fading / I Farnsworth / C fists | 63 / 23 / 1 | 169 / 27 / 10 | 157 / 26 / 1 |
 
 (Lock-ins out of 396, 64 and 180 transmissions. The CER per S₅₀₀ point, held-out seeds, from
-`results/` and `experiments/results/` on the Linux machine by `experiments/scripts/a12_by_snr.py`: copied
+`results/` and `experiments/results/` on the Linux machine by `training/kz4ap_proto/analysis/a12_by_snr.py` (committed): copied
 to `build/suite/full3/groupA-by-snr-held-out.txt`, git-ignored; Matched at 12 WPM and S₅₀₀ = −2 dB:
 0.285.)
 
@@ -1908,6 +1931,10 @@ to `build/suite/full3/groupA-by-snr-held-out.txt`, git-ignored; Matched at 12 WP
   that stage 1 does not measure (section 6).
 - CPU: the prototype is Python, 177 ms per channel-second on the Linux machine; the C++ cost of 32
   branches is not measured.
+- **CER is on the final text after corrections; provisional text is not scored; stage 2 must score it.**
+  The prototype replaces text up to 20 s back (4.09 corrections per channel-minute, section 4.4), while
+  Matched and Envelope publish text that only grows. What a user would read before a correction, and how
+  long a wrong character stays on screen, is not measured in stage 1 (spec §7's scoring of corrections).
 
 ## 6. Open items for the owner
 
@@ -2037,7 +2064,9 @@ to `build/suite/full3/groupA-by-snr-held-out.txt`, git-ignored; Matched at 12 WP
 
 - **Placeholders and heuristics kept unmeasured**: see `docs/backlog.md` (same item). In particular the
   log-normal scatter (0.15 marks, 0.25 spaces), the outlier class (ε = 0.05, log-uniform over 1 ms–10 s),
-  the T_P prior's width, the minimum fit weight (8 elements), the squelch constant 3, and the plan's other
+  the T_P prior's width, the minimum fit weight (8 elements), the squelch constant 3, the three
+  mechanisms added by controller rulings (the fresh fit's minimum of 8 observations and its ½·k·ln n
+  penalty, and the 2.0 s re-key time-out; see "Mechanisms and interpretations" below), and the plan's other
   heuristic rows (plan, "Parameters").
 
 - **Spec §8 questions stage 1 did not measure.** (a) 5 WPM keying against fading: the suite has no fading
@@ -2047,3 +2076,119 @@ to `build/suite/full3/groupA-by-snr-held-out.txt`, git-ignored; Matched at 12 WP
   clean fraction 0.5): only the estimator as a whole was compared with the per-branch fallback (E10). (d)
   The per-branch squelch's constant (3; its L^(1/4) scaling is derived). (e) The choices the plan made
   heuristically (plan, "Parameters").
+
+- **Mechanisms and interpretations added during implementation (controller rulings, not owner
+  decisions; added 2026-10-02, final review I1).** Each was ruled by the controller during a task review
+  as the reading of the spec it implements; the owner has not seen them before this record. None was
+  varied by an experiment.
+  1. *No renormalization of the fit's class priors* (Task 7 fix round 1). Where a class's median is not
+     positive (the element space T − w when w ≥ T), that class is dropped and the other classes' priors
+     are **not** renormalized, so a reading with no element spaces pays about ln(1 − 0.647) = −1.04 nats
+     per space (derived from the element-space prior 0.647). Renormalizing was tried: it let the fit read
+     "HI" at 12 WPM as T = 49.8 ms with w = T (1.30 against 0.90 nats of weighted log-likelihood for the
+     truth), breaking regression R2. Every mark inside a character is followed by an element space, so
+     the penalty is kept. The adopted w grid stops at 0.8 T (E5), so only the local refinement (bound
+     1.2 T) can reach w ≥ T. Recorded in `training/kz4ap_proto/fit.py`'s module docstring.
+  2. *The fresh fit of a new over must beat the previous over's fit by a penalty* (Task 11 review). Spec
+     §4.7's "whichever explains the new marks better wins" is implemented as a penalized comparison: the
+     fresh fit may replace the previous over's only after at least `fresh_fit_min_obs` = 8 of the over's
+     marks and spaces, and only if its weighted log-likelihood is higher by ½·k·ln n nats (k = 4 fitted
+     parameters, n = observations; BIC-style). Reason: unpenalized, the fresh fit won on 2–3 observations
+     almost always (a same-speed over read T = 101.6 ms against the true 48 ms: "IN EE TE U1ABC"). The 8
+     and the form of the penalty are placeholders (heuristic).
+  3. *The re-key time-out* (Task 11 review). If an over's amplitude is still unknown `rekey_timeout_s` =
+     2.0 s of channel time after it became unknown (W_min of keyed time not reached), what exists is
+     re-keyed with the full LLR at the previous over's amplitude (no keying if there is none) and corrected,
+     usually deleting characters decoded from noise; an over start counts only once its re-key has keyed a
+     mark. Reason: without it, characters from false key-downs in silences were published and never
+     corrected, and false key-ups kept starting overs. Placeholder (heuristic). It drives measured
+     behavior: **8 284 of the final evaluation's 31 158 corrections (26.6%) are time-out re-keyings**
+     (section 4.4).
+  4. *No re-decode when the rival fresh fit wins later* (Task 11 fix round 1). When the fresh fit
+     overtakes the previous over's fit after the re-key, the over's earlier text is not decoded again
+     under the new fit: at a 15 → 30 WPM turnover the first word "TEST" read "5T" and stayed so until a
+     branch switch corrected it. Re-decoding would instead corrupt the ambiguous case: in a same-speed
+     turnover whose first words have no element spaces ("EE TT …"), the fresh fit still takes over at
+     n = 12 observations (penalty ½·4·ln 12 = 5.0 nats) with T = 102.4 ms against the true 48 ms, reading
+     the character gaps (144 ms) as element spaces; the data cannot tell the two readings apart. Choosing
+     either way without a measurement would be a guess; neither is measured on the suite.
+  5. Smaller rulings, each documented in the code: a fit counts for eligibility only after 8 elements of
+     memory weight (`min_fit_weight`); the selection instants are branch 1's key-ups; fallback picks count
+     separately from eligible picks toward M; inside a quality tie the text step is skipped when a tied
+     branch has no text yet; durations keyed by the unknown-amplitude test enter no fit (they are biased
+     long by up to L and can merge across short spaces); and a switch to a fallback pick replaces text
+     from the switch's own time, since a fallback branch has no eligible run to start from
+     (`Selector.update`; spec §4.8 does not cover this case; final review M3).
+
+- **Design notes from Task 6 (the amplitude while an over starts; deferred to this record).** (a) The
+  seed of the amplitude, the 0.9 quantile of |v|² over the keyed samples minus 2σ_v², reads s² high by
+  +50% at a = 5
+  and +25% at a = 10 (a = s/σ_v; relative to the true key-down power s²; derived). (b) The p-weighted
+  EM that follows reads s² low by 22–28% (milestone 2's measured ŝ/s = 0.85–0.88). So at a = 5 the two
+  estimates differ by a factor of 1.50 / (0.72 to 0.78) = 1.9–2.1: the seed's s² is 2.8–3.2 dB above the
+  EM's (dB of the seed's s² relative to the EM's; computed from (a) and (b); the Task 6 review recorded
+  "about 2.5 dB" for the same ratio; not measured directly). (c) Marks keyed by the unknown-amplitude test
+  are about 0.15·L longer with ŝ ≈ 0.85 s (L the branch length); the fit's w absorbs a constant
+  lengthening. None of the three was measured on the suite.
+
+- **A correction owed to the owner (Task 9).** The controller's explanation to the owner during Task 9
+  said that the keying spectrum's nulls at m/T need one timing lattice across the window, so that
+  Farnsworth spacing would break them. That was wrong. A mark of duration kT (k = 1 for a dit, 3 for a dah) has a spectrum proportional to
+  sinc(f·kT), which is zero at f = m/T for every integer m ≥ 1 wherever the mark starts, so the nulls
+  need no lattice across the window and Farnsworth spacing leaves them intact (derived). What breaks them
+  is key weighting (marks not a whole number of dits long) and hand keying (derived). Consistent with this,
+  the spectrum fit read Farnsworth 18/10 WPM within +1.67% (Task 9, measured). The comb's failure on
+  Farnsworth (section 3.2; the strict expected failure
+  `test_periodicity_finds_the_dit[18.0-machine-10.0-comb]`) is a separate matter, proposed as a
+  correction of spec §4.4 in the write-back draft that awaits the owner.
+
+- **Three regressions behind strict expected failures, causes not traced (final review I4).** Each was
+  found after an adopted change; each test states the measured text; none was investigated further.
+  1. *A clean station loses its first character* (E9b, W_min 0.4 → 0.8 s of keyed time):
+     `test_decodes_a_clean_station` (25 WPM, S₅₀₀ = 20 dB, seed 1) reads "Q TEST K1ABC K1ABC", and
+     `test_farnsworth_text_is_right` (Farnsworth 18/10 WPM, seed 5) "Q TEST U1ABC". Cause: **untraced**.
+     **Conjectured**, not measured: it drives group C's small losses against Matched (+0.002 to +0.014
+     CER; first-word CER 0.17–0.42 against Matched's 0.11–0.19, section 5.3) and part of E9b's group I
+     loss, +0.0808 (+0.0306 to +0.1368). Owner not consulted on the xfail.
+  2. *A spurious leading "C"* (E4, N_mem 24 → 48): `test_a_same_speed_turnover_keeps_the_previous_over_s_fit`
+     reads "CCQ DE K1ABC K EE TT EE TT K1ABC". Cause: **untraced**. The owner accepted the xfail on
+     2026-10-01.
+  3. *T_g fitted 7.2% low on Farnsworth* (E5, coarse grids): `test_fits_farnsworth_spacing` gives T_g =
+     192.2 ms against the true 207.0 ms (the test allows 5%) with T right (66.72 ms against 66.67 ms).
+     Cause: **conjectured** only, not traced: the coarse T_g/T grid has 2.52 and 4 around the true 3.11
+     (the old grid had 3.17), and the refinement starts from a grid point. E5's grids cost group I
+     +0.0107 (+0.0037 to +0.0175). Owner not consulted on the xfail.
+
+  Whether to trace them now, in stage 1 (the final review proposes at least the first, a single S₅₀₀ = 20 dB
+  channel at seed 1, cheap in Python), or in stage 2, is **the owner's decision**.
+
+- **What the CER does not measure** (section 5, introduction; section 5.6): the prototype is scored on its
+  final text after corrections reaching back up to 20 s, Matched and Envelope on text that only grows; the
+  provisional text a user would see before the corrections is not measured. Stage 2 must score it.
+
+- **Smaller open items, not done in stage 1** (from the task reviews and the final review of
+  2026-10-02; each needs a code or test change, a rebuild, or the owner, not a re-run of the
+  experiments):
+  - C++ bench and engine tests: the channel recorder opens and truncates a channel's file before it
+    checks for a reused id (`bench/src/channel_recorder.cpp`, latent: ids are unique per run); the
+    engine tap test's text equality can pass with empty text (`engine/tests/engine_test.cpp`, add a
+    non-empty check); `--front-end` and `--no-timing` are silently ignored with `--score-decoded`;
+    duplicate track ids are accepted in the tracks form; a channel never fed reports `open_s` 0.0 s and
+    a null `center_hz`, which `streams.load_channel` turns into a bare TypeError; the mapping
+    `tracked_freq_hz` ← `last_freq_hz` in `main.cpp` is untested; two rejection tests are missing (a
+    non-string `texts` element, a non-object top level).
+  - `docs/signal-processing.md` §11 omits (but does not misdescribe): that `--record-channels` runs'
+    timing includes the recorder's file I/O; the padded last hop (60.01 s); where the decoded path's
+    JSON fields `duration_s`, `recording` and `front_end` come from; that the identity check was the
+    Matched oracle run; and, for the mixing, phase 0 at the first recorded sample and the exclusive sum.
+  - Prototype code and tests: the ladder count is one short if l_max falls exactly on the ladder
+    (`bank.py`); `load_channel` lacks mismatch and drift tests; the LLR test lacks a pinned derived value
+    (the ledger's "a = 4, x = 6: Λ ≈ 13.8 nats" needs re-deriving: −a²/2 + ln I₀(a·x) = −8 + ln I₀(24) ≈
+    13.50 nats); no test checks that the text never overrides a clearly better Q; the branch lengths are
+    kept in two places (`BranchView.length_s`, `Selector.lengths`); `channels.json` takes about 3.2 kB per
+    channel-second (a compact dump is possible).
+  - The calibrated x_on was checked on branch 1 with the exact σ_v,1² (new test, 2026-10-02); with the
+    decoder's estimated σ_v,k², whose white-noise mask bias is 2.9–5.9% off in channel-shaped noise, the
+    false key-down rate may be about 1.6× higher for a 5% low σ² (estimated, not measured).
+  - CI: GitHub's `ubuntu-latest` moves to Ubuntu 26 from 2026-10-19, so CI's Linux compiler may change;
+    pin `ubuntu-24.04` or check after the switch (the owner's choice).

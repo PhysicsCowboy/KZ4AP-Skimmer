@@ -8,13 +8,15 @@ Conventions shared by the grid and every scoring function:
 - Each class c has median mu_c (the model's parameter): ln d ~ N(ln mu_c, s_c^2), s_c^2 = sigma_ln^2 +
   sigma_t^2 / mu_c^2 (sigma_t^2 the branch's timing-resolution variance, s^2, turned into ln units to first
   order).
-- A class whose median is not positive (the element space T - w when w >= T; w reaches 1.0 T on the grid
-  and 1.2 T in the refinement) is dropped WITHOUT renormalizing the other classes' priors, so there the
+- A class whose median is not positive (the element space T - w when w >= T; the adopted w grid stops at
+  0.8 T (E5), so only the refinement, whose bound is 1.2 T, can reach it) is dropped WITHOUT renormalizing the other classes' priors, so there the
   space density integrates to (1 - epsilon)(1 - P(element)) + epsilon < 1. This improper density is a
   penalty of about ln(1 - 0.647) = -1.04 nats per space on a reading with no element spaces, which is
   physically impossible (every mark inside a character is followed by one). Renormalizing was tried in
   review fix round 1 and makes that reading win for "HI" at 12 WPM (T = 49.8 ms, w = T: 1.30 against
-  0.90 nats of weighted log-likelihood), breaking regression R2; the choice is open for the owner.
+  0.90 nats of weighted log-likelihood), breaking regression R2. Ruling (controller, Task 7 fix round 1,
+  2026-09-30): no renormalization; a controller ruling, not an owner decision, listed for the owner in the
+  results record, section 6 (2026-10-02).
 - The outlier class has density epsilon / ln(10 s / 1 ms) in ln d, proper only on [1 ms, 10 s], so every
   duration is clamped to that range before it is scored (a duration outside it scores as the edge).
 - A duration <= 0 s is an error (ValueError) in class_logliks and observations_loglik; DurationFit.add

@@ -1,7 +1,4 @@
-import math
-
 import numpy as np
-import pytest
 
 from kz4ap_proto.bank import realized_lengths_s
 from kz4ap_proto.fit import Fit
@@ -48,6 +45,7 @@ def test_without_an_eligible_branch_text_then_periodicity_then_the_shortest():
     sel = Selector(CFG, L)
     assert sel.best(views(texts={3: -2.0, 20: -4.0}), None) == (3, False)        # the text clearly separates
     nearest = int(np.argmin(np.abs(np.log(L / (0.8 * 0.048)))))
+    assert nearest == 15  # derived: 0.8 x 48 ms = 38.4 ms = 9.6 ms x 1.1^14.55, nearer 1.1^15 in ln L
     assert sel.best(views(texts={3: -2.0, 20: -2.5}), 0.048) == (nearest, False)  # no clear text: nearest 0.8 T_P
     assert sel.best(views(), None) == (0, False)
 

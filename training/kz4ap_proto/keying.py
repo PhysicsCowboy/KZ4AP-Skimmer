@@ -80,7 +80,8 @@ class BankKeyer:
         self.prev_amp2 = np.full(k, np.nan)
         self.unknown = np.ones(k, bool)  # the stream's start is an over's start
         self.keyed: list[list[np.ndarray]] = [[] for _ in range(k)]  # |v|^2 of keyed samples while unknown
-        # At most this many kept (samples): seed_memory_rekeys x W_min of keyed time, 1.6 s by default; heuristic.
+        # At most this many kept (samples): seed_memory_rekeys x W_min of keyed time, 4 x 0.8 s = 3.2 s by default;
+        # heuristic.
         self.keyed_cap = max(1, int(round(cfg.seed_memory_rekeys * self.rekey_weight)))
         self.key = np.zeros(k, bool)
 

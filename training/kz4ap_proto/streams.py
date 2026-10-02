@@ -14,7 +14,9 @@ def baseband(y, rate_hz: float, f_off_hz: float, drift_hz_per_s: float = 0.0, st
              first_sample_index: int = 0) -> np.ndarray:
     """u[n]: y mixed down so the labeled carrier sits at 0 Hz, y * exp(-j(2 pi f_off t + pi fdot (t - t0)^2))
     with the drift from t0 on (the generator's phase law, docs/signal-processing.md section 11 "Drift"),
-    t = (first index + n) / r."""
+    t = (first index + n) / r. The channelizer's group delay is not removed from t, so the drift term's time origin
+    lags the generator's by it: about 0.1 Hz of frequency error at 1 Hz/s (estimated from the ledger's Task 4
+    review, not measured)."""
     t = (first_sample_index + np.arange(len(y))) / rate_hz
     phase = 2.0 * np.pi * f_off_hz * t
     if drift_hz_per_s:
@@ -60,7 +62,7 @@ class ChannelStream:
 
 
 def read_manifest(record_dir) -> dict:
-    return json.loads((Path(record_dir) / "channels.json").read_text())
+    return json.loads((Path(record_dir) / "channels.json").read_text(encoding="utf-8"))
 
 
 def load_channel(record_dir, labels_path, position: int) -> ChannelStream:
@@ -68,7 +70,7 @@ def load_channel(record_dir, labels_path, position: int) -> ChannelStream:
     record_dir = Path(record_dir)
     manifest = read_manifest(record_dir)
     ch = manifest["channels"][position]
-    label = json.loads(Path(labels_path).read_text())["signals"][ch["label_index"]]
+    label = json.loads(Path(labels_path).read_text(encoding="utf-8"))["signals"][ch["label_index"]]
     y = np.fromfile(record_dir / ch["file"], dtype="<c8").astype(np.complex128)
     if len(y) != ch["samples"]:
         raise ValueError(f"{ch['file']}: {len(y)} samples, the manifest says {ch['samples']}")

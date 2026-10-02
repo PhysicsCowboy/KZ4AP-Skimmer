@@ -11,7 +11,7 @@ def test_ladder_spans_100_to_5_wpm_in_32_steps_of_ten_percent():
     assert lengths[0] == pytest.approx(0.0096)                   # 0.8 x the 100 WPM dit
     assert lengths[-1] == pytest.approx(0.0096 * 1.1 ** 31)      # 184.3 ms
     assert np.allclose(lengths[1:] / lengths[:-1], 1.1)
-    # the 5 WPM optimum, 0.8 x 240 ms, is within one step: 0.18 dB of signal power relative to the ideal length (spec 4.1, derived)
+    # the 5 WPM optimum, 0.8 x 240 ms, is within one step: a 0.18 dB loss of output SNR relative to the ideal length (spec 4.1, derived)
     assert 10 * np.log10(0.8 * 0.24 / lengths[-1]) == pytest.approx(0.18, abs=0.005)
 
 

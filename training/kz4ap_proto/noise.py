@@ -81,15 +81,15 @@ class BranchNoise:
 
 
 class SpectrumNoise:
-    """The shared noise spectrum (spec 4.2). Arm (a), level "three-tap":
+    """The shared noise spectrum (spec 4.2). Variant (a), level "three-tap":
     sigma_v,k^2 = sigma_v,1^2 [(W_k . S) / (W_1 . S)] [b_mask,1 / b_mask,k]: branch 1's level from the three-tap
     guard, the ratio from S, an exponential average (tau_n) of Hann-windowed periodograms of u over segments of
-    T_seg, smoothed over +/- spectrum_smoothing_hz; W_k[m] is the mean of |H_k(f)|^2 over bin m. Arm (b), level
+    T_seg, smoothed over +/- spectrum_smoothing_hz; W_k[m] is the mean of |H_k(f)|^2 over bin m. Variant (b), level
     "spectrum": sigma_v,k^2 = 0.5 (W_k . S) / (M b_mask,k). A sample of u is left out of its segment if any
     |v_1|^2 that contains it, or lies within guard_margin_s of it, reaches kappa_n 2 sigma_v,1^2; a segment
     enters only if at least min_clean_fraction of it is left in. The mask removes mostly low-frequency power,
     so its bias differs per branch (b_mask,k, cfg.mask_bias, measured in white noise) and does not cancel in
-    the ratio: both arms correct by the same table, so their relative levels agree and they differ only in
+    the ratio: both variants correct by the same table, so their relative levels agree and they differ only in
     the source of the absolute level. Until the three-tap warm-up is over no segment enters and the shape is
     white (ratio N_1/N_k, exact for white noise by Parseval, no correction)."""
 
@@ -177,7 +177,7 @@ class SpectrumNoise:
     def masked_branch_power(self) -> np.ndarray:
         """sigma_v,k^2 per real component, FS^2, from the flat mean of every accepted masked periodogram so far,
         smoothed as sigma2() smooths it and with no bias correction: 0.5 (W_k . S) / M. Divided by the true
-        sigma_v,k^2 it is the mask's bias per branch, b_mask,k (the calibration of arm (b))."""
+        sigma_v,k^2 it is the mask's bias per branch, b_mask,k (the calibration of variant (b))."""
         if self.periodogram_sum is None:
             raise ValueError("no segment has entered the spectrum")
         return 0.5 * (self.bin_weights @ self._smoothed(self.periodogram_sum / self.segments)) / self.m
@@ -191,7 +191,7 @@ class SpectrumNoise:
             # noise), so both the ratio and the absolute level are divided by it
             k = self.bin_weights @ self._smoothed() / self.mask_bias
             self.ratio = k / k[0]
-            # arm (b): complex power of v_k is (1/M) sum_m I_m W_k[m]; per real component half of it
+            # variant (b): complex power of v_k is (1/M) sum_m I_m W_k[m]; per real component half of it
             self.absolute = 0.5 * k / self.m
         return self.absolute.copy() if self.level == "spectrum" else level * self.ratio
 
