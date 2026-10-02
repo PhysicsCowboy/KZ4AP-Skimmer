@@ -709,3 +709,10 @@ and its reason says so. `pytest training -q` (local): 246 passed, 5 xfailed.
   plan says a channel test that fails after an adopted change is reported, not reverted silently.
   Owner's decision (2026-10-01): keep 48; the speed-step test now asks for 3 × N_mem elements, and
   the turnover test is a strict expected failure stating the finding (cause not traced).
+
+- **Extra configurations for the final evaluation (owner, 2026-10-01).** Task 15 evaluates, on the
+  held-out seeds 2 and 3 and beside the prototype with every adopted value, two more configurations
+  that differ from it only in the comb's confidence threshold: 0.2506 (T_P precision 0.95 on E1's
+  points) and 0.1487 (precision 0.90). They show the trade between overall and first-word CER
+  (section 3.6.1) on data no choice was made on. Neither is adopted by a rule; the owner decides from
+  the comparison.
