@@ -110,9 +110,9 @@ class ProtoConfig:
     # Selection (spec 4.6)
     eligibility_tolerance: float = math.log(1.1)   # heuristic (one ladder step)
     switch_persistence: int = 4            # M, selection instants in a row; placeholder, kept by E6 (section 3.11)
-    quality_tie_nats: float = 0.05         # epsilon_Q, nats per element; placeholder (E8)
+    quality_tie_nats: float = 0.05         # epsilon_Q, nats per element; placeholder, kept by E8 (section 3.12)
     text_tie_nats: float = 0.1             # nats per character; heuristic
-    text_window_chars: int = 10            # placeholder (E8)
+    text_window_chars: int = 10            # characters; placeholder, kept by E8
     text_separation_nats: float = 1.0      # "clearly separates" with none eligible, nats per character; heuristic
     # Silences and output (spec 4.7, 4.8)
     new_over_min_s: float = 0.5            # s; placeholder, kept by E7 (results record, section 3.10)

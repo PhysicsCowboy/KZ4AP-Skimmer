@@ -1099,6 +1099,54 @@ marks (median); Task 11 measured 11 marks (seeds 1–4) at N_mem = 24, before E4
 4 is measurably worse pooled except M = 2 (+0.0023, −0.0030 to +0.0076); M = 1 and 2 help group I and
 hurt B, E and H; M = 6 and 8 help C and E and hurt A, F and I.
 
+### 3.12 E8 — the text log-probability's weight and window in branch selection
+
+Question: when two eligible branches fit the durations almost equally well (their fit qualities Q
+within ε_Q = `quality_tie_nats`, nats per element), the prototype breaks the tie by the text each
+branch decoded: the mean log-probability per character of its last `text_window_chars` characters
+under the character model. ε_Q = 0 disables the tie-break. Reference: ε_Q = 0.05 nats per element,
+window 10 characters (both placeholders). The spec warns that the filler text of most groups is drawn
+from the model's own character frequencies, which flatters the text model, so groups G and H (ragchew
+and QSO text) are read separately.
+
+Variants, each changing one value: `exp-E8-tie-<ε_Q>` with ε_Q = 0, 0.02, 0.1, 0.2 nats per element;
+`exp-E8-window-<n>` with 5 and 20 characters. Against `exp-E9-rekey-0.8`. The plan runs the window
+variants after the ε_Q outcome; all six ran in one batch because the window runs would have been
+repeated only if an ε_Q value had been adopted, which none was. Development set, 509 signals, 74 748
+channel-seconds. Batch `build/suite/full3/experiments/E8.json` (git-ignored), at `c6b72bd`:
+
+```
+{"name": "E8", "base": "exp-E9-rekey-0.8", "subset": "dev", "runs": [{"name": "exp-E8-tie-0", "set": {"quality_tie_nats": 0.0}}, {"name": "exp-E8-tie-0.02", "set": {"quality_tie_nats": 0.02}}, {"name": "exp-E8-tie-0.1", "set": {"quality_tie_nats": 0.1}}, {"name": "exp-E8-tie-0.2", "set": {"quality_tie_nats": 0.2}}, {"name": "exp-E8-window-5", "set": {"text_window_chars": 5}}, {"name": "exp-E8-window-20", "set": {"text_window_chars": 20}}]}
+.venv/bin/python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench build/linux/bench/kz4ap-bench --spec build/suite/full3/experiments/E8.json --jobs 10
+```
+
+Paired CER, variant − `exp-E9-rekey-0.8` (G and H: groups G, H oracle and H per station, 48 signals;
+filler text: groups A–F and I, 461 signals; both from `scripts/pooled_groups.py`):
+
+| run | pooled CER | paired CER, all 509 | G and H (48) | filler-text groups (461) | CPU per channel-second |
+|---|---|---|---|---|---|
+| `exp-E9-rekey-0.8` (ε_Q 0.05, window 10) | 0.2799 | — | — | — | 184.3 ms |
+| `exp-E8-tie-0` (tie-break off) | 0.2808 | +0.0012 (+0.0001 to +0.0025) | +0.0002 (−0.0013 to +0.0016) | +0.0013 (+0.0000 to +0.0025) | 184.3 ms |
+| `exp-E8-tie-0.02` | 0.2799 | −0.0002 (−0.0009 to +0.0005) | +0.0000 (−0.0004 to +0.0005) | −0.0002 (−0.0010 to +0.0005) | 184.8 ms |
+| `exp-E8-tie-0.1` | 0.2805 | +0.0010 (+0.0002 to +0.0021) | +0.0002 (+0.0000 to +0.0005) | +0.0011 (+0.0002 to +0.0023) | 185.9 ms |
+| `exp-E8-tie-0.2` | 0.2816 | +0.0023 (+0.0007 to +0.0048) | −0.0001 (−0.0006 to +0.0005) | +0.0026 (+0.0007 to +0.0052) | 184.7 ms |
+| `exp-E8-window-5` | 0.2798 | +0.0001 (−0.0004 to +0.0009) | −0.0011 (−0.0029 to +0.0001) | +0.0003 (−0.0003 to +0.0010) | 184.2 ms |
+| `exp-E8-window-20` | 0.2803 | +0.0005 (−0.0002 to +0.0012) | −0.0017 (−0.0055 to +0.0004) | +0.0007 (+0.0000 to +0.0016) | 184.3 ms |
+
+Wall 23.1–23.6 min per run. Full tables:
+`build/suite/full3/experiments/linux/compare-exp-E8-<variant>-vs-exp-E9-rekey-0.8.md`, `summary-E8.md`
+(git-ignored).
+
+Rule (pre-registered): adopt a value only if the pooled paired CER interval lies entirely below 0 and
+the mean paired CER over groups G and H is not above 0; otherwise keep the reference's. **Outcome: no
+variant's pooled interval lies entirely below 0** (the lowest is ε_Q = 0.02, −0.0002 with −0.0009 to
++0.0005). **Kept: `quality_tie_nats = 0.05`, `text_window_chars = 10`** (placeholders, kept, not
+rejected by measurement). `exp-E9-rekey-0.8` remains the reference for Task 15.
+
+Observed, not part of the rule: the effects are all below 0.003 in CER. Turning the tie-break off
+(ε_Q = 0) and widening it to 0.1 or 0.2 nats per element are measurably worse pooled (intervals entirely
+above 0), mostly in the filler-text groups; on G and H nothing differs measurably.
+
 ## 4. Final evaluation (Task 15)
 
 ## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure
