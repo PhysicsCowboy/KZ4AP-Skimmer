@@ -1147,6 +1147,34 @@ Observed, not part of the rule: the effects are all below 0.003 in CER. Turning 
 (ε_Q = 0) and widening it to 0.1 or 0.2 nats per element are measurably worse pooled (intervals entirely
 above 0), mostly in the filler-text groups; on G and H nothing differs measurably.
 
+### 3.13 After E4–E9: the settings Task 15 starts from
+
+| parameter | before Task 14 | after | status | section |
+|---|---|---|---|---|
+| fit memory N_mem | 24 elements | **48 elements** | measured (E4); owner kept it, 2026-10-01 | 3.7 |
+| T grid step | 1% | 1% | kept by E5 | 3.8 |
+| q grid | 3, 3.5, 4, 4.5, 5 | **3, 4, 5** | measured (E5) | 3.8 |
+| w/T grid | −0.4 … 1.0 step 0.2 | **−0.4, 0, 0.4, 0.8** | measured (E5) | 3.8 |
+| T_g/T grid | 10 values, 1 … 8 | **1, 1.59, 2.52, 4, 6.35** | measured (E5) | 3.8 |
+| x_on per branch | nominal √(−2 ln(R_fa·L_k)), 4.31 … 3.55 | **calibrated, 4.64 … 4.20** | measured (E9a) | 3.9 |
+| R_fa | 0.01 /s | 0.01 /s | heuristic target, kept by E9b | 3.9 |
+| W_min | 0.4 s of keyed time | **0.8 s** | measured (E9b) | 3.9 |
+| T_new | max(0.5 s, 12·T_g) | max(0.5 s, 12·T_g) | placeholder, kept by E7 | 3.10 |
+| M | 4 | 4 | placeholder, kept by E6 | 3.11 |
+| ε_Q; text window | 0.05 nats per element; 10 characters | the same | placeholders, kept by E8 | 3.12 |
+
+Current reference: `exp-E9-rekey-0.8`, pooled CER 0.2799 on the development set against `exp-ref`'s
+0.3060, and 184.3 ms of decoding CPU per channel-second on the Linux machine against 317.7 ms. Compared
+pairwise with `exp-ref` (an observation after the rules, not a rule; the experiments chose on this same
+development set, so it is not an independent test, which Task 15's held-out seeds are): paired CER
+−0.0144 (−0.0282 to −0.0014), paired first-word CER −0.2821 (−0.4173 to −0.1486); by group, entirely
+below 0 in C, F, G and H (both views), **entirely above 0 in group I, +0.0578 (+0.0140 to +0.1106)**,
+the others containing 0 (file `build/suite/full3/experiments/linux/compare-exp-E9-rekey-0.8-vs-exp-ref.md`,
+git-ignored). Periodicity settings are unchanged (owner's option A). `pytest training -q`
+at `67f4d65`: 244 passed, 7 xfailed on the Windows machine and on the Linux machine. The three new
+strict expected failures (sections 3.7, 3.8, 3.9) and the two pre-registered checks that fired (E7's
+group I check, E6's follow criterion) are listed in section 6.
+
 ## 4. Final evaluation (Task 15)
 
 ## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure
@@ -1209,6 +1237,13 @@ above 0), mostly in the filler-text groups; on G and H nothing differs measurabl
   "within about 10 marks". At M = 4 the follow took 11 marks in Task 11 (seeds 1–4, N_mem = 24); E4's
   longer memory, E5's grids and E9's thresholds and W_min changed since; which of them added the 3
   marks is not measured.
+
+- **After Task 14 (section 3.13): group I (Farnsworth) is worse than at `exp-ref`.** Paired CER of
+  `exp-E9-rekey-0.8` against `exp-ref` +0.0578 (+0.0140 to +0.1106), while the pool improves (−0.0144,
+  −0.0282 to −0.0014). Only E4's rule guarded group I's CER. Of the adopted steps measured for group I,
+  E9's W_min = 0.8 s raised it most (+0.0808, +0.0306 to +0.1368); E4 lowered it (−0.0264) and E9's
+  calibrated thresholds lowered it (−0.0073); E5's coarse grids were measured only on the E5 subset
+  (+0.0055, −0.0017 to +0.0122, against the finest grids).
 
 - **Extra configurations for the final evaluation (owner, 2026-10-01).** Task 15 evaluates, on the
   held-out seeds 2 and 3 and beside the prototype with every adopted value, two more configurations
