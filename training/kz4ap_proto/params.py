@@ -54,9 +54,18 @@ class ProtoConfig:
     squelch_a: float = 3.0                 # a_min at squelch_ref_s (milestone 2; heuristic)
     squelch_ref_s: float = 0.016           # s
     squelch_exponent: float = 0.25         # a_min proportional to L^(1/4) (derived scaling)
-    false_marks_per_s: float = 0.01        # R_fa target, per branch, noise alone; heuristic (E9)
-    x_on_values: tuple[float, ...] = ()    # x_on per branch, calibrated to R_fa by measurement (E9); () = the
-                                           # nominal sqrt(-2 ln(R_fa L_k)), heuristic (keys 7-10x more than R_fa)
+    false_marks_per_s: float = 0.01        # R_fa target, per branch, noise alone; heuristic target, kept by E9(b)
+                                           # (0.001 and 0.1 /s did not qualify; results record, section 3.9)
+    x_on_values: tuple[float, ...] = (     # x_on per branch k = 1 ... 32; measured (E9a, channel-shaped noise,
+        4.6428, 4.637, 4.6206, 4.6163,     # R_fa 0.01 /s): `experiments calibrate-x-on`, about 20 noise key-downs
+        4.6196, 4.6047, 4.5827, 4.5936,    # per branch (2000 s of noise), so each value scatters (not monotone
+        4.5548, 4.528, 4.5647, 4.5285,     # in k). Must match false_marks_per_s: re-calibrate if that changes.
+        4.4602, 4.5024, 4.472, 4.4743,     # () = the nominal sqrt(-2 ln(R_fa L_k)), 4.31 ... 3.55, heuristic
+        4.4149, 4.4676, 4.4935, 4.4207,    # (keys 7-10x more than R_fa)
+        4.3846, 4.2876, 4.3223, 4.3391,
+        4.3002, 4.3336, 4.2214, 4.2471,
+        4.2129, 4.2335, 4.2228, 4.2036,
+    )
     release_probability: float = 0.3       # key up where noise alone exceeds x this often (x_off = 1.55); heuristic
     rekey_after_s: float = 0.4             # W_min, s of keyed time while the amplitude is unknown; placeholder (E9)
     seed_memory_rekeys: float = 4.0        # while the amplitude is unknown, the seed (0.9 quantile of |v|^2) is taken

@@ -752,6 +752,153 @@ not loosened; following the owner's handling of E4's finding, it is now a strict
 the finding, and the finding is in section 6. Then: 245 passed, 6 xfailed. The channel tests,
 including the Farnsworth text tests, pass.
 
+### 3.9 E9 — the first marks of an over: the threshold x_on, the target R_fa, and W_min
+
+Question. At the start of an over the amplitude is unknown, so each branch keys with a plain threshold
+on x = |v_k|/σ_v,k: key down when x > x_on,k, up when x < x_off = 1.55 (per sample, the spec's two
+candidate tests, the GLRT maximized over the amplitude and the threshold on x, are one test family
+(plan, "Design decisions"), so this experiment sets the threshold). The threshold is meant to let
+noise alone key a branch down R_fa times per second (target 0.01 /s); the nominal formula
+x_on,k = √(−2 ln(R_fa·L_k)) is a heuristic that keys 7–10 times more often (review). Once W_min of
+keyed time (0.4 s, placeholder) has accumulated, the over's start is re-keyed with the full likelihood
+ratio. E9 (a) replaces the formula by a measured threshold, (b) compares other targets R_fa, and then
+other W_min (`rekey_after_s`).
+
+**(a) Calibration** (pre-registered, adopted as a measurement). `experiments calibrate-x-on`: per branch,
+channel-shaped complex noise (white noise through the channel filter, the branch's exact σ_v,k) lasting
+20/R_fa seconds; each excursion of x above x_off gives one key-down if its maximum exceeds x_on, so x_on
+is the (R_fa × duration)-th largest excursion maximum (about 20 key-downs per branch: each value has the
+sampling scatter of about 20 events, which is why the column is not monotone in k). Run on the Linux
+machine (one process, 2026-10-01):
+
+```
+.venv/bin/python -m kz4ap_proto.experiments calibrate-x-on --set false_marks_per_s=<0.01|0.001|0.1> > build/suite/full3/experiments/logs/E9-calibrate-<R>.log
+```
+
+| branch k | L_k, ms | nominal x_on at 0.01 /s | **calibrated, 0.01 /s (adopted)** | calibrated, 0.001 /s | calibrated, 0.1 /s |
+|---|---|---|---|---|---|
+| 1 | 9.33 | 4.31 | 4.6428 | 5.1247 | 4.0954 |
+| 2 | 10.67 | 4.28 | 4.6370 | 5.1373 | 4.0583 |
+| 3 | 11.33 | 4.26 | 4.6206 | 5.0959 | 4.1037 |
+| 4 | 12.67 | 4.24 | 4.6163 | 5.0736 | 4.1256 |
+| 5 | 14.00 | 4.21 | 4.6196 | 5.0448 | 4.1127 |
+| 6 | 15.33 | 4.19 | 4.6047 | 5.0403 | 4.0646 |
+| 7 | 17.33 | 4.16 | 4.5827 | 5.0541 | 4.0432 |
+| 8 | 18.67 | 4.14 | 4.5936 | 5.0695 | 4.0059 |
+| 9 | 20.67 | 4.12 | 4.5548 | 5.1057 | 3.9664 |
+| 10 | 22.67 | 4.10 | 4.5280 | 4.9984 | 3.9806 |
+| 11 | 24.67 | 4.08 | 4.5647 | 5.0398 | 3.9697 |
+| 12 | 27.33 | 4.05 | 4.5285 | 4.9817 | 4.0099 |
+| 13 | 30.00 | 4.03 | 4.4602 | 4.9547 | 4.0025 |
+| 14 | 33.33 | 4.00 | 4.5024 | 4.9919 | 4.0095 |
+| 15 | 36.67 | 3.98 | 4.4720 | 4.9888 | 3.9146 |
+| 16 | 40.00 | 3.96 | 4.4743 | 4.9996 | 3.9181 |
+| 17 | 44.00 | 3.93 | 4.4149 | 4.9486 | 3.8522 |
+| 18 | 48.67 | 3.91 | 4.4676 | 4.8956 | 3.9680 |
+| 19 | 53.33 | 3.88 | 4.4935 | 4.8963 | 3.8725 |
+| 20 | 58.67 | 3.86 | 4.4207 | 4.8673 | 3.8706 |
+| 21 | 64.67 | 3.83 | 4.3846 | 4.8764 | 3.7273 |
+| 22 | 71.33 | 3.81 | 4.2876 | 4.8868 | 3.7332 |
+| 23 | 78.00 | 3.78 | 4.3223 | 4.8754 | 3.7370 |
+| 24 | 86.00 | 3.76 | 4.3391 | 4.8120 | 3.6718 |
+| 25 | 94.67 | 3.73 | 4.3002 | 4.8203 | 3.6667 |
+| 26 | 104.00 | 3.71 | 4.3336 | 4.8181 | 3.6541 |
+| 27 | 114.67 | 3.68 | 4.2214 | 4.7405 | 3.6281 |
+| 28 | 126.00 | 3.65 | 4.2471 | 4.7642 | 3.5762 |
+| 29 | 138.67 | 3.63 | 4.2129 | 4.7856 | 3.6931 |
+| 30 | 152.00 | 3.60 | 4.2335 | 4.8058 | 3.5405 |
+| 31 | 167.33 | 3.58 | 4.2228 | 4.7452 | 3.5951 |
+| 32 | 184.00 | 3.55 | 4.2036 | 4.7653 | 3.5425 |
+
+(L_k is the realized length N_k/r. The calibrated 0.01 /s thresholds lie 0.33 (k = 1) to 0.65 (k = 32)
+above the nominal ones. Logs: `build/suite/full3/experiments/linux/E9-calibrate-<R>.log`, git-ignored.
+The calibrations ran during E4; they depend only on the ladder, the channel filter, x_off and R_fa.)
+
+The reference decoded with them, against the current reference. The current reference after E5 is the
+adopted defaults (N_mem = 48, coarse grids) on the whole development set, `exp-E5-coarse-dev` (section
+3.8: E5's own runs covered only its subset), decoded as the first run of this batch and its base.
+Batch `build/suite/full3/experiments/E9a.json` (git-ignored), at `ae3f1ba`; development set, 509
+signals, 74 748 channel-seconds:
+
+```
+{"name": "E9a", "base": "exp-E5-coarse-dev", "subset": "dev", "runs": [{"name": "exp-E5-coarse-dev", "set": {}}, {"name": "exp-E9-calibrated", "set": {"x_on_values": [<the 0.01 /s column>]}}]}
+.venv/bin/python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench build/linux/bench/kz4ap-bench --spec build/suite/full3/experiments/E9a.json --jobs 10
+```
+
+| run | pooled CER | paired CER against `exp-E5-coarse-dev` | paired first-word CER | CPU per channel-second | wall |
+|---|---|---|---|---|---|
+| `exp-E5-coarse-dev` (N_mem 48, coarse grids, nominal x_on) | 0.2857 | — | — | 193.6 ms | 24.4 min |
+| `exp-E9-calibrated` | 0.2885 | +0.0024 (−0.0016 to +0.0067) | −0.0189 (−0.0529 to +0.0112) | 191.9 ms | 24.1 min |
+
+By group, `exp-E9-calibrated` − `exp-E5-coarse-dev`: A +0.0125 (+0.0039 to +0.0211), the only interval
+entirely above 0; I −0.0073 (−0.0191 to −0.0007), the only one entirely below 0; every other group's
+interval contains 0. False characters outside transmissions fall in every group (per minute: A 5.92 →
+3.77, B 1.20 → 0.70, C 0.171 → 0.047, D 0.64 → 0.00, E 43.8 → 43.2, F 9.97 → 7.91, G 0.86 → 0.61, H
+oracle 0.76 → 0.33, H per station 66.5 → 64.6, I 0.150 → 0.043). Full tables:
+`build/suite/full3/experiments/linux/compare-exp-E9-calibrated-vs-exp-E5-coarse-dev.md` (git-ignored).
+
+Rule (pre-registered): the calibrated thresholds become `ProtoConfig.x_on_values` (measured); the run
+becomes the current reference unless its pooled paired CER interval lies entirely above 0, in which
+case it is kept anyway and the loss reported. **Outcome: +0.0024 (−0.0016 to +0.0067), not entirely
+above 0; no loss to report. Adopted: `x_on_values` = the 0.01 /s column** (status measured, E9a,
+channel-shaped noise, R_fa 0.01 /s); `exp-E9-calibrated` is the current reference.
+
+Tests: the keying unit tests build keyers on one- or two-branch ladders, which the 32 calibrated values
+cannot serve (`x_on_values needs one threshold per branch`); their configuration now sets
+`x_on_values = ()`, the nominal formula they tested before. `pytest training -q` (local): 245 passed,
+6 xfailed; every channel test passes with the calibrated thresholds.
+
+**(b) The target R_fa**, each with its own calibration (columns above): `exp-E9-0.001` (R_fa 0.001 /s)
+and `exp-E9-0.1` (0.1 /s), against `exp-E9-calibrated`. Batch `build/suite/full3/experiments/E9b.json`
+(git-ignored), run in the same job right after E9a (E9a's rule keeps `exp-E9-calibrated` whatever its
+outcome, so it is E9b's reference either way):
+
+```
+{"name": "E9b", "base": "exp-E9-calibrated", "subset": "dev", "runs": [{"name": "exp-E9-0.001", "set": {"false_marks_per_s": 0.001, "x_on_values": [<the 0.001 /s column>]}}, {"name": "exp-E9-0.1", "set": {"false_marks_per_s": 0.1, "x_on_values": [<the 0.1 /s column>]}}]}
+.venv/bin/python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench build/linux/bench/kz4ap-bench --spec build/suite/full3/experiments/E9b.json --jobs 10
+```
+
+The first-word metric pooled over groups A, G, H (oracle, both views) and I (288 signals) is computed
+with `build/suite/full3/experiments/scripts/pooled_groups.py` (git-ignored; `experiments.pooled_paired`
+on those groups' rows, the same bootstrap).
+
+| run | pooled CER | paired CER, all 509 | paired first-word CER over A, G, H, I (288) | paired first-word CER, all 509 | CPU per channel-second | wall |
+|---|---|---|---|---|---|---|
+| `exp-E9-calibrated` (0.01 /s) | 0.2885 | — | — | — | 191.9 ms | 24.1 min |
+| `exp-E9-0.001` | 0.2949 | **+0.0059 (+0.0004 to +0.0124)** | −0.1002 (−0.2359 to +0.0040) | −0.0796 (−0.1691 to −0.0016) | 189.9 ms | 23.9 min |
+| `exp-E9-0.1` | 0.2884 | −0.0005 (−0.0057 to +0.0053) | +0.0477 (−0.0124 to +0.1117) | +0.0084 (−0.0479 to +0.0664) | 194.4 ms | 24.5 min |
+
+False characters outside transmissions, per minute:
+
+| group | 0.01 /s (reference) | 0.001 /s | 0.1 /s |
+|---|---|---|---|
+| A sensitivity | 3.77 | 2.49 | 5.92 (+57%) |
+| B fading | 0.70 | 0.29 | 1.53 (+118%) |
+| C fists | 0.047 | 0.031 | 0.218 (+367%) |
+| D speed | 0.00 | 0.00 | 0.32 (from 0) |
+| E interference | 43.2 | 42.6 | 43.8 |
+| F tuning | 7.91 | 5.85 | 8.25 |
+| G ragchew | 0.61 | 0.49 | 1.22 (+100%) |
+| H two-station QSO, oracle | 0.33 | 0.22 | 0.98 (+200%) |
+| H two-station QSO, oracle (per station) | 64.6 | 61.9 | 71.8 |
+| I Farnsworth | 0.043 | 0.021 | 0.172 (+300%) |
+
+Paired CER by group with an interval entirely on one side of 0: 0.001 /s, A +0.0158 (+0.0039 to
++0.0313) and H per station −0.0325 (−0.0695 to −0.0041); 0.1 /s, A −0.0148 (−0.0240 to −0.0057), H per
+station +0.0838 (+0.0169 to +0.1677) and I +0.0101 (+0.0019 to +0.0218). Full tables:
+`build/suite/full3/experiments/linux/compare-exp-E9-0.001-vs-exp-E9-calibrated.md`,
+`compare-exp-E9-0.1-vs-exp-E9-calibrated.md`, `summary-E9a.md`, `summary-E9b.md` (git-ignored).
+
+Rule (pre-registered): adopt a value only if the pooled paired first-word CER interval (A, G, H both
+views, I) lies entirely below 0, the false characters per minute do not exceed the reference's by more
+than 50% in any group, and the pooled paired CER interval does not lie entirely above 0; otherwise keep
+the reference's value. **Outcome: neither qualifies.** 0.001 /s: its first-word interval reaches
++0.0040 (not entirely below 0; over all 509 signals it would be, but the rule names groups A, G, H and
+I), and its pooled paired CER interval lies entirely above 0. 0.1 /s: first-word +0.0477, and its false
+characters exceed the reference's by more than 50% in A, B, C, D, G, H (oracle) and I. **Kept:
+`false_marks_per_s = 0.01`** (heuristic target, kept by E9(b), not rejected by measurement), with the
+calibrated thresholds of (a).
+
 ## 4. Final evaluation (Task 15)
 
 ## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure

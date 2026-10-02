@@ -9,7 +9,9 @@ from kz4ap_proto.params import ProtoConfig
 from kz4ap_synth.morse import keying_intervals
 
 RATE = 1500.0
-CFG = ProtoConfig()
+# These tests build keyers on one- or two-branch ladders, so they use the nominal x_on formula (x_on_values = ()):
+# E9's calibrated defaults are one value per branch of the full 32-branch ladder (Task 14).
+CFG = ProtoConfig(x_on_values=())
 
 
 def rectangles(intervals, n, start_s):
