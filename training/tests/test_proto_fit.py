@@ -61,6 +61,18 @@ def test_fits_farnsworth_spacing():
     assert f.tg_s == pytest.approx(farnsworth_gap_s(18.0, 10.0), rel=0.05)  # 207 ms, 3.11 T
 
 
+def test_fits_farnsworth_spacing_on_the_pre_e5_grids():
+    # Keeps the T_g refinement covered beside the strict xfail above (Task 14 review M9): the grids before E5.
+    cfg = CFG.with_values(q_grid=(3.0, 3.5, 4.0, 4.5, 5.0), w_grid=(-0.4, -0.2, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+                          tg_grid=(1.0, 1.26, 1.59, 2.0, 2.52, 3.17, 4.0, 5.04, 6.35, 8.0))
+    fit = DurationFit(cfg)
+    for is_mark, d in durations(timed_intervals(text(), 18.0, farnsworth_wpm=10.0)):
+        fit.add(is_mark, d, 1e-8)
+    f = fit.best(None, 0.0)
+    assert f.t_s == pytest.approx(1.2 / 18.0, rel=0.02)
+    assert f.tg_s == pytest.approx(farnsworth_gap_s(18.0, 10.0), rel=0.05)  # 207 ms, 3.11 T
+
+
 def test_fits_key_weighting():
     f = fitted(durations(timed_intervals(text(), 25.0, "machine", None, imbalance_dits=0.2)))
     assert f.w_s == pytest.approx(0.2 * 0.048, abs=0.002)

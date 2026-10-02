@@ -541,7 +541,8 @@ git-ignored; exp-ref's branch-1 posteriors, no decoding). The comb's thresholds 
   precise and less often available than the comb (0.903 and 0.633 against 0.971 and 0.772 for the comb
   at 0.2506).
 - Outside transmissions (padded by 0.5 s): at equal precision 0.95, the edge comb publishes a confident
-  T_P 2 to 15 times as often as the comb in groups B, C, G, H and I (for example group B 0.147 against
+  T_P 1.6 to 15 times as often as the comb (`exp-diag-edge-cal` against `exp-diag-comb-cal`) in groups B, C, G, H
+  and I (for example group B 0.147 against
   0.016 of update points), which fits its extra false characters in B. Against the comb at 0.03,
   though, the edge comb is less often confident outside transmissions, so this alone does not explain
   why it decodes worse than the reference. Every configuration publishes a confident T_P at 0.41–0.88
@@ -650,7 +651,7 @@ reference for E5.
 
 Observed, not part of the rule: with 48 the first-word CER rises in group A, +0.1276 (+0.0132 to
 +0.2610), and the selected-speed errors in group E rise (0.184 → 0.366), while they fall in every
-other group with such instants. Group D's speed changes read slightly worse with 48 in three of four
+other group with such instants (D unchanged, 0.0193). Group D's speed changes read slightly worse with 48 in three of four
 conditions (each condition is 2 signals; not tested separately).
 
 **Tests after the change** (`pytest training -q`, local): 3 failed, 244 passed, 4 xfailed with
@@ -736,8 +737,18 @@ and 0.02 lie entirely below 0, i.e. measurably better than the finest), and the 
 2% T step was not a variant and was not measured.
 
 Observed, not part of the rule: the finest grid is not the most accurate on this subset (every
-coarser T step is measurably better pooled); on group I the coarse grid's paired CER is +0.0055
-(−0.0017 to +0.0122), the only group where it is not at least as good as the reference.
+coarser T step is measurably better pooled). **Group I is worse with the coarse grids than with the
+reference grids.** The E5 subset holds all 48 group I signals of the development set
+(`I-farnsworth-.*-s1`), so for group I this is a full measurement, not a subset one. Against the
+finest grids, coarse gives +0.0055 (−0.0017 to +0.0122) and the reference −0.0052 (−0.0101 to −0.0014);
+both are paired over the same 48 signals, so the adopted step, coarse − reference, has mean
+**+0.0107** for group I (its interval was not computed: the decoded results are on the Linux machine,
+and `scripts/pooled_groups.py exp-E5-ref exp-E5-coarse I` there would give it). By condition (CER,
+reference → coarse), the paddle conditions rise most: 18/10 WPM 0.0273 → 0.0446, 18/5 WPM 0.1454 →
+0.1869, 25/18 WPM 0.0276 → 0.0457 (25/13 paddle 0.0371 → 0.0393); machine keying changes by at most
+0.0056. Conjectured, not measured: the coarse T_g/T grid stops at 6.35, while Farnsworth 18/5 WPM
+needs T_g/T = 7.84 (the old grid had 8). Group I's over starts per transmission also rose, from 1.521
+(`exp-E4-48`) to 1.750 (`exp-E5-coarse-dev`).
 
 **Reference for E9.** `exp-E5-coarse` decoded only the E5 subset (20% of the development set), and E9
 compares on the whole development set, so the adopted defaults (N_mem = 48 and the coarse grids, no
@@ -749,8 +760,11 @@ coarse grids. `test_fits_farnsworth_spacing` (Farnsworth 18/10 WPM, true T = 66.
 = 3.11 T): T = 66.72 ms is right, but T_g = 192.2 ms is 7.2% low against the test's 5% (the old grid
 had 3.17 T; the coarse grid's nearest points are 2.52 T and 4 T). Not a test of a default's value, so
 not loosened; following the owner's handling of E4's finding, it is now a strict expected failure stating
-the finding, and the finding is in section 6. Then: 245 passed, 6 xfailed. The channel tests,
-including the Farnsworth text tests, pass.
+the finding, and the finding is in section 6. Then: 245 passed, 6 xfailed. Every channel test that
+passed before still passes (including the Farnsworth over-start test,
+`test_farnsworth_word_gaps_do_not_start_a_new_over`; the Farnsworth text test was already a strict
+expected failure). Added in review: `test_fits_farnsworth_spacing_on_the_pre_e5_grids` runs the same fit
+with the grids before E5 set explicitly and keeps the 5% check, so the T_g refinement stays covered.
 
 ### 3.9 E9 — the first marks of an over: the threshold x_on, the target R_fa, and W_min
 
@@ -860,7 +874,8 @@ outcome, so it is E9b's reference either way):
 
 The first-word metric pooled over groups A, G, H (oracle, both views) and I (288 signals) is computed
 with `build/suite/full3/experiments/scripts/pooled_groups.py` (git-ignored; `experiments.pooled_paired`
-on those groups' rows, the same bootstrap).
+on those groups' rows, the same bootstrap; its output, copied from the session's console:
+`build/suite/full3/experiments/linux/pooled-groups-E9.txt`, git-ignored).
 
 | run | pooled CER | paired CER, all 509 | paired first-word CER over A, G, H, I (288) | paired first-word CER, all 509 | CPU per channel-second | wall |
 |---|---|---|---|---|---|---|
@@ -964,10 +979,14 @@ channel test now fails (below).
 
 **Tests after the change** (`pytest training -q`, local): 2 failed, 243 passed, 6 xfailed. The keying
 test of the seed's store asserted its size by value (`keyed_cap == 2400`, 4 × 0.4 s × 1500
-samples/s); it now computes 4 × W_min × r (4800). **The channel test `test_decodes_a_clean_station` (25
-WPM, S₅₀₀ = 20 dB, seed 1) now reads "Q TEST K1ABC K1ABC": the over's first character is lost.** Not
-traced; following the owner's handling of E4's finding, it is a strict expected failure stating the
-finding (section 6). Then: 244 passed, 7 xfailed.
+samples/s); it now computes 4 × W_min × r (4800). **Two channel tests lose the over's first character at W_min = 0.8 s.** `test_decodes_a_clean_station`
+(25 WPM, S₅₀₀ = 20 dB, seed 1) now reads "Q TEST K1ABC K1ABC"; not traced; following the owner's
+handling of E4's finding, it is a strict expected failure stating the finding (section 6). Then: 244
+passed, 7 xfailed. The second was hidden by an existing strict expected failure (found in review):
+`test_farnsworth_text_is_right` (Farnsworth 18/10 WPM, S₅₀₀ = 20 dB, seed 5) reads "Q TEST U1ABC" at
+W_min = 0.8 s against "CQ TEST U1ABC" at 0.4 s (decoded with the current defaults, only W_min
+changed); its reason now says so. A companion test, `test_a_clean_station_keeps_everything_after_the_first_character`,
+pins that the clean station's text from its second word on is right ("TEST K1ABC K1ABC").
 
 ### 3.10 E7 — the new-over silence threshold T_new
 
@@ -991,8 +1010,9 @@ Batch `build/suite/full3/experiments/E7.json` (git-ignored), at `25c1db6`:
 ```
 
 **Over starts inside transmissions** (the selected branch's over starts from 1 s after a transmission's
-start to its end, counted on scored labels; per transmission; counts from
-`metrics.spurious_over_starts` by `build/suite/full3/experiments/scripts/over_starts.py`, git-ignored):
+start to its end, counted on the test cases' labels; per transmission; counts from
+`metrics.spurious_over_starts` by `build/suite/full3/experiments/scripts/over_starts.py`, git-ignored;
+output: `build/suite/full3/experiments/linux/pooled-groups-and-over-starts-E7.txt`):
 
 | run | T_new | all groups | group I | A | B | C | G | H oracle | H per station |
 |---|---|---|---|---|---|---|---|---|---|
@@ -1013,7 +1033,7 @@ start to its end, counted on scored labels; per transmission; counts from
 | `exp-E7-min-1.0` | 0.2783 | −0.0011 (−0.0033 to +0.0008) | −0.0139 (−0.0390 to +0.0069) | 181.1 ms | 22.7 min |
 
 (The G-and-H first-word value pools groups G, H oracle and H per station, computed with
-`scripts/pooled_groups.py` as in E9.) Full tables:
+`scripts/pooled_groups.py` as in E9; output in the same `.txt` file.) Full tables:
 `build/suite/full3/experiments/linux/compare-exp-E7-<variant>-vs-exp-E9-rekey-0.8.md`, `summary-E7.md`
 (git-ignored).
 
@@ -1056,7 +1076,8 @@ matched to 30 WPM is selected). Development set, 509 signals, 74 748 channel-sec
 ```
 
 Switches and alternations per minute of transmission time, pooled over all groups (964.0 min; counts
-from `metrics.switch_stats` by `build/suite/full3/experiments/scripts/switches.py`, git-ignored):
+from `metrics.switch_stats` by `build/suite/full3/experiments/scripts/switches.py`, git-ignored; output:
+`build/suite/full3/experiments/linux/switches-E6.txt`):
 
 | M | marks to follow the 15 → 30 WPM step, seeds 1–10 | median | maximum | not followed | switches per min | alternations per min | pooled CER | paired CER against M = 4 |
 |---|---|---|---|---|---|---|---|---|
@@ -1096,8 +1117,9 @@ stays the current reference.
 Observed, not part of the rule: each step of 2 in M adds 2 marks to the follow (14 → 16 → 18 at M =
 4, 6, 8), as each extra selection instant waits for one more key-up. At M = 4 the step now takes 14
 marks (median); Task 11 measured 11 marks (seeds 1–4) at N_mem = 24, before E4–E9. Every M other than
-4 is measurably worse pooled except M = 2 (+0.0023, −0.0030 to +0.0076); M = 1 and 2 help group I and
-hurt B, E and H; M = 6 and 8 help C and E and hurt A, F and I.
+4 is measurably worse pooled except M = 2 (+0.0023, −0.0030 to +0.0076). By group (intervals entirely on
+one side of 0): M = 1 helps I and hurts B, C, E and H (both views); M = 2 helps I and hurts B, C, E and H
+(both views); M = 6 helps C and hurts A, F and I; M = 8 helps E and hurts A, F and I.
 
 ### 3.12 E8 — the text log-probability's weight and window in branch selection
 
@@ -1121,7 +1143,8 @@ channel-seconds. Batch `build/suite/full3/experiments/E8.json` (git-ignored), at
 ```
 
 Paired CER, variant − `exp-E9-rekey-0.8` (G and H: groups G, H oracle and H per station, 48 signals;
-filler text: groups A–F and I, 461 signals; both from `scripts/pooled_groups.py`):
+filler text: groups A–F and I, 461 signals; both from `scripts/pooled_groups.py`; output:
+`build/suite/full3/experiments/linux/pooled-groups-E8.txt`, git-ignored):
 
 | run | pooled CER | paired CER, all 509 | G and H (48) | filler-text groups (461) | CPU per channel-second |
 |---|---|---|---|---|---|
@@ -1152,7 +1175,7 @@ above 0), mostly in the filler-text groups; on G and H nothing differs measurabl
 | parameter | before Task 14 | after | status | section |
 |---|---|---|---|---|
 | fit memory N_mem | 24 elements | **48 elements** | measured (E4); owner kept it, 2026-10-01 | 3.7 |
-| T grid step | 1% | 1% | kept by E5 | 3.8 |
+| T grid step | 1% | 1% | placeholder, kept by E5 (the adopted coarse variant used it) | 3.8 |
 | q grid | 3, 3.5, 4, 4.5, 5 | **3, 4, 5** | measured (E5) | 3.8 |
 | w/T grid | −0.4 … 1.0 step 0.2 | **−0.4, 0, 0.4, 0.8** | measured (E5) | 3.8 |
 | T_g/T grid | 10 values, 1 … 8 | **1, 1.59, 2.52, 4, 6.35** | measured (E5) | 3.8 |
@@ -1171,7 +1194,7 @@ development set, so it is not an independent test, which Task 15's held-out seed
 below 0 in C, F, G and H (both views), **entirely above 0 in group I, +0.0578 (+0.0140 to +0.1106)**,
 the others containing 0 (file `build/suite/full3/experiments/linux/compare-exp-E9-rekey-0.8-vs-exp-ref.md`,
 git-ignored). Periodicity settings are unchanged (owner's option A). `pytest training -q`
-at `67f4d65`: 244 passed, 7 xfailed on the Windows machine and on the Linux machine. The three new
+at `67f4d65`: 244 passed, 7 xfailed on the Windows machine and on the Linux machine; after the review's two companion tests, 246 passed, 7 xfailed (Windows machine only; the Linux machine was busy with Task 15). The three new
 strict expected failures (sections 3.7, 3.8, 3.9) and the two pre-registered checks that fired (E7's
 group I check, E6's follow criterion) are listed in section 6.
 
@@ -1211,19 +1234,24 @@ group I check, E6's follow criterion) are listed in section 6.
   Owner's decision (2026-10-01): keep 48; the speed-step test now asks for 3 × N_mem elements, and
   the turnover test is a strict expected failure stating the finding (cause not traced).
 
-- **E5 (section 3.8): the coarse grids adopted by the rule; one fit test now fails, made a strict
-  expected failure (owner not consulted; following the E4 handling).** `test_fits_farnsworth_spacing`:
-  Farnsworth 18/10 WPM, T_g fitted 192.2 ms against the true 207.0 ms (−7.2%; the test allows 5%),
-  because the coarse T_g/T grid has 2.52 and 4 where the old one had 3.17. Decoding of group I on the E5
-  subset was not measurably worse (+0.0055, −0.0017 to +0.0122). The owner may prefer to un-mark it or
-  revisit the grid.
+- **E5 (section 3.8): the coarse grids adopted by the rule; they make group I worse, and one fit
+  test now fails (made a strict expected failure; owner not consulted; following the E4 handling).**
+  Measured: E5 chose by CPU among grids not worse than the finest, and did not compare per group with
+  the previous reference. Against that reference, on all 48 group I signals (the E5 subset holds them
+  all), the coarse grids raise group I's paired CER by +0.0107 (mean; its interval was not computed),
+  mostly in the paddle conditions. `test_fits_farnsworth_spacing`: Farnsworth 18/10 WPM, T_g fitted
+  192.2 ms against the true 207.0 ms (−7.2%; the test allows 5%); the coarse T_g/T grid has 2.52 and 4
+  where the old one had 3.17, and stops at 6.35 where 18/5 WPM needs 7.84. A companion test keeps the
+  5% check on the old grids. The owner may prefer to un-mark the test or revisit the grid.
 
 - **E9 (section 3.9): W_min = 0.8 s adopted by the rule (first words much better: −0.2893 over A, G, H,
-  I), but a clean station now loses its first character, and group I is worse.** The channel test
-  `test_decodes_a_clean_station` (25 WPM, S₅₀₀ = 20 dB) reads "Q TEST K1ABC K1ABC"; it is now a strict
-  expected failure stating the finding (owner not consulted; cause not traced). Group I's paired CER
-  +0.0808 (+0.0306 to +0.1368) and group B's +0.0206 (+0.0071 to +0.0356) lie entirely above 0; the rule
-  does not look at per-group CER.
+  I), but an over's first character can now be lost, and group I is worse.** Measured in two channel
+  tests: `test_decodes_a_clean_station` (25 WPM, S₅₀₀ = 20 dB, seed 1) reads "Q TEST K1ABC K1ABC", and
+  `test_farnsworth_text_is_right` (Farnsworth 18/10 WPM, seed 5) reads "Q TEST U1ABC" (at 0.4 s, "CQ TEST
+  U1ABC"). The first is a new strict expected failure stating the finding (owner not consulted); the
+  second was already one, and the change was found in review; both reasons say so. Cause not traced.
+  Group I's paired CER +0.0808 (+0.0306 to +0.1368) and group B's +0.0206 (+0.0071 to +0.0356) lie
+  entirely above 0; the rule does not look at per-group CER.
 
 - **E7 (section 3.10): the pre-registered check fires — Farnsworth word gaps start overs.** The current
   reference (`exp-E9-rekey-0.8`) has 0.333 over starts inside a transmission per transmission in group I
@@ -1234,16 +1262,26 @@ group I check, E6's follow criterion) are listed in section 6.
 - **E6 (section 3.11): no switch persistence follows a 15 → 30 WPM step within 10 marks (median);
   M = 4 kept.** Marks to follow, median (maximum) over 10 seeds: M = 1: 10.5 (11); M = 2: 11.5 (14);
   M = 4: 14.0 (16); M = 6: 16.0 (18); M = 8: 18.0 (20); all followed in every seed. Spec §4.6 asks for
-  "within about 10 marks". At M = 4 the follow took 11 marks in Task 11 (seeds 1–4, N_mem = 24); E4's
-  longer memory, E5's grids and E9's thresholds and W_min changed since; which of them added the 3
-  marks is not measured.
+  "within about 10 marks". At M = 4 the follow took 11 marks in Task 11 (seeds 1–4, N_mem = 24); now
+  14, 14, 16, 13 for seeds 1–4 (E6), and the channel test `test_follows_a_speed_step_within_ten_marks`
+  (seed 4) takes 13 marks (1.90 s); its strict expected failure's reason now says so. E4's longer
+  memory, E5's grids and E9's thresholds and W_min changed since; which of them added the marks is
+  not measured.
 
 - **After Task 14 (section 3.13): group I (Farnsworth) is worse than at `exp-ref`.** Paired CER of
   `exp-E9-rekey-0.8` against `exp-ref` +0.0578 (+0.0140 to +0.1106), while the pool improves (−0.0144,
-  −0.0282 to −0.0014). Only E4's rule guarded group I's CER. Of the adopted steps measured for group I,
-  E9's W_min = 0.8 s raised it most (+0.0808, +0.0306 to +0.1368); E4 lowered it (−0.0264) and E9's
-  calibrated thresholds lowered it (−0.0073); E5's coarse grids were measured only on the E5 subset
-  (+0.0055, −0.0017 to +0.0122, against the finest grids).
+  −0.0282 to −0.0014). Only E4's rule guarded group I's CER. Step by step, each paired over the same
+  48 group I signals, so the means add up exactly (measured):
+
+  | step | group I paired CER, mean |
+  |---|---|
+  | E4, N_mem 24 → 48 | −0.0264 (−0.0374 to −0.0171) |
+  | E5, reference grids → coarse grids | +0.0107 (interval not computed) |
+  | E9(a), nominal → calibrated x_on | −0.0073 (−0.0191 to −0.0007) |
+  | E9(b), W_min 0.4 s → 0.8 s | +0.0808 (+0.0306 to +0.1368) |
+  | total, `exp-ref` → `exp-E9-rekey-0.8` | +0.0578 (+0.0140 to +0.1106) |
+
+  So W_min and the coarse grids account for the loss. Why W_min hurts Farnsworth is not measured.
 
 - **Extra configurations for the final evaluation (owner, 2026-10-01).** Task 15 evaluates, on the
   held-out seeds 2 and 3 and beside the prototype with every adopted value, two more configurations

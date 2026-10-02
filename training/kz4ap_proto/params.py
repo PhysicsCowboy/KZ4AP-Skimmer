@@ -54,7 +54,7 @@ class ProtoConfig:
     squelch_a: float = 3.0                 # a_min at squelch_ref_s (milestone 2; heuristic)
     squelch_ref_s: float = 0.016           # s
     squelch_exponent: float = 0.25         # a_min proportional to L^(1/4) (derived scaling)
-    false_marks_per_s: float = 0.01        # R_fa target, per branch, noise alone; heuristic target, kept by E9(b)
+    false_marks_per_s: float = 0.01        # R_fa target, per branch, noise alone; heuristic target, kept by E9b
                                            # (0.001 and 0.1 /s did not qualify; results record, section 3.9)
     x_on_values: tuple[float, ...] = (     # x_on per branch k = 1 ... 32; measured (E9a, channel-shaped noise,
         4.6428, 4.637, 4.6206, 4.6163,     # R_fa 0.01 /s): `experiments calibrate-x-on`, about 20 noise key-downs
@@ -75,8 +75,8 @@ class ProtoConfig:
     # Duration fit (spec 4.5)
     fit_memory: float = 48.0               # N_mem, marks and spaces; measured (E4): 48 adopted over 24 and 12
                                            # (results record, section 3.7)
-    t_grid_step: float = 0.01              # relative step of the T grid; measured (E5): kept (the "coarse" grids
-                                           # below, with this step, had the lowest CPU; results record, section 3.8)
+    t_grid_step: float = 0.01              # relative step of the T grid; placeholder, kept by E5 (the adopted
+                                           # "coarse" variant used it; results record, section 3.8)
     q_grid: tuple[float, ...] = (3.0, 4.0, 5.0)                                            # measured (E5), "coarse"
     w_grid: tuple[float, ...] = (-0.4, 0.0, 0.4, 0.8)                                      # w/T; measured (E5), "coarse"
     tg_grid: tuple[float, ...] = (1.0, 1.59, 2.52, 4.0, 6.35)                              # T_g/T; measured (E5), "coarse"
@@ -112,11 +112,11 @@ class ProtoConfig:
     switch_persistence: int = 4            # M, selection instants in a row; placeholder, kept by E6 (section 3.11)
     quality_tie_nats: float = 0.05         # epsilon_Q, nats per element; placeholder, kept by E8 (section 3.12)
     text_tie_nats: float = 0.1             # nats per character; heuristic
-    text_window_chars: int = 10            # characters; placeholder, kept by E8
+    text_window_chars: int = 10            # characters; placeholder, kept by E8 (section 3.12)
     text_separation_nats: float = 1.0      # "clearly separates" with none eligible, nats per character; heuristic
     # Silences and output (spec 4.7, 4.8)
-    new_over_min_s: float = 0.5            # s; placeholder, kept by E7 (results record, section 3.10)
-    new_over_gaps: float = 12.0            # x T_g; placeholder; kept by E7
+    new_over_min_s: float = 0.5            # s; placeholder, kept by E7 (section 3.10)
+    new_over_gaps: float = 12.0            # x T_g; placeholder, kept by E7 (section 3.10)
     rekey_timeout_s: float = 2.0           # channel time, s: if an over's amplitude is still unknown this long after it
                                            # became unknown (W_min of keyed time not reached), what exists is re-keyed
                                            # with the full LLR at the previous over's amplitude (no keying if there is

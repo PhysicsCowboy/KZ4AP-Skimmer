@@ -76,6 +76,13 @@ def test_decodes_a_clean_station():
     assert norm(r.text) == "CQ TEST K1ABC K1ABC"
 
 
+def test_a_clean_station_keeps_everything_after_the_first_character():
+    # Pins today's behavior beside the strict xfail above (Task 14 review M9): only the first character is lost.
+    iv = keying_intervals("CQ TEST K1ABC K1ABC", 25.0)
+    r = run(stream(iv, 1.0, iv[-1][1] + 3.0, 20.0, 1))
+    assert norm(r.text).endswith("TEST K1ABC K1ABC")
+
+
 def test_decodes_a_station_from_the_first_sample():
     iv = keying_intervals("CQ TEST K1ABC K1ABC", 25.0)
     r = run(stream(iv, 0.0, iv[-1][1] + 3.0, 20.0, 2))
@@ -95,7 +102,10 @@ def test_slow_first_word_is_right_after_corrections():
     "(the T_P prior, 0.1 in ln T, holds them); T_P changes to 40.0 ms 1.0 s after the step (t = 11.605 s), the "
     "index-13 fit follows at the next observation, and the switch then needs M = 4 eligible instants in a row "
     "(the one fallback pick of index 13 just before restarts the count): 11.776 ... 12.331 s. Without the T_P "
-    "prior it takes 15 marks (2.22 s). Placeholders: M (E6), windows (E2); prior width heuristic."))
+    "prior it takes 15 marks (2.22 s). Placeholders: M (E6), windows (E2); prior width heuristic. "
+    "Update (Task 14, after E4-E9: N_mem 48, coarse grids, calibrated x_on, W_min 0.8 s): this seed (4) follows after "
+    "13 marks (1.90 s); E6 measured 14, 14, 16, 13 marks for seeds 1-4 at M = 4 (the fit details above are from "
+    "Task 11 and were not re-checked)."))
 def test_follows_a_speed_step_within_ten_marks():
     # Spec 4.6: a real speed jump (15 -> 30 WPM) must be followed within about 10 marks.
     text = "CQ CQ CQ DE K1ABC K1ABC K1ABC K1ABC"
@@ -130,7 +140,10 @@ def test_farnsworth_word_gaps_do_not_start_a_new_over():
     "T = 66.7 ms; the Task 9 finding), and the confident T_P prior (0.1 in ln T, about 63 nats at "
     "ln(204.5/66.8)) pulls the selected branch's fit (index 18, L = 53.3 ms) from T = 66.6 ms to T = 149.5 ms, "
     "w = 71 ms, so K's first dah (199 ms) reads as a dit. With the edge comb, or without the prior, the text is "
-    "right. Periodicity method: E1."))
+    "right. Periodicity method: E1. "
+    "Update (Task 14, E9b, W_min = 0.8 s): the text reads 'Q TEST U1ABC' (at W_min = 0.4 s, 'CQ TEST U1ABC'): the "
+    "over's first character is also lost, as in test_decodes_a_clean_station. The fit details above are from Task 11 "
+    "and were not re-checked."))
 def test_farnsworth_text_is_right():
     _, _, r = farnsworth()
     assert norm(r.text) == "CQ TEST K1ABC"
