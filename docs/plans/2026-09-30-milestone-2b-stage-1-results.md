@@ -1036,6 +1036,69 @@ Observed, not part of the rule: 16·T_g removes almost all of group I's over sta
 C's, G's and per-station H's, with no measurable change in CER (+0.0014, −0.0014 to +0.0050); 8·T_g
 multiplies them (group I 265). `new_over_min_s` = 1.0 s lowers over starts in A and B most.
 
+### 3.11 E6 — switch persistence M
+
+Question: how many selection instants in a row (branch 1's key-ups) another branch must be the best
+eligible one before the prototype switches to it. A small M follows a speed change sooner but switches
+back and forth more (an **alternation** is a switch straight back to the previous branch within 5 s);
+a large M is steadier but slower. Reference M = 4 (placeholder). Spec §4.6 asks that a speed step be
+followed "within about 10 marks".
+
+Variants: `switch_persistence` M = 1, 2, 6, 8 (`exp-E6-<M>`), against `exp-E9-rekey-0.8`, plus the
+synthetic speed-step follow test for M = 1, 2, 4, 6, 8 in the same process (`experiments.follow_marks`:
+15 → 30 WPM at the fifth word, S₅₀₀ = 20 dB, 10 seeds; the marks sent from the step until a branch
+matched to 30 WPM is selected). Development set, 509 signals, 74 748 channel-seconds. Batch
+`build/suite/full3/experiments/E6.json` (git-ignored), at `07b2f7e`:
+
+```
+{"name": "E6", "base": "exp-E9-rekey-0.8", "subset": "dev", "runs": [{"name": "exp-E6-1", "set": {"switch_persistence": 1}}, {"name": "exp-E6-2", "set": {"switch_persistence": 2}}, {"name": "exp-E6-6", "set": {"switch_persistence": 6}}, {"name": "exp-E6-8", "set": {"switch_persistence": 8}}], "follow": [{"set": {"switch_persistence": 1}}, {"set": {"switch_persistence": 2}}, {"set": {"switch_persistence": 4}}, {"set": {"switch_persistence": 6}}, {"set": {"switch_persistence": 8}}]}
+.venv/bin/python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench build/linux/bench/kz4ap-bench --spec build/suite/full3/experiments/E6.json --jobs 10
+```
+
+Switches and alternations per minute of transmission time, pooled over all groups (964.0 min; counts
+from `metrics.switch_stats` by `build/suite/full3/experiments/scripts/switches.py`, git-ignored):
+
+| M | marks to follow the 15 → 30 WPM step, seeds 1–10 | median | maximum | not followed | switches per min | alternations per min | pooled CER | paired CER against M = 4 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 11, 11, 10, 10, 11, 10, 10, 11, 11, 10 | 10.5 | 11 | 0 of 10 | 24.25 | 12.13 | 0.2895 | +0.0096 (+0.0030 to +0.0162) |
+| 2 | 12, 12, 11, 11, 14, 11, 11, 12, 14, 11 | 11.5 | 14 | 0 of 10 | 15.26 | 7.70 | 0.2837 | +0.0023 (−0.0030 to +0.0076) |
+| **4 (reference)** | 14, 14, 16, 13, 16, 13, 13, 14, 16, 13 | 14.0 | 16 | 0 of 10 | 7.78 | 3.42 | 0.2799 | — |
+| 6 | 16, 16, 18, 15, 18, 15, 15, 16, 18, 15 | 16.0 | 18 | 0 of 10 | 4.74 | 1.73 | 0.2819 | +0.0038 (+0.0004 to +0.0071) |
+| 8 | 18, 18, 20, 17, 20, 17, 17, 18, 20, 17 | 18.0 | 20 | 0 of 10 | 3.11 | 0.87 | 0.2839 | +0.0064 (+0.0031 to +0.0102) |
+
+Paired CER by group (variant − M = 4):
+
+| group | signals | M = 1 | M = 2 | M = 6 | M = 8 |
+|---|---|---|---|---|---|
+| A sensitivity | 192 | +0.0011 (−0.0073 to +0.0101) | −0.0022 (−0.0079 to +0.0028) | +0.0039 (+0.0004 to +0.0083) | +0.0061 (+0.0014 to +0.0121) |
+| B fading | 30 | +0.0554 (+0.0089 to +0.1362) | +0.0411 (+0.0011 to +0.1076) | +0.0102 (−0.0086 to +0.0312) | +0.0097 (−0.0106 to +0.0357) |
+| C fists | 135 | +0.0051 (+0.0017 to +0.0088) | +0.0034 (+0.0012 to +0.0060) | −0.0012 (−0.0024 to −0.0002) | −0.0008 (−0.0023 to +0.0007) |
+| D speed | 12 | +0.0200 (−0.0103 to +0.0621) | −0.0024 (−0.0109 to +0.0045) | −0.0021 (−0.0056 to +0.0000) | −0.0021 (−0.0056 to +0.0000) |
+| E interference | 16 | +0.0944 (+0.0280 to +0.1709) | +0.0530 (+0.0124 to +0.1050) | −0.0009 (−0.0182 to +0.0191) | −0.0196 (−0.0396 to −0.0019) |
+| F tuning | 28 | +0.0042 (−0.0102 to +0.0185) | +0.0006 (−0.0115 to +0.0115) | +0.0094 (+0.0026 to +0.0166) | +0.0216 (+0.0100 to +0.0344) |
+| G ragchew | 12 | +0.0060 (−0.0000 to +0.0131) | +0.0035 (−0.0002 to +0.0080) | −0.0015 (−0.0036 to +0.0001) | +0.0002 (−0.0022 to +0.0033) |
+| H two-station QSO, oracle | 12 | +0.0145 (+0.0004 to +0.0294) | +0.0061 (+0.0021 to +0.0105) | −0.0050 (−0.0127 to +0.0019) | −0.0070 (−0.0190 to +0.0032) |
+| H two-station QSO, oracle (per station) | 24 | +0.0520 (+0.0286 to +0.0815) | +0.0211 (+0.0082 to +0.0405) | −0.0062 (−0.0468 to +0.0256) | +0.0035 (−0.0180 to +0.0267) |
+| I Farnsworth | 48 | −0.0219 (−0.0439 to −0.0039) | −0.0327 (−0.0620 to −0.0092) | +0.0222 (+0.0067 to +0.0420) | +0.0346 (+0.0167 to +0.0555) |
+
+CPU 184.1–184.3 ms per channel-second, wall 23.1–23.2 min for every variant. Per-group switching
+tables: `build/suite/full3/experiments/linux/compare-exp-E6-<M>-vs-exp-E9-rekey-0.8.md`, `summary-E6.md`
+(git-ignored).
+
+Rule (pre-registered): consider only values whose median follow is at most 10 marks and that were never
+"not followed"; among them adopt the one with the fewest alternations per minute unless its pooled
+paired CER interval lies entirely above 0; ties keep 4. If no value meets the follow criterion, keep 4
+and report to the owner with the follow counts. **Outcome: no value meets the follow criterion** (the
+lowest median is 10.5 marks, M = 1; every value was followed in all 10 seeds). **Kept: M = 4**
+(placeholder, kept, not rejected by measurement); reported to the owner (section 6). `exp-E9-rekey-0.8`
+stays the current reference.
+
+Observed, not part of the rule: each step of 2 in M adds 2 marks to the follow (14 → 16 → 18 at M =
+4, 6, 8), as each extra selection instant waits for one more key-up. At M = 4 the step now takes 14
+marks (median); Task 11 measured 11 marks (seeds 1–4) at N_mem = 24, before E4–E9. Every M other than
+4 is measurably worse pooled except M = 2 (+0.0023, −0.0030 to +0.0076); M = 1 and 2 help group I and
+hurt B, E and H; M = 6 and 8 help C and E and hurt A, F and I.
+
 ## 4. Final evaluation (Task 15)
 
 ## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure
@@ -1091,6 +1154,13 @@ multiplies them (group I 265). `new_over_min_s` = 1.0 s lowers over starts in A 
   (16 in 48), against the rule's 0.05 (`exp-ref`: 1.604). No variant qualified, so T_new = max(0.5 s,
   12·T_g) is kept. 16·T_g brings group I to 0.0625 (3 in 48) with no measurable CER change, but its
   first-word CER over G and H (−0.0039, −0.0234 to +0.0203) is not below 0, so the rule does not adopt it.
+
+- **E6 (section 3.11): no switch persistence follows a 15 → 30 WPM step within 10 marks (median);
+  M = 4 kept.** Marks to follow, median (maximum) over 10 seeds: M = 1: 10.5 (11); M = 2: 11.5 (14);
+  M = 4: 14.0 (16); M = 6: 16.0 (18); M = 8: 18.0 (20); all followed in every seed. Spec §4.6 asks for
+  "within about 10 marks". At M = 4 the follow took 11 marks in Task 11 (seeds 1–4, N_mem = 24); E4's
+  longer memory, E5's grids and E9's thresholds and W_min changed since; which of them added the 3
+  marks is not measured.
 
 - **Extra configurations for the final evaluation (owner, 2026-10-01).** Task 15 evaluates, on the
   held-out seeds 2 and 3 and beside the prototype with every adopted value, two more configurations

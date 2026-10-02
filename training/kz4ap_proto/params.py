@@ -109,7 +109,7 @@ class ProtoConfig:
     spectrum_confidence_min: float = 1.5   # nats; placeholder (E1)
     # Selection (spec 4.6)
     eligibility_tolerance: float = math.log(1.1)   # heuristic (one ladder step)
-    switch_persistence: int = 4            # M, selection instants in a row; placeholder (E6)
+    switch_persistence: int = 4            # M, selection instants in a row; placeholder, kept by E6 (section 3.11)
     quality_tie_nats: float = 0.05         # epsilon_Q, nats per element; placeholder (E8)
     text_tie_nats: float = 0.1             # nats per character; heuristic
     text_window_chars: int = 10            # placeholder (E8)
