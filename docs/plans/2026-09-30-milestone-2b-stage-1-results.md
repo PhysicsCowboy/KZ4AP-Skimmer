@@ -525,6 +525,50 @@ CPU: 315.0 and 316.4 ms per channel-second; wall 39.6 and 39.8 min. Full tables:
 - These runs choose nothing. Whether the comb's threshold, or the E1 measure itself, should be
   revisited is the owner's decision (section 6).
 
+#### 3.6.1 The comb at intermediate thresholds, and T_P where E1 did not look (observations only)
+
+Owner's request, 2026-10-01, after choosing option A (Task 14 runs against `exp-ref`; the comb at
+0.2506 is evaluated on the held-out seeds in Task 15): the information option C would have given,
+where it is cheap.
+
+**Offline** (`build/suite/full3/experiments/tp_observe.py`, output `linux/tp-observe.md`, both
+git-ignored; exp-ref's branch-1 posteriors, no decoding). The comb's thresholds for precision 0.85 and
+0.90 on E1's points are 0.10230 and 0.14874 (dimensionless score). Measured:
+
+- Inside transmissions of groups D, E and F (not among E1's points): under interference (group E)
+  every configuration's precision is 0.57–0.68, so a neighbor's keying gives a wrong T_P about a
+  third of the time at any threshold; under tuning and drift (group F) the edge comb at 0.03232 is less
+  precise and less often available than the comb (0.903 and 0.633 against 0.971 and 0.772 for the comb
+  at 0.2506).
+- Outside transmissions (padded by 0.5 s): at equal precision 0.95, the edge comb publishes a confident
+  T_P 2 to 15 times as often as the comb in groups B, C, G, H and I (for example group B 0.147 against
+  0.016 of update points), which fits its extra false characters in B. Against the comb at 0.03,
+  though, the edge comb is less often confident outside transmissions, so this alone does not explain
+  why it decodes worse than the reference. Every configuration publishes a confident T_P at 0.41–0.88
+  of the update points outside transmissions in groups A (noise only) and E; whether the decoder acts
+  on T_P in silence was not measured.
+
+**Decoding**, two more runs against `exp-ref` (batch `diag-TP2.json`, fit memory pinned to the
+reference's 24 so that all four comb runs differ only in the threshold):
+
+| comb threshold | T_P precision / coverage / median time to first confident | pooled CER | paired CER | paired first-word CER |
+|---|---|---|---|---|
+| 0.03 (`exp-ref`) | 0.809 / 0.994 / 0.49 s | 0.3060 | — | — |
+| 0.1023 (`exp-diag-comb-p85`) | 0.854 / 0.928 / 0.77 s | 0.3098 | +0.0012 (−0.0073 to +0.0093) | +0.0360 (−0.0233 to +0.0976) |
+| 0.1487 (`exp-diag-comb-p90`) | 0.900 / 0.834 / 1.12 s | 0.2971 | −0.0089 (−0.0199 to +0.0011) | +0.0958 (+0.0238 to +0.1738) |
+| 0.2506 (`exp-diag-comb-cal`) | 0.950 / 0.589 / 2.08 s | 0.2872 | −0.0152 (−0.0280 to +0.0000) | +0.2612 (+0.1410 to +0.3906) |
+
+CPU 314.5 and 315.0 ms per channel-second, wall 39.5 and 39.6 min. Full tables:
+`linux/compare-exp-diag-comb-p85-vs-exp-ref.md` and `…-p90-…` (git-ignored).
+
+**Reading (measured).** Across the four thresholds the trade is smooth: a higher threshold gives a
+lower overall CER and a higher first-word CER, in step with the later first T_P. No intermediate
+threshold keeps the overall gain without the first-word cost; at 0.1023 neither changes measurably. So
+the choice of threshold is a priority between first words and the rest, for the owner, not a missed
+optimum. At 0.1487 group H (QSO, oracle view) gains clearly in first-word CER, −0.1688 (−0.2932 to
+−0.0612), and leans better in CER, −0.0326 (−0.0849 to +0.0001); group F loses CER at every raised
+threshold (+0.0098, +0.0158, +0.0247, each interval above 0).
+
 ### 3.7 E4 — the fit memory N_mem
 
 Question: how many recent marks and spaces each branch's duration fit remembers. Every new mark or
