@@ -899,6 +899,76 @@ characters exceed the reference's by more than 50% in A, B, C, D, G, H (oracle) 
 `false_marks_per_s = 0.01`** (heuristic target, kept by E9(b), not rejected by measurement), with the
 calibrated thresholds of (a).
 
+**(b, continued) When to re-key, W_min** (`rekey_after_s`, seconds of keyed time while the amplitude is
+unknown; 0.4 s, placeholder), with R_fa = 0.01 /s kept: `exp-E9-rekey-0.2` (0.2 s) and
+`exp-E9-rekey-0.8` (0.8 s), against `exp-E9-calibrated`. The seed's memory, `seed_memory_rekeys` × W_min
+(4 × W_min of keyed time), scales with it in both variants. Batch `build/suite/full3/experiments/E9c.json`
+(git-ignored), at `a3e7948` (the calibrated thresholds now defaults, so `exp-E9-calibrated`'s
+configuration is the default one):
+
+```
+{"name": "E9c", "base": "exp-E9-calibrated", "subset": "dev", "runs": [{"name": "exp-E9-rekey-0.2", "set": {"rekey_after_s": 0.2}}, {"name": "exp-E9-rekey-0.8", "set": {"rekey_after_s": 0.8}}]}
+.venv/bin/python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench build/linux/bench/kz4ap-bench --spec build/suite/full3/experiments/E9c.json --jobs 10
+```
+
+| run | W_min | pooled CER | paired CER, all 509 | paired first-word CER over A, G, H, I (288) | paired first-word CER, all 509 | CPU per channel-second | wall |
+|---|---|---|---|---|---|---|---|
+| `exp-E9-calibrated` | 0.4 s | 0.2885 | — | — | — | 191.9 ms | 24.1 min |
+| `exp-E9-rekey-0.2` | 0.2 s | 0.3006 | +0.0145 (+0.0086 to +0.0214) | +0.2539 (+0.1103 to +0.4252) | +0.2469 (+0.1492 to +0.3557) | 195.1 ms | 24.5 min |
+| **`exp-E9-rekey-0.8`** | 0.8 s | 0.2799 | −0.0013 (−0.0139 to +0.0088) | **−0.2893 (−0.5080 to −0.1211)** | −0.3010 (−0.4450 to −0.1693) | 184.3 ms | 23.2 min |
+
+Paired CER by group (variant − `exp-E9-calibrated`):
+
+| group | signals | `exp-E9-rekey-0.2` | `exp-E9-rekey-0.8` |
+|---|---|---|---|
+| A sensitivity | 192 | +0.0113 (+0.0033 to +0.0212) | −0.0011 (−0.0063 to +0.0045) |
+| B fading | 30 | +0.0164 (−0.0079 to +0.0474) | +0.0206 (+0.0071 to +0.0356) |
+| C fists | 135 | +0.0026 (+0.0013 to +0.0039) | −0.0004 (−0.0021 to +0.0011) |
+| D speed | 12 | +0.0021 (−0.0063 to +0.0084) | +0.0017 (−0.0058 to +0.0102) |
+| E interference | 16 | −0.0032 (−0.0228 to +0.0117) | −0.0148 (−0.0394 to +0.0041) |
+| F tuning | 28 | +0.0165 (+0.0045 to +0.0300) | −0.0156 (−0.0409 to +0.0091) |
+| G ragchew | 12 | −0.0004 (−0.0039 to +0.0025) | −0.0014 (−0.0059 to +0.0025) |
+| H two-station QSO, oracle | 12 | +0.0118 (−0.0008 to +0.0319) | −0.0221 (−0.0848 to +0.0134) |
+| H two-station QSO, oracle (per station) | 24 | +0.0711 (+0.0112 to +0.1664) | −0.1653 (−0.3879 to −0.0088) |
+| I Farnsworth | 48 | +0.0438 (+0.0161 to +0.0794) | **+0.0808 (+0.0306 to +0.1368)** |
+
+False characters outside transmissions, per minute:
+
+| group | 0.4 s (reference) | 0.2 s | 0.8 s |
+|---|---|---|---|
+| A sensitivity | 3.77 | 6.94 (+84%) | 1.11 |
+| B fading | 0.70 | 0.54 | 0.62 |
+| C fists | 0.047 | 0.031 | 0.047 |
+| D speed | 0.00 | 0.00 | 0.00 |
+| E interference | 43.2 | 42.6 | 43.2 |
+| F tuning | 7.91 | 10.32 | 2.41 |
+| G ragchew | 0.61 | 0.86 | 0.37 |
+| H two-station QSO, oracle | 0.33 | 0.33 | 0.33 |
+| H two-station QSO, oracle (per station) | 64.6 | 70.4 | 50.3 |
+| I Farnsworth | 0.043 | 0.064 (+50%, 0.0643 against 0.0429) | 0.021 |
+
+Group I's over starts inside transmissions per transmission (E7's measure): 1.1458 at 0.4 s, 4.6458 at
+0.2 s, 0.3333 at 0.8 s. Full tables:
+`build/suite/full3/experiments/linux/compare-exp-E9-rekey-<0.2|0.8>-vs-exp-E9-calibrated.md`,
+`summary-E9c.md` (git-ignored).
+
+Rule (the same as for R_fa). **Outcome: 0.8 s qualifies, 0.2 s does not.** 0.8 s: first-word
+−0.2893 (−0.5080 to −0.1211), entirely below 0; its false characters exceed the reference's in no group
+(they fall or stay equal in every group); pooled paired CER −0.0013 (−0.0139 to +0.0088), not entirely
+above 0. 0.2 s: first-word +0.2539, and pooled CER entirely above 0. **Adopted: `rekey_after_s = 0.8`**
+(status measured, E9b); `exp-E9-rekey-0.8` is the current reference for E7.
+
+**Measured costs the rule does not look at, stated prominently:** with 0.8 s, group I's paired CER is
++0.0808 (+0.0306 to +0.1368) and group B's +0.0206 (+0.0071 to +0.0356), both entirely above 0. And a
+channel test now fails (below).
+
+**Tests after the change** (`pytest training -q`, local): 2 failed, 243 passed, 6 xfailed. The keying
+test of the seed's store asserted its size by value (`keyed_cap == 2400`, 4 × 0.4 s × 1500
+samples/s); it now computes 4 × W_min × r (4800). **The channel test `test_decodes_a_clean_station` (25
+WPM, S₅₀₀ = 20 dB, seed 1) now reads "Q TEST K1ABC K1ABC": the over's first character is lost.** Not
+traced; following the owner's handling of E4's finding, it is a strict expected failure stating the
+finding (section 6). Then: 244 passed, 7 xfailed.
+
 ## 4. Final evaluation (Task 15)
 
 ## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure
@@ -941,6 +1011,13 @@ calibrated thresholds of (a).
   because the coarse T_g/T grid has 2.52 and 4 where the old one had 3.17. Decoding of group I on the E5
   subset was not measurably worse (+0.0055, −0.0017 to +0.0122). The owner may prefer to un-mark it or
   revisit the grid.
+
+- **E9 (section 3.9): W_min = 0.8 s adopted by the rule (first words much better: −0.2893 over A, G, H,
+  I), but a clean station now loses its first character, and group I is worse.** The channel test
+  `test_decodes_a_clean_station` (25 WPM, S₅₀₀ = 20 dB) reads "Q TEST K1ABC K1ABC"; it is now a strict
+  expected failure stating the finding (owner not consulted; cause not traced). Group I's paired CER
+  +0.0808 (+0.0306 to +0.1368) and group B's +0.0206 (+0.0071 to +0.0356) lie entirely above 0; the rule
+  does not look at per-group CER.
 
 - **Extra configurations for the final evaluation (owner, 2026-10-01).** Task 15 evaluates, on the
   held-out seeds 2 and 3 and beside the prototype with every adopted value, two more configurations

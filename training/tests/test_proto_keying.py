@@ -140,14 +140,15 @@ def test_the_amplitude_em_settles_on_milestone_2s_ramp_bias(a_true):
 def test_an_unknown_amplitude_accumulates_keyed_samples_across_blocks_up_to_the_cap():
     # PARIS x 4 at 25 WPM, 1 FS, 40 ms branch, unknown throughout, in the real block size: the re-key weight
     # counts every keyed sample across blocks (not capped), while the seed's store keeps only the most recent
-    # keyed_cap = 4 x W_min x r = 2400 samples (1.6 s of keyed time), and the seed is their 0.9 quantile.
+    # keyed_cap = seed_memory_rekeys x W_min x r samples (4 x 0.8 s x 1500 samples/s = 4800, 3.2 s of keyed time, since E9),
+    # and the seed is their 0.9 quantile.
     iv = keying_intervals("PARIS PARIS PARIS PARIS", 25.0)
     n = int(round((iv[-1][1] + 1.0) * RATE))
     u = rectangles(iv, n, 0.5) + noise(n, 1e-3, 14)
     P = (np.abs(boxcar(u, 60)) ** 2)[None, :]
     sigma2 = np.array([0.5 * 1e-3 / 60])
     keyer = BankKeyer(CFG, RATE, np.array([60 / RATE]))
-    assert keyer.keyed_cap == 2400
+    assert keyer.keyed_cap == int(round(CFG.seed_memory_rekeys * CFG.rekey_after_s * RATE))
     nb = int(round(CFG.block_s * RATE))
     total, stored = 0, []
     for i in range(0, n, nb):

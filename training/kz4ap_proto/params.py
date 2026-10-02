@@ -67,10 +67,11 @@ class ProtoConfig:
         4.2129, 4.2335, 4.2228, 4.2036,
     )
     release_probability: float = 0.3       # key up where noise alone exceeds x this often (x_off = 1.55); heuristic
-    rekey_after_s: float = 0.4             # W_min, s of keyed time while the amplitude is unknown; placeholder (E9)
+    rekey_after_s: float = 0.8             # W_min, s of keyed time while the amplitude is unknown; measured (E9b):
+                                           # 0.8 adopted over 0.4 and 0.2 (results record, section 3.9)
     seed_memory_rekeys: float = 4.0        # while the amplitude is unknown, the seed (0.9 quantile of |v|^2) is taken
                                            # over the most recent keyed samples, at most this x W_min of keyed time
-                                           # (1.6 s by default); heuristic (a bound on memory, several W_min long)
+                                           # (3.2 s with W_min = 0.8 s); heuristic (a bound on memory, several W_min long)
     # Duration fit (spec 4.5)
     fit_memory: float = 48.0               # N_mem, marks and spaces; measured (E4): 48 adopted over 24 and 12
                                            # (results record, section 3.7)
