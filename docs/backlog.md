@@ -182,6 +182,70 @@ per candidate. Also measure the mechanism the stage-1 record leaves
 conjectured: whether the edge comb is confident and wrong outside
 transmissions, in fading gaps and under interference.
 
+### Milestone 2b, stage 2: items found in stage 1's final evaluation
+
+From `docs/plans/2026-09-30-milestone-2b-stage-1-results.md`, sections 4–6
+(the Python prototype on the 3-seed full suite, against the engine's Matched
+and Envelope decoders on the same signals; paired CER = prototype minus the
+reference, per signal, with bootstrap 95% intervals over signals). They matter
+only if the owner decides to do stage 2.
+
+- **The tracker's input from the bank.** The frequency tracker now weights
+  the Matched front end's own filter output by its key-down probability.
+  With the bank there is no single filter: stage 2 must decide which branch's
+  output and probability feed it (the selected branch, branch 1, or a fixed
+  one), and measure it. Stage 1 mixed by the label (oracle) or by the
+  detector's frequency, without the tracker's ±12 Hz fine-tuning, so it does
+  not answer this.
+- **Strong neighbors (group E).** Worse than Matched in 6 of 16 rows, every
+  one with the neighbor 10 or 20 dB above the wanted station's key-down
+  power (dB relative to it below): largest 150 Hz away at +20 dB, +1.912
+  (+1.159 to +2.759); 100 Hz, +20 dB, +1.332 (+0.698 to +2.093); 50 Hz,
+  +10 dB, +0.517 (+0.365 to +0.761). Worse than Envelope in 5. The selected speed is off by more than
+  ×1.5 at 0.315 of selection instants. Conjectured, not measured: the short
+  branches pass the neighbor, and the periodicity estimate follows its
+  keying (section 3.6.1 found its precision 0.57–0.68 under interference).
+- **Crowded channels.** Oracle copies, against Matched: spacing 0 Hz
+  +0.192 (+0.088 to +0.318), 50 Hz +0.141 (+0.045 to +0.250), 100 Hz
+  +0.106 (+0.022 to +0.235); through the detector path, 50 Hz +0.066
+  (+0.002 to +0.143) and 100 Hz +0.073 (+0.005 to +0.162). Better than
+  Envelope in each.
+- **Slow and slowing keying (group D).** 10 WPM: +0.130 (+0.037 to +0.222)
+  against Matched and +0.191 (+0.125 to +0.264) against Envelope; ramp
+  30 → 15 WPM +0.010 (+0.003 to +0.021) against both.
+- **Lost first characters on clean, regular keying.** Group C machine and
+  computer keying, against Matched: +0.001 to +0.004 CER (4 of 6 rows'
+  intervals above 0), with first-word CER 0.17–0.42 against Matched's
+  0.11–0.19; consistent with the channel tests that lose an over's first
+  character since W_min = 0.8 s (section 3.9; cause not traced).
+- **Group H per station.** Against Matched, same-track QSOs: oracle 0 Hz
+  +0.179 (+0.080 to +0.291) and 10 Hz +0.066 (+0.012 to +0.128); through
+  the detector path, drawn offset +0.049 (+0.023 to +0.079), 0 Hz +0.081
+  (+0.011 to +0.169), 10 Hz +0.038 (+0.002 to +0.089).
+- **Fast fading, hand keying.** Group B hand 24 WPM at f_D = 3 Hz: +0.060
+  (+0.040 to +0.080) against Matched (better in the other 10 group B rows).
+- **Group A 12 WPM**: +0.029 (+0.006 to +0.056) CER against Matched, while
+  its crossings and first-word CER do not lose (section 5). The loss is at
+  the edge of decoding: CER 0.973 at S₅₀₀ = −2 dB against Matched's 0.384
+  (all seeds). A higher T_P confidence threshold removes it (held-out CER
+  0.045–0.073 at S₅₀₀ = −2 dB, section 5.5) at a cost elsewhere; not traced.
+- **Tune-up through the detector path**: 0.6 s, +0.029 (+0.005 to +0.048)
+  against Matched and +0.032 (+0.015 to +0.048) against Envelope; 1 s and
+  2 s, +0.466 and +0.904 against Envelope (Matched is as bad on those
+  tracks).
+- **Placeholders kept, not settled by any measurement that found a better
+  value**: periodicity windows (2, 5, 10 s), comb teeth and width, the three
+  confidence thresholds (comb 0.03, edge comb 0.03, spectrum fit 1.5 nats),
+  switch persistence M = 4, quality tie 0.05 nats per element, text window
+  10 characters, T_new = max(0.5 s, 12·T_g), T grid step 1%, R_fa 0.01 /s.
+  Heuristics never measured in stage 1: the log-normal scatter (0.15 marks,
+  0.25 spaces), the outlier class (ε = 0.05, log-uniform 1 ms–10 s), the T_P
+  prior's width (0.1 in ln T) and its gate at the confidence threshold, the
+  minimum fit weight (8 elements), the noise spectrum's segment (170.7 ms),
+  smoothing (±25 Hz), guard reach (20 ms) and clean fraction (0.5), the
+  estimate block (21.3 ms), the squelch constant 3, the text tie
+  (0.1 nats per character) and separation (1 nat per character).
+
 ### Benchmark scenarios to add first
 
 Done in milestone 2, part 1 (`training/kz4ap_synth/suites.py`).

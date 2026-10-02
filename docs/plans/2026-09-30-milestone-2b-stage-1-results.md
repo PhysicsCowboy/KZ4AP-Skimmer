@@ -742,8 +742,10 @@ reference grids.** The E5 subset holds all 48 group I signals of the development
 (`I-farnsworth-.*-s1`), so for group I this is a full measurement, not a subset one. Against the
 finest grids, coarse gives +0.0055 (−0.0017 to +0.0122) and the reference −0.0052 (−0.0101 to −0.0014);
 both are paired over the same 48 signals, so the adopted step, coarse − reference, has mean
-**+0.0107** for group I (its interval was not computed: the decoded results are on the Linux machine,
-and `scripts/pooled_groups.py exp-E5-ref exp-E5-coarse I` there would give it). By condition (CER,
+**+0.0107 (+0.0037 to +0.0175)** for group I, entirely above 0 (computed in Task 15 with
+`scripts/pooled_groups.py exp-E5-ref exp-E5-coarse I` on the Linux machine, no decoding; output
+`build/suite/full3/experiments/pooled-groups-E5-I.txt`, git-ignored; first-word CER −0.0417 (−0.1303 to
++0.0104)). By condition (CER,
 reference → coarse), the paddle conditions rise most: 18/10 WPM 0.0273 → 0.0446, 18/5 WPM 0.1454 →
 0.1869, 25/18 WPM 0.0276 → 0.0457 (25/13 paddle 0.0371 → 0.0393); machine keying changes by at most
 0.0056. Conjectured, not measured: the coarse T_g/T grid stops at 6.35, while Farnsworth 18/5 WPM
@@ -1200,7 +1202,394 @@ group I check, E6's follow criterion) are listed in section 6.
 
 ## 4. Final evaluation (Task 15)
 
+### 4.1 What was run
+
+The prototype with every settled value (`ProtoConfig()` at `67f4d65`, the configuration section 3.13
+lists; the later commits change documents and tests only), named `bank-proto`, decoded every test case of
+all three seeds: the 120 oracle test cases (the 27 oracle copies included) and the 33 recordings decoded
+through the detector path, 153 decoded files, 3 556 channels, 457 169 channel-seconds. Every decoded file
+stores the same configuration (checked). On the Linux machine, 10 workers:
+
+```
+.venv/bin/python -m kz4ap_proto.runner decode --out build/suite/full3 --name bank-proto --jobs 10
+.venv/bin/python -m kz4ap_proto.runner score --out build/suite/full3 --bench build/linux/bench/kz4ap-bench --name bank-proto
+.venv/bin/python -m kz4ap_proto.runner report --out build/suite/full3 --name bank-proto
+.venv/bin/python -m kz4ap_proto.runner report --out build/suite/full3 --name bank-proto "--only=-s[23](\.stations|\.oracle)?$" --suffix held-out
+.venv/bin/python -m kz4ap_proto.runner report --out build/suite/full3 --name bank-proto "--only=-s1(\.stations|\.oracle)?$" --suffix seed-1
+.venv/bin/python -m kz4ap_synth.suites summarize --out build/suite/full3
+```
+
+(with `PYTHONPATH=training`). Two deviations from the plan's commands, both of form only. The held-out
+filter adds `\.oracle`: the plan's `-s[23](\.stations)?$` would leave out the oracle copies, whose result
+names end in `.oracle`. And a regular expression that starts with `-` must be passed as `--only=…`:
+argparse reads `--only -s[23]` as an option without a value (this stopped the first job after the
+`bank-proto` decode, before the extra configurations of section 5.5, which were then started again). The
+seed-1 report is extra, for the check in section 4.2.
+
+Wall-clock times on the Linux machine: decoding 139.0 min (09:13:21 to 11:32:21); scoring 8 s (159 of 159
+test cases, 3 579 of 3 579 labels); the three reports, the summary and the corrections count about 2 min.
+Decoding CPU: 177.0 ms per channel-second on the oracle channels (176.3 ms on the held-out seeds' oracle
+channels; Python, for scale only, not comparable with the engine's C++). The plan's estimate of about 2 h
+on 14 workers assumed about 0.3–0.5 s of CPU per channel-second; E5's coarse grids brought it to about
+0.16–0.18 s.
+
+Files (all git-ignored): `build/suite/full3/report-bank-proto.md` (all seeds),
+`report-bank-proto-held-out.md` (seeds 2 and 3), `report-bank-proto-seed-1.md`, each with a `.json` beside
+it; `summary.md` (the suite summary, now with `bank-proto` rows beside `baseline` and `matched`; the
+earlier Windows summary is kept as `summary.windows.md`); decoded files `proto/bank-proto/`, results
+`results/bank-proto/`, on the Linux machine.
+
+### 4.2 Checks before reading the numbers
+
+- **References untouched** (local, Windows, Git Bash): `bash bench/smoke.sh build/windows` → `smoke test
+  passed`, Envelope smoke CER 0.0353 and Matched 0.0436, each twice, identical. `git diff --stat main --
+  bench/baselines` prints one file, `smoke-matched.json`, added by milestone 2 (`bb48b01`), which is not
+  merged into `main`; against the branch this branch starts from, `git diff --stat milestone-2 --
+  bench/baselines` prints nothing. So no baseline was changed by stage 1.
+- **Counts.** All 140 (group, tag) rows of `summary.json`, in 24 groups (the six oracle copies and the
+  detector-path groups included), have `bank-proto` rows with the same number of signals as `matched` and
+  `baseline`.
+- **Group A falls with S₅₀₀.** Prototype CER at 12 / 25 / 40 WPM: 1.000 / 1.000 / 1.000 at −6 dB, 0.062 /
+  0.096 / 0.273 at 0 dB, 0.012 / 0.002 / 0.008 at +6 dB, and at most 0.010 from +6 to +20 dB (small
+  non-monotone steps there, at most 0.008).
+- **Not-comparable rows** are exactly the four F drift rows and the five group H oracle QSO-label rows with
+  a nonzero offset, so 131 of 140 rows are compared.
+- **Held-out against development seed (group A crossings, prototype).** Every held-out crossing lies within
+  seed 1's interval or the intervals overlap; the largest difference is 0.2 dB of S₅₀₀:
+
+| speed | CER | seed 1, S₅₀₀ dB | seeds 2–3, S₅₀₀ dB |
+|---|---|---|---|
+| 12 WPM | 0.10 | −0.1 (−0.2 to −0.1) | −0.1 (−0.1 to 0.1) |
+| 12 WPM | 0.05 | −0.0 (−0.1 to 2.8) | 1.5 (−0.0 to 2.4) |
+| 25 WPM | 0.10 | 0.2 (−0.0 to 0.5) | −0.0 (−0.1 to 0.1) |
+| 25 WPM | 0.05 | 1.3 (1.1 to 1.6) | 1.2 (1.0 to 1.5) |
+| 40 WPM | 0.10 | 1.9 (1.7 to 2.4) | 1.8 (1.7 to 1.9) |
+| 40 WPM | 0.05 | 3.2 (2.9 to 3.4) | 3.1 (2.9 to 3.3) |
+
+  So there is no sign, in group A, that the experiments tuned the prototype toward seed 1. Pooled over
+  every comparable signal the same holds (section 4.3: seed 1 and seeds 2–3 give paired CER against
+  Matched −0.0534 and −0.0652, intervals overlapping).
+
+### 4.3 Every group: the prototype against Matched and Envelope
+
+The full per-tag tables (CER of all three decoders with intervals, the paired differences, first-word
+CER) are in the report files of section 4.1; this section counts them. "Better" or "worse" means the
+paired bootstrap 95% interval of the per-signal CER difference (prototype minus reference) excludes 0, a
+convention with no correction for the number of regimes (of 131 truly unchanged regimes about 6.6 would
+read better or worse by chance).
+
+Regimes (group and tag) better / worse / unchanged, all three seeds:
+
+| group | rows | against Matched | against Envelope |
+|---|---|---|---|
+| A sensitivity (white noise) | 3 | 2 / 1 / 0 | 3 / 0 / 0 |
+| B fading | 11 | 10 / 1 / 0 | 11 / 0 / 0 |
+| C fists | 15 | 7 / 5 / 3 | 15 / 0 / 0 |
+| D speed changes | 6 | 2 / 2 / 2 | 3 / 2 / 1 |
+| E interference | 16 | 0 / 6 / 10 | 5 / 5 / 6 |
+| F tuning (offset rows only) | 10 | 0 / 0 / 10 | 10 / 0 / 0 |
+| G ragchew | 1 | 1 / 0 / 0 | 1 / 0 / 0 |
+| H QSO, oracle (0 Hz QSO label, and per station) | 7 | 3 / 2 / 2 | 5 / 0 / 2 |
+| I Farnsworth | 8 | 8 / 0 / 0 | 8 / 0 / 0 |
+| oracle copies (band, crowded, first sample, pauses, strong, tune-up) | 18 | 2 / 3 / 13 | 10 / 0 / 8 |
+| detector path (group H both views, band, crowded, first sample, pauses, strong, tune-up) | 36 | 14 / 6 / 16 | 12 / 9 / 15 |
+| **all comparable** | **131** | **49 / 26 / 56** | **83 / 16 / 32** |
+
+Held-out seeds 2 and 3 alone: against Matched 48 / 23 / 59 (and 1 row without an interval), against
+Envelope 75 / 15 / 40 (and 1). The same pattern by group: group E holds 8 of the 23 "worse" rows against
+Matched.
+
+Pooled over signals (file `build/suite/full3/experiments/overall-bank-proto.txt` on the Linux machine,
+helper `experiments/scripts/overall.py`, both git-ignored; not-comparable rows left out; paired =
+prototype minus reference, mean over signals, bootstrap 95% interval over signals). These pools are
+dominated by groups A and B (576 + 990 of the 2 817 oracle signals) and include every S₅₀₀ down to
+−10 dB, so they are a summary, not a regime:
+
+| part | signals | pooled CER: prototype / Matched / Envelope | paired CER against Matched | against Envelope |
+|---|---|---|---|---|
+| oracle channels, all seeds | 2 817 | 0.3679 / 0.4579 / 0.6374 | −0.0776 (−0.0880 to −0.0673) | −0.2594 (−0.2831 to −0.2384) |
+| detector path, all seeds | 660 | 0.4481 / 0.4667 / 0.4819 | +0.0086 (−0.0075 to +0.0259) | −0.0628 (−0.0880 to −0.0388) |
+| everything, all seeds | 3 477 | 0.3816 / 0.4595 / 0.6107 | −0.0613 (−0.0696 to −0.0526) | −0.2220 (−0.2410 to −0.2038) |
+| everything, held-out seeds 2–3 | 2 318 | 0.3802 / 0.4599 / 0.6145 | −0.0652 (−0.0757 to −0.0546) | −0.2272 (−0.2500 to −0.2051) |
+| everything, seed 1 | 1 159 | 0.3846 / 0.4585 / 0.6029 | −0.0534 (−0.0705 to −0.0357) | −0.2117 (−0.2445 to −0.1811) |
+
+Paired first-word CER (same pools): against Matched −0.0186 (−0.0612 to +0.0224) for everything, all
+seeds, and −0.0451 (−0.0860 to −0.0041) on the held-out seeds; against Envelope −0.6138 (−0.7728 to
+−0.4719), all seeds.
+
+### 4.4 The prototype's own statistics (all three seeds)
+
+From `report-bank-proto.md`, "bank-proto's own statistics" (oracle channels; selected speed off by more
+than ×1.5 counted from 3 s into each transmission, at S₅₀₀ ≥ 6 dB, on constant-speed labels; a lock-in is
+such an error lasting 3 s or longer):
+
+| group | selected speed off ×1.5 (fraction of selection instants) | lock-ins / transmissions | switches / alternations per min | over starts inside a transmission, per transmission | false characters per min outside transmissions |
+|---|---|---|---|---|---|
+| A sensitivity | 0.001 (0.000–0.001) | 0 / 288 | 4.05 / 1.66 | 0.406 | 1.52 |
+| B fading | 0.056 (0.051–0.062) | 90 / 594 | 13.64 / 4.10 | 8.537 | 0.85 |
+| C fists | 0.006 (0.004–0.009) | 1 / 270 | 7.84 / 4.35 | 0.052 | 0.046 |
+| D speed | 0.010 (0.003–0.023) | 0 / 12 | 8.56 / 1.64 | 0.056 | 0.00 |
+| E interference | 0.315 (0.183–0.431) | 11 / 48 | 30.05 / 8.90 | 0.021 | 30.1 |
+| F tuning | — (every group F label is at S₅₀₀ 0 or 5 dB, below the 6 dB the measure needs) | — | 6.33 / 2.07 | 0.000 | 2.73 |
+| G ragchew | 0.000 (0.000–0.000) | 0 / 192 | 9.01 / 4.86 | 0.052 | 0.78 |
+| H QSO, oracle (QSO labels) | 0.332 (no interval) | 4 / 8 | 9.69 / 4.11 | 0.135 | 0.22 |
+| H QSO, oracle (per station) | 0.006 (0.004–0.009) | 0 / 288 | 19.07 / 8.26 | 0.035 | 45.2 |
+| I Farnsworth | 0.058 (0.039–0.081) | 35 / 96 | 4.76 / 1.93 | 0.278 | 0.014 |
+| crowded, oracle | 0.087 (0.055–0.122) | 7 / 300 | 13.40 / 4.45 | 0.000 | 23.0 |
+| band, first sample, pauses, strong, tune-up (oracle) | 0.000–0.003 | 0 in each | 3.98–5.54 / 0.00–1.58 | 0.000 | 0.00 (tune-up 6.89) |
+
+The group H QSO-label row counts a QSO of two stations at different speeds as one label; its 0.332 is the
+other station's speed, not an error of the selection (per-station view: 0.006). The per-station view's
+45.2 false characters per minute are the other station's keying on the channel, which per-station labels
+count as outside a transmission.
+
+**Corrections** (`experiments/scripts/corrections.py bank-proto`, every decoded file, oracle and detector
+path): 31 158 corrections in 457 169 channel-seconds (4.09 per channel-minute): 13 352 after a branch
+switch, 9 522 re-keyings of an over's first marks, 8 284 re-keyings after the amplitude stayed unknown
+too long. Reach (how far back a correction replaces text): median 1.544 s, 90% 5.437 s, 99% 19.861 s,
+maximum 20.000 s; **none exceeds 20 s** (the owner's limit).
+
 ## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure
+
+This compares **the Python prototype on recorded channel streams**, not a C++ filter bank in the engine.
+Every number is measured on the 3-seed full suite unless marked; "held out" means seeds 2 and 3, on which
+no setting was chosen. Intervals are bootstrap 95% intervals over signals. "Better" or "worse" means the
+interval of the per-signal CER difference excludes 0 (a convention; of 131 regimes truly unchanged, about
+7 would read better or worse by chance). No verdict is given here: whether the prototype is better, and
+whether stage 2 is worth doing, is the owner's decision.
+
+### 5.0 The answer in brief
+
+1. **Overall, on oracle channels** (one channel per station at its true frequency): the prototype's
+   character error rate (CER) is lower than Matched's by 0.078 (0.067 to 0.088) per signal on average,
+   and lower than Envelope's by 0.259 (0.238 to 0.283). On the held-out seeds alone, the full pool gives
+   −0.065 against Matched and −0.227 against Envelope. Measured (section 4.3).
+2. **Through the detector path** (the channels Matched's detector opened, decoded by the prototype):
+   no measurable difference from Matched, +0.009 (−0.008 to +0.026); better than Envelope by 0.063 (0.039
+   to 0.088). Measured.
+3. **By regime** (one condition of one group, 131 compared): against Matched 49 better, 26 worse, 56
+   unchanged; against Envelope 83 better, 16 worse, 32 unchanged. Measured.
+4. **Where it is better than Matched**: fading (10 of 11 rows), poor fists (hand and bug keying),
+   Farnsworth (8 of 8), the speed step 20 → 35 WPM, the first word at 12 WPM, ragchew, QSOs with one
+   track, pauses and strong signals through the detector. Measured.
+5. **Where it is worse than Matched**: a strong neighbor 50–150 Hz away at 10–20 dB above the wanted
+   station (group E, up to +1.9 CER), crowded channels 0–100 Hz apart, 10 WPM keying, per-station
+   decoding of same-track QSOs, and a small but consistent loss on clean machine and computer keying
+   (lost first characters). Measured; causes conjectured (section 5.3).
+6. **Sensitivity in white noise** (group A): the prototype reaches CER 0.10 at S₅₀₀ = 0.0 dB at 25 WPM
+   against Matched's 1.1 dB and Envelope's 5.1 dB; within 0.1 dB of Matched at 12 WPM; 1.0 dB below
+   Matched at 40 WPM (0.4 and 0.5 dB below at CER 0.05, 25 and 40 WPM). Measured.
+7. **Detection measures** through the detector are the same for all three decoders except false tracks on
+   very strong signals (prototype 1 in 3 recordings, Matched and Envelope 12 each). Measured. Stage 2 must
+   confirm them behind the live detector with the frequency tracker (section 5.6).
+8. **The owner's two extra configurations** (a higher confidence threshold, 0.1487 or 0.2506, for the
+   rough speed estimate T_P), on the held-out seeds: both are worse than the settled prototype overall
+   (+0.005 and +0.009 CER) and on first words (+0.12 and +0.23); they decode 12 WPM at S₅₀₀ = −2 dB, where
+   the settled prototype fails. Measured (section 5.5).
+
+### 5.1 Sensitivity in white noise (group A): S₅₀₀ at CER 0.10 and 0.05
+
+S₅₀₀ (key-down carrier power over noise power in 500 Hz) at which the pooled CER falls to the stated
+level, interpolated between the suite's 2 dB steps of S₅₀₀; lower needs less signal. All three seeds, 64 signals
+per S₅₀₀ point and speed. The differences are of the point values; their own intervals were not computed.
+
+| speed | CER | prototype, dB | Matched, dB | Envelope, dB | prototype − Matched, dB | prototype − Envelope, dB |
+|---|---|---|---|---|---|---|
+| 12 WPM | 0.10 | −0.1 (−0.1 to −0.0) | −0.2 (−0.5 to 0.7) | 7.2 (6.8 to 7.4) | +0.1 | −7.3 |
+| 12 WPM | 0.05 | 1.1 (−0.0 to 2.3) | 1.2 (−0.1 to 18.1) | 7.7 (7.5 to 7.8) | −0.1 | −6.6 |
+| 25 WPM | 0.10 | −0.0 (−0.1 to 0.2) | 1.1 (0.4 to 1.4) | 5.1 (4.8 to 5.2) | −1.1 | −5.1 |
+| 25 WPM | 0.05 | 1.3 (1.1 to 1.4) | 1.7 (1.4 to 1.8) | 5.6 (5.5 to 5.7) | −0.4 | −4.3 |
+| 40 WPM | 0.10 | 1.8 (1.8 to 1.9) | 2.9 (2.2 to 3.3) | 6.0 (5.9 to 15.2) | −1.0 | −4.1 |
+| 40 WPM | 0.05 | 3.2 (3.0 to 3.3) | 3.6 (3.3 to 4.3) | 14.8 (7.0 to 15.7) | −0.5 | −11.7 |
+
+Matched's 12 WPM CER stays between 0.02 and 0.04 from S₅₀₀ = +4 to +20 dB, near the 0.05 level, so its
+0.05 crossing interval reaches S₅₀₀ = 18.1 dB; the prototype's falls to at most 0.008 above S₅₀₀ = +6 dB.
+Envelope's 40 WPM intervals also reach S₅₀₀ = 15 dB (not traced). Group A's CER per tag: 12 WPM, the
+prototype is worse than Matched by +0.029 (+0.006 to +0.056), from S₅₀₀ = −4 to −2 dB, where it fails
+abruptly (0.973 at S₅₀₀ = −2 dB against Matched's 0.384); at 25 and 40 WPM it is better (−0.009 and −0.030).
+
+### 5.2 The regressions that started this redesign, and lock-ins
+
+| case | prototype | Matched | Envelope |
+|---|---|---|---|
+| R1: group D, step 20 → 35 WPM, CER (6 signals) | 0.038 (0.029–0.048) | 0.394 (0.222–0.499) | 0.525 (0.257–0.845) |
+| R1, held-out seeds (4 signals) | 0.043 (0.031–0.055) | 0.347 (0.102–0.510) | 0.452 (0.214–0.782) |
+| R2: group A 12 WPM, first-word CER at S₅₀₀ 6–20 dB (96 signals) | 0.119 (0.079–0.171) | 0.985 (0.823–1.174) | 0.801 (0.667–0.974) |
+| R2, held-out seeds (64 signals) | 0.137 (0.078–0.219) | 1.114 (0.922–1.356) | 0.915 (0.720–1.142) |
+| start-up runaway case 1: A-awgn-25wpm-1-s1, +6606.5 Hz, CER | 0.003 | 0.000 | 0.000 |
+| start-up runaway case 2: A-awgn-25wpm-0-s2, −2991.9 Hz, CER | 0.048 | 0.015 | 0.851 |
+
+(First-word CER can exceed 1: characters decoded in the silence before a transmission are charged to its
+first word.) The two runaway cases are the signals on which milestone 2 found Matched's speed estimate running
+away at start-up; all three decoders now decode the first, and the prototype and Matched the second (one
+signal each, so no interval).
+
+**Lock-ins** (the selected speed off by more than ×1.5 for 3 s or longer, at S₅₀₀ ≥ 6 dB, from 3 s into a
+transmission; the prototype only, as Matched does not log its speed per instant): none in groups A (0 of
+288 transmissions), D (0 of 12), G (0 of 192), H per station (0 of 288) and the oracle copies of band,
+first sample, pauses, strong and tune-up; 1 of 270 in C; 7 of 300 in crowded (oracle copies); 11 of 48 in E;
+35 of 96 in I (Farnsworth); 90 of 594 in B (fading). Measured (section 4.4).
+
+### 5.3 Every regime, against Matched and against Envelope
+
+Counts by group are in section 4.3 and every row is in `report-bank-proto.md` ("Comparison for the
+owner"). In plain words, the comparable rows (the four F drift rows, where the prototype's mix follows the
+labeled drift exactly, and the five H oracle QSO-label rows with an offset, where the answering station is
+off the prototype's mix, are left out):
+
+**Measured findings.**
+
+1. *Fading (B, 11 rows)*: better than Matched in 10, by 0.05 to 0.25 CER; worse only for hand keying at
+   f_D = 3 Hz, +0.060 (+0.040 to +0.080). Better than Envelope in all 11.
+2. *Fists (C, 15 rows)*: bug keying −0.38 to −0.70 and hand keying −0.08 to −0.31 against Matched; machine
+   and computer keying +0.001 to +0.004 against Matched (4 of 6 rows' intervals above 0), with first-word
+   CER 0.17–0.42 against Matched's 0.11–0.19. Better than Envelope in all 15.
+3. *Speed changes (D, 6 rows)*: step 20 → 35 WPM −0.368 and step 35 → 20 WPM −0.084 against Matched; 10 WPM
+   worse against both, +0.130 (+0.037 to +0.222) and +0.191 (+0.125 to +0.264); ramp 30 → 15 WPM +0.010
+   (+0.003 to +0.021) against both.
+4. *Interference (E, 16 rows; the neighbor's level in dB relative to the wanted station's key-down
+   power)*: never better than Matched; worse in 6, all with the neighbor at +10 or +20 dB (largest: 150 Hz
+   away at +20 dB, +1.912 (+1.159 to +2.759); 100 Hz at +20 dB, +1.332). Against Envelope: better in 5
+   (neighbor at 0 or +10 dB, 50–150 Hz away: −0.14 to −0.81), worse in 5.
+5. *Tuning offsets (F, 10 rows)*: unchanged against Matched in all 10; better than Envelope in all 10.
+   (F drift, not comparable: better than Matched at 1 and 2 Hz/s, −0.205 and −0.486, because the
+   prototype's mix follows the labeled drift.)
+6. *Farnsworth (I, 8 rows)*: better than both in all 8, by −0.27 to −0.57 against Matched; prototype CER
+   0.015–0.066 except the slowest overall speed, 18/5 WPM, 0.274 (machine) and 0.377 (paddle).
+7. *Ragchew (G)*: −0.034 (−0.054 to −0.017) against Matched, −0.151 against Envelope.
+8. *QSOs (H)*: on the QSO labels through the detector, better than Matched in 4 of 9 rows (−0.08 to −0.18,
+   same-track and the drawn ambiguous case), unchanged in 5. Per station: same-track QSOs are worse than
+   Matched (oracle 0 Hz +0.179, 10 Hz +0.066; detector path drawn offset +0.049, 0 Hz +0.081, 10 Hz
+   +0.038), while separate-track 100 and 200 Hz oracle rows are better (−0.345, −0.046).
+9. *Oracle copies (18 rows)*: unchanged against Matched in 13; better in first sample (−0.030) and tune-up
+   2 s (−0.847; Matched's CER there is 0.888); worse in crowded 0, 50 and 100 Hz (+0.192, +0.141, +0.106).
+   Against Envelope better in 10, worse in none.
+10. *Detector path (36 rows)*: against Matched (the same tracks) 14 better, 6 worse; against Envelope (its
+    own tracks; compared per label) 12 better, 9 worse, mostly the rows where Envelope's own detector
+    opens different tracks: tune-up 1 s and 2 s (+0.466, +0.904; Matched is as bad on those tracks), QSO
+    separate-track and ambiguous rows (+0.013 to +0.325).
+11. *The late-opening case* (a channel opened partway through a transmission) is read from the first-word
+    CER through the detector path, against the oracle copies of the same recordings: all three decoders
+    lose most of a first word when the detector opens late (band: prototype / Matched / Envelope 0.753 /
+    0.842 / 0.808 through the detector against 0.068 / 0.308 / 0.226 on oracle channels; first sample
+    0.833 / 0.900 / 0.833 against 0.033 / 0.400 / 0.400). Pooled over the detector path, the prototype's
+    first-word CER against Matched is −0.021 (−0.108 to +0.067), not distinguishable.
+
+**Conjectured, not measured.** (a) Group E and crowded: the short branches (9.3 ms, first null at
+107 Hz) pass a neighbor 50–150 Hz away, and the speed estimate follows the neighbor's keying (section
+3.6.1 measured its precision at 0.57–0.68 under interference; here the selected speed is off ×1.5 at 0.315
+of instants in E). (b) Machine and computer keying: the lost first characters of the channel tests since
+W_min = 0.8 s (section 3.9). (c) 10 WPM: the 2 s periodicity window cannot evaluate a dit longer than 109 ms (below 11 WPM;
+section 3.4, derived), so T_P comes from the 5 and 10 s windows only, later; and the fit's 48-element
+memory spans longer at slow speeds. Which of these matters is not measured.
+
+### 5.4 Detection measures on the detector path
+
+As the bench counts them (a track counts only if it decoded text), on the channels Matched's detector
+opened; the prototype is compared with Matched per track and with Envelope per label. All three seeds:
+
+| group | recordings | labels | detection recall: prototype / Matched / Envelope | false tracks: prototype / Matched / Envelope |
+|---|---|---|---|---|
+| H two-station QSO | 6 | 72 | 1.000 / 1.000 / 1.000 | 110 / 110 / 109 |
+| band | 3 | 60 | 1.000 / 1.000 / 1.000 | 0 / 0 / 0 |
+| crowded | 12 | 300 | 0.957 / 0.957 / 0.957 | 0 / 0 / 0 |
+| first sample | 3 | 12 | 1.000 / 1.000 / 1.000 | 0 / 0 / 0 |
+| pauses | 3 | 24 | 1.000 / 1.000 / 1.000 | 12 / 12 / 12 |
+| strong | 3 | 24 | 1.000 / 1.000 / 1.000 | **1** / 12 / 12 |
+| tune-up | 3 | 24 | 1.000 / 1.000 / 1.000 | 0 / 0 / 0 |
+
+Tracks per QSO (group H): the prototype equals Matched in every tag (1.00 for same-track QSOs, 5.67–7.50 for
+separate-track ones, which the detector reopens per over); Envelope differs only in the ambiguous rows
+(drawn offset 1.67 against 2.33; 50 Hz 1.50 against 1.33). On the held-out seeds all three are equal.
+Measured. The strong group's false tracks: Matched and Envelope decode text on 12 extra tracks (presumably
+the detector's ghost tracks beside very strong signals, backlog "Ghost tracks beside very strong signals";
+not checked track by track), the prototype on 1.
+
+### 5.5 The owner's extra configurations: the speed estimate's confidence threshold
+
+**What they are.** T_P is the prototype's rough, independent guess of the dit length (from the comb on
+branch 1's key-down probability); it pulls each branch's speed fit toward it and helps pick a branch when
+none fits. Its *confidence threshold* is how sure the comb must be before T_P is used at all. A higher
+threshold gives fewer, later, but more often right estimates. The owner asked (2026-10-01) for two higher
+thresholds to be decoded on the held-out seeds beside the settled prototype (`bank-proto`, threshold
+0.03), everything else equal, to see section 3.6.1's trade (better overall, worse first words) on data no
+choice was made on. Neither is adopted by any rule.
+
+```
+.venv/bin/python -m kz4ap_proto.runner decode --out build/suite/full3 --name bank-proto-comb0p2506 --set comb_confidence_min=0.2506 "--only=-s[23]" --jobs 10
+.venv/bin/python -m kz4ap_proto.runner decode --out build/suite/full3 --name bank-proto-comb0p1487 --set comb_confidence_min=0.14873606229535802 "--only=-s[23]" --jobs 10
+```
+
+Then each scored, reported and compared with `bank-proto` by the git-ignored helper
+`build/suite/full3/experiments/scripts/final_extras.py` (`score`, `report`, `paired`; it scores into
+`experiments/results/` so that the suite summary holds only the three decoders; the paired comparison is
+`experiments.pooled_paired`, the same per-signal differences and bootstrap as `suites.paired_differences`,
+grouped by group). Outputs: `build/suite/full3/report-bank-proto-comb0p2506-held-out.md`,
+`report-bank-proto-comb0p1487-held-out.md`, `experiments/extras-paired.md` (git-ignored). Wall time 107.0
+and 127.5 min, CPU 171.5 and 175.2 ms per channel-second (held-out oracle channels).
+
+**Held-out seeds 2 and 3, 2 354 signals** (observation only; paired = extra minus `bank-proto`, per
+signal):
+
+| threshold | T_P right / available / median wait (E1's offline measure, seed 1) | pooled CER | paired CER against `bank-proto` | paired first-word CER against `bank-proto` | regimes against Matched, better / worse / unchanged | against Envelope |
+|---|---|---|---|---|---|---|
+| 0.03 (`bank-proto`, settled) | 0.809 / 0.994 / 0.49 s | 0.3805 | — | — | 48 / 23 / 59 | 75 / 15 / 40 |
+| 0.1487 (90% right) | 0.900 / 0.834 / 1.12 s | 0.3870 | +0.0047 (+0.0003 to +0.0085) | +0.1226 (+0.0824 to +0.1637) | 49 / 25 / 56 | 72 / 14 / 44 |
+| 0.2506 (95% right) | 0.950 / 0.589 / 2.08 s | 0.3876 | +0.0093 (+0.0037 to +0.0157) | +0.2303 (+0.1829 to +0.2857) | 48 / 27 / 55 | 71 / 14 / 45 |
+
+("Right": the fraction of published T_P within 5% of the true dit; "available": the fraction of moments
+inside transmissions with a T_P; "wait": median time from a transmission's start to the first T_P.)
+
+By group (paired CER against `bank-proto`, intervals excluding 0 only; 0.1487 / 0.2506): better in group A,
+−0.0232 / −0.0219, and D, −0.0368 / −0.0350; worse in B, +0.0127 / +0.0160, E, +0.0952 / +0.2037, crowded
+oracle copies, +0.0247 / +0.0578, C (0.1487 only, +0.0123), F (0.2506 only, +0.0319). First-word CER is
+worse at both thresholds in B, C, F and I, and at 0.2506 also in A, E and the crowded oracle copies; better
+only in group H oracle per station at 0.1487, −0.2477 (−0.5151 to −0.0784). Full table: `experiments/extras-paired.md`.
+
+Group A and the regressions, held-out:
+
+| | 0.03 (`bank-proto`) | 0.1487 | 0.2506 |
+|---|---|---|---|
+| S₅₀₀ at CER 0.10, 12 / 25 / 40 WPM, dB | −0.1 / −0.0 / 1.8 | −2.1 / −0.1 / 1.9 | −2.2 / −0.1 / 1.9 |
+| S₅₀₀ at CER 0.05, 12 / 25 / 40 WPM, dB | 1.5 / 1.2 / 3.1 | 3.0 / 1.2 / 3.2 | 3.1 / 2.4 / 3.4 |
+| CER at 12 WPM, S₅₀₀ −2 dB / +2 dB | 0.972 / 0.044 | 0.073 / 0.075 | 0.045 / 0.078 |
+| R1 (step 20 → 35 WPM), CER | 0.043 | 0.046 | 0.043 |
+| R2 (12 WPM first word, S₅₀₀ 6–20 dB), first-word CER | 0.137 (0.078–0.219) | 0.175 (0.097–0.272) | 0.185 (0.098–0.291) |
+| lock-ins, group B fading / I Farnsworth / C fists | 63 / 23 / 1 | 169 / 27 / 10 | 157 / 26 / 1 |
+
+(Lock-ins out of 396, 64 and 180 transmissions.)
+
+**In plain words** (measured unless marked):
+
+1. On the held-out seeds, **both higher thresholds are worse than the settled 0.03 overall and on first
+   words**: overall CER +0.005 and +0.009, first-word CER +0.12 and +0.23. Section 3.6.1's trade (seed 1,
+   against the reference before Task 14) was better overall and worse on first words; here the
+   first-word cost remains and the overall gain does not.
+2. The one clear gain is group A at the edge of decoding: at 12 WPM and S₅₀₀ = −2 dB the settled prototype
+   fails (CER 0.972; Matched 0.285) and both higher thresholds decode (0.073, 0.045), moving the 12 WPM
+   CER-0.10 point 2 dB of S₅₀₀ lower. Above S₅₀₀ = 0 dB they are slightly worse, so the CER-0.05 point
+   moves 1.5 dB of S₅₀₀ higher.
+3. Lock-ins in fading roughly triple (63 → 157–169 of 396 transmissions).
+4. Conjectured, not measured: Task 14's changes (fit memory 48, calibrated x_on, W_min 0.8 s) may already
+   give most of what the higher threshold gave on top of the older reference (E4's longer memory improved
+   the same groups A, C, G and I); the held-out data and the changed base differ at once, so which one
+   removed the overall gain is not separated.
+
+
+### 5.6 The stated gap: what only stage 2 can measure
+
+- **Which tracks the detector opens is unchanged by the redesign.** The detection measures above depend on
+  the decoder only through which tracks decode any text. Stage 2 confirms them in C++, behind the live
+  detector, with the frequency tracker in the loop (spec §7; backlog "Stage-2 evaluation of the filter
+  bank through the detector").
+- On the detector path the prototype mixes each channel by the detector's frequency, block by block,
+  **without the tracker's fine-tuning (±12 Hz)**, which Matched has. On oracle channels it mixes at the
+  labeled frequency and drift, which is exact for the synthetic suite (the reason the F drift rows are not
+  comparable).
+- **Which branch feeds the tracker** (its output and its key-down probability) is a stage-2 design point
+  that stage 1 does not measure (section 6).
+- CPU: the prototype is Python, 177 ms per channel-second on the Linux machine; the C++ cost of 32
+  branches is not measured.
 
 ## 6. Open items for the owner
 
@@ -1238,7 +1627,7 @@ group I check, E6's follow criterion) are listed in section 6.
   test now fails (made a strict expected failure; owner not consulted; following the E4 handling).**
   Measured: E5 chose by CPU among grids not worse than the finest, and did not compare per group with
   the previous reference. Against that reference, on all 48 group I signals (the E5 subset holds them
-  all), the coarse grids raise group I's paired CER by +0.0107 (mean; its interval was not computed),
+  all), the coarse grids raise group I's paired CER by +0.0107 (+0.0037 to +0.0175),
   mostly in the paddle conditions. `test_fits_farnsworth_spacing`: Farnsworth 18/10 WPM, T_g fitted
   192.2 ms against the true 207.0 ms (−7.2%; the test allows 5%); the coarse T_g/T grid has 2.52 and 4
   where the old one had 3.17, and stops at 6.35 where 18/5 WPM needs 7.84. A companion test keeps the
@@ -1276,7 +1665,7 @@ group I check, E6's follow criterion) are listed in section 6.
   | step | group I paired CER, mean |
   |---|---|
   | E4, N_mem 24 → 48 | −0.0264 (−0.0374 to −0.0171) |
-  | E5, reference grids → coarse grids | +0.0107 (interval not computed) |
+  | E5, reference grids → coarse grids | +0.0107 (+0.0037 to +0.0175) |
   | E9(a), nominal → calibrated x_on | −0.0073 (−0.0191 to −0.0007) |
   | E9(b), W_min 0.4 s → 0.8 s | +0.0808 (+0.0306 to +0.1368) |
   | total, `exp-ref` → `exp-E9-rekey-0.8` | +0.0578 (+0.0140 to +0.1106) |
@@ -1288,4 +1677,48 @@ group I check, E6's follow criterion) are listed in section 6.
   that differ from it only in the comb's confidence threshold: 0.2506 (T_P precision 0.95 on E1's
   points) and 0.1487 (precision 0.90). They show the trade between overall and first-word CER
   (section 3.6.1) on data no choice was made on. Neither is adopted by a rule; the owner decides from
-  the comparison.
+  the comparison. Results (section 5.5): on the held-out seeds both are worse than the settled 0.03
+  overall, +0.0047 (+0.0003 to +0.0085) and +0.0093 (+0.0037 to +0.0157), and on first words, +0.1226
+  and +0.2303; section 3.6.1's overall gain did not appear. Both decode group A 12 WPM at S₅₀₀ = −2 dB
+  (CER 0.073 and 0.045, against 0.972). The owner chooses.
+
+- **Task 15 (sections 4–5): the regimes where the prototype is worse**, each measured, causes not traced:
+  a strong neighbor 50–150 Hz away at +10 to +20 dB relative to the wanted station's key-down power
+  (group E, 6 rows worse than Matched, up to +1.912); crowded channels 0–100 Hz apart (oracle copies
+  +0.106 to +0.192 against Matched); 10 WPM (+0.130 against Matched, +0.191 against Envelope); per-station
+  decoding of same-track QSOs (+0.038 to +0.179 against Matched); hand keying in fast fading (f_D = 3 Hz,
+  +0.060); clean machine and computer keying (+0.001 to +0.004, lost first characters); group A at 12 WPM
+  (+0.029). Each is a backlog item for stage 2 (`docs/backlog.md`, "Milestone 2b, stage 2: items found in
+  stage 1's final evaluation").
+
+- **The comb on 2T** (the periodicity comb's period corrected from T to 2T): answered by the owner on
+  2026-09-30 (section 2); nothing open.
+
+- **The tracker's input in stage 2.** The frequency tracker weights the Matched front end's filter output
+  by its key-down probability. With the bank, stage 2 must decide which branch's output v and probability
+  p feed it (the selected branch, branch 1, or a fixed one). Stage 1 does not measure it: on oracle
+  channels the prototype mixes at the labeled frequency and drift; on the detector path at the detector's
+  frequency, block by block, **without the tracker's ±12 Hz fine-tuning**, which Matched has.
+
+- **The T_P prior's reinterpretation.** The spec (§4.5) weights the prior on T "by its confidence"; the
+  prototype applies it as a gate at the confidence threshold with a fixed width (0.1 in ln T), because the
+  three methods' confidences are on different scales (comb and edge comb dimensionless, spectrum fit in
+  nats). Heuristic; not measured. The extra configurations (section 5.5) vary only the gate's threshold.
+
+- **Pre-registered rules that no setting met** (each kept the existing value): E1–E3's chosen periodicity
+  settings failed the end-to-end check (section 3.5); E3 (no teeth or width beat the default); E6 (no M
+  followed the speed step within a median of 10 marks); E7 (no T_new; its group I check fired); E8 (no
+  quality tie or text window); E9b (no R_fa); E10 (no noise variant).
+
+- **Placeholders and heuristics kept unmeasured**: see `docs/backlog.md` (same item). In particular the
+  log-normal scatter (0.15 marks, 0.25 spaces), the outlier class (ε = 0.05, log-uniform over 1 ms–10 s),
+  the T_P prior's width, the minimum fit weight (8 elements), the squelch constant 3, and the plan's other
+  heuristic rows (plan, "Parameters").
+
+- **Spec §8 questions stage 1 did not measure.** (a) 5 WPM keying against fading: the suite has no fading
+  signal slower than 12 WPM (group B's labels span 12–47.6 WPM), so the reasoning that slow fades hardly
+  affect the keying probability is untested. (b) The outlier class's shape (log-uniform; never varied).
+  (c) The noise spectrum's FFT size (T_seg = 170.7 ms), averaging (τ_n = 2 s) and guard (20 ms reach,
+  clean fraction 0.5): only the estimator as a whole was compared with the per-branch fallback (E10). (d)
+  The per-branch squelch's constant (3; its L^(1/4) scaling is derived). (e) The choices the plan made
+  heuristically (plan, "Parameters").
