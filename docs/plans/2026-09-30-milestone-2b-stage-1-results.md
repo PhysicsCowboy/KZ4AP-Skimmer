@@ -541,7 +541,7 @@ Owner's request, 2026-10-01, after choosing option A (Task 14 runs against `exp-
 0.2506 is evaluated on the held-out seeds in Task 15): the information option C would have given,
 where it is cheap.
 
-**Offline** (`training/kz4ap_proto/analysis/tp_observe.py`, committed; output `build/suite/full3/experiments/linux/tp-observe.md`,
+**Offline** (`training/kz4ap_proto/analysis/tp_observe.py`, committed; output written to `build/suite/full3/experiments/tp-observe.md` on the Linux machine, local copy `build/suite/full3/experiments/linux/tp-observe.md`,
 git-ignored; exp-ref's branch-1 posteriors, no decoding). The comb's thresholds for precision 0.85 and
 0.90 on E1's points are 0.10230 and 0.14874 (dimensionless score). Measured:
 
@@ -2128,7 +2128,7 @@ to `build/suite/full3/groupA-by-snr-held-out.txt`, git-ignored; Matched at 12 WP
   estimates differ by a factor of 1.50 / (0.72 to 0.78) = 1.9–2.1: the seed's s² is 2.8–3.2 dB above the
   EM's (dB of the seed's s² relative to the EM's; computed from (a) and (b); the Task 6 review recorded
   "about 2.5 dB" for the same ratio; not measured directly). (c) Marks keyed by the unknown-amplitude test
-  are about 0.15·L longer with ŝ ≈ 0.85 s (L the branch length); the fit's w absorbs a constant
+  are about 0.15·L longer with ŝ ≈ 0.85·s (s the true amplitude; L the branch length); the fit's w absorbs a constant
   lengthening. None of the three was measured on the suite.
 
 - **A correction owed to the owner (Task 9).** The controller's explanation to the owner during Task 9

@@ -131,7 +131,7 @@ def main():
         f"{g} {sum(1 for gg, _ in outs['comb'][0] if gg == g)}" for g in groups) +
         f"; update step {outs['comb'][1]:.3f} s."]
     target = OUT / "experiments" / "tp-observe.md"
-    target.write_text("\n".join(lines) + "\n")
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"wrote {target}")
 
 
