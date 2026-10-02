@@ -674,6 +674,84 @@ test is a strict expected failure stating the finding (spurious leading C; cause
 neighboring strict expected failure (the whole second over) still fails, now only on that leading C,
 and its reason says so. `pytest training -q` (local): 246 passed, 5 xfailed.
 
+### 3.8 E5 — the fit's grid steps
+
+Question: how finely the duration fit's grid must be spaced. The fit tabulates its likelihood over a
+grid of the dit T (log-spaced, relative step `t_grid_step`), the dah/dit ratio q, the key weighting
+w/T and the gap timebase T_g/T, then refines the best grid point by two weighted-least-squares steps.
+A finer grid costs CPU (the tables grow with the product of the grid sizes); a coarser one may fit
+worse. The rule picks the cheapest grid that is not measurably worse than the finest.
+
+Variants (the reference after E4: `fit_memory = 48`, grid T step 1% over 12–240 ms, q ∈ {3, 3.5, 4,
+4.5, 5}, w/T ∈ {−0.4 … 1.0} step 0.2 (8 values), T_g/T ∈ {1, 1.26, 1.59, 2, 2.52, 3.17, 4, 5.04,
+6.35, 8}):
+
+| run | T step | q | w/T | T_g/T |
+|---|---|---|---|---|
+| `exp-E5-finest` (the base) | 0.5% | 9 values, 3 … 5 step 0.25 | 15 values, −0.4 … 1.0 step 0.1 | 19 values, 1 … 8 at about 2^(1/6) |
+| `exp-E5-ref` (the reference, re-run on the subset) | 1% | 5 | 8 | 10 |
+| `exp-E5-0.005` | 0.5% | 5 | 8 | 10 |
+| `exp-E5-0.02` | 2% | 5 | 8 | 10 |
+| `exp-E5-fine` | 1% | 9 (as finest) | 15 (as finest) | 19 (as finest) |
+| `exp-E5-coarse` | 1% | {3, 4, 5} | {−0.4, 0, 0.4, 0.8} | {1, 1.59, 2.52, 4, 6.35} |
+
+Subset `experiments.DEV_E5` (`"subset": "e5"`): seed 1 of group A at 25 WPM, C, D and I; 10 test
+cases, 259 channels, 259 signals. **The batch ran alone on the Linux machine** (no other job; checked
+with the job helper and the load average, 0.19, before it started), because its rule chooses by CPU
+time. Batch `build/suite/full3/experiments/E5.json` (git-ignored), at `ccadcb5`:
+
+```
+{"name": "E5", "base": "exp-E5-finest", "subset": "e5", "runs": [{"name": "exp-E5-finest", "set": {"t_grid_step": 0.005, "q_grid": [3, 3.25, 3.5, 3.75, 4, 4.25, 4.5, 4.75, 5], "w_grid": [-0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], "tg_grid": [1, 1.12, 1.26, 1.41, 1.59, 1.78, 2, 2.24, 2.52, 2.83, 3.17, 3.56, 4, 4.49, 5.04, 5.66, 6.35, 7.13, 8]}}, {"name": "exp-E5-ref", "set": {}}, {"name": "exp-E5-0.005", "set": {"t_grid_step": 0.005}}, {"name": "exp-E5-0.02", "set": {"t_grid_step": 0.02}}, {"name": "exp-E5-fine", "set": {"q_grid": [...as finest], "w_grid": [...as finest], "tg_grid": [...as finest]}}, {"name": "exp-E5-coarse", "set": {"q_grid": [3, 4, 5], "w_grid": [-0.4, 0, 0.4, 0.8], "tg_grid": [1, 1.59, 2.52, 4, 6.35]}}]}
+.venv/bin/python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench build/linux/bench/kz4ap-bench --spec build/suite/full3/experiments/E5.json --jobs 10
+```
+
+| run | pooled CER | paired CER against `exp-E5-finest`, 259 signals | paired first-word CER | decoding CPU per channel-second | wall |
+|---|---|---|---|---|---|
+| `exp-E5-finest` | 0.1370 | — | — | 1411.1 ms | 79.5 min |
+| `exp-E5-ref` | 0.1345 | −0.0027 (−0.0054 to −0.0005) | +0.0066 (−0.0312 to +0.0649) | 276.4 ms | 15.6 min |
+| `exp-E5-0.005` | 0.1344 | −0.0028 (−0.0056 to −0.0007) | +0.0066 (−0.0331 to +0.0611) | 457.5 ms | 25.8 min |
+| `exp-E5-0.02` | 0.1354 | −0.0021 (−0.0045 to −0.0002) | +0.0076 (−0.0297 to +0.0615) | 189.5 ms | 10.7 min |
+| `exp-E5-fine` | 0.1369 | −0.0005 (−0.0015 to +0.0001) | +0.0000 (+0.0000 to +0.0000) | 718.6 ms | 40.5 min |
+| **`exp-E5-coarse`** | 0.1352 | −0.0009 (−0.0037 to +0.0014) | −0.0209 (−0.0605 to +0.0116) | **157.3 ms** | 8.9 min |
+
+Paired CER by group against `exp-E5-finest`:
+
+| group | signals | `exp-E5-ref` | `exp-E5-0.005` | `exp-E5-0.02` | `exp-E5-fine` | `exp-E5-coarse` |
+|---|---|---|---|---|---|---|
+| A sensitivity (25 WPM) | 64 | −0.0051 (−0.0170 to +0.0025) | −0.0051 (−0.0164 to +0.0030) | −0.0024 (−0.0108 to +0.0040) | +0.0000 (+0.0000 to +0.0000) | −0.0055 (−0.0152 to +0.0001) |
+| C fists | 135 | −0.0009 (−0.0020 to +0.0001) | −0.0011 (−0.0021 to +0.0000) | −0.0010 (−0.0020 to −0.0000) | +0.0001 (−0.0002 to +0.0004) | −0.0010 (−0.0032 to +0.0011) |
+| D speed | 12 | −0.0009 (−0.0026 to +0.0000) | −0.0009 (−0.0026 to +0.0000) | −0.0009 (−0.0026 to +0.0000) | +0.0000 (+0.0000 to +0.0000) | −0.0009 (−0.0026 to +0.0000) |
+| I Farnsworth | 48 | −0.0052 (−0.0101 to −0.0014) | −0.0050 (−0.0095 to −0.0014) | −0.0052 (−0.0096 to −0.0013) | −0.0029 (−0.0074 to +0.0000) | +0.0055 (−0.0017 to +0.0122) |
+
+Full tables: `build/suite/full3/experiments/linux/compare-exp-E5-<variant>-vs-exp-E5-finest.md`,
+`summary-E5.md` and `summary-exp-E5-<variant>.md` (git-ignored).
+
+Rule (pre-registered): among the variants (including the reference) whose pooled paired CER against
+the finest has an interval that does not lie entirely above 0, adopt the one with the lowest CPU per
+channel-second. **Outcome: every variant qualifies** (none lies entirely above 0; the reference, 0.005
+and 0.02 lie entirely below 0, i.e. measurably better than the finest), and the lowest CPU is
+**coarse, 157.3 ms per channel-second** (0.57 × the reference's 276.4 ms; 0.11 × the finest's).
+**Adopted: `q_grid = (3, 4, 5)`, `w_grid = (−0.4, 0, 0.4, 0.8)`, `tg_grid = (1, 1.59, 2.52, 4,
+6.35)`, `t_grid_step = 0.01` kept** (status measured, E5). The combination of the coarse grids with a
+2% T step was not a variant and was not measured.
+
+Observed, not part of the rule: the finest grid is not the most accurate on this subset (every
+coarser T step is measurably better pooled); on group I the coarse grid's paired CER is +0.0055
+(−0.0017 to +0.0122), the only group where it is not at least as good as the reference.
+
+**Reference for E9.** `exp-E5-coarse` decoded only the E5 subset (20% of the development set), and E9
+compares on the whole development set, so the adopted defaults (N_mem = 48 and the coarse grids, no
+`set`) are decoded on the development set as `exp-E5-coarse-dev`, the first run of E9(a)'s batch and its
+base (section 3.9). That run is a re-run of the adopted configuration, not a new variant.
+
+**Tests after the change** (`pytest training -q`, local): 1 failed, 245 passed, 5 xfailed with the
+coarse grids. `test_fits_farnsworth_spacing` (Farnsworth 18/10 WPM, true T = 66.67 ms, T_g = 207.0 ms
+= 3.11 T): T = 66.72 ms is right, but T_g = 192.2 ms is 7.2% low against the test's 5% (the old grid
+had 3.17 T; the coarse grid's nearest points are 2.52 T and 4 T). Not a test of a default's value, so
+not loosened; following the owner's handling of E4's finding, it is now a strict expected failure stating
+the finding, and the finding is in section 6. Then: 245 passed, 6 xfailed. The channel tests,
+including the Farnsworth text tests, pass.
+
 ## 4. Final evaluation (Task 15)
 
 ## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure
@@ -709,6 +787,13 @@ and its reason says so. `pytest training -q` (local): 246 passed, 5 xfailed.
   plan says a channel test that fails after an adopted change is reported, not reverted silently.
   Owner's decision (2026-10-01): keep 48; the speed-step test now asks for 3 × N_mem elements, and
   the turnover test is a strict expected failure stating the finding (cause not traced).
+
+- **E5 (section 3.8): the coarse grids adopted by the rule; one fit test now fails, made a strict
+  expected failure (owner not consulted; following the E4 handling).** `test_fits_farnsworth_spacing`:
+  Farnsworth 18/10 WPM, T_g fitted 192.2 ms against the true 207.0 ms (−7.2%; the test allows 5%),
+  because the coarse T_g/T grid has 2.52 and 4 where the old one had 3.17. Decoding of group I on the E5
+  subset was not measurably worse (+0.0055, −0.0017 to +0.0122). The owner may prefer to un-mark it or
+  revisit the grid.
 
 - **Extra configurations for the final evaluation (owner, 2026-10-01).** Task 15 evaluates, on the
   held-out seeds 2 and 3 and beside the prototype with every adopted value, two more configurations

@@ -65,10 +65,11 @@ class ProtoConfig:
     # Duration fit (spec 4.5)
     fit_memory: float = 48.0               # N_mem, marks and spaces; measured (E4): 48 adopted over 24 and 12
                                            # (results record, section 3.7)
-    t_grid_step: float = 0.01              # relative step of the T grid; placeholder (E5)
-    q_grid: tuple[float, ...] = (3.0, 3.5, 4.0, 4.5, 5.0)                                  # placeholder (E5)
-    w_grid: tuple[float, ...] = (-0.4, -0.2, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0)                 # w/T; placeholder (E5)
-    tg_grid: tuple[float, ...] = (1.0, 1.26, 1.59, 2.0, 2.52, 3.17, 4.0, 5.04, 6.35, 8.0)  # T_g/T; placeholder (E5)
+    t_grid_step: float = 0.01              # relative step of the T grid; measured (E5): kept (the "coarse" grids
+                                           # below, with this step, had the lowest CPU; results record, section 3.8)
+    q_grid: tuple[float, ...] = (3.0, 4.0, 5.0)                                            # measured (E5), "coarse"
+    w_grid: tuple[float, ...] = (-0.4, 0.0, 0.4, 0.8)                                      # w/T; measured (E5), "coarse"
+    tg_grid: tuple[float, ...] = (1.0, 1.59, 2.52, 4.0, 6.35)                              # T_g/T; measured (E5), "coarse"
     sigma_ln_mark: float = 0.15            # heuristic
     sigma_ln_space: float = 0.25           # heuristic
     outlier_prior: float = 0.05            # epsilon; heuristic
