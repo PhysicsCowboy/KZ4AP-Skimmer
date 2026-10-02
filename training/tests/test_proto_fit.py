@@ -82,7 +82,9 @@ def test_the_fit_follows_a_speed_step_within_its_memory():
     # Regression R1's trigger was a mark between the old clusters; the fit has no "all alike" branch.
     before = durations(keying_intervals(text(3), 20.0))
     after = durations(keying_intervals(text(4, 40), 35.0))
-    assert fitted(before + after[:72]).t_s == pytest.approx(1.2 / 35.0, rel=0.05)
+    # Within three memory lengths (3 x N_mem marks and spaces; 72 at the old N_mem = 24, 144 at 48, E4).
+    n = int(round(3 * ProtoConfig().fit_memory))
+    assert fitted(before + after[:n]).t_s == pytest.approx(1.2 / 35.0, rel=0.05)
 
 
 def test_a_tune_up_carrier_is_an_outlier():

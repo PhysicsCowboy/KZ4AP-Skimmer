@@ -620,6 +620,16 @@ needs about twice as many elements to follow a step) and the channel test
 "CCQ DE K1ABC K EE TT EE TT K1ABC": a spurious C before the first over's CQ, while the second over,
 which N_mem = 24 read as "… U1ABC", is now complete).
 
+**Owner's decision (2026-10-01): keep N_mem = 48** (option A), with these measured costs, which the rule
+does not look at, stated: group A's paired first-word CER +0.1276 (+0.0132 to +0.2610), entirely above
+0; the pooled paired first-word CER +0.0504 (−0.0239 to +0.1234), not distinguishable from 0; group E's
+selected speed off by more than ×1.5 at 0.366 of selection instants against 0.184. The tests, as the owner
+directed: the speed-step test now asks for T within 5% after 3 × N_mem elements ("within three memory
+lengths": 144 at N_mem = 48, where the fit gives 34.58 ms against the true 34.29 ms), and the turnover
+test is a strict expected failure stating the finding (spurious leading C; cause not traced); the
+neighboring strict expected failure (the whole second over) still fails, now only on that leading C,
+and its reason says so. `pytest training -q` (local): 246 passed, 5 xfailed.
+
 ## 4. Final evaluation (Task 15)
 
 ## 5. The comparison for the owner (no acceptance gate), and what stage 1 cannot measure
@@ -652,5 +662,6 @@ which N_mem = 24 read as "… U1ABC", is now complete).
   `test_a_same_speed_turnover_keeps_the_previous_over_s_fit` reads "CCQ DE K1ABC K EE TT EE TT K1ABC"
   (a spurious leading C; the second over is now right), and the fit's speed-step test needs about 144
   elements, not 72, to come within 5% of a 20 → 35 WPM step (37.50 ms after 72, true 34.29 ms). The
-  plan says a channel test that fails after an adopted change is reported, not reverted silently; the
-  adoption stands until the owner decides.
+  plan says a channel test that fails after an adopted change is reported, not reverted silently.
+  Owner's decision (2026-10-01): keep 48; the speed-step test now asks for 3 × N_mem elements, and
+  the turnover test is a strict expected failure stating the finding (cause not traced).
