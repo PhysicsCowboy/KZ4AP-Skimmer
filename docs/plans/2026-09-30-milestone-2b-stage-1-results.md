@@ -1877,7 +1877,9 @@ to `build/suite/full3/groupA-by-snr-held-out.txt`, git-ignored; Matched at 12 WP
 3. In the groups both pools share, at 0.2506 (seed 1, section 3.6 → held-out): A better in both (−0.0283
    → −0.0219), E and F worse in both (+0.2222 → +0.2037, +0.0247 → +0.0319); C, G, H oracle and I better
    on seed 1 (−0.0153, −0.0160, −0.0483, −0.0297) but not measurably different on the held-out seeds
-   (−0.0026, −0.0021, −0.0132, +0.0074, each interval containing 0).
+   (−0.0026, −0.0021, −0.0132, +0.0074, each interval containing 0); D (speed changes) the other way,
+   leaning better on seed 1 with the interval reaching 0 (−0.0492, −0.1214 to +0.0013) and measurably
+   better on the held-out seeds (−0.0350, −0.0770 to −0.0014; `experiments/extras-paired.md`).
 4. The one clear gain is group A at the edge of decoding: at 12 WPM and S₅₀₀ = −2 dB the settled prototype
    fails (CER 0.972; Matched 0.285) and both higher thresholds decode (0.073, 0.045), moving the 12 WPM
    CER-0.10 point 2 dB of S₅₀₀ lower. Above S₅₀₀ = 0 dB they are slightly worse, so the CER-0.05 point
