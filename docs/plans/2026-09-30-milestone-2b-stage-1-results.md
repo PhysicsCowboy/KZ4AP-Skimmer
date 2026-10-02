@@ -1235,8 +1235,11 @@ on 14 workers assumed about 0.3–0.5 s of CPU per channel-second; E5's coarse g
 
 Files (all git-ignored): `build/suite/full3/report-bank-proto.md` (all seeds),
 `report-bank-proto-held-out.md` (seeds 2 and 3), `report-bank-proto-seed-1.md`, each with a `.json` beside
-it; `summary.md` (the suite summary, now with `bank-proto` rows beside `baseline` and `matched`; the
-earlier Windows summary is kept as `summary.windows.md`); decoded files `proto/bank-proto/`, results
+it; `summary.md` (the suite summary, now with `bank-proto` rows beside `baseline` and `matched`; its
+CPU row for `bank-proto` is empty, 0.0 channel-seconds, because the summarizer reads the bench's
+`channel_seconds` and timing, which a `--score-decoded` result leaves at 0.0 and without timing; the prototype's CPU is in the report; the earlier Windows summary
+is kept as `summary.windows.md`); `corrections-bank-proto.txt` (section 4.4) and
+`groupA-by-snr-held-out.txt` (section 5.5), copied from the Linux machine; decoded files `proto/bank-proto/`, results
 `results/bank-proto/`, on the Linux machine.
 
 ### 4.2 Checks before reading the numbers
@@ -1249,13 +1252,15 @@ earlier Windows summary is kept as `summary.windows.md`); decoded files `proto/b
 - **Counts.** All 140 (group, tag) rows of `summary.json`, in 24 groups (the six oracle copies and the
   detector-path groups included), have `bank-proto` rows with the same number of signals as `matched` and
   `baseline`.
-- **Group A falls with S₅₀₀.** Prototype CER at 12 / 25 / 40 WPM: 1.000 / 1.000 / 1.000 at −6 dB, 0.062 /
-  0.096 / 0.273 at 0 dB, 0.012 / 0.002 / 0.008 at +6 dB, and at most 0.010 from +6 to +20 dB (small
-  non-monotone steps there, at most 0.008).
+- **Group A falls with S₅₀₀.** Prototype CER at 12 / 25 / 40 WPM: 1.000 / 1.000 / 1.000 at S₅₀₀ =
+  −6 dB, 0.062 / 0.096 / 0.273 at S₅₀₀ = 0 dB, 0.012 / 0.002 / 0.008 at S₅₀₀ = +6 dB, and at most 0.010
+  above S₅₀₀ = +6 dB up to +20 dB (small non-monotone steps there, at most 0.008).
 - **Not-comparable rows** are exactly the four F drift rows and the five group H oracle QSO-label rows with
   a nonzero offset, so 131 of 140 rows are compared.
 - **Held-out against development seed (group A crossings, prototype).** Every held-out crossing lies within
-  seed 1's interval or the intervals overlap; the largest difference is 0.2 dB of S₅₀₀:
+  seed 1's interval. The largest difference is 1.5 dB of S₅₀₀ (12 WPM, CER 0.05: seed 1 −0.003 dB,
+  seeds 2–3 1.507 dB, where both intervals are about 2.5 dB of S₅₀₀ wide); the other five differences are
+  at most 0.2 dB of S₅₀₀:
 
 | speed | CER | seed 1, S₅₀₀ dB | seeds 2–3, S₅₀₀ dB |
 |---|---|---|---|
@@ -1272,11 +1277,10 @@ earlier Windows summary is kept as `summary.windows.md`); decoded files `proto/b
 
 ### 4.3 Every group: the prototype against Matched and Envelope
 
-The full per-tag tables (CER of all three decoders with intervals, the paired differences, first-word
-CER) are in the report files of section 4.1; this section counts them. "Better" or "worse" means the
-paired bootstrap 95% interval of the per-signal CER difference (prototype minus reference) excludes 0, a
-convention with no correction for the number of regimes (of 131 truly unchanged regimes about 6.6 would
-read better or worse by chance).
+"Better" or "worse" means the paired bootstrap 95% interval of the per-signal CER difference (prototype
+minus reference) excludes 0, a convention with no correction for the number of regimes (of 131 truly
+unchanged regimes about 6.6 would read better or worse by chance). Every group's table is in section
+4.3.1; this subsection first counts them.
 
 Regimes (group and tag) better / worse / unchanged, all three seeds:
 
@@ -1299,8 +1303,8 @@ Held-out seeds 2 and 3 alone: against Matched 48 / 23 / 59 (and 1 row without an
 Envelope 75 / 15 / 40 (and 1). The same pattern by group: group E holds 8 of the 23 "worse" rows against
 Matched.
 
-Pooled over signals (file `build/suite/full3/experiments/overall-bank-proto.txt` on the Linux machine,
-helper `experiments/scripts/overall.py`, both git-ignored; not-comparable rows left out; paired =
+Pooled over signals (file `build/suite/full3/experiments/overall-bank-proto.txt`, helper
+`experiments/scripts/overall.py`, both git-ignored; not-comparable rows left out; paired =
 prototype minus reference, mean over signals, bootstrap 95% interval over signals). These pools are
 dominated by groups A and B (576 + 990 of the 2 817 oracle signals) and include every S₅₀₀ down to
 −10 dB, so they are a summary, not a regime:
@@ -1310,12 +1314,290 @@ dominated by groups A and B (576 + 990 of the 2 817 oracle signals) and include 
 | oracle channels, all seeds | 2 817 | 0.3679 / 0.4579 / 0.6374 | −0.0776 (−0.0880 to −0.0673) | −0.2594 (−0.2831 to −0.2384) |
 | detector path, all seeds | 660 | 0.4481 / 0.4667 / 0.4819 | +0.0086 (−0.0075 to +0.0259) | −0.0628 (−0.0880 to −0.0388) |
 | everything, all seeds | 3 477 | 0.3816 / 0.4595 / 0.6107 | −0.0613 (−0.0696 to −0.0526) | −0.2220 (−0.2410 to −0.2038) |
+| oracle channels, held-out seeds 2–3 | 1 878 | 0.3681 / 0.4604 / 0.6411 | −0.0810 (−0.0926 to −0.0688) | −0.2641 (−0.2910 to −0.2375) |
+| detector path, held-out seeds 2–3 | 440 | 0.4384 / 0.4577 / 0.4858 | +0.0023 (−0.0132 to +0.0191) | −0.0695 (−0.0949 to −0.0435) |
 | everything, held-out seeds 2–3 | 2 318 | 0.3802 / 0.4599 / 0.6145 | −0.0652 (−0.0757 to −0.0546) | −0.2272 (−0.2500 to −0.2051) |
 | everything, seed 1 | 1 159 | 0.3846 / 0.4585 / 0.6029 | −0.0534 (−0.0705 to −0.0357) | −0.2117 (−0.2445 to −0.1811) |
 
 Paired first-word CER (same pools): against Matched −0.0186 (−0.0612 to +0.0224) for everything, all
 seeds, and −0.0451 (−0.0860 to −0.0041) on the held-out seeds; against Envelope −0.6138 (−0.7728 to
 −0.4719), all seeds.
+
+#### 4.3.1 Every group's table (all three seeds)
+
+Generated from `build/suite/full3/summary.json` and `report-bank-proto.json` by the git-ignored helper
+`experiments/scripts/group_tables.py`; the same numbers as `report-bank-proto.md`. CER: pooled (summed
+edits over summed symbols) with its bootstrap 95% interval over signals. Paired columns: prototype minus
+the reference, the mean over signals of the per-signal CER difference with its paired bootstrap 95%
+interval; **B** = better, **W** = worse (interval excludes 0), blank = unchanged. First-word CER: P =
+prototype, M = Matched, E = Envelope (it can exceed 1). Rows marked * are not comparable (F drift: the
+prototype's mix follows the labeled drift; H oracle QSO labels with an offset: the answering station is
+off the prototype's mix). Detector-path groups (band, crowded, first sample, pauses, strong, tune-up and
+group H without ", oracle"): the prototype decodes Matched's detector channels, so against Matched the
+same tracks; Envelope's detector opens its own tracks, so against Envelope the same labels only. Signals
+per row are the same for all three decoders. Group E tags give the neighbor's offset (df) and level in
+dB relative to the wanted station's key-down power; group A and strong tags give S₅₀₀.
+
+
+**A sensitivity**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| 12 wpm | 192 | 0.318 (0.259–0.383) | 0.290 (0.233–0.353) | 0.862 (0.674–1.037) | +0.029 (+0.006 to +0.056) W | −0.547 (−0.696 to −0.397) B | 0.51 / 1.18 / 2.67 |
+| 25 wpm | 192 | 0.296 (0.242–0.356) | 0.306 (0.245–0.368) | 0.543 (0.446–0.650) | −0.009 (−0.018 to −0.002) B | −0.248 (−0.311 to −0.183) B | 0.46 / 0.42 / 1.30 |
+| 40 wpm | 192 | 0.328 (0.267–0.385) | 0.358 (0.297–0.422) | 0.445 (0.381–0.512) | −0.030 (−0.047 to −0.016) B | −0.117 (−0.152 to −0.086) B | 0.54 / 0.69 / 1.00 |
+
+**B fading**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| VE3NEA mix | 90 | 0.575 (0.524–0.625) | 0.733 (0.703–0.766) | 0.927 (0.811–1.054) | −0.147 (−0.182 to −0.114) B | −0.355 (−0.460 to −0.256) B | 0.85 / 0.70 / 1.63 |
+| hand 24 wpm fD 0.1 Hz | 90 | 0.472 (0.421–0.522) | 0.610 (0.573–0.652) | 0.697 (0.595–0.830) | −0.138 (−0.170 to −0.105) B | −0.228 (−0.338 to −0.144) B | 0.92 / 0.55 / 1.30 |
+| hand 24 wpm fD 0.3 Hz | 90 | 0.547 (0.511–0.586) | 0.654 (0.624–0.685) | 0.758 (0.657–0.884) | −0.106 (−0.129 to −0.085) B | −0.210 (−0.309 to −0.129) B | 0.79 / 0.59 / 1.87 |
+| hand 24 wpm fD 1 Hz | 90 | 0.688 (0.663–0.715) | 0.737 (0.717–0.758) | 0.937 (0.796–1.093) | −0.049 (−0.065 to −0.033) B | −0.250 (−0.393 to −0.131) B | 1.05 / 0.69 / 1.79 |
+| hand 24 wpm fD 3 Hz | 90 | 0.847 (0.832–0.863) | 0.788 (0.768–0.811) | 1.147 (0.974–1.354) | +0.060 (+0.040 to +0.080) W | −0.304 (−0.479 to −0.139) B | 1.27 / 0.85 / 2.47 |
+| paddle 12 wpm fD 0.1 Hz | 90 | 0.386 (0.320–0.454) | 0.513 (0.466–0.563) | 0.852 (0.558–1.220) | −0.128 (−0.174 to −0.082) B | −0.468 (−0.848 to −0.187) B | 0.75 / 1.02 / 1.69 |
+| paddle 24 wpm fD 0.1 Hz | 90 | 0.314 (0.253–0.377) | 0.508 (0.448–0.568) | 0.615 (0.478–0.765) | −0.194 (−0.231 to −0.155) B | −0.301 (−0.410 to −0.200) B | 0.51 / 0.41 / 0.95 |
+| paddle 24 wpm fD 0.3 Hz | 90 | 0.408 (0.358–0.460) | 0.594 (0.551–0.637) | 0.782 (0.647–0.940) | −0.187 (−0.219 to −0.156) B | −0.373 (−0.497 to −0.265) B | 0.64 / 0.54 / 1.54 |
+| paddle 24 wpm fD 1 Hz | 90 | 0.596 (0.560–0.634) | 0.752 (0.728–0.780) | 1.013 (0.860–1.181) | −0.156 (−0.183 to −0.129) B | −0.419 (−0.587 to −0.282) B | 0.84 / 0.84 / 3.02 |
+| paddle 24 wpm fD 3 Hz | 90 | 0.748 (0.729–0.770) | 0.812 (0.788–0.839) | 1.126 (0.966–1.312) | −0.064 (−0.084 to −0.041) B | −0.377 (−0.523 to −0.237) B | 1.07 / 0.79 / 2.23 |
+| paddle 40 wpm fD 0.1 Hz | 90 | 0.337 (0.276–0.402) | 0.591 (0.531–0.647) | 0.766 (0.696–0.842) | −0.253 (−0.298 to −0.208) B | −0.428 (−0.489 to −0.365) B | 0.48 / 0.71 / 0.87 |
+
+**C fists**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| bug imbalance +0.0 | 27 | 0.043 (0.035–0.051) | 0.622 (0.514–0.717) | 0.385 (0.286–0.513) | −0.582 (−0.687 to −0.467) B | −0.343 (−0.467 to −0.246) B | 0.28 / 0.78 / 0.17 |
+| bug imbalance +0.1 | 27 | 0.043 (0.033–0.055) | 0.753 (0.664–0.835) | 0.396 (0.301–0.516) | −0.702 (−0.789 to −0.597) B | −0.353 (−0.495 to −0.257) B | 0.21 / 0.91 / 0.21 |
+| bug imbalance -0.1 | 27 | 0.065 (0.051–0.079) | 0.431 (0.334–0.543) | 0.372 (0.269–0.487) | −0.380 (−0.484 to −0.284) B | −0.312 (−0.426 to −0.222) B | 0.48 / 0.56 / 0.45 |
+| computer imbalance +0.0 | 27 | 0.005 (0.002–0.010) | 0.002 (0.001–0.003) | 0.106 (0.023–0.222) | +0.004 (+0.000 to +0.008) W | −0.095 (−0.199 to −0.020) B | 0.21 / 0.12 / 0.04 |
+| computer imbalance +0.1 | 27 | 0.006 (0.002–0.010) | 0.002 (0.000–0.003) | 0.139 (0.030–0.255) | +0.004 (+0.001 to +0.009) W | −0.130 (−0.266 to −0.023) B | 0.42 / 0.12 / 0.02 |
+| computer imbalance -0.1 | 27 | 0.009 (0.005–0.013) | 0.005 (0.001–0.013) | 0.288 (0.113–0.507) | +0.004 (−0.002 to +0.009) | −0.282 (−0.518 to −0.103) B | 0.41 / 0.11 / 0.06 |
+| hand imbalance +0.0 | 27 | 0.196 (0.178–0.220) | 0.300 (0.245–0.361) | 0.302 (0.261–0.351) | −0.104 (−0.176 to −0.048) B | −0.106 (−0.152 to −0.062) B | 0.67 / 0.31 / 0.25 |
+| hand imbalance +0.1 | 27 | 0.197 (0.184–0.213) | 0.510 (0.420–0.611) | 0.351 (0.301–0.406) | −0.310 (−0.396 to −0.221) B | −0.153 (−0.206 to −0.106) B | 0.43 / 0.69 / 0.54 |
+| hand imbalance -0.1 | 27 | 0.210 (0.188–0.233) | 0.288 (0.247–0.337) | 0.324 (0.282–0.371) | −0.078 (−0.133 to −0.030) B | −0.114 (−0.155 to −0.075) B | 0.70 / 0.28 / 0.35 |
+| machine imbalance +0.0 | 27 | 0.003 (0.002–0.005) | 0.001 (0.001–0.002) | 0.017 (0.008–0.028) | +0.002 (+0.000 to +0.004) W | −0.015 (−0.026 to −0.006) B | 0.23 / 0.13 / 0.03 |
+| machine imbalance +0.1 | 27 | 0.002 (0.001–0.005) | 0.002 (0.000–0.003) | 0.022 (0.008–0.041) | +0.001 (−0.001 to +0.003) | −0.021 (−0.042 to −0.007) B | 0.17 / 0.19 / 0.00 |
+| machine imbalance -0.1 | 27 | 0.005 (0.002–0.009) | 0.001 (0.001–0.002) | 0.046 (0.019–0.081) | +0.004 (+0.001 to +0.008) W | −0.041 (−0.072 to −0.016) B | 0.31 / 0.12 / 0.00 |
+| paddle imbalance +0.0 | 27 | 0.039 (0.028–0.055) | 0.044 (0.039–0.050) | 0.106 (0.043–0.220) | −0.006 (−0.018 to +0.008) | −0.067 (−0.169 to −0.003) B | 0.24 / 0.11 / 0.06 |
+| paddle imbalance +0.1 | 27 | 0.032 (0.026–0.038) | 0.116 (0.077–0.191) | 0.106 (0.048–0.214) | −0.086 (−0.156 to −0.045) B | −0.071 (−0.172 to −0.017) B | 0.22 / 0.21 / 0.03 |
+| paddle imbalance -0.1 | 27 | 0.045 (0.036–0.055) | 0.032 (0.026–0.038) | 0.089 (0.056–0.128) | +0.014 (+0.003 to +0.024) W | −0.046 (−0.084 to −0.012) B | 0.38 / 0.23 / 0.06 |
+
+**D speed**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| 10 wpm | 6 | 0.240 (0.167–0.315) | 0.112 (0.074–0.177) | 0.052 (0.045–0.063) | +0.130 (+0.037 to +0.222) W | +0.191 (+0.125 to +0.264) W | 0.67 / 2.08 / 1.00 |
+| 60 wpm | 6 | 0.010 (0.002–0.019) | 0.005 (0.003–0.007) | 0.133 (0.005–0.367) | +0.005 (−0.004 to +0.014) | −0.134 (−0.368 to +0.005) | 0.33 / 0.67 / 0.83 |
+| ramp 15->30 | 6 | 0.000 (0.000–0.000) | 0.000 (0.000–0.000) | 0.202 (0.057–0.433) | +0.000 (+0.000 to +0.000) | −0.192 (−0.411 to −0.059) B | 0.00 / 0.00 / 0.00 |
+| ramp 30->15 | 6 | 0.010 (0.002–0.020) | 0.000 (0.000–0.000) | 0.000 (0.000–0.000) | +0.010 (+0.003 to +0.021) W | +0.010 (+0.003 to +0.021) W | 0.22 / 0.00 / 0.00 |
+| step 20->35 | 6 | 0.038 (0.029–0.048) | 0.394 (0.222–0.499) | 0.525 (0.257–0.845) | −0.368 (−0.461 to −0.203) B | −0.491 (−0.796 to −0.210) B | 0.00 / 0.92 / 0.00 |
+| step 35->20 | 6 | 0.046 (0.035–0.057) | 0.129 (0.097–0.162) | 0.114 (0.061–0.160) | −0.084 (−0.106 to −0.059) B | −0.068 (−0.123 to −0.015) B | 0.33 / 0.42 / 0.25 |
+
+**E interference**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| df 100 Hz, +0 dB re wanted key-down power | 3 | 0.009 (0.008–0.010) | 0.006 (0.000–0.019) | 0.820 (0.808–0.837) | +0.003 (−0.010 to +0.010) | −0.811 (−0.827 to −0.798) B | 0.00 / 0.33 / 1.00 |
+| df 100 Hz, +10 dB re wanted key-down power | 3 | 0.587 (0.550–0.608) | 0.388 (0.031–0.972) | 0.943 (0.775–1.113) | +0.211 (−0.367 to +0.577) | −0.363 (−0.505 to −0.225) B | 2.00 / 0.73 / 0.82 |
+| df 100 Hz, +20 dB re wanted key-down power | 3 | 2.153 (1.672–2.856) | 0.863 (0.763–0.974) | 1.041 (0.940–1.155) | +1.332 (+0.698 to +2.093) W | +1.141 (+0.733 to +1.701) W | 2.10 / 1.00 / 1.90 |
+| df 100 Hz, -10 dB re wanted key-down power | 3 | 0.003 (0.000–0.009) | 0.000 (0.000–0.000) | 0.036 (0.000–0.056) | +0.003 (+0.000 to +0.009) | −0.034 (−0.056 to +0.000) | 0.17 / 0.00 / 0.00 |
+| df 150 Hz, +0 dB re wanted key-down power | 3 | 0.000 (0.000–0.000) | 0.000 (0.000–0.000) | 0.145 (0.027–0.331) | +0.000 (+0.000 to +0.000) | −0.137 (−0.331 to −0.027) B | 0.00 / 0.00 / 0.00 |
+| df 150 Hz, +10 dB re wanted key-down power | 3 | 0.309 (0.264–0.364) | 0.000 (0.000–0.000) | 0.824 (0.818–0.829) | +0.308 (+0.264 to +0.364) W | −0.516 (−0.560 to −0.455) B | 1.67 / 0.00 / 1.00 |
+| df 150 Hz, +20 dB re wanted key-down power | 3 | 1.919 (1.199–2.888) | 0.076 (0.040–0.129) | 0.779 (0.491–1.008) | +1.912 (+1.159 to +2.759) W | +1.223 (+0.391 to +2.397) W | 6.11 / 1.11 / 2.33 |
+| df 150 Hz, -10 dB re wanted key-down power | 3 | 0.000 (0.000–0.000) | 0.000 (0.000–0.000) | 0.011 (0.000–0.029) | +0.000 (+0.000 to +0.000) | −0.010 (−0.029 to +0.000) | 0.00 / 0.00 / 0.00 |
+| df 20 Hz, +0 dB re wanted key-down power | 3 | 0.587 (0.377–0.748) | 0.786 (0.455–0.978) | 0.793 (0.654–1.101) | −0.145 (−0.447 to +0.242) | −0.222 (−0.404 to +0.014) | 2.50 / 1.50 / 0.67 |
+| df 20 Hz, +10 dB re wanted key-down power | 3 | 0.968 (0.888–1.016) | 0.765 (0.727–0.803) | 0.544 (0.480–0.640) | +0.209 (+0.056 to +0.288) W | +0.430 (+0.376 to +0.505) W | 1.17 / 1.00 / 6.33 |
+| df 20 Hz, +20 dB re wanted key-down power | 3 | 0.922 (0.788–1.131) | 0.813 (0.752–0.899) | 0.922 (0.822–1.131) | +0.128 (−0.013 to +0.232) | +0.000 (+0.000 to +0.000) | 2.67 / 0.67 / 2.67 |
+| df 20 Hz, -10 dB re wanted key-down power | 3 | 0.000 (0.000–0.000) | 0.003 (0.000–0.009) | 0.044 (0.000–0.081) | −0.003 (−0.009 to +0.000) | −0.046 (−0.081 to +0.000) | 0.00 / 0.17 / 0.00 |
+| df 50 Hz, +0 dB re wanted key-down power | 3 | 0.090 (0.070–0.118) | 0.090 (0.023–0.235) | 0.857 (0.807–0.930) | −0.005 (−0.118 to +0.056) | −0.762 (−0.846 to −0.689) B | 2.17 / 1.00 / 1.83 |
+| df 50 Hz, +10 dB re wanted key-down power | 3 | 1.331 (1.152–1.633) | 0.817 (0.728–0.872) | 0.787 (0.500–1.009) | +0.517 (+0.365 to +0.761) W | +0.558 (+0.320 to +0.731) W | 2.50 / 1.00 / 1.00 |
+| df 50 Hz, +20 dB re wanted key-down power | 3 | 1.321 (0.874–1.579) | 1.031 (0.811–1.404) | 0.855 (0.640–1.040) | +0.305 (+0.063 to +0.677) W | +0.465 (+0.234 to +0.675) W | 0.83 / 0.67 / 1.00 |
+| df 50 Hz, -10 dB re wanted key-down power | 3 | 0.000 (0.000–0.000) | 0.000 (0.000–0.000) | 0.005 (0.000–0.014) | +0.000 (+0.000 to +0.000) | −0.005 (−0.014 to +0.000) | 0.00 / 0.00 / 0.00 |
+
+**F tuning**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| drift 0.2 Hz/s * | 6 | 0.012 (0.003–0.025) | 0.065 (0.006–0.166) | 0.105 (0.038–0.168) | −0.046 (−0.145 to +0.012) | −0.086 (−0.156 to −0.023) B | 0.08 / 0.50 / 0.00 |
+| drift 0.5 Hz/s * | 6 | 0.035 (0.007–0.069) | 0.022 (0.009–0.036) | 0.073 (0.006–0.173) | +0.016 (−0.019 to +0.058) | −0.053 (−0.151 to +0.025) | 0.67 / 0.40 / 0.13 |
+| drift 1 Hz/s * | 6 | 0.018 (0.000–0.059) | 0.232 (0.190–0.276) | 0.080 (0.014–0.171) | −0.205 (−0.268 to −0.141) B | −0.067 (−0.150 to −0.014) B | 0.33 / 0.40 / 0.27 |
+| drift 2 Hz/s * | 6 | 0.039 (0.011–0.069) | 0.532 (0.439–0.618) | 0.113 (0.046–0.186) | −0.486 (−0.588 to −0.381) B | −0.076 (−0.165 to +0.019) | 0.83 / 0.42 / 0.00 |
+| offset 0 Hz 20 wpm | 6 | 0.033 (0.008–0.064) | 0.049 (0.002–0.142) | 0.416 (0.136–0.716) | −0.020 (−0.111 to +0.046) | −0.396 (−0.698 to −0.117) B | 0.56 / 0.25 / 0.62 |
+| offset 0 Hz 25 wpm | 6 | 0.079 (0.028–0.124) | 0.194 (0.012–0.425) | 0.412 (0.189–0.623) | −0.095 (−0.290 to +0.029) | −0.323 (−0.520 to −0.133) B | 0.67 / 0.58 / 0.50 |
+| offset 11.7 Hz 20 wpm | 6 | 0.082 (0.019–0.148) | 0.043 (0.012–0.079) | 0.404 (0.141–0.647) | +0.034 (−0.017 to +0.084) | −0.304 (−0.540 to −0.098) B | 0.27 / 0.93 / 0.33 |
+| offset 11.7 Hz 25 wpm | 6 | 0.068 (0.029–0.111) | 0.113 (0.023–0.233) | 0.420 (0.161–0.670) | −0.035 (−0.137 to +0.043) | −0.334 (−0.569 to −0.122) B | 0.50 / 0.45 / 0.30 |
+| offset 2.9 Hz 20 wpm | 6 | 0.101 (0.045–0.160) | 0.047 (0.003–0.129) | 0.486 (0.143–0.929) | +0.048 (−0.047 to +0.134) | −0.425 (−0.811 to −0.081) B | 0.68 / 0.79 / 0.58 |
+| offset 2.9 Hz 25 wpm | 6 | 0.066 (0.022–0.125) | 0.208 (0.039–0.451) | 0.394 (0.131–0.692) | −0.150 (−0.389 to +0.004) | −0.337 (−0.609 to −0.102) B | 0.53 / 0.47 / 0.53 |
+| offset 5.9 Hz 20 wpm | 6 | 0.070 (0.009–0.147) | 0.028 (0.011–0.045) | 0.393 (0.128–0.639) | +0.045 (−0.004 to +0.120) | −0.310 (−0.539 to −0.098) B | 0.90 / 0.33 / 0.48 |
+| offset 5.9 Hz 25 wpm | 6 | 0.066 (0.023–0.103) | 0.091 (0.017–0.169) | 0.386 (0.148–0.598) | −0.023 (−0.074 to +0.025) | −0.299 (−0.491 to −0.100) B | 0.38 / 1.19 / 0.31 |
+| offset 8.8 Hz 20 wpm | 6 | 0.045 (0.004–0.085) | 0.010 (0.004–0.016) | 0.492 (0.204–0.789) | +0.033 (−0.002 to +0.070) | −0.454 (−0.698 to −0.175) B | 0.12 / 0.18 / 0.65 |
+| offset 8.8 Hz 25 wpm | 6 | 0.064 (0.024–0.101) | 0.178 (0.016–0.347) | 0.405 (0.148–0.631) | −0.099 (−0.267 to +0.032) | −0.321 (−0.525 to −0.109) B | 0.27 / 0.87 / 0.40 |
+
+**G ragchew**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| ragchew 25 wpm | 36 | 0.048 (0.034–0.065) | 0.081 (0.051–0.116) | 0.196 (0.111–0.284) | −0.034 (−0.054 to −0.017) B | −0.151 (−0.230 to −0.076) B | 0.07 / 0.17 / 0.24 |
+
+**H two-station QSO**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| ambiguous, drawn offset | 3 | 0.455 (0.404–0.490) | 0.573 (0.456–0.643) | 0.130 (0.087–0.164) | −0.117 (−0.153 to −0.051) B | +0.325 (+0.303 to +0.354) W | 0.59 / 0.82 / 0.49 |
+| ambiguous, offset 50 Hz | 6 | 0.259 (0.057–0.521) | 0.215 (0.070–0.386) | 0.062 (0.026–0.101) | +0.047 (−0.066 to +0.214) | +0.198 (−0.022 to +0.477) | 0.45 / 0.39 / 0.11 |
+| same-track, drawn offset | 27 | 0.085 (0.063–0.105) | 0.220 (0.150–0.296) | 0.116 (0.087–0.146) | −0.135 (−0.208 to −0.078) B | −0.031 (−0.046 to −0.016) B | 0.22 / 0.28 / 0.25 |
+| same-track, offset 0 Hz | 6 | 0.092 (0.034–0.143) | 0.271 (0.092–0.469) | 0.150 (0.074–0.216) | −0.182 (−0.323 to −0.049) B | −0.057 (−0.107 to −0.012) B | 0.20 / 0.33 / 0.26 |
+| same-track, offset 10 Hz | 6 | 0.062 (0.026–0.096) | 0.146 (0.045–0.253) | 0.103 (0.036–0.176) | −0.084 (−0.152 to −0.020) B | −0.041 (−0.077 to −0.010) B | 0.10 / 0.22 / 0.25 |
+| same-track, offset 25 Hz | 6 | 0.073 (0.038–0.112) | 0.183 (0.043–0.363) | 0.107 (0.035–0.216) | −0.109 (−0.263 to +0.004) | −0.034 (−0.108 to +0.009) | 0.32 / 0.27 / 0.38 |
+| separate-track, drawn offset | 6 | 0.789 (0.781–0.796) | 0.790 (0.782–0.797) | 0.723 (0.702–0.746) | −0.000 (−0.003 to +0.001) | +0.067 (+0.052 to +0.080) W | 0.77 / 0.81 / 0.74 |
+| separate-track, offset 100 Hz | 6 | 0.664 (0.537–0.776) | 0.718 (0.548–0.848) | 0.428 (0.169–0.679) | −0.054 (−0.244 to +0.094) | +0.240 (+0.090 to +0.404) W | 0.74 / 0.78 / 0.54 |
+| separate-track, offset 200 Hz | 6 | 0.799 (0.787–0.809) | 0.806 (0.794–0.816) | 0.786 (0.770–0.799) | −0.008 (−0.020 to +0.001) | +0.013 (+0.005 to +0.022) W | 0.86 / 0.91 / 0.89 |
+
+**H two-station QSO (per station)**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| ambiguous, drawn offset | 6 | 0.482 (0.193–0.777) | 1.073 (0.753–1.395) | 0.992 (0.900–1.089) | −0.590 (−0.902 to −0.177) B | −0.504 (−0.820 to −0.121) B | 0.87 / 2.80 / 1.01 |
+| ambiguous, offset 50 Hz | 12 | 1.108 (0.917–1.356) | 0.977 (0.847–1.115) | 0.947 (0.878–1.007) | +0.130 (−0.060 to +0.366) | +0.159 (−0.060 to +0.387) | 1.86 / 1.87 / 1.58 |
+| same-track, drawn offset | 54 | 0.955 (0.936–0.973) | 0.903 (0.869–0.936) | 0.973 (0.951–0.995) | +0.049 (+0.023 to +0.079) W | −0.016 (−0.030 to −0.004) B | 1.33 / 1.06 / 1.09 |
+| same-track, offset 0 Hz | 12 | 0.939 (0.901–0.979) | 0.852 (0.758–0.938) | 0.971 (0.902–1.036) | +0.081 (+0.011 to +0.169) W | −0.032 (−0.096 to +0.027) | 1.17 / 0.77 / 0.76 |
+| same-track, offset 10 Hz | 12 | 0.946 (0.912–0.979) | 0.907 (0.828–0.973) | 0.960 (0.927–0.993) | +0.038 (+0.002 to +0.089) W | −0.013 (−0.033 to +0.001) | 1.66 / 1.64 / 1.73 |
+| same-track, offset 25 Hz | 12 | 0.930 (0.894–0.968) | 0.878 (0.780–0.961) | 0.979 (0.912–1.071) | +0.049 (−0.003 to +0.119) | −0.046 (−0.133 to +0.002) | 1.16 / 1.43 / 1.40 |
+| separate-track, drawn offset | 12 | 0.611 (0.602–0.620) | 0.618 (0.606–0.629) | 0.564 (0.548–0.582) | −0.007 (−0.014 to +0.000) | +0.049 (+0.032 to +0.065) W | 0.73 / 0.81 / 0.71 |
+| separate-track, offset 100 Hz | 12 | 0.566 (0.429–0.690) | 0.635 (0.581–0.693) | 0.673 (0.593–0.778) | −0.067 (−0.230 to +0.089) | −0.100 (−0.331 to +0.063) | 0.65 / 0.75 / 1.37 |
+| separate-track, offset 200 Hz | 12 | 0.626 (0.614–0.636) | 0.646 (0.627–0.663) | 0.613 (0.603–0.623) | −0.021 (−0.038 to −0.005) B | +0.013 (−0.001 to +0.026) | 0.80 / 0.75 / 0.73 |
+
+**H two-station QSO, oracle**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| ambiguous, offset 50 Hz * | 6 | 0.513 (0.420–0.645) | 0.479 (0.413–0.562) | 0.357 (0.029–0.973) | +0.035 (−0.068 to +0.191) | +0.156 (−0.532 to +0.594) | 0.73 / 0.67 / 0.08 |
+| same-track, offset 0 Hz | 6 | 0.089 (0.040–0.148) | 0.262 (0.088–0.459) | 0.322 (0.087–0.668) | −0.174 (−0.307 to −0.047) B | −0.230 (−0.600 to −0.017) B | 0.17 / 0.28 / 0.22 |
+| same-track, offset 10 Hz * | 6 | 0.058 (0.022–0.092) | 0.142 (0.046–0.238) | 0.101 (0.036–0.176) | −0.084 (−0.156 to −0.022) B | −0.044 (−0.085 to −0.013) B | 0.05 / 0.17 / 0.22 |
+| same-track, offset 25 Hz * | 6 | 0.460 (0.374–0.529) | 0.490 (0.418–0.557) | 0.106 (0.033–0.211) | −0.031 (−0.162 to +0.050) | +0.353 (+0.224 to +0.477) W | 0.86 / 0.51 / 0.33 |
+| separate-track, offset 100 Hz * | 6 | 0.493 (0.452–0.545) | 0.657 (0.539–0.799) | 0.336 (0.072–0.712) | −0.164 (−0.288 to −0.062) B | +0.157 (−0.249 to +0.414) | 0.57 / 0.70 / 0.31 |
+| separate-track, offset 200 Hz * | 6 | 0.481 (0.474–0.486) | 0.503 (0.479–0.532) | 0.468 (0.441–0.491) | −0.022 (−0.047 to −0.002) B | +0.014 (−0.019 to +0.042) | 0.55 / 0.59 / 0.72 |
+
+**H two-station QSO, oracle (per station)**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| ambiguous, offset 50 Hz | 12 | 0.850 (0.578–1.183) | 1.001 (0.746–1.219) | 1.490 (1.011–2.189) | −0.150 (−0.484 to +0.227) | −0.631 (−1.290 to −0.087) B | 1.04 / 2.80 / 1.89 |
+| same-track, offset 0 Hz | 12 | 1.039 (0.945–1.135) | 0.860 (0.747–0.981) | 1.461 (1.028–1.996) | +0.179 (+0.080 to +0.291) W | −0.429 (−0.992 to −0.019) B | 2.41 / 1.37 / 1.46 |
+| same-track, offset 10 Hz | 12 | 1.032 (0.953–1.116) | 0.965 (0.851–1.063) | 1.055 (0.971–1.151) | +0.066 (+0.012 to +0.128) W | −0.024 (−0.067 to +0.008) | 1.49 / 1.73 / 2.56 |
+| same-track, offset 25 Hz | 12 | 1.132 (0.809–1.426) | 1.029 (0.839–1.206) | 1.115 (0.985–1.258) | +0.118 (−0.232 to +0.407) | +0.034 (−0.274 to +0.334) | 1.53 / 2.23 / 2.29 |
+| separate-track, offset 100 Hz | 12 | 0.298 (0.136–0.487) | 0.634 (0.455–0.822) | 1.449 (1.023–2.046) | −0.345 (−0.564 to −0.118) B | −1.164 (−1.832 to −0.644) B | 1.68 / 1.39 / 2.06 |
+| separate-track, offset 200 Hz | 12 | 0.036 (0.020–0.059) | 0.081 (0.042–0.125) | 0.277 (0.178–0.384) | −0.046 (−0.077 to −0.019) B | −0.244 (−0.340 to −0.150) B | 0.03 / 0.15 / 1.22 |
+
+**I Farnsworth**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| farnsworth 18/10 wpm machine | 18 | 0.017 (0.007–0.029) | 0.563 (0.518–0.610) | 0.510 (0.481–0.539) | −0.546 (−0.588 to −0.500) B | −0.494 (−0.524 to −0.461) B | 0.10 / 0.95 / 0.71 |
+| farnsworth 18/10 wpm paddle | 18 | 0.060 (0.044–0.077) | 0.534 (0.508–0.560) | 0.526 (0.504–0.552) | −0.474 (−0.502 to −0.451) B | −0.466 (−0.498 to −0.441) B | 0.40 / 0.60 / 0.58 |
+| farnsworth 18/5 wpm machine | 18 | 0.274 (0.156–0.398) | 0.756 (0.589–0.962) | 0.545 (0.518–0.573) | −0.493 (−0.748 to −0.262) B | −0.280 (−0.390 to −0.145) B | 0.65 / 0.71 / 0.62 |
+| farnsworth 18/5 wpm paddle | 18 | 0.377 (0.266–0.501) | 0.644 (0.554–0.755) | 0.541 (0.495–0.587) | −0.274 (−0.413 to −0.110) B | −0.169 (−0.297 to −0.023) B | 0.75 / 0.71 / 0.71 |
+| farnsworth 25/13 wpm machine | 18 | 0.015 (0.009–0.022) | 0.584 (0.536–0.637) | 0.597 (0.528–0.717) | −0.568 (−0.619 to −0.521) B | −0.579 (−0.691 to −0.513) B | 0.33 / 0.74 / 0.68 |
+| farnsworth 25/13 wpm paddle | 18 | 0.066 (0.034–0.109) | 0.594 (0.538–0.662) | 0.544 (0.513–0.581) | −0.530 (−0.591 to −0.482) B | −0.478 (−0.508 to −0.452) B | 0.29 / 0.85 / 0.74 |
+| farnsworth 25/18 wpm machine | 18 | 0.016 (0.009–0.023) | 0.499 (0.483–0.515) | 0.570 (0.509–0.665) | −0.484 (−0.501 to −0.463) B | −0.554 (−0.649 to −0.495) B | 0.44 / 0.72 / 0.67 |
+| farnsworth 25/18 wpm paddle | 18 | 0.040 (0.033–0.048) | 0.432 (0.418–0.448) | 0.659 (0.467–0.890) | −0.393 (−0.412 to −0.374) B | −0.627 (−0.880 to −0.421) B | 0.27 / 0.67 / 0.68 |
+
+**band**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| band | 60 | 0.045 (0.037–0.054) | 0.051 (0.045–0.058) | 0.102 (0.041–0.177) | −0.005 (−0.014 to +0.003) | −0.036 (−0.087 to +0.004) | 0.75 / 0.84 / 0.81 |
+
+**band, oracle**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| band | 60 | 0.006 (0.003–0.009) | 0.010 (0.007–0.014) | 0.010 (0.006–0.016) | −0.007 (−0.017 to +0.002) | −0.011 (−0.024 to −0.000) B | 0.07 / 0.31 / 0.23 |
+
+**crowded**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| spacing 0 Hz | 75 | 0.294 (0.204–0.388) | 0.253 (0.167–0.347) | 0.518 (0.409–0.620) | +0.035 (−0.019 to +0.080) | −0.212 (−0.289 to −0.135) B | 1.01 / 1.03 / 1.37 |
+| spacing 100 Hz | 75 | 0.102 (0.047–0.180) | 0.048 (0.037–0.068) | 0.326 (0.223–0.430) | +0.073 (+0.005 to +0.162) W | −0.179 (−0.282 to −0.052) B | 0.92 / 0.86 / 0.88 |
+| spacing 200 Hz | 75 | 0.035 (0.029–0.042) | 0.041 (0.037–0.046) | 0.037 (0.030–0.047) | −0.008 (−0.013 to −0.004) B | −0.001 (−0.014 to +0.011) | 0.69 / 0.81 / 0.75 |
+| spacing 50 Hz | 75 | 0.194 (0.110–0.292) | 0.126 (0.065–0.201) | 0.394 (0.286–0.503) | +0.066 (+0.002 to +0.143) W | −0.213 (−0.314 to −0.125) B | 1.01 / 0.90 / 1.14 |
+
+**crowded, oracle**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| spacing 0 Hz | 75 | 0.308 (0.186–0.454) | 0.163 (0.089–0.247) | 0.499 (0.403–0.595) | +0.192 (+0.088 to +0.318) W | −0.126 (−0.252 to +0.008) | 1.17 / 0.76 / 1.33 |
+| spacing 100 Hz | 75 | 0.104 (0.028–0.205) | 0.027 (0.009–0.061) | 0.286 (0.196–0.393) | +0.106 (+0.022 to +0.235) W | −0.154 (−0.264 to −0.032) B | 0.36 / 0.35 / 0.76 |
+| spacing 200 Hz | 75 | 0.010 (0.005–0.016) | 0.010 (0.006–0.015) | 0.018 (0.009–0.029) | −0.003 (−0.010 to +0.003) | −0.018 (−0.038 to −0.004) B | 0.10 / 0.31 / 0.39 |
+| spacing 50 Hz | 75 | 0.204 (0.114–0.311) | 0.090 (0.033–0.152) | 0.371 (0.271–0.479) | +0.141 (+0.045 to +0.250) W | −0.155 (−0.246 to −0.070) B | 0.87 / 0.47 / 0.59 |
+
+**first sample**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| from the first sample | 12 | 0.105 (0.092–0.121) | 0.138 (0.122–0.157) | 0.119 (0.097–0.147) | −0.034 (−0.042 to −0.025) B | −0.017 (−0.037 to +0.000) | 0.83 / 0.90 / 0.83 |
+
+**first sample, oracle**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| from the first sample | 12 | 0.003 (0.000–0.009) | 0.032 (0.029–0.037) | 0.043 (0.030–0.067) | −0.030 (−0.036 to −0.023) B | −0.045 (−0.067 to −0.025) B | 0.03 / 0.40 / 0.40 |
+
+**pauses**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| pause 10 s | 6 | 0.025 (0.019–0.033) | 0.034 (0.032–0.036) | 0.144 (0.096–0.211) | −0.008 (−0.015 to −0.003) B | −0.123 (−0.190 to −0.069) B | 0.22 / 0.33 / 0.22 |
+| pause 2 s | 6 | 0.028 (0.018–0.044) | 0.038 (0.035–0.041) | 0.050 (0.023–0.092) | −0.008 (−0.018 to +0.005) | −0.023 (−0.052 to −0.004) B | 0.17 / 0.33 / 0.17 |
+| pause 20 s | 6 | 0.681 (0.670–0.695) | 0.707 (0.699–0.714) | 0.644 (0.632–0.655) | −0.026 (−0.036 to −0.015) B | +0.038 (+0.019 to +0.055) W | 0.86 / 1.00 / 0.83 |
+| pause 5 s | 6 | 0.023 (0.020–0.028) | 0.039 (0.036–0.042) | 0.069 (0.035–0.112) | −0.017 (−0.021 to −0.010) B | −0.049 (−0.096 to −0.010) B | 0.19 / 0.33 / 0.22 |
+
+**pauses, oracle**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| pause 10 s | 6 | 0.000 (0.000–0.000) | 0.000 (0.000–0.000) | 0.130 (0.075–0.198) | +0.000 (+0.000 to +0.000) | −0.134 (−0.199 to −0.079) B | 0.00 / 0.00 / 0.00 |
+| pause 2 s | 6 | 0.003 (0.000–0.010) | 0.000 (0.000–0.000) | 0.044 (0.012–0.085) | +0.004 (+0.000 to +0.011) | −0.044 (−0.081 to −0.012) B | 0.00 / 0.00 / 0.00 |
+| pause 20 s | 6 | 0.006 (0.000–0.012) | 0.000 (0.000–0.000) | 0.106 (0.086–0.129) | +0.006 (+0.000 to +0.013) | −0.101 (−0.123 to −0.082) B | 0.06 / 0.00 / 0.00 |
+| pause 5 s | 6 | 0.000 (0.000–0.000) | 0.000 (0.000–0.000) | 0.059 (0.031–0.101) | +0.000 (+0.000 to +0.000) | −0.061 (−0.101 to −0.030) B | 0.00 / 0.00 / 0.03 |
+
+**strong**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| S500 30 dB | 6 | 0.030 (0.021–0.047) | 0.053 (0.045–0.060) | 0.034 (0.023–0.048) | −0.022 (−0.031 to −0.012) B | −0.003 (−0.020 to +0.012) | 0.50 / 0.86 / 0.57 |
+| S500 40 dB | 6 | 0.030 (0.020–0.044) | 0.055 (0.051–0.059) | 0.052 (0.047–0.056) | −0.024 (−0.033 to −0.012) B | −0.020 (−0.033 to −0.001) B | 0.53 / 0.87 / 0.87 |
+| S500 50 dB | 6 | 0.035 (0.025–0.043) | 0.045 (0.041–0.049) | 0.028 (0.020–0.038) | −0.010 (−0.021 to +0.000) | +0.009 (−0.010 to +0.022) | 0.50 / 1.00 / 0.58 |
+| S500 60 dB | 6 | 0.028 (0.023–0.037) | 0.048 (0.045–0.050) | 0.028 (0.023–0.037) | −0.020 (−0.025 to −0.012) B | +0.000 (+0.000 to +0.000) | 0.58 / 1.00 / 0.58 |
+
+**strong, oracle**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| S500 30 dB | 6 | 0.019 (0.000–0.049) | 0.000 (0.000–0.000) | 0.000 (0.000–0.000) | +0.019 (+0.000 to +0.050) | +0.019 (+0.000 to +0.050) | 0.14 / 0.00 / 0.00 |
+| S500 40 dB | 6 | 0.003 (0.000–0.010) | 0.000 (0.000–0.000) | 0.000 (0.000–0.000) | +0.004 (+0.000 to +0.011) | +0.004 (+0.000 to +0.011) | 0.00 / 0.00 / 0.00 |
+| S500 50 dB | 6 | 0.007 (0.000–0.014) | 0.000 (0.000–0.000) | 0.000 (0.000–0.000) | +0.006 (+0.000 to +0.013) | +0.006 (+0.000 to +0.013) | 0.00 / 0.00 / 0.00 |
+| S500 60 dB | 6 | 0.000 (0.000–0.000) | 0.000 (0.000–0.000) | 0.000 (0.000–0.000) | +0.000 (+0.000 to +0.000) | +0.000 (+0.000 to +0.000) | 0.00 / 0.00 / 0.00 |
+
+**tune-up**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| tune-up 0.3 s | 6 | 0.010 (0.000–0.024) | 0.010 (0.000–0.023) | 0.007 (0.000–0.014) | +0.000 (+0.000 to +0.000) | +0.003 (+0.000 to +0.009) | 0.12 / 0.19 / 0.12 |
+| tune-up 0.6 s | 6 | 0.032 (0.014–0.048) | 0.003 (0.000–0.009) | 0.000 (0.000–0.000) | +0.029 (+0.005 to +0.048) W | +0.032 (+0.015 to +0.048) W | 0.50 / 0.06 / 0.00 |
+| tune-up 1 s | 6 | 0.438 (0.131–0.837) | 0.542 (0.258–0.835) | 0.000 (0.000–0.000) | −0.097 (−0.232 to +0.027) | +0.466 (+0.143 to +0.829) W | 1.00 / 0.83 / 0.00 |
+| tune-up 2 s | 6 | 0.917 (0.777–1.000) | 0.909 (0.758–1.000) | 0.029 (0.006–0.067) | +0.005 (+0.000 to +0.016) | +0.904 (+0.791 to +0.981) W | 1.00 / 1.00 / 0.00 |
+
+**tune-up, oracle**
+
+| tag | signals | CER: prototype | Matched | Envelope | prototype − Matched | prototype − Envelope | first-word CER P / M / E |
+|---|---|---|---|---|---|---|---|
+| tune-up 0.3 s | 6 | 0.045 (0.034–0.059) | 0.041 (0.038–0.045) | 0.055 (0.045–0.067) | +0.004 (−0.006 to +0.015) | −0.011 (−0.021 to +0.003) | 0.75 / 0.75 / 0.88 |
+| tune-up 0.6 s | 6 | 0.045 (0.035–0.055) | 0.039 (0.034–0.045) | 0.344 (0.203–0.547) | +0.005 (−0.009 to +0.017) | −0.311 (−0.519 to −0.161) B | 0.75 / 0.75 / 0.75 |
+| tune-up 1 s | 6 | 0.042 (0.028–0.056) | 0.042 (0.026–0.058) | 0.042 (0.038–0.045) | −0.001 (−0.021 to +0.018) | +0.000 (−0.014 to +0.014) | 1.00 / 1.00 / 1.00 |
+| tune-up 2 s | 6 | 0.065 (0.055–0.076) | 0.888 (0.716–0.992) | 0.072 (0.042–0.115) | −0.847 (−0.932 to −0.700) B | −0.013 (−0.043 to +0.014) | 0.88 / 1.00 / 0.75 |
 
 ### 4.4 The prototype's own statistics (all three seeds)
 
@@ -1343,8 +1625,8 @@ other station's speed, not an error of the selection (per-station view: 0.006). 
 45.2 false characters per minute are the other station's keying on the channel, which per-station labels
 count as outside a transmission.
 
-**Corrections** (`experiments/scripts/corrections.py bank-proto`, every decoded file, oracle and detector
-path): 31 158 corrections in 457 169 channel-seconds (4.09 per channel-minute): 13 352 after a branch
+**Corrections** (`experiments/scripts/corrections.py bank-proto` on the Linux machine, every decoded file,
+oracle and detector path; output copied to `build/suite/full3/corrections-bank-proto.txt`, git-ignored): 31 158 corrections in 457 169 channel-seconds (4.09 per channel-minute): 13 352 after a branch
 switch, 9 522 re-keyings of an over's first marks, 8 284 re-keyings after the amplitude stayed unknown
 too long. Reach (how far back a correction replaces text): median 1.544 s, 90% 5.437 s, 99% 19.861 s,
 maximum 20.000 s; **none exceeds 20 s** (the owner's limit).
@@ -1362,8 +1644,9 @@ whether stage 2 is worth doing, is the owner's decision.
 
 1. **Overall, on oracle channels** (one channel per station at its true frequency): the prototype's
    character error rate (CER) is lower than Matched's by 0.078 (0.067 to 0.088) per signal on average,
-   and lower than Envelope's by 0.259 (0.238 to 0.283). On the held-out seeds alone, the full pool gives
-   −0.065 against Matched and −0.227 against Envelope. Measured (section 4.3).
+   and lower than Envelope's by 0.259 (0.238 to 0.283). On the held-out seeds' oracle channels alone:
+   −0.081 (−0.093 to −0.069) against Matched and −0.264 (−0.291 to −0.238) against Envelope. Measured
+   (section 4.3).
 2. **Through the detector path** (the channels Matched's detector opened, decoded by the prototype):
    no measurable difference from Matched, +0.009 (−0.008 to +0.026); better than Envelope by 0.063 (0.039
    to 0.088). Measured.
@@ -1372,15 +1655,18 @@ whether stage 2 is worth doing, is the owner's decision.
 4. **Where it is better than Matched**: fading (10 of 11 rows), poor fists (hand and bug keying),
    Farnsworth (8 of 8), the speed step 20 → 35 WPM, the first word at 12 WPM, ragchew, QSOs with one
    track, pauses and strong signals through the detector. Measured.
-5. **Where it is worse than Matched**: a strong neighbor 50–150 Hz away at 10–20 dB above the wanted
-   station (group E, up to +1.9 CER), crowded channels 0–100 Hz apart, 10 WPM keying, per-station
-   decoding of same-track QSOs, and a small but consistent loss on clean machine and computer keying
-   (lost first characters). Measured; causes conjectured (section 5.3).
+5. **Where it is worse than Matched** (26 regimes): a strong neighbor 20–150 Hz away at +10 or +20 dB
+   relative to the wanted station's key-down power (group E, 6 rows, up to +1.9 CER), crowded channels
+   0–100 Hz apart, 10 WPM keying and the 30 → 15 WPM ramp, per-station decoding of same-track QSOs, hand
+   keying in fast fading, white noise at 12 WPM near S₅₀₀ = −2 dB, tune-up 0.6 s through the detector
+   path, and a small but consistent loss on clean machine, computer and paddle keying (lost first
+   characters). Measured; causes conjectured (section 5.3).
 6. **Sensitivity in white noise** (group A): the prototype reaches CER 0.10 at S₅₀₀ = 0.0 dB at 25 WPM
    against Matched's 1.1 dB and Envelope's 5.1 dB; within 0.1 dB of Matched at 12 WPM; 1.0 dB below
    Matched at 40 WPM (0.4 and 0.5 dB below at CER 0.05, 25 and 40 WPM). Measured.
-7. **Detection measures** through the detector are the same for all three decoders except false tracks on
-   very strong signals (prototype 1 in 3 recordings, Matched and Envelope 12 each). Measured. Stage 2 must
+7. **Detection measures** through the detector path: detection recall is the same for all three decoders;
+   false tracks are the same for the prototype and Matched except on very strong signals (prototype 1 in
+   3 recordings, Matched 12, Envelope 12); Envelope differs by one in group H (109 against 110). Measured. Stage 2 must
    confirm them behind the live detector with the frequency tracker (section 5.6).
 8. **The owner's two extra configurations** (a higher confidence threshold, 0.1487 or 0.2506, for the
    rough speed estimate T_P), on the held-out seeds: both are worse than the settled prototype overall
@@ -1441,16 +1727,22 @@ off the prototype's mix, are left out):
 
 1. *Fading (B, 11 rows)*: better than Matched in 10, by 0.05 to 0.25 CER; worse only for hand keying at
    f_D = 3 Hz, +0.060 (+0.040 to +0.080). Better than Envelope in all 11.
-2. *Fists (C, 15 rows)*: bug keying −0.38 to −0.70 and hand keying −0.08 to −0.31 against Matched; machine
-   and computer keying +0.001 to +0.004 against Matched (4 of 6 rows' intervals above 0), with first-word
-   CER 0.17–0.42 against Matched's 0.11–0.19. Better than Envelope in all 15.
+2. *Fists (C, 15 rows)*: bug keying −0.38 to −0.70 and hand keying −0.08 to −0.31 against Matched; worse
+   than Matched in 5 rows of regular keying: machine imbalance +0.0, +0.002 (+0.000 to +0.004), and −0.1,
+   +0.004 (+0.001 to +0.008); computer +0.0, +0.004 (+0.000 to +0.008), and +0.1, +0.004 (+0.001 to
+   +0.009); paddle −0.1, +0.014 (+0.003 to +0.024); with first-word CER 0.17–0.42 on machine and computer
+   keying against Matched's 0.11–0.19. Better than Envelope in all 15.
 3. *Speed changes (D, 6 rows)*: step 20 → 35 WPM −0.368 and step 35 → 20 WPM −0.084 against Matched; 10 WPM
    worse against both, +0.130 (+0.037 to +0.222) and +0.191 (+0.125 to +0.264); ramp 30 → 15 WPM +0.010
    (+0.003 to +0.021) against both.
 4. *Interference (E, 16 rows; the neighbor's level in dB relative to the wanted station's key-down
-   power)*: never better than Matched; worse in 6, all with the neighbor at +10 or +20 dB (largest: 150 Hz
-   away at +20 dB, +1.912 (+1.159 to +2.759); 100 Hz at +20 dB, +1.332). Against Envelope: better in 5
-   (neighbor at 0 or +10 dB, 50–150 Hz away: −0.14 to −0.81), worse in 5.
+   power)*: never better than Matched; worse in 6, all with the neighbor at +10 or +20 dB, 20–150 Hz
+   away: 150 Hz +20 dB, +1.912 (+1.159 to +2.759); 100 Hz +20 dB, +1.332 (+0.698 to +2.093); 50 Hz
+   +10 dB, +0.517 (+0.365 to +0.761); 150 Hz +10 dB, +0.308 (+0.264 to +0.364); 50 Hz +20 dB, +0.305
+   (+0.063 to +0.677); 20 Hz +10 dB, +0.209 (+0.056 to +0.288). Against Envelope: better in 5 (neighbor at
+   0 or +10 dB, 50–150 Hz away: −0.14 to −0.81); worse in 5: 150 Hz +20 dB, +1.223 (+0.391 to +2.397);
+   100 Hz +20 dB, +1.141 (+0.733 to +1.701); 50 Hz +10 dB, +0.558 (+0.320 to +0.731); 50 Hz +20 dB,
+   +0.465 (+0.234 to +0.675); 20 Hz +10 dB, +0.430 (+0.376 to +0.505).
 5. *Tuning offsets (F, 10 rows)*: unchanged against Matched in all 10; better than Envelope in all 10.
    (F drift, not comparable: better than Matched at 1 and 2 Hz/s, −0.205 and −0.486, because the
    prototype's mix follows the labeled drift.)
@@ -1465,9 +1757,14 @@ off the prototype's mix, are left out):
    2 s (−0.847; Matched's CER there is 0.888); worse in crowded 0, 50 and 100 Hz (+0.192, +0.141, +0.106).
    Against Envelope better in 10, worse in none.
 10. *Detector path (36 rows)*: against Matched (the same tracks) 14 better, 6 worse; against Envelope (its
-    own tracks; compared per label) 12 better, 9 worse, mostly the rows where Envelope's own detector
-    opens different tracks: tune-up 1 s and 2 s (+0.466, +0.904; Matched is as bad on those tracks), QSO
-    separate-track and ambiguous rows (+0.013 to +0.325).
+    own tracks; compared per label) 12 better, 9 worse, mostly where Envelope's own detector opens
+    different tracks: tune-up 0.6 s, +0.032 (+0.015 to +0.048), 1 s, +0.466 (+0.143 to +0.829), and 2 s,
+    +0.904 (+0.791 to +0.981) (Matched is as bad on the 1 s and 2 s tracks); group H QSO labels, ambiguous
+    drawn offset +0.325 (+0.303 to +0.354), separate-track drawn offset +0.067 (+0.052 to +0.080), 100 Hz
+    +0.240 (+0.090 to +0.404) and 200 Hz +0.013 (+0.005 to +0.022); group H per station, separate-track
+    drawn offset +0.049 (+0.032 to +0.065); pauses 20 s, +0.038 (+0.019 to +0.055). Against Matched the 6
+    worse rows are the per-station same-track rows (item 8), crowded 50 and 100 Hz, +0.066 (+0.002 to
+    +0.143) and +0.073 (+0.005 to +0.162), and tune-up 0.6 s, +0.029 (+0.005 to +0.048).
 11. *The late-opening case* (a channel opened partway through a transmission) is read from the first-word
     CER through the detector path, against the oracle copies of the same recordings: all three decoders
     lose most of a first word when the detector opens late (band: prototype / Matched / Envelope 0.753 /
@@ -1476,10 +1773,10 @@ off the prototype's mix, are left out):
     first-word CER against Matched is −0.021 (−0.108 to +0.067), not distinguishable.
 
 **Conjectured, not measured.** (a) Group E and crowded: the short branches (9.3 ms, first null at
-107 Hz) pass a neighbor 50–150 Hz away, and the speed estimate follows the neighbor's keying (section
+107 Hz) pass a neighbor 20–150 Hz away, and the speed estimate follows the neighbor's keying (section
 3.6.1 measured its precision at 0.57–0.68 under interference; here the selected speed is off ×1.5 at 0.315
-of instants in E). (b) Machine and computer keying: the lost first characters of the channel tests since
-W_min = 0.8 s (section 3.9). (c) 10 WPM: the 2 s periodicity window cannot evaluate a dit longer than 109 ms (below 11 WPM;
+of instants in E). (b) Machine, computer and paddle keying: the lost first characters of the channel tests
+since W_min = 0.8 s (section 3.9). (c) 10 WPM: the 2 s periodicity window cannot evaluate a dit longer than 109 ms (below 11 WPM;
 section 3.4, derived), so T_P comes from the 5 and 10 s windows only, later; and the fit's 48-element
 memory spans longer at slow speeds. Which of these matters is not measured.
 
@@ -1529,7 +1826,9 @@ grouped by group). Outputs: `build/suite/full3/report-bank-proto-comb0p2506-held
 and 127.5 min, CPU 171.5 and 175.2 ms per channel-second (held-out oracle channels).
 
 **Held-out seeds 2 and 3, 2 354 signals** (observation only; paired = extra minus `bank-proto`, per
-signal):
+signal). This pool keeps the 36 held-out signals of the 9 not-comparable rows (F drift and H oracle QSO labels with an
+offset, which are fair between two prototype configurations), so it is 36 signals larger than section
+4.3's held-out pool of 2 318, and `bank-proto`'s pooled CER here is 0.3805 rather than 0.3802:
 
 | threshold | T_P right / available / median wait (E1's offline measure, seed 1) | pooled CER | paired CER against `bank-proto` | paired first-word CER against `bank-proto` | regimes against Matched, better / worse / unchanged | against Envelope |
 |---|---|---|---|---|---|---|
@@ -1542,9 +1841,12 @@ inside transmissions with a T_P; "wait": median time from a transmission's start
 
 By group (paired CER against `bank-proto`, intervals excluding 0 only; 0.1487 / 0.2506): better in group A,
 −0.0232 / −0.0219, and D, −0.0368 / −0.0350; worse in B, +0.0127 / +0.0160, E, +0.0952 / +0.2037, crowded
-oracle copies, +0.0247 / +0.0578, C (0.1487 only, +0.0123), F (0.2506 only, +0.0319). First-word CER is
+oracle copies, +0.0247 / +0.0578, C (0.1487 only, +0.0123), F (0.2506 only, +0.0319). Through the detector
+path: at 0.2506, group H per station better, −0.0047 (−0.0104 to −0.0009), and crowded worse, +0.0189
+(+0.0003 to +0.0440); at 0.1487, group H QSO labels worse, +0.0073 (+0.0030 to +0.0118). First-word CER is
 worse at both thresholds in B, C, F and I, and at 0.2506 also in A, E and the crowded oracle copies; better
-only in group H oracle per station at 0.1487, −0.2477 (−0.5151 to −0.0784). Full table: `experiments/extras-paired.md`.
+only in group H oracle per station at 0.1487, −0.2477 (−0.5151 to −0.0784). Full table:
+`build/suite/full3/experiments/extras-paired.md` (git-ignored).
 
 Group A and the regressions, held-out:
 
@@ -1557,23 +1859,37 @@ Group A and the regressions, held-out:
 | R2 (12 WPM first word, S₅₀₀ 6–20 dB), first-word CER | 0.137 (0.078–0.219) | 0.175 (0.097–0.272) | 0.185 (0.098–0.291) |
 | lock-ins, group B fading / I Farnsworth / C fists | 63 / 23 / 1 | 169 / 27 / 10 | 157 / 26 / 1 |
 
-(Lock-ins out of 396, 64 and 180 transmissions.)
+(Lock-ins out of 396, 64 and 180 transmissions. The CER per S₅₀₀ point, held-out seeds, from
+`results/` and `experiments/results/` on the Linux machine by `experiments/scripts/a12_by_snr.py`: copied
+to `build/suite/full3/groupA-by-snr-held-out.txt`, git-ignored; Matched at 12 WPM and S₅₀₀ = −2 dB:
+0.285.)
 
 **In plain words** (measured unless marked):
 
 1. On the held-out seeds, **both higher thresholds are worse than the settled 0.03 overall and on first
-   words**: overall CER +0.005 and +0.009, first-word CER +0.12 and +0.23. Section 3.6.1's trade (seed 1,
-   against the reference before Task 14) was better overall and worse on first words; here the
-   first-word cost remains and the overall gain does not.
-2. The one clear gain is group A at the edge of decoding: at 12 WPM and S₅₀₀ = −2 dB the settled prototype
+   words**: paired CER +0.0047 (+0.0003 to +0.0085) at 0.1487 and +0.0093 (+0.0037 to +0.0157) at 0.2506,
+   both intervals entirely above 0; first-word CER +0.1226 and +0.2303.
+2. **This does not reverse a measured gain.** On seed 1 (section 3.6.1, against `exp-ref`, before Task 14)
+   the overall gain was never measurable: paired CER −0.0089 (−0.0199 to +0.0011) at 0.1487 and −0.0152
+   (−0.0280 to +0.0000) at 0.2506, both intervals reaching 0; only the pooled CER fell (0.3060 → 0.2971 and
+   0.2872). The first-word cost was measurable there too (+0.0958, +0.2612). So a lean toward better,
+   with the interval reaching 0, is measurably worse here.
+3. In the groups both pools share, at 0.2506 (seed 1, section 3.6 → held-out): A better in both (−0.0283
+   → −0.0219), E and F worse in both (+0.2222 → +0.2037, +0.0247 → +0.0319); C, G, H oracle and I better
+   on seed 1 (−0.0153, −0.0160, −0.0483, −0.0297) but not measurably different on the held-out seeds
+   (−0.0026, −0.0021, −0.0132, +0.0074, each interval containing 0).
+4. The one clear gain is group A at the edge of decoding: at 12 WPM and S₅₀₀ = −2 dB the settled prototype
    fails (CER 0.972; Matched 0.285) and both higher thresholds decode (0.073, 0.045), moving the 12 WPM
    CER-0.10 point 2 dB of S₅₀₀ lower. Above S₅₀₀ = 0 dB they are slightly worse, so the CER-0.05 point
    moves 1.5 dB of S₅₀₀ higher.
-3. Lock-ins in fading roughly triple (63 → 157–169 of 396 transmissions).
-4. Conjectured, not measured: Task 14's changes (fit memory 48, calibrated x_on, W_min 0.8 s) may already
-   give most of what the higher threshold gave on top of the older reference (E4's longer memory improved
-   the same groups A, C, G and I); the held-out data and the changed base differ at once, so which one
-   removed the overall gain is not separated.
+5. Lock-ins in fading rise 2.5 to 2.7 times (63 → 157 and 169 of 396 transmissions).
+6. Conjectured, not measured: three things differ at once from section 3.6.1, and none is separated. (a)
+   The seeds (2 and 3 against 1). (b) The base configuration: Task 14's values (fit memory 48, coarse
+   grids, calibrated x_on, W_min 0.8 s) against `exp-ref`; E4's longer memory improved the same groups
+   C, G and I that the higher threshold improved on seed 1, so it may already give that part. (c) The mix
+   of groups: seed 1's development set has 509 signals, 30 of them group B (its mixed-style recording
+   only) and no oracle copies or detector-path groups; the held-out pool has 2 354, 660 of them group B,
+   where both thresholds are worse (+0.0127, +0.0160), and 200 crowded oracle copies (+0.0247, +0.0578).
 
 
 ### 5.6 The stated gap: what only stage 2 can measure
@@ -1679,16 +1995,23 @@ Group A and the regressions, held-out:
   (section 3.6.1) on data no choice was made on. Neither is adopted by a rule; the owner decides from
   the comparison. Results (section 5.5): on the held-out seeds both are worse than the settled 0.03
   overall, +0.0047 (+0.0003 to +0.0085) and +0.0093 (+0.0037 to +0.0157), and on first words, +0.1226
-  and +0.2303; section 3.6.1's overall gain did not appear. Both decode group A 12 WPM at S₅₀₀ = −2 dB
-  (CER 0.073 and 0.045, against 0.972). The owner chooses.
+  and +0.2303. On seed 1 (section 3.6.1) the overall gain was never measurable: −0.0089 (−0.0199 to
+  +0.0011) and −0.0152 (−0.0280 to +0.0000), both intervals reaching 0; so the held-out result finds the
+  extras worse than 0.03 rather than reversing a gain. Possible reasons, all conjecture and not separated:
+  different seeds, a different base configuration (Task 14's values) and a different mix of groups in the
+  held-out pool (660 of its 2 354 signals from group B, where both are worse, against 30 of 509 on seed
+  1). Both decode group A 12 WPM at S₅₀₀ = −2 dB (CER 0.073 and 0.045, against 0.972). The owner chooses.
 
 - **Task 15 (sections 4–5): the regimes where the prototype is worse**, each measured, causes not traced:
-  a strong neighbor 50–150 Hz away at +10 to +20 dB relative to the wanted station's key-down power
-  (group E, 6 rows worse than Matched, up to +1.912); crowded channels 0–100 Hz apart (oracle copies
-  +0.106 to +0.192 against Matched); 10 WPM (+0.130 against Matched, +0.191 against Envelope); per-station
-  decoding of same-track QSOs (+0.038 to +0.179 against Matched); hand keying in fast fading (f_D = 3 Hz,
-  +0.060); clean machine and computer keying (+0.001 to +0.004, lost first characters); group A at 12 WPM
-  (+0.029). Each is a backlog item for stage 2 (`docs/backlog.md`, "Milestone 2b, stage 2: items found in
+  a strong neighbor 20–150 Hz away at +10 to +20 dB relative to the wanted station's key-down power
+  (group E, 6 rows worse than Matched, up to +1.912, and 5 worse than Envelope, up to +1.223); crowded
+  channels 0–100 Hz apart (oracle copies +0.106 to +0.192 against Matched); 10 WPM (+0.130 against Matched,
+  +0.191 against Envelope) and the 30 → 15 WPM ramp (+0.010 against both); per-station decoding of
+  same-track QSOs (+0.038 to +0.179 against Matched); hand keying in fast fading (f_D = 3 Hz, +0.060);
+  clean machine, computer and paddle keying (+0.002 to +0.014, conjectured lost first characters); group A
+  at 12 WPM (+0.029); tune-up 0.6 s through the detector path (+0.029 against Matched); and, against
+  Envelope's own tracks only, group H QSO rows, pauses 20 s and tune-up 1 s and 2 s through the detector
+  path. Every one, with its interval, is a backlog item for stage 2 (`docs/backlog.md`, "Milestone 2b, stage 2: items found in
   stage 1's final evaluation").
 
 - **The comb on 2T** (the periodicity comb's period corrected from T to 2T): answered by the owner on
@@ -1706,7 +2029,7 @@ Group A and the regressions, held-out:
   nats). Heuristic; not measured. The extra configurations (section 5.5) vary only the gate's threshold.
 
 - **Pre-registered rules that no setting met** (each kept the existing value): E1–E3's chosen periodicity
-  settings failed the end-to-end check (section 3.5); E3 (no teeth or width beat the default); E6 (no M
+  settings failed the end-to-end check (section 3.5); E3 (no teeth or width of the edge comb beat its default; the comb on 2T's were never measured); E6 (no M
   followed the speed step within a median of 10 marks); E7 (no T_new; its group I check fired); E8 (no
   quality tie or text window); E9b (no R_fa); E10 (no noise variant).
 

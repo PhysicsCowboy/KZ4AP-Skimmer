@@ -197,27 +197,40 @@ only if the owner decides to do stage 2.
   one), and measure it. Stage 1 mixed by the label (oracle) or by the
   detector's frequency, without the tracker's ±12 Hz fine-tuning, so it does
   not answer this.
-- **Strong neighbors (group E).** Worse than Matched in 6 of 16 rows, every
-  one with the neighbor 10 or 20 dB above the wanted station's key-down
-  power (dB relative to it below): largest 150 Hz away at +20 dB, +1.912
-  (+1.159 to +2.759); 100 Hz, +20 dB, +1.332 (+0.698 to +2.093); 50 Hz,
-  +10 dB, +0.517 (+0.365 to +0.761). Worse than Envelope in 5. The selected speed is off by more than
-  ×1.5 at 0.315 of selection instants. Conjectured, not measured: the short
-  branches pass the neighbor, and the periodicity estimate follows its
-  keying (section 3.6.1 found its precision 0.57–0.68 under interference).
-- **Crowded channels.** Oracle copies, against Matched: spacing 0 Hz
+Every regime listed below is worse than Matched or Envelope beyond its
+interval (all three seeds; group E levels in dB relative to the wanted
+station's key-down power). The complete per-tag tables are in the results'
+section 4.3.1.
+
+- **Strong neighbors (group E).** Worse than Matched in 6 of 16 rows, all
+  with the neighbor at +10 or +20 dB, 20–150 Hz away: 150 Hz +20 dB,
+  +1.912 (+1.159 to +2.759); 100 Hz +20 dB, +1.332 (+0.698 to +2.093);
+  50 Hz +10 dB, +0.517 (+0.365 to +0.761); 150 Hz +10 dB, +0.308 (+0.264
+  to +0.364); 50 Hz +20 dB, +0.305 (+0.063 to +0.677); 20 Hz +10 dB,
+  +0.209 (+0.056 to +0.288). Worse than Envelope in 5: 150 Hz +20 dB,
+  +1.223 (+0.391 to +2.397); 100 Hz +20 dB, +1.141 (+0.733 to +1.701);
+  50 Hz +10 dB, +0.558 (+0.320 to +0.731); 50 Hz +20 dB, +0.465 (+0.234
+  to +0.675); 20 Hz +10 dB, +0.430 (+0.376 to +0.505). The selected speed
+  is off by more than ×1.5 at 0.315 of selection instants. Conjectured,
+  not measured: the short branches pass the neighbor, and the periodicity
+  estimate follows its keying (section 3.6.1 found its precision 0.57–0.68
+  under interference).
+- **Crowded channels.** Against Matched: oracle copies, spacing 0 Hz
   +0.192 (+0.088 to +0.318), 50 Hz +0.141 (+0.045 to +0.250), 100 Hz
   +0.106 (+0.022 to +0.235); through the detector path, 50 Hz +0.066
   (+0.002 to +0.143) and 100 Hz +0.073 (+0.005 to +0.162). Better than
-  Envelope in each.
+  Envelope in 4 of these 5 rows (the oracle copy at 0 Hz is unchanged
+  against Envelope, −0.126, −0.252 to +0.008).
 - **Slow and slowing keying (group D).** 10 WPM: +0.130 (+0.037 to +0.222)
   against Matched and +0.191 (+0.125 to +0.264) against Envelope; ramp
   30 → 15 WPM +0.010 (+0.003 to +0.021) against both.
-- **Lost first characters on clean, regular keying.** Group C machine and
-  computer keying, against Matched: +0.001 to +0.004 CER (4 of 6 rows'
-  intervals above 0), with first-word CER 0.17–0.42 against Matched's
-  0.11–0.19; consistent with the channel tests that lose an over's first
-  character since W_min = 0.8 s (section 3.9; cause not traced).
+- **Regular keying, small losses (group C), against Matched:** machine
+  imbalance +0.0, +0.002 (+0.000 to +0.004), and −0.1, +0.004 (+0.001 to
+  +0.008); computer +0.0, +0.004 (+0.000 to +0.008), and +0.1, +0.004
+  (+0.001 to +0.009); paddle −0.1, +0.014 (+0.003 to +0.024). First-word
+  CER on machine and computer keying 0.17–0.42 against Matched's
+  0.11–0.19. Conjectured: the lost first character of an over that the
+  channel tests show since W_min = 0.8 s (section 3.9; cause not traced).
 - **Group H per station.** Against Matched, same-track QSOs: oracle 0 Hz
   +0.179 (+0.080 to +0.291) and 10 Hz +0.066 (+0.012 to +0.128); through
   the detector path, drawn offset +0.049 (+0.023 to +0.079), 0 Hz +0.081
@@ -230,14 +243,25 @@ only if the owner decides to do stage 2.
   (all seeds). A higher T_P confidence threshold removes it (held-out CER
   0.045–0.073 at S₅₀₀ = −2 dB, section 5.5) at a cost elsewhere; not traced.
 - **Tune-up through the detector path**: 0.6 s, +0.029 (+0.005 to +0.048)
-  against Matched and +0.032 (+0.015 to +0.048) against Envelope; 1 s and
-  2 s, +0.466 and +0.904 against Envelope (Matched is as bad on those
-  tracks).
-- **Placeholders kept, not settled by any measurement that found a better
-  value**: periodicity windows (2, 5, 10 s), comb teeth and width, the three
-  confidence thresholds (comb 0.03, edge comb 0.03, spectrum fit 1.5 nats),
-  switch persistence M = 4, quality tie 0.05 nats per element, text window
-  10 characters, T_new = max(0.5 s, 12·T_g), T grid step 1%, R_fa 0.01 /s.
+  against Matched and +0.032 (+0.015 to +0.048) against Envelope; 1 s,
+  +0.466 (+0.143 to +0.829), and 2 s, +0.904 (+0.791 to +0.981), against
+  Envelope (Matched is as bad on those tracks).
+- **Against Envelope's own tracks, through the detector path** (compared
+  per label; Envelope's detector opens different tracks there, so these
+  mix decoding with track choice): group H QSO labels, ambiguous drawn
+  offset +0.325 (+0.303 to +0.354), separate-track drawn offset +0.067
+  (+0.052 to +0.080), separate-track 100 Hz +0.240 (+0.090 to +0.404),
+  separate-track 200 Hz +0.013 (+0.005 to +0.022); group H per station,
+  separate-track drawn offset +0.049 (+0.032 to +0.065); pauses 20 s,
+  +0.038 (+0.019 to +0.055).
+- **Placeholders still unsettled**: periodicity windows (2, 5, 10 s), comb
+  teeth and width, and the three confidence thresholds (comb 0.03, edge
+  comb 0.03, spectrum fit 1.5 nats), measured in stage 1 but not adopted
+  (E1–E3 measured the edge comb and were reverted, results §3.5; the comb on
+  2T's windows and teeth were never measured); kept by rules no setting
+  met: switch persistence M = 4, quality tie 0.05 nats per element, text
+  window 10 characters, T_new = max(0.5 s, 12·T_g), R_fa 0.01 /s; and the
+  T grid step 1%, kept because E5's adopted variant used it.
   Heuristics never measured in stage 1: the log-normal scatter (0.15 marks,
   0.25 spaces), the outlier class (ε = 0.05, log-uniform 1 ms–10 s), the T_P
   prior's width (0.1 in ln T) and its gate at the confidence threshold, the
