@@ -3,12 +3,15 @@
 // library does not link nlohmann/json.
 #pragma once
 
+#include "kz4ap/bank/filters.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -71,6 +74,46 @@ inline std::vector<double> decode_f64_base64(const std::string& text) {
 // Relative 1e-9 with an absolute floor of 1e-12 (for expected values at zero).
 inline void expect_close(double actual, double expected) {
     EXPECT_NEAR(actual, expected, 1e-9 * std::max(std::abs(expected), 1e-12));
+}
+
+// A golden file's complex stream u (FS) from its "u_re" and "u_im" lists.
+inline std::vector<std::complex<double>> stream(const nlohmann::json& g) {
+    const auto re = g.at("u_re").get<std::vector<double>>();
+    const auto im = g.at("u_im").get<std::vector<double>>();
+    std::vector<std::complex<double>> u(re.size());
+    for (std::size_t i = 0; i < u.size(); ++i) u[i] = {re[i], im[i]};
+    return u;
+}
+
+// The prototype's P: np.abs(boxcar(u, N_k)) ** 2, stored as float32 (ChannelDecoder.run), FS^2; rows are the
+// branches n, columns the samples of u.
+inline kz4ap::bank::Matrix powers(const std::vector<std::complex<double>>& u, const std::vector<int>& n) {
+    kz4ap::bank::Matrix P;
+    P.rows = static_cast<int>(n.size());
+    P.cols = static_cast<int>(u.size());
+    P.v.resize(static_cast<std::size_t>(P.rows) * u.size());
+    for (int k = 0; k < P.rows; ++k) {
+        const auto v = kz4ap::bank::boxcar(u, n[static_cast<std::size_t>(k)]);
+        for (int i = 0; i < P.cols; ++i) P.at(k, i) = kz4ap::bank::boxcar_power_f32(v[static_cast<std::size_t>(i)]);
+    }
+    return P;
+}
+
+// golden_channel's stream `name` (channel.json "streams"), joined from its base64 float64 parts
+// channel_stream_<name>_<part>.json; FS.
+inline std::vector<std::complex<double>> channel_stream(const nlohmann::json& channel, const std::string& name) {
+    const auto& s = channel.at("streams").at(name);
+    const int parts = s.at("parts").get<int>();
+    std::vector<std::complex<double>> u;
+    for (int part = 0; part < parts; ++part) {
+        const auto g = load_golden("channel_stream_" + name + "_" + std::to_string(part));
+        const auto re = decode_f64_base64(g.at("u_re_b64").get<std::string>());
+        const auto im = decode_f64_base64(g.at("u_im_b64").get<std::string>());
+        if (re.size() != im.size()) throw std::runtime_error("channel stream parts of unequal length");
+        for (std::size_t i = 0; i < re.size(); ++i) u.emplace_back(re[i], im[i]);
+    }
+    if (u.size() != s.at("samples").get<std::size_t>()) throw std::runtime_error("channel stream " + name + ": length");
+    return u;
 }
 
 }  // namespace kz4ap::test

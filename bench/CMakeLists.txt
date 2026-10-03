@@ -1,4 +1,5 @@
 add_library(kz4ap_bench_lib
+  src/bank_json.cpp
   src/channel_recorder.cpp
   src/cpu_time.cpp
   src/labels.cpp
@@ -16,7 +17,19 @@ endif()
 add_executable(kz4ap-bench src/main.cpp)
 target_link_libraries(kz4ap-bench PRIVATE kz4ap_bench_lib)
 
+# Decodes recorded oracle channels with the C++ bank decoder into the prototype's decoded-file format.
+add_executable(kz4ap-bank-replay src/replay.cpp)
+target_link_libraries(kz4ap-bank-replay PRIVATE kz4ap_bench_lib)
+if(MSVC)
+  target_compile_options(kz4ap-bank-replay PRIVATE /W4 /permissive- /utf-8)
+else()
+  target_compile_options(kz4ap-bank-replay PRIVATE -Wall -Wextra -Wpedantic)
+  find_package(Threads REQUIRED)
+  target_link_libraries(kz4ap-bank-replay PRIVATE Threads::Threads)
+endif()
+
 add_executable(kz4ap_bench_tests
+  tests/bank_json_test.cpp
   tests/channel_recorder_test.cpp
   tests/cpu_time_test.cpp
   tests/labels_test.cpp
@@ -24,4 +37,8 @@ add_executable(kz4ap_bench_tests
   tests/scoring_test.cpp
 )
 target_link_libraries(kz4ap_bench_tests PRIVATE kz4ap_bench_lib GTest::gtest_main)
+# bank_json_test reads the bank decoder's golden values with the engine tests' helper.
+target_include_directories(kz4ap_bench_tests PRIVATE ${PROJECT_SOURCE_DIR}/engine/tests/bank)
+target_compile_definitions(kz4ap_bench_tests PRIVATE
+  KZ4AP_BANK_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/engine/tests/data/bank")
 gtest_discover_tests(kz4ap_bench_tests)

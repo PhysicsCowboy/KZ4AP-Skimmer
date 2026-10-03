@@ -30,8 +30,9 @@ std::pair<std::optional<double>, double> comb_estimate(std::span<const double> p
                                                        const std::vector<double>& grid, int teeth, double width);
 
 // What Periodicity::update returns: T_P (s, none when no window is confident), the confidence (the chosen
-// window's score, or the best score of all windows when none is confident; dimensionless), the window that
-// gave T_P (s, none when none) and whether the estimate was recomputed in this call.
+// window's score; when none is confident, max(0, every window's score), so 0 if none is positive;
+// dimensionless), the window that gave T_P (s, none when none) and whether the estimate was recomputed in
+// this call.
 struct PeriodicityUpdate {
     std::optional<double> t_p_s;
     double confidence = 0.0;

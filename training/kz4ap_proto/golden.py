@@ -580,6 +580,172 @@ def golden_selection(cfg: ProtoConfig) -> dict:
     }
 
 
+def _nan_none(x):
+    """None for None or NaN (JSON has no NaN), else the float."""
+    return None if x is None or (isinstance(x, float) and math.isnan(x)) else float(x)
+
+
+# Samples per stream file: 40 000 complex samples are about 853 kB of base64 (each golden file stays under 1 MB).
+CHANNEL_PART_SAMPLES = 40_000
+
+
+def _channel_streams() -> dict:
+    """golden_channel's streams: name -> (generator description, rate samples/s, u complex128 FS). Every stream is
+    testsignals.stream (a 1 FS carrier keyed by the intervals, 5 ms raised-cosine edges, in white noise at the
+    stated S500 = dB SNR in 500 Hz, numpy default_rng(seed)); the C++ cannot rebuild numpy's generator, so the
+    samples themselves are stored (channel_stream_<name>_<part>.json, base64 float64)."""
+    from kz4ap_synth.keying import timed_intervals
+    from kz4ap_synth.morse import keying_intervals
+
+    if _CHANNEL_STREAMS:
+        return _CHANNEL_STREAMS
+    st = testsignals.stream
+    out = {}
+
+    def add(name, text, u, rate=1500.0):
+        out[name] = (text, rate, np.asarray(u, np.complex128))
+
+    iv = keying_intervals("CQ TEST K1ABC K1ABC", 25.0)
+    add("clean", "keying_intervals('CQ TEST K1ABC K1ABC', 25 WPM) from 1.0 s, duration last key-up + 3 s, "
+        "S500 20 dB, seed 1 (test_decodes_a_clean_station)", st(iv, 1.0, iv[-1][1] + 3.0, 20.0, 1))
+    add("clean_2000", "as clean, generated at 2000 samples/s (Review Focus 5)",
+        st(iv, 1.0, iv[-1][1] + 3.0, 20.0, 1, 2000.0), 2000.0)
+    add("first_sample", "as clean from 0.0 s, duration last key-up + 3 s, S500 20 dB, seed 2 "
+        "(test_decodes_a_station_from_the_first_sample)", st(iv, 0.0, iv[-1][1] + 3.0, 20.0, 2))
+    a = keying_intervals("CQ DE K1ABC K", 25.0)
+    b = keying_intervals("EE TT EE TT K1ABC", 25.0)
+    gap = a[-1][1] + 3.0
+    tv = a + [(s + gap, e + gap) for s, e in b]
+    add("turnover", "keying_intervals('CQ DE K1ABC K', 25 WPM), then 3 s after its last key-up "
+        "keying_intervals('EE TT EE TT K1ABC', 25 WPM), from 1.0 s, duration last key-up + 4 s, S500 20 dB, seed 7 "
+        "(test_proto_channel.same_speed_turnover)", st(tv, 1.0, tv[-1][1] + 4.0, 20.0, 7))
+    iv = keying_intervals("TEST K1ABC", 25.0)
+    add("noise_tail", "keying_intervals('TEST K1ABC', 25 WPM) from 1.0 s, then 8 s of noise alone (duration last "
+        "key-up + 1 s + 8 s), S500 20 dB, seed 13", st(iv, 1.0, iv[-1][1] + 1.0 + 8.0, 20.0, 13))
+    text = "CQ CQ CQ DE K1ABC K1ABC K1ABC K1ABC"
+    iv = timed_intervals(text, 15.0, wpm_end=30.0, profile="step")
+    add("step", f"timed_intervals('{text}', 15 WPM, wpm_end 30 WPM, profile 'step') from 1.0 s, duration last "
+        "key-up + 1 s + 3 s, S500 20 dB, seed 4 (test_follows_a_speed_step_within_ten_marks)",
+        st(iv, 1.0, iv[-1][1] + 1.0 + 3.0, 20.0, 4))
+    iv = timed_intervals("CQ TEST K1ABC", 18.0, farnsworth_wpm=10.0)
+    add("farnsworth", "timed_intervals('CQ TEST K1ABC', 18 WPM, farnsworth_wpm 10 WPM) from 1.0 s, duration last "
+        "key-up + 1 s + 3 s, S500 20 dB, seed 5 (test_proto_channel.farnsworth)",
+        st(iv, 1.0, iv[-1][1] + 1.0 + 3.0, 20.0, 5))
+    iv = keying_intervals("CQ TEST K1ABC", 25.0)
+    add("zero_pad", "1500 samples (1 s) of exact zeros, then keying_intervals('CQ TEST K1ABC', 25 WPM) from 0.5 s, "
+        "duration last key-up + 3.5 s, S500 20 dB, seed 14 (a zero-padded first-sample recording; Review Focus 3)",
+        np.concatenate((np.zeros(1500, np.complex128), st(iv, 0.5, iv[-1][1] + 3.5, 20.0, 14))))
+    iv = keying_intervals("HI HI TEST", 12.0)
+    add("slow", "keying_intervals('HI HI TEST', 12 WPM) from 1.0 s, duration last key-up + 4 s, S500 20 dB, seed 3 "
+        "(test_slow_first_word_is_right_after_corrections)", st(iv, 1.0, iv[-1][1] + 4.0, 20.0, 3))
+    add("noise", "noise alone, 30 s, S500 20 dB, seed 6 (test_noise_alone_leaves_no_text)",
+        st([], 0.0, 30.0, 20.0, 6))
+    a = keying_intervals("CQ DE K1ABC K", 25.0)
+    b = keying_intervals("K1ABC DE W9XYZ K", 15.0)
+    gap = a[-1][1] + 2.0
+    tv = a + [(s + gap, e + gap) for s, e in b]
+    add("two_speeds", "keying_intervals('CQ DE K1ABC K', 25 WPM), then 2 s after its last key-up "
+        "keying_intervals('K1ABC DE W9XYZ K', 15 WPM), from 1.0 s, duration last key-up + 4 s, S500 20 dB, seed 7 "
+        "(test_two_overs_at_different_speeds)", st(tv, 1.0, tv[-1][1] + 4.0, 20.0, 7))
+    body = keying_intervals("CQ TEST K1ABC K1ABC", 25.0)
+    tv = [(0.0, 2.0)] + [(s + 2.5, e + 2.5) for s, e in body]
+    add("tune_up", "a 2 s carrier, then keying_intervals('CQ TEST K1ABC K1ABC', 25 WPM) 2.5 s after its start, from "
+        "1.0 s, duration last key-up + 4 s, S500 20 dB, seed 8 (test_a_tune_up_carrier_does_not_derail_decoding)",
+        st(tv, 1.0, tv[-1][1] + 4.0, 20.0, 8))
+    iv = keying_intervals(" ".join(["CQ TEST K1ABC"] * 8), 20.0)
+    add("long", "keying_intervals('CQ TEST K1ABC' x 8, 20 WPM) from 1.0 s, duration last key-up + 3 s, S500 8 dB, "
+        "seed 9 (test_corrections_never_reach_back_more_than_20_s)", st(iv, 1.0, iv[-1][1] + 3.0, 8.0, 9))
+    add("short", "noise alone, 0.3 s, S500 20 dB, seed 10 (test_short_and_empty_streams)",
+        st([], 0.0, 0.3, 20.0, 10))
+    a = keying_intervals("CQ DE K1ABC K", 15.0)
+    b = keying_intervals("TEST DE W9XYZ W9XYZ K", 30.0)
+    gap = a[-1][1] + 3.0
+    tv = a + [(s + gap, e + gap) for s, e in b]
+    add("speed_turnover", "keying_intervals('CQ DE K1ABC K', 15 WPM), then 3 s after its last key-up "
+        "keying_intervals('TEST DE W9XYZ W9XYZ K', 30 WPM), from 1.0 s, duration last key-up + 4 s, S500 20 dB, "
+        "seed 12 (test_a_speed_change_across_a_turnover_is_taken_up)", st(tv, 1.0, tv[-1][1] + 4.0, 20.0, 12))
+    _CHANNEL_STREAMS.update(out)
+    return out
+
+
+_CHANNEL_STREAMS: dict = {}
+
+
+def _channel_cut() -> int:
+    """The Review Focus 2 cut of the clean stream, samples: at the middle of the second-to-last mark (in C, the
+    last character of the over), so the stream ends mid-character and mid-over."""
+    from kz4ap_synth.morse import keying_intervals
+
+    iv = keying_intervals("CQ TEST K1ABC K1ABC", 25.0)
+    return int(round((1.0 + 0.5 * (iv[-2][0] + iv[-2][1])) * 1500.0))
+
+
+def _channel_result(r) -> dict:
+    """A ChannelResult in full precision (NaN as None) beside its to_json() and json.dumps(to_json())."""
+    return {
+        "text": r.text,
+        "chars": [[c.text, c.start_s, c.end_s] for c in r.chars],
+        "corrections": [dataclasses.asdict(c) for c in r.corrections],
+        "selections": [[t, k, _nan_none(T)] for t, k, T in r.selections],
+        "periodicity": [[t, _nan_none(T), _nan_none(c), _nan_none(w), [[_nan_none(pt), _nan_none(ps)] for pt, ps in per]]
+                        for t, T, c, w, per in r.periodicity],
+        "over_starts": list(r.over_starts),
+        "switches": r.switches,
+        "dumps": json.dumps(r.to_json()),
+    }
+
+
+def golden_channel(cfg: ProtoConfig) -> dict:
+    """channel.py: ChannelDecoder(cfg, rate).run(u) on every stream of _channel_streams (and the clean stream cut at
+    _channel_cut), each result in full precision and as the prototype's to_json() serialized by json.dumps
+    (the replay tool's byte-for-byte check). Also json.dumps of the config as runner.decode writes it."""
+    from .channel import ChannelDecoder
+
+    streams = _channel_streams()
+    out: dict = {"streams": {}, "results": {}, "part_samples": CHANNEL_PART_SAMPLES,
+                 "config_dumps": json.dumps(json.loads(json.dumps(dataclasses.asdict(cfg))))}
+    for name, (text, rate, u) in streams.items():
+        if len(u) != CHANNEL_STREAM_SAMPLES[name]:
+            raise ValueError(f"stream {name}: {len(u)} samples, CHANNEL_STREAM_SAMPLES says {CHANNEL_STREAM_SAMPLES[name]}")
+        out["streams"][name] = {"generator": text, "rate_hz": rate, "samples": len(u),
+                                "parts": max(1, -(-len(u) // CHANNEL_PART_SAMPLES))}
+        out["results"][name] = _channel_result(ChannelDecoder(cfg, rate).run(u))
+    # What the ported test_proto_channel.py assertions need besides the streams (times in s).
+    from kz4ap_synth.keying import timed_intervals
+    from kz4ap_synth.morse import keying_intervals
+
+    step_iv = timed_intervals("CQ CQ CQ DE K1ABC K1ABC K1ABC K1ABC", 15.0, wpm_end=30.0, profile="step")
+    farn_iv = timed_intervals("CQ TEST K1ABC", 18.0, farnsworth_wpm=10.0)
+    first = keying_intervals("CQ DE K1ABC K", 25.0)
+    out["test_inputs"] = {
+        "step_mark_starts_s": [a for a, _ in step_iv],  # from the stream's start of keying (1.0 s)
+        "step_s": 1.0 + step_iv[28][0],                  # the first mark at 30 WPM, s
+        "farnsworth_last_key_up_s": 1.0 + farn_iv[-1][1],
+        "turnover_first_end_s": 1.0 + first[-1][1],
+        "turnover_gap_s": first[-1][1] + 3.0,
+    }
+    cut = _channel_cut()
+    out["clean_cut_samples"] = cut
+    out["results"]["clean_cut"] = _channel_result(ChannelDecoder(cfg, 1500.0).run(streams["clean"][2][:cut]))
+    return out
+
+
+def _channel_stream_part(name: str, part: int) -> Callable[[ProtoConfig], dict]:
+    def fn(cfg: ProtoConfig) -> dict:
+        _, rate, u = _channel_streams()[name]
+        x = u[part * CHANNEL_PART_SAMPLES:(part + 1) * CHANNEL_PART_SAMPLES]
+        return {"name": name, "part": part, "rate_hz": rate, "u_re_b64": _f64_base64(x.real),
+                "u_im_b64": _f64_base64(x.imag)}
+    return fn
+
+
+# Stream lengths, samples (fixed by the generators above; checked against the streams when they are written).
+CHANNEL_STREAM_SAMPLES = {"clean": 18540, "clean_2000": 24720, "first_sample": 18540, "turnover": 28500,
+                          "noise_tail": 20052, "step": 36780, "farnsworth": 26500, "zero_pad": 15750,
+                          "slow": 15150, "noise": 45000, "two_speeds": 39672, "tune_up": 23790, "long": 98910,
+                          "short": 450, "speed_turnover": 39120}
+
+
 # name of the JSON file (without extension) -> function producing its content.
 # Later tasks register golden_<module> here.
 GOLDEN: dict[str, Callable[[ProtoConfig], dict]] = {
@@ -592,16 +758,25 @@ GOLDEN: dict[str, Callable[[ProtoConfig], dict]] = {
     "periodicity": golden_periodicity,
     "periodicity_cases": golden_periodicity_cases,
     "selection": golden_selection,
+    "channel": golden_channel,
 }
+GOLDEN.update({f"channel_stream_{name}_{part}": _channel_stream_part(name, part)
+               for name, samples in CHANNEL_STREAM_SAMPLES.items()
+               for part in range(max(1, -(-samples // CHANNEL_PART_SAMPLES)))})
 
 
-def write_all(out_dir: Path, cfg: ProtoConfig | None = None) -> list[Path]:
-    """Write every registered golden file into out_dir (created if needed); return the paths written."""
+def write_all(out_dir: Path, cfg: ProtoConfig | None = None, only: str | None = None) -> list[Path]:
+    """Write every registered golden file (or those whose names match the regular expression `only`) into
+    out_dir (created if needed); return the paths written."""
+    import re
+
     cfg = ProtoConfig() if cfg is None else cfg
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     for name, fn in GOLDEN.items():
+        if only is not None and not re.search(only, name):
+            continue
         path = out_dir / f"{name}.json"
         # repr-exact doubles: json writes the shortest string that round-trips.
         path.write_text(json.dumps(fn(cfg), indent=1, sort_keys=True) + "\n", encoding="utf-8")
@@ -612,8 +787,9 @@ def write_all(out_dir: Path, cfg: ProtoConfig | None = None) -> list[Path]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, required=True, help="output directory")
+    parser.add_argument("--only", default=None, help="regular expression on the golden file names")
     args = parser.parse_args()
-    for path in write_all(args.out):
+    for path in write_all(args.out, only=args.only):
         print(path)
 
 

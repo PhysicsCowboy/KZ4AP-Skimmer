@@ -14,7 +14,7 @@ def test_write_all_round_trips(tmp_path):
 
 def test_config_round_trips_exactly(tmp_path):
     cfg = ProtoConfig()
-    (path,) = [p for p in write_all(tmp_path) if p.stem == "config"]
+    (path,) = write_all(tmp_path, only="^config$")
     loaded = json.loads(path.read_text(encoding="utf-8"))
     assert loaded["x_on_values"] == list(cfg.x_on_values)
     assert loaded["eligibility_tolerance"] == cfg.eligibility_tolerance

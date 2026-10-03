@@ -1,6 +1,7 @@
 #include "kz4ap/bank/fit.hpp"
 
 #include "kz4ap/bank/numpy_sum.hpp"
+#include "kz4ap/bank/python_sum.hpp"
 #include "kz4ap/morse.hpp"
 #include "ve3nea.hpp"
 
@@ -242,9 +243,9 @@ ClassPriors class_priors() {
     }
     const double dits = static_cast<double>(dit_sum) / total;
     const double dahs = static_cast<double>(dah_sum) / total;
-    double psum = 0.0;  // Python's sum(): left to right
-    for (double v : kVe3neaWordLengthProbs) psum += v;
     constexpr std::size_t nl = std::size(kVe3neaWordLengthProbs);
+    // Python's sum() of floats (fit.py: sum(VE3NEA_WORD_LENGTH_PROBS)), which is compensated in Python 3.12.
+    const double psum = python_sum(kVe3neaWordLengthProbs, nl);
     std::vector<double> lp(nl);
     for (std::size_t i = 0; i < nl; ++i) lp[i] = static_cast<double>(i) * (kVe3neaWordLengthProbs[i] / psum);
     const double mean_len = pairwise_sum(lp);

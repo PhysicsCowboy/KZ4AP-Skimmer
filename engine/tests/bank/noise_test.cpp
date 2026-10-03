@@ -25,29 +25,8 @@ using kz4ap::test::load_golden;
 
 constexpr double kRate = 1500.0;  // samples/s
 
-std::vector<std::complex<double>> stream(const nlohmann::json& g) {
-    const auto re = g.at("u_re").get<std::vector<double>>();
-    const auto im = g.at("u_im").get<std::vector<double>>();
-    std::vector<std::complex<double>> u(re.size());
-    for (std::size_t i = 0; i < u.size(); ++i) u[i] = {re[i], im[i]};
-    return u;
-}
-
-// The prototype's P: np.abs(boxcar(u, N_k)) ** 2, stored as float32.
-Matrix powers(const std::vector<std::complex<double>>& u, const std::vector<int>& n) {
-    Matrix P;
-    P.rows = static_cast<int>(n.size());
-    P.cols = static_cast<int>(u.size());
-    P.v.resize(static_cast<std::size_t>(P.rows) * u.size());
-    for (int k = 0; k < P.rows; ++k) {
-        const auto v = boxcar(u, n[static_cast<std::size_t>(k)]);
-        for (int i = 0; i < P.cols; ++i) {
-            const double a = std::abs(v[static_cast<std::size_t>(i)]);
-            P.at(k, i) = static_cast<double>(static_cast<float>(a * a));
-        }
-    }
-    return P;
-}
+using kz4ap::test::powers;
+using kz4ap::test::stream;
 
 std::vector<int> ladder(double rate_hz) { return branch_samples(branch_lengths_s(BankConfig{}), rate_hz); }
 

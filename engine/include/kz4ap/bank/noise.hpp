@@ -10,6 +10,7 @@
 #include "kz4ap/bank/filters.hpp"
 
 #include <complex>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <span>
@@ -37,7 +38,8 @@ double quantile_linear(std::vector<double> x, double q);
 class ThreeTapNoise {
 public:
     ThreeTapNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n);
-    void update(const Matrix& P, int n0, int n1);
+    // Column j of P is absolute sample base + j; n0, n1 are absolute sample indices.
+    void update(const Matrix& P, std::int64_t n0, std::int64_t n1, std::int64_t base = 0);
     const std::vector<double>& var() const { return var_; }
     bool started() const { return started_; }
     const std::vector<double>& weight() const { return weight_; }
@@ -54,7 +56,10 @@ private:
 class NoiseEstimator {
 public:
     virtual ~NoiseEstimator() = default;
-    virtual void update(std::span<const std::complex<double>> u, const Matrix& P, int n0, int n1) = 0;
+    // Element j of u and column j of P are absolute sample base + j; n0, n1 are absolute sample indices
+    // (the channel keeps only a recent window of u and P).
+    virtual void update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0, std::int64_t n1,
+                        std::int64_t base = 0) = 0;
     // sigma_v,k^2 per real component, FS^2, one per branch.
     virtual std::vector<double> sigma2() const = 0;
 };
@@ -63,7 +68,8 @@ public:
 class BranchNoise : public NoiseEstimator {
 public:
     BranchNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n);
-    void update(std::span<const std::complex<double>> u, const Matrix& P, int n0, int n1) override;
+    void update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0, std::int64_t n1,
+                std::int64_t base = 0) override;
     std::vector<double> sigma2() const override { return est_.var(); }
 
 private:
@@ -80,7 +86,8 @@ class SpectrumNoise : public NoiseEstimator {
 public:
     SpectrumNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n,
                   const std::string& level = "three-tap");
-    void update(std::span<const std::complex<double>> u, const Matrix& P, int n0, int n1) override;
+    void update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0, std::int64_t n1,
+                std::int64_t base = 0) override;
     std::vector<double> sigma2() const override;
     // sigma_v,k^2 per real component, FS^2, from the flat mean of every accepted masked periodogram so far,
     // smoothed as sigma2() smooths it, with no bias correction (the calibration of b_mask,k). Throws if no
@@ -96,7 +103,7 @@ public:
     static constexpr int kSubsamples = 16;  // points per bin for W_k
 
 private:
-    std::vector<char> clean(const Matrix& P, int s) const;
+    std::vector<char> clean(const Matrix& P, std::int64_t s, std::int64_t base) const;
     void accept(std::span<const std::complex<double>> seg, const std::vector<char>& clean);
     std::vector<double> smoothed(const std::vector<double>& s) const;
 
@@ -120,7 +127,7 @@ private:
     int segments_offered_ = 0;
     double kept_fraction_sum_ = 0.0;
     double masked_power_sum_ = 0.0;
-    int next_start_ = 0;
+    std::int64_t next_start_ = 0;  // absolute sample index
 };
 
 // noise_method "spectrum", "spectrum-level" or "branch"; throws std::invalid_argument otherwise.

@@ -41,8 +41,9 @@ std::vector<int> hysteresis(std::span<const double> down, std::span<const double
     return key;
 }
 
-std::vector<std::vector<std::pair<int, bool>>> edges(const Matrix& key, const std::vector<int>& before, int n0) {
-    std::vector<std::vector<std::pair<int, bool>>> out(static_cast<std::size_t>(key.rows));
+std::vector<std::vector<std::pair<std::int64_t, bool>>> edges(const Matrix& key, const std::vector<int>& before,
+                                                            std::int64_t n0) {
+    std::vector<std::vector<std::pair<std::int64_t, bool>>> out(static_cast<std::size_t>(key.rows));
     for (int r = 0; r < key.rows; ++r) {
         bool prev = before[static_cast<std::size_t>(r)] != 0;
         for (int c = 0; c < key.cols; ++c) {

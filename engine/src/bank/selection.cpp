@@ -1,5 +1,6 @@
 #include "kz4ap/bank/selection.hpp"
 
+#include "kz4ap/bank/python_sum.hpp"
 #include "kz4ap/morse.hpp"
 #include "ve3nea.hpp"
 
@@ -21,23 +22,6 @@ bool is_code(const std::string& symbol) {
     if (symbol.empty()) return false;
     const std::string_view pattern = morse::encode(symbol);
     return !pattern.empty() && morse::decode(pattern) == symbol;
-}
-
-// Python's sum() of floats (CPython 3.12 and later): Neumaier's compensated summation from 0, the
-// compensation added at the end when it is non-zero and finite.
-double python_sum(const std::vector<double>& values) {
-    double sum = 0.0;
-    double c = 0.0;
-    for (double x : values) {
-        const double t = sum + x;
-        if (std::abs(sum) >= std::abs(x))
-            c += (sum - t) + x;
-        else
-            c += (x - t) + sum;
-        sum = t;
-    }
-    if (c != 0.0 && std::isfinite(c)) sum += c;
-    return sum;
 }
 
 }  // namespace

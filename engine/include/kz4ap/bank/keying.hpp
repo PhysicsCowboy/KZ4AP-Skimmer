@@ -9,6 +9,7 @@
 #include "kz4ap/bank/bank_config.hpp"
 #include "kz4ap/bank/filters.hpp"
 
+#include <cstdint>
 #include <span>
 #include <utility>
 #include <vector>
@@ -22,7 +23,8 @@ std::vector<int> hysteresis(std::span<const double> down, std::span<const double
 // Per branch, (sample index, key down after it) at every change of key state. key is (K, n) of 0/1,
 // `before` the key state before its first column, n0 the absolute sample index of that column. Edges of
 // marks keyed by the unknown-amplitude test are provisional (lengthened by up to L_k) until re-keyed.
-std::vector<std::vector<std::pair<int, bool>>> edges(const Matrix& key, const std::vector<int>& before, int n0);
+std::vector<std::vector<std::pair<std::int64_t, bool>>> edges(const Matrix& key, const std::vector<int>& before,
+                                                            std::int64_t n0);
 
 // What step returns: the key state (K, n) of 0/1; the posterior p (K, n), 0 where squelched; the key state
 // before the block (K); a_k = s_k / sigma_v,k (K, dimensionless) at the block's start.

@@ -23,32 +23,12 @@ namespace {
 using namespace kz4ap::bank;
 using kz4ap::test::expect_close;
 using kz4ap::test::load_golden;
+using kz4ap::test::powers;
+using kz4ap::test::stream;
 
 // The golden encoding of an edge: n + 1 for a key-down after sample n, -(n + 1) for a key-up.
-int signed_edge(const std::pair<int, bool>& e) { return e.second ? e.first + 1 : -(e.first + 1); }
-
-std::vector<std::complex<double>> stream(const nlohmann::json& g) {
-    const auto re = g.at("u_re").get<std::vector<double>>();
-    const auto im = g.at("u_im").get<std::vector<double>>();
-    std::vector<std::complex<double>> u(re.size());
-    for (std::size_t i = 0; i < u.size(); ++i) u[i] = {re[i], im[i]};
-    return u;
-}
-
-// The prototype's P: np.abs(boxcar(u, N_k)) ** 2, stored as float32 (ChannelDecoder.run).
-Matrix powers(const std::vector<std::complex<double>>& u, const std::vector<int>& n) {
-    Matrix P;
-    P.rows = static_cast<int>(n.size());
-    P.cols = static_cast<int>(u.size());
-    P.v.resize(static_cast<std::size_t>(P.rows) * u.size());
-    for (int k = 0; k < P.rows; ++k) {
-        const auto v = boxcar(u, n[static_cast<std::size_t>(k)]);
-        for (int i = 0; i < P.cols; ++i) {
-            const double a = std::abs(v[static_cast<std::size_t>(i)]);
-            P.at(k, i) = static_cast<double>(static_cast<float>(a * a));
-        }
-    }
-    return P;
+int signed_edge(const std::pair<std::int64_t, bool>& e) {
+    return static_cast<int>(e.second ? e.first + 1 : -(e.first + 1));
 }
 
 Matrix columns(const Matrix& P, int n0, int n1) {
@@ -88,8 +68,8 @@ TEST(BankKeying, EdgesAgainstTheStateBefore) {
              0, 0, 0, 0};
     const auto e = edges(key, {0, 1}, 100);
     ASSERT_EQ(e.size(), 2u);
-    EXPECT_EQ(e[0], (std::vector<std::pair<int, bool>>{{100, true}, {102, false}, {103, true}}));
-    EXPECT_EQ(e[1], (std::vector<std::pair<int, bool>>{{100, false}}));
+    EXPECT_EQ(e[0], (std::vector<std::pair<std::int64_t, bool>>{{100, true}, {102, false}, {103, true}}));
+    EXPECT_EQ(e[1], (std::vector<std::pair<std::int64_t, bool>>{{100, false}}));
 }
 
 TEST(BankKeying, KeyerMatchesPrototypeThroughRun) {

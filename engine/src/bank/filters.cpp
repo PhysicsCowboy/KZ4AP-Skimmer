@@ -36,11 +36,30 @@ std::vector<std::complex<double>> boxcar(std::span<const std::complex<double>> u
     c[0] = 0.0;
     for (std::size_t i = 0; i < u.size(); ++i) c[i + 1] = c[i] + u[i];
     std::vector<std::complex<double>> out(u.size());
+    const double scale = 1.0 / n;  // numpy's complex division by n + 0j multiplies by 1 / n
     for (std::size_t m = 1; m <= u.size(); ++m) {
         const std::size_t lo = m > static_cast<std::size_t>(n) ? m - static_cast<std::size_t>(n) : 0;
-        out[m - 1] = (c[m] - c[lo]) / static_cast<double>(n);
+        const std::complex<double> d = c[m] - c[lo];
+        out[m - 1] = {d.real() * scale, d.imag() * scale};
     }
     return out;
+}
+
+double numpy_abs(std::complex<double> z) {
+    const double re = std::abs(z.real());
+    const double im = std::abs(z.imag());
+    if (std::isnan(re) || std::isnan(im)) return std::isinf(re) || std::isinf(im) ? INFINITY : NAN;
+    const double larger = std::max(re, im);
+    const double smaller = std::min(re, im);
+    if (larger == 0.0) return 0.0;
+    if (std::isinf(larger)) return larger;
+    const double rat = smaller / larger;
+    return std::sqrt(std::fma(rat, rat, 1.0)) * larger;
+}
+
+double boxcar_power_f32(std::complex<double> v) {
+    const double a = numpy_abs(v);
+    return static_cast<double>(static_cast<float>(a * a));
 }
 
 double power_response(double f_hz, int n, double rate_hz) {

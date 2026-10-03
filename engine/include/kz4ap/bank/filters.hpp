@@ -36,8 +36,18 @@ std::vector<int> branch_samples(const std::vector<double>& lengths_s, double rat
 std::vector<double> realized_lengths_s(const BankConfig& cfg, double rate_hz);
 
 // v[m] = (1/n) sum of u[m-n+1 .. m], zeros before the stream: causal, unity gain; computed from a running
-// cumulative sum c, v[m] = (c[m+1] - c[max(m+1-n, 0)]) / n, as in the prototype.
+// cumulative sum c, v[m] = (c[m+1] - c[max(m+1-n, 0)]) x (1/n), as in the prototype (numpy divides a complex
+// array by n + 0j by multiplying both parts by 1/n).
 std::vector<std::complex<double>> boxcar(std::span<const std::complex<double>> u, int n);
+
+// |z| as numpy 2's np.abs computes it for complex128 on this build (its SIMD loop): the larger of |re|, |im|
+// times sqrt(fma(r, r, 1)), r = smaller / larger; 0 for 0. Measured equal to np.abs on 200 000 boxcar outputs
+// (numpy 2.5.3, x86-64); std::abs and hypot differ from it in the last bit for about 4% of values.
+double numpy_abs(std::complex<double> z);
+
+// The prototype's stored power of a branch output: |v|^2 (numpy_abs squared) rounded to float32, as
+// ChannelDecoder.run stores P (np.float32), returned as a double; FS^2.
+double boxcar_power_f32(std::complex<double> v);
 
 // |H(f)|^2 of an n-sample boxcar at rate_hz: (sin(pi f n / r) / (n sin(pi f / r)))^2, 1 at 0 Hz
 // (dimensionless, relative to the 0 Hz response); f in Hz, rate in samples/s.

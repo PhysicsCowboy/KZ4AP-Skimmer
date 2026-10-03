@@ -6,6 +6,7 @@ set(KZ4AP_BANK_SOURCES
   src/bank/fit.cpp
   src/bank/periodicity.cpp
   src/bank/selection.cpp
+  src/bank/channel.cpp
 )
 
 add_library(kz4ap_engine
@@ -55,6 +56,7 @@ add_executable(kz4ap_bank_tests
   tests/bank/fit_test.cpp
   tests/bank/periodicity_test.cpp
   tests/bank/selection_test.cpp
+  tests/bank/channel_test.cpp
 )
 target_link_libraries(kz4ap_bank_tests PRIVATE kz4ap::engine nlohmann_json::nlohmann_json GTest::gtest_main)
 target_compile_definitions(kz4ap_bank_tests PRIVATE

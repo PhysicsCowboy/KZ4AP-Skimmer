@@ -1884,17 +1884,20 @@ not in the repository; nothing was changed):
 
 The bank decoder is the C++ port of the stage-1 Python prototype
 (`training/kz4ap_proto`); it is a *decoder* alongside Envelope and Matched.
-This section is written as the port's modules land; it now covers the
-branch filters and the envelope likelihood (`engine/src/bank/filters.cpp`)
+This section covers the
+branch filters and the envelope likelihood (`engine/src/bank/filters.cpp`),
 the noise estimates (`engine/src/bank/noise.cpp`, "Noise" below), the
 keying (`engine/src/bank/keying.cpp`, "Keying" below), the duration
 fit (`engine/src/bank/fit.cpp`, "Duration fit" below), the periodicity
-estimate (`engine/src/bank/periodicity.cpp`, "Periodicity" below) and
+estimate (`engine/src/bank/periodicity.cpp`, "Periodicity" below),
 the text model and branch selection (`engine/src/bank/selection.cpp`,
-"Text model and branch selection" below), each checked against golden
-values from the prototype (relative 1e-9; discrete outputs exactly). The
-rest (the per-branch character assembly, the channel decoder that drives
-these stages, new overs and corrections) follows with its modules.
+"Text model and branch selection" below) and the channel decoder that
+drives them, with new overs, re-keying and the published text with its
+corrections (`engine/src/bank/channel.cpp`, "Channel decoder" below),
+each checked against golden values from the prototype (relative 1e-9;
+discrete outputs exactly). The bank is not yet behind the engine's
+`Decoder` interface; the replay tool `kz4ap-bank-replay` (bench) runs it
+on recorded channel streams.
 
 **The bank.** Instead of one matched filter whose length follows an
 estimated speed (section 8b), the bank runs K = 32 boxcar filters at once,
@@ -1916,7 +1919,17 @@ among them.
   r samples/s (ties to even), the point where seconds become samples:
   v_k[m] = (1/N_k) · Σ u[m−N_k+1 … m], with zeros before the start of the
   stream (so the first N_k − 1 outputs ramp up). It is computed as a
-  running cumulative sum c, v_k[m] = (c[m+1] − c[max(m+1−N_k, 0)]) / N_k.
+  running cumulative sum c (complex, summed in order from the stream's
+  start), v_k[m] = (c[m+1] − c[max(m+1−N_k, 0)]) · (1/N_k): numpy divides
+  a complex array by N_k + 0j by multiplying both parts by 1/N_k, which can
+  differ from dividing by N_k in the last bit, so the port multiplies too.
+  The channel decoder stores the power |v_k|² rounded to single precision
+  (float32), as the prototype does, and every later stage reads those
+  rounded values (FS²). |v_k| is computed as numpy computes it for
+  complex128 on this build (its vectorized loop): the larger of |Re|, |Im|
+  times √(fma(ρ, ρ, 1)), ρ = smaller / larger (0 for 0); measured equal to
+  `np.abs` on 200 000 boxcar outputs (numpy 2.5.3, x86-64), where `hypot`
+  and `std::abs` differ from it in the last bit for about 4% of values.
   At r = 1500 samples/s N_k runs from 14 to 276; at 2000 samples/s the same
   durations give 19 to 369 samples. The realized duration is N_k / r (s).
   Its power response is
@@ -2408,7 +2421,8 @@ spectrum) were not adopted and are not ported; any other
   first; T_P is the estimate of the shortest window whose score is
   ≥ 0.03, the confidence is that score, and the window (s) is reported
   with it. If no window is confident, T_P is none and the confidence is
-  the largest score of all windows (0 if none has an estimate). T_P never
+  max(0, every window's score): the largest score, or 0 if none is
+  positive (a window without an estimate scores 0). T_P never
   feeds back into its own estimate (spec 4.4).
 
 **Port check.** Golden values (`engine/tests/data/bank/periodicity.json`,
@@ -2461,9 +2475,10 @@ text is published (spec 4.6).
   else ln(10⁻⁶) = −13.816 nats (heuristic: "very unlikely"). A branch's
   text score is the mean over its characters, nats per character, word
   spaces left out (none without characters). The window,
-  `text_window_chars` = 10 characters (the branch's most recent ones), is
-  applied by the channel decoder that builds the views (the next module);
-  this module scores the characters it is given.
+  `text_window_chars` = 10 characters (the branch's most recent ones,
+  word spaces not counted), is applied by the channel decoder when it
+  builds the views ("Channel decoder" below); this module scores the
+  characters it is given, newest first, as the prototype sums them.
 - **Eligibility.** A branch is eligible when its own fitted dit T_k
   agrees with its length L_k: |ln(L_k / (0.8 T_k))| ≤ ln 1.1 = 0.0953
   (one ladder step), once its fit's memory weight is ≥ 8 elements and
@@ -2508,6 +2523,163 @@ text tie of 0.1 nats per character, the text separation of 1.0 nats per
 character and the log-probabilities given to codes missing from the
 table and to "*" heuristic; the character probabilities derived from
 VE3NEA's table.
+
+### Channel decoder (bank decoder)
+
+`engine/src/bank/channel.cpp`, a port of `training/kz4ap_proto/channel.py`
+(`Output`, `Branch`, `ChannelDecoder.run` as the streaming `BankChannel`),
+checked against the prototype's full decoded output (below). It decodes
+one station's baseband stream u (station at 0 Hz, FS, r samples/s): the
+32 branches each key, time, fit and spell their own text, and selection
+publishes one branch's characters, with corrections.
+
+- **Blocks.** Everything advances once per block of
+  B = max(1, round(block_s · r)) samples, block_s = 32/1500 s = 21.33 ms
+  (B = 32 at 1500 samples/s; 43 at 2000 samples/s, 21.5 ms). Input may
+  arrive in pieces of any length (`push`): a block is processed as soon
+  as its last sample has arrived, and the remainder waits; at the end
+  (`finish`) the remainder is processed as one shorter block, as the
+  prototype's last block, and the result does not depend on how the
+  stream was split (tested with pieces of 1, 47 and 1000 samples). As
+  each sample arrives, every branch's power |v_k|² is computed from the
+  running cumulative sum and stored rounded to float32 (section 8c, "The
+  bank").
+- **Order within a block** [n0, n1), t = n1 / r (s): (1) the noise
+  estimate is updated and σ²_v,k read; (2) the keyer keys the block and
+  updates the amplitudes ("Keying"); (3) branch 1's posterior p goes to
+  the periodicity estimate, which may recompute; T_P, when confident,
+  becomes the fit's prior (weight 1, else none); (4) per branch, in
+  ladder order: its key changes become marks and spaces, a new over may
+  start, or, while its amplitude is unknown, the over's start may be
+  re-keyed or time out; (5) if branch 1 keyed up in the block, selection
+  runs (each key-up of branch 1 is one selection instant); (6) the selected
+  branch's new characters are published.
+- **Marks, spaces and characters (per branch).** A key change at sample n
+  is at time n / r − (N_k − 1)/(2r) s (the boxcar's group delay removed).
+  A mark is key-down to key-up, a space key-up to key-down, each with the
+  timing variance σ_t² of the branch at its amplitude a_k ("Duration fit").
+  A duration > 0 s enters the branch's fit, which is then re-maximized
+  (`best`, with the T_P prior), unless it was keyed by the unknown-amplitude
+  test (provisional: lengthened by up to L_k, "Keying"); provisional
+  durations enter no fit. Each mark is classified dit or dah, each space
+  element space, character gap or word gap, by the branch's current fit
+  (nothing is classified while the branch has no fit); a character gap
+  ends the character (its symbol from its dot/dash pattern), a word gap
+  also adds a word space " " at the character's end time.
+- **New over.** After the key has been up longer than
+  T_new = max(0.5 s, 12 · T_g) since the branch's last key-up (T_g of its
+  current fit; without a fit T_g = 1.2 s / 5 = 240 ms, so T_new = 2.88 s;
+  at 25 words/min, T_g = 48 ms, T_new = 0.576 s), the branch ends its
+  character and word, keeps its fit as the previous over's (if it has
+  observations and none is kept yet), starts a fresh fit, decodes with the
+  previous fit's best until the re-key, and its amplitude becomes unknown
+  (the keyer's unknown-amplitude test from the next block).
+- **Re-key.** While a branch's amplitude is unknown, once it has keyed
+  marks in this over and W_min = 0.8 s of keyed time, the stretch from
+  where the amplitude became unknown (at most 20 s back) is keyed again
+  with the full log-likelihood ratio at each candidate amplitude: the seed
+  s² and, if there is one, the previous over's s² (FS²). For each, the
+  stretch's marks and spaces go into a fresh fit and into a copy of the
+  previous over's fit continued; the fresh fit is taken only if it wins
+  (below), else the continued one decodes and the fresh one stays its
+  rival. The candidate whose taken fit explains the stretch best (mean
+  log-likelihood per element, nats; the first on a tie) wins: its fit and
+  amplitude are kept, the stretch's characters are decoded again with it,
+  and the keyer switches to the full LLR at that amplitude. The
+  re-keyed characters replace the published ones from the stretch's start
+  if the branch is the selected one (reason "rekey").
+- **Re-key time-out.** If W_min is not reached within 2 s of channel time
+  (counted from where the amplitude became unknown, or from the last
+  time-out that keyed nothing), the stretch
+  is re-keyed at the previous over's amplitude if there is one and it keys
+  any sample (reason "timeout"); otherwise nothing in the stretch is
+  keyed: its provisional characters are deleted (a correction if the
+  branch is selected), the amplitude stays unknown and the 2 s count
+  restarts. This is what removes false key-downs in noise after the last
+  over.
+- **Fresh fit against the previous.** The fresh fit replaces the
+  previous over's continued fit only with at least 8 of this over's
+  (re-keyed or later) marks and spaces, and only if its log-likelihood on
+  them beats the continued fit's by more than ½ · k · ln n nats, k = 4
+  (the fitted T, w, q, T_g), n the number of those marks and spaces
+  (4.16 nats at n = 8, 4.97 at 12). After the re-key the rival fresh fit
+  keeps learning from every later mark and space and is tested again at
+  each; the competition ends when the rival has seen the fit memory's
+  retained length, ⌈4 · 48⌉ = 192 marks and spaces (the previous over's
+  memory then weighs e⁻⁴ = 1.8%).
+- **Over starts.** An over start is recorded (s, on the selected branch's
+  time base) once its re-key keyed at least one mark and the branch is
+  the selected one; a silence followed only by noise records none.
+- **Switching.** When selection switches to another branch, the new
+  branch's characters replace the published ones from the start of its
+  character that contains (or follows) the time at which its current
+  eligible run began, on its own time base; a fallback pick (never
+  eligible) replaces from the switch's own time.
+- **Published text and corrections.** New characters of the selected
+  branch are appended when they start after the last published one. A
+  replacement from time f at time t cuts at c = max(f, t − 20 s) and works
+  on overlap, not on start times alone: a published character is kept if
+  it starts before t − 20 s or ends before c, the others are replaced; a
+  new character is taken only if it starts at or after both c and the end
+  of the last kept character (different branches time one character a
+  few ms apart, and cutting on start times published one character
+  twice). A correction is recorded only if the replaced text differs:
+  (t, the first replaced character's start or c, the reach t − that
+  start ≤ 20 s, old text, new text, reason) and the number of characters
+  kept before it (`from_index`, the engine's index-based corrections).
+  Nothing that starts more than 20 s before t is ever changed.
+- **End of stream.** `finish` processes the last partial block, ends
+  every branch's open character (no word space) and publishes the
+  selected branch's new characters; a stream cut mid-character publishes
+  the elements completed so far as a character (tested: C, −·−·, cut
+  during its third element reads N, −·), and no correction refers past
+  the end.
+- **Memory.** The channel keeps a window of u and of |v_k|² (FS²) back to
+  the earliest sample a later block can read: the re-key's 20 s plus the
+  noise estimates' look-back (3 N_max, a segment with its mask's reach,
+  the warm-up) and 2 blocks, 31 688 samples (21.1 s) at 1500 samples/s;
+  its storage is moved forward every 2 s, about 8.9 MB per channel (a
+  bound chosen for the port, not a tuned value). Sample indices are
+  64-bit.
+- **Exact zeros.** On exact-zero input the noise estimate goes NaN (the
+  prototype's behavior, kept until Plan B; "Noise"), so nothing is keyed
+  and nothing is published: on a stream that starts with 1 s of exact
+  zeros the prototype and the port both publish no character and no
+  correction, and no NaN reaches a published time.
+
+**Port check.** Golden values (`engine/tests/data/bank/channel.json`,
+streams in `channel_stream_*.json`): the prototype's
+`ChannelDecoder(ProtoConfig(), r).run(u)` on 15 streams (about 297 s of
+channel time: a clean 25 words/min CQ, a same-speed turnover, noise after
+the last over, a 15 → 30 words/min step, Farnsworth 18/10, a zero-padded
+start, noise alone, a tune-up carrier, a 66 s stream at S₅₀₀ = 8 dB SNR in
+500 Hz, a speed change across a turnover and the inputs of the
+prototype's other channel tests; the clean stream also at 2000 samples/s
+and cut mid-character) and its full result. The port, fed each stream in
+one push, publishes the same text and characters (times to relative
+10⁻⁹), the same corrections (old and new text, reason, times), over
+starts, switches and selections (branch exactly, fitted T to relative
+10⁻⁹), and the same periodicity records (T_P and windows exactly,
+confidences and scores to relative 10⁻⁹) except two per-window estimates
+that are traced near-ties (D2): in the 2 s window, over a buffer of p that
+is zero but for one short squelch opening, two candidates' scores differ
+by 4.3 · 10⁻¹⁴ and 4.0 · 10⁻¹² relative (scores 9.5 · 10⁻⁷ and
+4.7 · 10⁻⁶, far below the 0.03 confidence threshold), and the port picks
+the other one; T_P and everything downstream are unaffected. The
+prototype's channel tests are ported one for one; its strict expected
+failures are skipped with their reasons (and fail if they pass), and its
+`keep_p1` posterior for the offline experiments is not ported.
+
+Status (as `training/kz4ap_proto/params.py` marks them): block_s
+heuristic (the engine's channel block); T_new's 0.5 s and 12 T_g
+placeholders kept by E7; W_min measured (E9b); the 2 s re-key time-out
+and the fresh fit's 8 marks and spaces placeholders (heuristic); the
+½ k ln n penalty's form derived (BIC, n independent observations), its
+use with k counting only the fresh fit's parameters heuristic; the end
+of the competition at 4 N_mem derived from the memory's weight; the 20 s
+correction reach an owner decision; the overlap cut and the choice of
+the re-key's candidate amplitudes heuristic; the window kept in memory a
+bound of the port, not a parameter.
 
 ## 9. Timing and latency
 
@@ -2596,10 +2768,17 @@ VE3NEA's table.
 | Bank periodicity windows | 2, 5 and 10 s (1500, 3750, 7500 samples at 750 samples/s); the shortest confident window gives T_P; reach caps T at ≈ W / 18.3 (109, 273, 546 ms) | `BankConfig::periodicity_windows_s` | windows placeholder (E2); reach caps derived from a heuristic rule |
 | Bank comb teeth and width | 4 teeth at kΠ, k = 1…4, negative teeth at (k ± ½)Π, each ±0.075 Π (±15% of T) wide; score = mean contrast, dimensionless; biased autocorrelation | `BankConfig::comb_teeth`, `comb_width`; `bank::comb_estimate` | placeholder (E3), not measured for the comb on 2T; biased estimate heuristic |
 | Bank comb confidence | T_P counts when its window's score ≥ 0.03 (dimensionless) | `BankConfig::comb_confidence_min` | placeholder (E1) |
-| Bank text model | ln(w / 2688) nats per character (VE3NEA's table); valid codes missing from it ln(8/2688) = −5.817 nats; "*" ln(10⁻⁶) = −13.816 nats; mean over the last 10 characters | `bank::TextModel`; `BankConfig::text_window_chars` | probabilities derived (VE3NEA); the two fallbacks heuristic; window 10 characters placeholder, kept by E8 |
+| Bank text model | ln(w / 2688) nats per character (VE3NEA's table); valid codes missing from it ln(8/2688) = −5.817 nats; "*" ln(10⁻⁶) = −13.816 nats; mean over the branch's last 10 characters (word spaces not counted), applied by the channel decoder | `bank::TextModel`; `BankConfig::text_window_chars`; `bank::Branch::text_logprob` | probabilities derived (VE3NEA); the two fallbacks heuristic; window 10 characters placeholder, kept by E8 |
 | Bank eligibility | \|ln(L_k / (0.8 T_k))\| ≤ ln 1.1 = 0.0953 (one ladder step), fit weight ≥ 8 elements | `BankConfig::eligibility_tolerance`, `min_fit_weight`; `bank::Selector::eligible` | heuristic |
 | Bank selection ties | quality tie ε_Q = 0.05 nats per element; then text tie 0.1 nats per character; then the longest branch. None eligible: text leading by ≥ 1.0 nats per character, else nearest 0.8 T_P, else branch 1 | `BankConfig::quality_tie_nats`, `text_tie_nats`, `text_separation_nats`; `bank::Selector::best` | ε_Q placeholder, kept by E8; text tie and separation heuristic |
 | Bank switch persistence | M = 4 selection instants in a row, of one kind (eligible or fallback) | `BankConfig::switch_persistence`; `bank::Selector::update` | placeholder, kept by E6 |
+| Bank block cadence | every stage advances once per block of round(block_s · r) samples, block_s = 32/1500 s = 21.33 ms (32 samples at 1500 samples/s); input in pieces of any length, a partial last block at the end | `BankConfig::block_s`; `bank::BankChannel::push`, `finish` | heuristic (the engine's channel block) |
+| Bank stored power | \|v_k\|² rounded to float32 as each sample arrives (as the prototype stores P), FS² | `bank::boxcar_power_f32` | the prototype's choice, reproduced |
+| Bank new over | key up longer than T_new = max(0.5 s, 12 · T_g) since the branch's last key-up (2.88 s without a fit; 0.576 s at 25 words/min) | `BankConfig::new_over_min_s`, `new_over_gaps`; `bank::Branch::new_over_due` | placeholders, kept by E7 |
+| Bank re-key and time-out | the over's start re-keyed with the full LLR after W_min = 0.8 s of keyed time, at the seed s² and the previous over's s² (best mean log-likelihood per element wins), over at most 20 s back; if W_min is not reached within 2 s, re-keyed at the previous over's s², or its provisional characters deleted | `BankConfig::rekey_after_s`, `rekey_timeout_s`; `bank::Branch::rekey_over`, `clear_over` | W_min measured (E9b); the 2 s time-out a placeholder (heuristic); candidate choice heuristic |
+| Bank fresh fit against the previous | the over's fresh fit replaces the previous over's continued fit with ≥ 8 of the over's marks and spaces and a log-likelihood gain > ½ · 4 · ln n nats on them (4.16 nats at n = 8); the competition ends after 192 (⌈4 N_mem⌉) | `BankConfig::fresh_fit_min_obs`; `bank::kFitParameters`; `bank::Branch` | 8 a placeholder (heuristic); ½ k ln n form derived (BIC), k = 4 heuristic; the end at 4 N_mem derived (e⁻⁴ = 1.8%) |
+| Bank corrections | a replacement at t changes nothing that starts before t − 20 s; overlap cut at max(from, t − 20 s); recorded only if the text differs, with its kept-character count | `BankConfig::correction_reach_s`; `bank::Output::replace_from` | 20 s owner; overlap cut heuristic |
+| Bank switch replacement | from the start of the new branch's character containing the time its eligible run began (its own time base); a fallback pick from the switch's time | `bank::BankChannel` | heuristic (spec 4.8; the fallback rule documented behavior) |
 
 ## 11. Definitions used in tests and the benchmark
 

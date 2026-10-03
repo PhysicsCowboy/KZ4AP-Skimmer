@@ -3,7 +3,7 @@
 // 1. Golden values (engine/tests/data/bank/periodicity.json, from golden.py golden_periodicity): the comb as
 //    ChannelDecoder.run drives it on three keyed streams (12, 25 and 40 WPM, 12 s at 1500 samples/s): the
 //    same pushes (branch 1's posterior, block by block) and an update after each; at every recomputation T_P,
-//    the window and each window's T to relative 1e-9 (a T one grid point off fails that by far), the
+//    the window and each window's T exactly (grid points and window lengths are discrete, D2), the
 //    confidence and the scores to relative 1e-9 (floor 1e-12).
 // 2. The Python comb tests (training/tests/test_proto_periodicity.py), one C++ test per Python test with the
 //    same inputs (engine/tests/data/bank/periodicity_cases.json: the key-down intervals and the noise draws,
@@ -44,7 +44,7 @@ void expect_optional(const std::optional<double>& actual, const nlohmann::json& 
         EXPECT_FALSE(actual.has_value());
     } else {
         ASSERT_TRUE(actual.has_value());
-        expect_close(*actual, expected.get<double>());
+        EXPECT_EQ(*actual, expected.get<double>());  // grid points and windows: discrete, exact (D2)
     }
 }
 
