@@ -174,6 +174,10 @@ in the character decisions themselves, for example a sequence decoder that weigh
 for each candidate character against its probability in context, and measure it on text that does not
 come from the model's own frequencies (groups G and H; real recordings).
 
+Owner, 2026-10-03: deferred until after stage 2 (`docs/design/2026-10-03-filter-bank-stage-2-design.md`,
+§6), to be designed with real recordings scored against real spots; the owner shares the concern that a
+text model can pull unusual callsigns toward plausible but wrong text.
+
 ### Following a speed jump: no switch setting meets the 10-mark target (stage 2)
 
 Spec §4.6 asks the decoder to follow a jump in speed within about 10 marks. Stage 1's E6 measured the
