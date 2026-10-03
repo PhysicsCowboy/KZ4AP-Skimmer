@@ -61,6 +61,18 @@ def golden_filters(cfg: ProtoConfig) -> dict:
     return out
 
 
+def _noise_stream(rate: float) -> np.ndarray:
+    """golden_noise's stream (also golden_keying's input): 20 s of testsignals.stream, a 1 FS carrier keyed at
+    25 WPM by kz4ap_synth's random_text(default_rng(4), 60) from 1.0 s, S500 = 15 dB, seed 21, through the
+    channel filter's shape (testsignals.lowpass, np.convolve mode="same"); complex128, FS."""
+    from kz4ap_synth.messages import random_text
+    from kz4ap_synth.morse import keying_intervals
+
+    iv = keying_intervals(random_text(np.random.default_rng(4), 60), 25.0)
+    u = np.convolve(testsignals.stream(iv, 1.0, 20.0, 15.0, 21, rate), testsignals.lowpass(rate), mode="same")
+    return np.asarray(u, np.complex128)
+
+
 def golden_noise(cfg: ProtoConfig) -> dict:
     """noise.py driven exactly as ChannelDecoder.run drives it, at 1500 samples/s: the stream is 20 s of
     testsignals.stream (a 1 FS carrier keyed at 25 WPM by kz4ap_synth's random_text(default_rng(4), 60) from
@@ -72,14 +84,9 @@ def golden_noise(cfg: ProtoConfig) -> dict:
     offered segment counts. guard_mean is recorded at three kappa."""
     import dataclasses as dc
 
-    from kz4ap_synth.messages import random_text
-    from kz4ap_synth.morse import keying_intervals
-
     rate = 1500.0
     n = bank.branch_samples(bank.branch_lengths_s(cfg), rate)
-    iv = keying_intervals(random_text(np.random.default_rng(4), 60), 25.0)
-    u = np.convolve(testsignals.stream(iv, 1.0, 20.0, 15.0, 21, rate), testsignals.lowpass(rate), mode="same")
-    u = np.asarray(u, np.complex128)
+    u = _noise_stream(rate)
     total = len(u)
     P = np.stack([np.abs(bank.boxcar(u, int(k))) ** 2 for k in n]).astype(np.float32)
     block = max(1, int(round(cfg.block_s * rate)))
@@ -111,12 +118,126 @@ def golden_noise(cfg: ProtoConfig) -> dict:
     return out
 
 
+def _signed_edges(changes) -> list[int]:
+    """(sample index n, key down after it) -> n + 1 for a key-down, -(n + 1) for a key-up."""
+    return [(n + 1) if down else -(n + 1) for n, down in changes]
+
+
+def golden_keying(cfg: ProtoConfig) -> dict:
+    """keying.py driven by ChannelDecoder.run itself on golden_noise's stream (1500 samples/s, 20 s; the C++
+    test reads u from noise.json and recomputes P as float32 and the default "spectrum" noise, as run does).
+    run's BankKeyer is replaced by a subclass that records, changing nothing:
+    - every block b (block_s): the branches' edges (keying.edges of step's key against `before`, as run
+      computes them), all blocks concatenated per branch, each edge n + 1 (key down after sample n) or -(n + 1)
+      (key up); `unknown` at step (one "0"/"1" per branch); and at each block with b % 10 == 9 or following a
+      block with a start_over or finish_over_start call: step's a_k (dimensionless), the row sums of step's
+      squelched posterior p (samples) and `weight` after step (samples);
+    - every start_over and finish_over_start call, in run's order: [block, name, k, (finish only: amp2 FS^2,
+      key_now)], then the keyer's weight (samples), amp2 (FS^2), prev_amp2 (FS^2, None for NaN) and
+      ready_to_rekey of branch k just before the call (what run reads to decide).
+    Plus keying.rekey on a fixed stretch: P of branch 14 over samples [0, 3008), the stretch of run's first
+    re-key of that branch (block 93), at that block's sigma_14^2 (FS^2) and three amplitudes s^2 (FS^2): run's
+    winner, a quarter of it, and 0 (squelched), as signed edges from key up; and keying.hysteresis on a hand
+    case."""
+    from . import channel, keying
+
+    rate = 1500.0
+    u = _noise_stream(rate)
+    block = max(1, int(round(cfg.block_s * rate)))
+    rec: dict = {"edges": None, "unknown": [], "a": [], "p_sum": [], "weight": [], "sampled_blocks": [],
+                 "calls": [], "sigma2": []}
+    state = {"b": -1, "n0": 0, "called_in": set()}
+
+    class Recording(keying.BankKeyer):
+        def step(self, P, sigma2):
+            state["b"] += 1
+            b, n0 = state["b"], state["n0"]
+            if rec["edges"] is None:
+                rec["edges"] = [[] for _ in range(len(self.amp2))]
+            rec["unknown"].append("".join("1" if x else "0" for x in self.unknown))
+            key, p, before, a = super().step(P, sigma2)
+            for k, ch in enumerate(keying.edges(key, before, n0)):
+                rec["edges"][k].extend(_signed_edges(ch))
+            if b % 10 == 9 or (b - 1) in state["called_in"]:
+                rec["sampled_blocks"].append(b)
+                rec["a"].append(np.asarray(a, float).tolist())
+                rec["p_sum"].append(np.asarray(p, float).sum(axis=1).tolist())
+                rec["weight"].append(self.weight.tolist())
+            rec["sigma2"].append(np.asarray(sigma2, float).copy())
+            state["n0"] = n0 + np.asarray(P).shape[1]
+            return key, p, before, a
+
+        def _before_call(self, k):
+            state["called_in"].add(state["b"])
+            prev = float(self.prev_amp2[k])
+            return [float(self.weight[k]), float(self.amp2[k]), None if np.isnan(prev) else prev,
+                    bool(self.ready_to_rekey()[k])]
+
+        def start_over(self, k):
+            rec["calls"].append([state["b"], "start_over", int(k)] + self._before_call(k))
+            super().start_over(k)
+
+        def finish_over_start(self, k, amp2, key_now):
+            rec["calls"].append([state["b"], "finish_over_start", int(k), float(amp2), bool(key_now)]
+                                + self._before_call(k))
+            super().finish_over_start(k, amp2, key_now)
+
+    saved = channel.BankKeyer
+    channel.BankKeyer = Recording
+    try:
+        text = channel.ChannelDecoder(cfg, rate).run(u).text
+    finally:
+        channel.BankKeyer = saved
+
+    # rekey on run's first re-key stretch of branch 14: block 93, samples [0, 3008) (s = 0: the amplitude has
+    # been unknown since the stream's start, and 3008 samples are within the 20 s reach).
+    k, b_rekey = 14, 93
+    first = next(c for c in rec["calls"] if c[1] == "finish_over_start" and c[2] == k)
+    assert first[0] == b_rekey, first
+    n = bank.branch_samples(bank.branch_lengths_s(cfg), rate)
+    n1 = (b_rekey + 1) * block
+    P = (np.abs(bank.boxcar(u, int(n[k]))) ** 2).astype(np.float32)[0:n1]
+    sigma2 = float(rec["sigma2"][b_rekey][k])
+    a_min = float(keying.BankKeyer(cfg, rate, n / rate).a_min[k])
+    amps = [first[3], 0.25 * first[3], 0.0]
+    rekeyed = [_signed_edges(keying.edges(keying.rekey(P, sigma2, a2, cfg, a_min)[None, :], np.zeros(1, bool),
+                                          0)[0]) for a2 in amps]
+
+    down = np.array([[0, 1, 0, 0, 1, 1, 0, 0, 0, 1], [0, 0, 0, 1, 0, 0, 0, 1, 0, 0]], bool)
+    up = np.array([[0, 0, 1, 0, 1, 0, 0, 1, 0, 0], [1, 0, 0, 0, 1, 0, 0, 0, 1, 0]], bool)
+    initial = np.array([False, True])
+    return {
+        "rate_hz": rate,
+        "block_samples": block,
+        "blocks": state["b"] + 1,
+        "text": text,
+        "edges": rec["edges"],
+        "unknown": rec["unknown"],
+        "sampled_blocks": rec["sampled_blocks"],
+        "a": rec["a"],
+        "p_sum": rec["p_sum"],
+        "weight": rec["weight"],
+        "calls": rec["calls"],
+        "rekey_branch": k,
+        "rekey_n1": n1,
+        "rekey_sigma2": sigma2,
+        "rekey_a_min": a_min,
+        "rekey_amp2": amps,
+        "rekey_edges": rekeyed,
+        "hysteresis_down": down.astype(int).tolist(),
+        "hysteresis_up": up.astype(int).tolist(),
+        "hysteresis_initial": initial.astype(int).tolist(),
+        "hysteresis": keying.hysteresis(down, up, initial).astype(int).tolist(),
+    }
+
+
 # name of the JSON file (without extension) -> function producing its content.
 # Later tasks register golden_<module> here.
 GOLDEN: dict[str, Callable[[ProtoConfig], dict]] = {
     "config": golden_config,
     "filters": golden_filters,
     "noise": golden_noise,
+    "keying": golden_keying,
 }
 
 

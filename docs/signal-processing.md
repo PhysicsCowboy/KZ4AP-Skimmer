@@ -1886,9 +1886,11 @@ The bank decoder is the C++ port of the stage-1 Python prototype
 (`training/kz4ap_proto`); it is a *decoder* alongside Envelope and Matched.
 This section is written as the port's modules land; it now covers the
 branch filters and the envelope likelihood (`engine/src/bank/filters.cpp`)
-and the noise estimates (`engine/src/bank/noise.cpp`, "Noise" below),
-each checked against golden values from the prototype (relative 1e-9).
-The rest (keying, characters) follows with its modules.
+the noise estimates (`engine/src/bank/noise.cpp`, "Noise" below) and the
+keying (`engine/src/bank/keying.cpp`, "Keying" below), each checked
+against golden values from the prototype (relative 1e-9; discrete
+outputs exactly). The rest (timing, characters, selection) follows with
+its modules.
 
 **The bank.** Instead of one matched filter whose length follows an
 estimated speed (section 8b), the bank runs K = 32 boxcar filters at once,
@@ -2075,6 +2077,136 @@ the 2·(−ln 0.8) warm-up scale derived; T_seg, the ±25 Hz smoothing, the
 measured; the choice of variant (a) is measured (prototype experiment
 E10); the 16 points per bin and the 10⁻²⁰ FS² floor are numerical choices.
 
+### Keying (bank decoder)
+
+`engine/src/bank/keying.cpp`, a port of `training/kz4ap_proto/keying.py`
+(`BankKeyer`, `hysteresis`, `edges`, `rekey`), checked against the
+prototype's golden values (below). Every branch is keyed separately, all
+32 once per block (round(block_s · r) = 32 samples at 1500 samples/s), in
+this order: the noise estimate is updated (above), then the block is
+keyed with the amplitude as it stood at the block's start, then the
+amplitude is updated from the block. The inputs are |v_k|² (FS², the
+float32-rounded values the prototype stores, widened exactly to double)
+and σ²_v,k (FS², per real component). The keyer itself rounds nothing.
+The lengths L_k it uses are the realized ones, N_k / r (s).
+
+- **Normalization.** a_k = √(ŝ_k² / σ²_v,k) (dimensionless, from the
+  amplitude estimate ŝ_k², FS², at the block's start) and, per sample,
+  x = √(|v_k|² / σ²_v,k) (dimensionless).
+- **Log-odds and posterior.** g = Λ(x, a_k) + ln(P₁ / (1 − P₁)) nats, with
+  Λ the envelope log-likelihood ratio above and P₁ = 0.44 (prior log-odds
+  −0.2412 nats); p = logistic(g). The posterior that leaves the keyer
+  (for the periodicity estimate) is p where the squelch is open and 0
+  where it is closed; the amplitude update uses p before the squelch.
+- **Squelch.** Open while a_k ≥ a_min,k = 3 · (L_k / 16 ms)^(1/4)
+  (dimensionless): 2.622 at L_1 = 14/1500 s = 9.33 ms to 5.525 at
+  L_32 = 276/1500 s = 184 ms. In noise alone ŝ² is a mean over about
+  τ_a / L_k independent samples, so its spread grows as √L_k and a_min as
+  L_k^(1/4) (the scaling derived; the 3 at 16 ms heuristic, milestone 2's
+  principle with each branch's own σ_v).
+- **Full-LLR keying (amplitude known).** Key down where the squelch is open
+  and g > h; key up where the squelch is closed or g < −h; otherwise the
+  key state stays as it was; h = 1 nat. Up wins if both hold (they cannot
+  both hold for h > 0). The prototype's vectorized hysteresis (the last
+  event at or before each sample) is ported as a per-sample loop with the
+  same state at every sample (`bank::hysteresis`).
+- **Unknown-amplitude test (at an over's start).** While branch k's
+  amplitude is unknown (`unknown`: from the stream's start, and from each
+  `start_over` until `finish_over_start`), the key is a threshold test on
+  x alone: key down where x > x_on,k, up where x < x_off, otherwise as it
+  was. x_off = √(−2 ln 0.3) = 1.552: noise alone (Rayleigh, P(x > X) =
+  e^(−X²/2)) is above it 30% of the time (derived from the heuristic
+  release probability 0.3). x_on,k are measured per branch (prototype
+  experiment E9a: channel-shaped noise, about 20 noise key-downs per
+  branch in 2000 s, at a target R_fa = 0.01 false marks/s per branch):
+  4.6428 (k = 1) … 4.2036 (k = 32), not monotone in k (sampling scatter;
+  `BankConfig::x_on_values`). They are valid for the 129-tap channel
+  filter's noise shape, the default ladder at 1500 samples/s, and x
+  measured with the exact σ²_v,k; the decoder divides by its estimated
+  σ²_v,k, whose white-noise mask bias is 2.9–5.9% off in channel-shaped
+  noise (a 5% low σ² raises x by about 2.5% and the false key-down rate
+  by about 1.6×, estimated in the prototype, not measured). Without
+  calibrated values the nominal x_on,k = √(−2 ln min(0.5, R_fa · L_k))
+  is used (4.308 at k = 1 … 3.549 at k = 32; heuristic: the envelope's
+  upcrossings make it key 7–10× more than R_fa), the clamp at 0.5 a
+  numerical guard (x_on ≥ √(2 ln 2) = 1.177), never active at the
+  defaults. Marks keyed this way are provisional: the test keys down when
+  x rises past x_on and up when it falls below x_off, low on the boxcar's
+  ramps, so noise-free a rectangular mark of length d ≥ L_k measures
+  d + L_k · (1 − (x_on + x_off)/a) (derived), up to L_k longer at high
+  SNR, and noise delays the key-up (a space little longer than L_k can
+  close up; measured in the prototype).
+- **Amplitude, known (online EM).** One step per block for each branch
+  whose amplitude is known: with w = Σ p over the block (samples of
+  key-down weight) and the p-weighted mean m = Σ p·|v_k|² / max(w, 10⁻³⁰⁰)
+  (FS²), W ← W + w and, if w > 0,
+  ŝ² ← max(0, ŝ² + s·(m − 2σ²_v,k − ŝ²)),
+  s = min(1, max(1 − (1 − α)^w, w / max(W, 10⁻³⁰⁰))),
+  α = 1 − exp(−1 / (τ_a · r)) = 1.332 · 10⁻³ per sample at 1500 samples/s,
+  τ_a = 0.5 s of key-down weight (the Rician mean square is 2σ² + s²;
+  milestone 2's estimator, as Matched's, section 8b). The sums are
+  computed in numpy's pairwise order (`np.sum` along a row; numpy's
+  `pairwise_sum` ported in keying.cpp), the same mathematical sum.
+- **Amplitude, unknown (seed).** While unknown, w = 0 (no EM step) and
+  only keyed samples count: each block's keyed |v_k|² are appended to a
+  memory of at most the most recent round(4 · W_min · r) = 4800 samples
+  (3.2 s of keyed time; heuristic, a bound several W_min long), W grows
+  by the number keyed, and ŝ² = max(0, Q₀.₉ − 2σ²_v,k) with Q₀.₉ the 90%
+  quantile (numpy "linear", `bank::quantile_linear`) of that memory,
+  FS². The 90% quantile, not the mean, because the mean is pulled down by
+  the boxcar's ramps, which the test keys (milestone 2 seeds from the 90%
+  quantile too; heuristic).
+- **Re-key bookkeeping.** `ready_to_rekey`: unknown and W ≥ W_min =
+  0.8 s · r = 1200 samples of keyed time (measured, prototype E9b:
+  0.8 s adopted over 0.4 s and 0.2 s). `start_over(k)` (a possible new
+  over; the channel stage, not yet ported, calls it after a silence) keeps an
+  established ŝ² as the fallback (`prev_amp2`; NaN while there is none),
+  then sets ŝ² = 0, W = 0, empties the memory and marks k unknown.
+  `finish_over_start(k, ŝ², key)` installs the re-keying's winning ŝ²
+  (FS²), empties the memory, marks k known and sets its key state to the
+  re-keyed stretch's last; W keeps the keyed-sample count (≥ W_min when
+  called once ready), so the first EM steps after the switch move ŝ² by
+  at most w / W rather than replacing it.
+- **Re-keying a stretch (`rekey`).** The stored |v_k|² of a stretch are
+  keyed again from key up with the full LLR at fixed σ²_v,k and ŝ²
+  (a = √(max(ŝ², 0) / σ²_v,k)), the same g, h = 1 nat and squelch as
+  above. The channel stage (not yet ported) chooses among candidate amplitudes.
+- **Edges.** `edges` lists, per branch, (sample index, key state after it)
+  at every change of key state against the state before the block: the
+  marks and spaces the timing stage reads.
+
+**Exact zeros.** The keyer adds nothing for exact-zero input beyond the
+prototype: with σ² = 10⁻²⁰ FS² from the noise (above) and |v|² = 0 FS²,
+x = 0 is finite. Where the noise's σ²_v,k is NaN (above), a_k, x, g and p
+are NaN and every comparison with them is false: an unknown branch's key
+state holds; a known branch's squelch reads closed (a_k ≥ a_min,k is
+false), so its key goes up and its posterior out is 0 · NaN = NaN; its EM
+skips the update (w = NaN is not > 0) but W becomes NaN; an unknown
+branch's seed max(0, Q₀.₉ − 2·NaN) is 0 FS² (Python's max(0, NaN) and
+std::max(0.0, NaN) both give 0). Faithful to the prototype in Plan A;
+the fix is Plan B's.
+
+**Port check.** Golden values (`engine/tests/data/bank/keying.json`, from
+`kz4ap_proto.golden`): the prototype's `ChannelDecoder.run` itself, on the
+noise check's 20 s stream (above), with its keyer replaced by a recording
+subclass. Over 938 blocks the C++ keyer, fed the same float32 |v_k|² and
+the C++ noise estimate, replays run's 56 calls (24 `start_over`,
+32 `finish_over_start`, with their re-keyed amplitudes) after the blocks
+they followed. Measured: all 5113 edges of the 32 branches and the
+unknown flags of every block equal; a_k, Σp, W at 115 sampled blocks and
+W, ŝ², prev_amp2 and `ready_to_rekey` before every call agree to a
+largest relative difference of 2.3 · 10⁻¹³. `rekey` on run's first
+re-key stretch of branch 14 (samples 0–3007, three amplitudes, one of
+them below the squelch): edges equal.
+
+Status (as `params.py` marks it): τ_a = 0.5 s and P₁ = 0.44 are
+milestone 2's (P₁ from PARIS); h = 1 nat heuristic; the squelch's 3 at
+16 ms heuristic, its L^(1/4) scaling derived; R_fa = 0.01 /s a heuristic
+target kept by E9b; x_on,k measured (E9a); the release probability 0.3
+(x_off = 1.552) heuristic; W_min = 0.8 s measured (E9b); the seed's
+memory of 4 × W_min heuristic; the 0.5 clamp and the 10⁻³⁰⁰ guards
+numerical choices.
+
 ## 9. Timing and latency
 
 | Stage | Delay |
@@ -2145,6 +2277,11 @@ E10); the 16 points per bin and the 10⁻²⁰ FS² floor are numerical choices.
 | Bank noise spectrum | segments T_seg = 256/1500 s = 170.7 ms (M = 256 samples, bins 5.86 Hz at 1500 samples/s), periodic Hann; exponential average τ_n = 2 s (β = 0.0818 per segment); smoothed ±25 Hz (±4 bins); W_k from 16 points per bin | `BankConfig::segment_s`, `spectrum_smoothing_hz`; `bank::SpectrumNoise` | heuristic; 16 points a numerical choice |
 | Bank spectrum mask | a sample is left out if \|v_1\|² ≥ κ_n·2σ²_v,1 anywhere from 20 ms before it to (N_1 − 1)/r + 20 ms after it; a segment enters if ≥ 50% is left in | `BankConfig::guard_margin_s`, `min_clean_fraction` | heuristic |
 | Bank mask bias b_mask,k | 0.8370 (k = 1) … 0.7852 (k = 32), dimensionless; divides each branch's spectrum reading | `BankConfig::mask_bias` | measured (white noise, seeds 101–110; valid only for the defaults at 1500 samples/s) |
+| Bank keying log-odds and hysteresis | g = Λ + ln(P₁/(1 − P₁)) nats, P₁ = 0.44 (−0.2412 nats); down at g > +1 nat, up at g < −1 nat | `BankConfig::prior_key_down`, `hysteresis_nats`; `bank::BankKeyer::step` | P₁ milestone 2 (PARIS); h heuristic |
+| Bank squelch | a_k ≥ a_min,k = 3·(L_k/16 ms)^(1/4) (2.622 at k = 1 to 5.525 at k = 32), dimensionless | `BankConfig::squelch_a`, `squelch_ref_s`, `squelch_exponent` | 3 heuristic; L^(1/4) scaling derived |
+| Bank amplitude EM | τ_a = 0.5 s of key-down weight (α = 1.332·10⁻³ per sample at 1500 samples/s), p-weighted, one step per block | `BankConfig::amplitude_tau_s`; `bank::BankKeyer` | milestone 2 |
+| Bank unknown-amplitude test | key down at x > x_on,k (4.6428 at k = 1 … 4.2036 at k = 32, dimensionless), up at x < x_off = √(−2 ln 0.3) = 1.552; target R_fa = 0.01 false marks/s per branch | `BankConfig::x_on_values`, `release_probability`, `false_marks_per_s` | x_on measured (E9a); release probability heuristic; R_fa heuristic target kept by E9b |
+| Bank amplitude seed and re-key | while unknown: ŝ² = 90% quantile of the last ≤ 3.2 s (4 × W_min) of keyed \|v\|² − 2σ², FS²; ready to re-key after W_min = 0.8 s of keyed time | `BankConfig::rekey_after_s`, `seed_memory_rekeys`; `bank::BankKeyer`, `bank::rekey` | W_min measured (E9b); memory and 90% quantile heuristic |
 
 ## 11. Definitions used in tests and the benchmark
 
