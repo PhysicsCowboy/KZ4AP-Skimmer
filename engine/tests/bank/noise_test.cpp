@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <random>
@@ -136,11 +137,12 @@ std::vector<std::complex<double>> zeros_then_noise() {
 }
 
 // Review Focus 3 (plan): no NaN or Inf at any time, and every sigma2 finite and positive after the warm-up.
-// DISABLED pending the owner's ruling: the prototype itself fails it (task-3 report). On exact zeros the
+// DISABLED by the controller's ruling (2026-10-03): the prototype itself fails it (task-3 report), Plan A
+// keeps the prototype's behavior, and the fix is a Plan B item; enable this test with it. On exact zeros the
 // three-tap level falls to kMinVar = 1e-20 FS^2 and, once noise arrives, no tap passes the guard again, so
 // it stays there; the spectrum's first accepted all-zero segment (n1 = 576 samples, 0.384 s) makes the
 // shape all zeros, so variant (a)'s ratio is 0/0 = NaN from then on, and variant (b)'s level is 0 FS^2.
-// The port is faithful.
+// The port is faithful (docs/signal-processing.md section 8c, "Exact zeros").
 TEST(BankNoise, DISABLED_ExactZerosThenNoiseStayFiniteAndPositive) {
     const auto u = zeros_then_noise();
     const auto n = ladder(kRate);
@@ -163,7 +165,7 @@ TEST(BankNoise, DISABLED_ExactZerosThenNoiseStayFiniteAndPositive) {
 }
 
 // What the prototype does on the same input (measured with noise.py, task-3 report), pinned so the port's
-// behavior is visible until the ruling: branch stays at kMinVar; spectrum-level reads 0 FS^2 and spectrum
+// behavior is visible until Plan B fixes it: branch stays at kMinVar; spectrum-level reads 0 FS^2 and spectrum
 // NaN from the first accepted segment on (n1 = 576, 0.384 s).
 TEST(BankNoise, ExactZerosThenNoiseAsThePrototype) {
     const auto u = zeros_then_noise();

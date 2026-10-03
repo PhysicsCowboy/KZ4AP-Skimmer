@@ -1949,8 +1949,9 @@ three-tap guard of Matched (section 8b), and the **ratios** between
 branches from one shared noise spectrum of the channel stream u. The
 estimate advances once per block of round(block_s · r) samples
 (block_s = 32/1500 s = 21.33 ms; 32 samples at r = 1500 samples/s),
-before that block is keyed, and the block's samples are judged against
-σ² as it stood at the block's start. The inputs are u (FS) and the
+before that block is keyed. The three-tap guard judges the block's
+samples against σ² as it stood at the block's start; the spectrum's mask
+uses σ²_v,1 after that update (below). The inputs are u (FS) and the
 branches' |v_k|² (FS²), which the prototype stores in single precision
 (float32); the noise estimate reads those rounded values.
 
@@ -1976,7 +1977,10 @@ branches' |v_k|² (FS²), which the prototype stores in single precision
   quantile of |v_k|² over every sample from the stream's start, by
   numpy's default ("linear", Hyndman & Fan type 7) definition, ported
   exactly (`bank::quantile_linear`). In Gaussian noise the 20% quantile of
-  |v|² is 2σ_v²·(−ln 0.8) (derived), so this is unbiased in noise alone.
+  |v|² is 2σ_v²·(−ln 0.8) (derived), so in noise alone the estimate is
+  consistent: it converges to σ_v² as the warm-up grows. Over the 480
+  correlated samples of the warm-up it is not exactly unbiased (not
+  computed).
   Matched's floor lift (section 8b, "Floor") is not part of the
   prototype and is not ported.
 - **Spectrum shape.** u is cut into consecutive, non-overlapping segments
@@ -1988,7 +1992,9 @@ branches' |v_k|² (FS²), which the prototype stores in single precision
   needs |v_1|² that far ahead. Segments examined before the three-tap
   warm-up has ended are discarded. **Mask:** sample u[i] feeds
   v_1[i … i + N_1 − 1]; it is left out if any |v_1[j]|², j from i − R to
-  i + N_1 − 1 + R, is at or above κ_n · 2σ²_v,1 (κ_n = 4). A segment
+  i + N_1 − 1 + R, is at or above κ_n · 2σ²_v,1 (κ_n = 4), where σ²_v,1
+  is the three-tap level after the current block's update (the update
+  runs first, then the segments due in this block are masked). A segment
   enters only if at least 50% of its samples are left in. With w the
   periodic Hann window 0.5 − 0.5·cos(2π i/M) times the mask (1 kept,
   0 left out), its periodogram is I_m = |DFT(u·w)_m|² / Σ w² (FS² per
@@ -2040,7 +2046,8 @@ every 10th block (93 instants). Measured largest relative difference:
 2.9 · 10⁻¹⁵ ("spectrum"), 2.2 · 10⁻¹⁵ ("spectrum-level"), 0 ("branch");
 accepted and offered segment counts equal at every instant.
 
-**Exact zeros (open; prototype behavior, ported as is).** On a stream that
+**Exact zeros (prototype behavior, ported as is; fix deferred to Plan B).**
+On a stream that
 starts with exact zeros (a zero-padded recording, a dead channel) every
 |v_k|² is 0 FS², so the warm-up sets σ² = 10⁻²⁰ FS² and the three-tap
 update keeps it there. When noise arrives, every tap exceeds κ·2σ², none
@@ -2054,8 +2061,12 @@ and variant (b)'s level 0 FS² from then on. Measured with the prototype
 and pinned by `BankNoise.ExactZerosThenNoiseAsThePrototype` (5 s of zeros,
 then 5 s of white noise of 1 FS² per complex sample); the plan's
 requirement that no NaN reach a published value (Review Focus 3) is
-`BankNoise.DISABLED_ExactZerosThenNoiseStayFiniteAndPositive`, disabled
-until the owner rules.
+`BankNoise.DISABLED_ExactZerosThenNoiseStayFiniteAndPositive`, disabled.
+The controller's ruling (2026-10-03): Plan A, a faithful port, keeps the
+prototype's behavior; the fix (the three-tap recovery from an all-zero
+start, the spectrum's 0/0 ratio) is a Plan B item. Until then the bank
+decoder may key nothing on digital silence, and the channel (Task 7)
+must still keep NaN out of published text and corrections.
 
 Status (as `params.py` marks it): κ = 1.75, κ_n = 4, τ_n = 2 s and the
 0.32 s warm-up are Matched's (milestone 2; heuristic), with m(κ) and
