@@ -162,6 +162,23 @@ Envelope paths, with intervals (spec §7, stage 2: a required part of the
 evaluation). Which tracks the detector opens is unchanged by the redesign. No
 acceptance gate: the owner decides from the comparison.
 
+### Time-base invariance of the decoder (stage 2; known issue)
+
+A decoder whose every time constant scales with the dit has a CER that depends only on the energy per
+dit, E/N₀ = S₅₀₀ × 500 Hz × T, so its CER crossings in S₅₀₀ must move 10·log₁₀ k lower when the speed
+falls by a factor k (derived; `docs/plans/2026-09-30-milestone-2b-stage-1-results.md`, section 5.1.1).
+From 25 to 12 WPM that is 3.2 dB of S₅₀₀. Measured in stage 1, the CER-0.10 crossing moves 0.1 dB for the
+prototype and 1.3 dB for Matched, and the prototype fails abruptly at 12 WPM, S₅₀₀ = −2 dB. Hypothesis,
+not traced: settings fixed in seconds rather than in dits (amplitude average τ_a = 0.5 s, noise average
+τ_n = 2 s, periodicity windows 2/5/10 s, re-key wait 0.8 s and time-out 2 s, new-over threshold at least
+0.5 s, first-mark threshold calibrated per second).
+
+Test (small): stretch a 25 WPM group A condition in time by 2.08 (into 12 WPM at the same E/N₀ per dit)
+and decode it twice, as is and with those settings also multiplied by 2.08. If the second run recovers
+the 3.2 dB, the fixed-second settings are the cause; then find which ones matter, and in stage 2 express
+each time constant in dits unless there is a stated reason not to (a physical time such as fading or
+the 20 s correction reach).
+
 ### A validated offline measure for the speed estimate T_P (stage 2)
 
 Stage 1's E1 judged the periodicity methods offline, by precision and coverage

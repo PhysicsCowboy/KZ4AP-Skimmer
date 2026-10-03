@@ -1767,6 +1767,21 @@ S₅₀₀):
    prototype's lies at the same S₅₀₀ (−0.1 dB against 0.0 dB). This matches its abrupt failure at
    S₅₀₀ = −2 dB (section 5.1). Conjectured, not traced: something other than the filters' energy limits
    at low speed (the amplitude estimate, the squelch or the first-mark threshold).
+
+   **Known issue: the decoders are not time-base invariant, and the bound is.** In E/N₀ the bound is
+   invariant under a stretch of the time base: stretching a transmission by k leaves the error rate at a
+   given E/N₀ unchanged, so in S₅₀₀ every crossing must move down by 10·log₁₀ k when the speed falls by
+   k (derived). From 25 to 12 WPM, k = 100 ms / 48 ms = 2.08 and the shift should be 3.2 dB of S₅₀₀. The
+   measured shift of the CER-0.10 crossing is 0.1 dB for the prototype (−0.1 dB at 12 WPM, 0.0 dB at
+   25 WPM) and 1.3 dB for Matched (−0.2 dB, 1.1 dB). So both decoders contain something whose cost grows
+   at low speed. The filter bank itself is close to invariant (its lengths are spaced by a constant
+   ratio, ×1.1), but several of the prototype's settings are fixed in seconds rather than in dits, and
+   each sees fewer marks at 12 WPM than at 25 WPM: the amplitude average (τ_a = 0.5 s of key-down
+   weight), the noise-level average (τ_n = 2 s), the periodicity windows (2, 5 and 10 s), the re-key wait
+   (W_min = 0.8 s of keyed time) and time-out (2 s), the new-over threshold (at least 0.5 s), and the
+   first-mark threshold, calibrated to a false-mark rate per second (R_fa = 0.01 /s). That these cause
+   the missing 3.2 dB is a hypothesis, not traced; which of them matter was not measured. A test is in
+   the backlog ("Time-base invariance of the decoder").
 3. The bound is approximate: the 10 units per character and the high-SNR approximation are heuristics
    (about ±0.7 dB, above). An exact reference would be a genie decoder run on the same recordings; the
    owner judged that a distraction for now (2026-10-02), so it is not in the backlog.
@@ -2246,3 +2261,11 @@ to `build/suite/full3/groupA-by-snr-held-out.txt`, git-ignored; Matched at 12 WP
     false key-down rate may be about 1.6× higher for a 5% low σ² (estimated, not measured).
   - CI: GitHub's `ubuntu-latest` moves to Ubuntu 26 from 2026-10-19, so CI's Linux compiler may change;
     pin `ubuntu-24.04` or check after the switch (the owner's choice).
+
+- **Known issue: sensitivity does not improve at low speed as theory requires (section 5.1.1).** From 25
+  to 12 WPM a dit carries 3.2 dB more energy, so every CER crossing should move 3.2 dB of S₅₀₀ lower
+  (derived from a time-base-invariant bound); the prototype's moves 0.1 dB and Matched's 1.3 dB
+  (measured). Hypothesis, not traced: settings fixed in seconds rather than in dits (amplitude and
+  noise averages, periodicity windows, re-key wait and time-out, new-over threshold, a first-mark
+  threshold per second). Recorded for stage 2 (backlog, "Time-base invariance of the decoder"); the owner
+  asked for it to be recorded (2026-10-02).
