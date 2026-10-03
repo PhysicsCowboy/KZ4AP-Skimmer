@@ -7,6 +7,7 @@
 //    inputs (engine/tests/data/bank/fit_cases.json, golden.py golden_fit_cases: the synthesis library is
 //    Python only) and the same assertions; the strict xfail is a GTEST_SKIP with the same reason.
 #include "kz4ap/bank/fit.hpp"
+#include "kz4ap/bank/numpy_sum.hpp"
 
 #include "golden.hpp"
 
@@ -77,28 +78,6 @@ std::optional<Fit> fitted(const Durations& obs, std::optional<double> prior_t = 
 std::array<double, 4> arr4(const nlohmann::json& j) {
     const auto v = j.get<std::vector<double>>();
     return {v.at(0), v.at(1), v.at(2), v.at(3)};
-}
-
-// numpy's pairwise summation (np.sum of a contiguous float64 array), for the plain formulas below.
-double np_sum(const double* a, std::size_t n) {
-    if (n < 8) {
-        double res = 0.0;
-        for (std::size_t i = 0; i < n; ++i) res += a[i];
-        return res;
-    }
-    if (n <= 128) {
-        double r[8];
-        for (std::size_t j = 0; j < 8; ++j) r[j] = a[j];
-        std::size_t i = 8;
-        for (; i < n - (n % 8); i += 8)
-            for (std::size_t j = 0; j < 8; ++j) r[j] += a[i + j];
-        double res = ((r[0] + r[1]) + (r[2] + r[3])) + ((r[4] + r[5]) + (r[6] + r[7]));
-        for (; i < n; ++i) res += a[i];
-        return res;
-    }
-    std::size_t n2 = n / 2;
-    n2 -= n2 % 8;
-    return np_sum(a, n2) + np_sum(a + n2, n - n2);
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -459,7 +438,7 @@ TEST(BankFitPython, FastPathsAreBitIdenticalToThePlainFormulas) {
         const ClassLogliks c = class_logliks(theta, h, cfg);
         std::vector<double> prod(h.size());
         for (std::size_t i = 0; i < h.size(); ++i) prod[i] = age[i] * c.total[i];
-        return np_sum(prod.data(), prod.size());
+        return pairwise_sum(prod.data(), prod.size());
     };
     auto prior_term = [&](double t_s, std::optional<double> pt, double pw) {
         if (!pt || !(pw > 0)) return 0.0;
@@ -477,7 +456,7 @@ TEST(BankFitPython, FastPathsAreBitIdenticalToThePlainFormulas) {
         for (const auto& c : {refined, grid})
             if (!theta && best.t_s == c[0] && best.w_s == c[1] && best.tg_s == c[3]) theta = c;
         ASSERT_TRUE(theta.has_value());
-        EXPECT_EQ(bits(best.quality), bits(plain_sum(*theta) / np_sum(age.data(), age.size())));
+        EXPECT_EQ(bits(best.quality), bits(plain_sum(*theta) / pairwise_sum(age.data(), age.size())));
     }
 }
 

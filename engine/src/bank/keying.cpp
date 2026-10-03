@@ -1,6 +1,7 @@
 #include "kz4ap/bank/keying.hpp"
 
 #include "kz4ap/bank/noise.hpp"
+#include "kz4ap/bank/numpy_sum.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -17,30 +18,6 @@ constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 // numpy.maximum / numpy.minimum: NaN if either is NaN.
 double np_maximum(double a, double b) { return (std::isnan(a) || std::isnan(b)) ? kNaN : std::max(a, b); }
 double np_minimum(double a, double b) { return (std::isnan(a) || std::isnan(b)) ? kNaN : std::min(a, b); }
-
-// numpy's pairwise summation of a contiguous float64 row (np.sum along the last axis): under 8 values a plain
-// loop; up to 128, eight interleaved partial sums combined pairwise, then the remainder; above, the halves
-// (split at a multiple of 8) summed recursively. The same mathematical sum in numpy's order of additions.
-double pairwise_sum(const double* a, std::size_t n) {
-    if (n < 8) {
-        double res = 0.0;
-        for (std::size_t i = 0; i < n; ++i) res += a[i];
-        return res;
-    }
-    if (n <= 128) {
-        double r[8];
-        for (int j = 0; j < 8; ++j) r[j] = a[j];
-        std::size_t i = 8;
-        for (; i < n - (n % 8); i += 8)
-            for (std::size_t j = 0; j < 8; ++j) r[j] += a[i + j];
-        double res = ((r[0] + r[1]) + (r[2] + r[3])) + ((r[4] + r[5]) + (r[6] + r[7]));
-        for (; i < n; ++i) res += a[i];
-        return res;
-    }
-    std::size_t n2 = n / 2;
-    n2 -= n2 % 8;
-    return pairwise_sum(a, n2) + pairwise_sum(a + n2, n - n2);
-}
 
 // np.sum(row) along a contiguous row.
 double row_sum(const std::vector<double>& row) { return pairwise_sum(row.data(), row.size()); }

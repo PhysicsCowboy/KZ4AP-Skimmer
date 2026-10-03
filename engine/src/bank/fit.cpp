@@ -1,5 +1,6 @@
 #include "kz4ap/bank/fit.hpp"
 
+#include "kz4ap/bank/numpy_sum.hpp"
 #include "kz4ap/morse.hpp"
 
 #include <algorithm>
@@ -46,32 +47,6 @@ constexpr CharWeight kVe3neaCharWeights[] = {
 };
 constexpr double kVe3neaWordLengthProbs[] = {0.0,   0.1672, 0.2569, 0.1939, 0.1745, 0.0921, 0.025, 0.008, 0.006,
                                              0.004, 0.003,  0.003,  0.002,  0.002,  0.002,  0.001, 0.001};
-
-// numpy's pairwise summation of a contiguous float64 array (np.sum): under 8 values a plain loop; up to 128,
-// eight interleaved partial sums combined pairwise, then the remainder; above, the halves (split at a
-// multiple of 8) summed recursively. The same sum in numpy's order of additions (as keying.cpp's).
-double pairwise_sum(const double* a, std::size_t n) {
-    if (n < 8) {
-        double res = 0.0;
-        for (std::size_t i = 0; i < n; ++i) res += a[i];
-        return res;
-    }
-    if (n <= 128) {
-        double r[8];
-        for (std::size_t j = 0; j < 8; ++j) r[j] = a[j];
-        std::size_t i = 8;
-        for (; i < n - (n % 8); i += 8)
-            for (std::size_t j = 0; j < 8; ++j) r[j] += a[i + j];
-        double res = ((r[0] + r[1]) + (r[2] + r[3])) + ((r[4] + r[5]) + (r[6] + r[7]));
-        for (; i < n; ++i) res += a[i];
-        return res;
-    }
-    std::size_t n2 = n / 2;
-    n2 -= n2 % 8;
-    return pairwise_sum(a, n2) + pairwise_sum(a + n2, n - n2);
-}
-
-double pairwise_sum(const std::vector<double>& a) { return pairwise_sum(a.data(), a.size()); }
 
 // ln((1 - epsilon) x prior) per class, nats (dit, dah, element, character, word).
 std::array<double, 5> log_priors(const BankConfig& cfg) {
