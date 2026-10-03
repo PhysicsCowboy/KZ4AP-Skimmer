@@ -219,6 +219,18 @@ station (dit 240 ms) needs a window of at least 4.4 s, so the 2 s window can nev
 §6, comb lag reach; results section 3.4). This fits the losses at 10 WPM (results section 5.3), but
 that link is conjectured.
 
+**Audit of fixed times (do first in stage 2's design; owner, 2026-10-02).** The spec and the stage-1
+plan set many time constants in seconds. Before the stretch test, list every time constant in the spec
+(§4, §6) and in `ProtoConfig`, and give each a class and its reason:
+1. **scales with the dit**: anything that means "enough marks to estimate something" (amplitude and
+   noise averages, periodicity windows, re-key wait, new-over threshold, a false-mark rate per second);
+   express it in dits or marks;
+2. **physical, seconds are right**: fading rate, frequency drift, the 20 s correction reach a reader
+   tolerates, display latency;
+3. **unclear**: mixes both (for example the 2 s re-key time-out: how long a user waits against how many
+   marks are needed); decide it explicitly.
+The result is a table in the stage-2 spec; the stretch test then checks it.
+
 ### A validated offline measure for the speed estimate T_P (stage 2)
 
 Stage 1's E1 judged the periodicity methods offline, by precision and coverage
