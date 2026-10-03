@@ -162,6 +162,18 @@ Envelope paths, with intervals (spec §7, stage 2: a required part of the
 evaluation). Which tracks the detector opens is unchanged by the redesign. No
 acceptance gate: the owner decides from the comparison.
 
+### Let the text model take part in character decisions (stage 2)
+
+In the stage-1 prototype the character model (VE3NEA's weights; invalid codes very unlikely) is used
+only to break near-ties between branches, and it has almost no effect: turning it off raised the CER
+by +0.0012 (+0.0001 to +0.0025), and no setting of its weight or window changed the CER by more than
+0.003 (measured, E8; `docs/plans/2026-09-30-milestone-2b-stage-1-results.md`, section 3.12). Each
+character is still decided from its durations alone. A text prior is the one thing that can take a
+decoder past the noise-only bound (section 5.1.1), so in stage 2 consider letting the model take part
+in the character decisions themselves, for example a sequence decoder that weighs the timing evidence
+for each candidate character against its probability in context, and measure it on text that does not
+come from the model's own frequencies (groups G and H; real recordings).
+
 ### Time-base invariance of the decoder (stage 2; known issue)
 
 A decoder whose every time constant scales with the dit has a CER that depends only on the energy per
