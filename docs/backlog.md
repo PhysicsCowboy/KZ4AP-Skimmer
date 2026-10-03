@@ -174,6 +174,27 @@ in the character decisions themselves, for example a sequence decoder that weigh
 for each candidate character against its probability in context, and measure it on text that does not
 come from the model's own frequencies (groups G and H; real recordings).
 
+### Following a speed jump: no switch setting meets the 10-mark target (stage 2)
+
+Spec §4.6 asks the decoder to follow a jump in speed within about 10 marks. Stage 1's E6 measured the
+marks needed to follow a 15 → 30 WPM step (10 seeds) at switch persistence M = 1, 2, 4, 6 and 8: medians
+10.5, 11.5, 14, 16 and 18 marks; every seed was followed (`docs/plans/2026-09-30-milestone-2b-stage-1-results.md`,
+section 3.11). No M meets the target, and M = 4 was kept. So the limit is not the switch setting alone.
+Conjectured, not traced: the fit memory of 48 elements (E4, adopted before E6) makes each branch's fit
+follow a step about twice as slowly as 24 did (the fit's step test needs about 144 elements against 72,
+section 3.7). Stage 2: find what limits following (fit memory, eligibility, the T_P prior) before
+tuning M.
+
+### Farnsworth word gaps start false overs (stage 2)
+
+A silence longer than T_new = max(0.5 s, 12·T_g) starts a new over (fresh fit and amplitude, first marks
+re-keyed). Farnsworth's long word gaps pass that test inside a transmission: in the reference before
+E7, 16 of 48 Farnsworth transmissions had a false over start (0.333 per transmission) against the
+rule's limit of 0.05; the variants tried did not fix it (the nearest, 16·T_g, gave 0.0625), so the
+threshold was kept (measured, E7; results section 3.10). A false over start discards the station's
+fit and amplitude mid-transmission. Stage 2: make the over-start test aware of the station's own
+spacing, for example from its fitted word gaps, rather than a fixed multiple of T_g.
+
 ### Time-base invariance of the decoder (stage 2; known issue)
 
 A decoder whose every time constant scales with the dit has a CER that depends only on the energy per
@@ -190,6 +211,13 @@ and decode it twice, as is and with those settings also multiplied by 2.08. If t
 the 3.2 dB, the fixed-second settings are the cause; then find which ones matter, and in stage 2 express
 each time constant in dits unless there is a stated reason not to (a physical time such as fading or
 the 20 s correction reach).
+
+A second, derived reason the seconds-based windows hurt slow stations: the comb on 2T reaches 9.15·T
+(4 teeth, ±15% of T), so a periodicity window of length W can measure dits only up to T = W / 18.3:
+109 ms (about 11 WPM) in the 2 s window, 273 ms in the 5 s window, 546 ms in the 10 s window. A 5 WPM
+station (dit 240 ms) needs a window of at least 4.4 s, so the 2 s window can never give it a T_P (spec
+§6, comb lag reach; results section 3.4). This fits the losses at 10 WPM (results section 5.3), but
+that link is conjectured.
 
 ### A validated offline measure for the speed estimate T_P (stage 2)
 
