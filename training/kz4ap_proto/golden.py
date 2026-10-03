@@ -2,7 +2,7 @@
 C++ port's tests read (engine/tests/data/bank/<name>.json) and must reproduce (continuous values to
 relative 1e-9, discrete values exactly).
 
-Run:  python -m kz4ap_proto.golden --out engine/tests/data/bank
+Run (from the repository root):  PYTHONPATH=training python -m kz4ap_proto.golden --out engine/tests/data/bank
 
 Each module of the decoder gets one function, golden_<module>(cfg) -> dict (JSON-serializable), added to
 GOLDEN below; write_all writes every registered function's dict to <out_dir>/<module>.json."""
@@ -17,7 +17,7 @@ from typing import Callable
 
 import numpy as np
 
-from . import bank, detect
+from . import bank, detect, noise, testsignals
 from .params import ProtoConfig
 
 
@@ -61,11 +61,62 @@ def golden_filters(cfg: ProtoConfig) -> dict:
     return out
 
 
+def golden_noise(cfg: ProtoConfig) -> dict:
+    """noise.py driven exactly as ChannelDecoder.run drives it, at 1500 samples/s: the stream is 20 s of
+    testsignals.stream (a 1 FS carrier keyed at 25 WPM by kz4ap_synth's random_text(default_rng(4), 60) from
+    1.0 s, S500 = 15 dB, seed 21) through the channel filter's shape (testsignals.lowpass, np.convolve
+    mode="same"), so the noise is channel-shaped. P = |boxcar(u, N_k)|^2 stored as float32 (as run stores it);
+    the C++ test recomputes P from u. Each method ("spectrum", "spectrum-level", "branch") is updated block by
+    block (block_s) and its sigma2() (FS^2 per real component, one per branch) is recorded after every 10th
+    block (block index b with b % 10 == 9), with n1 (samples) and, for the spectrum methods, the accepted and
+    offered segment counts. guard_mean is recorded at three kappa."""
+    import dataclasses as dc
+
+    from kz4ap_synth.messages import random_text
+    from kz4ap_synth.morse import keying_intervals
+
+    rate = 1500.0
+    n = bank.branch_samples(bank.branch_lengths_s(cfg), rate)
+    iv = keying_intervals(random_text(np.random.default_rng(4), 60), 25.0)
+    u = np.convolve(testsignals.stream(iv, 1.0, 20.0, 15.0, 21, rate), testsignals.lowpass(rate), mode="same")
+    u = np.asarray(u, np.complex128)
+    total = len(u)
+    P = np.stack([np.abs(bank.boxcar(u, int(k))) ** 2 for k in n]).astype(np.float32)
+    block = max(1, int(round(cfg.block_s * rate)))
+    out: dict = {
+        "rate_hz": rate,
+        "u_re": u.real.tolist(),
+        "u_im": u.imag.tolist(),
+        "guard_mean_kappa": [1.0, 1.75, 4.0],
+        "guard_mean": [noise.guard_mean(k) for k in (1.0, 1.75, 4.0)],
+    }
+    for method in ("spectrum", "spectrum-level", "branch"):
+        est = noise.make_noise(dc.replace(cfg, noise_method=method), rate, n)
+        snaps, n1s, accepted, offered = [], [], [], []
+        for b, n0 in enumerate(range(0, total, block)):
+            n1 = min(n0 + block, total)
+            est.update(u, P, n0, n1)
+            sigma2 = est.sigma2()
+            if b % 10 == 9:
+                snaps.append(sigma2.tolist())
+                n1s.append(n1)
+                if method != "branch":
+                    accepted.append(est.segments)
+                    offered.append(est.segments_offered)
+        out[f"{method}_n1"] = n1s
+        out[f"{method}_sigma2"] = snaps
+        if method != "branch":
+            out[f"{method}_segments"] = accepted
+            out[f"{method}_segments_offered"] = offered
+    return out
+
+
 # name of the JSON file (without extension) -> function producing its content.
 # Later tasks register golden_<module> here.
 GOLDEN: dict[str, Callable[[ProtoConfig], dict]] = {
     "config": golden_config,
     "filters": golden_filters,
+    "noise": golden_noise,
 }
 
 

@@ -1885,9 +1885,10 @@ not in the repository; nothing was changed):
 The bank decoder is the C++ port of the stage-1 Python prototype
 (`training/kz4ap_proto`); it is a *decoder* alongside Envelope and Matched.
 This section is written as the port's modules land; it now covers the
-branch filters and the envelope likelihood (`engine/src/bank/filters.cpp`,
-checked against golden values from the prototype, relative 1e-9). The
-rest (noise estimates, keying, characters) follows with its modules.
+branch filters and the envelope likelihood (`engine/src/bank/filters.cpp`)
+and the noise estimates (`engine/src/bank/noise.cpp`, "Noise" below),
+each checked against golden values from the prototype (relative 1e-9).
+The rest (keying, characters) follows with its modules.
 
 **The bank.** Instead of one matched filter whose length follows an
 estimated speed (section 8b), the bank runs K = 32 boxcar filters at once,
@@ -1937,6 +1938,131 @@ the step ρ = 1.1 is an owner decision; β = 0.8 dit is heuristic (the
 shape matched filter is derived, the fraction is not); the logistic clip
 (±50 nats) and the 10⁻⁹ guard in the branch count are numerical choices,
 not tuned.
+
+### Noise (bank decoder)
+
+`engine/src/bank/noise.cpp`, a port of `training/kz4ap_proto/noise.py`,
+checked against the prototype's golden values (below). The keying needs
+σ²_v,k, the noise variance per real component of each branch output v_k,
+in FS². It comes from two sources: the **level** of branch 1 by the
+three-tap guard of Matched (section 8b), and the **ratios** between
+branches from one shared noise spectrum of the channel stream u. The
+estimate advances once per block of round(block_s · r) samples
+(block_s = 32/1500 s = 21.33 ms; 32 samples at r = 1500 samples/s),
+before that block is keyed, and the block's samples are judged against
+σ² as it stood at the block's start. The inputs are u (FS) and the
+branches' |v_k|² (FS²), which the prototype stores in single precision
+(float32); the noise estimate reads those rounded values.
+
+- **Three-tap level.** For each sample n of the block with n ≥ 2N_k, the
+  middle tap |v_k[n−N_k]|² is accepted if it is below κ · 2σ² and both
+  neighbors, |v_k[n]|² and |v_k[n−2N_k]|², are below κ_n · 2σ², with
+  κ = 1.75 and κ_n = 4 (dimensionless; taps N_k apart share no inputs,
+  so in white noise they are independent). With c accepted taps in the
+  block (their mean |v|², FS², written μ), the update is
+  σ² ← max(σ² + s·(μ / (2·m(κ)) − σ²), 10⁻²⁰ FS²), where
+  s = max(1 − (1 − α)^c, c / W), α = 1 − exp(−1 / (τ_n · r)) per sample,
+  τ_n = 2 s, and W is the number of taps accepted so far (a count),
+  starting at 0.1 × the warm-up's sample count (48 at 1500 samples/s).
+  m(κ) = 1 − κ·e^(−κ)/(1 − e^(−κ)) = 0.632 at κ = 1.75 is the mean of an
+  exponential variable with mean 1 truncated at κ (derived: in Gaussian
+  noise |v|²/(2σ_v²) is exponential with mean 1; section 8b). A block in
+  which no branch accepts a tap changes nothing, not even W. The floor of
+  10⁻²⁰ FS² (−200 dBFS) is a numerical choice that keeps x = |v|/σ_v
+  finite on noise-free input.
+- **Warm-up.** Up to and including the first block that ends at or after
+  round(0.32 s · r) samples (480 at 1500 samples/s), σ² is recomputed each
+  block as max(Q₀.₂ / (2·(−ln 0.8)), 10⁻²⁰ FS²), where Q₀.₂ is the 20%
+  quantile of |v_k|² over every sample from the stream's start, by
+  numpy's default ("linear", Hyndman & Fan type 7) definition, ported
+  exactly (`bank::quantile_linear`). In Gaussian noise the 20% quantile of
+  |v|² is 2σ_v²·(−ln 0.8) (derived), so this is unbiased in noise alone.
+  Matched's floor lift (section 8b, "Floor") is not part of the
+  prototype and is not ported.
+- **Spectrum shape.** u is cut into consecutive, non-overlapping segments
+  of M = max(16, round(T_seg · r)) samples from sample 0
+  (T_seg = 256/1500 s = 170.7 ms; M = 256 at 1500 samples/s, bins
+  r/M = 5.86 Hz wide). A segment starting at sample s is examined in the
+  first block whose end n₁ satisfies s + M + N_1 − 1 + R ≤ n₁, with
+  R = round(0.02 s · r) = 30 samples (the guard margin), because its mask
+  needs |v_1|² that far ahead. Segments examined before the three-tap
+  warm-up has ended are discarded. **Mask:** sample u[i] feeds
+  v_1[i … i + N_1 − 1]; it is left out if any |v_1[j]|², j from i − R to
+  i + N_1 − 1 + R, is at or above κ_n · 2σ²_v,1 (κ_n = 4). A segment
+  enters only if at least 50% of its samples are left in. With w the
+  periodic Hann window 0.5 − 0.5·cos(2π i/M) times the mask (1 kept,
+  0 left out), its periodogram is I_m = |DFT(u·w)_m|² / Σ w² (FS² per
+  bin; its mean over the M bins is the power per sample). The shape S
+  starts at the first accepted periodogram and then follows
+  S ← S + max(β, 1/n_seg)·(I − S), β = 1 − exp(−T_seg/τ_n) = 0.0818
+  (n_seg the number of accepted segments, including this one). The DFT
+  is the engine's pocketfft in double precision (`detail::fft_forward`
+  for `std::complex<double>`, `engine/src/fft.hpp`): unnormalized, bin m
+  at m/M cycles per sample, m = 0 … M−1, the same definition and order
+  as `numpy.fft.fft`, so no rescaling or reordering is needed.
+- **Smoothing and branch weights.** S is smoothed by a circular moving
+  mean over 2h + 1 bins, h = round(25 Hz · M / r) = 4 bins (±23.4 Hz at
+  1500 samples/s). W_k[m] (dimensionless) is the mean of the boxcar's
+  power response |H_k(f)|² over 16 equally spaced frequencies across
+  bin m (offsets ((j + ½)/16 − ½)·r/M, j = 0 … 15, around the bin's
+  center as `numpy.fft.fftfreq` places it, so bins above M/2 are the
+  negative frequencies).
+- **Per-branch variances.** With S̃ the smoothed shape and b_k the mask
+  bias of branch k, the default ("spectrum", variant (a)) is
+  σ²_v,k = σ²_v,1 · [(W_k·S̃)/b_k] / [(W_1·S̃)/b_1]: the level from the
+  three-tap guard, the ratios from the spectrum. Variant (b)
+  ("spectrum-level") takes the level from the spectrum too:
+  σ²_v,k = 0.5·(W_k·S̃)/(M·b_k) (the complex power of v_k is
+  (1/M)·Σ_m I_m W_k[m], half of it per real component; derived). Before
+  any segment has entered, both use σ²_v,k = σ²_v,1 · N_1/N_k, exact for
+  white noise (Parseval; derived). The fallback ("branch") runs the
+  three-tap estimate on every branch separately.
+- **Mask bias b_mask,k.** The mask leaves out mostly low-frequency power
+  (the station is near 0 Hz), so the masked spectrum reads each branch's
+  noise low by a factor that differs per branch and does not cancel in
+  the ratio. b_k = (σ²_v,k from the masked, smoothed spectrum) / (true
+  σ²_v,k), dimensionless, runs from 0.8370 (k = 1) to 0.7852 (k = 32);
+  measured in the prototype (white noise of 1 FS² per complex sample,
+  seeds 101–110, 60 s each, 2362 of 3500 segments accepted; per-seed
+  scatter 2.6% at k = 1 to 4.5% at k = 32). In channel-shaped noise the
+  same ratios are 2.9% (k = 1) to 5.9% (k = 32) higher (measured in the
+  prototype), so the estimate is that much low there. The table is valid
+  only for the default ladder, T_seg, smoothing, guard margin, clean
+  fraction, κ_n and three-tap settings at 1500 samples/s; it has not
+  been re-measured at other rates.
+
+**Port check.** Golden values (`engine/tests/data/bank/noise.json`, from
+`kz4ap_proto.golden`): 20 s of a 1 FS carrier keyed at 25 WPM from 1.0 s
+at S₅₀₀ = 15 dB (SNR in 500 Hz), passed through the channel
+filter's shape so the noise is channel-shaped, run block by block as the
+prototype's channel runs it, σ²_v,k of all 32 branches compared after
+every 10th block (93 instants). Measured largest relative difference:
+2.9 · 10⁻¹⁵ ("spectrum"), 2.2 · 10⁻¹⁵ ("spectrum-level"), 0 ("branch");
+accepted and offered segment counts equal at every instant.
+
+**Exact zeros (open; prototype behavior, ported as is).** On a stream that
+starts with exact zeros (a zero-padded recording, a dead channel) every
+|v_k|² is 0 FS², so the warm-up sets σ² = 10⁻²⁰ FS² and the three-tap
+update keeps it there. When noise arrives, every tap exceeds κ·2σ², none
+is accepted, and σ² stays at 10⁻²⁰ FS² indefinitely: the "cannot settle
+low" argument of section 8b assumes ρ = σ̂²/σ² is not tiny, but its
+acceptance (1 − e^(−κρ))(1 − e^(−κ_n ρ))² is about 10⁻⁵⁴ at
+ρ = 10⁻²⁰/0.036 (computed). Meanwhile the spectrum accepts the all-zero
+segments; from the first (the block ending at 576 samples, 0.384 s, at
+1500 samples/s) S is identically 0, so variant (a)'s ratio is 0/0 = NaN
+and variant (b)'s level 0 FS² from then on. Measured with the prototype
+and pinned by `BankNoise.ExactZerosThenNoiseAsThePrototype` (5 s of zeros,
+then 5 s of white noise of 1 FS² per complex sample); the plan's
+requirement that no NaN reach a published value (Review Focus 3) is
+`BankNoise.DISABLED_ExactZerosThenNoiseStayFiniteAndPositive`, disabled
+until the owner rules.
+
+Status (as `params.py` marks it): κ = 1.75, κ_n = 4, τ_n = 2 s and the
+0.32 s warm-up are Matched's (milestone 2; heuristic), with m(κ) and
+the 2·(−ln 0.8) warm-up scale derived; T_seg, the ±25 Hz smoothing, the
+20 ms guard margin and the 50% clean fraction are heuristic; b_mask,k is
+measured; the choice of variant (a) is measured (prototype experiment
+E10); the 16 points per bin and the 10⁻²⁰ FS² floor are numerical choices.
 
 ## 9. Timing and latency
 
@@ -2003,6 +2129,11 @@ not tuned.
 | Bank ladder (decoder: bank) | L_k = 9.6 ms × 1.1^(k−1), k = 1…32 (9.6 to 184.3 ms): 0.8 dit at 100 to 5 words/min; ratio 1.1 | `BankConfig::min_wpm`, `max_wpm`, `ladder_step`, `length_dits` | WPM range and ratio owner; length 0.8 dit heuristic |
 | Bank branch filter | boxcar, N_k = round(L_k · r) samples (14 to 276 at r = 1500 samples/s), zeros before the stream | `bank::branch_samples`, `bank::boxcar` | derived from the ladder |
 | Bank envelope likelihood | Λ = −a²/2 + ln I₀(a·x) nats; p = logistic(g), g clipped to ±50 nats | `bank::envelope_llr`, `bank::logistic` | derived; clip a numerical choice |
+| Bank noise method | "spectrum": branch 1's three-tap level × spectrum ratios (variant (a)); "spectrum-level" (variant (b)) and "branch" (per-branch three-tap fallback) selectable | `BankConfig::noise_method`, `bank::make_noise` | measured (prototype E10) |
+| Bank three-tap noise level | κ = 1.75, κ_n = 4, τ_n = 2 s, truncation mean m(κ) = 0.632 divided out; warm-up 0.32 s, 20% quantile (numpy "linear") / (2·(−ln 0.8)); floor 10⁻²⁰ FS² (−200 dBFS) | `BankConfig::noise_guard`, `neighbor_guard`, `noise_tau_s`, `noise_warmup_s`; `bank::ThreeTapNoise` | heuristic (Matched's, milestone 2); m(κ) and the warm-up scale derived; floor a numerical choice |
+| Bank noise spectrum | segments T_seg = 256/1500 s = 170.7 ms (M = 256 samples, bins 5.86 Hz at 1500 samples/s), periodic Hann; exponential average τ_n = 2 s (β = 0.0818 per segment); smoothed ±25 Hz (±4 bins); W_k from 16 points per bin | `BankConfig::segment_s`, `spectrum_smoothing_hz`; `bank::SpectrumNoise` | heuristic; 16 points a numerical choice |
+| Bank spectrum mask | a sample is left out if \|v_1\|² ≥ κ_n·2σ²_v,1 anywhere from 20 ms before it to (N_1 − 1)/r + 20 ms after it; a segment enters if ≥ 50% is left in | `BankConfig::guard_margin_s`, `min_clean_fraction` | heuristic |
+| Bank mask bias b_mask,k | 0.8370 (k = 1) … 0.7852 (k = 32), dimensionless; divides each branch's spectrum reading | `BankConfig::mask_bias` | measured (white noise, seeds 101–110; valid only for the defaults at 1500 samples/s) |
 
 ## 11. Definitions used in tests and the benchmark
 

@@ -1,6 +1,7 @@
 # The bank decoder's sources (milestone 2c); later tasks add to this list.
 set(KZ4AP_BANK_SOURCES
   src/bank/filters.cpp
+  src/bank/noise.cpp
 )
 
 add_library(kz4ap_engine
@@ -45,6 +46,7 @@ gtest_discover_tests(kz4ap_engine_tests)
 add_executable(kz4ap_bank_tests
   tests/bank/config_test.cpp
   tests/bank/filters_test.cpp
+  tests/bank/noise_test.cpp
 )
 target_link_libraries(kz4ap_bank_tests PRIVATE kz4ap::engine nlohmann_json::nlohmann_json GTest::gtest_main)
 target_compile_definitions(kz4ap_bank_tests PRIVATE
