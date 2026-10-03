@@ -2158,15 +2158,31 @@ The lengths L_k it uses are the realized ones, N_k / r (s).
   quantile too; heuristic).
 - **Re-key bookkeeping.** `ready_to_rekey`: unknown and W ≥ W_min =
   0.8 s · r = 1200 samples of keyed time (measured, prototype E9b:
-  0.8 s adopted over 0.4 s and 0.2 s). `start_over(k)` (a possible new
-  over; the channel stage, not yet ported, calls it after a silence) keeps an
+  0.8 s adopted over 0.4 s and 0.2 s). `start_over(k)` keeps an
   established ŝ² as the fallback (`prev_amp2`; NaN while there is none),
   then sets ŝ² = 0, W = 0, empties the memory and marks k unknown.
   `finish_over_start(k, ŝ², key)` installs the re-keying's winning ŝ²
   (FS²), empties the memory, marks k known and sets its key state to the
   re-keyed stretch's last; W keeps the keyed-sample count (≥ W_min when
   called once ready), so the first EM steps after the switch move ŝ² by
-  at most w / W rather than replacing it.
+  at most w / W rather than replacing it. The prototype's channel
+  (`ChannelDecoder.run` in `channel.py`; its port is plan Task 7) calls
+  them after each block's step, branch by branch: (1) `start_over(k)` when
+  a new over is due, that is the key is up and more than
+  T_new = max(0.5 s, 12 · T_g) has passed since branch k's last key-up in
+  this over (none yet: not due; T_g the current fit's T_g, or
+  1.2 s / 5 = 0.24 s without a fit), whether or not the amplitude is
+  known; otherwise, while k is unknown: (2) `finish_over_start(k, …)`
+  after the stretch is re-keyed, once the over has a mark and
+  W ≥ W_min (candidates: ŝ² and, if finite, `prev_amp2`); or, if not,
+  once 2 s (`rekey_timeout_s`) of channel time have passed since the
+  amplitude became unknown (the stream's start, or a `start_over` of a
+  known branch; a new over of a still-unknown branch does not reset it)
+  or since the last time-out,
+  (3) `finish_over_start(k, …)`
+  with `prev_amp2` if it is finite and keys at least one sample of the
+  stretch, and otherwise (4) `start_over(k)` again, which keeps k unknown
+  so W_min of keyed time counts afresh from then on.
 - **Re-keying a stretch (`rekey`).** The stored |v_k|² of a stretch are
   keyed again from key up with the full LLR at fixed σ²_v,k and ŝ²
   (a = √(max(ŝ², 0) / σ²_v,k)), the same g, h = 1 nat and squelch as
@@ -2199,9 +2215,10 @@ largest relative difference of 2.3 · 10⁻¹³. `rekey` on run's first
 re-key stretch of branch 14 (samples 0–3007, three amplitudes, one of
 them below the squelch): edges equal.
 
-Status (as `params.py` marks it): τ_a = 0.5 s and P₁ = 0.44 are
-milestone 2's (P₁ from PARIS); h = 1 nat heuristic; the squelch's 3 at
-16 ms heuristic, its L^(1/4) scaling derived; R_fa = 0.01 /s a heuristic
+Status (as §8b classifies them for Matched): P₁ = 0.44 derived (from PARIS:
+key-down 22 of 50 dit units); τ_a = 0.5 s heuristic (the amplitude
+estimate is a heuristic running form of an EM update); h = 1 nat
+heuristic; the squelch's 3 at 16 ms heuristic, its L^(1/4) scaling derived; R_fa = 0.01 /s a heuristic
 target kept by E9b; x_on,k measured (E9a); the release probability 0.3
 (x_off = 1.552) heuristic; W_min = 0.8 s measured (E9b); the seed's
 memory of 4 × W_min heuristic; the 0.5 clamp and the 10⁻³⁰⁰ guards
@@ -2277,9 +2294,9 @@ numerical choices.
 | Bank noise spectrum | segments T_seg = 256/1500 s = 170.7 ms (M = 256 samples, bins 5.86 Hz at 1500 samples/s), periodic Hann; exponential average τ_n = 2 s (β = 0.0818 per segment); smoothed ±25 Hz (±4 bins); W_k from 16 points per bin | `BankConfig::segment_s`, `spectrum_smoothing_hz`; `bank::SpectrumNoise` | heuristic; 16 points a numerical choice |
 | Bank spectrum mask | a sample is left out if \|v_1\|² ≥ κ_n·2σ²_v,1 anywhere from 20 ms before it to (N_1 − 1)/r + 20 ms after it; a segment enters if ≥ 50% is left in | `BankConfig::guard_margin_s`, `min_clean_fraction` | heuristic |
 | Bank mask bias b_mask,k | 0.8370 (k = 1) … 0.7852 (k = 32), dimensionless; divides each branch's spectrum reading | `BankConfig::mask_bias` | measured (white noise, seeds 101–110; valid only for the defaults at 1500 samples/s) |
-| Bank keying log-odds and hysteresis | g = Λ + ln(P₁/(1 − P₁)) nats, P₁ = 0.44 (−0.2412 nats); down at g > +1 nat, up at g < −1 nat | `BankConfig::prior_key_down`, `hysteresis_nats`; `bank::BankKeyer::step` | P₁ milestone 2 (PARIS); h heuristic |
+| Bank keying log-odds and hysteresis | g = Λ + ln(P₁/(1 − P₁)) nats, P₁ = 0.44 (−0.2412 nats); down at g > +1 nat, up at g < −1 nat | `BankConfig::prior_key_down`, `hysteresis_nats`; `bank::BankKeyer::step` | P₁ derived (PARIS: key-down 22 of 50 dit units); h heuristic |
 | Bank squelch | a_k ≥ a_min,k = 3·(L_k/16 ms)^(1/4) (2.622 at k = 1 to 5.525 at k = 32), dimensionless | `BankConfig::squelch_a`, `squelch_ref_s`, `squelch_exponent` | 3 heuristic; L^(1/4) scaling derived |
-| Bank amplitude EM | τ_a = 0.5 s of key-down weight (α = 1.332·10⁻³ per sample at 1500 samples/s), p-weighted, one step per block | `BankConfig::amplitude_tau_s`; `bank::BankKeyer` | milestone 2 |
+| Bank amplitude EM | τ_a = 0.5 s of key-down weight (α = 1.332·10⁻³ per sample at 1500 samples/s), p-weighted, one step per block | `BankConfig::amplitude_tau_s`; `bank::BankKeyer` | heuristic (heuristic running form of an EM update, as Matched) |
 | Bank unknown-amplitude test | key down at x > x_on,k (4.6428 at k = 1 … 4.2036 at k = 32, dimensionless), up at x < x_off = √(−2 ln 0.3) = 1.552; target R_fa = 0.01 false marks/s per branch | `BankConfig::x_on_values`, `release_probability`, `false_marks_per_s` | x_on measured (E9a); release probability heuristic; R_fa heuristic target kept by E9b |
 | Bank amplitude seed and re-key | while unknown: ŝ² = 90% quantile of the last ≤ 3.2 s (4 × W_min) of keyed \|v\|² − 2σ², FS²; ready to re-key after W_min = 0.8 s of keyed time | `BankConfig::rekey_after_s`, `seed_memory_rekeys`; `bank::BankKeyer`, `bank::rekey` | W_min measured (E9b); memory and 90% quantile heuristic |
 
