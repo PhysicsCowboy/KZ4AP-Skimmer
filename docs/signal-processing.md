@@ -1886,11 +1886,12 @@ The bank decoder is the C++ port of the stage-1 Python prototype
 (`training/kz4ap_proto`); it is a *decoder* alongside Envelope and Matched.
 This section is written as the port's modules land; it now covers the
 branch filters and the envelope likelihood (`engine/src/bank/filters.cpp`)
-the noise estimates (`engine/src/bank/noise.cpp`, "Noise" below) and the
-keying (`engine/src/bank/keying.cpp`, "Keying" below), each checked
+the noise estimates (`engine/src/bank/noise.cpp`, "Noise" below), the
+keying (`engine/src/bank/keying.cpp`, "Keying" below) and the duration
+fit (`engine/src/bank/fit.cpp`, "Duration fit" below), each checked
 against golden values from the prototype (relative 1e-9; discrete
-outputs exactly). The rest (timing, characters, selection) follows with
-its modules.
+outputs exactly). The rest (periodicity, characters, selection) follows
+with its modules.
 
 **The bank.** Instead of one matched filter whose length follows an
 estimated speed (section 8b), the bank runs K = 32 boxcar filters at once,
@@ -2224,6 +2225,117 @@ target kept by E9b; x_on,k measured (E9a); the release probability 0.3
 memory of 4 × W_min heuristic; the 0.5 clamp and the 10⁻³⁰⁰ guards
 numerical choices.
 
+### Duration fit (bank decoder)
+
+`engine/src/bank/fit.cpp`, a port of `training/kz4ap_proto/fit.py`
+(`DurationFit`, `class_priors`, `resolution_var_s2`, `class_logliks`,
+`observations_loglik`, `classify_mark`, `classify_space`), checked against
+the prototype's golden values (below). Each branch fits the timing of the
+marks and spaces its keying produces (the edges above). Durations are in
+s, variances in s², log-likelihoods in nats; densities are in ln(duration).
+
+- **Parameters.** θ = (T, w, qT, T_g), all s: T the dit, w the key
+  weighting, q the dah/dit ratio, T_g the gap timebase (T_g = T for
+  standard spacing, larger for Farnsworth spacing).
+- **Classes.** Marks: dit, median T + w; dah, qT + w. Spaces: element
+  space T − w; character gap 3 T_g − w; word gap 7 T_g − w. Each class c
+  is log-normal around its median μ_c: ln d ~ N(ln μ_c, s_c²) with
+  s_c² = σ_ln² + σ_t² / μ_c² (σ_ln = 0.15 for marks, 0.25 for spaces,
+  dimensionless; σ_t² the branch's timing-resolution variance, s², turned
+  into ln units to first order). A class whose median is not positive
+  (the element space when w ≥ T) is dropped without renormalizing the
+  others' priors (the prototype's ruling: a penalty of about
+  ln(1 − 0.647) = −1.04 nats per space on a reading with no element
+  spaces).
+- **Class priors** (derived from VE3NEA's CW character frequencies and
+  word-length table, `kz4ap_synth.messages`): per character its dits and
+  dahs, its elements minus one element spaces, a character gap after every
+  character but a word's last ((L − 1)/L per character) and a word gap per
+  word (1/L), L = 3.062 characters the mean word length. Among marks
+  P(dit) = 0.5716, P(dah) = 0.4284; among spaces P(element) = 0.6467,
+  P(character) = 0.2379, P(word) = 0.1154. Each is multiplied by 1 − ε.
+- **Outlier class.** Probability ε = 0.05, log-uniform on [1 ms, 10 s]:
+  density ε / ln(10 s / 1 ms) in ln d, a log-density of −5.216 nats.
+  Every duration is clamped to [1 ms, 10 s] before it is scored, so the
+  density is proper. A duration ≤ 0 s is an error in `class_logliks`,
+  `observations_loglik` and the classifiers (`std::invalid_argument`,
+  the prototype's ValueError); `DurationFit::add` ignores it.
+- **Timing resolution.** σ_t² = 2 (L_k / max(a, 1))² + 2 / (12 r²), s²:
+  an edge through a boxcar of length L_k is a ramp of slope ŝ/L_k, so noise
+  of RMS σ_v moves its crossing by L_k / a (a = ŝ / σ_v); a duration has
+  two edges; sampling at r adds 1/(12 r²) per edge (derived, first order,
+  high SNR; a floored at 1).
+- **Per-observation log-likelihood.** For class c,
+  ℓ_c = ln((1 − ε) P_c) − ½ z² / s_c² − ½ ln s_c² − ln √(2π), z = ln d − ln μ_c,
+  −∞ for the other kind of interval (a mark is never a space); the
+  classes are combined in class order with logaddexp and then with the
+  outlier: ln(e^x + e^y) = max(x, y) + log1p(exp(−|x − y|)), and x + ln 2
+  where x = y (numpy's formula; both −∞ gives −∞).
+- **Grid and memory.** T on a log grid from 1.2 s / 100 = 12 ms in steps
+  of 1% (×1.01) up to the first point ≥ 1.2 s / 5 = 240 ms: 303 points,
+  12 ms to 242.2 ms. q ∈ {3, 4, 5}; w/T ∈ {−0.4, 0, 0.4, 0.8};
+  T_g/T ∈ {1, 1.59, 2.52, 4, 6.35}. Two tables hold the log-likelihood of
+  every observation at every grid point: marks over (T, q, w), 303 × 3 × 4
+  = 3636 points; spaces over (T, w, T_g), 303 × 4 × 5 = 6060 points. Each
+  observation multiplies both tables by λ = e^(−1/N_mem) = 0.97938
+  (N_mem = 48 marks and spaces) and adds its log-likelihood to its table,
+  so the tables hold the exponentially weighted log-likelihood exactly
+  (untruncated memory). The memory's weight is W ← λW + 1 elements. The
+  last ⌈4 N_mem⌉ = 192 observations are retained for the refinement, its
+  acceptance test and the quality, with weights λ^age (age 0 the newest);
+  the tail left out weighs λ^192 = e^(−4) = 1.8% of the total (derived).
+- **Grid maximum.** The score over (T, w) is the best q of the mark table
+  plus the best T_g of the space table; with a periodicity prior T_P
+  (weight π) it is lowered by π (ln T − ln T_P)² / (2 σ_P²), σ_P = 0.1 in
+  ln T. The first maximum in (T, w) order is taken, then the first best q
+  and T_g there: θ_grid = (T, (w/T)·T, q·T, (T_g/T)·T).
+- **Refinement.** 2 Gauss–Newton steps in ln d from θ_grid, EM-style: the
+  class responsibilities of the current point are held fixed per step.
+  Residual ln d − ln μ_c, Jacobian DESIGN_c / μ_c (1/s), weights
+  λ^age · responsibility / s_c²; the T_P prior as one more residual
+  ln T_P − ln T with weight π / σ_P²; damping toward the current point
+  with standard deviation 0.2 T per parameter (1/(0.2 T)² on the
+  diagonal), which keeps unobserved classes where they are. The 4 × 4
+  system is solved by LU with partial pivoting. After each step T is
+  floored at 0.1 ms and the others clipped: w to [−0.6, 1.2] T, qT to
+  [2, 6] T, T_g to [0.8, 10] T.
+- **Acceptance and quality.** The refined point is kept only if its
+  weighted log-likelihood on the retained history, Σ λ^age ℓ_total, plus
+  the prior term, is at least the grid point's; otherwise θ_grid is kept.
+  The quality Q = Σ λ^age ℓ_total / Σ λ^age, nats per element, at the
+  kept point. `best` returns T, q, w, T_g, Q and W; nothing before the
+  first observation.
+- **Classification.** A mark is a dah if ℓ_dah > ℓ_dit under the fit; a
+  space is the class among element, character and word with the largest
+  ℓ (the first on a tie). `observations_loglik` is the mean of ℓ_total
+  over a set of observations, nats per element.
+
+**Port check.** Golden values (`engine/tests/data/bank/fit.json`, from
+`kz4ap_proto.golden`): 300 observations (25 WPM text, a tune-up carrier of
+2 s, a step to 15 WPM, then 30 WPM, each duration jittered by
+exp(0.08 N(0, 1)), with their σ_t²) added one by one. After observations
+1, 2, 8, 48, 100 and 300, without a prior and with T_P = 0.05 s at
+weight 3: the grid indices and the classifications of 20 probe durations
+(10 ms to 1 s) equal; θ_grid, `best`, the weighted log-likelihoods and
+`observations_loglik` agree to a largest relative difference of
+2.0 · 10⁻¹⁶; the full mark and space tables after 8, 48 and 300
+observations are bit-identical. Both outcomes of the acceptance test occur
+in the sequence. The prototype's fit tests are ported one for one
+(inputs in `fit_cases.json`); its strict expected failure (Farnsworth
+T_g with the E5 grids) is skipped with the same reason, and the port
+reproduces its finding: T = 66.72 ms, T_g = 192.2 ms against 207.0 ms.
+Where numpy's order of operations is not reproduced (the einsum sums of
+the refinement's normal equations, LAPACK's solve), values may differ in
+the last bit.
+
+Status (as `training/kz4ap_proto/params.py` marks them): N_mem = 48
+measured (E4: adopted over 24 and 12); the q, w/T and T_g/T grids measured
+(E5, the "coarse" variant adopted); the T step of 1% a placeholder kept
+by E5; σ_ln = 0.15 (marks) and 0.25 (spaces), ε = 0.05, the outlier range
+1 ms–10 s, σ_P = 0.1 in ln T, 2 refinement steps, the damping 0.2 T and the
+clipping bounds heuristic; the class priors, σ_t² and the 1.8% tail
+derived; the 0.1 ms floor on T a numerical choice.
+
 ## 9. Timing and latency
 
 | Stage | Delay |
@@ -2299,6 +2411,13 @@ numerical choices.
 | Bank amplitude EM | τ_a = 0.5 s of key-down weight (α = 1.332·10⁻³ per sample at 1500 samples/s), p-weighted, one step per block | `BankConfig::amplitude_tau_s`; `bank::BankKeyer` | heuristic (heuristic running form of an EM update, as Matched) |
 | Bank unknown-amplitude test | key down at x > x_on,k (4.6428 at k = 1 … 4.2036 at k = 32, dimensionless), up at x < x_off = √(−2 ln 0.3) = 1.552; target R_fa = 0.01 false marks/s per branch | `BankConfig::x_on_values`, `release_probability`, `false_marks_per_s` | x_on measured (E9a); release probability heuristic; R_fa heuristic target kept by E9b |
 | Bank amplitude seed and re-key | while unknown: ŝ² = 90% quantile of the last ≤ 3.2 s (4 × W_min) of keyed \|v\|² − 2σ², FS²; ready to re-key after W_min = 0.8 s of keyed time | `BankConfig::rekey_after_s`, `seed_memory_rekeys`; `bank::BankKeyer`, `bank::rekey` | W_min measured (E9b); memory and 90% quantile heuristic |
+| Bank duration-fit classes | dit T + w, dah qT + w; element space T − w, character gap 3 T_g − w, word gap 7 T_g − w (s); log-normal in ln d, s_c² = σ_ln² + σ_t²/μ_c², σ_ln = 0.15 (marks), 0.25 (spaces); priors 0.5716 / 0.4284 (marks), 0.6467 / 0.2379 / 0.1154 (spaces) | `BankConfig::sigma_ln_mark`, `sigma_ln_space`; `bank::class_priors` | σ_ln heuristic; priors derived (VE3NEA tables) |
+| Bank timing resolution | σ_t² = 2 (L_k / max(a, 1))² + 2 / (12 r²), s² | `bank::resolution_var_s2` | derived (first order, high SNR) |
+| Bank outlier class | ε = 0.05, log-uniform on 1 ms–10 s (−5.216 nats in ln d); durations clamped to that range | `BankConfig::outlier_prior`, `outlier_range_s` | heuristic |
+| Bank fit memory | N_mem = 48 marks and spaces, λ = e^(−1/48) = 0.97938; tables untruncated; refinement and quality on the last ⌈4 N_mem⌉ = 192 (tail e^(−4) = 1.8%) | `BankConfig::fit_memory`; `bank::DurationFit` | N_mem measured (E4); the 1.8% tail derived |
+| Bank fit grid | T 12 ms to 242.2 ms in 1% steps (303 points); q ∈ {3, 4, 5}; w/T ∈ {−0.4, 0, 0.4, 0.8}; T_g/T ∈ {1, 1.59, 2.52, 4, 6.35} | `BankConfig::t_grid_step`, `q_grid`, `w_grid`, `tg_grid` | q, w, T_g grids measured (E5, "coarse"); T step placeholder kept by E5 |
+| Bank T_P prior | −π (ln T − ln T_P)² / (2 σ_P²) nats, σ_P = 0.1 in ln T | `BankConfig::prior_sigma_ln` | heuristic |
+| Bank fit refinement | 2 Gauss–Newton steps in ln d, damping 0.2 T per parameter; T ≥ 0.1 ms, w ∈ [−0.6, 1.2] T, qT ∈ [2, 6] T, T_g ∈ [0.8, 10] T; kept only if the weighted log-likelihood does not drop | `BankConfig::refine_iterations`; `bank::DurationFit::refine`, `best` | heuristic; the 0.1 ms floor a numerical choice |
 
 ## 11. Definitions used in tests and the benchmark
 
