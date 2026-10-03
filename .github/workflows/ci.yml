@@ -15,7 +15,7 @@ jobs:
         include:
           - os: windows-latest
             preset: windows
-          - os: ubuntu-latest
+          - os: ubuntu-24.04   # pinned: ubuntu-latest moves to Ubuntu 26 from 2026-10-19 (owner, 2026-10-02)
             preset: linux
     runs-on: ${{ matrix.os }}
     steps:
