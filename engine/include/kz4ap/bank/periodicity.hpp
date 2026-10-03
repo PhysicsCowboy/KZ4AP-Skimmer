@@ -65,6 +65,8 @@ public:
     double rate_hz() const { return rate_; }
     // The windows, samples at the averaged rate, ascending: max(16, round(w x rate_hz())).
     const std::vector<int>& windows() const { return windows_; }
+    // The averaged p, oldest first, at most the longest window (dimensionless).
+    const std::vector<double>& buffer() const { return buffer_; }
 
 private:
     BankConfig cfg_;

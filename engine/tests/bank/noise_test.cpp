@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <cstdint>
+#include <span>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -93,6 +95,67 @@ TEST(BankNoise, QuantileLinearIsNumpysDefault) {
 TEST(BankNoise, SpectrumMatchesPrototype) { check_method("spectrum"); }
 TEST(BankNoise, SpectrumLevelMatchesPrototype) { check_method("spectrum-level"); }
 TEST(BankNoise, BranchFallbackMatchesPrototype) { check_method("branch"); }
+
+// The columns [from, to) of P as a window (column 0 = absolute sample from).
+Matrix window_of(const Matrix& P, int from, int to) {
+    Matrix w;
+    w.rows = P.rows;
+    w.cols = to - from;
+    w.v.resize(static_cast<std::size_t>(w.rows) * static_cast<std::size_t>(w.cols));
+    for (int k = 0; k < P.rows; ++k)
+        for (int i = from; i < to; ++i) w.at(k, i - from) = P.at(k, i);
+    return w;
+}
+
+// Sample indices past 2^31 (a channel open for more than 16.6 days at 1500 samples/s): the same stream with
+// every absolute index shifted by 2^31 + 7 (the stream's first sample there), given the whole of P and then
+// only a sliding window of recent columns, gives bit-identical estimates after every block.
+void check_large_indices(const std::string& method) {
+    const auto g = load_golden("noise");
+    const auto u = stream(g);
+    const auto n = ladder(kRate);
+    const Matrix P = powers(u, n);
+    BankConfig cfg;
+    cfg.noise_method = method;
+    const std::int64_t offset = (std::int64_t{1} << 31) + 7;
+    auto small = make_noise(cfg, kRate, n);
+    auto large = make_noise(cfg, kRate, n, offset);
+    auto sliding = make_noise(cfg, kRate, n, offset);
+    const int total = static_cast<int>(u.size());
+    const int block = block_samples(kRate);
+    constexpr int kWindow = 2000;  // samples kept back: more than every look-back of the noise estimates
+    for (int n0 = 0; n0 < total; n0 += block) {
+        const int n1 = std::min(n0 + block, total);
+        small->update(u, P, n0, n1);
+        large->update(u, P, offset + n0, offset + n1, offset);
+        // the sliding window starts at the stream's start until the warm-up is over, as the channel's does
+        const int from = n1 <= kWindow ? 0 : n1 - kWindow;
+        const Matrix w = window_of(P, from, n1);
+        sliding->update(std::span(u).subspan(static_cast<std::size_t>(from), static_cast<std::size_t>(n1 - from)),
+                        w, offset + n0, offset + n1, offset + from);
+        const auto s = small->sigma2();
+        const auto l = large->sigma2();
+        const auto sl = sliding->sigma2();
+        ASSERT_EQ(l.size(), s.size());
+        for (std::size_t k = 0; k < s.size(); ++k) {
+            const bool both_nan = std::isnan(s[k]) && std::isnan(l[k]) && std::isnan(sl[k]);
+            ASSERT_TRUE(both_nan || (l[k] == s[k] && sl[k] == s[k])) << method << " block at " << n0 << " branch " << k;
+        }
+    }
+    if (method != "branch") {
+        EXPECT_EQ(dynamic_cast<const SpectrumNoise&>(*large).segments(),
+                  dynamic_cast<const SpectrumNoise&>(*small).segments());
+        EXPECT_EQ(dynamic_cast<const SpectrumNoise&>(*sliding).segments(),
+                  dynamic_cast<const SpectrumNoise&>(*small).segments());
+        EXPECT_GT(dynamic_cast<const SpectrumNoise&>(*small).segments(), 0);
+    }
+}
+
+TEST(BankNoise, SampleIndicesPast2To31GiveTheSameEstimates) {
+    check_large_indices("spectrum");
+    check_large_indices("spectrum-level");
+    check_large_indices("branch");
+}
 
 TEST(BankNoise, UnknownMethodThrows) {
     BankConfig cfg;

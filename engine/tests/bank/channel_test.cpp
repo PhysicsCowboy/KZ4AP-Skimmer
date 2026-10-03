@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <cstdio>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -95,10 +96,18 @@ void expect_equal_or_nan(double actual, const nlohmann::json& expected) {
 // Traced near-ties (D2): a window's comb maximum that the port and the prototype pick differently because the
 // two best candidates' scores differ by rounding. (stream, periodicity recomputation, window index). Both are
 // the 2 s window over a buffer of p that is zero but for one short squelch opening, far below the confidence
-// threshold (0.03), so T_P, the prior and everything downstream are unaffected. Prototype's two best scores:
-//   noise #14:      T = 97.95 ms 9.501131973816535e-07, T = 44.63 ms 9.501131973816128e-07 (relative 4.3e-14);
-//   farnsworth #64: T = 97.95 ms 4.732927653831648e-06, T = 44.63 ms 4.732927653812918e-06 (relative 4.0e-12).
-// The port picks 44.63 ms in both; its score equals the prototype's to relative 1e-9.
+// threshold (0.03), so T_P, the prior and everything downstream are unaffected. Both candidates on both sides
+// (TheTwoPeriodicityNearTiesAreRoundingOnBothSides recomputes the port's):
+//   noise #14,      T = 97.95 ms: prototype 9.5011319738165349e-07, port 9.5011319737701853e-07
+//                   T = 44.63 ms: prototype 9.5011319738161283e-07, port 9.5011319738161283e-07
+//     prototype gap +4.1e-20 absolute (relative 4.3e-14, picks 97.95 ms); port gap -4.6e-18 (4.8e-12, picks 44.63)
+//   farnsworth #64, T = 97.95 ms: prototype 4.7329276538316477e-06, port 4.7329276538037837e-06
+//                   T = 44.63 ms: prototype 4.7329276538129181e-06, port 4.7329276538129181e-06
+//     prototype gap +1.9e-17 absolute (relative 4.0e-12, picks 97.95 ms); port gap -9.1e-18 (1.9e-12, picks 44.63)
+// The 97.95 ms score differs between the sides by 4.6e-18 and 2.8e-17 absolute (4.9e-12, 5.9e-12 relative):
+// each score is a difference of comb-tooth means of the normalized autocorrelation (values up to 1, summed as a
+// cumulative sum), so last-bit differences of order 1e-17 in the means survive the cancellation down to a
+// score of 1e-6 as relative differences of order 1e-12. That is rounding, and it exceeds both gaps.
 struct NearTie {
     const char* stream;
     std::size_t update;
@@ -224,6 +233,55 @@ INSTANTIATE_TEST_SUITE_P(Streams, ChannelGolden,
                                            "first_sample", "slow", "noise", "two_speeds", "tune_up", "long", "short",
                                            "speed_turnover", "clean_2000", "clean_cut"),
                          [](const auto& info) { return info.param; });
+
+// ---- the traced near-ties, both candidates on both sides (D2) ----------------------------------------------
+
+// The port's score of one candidate T (s) in the 2 s window at a periodicity recomputation: the comb on the
+// port's own buffer, restricted to that one grid point.
+double port_score(const BankChannel& ch, double t_s) {
+    const BankConfig cfg;
+    const auto& per = ch.periodicity();
+    const auto& buf = per.buffer();
+    const auto w = static_cast<std::size_t>(per.windows().front());
+    const std::span<const double> window(buf.data() + (buf.size() - w), w);
+    const auto [t, score] = comb_estimate(window, per.rate_hz(), {t_s}, cfg.comb_teeth, cfg.comb_width);
+    EXPECT_TRUE(t.has_value() && *t == t_s);
+    return score;
+}
+
+TEST(BankChannel, TheTwoPeriodicityNearTiesAreRoundingOnBothSides) {
+    // Grid points (s), bit-identical in the port and the prototype, and the prototype's scores of both
+    // candidates (Python, recomputed from its buffer at the same recomputation):
+    const double t_a = 0.0979469944911008;   // 97.95 ms: the prototype's pick
+    const double t_b = 0.04462750274310159;  // 44.63 ms: the port's pick
+    struct Case {
+        const char* stream;
+        std::size_t update;
+        double proto_a, proto_b;
+    };
+    const Case cases[] = {{"noise", 14, 9.501131973816535e-07, 9.501131973816128e-07},
+                          {"farnsworth", 64, 4.732927653831648e-06, 4.732927653812918e-06}};
+    for (const auto& c : cases) {
+        SCOPED_TRACE(c.stream);
+        const auto& u = stream_of(c.stream);
+        BankChannel ch(BankConfig{}, 1500.0);
+        const auto block = static_cast<std::size_t>(ch.block_samples());
+        for (std::size_t i = 0; i < u.size() && ch.periodicity_records() <= c.update; i += block)
+            ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
+        ASSERT_EQ(ch.periodicity_records(), c.update + 1);
+        const double port_a = port_score(ch, t_a);
+        const double port_b = port_score(ch, t_b);
+        std::printf("%s #%zu: T = 97.95 ms: port %.16e, prototype %.16e; T = 44.63 ms: port %.16e, prototype %.16e\n",
+                    c.stream, c.update, port_a, c.proto_a, port_b, c.proto_b);
+        // each side picks its larger; the two candidates differ by rounding on each side
+        EXPECT_GE(port_b, port_a);
+        EXPECT_GT(c.proto_a, c.proto_b);
+        EXPECT_LT((port_b - port_a) / port_a, 1e-11);
+        EXPECT_LT((c.proto_a - c.proto_b) / c.proto_a, 1e-11);
+        expect_close(port_a, c.proto_a);
+        expect_close(port_b, c.proto_b);
+    }
+}
 
 // ---- Review Focus 1: the split into pushes does not matter ------------------------------------------------
 
@@ -474,9 +532,15 @@ TEST(BankChannelPrototypeTests, FollowsASpeedStepWithinTenMarks) {
         if (step_s <= 1.0 + a && 1.0 + a <= *followed) ++marks;
     KZ4AP_STRICT_XFAIL(marks <= 10,
                        "Finding (Task 11), design/placeholders: the step is followed after 11 marks (1.73 s), the same "
-                       "for seeds 1-4. [...] Update (Task 14, after E4-E9: N_mem 48, coarse grids, calibrated x_on, "
-                       "W_min 0.8 s): this seed (4) follows after 13 marks (1.90 s); E6 measured 14, 14, 16, 13 marks "
-                       "for seeds 1-4 at M = 4. [port: " + std::to_string(marks) + " marks]");
+                       "for seeds 1-4. The fits stay at the 15 WPM dit (about 80 ms) while the 2 s periodicity "
+                       "window's confident T_P is 80.3 ms (the T_P prior, 0.1 in ln T, holds them); T_P changes to "
+                       "40.0 ms 1.0 s after the step (t = 11.605 s), the index-13 fit follows at the next observation, "
+                       "and the switch then needs M = 4 eligible instants in a row (the one fallback pick of index 13 "
+                       "just before restarts the count): 11.776 ... 12.331 s. Without the T_P prior it takes 15 marks "
+                       "(2.22 s). Placeholders: M (E6), windows (E2); prior width heuristic. Update (Task 14, after "
+                       "E4-E9: N_mem 48, coarse grids, calibrated x_on, W_min 0.8 s): this seed (4) follows after 13 "
+                       "marks (1.90 s); E6 measured 14, 14, 16, 13 marks for seeds 1-4 at M = 4 (the fit details above "
+                       "are from Task 11 and were not re-checked). [port: " + std::to_string(marks) + " marks]");
 }
 
 TEST(BankChannelPrototypeTests, FarnsworthWordGapsDoNotStartANewOver) {
@@ -487,10 +551,15 @@ TEST(BankChannelPrototypeTests, FarnsworthWordGapsDoNotStartANewOver) {
 TEST(BankChannelPrototypeTests, FarnsworthTextIsRight) {
     const std::string got = norm(result_of("farnsworth").text);
     KZ4AP_STRICT_XFAIL(got == "CQ TEST K1ABC",
-                       "Finding (Task 11), design: no word gap starts an over, but the text reads 'CQ TEST U1ABC'. The "
-                       "default comb's T_P locks on T_g for Farnsworth 18/10 WPM in the 5 s window [...]. Update (Task "
-                       "14, E9b, W_min = 0.8 s): the text reads 'Q TEST U1ABC': the over's first character is also "
-                       "lost, as in test_decodes_a_clean_station. [port: reads '" + got + "']");
+                       "Finding (Task 11), design: no word gap starts an over (the test above), but the text reads 'CQ "
+                       "TEST U1ABC'. The default comb's T_P locks on T_g for Farnsworth 18/10 WPM in the 5 s window "
+                       "(202.5-206.6 ms against T = 66.7 ms; the Task 9 finding), and the confident T_P prior (0.1 in "
+                       "ln T, about 63 nats at ln(204.5/66.8)) pulls the selected branch's fit (index 18, L = 53.3 ms) "
+                       "from T = 66.6 ms to T = 149.5 ms, w = 71 ms, so K's first dah (199 ms) reads as a dit. With the "
+                       "edge comb, or without the prior, the text is right. Periodicity method: E1. Update (Task 14, "
+                       "E9b, W_min = 0.8 s): the text reads 'Q TEST U1ABC' (at W_min = 0.4 s, 'CQ TEST U1ABC'): the "
+                       "over's first character is also lost, as in test_decodes_a_clean_station. The fit details above "
+                       "are from Task 11 and were not re-checked. [port: reads '" + got + "']");
 }
 
 TEST(BankChannelPrototypeTests, NoiseAloneLeavesNoText) {
@@ -538,9 +607,15 @@ TEST(BankChannelPrototypeTests, ASameSpeedTurnoverKeepsThePreviousOversFit) {
 TEST(BankChannelPrototypeTests, ASameSpeedTurnoverDecodesTheWholeSecondOver) {
     const std::string got = norm(result_of("turnover").text);
     KZ4AP_STRICT_XFAIL(got == "CQ DE K1ABC K EE TT EE TT K1ABC",
-                       "Finding (Task 11 fix round 1), design: the second over reads 'EE TT EE TT U1ABC' [...]. Update "
-                       "(Task 14, E4, N_mem = 48): the text reads 'CCQ DE K1ABC K EE TT EE TT K1ABC'; the second over is "
-                       "now correct and the test fails only on the first over's spurious leading 'C'. [port and "
+                       "Finding (Task 11 fix round 1), design: the second over reads 'EE TT EE TT U1ABC'. The previous "
+                       "fit wins the re-key (11.2 s), but its rival fresh fit takes over at about 12.4 s (12 marks and "
+                       "spaces of the over, penalty 1/2 x 4 x ln 12 = 5.0 nats) with T = 102.4 ms, q = 2.0, w = -54.7 "
+                       "ms: it reads the character gaps of EE TT (144 ms) as element spaces (157 ms) and the word gaps "
+                       "as character gaps, an ambiguity this text cannot resolve, favored by the element-space prior "
+                       "(0.647 against 0.238, about 1 nat per space). K's first dah (143 ms) then reads as a dit under "
+                       "T = 128 ms before the fit recovers (T = 47.9 ms by 13.26 s). Update (Task 14, E4, N_mem = 48): "
+                       "the text reads 'CCQ DE K1ABC K EE TT EE TT K1ABC'; the second over is now correct and the test "
+                       "fails only on the first over's spurious leading 'C' (the finding of the test above). [port and "
                        "prototype now read '" + got + "']");
 }
 

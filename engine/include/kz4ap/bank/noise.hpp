@@ -37,7 +37,9 @@ double quantile_linear(std::vector<double> x, double q);
 // row k of P (P may have more rows: SpectrumNoise passes the whole matrix for branch 1).
 class ThreeTapNoise {
 public:
-    ThreeTapNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n);
+    // first_sample: the absolute sample index of the stream's first sample (0 for a stream counted from its
+    // start, as the prototype's); every index below is absolute (64-bit).
+    ThreeTapNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n, std::int64_t first_sample = 0);
     // Column j of P is absolute sample base + j; n0, n1 are absolute sample indices.
     void update(const Matrix& P, std::int64_t n0, std::int64_t n1, std::int64_t base = 0);
     const std::vector<double>& var() const { return var_; }
@@ -47,7 +49,8 @@ public:
 private:
     std::vector<int> n_;
     double kappa_, kappa_n_, m_, alpha_;
-    int warmup_;
+    int warmup_;               // samples
+    std::int64_t origin_ = 0;  // absolute index of the stream's first sample
     std::vector<double> var_, weight_;
     bool started_ = false;
 };
@@ -67,7 +70,7 @@ public:
 // The recorded fallback: each branch's own three-tap estimate.
 class BranchNoise : public NoiseEstimator {
 public:
-    BranchNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n);
+    BranchNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n, std::int64_t first_sample = 0);
     void update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0, std::int64_t n1,
                 std::int64_t base = 0) override;
     std::vector<double> sigma2() const override { return est_.var(); }
@@ -85,7 +88,7 @@ private:
 class SpectrumNoise : public NoiseEstimator {
 public:
     SpectrumNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n,
-                  const std::string& level = "three-tap");
+                  const std::string& level = "three-tap", std::int64_t first_sample = 0);
     void update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0, std::int64_t n1,
                 std::int64_t base = 0) override;
     std::vector<double> sigma2() const override;
@@ -127,10 +130,13 @@ private:
     int segments_offered_ = 0;
     double kept_fraction_sum_ = 0.0;
     double masked_power_sum_ = 0.0;
+    std::int64_t origin_ = 0;      // absolute index of the stream's first sample
     std::int64_t next_start_ = 0;  // absolute sample index
 };
 
 // noise_method "spectrum", "spectrum-level" or "branch"; throws std::invalid_argument otherwise.
-std::unique_ptr<NoiseEstimator> make_noise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n);
+// first_sample: the absolute index of the stream's first sample (0 by default).
+std::unique_ptr<NoiseEstimator> make_noise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n,
+                                           std::int64_t first_sample = 0);
 
 }  // namespace kz4ap::bank

@@ -2638,9 +2638,21 @@ publishes one branch's characters, with corrections.
   the earliest sample a later block can read: the re-key's 20 s plus the
   noise estimates' look-back (3 N_max, a segment with its mask's reach,
   the warm-up) and 2 blocks, 31 688 samples (21.1 s) at 1500 samples/s;
-  its storage is moved forward every 2 s, about 8.9 MB per channel (a
-  bound chosen for the port, not a tuned value). Sample indices are
-  64-bit.
+  its storage holds up to 2 s more (34 721 samples) and is moved forward
+  when full (a bound chosen for the port, not a tuned value). Memory per
+  channel at 1500 samples/s, counted from the arrays the code allocates
+  (derived, not measured): the |v_k|² window 32 × 34 721 × 8 B = 8.9 MB;
+  the u window 34 721 × 16 B = 0.56 MB; the cumulative-sum ring
+  277 × 16 B = 4.4 kB; per duration fit its two tables
+  (3636 + 6060) × 8 B = 77.6 kB and its retained history (≤ 192 marks and
+  spaces, 24 B each, 4.6 kB), plus its grid constants (ln μ, 1/μ², a validity
+  flag per class and grid point: 432.7 kB), which copies of a fit share
+  but every fit started afresh allocates anew. Each branch holds one to
+  three fits (the decoding fit, the previous over's, the rival), so the
+  fits take 32 × 0.515 MB = 16.5 MB to about 49 MB, and a channel 26 MB to
+  about 59 MB in all, plus small per-character and per-record lists.
+  Sample indices are 64-bit throughout (the noise estimates included:
+  tested with indices past 2³¹, as after 16.6 days at 1500 samples/s).
 - **Exact zeros.** On exact-zero input the noise estimate goes NaN (the
   prototype's behavior, kept until Plan B; "Noise"), so nothing is keyed
   and nothing is published: on a stream that starts with 1 s of exact
@@ -2661,11 +2673,29 @@ one push, publishes the same text and characters (times to relative
 starts, switches and selections (branch exactly, fitted T to relative
 10⁻⁹), and the same periodicity records (T_P and windows exactly,
 confidences and scores to relative 10⁻⁹) except two per-window estimates
-that are traced near-ties (D2): in the 2 s window, over a buffer of p that
-is zero but for one short squelch opening, two candidates' scores differ
-by 4.3 · 10⁻¹⁴ and 4.0 · 10⁻¹² relative (scores 9.5 · 10⁻⁷ and
-4.7 · 10⁻⁶, far below the 0.03 confidence threshold), and the port picks
-the other one; T_P and everything downstream are unaffected. The
+that are traced near-ties (D2), both in the 2 s window over a buffer of p
+that is zero but for one short squelch opening, far below the 0.03
+confidence threshold; T_P and everything downstream are unaffected. The
+two candidates, T = 97.95 ms and T = 44.63 ms, scored on each side
+(dimensionless):
+
+| Recomputation | T | Prototype | Port |
+|---|---|---|---|
+| noise #14 | 97.95 ms | 9.5011319738165349 · 10⁻⁷ | 9.5011319737701853 · 10⁻⁷ |
+| noise #14 | 44.63 ms | 9.5011319738161283 · 10⁻⁷ | 9.5011319738161283 · 10⁻⁷ |
+| Farnsworth #64 | 97.95 ms | 4.7329276538316477 · 10⁻⁶ | 4.7329276538037837 · 10⁻⁶ |
+| Farnsworth #64 | 44.63 ms | 4.7329276538129181 · 10⁻⁶ | 4.7329276538129181 · 10⁻⁶ |
+
+The prototype's lead of 97.95 ms is 4.3 · 10⁻¹⁴ and 4.0 · 10⁻¹² relative;
+the port's lead of 44.63 ms is 4.8 · 10⁻¹² and 1.9 · 10⁻¹² relative. The
+97.95 ms score differs between the two sides by 4.9 · 10⁻¹² and
+5.9 · 10⁻¹² relative (4.6 · 10⁻¹⁸ and 2.8 · 10⁻¹⁷ absolute): a score is a
+difference of comb-tooth means of the normalized autocorrelation (values
+up to 1, taken from a cumulative sum), so last-bit differences of the
+means, of order 10⁻¹⁷, survive the cancellation down to a score of
+order 10⁻⁶ as relative differences of order 10⁻¹². That is rounding, and
+it exceeds both leads, so the pick flips (a test recomputes the port's
+two scores at these recomputations). The
 prototype's channel tests are ported one for one; its strict expected
 failures are skipped with their reasons (and fail if they pass), and its
 `keep_p1` posterior for the offline experiments is not ported.

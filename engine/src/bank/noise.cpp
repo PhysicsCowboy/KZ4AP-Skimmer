@@ -12,8 +12,17 @@ namespace kz4ap::bank {
 
 namespace {
 
-// Python's int(round(x)) for the sample counts: ties to even (the default rounding mode).
+// Python's int(round(x)) for the sample counts: ties to even (the default rounding mode). Used only for
+// lengths derived from the configuration (a warm-up, a segment, a reach: well within int).
 int round_int(double x) { return static_cast<int>(std::nearbyint(x)); }
+
+// The column of P holding absolute sample i, where column 0 holds absolute sample base (64-bit indices). The
+// difference is a position inside the window, so it fits in int; a sample outside the window is an error.
+int window_column(std::int64_t i, std::int64_t base, const Matrix& P) {
+    const std::int64_t c = i - base;
+    if (c < 0 || c >= P.cols) throw std::out_of_range("noise: sample index outside the window of P");
+    return static_cast<int>(c);
+}
 
 }  // namespace
 
@@ -39,33 +48,34 @@ double quantile_linear(std::vector<double> x, double q) {
 
 // --- ThreeTapNoise ------------------------------------------------------------------------------------
 
-ThreeTapNoise::ThreeTapNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n)
+ThreeTapNoise::ThreeTapNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n,
+                             std::int64_t first_sample)
     : n_(std::move(branch_n)),
       kappa_(cfg.noise_guard),
       kappa_n_(cfg.neighbor_guard),
       m_(guard_mean(cfg.noise_guard)),
       alpha_(1.0 - std::exp(-1.0 / (cfg.noise_tau_s * rate_hz))),
       warmup_(std::max(1, round_int(cfg.noise_warmup_s * rate_hz))),
+      origin_(first_sample),
       var_(n_.size(), std::numeric_limits<double>::quiet_NaN()),
       weight_(n_.size(), 0.0) {}
 
 void ThreeTapNoise::update(const Matrix& P, std::int64_t n0, std::int64_t n1, std::int64_t base) {
     if (n1 <= n0) return;
     const std::size_t K = n_.size();
-    // column of absolute sample i
-    auto col = [base](std::int64_t i) { return static_cast<int>(i - base); };
     if (!started_) {
-        // the warm-up reads every sample from the stream's start
-        if (base != 0) throw std::logic_error("ThreeTapNoise: the warm-up needs P from the stream's start");
+        // the warm-up reads every sample from the stream's start, origin_ ... n1 - 1
+        const int from = window_column(origin_, base, P);
+        const int to = window_column(n1 - 1, base, P) + 1;
         const double scale = 2.0 * -std::log(0.8);
         for (std::size_t k = 0; k < K; ++k) {
-            std::vector<double> row(static_cast<std::size_t>(n1));
-            for (int i = 0; i < static_cast<int>(n1); ++i) row[static_cast<std::size_t>(i)] = P.at(static_cast<int>(k), i);
+            std::vector<double> row(static_cast<std::size_t>(to - from));
+            for (int i = from; i < to; ++i) row[static_cast<std::size_t>(i - from)] = P.at(static_cast<int>(k), i);
             const double q = quantile_linear(std::move(row), 0.2) / scale;
             var_[k] = std::max(q, kMinVar);  // np.maximum: NaN propagates
             if (std::isnan(q)) var_[k] = q;
         }
-        if (n1 >= warmup_) {
+        if (n1 - origin_ >= warmup_) {
             started_ = true;
             std::fill(weight_.begin(), weight_.end(), 0.1 * warmup_);  // milestone 2: the warm-up's weight
         }
@@ -78,11 +88,10 @@ void ThreeTapNoise::update(const Matrix& P, std::int64_t n0, std::int64_t n1, st
         const std::int64_t lag = n_[k];
         const int r = static_cast<int>(k);
         const double two_var = 2.0 * var_[k];
-        for (std::int64_t i = n0; i < n1; ++i) {
-            if (i < 2 * lag) continue;  // valid
-            const double now = P.at(r, col(i));
-            const double mid = P.at(r, col(i - lag));
-            const double old = P.at(r, col(i - 2 * lag));
+        for (std::int64_t i = std::max(n0, origin_ + 2 * lag); i < n1; ++i) {  // valid: i - origin >= 2 N_k
+            const double now = P.at(r, window_column(i, base, P));
+            const double mid = P.at(r, window_column(i - lag, base, P));
+            const double old = P.at(r, window_column(i - 2 * lag, base, P));
             if (mid < kappa_ * two_var && now < kappa_n_ * two_var && old < kappa_n_ * two_var) {
                 ++count[k];
                 sum_mid[k] += mid;
@@ -104,8 +113,9 @@ void ThreeTapNoise::update(const Matrix& P, std::int64_t n0, std::int64_t n1, st
 
 // --- BranchNoise --------------------------------------------------------------------------------------
 
-BranchNoise::BranchNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n)
-    : est_(cfg, rate_hz, std::move(branch_n)) {}
+BranchNoise::BranchNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n,
+                         std::int64_t first_sample)
+    : est_(cfg, rate_hz, std::move(branch_n), first_sample) {}
 
 void BranchNoise::update(std::span<const std::complex<double>>, const Matrix& P, std::int64_t n0, std::int64_t n1,
                          std::int64_t base) {
@@ -115,10 +125,12 @@ void BranchNoise::update(std::span<const std::complex<double>>, const Matrix& P,
 // --- SpectrumNoise ------------------------------------------------------------------------------------
 
 SpectrumNoise::SpectrumNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n,
-                             const std::string& level)
+                             const std::string& level, std::int64_t first_sample)
     : n_(std::move(branch_n)),
       mask_bias_(cfg.mask_bias),
-      ref_(cfg, rate_hz, std::vector<int>(n_.begin(), n_.begin() + (n_.empty() ? 0 : 1))) {
+      ref_(cfg, rate_hz, std::vector<int>(n_.begin(), n_.begin() + (n_.empty() ? 0 : 1)), first_sample),
+      origin_(first_sample),
+      next_start_(first_sample) {
     if (level != "three-tap" && level != "spectrum")
         throw std::invalid_argument("unknown noise level source '" + level + "'");
     spectrum_level_ = level == "spectrum";
@@ -178,10 +190,14 @@ void SpectrumNoise::update(std::span<const std::complex<double>> u, const Matrix
 std::vector<char> SpectrumNoise::clean(const Matrix& P, std::int64_t s, std::int64_t base) const {
     // Positions relative to the window's first column (absolute sample base); the window holds every sample
     // the flag needs (s + M + N_1 - 1 + reach <= n1, the update's end).
-    const int rel = static_cast<int>(s - base);
+    // Absolute (64-bit) first: the flag window starts no earlier than the stream's first sample.
     const int n1 = n_[0];
-    const int lo = std::max(static_cast<int>(-base), rel - reach_);  // >= the stream's start
-    const int hi = std::min(P.cols, rel + m_ + n1 - 1 + reach_);
+    const std::int64_t lo_abs = std::max(origin_, s - reach_);
+    const std::int64_t hi_abs = std::min(base + P.cols, s + m_ + n1 - 1 + reach_);
+    // Then window columns: positions inside P, small (checked).
+    const int rel = window_column(s, base, P);
+    const int lo = window_column(lo_abs, base, P);
+    const int hi = hi_abs > lo_abs ? window_column(hi_abs - 1, base, P) + 1 : lo;
     const int len = std::max(0, hi - lo);
     const double limit = kappa_n_ * 2.0 * ref_.var()[0];
     std::vector<int> c(static_cast<std::size_t>(len) + 1, 0);  // cumulative count of flagged samples
@@ -299,11 +315,14 @@ std::vector<double> SpectrumNoise::sigma2() const {
 
 // --- make_noise ---------------------------------------------------------------------------------------
 
-std::unique_ptr<NoiseEstimator> make_noise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n) {
-    if (cfg.noise_method == "spectrum") return std::make_unique<SpectrumNoise>(cfg, rate_hz, std::move(branch_n));
+std::unique_ptr<NoiseEstimator> make_noise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n,
+                                           std::int64_t first_sample) {
+    if (cfg.noise_method == "spectrum")
+        return std::make_unique<SpectrumNoise>(cfg, rate_hz, std::move(branch_n), "three-tap", first_sample);
     if (cfg.noise_method == "spectrum-level")
-        return std::make_unique<SpectrumNoise>(cfg, rate_hz, std::move(branch_n), "spectrum");
-    if (cfg.noise_method == "branch") return std::make_unique<BranchNoise>(cfg, rate_hz, std::move(branch_n));
+        return std::make_unique<SpectrumNoise>(cfg, rate_hz, std::move(branch_n), "spectrum", first_sample);
+    if (cfg.noise_method == "branch")
+        return std::make_unique<BranchNoise>(cfg, rate_hz, std::move(branch_n), first_sample);
     throw std::invalid_argument("unknown noise method '" + cfg.noise_method + "'");
 }
 

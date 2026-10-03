@@ -219,6 +219,10 @@ public:
     const std::vector<int>& branch_samples_n() const { return n_; }
     const std::vector<double>& lengths_s() const { return lengths_; }
     int block_samples() const { return block_; }
+    // The periodicity estimator and the number of its recomputations recorded so far (for tests that look
+    // inside a recomputation).
+    const Periodicity& periodicity() const { return periodicity_; }
+    std::size_t periodicity_records() const { return result_.periodicity.size(); }
 
 private:
     void append_sample(std::complex<double> x);
