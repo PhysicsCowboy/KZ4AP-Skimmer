@@ -1,3 +1,6 @@
+# The bank decoder's sources (milestone 2c); later tasks add to this list.
+set(KZ4AP_BANK_SOURCES)
+
 add_library(kz4ap_engine
   src/morse.cpp
   src/wav_reader.cpp
@@ -8,6 +11,7 @@ add_library(kz4ap_engine
   src/engine.cpp
   src/matched_front_end.cpp
   src/frequency_tracker.cpp
+  ${KZ4AP_BANK_SOURCES}
 )
 add_library(kz4ap::engine ALIAS kz4ap_engine)
 target_include_directories(kz4ap_engine PUBLIC include PRIVATE src)
@@ -33,3 +37,13 @@ add_executable(kz4ap_engine_tests
 )
 target_link_libraries(kz4ap_engine_tests PRIVATE kz4ap::engine GTest::gtest_main)
 gtest_discover_tests(kz4ap_engine_tests)
+
+# The bank decoder's tests. nlohmann/json is a test-only dependency (golden values); the engine
+# library does not link it.
+add_executable(kz4ap_bank_tests
+  tests/bank/config_test.cpp
+)
+target_link_libraries(kz4ap_bank_tests PRIVATE kz4ap::engine nlohmann_json::nlohmann_json GTest::gtest_main)
+target_compile_definitions(kz4ap_bank_tests PRIVATE
+  KZ4AP_BANK_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bank")
+gtest_discover_tests(kz4ap_bank_tests)
