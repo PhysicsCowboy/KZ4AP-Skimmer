@@ -1880,6 +1880,61 @@ not in the repository; nothing was changed):
   excludes marks longer than 0.96 s (section 8, step 10) and its levels
   are set by one dit.
 
+## 8c. Bank decoder (milestone 2c; selectable, not the default)
+
+The bank decoder is the C++ port of the stage-1 Python prototype
+(`training/kz4ap_proto`); it is a *decoder* alongside Envelope and Matched.
+This section is written as the port's modules land; it now covers the
+branch filters and the envelope likelihood (`engine/src/bank/filters.cpp`,
+checked against golden values from the prototype, relative 1e-9). The
+rest (noise estimates, keying, characters) follows with its modules.
+
+**The bank.** Instead of one matched filter whose length follows an
+estimated speed (section 8b), the bank runs K = 32 boxcar filters at once,
+one per speed on a geometric ladder, and lets the later stages choose
+among them.
+
+- **Ladder.** Branch k = 1 … K has duration
+  L_k = L_1 · ρ^(k−1), with L_1 = β · 1.2 s / WPM_max, ρ = 1.1
+  (dimensionless ratio of neighboring branches). With β = 0.8 dit and
+  WPM_max = 100 words/min this is L_1 = 0.8 · 1.2 s / 100 = 9.6 ms, so
+  L_k = 9.6 ms × 1.1^(k−1). The ladder stops at the first branch within
+  one step of the optimum for WPM_min = 5 words/min,
+  L_max = β · 1.2 s / WPM_min = 192 ms: the count is
+  K = ⌈ln(L_max / L_1) / ln ρ − 10⁻⁹⌉ = 32, giving L_32 = 184.3 ms
+  (9.6 ms to 184.3 ms). One dit lasts 1.2 s / WPM, so each branch is
+  the matched length β·dit of one speed.
+- **Boxcar.** Branch k is the causal, unity-gain boxcar over
+  N_k = max(1, round(L_k · r)) samples of the channel stream u at
+  r samples/s (ties to even), the point where seconds become samples:
+  v_k[m] = (1/N_k) · Σ u[m−N_k+1 … m], with zeros before the start of the
+  stream (so the first N_k − 1 outputs ramp up). It is computed as a
+  running cumulative sum c, v_k[m] = (c[m+1] − c[max(m+1−N_k, 0)]) / N_k.
+  At r = 1500 samples/s N_k runs from 14 to 276; at 2000 samples/s the same
+  durations give 19 to 369 samples. The realized duration is N_k / r (s).
+  Its power response is
+  |H(f)|² = (sin(π f N_k / r) / (N_k sin(π f / r)))², which is 1
+  (dimensionless, relative to 0 Hz) at 0 Hz.
+- **Envelope likelihood.** For a branch output with normalized envelope
+  x = |v_k| / σ_v (σ_v in FS, the noise's per-component scale) and
+  normalized key-down amplitude a = ŝ / σ_v, the log-likelihood ratio of
+  key-down (Rician envelope) over key-up (Rayleigh) is
+  Λ = −a²/2 + ln I₀(a·x), in nats (Proakis & Salehi, eq. 4.5-21; the same
+  expression as Matched, section 8b). ln I₀ is the Abramowitz & Stegun
+  9.8.1 (z < 3.75) and 9.8.2 approximation, relative error in I₀ below
+  5 · 10⁻⁷; the bank calls the same function Matched uses
+  (`kz4ap::log_bessel_i0`), whose formula equals the prototype's term for
+  term. The probability of key-down is the logistic
+  p = 1 / (1 + exp(−g)) of the log-odds g in nats (Λ plus the prior
+  log-odds), with g clipped to ±50 nats so that exp never overflows.
+
+Status of each value (as `training/kz4ap_proto/params.py` marks it):
+WPM_min = 5 words/min and WPM_max = 100 words/min are owner decisions;
+the step ρ = 1.1 is an owner decision; β = 0.8 dit is heuristic (the
+shape matched filter is derived, the fraction is not); the logistic clip
+(±50 nats) and the 10⁻⁹ guard in the branch count are numerical choices,
+not tuned.
+
 ## 9. Timing and latency
 
 | Stage | Delay |
@@ -1942,6 +1997,9 @@ not in the repository; nothing was changed):
 | Frequency average | τ_f = 0.5 s of key-down weight; moves the NCO at weight ≥ 0.6 and coherence > 0.3, every 21.3 ms | `FrequencyTrackerConfig` (`tau_s`, `min_weight`, `min_coherence`, `update_interval_s`) | heuristic; the resulting accuracy measured (median 0.11 Hz at S₅₀₀ = 5 dB, 0.13 Hz at 0 dB, group F, section 7) |
 | Fine-tuning range | ±12 Hz around the anchor (the detector's frequency for the track); farther estimates are discarded; the NCO jumps to an anchor more than 12 Hz away | `FrequencyTrackerConfig::fine_tune_hz` | heuristic (owner decision 2026-09-29, option 1) |
 | NCO range | ±75 Hz | `FrequencyTrackerConfig::max_offset_hz` | heuristic |
+| Bank ladder (decoder: bank) | L_k = 9.6 ms × 1.1^(k−1), k = 1…32 (9.6 to 184.3 ms): 0.8 dit at 100 to 5 words/min; ratio 1.1 | `BankConfig::min_wpm`, `max_wpm`, `ladder_step`, `length_dits` | WPM range and ratio owner; length 0.8 dit heuristic |
+| Bank branch filter | boxcar, N_k = round(L_k · r) samples (14 to 276 at r = 1500 samples/s), zeros before the stream | `bank::branch_samples`, `bank::boxcar` | derived from the ladder |
+| Bank envelope likelihood | Λ = −a²/2 + ln I₀(a·x) nats; p = logistic(g), g clipped to ±50 nats | `bank::envelope_llr`, `bank::logistic` | derived; clip a numerical choice |
 
 ## 11. Definitions used in tests and the benchmark
 
