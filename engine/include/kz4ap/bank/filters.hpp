@@ -47,7 +47,7 @@ double power_response(double f_hz, int n, double rate_hz);
 // 9.8.1 / 9.8.2 formula as the prototype's detect.py (compared term by term).
 double log_bessel_i0(double z);
 
-// Lambda = -a^2/2 + ln I0(a x), nats: key-down over key-up for x = |v|/sigma_v and a = s/sigma_v.
+// Lambda = -a^2/2 + ln I0(a x), nats (kz4ap::envelope_llr, shared with Matched): key-down over key-up for x = |v|/sigma_v and a = s/sigma_v.
 double envelope_llr(double x, double a);
 
 // 1 / (1 + exp(-g)), g clipped to [-50, 50] nats.

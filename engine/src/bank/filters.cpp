@@ -55,7 +55,7 @@ double power_response(double f_hz, int n, double rate_hz) {
 
 double log_bessel_i0(double z) { return kz4ap::log_bessel_i0(z); }
 
-double envelope_llr(double x, double a) { return -0.5 * a * a + log_bessel_i0(a * x); }
+double envelope_llr(double x, double a) { return kz4ap::envelope_llr(x, a); }
 
 double logistic(double g) { return 1.0 / (1.0 + std::exp(-std::clamp(g, -50.0, 50.0))); }
 

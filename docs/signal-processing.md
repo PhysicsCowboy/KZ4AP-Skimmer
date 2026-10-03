@@ -1920,11 +1920,14 @@ among them.
   normalized key-down amplitude a = ŝ / σ_v, the log-likelihood ratio of
   key-down (Rician envelope) over key-up (Rayleigh) is
   Λ = −a²/2 + ln I₀(a·x), in nats (Proakis & Salehi, eq. 4.5-21; the same
-  expression as Matched, section 8b). ln I₀ is the Abramowitz & Stegun
-  9.8.1 (z < 3.75) and 9.8.2 approximation, relative error in I₀ below
-  5 · 10⁻⁷; the bank calls the same function Matched uses
-  (`kz4ap::log_bessel_i0`), whose formula equals the prototype's term for
-  term. The probability of key-down is the logistic
+  expression as Matched, section 8b). ln I₀ is the logarithm of the
+  Abramowitz & Stegun polynomial approximations: 9.8.1 for z < 3.75
+  (I₀ itself, published error bound |ε| < 1.6 · 10⁻⁷) and 9.8.2 for
+  z ≥ 3.75 (the scaled form √z · e⁻ᶻ · I₀(z), bound |ε| < 1.9 · 10⁻⁷).
+  The bounds are the published ones for the approximations; they were
+  not re-measured here. The bank calls the same functions Matched uses
+  (`kz4ap::log_bessel_i0` and `kz4ap::envelope_llr`), whose formula equals
+  the prototype's term for term. The probability of key-down is the logistic
   p = 1 / (1 + exp(−g)) of the log-odds g in nats (Λ plus the prior
   log-odds), with g clipped to ±50 nats so that exp never overflows.
 

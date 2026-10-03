@@ -5,6 +5,10 @@
 
 #include <nlohmann/json.hpp>
 
+#include <gtest/gtest.h>
+
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -23,6 +27,11 @@ inline nlohmann::json load_golden(const std::string& name) {
     std::ifstream in(path);
     if (!in) throw std::runtime_error("cannot open golden file " + path.string());
     return nlohmann::json::parse(in);
+}
+
+// Relative 1e-9 with an absolute floor of 1e-12 (for expected values at zero).
+inline void expect_close(double actual, double expected) {
+    EXPECT_NEAR(actual, expected, 1e-9 * std::max(std::abs(expected), 1e-12));
 }
 
 }  // namespace kz4ap::test

@@ -1,6 +1,6 @@
 // The bank decoder's branch filters and envelope likelihood against the prototype's golden values
 // (engine/tests/data/bank/filters.json, from training/kz4ap_proto/golden.py): integers exactly, doubles
-// to relative 1e-9.
+// to relative 1e-9 (floor 1e-12 absolute).
 #include "kz4ap/bank/filters.hpp"
 
 #include "golden.hpp"
@@ -17,9 +17,7 @@ namespace {
 using namespace kz4ap::bank;
 using kz4ap::test::load_golden;
 
-void expect_close(double actual, double expected) {
-    EXPECT_NEAR(actual, expected, 1e-9 * std::max(1.0, std::abs(expected)));
-}
+using kz4ap::test::expect_close;
 
 std::vector<std::complex<double>> input(const nlohmann::json& g) {
     const auto re = g.at("boxcar_input_re").get<std::vector<double>>();
