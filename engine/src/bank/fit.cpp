@@ -2,6 +2,7 @@
 
 #include "kz4ap/bank/numpy_sum.hpp"
 #include "kz4ap/morse.hpp"
+#include "ve3nea.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -32,21 +33,9 @@ constexpr double kDesign[5][4] = {{1.0, 1.0, 0.0, 0.0},
 constexpr bool kIsMarkClass[5] = {true, true, false, false, false};
 constexpr const char* kSpaceKinds[3] = {"element", "character", "word"};
 
-// VE3NEA's CW character frequencies and word-length probabilities (kz4ap_synth.messages, MIT, from DeepCW),
-// in the prototype's order.
-struct CharWeight {
-    std::string_view symbol;
-    int weight;
-};
-constexpr CharWeight kVe3neaCharWeights[] = {
-    {"1", 13},  {"2", 14},  {"3", 33},  {"4", 43},  {"5", 41},  {"6", 8},   {"7", 14},  {"8", 10},  {"9", 14},
-    {"0", 11},  {"A", 127}, {"B", 62},  {"C", 69},  {"D", 84},  {"E", 321}, {"F", 55},  {"G", 43},  {"H", 68},
-    {"I", 130}, {"J", 8},   {"K", 117}, {"L", 100}, {"M", 76},  {"N", 168}, {"O", 126}, {"P", 57},  {"Q", 68},
-    {"R", 95},  {"S", 159}, {"T", 236}, {"U", 61},  {"V", 23},  {"W", 95},  {"X", 16},  {"Y", 40},  {"Z", 12},
-    {"/", 19},  {".", 12},  {",", 9},   {"?", 16},  {"<BT>", 15},
-};
-constexpr double kVe3neaWordLengthProbs[] = {0.0,   0.1672, 0.2569, 0.1939, 0.1745, 0.0921, 0.025, 0.008, 0.006,
-                                             0.004, 0.003,  0.003,  0.002,  0.002,  0.002,  0.001, 0.001};
+// VE3NEA's CW character frequencies and word-length probabilities (ve3nea.hpp).
+using detail::kVe3neaCharWeights;
+using detail::kVe3neaWordLengthProbs;
 
 // ln((1 - epsilon) x prior) per class, nats (dit, dah, element, character, word).
 std::array<double, 5> log_priors(const BankConfig& cfg) {

@@ -28,4 +28,24 @@ inline void fft_forward(const std::complex<double>* in, std::complex<double>* ou
     pocketfft::c2c<double>({n}, stride, stride, {0}, pocketfft::FORWARD, in, out, 1.0);
 }
 
+// numpy.fft.rfft(in, n) in double precision: the n / 2 + 1 non-negative-frequency bins of the unnormalized
+// forward DFT of n real values (the caller zero-pads to n), out[k] = sum_m in[m] exp(-2 pi i k m / n).
+// pocketfft's real transform, the one numpy.fft uses: the bank decoder's periodicity estimate
+// (bank/periodicity.cpp).
+inline void rfft_forward(const double* in, std::complex<double>* out, std::size_t n) {
+    const pocketfft::stride_t stride_in{static_cast<std::ptrdiff_t>(sizeof(double))};
+    const pocketfft::stride_t stride_out{static_cast<std::ptrdiff_t>(sizeof(std::complex<double>))};
+    pocketfft::r2c<double>({n}, stride_in, stride_out, std::size_t{0}, pocketfft::FORWARD, in, out, 1.0);
+}
+
+// numpy.fft.irfft(in, n) in double precision (norm "backward"): the n real values whose rfft is in (n / 2 + 1
+// bins; the imaginary parts of the 0 and n / 2 bins are ignored), out[m] = (1/n) sum_k in[k] exp(+2 pi i k m / n)
+// over the Hermitian extension.
+inline void irfft(const std::complex<double>* in, double* out, std::size_t n) {
+    const pocketfft::stride_t stride_in{static_cast<std::ptrdiff_t>(sizeof(std::complex<double>))};
+    const pocketfft::stride_t stride_out{static_cast<std::ptrdiff_t>(sizeof(double))};
+    pocketfft::c2r<double>({n}, stride_in, stride_out, std::size_t{0}, pocketfft::BACKWARD, in, out,
+                           1.0 / static_cast<double>(n));
+}
+
 }  // namespace kz4ap::detail

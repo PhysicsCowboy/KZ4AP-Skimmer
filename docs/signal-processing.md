@@ -1887,11 +1887,14 @@ The bank decoder is the C++ port of the stage-1 Python prototype
 This section is written as the port's modules land; it now covers the
 branch filters and the envelope likelihood (`engine/src/bank/filters.cpp`)
 the noise estimates (`engine/src/bank/noise.cpp`, "Noise" below), the
-keying (`engine/src/bank/keying.cpp`, "Keying" below) and the duration
-fit (`engine/src/bank/fit.cpp`, "Duration fit" below), each checked
-against golden values from the prototype (relative 1e-9; discrete
-outputs exactly). The rest (periodicity, characters, selection) follows
-with its modules.
+keying (`engine/src/bank/keying.cpp`, "Keying" below), the duration
+fit (`engine/src/bank/fit.cpp`, "Duration fit" below), the periodicity
+estimate (`engine/src/bank/periodicity.cpp`, "Periodicity" below) and
+the text model and branch selection (`engine/src/bank/selection.cpp`,
+"Text model and branch selection" below), each checked against golden
+values from the prototype (relative 1e-9; discrete outputs exactly). The
+rest (the per-branch character assembly, the channel decoder that drives
+these stages, new overs and corrections) follows with its modules.
 
 **The bank.** Instead of one matched filter whose length follows an
 estimated speed (section 8b), the bank runs K = 32 boxcar filters at once,
@@ -2336,6 +2339,176 @@ by E5; σ_ln = 0.15 (marks) and 0.25 (spaces), ε = 0.05, the outlier range
 clipping bounds heuristic; the class priors, σ_t² and the 1.8% tail
 derived; the 0.1 ms floor on T a numerical choice.
 
+### Periodicity (bank decoder)
+
+`engine/src/bank/periodicity.cpp`, a port of
+`training/kz4ap_proto/periodicity.py` (`t_grid`, `_normalized_acf`,
+`comb_estimate`, `Periodicity`), checked against the prototype's golden
+values (below). It estimates the coarse speed T_P (the dit, s) from
+branch 1's keying, independently of every branch's duration fit, for the
+fit's prior and for selection's fallback. Only the comb on the
+dit-plus-space period Π = 2T is ported: it is the prototype's default
+and the owner's choice (E1). The prototype's other two methods (a
+sign-weighted comb on the edges of p, and a fit to the nulls of p's
+spectrum) were not adopted and are not ported; any other
+`periodicity_method` is an error (`std::invalid_argument`).
+
+- **Input.** Branch 1's squelched posterior p (probability of key-down,
+  dimensionless; 0 where the squelch is closed), at the channel rate
+  r samples/s, as the keying produces it block by block. It is averaged
+  down by factor = max(1, round(r / 750 samples/s)) samples (ties to
+  even): 2 at r = 1500 samples/s, so the averaged rate is
+  r_P = r / factor = 750 samples/s (at 2000 samples/s factor 3,
+  r_P = 666.7 samples/s). Each averaged sample is the mean of factor
+  consecutive samples of p; a remainder shorter than factor waits for
+  the next block. A buffer keeps the last N_max averaged samples, the
+  longest window.
+- **Windows and updates.** Windows W ∈ {2, 5, 10} s, of
+  N_W = max(16, round(W · r_P)) averaged samples (1500, 3750 and 7500 at
+  750 samples/s). The estimate is recomputed once round(0.25 s · r)
+  samples of p (375 at 1500 samples/s, 0.25 s) have arrived since the
+  last recomputation; between recomputations the last result stands. A
+  window the buffer does not fill yet gives no estimate (score 0).
+- **Candidates.** T on a log grid from 1.2 s / 100 = 12 ms in steps of
+  1% (×1.01) up to the first point ≥ 1.2 s / 5 = 240 ms: 303 points,
+  12 ms to 242.2 ms (the duration fit's grid; the 1.01 is written into
+  `t_grid` itself, not read from `t_grid_step`).
+- **Autocorrelation.** Over one window's N samples,
+  x = p − mean(p) and the biased, normalized autocorrelation
+  ρ[τ] = Σ_{m=0}^{N−1−τ} x[m] x[m+τ] / Σ_m x[m]², τ = 0 … N − 1
+  (dimensionless; 1 at τ = 0), computed by FFT zero-padded to the
+  smallest power of two ≥ 2N (so the circular correlation equals the
+  linear one). No estimate when N < 16 or Σ x² ≤ 10⁻¹² · N (p does not
+  vary; for instance all zero while the squelch is closed).
+- **Comb.** For each candidate T, Π = 2T, in samples Π · r_P. A tooth at
+  lag c is the mean of ρ over the lags ⌊c − 0.075 Π⌋ … ⌈c + 0.075 Π⌉
+  (± 15% of T), clipped to 0 … N − 1. The contrast of tooth k is
+  tooth(kΠ) − ½ (tooth((k − ½)Π) + tooth((k + ½)Π)), k = 1 … 4 (teeth at
+  2T, 4T, 6T and 8T, negative teeth halfway between); the score is the
+  mean of the 4 contrasts (dimensionless). Why 2T and not T: consecutive
+  keying edges T apart have opposite signs, so p's structure repeats at
+  2T; its autocorrelation is low at odd and high at even multiples of T,
+  and a comb with teeth at multiples of T would peak at 2T (derived; the
+  comb was corrected to Π = 2T on 2026-09-30, spec 4.4).
+- **Reach.** A candidate counts only if its outermost lag,
+  (4 + ½ + 0.075) Π = 9.15 T, is at most (N − 1)/2 samples, which caps
+  T at (N − 1) / (18.3 r_P) ≈ W / 18.3: 109 ms (11 words/min) in the 2 s
+  window, 273 ms (the whole grid) in 5 s and 546 ms in 10 s (derived from
+  the rule; the rule itself is heuristic). A window whose true T is beyond
+  its cap still returns its best candidate within reach; only the
+  confidence threshold keeps that estimate out. The estimate is the
+  candidate with the largest score (the first on a tie); none if no
+  candidate is within reach.
+- **Taper.** The biased estimate tapers each tooth by about (1 − τ/N), so
+  a tooth's contrast shrinks with its lag: about 0.62 at the 8T tooth for
+  5 words/min (τ = 1.92 s) in a 5 s window (derived). Keeping the taper is
+  heuristic (the unbiased estimate is noisier at long lags); it lowers
+  long-T scores in short windows relative to short-T ones.
+- **T_P.** At each recomputation the windows are estimated shortest
+  first; T_P is the estimate of the shortest window whose score is
+  ≥ 0.03, the confidence is that score, and the window (s) is reported
+  with it. If no window is confident, T_P is none and the confidence is
+  the largest score of all windows (0 if none has an estimate). T_P never
+  feeds back into its own estimate (spec 4.4).
+
+**Port check.** Golden values (`engine/tests/data/bank/periodicity.json`,
+from `kz4ap_proto.golden`): the prototype's `ChannelDecoder.run` on 12 s
+streams keyed at 12, 25 and 40 words/min (S₅₀₀ = 15 dB SNR in 500 Hz, through the
+channel filter's shape), with its `Periodicity` recorded; the port is
+given the same blocks of p and asked for an update after each, as `run`
+does. At all 46 recomputations per stream the port recomputes on the
+same blocks; T_P, the window and every window's T are equal (the 303
+grid points are bit-identical); the confidences and the per-window
+scores agree to a largest relative difference of 1.0 · 10⁻¹⁴ (692 of the
+1005 compared values bit-identical). Not reproduced in numpy's order of
+operations: Σ x² (numpy's `x @ x` is a BLAS dot product, whose order
+depends on the BLAS build; the port sums the squares pairwise, as
+`np.sum` does), numpy's FFT build and its complex product; the
+contrasts subtract nearly equal tooth means, which turns last-bit
+differences of ρ into larger relative differences of the score. The
+prototype's comb tests are ported one for one (inputs in
+`periodicity_cases.json`); its strict expected failure (Farnsworth
+18/10 words/min, where the comb locks near the gap timebase) is skipped
+with the same reason.
+
+Status (as `training/kz4ap_proto/params.py` marks them): the method (the
+comb on Π = 2T) owner (E1); the windows 2, 5 and 10 s a placeholder
+(E2); the confidence threshold 0.03 a placeholder (E1); the 4 teeth and
+their half-width 0.075 Π a placeholder (E3), not measured for the comb
+on 2T; the update interval 0.25 s and the averaged rate 750 samples/s
+heuristic; Π = 2T, the reach caps and the taper's size derived; the
+reach rule and the biased estimate heuristic; the 1% grid step the
+duration fit's (a placeholder kept by E5); the 10⁻¹² · N variance floor
+and the 16-sample minimum numerical choices.
+
+### Text model and branch selection (bank decoder)
+
+`engine/src/bank/selection.cpp`, a port of `training/kz4ap_proto/text.py`
+(`decode_pattern`, `TextModel`) and `select.py` (`BranchView`,
+`Selector`), checked against the prototype's golden values (below).
+Every branch decodes its own text; selection chooses the branch whose
+text is published (spec 4.6).
+
+- **Characters.** A character's dot/dash pattern becomes its symbol by
+  the code table of `kz4ap::morse` (identical to `kz4ap_synth.morse`):
+  eight or more dits read "<HH>", a pattern with no code "*".
+- **Text model.** Unigram log-probability per symbol, nats, under
+  VE3NEA's CW character frequencies (`kz4ap_synth.messages`, MIT; 41
+  symbols, weights summing to 2688): ln(w / 2688) for a symbol in his
+  table (E: ln(321/2688) = −2.125 nats); a valid code missing from it
+  (prosigns other than <BT>, rarer punctuation) gets his rarest
+  character's, ln(8/2688) = −5.817 nats (heuristic); "*" and anything
+  else ln(10⁻⁶) = −13.816 nats (heuristic: "very unlikely"). A branch's
+  text score is the mean over its characters, nats per character, word
+  spaces left out (none without characters). The window,
+  `text_window_chars` = 10 characters (the branch's most recent ones), is
+  applied by the channel decoder that builds the views (the next module);
+  this module scores the characters it is given.
+- **Eligibility.** A branch is eligible when its own fitted dit T_k
+  agrees with its length L_k: |ln(L_k / (0.8 T_k))| ≤ ln 1.1 = 0.0953
+  (one ladder step), once its fit's memory weight is ≥ 8 elements and
+  T_k > 0 s.
+- **Best branch.** Among eligible branches: the best quality Q (nats per
+  element) and every branch within ε_Q = 0.05 nats per element of it are
+  tied; if more than one is tied and every tied branch has text, only
+  those within 0.1 nats per character of the likeliest text stay tied
+  (a branch with no text yet is not read as infinitely unlikely: the
+  text step is then skipped); of the tied, the longest branch wins
+  (better SNR). With no eligible branch (a fallback pick): the branch with
+  the likeliest text if it leads the next likeliest by ≥ 1.0 nats per
+  character; else, when T_P is confident, the branch whose length is
+  nearest 0.8 T_P in ln L (the first on a tie); else branch 1, the
+  shortest.
+- **Switching.** The published branch changes only when the same other
+  branch has been best for M = 4 selection instants in a row, all as the
+  best eligible branch or all as fallback picks (a run of one kind does
+  not complete a run of the other). One update may stand for several
+  instants (the caller counts them); an update with no instant changes
+  nothing, not even the eligibility times. For each branch the stream
+  time (s) at which its current eligible run began is kept (none while it
+  is not eligible); the channel decoder uses it to decide how far back a
+  switch replaces published text.
+
+**Port check.** Golden values (`engine/tests/data/bank/selection.json`):
+the selector on a scripted sequence of 40 updates over the view sets of
+the prototype's selection tests (eligible and ineligible fits, quality
+and text ties, fallback picks by text and by T_P, 0 to 4 instants per
+update): eligibility, the best branch, the returned branch, the pending
+switch and its count equal at every update, the eligibility times
+bit-identical; the text model's 12 patterns equal and its
+log-probabilities of 30 symbols and 5 symbol lists bit-identical (the
+mean uses Python's compensated float sum, as the prototype's `sum`
+does). The prototype's text and selection tests are ported one for one.
+
+Status (as `training/kz4ap_proto/params.py` marks them): M = 4 a
+placeholder kept by E6; ε_Q = 0.05 nats per element and the text window
+of 10 characters placeholders kept by E8; the eligibility tolerance
+ln 1.1 (one ladder step), the minimum fit weight of 8 elements, the
+text tie of 0.1 nats per character, the text separation of 1.0 nats per
+character and the log-probabilities given to codes missing from the
+table and to "*" heuristic; the character probabilities derived from
+VE3NEA's table.
+
 ## 9. Timing and latency
 
 | Stage | Delay |
@@ -2418,6 +2591,15 @@ derived; the 0.1 ms floor on T a numerical choice.
 | Bank fit grid | T 12 ms to 242.2 ms in 1% steps (303 points); q ∈ {3, 4, 5}; w/T ∈ {−0.4, 0, 0.4, 0.8}; T_g/T ∈ {1, 1.59, 2.52, 4, 6.35} | `BankConfig::t_grid_step`, `q_grid`, `w_grid`, `tg_grid` | q, w, T_g grids measured (E5, "coarse"); T step placeholder kept by E5 |
 | Bank T_P prior | −π (ln T − ln T_P)² / (2 σ_P²) nats, σ_P = 0.1 in ln T | `BankConfig::prior_sigma_ln` | heuristic |
 | Bank fit refinement | 2 Gauss–Newton steps in ln d, damping 0.2 T per parameter; T ≥ 0.1 ms, w ∈ [−0.6, 1.2] T, qT ∈ [2, 6] T, T_g ∈ [0.8, 10] T; kept only if the weighted log-likelihood does not drop | `BankConfig::refine_iterations`; `bank::DurationFit::refine`, `best` | heuristic; the 0.1 ms floor a numerical choice |
+| Bank periodicity method | the comb on Π = 2T over branch 1's posterior p (the edge comb and the spectrum fit are not ported) | `BankConfig::periodicity_method`; `bank::Periodicity` | owner (E1); Π = 2T derived |
+| Bank periodicity input and updates | p averaged to r_P = r / max(1, round(r / 750 samples/s)) (750 samples/s at r = 1500 samples/s); recomputed every 0.25 s of p (375 samples at 1500 samples/s) | `BankConfig::periodicity_rate_hz`, `periodicity_update_s` | heuristic |
+| Bank periodicity windows | 2, 5 and 10 s (1500, 3750, 7500 samples at 750 samples/s); the shortest confident window gives T_P; reach caps T at ≈ W / 18.3 (109, 273, 546 ms) | `BankConfig::periodicity_windows_s` | windows placeholder (E2); reach caps derived from a heuristic rule |
+| Bank comb teeth and width | 4 teeth at kΠ, k = 1…4, negative teeth at (k ± ½)Π, each ±0.075 Π (±15% of T) wide; score = mean contrast, dimensionless; biased autocorrelation | `BankConfig::comb_teeth`, `comb_width`; `bank::comb_estimate` | placeholder (E3), not measured for the comb on 2T; biased estimate heuristic |
+| Bank comb confidence | T_P counts when its window's score ≥ 0.03 (dimensionless) | `BankConfig::comb_confidence_min` | placeholder (E1) |
+| Bank text model | ln(w / 2688) nats per character (VE3NEA's table); valid codes missing from it ln(8/2688) = −5.817 nats; "*" ln(10⁻⁶) = −13.816 nats; mean over the last 10 characters | `bank::TextModel`; `BankConfig::text_window_chars` | probabilities derived (VE3NEA); the two fallbacks heuristic; window 10 characters placeholder, kept by E8 |
+| Bank eligibility | \|ln(L_k / (0.8 T_k))\| ≤ ln 1.1 = 0.0953 (one ladder step), fit weight ≥ 8 elements | `BankConfig::eligibility_tolerance`, `min_fit_weight`; `bank::Selector::eligible` | heuristic |
+| Bank selection ties | quality tie ε_Q = 0.05 nats per element; then text tie 0.1 nats per character; then the longest branch. None eligible: text leading by ≥ 1.0 nats per character, else nearest 0.8 T_P, else branch 1 | `BankConfig::quality_tie_nats`, `text_tie_nats`, `text_separation_nats`; `bank::Selector::best` | ε_Q placeholder, kept by E8; text tie and separation heuristic |
+| Bank switch persistence | M = 4 selection instants in a row, of one kind (eligible or fallback) | `BankConfig::switch_persistence`; `bank::Selector::update` | placeholder, kept by E6 |
 
 ## 11. Definitions used in tests and the benchmark
 

@@ -4,6 +4,8 @@ set(KZ4AP_BANK_SOURCES
   src/bank/noise.cpp
   src/bank/keying.cpp
   src/bank/fit.cpp
+  src/bank/periodicity.cpp
+  src/bank/selection.cpp
 )
 
 add_library(kz4ap_engine
@@ -51,6 +53,8 @@ add_executable(kz4ap_bank_tests
   tests/bank/noise_test.cpp
   tests/bank/keying_test.cpp
   tests/bank/fit_test.cpp
+  tests/bank/periodicity_test.cpp
+  tests/bank/selection_test.cpp
 )
 target_link_libraries(kz4ap_bank_tests PRIVATE kz4ap::engine nlohmann_json::nlohmann_json GTest::gtest_main)
 target_compile_definitions(kz4ap_bank_tests PRIVATE

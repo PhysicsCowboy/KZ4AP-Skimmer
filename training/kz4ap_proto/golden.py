@@ -393,6 +393,193 @@ def golden_fit_cases(cfg: ProtoConfig) -> dict:
     return out
 
 
+def _f64_base64(x) -> str:
+    """A float64 array as base64 of its little-endian bytes: exact, and about half the size of JSON numbers
+    (the C++ tests decode it with golden.hpp's decode_f64_base64)."""
+    import base64
+
+    return base64.b64encode(np.ascontiguousarray(x, "<f8").tobytes()).decode("ascii")
+
+
+def golden_periodicity(cfg: ProtoConfig) -> dict:
+    """periodicity.py (the comb on Pi = 2T, the default method) driven by ChannelDecoder.run itself at 1500
+    samples/s on three keyed streams: 12 s of testsignals.stream, a 1 FS carrier keyed at 12, 25 and 40 WPM
+    by kz4ap_synth's random_text(default_rng(4), 60) from 1.0 s, S500 = 15 dB, seed 21, through the channel
+    filter's shape (as _noise_stream, at another speed and length). run's Periodicity is replaced by a
+    subclass that records, changing nothing: every push's input (branch 1's squelched posterior p over one
+    block, all blocks concatenated, as base64 float64: "<wpm>_p_b64", with the block lengths
+    "<wpm>_block_lengths"), and every update that was recomputed: the block index after whose push it ran,
+    T_P (s, None when no window is confident), the confidence (dimensionless), the window (s, or None) and
+    per_window [(T s or None, score)] for the windows 2, 5 and 10 s. Also t_grid (s) and the windows in
+    samples at the averaged rate."""
+    from kz4ap_synth.messages import random_text
+    from kz4ap_synth.morse import keying_intervals
+
+    from . import channel, periodicity
+
+    rate = 1500.0
+    out: dict = {"rate_hz": rate, "t_grid_s": periodicity.t_grid(cfg).tolist(), "wpm": [12, 25, 40]}
+    for wpm in out["wpm"]:
+        iv = keying_intervals(random_text(np.random.default_rng(4), 60), float(wpm))
+        u = np.asarray(np.convolve(testsignals.stream(iv, 1.0, 12.0, 15.0, 21, rate), testsignals.lowpass(rate),
+                                   mode="same"), np.complex128)
+        blocks: list[np.ndarray] = []
+        updates: list = []
+
+        class Recording(periodicity.Periodicity):
+            def push(self, p):
+                blocks.append(np.asarray(p, float).copy())
+                super().push(p)
+
+            def update(self, force=False):
+                r = super().update(force)
+                if r[3]:
+                    updates.append([len(blocks) - 1, r[0], r[1], r[2],
+                                    [[t, s] for t, s in self.per_window]])
+                return r
+
+        saved = channel.Periodicity
+        channel.Periodicity = Recording
+        try:
+            channel.ChannelDecoder(cfg, rate).run(u)
+        finally:
+            channel.Periodicity = saved
+        probe = periodicity.Periodicity(cfg, rate)
+        out["factor"] = probe.factor
+        out["windows_samples"] = list(probe.windows)
+        out["update_every"] = probe.update_every
+        out[f"{wpm}_p_b64"] = _f64_base64(np.concatenate(blocks))
+        out[f"{wpm}_block_lengths"] = [len(b) for b in blocks]
+        out[f"{wpm}_updates"] = updates
+    return out
+
+
+PERIODICITY_CASES = [(5.0, "machine", None), (12.0, "machine", None), (25.0, "machine", None),
+                     (40.0, "machine", None), (100.0, "machine", None), (25.0, "paddle", None),
+                     (18.0, "machine", 10.0)]
+
+
+def golden_periodicity_cases(cfg: ProtoConfig) -> dict:
+    """The inputs of training/tests/test_proto_periodicity.py's comb tests, which the C++ port of those tests
+    replays (the synthesis library is Python only). Each case of PERIODICITY_CASES (wpm, style, farnsworth
+    wpm), named "<wpm>_<style>[_f<farnsworth>]": ten_seconds' key-down intervals, timed_intervals(
+    random_text(default_rng(1), 300), wpm, style, the same generator, farnsworth_wpm=...), only those starting
+    (round(a r)) before sample 16500 (11 s at 1500 samples/s), as "<case>_a_s" and "<case>_b_s" (s), and
+    keyed_p's length n = int((last end + 1 s) r), samples ("<case>_n"); the C++ test rebuilds keyed_p from
+    them. And test_noise_scores_below_keying's uniform draws, default_rng(5).random(15000), as base64 float64
+    ("noise_uniform_b64"; the test scales them by 0.2 and smooths them as the Python test does)."""
+    from kz4ap_synth.keying import timed_intervals
+    from kz4ap_synth.messages import random_text
+
+    rate = 1500.0
+    out: dict = {"rate_hz": rate, "cases": []}
+    for wpm, style, farnsworth in PERIODICITY_CASES:
+        rng = np.random.default_rng(1)
+        text = random_text(rng, 300)
+        iv = timed_intervals(text, wpm, style, rng, farnsworth_wpm=farnsworth)
+        name = f"{wpm:g}_{style}" + (f"_f{farnsworth:g}" if farnsworth is not None else "")
+        kept = [(a, b) for a, b in iv if int(round(a * rate)) < int(11 * rate)]
+        out["cases"].append(name)
+        out[f"{name}_a_s"] = [float(a) for a, _ in kept]
+        out[f"{name}_b_s"] = [float(b) for _, b in kept]
+        out[f"{name}_n"] = int((iv[-1][1] + 1.0) * rate)
+    out["noise_uniform_b64"] = _f64_base64(np.random.default_rng(5).random(int(10 * rate)))
+    return out
+
+
+def _selection_script() -> list[tuple[str, int, float | None]]:
+    """golden_selection's 40 updates: (scenario, instants, T_P s or None), the scenarios being the view sets
+    of training/tests/test_proto_select.py."""
+    return [
+        ("v15", 1, None), ("v15", 1, None), ("v15", 1, None), ("v16", 1, None), ("v16", 3, None),  # switch to 16
+        ("empty", 0, None), ("fallback16", 1, None), ("fallback16", 1, None),
+        ("fallback3", 1, None), ("fallback3", 1, None),
+        ("tie_text14", 1, None), ("tie_text14", 1, None), ("tie_text14", 1, None), ("tie_text14", 1, None),
+        ("no_clear_text", 1, 0.048), ("no_clear_text", 2, 0.048), ("no_clear_text", 0, 0.048),
+        ("no_clear_text", 1, 0.048), ("no_clear_text", 1, 0.048),
+        ("empty", 2, None), ("empty", 2, None),
+        ("tie_texts_tie", 1, None), ("tie_texts_tie", 1, None), ("tie_texts_tie", 1, None),
+        ("tie_texts_tie", 1, None),
+        ("best_eligible", 1, None), ("ineligible_scale", 1, None), ("ineligible_weight", 1, None),
+        ("fallback16", 2, None), ("eligible16", 1, None), ("eligible16", 2, None),
+        ("tie_no_text", 1, None), ("tie_text_15_only", 2, None), ("tie_text_14_only", 1, None),
+        ("tie_text14", 4, None), ("empty", 1, 0.048), ("no_clear_text", 3, None), ("empty", 1, 0.2),
+        ("empty", 3, 0.2), ("v15", 1, 0.2),
+    ]
+
+
+def golden_selection(cfg: ProtoConfig) -> dict:
+    """select.py and text.py. The selector (lengths: realized_lengths_s at 1500 samples/s) on _selection_script's
+    40 updates, the views built as test_proto_select.py builds them (fit_for(k, quality, weight=24, scale=1):
+    T = L_k / 0.8 x scale, q = 3, w = 0, T_g = T); per update the views' fits [k, t_s, q, w_s, tg_s, quality,
+    weight] and texts [k, nats per character], then eligible (one "0"/"1" per branch), best(views, T_P) before
+    the update, the update's return, candidate ([branch, from eligible] or None), count and eligible_since (s
+    or None). The text model: decode_pattern of 12 patterns, char_logprob (nats) of 30 symbols and
+    mean_logprob (nats per character, None without characters) of 5 symbol lists."""
+    from . import bank, select, text
+    from .fit import Fit
+
+    lengths = bank.realized_lengths_s(cfg, 1500.0)
+
+    def fit_for(k, quality, weight=24.0, scale=1.0):
+        t = lengths[k] / 0.8 * scale
+        return Fit(t, 3.0, 0.0, t, quality, weight)
+
+    tie = {14: fit_for(14, -0.50), 15: fit_for(15, -0.52)}
+    scenarios = {
+        "empty": ({}, {}),
+        "v15": ({15: fit_for(15, -0.5)}, {}),
+        "v16": ({16: fit_for(16, -0.5)}, {}),
+        "eligible16": ({16: fit_for(16, -0.5)}, {}),
+        "fallback16": ({}, {16: -2.0, 20: -4.0}),
+        "fallback3": ({}, {3: -2.0, 20: -4.0}),
+        "no_clear_text": ({}, {3: -2.0, 20: -2.5}),
+        "tie_text14": (tie, {14: -2.0, 15: -3.5}),
+        "tie_texts_tie": (tie, {14: -2.0, 15: -2.05}),
+        "tie_no_text": (tie, {}),
+        "tie_text_14_only": (tie, {14: -2.0}),
+        "tie_text_15_only": (tie, {15: -2.0}),
+        "best_eligible": ({14: fit_for(14, -1.0), 15: fit_for(15, -0.5), 20: fit_for(20, 0.0, scale=1.5)}, {}),
+        "ineligible_scale": ({15: fit_for(15, -1.0, scale=1.12), 16: fit_for(16, -1.0, scale=1.09)}, {}),
+        "ineligible_weight": ({15: fit_for(15, -1.0, weight=3.0), 17: fit_for(17, -0.2)}, {}),
+    }
+    sel = select.Selector(cfg, lengths)
+    steps = []
+    for name, instants, prior in _selection_script():
+        fits, texts = scenarios[name]
+        views = [select.BranchView(k, float(lengths[k]), fits.get(k), texts.get(k)) for k in range(len(lengths))]
+        best = sel.best(views, prior)
+        eligible = "".join("1" if sel.eligible(v) else "0" for v in views)
+        got = sel.update(views, instants, 0.5 * (len(steps) + 1), prior)
+        steps.append({
+            "scenario": name, "instants": instants, "prior_t_s": prior, "t_now_s": 0.5 * (len(steps) + 1),
+            "fits": [[k, f.t_s, f.q, f.w_s, f.tg_s, f.quality, f.weight] for k, f in sorted(fits.items())],
+            "texts": [[k, v] for k, v in sorted(texts.items())],
+            "eligible": eligible, "best": [best[0], best[1]], "current": got,
+            "candidate": None if sel.candidate is None else [sel.candidate[0], sel.candidate[1]],
+            "count": sel.count, "eligible_since": list(sel.eligible_since),
+        })
+    assert len(steps) == 40
+
+    m = text.TextModel()
+    patterns = [".-", "-...-", "...-.-", "..--..", "........", ".........", "--.--.", "", ".", "-.--.",
+                "...---...", "-.-..-.."]
+    symbols = ["E", "T", "A", "<BT>", "?", "/", ".", ",", "0", "9", "Q", "Z", "J", "6", "X", "<KN>", "<SK>",
+               "<HH>", "<AR>", ";", "@", "*", "e", "", " ", "<XX>", "AB", "=", "<SOS>", "_"]
+    strings = [["E", " ", "T"], [" "], [], ["C", "Q", " ", "D", "E", " ", "K", "Z", "4", "A", "P"],
+               ["*", "<KN>", "e", "5", " ", "?"]]
+    return {
+        "lengths_s": lengths.tolist(),
+        "steps": steps,
+        "patterns": patterns,
+        "decoded": [text.decode_pattern(p) for p in patterns],
+        "symbols": symbols,
+        "char_logprob": [m.char_logprob(s) for s in symbols],
+        "strings": strings,
+        "mean_logprob": [m.mean_logprob(s) for s in strings],
+    }
+
+
 # name of the JSON file (without extension) -> function producing its content.
 # Later tasks register golden_<module> here.
 GOLDEN: dict[str, Callable[[ProtoConfig], dict]] = {
@@ -402,6 +589,9 @@ GOLDEN: dict[str, Callable[[ProtoConfig], dict]] = {
     "keying": golden_keying,
     "fit": golden_fit,
     "fit_cases": golden_fit_cases,
+    "periodicity": golden_periodicity,
+    "periodicity_cases": golden_periodicity_cases,
+    "selection": golden_selection,
 }
 
 
