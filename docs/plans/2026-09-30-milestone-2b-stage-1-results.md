@@ -1717,6 +1717,60 @@ Envelope's 40 WPM intervals also reach S₅₀₀ = 15 dB (not traced). Group A'
 prototype is worse than Matched by +0.029 (+0.006 to +0.056), from S₅₀₀ = −4 to −2 dB, where it fails
 abruptly (0.973 at S₅₀₀ = −2 dB against Matched's 0.384); at 25 and 40 WPM it is better (−0.009 and −0.030).
 
+#### 5.1.1 How far from optimal: a genie-aided bound (derived, not measured)
+
+Added 2026-10-02 at the owner's question. The crossings above are compared with the error rate of a
+**genie-aided receiver**: one that knows the timing, the speed and the amplitude exactly and decides
+each Morse time unit (one dit length) on or off with the optimal detector. No decoder can do better
+from the noise alone; a text prior (which characters and words are likely) is the one thing that can,
+so this is the limit for a decoder without one. Everything in this subsection is derived from textbook
+detection theory, except the decoders' crossings, which are the measured ones of the table above.
+
+**Energy per dit.** S₅₀₀ is key-down carrier power P over noise power in 500 Hz, so with N₀ the
+one-sided noise power spectral density, N₀ × 500 Hz = P / S₅₀₀. A dit of duration T = 1.2 s / WPM
+carries E = P·T, so
+
+  E/N₀ = S₅₀₀ × 500 Hz × T  (12 WPM: T = 100 ms, E/N₀ = S₅₀₀ + 17.0 dB;
+  25 WPM: 48 ms, S₅₀₀ + 13.8 dB; 40 WPM: 30 ms, S₅₀₀ + 11.8 dB).
+
+**Error rate per time unit.** The closest pairs of Morse characters differ in one unit (for example
+"I", dit–space–dit, against "T", one dah: they differ in the middle unit), so one unit decision with
+energy E is the weakest link. For on-off keying, the error probability per unit P_u is Q(√(E/2N₀))
+with the carrier phase known (coherent), and about ½·exp(−E/4N₀) with it unknown (noncoherent, the
+realistic case for CW; high-SNR approximation, Proakis).
+
+**Per character.** With its inter-character space a character spans about 10 units (the PARIS standard
+is 50 units per word), so CER ≈ 10·P_u. This is a heuristic count: one unit error can cost one edit or
+two. Because the error falls exponentially with E/N₀, a factor of 2 in it moves the crossings by only
+about ±0.7 dB.
+
+**Result.** CER 0.10 needs E/N₀ = 11.9 dB (noncoherent) or 10.3 dB (coherent); CER 0.05 needs 12.7 dB
+or 11.2 dB. In S₅₀₀, with each decoder's distance from the noncoherent bound (decoder − bound, dB of
+S₅₀₀):
+
+| speed | CER | bound, noncoherent, dB | bound, coherent, dB | prototype: distance, dB | Matched: distance, dB | Envelope: distance, dB |
+|---|---|---|---|---|---|---|
+| 12 WPM | 0.10 | −5.0 | −6.6 | 4.9 | 4.8 | 12.2 |
+| 12 WPM | 0.05 | −4.3 | −5.8 | 5.4 | 5.5 | 12.0 |
+| 25 WPM | 0.10 | −1.9 | −3.5 | 1.9 | 3.0 | 7.0 |
+| 25 WPM | 0.05 | −1.1 | −2.6 | 2.4 | 2.8 | 6.7 |
+| 40 WPM | 0.10 | +0.2 | −1.4 | 1.6 | 2.7 | 5.8 |
+| 40 WPM | 0.05 | +0.9 | −0.5 | 2.3 | 2.7 | 13.9 |
+
+**Reading.**
+
+1. At 25 and 40 WPM the prototype is about 1.6–2.4 dB of S₅₀₀ from a receiver that knows everything
+   (derived bound against measured crossings). A real decoder must estimate the timing, speed and
+   amplitude, so part of that gap cannot be closed; how much was not estimated.
+2. At 12 WPM all three decoders are about 5 dB from the bound or more. By the bound, a 12 WPM station has
+   3.2 dB more energy per dit than a 25 WPM one, so its crossing should lie 3.2 dB lower; the
+   prototype's lies at the same S₅₀₀ (−0.1 dB against 0.0 dB). This matches its abrupt failure at
+   S₅₀₀ = −2 dB (section 5.1). Conjectured, not traced: something other than the filters' energy limits
+   at low speed (the amplitude estimate, the squelch or the first-mark threshold).
+3. The bound is approximate: the 10 units per character and the high-SNR approximation are heuristics
+   (about ±0.7 dB, above). An exact reference would be a genie decoder run on the same recordings; the
+   owner judged that a distraction for now (2026-10-02), so it is not in the backlog.
+
 ### 5.2 The regressions that started this redesign, and lock-ins
 
 | case | prototype | Matched | Envelope |
