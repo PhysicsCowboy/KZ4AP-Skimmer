@@ -627,12 +627,13 @@ def aggregate(rows) -> dict:
             continue
         key = (r["front_end"], r["group"], r["tag"])
         g = groups.setdefault(key, {"signals": 0, "detected": 0, "by_snr": {}, "freq_errors": [],
-                                    "beyond_oracle_anchor": False, "regimes": set(),
+                                    "beyond_oracle_anchor": False, "drifting_oracle": False, "regimes": set(),
                                     **{k: 0 for k in COUNT_KEYS}})
         g["signals"] += 1
         if r.get("regime"):
             g["regimes"].add(r["regime"])
         g["beyond_oracle_anchor"] |= bool(r.get("beyond_oracle_anchor"))
+        g["drifting_oracle"] |= bool(r.get("drifting_oracle"))
         g["detected"] += int(r["detected"])
         for k in COUNT_KEYS:
             g[k] += r[k]
@@ -667,6 +668,7 @@ def aggregate(rows) -> dict:
                                        if crossing else {}),
             "freq_error_hz_median": float(np.median(g["freq_errors"])) if g["freq_errors"] else None,
             "beyond_oracle_anchor": g["beyond_oracle_anchor"],
+            "drifting_oracle": g["drifting_oracle"],
             # Group H through the detector, QSO labels only: the QSOs' regimes on this row's path
             "regimes": sorted(g["regimes"]),
         }
@@ -686,7 +688,8 @@ def paired_differences(rows, a: str = "baseline", b: str = "matched") -> dict:
     for key in sorted(set(rows_a) & set(rows_b)):
         ra, rb = rows_a[key], rows_b[key]
         diffs.setdefault(key[:2], []).append(_ratio(rb["edits"], rb["symbols"]) - _ratio(ra["edits"], ra["symbols"]))
-        limited[key[:2]] = limited.get(key[:2], False) or bool(rb.get("beyond_oracle_anchor"))
+        limited[key[:2]] = (limited.get(key[:2], False) or bool(rb.get("beyond_oracle_anchor"))
+                            or (b == "bank" and bool(rb.get("drifting_oracle"))))
     out = {}
     for key, d in diffs.items():
         values = np.array(d)
@@ -723,7 +726,12 @@ ANCHORED_DECODERS = ("matched", "bank")
 
 
 def _anchor_limited(front_end: str, v: dict) -> bool:
-    return front_end in ANCHORED_DECODERS and v.get("beyond_oracle_anchor", False)
+    """A row (or signal) of front_end is "not meaningful (oracle anchor)": beyond the anchor's +/-12 Hz for Matched
+    and the bank; for the bank also any drifting label of an oracle recording, since it mixes without the drift (the
+    prototype mixed with it, so such rows are not comparable either; controller's ruling, milestone 2c Task 10)."""
+    if front_end not in ANCHORED_DECODERS:
+        return False
+    return bool(v.get("beyond_oracle_anchor", False) or (front_end == "bank" and v.get("drifting_oracle", False)))
 
 
 def _row_regime(oracle: bool, label: dict, front_end: str) -> str | None:
@@ -773,6 +781,7 @@ def load_results(out_dir: Path, results_dirs=None, front_ends=None):
                                  "freq_error_hz": freq_error,
                                  "regime": _row_regime(oracle, label, fe_dir.name),
                                  "beyond_oracle_anchor": beyond_oracle_anchor(oracle, label),
+                                 "drifting_oracle": bool(oracle and label.get("drift_hz_per_s")),
                                  **{k: sig[k] for k in COUNT_KEYS}})
                 if result_name == rec["name"]:
                     timing = result.get("timing", {})
@@ -935,7 +944,9 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
              f"fine-tunes only within ±{ORACLE_ANCHOR_RANGE_HZ:g} Hz of it; the bank mixes at the label, without "
              "its drift, and has no tracker (its ±"
              f"{ORACLE_ANCHOR_RANGE_HZ:g} Hz limit is heuristic: about where a 25 words/min branch loses 3 dB "
-             "relative to 0 Hz, docs/signal-processing.md section 8c). † : this group-H view does not fit the QSO. "
+             "relative to 0 Hz, docs/signal-processing.md section 8c), so a bank row is marked for any drifting "
+             "label of an oracle recording too (not comparable with the prototype, which mixed with the drift). "
+             "† : this group-H view does not fit the QSO. "
              "Through the detector, by the QSO's regime on the row's own path: labels per station for a "
              "same-track QSO, where both match one track and each is charged the other's text; labels per "
              "QSO for a separate-track QSO, where the caller's track lacks the answering station's overs. "

@@ -451,9 +451,11 @@ def test_summary_json_flags_the_oracle_anchor_only_on_matched_rows(tmp_path):
     assert groups[("matched", "drift 0.2 Hz/s")]["beyond_oracle_anchor"] is False
 
 
-def test_bank_rows_beyond_the_oracle_anchor_are_marked_too(tmp_path):
+def test_bank_rows_of_every_drifting_oracle_label_are_marked(tmp_path):
     # The engine's bank decoder mixes oracle channels at the label's frequency without its drift and has no
-    # tracker at all, so its oracle rows beyond the anchor are no more meaningful than Matched's.
+    # tracker at all: its rows beyond the anchor are no more meaningful than Matched's, and a row of any drifting
+    # oracle label, 0.2 Hz/s included, is not comparable with the prototype, which mixed with the drift
+    # (controller's ruling, milestone 2c Task 10). Matched keeps the +/-12 Hz rule.
     _drift_recording(tmp_path, oracle=True)
     results = tmp_path / "results" / "bank"
     results.mkdir(parents=True)
@@ -461,11 +463,29 @@ def test_bank_rows_beyond_the_oracle_anchor_are_marked_too(tmp_path):
     write_summary(tmp_path)
     lines = (tmp_path / "summary.md").read_text(encoding="utf-8").splitlines()
     assert any(line.startswith("| drift 2 Hz/s (not meaningful (oracle anchor)) | bank |") for line in lines)
-    assert any(line.startswith("| drift 0.2 Hz/s | bank |") for line in lines)
+    assert any(line.startswith("| drift 0.2 Hz/s (not meaningful (oracle anchor)) | bank |") for line in lines)
+    assert any(line.startswith("| drift 0.2 Hz/s | matched |") for line in lines)
     groups = {(g["front_end"], g["tag"]): g for g in json.loads((tmp_path / "summary.json").read_text())["groups"]}
     assert groups[("bank", "drift 2 Hz/s")]["beyond_oracle_anchor"] is True
-    assert groups[("bank", "drift 0.2 Hz/s")]["beyond_oracle_anchor"] is False
+    assert groups[("bank", "drift 0.2 Hz/s")]["beyond_oracle_anchor"] is True
+    assert groups[("matched", "drift 0.2 Hz/s")]["beyond_oracle_anchor"] is False
     assert groups[("baseline", "drift 2 Hz/s")]["beyond_oracle_anchor"] is False
+
+
+def test_paired_rows_against_the_bank_carry_its_drift_mark():
+    rows = [dict(_row(0.0, 100, 10, front_end="matched", index=0), drifting_oracle=True),
+            dict(_row(0.0, 100, 20, front_end="bank", index=0), drifting_oracle=True)]
+    assert paired_differences(rows, "matched", "bank")[("A", "25 wpm")]["beyond_oracle_anchor"] is True
+    assert paired_differences(rows, "bank", "matched")[("A", "25 wpm")]["beyond_oracle_anchor"] is False
+
+
+def test_the_bank_drift_mark_needs_an_oracle_recording(tmp_path):
+    _drift_recording(tmp_path, oracle=False)
+    results = tmp_path / "results" / "bank"
+    results.mkdir(parents=True)
+    (results / "drift.json").write_text(json.dumps({"score": {"signals": [_fake_signal(0), _fake_signal(1)]}}))
+    write_summary(tmp_path)
+    assert "(not meaningful (oracle anchor))" not in (tmp_path / "summary.md").read_text(encoding="utf-8")
 
 
 def test_farnsworth_group_uses_its_overall_speeds():
