@@ -278,7 +278,7 @@ TEST(BankChannel, TheTwoPeriodicityNearTiesAreRoundingOnBothSides) {
         // each side picks its larger; the two candidates differ by rounding on each side. Which one the port
         // picks depends on the platform's libm (the near-ties above are the Windows build's; with glibc the port's
         // farnsworth #64 picks 97.95 ms, as the prototype), so the port's pick is checked against its own scores.
-        const auto& pick = ch.result().periodicity.back().per_window.front().first;
+        const std::optional<double> pick = ch.result().periodicity.back().per_window.front().first;  // a copy
         ASSERT_TRUE(pick.has_value());
         ASSERT_TRUE(*pick == t_a || *pick == t_b) << *pick;
         EXPECT_GE(*pick == t_a ? port_a : port_b, *pick == t_a ? port_b : port_a);
