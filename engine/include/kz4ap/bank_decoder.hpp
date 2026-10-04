@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace kz4ap {
@@ -53,6 +54,8 @@ private:
     std::vector<std::complex<double>> u_;     // the block, mixed down, FS
     std::size_t appended_seen_ = 0;           // characters of the bank's Output::appended() already collected
     std::size_t corrections_seen_ = 0;        // the bank's corrections already returned
+    std::size_t changes_seen_ = 0;            // the bank's Output::text_changes() already looked at
+    std::vector<std::string> published_;      // the consumer's character list (texts), as the updates build it
     std::vector<DecodedSymbol> pending_;      // characters appended since the last update
     bool flushed_ = false;
 };

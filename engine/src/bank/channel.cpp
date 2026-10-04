@@ -55,7 +55,13 @@ void Output::replace_from(double from_s, const std::vector<Char>& chars, double 
             kept.push_back(c);
             new_text += c.text;
         }
+    // The first position whose character's text differs between the list before and after (its size if none,
+    // and the lists are the same length): kept characters need not be a prefix when characters overlap in time.
+    std::size_t changed = 0;
+    while (changed < chars_.size() && changed < kept.size() && chars_[changed].text == kept[changed].text) ++changed;
+    const bool text_changed = changed < std::max(chars_.size(), kept.size());
     chars_ = std::move(kept);
+    if (text_changed) text_changes_.push_back(changed);
     if (old_text != new_text) {
         double first = cut;  // >= lo: the reach is at most reach_s
         if (!old.empty()) {
@@ -63,7 +69,7 @@ void Output::replace_from(double from_s, const std::vector<Char>& chars, double 
             for (const auto& c : old)
                 if (c.start_s < first) first = c.start_s;
         }
-        corrections_.push_back(Correction{t_s, first, t_s - first, old_text, new_text, reason, from_index});
+        corrections_.push_back(Correction{t_s, first, t_s - first, old_text, new_text, reason, from_index, changed});
     }
 }
 

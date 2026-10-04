@@ -476,6 +476,36 @@ TEST(BankOutput, FromIndexCountsTheKeptCharacters) {
     EXPECT_EQ(out.corrections().back().new_text, "QE");
 }
 
+TEST(BankOutput, FirstChangedIndexIsBelowFromIndexWhenKeptCharactersAreNotAPrefix) {
+    // Two T's overlap in time with a Q between them in the list (published in start order): a cut at 1.2 s keeps
+    // both T's (ended before it) and replaces Q (not ended). The kept characters are not a prefix of the list: the
+    // prototype's from_index counts 2 of them, while the first character whose text changed is at index 1.
+    Output out(20.0);
+    out.append_new({{"T", 1.000, 1.100}, {"Q", 1.002, 1.400}, {"T", 1.004, 1.105}, {"O", 1.500, 1.800}});
+    out.replace_from(1.2, {{"O", 1.500, 1.800}}, 3.0, "switch");
+    EXPECT_EQ(out.text(), "TTO");
+    ASSERT_EQ(out.corrections().size(), 1u);
+    const Correction& c = out.corrections()[0];
+    EXPECT_EQ(c.old_text, "QO");
+    EXPECT_EQ(c.new_text, "O");
+    EXPECT_EQ(c.from_index, 2u);
+    EXPECT_EQ(c.first_changed_index, 1u);
+    EXPECT_EQ(out.text_changes(), std::vector<std::size_t>{1u});
+    // A same-text replacement that reorders overlapping characters changes the list's text without a correction.
+    Output o2(20.0);
+    o2.append_new({{"T", 1.000, 1.100}, {"Q", 1.002, 1.400}, {"T", 1.004, 1.105}});
+    o2.replace_from(1.2, {{"Q", 1.250, 1.400}}, 3.0, "switch");
+    EXPECT_EQ(o2.text(), "TTQ");
+    EXPECT_TRUE(o2.corrections().empty());
+    EXPECT_EQ(o2.text_changes(), std::vector<std::size_t>{1u});
+    // A prefix cut: first_changed_index is at or after from_index (here a re-timed "Q" keeps its text).
+    Output o3(20.0);
+    o3.append_new({{"C", 1.0, 1.2}, {"Q", 1.5, 1.8}, {" ", 1.8, 1.8}, {"D", 2.5, 2.7}});
+    o3.replace_from(1.4, {{"Q", 1.5, 1.8}, {"E", 2.5, 2.6}}, 3.0, "switch");
+    EXPECT_EQ(o3.corrections().back().from_index, 1u);
+    EXPECT_EQ(o3.corrections().back().first_changed_index, 2u);
+}
+
 // ---- Review Focus 5: 2000 samples/s -----------------------------------------------------------------------
 
 TEST(BankChannel, TwoThousandSamplesPerSecondDecodesTheSameText) {

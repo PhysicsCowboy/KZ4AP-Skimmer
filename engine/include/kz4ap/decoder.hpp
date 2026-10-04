@@ -22,12 +22,16 @@ struct DecodedSymbol {
 // from_index characters and replaces everything after them by chars. A consumer applies an update's chars first
 // (appended to the list) and then its corrections, in order, clipping from_index to the list's length; chars are
 // the channel's characters from from_index on as they stand after the update (so they include characters the same
-// update appended after the correction was made).
+// update appended after the correction was made, and any kept character after from_index). from_index is never
+// past the first character whose text the correction changed, so the consumer's list is always the decoder's.
 struct TextCorrection {
     std::size_t from_index = 0;
     std::vector<DecodedSymbol> chars;
     double t_s = 0;      // when the decoder made the correction, s (stream time)
-    std::string reason;  // the bank's reason: "switch", "rekey" or "timeout"
+    // the bank's reason: "switch", "rekey" or "timeout"; "resync" for one the BankDecoder adds when the list's text
+    // changed without a correction (expected never; see docs/signal-processing.md section 8c)
+    std::string reason;
+    double reach_s = 0;  // t_s minus the start of the first replaced character, s (at most the correction reach)
 };
 
 struct DecodeUpdate {

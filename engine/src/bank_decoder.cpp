@@ -66,19 +66,48 @@ DecodeUpdate BankDecoder::take_update() {
     up.chars = std::move(pending_);
     pending_.clear();
     up.freq_offset_hz = anchor_hz_;  // the bank decodes at the anchor (it does not track frequency itself)
+    for (const auto& c : up.chars) published_.push_back(c.text);
     const auto& out = channel_->output();
     const auto& corrections = out.corrections();
     const auto& chars = out.chars();
+    const double origin = origin_s_ ? *origin_s_ : 0.0;
+    // The consumer's list (published_) mirrors the bank's; apply a correction to it as the consumer will.
+    auto emit = [&](std::size_t from, double t_s, const std::string& reason, double reach_s) {
+        TextCorrection t;
+        t.from_index = std::min(from, chars.size());
+        for (std::size_t k = t.from_index; k < chars.size(); ++k) t.chars.push_back(symbol(chars[k]));
+        t.t_s = t_s + origin;
+        t.reason = reason;
+        t.reach_s = reach_s;
+        published_.resize(std::min(t.from_index, published_.size()));
+        for (const auto& s : t.chars) published_.push_back(s.text);
+        up.corrections.push_back(std::move(t));
+    };
     for (; corrections_seen_ < corrections.size(); ++corrections_seen_) {
         const auto& c = corrections[corrections_seen_];
-        TextCorrection t;
-        // The characters from from_index on as they stand now: applied after this update's chars, in order, the
-        // corrections leave the consumer's list equal to the bank's (docs/signal-processing.md section 8c).
-        t.from_index = std::min(c.from_index, chars.size());
-        for (std::size_t k = t.from_index; k < chars.size(); ++k) t.chars.push_back(symbol(chars[k]));
-        t.t_s = c.t_s + (origin_s_ ? *origin_s_ : 0.0);
-        t.reason = c.reason;
-        up.corrections.push_back(std::move(t));
+        // From the first character whose text the correction changed, or earlier: the prototype's from_index (the
+        // number of characters kept) is that index unless the kept characters are not a prefix of the list
+        // (characters that overlap in time), when it is past it. The characters from there on as they stand now:
+        // applied after this update's chars, in order, the corrections leave the consumer's list equal to the bank's
+        // (docs/signal-processing.md section 8c, "The consumer's rule").
+        emit(std::min(c.from_index, c.first_changed_index), c.t_s, c.reason, c.reach_s);
+    }
+    // Every change of the list's text (with a correction or without one: a same-text replacement that reorders
+    // overlapping characters) is at or after the lowest of the new text_changes(); from there, check the consumer's
+    // list against the bank's and, if they differ, re-send the tail ("resync"; never seen on the full suite).
+    std::size_t low = chars.size();
+    bool changed = false;
+    for (; changes_seen_ < out.text_changes().size(); ++changes_seen_) {
+        low = std::min(low, out.text_changes()[changes_seen_]);
+        changed = true;
+    }
+    if (changed) {
+        std::size_t k = std::min(low, published_.size());
+        while (k < chars.size() && k < published_.size() && published_[k] == chars[k].text) ++k;
+        if (k < chars.size() || k < published_.size()) {
+            const double now = static_cast<double>(channel_->processed()) / rate_;
+            emit(k, now, "resync", k < chars.size() ? now - chars[k].start_s : 0.0);
+        }
     }
     return up;
 }
@@ -97,6 +126,8 @@ void BankDecoder::reset() {
     phase_sum_hz_ = 0;
     appended_seen_ = 0;
     corrections_seen_ = 0;
+    changes_seen_ = 0;
+    published_.clear();
     pending_.clear();
     flushed_ = false;
 }

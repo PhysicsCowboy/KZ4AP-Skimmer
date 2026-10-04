@@ -46,6 +46,11 @@ struct Correction {
     // The number of published characters kept before the replacement (the prototype's len(kept)): the
     // characters from this index on were replaced by new_text's characters. Not in the prototype's JSON.
     std::size_t from_index = 0;
+    // The first position of the published list whose character's text this correction changed (the list before
+    // against the list after). The characters before it are untouched; from_index can be larger, when the kept
+    // characters are not a prefix of the list (characters that overlap in time). Not in the prototype; for the
+    // engine's TextCorrection (docs/signal-processing.md section 8c, "The consumer's rule").
+    std::size_t first_changed_index = 0;
 };
 
 // The channel's text (spec 4.8): the selected branch's characters appended as they are decided, and
@@ -70,10 +75,15 @@ public:
     // The number of characters append_new has published in all (corrections do not count). Observation only, for
     // the engine's BankDecoder (its immediate text); not in the prototype.
     std::size_t appended() const { return appended_; }
+    // For every replace_from that changed the list's text, recorded as a correction or not (a same-text
+    // replacement that reorders characters overlapping in time changes it without one): the first position whose
+    // character's text changed. Observation only, for the engine's BankDecoder; not in the prototype.
+    const std::vector<std::size_t>& text_changes() const { return text_changes_; }
 
 private:
     double reach_s_;
     std::size_t appended_ = 0;
+    std::vector<std::size_t> text_changes_;
     std::vector<Char> chars_;
     std::vector<Correction> corrections_;
 };

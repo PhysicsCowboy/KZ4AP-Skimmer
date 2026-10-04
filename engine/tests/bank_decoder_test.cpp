@@ -15,7 +15,10 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <map>
+#include <stdexcept>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -175,6 +178,55 @@ TEST(BankDecoder, CorrectionsAreCarriedWithTheirReasonAndTime) {
         EXPECT_EQ(got[i].from_index, r.corrections[i].from_index);
         EXPECT_EQ(got[i].reason, r.corrections[i].reason);
         EXPECT_DOUBLE_EQ(got[i].t_s, r.corrections[i].t_s + 10.0);
+    }
+}
+
+// A recorded oracle channel where the bank's list holds characters that overlap in time: the first 10 s of
+// E-qrm-s3, label 9 (the full suite's synthetic recording, seed 3; channel stream as the engine's channelizer gives
+// it, single precision, 1500 samples/s, the label 2.9375 Hz above the channel's center). At 8.149 s a "switch"
+// correction keeps a character that comes after a replaced one in the list (the kept characters are not a prefix),
+// so a correction index that counts the kept characters would leave the consumer with the replaced one.
+std::vector<Sample> overlap_stream() {
+    const auto path = std::filesystem::path(KZ4AP_BANK_GOLDEN_DIR) / "overlap_stream.c64";
+    std::ifstream in(path, std::ios::binary);
+    if (!in) throw std::runtime_error("cannot open " + path.string());
+    std::vector<float> raw(2 * 15000);
+    in.read(reinterpret_cast<char*>(raw.data()), static_cast<std::streamsize>(raw.size() * sizeof(float)));
+    if (in.gcount() != static_cast<std::streamsize>(raw.size() * sizeof(float))) throw std::runtime_error("short file");
+    std::vector<Sample> y(15000);
+    for (std::size_t i = 0; i < y.size(); ++i) y[i] = {raw[2 * i], raw[2 * i + 1]};
+    return y;
+}
+
+TEST(BankDecoder, TheConsumersListIsTheBanksAfterEveryUpdateWhenCharactersOverlapInTime) {
+    const auto y = overlap_stream();
+    constexpr double kRate = 1500.0, kOffsetHz = 2.9375;
+    for (const std::size_t block : {std::size_t{32}, std::size_t{1000}}) {
+        SCOPED_TRACE("blocks of " + std::to_string(block));
+        BankDecoder d(kRate, bank::BankConfig{}, kOffsetHz);
+        Assembled a;
+        bool not_prefix = false;  // the stream must exercise a correction whose kept characters are not a prefix
+        auto check = [&](const DecodeUpdate& u) {
+            a.apply(u);
+            const auto& chars = d.channel().output().chars();
+            ASSERT_EQ(a.final_chars.size(), chars.size());
+            for (std::size_t i = 0; i < chars.size(); ++i) ASSERT_EQ(a.final_chars[i].text, chars[i].text) << i;
+            for (const auto& c : d.channel().output().corrections()) not_prefix |= c.first_changed_index < c.from_index;
+            for (const auto& k : u.corrections) {
+                EXPECT_NE(k.reason, "resync");  // the corrections' own indices suffice
+                EXPECT_GE(k.reach_s, 0.0);
+                EXPECT_LE(k.reach_s, bank::BankConfig{}.correction_reach_s);
+            }
+        };
+        for (std::size_t i = 0; i < y.size(); i += block) {
+            d.set_frequency_anchor_hz(kOffsetHz);
+            check(d.process(std::span<const Sample>(y).subspan(i, std::min(block, y.size() - i)),
+                            static_cast<double>(i) / kRate));
+        }
+        check(d.flush());
+        EXPECT_TRUE(not_prefix);
+        EXPECT_EQ(a.text(), d.channel().result().text);
+        EXPECT_EQ(a.corrections, d.channel().result().corrections.size());
     }
 }
 

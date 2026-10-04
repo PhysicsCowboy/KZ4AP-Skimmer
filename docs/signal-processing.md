@@ -2771,11 +2771,14 @@ front of it are the Matched path's, unchanged.
   `DecodedTextEvent`, published when it has characters or corrections):
   `chars`, the characters appended since the last call, in order; and
   `corrections`, one `TextCorrection` per correction the bank recorded
-  since then, in order: `from_index` (the number of the channel's
-  characters it keeps, clipped to the list's current length), `chars`
-  (the bank's characters from `from_index` on, as they stand at the end of
-  the call), `t_s` (when it was made, s) and `reason` ("switch", "rekey"
-  or "timeout"). All times are stream times: the bank's times (counted
+  since then, in order: `from_index` (the smaller of the number of the
+  channel's characters the bank kept and the first position whose
+  character's text the correction changed, clipped to the list's current
+  length; see "The consumer's rule"), `chars` (the bank's characters from
+  `from_index` on, as they stand at the end of the call, kept ones
+  included), `t_s` (when it was made, s), `reason` ("switch", "rekey" or
+  "timeout") and `reach_s` (the bank's reach: `t_s` minus the start of the
+  first replaced character, s, at most 20 s). All times are stream times: the bank's times (counted
   from the channel's first sample, the branch's group delay removed) plus
   the first block's start time, s. The event's frequency is the anchor
   (center plus Δ: the detector's frequency, or the label in oracle mode).
@@ -2787,8 +2790,10 @@ front of it are the Matched path's, unchanged.
   order, each keeping the first min(`from_index`, length) characters and
   appending its `chars`. The list then equals the bank's (derived, and
   tested with calls of 1, 32, 47 and 1000 samples on golden streams with
-  corrections): let g be the smallest `from_index` of the call's
-  corrections; no character below g changed during the call, and any
+  corrections, and after every call on a recorded channel whose
+  characters overlap in time): let g be the smallest `from_index` of the
+  call's corrections; no character below g changed during the call
+  (`from_index` is never past the first position whose text changed), and any
   position between the consumer's previous length and g was filled by an
   append, in order, so after the appends the consumer's first g characters
   are the bank's; the correction at g replaces everything after them by
@@ -2802,20 +2807,29 @@ front of it are the Matched path's, unchanged.
   first published, so its texts are exact and its character times can
   differ from the bank's final ones by that re-timing (up to 5.0 ms on the
   speed-turnover golden stream, measured).
-  **Known defect (measured, milestone 2c Task 10):** the proof assumes
-  that the characters a correction keeps are the first `from_index`
-  characters of the list. `Output::replace_from` keeps every character
-  that starts more than 20 s before the correction or ends before the
-  cut, and sets `from_index` to the number kept; when two characters
-  overlap in time, a kept one can follow a replaced one in the list, so
-  the kept characters are not a prefix. The consumer then keeps the
-  replaced character and drops the kept one: its final text differs from
-  the bank's (`BankChannel::output`, which is right) by that character.
-  On the full suite this happened on 6 of 2 919 oracle signals and none
-  of 660 through the detector path, each time changing one or two
-  characters and no edit count (results record
-  `docs/plans/2026-10-03-milestone-2c-bank-results.md`, section 4.4). The
-  immediate text and the replay tool's text are not affected.
+  **Overlapping characters (a defect, fixed in milestone 2c Task 10).**
+  `Output::replace_from` keeps every character that starts more than 20 s
+  before the correction or ends before the cut, and the prototype's
+  `from_index` is the number kept. When two characters overlap in time
+  (copies of one character timed a few ms apart by two branches), a kept
+  one can follow a replaced one in the list, so the kept characters are
+  not a prefix, and a consumer keeping the first `from_index` would keep
+  the replaced character and drop the kept one. Found on the full suite
+  (6 oracle channels; results record
+  `docs/plans/2026-10-03-milestone-2c-bank-results.md`, section 4.4) by
+  driving the `BankDecoder` on the recorded channels. The fix:
+  `replace_from` also records `first_changed_index`, the first position
+  whose character's text differs between the list before and after, and
+  the event's `from_index` is min(`from_index`, `first_changed_index`),
+  its `chars` the bank's characters from there on, kept ones included.
+  `replace_from` also records every change of the list's text in
+  `text_changes()`, with a correction or without one (a same-text
+  replacement that reorders overlapping characters). The `BankDecoder`
+  keeps the consumer's list as its updates build it, checks it against
+  the bank's from the lowest new change, and if they differ sends a
+  correction with reason "resync" (expected never; counted by the bench).
+  The prototype's `from_index` and every other recorded value are
+  unchanged.
 - **The bench.** `kz4ap-bench` assembles each track's final and immediate
   text from the events (`TrackText`), writes both per track (`text`, the
   final text as before, and `text_immediate`), and scores both: `cer`
@@ -3026,7 +3040,7 @@ parameter was changed for this run.
 | Bank corrections | a replacement at t changes nothing that starts before t − 20 s; overlap cut at max(from, t − 20 s); recorded only if the text differs, with its kept-character count | `BankConfig::correction_reach_s`; `bank::Output::replace_from` | 20 s owner; overlap cut heuristic |
 | Bank switch replacement | from the start of the new branch's character containing the time its eligible run began (its own time base); a fallback pick from the switch's time | `bank::BankChannel` | heuristic (spec 4.8; the fallback rule documented behavior) |
 | Bank anchor mixing (engine) | u[n] = y[n] exp(−jφ[n]), φ[n] = 2π (Σ_{m≤n} Δ[m] − Δ[n]) / r, Δ = detector frequency (oracle: the label's, without its drift) − channel center, Hz, per channel block; no tracker | `BankDecoder::process` | derived: the prototype's `anchored_baseband`, mixing at the frequency where option 1 (the detector decides where the station is) puts the station; the oracle anchor without drift is the plan's choice, not tuned |
-| Bank events (engine) | new characters, then corrections (index kept, the bank's characters from it on, time, reason), applied in order; final text = all corrections applied, immediate text = characters as first appended | `TextCorrection`, `DecodeUpdate::corrections`, `DecodedTextEvent::corrections`; bench `TrackText` | derived: the consumer's rule rebuilds the bank's final text exactly (proof in section 8c); not signal processing, an interface choice of the port (owner decision D1 for `--decoder`); the event's probability 1, speed 0 and confidence 0 are placeholders |
+| Bank events (engine) | new characters, then corrections (index: the smaller of the number kept and the first position whose text changed; the bank's characters from it on; time, reason, reach), applied in order, plus a "resync" correction if the consumer's list ever differs from the bank's; final text = all corrections applied, immediate text = characters as first appended | `TextCorrection`, `DecodeUpdate::corrections`, `DecodedTextEvent::corrections`; bench `TrackText` | derived: the consumer's rule rebuilds the bank's final text exactly (proof in section 8c); not signal processing, an interface choice of the port (owner decision D1 for `--decoder`); the event's probability 1, speed 0 and confidence 0 are placeholders |
 
 ## 11. Definitions used in tests and the benchmark
 
