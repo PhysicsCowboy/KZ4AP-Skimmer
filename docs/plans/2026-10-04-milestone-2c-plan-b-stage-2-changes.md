@@ -124,3 +124,19 @@ Candidates, in this order:
 - [x] **Step 7: Adoption.** Keep the near-exact candidates only if Step 5 passes the rule; otherwise revert them by a new commit (never by discarding) and record why.
 - [x] **Step 8: Documents.** §8c: how the fit's log-likelihood is now evaluated (if the near-exact form is kept: the formula, and the measured largest difference from the old one), and the cost figures; the results record section 3: CPU per channel-second before and after each step, Linux and Windows, and the profile split.
 - [x] **Step 9: Commit.**
+
+### Task B2(b) (full text): vectorized exp and log (SLEEF)
+
+**Files:** `CMakeLists.txt` (the dependency), `engine/CMakeLists.txt`, `engine/src/bank/fit.cpp` (and a small vector-math wrapper header if useful, e.g. `engine/src/bank/vecmath.hpp`), `engine/tests/bank/fit_test.cpp`, `docs/signal-processing.md` (§8c "Duration fit" evaluation, the parameter table, the cost), build documentation if a build step changes, the results record (section 4, B2(b)).
+
+After B2(a) the Linux profile still puts 56% of the time in the math library (`exp` and `log`; `log1p` is gone). SLEEF (Boost Software License, builds with MSVC, clang and g++) evaluates them on 2 or 4 doubles at once with a stated maximum error of 1.0 ulp (the `_u10` functions).
+
+- [ ] **Step 1: The dependency.** Add SLEEF by `FetchContent` at a pinned release, building only the library (no tests, no DFT, no quad), statically linked, in both presets. Requirement: the binaries run on any x86-64 processor (no illegal instruction where AVX2 is missing): SLEEF's dispatcher functions (which choose the instruction set at run time) or the SSE2 variants; measure both if the dispatcher's cost is in doubt. CI (GitHub Actions, Windows and Ubuntu runners) must build it without manual steps; record the added configure and build time.
+- [ ] **Step 2: Failing tests first.** The wrapper's exp and log against `std::exp` and `std::log` over a sweep (≥ 10⁶ arguments covering the fit's ranges and the edge cases: −∞, 0, subnormals, the 40-nat cut-off), the largest difference in ulp measured and asserted ≤ 1 ulp (the library's stated bound); the fit's grid values against the B2(a) code (a frozen copy in the test, as B2(a) did) within a bound derived from 1 ulp per call through the formula, stated with its derivation.
+- [ ] **Step 3: Use it** in the fit's grid update and, if the profile says it matters, in `terms` and the refinement's responsibilities: grid points in blocks of the vector width, with a scalar tail. No change to what is computed, only how exp and log are evaluated.
+- [ ] **Step 4:** ctest on Windows (a moved golden comparison gets a traced, narrow allowance only, with values); smoke unchanged.
+- [ ] **Step 5: The check on the Linux machine:** run `bank-b2b`; texts against `bank-b2a` by the rule (identical, or every difference traced to a near-tie with the values on both sides; too many to trace: stop and report the count); CPU per channel-second pooled and per group; profile one channel (F-drift-s1 label 1).
+- [ ] **Step 6:** Windows: CPU on F-drift-s1, the B2(a) build against the B2(b) build, two runs each in one session.
+- [ ] **Step 7: Adoption** (owner's rule): keep it only if Step 5 passes; otherwise revert by a new commit and record why.
+- [ ] **Step 8: Documents.** §8c: that exp and log in the fit are SLEEF's (version, functions, the stated 1.0 ulp bound and the measured largest difference); the parameter table row; the cost; the results record section 4: CPU before and after on both platforms, the profile split, the text check, the build-time cost.
+- [ ] **Step 9: Commit.**
