@@ -2306,7 +2306,8 @@ s, variances in s², log-likelihoods in nats; densities are in ln(duration).
   to max(x, y), so numpy's formula rounds to max(x, y) exactly (the proof,
   with the libm error allowance, is in `fit.cpp` at `lae`). With the
   outlier's −5.216 nats as the larger term (k = 2) the threshold is
-  38.8 nats. (3) The best-fit search evaluates the retained history's
+  38.8 nats. (Since the near-exact step below, the fit's own evaluation no
+  longer calls logaddexp; the function keeps the skip.) (3) The best-fit search evaluates the retained history's
   terms 3 times instead of 5 (with 2 refinement steps): the grid point's
   terms are the refinement's starting terms and the refined point's are
   its last, so they are reused for the acceptance test and the quality.
@@ -2413,23 +2414,45 @@ and 2000 random fits per configuration and number of refinement steps
 (0, 2, 5), without and with T_P priors. With the exact steps every
 comparison was equal (commit `42201d7`; Windows and Linux, full sizes).
 Since the near-exact step logaddexp is still compared bit for bit, the
-per-class ℓ_c and s_c² too, and every other value to a bound of
-10⁻¹⁴ · max(|value|, 1 nat) (heuristic), non-finite values bit for bit:
-on Windows, at the full sizes, 0 values
-above the bound and 0 non-finite mismatches; the largest differences are
-1.3 · 10⁻¹⁵ nats in the grid's 8.5 · 10⁹ log-likelihood values (relative
-7.5 · 10⁻⁸, at a value near 0 nats; relative to max(|value|, 1 nat) at most
-1.3 · 10⁻¹⁵), 8.9 · 10⁻¹⁶ nats in ℓ_total of `class_logliks`,
-1.8 · 10⁻¹² nats (relative 1.6 · 10⁻¹³) in the weighted log-likelihood (a
-sum over up to 192 observations), 1.2 · 10⁻¹⁵ in `refine`'s θ (s) and
-1.8 · 10⁻¹⁴ in `best`'s fields (relative 1.6 · 10⁻¹⁰, at a small w); no
-acceptance test turned the other way in the sweep. (The default test run uses 20 000 observations and
-100 fits; the full sizes run with `KZ4AP_FIT_FULL_SWEEP=1`.) The port's
-check against the plain formula (`FastPathsAreBitIdenticalToThePlainFormulas`)
-now allows the grid's values 2^−50 nats (8.9 · 10⁻¹⁶) and the
-accumulated tables 64 · 2^−50 nats (5.7 · 10⁻¹⁴): on its 414 observations
-645 881 of 2 007 072 grid values differ, by at most 8.9 · 10⁻¹⁶ nats, and
-1358 of the 9696 table entries, by at most 2.8 · 10⁻¹⁴ nats.
+per-class ℓ_c and s_c² too, non-finite values bit for bit, and every other
+value against a bound of 10⁻¹⁴ · max(|value|, 1 in its unit) (heuristic;
+10⁻¹³ for `best`'s quality Q, a weighted mean). At the full sizes no value
+exceeds its bound and no non-finite value differs, on both platforms; the
+largest differences (Windows / Linux):
+
+| quantity | values | largest difference |
+|---|---|---|
+| grid log-likelihood (ℓ_total at every grid point) | 8.5 · 10⁹ | 1.3 · 10⁻¹⁵ / 8.9 · 10⁻¹⁶ nats (relative 7.5 · 10⁻⁸ / 8.3 · 10⁻⁹, at values near 0 nats) |
+| ℓ_total of `class_logliks` | 1.8 · 10⁷ | 8.9 · 10⁻¹⁶ / 8.9 · 10⁻¹⁶ nats |
+| weighted log-likelihood (Σ over ≤ 192 observations) | 4.4 · 10⁵ | 1.8 · 10⁻¹² / 1.8 · 10⁻¹² nats (relative ≤ 3.9 · 10⁻¹³) |
+| `refine`'s θ | 1.4 · 10⁵ | 1.2 · 10⁻¹⁵ / 1.4 · 10⁻¹⁵ s |
+| `best`'s T, w, T_g (s), q, W | 1.8 · 10⁵ | 1.8 · 10⁻¹⁴ / 9.8 · 10⁻¹⁵ (in the field's unit) |
+| `best`'s quality Q | 3.6 · 10⁴ | 8.0 · 10⁻¹⁵ / 4.7 · 10⁻¹⁴ nats |
+
+No acceptance test turned the other way (a turned one would move `best`
+by far more than its bound). (The default test run uses 20 000
+observations and 100 fits; the full sizes run with
+`KZ4AP_FIT_FULL_SWEEP=1`.) The port's check against the plain formula
+(`FastPathsAreBitIdenticalToThePlainFormulas`) now allows the grid's
+values 2^−50 nats (8.9 · 10⁻¹⁶) and the accumulated tables 64 · 2^−50 nats
+(5.7 · 10⁻¹⁴): on its 414 observations 645 881 of 2 007 072 grid values
+differ on Windows (642 914 on Linux), by at most 8.9 · 10⁻¹⁶ nats, and
+1358 (1397) of the 9696 table entries, by at most 2.8 · 10⁻¹⁴ nats.
+
+**Cost (Plan B task B2(a), measured).** CPU per channel-second of the bank
+decoder (`kz4ap-bank-replay`, development set, 525 oracle channels,
+74 749.9 channel-seconds, Linux machine, 10 threads): 127.91 ms before
+Plan B, 123.96 ms after B1, 104.60 ms after B2(a)'s exact steps,
+**75.84 ms** after its near-exact step (−40.7% against 127.91 ms). On the
+Windows PC (F-drift-s1, 8 channels, 240.1 channel-seconds, 8 threads, two
+runs each, alternated in one session): 303.3 and 314.4 ms before, 166.0
+and 170.5 ms after the exact steps, 76.5 and 78.4 ms after the near-exact
+step. A gprof profile of one channel (F-drift-s1, label 1, 30 s; Linux,
+statically linked so that libm is sampled) falls from 3.70 s to 2.30 s;
+the scalar libm functions from 2.67 s (log1p 1.13 s, exp 1.19 s, ln
+0.30 s, pow 0.05 s) to 1.29 s (log1p 0, exp 0.62 s, ln 0.62 s, pow
+0.05 s). The decoded text and every decoded record are unchanged on all
+525 channels (results record, section 3).
 
 Status (as `training/kz4ap_proto/params.py` marks them): N_mem = 48
 measured (E4: adopted over 24 and 12); the q, w/T and T_g/T grids measured
@@ -3222,6 +3245,7 @@ parameter was changed for this run.
 | Bank T_P prior | −π (ln T − ln T_P)² / (2 σ_P²) nats, σ_P = 0.1 in ln T | `BankConfig::prior_sigma_ln` | heuristic |
 | Bank fit refinement | 2 Gauss–Newton steps in ln d, damping 0.2 T per parameter; T ≥ 0.1 ms, w ∈ [−0.6, 1.2] T, qT ∈ [2, 6] T, T_g ∈ [0.8, 10] T; kept only if the weighted log-likelihood does not drop | `BankConfig::refine_iterations`; `bank::DurationFit::refine`, `best` | heuristic; the 0.1 ms floor a numerical choice |
 | Bank fit grid constants | ln μ, 1/μ² and a validity flag per class and grid point (432.7 kB with the defaults), built once per process per configuration and shared, immutable, by every fit of a configuration with bit-identical values of the 13 fields they read; freed when no fit uses them | `bank::DurationFit::shared_model` | a memory choice with no arithmetic effect (Plan B B1: tested bit for bit across threads; development-set texts identical) |
+| Bank fit evaluation | ℓ_total = m + ln Σ e^(x − m) over the observation's kind of classes and the outlier, in one pass; terms more than 40 nats below m left out, and a grid class's ln s_c² skipped when its bound (with σ_ln² for s_c²) is more than 41 nats below the outlier's −5.216 nats; logaddexp skips exp and log1p at \|x − y\| ≥ (58 − k) ln 2 nats (38.8 nats at k = 2) | `bank::DurationFit::grid_loglik`, `terms`, `log_sum_exp`, `logaddexp` | the 40 nats and the skip threshold derived (no bit changes against the one-pass sum, respectively numpy's formula); the one-pass sum changes ℓ_total by ≤ 1.3 · 10⁻¹⁵ nats (measured, Plan B B2(a); development-set texts and records identical) |
 | Bank periodicity method | the comb on Π = 2T over branch 1's posterior p (the edge comb and the spectrum fit are not ported) | `BankConfig::periodicity_method`; `bank::Periodicity` | owner (E1); Π = 2T derived |
 | Bank periodicity input and updates | p averaged to r_P = r / max(1, round(r / 750 samples/s)) (750 samples/s at r = 1500 samples/s); recomputed every 0.25 s of p (375 samples at 1500 samples/s) | `BankConfig::periodicity_rate_hz`, `periodicity_update_s` | heuristic |
 | Bank periodicity windows | 2, 5 and 10 s (1500, 3750, 7500 samples at 750 samples/s); the shortest confident window gives T_P; reach caps T at ≈ W / 18.3 (109, 273, 546 ms) | `BankConfig::periodicity_windows_s` | windows placeholder (E2); reach caps derived from a heuristic rule |

@@ -12,6 +12,14 @@ on the Linux machine, falls from **63.3 MB to 32.1 MB** (−31.1 MB; derived −
 per channel-second is 123.96 ms against the reference's 127.91 ms on the Linux machine (−3.1%, one run each;
 not a gate).
 
+**Answer (B2(a), the fit's arithmetic).** Restructuring the duration fit's evaluation cuts the bank
+decoder's CPU on the Linux machine from **123.96 ms to 75.84 ms per channel-second** (B1 build to B2(a);
+−40.7% against the reference's 127.91 ms), with **all 525 development-set channels decoding to the identical
+final text and every decoded record identical**, after both the exact steps (no bit changes) and the
+near-exact step (one-pass log-sum-exp, which changes the last bits of the per-observation log-likelihood by
+at most 1.3 · 10⁻¹⁵ nats). There is no difference to trace, so the near-exact step is kept. On the Windows PC
+(F-drift-s1) the cost falls from about 309 ms to about 77 ms per channel-second.
+
 ## 0. Terms used in this record
 
 - **Decoder**: Envelope, Matched and the bank are the three decoders; here only the bank decoder in C++ is
@@ -158,3 +166,120 @@ B1 322.5, 294.4 and 298.7 ms per channel-second; the spread within a build (up t
 difference between the builds, so no change is measured there. The texts of all five runs are identical.
 Plan A's 453.6 ms (Task 7) on the same test case and code was not reproduced in this session (302.2 and
 315.0 ms now); the PC's state then is not recorded, so the cause is not known.
+
+## 3. CPU: the fit's arithmetic (B2(a))
+
+### 3.1 What changed
+
+In `engine/src/bank/fit.cpp` (docs/signal-processing.md, section 8c, "Duration fit": "Evaluation"):
+
+1. **Exact steps** (commit `42201d7`; no bit of any result changes, derived from IEEE arithmetic and tested
+   bit for bit against a frozen copy of the earlier code): only the classes of an observation's kind are
+   evaluated (2 for a mark, 3 for a space; the other kind's −∞ terms changed nothing); logaddexp returns
+   max(x, y) without exp and log1p where |x − y| ≥ (58 − k) ln 2 nats, k the binary exponent of the larger
+   term, where numpy's formula rounds to max(x, y) exactly; the best-fit search reuses the refinement's terms
+   at its start and its result (3 evaluations of the retained history's terms instead of 5).
+2. **Near-exact step** (commit `3f99859`, a test bound fixed in `1c6b681`): each observation's total
+   log-likelihood is m + ln Σ e^(x − m) over its classes and the outlier in one pass (one exp per term
+   other than the largest, one ln) instead of the logaddexp chain (one exp and one log1p per term); terms
+   more than 40 nats below m are left out, and in the grid a class whose bound (with σ_ln² for s_c²) lies
+   more than 41 nats below the outlier's term is left out before its ln s_c² is computed. Both leave-outs
+   change no bit of the one-pass sum (derived); the one-pass sum itself changes the last bits.
+
+### 3.2 Tests
+
+`engine/tests/bank/fit_test.cpp`, `BankFitB2a.*`, against a frozen copy of the code before B2(a) (at the
+full sizes with `KZ4AP_FIT_FULL_SWEEP=1`: 10⁶ random observations per configuration at every grid point,
+2000 random fits per configuration and number of refinement steps; edge cases: durations beyond the clamps
+and one step beside them, σ_t² = 0 and up to +∞, medians not positive). After the exact steps every
+comparison is bit-identical on Windows (1050 s) and on the Linux machine (188 s). Before the exact steps
+were applied, the new tests ran on the earlier code (the change set aside with `git stash`) and passed: the
+frozen copy reproduces the code it copies. After the near-exact step the differences are measured
+(docs/signal-processing.md, 8c, "Bit-for-bit check", table): at most 1.3 · 10⁻¹⁵ nats (Windows) and
+8.9 · 10⁻¹⁶ nats (Linux) in the grid's 8.5 · 10⁹ log-likelihood values, 1.8 · 10⁻¹² nats in the weighted
+log-likelihood, at most 1.8 · 10⁻¹⁴ in `best`'s fields and 4.7 · 10⁻¹⁴ nats in its quality; no value above
+its bound, no acceptance test turned. The golden tests are unchanged and pass; the port's own plain-formula
+check (`FastPathsAreBitIdenticalToThePlainFormulas`) has a traced allowance (grid values 2^−50 nats, tables
+64 · 2^−50 nats; measured 8.9 · 10⁻¹⁶ and 2.8 · 10⁻¹⁴ nats). `ctest` at the final code: 321 passed or
+skipped on Windows and on the Linux machine (8 skipped, 1 disabled); at `42201d7` on Windows the same (on the
+Linux machine that run's summary line was not kept by the helper's filter; its full sweep passed). Smoke check unchanged: Envelope CER 0.0353, Matched 0.0436.
+
+### 3.3 The text check
+
+| run (Linux machine) | against | identical final text | every decoded record identical | paired CER, 509 signals |
+|---|---|---|---|---|
+| `bank-b2a-exact` (`42201d7`) | `bank-b0` | **525 of 525** | 525 of 525 (0 of 875 070 periodicity windows differ) | +0.0000 (+0.0000 to +0.0000) |
+| `bank-b2a` (`1c6b681`, the near-exact step) | `bank-b2a-exact` | **525 of 525** | 525 of 525 (0 of 875 070) | +0.0000 (+0.0000 to +0.0000) |
+
+There is no difference to trace; the near-exact step passes the rule and is kept (Step 7).
+
+### 3.4 CPU per channel-second
+
+Linux machine, development set, from the decoded files' `cpu_s` and `channel_s` (ms of CPU per
+channel-second, one run each; `bank-b0` and `bank-b1` from section 2.5):
+
+| group | channels | channel-seconds | `bank-b0` | `bank-b1` | `bank-b2a-exact` | `bank-b2a` |
+|---|---|---|---|---|---|---|
+| A sensitivity | 192 | 23 040.0 | 117.08 | 113.45 | 96.27 | 69.27 |
+| B fading | 30 | 5 400.3 | 135.25 | 130.40 | 113.48 | 81.35 |
+| C fists | 135 | 16 200.0 | 116.43 | 113.00 | 96.29 | 70.01 |
+| D speed | 12 | 720.1 | 114.05 | 110.96 | 94.21 | 68.29 |
+| E interference | 32 | 1 920.3 | 257.40 | 249.95 | 189.21 | 136.86 |
+| F tuning | 28 | 1 440.3 | 138.36 | 133.88 | 114.31 | 81.45 |
+| G ragchew | 12 | 4 392.2 | 187.76 | 182.07 | 155.23 | 111.41 |
+| H two-station QSO, oracle | 36 | 12 996.1 | 168.79 | 163.59 | 135.59 | 99.17 |
+| I Farnsworth | 48 | 8 640.5 | 52.45 | 50.74 | 44.91 | 33.78 |
+| all | 525 | 74 749.9 | **127.91** | **123.96** | **104.60** | **75.84** |
+
+Wall time of the replay on 10 threads: 963 s (`bank-b0`), 787 s (`bank-b2a-exact`), 572 s (`bank-b2a`).
+
+Windows PC, F-drift-s1 (8 channels, 240.1 channel-seconds), `--jobs 8`, the three builds alternated in one
+session (reference `4cde638` and exact steps `42201d7`, each built in a separate worktree; near-exact step
+`3f99859`):
+
+| build | run 1 | run 2 |
+|---|---|---|
+| reference | 303.3 | 314.4 |
+| B2(a) exact steps | 166.0 | 170.5 |
+| B2(a) near-exact step | 76.5 | 78.4 |
+
+The run-to-run spread is 11.1 ms (reference), 4.5 ms and 1.9 ms. The texts and every decoded record of all
+six runs equal those of the reference's B1 run `b0-win-cpu` on all 8 channels. The Windows build gains more
+than the Linux build (−75% against −41%), presumably because MSVC's scalar log1p and exp cost more per call
+(conjectured from the larger gain of the steps that remove them; not profiled on Windows).
+
+### 3.5 Profile
+
+gprof, one channel (F-drift-s1, label 1, 30.0 s), Linux machine, the bank sources compiled with `-pg -O3`
+and linked statically so that the math library is sampled (Plan A's method; helper `build/b2a/b2a_prof.sh`,
+git-ignored). Seconds of samples (10 ms each):
+
+| build | total | log1p | exp | ln | pow | `grid_loglik` | the search's own code | everything else |
+|---|---|---|---|---|---|---|---|---|
+| B1 (`41b8f5e`) | 3.70 | 1.13 | 1.19 | 0.30 | 0.05 | 0.48 | 0.29 | 0.26 |
+| exact steps (`42201d7`) | 3.35 | 1.15 | 0.58 | 0.37 | 0.01 | 0.87 | 0.16 | 0.21 |
+| near-exact step (`1c6b681`) | 2.30 | 0 | 0.62 | 0.62 | 0.05 | 0.64 | 0.10 | 0.27 |
+
+("The search's own code": `terms`, `refine`, `weighted_loglik`, `best`, `retained`, `aged_sum`; a flat
+profile cannot split libm's time between the grid and the search.) Before B2(a) 72% of the samples were in
+libm's exp, log1p, ln and pow; after it 56%. The exact steps removed about half of the exp time (the other
+kind's classes and the repeated evaluations in the search) but almost none of log1p's: the skipped
+logaddexp calls appear to be the cheap ones, with a tiny log1p argument (conjectured; not measured per
+call). The one-pass sum removes log1p altogether. User time of the profiled run: 3.82 s, 3.34 s, 2.31 s.
+
+### 3.6 Carried from the B1 review
+
+- docs/signal-processing.md, 8c, "Memory": the 1.7 MB by which the measured per-channel memory after B1
+  exceeds the derived upper end is now stated there, and its cause is marked conjectured, not traced.
+- The per-call copy in `BankChannel::p_row` (B1): on the profiled channel it is called 67 times in 30.0 s
+  (the re-key paths only) and is attributed 0.00 s of 3.70 s (below the profile's 10 ms resolution, 0.3%).
+  It costs no measurable time and is left as it is.
+
+### 3.7 Raw outputs
+
+Git-ignored, in `build/suite/full3/experiments/linux/`: `c2-diff-bank-b2a-exact-vs-bank-b0.md`,
+`compare-bank-b2a-exact-vs-bank-b0.md`, `c2-diff-bank-b2a-vs-bank-b2a-exact.md`,
+`compare-bank-b2a-vs-bank-b2a-exact.md`, and the job logs `b2a-exact.log`, `b2a-near.log` (the first
+near-exact run, stopped by the quality bound before its replay) and `b2a-near2.log`. Profiles:
+`build/b2a/prof-b1-flat.txt`, `prof-b2a-exact-flat.txt`, `prof-b2a-flat.txt`. Windows decoded files:
+`build/suite/full3/proto/b2a-win-{ref,exact,near}-{1,2}/`; full-sweep outputs `build/b2a/near-sweep-windows*.txt`.

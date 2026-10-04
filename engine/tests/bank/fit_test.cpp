@@ -1090,8 +1090,9 @@ struct Diffs {
         if (first.empty()) first = o.first;
     }
     void expect_ok(const std::string& what) const {
-        std::printf("%s: %zu values, largest difference %.3g nats absolute, %.3g relative; %zu above the bound "
-                    "%.3g x max(|value|, 1 nat); %zu non-finite mismatches\n",
+        std::printf("%s: %zu values, largest difference %.3g absolute (in the value's unit: nats, s or none), %.3g "
+                    "relative; %zu above the bound "
+                    "%.3g x max(|value|, 1 unit); %zu non-finite mismatches\n",
                     what.c_str(), n, max_abs, max_rel, over_bound, bound, nonfinite_bad);
         EXPECT_EQ(nonfinite_bad, 0u) << what << ": " << first;
         EXPECT_EQ(over_bound, 0u) << what << ": " << first;

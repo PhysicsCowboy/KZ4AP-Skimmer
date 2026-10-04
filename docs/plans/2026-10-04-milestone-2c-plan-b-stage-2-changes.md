@@ -115,12 +115,12 @@ Candidates, in this order:
    Each change is tested **bit for bit** (`std::bit_cast<std::uint64_t>` equality, not a tolerance) against a frozen copy of the current code kept in the test file, over the golden inputs and a randomized sweep (≥ 10⁶ observations across durations at and beyond the outlier clamps 0.001 s and 10 s, var_t from 0 to 10⁻² s², marks and spaces, every grid point), including the edge cases of the Review Focus.
 2. **Near-exact (changes last-bit rounding):** the log-sum-exp of all of an observation's classes and the outlier in one pass, m + log(Σᵢ exp(xᵢ − m)) with m the largest term (one `log` per grid point instead of one `log1p` per class), and any other algebraic rearrangement that reduces the transcendental count. Tested against the old code on the same sweep, with the largest relative difference measured and stated, and checked on the development set by the rule.
 
-- [ ] **Step 1:** Profile one channel on the Linux machine (gprof as Plan A Task 9: F-drift-s1 label 1) at the B1 build: the starting split by function.
-- [ ] **Step 2:** The exact candidates, test first (the frozen-copy bit-for-bit tests in place before the change); ctest; commit.
-- [ ] **Step 3:** Linux: run `bank-b2a-exact`; texts against `bank-b0` must be identical (bit-identical by construction; a difference is a bug); CPU per channel-second pooled and per group; profile again.
-- [ ] **Step 4:** The near-exact candidates, test first; ctest (a golden comparison that moves gets a traced, narrow allowance only, with values); commit.
-- [ ] **Step 5:** Linux: run `bank-b2a`; the check against `bank-b2a-exact` by the rule (identical, or every difference traced); CPU.
-- [ ] **Step 6:** Windows: CPU on F-drift-s1 at the reference, after Step 2 and after Step 4.
-- [ ] **Step 7: Adoption.** Keep the near-exact candidates only if Step 5 passes the rule; otherwise revert them by a new commit (never by discarding) and record why.
-- [ ] **Step 8: Documents.** §8c: how the fit's log-likelihood is now evaluated (if the near-exact form is kept: the formula, and the measured largest difference from the old one), and the cost figures; the results record section 3: CPU per channel-second before and after each step, Linux and Windows, and the profile split.
-- [ ] **Step 9: Commit.**
+- [x] **Step 1:** Profile one channel on the Linux machine (gprof as Plan A Task 9: F-drift-s1 label 1) at the B1 build: the starting split by function.
+- [x] **Step 2:** The exact candidates, test first (the frozen-copy bit-for-bit tests in place before the change); ctest; commit.
+- [x] **Step 3:** Linux: run `bank-b2a-exact`; texts against `bank-b0` must be identical (bit-identical by construction; a difference is a bug); CPU per channel-second pooled and per group; profile again.
+- [x] **Step 4:** The near-exact candidates, test first; ctest (a golden comparison that moves gets a traced, narrow allowance only, with values); commit.
+- [x] **Step 5:** Linux: run `bank-b2a`; the check against `bank-b2a-exact` by the rule (identical, or every difference traced); CPU.
+- [x] **Step 6:** Windows: CPU on F-drift-s1 at the reference, after Step 2 and after Step 4.
+- [x] **Step 7: Adoption.** Keep the near-exact candidates only if Step 5 passes the rule; otherwise revert them by a new commit (never by discarding) and record why.
+- [x] **Step 8: Documents.** §8c: how the fit's log-likelihood is now evaluated (if the near-exact form is kept: the formula, and the measured largest difference from the old one), and the cost figures; the results record section 3: CPU per channel-second before and after each step, Linux and Windows, and the profile split.
+- [x] **Step 9: Commit.**
