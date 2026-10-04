@@ -7,6 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -41,11 +42,16 @@ public:
     void apply(const std::vector<kz4ap::DecodedSymbol>& chars, const std::vector<kz4ap::TextCorrection>& corrections);
     std::string final_text() const;
     const std::string& immediate_text() const { return immediate_; }
-    // Every correction received, in order: when it was made (stream time, s), its reach (s) and its reason.
+    // Every correction received, in order: when it was made (stream time, s), its reach (s), its reason, and the
+    // characters it changed in the final text: the replaced characters (from its index on) and its new ones, less
+    // the characters the two share at their start and at their end, as `removed` and `inserted` (characters; the
+    // smallest contiguous block that differs, so an upper bound of the correction's edit distance).
     struct Received {
         double t_s;
         double reach_s;
         std::string reason;
+        std::size_t removed = 0;
+        std::size_t inserted = 0;
     };
     const std::vector<Received>& corrections() const { return corrections_; }
 
@@ -55,7 +61,8 @@ private:
     std::vector<Received> corrections_;
 };
 
-// A track's corrections as the bench writes them: [{"t_s", "reach_s", "reason"}, ...] (the bank decoder only).
+// A track's corrections as the bench writes them: [{"t_s", "reach_s", "reason", "removed", "inserted"}, ...] (the
+// bank decoder only).
 nlohmann::json corrections_json(const std::vector<TrackText::Received>& corrections);
 
 // Text decoded outside the engine (kz4ap-bench --score-decoded), in one of two forms: {"front_end", "recording",

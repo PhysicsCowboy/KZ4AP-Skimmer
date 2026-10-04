@@ -2889,12 +2889,24 @@ front of it are the Matched path's, unchanged.
   F-drift-s1, through the detector path and with oracle channels: identical
   JSON apart from the new keys). For the bank it also writes, per track,
   `corrections`: every correction the events carried, with `t_s` (s,
-  stream time), `reach_s` (s) and `reason`. `kz4ap_synth.suites
+  stream time), `reach_s` (s), `reason`, and `removed` and `inserted`
+  (characters): the final text's characters from the correction's index
+  on against its new ones, less what the two share at their start (an
+  index before the first change) and at their end (characters re-sent
+  unchanged), so the smallest contiguous block that differs; an upper
+  bound of the correction's edit distance (derived), and removed plus
+  inserted, summed over a track, is at least the net Levenshtein distance
+  from the immediate to the final text (derived: an append adds the same
+  character to both texts, and each correction changes the final text by
+  at most its removed plus inserted). `kz4ap_synth.suites
   summarize` counts them per group (section "Corrections" of the summary:
   corrections per channel-minute of the group's engine runs, by reason,
-  and the reach's median, 99th percentile and maximum, numpy's linear
-  percentile; each engine run once, a detector-path recording's
-  station-label result being the same run).
+  the reach's median, 99th percentile and maximum, numpy's linear
+  percentile, and the characters removed and inserted per channel-minute,
+  shown as "—" for results written before these counts; each engine run
+  once, a detector-path recording's station-label result being the same
+  run). The per-correction counts are not yet measured on the suite: the
+  first full run after this change measures them.
 - **End to end (measured, development set seed 1).** first-sample-s1 with
   oracle channels: the engine's final texts equal the replay tool's on all
   4 channels (CER 0.0000 on the final text, 0.0743 on the immediate text:

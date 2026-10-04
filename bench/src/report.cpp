@@ -91,15 +91,28 @@ void TrackText::apply(const std::vector<kz4ap::DecodedSymbol>& chars,
         immediate_ += c.text;
     }
     for (const auto& k : corrections) {
-        final_.resize(std::min(k.from_index, final_.size()));  // never indexes past the published characters
+        const std::size_t from = std::min(k.from_index, final_.size());  // never indexes past the published characters
+        // Characters changed: the replaced tail final_[from, end) against the new one, k.chars, without the part
+        // they share at the start (a correction's index can be before its first change) and at the end (characters
+        // re-sent unchanged): what is left is the block of characters removed and the block inserted in its place.
+        const std::size_t old_n = final_.size() - from, new_n = k.chars.size();
+        std::size_t prefix = 0;
+        while (prefix < old_n && prefix < new_n && final_[from + prefix] == k.chars[prefix].text) ++prefix;
+        std::size_t suffix = 0;
+        while (suffix < old_n - prefix && suffix < new_n - prefix &&
+               final_[final_.size() - 1 - suffix] == k.chars[new_n - 1 - suffix].text)
+            ++suffix;
+        final_.resize(from);
         for (const auto& c : k.chars) final_.push_back(c.text);
-        corrections_.push_back({k.t_s, k.reach_s, k.reason});
+        corrections_.push_back({k.t_s, k.reach_s, k.reason, old_n - prefix - suffix, new_n - prefix - suffix});
     }
 }
 
 nlohmann::json corrections_json(const std::vector<TrackText::Received>& corrections) {
     nlohmann::json a = nlohmann::json::array();
-    for (const auto& c : corrections) a.push_back({{"t_s", c.t_s}, {"reach_s", c.reach_s}, {"reason", c.reason}});
+    for (const auto& c : corrections)
+        a.push_back({{"t_s", c.t_s}, {"reach_s", c.reach_s}, {"reason", c.reason}, {"removed", c.removed},
+                     {"inserted", c.inserted}});
     return a;
 }
 

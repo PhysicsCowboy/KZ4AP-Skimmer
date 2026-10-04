@@ -127,6 +127,33 @@ TEST(Report, TrackTextKeepsEveryCorrectionsTimeReachAndReason) {
     EXPECT_TRUE(corrections_json({}).empty());
 }
 
+TEST(Report, TrackTextCountsTheCharactersEachCorrectionRemovedAndInserted) {
+    TrackText t;
+    t.apply(symbols({"A", "B", "C", "D", "E"}), {});
+    // From index 1: B C D E becomes B X D E; the shared start (B) and end (D E) are not changes.
+    t.apply({}, {kz4ap::TextCorrection{1, symbols({"B", "X", "D", "E"}), 1.0, "switch"}});
+    // Everything deleted.
+    t.apply({}, {kz4ap::TextCorrection{0, {}, 2.0, "timeout"}});
+    // Two appended, then an index past them (clipped): one inserted, none removed.
+    t.apply(symbols({"F", "G"}), {kz4ap::TextCorrection{99, symbols({"H"}), 3.0, "rekey"}});
+    // The same characters sent again (a correction whose index is before its first change): nothing changed.
+    t.apply({}, {kz4ap::TextCorrection{0, symbols({"F", "G", "H"}), 4.0, "resync"}});
+    // A shared start and end that would overlap: "A A" against "A" is one removed, not a negative count.
+    t.apply(symbols({"A", "A"}), {kz4ap::TextCorrection{3, symbols({"A"}), 5.0, "switch"}});
+    EXPECT_EQ(t.final_text(), "FGHA");
+    const auto& c = t.corrections();
+    ASSERT_EQ(c.size(), 5u);
+    const std::size_t removed[] = {1, 5, 0, 0, 1}, inserted[] = {1, 0, 1, 0, 0};
+    for (std::size_t i = 0; i < c.size(); ++i) {
+        EXPECT_EQ(c[i].removed, removed[i]) << i;
+        EXPECT_EQ(c[i].inserted, inserted[i]) << i;
+    }
+    const auto j = corrections_json(c);
+    EXPECT_EQ(j[0].at("removed").get<std::size_t>(), 1u);
+    EXPECT_EQ(j[1].at("removed").get<std::size_t>(), 5u);
+    EXPECT_EQ(j[2].at("inserted").get<std::size_t>(), 1u);
+}
+
 TEST(Report, ImmediateScoreIsAddedBesideTheFinalOne) {
     const Labels labels = two_labels();
     const Score final_score = score(labels.signals, {{1, 1000.0, "CQ K1ABC"}, {2, 2000.0, "TU"}}, 50.0, true);

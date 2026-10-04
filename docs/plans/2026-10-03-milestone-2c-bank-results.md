@@ -584,9 +584,14 @@ text, per channel-minute.
   channel-minute; through the detector path 3.454.
 - **Characters changed:** 86 906 characters on 3 177 of the 3 556 tracks; 11.2 per 100 characters first
   displayed. It is a lower bound on the characters a reader saw replaced: a correction that rewrites text and
-  a later one that restores it cancel. The number of characters each correction replaced is not written by
-  the bench, so the spec's "characters changed" is given only as this net measure. (First run: 86 913; E
-  interference 1 987. The difference is the fixed defect.)
+  a later one that restores it cancel. The number of characters each correction replaced was not written by
+  the bench in these runs, so the spec's "characters changed" is given only as this net measure. (First run:
+  86 913; E interference 1 987. The difference is the fixed defect.) *Later change (final review):* the bench now
+  writes, per correction, the characters removed and inserted (the smallest block that differs between the
+  replaced and the new characters), and the suite summary sums them per group, per channel-minute
+  (`docs/signal-processing.md` section 8c, "The bench"). The statistic is implemented and is measured from the
+  next full run; the suite was not re-run for it, so in Plan A the net Levenshtein measure above remains the
+  reported figure.
 - **Against the prototype** (stage 1's corrections script on its decoded files,
   `c10-corrections-bank-proto.txt`): the counts per group are equal in every group except F tuning. There the
   engine has 227 against the prototype's 180, from the drifting labels. All: 31 205 against 31 158; reach

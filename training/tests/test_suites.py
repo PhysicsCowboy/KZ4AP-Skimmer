@@ -481,16 +481,18 @@ def test_corrections_are_counted_per_group_once_per_engine_run(tmp_path):
     bank = tmp_path / "results" / "bank"
     bank.mkdir(parents=True)
 
-    def result(reaches, seconds):
+    def result(reaches, seconds, counts=True):
+        # counts: the per-correction characters removed (2) and inserted (1); False: a bench before the counts
         tracks = [{"id": 1, "freq_hz": 0.0, "text": "", "text_immediate": "",
-                   "corrections": [{"t_s": 5.0, "reach_s": r, "reason": "switch" if r < 2 else "rekey"}
+                   "corrections": [{"t_s": 5.0, "reach_s": r, "reason": "switch" if r < 2 else "rekey",
+                                    **({"removed": 2, "inserted": 1} if counts else {})}
                                    for r in reaches]}]
         return json.dumps({"decoder": "bank", "channel_seconds": seconds, "tracks": tracks,
                            "score": {"signals": []}})
 
     (bank / "qso.json").write_text(result([0.5, 1.5, 3.0], 120.0))
     (bank / "qso.stations.json").write_text(result([0.5, 1.5, 3.0], 120.0))  # the same run: not counted again
-    (bank / "ora.json").write_text(result([20.0], 60.0))
+    (bank / "ora.json").write_text(result([20.0], 60.0, counts=False))
     (bank / "ora.oracle.json").write_text(result([9.0], 60.0))  # not a copy group: ignored
     base = tmp_path / "results" / "baseline"
     base.mkdir(parents=True)
@@ -504,12 +506,17 @@ def test_corrections_are_counted_per_group_once_per_engine_run(tmp_path):
     assert h["by_reason"] == {"rekey": 1, "switch": 2}
     assert h["reach_median_s"] == 1.5 and h["reach_max_s"] == 3.0
     assert h["reach_p99_s"] == pytest.approx(float(np.percentile([0.5, 1.5, 3.0], 99)))
+    assert h["chars_removed"] == 6 and h["chars_inserted"] == 3
+    assert h["chars_removed_per_channel_minute"] == 3.0 and h["chars_inserted_per_channel_minute"] == 1.5
     a = s[("bank", "A sensitivity")]
     assert a["corrections"] == 1 and a["per_channel_minute"] == 1.0 and a["reach_max_s"] == 20.0
+    assert a["chars_removed"] is None and a["chars_inserted_per_channel_minute"] is None  # written without counts
     write_summary(tmp_path)
     text = (tmp_path / "summary.md").read_text(encoding="utf-8")
     assert "## Corrections" in text
     assert "| H two-station QSO | bank | 1 | 2.0 | 3 | 1.50 | rekey 1, switch 2 | 1.500 |" in text
+    assert "| H two-station QSO | bank | 1 | 2.0 | 3 | 1.50 | rekey 1, switch 2 | 1.500 | 2.970 | 3.000 | 3.00 | 1.50 |" in text
+    assert "| A sensitivity | bank | 1 | 1.0 | 1 | 1.00 | rekey 1 | 20.000 | 20.000 | 20.000 | — | — |" in text
     summary = json.loads((tmp_path / "summary.json").read_text())
     assert {(c["front_end"], c["group"]) for c in summary["corrections"]} == set(s)
 

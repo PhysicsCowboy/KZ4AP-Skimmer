@@ -855,9 +855,12 @@ def track_splits(out_dir: Path, results_dirs=None, front_ends=None, only: str | 
 
 def correction_stats(out_dir: Path, results_dirs=None, front_ends=None) -> dict:
     """The corrections the engine's text events carried, from the bench's per-track "corrections" (written for the
-    bank decoder: when, reach in s, reason), by (decoder, group): count, count by reason, per channel-minute of the
-    group's engine runs, and the reach (s: the correction's time minus the start of the first character it
-    replaced): median, 99th percentile and maximum (numpy's linear percentile). Each engine run counts once: a
+    bank decoder: when, reach in s, reason, characters removed and inserted), by (decoder, group): count, count by
+    reason, per channel-minute of the group's engine runs, the reach (s: the correction's time minus the start of
+    the first character it replaced): median, 99th percentile and maximum (numpy's linear percentile), and the
+    characters the corrections removed and inserted (each correction's smallest differing block, TrackText), in all
+    and per channel-minute (None if any correction of the group was written without the counts). Each engine run
+    counts once: a
     detector-path recording's station-label result is the same run as its main result and is left out; an oracle
     recording's station labels have their own channels and run."""
     manifest = json.loads((Path(out_dir) / "manifest.json").read_text())
@@ -874,20 +877,32 @@ def correction_stats(out_dir: Path, results_dirs=None, front_ends=None) -> dict:
                 if j.get("decoder") != "bank":
                     continue
                 g = acc.setdefault((fe_dir.name, group), {"runs": 0, "channel_seconds": 0.0, "reaches": [],
-                                                          "by_reason": {}})
+                                                          "by_reason": {}, "removed": 0, "inserted": 0,
+                                                          "counted": True})
                 g["runs"] += 1
                 g["channel_seconds"] += j.get("channel_seconds", 0.0)
                 for t in j.get("tracks", []):
                     for c in t.get("corrections", []):
                         g["reaches"].append(float(c["reach_s"]))
                         g["by_reason"][c["reason"]] = g["by_reason"].get(c["reason"], 0) + 1
+                        if "removed" in c and "inserted" in c:
+                            g["removed"] += int(c["removed"])
+                            g["inserted"] += int(c["inserted"])
+                        else:  # written by a bench before the per-correction counts
+                            g["counted"] = False
     out = {}
     for key, g in acc.items():
         r = np.array(g["reaches"])
         minutes = g["channel_seconds"] / 60.0
+        per_minute = (lambda n: n / minutes if minutes > 0 else None)  # noqa: E731
+        counted = g["counted"]
         out[key] = {"runs": g["runs"], "channel_minutes": minutes, "corrections": len(r),
                     "by_reason": dict(sorted(g["by_reason"].items())),
                     "per_channel_minute": len(r) / minutes if minutes > 0 else None,
+                    "chars_removed": g["removed"] if counted else None,
+                    "chars_inserted": g["inserted"] if counted else None,
+                    "chars_removed_per_channel_minute": per_minute(g["removed"]) if counted else None,
+                    "chars_inserted_per_channel_minute": per_minute(g["inserted"]) if counted else None,
                     "reach_median_s": float(np.median(r)) if len(r) else None,
                     "reach_p99_s": float(np.percentile(r, 99)) if len(r) else None,
                     "reach_max_s": float(r.max()) if len(r) else None}
@@ -901,14 +916,20 @@ def _format_corrections(stats: dict) -> list[str]:
     lines = ["## Corrections", "",
              "The corrections in the engine's text events (the bank decoder), per group: each engine run counted once "
              "(a detector-path recording's station labels share its run). Reach: the correction's time minus the "
-             "start of the first character it replaced, s.", "",
+             "start of the first character it replaced, s. Characters removed and inserted: per correction, the "
+             "replaced characters against the new ones less what the two share at their start and end (the smallest "
+             "block that differs, an upper bound of the correction's edit distance), summed, per channel-minute.", "",
              "| group | decoder | runs | channel-minutes | corrections | per channel-minute | by reason | "
-             "reach median (s) | reach 99th percentile (s) | reach maximum (s) |", "|---|---|---|---|---|---|---|---|---|---|"]
+             "reach median (s) | reach 99th percentile (s) | reach maximum (s) | "
+             "characters removed per channel-minute | characters inserted per channel-minute |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for (fe, group), v in sorted(stats.items(), key=lambda kv: (kv[0][1], kv[0][0])):
         reasons = ", ".join(f"{k} {n}" for k, n in v["by_reason"].items()) or "—"
         lines.append(f"| {group} | {fe} | {v['runs']} | {v['channel_minutes']:.1f} | {v['corrections']} | "
                      f"{fmt(v['per_channel_minute'], '.2f')} | {reasons} | {fmt(v['reach_median_s'], '.3f')} | "
-                     f"{fmt(v['reach_p99_s'], '.3f')} | {fmt(v['reach_max_s'], '.3f')} |")
+                     f"{fmt(v['reach_p99_s'], '.3f')} | {fmt(v['reach_max_s'], '.3f')} | "
+                     f"{fmt(v['chars_removed_per_channel_minute'], '.2f')} | "
+                     f"{fmt(v['chars_inserted_per_channel_minute'], '.2f')} |")
     return lines + [""]
 
 
