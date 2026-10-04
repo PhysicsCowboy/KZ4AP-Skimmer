@@ -97,7 +97,9 @@ void expect_equal_or_nan(double actual, const nlohmann::json& expected) {
 // two best candidates' scores differ by rounding. (stream, periodicity recomputation, window index). Both are
 // the 2 s window over a buffer of p that is zero but for one short squelch opening, far below the confidence
 // threshold (0.03), so T_P, the prior and everything downstream are unaffected. Both candidates on both sides
-// (TheTwoPeriodicityNearTiesAreRoundingOnBothSides recomputes the port's):
+// (TheTwoPeriodicityNearTiesAreRoundingOnBothSides recomputes the port's; the port's values below are the
+// Windows build's, MSVC's libm; with glibc on Linux, farnsworth #64's 97.95 ms score is 4.7329276537942970e-06
+// and the port picks 97.95 ms, as the prototype does, a gap of +1.8e-17 absolute, 3.9e-12 relative):
 //   noise #14,      T = 97.95 ms: prototype 9.5011319738165349e-07, port 9.5011319737701853e-07
 //                   T = 44.63 ms: prototype 9.5011319738161283e-07, port 9.5011319738161283e-07
 //     prototype gap +4.1e-20 absolute (relative 4.3e-14, picks 97.95 ms); port gap -4.6e-18 (4.8e-12, picks 44.63)
@@ -273,10 +275,15 @@ TEST(BankChannel, TheTwoPeriodicityNearTiesAreRoundingOnBothSides) {
         const double port_b = port_score(ch, t_b);
         std::printf("%s #%zu: T = 97.95 ms: port %.16e, prototype %.16e; T = 44.63 ms: port %.16e, prototype %.16e\n",
                     c.stream, c.update, port_a, c.proto_a, port_b, c.proto_b);
-        // each side picks its larger; the two candidates differ by rounding on each side
-        EXPECT_GE(port_b, port_a);
+        // each side picks its larger; the two candidates differ by rounding on each side. Which one the port
+        // picks depends on the platform's libm (the near-ties above are the Windows build's; with glibc the port's
+        // farnsworth #64 picks 97.95 ms, as the prototype), so the port's pick is checked against its own scores.
+        const auto& pick = ch.result().periodicity.back().per_window.front().first;
+        ASSERT_TRUE(pick.has_value());
+        ASSERT_TRUE(*pick == t_a || *pick == t_b) << *pick;
+        EXPECT_GE(*pick == t_a ? port_a : port_b, *pick == t_a ? port_b : port_a);
         EXPECT_GT(c.proto_a, c.proto_b);
-        EXPECT_LT((port_b - port_a) / port_a, 1e-11);
+        EXPECT_LT(std::abs(port_b - port_a) / port_a, 1e-11);
         EXPECT_LT((c.proto_a - c.proto_b) / c.proto_a, 1e-11);
         expect_close(port_a, c.proto_a);
         expect_close(port_b, c.proto_b);
