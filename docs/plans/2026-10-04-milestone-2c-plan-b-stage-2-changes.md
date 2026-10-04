@@ -78,3 +78,49 @@ All three seeds (held-out 2–3 reported separately), oracle and through the det
 2. **B10:** diagnose first, then bring the proposed fix to the owner (option A).
 3. **Order:** B1 and B2(a, b) first, the design changes next, B2(c) last before the final evaluation (option C).
 4. **Branch:** a new branch `milestone-2c-stage2` from `milestone-2c-bank` (option A).
+
+## Full task texts
+
+Written task by task before dispatch (the plan's status note). Common to the no-text-change tasks (B1, B2(a), B2(b)):
+
+- **The reference** is `bank-b0`: the development set (seed 1, `kz4ap_proto.experiments.DEV`, 21 test cases, 525 oracle channels) replayed on the Linux machine by `kz4ap-bank-replay` at the Plan A code (a3a96d9), written to `build/suite/full3/proto/bank-b0/` there. B1 produces it first and checks its texts against Plan A's `bank-cpp`.
+- **The check** is a channel-by-channel comparison of final texts against the reference (count identical; for each differing channel, its first differing character and time), plus `kz4ap_proto.experiments compare --base bank-b0 --variant <run>` for the paired CER. Pass: every text identical, or every difference traced to a near-tie with the values on both sides (owner, 2026-10-04). Too many to trace: stop and report the count.
+- **CPU** per channel-second from the decoded files' `cpu_s` and `channel_s`, pooled and per group, on the Linux machine; on the Windows PC, F-drift-s1 (8 channels, 240.1 channel-seconds; Plan A Task 7: 453.6 ms per channel-second).
+
+### Task B1 (full text): memory
+
+**Files:** `engine/include/kz4ap/bank/fit.hpp`, `engine/src/bank/fit.cpp`, `engine/include/kz4ap/bank/channel.hpp`, `engine/src/bank/channel.cpp`, `engine/tests/bank/fit_test.cpp`, `engine/tests/bank/channel_test.cpp`, `docs/signal-processing.md` (§8c "Memory"), `docs/plans/2026-10-04-milestone-2c-plan-b-results.md` (new: the Plan B results record, section 1 conditions and section 2 memory).
+
+- [ ] **Step 1: The reference run.** Bundle the branch to the Linux machine, build the `linux` preset, run `ctest`, then as a job `kz4ap-bank-replay --out build/suite/full3 --name bank-b0 --only "<DEV>" --jobs 10`. Compare its texts with `bank-cpp`: expected identical on all 525 channels (Plan A's later commits changed the engine's correction events and the tests, not the bank's text). Any difference: stop and report.
+- [ ] **Step 2: Measure memory before the change.** Peak resident set size (`/usr/bin/time -v`, "Maximum resident set size", kB) of `kz4ap-bank-replay` on one long test case (G-ragchew-s1) with `--jobs 1` and with `--jobs 10`, at the reference build; per channel in flight = (RSS₁₀ − RSS₁) / 9 (measured), against §8c's derived 26–59 MB.
+- [ ] **Step 3: Failing tests.** (i) Two `DurationFit`s built from the same configuration share one grid-constants object (pointer equality through a test accessor), a fit built from a configuration with a different grid (e.g. `t_grid_step` 0.02) does not, and both decode their own grid correctly; (ii) the shared constants are immutable (`const`) and safe to read from several threads (a test constructing and using fits from 8 threads at once); (iii) the channel's |v_k|² window stores 4-byte floats (a size accessor or a static_assert on the element type).
+- [ ] **Step 4: Share the grid constants.** One immutable `DurationFit::Model` per configuration, shared process-wide by every fit built from an equal configuration (keyed by the exact values of the fields the model reads: `min_wpm`, `max_wpm`, `t_grid_step`, `q_grid`, `w_grid`, `tg_grid`, `outlier_prior`, `outlier_range_s`, `sigma_ln_mark`, `sigma_ln_space`, `fit_memory`, `prior_sigma_ln`, `refine_iterations`), held by `shared_ptr<const Model>` in a mutex-protected cache of `weak_ptr`s so it is freed when no fit uses it. The tables and history stay per fit. No arithmetic changes.
+- [ ] **Step 5: Store the |v_k|² window as float.** The window already holds values rounded to float32 (the prototype's rounding, Plan A); storing them as `float` is lossless. Every read converts to double exactly as now. No arithmetic changes.
+- [ ] **Step 6: Tests pass; golden tests unchanged** (ctest on Windows; smoke unchanged).
+- [ ] **Step 7: The check on the Linux machine:** run `bank-b1`; texts against `bank-b0` (expected identical: no arithmetic changed); CPU per channel-second (reported, not a gate); memory measured as in Step 2 at the new build.
+- [ ] **Step 8: Documents.** §8c "Memory": the new derived counts (the window 32 × 34 721 × 4 B = 4.4 MB; the grid constants once per process per configuration; per fit its tables and history), and the measured per-channel figures before and after, with the method. The new results record `docs/plans/2026-10-04-milestone-2c-plan-b-results.md`: section 0 terms, section 1 conditions (platform, the reference `bank-b0` and its check against `bank-cpp`), section 2 memory (before and after, derived and measured, and the text check).
+- [ ] **Step 9: Commit** (ctest on Windows and on the Linux machine passing).
+
+### Task B2(a) (full text): restructure the fit's arithmetic
+
+**Files:** `engine/src/bank/fit.cpp` (and `fit.hpp` if a declaration changes), `engine/tests/bank/fit_test.cpp`, `docs/signal-processing.md` (§8c "Duration fit" where the evaluation changes, and the measured cost), the results record (section 3, cost).
+
+The target: 75% of the decoder's CPU time is in scalar `exp`, `log` and `log1p` inside `DurationFit::add` (`grid_loglik`: per grid point, 2 `log` + 2 logaddexp for marks over 3636 points, 3 `log` + 3 logaddexp for spaces over 6060 points; each logaddexp one `exp` and one `log1p`) and in `best` (`terms` evaluated 5 times per call on up to 192 retained observations, all 5 classes each, plus `refine`'s responsibilities `exp(ll − total)`).
+
+Candidates, in this order:
+1. **Exact (bit-identical by IEEE arithmetic):**
+   - in `terms`, compute only the classes of the observation's kind (2 for a mark, 3 for a space); the others are −∞ by definition and enter only as logaddexp(x, −∞) = x + log1p(0) = x, and as `exp(−∞) = 0` weights adding +0 in `refine`;
+   - in `best`, reuse the `terms` already computed (the grid point's terms are `refine`'s starting terms; the refined point's are its last) instead of recomputing them;
+   - any further skip of a logaddexp whose smaller term is so far below that the result equals the larger term exactly (derive the exact condition from the rounding, with its proof in a comment; the test decides).
+   Each change is tested **bit for bit** (`std::bit_cast<std::uint64_t>` equality, not a tolerance) against a frozen copy of the current code kept in the test file, over the golden inputs and a randomized sweep (≥ 10⁶ observations across durations at and beyond the outlier clamps 0.001 s and 10 s, var_t from 0 to 10⁻² s², marks and spaces, every grid point), including the edge cases of the Review Focus.
+2. **Near-exact (changes last-bit rounding):** the log-sum-exp of all of an observation's classes and the outlier in one pass, m + log(Σᵢ exp(xᵢ − m)) with m the largest term (one `log` per grid point instead of one `log1p` per class), and any other algebraic rearrangement that reduces the transcendental count. Tested against the old code on the same sweep, with the largest relative difference measured and stated, and checked on the development set by the rule.
+
+- [ ] **Step 1:** Profile one channel on the Linux machine (gprof as Plan A Task 9: F-drift-s1 label 1) at the B1 build: the starting split by function.
+- [ ] **Step 2:** The exact candidates, test first (the frozen-copy bit-for-bit tests in place before the change); ctest; commit.
+- [ ] **Step 3:** Linux: run `bank-b2a-exact`; texts against `bank-b0` must be identical (bit-identical by construction; a difference is a bug); CPU per channel-second pooled and per group; profile again.
+- [ ] **Step 4:** The near-exact candidates, test first; ctest (a golden comparison that moves gets a traced, narrow allowance only, with values); commit.
+- [ ] **Step 5:** Linux: run `bank-b2a`; the check against `bank-b2a-exact` by the rule (identical, or every difference traced); CPU.
+- [ ] **Step 6:** Windows: CPU on F-drift-s1 at the reference, after Step 2 and after Step 4.
+- [ ] **Step 7: Adoption.** Keep the near-exact candidates only if Step 5 passes the rule; otherwise revert them by a new commit (never by discarding) and record why.
+- [ ] **Step 8: Documents.** §8c: how the fit's log-likelihood is now evaluated (if the near-exact form is kept: the formula, and the measured largest difference from the old one), and the cost figures; the results record section 3: CPU per channel-second before and after each step, Linux and Windows, and the profile split.
+- [ ] **Step 9: Commit.**
