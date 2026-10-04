@@ -23,6 +23,14 @@
 #include <string>
 #include <vector>
 
+namespace kz4ap {
+// The test-only seam declared in bank_decoder.hpp and bank/channel.hpp: the bank's published list, to make a change
+// the bank has never made on a recorded stream (a same-text reorder; see AResync... below).
+struct BankDecoderTestAccess {
+    static bank::Output& output(BankDecoder& d) { return d.channel_->out_; }
+};
+}  // namespace kz4ap
+
 namespace {
 
 using namespace kz4ap;
@@ -230,6 +238,74 @@ TEST(BankDecoder, TheConsumersListIsTheBanksAfterEveryUpdateWhenCharactersOverla
     }
 }
 
+// The resync path (docs/signal-processing.md section 8c, "Overlapping characters"): a replacement that changes the
+// list's text without a correction (the replaced and the new text are equal, but a kept character that overlaps a
+// replaced one moves ahead of it) leaves the consumer's list different from the bank's, and the BankDecoder must
+// send one "resync" correction that makes them equal again. No recorded stream has made the bank do this (0 of
+// 31 205 corrections on the full suite), so the test makes the change itself through the test-only seam.
+TEST(BankDecoder, AResyncRestoresTheConsumersListAfterASameTextReorder) {
+    double rate = 0;
+    const auto y = shifted("noise", 0.0, rate);  // noise alone: the bank publishes nothing of its own
+    ASSERT_EQ(rate, 1500.0);
+    BankDecoder d(rate, bank::BankConfig{}, 0.0);
+    Assembled a;
+    std::size_t resyncs = 0;
+    auto check = [&](const DecodeUpdate& u) {
+        a.apply(u);
+        for (const auto& k : u.corrections) resyncs += k.reason == "resync";
+        const auto& chars = d.channel().output().chars();
+        ASSERT_EQ(a.final_chars.size(), chars.size());
+        for (std::size_t i = 0; i < chars.size(); ++i) ASSERT_EQ(a.final_chars[i].text, chars[i].text) << i;
+    };
+    auto feed = [&](std::size_t from, std::size_t to, std::size_t block) {
+        for (std::size_t i = from; i < to; i += block)
+            check(d.process(std::span<const Sample>(y).subspan(i, std::min(block, to - i)),
+                            static_cast<double>(i) / rate));
+    };
+    constexpr std::size_t kWarm = 468 * 32;  // 9.984 s, whole 32-sample bank blocks
+    feed(0, kWarm, 32);
+    ASSERT_TRUE(a.final_chars.empty());
+    ASSERT_EQ(d.channel().processed(), static_cast<std::int64_t>(kWarm));
+
+    // Two published characters that overlap in time: "E" from 2.0 to 5.0 s and "T" from 3.0 to 3.5 s, inside it
+    // (bank times, s from the channel's first sample). One sample more completes no bank block, so the bank itself
+    // changes nothing; the update carries both characters.
+    bank::Output& out = BankDecoderTestAccess::output(d);
+    out.append_new({bank::Char{"E", 2.0, 5.0}, bank::Char{"T", 3.0, 3.5}});
+    feed(kWarm, kWarm + 1, 1);
+    ASSERT_EQ(a.text(), "ET");
+
+    // A same-text replacement from 4.0 s, made at 9.9 s: "E" ends after the cut (4.0 s) and is replaced by an "E" from
+    // 4.0 to 4.5 s; "T" ends before the cut and is kept. The list becomes "T", "E": its text changed at index 0, but
+    // the replaced and the new text are both "E", so no correction is recorded.
+    const std::size_t corrections_before = out.corrections().size();
+    out.replace_from(4.0, {bank::Char{"E", 4.0, 4.5}}, 9.9, "switch");
+    ASSERT_EQ(out.corrections().size(), corrections_before);
+    ASSERT_EQ(out.text(), "TE");
+
+    const auto u = d.process(std::span<const Sample>(y).subspan(kWarm + 1, 1), static_cast<double>(kWarm + 1) / rate);
+    ASSERT_EQ(u.corrections.size(), 1u);
+    const auto& r = u.corrections.front();
+    EXPECT_EQ(r.reason, "resync");
+    EXPECT_EQ(r.from_index, 0u);
+    ASSERT_EQ(r.chars.size(), 2u);
+    EXPECT_EQ(r.chars[0].text, "T");
+    EXPECT_EQ(r.chars[1].text, "E");
+    // Its time is the bank's processed samples (9.984 s) and its reach back to the start of the first character
+    // that differs, "T" at 3.0 s.
+    EXPECT_DOUBLE_EQ(r.t_s, static_cast<double>(kWarm) / rate);
+    EXPECT_DOUBLE_EQ(r.reach_s, static_cast<double>(kWarm) / rate - 3.0);
+    check(u);
+    EXPECT_EQ(a.text(), "TE");
+    EXPECT_EQ(resyncs, 1u);
+
+    // The rest of the stream and the flush keep the lists equal, with no further resync.
+    feed(kWarm + 2, y.size(), 32);
+    check(d.flush());
+    EXPECT_EQ(resyncs, 1u);
+    EXPECT_EQ(a.text(), d.channel().output().text());
+}
+
 TEST(BankDecoder, ExactZerosPublishNothing) {
     BankDecoder d(1500.0, bank::BankConfig{}, 0.0);
     const std::vector<Sample> zeros(3000);
@@ -290,9 +366,9 @@ TEST(BankDecoder, TheEngineRunsTheBankOnOracleChannels) {
     engine.process(x);
     engine.finish();
     ASSERT_EQ(texts.size(), 1u);
-    EXPECT_NE(texts[1].text().find("K1ABC K1ABC K"), std::string::npos) << texts[1].text();
-    std::printf("bank via the engine: final \"%s\", immediate \"%s\", %zu corrections\n", texts[1].text().c_str(),
-                texts[1].immediate.c_str(), corrections);
+    EXPECT_NE(texts[1].text().find("K1ABC K1ABC K"), std::string::npos)
+        << "final \"" << texts[1].text() << "\", immediate \"" << texts[1].immediate << "\", " << corrections
+        << " corrections";
 }
 
 }  // namespace

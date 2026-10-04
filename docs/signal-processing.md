@@ -2206,7 +2206,8 @@ The lengths L_k it uses are the realized ones, N_k / r (s).
 - **Re-keying a stretch (`rekey`).** The stored |v_k|² of a stretch are
   keyed again from key up with the full LLR at fixed σ²_v,k and ŝ²
   (a = √(max(ŝ², 0) / σ²_v,k)), the same g, h = 1 nat and squelch as
-  above. The channel stage (not yet ported) chooses among candidate amplitudes.
+  above. The channel decoder chooses among candidate amplitudes ("Channel
+  decoder" below, "Re-key").
 - **Edges.** `edges` lists, per branch, (sample index, key state after it)
   at every change of key state against the state before the block: the
   marks and spaces the timing stage reads.
@@ -2628,9 +2629,13 @@ publishes one branch's characters, with corrections.
   few ms apart, and cutting on start times published one character
   twice). A correction is recorded only if the replaced text differs:
   (t, the first replaced character's start or c, the reach t − that
-  start ≤ 20 s, old text, new text, reason) and the number of characters
-  kept before it (`from_index`, the engine's index-based corrections).
-  Nothing that starts more than 20 s before t is ever changed.
+  start ≤ 20 s, old text, new text, reason), the number of characters
+  kept (`from_index`, the prototype's len(kept)) and the first position
+  whose character's text changed (`first_changed_index`). The engine's
+  index-based correction starts at the smaller of the two ("The bank
+  decoder behind the engine", "Events"): the kept characters are not
+  always a prefix of the list. Nothing that starts more than 20 s before
+  t is ever changed.
 - **End of stream.** `finish` processes the last partial block, ends
   every branch's open character (no word space) and publishes the
   selected branch's new characters; a stream cut mid-character publishes
@@ -2787,7 +2792,15 @@ front of it are the Matched path's, unchanged.
   `from_index` on, as they stand at the end of the call, kept ones
   included), `t_s` (when it was made, s), `reason` ("switch", "rekey" or
   "timeout") and `reach_s` (the bank's reach: `t_s` minus the start of the
-  first replaced character, s, at most 20 s). All times are stream times: the bank's times (counted
+  first replaced character, s, at most 20 s). A "resync" correction (see
+  "Overlapping characters" below) is the exception: its `t_s` is the end
+  of the call's processed blocks, and its `reach_s` is `t_s` minus the
+  start of the first character at which the consumer's list differs from
+  the bank's (0 when only the list's length differs). That reach is not
+  bounded by the 20 s correction reach: the character can be a kept one
+  that a same-text replacement moved, and a kept character is one that
+  starts more than 20 s before the replacement or ends before its cut, so
+  nothing in the code bounds how far back it starts. All times are stream times: the bank's times (counted
   from the channel's first sample, the branch's group delay removed) plus
   the first block's start time, s. The event's frequency is the anchor
   (center plus Δ: the detector's frequency, or the label in oracle mode).
@@ -2797,18 +2810,31 @@ front of it are the Matched path's, unchanged.
 - **The consumer's rule.** A consumer keeps one character list per
   channel: it appends an event's `chars`, then applies its corrections in
   order, each keeping the first min(`from_index`, length) characters and
-  appending its `chars`. The list then equals the bank's (derived, and
-  tested with calls of 1, 32, 47 and 1000 samples on golden streams with
-  corrections, and after every call on a recorded channel whose
-  characters overlap in time): let g be the smallest `from_index` of the
-  call's corrections; no character below g changed during the call
-  (`from_index` is never past the first position whose text changed), and any
-  position between the consumer's previous length and g was filled by an
-  append, in order, so after the appends the consumer's first g characters
-  are the bank's; the correction at g replaces everything after them by
-  the bank's tail, the ones before it only touched positions at or after
-  their own index (≥ g), and the ones after it (index ≥ g) put back the
-  bank's tail again. The *final text* is that list's text, every
+  appending its `chars`. The list's text then equals the bank's after
+  every call (derived; tested with calls of 1, 32, 47 and 1000 samples on
+  golden streams with corrections, after every call on a recorded channel
+  whose characters overlap in time, and with a forced resync). The bank's
+  list changes only by appends and by replacements, and a replacement that
+  changes the list's text either records a correction or, when the
+  replaced and the new text are equal but overlapping characters change
+  places, does not. *Changes with a correction:* let g be the smallest
+  `from_index` of the call's corrections; no character's text below g
+  changed during the call (`from_index` is never past the first position
+  whose text changed), and any position between the consumer's previous
+  length and g was filled by an append, in order, so after the appends the
+  consumer's first g characters are the bank's; the correction at g
+  replaces everything after them by the bank's tail, the ones before it
+  only touched positions at or after their own index (≥ g), and the ones
+  after it (index ≥ g) put back the bank's tail again. *Changes without a
+  correction:* the `BankDecoder` applies every update to a copy of the
+  consumer's list exactly as the rule above does, and at the end of the
+  call compares it with the bank's list from the lowest position that any
+  of the call's text changes touched; if they differ there or later (or
+  in length), it sends a "resync" correction from the first differing
+  position with the bank's characters from there on, after which the copy,
+  and so the consumer's list, is the bank's. Below that position no
+  replacement of the call changed a text, so the argument of the first
+  case holds there. The *final text* is that list's text, every
   correction applied; the *immediate text* is every appended character in
   order, corrections ignored (what a reader would have seen live). A
   replacement whose text is unchanged is not a correction (the prototype
@@ -2838,10 +2864,17 @@ front of it are the Matched path's, unchanged.
   replacement that reorders overlapping characters). The `BankDecoder`
   keeps the consumer's list as its updates build it, checks it against
   the bank's from the lowest new change, and if they differ sends a
-  correction with reason "resync" (expected never; counted by the bench).
-  The prototype's `from_index` and every other recorded value are
-  unchanged. On the second full-suite run no "resync" was sent (0 of
-  31 205 corrections; measured), and the 6 labels have the bank's, and the
+  correction with reason "resync" (counted by the bench; its reach is not
+  bounded by the 20 s correction reach, "Events" above). Measured: never
+  on the suite (0 of 31 205 corrections on the second full-suite run).
+  The resync path is tested by forcing one: a test-only seam
+  (`BankDecoderTestAccess`, a friend of `BankDecoder` and `BankChannel`
+  that adds no code to the engine) makes a same-text replacement in the
+  bank's list ("E" from 2.0 to 5.0 s and "T" from 3.0 to 3.5 s become "T",
+  "E" with no correction), and the test checks that exactly one resync
+  follows and leaves the consumer's list equal to the bank's. The
+  prototype's `from_index` and every other recorded value are unchanged.
+  On the second full-suite run the 6 labels have the bank's, and the
   prototype's, text.
 - **The bench.** `kz4ap-bench` assembles each track's final and immediate
   text from the events (`TrackText`), writes both per track (`text`, the
@@ -3075,7 +3108,7 @@ parameter was changed for this run.
 | Bank corrections | a replacement at t changes nothing that starts before t − 20 s; overlap cut at max(from, t − 20 s); recorded only if the text differs, with its kept-character count | `BankConfig::correction_reach_s`; `bank::Output::replace_from` | 20 s owner; overlap cut heuristic |
 | Bank switch replacement | from the start of the new branch's character containing the time its eligible run began (its own time base); a fallback pick from the switch's time | `bank::BankChannel` | heuristic (spec 4.8; the fallback rule documented behavior) |
 | Bank anchor mixing (engine) | u[n] = y[n] exp(−jφ[n]), φ[n] = 2π (Σ_{m≤n} Δ[m] − Δ[n]) / r, Δ = detector frequency (oracle: the label's, without its drift) − channel center, Hz, per channel block; no tracker | `BankDecoder::process` | derived: the prototype's `anchored_baseband`, mixing at the frequency where option 1 (the detector decides where the station is) puts the station; the oracle anchor without drift is the plan's choice, not tuned |
-| Bank events (engine) | new characters, then corrections (index: the smaller of the number kept and the first position whose text changed; the bank's characters from it on; time, reason, reach), applied in order, plus a "resync" correction if the consumer's list ever differs from the bank's; final text = all corrections applied, immediate text = characters as first appended | `TextCorrection`, `DecodeUpdate::corrections`, `DecodedTextEvent::corrections`; bench `TrackText` | derived: the consumer's rule rebuilds the bank's final text exactly (proof in section 8c); not signal processing, an interface choice of the port (owner decision D1 for `--decoder`); the event's probability 1, speed 0 and confidence 0 are placeholders |
+| Bank events (engine) | new characters, then corrections (index: the smaller of the number kept and the first position whose text changed; the bank's characters from it on; time, reason, reach), applied in order, plus a "resync" correction if the consumer's list ever differs from the bank's (its reach not bounded by the 20 s correction reach; never on the suite, measured; tested by forcing one); final text = all corrections applied, immediate text = characters as first appended | `TextCorrection`, `DecodeUpdate::corrections`, `DecodedTextEvent::corrections`; bench `TrackText` | derived: the consumer's rule rebuilds the bank's final text exactly (proof in section 8c); not signal processing, an interface choice of the port (owner decision D1 for `--decoder`); the event's probability 1, speed 0 and confidence 0 are placeholders |
 
 ## 11. Definitions used in tests and the benchmark
 

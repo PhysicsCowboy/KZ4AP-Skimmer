@@ -29,9 +29,13 @@ struct TextCorrection {
     std::vector<DecodedSymbol> chars;
     double t_s = 0;      // when the decoder made the correction, s (stream time)
     // the bank's reason: "switch", "rekey" or "timeout"; "resync" for one the BankDecoder adds when the list's text
-    // changed without a correction (expected never; see docs/signal-processing.md section 8c)
+    // changed without a correction (measured: never on the suite, 0 of 31 205; see docs/signal-processing.md
+    // section 8c)
     std::string reason;
-    double reach_s = 0;  // t_s minus the start of the first replaced character, s (at most the correction reach)
+    // t_s minus the start of the first replaced character, s: at most the correction reach (20 s), except for a
+    // "resync", whose first replaced character can be an older kept one that a same-text replacement moved, so its
+    // reach has no bound but the channel's start
+    double reach_s = 0;
 };
 
 struct DecodeUpdate {

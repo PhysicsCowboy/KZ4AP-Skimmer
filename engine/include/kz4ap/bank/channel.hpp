@@ -25,6 +25,10 @@
 #include <utility>
 #include <vector>
 
+namespace kz4ap {
+struct BankDecoderTestAccess;  // test-only seam (engine/tests/bank_decoder_test.cpp); no code in the engine
+}  // namespace kz4ap
+
 namespace kz4ap::bank {
 
 // One published character.
@@ -239,6 +243,9 @@ public:
     std::size_t periodicity_records() const { return result_.periodicity.size(); }
 
 private:
+    // The resync test changes the published list directly, as no recorded stream makes the bank do it.
+    friend struct ::kz4ap::BankDecoderTestAccess;
+
     void append_sample(std::complex<double> x);
     void process_block(std::int64_t n0, std::int64_t n1);
     void compact();

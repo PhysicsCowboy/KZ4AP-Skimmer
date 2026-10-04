@@ -40,6 +40,9 @@ public:
     const bank::BankChannel& channel() const { return *channel_; }
 
 private:
+    // Test-only seam (engine/tests/bank_decoder_test.cpp): reaches the bank's published list to force a "resync".
+    friend struct BankDecoderTestAccess;
+
     void push_mixed(std::span<const std::complex<double>> u);
     void collect_appended();
     DecodeUpdate take_update();
