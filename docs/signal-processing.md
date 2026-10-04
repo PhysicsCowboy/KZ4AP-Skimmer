@@ -2802,6 +2802,20 @@ front of it are the Matched path's, unchanged.
   first published, so its texts are exact and its character times can
   differ from the bank's final ones by that re-timing (up to 5.0 ms on the
   speed-turnover golden stream, measured).
+  **Known defect (measured, milestone 2c Task 10):** the proof assumes
+  that the characters a correction keeps are the first `from_index`
+  characters of the list. `Output::replace_from` keeps every character
+  that starts more than 20 s before the correction or ends before the
+  cut, and sets `from_index` to the number kept; when two characters
+  overlap in time, a kept one can follow a replaced one in the list, so
+  the kept characters are not a prefix. The consumer then keeps the
+  replaced character and drops the kept one: its final text differs from
+  the bank's (`BankChannel::output`, which is right) by that character.
+  On the full suite this happened on 6 of 2 919 oracle signals and none
+  of 660 through the detector path, each time changing one or two
+  characters and no edit count (results record
+  `docs/plans/2026-10-03-milestone-2c-bank-results.md`, section 4.4). The
+  immediate text and the replay tool's text are not affected.
 - **The bench.** `kz4ap-bench` assembles each track's final and immediate
   text from the events (`TrackText`), writes both per track (`text`, the
   final text as before, and `text_immediate`), and scores both: `cer`
@@ -2842,6 +2856,76 @@ the event format, the consumer's rule and the immediate text are this
 port's interface choices (owner decision D1 for `--decoder`); probability
 1, speed 0 and confidence 0 are placeholders for values the bank does not
 produce.
+
+### Measured: the bank against Matched and Envelope (milestone 2c, Plan A)
+
+Full suite, 3 seeds (`kz4ap_synth.suites`: 120 oracle test cases, the 27
+oracle copies included, and 39 scorings through the detector path; 3 531
+scored signals, 457 168.6 channel-seconds), `kz4ap-bench --decoder bank` on
+the Linux machine (Ubuntu 22.04, 10-core Intel Xeon (Ice Lake), g++ 11.4,
+exact-math build), 10 bench processes at once, 110 min of wall time.
+Envelope and Matched are stage 1's result files, checked identical on 54
+runs with this build. Source: results record
+`docs/plans/2026-10-03-milestone-2c-bank-results.md`, section 4 (raw
+summaries git-ignored under `build/suite/full3/experiments/linux/`). CER is
+a fraction (edits per reference symbol); parentheses are bootstrap 95%
+intervals over signals; "paired" is the mean per-signal difference. No
+parameter was changed for this run.
+
+| part | bank CER | Matched CER | Envelope CER | bank − Matched, paired | bank − Envelope, paired |
+|---|---|---|---|---|---|
+| oracle test cases (2 871 signals) | 0.369 (0.352–0.385) | 0.457 (0.442–0.473) | 0.625 (0.599–0.655) | −0.076 (−0.086 to −0.066) | −0.252 (−0.272 to −0.232) |
+| through the detector path (660 signals) | 0.448 (0.409–0.490) | 0.467 (0.426–0.505) | 0.482 (0.442–0.525) | +0.009 (−0.007 to +0.026) | −0.063 (−0.088 to −0.039) |
+
+- **Against the prototype.** Every per-regime paired comparison (140
+  regimes against Matched and against Envelope) has the prototype's values
+  from the stage-1 results record, section 4.3.1, except the four group F
+  drift rows (272 of 280 pairs identical). Signal by signal, the decoded
+  text equals the prototype's on 2 889 of 2 895 non-drifting oracle signals
+  and all 660 through the detector path. The 15 drifting labels that differ
+  are the anchor without the drift (the prototype mixed as the engine mixes
+  reproduces all 15; not comparable until a frequency tracker is in the
+  loop). The 6 others are the correction-event defect described under "The
+  consumer's rule" above.
+- **Every regime** (suite rows marked "not meaningful (oracle anchor)" left
+  out, 133 rows): against Matched 50 better, 26 worse, 57 unchanged;
+  against Envelope 85 better, 16 worse, 32 unchanged ("better" or "worse":
+  the paired interval excludes 0, a heuristic convention). Worse than
+  Matched: strong neighbors at +10 and +20 dB relative to the wanted
+  station's key-down power (group E), crowded channels 0 to 100 Hz apart,
+  10 WPM and the 30 → 15 WPM ramp, same-track QSOs scored per station,
+  12 WPM in white noise, fast-fading hand keying, tune-up 0.6 s through the
+  detector path, and clean machine, computer and paddle keying (+0.002 to
+  +0.014 CER). Group A, S₅₀₀ (key-down carrier power over noise power in
+  500 Hz) at CER 0.10: −0.1, −0.0 and 1.8 dB of S₅₀₀ at 12, 25 and 40 WPM
+  (Matched −0.2, 1.1, 2.9 dB of S₅₀₀; Envelope 7.2, 5.1, 6.0 dB of S₅₀₀).
+- **Displayed text.** CER of the text as first published (corrections
+  ignored) 0.411, of the final text 0.382, over all 3 531 signals; paired
+  immediate minus final +0.027 (+0.023 to +0.032), positive in every group
+  except tune-up with oracle channels (−0.004, interval containing 0). The
+  corrections change 11.4 characters per channel-minute (Levenshtein
+  distance from immediate to final text; 86 913 characters on 3 177 of 3 556
+  tracks). The engine's bench writes the two texts, not the events, so the
+  count and reach of corrections are the prototype's (stage 1): 4.09 per
+  channel-minute, reach median 1.544 s, 99th percentile 19.861 s, maximum
+  20.000 s. For Matched and Envelope the two texts are equal.
+- **Cost.** 134.1 ms of CPU per channel-second through the engine
+  (130.7 ms on oracle test cases, 166.1 ms through the detector path), all
+  but 0.1 to 0.8 ms of it in the decoder; per group from 54.4 ms (Farnsworth)
+  to 260.8 ms (interference). On the development set, 130.7 ms against the
+  replay tool's 128.2 ms (Task 9). On the same 26 test cases Matched costs
+  0.610 ms and Envelope 0.344 ms, so the bank costs about 240 and 430 times
+  as much. One core decodes about 7.5 bank channels in real time (derived).
+- **Detection** (behind the Matched path's live detector, as the bench
+  counts it): recall equal for all three decoders in every group; false
+  tracks equal to Matched's except the strong group (bank 1, Matched and
+  Envelope 12 each); tracks per QSO equal to Matched's in every group-H tag;
+  every count equal to the prototype's in stage 1.
+- **Status.** Measured. The F drift rows are not comparable with the
+  prototype (anchor without drift). The intervals treat signals as
+  independent, although signals of one recording share its noise; they are
+  likely too narrow where a regime has few recordings (stage-1 results
+  record, section 4.3).
 
 ## 9. Timing and latency
 
