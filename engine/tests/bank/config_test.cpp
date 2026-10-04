@@ -85,3 +85,11 @@ TEST(BankConfig, DefaultsEqualThePrototypes) {
     EXPECT_EQ(c.correction_reach_s, g.at("correction_reach_s").get<double>());
     EXPECT_EQ(g.size(), 61u) << "ProtoConfig has a field that BankConfig does not mirror";
 }
+
+// Plan B's fields, which the prototype does not have (docs/signal-processing.md section 8c).
+TEST(BankConfig, PlanBDefaults) {
+    const kz4ap::bank::BankConfig c{};
+    // B3: the stuck-level recovery after 4 tau_n of non-zero input with no accepted tap (heuristic), s
+    EXPECT_EQ(c.noise_stuck_s, 8.0);
+    EXPECT_EQ(c.noise_stuck_s, 4.0 * c.noise_tau_s);
+}

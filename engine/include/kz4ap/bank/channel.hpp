@@ -244,6 +244,10 @@ public:
     // The |v_k|^2 window's storage: values allocated (branches x columns) and their size, bytes.
     std::size_t p_window_values() const { return p_win_.v.size(); }
     std::size_t p_window_bytes() const { return p_win_.v.size() * sizeof(p_win_.v[0]); }
+    // The noise estimate's diagnostics (Plan B, B3): how often its stuck-level recovery fired (each firing
+    // resets every branch), and the blocks of exact zeros it skipped.
+    int noise_recoveries() const { return noise_->recoveries(); }
+    std::int64_t noise_zero_blocks() const { return noise_->zero_blocks(); }
 
 private:
     // The resync test changes the published list directly, as no recorded stream makes the bank do it.

@@ -209,6 +209,9 @@ ordered_json decode_one(const kz4ap::bank::BankConfig& cfg, const Pending& p, in
     out["label_index"] = label_index;
     out["rate_hz"] = rate;
     out["cpu_s"] = kz4ap::bench::thread_cpu_seconds() - started;
+    // Plan B (B3): the noise estimate's stuck-level recoveries and skipped blocks of exact zeros
+    out["noise_recoveries"] = channel.noise_recoveries();
+    out["noise_zero_blocks"] = channel.noise_zero_blocks();
     out["channel_s"] = static_cast<double>(samples) / rate;
     return out;
 }

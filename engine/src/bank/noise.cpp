@@ -25,6 +25,21 @@ int window_column(std::int64_t i, std::int64_t base, const M& P) {
     return static_cast<int>(c);
 }
 
+// Every input sample from absolute index from to to (exclusive) is exactly 0 FS (both components; -0.0 counts
+// as 0). Element j of u is absolute sample base + j.
+bool all_zero(std::span<const std::complex<double>> u, std::int64_t base, std::int64_t from, std::int64_t to) {
+    if (from - base < 0 || to - base > static_cast<std::int64_t>(u.size()))
+        throw std::out_of_range("noise: sample index outside the window of u");
+    for (std::int64_t i = from; i < to; ++i) {
+        const auto& x = u[static_cast<std::size_t>(i - base)];
+        if (x.real() != 0.0 || x.imag() != 0.0) return false;
+    }
+    return true;
+}
+
+// The warm-up's scale: in Gaussian noise the 20% quantile of |v|^2 is 2 sigma_v^2 (-ln 0.8) (derived).
+const double kWarmupScale = 2.0 * -std::log(0.8);
+
 }  // namespace
 
 double guard_mean(double kappa) { return 1.0 - kappa * std::exp(-kappa) / (1.0 - std::exp(-kappa)); }
@@ -57,41 +72,79 @@ ThreeTapNoise::ThreeTapNoise(const BankConfig& cfg, double rate_hz, std::vector<
       m_(guard_mean(cfg.noise_guard)),
       alpha_(1.0 - std::exp(-1.0 / (cfg.noise_tau_s * rate_hz))),
       warmup_(std::max(1, round_int(cfg.noise_warmup_s * rate_hz))),
+      stuck_(std::isfinite(cfg.noise_stuck_s)
+                 ? std::max<std::int64_t>(1, static_cast<std::int64_t>(std::nearbyint(cfg.noise_stuck_s * rate_hz)))
+                 : std::numeric_limits<std::int64_t>::max()),
       origin_(first_sample),
+      resume_(first_sample),
       var_(n_.size(), std::numeric_limits<double>::quiet_NaN()),
-      weight_(n_.size(), 0.0) {}
-
-void ThreeTapNoise::update(const Matrix& P, std::int64_t n0, std::int64_t n1, std::int64_t base) {
-    update_impl(P, n0, n1, base);
+      weight_(n_.size(), 0.0),
+      hist_(n_.size()),
+      quiet_(0) {
+    if (!(cfg.noise_stuck_s > 0.0)) throw std::invalid_argument("noise_stuck_s must be positive (s)");
 }
 
-void ThreeTapNoise::update(const PowerMatrix& P, std::int64_t n0, std::int64_t n1, std::int64_t base) {
-    update_impl(P, n0, n1, base);
+void ThreeTapNoise::update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0,
+                           std::int64_t n1, std::int64_t base) {
+    update_impl(u, P, n0, n1, base);
+}
+
+void ThreeTapNoise::update(std::span<const std::complex<double>> u, const PowerMatrix& P, std::int64_t n0,
+                           std::int64_t n1, std::int64_t base) {
+    update_impl(u, P, n0, n1, base);
 }
 
 // P.at gives a double or a float; every value is read into a double (exact for a float), so both storages
 // give the same arithmetic.
 template <class M>
-void ThreeTapNoise::update_impl(const M& P, std::int64_t n0, std::int64_t n1, std::int64_t base) {
+void ThreeTapNoise::update_impl(std::span<const std::complex<double>> u, const M& P, std::int64_t n0,
+                                std::int64_t n1, std::int64_t base) {
     if (n1 <= n0) return;
+    // Exact zeros are missing data (a receiver's output carries noise): the block changes nothing.
+    if (all_zero(u, base, n0, n1)) {
+        ++zero_blocks_;
+        gap_ = true;
+        return;
+    }
+    if (gap_) {
+        resume_ = n0;  // taps are counted again from 2 N_k samples into this run of non-zero input
+        gap_ = false;
+    }
     const std::size_t K = n_.size();
+    const int c0 = window_column(n0, base, P);
+    const int c1 = window_column(n1 - 1, base, P) + 1;
     if (!started_) {
-        // the warm-up reads every sample from the stream's start, origin_ ... n1 - 1
-        const int from = window_column(origin_, base, P);
-        const int to = window_column(n1 - 1, base, P) + 1;
-        const double scale = 2.0 * -std::log(0.8);
+        // The warm-up reads every sample of non-zero input so far (without exact zeros: every sample from the
+        // stream's start, origin_ ... n1 - 1, as the prototype's).
+        nonzero_ += n1 - n0;
         for (std::size_t k = 0; k < K; ++k) {
-            std::vector<double> row(static_cast<std::size_t>(to - from));
-            for (int i = from; i < to; ++i) row[static_cast<std::size_t>(i - from)] = P.at(static_cast<int>(k), i);
-            const double q = quantile_linear(std::move(row), 0.2) / scale;
+            auto& h = hist_[k];
+            for (int i = c0; i < c1; ++i) h.push_back(P.at(static_cast<int>(k), i));
+            const double q = quantile_linear(h, 0.2) / kWarmupScale;
             var_[k] = std::max(q, kMinVar);  // np.maximum: NaN propagates (std::max returns q, as NaN < x is false)
         }
-        if (n1 - origin_ >= warmup_) {
+        if (nonzero_ >= warmup_) {
             started_ = true;
             std::fill(weight_.begin(), weight_.end(), 0.1 * warmup_);  // milestone 2: the warm-up's weight
+            // From now on hist_ keeps the last warmup_ samples, for the recovery.
+            const auto keep = static_cast<std::size_t>(warmup_);
+            for (auto& h : hist_) {
+                if (h.size() > keep) h.erase(h.begin(), h.end() - static_cast<std::ptrdiff_t>(keep));
+                h.shrink_to_fit();
+            }
+            hist_pos_ = 0;  // the oldest
         }
         return;
     }
+    for (std::size_t k = 0; k < K; ++k) {
+        auto& h = hist_[k];
+        std::size_t pos = hist_pos_;
+        for (int i = c0; i < c1; ++i) {
+            h[pos] = P.at(static_cast<int>(k), i);
+            if (++pos == h.size()) pos = 0;
+        }
+    }
+    hist_pos_ = (hist_pos_ + static_cast<std::size_t>(c1 - c0)) % static_cast<std::size_t>(warmup_);
     std::vector<int> count(K, 0);
     std::vector<double> sum_mid(K, 0.0);
     bool any = false;
@@ -99,7 +152,8 @@ void ThreeTapNoise::update_impl(const M& P, std::int64_t n0, std::int64_t n1, st
         const std::int64_t lag = n_[k];
         const int r = static_cast<int>(k);
         const double two_var = 2.0 * var_[k];
-        for (std::int64_t i = std::max(n0, origin_ + 2 * lag); i < n1; ++i) {  // valid: i - origin >= 2 N_k
+        // valid: i - resume >= 2 N_k (resume = origin without exact zeros, as the prototype's)
+        for (std::int64_t i = std::max(n0, resume_ + 2 * lag); i < n1; ++i) {
             const double now = P.at(r, window_column(i, base, P));
             const double mid = P.at(r, window_column(i - lag, base, P));
             const double old = P.at(r, window_column(i - 2 * lag, base, P));
@@ -110,16 +164,32 @@ void ThreeTapNoise::update_impl(const M& P, std::int64_t n0, std::int64_t n1, st
         }
         any = any || count[k] > 0;
     }
-    if (!any) return;
-    for (std::size_t k = 0; k < K; ++k) {
-        const double c = static_cast<double>(count[k]);
-        const double mean_mid = sum_mid[k] / std::max(c, 1.0);
-        weight_[k] += c;
-        if (count[k] == 0) continue;
-        const double step = std::max(1.0 - std::pow(1.0 - alpha_, c), c / std::max(weight_[k], 1.0));
-        const double target = mean_mid / (2.0 * m_);
-        var_[k] = std::max(var_[k] + step * (target - var_[k]), kMinVar);
+    if (any) {
+        for (std::size_t k = 0; k < K; ++k) {
+            const double c = static_cast<double>(count[k]);
+            const double mean_mid = sum_mid[k] / std::max(c, 1.0);
+            weight_[k] += c;
+            if (count[k] == 0) continue;
+            const double step = std::max(1.0 - std::pow(1.0 - alpha_, c), c / std::max(weight_[k], 1.0));
+            const double target = mean_mid / (2.0 * m_);
+            var_[k] = std::max(var_[k] + step * (target - var_[k]), kMinVar);
+        }
     }
+    // Recovery of a stuck level (heuristic): branch 1 (row 0, the shortest boxcar, which sees noise in every
+    // character space up to max_wpm) has accepted no middle tap for noise_stuck_s of non-zero input. Then every
+    // branch's level is set again by the warm-up rule over its last noise_warmup_s of non-zero input; W and the
+    // update carry on. Gated on branch 1 so that a long branch blind to a station's spaces is not reset to the
+    // station's power (Plan B, B3 ruling (A)).
+    if (K == 0) return;
+    if (count[0] > 0) {
+        quiet_ = 0;
+        return;
+    }
+    quiet_ += n1 - n0;
+    if (quiet_ < stuck_) return;
+    for (std::size_t k = 0; k < K; ++k) var_[k] = std::max(quantile_linear(hist_[k], 0.2) / kWarmupScale, kMinVar);
+    quiet_ = 0;
+    ++recoveries_;
 }
 
 // --- BranchNoise --------------------------------------------------------------------------------------
@@ -128,14 +198,14 @@ BranchNoise::BranchNoise(const BankConfig& cfg, double rate_hz, std::vector<int>
                          std::int64_t first_sample)
     : est_(cfg, rate_hz, std::move(branch_n), first_sample) {}
 
-void BranchNoise::update(std::span<const std::complex<double>>, const Matrix& P, std::int64_t n0, std::int64_t n1,
+void BranchNoise::update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0, std::int64_t n1,
                          std::int64_t base) {
-    est_.update(P, n0, n1, base);
+    est_.update(u, P, n0, n1, base);
 }
 
-void BranchNoise::update(std::span<const std::complex<double>>, const PowerMatrix& P, std::int64_t n0,
+void BranchNoise::update(std::span<const std::complex<double>> u, const PowerMatrix& P, std::int64_t n0,
                          std::int64_t n1, std::int64_t base) {
-    est_.update(P, n0, n1, base);
+    est_.update(u, P, n0, n1, base);
 }
 
 // --- SpectrumNoise ------------------------------------------------------------------------------------
@@ -197,13 +267,14 @@ void SpectrumNoise::update(std::span<const std::complex<double>> u, const PowerM
 template <class M>
 void SpectrumNoise::update_impl(std::span<const std::complex<double>> u, const M& P, std::int64_t n0,
                                 std::int64_t n1, std::int64_t base) {
-    ref_.update(P, n0, n1, base);  // branch 1 only: ref_ has one branch and reads row 0
+    ref_.update(u, P, n0, n1, base);  // branch 1 only: ref_ has one branch and reads row 0
     const int look = n_[0] - 1 + reach_;  // the flag needs |v_1|^2 this far past a segment
     while (next_start_ + m_ + look <= n1) {
         const std::int64_t s = next_start_;
         next_start_ += m_;
         if (!ref_.started()) continue;
-        const auto c = clean(P, s, base);
+        if (all_zero(u, base, s, s + m_)) continue;  // missing data: not offered
+        const auto c = clean(u, P, s, base);
         int kept = 0;
         for (char x : c) kept += x;
         const double fraction = static_cast<double>(kept) / m_;
@@ -215,7 +286,8 @@ void SpectrumNoise::update_impl(std::span<const std::complex<double>> u, const M
 }
 
 template <class M>
-std::vector<char> SpectrumNoise::clean(const M& P, std::int64_t s, std::int64_t base) const {
+std::vector<char> SpectrumNoise::clean(std::span<const std::complex<double>> u, const M& P, std::int64_t s,
+                                       std::int64_t base) const {
     // Positions relative to the window's first column (absolute sample base); the window holds every sample
     // the flag needs (s + M + N_1 - 1 + reach <= n1, the update's end).
     // Absolute (64-bit) first: the flag window starts no earlier than the stream's first sample.
@@ -236,7 +308,10 @@ std::vector<char> SpectrumNoise::clean(const M& P, std::int64_t s, std::int64_t 
         // u[i] feeds v_1[i .. i + N_1 - 1]; none of them (+/- the reach) may be flagged
         const int a = std::clamp(i - reach_ - lo, 0, len);
         const int b = std::clamp(i + n1 - 1 + reach_ - lo + 1, 0, len);
-        out[static_cast<std::size_t>(i - rel)] = (c[static_cast<std::size_t>(b)] - c[static_cast<std::size_t>(a)]) == 0;
+        // an exact-zero sample is missing data, left out as a flagged one (u and P share the window's base)
+        const auto& x = u[static_cast<std::size_t>(s - base) + static_cast<std::size_t>(i - rel)];
+        out[static_cast<std::size_t>(i - rel)] =
+            (c[static_cast<std::size_t>(b)] - c[static_cast<std::size_t>(a)]) == 0 && (x.real() != 0.0 || x.imag() != 0.0);
     }
     return out;
 }

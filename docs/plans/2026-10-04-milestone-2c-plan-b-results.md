@@ -30,6 +30,13 @@ by at most 1.8 · 10⁻¹⁵ nats, within a derived bound. On the Windows PC (F-
 alternated runs falls from 74.5 to 66.2 ms per channel-second (−11%; the PC's run-to-run spread is larger). SLEEF's
 portable SSE2 functions alone would have made the decoder slower (section 4.1).
 
+**Answer (B3, exact zeros and a stuck noise level).** Exact zeros are now missing data and a stuck noise level
+recovers: a stream that starts with 1 s of exact zeros decodes as the station alone (the same text, times shifted
+by 1 s within 0.67 ms), where Plan A keyed nothing; a 60 dB rise of the noise is followed within a factor 2 by
+12.32 s after it (derived), a 10 s carrier 40 dB above the noise is forgotten within a factor 2 22 s after it
+stops (derived 22.1 s, measured 22.0 s). The development set has no exact zeros and the recovery never fires on
+it: **all 525 channels decode to the identical final text with every decoded record identical** (section 5).
+
 ## 0. Terms used in this record
 
 - **Decoder**: Envelope, Matched and the bank are the three decoders; here only the bank decoder in C++ is
@@ -619,3 +626,62 @@ Tests: `ctest --preset windows` 324 of 324 and `ctest --preset linux` 324 of 324
 skipped, 1 disabled); smoke unchanged (Envelope CER 0.0353, Matched 0.0436). Raw outputs (git-ignored):
 `build/suite/full3/experiments/linux/c2-diff-bank-b2b-cinz-vs-bank-b2a2.md`,
 `compare-bank-b2b-cinz-vs-bank-b2a2.md`, `b2b-cinz.log`.
+
+## 5. Exact zeros and a stuck noise level (B3)
+
+### 5.1 What changed
+
+Two rules in the bank decoder's noise estimate (`docs/signal-processing.md` section 8c, "Noise", "Exact zeros",
+"Recovery of a stuck level"; "Channel decoder", "Exact zeros"):
+
+1. **Exact zeros are missing data** (derived: a receiver's output carries noise). A block of input samples all
+   exactly 0 FS updates nothing in the three-tap estimate (warm-up, level, W, the recovery's count); the warm-up
+   runs on the first 0.32 s of non-zero input; taps count again 2N_k into the next non-zero block. In the spectrum
+   an all-zero segment is not offered and each exact-zero sample is left out of the mask as a flagged sample is
+   (per sample: stricter than the plan's per-segment wording, accepted by the controller). Until the first
+   non-zero block σ² is unknown, and the channel keys, observes and publishes nothing and keeps its clocks at
+   its start state.
+2. **Recovery of a stuck level** (heuristic): when branch 1 has accepted no tap for `noise_stuck_s` = 8 s (4 τ_n)
+   of non-zero input, every branch's level is set again by the warm-up rule over its last 0.32 s of non-zero
+   input. The brief's first form was per branch; it fired on the noise golden stream in the "branch" fallback
+   (the long branches see no noise during continuous 25 words/min keying: a tap of branch 32 needs 0.551 s free
+   of the station, a word space is 0.336 s) and set those branches to the station's power, 3 to 4 orders of
+   magnitude too high, moving `BankNoise.BranchFallbackMatchesPrototype`. The controller ruled option (A): gate
+   on branch 1, which sees noise in every character space up to 100 words/min (a tap needs 27.3 ms, a character
+   space at 100 words/min is 36 ms; derived). With the gate that golden passes unchanged.
+
+`noise_stuck_s` is a new `BankConfig` field (Plan B, not in the prototype); it is now in the bench's configuration
+list, so decoded files record it and `--set noise_stuck_s=...` works. The replay tool writes two diagnostics per
+channel: `noise_recoveries` and `noise_zero_blocks`.
+
+### 5.2 Golden tests
+
+All golden comparisons pass unchanged except the `zero_pad` stream's (1 s of exact zeros, then a 25 words/min
+station): its golden result was the prototype's exact-zero defect (it keyed nothing). The plan's statement that
+the golden streams have no exact zeros was wrong for this one. By the controller's ruling it left the
+`ChannelGolden` and bench `BankJsonResult` lists; `BankChannel.LeadingExactZerosDecodeAsTheStationAlone` replaces
+it (and Plan A's `ExactZerosAtTheStartPublishNoNaN`) with a stricter requirement: the text decoded from the stream
+without its zeros, characters' times + 1 s within one block (measured 0.67 ms), no NaN published.
+
+### 5.3 Tests added (`engine/tests/bank/noise_test.cpp`, `channel_test.cpp`, `config_test.cpp`)
+
+| test | requirement | measured (Windows) |
+|---|---|---|
+| `ExactZerosThenNoiseStayFiniteAndPositive` (Plan A's, enabled) | 5 s zeros then noise: unknown before, finite after, > 0 from 0.32 s after the first non-zero input; within a factor 2 at the end | passes; 234 zero blocks |
+| `AGapOfExactZerosLeavesTheEstimateUnchanged` | 5 s gap inside noise: σ² bit for bit constant across the gap | passes |
+| `ANoiseRiseOf60dBRecoversByTheDerivedTime` | within a factor 2 from the rise + 12.32 s (derived) | recovery at 8.011 s; passes |
+| `ALongCarrierRecoversByTheDerivedTime` | 10 s carrier 40 dB above branch 1's noise: within a factor 2 by the derived t_k (22.1 s for branch 1, 28.0 s for branch 32) + 0.25 s | 44.2 dB at the carrier's end; 1.96 at 22.0 s; passes |
+| `AKeyedStationDoesNotTriggerTheRecovery` | no recovery on the noise golden stream, any method | passes |
+| `LeadingExactZerosDecodeAsTheStationAlone` | section 5.2 | 0.67 ms |
+| `BankConfig.PlanBDefaults` | noise_stuck_s = 8 s = 4 τ_n | passes |
+
+`BankNoise.ExactZerosThenNoiseAsThePrototype`, which pinned the defect, is removed. Observation (not B3): in the
+"branch" fallback, branch k = 25 (index 24) reads 0.34 to 0.47 of white noise's σ²_v,k for the whole 10 s of the
+gap test's streams with or without the gap (seeds 21, 22): the three-tap estimate's slow rise from a low warm-up.
+
+### 5.4 The text check
+
+A probe before the ruling (`bank-b3-probe`: the per-branch rule, which for the default "spectrum" method is the
+same code as the gated rule, since that method has only branch 1's three-tap estimate) against `bank-b2b`:
+**525 of 525 identical final texts and decoded records**, 0 recoveries, 0 blocks of exact zeros.
+`bank-b3`, from the commit: see 5.5.

@@ -4,8 +4,9 @@
 // the text, the characters, corrections, over starts, selections and switches exactly (the discrete values) or
 // to relative 1e-9 (times, fitted T, scores); T_P, each window's T and the window are grid values and compared
 // exactly. Then the Review Focus tests (1: the same result however the stream is split into pushes; 2: a stream
-// cut mid-character and mid-over; 3: exact zeros publish no NaN; 4: the correction cut's clipping; 5: 2000
-// samples/s) and the prototype's channel tests (training/tests/test_proto_channel.py), one for one.
+// cut mid-character and mid-over; 3: exact zeros, missing data since Plan B's B3; 4: the correction cut's
+// clipping; 5: 2000 samples/s) and the prototype's channel tests (training/tests/test_proto_channel.py), one for
+// one.
 #include "kz4ap/bank/channel.hpp"
 
 #include "golden.hpp"
@@ -248,8 +249,11 @@ TEST_P(ChannelGolden, MatchesThePrototypesRun) {
     expect_published_finite(r);
 }
 
+// "zero_pad" (1 s of exact zeros, then a station) left this list in Plan B's B3: its golden pinned the prototype's
+// exact-zero defect (it keyed nothing); BankChannel.LeadingExactZerosDecodeAsTheStationAlone now requires it to
+// decode as the station alone. It stays in ChannelSplit (pushes against the single push, not the prototype).
 INSTANTIATE_TEST_SUITE_P(Streams, ChannelGolden,
-                         ::testing::Values("clean", "turnover", "noise_tail", "step", "farnsworth", "zero_pad",
+                         ::testing::Values("clean", "turnover", "noise_tail", "step", "farnsworth",
                                            "first_sample", "slow", "noise", "two_speeds", "tune_up", "long", "short",
                                            "speed_turnover", "clean_2000", "clean_cut"),
                          [](const auto& info) { return info.param; });
@@ -370,15 +374,41 @@ TEST(BankChannel, AStreamCutMidCharacterPublishesThePartialCharacterAndNothingPa
     expect_identical(decode(std::span(u).first(static_cast<std::size_t>(cut)), 1500.0, 47), r);
 }
 
-// ---- Review Focus 3: exact zeros at the start -------------------------------------------------------------
+// ---- Review Focus 3: exact zeros at the start (Plan B, B3) --------------------------------------------------
 
-TEST(BankChannel, ExactZerosAtTheStartPublishNoNaN) {
-    // The prototype's noise estimate goes NaN on exact-zero input (Task 3's finding, kept until Plan B): it keys
-    // nothing here. The port must publish exactly what the prototype publishes, and nothing non-finite.
-    const ChannelResult& r = result_of("zero_pad");
-    expect_matches_golden(r, golden().at("results").at("zero_pad"));
-    expect_published_finite(r);
-    for (const auto& s : r.selections) EXPECT_TRUE(std::isfinite(s.t_s));
+// Plan B task B3 (replaces Plan A's ExactZerosAtTheStartPublishNoNaN, which pinned the prototype's defect: it
+// keyed nothing here): exact zeros are missing data. The zero_pad stream (1 s = 1500 samples of exact zeros,
+// then a 25 words/min station from 0.5 s) decodes as the station alone (the same stream without its leading
+// zeros): the same text, the same characters with their times shifted by 1 s, and no NaN in a published value.
+// The shift is not exact to the last bit: 1500 samples are 46.875 blocks of 32, so every block boundary of the
+// padded stream falls 12 samples (8 ms) later in the station's time than the unpadded stream's, and the noise
+// estimate, the keying and the periodicity are updated once per block. A character's time may therefore move
+// by the edges' quantization to the block grid: the tolerance is one block (21.33 ms).
+TEST(BankChannel, LeadingExactZerosDecodeAsTheStationAlone) {
+    const auto& u = stream_of("zero_pad");
+    const double rate = rate_of("zero_pad");
+    const std::size_t zeros = 1500;
+    for (std::size_t i = 0; i < zeros; ++i) ASSERT_EQ(u[i], std::complex<double>(0.0, 0.0));
+    ASSERT_NE(u[zeros], std::complex<double>(0.0, 0.0));
+    const ChannelResult padded = decode(u, rate);
+    const ChannelResult alone = decode(std::span(u).subspan(zeros), rate);
+    const double shift = static_cast<double>(zeros) / rate;    // 1 s
+    const double tol = BankConfig{}.block_s;                    // s
+    EXPECT_EQ(alone.text, "CQ TEST K1ABC ");
+    EXPECT_EQ(padded.text, alone.text);
+    ASSERT_EQ(padded.chars.size(), alone.chars.size());
+    double worst = 0.0;
+    for (std::size_t i = 0; i < alone.chars.size(); ++i) {
+        EXPECT_EQ(padded.chars[i].text, alone.chars[i].text) << "char " << i;
+        worst = std::max({worst, std::abs(padded.chars[i].start_s - (alone.chars[i].start_s + shift)),
+                          std::abs(padded.chars[i].end_s - (alone.chars[i].end_s + shift))});
+    }
+    EXPECT_LE(worst, tol) << "largest time difference " << worst << " s";
+    std::printf("[ info ] largest character-time difference after the 1 s shift: %.6f s\n", worst);
+    expect_published_finite(padded);
+    for (const auto& s : padded.selections) EXPECT_TRUE(std::isfinite(s.t_s));
+    for (const auto& p : padded.periodicity) EXPECT_TRUE(std::isfinite(p.t_s) && std::isfinite(p.confidence));
+    for (const auto& o : padded.over_starts) EXPECT_TRUE(std::isfinite(o));
 }
 
 TEST(BankChannel, ThePowerWindowStoresFourByteFloats) {

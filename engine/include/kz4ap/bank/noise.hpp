@@ -35,28 +35,58 @@ double quantile_linear(std::vector<double> x, double q);
 // accepted taps is divided by m(kappa). The first estimate is the 20% quantile of |v|^2 over the warm-up
 // (a provisional one before). Updated once per block with the block's starting sigma^2. Branch k reads
 // row k of P (P may have more rows: SpectrumNoise passes the whole matrix for branch 1).
+// Plan B task B3 (docs/signal-processing.md section 8c, "Noise", "Exact zeros" and "Recovery"):
+// - exact zeros are missing data: a block whose input u is all exactly 0 FS updates nothing (not the warm-up,
+//   not the level, not the recovery's count); the warm-up runs on the first noise_warmup_s of non-zero input,
+//   and after a run of zero blocks no tap is counted until 2 N_k samples into the next non-zero run;
+// - recovery of a stuck level: if no middle tap of branch 1 (row 0, the shortest boxcar) has been accepted for
+//   noise_stuck_s of non-zero input, every branch's level is set again by the warm-up rule over its last
+//   noise_warmup_s of non-zero input (gated on branch 1: a long branch sees no noise while a station keys).
 class ThreeTapNoise {
 public:
     // first_sample: the absolute sample index of the stream's first sample (0 for a stream counted from its
     // start, as the prototype's); every index below is absolute (64-bit).
     ThreeTapNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n, std::int64_t first_sample = 0);
-    // Column j of P is absolute sample base + j; n0, n1 are absolute sample indices. P is read as double in
-    // either storage (a PowerMatrix's float32 values convert exactly).
-    void update(const Matrix& P, std::int64_t n0, std::int64_t n1, std::int64_t base = 0);
-    void update(const PowerMatrix& P, std::int64_t n0, std::int64_t n1, std::int64_t base = 0);
+    // Element j of u and column j of P are absolute sample base + j; n0, n1 are absolute sample indices. u is
+    // read only to recognize a block of exact zeros. P is read as double in either storage (a PowerMatrix's
+    // float32 values convert exactly).
+    void update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0, std::int64_t n1,
+                std::int64_t base = 0);
+    void update(std::span<const std::complex<double>> u, const PowerMatrix& P, std::int64_t n0, std::int64_t n1,
+                std::int64_t base = 0);
+    // sigma_v,k^2, FS^2; NaN until the first block of non-zero input.
     const std::vector<double>& var() const { return var_; }
+    // The warm-up is over.
     bool started() const { return started_; }
+    // A first estimate exists (a block of non-zero input has been seen).
+    bool ready() const { return nonzero_ > 0; }
     const std::vector<double>& weight() const { return weight_; }
+    // How often the recovery has fired (each firing resets every branch), and how many blocks of exact zeros
+    // were skipped.
+    int recoveries() const { return recoveries_; }
+    std::int64_t zero_blocks() const { return zero_blocks_; }
 
 private:
     template <class M>
-    void update_impl(const M& P, std::int64_t n0, std::int64_t n1, std::int64_t base);
+    void update_impl(std::span<const std::complex<double>> u, const M& P, std::int64_t n0, std::int64_t n1,
+                     std::int64_t base);
 
     std::vector<int> n_;
     double kappa_, kappa_n_, m_, alpha_;
-    int warmup_;               // samples
+    int warmup_;               // samples (from noise_warmup_s at the point of use)
+    std::int64_t stuck_;       // samples (from noise_stuck_s at the point of use); INT64_MAX: never
     std::int64_t origin_ = 0;  // absolute index of the stream's first sample
+    std::int64_t resume_ = 0;  // absolute index where the current run of non-zero blocks started
+    bool gap_ = false;         // the last block was all exact zeros
+    std::int64_t nonzero_ = 0; // samples of non-zero input during the warm-up (then frozen)
     std::vector<double> var_, weight_;
+    // |v_k|^2 of non-zero input, FS^2, per branch: every sample during the warm-up, then the last warmup_
+    // samples (a ring written at hist_pos_; the quantile does not need their order)
+    std::vector<std::vector<double>> hist_;
+    std::size_t hist_pos_ = 0;
+    std::int64_t quiet_;  // samples of non-zero input since branch 1 (row 0) last accepted a tap
+    int recoveries_ = 0;
+    std::int64_t zero_blocks_ = 0;
     bool started_ = false;
 };
 
@@ -70,8 +100,14 @@ public:
                         std::int64_t base = 0) = 0;
     virtual void update(std::span<const std::complex<double>> u, const PowerMatrix& P, std::int64_t n0,
                         std::int64_t n1, std::int64_t base = 0) = 0;
-    // sigma_v,k^2 per real component, FS^2, one per branch.
+    // sigma_v,k^2 per real component, FS^2, one per branch; NaN until ready().
     virtual std::vector<double> sigma2() const = 0;
+    // A first estimate exists: input other than exact zeros has been seen.
+    virtual bool ready() const = 0;
+    // How often the stuck-level recovery has fired (each firing resets every branch), and the blocks of exact
+    // zeros skipped (diagnostics, docs/signal-processing.md section 8c, "Noise").
+    virtual int recoveries() const = 0;
+    virtual std::int64_t zero_blocks() const = 0;
 };
 
 // The recorded fallback: each branch's own three-tap estimate.
@@ -83,6 +119,9 @@ public:
     void update(std::span<const std::complex<double>> u, const PowerMatrix& P, std::int64_t n0, std::int64_t n1,
                 std::int64_t base = 0) override;
     std::vector<double> sigma2() const override { return est_.var(); }
+    bool ready() const override { return est_.ready(); }
+    int recoveries() const override { return est_.recoveries(); }
+    std::int64_t zero_blocks() const override { return est_.zero_blocks(); }
 
 private:
     ThreeTapNoise est_;
@@ -93,7 +132,8 @@ private:
 // sigma_v,k^2 = 0.5 (W_k . S) / (M b_mask,k). S is an exponential average (tau_n) of Hann-windowed,
 // masked periodograms of u over segments of T_seg, smoothed over +/- spectrum_smoothing_hz; W_k[m] is the
 // mean of |H_k(f)|^2 over bin m. Until the three-tap warm-up is over no segment enters and the shape is
-// white (ratio N_1 / N_k).
+// white (ratio N_1 / N_k). Exact-zero samples of u are missing data: a segment of exact zeros only is not
+// offered, and in any other segment they are left out of the mask as flagged samples are.
 class SpectrumNoise : public NoiseEstimator {
 public:
     SpectrumNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n,
@@ -103,6 +143,9 @@ public:
     void update(std::span<const std::complex<double>> u, const PowerMatrix& P, std::int64_t n0, std::int64_t n1,
                 std::int64_t base = 0) override;
     std::vector<double> sigma2() const override;
+    bool ready() const override { return ref_.ready(); }
+    int recoveries() const override { return ref_.recoveries(); }
+    std::int64_t zero_blocks() const override { return ref_.zero_blocks(); }
     // sigma_v,k^2 per real component, FS^2, from the flat mean of every accepted masked periodogram so far,
     // smoothed as sigma2() smooths it, with no bias correction (the calibration of b_mask,k). Throws if no
     // segment has entered.
@@ -121,7 +164,8 @@ private:
     void update_impl(std::span<const std::complex<double>> u, const M& P, std::int64_t n0, std::int64_t n1,
                      std::int64_t base);
     template <class M>
-    std::vector<char> clean(const M& P, std::int64_t s, std::int64_t base) const;
+    std::vector<char> clean(std::span<const std::complex<double>> u, const M& P, std::int64_t s,
+                            std::int64_t base) const;
     void accept(std::span<const std::complex<double>> seg, const std::vector<char>& clean);
     std::vector<double> smoothed(const std::vector<double>& s) const;
 

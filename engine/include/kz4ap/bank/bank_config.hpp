@@ -3,7 +3,8 @@
 // measured, heuristic or placeholder). The port is faithful: change a value only together with the
 // prototype's. Parameters are in physical units (Hz, s, FS, nats, dB with a named reference); lengths
 // become samples only at the point of use. Defaults are checked against the prototype's by
-// engine/tests/bank/config_test.cpp (golden file engine/tests/data/bank/config.json).
+// engine/tests/bank/config_test.cpp (golden file engine/tests/data/bank/config.json). Plan B adds fields the
+// prototype does not have (marked "Plan B"); their defaults are checked by the same test file.
 #pragma once
 
 #include <cmath>
@@ -40,8 +41,13 @@ struct BankConfig {
     };
     // s, time constant of noise updates (tau_n); mask_bias measured with this default
     double noise_tau_s = 2.0;
-    // s, first estimate: 20% quantile of |v|^2 over this; mask_bias measured with this default
+    // s, first estimate: 20% quantile of |v|^2 over this; mask_bias measured with this default. Plan B (B3): of
+    // non-zero input (exact zeros are missing data); the recovery below re-uses it
     double noise_warmup_s = 0.32;
+    // s, of non-zero input: when branch 1's three-tap guard has accepted no tap for this long, every branch's
+    // level is set again by the warm-up rule (the stuck-level recovery); 4 tau_n; heuristic. Seconds, not dits:
+    // the noise has no keying speed. Plan B (B3), not a prototype field
+    double noise_stuck_s = 8.0;
     // kappa, dimensionless; mask_bias measured with this default
     double noise_guard = 1.75;
     // kappa_n, dimensionless; also the spectrum's mark flag; mask_bias measured with this default

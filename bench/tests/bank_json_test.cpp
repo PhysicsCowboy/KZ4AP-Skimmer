@@ -69,7 +69,11 @@ TEST(BankJson, DumpsAsPythonDumps) {
 TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     const auto g = kz4ap::test::load_golden("channel");
     const ordered_json cfg = kz4ap::bench::to_json(kz4ap::bank::BankConfig{});
-    EXPECT_EQ(py_dumps(cfg), g.at("config_dumps").get<std::string>());
+    // the prototype's ProtoConfig() dump, then Plan B's fields (noise_stuck_s, B3), which the prototype lacks
+    std::string want = g.at("config_dumps").get<std::string>();
+    ASSERT_EQ(want.back(), '}');
+    want.insert(want.size() - 1, ", \"noise_stuck_s\": 8.0");
+    EXPECT_EQ(py_dumps(cfg), want);
     // and back
     EXPECT_EQ(py_dumps(kz4ap::bench::to_json(kz4ap::bench::bank_config_from_json(cfg))), py_dumps(cfg));
     kz4ap::bank::BankConfig c;
@@ -77,6 +81,8 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     kz4ap::bench::set_config_value(c, "x_on_values", ordered_json::array());
     kz4ap::bench::set_config_value(c, "noise_method", ordered_json("branch"));
     kz4ap::bench::set_config_value(c, "comb_teeth", ordered_json(5));
+    kz4ap::bench::set_config_value(c, "noise_stuck_s", ordered_json(16.0));
+    EXPECT_EQ(c.noise_stuck_s, 16.0);
     EXPECT_EQ(c.fit_memory, 24.0);
     EXPECT_TRUE(c.x_on_values.empty());
     EXPECT_EQ(c.noise_method, "branch");
@@ -97,7 +103,10 @@ TEST_P(BankJsonResult, ToJsonDumpsAsThePrototypes) {
               g.at("results").at(GetParam()).at("dumps").get<std::string>());
 }
 
-INSTANTIATE_TEST_SUITE_P(Streams, BankJsonResult, ::testing::Values("clean", "turnover", "noise_tail", "zero_pad"),
+// "zero_pad" (1 s of exact zeros, then a station) left this list in Plan B's B3: its golden pinned the prototype's
+// exact-zero defect (it keyed nothing); BankChannel.LeadingExactZerosDecodeAsTheStationAlone (engine tests) now
+// requires it to decode as the station alone.
+INSTANTIATE_TEST_SUITE_P(Streams, BankJsonResult, ::testing::Values("clean", "turnover", "noise_tail"),
                          [](const auto& info) { return info.param; });
 
 }  // namespace

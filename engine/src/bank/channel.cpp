@@ -448,6 +448,14 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
     noise_->update(std::span<const std::complex<double>>(u_win_.data(), static_cast<std::size_t>(total_ - base_)),
                    p_win_, n0, n1, base_);
     const std::vector<double> sigma2 = noise_->sigma2();
+    if (!noise_->ready()) {
+        // Only exact zeros so far: sigma^2 is unknown (NaN), so nothing is keyed, observed or published, and
+        // the channel stays in its start state, its clocks (over start, unknown amplitude, re-key time-out)
+        // restarted at the block's end: the first block with input other than exact zeros finds the channel
+        // as a stream's first block does (docs/signal-processing.md section 8c, "Exact zeros").
+        for (auto& br : branches_) br.over_start_n = br.unknown_since_n = br.timeout_from_n = n1;
+        return;
+    }
     Matrix P;  // the block's |v|^2 (already rounded to float32, as run's P), FS^2
     P.rows = K;
     P.cols = static_cast<int>(n1 - n0);
