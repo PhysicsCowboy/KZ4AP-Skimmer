@@ -603,7 +603,10 @@ FitBits fit_bits(const BankConfig& cfg, const Durations& obs) {
     for (double x : fit.space_table()) out.v.push_back(bits(x));
     out.v.push_back(bits(fit.weight()));
     for (const auto& [pt, pw] : {std::pair<std::optional<double>, double>{std::nullopt, 0.0}, {0.05, 1.0}}) {
-        for (int i : *fit.grid_index(pt, pw)) out.v.push_back(static_cast<std::uint64_t>(i));
+        // A named copy: ranging over *fit.grid_index(...) directly would read the returned optional after its
+        // lifetime ended (C++20 does not extend a range-for temporary reached through operator*).
+        const std::array<int, 4> idx = *fit.grid_index(pt, pw);
+        for (int i : idx) out.v.push_back(static_cast<std::uint64_t>(i));
         const Fit b = *fit.best(pt, pw);
         for (double x : {b.t_s, b.q, b.w_s, b.tg_s, b.quality, b.weight}) out.v.push_back(bits(x));
     }
@@ -1131,8 +1134,19 @@ TEST(BankFitB2a, LogaddexpIsBitIdenticalToTheFrozenFormula) {
                                          std::numeric_limits<double>::denorm_min(),
                                          -std::numeric_limits<double>::min(), std::numeric_limits<double>::max(),
                                          -std::numeric_limits<double>::max(), -5.216, 0.37, -40.0, 1e-300, -1e-300};
+    // A NaN result matches any NaN: IEEE 754 does not specify the sign or payload of a NaN that an arithmetic
+    // operation returns, and on x86-64 it is the first operand's of the add, an order the compiler chooses
+    // (with GCC 13, -O2, NaN + -NaN came out as +NaN in one function and -NaN in the other).
     for (double x : special)
-        for (double y : special) ASSERT_EQ(bits(logaddexp(x, y)), bits(frozen::logaddexp(x, y))) << x << " " << y;
+        for (double y : special) {
+            const double got = logaddexp(x, y);
+            const double want = frozen::logaddexp(x, y);
+            if (std::isnan(want)) {
+                EXPECT_TRUE(std::isnan(got)) << x << " " << y;
+                continue;
+            }
+            ASSERT_EQ(bits(got), bits(want)) << x << " " << y;
+        }
     std::size_t n = 0;
     for (int i = 0; i < 4'000'000; ++i) {
         const int e = std::uniform_int_distribution<int>(-1030, 1022)(rng);
