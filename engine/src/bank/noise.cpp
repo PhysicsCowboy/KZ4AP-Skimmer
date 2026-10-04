@@ -18,7 +18,8 @@ int round_int(double x) { return static_cast<int>(std::nearbyint(x)); }
 
 // The column of P holding absolute sample i, where column 0 holds absolute sample base (64-bit indices). The
 // difference is a position inside the window, so it fits in int; a sample outside the window is an error.
-int window_column(std::int64_t i, std::int64_t base, const Matrix& P) {
+template <class M>
+int window_column(std::int64_t i, std::int64_t base, const M& P) {
     const std::int64_t c = i - base;
     if (c < 0 || c >= P.cols) throw std::out_of_range("noise: sample index outside the window of P");
     return static_cast<int>(c);
@@ -61,6 +62,17 @@ ThreeTapNoise::ThreeTapNoise(const BankConfig& cfg, double rate_hz, std::vector<
       weight_(n_.size(), 0.0) {}
 
 void ThreeTapNoise::update(const Matrix& P, std::int64_t n0, std::int64_t n1, std::int64_t base) {
+    update_impl(P, n0, n1, base);
+}
+
+void ThreeTapNoise::update(const PowerMatrix& P, std::int64_t n0, std::int64_t n1, std::int64_t base) {
+    update_impl(P, n0, n1, base);
+}
+
+// P.at gives a double or a float; every value is read into a double (exact for a float), so both storages
+// give the same arithmetic.
+template <class M>
+void ThreeTapNoise::update_impl(const M& P, std::int64_t n0, std::int64_t n1, std::int64_t base) {
     if (n1 <= n0) return;
     const std::size_t K = n_.size();
     if (!started_) {
@@ -121,6 +133,11 @@ void BranchNoise::update(std::span<const std::complex<double>>, const Matrix& P,
     est_.update(P, n0, n1, base);
 }
 
+void BranchNoise::update(std::span<const std::complex<double>>, const PowerMatrix& P, std::int64_t n0,
+                         std::int64_t n1, std::int64_t base) {
+    est_.update(P, n0, n1, base);
+}
+
 // --- SpectrumNoise ------------------------------------------------------------------------------------
 
 SpectrumNoise::SpectrumNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n,
@@ -169,6 +186,17 @@ SpectrumNoise::SpectrumNoise(const BankConfig& cfg, double rate_hz, std::vector<
 
 void SpectrumNoise::update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0,
                            std::int64_t n1, std::int64_t base) {
+    update_impl(u, P, n0, n1, base);
+}
+
+void SpectrumNoise::update(std::span<const std::complex<double>> u, const PowerMatrix& P, std::int64_t n0,
+                           std::int64_t n1, std::int64_t base) {
+    update_impl(u, P, n0, n1, base);
+}
+
+template <class M>
+void SpectrumNoise::update_impl(std::span<const std::complex<double>> u, const M& P, std::int64_t n0,
+                                std::int64_t n1, std::int64_t base) {
     ref_.update(P, n0, n1, base);  // branch 1 only: ref_ has one branch and reads row 0
     const int look = n_[0] - 1 + reach_;  // the flag needs |v_1|^2 this far past a segment
     while (next_start_ + m_ + look <= n1) {
@@ -186,7 +214,8 @@ void SpectrumNoise::update(std::span<const std::complex<double>> u, const Matrix
     }
 }
 
-std::vector<char> SpectrumNoise::clean(const Matrix& P, std::int64_t s, std::int64_t base) const {
+template <class M>
+std::vector<char> SpectrumNoise::clean(const M& P, std::int64_t s, std::int64_t base) const {
     // Positions relative to the window's first column (absolute sample base); the window holds every sample
     // the flag needs (s + M + N_1 - 1 + reach <= n1, the update's end).
     // Absolute (64-bit) first: the flag window starts no earlier than the stream's first sample.

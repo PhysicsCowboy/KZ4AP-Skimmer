@@ -399,7 +399,7 @@ void BankChannel::append_sample(std::complex<double> x) {
         const std::complex<double> lo_c = csum_ring_[static_cast<std::size_t>(lo % static_cast<std::int64_t>(R))];
         const double scale = 1.0 / n_[k];  // numpy's complex division by n + 0j
         const std::complex<double> v{(csum_.real() - lo_c.real()) * scale, (csum_.imag() - lo_c.imag()) * scale};
-        p_win_.v[k * cols + col] = boxcar_power_f32(v);
+        p_win_.v[k * cols + col] = static_cast<float>(boxcar_power_f32(v));  // already float32: exact
     }
     u_win_[col] = x;
     ++total_;
@@ -413,15 +413,15 @@ void BankChannel::compact() {
         // grow (up to cap_max; beyond it only if nothing can be dropped, which the block loop rules out)
         const std::int64_t want = std::max<std::int64_t>(
             valid + 1, std::min<std::int64_t>(cap_max, std::max<std::int64_t>(2 * p_win_.cols, 4096)));
-        Matrix grown;
+        PowerMatrix grown;
         grown.rows = p_win_.rows;
         grown.cols = static_cast<int>(want);
-        grown.v.assign(static_cast<std::size_t>(grown.rows) * static_cast<std::size_t>(want), 0.0);
+        grown.v.assign(static_cast<std::size_t>(grown.rows) * static_cast<std::size_t>(want), 0.0f);
         for (int k = 0; k < p_win_.rows; ++k)
             if (valid > 0)
                 std::memcpy(&grown.v[static_cast<std::size_t>(k) * static_cast<std::size_t>(want)],
                             &p_win_.v[static_cast<std::size_t>(k) * static_cast<std::size_t>(p_win_.cols)],
-                            static_cast<std::size_t>(valid) * sizeof(double));
+                            static_cast<std::size_t>(valid) * sizeof(float));
         p_win_ = std::move(grown);
         u_win_.resize(static_cast<std::size_t>(want));
         return;
@@ -429,16 +429,17 @@ void BankChannel::compact() {
     const auto keep = static_cast<std::size_t>(valid - drop);
     const auto d = static_cast<std::size_t>(drop);
     for (int k = 0; k < p_win_.rows; ++k) {
-        double* row = &p_win_.v[static_cast<std::size_t>(k) * static_cast<std::size_t>(p_win_.cols)];
-        std::memmove(row, row + d, keep * sizeof(double));
+        float* row = &p_win_.v[static_cast<std::size_t>(k) * static_cast<std::size_t>(p_win_.cols)];
+        std::memmove(row, row + d, keep * sizeof(float));
     }
     std::memmove(u_win_.data(), u_win_.data() + d, keep * sizeof(std::complex<double>));
     base_ += drop;
 }
 
-std::span<const double> BankChannel::p_row(int k, std::int64_t from, std::int64_t to) const {
-    const double* row = &p_win_.v[static_cast<std::size_t>(k) * static_cast<std::size_t>(p_win_.cols)];
-    return {row + (from - base_), static_cast<std::size_t>(std::max<std::int64_t>(0, to - from))};
+std::vector<double> BankChannel::p_row(int k, std::int64_t from, std::int64_t to) const {
+    const float* row = &p_win_.v[static_cast<std::size_t>(k) * static_cast<std::size_t>(p_win_.cols)];
+    const float* first = row + (from - base_);
+    return std::vector<double>(first, first + std::max<std::int64_t>(0, to - from));  // float -> double: exact
 }
 
 void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
@@ -452,8 +453,9 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
     P.cols = static_cast<int>(n1 - n0);
     P.v.resize(static_cast<std::size_t>(K) * static_cast<std::size_t>(P.cols));
     for (int k = 0; k < K; ++k) {
-        const auto row = p_row(k, n0, n1);
-        std::copy(row.begin(), row.end(), P.v.begin() + static_cast<std::ptrdiff_t>(k) * P.cols);
+        const float* row =
+            &p_win_.v[static_cast<std::size_t>(k) * static_cast<std::size_t>(p_win_.cols)] + (n0 - base_);
+        std::copy(row, row + P.cols, P.v.begin() + static_cast<std::ptrdiff_t>(k) * P.cols);  // float -> double: exact
     }
     const KeyStep s = keyer_.step(P, sigma2);
     if (K > 0) periodicity_.push(std::span<const double>(s.p.v.data(), static_cast<std::size_t>(s.p.cols)));

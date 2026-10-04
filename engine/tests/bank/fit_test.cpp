@@ -19,11 +19,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <numbers>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -472,6 +475,141 @@ TEST(BankFitPython, FastPathsAreBitIdenticalToThePlainFormulas) {
             if (!theta && best.t_s == c[0] && best.w_s == c[1] && best.tg_s == c[3]) theta = c;
         ASSERT_TRUE(theta.has_value());
         EXPECT_EQ(bits(best.quality), bits(plain_sum(*theta) / pairwise_sum(age.data(), age.size())));
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Plan B task B1: the grid constants are shared process-wide per configuration.
+
+// The T axis a configuration gives: T_min (1 + t_grid_step)^i, T_min = 1.2 s / max_wpm, up to 1.2 s / min_wpm.
+std::vector<double> expected_t_grid(const BankConfig& cfg) {
+    const double t_min = 1.2 / cfg.max_wpm;
+    const double t_max = 1.2 / cfg.min_wpm;
+    const int count = static_cast<int>(std::ceil(std::log(t_max / t_min) / std::log1p(cfg.t_grid_step))) + 1;
+    std::vector<double> t;
+    for (int i = 0; i < count; ++i) t.push_back(t_min * std::pow(1.0 + cfg.t_grid_step, static_cast<double>(i)));
+    return t;
+}
+
+// Every bit of a fit's state after the observations: tables, weight, grid maximum and best (with and without
+// the T_P prior).
+struct FitBits {
+    std::vector<std::uint64_t> v;
+    bool operator==(const FitBits&) const = default;
+};
+FitBits fit_bits(const BankConfig& cfg, const Durations& obs) {
+    DurationFit fit(cfg);
+    for (const auto& [m, d] : obs) fit.add(m, d, 1e-8);
+    FitBits out;
+    for (double x : fit.mark_table()) out.v.push_back(bits(x));
+    for (double x : fit.space_table()) out.v.push_back(bits(x));
+    out.v.push_back(bits(fit.weight()));
+    for (const auto& [pt, pw] : {std::pair<std::optional<double>, double>{std::nullopt, 0.0}, {0.05, 1.0}}) {
+        for (int i : *fit.grid_index(pt, pw)) out.v.push_back(static_cast<std::uint64_t>(i));
+        const Fit b = *fit.best(pt, pw);
+        for (double x : {b.t_s, b.q, b.w_s, b.tg_s, b.quality, b.weight}) out.v.push_back(bits(x));
+    }
+    return out;
+}
+
+TEST(BankFitShared, FitsOfOneConfigurationShareTheGridConstantsAndOthersDoNot) {
+    const BankConfig a;
+    BankConfig b;
+    b.t_grid_step = 0.02;
+    const DurationFit a1(a);
+    const DurationFit a2(a);
+    const DurationFit b1(b);
+    const DurationFit b2(b);
+    EXPECT_EQ(a1.model(), a2.model());
+    EXPECT_EQ(a1.model(), a1.copy().model());
+    EXPECT_EQ(b1.model(), b2.model());
+    EXPECT_NE(a1.model(), b1.model());
+    // Each decodes its own grid: its axes, its tables' sizes, and the fit of machine keying.
+    for (const BankConfig* cfg : std::array<const BankConfig*, 2>{&a, &b}) {
+        DurationFit fit(*cfg);
+        const std::vector<double> t = expected_t_grid(*cfg);
+        ASSERT_EQ(fit.t_grid_s().size(), t.size());
+        for (std::size_t i = 0; i < t.size(); ++i) EXPECT_EQ(bits(fit.t_grid_s()[i]), bits(t[i]));
+        EXPECT_EQ(fit.mark_table().size(), t.size() * cfg->q_grid.size() * cfg->w_grid.size());
+        EXPECT_EQ(fit.space_table().size(), t.size() * cfg->w_grid.size() * cfg->tg_grid.size());
+        for (const auto& [m, d] : load_case("machine")) fit.add(m, d, 1e-8);
+        const auto theta = *fit.grid_theta();
+        EXPECT_NE(std::find(t.begin(), t.end(), theta[0]), t.end());  // a point of its own T axis
+        const Fit f = *fit.best();
+        expect_rel(f.t_s, 0.048, 0.02);
+        EXPECT_NEAR(f.q, 3.0, 0.1);
+        expect_rel(f.tg_s, 0.048, 0.05);
+    }
+    EXPECT_LT(DurationFit(b).t_grid_s().size(), DurationFit(a).t_grid_s().size());
+}
+
+TEST(BankFitShared, EveryFieldTheConstantsReadSeparatesConfigurationsAndNoOtherDoes) {
+    const BankConfig base;
+    const DurationFit ref(base);
+    // A field the grid constants do not read leaves the sharing alone.
+    BankConfig other = base;
+    other.correction_reach_s += 1.0;
+    other.text_window_chars += 1;
+    EXPECT_EQ(DurationFit(other).model(), ref.model());
+    // Each field they read gives its own constants (kept alive together: all distinct).
+    const std::vector<std::function<void(BankConfig&)>> changes = {
+        [](BankConfig& c) { c.min_wpm = 6.0; },
+        [](BankConfig& c) { c.max_wpm = 90.0; },
+        [](BankConfig& c) { c.t_grid_step = 0.015; },
+        [](BankConfig& c) { c.q_grid = {3.0, 4.0}; },
+        [](BankConfig& c) { c.w_grid = {-0.4, 0.0, 0.4, 0.7}; },
+        [](BankConfig& c) { c.tg_grid = {1.0, 1.59, 2.52, 4.0, 6.0}; },
+        [](BankConfig& c) { c.outlier_prior = 0.04; },
+        [](BankConfig& c) { c.outlier_range_s = {0.001, 9.0}; },
+        [](BankConfig& c) { c.sigma_ln_mark = 0.14; },
+        [](BankConfig& c) { c.sigma_ln_space = 0.24; },
+        [](BankConfig& c) { c.fit_memory = 47.0; },
+        [](BankConfig& c) { c.prior_sigma_ln = 0.11; },
+        [](BankConfig& c) { c.refine_iterations = 3; },
+    };
+    std::vector<DurationFit> fits;
+    fits.reserve(changes.size());
+    for (const auto& change : changes) {
+        BankConfig c = base;
+        change(c);
+        fits.emplace_back(c);
+        EXPECT_EQ(DurationFit(c).model(), fits.back().model());
+    }
+    for (std::size_t i = 0; i < fits.size(); ++i) {
+        EXPECT_NE(fits[i].model(), ref.model()) << "field " << i;
+        for (std::size_t j = i + 1; j < fits.size(); ++j) EXPECT_NE(fits[i].model(), fits[j].model());
+    }
+}
+
+TEST(BankFitShared, FitsBuiltAndUsedOnEightThreadsAtOnceGiveTheSingleThreadedResultBitForBit) {
+    // The constants are const (shared_ptr<const Model>) and only read; eight threads build fits of two
+    // configurations, interleaved, add the same observations and compare every bit of their state with fits
+    // built on this thread. Under ThreadSanitizer this is also the data-race check.
+    const BankConfig a;
+    BankConfig b;
+    b.t_grid_step = 0.02;
+    static_assert(std::is_const_v<std::remove_pointer_t<decltype(DurationFit(a).model())>>);
+    const Durations obs = load_case("machine");
+    const FitBits want_a = fit_bits(a, obs);
+    const FitBits want_b = fit_bits(b, obs);
+    const DurationFit keep_a(a);  // keeps a's constants alive: every thread's fits of a share them
+    constexpr int kThreads = 8;
+    constexpr int kRounds = 6;
+    std::vector<int> ok(kThreads, 0);
+    std::vector<int> same_model(kThreads, 0);
+    std::vector<std::thread> threads;
+    for (int t = 0; t < kThreads; ++t)
+        threads.emplace_back([&, t] {
+            for (int r = 0; r < kRounds; ++r) {
+                const bool use_a = (t + r) % 2 == 0;
+                ok[static_cast<std::size_t>(t)] += fit_bits(use_a ? a : b, obs) == (use_a ? want_a : want_b);
+                same_model[static_cast<std::size_t>(t)] += DurationFit(a).model() == keep_a.model();
+            }
+        });
+    for (auto& th : threads) th.join();
+    for (int t = 0; t < kThreads; ++t) {
+        EXPECT_EQ(ok[static_cast<std::size_t>(t)], kRounds) << "thread " << t;
+        EXPECT_EQ(same_model[static_cast<std::size_t>(t)], kRounds) << "thread " << t;
     }
 }
 

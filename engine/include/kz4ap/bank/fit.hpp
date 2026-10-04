@@ -85,7 +85,7 @@ class DurationFit {
 public:
     explicit DurationFit(const BankConfig& cfg);
 
-    // An independent copy (the read-only grid is shared).
+    // An independent copy (the read-only grid constants are shared, as by every fit of an equal configuration).
     DurationFit copy() const { return *this; }
 
     // One more mark or space: duration_s, s, and its timing-resolution variance var_t, s^2. A duration that is
@@ -131,10 +131,17 @@ public:
     // laid out as that table. The duration must be > 0 s.
     std::vector<double> grid_loglik(bool is_mark, double duration_s, double var_t) const;
 
-    struct Model;  // the read-only grid and constants, shared by copies
+    struct Model;  // the read-only grid and constants, shared by every fit of an equal configuration
+
+    // The fit's grid constants, for tests: fits built from configurations equal in every field the constants
+    // read share one object.
+    const Model* model() const { return m_.get(); }
 
 private:
-    std::shared_ptr<const Model> m_;
+    // The process-wide Model of this configuration (built on first use, freed when no fit uses it).
+    static std::shared_ptr<const Model> shared_model(const BankConfig& cfg);
+
+    std::shared_ptr<const Model> m_;  // immutable, shared by every fit of an equal configuration
     std::vector<double> mark_table_;
     std::vector<double> space_table_;
     double weight_ = 0.0;

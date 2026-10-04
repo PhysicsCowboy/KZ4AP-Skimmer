@@ -40,13 +40,18 @@ public:
     // first_sample: the absolute sample index of the stream's first sample (0 for a stream counted from its
     // start, as the prototype's); every index below is absolute (64-bit).
     ThreeTapNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n, std::int64_t first_sample = 0);
-    // Column j of P is absolute sample base + j; n0, n1 are absolute sample indices.
+    // Column j of P is absolute sample base + j; n0, n1 are absolute sample indices. P is read as double in
+    // either storage (a PowerMatrix's float32 values convert exactly).
     void update(const Matrix& P, std::int64_t n0, std::int64_t n1, std::int64_t base = 0);
+    void update(const PowerMatrix& P, std::int64_t n0, std::int64_t n1, std::int64_t base = 0);
     const std::vector<double>& var() const { return var_; }
     bool started() const { return started_; }
     const std::vector<double>& weight() const { return weight_; }
 
 private:
+    template <class M>
+    void update_impl(const M& P, std::int64_t n0, std::int64_t n1, std::int64_t base);
+
     std::vector<int> n_;
     double kappa_, kappa_n_, m_, alpha_;
     int warmup_;               // samples
@@ -60,9 +65,11 @@ class NoiseEstimator {
 public:
     virtual ~NoiseEstimator() = default;
     // Element j of u and column j of P are absolute sample base + j; n0, n1 are absolute sample indices
-    // (the channel keeps only a recent window of u and P).
+    // (the channel keeps only a recent window of u and P, P as a PowerMatrix: float32 values read as double).
     virtual void update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0, std::int64_t n1,
                         std::int64_t base = 0) = 0;
+    virtual void update(std::span<const std::complex<double>> u, const PowerMatrix& P, std::int64_t n0,
+                        std::int64_t n1, std::int64_t base = 0) = 0;
     // sigma_v,k^2 per real component, FS^2, one per branch.
     virtual std::vector<double> sigma2() const = 0;
 };
@@ -72,6 +79,8 @@ class BranchNoise : public NoiseEstimator {
 public:
     BranchNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n, std::int64_t first_sample = 0);
     void update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0, std::int64_t n1,
+                std::int64_t base = 0) override;
+    void update(std::span<const std::complex<double>> u, const PowerMatrix& P, std::int64_t n0, std::int64_t n1,
                 std::int64_t base = 0) override;
     std::vector<double> sigma2() const override { return est_.var(); }
 
@@ -91,6 +100,8 @@ public:
                   const std::string& level = "three-tap", std::int64_t first_sample = 0);
     void update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0, std::int64_t n1,
                 std::int64_t base = 0) override;
+    void update(std::span<const std::complex<double>> u, const PowerMatrix& P, std::int64_t n0, std::int64_t n1,
+                std::int64_t base = 0) override;
     std::vector<double> sigma2() const override;
     // sigma_v,k^2 per real component, FS^2, from the flat mean of every accepted masked periodogram so far,
     // smoothed as sigma2() smooths it, with no bias correction (the calibration of b_mask,k). Throws if no
@@ -106,7 +117,11 @@ public:
     static constexpr int kSubsamples = 16;  // points per bin for W_k
 
 private:
-    std::vector<char> clean(const Matrix& P, std::int64_t s, std::int64_t base) const;
+    template <class M>
+    void update_impl(std::span<const std::complex<double>> u, const M& P, std::int64_t n0, std::int64_t n1,
+                     std::int64_t base);
+    template <class M>
+    std::vector<char> clean(const M& P, std::int64_t s, std::int64_t base) const;
     void accept(std::span<const std::complex<double>> seg, const std::vector<char>& clean);
     std::vector<double> smoothed(const std::vector<double>& s) const;
 

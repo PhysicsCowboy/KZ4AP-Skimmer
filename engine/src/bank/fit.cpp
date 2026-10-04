@@ -6,9 +6,13 @@
 #include "ve3nea.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <map>
+#include <mutex>
 #include <numbers>
 #include <stdexcept>
 #include <string_view>
@@ -143,7 +147,8 @@ std::array<double, 4> solve4(std::array<std::array<double, 4>, 4> a, std::array<
 
 }  // namespace
 
-// The read-only grid and constants (the prototype's _grid, _log_priors, _log_outlier and lambda).
+// The read-only grid and constants (the prototype's _grid, _log_priors, _log_outlier and lambda); one per
+// configuration, shared (DurationFit::shared_model).
 struct DurationFit::Model {
     // One class over the grid: ln median, 1 / median^2, median > 0 (laid out as its table).
     struct Class {
@@ -316,7 +321,55 @@ std::string classify_space(const Fit& fit, double d, double var_t, const BankCon
     return kSpaceKinds[best];
 }
 
-DurationFit::DurationFit(const BankConfig& cfg) : m_(std::make_shared<const Model>(cfg)) {
+namespace {
+
+// The exact values of the fields Model reads (min_wpm, max_wpm, t_grid_step, q_grid, w_grid, tg_grid,
+// outlier_prior, outlier_range_s, sigma_ln_mark, sigma_ln_space, fit_memory, prior_sigma_ln,
+// refine_iterations) as bit patterns, each list preceded by its length: equal keys build bit-identical models.
+std::vector<std::uint64_t> model_key(const BankConfig& cfg) {
+    std::vector<std::uint64_t> key;
+    auto put = [&key](double x) { key.push_back(std::bit_cast<std::uint64_t>(x)); };
+    auto put_list = [&key, &put](const std::vector<double>& v) {
+        key.push_back(v.size());
+        for (double x : v) put(x);
+    };
+    put(cfg.min_wpm);
+    put(cfg.max_wpm);
+    put(cfg.t_grid_step);
+    put_list(cfg.q_grid);
+    put_list(cfg.w_grid);
+    put_list(cfg.tg_grid);
+    put(cfg.outlier_prior);
+    put_list(cfg.outlier_range_s);
+    put(cfg.sigma_ln_mark);
+    put(cfg.sigma_ln_space);
+    put(cfg.fit_memory);
+    put(cfg.prior_sigma_ln);
+    key.push_back(static_cast<std::uint64_t>(static_cast<std::int64_t>(cfg.refine_iterations)));
+    return key;
+}
+
+}  // namespace
+
+// One immutable Model per configuration, shared process-wide by every fit built from a configuration with the
+// same key; the cache holds weak references, so a Model is freed when no fit uses it (expired entries are
+// dropped whenever a Model is added). Models are only read after construction, so fits on several threads may
+// share one; the cache itself is guarded by a mutex.
+std::shared_ptr<const DurationFit::Model> DurationFit::shared_model(const BankConfig& cfg) {
+    static std::mutex mutex;
+    static std::map<std::vector<std::uint64_t>, std::weak_ptr<const Model>> cache;
+    std::vector<std::uint64_t> key = model_key(cfg);
+    const std::lock_guard<std::mutex> lock(mutex);
+    const auto it = cache.find(key);
+    if (it != cache.end())
+        if (auto m = it->second.lock()) return m;
+    auto m = std::make_shared<const Model>(cfg);
+    std::erase_if(cache, [](const auto& entry) { return entry.second.expired(); });
+    cache.insert_or_assign(std::move(key), m);
+    return m;
+}
+
+DurationFit::DurationFit(const BankConfig& cfg) : m_(shared_model(cfg)) {
     mark_table_.assign(m_->nt * m_->nq * m_->nw, 0.0);
     space_table_.assign(m_->nt * m_->nw * m_->ng, 0.0);
 }

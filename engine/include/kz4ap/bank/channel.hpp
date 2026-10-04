@@ -241,6 +241,9 @@ public:
     // inside a recomputation).
     const Periodicity& periodicity() const { return periodicity_; }
     std::size_t periodicity_records() const { return result_.periodicity.size(); }
+    // The |v_k|^2 window's storage: values allocated (branches x columns) and their size, bytes.
+    std::size_t p_window_values() const { return p_win_.v.size(); }
+    std::size_t p_window_bytes() const { return p_win_.v.size() * sizeof(p_win_.v[0]); }
 
 private:
     // The resync test changes the published list directly, as no recorded stream makes the bank do it.
@@ -249,7 +252,9 @@ private:
     void append_sample(std::complex<double> x);
     void process_block(std::int64_t n0, std::int64_t n1);
     void compact();
-    std::span<const double> p_row(int k, std::int64_t from, std::int64_t to) const;
+    // Row k of the |v_k|^2 window from absolute sample `from` to `to` (exclusive), converted to double
+    // (exact), FS^2.
+    std::vector<double> p_row(int k, std::int64_t from, std::int64_t to) const;
 
     BankConfig cfg_;
     double rate_;
@@ -269,12 +274,13 @@ private:
     Prior prior_;
 
     // Streaming state. The cumulative sum c[j] = u[0] + ... + u[j-1] (complex, FS) in a ring of the last
-    // max N_k + 1 values; the window of u and of P (|v_k|^2 rounded to float32, FS^2) from absolute sample base_
-    // to total_, kept back far enough for the re-key (correction_reach_s) and the noise estimates.
+    // max N_k + 1 values; the window of u and of P (|v_k|^2 rounded to float32, FS^2, stored as float: lossless)
+    // from absolute sample base_ to total_, kept back far enough for the re-key (correction_reach_s) and the noise
+    // estimates.
     std::vector<std::complex<double>> csum_ring_;
     std::complex<double> csum_{0.0, 0.0};
     std::vector<std::complex<double>> u_win_;
-    Matrix p_win_;
+    PowerMatrix p_win_;
     std::int64_t base_ = 0;
     std::int64_t keep_back_ = 0;
     std::int64_t total_ = 0;

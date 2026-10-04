@@ -2553,8 +2553,8 @@ publishes one branch's characters, with corrections.
   prototype's last block, and the result does not depend on how the
   stream was split (tested with pieces of 1, 47 and 1000 samples). As
   each sample arrives, every branch's power |v_k|² is computed from the
-  running cumulative sum and stored rounded to float32 (section 8c, "The
-  bank").
+  running cumulative sum and stored rounded to float32, as a 4-byte float
+  (section 8c, "The bank"; "Memory" below).
 - **Order within a block** [n0, n1), t = n1 / r (s): (1) the noise
   estimate is updated and σ²_v,k read; (2) the keyer keys the block and
   updates the amplitudes ("Keying"); (3) branch 1's posterior p goes to
@@ -2654,18 +2654,39 @@ publishes one branch's characters, with corrections.
   noise estimates' look-back (3 N_max, a segment with its mask's reach,
   the warm-up) and 2 blocks, 31 688 samples (21.1 s) at 1500 samples/s;
   its storage holds up to 2 s more (34 721 samples) and is moved forward
-  when full (a bound chosen for the port, not a tuned value). Memory per
+  when full (a bound chosen for the port, not a tuned value). The |v_k|²
+  values are rounded to float32 when computed (the prototype's rounding,
+  "Port check" below) and stored as 4-byte floats, which is lossless; every
+  read converts them to double exactly (Plan B task B1). Memory per
   channel at 1500 samples/s, counted from the arrays the code allocates
-  (derived, not measured): the |v_k|² window 32 × 34 721 × 8 B = 8.9 MB;
+  (derived, not measured): the |v_k|² window 32 × 34 721 × 4 B = 4.4 MB;
   the u window 34 721 × 16 B = 0.56 MB; the cumulative-sum ring
   277 × 16 B = 4.4 kB; per duration fit its two tables
   (3636 + 6060) × 8 B = 77.6 kB and its retained history (≤ 192 marks and
-  spaces, 24 B each, 4.6 kB), plus its grid constants (ln μ, 1/μ², a validity
-  flag per class and grid point: 432.7 kB), which copies of a fit share
-  but every fit started afresh allocates anew. Each branch holds one to
-  three fits (the decoding fit, the previous over's, the rival), so the
-  fits take 32 × 0.515 MB = 16.5 MB to about 49 MB, and a channel 26 MB to
-  about 59 MB in all, plus small per-character and per-record lists.
+  spaces, 24 B each, 4.6 kB), 82.2 kB. Each branch holds one to three fits
+  (the decoding fit, the previous over's, the rival), so the fits take
+  32 × 82.2 kB = 2.6 MB to 96 × 82.2 kB = 7.9 MB, and a channel 7.6 MB to
+  12.9 MB in all, plus small per-character and per-record lists. The fit's
+  grid constants (ln μ, 1/μ², a validity flag per class and grid point:
+  432.7 kB with the defaults) are immutable and held once per process per
+  configuration: every fit built from a configuration with the same values
+  of the fields they read (`min_wpm`, `max_wpm`, `t_grid_step`, the q, w
+  and T_g grids, `outlier_prior`, `outlier_range_s`, `sigma_ln_mark`,
+  `sigma_ln_space`, `fit_memory`, `prior_sigma_ln`, `refine_iterations`;
+  compared bit for bit) shares one copy, which is freed when no fit uses
+  it. Before Plan B task B1 the window took 8.9 MB (8-byte doubles) and
+  every fit started afresh allocated its own grid constants (0.515 MB per
+  fit), 26 MB to about 59 MB per channel (derived). **Measured** (Linux
+  machine, `kz4ap-bank-replay` on G-ragchew-s1: 12 channels of 366.0 s,
+  peak resident set size from `/usr/bin/time -v`, per channel in flight
+  (RSS at 10 threads − RSS at 1 thread) / 9): 63.3 MB before B1, 32.1 MB
+  after (−31.1 MB, against −18.3 MB to −46.0 MB derived). The measured
+  figure includes what the replay tool holds per channel besides the
+  decoder, chiefly the channel's recorded stream and its mixed copy
+  (2 × 549 000 samples × 16 B = 17.6 MB, derived), plus its decoded record
+  until its test case is written and the allocator's overhead; less the
+  17.6 MB it is 45.7 MB before (derived 26 MB to 59 MB) and 14.6 MB after
+  (derived 7.6 MB to 12.9 MB).
   Sample indices are 64-bit throughout (the noise estimates included:
   tested with indices past 2³¹, as after 16.6 days at 1500 samples/s).
 - **Exact zeros.** On exact-zero input the noise estimate goes NaN (the
@@ -3118,6 +3139,7 @@ parameter was changed for this run.
 | Bank fit grid | T 12 ms to 242.2 ms in 1% steps (303 points); q ∈ {3, 4, 5}; w/T ∈ {−0.4, 0, 0.4, 0.8}; T_g/T ∈ {1, 1.59, 2.52, 4, 6.35} | `BankConfig::t_grid_step`, `q_grid`, `w_grid`, `tg_grid` | q, w, T_g grids measured (E5, "coarse"); T step placeholder kept by E5 |
 | Bank T_P prior | −π (ln T − ln T_P)² / (2 σ_P²) nats, σ_P = 0.1 in ln T | `BankConfig::prior_sigma_ln` | heuristic |
 | Bank fit refinement | 2 Gauss–Newton steps in ln d, damping 0.2 T per parameter; T ≥ 0.1 ms, w ∈ [−0.6, 1.2] T, qT ∈ [2, 6] T, T_g ∈ [0.8, 10] T; kept only if the weighted log-likelihood does not drop | `BankConfig::refine_iterations`; `bank::DurationFit::refine`, `best` | heuristic; the 0.1 ms floor a numerical choice |
+| Bank fit grid constants | ln μ, 1/μ² and a validity flag per class and grid point (432.7 kB with the defaults), built once per process per configuration and shared, immutable, by every fit of a configuration with bit-identical values of the 13 fields they read; freed when no fit uses them | `bank::DurationFit::shared_model` | a memory choice with no arithmetic effect (Plan B B1: tested bit for bit across threads; development-set texts identical) |
 | Bank periodicity method | the comb on Π = 2T over branch 1's posterior p (the edge comb and the spectrum fit are not ported) | `BankConfig::periodicity_method`; `bank::Periodicity` | owner (E1); Π = 2T derived |
 | Bank periodicity input and updates | p averaged to r_P = r / max(1, round(r / 750 samples/s)) (750 samples/s at r = 1500 samples/s); recomputed every 0.25 s of p (375 samples at 1500 samples/s) | `BankConfig::periodicity_rate_hz`, `periodicity_update_s` | heuristic |
 | Bank periodicity windows | 2, 5 and 10 s (1500, 3750, 7500 samples at 750 samples/s); the shortest confident window gives T_P; reach caps T at ≈ W / 18.3 (109, 273, 546 ms) | `BankConfig::periodicity_windows_s` | windows placeholder (E2); reach caps derived from a heuristic rule |
@@ -3128,7 +3150,7 @@ parameter was changed for this run.
 | Bank selection ties | quality tie ε_Q = 0.05 nats per element; then text tie 0.1 nats per character; then the longest branch. None eligible: text leading by ≥ 1.0 nats per character, else nearest 0.8 T_P, else branch 1 | `BankConfig::quality_tie_nats`, `text_tie_nats`, `text_separation_nats`; `bank::Selector::best` | ε_Q placeholder, kept by E8; text tie and separation heuristic |
 | Bank switch persistence | M = 4 selection instants in a row, of one kind (eligible or fallback) | `BankConfig::switch_persistence`; `bank::Selector::update` | placeholder, kept by E6 |
 | Bank block cadence | every stage advances once per block of round(block_s · r) samples, block_s = 32/1500 s = 21.33 ms (32 samples at 1500 samples/s); input in pieces of any length, a partial last block at the end | `BankConfig::block_s`; `bank::BankChannel::push`, `finish` | heuristic (the engine's channel block) |
-| Bank stored power | \|v_k\|² rounded to float32 as each sample arrives (as the prototype stores P), FS² | `bank::boxcar_power_f32` | numerical choice (the prototype's, reproduced) |
+| Bank stored power | \|v_k\|² rounded to float32 as each sample arrives (as the prototype stores P), FS²; the channel's window stores it as a 4-byte float (lossless) and every read widens it to double exactly | `bank::boxcar_power_f32`; `bank::PowerMatrix`, `bank::BankChannel` | rounding a numerical choice (the prototype's, reproduced); the float storage a memory choice with no arithmetic effect (Plan B B1: development-set texts identical) |
 | Bank new over | key up longer than T_new = max(0.5 s, 12 · T_g) since the branch's last key-up (2.88 s without a fit; 0.576 s at 25 words/min) | `BankConfig::new_over_min_s`, `new_over_gaps`; `bank::Branch::new_over_due` | placeholders, kept by E7 |
 | Bank re-key and time-out | the over's start re-keyed with the full LLR after W_min = 0.8 s of keyed time, at the seed s² and the previous over's s² (best mean log-likelihood per element wins), over at most 20 s back; if W_min is not reached within 2 s, re-keyed at the previous over's s², or its provisional characters deleted | `BankConfig::rekey_after_s`, `rekey_timeout_s`; `bank::Branch::rekey_over`, `clear_over` | W_min measured (E9b); the 2 s time-out a placeholder (heuristic); candidate choice heuristic |
 | Bank fresh fit against the previous | the over's fresh fit replaces the previous over's continued fit with ≥ 8 of the over's marks and spaces and a log-likelihood gain > ½ · 4 · ln n nats on them (4.16 nats at n = 8); the competition ends after 192 (⌈4 N_mem⌉) | `BankConfig::fresh_fit_min_obs`; `bank::kFitParameters`; `bank::Branch` | 8 a placeholder (heuristic); ½ k ln n form derived (BIC), k = 4 heuristic; the end at 4 N_mem derived (e⁻⁴ = 1.8%) |

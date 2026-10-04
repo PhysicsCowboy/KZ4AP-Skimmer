@@ -381,6 +381,17 @@ TEST(BankChannel, ExactZerosAtTheStartPublishNoNaN) {
     for (const auto& s : r.selections) EXPECT_TRUE(std::isfinite(s.t_s));
 }
 
+TEST(BankChannel, ThePowerWindowStoresFourByteFloats) {
+    // Plan B task B1: the |v_k|^2 window holds values already rounded to float32 and stores them as 4-byte
+    // floats. 24 s of exact zeros at 1500 samples/s fill it to its full size (keyed nothing: "Exact zeros"):
+    // 32 branches x 34 721 columns (docs/signal-processing.md section 8c, "Memory").
+    BankChannel ch(BankConfig{}, 1500.0);
+    const std::vector<std::complex<double>> zeros(36000, {0.0, 0.0});
+    ch.push(zeros);
+    EXPECT_EQ(ch.p_window_values(), 32u * 34721u);
+    EXPECT_EQ(ch.p_window_bytes(), ch.p_window_values() * 4u);
+}
+
 // ---- Review Focus 4 and the prototype's Output tests ------------------------------------------------------
 
 TEST(BankOutput, AppendsAndCorrectsWithinTheReach) {

@@ -13,18 +13,23 @@
 
 namespace kz4ap::bank {
 
-// A small row-major matrix of doubles: rows are branches (K), columns are samples.
-struct Matrix {
+// A small row-major matrix: rows are branches (K), columns are samples.
+template <class T>
+struct BasicMatrix {
     int rows = 0, cols = 0;
-    std::vector<double> v;
-    double& at(int r, int c) { return v[index(r, c)]; }
-    double at(int r, int c) const { return v[index(r, c)]; }
+    std::vector<T> v;
+    T& at(int r, int c) { return v[index(r, c)]; }
+    T at(int r, int c) const { return v[index(r, c)]; }
 
 private:
     std::size_t index(int r, int c) const {
         return static_cast<std::size_t>(r) * static_cast<std::size_t>(cols) + static_cast<std::size_t>(c);
     }
 };
+using Matrix = BasicMatrix<double>;
+// The channel's window of |v_k|^2 (FS^2): the values are rounded to float32 when computed
+// (boxcar_power_f32), so storing them as float is lossless; every read converts them to double exactly.
+using PowerMatrix = BasicMatrix<float>;
 
 // L_k = length_dits x 1.2 s / max_wpm x ladder_step^(k-1), k = 1 ... count, up to the first length within
 // one step of the min_wpm optimum: 9.6 ms ... 184.3 ms, 32 branches with the defaults; s.
