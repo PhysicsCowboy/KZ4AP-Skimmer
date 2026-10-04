@@ -2518,18 +2518,29 @@ against `std::exp` and `std::log` on 10⁶ arguments each (the sum's r in
 [−40, 0] nats and the leave-out's edge, the responsibilities down to
 subnormal results and 0, overflow, subnormal and edge arguments, ±0, ±∞,
 NaN): at most 1 ulp apart, every element bit for bit as when evaluated
-alone, and bit for bit within its family. On the Windows PC (AVX2, finz
-avx2 selected) 3.7% of the exps and 0.5% of the lns differ from the C
-library's, by 1 ulp; at the default test sizes the grid's ℓ_total differs
-from the B2(a) code by at most 1.8 · 10⁻¹⁵ nats (21% of its bound),
-`class_logliks`' ℓ_total by at most 1.8 · 10⁻¹⁵ nats (20%), and the
-weighted log-likelihood by at most 1.1 · 10⁻¹³ nats (32%).
+alone, and bit for bit within its family (finz AVX-512 = finz AVX2 and
+cinz AVX-512 = AVX = SSE2 on the Linux machine; cinz AVX = SSE2 on the
+Windows PC, which has no AVX-512). About 3.7% of the exps (finz) and 0.5%
+of the lns differ from the C library's, by 1 ulp, on both machines. At the
+full sizes every bit-for-bit comparison is equal on both machines, and the
+largest differences from the B2(a) code are (Linux machine / Windows PC):
+
+| quantity | values | largest difference from the B2(a) code | of its bound |
+|---|---|---|---|
+| grid log-likelihood | 8.5 · 10⁹ | 1.8 · 10⁻¹⁵ / 1.8 · 10⁻¹⁵ nats | 21.7% / 21.7% |
+| ℓ_total of `class_logliks` | 1.8 · 10⁷ | 1.8 · 10⁻¹⁵ / 1.8 · 10⁻¹⁵ nats | 20.0% / 19.9% |
+| weighted log-likelihood at a fixed θ | 4.4 · 10⁵ | 4.6 · 10⁻¹³ / 1.1 · 10⁻¹³ nats | 31.9% / 40.5% |
+
+Against the logaddexp chain (both steps together) the grid's ℓ_total
+differs by at most 2.2 · 10⁻¹⁵ nats (4.8% of the summed bound). The
+development-set texts and every decoded record are unchanged (results
+record, section 4).
 
 (The default test run uses 20 000 observations and 100 fits; the full sizes
 run as the ctest entry `BankFitB2a.FullSweep`, label `full-sweep`, which the
 default test presets exclude: `ctest --preset windows-full-sweep` or
-`ctest --preset linux-full-sweep`, about 25 min on the Windows PC and 3 min
-on the Linux machine.) The port's check against the plain formula
+`ctest --preset linux-full-sweep`, about 41 min on the Windows PC and 6 min
+on the Linux machine since B2(b), whose frozen copy runs three variants.) The port's check against the plain formula
 (`FastPathsAreBitIdenticalToThePlainFormulas`) now allows each grid value
 the same derived bound 30 · 2^−52 · (|v| + 2 nats) (6.7 · 10⁻¹⁵ · (|v| + 2)
 nats, against the 1.3 · 10⁻¹⁵ nats measured in the full sweep) plus, since
@@ -2557,6 +2568,25 @@ sampled) falls from 3.70 s to 1.98 s; the scalar libm functions from
 2.67 s (log1p 1.13 s, exp 1.19 s, ln 0.30 s, pow 0.05 s) to 1.19 s
 (log1p 0, exp 0.44 s, ln 0.73 s, pow 0.02 s). The decoded text and every decoded record are unchanged on all
 525 channels (results record, section 3).
+
+**Cost (Plan B task B2(b), measured).** With SLEEF's exp and ln (finz
+AVX-512 on the Linux machine) the bank decoder's CPU per channel-second on
+the development set (as above) falls from 66.67 ms to **42.37 ms** (−36.4%;
+−66.9% against 127.91 ms before Plan B; replay wall time 502 s to 319 s).
+On the Windows PC (F-drift-s1, finz AVX2, five runs of each build alternated
+in two sessions) the medians are 74.5 ms (B2(a)) and 66.2 ms (B2(b)),
+−11%, with a run-to-run spread of up to 29 ms. The gprof profile of one
+channel (as above) falls from 2.04 s (at the start of B2(b)) to 1.27 s: the
+C library's ln and exp from 1.17 s to 0.10 s (ln outside the fit's arrays:
+ln d of the retained history, ln μ_c, other stages), SLEEF's ln 0.15 s and
+exp 0.08 s; `grid_loglik`'s own code, which now contains the one-pass sum
+and the staging of the blocks, rises from 0.49 s to 0.58 s and is the
+largest item (46%). Memory: the blocks use 25.3 kB of stack scratch per
+call and the search two vectors of up to 3 × 192 doubles (4.6 kB each) per
+call, freed on return; nothing persistent is added. Build: SLEEF adds
+4.6 s to a fresh configure and 3.0 s to a fresh build on the Linux machine
+(Ninja, 10 jobs), 29.1 s and 40.4 s on the Windows PC (results record,
+section 4.6).
 
 Status (as `training/kz4ap_proto/params.py` marks them): N_mem = 48
 measured (E4: adopted over 24 and 12); the q, w/T and T_g/T grids measured

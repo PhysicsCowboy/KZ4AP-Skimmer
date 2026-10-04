@@ -21,6 +21,15 @@ at most 1.3 · 10⁻¹⁵ nats) and its fix (the sum started at the largest term
 trace, so the near-exact step is kept. On the Windows PC (F-drift-s1) the cost falls from about 309 ms to
 about 77 ms per channel-second (68 ms after the fix, in a later session).
 
+**Answer (B2(b), SLEEF's exp and ln).** Evaluating the duration fit's exp and ln with SLEEF's vectorized
+functions (the FMA family, 8 doubles per call on the Linux machine, 4 on the Windows PC, chosen at run time)
+cuts the bank decoder's CPU on the Linux machine from **66.67 ms to 42.37 ms per channel-second** (−36.4%;
+−66.9% against the reference's 127.91 ms), with **all 525 development-set channels decoding to the identical
+final text and every decoded record identical**. The last bits of each per-observation log-likelihood change
+by at most 1.8 · 10⁻¹⁵ nats, within a derived bound. On the Windows PC (F-drift-s1) the median of five
+alternated runs falls from 74.5 to 66.2 ms per channel-second (−11%; the PC's run-to-run spread is larger). SLEEF's
+portable SSE2 functions alone would have made the decoder slower (section 4.1).
+
 ## 0. Terms used in this record
 
 - **Decoder**: Envelope, Matched and the bank are the three decoders; here only the bank decoder in C++ is
@@ -207,8 +216,9 @@ derived ones) the differences are measured
 log-likelihood, at most 1.8 · 10⁻¹⁴ in `best`'s fields and 4.7 · 10⁻¹⁴ nats in its quality; no value above
 its bound, no acceptance test turned. The golden tests are unchanged and pass; the port's own plain-formula
 check (`FastPathsAreBitIdenticalToThePlainFormulas`) has a traced allowance (grid values 2^−50 nats, tables
-64 · 2^−50 nats; measured 8.9 · 10⁻¹⁶ and 2.8 · 10⁻¹⁴ nats). `ctest` at the final code: 321 passed or
-skipped on Windows and on the Linux machine (8 skipped, 1 disabled); at `42201d7` on Windows the same (on the
+64 · 2^−50 nats; measured 8.9 · 10⁻¹⁶ and 2.8 · 10⁻¹⁴ nats). `ctest` at `1c6b681`: 321 passed or
+skipped on Windows and on the Linux machine (8 skipped, 1 disabled; 322 after fix round 1, section 3.8, which
+added a test); at `42201d7` on Windows the same (on the
 Linux machine that run's summary line was not kept by the helper's filter; its full sweep passed). Smoke check unchanged: Envelope CER 0.0353, Matched 0.0436.
 
 ### 3.3 The text check
@@ -361,3 +371,196 @@ decoded record equal to `b0-win-cpu`'s on all 8 channels.
 Raw outputs (git-ignored): `build/suite/full3/experiments/linux/c2-diff-bank-b2a2-vs-bank-b2a-exact.md`,
 `compare-bank-b2a2-vs-bank-b2a-exact.md`, `b2a-fix1.log`; `build/b2a/prof-b2a2-flat.txt`,
 `build/b2a/fix1-full-sweep-windows.txt`; Windows decoded files `build/suite/full3/proto/b2a2-win-near-{1,2}/`.
+
+## 4. CPU: SLEEF's exp and ln in the fit (B2(b))
+
+### 4.1 What changed
+
+In `engine/src/bank/fit.cpp` and the new `engine/src/bank/vecmath*.cpp` (docs/signal-processing.md, section 8c,
+"Duration fit": "Evaluation (Plan B task B2(b), exp and log)"; commit `35817fa`):
+
+1. Every exp and ln of the fit (ln s_c² of each class term on the grid and on the retained history, the
+   one-pass sum's e^(x − m) and its ln, the refinement's responsibilities e^(ℓ_c − ℓ_total)) is SLEEF 3.9.0's
+   vectorized `_u10` function (stated error bound 1.0 ulp of the returned value) instead of the C library's.
+   They are evaluated on arrays: the grid's points in blocks of 256, the retained history at once. Per value
+   the operations and their order are unchanged.
+2. The implementation is chosen once at run time from what the processor and the operating system support:
+   SLEEF's "finz" family (with FMA) on AVX-512F (8 doubles per call) or AVX2 + FMA (4), else its "cinz" family
+   (no FMA) on AVX-512F, AVX or SSE2 (8, 4, 2). SLEEF states that each family returns the same bits with every
+   instruction set (tested on both machines, 4.2). Each instruction set's code is compiled in its own file for
+   that set alone (no inline function in those files that the linker could share; checked with `nm` on the
+   Linux build: only the wrappers' own symbols), so the binaries run on every x86-64 processor.
+3. SLEEF by `FetchContent` at the 3.9.0 release (SHA-256 pinned), the static math library only (no tests,
+   DFT, quad, GNU ABI or scalar libraries, no TLFloat), in both presets.
+
+**Why a run-time choice, not the brief's "dispatcher or SSE2" alone (measured).** Per value, on arrays of
+4096 (`build/b2b/microbench.cpp`, ns per value):
+
+| function | Linux machine (g++ 11, Ice Lake) | Windows PC (MSVC, Alder Lake) |
+|---|---|---|
+| C library exp / ln | 4.6 / 4.6 | 3.6 / 3.6 |
+| cinz SSE2 (2 doubles) exp / ln | 4.7 / 10.6 | 3.6 / 8.5 |
+| SLEEF's 2-double dispatcher (`Sleef_expd2_u10`, AVX2 + FMA on 128 bits) exp / ln | 3.4 / 6.6 | 2.7 / not measured cleanly |
+| cinz AVX (4) exp / ln | 2.4 / 5.8 | 1.9 / not measured cleanly |
+| finz AVX2 (4) exp / ln | 1.9 / 3.5 | 1.3 / not measured cleanly |
+| cinz AVX-512 (8) exp / ln | 1.3 / 2.0 | not available |
+| finz AVX-512 (8) exp / ln | 1.0 / 1.3 | not available |
+
+(On the Windows PC the benchmark's ln figures after the first AVX call were inflated by mixing SSE and AVX code
+in one test program without `vzeroupper`; the fit's own build ends every AVX wrapper with it.) SLEEF's
+accurate ln is 2.3 times the C library's in SSE2, and its 4-double dispatcher (`Sleef_expd4_u10`) needs AVX,
+so it cannot be the fallback. On one channel (F-drift-s1, label 1, 30.0 s; Linux machine; the fit compiled
+with the variant's instruction set; user seconds, 3 runs each, identical decoded output in every variant):
+
+| variant | user s |
+|---|---|
+| B2(a) code, C library | 2.05 |
+| B2(b) blocks, C library | 1.77 |
+| B2(b), cinz SSE2 | 2.52 |
+| B2(b), cinz AVX | 1.82 |
+| B2(b), finz AVX2 | 1.52 |
+| B2(b), cinz AVX-512 | 1.30 |
+| B2(b), finz AVX-512 | 1.22 |
+
+On the Windows PC (F-drift-s1, 8 channels; alternated with the B2(a) build in one session): cinz SSE2 89.1 ms
+against 68.6 ms; cinz AVX 72.6 and 76.0 against 71.2 and 74.4 ms; finz AVX2 in 4.4. So the portable cinz SSE2
+alone would have made the decoder slower on both machines, cinz AVX helps only on the Linux machine, and the
+FMA functions help on both. The blocks alone, with the C library's functions, already save 14% on that channel
+(no bit changes; not adopted separately, conjectured cause: fewer branches and better pipelining of
+independent calls).
+
+**What the run-time choice costs in reproducibility.** Within a family the fit's values do not depend on the
+processor (SLEEF's statement, tested on both machines); the two families differ in the last bits, so a
+processor without AVX2 + FMA (Intel before 2013, AMD before 2015) computes other last bits than the machines
+measured here. Before B2(b) the fit already depended on the platform's C library (glibc and Microsoft's differ
+in the last bits); with B2(b) the Windows PC and the Linux machine use the same functions (finz) for the fit.
+
+### 4.2 Tests
+
+- `BankFitB2b.ExpAndLogAreWithinOneUlpOfTheCLibraryAndConsistentWithinEachFamily`: 10⁶ arguments for exp and
+  10⁶ for ln (the one-pass sum's r in [−40, 0] nats and the leave-out's edge, the responsibilities down to
+  subnormal results and 0, overflow, subnormal and edge arguments, ±0, ±∞, NaN), every implementation the
+  processor can run: at most 1 ulp from `std::exp` / `std::log`, every element bit for bit as when evaluated
+  alone (the padded last vector), every implementation of a family bit for bit the same, the fit's exp and ln
+  the selected implementation's. Selected: finz AVX-512 on the Linux machine, finz AVX2 on the Windows PC.
+
+| | exp: differ from the C library (1 ulp) | ln: differ (1 ulp) | families checked |
+|---|---|---|---|
+| Linux machine (glibc) | finz 37 994, cinz 60 106 | 5118 (both) | finz AVX-512 = AVX2; cinz AVX-512 = AVX = SSE2 |
+| Windows PC (Microsoft) | finz 36 779, cinz 57 577 | finz 5227, cinz 5230 | cinz AVX = SSE2 (no AVX-512) |
+
+- The B2(a) tests' frozen copy calls either the C library's exp and ln (the code at B2(a)) or the fit's. Against
+  the latter every comparison is bit for bit; against the former each ℓ_total within the derived bound
+  1.001 · 2^−52 · (5 |ℓ_total| + 14.3 + |ln σ_ln²|) nats (derivation in docs/signal-processing.md, 8c, and in
+  `fit_test.cpp`, `sleef_bound`), the weighted log-likelihood within the bound from those totals' differences;
+  against the logaddexp chain within the sum of the B2(a) and B2(b) bounds. The tests were written first: on
+  the B2(a) code the three bit-for-bit comparisons with the fit's exp and ln failed (e.g. 259 216 of
+  96 753 960 grid values on the default grids, 1.8 · 10⁻¹⁵ nats apart) and the comparisons with the C
+  library's passed with differences 0; after the change all passed.
+- Full sweeps (`ctest --preset linux-full-sweep` / `windows-full-sweep`): every bit-for-bit comparison equal;
+  largest differences from the B2(a) code (Linux / Windows), share of the derived bound:
+
+| quantity | values | largest difference from the B2(a) code | of its bound |
+|---|---|---|---|
+| grid log-likelihood | 8.5 · 10⁹ | 1.8 · 10⁻¹⁵ / 1.8 · 10⁻¹⁵ nats | 21.7% / 21.7% |
+| ℓ_total of `class_logliks` | 1.8 · 10⁷ | 1.8 · 10⁻¹⁵ / 1.8 · 10⁻¹⁵ nats | 20.0% / 19.9% |
+| weighted log-likelihood at fixed θ | 4.4 · 10⁵ | 4.6 · 10⁻¹³ / 1.1 · 10⁻¹³ nats | 31.9% / 40.5% |
+
+  Against the logaddexp chain (both steps): grid 2.2 · 10⁻¹⁵ nats (4.8% of the summed bound), weighted
+  log-likelihood up to 99.6% / 99.1% of its bound (Linux / Windows), as in section 3.8. Wall time of the full
+  sweep: 336 s on the Linux machine, 2477 s on the Windows PC (the frozen copy now runs three variants, and its
+  SLEEF variant calls SLEEF one value at a time).
+- The golden tests are unchanged and pass. Their printouts on Windows: the tables after 8, 48 and 300
+  observations differ from the prototype's in 2005, 1712 and 1523 of 9696 entries (1980, 1702 and 1517 after
+  B2(a)), by at most 7.1 · 10⁻¹⁵, 2.8 · 10⁻¹⁴ and 4.3 · 10⁻¹⁴ nats. The plain-formula check
+  (`FastPathsAreBitIdenticalToThePlainFormulas`) allows each grid value its B2(a) bound plus the B2(b) bound:
+  657 286 of 2 007 072 values differ, by at most 1.8 · 10⁻¹⁵ nats; 1410 of 9696 table entries, by at most
+  4.3 · 10⁻¹⁴ nats.
+- `ctest --preset windows` and `ctest --preset linux`: 323 of 323 passed or skipped (8 skipped, 1 disabled).
+  Smoke check unchanged: Envelope CER 0.0353, Matched 0.0436.
+
+### 4.3 The text check
+
+`bank-b2b` (`35817fa`, Linux machine, finz AVX-512) against `bank-b2a2`: **525 of 525 identical final
+texts**, 525 of 525 identical character lists, 525 of 525 channels with every decoded record identical
+(0 of 875 070 periodicity windows differ), paired CER +0.0000 (+0.0000 to +0.0000) on all 509 signals and in
+every group. There is no difference to trace; B2(b) passes the rule and is kept (Step 7).
+
+### 4.4 CPU per channel-second
+
+Linux machine, development set (ms of CPU per channel-second, one run each):
+
+| group | channels | channel-seconds | `bank-b0` | `bank-b2a2` | `bank-b2b` | change |
+|---|---|---|---|---|---|---|
+| A sensitivity | 192 | 23 040.0 | 117.08 | 60.86 | 37.98 | −37.6% |
+| B fading | 30 | 5 400.3 | 135.25 | 71.58 | 45.34 | −36.7% |
+| C fists | 135 | 16 200.0 | 116.43 | 61.79 | 38.95 | −37.0% |
+| D speed | 12 | 720.1 | 114.05 | 60.25 | 38.27 | −36.5% |
+| E interference | 32 | 1 920.3 | 257.40 | 118.01 | 80.55 | −31.7% |
+| F tuning | 28 | 1 440.3 | 138.36 | 71.56 | 44.35 | −38.0% |
+| G ragchew | 12 | 4 392.2 | 187.76 | 97.79 | 60.15 | −38.5% |
+| H two-station QSO, oracle | 36 | 12 996.1 | 168.79 | 86.81 | 55.81 | −35.7% |
+| I Farnsworth | 48 | 8 640.5 | 52.45 | 30.44 | 20.86 | −31.5% |
+| all | 525 | 74 749.9 | **127.91** | **66.67** | **42.37** | **−36.4%** |
+
+Replay wall time on 10 threads: 502 s (`bank-b2a2`), 319 s (`bank-b2b`). Against the reference `bank-b0` the
+bank decoder now costs 33% of its CPU (−66.9%).
+
+Windows PC, F-drift-s1 (8 channels, 240.1 channel-seconds), `--jobs 8`, the B2(a) build (`00f17f6`, a separate
+worktree) and the B2(b) build alternated in one session, ms per channel-second:
+
+| build | runs (in the order run) | median |
+|---|---|---|
+| B2(a) | 68.7, 72.3, 74.5, 96.6, 97.5 | 74.5 |
+| B2(b) (finz AVX2) | 63.5, 88.3, 66.2, 66.1, 69.4 | 66.2 |
+
+Two sessions of alternated pairs (2 + 3 rounds). The PC's spread within a build (up to 29 ms) is larger than
+the difference between the builds, so single runs do not order the builds; the medians differ by −11%, and 4 of
+the 5 pairs favor B2(b). An earlier session during development gave 58.3 and 61.8 ms (B2(b)) against 68.6 and
+69.8 ms. The texts and every decoded record of the B2(b) runs equal the B2(a) runs' on all 8 channels
+(`c2_diff.py`, run 1 of each; 0 of 2808 periodicity windows differ).
+
+### 4.5 Profile
+
+gprof, one channel (F-drift-s1, label 1, 30.0 s), Linux machine, as section 3.5 (helper `build/b2b/b2b_prof.sh`;
+the vecmath files come from the library build, not compiled with `-pg`, and are sampled). Seconds of samples:
+
+| build | total | C library ln | C library exp | pow | SLEEF ln (with its wrapper) | SLEEF exp (with its wrappers) | `grid_loglik` | the search's own code | everything else |
+|---|---|---|---|---|---|---|---|---|---|
+| B2(a) (`00f17f6`, at the start of B2(b)) | 2.04 | 0.75 | 0.42 | 0.03 | — | — | 0.49 | 0.07 | 0.28 |
+| B2(b) (`35817fa`) | 1.27 | 0.10 | 0 | 0.01 | 0.15 | 0.08 | 0.58 | 0.10 | 0.25 |
+
+The math library's share falls from 59% to 27% (SLEEF 18%, the C library 9%: the remaining ln outside the
+fit's vectorized paths, e.g. the retained history's ln d, ln μ_c of the search points and the other stages).
+`grid_loglik`'s own time rises from 0.49 to 0.58 s: it now contains the inlined one-pass sum and the staging
+of the blocks; it is the largest single item (46%). User time of the profiled run: 2.07 s and 1.33 s.
+
+### 4.6 Build cost
+
+From scratch (new build folder, FetchContent downloads included), configure and build, seconds:
+
+| platform | B2(a) (`00f17f6`) configure / build | B2(b) configure / build | added |
+|---|---|---|---|
+| Linux machine (Ninja, 10 jobs) | 2.3 / 21.6 (64 steps) | 6.9 / 24.6 (170 steps) | +4.6 / +3.0 |
+| Windows PC (Visual Studio generator, Release) | 14.5 / 512.8 | 43.6 / 553.2 | +29.1 / +40.4 |
+
+CI (GitHub Actions) was not run: it needs a push, which needs the owner's approval. The same presets build
+SLEEF without manual steps on both machines here (MSVC from Visual Studio Build Tools 2026 and g++ 11.4); the
+runners use other compiler versions (Windows: the runner image's Visual Studio; Ubuntu 24.04: g++ 13), not
+tried.
+
+### 4.7 Carried from the B2(a) re-review
+
+The Windows full-sweep time was stated three ways (15 to 20 min in `engine/CMakeLists.txt`, about 25 min in
+docs/signal-processing.md, about 20 min in `fit_test.cpp`); all three now state the B2(b) measurement
+(about 41 min on the Windows PC) and the Linux machine's (about 6 min). Section 3.2's test count (321, correct at `1c6b681`) now notes the
+322 after fix round 1.
+
+### 4.8 Raw outputs
+
+Git-ignored, in `build/suite/full3/experiments/linux/`: `c2-diff-bank-b2b-vs-bank-b2a2.md`,
+`compare-bank-b2b-vs-bank-b2a2.md`, `b2b-run.log` (build, ctest, the implementations test, the full sweep, the
+replay, the scoring, the profile), `b2b-variants.log` (the per-variant timing), `prof-b2a2-start-flat.txt`,
+`prof-bank-b2b-flat.txt`. Under `build/b2b/`: the helper scripts (`b2b_run.sh`, `b2b_prof.sh`,
+`b2b_variants.sh`, `b2b_buildtime.sh`, `win_cpu.sh`), `microbench.cpp`, `full-sweep-windows.txt`. Windows
+decoded files: `build/suite/full3/proto/win-*/`.

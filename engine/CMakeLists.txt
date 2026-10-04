@@ -86,8 +86,8 @@ target_compile_definitions(kz4ap_bank_tests PRIVATE
   KZ4AP_BANK_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bank")
 gtest_discover_tests(kz4ap_bank_tests)
 # Plan B task B2(a): the fit's frozen-copy sweeps at their full sizes (10^6 observations per configuration at
-# every grid point, 2000 random fits per configuration and number of refinement steps), about 3 min on the
-# Linux machine and 15 to 20 min on the Windows PC. Labeled full-sweep: the default test presets exclude it,
+# every grid point, 2000 random fits per configuration and number of refinement steps), about 6 min on the
+# Linux machine and 41 min on the Windows PC (since B2(b)). Labeled full-sweep: the default test presets exclude it,
 # the presets windows-full-sweep and linux-full-sweep run only it.
 add_test(NAME BankFitB2a.FullSweep COMMAND kz4ap_bank_tests --gtest_filter=BankFitB2a.*)
 set_tests_properties(BankFitB2a.FullSweep PROPERTIES ENVIRONMENT KZ4AP_FIT_FULL_SWEEP=1 LABELS full-sweep)

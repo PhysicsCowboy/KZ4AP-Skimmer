@@ -1108,7 +1108,8 @@ Obs random_obs(std::mt19937_64& rng) {
 // The sweeps' sizes: by default small enough for every ctest run (about 20 s on the Windows PC); with the
 // environment variable KZ4AP_FIT_FULL_SWEEP=1 the full sizes the plan asks for (10^6 observations per
 // configuration at every grid point; 2000 random fits per configuration and refine_iterations), run once per
-// change on each platform (about 20 min on the Windows PC with the code before B2(a) on both sides).
+// change on each platform (since B2(b), with three frozen variants: about 41 min on the Windows PC, 6 min on the
+// Linux machine).
 bool full_sweep() {
     const char* v = std::getenv("KZ4AP_FIT_FULL_SWEEP");
     return v != nullptr && std::string(v) == "1";
