@@ -216,6 +216,35 @@ def periodicity_points_decoded(out_dir, name, only=None, groups=PERIODICITY_GROU
     return points
 
 
+SPEED_BINS_WPM = ((5.0, 15.0), (15.0, 22.0), (22.0, 30.0), (30.0, 50.0), (50.0, 100.01))
+
+
+def periodicity_by_speed(points, threshold: float, bins=SPEED_BINS_WPM, tolerance: float = math.log(1.05)) -> list:
+    """Per speed bin of the true dit (WPM = 1.2 s / T, [low, high)) and per window (index, shortest first), and for
+    the rule over all windows ("rule"): points, the fraction confident (score >= threshold), and the precision of the
+    confident estimates (within 5% of the true dit). Pooled counts, no intervals."""
+    rows = []
+    n = max((len(p["per"]) for p in points), default=0)
+    for lo, hi in bins:
+        sel = [p for p in points if lo <= 1.2 / p["truth"] < hi]
+        for w in list(range(n)) + ["rule"]:
+            confident = correct = 0
+            for p in sel:
+                if w == "rule":
+                    est = next((e for e in p["per"] if e[0] is not None and e[1] >= threshold), None)
+                else:
+                    e = p["per"][w]
+                    est = e if e[0] is not None and e[1] >= threshold else None
+                if est is None:
+                    continue
+                confident += 1
+                correct += abs(math.log(est[0] / p["truth"])) <= tolerance
+            rows.append({"bin": (lo, hi), "window": w, "points": len(sel),
+                         "confident": confident / len(sel) if sel else None,
+                         "precision": correct / confident if confident else None})
+    return rows
+
+
 def evaluate_rule(points, windows_s, subset, threshold: float, tolerance: float = math.log(1.05)) -> dict:
     """The rule "the confident estimate (score >= threshold) with the shortest window in subset": precision
     (confident estimates within 5% of the true dit), coverage (points with a confident estimate), and the median

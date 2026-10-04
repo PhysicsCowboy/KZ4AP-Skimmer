@@ -853,4 +853,46 @@ TEST(BankChannelDits, A12WpmStationReKeysAfterItsBranchsWait) {
     EXPECT_GT(now.t_s, old.t_s + 0.5);  // about 0.8 s more keyed time: at least 0.5 s later
 }
 
+// The overrides in seconds (BankConfig::rekey_after_s, rekey_timeout_s, periodicity_windows_s; for ablations, settable
+// with --set in the replay tool) set to stage 1's values reproduce the prototype's timing, which bank-b3b ran: the
+// result equals the fixed_timing result bit for bit and the prototype's golden, on three golden streams.
+TEST(BankChannelDits, OverridesInSecondsReproduceStageOnesTimingBitForBit) {
+    BankConfig cfg;
+    cfg.rekey_after_s = 0.8;
+    cfg.rekey_timeout_s = 2.0;
+    cfg.periodicity_windows_s = {2.0, 5.0, 10.0};
+    for (const std::string name : {"clean", "turnover", "farnsworth"}) {
+        SCOPED_TRACE(name);
+        BankChannel ch(cfg, rate_of(name));
+        ch.push(stream_of(name));
+        ch.finish();
+        const ChannelResult r = ch.result();
+        expect_identical(r, result_of(name));
+        expect_matches_golden(r, golden().at("results").at(name), name);
+    }
+}
+
+// Each part of the overrides acts alone: the re-key settings in seconds leave the periodicity windows per candidate,
+// and the windows in seconds leave W_min,k and the time-out in dits.
+TEST(BankChannelDits, EachOverrideActsAlone) {
+    const BankTiming dits = bank_timing(BankConfig{});
+    BankConfig rekey;
+    rekey.rekey_after_s = 0.8;
+    rekey.rekey_timeout_s = 2.0;
+    const BankTiming a = bank_timing(rekey);
+    EXPECT_EQ(a.rekey_wait_s, std::vector<double>(32, 0.8));
+    EXPECT_EQ(a.rekey_timeout_s, std::vector<double>(32, 2.0));
+    EXPECT_EQ(a.periodicity_windows_s, dits.periodicity_windows_s);
+    BankConfig windows;
+    windows.periodicity_windows_s = {2.0, 5.0, 10.0};
+    const BankTiming b = bank_timing(windows);
+    EXPECT_EQ(b.rekey_wait_s, dits.rekey_wait_s);
+    EXPECT_EQ(b.rekey_timeout_s, dits.rekey_timeout_s);
+    EXPECT_EQ(b.periodicity_windows_s, (std::vector<std::vector<double>>{{2.0}, {5.0}, {10.0}}));
+    // only the wait set: the time-out follows it by the ratio
+    BankConfig wait;
+    wait.rekey_after_s = 0.8;
+    EXPECT_EQ(bank_timing(wait).rekey_timeout_s, std::vector<double>(32, 2.5 * 0.8));
+}
+
 }  // namespace

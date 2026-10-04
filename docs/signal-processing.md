@@ -2257,6 +2257,22 @@ goldens pass unchanged. Before B4a the three settings were
 `rekey_after_s` = 0.8 s and `rekey_timeout_s` = 2 s for every branch and
 `periodicity_windows_s` = 2, 5 and 10 s for every candidate.
 
+Overrides in seconds, for ablations (default unset): `BankConfig` keeps
+`rekey_after_s`, `rekey_timeout_s` (s; 0 = unset) and
+`periodicity_windows_s` (s; empty = unset). When set they take
+precedence: `rekey_after_s` gives every branch W_min,k = that value (the
+time-out then follows it by `rekey_timeout_ratio` unless
+`rekey_timeout_s` is set too), `rekey_timeout_s` gives every branch that
+time-out, and `periodicity_windows_s` gives windows of those lengths
+shared by every candidate (one FFT each). The replay tool sets them with
+`--set`; set to 0.8 s, 2 s and {2, 5, 10} s they reproduce stage 1's
+timing bit for bit (tested on three golden streams), and each part acts
+alone (tested). Note that branch 1's settings feed the periodicity
+estimate: its input p is branch 1's squelched posterior, which depends on
+branch 1's amplitude, seeded and re-keyed with W_min,1 (200.4 ms in dits,
+0.8 s in stage 1) and its time-out (501 ms, 2 s); so the re-key settings
+change the periodicity estimate's input as well as the keying.
+
 Tests at the default timing (`engine/tests/bank/`): W_min,k, the seed's
 memory and the time-out in samples at 1500 samples/s for k = 1, 16 and
 32 (derived values) and the 25 words/min bound above; the keyer ready
@@ -2946,7 +2962,11 @@ their half-width 0.075 Π a placeholder (E3), not measured for the comb
 on 2T; the update interval 0.25 s and the averaged rate 750 samples/s
 heuristic; Π = 2T, the reach caps and the taper's size derived; the
 reach rule and the biased estimate heuristic; the 1% grid step the
-duration fit's (a placeholder kept by E5); the 10⁻¹² · N variance floor
+duration fit's (a placeholder kept by E5); a candidate whose window the
+buffer does not yet fill takes no part (Plan B, B4a; heuristic, like the
+reach rule's exclusion: for up to 10.1 s in the shortest window and
+50.4 s in the longest, the row's estimate is over the short candidates
+only); the 10⁻¹² · N variance floor
 and the 16-sample minimum numerical choices.
 
 ### Text model and branch selection (bank decoder)
@@ -3675,7 +3695,7 @@ parameter was changed for this run.
 | Bank fit exp and ln | SLEEF 3.9.0 `_u10` (stated error bound 1.0 ulp) on arrays: grid points in blocks of 256, the retained history at once; finz (FMA) on AVX-512F (8 doubles) or AVX2 + FMA (4), else cinz on AVX-512F, AVX or SSE2 (8, 4, 2), chosen at run time; changes ℓ_total by ≤ 1.001 · 2^−52 · (5 \|ℓ_total\| + 14.3 + \|ln σ_ln²\|) nats against the C library's | `bank::vecmath` (`engine/src/bank/vecmath*.cpp`); `bank::DurationFit::grid_loglik`, `terms`, `refine` | the bound derived (1 ulp per call through the formula, assuming the C library's exp and ln within 1 ulp as SLEEF's; tested on the sweeps); the implementation order measured (Plan B B2(b)); the block of 256 a heuristic (stack scratch of 25 856 B, no measured effect claimed) |
 | Bank periodicity method | the comb on Π = 2T over branch 1's posterior p (the edge comb and the spectrum fit are not ported) | `BankConfig::periodicity_method`; `bank::Periodicity` | owner (E1); Π = 2T derived |
 | Bank periodicity input and updates | p averaged to r_P = r / max(1, round(r / 750 samples/s)) (750 samples/s at r = 1500 samples/s); recomputed every 0.25 s of p (375 samples at 1500 samples/s) | `BankConfig::periodicity_rate_hz`, `periodicity_update_s` | heuristic |
-| Bank periodicity windows | each candidate T over its own N_w · T, N_w = 41.7, 104 and 208 (0.50 to 2.50 s at T = 12 ms, 10.1 to 50.4 s at T = 242.2 ms); the shortest confident window gives T_P; the comb's reach 9.15 T always inside; class (1) dits | `BankConfig::periodicity_windows_dits`; `bank::bank_timing`, `bank::Periodicity` | windows placeholder (stage 1's 2, 5 and 10 s at 48 ms; Plan B, B4a); reach inside derived |
+| Bank periodicity windows | each candidate T over its own N_w · T, N_w = 41.7, 104 and 208 (0.50 to 2.50 s at T = 12 ms, 10.1 to 50.4 s at T = 242.2 ms); the shortest confident window gives T_P; the comb's reach 9.15 T always inside; class (1) dits | `BankConfig::periodicity_windows_dits` (override in s: `periodicity_windows_s`, unset); `bank::bank_timing`, `bank::Periodicity` | windows placeholder (stage 1's 2, 5 and 10 s at 48 ms; Plan B, B4a); reach inside derived |
 | Bank comb teeth and width | 4 teeth at kΠ, k = 1…4, negative teeth at (k ± ½)Π, each ±0.075 Π (±15% of T) wide; score = mean contrast, dimensionless; biased autocorrelation | `BankConfig::comb_teeth`, `comb_width`; `bank::comb_estimate` | placeholder (E3), not measured for the comb on 2T; biased estimate heuristic |
 | Bank comb confidence | T_P counts when its window's score ≥ 0.03 (dimensionless) | `BankConfig::comb_confidence_min` | placeholder (E1) |
 | Bank text model | ln(w / 2688) nats per character (VE3NEA's table); valid codes missing from it ln(8/2688) = −5.817 nats; "*" ln(10⁻⁶) = −13.816 nats; mean over the branch's last 10 characters (word spaces not counted), applied by the channel decoder | `bank::TextModel`; `BankConfig::text_window_chars`; `bank::Branch::text_logprob` | probabilities derived (VE3NEA); the two fallbacks heuristic; window 10 characters placeholder, kept by E8 |
@@ -3685,7 +3705,7 @@ parameter was changed for this run.
 | Bank block cadence | every stage advances once per block of round(block_s · r) samples, block_s = 32/1500 s = 21.33 ms (32 samples at 1500 samples/s); input in pieces of any length, a partial last block at the end | `BankConfig::block_s`; `bank::BankChannel::push`, `finish` | heuristic (the engine's channel block) |
 | Bank stored power | \|v_k\|² rounded to float32 as each sample arrives (as the prototype stores P), FS²; the channel's window stores it as a 4-byte float (lossless) and every read widens it to double exactly | `bank::boxcar_power_f32`; `bank::PowerMatrix`, `bank::BankChannel` | rounding a numerical choice (the prototype's, reproduced); the float storage a memory choice with no arithmetic effect (Plan B B1: development-set texts identical) |
 | Bank new over | key up longer than T_new = max(0.5 s, 12 · T_g) since the branch's last key-up (2.88 s without a fit; 0.576 s at 25 words/min) | `BankConfig::new_over_min_s`, `new_over_gaps`; `bank::Branch::new_over_due` | placeholders, kept by E7 |
-| Bank re-key and time-out | the over's start re-keyed with the full LLR after W_min,k = 16.7 d_k of keyed time, at the seed s² and the previous over's s² (best mean log-likelihood per element wins), over at most 20 s back; if W_min,k is not reached within 2.5 W_min,k = 41.75 d_k of channel time (501 ms at k = 1, 2.093 s at k = 16, 9.616 s at k = 32), re-keyed at the previous over's s², or its provisional characters deleted; class (1) dits | `BankConfig::rekey_after_dits`, `rekey_timeout_ratio`; `bank::Branch::rekey_over`, `clear_over` | W_min,k derived from E9b (Plan B, B4a); the ratio 2.5 heuristic (stage 1's 2 s / 0.8 s); candidate choice heuristic |
+| Bank re-key and time-out | the over's start re-keyed with the full LLR after W_min,k = 16.7 d_k of keyed time, at the seed s² and the previous over's s² (best mean log-likelihood per element wins), over at most 20 s back; if W_min,k is not reached within 2.5 W_min,k = 41.75 d_k of channel time (501 ms at k = 1, 2.093 s at k = 16, 9.616 s at k = 32), re-keyed at the previous over's s², or its provisional characters deleted; class (1) dits | `BankConfig::rekey_after_dits`, `rekey_timeout_ratio` (overrides in s: `rekey_after_s`, `rekey_timeout_s`, unset); `bank::Branch::rekey_over`, `clear_over` | W_min,k derived from E9b (Plan B, B4a); the ratio 2.5 heuristic (stage 1's 2 s / 0.8 s); candidate choice heuristic |
 | Bank fresh fit against the previous | the over's fresh fit replaces the previous over's continued fit with ≥ 8 of the over's marks and spaces and a log-likelihood gain > ½ · 4 · ln n nats on them (4.16 nats at n = 8); the competition ends after 192 (⌈4 N_mem⌉) | `BankConfig::fresh_fit_min_obs`; `bank::kFitParameters`; `bank::Branch` | 8 a placeholder (heuristic); ½ k ln n form derived (BIC), k = 4 heuristic; the end at 4 N_mem derived (e⁻⁴ = 1.8%) |
 | Bank corrections | a replacement at t changes nothing that starts before t − 20 s; overlap cut at max(from, t − 20 s); recorded only if the text differs, with its kept-character count | `BankConfig::correction_reach_s`; `bank::Output::replace_from` | 20 s owner; overlap cut heuristic |
 | Bank switch replacement | from the start of the new branch's character containing the time its eligible run began (its own time base); a fallback pick from the switch's time | `bank::BankChannel` | heuristic (spec 4.8; the fallback rule documented behavior) |

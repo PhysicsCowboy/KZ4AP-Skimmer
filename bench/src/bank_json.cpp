@@ -15,7 +15,8 @@ namespace {
 // Every ProtoConfig field, in its declaration order (training/kz4ap_proto/params.py), with Plan B's B4a fields in
 // dits in place of the three in seconds they replaced (rekey_after_dits for rekey_after_s, periodicity_windows_dits
 // for periodicity_windows_s, rekey_timeout_ratio for rekey_timeout_s), then Plan B's BankConfig fields, which the
-// prototype does not have (noise_stuck_s: B3).
+// prototype does not have (noise_stuck_s: B3; the overrides in seconds rekey_after_s, rekey_timeout_s and
+// periodicity_windows_s: B4a, for ablations, unset by default).
 #define KZ4AP_BANK_CONFIG_FIELDS(X)                                                                           \
     X(min_wpm) X(max_wpm) X(ladder_step) X(length_dits) X(block_s) X(noise_method) X(mask_bias) X(noise_tau_s) \
     X(noise_warmup_s) X(noise_guard) X(neighbor_guard) X(segment_s) X(spectrum_smoothing_hz) X(guard_margin_s) \
@@ -28,7 +29,8 @@ namespace {
     X(spectrum_null_width) X(spectrum_front_floor_db) X(comb_confidence_min) X(edge_confidence_min)            \
     X(spectrum_confidence_min) X(eligibility_tolerance) X(switch_persistence) X(quality_tie_nats)              \
     X(text_tie_nats) X(text_window_chars) X(text_separation_nats) X(new_over_min_s) X(new_over_gaps)           \
-    X(rekey_timeout_ratio) X(fresh_fit_min_obs) X(correction_reach_s) X(noise_stuck_s)
+    X(rekey_timeout_ratio) X(fresh_fit_min_obs) X(correction_reach_s) X(noise_stuck_s) X(rekey_after_s)        \
+    X(rekey_timeout_s) X(periodicity_windows_s)
 
 ordered_json field_json(double v) { return ordered_json(v); }
 ordered_json field_json(int v) { return ordered_json(v); }

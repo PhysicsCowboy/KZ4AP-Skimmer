@@ -249,6 +249,15 @@ def periodicity_decoded_table(out_dir, name: str, threshold: float = 0.03, targe
             lines.append(f"| {subset} | {label} {th:.4g} | {_with_interval(res['precision'], res['precision_interval'], '.3f')} | "
                          f"{_with_interval(res['coverage'], res['coverage_interval'], '.3f')} | "
                          f"{_with_interval(res['median_time_to_confident_s'], None, '.2f')} |")
+    lines += ["", f"### By speed (true dit's WPM bin), at threshold {threshold:g}", "",
+              "Per window (shortest first) and for the rule over all windows: points, fraction confident, precision of "
+              "the confident estimates. Pooled counts, no intervals.", "",
+              "| WPM bin | window | points | confident | precision |", "|---|---|---|---|---|"]
+    for r in metrics.periodicity_by_speed(points, threshold):
+        lo, hi = r["bin"]
+        fmt = lambda x: "—" if x is None else f"{x:.3f}"
+        lines.append(f"| {lo:g}-{min(hi, 100.0):g} | {r['window']} | {r['points']} | {fmt(r['confident'])} | "
+                     f"{fmt(r['precision'])} |")
     path = out_dir / "experiments" / f"periodicity-decoded-{name}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -71,7 +71,7 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     const auto g = kz4ap::test::load_golden("channel");
     const ordered_json cfg = kz4ap::bench::to_json(kz4ap::bank::BankConfig{});
     // the prototype's ProtoConfig() dump with B4a's fields in dits in place of the three in seconds they replaced,
-    // then Plan B's fields (noise_stuck_s, B3), which the prototype lacks
+    // then Plan B's fields (noise_stuck_s, B3; B4a's overrides in seconds, unset), which the prototype lacks
     std::string want = g.at("config_dumps").get<std::string>();
     for (const auto& [from, to] : std::vector<std::pair<std::string, std::string>>{
              {"\"rekey_after_s\": 0.8", "\"rekey_after_dits\": 16.7"},
@@ -82,7 +82,8 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
         want.replace(at, from.size(), to);
     }
     ASSERT_EQ(want.back(), '}');
-    want.insert(want.size() - 1, ", \"noise_stuck_s\": 8.0");
+    want.insert(want.size() - 1, ", \"noise_stuck_s\": 8.0, \"rekey_after_s\": 0.0, \"rekey_timeout_s\": 0.0, "
+                                 "\"periodicity_windows_s\": []");
     EXPECT_EQ(py_dumps(cfg), want);
     // and back
     EXPECT_EQ(py_dumps(kz4ap::bench::to_json(kz4ap::bench::bank_config_from_json(cfg))), py_dumps(cfg));
@@ -93,6 +94,10 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     kz4ap::bench::set_config_value(c, "comb_teeth", ordered_json(5));
     kz4ap::bench::set_config_value(c, "noise_stuck_s", ordered_json(16.0));
     EXPECT_EQ(c.noise_stuck_s, 16.0);
+    kz4ap::bench::set_config_value(c, "periodicity_windows_s", ordered_json::array({2.0, 5.0, 10.0}));
+    kz4ap::bench::set_config_value(c, "rekey_after_s", ordered_json(0.8));
+    EXPECT_EQ(c.periodicity_windows_s, (std::vector<double>{2.0, 5.0, 10.0}));
+    EXPECT_EQ(c.rekey_after_s, 0.8);
     EXPECT_EQ(c.fit_memory, 24.0);
     EXPECT_TRUE(c.x_on_values.empty());
     EXPECT_EQ(c.noise_method, "branch");

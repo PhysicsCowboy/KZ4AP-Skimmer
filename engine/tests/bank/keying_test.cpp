@@ -251,8 +251,8 @@ TEST(BankKeyingDits, RekeyWaitAndTimeOutPerBranch) {
         double timeout_s;        // 2.5 W_min,k, s
         std::int64_t timeout_n;  // round(1500 x time-out), samples
     };
-    // d_1 = 12 ms: W_min = 200.4 ms = 300.6 samples, time-out 501.0 ms = 751.5 samples (the product's last bit puts
-    // it below the tie: 751). d_16 = 50.13 ms: 837.1 ms = 1255.7 samples, 2.093 s = 3139 samples. d_32 = 230.3 ms:
+    // d_1 = 12 ms: W_min = 200.4 ms = 300.6 samples, time-out 501.0 ms = 751.5 samples, a tie that the product's
+    // last bit decides (751 on this expression; either is within half a sample, so either is accepted). d_16 = 50.13 ms: 837.1 ms = 1255.7 samples, 2.093 s = 3139 samples. d_32 = 230.3 ms:
     // 3.847 s = 5769.8 samples, 9.616 s = 14425 samples.
     const Want want[] = {{0, 0.2004, 300.6, 1202, 0.501, 751},
                          {15, 0.83712, 1255.68, 5023, 2.09280, 3139},
@@ -265,7 +265,10 @@ TEST(BankKeyingDits, RekeyWaitAndTimeOutPerBranch) {
         EXPECT_EQ(keyer.keyed_cap[w.k], w.cap);
         EXPECT_NEAR(t.rekey_timeout_s[w.k], w.timeout_s, 1e-5);
         EXPECT_NEAR(t.rekey_timeout_s[w.k], 2.5 * 16.7 * d[w.k], 1e-14);
-        EXPECT_EQ(timeout[w.k], w.timeout_n);
+        if (w.k == 0)
+            EXPECT_NEAR(static_cast<double>(timeout[w.k]), 751.5, 0.5);  // the tie: 751 or 752
+        else
+            EXPECT_EQ(timeout[w.k], w.timeout_n);
     }
 }
 

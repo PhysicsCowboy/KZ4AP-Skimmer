@@ -13,10 +13,15 @@ std::vector<double> branch_dits_s(const BankConfig& cfg) {
 
 BankTiming bank_timing(const BankConfig& cfg) {
     BankTiming t;
+    // The overrides in seconds (ablations), when set, take precedence over the values in dits.
     for (const double d : branch_dits_s(cfg)) {
-        const double wait = cfg.rekey_after_dits * d;
+        const double wait = cfg.rekey_after_s > 0.0 ? cfg.rekey_after_s : cfg.rekey_after_dits * d;
         t.rekey_wait_s.push_back(wait);
-        t.rekey_timeout_s.push_back(cfg.rekey_timeout_ratio * wait);
+        t.rekey_timeout_s.push_back(cfg.rekey_timeout_s > 0.0 ? cfg.rekey_timeout_s : cfg.rekey_timeout_ratio * wait);
+    }
+    if (!cfg.periodicity_windows_s.empty()) {
+        for (const double w : cfg.periodicity_windows_s) t.periodicity_windows_s.push_back({w});
+        return t;
     }
     const std::vector<double> grid = t_grid(cfg);
     for (const double n_w : cfg.periodicity_windows_dits) {

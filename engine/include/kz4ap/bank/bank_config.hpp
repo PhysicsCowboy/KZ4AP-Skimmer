@@ -50,6 +50,15 @@ struct BankConfig {
     // level is set again by the warm-up rule (the stuck-level recovery); 4 tau_n; heuristic. Seconds, not dits:
     // the noise has no keying speed. Plan B (B3), not a prototype field
     double noise_stuck_s = 8.0;
+    // Overrides in seconds of B4a's time constants in dits, for ablations (Plan B, B4a; default unset). When set, they
+    // take precedence over the fields in dits: rekey_after_s > 0 sets W_min,k = rekey_after_s of keyed time for every
+    // branch (instead of rekey_after_dits x d_k), rekey_timeout_s > 0 the re-key time-out to rekey_timeout_s of
+    // channel time for every branch (instead of rekey_timeout_ratio x W_min,k), and a non-empty periodicity_windows_s
+    // windows of these lengths shared by every candidate (instead of periodicity_windows_dits x T). Stage 1's values
+    // are 0.8 s, 2 s and {2, 5, 10} s. s; 0 or empty: unset
+    double rekey_after_s = 0.0;
+    double rekey_timeout_s = 0.0;
+    std::vector<double> periodicity_windows_s = {};
     // kappa, dimensionless; mask_bias measured with this default
     double noise_guard = 1.75;
     // kappa_n, dimensionless; also the spectrum's mark flag; mask_bias measured with this default

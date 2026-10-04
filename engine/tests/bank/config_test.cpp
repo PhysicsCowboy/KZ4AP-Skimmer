@@ -46,7 +46,7 @@ TEST(BankConfig, DefaultsEqualThePrototypes) {
     EXPECT_EQ(c.false_marks_per_s, g.at("false_marks_per_s").get<double>());
     expect_vector(c.x_on_values, g.at("x_on_values"), "x_on_values");
     EXPECT_EQ(c.release_probability, g.at("release_probability").get<double>());
-    // rekey_after_s: replaced by rekey_after_dits (Plan B, B4a; PlanBDefaults below)
+    // rekey_after_s: replaced by rekey_after_dits (Plan B, B4a; PlanBDefaults below); the name is now an override, unset
     EXPECT_EQ(g.at("rekey_after_s").get<double>(), 0.8);
     EXPECT_EQ(c.seed_memory_rekeys, g.at("seed_memory_rekeys").get<double>());
     EXPECT_EQ(c.fit_memory, g.at("fit_memory").get<double>());
@@ -62,7 +62,7 @@ TEST(BankConfig, DefaultsEqualThePrototypes) {
     EXPECT_EQ(c.refine_iterations, g.at("refine_iterations").get<int>());
     EXPECT_EQ(c.min_fit_weight, g.at("min_fit_weight").get<double>());
     EXPECT_EQ(c.periodicity_method, g.at("periodicity_method").get<std::string>());
-    // periodicity_windows_s: replaced by periodicity_windows_dits (Plan B, B4a)
+    // periodicity_windows_s: replaced by periodicity_windows_dits (Plan B, B4a); now an override, unset
     EXPECT_EQ(g.at("periodicity_windows_s").get<std::vector<double>>(), (std::vector<double>{2.0, 5.0, 10.0}));
     EXPECT_EQ(c.periodicity_update_s, g.at("periodicity_update_s").get<double>());
     EXPECT_EQ(c.periodicity_rate_hz, g.at("periodicity_rate_hz").get<double>());
@@ -82,7 +82,7 @@ TEST(BankConfig, DefaultsEqualThePrototypes) {
     EXPECT_EQ(c.text_separation_nats, g.at("text_separation_nats").get<double>());
     EXPECT_EQ(c.new_over_min_s, g.at("new_over_min_s").get<double>());
     EXPECT_EQ(c.new_over_gaps, g.at("new_over_gaps").get<double>());
-    // rekey_timeout_s: replaced by rekey_timeout_ratio (Plan B, B4a)
+    // rekey_timeout_s: replaced by rekey_timeout_ratio (Plan B, B4a); now an override, unset
     EXPECT_EQ(g.at("rekey_timeout_s").get<double>(), 2.0);
     EXPECT_EQ(c.fresh_fit_min_obs, g.at("fresh_fit_min_obs").get<int>());
     EXPECT_EQ(c.correction_reach_s, g.at("correction_reach_s").get<double>());
@@ -102,6 +102,10 @@ TEST(BankConfig, PlanBDefaults) {
     EXPECT_NEAR(c.rekey_after_dits * 0.048 / 0.8, 1.0, 0.0025);  // 0.2%
     EXPECT_EQ(c.rekey_timeout_ratio, 2.5);
     EXPECT_EQ(c.periodicity_windows_dits, (std::vector<double>{41.7, 104.0, 208.0}));
+    // B4a's overrides in seconds (ablations): unset
+    EXPECT_EQ(c.rekey_after_s, 0.0);
+    EXPECT_EQ(c.rekey_timeout_s, 0.0);
+    EXPECT_TRUE(c.periodicity_windows_s.empty());
     const std::vector<double> stage1_s = {2.0, 5.0, 10.0};
     for (std::size_t i = 0; i < stage1_s.size(); ++i)
         EXPECT_NEAR(c.periodicity_windows_dits[i] * 0.048 / stage1_s[i], 1.0, 0.002) << i;  // 0.08%, 0.16%, 0.16%

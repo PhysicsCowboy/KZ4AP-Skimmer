@@ -29,7 +29,8 @@ struct BankTiming {
 };
 
 // The configuration's timing: W_min,k = rekey_after_dits x d_k; the time-out rekey_timeout_ratio x W_min,k; a row
-// per N_w of periodicity_windows_dits, N_w x T for each candidate T of t_grid(cfg).
+// per N_w of periodicity_windows_dits, N_w x T for each candidate T of t_grid(cfg). The overrides in seconds
+// (rekey_after_s, rekey_timeout_s, periodicity_windows_s), when set, replace the corresponding part.
 BankTiming bank_timing(const BankConfig& cfg);
 
 // Every constant in seconds, the same for every branch and every candidate (stage 1's form; Plan A and the

@@ -69,3 +69,16 @@ def test_periodicity_points_from_the_decoders_own_records(tmp_path):
     r = metrics.evaluate_rule(points, (0, 1, 2), (0, 1, 2), 0.03)
     assert r["confident"] == 3 and r["precision"] == pytest.approx(1.0)
     assert metrics.periodicity_points_decoded(tmp_path, "p", min_snr_db=20.0) == []
+
+
+def test_periodicity_by_speed_bins_the_true_dit():
+    points = [{"truth": 0.048, "per": [(0.048, 0.04), (0.096, 0.5)]},
+              {"truth": 0.048, "per": [(0.030, 0.01), (0.048, 0.5)]},
+              {"truth": 0.1, "per": [(None, 0.0), (0.1, 0.2)]}]
+    rows = {(r["bin"], r["window"]): r for r in metrics.periodicity_by_speed(points, 0.03)}
+    r25 = rows[((22.0, 30.0), 0)]
+    assert r25["points"] == 2 and r25["confident"] == pytest.approx(0.5) and r25["precision"] == pytest.approx(1.0)
+    rule = rows[((22.0, 30.0), "rule")]
+    assert rule["confident"] == pytest.approx(1.0) and rule["precision"] == pytest.approx(1.0)
+    assert rows[((5.0, 15.0), 1)]["precision"] == pytest.approx(1.0)
+    assert rows[((30.0, 50.0), 0)]["points"] == 0 and rows[((30.0, 50.0), 0)]["confident"] is None
