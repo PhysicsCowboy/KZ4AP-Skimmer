@@ -44,7 +44,10 @@ a different text; groups A, B, C, F, G, H (oracle) and I have paired intervals e
 10 WPM) improves without a significant interval. The periodicity rule's precision at the 0.03 threshold falls from
 0.804 to 0.753 (non-overlapping intervals), all of it in the shortest window. CPU 42.61 → 57.56 ms per channel-second
 (Linux machine), memory per channel in flight 32.16 → 33.29 MB. Every Plan A golden test passes unchanged at the
-prototype's values set explicitly (section 6).
+prototype's values set explicitly (section 6). The ablation (6.5) splits the loss: the windows in dits alone
+cost +0.0184 (+0.0122 to +0.0251), the re-key settings in dits alone +0.0116 (+0.0042 to +0.0202); the comb's
+precision fall comes from the windows alone, whose wrong estimates move to about 3 T and longer, not from a shortest
+window too short at fast speeds.
 
 ## 0. Terms used in this record
 
@@ -794,10 +797,13 @@ A, B, C, F, G, H (oracle) and I, and the pooled figure. Their regimes (CER of th
   0.078 → 0.058.
 
 Better: D speed 10 WPM 0.291 → 0.000 and step 35 → 20 WPM 0.060 → 0.018 (D's pooled interval includes 0).
-Conjecture, not measured: the losses at 25 WPM, where W_min and the time-out are nearly stage 1's, point at the
-periodicity windows rather than the re-key settings: the shortest window's precision at 0.03 fell (6.4), and early
-in an over only the short candidates' windows are full, so the first confident T_P can come from a short candidate.
-An ablation (re-key settings in dits with stage 1's periodicity windows, and the reverse) would separate the two.
+Attribution: this comparison changes both parts at once, and the re-key part is not small at any speed, 25 WPM
+included. The periodicity estimate's input is branch 1's squelched posterior p, which depends on branch 1's
+amplitude, and branch 1's W_min went from 0.8 s to 200.4 ms, its time-out from 2 s to 501 ms and its seed memory from
+4800 to 1202 samples, at every station speed; the branches next to a station's own also changed by up to the ladder
+step. (An earlier version of this section attributed the losses at 25 WPM to the windows because "W_min and the
+time-out are nearly stage 1's there"; that premise was wrong, as the review of B4a found.) The ablation in 6.5
+separates the two parts; its result is there.
 
 ### 6.3 CPU and memory
 
@@ -840,10 +846,128 @@ dit; bootstrap 95% over channels; scores as recorded, rounded to 4 decimals): 17
 **Precision at 0.03 fell from 0.804 to 0.753 with non-overlapping intervals** (0.728–0.776 against 0.779–0.828;
 two separate bootstraps, not a paired one): reported to the owner, as the brief requires. The fall is in the
 shortest window (0.809 → 0.753); the two longer windows are more precise than the fixed ones and reach a confident
-estimate sooner. The threshold at which the rule's precision reaches 0.95 is 0.2609 (0.2495 with the fixed
+estimate sooner. Between these two runs p itself differs (branch 1's re-key settings changed, 6.2), so this table
+alone does not attribute the fall to the windows; the ablation (6.5) does: with the re-key settings in dits and the
+fixed windows the precision is 0.808, with the windows in dits and stage 1's re-key settings 0.747. The threshold at which the rule's precision reaches 0.95 is 0.2609 (0.2495 with the fixed
 windows); stage 1's E1 found 0.2506. **0.03 is kept** (the brief: stage 1's end-to-end check made decoding worse at
 the calibrated threshold).
 
 Raw outputs (git-ignored): `build/suite/full3/experiments/linux/b4a/` (`compare-bank-b4a-vs-bank-b3b.md`,
 `c2-diff-bank-b4a-vs-bank-b3b.md`, `periodicity-decoded-bank-b4a.md`, `periodicity-decoded-bank-b3b.md`,
 `b4a-run.log`); decoded files `build/suite/full3/proto/bank-b4a/` on the Linux machine.
+
+### 6.5 Ablation: which part costs CER
+
+Two variants, each with one part of B4a reverted to stage 1's values through the overrides in seconds (`95c7618`;
+`--set` in `kz4ap-bank-replay`; set to stage 1's values they reproduce its timing bit for bit, tested on three
+golden streams). Both runs use the same build, are on the development set (Linux machine), and are compared with
+`bank-b3b`:
+
+- `bank-b4a-rekey`: the re-key settings in dits (W_min,k, time-out, seed memory, branch 1's included), with stage 1's
+  periodicity windows of 2, 5 and 10 s (`--set periodicity_windows_s=[2,5,10]`). This changes p, the periodicity
+  estimate's input (through branch 1's amplitude), but not the windows.
+- `bank-b4a-windows`: stage 1's re-key settings (`--set rekey_after_s=0.8 --set rekey_timeout_s=2.0`), with the
+  windows in dits. This keeps stage 1's p and changes only the windows.
+
+Paired CER, variant − `bank-b3b` (bootstrap 95% over signals); **bold**: interval entirely above 0.
+
+| group | signals | bank-b4a-rekey | bank-b4a-windows | bank-b4a (both, 6.2) |
+|---|---|---|---|---|
+| all | 509 | **+0.0116 (+0.0042 to +0.0202)** | **+0.0184 (+0.0122 to +0.0251)** | **+0.0277 (+0.0194 to +0.0362)** |
+| A sensitivity | 192 | **+0.0118 (+0.0025 to +0.0224)** | **+0.0085 (+0.0019 to +0.0161)** | **+0.0153** |
+| B fading | 30 | +0.0093 (−0.0087 to +0.0333) | **+0.0233 (+0.0017 to +0.0511)** | **+0.0350** |
+| C fists | 135 | +0.0002 (−0.0016 to +0.0020) | **+0.0424 (+0.0298 to +0.0566)** | **+0.0438** |
+| D speed | 12 | −0.0027 (−0.0112 to +0.0047) | −0.0425 (−0.1156 to +0.0133) | −0.0447 |
+| E interference | 16 | +0.0056 (−0.0086 to +0.0250) | −0.0167 (−0.0594 to +0.0213) | −0.0105 |
+| F tuning | 28 | +0.0109 (−0.0112 to +0.0352) | **+0.0358 (+0.0137 to +0.0604)** | **+0.0618** |
+| G ragchew | 12 | −0.0015 (−0.0037 to +0.0002) | **+0.0253 (+0.0023 to +0.0576)** | **+0.0084** |
+| H two-station QSO, oracle | 12 | +0.0045 (−0.0011 to +0.0118) | **+0.0304 (+0.0026 to +0.0686)** | **+0.0302** |
+| H (per station) | 24 | **+0.0256 (+0.0080 to +0.0484)** | −0.0215 (−0.0559 to +0.0107) | +0.0204 |
+| I Farnsworth | 48 | +0.0486 (−0.0140 to +0.1185) | **+0.0190 (+0.0070 to +0.0328)** | **+0.0468** |
+
+Paired first-word CER, pooled: `bank-b4a-rekey` +0.1922 (+0.0827 to +0.3212); `bank-b4a-windows` +0.0640 (−0.0049 to
++0.1392).
+
+Texts changed against `bank-b3b`: 333 of 525 (`bank-b4a-rekey`) and 399 of 525 (`bank-b4a-windows`). CPU: 45.17 and
+55.06 ms per channel-second (one run each). The CPU cost is the windows'.
+
+Worst regimes (test case CER, `bank-b3b` → variant):
+
+- `bank-b4a-rekey`:
+  - I 18/5 WPM paddle: 0.288 → 0.650.
+  - E Δf 20 Hz, +0 dB: 0.697 → 0.808.
+  - F offset 2.9 Hz 25 WPM: 0.079 → 0.183.
+  - F drift 0.5 Hz/s: 0.000 → 0.080.
+  - H per station, separate track 100 Hz: 0.104 → 0.169.
+
+  These are mostly over starts. First-word CER rises in A, H and F. C fists does not move (+0.0002).
+- `bank-b4a-windows`:
+  - C hand imbalance −0.1, +0.1, +0.0: 0.207 → 0.361, 0.199 → 0.295, 0.188 → 0.276.
+  - C machine imbalance +0.0: 0.002 → 0.077.
+  - C bug −0.1: 0.064 → 0.124.
+  - E Δf 50 Hz, +0 dB: 0.118 → 0.252.
+  - F drift 0.2 Hz/s: 0.028 → 0.139.
+  - F offsets at 20 WPM (0 Hz: 0.043 → 0.125; 5.9 Hz: 0.058 → 0.142).
+  - H same-track offset 0 Hz: 0.120 → 0.229.
+
+  Better: D 10 WPM 0.291 → 0.000; E +20 dB interferers.
+
+**Answer.** Both parts cost CER, in different places:
+
+- **The windows in dits** cost the larger share pooled (+0.0184). They account for C (all of it), F, G, H (oracle), B
+  and part of I.
+- **The re-key settings in dits** cost +0.0116 pooled. They account for A, H per station and part of I (18/5 paddle),
+  mostly in the first words.
+- The effects roughly add: +0.0116 + 0.0184 = +0.0300 against +0.0277 measured for both.
+
+**The comb's precision fall is the windows'.** At threshold 0.03, over all windows:
+
+| run | precision | coverage |
+|---|---|---|
+| `bank-b3b` | 0.804 (0.779–0.828) | 0.993 |
+| `bank-b4a-rekey` | 0.808 (0.784–0.833) | 0.993 |
+| `bank-b4a-windows` | 0.747 (0.723–0.772) | 0.993 |
+| `bank-b4a` | 0.753 (0.728–0.776) | 0.993 |
+
+So the change of p by the re-key settings does not move the comb, and the windows do.
+
+**Is the shortest window too short at fast speeds? No.** The shortest window is 41.7 T in seconds:
+
+- 1.25 s at 40 WPM (T = 30 ms);
+- 2.00 s at 25 WPM;
+- 3.34 s at 15 WPM;
+- 4.17 s at 12 WPM;
+- 0.50 s only at 100 WPM (T = 12 ms), the grid's fastest candidate.
+
+Precision of the shortest window's confident estimates at 0.03, by the true dit's speed (`bank-b3b`, fixed 2 s →
+`bank-b4a-windows`, 41.7 T; pooled counts):
+
+| speed bin | 41.7 T in that bin | precision | fraction confident |
+|---|---|---|---|
+| 5–15 WPM | 3.3 to 10 s | 0.969 → 0.948 | 0.977 → 0.982 |
+| 15–22 WPM | 2.3 to 3.3 s | 0.902 → 0.729 | 0.777 → 0.950 |
+| 22–30 WPM | 1.7 to 2.3 s | 0.772 → 0.721 | 0.984 → 0.993 |
+| 30–50 WPM | 1.0 to 1.7 s | 0.795 → 0.709 | 0.984 → 0.997 |
+
+The largest fall is at 15–22 WPM, where the new window is longer than the old 2 s. So the loss does not come from
+the window being too short. What changed is where the wrong estimates fall. Among the shortest window's confident
+wrong estimates (all speeds), the share near 3 T (ratio 2.9–3.1) rose from 3.7% to 26.0%, and the share beyond 3.1 T
+from 1.4% to 15.7%. The share at 1.05–1.45 T fell from 37.0% to 22.4%.
+
+The wrong fraction is about the same early and late in a transmission (bank-b4a-windows: 0.255 before 5 s, 0.253
+from 10 s on). So the early-availability rule (a candidate whose window is not full takes no part) is not the cause
+either.
+
+Conjecture, not measured: with each candidate judged over its own window, a long candidate (3 T and longer) is scored
+over a window 3 or more times longer than the true dit's. Its normalized comb then differs in noise and taper from
+the true candidate's, and the argmax across candidates whose windows differ favors the long ones. Comparing
+candidates over different windows was not a question stage 1 measured.
+
+Raw outputs (git-ignored), in `build/suite/full3/experiments/linux/b4a/`:
+
+- `compare-bank-b4a-{rekey,windows}-vs-bank-b3b.md`
+- `c2-diff-…`
+- `periodicity-decoded-{bank-b3b,bank-b4a,bank-b4a-rekey,bank-b4a-windows}.md` (with the by-speed tables)
+- `b4a-ablation.log`
+
+The script for the wrong-estimate ratios is `build/b4a/wrong_ratio.py`.
