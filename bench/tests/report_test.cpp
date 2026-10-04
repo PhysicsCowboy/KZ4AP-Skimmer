@@ -106,6 +106,27 @@ TEST(Report, TrackTextAppliesCorrectionsByIndexToTheFinalTextOnly) {
     EXPECT_EQ(t.immediate_text(), "CQ DX");
 }
 
+TEST(Report, TrackTextKeepsEveryCorrectionsTimeReachAndReason) {
+    TrackText t;
+    t.apply(symbols({"C", "Q", " ", "D"}), {});
+    EXPECT_TRUE(t.corrections().empty());
+    kz4ap::TextCorrection a{1, symbols({"Q", "E"}), 2.0, "switch", 0.5};
+    kz4ap::TextCorrection b{2, symbols({"X"}), 3.5, "rekey", 1.25};
+    t.apply(symbols({"Z"}), {a, b});
+    ASSERT_EQ(t.corrections().size(), 2u);
+    EXPECT_EQ(t.corrections()[0].t_s, 2.0);
+    EXPECT_EQ(t.corrections()[0].reach_s, 0.5);
+    EXPECT_EQ(t.corrections()[0].reason, "switch");
+    EXPECT_EQ(t.corrections()[1].reach_s, 1.25);
+    const auto j = corrections_json(t.corrections());
+    ASSERT_EQ(j.size(), 2u);
+    EXPECT_EQ(j[1].at("reason"), "rekey");
+    EXPECT_DOUBLE_EQ(j[1].at("reach_s").get<double>(), 1.25);
+    EXPECT_DOUBLE_EQ(j[1].at("t_s").get<double>(), 3.5);
+    EXPECT_TRUE(corrections_json({}).is_array());
+    EXPECT_TRUE(corrections_json({}).empty());
+}
+
 TEST(Report, ImmediateScoreIsAddedBesideTheFinalOne) {
     const Labels labels = two_labels();
     const Score final_score = score(labels.signals, {{1, 1000.0, "CQ K1ABC"}, {2, 2000.0, "TU"}}, 50.0, true);

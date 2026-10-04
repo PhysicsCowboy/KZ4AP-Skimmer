@@ -134,13 +134,20 @@ void write_json(const std::optional<std::filesystem::path>& path, const nlohmann
 
 // "text" is the final text; "text_immediate" (when immediate is given, one per track in the same order) the text as
 // first published, corrections ignored.
+// "corrections" (when corrections is given: the bank decoder) the track's corrections, corrections_json's form.
 void add_tracks(nlohmann::json& out, const std::vector<DecodedTrack>& tracks,
-                const std::vector<DecodedTrack>* immediate = nullptr) {
+                const std::vector<DecodedTrack>* immediate = nullptr,
+                const std::map<std::uint32_t, TrackText>* corrections = nullptr) {
     out["tracks"] = nlohmann::json::array();
     for (std::size_t i = 0; i < tracks.size(); ++i) {
         const auto& t = tracks[i];
         nlohmann::json j = {{"id", t.id}, {"freq_hz", t.freq_hz}, {"text", normalize_text(t.text)}};
         if (immediate) j["text_immediate"] = normalize_text((*immediate)[i].text);
+        if (corrections) {
+            const auto it = corrections->find(t.id);
+            j["corrections"] = corrections_json(it != corrections->end() ? it->second.corrections()
+                                                                          : std::vector<TrackText::Received>{});
+        }
         out["tracks"].push_back(std::move(j));
         std::printf("track %4u  %+10.1f Hz  %s\n", t.id, t.freq_hz, normalize_text(t.text).c_str());
     }
@@ -221,7 +228,7 @@ int run_engine(const Args& args) {
         immediate_list.push_back(std::move(immediate_track));
         tracked_freq_hz[id] = t.last_freq_hz;
     }
-    add_tracks(out, track_list, &immediate_list);
+    add_tracks(out, track_list, &immediate_list, args.front_end == FrontEnd::Bank ? &texts : nullptr);
     out["channel_seconds"] = stats.channel_seconds;
     if (args.timing) {
         const auto per_channel_ms = [&](double seconds) {

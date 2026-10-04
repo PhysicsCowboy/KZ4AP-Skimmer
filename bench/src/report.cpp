@@ -93,7 +93,14 @@ void TrackText::apply(const std::vector<kz4ap::DecodedSymbol>& chars,
     for (const auto& k : corrections) {
         final_.resize(std::min(k.from_index, final_.size()));  // never indexes past the published characters
         for (const auto& c : k.chars) final_.push_back(c.text);
+        corrections_.push_back({k.t_s, k.reach_s, k.reason});
     }
+}
+
+nlohmann::json corrections_json(const std::vector<TrackText::Received>& corrections) {
+    nlohmann::json a = nlohmann::json::array();
+    for (const auto& c : corrections) a.push_back({{"t_s", c.t_s}, {"reach_s", c.reach_s}, {"reason", c.reason}});
+    return a;
 }
 
 std::string TrackText::final_text() const {

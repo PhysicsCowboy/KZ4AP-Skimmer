@@ -2841,7 +2841,14 @@ front of it are the Matched path's, unchanged.
   the two texts are equal and the rest of the output unchanged (checked
   against the previous build on the smoke recording, first-sample-s1 and
   F-drift-s1, through the detector path and with oracle channels: identical
-  JSON apart from the new keys).
+  JSON apart from the new keys). For the bank it also writes, per track,
+  `corrections`: every correction the events carried, with `t_s` (s,
+  stream time), `reach_s` (s) and `reason`. `kz4ap_synth.suites
+  summarize` counts them per group (section "Corrections" of the summary:
+  corrections per channel-minute of the group's engine runs, by reason,
+  and the reach's median, 99th percentile and maximum, numpy's linear
+  percentile; each engine run once, a detector-path recording's
+  station-label result being the same run).
 - **End to end (measured, development set seed 1).** first-sample-s1 with
   oracle channels: the engine's final texts equal the replay tool's on all
   4 channels (CER 0.0000 on the final text, 0.0743 on the immediate text:

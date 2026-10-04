@@ -853,6 +853,65 @@ def track_splits(out_dir: Path, results_dirs=None, front_ends=None, only: str | 
     return {k: {"qsos": len(v), "mean_tracks": float(np.mean(v))} for k, v in counts.items()}
 
 
+def correction_stats(out_dir: Path, results_dirs=None, front_ends=None) -> dict:
+    """The corrections the engine's text events carried, from the bench's per-track "corrections" (written for the
+    bank decoder: when, reach in s, reason), by (decoder, group): count, count by reason, per channel-minute of the
+    group's engine runs, and the reach (s: the correction's time minus the start of the first character it
+    replaced): median, 99th percentile and maximum (numpy's linear percentile). Each engine run counts once: a
+    detector-path recording's station-label result is the same run as its main result and is left out; an oracle
+    recording's station labels have their own channels and run."""
+    manifest = json.loads((Path(out_dir) / "manifest.json").read_text())
+    acc: dict = {}
+    for fe_dir in front_end_dirs(out_dir, results_dirs, front_ends):
+        for rec in manifest["recordings"]:
+            runs = [(r, g) for _, r, g in _scorings(rec) if rec["oracle"] or r == rec["name"]]
+            runs += [(r, g) for _, r, g in oracle_copies(rec)]
+            for result, group in runs:
+                path = fe_dir / f"{result}.json"
+                if not path.exists():
+                    continue
+                j = json.loads(path.read_text())
+                if j.get("decoder") != "bank":
+                    continue
+                g = acc.setdefault((fe_dir.name, group), {"runs": 0, "channel_seconds": 0.0, "reaches": [],
+                                                          "by_reason": {}})
+                g["runs"] += 1
+                g["channel_seconds"] += j.get("channel_seconds", 0.0)
+                for t in j.get("tracks", []):
+                    for c in t.get("corrections", []):
+                        g["reaches"].append(float(c["reach_s"]))
+                        g["by_reason"][c["reason"]] = g["by_reason"].get(c["reason"], 0) + 1
+    out = {}
+    for key, g in acc.items():
+        r = np.array(g["reaches"])
+        minutes = g["channel_seconds"] / 60.0
+        out[key] = {"runs": g["runs"], "channel_minutes": minutes, "corrections": len(r),
+                    "by_reason": dict(sorted(g["by_reason"].items())),
+                    "per_channel_minute": len(r) / minutes if minutes > 0 else None,
+                    "reach_median_s": float(np.median(r)) if len(r) else None,
+                    "reach_p99_s": float(np.percentile(r, 99)) if len(r) else None,
+                    "reach_max_s": float(r.max()) if len(r) else None}
+    return out
+
+
+def _format_corrections(stats: dict) -> list[str]:
+    if not stats:
+        return []
+    fmt = lambda x, f: "—" if x is None else f"{x:{f}}"  # noqa: E731
+    lines = ["## Corrections", "",
+             "The corrections in the engine's text events (the bank decoder), per group: each engine run counted once "
+             "(a detector-path recording's station labels share its run). Reach: the correction's time minus the "
+             "start of the first character it replaced, s.", "",
+             "| group | decoder | runs | channel-minutes | corrections | per channel-minute | by reason | "
+             "reach median (s) | reach 99th percentile (s) | reach maximum (s) |", "|---|---|---|---|---|---|---|---|---|---|"]
+    for (fe, group), v in sorted(stats.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        reasons = ", ".join(f"{k} {n}" for k, n in v["by_reason"].items()) or "—"
+        lines.append(f"| {group} | {fe} | {v['runs']} | {v['channel_minutes']:.1f} | {v['corrections']} | "
+                     f"{fmt(v['per_channel_minute'], '.2f')} | {reasons} | {fmt(v['reach_median_s'], '.3f')} | "
+                     f"{fmt(v['reach_p99_s'], '.3f')} | {fmt(v['reach_max_s'], '.3f')} |")
+    return lines + [""]
+
+
 def cpu_summary(timings) -> dict:
     out: dict = {}
     for t in timings:
@@ -924,7 +983,7 @@ def _crossing_cell(v: dict, threshold: str) -> str:
 
 
 def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dict | None = None,
-                    splits: dict | None = None) -> str:
+                    splits: dict | None = None, corrections: dict | None = None) -> str:
     lines = ["# Benchmark summary", "",
              "S₅₀₀: key-down carrier power over noise power in 500 Hz, dB. CER counts word spaces; "
              "character CER and space error rate split its edits; first-word CER scores the first word "
@@ -1013,6 +1072,7 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
         for (fe, tag), v in sorted(splits.items(), key=lambda kv: (kv[0][1], kv[0][0])):
             lines.append(f"| {tag} | {fe} | {v['qsos']} | {v['mean_tracks']:.2f} |")
         lines.append("")
+    lines += _format_corrections(corrections or {})
     lines += ["## CPU", "",
               "| decoder | channel-seconds (s) | CPU per channel-second (ms/s) | decoders per channel-second (ms/s) |",
               "|---|---|---|---|"]
@@ -1033,6 +1093,7 @@ def write_summary(out_dir: Path) -> None:
     overs = aggregate_overs(over_rows(out_dir))
     paired = paired_differences(rows)
     splits = track_splits(out_dir)
+    corrections = correction_stats(out_dir)
     summary = {
         # beyond_oracle_anchor is a limit of the anchored decoders (Matched, bank): set only on their rows, as the
         # markdown marks them
@@ -1043,10 +1104,12 @@ def write_summary(out_dir: Path) -> None:
         "overs": [{"front_end": fe, "group": g, "keying": k, **v, "beyond_oracle_anchor": _anchor_limited(fe, v)}
                   for (fe, g, k), v in sorted(overs.items())],
         "track_splits": [{"front_end": fe, "tag": tag, **v} for (fe, tag), v in sorted(splits.items())],
+        "corrections": [{"front_end": fe, "group": g, **v} for (fe, g), v in sorted(corrections.items())],
         "cpu": cpu,
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    (out_dir / "summary.md").write_text(format_markdown(agg, cpu, overs, paired, splits), encoding="utf-8")
+    (out_dir / "summary.md").write_text(format_markdown(agg, cpu, overs, paired, splits, corrections),
+                                        encoding="utf-8")
     print(f"wrote {out_dir / 'summary.md'}")
 
 

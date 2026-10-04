@@ -472,6 +472,48 @@ def test_bank_rows_of_every_drifting_oracle_label_are_marked(tmp_path):
     assert groups[("baseline", "drift 2 Hz/s")]["beyond_oracle_anchor"] is False
 
 
+def test_corrections_are_counted_per_group_once_per_engine_run(tmp_path):
+    from kz4ap_synth.suites import correction_stats
+    # A detector-path QSO recording with station labels (one engine run, two result files) and an oracle recording.
+    qso = Recording("qso", "H two-station QSO", 8000, 12.0, 5, False, [_two_station(100.0)], True)
+    ora = Recording("ora", "A sensitivity", 8000, 3.0, 5, True, [SignalSpec("CQ", 1000.0, 25.0, 10.0, 0.5)])
+    write_suite([qso, ora], tmp_path, "test")
+    bank = tmp_path / "results" / "bank"
+    bank.mkdir(parents=True)
+
+    def result(reaches, seconds):
+        tracks = [{"id": 1, "freq_hz": 0.0, "text": "", "text_immediate": "",
+                   "corrections": [{"t_s": 5.0, "reach_s": r, "reason": "switch" if r < 2 else "rekey"}
+                                   for r in reaches]}]
+        return json.dumps({"decoder": "bank", "channel_seconds": seconds, "tracks": tracks,
+                           "score": {"signals": []}})
+
+    (bank / "qso.json").write_text(result([0.5, 1.5, 3.0], 120.0))
+    (bank / "qso.stations.json").write_text(result([0.5, 1.5, 3.0], 120.0))  # the same run: not counted again
+    (bank / "ora.json").write_text(result([20.0], 60.0))
+    (bank / "ora.oracle.json").write_text(result([9.0], 60.0))  # not a copy group: ignored
+    base = tmp_path / "results" / "baseline"
+    base.mkdir(parents=True)
+    (base / "ora.json").write_text(json.dumps({"decoder": "envelope", "channel_seconds": 60.0, "tracks": [],
+                                               "score": {"signals": []}}))
+    s = correction_stats(tmp_path)
+    assert set(s) == {("bank", "H two-station QSO"), ("bank", "A sensitivity")}
+    h = s[("bank", "H two-station QSO")]
+    assert h["runs"] == 1 and h["corrections"] == 3 and h["channel_minutes"] == 2.0
+    assert h["per_channel_minute"] == 1.5
+    assert h["by_reason"] == {"rekey": 1, "switch": 2}
+    assert h["reach_median_s"] == 1.5 and h["reach_max_s"] == 3.0
+    assert h["reach_p99_s"] == pytest.approx(float(np.percentile([0.5, 1.5, 3.0], 99)))
+    a = s[("bank", "A sensitivity")]
+    assert a["corrections"] == 1 and a["per_channel_minute"] == 1.0 and a["reach_max_s"] == 20.0
+    write_summary(tmp_path)
+    text = (tmp_path / "summary.md").read_text(encoding="utf-8")
+    assert "## Corrections" in text
+    assert "| H two-station QSO | bank | 1 | 2.0 | 3 | 1.50 | rekey 1, switch 2 | 1.500 |" in text
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    assert {(c["front_end"], c["group"]) for c in summary["corrections"]} == set(s)
+
+
 def test_paired_rows_against_the_bank_carry_its_drift_mark():
     rows = [dict(_row(0.0, 100, 10, front_end="matched", index=0), drifting_oracle=True),
             dict(_row(0.0, 100, 20, front_end="bank", index=0), drifting_oracle=True)]
