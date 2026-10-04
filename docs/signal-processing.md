@@ -2690,38 +2690,42 @@ one push, publishes the same text and characters (times to relative
 starts, switches and selections (branch exactly, fitted T to relative
 10⁻⁹), and the same periodicity records (T_P and windows exactly,
 confidences and scores to relative 10⁻⁹) except per-window estimates
-that are traced near-ties (D2) and allowed to differ: two recomputations,
-both in the 2 s window over a buffer of p that is zero but for one short
-squelch opening, far below the 0.03 confidence threshold; T_P and
-everything downstream are unaffected. Three candidates tie in each,
-T = 97.95 ms, 44.63 ms and 61.97 ms (the fourth best scores about half as
-much). Their scores (dimensionless) on the prototype (numpy 2.5.3 on
-Windows, the golden values) and the port's Windows build (MSVC), on the
-complex64 streams, each side's pick in bold:
+that are traced near-ties (D2) and allowed to differ: three
+recomputations, all in the 2 s window over a buffer of p that is zero but
+for one short squelch opening, far below the 0.03 confidence threshold;
+T_P and everything downstream are unaffected. Three candidates tie in
+each, T = 97.95 ms, 44.63 ms and 61.97 ms (the fourth best scores about
+half as much). Their scores (dimensionless) on the prototype (numpy 2.5.3
+on Windows, the golden values), the port's Windows build (MSVC) and the
+port's Linux build (g++ 11.4, glibc 2.35), on the complex64 streams,
+each side's pick in bold:
 
-| Recomputation | T | Prototype | Port, Windows |
-|---|---|---|---|
-| noise #14 | 97.95 ms | 9.501131563217924 · 10⁻⁷ | 9.5011315631715739 · 10⁻⁷ |
-| noise #14 | 44.63 ms | 9.501131563218533 · 10⁻⁷ | 9.5011315632185335 · 10⁻⁷ |
-| noise #14 | 61.97 ms | **9.501131563310894 · 10⁻⁷** | **9.5011315633455884 · 10⁻⁷** |
-| Farnsworth #64 | 97.95 ms | **4.7329276538316477 · 10⁻⁶** | 4.7329276538037837 · 10⁻⁶ |
-| Farnsworth #64 | 44.63 ms | 4.7329276538129181 · 10⁻⁶ | **4.7329276538129181 · 10⁻⁶** |
-| Farnsworth #64 | 61.97 ms | 4.7329276537666498 · 10⁻⁶ | 4.7329276537944054 · 10⁻⁶ |
+| Recomputation | T | Prototype | Port, Windows | Port, Linux |
+|---|---|---|---|---|
+| noise #14 | 97.95 ms | 9.5011315632179236 · 10⁻⁷ | 9.5011315631715739 · 10⁻⁷ | 9.5011315631715739 · 10⁻⁷ |
+| noise #14 | 44.63 ms | 9.5011315632185335 · 10⁻⁷ | 9.5011315632185335 · 10⁻⁷ | **9.5011315633110972 · 10⁻⁷** |
+| noise #14 | 61.97 ms | **9.5011315633108939 · 10⁻⁷** | **9.5011315633455884 · 10⁻⁷** | 9.5011315633108939 · 10⁻⁷ |
+| noise #38 | 97.95 ms | 2.3515786746381741 · 10⁻⁶ | 2.3515786746336205 · 10⁻⁶ | 2.3515786746381470 · 10⁻⁶ |
+| noise #38 | 44.63 ms | **2.3515786746568495 · 10⁻⁶** | **2.3515786746568495 · 10⁻⁶** | 2.3515786746383367 · 10⁻⁶ |
+| noise #38 | 61.97 ms | 2.3515786746405865 · 10⁻⁶ | 2.3515786746405865 · 10⁻⁶ | **2.3515786746544642 · 10⁻⁶** |
+| Farnsworth #64 | 97.95 ms | **4.7329276538316477 · 10⁻⁶** | 4.7329276538037837 · 10⁻⁶ | 4.7329276537942970 · 10⁻⁶ |
+| Farnsworth #64 | 44.63 ms | 4.7329276538129181 · 10⁻⁶ | **4.7329276538129181 · 10⁻⁶** | 4.7329276537759468 · 10⁻⁶ |
+| Farnsworth #64 | 61.97 ms | 4.7329276537666498 · 10⁻⁶ | 4.7329276537944054 · 10⁻⁶ | **4.7329276538082832 · 10⁻⁶** |
 
-So at noise #14 both sides now pick 61.97 ms on Windows, and at
-Farnsworth #64 the prototype picks 97.95 ms and the port 44.63 ms. The
-leads of the picks over the runner-up: prototype 9.2 · 10⁻¹⁹ and
-1.9 · 10⁻¹⁷ absolute (9.7 · 10⁻¹³ and 4.0 · 10⁻¹² relative); port,
-Windows, 1.3 · 10⁻¹⁷ and 9.1 · 10⁻¹⁸ (1.3 · 10⁻¹¹ and 1.9 · 10⁻¹²). On
-the earlier float64 golden streams (before they were stored as complex64)
-the Farnsworth #64 values were the same on both sides, and the port's
-Linux build (g++ 11.4, glibc 2.35) picked 61.97 ms there (scores
-4.7329276537942970, 4.7329276537759468 and 4.7329276538082832 · 10⁻⁶ for
-97.95, 44.63 and 61.97 ms); the Linux build has not been measured on the
-complex64 streams. One candidate's score differs between the prototype
-and the port by up to 4.6 · 10⁻¹⁸ (noise, 4.9 · 10⁻¹² relative) and, on
-the float64 streams, 4.2 · 10⁻¹⁷ (Farnsworth, 8.8 · 10⁻¹² relative,
-Linux) absolute: a score is a difference of comb-tooth means of
+So the port's pick differs from the prototype's at Farnsworth #64 on both
+builds, and at noise #14 and noise #38 on Linux only. The leads of the
+picks over the runner-up, absolute (relative): prototype 9.2 · 10⁻¹⁸
+(9.7 · 10⁻¹²), 1.6 · 10⁻¹⁷ (6.9 · 10⁻¹²) and 1.9 · 10⁻¹⁷ (4.0 · 10⁻¹²) at
+noise #14, noise #38 and Farnsworth #64; port, Windows, 1.3 · 10⁻¹⁷,
+1.6 · 10⁻¹⁷ and 9.1 · 10⁻¹⁸; port, Linux, 2.0 · 10⁻²⁰, 1.6 · 10⁻¹⁷ and
+1.4 · 10⁻¹⁷. The spread of the three scores is at most 6.5 · 10⁻¹⁷
+absolute on any side (prototype, Farnsworth #64; at noise #38 1.9, 2.3
+and 1.6 · 10⁻¹⁷). One candidate's score differs between the prototype
+and the port by up to 1.9 · 10⁻¹⁷ (noise #38, Linux, 7.9 · 10⁻¹²
+relative) and 4.2 · 10⁻¹⁷ (Farnsworth, Linux, 8.8 · 10⁻¹² relative)
+absolute. (Noise #38 was found by the Linux build's first run on the
+complex64 streams; on the earlier float64 streams the Linux build had
+matched the prototype there.) A score is a difference of comb-tooth means of
 the normalized autocorrelation (values up to 1, taken from a cumulative
 sum), so last-bit differences of the means, of order 10⁻¹⁷, survive the
 cancellation down to a score of order 10⁻⁶ as relative differences of

@@ -95,24 +95,34 @@ void expect_equal_or_nan(double actual, const nlohmann::json& expected) {
 }
 
 // Traced near-ties (D2): a window's comb maximum that the port and the prototype pick differently because the
-// two best candidates' scores differ by rounding. (stream, periodicity recomputation, window index). Both are
-// the 2 s window over a buffer of p that is zero but for one short squelch opening, far below the confidence
+// two best candidates' scores differ by rounding. (stream, periodicity recomputation, window index). All three
+// are the 2 s window over a buffer of p that is zero but for one short squelch opening, far below the confidence
 // threshold (0.03), so T_P, the prior and everything downstream are unaffected. Three candidates tie, 97.95,
 // 44.63 and 61.97 ms (the fourth best scores about half as much); ThePeriodicityNearTiesAreRoundingOnBothSides
 // recomputes the port's scores of all three. Prototype: numpy 2.5.3 on Windows (the golden values, on the
-// streams rounded to complex64, as stored); port: the Windows build (MSVC's libm). The Linux build's scores were
-// measured on the earlier float64 streams only (farnsworth: 97.95 ms 4.7329276537942970e-06, 44.63 ms
-// 4.7329276537759468e-06, 61.97 ms 4.7329276538082832e-06; it picked 61.97 ms).
-//   noise #14,      T = 97.95 ms: prototype 9.501131563217924e-07,  port 9.5011315631715739e-07 (Windows)
-//                   T = 44.63 ms: prototype 9.501131563218533e-07,  port 9.5011315632185335e-07 (Windows)
-//                   T = 61.97 ms: prototype 9.501131563310894e-07,  port 9.5011315633455884e-07 (Windows)
-//     the prototype picks 61.97 ms (a lead of 9.2e-19 absolute, 9.7e-13 relative); the port 61.97 ms as well
-//     (lead 1.3e-17), so this near-tie no longer differs on Windows
-//   farnsworth #64, T = 97.95 ms: prototype 4.7329276538316477e-06, port 4.7329276538037837e-06 (Windows)
-//                   T = 44.63 ms: prototype 4.7329276538129181e-06, port 4.7329276538129181e-06 (Windows)
-//                   T = 61.97 ms: prototype 4.7329276537666498e-06, port 4.7329276537944054e-06 (Windows)
-//     the prototype picks 97.95 ms (lead 1.9e-17 absolute, 4.0e-12 relative); the port 44.63 ms on Windows
-//     (lead 9.1e-18)
+// streams rounded to complex64, as stored); port: the Windows build (MSVC's libm) and the Linux build (g++ 11.4,
+// glibc 2.35). Each side's pick marked *; a near-tie is listed if the port picks differently on any build.
+//   noise #14,      97.95 ms: prototype 9.5011315632179236e-07,  Windows 9.5011315631715739e-07,
+//                                                                Linux   9.5011315631715739e-07
+//                   44.63 ms: prototype 9.5011315632185335e-07,  Windows 9.5011315632185335e-07,
+//                                                                Linux  *9.5011315633110972e-07
+//                   61.97 ms: prototype*9.5011315633108939e-07,  Windows*9.5011315633455884e-07,
+//                                                                Linux   9.5011315633108939e-07
+//     leads: prototype 9.2e-18 absolute (9.7e-12 relative), Windows 1.3e-17, Linux 2.0e-20
+//   noise #38,      97.95 ms: prototype 2.3515786746381741e-06,  Windows 2.3515786746336205e-06,
+//                                                                Linux   2.3515786746381470e-06
+//                   44.63 ms: prototype*2.3515786746568495e-06,  Windows*2.3515786746568495e-06,
+//                                                                Linux   2.3515786746383367e-06
+//                   61.97 ms: prototype 2.3515786746405865e-06,  Windows 2.3515786746405865e-06,
+//                                                                Linux  *2.3515786746544642e-06
+//     leads: prototype and Windows 1.6e-17 absolute (6.9e-12 relative), Linux 1.6e-17
+//   farnsworth #64, 97.95 ms: prototype*4.7329276538316477e-06,  Windows 4.7329276538037837e-06,
+//                                                                Linux   4.7329276537942970e-06
+//                   44.63 ms: prototype 4.7329276538129181e-06,  Windows*4.7329276538129181e-06,
+//                                                                Linux   4.7329276537759468e-06
+//                   61.97 ms: prototype 4.7329276537666498e-06,  Windows 4.7329276537944054e-06,
+//                                                                Linux  *4.7329276538082832e-06
+//     leads: prototype 1.9e-17 absolute (4.0e-12 relative), Windows 9.1e-18, Linux 1.4e-17
 // The spread of the three scores is at most 6.5e-17 absolute on any side, and one candidate's score differs
 // between the sides by up to 4.2e-17 absolute: each score is a difference of comb-tooth means of the normalized
 // autocorrelation (values up to 1, summed as a cumulative sum), so last-bit differences of order 1e-17 in the
@@ -303,12 +313,13 @@ TEST(BankChannel, ThePeriodicityNearTiesAreRoundingOnBothSides) {
         EXPECT_EQ(golden_record.at(4).at(0).at(0).get<double>(), t[c.proto_pick]);
         // The three candidates differ by rounding on each side: the spread of their scores is below 1e-16 absolute.
         // The bound is heuristic, not derived: a margin about 1.5x above the largest measured spread (the
-        // prototype's 6.5e-17 at farnsworth; the port's 1.9e-17 there on Windows, 3.2e-17 on Linux with the
-        // earlier float64 streams; at noise the prototype's 9.3e-19 and the port's 1.7e-17 on Windows), below one
-        // unit in the last place of 1.0 (2.2e-16), the scale of the normalized autocorrelation's values whose
+        // prototype's 6.5e-17 at farnsworth #64; elsewhere, prototype / Windows / Linux: farnsworth #64 6.5e-17 /
+        // 1.9e-17 / 3.2e-17, noise #14 9.3e-18 / 1.7e-17 / 1.4e-17, noise #38 1.9e-17 / 2.3e-17 / 1.6e-17), below
+        // one unit in the last place of 1.0 (2.2e-16), the scale of the normalized autocorrelation's values whose
         // cumulative-sum means the scores are differences of. Relative to the scores it is 2.1e-11 at farnsworth
-        // (4.73e-6) and 1.05e-10 at noise (9.5e-7). (The checks on c.proto check the held constants against the
-        // golden pick, not code: they document the prototype's pick and spread.)
+        // (4.73e-6), 4.3e-11 at noise #38 (2.35e-6) and 1.05e-10 at noise #14 (9.5e-7). (The checks on c.proto
+        // check the held constants against the golden pick, not code: they document the prototype's pick and
+        // spread.)
         const auto spread = [](const std::array<double, 3>& s) {
             return *std::max_element(s.begin(), s.end()) - *std::min_element(s.begin(), s.end());
         };

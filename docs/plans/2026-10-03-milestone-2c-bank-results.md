@@ -183,8 +183,28 @@ level 6, measured on the committed files; the change's commit message quotes the
 count Windows line endings in some JSON files). Every golden channel text, correction count and switch count is unchanged; at noise #14 the
 scores moved (prototype 9.501131563217924e-07, 9.501131563218533e-07 and 9.501131563310894e-07 for 97.95, 44.63
 and 61.97 ms), and the prototype and the Windows port now both pick 61.97 ms there; farnsworth #64 is unchanged.
-The Linux build has not been measured on the new streams (`docs/signal-processing.md` section 8c, "Channel
-decoder", port check).
+The Linux build's first run on the new streams (at `bd973b1`) failed `ChannelGolden/noise` at a third near-tie,
+noise #38 (the same 2 s window and the same three candidates). It is traced with the values below and added to the
+allowed near-ties (`2b9a01e`); the near-tie test checks it as it checks the other two. Scores (prototype: numpy
+2.5.3 on Windows; each side's pick in bold), measured:
+
+| stream, update | candidate T (ms) | prototype | port, Windows (MSVC) | port, Linux (g++, glibc) |
+|---|---|---|---|---|
+| noise #38 | 97.95 | 2.3515786746381741e-06 | 2.3515786746336205e-06 | 2.3515786746381470e-06 |
+| | 44.63 | **2.3515786746568495e-06** | **2.3515786746568495e-06** | 2.3515786746383367e-06 |
+| | 61.97 | 2.3515786746405865e-06 | 2.3515786746405865e-06 | **2.3515786746544642e-06** |
+| noise #14 | 97.95 | 9.5011315632179236e-07 | 9.5011315631715739e-07 | 9.5011315631715739e-07 |
+| | 44.63 | 9.5011315632185335e-07 | 9.5011315632185335e-07 | **9.5011315633110972e-07** |
+| | 61.97 | **9.5011315633108939e-07** | **9.5011315633455884e-07** | 9.5011315633108939e-07 |
+
+At noise #38 the leads are 1.6e-17 absolute (6.9e-12 relative) on every side; the spreads of the three scores are
+1.9e-17 (prototype), 2.3e-17 (Windows) and 1.6e-17 (Linux), within the test's 1e-16 bound (a heuristic margin
+about 1.5 times the largest measured spread, 6.5e-17 at farnsworth #64); the largest difference of one candidate's
+score between the prototype and Linux is 1.9e-17 (7.9e-12 relative). At noise #14 Linux picks 44.63 ms by a lead
+of 2.0e-20. Farnsworth #64's Linux scores are the same as on the float64 streams. (The previous commit's section
+8c gave noise #14's prototype lead as 9.2e-19, 9.7e-13 relative, and its spread as 9.3e-19; they are 9.2e-18,
+9.7e-12 relative, and 9.3e-18.)
+`docs/signal-processing.md` section 8c, "Channel decoder", port check, has all three.
 
 ## 3. Cost (Task 9)
 
@@ -675,8 +695,6 @@ else the review found is fixed on the branch (the fix report is in the plan's wo
   summary; measuring it needs a full run, which this plan does not repeat. Plan B's first full run.
 - **No test pins the keyer's own exact-zero NaN path.** The Plan B zero-input fix changes that path, so the test
   belongs with it. Plan B.
-- **The near-tie scores on the complex64 golden streams were measured on Windows only.** The Linux build's
-  values (and its pick at noise #14) are measured by the next Linux test run. Plan B.
 - **Two unreachable `comb_estimate` edge cases differ from the prototype without a trace.** Making them agree
   changes the decoder's behavior (on inputs it never receives). Backlog.
 - **No drift guard on the committed golden files** (comparing a regeneration with them). It needs a decision on
