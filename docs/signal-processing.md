@@ -2814,10 +2814,12 @@ front of it are the Matched path's, unchanged.
   (copies of one character timed a few ms apart by two branches), a kept
   one can follow a replaced one in the list, so the kept characters are
   not a prefix, and a consumer keeping the first `from_index` would keep
-  the replaced character and drop the kept one. Found on the full suite
-  (6 oracle channels; results record
-  `docs/plans/2026-10-03-milestone-2c-bank-results.md`, section 4.4) by
-  driving the `BankDecoder` on the recorded channels. The fix:
+  the replaced character and drop the kept one. Found by the first
+  full-suite run, where it left the final text of 6 oracle labels (4 scored
+  signals and 2 unscored interferers) one or two characters off the bank's,
+  with no edit count changed. It was traced by driving the `BankDecoder` on
+  the recorded channels (results record
+  `docs/plans/2026-10-03-milestone-2c-bank-results.md`, section 4.4). The fix:
   `replace_from` also records `first_changed_index`, the first position
   whose character's text differs between the list before and after, and
   the event's `from_index` is min(`from_index`, `first_changed_index`),
@@ -2829,7 +2831,9 @@ front of it are the Matched path's, unchanged.
   the bank's from the lowest new change, and if they differ sends a
   correction with reason "resync" (expected never; counted by the bench).
   The prototype's `from_index` and every other recorded value are
-  unchanged.
+  unchanged. On the second full-suite run no "resync" was sent (0 of
+  31 205 corrections; measured), and the 6 labels have the bank's, and the
+  prototype's, text.
 - **The bench.** `kz4ap-bench` assembles each track's final and immediate
   text from the events (`TrackText`), writes both per track (`text`, the
   final text as before, and `text_immediate`), and scores both: `cer`
@@ -2881,12 +2885,14 @@ produce.
 ### Measured: the bank against Matched and Envelope (milestone 2c, Plan A)
 
 Full suite, 3 seeds (`kz4ap_synth.suites`: 120 oracle test cases, the 27
-oracle copies included, and 39 scorings through the detector path; 3 531
-scored signals, 457 168.6 channel-seconds), `kz4ap-bench --decoder bank` on
-the Linux machine (Ubuntu 22.04, 10-core Intel Xeon (Ice Lake), g++ 11.4,
-exact-math build), 10 bench processes at once, 110 min of wall time.
-Envelope and Matched are stage 1's result files, checked identical on 54
-runs with this build. Source: results record
+oracle copies included, and 39 test cases scored through the detector
+path; 3 579 labels, of which 3 531 scored signals, the other 48 being
+group E's interferers; 457 168.6 channel-seconds), `kz4ap-bench --decoder
+bank` on the Linux machine (Ubuntu 22.04, 10-core Intel Xeon (Ice Lake),
+g++ 11.4, exact-math build), 10 bench processes at once, 110 min of wall
+time. This is the second run, with the correction fix (`1b2f4ef`). Envelope
+and Matched are stage 1's result files, checked identical on 54 runs with
+the bench. Source: results record
 `docs/plans/2026-10-03-milestone-2c-bank-results.md`, section 4 (raw
 summaries git-ignored under `build/suite/full3/experiments/linux/`). CER is
 a fraction (edits per reference symbol); parentheses are bootstrap 95%
@@ -2902,16 +2908,20 @@ parameter was changed for this run.
   regimes against Matched and against Envelope) has the prototype's values
   from the stage-1 results record, section 4.3.1, except the four group F
   drift rows (272 of 280 pairs identical). Signal by signal, the decoded
-  text equals the prototype's on 2 889 of 2 895 non-drifting oracle signals
-  and all 660 through the detector path. The 15 drifting labels that differ
-  are the anchor without the drift (the prototype mixed as the engine mixes
-  reproduces all 15; not comparable until a frequency tracker is in the
-  loop). The 6 others are the correction-event defect described under "The
-  consumer's rule" above.
-- **Every regime** (suite rows marked "not meaningful (oracle anchor)" left
-  out, 133 rows): against Matched 50 better, 26 worse, 57 unchanged;
-  against Envelope 85 better, 16 worse, 32 unchanged ("better" or "worse":
-  the paired interval excludes 0, a heuristic convention). Worse than
+  text equals the prototype's on all 2 895 non-drifting oracle labels
+  (2 847 scored, 48 unscored) and all 660 through the detector path. The 15
+  drifting labels that differ are the anchor without the drift: the
+  prototype mixed as the engine mixes reproduces all 15. They are not
+  comparable until a frequency tracker is in the loop, and the suite marks
+  every drifting oracle row of the bank "not meaningful (oracle anchor)".
+  The first run, before the fix, also differed on 6 other labels (4 scored,
+  2 unscored, no edit count changed); that was the correction-event defect
+  under "The consumer's rule" above.
+- **Every regime** (132 rows; the 8 rows the suite marks "not meaningful
+  (oracle anchor)" for the bank are left out): against Matched 50 better,
+  26 worse, 56 unchanged; against Envelope 84 better, 16 worse, 32
+  unchanged ("better" or "worse": the paired interval excludes 0, a
+  heuristic convention). Worse than
   Matched: strong neighbors at +10 and +20 dB relative to the wanted
   station's key-down power (group E), crowded channels 0 to 100 Hz apart,
   10 WPM and the 30 → 15 WPM ramp, same-track QSOs scored per station,
@@ -2923,20 +2933,29 @@ parameter was changed for this run.
 - **Displayed text.** CER of the text as first published (corrections
   ignored) 0.411, of the final text 0.382, over all 3 531 signals; paired
   immediate minus final +0.027 (+0.023 to +0.032), positive in every group
-  except tune-up with oracle channels (−0.004, interval containing 0). The
-  corrections change 11.4 characters per channel-minute (Levenshtein
-  distance from immediate to final text; 86 913 characters on 3 177 of 3 556
-  tracks). The engine's bench writes the two texts, not the events, so the
-  count and reach of corrections are the prototype's (stage 1): 4.09 per
-  channel-minute, reach median 1.544 s, 99th percentile 19.861 s, maximum
-  20.000 s. For Matched and Envelope the two texts are equal.
-- **Cost.** 134.1 ms of CPU per channel-second through the engine
-  (130.7 ms on oracle test cases, 166.1 ms through the detector path), all
-  but 0.1 to 0.8 ms of it in the decoder; per group from 54.4 ms (Farnsworth)
-  to 260.8 ms (interference). On the development set, 130.7 ms against the
-  replay tool's 128.2 ms (Task 9). On the same 26 test cases Matched costs
-  0.610 ms and Envelope 0.344 ms, so the bank costs about 240 and 430 times
-  as much. One core decodes about 7.5 bank channels in real time (derived).
+  except tune-up with oracle channels (−0.004, interval containing 0). For
+  Matched and Envelope the two texts are equal.
+- **Corrections** (from the engine's text events, counted by the bench and
+  `suites summarize`; each engine run once). In all, 4.095 per
+  channel-minute (31 205 in 7 619.5 channel-minutes: switch 13 371, re-key
+  9 521, time-out 8 313, resync 0). Reach, from the correction's time back to
+  the start of the first character it replaced: median 1.544 s, 99th
+  percentile 19.861 s, maximum 20.000 s. Per group from 0.579 per
+  channel-minute (Farnsworth) to 8.394 (interference). The counts equal the
+  prototype's in every group but F tuning (227 against 180, the drifting
+  labels). The corrections change a net 11.4 characters per channel-minute:
+  the Levenshtein distance from immediate to final text, a lower bound on
+  the characters replaced, 86 906 characters on 3 177 of 3 556 tracks.
+- **Cost.** 133.8 ms of CPU per channel-second through the engine
+  (130.4 ms on oracle test cases, 165.6 ms through the detector path). Nearly
+  all of it is in the decoder: the decoders' share, a steady-clock time
+  that is not strictly nested in the process CPU time, is within 0.9 ms of
+  it. Per group it ranges from 54.2 ms (Farnsworth) to 259.4 ms
+  (interference). On the development set it is 130.4 ms, against the replay
+  tool's 128.2 ms (Task 9). On the same 26 engine runs (148.1 ms for the
+  bank) Matched costs 0.610 ms and Envelope 0.344 ms, so the bank costs
+  about 240 and 430 times as much. One core decodes about 7.5 bank channels
+  in real time (derived).
 - **Detection** (behind the Matched path's live detector, as the bench
   counts it): recall equal for all three decoders in every group; false
   tracks equal to Matched's except the strong group (bank 1, Matched and
