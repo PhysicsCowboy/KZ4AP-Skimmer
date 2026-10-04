@@ -141,7 +141,7 @@ def qso_regime(offset_hz: float, front_end: str = "baseline") -> str:
             return "ambiguous"
         return "separate-track"
     if front_end != "baseline":
-        raise ValueError(f"unknown front end {front_end!r}")
+        raise ValueError(f"unknown decoder {front_end!r}")
     if df <= (ENVELOPE_SEPARATION_BINS - 1) * BIN_HZ:
         return "same-track"
     if df < ENVELOPE_SEPARATION_BINS * BIN_HZ:
@@ -539,7 +539,7 @@ def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None) -
     manifest = json.loads((out_dir / "manifest.json").read_text())
     for fe in front_ends:
         if fe not in FRONT_ENDS:
-            raise ValueError(f"unknown front end {fe!r}")
+            raise ValueError(f"unknown decoder {fe!r}")
         results = out_dir / "results" / fe
         results.mkdir(parents=True, exist_ok=True)
         for rec in manifest["recordings"]:
@@ -713,12 +713,17 @@ def _excursion_hz(label: dict) -> float:
 
 def beyond_oracle_anchor(oracle: bool, label: dict) -> bool:
     """Whether an oracle channel's fixed anchor (the label, +/-ORACLE_ANCHOR_RANGE_HZ) cannot
-    reach the label's sound, so the Matched front end's result on it is not meaningful."""
+    reach the label's sound, so the Matched or bank decoder's result on it is not meaningful."""
     return oracle and _excursion_hz(label) > ORACLE_ANCHOR_RANGE_HZ
 
 
+# The decoders whose oracle channels are anchored at the label: Matched's tracker fine-tunes within
+# +/-ORACLE_ANCHOR_RANGE_HZ of it; the bank mixes at the label (without its drift) and has no tracker at all.
+ANCHORED_DECODERS = ("matched", "bank")
+
+
 def _anchor_limited(front_end: str, v: dict) -> bool:
-    return front_end == "matched" and v.get("beyond_oracle_anchor", False)
+    return front_end in ANCHORED_DECODERS and v.get("beyond_oracle_anchor", False)
 
 
 def _row_regime(oracle: bool, label: dict, front_end: str) -> str | None:
@@ -739,7 +744,7 @@ def front_end_dirs(out_dir: Path, results_dirs=None, front_ends=None) -> list[Pa
     names = [p.name for p in found]
     twice = sorted({n for n in names if names.count(n) > 1})
     if twice:
-        raise ValueError(f"front end(s) {twice} found under more than one results directory")
+        raise ValueError(f"decoder(s) {twice} found under more than one results directory")
     return sorted(found, key=lambda p: p.name)
 
 
@@ -924,15 +929,19 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
              "S₅₀₀ points with at least 2 signals each; groups that draw S₅₀₀ per signal (band, crowded) "
              "have one signal per point and show —. ≤ x : no point fails, so x, the lowest point, is an "
              "upper bound. — : not reached, or no sweep. "
-             f"{ANCHOR_NOTE}: a Matched row of an oracle recording in which some label's sound gets more than "
-             f"{ORACLE_ANCHOR_RANGE_HZ:g} Hz from its labeled frequency (a drift over the signal's length, or a "
-             "QSO's answering station): with no detector, the tracker's anchor is the label and it fine-tunes "
-             f"only within ±{ORACLE_ANCHOR_RANGE_HZ:g} Hz of it. † : this group-H view does not fit the QSO. "
+             f"{ANCHOR_NOTE}: a Matched or bank row of an oracle recording in which some label's sound gets more "
+             f"than {ORACLE_ANCHOR_RANGE_HZ:g} Hz from its labeled frequency (a drift over the signal's length, or "
+             "a QSO's answering station): with no detector, Matched's tracker is anchored at the label and "
+             f"fine-tunes only within ±{ORACLE_ANCHOR_RANGE_HZ:g} Hz of it; the bank mixes at the label, without "
+             "its drift, and has no tracker (its ±"
+             f"{ORACLE_ANCHOR_RANGE_HZ:g} Hz limit is heuristic: about where a 25 words/min branch loses 3 dB "
+             "relative to 0 Hz, docs/signal-processing.md section 8c). † : this group-H view does not fit the QSO. "
              "Through the detector, by the QSO's regime on the row's own path: labels per station for a "
              "same-track QSO, where both match one track and each is charged the other's text; labels per "
              "QSO for a separate-track QSO, where the caller's track lacks the answering station's overs. "
              "A group-H tag's regime word is the Envelope path's (3-bin rule: same-track up to 46.9 Hz, "
-             "ambiguous below 70.3 Hz, separate-track from 70.3 Hz); on the Matched path the rule is the "
+             "ambiguous below 70.3 Hz, separate-track from 70.3 Hz); on the Matched path (the bank decoder's "
+             "too) the rule is the "
              f"channel distance D_ch = {CHANNEL_DISTANCE_HZ:g} Hz (same-track below it; ambiguous below "
              f"{MATCHED_AMBIGUOUS_BELOW_HZ:.1f} Hz, D_ch plus two bins, because interpolated frequencies "
              "can each read up to one bin from their carriers; separate-track from there on), and a row "
@@ -944,7 +953,7 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
              "otherwise. Read the other view.", ""]
     for group in sorted({k[1] for k in agg}):
         lines += [f"## {group}", "",
-                  "| tag | front end | signals | detected | CER | character CER | space error rate | "
+                  "| tag | decoder | signals | detected | CER | character CER | space error rate | "
                   "first-word CER | no-space CER | fewest symbols at one S₅₀₀ point | "
                   "S₅₀₀ at CER 0.10 (dB) | S₅₀₀ at CER 0.05 (dB) | median frequency error (Hz) |",
                   "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
@@ -979,7 +988,7 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
                   "keying style. An upper bound, like first-word CER: ambiguous edits are charged to the "
                   "earliest position and insertions before an over to its first word, so it can exceed 1 "
                   "(docs/signal-processing.md, section 11).", "",
-                  "| group | keying | front end | overs | CER |", "|---|---|---|---|---|"]
+                  "| group | keying | decoder | overs | CER |", "|---|---|---|---|---|"]
         for (fe, group, keying), v in sorted(overs.items(), key=lambda kv: (kv[0][1], kv[0][2], kv[0][0])):
             note = f" ({ANCHOR_NOTE})" if _anchor_limited(fe, v) else ""
             lines.append(f"| {group} | {keying}{note} | {fe} | {v['overs']} | {v['cer']:.3f} |")
@@ -989,12 +998,12 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
                   "Tracks that decoded text within 25 Hz of either station's carrier; 1 = one track for the "
                   "QSO, 2 = one per station. Values above 2 mean a station's track dropped and was re-born "
                   "(about once per over), not false tracks.", "",
-                  "| tag | front end | QSOs | mean tracks |", "|---|---|---|---|"]
+                  "| tag | decoder | QSOs | mean tracks |", "|---|---|---|---|"]
         for (fe, tag), v in sorted(splits.items(), key=lambda kv: (kv[0][1], kv[0][0])):
             lines.append(f"| {tag} | {fe} | {v['qsos']} | {v['mean_tracks']:.2f} |")
         lines.append("")
     lines += ["## CPU", "",
-              "| front end | channel-seconds (s) | CPU per channel-second (ms/s) | decoders per channel-second (ms/s) |",
+              "| decoder | channel-seconds (s) | CPU per channel-second (ms/s) | decoders per channel-second (ms/s) |",
               "|---|---|---|---|"]
     for fe, c in sorted(cpu.items()):
         lines.append(f"| {fe} | {c['channel_seconds']:.1f} | {c['cpu_ms_per_channel_s']:.3f} | "
@@ -1014,7 +1023,8 @@ def write_summary(out_dir: Path) -> None:
     paired = paired_differences(rows)
     splits = track_splits(out_dir)
     summary = {
-        # beyond_oracle_anchor is a Matched limit: set only on Matched rows, as the markdown marks them
+        # beyond_oracle_anchor is a limit of the anchored decoders (Matched, bank): set only on their rows, as the
+        # markdown marks them
         "groups": [{"front_end": fe, "group": g, "tag": tag, **_intervals_json(v),
                     "beyond_oracle_anchor": _anchor_limited(fe, v)}
                    for (fe, g, tag), v in sorted(agg.items())],

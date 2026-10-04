@@ -167,7 +167,7 @@ def compare(out_dir, base: str, variant: str, only: str = DEV) -> Path:
         f = fw.get(group, {})
         lines.append(f"| {group} | {cer[group]['signals']} | {_with_interval(cer[group]['mean'], cer[group]['interval'], '+.4f')} | "
                      f"{_with_interval(f.get('mean'), f.get('interval'), '+.4f')} |")
-    lines += ["", "| front end | group | tag | CER | first-word CER |", "|---|---|---|---|---|"]
+    lines += ["", "| decoder | group | tag | CER | first-word CER |", "|---|---|---|---|---|"]
     for (fe, group, tag), v in sorted(agg.items(), key=lambda kv: (kv[0][1], kv[0][2], kv[0][0])):
         lines.append(f"| {fe} | {group} | {tag} | {_with_interval(v['cer'], v['cer_interval'], '.4f')} | "
                      f"{v['first_word_cer']:.4f} |")

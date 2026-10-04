@@ -2816,7 +2816,12 @@ front of it are the Matched path's, unchanged.
   stage 1) mixes by the label's drifting phase law (the label's frequency
   is the carrier's at the label's start); the residual grows by 1 or
   2 Hz per second of the signal and passes the 25.9 Hz null of a
-  25 words/min branch after 25.9 s or 12.9 s (derived).
+  25 words/min branch after 25.9 s or 12.9 s (derived). The suite
+  summary therefore marks a bank row of an oracle recording "not
+  meaningful (oracle anchor)" as it does a Matched one, when some label's
+  sound gets more than 12 Hz from its labeled frequency (for the bank a
+  heuristic limit: a 58-sample branch, 0.8 dit at 25 words/min, is
+  −3.33 dB relative to 0 Hz at 12 Hz).
   Cost: 0.40 s of CPU per channel-second on first-sample-s1 (4 channels,
   0.6× real time; the exact-math build, the development desktop).
 
@@ -2925,8 +2930,8 @@ produce.
 | Bank fresh fit against the previous | the over's fresh fit replaces the previous over's continued fit with ≥ 8 of the over's marks and spaces and a log-likelihood gain > ½ · 4 · ln n nats on them (4.16 nats at n = 8); the competition ends after 192 (⌈4 N_mem⌉) | `BankConfig::fresh_fit_min_obs`; `bank::kFitParameters`; `bank::Branch` | 8 a placeholder (heuristic); ½ k ln n form derived (BIC), k = 4 heuristic; the end at 4 N_mem derived (e⁻⁴ = 1.8%) |
 | Bank corrections | a replacement at t changes nothing that starts before t − 20 s; overlap cut at max(from, t − 20 s); recorded only if the text differs, with its kept-character count | `BankConfig::correction_reach_s`; `bank::Output::replace_from` | 20 s owner; overlap cut heuristic |
 | Bank switch replacement | from the start of the new branch's character containing the time its eligible run began (its own time base); a fallback pick from the switch's time | `bank::BankChannel` | heuristic (spec 4.8; the fallback rule documented behavior) |
-| Bank anchor mixing (engine) | u[n] = y[n] exp(−jφ[n]), φ[n] = 2π (Σ_{m≤n} Δ[m] − Δ[n]) / r, Δ = detector frequency (oracle: the label's, without its drift) − channel center, Hz, per channel block; no tracker | `BankDecoder::process` | the prototype's `anchored_baseband` (option 1: the detector decides where the station is) |
-| Bank events (engine) | new characters, then corrections (index kept, the bank's characters from it on, time, reason), applied in order; final text = all corrections applied, immediate text = characters as first appended | `TextCorrection`, `DecodeUpdate::corrections`, `DecodedTextEvent::corrections`; bench `TrackText` | interface choice of the port (owner decision D1 for `--decoder`) |
+| Bank anchor mixing (engine) | u[n] = y[n] exp(−jφ[n]), φ[n] = 2π (Σ_{m≤n} Δ[m] − Δ[n]) / r, Δ = detector frequency (oracle: the label's, without its drift) − channel center, Hz, per channel block; no tracker | `BankDecoder::process` | derived: the prototype's `anchored_baseband`, mixing at the frequency where option 1 (the detector decides where the station is) puts the station; the oracle anchor without drift is the plan's choice, not tuned |
+| Bank events (engine) | new characters, then corrections (index kept, the bank's characters from it on, time, reason), applied in order; final text = all corrections applied, immediate text = characters as first appended | `TextCorrection`, `DecodeUpdate::corrections`, `DecodedTextEvent::corrections`; bench `TrackText` | derived: the consumer's rule rebuilds the bank's final text exactly (proof in section 8c); not signal processing, an interface choice of the port (owner decision D1 for `--decoder`); the event's probability 1, speed 0 and confidence 0 are placeholders |
 
 ## 11. Definitions used in tests and the benchmark
 

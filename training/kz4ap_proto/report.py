@@ -22,7 +22,7 @@ RUNAWAY_CASES = (("A-awgn-25wpm-1-s1", 6606.5), ("A-awgn-25wpm-0-s2", -2991.9))
 FALSE_CALL_RATE = 0.05
 STATISTICS_NOTE = (
     "Statistics. CER columns are pooled: summed edits over summed symbols. The paired columns are the mean over "
-    "signals of the per-signal CER difference (front end minus reference, signal by signal on the same labels), so "
+    "signals of the per-signal CER difference (decoder minus reference, signal by signal on the same labels), so "
     "a paired mean and the difference of two pooled CERs can differ, even in sign. Intervals are bootstrap 95% "
     "intervals with the signal as the unit (1000 resamples of signals within each group and tag); signals of one "
     "recording share its noise and its keying draws, and that within-recording correlation is not modeled, so the "
@@ -207,7 +207,7 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
     recordings = _recordings(rows, name)
     lines = [f"# {name} against Matched and Envelope" + (f" ({suffix})" if suffix else ""), "",
              f"The same labeled signals for all three, on the signals {name} has results for. Oracle groups (and the "
-             "`, oracle` copies): every front end decodes one oracle channel per label. Detector-path groups (group H "
+             "`, oracle` copies): every decoder decodes one oracle channel per label. Detector-path groups (group H "
              f"through the detector, band, crowded, pauses, strong, tune-up, first sample): {name} decodes the "
              "channels the Matched path's detector opened, so against Matched it is the same tracks, while "
              "Envelope's detector opens its own tracks, so against Envelope it is the same labels only. Paired "
@@ -266,7 +266,7 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
     measures = detector_measures(out_dir, name, results_dirs, only)
     lines += ["", "Detection measures on the detector path (the Matched path's detector; as the bench counts them, a "
               "track counts only if it decoded text):", "",
-              "| group | front end | recordings | labels scored | detected | detection recall | false tracks |",
+              "| group | decoder | recordings | labels scored | detected | detection recall | false tracks |",
               "|---|---|---|---|---|---|---|"]
     for fe, groups in measures["by_front_end"].items():
         for g, v in sorted(groups.items()):
@@ -274,7 +274,7 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
                          f"{_fmt(v['detection_recall'], None, '.3f')} | {v['false_tracks']} |")
     if measures["tracks_per_qso"]:  # the keys are "<front end> | <tag>", two cells
         lines += ["", "Tracks per QSO (group H through the detector, the same recordings as above):", "",
-                  "| front end | group-H tag | QSOs | tracks per QSO |", "|---|---|---|---|"]
+                  "| decoder | group-H tag | QSOs | tracks per QSO |", "|---|---|---|---|"]
         lines += [f"| {k} | {v['qsos']} | {v['mean_tracks']:.2f} |" for k, v in measures["tracks_per_qso"].items()]
     lines += ["", f"**Stated gap.** {comp['detector_gap']}", ""]
     lines += ["", f"## {name}'s own statistics", ""]
