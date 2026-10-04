@@ -2,6 +2,8 @@
 #include "vecmath.hpp"
 
 #include <cstdint>
+#include <cstdlib>
+#include <string_view>
 
 #if defined(_MSC_VER)
 #include <immintrin.h>
@@ -48,14 +50,20 @@ Cpu detect() {
     c.avx = true;
     if (max_leaf < 7) return c;
     __cpuidex(r, 7, 0);
-    c.avx2_fma = fma && (r[1] & (1 << 5)) != 0;
-    c.avx512f = (r[1] & (1 << 16)) != 0 && (xcr0 & 0xe6) == 0xe6;  // and the opmask and ZMM state
+    // MSVC's /arch:AVX2 (vecmath_avx2.cpp, and vecmath_avx512.cpp as SLEEF builds its own AVX-512 code with
+    // MSVC: /arch:AVX2 plus AVX-512F intrinsics) may also emit BMI1 and BMI2 instructions: required too.
+    const bool bmi = (r[1] & (1 << 3)) != 0 && (r[1] & (1 << 8)) != 0;
+    c.avx2_fma = fma && (r[1] & (1 << 5)) != 0 && bmi;
+    // AVX-512F with the opmask and ZMM state; the AVX-512 file's other code is AVX2's (every AVX-512F
+    // processor has AVX2 and FMA; required explicitly).
+    c.avx512f = (r[1] & (1 << 16)) != 0 && (xcr0 & 0xe6) == 0xe6 && c.avx2_fma;
 #else
-    // GCC and Clang check the operating system's support (XGETBV) before reporting avx, avx2 and avx512f.
+    // GCC and Clang check the operating system's support (XGETBV) before reporting avx, avx2 and avx512f. Each
+    // file is compiled with exactly the extensions checked here (-mavx; -mavx2 -mfma; -mavx512f).
     __builtin_cpu_init();
     c.avx = __builtin_cpu_supports("avx");
     c.avx2_fma = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
-    c.avx512f = __builtin_cpu_supports("avx512f");
+    c.avx512f = __builtin_cpu_supports("avx512f") && c.avx2_fma;
 #endif
     return c;
 }
@@ -71,9 +79,9 @@ bool has_avx2_fma() { return cpu().avx2_fma; }
 bool has_avx512f() { return cpu().avx512f; }
 
 // The fit's order of preference (chosen by measurement, Plan B task B2(b); results record section 4): the finz
-// family on the widest vectors the processor has (AVX-512F, else AVX2 with FMA: Intel since 2013, AMD since
-// 2015), else the cinz family's widest (AVX-512F, AVX, else SSE2, which every x86-64 processor has). Only the
-// finz functions made the fit faster than the C library's exp and log on both machines measured; cinz SSE2
+// family on the widest vectors the processor has (AVX-512F, else AVX2 with FMA: most Intel Core processors
+// since Haswell, 2013, and AMD since Excavator, 2015; not every Pentium, Celeron or Atom-class one), else the
+// cinz family's widest (AVX-512F, AVX, else SSE2, which every x86-64 processor has). Only the finz functions made the fit faster than the C library's exp and log on both machines measured; cinz SSE2
 // made it slower. Within a family the bits do not depend on the instruction set (SLEEF's statement, tested);
 // the two families differ in the last bits, so a processor without FMA gives other last bits than one with it.
 constexpr Impl kImpls[] = {
@@ -84,7 +92,25 @@ constexpr Impl kImpls[] = {
     {"cinz sse2", false, 2, isa::exp_cinz_sse2, isa::log_cinz_sse2, always},
 };
 
+// TEST ONLY: the environment variable KZ4AP_FIT_MATH, read once at the first use, restricts the choice to the
+// implementations whose name starts with its value ("cinz" or "finz" for a family, or a full name such as
+// "cinz sse2"); the first available of those is used. Unset, empty or matching none available: the order
+// above. It exists so that the tests and a development-set replay can run the fit through the family a
+// processor without FMA would use; decoding is not meant to set it.
 const Impl& choose() {
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)  // getenv: read once; the program never changes its environment
+#endif
+    const char* force = std::getenv("KZ4AP_FIT_MATH");
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+    if (force != nullptr && *force != '\0') {
+        const std::string_view f(force);
+        for (const Impl& i : kImpls)
+            if (std::string_view(i.name).substr(0, f.size()) == f && i.available()) return i;
+    }
     for (const Impl& i : kImpls)
         if (i.available()) return i;
     return kImpls[4];  // unreachable: cinz sse2 is always available

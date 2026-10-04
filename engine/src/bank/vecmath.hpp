@@ -35,7 +35,8 @@ struct Impl {
 // Every implementation built in, in the order the fit prefers them (the first available is used).
 const Impl* implementations(std::size_t& count);
 
-// The implementation the fit uses on this processor (chosen once, at the first use).
+// The implementation the fit uses on this processor (chosen once, at the first use; for tests only, the
+// environment variable KZ4AP_FIT_MATH can restrict the choice: vecmath.cpp, choose).
 const Impl& selected();
 
 // The fit's exp and log: the selected implementation's.

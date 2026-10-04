@@ -411,6 +411,8 @@ double logaddexp(double x, double y) {
 }
 
 double log_sum_exp(const double* x, std::size_t n, double out) {
+    // lse_block counts a point's added terms in 8 bits and holds at most 3 kBlock of them.
+    if (n > 255) throw std::invalid_argument("log_sum_exp: at most 255 class terms");
     double result;
     lse_block(
         1, [n](std::size_t) { return n; }, [x](std::size_t, std::size_t c) { return x[c]; }, out, &result);

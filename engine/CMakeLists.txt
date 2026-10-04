@@ -40,7 +40,9 @@ target_link_libraries(kz4ap_engine PRIVATE sleef)
 if(MSVC)
   set_source_files_properties(src/bank/vecmath_avx.cpp PROPERTIES COMPILE_OPTIONS /arch:AVX)
   set_source_files_properties(src/bank/vecmath_avx2.cpp PROPERTIES COMPILE_OPTIONS /arch:AVX2)
-  set_source_files_properties(src/bank/vecmath_avx512.cpp PROPERTIES COMPILE_OPTIONS /arch:AVX512)
+  # As SLEEF builds its own AVX-512 code with MSVC: AVX2 code generation and AVX-512F intrinsics only (/arch:AVX512
+  # would also emit AVX-512 CD, BW, DQ and VL instructions, which vecmath.cpp does not check for).
+  set_source_files_properties(src/bank/vecmath_avx512.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX2;/D__AVX512F__")
 else()
   set_source_files_properties(src/bank/vecmath_avx.cpp PROPERTIES COMPILE_OPTIONS -mavx)
   set_source_files_properties(src/bank/vecmath_avx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma")

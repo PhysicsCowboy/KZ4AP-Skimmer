@@ -2354,10 +2354,19 @@ s, variances in s², log-likelihoods in nats; densities are in ln(duration).
   SLEEF states that each family gives the same bits with every instruction
   set, and the tests check it on each machine
   (`BankFitB2b.ExpAndLogAreWithinOneUlpOfTheCLibraryAndConsistentWithinEachFamily`);
-  so the fit's values are the same on every processor with FMA (Intel since
-  2013, AMD since 2015), and a processor without FMA gives other last bits.
-  Each instruction set's code is compiled in its own file for that set
-  alone, so the program runs on every x86-64 processor. The order is
+  so the fit's values are the same on every processor with AVX2 and FMA
+  (most Intel Core processors since Haswell, 2013, and AMD since Excavator,
+  2015; not every Pentium, Celeron or Atom-class one), and a processor
+  without them gives other last bits. Each instruction set's code is
+  compiled in its own file for that set alone (on MSVC the AVX-512 file as
+  SLEEF compiles its own: AVX2 code generation, AVX-512F intrinsics), and
+  each runs only where the processor reports the extensions its file may
+  use, so the program runs on every x86-64 processor: by construction and
+  by the symbol check of results record section 4.1, not by a run on a
+  processor without AVX. The environment variable `KZ4AP_FIT_MATH`
+  (`cinz`, `finz` or a full name) restricts the choice, for the tests and
+  for one development-set replay only (results record, section 4.9). The
+  order is
   measured, not derived: the 2-double SSE2 functions (cinz) are slower than
   the C library's ln (10.6 against 4.6 ns per value on the Linux machine)
   and made the decoder slower on both machines; the cinz AVX and AVX-512
@@ -2520,8 +2529,10 @@ subnormal results and 0, overflow, subnormal and edge arguments, ±0, ±∞,
 NaN): at most 1 ulp apart, every element bit for bit as when evaluated
 alone, and bit for bit within its family (finz AVX-512 = finz AVX2 and
 cinz AVX-512 = AVX = SSE2 on the Linux machine; cinz AVX = SSE2 on the
-Windows PC, which has no AVX-512). About 3.7% of the exps (finz) and 0.5%
-of the lns differ from the C library's, by 1 ulp, on both machines. At the
+Windows PC, which has no AVX-512). Of the test's 10⁶ arguments (its own mix,
+not the fit's arguments) about 3.7% of the exps (finz; 5.8% and 6.0% cinz,
+Windows and Linux) and 0.5% of the lns differ from the C library's, by
+1 ulp, on both machines. At the
 full sizes every bit-for-bit comparison is equal on both machines, and the
 largest differences from the B2(a) code are (Linux machine / Windows PC):
 
@@ -2581,8 +2592,8 @@ C library's ln and exp from 1.17 s to 0.10 s (ln outside the fit's arrays:
 ln d of the retained history, ln μ_c, other stages), SLEEF's ln 0.15 s and
 exp 0.08 s; `grid_loglik`'s own code, which now contains the one-pass sum
 and the staging of the blocks, rises from 0.49 s to 0.58 s and is the
-largest item (46%). Memory: the blocks use 25.3 kB of stack scratch per
-call and the search two vectors of up to 3 × 192 doubles (4.6 kB each) per
+largest item (46%). Memory: the blocks use 25 856 B of stack scratch per
+call and the search two vectors of up to 3 × 192 doubles (4608 B each) per
 call, freed on return; nothing persistent is added. Build: SLEEF adds
 4.6 s to a fresh configure and 3.0 s to a fresh build on the Linux machine
 (Ninja, 10 jobs), 29.1 s and 40.4 s on the Windows PC (results record,
@@ -3380,7 +3391,7 @@ parameter was changed for this run.
 | Bank fit refinement | 2 Gauss–Newton steps in ln d, damping 0.2 T per parameter; T ≥ 0.1 ms, w ∈ [−0.6, 1.2] T, qT ∈ [2, 6] T, T_g ∈ [0.8, 10] T; kept only if the weighted log-likelihood does not drop | `BankConfig::refine_iterations`; `bank::DurationFit::refine`, `best` | heuristic; the 0.1 ms floor a numerical choice |
 | Bank fit grid constants | ln μ, 1/μ² and a validity flag per class and grid point (432.7 kB with the defaults), built once per process per configuration and shared, immutable, by every fit of a configuration with bit-identical values of the 13 fields they read; freed when no fit uses them | `bank::DurationFit::shared_model` | a memory choice with no arithmetic effect (Plan B B1: tested bit for bit across threads; development-set texts identical) |
 | Bank fit evaluation | ℓ_total = m + ln(1 + Σ e^(x − m)) over the observation's kind of classes and the outlier, in one pass, the others added after the largest's 1; terms more than 40 nats below m left out, and a grid class's ln s_c² skipped when its bound (with σ_ln² for s_c²) is more than 41 nats below the outlier's −5.216 nats; logaddexp skips exp and log1p at \|x − y\| ≥ (58 − k) ln 2 nats (38.8 nats at k = 2) | `bank::DurationFit::grid_loglik`, `terms`, `log_sum_exp`, `logaddexp` | the 40 nats and the skip threshold derived (no bit changes against the one-pass sum, which starts at the largest term's 1, respectively against numpy's formula; both tested bit for bit); the one-pass sum changes ℓ_total by ≤ 1.3 · 10⁻¹⁵ nats (measured, Plan B B2(a); development-set texts and records identical) |
-| Bank fit exp and ln | SLEEF 3.9.0 `_u10` (stated error bound 1.0 ulp) on arrays: grid points in blocks of 256, the retained history at once; finz (FMA) on AVX-512F (8 doubles) or AVX2 + FMA (4), else cinz on AVX-512F, AVX or SSE2 (8, 4, 2), chosen at run time; changes ℓ_total by ≤ 1.001 · 2^−52 · (5 \|ℓ_total\| + 14.3 + \|ln σ_ln²\|) nats against the C library's | `bank::vecmath` (`engine/src/bank/vecmath*.cpp`); `bank::DurationFit::grid_loglik`, `terms`, `refine` | the bound derived (1 ulp per call through the formula; tested on the sweeps); the implementation order measured (Plan B B2(b)); the block of 256 a heuristic (stack scratch of 25.3 kB, no measured effect claimed) |
+| Bank fit exp and ln | SLEEF 3.9.0 `_u10` (stated error bound 1.0 ulp) on arrays: grid points in blocks of 256, the retained history at once; finz (FMA) on AVX-512F (8 doubles) or AVX2 + FMA (4), else cinz on AVX-512F, AVX or SSE2 (8, 4, 2), chosen at run time; changes ℓ_total by ≤ 1.001 · 2^−52 · (5 \|ℓ_total\| + 14.3 + \|ln σ_ln²\|) nats against the C library's | `bank::vecmath` (`engine/src/bank/vecmath*.cpp`); `bank::DurationFit::grid_loglik`, `terms`, `refine` | the bound derived (1 ulp per call through the formula, assuming the C library's exp and ln within 1 ulp as SLEEF's; tested on the sweeps); the implementation order measured (Plan B B2(b)); the block of 256 a heuristic (stack scratch of 25 856 B, no measured effect claimed) |
 | Bank periodicity method | the comb on Π = 2T over branch 1's posterior p (the edge comb and the spectrum fit are not ported) | `BankConfig::periodicity_method`; `bank::Periodicity` | owner (E1); Π = 2T derived |
 | Bank periodicity input and updates | p averaged to r_P = r / max(1, round(r / 750 samples/s)) (750 samples/s at r = 1500 samples/s); recomputed every 0.25 s of p (375 samples at 1500 samples/s) | `BankConfig::periodicity_rate_hz`, `periodicity_update_s` | heuristic |
 | Bank periodicity windows | 2, 5 and 10 s (1500, 3750, 7500 samples at 750 samples/s); the shortest confident window gives T_P; reach caps T at ≈ W / 18.3 (109, 273, 546 ms) | `BankConfig::periodicity_windows_s` | windows placeholder (E2); reach caps derived from a heuristic rule |

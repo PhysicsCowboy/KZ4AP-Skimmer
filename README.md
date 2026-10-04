@@ -35,7 +35,10 @@ Clang 17+, CMake 3.25+, Ninja.
 
 The first configure downloads GoogleTest, nlohmann/json and SLEEF (the
 vectorized math library of the bank decoder's duration fit) with CMake's
-FetchContent, so it needs network access.
+FetchContent, so it needs network access. Configure through the presets: with
+a single-configuration generator and no `CMAKE_BUILD_TYPE`, SLEEF's own CMake
+code sets it to Release in the cache, which then applies to the whole project
+from the next configure on.
 
 ## Benchmark
 

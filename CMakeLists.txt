@@ -21,7 +21,8 @@ FetchContent_MakeAvailable(json)
 # SLEEF (Boost Software License 1.0): vectorized exp and log for the bank decoder's duration fit (Plan B task
 # B2(b)). Only the static math library is built: no tests, DFT, quad, GNU ABI or scalar libraries, and no TLFloat
 # (needed only by SLEEF's own tests). The engine chooses among SLEEF's bit-wise consistent functions at run time
-# (engine/src/bank/vecmath.hpp), so the binaries run on every x86-64 processor.
+# (engine/src/bank/vecmath.hpp), so the binaries run on every x86-64 processor (by construction; not run on one
+# without AVX). SLEEF sets CMAKE_BUILD_TYPE to Release in the cache when it is empty (README, Building).
 FetchContent_Declare(sleef
   URL https://github.com/shibatch/sleef/archive/refs/tags/3.9.0.tar.gz
   URL_HASH SHA256=af60856abac08a3b5e72a8d156dd71fec1f7ac23de8ee67793f45f9edcdf0908

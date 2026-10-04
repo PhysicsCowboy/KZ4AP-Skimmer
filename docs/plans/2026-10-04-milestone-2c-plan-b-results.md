@@ -389,7 +389,11 @@ In `engine/src/bank/fit.cpp` and the new `engine/src/bank/vecmath*.cpp` (docs/si
    (no FMA) on AVX-512F, AVX or SSE2 (8, 4, 2). SLEEF states that each family returns the same bits with every
    instruction set (tested on both machines, 4.2). Each instruction set's code is compiled in its own file for
    that set alone (no inline function in those files that the linker could share; checked with `nm` on the
-   Linux build: only the wrappers' own symbols), so the binaries run on every x86-64 processor.
+   Linux build: only the wrappers' own symbols), and each runs only where the processor reports what its file
+   may use, so the binaries run on every x86-64 processor: by construction and by the symbol check, not by a
+   run on a processor without AVX. (Fix round 1: on MSVC the AVX-512 file is now compiled as SLEEF compiles its
+   own, AVX2 code generation with AVX-512F intrinsics, and the AVX2 path also requires BMI1 and BMI2, which
+   MSVC's /arch:AVX2 may emit; section 4.9.)
 3. SLEEF by `FetchContent` at the 3.9.0 release (SHA-256 pinned), the static math library only (no tests,
    DFT, quad, GNU ABI or scalar libraries, no TLFloat), in both presets.
 
@@ -431,8 +435,9 @@ independent calls).
 
 **What the run-time choice costs in reproducibility.** Within a family the fit's values do not depend on the
 processor (SLEEF's statement, tested on both machines); the two families differ in the last bits, so a
-processor without AVX2 + FMA (Intel before 2013, AMD before 2015) computes other last bits than the machines
-measured here. Before B2(b) the fit already depended on the platform's C library (glibc and Microsoft's differ
+processor without AVX2 and FMA (Intel Core before Haswell, 2013, AMD before Excavator, 2015, and some later
+Pentium, Celeron and Atom-class processors) computes other last bits than the machines measured here (the cinz
+family's development-set check: section 4.9). Before B2(b) the fit already depended on the platform's C library (glibc and Microsoft's differ
 in the last bits); with B2(b) the Windows PC and the Linux machine use the same functions (finz) for the fit.
 
 ### 4.2 Tests

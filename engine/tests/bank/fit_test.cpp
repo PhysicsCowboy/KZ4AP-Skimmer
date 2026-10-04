@@ -1292,6 +1292,15 @@ TEST(BankFitB2a, LogSumExpLeaveOutChangesNoBit) {
     EXPECT_EQ(bits(log_sum_exp(d, 2, -5.216)), bits(-5.216));
 }
 
+TEST(BankFitB2b, LogSumExpTakesAtMost255ClassTerms) {
+    // The block evaluation counts a point's added terms in 8 bits: 255 terms are summed (all equal: the sum is
+    // e^x (256), within the fit's exp and ln rounding of x + ln 256), 256 are refused.
+    std::vector<double> x(256, -3.0);
+    const double v = log_sum_exp(x.data(), 255, -3.0);
+    EXPECT_NEAR(v, -3.0 + std::log(256.0), 1e-13);
+    EXPECT_THROW(log_sum_exp(x.data(), 256, -3.0), std::invalid_argument);
+}
+
 TEST(BankFitB2a, GridLoglikIsBitIdenticalToTheFrozenOnePassAndNearTheChainAtEveryGridPoint) {
     // 10^6 random observations per configuration (two configurations; 20 000 without KZ4AP_FIT_FULL_SWEEP),
     // each at every grid point of its table (3636 mark or 6060 space points with the defaults), then the
@@ -1560,7 +1569,8 @@ TEST(BankFitB2a, SearchesAreBitIdenticalToTheFrozenOnePassAndNearTheChain) {
 }
 
 // ---------------------------------------------------------------------------------------------------------
-// Plan B task B2(b): the fit's exp and log (SLEEF 3.9.0, Sleef_cinz_expd2_u10sse2 and Sleef_cinz_logd2_u10sse2).
+// Plan B task B2(b): the fit's exp and log (SLEEF 3.9.0's _u10 functions, finz or cinz family, chosen at run time;
+// src/bank/vecmath.hpp).
 
 // The number of doubles from a to b (0 if equal, +-0 equal; both NaN: 0), on the ordered line of finite doubles;
 // +inf where one is infinite or NaN and the other is not the same.
@@ -1626,6 +1636,14 @@ TEST(BankFitB2b, ExpAndLogAreWithinOneUlpOfTheCLibraryAndConsistentWithinEachFam
     const vm::Impl& sel = vm::selected();
     std::printf("selected: %s\n", sel.name);
     EXPECT_TRUE(sel.available());
+    // The test-only override (vecmath.cpp, choose): with KZ4AP_FIT_MATH set to a family or a name that this
+    // processor can run, the selected implementation is one of those.
+    if (const char* force = std::getenv("KZ4AP_FIT_MATH"); force != nullptr && *force != '\0') {
+        bool runnable = false;
+        for (std::size_t k = 0; k < count; ++k)
+            runnable = runnable || (std::string(impls[k].name).rfind(force, 0) == 0 && impls[k].available());
+        if (runnable) EXPECT_EQ(std::string(sel.name).rfind(force, 0), 0u) << sel.name << " against " << force;
+    }
     for (const bool is_exp : {true, false}) {
         const std::vector<double>& x = is_exp ? xe : xl;
         const char* fn = is_exp ? "exp" : "log";
