@@ -109,7 +109,9 @@ for a short squelch opening (score 0.0000 as written), where several candidates 
 same.
 
 Three traced, the prototype's and the port's scores of the best candidates recomputed from each side's
-own buffer at that update (file `c2-ties-bank-cpp-vs-bank-proto.txt`):
+own buffer at that update (file `c2-ties-bank-cpp-vs-bank-proto.txt`; its "port: pick" lines print a
+meaningless value, about 5e-310, read through a reference into a temporary in the helper; the port's
+picks below follow from its scores and agree with the decoded files):
 
 | channel, update, window | candidate T (s) | prototype score | port score | lead of each side's pick |
 |---|---|---|---|---|
@@ -122,7 +124,7 @@ own buffer at that update (file `c2-ties-bank-cpp-vs-bank-proto.txt`):
 | | 0.0127382 | 2.8383525696517864e-03 | **2.8383525696515366e-03** | port: 8.3e-17 absolute (2.9e-14 relative) |
 
 (Bold: each side's pick. Scores are dimensionless.) In each, each side's lead is of the order of the
-difference between the two sides' scores of one candidate (largest such difference: 1.9e-17, 2.0e-18 and
+difference between the two sides' scores of one candidate (largest such difference: 1.9e-17, 2.1e-18 and
 9.9e-16 absolute in the three rows; the largest lead is 1.3 times it, the port's 2.5e-17 in the first),
 and every lead is at most 1.1e-11 relative, the scale of rounding for comb scores of order 1e-6 (derived
 in section 2.4). So each is a near-tie in D2's sense (measured values).
@@ -137,7 +139,9 @@ required the port to pick 44.63 ms at both. On the Linux machine it picked 61.97
 tie is three-way. The test asserted one platform's rounding, which D2 does not require; it now scores all
 three candidates on the port and requires the port's pick to be its own largest score, each port score
 within the golden tolerance (1e-9 relative) of the prototype's, and the three scores within 1e-16 absolute
-of each other on each side (commits `fe74c75`, `c09f458`, `dea9065`, `3e628a6`; the first of these
+of each other on each side (a heuristic margin, not derived: about 1.5 times the largest measured spread,
+6.5e-17, and below one unit in the last place of 1.0; relative to the scores it is 2.1e-11 at farnsworth
+and 1.05e-10 at noise) (commits `fe74c75`, `c09f458`, `dea9065`, `3e628a6`; the first of these
 referred to a temporary, which the second fixed). The values (prototype: numpy on Windows):
 
 | stream, update | candidate T (ms) | prototype | port, Windows (MSVC) | port, Linux (g++, glibc) |
@@ -153,7 +157,7 @@ The spread of the three scores is at most 6.5e-17 absolute on any side; one cand
 between sides by up to 4.2e-17. Each score is a difference of comb-tooth means of the normalized
 autocorrelation (values up to 1, summed in a cumulative sum), so last-bit differences of order 1e-17 in
 the means survive the cancellation down to scores of order 1e-6 as relative differences of order 1e-11
-(derived). The prototype itself orders the two runners-up differently under numpy on Linux (61.97 ms
+(derived, as an order of magnitude; the test's 1e-16 bound is not derived from it). The prototype itself orders the two runners-up differently under numpy on Linux (61.97 ms
 4.732927653808283e-06 above 44.63 ms 4.732927653775947e-06; its pick, 97.95 ms, is the same).
 
 ## 3. Cost (Task 9)
@@ -193,11 +197,12 @@ that the math library is sampled; file `c2-gprof-F-drift-s1-1.txt`) shows where:
   searches** (6972 calls of `refine`); the projection assumed about 160 and 145. With
   the spike's per-call costs (329 µs per observation, 66 µs per search) these rates give 98 ms per
   channel-second (derived), against 130 ms measured for this channel under the profiler and 120.7 ms
-  for its test case without it. So most of the gap to the projection is the event rate (measured on this
-  one channel; that the development set's rate is similar is conjectured, not counted).
+  for its test case without it. So on this channel the event rate accounts for 98 − 65 = 33 ms of the
+  120.7 − 65 = 56 ms gap to the projection, 59% (derived from the measured rates; that the development
+  set's rate is similar is conjectured, not counted).
 
 **Against the prototype (stage 1's "157 ms").** The like-for-like reference is the prototype's own
-decoded files on the same 525 channels and machine: 184.0 ms per channel-second, the same as the stage-1
+decoded files on the same 525 channels and machine: 184.0 ms per channel-second, within 0.2% of the stage-1
 record's 184.3 ms for `exp-E9-rekey-0.8` (the settled configuration). The 157.3 ms in the stage-1 record
 is `exp-E5-coarse` on E5's subset (about 20% of the development set) under the configuration before E6 to
 E9, so it is not comparable. The port is 0.70 times the prototype: faster, but by much less than a
@@ -210,15 +215,16 @@ the prototype was not profiled here).
 Windows PC (Intel Core i7-12700H, Windows 11, MSVC; files `build/suite/full3/proto/t7-cpp/` and
 `t7-proto/`, git-ignored), with the Linux figures for the one of them in the development set:
 
-| test case | port, Windows | port, Linux | prototype, Windows | prototype, Linux |
+| test case | port, Windows (ms of CPU per channel-second) | port, Linux (ms of CPU per channel-second) | prototype, Windows (ms of CPU per channel-second) | prototype, Linux (ms of CPU per channel-second) |
 |---|---|---|---|---|
-| F-drift-s1 (8 channels, 240.1 channel-seconds) | 453.6 ms | 120.7 ms | 273.1 ms | 175.5 ms |
-| first-sample-s1.oracle (4 channels, 80.0 channel-seconds) | 543.3 ms | not decoded (not in the development set) | 246.4 ms | — |
+| F-drift-s1 (8 channels, 240.1 channel-seconds) | 453.6 | 120.7 | 273.1 | 175.5 |
+| first-sample-s1.oracle (4 channels, 80.0 channel-seconds) | 543.3 | not decoded (not in the development set) | 246.4 | — |
 
 On F-drift-s1 the same Python code costs 1.56 times as much on the Windows PC as on the Linux machine,
 the port 3.76 times as much; so the port's extra factor on Windows, 3.76 / 1.56 = 2.4, comes with the
-build, not the hardware (measured ratios; the owner's reading, that the cost is the code's construction,
-is consistent with them). Which part of the build: the exact-math port spends 75% of its time in the
+build, not the hardware (derived from measured ratios, assuming the prototype's ratio measures the
+hardware alone, which is approximate: numpy's own builds also differ between the platforms; the owner's
+reading, that the cost is the code's construction, is consistent with them). Which part of the build: the exact-math port spends 75% of its time in the
 math library on Linux (above), and Task 7 measured `DurationFit::add` at 458 µs per call with MSVC's
 scalar exp and log against 221 µs for numpy's vectorized ones on the same PC; that MSVC's exp, log and
 log1p are the main cause of the remaining factor is conjectured (the Windows build was not profiled by

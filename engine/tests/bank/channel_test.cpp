@@ -297,9 +297,13 @@ TEST(BankChannel, TheTwoPeriodicityNearTiesAreRoundingOnBothSides) {
         EXPECT_EQ(port[static_cast<std::size_t>(at - t.begin())], *std::max_element(port.begin(), port.end()));
         EXPECT_GT(c.proto[0], c.proto[1]);
         EXPECT_GT(c.proto[1], c.proto[2]);
-        // The three candidates differ by rounding on each side: the spread of their scores is below 1e-16 absolute,
-        // the rounding of the normalized autocorrelation's cumulative sums (values up to 1) that the scores are
-        // differences of (relative to the scores of 1e-6 that is up to 2e-11).
+        // The three candidates differ by rounding on each side: the spread of their scores is below 1e-16 absolute.
+        // The bound is heuristic, not derived: a margin about 1.5x above the largest measured spread (the
+        // prototype's 6.5e-17 at farnsworth; the port's 1.9e-17 on Windows, 3.2e-17 on Linux; noise 7.0e-18 on
+        // every side), below one unit in the last place of 1.0 (2.2e-16), the scale of the normalized
+        // autocorrelation's values whose cumulative-sum means the scores are differences of. Relative to the
+        // scores it is 2.1e-11 at farnsworth (4.73e-6) and 1.05e-10 at noise (9.5e-7). (The two checks on c.proto
+        // check the held constants, not code: they document the prototype's order and spread.)
         const auto spread = [](const std::array<double, 3>& s) {
             return *std::max_element(s.begin(), s.end()) - *std::min_element(s.begin(), s.end());
         };

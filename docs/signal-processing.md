@@ -2676,27 +2676,38 @@ starts, switches and selections (branch exactly, fitted T to relative
 confidences and scores to relative 10⁻⁹) except two per-window estimates
 that are traced near-ties (D2), both in the 2 s window over a buffer of p
 that is zero but for one short squelch opening, far below the 0.03
-confidence threshold; T_P and everything downstream are unaffected. The
-two candidates, T = 97.95 ms and T = 44.63 ms, scored on each side
-(dimensionless):
+confidence threshold; T_P and everything downstream are unaffected. Three
+candidates tie in each, T = 97.95 ms, 44.63 ms and 61.97 ms (the fourth
+best scores about half as much). Their scores (dimensionless) on the
+prototype (numpy on Windows, the golden values), the port's Windows build
+(MSVC) and the port's Linux build (g++ 11.4, glibc 2.35), each side's pick
+in bold:
 
-| Recomputation | T | Prototype | Port |
-|---|---|---|---|
-| noise #14 | 97.95 ms | 9.5011319738165349 · 10⁻⁷ | 9.5011319737701853 · 10⁻⁷ |
-| noise #14 | 44.63 ms | 9.5011319738161283 · 10⁻⁷ | 9.5011319738161283 · 10⁻⁷ |
-| Farnsworth #64 | 97.95 ms | 4.7329276538316477 · 10⁻⁶ | 4.7329276538037837 · 10⁻⁶ |
-| Farnsworth #64 | 44.63 ms | 4.7329276538129181 · 10⁻⁶ | 4.7329276538129181 · 10⁻⁶ |
+| Recomputation | T | Prototype | Port, Windows | Port, Linux |
+|---|---|---|---|---|
+| noise #14 | 97.95 ms | **9.5011319738165349 · 10⁻⁷** | 9.5011319737701853 · 10⁻⁷ | 9.5011319737701853 · 10⁻⁷ |
+| noise #14 | 44.63 ms | 9.5011319738161283 · 10⁻⁷ | **9.5011319738161283 · 10⁻⁷** | **9.5011319738161283 · 10⁻⁷** |
+| noise #14 | 61.97 ms | 9.5011319737464683 · 10⁻⁷ | 9.5011319737464683 · 10⁻⁷ | 9.5011319737464683 · 10⁻⁷ |
+| Farnsworth #64 | 97.95 ms | **4.7329276538316477 · 10⁻⁶** | 4.7329276538037837 · 10⁻⁶ | 4.7329276537942970 · 10⁻⁶ |
+| Farnsworth #64 | 44.63 ms | 4.7329276538129181 · 10⁻⁶ | **4.7329276538129181 · 10⁻⁶** | 4.7329276537759468 · 10⁻⁶ |
+| Farnsworth #64 | 61.97 ms | 4.7329276537666498 · 10⁻⁶ | 4.7329276537944054 · 10⁻⁶ | **4.7329276538082832 · 10⁻⁶** |
 
-The prototype's lead of 97.95 ms is 4.3 · 10⁻¹⁴ and 4.0 · 10⁻¹² relative;
-the port's lead of 44.63 ms is 4.8 · 10⁻¹² and 1.9 · 10⁻¹² relative. The
-97.95 ms score differs between the two sides by 4.9 · 10⁻¹² and
-5.9 · 10⁻¹² relative (4.6 · 10⁻¹⁸ and 2.8 · 10⁻¹⁷ absolute): a score is a
-difference of comb-tooth means of the normalized autocorrelation (values
-up to 1, taken from a cumulative sum), so last-bit differences of the
-means, of order 10⁻¹⁷, survive the cancellation down to a score of
-order 10⁻⁶ as relative differences of order 10⁻¹². That is rounding, and
-it exceeds both leads, so the pick flips (a test recomputes the port's
-two scores at these recomputations). The
+So the prototype picks 97.95 ms at both; the port picks 44.63 ms at both
+on Windows, and on Linux 44.63 ms at noise #14 and 61.97 ms at Farnsworth
+#64. The leads of the picks over the runner-up: prototype 4.1 · 10⁻²⁰ and
+1.9 · 10⁻¹⁷ absolute (4.3 · 10⁻¹⁴ and 4.0 · 10⁻¹² relative); port, Windows,
+4.6 · 10⁻¹⁸ and 9.1 · 10⁻¹⁸ (4.8 · 10⁻¹² and 1.9 · 10⁻¹²); port, Linux,
+4.6 · 10⁻¹⁸ and 1.4 · 10⁻¹⁷ (4.8 · 10⁻¹² and 3.0 · 10⁻¹²). One candidate's
+score differs between the prototype and the port by up to 4.6 · 10⁻¹⁸
+(noise, 4.9 · 10⁻¹² relative) and 4.2 · 10⁻¹⁷ (Farnsworth, 8.8 · 10⁻¹²
+relative, Linux) absolute: a score is a difference of comb-tooth means of
+the normalized autocorrelation (values up to 1, taken from a cumulative
+sum), so last-bit differences of the means, of order 10⁻¹⁷, survive the
+cancellation down to a score of order 10⁻⁶ as relative differences of
+order 10⁻¹² to 10⁻¹¹ (derived, order of magnitude). That is rounding, and
+it is at least as large as every lead, so the pick depends on the build (a
+test recomputes the port's three scores at these recomputations and
+requires the port's pick to be its own largest). The
 prototype's channel tests are ported one for one; its strict expected
 failures are skipped with their reasons (and fail if they pass), and its
 `keep_p1` posterior for the offline experiments is not ported.
