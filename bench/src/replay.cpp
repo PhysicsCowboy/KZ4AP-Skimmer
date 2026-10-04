@@ -5,7 +5,7 @@
 //
 //   kz4ap-bank-replay --out DIR --name NAME [--only REGEX] [--set KEY=VALUE ...] [--jobs N]
 //
-// reads DIR/manifest.json and, for every oracle test case (the oracle recordings' scorings and the oracle copies
+// reads DIR/manifest.json and, for every oracle test case (the oracle recordings' test cases and the oracle copies
 // of the detector-path groups, as kz4ap_synth.suites names them) whose result name matches REGEX (searched, as
 // Python's re.search), DIR/channels/<result>/channels.json and its channel files (complex64, little-endian);
 // mixes each channel as streams.ChannelStream.baseband() does for a labeled channel (the labeled offset, and the
@@ -107,7 +107,8 @@ struct Job {
     std::string labels;
 };
 
-// kz4ap_synth.suites: the groups of the detector path that also get an oracle copy.
+// kz4ap_synth.suites.ORACLE_COPY_GROUPS: the groups of the detector path that also get an oracle copy (a test in
+// training/tests/test_suites.py checks that the two lists are equal).
 const std::vector<std::string> kOracleCopyGroups = {"pauses", "strong", "tune-up", "first sample", "band", "crowded"};
 
 std::vector<Job> oracle_jobs(const ordered_json& manifest, const std::optional<std::regex>& only) {

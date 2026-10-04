@@ -40,7 +40,7 @@ struct ClassicalDecoderConfig {
     FrequencyTrackerConfig tracker;       // Matched only
 };
 
-// Classical statistical decoder with two front ends (ClassicalDecoderConfig::front_end): Matched (the
+// The classical statistical decoder, run as one of two decoders (ClassicalDecoderConfig::front_end): Matched (the
 // default) re-centers the station's frequency, filters with a dit-matched boxcar and keys on the
 // posterior log-odds; Envelope (the milestone-1 path) keys the smoothed envelope against adaptive mark
 // and space levels. Both then take the speed from the dit/dah split of recent marks and probabilities
@@ -48,7 +48,7 @@ struct ClassicalDecoderConfig {
 class ClassicalDecoder final : public Decoder {
 public:
     // initial_offset_hz: the station's offset from its channel's center as the detector
-    // measured it, Hz. The Matched front end starts re-centering there. Throws std::invalid_argument for an invalid
+    // measured it, Hz. The Matched decoder starts re-centering there. Throws std::invalid_argument for an invalid
     // config, and for front_end == FrontEnd::Bank (see BankDecoder).
     explicit ClassicalDecoder(double sample_rate, ClassicalDecoderConfig config = {}, double initial_offset_hz = 0.0);
 

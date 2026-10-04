@@ -23,7 +23,8 @@ tracker is Plan B's. So 272 of the 280 per-regime paired comparisons (140 regime
 Envelope) are the same numbers as stage 1's, and the 8 that differ are the four F drift rows. Pooled over the
 oracle test cases its CER is 0.369, against Matched's 0.457 and Envelope's 0.625; through the detector path
 0.448, against 0.467 and 0.482 (section 4.2). The first run found a defect in how the engine reported
-corrections, which left the final text of 6 signals one or two characters off the bank's own text. It is
+corrections, which left the final text of 6 labels (4 scored signals and 2 unscored interferers) one or two
+characters off the bank's own text. It is
 fixed, and the run was repeated (section 4.4). The text as first displayed has CER 0.411, against 0.382
 after corrections. Through the engine there are 4.10 corrections per channel-minute, reaching back a median
 of 1.544 s and at most 20.000 s (section 4.5). The bank costs 133.8 ms of CPU per channel-second through the

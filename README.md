@@ -74,7 +74,7 @@ interval), and CPU time per channel-second. The full suite is sized for
 three seeds: 117 recordings, 4.55 h of audio and 3.20 GB (measured). On this
 project's development desktop (12th Gen Intel Core i7-12700H) generating them
 took 60 min, with another job sharing the machine for part of it, and scoring
-them with both front ends took 5.0 min (measured; `docs/signal-processing.md`,
+them with both decoders took 5.0 min (measured; `docs/signal-processing.md`,
 section 8b):
 
     $env:PYTHONPATH = "training"

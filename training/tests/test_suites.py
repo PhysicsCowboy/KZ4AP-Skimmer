@@ -637,3 +637,15 @@ def test_load_results_rejects_a_front_end_under_two_roots(tmp_path):
     from kz4ap_synth.suites import load_results
     with pytest.raises(ValueError, match="matched"):
         load_results(tmp_path, [tmp_path / "results", tmp_path / "exp"])
+
+
+def test_the_replay_tools_oracle_copy_groups_are_the_suites():
+    # bench/src/replay.cpp keeps its own copy of ORACLE_COPY_GROUPS: a group added here only would leave its oracle
+    # copies out of the C++ replay without an error.
+    import re
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[2] / "bench" / "src" / "replay.cpp").read_text(encoding="utf-8")
+    m = re.search(r"kOracleCopyGroups = \{([^}]*)\};", source)
+    assert m is not None
+    assert tuple(re.findall(r'"([^"]*)"', m.group(1))) == suites.ORACLE_COPY_GROUPS

@@ -105,8 +105,8 @@ power (detection and, later, the waterfall), and an **unwindowed** one used
 only as a fast-convolution filter bank (the channelizer). Both use the same
 size N and the same hop N/2, so they stay in lockstep.
 
-The decoder box shows the Envelope front end (`--front-end envelope`, the
-milestone-1 pipeline). The default, the Matched front end, replaces
+The decoder box shows the Envelope decoder (`--decoder envelope`, the
+milestone-1 pipeline). The default, the Matched decoder, replaces
 |y| → smoothing → keying with frequency re-centering, a dit-matched filter
 and keying on the posterior log-odds (sections 7 and 8b), and the engine
 gives each channel's decoder the detector's current frequency for its track
@@ -503,7 +503,7 @@ decoded in 30 of 30 from −6 dB up; channels were never merged.
   tracker covers ±12 Hz around it: a station that drifts more than 12 Hz
   from its label, or a QSO's answering station more than 12 Hz from the
   label, cannot be followed there; the benchmark marks such oracle rows as
-  not meaningful for the Matched front end.
+  not meaningful for the Matched decoder.
 - **Two tracks can converge on one peak (possible; derived from the code,
   not observed).** Following (item 1, `SignalDetector::follow_peaks`)
   moves each track to the strongest qualifying peak within D_ch of its
@@ -555,7 +555,7 @@ tracker anchor); the tap still only observes. (`anchor_hz` is the value
 the engine already hands the decoder as its anchor before each block: the
 labeled frequency in oracle mode; with `--front-end matched` and no
 oracle, the detector's current frequency for the track; with the Envelope
-front end and no oracle, which never updates it, the track's birth
+decoder and no oracle, which never updates it, the track's birth
 frequency. Benchmark tooling only; it changes no signal processing.)
 
 ## 7. Channelizer: one stream per station
@@ -706,7 +706,7 @@ stages").
 ### Residual frequency offset
 
 Because f_c is rounded to a bin, a station can sit up to ±11.7 Hz from 0 Hz in
-its channel, well inside the flat passband. The two front ends treat that
+its channel, well inside the flat passband. The two decoders treat that
 offset differently:
 
 - **Envelope path** (`--front-end envelope`): the offset appears as slow
@@ -735,9 +735,9 @@ A channel opens when its track is born and closes when it dies. It starts
 with the current block, so the decoder never sees the signal from before the
 detector noticed it: see "first characters" in the backlog.
 
-### Frequency re-centering (Matched front end only)
+### Frequency re-centering (Matched decoder only)
 
-Used only when the decoder's front end is `Matched` (section 8b); the
+Used only by the Matched decoder (section 8b); the
 Envelope pipeline does not re-center. `FrequencyTracker`
 (frequency_tracker.cpp) runs per station at r = 1500 samples/s inside the
 classical decoder, on the channel stream, ahead of section 8b's filter.
@@ -774,7 +774,7 @@ current frequency for the track minus the channel center (section 6,
   and the fine-tuning range (±12 Hz) must both lie below it; the
   constructor rejects a configuration where they do not.
 - **Average (heuristic):** Z̄ ← Z̄ + α·p·(rotated z − Z̄),
-  α = 1 − e^(−1/(τ_f·r)), τ_f = 0.5 s, weighted by p, the front end's
+  α = 1 − e^(−1/(τ_f·r)), τ_f = 0.5 s, weighted by p, the Matched decoder's
   key-down probability, so key-up and pauses leave it unchanged. Every
   32 samples (21.3 ms) f̂ ← arg(Z̄)/(2π·τ_L), once the average holds
   weight 0.6 or more and is coherent (|Z̄| > 0.3 × the same average of
@@ -814,7 +814,7 @@ current frequency for the track minus the channel center (section 6,
   (1 − e^(−m/(τ_f·r)))·e^(−(n₆ − m)/(τ_f·r))/0.6 with m = τ_L·r + K − 1
   and n₆ = τ_f·r·ln 2.5 = 687 samples: 2.8% at K = 24 (60 WPM), 6.0% at
   K = 58 (25 WPM) and 32% at K = 288 (5 WPM), decaying with τ_f
-  afterward. The classical decoder (section 8, "Two front ends"), which
+  afterward. The classical decoder (section 8, "Two decoders"), which
   puts the tracker in front of the matched filter, does not hold off the
   average for those samples; the bias is bounded by the figures above
   (derived) and has not been measured.
@@ -864,7 +864,7 @@ finding "the most probable character sequence given timing statistics and a
 prior over likely text". A probabilistic decoder is the key next step; decoder
 research is under way (`docs/research/`).
 
-**Two front ends.** `ClassicalDecoderConfig::front_end` selects how samples
+**Two decoders.** `ClassicalDecoderConfig::front_end` selects how samples
 become key-down and key-up. `Envelope` (steps 1–5 below) is the baseline;
 `Matched` is the default (owner decision 2026-09-29). `Matched` replaces
 steps 1–5 with section 7's re-centering and section 8b's matched filter
@@ -917,7 +917,7 @@ added); the speed step from
 to 0.499), the text stopping after the step in 5 of 6 signals (not
 diagnosed).
 **Marks whose start was not observed (Matched; Task 16).** Keying is
-possible on a sample where the front end is ready (its 0.32 s warm-up is
+possible on a sample where the Matched decoder is ready (its 0.32 s warm-up is
 over) and the squelch is open (a ≥ a_min). A key-down counts as observed
 only if, since the last sample on which keying was impossible, the
 decoder saw a keyable sample with the key up and g < −1 nat (the key-up
@@ -1097,10 +1097,10 @@ its first few noise samples.
     seconds to follow. A window measured in time rather than marks is an
     alternative (backlog).
 
-## 8b. Matched front end (the default, per station)
+## 8b. Matched decoder (the default, per station)
 
-Used when the classical decoder's front end is `Matched` (the default;
-owner decision 2026-09-29) (`ClassicalDecoderConfig::front_end`; section 8, "Two front ends").
+Used when the classical decoder's `front_end` setting is `Matched` (the default;
+owner decision 2026-09-29) (`ClassicalDecoderConfig::front_end`; section 8, "Two decoders").
 `MatchedFrontEnd` (matched_front_end.cpp) runs per station at
 r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
 (section 7, "Frequency re-centering"), before any envelope is taken.
@@ -1119,7 +1119,7 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
   decoder passes it once its speed window holds 8 marks (8 new ones after
   a re-acquisition), the filter's dit growing at most ×1.25 per
   physical mark from the 20 ms acquisition dit (owner decision; a merge
-  undoes the merged mark's update, section 8, "Two front ends"); K is
+  undoes the merged mark's update, section 8, "Two decoders"); K is
   clamped between the acquisition width (β·1.2 s/60 = 16 ms, K = 24) and
   the 5 WPM width (β·1.2 s/5 = 192 ms, K = 288), both computed from
   durations; a dit that is not finite or
@@ -1281,7 +1281,7 @@ r = 1500 samples/s inside the decoder, on the re-centered stream u[n]
 Full suite, 3 seeds, synthetic recordings (`kz4ap_synth.suites`, 117
 recordings, 4.55 h of audio, 3.20 GB), on a 12th Gen Intel Core i7-12700H
 (32 GB, Windows 11); generating took 60 min (another job shared the
-machine for part of it) and scoring both front ends 5.0 min (nothing
+machine for part of it) and scoring both decoders 5.0 min (nothing
 else running). S₅₀₀: key-down carrier power over noise power in 500 Hz,
 dB; every dB value in this subsection is an S₅₀₀ (or a difference of
 S₅₀₀ values) unless it names another reference. Groups A–G and the "H, oracle" copy use oracle channels (detector
@@ -1296,7 +1296,7 @@ Source: `build/suite/full3/summary.md` (not in the repository; rerun
 with the commands in section 11, "Suites").
 **Re-measured after Tasks 15 and 16 (Task 17, 2026-09-30).** The Matched
 cells below are from the code after Task 16 (76e2c27), scored on the same
-117 recordings (Task 14's, not regenerated); scoring both front ends took
+117 recordings (Task 14's, not regenerated); scoring both decoders took
 6.0 min on the same machine. The Envelope results were re-scored too and
 are identical to Task 14's, score and decoded tracks, in all 126 result
 files (the Envelope path is untouched by both fixes). Figures quoted
@@ -1499,7 +1499,7 @@ chance. At 50 Hz the over CER moved from the answering station (0.345 →
 
 Pooled over 3 seeds, 9 stations per point: 1951, 1960, 1954 and 1932
 reference characters per point (paddle) and 1927, 1964, 1952 and 1922
-(hand key), the same for both front ends; VE3NEA's points hold 30 000.
+(hand key), the same for both decoders; VE3NEA's points hold 30 000.
 Task 14's Matched cells: paddle 0.741 / 0.604 / 0.558 / 0.348, hand key
 0.658 / 0.530 / 0.485 / 0.519 (no interval; pooled ratios).
 Remaining differences from his benchmark: bin-centered oracle channels
@@ -1521,7 +1521,7 @@ measured.
 | Median frequency error, group F offsets, Hz | 5.9 (bin rounding; no re-centering) | 0.11 at S₅₀₀ = 5 dB, 0.13 at 0 dB (30 signals each) |
 
 CPU is over 384 495 channel-seconds (Envelope) and 384 661 (Matched), on
-the machine above; the Matched front end adds 0.163 ms of decoder time per
+the machine above; the Matched decoder adds 0.163 ms of decoder time per
 channel-second, 11.6 times the Envelope decoder's time (the Matched decoders'
 total, 0.177 ms, is 12.6 times it), and nearly doubles the
 whole process: outside the decoders (WAV reading, the shared FFTs, the
@@ -1568,7 +1568,7 @@ measurement can resolve.
   not observed"): the first characters read as T's, CER 0.021–0.039 per
   point at 6–20 dB against 0.011–0.021 in Task 14, and 1 of 12 stations
   above CER 0.10 at 4 and at 12 dB. No run or scoring fault was found:
-  every result file names the front end that made it, and the rebuilt
+  every result file names the decoder that made it, and the rebuilt
   bench reproduces the stored results exactly (Task 14's Matched results
   re-scored at 74182aa, whose engine differs from c9a2aa4 only in
   comments, are identical in all 126 files; Task 17).
@@ -1751,7 +1751,7 @@ not in the repository; nothing was changed):
   cut) reproduced the same text exactly (11 edits in 47 symbols), so the
   detector is not involved; cut at 1.620 s the Matched decode lost only
   the first word, sent partly before the cut (3 edits). Mechanism (from
-  the code, confirmed with debug prints): the front end's warm-up
+  the code, confirmed with debug prints): the Matched decoder's warm-up
   (0.32 s, "Warm-up" above) keys nothing; cut at 1.600 s it ended 15 ms
   before the end of the dah of U (1.725–1.919 s, plus about 18 ms of
   filter delay), so the first mark the decoder timed was a 15.3 ms
@@ -1823,7 +1823,7 @@ not in the repository; nothing was changed):
   keyed late while ŝ rises from the warm-up, or merged elements at low
   S₅₀₀ through the 16 ms acquisition filter); (2) at the 8th mark the
   filter started following, and the widening cascade (section 8, "Two
-  front ends") stretched the mark just ended; (3) with one mark of
+  decoders") stretched the mark just ended; (3) with one mark of
   intermediate length in the window, no neighbor ratio reached 1.8, the
   estimator took the mean of dits and dahs as the dit (section 8, step
   10), about twice the true dit, and the bound, then applied ×1.25 per
@@ -2345,8 +2345,14 @@ in the sequence. The prototype's fit tests are ported one for one
 T_g with the E5 grids) is skipped with the same reason, and the port
 reproduces its finding: T = 66.72 ms, T_g = 192.2 ms against 207.0 ms.
 Where numpy's order of operations is not reproduced (the einsum sums of
-the refinement's normal equations, LAPACK's solve), values may differ in
-the last bit.
+the refinement's normal equations, LAPACK's solve, the `DESIGN @ θ`
+matrix product, where BLAS may fuse 3·T_g − w into one rounding), values
+may differ in the last bit. The prototype's squares `x ** 2` (in
+`resolution_var_s2`: (L/a)² and r²; in the refinement: the prior's σ_ln²,
+T² and (0.2 T)²) call libm's `pow`, which is not guaranteed correctly
+rounded (glibc states a bound of about 0.52 units in the last place); the
+port computes them as products x · x, so a rare value can differ in the
+last bit.
 
 Status (as `training/kz4ap_proto/params.py` marks them): N_mem = 48
 measured (E4: adopted over 24 and 12); the q, w/T and T_g/T grids measured
@@ -3029,9 +3035,13 @@ parameter was changed for this run.
 | Detection | 1 s warm-up at recording start; then ~0.5–1.5 s for a new station (averaging + 0.5 s persistence) |
 | Channel filter group delay | 10.7 ms |
 | Decoder smoothing | ~¼ dit (τ_s) |
-| Front-end warm-up (Matched only) | the first 0.32 s of each channel key nothing (section 8b, "Warm-up"); a mark in progress when it ends is decoded but not counted for speed (section 8, "Marks whose start was not observed") |
+| Decoder warm-up (Matched only) | the first 0.32 s of each channel key nothing (section 8b, "Warm-up"); a mark in progress when it ends is decoded but not counted for speed (section 8, "Marks whose start was not observed") |
 | Matched filter group delay (Matched only) | (K − 1)/2 samples: 19 ms at 25 WPM |
-| Character emitted | after a 2-dit gap follows it |
+| Character emitted | after a 2-dit gap follows it (Envelope and Matched) |
+| Bank block (bank only) | 21.3 ms: B = round(block_s · r) = 32 samples at 1500 samples/s; characters and corrections are published at the end of the block that makes them (section 8c, "Blocks") |
+| Bank branch group delay (bank only) | (N_k − 1)/(2r): 4.3 ms (k = 1, N_k = 14) to 91.7 ms (k = 32, N_k = 276) at 1500 samples/s (derived); removed from the published character times, but branch k sees a key change that much later |
+| Bank character published (bank only) | when the selected branch classifies the space after it as a character or word gap, at the next key-down; at a new over (key up for T_new = max(0.5 s, 12 · T_g)) or at the end of the stream (section 8c, "Marks, spaces and characters") |
+| Bank corrections (bank only) | replace published text up to 20 s back (the correction reach); a "resync" is not bounded by it (section 8c, "Events") |
 | Track removed | average decay (~6–7 s for a 20 dB SNR (500 Hz) station) plus the 10 s timeout |
 
 ## 10. Parameters at a glance
@@ -3113,7 +3123,7 @@ parameter was changed for this run.
 | Bank selection ties | quality tie ε_Q = 0.05 nats per element; then text tie 0.1 nats per character; then the longest branch. None eligible: text leading by ≥ 1.0 nats per character, else nearest 0.8 T_P, else branch 1 | `BankConfig::quality_tie_nats`, `text_tie_nats`, `text_separation_nats`; `bank::Selector::best` | ε_Q placeholder, kept by E8; text tie and separation heuristic |
 | Bank switch persistence | M = 4 selection instants in a row, of one kind (eligible or fallback) | `BankConfig::switch_persistence`; `bank::Selector::update` | placeholder, kept by E6 |
 | Bank block cadence | every stage advances once per block of round(block_s · r) samples, block_s = 32/1500 s = 21.33 ms (32 samples at 1500 samples/s); input in pieces of any length, a partial last block at the end | `BankConfig::block_s`; `bank::BankChannel::push`, `finish` | heuristic (the engine's channel block) |
-| Bank stored power | \|v_k\|² rounded to float32 as each sample arrives (as the prototype stores P), FS² | `bank::boxcar_power_f32` | the prototype's choice, reproduced |
+| Bank stored power | \|v_k\|² rounded to float32 as each sample arrives (as the prototype stores P), FS² | `bank::boxcar_power_f32` | numerical choice (the prototype's, reproduced) |
 | Bank new over | key up longer than T_new = max(0.5 s, 12 · T_g) since the branch's last key-up (2.88 s without a fit; 0.576 s at 25 words/min) | `BankConfig::new_over_min_s`, `new_over_gaps`; `bank::Branch::new_over_due` | placeholders, kept by E7 |
 | Bank re-key and time-out | the over's start re-keyed with the full LLR after W_min = 0.8 s of keyed time, at the seed s² and the previous over's s² (best mean log-likelihood per element wins), over at most 20 s back; if W_min is not reached within 2 s, re-keyed at the previous over's s², or its provisional characters deleted | `BankConfig::rekey_after_s`, `rekey_timeout_s`; `bank::Branch::rekey_over`, `clear_over` | W_min measured (E9b); the 2 s time-out a placeholder (heuristic); candidate choice heuristic |
 | Bank fresh fit against the previous | the over's fresh fit replaces the previous over's continued fit with ≥ 8 of the over's marks and spaces and a log-likelihood gain > ½ · 4 · ln n nats on them (4.16 nats at n = 8); the competition ends after 192 (⌈4 N_mem⌉) | `BankConfig::fresh_fit_min_obs`; `bank::kFitParameters`; `bank::Branch` | 8 a placeholder (heuristic); ½ k ln n form derived (BIC), k = 4 heuristic; the end at 4 N_mem derived (e⁻⁴ = 1.8%) |
@@ -3342,12 +3352,12 @@ parameter was changed for this run.
   between two overs belongs to neither.
   **Intervals:** every rate and crossing in the summary carries a
   bootstrap 95% interval over signals (1000 resamples; errors cluster
-  within a signal, so signals are the units), and front ends are compared
+  within a signal, so signals are the units), and decoders are compared
   signal by signal on the same recordings. The full suite is sized for
   3 seeds: at least 1000 characters per S₅₀₀ point in groups A–C, and at
   least 100 fade times per point at f_D = 0.1 Hz.
   **QSO regimes** (group H): how the detector sorts a QSO's two stations
-  into tracks depends on the front end's attribution rule (section 6), so
+  into tracks depends on the decoder's attribution rule (section 6), so
   the regime is judged per path (`suites.qso_regime`):
   - **Envelope path** (`Attribution::Bins`, the milestone-1 rule; derived
     from the 3-bin minimum peak separation at 23.4 Hz bins): same-track
@@ -3472,7 +3482,7 @@ parameter was changed for this run.
   crowded; `suites.ORACLE_COPY_GROUPS`) are decoded once more on oracle
   channels, as result `<recording>.oracle` in
   group `<group>, oracle`, by Envelope and Matched (`kz4ap-bench --oracle`)
-  and by the prototype, so every regime has a like-for-like front-end
+  and by the prototype, so every regime has a like-for-like decoder
   comparison; group H already has its own oracle copy. **Channels:** the
   oracle test cases' channels are recorded with `--oracle --front-end envelope
   --record-channels` and mixed at the label; every non-oracle recording is
@@ -3503,7 +3513,7 @@ parameter was changed for this run.
   counted: group F drift (the oracle mix follows the labeled drift,
   favoring the prototype) and group H oracle QSO labels with a nonzero
   answering offset (the answering station is off the mix, handicapping
-  it). **Detection measures** on the detector path, per front end and
+  it). **Detection measures** on the detector path, per decoder and
   group: labels scored, labels detected, detection recall (detected /
   scored) and false tracks (tracks that decoded text and matched no
   label), summed over each recording's main test case, and tracks per QSO

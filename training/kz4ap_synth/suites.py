@@ -526,7 +526,7 @@ ORACLE_COPY_GROUPS = ("pauses", "strong", "tune-up", "first sample", "band", "cr
 
 
 def oracle_copies(rec: dict) -> list[tuple[str, str, str]]:
-    """(labels file, result name, group) of a detector-only recording's oracle copy, or []."""
+    """(labels file, result name, group) of the oracle copy of a recording decoded through the detector path, or []."""
     if rec["oracle"] or rec["group"] not in ORACLE_COPY_GROUPS:
         return []
     return [(rec["labels"], f"{rec['name']}.oracle", f"{rec['group']}, oracle")]
