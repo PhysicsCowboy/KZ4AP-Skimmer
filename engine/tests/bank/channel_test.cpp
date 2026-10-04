@@ -98,7 +98,7 @@ void expect_equal_or_nan(double actual, const nlohmann::json& expected) {
 // two best candidates' scores differ by rounding. (stream, periodicity recomputation, window index). Both are
 // the 2 s window over a buffer of p that is zero but for one short squelch opening, far below the confidence
 // threshold (0.03), so T_P, the prior and everything downstream are unaffected. Three candidates tie, 97.95,
-// 44.63 and 61.97 ms (the fourth best scores about half as much); TheTwoPeriodicityNearTiesAreRoundingOnBothSides
+// 44.63 and 61.97 ms (the fourth best scores about half as much); ThePeriodicityNearTiesAreRoundingOnBothSides
 // recomputes the port's scores of all three. Prototype: numpy 2.5.3 on Windows (the golden values, on the
 // streams rounded to complex64, as stored); port: the Windows build (MSVC's libm). The Linux build's scores were
 // measured on the earlier float64 streams only (farnsworth: 97.95 ms 4.7329276537942970e-06, 44.63 ms
@@ -123,7 +123,7 @@ struct NearTie {
     std::size_t update;
     std::size_t window;
 };
-constexpr NearTie kNearTies[] = {{"noise", 14, 0}, {"farnsworth", 64, 0}};
+constexpr NearTie kNearTies[] = {{"noise", 14, 0}, {"noise", 38, 0}, {"farnsworth", 64, 0}};
 
 bool is_near_tie(const std::string& stream, std::size_t update, std::size_t window) {
     for (const auto& t : kNearTies)
@@ -259,7 +259,7 @@ double port_score(const BankChannel& ch, double t_s) {
     return score;
 }
 
-TEST(BankChannel, TheTwoPeriodicityNearTiesAreRoundingOnBothSides) {
+TEST(BankChannel, ThePeriodicityNearTiesAreRoundingOnBothSides) {
     // Grid points (s), bit-identical in the port and the prototype, and the prototype's scores of both
     // candidates (Python, recomputed from its buffer at the same recomputation):
     // The three near-tied candidates (the fourth best scores about half as much):
@@ -273,6 +273,7 @@ TEST(BankChannel, TheTwoPeriodicityNearTiesAreRoundingOnBothSides) {
         std::size_t proto_pick;  // index into t of the prototype's pick
     };
     const Case cases[] = {{"noise", 14, {9.501131563217924e-07, 9.501131563218533e-07, 9.501131563310894e-07}, 2},
+                          {"noise", 38, {2.351578674638174e-06, 2.3515786746568495e-06, 2.3515786746405865e-06}, 1},
                           {"farnsworth", 64, {4.732927653831648e-06, 4.732927653812918e-06, 4.73292765376665e-06}, 0}};
     for (const auto& c : cases) {
         SCOPED_TRACE(c.stream);
