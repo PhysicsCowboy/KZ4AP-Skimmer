@@ -1159,12 +1159,18 @@ TEST(BankFitB2a, GridLoglikMatchesTheFrozenCodeToRoundingAtEveryGridPoint) {
 // comes from the fit's own tables on both sides): best, refine from the grid point, weighted_loglik at the
 // grid point, the refined point and the given points, with three T_P priors (none, 50 ms with weight 1,
 // 200 ms with weight 3); class_logliks at the given points (ll and var_lin bit for bit, total to rounding).
+// best's quality Q, a weighted mean of up to 192 observations' totals, nats, gets a bound of 1e-13 x max(|Q|,
+// 1 nat) (heuristic; measured on the Linux machine: 4.7e-14 nats at Q = -2.56 nats with 5 refinement steps).
+constexpr double kQualityBound = 1e-13;
+
 struct SearchDiffs {
-    Diffs best{kNearExactBound}, refine{kNearExactBound}, wll{kNearExactBound}, total{kNearExactBound};
+    Diffs best{kNearExactBound}, quality{kQualityBound}, refine{kNearExactBound}, wll{kNearExactBound},
+        total{kNearExactBound};
     std::size_t bits_bad = 0;
     std::string first_bits;
     void merge(const SearchDiffs& o) {
         best.merge(o.best);
+        quality.merge(o.quality);
         refine.merge(o.refine);
         wll.merge(o.wll);
         total.merge(o.total);
@@ -1172,7 +1178,8 @@ struct SearchDiffs {
         if (first_bits.empty()) first_bits = o.first_bits;
     }
     void expect_ok(const std::string& what) const {
-        best.expect_ok(what + ", best");
+        best.expect_ok(what + ", best (T, q, w, T_g, weight)");
+        quality.expect_ok(what + ", best quality");
         refine.expect_ok(what + ", refine");
         wll.expect_ok(what + ", weighted_loglik");
         total.expect_ok(what + ", class_logliks total");
@@ -1196,8 +1203,9 @@ void compare_searches(const DurationFit& fit, const BankConfig& cfg, const std::
         if (!got) continue;
         for (const auto& [a, b] : {std::pair{got->t_s, want->t_s}, std::pair{got->q, want->q},
                                    std::pair{got->w_s, want->w_s}, std::pair{got->tg_s, want->tg_s},
-                                   std::pair{got->quality, want->quality}, std::pair{got->weight, want->weight}})
+                                   std::pair{got->weight, want->weight}})
             out.best.add(a, b, at_where("best"));
+        out.quality.add(got->quality, want->quality, at_where("best quality"));
         const auto grid = *fit.grid_theta(pt, pw);
         const auto r1 = fit.refine(grid, pt, pw);
         const auto r0 = frozen::refine(fit, cfg, grid, pt, pw);
