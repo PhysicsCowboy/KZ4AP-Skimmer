@@ -685,3 +685,13 @@ A probe before the ruling (`bank-b3-probe`: the per-branch rule, which for the d
 same code as the gated rule, since that method has only branch 1's three-tap estimate) against `bank-b2b`:
 **525 of 525 identical final texts and decoded records**, 0 recoveries, 0 blocks of exact zeros.
 `bank-b3`, from the commit: see 5.5.
+
+### 5.5 `bank-b3` (`856fc0d`, Linux machine)
+
+Against `bank-b2b`: **525 of 525 identical final texts**, 525 of 525 identical character lists, 525 of 525
+channels with every decoded record identical (0 of 875 070 periodicity windows differ); paired CER +0.0000
+(+0.0000 to +0.0000) on all 509 signals. Noise diagnostics over all 525 channels: **0 recoveries, 0 blocks of
+exact zeros**; every decoded file records `noise_stuck_s` = 8.0 s. CPU 42.49 ms per channel-second pooled (one run;
+`bank-b2b` 42.37; not a gate). Tests: `ctest --preset windows` 327 of 327 and `ctest --preset linux` 327 of 327
+passed or skipped; smoke unchanged (Envelope CER 0.0353, Matched 0.0436). Raw outputs (git-ignored):
+`build/suite/full3/experiments/c2-diff-bank-b3-vs-bank-b2b.md`, `compare-bank-b3-vs-bank-b2b.md`.
