@@ -2448,12 +2448,12 @@ largest differences from the logaddexp chain (Windows / Linux):
 | weighted log-likelihood at a fixed θ (Σ over ≤ 192 observations, with the T_P prior term) | 4.4 · 10⁵ | 1.8 · 10⁻¹² nats (relative ≤ 1.6 · 10⁻¹³) | 99.1% |
 
 (Windows; the Linux machine's figures are in the results record, section
-3.8.) The weighted log-likelihood comes within 1% of its bound where the
-result is dominated by the rounding of the prior term's addition: with θ
-far from T_P (T at the 0.1 ms floor, weight 3) the prior term is about
-−8.7 · 10³ nats, one unit in the last place there is 1.8 · 10⁻¹² nats, and
-the bound allows each side half of it plus the sums' roundings (derived;
-the bound holds by construction, it is not fitted). Through the exact
+3.8.) The weighted log-likelihood comes within 1% of its bound (99.6% on
+the Linux machine) because the bound's first term, Σ λ^age |Δℓ_total|, is
+the difference itself wherever one observation's difference dominates (a
+short history, or one term much larger than the others): the bound is
+derived and holds by construction, it is not fitted, and it is tight
+there. Through the exact
 steps (variant 1) `best`, `refine` and every other value are equal bit for
 bit, so no acceptance test turns.
 
@@ -2472,15 +2472,18 @@ the value's + 2^−51 |entry|; on its 414 observations 654 897 of 2 007 072 grid
 decoder (`kz4ap-bank-replay`, development set, 525 oracle channels,
 74 749.9 channel-seconds, Linux machine, 10 threads): 127.91 ms before
 Plan B, 123.96 ms after B1, 104.60 ms after B2(a)'s exact steps,
-**75.84 ms** after its near-exact step (−40.7% against 127.91 ms). On the
+75.84 ms after its near-exact step as first committed, and **66.67 ms**
+with the sum started at the largest term's 1 (fix round 1, which also
+saves the exp(0) of the largest term; −47.9% against 127.91 ms). On the
 Windows PC (F-drift-s1, 8 channels, 240.1 channel-seconds, 8 threads, two
 runs each, alternated in one session): 303.3 and 314.4 ms before, 166.0
 and 170.5 ms after the exact steps, 76.5 and 78.4 ms after the near-exact
-step. A gprof profile of one channel (F-drift-s1, label 1, 30 s; Linux,
-statically linked so that libm is sampled) falls from 3.70 s to 2.30 s;
-the scalar libm functions from 2.67 s (log1p 1.13 s, exp 1.19 s, ln
-0.30 s, pow 0.05 s) to 1.29 s (log1p 0, exp 0.62 s, ln 0.62 s, pow
-0.05 s). The decoded text and every decoded record are unchanged on all
+step as first committed; 67.0 and 68.6 ms with fix round 1 (a later
+session, not alternated with the reference). A gprof profile of one channel
+(F-drift-s1, label 1, 30 s; Linux, statically linked so that libm is
+sampled) falls from 3.70 s to 1.98 s; the scalar libm functions from
+2.67 s (log1p 1.13 s, exp 1.19 s, ln 0.30 s, pow 0.05 s) to 1.19 s
+(log1p 0, exp 0.44 s, ln 0.73 s, pow 0.02 s). The decoded text and every decoded record are unchanged on all
 525 channels (results record, section 3).
 
 Status (as `training/kz4ap_proto/params.py` marks them): N_mem = 48

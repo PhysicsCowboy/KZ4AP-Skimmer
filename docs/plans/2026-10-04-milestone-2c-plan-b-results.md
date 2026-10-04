@@ -13,12 +13,13 @@ per channel-second is 123.96 ms against the reference's 127.91 ms on the Linux m
 not a gate).
 
 **Answer (B2(a), the fit's arithmetic).** Restructuring the duration fit's evaluation cuts the bank
-decoder's CPU on the Linux machine from **123.96 ms to 75.84 ms per channel-second** (B1 build to B2(a);
-−40.7% against the reference's 127.91 ms), with **all 525 development-set channels decoding to the identical
-final text and every decoded record identical**, after both the exact steps (no bit changes) and the
+decoder's CPU on the Linux machine from **123.96 ms to 66.67 ms per channel-second** (B1 build to B2(a) after
+fix round 1; −47.9% against the reference's 127.91 ms), with **all 525 development-set channels decoding to
+the identical final text and every decoded record identical**, after the exact steps (no bit changes), the
 near-exact step (one-pass log-sum-exp, which changes the last bits of the per-observation log-likelihood by
-at most 1.3 · 10⁻¹⁵ nats). There is no difference to trace, so the near-exact step is kept. On the Windows PC
-(F-drift-s1) the cost falls from about 309 ms to about 77 ms per channel-second.
+at most 1.3 · 10⁻¹⁵ nats) and its fix (the sum started at the largest term). There is no difference to
+trace, so the near-exact step is kept. On the Windows PC (F-drift-s1) the cost falls from about 309 ms to
+about 77 ms per channel-second (68 ms after the fix, in a later session).
 
 ## 0. Terms used in this record
 
@@ -198,7 +199,9 @@ full sizes with `KZ4AP_FIT_FULL_SWEEP=1`: 10⁶ random observations per configur
 and one step beside them, σ_t² = 0 and up to +∞, medians not positive). After the exact steps every
 comparison is bit-identical on Windows (1050 s) and on the Linux machine (188 s). Before the exact steps
 were applied, the new tests ran on the earlier code (the change set aside with `git stash`) and passed: the
-frozen copy reproduces the code it copies. After the near-exact step the differences are measured
+frozen copy reproduces the code it copies. After the near-exact step (as first committed; superseded by
+section 3.8, which restored bit-for-bit tests of the exact steps and replaced the fitted bounds below by
+derived ones) the differences are measured
 (docs/signal-processing.md, 8c, "Bit-for-bit check", table): at most 1.3 · 10⁻¹⁵ nats (Windows) and
 8.9 · 10⁻¹⁶ nats (Linux) in the grid's 8.5 · 10⁹ log-likelihood values, 1.8 · 10⁻¹² nats in the weighted
 log-likelihood, at most 1.8 · 10⁻¹⁴ in `best`'s fields and 4.7 · 10⁻¹⁴ nats in its quality; no value above
@@ -287,3 +290,74 @@ Git-ignored, in `build/suite/full3/experiments/linux/`: `c2-diff-bank-b2a-exact-
 near-exact run, stopped by the quality bound before its replay) and `b2a-near2.log`. Profiles:
 `build/b2a/prof-b1-flat.txt`, `prof-b2a-exact-flat.txt`, `prof-b2a-flat.txt`. Windows decoded files:
 `build/suite/full3/proto/b2a-win-{ref,exact,near}-{1,2}/`; full-sweep outputs `build/b2a/near-sweep-windows*.txt`.
+
+### 3.8 Fix round 1 (review of B2(a))
+
+1. **The 40-nat leave-out.** As first committed (`3f99859`) the one-pass sum started at 0 and added the terms
+   in class order with the outlier last; a left-out term added before the largest term's 1 could shift a
+   partial sum below 1 and so the sum's rounding (the review measured 667 of 200 000 random cases), so the
+   documented "no bit changes" was false. Since `327ffa7` the sum starts at the largest term's 1 and adds
+   the others after it: every partial sum is ≥ 1, where the doubles are at least 2^−52 apart, and a left-out
+   term is below 4.3 · 10⁻¹⁸ < 2^−53, so it cannot change any partial sum (derived; tested bit for bit by
+   `BankFitB2a.LogSumExpLeaveOutChangesNoBit`, 2 · 10⁶ cases with the largest term at every position, the
+   outlier included, and terms at, beside and below −40 nats).
+2. **Bit-for-bit tests of the exact steps restored.** A second frozen variant, the code before B2(a) with
+   its totals by the current one-pass sum, is compared bit for bit with the grid's log-likelihood, `best`
+   (with Q), `refine`, the weighted log-likelihood and `class_logliks`; the comparison with the logaddexp
+   chain measures only the near-exact difference (the totals, and the weighted log-likelihood at fixed θ).
+3. **Derived bounds** replace the fitted 10⁻¹⁴ and 10⁻¹³: each total within 30 · 2^−52 · (|ℓ_total| +
+   2 nats) (a rounding count), the weighted log-likelihood within Σ λ^age |Δℓ_total| plus numpy's pairwise
+   rounding of both sums and the prior's addition. The plain-formula check
+   (`FastPathsAreBitIdenticalToThePlainFormulas`, name kept) allows each grid value the same bound and each
+   table entry an accumulated one.
+4. Comments made accurate (NaN and +∞ in the one-pass sum; the refinement's kind-only sums are exact for a
+   finite θ, which every call from `best` has). The full sweep is the ctest entry `BankFitB2a.FullSweep`
+   (label `full-sweep`, excluded by the default test presets; `ctest --preset windows-full-sweep` or
+   `linux-full-sweep`).
+
+Tests: `ctest --preset windows` 322 of 322 passed or skipped, `ctest --preset linux` 322 of 322; the
+full-sweep presets pass on both (Windows 1195 s, Linux 184 s); smoke check unchanged (Envelope CER 0.0353,
+Matched 0.0436). Every bit-for-bit comparison is equal at the full sizes on both platforms. Largest
+differences from the logaddexp chain (Windows / Linux), and the share of the derived bound used:
+
+| quantity | values | largest difference | of its bound |
+|---|---|---|---|
+| grid log-likelihood | 8.5 · 10⁹ | 1.3 · 10⁻¹⁵ / 8.9 · 10⁻¹⁶ nats | 3.5% / 3.4% |
+| ℓ_total of `class_logliks` | 1.8 · 10⁷ | 8.9 · 10⁻¹⁶ / 8.9 · 10⁻¹⁶ nats | 3.3% / 3.3% |
+| weighted log-likelihood at fixed θ | 4.4 · 10⁵ | 1.8 · 10⁻¹² / 1.8 · 10⁻¹² nats | 99.1% / 99.6% |
+
+The weighted log-likelihood's bound is tight where one observation's difference dominates the sum (its first
+term, Σ λ^age |Δℓ_total|, is then the difference itself); it is derived, not fitted. The plain-formula check
+on its 414 observations: 654 897 of 2 007 072 grid values differ (Windows), by at most 8.9 · 10⁻¹⁶ nats; 1411
+of 9696 table entries, by at most 4.3 · 10⁻¹⁴ nats; the golden tables after 8, 48 and 300 observations differ
+from the prototype's in 1980, 1702 and 1517 of 9696 entries (assertions unchanged).
+
+The text check, Linux machine (`bank-b2a2`, `327ffa7`, against `bank-b2a-exact`): **525 of 525 identical
+final texts**, 525 of 525 channels with every decoded record identical, 0 of 875 070 periodicity windows
+differ, paired CER +0.0000 (+0.0000 to +0.0000). Nothing to trace.
+
+CPU per channel-second, Linux machine (one run; replay wall time 502 s):
+
+| group | `bank-b2a-exact` | `bank-b2a` (`3f99859`) | `bank-b2a2` (`327ffa7`) |
+|---|---|---|---|
+| A sensitivity | 96.27 | 69.27 | 60.86 |
+| B fading | 113.48 | 81.35 | 71.58 |
+| C fists | 96.29 | 70.01 | 61.79 |
+| D speed | 94.21 | 68.29 | 60.25 |
+| E interference | 189.21 | 136.86 | 118.01 |
+| F tuning | 114.31 | 81.45 | 71.56 |
+| G ragchew | 155.23 | 111.41 | 97.79 |
+| H two-station QSO, oracle | 135.59 | 99.17 | 86.81 |
+| I Farnsworth | 44.91 | 33.78 | 30.44 |
+| all | 104.60 | 75.84 | **66.67** |
+
+The fix is also 12% faster than `3f99859`: the largest term's e^0 is no longer evaluated (the outlier is the
+largest term at most grid points far from the observation; conjectured as the main cause, not measured per
+term). Profile (as section 3.5): total 1.98 s; log1p 0, exp 0.44 s, ln 0.73 s, pow 0.02 s, `grid_loglik`
+0.45 s, the search's own code 0.13 s, everything else 0.21 s. Windows PC, F-drift-s1, two runs of the fix's
+build in a later session (not alternated with the reference): 67.0 and 68.6 ms per channel-second; every
+decoded record equal to `b0-win-cpu`'s on all 8 channels.
+
+Raw outputs (git-ignored): `build/suite/full3/experiments/linux/c2-diff-bank-b2a2-vs-bank-b2a-exact.md`,
+`compare-bank-b2a2-vs-bank-b2a-exact.md`, `b2a-fix1.log`; `build/b2a/prof-b2a2-flat.txt`,
+`build/b2a/fix1-full-sweep-windows.txt`; Windows decoded files `build/suite/full3/proto/b2a2-win-near-{1,2}/`.
