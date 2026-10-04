@@ -157,3 +157,44 @@ After B2(a) the Linux profile still puts 56% of the time in the math library (`e
 - [ ] **Step 4: The check on the Linux machine:** run `bank-b3`; texts against the latest reference (`bank-b2b`, or `bank-b2a2` if B2(b) was not adopted). Expected identical: the development set has no exact zeros, and rule 2 should not fire. Count how often rule 2 fires (a counter written to the decoded file or a log). Any text difference or firing: report each with its cause; the controller decides (the plan expects texts unchanged).
 - [ ] **Step 5: Documents.** §8c: the three "Exact zeros" passages rewritten to the new behavior; the two rules in "Noise" with their classes; the parameter table rows; the results record section 5.
 - [ ] **Step 6: Commit** (ctest on Windows and on the Linux machine passing).
+
+### Common to the design-change tasks (B4 onward)
+
+- **Reference:** the previous task's development-set run (for B4a: `bank-b3b`), replayed on the Linux machine.
+- **Measure:** paired CER (variant − reference) pooled and per group with 95% bootstrap intervals over test cases (`kz4ap_proto.experiments compare`), first-word CER, CPU per channel-second; the texts that changed are counted.
+- **Rule (stage-2 spec decisions already taken by the owner):** reported, not a gate. A group whose paired interval lies entirely above 0 is reported to the owner with its regimes before the next task starts.
+- **The stretch test** (stage-2 spec §4.1) is built in B9, which runs after B4; B9 measures it on both `bank-b3b` and the final B4 code, so B4's effect on time-base invariance is reported there (controller's ruling: the plan's order puts B4 before B9).
+
+### Task B4a (full text): time constants in dits (stage-2 spec §3.1)
+
+**Files:** `engine/include/kz4ap/bank/bank_config.hpp`, `engine/src/bank/keying.cpp`, `engine/src/bank/channel.cpp`, `engine/src/bank/periodicity.cpp` (and their headers), `bench/src/bank_json.cpp` (the configuration list), tests in `engine/tests/bank/`, `docs/signal-processing.md` (§8c and the parameter table), the results record (section 6).
+
+Within branch k, a dit is the branch's nominal dit d_k = L_k / 0.8, L_k = 9.6 ms × 1.1^(k−1) (d_1 = 12 ms, d_32 = 230 ms).
+
+- **Re-key wait** W_min,k = 16.7·d_k of key-down time per branch (was 0.8 s for every branch; 16.7 = 0.8 s / 48 ms). The seed's memory bound stays `seed_memory_rekeys` × W_min,k (so it scales with it).
+- **Re-key time-out** = 2.5 × W_min,k = 41.7·d_k of channel time, per branch (was 2 s per channel).
+- **Periodicity windows:** each candidate dit T is judged over its own window N_w·T, N_w ∈ {41.7, 104, 208} (were 2, 5 and 10 s); the rule "the confident estimate with the shortest window" unchanged. The comb's reach (out to 9.15·T) is then always inside the window (N_w ≥ 41.7 > 18.3, derived). The history of p kept for the longest window: 208·T_max of the candidates (50 s at 5 WPM); state the memory it costs.
+- **New parameters** replace the old ones in `BankConfig` (`rekey_after_dits` = 16.7, `rekey_timeout_ratio` = 2.5, `periodicity_windows_dits` = {41.7, 104, 208}), each with unit, default and status (measured at 25 WPM by E9b and scaled: derived; 2.5: heuristic, stage 1's ratio; N_w: placeholder, stage 1's at 25 WPM), and the time-constant class of each (dits, with the reason).
+
+- [ ] **Step 1: Failing tests:** W_min,k and the time-out per branch in samples at 1500 samples/s for k = 1, 16, 32 (derived values: e.g. W_min,1 = 16.7 × 12 ms = 200.4 ms); at 25 WPM's branch (d_k nearest 48 ms) the values equal stage 1's within the ladder's granularity (state it); the periodicity window used for a candidate T is N_w·T; a channel test: a 12 WPM station re-keys after 16.7 dits of key-down, not 0.8 s.
+- [ ] **Step 2: Implement.**
+- [ ] **Step 3: Periodicity confidence.** The comb's threshold 0.03 (placeholder) was set with fixed windows. Measure, offline from the `bank-b4a` decoded files' per-window estimates and scores against the truth labels (stage 1's E1 method: points every 0.25 s inside transmissions of constant-speed stations counted at S₅₀₀ ≥ 0 dB, in groups A, B mixed style, C, G, H per-station view, and I; correct within 5% of the true dit; bootstrap 95% intervals over channels): precision and coverage at 0.03 with the new windows, against the same on `bank-b3b` (the old windows), and the threshold at which precision reaches 0.95. Keep 0.03 (stage 1's end-to-end check made decoding worse at the calibrated threshold); report the numbers. If precision at 0.03 falls below `bank-b3b`'s with non-overlapping intervals, report it to the owner.
+- [ ] **Step 4:** ctest on Windows; the Plan A golden tests whose configuration is the old one either run with the old values set explicitly (preferred: the module goldens test the code, not the defaults) or are listed with the reason they moved; smoke unchanged.
+- [ ] **Step 5: The run** `bank-b4a` on the Linux machine against `bank-b3b`: the measure and rule above; CPU (the longer windows cost); peak memory per channel (B1's method).
+- [ ] **Step 6: Documents:** §8c (re-keying, periodicity: the values in dits and the class of each), the parameter table rows, the results record section 6.
+- [ ] **Step 7: Commit.**
+
+### Task B4b (full text): the noise-spectrum guard margin (stage-2 spec §3.3)
+
+**Files:** `engine/include/kz4ap/bank/bank_config.hpp`, `engine/src/bank/noise.cpp`, tests, a measuring tool or test for b_mask,k (C++), `docs/signal-processing.md`, the results record (section 7).
+
+- **Guard margin** 0.5·L_1 = 4.8 ms (was 20 ms; heuristic; class: a property of branch 1's filter and the transmitter, so seconds tied to L_1, not dits).
+- **b_mask,k re-measured** with the new margin by stage 1's Task 5 method (white noise, 60 s, seeds 101–110; the ratio of the masked periodogram's mean power to the true noise power per branch), now with the C++ estimator; cross-check one seed against the prototype run with `guard_margin_s=0.0048`; the 32 values replace the table with status "measured (Plan B task B4b, white noise, seeds 101–110)".
+- **Accepted segments per second** while a station sends, at 12, 25 and 40 WPM (PARIS text, S₅₀₀ = 20 dB, 60 s each), before and after, against the derived clean fractions (stage-2 spec §3.3).
+
+- [ ] **Step 1:** the measuring test or tool, run at the old margin first: it must reproduce the current table within its stated scatter (a check of the method).
+- [ ] **Step 2:** the new margin and the new table; tests (the mask's reach in samples at 1500 samples/s; the table's length 32).
+- [ ] **Step 3:** ctest; golden tests as in B4a Step 4; smoke unchanged.
+- [ ] **Step 4: The run** `bank-b4b` against `bank-b4a`: the measure and rule above; accepted segments per second.
+- [ ] **Step 5: Documents:** §8c (the mask, the table, its status), the parameter table, the results record section 7.
+- [ ] **Step 6: Commit.**
