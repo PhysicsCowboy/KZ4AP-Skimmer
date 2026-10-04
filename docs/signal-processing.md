@@ -1977,8 +1977,8 @@ branches' |v_k|² (FS²), which the prototype stores in single precision
 (float32); the noise estimate reads those rounded values.
 
 - **Three-tap level.** For each sample n of the block with n − n_s ≥ 2N_k,
-  where n_s is the stream's first sample or, after a run of exact-zero
-  blocks (below), the first sample of the next non-zero block, the
+  where n_s is the stream's first sample or, after an exact-zero input
+  sample (below), the sample after the latest one, the
   middle tap |v_k[n−N_k]|² is accepted if it is below κ · 2σ² and both
   neighbors, |v_k[n]|² and |v_k[n−2N_k]|², are below κ_n · 2σ², with
   κ = 1.75 and κ_n = 4 (dimensionless; taps N_k apart share no inputs,
@@ -1995,10 +1995,10 @@ branches' |v_k|² (FS²), which the prototype stores in single precision
   10⁻²⁰ FS² (−200 dBFS) is a numerical choice that keeps x = |v|/σ_v
   finite on noise-free input.
 - **Warm-up.** Up to and including the first block with which the
-  blocks of non-zero input (below) reach round(0.32 s · r) samples (480 at
-  1500 samples/s), σ² is recomputed each such block as
+  non-zero input samples (below) reach round(0.32 s · r) (480 at
+  1500 samples/s), σ² is recomputed each block holding such samples as
   max(Q₀.₂ / (2·(−ln 0.8)), 10⁻²⁰ FS²), where Q₀.₂ is the 20% quantile of
-  |v_k|² over every sample of those blocks so far (without exact zeros:
+  |v_k|² over every non-zero input sample so far (without exact zeros:
   every sample from the stream's start, as the prototype's), kept by the
   estimator itself (Plan B, B3: before, the window was read from the
   stream's start), by
@@ -2078,14 +2078,28 @@ accepted and offered segment counts equal at every instant.
 **Exact zeros (Plan B, B3; derived).** Exact zeros are missing data: a
 receiver's output carries noise, so a run of input samples that are
 exactly 0 FS (both components; a zero-padded recording, a dead channel)
-is padding, not a measurement of the noise. A block whose input samples
-are all exactly 0 FS changes nothing in the three-tap estimate: not the
-warm-up, not σ², not W, not the recovery's count below; the warm-up runs
-on the first 0.32 s of non-zero input, and after such a run taps count
-again from 2N_k samples into the next non-zero block (the stream-start
-rule above), so no accepted tap has a neighbor in the zeros. Until the
-first non-zero block σ² is unknown (NaN), as before a stream's first
-block; the channel then keys, observes and publishes nothing ("Channel
+is padding, not a measurement of the noise. An exact-zero input sample
+enters neither the three-tap warm-up nor the recovery's history or count
+below, so a block whose input samples are all exactly 0 FS changes
+nothing in the three-tap estimate (not the warm-up, not σ², not W, not
+the recovery's count), and in a block that is only partly zero (a run of
+zeros starting or ending inside it) only the non-zero samples count: the
+warm-up runs on the first 0.32 s of non-zero input samples. A tap counts
+only from 2N_k samples after the sample following the latest exact zero
+(the stream-start rule above, with that sample as the start): its middle
+and newest taps then hold no zero, and its oldest tap's boxcar may reach
+back into the zeros, exactly as at a stream's start (where the boxcar
+reaches into the zeros before the first sample). Before fix round 1 of
+the B3 review the rule was per block: a partly zero block's exact-zero
+|v_k|² entered the warm-up, whose 20% quantile was then 0, so σ² sat at
+the 10⁻²⁰ FS² floor for the first few blocks of noise (4 blocks, 85 ms,
+in the zero_pad stream; derived by the reviewer), and middle taps of 0
+FS² inside a block were accepted. Tested bit for bit:
+`BankNoise.ZerosEndingInsideABlockLeaveTheWarmUpToTheNoise` (the estimate
+after 1500 zeros ending inside a block equals the noise alone's, fed in
+the same blocks) and the gap's edge blocks in
+`BankNoise.AGapOfExactZerosLeavesTheEstimateUnchanged`. Until the first
+non-zero sample σ² is unknown (NaN), as before a stream's first block; the channel then keys, observes and publishes nothing ("Channel
 decoder", "Exact zeros"). In the spectrum, a segment whose samples are
 all exact zeros is not offered, and in any other segment each exact-zero
 sample is left out of the mask as a flagged sample is. That per-sample
@@ -2119,16 +2133,21 @@ decoded files as `noise_recoveries`, with `noise_zero_blocks`). The time
 is in seconds, not dits, because the noise process has no keying speed;
 8 s is a heuristic. The rule is gated on branch 1 for every method (the
 controller's ruling, option (A)): branch 1 is the shortest boxcar
-(N_1 = 14 samples at 1500 samples/s), and a tap of it lies entirely in
-noise when 3N_1 − 1 = 41 samples (27.3 ms) are free of the station; a
-character space, 3 dits = 3.6/WPM s, is 36 ms even at max_wpm = 100
-words/min, so branch 1 sees noise in every character space at every
-speed of the ladder (derived; element spaces, 1 dit, suffice up to
-1.2 · r/41 = 43.9 words/min). A long branch does not: branch 32
-(N_32 = 276 samples) needs 3N_32 − 1 = 827 samples (0.551 s) free of the
-station, longer than a word space (7 dits = 8.4/WPM s) above about
-15.2 words/min, so during continuous keying faster than that it accepts
-no tap at all. A per-branch rule (the brief's first
+(N_1 = 14 samples at 1500 samples/s). A tap at n reads v[n], v[n − N]
+and v[n − 2N], whose boxcars span the 3N_k samples n − 3N_k + 1 … n, so
+it lies entirely in noise when 3N_1 = 42 samples (28.0 ms) are free of
+the station; a character space, 3 dits = 3.6/WPM s, is 54 samples
+(36 ms) even at max_wpm = 100 words/min, so branch 1 sees noise in every
+character space at every speed of the ladder (derived, assuming
+rectangular keying: the margin at 100 words/min is only 12 samples,
+8 ms, which the keying's rise and fall and the channel filter's tails
+eat into; the measured fact relied on is that the development set's 525
+channels never fire it; element spaces, 1 dit,
+suffice up to 1.2 · r/42 = 42.9 words/min). A long branch does not:
+branch 32 (N_32 = 276 samples) needs 3N_32 = 828 samples (0.552 s) free
+of the station, longer than a word space (7 dits = 8.4/WPM s) above
+about 15.2 words/min, so during continuous keying faster than that it
+accepts no tap at all. A per-branch rule (the brief's first
 form) therefore fired on the noise golden stream (20 s, 25 words/min
 keying from 1.0 s) in the "branch" fallback after 8 s and set the long
 branches to the station's power, 3 to 4 orders of magnitude above the
@@ -2142,11 +2161,17 @@ Consequences, tested (`engine/tests/bank/noise_test.cpp`):
 - A 60 dB rise (`BankNoise.ANoiseRiseOf60dBRecoversByTheDerivedTime`):
   the recovery fires at the first block end at or after the rise
   + 8 s (measured 8.011 s), its 0.32 s window then holds only the new
-  noise, and the warm-up estimate's error decays as e^(−t/τ_n): within a
-  factor 2 of the new σ²_v,k from the rise + 8 s + 0.32 s + 2 τ_n
-  (12.32 s, derived) on, in all three methods (variant (b)'s shape
-  follows after branch 1 recovers, with β per segment: τ_n ln 2 = 1.39 s
-  to half the new level).
+  noise, and every branch restarts from a 480-sample warm-up estimate of
+  the new level. From above (ρ > 1) every tap is accepted and the
+  excess decays as e^(−t/τ_n), so within a factor 2 of the new σ²_v,k
+  from the rise + 8 s + 0.32 s + 2 τ_n (12.32 s) on, derived given a
+  warm-up estimate at most 1 + e² = 8.4 times too high; from below
+  (ρ < 1) the guard truncates and the rise is slower and not
+  exponential, so no time is derived for it. That condition is
+  measured: the test passes in all three methods ("branch" branch 32,
+  whose 0.32 s window spans only 1.7 boxcar lengths, restarts at 2.14).
+  Variant (b)'s shape follows after branch 1 recovers, with β per
+  segment: τ_n ln 2 = 1.39 s to half the new level (derived).
 - A continuous carrier longer than 8 s also triggers it: the level is
   then set to the carrier's (an estimate cannot tell a carrier from
   noise by tap acceptance alone) and decays back with τ_n once the
@@ -2158,14 +2183,21 @@ Consequences, tested (`engine/tests/bank/noise_test.cpp`):
   remaining 2 s of carrier every tap is accepted and ρ decays with τ_n
   toward 2·10⁴/(2 m(κ)), so at the carrier's end ρ = 2.63·10⁴
   (44.2 dB relative to the noise; measured 2.62·10⁴); then ρ decays at
-  10·log₁₀(e)/τ_n = 2.17 dB per s toward 1/m(κ) = 1.58 (conservative:
+  10·log₁₀(e)/τ_n = 2.17 dB (relative to the noise) per s toward
+  1/m(κ) = 1.58 (conservative:
   truncation lowers the target near ρ = 1) and reaches 2 after
   τ_n ln((26 290 − 1.58)/(2 − 1.58)) = 22.1 s (measured 1.96 at 22.0 s).
   Branch k of the "branch" fallback starts higher by N_k/N_1 and takes
-  τ_n ln(N_k/N_1) longer (28.0 s for k = 32). The spectrum's shape takes
-  the carrier's segments after branch 1 recovers; their excess decays
-  with τ_n from at most A²/(2σ²_v,k), so within these times
-  (`BankNoise.ALongCarrierRecoversByTheDerivedTime`).
+  τ_n ln(N_k/N_1) longer (28.0 s for k = 32; derived; measured ρ of
+  branches 2 to 32 between 1.14 and 1.98 from their t_k + 0.25 s on).
+  For the spectrum methods' branches 2 to 32 the factor 2 by
+  max_k t_k + 0.25 s = 28.3 s is a **measured margin, not derived**: the
+  shape takes the carrier's segments after branch 1 recovers and their
+  excess decays with τ_n from at most A²/(2σ²_v,k) (a derived bound on
+  that factor alone), but the level and the shape's ratio each within 2
+  bound their product only within 4; measured ρ from 1.10 to 1.27
+  ("spectrum") and 1.02 to 1.16 ("spectrum-level") from 28.3 s on
+  (`BankNoise.ALongCarrierRecoversByTheDerivedTime`, Windows).
 - A 5 s gap of exact zeros inside noise leaves σ² unchanged bit for bit
   (`BankNoise.AGapOfExactZerosLeavesTheEstimateUnchanged`); noise after
   5 s of zeros starts the estimate 0.32 s after its first sample
@@ -3036,10 +3068,11 @@ publishes one branch's characters, with corrections.
   branches, nothing is published, and every branch's clocks (over start,
   start of the unknown amplitude, re-key time-out) restart at the
   block's end: the first block with other input finds the channel as a
-  stream's first block does. A stream that starts with 1 s of exact zeros
+  stream's first block does (its noise estimate taken from that block's
+  non-zero samples only, "Noise"). A stream that starts with 1 s of exact zeros
   and then a station therefore decodes as the station alone: the same
   text and characters, times shifted by 1 s (measured within 0.67 ms;
-  the block grid moves by 12 samples relative to the station, 1500
+  the block grid moves by 4 samples relative to the station, 1500
   samples being 46.875 blocks), no NaN in any published value
   (`BankChannel.LeadingExactZerosDecodeAsTheStationAlone`). Before Plan B
   (the prototype's behavior) the noise estimate went NaN there and
@@ -3476,8 +3509,8 @@ parameter was changed for this run.
 | Bank envelope likelihood | Λ = −a²/2 + ln I₀(a·x) nats; p = logistic(g), g clipped to ±50 nats | `kz4ap::envelope_llr` (shared with Matched), `bank::logistic` | derived; clip a numerical choice; the logistic checked against the prototype on nine log-odds |
 | Bank noise method | "spectrum": branch 1's three-tap level × spectrum ratios (variant (a)); "spectrum-level" (variant (b)) and "branch" (per-branch three-tap fallback) selectable | `BankConfig::noise_method`, `bank::make_noise` | measured (prototype E10) |
 | Bank three-tap noise level | κ = 1.75, κ_n = 4, τ_n = 2 s, truncation mean m(κ) = 0.632 divided out; warm-up 0.32 s of non-zero input, 20% quantile (numpy "linear") / (2·(−ln 0.8)); floor 10⁻²⁰ FS² (−200 dBFS) | `BankConfig::noise_guard`, `neighbor_guard`, `noise_tau_s`, `noise_warmup_s`; `bank::ThreeTapNoise` | heuristic (Matched's, milestone 2); m(κ) and the warm-up scale derived; floor a numerical choice |
-| Bank noise: exact zeros | an all-zero input block updates nothing (warm-up, level, W, recovery count); taps restart 2N_k into the next non-zero block; an all-zero spectrum segment is not offered, an exact-zero sample is left out of the mask; σ² unknown (nothing keyed or published) until the first non-zero block | `bank::ThreeTapNoise`, `bank::SpectrumNoise`, `bank::BankChannel` | derived (a receiver's output carries noise: zeros are missing data; Plan B, B3) |
-| Bank noise: stuck-level recovery | when branch 1 has accepted no tap for 8 s (4 τ_n) of non-zero input, every branch's σ² is set again by the warm-up rule over its last 0.32 s of non-zero input | `BankConfig::noise_stuck_s`; `bank::ThreeTapNoise` | heuristic (8 s, seconds because the noise has no keying speed); the gate on branch 1 derived (it sees noise in every character space up to 100 words/min; Plan B, B3) |
+| Bank noise: exact zeros | an exact-zero input sample enters no warm-up, recovery history or count (an all-zero block updates nothing); taps count from 2N_k samples after the sample following the latest exact zero; an all-zero spectrum segment is not offered, an exact-zero sample is left out of the mask; σ² unknown (nothing keyed or published) until the first non-zero block | `bank::ThreeTapNoise`, `bank::SpectrumNoise`, `bank::BankChannel` | derived (a receiver's output carries noise: zeros are missing data; Plan B, B3) |
+| Bank noise: stuck-level recovery | when branch 1 has accepted no tap for 8 s (4 τ_n) of non-zero input, every branch's σ² is set again by the warm-up rule over its last 0.32 s of non-zero input | `BankConfig::noise_stuck_s`; `bank::ThreeTapNoise` | heuristic (8 s, seconds because the noise has no keying speed); the gate on branch 1 derived for rectangular keying (a tap needs 3N_1 = 42 samples, a character space at 100 words/min is 54) and measured (no firing on the development set); Plan B, B3 |
 | Bank noise spectrum | segments T_seg = 256/1500 s = 170.7 ms (M = 256 samples, bins 5.86 Hz at 1500 samples/s), periodic Hann; exponential average τ_n = 2 s (β = 0.0818 per segment); smoothed ±25 Hz (±4 bins); W_k from 16 points per bin | `BankConfig::segment_s`, `spectrum_smoothing_hz`; `bank::SpectrumNoise` | heuristic; 16 points a numerical choice |
 | Bank spectrum mask | a sample is left out if \|v_1\|² ≥ κ_n·2σ²_v,1 anywhere from 20 ms before it to (N_1 − 1)/r + 20 ms after it; a segment enters if ≥ 50% is left in | `BankConfig::guard_margin_s`, `min_clean_fraction` | heuristic |
 | Bank mask bias b_mask,k | 0.8370 (k = 1) … 0.7852 (k = 32), dimensionless; divides each branch's spectrum reading | `BankConfig::mask_bias` | measured (white noise, seeds 101–110; valid only for the defaults at 1500 samples/s) |

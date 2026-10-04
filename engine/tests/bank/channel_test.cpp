@@ -381,7 +381,7 @@ TEST(BankChannel, AStreamCutMidCharacterPublishesThePartialCharacterAndNothingPa
 // then a 25 words/min station from 0.5 s) decodes as the station alone (the same stream without its leading
 // zeros): the same text, the same characters with their times shifted by 1 s, and no NaN in a published value.
 // The shift is not exact to the last bit: 1500 samples are 46.875 blocks of 32, so every block boundary of the
-// padded stream falls 12 samples (8 ms) later in the station's time than the unpadded stream's, and the noise
+// padded stream falls 4 samples (2.67 ms) later in the station's time than the unpadded stream's, and the noise
 // estimate, the keying and the periodicity are updated once per block. A character's time may therefore move
 // by the edges' quantization to the block grid: the tolerance is one block (21.33 ms).
 TEST(BankChannel, LeadingExactZerosDecodeAsTheStationAlone) {

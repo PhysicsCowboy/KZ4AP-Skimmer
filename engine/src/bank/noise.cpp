@@ -76,7 +76,7 @@ ThreeTapNoise::ThreeTapNoise(const BankConfig& cfg, double rate_hz, std::vector<
                  ? std::max<std::int64_t>(1, static_cast<std::int64_t>(std::nearbyint(cfg.noise_stuck_s * rate_hz)))
                  : std::numeric_limits<std::int64_t>::max()),
       origin_(first_sample),
-      resume_(first_sample),
+      last_zero_(first_sample - 1),
       var_(n_.size(), std::numeric_limits<double>::quiet_NaN()),
       weight_(n_.size(), 0.0),
       hist_(n_.size()),
@@ -100,26 +100,38 @@ template <class M>
 void ThreeTapNoise::update_impl(std::span<const std::complex<double>> u, const M& P, std::int64_t n0,
                                 std::int64_t n1, std::int64_t base) {
     if (n1 <= n0) return;
-    // Exact zeros are missing data (a receiver's output carries noise): the block changes nothing.
-    if (all_zero(u, base, n0, n1)) {
-        ++zero_blocks_;
-        gap_ = true;
-        return;
-    }
-    if (gap_) {
-        resume_ = n0;  // taps are counted again from 2 N_k samples into this run of non-zero input
-        gap_ = false;
-    }
+    // Exact zeros are missing data (a receiver's output carries noise): an exact-zero input sample enters neither
+    // the warm-up nor the recovery's history nor the recovery's count, and a tap counts only from 2 N_k + 1
+    // samples after the latest exact zero (the prototype's start rule, i - origin >= 2 N_k, with origin - 1 as
+    // the latest "zero"). A block of exact zeros only therefore changes nothing.
     const std::size_t K = n_.size();
     const int c0 = window_column(n0, base, P);
-    const int c1 = window_column(n1 - 1, base, P) + 1;
+    window_column(n1 - 1, base, P);  // the block lies in the window of P (throws otherwise)
+    if (n1 - base > static_cast<std::int64_t>(u.size()))
+        throw std::out_of_range("noise: sample index outside the window of u");
+    std::vector<std::int64_t> last_zero(static_cast<std::size_t>(n1 - n0));  // the latest exact zero at or before i
+    std::vector<int> cols;  // window columns of the block's non-zero samples
+    cols.reserve(static_cast<std::size_t>(n1 - n0));
+    for (std::int64_t i = n0; i < n1; ++i) {
+        const auto& x = u[static_cast<std::size_t>(i - base)];
+        if (x.real() == 0.0 && x.imag() == 0.0)
+            last_zero_ = i;
+        else
+            cols.push_back(c0 + static_cast<int>(i - n0));
+        last_zero[static_cast<std::size_t>(i - n0)] = last_zero_;
+    }
+    if (cols.empty()) {
+        ++zero_blocks_;
+        return;
+    }
+    const auto fresh = static_cast<std::int64_t>(cols.size());  // samples of non-zero input in this block
     if (!started_) {
         // The warm-up reads every sample of non-zero input so far (without exact zeros: every sample from the
         // stream's start, origin_ ... n1 - 1, as the prototype's).
-        nonzero_ += n1 - n0;
+        nonzero_ += fresh;
         for (std::size_t k = 0; k < K; ++k) {
             auto& h = hist_[k];
-            for (int i = c0; i < c1; ++i) h.push_back(P.at(static_cast<int>(k), i));
+            for (int i : cols) h.push_back(P.at(static_cast<int>(k), i));
             const double q = quantile_linear(h, 0.2) / kWarmupScale;
             var_[k] = std::max(q, kMinVar);  // np.maximum: NaN propagates (std::max returns q, as NaN < x is false)
         }
@@ -139,12 +151,12 @@ void ThreeTapNoise::update_impl(std::span<const std::complex<double>> u, const M
     for (std::size_t k = 0; k < K; ++k) {
         auto& h = hist_[k];
         std::size_t pos = hist_pos_;
-        for (int i = c0; i < c1; ++i) {
+        for (int i : cols) {
             h[pos] = P.at(static_cast<int>(k), i);
             if (++pos == h.size()) pos = 0;
         }
     }
-    hist_pos_ = (hist_pos_ + static_cast<std::size_t>(c1 - c0)) % static_cast<std::size_t>(warmup_);
+    hist_pos_ = (hist_pos_ + cols.size()) % static_cast<std::size_t>(warmup_);
     std::vector<int> count(K, 0);
     std::vector<double> sum_mid(K, 0.0);
     bool any = false;
@@ -152,8 +164,9 @@ void ThreeTapNoise::update_impl(std::span<const std::complex<double>> u, const M
         const std::int64_t lag = n_[k];
         const int r = static_cast<int>(k);
         const double two_var = 2.0 * var_[k];
-        // valid: i - resume >= 2 N_k (resume = origin without exact zeros, as the prototype's)
-        for (std::int64_t i = std::max(n0, resume_ + 2 * lag); i < n1; ++i) {
+        // valid: i - (latest exact zero) > 2 N_k; without exact zeros i - origin >= 2 N_k, as the prototype's
+        for (std::int64_t i = std::max(n0, origin_ + 2 * lag); i < n1; ++i) {
+            if (i - last_zero[static_cast<std::size_t>(i - n0)] <= 2 * lag) continue;
             const double now = P.at(r, window_column(i, base, P));
             const double mid = P.at(r, window_column(i - lag, base, P));
             const double old = P.at(r, window_column(i - 2 * lag, base, P));
@@ -176,7 +189,7 @@ void ThreeTapNoise::update_impl(std::span<const std::complex<double>> u, const M
         }
     }
     // Recovery of a stuck level (heuristic): branch 1 (row 0, the shortest boxcar, which sees noise in every
-    // character space up to max_wpm) has accepted no middle tap for noise_stuck_s of non-zero input. Then every
+    // character space up to max_wpm with rectangular keying; docs/signal-processing.md section 8c) has accepted no middle tap for noise_stuck_s of non-zero input. Then every
     // branch's level is set again by the warm-up rule over its last noise_warmup_s of non-zero input; W and the
     // update carry on. Gated on branch 1 so that a long branch blind to a station's spaces is not reset to the
     // station's power (Plan B, B3 ruling (A)).
@@ -185,7 +198,7 @@ void ThreeTapNoise::update_impl(std::span<const std::complex<double>> u, const M
         quiet_ = 0;
         return;
     }
-    quiet_ += n1 - n0;
+    quiet_ += fresh;
     if (quiet_ < stuck_) return;
     for (std::size_t k = 0; k < K; ++k) var_[k] = std::max(quantile_linear(hist_[k], 0.2) / kWarmupScale, kMinVar);
     quiet_ = 0;
@@ -311,7 +324,8 @@ std::vector<char> SpectrumNoise::clean(std::span<const std::complex<double>> u, 
         // an exact-zero sample is missing data, left out as a flagged one (u and P share the window's base)
         const auto& x = u[static_cast<std::size_t>(s - base) + static_cast<std::size_t>(i - rel)];
         out[static_cast<std::size_t>(i - rel)] =
-            (c[static_cast<std::size_t>(b)] - c[static_cast<std::size_t>(a)]) == 0 && (x.real() != 0.0 || x.imag() != 0.0);
+            (c[static_cast<std::size_t>(b)] - c[static_cast<std::size_t>(a)]) == 0 &&
+            (x.real() != 0.0 || x.imag() != 0.0);
     }
     return out;
 }

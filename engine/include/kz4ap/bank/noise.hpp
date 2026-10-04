@@ -36,9 +36,9 @@ double quantile_linear(std::vector<double> x, double q);
 // (a provisional one before). Updated once per block with the block's starting sigma^2. Branch k reads
 // row k of P (P may have more rows: SpectrumNoise passes the whole matrix for branch 1).
 // Plan B task B3 (docs/signal-processing.md section 8c, "Noise", "Exact zeros" and "Recovery"):
-// - exact zeros are missing data: a block whose input u is all exactly 0 FS updates nothing (not the warm-up,
-//   not the level, not the recovery's count); the warm-up runs on the first noise_warmup_s of non-zero input,
-//   and after a run of zero blocks no tap is counted until 2 N_k samples into the next non-zero run;
+// - exact zeros are missing data: an input sample of exactly 0 FS enters neither the warm-up nor the recovery's
+//   history or count (a block of zeros only updates nothing); the warm-up runs on the first noise_warmup_s of
+//   non-zero input, and a tap counts only from 2 N_k + 1 samples after the latest exact zero;
 // - recovery of a stuck level: if no middle tap of branch 1 (row 0, the shortest boxcar) has been accepted for
 //   noise_stuck_s of non-zero input, every branch's level is set again by the warm-up rule over its last
 //   noise_warmup_s of non-zero input (gated on branch 1: a long branch sees no noise while a station keys).
@@ -76,9 +76,8 @@ private:
     int warmup_;               // samples (from noise_warmup_s at the point of use)
     std::int64_t stuck_;       // samples (from noise_stuck_s at the point of use); INT64_MAX: never
     std::int64_t origin_ = 0;  // absolute index of the stream's first sample
-    std::int64_t resume_ = 0;  // absolute index where the current run of non-zero blocks started
-    bool gap_ = false;         // the last block was all exact zeros
-    std::int64_t nonzero_ = 0; // samples of non-zero input during the warm-up (then frozen)
+    std::int64_t last_zero_ = -1;  // absolute index of the latest exact-zero input sample (origin - 1: none)
+    std::int64_t nonzero_ = 0;     // samples of non-zero input during the warm-up (then frozen)
     std::vector<double> var_, weight_;
     // |v_k|^2 of non-zero input, FS^2, per branch: every sample during the warm-up, then the last warmup_
     // samples (a ring written at hist_pos_; the quantile does not need their order)
