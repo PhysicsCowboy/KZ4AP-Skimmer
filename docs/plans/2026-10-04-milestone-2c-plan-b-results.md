@@ -698,3 +698,21 @@ exact zeros**; every decoded file records `noise_stuck_s` = 8.0 s. CPU 42.49 ms 
 `bank-b2b` 42.37; not a gate). Tests: `ctest --preset windows` 327 of 327 and `ctest --preset linux` 327 of 327
 passed or skipped; smoke unchanged (Envelope CER 0.0353, Matched 0.0436). Raw outputs (git-ignored):
 `build/suite/full3/experiments/c2-diff-bank-b3-vs-bank-b2b.md`, `compare-bank-b3-vs-bank-b2b.md`.
+
+### 5.6 Fix round 1 (review of B3)
+
+The review found that a partly zero block (a run of zeros starting or ending inside a block) fed its exact-zero
+|v_k|² into the three-tap warm-up, so its 20% quantile was 0 and σ² sat at the 10⁻²⁰ FS² floor for the first
+blocks of noise (4 blocks, 85 ms, in the zero_pad stream; derived by the reviewer), and that §8c said otherwise.
+Fixed in the code (`9744b5e`): exact-zero samples enter neither the warm-up nor the recovery's history or count,
+and a tap counts from 2N_k samples after the sample following the latest exact zero. New test
+`ZerosEndingInsideABlockLeaveTheWarmUpToTheNoise` (bit for bit against the noise alone, above the floor); test (ii)
+now also checks the gap's edge blocks bit for bit; test (i) checks σ² above the floor from the first non-zero
+block. The spectrum methods' factor 2 in test (iv) for branches 2 to 32 is now labeled a measured margin (section
+5.3); test (iii)'s time is derived given a measured condition; branch 1's gate is stated as 3N_1 = 42 samples
+(42.9 words/min for element spaces) with the rectangular-keying assumption.
+
+`bank-b3b` (`9744b5e`, Linux machine) against `bank-b2b`: **525 of 525 identical final texts and decoded records**,
+paired CER +0.0000 (+0.0000 to +0.0000) on 509 signals; 0 recoveries, 0 blocks of exact zeros; CPU 42.61 ms per
+channel-second (one run; not a gate). `ctest --preset windows` 328 of 328 and `ctest --preset linux` 328 of 328
+passed or skipped; smoke unchanged (Envelope CER 0.0353, Matched 0.0436).
