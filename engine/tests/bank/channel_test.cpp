@@ -97,20 +97,27 @@ void expect_equal_or_nan(double actual, const nlohmann::json& expected) {
 // Traced near-ties (D2): a window's comb maximum that the port and the prototype pick differently because the
 // two best candidates' scores differ by rounding. (stream, periodicity recomputation, window index). Both are
 // the 2 s window over a buffer of p that is zero but for one short squelch opening, far below the confidence
-// threshold (0.03), so T_P, the prior and everything downstream are unaffected. Both candidates on both sides
-// (TheTwoPeriodicityNearTiesAreRoundingOnBothSides recomputes the port's; the port's values below are the
-// Windows build's, MSVC's libm; with glibc on Linux, farnsworth #64's 97.95 ms score is 4.7329276537942970e-06
-// and the port picks 97.95 ms, as the prototype does, a gap of +1.8e-17 absolute, 3.9e-12 relative):
-//   noise #14,      T = 97.95 ms: prototype 9.5011319738165349e-07, port 9.5011319737701853e-07
-//                   T = 44.63 ms: prototype 9.5011319738161283e-07, port 9.5011319738161283e-07
-//     prototype gap +4.1e-20 absolute (relative 4.3e-14, picks 97.95 ms); port gap -4.6e-18 (4.8e-12, picks 44.63)
-//   farnsworth #64, T = 97.95 ms: prototype 4.7329276538316477e-06, port 4.7329276538037837e-06
-//                   T = 44.63 ms: prototype 4.7329276538129181e-06, port 4.7329276538129181e-06
-//     prototype gap +1.9e-17 absolute (relative 4.0e-12, picks 97.95 ms); port gap -9.1e-18 (1.9e-12, picks 44.63)
-// The 97.95 ms score differs between the sides by 4.6e-18 and 2.8e-17 absolute (4.9e-12, 5.9e-12 relative):
-// each score is a difference of comb-tooth means of the normalized autocorrelation (values up to 1, summed as a
-// cumulative sum), so last-bit differences of order 1e-17 in the means survive the cancellation down to a
-// score of 1e-6 as relative differences of order 1e-12. That is rounding, and it exceeds both gaps.
+// threshold (0.03), so T_P, the prior and everything downstream are unaffected. Three candidates tie, 97.95,
+// 44.63 and 61.97 ms (the fourth best scores about half as much); TheTwoPeriodicityNearTiesAreRoundingOnBothSides
+// recomputes the port's scores of all three. Prototype: numpy on Windows (the golden values); port: the Windows
+// build (MSVC's libm) and the Linux build (g++ 11.4, glibc).
+//   noise #14,      T = 97.95 ms: prototype 9.5011319738165349e-07, port 9.5011319737701853e-07 (both builds)
+//                   T = 44.63 ms: prototype 9.5011319738161283e-07, port 9.5011319738161283e-07 (both builds)
+//                   T = 61.97 ms: prototype 9.5011319737464683e-07, port 9.5011319737464683e-07 (both builds)
+//     the prototype picks 97.95 ms (a lead of 4.1e-20 absolute, 4.3e-14 relative); the port 44.63 ms (4.6e-18)
+//   farnsworth #64, T = 97.95 ms: prototype 4.7329276538316477e-06, port 4.7329276538037837e-06 (Windows),
+//                                                                         4.7329276537942970e-06 (Linux)
+//                   T = 44.63 ms: prototype 4.7329276538129181e-06, port 4.7329276538129181e-06 (Windows),
+//                                                                         4.7329276537759468e-06 (Linux)
+//                   T = 61.97 ms: prototype 4.7329276537666498e-06, port 4.7329276537944054e-06 (Windows),
+//                                                                         4.7329276538082832e-06 (Linux)
+//     the prototype picks 97.95 ms (lead 1.9e-17 absolute, 4.0e-12 relative); the port 44.63 ms on Windows
+//     (lead 9.1e-18) and 61.97 ms on Linux (lead 1.4e-17)
+// The spread of the three scores is at most 6.5e-17 absolute on any side, and one candidate's score differs
+// between the sides by up to 4.2e-17 absolute: each score is a difference of comb-tooth means of the normalized
+// autocorrelation (values up to 1, summed as a cumulative sum), so last-bit differences of order 1e-17 in the
+// means survive the cancellation down to a score of 1e-6 as relative differences of order 1e-11. That is
+// rounding, and it exceeds every lead.
 struct NearTie {
     const char* stream;
     std::size_t update;
