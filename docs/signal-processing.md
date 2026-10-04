@@ -2597,7 +2597,10 @@ call and the search two vectors of up to 3 × 192 doubles (4608 B each) per
 call, freed on return; nothing persistent is added. Build: SLEEF adds
 4.6 s to a fresh configure and 3.0 s to a fresh build on the Linux machine
 (Ninja, 10 jobs), 29.1 s and 40.4 s on the Windows PC (results record,
-section 4.6).
+section 4.6). With the cinz family forced (`KZ4AP_FIT_MATH=cinz`, cinz
+AVX-512, what a processor without FMA computes) the development set costs
+45.90 ms per channel-second and decodes to the same texts and records
+(results record, section 4.9).
 
 Status (as `training/kz4ap_proto/params.py` marks them): N_mem = 48
 measured (E4: adopted over 24 and 12); the q, w/T and T_g/T grids measured

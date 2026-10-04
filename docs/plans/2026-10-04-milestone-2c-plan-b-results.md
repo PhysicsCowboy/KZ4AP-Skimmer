@@ -569,3 +569,53 @@ replay, the scoring, the profile), `b2b-variants.log` (the per-variant timing), 
 `prof-bank-b2b-flat.txt`. Under `build/b2b/`: the helper scripts (`b2b_run.sh`, `b2b_prof.sh`,
 `b2b_variants.sh`, `b2b_buildtime.sh`, `win_cpu.sh`), `microbench.cpp`, `full-sweep-windows.txt`. Windows
 decoded files: `build/suite/full3/proto/win-*/`.
+
+### 4.9 Fix round 1 (review of B2(b))
+
+1. **The cinz family at fit level.** The environment variable `KZ4AP_FIT_MATH` (test only, read once;
+   `engine/src/bank/vecmath.cpp`) restricts the run-time choice to a family or an implementation. With
+   `KZ4AP_FIT_MATH=cinz` on the Linux machine (cinz AVX-512 selected; the cinz family gives the same bits with
+   SSE2 and AVX, 4.2, so this is also what a processor without FMA computes):
+   - the full sweep passes (352 s): every bit-for-bit comparison equal; largest differences from the B2(a)
+     code 1.8 · 10⁻¹⁵ nats in the grid (21.7% of the bound), 1.8 · 10⁻¹⁵ nats in `class_logliks`' ℓ_total
+     (20.0%), 4.6 · 10⁻¹³ nats in the weighted log-likelihood (31.9%);
+   - the development set, `bank-b2b-cinz` against `bank-b2a2`: **525 of 525 identical final texts**, 525 of
+     525 channels with every decoded record identical, 0 of 875 070 periodicity windows differ, paired CER
+     +0.0000 (+0.0000 to +0.0000). Nothing to trace.
+   - CPU per channel-second (one run; replay wall time 346 s):
+
+| group | `bank-b2a2` | `bank-b2b` (finz AVX-512) | `bank-b2b-cinz` (cinz AVX-512) |
+|---|---|---|---|
+| A sensitivity | 60.86 | 37.98 | 41.27 |
+| B fading | 71.58 | 45.34 | 49.09 |
+| C fists | 61.79 | 38.95 | 42.18 |
+| D speed | 60.25 | 38.27 | 41.57 |
+| E interference | 118.01 | 80.55 | 86.97 |
+| F tuning | 71.56 | 44.35 | 48.52 |
+| G ragchew | 97.79 | 60.15 | 65.52 |
+| H two-station QSO, oracle | 86.81 | 55.81 | 60.40 |
+| I Farnsworth | 30.44 | 20.86 | 22.18 |
+| all | 66.67 | **42.37** | **45.90** |
+
+   With Windows default test sizes and `KZ4AP_FIT_MATH=cinz` (cinz AVX selected) all 30 fit tests pass.
+2. **Detection matches what each file may use.** MSVC's `/arch:AVX512` would allow AVX-512 CD, BW, DQ and VL
+   instructions, which `detect()` did not check; the MSVC AVX-512 file is now compiled as SLEEF compiles its own
+   AVX-512 code with MSVC (`/arch:AVX2` with `__AVX512F__` defined: AVX2 code generation, AVX-512F intrinsics),
+   and AVX-512 is used only with AVX2 + FMA present. MSVC's `/arch:AVX2` may also emit BMI1 and BMI2
+   instructions, so the MSVC path now requires them for AVX2 (leaf 7 EBX bits 3 and 8). GCC's files use exactly
+   `-mavx`, `-mavx2 -mfma` and `-mavx512f`, which are checked.
+3. `log_sum_exp` throws `std::invalid_argument` for more than 255 class terms (the block evaluation counts a
+   point's terms in 8 bits); test `BankFitB2b.LogSumExpTakesAtMost255ClassTerms`.
+4. Wording: processor generations ("most Intel Core processors since Haswell, 2013, and AMD since Excavator,
+   2015; not every Pentium, Celeron or Atom-class one"); the portability claim now says "by construction and by
+   the symbol check, not by a run on a processor without AVX" (Intel SDE not run); stack scratch in bytes
+   (25 856 B; 4608 B per search vector); the test's shares of exps and lns that differ from the C library's are
+   of its own argument mix (finz 3.7%, cinz 5.8% Windows / 6.0% Linux, lns 0.5%); the parameter table's
+   classification names the assumption that the C library's exp and ln are within 1 ulp; the test file's
+   section header no longer names only the SSE2 functions; README notes that SLEEF sets `CMAKE_BUILD_TYPE` to
+   Release in the cache when a single-configuration generator is configured without one.
+
+Tests: `ctest --preset windows` 324 of 324 and `ctest --preset linux` 324 of 324 passed or skipped (8
+skipped, 1 disabled); smoke unchanged (Envelope CER 0.0353, Matched 0.0436). Raw outputs (git-ignored):
+`build/suite/full3/experiments/linux/c2-diff-bank-b2b-cinz-vs-bank-b2a2.md`,
+`compare-bank-b2b-cinz-vs-bank-b2a2.md`, `b2b-cinz.log`.
