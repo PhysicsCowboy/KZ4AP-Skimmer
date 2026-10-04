@@ -178,8 +178,9 @@ the means survive the cancellation down to scores of order 1e-6 as relative diff
 *Later change (final review, owner Q4 A).* The golden test streams are now stored as complex64, the engine's
 sample type (`engine/tests/data/bank/*.c64`), and every golden result was regenerated from the rounded streams,
 so the C++ tests' input is still exactly the prototype's and every tolerance and exact check is unchanged. The
-data went from 14 599 164 to 7 362 191 bytes on disk and from 8 739 088 to 4 511 830 bytes compressed (zlib
-level 6, measured). Every golden channel text, correction count and switch count is unchanged; at noise #14 the
+committed data went from 14 416 177 to 7 239 333 bytes and from 8 733 310 to 4 508 704 bytes compressed (zlib
+level 6, measured on the committed files; the change's commit message quotes the working copy's sizes, which
+count Windows line endings in some JSON files). Every golden channel text, correction count and switch count is unchanged; at noise #14 the
 scores moved (prototype 9.501131563217924e-07, 9.501131563218533e-07 and 9.501131563310894e-07 for 97.95, 44.63
 and 61.97 ms), and the prototype and the Windows port now both pick 61.97 ms there; farnsworth #64 is unchanged.
 The Linux build has not been measured on the new streams (`docs/signal-processing.md` section 8c, "Channel
