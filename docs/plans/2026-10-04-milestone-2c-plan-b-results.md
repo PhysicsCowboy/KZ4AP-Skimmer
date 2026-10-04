@@ -37,6 +37,15 @@ by 1 s within 0.67 ms), where Plan A keyed nothing; a 60 dB rise of the noise is
 stops (derived 22.1 s, measured 22.0 s). The development set has no exact zeros and the recovery never fires on
 it: **all 525 channels decode to the identical final text with every decoded record identical** (section 5).
 
+**Answer (B4a, time constants in dits).** With the re-key wait 16.7 d_k, the re-key time-out 2.5 times that and the
+periodicity windows 41.7, 104 and 208 dits of each candidate (the owner's stage-2 decisions), the bank decoder's
+CER on the development set is **worse: paired +0.0277 (+0.0194 to +0.0362)**, with 428 of 525 channels decoding to
+a different text; groups A, B, C, F, G, H (oracle) and I have paired intervals entirely above 0, D (speed changes,
+10 WPM) improves without a significant interval. The periodicity rule's precision at the 0.03 threshold falls from
+0.804 to 0.753 (non-overlapping intervals), all of it in the shortest window. CPU 42.61 → 57.56 ms per channel-second
+(Linux machine), memory per channel in flight 32.16 → 33.29 MB. Every Plan A golden test passes unchanged at the
+prototype's values set explicitly (section 6).
+
 ## 0. Terms used in this record
 
 - **Decoder**: Envelope, Matched and the bank are the three decoders; here only the bank decoder in C++ is
@@ -716,3 +725,125 @@ block. The spectrum methods' factor 2 in test (iv) for branches 2 to 32 is now l
 paired CER +0.0000 (+0.0000 to +0.0000) on 509 signals; 0 recoveries, 0 blocks of exact zeros; CPU 42.61 ms per
 channel-second (one run; not a gate). `ctest --preset windows` 328 of 328 and `ctest --preset linux` 328 of 328
 passed or skipped; smoke unchanged (Envelope CER 0.0353, Matched 0.0436).
+
+## 6. Time constants in dits (B4a)
+
+### 6.1 What changed
+
+Stage-2 spec section 3.1 (owner, 2026-10-03); `docs/signal-processing.md` section 8c, "Time constants in dits".
+Within branch k a dit is the branch's nominal dit d_k = L_k / 0.8 (12 ms at k = 1, 50.13 ms at k = 16, 230.3 ms
+at k = 32). Code: `fde71a9`.
+
+| Setting | Before (Plan A, stage 1) | B4a | Class | Status |
+|---|---|---|---|---|
+| Re-key wait W_min,k | 0.8 s of keyed time, every branch | 16.7 d_k: 200.4 ms (k = 1), 837.1 ms (k = 16), 3.847 s (k = 32) | (1) dits | derived from E9b's 0.8 s, measured at 25 WPM |
+| Seed memory | 4 × 0.8 s = 4800 samples | 4 W_min,k: 1202 to 23 079 samples | follows W_min,k | heuristic |
+| Re-key time-out | 2 s of channel time, every branch | 2.5 W_min,k = 41.75 d_k: 501 ms, 2.093 s, 9.616 s | (1) dits | heuristic (stage 1's ratio 2 s / 0.8 s) |
+| Periodicity windows | 2, 5 and 10 s, every candidate | N_w · T per candidate T, N_w = 41.7, 104, 208: 0.50 to 2.50 s at 12 ms, 10.1 to 50.4 s at 242.2 ms | (1) dits | placeholder (stage 1's at 48 ms) |
+| Comb threshold | 0.03 | 0.03, kept (6.4) | — | placeholder |
+
+At 25 WPM the nearest branch (k = 16) has W_min = 837.1 ms and time-out 2.093 s, 4.6% above stage 1's values: the
+ladder's granularity (derived bound 5.1%). A window per candidate is computed by sliding per-band lagged-product
+sums (no FFT per candidate); every candidate's score equals the FFT comb on its own window to 1.3 · 10⁻¹³ absolute
+(measured, Windows build). The prototype's values in seconds remain reachable (`fixed_timing`), and the module and
+channel golden tests set them explicitly: **every Plan A golden test passes unchanged; none moved**
+(`BankKeying.KeyerMatchesPrototypeThroughRun`, `BankPeriodicity.CombMatchesPrototypeThroughRun` and the Python-port
+periodicity tests, the 15 `ChannelGolden` streams, the near-tie test, `FromIndexCountsTheKeptCharacters`, the bench's
+`BankJsonResult`, and `BankDecoder.TheConsumersListIsTheBanksAfterEveryUpdateWhenCharactersOverlapInTime`, whose
+stream was found at those values).
+
+Tests added (13): W_min,k, seed memory and time-out in samples at k = 1, 16, 32; the 25 WPM bound; readiness per
+branch; the window N_w T and the reach per candidate; every candidate's score against the FFT comb on its own
+window (with a NaN in the stream); the shortest confident window; window rows of a wrong size; split invariance at
+the default timing (3 streams); a 12 WPM station (branch 23) re-keyed after 1.643 s of keyed time at 2.752 s
+(W_min,23 = 1.631 s) where stage 1's timing re-keys at 1.387 s after 0.811 s; the exact-zero test at the default
+timing. `ctest --preset windows` 341 of 341 and `ctest --preset linux` 341 of 341 passed or skipped; Python tests
+259 passed, 7 expected failures; smoke unchanged (Envelope CER 0.0353, Matched 0.0436).
+
+### 6.2 `bank-b4a` against `bank-b3b` (Linux machine, the development set)
+
+Texts: **428 of 525 channels decode to a different final text** (97 identical; 47 with identical character lists).
+Paired CER (variant − reference, signal by signal; bootstrap 95% over signals):
+
+| group | signals | paired CER | paired first-word CER |
+|---|---|---|---|
+| all | 509 | **+0.0277 (+0.0194 to +0.0362)** | +0.2684 (+0.1356 to +0.4110) |
+| A sensitivity | 192 | **+0.0153 (+0.0066 to +0.0245)** | +0.3932 (+0.1503 to +0.6901) |
+| B fading | 30 | **+0.0350 (+0.0063 to +0.0704)** | +0.2886 (−0.0239 to +0.6518) |
+| C fists | 135 | **+0.0438 (+0.0303 to +0.0594)** | +0.0523 (−0.0806 to +0.1858) |
+| D speed | 12 | −0.0447 (−0.1138 to +0.0122) | −0.1667 (−0.4177 to +0.0833) |
+| E interference | 16 | −0.0105 (−0.0723 to +0.0411) | +0.2458 (−0.9501 to +1.1834) |
+| F tuning | 28 | **+0.0618 (+0.0227 to +0.1019)** | +1.5196 (+0.4107 to +2.7947) |
+| G ragchew | 12 | **+0.0084 (+0.0011 to +0.0193)** | +0.0287 (−0.0259 to +0.1082) |
+| H two-station QSO, oracle | 12 | **+0.0302 (+0.0022 to +0.0703)** | +0.0521 (−0.0160 to +0.1363) |
+| H two-station QSO, oracle (per station) | 24 | +0.0204 (−0.0324 to +0.0785) | +0.1748 (−0.3038 to +0.7199) |
+| I Farnsworth | 48 | **+0.0468 (+0.0039 to +0.0946)** | −0.0882 (−0.2351 to +0.0580) |
+
+**Groups made worse (paired interval entirely above 0), reported to the owner (the plan's rule; not a gate):**
+A, B, C, F, G, H (oracle) and I, and the pooled figure. Their regimes (CER of the test case, `bank-b3b` → `bank-b4a`):
+
+- A: 12 WPM 0.313 → 0.344 (first-word CER 0.39 → 1.28), 25 WPM 0.297 → 0.312, 40 WPM 0.328 → 0.328.
+- B: the mixed-style fading recording 0.579 → 0.607.
+- C: every keying style, worst on hand (0.188–0.207 → 0.277–0.358), bug ±0.1 (0.046–0.064 → 0.097–0.123) and
+  machine imbalance +0.0 (0.002 → 0.079, interval to 0.217: a few channels badly wrong).
+- F: offsets at 20 and 25 WPM (for example 5.9 Hz 25 WPM 0.064 → 0.199, 8.8 Hz 25 WPM 0.057 → 0.202) and drift
+  0.2 Hz/s (0.028 → 0.157).
+- G: the 25 WPM ragchew 0.046 → 0.055.
+- H (oracle): same-track offset 0 Hz 0.120 → 0.225; ambiguous offset 50 Hz 0.484 → 0.535.
+- I: 18/5 WPM paddle 0.288 → 0.496; 25/18 and 25/13 machine 0.020 → 0.061 and 0.014 → 0.039; 18/10 paddle improved
+  0.078 → 0.058.
+
+Better: D speed 10 WPM 0.291 → 0.000 and step 35 → 20 WPM 0.060 → 0.018 (D's pooled interval includes 0).
+Conjecture, not measured: the losses at 25 WPM, where W_min and the time-out are nearly stage 1's, point at the
+periodicity windows rather than the re-key settings: the shortest window's precision at 0.03 fell (6.4), and early
+in an over only the short candidates' windows are full, so the first confident T_P can come from a short candidate.
+An ablation (re-key settings in dits with stage 1's periodicity windows, and the reverse) would separate the two.
+
+### 6.3 CPU and memory
+
+CPU per channel-second (Linux machine, one run each; not a gate): pooled **42.61 → 57.56 ms** (+14.95 ms, +35%);
+per group A 38.22 → 53.21, B 45.46 → 62.26, C 39.18 → 52.69, D 38.56 → 51.92, E 81.09 → 93.86, F 44.55 → 60.11,
+G 60.52 → 75.95, H (oracle) 55.85 → 71.28, H (per station) 56.27 → 71.56, I 20.97 → 37.04 ms. The increase is about
+15 ms in every group, as the periodicity estimate's cost does not depend on the signal: derived 3.9 M
+multiply-adds per recomputation, 15 M per channel-second (section 8c, "Periodicity"). Windows PC, F-drift-s1
+(8 channels, 240.1 channel-s, `--jobs 8`), alternated with the reference built in a worktree at `ff5475b`:
+reference 59.5, 62.9, 62.5, 66.4; B4a 70.9, 100.8, 71.7, 111.7 ms per channel-second; the B4a runs 2 and 4 are
+slower on every channel alike (PC state; texts identical in all four runs), so the typical cost is about
++10 ms (+16%).
+
+Memory per channel in flight (B1's method, G-ragchew-s1, 12 channels × 366.0 s): `bank-b3b`'s binary 56 352 KiB
+(1 thread), 339 032 KiB (10 threads): 32.16 MB; B4a 59 264 KiB, 351 852 KiB: **33.29 MB (+1.13 MB)**. Derived:
+the periodicity estimate's arrays about 1.5 MB per channel, where the former windows held 60 kB plus about 0.6 MB
+of FFT work arrays during a recomputation (+0.9 MB to +1.5 MB).
+
+### 6.4 Periodicity confidence (Step 3)
+
+The rule "the confident estimate of the shortest window", scored on each run's own decoded records (stage 1's E1
+method: points at every recomputation, about every 0.256 s, inside transmissions of constant-speed stations
+counted at S₅₀₀ ≥ 0 dB in groups A, B mixed style, C, G, H per-station view and I; correct within 5% of the true
+dit; bootstrap 95% over channels; scores as recorded, rounded to 4 decimals): 171 426 points.
+`python -m kz4ap_proto.experiments periodicity-decoded --out build/suite/full3 --name <run>` (new subcommand).
+
+| run | windows | threshold | precision | coverage | median time to confident (s) |
+|---|---|---|---|---|---|
+| bank-b3b (2, 5, 10 s) | all | 0.03 | 0.804 (0.779–0.828) | 0.993 (0.992–0.994) | 0.53 |
+| bank-b4a (41.7, 104, 208 T) | all | 0.03 | **0.753 (0.728–0.776)** | 0.993 (0.992–0.994) | 0.32 |
+| bank-b3b | all | calibrated 0.2495 | 0.950 (0.943–0.958) | 0.582 (0.541–0.624) | 2.12 |
+| bank-b4a | all | calibrated 0.2609 | 0.952 (0.943–0.961) | 0.555 (0.516–0.595) | 2.64 |
+| bank-b3b | shortest alone | 0.03 | 0.809 (0.786–0.834) | 0.966 | 0.54 |
+| bank-b4a | shortest alone | 0.03 | 0.753 (0.730–0.779) | 0.989 | 0.35 |
+| bank-b3b | middle alone | 0.03 | 0.842 (0.813–0.868) | 0.965 | 3.54 |
+| bank-b4a | middle alone | 0.03 | 0.878 (0.853–0.899) | 0.965 | 2.47 |
+| bank-b3b | longest alone | 0.03 | 0.892 (0.866–0.917) | 0.922 | 8.66 |
+| bank-b4a | longest alone | 0.03 | 0.914 (0.894–0.933) | 0.918 | 7.35 |
+
+**Precision at 0.03 fell from 0.804 to 0.753 with non-overlapping intervals** (0.728–0.776 against 0.779–0.828;
+two separate bootstraps, not a paired one): reported to the owner, as the brief requires. The fall is in the
+shortest window (0.809 → 0.753); the two longer windows are more precise than the fixed ones and reach a confident
+estimate sooner. The threshold at which the rule's precision reaches 0.95 is 0.2609 (0.2495 with the fixed
+windows); stage 1's E1 found 0.2506. **0.03 is kept** (the brief: stage 1's end-to-end check made decoding worse at
+the calibrated threshold).
+
+Raw outputs (git-ignored): `build/suite/full3/experiments/linux/b4a/` (`compare-bank-b4a-vs-bank-b3b.md`,
+`c2-diff-bank-b4a-vs-bank-b3b.md`, `periodicity-decoded-bank-b4a.md`, `periodicity-decoded-bank-b3b.md`,
+`b4a-run.log`); decoded files `build/suite/full3/proto/bank-b4a/` on the Linux machine.

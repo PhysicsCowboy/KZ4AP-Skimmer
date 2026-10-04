@@ -2872,7 +2872,10 @@ spectrum) were not adopted and are not ported; any other
   the bands' tails and S-sums 5 L per candidate and band (0.26 M): about
   3.9 M multiply-adds per recomputation, 15 M per channel-second at
   3.9 recomputations per second (the FFT form: three FFTs of 4096 to
-  16 384 points per recomputation).
+  16 384 points per recomputation). Measured with the rest of Plan B's
+  B4a on the development set (Linux machine): the bank decoder's CPU
+  42.61 → 57.56 ms per channel-second, about +15 ms in every group
+  (results record, section 6.3).
 - **Comb.** For each candidate T, Π = 2T, in samples Π · r_P. A tooth at
   lag c is the mean of ρ over the lags ⌊c − 0.075 Π⌋ … ⌈c + 0.075 Π⌉
   (± 15% of T), clipped to 0 … N − 1. The contrast of tooth k is
@@ -3160,7 +3163,9 @@ publishes one branch's characters, with corrections.
   per-candidate terms ((3 + 3) × 303 × 9 × 8 B = 131 kB) and the bands
   (22 kB): about 1.5 MB per channel (derived), where the former 10 s
   window held 60 kB and about 0.6 MB of FFT work arrays during a
-  recomputation; so a channel 9.1 MB to 14.4 MB in all. The
+  recomputation; so a channel 9.1 MB to 14.4 MB in all. Measured by the
+  method below: 32.16 MB per channel in flight before B4a, 33.29 MB after
+  (+1.13 MB; derived +0.9 MB to +1.5 MB). The
   noise estimate keeps its own last 480 |v_k|² of non-zero input per
   three-tap branch for the warm-up and the recovery (Plan B, B3): 1 × 480
   × 8 B = 3.8 kB with the default "spectrum" method (branch 1 only),
