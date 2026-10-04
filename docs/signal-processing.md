@@ -1895,9 +1895,10 @@ the text model and branch selection (`engine/src/bank/selection.cpp`,
 drives them, with new overs, re-keying and the published text with its
 corrections (`engine/src/bank/channel.cpp`, "Channel decoder" below),
 each checked against golden values from the prototype (relative 1e-9;
-discrete outputs exactly). The bank is not yet behind the engine's
-`Decoder` interface; the replay tool `kz4ap-bank-replay` (bench) runs it
-on recorded channel streams.
+discrete outputs exactly). The engine runs it behind its `Decoder`
+interface (`BankDecoder`, `kz4ap-bench --decoder bank`; "The bank decoder
+behind the engine" below), and the replay tool `kz4ap-bank-replay`
+(bench) runs it on recorded channel streams.
 
 **The bank.** Instead of one matched filter whose length follows an
 estimated speed (section 8b), the bank runs K = 32 boxcar filters at once,
@@ -2711,6 +2712,121 @@ correction reach an owner decision; the overlap cut and the choice of
 the re-key's candidate amplitudes heuristic; the window kept in memory a
 bound of the port, not a parameter.
 
+### The bank decoder behind the engine
+
+`engine/src/bank_decoder.cpp` (`BankDecoder`), one `BankChannel` per
+channel, selected by `FrontEnd::Bank` (`kz4ap-bench --decoder bank`;
+`--front-end` is the option's old name, kept as an alias). The bank is a
+decoder like Envelope and Matched: the detector and the channelizer in
+front of it are the Matched path's, unchanged.
+
+- **Channels.** The engine opens and closes channels exactly as on the
+  Matched path: the detector with distance attribution (each track follows
+  its own peak within D_ch = 47 Hz, section 6), the channelizer's ±150 Hz
+  channels at r = 1500 samples/s (section 7). Before every channel block
+  (32 samples, 21.33 ms at 1500 samples/s) the engine gives the decoder
+  its anchor Δ = f_det − f_c, Hz: the detector's current frequency for the
+  track minus the channel's center (its FFT bin's center). In oracle mode
+  f_det is the label's frequency, fixed for the whole recording: the
+  label's drift is not followed.
+- **Anchor mixing (order of operations).** Each block y (channelizer
+  output, FS, single precision, widened to double) is mixed down by the
+  anchor in force for it: u[n] = y[n] · exp(−jφ[n]),
+  φ[n] = 2π · (S[n] − Δ[n]) / r rad, S[n] = Σ_{m ≤ n} Δ[m] (Hz, summed in
+  order from the channel's first sample, in double precision), so φ[0] = 0
+  and the phase advances 2π Δ / r per sample, continuous across blocks and
+  across anchor changes. This is the prototype's
+  `streams.anchored_baseband` with the same order of operations (the
+  cumulative sum, minus the sample's own Δ, times 2π, divided by r;
+  cos(−φ) and sin(−φ); the complex product written out as numpy computes
+  it), so the engine and the prototype run on recorded detector channels
+  see the same u up to libm's last-bit rounding of cos and sin. The bank
+  has no frequency tracker: the residual (the station's frequency minus
+  f_det) stays in u, where the branch boxcars attenuate it by
+  |H(f)|² = (sin(π f N_k / r) / (N_k sin(π f / r)))². For a boxcar of
+  58 samples (38.7 ms, 0.8 dit at 25 words/min; the ladder's neighbors are
+  36.4 and 40.1 ms) that is −0.54 dB relative to 0 Hz at a 5 Hz residual,
+  −2.25 dB at 10 Hz, −3.33 dB at 12 Hz and −11.4 dB at 20 Hz, with the first
+  null at r / N = 25.9 Hz (derived from the formula; the decoding effect
+  is not measured here).
+- **Blocks.** The decoder pushes a call's samples to the bank one bank
+  block at a time (B = round(block_s · r) = 32 samples at 1500 samples/s,
+  so the engine's 32-sample channel blocks are normally one bank block
+  each; a call with more samples is cut at the bank's block boundaries).
+  A bank block's last step publishes the selected branch's new
+  characters, so after each block the characters it appended are the
+  last ones of the bank's list (`Output::appended()` counts them).
+- **Events.** Each call returns a `DecodeUpdate` (and the engine a
+  `DecodedTextEvent`, published when it has characters or corrections):
+  `chars`, the characters appended since the last call, in order; and
+  `corrections`, one `TextCorrection` per correction the bank recorded
+  since then, in order: `from_index` (the number of the channel's
+  characters it keeps, clipped to the list's current length), `chars`
+  (the bank's characters from `from_index` on, as they stand at the end of
+  the call), `t_s` (when it was made, s) and `reason` ("switch", "rekey"
+  or "timeout"). All times are stream times: the bank's times (counted
+  from the channel's first sample, the branch's group delay removed) plus
+  the first block's start time, s. The event's frequency is the anchor
+  (center plus Δ: the detector's frequency, or the label in oracle mode).
+  The bank publishes no speed or confidence (both 0 in its events) and no
+  per-character probability (1). Envelope's and Matched's updates always
+  carry no corrections, and their events are otherwise unchanged.
+- **The consumer's rule.** A consumer keeps one character list per
+  channel: it appends an event's `chars`, then applies its corrections in
+  order, each keeping the first min(`from_index`, length) characters and
+  appending its `chars`. The list then equals the bank's (derived, and
+  tested with calls of 1, 32, 47 and 1000 samples on golden streams with
+  corrections): let g be the smallest `from_index` of the call's
+  corrections; no character below g changed during the call, and any
+  position between the consumer's previous length and g was filled by an
+  append, in order, so after the appends the consumer's first g characters
+  are the bank's; the correction at g replaces everything after them by
+  the bank's tail, the ones before it only touched positions at or after
+  their own index (≥ g), and the ones after it (index ≥ g) put back the
+  bank's tail again. The *final text* is that list's text, every
+  correction applied; the *immediate text* is every appended character in
+  order, corrections ignored (what a reader would have seen live). A
+  replacement whose text is unchanged is not a correction (the prototype
+  records none) but can re-time characters; the consumer keeps the times
+  first published, so its texts are exact and its character times can
+  differ from the bank's final ones by that re-timing (up to 5.0 ms on the
+  speed-turnover golden stream, measured).
+- **The bench.** `kz4ap-bench` assembles each track's final and immediate
+  text from the events (`TrackText`), writes both per track (`text`, the
+  final text as before, and `text_immediate`), and scores both: `cer`
+  (and every other rate, and the baseline check) on the final text, and
+  `cer_immediate` (with `decoded_immediate`, `edits_immediate` and
+  `cer_immediate` per signal) on the immediate text. The JSON keeps the
+  key `front_end` (stage 1's tooling reads it) and adds `decoder`, with the
+  same value (`envelope`, `matched` or `bank`). For Envelope and Matched
+  the two texts are equal and the rest of the output unchanged (checked
+  against the previous build on the smoke recording, first-sample-s1 and
+  F-drift-s1, through the detector path and with oracle channels: identical
+  JSON apart from the new keys).
+- **End to end (measured, development set seed 1).** first-sample-s1 with
+  oracle channels: the engine's final texts equal the replay tool's on all
+  4 channels (CER 0.0000 on the final text, 0.0743 on the immediate text:
+  corrections restore the first characters of three channels). Through the
+  detector path, its 4 tracks' final texts equal the prototype's
+  (`kz4ap_proto.runner decode`) on the channels recorded through the
+  Matched path's detector (CER 0.1014, immediate 0.2027). F-drift-s1 with
+  oracle channels: equal for the 4 labels drifting 0.2 and 0.5 Hz/s,
+  different for the 4 drifting 1 and 2 Hz/s, because the engine anchors
+  the bank at the label's starting frequency while the replay tool (and
+  stage 1) mixes by the label's drifting phase law (the label's frequency
+  is the carrier's at the label's start); the residual grows by 1 or
+  2 Hz per second of the signal and passes the 25.9 Hz null of a
+  25 words/min branch after 25.9 s or 12.9 s (derived).
+  Cost: 0.40 s of CPU per channel-second on first-sample-s1 (4 channels,
+  0.6× real time; the exact-math build, the development desktop).
+
+Status: the anchor mixing is the prototype's (`anchored_baseband`,
+derived: the detector's frequency is where option 1 says the station is);
+the event format, the consumer's rule and the immediate text are this
+port's interface choices (owner decision D1 for `--decoder`); probability
+1, speed 0 and confidence 0 are placeholders for values the bank does not
+produce.
+
 ## 9. Timing and latency
 
 | Stage | Delay |
@@ -2757,7 +2873,7 @@ bound of the port, not a parameter.
 | Character / word gap | > 2 / > 5 dits | classical_decoder.cpp | standard midpoints |
 | Speed window / range | 24 marks, 5–60 WPM | classical_decoder.cpp | heuristic |
 | Edge-shortening ratio band | 3.0–3.85 | classical_decoder.cpp | measured |
-| Front end | Matched (default) or Envelope | `ClassicalDecoderConfig::front_end`; `--front-end` | owner decision 2026-09-29 |
+| Decoder | Matched (default), Envelope or the bank | `ClassicalDecoderConfig::front_end` (`FrontEnd::Bank` makes the engine create a `BankDecoder`); `kz4ap-bench --decoder` (`--front-end` its old alias) | Matched default and Envelope owner decisions 2026-09-29; the bank selectable (owner decision D1, 2026-10-03) |
 | LLR keying hysteresis (Matched) | g > +1 nat down, g < −1 nat up; the key-up threshold, −1 nat, is also the evidence that a mark's start was observed (row "Marks not counted for speed", Task 16) | `ClassicalDecoderConfig::llr_hysteresis` | heuristic |
 | Filter follows speed after (Matched) | 8 marks in the speed window (8 new ones after a re-acquisition) | `ClassicalDecoderConfig::follow_after_marks` | heuristic |
 | Dit-estimate growth bound (Matched) | decided: at most ×1.25 per mark while the filter follows the speed, and the filter's own dit at most ×1.25 per mark from its first follow step (from the 20 ms acquisition dit). Applied at each key-up counted for speed; a dropout merge restores the state before the merged mark's update, so each physical mark is bounded once (Task 15) | `ClassicalDecoderConfig::max_dit_growth` | heuristic value (owner decisions 2026-09-29); applied per physical mark (derived from the code, Task 15; re-measured in section 8b, "Measured: Matched against Envelope" and "Start-up runaway", Task 17) |
@@ -2809,6 +2925,8 @@ bound of the port, not a parameter.
 | Bank fresh fit against the previous | the over's fresh fit replaces the previous over's continued fit with ≥ 8 of the over's marks and spaces and a log-likelihood gain > ½ · 4 · ln n nats on them (4.16 nats at n = 8); the competition ends after 192 (⌈4 N_mem⌉) | `BankConfig::fresh_fit_min_obs`; `bank::kFitParameters`; `bank::Branch` | 8 a placeholder (heuristic); ½ k ln n form derived (BIC), k = 4 heuristic; the end at 4 N_mem derived (e⁻⁴ = 1.8%) |
 | Bank corrections | a replacement at t changes nothing that starts before t − 20 s; overlap cut at max(from, t − 20 s); recorded only if the text differs, with its kept-character count | `BankConfig::correction_reach_s`; `bank::Output::replace_from` | 20 s owner; overlap cut heuristic |
 | Bank switch replacement | from the start of the new branch's character containing the time its eligible run began (its own time base); a fallback pick from the switch's time | `bank::BankChannel` | heuristic (spec 4.8; the fallback rule documented behavior) |
+| Bank anchor mixing (engine) | u[n] = y[n] exp(−jφ[n]), φ[n] = 2π (Σ_{m≤n} Δ[m] − Δ[n]) / r, Δ = detector frequency (oracle: the label's, without its drift) − channel center, Hz, per channel block; no tracker | `BankDecoder::process` | the prototype's `anchored_baseband` (option 1: the detector decides where the station is) |
+| Bank events (engine) | new characters, then corrections (index kept, the bank's characters from it on, time, reason), applied in order; final text = all corrections applied, immediate text = characters as first appended | `TextCorrection`, `DecodeUpdate::corrections`, `DecodedTextEvent::corrections`; bench `TrackText` | interface choice of the port (owner decision D1 for `--decoder`) |
 
 ## 11. Definitions used in tests and the benchmark
 

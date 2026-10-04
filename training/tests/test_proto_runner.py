@@ -23,7 +23,7 @@ def test_record_runs_the_bench_on_every_oracle_scoring(tmp_path, monkeypatch):
     oracle = [c for c in calls if "--oracle" in c]
     assert [c[c.index("--record-channels") + 1] for c in oracle] == [
         str(tmp_path / "channels" / "a"), str(tmp_path / "channels" / "a.stations")]
-    assert all(c[c.index("--front-end") + 1] == "envelope" for c in oracle)
+    assert all(c[c.index("--decoder") + 1] == "envelope" for c in oracle)
     # b is not an oracle recording: its detector channels are recorded once (Task 11b)
     assert [c[c.index("--record-channels") + 1] for c in calls if "--oracle" not in c] == [
         str(tmp_path / "channels" / "b.detector")]
@@ -103,10 +103,16 @@ def test_oracle_copies_are_recorded_and_scored_by_the_engine_front_ends(tmp_path
     calls = []
     monkeypatch.setattr(subprocess, "run", lambda cmd, **k: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "CER 0\n", ""))
     runner.score_engine_copies(tmp_path, tmp_path / "kz4ap-bench")
-    assert [(c[c.index("--front-end") + 1], c[c.index("--json") + 1]) for c in calls] == [
+    assert [(c[c.index("--decoder") + 1], c[c.index("--json") + 1]) for c in calls] == [
         ("envelope", str(tmp_path / "results" / "baseline" / "p.oracle.json")),
         ("matched", str(tmp_path / "results" / "matched" / "p.oracle.json"))]
     assert all("--oracle" in c and c[1] == str(tmp_path / "p.wav") for c in calls)
+    # The bank decoder: --decoder bank into results/bank, asked for by name on the command line.
+    calls.clear()
+    runner.main(["engine-copies", "--out", str(tmp_path), "--bench", str(tmp_path / "kz4ap-bench"),
+                 "--decoder", "bank"])
+    assert [(c[c.index("--decoder") + 1], c[c.index("--json") + 1]) for c in calls] == [
+        ("bank", str(tmp_path / "results" / "bank" / "p.oracle.json"))]
 
 
 def test_detector_path_is_recorded_decoded_as_tracks_and_scored_under_the_engine_names(tmp_path, monkeypatch):
@@ -117,7 +123,7 @@ def test_detector_path_is_recorded_decoded_as_tracks_and_scored_under_the_engine
     monkeypatch.setattr(subprocess, "run", lambda cmd, **k: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "CER 0\n", ""))
     runner.record(tmp_path, tmp_path / "kz4ap-bench", only="^h")
     (cmd,) = calls
-    assert "--oracle" not in cmd and cmd[cmd.index("--front-end") + 1] == "matched"
+    assert "--oracle" not in cmd and cmd[cmd.index("--decoder") + 1] == "matched"
     assert cmd[cmd.index("--record-channels") + 1] == str(tmp_path / "channels" / "h.detector")
     # a detector recording with one track, decoded as a "tracks" file
     record_dir = tmp_path / "channels" / "h.detector"

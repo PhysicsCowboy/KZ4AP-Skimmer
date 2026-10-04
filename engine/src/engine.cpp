@@ -1,5 +1,7 @@
 #include "kz4ap/engine.hpp"
 
+#include "kz4ap/bank_decoder.hpp"
+
 #include <chrono>
 #include <stdexcept>
 #include <utility>
@@ -96,9 +98,10 @@ void Engine::process_hop(std::span<const Sample> hop) {
         bus_.publish(Event{std::move(frame)});
         for (const auto id : update.died) close_channel(id);
         for (const auto& track : update.born) open_channel(track, channelizer_.hz_to_bin(track.freq_hz));
-        if (!oracle_ && config_.decoder.front_end == FrontEnd::Matched) {
+        if (!oracle_ && config_.decoder.front_end != FrontEnd::Envelope) {
             // Option 1: the detector decides where each channel's station is (its track follows its own
-            // peak); the channel's tracker is anchored there before its next block.
+            // peak); the channel's tracker (Matched) is anchored there, or the bank's mixing set there, before
+            // its next block.
             for (const auto& t : detector_.tracks()) {
                 if (const auto c = channels_.find(t.id); c != channels_.end()) c->second.detector_freq_hz = t.freq_hz;
             }
@@ -112,11 +115,12 @@ void Engine::process_hop(std::span<const Sample> hop) {
         const double center_hz = channelizer_.bin_to_hz(channel.bin);
         if (tap_) tap_(ChannelBlock{id, first_index, center_hz, s, channel.detector_freq_hz});
         channel.decoder->set_frequency_anchor_hz(channel.detector_freq_hz - center_hz);  // Envelope: ignored
+        // Bank: the block is mixed down by this anchor
         const auto started = std::chrono::steady_clock::now();
         auto update = channel.decoder->process(s, t0);
         decoder_seconds_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
         channel_samples_ += s.size();
-        // Matched mode: the decoder re-centers on the carrier; report the station there.
+        // Matched mode: the decoder re-centers on the carrier; report the station there. Bank: the anchor.
         if (update.freq_offset_hz) channel.track.freq_hz = center_hz + *update.freq_offset_hz;
         publish_update(id, std::move(update));
     });
@@ -125,10 +129,12 @@ void Engine::process_hop(std::span<const Sample> hop) {
 void Engine::open_channel(const Track& track, int bin) {
     channelizer_.add_channel(track.id, bin);
     const double residual_hz = track.freq_hz - channelizer_.bin_to_hz(bin);
-    channels_.emplace(track.id, Channel{track, bin,
-                                        std::make_unique<ClassicalDecoder>(channelizer_.output_rate(), config_.decoder,
-                                                                           residual_hz),
-                                        track.freq_hz});
+    std::unique_ptr<Decoder> decoder;
+    if (config_.decoder.front_end == FrontEnd::Bank)
+        decoder = std::make_unique<BankDecoder>(channelizer_.output_rate(), config_.bank, residual_hz);
+    else
+        decoder = std::make_unique<ClassicalDecoder>(channelizer_.output_rate(), config_.decoder, residual_hz);
+    channels_.emplace(track.id, Channel{track, bin, std::move(decoder), track.freq_hz});
     bus_.publish(Event{TrackEvent{TrackEvent::Kind::Born, track}});
 }
 
@@ -142,10 +148,10 @@ void Engine::close_channel(std::uint32_t id) {
 }
 
 void Engine::publish_update(std::uint32_t id, DecodeUpdate&& update) {
-    if (update.chars.empty()) return;
+    if (update.chars.empty() && update.corrections.empty()) return;  // Envelope and Matched: corrections always empty
     const auto& channel = channels_.at(id);
     bus_.publish(Event{DecodedTextEvent{id, channel.track.freq_hz, std::move(update.chars), update.wpm,
-                                        update.confidence}});
+                                        update.confidence, std::move(update.corrections)}});
 }
 
 }  // namespace kz4ap

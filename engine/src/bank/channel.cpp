@@ -31,6 +31,7 @@ void Output::append_new(const std::vector<Char>& chars) {
     std::size_t first = chars.size();  // the fresh characters are chars[first ...]
     while (first > 0 && !(chars[first - 1].start_s <= last)) --first;
     chars_.insert(chars_.end(), chars.begin() + static_cast<std::ptrdiff_t>(first), chars.end());
+    appended_ += chars.size() - first;
 }
 
 void Output::replace_from(double from_s, const std::vector<Char>& chars, double t_s, const std::string& reason) {

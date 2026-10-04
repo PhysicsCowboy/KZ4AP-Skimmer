@@ -19,6 +19,7 @@ add_library(kz4ap_engine
   src/engine.cpp
   src/matched_front_end.cpp
   src/frequency_tracker.cpp
+  src/bank_decoder.cpp
   ${KZ4AP_BANK_SOURCES}
 )
 add_library(kz4ap::engine ALIAS kz4ap_engine)
@@ -57,6 +58,7 @@ add_executable(kz4ap_bank_tests
   tests/bank/periodicity_test.cpp
   tests/bank/selection_test.cpp
   tests/bank/channel_test.cpp
+  tests/bank_decoder_test.cpp
 )
 target_link_libraries(kz4ap_bank_tests PRIVATE kz4ap::engine nlohmann_json::nlohmann_json GTest::gtest_main)
 target_compile_definitions(kz4ap_bank_tests PRIVATE

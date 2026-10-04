@@ -1,5 +1,6 @@
 #include "report.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -69,6 +70,36 @@ void print_score(const Score& s) {
                 "detected %zu of %zu, %zu false tracks\n",
                 s.cer, s.char_cer, s.space_error_rate, s.first_word_cer, s.nospace_cer, s.detected, s.scored,
                 s.false_tracks);
+}
+
+void add_immediate_score(nlohmann::json& score, const Score& immediate) {
+    score["cer_immediate"] = immediate.cer;
+    auto& signals = score.at("signals");
+    if (signals.size() != immediate.signals.size()) throw std::logic_error("immediate score of other labels");
+    for (std::size_t i = 0; i < signals.size(); ++i) {
+        const auto& sig = immediate.signals[i];
+        signals[i]["decoded_immediate"] = sig.decoded;
+        signals[i]["edits_immediate"] = sig.edits;
+        signals[i]["cer_immediate"] = sig.cer;
+    }
+}
+
+void TrackText::apply(const std::vector<kz4ap::DecodedSymbol>& chars,
+                      const std::vector<kz4ap::TextCorrection>& corrections) {
+    for (const auto& c : chars) {
+        final_.push_back(c.text);
+        immediate_ += c.text;
+    }
+    for (const auto& k : corrections) {
+        final_.resize(std::min(k.from_index, final_.size()));  // never indexes past the published characters
+        for (const auto& c : k.chars) final_.push_back(c.text);
+    }
+}
+
+std::string TrackText::final_text() const {
+    std::string s;
+    for (const auto& t : final_) s += t;
+    return s;
 }
 
 DecodedTexts parse_decoded_texts(const std::string& json_text) {

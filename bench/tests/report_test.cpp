@@ -80,3 +80,42 @@ TEST(Report, DetectorTracksAreScoredByFrequencyWithFalseTracks) {
     EXPECT_THROW(parse_decoded_texts(R"({"front_end": "x", "texts": [], "tracks": []})"), std::runtime_error);
     EXPECT_TRUE(parse_decoded_texts(R"({"front_end": "x", "tracks": []})").detector);  // no track opened
 }
+
+namespace {
+
+std::vector<kz4ap::DecodedSymbol> symbols(const std::vector<std::string>& texts) {
+    std::vector<kz4ap::DecodedSymbol> out;
+    for (const auto& t : texts) out.push_back({t, 1.0f, 0.0, 0.0});
+    return out;
+}
+
+}  // namespace
+
+TEST(Report, TrackTextAppliesCorrectionsByIndexToTheFinalTextOnly) {
+    TrackText t;
+    t.apply(symbols({"C", "Q", " ", "D"}), {});
+    t.apply({}, {kz4ap::TextCorrection{1, symbols({"Q", "E"}), 2.0, "switch"}});
+    EXPECT_EQ(t.final_text(), "CQE");
+    EXPECT_EQ(t.immediate_text(), "CQ D");
+    // Chars first, then corrections; a correction's index is clipped to the characters published.
+    t.apply(symbols({"X"}), {kz4ap::TextCorrection{99, symbols({"Y"}), 3.0, "rekey"}});
+    EXPECT_EQ(t.final_text(), "CQEXY");
+    EXPECT_EQ(t.immediate_text(), "CQ DX");
+    t.apply({}, {kz4ap::TextCorrection{0, {}, 4.0, "timeout"}});
+    EXPECT_EQ(t.final_text(), "");
+    EXPECT_EQ(t.immediate_text(), "CQ DX");
+}
+
+TEST(Report, ImmediateScoreIsAddedBesideTheFinalOne) {
+    const Labels labels = two_labels();
+    const Score final_score = score(labels.signals, {{1, 1000.0, "CQ K1ABC"}, {2, 2000.0, "TU"}}, 50.0, true);
+    const Score immediate = score(labels.signals, {{1, 1000.0, "CQ K1ABD"}, {2, 2000.0, "TU"}}, 50.0, true);
+    auto j = score_json(labels, final_score, {});
+    add_immediate_score(j, immediate);
+    EXPECT_DOUBLE_EQ(j.at("cer").get<double>(), 0.0);
+    EXPECT_DOUBLE_EQ(j.at("cer_immediate").get<double>(), immediate.cer);
+    EXPECT_GT(immediate.cer, 0.0);
+    EXPECT_EQ(j.at("signals")[0].at("decoded_immediate"), "CQ K1ABD");
+    EXPECT_EQ(j.at("signals")[0].at("edits_immediate"), 1);
+    EXPECT_DOUBLE_EQ(j.at("signals")[0].at("cer_immediate").get<double>(), immediate.signals[0].cer);
+}

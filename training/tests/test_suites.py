@@ -7,6 +7,7 @@ import pytest
 
 from kz4ap_synth.generate import Sender, SignalSpec, qso_spec, scenario_band
 from kz4ap_synth.messages import Over
+from kz4ap_synth import suites
 from kz4ap_synth.morse import symbols
 from kz4ap_synth.suites import (
     SUITES,
@@ -351,7 +352,35 @@ def test_run_passes_the_front_end_to_the_bench_for_every_front_end(tmp_path, mon
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     run_suite(tmp_path, tmp_path / "kz4ap-bench", ["baseline", "matched"])
-    assert [c[c.index("--front-end") + 1] for c in calls] == ["envelope", "matched"]
+    assert [c[c.index("--decoder") + 1] for c in calls] == ["envelope", "matched"]
+    assert all("--front-end" not in c for c in calls)
+
+
+def test_run_scores_the_bank_decoder_into_results_bank(tmp_path, monkeypatch):
+    (tmp_path / "manifest.json").write_text(json.dumps({"suite": "t", "recordings": [
+        {"name": "x", "group": "g", "oracle": True, "wav": "x.wav", "labels": "x.json", "station_labels": None}]}))
+    calls = []
+    monkeypatch.setattr(subprocess, "run",
+                        lambda cmd, *a, **k: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "CER 0.0\n", ""))
+    run_suite(tmp_path, tmp_path / "kz4ap-bench", ["bank"])
+    (cmd,) = calls
+    assert cmd[cmd.index("--decoder") + 1] == "bank" and "--oracle" in cmd
+    assert cmd[cmd.index("--json") + 1] == str(tmp_path / "results" / "bank" / "x.json")
+    assert (tmp_path / "results" / "bank").is_dir()
+
+
+def test_the_run_command_takes_decoder_and_its_old_name(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(suites, "run_suite", lambda out, bench, fes, only=None: seen.append(fes))
+    suites.main(["run", "--out", str(tmp_path), "--bench", "b", "--decoder", "bank", "--front-end", "matched"])
+    assert seen == [["bank", "matched"]]
+    with pytest.raises(SystemExit):
+        suites.main(["run", "--out", str(tmp_path), "--bench", "b", "--decoder", "neural"])
+
+
+def test_the_bank_decoder_has_the_matched_paths_regimes():
+    for df in (10.0, 50.0, 80.0, 93.8, 93.9, 150.0):
+        assert qso_regime(df, "bank") == qso_regime(df, "matched")
 
 
 def _drift_recording(tmp_path, oracle):

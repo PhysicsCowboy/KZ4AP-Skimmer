@@ -3,6 +3,8 @@
 #include "labels.hpp"
 #include "scoring.hpp"
 
+#include "kz4ap/decoder.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <cstdint>
@@ -23,6 +25,27 @@ nlohmann::json score_json(const Labels& labels, const Score& s, const std::map<s
 
 // The per-label lines and the summary line kz4ap-bench prints.
 void print_score(const Score& s);
+
+// Adds the score of the immediate text (characters as first published, corrections ignored) to a score_json
+// object: "cer_immediate" in the totals and, per signal, "decoded_immediate", "edits_immediate" and "cer_immediate".
+// immediate must score the same labels as the object.
+void add_immediate_score(nlohmann::json& score, const Score& immediate);
+
+// One track's text as the engine's DecodedTextEvents build it (kz4ap::TextCorrection): the final text, with every
+// correction applied, and the immediate text, the characters as first published with corrections ignored.
+class TrackText {
+public:
+    // An event's characters are appended (to both texts), then its corrections are applied to the final text, in
+    // order: each keeps the first from_index characters (clipped to the characters there are) and replaces the
+    // rest by its chars.
+    void apply(const std::vector<kz4ap::DecodedSymbol>& chars, const std::vector<kz4ap::TextCorrection>& corrections);
+    std::string final_text() const;
+    const std::string& immediate_text() const { return immediate_; }
+
+private:
+    std::vector<std::string> final_;
+    std::string immediate_;
+};
 
 // Text decoded outside the engine (kz4ap-bench --score-decoded), in one of two forms: {"front_end", "recording",
 // "texts": [one per label, in the labels file's order]} (oracle channels, matched by order), or {"front_end",

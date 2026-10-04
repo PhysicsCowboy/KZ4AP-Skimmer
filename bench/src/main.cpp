@@ -37,12 +37,21 @@ struct Args {
     std::optional<std::filesystem::path> score_decoded;
     bool timing = true;
     bool oracle = false;
-    FrontEnd front_end = FrontEnd::Matched;
+    FrontEnd front_end = FrontEnd::Matched;  // the decoder (--decoder; --front-end is its old name, kept as an alias)
 };
+
+const char* decoder_name(FrontEnd d) {
+    switch (d) {
+        case FrontEnd::Envelope: return "envelope";
+        case FrontEnd::Matched: return "matched";
+        case FrontEnd::Bank: return "bank";
+    }
+    return "?";
+}
 
 constexpr const char* kUsage =
     "usage: kz4ap-bench RECORDING.wav [--labels LABELS.json] [--json OUT.json]\n"
-    "                   [--no-timing] [--baseline BASELINE.json] [--oracle] [--front-end envelope|matched]\n"
+    "                   [--no-timing] [--baseline BASELINE.json] [--oracle] [--decoder envelope|matched|bank]\n"
     "                   [--record-channels DIR (with --oracle: the oracle channels; without: the detector's)]\n"
     "       kz4ap-bench --labels LABELS.json --score-decoded DECODED.json [--json OUT.json] [--baseline BASELINE.json]\n";
 
@@ -61,11 +70,12 @@ Args parse_args(int argc, char** argv) {
         else if (a == "--oracle") args.oracle = true;
         else if (a == "--record-channels") args.record_channels = value();
         else if (a == "--score-decoded") args.score_decoded = value();
-        else if (a == "--front-end") {
+        else if (a == "--decoder" || a == "--front-end") {  // --front-end: the old name, kept for existing scripts
             const auto v = value().string();
             if (v == "envelope" || v == "baseline") args.front_end = FrontEnd::Envelope;
             else if (v == "matched") args.front_end = FrontEnd::Matched;
-            else throw std::runtime_error("--front-end must be envelope or matched\n" + std::string(kUsage));
+            else if (v == "bank") args.front_end = FrontEnd::Bank;
+            else throw std::runtime_error(a + " must be envelope, matched or bank\n" + std::string(kUsage));
         }
         else if (!a.empty() && a[0] == '-') throw std::runtime_error("unknown option " + a + "\n" + kUsage);
         else if (!args.recording) args.recording = a;
@@ -85,12 +95,19 @@ Args parse_args(int argc, char** argv) {
     return args;
 }
 
-// Scores, prints, fills out["score"] and checks the baseline; returns the exit code.
+// Scores, prints, fills out["score"] and checks the baseline (on the final text); returns the exit code.
+// immediate: the same tracks with their immediate text (the engine's runs), scored beside the final text.
 int score_and_report(const Labels& labels, const std::vector<DecodedTrack>& tracks,
                      const std::map<std::uint32_t, double>& tracked_freq_hz, bool match_by_order,
-                     const std::optional<std::filesystem::path>& baseline, nlohmann::json& out) {
+                     const std::optional<std::filesystem::path>& baseline, nlohmann::json& out,
+                     const std::vector<DecodedTrack>* immediate = nullptr) {
     const Score s = score(labels.signals, tracks, 50.0, match_by_order);
     out["score"] = score_json(labels, s, tracked_freq_hz);
+    if (immediate) {
+        const Score si = score(labels.signals, *immediate, 50.0, match_by_order);
+        add_immediate_score(out["score"], si);
+        std::printf("immediate text (corrections ignored): CER %.4f\n", si.cer);
+    }
     print_score(s);
     if (!baseline) return 0;
     std::ifstream f(*baseline);
@@ -115,10 +132,16 @@ void write_json(const std::optional<std::filesystem::path>& path, const nlohmann
     if (!f) throw std::runtime_error("cannot write " + path->string());
 }
 
-void add_tracks(nlohmann::json& out, const std::vector<DecodedTrack>& tracks) {
+// "text" is the final text; "text_immediate" (when immediate is given, one per track in the same order) the text as
+// first published, corrections ignored.
+void add_tracks(nlohmann::json& out, const std::vector<DecodedTrack>& tracks,
+                const std::vector<DecodedTrack>* immediate = nullptr) {
     out["tracks"] = nlohmann::json::array();
-    for (const auto& t : tracks) {
-        out["tracks"].push_back({{"id", t.id}, {"freq_hz", t.freq_hz}, {"text", normalize_text(t.text)}});
+    for (std::size_t i = 0; i < tracks.size(); ++i) {
+        const auto& t = tracks[i];
+        nlohmann::json j = {{"id", t.id}, {"freq_hz", t.freq_hz}, {"text", normalize_text(t.text)}};
+        if (immediate) j["text_immediate"] = normalize_text((*immediate)[i].text);
+        out["tracks"].push_back(std::move(j));
         std::printf("track %4u  %+10.1f Hz  %s\n", t.id, t.freq_hz, normalize_text(t.text).c_str());
     }
 }
@@ -133,7 +156,8 @@ int run_engine(const Args& args) {
     }
 
     EventBus bus;
-    std::map<std::uint32_t, DecodedTrack> tracks;
+    std::map<std::uint32_t, DecodedTrack> tracks;  // text filled in at the end, from texts
+    std::map<std::uint32_t, TrackText> texts;
     std::optional<ChannelRecorder> recorder;
     bus.subscribe([&](const Event& e) {
         const auto* t = std::get_if<TrackEvent>(&e);
@@ -143,7 +167,7 @@ int run_engine(const Args& args) {
         } else if (t && t->kind == TrackEvent::Kind::Died) {
             if (recorder) recorder->close_track(t->track.id);
         } else if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
-            for (const auto& c : d->chars) tracks[d->track_id].text += c.text;
+            texts[d->track_id].apply(d->chars, d->corrections);
             tracks[d->track_id].last_freq_hz = d->freq_hz;
         }
     });
@@ -151,6 +175,7 @@ int run_engine(const Args& args) {
     EngineConfig config;
     config.sample_rate = reader.sample_rate();
     if (args.front_end == FrontEnd::Envelope) config = with_envelope_path(config);
+    config.decoder.front_end = args.front_end;
     if (args.oracle) {
         for (const auto& s : labels->signals) config.oracle_frequencies_hz.push_back(s.freq_offset_hz);
     }
@@ -181,14 +206,22 @@ int run_engine(const Args& args) {
     nlohmann::json out;
     out["recording"] = args.recording->filename().string();
     out["duration_s"] = duration_s;
-    out["front_end"] = args.front_end == FrontEnd::Matched ? "matched" : "envelope";
-    std::vector<DecodedTrack> track_list;
+    out["front_end"] = decoder_name(args.front_end);  // the old key, read by stage 1's tooling
+    out["decoder"] = decoder_name(args.front_end);
+    std::vector<DecodedTrack> track_list;     // final text
+    std::vector<DecodedTrack> immediate_list; // immediate text
     std::map<std::uint32_t, double> tracked_freq_hz;
     for (const auto& [id, t] : tracks) {
-        track_list.push_back(t);
+        DecodedTrack final_track = t, immediate_track = t;
+        if (const auto it = texts.find(id); it != texts.end()) {
+            final_track.text = it->second.final_text();
+            immediate_track.text = it->second.immediate_text();
+        }
+        track_list.push_back(std::move(final_track));
+        immediate_list.push_back(std::move(immediate_track));
         tracked_freq_hz[id] = t.last_freq_hz;
     }
-    add_tracks(out, track_list);
+    add_tracks(out, track_list, &immediate_list);
     out["channel_seconds"] = stats.channel_seconds;
     if (args.timing) {
         const auto per_channel_ms = [&](double seconds) {
@@ -204,7 +237,10 @@ int run_engine(const Args& args) {
                     duration_s, wall_s, duration_s / wall_s, per_channel_ms(cpu_s), per_channel_ms(stats.decoder_seconds));
     }
     int exit_code = 0;
-    if (labels) exit_code = score_and_report(*labels, track_list, tracked_freq_hz, args.oracle, args.baseline, out);
+    if (labels) {
+        exit_code =
+            score_and_report(*labels, track_list, tracked_freq_hz, args.oracle, args.baseline, out, &immediate_list);
+    }
     write_json(args.json, out);
     return exit_code;
 }
@@ -223,6 +259,7 @@ int score_decoded(const Args& args) {
     out["recording"] = decoded.recording;
     out["duration_s"] = labels.duration_s;
     out["front_end"] = decoded.front_end;
+    out["decoder"] = decoded.front_end;
     add_tracks(out, tracks);
     out["channel_seconds"] = 0.0;  // no engine ran
     const int exit_code = score_and_report(labels, tracks, tracked_freq_hz, !decoded.detector, args.baseline, out);

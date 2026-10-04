@@ -79,13 +79,18 @@ section 8b):
 
     $env:PYTHONPATH = "training"
     .venv\Scripts\python -m kz4ap_synth.suites generate --suite full --seeds 3 --out build/suite/full
-    .venv\Scripts\python -m kz4ap_synth.suites run --out build/suite/full --bench build\windows\bench\Release\kz4ap-bench.exe --front-end baseline --front-end matched
+    .venv\Scripts\python -m kz4ap_synth.suites run --out build/suite/full --bench build\windows\bench\Release\kz4ap-bench.exe --decoder baseline --decoder matched
     .venv\Scripts\python -m kz4ap_synth.suites summarize --out build/suite/full
 
-`--front-end matched` (the default) selects the dit-matched front end with
-frequency re-centering, each channel following the station the signal
+`kz4ap-bench --decoder` selects the decoder (`--front-end` is its old name and
+still works). `--decoder matched` (the default) selects the dit-matched decoder
+with frequency re-centering, each channel following the station the signal
 detector assigns it (see `docs/signal-processing.md`, sections 6 and 8b);
-`--front-end envelope` (also `baseline`) selects the milestone-1 pipeline.
+`--decoder envelope` (also `baseline`) selects the milestone-1 pipeline;
+`--decoder bank` selects the filter-bank decoder (section 8c), whose results
+the suites write to `results/bank`. The bench writes each track's final text
+(`text`, corrections applied) and its immediate text (`text_immediate`, the
+characters as first published) and scores both (`cer`, `cer_immediate`).
 
 ## Known limitations
 

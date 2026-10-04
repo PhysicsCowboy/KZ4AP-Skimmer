@@ -67,9 +67,13 @@ public:
     const std::vector<Char>& chars() const { return chars_; }
     const std::vector<Correction>& corrections() const { return corrections_; }
     double reach_s() const { return reach_s_; }
+    // The number of characters append_new has published in all (corrections do not count). Observation only, for
+    // the engine's BankDecoder (its immediate text); not in the prototype.
+    std::size_t appended() const { return appended_; }
 
 private:
     double reach_s_;
+    std::size_t appended_ = 0;
     std::vector<Char> chars_;
     std::vector<Correction> corrections_;
 };

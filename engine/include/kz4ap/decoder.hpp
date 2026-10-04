@@ -2,6 +2,7 @@
 
 #include "kz4ap/types.hpp"
 
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <string>
@@ -16,8 +17,22 @@ struct DecodedSymbol {
     double end_s;
 };
 
-struct DecodeUpdate {
+// A correction of a channel's published text (the bank decoder; Envelope and Matched never correct). The channel's
+// characters form one list, indexed from 0 in the order they were published; a correction keeps the first
+// from_index characters and replaces everything after them by chars. A consumer applies an update's chars first
+// (appended to the list) and then its corrections, in order, clipping from_index to the list's length; chars are
+// the channel's characters from from_index on as they stand after the update (so they include characters the same
+// update appended after the correction was made).
+struct TextCorrection {
+    std::size_t from_index = 0;
     std::vector<DecodedSymbol> chars;
+    double t_s = 0;      // when the decoder made the correction, s (stream time)
+    std::string reason;  // the bank's reason: "switch", "rekey" or "timeout"
+};
+
+struct DecodeUpdate {
+    std::vector<DecodedSymbol> chars;  // characters newly published, appended to the channel's list
+    std::vector<TextCorrection> corrections;  // applied after chars, in order (always empty for Envelope and Matched)
     float wpm = 0;
     float confidence = 0;  // running average of recent character probabilities
     std::optional<double> freq_offset_hz;  // the station's offset from its channel's center, Hz, if the decoder tracks it

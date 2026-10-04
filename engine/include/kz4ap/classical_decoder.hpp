@@ -15,6 +15,7 @@ namespace kz4ap {
 enum class FrontEnd {
     Envelope,  // the baseline: |y|, smoothing, keying at 40%/60% between space and mark levels
     Matched,   // re-centering, a filter matched to the dit, keying on the posterior log-odds
+    Bank,      // the bank decoder (BankDecoder, milestone 2c), not a ClassicalDecoder: the engine creates a BankDecoder
 };
 
 struct ClassicalDecoderConfig {
@@ -47,7 +48,8 @@ struct ClassicalDecoderConfig {
 class ClassicalDecoder final : public Decoder {
 public:
     // initial_offset_hz: the station's offset from its channel's center as the detector
-    // measured it, Hz. The Matched front end starts re-centering there.
+    // measured it, Hz. The Matched front end starts re-centering there. Throws std::invalid_argument for an invalid
+    // config, and for front_end == FrontEnd::Bank (see BankDecoder).
     explicit ClassicalDecoder(double sample_rate, ClassicalDecoderConfig config = {}, double initial_offset_hz = 0.0);
 
     DecodeUpdate process(std::span<const Sample> samples, double t0_s) override;

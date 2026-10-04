@@ -1,5 +1,6 @@
 #pragma once
 
+#include "kz4ap/bank/bank_config.hpp"
 #include "kz4ap/channelizer.hpp"
 #include "kz4ap/classical_decoder.hpp"
 #include "kz4ap/event_bus.hpp"
@@ -40,7 +41,8 @@ struct EngineConfig {
     double channel_cutoff_hz = 150.0;
     DetectorConfig detector;  // sample_rate, fft_size, hop and attribution_distance_hz (from
                               // channel_distance_hz) are overwritten by the engine
-    ClassicalDecoderConfig decoder;
+    ClassicalDecoderConfig decoder;  // decoder.front_end selects the decoder: Envelope, Matched or Bank
+    bank::BankConfig bank;           // the bank decoder's configuration (decoder.front_end == FrontEnd::Bank)
 
     // Oracle mode, for the benchmark: when not empty, a channel is opened at each of
     // these frequencies (Hz from the span's center, rounded to the nearest FFT bin)

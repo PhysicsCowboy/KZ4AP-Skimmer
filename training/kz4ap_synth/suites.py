@@ -3,7 +3,7 @@ scores each with kz4ap-bench, and a summary.
 
     python -m kz4ap_synth.suites generate --suite full --out build/suite/full [--seeds 3]
     python -m kz4ap_synth.suites run --out build/suite/full --bench PATH/kz4ap-bench \
-        --front-end baseline --front-end matched
+        --decoder baseline --decoder matched [--decoder bank]
     python -m kz4ap_synth.suites summarize --out build/suite/full
 
 "smoke" is the recording bench/smoke.sh makes (the CI check); "full" is for
@@ -64,8 +64,10 @@ VE3NEA_SNR_DB = [round(r + RHO_TO_S500_DB, 2) for r in VE3NEA_RHO_DB]  # S500: -
 VE3NEA_SPREADS_HZ = (0.1, 0.3, 1.0, 3.0)  # his f_D grid, Hz
 VE3NEA_EDGE_S = 0.002  # his raised-cosine keying edges, s, centered on each element's ends
 CER_THRESHOLDS = (0.05, 0.10)
-FRONT_ENDS = ("baseline", "matched")
-BENCH_FRONT_END = {"baseline": "envelope", "matched": "matched"}  # kz4ap-bench --front-end; its default is Matched
+# The engine's decoders by results folder (results/<name>); the identifiers keep their old "front end" names.
+FRONT_ENDS = ("baseline", "matched", "bank")
+# kz4ap-bench --decoder (--front-end is its old alias); the bench's default is Matched
+BENCH_FRONT_END = {"baseline": "envelope", "matched": "matched", "bank": "bank"}
 COUNT_KEYS = ("symbols", "edits", "chars", "char_edits", "spaces", "space_edits",
               "first_word_symbols", "first_word_edits", "nospace_symbols", "nospace_edits")
 BOOTSTRAP_RESAMPLES = 1000
@@ -128,9 +130,11 @@ def qso_regime(offset_hz: float, front_end: str = "baseline") -> str:
     "matched" (the default path): below D_ch = 47 Hz one track; from D_ch up to
     MATCHED_AMBIGUOUS_BELOW_HZ (D_ch + 2 bins, 93.9 Hz) ambiguous, because the detector
     compares interpolated frequencies that can each be up to one bin from their carriers
-    (derived bound; see MATCHED_AMBIGUOUS_BELOW_HZ); from there on, two tracks."""
+    (derived bound; see MATCHED_AMBIGUOUS_BELOW_HZ); from there on, two tracks.
+
+    "bank": the bank decoder runs on the Matched path's detector, so its regimes are Matched's."""
     df = abs(offset_hz)
-    if front_end == "matched":
+    if front_end in ("matched", "bank"):
         if df < CHANNEL_DISTANCE_HZ:
             return "same-track"
         if df < MATCHED_AMBIGUOUS_BELOW_HZ:
@@ -546,7 +550,7 @@ def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None) -
                        "--json", str(results / f"{result}.json")]
                 if rec["oracle"]:
                     cmd.append("--oracle")
-                cmd += ["--front-end", BENCH_FRONT_END[fe]]
+                cmd += ["--decoder", BENCH_FRONT_END[fe]]
                 done = subprocess.run(cmd, capture_output=True, text=True)
                 if done.returncode != 0:
                     raise RuntimeError(f"kz4ap-bench failed on {result} ({fe}):\n{done.stderr}")
@@ -1037,7 +1041,8 @@ def main(argv=None) -> None:
     r = sub.add_parser("run", help="score every recording with kz4ap-bench")
     r.add_argument("--out", type=Path, required=True)
     r.add_argument("--bench", type=Path, required=True)
-    r.add_argument("--front-end", dest="front_ends", action="append", choices=FRONT_ENDS)
+    r.add_argument("--decoder", "--front-end", dest="front_ends", action="append", choices=FRONT_ENDS,
+                   help="the decoder (repeatable; --front-end is its old name)")
     r.add_argument("--only", default=None, help="regular expression: score only matching recordings")
     s = sub.add_parser("summarize", help="write summary.json and summary.md")
     s.add_argument("--out", type=Path, required=True)

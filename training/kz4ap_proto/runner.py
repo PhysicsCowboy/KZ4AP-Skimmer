@@ -3,7 +3,7 @@ the prototype, score the decoded text with kz4ap-bench --score-decoded, and repo
 results in the suite's results/ directory.
 
     python -m kz4ap_proto.runner record --out build/suite/full3 --bench PATH/kz4ap-bench [--only REGEX]
-    python -m kz4ap_proto.runner engine-copies --out build/suite/full3 --bench PATH/kz4ap-bench [--only REGEX]
+    python -m kz4ap_proto.runner engine-copies --out build/suite/full3 --bench PATH/kz4ap-bench [--only REGEX] [--decoder baseline|matched|bank ...]
     python -m kz4ap_proto.runner decode --out build/suite/full3 [--name bank-proto] [--set KEY=VALUE ...] [--only REGEX] [--jobs N]
     python -m kz4ap_proto.runner score --out build/suite/full3 --bench PATH/kz4ap-bench [--name bank-proto] [--only REGEX]
     python -m kz4ap_proto.runner report --out build/suite/full3 [--name bank-proto] [--only REGEX] [--suffix TEXT]
@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from kz4ap_synth.suites import BENCH_FRONT_END, _scorings, oracle_copies
+from kz4ap_synth.suites import BENCH_FRONT_END, FRONT_ENDS, _scorings, oracle_copies
 
 from .channel import ChannelDecoder
 from .params import ProtoConfig
@@ -65,14 +65,14 @@ def detector_jobs(out_dir: Path, only: str | None = None) -> list[dict]:
 
 def record(out_dir: Path, bench: Path, only: str | None = None) -> None:
     """Records the oracle scorings' channels (--oracle) and the detector's channels of every non-oracle recording
-    (the Matched path's detector: --front-end matched, no --oracle)."""
+    (the Matched path's detector: --decoder matched, no --oracle)."""
     out_dir = Path(out_dir)
     for job in detector_jobs(out_dir, only):
         target = out_dir / "channels" / job["result"]
         if (target / "channels.json").exists():
             continue
         cmd = [str(bench), str(out_dir / job["wav"]), "--labels", str(out_dir / job["labels"]),
-               "--front-end", "matched", "--no-timing", "--record-channels", str(target),
+               "--decoder", "matched", "--no-timing", "--record-channels", str(target),
                "--json", str(target / "bench.json")]
         done = subprocess.run(cmd, capture_output=True, text=True)
         if done.returncode != 0:
@@ -83,7 +83,7 @@ def record(out_dir: Path, bench: Path, only: str | None = None) -> None:
         if (target / "channels.json").exists():
             continue
         cmd = [str(bench), str(out_dir / job["wav"]), "--labels", str(out_dir / job["labels"]), "--oracle",
-               "--front-end", "envelope", "--no-timing", "--record-channels", str(target),
+               "--decoder", "envelope", "--no-timing", "--record-channels", str(target),
                "--json", str(target / "bench.json")]
         done = subprocess.run(cmd, capture_output=True, text=True)
         if done.returncode != 0:
@@ -92,9 +92,10 @@ def record(out_dir: Path, bench: Path, only: str | None = None) -> None:
 
 
 def score_engine_copies(out_dir: Path, bench: Path, front_ends=("baseline", "matched"), only: str | None = None) -> None:
-    """Scores the oracle copies of the detector-only groups with the engine's own front ends
-    (kz4ap-bench --oracle --front-end envelope|matched) into results/<front end>/<name>.oracle.json, so the
-    prototype's rows there compare like for like. Existing results are kept."""
+    """Scores the oracle copies of the detector-path groups with the engine's own decoders
+    (kz4ap-bench --oracle --decoder envelope|matched|bank; front_ends names them by results folder: baseline,
+    matched, bank) into results/<folder>/<name>.oracle.json, so the prototype's rows there compare like for like.
+    Existing results are kept."""
     out_dir = Path(out_dir)
     manifest = json.loads((out_dir / "manifest.json").read_text())
     for rec in manifest["recordings"]:
@@ -107,7 +108,7 @@ def score_engine_copies(out_dir: Path, bench: Path, front_ends=("baseline", "mat
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 cmd = [str(bench), str(out_dir / rec["wav"]), "--labels", str(out_dir / label_file), "--oracle",
-                       "--front-end", BENCH_FRONT_END[fe], "--json", str(target)]
+                       "--decoder", BENCH_FRONT_END[fe], "--json", str(target)]
                 done = subprocess.run(cmd, capture_output=True, text=True)
                 if done.returncode != 0:
                     raise RuntimeError(f"kz4ap-bench failed on {result} ({fe}):\n{done.stderr}")
@@ -299,11 +300,15 @@ def main(argv=None) -> None:
             p.add_argument("--keep-p1", action="store_true")
         if command == "report":
             p.add_argument("--suffix", default="")
+        if command == "engine-copies":
+            p.add_argument("--decoder", dest="front_ends", action="append", choices=FRONT_ENDS,
+                           help="the engine's decoder by results folder (repeatable; default baseline and matched)")
     args = parser.parse_args(argv)
     if args.command == "record":
         record(args.out, args.bench, args.only)
     elif args.command == "engine-copies":
-        score_engine_copies(args.out, args.bench, only=args.only)
+        score_engine_copies(args.out, args.bench, front_ends=tuple(args.front_ends or ("baseline", "matched")),
+                            only=args.only)
     elif args.command == "decode":
         decode(args.out, args.name, parse_values(args.values), args.only, args.jobs, args.keep_p1)
     elif args.command == "score":
