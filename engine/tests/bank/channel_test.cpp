@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <complex>
 #include <cstdio>
@@ -254,15 +255,17 @@ double port_score(const BankChannel& ch, double t_s) {
 TEST(BankChannel, TheTwoPeriodicityNearTiesAreRoundingOnBothSides) {
     // Grid points (s), bit-identical in the port and the prototype, and the prototype's scores of both
     // candidates (Python, recomputed from its buffer at the same recomputation):
-    const double t_a = 0.0979469944911008;   // 97.95 ms: the prototype's pick
-    const double t_b = 0.04462750274310159;  // 44.63 ms: the port's pick
+    // The three near-tied candidates (the fourth best scores about half as much):
+    const std::array<double, 3> t = {0.0979469944911008,     // 97.95 ms: the prototype's pick
+                                     0.04462750274310159,    // 44.63 ms: the Windows build's pick
+                                     0.061973770591775994};  // 61.97 ms: the Linux (glibc) build's pick at farnsworth
     struct Case {
         const char* stream;
         std::size_t update;
-        double proto_a, proto_b;
+        std::array<double, 3> proto;
     };
-    const Case cases[] = {{"noise", 14, 9.501131973816535e-07, 9.501131973816128e-07},
-                          {"farnsworth", 64, 4.732927653831648e-06, 4.732927653812918e-06}};
+    const Case cases[] = {{"noise", 14, {9.501131973816535e-07, 9.501131973816128e-07, 9.501131973746468e-07}},
+                          {"farnsworth", 64, {4.732927653831648e-06, 4.732927653812918e-06, 4.73292765376665e-06}}};
     for (const auto& c : cases) {
         SCOPED_TRACE(c.stream);
         const auto& u = stream_of(c.stream);
@@ -271,22 +274,32 @@ TEST(BankChannel, TheTwoPeriodicityNearTiesAreRoundingOnBothSides) {
         for (std::size_t i = 0; i < u.size() && ch.periodicity_records() <= c.update; i += block)
             ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
         ASSERT_EQ(ch.periodicity_records(), c.update + 1);
-        const double port_a = port_score(ch, t_a);
-        const double port_b = port_score(ch, t_b);
-        std::printf("%s #%zu: T = 97.95 ms: port %.16e, prototype %.16e; T = 44.63 ms: port %.16e, prototype %.16e\n",
-                    c.stream, c.update, port_a, c.proto_a, port_b, c.proto_b);
-        // each side picks its larger; the two candidates differ by rounding on each side. Which one the port
-        // picks depends on the platform's libm (the near-ties above are the Windows build's; with glibc the port's
-        // farnsworth #64 picks 97.95 ms, as the prototype), so the port's pick is checked against its own scores.
+        std::array<double, 3> port{};
+        for (std::size_t j = 0; j < 3; ++j) {
+            port[j] = port_score(ch, t[j]);
+            std::printf("%s #%zu: T = %.2f ms: port %.16e, prototype %.16e\n", c.stream, c.update, 1000.0 * t[j],
+                        port[j], c.proto[j]);
+            expect_close(port[j], c.proto[j]);
+        }
+        // Each side picks its largest; which candidate the port picks depends on the platform's libm, so the
+        // port's pick is checked against its own scores. The prototype picks 97.95 ms.
         const std::optional<double> pick = ch.result().periodicity.back().per_window.front().first;  // a copy
         ASSERT_TRUE(pick.has_value());
-        ASSERT_TRUE(*pick == t_a || *pick == t_b) << *pick;
-        EXPECT_GE(*pick == t_a ? port_a : port_b, *pick == t_a ? port_b : port_a);
-        EXPECT_GT(c.proto_a, c.proto_b);
-        EXPECT_LT(std::abs(port_b - port_a) / port_a, 1e-11);
-        EXPECT_LT((c.proto_a - c.proto_b) / c.proto_a, 1e-11);
-        expect_close(port_a, c.proto_a);
-        expect_close(port_b, c.proto_b);
+        const auto at = std::find(t.begin(), t.end(), *pick);
+        ASSERT_NE(at, t.end()) << *pick;
+        EXPECT_EQ(port[static_cast<std::size_t>(at - t.begin())], *std::max_element(port.begin(), port.end()));
+        EXPECT_GT(c.proto[0], c.proto[1]);
+        EXPECT_GT(c.proto[1], c.proto[2]);
+        // The three candidates differ by rounding on each side: the spread of their scores is below 1e-16 absolute,
+        // the rounding of the normalized autocorrelation's cumulative sums (values up to 1) that the scores are
+        // differences of (relative to the scores of 1e-6 that is up to 2e-11).
+        const auto spread = [](const std::array<double, 3>& s) {
+            return *std::max_element(s.begin(), s.end()) - *std::min_element(s.begin(), s.end());
+        };
+        std::printf("%s #%zu: spread port %.2e, prototype %.2e (absolute)\n", c.stream, c.update, spread(port),
+                    spread(c.proto));
+        EXPECT_LT(spread(port), 1e-16);
+        EXPECT_LT(spread(c.proto), 1e-16);
     }
 }
 
