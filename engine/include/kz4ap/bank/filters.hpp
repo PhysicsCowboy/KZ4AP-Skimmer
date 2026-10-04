@@ -4,6 +4,7 @@
 #pragma once
 
 #include "kz4ap/bank/bank_config.hpp"
+#include "kz4ap/matched_front_end.hpp"
 
 #include <complex>
 #include <cstddef>
@@ -37,7 +38,8 @@ std::vector<double> realized_lengths_s(const BankConfig& cfg, double rate_hz);
 
 // v[m] = (1/n) sum of u[m-n+1 .. m], zeros before the stream: causal, unity gain; computed from a running
 // cumulative sum c, v[m] = (c[m+1] - c[max(m+1-n, 0)]) x (1/n), as in the prototype (numpy divides a complex
-// array by n + 0j by multiplying both parts by 1/n).
+// array by n + 0j by multiplying both parts by 1/n). Throws std::invalid_argument for n < 1 (branch_samples
+// gives at least 1).
 std::vector<std::complex<double>> boxcar(std::span<const std::complex<double>> u, int n);
 
 // |z| as numpy 2's np.abs computes it for complex128 on this build (its SIMD loop): the larger of |re|, |im|
@@ -53,14 +55,14 @@ double boxcar_power_f32(std::complex<double> v);
 // (dimensionless, relative to the 0 Hz response); f in Hz, rate in samples/s.
 double power_response(double f_hz, int n, double rate_hz);
 
-// ln I0(z) for any z: kz4ap::log_bessel_i0 (matched_front_end.cpp), the same Abramowitz & Stegun
-// 9.8.1 / 9.8.2 formula as the prototype's detect.py (compared term by term).
-double log_bessel_i0(double z);
+// Shared with Matched (matched_front_end.cpp), the same formulas as the prototype's detect.py (compared term by
+// term): ln I0(z) for any z, Abramowitz & Stegun 9.8.1 / 9.8.2; and Lambda = -a^2/2 + ln I0(a x), nats, key-down
+// over key-up for x = |v|/sigma_v and a = s/sigma_v.
+using kz4ap::envelope_llr;
+using kz4ap::log_bessel_i0;
 
-// Lambda = -a^2/2 + ln I0(a x), nats (kz4ap::envelope_llr, shared with Matched): key-down over key-up for x = |v|/sigma_v and a = s/sigma_v.
-double envelope_llr(double x, double a);
-
-// 1 / (1 + exp(-g)), g clipped to [-50, 50] nats.
+// 1 / (1 + exp(-g)), g clipped to [-50, 50] nats (detect.py's logistic; Matched's own copy is internal to
+// matched_front_end.cpp).
 double logistic(double g);
 
 }  // namespace kz4ap::bank

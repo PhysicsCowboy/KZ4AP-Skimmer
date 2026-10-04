@@ -34,7 +34,8 @@ def golden_config(cfg: ProtoConfig) -> dict:
 def golden_filters(cfg: ProtoConfig) -> dict:
     """bank.py and detect.py on fixed inputs: the ladder, the boxcar of a seeded complex sequence (numpy
     default_rng(7), 400 samples, real and imaginary parts standard normal, drawn as one (400, 2) array), the
-    boxcar power response, ln I0 and the envelope log-likelihood ratio on a 5 x 5 grid."""
+    boxcar power response, ln I0, the envelope log-likelihood ratio on a 5 x 5 grid, and the logistic of nine
+    log-odds (nats), the clip at +/-50 nats included."""
     lengths = bank.branch_lengths_s(cfg)
     rng = np.random.default_rng(7)
     ri = rng.standard_normal((400, 2))
@@ -63,6 +64,9 @@ def golden_filters(cfg: ProtoConfig) -> dict:
     out["envelope_llr_a"] = as_
     # row-major: index i * 5 + j is x = xs[i], a = as_[j]
     out["envelope_llr"] = [float(detect.envelope_llr(x, a)) for x in xs for a in as_]
+    g = [-1000.0, -50.0, -3.5, -1e-3, 0.0, 0.7, 4.6, 50.0, 1000.0]
+    out["logistic_g"] = g
+    out["logistic"] = detect.logistic(g).tolist()
     return out
 
 
@@ -337,6 +341,9 @@ def golden_fit(cfg: ProtoConfig) -> dict:
         "obs_var_t_s2": [v for _, _, v in seq],
         "probes_s": probes,
         "snapshots": snaps,
+        # resolution_var_s2 itself: [L s, a, r samples/s, sigma_t^2 s^2], a below and above its floor of 1
+        "resolution_cases": [[L, a, r, fit.resolution_var_s2(L, a, r)] for L in (0.0093, 0.04, 0.184)
+                             for a in (0.5, 1.0, 7.3, 50.0) for r in (1500.0, 2000.0)],
     }
 
 

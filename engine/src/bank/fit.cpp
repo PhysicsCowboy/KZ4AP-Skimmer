@@ -519,7 +519,8 @@ std::optional<Fit> DurationFit::best(std::optional<double> prior_t_s, double pri
     const Model& m = *m_;
     const Retained r = retained(history_, m.lam, m.lo, m.hi);
     const std::array<double, 4> refined = refine(*grid, prior_t_s, prior_weight);
-    const double refined_sum = aged_sum(r, terms(refined, r.is_mark, r.log_d, r.var_t, m.lp, m.sigma2, m.log_out).total);
+    const double refined_sum =
+        aged_sum(r, terms(refined, r.is_mark, r.log_d, r.var_t, m.lp, m.sigma2, m.log_out).total);
     const double grid_sum = aged_sum(r, terms(*grid, r.is_mark, r.log_d, r.var_t, m.lp, m.sigma2, m.log_out).total);
     std::array<double, 4> theta = *grid;
     double total_sum = grid_sum;

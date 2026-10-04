@@ -1947,7 +1947,8 @@ among them.
   z ≥ 3.75 (the scaled form √z · e⁻ᶻ · I₀(z), bound |ε| < 1.9 · 10⁻⁷).
   The bounds are the published ones for the approximations; they were
   not re-measured here. The bank calls the same functions Matched uses
-  (`kz4ap::log_bessel_i0` and `kz4ap::envelope_llr`), whose formula equals
+  (`kz4ap::log_bessel_i0` and `kz4ap::envelope_llr`, in
+  `matched_front_end.cpp`), whose formula equals
   the prototype's term for term. The probability of key-down is the logistic
   p = 1 / (1 + exp(−g)) of the log-odds g in nats (Λ plus the prior
   log-odds), with g clipped to ±50 nats so that exp never overflows.
@@ -3095,7 +3096,7 @@ parameter was changed for this run.
 | NCO range | ±75 Hz | `FrequencyTrackerConfig::max_offset_hz` | heuristic |
 | Bank ladder (decoder: bank) | L_k = 9.6 ms × 1.1^(k−1), k = 1…32 (9.6 to 184.3 ms): 0.8 dit at 100 to 5 words/min; ratio 1.1 | `BankConfig::min_wpm`, `max_wpm`, `ladder_step`, `length_dits` | WPM range and ratio owner; length 0.8 dit heuristic |
 | Bank branch filter | boxcar, N_k = round(L_k · r) samples (14 to 276 at r = 1500 samples/s), zeros before the stream | `bank::branch_samples`, `bank::boxcar` | derived from the ladder |
-| Bank envelope likelihood | Λ = −a²/2 + ln I₀(a·x) nats; p = logistic(g), g clipped to ±50 nats | `bank::envelope_llr`, `bank::logistic` | derived; clip a numerical choice |
+| Bank envelope likelihood | Λ = −a²/2 + ln I₀(a·x) nats; p = logistic(g), g clipped to ±50 nats | `kz4ap::envelope_llr` (shared with Matched), `bank::logistic` | derived; clip a numerical choice; the logistic checked against the prototype on nine log-odds |
 | Bank noise method | "spectrum": branch 1's three-tap level × spectrum ratios (variant (a)); "spectrum-level" (variant (b)) and "branch" (per-branch three-tap fallback) selectable | `BankConfig::noise_method`, `bank::make_noise` | measured (prototype E10) |
 | Bank three-tap noise level | κ = 1.75, κ_n = 4, τ_n = 2 s, truncation mean m(κ) = 0.632 divided out; warm-up 0.32 s, 20% quantile (numpy "linear") / (2·(−ln 0.8)); floor 10⁻²⁰ FS² (−200 dBFS) | `BankConfig::noise_guard`, `neighbor_guard`, `noise_tau_s`, `noise_warmup_s`; `bank::ThreeTapNoise` | heuristic (Matched's, milestone 2); m(κ) and the warm-up scale derived; floor a numerical choice |
 | Bank noise spectrum | segments T_seg = 256/1500 s = 170.7 ms (M = 256 samples, bins 5.86 Hz at 1500 samples/s), periodic Hann; exponential average τ_n = 2 s (β = 0.0818 per segment); smoothed ±25 Hz (±4 bins); W_k from 16 points per bin | `BankConfig::segment_s`, `spectrum_smoothing_hz`; `bank::SpectrumNoise` | heuristic; 16 points a numerical choice |

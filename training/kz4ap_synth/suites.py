@@ -814,7 +814,8 @@ def over_rows(out_dir: Path) -> list[dict]:
                                  "tag": label_signals[sig["index"]].get("tag", ""), "over": k,
                                  "sender": over["sender"], "keying": over["keying"], "wpm": over["wpm"],
                                  "symbols": counts["symbols"], "edits": counts["edits"],
-                                 "beyond_oracle_anchor": beyond_oracle_anchor(rec["oracle"], label)})
+                                 "beyond_oracle_anchor": beyond_oracle_anchor(rec["oracle"], label),
+                                 "drifting_oracle": bool(rec["oracle"] and label.get("drift_hz_per_s"))})
     return rows
 
 
@@ -823,9 +824,11 @@ def aggregate_overs(rows) -> dict:
     groups: dict = {}
     for r in rows:
         g = groups.setdefault((r["front_end"], r["group"], r["keying"]),
-                              {"overs": 0, "symbols": 0, "edits": 0, "beyond_oracle_anchor": False})
+                              {"overs": 0, "symbols": 0, "edits": 0, "beyond_oracle_anchor": False,
+                               "drifting_oracle": False})
         g["overs"] += 1
         g["beyond_oracle_anchor"] |= bool(r.get("beyond_oracle_anchor"))
+        g["drifting_oracle"] |= bool(r.get("drifting_oracle"))
         g["symbols"] += r["symbols"]
         g["edits"] += r["edits"]
     return {k: {**g, "cer": _ratio(g["edits"], g["symbols"])} for k, g in groups.items()}

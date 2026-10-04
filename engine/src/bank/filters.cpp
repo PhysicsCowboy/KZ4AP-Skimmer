@@ -1,10 +1,9 @@
 #include "kz4ap/bank/filters.hpp"
 
-#include "kz4ap/matched_front_end.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
 
 namespace kz4ap::bank {
 
@@ -32,6 +31,7 @@ std::vector<double> realized_lengths_s(const BankConfig& cfg, double rate_hz) {
 }
 
 std::vector<std::complex<double>> boxcar(std::span<const std::complex<double>> u, int n) {
+    if (n < 1) throw std::invalid_argument("boxcar: n must be at least 1 sample");
     std::vector<std::complex<double>> c(u.size() + 1);
     c[0] = 0.0;
     for (std::size_t i = 0; i < u.size(); ++i) c[i + 1] = c[i] + u[i];
@@ -71,10 +71,6 @@ double power_response(double f_hz, int n, double rate_hz) {
     }
     return 1.0;
 }
-
-double log_bessel_i0(double z) { return kz4ap::log_bessel_i0(z); }
-
-double envelope_llr(double x, double a) { return kz4ap::envelope_llr(x, a); }
 
 double logistic(double g) { return 1.0 / (1.0 + std::exp(-std::clamp(g, -50.0, 50.0))); }
 

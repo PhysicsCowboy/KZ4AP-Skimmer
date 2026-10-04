@@ -194,7 +194,8 @@ std::string py_float_repr(double x) {
         } else if (decpt >= n) {
             out += digits + std::string(static_cast<std::size_t>(decpt - n), '0') + ".0";
         } else {
-            out += digits.substr(0, static_cast<std::size_t>(decpt)) + "." + digits.substr(static_cast<std::size_t>(decpt));
+            out += digits.substr(0, static_cast<std::size_t>(decpt)) + "." +
+                   digits.substr(static_cast<std::size_t>(decpt));
         }
     } else {
         out += digits.substr(0, 1);
@@ -215,7 +216,8 @@ std::string py_dumps(const ordered_json& value) {
 
 ordered_json to_json(const bank::ChannelResult& r) {
     ordered_json chars = ordered_json::array();
-    for (const auto& c : r.chars) chars.push_back(ordered_json::array({c.text, py_round(c.start_s, 4), py_round(c.end_s, 4)}));
+    for (const auto& c : r.chars)
+        chars.push_back(ordered_json::array({c.text, py_round(c.start_s, 4), py_round(c.end_s, 4)}));
     ordered_json corrections = ordered_json::array();
     for (const auto& c : r.corrections) {
         ordered_json o = ordered_json::object();
@@ -234,7 +236,8 @@ ordered_json to_json(const bank::ChannelResult& r) {
     for (const auto& p : r.periodicity) {
         ordered_json per = ordered_json::array();
         for (const auto& [t, score] : p.per_window)
-            per.push_back(ordered_json::array({t ? ordered_json(py_round(*t, 6)) : ordered_json(nullptr), py_round(score, 4)}));
+            per.push_back(
+                ordered_json::array({t ? ordered_json(py_round(*t, 6)) : ordered_json(nullptr), py_round(score, 4)}));
         periodicity.push_back(ordered_json::array(
             {py_round(p.t_s, 4), none_or_round6(p.t_p_s), py_round(p.confidence, 4), none_or_round6(p.window_s), per}));
     }

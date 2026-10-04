@@ -163,7 +163,8 @@ std::vector<std::complex<double>> read_c64(const fs::path& path, std::size_t sam
     if (!in) throw std::runtime_error("cannot open " + path.string());
     std::vector<float> raw(2 * samples);
     in.read(reinterpret_cast<char*>(raw.data()), static_cast<std::streamsize>(raw.size() * sizeof(float)));
-    if (static_cast<std::size_t>(in.gcount()) != raw.size() * sizeof(float) || in.peek() != std::ifstream::traits_type::eof())
+    if (static_cast<std::size_t>(in.gcount()) != raw.size() * sizeof(float) ||
+        in.peek() != std::ifstream::traits_type::eof())
         throw std::runtime_error(path.filename().string() + ": not " + std::to_string(samples) +
                                  " samples, as the manifest says");
     std::vector<std::complex<double>> y(samples);

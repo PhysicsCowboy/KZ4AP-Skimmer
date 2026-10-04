@@ -639,6 +639,25 @@ def test_load_results_rejects_a_front_end_under_two_roots(tmp_path):
         load_results(tmp_path, [tmp_path / "results", tmp_path / "exp"])
 
 
+def test_overs_rows_of_the_anchored_decoders_are_marked():
+    from kz4ap_synth.suites import ANCHOR_NOTE, aggregate_overs
+
+    def over(fe, keying, beyond=False, drifting=False):
+        return {"front_end": fe, "group": "H two-station QSO", "keying": keying, "symbols": 10, "edits": 1,
+                "beyond_oracle_anchor": beyond, "drifting_oracle": drifting}
+
+    rows = [over("matched", "hand", beyond=True), over("matched", "paddle", drifting=True),
+            over("bank", "paddle", drifting=True), over("bank", "hand"), over("baseline", "hand", beyond=True)]
+    overs = aggregate_overs(rows)
+    assert overs[("bank", "H two-station QSO", "paddle")]["drifting_oracle"] is True
+    text = format_markdown({}, {}, overs)
+    assert f"| H two-station QSO | hand ({ANCHOR_NOTE}) | matched | 1 | 0.100 |" in text
+    assert "| H two-station QSO | paddle | matched | 1 | 0.100 |" in text  # Matched follows a drift
+    assert f"| H two-station QSO | paddle ({ANCHOR_NOTE}) | bank | 1 | 0.100 |" in text
+    assert "| H two-station QSO | hand | bank | 1 | 0.100 |" in text
+    assert "| H two-station QSO | hand | baseline | 1 | 0.100 |" in text  # Envelope is not anchored
+
+
 def test_the_replay_tools_oracle_copy_groups_are_the_suites():
     # bench/src/replay.cpp keeps its own copy of ORACLE_COPY_GROUPS: a group added here only would leave its oracle
     # copies out of the C++ replay without an error.

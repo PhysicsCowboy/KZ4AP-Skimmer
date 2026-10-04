@@ -620,8 +620,8 @@ TEST(BankChannelPrototypeTests, FarnsworthTextIsRight) {
                        "TEST U1ABC'. The default comb's T_P locks on T_g for Farnsworth 18/10 WPM in the 5 s window "
                        "(202.5-206.6 ms against T = 66.7 ms; the Task 9 finding), and the confident T_P prior (0.1 in "
                        "ln T, about 63 nats at ln(204.5/66.8)) pulls the selected branch's fit (index 18, L = 53.3 ms) "
-                       "from T = 66.6 ms to T = 149.5 ms, w = 71 ms, so K's first dah (199 ms) reads as a dit. With the "
-                       "edge comb, or without the prior, the text is right. Periodicity method: E1. Update (Task 14, "
+                       "from T = 66.6 ms to T = 149.5 ms, w = 71 ms, so K's first dah (199 ms) reads as a dit. With "
+                       "the edge comb, or without the prior, the text is right. Periodicity method: E1. Update (Task 14, "
                        "E9b, W_min = 0.8 s): the text reads 'Q TEST U1ABC' (at W_min = 0.4 s, 'CQ TEST U1ABC'): the "
                        "over's first character is also lost, as in test_decodes_a_clean_station. The fit details above "
                        "are from Task 11 and were not re-checked. [port: reads '" + got + "']");

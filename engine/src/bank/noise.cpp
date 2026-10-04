@@ -72,8 +72,7 @@ void ThreeTapNoise::update(const Matrix& P, std::int64_t n0, std::int64_t n1, st
             std::vector<double> row(static_cast<std::size_t>(to - from));
             for (int i = from; i < to; ++i) row[static_cast<std::size_t>(i - from)] = P.at(static_cast<int>(k), i);
             const double q = quantile_linear(std::move(row), 0.2) / scale;
-            var_[k] = std::max(q, kMinVar);  // np.maximum: NaN propagates
-            if (std::isnan(q)) var_[k] = q;
+            var_[k] = std::max(q, kMinVar);  // np.maximum: NaN propagates (std::max returns q, as NaN < x is false)
         }
         if (n1 - origin_ >= warmup_) {
             started_ = true;

@@ -108,6 +108,21 @@ TEST(BankFilters, Logistic) {
     EXPECT_DOUBLE_EQ(logistic(-1000.0), 1.0 / (1.0 + std::exp(50.0)));
 }
 
+TEST(BankFilters, LogisticMatchesPrototype) {
+    const auto g = load_golden("filters");
+    const auto x = g.at("logistic_g").get<std::vector<double>>();
+    const auto want = g.at("logistic").get<std::vector<double>>();
+    ASSERT_EQ(want.size(), x.size());
+    for (std::size_t i = 0; i < x.size(); ++i) expect_close(logistic(x[i]), want[i]);
+}
+
+TEST(BankFilters, BoxcarNeedsAtLeastOneSample) {
+    const std::vector<std::complex<double>> u(4, {1.0, 0.0});
+    EXPECT_THROW(boxcar(u, 0), std::invalid_argument);
+    EXPECT_THROW(boxcar(u, -3), std::invalid_argument);
+    EXPECT_EQ(boxcar(u, 1).size(), u.size());
+}
+
 TEST(BankFilters, MatrixIsRowMajor) {
     Matrix m;
     m.rows = 2;

@@ -25,7 +25,9 @@ struct BankConfig {
     double block_s = 32.0 / 1500.0;
     // "spectrum" (three-tap level x spectrum ratios), "spectrum-level" or "branch"; measured (E10): "spectrum"
     std::string noise_method = "spectrum";
-    // b_mask,k, one per branch, dimensionless; measured (white noise, seeds 101-110); valid only for the defaults of the ladder, segment_s, spectrum_smoothing_hz, guard_margin_s, min_clean_fraction, neighbor_guard and the three-tap settings at 1500 samples/s
+    // b_mask,k, one per branch, dimensionless; measured (white noise, seeds 101-110); valid only for the defaults
+    // of the ladder, segment_s, spectrum_smoothing_hz, guard_margin_s, min_clean_fraction, neighbor_guard and the
+    // three-tap settings at 1500 samples/s
     std::vector<double> mask_bias = {
         0.837, 0.8293, 0.8263, 0.8213,
         0.8171, 0.8136, 0.8095, 0.8074,
@@ -66,7 +68,8 @@ struct BankConfig {
     double squelch_exponent = 0.25;
     // 1/s, R_fa target per branch, noise alone; heuristic target, kept by E9b
     double false_marks_per_s = 0.01;
-    // x_on per branch k = 1 ... 32, dimensionless; measured (E9a, channel-shaped noise, R_fa 0.01 /s); must match false_marks_per_s
+    // x_on per branch k = 1 ... 32, dimensionless; measured (E9a, channel-shaped noise, R_fa 0.01 /s); must match
+    // false_marks_per_s
     std::vector<double> x_on_values = {
         4.6428, 4.637, 4.6206, 4.6163,
         4.6196, 4.6047, 4.5827, 4.5936,
@@ -117,7 +120,8 @@ struct BankConfig {
     double periodicity_rate_hz = 750.0;
     // count, teeth at k Pi (comb) or k T (edge comb); placeholder (E3)
     int comb_teeth = 4;
-    // comb tooth half-width, fraction of Pi, dimensionless; the edge comb uses 2 x this, fraction of T; placeholder (E3)
+    // comb tooth half-width, fraction of Pi, dimensionless; the edge comb uses 2 x this, fraction of T;
+    // placeholder (E3)
     double comb_width = 0.075;
     // count; placeholder (E3)
     int spectrum_nulls = 3;

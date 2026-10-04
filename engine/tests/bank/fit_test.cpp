@@ -199,6 +199,17 @@ TEST(BankFitPython, ResolutionVarianceIsTwoEdgesOfLOverAPlusSampling) {
     EXPECT_EQ(resolution_var_s2(0.04, 0.1, 1500.0), resolution_var_s2(0.04, 1.0, 1500.0));  // a floored at 1
 }
 
+// fit.json's resolution_cases: the prototype's resolution_var_s2 at 24 (L, a, r), s^2. The port squares by
+// products where the prototype calls pow (section 8c, "Duration fit"), so relative 1e-9, not exact.
+TEST(BankFit, ResolutionVarianceMatchesPrototype) {
+    const auto g = load_golden("fit");
+    const auto& cases = g.at("resolution_cases");
+    ASSERT_EQ(cases.size(), 24u);
+    for (const auto& c : cases)
+        expect_close(resolution_var_s2(c.at(0).get<double>(), c.at(1).get<double>(), c.at(2).get<double>()),
+                     c.at(3).get<double>());
+}
+
 TEST(BankFitPython, FitsMachineKeying) {
     const auto f = fitted(load_case("machine"));
     ASSERT_TRUE(f.has_value());
@@ -325,7 +336,8 @@ TEST(BankFitPython, RefinementNeverLowersTheWeightedLoglik) {
         {concat(load_case("speed_before"), load_case("speed_after"), 36), 0.04, 1.0},
         {load_case("random"), std::nullopt, 0.0},
     };
-    for (int seed = 1; seed <= 3; ++seed) all.push_back({load_case("model30_" + std::to_string(seed)), std::nullopt, 0.0});
+    for (int seed = 1; seed <= 3; ++seed)
+        all.push_back({load_case("model30_" + std::to_string(seed)), std::nullopt, 0.0});
     for (const auto& c : all) {
         DurationFit fit{BankConfig{}};
         for (const auto& [m, d] : c.obs) fit.add(m, d, 1e-8);
@@ -375,7 +387,8 @@ TEST(BankFitPython, FastPathsAreBitIdenticalToThePlainFormulas) {
     const double keep = 1.0 - cfg.outlier_prior;
     const double lp[5] = {std::log(keep * pr.marks[0]), std::log(keep * pr.marks[1]), std::log(keep * pr.spaces[0]),
                           std::log(keep * pr.spaces[1]), std::log(keep * pr.spaces[2])};
-    const double log_out = std::log(cfg.outlier_prior) - std::log(std::log(cfg.outlier_range_s[1] / cfg.outlier_range_s[0]));
+    const double log_out =
+        std::log(cfg.outlier_prior) - std::log(std::log(cfg.outlier_range_s[1] / cfg.outlier_range_s[0]));
     const double log_sqrt_2pi = 0.5 * std::log(2.0 * std::numbers::pi);
     const auto& t = fit.t_grid_s();
     const auto& q = fit.q_grid();
@@ -405,8 +418,10 @@ TEST(BankFitPython, FastPathsAreBitIdenticalToThePlainFormulas) {
                 for (std::size_t j = 0; j < w.size(); ++j)
                     for (std::size_t l = 0; l < g.size(); ++l) {
                         double total = term(t[i] * (1.0 - w[j]), log_d, var_t, cfg.sigma_ln_space, lp[2]);
-                        total = logaddexp(total, term(t[i] * (3.0 * g[l] - w[j]), log_d, var_t, cfg.sigma_ln_space, lp[3]));
-                        total = logaddexp(total, term(t[i] * (7.0 * g[l] - w[j]), log_d, var_t, cfg.sigma_ln_space, lp[4]));
+                        total = logaddexp(
+                            total, term(t[i] * (3.0 * g[l] - w[j]), log_d, var_t, cfg.sigma_ln_space, lp[3]));
+                        total = logaddexp(
+                            total, term(t[i] * (7.0 * g[l] - w[j]), log_d, var_t, cfg.sigma_ln_space, lp[4]));
                         out.push_back(logaddexp(total, log_out));
                     }
             }
