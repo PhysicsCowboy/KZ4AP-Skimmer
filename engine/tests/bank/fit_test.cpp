@@ -9,6 +9,8 @@
 #include "kz4ap/bank/fit.hpp"
 #include "kz4ap/bank/numpy_sum.hpp"
 
+#include "bank/vecmath.hpp"
+
 #include "golden.hpp"
 
 #include <gtest/gtest.h>
@@ -23,6 +25,7 @@
 #include <cstring>
 #include <deque>
 #include <functional>
+#include <iomanip>
 #include <limits>
 #include <numbers>
 #include <optional>
@@ -53,6 +56,36 @@ std::uint64_t bits(double x) {
     std::uint64_t b;
     std::memcpy(&b, &x, sizeof b);
     return b;
+}
+
+// Plan B task B2(b): the derived bound on |v_sleef - v_libm| for one total log-likelihood v (a grid value or a
+// class_logliks total), nats, where the two evaluations differ only in which exp and log they call, each within
+// 1 ulp of the exact value: SLEEF's stated bound, and assumed (not proven here) of the C libraries (glibc's,
+// Microsoft's); consistent with BankFitB2b.ExpAndLogAreWithinOneUlpOfTheCLibrary..., where the two are never more
+// than 1 ulp apart. With eps = 2^-52 (one ulp of y is at most eps |y|) and u = 2^-53:
+//   v_s - v_l = [v_s - LSE(x_s)] + [LSE(x_s) - LSE(x_l)] + [LSE(x_l) - v_l],
+// x the computed class terms (the outlier's term is the same constant on both sides), LSE the exact
+// log-sum-exp.
+// 1. Each side's one-pass evaluation of its own terms: r = x - m rounded (u |r|, so e^r off by u |r| e^r), exp
+//    within eps e^r, at most 3 additions to a sum S in [1, 4] (u S each), so S is off by at most
+//    eps + 3 u (1 + 1/e) <= 3.05 eps relative (sum of e^r |r| <= 3 / e, every term <= 1); ln S off by that plus
+//    eps ln 4; m + ln S rounded (u |v|): at most 4.44 eps + u |v| per side.
+// 2. LSE is a softmax-weighted mean in its arguments: |LSE(x_s) - LSE(x_l)| <= sum_c p_c |dx_c|, p_c =
+//    e^(x_c - v), sum_c p_c <= 1. A class term is x = (a - 0.5 ln s2) - ln sqrt(2 pi), a = lp - q the same on
+//    both sides: the two ln s2 differ by at most 2 eps |ln s2|, then two roundings each side, so
+//    |dx_c| <= eps (|ln s2| + |a - 0.5 ln s2| + |x|) <= eps (|ln s2| + 2 |x| + 1). Since lp < 0 and q >= 0,
+//    0.5 ln s2 <= -x - ln sqrt(2 pi) when ln s2 > 0, and s2 >= sigma^2 otherwise: |ln s2| <= 2 |x| + |ln sigma^2|.
+//    So |dx_c| <= eps (4 |x_c| + |ln sigma^2| + 1), and with p |x - v| = p |ln p| <= 1 / e (three classes at
+//    most): sum_c p_c |dx_c| <= eps (4 |v| + 4.42 + |ln sigma^2| + 1).
+// Together: eps (5 |v| + 14.3 + |ln sigma^2|), x 1.001 for the second-order terms (p at an intermediate point,
+// the products of two errors). ln_sigma2 is the larger |ln sigma^2| of marks and spaces.
+double sleef_bound(double v, double ln_sigma2) {
+    return 1.001 * 0x1p-52 * (5.0 * std::abs(v) + 14.3 + ln_sigma2);
+}
+
+double ln_sigma2_max(const BankConfig& cfg) {
+    return std::max(std::abs(std::log(cfg.sigma_ln_mark * cfg.sigma_ln_mark)),
+                    std::abs(std::log(cfg.sigma_ln_space * cfg.sigma_ln_space)));
 }
 
 const nlohmann::json& cases() {
@@ -458,11 +491,14 @@ TEST(BankFitPython, FastPathsAreBitIdenticalToThePlainFormulas) {
     // allowance is derived from a rounding count (as BankFitB2a's total_bound): each evaluation of a value v
     // makes at most 15 roundings of relative size <= 2^-52 on quantities of magnitude <= |v| + 2 nats, so
     // |difference| <= 30 x 2^-52 x (|v| + 2 nats) (6.7e-15 x (|v| + 2) nats; the largest difference measured
-    // here 8.9e-16 nats, in B2(a)'s full sweep 1.33e-15 nats). A table entry's allowance accumulates as the
-    // table does: lambda x its allowance + the value's allowance + 2^-51 |entry| (one multiplication and one
-    // addition rounded on each side). Every value that differs is counted and the largest difference printed;
-    // NaN and infinities must still match bit for bit.
-    auto value_allowance = [](double v) { return 30.0 * 0x1p-52 * (std::abs(v) + 2.0); };
+    // here 8.9e-16 nats, in B2(a)'s full sweep 1.33e-15 nats). Plan B task B2(b): the port's exp and log are
+    // SLEEF's, so its values may differ by sleef_bound(v) more (derived at sleef_bound; the same
+    // triangle inequality as there). A table entry's allowance accumulates as the table does: lambda x its
+    // allowance + the value's allowance + 2^-51 |entry| (one multiplication and one addition rounded on each
+    // side). Every value that differs is counted and the largest difference printed; NaN and infinities must
+    // still match bit for bit.
+    const double ls = ln_sigma2_max(cfg);
+    auto value_allowance = [ls](double v) { return 30.0 * 0x1p-52 * (std::abs(v) + 2.0) + sleef_bound(v, ls); };
     std::size_t values_differ = 0;
     double value_max = 0.0;
     std::vector<double> marks(fit.mark_table().size(), 0.0);
@@ -678,6 +714,10 @@ TEST(BankFitShared, FitsBuiltAndUsedOnEightThreadsAtOnceGiveTheSingleThreadedRes
 // ---------------------------------------------------------------------------------------------------------
 // Plan B task B2(a): the fit's arithmetic restructured; every result compared bit for bit with a frozen copy
 // of the code before the change (fit.cpp at 41b8f5e), over the golden inputs and randomized sweeps.
+// Plan B task B2(b): the fit's exp and log evaluated by SLEEF (vecmath); the frozen copy calls either
+// the C library's exp and log (Lib::libm: the code at B2(a), 00f17f6, with Sum::one_pass) or the fit's
+// (Lib::sleef: the B2(a) code with only the evaluation of exp and log changed), and the fit is compared bit for
+// bit with the latter and within a derived bound (sleef_bound) with the former.
 
 namespace frozen {
 
@@ -693,6 +733,51 @@ constexpr bool kIsMarkClass[5] = {true, true, false, false, false};
 double logaddexp(double x, double y) {
     if (x == y) return x + kLogE2;
     return std::max(x, y) + std::log1p(std::exp(-std::abs(x - y)));
+}
+
+// Which exp and log the frozen code calls where the fit (since B2(b)) calls SLEEF's (ln s2 of the class terms,
+// the one-pass sum's exp and log, the refinement's responsibilities): the C library's or the fit's, element by
+// element.
+enum class Lib { libm, sleef };
+
+double ex(double x, Lib lib) {
+    if (lib == Lib::libm) return std::exp(x);
+    double y;
+    kz4ap::bank::vecmath::exp(&x, &y, 1);
+    return y;
+}
+
+double ln(double x, Lib lib) {
+    if (lib == Lib::libm) return std::log(x);
+    double y;
+    kz4ap::bank::vecmath::log(&x, &y, 1);
+    return y;
+}
+
+// The one-pass log-sum-exp as B2(a) left it (fit.cpp lse at 00f17f6), its exp and log from lib.
+double lse(const double* x, std::size_t n, double out, Lib lib) {
+    if (std::isnan(out)) return out;
+    std::size_t top = n;
+    double m = out;
+    for (std::size_t c = 0; c < n; ++c) {
+        if (std::isnan(x[c])) return x[c];
+        if (x[c] > m) {
+            m = x[c];
+            top = c;
+        }
+    }
+    if (m == kInf) return m;
+    double sum = 1.0;
+    for (std::size_t c = 0; c < n; ++c) {
+        if (c == top) continue;
+        const double r = x[c] - m;
+        if (r > -40.0) sum += ex(r, lib);
+    }
+    if (top != n) {
+        const double r = out - m;
+        if (r > -40.0) sum += ex(r, lib);
+    }
+    return sum == 1.0 ? m : m + ln(sum, lib);
 }
 
 // The model's constants, as Model(cfg) computes them.
@@ -727,9 +812,9 @@ std::array<double, 5> medians(const std::array<double, 4>& theta) {
 }
 
 // How an observation's classes and the outlier are combined: the logaddexp chain over all five classes then
-// the outlier (the code before B2(a)), or the current one-pass log-sum-exp (kz4ap::bank::log_sum_exp) over all
-// five (the other kind's -inf terms add nothing): the frozen code with only B2(a)'s near-exact step applied,
-// against which the exact steps are compared bit for bit.
+// the outlier (the code before B2(a)), or B2(a)'s one-pass log-sum-exp (lse above) over all five (the other
+// kind's -inf terms add nothing): the frozen code with only B2(a)'s near-exact step applied, against which the
+// exact steps are compared bit for bit.
 enum class Sum { chain, one_pass };
 
 struct Terms {
@@ -742,7 +827,7 @@ struct Terms {
 
 Terms terms(const std::array<double, 4>& theta, const std::vector<bool>& is_mark, const std::vector<double>& log_d,
             const std::vector<double>& var_t, const std::array<double, 5>& lp, const std::array<double, 5>& sigma2,
-            double log_out, Sum sum = Sum::chain) {
+            double log_out, Sum sum = Sum::chain, Lib lib = Lib::libm) {
     Terms t;
     const std::array<double, 5> mu = medians(theta);
     std::array<bool, 5> valid{};
@@ -759,13 +844,13 @@ Terms terms(const std::array<double, 4>& theta, const std::vector<bool>& is_mark
         for (std::size_t c = 0; c < 5; ++c) {
             const double s2 = sigma2[c] + var_t[i] / (t.safe[c] * t.safe[c]);
             const double z = log_d[i] - t.log_mu[c];
-            double ll = lp[c] - 0.5 * z * z / s2 - 0.5 * std::log(s2) - kLogSqrt2Pi;
+            double ll = lp[c] - 0.5 * z * z / s2 - 0.5 * ln(s2, lib) - kLogSqrt2Pi;
             if (!(kIsMarkClass[c] == is_mark[i] && valid[c])) ll = -kInf;
             t.ll[i][c] = ll;
             t.s2[i][c] = s2;
         }
         if (sum == Sum::one_pass) {
-            t.total[i] = kz4ap::bank::log_sum_exp(t.ll[i].data(), 5, log_out);
+            t.total[i] = lse(t.ll[i].data(), 5, log_out, lib);
             continue;
         }
         double acc = t.ll[i][0];
@@ -832,19 +917,21 @@ double prior_term(const BankConfig& cfg, double t_s, std::optional<double> prior
 }
 
 double weighted_loglik(const DurationFit& fit, const BankConfig& cfg, const std::array<double, 4>& theta,
-                       std::optional<double> prior_t_s, double prior_weight, Sum sum = Sum::chain) {
+                       std::optional<double> prior_t_s, double prior_weight, Sum sum = Sum::chain,
+                       Lib lib = Lib::libm) {
     const Consts k(cfg);
     const Retained r = retained(fit.history(), fit.lambda(), k.lo, k.hi);
-    const Terms t = terms(theta, r.is_mark, r.log_d, r.var_t, k.lp, k.sigma2, k.log_out, sum);
+    const Terms t = terms(theta, r.is_mark, r.log_d, r.var_t, k.lp, k.sigma2, k.log_out, sum, lib);
     return aged_sum(r, t.total) + prior_term(cfg, theta[0], prior_t_s, prior_weight);
 }
 
 std::array<double, 4> refine(const DurationFit& fit, const BankConfig& cfg, const std::array<double, 4>& start,
-                             std::optional<double> prior_t_s, double prior_weight, Sum sum = Sum::chain) {
+                             std::optional<double> prior_t_s, double prior_weight, Sum sum = Sum::chain,
+                             Lib lib = Lib::libm) {
     const Consts k(cfg);
     const Retained r = retained(fit.history(), fit.lambda(), k.lo, k.hi);
     std::array<double, 4> theta = start;
-    Terms t = terms(theta, r.is_mark, r.log_d, r.var_t, k.lp, k.sigma2, k.log_out, sum);
+    Terms t = terms(theta, r.is_mark, r.log_d, r.var_t, k.lp, k.sigma2, k.log_out, sum, lib);
     const std::size_t n = r.log_d.size();
     for (int it = 0; it < cfg.refine_iterations; ++it) {
         double jac[5][4];
@@ -854,7 +941,7 @@ std::array<double, 4> refine(const DurationFit& fit, const BankConfig& cfg, cons
         std::array<double, 4> b{};
         for (std::size_t o = 0; o < n; ++o) {
             for (std::size_t c = 0; c < 5; ++c) {
-                const double wgt = r.age[o] * std::exp(t.ll[o][c] - t.total[o]) / t.s2[o][c];
+                const double wgt = r.age[o] * ex(t.ll[o][c] - t.total[o], lib) / t.s2[o][c];
                 const double resid = r.log_d[o] - t.log_mu[c];
                 for (std::size_t i = 0; i < 4; ++i) {
                     const double wj = wgt * jac[c][i];
@@ -877,22 +964,22 @@ std::array<double, 4> refine(const DurationFit& fit, const BankConfig& cfg, cons
         const double tt = std::max(next[0], 1e-4);
         theta = {tt, std::min(std::max(next[1], -0.6 * tt), 1.2 * tt), std::min(std::max(next[2], 2.0 * tt), 6.0 * tt),
                  std::min(std::max(next[3], 0.8 * tt), 10.0 * tt)};
-        t = terms(theta, r.is_mark, r.log_d, r.var_t, k.lp, k.sigma2, k.log_out, sum);
+        t = terms(theta, r.is_mark, r.log_d, r.var_t, k.lp, k.sigma2, k.log_out, sum, lib);
     }
     return theta;
 }
 
 std::optional<Fit> best(const DurationFit& fit, const BankConfig& cfg, std::optional<double> prior_t_s,
-                        double prior_weight, Sum sum = Sum::chain) {
+                        double prior_weight, Sum sum = Sum::chain, Lib lib = Lib::libm) {
     const auto grid = fit.grid_theta(prior_t_s, prior_weight);
     if (!grid) return std::nullopt;
     const Consts k(cfg);
     const Retained r = retained(fit.history(), fit.lambda(), k.lo, k.hi);
-    const std::array<double, 4> refined = refine(fit, cfg, *grid, prior_t_s, prior_weight, sum);
+    const std::array<double, 4> refined = refine(fit, cfg, *grid, prior_t_s, prior_weight, sum, lib);
     const double refined_sum =
-        aged_sum(r, terms(refined, r.is_mark, r.log_d, r.var_t, k.lp, k.sigma2, k.log_out, sum).total);
+        aged_sum(r, terms(refined, r.is_mark, r.log_d, r.var_t, k.lp, k.sigma2, k.log_out, sum, lib).total);
     const double grid_sum =
-        aged_sum(r, terms(*grid, r.is_mark, r.log_d, r.var_t, k.lp, k.sigma2, k.log_out, sum).total);
+        aged_sum(r, terms(*grid, r.is_mark, r.log_d, r.var_t, k.lp, k.sigma2, k.log_out, sum, lib).total);
     std::array<double, 4> theta = *grid;
     double total_sum = grid_sum;
     if (refined_sum + prior_term(cfg, refined[0], prior_t_s, prior_weight) >=
@@ -946,7 +1033,7 @@ struct Grid {
 
     // DurationFit::grid_loglik before B2(a), into total (resized).
     void grid_loglik(bool is_mark, double duration_s, double var_t, std::vector<double>& total,
-                     Sum sum = Sum::chain) const {
+                     Sum sum = Sum::chain, Lib lib = Lib::libm) const {
         const double log_d = std::log(std::min(std::max(duration_s, k.lo), k.hi));
         const double sigma = is_mark ? sigma_ln_mark : sigma_ln_space;
         const double sigma2 = sigma * sigma;
@@ -966,14 +1053,13 @@ struct Grid {
                 q *= z;
                 q /= s2;
                 q = lp - q;
-                q -= std::log(s2) * 0.5;
+                q -= ln(s2, lib) * 0.5;
                 q -= kLogSqrt2Pi;
                 if (!cls.valid[at]) q = -kInf;
                 x[c] = q;
                 acc = c == 0 ? q : logaddexp(acc, q);
             }
-            total[at] = sum == Sum::one_pass ? kz4ap::bank::log_sum_exp(x, nclass, k.log_out)
-                                             : logaddexp(acc, k.log_out);
+            total[at] = sum == Sum::one_pass ? lse(x, nclass, k.log_out, lib) : logaddexp(acc, k.log_out);
         }
     }
 };
@@ -1147,7 +1233,10 @@ TEST(BankFitB2a, LogSumExpLeaveOutChangesNoBit) {
     // log_sum_exp against the same one-pass sum without the 40-nat leave-out (every term's e^(x - m) added, in
     // the same order: the largest's 1 first, then the others, the outlier last unless it is the largest), bit
     // for bit: 2 or 3 class terms and the outlier, the largest at every position (the outlier included), the
-    // others within 40 nats of it, at -40 nats and one step beside it, 40 to 45 nats below it, or -inf.
+    // others within 40 nats of it, at -40 nats and one step beside it, 40 to 45 nats below it, or -inf. Since
+    // B2(b) both evaluate exp and log as the fit does (vecmath, within 1 ulp: the proof in fit.cpp's
+    // lse_block holds for them).
+    using frozen::Lib;
     auto reference = [](const double* x, std::size_t n, double out) {
         std::size_t top = n;
         double m = out;
@@ -1158,9 +1247,9 @@ TEST(BankFitB2a, LogSumExpLeaveOutChangesNoBit) {
             }
         double sum = 1.0;
         for (std::size_t c = 0; c < n; ++c)
-            if (c != top) sum += std::exp(x[c] - m);
-        if (top != n) sum += std::exp(out - m);
-        return sum == 1.0 ? m : m + std::log(sum);
+            if (c != top) sum += frozen::ex(x[c] - m, Lib::sleef);
+        if (top != n) sum += frozen::ex(out - m, Lib::sleef);
+        return sum == 1.0 ? m : m + frozen::ln(sum, Lib::sleef);
     };
     std::mt19937_64 rng(4040);
     std::uniform_real_distribution<double> u(0.0, 1.0);
@@ -1205,25 +1294,31 @@ TEST(BankFitB2a, LogSumExpLeaveOutChangesNoBit) {
 TEST(BankFitB2a, GridLoglikIsBitIdenticalToTheFrozenOnePassAndNearTheChainAtEveryGridPoint) {
     // 10^6 random observations per configuration (two configurations; 20 000 without KZ4AP_FIT_FULL_SWEEP),
     // each at every grid point of its table (3636 mark or 6060 space points with the defaults), then the
-    // golden observations: bit for bit against the frozen code with the one-pass sum (the exact steps,
-    // including the bounded skip of ln s2), and against the frozen logaddexp chain within total_bound.
+    // golden observations: bit for bit against the frozen code with the one-pass sum and the fit's exp and log
+    // (B2(a)'s exact steps, including the bounded skip of ln s2, and B2(b)'s blocks of SLEEF calls); against
+    // the frozen one-pass code with the C library's exp and log (the code at B2(a)) within sleef_bound; and
+    // against the frozen logaddexp chain within total_bound + sleef_bound.
+    using frozen::Lib;
+    using frozen::Sum;
     const std::size_t kObs = full_sweep() ? 1'000'000 : 20'000;
     const char* names[] = {"default grids", "grids with medians <= 0"};
     int which = 0;
     for (const BankConfig& cfg : sweep_configs()) {
         const frozen::Grid grid(cfg);
         const DurationFit fit(cfg);
+        const double ls = ln_sigma2_max(cfg);
         const std::size_t nt = std::max<std::size_t>(1, std::thread::hardware_concurrency());
-        std::vector<Diffs> exact(nt), near(nt);
+        std::vector<Diffs> exact(nt), libm(nt), near(nt);
         std::vector<std::thread> threads;
         for (std::size_t t = 0; t < nt; ++t)
             threads.emplace_back([&, t] {
                 const std::size_t b = kObs * t / nt;
                 std::mt19937_64 rng(1000003 * (b + 1));
-                std::vector<double> one, chain;
+                std::vector<double> one, one_libm, chain;
                 for (std::size_t i = b; i < kObs * (t + 1) / nt; ++i) {
                     const Obs o = random_obs(rng);
-                    grid.grid_loglik(o.is_mark, o.d_s, o.var_t_s2, one, frozen::Sum::one_pass);
+                    grid.grid_loglik(o.is_mark, o.d_s, o.var_t_s2, one, Sum::one_pass, Lib::sleef);
+                    grid.grid_loglik(o.is_mark, o.d_s, o.var_t_s2, one_libm, Sum::one_pass);
                     grid.grid_loglik(o.is_mark, o.d_s, o.var_t_s2, chain);
                     const std::vector<double> got = fit.grid_loglik(o.is_mark, o.d_s, o.var_t_s2);
                     if (got.size() != one.size()) {
@@ -1233,17 +1328,23 @@ TEST(BankFitB2a, GridLoglikIsBitIdenticalToTheFrozenOnePassAndNearTheChainAtEver
                     for (std::size_t k = 0; k < got.size(); ++k) {
                         auto where = [&] { return describe(o) + " point " + std::to_string(k); };
                         exact[t].add(got[k], one[k], -1.0, where);
-                        near[t].add(got[k], chain[k], total_bound(chain[k]), where);
+                        libm[t].add(got[k], one_libm[k], sleef_bound(one_libm[k], ls), where);
+                        near[t].add(got[k], chain[k], total_bound(chain[k]) + sleef_bound(chain[k], ls), where);
                     }
                 }
             });
         for (auto& th : threads) th.join();
-        Diffs e, n;
+        Diffs e, l, n;
         for (std::size_t t = 0; t < nt; ++t) {
             e.merge(exact[t]);
+            l.merge(libm[t]);
             n.merge(near[t]);
         }
-        e.expect_ok(std::string("grid_loglik against the frozen one-pass code, bit for bit, ") + names[which]);
+        e.expect_ok(std::string("grid_loglik against the frozen one-pass code with the fit's exp and log, bit for "
+                                "bit, ") +
+                    names[which]);
+        l.expect_ok(std::string("grid_loglik against the frozen one-pass code with the C library's exp and log, ") +
+                    names[which]);
         n.expect_ok(std::string("grid_loglik against the frozen logaddexp chain, ") + names[which]);
         ++which;
     }
@@ -1253,36 +1354,47 @@ TEST(BankFitB2a, GridLoglikIsBitIdenticalToTheFrozenOnePassAndNearTheChainAtEver
     const auto v = g.at("obs_var_t_s2").get<std::vector<double>>();
     const frozen::Grid grid{BankConfig{}};
     const DurationFit fit{BankConfig{}};
-    std::vector<double> one, chain;
-    Diffs e, n;
+    const double ls = ln_sigma2_max(BankConfig{});
+    std::vector<double> one, one_libm, chain;
+    Diffs e, l, n;
     for (std::size_t i = 0; i < d.size(); ++i) {
-        grid.grid_loglik(mark.at(i) == '1', d[i], v[i], one, frozen::Sum::one_pass);
+        grid.grid_loglik(mark.at(i) == '1', d[i], v[i], one, Sum::one_pass, Lib::sleef);
+        grid.grid_loglik(mark.at(i) == '1', d[i], v[i], one_libm, Sum::one_pass);
         grid.grid_loglik(mark.at(i) == '1', d[i], v[i], chain);
         const std::vector<double> got = fit.grid_loglik(mark.at(i) == '1', d[i], v[i]);
         ASSERT_EQ(got.size(), one.size());
         for (std::size_t k = 0; k < got.size(); ++k) {
             auto where = [&] { return "golden " + std::to_string(i) + " point " + std::to_string(k); };
             e.add(got[k], one[k], -1.0, where);
-            n.add(got[k], chain[k], total_bound(chain[k]), where);
+            l.add(got[k], one_libm[k], sleef_bound(one_libm[k], ls), where);
+            n.add(got[k], chain[k], total_bound(chain[k]) + sleef_bound(chain[k], ls), where);
         }
     }
-    e.expect_ok("grid_loglik against the frozen one-pass code, bit for bit, golden observations");
+    e.expect_ok("grid_loglik against the frozen one-pass code with the fit's exp and log, bit for bit, golden "
+                "observations");
+    l.expect_ok("grid_loglik against the frozen one-pass code with the C library's exp and log, golden observations");
     n.expect_ok("grid_loglik against the frozen logaddexp chain, golden observations");
 }
 
-// The searches' comparisons: bit for bit against the frozen code with the one-pass sum (the exact steps:
-// best with its quality, refine, weighted_loglik, class_logliks' ll, total and var_lin), and the near-exact
-// step against the frozen logaddexp chain (class_logliks' totals within total_bound, weighted_loglik at fixed
-// theta within weighted_sum_bound).
+// The searches' comparisons: bit for bit against the frozen code with the one-pass sum and the fit's exp and
+// log (B2(a)'s exact steps and B2(b)'s blocks: best with its quality, refine, weighted_loglik, class_logliks'
+// ll, total and var_lin); B2(b)'s change against the frozen one-pass code with the C library's exp and log
+// (class_logliks' totals within sleef_bound, weighted_loglik at fixed theta within weighted_sum_bound); and
+// both steps against the frozen logaddexp chain (totals within total_bound + sleef_bound, weighted_loglik
+// within weighted_sum_bound).
 struct SearchDiffs {
-    Diffs exact, total, wll;
+    Diffs exact, total, wll, libm_total, libm_wll;
     void merge(const SearchDiffs& o) {
         exact.merge(o.exact);
         total.merge(o.total);
         wll.merge(o.wll);
+        libm_total.merge(o.libm_total);
+        libm_wll.merge(o.libm_wll);
     }
     void expect_ok(const std::string& what) const {
-        exact.expect_ok(what + ", against the frozen one-pass code, bit for bit");
+        exact.expect_ok(what + ", against the frozen one-pass code with the fit's exp and log, bit for bit");
+        libm_total.expect_ok(what + ", class_logliks total against the frozen one-pass code with the C library's");
+        libm_wll.expect_ok(what + ", weighted_loglik against the frozen one-pass code with the C library's");
         total.expect_ok(what + ", class_logliks total against the frozen logaddexp chain");
         wll.expect_ok(what + ", weighted_loglik against the frozen logaddexp chain");
     }
@@ -1290,9 +1402,11 @@ struct SearchDiffs {
 
 void compare_searches(const DurationFit& fit, const BankConfig& cfg, const std::vector<std::array<double, 4>>& points,
                       const std::string& where, SearchDiffs& out) {
+    using frozen::Lib;
     using frozen::Sum;
     const std::vector<Obs> h(fit.history().begin(), fit.history().end());
     const frozen::Consts k(cfg);
+    const double ls = ln_sigma2_max(cfg);
     auto at_where = [&where](const char* what) { return [&where, what] { return where + ": " + what; }; };
     const std::pair<std::optional<double>, double> priors[] = {{std::nullopt, 0.0}, {0.05, 1.0}, {0.2, 3.0}};
     std::vector<bool> is_mark;
@@ -1305,7 +1419,7 @@ void compare_searches(const DurationFit& fit, const BankConfig& cfg, const std::
     }
     for (const auto& [pt, pw] : priors) {
         const auto got = fit.best(pt, pw);
-        const auto want = frozen::best(fit, cfg, pt, pw, Sum::one_pass);
+        const auto want = frozen::best(fit, cfg, pt, pw, Sum::one_pass, Lib::sleef);
         if (got.has_value() != want.has_value()) {
             out.exact.add(kInf, 0.0, -1.0, at_where("best presence"));
             continue;
@@ -1317,18 +1431,24 @@ void compare_searches(const DurationFit& fit, const BankConfig& cfg, const std::
             out.exact.add(a, b, -1.0, at_where("best"));
         const auto grid = *fit.grid_theta(pt, pw);
         const auto r1 = fit.refine(grid, pt, pw);
-        const auto r0 = frozen::refine(fit, cfg, grid, pt, pw, Sum::one_pass);
+        const auto r0 = frozen::refine(fit, cfg, grid, pt, pw, Sum::one_pass, Lib::sleef);
         for (std::size_t i = 0; i < 4; ++i) out.exact.add(r1[i], r0[i], -1.0, at_where("refine"));
         std::vector<std::array<double, 4>> at = points;
         at.push_back(grid);
         at.push_back(r0);
         for (const auto& th : at) {
             const double s_new = fit.weighted_loglik(th, pt, pw);
-            out.exact.add(s_new, frozen::weighted_loglik(fit, cfg, th, pt, pw, Sum::one_pass), -1.0,
+            out.exact.add(s_new, frozen::weighted_loglik(fit, cfg, th, pt, pw, Sum::one_pass, Lib::sleef), -1.0,
                           at_where("weighted_loglik"));
-            const double s_old = frozen::weighted_loglik(fit, cfg, th, pt, pw);
             const double prior = frozen::prior_term(cfg, th[0], pt, pw);
-            const auto t_new = frozen::terms(th, is_mark, log_d, var_t, k.lp, k.sigma2, k.log_out, Sum::one_pass);
+            const auto t_new =
+                frozen::terms(th, is_mark, log_d, var_t, k.lp, k.sigma2, k.log_out, Sum::one_pass, Lib::sleef);
+            const double s_libm = frozen::weighted_loglik(fit, cfg, th, pt, pw, Sum::one_pass);
+            const auto t_libm = frozen::terms(th, is_mark, log_d, var_t, k.lp, k.sigma2, k.log_out, Sum::one_pass);
+            out.libm_wll.add(s_new, s_libm,
+                             weighted_sum_bound(age, t_new.total, t_libm.total, s_new, s_libm, prior),
+                             at_where("weighted_loglik"));
+            const double s_old = frozen::weighted_loglik(fit, cfg, th, pt, pw);
             const auto t_old = frozen::terms(th, is_mark, log_d, var_t, k.lp, k.sigma2, k.log_out);
             out.wll.add(s_new, s_old, weighted_sum_bound(age, t_new.total, t_old.total, s_new, s_old, prior),
                         at_where("weighted_loglik"));
@@ -1337,11 +1457,17 @@ void compare_searches(const DurationFit& fit, const BankConfig& cfg, const std::
     if (h.empty()) return;
     for (const auto& th : points) {
         const ClassLogliks got = class_logliks(th, h, cfg);
-        const frozen::Terms one = frozen::terms(th, is_mark, log_d, var_t, k.lp, k.sigma2, k.log_out, Sum::one_pass);
+        const frozen::Terms one =
+            frozen::terms(th, is_mark, log_d, var_t, k.lp, k.sigma2, k.log_out, Sum::one_pass, Lib::sleef);
+        const frozen::Terms one_libm =
+            frozen::terms(th, is_mark, log_d, var_t, k.lp, k.sigma2, k.log_out, Sum::one_pass);
         const frozen::Terms chain = frozen::terms(th, is_mark, log_d, var_t, k.lp, k.sigma2, k.log_out);
         for (std::size_t i = 0; i < h.size(); ++i) {
             out.exact.add(got.total[i], one.total[i], -1.0, at_where("class_logliks total"));
-            out.total.add(got.total[i], chain.total[i], total_bound(chain.total[i]), at_where("class_logliks total"));
+            out.libm_total.add(got.total[i], one_libm.total[i], sleef_bound(one_libm.total[i], ls),
+                               at_where("class_logliks total"));
+            out.total.add(got.total[i], chain.total[i], total_bound(chain.total[i]) + sleef_bound(chain.total[i], ls),
+                          at_where("class_logliks total"));
             for (std::size_t c = 0; c < 5; ++c) {
                 out.exact.add(got.ll[i][c], one.ll[i][c], -1.0, at_where("class_logliks ll"));
                 out.exact.add(got.var_lin[i][c], one.s2[i][c] * (one.safe[c] * one.safe[c]), -1.0,
@@ -1432,4 +1558,130 @@ TEST(BankFitB2a, SearchesAreBitIdenticalToTheFrozenOnePassAndNearTheChain) {
     }
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// Plan B task B2(b): the fit's exp and log (SLEEF 3.9.0, Sleef_cinz_expd2_u10sse2 and Sleef_cinz_logd2_u10sse2).
+
+// The number of doubles from a to b (0 if equal, +-0 equal; both NaN: 0), on the ordered line of finite doubles;
+// +inf where one is infinite or NaN and the other is not the same.
+double ulps(double a, double b) {
+    if (bits(a) == bits(b) || a == b || (std::isnan(a) && std::isnan(b))) return 0.0;
+    if (!std::isfinite(a) || !std::isfinite(b)) return kInf;
+    auto key = [](double x) {
+        const auto u = static_cast<std::int64_t>(bits(x) & 0x7fffffffffffffffULL);
+        return std::signbit(x) ? -u : u;
+    };
+    return std::abs(static_cast<double>(key(a) - key(b)));
+}
+
+TEST(BankFitB2b, ExpAndLogAreWithinOneUlpOfTheCLibraryAndConsistentWithinEachFamily) {
+    // 10^6 arguments each, over the fit's ranges and the edge cases, evaluated as one array (odd length: the
+    // last element goes through the padded vector) by every implementation this processor can run, and
+    // compared with std::exp and std::log: at most 1 ulp apart (SLEEF's stated bound is 1.0 ulp from the exact
+    // value), non-finite results identical; every element bit for bit what a call on that element alone
+    // gives; within each family (cinz, finz) every implementation bit for bit the same (SLEEF's consistency
+    // statement, tested on this processor); and the fit's exp and log the selected implementation's.
+    namespace vm = kz4ap::bank::vecmath;
+    std::mt19937_64 rng(2026100402);
+    std::uniform_real_distribution<double> u(0.0, 1.0);
+    const double dmin = std::numeric_limits<double>::denorm_min();
+    const double nmin = std::numeric_limits<double>::min();
+    const double dmax = std::numeric_limits<double>::max();
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+
+    // exp: the one-pass sum's r in [-40, 0] nats (and the leave-out's edge), the responsibilities' ll - total
+    // <= 0 down to the subnormal results (below -708.4) and to 0 (below -745.2), positive arguments to overflow
+    // (above 709.78), arguments near 0 (subnormal ones included).
+    std::vector<double> xe = {0.0, -0.0, dmin, -dmin, nmin, -nmin, -40.0, std::nextafter(-40.0, 0.0),
+                              std::nextafter(-40.0, -kInf), -708.3964185322641, -708.4, -745.1332191019411,
+                              -745.2, -1000.0, 709.782712893384, 709.79, 1000.0, dmax, -dmax, kInf, -kInf, nan};
+    while (xe.size() < 1'000'001) {
+        switch (xe.size() % 5) {
+            case 0: xe.push_back(-40.0 * u(rng)); break;
+            case 1: xe.push_back(-746.0 * u(rng)); break;
+            case 2: xe.push_back(-708.0 - 38.0 * u(rng)); break;
+            case 3: xe.push_back(1420.0 * u(rng) - 710.0); break;
+            default: xe.push_back((u(rng) - 0.5) * std::ldexp(1.0, std::uniform_int_distribution<int>(-1074, 0)(rng)));
+        }
+    }
+    // log: s2 >= sigma^2 log-uniform over about 1e-308 to 1e308, the one-pass sums in [1, 4] and just above 1,
+    // subnormal and edge arguments.
+    std::vector<double> xl = {0.0, -0.0, dmin, 2.0 * dmin, nmin, std::nextafter(nmin, 0.0), 1.0,
+                              std::nextafter(1.0, 2.0), std::nextafter(1.0, 0.0), 4.0, dmax, kInf, -1.0, -kInf, nan};
+    while (xl.size() < 1'000'001) {
+        switch (xl.size() % 4) {
+            case 0: xl.push_back(std::exp((u(rng) - 0.5) * 2.0 * 709.0)); break;
+            case 1: xl.push_back(1.0 + 3.0 * u(rng)); break;
+            case 2:
+                xl.push_back(1.0 + std::ldexp(static_cast<double>(std::uniform_int_distribution<int>(1, 1 << 20)(rng)),
+                                              -52));
+                break;
+            default:
+                xl.push_back(dmin * static_cast<double>(std::uniform_int_distribution<std::int64_t>(
+                                        1, (std::int64_t{1} << 52) - 1)(rng)));
+        }
+    }
+    std::size_t count = 0;
+    const vm::Impl* impls = vm::implementations(count);
+    const vm::Impl& sel = vm::selected();
+    std::printf("selected: %s\n", sel.name);
+    EXPECT_TRUE(sel.available());
+    for (const bool is_exp : {true, false}) {
+        const std::vector<double>& x = is_exp ? xe : xl;
+        const char* fn = is_exp ? "exp" : "log";
+        std::vector<double> first_cinz, first_finz;
+        for (std::size_t k = 0; k < count; ++k) {
+            const vm::Impl& im = impls[k];
+            if (!im.available()) {
+                std::printf("%s %s: not available on this processor\n", fn, im.name);
+                continue;
+            }
+            const vm::ArrayFn f = is_exp ? im.exp : im.log;
+            std::vector<double> got(x.size());
+            f(x.data(), got.data(), x.size());
+            double max_ulps = 0.0, at = 0.0;
+            std::size_t differ = 0, not_alone = 0, bad = 0;
+            for (std::size_t i = 0; i < x.size(); ++i) {
+                double alone;
+                f(&x[i], &alone, 1);
+                if (bits(alone) != bits(got[i]) && !(std::isnan(alone) && std::isnan(got[i]))) ++not_alone;
+                const double want = is_exp ? std::exp(x[i]) : std::log(x[i]);
+                const double d = ulps(got[i], want);
+                if (d > 0.0) ++differ;
+                if (d > max_ulps) {
+                    max_ulps = d;
+                    at = x[i];
+                }
+                if (d > 1.0 && bad++ == 0)
+                    ADD_FAILURE() << fn << " " << im.name << "(" << std::setprecision(17) << x[i] << "): " << got[i]
+                                  << " against " << want << ", " << d << " ulp";
+            }
+            std::vector<double>& ref = im.fma ? first_finz : first_cinz;
+            std::size_t family_differ = 0;
+            if (ref.empty()) {
+                ref = got;
+            } else {
+                for (std::size_t i = 0; i < x.size(); ++i)
+                    if (bits(ref[i]) != bits(got[i]) && !(std::isnan(ref[i]) && std::isnan(got[i]))) ++family_differ;
+            }
+            std::printf("%s %s: %zu arguments, %zu differ from the C library's, largest %.0f ulp (at %.17g); %zu "
+                        "beyond 1 ulp; %zu differ from the element evaluated alone; %zu differ from the first of its "
+                        "family\n",
+                        fn, im.name, x.size(), differ, max_ulps, at, bad, not_alone, family_differ);
+            EXPECT_EQ(bad, 0u) << im.name;
+            EXPECT_EQ(not_alone, 0u) << im.name;
+            EXPECT_EQ(family_differ, 0u) << im.name;
+            if (&im == &sel) {
+                std::vector<double> fit(x.size());
+                (is_exp ? vm::exp : vm::log)(x.data(), fit.data(), x.size());
+                for (std::size_t i = 0; i < x.size(); ++i)
+                    if (!(std::isnan(fit[i]) && std::isnan(got[i]))) ASSERT_EQ(bits(fit[i]), bits(got[i])) << i;
+            }
+        }
+    }
+    // In place (out == x) as out of place.
+    std::vector<double> a = {-1.5, 0.25, -39.0, -2.0, 3.0}, b(5);
+    vm::exp(a.data(), b.data(), 5);
+    vm::exp(a.data(), a.data(), 5);
+    for (std::size_t i = 0; i < 5; ++i) EXPECT_EQ(bits(a[i]), bits(b[i]));
+}
 }  // namespace

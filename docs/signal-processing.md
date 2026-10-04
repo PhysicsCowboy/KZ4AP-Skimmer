@@ -2335,6 +2335,36 @@ s, variances in s², log-likelihoods in nats; densities are in ln(duration).
   ℓ_c, s_c² and the classifications do not change. A NaN term gives NaN,
   otherwise a +∞ term gives +∞ (as the chain); a class term is never +∞
   while σ_ln > 0.
+- **Evaluation (Plan B task B2(b), exp and log).** The fit's exp and ln
+  are SLEEF 3.9.0's vectorized functions (`_u10`: a stated error bound of
+  1.0 unit in the last place of the returned value) instead of the C
+  library's: every ln s_c² of a class term (on the grid and on the retained
+  history), the one-pass sum's e^(x − m) and its ln, and the refinement's
+  responsibilities e^(ℓ_c − ℓ_total). They are evaluated on arrays: the
+  grid's points in blocks of 256 (per block every class term's s_c², then
+  all their ln together, then the terms, then every e^(x − m) of the
+  block, then every ln of a sum), the retained history's observations all
+  at once. Per value the operations and their order are unchanged; only exp
+  and ln are SLEEF's. (A term already known to be −∞, with its median not
+  positive or below the bound above, gets no ln s_c²: no change.) The
+  implementation is chosen once at run time (`engine/src/bank/vecmath.cpp`):
+  SLEEF's "finz" functions (with fused multiply-add) on AVX-512F, 8 doubles
+  per call, or on AVX2 with FMA, 4 doubles; on a processor without them its
+  "cinz" functions (no FMA) on AVX-512F, AVX or SSE2 (8, 4 or 2 doubles).
+  SLEEF states that each family gives the same bits with every instruction
+  set, and the tests check it on each machine
+  (`BankFitB2b.ExpAndLogAreWithinOneUlpOfTheCLibraryAndConsistentWithinEachFamily`);
+  so the fit's values are the same on every processor with FMA (Intel since
+  2013, AMD since 2015), and a processor without FMA gives other last bits.
+  Each instruction set's code is compiled in its own file for that set
+  alone, so the program runs on every x86-64 processor. The order is
+  measured, not derived: the 2-double SSE2 functions (cinz) are slower than
+  the C library's ln (10.6 against 4.6 ns per value on the Linux machine)
+  and made the decoder slower on both machines; the cinz AVX and AVX-512
+  versions made it faster on the Linux machine only, the FMA versions on
+  both (results record, section 4). The
+  last bits of ℓ_total change; the bound and the measured differences are
+  under "Bit-for-bit check" below.
 - **Grid and memory.** T on a log grid from 1.2 s / 100 = 12 ms in steps
   of 1% (×1.01) up to the first point ≥ 1.2 s / 5 = 240 ms: 303 points,
   12 ms to 242.2 ms. q ∈ {3, 4, 5}; w/T ∈ {−0.4, 0, 0.4, 0.8};
@@ -2385,11 +2415,12 @@ weight 3: the grid indices and the classifications of 20 probe durations
 2.0 · 10⁻¹⁶; the full mark and space tables after 8, 48 and 300
 observations were bit-identical until Plan B task B2(a). Since its
 near-exact step (one-pass log-sum-exp, above) they agree to the test's
-relative 10⁻⁹ as the other values: after 8, 48 and 300 observations 1980,
-1702 and 1517 of the 9696 entries differ from the prototype's, by at most
-7.1 · 10⁻¹⁵, 2.8 · 10⁻¹⁴ and 4.3 · 10⁻¹⁴ nats (relative 1.2 · 10⁻¹⁵,
-4.6 · 10⁻¹⁴ and 1.2 · 10⁻¹⁵; measured on Windows), and the grid indices and
-classifications are still equal. Both outcomes of the acceptance test occur
+relative 10⁻⁹ as the other values: with SLEEF's exp and ln (B2(b)), after
+8, 48 and 300 observations 2005, 1712 and 1523 of the 9696 entries differ
+from the prototype's, by at most 7.1 · 10⁻¹⁵, 2.8 · 10⁻¹⁴ and
+4.3 · 10⁻¹⁴ nats (relative 1.2 · 10⁻¹⁵, 1.4 · 10⁻¹³ and 1.2 · 10⁻¹⁵;
+measured on Windows; after B2(a) alone 1980, 1702 and 1517), and the grid
+indices and classifications are still equal. Both outcomes of the acceptance test occur
 in the sequence. The prototype's fit tests are ported one for one
 (inputs in `fit_cases.json`); its strict expected failure (Farnsworth
 T_g with the E5 grids) is skipped with the same reason, and the port
@@ -2457,6 +2488,43 @@ there. Through the exact
 steps (variant 1) `best`, `refine` and every other value are equal bit for
 bit, so no acceptance test turns.
 
+**Check of SLEEF's exp and ln (Plan B task B2(b)).** The frozen copy calls
+either the C library's exp and ln (the code at B2(a)) or the fit's
+(SLEEF's, one value at a time). (1) Against the frozen one-pass code with
+the fit's exp and ln, every comparison of the check above is **bit for bit**
+(the blocks, the padded last vector and the order of operations change no
+value). (2) Against the frozen one-pass code with the C library's, each
+ℓ_total (the grid's and `class_logliks`') must lie within the derived bound
+1.001 · 2^−52 · (5 |ℓ_total| + 14.3 + |ln σ_ln²|) nats (18.1 nats for the
+constant with σ_ln = 0.15; 7.4 · 10⁻¹⁵ nats at ℓ_total = −3 nats), and the
+weighted log-likelihood at a fixed θ within the bound above from those
+totals' differences. The derivation (in `fit_test.cpp`, `sleef_bound`),
+with every exp and ln within 1 ulp of the exact value (SLEEF's stated
+bound; assumed, not proven, of the C libraries): the difference is each
+side's evaluation error of its own terms plus the exact log-sum-exp's
+change between the two sides' terms. Each side's one-pass evaluation errs
+by at most 4.44 · 2^−52 + 2^−53 |ℓ_total| (the sum S ∈ [1, 4] off by at
+most 3.05 · 2^−52 relative after ≤ 3 subtractions, exps and additions; its
+ln by 2^−52 ln 4 more; the final addition). The log-sum-exp moves by the
+responsibility-weighted mean of the terms' changes, Σ p_c |Δx_c| with
+Σ p_c ≤ 1; a term x = (a − ½ ln s²) − ln √(2π) changes by at most
+2^−52 (|ln s²| + 2|x| + 1), as the two ln s² differ by at most 2 ulp, and
+|ln s²| ≤ 2|x| + |ln σ_ln²| (ln((1 − ε) P_c) < 0 and z²/s² ≥ 0, else
+s² ≥ σ_ln²); with p |x − ℓ_total| = p |ln p| ≤ 1/e per class this gives
+2^−52 (4 |ℓ_total| + 5.42 + |ln σ_ln²|). The factor 1.001 covers the
+second-order terms. (3) Against the logaddexp chain each ℓ_total within the
+sum of the two bounds. Each implementation the processor can run is checked
+against `std::exp` and `std::log` on 10⁶ arguments each (the sum's r in
+[−40, 0] nats and the leave-out's edge, the responsibilities down to
+subnormal results and 0, overflow, subnormal and edge arguments, ±0, ±∞,
+NaN): at most 1 ulp apart, every element bit for bit as when evaluated
+alone, and bit for bit within its family. On the Windows PC (AVX2, finz
+avx2 selected) 3.7% of the exps and 0.5% of the lns differ from the C
+library's, by 1 ulp; at the default test sizes the grid's ℓ_total differs
+from the B2(a) code by at most 1.8 · 10⁻¹⁵ nats (21% of its bound),
+`class_logliks`' ℓ_total by at most 1.8 · 10⁻¹⁵ nats (20%), and the
+weighted log-likelihood by at most 1.1 · 10⁻¹³ nats (32%).
+
 (The default test run uses 20 000 observations and 100 fits; the full sizes
 run as the ctest entry `BankFitB2a.FullSweep`, label `full-sweep`, which the
 default test presets exclude: `ctest --preset windows-full-sweep` or
@@ -2464,9 +2532,13 @@ default test presets exclude: `ctest --preset windows-full-sweep` or
 on the Linux machine.) The port's check against the plain formula
 (`FastPathsAreBitIdenticalToThePlainFormulas`) now allows each grid value
 the same derived bound 30 · 2^−52 · (|v| + 2 nats) (6.7 · 10⁻¹⁵ · (|v| + 2)
-nats, against the 1.3 · 10⁻¹⁵ nats measured in the full sweep), and each
-table entry an allowance accumulated as the table is: λ × its allowance +
-the value's + 2^−51 |entry|; on its 414 observations 654 897 of 2 007 072 grid values differ (Windows), by at most 8.9 · 10⁻¹⁶ nats, and 1411 of the 9696 table entries, by at most 4.3 · 10⁻¹⁴ nats, each within its allowance.
+nats, against the 1.3 · 10⁻¹⁵ nats measured in the full sweep) plus, since
+B2(b), SLEEF's bound above, and each table entry an allowance accumulated as
+the table is: λ × its allowance + the value's + 2^−51 |entry|; on its 414
+observations 657 286 of 2 007 072 grid values differ (Windows), by at most
+1.8 · 10⁻¹⁵ nats, and 1410 of the 9696 table entries, by at most
+4.3 · 10⁻¹⁴ nats, each within its allowance (after B2(a) alone 654 897,
+8.9 · 10⁻¹⁶ nats, and 1411).
 
 **Cost (Plan B task B2(a), measured).** CPU per channel-second of the bank
 decoder (`kz4ap-bank-replay`, development set, 525 oracle channels,
@@ -3278,6 +3350,7 @@ parameter was changed for this run.
 | Bank fit refinement | 2 Gauss–Newton steps in ln d, damping 0.2 T per parameter; T ≥ 0.1 ms, w ∈ [−0.6, 1.2] T, qT ∈ [2, 6] T, T_g ∈ [0.8, 10] T; kept only if the weighted log-likelihood does not drop | `BankConfig::refine_iterations`; `bank::DurationFit::refine`, `best` | heuristic; the 0.1 ms floor a numerical choice |
 | Bank fit grid constants | ln μ, 1/μ² and a validity flag per class and grid point (432.7 kB with the defaults), built once per process per configuration and shared, immutable, by every fit of a configuration with bit-identical values of the 13 fields they read; freed when no fit uses them | `bank::DurationFit::shared_model` | a memory choice with no arithmetic effect (Plan B B1: tested bit for bit across threads; development-set texts identical) |
 | Bank fit evaluation | ℓ_total = m + ln(1 + Σ e^(x − m)) over the observation's kind of classes and the outlier, in one pass, the others added after the largest's 1; terms more than 40 nats below m left out, and a grid class's ln s_c² skipped when its bound (with σ_ln² for s_c²) is more than 41 nats below the outlier's −5.216 nats; logaddexp skips exp and log1p at \|x − y\| ≥ (58 − k) ln 2 nats (38.8 nats at k = 2) | `bank::DurationFit::grid_loglik`, `terms`, `log_sum_exp`, `logaddexp` | the 40 nats and the skip threshold derived (no bit changes against the one-pass sum, which starts at the largest term's 1, respectively against numpy's formula; both tested bit for bit); the one-pass sum changes ℓ_total by ≤ 1.3 · 10⁻¹⁵ nats (measured, Plan B B2(a); development-set texts and records identical) |
+| Bank fit exp and ln | SLEEF 3.9.0 `_u10` (stated error bound 1.0 ulp) on arrays: grid points in blocks of 256, the retained history at once; finz (FMA) on AVX-512F (8 doubles) or AVX2 + FMA (4), else cinz on AVX-512F, AVX or SSE2 (8, 4, 2), chosen at run time; changes ℓ_total by ≤ 1.001 · 2^−52 · (5 \|ℓ_total\| + 14.3 + \|ln σ_ln²\|) nats against the C library's | `bank::vecmath` (`engine/src/bank/vecmath*.cpp`); `bank::DurationFit::grid_loglik`, `terms`, `refine` | the bound derived (1 ulp per call through the formula; tested on the sweeps); the implementation order measured (Plan B B2(b)); the block of 256 a heuristic (stack scratch of 25.3 kB, no measured effect claimed) |
 | Bank periodicity method | the comb on Π = 2T over branch 1's posterior p (the edge comb and the spectrum fit are not ported) | `BankConfig::periodicity_method`; `bank::Periodicity` | owner (E1); Π = 2T derived |
 | Bank periodicity input and updates | p averaged to r_P = r / max(1, round(r / 750 samples/s)) (750 samples/s at r = 1500 samples/s); recomputed every 0.25 s of p (375 samples at 1500 samples/s) | `BankConfig::periodicity_rate_hz`, `periodicity_update_s` | heuristic |
 | Bank periodicity windows | 2, 5 and 10 s (1500, 3750, 7500 samples at 750 samples/s); the shortest confident window gives T_P; reach caps T at ≈ W / 18.3 (109, 273, 546 ms) | `BankConfig::periodicity_windows_s` | windows placeholder (E2); reach caps derived from a heuristic rule |

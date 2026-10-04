@@ -3,6 +3,7 @@
 #include "kz4ap/bank/numpy_sum.hpp"
 #include "kz4ap/bank/python_sum.hpp"
 #include "kz4ap/morse.hpp"
+#include "vecmath.hpp"
 #include "ve3nea.hpp"
 
 #include <algorithm>
@@ -100,48 +101,93 @@ inline double lae(double x, double y) {
     return m + std::log1p(std::exp(-d));
 }
 
-// Terms more than this far below the largest are left out of a log-sum-exp, nats (derived, see lse).
+// Terms more than this far below the largest are left out of a log-sum-exp, nats (derived, see lse_block).
 constexpr double kNegligibleNats = 40.0;
 
-// ln(e^x_0 + ... + e^x_(n-1) + e^out), nats, in one pass (Plan B task B2(a), near-exact): m + ln(1 + the sum
-// of e^(x - m) over the other terms), m the largest term (the first largest; out where a class term only ties
-// it). The sum starts at the largest term's e^0 = 1 and the others are added after it in class order, the
-// outlier last (unless it is the largest); terms more than kNegligibleNats below m are left out, and the log
-// is skipped where the sum is exactly 1 (ln 1 = 0 and m + 0 = m: m is never -0).
+// Points per block of lse_block and grid_loglik (their scratch arrays are on the stack).
+constexpr std::size_t kBlock = 256;
+
+// For np <= kBlock points p, result[p] = ln(e^x_0 + ... + e^x_(n-1) + e^out), nats, x_c = term(p, c) the
+// point's n = count(p) <= 3 class terms and out the outlier's term, each in one pass (Plan B task B2(a),
+// near-exact): m + ln(1 + the sum of e^(x - m) over the other terms), m the largest term (the first largest; out
+// where a class term only ties it). The sum starts at the largest term's e^0 = 1 and the others are added after
+// it in class order, the outlier last (unless it is the largest); terms more than kNegligibleNats below m are
+// left out, and the log's value is not used where the sum is exactly 1 (ln 1 = 0 and m + 0 = m: m is never -0).
+// Plan B task B2(b): exp and log are SLEEF's (vecmath), every e^r of the block evaluated together, then every
+// ln of a sum; per point the operations and their order are as before.
 //
 // The leave-out changes no bit. Every partial sum is >= 1 (it starts at 1 and adds e^r >= 0), and the doubles
 // above a value >= 1 are at least 2^-52 apart, so adding t < 2^-53 rounds back to the partial sum. A left-out
-// term has r <= -40 nats, e^r <= 4.25e-18, and exp errs by less than one unit in the last place, so its
-// computed value is below 4.3e-18 < 2^-57 < 2^-53: adding it would leave the partial sum unchanged, and the
-// remaining terms are added in the same order to the same partial sums with or without it (tested bit for
-// bit: BankFitB2a.LogSumExpLeaveOutChangesNoBit).
+// term has r <= -40 nats, e^r <= 4.25e-18, and exp errs by at most one unit in the last place (SLEEF's stated
+// bound; the C library's before B2(b)), so its computed value is below 4.3e-18 < 2^-57 < 2^-53: adding it
+// would leave the partial sum unchanged, and the remaining terms are added in the same order to the same
+// partial sums with or without it (tested bit for bit: BankFitB2a.LogSumExpLeaveOutChangesNoBit).
 //
-// Non-finite terms: a NaN term (x or out) is returned (the logaddexp chain also gave NaN); otherwise a +inf
+// Non-finite terms: a NaN term (x or out) is the result (the logaddexp chain also gave NaN); otherwise a +inf
 // term gives +inf (as the chain did); -inf terms add nothing (e^-inf = 0) and are never the largest while out
 // is finite.
-inline double lse(const double* x, std::size_t n, double out) {
-    if (std::isnan(out)) return out;
-    std::size_t top = n;  // n: the outlier
-    double m = out;
-    for (std::size_t c = 0; c < n; ++c) {
-        if (std::isnan(x[c])) return x[c];
-        if (x[c] > m) {
-            m = x[c];
-            top = c;
+template <class Count, class Term>
+void lse_block(std::size_t np, Count count, Term term, double out, double* result) {
+    double m[kBlock];
+    std::uint8_t used[kBlock];  // how many e^r point p adds
+    bool done[kBlock];          // result[p] already set (a NaN or +inf term)
+    double r[3 * kBlock];       // every point's r = x - m above the leave-out, in the order they are added
+    double sum[kBlock];
+    double ln_sum[kBlock];
+    std::size_t k = 0;
+    for (std::size_t p = 0; p < np; ++p) {
+        const std::size_t n = count(p);
+        done[p] = true;
+        used[p] = 0;
+        sum[p] = 1.0;
+        if (std::isnan(out)) {
+            result[p] = out;
+            continue;
         }
+        std::size_t t = n;
+        double mm = out;
+        bool is_nan = false;
+        for (std::size_t c = 0; c < n; ++c) {
+            const double x = term(p, c);
+            if (std::isnan(x)) {
+                result[p] = x;
+                is_nan = true;
+                break;
+            }
+            if (x > mm) {
+                mm = x;
+                t = c;
+            }
+        }
+        if (is_nan) continue;
+        if (mm == kInf) {
+            result[p] = mm;
+            continue;
+        }
+        done[p] = false;
+        m[p] = mm;
+        const std::size_t k0 = k;
+        for (std::size_t c = 0; c < n; ++c) {
+            if (c == t) continue;
+            const double d = term(p, c) - mm;
+            if (d > -kNegligibleNats) r[k++] = d;
+        }
+        if (t != n) {
+            const double d = out - mm;
+            if (d > -kNegligibleNats) r[k++] = d;
+        }
+        used[p] = static_cast<std::uint8_t>(k - k0);
     }
-    if (m == kInf) return m;
-    double sum = 1.0;
-    for (std::size_t c = 0; c < n; ++c) {
-        if (c == top) continue;
-        const double r = x[c] - m;
-        if (r > -kNegligibleNats) sum += std::exp(r);
+    vecmath::exp(r, r, k);
+    k = 0;
+    for (std::size_t p = 0; p < np; ++p) {
+        double s = 1.0;
+        for (std::uint8_t j = 0; j < used[p]; ++j) s += r[k++];
+        sum[p] = s;
     }
-    if (top != n) {
-        const double r = out - m;
-        if (r > -kNegligibleNats) sum += std::exp(r);
-    }
-    return sum == 1.0 ? m : m + std::log(sum);
+    vecmath::log(sum, ln_sum, np);
+    for (std::size_t p = 0; p < np; ++p)
+        if (!done[p]) result[p] = sum[p] == 1.0 ? m[p] : m[p] + ln_sum[p];
 }
 
 // What the prototype's _terms / _class_terms compute for each observation: ll (n, 5), total (n), s2 (n, 5),
@@ -161,11 +207,13 @@ constexpr std::size_t end_class(bool is_mark) { return is_mark ? 2 : 5; }
 // log_d: ln of the clamped durations; s2 = sigma_ln^2 + var_t / mu^2 (every class); ll = lp - 0.5 z^2 / s2 -
 // 0.5 ln s2 - ln sqrt(2 pi), z = ln d - ln mu, for the classes of the observation's kind, -inf for the other
 // kind or a median not positive; total = ln of the sum of e^ll over the kind's classes and the outlier's
-// e^log_out, in one pass (lse; Plan B task B2(a), near-exact: the earlier logaddexp chain over all
-// five classes then the outlier differs in the last bits).
+// e^log_out, in one pass (lse_block; Plan B task B2(a), near-exact: the earlier logaddexp chain over all
+// five classes then the outlier differs in the last bits). ln s2 and the sum's exp and log are SLEEF's (Plan B
+// task B2(b)), evaluated for all observations together.
 //
 // Evaluating only the kind's classes changes no bit of ll or of the sum: the other kind's -inf terms add
 // e^-inf = 0 (and before B2(a)'s near-exact step entered the logaddexp chain only as logaddexp(x, -inf) = x).
+// Leaving out ln s2 where the median is not positive changes nothing: that ll is -inf either way.
 Terms terms(const std::array<double, 4>& theta, const std::vector<bool>& is_mark, const std::vector<double>& log_d,
             const std::vector<double>& var_t, const std::array<double, 5>& lp, const std::array<double, 5>& sigma2,
             double log_out) {
@@ -181,19 +229,30 @@ Terms terms(const std::array<double, 4>& theta, const std::vector<bool>& is_mark
     t.ll.resize(n);
     t.total.resize(n);
     t.s2.resize(n);
+    // ln s2 of the kind's classes with a positive median, all observations' at once (vecmath, B2(b)); the
+    // others' ll is -inf without it.
+    std::vector<double> ln_s2;
+    ln_s2.reserve(3 * n);
     for (std::size_t i = 0; i < n; ++i) {
         for (std::size_t c = 0; c < 5; ++c) t.s2[i][c] = sigma2[c] + var_t[i] / (t.safe[c] * t.safe[c]);
         t.ll[i].fill(-kInf);
-        const std::size_t c0 = first_class(is_mark[i]);
-        for (std::size_t c = c0; c < end_class(is_mark[i]); ++c) {
+        for (std::size_t c = first_class(is_mark[i]); c < end_class(is_mark[i]); ++c)
+            if (valid[c]) ln_s2.push_back(t.s2[i][c]);
+    }
+    vecmath::log(ln_s2.data(), ln_s2.data(), ln_s2.size());
+    std::size_t k = 0;
+    for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t c = first_class(is_mark[i]); c < end_class(is_mark[i]); ++c) {
+            if (!valid[c]) continue;
             const double s2 = t.s2[i][c];
             const double z = log_d[i] - t.log_mu[c];
-            double ll = lp[c] - 0.5 * z * z / s2 - 0.5 * std::log(s2) - kLogSqrt2Pi;
-            if (!valid[c]) ll = -kInf;
-            t.ll[i][c] = ll;
+            t.ll[i][c] = lp[c] - 0.5 * z * z / s2 - 0.5 * ln_s2[k++] - kLogSqrt2Pi;
         }
-        t.total[i] = lse(t.ll[i].data() + c0, end_class(is_mark[i]) - c0, log_out);
-    }
+    for (std::size_t i0 = 0; i0 < n; i0 += kBlock)
+        lse_block(
+            std::min(kBlock, n - i0), [&](std::size_t p) { return is_mark[i0 + p] ? std::size_t{2} : std::size_t{3}; },
+            [&](std::size_t p, std::size_t c) { return t.ll[i0 + p][first_class(is_mark[i0 + p]) + c]; }, log_out,
+            t.total.data() + i0);
     return t;
 }
 
@@ -351,7 +410,12 @@ double logaddexp(double x, double y) {
     return lae(x, y);
 }
 
-double log_sum_exp(const double* x, std::size_t n, double out) { return lse(x, n, out); }
+double log_sum_exp(const double* x, std::size_t n, double out) {
+    double result;
+    lse_block(
+        1, [n](std::size_t) { return n; }, [x](std::size_t, std::size_t c) { return x[c]; }, out, &result);
+    return result;
+}
 
 ClassLogliks class_logliks(const std::array<double, 4>& theta, const std::vector<Obs>& obs, const BankConfig& cfg) {
     const double lo = cfg.outlier_range_s.at(0);
@@ -462,7 +526,9 @@ const std::vector<double>& DurationFit::tg_grid() const { return m_->g; }
 std::vector<double> DurationFit::grid_loglik(bool is_mark, double duration_s, double var_t) const {
     // Each class's term, operation by operation in the prototype's order: s2 = var_t / mu^2 + sigma^2;
     // q = 0.5 z z / s2 with z = ln d - ln mu; lp - q - 0.5 ln s2 - ln sqrt(2 pi); -inf where the median is not
-    // positive. Classes and the outlier combined in one pass (lse; Plan B task B2(a), near-exact).
+    // positive. Classes and the outlier combined in one pass (lse_block; Plan B task B2(a), near-exact). Plan B
+    // task B2(b): grid points in blocks of kBlock, every ln s2 of a block and the block's one-pass sums
+    // evaluated together by SLEEF (vecmath).
     //
     // A class whose term cannot come within kNegligibleNats of the outlier's is left out before its ln s2 is
     // computed: s2 >= sigma^2, so the term is at most a - 0.5 ln sigma^2 - ln sqrt(2 pi), a = lp - q, and where
@@ -476,27 +542,42 @@ std::vector<double> DurationFit::grid_loglik(bool is_mark, double duration_s, do
     const std::size_t nclass = is_mark ? 2 : 3;
     const std::size_t size = is_mark ? mark_table_.size() : space_table_.size();
     std::vector<double> total(size);
-    for (std::size_t at = 0; at < size; ++at) {
-        double x[3];
+    double x[3][kBlock];
+    bool pending[3][kBlock];  // the term still needs its ln s2
+    double ln_s2[3 * kBlock];
+    for (std::size_t a0 = 0; a0 < size; a0 += kBlock) {
+        const std::size_t np = std::min(kBlock, size - a0);
+        std::size_t k = 0;
         for (std::size_t c = 0; c < nclass; ++c) {
             const Model::Class& cls = is_mark ? m.marks[c] : m.spaces[c];
             const double lp = m.lp[is_mark ? c : 2 + c];
-            double s2 = var_t * cls.inv_mu2[at];
-            s2 += sigma2;
-            const double z = log_d - cls.log_mu[at];
-            double q = 0.5 * z;
-            q *= z;
-            q /= s2;
-            q = lp - q;
-            if (!cls.valid[at] || q < cut) {
-                x[c] = -kInf;
-                continue;
+            for (std::size_t p = 0; p < np; ++p) {
+                const std::size_t at = a0 + p;
+                double s2 = var_t * cls.inv_mu2[at];
+                s2 += sigma2;
+                const double z = log_d - cls.log_mu[at];
+                double q = 0.5 * z;
+                q *= z;
+                q /= s2;
+                q = lp - q;
+                pending[c][p] = cls.valid[at] && !(q < cut);
+                x[c][p] = pending[c][p] ? q : -kInf;
+                if (pending[c][p]) ln_s2[k++] = s2;
             }
-            q -= std::log(s2) * 0.5;
-            q -= kLogSqrt2Pi;
-            x[c] = q;
         }
-        total[at] = lse(x, nclass, m.log_out);
+        vecmath::log(ln_s2, ln_s2, k);
+        k = 0;
+        for (std::size_t c = 0; c < nclass; ++c)
+            for (std::size_t p = 0; p < np; ++p) {
+                if (!pending[c][p]) continue;
+                double q = x[c][p];
+                q -= ln_s2[k++] * 0.5;
+                q -= kLogSqrt2Pi;
+                x[c][p] = q;
+            }
+        lse_block(
+            np, [nclass](std::size_t) { return nclass; }, [&x](std::size_t p, std::size_t c) { return x[c][p]; },
+            m.log_out, total.data() + a0);
     }
     return total;
 }
@@ -618,10 +699,11 @@ struct Refinement {
 Refinement refine_on(const DurationFit::Model& m, const Retained& r, const std::array<double, 4>& start,
                      std::optional<double> prior_t_s, double prior_weight) {
     // Gauss-Newton in ln d on the model's medians, EM-style (the class responsibilities of the current point
-    // held fixed per step): residual ln d - ln mu_c, Jacobian DESIGN_c / mu_c, weights lambda^age x
-    // responsibility / s_c^2; the T_P prior as one more residual ln T_P - ln T with weight prior_weight /
-    // sigma_P^2; damping toward the current point with standard deviation 0.2 T per parameter. After each
-    // step: T floored at 0.1 ms, w clipped to [-0.6, 1.2] T, qT to [2, 6] T, T_g to [0.8, 10] T.
+    // held fixed per step; their exp is SLEEF's, all observations' at once, Plan B task B2(b)): residual
+    // ln d - ln mu_c, Jacobian DESIGN_c / mu_c, weights lambda^age x responsibility / s_c^2; the T_P prior as
+    // one more residual ln T_P - ln T with weight prior_weight / sigma_P^2; damping toward the current point
+    // with standard deviation 0.2 T per parameter. After each step: T floored at 0.1 ms, w clipped to
+    // [-0.6, 1.2] T, qT to [2, 6] T, T_g to [0.8, 10] T.
     //
     // Only the classes of each observation's kind are summed. For a finite theta (every call from best: grid
     // points are finite and the clipped steps keep each median <= 0, then 1 is used, or >= about 1e-20 s) the
@@ -635,6 +717,8 @@ Refinement refine_on(const DurationFit::Model& m, const Retained& r, const std::
     out.start = terms(start, r.is_mark, r.log_d, r.var_t, m.lp, m.sigma2, m.log_out);
     const Terms* t = &out.start;
     const std::size_t n = r.log_d.size();
+    std::vector<double> resp;  // the responsibilities e^(ll - total), all observations' at once (B2(b))
+    resp.reserve(3 * n);
     for (int it = 0; it < m.refine_iterations; ++it) {
         std::array<double, 4>& theta = out.theta;
         double jac[5][4];
@@ -642,9 +726,15 @@ Refinement refine_on(const DurationFit::Model& m, const Retained& r, const std::
             for (std::size_t i = 0; i < 4; ++i) jac[c][i] = kDesign[c][i] / t->safe[c];
         std::array<std::array<double, 4>, 4> mm{};
         std::array<double, 4> b{};
+        resp.clear();
+        for (std::size_t o = 0; o < n; ++o)
+            for (std::size_t c = first_class(r.is_mark[o]); c < end_class(r.is_mark[o]); ++c)
+                resp.push_back(t->ll[o][c] - t->total[o]);
+        vecmath::exp(resp.data(), resp.data(), resp.size());
+        std::size_t k = 0;
         for (std::size_t o = 0; o < n; ++o) {
             for (std::size_t c = first_class(r.is_mark[o]); c < end_class(r.is_mark[o]); ++c) {
-                const double wgt = r.age[o] * std::exp(t->ll[o][c] - t->total[o]) / t->s2[o][c];
+                const double wgt = r.age[o] * resp[k++] / t->s2[o][c];
                 const double resid = r.log_d[o] - t->log_mu[c];
                 for (std::size_t i = 0; i < 4; ++i) {
                     const double wj = wgt * jac[c][i];

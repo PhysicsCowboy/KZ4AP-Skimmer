@@ -58,9 +58,10 @@ double resolution_var_s2(double length_s, double a, double rate_hz);
 double logaddexp(double x, double y);
 
 // ln(e^x_0 + ... + e^x_(n-1) + e^out), nats: the fit's one-pass log-sum-exp (Plan B task B2(a); fit.cpp,
-// lse): m + ln(1 + sum of e^(x - m) over the other terms), m the largest, the others added after the largest
-// in order (the outlier out last), terms more than 40 nats below m left out (no bit changes). A NaN term
-// gives NaN, otherwise a +inf term gives +inf.
+// lse_block): m + ln(1 + sum of e^(x - m) over the other terms), m the largest, the others added after the
+// largest in order (the outlier out last), terms more than 40 nats below m left out (no bit changes); exp and
+// log are the fit's (SLEEF's, src/bank/vecmath.hpp; B2(b)). A NaN term gives NaN, otherwise a +inf term gives
+// +inf. n <= 255.
 double log_sum_exp(const double* x, std::size_t n, double out);
 
 // Per observation: ll, ln(prior x density in ln d) of each class (-inf for the other kind of interval, or a

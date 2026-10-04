@@ -4,6 +4,11 @@ set(KZ4AP_BANK_SOURCES
   src/bank/noise.cpp
   src/bank/keying.cpp
   src/bank/fit.cpp
+  src/bank/vecmath.cpp
+  src/bank/vecmath_sse2.cpp
+  src/bank/vecmath_avx.cpp
+  src/bank/vecmath_avx2.cpp
+  src/bank/vecmath_avx512.cpp
   src/bank/periodicity.cpp
   src/bank/selection.cpp
   src/bank/channel.cpp
@@ -27,6 +32,20 @@ target_include_directories(kz4ap_engine PUBLIC include PRIVATE src)
 target_include_directories(kz4ap_engine SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party/pocketfft)
 target_compile_definitions(kz4ap_engine PRIVATE POCKETFFT_NO_MULTITHREADING)
 target_compile_features(kz4ap_engine PUBLIC cxx_std_20)
+# SLEEF's generated sleef.h and its static library (the duration fit's exp and log, src/bank/vecmath.hpp).
+# Each vecmath_<set>.cpp is compiled for its instruction set and run only where vecmath.cpp finds it at run
+# time; everything else stays plain x86-64.
+target_include_directories(kz4ap_engine SYSTEM PRIVATE ${sleef_BINARY_DIR}/include)
+target_link_libraries(kz4ap_engine PRIVATE sleef)
+if(MSVC)
+  set_source_files_properties(src/bank/vecmath_avx.cpp PROPERTIES COMPILE_OPTIONS /arch:AVX)
+  set_source_files_properties(src/bank/vecmath_avx2.cpp PROPERTIES COMPILE_OPTIONS /arch:AVX2)
+  set_source_files_properties(src/bank/vecmath_avx512.cpp PROPERTIES COMPILE_OPTIONS /arch:AVX512)
+else()
+  set_source_files_properties(src/bank/vecmath_avx.cpp PROPERTIES COMPILE_OPTIONS -mavx)
+  set_source_files_properties(src/bank/vecmath_avx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma")
+  set_source_files_properties(src/bank/vecmath_avx512.cpp PROPERTIES COMPILE_OPTIONS -mavx512f)
+endif()
 if(MSVC)
   target_compile_options(kz4ap_engine PRIVATE /W4 /permissive- /utf-8)
 else()
@@ -61,6 +80,8 @@ add_executable(kz4ap_bank_tests
   tests/bank_decoder_test.cpp
 )
 target_link_libraries(kz4ap_bank_tests PRIVATE kz4ap::engine nlohmann_json::nlohmann_json GTest::gtest_main)
+# fit_test.cpp compares the fit's exp and log implementations (src/bank/vecmath.hpp).
+target_include_directories(kz4ap_bank_tests PRIVATE src)
 target_compile_definitions(kz4ap_bank_tests PRIVATE
   KZ4AP_BANK_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bank")
 gtest_discover_tests(kz4ap_bank_tests)

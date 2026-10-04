@@ -33,6 +33,10 @@ Clang 17+, CMake 3.25+, Ninja.
     cmake --build --preset windows
     ctest --preset windows
 
+The first configure downloads GoogleTest, nlohmann/json and SLEEF (the
+vectorized math library of the bank decoder's duration fit) with CMake's
+FetchContent, so it needs network access.
+
 ## Benchmark
 
 `kz4ap-bench` runs the engine over an I/Q recording and, given the labels file
