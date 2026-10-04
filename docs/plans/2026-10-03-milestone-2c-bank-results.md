@@ -657,3 +657,40 @@ Tracks per QSO (group H): the bank equals Matched in all 9 tags (1.00 for every 
 ambiguous ones). Envelope differs only in the ambiguous tags (1.67 and 1.50). Every count above, the bank's
 tracks per QSO included, equals the prototype's from stage 1, which decoded the recorded channels of the same
 detector (stage-1 record, section 5.4).
+
+## 5. Open items (final review)
+
+The final whole-branch review's findings that this plan leaves open, each with why and where it goes. Everything
+else the review found is fixed on the branch (the fix report is in the plan's working folder).
+
+- **Exact zeros then noise: the noise estimate goes NaN, so nothing is published** (Review Focus 3). Kept
+  faithful to the prototype by ruling; a decoder behavior change. Plan B, first.
+- **The bank's events carry speed 0 WPM and confidence 0** (stage-1 spec 4.6 names the selected branch's T as
+  the reported speed). A change of what the decoder reports. Plan B.
+- **Per-tag counts behind "227 against the prototype's 180" corrections in group F** (section 4.5). The
+  per-result files of that run are on the Linux machine only, and the counts need no new run. Plan B's first full
+  run reports them per tag.
+- **Characters changed per correction, measured** (stage-2 spec 4.2). Implemented in the bench and the suite
+  summary; measuring it needs a full run, which this plan does not repeat. Plan B's first full run.
+- **No test pins the keyer's own exact-zero NaN path.** The Plan B zero-input fix changes that path, so the test
+  belongs with it. Plan B.
+- **The near-tie scores on the complex64 golden streams were measured on Windows only.** The Linux build's
+  values (and its pick at noise #14) are measured by the next Linux test run. Plan B.
+- **Two unreachable `comb_estimate` edge cases differ from the prototype without a trace.** Making them agree
+  changes the decoder's behavior (on inputs it never receives). Backlog.
+- **No drift guard on the committed golden files** (comparing a regeneration with them). It needs a decision on
+  which fields are stable across numpy builds and CPUs (last bits, near-ties). Backlog.
+- **Test cost** (about 400 s of ctest on the development PC, most of it the bank's golden-stream tests, paid
+  twice in CI). A CI choice (`ctest -j`, or a `slow` label run separately). Backlog.
+- **The bank's logistic duplicates Matched's.** Sharing it touches Matched's source, and `classical_decoder.cpp`
+  has a different function of the same name in the same namespace. Backlog.
+- **Golden coverage still missing:** `masked_branch_power`, `kept_fraction_sum`, `masked_power_sum` (covered end
+  to end through σ²); a fit golden that selects q ≠ 3 or T_g ≠ T (mitigated: the Farnsworth channels replay
+  identically); the replay's `baseband` and the engine's anchored mixing against a prototype golden of
+  `anchored_baseband` (mitigated by the replay and the full suite). Each needs new golden inputs. Backlog.
+- **The fit tables are stored as decimal text** (about 1.3 MB on disk; base64 would be about 0.7 MB, little gain
+  compressed). Optional. Backlog.
+- **Not defects, recorded:** the replay tool's decoded files are JSON-equivalent to `runner.decode`'s, not
+  byte-identical (Task 9's tooling accepts them); the C++ fast-path fit test is close to tautological but kept as
+  the brief requires; the temporary outputs `build/t8` and `build/suite/full3/proto/t8-proto-det` are
+  git-ignored local folders, left for the owner to delete.
