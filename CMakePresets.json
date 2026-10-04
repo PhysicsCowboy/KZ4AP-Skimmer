@@ -21,8 +21,16 @@
   ],
   "testPresets": [
     { "name": "windows", "configurePreset": "windows", "configuration": "Release",
-      "output": { "outputOnFailure": true } },
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "full-sweep" } } },
     { "name": "linux", "configurePreset": "linux",
-      "output": { "outputOnFailure": true } }
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "full-sweep" } } },
+    { "name": "windows-full-sweep", "configurePreset": "windows", "configuration": "Release",
+      "output": { "outputOnFailure": true, "verbosity": "verbose" },
+      "filter": { "include": { "label": "full-sweep" } } },
+    { "name": "linux-full-sweep", "configurePreset": "linux",
+      "output": { "outputOnFailure": true, "verbosity": "verbose" },
+      "filter": { "include": { "label": "full-sweep" } } }
   ]
 }

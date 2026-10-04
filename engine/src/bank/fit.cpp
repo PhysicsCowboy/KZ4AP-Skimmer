@@ -100,27 +100,47 @@ inline double lae(double x, double y) {
     return m + std::log1p(std::exp(-d));
 }
 
-// Terms more than this far below the largest are left out of a log-sum-exp, nats: e^-40 = 4.2e-18, so up to
-// four of them added to the largest term's e^0 = 1 cannot change the double sum (half its spacing above 1 is
-// 2^-53 = 1.1e-16). Derived.
+// Terms more than this far below the largest are left out of a log-sum-exp, nats (derived, see lse).
 constexpr double kNegligibleNats = 40.0;
 
-// ln(e^x_0 + ... + e^x_(n-1) + e^out), nats, in one pass (Plan B task B2(a), near-exact): m + ln(sum of
-// e^(x - m)), m the largest term; terms more than kNegligibleNats below m are left out, and the log is
-// skipped where the sum is 1 (every other term negligible). A NaN term gives NaN; -inf terms add 0; a +inf
-// term gives +inf (as the logaddexp chain did; a class term is finite while sigma_ln > 0).
-inline double log_sum_exp(const double* x, std::size_t n, double out) {
+// ln(e^x_0 + ... + e^x_(n-1) + e^out), nats, in one pass (Plan B task B2(a), near-exact): m + ln(1 + the sum
+// of e^(x - m) over the other terms), m the largest term (the first largest; out where a class term only ties
+// it). The sum starts at the largest term's e^0 = 1 and the others are added after it in class order, the
+// outlier last (unless it is the largest); terms more than kNegligibleNats below m are left out, and the log
+// is skipped where the sum is exactly 1 (ln 1 = 0 and m + 0 = m: m is never -0).
+//
+// The leave-out changes no bit. Every partial sum is >= 1 (it starts at 1 and adds e^r >= 0), and the doubles
+// above a value >= 1 are at least 2^-52 apart, so adding t < 2^-53 rounds back to the partial sum. A left-out
+// term has r <= -40 nats, e^r <= 4.25e-18, and exp errs by less than one unit in the last place, so its
+// computed value is below 4.3e-18 < 2^-57 < 2^-53: adding it would leave the partial sum unchanged, and the
+// remaining terms are added in the same order to the same partial sums with or without it (tested bit for
+// bit: BankFitB2a.LogSumExpLeaveOutChangesNoBit).
+//
+// Non-finite terms: a NaN term (x or out) is returned (the logaddexp chain also gave NaN); otherwise a +inf
+// term gives +inf (as the chain did); -inf terms add nothing (e^-inf = 0) and are never the largest while out
+// is finite.
+inline double lse(const double* x, std::size_t n, double out) {
+    if (std::isnan(out)) return out;
+    std::size_t top = n;  // n: the outlier
     double m = out;
-    for (std::size_t c = 0; c < n; ++c)
-        if (!(x[c] <= m)) m = x[c];  // a NaN term becomes m, so it reaches the sum
-    if (m == kInf) return m;
-    double sum = 0.0;
     for (std::size_t c = 0; c < n; ++c) {
-        const double r = x[c] - m;
-        if (!(r <= -kNegligibleNats)) sum += std::exp(r);
+        if (std::isnan(x[c])) return x[c];
+        if (x[c] > m) {
+            m = x[c];
+            top = c;
+        }
     }
-    const double r = out - m;
-    if (!(r <= -kNegligibleNats)) sum += std::exp(r);
+    if (m == kInf) return m;
+    double sum = 1.0;
+    for (std::size_t c = 0; c < n; ++c) {
+        if (c == top) continue;
+        const double r = x[c] - m;
+        if (r > -kNegligibleNats) sum += std::exp(r);
+    }
+    if (top != n) {
+        const double r = out - m;
+        if (r > -kNegligibleNats) sum += std::exp(r);
+    }
     return sum == 1.0 ? m : m + std::log(sum);
 }
 
@@ -141,7 +161,7 @@ constexpr std::size_t end_class(bool is_mark) { return is_mark ? 2 : 5; }
 // log_d: ln of the clamped durations; s2 = sigma_ln^2 + var_t / mu^2 (every class); ll = lp - 0.5 z^2 / s2 -
 // 0.5 ln s2 - ln sqrt(2 pi), z = ln d - ln mu, for the classes of the observation's kind, -inf for the other
 // kind or a median not positive; total = ln of the sum of e^ll over the kind's classes and the outlier's
-// e^log_out, in one pass (log_sum_exp; Plan B task B2(a), near-exact: the earlier logaddexp chain over all
+// e^log_out, in one pass (lse; Plan B task B2(a), near-exact: the earlier logaddexp chain over all
 // five classes then the outlier differs in the last bits).
 //
 // Evaluating only the kind's classes changes no bit of ll or of the sum: the other kind's -inf terms add
@@ -172,7 +192,7 @@ Terms terms(const std::array<double, 4>& theta, const std::vector<bool>& is_mark
             if (!valid[c]) ll = -kInf;
             t.ll[i][c] = ll;
         }
-        t.total[i] = log_sum_exp(t.ll[i].data() + c0, end_class(is_mark[i]) - c0, log_out);
+        t.total[i] = lse(t.ll[i].data() + c0, end_class(is_mark[i]) - c0, log_out);
     }
     return t;
 }
@@ -331,6 +351,8 @@ double logaddexp(double x, double y) {
     return lae(x, y);
 }
 
+double log_sum_exp(const double* x, std::size_t n, double out) { return lse(x, n, out); }
+
 ClassLogliks class_logliks(const std::array<double, 4>& theta, const std::vector<Obs>& obs, const BankConfig& cfg) {
     const double lo = cfg.outlier_range_s.at(0);
     const double hi = cfg.outlier_range_s.at(1);
@@ -440,7 +462,7 @@ const std::vector<double>& DurationFit::tg_grid() const { return m_->g; }
 std::vector<double> DurationFit::grid_loglik(bool is_mark, double duration_s, double var_t) const {
     // Each class's term, operation by operation in the prototype's order: s2 = var_t / mu^2 + sigma^2;
     // q = 0.5 z z / s2 with z = ln d - ln mu; lp - q - 0.5 ln s2 - ln sqrt(2 pi); -inf where the median is not
-    // positive. Classes and the outlier combined in one pass (log_sum_exp; Plan B task B2(a), near-exact).
+    // positive. Classes and the outlier combined in one pass (lse; Plan B task B2(a), near-exact).
     //
     // A class whose term cannot come within kNegligibleNats of the outlier's is left out before its ln s2 is
     // computed: s2 >= sigma^2, so the term is at most a - 0.5 ln sigma^2 - ln sqrt(2 pi), a = lp - q, and where
@@ -474,7 +496,7 @@ std::vector<double> DurationFit::grid_loglik(bool is_mark, double duration_s, do
             q -= kLogSqrt2Pi;
             x[c] = q;
         }
-        total[at] = log_sum_exp(x, nclass, m.log_out);
+        total[at] = lse(x, nclass, m.log_out);
     }
     return total;
 }
@@ -601,10 +623,13 @@ Refinement refine_on(const DurationFit::Model& m, const Retained& r, const std::
     // sigma_P^2; damping toward the current point with standard deviation 0.2 T per parameter. After each
     // step: T floored at 0.1 ms, w clipped to [-0.6, 1.2] T, qT to [2, 6] T, T_g to [0.8, 10] T.
     //
-    // Only the classes of each observation's kind are summed: the other kind's responsibilities are
-    // exp(-inf - total) = 0, so their weights and every product of them are +0 or -0, and adding a zero leaves
-    // every sum unchanged (the sums start at +0 and a sum is -0 only if both addends are -0, so no sum is ever
-    // -0; NaN stays NaN).
+    // Only the classes of each observation's kind are summed. For a finite theta (every call from best: grid
+    // points are finite and the clipped steps keep each median <= 0, then 1 is used, or >= about 1e-20 s) the
+    // other kind's responsibilities are exp(-inf - total) = 0 and the Jacobian and residuals are finite, so
+    // their weights and every product of them are +0 or -0, and adding a zero leaves every sum unchanged (the
+    // sums start at +0 and a sum is -0 only if both addends are -0, so no sum is ever -0; NaN stays NaN). With
+    // a non-finite start through the public refine (e.g. qT = +inf on a history of spaces only) the code before
+    // B2(a) could get NaN from 0 x inf where this one does not.
     Refinement out;
     out.theta = start;
     out.start = terms(start, r.is_mark, r.log_d, r.var_t, m.lp, m.sigma2, m.log_out);

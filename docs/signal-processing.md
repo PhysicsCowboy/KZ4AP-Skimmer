@@ -2313,21 +2313,28 @@ s, variances in s², log-likelihoods in nats; densities are in ln(duration).
   its last, so they are reused for the acceptance test and the quality.
 - **Evaluation (Plan B task B2(a), near-exact step).** ℓ_total is computed
   in one pass instead of the logaddexp chain:
-  ℓ_total = m + ln(Σ_c e^(ℓ_c − m) + e^(ℓ_out − m)), m the largest of the
-  terms of the observation's kind and the outlier's −5.216 nats (one exp per
-  term that is not the largest and one ln, instead of one exp and one log1p
-  per term). Terms more than 40 nats below m are left out
-  (e^−40 = 4.2 · 10⁻¹⁸: up to four of them added to the largest term's 1
-  cannot change the double sum, whose spacing above 1 is 2^−52; derived),
-  and the ln is skipped where the sum is exactly 1. In the grid's
-  log-likelihood a class whose term cannot come within 41 nats of the
-  outlier's is left out before its ln s_c² is computed: s_c² ≥ σ_ln², so
+  ℓ_total = m + ln(1 + Σ e^(x − m)), m the largest of the terms of the
+  observation's kind and the outlier's −5.216 nats (the first largest; the
+  outlier where a class only ties it), the sum over the other terms (one exp
+  per term that is not the largest and one ln, instead of one exp and one
+  log1p per term). The sum starts at the largest term's 1 and the others are
+  added after it in class order, the outlier last. Terms more than 40 nats
+  below m are left out, which changes no bit (derived): every partial sum is
+  ≥ 1, where the doubles are at least 2^−52 apart, and a left-out term is
+  below e^−40 (1 + 2^−52) < 4.3 · 10⁻¹⁸ < 2^−53, so adding it would round
+  back to the same partial sum (tested bit for bit:
+  `BankFitB2a.LogSumExpLeaveOutChangesNoBit`). The ln is skipped where the
+  sum is exactly 1. In the grid's log-likelihood a class whose term cannot
+  come within 41 nats of the outlier's is left out before its ln s_c² is
+  computed: s_c² ≥ σ_ln², so
   ℓ_c ≤ ln((1 − ε) P_c) − ½ z²/s_c² − ½ ln σ_ln² − ln √(2π), a bound with no
   logarithm of the observation (1 nat of the 41 covers rounding); the result
-  is the same bit for bit as with the term evaluated. This changes the last
-  bits of ℓ_total; the measured differences from the logaddexp chain are
-  stated under "Bit-for-bit check" below. The per-class ℓ_c, s_c² and the
-  classifications do not change.
+  is the same bit for bit as with the term evaluated. The one-pass sum
+  itself changes the last bits of ℓ_total; the measured differences from the
+  logaddexp chain are stated under "Bit-for-bit check" below. The per-class
+  ℓ_c, s_c² and the classifications do not change. A NaN term gives NaN,
+  otherwise a +∞ term gives +∞ (as the chain); a class term is never +∞
+  while σ_ln > 0.
 - **Grid and memory.** T on a log grid from 1.2 s / 100 = 12 ms in steps
   of 1% (×1.01) up to the first point ≥ 1.2 s / 5 = 240 ms: 303 points,
   12 ms to 242.2 ms. q ∈ {3, 4, 5}; w/T ∈ {−0.4, 0, 0.4, 0.8};
@@ -2378,8 +2385,8 @@ weight 3: the grid indices and the classifications of 20 probe durations
 2.0 · 10⁻¹⁶; the full mark and space tables after 8, 48 and 300
 observations were bit-identical until Plan B task B2(a). Since its
 near-exact step (one-pass log-sum-exp, above) they agree to the test's
-relative 10⁻⁹ as the other values: after 8, 48 and 300 observations 1918,
-1675 and 1464 of the 9696 entries differ from the prototype's, by at most
+relative 10⁻⁹ as the other values: after 8, 48 and 300 observations 1980,
+1702 and 1517 of the 9696 entries differ from the prototype's, by at most
 7.1 · 10⁻¹⁵, 2.8 · 10⁻¹⁴ and 4.3 · 10⁻¹⁴ nats (relative 1.2 · 10⁻¹⁵,
 4.6 · 10⁻¹⁴ and 1.2 · 10⁻¹⁵; measured on Windows), and the grid indices and
 classifications are still equal. Both outcomes of the acceptance test occur
@@ -2411,33 +2418,55 @@ grids with medians that are not positive (w/T up to 1.2, T_g/T down to
 0.2), and on the golden observations; `best`, `refine`, the weighted
 log-likelihood and `class_logliks` on the golden sequence, the fit cases
 and 2000 random fits per configuration and number of refinement steps
-(0, 2, 5), without and with T_P priors. With the exact steps every
+(0, 2, 5), without and with T_P priors. With the exact steps alone every
 comparison was equal (commit `42201d7`; Windows and Linux, full sizes).
-Since the near-exact step logaddexp is still compared bit for bit, the
-per-class ℓ_c and s_c² too, non-finite values bit for bit, and every other
-value against a bound of 10⁻¹⁴ · max(|value|, 1 in its unit) (heuristic;
-10⁻¹³ for `best`'s quality Q, a weighted mean). At the full sizes no value
-exceeds its bound and no non-finite value differs, on both platforms; the
-largest differences (Windows / Linux):
+Since the near-exact step the tests keep two frozen variants. (1) The
+frozen code with only the near-exact step applied (its ℓ_total by the
+current one-pass sum, over all five classes): against it the grid's
+log-likelihood (including the bounded skip of ln s_c²), `best` with its
+quality, `refine`, the weighted log-likelihood and `class_logliks` (ℓ_c,
+ℓ_total, s_c²) are compared **bit for bit**, so the exact steps keep a
+bit-for-bit guard. (2) The frozen code with the logaddexp chain: against it
+only the near-exact difference itself is measured, each ℓ_total (the grid's
+and `class_logliks`') within the derived bound 30 · 2^−52 · (|ℓ_total| +
+2 nats) (a count of at most 15 roundings per evaluation, each within one
+unit in the last place, on quantities of magnitude ≤ |ℓ_total| + 2 nats),
+and the weighted log-likelihood at a fixed θ within the bound derived from
+those totals' own differences: Σ λ^age |Δℓ_total| plus each side's
+rounding of numpy's pairwise sum, (⌈n/8⌉ + ⌈log₂ n⌉ + 4) · 2^−53 ·
+Σ |λ^age ℓ_total|, and of the prior's addition. The one-pass sum's
+leave-out of terms below 40 nats is tested bit for bit against the same sum
+without it (`LogSumExpLeaveOutChangesNoBit`, 2 · 10⁶ cases, the outlier
+last and largest included). Non-finite values are compared bit for bit
+everywhere. At the full sizes no comparison fails, on both platforms; the
+largest differences from the logaddexp chain (Windows / Linux):
 
-| quantity | values | largest difference |
-|---|---|---|
-| grid log-likelihood (ℓ_total at every grid point) | 8.5 · 10⁹ | 1.3 · 10⁻¹⁵ / 8.9 · 10⁻¹⁶ nats (relative 7.5 · 10⁻⁸ / 8.3 · 10⁻⁹, at values near 0 nats) |
-| ℓ_total of `class_logliks` | 1.8 · 10⁷ | 8.9 · 10⁻¹⁶ / 8.9 · 10⁻¹⁶ nats |
-| weighted log-likelihood (Σ over ≤ 192 observations) | 4.4 · 10⁵ | 1.8 · 10⁻¹² / 1.8 · 10⁻¹² nats (relative ≤ 3.9 · 10⁻¹³) |
-| `refine`'s θ | 1.4 · 10⁵ | 1.2 · 10⁻¹⁵ / 1.4 · 10⁻¹⁵ s |
-| `best`'s T, w, T_g (s), q, W | 1.8 · 10⁵ | 1.8 · 10⁻¹⁴ / 9.8 · 10⁻¹⁵ (in the field's unit) |
-| `best`'s quality Q | 3.6 · 10⁴ | 8.0 · 10⁻¹⁵ / 4.7 · 10⁻¹⁴ nats |
+| quantity | values | largest difference from the chain | of its bound |
+|---|---|---|---|
+| grid log-likelihood (ℓ_total at every grid point) | 8.5 · 10⁹ | 1.3 · 10⁻¹⁵ nats (relative 7.5 · 10⁻⁸, at a value near 0 nats) | 3.5% |
+| ℓ_total of `class_logliks` | 1.8 · 10⁷ | 8.9 · 10⁻¹⁶ nats | 3.3% |
+| weighted log-likelihood at a fixed θ (Σ over ≤ 192 observations, with the T_P prior term) | 4.4 · 10⁵ | 1.8 · 10⁻¹² nats (relative ≤ 1.6 · 10⁻¹³) | 99.1% |
 
-No acceptance test turned the other way (a turned one would move `best`
-by far more than its bound). (The default test run uses 20 000
-observations and 100 fits; the full sizes run with
-`KZ4AP_FIT_FULL_SWEEP=1`.) The port's check against the plain formula
-(`FastPathsAreBitIdenticalToThePlainFormulas`) now allows the grid's
-values 2^−50 nats (8.9 · 10⁻¹⁶) and the accumulated tables 64 · 2^−50 nats
-(5.7 · 10⁻¹⁴): on its 414 observations 645 881 of 2 007 072 grid values
-differ on Windows (642 914 on Linux), by at most 8.9 · 10⁻¹⁶ nats, and
-1358 (1397) of the 9696 table entries, by at most 2.8 · 10⁻¹⁴ nats.
+(Windows; the Linux machine's figures are in the results record, section
+3.8.) The weighted log-likelihood comes within 1% of its bound where the
+result is dominated by the rounding of the prior term's addition: with θ
+far from T_P (T at the 0.1 ms floor, weight 3) the prior term is about
+−8.7 · 10³ nats, one unit in the last place there is 1.8 · 10⁻¹² nats, and
+the bound allows each side half of it plus the sums' roundings (derived;
+the bound holds by construction, it is not fitted). Through the exact
+steps (variant 1) `best`, `refine` and every other value are equal bit for
+bit, so no acceptance test turns.
+
+(The default test run uses 20 000 observations and 100 fits; the full sizes
+run as the ctest entry `BankFitB2a.FullSweep`, label `full-sweep`, which the
+default test presets exclude: `ctest --preset windows-full-sweep` or
+`ctest --preset linux-full-sweep`, about 25 min on the Windows PC and 3 min
+on the Linux machine.) The port's check against the plain formula
+(`FastPathsAreBitIdenticalToThePlainFormulas`) now allows each grid value
+the same derived bound 30 · 2^−52 · (|v| + 2 nats) (6.7 · 10⁻¹⁵ · (|v| + 2)
+nats, against the 1.3 · 10⁻¹⁵ nats measured in the full sweep), and each
+table entry an allowance accumulated as the table is: λ × its allowance +
+the value's + 2^−51 |entry|; on its 414 observations 654 897 of 2 007 072 grid values differ (Windows), by at most 8.9 · 10⁻¹⁶ nats, and 1411 of the 9696 table entries, by at most 4.3 · 10⁻¹⁴ nats, each within its allowance.
 
 **Cost (Plan B task B2(a), measured).** CPU per channel-second of the bank
 decoder (`kz4ap-bank-replay`, development set, 525 oracle channels,
@@ -3245,7 +3274,7 @@ parameter was changed for this run.
 | Bank T_P prior | −π (ln T − ln T_P)² / (2 σ_P²) nats, σ_P = 0.1 in ln T | `BankConfig::prior_sigma_ln` | heuristic |
 | Bank fit refinement | 2 Gauss–Newton steps in ln d, damping 0.2 T per parameter; T ≥ 0.1 ms, w ∈ [−0.6, 1.2] T, qT ∈ [2, 6] T, T_g ∈ [0.8, 10] T; kept only if the weighted log-likelihood does not drop | `BankConfig::refine_iterations`; `bank::DurationFit::refine`, `best` | heuristic; the 0.1 ms floor a numerical choice |
 | Bank fit grid constants | ln μ, 1/μ² and a validity flag per class and grid point (432.7 kB with the defaults), built once per process per configuration and shared, immutable, by every fit of a configuration with bit-identical values of the 13 fields they read; freed when no fit uses them | `bank::DurationFit::shared_model` | a memory choice with no arithmetic effect (Plan B B1: tested bit for bit across threads; development-set texts identical) |
-| Bank fit evaluation | ℓ_total = m + ln Σ e^(x − m) over the observation's kind of classes and the outlier, in one pass; terms more than 40 nats below m left out, and a grid class's ln s_c² skipped when its bound (with σ_ln² for s_c²) is more than 41 nats below the outlier's −5.216 nats; logaddexp skips exp and log1p at \|x − y\| ≥ (58 − k) ln 2 nats (38.8 nats at k = 2) | `bank::DurationFit::grid_loglik`, `terms`, `log_sum_exp`, `logaddexp` | the 40 nats and the skip threshold derived (no bit changes against the one-pass sum, respectively numpy's formula); the one-pass sum changes ℓ_total by ≤ 1.3 · 10⁻¹⁵ nats (measured, Plan B B2(a); development-set texts and records identical) |
+| Bank fit evaluation | ℓ_total = m + ln(1 + Σ e^(x − m)) over the observation's kind of classes and the outlier, in one pass, the others added after the largest's 1; terms more than 40 nats below m left out, and a grid class's ln s_c² skipped when its bound (with σ_ln² for s_c²) is more than 41 nats below the outlier's −5.216 nats; logaddexp skips exp and log1p at \|x − y\| ≥ (58 − k) ln 2 nats (38.8 nats at k = 2) | `bank::DurationFit::grid_loglik`, `terms`, `log_sum_exp`, `logaddexp` | the 40 nats and the skip threshold derived (no bit changes against the one-pass sum, which starts at the largest term's 1, respectively against numpy's formula; both tested bit for bit); the one-pass sum changes ℓ_total by ≤ 1.3 · 10⁻¹⁵ nats (measured, Plan B B2(a); development-set texts and records identical) |
 | Bank periodicity method | the comb on Π = 2T over branch 1's posterior p (the edge comb and the spectrum fit are not ported) | `BankConfig::periodicity_method`; `bank::Periodicity` | owner (E1); Π = 2T derived |
 | Bank periodicity input and updates | p averaged to r_P = r / max(1, round(r / 750 samples/s)) (750 samples/s at r = 1500 samples/s); recomputed every 0.25 s of p (375 samples at 1500 samples/s) | `BankConfig::periodicity_rate_hz`, `periodicity_update_s` | heuristic |
 | Bank periodicity windows | 2, 5 and 10 s (1500, 3750, 7500 samples at 750 samples/s); the shortest confident window gives T_P; reach caps T at ≈ W / 18.3 (109, 273, 546 ms) | `BankConfig::periodicity_windows_s` | windows placeholder (E2); reach caps derived from a heuristic rule |

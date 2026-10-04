@@ -179,12 +179,16 @@ In `engine/src/bank/fit.cpp` (docs/signal-processing.md, section 8c, "Duration f
    max(x, y) without exp and log1p where |x − y| ≥ (58 − k) ln 2 nats, k the binary exponent of the larger
    term, where numpy's formula rounds to max(x, y) exactly; the best-fit search reuses the refinement's terms
    at its start and its result (3 evaluations of the retained history's terms instead of 5).
-2. **Near-exact step** (commit `3f99859`, a test bound fixed in `1c6b681`): each observation's total
-   log-likelihood is m + ln Σ e^(x − m) over its classes and the outlier in one pass (one exp per term
-   other than the largest, one ln) instead of the logaddexp chain (one exp and one log1p per term); terms
-   more than 40 nats below m are left out, and in the grid a class whose bound (with σ_ln² for s_c²) lies
-   more than 41 nats below the outlier's term is left out before its ln s_c² is computed. Both leave-outs
-   change no bit of the one-pass sum (derived); the one-pass sum itself changes the last bits.
+2. **Near-exact step** (commit `3f99859`, a test bound fixed in `1c6b681`; the summation order changed in
+   fix round 1, section 3.8): each observation's total log-likelihood is m + ln(1 + Σ e^(x − m)) over its
+   classes and the outlier in one pass (one exp per term other than the largest, one ln) instead of the
+   logaddexp chain (one exp and one log1p per term). Since fix round 1 the sum starts at the largest term's
+   1 and the others are added after it; terms more than 40 nats below m are left out, and in the grid a class
+   whose bound (with σ_ln² for s_c²) lies more than 41 nats below the outlier's term is left out before its
+   ln s_c² is computed. Both leave-outs change no bit of the one-pass sum (derived; both tested bit for bit).
+   In `3f99859` the sum started at 0 in class order with the outlier last, so a left-out term could have
+   shifted a partial sum below 1 and so the rounding of the sum (the review measured 667 of 200 000 random
+   cases); the claim "no bit changes" was then false. The one-pass sum itself changes the last bits.
 
 ### 3.2 Tests
 
