@@ -1,6 +1,6 @@
 // The bank decoder's keying against the prototype's golden values (engine/tests/data/bank/keying.json, from
 // training/kz4ap_proto/golden.py golden_keying). The keyer is driven exactly as ChannelDecoder.run drove the
-// prototype's: noise.json's stream u, P = |boxcar(u, N_k)|^2 rounded to float32 (as run stores it), the
+// prototype's: noise.json's stream u (noise_stream.c64, complex64), P = |boxcar(u, N_k)|^2 rounded to float32 (as run stores it), the
 // default "spectrum" noise updated once per block, step on each block, and run's recorded start_over and
 // finish_over_start calls replayed after the block they followed. Edges (keyed sample indices) and `unknown`
 // exactly; a_k, the posterior's row sums, weight, amp2 and prev_amp2 to relative 1e-9 (floor 1e-12).

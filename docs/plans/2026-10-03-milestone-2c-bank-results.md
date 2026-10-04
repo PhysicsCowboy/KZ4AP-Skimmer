@@ -174,6 +174,16 @@ the means survive the cancellation down to scores of order 1e-6 as relative diff
 (derived, as an order of magnitude; the test's 1e-16 bound is not derived from it). The prototype itself orders the two runners-up differently under numpy on Linux (61.97 ms
 4.732927653808283e-06 above 44.63 ms 4.732927653775947e-06; its pick, 97.95 ms, is the same).
 
+*Later change (final review, owner Q4 A).* The golden test streams are now stored as complex64, the engine's
+sample type (`engine/tests/data/bank/*.c64`), and every golden result was regenerated from the rounded streams,
+so the C++ tests' input is still exactly the prototype's and every tolerance and exact check is unchanged. The
+data went from 14 599 164 to 7 362 191 bytes on disk and from 8 739 088 to 4 511 830 bytes compressed (zlib
+level 6, measured). Every golden channel text, correction count and switch count is unchanged; at noise #14 the
+scores moved (prototype 9.501131563217924e-07, 9.501131563218533e-07 and 9.501131563310894e-07 for 97.95, 44.63
+and 61.97 ms), and the prototype and the Windows port now both pick 61.97 ms there; farnsworth #64 is unchanged.
+The Linux build has not been measured on the new streams (`docs/signal-processing.md` section 8c, "Channel
+decoder", port check).
+
 ## 3. Cost (Task 9)
 
 CPU time per channel-second, from the decoded files' `cpu_s` (each channel's thread CPU time, mixing to

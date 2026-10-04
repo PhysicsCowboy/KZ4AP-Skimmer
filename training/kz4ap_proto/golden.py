@@ -5,7 +5,11 @@ relative 1e-9, discrete values exactly).
 Run (from the repository root):  PYTHONPATH=training python -m kz4ap_proto.golden --out engine/tests/data/bank
 
 Each module of the decoder gets one function, golden_<module>(cfg) -> dict (JSON-serializable), added to
-GOLDEN below; write_all writes every registered function's dict to <out_dir>/<module>.json."""
+GOLDEN below; write_all writes every registered function's dict to <out_dir>/<module>.json. The test streams
+themselves are binary (STREAMS below, <out_dir>/<name>.c64): complex64, the engine's own sample type, as
+interleaved little-endian float32 (real, imaginary), FS. Every stream is rounded to complex64 when it is generated
+and the prototype runs on the rounded stream, so a C++ test that widens the stored samples to double has exactly
+the prototype's input."""
 
 from __future__ import annotations
 
@@ -62,29 +66,39 @@ def golden_filters(cfg: ProtoConfig) -> dict:
     return out
 
 
+def _rounded(u) -> np.ndarray:
+    """u rounded to complex64 (the engine's sample type) and widened back to complex128, FS: the stream every
+    golden result is computed on, exactly what the C++ tests read from the .c64 files."""
+    return np.asarray(u, np.complex128).astype(np.complex64).astype(np.complex128)
+
+
+def _c64_bytes(u) -> bytes:
+    """A complex stream as complex64 bytes: interleaved little-endian float32 (real, imaginary), FS."""
+    return np.ascontiguousarray(u, "<c8").tobytes()
+
+
 def _noise_stream(rate: float) -> np.ndarray:
     """golden_noise's stream (also golden_keying's input): 20 s of testsignals.stream, a 1 FS carrier keyed at
     25 WPM by kz4ap_synth's random_text(default_rng(4), 60) from 1.0 s, S500 = 15 dB, seed 21, through the
-    channel filter's shape (testsignals.lowpass, np.convolve mode="same"); complex128, FS."""
+    channel filter's shape (testsignals.lowpass, np.convolve mode="same"), rounded to complex64 (_rounded);
+    complex128, FS. Stored as noise_stream.c64."""
     from kz4ap_synth.messages import random_text
     from kz4ap_synth.morse import keying_intervals
 
     iv = keying_intervals(random_text(np.random.default_rng(4), 60), 25.0)
     u = np.convolve(testsignals.stream(iv, 1.0, 20.0, 15.0, 21, rate), testsignals.lowpass(rate), mode="same")
-    return np.asarray(u, np.complex128)
+    return _rounded(u)
 
 
 def golden_noise(cfg: ProtoConfig) -> dict:
     """noise.py driven exactly as ChannelDecoder.run drives it, at 1500 samples/s: the stream is 20 s of
     testsignals.stream (a 1 FS carrier keyed at 25 WPM by kz4ap_synth's random_text(default_rng(4), 60) from
     1.0 s, S500 = 15 dB, seed 21) through the channel filter's shape (testsignals.lowpass, np.convolve
-    mode="same"), so the noise is channel-shaped. P = |boxcar(u, N_k)|^2 stored as float32 (as run stores it);
-    the C++ test recomputes P from u. Each method ("spectrum", "spectrum-level", "branch") is updated block by
+    mode="same"), so the noise is channel-shaped, rounded to complex64 and stored as noise_stream.c64 ("stream_file",
+    "samples"). P = |boxcar(u, N_k)|^2 stored as float32 (as run stores it); the C++ test recomputes P from u. Each method ("spectrum", "spectrum-level", "branch") is updated block by
     block (block_s) and its sigma2() (FS^2 per real component, one per branch) is recorded after every 10th
     block (block index b with b % 10 == 9), with n1 (samples) and, for the spectrum methods, the accepted and
     offered segment counts. guard_mean is recorded at three kappa."""
-    import dataclasses as dc
-
     rate = 1500.0
     n = bank.branch_samples(bank.branch_lengths_s(cfg), rate)
     u = _noise_stream(rate)
@@ -93,13 +107,13 @@ def golden_noise(cfg: ProtoConfig) -> dict:
     block = max(1, int(round(cfg.block_s * rate)))
     out: dict = {
         "rate_hz": rate,
-        "u_re": u.real.tolist(),
-        "u_im": u.imag.tolist(),
+        "stream_file": "noise_stream.c64",
+        "samples": len(u),
         "guard_mean_kappa": [1.0, 1.75, 4.0],
         "guard_mean": [noise.guard_mean(k) for k in (1.0, 1.75, 4.0)],
     }
     for method in ("spectrum", "spectrum-level", "branch"):
-        est = noise.make_noise(dc.replace(cfg, noise_method=method), rate, n)
+        est = noise.make_noise(dataclasses.replace(cfg, noise_method=method), rate, n)
         snaps, n1s, accepted, offered = [], [], [], []
         for b, n0 in enumerate(range(0, total, block)):
             n1 = min(n0 + block, total)
@@ -126,7 +140,7 @@ def _signed_edges(changes) -> list[int]:
 
 def golden_keying(cfg: ProtoConfig) -> dict:
     """keying.py driven by ChannelDecoder.run itself on golden_noise's stream (1500 samples/s, 20 s; the C++
-    test reads u from noise.json and recomputes P as float32 and the default "spectrum" noise, as run does).
+    test reads u from noise_stream.c64 and recomputes P as float32 and the default "spectrum" noise, as run does).
     run's BankKeyer is replaced by a subclass that records, changing nothing:
     - every block b (block_s): the branches' edges (keying.edges of step's key against `before`, as run
       computes them), all blocks concatenated per branch, each edge n + 1 (key down after sample n) or -(n + 1)
@@ -585,15 +599,11 @@ def _nan_none(x):
     return None if x is None or (isinstance(x, float) and math.isnan(x)) else float(x)
 
 
-# Samples per stream file: 40 000 complex samples are about 853 kB of base64 (each golden file stays under 1 MB).
-CHANNEL_PART_SAMPLES = 40_000
-
-
 def _channel_streams() -> dict:
     """golden_channel's streams: name -> (generator description, rate samples/s, u complex128 FS). Every stream is
     testsignals.stream (a 1 FS carrier keyed by the intervals, 5 ms raised-cosine edges, in white noise at the
-    stated S500 = dB SNR in 500 Hz, numpy default_rng(seed)); the C++ cannot rebuild numpy's generator, so the
-    samples themselves are stored (channel_stream_<name>_<part>.json, base64 float64)."""
+    stated S500 = dB SNR in 500 Hz, numpy default_rng(seed)), rounded to complex64 (_rounded); the C++ cannot
+    rebuild numpy's generator, so the samples themselves are stored (channel_stream_<name>.c64)."""
     from kz4ap_synth.keying import timed_intervals
     from kz4ap_synth.morse import keying_intervals
 
@@ -603,7 +613,7 @@ def _channel_streams() -> dict:
     out = {}
 
     def add(name, text, u, rate=1500.0):
-        out[name] = (text, rate, np.asarray(u, np.complex128))
+        out[name] = (text, rate, _rounded(u))
 
     iv = keying_intervals("CQ TEST K1ABC K1ABC", 25.0)
     add("clean", "keying_intervals('CQ TEST K1ABC K1ABC', 25 WPM) from 1.0 s, duration last key-up + 3 s, "
@@ -702,13 +712,13 @@ def golden_channel(cfg: ProtoConfig) -> dict:
     from .channel import ChannelDecoder
 
     streams = _channel_streams()
-    out: dict = {"streams": {}, "results": {}, "part_samples": CHANNEL_PART_SAMPLES,
+    out: dict = {"streams": {}, "results": {},
                  "config_dumps": json.dumps(json.loads(json.dumps(dataclasses.asdict(cfg))))}
     for name, (text, rate, u) in streams.items():
         if len(u) != CHANNEL_STREAM_SAMPLES[name]:
             raise ValueError(f"stream {name}: {len(u)} samples, CHANNEL_STREAM_SAMPLES says {CHANNEL_STREAM_SAMPLES[name]}")
         out["streams"][name] = {"generator": text, "rate_hz": rate, "samples": len(u),
-                                "parts": max(1, -(-len(u) // CHANNEL_PART_SAMPLES))}
+                                "file": f"channel_stream_{name}.c64"}
         out["results"][name] = _channel_result(ChannelDecoder(cfg, rate).run(u))
     # What the ported test_proto_channel.py assertions need besides the streams (times in s).
     from kz4ap_synth.keying import timed_intervals
@@ -730,12 +740,9 @@ def golden_channel(cfg: ProtoConfig) -> dict:
     return out
 
 
-def _channel_stream_part(name: str, part: int) -> Callable[[ProtoConfig], dict]:
-    def fn(cfg: ProtoConfig) -> dict:
-        _, rate, u = _channel_streams()[name]
-        x = u[part * CHANNEL_PART_SAMPLES:(part + 1) * CHANNEL_PART_SAMPLES]
-        return {"name": name, "part": part, "rate_hz": rate, "u_re_b64": _f64_base64(x.real),
-                "u_im_b64": _f64_base64(x.imag)}
+def _channel_stream_bytes(name: str) -> Callable[[], bytes]:
+    def fn() -> bytes:
+        return _c64_bytes(_channel_streams()[name][2])
     return fn
 
 
@@ -760,14 +767,15 @@ GOLDEN: dict[str, Callable[[ProtoConfig], dict]] = {
     "selection": golden_selection,
     "channel": golden_channel,
 }
-GOLDEN.update({f"channel_stream_{name}_{part}": _channel_stream_part(name, part)
-               for name, samples in CHANNEL_STREAM_SAMPLES.items()
-               for part in range(max(1, -(-samples // CHANNEL_PART_SAMPLES)))})
+
+# name of the binary stream file (without the .c64 extension) -> function producing its complex64 bytes.
+STREAMS: dict[str, Callable[[], bytes]] = {"noise_stream": lambda: _c64_bytes(_noise_stream(1500.0))}
+STREAMS.update({f"channel_stream_{name}": _channel_stream_bytes(name) for name in CHANNEL_STREAM_SAMPLES})
 
 
 def write_all(out_dir: Path, cfg: ProtoConfig | None = None, only: str | None = None) -> list[Path]:
-    """Write every registered golden file (or those whose names match the regular expression `only`) into
-    out_dir (created if needed); return the paths written."""
+    """Write every registered golden file, GOLDEN's as <name>.json and STREAMS' as <name>.c64 (or those whose
+    names match the regular expression `only`), into out_dir (created if needed); return the paths written."""
     import re
 
     cfg = ProtoConfig() if cfg is None else cfg
@@ -780,6 +788,12 @@ def write_all(out_dir: Path, cfg: ProtoConfig | None = None, only: str | None = 
         path = out_dir / f"{name}.json"
         # repr-exact doubles: json writes the shortest string that round-trips.
         path.write_text(json.dumps(fn(cfg), indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        paths.append(path)
+    for name, stream_fn in STREAMS.items():
+        if only is not None and not re.search(only, name):
+            continue
+        path = out_dir / f"{name}.c64"
+        path.write_bytes(stream_fn())
         paths.append(path)
     return paths
 

@@ -76,13 +76,33 @@ inline void expect_close(double actual, double expected) {
     EXPECT_NEAR(actual, expected, 1e-9 * std::max(std::abs(expected), 1e-12));
 }
 
-// A golden file's complex stream u (FS) from its "u_re" and "u_im" lists.
-inline std::vector<std::complex<double>> stream(const nlohmann::json& g) {
-    const auto re = g.at("u_re").get<std::vector<double>>();
-    const auto im = g.at("u_im").get<std::vector<double>>();
-    std::vector<std::complex<double>> u(re.size());
-    for (std::size_t i = 0; i < u.size(); ++i) u[i] = {re[i], im[i]};
+// <KZ4AP_BANK_GOLDEN_DIR>/<file>: a complex64 stream (golden.py's STREAMS: interleaved little-endian float32,
+// real and imaginary, FS) of exactly `samples` samples, widened to double (exact: the prototype ran on the same
+// float32-rounded values).
+inline std::vector<std::complex<double>> read_c64(const std::string& file, std::size_t samples) {
+    const std::filesystem::path path = std::filesystem::path(KZ4AP_BANK_GOLDEN_DIR) / file;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) throw std::runtime_error("cannot open golden stream " + path.string());
+    static_assert(sizeof(float) == 4);
+    std::vector<unsigned char> bytes(8 * samples);
+    in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (in.gcount() != static_cast<std::streamsize>(bytes.size()) || in.peek() != std::ifstream::traits_type::eof())
+        throw std::runtime_error("golden stream " + path.string() + ": not " + std::to_string(samples) + " samples");
+    auto f32 = [&](std::size_t at) {  // little-endian, whatever the host's byte order
+        std::uint32_t v = 0;
+        for (int b = 3; b >= 0; --b) v = (v << 8) | bytes[at + static_cast<std::size_t>(b)];
+        float x;
+        std::memcpy(&x, &v, sizeof x);
+        return static_cast<double>(x);
+    };
+    std::vector<std::complex<double>> u(samples);
+    for (std::size_t i = 0; i < samples; ++i) u[i] = {f32(8 * i), f32(8 * i + 4)};
     return u;
+}
+
+// A golden file's complex stream u (FS): its "stream_file" of "samples" samples (noise.json).
+inline std::vector<std::complex<double>> stream(const nlohmann::json& g) {
+    return read_c64(g.at("stream_file").get<std::string>(), g.at("samples").get<std::size_t>());
 }
 
 // The prototype's P: np.abs(boxcar(u, N_k)) ** 2, stored as float32 (ChannelDecoder.run), FS^2; rows are the
@@ -99,21 +119,11 @@ inline kz4ap::bank::Matrix powers(const std::vector<std::complex<double>>& u, co
     return P;
 }
 
-// golden_channel's stream `name` (channel.json "streams"), joined from its base64 float64 parts
-// channel_stream_<name>_<part>.json; FS.
+// golden_channel's stream `name` (channel.json "streams": its "file", channel_stream_<name>.c64, of "samples"
+// samples); FS.
 inline std::vector<std::complex<double>> channel_stream(const nlohmann::json& channel, const std::string& name) {
     const auto& s = channel.at("streams").at(name);
-    const int parts = s.at("parts").get<int>();
-    std::vector<std::complex<double>> u;
-    for (int part = 0; part < parts; ++part) {
-        const auto g = load_golden("channel_stream_" + name + "_" + std::to_string(part));
-        const auto re = decode_f64_base64(g.at("u_re_b64").get<std::string>());
-        const auto im = decode_f64_base64(g.at("u_im_b64").get<std::string>());
-        if (re.size() != im.size()) throw std::runtime_error("channel stream parts of unequal length");
-        for (std::size_t i = 0; i < re.size(); ++i) u.emplace_back(re[i], im[i]);
-    }
-    if (u.size() != s.at("samples").get<std::size_t>()) throw std::runtime_error("channel stream " + name + ": length");
-    return u;
+    return read_c64(s.at("file").get<std::string>(), s.at("samples").get<std::size_t>());
 }
 
 }  // namespace kz4ap::test
