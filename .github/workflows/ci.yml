@@ -9,6 +9,9 @@ permissions:
 
 jobs:
   build-and-test:
+    # Fixed check names, independent of the runner image: the main ruleset requires
+    # "build-and-test (windows)" and "build-and-test (linux)".
+    name: build-and-test (${{ matrix.preset }})
     strategy:
       fail-fast: false
       matrix:
