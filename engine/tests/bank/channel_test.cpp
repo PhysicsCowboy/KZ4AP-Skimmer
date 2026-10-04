@@ -6,10 +6,13 @@
 // exactly. Then the Review Focus tests (1: the same result however the stream is split into pushes; 2: a stream
 // cut mid-character and mid-over; 3: exact zeros, missing data since Plan B's B3; 4: the correction cut's
 // clipping; 5: 2000 samples/s) and the prototype's channel tests (training/tests/test_proto_channel.py), one for
-// one.
+// one. The golden comparisons and the prototype's tests run at the prototype's time constants, in seconds and set
+// explicitly (stage1_timing: W_min 0.8 s, time-out 2 s, periodicity windows 2, 5 and 10 s); Plan B's B4a made them
+// nominal dits (the configuration's default), tested at the end with the split test at the default timing.
 #include "kz4ap/bank/channel.hpp"
 
 #include "golden.hpp"
+#include "../test_signals.hpp"
 
 #include <gtest/gtest.h>
 
@@ -48,9 +51,17 @@ const std::vector<std::complex<double>>& stream_of(const std::string& name) {
     return it->second;
 }
 
-// Decodes u at rate_hz, pushed in pieces of `piece` samples (0: one push).
-ChannelResult decode(std::span<const std::complex<double>> u, double rate_hz, std::size_t piece = 0) {
-    BankChannel ch(BankConfig{}, rate_hz);
+// The prototype's time constants in seconds, the same for every branch and candidate (Plan A's, before B4a).
+const BankTiming& stage1_timing() {
+    static const BankTiming t = fixed_timing(BankConfig{}, 0.8, 2.0, {2.0, 5.0, 10.0});
+    return t;
+}
+
+// Decodes u at rate_hz, pushed in pieces of `piece` samples (0: one push), at the given timing (the prototype's
+// unless stated).
+ChannelResult decode(std::span<const std::complex<double>> u, double rate_hz, std::size_t piece = 0,
+                     const BankTiming& timing = stage1_timing()) {
+    BankChannel ch(BankConfig{}, rate_hz, timing);
     if (piece == 0) {
         ch.push(u);
     } else {
@@ -266,7 +277,7 @@ double port_score(const BankChannel& ch, double t_s) {
     const BankConfig cfg;
     const auto& per = ch.periodicity();
     const auto& buf = per.buffer();
-    const auto w = static_cast<std::size_t>(per.windows().front());
+    const auto w = static_cast<std::size_t>(per.windows().front().front());
     const std::span<const double> window(buf.data() + (buf.size() - w), w);
     const auto [t, score] = comb_estimate(window, per.rate_hz(), {t_s}, cfg.comb_teeth, cfg.comb_width);
     EXPECT_TRUE(t.has_value() && *t == t_s);
@@ -292,7 +303,7 @@ TEST(BankChannel, ThePeriodicityNearTiesAreRoundingOnBothSides) {
     for (const auto& c : cases) {
         SCOPED_TRACE(c.stream);
         const auto& u = stream_of(c.stream);
-        BankChannel ch(BankConfig{}, 1500.0);
+        BankChannel ch(BankConfig{}, 1500.0, stage1_timing());
         const auto block = static_cast<std::size_t>(ch.block_samples());
         for (std::size_t i = 0; i < u.size() && ch.periodicity_records() <= c.update; i += block)
             ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
@@ -383,18 +394,19 @@ TEST(BankChannel, AStreamCutMidCharacterPublishesThePartialCharacterAndNothingPa
 // The shift is not exact to the last bit: 1500 samples are 46.875 blocks of 32, so every block boundary of the
 // padded stream falls 4 samples (2.67 ms) later in the station's time than the unpadded stream's, and the noise
 // estimate, the keying and the periodicity are updated once per block. A character's time may therefore move
-// by the edges' quantization to the block grid: the tolerance is one block (21.33 ms).
-TEST(BankChannel, LeadingExactZerosDecodeAsTheStationAlone) {
+// by the edges' quantization to the block grid: the tolerance is one block (21.33 ms). Checked at the prototype's
+// timing (in seconds) and at Plan B's B4a default timing in dits.
+void expect_leading_zeros_decode_as_the_station_alone(const BankTiming& timing, const std::string& want_text) {
     const auto& u = stream_of("zero_pad");
     const double rate = rate_of("zero_pad");
     const std::size_t zeros = 1500;
     for (std::size_t i = 0; i < zeros; ++i) ASSERT_EQ(u[i], std::complex<double>(0.0, 0.0));
     ASSERT_NE(u[zeros], std::complex<double>(0.0, 0.0));
-    const ChannelResult padded = decode(u, rate);
-    const ChannelResult alone = decode(std::span(u).subspan(zeros), rate);
+    const ChannelResult padded = decode(u, rate, 0, timing);
+    const ChannelResult alone = decode(std::span(u).subspan(zeros), rate, 0, timing);
     const double shift = static_cast<double>(zeros) / rate;    // 1 s
     const double tol = BankConfig{}.block_s;                    // s
-    EXPECT_EQ(alone.text, "CQ TEST K1ABC ");
+    EXPECT_EQ(alone.text, want_text);
     EXPECT_EQ(padded.text, alone.text);
     ASSERT_EQ(padded.chars.size(), alone.chars.size());
     double worst = 0.0;
@@ -409,6 +421,14 @@ TEST(BankChannel, LeadingExactZerosDecodeAsTheStationAlone) {
     for (const auto& s : padded.selections) EXPECT_TRUE(std::isfinite(s.t_s));
     for (const auto& p : padded.periodicity) EXPECT_TRUE(std::isfinite(p.t_s) && std::isfinite(p.confidence));
     for (const auto& o : padded.over_starts) EXPECT_TRUE(std::isfinite(o));
+}
+
+TEST(BankChannel, LeadingExactZerosDecodeAsTheStationAlone) {
+    expect_leading_zeros_decode_as_the_station_alone(stage1_timing(), "CQ TEST K1ABC ");
+}
+
+TEST(BankChannelDits, LeadingExactZerosDecodeAsTheStationAlone) {
+    expect_leading_zeros_decode_as_the_station_alone(bank_timing(BankConfig{}), "CQ TEST K1ABC ");
 }
 
 TEST(BankChannel, ThePowerWindowStoresFourByteFloats) {
@@ -496,7 +516,7 @@ TEST(BankOutput, FromIndexCountsTheKeptCharacters) {
     for (const std::string name : {"clean", "turnover", "speed_turnover"}) {
         SCOPED_TRACE(name);
         const auto& u = stream_of(name);
-        BankChannel ch(BankConfig{}, rate_of(name));
+        BankChannel ch(BankConfig{}, rate_of(name), stage1_timing());
         const auto block = static_cast<std::size_t>(ch.block_samples());
         std::vector<Char> before;
         std::size_t seen = 0;
@@ -761,6 +781,76 @@ TEST(BankChannelPrototypeTests, ASpeedChangeAcrossATurnoverIsTakenUp) {
     EXPECT_TRUE(starts_with(t, "CQ DE K1ABC K ")) << t;
     EXPECT_TRUE(ends_with(t, "DE W9XYZ W9XYZ K")) << t;
     EXPECT_EQ(r.over_starts.size(), 1u);
+}
+
+// ---- Plan B, B4a: time constants in nominal dits (the configuration's default timing) ------------------------
+
+// Review Focus 1 at the default timing (per-branch W_min and time-out, a periodicity window per candidate, whose
+// sums are slid from one recomputation to the next): the split into pushes does not matter.
+class ChannelSplitDits : public ::testing::TestWithParam<std::string> {};
+
+TEST_P(ChannelSplitDits, PiecesOf1And47And1000SamplesGiveTheSingleResult) {
+    const auto& u = stream_of(GetParam());
+    const BankTiming timing = bank_timing(BankConfig{});
+    const ChannelResult whole = decode(u, rate_of(GetParam()), 0, timing);
+    expect_published_finite(whole);
+    for (std::size_t piece : {std::size_t{1}, std::size_t{47}, std::size_t{1000}}) {
+        SCOPED_TRACE("pieces of " + std::to_string(piece) + " samples");
+        expect_identical(decode(u, rate_of(GetParam()), piece, timing), whole);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(Streams, ChannelSplitDits, ::testing::Values("clean", "farnsworth", "zero_pad"),
+                         [](const auto& info) { return info.param; });
+
+// A 12 WPM station (T = 100 ms; S500 = 15.2 dB: carrier amplitude 1 FS, noise 0.03 FS^2 in 500 Hz) re-keys the over's
+// start on its own branch, k = 23 (d_23 = 97.7 ms, the nearest), after W_min,23 = 16.7 d_23 = 1.631 s of keyed time,
+// not stage 1's 0.8 s: the block at which the branch's amplitude becomes known (a re-key: the keyed count reached
+// W_min,23 at that block and had not at the block before) is compared with the same stream at the prototype's
+// timing, where it comes at 0.8 s of keyed time.
+TEST(BankChannelDits, A12WpmStationReKeysAfterItsBranchsWait) {
+    const double rate = 1500.0;
+    const std::string text = "PARIS PARIS PARIS";
+    const auto x = kz4ap::test::keyed_signal(text, 12.0, rate, kz4ap::test::duration_for(text, 12.0), 0.0, 1.0,
+                                             std::sqrt(0.09), 7);
+    std::vector<std::complex<double>> u(x.size());
+    for (std::size_t i = 0; i < x.size(); ++i) u[i] = {x[i].real(), x[i].imag()};
+    const std::size_t k = 22;  // branch 23
+    struct Known {
+        double t_s = -1.0;          // the block's end, s
+        double weight_s = 0.0;      // keyed time counted at that block, s
+        double weight_before_s = 0.0;
+    };
+    auto known_at = [&](const BankTiming& timing) {
+        BankChannel ch(BankConfig{}, rate, timing);
+        const auto block = static_cast<std::size_t>(ch.block_samples());
+        Known out;
+        double before = 0.0;
+        for (std::size_t i = 0; i < u.size(); i += block) {
+            ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
+            if (!ch.keyer().unknown[k]) {
+                out = Known{static_cast<double>(ch.processed()) / rate, ch.keyer().weight[k] / rate, before};
+                break;
+            }
+            before = ch.keyer().weight[k] / rate;
+        }
+        return out;
+    };
+    const BankTiming dits = bank_timing(BankConfig{});
+    const double wait = dits.rekey_wait_s[k];
+    EXPECT_NEAR(wait, 16.7 * 0.012 * std::pow(1.1, 22), 1e-12);
+    EXPECT_NEAR(wait, 1.631, 0.001);
+    const Known now = known_at(dits);
+    const Known old = known_at(stage1_timing());
+    std::printf("[ info ] branch 23 known at %.3f s with %.3f s keyed (before %.3f s); stage 1's timing: at %.3f s "
+                "with %.3f s keyed\n", now.t_s, now.weight_s, now.weight_before_s, old.t_s, old.weight_s);
+    ASSERT_GT(now.t_s, 0.0) << "branch 23 never became known";
+    ASSERT_GT(old.t_s, 0.0);
+    EXPECT_GE(now.weight_s, wait);         // re-keyed when W_min,23 was reached ...
+    EXPECT_LT(now.weight_before_s, wait);  // ... and not before (not a time-out)
+    EXPECT_GE(old.weight_s, 0.8);
+    EXPECT_LT(old.weight_before_s, 0.8);
+    EXPECT_GT(now.t_s, old.t_s + 0.5);  // about 0.8 s more keyed time: at least 0.5 s later
 }
 
 }  // namespace

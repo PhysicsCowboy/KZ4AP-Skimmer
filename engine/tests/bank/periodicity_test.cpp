@@ -10,7 +10,11 @@
 //    from which keyed_p and the noise are rebuilt as the Python test builds them) and the same assertions; the
 //    strict xfail is a GTEST_SKIP with the same reason. The edge-comb and spectrum tests are not ported (those
 //    methods are not).
+// Both use the prototype's windows, shared by every candidate and in seconds, set explicitly (Plan B's B4a made
+// each candidate's window N_w x T, tested in 3).
+// 3. Plan B, B4a: each candidate dit T judged over its own window N_w x T.
 #include "kz4ap/bank/periodicity.hpp"
+#include "kz4ap/bank/timing.hpp"
 
 #include "golden.hpp"
 
@@ -19,6 +23,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -48,10 +54,16 @@ void expect_optional(const std::optional<double>& actual, const nlohmann::json& 
     }
 }
 
-// ProtoConfig(periodicity_windows_s=windows, comb_confidence_min=0, ...): every estimate confident.
-BankConfig open_config(std::vector<double> windows) {
+// Windows in seconds shared by every candidate (the prototype's periodicity_windows_s): one row of one value each.
+std::vector<std::vector<double>> shared(const std::vector<double>& windows_s) {
+    std::vector<std::vector<double>> rows;
+    for (const double w : windows_s) rows.push_back({w});
+    return rows;
+}
+
+// ProtoConfig(comb_confidence_min=0, ...): every estimate confident (with shared windows).
+BankConfig open_config() {
     BankConfig cfg;
-    cfg.periodicity_windows_s = std::move(windows);
     cfg.comb_confidence_min = 0.0;
     cfg.edge_confidence_min = 0.0;
     cfg.spectrum_confidence_min = 0.0;
@@ -107,9 +119,14 @@ TEST(BankPeriodicity, CombMatchesPrototypeThroughRun) {
     for (const int wpm : g.at("wpm").get<std::vector<int>>()) {
         SCOPED_TRACE(std::to_string(wpm) + " WPM");
         const std::string key = std::to_string(wpm);
-        Periodicity per(BankConfig{}, rate);
+        Periodicity per(BankConfig{}, rate, shared({2.0, 5.0, 10.0}));  // the prototype's windows, s
         EXPECT_EQ(per.factor(), g.at("factor").get<int>());
-        EXPECT_EQ(per.windows(), g.at("windows_samples").get<std::vector<int>>());
+        std::vector<int> windows;
+        for (const auto& row : per.windows()) {
+            ASSERT_EQ(row.size(), 1u);
+            windows.push_back(row[0]);
+        }
+        EXPECT_EQ(windows, g.at("windows_samples").get<std::vector<int>>());
         EXPECT_EQ(per.update_every(), g.at("update_every").get<int>());
         const auto p = decode_f64_base64(g.at(key + "_p_b64").get<std::string>());
         const auto lengths = g.at(key + "_block_lengths").get<std::vector<int>>();
@@ -168,7 +185,7 @@ TEST(BankPeriodicityPython, FindsTheDit) {
                                                               {"100_machine", 100.0}, {"25_paddle", 25.0}};
     for (const auto& [name, wpm] : runs) {
         SCOPED_TRACE(name);
-        Periodicity per(open_config({10.0}), kRate);
+        Periodicity per(open_config(), kRate, shared({10.0}));
         per.push(ten_seconds(name));
         const PeriodicityUpdate r = per.update(true);
         EXPECT_TRUE(r.updated);
@@ -195,7 +212,7 @@ TEST(BankPeriodicityPython, NoiseScoresBelowKeying) {
     const auto noise = smooth14(scaled, 0, 15000);
     std::vector<double> scores;
     for (const auto& p : {ten_seconds("25_machine"), noise}) {
-        Periodicity per(open_config({10.0}), kRate);
+        Periodicity per(open_config(), kRate, shared({10.0}));
         per.push(p);
         scores.push_back(per.update(true).confidence);
     }
@@ -203,7 +220,7 @@ TEST(BankPeriodicityPython, NoiseScoresBelowKeying) {
 }
 
 TEST(BankPeriodicityPython, TheShortestFullWindowIsUsedAndUpdatesFollowTheInterval) {
-    Periodicity per(open_config({2.0, 5.0, 10.0}), kRate);
+    Periodicity per(open_config(), kRate, shared({2.0, 5.0, 10.0}));
     const auto p = ten_seconds("25_machine");
     const std::span<const double> s(p);
     per.push(s.subspan(0, 1500));
@@ -223,14 +240,133 @@ TEST(BankPeriodicityPython, TheShortestFullWindowIsUsedAndUpdatesFollowTheInterv
 
 TEST(BankPeriodicityPython, AnUnconfidentEstimateIsNotUsed) {
     BankConfig cfg;
-    cfg.periodicity_windows_s = {10.0};
     cfg.comb_confidence_min = 10.0;
-    Periodicity per(cfg, kRate);
+    Periodicity per(cfg, kRate, shared({10.0}));
     per.push(ten_seconds("25_machine"));
     const PeriodicityUpdate r = per.update(true);
     EXPECT_FALSE(r.t_p_s.has_value());
     EXPECT_FALSE(r.window_s.has_value());
     EXPECT_GT(r.confidence, 0.0);
+}
+
+// ---------------------------------------------------------------- Plan B, B4a: a window per candidate
+
+// The configuration's windows: N_w x T for each candidate T, N_w = 41.7, 104 and 208, in samples at 750 samples/s
+// max(16, round(N_w T 750)): 375 (41.7 x 12 ms), 936 and 1872 samples for the 12 ms candidate; 7576, 18894 and 37789
+// for the 242.2 ms one (50.4 s). Every candidate is inside the comb's reach in every window, (4 + 1/2 + 0.075) 2T =
+// 9.15 T <= (n - 1) / 2: N_w >= 41.7 > 18.3 (derived; the rounding of n costs at most half a sample).
+TEST(BankPeriodicityDits, TheWindowOfACandidateIsNwTimesItsDit) {
+    const BankConfig cfg;
+    const Periodicity per(cfg, kRate);
+    ASSERT_EQ(per.rate_hz(), 750.0);
+    const auto& grid = per.grid();
+    ASSERT_EQ(grid.size(), 303u);
+    ASSERT_EQ(per.windows().size(), 3u);
+    const double n_w[] = {41.7, 104.0, 208.0};
+    for (std::size_t r = 0; r < 3; ++r) {
+        ASSERT_EQ(per.windows()[r].size(), grid.size());
+        for (std::size_t g = 0; g < grid.size(); ++g) {
+            const int want = std::max(16, static_cast<int>(std::nearbyint(n_w[r] * grid[g] * 750.0)));
+            EXPECT_EQ(per.window_samples(r, g), want) << r << ", " << g;
+            const double reach = (cfg.comb_teeth + 0.5 + cfg.comb_width) * 2.0 * grid[g] * 750.0;
+            EXPECT_LE(reach, (per.window_samples(r, g) - 1) / 2.0) << r << ", " << g;
+        }
+    }
+    EXPECT_EQ(per.window_samples(0, 0), 375);
+    EXPECT_EQ(per.window_samples(1, 0), 936);
+    EXPECT_EQ(per.window_samples(2, 0), 1872);
+    EXPECT_EQ(per.window_samples(0, 302), 7576);
+    EXPECT_EQ(per.window_samples(1, 302), 18894);
+    EXPECT_EQ(per.window_samples(2, 302), 37789);
+}
+
+// Each candidate's score is the comb's score of that candidate alone on its own most recent N_w T samples
+// (comb_estimate(recent n samples, rate, {T})): over 60 s of keyed posteriors at five speeds with noise, pushed block
+// by block as the channel does (32 samples at 1500 samples/s, an update after each), with one NaN at 5.0 s. Checked
+// at every 25th recomputation, every 4th candidate. The slid sums are a different summation from the FFT's: they
+// agree to a largest absolute difference of 1e-12 (bound) in the score, a measured margin (the largest measured
+// difference is printed; scores are of order 1e-2 to 1). A candidate whose window holds the NaN has no finite score
+// (comb_estimate: none), and the row then has no estimate, as the prototype's comb on a window with a NaN; once the
+// NaN has left a candidate's window its score is finite again and agrees.
+TEST(BankPeriodicityDits, EachCandidateIsJudgedOverItsOwnWindow) {
+    const BankConfig cfg;
+    Periodicity per(cfg, kRate);
+    std::vector<double> p;
+    const auto uniform = decode_f64_base64(cases().at("noise_uniform_b64").get<std::string>());
+    for (const char* name : {"5_machine", "12_machine", "25_machine", "40_machine", "25_paddle", "100_machine"}) {
+        const auto x = ten_seconds(name);
+        for (std::size_t i = 0; i < x.size(); ++i) p.push_back(0.9 * x[i] + 0.1 * uniform[i % uniform.size()]);
+    }
+    p[7500] = std::numeric_limits<double>::quiet_NaN();
+    const std::size_t block = 32;
+    std::size_t updates = 0, checked = 0, nonfinite = 0;
+    double worst = 0.0;
+    for (std::size_t i = 0; i < p.size(); i += block) {
+        per.push(std::span<const double>(p.data() + i, std::min(block, p.size() - i)));
+        if (!per.update().updated || ++updates % 25 != 0) continue;
+        const auto& buf = per.buffer();
+        for (std::size_t r = 0; r < 3; ++r) {
+            const auto& scores = per.candidate_scores()[r];
+            ASSERT_EQ(scores.size(), per.grid().size());
+            for (std::size_t g = 0; g < per.grid().size(); g += 4) {
+                const auto n = static_cast<std::size_t>(per.window_samples(r, g));
+                if (buf.size() < n) {
+                    EXPECT_EQ(scores[g], -std::numeric_limits<double>::infinity());
+                    continue;
+                }
+                const std::span<const double> recent(buf.data() + (buf.size() - n), n);
+                const auto [t, want] = comb_estimate(recent, per.rate_hz(), {per.grid()[g]}, cfg.comb_teeth,
+                                                     cfg.comb_width);
+                if (!t) {
+                    EXPECT_FALSE(std::isfinite(scores[g])) << r << ", " << g;
+                    ++nonfinite;
+                    continue;
+                }
+                ++checked;
+                worst = std::max(worst, std::abs(scores[g] - want));
+                EXPECT_NEAR(scores[g], want, 1e-12) << "row " << r << ", T " << per.grid()[g] << " s, update " << updates;
+            }
+            // the row's estimate: the first maximum of the candidates' scores, none if a NaN is among them
+            std::optional<double> pick;
+            double best = -std::numeric_limits<double>::infinity();
+            bool nan = false;
+            for (std::size_t g = 0; g < scores.size(); ++g) {
+                if (std::isnan(scores[g])) nan = true;
+                if (!nan && scores[g] > best) {
+                    best = scores[g];
+                    pick = per.grid()[g];
+                }
+            }
+            if (nan || !std::isfinite(best)) pick.reset();
+            EXPECT_EQ(per.per_window()[r].first, pick) << "row " << r << ", update " << updates;
+        }
+    }
+    std::printf("[ info ] %zu candidate scores checked, %zu without a finite score; largest difference %.3e\n", checked,
+                nonfinite, worst);
+    EXPECT_GT(checked, 1000u);
+    EXPECT_GT(nonfinite, 0u);  // the NaN was inside some windows
+}
+
+// The shortest confident window gives T_P, now per candidate: a 25 WPM stream (48 ms) is found in the shortest window
+// (41.7 T = 2.0 s), whose window_s is that of the chosen candidate.
+TEST(BankPeriodicityDits, TheShortestConfidentWindowGivesTp) {
+    const BankConfig cfg;
+    Periodicity per(cfg, kRate);
+    per.push(ten_seconds("25_machine"));
+    const PeriodicityUpdate r = per.update(true);
+    ASSERT_TRUE(r.t_p_s.has_value());
+    expect_rel(*r.t_p_s, 0.048, 0.05);
+    ASSERT_TRUE(r.window_s.has_value());
+    EXPECT_NEAR(*r.window_s, 41.7 * *r.t_p_s, 1.0 / 750.0);
+}
+
+// A per-candidate row of the wrong size is refused; one value per row is a shared window.
+TEST(BankPeriodicityDits, AWindowRowNeedsOneValueOrOnePerCandidate) {
+    const BankConfig cfg;
+    EXPECT_THROW(Periodicity(cfg, kRate, {{1.0, 2.0}}), std::invalid_argument);
+    EXPECT_THROW(Periodicity(cfg, kRate, {}), std::invalid_argument);
+    EXPECT_NO_THROW(Periodicity(cfg, kRate, {{2.0}}));
+    EXPECT_EQ(bank_timing(cfg).periodicity_windows_s.size(), 3u);
 }
 
 }  // namespace

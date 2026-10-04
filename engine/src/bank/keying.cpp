@@ -55,13 +55,17 @@ std::vector<std::vector<std::pair<std::int64_t, bool>>> edges(const Matrix& key,
     return out;
 }
 
-BankKeyer::BankKeyer(const BankConfig& cfg, double rate_hz, const std::vector<double>& lengths_s)
+BankKeyer::BankKeyer(const BankConfig& cfg, double rate_hz, const std::vector<double>& lengths_s,
+                     const std::vector<double>& rekey_wait_s)
     : alpha(1.0 - std::exp(-1.0 / (cfg.amplitude_tau_s * rate_hz))),
       log_prior(log_prior_odds(cfg)),
       h(cfg.hysteresis_nats),
-      x_off(std::sqrt(-2.0 * std::log(cfg.release_probability))),
-      rekey_weight(cfg.rekey_after_s * rate_hz) {
+      x_off(std::sqrt(-2.0 * std::log(cfg.release_probability))) {
     const std::size_t k = lengths_s.size();
+    if (rekey_wait_s.size() != k) throw std::invalid_argument("rekey_wait_s needs one W_min per branch");
+    // W_min,k in samples of keyed time (s x samples/s; not rounded: W counts samples and is compared with it).
+    rekey_weight.resize(k);
+    for (std::size_t i = 0; i < k; ++i) rekey_weight[i] = rekey_wait_s[i] * rate_hz;
     // Squelch: a_min,k = squelch_a (L_k / squelch_ref_s)^squelch_exponent (a-hat^2's spread in noise alone
     // grows as sqrt(L_k), so a_min as L_k^(1/4)).
     a_min.resize(k);
@@ -82,8 +86,10 @@ BankKeyer::BankKeyer(const BankConfig& cfg, double rate_hz, const std::vector<do
     prev_amp2.assign(k, kNaN);
     unknown.assign(k, true);  // the stream's start is an over's start
     keyed.assign(k, {});
-    // seed_memory_rekeys x W_min of keyed time, samples (Python int(round(.)): ties to even); heuristic.
-    keyed_cap = std::max(1, static_cast<int>(std::nearbyint(cfg.seed_memory_rekeys * rekey_weight)));
+    // seed_memory_rekeys x W_min,k of keyed time, samples (Python int(round(.)): ties to even); heuristic.
+    keyed_cap.resize(k);
+    for (std::size_t i = 0; i < k; ++i)
+        keyed_cap[i] = std::max(1, static_cast<int>(std::nearbyint(cfg.seed_memory_rekeys * rekey_weight[i])));
     key.assign(k, 0);
 }
 
@@ -161,7 +167,7 @@ void BankKeyer::update_amplitude(const Matrix& P, const Matrix& p, const std::ve
                 ++count;
             }
         if (count == 0) continue;
-        const auto cap = static_cast<std::size_t>(keyed_cap);
+        const auto cap = static_cast<std::size_t>(keyed_cap[kk]);
         if (kept.size() > cap) kept.erase(kept.begin(), kept.end() - static_cast<std::ptrdiff_t>(cap));
         weight[kk] += static_cast<double>(count);
         // Python's max(0.0, x): 0 when x is NaN, as std::max(0.0, x) gives.
@@ -171,7 +177,7 @@ void BankKeyer::update_amplitude(const Matrix& P, const Matrix& p, const std::ve
 
 std::vector<bool> BankKeyer::ready_to_rekey() const {
     std::vector<bool> out(unknown.size());
-    for (std::size_t k = 0; k < out.size(); ++k) out[k] = unknown[k] && weight[k] >= rekey_weight;
+    for (std::size_t k = 0; k < out.size(); ++k) out[k] = unknown[k] && weight[k] >= rekey_weight[k];
     return out;
 }
 

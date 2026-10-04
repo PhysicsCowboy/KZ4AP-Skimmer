@@ -56,3 +56,16 @@ def test_the_shortest_confident_window_rule_is_scored_against_the_true_dit():
     assert metrics.true_dit_s({**LABEL, "wpm_end": 35.0}) is None
     assert metrics.true_dit_s({**LABEL, "senders": [{"wpm": 20.0}, {"wpm": 25.0}]}) is None
     assert metrics.true_dit_s(LABEL) == pytest.approx(0.048)
+
+
+def test_periodicity_points_from_the_decoders_own_records(tmp_path):
+    # [t, T_P, confidence, window, [(T, score) per window, shortest first]]; points only inside the transmission
+    per = [[t, 0.048, 0.4, 2.0, [[0.048, 0.4], [None, 0.0], [0.096, 0.2]]] for t in (0.25, 10.0, 29.75, 31.0)]
+    suite(tmp_path, LABEL, {"text": "CQ", "selections": [], "over_starts": [], "chars": [], "periodicity": per})
+    points = metrics.periodicity_points_decoded(tmp_path, "p")
+    assert [p["since_start"] for p in points] == [0.25, 10.0, 29.75]
+    assert points[0]["per"] == [(0.048, 0.4), (None, 0.0), (0.096, 0.2)]
+    assert points[0]["truth"] == pytest.approx(0.048) and points[0]["unit"] == ("a", 0)
+    r = metrics.evaluate_rule(points, (0, 1, 2), (0, 1, 2), 0.03)
+    assert r["confident"] == 3 and r["precision"] == pytest.approx(1.0)
+    assert metrics.periodicity_points_decoded(tmp_path, "p", min_snr_db=20.0) == []

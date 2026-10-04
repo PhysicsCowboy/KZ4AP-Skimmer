@@ -5,6 +5,7 @@ evaluated offline on stored branch-1 posteriors; and the synthetic speed-step fo
     python -m kz4ap_proto.experiments run --out build/suite/full3 --bench PATH --name exp-ref [--set KEY=VALUE ...] [--keep-p1] [--jobs N]
     python -m kz4ap_proto.experiments compare --out build/suite/full3 --base exp-ref --variant exp-E10-branch
     python -m kz4ap_proto.experiments periodicity --out build/suite/full3 --name exp-ref [--set KEY=VALUE ...] --subsets "2,5,10;1,2,5,10"
+    python -m kz4ap_proto.experiments periodicity-decoded --out build/suite/full3 --name bank-b4a [--threshold 0.03]
     python -m kz4ap_proto.experiments follow [--set KEY=VALUE ...] [--seeds 10]
     python -m kz4ap_proto.experiments batch --out build/suite/full3 --bench PATH --spec build/suite/full3/experiments/E4.json
     python -m kz4ap_proto.experiments calibrate-x-on [--set KEY=VALUE ...] [--events 20]
@@ -223,6 +224,37 @@ def periodicity_table(out_dir, name: str, values: dict, subsets, target: float =
     return path
 
 
+def periodicity_decoded_table(out_dir, name: str, threshold: float = 0.03, target: float = 0.95) -> Path:
+    """Plan B, B4a: the periodicity rule evaluated on the decoder's own records in name's decoded files (whatever its
+    windows: the C++ bank's fixed windows in seconds or a window per candidate in dits). Windows are numbered
+    shortest first (0, 1, 2). For the rule over all windows and for each window alone: precision, coverage and
+    median time to the first confident estimate at `threshold`, and the lowest of 100 quantiles of the scores at
+    which precision reaches `target` (scores as recorded, rounded to 4 decimals)."""
+    out_dir = Path(out_dir)
+    points = metrics.periodicity_points_decoded(out_dir, name, only=DEV)
+    n = max((len(p["per"]) for p in points), default=0)
+    windows = tuple(range(n))
+    lines = [f"# Periodicity, from {name}'s decoded records", "",
+             f"{len(points)} update points inside transmissions (groups {', '.join(metrics.PERIODICITY_GROUPS)}; "
+             "S500 >= 0 dB; constant-speed labels; the decoder's own recomputations). Correct: within 5% of 1.2 s / "
+             "WPM. Intervals: bootstrap 95% over channels. Windows numbered shortest first.", "",
+             "| windows | threshold | precision | coverage | median time to confident (s) |", "|---|---|---|---|---|"]
+    for subset in [windows] + [(w,) for w in windows]:
+        calibrated, r = metrics.calibrate(points, windows, subset, target)
+        for label, th, res in (("configured", threshold, metrics.evaluate_rule(points, windows, subset, threshold)),
+                               ("calibrated", calibrated, r)):
+            if res is None:
+                lines.append(f"| {subset} | {label}: none reaches {target} | — | — | — |")
+                continue
+            lines.append(f"| {subset} | {label} {th:.4g} | {_with_interval(res['precision'], res['precision_interval'], '.3f')} | "
+                         f"{_with_interval(res['coverage'], res['coverage_interval'], '.3f')} | "
+                         f"{_with_interval(res['median_time_to_confident_s'], None, '.2f')} |")
+    path = out_dir / "experiments" / f"periodicity-decoded-{name}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
 def follow_marks(cfg, seeds) -> list:
     """Spec 4.6's speed jump: 15 -> 30 WPM at the fifth word, S500 = 20 dB. For each seed, the marks sent from
     the step until a branch matched to 30 WPM (within the eligibility tolerance of 0.8 x 40 ms) is selected;
@@ -248,10 +280,11 @@ def main(argv=None) -> None:
     r = sub.add_parser("run")
     c = sub.add_parser("compare")
     p = sub.add_parser("periodicity")
+    pd = sub.add_parser("periodicity-decoded")
     f = sub.add_parser("follow")
     b = sub.add_parser("batch")
     x = sub.add_parser("calibrate-x-on")
-    for s in (r, c, p, b):
+    for s in (r, c, p, b, pd):
         s.add_argument("--out", type=Path, required=True)
     for s in (r, p, f, x):
         s.add_argument("--set", dest="values", action="append", help="KEY=VALUE: a ProtoConfig value")
@@ -271,6 +304,9 @@ def main(argv=None) -> None:
     p.add_argument("--subsets", required=True, help='window subsets, s: "2,5,10;1,2,5,10"')
     p.add_argument("--target", type=float, default=0.95)
     f.add_argument("--seeds", type=int, default=10)
+    pd.add_argument("--name", required=True)
+    pd.add_argument("--threshold", type=float, default=0.03)
+    pd.add_argument("--target", type=float, default=0.95)
     args = parser.parse_args(argv)
     if args.command == "run":
         print(f"wrote {run(args.out, args.bench, args.name, runner.parse_values(args.values), args.keep_p1, args.jobs, SUBSETS[args.subset])}")
@@ -281,6 +317,8 @@ def main(argv=None) -> None:
         print(json.dumps([round(v, 4) for v in calibrate_x_on(cfg, events=args.events)]))
     elif args.command == "compare":
         print(f"wrote {compare(args.out, args.base, args.variant, SUBSETS[args.subset])}")
+    elif args.command == "periodicity-decoded":
+        print(f"wrote {periodicity_decoded_table(args.out, args.name, args.threshold, args.target)}")
     elif args.command == "periodicity":
         subsets = [tuple(float(x) for x in s.split(",")) for s in args.subsets.split(";")]
         print(f"wrote {periodicity_table(args.out, args.name, runner.parse_values(args.values), subsets, args.target, args.jobs)}")

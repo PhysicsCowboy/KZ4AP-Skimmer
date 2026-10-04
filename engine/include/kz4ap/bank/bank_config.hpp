@@ -4,7 +4,9 @@
 // prototype's. Parameters are in physical units (Hz, s, FS, nats, dB with a named reference); lengths
 // become samples only at the point of use. Defaults are checked against the prototype's by
 // engine/tests/bank/config_test.cpp (golden file engine/tests/data/bank/config.json). Plan B adds fields the
-// prototype does not have (marked "Plan B"); their defaults are checked by the same test file.
+// prototype does not have (marked "Plan B"); their defaults are checked by the same test file. Plan B's B4a
+// replaced three of the prototype's fields in seconds by fields in dits (rekey_after_dits, periodicity_windows_dits,
+// rekey_timeout_ratio); timing.hpp converts them to seconds per branch and per candidate dit.
 #pragma once
 
 #include <cmath>
@@ -88,9 +90,13 @@ struct BankConfig {
     };
     // probability, key up where noise alone exceeds x this often (x_off = 1.55); heuristic
     double release_probability = 0.3;
-    // s, W_min of keyed time while the amplitude is unknown; measured (E9b)
-    double rekey_after_s = 0.8;
-    // multiples of rekey_after_s, bound on the seed's memory of keyed time; heuristic
+    // nominal dits of branch k, d_k = L_k / length_dits (the nominal L_k: d_k = 12 ms ... 230 ms): W_min,k =
+    // rekey_after_dits x d_k of keyed time while the amplitude is unknown. Class (1) dits: it collects enough marks to
+    // seed the amplitude, and the marks a branch is matched to last a number of its dits. Status: derived from a
+    // measurement, the prototype's 0.8 s (measured at 25 WPM by E9b) over 48 ms = 16.7 (stage-2 spec section 3.1).
+    // Plan B (B4a), replaces rekey_after_s
+    double rekey_after_dits = 16.7;
+    // multiples of W_min,k, bound on the seed's memory of keyed time; heuristic
     double seed_memory_rekeys = 4.0;
     // N_mem, marks and spaces; measured (E4)
     double fit_memory = 48.0;
@@ -118,8 +124,10 @@ struct BankConfig {
     double min_fit_weight = 8.0;
     // "comb" (on Pi = 2T; owner), "edge" or "spectrum"; E1
     std::string periodicity_method = "comb";
-    // s; placeholder (E2)
-    std::vector<double> periodicity_windows_s = {2.0, 5.0, 10.0};
+    // N_w, dimensionless: each candidate dit T of the comb is judged over a window of N_w x T, one window per value.
+    // Class (1) dits: the comb needs enough dit periods (its reach is 9.15 T). Status: placeholder, stage 1's 2, 5
+    // and 10 s at T = 48 ms (stage-2 spec section 3.1). Plan B (B4a), replaces periodicity_windows_s
+    std::vector<double> periodicity_windows_dits = {41.7, 104.0, 208.0};
     // s; heuristic
     double periodicity_update_s = 0.25;
     // samples/s, p is averaged down to this rate; heuristic
@@ -157,8 +165,11 @@ struct BankConfig {
     double new_over_min_s = 0.5;
     // multiples of T_g, dimensionless; placeholder, kept by E7
     double new_over_gaps = 12.0;
-    // s, channel time an over's amplitude may stay unknown before re-keying; placeholder, heuristic
-    double rekey_timeout_s = 2.0;
+    // multiples of W_min,k, dimensionless: the channel time branch k's over may stay of unknown amplitude before it is
+    // re-keyed or cleared is rekey_timeout_ratio x W_min,k = 41.7 d_k. Class (1) dits, through W_min,k: a station is
+    // keyed down about 44% of the time, so it needs about W_min,k / 0.44 of channel time to reach W_min,k. Status:
+    // heuristic, stage 1's ratio 2 s / 0.8 s (stage-2 spec section 3.1). Plan B (B4a), replaces rekey_timeout_s
+    double rekey_timeout_ratio = 2.5;
     // marks and spaces of this over a fresh fit needs before it may replace the previous over's; placeholder, heuristic
     int fresh_fit_min_obs = 8;
     // s; owner

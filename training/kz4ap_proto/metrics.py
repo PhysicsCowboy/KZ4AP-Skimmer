@@ -194,6 +194,28 @@ def periodicity_points(out_dir, name, cfg, only=None, groups=PERIODICITY_GROUPS,
         return [p for points in pool.map(_points_of, work, chunksize=1) for p in points]
 
 
+def periodicity_points_decoded(out_dir, name, only=None, groups=PERIODICITY_GROUPS, min_snr_db=0.0) -> list:
+    """The decoder's own periodicity records (Plan B, B4a), one point per recorded recomputation inside a
+    transmission of a scored, constant-speed label at S500 >= min_snr_db in the given groups, with every window's
+    (T, score) as the decoded file records it (scores rounded to 4 decimals). The same points as
+    periodicity_points, but read from what the decoder computed (its windows, whatever their form) rather than
+    recomputed from stored posteriors; "per" lists the windows shortest first."""
+    points = []
+    for job, label, ch, _ in iter_channels(out_dir, name, only):
+        if job["group"] not in groups or true_dit_s(label) is None or not label.get("score", True):
+            continue
+        if label["snr_db"] < min_snr_db:
+            continue
+        txs = transmissions(label)
+        unit = (job["result"], ch["label_index"])
+        for t, _, _, _, per in ch["periodicity"]:
+            inside = [k for k, (a, b) in enumerate(txs) if a <= t <= b]
+            if inside:
+                points.append({"group": job["group"], "unit": unit, "tx": inside[0], "truth": true_dit_s(label),
+                               "since_start": t - txs[inside[0]][0], "per": [tuple(w) for w in per]})
+    return points
+
+
 def evaluate_rule(points, windows_s, subset, threshold: float, tolerance: float = math.log(1.05)) -> dict:
     """The rule "the confident estimate (score >= threshold) with the shortest window in subset": precision
     (confident estimates within 5% of the true dit), coverage (points with a confident estimate), and the median

@@ -14,6 +14,7 @@
 #include "kz4ap/bank/noise.hpp"
 #include "kz4ap/bank/periodicity.hpp"
 #include "kz4ap/bank/selection.hpp"
+#include "kz4ap/bank/timing.hpp"
 
 #include <complex>
 #include <cstddef>
@@ -46,7 +47,8 @@ struct Correction {
     std::string old_text;  // the replaced characters' text
     std::string new_text;  // the text that replaced it
     std::string reason;    // "switch" (branch selection), "rekey" (an over's first marks re-keyed) or "timeout"
-                           // (re-keyed, or deleted, because the over's amplitude stayed unknown rekey_timeout_s)
+                           // (re-keyed, or deleted, because the over's amplitude stayed unknown for the branch's
+                           // re-key time-out)
     // The number of published characters kept before the replacement (the prototype's len(kept)): the
     // characters from this index on were replaced by new_text's characters. Not in the prototype's JSON.
     std::size_t from_index = 0;
@@ -214,7 +216,11 @@ struct ChannelResult {
 // One channel through the bank, streaming (the prototype's ChannelDecoder.run).
 class BankChannel {
 public:
+    // The configuration's timing (bank_timing(cfg): time constants in dits).
     BankChannel(const BankConfig& cfg, double rate_hz);
+    // An explicit timing (e.g. fixed_timing, stage 1's constants in seconds, for the golden tests). Throws
+    // std::invalid_argument if a per-branch list does not hold one value per branch.
+    BankChannel(const BankConfig& cfg, double rate_hz, const BankTiming& timing);
     ~BankChannel();
     BankChannel(const BankChannel&) = delete;
     BankChannel& operator=(const BankChannel&) = delete;
@@ -240,6 +246,9 @@ public:
     // The periodicity estimator and the number of its recomputations recorded so far (for tests that look
     // inside a recomputation).
     const Periodicity& periodicity() const { return periodicity_; }
+    // The keyer (each branch's amplitude state and W_min,k) and each branch's re-key time-out, samples.
+    const BankKeyer& keyer() const { return keyer_; }
+    const std::vector<std::int64_t>& rekey_timeout_samples() const { return timeout_; }
     std::size_t periodicity_records() const { return result_.periodicity.size(); }
     // The |v_k|^2 window's storage: values allocated (branches x columns) and their size, bytes.
     std::size_t p_window_values() const { return p_win_.v.size(); }
@@ -274,7 +283,7 @@ private:
     ChannelResult result_;
     int block_;
     std::int64_t reach_;
-    std::int64_t timeout_;
+    std::vector<std::int64_t> timeout_;  // per branch: the re-key time-out, samples
     Prior prior_;
 
     // Streaming state. The cumulative sum c[j] = u[0] + ... + u[j-1] (complex, FS) in a ring of the last

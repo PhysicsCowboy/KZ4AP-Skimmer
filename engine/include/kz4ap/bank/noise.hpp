@@ -48,8 +48,10 @@ public:
     // start, as the prototype's); every index below is absolute (64-bit).
     ThreeTapNoise(const BankConfig& cfg, double rate_hz, std::vector<int> branch_n, std::int64_t first_sample = 0);
     // Element j of u and column j of P are absolute sample base + j; n0, n1 are absolute sample indices. u is
-    // read only to recognize a block of exact zeros. P is read as double in either storage (a PowerMatrix's
-    // float32 values convert exactly).
+    // read sample by sample only to recognize exact zeros (Plan B, B3): a block of them, which updates nothing,
+    // and each one, which stays out of the warm-up and the recovery's history and count, and blocks branch k's taps
+    // at it and the 2 N_k samples after it. P is read as double in either storage (a PowerMatrix's float32 values
+    // convert exactly).
     void update(std::span<const std::complex<double>> u, const Matrix& P, std::int64_t n0, std::int64_t n1,
                 std::int64_t base = 0);
     void update(std::span<const std::complex<double>> u, const PowerMatrix& P, std::int64_t n0, std::int64_t n1,

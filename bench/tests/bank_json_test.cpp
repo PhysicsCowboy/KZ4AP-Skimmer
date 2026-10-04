@@ -10,6 +10,7 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -69,8 +70,17 @@ TEST(BankJson, DumpsAsPythonDumps) {
 TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     const auto g = kz4ap::test::load_golden("channel");
     const ordered_json cfg = kz4ap::bench::to_json(kz4ap::bank::BankConfig{});
-    // the prototype's ProtoConfig() dump, then Plan B's fields (noise_stuck_s, B3), which the prototype lacks
+    // the prototype's ProtoConfig() dump with B4a's fields in dits in place of the three in seconds they replaced,
+    // then Plan B's fields (noise_stuck_s, B3), which the prototype lacks
     std::string want = g.at("config_dumps").get<std::string>();
+    for (const auto& [from, to] : std::vector<std::pair<std::string, std::string>>{
+             {"\"rekey_after_s\": 0.8", "\"rekey_after_dits\": 16.7"},
+             {"\"periodicity_windows_s\": [2.0, 5.0, 10.0]", "\"periodicity_windows_dits\": [41.7, 104.0, 208.0]"},
+             {"\"rekey_timeout_s\": 2.0", "\"rekey_timeout_ratio\": 2.5"}}) {
+        const auto at = want.find(from);
+        ASSERT_NE(at, std::string::npos) << from;
+        want.replace(at, from.size(), to);
+    }
     ASSERT_EQ(want.back(), '}');
     want.insert(want.size() - 1, ", \"noise_stuck_s\": 8.0");
     EXPECT_EQ(py_dumps(cfg), want);
@@ -96,7 +106,10 @@ class BankJsonResult : public ::testing::TestWithParam<std::string> {};
 TEST_P(BankJsonResult, ToJsonDumpsAsThePrototypes) {
     const auto g = kz4ap::test::load_golden("channel");
     const auto u = kz4ap::test::channel_stream(g, GetParam());
-    kz4ap::bank::BankChannel ch(kz4ap::bank::BankConfig{}, g.at("streams").at(GetParam()).at("rate_hz").get<double>());
+    // the prototype's time constants in seconds, set explicitly (Plan B's B4a made the default nominal dits)
+    const kz4ap::bank::BankConfig cfg;
+    kz4ap::bank::BankChannel ch(cfg, g.at("streams").at(GetParam()).at("rate_hz").get<double>(),
+                                kz4ap::bank::fixed_timing(cfg, 0.8, 2.0, {2.0, 5.0, 10.0}));
     ch.push(u);
     ch.finish();
     EXPECT_EQ(py_dumps(kz4ap::bench::to_json(ch.result())),

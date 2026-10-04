@@ -322,7 +322,9 @@ std::optional<double> Branch::text_logprob(int window) const {
 
 // --- BankChannel --------------------------------------------------------------------------------------
 
-BankChannel::BankChannel(const BankConfig& cfg, double rate_hz)
+BankChannel::BankChannel(const BankConfig& cfg, double rate_hz) : BankChannel(cfg, rate_hz, bank_timing(cfg)) {}
+
+BankChannel::BankChannel(const BankConfig& cfg, double rate_hz, const BankTiming& timing)
     : cfg_(cfg),
       rate_(rate_hz),
       n_(branch_samples(branch_lengths_s(cfg), rate_hz)),
@@ -332,13 +334,15 @@ BankChannel::BankChannel(const BankConfig& cfg, double rate_hz)
           return l;
       }()),
       noise_(make_noise(cfg_, rate_hz, n_)),
-      keyer_(cfg_, rate_hz, lengths_),
-      periodicity_(cfg_, rate_hz),
+      keyer_(cfg_, rate_hz, lengths_, timing.rekey_wait_s),
+      periodicity_(cfg_, rate_hz, timing.periodicity_windows_s),
       selector_(cfg_, lengths_),
       out_(cfg.correction_reach_s),
       block_(static_cast<int>(std::max<std::int64_t>(1, round_samples(cfg.block_s * rate_hz)))),
-      reach_(round_samples(cfg.correction_reach_s * rate_hz)),
-      timeout_(round_samples(cfg.rekey_timeout_s * rate_hz)) {
+      reach_(round_samples(cfg.correction_reach_s * rate_hz)) {
+    if (timing.rekey_timeout_s.size() != n_.size())
+        throw std::invalid_argument("rekey_timeout_s needs one time-out per branch");
+    for (const double t : timing.rekey_timeout_s) timeout_.push_back(round_samples(t * rate_hz));
     branches_.reserve(n_.size());
     for (std::size_t k = 0; k < n_.size(); ++k)
         branches_.emplace_back(static_cast<int>(k), lengths_[k], n_[k], rate_hz, cfg_, text_model_);
@@ -488,8 +492,8 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
             std::optional<int> marks;
             double from_s = 0.0;
             const char* reason = nullptr;
-            if (br.marks_in_over && keyer_.weight[ku] >= keyer_.rekey_weight) {
-                // W_min of keyed time since the over started
+            if (br.marks_in_over && keyer_.weight[ku] >= keyer_.rekey_weight[ku]) {
+                // W_min,k of keyed time since the over started
                 std::vector<double> candidates{keyer_.amp2[ku]};
                 if (std::isfinite(keyer_.prev_amp2[ku])) candidates.push_back(keyer_.prev_amp2[ku]);
                 const auto r = br.rekey_over(p_row(k, st, n1), st, sigma2[ku], candidates, keyer_.a_min[ku], prior_);
@@ -497,8 +501,8 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
                 from_s = r.from_s;
                 marks = r.marks;
                 reason = "rekey";
-            } else if (n1 - br.timeout_from_n >= timeout_) {
-                // W_min not reached within rekey_timeout_s: re-key what exists with the previous over's
+            } else if (n1 - br.timeout_from_n >= timeout_[ku]) {
+                // W_min,k not reached within the branch's time-out: re-key what exists with the previous over's
                 // amplitude; if there is none, or it keys nothing, the stretch's provisional characters are
                 // deleted and the amplitude stays unknown (the time-out counts again from now).
                 const double prev2 = keyer_.prev_amp2[ku];
@@ -515,7 +519,7 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
                 } else {
                     from_s = br.clear_over(st);
                     br.timeout_from_n = n1;
-                    keyer_.start_over(k);  // still unknown: W_min of keyed time counts afresh from now
+                    keyer_.start_over(k);  // still unknown: W_min,k of keyed time counts afresh from now
                 }
                 reason = "timeout";
             }
