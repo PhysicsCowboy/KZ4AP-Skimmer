@@ -77,6 +77,29 @@ std::array<double, 5> medians(const std::array<double, 4>& theta) {
     return mu;
 }
 
+// logaddexp's value, ln(e^x + e^y), nats: numpy's formula by parts (see logaddexp below), returning max(x, y)
+// without evaluating exp and log1p where |x - y| is so large that the formula's result is max(x, y) exactly.
+//
+// Proof that the skip changes no bit. Let m = max(x, y) be a normal double with exponent k (2^k <= |m| <
+// 2^(k+1)) and k >= -1000, and d = |x - y| (computed, as the formula uses it). The formula returns
+// fl(m + delta), delta = fl(log1p(fl(exp(-d)))) >= 0. The doubles next to m are at least 2^(k-53) away (the gap
+// below |m| = 2^k), so fl(m + delta) = m whenever delta < 2^(k-54). If d >= (58 - k) ln 2 (the threshold is
+// computed to within relative 2^-52, which changes e^-d by less than relative 2^-40), the exact e^-d is at most
+// 2^(k-58) (1 + 2^-40); exp and log1p err by less than one unit in the last place (with an absolute error of at
+// most 2^-1074 where the result is subnormal), and log1p(u) <= u, so delta <= 2^(k-58) (1 + 2^-39) + 2^-1073,
+// which is below 2^(k-54) for every k >= -1014. Margin: a factor 16, against libm errors of a few units.
+// Other cases are left to the formula: m zero, subnormal or below 2^-1000 in magnitude (exponent field < 23),
+// and m NaN (d NaN: the comparison is false). m = +inf has exponent field 2047, a negative threshold, and
+// the formula's value inf + log1p(exp(-|inf - y|)) = inf = m; x == y is handled first, as before.
+inline double lae(double x, double y) {
+    if (x == y) return x + kLogE2;
+    const double m = std::max(x, y);
+    const double d = std::abs(x - y);
+    const auto field = static_cast<int>((std::bit_cast<std::uint64_t>(m) >> 52) & 0x7ff);
+    if (field >= 23 && d >= static_cast<double>(1081 - field) * kLogE2) return m;  // (58 - k) ln 2, k = field - 1023
+    return m + std::log1p(std::exp(-d));
+}
+
 // What the prototype's _terms / _class_terms compute for each observation: ll (n, 5), total (n), s2 (n, 5),
 // and per class the median (1 where not positive) and its log.
 struct Terms {
@@ -87,9 +110,19 @@ struct Terms {
     std::array<double, 5> log_mu{};
 };
 
-// log_d: ln of the clamped durations; s2 = sigma_ln^2 + var_t / mu^2; ll = lp - 0.5 z^2 / s2 - 0.5 ln s2 -
-// ln sqrt(2 pi), z = ln d - ln mu, -inf for the other kind or a median not positive; total = the classes
-// combined by logaddexp in class order, then with the outlier.
+// The classes of an observation's kind: [0, 2) for a mark, [2, 5) for a space.
+constexpr std::size_t first_class(bool is_mark) { return is_mark ? 0 : 2; }
+constexpr std::size_t end_class(bool is_mark) { return is_mark ? 2 : 5; }
+
+// log_d: ln of the clamped durations; s2 = sigma_ln^2 + var_t / mu^2 (every class); ll = lp - 0.5 z^2 / s2 -
+// 0.5 ln s2 - ln sqrt(2 pi), z = ln d - ln mu, for the classes of the observation's kind, -inf for the other
+// kind or a median not positive; total = the kind's classes combined by logaddexp in class order, then with
+// the outlier.
+//
+// Evaluating only the kind's classes gives the prototype's total bit for bit: it combined all five in class
+// order, and the other kind's -inf terms enter only as logaddexp(x, -inf) = x + log1p(exp(-inf)) = x + 0 = x
+// (x is never -0: ll ends in a subtraction of ln sqrt(2 pi) > 0), logaddexp(-inf, -inf) = -inf + ln 2 = -inf
+// and logaddexp(-inf, y) = y + 0 = y; a NaN stays a NaN either way.
 Terms terms(const std::array<double, 4>& theta, const std::vector<bool>& is_mark, const std::vector<double>& log_d,
             const std::vector<double>& var_t, const std::array<double, 5>& lp, const std::array<double, 5>& sigma2,
             double log_out) {
@@ -106,17 +139,19 @@ Terms terms(const std::array<double, 4>& theta, const std::vector<bool>& is_mark
     t.total.resize(n);
     t.s2.resize(n);
     for (std::size_t i = 0; i < n; ++i) {
-        for (std::size_t c = 0; c < 5; ++c) {
-            const double s2 = sigma2[c] + var_t[i] / (t.safe[c] * t.safe[c]);
+        for (std::size_t c = 0; c < 5; ++c) t.s2[i][c] = sigma2[c] + var_t[i] / (t.safe[c] * t.safe[c]);
+        t.ll[i].fill(-kInf);
+        const std::size_t c0 = first_class(is_mark[i]);
+        double acc = 0.0;
+        for (std::size_t c = c0; c < end_class(is_mark[i]); ++c) {
+            const double s2 = t.s2[i][c];
             const double z = log_d[i] - t.log_mu[c];
             double ll = lp[c] - 0.5 * z * z / s2 - 0.5 * std::log(s2) - kLogSqrt2Pi;
-            if (!(kIsMarkClass[c] == is_mark[i] && valid[c])) ll = -kInf;
+            if (!valid[c]) ll = -kInf;
             t.ll[i][c] = ll;
-            t.s2[i][c] = s2;
+            acc = c == c0 ? ll : lae(acc, ll);
         }
-        double acc = t.ll[i][0];
-        for (std::size_t c = 1; c < 5; ++c) acc = logaddexp(acc, t.ll[i][c]);
-        t.total[i] = logaddexp(acc, log_out);
+        t.total[i] = lae(acc, log_out);
     }
     return t;
 }
@@ -271,8 +306,8 @@ double logaddexp(double x, double y) {
     // The prototype's grid uses numpy's own formula by parts, max(x, y) + log1p(exp(-|x - y|)), and falls back
     // to np.logaddexp where that is NaN (both -inf); np.logaddexp gives x + ln 2 where x == y, which the
     // prototype checks equals max + log1p(1) on its machine (BankFit.LogaddexpOfEqualArguments checks it here).
-    if (x == y) return x + kLogE2;
-    return std::max(x, y) + std::log1p(std::exp(-std::abs(x - y)));
+    // The value where |x - y| is so large that it is max(x, y) exactly is returned without exp and log1p (lae).
+    return lae(x, y);
 }
 
 ClassLogliks class_logliks(const std::array<double, 4>& theta, const std::vector<Obs>& obs, const BankConfig& cfg) {
@@ -407,9 +442,9 @@ std::vector<double> DurationFit::grid_loglik(bool is_mark, double duration_s, do
             q -= std::log(s2) * 0.5;
             q -= kLogSqrt2Pi;
             if (!cls.valid[at]) q = -kInf;
-            acc = c == 0 ? q : logaddexp(acc, q);
+            acc = c == 0 ? q : lae(acc, q);
         }
-        total[at] = logaddexp(acc, m.log_out);
+        total[at] = lae(acc, m.log_out);
     }
     return total;
 }
@@ -518,28 +553,44 @@ double DurationFit::weighted_loglik(const std::array<double, 4>& theta, std::opt
     return aged_sum(r, t.total) + m.prior_term(theta[0], prior_t_s, prior_weight);
 }
 
-std::array<double, 4> DurationFit::refine(const std::array<double, 4>& start, std::optional<double> prior_t_s,
-                                          double prior_weight) const {
+namespace {
+
+// refine's result with the terms it evaluated at its start and at its result (one evaluation each; the same
+// object when there are no steps).
+struct Refinement {
+    std::array<double, 4> theta{};
+    Terms start;
+    Terms last;  // empty when there are no steps: the start's terms are the result's
+};
+
+Refinement refine_on(const DurationFit::Model& m, const Retained& r, const std::array<double, 4>& start,
+                     std::optional<double> prior_t_s, double prior_weight) {
     // Gauss-Newton in ln d on the model's medians, EM-style (the class responsibilities of the current point
     // held fixed per step): residual ln d - ln mu_c, Jacobian DESIGN_c / mu_c, weights lambda^age x
     // responsibility / s_c^2; the T_P prior as one more residual ln T_P - ln T with weight prior_weight /
     // sigma_P^2; damping toward the current point with standard deviation 0.2 T per parameter. After each
     // step: T floored at 0.1 ms, w clipped to [-0.6, 1.2] T, qT to [2, 6] T, T_g to [0.8, 10] T.
-    const Model& m = *m_;
-    const Retained r = retained(history_, m.lam, m.lo, m.hi);
-    std::array<double, 4> theta = start;
-    Terms t = terms(theta, r.is_mark, r.log_d, r.var_t, m.lp, m.sigma2, m.log_out);
+    //
+    // Only the classes of each observation's kind are summed: the other kind's responsibilities are
+    // exp(-inf - total) = 0, so their weights and every product of them are +0 or -0, and adding a zero leaves
+    // every sum unchanged (the sums start at +0 and a sum is -0 only if both addends are -0, so no sum is ever
+    // -0; NaN stays NaN).
+    Refinement out;
+    out.theta = start;
+    out.start = terms(start, r.is_mark, r.log_d, r.var_t, m.lp, m.sigma2, m.log_out);
+    const Terms* t = &out.start;
     const std::size_t n = r.log_d.size();
     for (int it = 0; it < m.refine_iterations; ++it) {
+        std::array<double, 4>& theta = out.theta;
         double jac[5][4];
         for (std::size_t c = 0; c < 5; ++c)
-            for (std::size_t i = 0; i < 4; ++i) jac[c][i] = kDesign[c][i] / t.safe[c];
+            for (std::size_t i = 0; i < 4; ++i) jac[c][i] = kDesign[c][i] / t->safe[c];
         std::array<std::array<double, 4>, 4> mm{};
         std::array<double, 4> b{};
         for (std::size_t o = 0; o < n; ++o) {
-            for (std::size_t c = 0; c < 5; ++c) {
-                const double wgt = r.age[o] * std::exp(t.ll[o][c] - t.total[o]) / t.s2[o][c];
-                const double resid = r.log_d[o] - t.log_mu[c];
+            for (std::size_t c = first_class(r.is_mark[o]); c < end_class(r.is_mark[o]); ++c) {
+                const double wgt = r.age[o] * std::exp(t->ll[o][c] - t->total[o]) / t->s2[o][c];
+                const double resid = r.log_d[o] - t->log_mu[c];
                 for (std::size_t i = 0; i < 4; ++i) {
                     const double wj = wgt * jac[c][i];
                     for (std::size_t j = 0; j < 4; ++j) mm[i][j] += wj * jac[c][j];
@@ -561,20 +612,32 @@ std::array<double, 4> DurationFit::refine(const std::array<double, 4>& start, st
         const double tt = std::max(next[0], 1e-4);
         theta = {tt, std::min(std::max(next[1], -0.6 * tt), 1.2 * tt), std::min(std::max(next[2], 2.0 * tt), 6.0 * tt),
                  std::min(std::max(next[3], 0.8 * tt), 10.0 * tt)};
-        t = terms(theta, r.is_mark, r.log_d, r.var_t, m.lp, m.sigma2, m.log_out);
+        out.last = terms(theta, r.is_mark, r.log_d, r.var_t, m.lp, m.sigma2, m.log_out);
+        t = &out.last;
     }
-    return theta;
+    return out;
+}
+
+}  // namespace
+
+std::array<double, 4> DurationFit::refine(const std::array<double, 4>& start, std::optional<double> prior_t_s,
+                                          double prior_weight) const {
+    const Model& m = *m_;
+    return refine_on(m, retained(history_, m.lam, m.lo, m.hi), start, prior_t_s, prior_weight).theta;
 }
 
 std::optional<Fit> DurationFit::best(std::optional<double> prior_t_s, double prior_weight) const {
+    // The grid point's and the refined point's weighted log-likelihoods come from the terms the refinement
+    // evaluated at its start and at its result (the same values the plain evaluation gives: terms is a
+    // function of the point and the retained history only).
     const auto grid = grid_theta(prior_t_s, prior_weight);
     if (!grid) return std::nullopt;
     const Model& m = *m_;
     const Retained r = retained(history_, m.lam, m.lo, m.hi);
-    const std::array<double, 4> refined = refine(*grid, prior_t_s, prior_weight);
-    const double refined_sum =
-        aged_sum(r, terms(refined, r.is_mark, r.log_d, r.var_t, m.lp, m.sigma2, m.log_out).total);
-    const double grid_sum = aged_sum(r, terms(*grid, r.is_mark, r.log_d, r.var_t, m.lp, m.sigma2, m.log_out).total);
+    const Refinement ref = refine_on(m, r, *grid, prior_t_s, prior_weight);
+    const std::array<double, 4>& refined = ref.theta;
+    const double grid_sum = aged_sum(r, ref.start.total);
+    const double refined_sum = m.refine_iterations > 0 ? aged_sum(r, ref.last.total) : grid_sum;
     std::array<double, 4> theta = *grid;
     double total_sum = grid_sum;
     if (refined_sum + m.prior_term(refined[0], prior_t_s, prior_weight) >=

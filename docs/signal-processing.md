@@ -2292,6 +2292,24 @@ s, variances in s², log-likelihoods in nats; densities are in ln(duration).
   classes are combined in class order with logaddexp and then with the
   outlier: ln(e^x + e^y) = max(x, y) + log1p(exp(−|x − y|)), and x + ln 2
   where x = y (numpy's formula; both −∞ gives −∞).
+- **Evaluation (Plan B task B2(a), exact steps).** Three restructurings
+  that change no bit of any result (derived from IEEE arithmetic, and
+  tested bit for bit against a frozen copy of the earlier code: below).
+  (1) Only the classes of the observation's kind are evaluated (2 for a
+  mark, 3 for a space): the other kind's −∞ terms entered the logaddexp
+  chain only as logaddexp(x, −∞) = x + log1p(0) = x, and the refinement
+  only as responsibilities exp(−∞ − ℓ_total) = 0, whose products add ±0 to
+  sums that are never −0. (2) logaddexp returns max(x, y) without calling
+  exp and log1p when |x − y| ≥ (58 − k) ln 2 nats, k the binary exponent of
+  max(x, y) (2^k ≤ |max| < 2^(k+1), k ≥ −1000): then exp(−|x − y|) ≤
+  2^(k−58), less than a sixteenth of half the spacing of the doubles next
+  to max(x, y), so numpy's formula rounds to max(x, y) exactly (the proof,
+  with the libm error allowance, is in `fit.cpp` at `lae`). With the
+  outlier's −5.216 nats as the larger term (k = 2) the threshold is
+  38.8 nats. (3) The best-fit search evaluates the retained history's
+  terms 3 times instead of 5 (with 2 refinement steps): the grid point's
+  terms are the refinement's starting terms and the refined point's are
+  its last, so they are reused for the acceptance test and the quality.
 - **Grid and memory.** T on a log grid from 1.2 s / 100 = 12 ms in steps
   of 1% (×1.01) up to the first point ≥ 1.2 s / 5 = 240 ms: 303 points,
   12 ms to 242.2 ms. q ∈ {3, 4, 5}; w/T ∈ {−0.4, 0, 0.4, 0.8};
@@ -2354,6 +2372,24 @@ T² and (0.2 T)²) call libm's `pow`, which is not guaranteed correctly
 rounded (glibc states a bound of about 0.52 units in the last place); the
 port computes them as products x · x, so a rare value can differ in the
 last bit.
+
+**Bit-for-bit check of the restructured evaluation (Plan B task B2(a)).**
+`fit_test.cpp` keeps a frozen copy of the fit's evaluation before B2(a)
+(logaddexp, the per-observation terms, the grid's log-likelihood, the
+refinement and the best-fit search) and compares the bit patterns of every
+result: logaddexp on 1.2 · 10⁷ pairs placed at and beside the skip
+threshold at every binary exponent, and on the special values (±0, ±∞,
+NaN, subnormals); the grid log-likelihood at every grid point for 10⁶
+random observations per configuration (durations from 10 µs to 100 s,
+beyond the 1 ms and 10 s clamps and one step beside them; σ_t² of 0,
+10⁻¹⁴ to 10⁻² s², and 1, 10¹⁰, 10³⁰⁰ s² and +∞), on the default grids and on
+grids with medians that are not positive (w/T up to 1.2, T_g/T down to
+0.2), and on the golden observations; `best`, `refine`, the weighted
+log-likelihood and `class_logliks` on the golden sequence, the fit cases
+and 2000 random fits per configuration and number of refinement steps
+(0, 2, 5), without and with T_P priors. Every comparison is equal. (The
+default test run uses 20 000 observations and 100 fits; the full sizes run
+with `KZ4AP_FIT_FULL_SWEEP=1`.)
 
 Status (as `training/kz4ap_proto/params.py` marks them): N_mem = 48
 measured (E4: adopted over 24 and 12); the q, w/T and T_g/T grids measured
