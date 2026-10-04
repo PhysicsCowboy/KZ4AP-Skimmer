@@ -2310,6 +2310,23 @@ s, variances in s², log-likelihoods in nats; densities are in ln(duration).
   terms 3 times instead of 5 (with 2 refinement steps): the grid point's
   terms are the refinement's starting terms and the refined point's are
   its last, so they are reused for the acceptance test and the quality.
+- **Evaluation (Plan B task B2(a), near-exact step).** ℓ_total is computed
+  in one pass instead of the logaddexp chain:
+  ℓ_total = m + ln(Σ_c e^(ℓ_c − m) + e^(ℓ_out − m)), m the largest of the
+  terms of the observation's kind and the outlier's −5.216 nats (one exp per
+  term that is not the largest and one ln, instead of one exp and one log1p
+  per term). Terms more than 40 nats below m are left out
+  (e^−40 = 4.2 · 10⁻¹⁸: up to four of them added to the largest term's 1
+  cannot change the double sum, whose spacing above 1 is 2^−52; derived),
+  and the ln is skipped where the sum is exactly 1. In the grid's
+  log-likelihood a class whose term cannot come within 41 nats of the
+  outlier's is left out before its ln s_c² is computed: s_c² ≥ σ_ln², so
+  ℓ_c ≤ ln((1 − ε) P_c) − ½ z²/s_c² − ½ ln σ_ln² − ln √(2π), a bound with no
+  logarithm of the observation (1 nat of the 41 covers rounding); the result
+  is the same bit for bit as with the term evaluated. This changes the last
+  bits of ℓ_total; the measured differences from the logaddexp chain are
+  stated under "Bit-for-bit check" below. The per-class ℓ_c, s_c² and the
+  classifications do not change.
 - **Grid and memory.** T on a log grid from 1.2 s / 100 = 12 ms in steps
   of 1% (×1.01) up to the first point ≥ 1.2 s / 5 = 240 ms: 303 points,
   12 ms to 242.2 ms. q ∈ {3, 4, 5}; w/T ∈ {−0.4, 0, 0.4, 0.8};
@@ -2358,7 +2375,13 @@ weight 3: the grid indices and the classifications of 20 probe durations
 (10 ms to 1 s) equal; θ_grid, `best`, the weighted log-likelihoods and
 `observations_loglik` agree to a largest relative difference of
 2.0 · 10⁻¹⁶; the full mark and space tables after 8, 48 and 300
-observations are bit-identical. Both outcomes of the acceptance test occur
+observations were bit-identical until Plan B task B2(a). Since its
+near-exact step (one-pass log-sum-exp, above) they agree to the test's
+relative 10⁻⁹ as the other values: after 8, 48 and 300 observations 1918,
+1675 and 1464 of the 9696 entries differ from the prototype's, by at most
+7.1 · 10⁻¹⁵, 2.8 · 10⁻¹⁴ and 4.3 · 10⁻¹⁴ nats (relative 1.2 · 10⁻¹⁵,
+4.6 · 10⁻¹⁴ and 1.2 · 10⁻¹⁵; measured on Windows), and the grid indices and
+classifications are still equal. Both outcomes of the acceptance test occur
 in the sequence. The prototype's fit tests are ported one for one
 (inputs in `fit_cases.json`); its strict expected failure (Farnsworth
 T_g with the E5 grids) is skipped with the same reason, and the port
@@ -2387,9 +2410,26 @@ grids with medians that are not positive (w/T up to 1.2, T_g/T down to
 0.2), and on the golden observations; `best`, `refine`, the weighted
 log-likelihood and `class_logliks` on the golden sequence, the fit cases
 and 2000 random fits per configuration and number of refinement steps
-(0, 2, 5), without and with T_P priors. Every comparison is equal. (The
-default test run uses 20 000 observations and 100 fits; the full sizes run
-with `KZ4AP_FIT_FULL_SWEEP=1`.)
+(0, 2, 5), without and with T_P priors. With the exact steps every
+comparison was equal (commit `42201d7`; Windows and Linux, full sizes).
+Since the near-exact step logaddexp is still compared bit for bit, the
+per-class ℓ_c and s_c² too, and every other value to a bound of
+10⁻¹⁴ · max(|value|, 1 nat) (heuristic), non-finite values bit for bit:
+on Windows, at the full sizes, 0 values
+above the bound and 0 non-finite mismatches; the largest differences are
+1.3 · 10⁻¹⁵ nats in the grid's 8.5 · 10⁹ log-likelihood values (relative
+7.5 · 10⁻⁸, at a value near 0 nats; relative to max(|value|, 1 nat) at most
+1.3 · 10⁻¹⁵), 8.9 · 10⁻¹⁶ nats in ℓ_total of `class_logliks`,
+1.8 · 10⁻¹² nats (relative 1.6 · 10⁻¹³) in the weighted log-likelihood (a
+sum over up to 192 observations), 1.2 · 10⁻¹⁵ in `refine`'s θ (s) and
+1.8 · 10⁻¹⁴ in `best`'s fields (relative 1.6 · 10⁻¹⁰, at a small w); no
+acceptance test turned the other way in the sweep. (The default test run uses 20 000 observations and
+100 fits; the full sizes run with `KZ4AP_FIT_FULL_SWEEP=1`.) The port's
+check against the plain formula (`FastPathsAreBitIdenticalToThePlainFormulas`)
+now allows the grid's values 2^−50 nats (8.9 · 10⁻¹⁶) and the
+accumulated tables 64 · 2^−50 nats (5.7 · 10⁻¹⁴): on its 414 observations
+645 881 of 2 007 072 grid values differ, by at most 8.9 · 10⁻¹⁶ nats, and
+1358 of the 9696 table entries, by at most 2.8 · 10⁻¹⁴ nats.
 
 Status (as `training/kz4ap_proto/params.py` marks them): N_mem = 48
 measured (E4: adopted over 24 and 12); the q, w/T and T_g/T grids measured
@@ -2719,10 +2759,16 @@ publishes one branch's characters, with corrections.
   after (−31.1 MB, against −18.3 MB to −46.0 MB derived). The measured
   figure includes what the replay tool holds per channel besides the
   decoder, chiefly the channel's recorded stream and its mixed copy
-  (2 × 549 000 samples × 16 B = 17.6 MB, derived), plus its decoded record
-  until its test case is written and the allocator's overhead; less the
-  17.6 MB it is 45.7 MB before (derived 26 MB to 59 MB) and 14.6 MB after
-  (derived 7.6 MB to 12.9 MB).
+  (2 × 549 000 samples × 16 B = 17.6 MB, derived); less the 17.6 MB it is
+  45.7 MB before (derived 26 MB to 59 MB) and 14.6 MB after (derived 7.6 MB
+  to 12.9 MB), so after B1 the measurement lies **1.7 MB above** the
+  derived upper end. The cause of that excess is **conjectured, not
+  traced**: the channel's decoded record held until its test case is
+  written and the allocator's overhead are not in the derived count;
+  per-thread allocator arenas, or more than three fits per branch at some
+  moment, are untested alternatives. The check is weak in both directions:
+  the derived range before B1 is wide enough to contain its measurement,
+  and the 17.6 MB subtracted is itself derived, not measured.
   Sample indices are 64-bit throughout (the noise estimates included:
   tested with indices past 2³¹, as after 16.6 days at 1500 samples/s).
 - **Exact zeros.** On exact-zero input the noise estimate goes NaN (the

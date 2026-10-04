@@ -100,6 +100,30 @@ inline double lae(double x, double y) {
     return m + std::log1p(std::exp(-d));
 }
 
+// Terms more than this far below the largest are left out of a log-sum-exp, nats: e^-40 = 4.2e-18, so up to
+// four of them added to the largest term's e^0 = 1 cannot change the double sum (half its spacing above 1 is
+// 2^-53 = 1.1e-16). Derived.
+constexpr double kNegligibleNats = 40.0;
+
+// ln(e^x_0 + ... + e^x_(n-1) + e^out), nats, in one pass (Plan B task B2(a), near-exact): m + ln(sum of
+// e^(x - m)), m the largest term; terms more than kNegligibleNats below m are left out, and the log is
+// skipped where the sum is 1 (every other term negligible). A NaN term gives NaN; -inf terms add 0; a +inf
+// term gives +inf (as the logaddexp chain did; a class term is finite while sigma_ln > 0).
+inline double log_sum_exp(const double* x, std::size_t n, double out) {
+    double m = out;
+    for (std::size_t c = 0; c < n; ++c)
+        if (!(x[c] <= m)) m = x[c];  // a NaN term becomes m, so it reaches the sum
+    if (m == kInf) return m;
+    double sum = 0.0;
+    for (std::size_t c = 0; c < n; ++c) {
+        const double r = x[c] - m;
+        if (!(r <= -kNegligibleNats)) sum += std::exp(r);
+    }
+    const double r = out - m;
+    if (!(r <= -kNegligibleNats)) sum += std::exp(r);
+    return sum == 1.0 ? m : m + std::log(sum);
+}
+
 // What the prototype's _terms / _class_terms compute for each observation: ll (n, 5), total (n), s2 (n, 5),
 // and per class the median (1 where not positive) and its log.
 struct Terms {
@@ -116,13 +140,12 @@ constexpr std::size_t end_class(bool is_mark) { return is_mark ? 2 : 5; }
 
 // log_d: ln of the clamped durations; s2 = sigma_ln^2 + var_t / mu^2 (every class); ll = lp - 0.5 z^2 / s2 -
 // 0.5 ln s2 - ln sqrt(2 pi), z = ln d - ln mu, for the classes of the observation's kind, -inf for the other
-// kind or a median not positive; total = the kind's classes combined by logaddexp in class order, then with
-// the outlier.
+// kind or a median not positive; total = ln of the sum of e^ll over the kind's classes and the outlier's
+// e^log_out, in one pass (log_sum_exp; Plan B task B2(a), near-exact: the earlier logaddexp chain over all
+// five classes then the outlier differs in the last bits).
 //
-// Evaluating only the kind's classes gives the prototype's total bit for bit: it combined all five in class
-// order, and the other kind's -inf terms enter only as logaddexp(x, -inf) = x + log1p(exp(-inf)) = x + 0 = x
-// (x is never -0: ll ends in a subtraction of ln sqrt(2 pi) > 0), logaddexp(-inf, -inf) = -inf + ln 2 = -inf
-// and logaddexp(-inf, y) = y + 0 = y; a NaN stays a NaN either way.
+// Evaluating only the kind's classes changes no bit of ll or of the sum: the other kind's -inf terms add
+// e^-inf = 0 (and before B2(a)'s near-exact step entered the logaddexp chain only as logaddexp(x, -inf) = x).
 Terms terms(const std::array<double, 4>& theta, const std::vector<bool>& is_mark, const std::vector<double>& log_d,
             const std::vector<double>& var_t, const std::array<double, 5>& lp, const std::array<double, 5>& sigma2,
             double log_out) {
@@ -142,16 +165,14 @@ Terms terms(const std::array<double, 4>& theta, const std::vector<bool>& is_mark
         for (std::size_t c = 0; c < 5; ++c) t.s2[i][c] = sigma2[c] + var_t[i] / (t.safe[c] * t.safe[c]);
         t.ll[i].fill(-kInf);
         const std::size_t c0 = first_class(is_mark[i]);
-        double acc = 0.0;
         for (std::size_t c = c0; c < end_class(is_mark[i]); ++c) {
             const double s2 = t.s2[i][c];
             const double z = log_d[i] - t.log_mu[c];
             double ll = lp[c] - 0.5 * z * z / s2 - 0.5 * std::log(s2) - kLogSqrt2Pi;
             if (!valid[c]) ll = -kInf;
             t.ll[i][c] = ll;
-            acc = c == c0 ? ll : lae(acc, ll);
         }
-        t.total[i] = lae(acc, log_out);
+        t.total[i] = log_sum_exp(t.ll[i].data() + c0, end_class(is_mark[i]) - c0, log_out);
     }
     return t;
 }
@@ -419,16 +440,22 @@ const std::vector<double>& DurationFit::tg_grid() const { return m_->g; }
 std::vector<double> DurationFit::grid_loglik(bool is_mark, double duration_s, double var_t) const {
     // Each class's term, operation by operation in the prototype's order: s2 = var_t / mu^2 + sigma^2;
     // q = 0.5 z z / s2 with z = ln d - ln mu; lp - q - 0.5 ln s2 - ln sqrt(2 pi); -inf where the median is not
-    // positive. Classes combined by logaddexp in class order, then the outlier.
+    // positive. Classes and the outlier combined in one pass (log_sum_exp; Plan B task B2(a), near-exact).
+    //
+    // A class whose term cannot come within kNegligibleNats of the outlier's is left out before its ln s2 is
+    // computed: s2 >= sigma^2, so the term is at most a - 0.5 ln sigma^2 - ln sqrt(2 pi), a = lp - q, and where
+    // that bound is more than kNegligibleNats + 1 nats below the outlier's log-density (1 nat for rounding) the
+    // term would be left out of the sum anyway: the result is the same bit for bit as evaluating it.
     const Model& m = *m_;
     const double log_d = std::log(std::min(std::max(duration_s, m.lo), m.hi));
     const double sigma = is_mark ? m.sigma_ln_mark : m.sigma_ln_space;
     const double sigma2 = sigma * sigma;
+    const double cut = m.log_out - (kNegligibleNats + 1.0) + 0.5 * std::log(sigma2) + kLogSqrt2Pi;
     const std::size_t nclass = is_mark ? 2 : 3;
     const std::size_t size = is_mark ? mark_table_.size() : space_table_.size();
     std::vector<double> total(size);
     for (std::size_t at = 0; at < size; ++at) {
-        double acc = 0.0;
+        double x[3];
         for (std::size_t c = 0; c < nclass; ++c) {
             const Model::Class& cls = is_mark ? m.marks[c] : m.spaces[c];
             const double lp = m.lp[is_mark ? c : 2 + c];
@@ -439,12 +466,15 @@ std::vector<double> DurationFit::grid_loglik(bool is_mark, double duration_s, do
             q *= z;
             q /= s2;
             q = lp - q;
+            if (!cls.valid[at] || q < cut) {
+                x[c] = -kInf;
+                continue;
+            }
             q -= std::log(s2) * 0.5;
             q -= kLogSqrt2Pi;
-            if (!cls.valid[at]) q = -kInf;
-            acc = c == 0 ? q : lae(acc, q);
+            x[c] = q;
         }
-        total[at] = lae(acc, m.log_out);
+        total[at] = log_sum_exp(x, nclass, m.log_out);
     }
     return total;
 }

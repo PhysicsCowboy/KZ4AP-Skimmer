@@ -182,6 +182,21 @@ TEST(BankFit, SnapshotsMatchPrototype) {
             ASSERT_EQ(fit.space_table().size(), st.size());
             for (std::size_t i = 0; i < mt.size(); ++i) expect_close(fit.mark_table()[i], mt[i]);
             for (std::size_t i = 0; i < st.size(); ++i) expect_close(fit.space_table()[i], st[i]);
+            // Measured, not asserted beyond expect_close: how many entries differ from the prototype's and by how
+            // much (bit-identical before Plan B task B2(a)'s near-exact step).
+            std::size_t differ = 0;
+            double max_abs = 0.0, max_rel = 0.0;
+            for (const auto& [got, want] : {std::pair{&fit.mark_table(), &mt}, std::pair{&fit.space_table(), &st}})
+                for (std::size_t i = 0; i < want->size(); ++i)
+                    if (bits((*got)[i]) != bits((*want)[i])) {
+                        ++differ;
+                        const double dd = std::abs((*got)[i] - (*want)[i]);
+                        max_abs = std::max(max_abs, dd);
+                        max_rel = std::max(max_rel, dd / std::abs((*want)[i]));
+                    }
+            std::printf("tables after observation %zu: %zu of %zu entries differ from the prototype's, largest "
+                        "%.3g nats absolute, %.3g relative\n",
+                        n, differ, mt.size() + st.size(), max_abs, max_rel);
         }
     }
     EXPECT_EQ(next, snaps.size());
@@ -383,8 +398,9 @@ TEST(BankFitPython, CopyIsIndependentAndBestNeedsAnObservation) {
 TEST(BankFitPython, FastPathsAreBitIdenticalToThePlainFormulas) {
     // The prototype's Task 11p speed-ups have no counterpart in the port, which computes the plain formulas;
     // the assertions are kept: the tables equal the plain per-observation formula (Task 7's DurationFit.add)
-    // accumulated bit for bit, also after the history wraps (> 2 x capacity adds); weighted_loglik and the
-    // quality equal the plain class_logliks sums bit for bit.
+    // accumulated (bit for bit until Plan B task B2(a); now within the traced allowance below), also after the
+    // history wraps (> 2 x capacity adds); weighted_loglik and the quality equal the plain class_logliks sums
+    // bit for bit.
     const BankConfig cfg;
     const Durations obs = load_case("fast_paths");
     const auto var = cases().at("fast_paths_var_t_s2").get<std::vector<double>>();
@@ -436,6 +452,18 @@ TEST(BankFitPython, FastPathsAreBitIdenticalToThePlainFormulas) {
         return out;
     };
 
+    // Plan B task B2(a), near-exact step: the port now combines the classes and the outlier in one pass
+    // (m + ln sum e^(x - m)) instead of the plain formula's logaddexp chain, so the grid's values may differ
+    // from the plain formula's in the last bits (traced allowance, Plan A's noise #38 precedent): at most
+    // 2^-50 nats (8.9e-16, one unit in the last place at 4 to 8 nats; the largest difference measured on this
+    // test's values; B2(a)'s full sweep measured at most 1.33e-15 nats over 8.5e9 values), and the tables,
+    // which sum about N_mem = 48 effective observations' values, at most kTableAllowance (measured here:
+    // 2.8e-14 nats). Every value that differs is counted and the largest difference
+    // printed; NaN and infinities must still match bit for bit.
+    constexpr double kValueAllowance = 0x1p-50;
+    constexpr double kTableAllowance = 64 * 0x1p-50;
+    std::size_t values_differ = 0;
+    double value_max = 0.0;
     std::vector<double> marks(fit.mark_table().size(), 0.0);
     std::vector<double> spaces(fit.space_table().size(), 0.0);
     for (std::size_t i = 0; i < obs.size(); ++i) {
@@ -443,15 +471,36 @@ TEST(BankFitPython, FastPathsAreBitIdenticalToThePlainFormulas) {
         const std::vector<double> expected = plain_grid_loglik(is_mark, d, var[i]);
         const std::vector<double> got = fit.grid_loglik(is_mark, d, var[i]);
         ASSERT_EQ(got.size(), expected.size());
-        for (std::size_t k = 0; k < got.size(); ++k) ASSERT_EQ(bits(got[k]), bits(expected[k])) << "obs " << i;
+        for (std::size_t k = 0; k < got.size(); ++k) {
+            if (bits(got[k]) == bits(expected[k])) continue;
+            ASSERT_TRUE(std::isfinite(got[k]) && std::isfinite(expected[k])) << "obs " << i << " point " << k;
+            ++values_differ;
+            value_max = std::max(value_max, std::abs(got[k] - expected[k]));
+            ASSERT_LE(std::abs(got[k] - expected[k]), kValueAllowance) << "obs " << i << " point " << k;
+        }
         fit.add(is_mark, d, var[i]);
         for (double& x : marks) x = x * fit.lambda();
         for (double& x : spaces) x = x * fit.lambda();
         std::vector<double>& table = is_mark ? marks : spaces;
         for (std::size_t k = 0; k < table.size(); ++k) table[k] = table[k] + expected[k];
     }
-    for (std::size_t k = 0; k < marks.size(); ++k) ASSERT_EQ(bits(fit.mark_table()[k]), bits(marks[k]));
-    for (std::size_t k = 0; k < spaces.size(); ++k) ASSERT_EQ(bits(fit.space_table()[k]), bits(spaces[k]));
+    std::size_t tables_differ = 0;
+    double table_max = 0.0;
+    auto table_check = [&](const std::vector<double>& got, const std::vector<double>& want) {
+        for (std::size_t k = 0; k < got.size(); ++k) {
+            if (bits(got[k]) == bits(want[k])) continue;
+            ++tables_differ;
+            table_max = std::max(table_max, std::abs(got[k] - want[k]));
+            ASSERT_LE(std::abs(got[k] - want[k]), kTableAllowance) << "point " << k;
+        }
+    };
+    table_check(fit.mark_table(), marks);
+    table_check(fit.space_table(), spaces);
+    std::size_t values = 0;
+    for (const auto& o : obs) values += o.first ? marks.size() : spaces.size();
+    std::printf("grid values differing from the plain formula: %zu of %zu, largest %.3g nats; table entries "
+                "differing: %zu of %zu, largest %.3g nats\n",
+                values_differ, values, value_max, tables_differ, marks.size() + spaces.size(), table_max);
 
     const std::vector<Obs> h(fit.history().begin(), fit.history().end());
     std::vector<double> age(h.size());
@@ -946,26 +995,6 @@ Obs random_obs(std::mt19937_64& rng) {
     return o;
 }
 
-// Runs body(begin, end, mismatches, first) on [0, n) split over the machine's threads; returns the count of
-// mismatches and the description of the first.
-std::pair<std::size_t, std::string> parallel_sweep(
-    std::size_t n, const std::function<void(std::size_t, std::size_t, std::size_t&, std::string&)>& body) {
-    const std::size_t nt = std::max<std::size_t>(1, std::thread::hardware_concurrency());
-    std::vector<std::size_t> bad(nt, 0);
-    std::vector<std::string> first(nt);
-    std::vector<std::thread> threads;
-    for (std::size_t t = 0; t < nt; ++t)
-        threads.emplace_back([&, t] { body(n * t / nt, n * (t + 1) / nt, bad[t], first[t]); });
-    for (auto& th : threads) th.join();
-    std::size_t total = 0;
-    std::string f;
-    for (std::size_t t = 0; t < nt; ++t) {
-        total += bad[t];
-        if (f.empty()) f = first[t];
-    }
-    return {total, f};
-}
-
 // The sweeps' sizes: by default small enough for every ctest run (about 20 s on the Windows PC); with the
 // environment variable KZ4AP_FIT_FULL_SWEEP=1 the full sizes the plan asks for (10^6 observations per
 // configuration at every grid point; 2000 random fits per configuration and refine_iterations), run once per
@@ -1018,36 +1047,95 @@ TEST(BankFitB2a, LogaddexpIsBitIdenticalToTheFrozenFormula) {
     EXPECT_EQ(n, 12'000'000u);
 }
 
-TEST(BankFitB2a, GridLoglikIsBitIdenticalToTheFrozenCodeAtEveryGridPoint) {
+// The differences of the near-exact step (one-pass log-sum-exp) from the frozen code: where the frozen value
+// or the new one is not finite, the new one must have the frozen one's bits; elsewhere |new - frozen| is
+// measured, absolute (nats) and relative to |frozen|, and checked against a bound relative to
+// max(|frozen|, 1 nat).
+struct Diffs {
+    std::size_t n = 0;
+    std::size_t nonfinite_bad = 0;
+    std::size_t over_bound = 0;
+    double max_abs = 0.0;
+    double max_rel = 0.0;
+    double bound = 0.0;
+    std::string first;
+    explicit Diffs(double b = 0.0) : bound(b) {}
+    void add(double got, double want, const std::function<std::string()>& where) {
+        ++n;
+        if (!std::isfinite(want) || !std::isfinite(got)) {
+            if (bits(got) != bits(want)) {
+                ++nonfinite_bad;
+                if (first.empty()) first = where() + ": not finite";
+            }
+            return;
+        }
+        const double d = std::abs(got - want);
+        max_abs = std::max(max_abs, d);
+        if (want != 0.0) max_rel = std::max(max_rel, d / std::abs(want));
+        if (d > bound * std::max(std::abs(want), 1.0)) {
+            ++over_bound;
+            if (first.empty()) {
+                char buf[200];
+                std::snprintf(buf, sizeof buf, ": %.17g against %.17g", got, want);
+                first = where() + buf;
+            }
+        }
+    }
+    void merge(const Diffs& o) {
+        n += o.n;
+        nonfinite_bad += o.nonfinite_bad;
+        over_bound += o.over_bound;
+        max_abs = std::max(max_abs, o.max_abs);
+        max_rel = std::max(max_rel, o.max_rel);
+        if (first.empty()) first = o.first;
+    }
+    void expect_ok(const std::string& what) const {
+        std::printf("%s: %zu values, largest difference %.3g nats absolute, %.3g relative; %zu above the bound "
+                    "%.3g x max(|value|, 1 nat); %zu non-finite mismatches\n",
+                    what.c_str(), n, max_abs, max_rel, over_bound, bound, nonfinite_bad);
+        EXPECT_EQ(nonfinite_bad, 0u) << what << ": " << first;
+        EXPECT_EQ(over_bound, 0u) << what << ": " << first;
+    }
+};
+
+// The bound on the near-exact differences, relative to max(|value|, 1 nat): 1e-14, 45 units in the last
+// place of 1 (heuristic, above the measured largest differences stated in docs/signal-processing.md, 8c).
+constexpr double kNearExactBound = 1e-14;
+
+TEST(BankFitB2a, GridLoglikMatchesTheFrozenCodeToRoundingAtEveryGridPoint) {
     // 10^6 random observations per configuration (two configurations; 20 000 without KZ4AP_FIT_FULL_SWEEP),
     // each at every grid point of its table (3636 mark or 6060 space points with the defaults), then the
     // golden observations.
     const std::size_t kObs = full_sweep() ? 1'000'000 : 20'000;
+    const char* names[] = {"grid_loglik, default grids", "grid_loglik, grids with medians <= 0"};
+    int which = 0;
     for (const BankConfig& cfg : sweep_configs()) {
         const frozen::Grid grid(cfg);
         const DurationFit fit(cfg);
-        const auto [bad, first] = parallel_sweep(kObs, [&](std::size_t b, std::size_t e, std::size_t& nbad,
-                                                           std::string& f) {
-            std::mt19937_64 rng(1000003 * (b + 1));
-            std::vector<double> want;
-            for (std::size_t i = b; i < e; ++i) {
-                const Obs o = random_obs(rng);
-                grid.grid_loglik(o.is_mark, o.d_s, o.var_t_s2, want);
-                const std::vector<double> got = fit.grid_loglik(o.is_mark, o.d_s, o.var_t_s2);
-                if (got.size() != want.size()) {
-                    ++nbad;
-                    if (f.empty()) f = "size " + describe(o);
-                    continue;
-                }
-                for (std::size_t k = 0; k < got.size(); ++k)
-                    if (bits(got[k]) != bits(want[k])) {
-                        ++nbad;
-                        if (f.empty()) f = describe(o) + " point " + std::to_string(k);
-                        break;
+        const std::size_t nt = std::max<std::size_t>(1, std::thread::hardware_concurrency());
+        std::vector<Diffs> part(nt, Diffs(kNearExactBound));
+        std::vector<std::thread> threads;
+        for (std::size_t t = 0; t < nt; ++t)
+            threads.emplace_back([&, t] {
+                const std::size_t b = kObs * t / nt;
+                std::mt19937_64 rng(1000003 * (b + 1));
+                std::vector<double> want;
+                for (std::size_t i = b; i < kObs * (t + 1) / nt; ++i) {
+                    const Obs o = random_obs(rng);
+                    grid.grid_loglik(o.is_mark, o.d_s, o.var_t_s2, want);
+                    const std::vector<double> got = fit.grid_loglik(o.is_mark, o.d_s, o.var_t_s2);
+                    if (got.size() != want.size()) {
+                        part[t].add(kInf, 0.0, [&] { return "size " + describe(o); });
+                        continue;
                     }
-            }
-        });
-        EXPECT_EQ(bad, 0u) << first;
+                    for (std::size_t k = 0; k < got.size(); ++k)
+                        part[t].add(got[k], want[k], [&] { return describe(o) + " point " + std::to_string(k); });
+                }
+            });
+        for (auto& th : threads) th.join();
+        Diffs all(kNearExactBound);
+        for (const Diffs& p : part) all.merge(p);
+        all.expect_ok(names[which++]);
     }
     const auto g = load_golden("fit");
     const auto mark = g.at("obs_mark").get<std::string>();
@@ -1056,51 +1144,70 @@ TEST(BankFitB2a, GridLoglikIsBitIdenticalToTheFrozenCodeAtEveryGridPoint) {
     const frozen::Grid grid{BankConfig{}};
     const DurationFit fit{BankConfig{}};
     std::vector<double> want;
+    Diffs golden(kNearExactBound);
     for (std::size_t i = 0; i < d.size(); ++i) {
         grid.grid_loglik(mark.at(i) == '1', d[i], v[i], want);
         const std::vector<double> got = fit.grid_loglik(mark.at(i) == '1', d[i], v[i]);
         ASSERT_EQ(got.size(), want.size());
-        for (std::size_t k = 0; k < got.size(); ++k) ASSERT_EQ(bits(got[k]), bits(want[k])) << i << " " << k;
+        for (std::size_t k = 0; k < got.size(); ++k)
+            golden.add(got[k], want[k], [&] { return "golden " + std::to_string(i) + " point " + std::to_string(k); });
     }
+    golden.expect_ok("grid_loglik, golden observations");
 }
 
-// Every bit of what the fit's searches give, the new code against the frozen copy, on one fit's history:
-// best, refine from the grid point, weighted_loglik at the grid point, the refined point and the given
-// points, with three T_P priors (none, 50 ms with weight 1, 200 ms with weight 3); class_logliks (ll, total,
-// var_lin) at the given points.
-void expect_searches_bit_identical(const DurationFit& fit, const BankConfig& cfg,
-                                   const std::vector<std::array<double, 4>>& points, const std::string& where,
-                                   std::size_t& nbad, std::string& first) {
-    auto fail = [&](const std::string& what) {
-        ++nbad;
-        if (first.empty()) first = where + ": " + what;
-    };
+// What the fit's searches give, the new code against the frozen copy, on one fit's history (the grid point
+// comes from the fit's own tables on both sides): best, refine from the grid point, weighted_loglik at the
+// grid point, the refined point and the given points, with three T_P priors (none, 50 ms with weight 1,
+// 200 ms with weight 3); class_logliks at the given points (ll and var_lin bit for bit, total to rounding).
+struct SearchDiffs {
+    Diffs best{kNearExactBound}, refine{kNearExactBound}, wll{kNearExactBound}, total{kNearExactBound};
+    std::size_t bits_bad = 0;
+    std::string first_bits;
+    void merge(const SearchDiffs& o) {
+        best.merge(o.best);
+        refine.merge(o.refine);
+        wll.merge(o.wll);
+        total.merge(o.total);
+        bits_bad += o.bits_bad;
+        if (first_bits.empty()) first_bits = o.first_bits;
+    }
+    void expect_ok(const std::string& what) const {
+        best.expect_ok(what + ", best");
+        refine.expect_ok(what + ", refine");
+        wll.expect_ok(what + ", weighted_loglik");
+        total.expect_ok(what + ", class_logliks total");
+        EXPECT_EQ(bits_bad, 0u) << what << ": " << first_bits;
+    }
+};
+
+void compare_searches(const DurationFit& fit, const BankConfig& cfg, const std::vector<std::array<double, 4>>& points,
+                      const std::string& where, SearchDiffs& out) {
     const std::vector<Obs> h(fit.history().begin(), fit.history().end());
     const frozen::Consts k(cfg);
+    auto at_where = [&](const char* what) { return [&where, what] { return where + ": " + what; }; };
     const std::pair<std::optional<double>, double> priors[] = {{std::nullopt, 0.0}, {0.05, 1.0}, {0.2, 3.0}};
     for (const auto& [pt, pw] : priors) {
         const auto got = fit.best(pt, pw);
         const auto want = frozen::best(fit, cfg, pt, pw);
         if (got.has_value() != want.has_value()) {
-            fail("best presence");
+            out.best.add(kInf, 0.0, at_where("best presence"));
             continue;
         }
         if (!got) continue;
         for (const auto& [a, b] : {std::pair{got->t_s, want->t_s}, std::pair{got->q, want->q},
                                    std::pair{got->w_s, want->w_s}, std::pair{got->tg_s, want->tg_s},
                                    std::pair{got->quality, want->quality}, std::pair{got->weight, want->weight}})
-            if (bits(a) != bits(b)) fail("best");
+            out.best.add(a, b, at_where("best"));
         const auto grid = *fit.grid_theta(pt, pw);
         const auto r1 = fit.refine(grid, pt, pw);
         const auto r0 = frozen::refine(fit, cfg, grid, pt, pw);
-        for (std::size_t i = 0; i < 4; ++i)
-            if (bits(r1[i]) != bits(r0[i])) fail("refine");
+        for (std::size_t i = 0; i < 4; ++i) out.refine.add(r1[i], r0[i], at_where("refine"));
         std::vector<std::array<double, 4>> at = points;
         at.push_back(grid);
         at.push_back(r0);
         for (const auto& th : at)
-            if (bits(fit.weighted_loglik(th, pt, pw)) != bits(frozen::weighted_loglik(fit, cfg, th, pt, pw)))
-                fail("weighted_loglik");
+            out.wll.add(fit.weighted_loglik(th, pt, pw), frozen::weighted_loglik(fit, cfg, th, pt, pw),
+                        at_where("weighted_loglik"));
     }
     if (h.empty()) return;
     std::vector<bool> is_mark;
@@ -1114,11 +1221,14 @@ void expect_searches_bit_identical(const DurationFit& fit, const BankConfig& cfg
         const ClassLogliks got = class_logliks(th, h, cfg);
         const frozen::Terms want = frozen::terms(th, is_mark, log_d, var_t, k.lp, k.sigma2, k.log_out);
         for (std::size_t i = 0; i < h.size(); ++i) {
-            if (bits(got.total[i]) != bits(want.total[i])) fail("class_logliks total");
+            out.total.add(got.total[i], want.total[i], at_where("class_logliks total"));
             for (std::size_t c = 0; c < 5; ++c) {
-                if (bits(got.ll[i][c]) != bits(want.ll[i][c])) fail("class_logliks ll");
-                if (bits(got.var_lin[i][c]) != bits(want.s2[i][c] * (want.safe[c] * want.safe[c])))
-                    fail("class_logliks var_lin");
+                const bool same = bits(got.ll[i][c]) == bits(want.ll[i][c]) &&
+                                  bits(got.var_lin[i][c]) == bits(want.s2[i][c] * (want.safe[c] * want.safe[c]));
+                if (!same) {
+                    ++out.bits_bad;
+                    if (out.first_bits.empty()) out.first_bits = where + ": class_logliks ll or var_lin";
+                }
             }
         }
     }
@@ -1138,7 +1248,7 @@ std::vector<std::array<double, 4>> sweep_points(std::mt19937_64& rng) {
     return p;
 }
 
-TEST(BankFitB2a, SearchesAreBitIdenticalToTheFrozenCode) {
+TEST(BankFitB2a, SearchesMatchTheFrozenCodeToRounding) {
     // The golden sequence (300 observations; the searches after each of the first 60 and every 10th), six
     // fit_cases sequences, and per configuration (two) and refine_iterations (2, 0, 5) 2000 random fits (100
     // without KZ4AP_FIT_FULL_SWEEP) of 1 to 400 observations (the history wraps beyond 192), three in four
@@ -1151,49 +1261,58 @@ TEST(BankFitB2a, SearchesAreBitIdenticalToTheFrozenCode) {
     {
         const BankConfig cfg;
         DurationFit fit(cfg);
-        std::size_t nbad = 0;
-        std::string first;
+        SearchDiffs out;
         for (std::size_t i = 0; i < d.size(); ++i) {
             fit.add(mark.at(i) == '1', d[i], v[i]);
             if (i < 60 || i % 10 == 9)
-                expect_searches_bit_identical(fit, cfg, sweep_points(rng), "golden " + std::to_string(i), nbad, first);
+                compare_searches(fit, cfg, sweep_points(rng), "golden " + std::to_string(i), out);
         }
         for (const std::string name : {"machine", "farnsworth", "key_weighting", "heavy_dahs", "hi", "random"}) {
             DurationFit f(cfg);
             for (const auto& [m, dd] : load_case(name)) f.add(m, dd, 1e-8);
-            expect_searches_bit_identical(f, cfg, sweep_points(rng), name, nbad, first);
+            compare_searches(f, cfg, sweep_points(rng), name, out);
         }
-        EXPECT_EQ(nbad, 0u) << first;
+        out.expect_ok("searches, golden and fit cases");
     }
-    for (const BankConfig& base : sweep_configs())
+    int which = 0;
+    for (const BankConfig& base : sweep_configs()) {
+        ++which;
         for (const int iters : {2, 0, 5}) {
             BankConfig cfg = base;
             cfg.refine_iterations = iters;
             const std::size_t fits = full_sweep() ? 2000 : 100;
-            const auto [bad, first] = parallel_sweep(fits, [&](std::size_t b, std::size_t e, std::size_t& nbad,
-                                                               std::string& f) {
-                std::mt19937_64 r(99991 * (b + 1) + static_cast<std::size_t>(iters));
-                std::uniform_real_distribution<double> u(0.0, 1.0);
-                for (std::size_t i = b; i < e; ++i) {
-                    DurationFit fit(cfg);
-                    const int n = std::uniform_int_distribution<int>(1, 400)(r);
-                    const double t = std::exp(std::log(0.012) + u(r) * std::log(20.0));
-                    for (int j = 0; j < n; ++j) {
-                        Obs o = random_obs(r);
-                        if (std::uniform_int_distribution<int>(0, 3)(r) != 0) {
-                            constexpr double mult[] = {1.0, 3.0, 1.0, 3.0, 7.0};
-                            const int c = std::uniform_int_distribution<int>(0, 4)(r);
-                            o.is_mark = c < 2;
-                            o.d_s = t * mult[c] * std::exp(0.2 * std::normal_distribution<double>(0.0, 1.0)(r));
+            const std::size_t nt = std::max<std::size_t>(1, std::thread::hardware_concurrency());
+            std::vector<SearchDiffs> part(nt);
+            std::vector<std::thread> threads;
+            for (std::size_t th = 0; th < nt; ++th)
+                threads.emplace_back([&, th] {
+                    const std::size_t b = fits * th / nt;
+                    std::mt19937_64 r(99991 * (b + 1) + static_cast<std::size_t>(iters));
+                    std::uniform_real_distribution<double> u(0.0, 1.0);
+                    for (std::size_t i = b; i < fits * (th + 1) / nt; ++i) {
+                        DurationFit fit(cfg);
+                        const int n = std::uniform_int_distribution<int>(1, 400)(r);
+                        const double t = std::exp(std::log(0.012) + u(r) * std::log(20.0));
+                        for (int j = 0; j < n; ++j) {
+                            Obs o = random_obs(r);
+                            if (std::uniform_int_distribution<int>(0, 3)(r) != 0) {
+                                constexpr double mult[] = {1.0, 3.0, 1.0, 3.0, 7.0};
+                                const int c = std::uniform_int_distribution<int>(0, 4)(r);
+                                o.is_mark = c < 2;
+                                o.d_s = t * mult[c] * std::exp(0.2 * std::normal_distribution<double>(0.0, 1.0)(r));
+                            }
+                            fit.add(o.is_mark, o.d_s, o.var_t_s2);
                         }
-                        fit.add(o.is_mark, o.d_s, o.var_t_s2);
+                        compare_searches(fit, cfg, sweep_points(r), "random fit " + std::to_string(i), part[th]);
                     }
-                    expect_searches_bit_identical(fit, cfg, sweep_points(r), "random fit " + std::to_string(i),
-                                                  nbad, f);
-                }
-            });
-            EXPECT_EQ(bad, 0u) << "refine_iterations " << iters << ": " << first;
+                });
+            for (auto& th : threads) th.join();
+            SearchDiffs all;
+            for (const SearchDiffs& p : part) all.merge(p);
+            all.expect_ok("searches, configuration " + std::to_string(which) + ", refine_iterations " +
+                          std::to_string(iters));
         }
+    }
 }
 
 }  // namespace
