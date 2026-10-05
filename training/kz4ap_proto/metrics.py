@@ -361,26 +361,36 @@ def new_over_counts(label: dict, over_starts, within_s: float = 2.0, settle_s: f
       last key-up (a real new over is recorded in the silence before it: at the last key-up plus the silence threshold,
       at most as late as the next first key-down; settle_s, heuristic, covers the few milliseconds by which the
       decoder's time base and the labels' millisecond-rounded times differ, far shorter than any silence that starts
-      a new over, at least 0.5 s);
-    - turnovers: transmissions after one by the other station (a QSO label's sender_index changes), and missed
-      turnovers: those with no over start after the previous transmission's last key-up and no later than within_s
-      after their first key-down;
+      a new over, at least 0.5 s), except an over start that found a turnover late (below);
+    - turnovers: transmissions after one by the other station (a QSO label's sender_index changes), each found on
+      time (an over start after the previous transmission's last key-up and no later than settle_s after its own
+      first key-down), found late (the first over start after the previous last key-up lies later than settle_s and
+      no later than within_s after its first key-down; its delay from the first key-down is recorded, s, and that
+      over start is not a false new over: review of B9, I1) or missed (neither);
     - same-station silences (a transmission after one by the same station: the pauses group's repeats) and the over
       starts in them (informative: whether the decoder starts a new over when the station did not change)."""
     txs = label.get("transmissions") or [{"start_s": label["start_s"], "end_s": label["end_s"]}]
     out = {"transmissions": len(txs), "false_new_overs": 0, "turnovers": 0, "missed_turnovers": 0,
-           "same_station_gaps": 0, "same_station_new_overs": 0}
-    out["false_new_overs"] = sum(1 for t in over_starts
-                                 if any(x["start_s"] + settle_s < t < x["end_s"] for x in txs))
+           "late_turnovers": 0, "late_delays_s": [], "same_station_gaps": 0, "same_station_new_overs": 0}
+    late_finds = set()  # indices into over_starts of the over starts that found a turnover late
     for k in range(1, len(txs)):
         kind = _gap_kind(txs, k)
         prev_end, start = txs[k - 1]["end_s"], txs[k]["start_s"]
         if kind == "turnover":
             out["turnovers"] += 1
-            out["missed_turnovers"] += not any(prev_end < t <= start + within_s for t in over_starts)
+            found = [(t, i) for i, t in enumerate(over_starts) if prev_end < t <= start + within_s]
+            if not found:
+                out["missed_turnovers"] += 1
+            elif min(found)[0] > start + settle_s:
+                t, i = min(found)
+                out["late_turnovers"] += 1
+                out["late_delays_s"].append(t - start)
+                late_finds.add(i)
         else:
             out["same_station_gaps"] += 1
             out["same_station_new_overs"] += any(prev_end < t <= start + settle_s for t in over_starts)
+    out["false_new_overs"] = sum(1 for i, t in enumerate(over_starts) if i not in late_finds
+                                 and any(x["start_s"] + settle_s < t < x["end_s"] for x in txs))
     return out
 
 
@@ -388,5 +398,8 @@ def first_word_by_over(label: dict, signal: dict) -> list[dict]:
     """Per transmission of one scored signal (the bench's per-transmission counts, signal["transmissions"]): the
     silence kind before it (_gap_kind) and its first word's symbols and edits."""
     txs = label.get("transmissions") or []
+    counts = signal.get("transmissions") or []
+    if len(counts) != len(txs):
+        raise ValueError(f"the bench scored {len(counts)} transmissions, the label has {len(txs)}")
     return [{"kind": _gap_kind(txs, k), "symbols": c["first_word_symbols"], "edits": c["first_word_edits"]}
-            for k, c in enumerate(signal.get("transmissions") or []) if k < len(txs)]
+            for k, c in enumerate(counts)]

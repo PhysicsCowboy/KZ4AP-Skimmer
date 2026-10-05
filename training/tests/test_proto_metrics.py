@@ -136,10 +136,17 @@ def test_new_over_counts_false_overs_missed_turnovers_and_same_station_silences(
     # before D (same station).
     c = metrics.new_over_counts(QSO, [10.6, 12.5, 21.55, 35.0])
     assert c == {"transmissions": 4, "false_new_overs": 2, "turnovers": 2, "missed_turnovers": 0,
-                 "same_station_gaps": 1, "same_station_new_overs": 0}
+                 "late_turnovers": 0, "late_delays_s": [], "same_station_gaps": 1, "same_station_new_overs": 0}
     # Nothing after B's end until 23.6 s, more than 2 s after C's first key-down: C's turnover is missed.
     c = metrics.new_over_counts(QSO, [10.6, 23.6, 30.5])
     assert (c["missed_turnovers"], c["false_new_overs"], c["same_station_new_overs"]) == (1, 1, 1)
+    # Review I1: B's turnover found only at 12.0 s, 1.0 s after B's first key-down: found late (its delay recorded), not
+    # a false new over; a second over start at 12.5 s, after the turnover was found, is false.
+    c = metrics.new_over_counts(QSO, [12.0, 21.55])
+    assert (c["late_turnovers"], c["missed_turnovers"], c["false_new_overs"]) == (1, 0, 0)
+    assert c["late_delays_s"] == pytest.approx([1.0])
+    c = metrics.new_over_counts(QSO, [12.0, 12.5, 21.55])
+    assert (c["late_turnovers"], c["missed_turnovers"], c["false_new_overs"]) == (1, 0, 1)
     # A label without senders (the pauses group's repeats): every silence is the same station's.
     rep = {"start_s": 0.0, "end_s": 30.0, "transmissions": [{"start_s": 0.0, "end_s": 10.0},
                                                              {"start_s": 20.0, "end_s": 30.0}]}
@@ -152,3 +159,5 @@ def test_first_word_by_over_names_the_silence_before_each_over():
     got = metrics.first_word_by_over(QSO, sig)
     assert [g["kind"] for g in got] == ["first", "turnover", "turnover", "same station"]
     assert [(g["edits"], g["symbols"]) for g in got] == [(0, 2), (1, 2), (2, 2), (3, 2)]
+    with pytest.raises(ValueError):  # review of B9, M4: a count mismatch is an error, not dropped overs
+        metrics.first_word_by_over(QSO, {"transmissions": sig["transmissions"][:3]})

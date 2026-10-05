@@ -161,10 +161,10 @@ def test_the_new_over_table_counts_by_group_and_leaves_out_qsos_the_channel_does
     _b9_suite(tmp_path)
     text = experiments.new_over_table(tmp_path, "v").read_text(encoding="utf-8")
     # H: only the 0 Hz QSO (the 200 Hz one is beyond the oracle channel's -6 dB point): 12.5 s is inside B (1 false
-    # of 3 transmissions); turnover B found (10.6 s), turnover C missed (nothing in 20 to 23.5 s).
-    assert "| H two-station QSO, oracle | all | 1 | 0.3333 (1 / 3) | 0.5000 (1 / 2) | — |" in text
+    # of 3 transmissions); turnover B found on time (10.6 s), turnover C missed (nothing in 20 to 23.5 s).
+    assert "| H two-station QSO, oracle | all | 1 | 0.3333 (1 / 3) | 0.5000 (1 / 2) | 0.0000 (0 / 2) | — | — |" in text
     # pauses: the over start at 5.7 s is in the same station's silence before its repeat.
-    assert "| pauses, oracle | all | 1 | 0.0000 (0 / 2) | — | 1.0000 (1 / 1) |" in text
+    assert "| pauses, oracle | all | 1 | 0.0000 (0 / 2) | — | — | — | 1.0000 (1 / 1) |" in text
     # first-word CER per over: first overs 1/4 each, the H turnovers 2/4 and 3/4, the pauses repeat 2/4
     assert "| H two-station QSO, oracle | turnover | 1 | 2 | 0.6250 (5 / 8) |" in text
     assert "| pauses, oracle | same station | 1 | 1 | 0.5000 (2 / 4) |" in text

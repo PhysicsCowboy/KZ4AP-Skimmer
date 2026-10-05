@@ -397,20 +397,27 @@ def new_over_table(out_dir, name: str, only: str = NEW_OVERS, within_s: float = 
     lines = [f"# New-over checks, {name}", "",
              f"Test cases `{only}`; group H's oracle QSO labels only where the channel holds the answering station "
              "(offset below 150 Hz). False new over: an over start later than "
-             f"{settle_s:g} s after a transmission's first key-down and before its last key-up. Missed turnover: a "
-             "transmission by the other station with no over start after the previous transmission's last key-up and "
-             f"no later than {within_s:g} s after its first key-down. Same-station silence: a transmission after one "
+             f"{settle_s:g} s after a transmission's first key-down and before its last key-up, other than one that found a "
+             "turnover late. Turnover: a transmission by the other station; found late: the first over start after the "
+             f"previous transmission's last key-up comes later than {settle_s:g} s and no later than {within_s:g} s "
+             "after its first key-down (delays from that key-down, s: median and maximum); missed: no over start in "
+             f"that span up to {within_s:g} s. Same-station silence: a transmission after one "
              "by the same station (the pauses group's repeats). Parentheses: bootstrap 95% interval over channels, "
              "then the counts.", "",
              "| group | tag | channels | false new overs per transmission | missed turnovers per turnover | "
-             "over starts per same-station silence |", "|---|---|---|---|---|---|"]
+             "turnovers found late per turnover | late delay median, maximum (s) | "
+             "over starts per same-station silence |", "|---|---|---|---|---|---|---|---|"]
     for (group, tag), cs in sorted(counts.items(), key=lambda kv: (kv[0][0], kv[0][1] != "all", kv[0][1])):
         false = rate([(c["false_new_overs"], c["transmissions"]) for c in cs], ("false", name, group, tag))
         missed = (rate([(c["missed_turnovers"], c["turnovers"]) for c in cs], ("missed", name, group, tag))
                   if any(c["turnovers"] for c in cs) else "—")
+        late = (rate([(c["late_turnovers"], c["turnovers"]) for c in cs], ("late", name, group, tag))
+                if any(c["turnovers"] for c in cs) else "—")
+        delays = [d for c in cs for d in c["late_delays_s"]]
+        delay = f"{np.median(delays):.2f}, {max(delays):.2f}" if delays else "—"
         same = (rate([(c["same_station_new_overs"], c["same_station_gaps"]) for c in cs], ("same", name, group, tag))
                 if any(c["same_station_gaps"] for c in cs) else "—")
-        lines.append(f"| {group} | {tag} | {len(cs)} | {false} | {missed} | {same} |")
+        lines.append(f"| {group} | {tag} | {len(cs)} | {false} | {missed} | {late} | {delay} | {same} |")
     lines += ["", "First-word CER of the overs, by the silence before them (the bench's per-transmission first-word "
               "counts; an upper bound, as in the suite's summary):", "",
               "| group | over | channels | overs | first-word CER |", "|---|---|---|---|---|"]
