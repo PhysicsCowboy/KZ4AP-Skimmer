@@ -17,6 +17,24 @@ against the numbers. Several of these were found by review but are invisible
 to the current benchmark, which only has clean, well-separated signals of
 10–30 dB SNR (500 Hz, key-down).
 
+### The development set's distribution of speeds and noise levels (owner, 2026-10-04; open for discussion)
+
+The owner's judgment: the development set (`kz4ap_proto.experiments.DEV`, seed 1; 509 scored
+signals) has a poorly chosen distribution of speeds, and to some extent of noise levels. Speeds
+are concentrated near 25 WPM (groups C, E, G and a third of A at 25 WPM; B, H and I mostly 18 to
+31 WPM); below 15 WPM there are only A's 12 WPM third, a few B signals and D's 10 WPM step;
+above 40 WPM, A's 40 WPM third, a few B signals and D's 60 WPM step. S₅₀₀ (dB SNR in 500 Hz)
+covers −10 to +20 dB on a regular grid only in group A; elsewhere mostly 0 to 20 dB. A set
+built this way can show what a change costs near 25 WPM but hardly what it gains at slow or
+fast speeds, which is where the stage-2 time-base work (time constants in dits) is aimed
+(Plan B task B4a, results record section 6).
+
+It is kept for now only so that results stay comparable with stage 1's and Plan A's
+experiments. Open question, for discussion with the owner: whether to start new comparisons
+on a redesigned development set (speeds spread evenly in ln WPM, e.g. 8 to 60 WPM; S₅₀₀
+spread evenly across the decision-relevant range in every group), re-measuring the current
+reference on it, rather than carrying the old set forward.
+
 ### Top priority: research, then implement a probabilistic decoder
 
 The classical decoder is a hard-decision baseline (see
