@@ -121,6 +121,24 @@ shortest row, i.e. the alias, as long as T̂ is near T₀. Its weakness (conject
 somewhere (option C uses the selected branch's dit), which ties the window to the decoder's own speed
 estimate.
 
+### 2.5 Option C on the development set (measured; results record §6.6)
+
+T̂ = the selected branch's eligible fitted dit, else its nominal d_k; stage 1's windows before the first
+selection. Against all settings in seconds (`bank-b3b`):
+
+| Run | Paired CER | Comb precision at 0.03 | Near-3T₀ share of the shortest window's wrong estimates |
+|---|---|---|---|
+| Shared windows, re-key in dits | +0.0223 (+0.0119 to +0.0341) | 0.795 (0.771–0.819) | 0.3% |
+| Shared windows, re-key in seconds | +0.0148 (+0.0072 to +0.0239) | 0.789 (0.765–0.813) | 0.4% |
+| B4a (per-candidate windows, re-key in dits) | +0.0277 (+0.0194 to +0.0362) | 0.753 | 26.3% |
+| All in seconds (`bank-b3b`) | 0 | 0.804 | 3.7% |
+
+As §2.4 predicted, the shared window removes the alias and restores the comb's precision. The development
+set is nevertheless still worse than with stage 1's settings (shared, re-key in seconds: groups A, C, F,
+G). So the windows' cost on this set is not only the alias; its other cause is not established
+(conjectured: the windows' lengths differ from stage 1's away from 25 WPM, and T̂'s source ties the window
+to the selected branch).
+
 ## 3. The re-key settings
 
 ### 3.1 Algebra (derived)
@@ -173,9 +191,12 @@ decoder decodes both alike):
 | Re-key in dits | +0.116 | −0.28 |
 | Windows in dits | +0.107 | +0.33 |
 | Both (B4a) | +0.126 | +0.10 |
+| Shared window (option C), re-key in dits | +0.093 (+0.030 to +0.169) | +0.50 |
+| Shared window, re-key in seconds | +0.079 (+0.040 to +0.124) | +0.53 (interval −1.68 to +1.62: uninformative) |
 
-The decoder needs about 2.9 to 3.7 dB more energy per dit at 12 WPM than at 25 WPM; the dits conversion
-recovers about 0.6 dB. The rest lies elsewhere (conjectured: settings still in seconds, e.g. the amplitude
+Every variant needs about 2.7 to 3.7 dB more energy per dit at 12 WPM than at 25 WPM. Whether the
+variants differ from one another by a fraction of a dB is not established (each shift's interval is a
+separate, nominal bootstrap). The deficit lies elsewhere (conjectured: settings still in seconds, e.g. the amplitude
 average τ_a = 0.5 s (task B5), the false-mark rate per second, the noise time constants).
 
 ## 5. Open for the owner
