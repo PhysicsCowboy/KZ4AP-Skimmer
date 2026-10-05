@@ -49,6 +49,22 @@ cost +0.0184 (+0.0122 to +0.0251), the re-key settings in dits alone +0.0116 (+0
 precision fall comes from the windows alone, whose wrong estimates move to about 3 T and longer, not from a shortest
 window too short at fast speeds.
 
+**Answer (B9, the stretch test and the new-over checks).** The bank decoder is not time-base invariant. Group A's
+25 WPM signals stretched to 12 WPM at the same energy per dit (S₅₀₀ 3.19 dB lower) decode worse. Pooled paired CER,
+stretched − original, is +0.117 (stage 1's settings in seconds), +0.126 (B4a), +0.116 (re-key in dits only) and
++0.107 (windows in dits only), every interval above 0. The CER-0.10 crossing shifts by −0.49, +0.10, −0.28 and
++0.33 dB of S₅₀₀ against the invariant +3.19 dB. So at 12 WPM the decoder needs about 2.9 to 3.7 dB more energy per
+dit; B4a's time constants in dits recover about 0.6 dB of it.
+
+Stage 1's new-over rule on the same variants:
+
+- It starts a new over in every same-station pause of 2 to 20 s.
+- Group H (oracle): 0.05 to 0.11 false new overs per transmission, and 0.23 to 0.31 of the turnovers missed, mostly
+  at 50 and 100 Hz offsets.
+- First words after a turnover are about half wrong.
+
+Details in section 8.
+
 ## 0. Terms used in this record
 
 - **Decoder**: Envelope, Matched and the bank are the three decoders; here only the bank decoder in C++ is
@@ -971,3 +987,177 @@ Raw outputs (git-ignored), in `build/suite/full3/experiments/linux/b4a/`:
 - `b4a-ablation.log`
 
 The script for the wrong-estimate ratios is `build/b4a/wrong_ratio.py`.
+
+## 8. The stretch test and the new-over checks (B9)
+
+Stage-2 spec sections 4.1 and 4.3. Tooling: `98ccb9d`. Every number here is measured unless marked otherwise.
+
+### 8.1 The stretch group and the measures
+
+**The group `S stretch`** (`suites.stretch`, recordings `S-stretch-25wpm-{0,1}-s{1,2,3}`). Each group-A 25 WPM recording
+(`A-awgn-25wpm-{0,1}-sN`: 32 signals, machine keying, S₅₀₀ −10 to +20 dB SNR in 500 Hz in 2 dB steps, two signals per
+step) is copied with:
+
+- the same texts, carrier frequencies and first-mark times;
+- each signal's keying timeline scaled in time by 25/12 = 2.0833 from its first mark, that is 12 WPM (derived: machine
+  keying's every duration is a whole number of dits of 1.2 s / WPM; generated times are within 10⁻⁹ s of 25/12 times
+  group A's, tested);
+- S₅₀₀ lowered by 10·log₁₀(25/12) = 3.1876 dB, so the key-down power times the dit length, the energy per dit
+  relative to the noise density, is unchanged (derived);
+- the raised-cosine keying edges scaled too, 5 ms → 10.42 ms, so each envelope is exactly the original's in a time base
+  25/12 slower (derived). With 5 ms edges kept, a stretched dit would carry 0.33 dB more energy than the original's
+  (derived: a dit of length L with two raised-cosine edges of r inside it carries A²(L − 1.25 r): 93.75 ms against
+  2.0833 × 41.75 ms);
+- a recording length of 250 s (25/12 × 120 s) and its own noise seed (1000·seed + 160 + part).
+
+Seeds 1 to 3 are generated on the Linux machine (`build/suite/full3`, manifest 123 → 129 entries, the 123 old ones
+unchanged, checked); only seed 1's oracle channels are recorded and decoded; seeds 2 and 3 are held out until B12.
+The development set `DEV` does not change (tested).
+
+**Measures** (`experiments stretch`, `metrics.stretch_measures`). Each stretched signal is paired with the group-A signal
+it copies (the same recording part and label index; texts and the 3.1876 dB S₅₀₀ difference checked per pair):
+
+- the paired CER, the mean over pairs of (stretched CER − original CER), per original S₅₀₀ step (4 pairs) and pooled
+  (64 pairs);
+- the S₅₀₀ at which each side's CER (pooled per step) crosses 0.10, by the suite's linear interpolation, the stretched
+  copies on their own S₅₀₀ axis;
+- the shift, original crossing − stretched crossing, in dB of S₅₀₀. A time-base-invariant decoder gives +3.19 dB (the
+  crossing at the same energy per dit);
+- the same for first-word CER.
+
+Intervals: bootstrap 95% over pairs (1000 resamples); for the shift, pairs resampled within each step, the same pairs
+for both sides. The brief asked for intervals over test cases; with two test cases per side that bootstrap has no
+meaning, so pairs (signals) are the units, as in the rest of this record.
+
+**Runs** (Linux machine, `build/b9/b9_run.sh`; replay tool and bench built in `build/linux-b9` from `98ccb9d`, whose
+engine and bench code is that of `95c7618`; `--jobs 5`). Each run decodes the test cases `experiments.B9`: group A's
+two 25 WPM recordings and the two stretched ones (seed 1), group H's oracle QSO labels (`H-qso-oracle-s1`) and the
+pauses group's oracle copy (`pauses-s1.oracle`):
+
+| run | settings | B4a's parts |
+|---|---|---|
+| `stretch-b3b` | `--set rekey_after_s=0.8 --set rekey_timeout_s=2.0 --set periodicity_windows_s=[2.0,5.0,10.0]` | none (all in seconds, stage 1) |
+| `stretch-b4a` | defaults | both (in dits) |
+| `stretch-rekey` | `--set periodicity_windows_s=[2.0,5.0,10.0]` | re-key settings in dits |
+| `stretch-windows` | `--set rekey_after_s=0.8 --set rekey_timeout_s=2.0` | windows in dits |
+
+Reproduction check: on the 76 channels these runs share with the development set (A 25 WPM and H oracle QSO labels),
+every run's decoded records are identical to the earlier run with the same settings (`bank-b3b`, `bank-b4a`,
+`bank-b4a-rekey`, `bank-b4a-windows`): 76 of 76 channels, every record.
+
+### 8.2 The stretch test
+
+Pooled over the 64 pairs (CER of the original signals, of the stretched copies, and paired):
+
+| run | CER original | CER stretched | paired CER (stretched − original) | S₅₀₀ at CER 0.10, original (dB SNR in 500 Hz) | stretched | shift (dB of S₅₀₀; invariance +3.19) |
+|---|---|---|---|---|---|---|
+| `stretch-b3b` | 0.2968 | 0.4131 | **+0.1166 (+0.0577 to +0.1902)** | +0.16 | +0.65 | **−0.49 (−0.73 to −0.10)** |
+| `stretch-b4a` | 0.3117 | 0.4369 | **+0.1260 (+0.0627 to +0.1902)** | +0.79 | +0.69 | **+0.10 (−0.08 to +0.29)** |
+| `stretch-rekey` | 0.3088 | 0.4239 | **+0.1161 (+0.0517 to +0.1888)** | +0.37 | +0.64 | **−0.28 (−0.67 to +0.17)** |
+| `stretch-windows` | 0.3124 | 0.4196 | **+0.1074 (+0.0550 to +0.1692)** | +1.01 | +0.68 | **+0.33 (−0.21 to +0.58)** |
+
+Paired CER by the original's S₅₀₀ step (4 pairs each; intervals in the raw outputs). Steps −10 to −6 dB: +0.000 in
+every run (both sides CER 1.000).
+
+| original S₅₀₀ (dB SNR in 500 Hz) | −4 | −2 | 0 | +2 | +4 | +6 | +8 | +10 to +20 |
+|---|---|---|---|---|---|---|---|---|
+| `stretch-b3b` | +0.008 | +0.304 | +0.878 | +0.595 | +0.052 | +0.010 | +0.003 | −0.001 to +0.008 |
+| `stretch-b4a` | +0.052 | +0.210 | +0.852 | +0.821 | +0.038 | +0.035 | +0.025 | −0.010 to +0.006 |
+| `stretch-rekey` | +0.051 | +0.118 | +0.822 | +0.838 | +0.025 | +0.004 | −0.002 | −0.003 to +0.004 |
+| `stretch-windows` | +0.055 | +0.194 | +0.777 | +0.617 | +0.029 | +0.032 | +0.019 | −0.007 to +0.008 |
+
+CER per step, `stretch-b4a` (original / stretched): −2 dB 0.763 / 0.973; 0 dB 0.139 / 0.991; +2 dB 0.041 / 0.863;
++4 dB 0.014 / 0.052. `stretch-b3b`: 0.594 / 0.896; 0.107 / 0.988; 0.018 / 0.613; 0.003 / 0.055.
+
+First-word CER, paired (stretched − original), pooled: `stretch-b3b` +0.2432 (+0.0877 to +0.4281); `stretch-b4a`
++0.9160 (+0.2456 to +1.6624); `stretch-rekey` +0.1277 (−0.2880 to +0.7020); `stretch-windows` +0.5722 (+0.2832 to
++0.9147). There is no first-word crossing shift in any run. The original side's first-word CER is above 0.10 at the
+highest step, +20 dB, in every run (one or two wrong first words among 4 pairs are enough), so it has no crossing.
+Only `stretch-rekey`'s stretched copies cross, at +16.58 dB.
+
+**Answer.** The bank decoder is **not time-base invariant** in any of the four variants. At equal energy per dit the
+stretched copies (12 WPM) decode worse than the originals (25 WPM), by paired CER +0.107 to +0.126 pooled, all
+intervals above 0. The loss sits in the steep part of the curve, original S₅₀₀ −2 to +2 dB. The CER-0.10 crossing
+shift is −0.49 to +0.33 dB of S₅₀₀ against the invariant +3.19 dB, so at 12 WPM the decoder needs about 2.9 to 3.7 dB
+more energy per dit than at 25 WPM. The time constants in dits move the shift toward invariance by a fraction of a dB:
+`stretch-b4a` +0.10 (−0.08 to +0.29) against `stretch-b3b` −0.49 (−0.73 to −0.10), two separate bootstraps whose
+intervals do not overlap; the windows in dits alone +0.33 and the re-key settings alone −0.28 have intervals that
+overlap both. Pooled paired CER does not separate the variants (overlapping intervals). Above +8 dB both sides decode
+alike in every variant (|paired CER| ≤ 0.010).
+
+What causes the remaining 2.9 to 3.7 dB is not measured here. Candidates are the settings still in seconds: those
+stage-2 spec 3.2 keeps (for example the unknown-amplitude test's false-mark rate of 0.01 per second, per branch), and
+the amplitude average τ_a, which spec 3.4 leaves to a stage-2 measurement. This is a conjecture, not a measurement.
+
+### 8.3 The new-over checks
+
+Measures (`experiments new-overs`, `metrics.new_over_counts`), from each channel's recorded over starts (the time on the
+selected branch's time base at which the silence reached the new-over threshold) and its labels:
+
+- **false new over**: an over start later than 0.1 s after a transmission's first key-down and before its last key-up.
+  A real over start is recorded in the silence before a transmission, at most at its first key-down; the 0.1 s
+  (heuristic) covers the few milliseconds between the decoder's time base and the labels' millisecond-rounded times
+  (an over start 6 ms after a first key-down was seen in `bank-b3b`);
+- **missed turnover**: a transmission by the other station of a QSO with no over start after the previous
+  transmission's last key-up and no later than 2 s after its own first key-down;
+- **over starts per same-station silence**: whether a silence between two transmissions of the same station (the
+  pauses group's repeats, 2, 5, 10 and 20 s) started a new over;
+- **first-word CER per over**, by the silence before the over (first over, after a turnover, after the same station),
+  from the bench's per-transmission first-word counts (an upper bound, as everywhere in this record).
+
+Group H's oracle QSO labels (the channel opened at the caller's labeled frequency) are counted only where the channel
+holds the answering station: offsets 0 to 100 Hz, 10 QSOs, 80 transmissions, 70 turnovers. The two 200 Hz QSOs are left
+out: they are beyond the oracle channel's −6 dB point at 150 Hz from its center (measured; `suites.view_fits`). The pauses group: 8 channels, 24 transmissions, 16
+same-station silences. Intervals: bootstrap 95% over channels.
+
+| run | H: false new overs per transmission | H: missed turnovers per turnover | pauses: false new overs per transmission | pauses: over starts per same-station silence |
+|---|---|---|---|---|
+| `stretch-b3b` | 0.088 (0.025–0.150), 7 / 80 | 0.229 (0.029–0.429), 16 / 70 | 0 / 24 | 16 / 16 |
+| `stretch-b4a` | 0.050 (0.000–0.100), 4 / 80 | 0.314 (0.114–0.543), 22 / 70 | 0 / 24 | 16 / 16 |
+| `stretch-rekey` | 0.088 (0.025–0.150), 7 / 80 | 0.271 (0.043–0.529), 19 / 70 | 0 / 24 | 15 / 16 |
+| `stretch-windows` | 0.113 (0.038–0.188), 9 / 80 | 0.300 (0.086–0.529), 21 / 70 | 0 / 24 | 16 / 16 |
+
+Missed turnovers by the answering station's offset (of 14 turnovers each; `stretch-b3b`, `stretch-b4a`,
+`stretch-rekey`, `stretch-windows`): 0 Hz 1, 4, 1, 3; 10 Hz 0, 0, 0, 0; 25 Hz 0, 1, 0, 1; 50 Hz 5, 6, 6, 5; 100 Hz 10,
+11, 12, 12. False new overs (of 16 transmissions each):
+
+- 25 Hz: 3 or 4 in every run.
+- 100 Hz: 3 or 4, except `stretch-b4a`'s 1.
+- 50 Hz: 0 or 1.
+- 0 Hz and 10 Hz: none.
+
+First-word CER per over:
+
+| run | H, first over (10) | H, after a turnover (70) | pauses, first (8) | pauses, after the same station (16) |
+|---|---|---|---|---|
+| `stretch-b3b` | 0.150 (0.050–0.300) | 0.427 (0.234–0.627) | 0.063 | 0.000 |
+| `stretch-b4a` | 0.500 (0.100–0.951) | 0.499 (0.268–0.739) | 0.000 | 0.000 |
+| `stretch-rekey` | 0.050 (0.000–0.150) | 0.501 (0.272–0.740) | 0.000 | 0.000 |
+| `stretch-windows` | 0.600 (0.050–1.500) | 0.464 (0.272–0.663) | 0.063 | 0.094 |
+
+**Answer.** Stage 1's new-over rule (silence threshold T_new = max(0.5 s, 12 T_g)), in all four variants:
+
+- It starts a new over in every same-station silence of the pauses group, 2 s included (15 or 16 of 16; derived:
+  T_new = 0.576 s at 25 WPM), with no false new over inside its transmissions (0 of 24).
+- In group H, 0.05 to 0.11 false new overs per transmission. 0.23 to 0.31 of the turnovers are missed, almost all at
+  50 Hz and 100 Hz offsets, where the answering station is off the channel's center (with oracle channels the bank mixes at
+  the caller's labeled frequency and has no tracker). There, a missed turnover is probably a weak or absent answering
+  station rather than a silence too short; this is a conjecture, not separated here.
+- First words after a turnover are about half wrong (0.43 to 0.50, upper bound) in every variant.
+
+These are the baselines B6 (two hypotheses after 8 T_g) will be measured against. The intervals of the four variants
+overlap on every measure.
+
+### 8.4 Raw outputs
+
+Git-ignored, copied back from the Linux machine to `build/suite/full3/experiments/linux/b9/`:
+
+- `stretch-stretch-{b3b,b4a,rekey,windows}.{md,json}`: the per-step tables with intervals.
+- `new-overs-stretch-{…}.md`: per tag as well.
+- `c2-diff-stretch-…-vs-bank-….md`: the reproduction checks.
+- `b9-prep.log`, `b9-runs.log`.
+
+Decoded files are in `build/suite/full3/proto/stretch-*/` and scored results in
+`build/suite/full3/experiments/results/stretch-*/`, both on the Linux machine. The helper scripts are in `build/b9/`
+(`b9_prep.sh`, `b9_check.py`, `b9_run.sh`, `b9_runs.sh`). B4a-C's shared-window variant is added to this section when
+it exists.
