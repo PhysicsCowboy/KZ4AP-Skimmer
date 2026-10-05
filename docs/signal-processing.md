@@ -2347,8 +2347,8 @@ change the periodicity estimate's input as well as the keying.
 A variant of the windows, not the default (Plan B, B4a-C):
 `periodicity_window_mode` = `"shared"` keeps N_w in dits but judges every
 candidate of a row over one window N_w · T̂, T̂ the selected branch's
-dit, with stage 1's 2, 5 and 10 s before the first selection
-("Periodicity" below). The replay tool sets it with
+eligible fitted dit of its current over, with stage 1's 2, 5 and 10 s
+whenever there is none ("Periodicity" below). The replay tool sets it with
 `--set periodicity_window_mode=shared`.
 
 Tests at the default timing (`engine/tests/bank/`): W_min,k, the seed's
@@ -2929,56 +2929,79 @@ spectrum) were not adopted and are not ported; any other
   `periodicity_windows_s`, when set, wins over either mode). Each of the
   three rows has one window, the same for every candidate:
   N = max(16, round(N_w · T̂ · r_P)) averaged samples, N_w ∈ {41.7, 104,
-  208}, where T̂ (s) is the dit of the branch currently selected: its
-  fitted T if its fit is eligible (selection's test: memory ≥ 8 elements
-  and |ln(L_k / (0.8 T))| ≤ ln 1.1), else its nominal dit d_k ("Time
-  constants in dits"). The channel takes T̂ from the selection made at
-  the last selection instant (an earlier block) and passes it at every
-  block; before the channel's first selection there is no T̂ and the
-  rows are stage 1's windows in seconds,
-  `periodicity_unselected_windows_s` = 2, 5 and 10 s (1500, 3750 and
-  7500 samples). T̂ is capped at the longest fitted dit an eligible fit
-  can have, L_32 / 0.8 · 1.1 = 0.2530 s at 1500 samples/s (L_32 =
-  276 samples / 1500 samples/s, realized; derived), and the buffer keeps
-  208 times that, 39 468 samples (52.6 s, 316 kB of doubles) at
-  750 samples/s, instead of 37 789. Each row is then exactly the shared
-  form, `comb_estimate` over its most recent N samples (one FFT per row,
-  zero-padded to the power of two ≥ 2N: 4096, 8192 and 16 384 points at
-  T̂ = 48 ms; 16 384, 65 536 and 131 072 at the cap), and the reach rule
-  applies as in stage 1: a candidate counts in a row only if
-  9.15 T ≤ (N − 1) / 2, so T ≤ about N_w T̂ / 18.3: 2.28 T̂ in the
-  shortest row, 5.68 T̂ and 11.4 T̂ in the others (derived). An alias at
-  3 T̂ therefore cannot be the shortest row's estimate; the other two
-  rows still score it, over the same window as T̂ itself. T_P, the
-  confidence and the reported window follow the rule above (the shortest
-  confident row; its window N / r_P). Why: with a window per candidate,
-  an alias at 3 T₀ is scored over three times the samples of the true
-  T₀, and the per-window cap T ≤ W / 18.3 is gone; the shortest window's
-  confident wrong estimates near 3 T₀ rose from 3.7% to 26.0% (results
-  record, section 6.5). Class (1) dits, through T̂. Status: heuristic,
-  an experiment (owner, 2026-10-04: measured as a variant, no default
-  changed). **It introduces a feedback the default does not have:** the
-  selected branch's speed sets the windows that judge T_P, and T_P feeds
-  every fit's prior (and so the fitted T that becomes T̂) and selection's
-  fallback (which chooses the branch whose dit becomes T̂). A wrong
-  selection can therefore shorten or lengthen the windows that would
-  correct it; in particular, when the selected dit is too long, the
-  shortest row's reach admits candidates up to 2.28 times that dit. The
-  default form has no such loop (its windows depend on the candidate
-  alone). Tests (`engine/tests/bank/periodicity_test.cpp`,
-  `channel_test.cpp`): in this mode each row's estimate equals
-  `comb_estimate` on its most recent N samples bit for bit, with the
-  window following T̂ as it changes, and the shortest row's estimate
-  < 2.3 T̂; before a selection the estimates equal stage 1's windows'
-  bit for bit; T̂ at the cap; on three golden channel streams no T̂
-  before the first selection, then every row's window N_w T̂ with T̂
-  within ln 1.1 of the selected branch's L_k / 0.8.
-  Measured on the development set (Linux machine, results record
-  section 6.6): CPU 45.79 ms per channel-second pooled (the default at
-  the same build and conditions 56.60), comb precision at 0.03 0.795
-  (default 0.753), near-3T₀ share of the shortest window's confident
-  wrong estimates 0.3% (default 26.3%), paired CER against `bank-b3b`
-  +0.0223 (default +0.0277).
+  208}, where T̂ (s) is the fitted dit T of the branch currently selected
+  (by the last selection instant, an earlier block), and only when (a) a
+  selection exists, (b) that branch's fit belongs to its current over
+  and (c) the fit is eligible (selection's test: memory ≥ 8 elements and
+  |ln(L_k / (0.8 T))| ≤ ln 1.1). Otherwise there is no T̂ and the rows
+  are stage 1's windows in seconds, `periodicity_unselected_windows_s` =
+  2, 5 and 10 s (1500, 3750 and 7500 samples at 750 samples/s). Condition
+  (b) is the decoder's own turnover: a new over starts on a branch when
+  its key has been up for longer than T_new = max(0.5 s, 12 T_g) since
+  its last key-up (`Branch::new_over_due`, `start_over`); from then the
+  branch decodes with the previous over's fit (`prev_fit`) until the
+  over's first marks are re-keyed (W_min,k of keyed time, or a time-out
+  that keys marks with the previous amplitude), when the fit becomes the
+  over's own (fresh, or the previous one continued with this over's
+  marks). The decoder does not tell a new station from the same station
+  resuming: every pause longer than T_new withholds T̂ until the re-key.
+  So T̂ is withheld at the stream's start until the selected branch has
+  an eligible fit, and from every over start on the selected branch until
+  that over's re-keyed fit is eligible; a switch to another branch gives
+  that branch's T̂ under the same conditions. (Fix round 1, controller's
+  ruling 2026-10-05: the first form fell back to the selected branch's
+  nominal dit d_k without an eligible fit; as the selector starts on
+  branch 1, that made T̂ = d_1 = 12 ms from branch 1's first key-up,
+  about 1.1 s into a stream, until the selector's first switch, with
+  windows of 0.50, 1.25 and 2.50 s whose reach stops at 27.3, 68.1 and
+  136.3 ms, i.e. stations slower than 44 words/min out of the shortest
+  row's reach: a start-up trap. Its runs are superseded; results record
+  section 6.6.) On the golden streams (25 words/min clean, turnover and
+  two speeds; 12 words/min slow) the first selection comes at 1.11 to
+  1.15 s and the first T̂ at 2.82 to 3.67 s (measured). T̂ is capped at
+  the longest fitted dit an eligible fit can have, L_32 / 0.8 · 1.1 =
+  0.2530 s at 1500 samples/s (L_32 = 276 samples / 1500 samples/s,
+  realized; derived), and the buffer keeps 208 times that, 39 468
+  samples (52.6 s, 316 kB of doubles) at 750 samples/s, instead of
+  37 789. Each row is then exactly the shared form, `comb_estimate` over
+  its most recent N samples (one FFT per row, zero-padded to the power of
+  two ≥ 2N: 4096, 8192 and 16 384 points at T̂ = 48 ms; 16 384, 65 536
+  and 131 072 at the cap), and the reach rule applies as in stage 1: a
+  candidate counts in a row only if 9.15 T ≤ (N − 1) / 2, so T ≤ about
+  N_w T̂ / 18.3: 2.28 T̂ in the shortest row, 5.68 T̂ and 11.4 T̂ in the
+  others (derived). An alias at 3 T̂ therefore cannot be the shortest
+  row's estimate; the other two rows still score it, over the same window
+  as T̂ itself. T_P, the confidence and the reported window follow the
+  rule above (the shortest confident row; its window N / r_P). Why: with
+  a window per candidate, an alias at 3 T₀ is scored over three times the
+  samples of the true T₀, and the per-window cap T ≤ W / 18.3 is gone;
+  the shortest window's confident wrong estimates near 3 T₀ rose from
+  3.7% (`bank-b3b`) to 26.3% (`bank-b4a`; 26.0% with the windows alone,
+  `bank-b4a-windows`; results record sections 6.5 and 6.6). Class (1)
+  dits, through T̂. Status: heuristic, an experiment (owner, 2026-10-04:
+  measured as a variant, no default changed). **It introduces a feedback
+  the default does not have:** the selected branch's speed sets the
+  windows that judge T_P, and T_P feeds every fit's prior (and so the
+  fitted T that becomes T̂) and selection's fallback (which chooses the
+  branch whose dit becomes T̂). A wrong selection with an eligible fit
+  can therefore shorten or lengthen the windows that would correct it;
+  when the selected dit is too long, the shortest row's reach admits
+  candidates up to 2.28 times that dit. The default form has no such loop
+  (its windows depend on the candidate alone). Tests
+  (`engine/tests/bank/periodicity_test.cpp`, `channel_test.cpp`): in this
+  mode each row's estimate equals `comb_estimate` on its most recent N
+  samples (by construction; the test's content is the window length,
+  computed independently as T̂ changes, and the reach: the shortest row's
+  estimate < 2.3 T̂); without T̂ the estimates equal stage 1's windows'
+  bit for bit; T̂ at the cap; on four golden channel streams, at every
+  block, T̂ equals the rule above evaluated on the state before the block
+  (both transitions occur: withheld after the first selection until the
+  first eligible fit, and withheld from an over start on the selected
+  branch until its re-key), every filled row's window is N_w T̂ or stage
+  1's, and on the clean 25 words/min stream every T̂ is between 40 and
+  58 ms (never d_1).
+  Measured on the development set: results record section 6.6 (the
+  first form's runs, with the nominal-dit fallback, are superseded).
 - **Candidates.** T on a log grid from 1.2 s / 100 = 12 ms in steps of
   1% (×1.01) up to the first point ≥ 1.2 s / 5 = 240 ms: 303 points,
   12 ms to 242.2 ms (the duration fit's grid; the 1.01 is written into
@@ -3831,7 +3854,7 @@ parameter was changed for this run.
 | Bank periodicity method | the comb on Π = 2T over branch 1's posterior p (the edge comb and the spectrum fit are not ported) | `BankConfig::periodicity_method`; `bank::Periodicity` | owner (E1); Π = 2T derived |
 | Bank periodicity input and updates | p averaged to r_P = r / max(1, round(r / 750 samples/s)) (750 samples/s at r = 1500 samples/s); recomputed every 0.25 s of p (375 samples at 1500 samples/s) | `BankConfig::periodicity_rate_hz`, `periodicity_update_s` | heuristic |
 | Bank periodicity windows | each candidate T over its own N_w · T, N_w = 41.7, 104 and 208 (0.50 to 2.50 s at T = 12 ms, 10.1 to 50.4 s at T = 242.2 ms); the shortest confident window gives T_P; the comb's reach 9.15 T always inside; class (1) dits | `BankConfig::periodicity_windows_dits` (override in s: `periodicity_windows_s`, unset); `bank::bank_timing`, `bank::Periodicity` | windows placeholder (stage 1's 2, 5 and 10 s at 48 ms; Plan B, B4a); reach inside derived |
-| Bank periodicity windows, shared variant (not the default) | `periodicity_window_mode` = "shared": each row one window for every candidate, N_w · T̂ (N_w = 41.7, 104, 208; T̂ the selected branch's eligible fitted T, else its nominal d_k, capped at 0.2530 s); before the first selection 2, 5 and 10 s; a candidate counts only within the comb's reach (T ≤ about N_w T̂ / 18.3); feeds back through T_P (fit prior, selection fallback) | `BankConfig::periodicity_window_mode` (default "per_candidate"), `periodicity_unselected_windows_s`; `bank::bank_timing`, `bank::Periodicity`, `bank::BankChannel` | heuristic, an experiment (Plan B, B4a-C); the cap and reach derived |
+| Bank periodicity windows, shared variant (not the default) | `periodicity_window_mode` = "shared": each row one window for every candidate, N_w · T̂ (N_w = 41.7, 104, 208; T̂ the selected branch's eligible fitted T of its current over, capped at 0.2530 s); without such a fit (stream start, from an over start until its re-key) 2, 5 and 10 s; a candidate counts only within the comb's reach (T ≤ about N_w T̂ / 18.3); feeds back through T_P (fit prior, selection fallback) | `BankConfig::periodicity_window_mode` (default "per_candidate"), `periodicity_unselected_windows_s`; `bank::bank_timing`, `bank::Periodicity`, `bank::BankChannel` | heuristic, an experiment (Plan B, B4a-C); the cap and reach derived |
 | Bank comb teeth and width | 4 teeth at kΠ, k = 1…4, negative teeth at (k ± ½)Π, each ±0.075 Π (±15% of T) wide; score = mean contrast, dimensionless; biased autocorrelation | `BankConfig::comb_teeth`, `comb_width`; `bank::comb_estimate` | placeholder (E3), not measured for the comb on 2T; biased estimate heuristic |
 | Bank comb confidence | T_P counts when its window's score ≥ 0.03 (dimensionless) | `BankConfig::comb_confidence_min` | placeholder (E1) |
 | Bank text model | ln(w / 2688) nats per character (VE3NEA's table); valid codes missing from it ln(8/2688) = −5.817 nats; "*" ln(10⁻⁶) = −13.816 nats; mean over the branch's last 10 characters (word spaces not counted), applied by the channel decoder | `bank::TextModel`; `BankConfig::text_window_chars`; `bank::Branch::text_logprob` | probabilities derived (VE3NEA); the two fallbacks heuristic; window 10 characters placeholder, kept by E8 |

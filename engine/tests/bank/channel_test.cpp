@@ -903,60 +903,94 @@ TEST(BankChannelDits, EachOverrideActsAlone) {
     EXPECT_EQ(bank_timing(wait).rekey_timeout_s, std::vector<double>(32, 2.5 * 0.8));
 }
 
-// The shared-window variant (B4a-C, periodicity_window_mode = "shared"; not the default), on golden streams pushed
-// block by block: no T-hat before the channel's first selection (the windows are stage 1's 2, 5 and 10 s, 1500, 3750
-// and 7500 samples at 750 samples/s), a T-hat from the block after it on; at every recomputation each filled row's
-// window is max(16, round(N_w T-hat 750)) samples; T-hat is a dit of the selected branch's ladder position (its
-// nominal dit d_k or an eligible fit's T, within ln 1.1 of L_k / 0.8 in ln T).
-TEST(BankChannelShared, ThePeriodicityWindowsFollowTheSelectedBranchsDit) {
+// The shared-window variant (B4a-C, periodicity_window_mode = "shared"; not the default; fix round 1), on golden
+// streams pushed block by block. The rule, checked at every block against the state before it: T-hat is the selected
+// branch's fitted T only if a selection exists, the branch's over start has been re-keyed (no previous over's fit
+// held) and the fit is eligible (Selector::eligible); otherwise none. At every recomputation each filled row's window
+// is max(16, round(N_w T-hat 750)) samples with a T-hat, stage 1's 1500, 3750 and 7500 samples without. Both
+// transitions occur: none at the stream's start until the first eligible fit (no T-hat from branch 1's unfitted state,
+// the start-up trap of the nominal-dit fallback this replaces), and none from a new over's start on the selected branch
+// (the decoder's turnover) until that over is re-keyed with an eligible fit.
+TEST(BankChannelShared, THatIsTheSelectedBranchsEligibleFitOfItsCurrentOver) {
     BankConfig cfg;
     cfg.periodicity_window_mode = "shared";
+    const BankConfig plain;
+    const Selector sel_rule(plain, [] {
+        BankChannel probe(BankConfig{}, 1500.0);
+        return probe.lengths_s();
+    }());
     const double n_w[] = {41.7, 104.0, 208.0};
     const int stage1[] = {1500, 3750, 7500};
-    for (const std::string name : {"clean", "turnover", "two_speeds"}) {
+    std::size_t turnover_withheld = 0, start_withheld = 0;
+    for (const std::string name : {"clean", "turnover", "two_speeds", "slow"}) {
         SCOPED_TRACE(name);
         const auto& u = stream_of(name);
         BankChannel ch(cfg, rate_of(name));
         const auto block = static_cast<std::size_t>(ch.block_samples());
         std::size_t records = 0, without = 0, with = 0;
-        bool selected_before = false;
-        std::vector<double> dits;
+        std::optional<double> first_t;   // stream time of the first T-hat, s
+        std::optional<double> first_sel;  // of the first selection, s
+        bool had = false;
         for (std::size_t i = 0; i < u.size(); i += block) {
+            // the expected T-hat, from the state before the block
+            std::optional<double> want;
+            bool pending_over = false;
+            if (ch.processed() > 0 && !ch.result().selections.empty()) {
+                const Branch& b = ch.branches()[static_cast<std::size_t>(ch.selected())];
+                pending_over = b.prev_fit.has_value();
+                if (!pending_over && sel_rule.eligible(BranchView{b.index, b.length_s, b.current, std::nullopt}))
+                    want = b.current->t_s;
+                if (!first_sel) first_sel = ch.result().selections.front().t_s;
+            }
+            EXPECT_EQ(ch.shared_window_dit(), want);
             ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
             const auto& dit = ch.periodicity_dit_s();
-            if (dit) {
-                EXPECT_TRUE(selected_before) << "a T-hat before the first selection, at " << i;
-            }
-            if (!selected_before) selected_before = !ch.result().selections.empty();
+            ASSERT_EQ(dit, want) << "block at " << i;
+            if (had && !dit && pending_over) ++turnover_withheld;
+            if (!had && !dit && first_sel) ++start_withheld;  // selected, but no eligible fit yet
+            if (dit && !first_t) first_t = static_cast<double>(ch.processed()) / rate_of(name);
+            had = dit.has_value();
             if (ch.periodicity_records() == records) continue;
             records = ch.periodicity_records();
             const auto& used = ch.periodicity().used_windows();
             ASSERT_EQ(used.size(), 3u);
             for (std::size_t r = 0; r < 3; ++r) {
                 if (used[r] == 0) continue;  // the buffer does not hold the window yet
-                const int want =
+                const int expect =
                     dit ? std::max(16, static_cast<int>(std::nearbyint(n_w[r] * *dit * 750.0))) : stage1[r];
-                EXPECT_EQ(used[r], want) << "row " << r << ", block at " << i;
+                EXPECT_EQ(used[r], expect) << "row " << r << ", block at " << i;
             }
-            if (dit) {
-                ++with;
-                dits.push_back(*dit);
-            } else {
-                ++without;
-            }
+            (dit ? with : without) += 1;
         }
         ch.finish();
-        const ChannelResult r = ch.result();
-        ASSERT_FALSE(r.selections.empty());
-        EXPECT_GT(without, 0u);
-        EXPECT_GT(with, 0u);
-        ASSERT_TRUE(ch.periodicity_dit_s().has_value());
-        const double last = *ch.periodicity_dit_s();
-        const double length = ch.lengths_s()[static_cast<std::size_t>(r.selections.back().branch)];
-        EXPECT_LE(std::abs(std::log(length / (0.8 * last))), std::log(1.1) + 1e-3) << last;
-        std::printf("[ info ] %s: %zu recomputations with stage 1's windows, %zu following T-hat; last T-hat %.4f s "
-                    "(branch %d); text \"%s\"\n", name.c_str(), without, with, last, r.selections.back().branch + 1,
-                    r.text.c_str());
+        ASSERT_TRUE(first_t.has_value());
+        ASSERT_TRUE(first_sel.has_value());
+        EXPECT_GT(*first_t, *first_sel);  // not from the first selection on: from the first eligible fit
+        std::printf("[ info ] %s: first selection at %.3f s, first T-hat at %.3f s; %zu recomputations with stage 1's "
+                    "windows, %zu following T-hat; last T-hat %s\n", name.c_str(), *first_sel, *first_t, without, with,
+                    ch.periodicity_dit_s() ? std::to_string(*ch.periodicity_dit_s()).c_str() : "none");
+    }
+    std::printf("[ info ] blocks withheld after a selection before the first eligible fit: %zu; after an over start on "
+                "the selected branch: %zu\n", start_withheld, turnover_withheld);
+    EXPECT_GT(start_withheld, 0u);
+    EXPECT_GT(turnover_withheld, 0u);
+}
+
+// At the start, the selected branch is branch 1 (the selector's initial value) whose fit is not eligible for a
+// 25 WPM station, so no T-hat (the windows stay 2, 5 and 10 s) where the replaced rule took d_1 = 12 ms; the first
+// T-hat of the clean 25 WPM stream is a dit near 48 ms.
+TEST(BankChannelShared, NoTHatFromBranchOnesUnfittedStart) {
+    BankConfig cfg;
+    cfg.periodicity_window_mode = "shared";
+    const auto& u = stream_of("clean");
+    BankChannel ch(cfg, rate_of("clean"));
+    const auto block = static_cast<std::size_t>(ch.block_samples());
+    for (std::size_t i = 0; i < u.size(); i += block) {
+        ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
+        if (const auto& dit = ch.periodicity_dit_s()) {
+            EXPECT_GT(*dit, 0.040) << "at " << ch.processed() / 1500.0 << " s";
+            EXPECT_LT(*dit, 0.058) << "at " << ch.processed() / 1500.0 << " s";
+        }
     }
 }
 

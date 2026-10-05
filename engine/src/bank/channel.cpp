@@ -322,6 +322,20 @@ std::optional<double> Branch::text_logprob(int window) const {
 
 // --- BankChannel --------------------------------------------------------------------------------------
 
+std::optional<double> BankChannel::shared_window_dit() const {
+    // The shared-window variant (B4a-C, fix round 1): T-hat is the fitted dit of the branch currently selected (by the
+    // last selection instant, in an earlier block), and only when that fit is eligible (Selector::eligible) and
+    // belongs to the branch's current over: none before the first selection, and none while the branch's over start
+    // is not yet re-keyed (prev_fit held: from Branch::start_over, the decoder's turnover, until rekey_over), when its
+    // current fit is the previous over's. Without T-hat the windows are stage 1's, in seconds.
+    if (result_.selections.empty() || branches_.empty()) return std::nullopt;
+    const Branch& sel = branches_[static_cast<std::size_t>(selector_.current())];
+    if (sel.prev_fit) return std::nullopt;
+    const BranchView view{sel.index, sel.length_s, sel.current, std::nullopt};
+    if (!selector_.eligible(view)) return std::nullopt;
+    return sel.current->t_s;
+}
+
 BankChannel::BankChannel(const BankConfig& cfg, double rate_hz) : BankChannel(cfg, rate_hz, bank_timing(cfg)) {}
 
 BankChannel::BankChannel(const BankConfig& cfg, double rate_hz, const BankTiming& timing)
@@ -343,7 +357,7 @@ BankChannel::BankChannel(const BankConfig& cfg, double rate_hz, const BankTiming
     if (timing.rekey_timeout_s.size() != n_.size())
         throw std::invalid_argument("rekey_timeout_s needs one time-out per branch");
     for (const double t : timing.rekey_timeout_s) timeout_.push_back(round_samples(t * rate_hz));
-    if (!timing.periodicity_window_dits.empty()) nominal_dits_ = branch_dits_s(cfg_);
+    shared_windows_ = !timing.periodicity_window_dits.empty();
     branches_.reserve(n_.size());
     for (std::size_t k = 0; k < n_.size(); ++k)
         branches_.emplace_back(static_cast<int>(k), lengths_[k], n_[k], rate_hz, cfg_, text_model_);
@@ -472,15 +486,7 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
     }
     const KeyStep s = keyer_.step(P, sigma2);
     if (K > 0) periodicity_.push(std::span<const double>(s.p.v.data(), static_cast<std::size_t>(s.p.cols)));
-    if (!nominal_dits_.empty() && !result_.selections.empty()) {
-        // The shared-window variant (B4a-C): the windows follow T-hat, the dit of the branch currently selected (by
-        // the last selection instant, in an earlier block): its fitted T if its fit is eligible (Selector::eligible),
-        // else its nominal dit d_k. Before any selection there is none, and the windows are in seconds.
-        const Branch& sel = branches_[static_cast<std::size_t>(selector_.current())];
-        const BranchView view{sel.index, sel.length_s, sel.current, std::nullopt};
-        periodicity_dit_ =
-            selector_.eligible(view) ? sel.current->t_s : nominal_dits_[static_cast<std::size_t>(sel.index)];
-    }
+    if (shared_windows_) periodicity_dit_ = shared_window_dit();
     const PeriodicityUpdate upd = periodicity_.update(false, periodicity_dit_);
     prior_ = upd.t_p_s ? Prior{upd.t_p_s, 1.0} : Prior{std::nullopt, 0.0};  // the prior counts once T_P is confident
     if (upd.updated)

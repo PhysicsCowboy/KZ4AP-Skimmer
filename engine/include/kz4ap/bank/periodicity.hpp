@@ -71,7 +71,7 @@ public:
     // window_dits non-empty (Plan B, B4a-C, the "shared" variant; BankTiming::periodicity_window_dits): row r's
     // window is shared by every candidate and follows the dit T-hat passed to update(): max(16, round(N_w,r x T-hat x
     // rate_hz())) samples, N_w,r the r-th smallest of window_dits; windows_s (rows of one value each, as many rows as
-    // window_dits) are the windows while update() has no T-hat (before any selection). Each row is then
+    // window_dits) are the windows while update() has no T-hat. Each row is then
     // comb_estimate on its most recent samples, so a candidate beyond the comb's reach in that window (T > about
     // N_w T-hat / 18.3) is not scored in that row. T-hat is capped at dit_cap_s(). Throws std::invalid_argument
     // also for a per-candidate row or a different number of rows with window_dits.

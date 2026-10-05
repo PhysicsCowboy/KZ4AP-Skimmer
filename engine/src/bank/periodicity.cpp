@@ -143,7 +143,7 @@ Periodicity::Periodicity(const BankConfig& cfg, double rate_hz, const std::vecto
     std::stable_sort(windows_.begin(), windows_.end(),
                      [](const std::vector<int>& a, const std::vector<int>& b) { return a.front() < b.front(); });
     if (!dits_.empty()) {
-        // Windows that follow T-hat (B4a-C): shared rows only, as many as windows_s (the windows before a selection).
+        // Windows that follow T-hat (B4a-C): shared rows only, as many as windows_s (the windows without a T-hat).
         if (any_per_candidate_ || dits_.size() != windows_.size())
             throw std::invalid_argument("windows that follow a dit need one shared window in seconds per N_w");
         std::sort(dits_.begin(), dits_.end());
