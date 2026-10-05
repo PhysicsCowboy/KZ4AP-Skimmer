@@ -49,6 +49,16 @@ cost +0.0184 (+0.0122 to +0.0251), the re-key settings in dits alone +0.0116 (+0
 precision fall comes from the windows alone, whose wrong estimates move to about 3 T and longer, not from a shortest
 window too short at fast speeds.
 
+**Answer (B4a-C, one shared periodicity window per row; a variant, not the default).** Judging every candidate of a
+row over one window N_w · T̂ (T̂ the selected branch's dit) instead of N_w · T per candidate removes the near-3T₀
+errors (0.3% of the shortest window's confident wrong estimates, against 26.3% for B4a and 3.7% for `bank-b3b`) and
+restores the comb's precision at 0.03 to 0.795 (0.771 to 0.819; B4a 0.753, `bank-b3b` 0.804), and it removes most
+of the windows' cost in C fists (−0.038 paired against `bank-b4a`). Pooled CER against `bank-b3b` stays worse:
+**+0.0223 (+0.0119 to +0.0341)** with the re-key settings in dits and **+0.0148 (+0.0072 to +0.0239)** with stage
+1's; against `bank-b4a` the pooled change, −0.0054 (−0.0151 to +0.0052), is not established, as it loses in the
+first words, H per station, E and A (section 6.6). The default is unchanged (every decoded record of the 525
+channels identical to `bank-b4a`).
+
 **Answer (B9, the stretch test and the new-over checks).** The bank decoder is not time-base invariant. Group A's
 25 WPM signals stretched to 12 WPM at the same energy per dit (S₅₀₀ 3.19 dB lower) decode worse in all six
 variants, every pooled paired CER interval above 0:
@@ -997,6 +1007,129 @@ Raw outputs (git-ignored), in `build/suite/full3/experiments/linux/b4a/`:
 - `b4a-ablation.log`
 
 The script for the wrong-estimate ratios is `build/b4a/wrong_ratio.py`.
+
+### 6.6 Variant: one shared window per row (B4a-C; not the default)
+
+What it is (`db38cd0`; `docs/signal-processing.md` section 8c, "Periodicity", the "Variant" bullet):
+`periodicity_window_mode` = `"shared"` keeps N_w = 41.7, 104 and 208 but judges every candidate of a row over one
+window N_w · T̂, T̂ the dit of the branch currently selected (its fitted T if its fit is eligible, else its nominal
+d_k; capped at 0.2530 s), with stage 1's 2, 5 and 10 s before the channel's first selection. Each row is then stage
+1's comb on that window, so the reach rule caps a row's candidates at about N_w T̂ / 18.3 (2.28 T̂ in the shortest
+row). It adds a feedback loop the default does not have (the selected branch's dit sets the windows that judge T_P,
+and T_P feeds the fits' prior and selection's fallback). The default (`"per_candidate"`) is unchanged: the
+development set replayed at the default configuration with this build (`bank-b4c-default`) equals `bank-b4a` in every
+decoded record of all 525 channels (texts, characters, corrections, selections, periodicity records, over starts,
+switches); locally, 59 of 59 channels of three test cases identical to the build before.
+
+Two variants, both on the development set (Linux machine, `--jobs 5`, one run each), compared with `bank-b3b`:
+
+- `bank-b4a-shared`: `--set periodicity_window_mode=shared`, re-key settings in dits (as `bank-b4a`).
+- `bank-b4a-shared-rekeys`: `--set periodicity_window_mode=shared --set rekey_after_s=0.8 --set rekey_timeout_s=2.0`,
+  stage 1's re-key settings (as `bank-b4a-windows`, 6.5).
+
+Paired CER, variant − `bank-b3b` (bootstrap 95% over signals); **bold**: interval entirely above 0. The B4a columns
+are 6.2 and 6.5's, for comparison.
+
+| group | signals | bank-b4a-shared | bank-b4a-shared-rekeys | bank-b4a (6.2) | bank-b4a-windows (6.5) |
+|---|---|---|---|---|---|
+| all | 509 | **+0.0223 (+0.0119 to +0.0341)** | **+0.0148 (+0.0072 to +0.0239)** | **+0.0277** | **+0.0184** |
+| A sensitivity | 192 | **+0.0234 (+0.0047 to +0.0477)** | **+0.0177 (+0.0041 to +0.0312)** | **+0.0153** | **+0.0085** |
+| B fading | 30 | +0.0106 (−0.0108 to +0.0339) | +0.0472 (−0.0100 to +0.1424) | **+0.0350** | **+0.0233** |
+| C fists | 135 | **+0.0055 (+0.0019 to +0.0092)** | **+0.0064 (+0.0021 to +0.0109)** | **+0.0438** | **+0.0424** |
+| D speed | 12 | −0.0336 (−0.0785 to +0.0047) | −0.0042 (−0.0512 to +0.0407) | −0.0447 | −0.0425 |
+| E interference | 16 | **+0.0307 (+0.0028 to +0.0607)** | +0.0273 (−0.0055 to +0.0695) | −0.0105 | −0.0167 |
+| F tuning | 28 | **+0.0600 (+0.0086 to +0.1203)** | **+0.0496 (+0.0080 to +0.1089)** | **+0.0618** | **+0.0358** |
+| G ragchew | 12 | +0.0008 (−0.0009 to +0.0023) | **+0.0054 (+0.0002 to +0.0119)** | **+0.0084** | **+0.0253** |
+| H two-station QSO, oracle | 12 | **+0.0264 (+0.0056 to +0.0537)** | +0.0012 (−0.0040 to +0.0067) | **+0.0302** | **+0.0304** |
+| H (per station) | 24 | **+0.0967 (+0.0079 to +0.2221)** | −0.0042 (−0.0247 to +0.0197) | +0.0204 | −0.0215 |
+| I Farnsworth | 48 | +0.0293 (−0.0167 to +0.0795) | +0.0028 (−0.0113 to +0.0189) | **+0.0468** | **+0.0190** |
+
+Paired first-word CER, pooled, against `bank-b3b`: `bank-b4a-shared` +0.4620 (+0.2886 to +0.6698),
+`bank-b4a-shared-rekeys` +0.3412 (+0.1782 to +0.5127).
+
+The variant's own effect, paired CER against the per-candidate run with the same re-key settings (variant − base):
+
+| group | shared − bank-b4a | shared-rekeys − bank-b4a-windows |
+|---|---|---|
+| all | −0.0054 (−0.0151 to +0.0052) | −0.0035 (−0.0129 to +0.0064) |
+| A sensitivity | +0.0081 (−0.0069 to +0.0303) | +0.0091 (−0.0043 to +0.0259) |
+| B fading | −0.0244 (−0.0659 to +0.0091) | +0.0239 (−0.0244 to +0.0960) |
+| C fists | **−0.0383 (−0.0539 to −0.0252)** | **−0.0360 (−0.0498 to −0.0216)** |
+| D speed | +0.0110 (−0.0213 to +0.0494) | +0.0383 (−0.0176 to +0.1099) |
+| E interference | +0.0412 (−0.0232 to +0.1251) | +0.0440 (−0.0166 to +0.1326) |
+| F tuning | −0.0017 (−0.0487 to +0.0615) | +0.0138 (−0.0316 to +0.0679) |
+| G ragchew | **−0.0075 (−0.0177 to −0.0006)** | **−0.0200 (−0.0464 to −0.0016)** |
+| H two-station QSO, oracle | −0.0038 (−0.0445 to +0.0418) | **−0.0293 (−0.0632 to −0.0042)** |
+| H (per station) | **+0.0763 (+0.0116 to +0.1523)** | +0.0172 (−0.0116 to +0.0514) |
+| I Farnsworth | **−0.0175 (−0.0339 to −0.0014)** | **−0.0163 (−0.0322 to −0.0005)** |
+
+Bold here: interval clear of 0 (better below, worse above). Pooled first-word CER rises: +0.1935 (+0.0617 to +0.3491) and +0.2771 (+0.1423 to +0.4324).
+
+**Groups made worse against `bank-b3b` (reported to the owner, the plan's rule; not a gate).**
+`bank-b4a-shared`: pooled, A, C, E, F, H (oracle) and H per station. `bank-b4a-shared-rekeys`: pooled, A, C, F and G.
+Worst regimes (test case CER, `bank-b3b` → variant):
+
+- `bank-b4a-shared`: H per station, separate track 100 Hz 0.104 → 0.636; F offset 5.9 Hz 20 WPM 0.058 → 0.442,
+  11.7 Hz 20 WPM 0.081 → 0.266, 8.8 Hz 25 WPM 0.057 → 0.215, 2.9 Hz 25 WPM 0.079 → 0.173; I 18/5 WPM paddle
+  0.288 → 0.469; E Δf 20 Hz, +0 dB 0.697 → 0.859; A 12 WPM 0.313 → 0.344 (first-word CER 0.39 → 1.50), 25 WPM
+  0.297 → 0.330. Better: D 10 WPM 0.291 → 0.093, D step 35 → 20 WPM 0.060 → 0.030, F drift 1 Hz/s 0.056 → 0.011.
+- `bank-b4a-shared-rekeys`: F offset 11.7 Hz 20 WPM 0.081 → 0.462, 5.9 Hz 25 WPM 0.064 → 0.178, 0 Hz 20 WPM
+  0.043 → 0.141; D step 20 → 35 WPM 0.029 → 0.105, ramp 15 → 30 WPM 0.000 → 0.062; C bug imbalance +0.1
+  0.046 → 0.086. Better: D 10 WPM 0.291 → 0.186, D step 35 → 20 WPM 0.060 → 0.024.
+
+Texts changed against `bank-b3b`: 390 of 525 (`bank-b4a-shared`) and 321 of 525 (`bank-b4a-shared-rekeys`).
+
+**Periodicity at threshold 0.03** (6.4's method, 171 426 points; bootstrap 95% over channels):
+
+| run | precision (rule) | coverage (rule) | shortest window alone: precision | median time to confident (s) |
+|---|---|---|---|---|
+| `bank-b3b` | 0.804 (0.779–0.828) | 0.993 | 0.809 | 0.53 |
+| `bank-b4a` | 0.753 (0.728–0.776) | 0.993 | 0.753 | 0.32 |
+| `bank-b4a-windows` | 0.747 (0.723–0.772) | 0.993 | 0.747 | — |
+| `bank-b4a-shared` | **0.795 (0.771–0.819)** | 0.995 (0.994–0.996) | 0.800 (0.778–0.826) | 0.31 |
+| `bank-b4a-shared-rekeys` | **0.789 (0.765–0.813)** | 0.995 (0.994–0.996) | 0.795 (0.772–0.820) | 0.24 |
+
+The shared window restores the comb's precision to within `bank-b3b`'s interval (overlapping intervals, two separate
+bootstraps) and keeps B4a's earlier confident estimates. Calibrated thresholds for 0.95 precision: 0.2608 and 0.2594
+(B4a 0.2609, `bank-b3b` 0.2495).
+
+**Error classes.** The shortest window's confident wrong estimates, share by ratio estimate / true dit (pooled):
+
+| run | wrong | ≈ 3 T₀ (2.9–3.1) | > 3.1 T₀ | 2.1–2.9 T₀ | ≈ 2 T₀ | 1.05–1.45 T₀ |
+|---|---|---|---|---|---|---|
+| `bank-b3b` | 31 596 | 3.7% | 1.4% | 21.9% | 12.2% | 37.0% |
+| `bank-b4a` | 41 903 | 26.3% | 15.9% | 15.6% | 5.1% | 23.0% |
+| `bank-b4a-windows` | 42 830 | 26.0% | 15.7% | 15.8% | 5.4% | 22.4% |
+| `bank-b4a-shared` | 32 958 | **0.3%** | 2.8% | 28.5% | 13.6% | 33.5% |
+| `bank-b4a-shared-rekeys` | 33 839 | **0.4%** | 2.6% | 28.5% | 13.6% | 32.5% |
+
+By speed bin (shortest window, `bank-b3b` → `bank-b4a` → `bank-b4a-shared`): precision 5–15 WPM 0.969 → 0.948 →
+0.930; 15–22 WPM 0.902 → 0.734 → 0.842; 22–30 WPM 0.772 → 0.726 → 0.767; 30–50 WPM 0.795 → 0.719 → 0.814. The
+share near 3 T₀ at 30–50 WPM: 20.8% → 44.4% → 0.9%. What remains wrong moves to 2.1–2.9 T₀ (5–15 WPM: 51% of
+1429 wrong estimates; 30–50 WPM: 34%) and ≈ 2 T₀ (15–22 WPM: 24.5%): the shortest row's reach admits candidates up to
+2.28 T̂, so a 2T or 2.2T alias stays reachable (derived from the reach; the attribution of the 2.1–2.9 class to it is a
+conjecture). Over the rule (all windows) the shares are 0.6% near 3 T₀ and 4.5% beyond (`bank-b4a-shared`).
+Table: `error-classes.md` below.
+
+**Answer.** The shared window removes the near-3T₀ errors that per-candidate windows introduced (26% → 0.3% of the
+shortest window's wrong estimates) and the comb's precision fall (0.753 → 0.795), and it removes most of the windows'
+cost in C fists (−0.038 paired against `bank-b4a`, interval clear of 0). It does not repair the pooled CER: against
+`bank-b4a` the pooled change is −0.0054 (interval includes 0), because it loses elsewhere, mostly in the first words
+(pooled first-word CER +0.19 against `bank-b4a`) and in H per station (+0.076), E and A. Against `bank-b3b` both
+variants remain worse pooled (+0.0223 and +0.0148). Conjecture, not measured: the losses in the first words and in
+two-station views come from the feedback loop (a wrong early selection sets windows that confirm it) and from the
+first selection's timing (stage 1's windows until then, then a jump to N_w T̂).
+
+**CPU** (one run each, `--jobs 5`, alongside another job on the machine; not a gate): `bank-b4a-shared` 45.79,
+`bank-b4a-shared-rekeys` 42.89 ms per channel-second pooled; `bank-b4c-default`, the default at the same build under
+the same conditions, 56.60 (`bank-b4a` 57.56 at `--jobs 10`). The shared form's three FFTs per recomputation cost
+about 11 ms per channel-second less than the per-candidate slid sums.
+
+Raw outputs (git-ignored), in `build/suite/full3/experiments/linux/b4c/`: `compare-bank-b4a-shared{,-rekeys}-vs-bank-b3b.md`,
+`compare-bank-b4a-shared-vs-bank-b4a.md`, `compare-bank-b4a-shared-rekeys-vs-bank-b4a-windows.md`, `c2-diff-…`
+(including `c2-diff-bank-b4c-default-vs-bank-b4a.md`), `periodicity-decoded-bank-b4a-shared{,-rekeys}.md`,
+`error-classes.md` (script `build/b4c/error_classes.py`), `b4c-run.log`; decoded files on the Linux machine under
+`build/suite/full3/proto/bank-b4a-shared/`, `bank-b4a-shared-rekeys/`, `bank-b4c-default/`.
 
 ## 8. The stretch test and the new-over checks (B9)
 
