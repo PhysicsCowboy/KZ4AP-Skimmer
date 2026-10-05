@@ -137,6 +137,16 @@ struct BankConfig {
     // Class (1) dits: the comb needs enough dit periods (its reach is 9.15 T). Status: placeholder, stage 1's 2, 5
     // and 10 s at T = 48 ms (stage-2 spec section 3.1). Plan B (B4a), replaces periodicity_windows_s
     std::vector<double> periodicity_windows_dits = {41.7, 104.0, 208.0};
+    // How the windows of periodicity_windows_dits apply (Plan B, B4a-C; an experiment, owner 2026-10-04). Default
+    // "per_candidate": each candidate T over its own window N_w x T (B4a as committed). "shared" (a variant, not the
+    // default): every candidate of a row over one window N_w x T-hat, T-hat the dit of the branch currently selected
+    // (its fitted T if its fit is eligible, else its nominal dit d_k), so candidates beyond N_w T-hat / 18.3 are out of
+    // the comb's reach in that row; before any selection the windows periodicity_unselected_windows_s. Class (1) dits.
+    // Status: heuristic. Ignored when periodicity_windows_s is set
+    std::string periodicity_window_mode = "per_candidate";
+    // s, the "shared" variant's windows before any selection exists: stage 1's 2, 5 and 10 s (stage 1's
+    // periodicity_windows_s, placeholder there). Plan B (B4a-C); unused in the default mode
+    std::vector<double> periodicity_unselected_windows_s = {2.0, 5.0, 10.0};
     // s; heuristic
     double periodicity_update_s = 0.25;
     // samples/s, p is averaged down to this rate; heuristic

@@ -26,11 +26,18 @@ struct BankTiming {
     // The periodicity windows, s: one row per window, each row either one value (every candidate dit is judged over
     // the same window, stage 1's form) or one value per candidate of t_grid(cfg) (each candidate over its own).
     std::vector<std::vector<double>> periodicity_windows_s;
+    // Plan B, B4a-C (the "shared" variant, not the default): N_w per row, each row's window shared by every candidate
+    // and N_w x T-hat long, T-hat the selected branch's dit; periodicity_windows_s then holds the windows used before
+    // any selection (rows of one value each, as many as here). Empty: the windows are periodicity_windows_s alone.
+    std::vector<double> periodicity_window_dits;
 };
 
 // The configuration's timing: W_min,k = rekey_after_dits x d_k; the time-out rekey_timeout_ratio x W_min,k; a row
-// per N_w of periodicity_windows_dits, N_w x T for each candidate T of t_grid(cfg). The overrides in seconds
-// (rekey_after_s, rekey_timeout_s, periodicity_windows_s), when set, replace the corresponding part.
+// per N_w of periodicity_windows_dits, N_w x T for each candidate T of t_grid(cfg) (periodicity_window_mode
+// "per_candidate", the default) or, in the "shared" variant (B4a-C), periodicity_window_dits = periodicity_windows_dits
+// with rows of periodicity_unselected_windows_s before any selection. The overrides in seconds (rekey_after_s,
+// rekey_timeout_s, periodicity_windows_s), when set, replace the corresponding part (periodicity_windows_s whatever the
+// mode). Throws std::invalid_argument for another periodicity_window_mode.
 BankTiming bank_timing(const BankConfig& cfg);
 
 // Every constant in seconds, the same for every branch and every candidate (stage 1's form; Plan A and the

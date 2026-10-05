@@ -83,7 +83,8 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     }
     ASSERT_EQ(want.back(), '}');
     want.insert(want.size() - 1, ", \"noise_stuck_s\": 8.0, \"rekey_after_s\": 0.0, \"rekey_timeout_s\": 0.0, "
-                                 "\"periodicity_windows_s\": []");
+                                 "\"periodicity_windows_s\": [], \"periodicity_window_mode\": \"per_candidate\", "
+                                 "\"periodicity_unselected_windows_s\": [2.0, 5.0, 10.0]");
     EXPECT_EQ(py_dumps(cfg), want);
     // and back
     EXPECT_EQ(py_dumps(kz4ap::bench::to_json(kz4ap::bench::bank_config_from_json(cfg))), py_dumps(cfg));
@@ -98,6 +99,8 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     kz4ap::bench::set_config_value(c, "rekey_after_s", ordered_json(0.8));
     EXPECT_EQ(c.periodicity_windows_s, (std::vector<double>{2.0, 5.0, 10.0}));
     EXPECT_EQ(c.rekey_after_s, 0.8);
+    kz4ap::bench::set_config_value(c, "periodicity_window_mode", ordered_json("shared"));
+    EXPECT_EQ(c.periodicity_window_mode, "shared");
     EXPECT_EQ(c.fit_memory, 24.0);
     EXPECT_TRUE(c.x_on_values.empty());
     EXPECT_EQ(c.noise_method, "branch");

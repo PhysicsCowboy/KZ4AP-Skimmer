@@ -106,6 +106,9 @@ TEST(BankConfig, PlanBDefaults) {
     EXPECT_EQ(c.rekey_after_s, 0.0);
     EXPECT_EQ(c.rekey_timeout_s, 0.0);
     EXPECT_TRUE(c.periodicity_windows_s.empty());
+    // B4a-C: the shared-window variant is not the default; its windows before a selection are stage 1's
+    EXPECT_EQ(c.periodicity_window_mode, "per_candidate");
+    EXPECT_EQ(c.periodicity_unselected_windows_s, (std::vector<double>{2.0, 5.0, 10.0}));
     const std::vector<double> stage1_s = {2.0, 5.0, 10.0};
     for (std::size_t i = 0; i < stage1_s.size(); ++i)
         EXPECT_NEAR(c.periodicity_windows_dits[i] * 0.048 / stage1_s[i], 1.0, 0.002) << i;  // 0.08%, 0.16%, 0.16%

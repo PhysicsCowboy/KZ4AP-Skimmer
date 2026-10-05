@@ -335,7 +335,7 @@ BankChannel::BankChannel(const BankConfig& cfg, double rate_hz, const BankTiming
       }()),
       noise_(make_noise(cfg_, rate_hz, n_)),
       keyer_(cfg_, rate_hz, lengths_, timing.rekey_wait_s),
-      periodicity_(cfg_, rate_hz, timing.periodicity_windows_s),
+      periodicity_(cfg_, rate_hz, timing.periodicity_windows_s, timing.periodicity_window_dits),
       selector_(cfg_, lengths_),
       out_(cfg.correction_reach_s),
       block_(static_cast<int>(std::max<std::int64_t>(1, round_samples(cfg.block_s * rate_hz)))),
@@ -343,6 +343,7 @@ BankChannel::BankChannel(const BankConfig& cfg, double rate_hz, const BankTiming
     if (timing.rekey_timeout_s.size() != n_.size())
         throw std::invalid_argument("rekey_timeout_s needs one time-out per branch");
     for (const double t : timing.rekey_timeout_s) timeout_.push_back(round_samples(t * rate_hz));
+    if (!timing.periodicity_window_dits.empty()) nominal_dits_ = branch_dits_s(cfg_);
     branches_.reserve(n_.size());
     for (std::size_t k = 0; k < n_.size(); ++k)
         branches_.emplace_back(static_cast<int>(k), lengths_[k], n_[k], rate_hz, cfg_, text_model_);
@@ -471,7 +472,16 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
     }
     const KeyStep s = keyer_.step(P, sigma2);
     if (K > 0) periodicity_.push(std::span<const double>(s.p.v.data(), static_cast<std::size_t>(s.p.cols)));
-    const PeriodicityUpdate upd = periodicity_.update();
+    if (!nominal_dits_.empty() && !result_.selections.empty()) {
+        // The shared-window variant (B4a-C): the windows follow T-hat, the dit of the branch currently selected (by
+        // the last selection instant, in an earlier block): its fitted T if its fit is eligible (Selector::eligible),
+        // else its nominal dit d_k. Before any selection there is none, and the windows are in seconds.
+        const Branch& sel = branches_[static_cast<std::size_t>(selector_.current())];
+        const BranchView view{sel.index, sel.length_s, sel.current, std::nullopt};
+        periodicity_dit_ =
+            selector_.eligible(view) ? sel.current->t_s : nominal_dits_[static_cast<std::size_t>(sel.index)];
+    }
+    const PeriodicityUpdate upd = periodicity_.update(false, periodicity_dit_);
     prior_ = upd.t_p_s ? Prior{upd.t_p_s, 1.0} : Prior{std::nullopt, 0.0};  // the prior counts once T_P is confident
     if (upd.updated)
         result_.periodicity.push_back(PeriodicityRecord{t_now, upd.t_p_s ? *upd.t_p_s : kNaN, upd.confidence,

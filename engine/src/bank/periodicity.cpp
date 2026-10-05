@@ -1,5 +1,6 @@
 #include "kz4ap/bank/periodicity.hpp"
 
+#include "kz4ap/bank/filters.hpp"
 #include "kz4ap/bank/numpy_sum.hpp"
 #include "kz4ap/bank/timing.hpp"
 
@@ -116,10 +117,11 @@ std::pair<std::optional<double>, double> comb_estimate(std::span<const double> p
 }
 
 Periodicity::Periodicity(const BankConfig& cfg, double rate_hz)
-    : Periodicity(cfg, rate_hz, bank_timing(cfg).periodicity_windows_s) {}
+    : Periodicity(cfg, rate_hz, bank_timing(cfg).periodicity_windows_s, bank_timing(cfg).periodicity_window_dits) {}
 
-Periodicity::Periodicity(const BankConfig& cfg, double rate_hz, const std::vector<std::vector<double>>& windows_s)
-    : cfg_(cfg) {
+Periodicity::Periodicity(const BankConfig& cfg, double rate_hz, const std::vector<std::vector<double>>& windows_s,
+                         const std::vector<double>& window_dits)
+    : cfg_(cfg), dits_(window_dits) {
     factor_ = std::max(1, round_int(rate_hz / cfg.periodicity_rate_hz));
     rate_ = rate_hz / static_cast<double>(factor_);
     update_every_ = std::max(1, round_int(cfg.periodicity_update_s * rate_hz));
@@ -140,6 +142,19 @@ Periodicity::Periodicity(const BankConfig& cfg, double rate_hz, const std::vecto
     // Shortest first, by the first entry (a per-candidate row's first entry is its shortest candidate's window).
     std::stable_sort(windows_.begin(), windows_.end(),
                      [](const std::vector<int>& a, const std::vector<int>& b) { return a.front() < b.front(); });
+    if (!dits_.empty()) {
+        // Windows that follow T-hat (B4a-C): shared rows only, as many as windows_s (the windows before a selection).
+        if (any_per_candidate_ || dits_.size() != windows_.size())
+            throw std::invalid_argument("windows that follow a dit need one shared window in seconds per N_w");
+        std::sort(dits_.begin(), dits_.end());
+        // The longest fitted dit an eligible fit can have: |ln(L_k / (length_dits T))| <= eligibility_tolerance, with
+        // L_k the realized length N_k / rate_hz, so T <= L_max / length_dits x exp(eligibility_tolerance).
+        const std::vector<int> n = branch_samples(branch_lengths_s(cfg), rate_hz);
+        const int n_max = n.empty() ? 1 : *std::max_element(n.begin(), n.end());
+        dit_cap_s_ = static_cast<double>(n_max) / rate_hz / cfg.length_dits * std::exp(cfg.eligibility_tolerance);
+        const int n_cap = std::max(16, round_int(dits_.back() * dit_cap_s_ * rate_));
+        longest_ = std::max(longest_, static_cast<std::size_t>(n_cap));
+    }
     threshold_ = cfg.comb_confidence_min;
     per_window_.assign(windows_.size(), {std::nullopt, 0.0});
     scores_.resize(windows_.size());
@@ -315,7 +330,7 @@ std::size_t Periodicity::per_candidate_row(std::size_t r, std::int64_t e) {
     return best;
 }
 
-PeriodicityUpdate Periodicity::update(bool force) {
+PeriodicityUpdate Periodicity::update(bool force, std::optional<double> dit_s) {
     if (!force && pending_ < update_every_) {
         PeriodicityUpdate r = last_;
         r.updated = false;
@@ -343,10 +358,15 @@ PeriodicityUpdate Periodicity::update(bool force) {
     std::optional<PeriodicityUpdate> found;
     double best = 0.0;
     per_window_.clear();
+    used_.assign(windows_.size(), 0);
     for (std::size_t r = 0; r < windows_.size(); ++r) {
         double window_s = 0.0;
         if (windows_[r].size() == 1) {
-            const auto wn = static_cast<std::size_t>(windows_[r][0]);
+            // A shared row: every candidate over the same most recent samples. With windows that follow a dit
+            // (B4a-C) and a T-hat, N_w,r x T-hat (T-hat capped at dit_cap_s_, which the buffer holds).
+            auto wn = static_cast<std::size_t>(windows_[r][0]);
+            if (!dits_.empty() && dit_s && std::isfinite(*dit_s) && *dit_s > 0.0)
+                wn = static_cast<std::size_t>(std::max(16, round_int(dits_[r] * std::min(*dit_s, dit_cap_s_) * rate_)));
             if (buffer_.size() < wn) {
                 per_window_.emplace_back(std::nullopt, 0.0);
                 continue;
@@ -354,9 +374,11 @@ PeriodicityUpdate Periodicity::update(bool force) {
             const std::span<const double> recent(buffer_.data() + (buffer_.size() - wn), wn);
             per_window_.push_back(comb_estimate(recent, rate_, grid_, cfg_.comb_teeth, cfg_.comb_width));
             window_s = static_cast<double>(wn) / rate_;
+            used_[r] = static_cast<int>(wn);
         } else {
             const std::size_t g = per_candidate_row(r, e);
             window_s = static_cast<double>(windows_[r][g]) / rate_;
+            if (per_window_.back().first) used_[r] = windows_[r][g];
         }
         const auto& est = per_window_.back();
         if (est.second > best) best = est.second;  // Python's max(best, score)

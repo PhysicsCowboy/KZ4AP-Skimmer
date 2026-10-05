@@ -5,6 +5,8 @@
 // sign-weighted edge comb and the spectrum fit) were not adopted and are not ported. Since Plan B's B4a each
 // candidate dit T is judged over its own window N_w x T (timing.hpp); a window shared by every candidate (stage 1's
 // fixed windows in seconds) remains available for the golden tests and is computed as the prototype computes it.
+// Plan B's B4a-C adds a variant, not the default (periodicity_window_mode = "shared"): every candidate of a row is
+// judged over one window N_w x T-hat, T-hat the selected branch's dit, which the channel passes to update().
 #pragma once
 
 #include "kz4ap/bank/bank_config.hpp"
@@ -61,17 +63,27 @@ struct PeriodicityUpdate {
 // finite); the mean is removed algebraically (docs/signal-processing.md section 8c, "Periodicity").
 class Periodicity {
 public:
-    // The configuration's windows (bank_timing(cfg).periodicity_windows_s).
+    // The configuration's windows (bank_timing(cfg).periodicity_windows_s and periodicity_window_dits).
     Periodicity(const BankConfig& cfg, double rate_hz);
     // Explicit windows, s: rows of one value or of one value per candidate of t_grid(cfg). Throws
     // std::invalid_argument for a periodicity_method other than "comb", no rows, or a row of another size.
-    Periodicity(const BankConfig& cfg, double rate_hz, const std::vector<std::vector<double>>& windows_s);
+    //
+    // window_dits non-empty (Plan B, B4a-C, the "shared" variant; BankTiming::periodicity_window_dits): row r's
+    // window is shared by every candidate and follows the dit T-hat passed to update(): max(16, round(N_w,r x T-hat x
+    // rate_hz())) samples, N_w,r the r-th smallest of window_dits; windows_s (rows of one value each, as many rows as
+    // window_dits) are the windows while update() has no T-hat (before any selection). Each row is then
+    // comb_estimate on its most recent samples, so a candidate beyond the comb's reach in that window (T > about
+    // N_w T-hat / 18.3) is not scored in that row. T-hat is capped at dit_cap_s(). Throws std::invalid_argument
+    // also for a per-candidate row or a different number of rows with window_dits.
+    Periodicity(const BankConfig& cfg, double rate_hz, const std::vector<std::vector<double>>& windows_s,
+                const std::vector<double>& window_dits = {});
 
     // Appends p's samples (the channel rate); a remainder shorter than factor waits for the next push.
     void push(std::span<const double> p);
     // Recomputes when force is set or at least update_every() samples were pushed since the last
-    // recomputation; otherwise returns the last result with updated = false.
-    PeriodicityUpdate update(bool force = false);
+    // recomputation; otherwise returns the last result with updated = false. dit_s (s): T-hat for windows that follow
+    // a dit (window_dits); ignored otherwise.
+    PeriodicityUpdate update(bool force = false, std::optional<double> dit_s = std::nullopt);
 
     // The last recomputation's (T s or none, score) per window, shortest first; (none, 0) for a window
     // the buffer does not fill yet (for a per-candidate window: for none of its candidates).
@@ -90,6 +102,16 @@ public:
     int window_samples(std::size_t r, std::size_t g) const {
         return windows_[r].size() == 1 ? windows_[r][0] : windows_[r][g];
     }
+    // Windows that follow a dit (B4a-C): N_w per row, ascending; empty otherwise.
+    const std::vector<double>& window_dits() const { return dits_; }
+    // The largest T-hat a window follows, s: the longest branch's realized length / length_dits x
+    // exp(eligibility_tolerance), the longest fitted dit an eligible fit can have (0.2530 s with the defaults at 1500 samples/s). The
+    // buffer holds N_w,max x dit_cap_s() (or the longest of windows_s, if longer).
+    double dit_cap_s() const { return dit_cap_s_; }
+    // The window each row used at the last recomputation, samples at the averaged rate (a shared row: its window or,
+    // with window_dits, the one that followed T-hat; a per-candidate row: the chosen candidate's); 0 for a shared row
+    // the buffer did not fill or a per-candidate row without an estimate. Empty before the first recomputation.
+    const std::vector<int>& used_windows() const { return used_; }
     // The last recomputation's score of every candidate of a per-candidate row, dimensionless (minus infinity: no
     // part in the row's estimate); empty for a shared row.
     const std::vector<std::vector<double>>& candidate_scores() const { return scores_; }
@@ -118,6 +140,9 @@ private:
     int factor_;
     double rate_;
     std::vector<std::vector<int>> windows_;
+    std::vector<double> dits_;  // N_w per row (windows that follow T-hat), ascending; empty otherwise
+    double dit_cap_s_ = 0.0;
+    std::vector<int> used_;
     std::size_t longest_ = 0;  // the longest window, samples
     bool any_per_candidate_ = false;
     int update_every_;

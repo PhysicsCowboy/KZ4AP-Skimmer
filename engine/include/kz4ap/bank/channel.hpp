@@ -250,6 +250,10 @@ public:
     const BankKeyer& keyer() const { return keyer_; }
     const std::vector<std::int64_t>& rekey_timeout_samples() const { return timeout_; }
     std::size_t periodicity_records() const { return result_.periodicity.size(); }
+    // The shared-window variant (B4a-C): the T-hat passed to the periodicity estimate at the last block, s (the
+    // selected branch's fitted T if its fit is eligible, else its nominal dit d_k); none before any selection and in
+    // the default mode.
+    const std::optional<double>& periodicity_dit_s() const { return periodicity_dit_; }
     // The |v_k|^2 window's storage: values allocated (branches x columns) and their size, bytes.
     std::size_t p_window_values() const { return p_win_.v.size(); }
     std::size_t p_window_bytes() const { return p_win_.v.size() * sizeof(p_win_.v[0]); }
@@ -284,6 +288,8 @@ private:
     int block_;
     std::int64_t reach_;
     std::vector<std::int64_t> timeout_;  // per branch: the re-key time-out, samples
+    std::vector<double> nominal_dits_;   // per branch: d_k, s (the shared-window variant's T-hat without a fit)
+    std::optional<double> periodicity_dit_;
     Prior prior_;
 
     // Streaming state. The cumulative sum c[j] = u[0] + ... + u[j-1] (complex, FS) in a ring of the last
