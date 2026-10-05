@@ -37,20 +37,20 @@ def test_smoke_suite_is_the_smoke_script_recording():
 def test_full_suite_recordings_are_valid_and_uniquely_named():
     recs = SUITES["full"](1)
     names = [r.name for r in recs]
-    assert len(names) == len(set(names)) == 41
+    assert len(names) == len(set(names)) == 43
     for r in recs:
         check_recording(r)
     assert {r.group for r in recs} == {
         "A sensitivity", "B fading", "C fists", "D speed", "E interference", "F tuning",
         "G ragchew", "H two-station QSO", "H two-station QSO, oracle", "I Farnsworth", "strong", "pauses",
-        "tune-up", "first sample", "crowded", "band"}
+        "tune-up", "first sample", "crowded", "band", "S stretch"}
 
 
 def test_full_suite_covers_the_scenarios():
     recs = SUITES["full"](1)
     specs = [s for r in recs for s in r.specs]
     assert max(s.snr_db for s in specs if s.score) == 60.0
-    assert min(s.snr_db for s in specs) == -10.0
+    assert min(s.snr_db for r in recs if r.group != "S stretch" for s in r.specs) == -10.0
     assert set(VE3NEA_SNR_DB) <= {s.snr_db for s in specs if s.fading_hz > 0}
     assert {s.fading_hz for s in specs} >= {0.1, 0.3, 1.0, 3.0}
     assert {s.keying for s in specs} == {"machine", "computer", "paddle", "bug", "hand"}
@@ -668,3 +668,43 @@ def test_the_replay_tools_oracle_copy_groups_are_the_suites():
     m = re.search(r"kOracleCopyGroups = \{([^}]*)\};", source)
     assert m is not None
     assert tuple(re.findall(r'"([^"]*)"', m.group(1))) == suites.ORACLE_COPY_GROUPS
+
+
+def test_the_stretch_group_is_group_as_25_wpm_recordings_stretched_25_over_12():
+    # Plan B, B9 (stage-2 spec section 4.1): the same texts, each keying timeline 25/12 = 2.0833 times longer from the
+    # signal's first mark, S500 3.19 dB lower (the same energy per dit relative to the noise density).
+    from kz4ap_synth.generate import labels, plan_intervals
+    assert suites.STRETCH_FACTOR == pytest.approx(2.0833, abs=1e-4)
+    assert suites.STRETCH_SNR_DB == pytest.approx(3.19, abs=0.005)
+    every = SUITES["full"](3)
+    for seed in (1, 2, 3):
+        recs = {r.name: r for r in every if r.name.endswith(f"-s{seed}")}
+        stretched = [r for r in recs.values() if r.group == "S stretch"]
+        assert sorted(r.name for r in stretched) == [f"S-stretch-25wpm-{p}-s{seed}" for p in (0, 1)]
+        for r in stretched:
+            a = recs[suites.stretch_source(r.name)]
+            check_recording(r)
+            assert r.oracle and a.oracle and r.sample_rate == a.sample_rate
+            assert r.duration_s == pytest.approx(250.0)
+            assert r.noise_seed not in {x.noise_seed for x in every if x is not r}
+            assert len(r.specs) == len(a.specs) == 32
+            plans, plans_a = plan_intervals(r.specs, r.noise_seed), plan_intervals(a.specs, a.noise_seed)
+            for s, sa, plan, plan_a in zip(r.specs, a.specs, plans, plans_a):
+                assert (s.text, s.freq_offset_hz, s.start_s) == (sa.text, sa.freq_offset_hz, sa.start_s)
+                assert (s.keying, sa.keying, s.wpm, sa.wpm) == ("machine", "machine", 12.0, 25.0)
+                assert s.repeats == 1 and s.fading_hz == 0.0 and s.score
+                assert sa.snr_db - s.snr_db == pytest.approx(10 * np.log10(25 / 12), abs=1e-12)
+                assert s.edge_s == pytest.approx(sa.edge_s * 25 / 12, abs=1e-15)
+                assert plan_a.intervals[0][0] == 0.0  # times are from the first mark, at start_s in both
+                got, want = np.array(plan.intervals), 25 / 12 * np.array(plan_a.intervals)
+                assert got.shape == want.shape and np.max(np.abs(got - want)) < 1e-9
+            lab = labels(r.specs, 48000, r.duration_s, r.noise_seed)["signals"]
+            lab_a = labels(a.specs, 48000, a.duration_s, a.noise_seed)["signals"]
+            for x, xa in zip(lab, lab_a):
+                assert x["text"] == xa["text"] and x["start_s"] == xa["start_s"]
+                assert x["end_s"] - x["start_s"] == pytest.approx(25 / 12 * (xa["end_s"] - xa["start_s"]), abs=0.002)
+
+
+def test_the_stretch_source_names_the_group_a_original():
+    assert suites.stretch_source("S-stretch-25wpm-1-s2") == "A-awgn-25wpm-1-s2"
+    assert suites.stretch_source("A-awgn-25wpm-1-s2") is None

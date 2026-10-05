@@ -16,8 +16,10 @@ spectrum and f_D grid, his SNR points converted to S500 (his key-on SNR in
 centered keying edges, his style mix and speed range (one recording), and
 filler text with his statistics. Groups G and H send whole ragchew QSOs
 (G: one speed and style for both stations on one carrier; H: two operators
-0-200 Hz apart). Every rate in the summary carries a bootstrap 95% interval
-over signals, so a difference smaller than the intervals is not a result.
+0-200 Hz apart). Group S (the stretch test, Plan B) copies group A's 25 WPM
+recordings at 12 WPM and 3.19 dB lower S500. Every rate in the summary carries
+a bootstrap 95% interval over signals, so a difference smaller than the
+intervals is not a result.
 """
 
 from __future__ import annotations
@@ -217,6 +219,46 @@ def sensitivity(seed: int) -> list[Recording]:
                                         tag=f"{wpm:g} wpm"))
             recs.append(Recording(f"A-awgn-{wpm:g}wpm-{part}-s{seed}", "A sensitivity", 48000, 120.0,
                                   1000 * seed + 10 + 2 * code + part, True, specs))
+    return recs
+
+
+STRETCH_FROM_WPM = 25.0  # group A's speed whose recordings are stretched
+STRETCH_TO_WPM = 12.0
+# The stretch test (stage-2 spec section 4.1): the keying timeline scaled in time by 25/12 = 2.0833 (derived: machine
+# keying at 12 WPM is 25 WPM's timeline times 25/12, 1.2 s / WPM per dit) ...
+STRETCH_FACTOR = STRETCH_FROM_WPM / STRETCH_TO_WPM
+# ... and S500 lowered by 10 log10(25/12) = 3.19 dB, so the energy per dit relative to the noise density is unchanged
+# (derived: key-down power times dit length).
+STRETCH_SNR_DB = 10.0 * math.log10(STRETCH_FACTOR)
+
+
+def stretch_source(name: str) -> str | None:
+    """The group-A recording (or result) name a stretched recording copies ("S-stretch-25wpm-0-s1" ->
+    "A-awgn-25wpm-0-s1"); None for any other name."""
+    return "A-awgn-" + name[len("S-stretch-"):] if name.startswith("S-stretch-") else None
+
+
+def stretch(seed: int) -> list[Recording]:
+    """The stretch test (time-base invariance; stage-2 spec section 4.1): each group-A 25 WPM recording again, its
+    signals' keying timelines scaled in time by STRETCH_FACTOR = 25/12 from each signal's first mark (the same
+    texts, frequencies and first-mark times, at 12 WPM) and their S500 lowered by STRETCH_SNR_DB = 3.19 dB, so that
+    the energy per dit relative to the noise density is unchanged. The raised-cosine keying edges are scaled too
+    (5 ms to 10.42 ms), so each signal's envelope is exactly the original's in a time base 25/12 slower and the
+    energy per dit is exactly unchanged (derived; with 5 ms edges a stretched dit would carry 0.33 dB more energy).
+    The recording lasts 25/12 of the original's 120 s, 250 s; the noise is new (its own seed). A time-base-invariant
+    decoder decodes both alike."""
+    recs = []
+    prefix = f"A-awgn-{STRETCH_FROM_WPM:g}wpm-"
+    for rec in sensitivity(seed):
+        if not rec.name.startswith(prefix):
+            continue
+        part = int(rec.name[len(prefix):].split("-")[0])
+        specs = [SignalSpec(s.text, s.freq_offset_hz, STRETCH_TO_WPM, s.snr_db - STRETCH_SNR_DB, s.start_s,
+                            edge_s=s.edge_s * STRETCH_FACTOR,
+                            tag=f"{STRETCH_TO_WPM:g} wpm, stretched from {STRETCH_FROM_WPM:g} wpm")
+                 for s in rec.specs]
+        recs.append(Recording(rec.name.replace("A-awgn-", "S-stretch-"), "S stretch", rec.sample_rate,
+                              round(rec.duration_s * STRETCH_FACTOR, 6), 1000 * seed + 160 + part, True, specs))
     return recs
 
 
@@ -462,7 +504,7 @@ def full_suite(seeds: int = 1) -> list[Recording]:
     recs = []
     for seed in range(1, seeds + 1):
         for build in (sensitivity, fading, fists, speed, interference, tuning, ragchew, two_station_qso, farnsworth,
-                      strong, pauses, tune_up, first_sample, crowded, band):
+                      strong, pauses, tune_up, first_sample, crowded, band, stretch):
             recs += build(seed)
     return recs
 

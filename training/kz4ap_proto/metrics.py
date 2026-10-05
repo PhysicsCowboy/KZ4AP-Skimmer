@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from kz4ap_synth.suites import BOOTSTRAP_RESAMPLES, _interval, _rng_for
+from kz4ap_synth.suites import BOOTSTRAP_RESAMPLES, _interval, _rng_for, crossing_snr
 
 from .periodicity import Periodicity
 from .power import disable_power_throttling
@@ -284,3 +284,109 @@ def calibrate(points, windows_s, subset, target: float = 0.95):
         if r["precision"] is not None and r["precision"] >= target:
             return float(threshold), r
     return None, None
+
+
+# --- Plan B, B9: the stretch test (stage-2 spec section 4.1) and the new-over checks (section 4.3) ---
+
+def _crossing_or_bound(points, threshold: float):
+    """(crossing S500 dB, True if it is only an upper bound: no point fails) by suites.crossing_snr."""
+    c = crossing_snr(points, threshold)
+    return c, c is not None and all(v <= threshold for _, v in points)
+
+
+def stretch_measures(pairs, snr_step_db: float, threshold: float = 0.10, key=("stretch",)) -> dict:
+    """The stretch test's measures over pairs of signals, the original and its stretched copy (the same text and
+    condition): each pair {"snr_db": the original's S500, dB; "orig": (edits, symbols); "stretched": (edits,
+    symbols)}. The stretched copy's S500 is the original's minus snr_step_db.
+
+    Per original S500 step and pooled ("all"): pairs, each side's pooled CER (summed edits over summed symbols),
+    and the paired CER, the mean over pairs of (stretched CER - original CER), with a bootstrap 95% interval over
+    pairs. The S500 at which each side's CER curve (pooled per step) crosses `threshold` (suites.crossing_snr:
+    linear interpolation; an upper bound if no step fails), the stretched copy's on its own S500 axis, and the shift
+    original - stretched, dB of S500 (a time-base-invariant decoder: snr_step_db), with a bootstrap 95% interval
+    that resamples pairs within each step, the same pairs for both sides. Pairs with no symbols are left out."""
+    pairs = [p for p in pairs if p["orig"][1] > 0 and p["stretched"][1] > 0]
+    steps: dict = {}
+    for p in pairs:
+        steps.setdefault(p["snr_db"], []).append(p)
+    rate = lambda e, s: e / s if s else 0.0  # noqa: E731
+
+    def side(ps, which):
+        return rate(sum(p[which][0] for p in ps), sum(p[which][1] for p in ps))
+
+    def paired(ps, k):
+        d = np.array([rate(*p["stretched"]) - rate(*p["orig"]) for p in ps])
+        picks = _rng_for(key + ("paired", k)).integers(len(d), size=(BOOTSTRAP_RESAMPLES, len(d)))
+        return {"pairs": len(d), "orig": side(ps, "orig"), "stretched": side(ps, "stretched"),
+                "mean": float(d.mean()),
+                "interval": _interval([float(d[q].mean()) for q in picks]) if len(d) >= 2 else None}
+
+    out = {"by_snr": {s: paired(ps, s) for s, ps in sorted(steps.items())}}
+    out["all"] = paired(pairs, "all") if pairs else None
+
+    def crossings(by_step):
+        o = [(s, side(ps, "orig")) for s, ps in by_step]
+        t = [(s - snr_step_db, side(ps, "stretched")) for s, ps in by_step]
+        (co, bo), (ct, bt) = _crossing_or_bound(o, threshold), _crossing_or_bound(t, threshold)
+        return co, bo, ct, bt
+
+    ordered = sorted(steps.items())
+    co, bo, ct, bt = crossings(ordered) if len(ordered) >= 3 else (None, False, None, False)
+    shifts = []
+    if co is not None and ct is not None:
+        rng = _rng_for(key + ("shift",))
+        for _ in range(BOOTSTRAP_RESAMPLES):
+            sample = [(s, [ps[i] for i in rng.integers(len(ps), size=len(ps))]) for s, ps in ordered]
+            a, _, b, _ = crossings(sample)
+            shifts.append(None if a is None or b is None else a - b)
+    out.update(threshold=threshold, snr_step_db=snr_step_db, crossing_orig_db=co, crossing_orig_upper_bound=bo,
+               crossing_stretched_db=ct, crossing_stretched_upper_bound=bt,
+               shift_db=None if co is None or ct is None else co - ct,
+               shift_interval=_interval(shifts) if shifts else None)
+    return out
+
+
+def _gap_kind(txs, k: int) -> str:
+    """The silence before transmission k: "first" (none), "turnover" (another station sent the one before),
+    "same station"."""
+    if k == 0:
+        return "first"
+    a, b = txs[k - 1].get("sender_index"), txs[k].get("sender_index")
+    return "turnover" if a is not None and b is not None and a != b else "same station"
+
+
+def new_over_counts(label: dict, over_starts, within_s: float = 2.0, settle_s: float = 0.1) -> dict:
+    """The new-over checks (stage-2 spec section 4.3) of one channel against its label:
+    - false new overs: over starts inside a transmission, later than settle_s after its first key-down and before its
+      last key-up (a real new over is recorded in the silence before it: at the last key-up plus the silence threshold,
+      at most as late as the next first key-down; settle_s, heuristic, covers the few milliseconds by which the
+      decoder's time base and the labels' millisecond-rounded times differ, far shorter than any silence that starts
+      a new over, at least 0.5 s);
+    - turnovers: transmissions after one by the other station (a QSO label's sender_index changes), and missed
+      turnovers: those with no over start after the previous transmission's last key-up and no later than within_s
+      after their first key-down;
+    - same-station silences (a transmission after one by the same station: the pauses group's repeats) and the over
+      starts in them (informative: whether the decoder starts a new over when the station did not change)."""
+    txs = label.get("transmissions") or [{"start_s": label["start_s"], "end_s": label["end_s"]}]
+    out = {"transmissions": len(txs), "false_new_overs": 0, "turnovers": 0, "missed_turnovers": 0,
+           "same_station_gaps": 0, "same_station_new_overs": 0}
+    out["false_new_overs"] = sum(1 for t in over_starts
+                                 if any(x["start_s"] + settle_s < t < x["end_s"] for x in txs))
+    for k in range(1, len(txs)):
+        kind = _gap_kind(txs, k)
+        prev_end, start = txs[k - 1]["end_s"], txs[k]["start_s"]
+        if kind == "turnover":
+            out["turnovers"] += 1
+            out["missed_turnovers"] += not any(prev_end < t <= start + within_s for t in over_starts)
+        else:
+            out["same_station_gaps"] += 1
+            out["same_station_new_overs"] += any(prev_end < t <= start + settle_s for t in over_starts)
+    return out
+
+
+def first_word_by_over(label: dict, signal: dict) -> list[dict]:
+    """Per transmission of one scored signal (the bench's per-transmission counts, signal["transmissions"]): the
+    silence kind before it (_gap_kind) and its first word's symbols and edits."""
+    txs = label.get("transmissions") or []
+    return [{"kind": _gap_kind(txs, k), "symbols": c["first_word_symbols"], "edits": c["first_word_edits"]}
+            for k, c in enumerate(signal.get("transmissions") or []) if k < len(txs)]
