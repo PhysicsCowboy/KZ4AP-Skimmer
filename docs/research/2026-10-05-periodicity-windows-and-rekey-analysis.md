@@ -123,21 +123,27 @@ estimate.
 
 ### 2.5 Option C on the development set (measured; results record §6.6)
 
-T̂ = the selected branch's eligible fitted dit, else its nominal d_k; stage 1's windows before the first
-selection. Against all settings in seconds (`bank-b3b`):
+**Final form (fix round, commit ae0188c):** T̂ = the selected branch's eligible fitted dit of its current
+over; whenever the selected branch has none (the stream's start; after the decoder's own new over until it
+is re-keyed and its fit is eligible), stage 1's windows (2, 5, 10 s). The first form also fell back to the
+selected branch's nominal dit, which at a stream's start is branch 1's 12 ms (the selector holds branch 1
+until its first switch): windows of 0.5, 1.25 and 2.5 s that could confirm only T ≤ 27 ms, a likely
+start-up trap (conjectured, from the code); its runs are superseded (results record §6.6).
 
-| Run | Paired CER | Comb precision at 0.03 | Near-3T₀ share of the shortest window's wrong estimates |
-|---|---|---|---|
-| Shared windows, re-key in dits | +0.0223 (+0.0119 to +0.0341) | 0.795 (0.771–0.819) | 0.3% |
-| Shared windows, re-key in seconds | +0.0148 (+0.0072 to +0.0239) | 0.789 (0.765–0.813) | 0.4% |
-| B4a (per-candidate windows, re-key in dits) | +0.0277 (+0.0194 to +0.0362) | 0.753 | 26.3% |
-| All in seconds (`bank-b3b`) | 0 | 0.804 | 3.7% |
+Against all settings in seconds (`bank-b3b`; the final form's runs include B4b's new mask defaults, whose
+own effect, from a control run at the same build, is −0.0027 with an interval including 0):
 
-As §2.4 predicted, the shared window removes the alias and restores the comb's precision. The development
-set is nevertheless still worse than with stage 1's settings (shared, re-key in seconds: groups A, C, F,
-G). So the windows' cost on this set is not only the alias; its other cause is not established
-(conjectured: the windows' lengths differ from stage 1's away from 25 WPM, and T̂'s source ties the window
-to the selected branch).
+| Run | Paired CER | First-word CER | Comb precision at 0.03 | Near-3T₀ share |
+|---|---|---|---|---|
+| Shared windows (final), re-key in seconds | −0.0033 (−0.0071 to +0.0001) | +0.009 | 0.797 | 1.0% |
+| Shared windows (final), re-key in dits | +0.0045 (−0.0022 to +0.0113) | +0.203 | 0.801 | 0.7% |
+| Per-candidate windows (B4a) | +0.0277 (+0.0194 to +0.0362) | | 0.753 | 26.3% |
+| All in seconds (`bank-b3b`) | 0 | 0 | 0.804 | 3.7% |
+
+Each final shared variant is better than the per-candidate windows at the same build by about 0.020
+(intervals entirely below 0). So with one shared window per decision, the windows in dits cost nothing
+measurable on the development set; what remains with the re-key in dits is the first words (§3.2).
+Superseded first form, for the record: +0.0223 and +0.0148.
 
 ## 3. The re-key settings
 
@@ -191,8 +197,8 @@ decoder decodes both alike):
 | Re-key in dits | +0.116 | −0.28 |
 | Windows in dits | +0.107 | +0.33 |
 | Both (B4a) | +0.126 | +0.10 |
-| Shared window (option C), re-key in dits | +0.093 (+0.030 to +0.169) | +0.50 |
-| Shared window, re-key in seconds | +0.079 (+0.040 to +0.124) | +0.53 (interval −1.68 to +1.62: uninformative) |
+| Shared window (option C, final form), re-key in dits | +0.113 (+0.057 to +0.173) | −0.18 (−0.61 to +0.28) |
+| Shared window (final form), re-key in seconds | +0.093 (+0.042 to +0.151) | −0.12 (−0.41 to +0.34) |
 
 Every variant needs about 2.7 to 3.7 dB more energy per dit at 12 WPM than at 25 WPM. Whether the
 variants differ from one another by a fraction of a dB is not established (each shift's interval is a
