@@ -59,6 +59,17 @@ of the windows' cost in C fists (−0.038 paired against `bank-b4a`). Pooled CER
 first words, H per station, E and A (section 6.6). The default is unchanged (every decoded record of the 525
 channels identical to `bank-b4a`).
 
+**Answer (B4b, the noise-spectrum guard margin).** With the spectrum mask's guard margin 0.5 · L₁ = 4.8 ms
+(was 20 ms; the owner's stage-2 decision) and the mask-bias table b_mask,k re-measured for it (0.8281 at k = 1 to
+0.7713 at k = 32, was 0.8370 to 0.7852), **the development-set CER does not change measurably: paired +0.0004
+(−0.0021 to +0.0028)** against `bank-b3b`, 116 of 525 channels with a different final text. No group's interval
+lies entirely above 0; group I's starts at exactly 0 (+0.0018, 0 to +0.0054; one regime), group F improves
+(−0.0013, −0.0026 to −0.0003). **Measured with the time constants in seconds** (stage 1's re-key settings and
+windows, through B4a's overrides), as the owner instructed, so that the effect is B4b's alone; the code's defaults
+keep B4a's time constants in dits, still undecided. While a PARIS station sends at S₅₀₀ = 20 dB the spectrum
+accepts 1.70, 1.64 and 0.65 segments per second at 12, 25 and 40 WPM, against 0.78, 0.65 and 0.28 at 20 ms
+(section 7).
+
 **Answer (B9, the stretch test and the new-over checks).** The bank decoder is not time-base invariant. Group A's
 25 WPM signals stretched to 12 WPM at the same energy per dit (S₅₀₀ 3.19 dB lower) decode worse in all six
 variants, every pooled paired CER interval above 0:
@@ -1130,6 +1141,117 @@ Raw outputs (git-ignored), in `build/suite/full3/experiments/linux/b4c/`: `compa
 (including `c2-diff-bank-b4c-default-vs-bank-b4a.md`), `periodicity-decoded-bank-b4a-shared{,-rekeys}.md`,
 `error-classes.md` (script `build/b4c/error_classes.py`), `b4c-run.log`; decoded files on the Linux machine under
 `build/suite/full3/proto/bank-b4a-shared/`, `bank-b4a-shared-rekeys/`, `bank-b4c-default/`.
+
+## 7. The noise-spectrum guard margin (B4b)
+
+### 7.1 What changed
+
+Stage-2 spec section 3.3 (owner, 2026-10-03); `docs/signal-processing.md` section 8c, "Noise". Code: `81a42cb`.
+
+| Setting | Before (stage 1) | B4b | Class | Status |
+|---|---|---|---|---|
+| Guard margin g (`guard_margin_s`) | 20 ms (30 samples at 1500 samples/s) | 0.5 · L₁ = 4.8 ms (round(7.2) = 7 samples, 4.67 ms) | seconds tied to branch 1's filter and the transmitter's keying edges, not dits | heuristic (owner) |
+| Mask bias b_mask,k (`mask_bias`) | 0.8370 (k = 1) … 0.7852 (k = 32) | 0.8281 … 0.7713 | — | measured (Plan B task B4b, white noise, seeds 101–110) |
+
+**How B4b was measured: with the time constants in seconds.** The owner has not decided B4a (time constants in
+dits; sections 6.2 to 6.6). On his instruction (2026-10-04) B4b is measured against `bank-b3b` with stage 1's re-key
+wait 0.8 s, time-out 2 s and periodicity windows 2, 5 and 10 s, set by B4a's overrides
+(`--set rekey_after_s=0.8 --set rekey_timeout_s=2.0 --set "periodicity_windows_s=[2,5,10]"`), so that the
+comparison changes the margin and the table only. The new margin and table become the code's defaults (decided);
+B4a's defaults in dits stay as they are.
+
+**The reference reproduced.** At `8eab61e` (before B4b) with those three overrides, `bank-b4b-ref` equals
+`bank-b3b` in **all 525 channels, every decoded record identical** (every field but `cpu_s`, the periodicity records
+included). After B4b, the same binary as `bank-b4b` with `--set guard_margin_s=0.02 --set mask_bias=[stage 1's
+table]` (`bank-b4b-oldmask`) equals `bank-b4b-ref` in all 525 channels: B4b changes nothing else.
+
+**The table (Step 1 and 2).** Stage 1's Task 5 method on the C++ estimate, through a new tool,
+`kz4ap-noise-mask` (`white`: the table on the tool's own white noise; `stream`: one complex64 stream's segments and
+masked branch powers). The table comes from stage 1's own Task 5 noise (numpy's `default_rng`, seeds 101–110, 60 s
+each, rounded to complex64), so it is paired with the old table:
+
+| quantity | at 20 ms | at 4.8 ms |
+|---|---|---|
+| b_mask,1 … b_mask,32, stage 1's noise through the C++ estimate | 0.8370 … 0.7852 (stage 1's table to 4.9 · 10⁻⁵; identical at four decimals) | **0.8281 … 0.7713** |
+| segments accepted of offered (10 × 60 s) | 2362 of 3500 | 3459 of 3500 |
+| kept fraction, noise alone | 0.619 | 0.826 |
+| per-seed scatter (k = 1 … 32) | 2.6% … 4.5% | 2.6% … 3.9% |
+| second noise source, the same 10 seed numbers (`std::mt19937_64`, Box–Muller) | 0.8483 … 0.8020 | 0.8478 … 0.8000 |
+| second noise source, 200 seeds (1001–1200) | 0.8405 … 0.7849 | 0.8381 … 0.7812 |
+
+Cross-check against the prototype (seed 101, run with `guard_margin_s=0.0048` on the same complex64 stream): masked
+branch powers equal to a relative 1.3 · 10⁻¹⁵, segments 344 of 350 in both (at 20 ms: 1.9 · 10⁻¹⁵, 237 of 350).
+The second source's white-noise table is identical on the Linux machine and the Windows PC to 4.4 · 10⁻¹⁶. The
+ten-seed table's standard error is about 0.8% to 1.2% (from the scatter), as large as the margin's effect on it:
+−1.1% (k = 1) to −1.8% (k = 32) on stage 1's noise, −0.3% to −0.5% on the 200 seeds. The bench test
+`NoiseMask.TheTableIsAWhiteNoiseMeasurementAtTheDefaultMargin` re-measures on the second source and requires every
+branch within 3 standard errors of the difference (measured 2.51 at worst); at 20 ms against stage 1's table, 1.35.
+
+Golden tests: none moved. They run with stage 1's margin and table set explicitly (`kStage1GuardMarginS`,
+`kStage1MaskBias`; `stage1_config()` in `engine/tests/bank/golden.hpp`), as B4a's run with stage 1's time constants.
+One non-golden expectation changed by derivation: the |v_k|² window's full size, 32 × 34 721 → 32 × 34 675 columns
+(the look-back falls by round((2 × 20 − 2 × 4.8) ms × 1500 samples/s) = 46 samples). Tests added (5): the mask's
+reach (7 samples at 1500 samples/s, 10 at 2000, 30 at stage 1's 20 ms), the white-noise source, the table against a
+re-measurement at the default margin and stage 1's at 20 ms, the tool's counting window. `ctest --preset windows`
+354 of 354 and `ctest --preset linux` 354 of 354 passed or skipped; Python tests 269 passed, 7 expected failures;
+smoke unchanged (Envelope CER 0.0353, Matched 0.0436).
+
+### 7.2 Accepted segments while a station sends
+
+PARIS at 12, 25 and 40 WPM, S₅₀₀ = 20 dB against white noise of 1 FS² per complex sample, 1 s of noise, then about
+60 s of sending (the bench's keying, 5 ms edges), one stream per speed; counted over the segments that start while
+the station sends (348 to 351 offered, 5.87 per second). Measured by `kz4ap-noise-mask stream`; derived from a
+noise-free model of the code's mask rule (flag level at the true σ²_v,1); the stage-2 spec's derived clean fractions
+for 20 ms (a gap loses 2g + L₁) in the last column:
+
+| WPM | accepted per s, 20 ms | accepted per s, 4.8 ms | kept fraction, 20 ms → 4.8 ms (measured) | derived clean fraction, 20 ms → 4.8 ms | derived accepted per s, 20 ms → 4.8 ms | spec, 20 ms |
+|---|---|---|---|---|---|---|
+| 12 | 0.78 | **1.70** | 21.6% → 38.6% | 40.8% → 49.5% | 1.91 → 2.07 | 42% |
+| 25 | 0.65 | **1.64** | 16.6% → 36.1% | 26.8% → 43.3% | 1.69 → 2.53 | 28% |
+| 40 | 0.28 | **0.65** | 13.3% → 30.8% | 20.5% → 35.9% | 0.59 → 0.82 | 21% |
+
+So the spectrum's shape now updates 2.2 to 2.5 times as often while a station sends (measured). The measured rates
+are below the noise-free ones because noise peaks are flagged too: in noise alone the mask keeps 82.6% of samples at
+4.8 ms and 61.9% at 20 ms. In the code's rule a mark costs N₁ − 1 + R samples on each side of it (26.7 ms per gap at
+4.8 ms, 57.3 ms at 20 ms, derived); the spec's "about 50 ms" counted L₁ once.
+
+### 7.3 `bank-b4b` against `bank-b3b` (Linux machine, the development set, time constants in seconds)
+
+Texts: **116 of 525 channels decode to a different final text** (409 identical; 117 with identical character
+lists; 46 with every decoded record identical). The periodicity records are identical in all 291 690 records (their
+input, branch 1's posterior, does not depend on the noise spectrum's shape). Paired CER (variant − reference,
+signal by signal; bootstrap 95% over signals):
+
+| group | signals | paired CER | paired first-word CER |
+|---|---|---|---|
+| all | 509 | **+0.0004 (−0.0021 to +0.0028)** | +0.0116 (−0.0359 to +0.0620) |
+| A sensitivity | 192 | +0.0021 (−0.0017 to +0.0065) | −0.0247 (−0.0534 to +0.0026) |
+| B fading | 30 | −0.0039 (−0.0144 to +0.0047) | +0.3433 (−0.0334 to +1.3100) |
+| C fists | 135 | +0.0001 (−0.0001 to +0.0003) | +0.0000 (+0.0000 to +0.0000) |
+| D speed | 12 | +0.0000 (+0.0000 to +0.0000) | +0.0000 (+0.0000 to +0.0000) |
+| E interference | 16 | +0.0011 (−0.0135 to +0.0142) | +0.1958 (−0.0250 to +0.6250) |
+| F tuning | 28 | **−0.0013 (−0.0026 to −0.0003)** | −0.0179 (−0.0536 to +0.0000) |
+| G ragchew | 12 | −0.0023 (−0.0052 to 0) | −0.0183 (−0.0444 to +0.0018) |
+| H two-station QSO, oracle | 12 | +0.0001 (−0.0006 to +0.0007) | −0.0028 (−0.0083 to +0.0000) |
+| H two-station QSO, oracle (per station) | 24 | −0.0056 (−0.0422 to +0.0236) | −0.1262 (−0.7125 to +0.2818) |
+| I Farnsworth | 48 | +0.0018 (exactly 0 to +0.0054) | +0.0208 (+0.0000 to +0.0625) |
+
+**No group has a paired interval entirely above 0** (the plan's rule; not a gate). Group I's interval starts at
+exactly 0 (full precision: 0.0 to 0.005433): one regime moves, the 25/13 WPM machine recording 0.0141 → 0.0283
+(25/18 paddle 0.0426 → 0.0434); it is reported to the owner as the edge case. F improves at its offsets of 0 to
+8.8 Hz (for example 5.9 Hz 25 WPM 0.0636 → 0.0593). The largest single-regime moves: E Δf 100 Hz at +10 dB
+0.6055 → 0.6697 and at +20 dB 2.8557 → 2.7732 (E's pooled interval includes 0); A 40 WPM 0.3282 → 0.3333; H
+separate-track 100 Hz per station 0.1042 → 0.0525.
+
+CPU per channel-second (Linux machine, one run each, the three runs of this task under the same conditions; not a
+gate): `bank-b4b-ref` 42.60, `bank-b4b` **42.27**, `bank-b4b-oldmask` 42.39 ms; per group within 0.7 ms of the
+reference. The mask's cost does not depend on the margin (derived); the differences are run-to-run.
+
+Raw outputs (git-ignored): `build/suite/full3/experiments/linux/b4b/` (`compare-bank-b4b-vs-bank-b3b.md`,
+`c2-diff-bank-b4b-vs-bank-b3b.md`, `b4b-ref.log`, `b4b-run.log`, the Linux machine's white-noise tables);
+`build/b4b/` (the table's runs on both noise sources, the prototype cross-check, the PARIS streams and their
+counts, helper scripts); decoded files `build/suite/full3/proto/bank-b4b-ref/`, `bank-b4b/`, `bank-b4b-oldmask/`
+on the Linux machine.
 
 ## 8. The stretch test and the new-over checks (B9)
 

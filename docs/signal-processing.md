@@ -2117,6 +2117,19 @@ branches' |v_k|² (FS²), which the prototype stores in single precision
   are flagged too (in noise alone the mask keeps 82.6% of samples at
   4.8 ms and 61.9% at 20 ms, measured above). One stream per speed
   (numpy seeds 1012, 1025, 1040).
+- **The development set (Plan B, B4b; measured with the time constants
+  in seconds).** The guard margin and the table were measured on the
+  development set with stage 1's re-key wait (0.8 s), time-out (2 s) and
+  periodicity windows (2, 5, 10 s), set by the overrides in seconds,
+  against `bank-b3b` (the same settings, 20 ms, stage 1's table): the
+  owner's instruction (2026-10-04), so that B4b's effect is separate from
+  the undecided time constants in dits of B4a; the code's defaults keep
+  B4a's dits. 116 of 525 channels decode to a different final text;
+  paired CER +0.0004 (−0.0021 to +0.0028), no group's interval entirely
+  above 0 (group I, Farnsworth: +0.0018, interval from exactly 0 to
+  +0.0054, one regime, 25/13 words/min machine, 0.0141 → 0.0283), group
+  F (tuning) better, −0.0013 (−0.0026 to −0.0003); CPU 42.60 → 42.27 ms
+  per channel-second (Linux machine). Results record section 7.
 
 **Port check.** Golden values (`engine/tests/data/bank/noise.json`, from
 `kz4ap_proto.golden`): 20 s of a 1 FS carrier keyed at 25 WPM from 1.0 s
