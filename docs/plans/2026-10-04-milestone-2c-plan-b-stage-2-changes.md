@@ -198,3 +198,31 @@ Within branch k, a dit is the branch's nominal dit d_k = L_k / 0.8, L_k = 9.6 ms
 - [ ] **Step 4: The run** `bank-b4b` against `bank-b4a`: the measure and rule above; accepted segments per second.
 - [ ] **Step 5: Documents:** §8c (the mask, the table, its status), the parameter table, the results record section 7.
 - [ ] **Step 6: Commit.**
+
+### Task B4a-C (full text): one shared periodicity window per decision, as a switchable variant (owner, 2026-10-04: measure overnight; no default changes)
+
+Why: B4a's per-candidate windows (N_w·T for each candidate T) score an alias at 3T₀ over three times the signal of the true T₀, and remove stage 1's implicit cap T ≤ W/18.3 per window; wrong estimates near 3T₀ rose from 3.7% to 26.0% (results §6.5). Option C keeps the windows in dits but scores every candidate of a row over one shared window N_w·T̂.
+
+**Files:** `engine/include/kz4ap/bank/bank_config.hpp`, `engine/src/bank/periodicity.cpp` (and header), `engine/src/bank/channel.cpp` if T̂ comes from there, `bench/src/bank_json.cpp` (configuration list), tests, `docs/signal-processing.md` §8c (the variant, marked not the default), the results record (section 6.6).
+
+- **`periodicity_window_mode`**: `"per_candidate"` (default: B4a as committed) or `"shared"`.
+- **Shared mode:** each row's window is N_w·T̂ samples of p, the same for every candidate of the row, with T̂ the dit of the branch currently selected (its fitted T if it has an eligible fit, else its nominal dit d_k); before any selection exists, stage 1's windows (2, 5, 10 s). The reach condition (comb inside half the window) applies as in stage 1, so candidates beyond N_w·T̂ / 18.3 are not scored in that row. State the feedback this introduces (the selection's speed sets the window that judges T_P, which feeds the fit's prior and selection's fallback) and that it is an experiment.
+- [ ] **Step 1:** tests: in shared mode every candidate of a row is scored on the same samples (scores equal `comb_estimate` on that window); the window follows T̂; before a selection, stage 1's windows.
+- [ ] **Step 2:** implement; ctest; defaults unchanged (the development set's default run must stay identical to `bank-b4a`: check on 3 golden streams bit for bit).
+- [ ] **Step 3:** the Linux machine: `bank-b4a-shared` (`--set periodicity_window_mode=shared`, re-key in dits) and `bank-b4a-shared-rekeys` (shared windows, stage 1's re-key via `rekey_after_s=0.8`, `rekey_timeout_s=2`) against `bank-b3b`: paired CER pooled and per group, comb precision and coverage at 0.03 and the error classes (near 3T₀, etc., as in §6.5), by speed bin.
+- [ ] **Step 4:** documents (§8c, results §6.6); commit.
+
+### Task B9 (full text): the stretch test and the new-over checks (stage-2 spec §4.1, §4.3)
+
+**Files:** `training/kz4ap_synth/suites.py` (new groups), `training/kz4ap_proto/experiments.py` and/or `metrics.py` (the measures), `training/tests/` (tests), the results record (section 8), `docs/backlog.md` only if a finding needs it.
+
+**The stretch test (time-base invariance).** For every group-A 25 WPM condition (machine keying; S₅₀₀ −10 to +20 dB in 2 dB steps; the same texts), a stretched copy: the keying timeline stretched by 25/12 = 2.0833 (12 WPM) and S₅₀₀ lowered by 10·log₁₀(2.0833) = 3.19 dB, so that the energy per dit relative to the noise density is unchanged (derived). New suite group `S-stretch` (seeds 1–3 generated; only seed 1 used until Plan B's final evaluation, B12). An invariant decoder decodes both alike.
+- **Measures:** per S₅₀₀ step and pooled, paired CER (stretched − original, paired by text and condition) with 95% bootstrap intervals over test cases; the S₅₀₀ at which CER crosses 0.10 for the original and the stretched copies (interpolated), and the shift between them (invariance target: 3.19 dB, i.e. the crossing at the same energy per dit); the same for first-word CER.
+- **Runs:** the original group-A 25 WPM conditions and `S-stretch-s1`, replayed for each of: `bank-b3b` settings (all in seconds, via `--set rekey_after_s=0.8 rekey_timeout_s=2 periodicity_windows_s=[2,5,10]`), `bank-b4a` (defaults), re-key in dits only, windows in dits only, and B4a-C's shared mode (when it exists; the controller tells you). Name runs `stretch-<variant>`.
+
+**The new-over checks.** On group H (two-station QSOs, oracle views) and the `pauses` group (seed 1): false new overs per transmission (a new over started inside a transmission), missed turnovers per QSO turnover (a station change with no new over within 2 s), and first-word CER per over; computed from the decoded files' records and the labels. Run them on `bank-b3b` and `bank-b4a` now (B6 will use them).
+
+- [ ] **Step 1:** the suite group and its generation test (texts identical to group A's; keying times exactly 2.0833 × A's from the stream's first mark; S₅₀₀ 3.19 dB lower; the stretched recording's duration as needed).
+- [ ] **Step 2:** the measures, with tests on small hand-made decoded files.
+- [ ] **Step 3:** generate on the Linux machine (seed 1; seeds 2–3 generated but not decoded), run the variants, the measures.
+- [ ] **Step 4:** results record section 8 (the stretch test table per variant: paired CER by S₅₀₀, the crossing shift; the new-over checks), each number measured; commit.
