@@ -156,9 +156,10 @@ struct BankConfig {
     // How the windows of periodicity_windows_dits apply (Plan B, B4a-C; an experiment, owner 2026-10-04). Default
     // "per_candidate": each candidate T over its own window N_w x T (B4a as committed). "shared" (a variant, not the
     // default): every candidate of a row over one window N_w x T-hat, T-hat the dit of the branch currently selected
-    // (its fitted T, only if that fit is eligible and belongs to the branch's current, re-keyed over), so candidates
-    // beyond N_w T-hat / 18.3 are out of the comb's reach in that row; without such a T-hat (stream start, from an over
-    // start until its re-key) the windows periodicity_unselected_windows_s. Class (1) dits. Status: heuristic.
+    // (its fitted T, only if that fit is eligible and is not a previous over's fit held across a new over's start: at
+    // the stream's start the first over's fit counts once eligible; after a new over's start, only once the over's start
+    // has been re-keyed), so candidates beyond N_w T-hat / 18.3 are out of the comb's reach in that row; without such a
+    // T-hat the windows periodicity_unselected_windows_s. Class (1) dits. Status: heuristic.
     // Ignored when periodicity_windows_s is set
     std::string periodicity_window_mode = "per_candidate";
     // s, the "shared" variant's windows while there is no T-hat: stage 1's 2, 5 and 10 s (stage 1's

@@ -77,7 +77,8 @@ accepts 1.70, 1.64 and 0.65 segments per second at 12, 25 and 40 WPM, against 0.
 
 **Answer (B9, the stretch test and the new-over checks).** The bank decoder is not time-base invariant. Group A's
 25 WPM signals stretched to 12 WPM at the same energy per dit (S₅₀₀ 3.19 dB lower) decode worse in all six
-variants, every pooled paired CER interval above 0:
+variants and in B4a-C's final form (two more runs, 6.6.1; built with B4b), every pooled paired CER interval above
+0:
 
 | variant | pooled paired CER, stretched − original | CER-0.10 crossing shift (dB of S₅₀₀; invariant +3.19) |
 |---|---|---|
@@ -85,8 +86,10 @@ variants, every pooled paired CER interval above 0:
 | B4a | +0.126 | +0.10 |
 | re-key settings in dits only | +0.116 | −0.28 |
 | windows in dits only | +0.107 | +0.33 |
-| B4a-C's shared window | +0.093 | +0.50 |
-| shared window with stage 1's re-key settings | +0.079 | +0.53 |
+| B4a-C's shared window, first form, superseded (nominal-d_k fallback; 6.6.1) | +0.093 | +0.50 |
+| shared window with stage 1's re-key settings, first form, superseded (nominal-d_k fallback; 6.6.1) | +0.079 | +0.53 |
+| B4a-C's shared window, final form (`stretch-b4ac2`) | +0.113 | −0.18 (−0.61 to +0.28) |
+| final form with stage 1's re-key settings (`stretch-b4ac2-rekeys`) | +0.093 | −0.12 (−0.41 to +0.34) |
 
 So at 12 WPM the decoder needs about 2.7 to 3.7 dB more energy per dit than at 25 WPM. The variants differ by a
 fraction of a dB, and that difference is not established. The shift intervals are separate and nominal bootstraps,
@@ -1454,14 +1457,20 @@ pauses group's oracle copy (`pauses-s1.oracle`):
 | `stretch-b4a` | defaults | both (in dits) |
 | `stretch-rekey` | `--set periodicity_windows_s=[2.0,5.0,10.0]` | re-key settings in dits |
 | `stretch-windows` | `--set rekey_after_s=0.8 --set rekey_timeout_s=2.0` | windows in dits |
-| `stretch-b4ac` | `--set periodicity_window_mode=shared` | B4a-C's one shared window per decision, re-key settings in dits |
-| `stretch-b4ac-rekeys` | `--set periodicity_window_mode=shared --set rekey_after_s=0.8 --set rekey_timeout_s=2.0` | B4a-C's shared window, stage 1's re-key settings |
+| `stretch-b4ac` | `--set periodicity_window_mode=shared` | B4a-C's one shared window per decision, re-key settings in dits; first form, superseded (nominal-d_k fallback; 6.6.1) |
+| `stretch-b4ac-rekeys` | `--set periodicity_window_mode=shared --set rekey_after_s=0.8 --set rekey_timeout_s=2.0` | B4a-C's shared window, stage 1's re-key settings; first form, superseded (nominal-d_k fallback; 6.6.1) |
+| `stretch-b4ac2` | `--set periodicity_window_mode=shared` | B4a-C's final form (T̂ only from an eligible fit), re-key settings in dits |
+| `stretch-b4ac2-rekeys` | `--set periodicity_window_mode=shared --set rekey_after_s=0.8 --set rekey_timeout_s=2.0` | B4a-C's final form, stage 1's re-key settings |
 
 Reproduction check: on the 76 channels these runs share with the development set (A 25 WPM and H oracle QSO labels),
 the first four runs' decoded records are identical to the earlier runs with the same settings (`bank-b3b`, `bank-b4a`,
 `bank-b4a-rekey`, `bank-b4a-windows`): 76 of 76 channels, every record. The two B4a-C runs (fix round 1) used a
 replay tool and bench rebuilt in `build/linux-b9` from `b44da0b` (engine code of `db38cd0`, B4a-C), with `--jobs 5`
-(`build/b9/b9_fix1.sh`). They have no earlier run to reproduce.
+(`build/b9/b9_fix1.sh`). They have no earlier run to reproduce. They are superseded: that build's T̂ fell back to the
+selected branch's nominal dit, which trapped T̂ at 12 ms after a stream's start (6.6.1). The final form's runs,
+`stretch-b4ac2` and `stretch-b4ac2-rekeys`, were made in B4a-C's fix round 1 at `ae0188c` (which includes B4b's guard
+margin and mask table) with B9's steps, that build's tools and `--jobs 10` (`build/b4c/b9_run_b4c.sh`, a copy of
+`build/b9/b9_run.sh`).
 
 ### 8.2 The stretch test
 
@@ -1473,8 +1482,10 @@ Pooled over the 64 pairs (CER of the original signals, of the stretched copies, 
 | `stretch-b4a` | 0.3117 | 0.4369 | **+0.1260 (+0.0627 to +0.1902)** | +0.79 | +0.69 | **+0.10 (−0.08 to +0.29)** |
 | `stretch-rekey` | 0.3088 | 0.4239 | **+0.1161 (+0.0517 to +0.1888)** | +0.37 | +0.64 | **−0.28 (−0.67 to +0.17)** |
 | `stretch-windows` | 0.3124 | 0.4196 | **+0.1074 (+0.0550 to +0.1692)** | +1.01 | +0.68 | **+0.33 (−0.21 to +0.58)** |
-| `stretch-b4ac` | 0.3299 | 0.4210 | **+0.0927 (+0.0297 to +0.1691)** | +1.12 | +0.62 | **+0.50 (+0.30 to +0.73)** |
-| `stretch-b4ac-rekeys` | 0.3075 | 0.3867 | **+0.0793 (+0.0399 to +0.1236)** | +1.18 | +0.66 | **+0.53 (−1.68 to +1.62)** |
+| `stretch-b4ac` (superseded) | 0.3299 | 0.4210 | **+0.0927 (+0.0297 to +0.1691)** | +1.12 | +0.62 | **+0.50 (+0.30 to +0.73)** |
+| `stretch-b4ac-rekeys` (superseded) | 0.3075 | 0.3867 | **+0.0793 (+0.0399 to +0.1236)** | +1.18 | +0.66 | **+0.53 (−1.68 to +1.62)** |
+| `stretch-b4ac2` | 0.3044 | 0.4172 | **+0.1134 (+0.0571 to +0.1730)** | +0.41 | +0.59 | **−0.18 (−0.61 to +0.28)** |
+| `stretch-b4ac2-rekeys` | 0.2963 | 0.3890 | **+0.0931 (+0.0419 to +0.1508)** | +0.10 | +0.23 | **−0.12 (−0.41 to +0.34)** |
 
 Paired CER by the original's S₅₀₀ step (4 pairs each; intervals in the raw outputs). Steps −10 to −6 dB: +0.000 in
 every run (both sides CER 1.000).
@@ -1485,27 +1496,32 @@ every run (both sides CER 1.000).
 | `stretch-b4a` | +0.052 | +0.210 | +0.852 | +0.821 | +0.038 | +0.035 | +0.025 | −0.010 to +0.006 |
 | `stretch-rekey` | +0.051 | +0.118 | +0.822 | +0.838 | +0.025 | +0.004 | −0.002 | −0.003 to +0.004 |
 | `stretch-windows` | +0.055 | +0.194 | +0.777 | +0.617 | +0.029 | +0.032 | +0.019 | −0.007 to +0.008 |
-| `stretch-b4ac` | +0.000 | −0.049 | +0.915 | +0.536 | +0.042 | +0.014 | +0.017 | −0.003 to +0.007 |
-| `stretch-b4ac-rekeys` | +0.000 | +0.255 | +0.670 | +0.205 | +0.071 | +0.050 | +0.009 | −0.012 to +0.011 |
+| `stretch-b4ac` (superseded) | +0.000 | −0.049 | +0.915 | +0.536 | +0.042 | +0.014 | +0.017 | −0.003 to +0.007 |
+| `stretch-b4ac-rekeys` (superseded) | +0.000 | +0.255 | +0.670 | +0.205 | +0.071 | +0.050 | +0.009 | −0.012 to +0.011 |
+| `stretch-b4ac2` | +0.004 | +0.296 | +0.854 | +0.637 | +0.023 | −0.001 | −0.000 | −0.003 to +0.005 |
+| `stretch-b4ac2-rekeys` | +0.037 | +0.265 | +0.898 | +0.234 | +0.031 | +0.007 | +0.003 | −0.001 to +0.006 |
 
 CER per step, `stretch-b4a` (original / stretched): −2 dB 0.763 / 0.973; 0 dB 0.139 / 0.991; +2 dB 0.041 / 0.863;
 +4 dB 0.014 / 0.052. `stretch-b3b`: 0.594 / 0.896; 0.107 / 0.988; 0.018 / 0.613; 0.003 / 0.055. `stretch-b4ac`:
 0.992 / 0.943; 0.185 / 1.094; 0.033 / 0.568; 0.009 / 0.050. `stretch-b4ac-rekeys`: 0.637 / 0.893; 0.155 / 0.824;
-0.062 / 0.267; 0.015 / 0.086.
+0.062 / 0.267; 0.015 / 0.086 (both superseded). `stretch-b4ac2`: 0.684 / 0.980; 0.120 / 0.973; 0.023 / 0.660;
+0.005 / 0.028. `stretch-b4ac2-rekeys`: 0.613 / 0.875; 0.104 / 1.003; 0.020 / 0.254; 0.005 / 0.036.
 
 First-word CER, paired (stretched − original), pooled: `stretch-b3b` +0.2432 (+0.0877 to +0.4281); `stretch-b4a`
 +0.9160 (+0.2456 to +1.6624); `stretch-rekey` +0.1277 (−0.2880 to +0.7020); `stretch-windows` +0.5722 (+0.2832 to
-+0.9147); `stretch-b4ac` +1.4482 (+0.2736 to +2.8694); `stretch-b4ac-rekeys` +0.5772 (−0.3542 to +1.5641). There is no first-word crossing shift in any run. The original side's first-word CER is above 0.10 at the
++0.9147); `stretch-b4ac` +1.4482 (+0.2736 to +2.8694); `stretch-b4ac-rekeys` +0.5772 (−0.3542 to +1.5641) (both superseded);
+`stretch-b4ac2` +0.1524 (−0.4597 to +0.8608); `stretch-b4ac2-rekeys` +0.2327 (+0.0816 to +0.4225). There is no first-word crossing shift in any run. The original side's first-word CER is above 0.10 at the
 highest step, +20 dB, in every run (one or two wrong first words among 4 pairs are enough), so it has no crossing.
 Only `stretch-rekey`'s stretched copies cross, at +16.58 dB.
 
-**Answer.** The bank decoder is **not time-base invariant** in any of the six variants.
+**Answer.** The bank decoder is **not time-base invariant** in any of the six variants, nor in B4a-C's final form
+(`stretch-b4ac2`, `stretch-b4ac2-rekeys`).
 
 - At equal energy per dit the stretched copies (12 WPM) decode worse than the originals (25 WPM). Pooled paired CER is
-  +0.079 to +0.126, every interval above 0.
+  +0.079 to +0.126, every interval above 0 (final form +0.093 and +0.113).
 - The loss sits in the steep part of the curve, at original S₅₀₀ −2 to +2 dB.
-- The CER-0.10 crossing shift is −0.49 to +0.53 dB of S₅₀₀, against the invariant +3.19 dB. So at 12 WPM the decoder
-  needs about 2.7 to 3.7 dB more energy per dit than at 25 WPM.
+- The CER-0.10 crossing shift is −0.49 to +0.53 dB of S₅₀₀ (final form −0.18 and −0.12), against the invariant
+  +3.19 dB. So at 12 WPM the decoder needs about 2.7 to 3.7 dB more energy per dit than at 25 WPM.
 
 The variants differ by a fraction of a dB, and the evidence for that is weak:
 
@@ -1515,8 +1531,11 @@ The variants differ by a fraction of a dB, and the evidence for that is weak:
 - The shift intervals are nominal and probably too narrow (8.1).
 - The single-part variants, the windows in dits +0.33 and the re-key settings in dits −0.28, do not add up to B4a's,
   and their intervals overlap both endpoints.
-- B4a-C's shared window has the largest shift: +0.50 (+0.30 to +0.73) with the re-key settings in dits. With stage
-  1's re-key settings it is +0.53, but with an interval of −1.68 to +1.62 that says nothing.
+- B4a-C's first form had the largest shift, +0.50 (+0.30 to +0.73) with the re-key settings in dits and +0.53
+  (−1.68 to +1.62) with stage 1's; that form is superseded (6.6.1). The final form's shifts, −0.18 (−0.61 to +0.28)
+  and −0.12 (−0.41 to +0.34), lie between `stretch-b3b`'s and `stretch-b4a`'s and overlap both; the largest shift
+  among current runs is `stretch-windows`' +0.33 (−0.21 to +0.58). None of these differences is established
+  (separate, nominal bootstraps).
 - Pooled paired CER does not separate the variants: the intervals overlap.
 
 Above +8 dB both sides decode alike in every variant (|paired CER| ≤ 0.012).
@@ -1560,27 +1579,30 @@ Recomputed in fix round 1 from the same decoded files:
 | `stretch-b4a` | 0.050 (0.000–0.100), 4 / 80 | 0 / 70 | 0.314 (0.114–0.543), 22 / 70 | 0 / 24 | 16 / 16 |
 | `stretch-rekey` | 0.088 (0.025–0.150), 7 / 80 | 0 / 70 | 0.271 (0.043–0.529), 19 / 70 | 0 / 24 | 15 / 16 |
 | `stretch-windows` | 0.100 (0.025–0.188), 8 / 80 | 1 / 70 (delay 0.16 s) | 0.300 (0.086–0.529), 21 / 70 | 0 / 24 | 16 / 16 |
-| `stretch-b4ac` | 0.075 (0.013–0.138), 6 / 80 | 0 / 70 | 0.271 (0.029–0.543), 19 / 70 | 0 / 24 | 15 / 16 |
-| `stretch-b4ac-rekeys` | 0.088 (0.025–0.163), 7 / 80 | 0 / 70 | 0.229 (0.029–0.443), 16 / 70 | 0 / 24 | 16 / 16 |
+| `stretch-b4ac` (superseded) | 0.075 (0.013–0.138), 6 / 80 | 0 / 70 | 0.271 (0.029–0.543), 19 / 70 | 0 / 24 | 15 / 16 |
+| `stretch-b4ac-rekeys` (superseded) | 0.088 (0.025–0.163), 7 / 80 | 0 / 70 | 0.229 (0.029–0.443), 16 / 70 | 0 / 24 | 16 / 16 |
+| `stretch-b4ac2` | 0.075 (0.025–0.138), 6 / 80 | 0 / 70 | 0.243 (0.029–0.471), 17 / 70 | 0 / 24 | 15 / 16 |
+| `stretch-b4ac2-rekeys` | 0.088 (0.025–0.150), 7 / 80 | 0 / 70 | 0.243 (0.057–0.486), 17 / 70 | 0 / 24 | 16 / 16 |
 
 The split changes only `stretch-windows`. One of its nine false new overs was the late find of a 50 Hz turnover,
 0.16 s after its first key-down. In every other run no turnover is found late. So group H's false new overs are not
 late-found turnovers: the review's conjecture that they might be is refuted by these counts.
 
 Missed turnovers by the answering station's offset (of 14 turnovers each; in the order `stretch-b3b`, `stretch-b4a`,
-`stretch-rekey`, `stretch-windows`, `stretch-b4ac`, `stretch-b4ac-rekeys`):
+`stretch-rekey`, `stretch-windows`, `stretch-b4ac`, `stretch-b4ac-rekeys`; then the final form's `stretch-b4ac2`,
+`stretch-b4ac2-rekeys`):
 
-- 0 Hz: 1, 4, 1, 3, 1, 1.
+- 0 Hz: 1, 4, 1, 3, 1, 1; 1, 1.
 - 10 Hz: 0 in every run.
-- 25 Hz: 0, 1, 0, 1, 0, 0.
-- 50 Hz: 5, 6, 6, 5, 6, 4.
-- 100 Hz: 10, 11, 12, 12, 12, 11.
+- 25 Hz: 0, 1, 0, 1, 0, 0; 0, 0.
+- 50 Hz: 5, 6, 6, 5, 6, 4; 5, 4.
+- 100 Hz: 10, 11, 12, 12, 12, 11; 11, 12.
 
 False new overs (of 16 transmissions each, same order):
 
-- 25 Hz: 3, 3, 3, 4, 3, 3.
-- 100 Hz: 3, 1, 3, 4, 3, 4.
-- 50 Hz: 1, 0, 1, 0, 0, 0.
+- 25 Hz: 3, 3, 3, 4, 3, 3; 3, 3.
+- 100 Hz: 3, 1, 3, 4, 3, 4; 2, 4.
+- 50 Hz: 1, 0, 1, 0, 0, 0; 1, 0.
 - 0 Hz and 10 Hz: none.
 
 First-word CER per over:
@@ -1591,8 +1613,10 @@ First-word CER per over:
 | `stretch-b4a` | 0.500 (0.100–0.951) | 0.499 (0.268–0.739) | 0.000 | 0.000 |
 | `stretch-rekey` | 0.050 (0.000–0.150) | 0.501 (0.272–0.740) | 0.000 | 0.000 |
 | `stretch-windows` | 0.600 (0.050–1.500) | 0.464 (0.272–0.663) | 0.063 | 0.094 |
-| `stretch-b4ac` | 0.650 (0.150–1.250) | 0.516 (0.282–0.779) | 0.000 | 0.000 |
-| `stretch-b4ac-rekeys` | 0.600 (0.050–1.500) | 0.438 (0.245–0.664) | 0.063 | 0.000 |
+| `stretch-b4ac` (superseded) | 0.650 (0.150–1.250) | 0.516 (0.282–0.779) | 0.000 | 0.000 |
+| `stretch-b4ac-rekeys` (superseded) | 0.600 (0.050–1.500) | 0.438 (0.245–0.664) | 0.063 | 0.000 |
+| `stretch-b4ac2` | 0.050 (0.000–0.150) | 0.510 (0.280–0.763) | 0.000 | 0.000 |
+| `stretch-b4ac2-rekeys` | 0.150 (0.050–0.300) | 0.424 (0.228–0.619) | 0.063 | 0.000 |
 
 **Answer.** Stage 1's new-over rule (silence threshold T_new = max(0.5 s, 12 T_g)), in all six variants:
 

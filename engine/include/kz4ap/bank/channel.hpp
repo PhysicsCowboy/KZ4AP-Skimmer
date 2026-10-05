@@ -254,8 +254,8 @@ public:
     // selected branch's fitted T, only when that fit is eligible and its over's start has been re-keyed); none
     // otherwise, before any selection and in the default mode.
     const std::optional<double>& periodicity_dit_s() const { return periodicity_dit_; }
-    // The T-hat the next block would use, from the channel's state now (the rule above; none in the default mode's
-    // terms too, as it is computed only in the shared mode). For tests.
+    // The T-hat the shared mode's next block would use, from the channel's state now (the rule above). It evaluates
+    // the rule in either mode when called; only the shared mode's blocks use it. For tests.
     std::optional<double> shared_window_dit() const;
     // The branches and the selected branch (read-only, for tests).
     const std::vector<Branch>& branches() const { return branches_; }
