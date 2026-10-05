@@ -2095,7 +2095,25 @@ branches' |v_k|² (FS²), which the prototype stores in single precision
   margin lowers b_k by 1.1% (k = 1) to 1.8% (k = 32) on stage 1's ten
   noise streams and by 0.3% to 0.5% on the second source's 200: the
   table's own sampling error is about as large as the margin's effect on
-  it (measured). Stage 1's table (20 ms margin; 0.8370 to 0.7852,
+  it (measured). The 200-seed measurement points one way: at 4.8 ms it
+  lies above the adopted ten-seed table at every branch (0.8381 against
+  0.8281 at k = 1, 0.7812 against 0.7713 at k = 32; 1.2% to 1.5% over
+  the 32 branches) and within 0.5% of stage 1's table (−0.5% to +0.1%);
+  its standard error is about 0.2% (3% / √200, derived), and at 20 ms
+  the same source agrees with stage 1's table (0.8405 against 0.8370,
+  0.7849 against 0.7852). So most of the adopted table's shift from
+  stage 1's is the sampling error of seeds 101–110, one sign at every
+  branch because the branches see the same noise; the margin's own
+  effect is about −0.3% to −0.5% (measured). Effect on the estimate, if
+  the 200-seed values are the truth: dividing by the adopted table reads
+  σ²_v,k 1.2% to 1.5% high, +0.05 to +0.06 dB relative to the true noise
+  power, in the absolute level (variant (b), `spectrum-level`, not the
+  default); in the default (variant (a)) only b_k / b_1 enters, and
+  branch k's σ²_v,k relative to branch 1's reads 0% to 0.25% high, at
+  most +0.011 dB (derived from the two tables). The table is unchanged:
+  whether to adopt a 200-seed table (stage 1's numpy noise, so the
+  method stays stage 1's) and re-run the paired comparison is open, for
+  the owner. Stage 1's table (20 ms margin; 0.8370 to 0.7852,
   prototype, the same streams) is kept as `kStage1MaskBias` for the
   golden tests. In channel-shaped noise stage 1's ratios were 2.9%
   (k = 1) to 5.9% (k = 32) higher (measured in the prototype at 20 ms;
@@ -2116,7 +2134,11 @@ branches' |v_k|² (FS²), which the prototype stores in single precision
   20 ms; derived); the measured values are lower because noise peaks
   are flagged too (in noise alone the mask keeps 82.6% of samples at
   4.8 ms and 61.9% at 20 ms, measured above). One stream per speed
-  (numpy seeds 1012, 1025, 1040).
+  (numpy seeds 1012, 1025, 1040), one realization each: about 350
+  segments offered per stream, so a binomial standard error of about
+  ±0.14 accepted segments per second at 1.7 per second and ±0.10 at 0.65
+  (derived, indicative: the segments are correlated through the PARIS
+  pattern).
 - **The development set (Plan B, B4b; measured with the time constants
   in seconds).** The guard margin and the table were measured on the
   development set with stage 1's re-key wait (0.8 s), time-out (2 s) and

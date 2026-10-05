@@ -65,8 +65,11 @@ to the nominal dit that trapped T̂ at 12 ms after start, are superseded (sectio
 (was 20 ms; the owner's stage-2 decision) and the mask-bias table b_mask,k re-measured for it (0.8281 at k = 1 to
 0.7713 at k = 32, was 0.8370 to 0.7852), **the development-set CER does not change measurably: paired +0.0004
 (−0.0021 to +0.0028)** against `bank-b3b`, 116 of 525 channels with a different final text. No group's interval
-lies entirely above 0; group I's starts at exactly 0 (+0.0018, 0 to +0.0054; one regime), group F improves
-(−0.0013, −0.0026 to −0.0003). **Measured with the time constants in seconds** (stage 1's re-key settings and
+lies entirely above 0; group I's starts at exactly 0 (+0.0018, 0 to +0.0054; one regime), group G's ends at
+exactly 0 (−0.0023, −0.0052 to 0), group F improves (−0.0013, −0.0026 to −0.0003). The ten-seed mask-bias table
+is about 1.2% to 1.5% below a 200-seed measurement at every branch (sampling error of the brief's method; +0.05 to
++0.06 dB relative to the true noise power in the absolute level, at most +0.011 dB in the default's ratios);
+whether to adopt a 200-seed table is open for the owner (7.1). **Measured with the time constants in seconds** (stage 1's re-key settings and
 windows, through B4a's overrides), as the owner instructed, so that the effect is B4b's alone; the code's defaults
 keep B4a's time constants in dits, still undecided. While a PARIS station sends at S₅₀₀ = 20 dB the spectrum
 accepts 1.70, 1.64 and 0.65 segments per second at 12, 25 and 40 WPM, against 0.78, 0.65 and 0.28 at 20 ms
@@ -1297,9 +1300,27 @@ Cross-check against the prototype (seed 101, run with `guard_margin_s=0.0048` on
 branch powers equal to a relative 1.3 · 10⁻¹⁵, segments 344 of 350 in both (at 20 ms: 1.9 · 10⁻¹⁵, 237 of 350).
 The second source's white-noise table is identical on the Linux machine and the Windows PC to 4.4 · 10⁻¹⁶. The
 ten-seed table's standard error is about 0.8% to 1.2% (from the scatter), as large as the margin's effect on it:
-−1.1% (k = 1) to −1.8% (k = 32) on stage 1's noise, −0.3% to −0.5% on the 200 seeds. The bench test
-`NoiseMask.TheTableIsAWhiteNoiseMeasurementAtTheDefaultMargin` re-measures on the second source and requires every
-branch within 3 standard errors of the difference (measured 2.51 at worst); at 20 ms against stage 1's table, 1.35.
+−1.1% (k = 1) to −1.8% (k = 32) on stage 1's noise, −0.3% to −0.5% on the 200 seeds. The 200-seed measurement points
+one way: at 4.8 ms it lies above the adopted ten-seed table at every branch (0.8381 against 0.8281 at k = 1, 0.7812
+against 0.7713 at k = 32; 1.2% to 1.5% over the 32 branches) and within 0.5% of stage 1's table (−0.5% to +0.1%); its
+standard error is about 0.2% (3% / √200, derived), and at 20 ms the same source agrees with stage 1's table (0.8405
+against 0.8370, 0.7849 against 0.7852). So most of the adopted table's shift from stage 1's is the sampling error of
+seeds 101–110, one sign at every branch because the branches see the same noise; the margin's own effect is about
+−0.3% to −0.5% (measured). Effect on the estimate, if the 200-seed values are the truth: dividing by the adopted table
+reads σ²_v,k 1.2% to 1.5% high, +0.05 to +0.06 dB relative to the true noise power, in the absolute level (variant
+(b), `spectrum-level`, not the default); in the default (variant (a)) only b_k / b_1 enters, and branch k's σ²_v,k
+relative to branch 1's reads 0% to 0.25% high, at most +0.011 dB (derived from the two tables). The table is
+unchanged: whether to adopt a 200-seed table (stage 1's numpy noise, so the method stays stage 1's) and re-run the
+paired comparison is open, for the owner. The options for the owner: (a) keep the brief's ten-seed
+table; (b) adopt a 200-seed table on numpy noise and re-run the paired comparison (cheap: the table takes seconds,
+the development-set run about 6 minutes).
+
+The bench test `NoiseMask.TheTableIsAWhiteNoiseMeasurementAtTheDefaultMargin` re-measures on the second source and
+requires every branch within 3 standard errors of the difference (measured 2.51 at worst); at 20 ms against stage
+1's table, 1.35. It checks the table's magnitude, not its identity: stage 1's table would pass it at 4.8 ms too (at
+k = 32, 0.8000 − 0.7852 = 1.3 of its standard errors, against 2.5 for the adopted table). The table's exact values
+are pinned by `BankConfig.PlanBDefaults`; their reproduction (the C++ estimate on stage 1's noise) is by the
+git-ignored scripts listed in 7.3.
 
 Golden tests: none moved. They run with stage 1's margin and table set explicitly (`kStage1GuardMarginS`,
 `kStage1MaskBias`; `stage1_config()` in `engine/tests/bank/golden.hpp`), as B4a's run with stage 1's time constants.
@@ -1313,7 +1334,9 @@ smoke unchanged (Envelope CER 0.0353, Matched 0.0436).
 ### 7.2 Accepted segments while a station sends
 
 PARIS at 12, 25 and 40 WPM, S₅₀₀ = 20 dB against white noise of 1 FS² per complex sample, 1 s of noise, then about
-60 s of sending (the bench's keying, 5 ms edges), one stream per speed; counted over the segments that start while
+60 s of sending (the bench's keying, 5 ms edges), one stream per speed (one realization: about ±0.14 accepted
+segments per second at 1.7 per second and ±0.10 at 0.65, binomial over about 350 offered segments; derived,
+indicative, since the segments are correlated through the PARIS pattern); counted over the segments that start while
 the station sends (348 to 351 offered, 5.87 per second). Measured by `kz4ap-noise-mask stream`; derived from a
 noise-free model of the code's mask rule (flag level at the true σ²_v,1); the stage-2 spec's derived clean fractions
 for 20 ms (a gap loses 2g + L₁) in the last column:
@@ -1328,6 +1351,14 @@ So the spectrum's shape now updates 2.2 to 2.5 times as often while a station se
 are below the noise-free ones because noise peaks are flagged too: in noise alone the mask keeps 82.6% of samples at
 4.8 ms and 61.9% at 20 ms. In the code's rule a mark costs N₁ − 1 + R samples on each side of it (26.7 ms per gap at
 4.8 ms, 57.3 ms at 20 ms, derived); the spec's "about 50 ms" counted L₁ once.
+
+**Erratum in the stage-2 spec, for the owner (not edited; the spec needs his approval).** Section 3.3 says the
+20 ms margin "adds about 50 ms to every gap (20 ms before, 20 ms plus L_1 after)". The code's rule (stage 1's,
+unchanged by B4b) leaves out N₁ − 1 + R samples on each side of a mark: 2 · (13 + 30) = 86 samples, 57.3 ms per gap
+at 20 ms, and 2 · (13 + 7) = 40 samples, 26.7 ms per gap at 4.8 ms (derived; checked by the review). The spec
+counts L₁ once. The decision (g = 0.5 · L₁) does not depend on it, and the spec's clean fractions (42%, 28%, 21%)
+are close to the noise-free model of the code's rule at 20 ms (40.8%, 26.8%, 20.5%). Proposed wording: "adds about
+57 ms to every gap (20 ms plus L₁ on each side)".
 
 ### 7.3 `bank-b4b` against `bank-b3b` (Linux machine, the development set, time constants in seconds)
 
@@ -1345,16 +1376,18 @@ signal by signal; bootstrap 95% over signals):
 | D speed | 12 | +0.0000 (+0.0000 to +0.0000) | +0.0000 (+0.0000 to +0.0000) |
 | E interference | 16 | +0.0011 (−0.0135 to +0.0142) | +0.1958 (−0.0250 to +0.6250) |
 | F tuning | 28 | **−0.0013 (−0.0026 to −0.0003)** | −0.0179 (−0.0536 to +0.0000) |
-| G ragchew | 12 | −0.0023 (−0.0052 to 0) | −0.0183 (−0.0444 to +0.0018) |
+| G ragchew | 12 | −0.0023 (−0.0052 to exactly 0) | −0.0183 (−0.0444 to +0.0018) |
 | H two-station QSO, oracle | 12 | +0.0001 (−0.0006 to +0.0007) | −0.0028 (−0.0083 to +0.0000) |
 | H two-station QSO, oracle (per station) | 24 | −0.0056 (−0.0422 to +0.0236) | −0.1262 (−0.7125 to +0.2818) |
 | I Farnsworth | 48 | +0.0018 (exactly 0 to +0.0054) | +0.0208 (+0.0000 to +0.0625) |
 
 **No group has a paired interval entirely above 0** (the plan's rule; not a gate). Group I's interval starts at
 exactly 0 (full precision: 0.0 to 0.005433): one regime moves, the 25/13 WPM machine recording 0.0141 → 0.0283
-(25/18 paddle 0.0426 → 0.0434); it is reported to the owner as the edge case. F improves at its offsets of 0 to
-8.8 Hz (for example 5.9 Hz 25 WPM 0.0636 → 0.0593). The largest single-regime moves: E Δf 100 Hz at +10 dB
-0.6055 → 0.6697 and at +20 dB 2.8557 → 2.7732 (E's pooled interval includes 0); A 40 WPM 0.3282 → 0.3333; H
+(25/18 paddle 0.0426 → 0.0434); it is reported to the owner as the edge case. Group G is the mirror case: −0.0023 with an interval from
+−0.0052 to exactly 0 (the 25 WPM ragchew 0.0464 → 0.0442). F improves at its offsets of 0 to
+8.8 Hz (for example 5.9 Hz 25 WPM 0.0636 → 0.0593). The largest single-regime moves: E Δf 100 Hz with the
+interferer at +10 dB relative to the wanted signal's key-down power 0.6055 → 0.6697, and at +20 dB relative to it
+2.8557 → 2.7732 (E's pooled interval includes 0); A 40 WPM 0.3282 → 0.3333; H
 separate-track 100 Hz per station 0.1042 → 0.0525.
 
 CPU per channel-second (Linux machine, one run each, the three runs of this task under the same conditions; not a
