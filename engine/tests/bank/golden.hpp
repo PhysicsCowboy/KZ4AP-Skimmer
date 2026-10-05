@@ -126,4 +126,14 @@ inline std::vector<std::complex<double>> channel_stream(const nlohmann::json& ch
     return read_c64(s.at("file").get<std::string>(), s.at("samples").get<std::size_t>());
 }
 
+// The prototype's configuration, which the golden files were written with: the defaults with Plan B's B4b changes
+// undone (stage 1's 20 ms guard margin and its mask-bias table). Stage 1's time constants in seconds are passed
+// separately (bank::fixed_timing, or the overrides rekey_after_s, rekey_timeout_s and periodicity_windows_s).
+inline kz4ap::bank::BankConfig stage1_config() {
+    kz4ap::bank::BankConfig cfg;
+    cfg.guard_margin_s = kz4ap::bank::kStage1GuardMarginS;
+    cfg.mask_bias = kz4ap::bank::kStage1MaskBias;
+    return cfg;
+}
+
 }  // namespace kz4ap::test

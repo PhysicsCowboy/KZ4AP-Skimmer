@@ -81,7 +81,7 @@ TEST(BankKeying, KeyerMatchesPrototypeThroughRun) {
     const auto gn = load_golden("noise");
     const auto g = load_golden("keying");
     const double rate = g.at("rate_hz").get<double>();
-    const BankConfig cfg;
+    const BankConfig cfg = kz4ap::test::stage1_config();  // the prototype's guard margin and mask-bias table
     const auto n = branch_samples(branch_lengths_s(cfg), rate);
     const auto u = stream(gn);
     const Matrix P = powers(u, n);

@@ -2015,14 +2015,33 @@ branches' |v_k|² (FS²), which the prototype stores in single precision
   (T_seg = 256/1500 s = 170.7 ms; M = 256 at 1500 samples/s, bins
   r/M = 5.86 Hz wide). A segment starting at sample s is examined in the
   first block whose end n₁ satisfies s + M + N_1 − 1 + R ≤ n₁, with
-  R = round(0.02 s · r) = 30 samples (the guard margin), because its mask
-  needs |v_1|² that far ahead. Segments examined before the three-tap
+  R = round(g · r) samples (g the guard margin, below: 4.8 ms, so
+  R = round(7.2) = 7 samples, 4.67 ms, at 1500 samples/s; stage 1's 20 ms
+  gave 30), because its mask needs |v_1|² that far ahead. Segments examined before the three-tap
   warm-up has ended are discarded. **Mask:** sample u[i] feeds
   v_1[i … i + N_1 − 1]; it is left out if any |v_1[j]|², j from i − R to
   i + N_1 − 1 + R, is at or above κ_n · 2σ²_v,1 (κ_n = 4), where σ²_v,1
   is the three-tap level after the current block's update (the update
   runs first, then the segments due in this block are masked). A segment
-  enters only if at least 50% of its samples are left in. With w the
+  enters only if at least 50% of its samples are left in. **Guard
+  margin (Plan B, B4b; stage-2 spec section 3.3, owner 2026-10-03):**
+  g = 0.5 · L_1 = 4.8 ms, where L_1 = 0.8 dits at 100 words/min = 9.6 ms
+  is branch 1's nominal length (`guard_margin_s`; stage 1: 20 ms). The
+  margin covers what the flag misses next to a mark (keying edges, the
+  parts of a mark's rise and fall below the flag level): properties of
+  branch 1's filter and of the transmitter, not of the station's speed,
+  so its class is seconds tied to L_1, not dits. The value is heuristic.
+  Next to a mark the mask leaves out N_1 − 1 + R samples on each side
+  where |v_1|² reaches the flag level as soon as the boxcar overlaps the
+  mark (a strong station; derived from the rule above): 2 · (13 + 7) =
+  40 samples (26.7 ms) per gap at 1500 samples/s, 2 · (13 + 30) = 86
+  samples (57.3 ms) with stage 1's margin. (The stage-2 spec's "20 ms
+  before, 20 ms plus L_1 after", about 50 ms, counts L_1 once.) The clean
+  fraction while a station sends PARIS at S₅₀₀ = 20 dB, from a noise-free
+  model of this rule (the bench's keying with 5 ms edges, the flag level
+  at the true σ²_v,1; derived): 35.9% at 40 words/min, 43.3% at 25 and
+  49.5% at 12 (stage 1's margin: 20.5%, 26.8% and 40.8%; the spec's
+  21%, 28% and 42%), before the segments' 50% rule. With w the
   periodic Hann window 0.5 − 0.5·cos(2π i/M) times the mask (1 kept,
   0 left out), its periodogram is I_m = |DFT(u·w)_m|² / Σ w² (FS² per
   bin; its mean over the M bins is the power per sample). The shape S
@@ -2054,15 +2073,50 @@ branches' |v_k|² (FS²), which the prototype stores in single precision
   (the station is near 0 Hz), so the masked spectrum reads each branch's
   noise low by a factor that differs per branch and does not cancel in
   the ratio. b_k = (σ²_v,k from the masked, smoothed spectrum) / (true
-  σ²_v,k), dimensionless, runs from 0.8370 (k = 1) to 0.7852 (k = 32);
-  measured in the prototype (white noise of 1 FS² per complex sample,
-  seeds 101–110, 60 s each, 2362 of 3500 segments accepted; per-seed
-  scatter 2.6% at k = 1 to 4.5% at k = 32). In channel-shaped noise the
-  same ratios are 2.9% (k = 1) to 5.9% (k = 32) higher (measured in the
-  prototype), so the estimate is that much low there. The table is valid
-  only for the default ladder, T_seg, smoothing, guard margin, clean
-  fraction, κ_n and three-tap settings at 1500 samples/s; it has not
-  been re-measured at other rates.
+  σ²_v,k), dimensionless, the segment-weighted mean over the noise
+  streams, runs from 0.8281 (k = 1) to 0.7713 (k = 32) at the 4.8 ms
+  guard margin (`BankConfig::mask_bias`). Measured (Plan B, B4b: stage
+  1's Task 5 method on the C++ estimate, `kz4ap-noise-mask stream`) on
+  stage 1's own Task 5 noise: white, 1 FS² per complex sample, numpy's
+  `default_rng` seeds 101–110, 60 s each, rounded to complex64 (the
+  engine's sample type); 3459 of 3500 segments accepted (2362 at 20 ms),
+  kept fraction 0.826 (0.619 at 20 ms); per-seed scatter 2.6% (k = 1) to
+  3.9% (k = 32), so the ten-seed mean carries a standard error of about
+  0.8% to 1.2% (derived from the scatter). Checks of the method: the same
+  streams at 20 ms through the C++ estimate give stage 1's table to
+  4.9 · 10⁻⁵ (largest difference; identical at four decimals), and on
+  seed 101 at 4.8 ms the C++ estimate's masked branch powers equal the
+  prototype's (`guard_margin_s` = 0.0048) to a relative 1.3 · 10⁻¹⁵ with
+  equal segment counts (344 of 350 accepted). A second noise source (the
+  bench test's: `std::mt19937_64` and Box–Muller, the same seed numbers)
+  gives 0.8478 (k = 1) to 0.8000 (k = 32) with ten seeds, up to 2.5
+  standard errors of the difference above the table, and 0.8381 to
+  0.7812 with 200 seeds (1001–1200; 0.8405 to 0.7849 at 20 ms). So the
+  margin lowers b_k by 1.1% (k = 1) to 1.8% (k = 32) on stage 1's ten
+  noise streams and by 0.3% to 0.5% on the second source's 200: the
+  table's own sampling error is about as large as the margin's effect on
+  it (measured). Stage 1's table (20 ms margin; 0.8370 to 0.7852,
+  prototype, the same streams) is kept as `kStage1MaskBias` for the
+  golden tests. In channel-shaped noise stage 1's ratios were 2.9%
+  (k = 1) to 5.9% (k = 32) higher (measured in the prototype at 20 ms;
+  not re-measured at 4.8 ms), so the estimate is about that much low
+  there. The table is valid only for the default ladder, T_seg,
+  smoothing, guard margin, clean fraction, κ_n and three-tap settings at
+  1500 samples/s; it has not been re-measured at other rates.
+- **Accepted segments while a station sends (Plan B, B4b; measured).**
+  PARIS at 12, 25 and 40 words/min, S₅₀₀ = 20 dB against white noise of
+  1 FS² per complex sample, 1 s of noise first, about 60 s of sending
+  (the bench's keying, 5 ms edges), counted over the segments starting
+  while the station sends (348 to 351 offered, 5.87 per second), C++
+  estimate (`kz4ap-noise-mask stream`): accepted 1.70, 1.64 and 0.65
+  segments per second at 12, 25 and 40 words/min with the 4.8 ms margin
+  (0.78, 0.65 and 0.28 with stage 1's 20 ms), mean kept fraction 38.6%,
+  36.1% and 30.8% (21.6%, 16.6% and 13.3%). The noise-free model above
+  gives 2.07, 2.53 and 0.82 accepted per second (1.91, 1.69 and 0.59 at
+  20 ms; derived); the measured values are lower because noise peaks
+  are flagged too (in noise alone the mask keeps 82.6% of samples at
+  4.8 ms and 61.9% at 20 ms, measured above). One stream per speed
+  (numpy seeds 1012, 1025, 1040).
 
 **Port check.** Golden values (`engine/tests/data/bank/noise.json`, from
 `kz4ap_proto.golden`): 20 s of a 1 FS carrier keyed at 25 WPM from 1.0 s
@@ -2073,7 +2127,9 @@ on the rounded stream), run block by block as the
 prototype's channel runs it, σ²_v,k of all 32 branches compared after
 every 10th block (93 instants). Measured largest relative difference
 (Windows build): 2.4 · 10⁻¹⁵ ("spectrum"), 2.0 · 10⁻¹⁵ ("spectrum-level"), 0 ("branch");
-accepted and offered segment counts equal at every instant.
+accepted and offered segment counts equal at every instant. The golden
+tests run with stage 1's guard margin (20 ms) and mask-bias table, the
+prototype's configuration (Plan B, B4b changed both defaults).
 
 **Exact zeros (Plan B, B3; derived).** Exact zeros are missing data: a
 receiver's output carries noise, so a run of input samples that are
@@ -2211,9 +2267,11 @@ Consequences, tested (`engine/tests/bank/noise_test.cpp`):
 
 Status (as `params.py` marks it): κ = 1.75, κ_n = 4, τ_n = 2 s and the
 0.32 s warm-up are Matched's (milestone 2; heuristic), with m(κ) and
-the 2·(−ln 0.8) warm-up scale derived; T_seg, the ±25 Hz smoothing, the
-20 ms guard margin and the 50% clean fraction are heuristic; b_mask,k is
-measured; the choice of variant (a) is measured (prototype experiment
+the 2·(−ln 0.8) warm-up scale derived; T_seg, the ±25 Hz smoothing and
+the 50% clean fraction are heuristic; the 4.8 ms guard margin
+(0.5 · L_1) is heuristic, its class seconds tied to branch 1's filter
+(owner, stage-2 spec section 3.3; Plan B, B4b; stage 1: 20 ms); b_mask,k
+is measured (Plan B, B4b, white noise, seeds 101–110); the choice of variant (a) is measured (prototype experiment
 E10); the 16 points per bin and the 10⁻²⁰ FS² floor are numerical choices;
 exact zeros as missing data are derived (Plan B, B3) and the recovery
 after 8 s (4 τ_n) of branch 1 accepting no tap is heuristic (Plan B, B3).
@@ -3222,15 +3280,16 @@ publishes one branch's characters, with corrections.
 - **Memory.** The channel keeps a window of u and of |v_k|² (FS²) back to
   the earliest sample a later block can read: the re-key's 20 s plus the
   noise estimates' look-back (3 N_max, a segment with its mask's reach,
-  the warm-up) and 2 blocks, 31 688 samples (21.1 s) at 1500 samples/s;
-  its storage holds up to 2 s more (34 721 samples) and is moved forward
+  the warm-up) and 2 blocks, 31 642 samples (21.1 s) at 1500 samples/s
+  (31 688 with stage 1's 20 ms guard margin; Plan B, B4b);
+  its storage holds up to 2 s more (34 675 samples) and is moved forward
   when full (a bound chosen for the port, not a tuned value). The |v_k|²
   values are rounded to float32 when computed (the prototype's rounding,
   "Port check" below) and stored as 4-byte floats, which is lossless; every
   read converts them to double exactly (Plan B task B1). Memory per
   channel at 1500 samples/s, counted from the arrays the code allocates
-  (derived, not measured): the |v_k|² window 32 × 34 721 × 4 B = 4.4 MB;
-  the u window 34 721 × 16 B = 0.56 MB; the cumulative-sum ring
+  (derived, not measured): the |v_k|² window 32 × 34 675 × 4 B = 4.4 MB;
+  the u window 34 675 × 16 B = 0.55 MB; the cumulative-sum ring
   277 × 16 B = 4.4 kB; per duration fit its two tables
   (3636 + 6060) × 8 B = 77.6 kB and its retained history (≤ 192 marks and
   spaces, 24 B each, 4.6 kB), 82.2 kB. Each branch holds one to three fits
@@ -3739,8 +3798,8 @@ parameter was changed for this run.
 | Bank noise: exact zeros | an exact-zero input sample enters no warm-up, recovery history or count (an all-zero block updates nothing); taps count from 2N_k samples after the sample following the latest exact zero; an all-zero spectrum segment is not offered, an exact-zero sample is left out of the mask; σ² unknown (nothing keyed or published) until the first non-zero block | `bank::ThreeTapNoise`, `bank::SpectrumNoise`, `bank::BankChannel` | derived (a receiver's output carries noise: zeros are missing data; Plan B, B3) |
 | Bank noise: stuck-level recovery | when branch 1 has accepted no tap for 8 s (4 τ_n) of non-zero input, every branch's σ² is set again by the warm-up rule over its last 0.32 s of non-zero input | `BankConfig::noise_stuck_s`; `bank::ThreeTapNoise` | heuristic (8 s, seconds because the noise has no keying speed); the gate on branch 1 derived for rectangular keying (a tap needs 3N_1 = 42 samples, a character space at 100 words/min is 54) and measured (no firing on the development set); Plan B, B3 |
 | Bank noise spectrum | segments T_seg = 256/1500 s = 170.7 ms (M = 256 samples, bins 5.86 Hz at 1500 samples/s), periodic Hann; exponential average τ_n = 2 s (β = 0.0818 per segment); smoothed ±25 Hz (±4 bins); W_k from 16 points per bin | `BankConfig::segment_s`, `spectrum_smoothing_hz`; `bank::SpectrumNoise` | heuristic; 16 points a numerical choice |
-| Bank spectrum mask | a sample is left out if \|v_1\|² ≥ κ_n·2σ²_v,1 anywhere from 20 ms before it to (N_1 − 1)/r + 20 ms after it; a segment enters if ≥ 50% is left in | `BankConfig::guard_margin_s`, `min_clean_fraction` | heuristic |
-| Bank mask bias b_mask,k | 0.8370 (k = 1) … 0.7852 (k = 32), dimensionless; divides each branch's spectrum reading | `BankConfig::mask_bias` | measured (white noise, seeds 101–110; valid only for the defaults at 1500 samples/s) |
+| Bank spectrum mask | a sample is left out if \|v_1\|² ≥ κ_n·2σ²_v,1 anywhere from g before it to (N_1 − 1)/r + g after it, guard margin g = 0.5·L_1 = 4.8 ms (7 samples at 1500 samples/s; stage 1: 20 ms); a segment enters if ≥ 50% is left in | `BankConfig::guard_margin_s`, `min_clean_fraction` | heuristic (g: owner, stage-2 spec section 3.3, Plan B task B4b; class: seconds tied to branch 1's filter) |
+| Bank mask bias b_mask,k | 0.8281 (k = 1) … 0.7713 (k = 32), dimensionless; divides each branch's spectrum reading (stage 1's 0.8370 … 0.7852 at 20 ms) | `BankConfig::mask_bias` | measured (Plan B task B4b, white noise, seeds 101–110; valid only for the defaults at 1500 samples/s) |
 | Bank keying log-odds and hysteresis | g = Λ + ln(P₁/(1 − P₁)) nats, P₁ = 0.44 (−0.2412 nats); down at g > +1 nat, up at g < −1 nat | `BankConfig::prior_key_down`, `hysteresis_nats`; `bank::BankKeyer::step` | P₁ derived (PARIS: key-down 22 of 50 dit units); h heuristic |
 | Bank squelch | a_k ≥ a_min,k = 3·(L_k/16 ms)^(1/4) (2.622 at k = 1 to 5.525 at k = 32), dimensionless | `BankConfig::squelch_a`, `squelch_ref_s`, `squelch_exponent` | 3 heuristic; L^(1/4) scaling derived |
 | Bank amplitude EM | τ_a = 0.5 s of key-down weight (α = 1.332·10⁻³ per sample at 1500 samples/s), p-weighted, one step per block | `BankConfig::amplitude_tau_s`; `bank::BankKeyer` | heuristic (heuristic running form of an EM update, as Matched) |

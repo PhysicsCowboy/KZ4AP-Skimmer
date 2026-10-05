@@ -70,10 +70,15 @@ TEST(BankJson, DumpsAsPythonDumps) {
 TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     const auto g = kz4ap::test::load_golden("channel");
     const ordered_json cfg = kz4ap::bench::to_json(kz4ap::bank::BankConfig{});
-    // the prototype's ProtoConfig() dump with B4a's fields in dits in place of the three in seconds they replaced,
-    // then Plan B's fields (noise_stuck_s, B3; B4a's overrides in seconds, unset), which the prototype lacks
+    // the prototype's ProtoConfig() dump with B4a's fields in dits in place of the three in seconds they replaced and
+    // B4b's guard margin and mask-bias table (pinned in BankConfig.PlanBDefaults), then Plan B's fields (noise_stuck_s,
+    // B3; B4a's overrides in seconds, unset), which the prototype lacks
     std::string want = g.at("config_dumps").get<std::string>();
+    const kz4ap::bank::BankConfig defaults;
     for (const auto& [from, to] : std::vector<std::pair<std::string, std::string>>{
+             {"\"guard_margin_s\": 0.02", "\"guard_margin_s\": 0.0048"},
+             {"\"mask_bias\": " + py_dumps(ordered_json(kz4ap::bank::kStage1MaskBias)),
+              "\"mask_bias\": " + py_dumps(ordered_json(defaults.mask_bias))},
              {"\"rekey_after_s\": 0.8", "\"rekey_after_dits\": 16.7"},
              {"\"periodicity_windows_s\": [2.0, 5.0, 10.0]", "\"periodicity_windows_dits\": [41.7, 104.0, 208.0]"},
              {"\"rekey_timeout_s\": 2.0", "\"rekey_timeout_ratio\": 2.5"}}) {
@@ -99,6 +104,10 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     kz4ap::bench::set_config_value(c, "rekey_after_s", ordered_json(0.8));
     EXPECT_EQ(c.periodicity_windows_s, (std::vector<double>{2.0, 5.0, 10.0}));
     EXPECT_EQ(c.rekey_after_s, 0.8);
+    kz4ap::bench::set_config_value(c, "guard_margin_s", ordered_json(0.02));
+    kz4ap::bench::set_config_value(c, "mask_bias", ordered_json(kz4ap::bank::kStage1MaskBias));
+    EXPECT_EQ(c.guard_margin_s, kz4ap::bank::kStage1GuardMarginS);
+    EXPECT_EQ(c.mask_bias, kz4ap::bank::kStage1MaskBias);
     kz4ap::bench::set_config_value(c, "periodicity_window_mode", ordered_json("shared"));
     EXPECT_EQ(c.periodicity_window_mode, "shared");
     EXPECT_EQ(c.fit_memory, 24.0);
@@ -114,8 +123,9 @@ class BankJsonResult : public ::testing::TestWithParam<std::string> {};
 TEST_P(BankJsonResult, ToJsonDumpsAsThePrototypes) {
     const auto g = kz4ap::test::load_golden("channel");
     const auto u = kz4ap::test::channel_stream(g, GetParam());
-    // the prototype's time constants in seconds, set explicitly (Plan B's B4a made the default nominal dits)
-    const kz4ap::bank::BankConfig cfg;
+    // the prototype's time constants in seconds, guard margin and mask-bias table, set explicitly (Plan B's B4a made
+    // the default nominal dits, B4b changed the margin and the table)
+    const kz4ap::bank::BankConfig cfg = kz4ap::test::stage1_config();
     kz4ap::bank::BankChannel ch(cfg, g.at("streams").at(GetParam()).at("rate_hz").get<double>(),
                                 kz4ap::bank::fixed_timing(cfg, 0.8, 2.0, {2.0, 5.0, 10.0}));
     ch.push(u);

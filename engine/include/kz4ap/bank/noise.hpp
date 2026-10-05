@@ -154,6 +154,7 @@ public:
 
     int segments() const { return segments_; }                  // accepted
     int segments_offered() const { return segments_offered_; }  // after the warm-up
+    int reach() const { return reach_; }                        // the guard margin, samples
     double kept_fraction_sum() const { return kept_fraction_sum_; }
     double masked_power_sum() const { return masked_power_sum_; }  // FS^2
     const ThreeTapNoise& ref() const { return ref_; }

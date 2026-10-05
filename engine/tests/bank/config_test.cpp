@@ -28,14 +28,16 @@ TEST(BankConfig, DefaultsEqualThePrototypes) {
     EXPECT_EQ(c.length_dits, g.at("length_dits").get<double>());
     EXPECT_EQ(c.block_s, g.at("block_s").get<double>());
     EXPECT_EQ(c.noise_method, g.at("noise_method").get<std::string>());
-    expect_vector(c.mask_bias, g.at("mask_bias"), "mask_bias");
+    // mask_bias and guard_margin_s: changed by Plan B's B4b (PlanBDefaults below); stage 1's values are kept as
+    // kStage1MaskBias and kStage1GuardMarginS
+    expect_vector(kz4ap::bank::kStage1MaskBias, g.at("mask_bias"), "mask_bias");
     EXPECT_EQ(c.noise_tau_s, g.at("noise_tau_s").get<double>());
     EXPECT_EQ(c.noise_warmup_s, g.at("noise_warmup_s").get<double>());
     EXPECT_EQ(c.noise_guard, g.at("noise_guard").get<double>());
     EXPECT_EQ(c.neighbor_guard, g.at("neighbor_guard").get<double>());
     EXPECT_EQ(c.segment_s, g.at("segment_s").get<double>());
     EXPECT_EQ(c.spectrum_smoothing_hz, g.at("spectrum_smoothing_hz").get<double>());
-    EXPECT_EQ(c.guard_margin_s, g.at("guard_margin_s").get<double>());
+    EXPECT_EQ(kz4ap::bank::kStage1GuardMarginS, g.at("guard_margin_s").get<double>());
     EXPECT_EQ(c.min_clean_fraction, g.at("min_clean_fraction").get<double>());
     EXPECT_EQ(c.amplitude_tau_s, g.at("amplitude_tau_s").get<double>());
     EXPECT_EQ(c.prior_key_down, g.at("prior_key_down").get<double>());
@@ -102,6 +104,19 @@ TEST(BankConfig, PlanBDefaults) {
     EXPECT_NEAR(c.rekey_after_dits * 0.048 / 0.8, 1.0, 0.0025);  // 0.2%
     EXPECT_EQ(c.rekey_timeout_ratio, 2.5);
     EXPECT_EQ(c.periodicity_windows_dits, (std::vector<double>{41.7, 104.0, 208.0}));
+    // B4b: the spectrum mask's guard margin 0.5 L_1, L_1 = 0.8 dits at max_wpm = 0.8 x 1.2 s / 100 = 9.6 ms (stage-2
+    // spec section 3.3), s
+    EXPECT_EQ(c.guard_margin_s, 0.0048);
+    EXPECT_NEAR(c.guard_margin_s, 0.5 * c.length_dits * 1.2 / c.max_wpm, 1e-15);
+    // B4b: b_mask,k re-measured at that margin (kz4ap-noise-mask stream on stage 1's Task 5 noise, seeds 101-110,
+    // 60 s each; docs/signal-processing.md section 8c), one per branch
+    const std::vector<double> b4b = {0.8281, 0.8198, 0.8165, 0.8112, 0.8068, 0.8031, 0.7988, 0.7965,
+                                     0.7936, 0.7912, 0.7892, 0.7871, 0.7854, 0.7836, 0.7822, 0.781,
+                                     0.7798, 0.7787, 0.7778, 0.7769, 0.7761, 0.7754, 0.7748, 0.7742,
+                                     0.7737, 0.7732, 0.7728, 0.7725, 0.7721, 0.7719, 0.7716, 0.7713};
+    EXPECT_EQ(c.mask_bias.size(), 32u);
+    EXPECT_EQ(c.mask_bias, b4b);
+    EXPECT_EQ(kz4ap::bank::kStage1MaskBias.size(), 32u);
     // B4a's overrides in seconds (ablations): unset
     EXPECT_EQ(c.rekey_after_s, 0.0);
     EXPECT_EQ(c.rekey_timeout_s, 0.0);

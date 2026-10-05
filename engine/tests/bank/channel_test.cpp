@@ -57,11 +57,12 @@ const BankTiming& stage1_timing() {
     return t;
 }
 
-// Decodes u at rate_hz, pushed in pieces of `piece` samples (0: one push), at the given timing (the prototype's
-// unless stated).
+// Decodes u at rate_hz, pushed in pieces of `piece` samples (0: one push), at the given timing and configuration (the
+// prototype's unless stated: stage 1's time constants in seconds, guard margin and mask-bias table).
 ChannelResult decode(std::span<const std::complex<double>> u, double rate_hz, std::size_t piece = 0,
-                     const BankTiming& timing = stage1_timing()) {
-    BankChannel ch(BankConfig{}, rate_hz, timing);
+                     const BankTiming& timing = stage1_timing(),
+                     const BankConfig& cfg = kz4ap::test::stage1_config()) {
+    BankChannel ch(cfg, rate_hz, timing);
     if (piece == 0) {
         ch.push(u);
     } else {
@@ -303,7 +304,7 @@ TEST(BankChannel, ThePeriodicityNearTiesAreRoundingOnBothSides) {
     for (const auto& c : cases) {
         SCOPED_TRACE(c.stream);
         const auto& u = stream_of(c.stream);
-        BankChannel ch(BankConfig{}, 1500.0, stage1_timing());
+        BankChannel ch(kz4ap::test::stage1_config(), 1500.0, stage1_timing());
         const auto block = static_cast<std::size_t>(ch.block_samples());
         for (std::size_t i = 0; i < u.size() && ch.periodicity_records() <= c.update; i += block)
             ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
@@ -395,15 +396,16 @@ TEST(BankChannel, AStreamCutMidCharacterPublishesThePartialCharacterAndNothingPa
 // padded stream falls 4 samples (2.67 ms) later in the station's time than the unpadded stream's, and the noise
 // estimate, the keying and the periodicity are updated once per block. A character's time may therefore move
 // by the edges' quantization to the block grid: the tolerance is one block (21.33 ms). Checked at the prototype's
-// timing (in seconds) and at Plan B's B4a default timing in dits.
-void expect_leading_zeros_decode_as_the_station_alone(const BankTiming& timing, const std::string& want_text) {
+// timing (in seconds) with its configuration, and at Plan B's default timing in dits with the default configuration.
+void expect_leading_zeros_decode_as_the_station_alone(const BankTiming& timing, const BankConfig& cfg,
+                                                      const std::string& want_text) {
     const auto& u = stream_of("zero_pad");
     const double rate = rate_of("zero_pad");
     const std::size_t zeros = 1500;
     for (std::size_t i = 0; i < zeros; ++i) ASSERT_EQ(u[i], std::complex<double>(0.0, 0.0));
     ASSERT_NE(u[zeros], std::complex<double>(0.0, 0.0));
-    const ChannelResult padded = decode(u, rate, 0, timing);
-    const ChannelResult alone = decode(std::span(u).subspan(zeros), rate, 0, timing);
+    const ChannelResult padded = decode(u, rate, 0, timing, cfg);
+    const ChannelResult alone = decode(std::span(u).subspan(zeros), rate, 0, timing, cfg);
     const double shift = static_cast<double>(zeros) / rate;    // 1 s
     const double tol = BankConfig{}.block_s;                    // s
     EXPECT_EQ(alone.text, want_text);
@@ -424,21 +426,26 @@ void expect_leading_zeros_decode_as_the_station_alone(const BankTiming& timing, 
 }
 
 TEST(BankChannel, LeadingExactZerosDecodeAsTheStationAlone) {
-    expect_leading_zeros_decode_as_the_station_alone(stage1_timing(), "CQ TEST K1ABC ");
+    expect_leading_zeros_decode_as_the_station_alone(stage1_timing(), kz4ap::test::stage1_config(), "CQ TEST K1ABC ");
 }
 
 TEST(BankChannelDits, LeadingExactZerosDecodeAsTheStationAlone) {
-    expect_leading_zeros_decode_as_the_station_alone(bank_timing(BankConfig{}), "CQ TEST K1ABC ");
+    expect_leading_zeros_decode_as_the_station_alone(bank_timing(BankConfig{}), BankConfig{}, "CQ TEST K1ABC ");
 }
 
 TEST(BankChannel, ThePowerWindowStoresFourByteFloats) {
     // Plan B task B1: the |v_k|^2 window holds values already rounded to float32 and stores them as 4-byte
     // floats. 24 s of exact zeros at 1500 samples/s fill it to its full size (keyed nothing: "Exact zeros"):
-    // 32 branches x 34 721 columns (docs/signal-processing.md section 8c, "Memory").
+    // 32 branches x 34 675 columns (docs/signal-processing.md section 8c, "Memory"): the look-back 31 642 samples
+    // (30 000 + 3 x 276 + round((0.1707 + 2 x 0.0048 + 0.32) s x 1500) = 750 + 2 x 32) plus a block, 2 s and 1;
+    // 34 721 with stage 1's 20 ms guard margin (look-back 31 688).
     BankChannel ch(BankConfig{}, 1500.0);
     const std::vector<std::complex<double>> zeros(36000, {0.0, 0.0});
     ch.push(zeros);
-    EXPECT_EQ(ch.p_window_values(), 32u * 34721u);
+    EXPECT_EQ(ch.p_window_values(), 32u * 34675u);
+    BankChannel stage1(kz4ap::test::stage1_config(), 1500.0);
+    stage1.push(zeros);
+    EXPECT_EQ(stage1.p_window_values(), 32u * 34721u);
     EXPECT_EQ(ch.p_window_bytes(), ch.p_window_values() * 4u);
 }
 
@@ -516,7 +523,7 @@ TEST(BankOutput, FromIndexCountsTheKeptCharacters) {
     for (const std::string name : {"clean", "turnover", "speed_turnover"}) {
         SCOPED_TRACE(name);
         const auto& u = stream_of(name);
-        BankChannel ch(BankConfig{}, rate_of(name), stage1_timing());
+        BankChannel ch(kz4ap::test::stage1_config(), rate_of(name), stage1_timing());
         const auto block = static_cast<std::size_t>(ch.block_samples());
         std::vector<Char> before;
         std::size_t seen = 0;
@@ -792,11 +799,11 @@ class ChannelSplitDits : public ::testing::TestWithParam<std::string> {};
 TEST_P(ChannelSplitDits, PiecesOf1And47And1000SamplesGiveTheSingleResult) {
     const auto& u = stream_of(GetParam());
     const BankTiming timing = bank_timing(BankConfig{});
-    const ChannelResult whole = decode(u, rate_of(GetParam()), 0, timing);
+    const ChannelResult whole = decode(u, rate_of(GetParam()), 0, timing, BankConfig{});
     expect_published_finite(whole);
     for (std::size_t piece : {std::size_t{1}, std::size_t{47}, std::size_t{1000}}) {
         SCOPED_TRACE("pieces of " + std::to_string(piece) + " samples");
-        expect_identical(decode(u, rate_of(GetParam()), piece, timing), whole);
+        expect_identical(decode(u, rate_of(GetParam()), piece, timing, BankConfig{}), whole);
     }
 }
 
@@ -855,9 +862,10 @@ TEST(BankChannelDits, A12WpmStationReKeysAfterItsBranchsWait) {
 
 // The overrides in seconds (BankConfig::rekey_after_s, rekey_timeout_s, periodicity_windows_s; for ablations, settable
 // with --set in the replay tool) set to stage 1's values reproduce the prototype's timing, which bank-b3b ran: the
-// result equals the fixed_timing result bit for bit and the prototype's golden, on three golden streams.
+// result equals the fixed_timing result bit for bit and the prototype's golden, on three golden streams. With stage
+// 1's guard margin and mask-bias table (Plan B, B4b changed both defaults; --set guard_margin_s and mask_bias).
 TEST(BankChannelDits, OverridesInSecondsReproduceStageOnesTimingBitForBit) {
-    BankConfig cfg;
+    BankConfig cfg = kz4ap::test::stage1_config();
     cfg.rekey_after_s = 0.8;
     cfg.rekey_timeout_s = 2.0;
     cfg.periodicity_windows_s = {2.0, 5.0, 10.0};

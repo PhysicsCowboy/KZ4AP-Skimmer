@@ -42,7 +42,7 @@ void check_method(const std::string& method) {
     const auto u = stream(g);
     const auto n = ladder(kRate);
     const Matrix P = powers(u, n);
-    BankConfig cfg;
+    BankConfig cfg = kz4ap::test::stage1_config();  // the prototype's guard margin and mask-bias table
     cfg.noise_method = method;
     auto est = make_noise(cfg, kRate, n);
     const auto want = g.at(method + "_sigma2").get<std::vector<std::vector<double>>>();
@@ -167,6 +167,17 @@ TEST(BankNoise, UnknownMethodThrows) {
 TEST(BankNoise, MaskBiasMustMatchTheLadder) {
     BankConfig cfg;
     EXPECT_THROW(SpectrumNoise(cfg, kRate, {14, 15}), std::invalid_argument);
+}
+
+// Plan B, B4b: the mask's guard margin 0.5 L_1 = 4.8 ms reaches round(4.8 ms x 1500 samples/s) = round(7.2) = 7
+// samples (4.67 ms) at 1500 samples/s and round(9.6) = 10 at 2000 samples/s; stage 1's 20 ms reached 30 samples.
+TEST(BankNoise, TheMasksReachIsHalfBranchOnesLengthInSamples) {
+    const BankConfig cfg;
+    EXPECT_EQ(SpectrumNoise(cfg, kRate, ladder(kRate)).reach(), 7);
+    EXPECT_EQ(SpectrumNoise(cfg, 2000.0, ladder(2000.0)).reach(), 10);
+    EXPECT_EQ(SpectrumNoise(kz4ap::test::stage1_config(), kRate, ladder(kRate)).reach(), 30);
+    EXPECT_EQ(cfg.mask_bias.size(), ladder(kRate).size());
+    EXPECT_EQ(ladder(kRate).size(), 32u);
 }
 
 // ---- Plan B task B3: exact zeros and the stuck-level recovery ----------------------------------------------

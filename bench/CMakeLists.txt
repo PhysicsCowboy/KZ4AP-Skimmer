@@ -3,6 +3,7 @@ add_library(kz4ap_bench_lib
   src/channel_recorder.cpp
   src/cpu_time.cpp
   src/labels.cpp
+  src/noise_mask.cpp
   src/report.cpp
   src/scoring.cpp
 )
@@ -28,11 +29,22 @@ else()
   target_link_libraries(kz4ap-bank-replay PRIVATE Threads::Threads)
 endif()
 
+# Measures the spectrum noise estimate's mask: the mask-bias table b_mask,k in white noise and the mask's acceptance on
+# a stream (Plan B, B4b).
+add_executable(kz4ap-noise-mask src/noise_mask_main.cpp)
+target_link_libraries(kz4ap-noise-mask PRIVATE kz4ap_bench_lib)
+if(MSVC)
+  target_compile_options(kz4ap-noise-mask PRIVATE /W4 /permissive- /utf-8)
+else()
+  target_compile_options(kz4ap-noise-mask PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(kz4ap_bench_tests
   tests/bank_json_test.cpp
   tests/channel_recorder_test.cpp
   tests/cpu_time_test.cpp
   tests/labels_test.cpp
+  tests/noise_mask_test.cpp
   tests/report_test.cpp
   tests/scoring_test.cpp
 )

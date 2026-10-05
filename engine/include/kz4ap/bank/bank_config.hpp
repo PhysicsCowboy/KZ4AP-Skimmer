@@ -6,7 +6,9 @@
 // engine/tests/bank/config_test.cpp (golden file engine/tests/data/bank/config.json). Plan B adds fields the
 // prototype does not have (marked "Plan B"); their defaults are checked by the same test file. Plan B's B4a
 // replaced three of the prototype's fields in seconds by fields in dits (rekey_after_dits, periodicity_windows_dits,
-// rekey_timeout_ratio); timing.hpp converts them to seconds per branch and per candidate dit.
+// rekey_timeout_ratio); timing.hpp converts them to seconds per branch and per candidate dit. Plan B's B4b changed two
+// prototype defaults, guard_margin_s (20 ms to 4.8 ms) and mask_bias (re-measured); stage 1's values are
+// kStage1GuardMarginS and kStage1MaskBias.
 #pragma once
 
 #include <cmath>
@@ -14,6 +16,15 @@
 #include <vector>
 
 namespace kz4ap::bank {
+
+// Stage 1's b_mask,k (prototype Task 5: white noise, seeds 101-110, 60 s each, 20 ms guard margin), dimensionless;
+// with guard_margin_s = kStage1GuardMarginS, the prototype's configuration (golden tests, ablations).
+inline constexpr double kStage1GuardMarginS = 0.02;
+inline const std::vector<double> kStage1MaskBias = {
+    0.837, 0.8293, 0.8263, 0.8213, 0.8171, 0.8136, 0.8095, 0.8074, 0.8047, 0.8025, 0.8008,
+    0.7988, 0.7973, 0.7958, 0.7945, 0.7935, 0.7924, 0.7914, 0.7907, 0.7899, 0.7892, 0.7885,
+    0.788, 0.7875, 0.7871, 0.7867, 0.7864, 0.7861, 0.7858, 0.7856, 0.7854, 0.7852,
+};
 
 struct BankConfig {
     // words/min; owner
@@ -28,18 +39,20 @@ struct BankConfig {
     double block_s = 32.0 / 1500.0;
     // "spectrum" (three-tap level x spectrum ratios), "spectrum-level" or "branch"; measured (E10): "spectrum"
     std::string noise_method = "spectrum";
-    // b_mask,k, one per branch, dimensionless; measured (white noise, seeds 101-110); valid only for the defaults
-    // of the ladder, segment_s, spectrum_smoothing_hz, guard_margin_s, min_clean_fraction, neighbor_guard and the
-    // three-tap settings at 1500 samples/s
+    // b_mask,k, one per branch, dimensionless; measured (Plan B task B4b, white noise, seeds 101-110: stage 1's
+    // Task 5 noise, 60 s each, through the C++ estimate at guard_margin_s = 4.8 ms; kz4ap-noise-mask); valid only for
+    // the defaults of the ladder, segment_s, spectrum_smoothing_hz, guard_margin_s, min_clean_fraction,
+    // neighbor_guard and the three-tap settings at 1500 samples/s. Stage 1's table (20 ms margin) is
+    // kStage1MaskBias above
     std::vector<double> mask_bias = {
-        0.837, 0.8293, 0.8263, 0.8213,
-        0.8171, 0.8136, 0.8095, 0.8074,
-        0.8047, 0.8025, 0.8008, 0.7988,
-        0.7973, 0.7958, 0.7945, 0.7935,
-        0.7924, 0.7914, 0.7907, 0.7899,
-        0.7892, 0.7885, 0.788, 0.7875,
-        0.7871, 0.7867, 0.7864, 0.7861,
-        0.7858, 0.7856, 0.7854, 0.7852,
+        0.8281, 0.8198, 0.8165, 0.8112,
+        0.8068, 0.8031, 0.7988, 0.7965,
+        0.7936, 0.7912, 0.7892, 0.7871,
+        0.7854, 0.7836, 0.7822, 0.781,
+        0.7798, 0.7787, 0.7778, 0.7769,
+        0.7761, 0.7754, 0.7748, 0.7742,
+        0.7737, 0.7732, 0.7728, 0.7725,
+        0.7721, 0.7719, 0.7716, 0.7713,
     };
     // s, time constant of noise updates (tau_n); mask_bias measured with this default
     double noise_tau_s = 2.0;
@@ -67,8 +80,11 @@ struct BankConfig {
     double segment_s = 256.0 / 1500.0;
     // Hz, the shape is averaged over +/- this; heuristic; mask_bias measured with this default
     double spectrum_smoothing_hz = 25.0;
-    // s, the spectrum's mark flag reaches this far; heuristic; mask_bias measured with this default
-    double guard_margin_s = 0.02;
+    // s, the spectrum's mark flag reaches this far: 0.5 L_1 (L_1 = 0.8 dits at max_wpm = 9.6 ms, branch 1's nominal
+    // length), round(7.2) = 7 samples = 4.67 ms at 1500 samples/s. Class: seconds tied to branch 1's filter and the
+    // transmitter's keying edges, not to the station's speed (stage-2 spec section 3.3; owner). Heuristic. mask_bias
+    // measured with this default. Plan B (B4b); stage 1's was 0.02 s
+    double guard_margin_s = 0.0048;
     // fraction, a segment enters the spectrum only if this much of it is unflagged; heuristic
     double min_clean_fraction = 0.5;
     // s, tau_a, time constant of key-down weight; milestone 2
