@@ -3000,8 +3000,13 @@ spectrum) were not adopted and are not ported; any other
   branch until its re-key), every filled row's window is N_w T̂ or stage
   1's, and on the clean 25 words/min stream every T̂ is between 40 and
   58 ms (never d_1).
-  Measured on the development set: results record section 6.6 (the
-  first form's runs, with the nominal-dit fallback, are superseded).
+  Measured on the development set (Linux machine, results record
+  section 6.6.1; build with B4b): CPU 45.53 ms per channel-second
+  pooled, comb precision at 0.03 0.801 (default 0.753), near-3T₀ share
+  of the shortest window's confident wrong estimates 0.7% (default
+  26.3%), paired CER against `bank-b3b` +0.0045 (−0.0022 to +0.0113),
+  and −0.0206 (−0.0286 to −0.0128) against the per-candidate windows at
+  the same build. The first form's runs (section 6.6) are superseded.
 - **Candidates.** T on a log grid from 1.2 s / 100 = 12 ms in steps of
   1% (×1.01) up to the first point ≥ 1.2 s / 5 = 240 ms: 303 points,
   12 ms to 242.2 ms (the duration fit's grid; the 1.01 is written into
