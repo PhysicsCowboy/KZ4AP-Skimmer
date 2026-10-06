@@ -228,7 +228,7 @@ struct ChannelResult {
 // One channel through the bank, streaming (the prototype's ChannelDecoder.run).
 class BankChannel {
 public:
-    // The configuration's timing (bank_timing(cfg): time constants in dits).
+    // The configuration's timing (bank_timing(cfg)).
     BankChannel(const BankConfig& cfg, double rate_hz);
     // An explicit timing (e.g. fixed_timing, stage 1's constants in seconds, for the golden tests). Throws
     // std::invalid_argument if a per-branch list does not hold one value per branch.

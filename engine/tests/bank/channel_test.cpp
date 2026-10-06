@@ -7,8 +7,9 @@
 // cut mid-character and mid-over; 3: exact zeros, missing data since Plan B's B3; 4: the correction cut's
 // clipping; 5: 2000 samples/s) and the prototype's channel tests (training/tests/test_proto_channel.py), one for
 // one. The golden comparisons and the prototype's tests run at the prototype's time constants, in seconds and set
-// explicitly (stage1_timing: W_min 0.8 s, time-out 2 s, periodicity windows 2, 5 and 10 s); Plan B's B4a made them
-// nominal dits (the configuration's default), tested at the end with the split test at the default timing.
+// explicitly (stage1_timing: W_min 0.8 s, time-out 2 s, periodicity windows 2, 5 and 10 s); Plan B's B4a made the
+// re-key settings nominal dits and B4e marks, variants since B4g, whose default is stage 1's seconds again; the variants
+// are tested explicitly near the end.
 #include "kz4ap/bank/channel.hpp"
 
 #include "golden.hpp"
@@ -396,7 +397,7 @@ TEST(BankChannel, AStreamCutMidCharacterPublishesThePartialCharacterAndNothingPa
 // padded stream falls 4 samples (2.67 ms) later in the station's time than the unpadded stream's, and the noise
 // estimate, the keying and the periodicity are updated once per block. A character's time may therefore move
 // by the edges' quantization to the block grid: the tolerance is one block (21.33 ms). Checked at the prototype's
-// timing (in seconds) with its configuration, and at Plan B's default timing in dits with the default configuration.
+// timing (in seconds) with its configuration, and at Plan B's default timing with the default configuration.
 void expect_leading_zeros_decode_as_the_station_alone(const BankTiming& timing, const BankConfig& cfg,
                                                       const std::string& want_text) {
     const auto& u = stream_of("zero_pad");
@@ -790,11 +791,11 @@ TEST(BankChannelPrototypeTests, ASpeedChangeAcrossATurnoverIsTakenUp) {
     EXPECT_EQ(r.over_starts.size(), 1u);
 }
 
-// ---- Plan B, B4a: time constants in nominal dits (the configuration's default timing) ------------------------
+// ---- Plan B, B4a: time constants in nominal dits (a variant since B4g) and the default timing -------------------
 
-// Review Focus 1 at the default timing (B4e's re-key wait in marks and 7 s time-out; B4d's re-key clocks; the
-// periodicity windows in seconds), in the variant with the wait in keyed time (per-branch W_min and time-out in dits)
-// and in the per-candidate variant (a periodicity window per candidate, whose sums are slid from one
+// Review Focus 1 at the default timing (stage 1's re-key wait 0.8 s and time-out 2 s, since B4g; the periodicity
+// windows in seconds), in B4f's variant (the wait in marks with its guards and B4d's clocks) and in the per-candidate
+// variant (a periodicity window per candidate, whose sums are slid from one
 // recomputation to the next): the split into pushes does not matter.
 class ChannelSplitDits : public ::testing::TestWithParam<std::string> {};
 
@@ -1104,8 +1105,8 @@ BankConfig stage1_clocks() {
     return cfg;
 }
 
-// B4d's re-key: its clocks (the defaults) with the wait in keyed time, W_min,k = 16.7 d_k, and the time-out 2.5 W_min,k
-// (the variant since B4e), without B4f's guards.
+// B4d's re-key variant: its clocks with the wait in dits, W_min,k = 16.7 d_k, and the time-out 2.5 W_min,k, without
+// B4f's guards.
 BankConfig b4d_wait() { return kz4ap::test::b4d_config(); }
 
 // B4e's re-key: the wait in marks, without B4f's guards.

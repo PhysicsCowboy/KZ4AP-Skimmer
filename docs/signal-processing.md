@@ -426,7 +426,7 @@ measurement in the stage-1 prototype).
   branch's noise is re-initialized from its recent input. In seconds, not
   dits, because noise has no keying speed.
 
-### Time constants in dits
+### Keying time constants
 
 Plan B stated some keying time constants in the branch's dits, so that a
 slow station is treated as a fast one; those are now variants. The
@@ -2034,7 +2034,7 @@ branches from one noise spectrum of u.
   spectrum as well, σ²_v,k = 0.5·(W_k·S̃)/(M·b_k); "branch" runs the
   three-tap estimate on every branch.
 
-#### Time constants in dits (bank decoder)
+#### Keying time constants (bank decoder)
 
 The re-key wait is **0.8 s of keyed time** and the time-out **2 s** of
 channel time from the amplitude becoming unknown, on every branch (stage
@@ -2046,7 +2046,7 @@ default: the wait and time-out in each branch's nominal dit d_k = L_k/0.8
 (W_min,k = 16.7·d_k, time-out 2.5·W_min,k; both seconds fields unset),
 the re-key clocks started at the first provisional mark with the lead
 7·d_k (B4d), the wait counted in marks (8, time-out 7 s; B4e) and its two
-guards (B4f); their measured results are in "Time constants in dits"
+guards (B4f); their measured results are in "Keying time constants"
 below. The periodicity windows are in seconds, **2, 5 and 10 s** for every
 candidate (class 2: latency after a change; owner, 2026-10-06; values
 placeholder); windows in dits are variants.
@@ -2537,7 +2537,7 @@ start; the spectrum's mask uses σ²_v,1 after that update. The inputs are u
 - A carrier longer than 8 s sets the level to the carrier's (above); the
   recovery cannot tell a carrier from noise.
 
-### Time constants in dits
+### Keying time constants
 
 `engine/src/bank/timing.cpp` (`branch_dits_s`, `bank_timing`,
 `fixed_timing`); Plan B, B4a, B4d and B4e (stage-2 spec,
@@ -2588,10 +2588,10 @@ so a branch with no station reaches 8 marks after about 8 / 0.01 = 800 s
 on average (derived), far beyond the time-out, which therefore clears
 them. Branch 1's settings feed the periodicity estimate: its input p is
 branch 1's squelched posterior, which depends on branch 1's amplitude,
-seeded and re-keyed after its wait (8 marks; 200.4 ms of keyed time in the
-variant, 0.8 s in stage 1) and its time-out (7 s; 501 ms in the variant,
-2 s in stage 1); so the re-key settings change the periodicity estimate's
-input as well as the keying.
+seeded and re-keyed after its wait (0.8 s of keyed time by default, as in
+stage 1; variants: 200.4 ms in dits, 8 marks) and its time-out (2 s by
+default; variants: 501 ms in dits, 7 s with the marks); so the re-key
+settings change the periodicity estimate's input as well as the keying.
 
 **The default since B4g: the seconds fields** (`rekey_after_s` = 0.8 s,
 `rekey_timeout_s` = 2 s; 0 = unset). When set they take precedence:
@@ -2768,11 +2768,12 @@ it uses are the realized ones, N_k / r (s).
 τ_a = 0.5 s heuristic (a heuristic running form of an EM update); h = 1 nat
 heuristic; the squelch's 3 at 16 ms heuristic, its L^(1/4) scaling derived;
 R_fa = 0.01 /s a heuristic target kept by E9b; the release probability 0.3
-heuristic; the wait of 8 provisional marks heuristic (Plan B, B4e: about
-stage 1's 0.8 s at 25 words/min); W_min,k = 16.7 d_k derived from E9b's
-0.8 s (measured at 25 words/min, adopted over 0.4 s and 0.2 s; stage-1
-record, section 3.9);
-the seed's memory of 4 × W_min,k and the 90% quantile heuristic; the 0.5
+heuristic; the default wait W_min = 0.8 s of keyed time measured (E9b,
+at 25 words/min, adopted over 0.4 s and 0.2 s; stage-1 record, section
+3.9; the default again since Plan B's B4g); in the variants, W_min,k =
+16.7 d_k derived from that 0.8 s (B4a) and the wait of 8 provisional
+marks heuristic (B4e: about stage 1's 0.8 s at 25 words/min);
+the seed's memory of 4 × W_min and the 90% quantile heuristic; the 0.5
 clamp and the 10⁻³⁰⁰ guards numerical choices. **x_on,k** (4.6428 at k = 1
 … 4.2036 at k = 32, `BankConfig::x_on_values`): measured, prototype
 experiment E9a (stage-1 record, section 3.9): channel-shaped noise, about
@@ -3088,8 +3089,9 @@ samples at 750 samples/s). Condition (b) is the decoder's own turnover: a
 new over starts on a branch when its key has been up for longer than
 T_new = max(0.5 s, 12 T_g) since its last key-up (`Branch::new_over_due`,
 `start_over`); from then the branch decodes with the previous over's fit
-(`prev_fit`) until the over's first marks are re-keyed (8 provisional
-marks; variant: W_min,k of keyed time; or a time-out that keys marks with the previous amplitude), when the
+(`prev_fit`) until the over's first marks are re-keyed (after 0.8 s of
+keyed time by default; variants: W_min,k = 16.7·d_k, or 8 provisional
+marks; or a time-out that keys marks with the previous amplitude), when the
 fit becomes the over's own (fresh, or the previous one continued with this
 over's marks). The decoder does not tell a new station from the same
 station resuming: every pause longer than T_new withholds T̂ until the
@@ -3399,20 +3401,24 @@ cost of each step): Plan B record, sections 2, 3.4, 4.4, 6.3 and 9.6.
 
 **Limitations.** The measured memory per channel after B1 lies 1.7 MB above
 the derived upper end; the cause is conjectured, not traced (Plan B record,
-section 9.6). A mark the unknown-amplitude test keys in the noise just
-before a station starts the over, so the clocks start there and its
-character can be published (measured once in 8 test streams of 1 s of
-noise at S₅₀₀ = +2 dB before a 25 words/min station: an "E" 29 ms before the
-station's first mark, with any lead from 0 to 7 d_k, the same with the
-wait in marks; Plan B record, sections 10 and 11). Such a mark survives
-when the station reaches the wait before the time-out counted from it:
-with the wait in marks, any noise mark up to about 7 s less the station's
-time to 8 marks before it (derived), and it is then published only if the
-re-key at the station's amplitude keys it again; with the variant's wait,
-about 2.5·W_min,k − W_min,k/0.44 ≈ 0.23·W_min,k ≈ 3.8·d_k before it at 44%
-key-down (46 ms on branch 1; derived, B4d review). False marks come at
-0.01 per second per branch (the calibration target), so a noise mark in
-those windows is rare.
+section 9.6). With the default's clocks (stage 1's) the time-out counts,
+and the re-keyed stretch reaches back, from where the amplitude became
+unknown, so the re-key can key the noise before a weak station (the loss
+stated under "Keying time constants" above). In B4d's clocks variant
+(`rekey_timeout_from_first_mark`) a mark the unknown-amplitude test keys
+in the noise just before a station starts the over instead, so the clocks
+start there and its character can be published (measured once in 8 test
+streams of 1 s of noise at S₅₀₀ = +2 dB before a 25 words/min station: an
+"E" 29 ms before the station's first mark, with any lead from 0 to 7 d_k,
+the same with the wait in marks; Plan B record, sections 10 and 11). Such
+a mark survives when the station reaches the wait before the time-out
+counted from it: with the marks variant, any noise mark up to about 7 s
+less the station's time to 8 marks before it (derived), and it is then
+published only if the re-key at the station's amplitude keys it again;
+with the dits variant, about 2.5·W_min,k − W_min,k/0.44 ≈ 0.23·W_min,k ≈
+3.8·d_k before it at 44% key-down (46 ms on branch 1; derived, B4d
+review). False marks come at 0.01 per second per branch (the calibration
+target), so a noise mark in those windows is rare.
 
 ### The bank decoder behind the engine
 

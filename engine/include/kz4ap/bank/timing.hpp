@@ -1,5 +1,6 @@
 // The bank decoder's time constants per branch and per periodicity candidate (docs/signal-processing.md section
-// 8c, "Time constants in dits"). BankConfig states them in nominal dits (Plan B, B4a; stage-2 spec section 2): within
+// 8c, "Keying time constants"). The re-key defaults are stage 1's seconds (Plan B, B4g); the variants state them in
+// nominal dits (Plan B, B4a; stage-2 spec section 2): within
 // branch k a dit is d_k = L_k / length_dits, with L_k the branch's nominal length (branch_lengths_s, 9.6 ms x
 // 1.1^(k-1)), not its realized N_k / r, so d_k is a constant of the branch: 12 ms (k = 1) to 230 ms (k = 32) with
 // the defaults. The periodicity variants in dits use the comb's candidate dit tau_c (the default windows are in
@@ -37,9 +38,9 @@ struct BankTiming {
     std::vector<double> periodicity_window_dits;
 };
 
-// The configuration's timing: W_min,k = rekey_after_dits x d_k; the time-out rekey_marks_timeout_s with
-// rekey_wait_in_marks (B4e, the default), else rekey_timeout_ratio x W_min,k (the overrides rekey_after_s and
-// rekey_timeout_s, when set, replace them); the periodicity windows by
+// The configuration's timing: W_min = rekey_after_s and the time-out rekey_timeout_s on every branch (the default since
+// B4g: 0.8 s and 2 s); with them unset (the variants), W_min,k = rekey_after_dits x d_k and the time-out
+// rekey_marks_timeout_s with rekey_wait_in_marks (B4e), else rekey_timeout_ratio x W_min,k; the periodicity windows by
 // periodicity_window_mode: "seconds" (the default, B4d) a row of one value per entry of periodicity_windows_s;
 // "per_candidate" (a variant, B4a) a row per N_w of periodicity_windows_dits, N_w x tau_c for each candidate tau_c of
 // t_grid(cfg); "shared" (a variant, B4a-C) periodicity_window_dits = periodicity_windows_dits with rows of

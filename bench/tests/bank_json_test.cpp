@@ -72,8 +72,9 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     const ordered_json cfg = kz4ap::bench::to_json(kz4ap::bank::BankConfig{});
     // the prototype's ProtoConfig() dump with B4a's fields in dits in place of the three in seconds they replaced and
     // B4b's guard margin and mask-bias table (pinned in BankConfig.PlanBDefaults), then Plan B's fields (noise_stuck_s,
-    // B3; B4a's re-key overrides in seconds, unset; the periodicity windows in seconds, the default again since B4d, and
-    // the window mode; B4d's two re-key clock switches and the lead; B4e's re-key wait in marks), the prototype's periodicity_windows_s among them at the end
+    // B3; the re-key wait and time-out in seconds, stage 1's 0.8 s and 2 s, the default again since B4g; the periodicity
+    // windows in seconds, the default again since B4d, and the window mode; B4d's two re-key clock switches and the lead;
+    // B4e's re-key wait in marks; B4f's two guards; the switches off since B4g), the prototype's periodicity_windows_s among them at the end
     std::string want = g.at("config_dumps").get<std::string>();
     const kz4ap::bank::BankConfig defaults;
     for (const auto& [from, to] : std::vector<std::pair<std::string, std::string>>{

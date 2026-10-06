@@ -15,12 +15,12 @@ std::vector<double> branch_dits_s(const BankConfig& cfg) {
 
 BankTiming bank_timing(const BankConfig& cfg) {
     BankTiming t;
-    // The overrides in seconds (ablations), when set, take precedence over the values in dits.
+    // The seconds fields (the default since B4g: stage 1's 0.8 s and 2 s), when set, take precedence over the variants.
     for (const double d : branch_dits_s(cfg)) {
         const double wait = cfg.rekey_after_s > 0.0 ? cfg.rekey_after_s : cfg.rekey_after_dits * d;
         t.rekey_wait_s.push_back(wait);
-        // B4e (the default): the time-out in seconds of channel time, the same for every branch; the B4a-B4d variant:
-        // rekey_timeout_ratio x W_min,k.
+        // Variants (seconds fields unset): with the wait in marks (B4e) the time-out rekey_marks_timeout_s, the same for
+        // every branch; in dits (B4a-B4d) rekey_timeout_ratio x W_min,k.
         const double timeout = cfg.rekey_wait_in_marks ? cfg.rekey_marks_timeout_s : cfg.rekey_timeout_ratio * wait;
         t.rekey_timeout_s.push_back(cfg.rekey_timeout_s > 0.0 ? cfg.rekey_timeout_s : timeout);
         t.rekey_lead_s.push_back(cfg.rekey_lead_dits * d);

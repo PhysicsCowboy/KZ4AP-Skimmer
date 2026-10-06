@@ -2670,8 +2670,8 @@ stretch's start) are unchanged. The goldens are unmoved: `stage1_config()` sets 
   s² = 9.418 FS² (its own seed). B4d's wait: 12.501 s, 0.707 s keyed (0.686 s before), s² = 9.503 FS². Stage 1's
   clocks: 12.181 s, 0.434 s keyed, s² = 0.849 FS² (a time-out at the first over's amplitude).
 - The keyed-time tests (`BankChannelDits.A12WpmStationReKeysAfterItsBranchsWait`,
-  `BankKeyingDits.RekeyWaitAndTimeOutPerBranch`, `At25WpmTheValuesAreStageOnes`) run the variant; the first also checks
-  the default's 7 s = 10 500 samples on every branch. The split test adds the variant. `bank_json`: the three fields.
+  `BankKeyingDits.RekeyWaitAndTimeOutPerBranch`, `At25WpmTheValuesAreStageOnes`) run the variant; `RekeyWaitAndTimeOutPerBranch`
+  also checks B4e's default (a variant since B4g, section 13), 7 s = 10 500 samples on every branch. The split test adds the variant. `bank_json`: the three fields.
 
 Results: `ctest --preset windows` 360 of 360 passed or skipped; `ctest --preset linux` 360 of 360; Python tests 269
 passed, 7 expected failures; smoke unchanged (Envelope CER 0.0353, Matched 0.0436).

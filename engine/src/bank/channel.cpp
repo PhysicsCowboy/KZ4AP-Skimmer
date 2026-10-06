@@ -573,8 +573,8 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
             std::optional<int> marks;
             double from_s = 0.0;
             const char* reason = nullptr;
-            // The re-key wait: rekey_marks provisional marks in the over (B4e, the default), or W_min,k of keyed time
-            // since the over started (the B4a-B4d variant).
+            // The re-key wait: W_min of keyed time since the over started (the default since B4g, 0.8 s; the dits variant
+            // W_min,k), or rekey_marks provisional marks in the over (the marks variant, B4e/B4f).
             const bool waited = cfg_.rekey_wait_in_marks
                                     ? (guarded ? br.wait_marks : br.marks_in_over) >= cfg_.rekey_marks
                                     : br.marks_in_over && keyer_.weight[ku] >= keyer_.rekey_weight[ku];
