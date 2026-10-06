@@ -13,7 +13,7 @@ import numpy as np
 def baseband(y, rate_hz: float, f_off_hz: float, drift_hz_per_s: float = 0.0, start_s: float = 0.0,
              first_sample_index: int = 0) -> np.ndarray:
     """u[n]: y mixed down so the labeled carrier sits at 0 Hz, y * exp(-j(2 pi f_off t + pi fdot (t - t0)^2))
-    with the drift from t0 on (the generator's phase law, docs/signal-processing.md section 11 "Drift"),
+    with the drift from t0 on (the generator's phase law, docs/signal-processing.md appendix A.11 "Drift"),
     t = (first index + n) / r. The channelizer's group delay is not removed from t, so the drift term's time origin
     lags the generator's by it: about 0.1 Hz of frequency error at 1 Hz/s (estimated from the ledger's Task 4
     review, not measured)."""

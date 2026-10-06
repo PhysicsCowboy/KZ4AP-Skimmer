@@ -385,7 +385,7 @@ TEST(BankNoise, ZerosEndingInsideABlockLeaveTheWarmUpToTheNoise) {
 
 // (iii) Noise stepping up by 60 dB (the noise power per complex sample after the step relative to before: 1e-6 to
 // 1 FS^2), e.g. a band change or a receiver gain step. Without the recovery the estimate stays where it was:
-// every tap of branch 1 now exceeds kappa 2 sigma^2 (acceptance about 1e-17 per tap at rho = 1e-6, section 8c).
+// every tap of branch 1 now exceeds kappa 2 sigma^2 (acceptance about 1e-17 per tap at rho = 1e-6, appendix A.8c).
 // Expectation, derived given a condition that is measured: branch 1's last accepted tap is just before the step,
 // so the recovery fires at the first block end at or after step + noise_stuck_s (<= 8 s + one block; derived); its
 // quantile window, the last noise_warmup_s = 0.32 s of input, then holds only the new noise, so every branch

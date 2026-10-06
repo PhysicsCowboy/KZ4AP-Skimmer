@@ -73,7 +73,7 @@ evidence per CPU cycle, is:
      item 13).
    - **Built** (milestone 2, part 1): `FrontEnd::Matched`, the default
      since the owner's decision of 2026-09-29; measured against the
-     baseline in `docs/signal-processing.md` §8b. Tuning its parameters
+     baseline in `docs/plans/2026-09-27-milestone-2a-results.md` §3 and §8.3. Tuning its parameters
      waits for evidence from these measurements. Group A at 25 WPM (oracle,
      3 seeds): S₅₀₀ at CER 0.10 = 5.1 dB (4.8 to 5.2 dB) Envelope, 2.7 dB
      (−0.0 to 10.4 dB) Matched; at CER 0.05, 5.6 dB (5.5 to 5.7 dB) and
@@ -540,8 +540,8 @@ Must land before callsign matching.
 
 **Matched, a channel that opens mid-mark (milestone 2, part 1, Task 16):**
 the partial mark is no longer counted for speed (`docs/signal-processing.md`
-§8, "Marks whose start was not observed"); measured before/after (Task 17;
-§8b, "A channel that opens mid-transmission"): the smoke recording's
+appendix A.8, "Marks whose start was not observed"); measured before/after (Task 17;
+`docs/plans/2026-09-27-milestone-2a-results.md` §8.3, "A channel that opens mid-transmission"): the smoke recording's
 Matched CER 0.0622 → 0.0436 (60 → 42 edits in 964 symbols), its
 +7617.6 Hz station 0.234 → 0.043; in a focused run of 80 oracle openings
 per speed (machine keying, S₅₀₀ 25 and 10 dB), openings worse than
@@ -795,12 +795,12 @@ moves to its peak and the channel's decoder re-centers on it), and one
 farther away as a separate track (milestone 2, part 1, Design decisions B),
 with an ambiguous band from 47 Hz to about 94 Hz where the interpolated
 frequencies it compares can read closer than D_ch (derived bound;
-`docs/signal-processing.md` §11, "QSO regimes"); the milestone-1 detector
+`docs/signal-processing.md` appendix A.11, "QSO regimes"); the milestone-1 detector
 (the Envelope path) hears stations within about 47 Hz as one track, from
 about 70 Hz as two, and either in between.
 
 Measured on group H (milestone 2, part 1, 3 seeds, through the detector;
-`docs/signal-processing.md` §8b): tracks per QSO, Envelope / Matched, were
+`docs/plans/2026-09-27-milestone-2a-results.md` §3.6 and §8.3): tracks per QSO, Envelope / Matched, were
 1.00 / 1.00 same-track (45 QSOs), 1.56 / 1.67 ambiguous (9) and 6.78 / 6.78
 separate-track (18; each station's track dies during the other's over and
 is re-born). QSO-label CER was 0.118 / 0.197 same-track and 0.085 / 0.297
@@ -842,7 +842,7 @@ The four limits below were postponed by the owner on 2026-09-29. Each is a
 known limitation of the Matched front end as planned.
 
 **Measured bearing (milestone 2, part 1, full suite, 3 seeds;
-`docs/signal-processing.md` §8b, "Measured: Matched against Envelope";
+`docs/plans/2026-09-27-milestone-2a-results.md` §8.3, "Measured: Matched against Envelope";
 re-measured in Task 17 after Tasks 15 and 16, Task 14's figure after
 "was").** Matched is better than Envelope in most conditions and at low
 S₅₀₀, and **worse** in these (paired CER difference, interval excluding
@@ -985,7 +985,7 @@ QSO label, which does not fit a split QSO, charges one station's overs
 as missing (the answering station's in Task 14, on its own track and not
 passed by the caller's re-centered channel; in one of the two now the
 caller's, not diagnosed); in the 4 that stayed one track Matched read
-0.025–0.234 (`docs/signal-processing.md` §8b). The answering station's
+0.025–0.234 (`docs/plans/2026-09-27-milestone-2a-results.md` §8.3). The answering station's
 first-word CER was 0.379 (was 0.444; Envelope 0.032). This is not the
 60–70 Hz sidelobe leak of this item. The retune delay (see "Wrong or
 missing first characters"): the answering station's first-word CER with
@@ -1037,7 +1037,7 @@ count twice toward the 8 marks before the filter follows. Fix: save
 `dit_s_`, `filter_dit_s_` and the mark counters at each key-up and restore
 them when the next key-down merges into that mark, so a re-measured mark
 gets one bounded update; then re-run the suite (the start-up runaways and
-group H's 50 Hz rows in `docs/signal-processing.md` §8b are the cases to
+group H's 50 Hz rows in `docs/plans/2026-09-27-milestone-2a-results.md` §8.3 are the cases to
 check). This is a code fix to meet a decision already made, not a
 parameter change, but the owner decides when.
 
@@ -1045,7 +1045,7 @@ parameter change, but the owner decides when.
 the dit estimate, the filter's dit and length, the count of marks since
 the last re-acquisition and the speed window, and a dropout merge that
 re-opens that mark restores them, so each physical mark is bounded once
-(`docs/signal-processing.md` §8, "Once per physical mark"). **Measured
+(`docs/signal-processing.md` appendix A.8, "Once per physical mark"; history in `docs/plans/2026-09-27-milestone-2a-results.md` §8.2). **Measured
 before → after** (Task 17; full suite, 3 seeds, the same recordings;
 the after figures include Task 16; Task 15 alone was also scored, and
 its figures are given where they differ): group A, Matched S₅₀₀ at CER 0.10
@@ -1066,7 +1066,7 @@ failing them (inferred; §8b, "Groups G and H").
 ### A mark whose key-up the squelch forces (possible limit; derived from the code, not observed)
 
 The end-of-mark counterpart of Task 16's rule (`docs/signal-processing.md`
-§8, "Marks whose start was not observed"). In the Matched decoder a mark
+appendix A.8, "Marks whose start was not observed"). In the Matched decoder a mark
 ends either by the log-odds (g < −1 nat) or because keying becomes
 impossible: the squelch closes (a < a_min), for example when the noise
 floor's stuck-low restart sets ŝ back to 0 in the middle of a mark, or ŝ
@@ -1092,7 +1092,7 @@ frequency (so it is not a false track), and the results record only birth
 frequencies. Group H's drawn QSO at 53.9 Hz (seed 1) may be a case: the
 caller's track ended on the answering station's carrier, and that station
 also had a track born at its own carrier (whether both were alive at once
-is not recorded; `docs/signal-processing.md` §11, "QSO regimes"). To do: record each track's
+is not recorded; `docs/plans/2026-09-27-milestone-2a-results.md` §8.5). To do: record each track's
 frequency history (or last frequency) in the bench's results, count
 tracks that share a peak, check the crowded group at 50 Hz spacing, and,
 if it happens, decide the rule (for example, a track may not move onto a
@@ -1216,7 +1216,7 @@ for the line format and client handling.
   exist.
 - **Neutral attribution of ambiguous edits in first-word scoring:** the
   bench's alignment traceback charges an ambiguous edit to the earliest
-  reference symbol it could belong to (`docs/signal-processing.md` §11),
+  reference symbol it could belong to (`docs/signal-processing.md` appendix A.11),
   which biases first-word and per-transmission CER upward when text repeats
   or a whole word is dropped. Among the alignment's optimal paths, split an
   ambiguous edit's charge (for example half to each candidate symbol), or

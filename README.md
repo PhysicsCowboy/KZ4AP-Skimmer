@@ -18,7 +18,7 @@ See `docs/design/` for the design.
 | `docs/design/2026-09-25-kz4ap-skimmer-design.md` | What we are building and why: the decisions, including the development order (§3.1) and the decoder plan (§5). The authority; changes need the owner's approval. |
 | `docs/plans/` | One implementation plan per milestone: how to build it, task by task. Written from the approved design before the milestone starts, and approved before any code is written. |
 | `docs/backlog.md` | Deferred work and to-dos, in milestone order. Items move into plans as milestones start. |
-| `docs/signal-processing.md` | What the engine's signal processing actually does now, with every parameter and whether it was derived, measured or chosen heuristically. Updated in the same commit as any signal-processing change. |
+| `docs/signal-processing.md` | What the engine's signal processing actually does now: a body readable in about 30 minutes (each stage, its formulas, every value with its unit and whether it was derived, measured or chosen heuristically) and an appendix (derivations, provenance with validity conditions, known limitations, the full parameter table, the benchmark's definitions). Updated in the same commit as any signal-processing change. Results and evidence are in the results records under `docs/plans/`. |
 | `docs/research/` | The evidence behind decisions. `decoder-survey.md` is the synthesis (glossary, decoder ranking, benchmark scenarios); verification notes for each source sit beside it; `research_notes/` holds the original research record, annotated rather than rewritten. |
 
 Work happens on feature branches; merging into `main` and pushing require the
@@ -72,7 +72,7 @@ Envelope CER 0.0353 (34 edits in 964 symbols), Matched 0.0436 (42 edits;
 0.0622, 60 edits, before the growth-bound and late-opening fixes). The Matched
 limit was set from the 0.0622 and fails from 68 edits; it is tightened only
 once the Linux CI value is measured too; how both limits were chosen is in
-`docs/signal-processing.md`, section 11, "Smoke check".
+`docs/signal-processing.md`, appendix A.11, "Smoke check".
 
 Named suites generate many recordings at once, score them, and summarize
 CER, character and word-space errors, first-word errors, VE3NEA's no-space
@@ -81,8 +81,8 @@ interval), and CPU time per channel-second. The full suite is sized for
 three seeds: 117 recordings, 4.55 h of audio and 3.20 GB (measured). On this
 project's development desktop (12th Gen Intel Core i7-12700H) generating them
 took 60 min, with another job sharing the machine for part of it, and scoring
-them with both decoders took 5.0 min (measured; `docs/signal-processing.md`,
-section 8b):
+them with both decoders took 5.0 min (measured; `docs/plans/2026-09-27-milestone-2a-results.md`,
+section 3.1):
 
     $env:PYTHONPATH = "training"
     .venv\Scripts\python -m kz4ap_synth.suites generate --suite full --seeds 3 --out build/suite/full
@@ -108,7 +108,7 @@ characters as first published) and scores both (`cer`, `cer_immediate`).
 - After a station stops, a few stray E's can be decoded from noise before its
   track is dropped.
 - Default (Matched) path, measured on synthetic recordings
-  (`docs/signal-processing.md`, section 8b, "Limits measured"):
+  (`docs/plans/2026-09-27-milestone-2a-results.md`, section 8.3, "Limits measured"):
   - an unkeyed tune-up carrier of 1 s or more before the first sending can
     stop the station from being decoded at all (CER 0.542 after 1 s and 0.909
     after 2 s, against 0.000 and 0.029 on the Envelope path);

@@ -452,7 +452,7 @@ TEST(ClassicalDecoder, MatchedMergedDropoutIsOneMarkForSpeed) {
 }
 
 TEST(ClassicalDecoder, MatchedChannelOpeningInsideADahCountsNoFragment) {
-    // Task 14 (docs/signal-processing.md section 8b, "A channel that opens mid-transmission"): on the
+    // Task 14 (docs/plans/2026-09-27-milestone-2a-results.md 8.3, "Limits measured"): on the
     // smoke recording an 18.5 WPM station (T = 64.9 ms) at S500 = 25.1 dB, whose channel opened so that
     // the front end's 0.32 s warm-up ended inside the dah of U, timed a 15.3 ms fragment as its first
     // mark; the speed estimate took it as the whole dit cluster (dit clamped to 20 ms) and garbled the
@@ -495,7 +495,7 @@ TEST(ClassicalDecoder, MatchedFirstMarkAfterReacquisitionIsNotCounted) {
     // estimate restarts at 0 (a = 0 < a_min), which closes the squelch and clears the decoder's
     // key-up evidence (no re-acquisition-specific code); the next station's first mark lifts s-hat and
     // opens the squelch, and is keyed with no key-up sample (g < -1 nat) seen since, so its start was not
-    // observed (keyed early on its ramp at this S500, derived from the code, section 8b,
+    // observed (keyed early on its ramp at this S500, derived from the code, appendix A.8b,
     // "Re-acquisition"). It is decoded but not counted for speed. 1.5 s of silence at 25 WPM: the
     // re-acquisition comes 0.576 s after the last key-up (12 dits), and the second over starts within
     // its 2 s window, so nothing set aside comes back. "K1ABC" has 18 marks; 17 count. Noise alone could

@@ -436,7 +436,7 @@ TEST(BankChannelDits, LeadingExactZerosDecodeAsTheStationAlone) {
 TEST(BankChannel, ThePowerWindowStoresFourByteFloats) {
     // Plan B task B1: the |v_k|^2 window holds values already rounded to float32 and stores them as 4-byte
     // floats. 24 s of exact zeros at 1500 samples/s fill it to its full size (keyed nothing: "Exact zeros"):
-    // 32 branches x 34 675 columns (docs/signal-processing.md section 8c, "Memory"): the look-back 31 642 samples
+    // 32 branches x 34 675 columns (docs/signal-processing.md appendix A.8c, "Memory"): the look-back 31 642 samples
     // (30 000 + 3 x 276 + round((0.1707 + 2 x 0.0048 + 0.32) s x 1500) = 750 + 2 x 32) plus a block, 2 s and 1;
     // 34 721 with stage 1's 20 ms guard margin (look-back 31 688).
     BankChannel ch(BankConfig{}, 1500.0);

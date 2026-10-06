@@ -60,7 +60,7 @@ struct PeriodicityUpdate {
 // sum over i of p_i (S(i+hi+1) - S(i+lo)) with S the running sum of p, kept per candidate and band and slid
 // from one recomputation to the next (the products entering at the window's end added, those leaving at its
 // start subtracted) and recomputed directly once the window has slid by its own length (or when it is not
-// finite); the mean is removed algebraically (docs/signal-processing.md section 8c, "Periodicity").
+// finite); the mean is removed algebraically (docs/signal-processing.md appendix A.8c, "Periodicity").
 class Periodicity {
 public:
     // The configuration's windows (bank_timing(cfg).periodicity_windows_s and periodicity_window_dits).

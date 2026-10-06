@@ -39,7 +39,7 @@ the periodicity and speed statistics). S₅₀₀: key-down carrier power over n
   involves detection. A recording is only test material: it is never "scored"; a decoder is.
 - **Scoring a decoder**: running it on a recording, decoding every station, and comparing the text with
   the labels. **CER**
-  (character error rate) is the minimum number of symbol insertions, deletions and substitutions that turn the decoded text into the reference, divided by the number of reference symbols (a fraction; prosigns and word spaces count as symbols; `docs/signal-processing.md` section 11). A **test case** is one recording paired with one label file (group H's recordings have
+  (character error rate) is the minimum number of symbol insertions, deletions and substitutions that turn the decoded text into the reference, divided by the number of reference symbols (a fraction; prosigns and word spaces count as symbols; `docs/signal-processing.md` appendix A.11). A **test case** is one recording paired with one label file (group H's recordings have
   two: one label per QSO and one per station).
 - **Recorded channel streams**: the engine run once with a tap that writes each channel stream to disk
   (`build/suite/full3/channels/`, complex64 files) exactly as the channelizer delivers it, before any
@@ -2246,7 +2246,7 @@ to `build/suite/full3/groupA-by-snr-held-out.txt`, git-ignored; Matched at 12 WP
     a null `center_hz`, which `streams.load_channel` turns into a bare TypeError; the mapping
     `tracked_freq_hz` ← `last_freq_hz` in `main.cpp` is untested; two rejection tests are missing (a
     non-string `texts` element, a non-object top level).
-  - `docs/signal-processing.md` §11 omits (but does not misdescribe): that `--record-channels` runs'
+  - `docs/signal-processing.md` §11 (now appendix A.11) omits (but does not misdescribe): that `--record-channels` runs'
     timing includes the recorder's file I/O; the padded last hop (60.01 s); where the decoded path's
     JSON fields `duration_s`, `recording` and `front_end` come from; that the identity check was the
     Matched oracle run; and, for the mixing, phase 0 at the first recorded sample and the exclusive sum.

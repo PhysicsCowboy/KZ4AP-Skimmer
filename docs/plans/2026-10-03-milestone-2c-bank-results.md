@@ -204,7 +204,7 @@ score between the prototype and Linux is 1.9e-17 (7.9e-12 relative). At noise #1
 of 2.0e-20. Farnsworth #64's Linux scores are the same as on the float64 streams. (The previous commit's section
 8c gave noise #14's prototype lead as 9.2e-19, 9.7e-13 relative, and its spread as 9.3e-19; they are 9.2e-18,
 9.7e-12 relative, and 9.3e-18.)
-`docs/signal-processing.md` section 8c, "Channel decoder", port check, has all three.
+`docs/signal-processing.md` section 8c, "Channel decoder", port check, had all three (moved on 2026-10-05 to section 6.1.7 of this record).
 
 ## 3. Cost (Task 9)
 
@@ -510,14 +510,14 @@ How this was found (`c10-rec.txt`, `c10-mix.txt`, `c10-trace.txt`, `c10-engine.t
    the second T. `Output::replace_from` keeps every character that starts more than 20 s back or ends before
    the cut, and sets `from_index` to the number kept. Here the second T ends before the cut and is kept, while
    Q, listed before it, is not, so the kept characters are not a prefix of the list. The event format, and
-   the proof in `docs/signal-processing.md` section 8c ("The consumer's rule"), assume they are. (Derived from
+   the proof in `docs/signal-processing.md` appendix A.8c ("The consumer's rule"), assume they are. (Derived from
    the code and the printed lists. Q's end time was not printed; it must be at or after the cut, since Q was
    not kept.) The others fail the same way, at the corrections listed in step 3.
 
 The defect affected only the final text built from the events; the immediate text ignores corrections, and
 the bank's own result, which the replay tool writes, was right (derived).
 
-**The fix** (`1b2f4ef`, described in `docs/signal-processing.md` section 8c, "The consumer's rule") has three
+**The fix** (`1b2f4ef`, described in `docs/signal-processing.md` appendix A.8c, "The consumer's rule" and "Why `from_index` is a minimum") has three
 parts:
 
 - `Output::replace_from` also records `first_changed_index`, the first position whose character's text
@@ -611,7 +611,7 @@ text, per channel-minute.
   86 913; E interference 1 987. The difference is the fixed defect.) *Later change (final review):* the bench now
   writes, per correction, the characters removed and inserted (the smallest block that differs between the
   replaced and the new characters), and the suite summary sums them per group, per channel-minute
-  (`docs/signal-processing.md` section 8c, "The bench"). The statistic is implemented and is measured from the
+  (`docs/signal-processing.md` appendix A.11, "Bank corrections in the bench"). The statistic is implemented and is measured from the
   next full run; the suite was not re-run for it, so in Plan A the net Levenshtein measure above remains the
   reported figure.
 - **Against the prototype** (stage 1's corrections script on its decoded files,
@@ -713,3 +713,445 @@ else the review found is fixed on the branch (the fix report is in the plan's wo
   byte-identical (Task 9's tooling accepts them); the C++ fast-path fit test is close to tautological but kept as
   the brief requires; the temporary outputs `build/t8` and `build/suite/full3/proto/t8-proto-det` are
   git-ignored local folders, left for the owner to delete.
+
+---
+
+## 6. Moved from signal-processing.md, 2026-10-05: port checks and measurements of the bank decoder (Plan A)
+
+Moved verbatim on 2026-10-05, when `docs/signal-processing.md` was restructured into a body and an appendix (owner, option B). The text is as it stood at commit 5099a29; its references to sections of signal-processing.md ("section 8", "§8b", "section 11" …) are to that version: the derivations now sit in its appendix under the same numbers (A.6, A.7, A.8, A.8b, A.8c, A.11), and "results record" means this file.
+
+### 6.1 Port checks against the prototype's golden values
+
+#### 6.1.1 Section 8c's opening and "The bank"
+
+The bank decoder is the C++ port of the stage-1 Python prototype
+(`training/kz4ap_proto`); it is a *decoder* alongside Envelope and Matched.
+This section covers the
+branch filters and the envelope likelihood (`engine/src/bank/filters.cpp`),
+the noise estimates (`engine/src/bank/noise.cpp`, "Noise" below), the
+keying (`engine/src/bank/keying.cpp`, "Keying" below), the duration
+fit (`engine/src/bank/fit.cpp`, "Duration fit" below), the periodicity
+estimate (`engine/src/bank/periodicity.cpp`, "Periodicity" below),
+the text model and branch selection (`engine/src/bank/selection.cpp`,
+"Text model and branch selection" below) and the channel decoder that
+drives them, with new overs, re-keying and the published text with its
+corrections (`engine/src/bank/channel.cpp`, "Channel decoder" below),
+each checked against golden values from the prototype (relative 1e-9;
+discrete outputs exactly). The engine runs it behind its `Decoder`
+interface (`BankDecoder`, `kz4ap-bench --decoder bank`; "The bank decoder
+behind the engine" below), and the replay tool `kz4ap-bank-replay`
+(bench) runs it on recorded channel streams.
+
+  rounded values (FS²). |v_k| is computed as numpy computes it for
+  complex128 on this build (its vectorized loop): the larger of |Re|, |Im|
+  times √(fma(ρ, ρ, 1)), ρ = smaller / larger (0 for 0); measured equal to
+  `np.abs` on 200 000 boxcar outputs (numpy 2.5.3, x86-64), where `hypot`
+  and `std::abs` differ from it in the last bit for about 4% of values.
+
+(Parameter table, row "Bank envelope likelihood": the logistic checked against the prototype on nine log-odds.)
+
+#### 6.1.2 Noise
+
+**Port check.** Golden values (`engine/tests/data/bank/noise.json`, from
+`kz4ap_proto.golden`): 20 s of a 1 FS carrier keyed at 25 WPM from 1.0 s
+at S₅₀₀ = 15 dB (SNR in 500 Hz), passed through the channel
+filter's shape so the noise is channel-shaped, rounded to complex64 (the
+engine's sample type; stored as `noise_stream.c64`, and the prototype ran
+on the rounded stream), run block by block as the
+prototype's channel runs it, σ²_v,k of all 32 branches compared after
+every 10th block (93 instants). Measured largest relative difference
+(Windows build): 2.4 · 10⁻¹⁵ ("spectrum"), 2.0 · 10⁻¹⁵ ("spectrum-level"), 0 ("branch");
+accepted and offered segment counts equal at every instant. The golden
+tests run with stage 1's guard margin (20 ms) and mask-bias table, the
+prototype's configuration (Plan B, B4b changed both defaults).
+
+#### 6.1.3 Keying
+
+**Port check.** Golden values (`engine/tests/data/bank/keying.json`, from
+`kz4ap_proto.golden`): the prototype's `ChannelDecoder.run` itself, on the
+noise check's 20 s stream (above), with its keyer replaced by a recording
+subclass. Over 938 blocks the C++ keyer, fed the same float32 |v_k|² and
+the C++ noise estimate, replays run's 56 calls (24 `start_over`,
+32 `finish_over_start`, with their re-keyed amplitudes) after the blocks
+they followed, with the prototype's W_min = 0.8 s for every branch set
+explicitly. Measured: all 5113 edges of the 32 branches and the
+unknown flags of every block equal; a_k, Σp, W at 115 sampled blocks and
+W, ŝ², prev_amp2 and `ready_to_rekey` before every call agree to a
+largest relative difference of 4.3 · 10⁻¹³ (Windows build). `rekey` on run's first
+re-key stretch of branch 14 (samples 0–3007, three amplitudes, one of
+them below the squelch): edges equal.
+
+#### 6.1.4 Duration fit
+
+**Port check.** Golden values (`engine/tests/data/bank/fit.json`, from
+`kz4ap_proto.golden`): 300 observations (25 WPM text, a tune-up carrier of
+2 s, a step to 15 WPM, then 30 WPM, each duration jittered by
+exp(0.08 N(0, 1)), with their σ_t²) added one by one. After observations
+1, 2, 8, 48, 100 and 300, without a prior and with T_P = 0.05 s at
+weight 3: the grid indices and the classifications of 20 probe durations
+(10 ms to 1 s) equal; θ_grid, `best`, the weighted log-likelihoods and
+`observations_loglik` agree to a largest relative difference of
+2.0 · 10⁻¹⁶; the full mark and space tables after 8, 48 and 300
+observations were bit-identical until Plan B task B2(a). Since its
+near-exact step (one-pass log-sum-exp, above) they agree to the test's
+relative 10⁻⁹ as the other values: with SLEEF's exp and ln (B2(b)), after
+8, 48 and 300 observations 2005, 1712 and 1523 of the 9696 entries differ
+from the prototype's, by at most 7.1 · 10⁻¹⁵, 2.8 · 10⁻¹⁴ and
+4.3 · 10⁻¹⁴ nats (relative 1.2 · 10⁻¹⁵, 1.4 · 10⁻¹³ and 1.2 · 10⁻¹⁵;
+measured on Windows; after B2(a) alone 1980, 1702 and 1517), and the grid
+indices and classifications are still equal. Both outcomes of the acceptance test occur
+in the sequence. The prototype's fit tests are ported one for one
+(inputs in `fit_cases.json`); its strict expected failure (Farnsworth
+T_g with the E5 grids) is skipped with the same reason, and the port
+reproduces its finding: T = 66.72 ms, T_g = 192.2 ms against 207.0 ms.
+Where numpy's order of operations is not reproduced (the einsum sums of
+the refinement's normal equations, LAPACK's solve, the `DESIGN @ θ`
+matrix product, where BLAS may fuse 3·T_g − w into one rounding), values
+may differ in the last bit. The prototype's squares `x ** 2` (in
+`resolution_var_s2`: (L/a)² and r²; in the refinement: the prior's σ_ln²,
+T² and (0.2 T)²) call libm's `pow`, which is not guaranteed correctly
+rounded (glibc states a bound of about 0.52 units in the last place); the
+port computes them as products x · x, so a rare value can differ in the
+last bit.
+
+#### 6.1.5 Periodicity
+
+**Port check.** At the prototype's windows of 2, 5 and 10 s, shared by
+every candidate and set explicitly. Golden values
+(`engine/tests/data/bank/periodicity.json`,
+from `kz4ap_proto.golden`): the prototype's `ChannelDecoder.run` on 12 s
+streams keyed at 12, 25 and 40 words/min (S₅₀₀ = 15 dB SNR in 500 Hz, through the
+channel filter's shape), with its `Periodicity` recorded; the port is
+given the same blocks of p and asked for an update after each, as `run`
+does. At all 46 recomputations per stream the port recomputes on the
+same blocks; T_P, the window and every window's T are equal (the 303
+grid points are bit-identical); the confidences and the per-window
+scores agree to a largest relative difference of 1.0 · 10⁻¹⁴ (692 of the
+1005 compared values bit-identical). Not reproduced in numpy's order of
+operations: Σ x² (numpy's `x @ x` is a BLAS dot product, whose order
+depends on the BLAS build; the port sums the squares pairwise, as
+`np.sum` does), numpy's FFT build and its complex product; the
+contrasts subtract nearly equal tooth means, which turns last-bit
+differences of ρ into larger relative differences of the score. The
+prototype's comb tests are ported one for one (inputs in
+`periodicity_cases.json`); its strict expected failure (Farnsworth
+18/10 words/min, where the comb locks near the gap timebase) is skipped
+with the same reason.
+
+#### 6.1.6 Text model and branch selection
+
+**Port check.** Golden values (`engine/tests/data/bank/selection.json`):
+the selector on a scripted sequence of 40 updates over the view sets of
+the prototype's selection tests (eligible and ineligible fits, quality
+and text ties, fallback picks by text and by T_P, 0 to 4 instants per
+update): eligibility, the best branch, the returned branch, the pending
+switch and its count equal at every update, the eligibility times
+bit-identical; the text model's 12 patterns equal and its
+log-probabilities of 30 symbols and 5 symbol lists bit-identical (the
+mean uses Python's compensated float sum, as the prototype's `sum`
+does). The prototype's text and selection tests are ported one for one.
+
+#### 6.1.7 Channel decoder (the near-tie table duplicates section 2.4)
+
+**Port check.** At the prototype's time constants in seconds, set
+explicitly (`fixed_timing`: W_min 0.8 s and the time-out 2 s for every
+branch, periodicity windows of 2, 5 and 10 s; "Time constants in dits").
+Golden values (`engine/tests/data/bank/channel.json`,
+streams in `channel_stream_*.c64`, complex64 like the engine's own
+samples; the prototype ran on the same float32-rounded streams, so the
+comparison is exact in its input): the prototype's
+`ChannelDecoder(ProtoConfig(), r).run(u)` on 15 streams (about 297 s of
+channel time: a clean 25 words/min CQ, a same-speed turnover, noise after
+the last over, a 15 → 30 words/min step, Farnsworth 18/10, a zero-padded
+start (no longer compared since Plan B's B3: its golden result keyed
+nothing, the prototype's exact-zero defect; "Exact zeros" above states
+what replaced it), noise alone, a tune-up carrier, a 66 s stream at S₅₀₀ = 8 dB SNR in
+500 Hz, a speed change across a turnover and the inputs of the
+prototype's other channel tests; the clean stream also at 2000 samples/s
+and cut mid-character) and its full result. The port, fed each stream in
+one push, publishes the same text and characters (times to relative
+10⁻⁹), the same corrections (old and new text, reason, times), over
+starts, switches and selections (branch exactly, fitted T to relative
+10⁻⁹), and the same periodicity records (T_P and windows exactly,
+confidences and scores to relative 10⁻⁹) except per-window estimates
+that are traced near-ties (D2) and allowed to differ: three
+recomputations, all in the 2 s window over a buffer of p that is zero but
+for one short squelch opening, far below the 0.03 confidence threshold;
+T_P and everything downstream are unaffected. Three candidates tie in
+each, T = 97.95 ms, 44.63 ms and 61.97 ms (the fourth best scores about
+half as much). Their scores (dimensionless) on the prototype (numpy 2.5.3
+on Windows, the golden values), the port's Windows build (MSVC) and the
+port's Linux build (g++ 11.4, glibc 2.35), on the complex64 streams,
+each side's pick in bold:
+
+| Recomputation | T | Prototype | Port, Windows | Port, Linux |
+|---|---|---|---|---|
+| noise #14 | 97.95 ms | 9.5011315632179236 · 10⁻⁷ | 9.5011315631715739 · 10⁻⁷ | 9.5011315631715739 · 10⁻⁷ |
+| noise #14 | 44.63 ms | 9.5011315632185335 · 10⁻⁷ | 9.5011315632185335 · 10⁻⁷ | **9.5011315633110972 · 10⁻⁷** |
+| noise #14 | 61.97 ms | **9.5011315633108939 · 10⁻⁷** | **9.5011315633455884 · 10⁻⁷** | 9.5011315633108939 · 10⁻⁷ |
+| noise #38 | 97.95 ms | 2.3515786746381741 · 10⁻⁶ | 2.3515786746336205 · 10⁻⁶ | 2.3515786746381470 · 10⁻⁶ |
+| noise #38 | 44.63 ms | **2.3515786746568495 · 10⁻⁶** | **2.3515786746568495 · 10⁻⁶** | 2.3515786746383367 · 10⁻⁶ |
+| noise #38 | 61.97 ms | 2.3515786746405865 · 10⁻⁶ | 2.3515786746405865 · 10⁻⁶ | **2.3515786746544642 · 10⁻⁶** |
+| Farnsworth #64 | 97.95 ms | **4.7329276538316477 · 10⁻⁶** | 4.7329276538037837 · 10⁻⁶ | 4.7329276537942970 · 10⁻⁶ |
+| Farnsworth #64 | 44.63 ms | 4.7329276538129181 · 10⁻⁶ | **4.7329276538129181 · 10⁻⁶** | 4.7329276537759468 · 10⁻⁶ |
+| Farnsworth #64 | 61.97 ms | 4.7329276537666498 · 10⁻⁶ | 4.7329276537944054 · 10⁻⁶ | **4.7329276538082832 · 10⁻⁶** |
+
+So the port's pick differs from the prototype's at Farnsworth #64 on both
+builds, and at noise #14 and noise #38 on Linux only. The leads of the
+picks over the runner-up, absolute (relative): prototype 9.2 · 10⁻¹⁸
+(9.7 · 10⁻¹²), 1.6 · 10⁻¹⁷ (6.9 · 10⁻¹²) and 1.9 · 10⁻¹⁷ (4.0 · 10⁻¹²) at
+noise #14, noise #38 and Farnsworth #64; port, Windows, 1.3 · 10⁻¹⁷,
+1.6 · 10⁻¹⁷ and 9.1 · 10⁻¹⁸; port, Linux, 2.0 · 10⁻²⁰, 1.6 · 10⁻¹⁷ and
+1.4 · 10⁻¹⁷. The spread of the three scores is at most 6.5 · 10⁻¹⁷
+absolute on any side (prototype, Farnsworth #64; at noise #38 1.9, 2.3
+and 1.6 · 10⁻¹⁷). One candidate's score differs between the prototype
+and the port by up to 1.9 · 10⁻¹⁷ (noise #38, Linux, 7.9 · 10⁻¹²
+relative) and 4.2 · 10⁻¹⁷ (Farnsworth, Linux, 8.8 · 10⁻¹² relative)
+absolute. (Noise #38 was found by the Linux build's first run on the
+complex64 streams; on the earlier float64 streams the Linux build had
+matched the prototype there.) A score is a difference of comb-tooth means of
+the normalized autocorrelation (values up to 1, taken from a cumulative
+sum), so last-bit differences of the means, of order 10⁻¹⁷, survive the
+cancellation down to a score of order 10⁻⁶ as relative differences of
+order 10⁻¹² to 10⁻¹¹ (derived, order of magnitude). That is rounding, and
+it is at least as large as every lead, so the pick depends on the build (a
+test recomputes the port's three scores at these recomputations and
+requires the port's pick to be its own largest). The
+prototype's channel tests are ported one for one; its strict expected
+failures are skipped with their reasons (and fail if they pass), and its
+`keep_p1` posterior for the offline experiments is not ported.
+
+#### 6.1.8 Channel decoder and engine: the bullets that state their tests
+
+- **Blocks.** Everything advances once per block of
+  B = max(1, round(block_s · r)) samples, block_s = 32/1500 s = 21.33 ms
+  (B = 32 at 1500 samples/s; 43 at 2000 samples/s, 21.5 ms). Input may
+  arrive in pieces of any length (`push`): a block is processed as soon
+  as its last sample has arrived, and the remainder waits; at the end
+  (`finish`) the remainder is processed as one shorter block, as the
+  prototype's last block, and the result does not depend on how the
+  stream was split (tested with pieces of 1, 47 and 1000 samples). As
+  each sample arrives, every branch's power |v_k|² is computed from the
+  running cumulative sum and stored rounded to float32, as a 4-byte float
+  (section 8c, "The bank"; "Memory" below).
+- **End of stream.** `finish` processes the last partial block, ends
+  every branch's open character (no word space) and publishes the
+  selected branch's new characters; a stream cut mid-character publishes
+  the elements completed so far as a character (tested: C, −·−·, cut
+  during its third element reads N, −·), and no correction refers past
+  the end.
+- **The consumer's rule.** A consumer keeps one character list per
+  channel: it appends an event's `chars`, then applies its corrections in
+  order, each keeping the first min(`from_index`, length) characters and
+  appending its `chars`. The list's text then equals the bank's after
+  every call (derived; tested with calls of 1, 32, 47 and 1000 samples on
+  golden streams with corrections, after every call on a recorded channel
+  whose characters overlap in time, and with a forced resync). The bank's
+  list changes only by appends and by replacements, and a replacement that
+  changes the list's text either records a correction or, when the
+  replaced and the new text are equal but overlapping characters change
+  places, does not. *Changes with a correction:* let g be the smallest
+  `from_index` of the call's corrections; no character's text below g
+  changed during the call (`from_index` is never past the first position
+  whose text changed), and any position between the consumer's previous
+  length and g was filled by an append, in order, so after the appends the
+  consumer's first g characters are the bank's; the correction at g
+  replaces everything after them by the bank's tail, the ones before it
+  only touched positions at or after their own index (≥ g), and the ones
+  after it (index ≥ g) put back the bank's tail again. *Changes without a
+  correction:* the `BankDecoder` applies every update to a copy of the
+  consumer's list exactly as the rule above does, and at the end of the
+  call compares it with the bank's list from the lowest position that any
+  of the call's text changes touched; if they differ there or later (or
+  in length), it sends a "resync" correction from the first differing
+  position with the bank's characters from there on, after which the copy,
+  and so the consumer's list, is the bank's. Below that position no
+  replacement of the call changed a text, so the argument of the first
+  case holds there. The *final text* is that list's text, every
+  correction applied; the *immediate text* is every appended character in
+  order, corrections ignored (what a reader would have seen live). A
+  replacement whose text is unchanged is not a correction (the prototype
+  records none) but can re-time characters; the consumer keeps the times
+  first published, so its texts are exact and its character times can
+  differ from the bank's final ones by that re-timing (up to 5.0 ms on the
+  speed-turnover golden stream, measured).
+
+### 6.2 The overlapping-characters defect (fixed in Task 10)
+
+  **Overlapping characters (a defect, fixed in milestone 2c Task 10).**
+  `Output::replace_from` keeps every character that starts more than 20 s
+  before the correction or ends before the cut, and the prototype's
+  `from_index` is the number kept. When two characters overlap in time
+  (copies of one character timed a few ms apart by two branches), a kept
+  one can follow a replaced one in the list, so the kept characters are
+  not a prefix, and a consumer keeping the first `from_index` would keep
+  the replaced character and drop the kept one. Found by the first
+  full-suite run, where it left the final text of 6 oracle labels (4 scored
+  signals and 2 unscored interferers) one or two characters off the bank's,
+  with no edit count changed. It was traced by driving the `BankDecoder` on
+  the recorded channels (results record
+  `docs/plans/2026-10-03-milestone-2c-bank-results.md`, section 4.4). The fix:
+  `replace_from` also records `first_changed_index`, the first position
+  whose character's text differs between the list before and after, and
+  the event's `from_index` is min(`from_index`, `first_changed_index`),
+  its `chars` the bank's characters from there on, kept ones included.
+  `replace_from` also records every change of the list's text in
+  `text_changes()`, with a correction or without one (a same-text
+  replacement that reorders overlapping characters). The `BankDecoder`
+  keeps the consumer's list as its updates build it, checks it against
+  the bank's from the lowest new change, and if they differ sends a
+  correction with reason "resync" (counted by the bench; its reach is not
+  bounded by the 20 s correction reach, "Events" above). Measured: never
+  on the suite (0 of 31 205 corrections on the second full-suite run).
+  The resync path is tested by forcing one: a test-only seam
+  (`BankDecoderTestAccess`, a friend of `BankDecoder` and `BankChannel`
+  that adds no code to the engine) makes a same-text replacement in the
+  bank's list ("E" from 2.0 to 5.0 s and "T" from 3.0 to 3.5 s become "T",
+  "E" with no correction), and the test checks that exactly one resync
+  follows and leaves the consumer's list equal to the bank's. The
+  prototype's `from_index` and every other recorded value are unchanged.
+  On the second full-suite run the 6 labels have the bank's, and the
+  prototype's, text.
+
+### 6.3 The bench (as described in section 8c, with its check against the previous build)
+
+- **The bench.** `kz4ap-bench` assembles each track's final and immediate
+  text from the events (`TrackText`), writes both per track (`text`, the
+  final text as before, and `text_immediate`), and scores both: `cer`
+  (and every other rate, and the baseline check) on the final text, and
+  `cer_immediate` (with `decoded_immediate`, `edits_immediate` and
+  `cer_immediate` per signal) on the immediate text. The JSON keeps the
+  key `front_end` (stage 1's tooling reads it) and adds `decoder`, with the
+  same value (`envelope`, `matched` or `bank`). For Envelope and Matched
+  the two texts are equal and the rest of the output unchanged (checked
+  against the previous build on the smoke recording, first-sample-s1 and
+  F-drift-s1, through the detector path and with oracle channels: identical
+  JSON apart from the new keys). For the bank it also writes, per track,
+  `corrections`: every correction the events carried, with `t_s` (s,
+  stream time), `reach_s` (s), `reason`, and `removed` and `inserted`
+  (characters): the final text's characters from the correction's index
+  on against its new ones, less what the two share at their start (an
+  index before the first change) and at their end (characters re-sent
+  unchanged), so the smallest contiguous block that differs; an upper
+  bound of the correction's edit distance (derived), and removed plus
+  inserted, summed over a track, is at least the net Levenshtein distance
+  from the immediate to the final text (derived: an append adds the same
+  character to both texts, and each correction changes the final text by
+  at most its removed plus inserted). `kz4ap_synth.suites
+  summarize` counts them per group (section "Corrections" of the summary:
+  corrections per channel-minute of the group's engine runs, by reason,
+  the reach's median, 99th percentile and maximum, numpy's linear
+  percentile, and the characters removed and inserted per channel-minute,
+  shown as "—" for results written before these counts; each engine run
+  once, a detector-path recording's station-label result being the same
+  run). The per-correction counts are not yet measured on the suite: the
+  first full run after this change measures them.
+
+### 6.4 End to end (development set seed 1)
+
+- **End to end (measured, development set seed 1).** first-sample-s1 with
+  oracle channels: the engine's final texts equal the replay tool's on all
+  4 channels (CER 0.0000 on the final text, 0.0743 on the immediate text:
+  corrections restore the first characters of three channels). Through the
+  detector path, its 4 tracks' final texts equal the prototype's
+  (`kz4ap_proto.runner decode`) on the channels recorded through the
+  Matched path's detector (CER 0.1014, immediate 0.2027). F-drift-s1 with
+  oracle channels: equal for the 4 labels drifting 0.2 and 0.5 Hz/s,
+  different for the 4 drifting 1 and 2 Hz/s, because the engine anchors
+  the bank at the label's starting frequency while the replay tool (and
+  stage 1) mixes by the label's drifting phase law (the label's frequency
+  is the carrier's at the label's start); the residual grows by 1 or
+  2 Hz per second of the signal and passes the 25.9 Hz null of a
+  25 words/min branch after 25.9 s or 12.9 s (derived). The suite
+  summary therefore marks a bank row of an oracle recording "not
+  meaningful (oracle anchor)" as it does a Matched one, when some label's
+  sound gets more than 12 Hz from its labeled frequency (for the bank a
+  heuristic limit: a 58-sample branch, 0.8 dit at 25 words/min, is
+  −3.33 dB relative to 0 Hz at 12 Hz).
+  Cost: 0.40 s of CPU per channel-second on first-sample-s1 (4 channels,
+  0.6× real time; the exact-math build, the development desktop).
+
+### 6.5 "Measured: the bank against Matched and Envelope (milestone 2c, Plan A)" (summarizes section 4)
+
+Full suite, 3 seeds (`kz4ap_synth.suites`: 120 oracle test cases, the 27
+oracle copies included, and 39 test cases scored through the detector
+path; 3 579 labels, of which 3 531 scored signals, the other 48 being
+group E's interferers; 457 168.6 channel-seconds), `kz4ap-bench --decoder
+bank` on the Linux machine (Ubuntu 22.04, 10-core Intel Xeon (Ice Lake),
+g++ 11.4, exact-math build), 10 bench processes at once, 110 min of wall
+time. This is the second run, with the correction fix (`1b2f4ef`). Envelope
+and Matched are stage 1's result files, checked identical on 54 runs with
+the bench. Source: results record
+`docs/plans/2026-10-03-milestone-2c-bank-results.md`, section 4 (raw
+summaries git-ignored under `build/suite/full3/experiments/linux/`). CER is
+a fraction (edits per reference symbol); parentheses are bootstrap 95%
+intervals over signals; "paired" is the mean per-signal difference. No
+parameter was changed for this run.
+
+| part | bank CER | Matched CER | Envelope CER | bank − Matched, paired | bank − Envelope, paired |
+|---|---|---|---|---|---|
+| oracle test cases (2 871 signals) | 0.369 (0.352–0.385) | 0.457 (0.442–0.473) | 0.625 (0.599–0.655) | −0.076 (−0.086 to −0.066) | −0.252 (−0.272 to −0.232) |
+| through the detector path (660 signals) | 0.448 (0.409–0.490) | 0.467 (0.426–0.505) | 0.482 (0.442–0.525) | +0.009 (−0.007 to +0.026) | −0.063 (−0.088 to −0.039) |
+
+- **Against the prototype.** Every per-regime paired comparison (140
+  regimes against Matched and against Envelope) has the prototype's values
+  from the stage-1 results record, section 4.3.1, except the four group F
+  drift rows (272 of 280 pairs identical). Signal by signal, the decoded
+  text equals the prototype's on all 2 895 non-drifting oracle labels
+  (2 847 scored, 48 unscored) and all 660 through the detector path. The 15
+  drifting labels that differ are the anchor without the drift: the
+  prototype mixed as the engine mixes reproduces all 15. They are not
+  comparable until a frequency tracker is in the loop, and the suite marks
+  every drifting oracle row of the bank "not meaningful (oracle anchor)".
+  The first run, before the fix, also differed on 6 other labels (4 scored,
+  2 unscored, no edit count changed); that was the correction-event defect
+  under "The consumer's rule" above.
+- **Every regime** (132 rows; the 8 rows the suite marks "not meaningful
+  (oracle anchor)" for the bank are left out): against Matched 50 better,
+  26 worse, 56 unchanged; against Envelope 84 better, 16 worse, 32
+  unchanged ("better" or "worse": the paired interval excludes 0, a
+  heuristic convention). Worse than
+  Matched: strong neighbors at +10 and +20 dB relative to the wanted
+  station's key-down power (group E), crowded channels 0 to 100 Hz apart,
+  10 WPM and the 30 → 15 WPM ramp, same-track QSOs scored per station,
+  12 WPM in white noise, fast-fading hand keying, tune-up 0.6 s through the
+  detector path, and clean machine, computer and paddle keying (+0.002 to
+  +0.014 CER). Group A, S₅₀₀ (key-down carrier power over noise power in
+  500 Hz) at CER 0.10: −0.1, −0.0 and 1.8 dB of S₅₀₀ at 12, 25 and 40 WPM
+  (Matched −0.2, 1.1, 2.9 dB of S₅₀₀; Envelope 7.2, 5.1, 6.0 dB of S₅₀₀).
+- **Displayed text.** CER of the text as first published (corrections
+  ignored) 0.411, of the final text 0.382, over all 3 531 signals; paired
+  immediate minus final +0.027 (+0.023 to +0.032), positive in every group
+  except tune-up with oracle channels (−0.004, interval containing 0). For
+  Matched and Envelope the two texts are equal.
+- **Corrections** (from the engine's text events, counted by the bench and
+  `suites summarize`; each engine run once). In all, 4.095 per
+  channel-minute (31 205 in 7 619.5 channel-minutes: switch 13 371, re-key
+  9 521, time-out 8 313, resync 0). Reach, from the correction's time back to
+  the start of the first character it replaced: median 1.544 s, 99th
+  percentile 19.861 s, maximum 20.000 s. Per group from 0.579 per
+  channel-minute (Farnsworth) to 8.394 (interference). The counts equal the
+  prototype's in every group but F tuning (227 against 180, the drifting
+  labels). The corrections change a net 11.4 characters per channel-minute:
+  the Levenshtein distance from immediate to final text, a lower bound on
+  the characters replaced, 86 906 characters on 3 177 of 3 556 tracks.
+- **Cost.** 133.8 ms of CPU per channel-second through the engine
+  (130.4 ms on oracle test cases, 165.6 ms through the detector path). Nearly
+  all of it is in the decoder: the decoders' share, a steady-clock time
+  that is not strictly nested in the process CPU time, is within 0.9 ms of
+  it. Per group it ranges from 54.2 ms (Farnsworth) to 259.4 ms
+  (interference). On the development set it is 130.4 ms, against the replay
+  tool's 128.2 ms (Task 9). On the same 26 engine runs (148.1 ms for the
+  bank) Matched costs 0.610 ms and Envelope 0.344 ms, so the bank costs
+  about 240 and 430 times as much. One core decodes about 7.5 bank channels
+  in real time (derived).
+- **Detection** (behind the Matched path's live detector, as the bench
+  counts it): recall equal for all three decoders in every group; false
+  tracks equal to Matched's except the strong group (bank 1, Matched and
+  Envelope 12 each); tracks per QSO equal to Matched's in every group-H tag;
+  every count equal to the prototype's in stage 1.
+- **Status.** Measured. The F drift rows are not comparable with the
+  prototype (anchor without drift). The intervals treat signals as
+  independent, although signals of one recording share its noise; they are
+  likely too narrow where a regime has few recordings (stage-1 results
+  record, section 4.3).

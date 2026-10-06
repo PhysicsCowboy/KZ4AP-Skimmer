@@ -471,7 +471,7 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
         // Only exact zeros so far: sigma^2 is unknown (NaN), so nothing is keyed, observed or published, and
         // the channel stays in its start state, its clocks (over start, unknown amplitude, re-key time-out)
         // restarted at the block's end: the first block with input other than exact zeros finds the channel
-        // as a stream's first block does (docs/signal-processing.md section 8c, "Exact zeros").
+        // as a stream's first block does (docs/signal-processing.md appendix A.8c, "Exact zeros").
         for (auto& br : branches_) br.over_start_n = br.unknown_since_n = br.timeout_from_n = n1;
         return;
     }

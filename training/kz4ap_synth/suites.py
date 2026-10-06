@@ -76,7 +76,7 @@ BOOTSTRAP_RESAMPLES = 1000
 MIN_SIGNALS_FOR_INTERVAL = 2  # a bootstrap over one signal has no spread: no interval is printed
 MIN_SIGNALS_PER_POINT = 2     # an S500 crossing is computed only if every point holds this many signals
 # The oracle channel's response relative to its passband (measured, docs/signal-processing.md
-# section 7): -1.17 dB at 100 Hz from its center, -6.02 dB at 150 Hz, -18.0 dB at 200 Hz. An
+# appendix A.7): -1.17 dB at 100 Hz from its center, -6.02 dB at 150 Hz, -18.0 dB at 200 Hz. An
 # oracle QSO label (channel on the caller) holds the answering station below the -6 dB point.
 ORACLE_CHANNEL_CUTOFF_HZ = 150.0
 # With oracle channels (no detector), the Matched tracker's anchor is the labeled frequency and it
@@ -1057,7 +1057,7 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
              "distance with spaces removed). First-word CER (and the per-over CER below) is an upper "
              "bound, not an exact attribution: an edit the alignment could place in more than one "
              "position is charged to the earliest, and insertions decoded before a transmission are "
-             "charged to its first word, so it can exceed 1 (docs/signal-processing.md, section 11). "
+             "charged to its first word, so it can exceed 1 (docs/signal-processing.md, appendix A.11). "
              "Parentheses: bootstrap 95% interval over signals; none is printed for a row with fewer "
              "than 2 signals. S₅₀₀ at a CER threshold is computed only for a sweep of at least three "
              "S₅₀₀ points with at least 2 signals each; groups that draw S₅₀₀ per signal (band, crowded) "
@@ -1123,7 +1123,7 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
                   "CER of each over (from its first to its last symbol) pooled by the sending station's "
                   "keying style. An upper bound, like first-word CER: ambiguous edits are charged to the "
                   "earliest position and insertions before an over to its first word, so it can exceed 1 "
-                  "(docs/signal-processing.md, section 11).", "",
+                  "(docs/signal-processing.md, appendix A.11).", "",
                   "| group | keying | decoder | overs | CER |", "|---|---|---|---|---|"]
         for (fe, group, keying), v in sorted(overs.items(), key=lambda kv: (kv[0][1], kv[0][2], kv[0][0])):
             note = f" ({ANCHOR_NOTE})" if _anchor_limited(fe, v) else ""

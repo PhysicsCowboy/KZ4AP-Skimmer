@@ -55,7 +55,7 @@ struct Correction {
     // The first position of the published list whose character's text this correction changed (the list before
     // against the list after). The characters before it are untouched; from_index can be larger, when the kept
     // characters are not a prefix of the list (characters that overlap in time). Not in the prototype; for the
-    // engine's TextCorrection (docs/signal-processing.md section 8c, "The consumer's rule").
+    // engine's TextCorrection (docs/signal-processing.md appendix A.8c, "The consumer's rule").
     std::size_t first_changed_index = 0;
 };
 

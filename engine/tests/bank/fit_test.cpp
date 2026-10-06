@@ -255,7 +255,7 @@ TEST(BankFitPython, ResolutionVarianceIsTwoEdgesOfLOverAPlusSampling) {
 }
 
 // fit.json's resolution_cases: the prototype's resolution_var_s2 at 24 (L, a, r), s^2. The port squares by
-// products where the prototype calls pow (section 8c, "Duration fit"), so relative 1e-9, not exact.
+// products where the prototype calls pow (Plan A results record, section 6.1.4), so relative 1e-9, not exact.
 TEST(BankFit, ResolutionVarianceMatchesPrototype) {
     const auto g = load_golden("fit");
     const auto& cases = g.at("resolution_cases");

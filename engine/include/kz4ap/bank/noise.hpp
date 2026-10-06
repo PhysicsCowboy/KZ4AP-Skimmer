@@ -35,7 +35,7 @@ double quantile_linear(std::vector<double> x, double q);
 // accepted taps is divided by m(kappa). The first estimate is the 20% quantile of |v|^2 over the warm-up
 // (a provisional one before). Updated once per block with the block's starting sigma^2. Branch k reads
 // row k of P (P may have more rows: SpectrumNoise passes the whole matrix for branch 1).
-// Plan B task B3 (docs/signal-processing.md section 8c, "Noise", "Exact zeros" and "Recovery"):
+// Plan B task B3 (docs/signal-processing.md section 8c and appendix A.8c, "Noise"):
 // - exact zeros are missing data: an input sample of exactly 0 FS enters neither the warm-up nor the recovery's
 //   history or count (a block of zeros only updates nothing); the warm-up runs on the first noise_warmup_s of
 //   non-zero input, and a tap counts only from 2 N_k + 1 samples after the latest exact zero;

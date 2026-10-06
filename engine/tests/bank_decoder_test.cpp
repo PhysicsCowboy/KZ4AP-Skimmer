@@ -244,7 +244,7 @@ TEST(BankDecoder, TheConsumersListIsTheBanksAfterEveryUpdateWhenCharactersOverla
     }
 }
 
-// The resync path (docs/signal-processing.md section 8c, "Overlapping characters"): a replacement that changes the
+// The resync path (docs/signal-processing.md appendix A.8c, "The consumer's rule"): a replacement that changes the
 // list's text without a correction (the replaced and the new text are equal, but a kept character that overlaps a
 // replaced one moves ahead of it) leaves the consumer's list different from the bank's, and the BankDecoder must
 // send one "resync" correction that makes them equal again. No recorded stream has made the bank do this (0 of

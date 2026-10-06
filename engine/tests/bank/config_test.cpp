@@ -109,7 +109,7 @@ TEST(BankConfig, PlanBDefaults) {
     EXPECT_EQ(c.guard_margin_s, 0.0048);
     EXPECT_NEAR(c.guard_margin_s, 0.5 * c.length_dits * 1.2 / c.max_wpm, 1e-15);
     // B4b: b_mask,k re-measured at that margin (kz4ap-noise-mask stream on stage 1's Task 5 noise, seeds 101-110,
-    // 60 s each; docs/signal-processing.md section 8c), one per branch
+    // 60 s each; docs/signal-processing.md A.8c), one per branch
     const std::vector<double> b4b = {0.8281, 0.8198, 0.8165, 0.8112, 0.8068, 0.8031, 0.7988, 0.7965,
                                      0.7936, 0.7912, 0.7892, 0.7871, 0.7854, 0.7836, 0.7822, 0.781,
                                      0.7798, 0.7787, 0.7778, 0.7769, 0.7761, 0.7754, 0.7748, 0.7742,

@@ -97,7 +97,7 @@ DecodeUpdate BankDecoder::take_update() {
         // number of characters kept) is that index unless the kept characters are not a prefix of the list
         // (characters that overlap in time), when it is past it. The characters from there on as they stand now:
         // applied after this update's chars, in order, the corrections leave the consumer's list equal to the bank's
-        // (docs/signal-processing.md section 8c, "The consumer's rule").
+        // (docs/signal-processing.md appendix A.8c, "The consumer's rule").
         emit(std::min(c.from_index, c.first_changed_index), c.t_s, c.reason, c.reach_s);
     }
     // Every change of the list's text (with a correction or without one: a same-text replacement that reorders

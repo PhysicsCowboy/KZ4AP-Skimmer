@@ -12,7 +12,7 @@
 
 ## Global constraints (as Plan A's, plus)
 
-- Every engine signal-processing change updates `docs/signal-processing.md` §8c in the same commit (project rule), with each value derived, measured or heuristic, and each time constant's class (dits / seconds, with its reason; owner, 2026-10-03).
+- Every engine signal-processing change updates `docs/signal-processing.md` §8c (since 2026-10-05: the body's §8c and, where a derivation, provenance or limitation changes, appendix A.8c) in the same commit (project rule), with each value derived, measured or heuristic, and each time constant's class (dits / seconds, with its reason; owner, 2026-10-03).
 - Envelope and Matched stay bit-identical; smoke unchanged.
 - One change per measured step; each step's decision rule is in this plan before its run; held-out seeds untouched until Task B12.
 - Wording, units, privacy and git rules as Plan A (no-prompt git recipe; text files via the Write and Edit tools).

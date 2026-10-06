@@ -38,7 +38,7 @@ TEST(NoiseMask, WhiteNoiseHasUnitPowerAndIsReproducible) {
 }
 
 // The table BankConfig::mask_bias was measured on stage 1's Task 5 noise (numpy's default_rng, seeds 101-110, 60 s
-// each, rounded to complex64) through this estimate (kz4ap-noise-mask stream; docs/signal-processing.md section 8c).
+// each, rounded to complex64) through this estimate (kz4ap-noise-mask stream; docs/signal-processing.md A.8c).
 // That noise is not reproducible here, so this test re-measures with this file's white noise, the same seeds and
 // length, and requires each branch's value within 3 standard errors of the difference of two independent 10-seed
 // means (sqrt(2) x the per-seed scatter / sqrt(10); a consistency check, not an identity). Measured (Windows): the

@@ -169,8 +169,8 @@ Details in section 8.
 
 ### 2.2 Derived and measured
 
-Derived from the arrays the code allocates, per channel at 1500 samples/s (docs/signal-processing.md, section
-8c, "Memory"):
+Derived from the arrays the code allocates, per channel at 1500 samples/s (docs/signal-processing.md, appendix
+A.8c, "Channel decoder", "Memory"):
 
 | item | before B1 | after B1 |
 |---|---|---|
@@ -255,7 +255,7 @@ Plan A's 453.6 ms (Task 7) on the same test case and code was not reproduced in 
 
 ### 3.1 What changed
 
-In `engine/src/bank/fit.cpp` (docs/signal-processing.md, section 8c, "Duration fit": "Evaluation"):
+In `engine/src/bank/fit.cpp` (docs/signal-processing.md, appendix A.8c, "Duration fit": "Evaluation"):
 
 1. **Exact steps** (commit `42201d7`; no bit of any result changes, derived from IEEE arithmetic and tested
    bit for bit against a frozen copy of the earlier code): only the classes of an observation's kind are
@@ -285,7 +285,7 @@ were applied, the new tests ran on the earlier code (the change set aside with `
 frozen copy reproduces the code it copies. After the near-exact step (as first committed; superseded by
 section 3.8, which restored bit-for-bit tests of the exact steps and replaced the fitted bounds below by
 derived ones) the differences are measured
-(docs/signal-processing.md, 8c, "Bit-for-bit check", table): at most 1.3 · 10⁻¹⁵ nats (Windows) and
+(docs/signal-processing.md, 8c, "Bit-for-bit check", table; since 2026-10-05 section 9.4 of this record): at most 1.3 · 10⁻¹⁵ nats (Windows) and
 8.9 · 10⁻¹⁶ nats (Linux) in the grid's 8.5 · 10⁹ log-likelihood values, 1.8 · 10⁻¹² nats in the weighted
 log-likelihood, at most 1.8 · 10⁻¹⁴ in `best`'s fields and 4.7 · 10⁻¹⁴ nats in its quality; no value above
 its bound, no acceptance test turned. The golden tests are unchanged and pass; the port's own plain-formula
@@ -360,7 +360,7 @@ call). The one-pass sum removes log1p altogether. User time of the profiled run:
 
 ### 3.6 Carried from the B1 review
 
-- docs/signal-processing.md, 8c, "Memory": the 1.7 MB by which the measured per-channel memory after B1
+- docs/signal-processing.md, 8c, "Memory" (since 2026-10-05: section 9.6 of this record, and appendix A.8c's limitations): the 1.7 MB by which the measured per-channel memory after B1
   exceeds the derived upper end is now stated there, and its cause is marked conjectured, not traced.
 - The per-call copy in `BankChannel::p_row` (B1): on the profiled channel it is called 67 times in 30.0 s
   (the re-key paths only) and is attributed 0.00 s of 3.70 s (below the profile's 10 ms resolution, 0.3%).
@@ -450,8 +450,8 @@ Raw outputs (git-ignored): `build/suite/full3/experiments/linux/c2-diff-bank-b2a
 
 ### 4.1 What changed
 
-In `engine/src/bank/fit.cpp` and the new `engine/src/bank/vecmath*.cpp` (docs/signal-processing.md, section 8c,
-"Duration fit": "Evaluation (Plan B task B2(b), exp and log)"; commit `35817fa`):
+In `engine/src/bank/fit.cpp` and the new `engine/src/bank/vecmath*.cpp` (docs/signal-processing.md, appendix A.8c,
+"Duration fit": "SLEEF's exp and ln (Plan B, B2(b))"; commit `35817fa`):
 
 1. Every exp and ln of the fit (ln s_c² of each class term on the grid and on the retained history, the
    one-pass sum's e^(x − m) and its ln, the refinement's responsibilities e^(ℓ_c − ℓ_total)) is SLEEF 3.9.0's
@@ -530,7 +530,7 @@ in the last bits); with B2(b) the Windows PC and the Linux machine use the same 
 
 - The B2(a) tests' frozen copy calls either the C library's exp and ln (the code at B2(a)) or the fit's. Against
   the latter every comparison is bit for bit; against the former each ℓ_total within the derived bound
-  1.001 · 2^−52 · (5 |ℓ_total| + 14.3 + |ln σ_ln²|) nats (derivation in docs/signal-processing.md, 8c, and in
+  1.001 · 2^−52 · (5 |ℓ_total| + 14.3 + |ln σ_ln²|) nats (derivation in docs/signal-processing.md, appendix A.8c, "SLEEF's bound", and in
   `fit_test.cpp`, `sleef_bound`), the weighted log-likelihood within the bound from those totals' differences;
   against the logaddexp chain within the sum of the B2(a) and B2(b) bounds. The tests were written first: on
   the B2(a) code the three bit-for-bit comparisons with the fit's exp and ln failed (e.g. 259 216 of
@@ -631,7 +631,7 @@ tried.
 ### 4.7 Carried from the B2(a) re-review
 
 The Windows full-sweep time was stated three ways (15 to 20 min in `engine/CMakeLists.txt`, about 25 min in
-docs/signal-processing.md, about 20 min in `fit_test.cpp`); all three now state the B2(b) measurement
+docs/signal-processing.md (that statement now in section 9.4 of this record), about 20 min in `fit_test.cpp`); all three now state the B2(b) measurement
 (about 41 min on the Windows PC) and the Linux machine's (about 6 min). Section 3.2's test count (321, correct at `1c6b681`) now notes the
 322 after fix round 1.
 
@@ -698,8 +698,8 @@ skipped, 1 disabled); smoke unchanged (Envelope CER 0.0353, Matched 0.0436). Raw
 
 ### 5.1 What changed
 
-Two rules in the bank decoder's noise estimate (`docs/signal-processing.md` section 8c, "Noise", "Exact zeros",
-"Recovery of a stuck level"; "Channel decoder", "Exact zeros"):
+Two rules in the bank decoder's noise estimate (`docs/signal-processing.md` appendix A.8c, "Noise" (exact zeros, the recovery of a stuck level);
+"Channel decoder", "Exact zeros"):
 
 1. **Exact zeros are missing data** (derived: a receiver's output carries noise). A block of input samples all
    exactly 0 FS updates nothing in the three-tap estimate (warm-up, level, W, the recovery's count), and after
@@ -1033,7 +1033,7 @@ The script for the wrong-estimate ratios is `build/b4a/wrong_ratio.py`.
 selected branch's nominal dit d_k without an eligible fit; that made T̂ = 12 ms from branch 1's first key-up until the
 selector's first switch (a start-up trap). They are kept as the record of that form; 6.6.1 replaces them.
 
-What it is (`db38cd0`; `docs/signal-processing.md` section 8c, "Periodicity", the "Variant" bullet):
+What it is (`db38cd0`; `docs/signal-processing.md` appendix A.8c, "Periodicity", "The shared-window variant"):
 `periodicity_window_mode` = `"shared"` keeps N_w = 41.7, 104 and 208 but judges every candidate of a row over one
 window N_w · T̂, T̂ the dit of the branch currently selected (its fitted T if its fit is eligible, else its nominal
 d_k; capped at 0.2530 s), with stage 1's 2, 5 and 10 s before the channel's first selection. Each row is then stage
@@ -1645,3 +1645,710 @@ Git-ignored, copied back from the Linux machine to `build/suite/full3/experiment
 Decoded files are in `build/suite/full3/proto/stretch-*/` and scored results in
 `build/suite/full3/experiments/results/stretch-*/`, both on the Linux machine. The helper scripts are in `build/b9/`
 (`b9_prep.sh`, `b9_check.py`, `b9_run.sh`, `b9_runs.sh`, `b9_fix1.sh`).
+
+---
+
+## 9. Moved from signal-processing.md, 2026-10-05: Plan B's measurements, checks and tests as section 8c stated them
+
+Moved verbatim on 2026-10-05, when `docs/signal-processing.md` was restructured into a body and an appendix (owner, option B). The text is as it stood at commit 5099a29; its references to sections of signal-processing.md ("section 8", "§8b", "section 11" …) are to that version: the derivations now sit in its appendix under the same numbers (A.6, A.7, A.8, A.8b, A.8c, A.11), and "results record" means this file.
+
+### 9.1 Noise (B3, B4b)
+
+- **Mask bias b_mask,k.** The mask leaves out mostly low-frequency power
+  (the station is near 0 Hz), so the masked spectrum reads each branch's
+  noise low by a factor that differs per branch and does not cancel in
+  the ratio. b_k = (σ²_v,k from the masked, smoothed spectrum) / (true
+  σ²_v,k), dimensionless, the segment-weighted mean over the noise
+  streams, runs from 0.8281 (k = 1) to 0.7713 (k = 32) at the 4.8 ms
+  guard margin (`BankConfig::mask_bias`). Measured (Plan B, B4b: stage
+  1's Task 5 method on the C++ estimate, `kz4ap-noise-mask stream`) on
+  stage 1's own Task 5 noise: white, 1 FS² per complex sample, numpy's
+  `default_rng` seeds 101–110, 60 s each, rounded to complex64 (the
+  engine's sample type); 3459 of 3500 segments accepted (2362 at 20 ms),
+  kept fraction 0.826 (0.619 at 20 ms); per-seed scatter 2.6% (k = 1) to
+  3.9% (k = 32), so the ten-seed mean carries a standard error of about
+  0.8% to 1.2% (derived from the scatter). Checks of the method: the same
+  streams at 20 ms through the C++ estimate give stage 1's table to
+  4.9 · 10⁻⁵ (largest difference; identical at four decimals), and on
+  seed 101 at 4.8 ms the C++ estimate's masked branch powers equal the
+  prototype's (`guard_margin_s` = 0.0048) to a relative 1.3 · 10⁻¹⁵ with
+  equal segment counts (344 of 350 accepted). A second noise source (the
+  bench test's: `std::mt19937_64` and Box–Muller, the same seed numbers)
+  gives 0.8478 (k = 1) to 0.8000 (k = 32) with ten seeds, up to 2.5
+  standard errors of the difference above the table, and 0.8381 to
+  0.7812 with 200 seeds (1001–1200; 0.8405 to 0.7849 at 20 ms). So the
+  margin lowers b_k by 1.1% (k = 1) to 1.8% (k = 32) on stage 1's ten
+  noise streams and by 0.3% to 0.5% on the second source's 200: the
+  table's own sampling error is about as large as the margin's effect on
+  it (measured). The 200-seed measurement points one way: at 4.8 ms it
+  lies above the adopted ten-seed table at every branch (0.8381 against
+  0.8281 at k = 1, 0.7812 against 0.7713 at k = 32; 1.2% to 1.5% over
+  the 32 branches) and within 0.5% of stage 1's table (−0.5% to +0.1%);
+  its standard error is about 0.2% (3% / √200, derived), and at 20 ms
+  the same source agrees with stage 1's table (0.8405 against 0.8370,
+  0.7849 against 0.7852). So most of the adopted table's shift from
+  stage 1's is the sampling error of seeds 101–110, one sign at every
+  branch because the branches see the same noise; the margin's own
+  effect is about −0.3% to −0.5% (measured). Effect on the estimate, if
+  the 200-seed values are the truth: dividing by the adopted table reads
+  σ²_v,k 1.2% to 1.5% high, +0.05 to +0.06 dB relative to the true noise
+  power, in the absolute level (variant (b), `spectrum-level`, not the
+  default); in the default (variant (a)) only b_k / b_1 enters, and
+  branch k's σ²_v,k relative to branch 1's reads 0% to 0.25% high, at
+  most +0.011 dB (derived from the two tables). The table is unchanged:
+  whether to adopt a 200-seed table (stage 1's numpy noise, so the
+  method stays stage 1's) and re-run the paired comparison is open, for
+  the owner. Stage 1's table (20 ms margin; 0.8370 to 0.7852,
+  prototype, the same streams) is kept as `kStage1MaskBias` for the
+  golden tests. In channel-shaped noise stage 1's ratios were 2.9%
+  (k = 1) to 5.9% (k = 32) higher (measured in the prototype at 20 ms;
+  not re-measured at 4.8 ms), so the estimate is about that much low
+  there. The table is valid only for the default ladder, T_seg,
+  smoothing, guard margin, clean fraction, κ_n and three-tap settings at
+  1500 samples/s; it has not been re-measured at other rates.
+- **Accepted segments while a station sends (Plan B, B4b; measured).**
+  PARIS at 12, 25 and 40 words/min, S₅₀₀ = 20 dB against white noise of
+  1 FS² per complex sample, 1 s of noise first, about 60 s of sending
+  (the bench's keying, 5 ms edges), counted over the segments starting
+  while the station sends (348 to 351 offered, 5.87 per second), C++
+  estimate (`kz4ap-noise-mask stream`): accepted 1.70, 1.64 and 0.65
+  segments per second at 12, 25 and 40 words/min with the 4.8 ms margin
+  (0.78, 0.65 and 0.28 with stage 1's 20 ms), mean kept fraction 38.6%,
+  36.1% and 30.8% (21.6%, 16.6% and 13.3%). The noise-free model above
+  gives 2.07, 2.53 and 0.82 accepted per second (1.91, 1.69 and 0.59 at
+  20 ms; derived); the measured values are lower because noise peaks
+  are flagged too (in noise alone the mask keeps 82.6% of samples at
+  4.8 ms and 61.9% at 20 ms, measured above). One stream per speed
+  (numpy seeds 1012, 1025, 1040), one realization each: about 350
+  segments offered per stream, so a binomial standard error of about
+  ±0.14 accepted segments per second at 1.7 per second and ±0.10 at 0.65
+  (derived, indicative: the segments are correlated through the PARIS
+  pattern).
+- **The development set (Plan B, B4b; measured with the time constants
+  in seconds).** The guard margin and the table were measured on the
+  development set with stage 1's re-key wait (0.8 s), time-out (2 s) and
+  periodicity windows (2, 5, 10 s), set by the overrides in seconds,
+  against `bank-b3b` (the same settings, 20 ms, stage 1's table): the
+  owner's instruction (2026-10-04), so that B4b's effect is separate from
+  the undecided time constants in dits of B4a; the code's defaults keep
+  B4a's dits. 116 of 525 channels decode to a different final text;
+  paired CER +0.0004 (−0.0021 to +0.0028), no group's interval entirely
+  above 0 (group I, Farnsworth: +0.0018, interval from exactly 0 to
+  +0.0054, one regime, 25/13 words/min machine, 0.0141 → 0.0283), group
+  F (tuning) better, −0.0013 (−0.0026 to −0.0003); CPU 42.60 → 42.27 ms
+  per channel-second (Linux machine). Results record section 7.
+
+**Exact zeros (Plan B, B3; derived).** Exact zeros are missing data: a
+receiver's output carries noise, so a run of input samples that are
+exactly 0 FS (both components; a zero-padded recording, a dead channel)
+is padding, not a measurement of the noise. An exact-zero input sample
+enters neither the three-tap warm-up nor the recovery's history or count
+below, so a block whose input samples are all exactly 0 FS changes
+nothing in the three-tap estimate (not the warm-up, not σ², not W, not
+the recovery's count), and in a block that is only partly zero (a run of
+zeros starting or ending inside it) only the non-zero samples count: the
+warm-up runs on the first 0.32 s of non-zero input samples. A tap counts
+only from 2N_k samples after the sample following the latest exact zero
+(the stream-start rule above, with that sample as the start): its middle
+and newest taps then hold no zero, and its oldest tap's boxcar may reach
+back into the zeros, exactly as at a stream's start (where the boxcar
+reaches into the zeros before the first sample). So a single isolated
+exact zero at sample z blocks branch k's taps at z and at the 2N_k
+samples after it (a tap at i counts only if i − z > 2N_k): 2N_k + 1
+samples in all, 29 (19.3 ms) for branch 1 (N_1 = 14) and 553 (369 ms)
+for branch 32 (N_32 = 276), derived. Before fix round 1 of
+the B3 review the rule was per block: a partly zero block's exact-zero
+|v_k|² entered the warm-up, whose 20% quantile was then 0, so σ² sat at
+the 10⁻²⁰ FS² floor for the first few blocks of noise (4 blocks, 85 ms,
+in the zero_pad stream; derived by the reviewer), and middle taps of 0
+FS² inside a block were accepted. Tested bit for bit:
+`BankNoise.ZerosEndingInsideABlockLeaveTheWarmUpToTheNoise` (the estimate
+after 1500 zeros ending inside a block equals the noise alone's, fed in
+the same blocks) and the gap's edge blocks in
+`BankNoise.AGapOfExactZerosLeavesTheEstimateUnchanged`. Until the first
+non-zero sample σ² is unknown (NaN), as before a stream's first block; the channel then keys, observes and publishes nothing ("Channel
+decoder", "Exact zeros"). In the spectrum, a segment whose samples are
+all exact zeros is not offered, and in any other segment each exact-zero
+sample is left out of the mask as a flagged sample is. That per-sample
+rule is stricter than leaving out only all-zero segments (accepted by the
+controller): a segment straddling the edge of a run of zeros is measured
+on its non-zero part (Σw² counts only those samples, so its level is not
+read low), it needs 50% non-zero, unflagged samples to enter, and an
+all-zero periodogram, hence the former 0/0 ratio, cannot occur.
+Without exact zeros every one of these rules gives the prototype's
+arithmetic unchanged (the noise goldens and all development-set records
+are identical, results record section 5).
+
+Before (Plan A, the prototype's behavior): on exact zeros the warm-up
+set σ² = 10⁻²⁰ FS² and, once noise arrived, no tap passed the guard
+again (acceptance (1 − e^(−κρ))(1 − e^(−κ_n ρ))² about 10⁻⁵⁴ per tap at
+ρ = σ̂²/σ² = 10⁻²⁰/0.036, computed), so σ² stayed there; the spectrum
+accepted the all-zero segments, its shape became identically 0 and
+variant (a)'s ratio 0/0 = NaN.
+
+**Recovery of a stuck level (Plan B, B3; heuristic).** The same lock-up
+follows any rise of the true noise level by a large factor faster than
+the estimate follows (at 60 dB, ρ = 10⁻⁶ and the acceptance is about
+10⁻¹⁷ per tap; derived from the same formula), for example a band change
+or a receiver gain step. Rule: if branch 1 has accepted no middle tap
+for `noise_stuck_s` = 8 s (= 4 τ_n) of non-zero input, every branch's σ²
+is set again by the warm-up rule, max(Q₀.₂ / (2·(−ln 0.8)), 10⁻²⁰ FS²)
+over that branch's last 0.32 s of non-zero input (a ring of 480 |v_k|²
+values per branch), W is kept and the update resumes; the firings are
+counted (`recoveries()`, written per channel to the replay tool's
+decoded files as `noise_recoveries`, with `noise_zero_blocks`). The time
+is in seconds, not dits, because the noise process has no keying speed;
+8 s is a heuristic. The rule is gated on branch 1 for every method (the
+controller's ruling, option (A)): branch 1 is the shortest boxcar
+(N_1 = 14 samples at 1500 samples/s). A tap at n reads v[n], v[n − N]
+and v[n − 2N], whose boxcars span the 3N_k samples n − 3N_k + 1 … n, so
+it lies entirely in noise when 3N_1 = 42 samples (28.0 ms) are free of
+the station; a character space, 3 dits = 3.6/WPM s, is 54 samples
+(36 ms) even at max_wpm = 100 words/min, so branch 1 sees noise in every
+character space at every speed of the ladder (derived, assuming
+rectangular keying: the margin at 100 words/min is only 12 samples,
+8 ms, which the keying's rise and fall and the channel filter's tails
+eat into; the measured fact relied on is that the development set's 525
+channels never fire it; element spaces, 1 dit,
+suffice up to 1.2 · r/42 = 42.9 words/min). A long branch does not:
+branch 32 (N_32 = 276 samples) needs 3N_32 = 828 samples (0.552 s) free
+of the station, longer than a word space (7 dits = 8.4/WPM s) above
+about 15.2 words/min, so during continuous keying faster than that it
+accepts no tap at all. A per-branch rule (the brief's first
+form) therefore fired on the noise golden stream (20 s, 25 words/min
+keying from 1.0 s) in the "branch" fallback after 8 s and set the long
+branches to the station's power, 3 to 4 orders of magnitude above the
+noise (measured), which the gate prevents
+(`BankNoise.AKeyedStationDoesNotTriggerTheRecovery`). For "spectrum" and
+"spectrum-level" only branch 1 has a three-tap estimate, so the gate is
+their only form. Measured on the development set (525 channels): no
+firing.
+
+Consequences, tested (`engine/tests/bank/noise_test.cpp`):
+- A 60 dB rise (`BankNoise.ANoiseRiseOf60dBRecoversByTheDerivedTime`):
+  the recovery fires at the first block end at or after the rise
+  + 8 s (measured 8.011 s), its 0.32 s window then holds only the new
+  noise, and every branch restarts from a 480-sample warm-up estimate of
+  the new level. From above (ρ > 1) every tap is accepted and the
+  excess decays as e^(−t/τ_n), so within a factor 2 of the new σ²_v,k
+  from the rise + 8 s + 0.32 s + 2 τ_n (12.32 s) on, derived given a
+  warm-up estimate at most 1 + e² = 8.4 times too high; from below
+  (ρ < 1) the guard truncates and the rise is slower and not
+  exponential, so no time is derived for it. That condition is
+  measured: the test passes in all three methods ("branch" branch 32,
+  whose 0.32 s window spans only 1.7 boxcar lengths, restarts at 2.14).
+  Variant (b)'s shape follows after branch 1 recovers, with β per
+  segment: τ_n ln 2 = 1.39 s to half the new level (derived).
+- A continuous carrier longer than 8 s also triggers it: the level is
+  then set to the carrier's (an estimate cannot tell a carrier from
+  noise by tap acceptance alone) and decays back with τ_n once the
+  carrier stops. Derived for a 10 s carrier A² = 10⁴/N_1 FS² (40 dB above
+  branch 1's noise power 1/N_1 FS² per complex sample, white noise of
+  1 FS²; ρ in units of the noise's σ²_v,1): at the recovery ρ = 2·10⁴ ·
+  q/(2·(−ln 0.8)), q = 0.988 (the 20% quantile of |A + n|² is about
+  A²(1 − 2·0.8416·σ_v,1/A)), 46.5 dB relative to the noise; for the
+  remaining 2 s of carrier every tap is accepted and ρ decays with τ_n
+  toward 2·10⁴/(2 m(κ)), so at the carrier's end ρ = 2.63·10⁴
+  (44.2 dB relative to the noise; measured 2.62·10⁴); then ρ decays at
+  10·log₁₀(e)/τ_n = 2.17 dB (relative to the noise) per s toward
+  1/m(κ) = 1.58 (conservative:
+  truncation lowers the target near ρ = 1) and reaches 2 after
+  τ_n ln((26 290 − 1.58)/(2 − 1.58)) = 22.1 s (measured 1.96 at 22.0 s).
+  Branch k of the "branch" fallback starts higher by N_k/N_1 and takes
+  τ_n ln(N_k/N_1) longer (28.0 s for k = 32; derived; measured ρ of
+  branches 2 to 32 between 1.14 and 1.98 from their t_k + 0.25 s on).
+  For the spectrum methods' branches 2 to 32 the factor 2 by
+  max_k t_k + 0.25 s = 28.3 s is a **measured margin, not derived**: the
+  shape takes the carrier's segments after branch 1 recovers and their
+  excess decays with τ_n from at most A²/(2σ²_v,k) (a derived bound on
+  that factor alone), but the level and the shape's ratio each within 2
+  bound their product only within 4; measured ρ from 1.10 to 1.27
+  ("spectrum") and 1.02 to 1.16 ("spectrum-level") from 28.3 s on
+  (`BankNoise.ALongCarrierRecoversByTheDerivedTime`, Windows).
+- A 5 s gap of exact zeros inside noise leaves σ² unchanged bit for bit
+  (`BankNoise.AGapOfExactZerosLeavesTheEstimateUnchanged`); noise after
+  5 s of zeros starts the estimate 0.32 s after its first sample
+  (`BankNoise.ExactZerosThenNoiseStayFiniteAndPositive`, Plan A's
+  disabled requirement, now enabled with "after the warm-up" counted from
+  the first non-zero input).
+
+### 9.2 Time constants in dits (B4a): granularity, overrides, the shared variant, tests
+
+At 25 words/min (T = 48 ms) the values are stage 1's within the ladder's
+granularity: the branch whose d_k is nearest 48 ms is k = 16 (50.13 ms),
+whose W_min,16 = 837.1 ms and time-out 2.093 s are 4.6% above 0.8 s and
+2 s; any dit inside the ladder's range is within a factor 1.1^(1/2) =
+1.049 of the nearest d_k, and 16.7 is 0.2% above 16.67, so the bound is
+a factor 1.051 (derived; tested). The windows at T = 48 ms are 2.002,
+4.992 and 9.984 s. After a slow station stops, its branch's false
+characters (provisional keying of noise) can stay published up to its
+time-out, about 4 s at 12 words/min, inside the 20 s correction reach.
+The prototype's values in seconds (0.8 s, 2 s and windows of 2, 5 and
+10 s shared by every candidate) are `fixed_timing(cfg, 0.8, 2.0, {2, 5,
+10})`, which the module and channel golden tests set explicitly
+(`BankChannel`, `BankDecoder` and `Periodicity` take a timing); a shared
+window is computed exactly as before (one FFT per window), so those
+goldens pass unchanged. Before B4a the three settings were
+`rekey_after_s` = 0.8 s and `rekey_timeout_s` = 2 s for every branch and
+`periodicity_windows_s` = 2, 5 and 10 s for every candidate.
+
+Overrides in seconds, for ablations (default unset): `BankConfig` keeps
+`rekey_after_s`, `rekey_timeout_s` (s; 0 = unset) and
+`periodicity_windows_s` (s; empty = unset). When set they take
+precedence: `rekey_after_s` gives every branch W_min,k = that value (the
+time-out then follows it by `rekey_timeout_ratio` unless
+`rekey_timeout_s` is set too), `rekey_timeout_s` gives every branch that
+time-out, and `periodicity_windows_s` gives windows of those lengths
+shared by every candidate (one FFT each). The replay tool sets them with
+`--set`; set to 0.8 s, 2 s and {2, 5, 10} s they reproduce stage 1's
+timing bit for bit (tested on three golden streams), and each part acts
+alone (tested). Note that branch 1's settings feed the periodicity
+estimate: its input p is branch 1's squelched posterior, which depends on
+branch 1's amplitude, seeded and re-keyed with W_min,1 (200.4 ms in dits,
+0.8 s in stage 1) and its time-out (501 ms, 2 s); so the re-key settings
+change the periodicity estimate's input as well as the keying.
+
+A variant of the windows, not the default (Plan B, B4a-C):
+`periodicity_window_mode` = `"shared"` keeps N_w in dits but judges every
+candidate of a row over one window N_w · T̂, T̂ the selected branch's
+eligible fitted dit of its current over, with stage 1's 2, 5 and 10 s
+whenever there is none ("Periodicity" below). The replay tool sets it with
+`--set periodicity_window_mode=shared`.
+
+Tests at the default timing (`engine/tests/bank/`): W_min,k, the seed's
+memory and the time-out in samples at 1500 samples/s for k = 1, 16 and
+32 (derived values) and the 25 words/min bound above; the keyer ready
+at the block that reaches each branch's own W_min,k; each candidate's
+window N = max(16, round(N_w T r_P)) and its reach inside it; each
+candidate's score against `comb_estimate` on its own window (above);
+the channel's result independent of the split into pushes; and a
+12 words/min station (S₅₀₀ = 15.2 dB SNR in 500 Hz) whose branch 23
+becomes known by a re-key at 2.752 s of stream time with 1.643 s of
+keyed time counted (1.622 s one block before; W_min,23 = 1.631 s),
+where stage 1's timing re-keys it at 1.387 s with 0.811 s (measured,
+Windows build).
+
+### 9.3 Keying: exact zeros, before and after B3
+
+**Exact zeros (Plan B, B3).** The keyer never sees a NaN σ²: while the
+noise estimate has none (only exact zeros so far, "Noise" above) the
+channel does not call it ("Channel decoder", "Exact zeros"). A run of
+exact zeros after the first estimate is keyed with σ² as it stood
+before the run (the noise estimate holds it): |v|² = 0 FS² gives x = 0,
+which keys nothing. Before Plan B (the prototype's behavior) σ² could be
+NaN here, so a_k, x, g and p were NaN, every comparison with them false,
+and nothing was keyed.
+
+### 9.4 Duration fit (B2(a), B2(b)): SLEEF's implementations, the bit-for-bit checks and the cost
+
+- **Evaluation (Plan B task B2(b), exp and log).** The fit's exp and ln
+  are SLEEF 3.9.0's vectorized functions (`_u10`: a stated error bound of
+  1.0 unit in the last place of the returned value) instead of the C
+  library's: every ln s_c² of a class term (on the grid and on the retained
+  history), the one-pass sum's e^(x − m) and its ln, and the refinement's
+  responsibilities e^(ℓ_c − ℓ_total). They are evaluated on arrays: the
+  grid's points in blocks of 256 (per block every class term's s_c², then
+  all their ln together, then the terms, then every e^(x − m) of the
+  block, then every ln of a sum), the retained history's observations all
+  at once. Per value the operations and their order are unchanged; only exp
+  and ln are SLEEF's. (A term already known to be −∞, with its median not
+  positive or below the bound above, gets no ln s_c²: no change.) The
+  implementation is chosen once at run time (`engine/src/bank/vecmath.cpp`):
+  SLEEF's "finz" functions (with fused multiply-add) on AVX-512F, 8 doubles
+  per call, or on AVX2 with FMA, 4 doubles; on a processor without them its
+  "cinz" functions (no FMA) on AVX-512F, AVX or SSE2 (8, 4 or 2 doubles).
+  SLEEF states that each family gives the same bits with every instruction
+  set, and the tests check it on each machine
+  (`BankFitB2b.ExpAndLogAreWithinOneUlpOfTheCLibraryAndConsistentWithinEachFamily`);
+  so the fit's values are the same on every processor with AVX2 and FMA
+  (most Intel Core processors since Haswell, 2013, and AMD since Excavator,
+  2015; not every Pentium, Celeron or Atom-class one), and a processor
+  without them gives other last bits. Each instruction set's code is
+  compiled in its own file for that set alone (on MSVC the AVX-512 file as
+  SLEEF compiles its own: AVX2 code generation, AVX-512F intrinsics), and
+  each runs only where the processor reports the extensions its file may
+  use, so the program runs on every x86-64 processor: by construction and
+  by the symbol check of results record section 4.1, not by a run on a
+  processor without AVX. The environment variable `KZ4AP_FIT_MATH`
+  (`cinz`, `finz` or a full name) restricts the choice, for the tests and
+  for one development-set replay only (results record, section 4.9). The
+  order is
+  measured, not derived: the 2-double SSE2 functions (cinz) are slower than
+  the C library's ln (10.6 against 4.6 ns per value on the Linux machine)
+  and made the decoder slower on both machines; the cinz AVX and AVX-512
+  versions made it faster on the Linux machine only, the FMA versions on
+  both (results record, section 4). The
+  last bits of ℓ_total change; the bound and the measured differences are
+  under "Bit-for-bit check" below.
+
+**Bit-for-bit check of the restructured evaluation (Plan B task B2(a)).**
+`fit_test.cpp` keeps a frozen copy of the fit's evaluation before B2(a)
+(logaddexp, the per-observation terms, the grid's log-likelihood, the
+refinement and the best-fit search) and compares the bit patterns of every
+result: logaddexp on 1.2 · 10⁷ pairs placed at and beside the skip
+threshold at every binary exponent, and on the special values (±0, ±∞,
+NaN, subnormals); the grid log-likelihood at every grid point for 10⁶
+random observations per configuration (durations from 10 µs to 100 s,
+beyond the 1 ms and 10 s clamps and one step beside them; σ_t² of 0,
+10⁻¹⁴ to 10⁻² s², and 1, 10¹⁰, 10³⁰⁰ s² and +∞), on the default grids and on
+grids with medians that are not positive (w/T up to 1.2, T_g/T down to
+0.2), and on the golden observations; `best`, `refine`, the weighted
+log-likelihood and `class_logliks` on the golden sequence, the fit cases
+and 2000 random fits per configuration and number of refinement steps
+(0, 2, 5), without and with T_P priors. With the exact steps alone every
+comparison was equal (commit `42201d7`; Windows and Linux, full sizes).
+Since the near-exact step the tests keep two frozen variants. (1) The
+frozen code with only the near-exact step applied (its ℓ_total by the
+current one-pass sum, over all five classes): against it the grid's
+log-likelihood (including the bounded skip of ln s_c²), `best` with its
+quality, `refine`, the weighted log-likelihood and `class_logliks` (ℓ_c,
+ℓ_total, s_c²) are compared **bit for bit**, so the exact steps keep a
+bit-for-bit guard. (2) The frozen code with the logaddexp chain: against it
+only the near-exact difference itself is measured, each ℓ_total (the grid's
+and `class_logliks`') within the derived bound 30 · 2^−52 · (|ℓ_total| +
+2 nats) (a count of at most 15 roundings per evaluation, each within one
+unit in the last place, on quantities of magnitude ≤ |ℓ_total| + 2 nats),
+and the weighted log-likelihood at a fixed θ within the bound derived from
+those totals' own differences: Σ λ^age |Δℓ_total| plus each side's
+rounding of numpy's pairwise sum, (⌈n/8⌉ + ⌈log₂ n⌉ + 4) · 2^−53 ·
+Σ |λ^age ℓ_total|, and of the prior's addition. The one-pass sum's
+leave-out of terms below 40 nats is tested bit for bit against the same sum
+without it (`LogSumExpLeaveOutChangesNoBit`, 2 · 10⁶ cases, the outlier
+last and largest included). Non-finite values are compared bit for bit
+everywhere. At the full sizes no comparison fails, on both platforms; the
+largest differences from the logaddexp chain (Windows / Linux):
+
+| quantity | values | largest difference from the chain | of its bound |
+|---|---|---|---|
+| grid log-likelihood (ℓ_total at every grid point) | 8.5 · 10⁹ | 1.3 · 10⁻¹⁵ nats (relative 7.5 · 10⁻⁸, at a value near 0 nats) | 3.5% |
+| ℓ_total of `class_logliks` | 1.8 · 10⁷ | 8.9 · 10⁻¹⁶ nats | 3.3% |
+| weighted log-likelihood at a fixed θ (Σ over ≤ 192 observations, with the T_P prior term) | 4.4 · 10⁵ | 1.8 · 10⁻¹² nats (relative ≤ 1.6 · 10⁻¹³) | 99.1% |
+
+(Windows; the Linux machine's figures are in the results record, section
+3.8.) The weighted log-likelihood comes within 1% of its bound (99.6% on
+the Linux machine) because the bound's first term, Σ λ^age |Δℓ_total|, is
+the difference itself wherever one observation's difference dominates (a
+short history, or one term much larger than the others): the bound is
+derived and holds by construction, it is not fitted, and it is tight
+there. Through the exact
+steps (variant 1) `best`, `refine` and every other value are equal bit for
+bit, so no acceptance test turns.
+
+**Check of SLEEF's exp and ln (Plan B task B2(b)).** The frozen copy calls
+either the C library's exp and ln (the code at B2(a)) or the fit's
+(SLEEF's, one value at a time). (1) Against the frozen one-pass code with
+the fit's exp and ln, every comparison of the check above is **bit for bit**
+(the blocks, the padded last vector and the order of operations change no
+value). (2) Against the frozen one-pass code with the C library's, each
+ℓ_total (the grid's and `class_logliks`') must lie within the derived bound
+1.001 · 2^−52 · (5 |ℓ_total| + 14.3 + |ln σ_ln²|) nats (18.1 nats for the
+constant with σ_ln = 0.15; 7.4 · 10⁻¹⁵ nats at ℓ_total = −3 nats), and the
+weighted log-likelihood at a fixed θ within the bound above from those
+totals' differences. The derivation (in `fit_test.cpp`, `sleef_bound`),
+with every exp and ln within 1 ulp of the exact value (SLEEF's stated
+bound; assumed, not proven, of the C libraries): the difference is each
+side's evaluation error of its own terms plus the exact log-sum-exp's
+change between the two sides' terms. Each side's one-pass evaluation errs
+by at most 4.44 · 2^−52 + 2^−53 |ℓ_total| (the sum S ∈ [1, 4] off by at
+most 3.05 · 2^−52 relative after ≤ 3 subtractions, exps and additions; its
+ln by 2^−52 ln 4 more; the final addition). The log-sum-exp moves by the
+responsibility-weighted mean of the terms' changes, Σ p_c |Δx_c| with
+Σ p_c ≤ 1; a term x = (a − ½ ln s²) − ln √(2π) changes by at most
+2^−52 (|ln s²| + 2|x| + 1), as the two ln s² differ by at most 2 ulp, and
+|ln s²| ≤ 2|x| + |ln σ_ln²| (ln((1 − ε) P_c) < 0 and z²/s² ≥ 0, else
+s² ≥ σ_ln²); with p |x − ℓ_total| = p |ln p| ≤ 1/e per class this gives
+2^−52 (4 |ℓ_total| + 5.42 + |ln σ_ln²|). The factor 1.001 covers the
+second-order terms. (3) Against the logaddexp chain each ℓ_total within the
+sum of the two bounds. Each implementation the processor can run is checked
+against `std::exp` and `std::log` on 10⁶ arguments each (the sum's r in
+[−40, 0] nats and the leave-out's edge, the responsibilities down to
+subnormal results and 0, overflow, subnormal and edge arguments, ±0, ±∞,
+NaN): at most 1 ulp apart, every element bit for bit as when evaluated
+alone, and bit for bit within its family (finz AVX-512 = finz AVX2 and
+cinz AVX-512 = AVX = SSE2 on the Linux machine; cinz AVX = SSE2 on the
+Windows PC, which has no AVX-512). Of the test's 10⁶ arguments (its own mix,
+not the fit's arguments) about 3.7% of the exps (finz; 5.8% and 6.0% cinz,
+Windows and Linux) and 0.5% of the lns differ from the C library's, by
+1 ulp, on both machines. At the
+full sizes every bit-for-bit comparison is equal on both machines, and the
+largest differences from the B2(a) code are (Linux machine / Windows PC):
+
+| quantity | values | largest difference from the B2(a) code | of its bound |
+|---|---|---|---|
+| grid log-likelihood | 8.5 · 10⁹ | 1.8 · 10⁻¹⁵ / 1.8 · 10⁻¹⁵ nats | 21.7% / 21.7% |
+| ℓ_total of `class_logliks` | 1.8 · 10⁷ | 1.8 · 10⁻¹⁵ / 1.8 · 10⁻¹⁵ nats | 20.0% / 19.9% |
+| weighted log-likelihood at a fixed θ | 4.4 · 10⁵ | 4.6 · 10⁻¹³ / 1.1 · 10⁻¹³ nats | 31.9% / 40.5% |
+
+Against the logaddexp chain (both steps together) the grid's ℓ_total
+differs by at most 2.2 · 10⁻¹⁵ nats (4.8% of the summed bound). The
+development-set texts and every decoded record are unchanged (results
+record, section 4).
+
+(The default test run uses 20 000 observations and 100 fits; the full sizes
+run as the ctest entry `BankFitB2a.FullSweep`, label `full-sweep`, which the
+default test presets exclude: `ctest --preset windows-full-sweep` or
+`ctest --preset linux-full-sweep`, about 41 min on the Windows PC and 6 min
+on the Linux machine since B2(b), whose frozen copy runs three variants.) The port's check against the plain formula
+(`FastPathsAreBitIdenticalToThePlainFormulas`) now allows each grid value
+the same derived bound 30 · 2^−52 · (|v| + 2 nats) (6.7 · 10⁻¹⁵ · (|v| + 2)
+nats, against the 1.3 · 10⁻¹⁵ nats measured in the full sweep) plus, since
+B2(b), SLEEF's bound above, and each table entry an allowance accumulated as
+the table is: λ × its allowance + the value's + 2^−51 |entry|; on its 414
+observations 657 286 of 2 007 072 grid values differ (Windows), by at most
+1.8 · 10⁻¹⁵ nats, and 1410 of the 9696 table entries, by at most
+4.3 · 10⁻¹⁴ nats, each within its allowance (after B2(a) alone 654 897,
+8.9 · 10⁻¹⁶ nats, and 1411).
+
+**Cost (Plan B task B2(a), measured).** CPU per channel-second of the bank
+decoder (`kz4ap-bank-replay`, development set, 525 oracle channels,
+74 749.9 channel-seconds, Linux machine, 10 threads): 127.91 ms before
+Plan B, 123.96 ms after B1, 104.60 ms after B2(a)'s exact steps,
+75.84 ms after its near-exact step as first committed, and **66.67 ms**
+with the sum started at the largest term's 1 (fix round 1, which also
+saves the exp(0) of the largest term; −47.9% against 127.91 ms). On the
+Windows PC (F-drift-s1, 8 channels, 240.1 channel-seconds, 8 threads, two
+runs each, alternated in one session): 303.3 and 314.4 ms before, 166.0
+and 170.5 ms after the exact steps, 76.5 and 78.4 ms after the near-exact
+step as first committed; 67.0 and 68.6 ms with fix round 1 (a later
+session, not alternated with the reference). A gprof profile of one channel
+(F-drift-s1, label 1, 30 s; Linux, statically linked so that libm is
+sampled) falls from 3.70 s to 1.98 s; the scalar libm functions from
+2.67 s (log1p 1.13 s, exp 1.19 s, ln 0.30 s, pow 0.05 s) to 1.19 s
+(log1p 0, exp 0.44 s, ln 0.73 s, pow 0.02 s). The decoded text and every decoded record are unchanged on all
+525 channels (results record, section 3).
+
+**Cost (Plan B task B2(b), measured).** With SLEEF's exp and ln (finz
+AVX-512 on the Linux machine) the bank decoder's CPU per channel-second on
+the development set (as above) falls from 66.67 ms to **42.37 ms** (−36.4%;
+−66.9% against 127.91 ms before Plan B; replay wall time 502 s to 319 s).
+On the Windows PC (F-drift-s1, finz AVX2, five runs of each build alternated
+in two sessions) the medians are 74.5 ms (B2(a)) and 66.2 ms (B2(b)),
+−11%, with a run-to-run spread of up to 29 ms. The gprof profile of one
+channel (as above) falls from 2.04 s (at the start of B2(b)) to 1.27 s: the
+C library's ln and exp from 1.17 s to 0.10 s (ln outside the fit's arrays:
+ln d of the retained history, ln μ_c, other stages), SLEEF's ln 0.15 s and
+exp 0.08 s; `grid_loglik`'s own code, which now contains the one-pass sum
+and the staging of the blocks, rises from 0.49 s to 0.58 s and is the
+largest item (46%). Memory: the blocks use 25 856 B of stack scratch per
+call and the search two vectors of up to 3 × 192 doubles (4608 B each) per
+call, freed on return; nothing persistent is added. Build: SLEEF adds
+4.6 s to a fresh configure and 3.0 s to a fresh build on the Linux machine
+(Ninja, 10 jobs), 29.1 s and 40.4 s on the Windows PC (results record,
+section 4.6). With the cinz family forced (`KZ4AP_FIT_MATH=cinz`, cinz
+AVX-512, what a processor without FMA computes) the development set costs
+45.90 ms per channel-second and decodes to the same texts and records
+(results record, section 4.9).
+
+### 9.5 Periodicity (B4a, B4a-C): the sliding sums and their measured agreement and cost; the shared-window variant with its history, tests and measurements
+
+- **Autocorrelation.** Over one window's N samples,
+  x = p − mean(p) and the biased, normalized autocorrelation
+  ρ[τ] = Σ_{m=0}^{N−1−τ} x[m] x[m+τ] / Σ_m x[m]², τ = 0 … N − 1
+  (dimensionless; 1 at τ = 0), computed by FFT zero-padded to the
+  smallest power of two ≥ 2N (so the circular correlation equals the
+  linear one). No estimate when N < 16 or Σ x² ≤ 10⁻¹² · N (p does not
+  vary; for instance all zero while the squelch is closed). With a
+  window per candidate the same quantity is computed per candidate
+  without an FFT: for a band of lags [lo, hi] (a tooth, below) over the
+  window [s, e) of N samples, with S the running sum of p and m the
+  window's mean,
+  Σ_{τ=lo}^{hi} Σ_m x[m] x[m+τ] = F + tail − m (A + B) + m² (L N − (lo + hi) L / 2),
+  L = hi − lo + 1, where F = Σ_{i=s}^{e−1−hi} p_i (S(i+hi+1) − S(i+lo))
+  holds the samples whose every lag of the band is inside the window,
+  tail = Σ_{i=e−hi}^{e−1−lo} p_i (S(e) − S(i+lo)) those whose lags reach
+  its end, A = Σ_τ (S(e−τ) − S(s)) and B = Σ_τ (S(e) − S(s+τ)), and
+  Σ x² = Σ p² − N m² (derived: the expansion of x = p − m). F is kept per
+  window, candidate and band, and slid from one recomputation to the
+  next: the products entering at the window's end are added (computed
+  once per candidate, shared by the three windows), those leaving at its
+  start subtracted; it is recomputed directly the first time, once the
+  window has slid by its own length N, and whenever it is not finite.
+  S, Σ p² and a count of non-finite samples are recomputed over the
+  buffer at each recomputation, from the buffer's first sample (so their
+  size is that of the buffer's sums, not of the stream's); a NaN or
+  infinity is held there as 0 and counted, and a candidate whose window
+  holds one has no score (as the FFT form, whose mean is then NaN). The
+  slid sums differ from the FFT form by rounding only: on 60 s of keyed
+  posteriors at five speeds with noise, pushed block by block, every
+  candidate's score equals `comb_estimate` on its own window to a largest
+  absolute difference of 1.3 · 10⁻¹³ (measured, Windows build; the test's
+  bound is 10⁻¹², scores are of order 10⁻² to 1). Cost, derived from the
+  operation counts at 750 samples/s, 192 samples per recomputation and
+  303 candidates × 9 bands: entering 303 · 9 · 192 = 0.52 M
+  products, leaving 3 × 0.52 M, the direct recomputation at most 9 N per
+  N samples of sliding (3 × 0.52 M per recomputation on average), and
+  the bands' tails and S-sums 5 L per candidate and band (0.26 M): about
+  3.9 M multiply-adds per recomputation, 15 M per channel-second at
+  3.9 recomputations per second (the FFT form: three FFTs of 4096 to
+  16 384 points per recomputation). Measured with the rest of Plan B's
+  B4a on the development set (Linux machine): the bank decoder's CPU
+  42.61 → 57.56 ms per channel-second, about +15 ms in every group
+  (results record, section 6.3).
+- **Variant: one window per row shared by every candidate (Plan B,
+  B4a-C; an experiment, not the default).** `periodicity_window_mode` =
+  `"shared"` (default `"per_candidate"`, the form above; the override
+  `periodicity_windows_s`, when set, wins over either mode). Each of the
+  three rows has one window, the same for every candidate:
+  N = max(16, round(N_w · T̂ · r_P)) averaged samples, N_w ∈ {41.7, 104,
+  208}, where T̂ (s) is the fitted dit T of the branch currently selected
+  (by the last selection instant, an earlier block), and only when (a) a
+  selection exists, (b) that branch's fit belongs to its current over
+  and (c) the fit is eligible (selection's test: memory ≥ 8 elements and
+  |ln(L_k / (0.8 T))| ≤ ln 1.1). Otherwise there is no T̂ and the rows
+  are stage 1's windows in seconds, `periodicity_unselected_windows_s` =
+  2, 5 and 10 s (1500, 3750 and 7500 samples at 750 samples/s). Condition
+  (b) is the decoder's own turnover: a new over starts on a branch when
+  its key has been up for longer than T_new = max(0.5 s, 12 T_g) since
+  its last key-up (`Branch::new_over_due`, `start_over`); from then the
+  branch decodes with the previous over's fit (`prev_fit`) until the
+  over's first marks are re-keyed (W_min,k of keyed time, or a time-out
+  that keys marks with the previous amplitude), when the fit becomes the
+  over's own (fresh, or the previous one continued with this over's
+  marks). The decoder does not tell a new station from the same station
+  resuming: every pause longer than T_new withholds T̂ until the re-key.
+  So T̂ is withheld at the stream's start until the selected branch has
+  an eligible fit, and from every over start on the selected branch until
+  that over's re-keyed fit is eligible; a switch to another branch gives
+  that branch's T̂ under the same conditions. (Fix round 1, controller's
+  ruling 2026-10-05: the first form fell back to the selected branch's
+  nominal dit d_k without an eligible fit; as the selector starts on
+  branch 1, that made T̂ = d_1 = 12 ms from branch 1's first key-up,
+  about 1.1 s into a stream, until the selector's first switch, with
+  windows of 0.50, 1.25 and 2.50 s whose reach stops at 27.3, 68.1 and
+  136.3 ms, i.e. stations slower than 44 words/min out of the shortest
+  row's reach: a start-up trap. Its runs are superseded; results record
+  section 6.6.) On the golden streams (25 words/min clean, turnover and
+  two speeds; 12 words/min slow) the first selection comes at 1.11 to
+  1.15 s and the first T̂ at 2.82 to 3.67 s (measured). T̂ is capped at
+  the longest fitted dit an eligible fit can have, L_32 / 0.8 · 1.1 =
+  0.2530 s at 1500 samples/s (L_32 = 276 samples / 1500 samples/s,
+  realized; derived), and the buffer keeps 208 times that, 39 468
+  samples (52.6 s, 316 kB of doubles) at 750 samples/s, instead of
+  37 789. Each row is then exactly the shared form, `comb_estimate` over
+  its most recent N samples (one FFT per row, zero-padded to the power of
+  two ≥ 2N: 4096, 8192 and 16 384 points at T̂ = 48 ms; 16 384, 65 536
+  and 131 072 at the cap), and the reach rule applies as in stage 1: a
+  candidate counts in a row only if 9.15 T ≤ (N − 1) / 2, so T ≤ about
+  N_w T̂ / 18.3: 2.28 T̂ in the shortest row, 5.68 T̂ and 11.4 T̂ in the
+  others (derived). An alias at 3 T̂ therefore cannot be the shortest
+  row's estimate; the other two rows still score it, over the same window
+  as T̂ itself. T_P, the confidence and the reported window follow the
+  rule above (the shortest confident row; its window N / r_P). Why: with
+  a window per candidate, an alias at 3 T₀ is scored over three times the
+  samples of the true T₀, and the per-window cap T ≤ W / 18.3 is gone;
+  the shortest window's confident wrong estimates near 3 T₀ rose from
+  3.7% (`bank-b3b`) to 26.3% (`bank-b4a`; 26.0% with the windows alone,
+  `bank-b4a-windows`; results record sections 6.5 and 6.6). Class (1)
+  dits, through T̂. Status: heuristic, an experiment (owner, 2026-10-04:
+  measured as a variant, no default changed). **It introduces a feedback
+  the default does not have:** the selected branch's speed sets the
+  windows that judge T_P, and T_P feeds every fit's prior (and so the
+  fitted T that becomes T̂) and selection's fallback (which chooses the
+  branch whose dit becomes T̂). A wrong selection with an eligible fit
+  can therefore shorten or lengthen the windows that would correct it;
+  when the selected dit is too long, the shortest row's reach admits
+  candidates up to 2.28 times that dit. The default form has no such loop
+  (its windows depend on the candidate alone). Tests
+  (`engine/tests/bank/periodicity_test.cpp`, `channel_test.cpp`): in this
+  mode each row's estimate equals `comb_estimate` on its most recent N
+  samples (by construction; the test's content is the window length,
+  computed independently as T̂ changes, and the reach: the shortest row's
+  estimate < 2.3 T̂); without T̂ the estimates equal stage 1's windows'
+  bit for bit; T̂ at the cap; on four golden channel streams, at every
+  block, T̂ equals the rule above evaluated on the state before the block
+  (both transitions occur: withheld after the first selection until the
+  first eligible fit, and withheld from an over start on the selected
+  branch until its re-key), every filled row's window is N_w T̂ or stage
+  1's, and on the clean 25 words/min stream every T̂ is between 40 and
+  58 ms (never d_1).
+  Measured on the development set (Linux machine, results record
+  section 6.6.1; build with B4b): CPU 45.53 ms per channel-second
+  pooled, comb precision at 0.03 0.801 (default 0.753), near-3T₀ share
+  of the shortest window's confident wrong estimates 0.7% (default
+  26.3%), paired CER against `bank-b3b` +0.0045 (−0.0022 to +0.0113),
+  and −0.0206 (−0.0286 to −0.0128) against the per-candidate windows at
+  the same build. The first form's runs (section 6.6) are superseded.
+
+### 9.6 Channel decoder: memory (B1, B4a, B4b) and exact zeros (B3)
+
+- **Memory.** The channel keeps a window of u and of |v_k|² (FS²) back to
+  the earliest sample a later block can read: the re-key's 20 s plus the
+  noise estimates' look-back (3 N_max, a segment with its mask's reach,
+  the warm-up) and 2 blocks, 31 642 samples (21.1 s) at 1500 samples/s
+  (31 688 with stage 1's 20 ms guard margin; Plan B, B4b);
+  its storage holds up to 2 s more (34 675 samples) and is moved forward
+  when full (a bound chosen for the port, not a tuned value). The |v_k|²
+  values are rounded to float32 when computed (the prototype's rounding,
+  "Port check" below) and stored as 4-byte floats, which is lossless; every
+  read converts them to double exactly (Plan B task B1). Memory per
+  channel at 1500 samples/s, counted from the arrays the code allocates
+  (derived, not measured): the |v_k|² window 32 × 34 675 × 4 B = 4.4 MB;
+  the u window 34 675 × 16 B = 0.55 MB; the cumulative-sum ring
+  277 × 16 B = 4.4 kB; per duration fit its two tables
+  (3636 + 6060) × 8 B = 77.6 kB and its retained history (≤ 192 marks and
+  spaces, 24 B each, 4.6 kB), 82.2 kB. Each branch holds one to three fits
+  (the decoding fit, the previous over's, the rival), so the fits take
+  32 × 82.2 kB = 2.6 MB to 96 × 82.2 kB = 7.9 MB, and a channel 7.6 MB to
+  12.9 MB in all, plus small per-character and per-record lists. The
+  periodicity estimate (Plan B, B4a: a window per candidate, the longest
+  208 · 242.2 ms = 50.4 s) keeps its buffer of averaged p, at most
+  37 789 + 192 samples × 8 B = 304 kB (60 kB with the former 10 s
+  window), and per recomputation, kept allocated, the buffer with
+  non-finite samples held as 0, S and Σ p² over it (3 × 304 kB) and the
+  non-finite count (4 B per sample, 152 kB), plus the slid sums and the
+  per-candidate terms ((3 + 3) × 303 × 9 × 8 B = 131 kB) and the bands
+  (22 kB): about 1.5 MB per channel (derived), where the former 10 s
+  window held 60 kB and about 0.6 MB of FFT work arrays during a
+  recomputation; so a channel 9.1 MB to 14.4 MB in all. Measured by the
+  method below: 32.16 MB per channel in flight before B4a, 33.29 MB after
+  (+1.13 MB; derived +0.9 MB to +1.5 MB). The
+  noise estimate keeps its own last 480 |v_k|² of non-zero input per
+  three-tap branch for the warm-up and the recovery (Plan B, B3): 1 × 480
+  × 8 B = 3.8 kB with the default "spectrum" method (branch 1 only),
+  32 × 480 × 8 B = 123 kB with "branch" (derived); the window's look-back
+  still counts the warm-up, which the estimate no longer reads from the
+  window (kept: a bound, and the stated sizes stay). The fit's
+  grid constants (ln μ, 1/μ², a validity flag per class and grid point:
+  432.7 kB with the defaults) are immutable and held once per process per
+  configuration: every fit built from a configuration with the same values
+  of the fields they read (`min_wpm`, `max_wpm`, `t_grid_step`, the q, w
+  and T_g grids, `outlier_prior`, `outlier_range_s`, `sigma_ln_mark`,
+  `sigma_ln_space`, `fit_memory`, `prior_sigma_ln`, `refine_iterations`;
+  compared bit for bit) shares one copy, which is freed when no fit uses
+  it. Before Plan B task B1 the window took 8.9 MB (8-byte doubles) and
+  every fit started afresh allocated its own grid constants (0.515 MB per
+  fit), 26 MB to about 59 MB per channel (derived). **Measured** (Linux
+  machine, `kz4ap-bank-replay` on G-ragchew-s1: 12 channels of 366.0 s,
+  peak resident set size from `/usr/bin/time -v`, per channel in flight
+  (RSS at 10 threads − RSS at 1 thread) / 9): 63.3 MB before B1, 32.1 MB
+  after (−31.1 MB, against −18.3 MB to −46.0 MB derived). The measured
+  figure includes what the replay tool holds per channel besides the
+  decoder, chiefly the channel's recorded stream and its mixed copy
+  (2 × 549 000 samples × 16 B = 17.6 MB, derived); less the 17.6 MB it is
+  45.7 MB before (derived 26 MB to 59 MB) and 14.6 MB after (derived 7.6 MB
+  to 12.9 MB), so after B1 the measurement lies **1.7 MB above** the
+  derived upper end. The cause of that excess is **conjectured, not
+  traced**: the channel's decoded record held until its test case is
+  written and the allocator's overhead are not in the derived count;
+  per-thread allocator arenas, or more than three fits per branch at some
+  moment, are untested alternatives. The check is weak in both directions:
+  the derived range before B1 is wide enough to contain its measurement,
+  and the 17.6 MB subtracted is itself derived, not measured.
+  Sample indices are 64-bit throughout (the noise estimates included:
+  tested with indices past 2³¹, as after 16.6 days at 1500 samples/s).
+- **Exact zeros (Plan B, B3).** Exact zeros are missing data ("Noise").
+  While the noise estimate has no first estimate (only exact zeros so
+  far) a block is not keyed, nothing enters the periodicity or the
+  branches, nothing is published, and every branch's clocks (over start,
+  start of the unknown amplitude, re-key time-out) restart at the
+  block's end: the first block with other input finds the channel as a
+  stream's first block does (its noise estimate taken from that block's
+  non-zero samples only, "Noise"). A stream that starts with 1 s of exact zeros
+  and then a station therefore decodes as the station alone: the same
+  text and characters, times shifted by 1 s (measured within 0.67 ms;
+  the block grid moves by 4 samples relative to the station, 1500
+  samples being 46.875 blocks), no NaN in any published value
+  (`BankChannel.LeadingExactZerosDecodeAsTheStationAlone`, at the
+  prototype's time constants and at the default ones in dits). Before Plan B
+  (the prototype's behavior) the noise estimate went NaN there and
+  nothing was keyed or published.

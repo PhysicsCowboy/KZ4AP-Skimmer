@@ -61,7 +61,7 @@ struct EngineConfig {
 // milestone-1 detector rules (frequency fixed at birth, bin attribution). CI (bench/smoke.sh) bounds its
 // smoke CER at 0.09 and checks that two runs agree; it does not pin bit-identity with milestone 1. That
 // rests on the generator's frozen-copy tests (training/tests/test_generate.py), reading this path, and
-// its smoke CER, 34 edits in 964 symbols, unchanged since Task 2 (docs/signal-processing.md, section 11,
+// its smoke CER, 34 edits in 964 symbols, unchanged since Task 2 (docs/signal-processing.md, appendix A.11,
 // "Smoke check").
 inline EngineConfig with_envelope_path(EngineConfig config) {
     config.decoder.front_end = FrontEnd::Envelope;

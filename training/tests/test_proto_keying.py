@@ -113,7 +113,7 @@ def test_the_amplitude_em_settles_on_milestone_2s_ramp_bias(a_true):
     # sum p / W = 1 replaces it) and with an established weight (W = 1e6 samples, so only the recursion's
     # 1 - (1 - alpha)^(sum p) acts; it reaches s-hat < 1 FS after 4.6-6.1 s, measured). Samples on the boxcar's
     # ramps pull s-hat low: milestone 2 simulated 0.85-0.88 of s for PARIS at 25 WPM, S_500 0-60 dB
-    # (docs/signal-processing.md section 8b, "Amplitude estimate"). Measured here (time mean of s-hat over
+    # (docs/signal-processing.md appendix A.8b, provenance). Measured here (time mean of s-hat over
     # t >= 10 s of 30 PARIS words, seeds 1-10, either start): 0.869-0.886 at a = 7, 0.864-0.876 at a = 10,
     # 0.859-0.865 at a = 20 (Task 6 report); the band is widened to 0.89 at the top to hold a = 7 (S_500 about
     # +1 dB at 25 WPM), a heuristic margin on a measured spread.

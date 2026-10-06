@@ -189,7 +189,7 @@ void ThreeTapNoise::update_impl(std::span<const std::complex<double>> u, const M
         }
     }
     // Recovery of a stuck level (heuristic): branch 1 (row 0, the shortest boxcar, which sees noise in every
-    // character space up to max_wpm with rectangular keying; docs/signal-processing.md section 8c) has accepted no middle tap for noise_stuck_s of non-zero input. Then every
+    // character space up to max_wpm with rectangular keying; docs/signal-processing.md appendix A.8c) has accepted no middle tap for noise_stuck_s of non-zero input. Then every
     // branch's level is set again by the warm-up rule over its last noise_warmup_s of non-zero input; W and the
     // update carry on. Gated on branch 1 so that a long branch blind to a station's spaces is not reset to the
     // station's power (Plan B, B3 ruling (A)).

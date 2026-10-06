@@ -155,7 +155,7 @@ void MatchedFrontEnd::start_estimates() {
         return sorted[static_cast<std::size_t>(q * static_cast<double>(sorted.size() - 1))];
     };
     // In noise alone |v|^2 is exponential with mean 2 sigma^2; its q-quantile is 2 sigma^2 (-ln(1 - q)).
-    // 0.32 s at K = 24 holds about 20 independent samples (section 8b).
+    // 0.32 s at K = 24 holds about 20 independent samples (appendix A.8b).
     noise_var_ = std::max(kMinNoiseVar, quantile(kWarmupNoiseQuantile) /
                                             (2.0 * -std::log(1.0 - kWarmupNoiseQuantile)));
     amp2_ = std::max(0.0, quantile(0.9) - 2.0 * noise_var_);

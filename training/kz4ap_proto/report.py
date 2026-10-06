@@ -14,7 +14,7 @@ from . import metrics
 from .runner import detector_jobs, oracle_scorings
 
 REFERENCES = ("matched", "baseline")
-# The start-up runaways of milestone 2 (docs/signal-processing.md 8b, "Start-up runaway"): recording, labeled Hz.
+# The start-up runaways of milestone 2 (docs/plans/2026-09-27-milestone-2a-results.md 8.3, "Start-up runaway"): recording, labeled Hz.
 RUNAWAY_CASES = (("A-awgn-25wpm-1-s1", 6606.5), ("A-awgn-25wpm-0-s2", -2991.9))
 # A verdict calls a regime better or worse when its paired bootstrap 95% interval excludes 0 (a convention, heuristic).
 # Each regime is one such test, with no multiplicity correction: a regime truly unchanged reads better or worse with
