@@ -142,4 +142,31 @@ inline kz4ap::bank::BankConfig stage1_config() {
     return cfg;
 }
 
+// Plan B's re-key variants, off by default since B4g (the default is stage 1's wait 0.8 s and time-out 2 s): the wait
+// and time-out in dits (B4a; rekey_after_s and rekey_timeout_s unset) with stage 1's clocks; with B4d's clocks; the wait
+// in marks (B4e); and with B4f's guards.
+inline kz4ap::bank::BankConfig dits_config() {
+    kz4ap::bank::BankConfig cfg;
+    cfg.rekey_after_s = 0.0;
+    cfg.rekey_timeout_s = 0.0;
+    return cfg;
+}
+inline kz4ap::bank::BankConfig b4d_config() {
+    kz4ap::bank::BankConfig cfg = dits_config();
+    cfg.rekey_clear_moves_stretch = true;
+    cfg.rekey_timeout_from_first_mark = true;
+    return cfg;
+}
+inline kz4ap::bank::BankConfig b4e_config() {
+    kz4ap::bank::BankConfig cfg = b4d_config();
+    cfg.rekey_wait_in_marks = true;
+    return cfg;
+}
+inline kz4ap::bank::BankConfig b4f_config() {
+    kz4ap::bank::BankConfig cfg = b4e_config();
+    cfg.rekey_guard_filter_full = true;
+    cfg.rekey_guard_min_length = true;
+    return cfg;
+}
+
 }  // namespace kz4ap::test

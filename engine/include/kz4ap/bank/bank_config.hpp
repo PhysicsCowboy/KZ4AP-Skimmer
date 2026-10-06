@@ -68,15 +68,17 @@ struct BankConfig {
     // level is set again by the warm-up rule (the stuck-level recovery); 4 tau_n; heuristic. Seconds, not dits:
     // the noise has no keying speed. Plan B (B3), not a prototype field
     double noise_stuck_s = 8.0;
-    // Overrides in seconds of B4a's re-key time constants in dits, for ablations (Plan B, B4a; default unset). When set,
-    // they take precedence over the fields in dits: rekey_after_s > 0 sets W_min,k = rekey_after_s of keyed time for
-    // every branch (instead of rekey_after_dits x d_k), rekey_timeout_s > 0 the re-key time-out to rekey_timeout_s of
-    // channel time for every branch (instead of rekey_timeout_ratio x W_min,k, or rekey_marks_timeout_s with
-    // rekey_wait_in_marks). Stage 1's values are 0.8 s and 2 s. With rekey_wait_in_marks, W_min,k sets only the seed's
-    // memory.
+    // The re-key wait and time-out in seconds, the same for every branch: W_min = rekey_after_s of key-down time while
+    // the amplitude is unknown, and the time-out rekey_timeout_s of channel time. The default since Plan B's B4g
+    // (owner, 2026-10-06, option a'): stage 1's values, 0.8 s (measured at 25 WPM by E9b) and 2 s (heuristic).
+    // Class: seconds (stage 1's measured 0.8 s, E9b), pending the comparison of the variants on the redesigned
+    // development set (owner, 2026-10-06). When set (> 0) they take precedence: rekey_after_s over the wait in dits
+    // (rekey_after_dits x d_k), rekey_timeout_s over the time-outs in dits (rekey_timeout_ratio x W_min,k) and in marks
+    // (rekey_marks_timeout_s). Set both to 0 for the variants in dits (B4a-B4d) or in marks (B4e, B4f); with
+    // rekey_wait_in_marks the wait is counted in marks and W_min,k sets only the seed's memory.
     // s; 0: unset
-    double rekey_after_s = 0.0;
-    double rekey_timeout_s = 0.0;
+    double rekey_after_s = 0.8;
+    double rekey_timeout_s = 2.0;
     // s, the periodicity windows of the default mode (periodicity_window_mode "seconds"): every candidate dit tau_c of
     // the comb is judged over the same window, one row per value (stage 1's rule and values; the prototype's field).
     // Class (2) seconds, a latency (owner, 2026-10-06; stage-2 spec sections 3.2 and 6): several windows exist so that
@@ -225,20 +227,22 @@ struct BankConfig {
     // keyed down about 44% of the time, so it needs about W_min,k / 0.44 of channel time to reach W_min,k. Status:
     // heuristic, stage 1's ratio 2 s / 0.8 s (stage-2 spec section 3.1). Plan B (B4a), replaces rekey_timeout_s
     double rekey_timeout_ratio = 2.5;
+    // Variants since B4g, off by default (owner, 2026-10-06, option a'): the clock switches, the lead, the wait in marks
+    // and its guards below (measured results: docs/signal-processing.md A.8c; Plan B record sections 10 to 13).
     // When the re-key clocks start (Plan B, B4d; owner, 2026-10-06; found by the re-key trace,
     // docs/research/2026-10-05-periodicity-windows-and-rekey-analysis.md section 3.2). Each switch can be measured
-    // alone; both off is stage 1's (and the prototype's) rule. Status: heuristic.
+    // alone; both off is stage 1's (and the prototype's) rule, the default since B4g. Status: heuristic.
     // (i) A time-out that keys nothing (its provisional characters deleted, the amplitude still unknown) also moves
     // the start of the stretch a later re-key keys again to the time-out's instant, so that a re-key does not reach back
     // into the noise the time-out cleared. Off: the stretch starts where the amplitude became unknown, however many
     // time-outs cleared nothing since (the stream's start for the first over).
-    bool rekey_clear_moves_stretch = true;
+    bool rekey_clear_moves_stretch = false;  // a variant since B4g (off)
     // (ii) The time-out counts from the branch's first provisional mark (the key-down sample of the first mark the
     // unknown-amplitude test keys) since the amplitude became unknown or since the last time-out that keyed nothing;
     // before that mark nothing is counted. A new over started while the amplitude is still unknown does not restart
     // the count. Off: it counts from when the amplitude became unknown, a gap in seconds before an over's first mark,
     // so a time-out in dits could fire before the station had keyed W_min,k
-    bool rekey_timeout_from_first_mark = true;
+    bool rekey_timeout_from_first_mark = false;  // a variant since B4g (off)
     // nominal dits of branch k (d_k), the lead of the re-key stretch under rekey_timeout_from_first_mark: when the count
     // starts at the first provisional mark, the stretch a later re-key keys again starts rekey_lead_dits x d_k before
     // that mark's key-down sample (or where it started, if later), so that the full rule can still find weak marks
@@ -249,12 +253,13 @@ struct BankConfig {
     double rekey_lead_dits = 7.0;
     // The re-key wait counted in the station's marks (Plan B, B4e; the owner's decision of 2026-10-06, option d). On:
     // the over's start is re-keyed once the branch has rekey_marks provisional marks, and its time-out is
-    // rekey_marks_timeout_s of channel time for every branch. Off: the B4a-B4d variant, W_min,k = rekey_after_dits x
-    // d_k of keyed time and the time-out rekey_timeout_ratio x W_min,k. Why: the wait exists to collect enough of the
+    // rekey_marks_timeout_s of channel time for every branch (with rekey_after_s and rekey_timeout_s unset). Off: the
+    // wait in keyed time (W_min = rekey_after_s, stage 1's, the default; or, unset, the B4a-B4d variant
+    // rekey_after_dits x d_k with the time-out rekey_timeout_ratio x W_min,k). Why: the wait exists to collect enough of the
     // station's marks to choose the re-key's amplitude and seed the fit; in the branch's dits, a branch much faster
     // than the station (branch 1, d_1 = 12 ms, under a 25 WPM station) reached its wait after one or two of the
     // station's marks. Counting marks does not depend on the speed (by construction).
-    bool rekey_wait_in_marks = true;
+    bool rekey_wait_in_marks = false;  // a variant since B4g (off)
     // marks, the re-key wait K: provisional marks (keyed by the unknown-amplitude test, ended: key-down then key-up)
     // the branch has in its over (since the over started or since the last time-out that keyed nothing) before the
     // over's start is re-keyed. Class: counted in marks, like the fit's memory (fit_memory). Reason: stage 1's 0.8 s
@@ -271,19 +276,19 @@ struct BankConfig {
     // precedence
     double rekey_marks_timeout_s = 7.0;
     // Guards on the provisional marks that count toward the re-key wait in marks and start the time-out and the
-    // stretch (Plan B, B4f; the owner's option e of 2026-10-06). Marks that fail a guard are still keyed provisionally
+    // stretch (Plan B, B4f; the owner's option e of 2026-10-06; off by default since B4g). Marks that fail a guard are still keyed provisionally
     // and decoded as before; they only do not count. Each guard behind its own switch; both off is B4e.
     // (1) Filter full: a provisional mark whose key-down sample has fewer than N_k samples of non-zero input before it
     // (inclusive) since the stream's start or the last exact zero does not count. Why: before that the boxcar's output
     // is a partial sum divided by N_k, not a valid average, and the noise warm-up reads it (derived). B4e's trace found
     // every channel's first provisional mark 1.7 to 3.7 ms into the stream, so its count and stretch started there.
     // Status: derived
-    bool rekey_guard_filter_full = true;
+    bool rekey_guard_filter_full = false;  // a variant since B4g (off)
     // (2) Minimum length: a provisional mark counts only if it lasts at least N_k samples (L_k, the branch's filter
     // length; key-down to key-up). Why: a real element keyed on its own branch lasts about L_k or longer (its dit is
     // d_k = L_k / 0.8), while a noise excursion over the provisional threshold is expected to be shorter than the
     // filter's correlation time L_k. Status: heuristic (measured for and against in the Plan B record, section 12)
-    bool rekey_guard_min_length = true;
+    bool rekey_guard_min_length = false;  // a variant since B4g (off)
     // marks and spaces of this over a fresh fit needs before it may replace the previous over's; placeholder, heuristic
     int fresh_fit_min_obs = 8;
     // s; owner

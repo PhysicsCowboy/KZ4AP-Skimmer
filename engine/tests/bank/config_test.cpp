@@ -119,30 +119,30 @@ TEST(BankConfig, PlanBDefaults) {
     EXPECT_EQ(c.mask_bias.size(), 32u);
     EXPECT_EQ(c.mask_bias, b4d);
     EXPECT_EQ(kz4ap::bank::kStage1MaskBias.size(), 32u);
-    // B4a's overrides in seconds of the re-key settings (ablations): unset
-    EXPECT_EQ(c.rekey_after_s, 0.0);
-    EXPECT_EQ(c.rekey_timeout_s, 0.0);
+    // B4g: stage 1's re-key wait and time-out in seconds are the default again (owner, 2026-10-06, option a')
+    EXPECT_EQ(c.rekey_after_s, 0.8);
+    EXPECT_EQ(c.rekey_timeout_s, 2.0);
     // B4d: the periodicity windows in seconds, 2, 5 and 10 s for every candidate (class 2, a latency; owner,
     // 2026-10-06); the per-candidate (B4a) and shared (B4a-C) windows in dits are variants, not the default; the shared
     // variant's windows before a selection are stage 1's
     EXPECT_EQ(c.periodicity_window_mode, "seconds");
     EXPECT_EQ(c.periodicity_windows_s, (std::vector<double>{2.0, 5.0, 10.0}));
-    // B4d: both re-key clock fixes on (owner, 2026-10-06)
-    EXPECT_TRUE(c.rekey_clear_moves_stretch);
-    EXPECT_TRUE(c.rekey_timeout_from_first_mark);
+    // B4d's re-key clock fixes: variants since B4g, off
+    EXPECT_FALSE(c.rekey_clear_moves_stretch);
+    EXPECT_FALSE(c.rekey_timeout_from_first_mark);
     // B4d: the re-key stretch's lead before the first provisional mark, one word gap of the branch's dits (heuristic)
     EXPECT_EQ(c.rekey_lead_dits, 7.0);
     // B4e: the re-key wait counted in the station's marks, 8 provisional marks (heuristic), with a time-out of 7 s of
     // channel time for every branch: 8 marks of PARIS (a mark every 50/14 dits) at the 5 WPM floor (dit 240 ms) take
     // 6.9 s (derived), rounded to 7 s (owner, 2026-10-06, option d)
-    EXPECT_TRUE(c.rekey_wait_in_marks);
+    EXPECT_FALSE(c.rekey_wait_in_marks);  // a variant since B4g
     EXPECT_EQ(c.rekey_marks, 8);
     EXPECT_EQ(c.rekey_marks_timeout_s, 7.0);
     EXPECT_NEAR(8.0 * 50.0 / 14.0 * 1.2 / c.min_wpm, 6.857, 0.001);
     EXPECT_EQ(std::round(8.0 * 50.0 / 14.0 * 1.2 / c.min_wpm), c.rekey_marks_timeout_s);
-    // B4f: the guards on the counted provisional marks, both on (owner, 2026-10-06, option e)
-    EXPECT_TRUE(c.rekey_guard_filter_full);
-    EXPECT_TRUE(c.rekey_guard_min_length);
+    // B4f: the guards on the counted provisional marks; variants since B4g, off
+    EXPECT_FALSE(c.rekey_guard_filter_full);
+    EXPECT_FALSE(c.rekey_guard_min_length);
     EXPECT_EQ(c.periodicity_unselected_windows_s, (std::vector<double>{2.0, 5.0, 10.0}));
     const std::vector<double> stage1_s = {2.0, 5.0, 10.0};
     for (std::size_t i = 0; i < stage1_s.size(); ++i)

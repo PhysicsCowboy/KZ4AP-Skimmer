@@ -228,12 +228,11 @@ TEST(BankKeying, NominalXOnWithoutCalibratedValues) {
 // W_min,k = 16.7 d_k of keyed time and the time-out 2.5 W_min,k = 41.75 d_k of channel time, d_k = L_k / 0.8 with the
 // nominal L_k = 9.6 ms x 1.1^(k-1): derived values at 1500 samples/s for k = 1, 16 and 32. W in samples is not
 // rounded (the keyed-sample count is compared with it); the seed's memory is round(4 W) samples and the time-out
-// round(r x time-out) samples (Python's rounding, ties to even). The time-out in dits is the variant's with the wait in
-// keyed time (rekey_wait_in_marks off, B4a-B4d); B4e's default, 7 s for every branch, is checked at the end; W_min,k
-// (the seed's memory) is the same in both.
+// round(r x time-out) samples (Python's rounding, ties to even). In the variant in dits (B4a-B4d; rekey_after_s and
+// rekey_timeout_s unset); the variant in marks (B4e, 7 s for every branch) and the default since B4g (stage 1's 0.8 s
+// and 2 s for every branch) are checked at the end.
 TEST(BankKeyingDits, RekeyWaitAndTimeOutPerBranch) {
-    BankConfig cfg;
-    cfg.rekey_wait_in_marks = false;
+    BankConfig cfg = kz4ap::test::dits_config();
     const double rate = 1500.0;
     const BankTiming t = bank_timing(cfg);
     ASSERT_EQ(t.rekey_wait_s.size(), 32u);
@@ -273,22 +272,26 @@ TEST(BankKeyingDits, RekeyWaitAndTimeOutPerBranch) {
         else
             EXPECT_EQ(timeout[w.k], w.timeout_n);
     }
-    // B4e's default: the time-out 7 s = 10500 samples for every branch; W_min,k and the seed's memory unchanged
-    const BankConfig marks;
+    // B4e's variant: the time-out 7 s = 10500 samples for every branch; W_min,k and the seed's memory unchanged
+    const BankConfig marks = kz4ap::test::b4e_config();
     const BankTiming tm = bank_timing(marks);
     EXPECT_EQ(tm.rekey_wait_s, t.rekey_wait_s);
     EXPECT_EQ(tm.rekey_timeout_s, std::vector<double>(32, 7.0));
     EXPECT_EQ(BankChannel(marks, rate).rekey_timeout_samples(), std::vector<std::int64_t>(32, 10500));
+    // B4g's default: stage 1's W_min = 0.8 s (1200 samples of keyed time) and time-out 2 s (3000 samples), every branch
+    const BankTiming td = bank_timing(BankConfig{});
+    EXPECT_EQ(td.rekey_wait_s, std::vector<double>(32, 0.8));
+    EXPECT_EQ(td.rekey_timeout_s, std::vector<double>(32, 2.0));
+    EXPECT_EQ(BankChannel(BankConfig{}, rate).rekey_timeout_samples(), std::vector<std::int64_t>(32, 3000));
 }
 
 // At 25 WPM (T = 48 ms) the values equal stage 1's (0.8 s, 2 s) within the ladder's granularity: the branch whose d_k
 // is nearest 48 ms is k = 16 (50.13 ms; k = 15 has 45.57 ms); a dit inside the ladder's range is within a factor
 // 1.1^(1/2) = 1.0488 of the nearest d_k, and 16.7 = 1.002 x 0.8 s / 48 ms, so W_min,16 / 0.8 s and the time-out / 2 s
 // lie within a factor 1.0488 x 1.002 = 1.0509 of 1 (derived). Here both are 1.0464 (837.1 ms, 2.093 s). In the variant
-// with the wait in keyed time (rekey_wait_in_marks off; B4e's default counts marks).
+// in dits (B4a-B4d; since B4g the default is stage 1's 0.8 s and 2 s themselves).
 TEST(BankKeyingDits, At25WpmTheValuesAreStageOnes) {
-    BankConfig cfg;
-    cfg.rekey_wait_in_marks = false;
+    BankConfig cfg = kz4ap::test::dits_config();
     const auto d = branch_dits_s(cfg);
     std::size_t nearest = 0;
     for (std::size_t k = 0; k < d.size(); ++k)
@@ -306,7 +309,7 @@ TEST(BankKeyingDits, At25WpmTheValuesAreStageOnes) {
 // carrier keys every sample of every branch, so branch k is ready at the end of the block (32 samples) in which the
 // count reaches W_min,k x r.
 TEST(BankKeyingDits, ReadyToRekeyAfterTheBranchsOwnWait) {
-    const BankConfig cfg;
+    const BankConfig cfg = kz4ap::test::dits_config();  // the variant in dits
     const double rate = 1500.0;
     const BankTiming t = bank_timing(cfg);
     BankKeyer keyer(cfg, rate, realized_lengths_s(cfg, rate), t.rekey_wait_s);
