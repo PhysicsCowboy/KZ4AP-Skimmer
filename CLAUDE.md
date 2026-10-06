@@ -8,6 +8,8 @@
     before any code.
   - `docs/backlog.md`: deferred work in milestone order; items move into plans.
   - `docs/signal-processing.md`: what the code actually does now (rule below).
+  - `docs/signal-processing-summary.md`: its short companion, for a human
+    reader (rule below).
   - `docs/research/`: evidence. `decoder-survey.md` is the synthesis (glossary,
     ranking, benchmark scenarios); per-source verification notes sit beside
     it; `research_notes/` is the original record, annotated, never rewritten.
@@ -19,8 +21,18 @@
   algorithm, the order of stages, a new stage — must update that document in
   the same commit, including its parameter table and whether each choice is
   derived, measured or heuristic. Treat a stale description as a bug.
-- Any agent doing implementation work on this project must be told the rule
-  above.
+- **`docs/signal-processing-summary.md` is its companion, kept up to date in
+  the same commit** (owner, 2026-10-05). It abbreviates `signal-processing.md`
+  to *how* the system works: each stage in order, what it computes (the
+  formulas), its parameter values with units, and whether each is derived,
+  measured or heuristic. It leaves out results, measurements, port checks,
+  test evidence and history. The default signal path comes first; variants
+  that are not the default get a sentence each. It must be readable with
+  concentration in about 30 minutes (roughly 6 000 words at most). Any change
+  that updates `signal-processing.md` updates the summary too, or states in
+  the commit why the summary is unaffected.
+- Any agent doing implementation work on this project must be told the two
+  rules above.
 - **Units:** every displayed, logged or documented quantity carries an
   explicit unit. Every dB value names its reference (dBFS, dB SNR in a stated
   bandwidth, dB relative to the passband, etc.); a bare "dB" is a bug. Linear
