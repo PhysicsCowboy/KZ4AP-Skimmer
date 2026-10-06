@@ -1,4 +1,4 @@
-# Development set redesign (DRAFT for the owner's approval)
+# Development set redesign
 
 > **Status: approved by the owner, 2026-10-06** (with the figures of principle 7 added at his request). Owner's decision E (2026-10-06): redesign the development set now, before Plan B's B5, as a
 > **jittered grid**. The old set (`kz4ap_proto.experiments.DEV`, seed 1) stays available, unchanged, for
@@ -96,3 +96,69 @@ speed cell (backlog, 2026-10-06). The backlog's 80 WPM point lies in cell 10.
 5. Reference runs: Envelope, Matched, `bank-b3b` settings and the current bank (after B4d); a new results
    record section, the new set's baseline.
 6. Plan B continues (B5 onward) on the new set; the old set is run once more at the end, for continuity.
+
+## Full task texts
+
+Common to every task: the repository CLAUDE.md and its "Working rules for agents" (one git command per call,
+never chained; no attribution lines; units with references, S₅₀₀ is dB SNR in 500 Hz); work on branch
+`milestone-2c-stage2`; the Linux machine by `server-workflow.md` (Plan B workspace); the old development set
+and its regex `DEV` stay unchanged. New suite names start with the group letter and a `2`
+(`A2-…`, `B2-…`, …) and a new regex `DEV2` selects seed 1 of them.
+
+### Task D1 (full text): the jittered grid and the new groups
+
+**Files:** `training/kz4ap_synth/jitter.py` (new), `training/kz4ap_synth/suites.py`, `training/kz4ap_proto/experiments.py`
+(the `DEV2` regex only), `training/tests/test_synth_jitter.py` (new), `training/tests/test_synth_suites2.py` (new).
+
+- [ ] **Step 1: The helper.** `Cells` (edges, scale "log" or "linear") and `draw(cells, index, rng)` returning a
+  value uniform within cell `index` (uniform in ln for "log"); `SPEED_CELLS` = 11 edges 8·10^(i/10) WPM,
+  i = 0…10 (the plan's table); `SNR_CELLS` = edges −8, −6, …, +20 dB. Tests: every draw lies inside its cell;
+  the cells tile the range (each upper edge is the next lower edge); reproducible by seed; the log draw is
+  uniform in ln WPM (a χ² test over 10 000 draws, stated threshold).
+- [ ] **Step 2: Text of about 100 characters.** A text generator that returns VE3NEA-statistics random text of
+  100 ± 5 characters (spaces counted); each signal's recording time follows from its speed (12/WPM s per
+  character on average, PARIS) plus its start offset. Test: lengths within the bound for 1 000 draws.
+- [ ] **Step 3: The groups**, per the plan's table (A2, B2, C2, D2, E2, F2, G2/H2, I2, S2), each a function of
+  the seed and of `per_cell` (signals per cell, default from the plan; A2's pilot value 4). Every drawn value
+  (speed, S₅₀₀, offsets, levels, f_D, imbalance) is recorded in the label file with its cell index. Signals are
+  placed in recordings as now (several stations per recording, slots ≥ 1.2 kHz apart). Tests: counts per cell;
+  every label value inside its cell; S2 is A2's cell-5 signals stretched by exactly 2.0 with S₅₀₀ lowered by
+  10·log₁₀ 2 = 3.01 dB, edges scaled (as B9).
+- [ ] **Step 4:** pytest; commit.
+
+### Task D2 (full text): the analysis and the figures
+
+**Files:** `training/kz4ap_proto/devset2.py` (new: the fits and comparisons), `training/kz4ap_proto/figures.py`
+(new), `training/kz4ap_proto/experiments.py` (subcommands `devset2` and `figures`), tests, and
+`training/requirements-analysis.txt` (new: `matplotlib`, pinned; kept out of CI's requirements). Install it into
+the local `.venv` and on the Linux machine's `.venv` (`PIP_CACHE_DIR=build/pip-cache`); if installation is
+refused, stop and report.
+
+- [ ] **Step 1: The fit.** Per signal: CER and its character count. Model: CER(S₅₀₀, v) = c_floor +
+  (1 − c_floor)·logistic(−(S₅₀₀ − s₀(v))/w(v)), with s₀ and ln w quadratic in ln v (v the speed, WPM) and
+  c_floor ≥ 0 a small floor; fitted by weighted least squares on the signals' CER (weights: character counts),
+  or by maximum likelihood of the character errors as binomial, whichever is stable (state which and why).
+  Outputs: the crossings (S₅₀₀ at CER 0.10 and 0.05) as functions of speed, evaluated at each cell's center;
+  their 95% intervals by bootstrap over signals (1 000 resamples, seeded). Tests on synthetic CER data with known
+  s₀(v), w(v): the fit recovers them within stated tolerances.
+- [ ] **Step 2: E/N₀ per dit:** E/N₀ = S₅₀₀ + 10·log₁₀(500 Hz × dit), dit = 1.2 s / WPM (dB). The same fit
+  against E/N₀ with s₀ constant in v is the time-base-invariant hypothesis; report the spread of the per-cell
+  crossings in E/N₀ and a test of invariance (the quadratic terms' significance by bootstrap).
+- [ ] **Step 3: Paired comparisons:** variant − reference per signal; pooled and per group with bootstrap
+  intervals over test cases (as `experiments compare`), and per speed cell.
+- [ ] **Step 4: Detection recall** per speed cell against S₅₀₀ (from the bench's through-the-detector scoring).
+- [ ] **Step 5: The five figures** of the plan's principle 7, as PNG at 150 dpi and SVG, with axis labels
+  carrying units (dB SNR in 500 Hz; dB of E/N₀ per dit; WPM), legends, and a caption file listing the runs and
+  commit each figure was drawn from. Test: each figure is produced from a small fixture without error.
+- [ ] **Step 6:** pytest; commit.
+
+### Task D3 (full text): the pilot
+
+- [ ] **Step 1:** generate A2 seed 1 at 4 signals per cell (560 signals) on the Linux machine.
+- [ ] **Step 2:** decode with Matched (`kz4ap-bench`, oracle) and the bank at its current defaults
+  (`kz4ap-bank-replay`), score.
+- [ ] **Step 3:** the fit; the crossing's 95% interval per speed cell for each decoder; the signals per cell
+  needed to reach about ±0.5 dB (the interval scales about as 1/√n; state the assumption); the resulting sizes of
+  every group and the run time at the measured CPU.
+- [ ] **Step 4:** a short pilot section in a new results record `docs/plans/2026-10-06-development-set-results.md`,
+  with figures 1–3 for the pilot; commit. **Stop: the owner sees the sizes before the full generation.**
