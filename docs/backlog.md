@@ -35,6 +35,30 @@ on a redesigned development set (speeds spread evenly in ln WPM, e.g. 8 to 60 WP
 spread evenly across the decision-relevant range in every group), re-measuring the current
 reference on it, rather than carrying the old set forward.
 
+### Are the bandwidths wide enough above 50 WPM? (owner, 2026-10-06)
+
+Test, at representative speeds above 50 WPM (e.g. 50, 60, 80, 100 WPM;
+machine and paddle keying; S₅₀₀ across the decision-relevant range), whether
+every bandwidth in the chain is wide enough:
+
+- the FFT bins (23.44 Hz) and the detector: a keyed signal's sidebands
+  spread over about ±1/T (±50 Hz at 60 WPM, ±83 Hz at 100 WPM), so the
+  track's level (and its birth at 6 dB above the floor, dB SNR per bin)
+  depends on speed; measure the track level against the key-down SNR per
+  bin by speed;
+- the channel filter (±150 Hz, sized heuristically for about 60 WPM): how
+  much keying-sideband power and edge sharpness it removes at higher speeds,
+  and the effect on mark timing;
+- the decoders' fast limits: Envelope's and Matched's speed clamp of
+  5–60 WPM and Matched's 16 ms acquisition width (60 WPM); the bank's
+  shortest branch, 9.6 ms (100 WPM);
+- the channel rate, 1500 samples/s (0.67 ms per sample against a 12 ms dit
+  at 100 WPM).
+
+The current development set has almost nothing above 40 WPM (D's 60 WPM
+step, a few B signals), so this needs its own test group. Related: the
+development set's distribution (above).
+
 ### Top priority: research, then implement a probabilistic decoder
 
 The classical decoder is a hard-decision baseline (see
