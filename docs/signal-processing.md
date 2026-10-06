@@ -42,6 +42,17 @@ dits where the text says so.
 | dit | 1.2 s / WPM (the PARIS convention) | 48 ms at 25 WPM |
 | S₅₀₀ | key-down carrier power over the noise power in 500 Hz | |
 
+Several dit-like quantities appear in the bank decoder (section 8c); they
+are different things:
+
+| Symbol | What it is |
+|---|---|
+| dit | the generic dit of a speed, 1.2 s / WPM |
+| d_k | branch k's nominal dit, fixed: L_k / 0.8 (12 ms on branch 1 to 230 ms on branch 32) |
+| T | the dit a branch has fitted to its own marks and spaces (the duration fit) |
+| τ_c | a candidate dit tried by the periodicity estimator (303 values, 12 to 242 ms) |
+| T_P | the periodicity estimator's result: the best confident candidate |
+
 ## Overview
 
 ```
@@ -70,25 +81,33 @@ thinks the station is (the *anchor*).
 
 A 16-bit stereo WAV, left channel I and right channel Q, divided by 32768,
 so samples lie in [−1, 1) FS. Frequencies are offsets from the radio's
-center frequency, in Hz, spanning ±fs/2. Input is processed in blocks of
-exactly N/2 samples, so the output does not depend on how a caller splits
-the input.
+center frequency, in Hz, spanning ±fs/2. The engine collects incoming
+samples and processes them in fixed blocks of exactly N/2 samples (the
+hop), always at the same sample positions, so the output does not depend on
+how a caller splits the input (one sample at a time or a whole file at
+once).
 
 ## 2. The FFT size N and bin width Δf
 
 N is the largest power of two that keeps the bins at least 20 Hz wide:
 8192 at 192 kHz, so Δf = 23.44 Hz and each transform spans 42.7 ms. This is
 a heuristic. The real intent is "bins about 23 Hz wide": narrow enough to
-separate stations a few tens of Hz apart, wide enough that a keyed CW
-signal's energy (tens of Hz wide at contest speeds) falls in one to three
-bins. The detector does not need to follow the keying: it averages each
-bin over 1 s (section 6).
+separate stations a few tens of Hz apart, wide enough that most of a keyed
+CW signal's energy falls within one to three bins up to about 40 WPM. In
+random keying about 44% of the key-down power (the key-down fraction) is a
+pure carrier line, always in one bin; the rest is keying sidebands whose
+main lobe spreads over about ±1/dit: ±21 Hz at 25 WPM, ±33 Hz at 40 WPM,
+±50 Hz at 60 WPM (derived). The occupied bandwidth by the ham rule of thumb
+(about 4 × WPM in Hz) is wider. The detector does not need to follow the
+keying: it averages each bin over 1 s (section 6).
 
 Appendix: A.2.
 
 ## 3. Hops and 50% overlap
 
-Consecutive FFTs start N/2 samples apart, so each sample is seen twice. With
+New input arrives in blocks of N/2 samples (the hop), but each FFT covers
+N samples: the newest block and the one before it. So consecutive FFTs
+overlap by half, and every sample appears in two consecutive FFTs. With
 the Hann window (section 4) the overlapping windows add up to a constant,
 so no part of the signal is weighted less than another (derived). The hop
 also fixes the channel filter's length (section 7).
@@ -99,7 +118,7 @@ Appendix: A.3.
 
 Every hop, the analyzer takes the last N samples, multiplies them by a Hann
 window and computes an FFT. The power in bin k, normalized so that a tone
-reads its own power, is
+exactly on a bin reads its true power, A² FS², is
 
   P[k] = |X[k]|² / (Σw)²  (FS²),
 
@@ -118,15 +137,20 @@ Appendix: A.4.
 
 **S₅₀₀** is the key-down carrier power over the noise power in 500 Hz, the
 convention of CW Skimmer and the Reverse Beacon Network. The synthetic test
-recordings add complex white noise of σ = 0.02 FS. The detector sees a
+recordings always add the same noise, complex white noise of σ = 0.02 FS;
+a station's S₅₀₀ is set by its carrier amplitude. The detector sees a
 narrower noise bandwidth, one bin's ENBW of 35.2 Hz, so the same signal
 reads 10·log₁₀(500/35.2) = **11.5 dB higher** as an SNR per bin than as an
 SNR in 500 Hz (derived, white noise). A track's reported SNR is lower than
-its key-down SNR per bin: by about 3 dB at 50% key-down, because it
-averages over key-up time too, and further because the keying sidebands
-fall outside the peak bin and the tone may sit between bins (up to
-1.42 dB). A station at 20 dB SNR in 500 Hz is 31.5 dB SNR per bin
-key-down and reads about 27 dB SNR per bin as a track.
+its key-down SNR per bin, and by how much depends on the speed. With a
+key-down fraction D, the averaged power is a carrier line of D² of the
+key-down power, always in the peak bin, plus keying sidebands of D − D²,
+spread over about ±1/dit, so less of them fall in the bin the faster the
+keying. At D = 0.44 the track reads between about 3.6 dB (slow keying: all
+sidebands in the bin) and 7.1 dB (very fast: the carrier line only) below
+the key-down SNR per bin (derived), plus up to 1.42 dB if the tone sits
+between bins. Example at 25 WPM: a station at 20 dB SNR in 500 Hz is
+31.5 dB SNR per bin key-down and reads about 27 dB SNR per bin as a track.
 
 Appendix: A.5.
 
@@ -142,7 +166,7 @@ the average shows a station as a steady peak above the noise.
 
 **Noise floor.** The median of all 8192 averaged bins, every hop: one
 number for the whole span (heuristic). Stations occupy few bins, so the
-median is the noise.
+median is very close to the noise.
 
 **Finding a station.** A bin becomes a candidate when its average is at
 least **6 dB** above the floor (dB SNR per bin, since the floor is the
@@ -269,9 +293,10 @@ start was not seen (it began while keying was impossible) is decoded but
 not counted for speed.
 
 **The probability of key-down.** With v the filter output, σ the noise per
-real component and ŝ the station's amplitude, the evidence for key-down in
-one sample is the likelihood ratio of a carrier plus noise (Rician) against
-noise alone (Rayleigh):
+real component and ŝ the station's amplitude, each filter output gets the
+log-likelihood ratio of key-down against key-up: how much more likely the
+observed |v| is with a carrier plus noise (Rician) than with noise alone
+(Rayleigh):
 
   Λ = −a²/2 + ln I₀(a·x)  (nats),  x = |v|/σ,  a = ŝ/σ.
 
@@ -282,7 +307,9 @@ tied to S₅₀₀ by a² = 2·S₅₀₀·(500 Hz)·K/r, S₅₀₀ as a linear
 25 WPM. Adding the prior log-odds of key-down, ln(0.44/0.56) (PARIS text keys down
 22 of every 50 dit units; derived), gives g; the probability is
 p = 1/(1 + e^(−g)). The key goes down when g > +1 nat and up when
-g < −1 nat (heuristic hysteresis).
+g < −1 nat (heuristic hysteresis). Each sample is judged on its own: neighboring outputs of the
+boxcar share most of their input, so they are strongly correlated, and the decoder does not add
+their likelihood ratios up as independent evidence.
 
 **What it must estimate.** The rule needs ŝ and σ, both learned on the air:
 
