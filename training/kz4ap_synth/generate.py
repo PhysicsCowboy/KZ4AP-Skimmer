@@ -65,6 +65,9 @@ class SignalSpec:
     overs: list[Over] = field(default_factory=list)      # a QSO's overs, in order (empty: send text)
     turn_s: tuple[float, float] = (0.5, 2.0)             # silence before each over after the first, s (uniform)
     farnsworth_wpm: float | None = None  # overall speed with Farnsworth spacing, WPM (keying.farnsworth_gap_s); None = standard
+    # The jittered development set's drawn values (jitter.record: value, cell number, cell range), by name; empty for
+    # other suites, and then not written to the labels
+    design: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -255,6 +258,8 @@ def labels(signals, sample_rate: int, duration_s: float, seed: int) -> dict:
         fields = asdict(s)
         if fields["farnsworth_wpm"] is None:
             del fields["farnsworth_wpm"]  # standard spacing: the labels stay exactly as before
+        if not fields["design"]:
+            del fields["design"]  # not a jittered-grid signal: the labels stay exactly as before
         if s.overs:
             texts = [o.text for o in s.overs]
             extra = [{"sender": s.senders[k].call, "sender_index": k, "wpm": s.senders[k].wpm,
@@ -304,6 +309,7 @@ def station_labels(signals, sample_rate: int, duration_s: float, seed: int) -> d
                 "start_s": mine[0]["start_s"], "end_s": mine[-1]["end_s"],
                 "keying": who.keying, "imbalance_dits": who.imbalance_dits, "drift_hz_per_s": s.drift_hz_per_s,
                 "score": s.score, "tag": s.tag, "qso_index": i, "sender": who.call, "transmissions": mine,
+                **({"design": s.design} if s.design else {}),
             })
     return {**base, "signals": entries}
 

@@ -2,6 +2,7 @@
 scores each with kz4ap-bench, and a summary.
 
     python -m kz4ap_synth.suites generate --suite full --out build/suite/full [--seeds 3]
+    python -m kz4ap_synth.suites generate --suite dev2 --out build/suite/dev2 [--seeds 3] [--per-cell A2=4 ...]         [--groups A2,S2]
     python -m kz4ap_synth.suites run --out build/suite/full --bench PATH/kz4ap-bench \
         --decoder baseline --decoder matched [--decoder bank]
     python -m kz4ap_synth.suites summarize --out build/suite/full
@@ -30,7 +31,7 @@ import math
 import re
 import subprocess
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -38,10 +39,11 @@ import numpy as np
 from .generate import (MESSAGES, Sender, SignalSpec, draw_answer_offset_hz, fill_text, generate, labels,
                        plan_intervals, qso_spec, random_callsign, scenario_band, signal_end_s, station_labels,
                        with_interferer, write_wav)
-from .keying import VE3NEA_WPM_RANGE, draw_imbalance_dits, draw_style
+from .jitter import SNR_CELLS, SPEED_CELLS, Cells, pick, record
+from .keying import VE3NEA_STYLE_MIX, VE3NEA_WPM_RANGE, draw_imbalance_dits, draw_style
 from .messages import ragchew as ragchew_overs
 from .messages import random_operator, random_text
-from .morse import keying_intervals
+from .morse import keying_intervals, symbols
 
 BIN_HZ = 48000 / 2048  # the engine's FFT bin width at 48 kHz (and at 192 kHz), Hz
 # How the detector sorts a QSO's two stations into tracks depends on the front end's attribution
@@ -494,6 +496,462 @@ def farnsworth(seed: int) -> list[Recording]:
     return recs
 
 
+# ----------------------------------------------------------------------------------------------------------------------
+# The jittered development set (docs/plans/2026-10-06-development-set-redesign.md, task D1): groups A2 ... I2 and S2.
+# Every condition is a jittered grid (jitter.py): each signal's value is drawn uniformly within its cell (in ln for
+# speeds and f_D), from a generator seeded by (seed, group, its cells, its replicate), so a signal's draws do not depend
+# on per_cell or on the other signals. Every drawn value is recorded in the label file (SignalSpec.design, written as
+# "design") with its cell number and the cell's range; a value drawn from one range is cell 1 of a one-cell Cells.
+# Values are not rounded (rounding could move a value across its cell's edge). S500 is dB SNR in 500 Hz throughout.
+# Recording names start with the group letter and a 2; experiments.DEV2 selects seed 1 of the oracle ones.
+
+DEV2_TEXT_CHARS = 100        # characters per signal, spaces counted, a prosign one character (plan principle 4)
+DEV2_TEXT_TOLERANCE = 5      # +/- characters
+PARIS_S_PER_CHAR_PER_WPM = 12.0  # PARIS: 60/WPM s per 5-character word, space counted, so 12/WPM s per character
+DEV2_MAX_STATIONS = 32       # stations per recording at DEV2_SLOT_HZ (as group A): within +/-18.6 kHz of 48 kHz's
+DEV2_SLOT_HZ = 1200.0        # +/-21.6 kHz span (check_recording), slots jittered by +/- half a bin
+DEV2_BIN_SLOT_BINS = 51      # group F2: exact FFT-bin centers 51 bins (1195.3 Hz) apart, as group F
+DEV2_SAMPLE_RATE = 48000
+# Noise seeds 10^6 x seed + 10^4 x group code + the group's recording number: apart from every old suite's (1000 x seed
+# + at most 161) and from each other's (the A2 detector copies share their oracle recordings' noise, as group H's do).
+DEV2_SEED_BASE = 1_000_000
+DEV2_GROUP_SEED = 10_000
+# Signals per cell by default (the plan sets A2's pilot value, 4; the others are this task's choice, sized to give each
+# group's main comparison tens of signals per cell of interest; task D3's pilot scales them).
+DEV2_PER_CELL = {"A2": 4, "B2": 2, "C2": 2, "D2": 3, "E2": 3, "F2": 4, "G2": 2, "H2": 2, "I2": 2}
+S500_UNIT = SNR_CELLS.unit
+FADING2_CELLS = Cells((0.05, 0.2, 0.6, 2.0, 5.0), "log", "Hz (f_D, 2 sigma)")
+FADING2_SNR_CELLS = Cells((0.0, 10.0, 20.0), "linear", S500_UNIT)
+FIST2_SNR_CELLS = Cells((2.0, 8.0, 14.0, 20.0), "linear", S500_UNIT)
+FIST2_IMBALANCE = Cells((-0.1, 0.1), "linear", "dits")
+SPEED2_FACTOR = Cells((1.3, 2.0), "log", "ratio of speeds")
+SPEED2_SNR = Cells((10.0, 20.0), "linear", S500_UNIT)
+SPEED2_DIRECTIONS = ("up", "down")
+SPEED2_PROFILES = ("step", "ramp")
+QRM2_OFFSET_CELLS = Cells((0.0, 25.0, 60.0, 120.0), "linear", "Hz (neighbor above the wanted signal)")
+QRM2_RELATIVE = Cells((-6.0, 12.0), "linear", "dB relative to the wanted key-down power")
+QRM2_SNR = Cells((8.0, 14.0), "linear", S500_UNIT)
+TUNING2_OFFSET = Cells((0.0, 12.0), "linear", "Hz above the FFT bin center (23.4375 Hz bins)")
+TUNING2_DRIFT = Cells((0.0, 2.0), "linear", "Hz/s")
+TUNING2_SNR = Cells((0.0, 10.0), "linear", S500_UNIT)
+QSO2_SNR = Cells((10.0, 20.0), "linear", S500_UNIT + " (the caller)")
+QSO2_RELATIVE = Cells((-6.0, 6.0), "linear", "dB relative to the caller's key-down power")
+# G2: the answering station within the zero-beat band (generate.ANSWER_OFFSET_BANDS_HZ's first band), so one track on
+# every path (Envelope: within 2 bins; Matched and bank: below D_ch = 47 Hz) and within the oracle anchor's +/-12 Hz.
+QSO2_SAME_OFFSET = Cells((0.0, 10.0), "linear", "Hz (answering station above the caller)")
+# H2: 200-300 Hz apart, so two tracks on every path (from 93.9 Hz on) and, with oracle channels, each station at least
+# 18.0 dB below the other's channel passband (measured: -18.0 dB relative to the passband at 200 Hz, appendix A.7).
+QSO2_SEPARATE_OFFSET = Cells((200.0, 300.0), "linear", "Hz (answering station above the caller)")
+FARNSWORTH2_CHAR = Cells((18.0, 25.0, 33.0), "log", "WPM (character speed)")
+FARNSWORTH2_OVERALL = Cells((5.0, 8.0, 12.0, 16.0), "log", "WPM (overall speed)")
+FARNSWORTH2_SNR = Cells((2.0, 8.0, 14.0, 20.0), "linear", S500_UNIT)
+STRETCH2_FACTOR = 2.0        # S2: A2's speed-cell-5 signals stretched in time by exactly 2 ...
+STRETCH2_SNR_DB = 10.0 * math.log10(STRETCH2_FACTOR)  # ... with S500 3.01 dB lower: the same energy per dit (derived)
+STRETCH2_FROM_CELL = 5       # 20.10-25.30 WPM, stretched to 10.05-12.65 WPM
+SPEED_MIN_WPM, SPEED_MAX_WPM = SPEED_CELLS.edges[0], SPEED_CELLS.edges[-1]
+NOT_A_CELL = None            # the cell of a value drawn from a distribution rather than a cell
+STYLE_MIX_TEXT = "VE3NEA's mix: " + ", ".join(f"{name} {p:.2f}" for name, p in VE3NEA_STYLE_MIX)
+IMBALANCE_TEXT = "normal, mean 0, standard deviation 0.1 dit (VE3NEA's per-operator imbalance)"
+
+
+def text_chars(text: str) -> int:
+    """Characters as the plan counts them: spaces counted, a prosign token ("<BT>") one character."""
+    return len(symbols(text))
+
+
+def text_100(rng, chars: int = DEV2_TEXT_CHARS, tolerance: int = DEV2_TEXT_TOLERANCE) -> str:
+    """VE3NEA-statistics random text (messages.random_text) of chars +/- tolerance characters (text_chars): of 70
+    drawn words (about 284 characters at his mean of 3.06 characters a word), the prefix of whole words whose length is
+    closest to chars (the shorter on a tie); drawn again from the same generator in the rare case that none lies within
+    the tolerance (a long word straddling the bound)."""
+    while True:
+        words = random_text(rng, 70).split()
+        n, best = 0, None
+        for k, word in enumerate(words):
+            n += text_chars(word) + (1 if k else 0)
+            if best is None or abs(n - chars) < abs(best[1] - chars):
+                best = (k + 1, n)
+            if n > chars + tolerance:
+                break
+        if best is not None and abs(best[1] - chars) <= tolerance:
+            return " ".join(words[:best[0]])
+
+
+def nominal_duration_s(text: str, wpm: float) -> float:
+    """The keying time of text at wpm on PARIS's average, 12/WPM s per character (spaces counted), s. A signal's
+    recording time is its start offset plus its keying time; recordings are sized from the actual plan
+    (_fitted_duration), which differs from this by the text's own mix of characters and the keying style."""
+    return PARIS_S_PER_CHAR_PER_WPM / wpm * text_chars(text)
+
+
+def _signal_rng(seed: int, code: int, *key: int) -> np.random.Generator:
+    """One signal's generator: (seed, 100 + group code, 0, its cell numbers ..., its replicate)."""
+    return np.random.default_rng([seed, 100 + code, 0, *key])
+
+
+def _pack(batches, *, prefix: str, group: str, seed: int, code: int, oracle: bool = True,
+          station_labels: bool = False, bin_slots: bool = False) -> list[Recording]:
+    """Places units of signals in recordings. batches: [(name, units)], one batch per cell of the condition that
+    sets the signals' lengths (a speed cell), so that a recording's channels last about as long as its signals; a unit
+    is a list of SignalSpecs whose freq_offset_hz is relative to the unit's slot (one signal; a wanted signal at 0 Hz
+    and its neighbor; one QSO). Each batch is split into the fewest recordings of at most DEV2_MAX_STATIONS units, as
+    even as possible; within a recording the units' order is shuffled (so no condition is tied to a frequency) and the
+    units take slots DEV2_SLOT_HZ apart around 0 Hz, each moved by a uniform offset within +/- half a bin (bin_slots:
+    exact FFT-bin centers DEV2_BIN_SLOT_BINS bins apart, for group F2's offsets from the bin center). A recording lasts
+    until 2 s after its last signal ends, rounded up to whole seconds. Names: <prefix>-<batch>-<part>-s<seed>."""
+    recs = []
+    number = 0
+    for batch, units in batches:
+        if not units:
+            continue
+        parts = math.ceil(len(units) / DEV2_MAX_STATIONS)
+        for part, chunk in enumerate(np.array_split(np.arange(len(units)), parts)):
+            rng = np.random.default_rng([seed, 100 + code, 1, number])
+            order = [int(i) for i in rng.permutation(chunk)]
+            slots = (_bin_centers(len(order), DEV2_BIN_SLOT_BINS) if bin_slots
+                     else _slots(len(order), DEV2_SLOT_HZ, rng, BIN_HZ / 2))
+            specs = [replace(s, freq_offset_hz=f + s.freq_offset_hz) for f, i in zip(slots, order) for s in units[i]]
+            noise_seed = DEV2_SEED_BASE * seed + DEV2_GROUP_SEED * code + number
+            recs.append(Recording(f"{prefix}-{batch}-{part}-s{seed}", group, DEV2_SAMPLE_RATE,
+                                  _fitted_duration(specs, noise_seed), noise_seed, oracle, specs, station_labels))
+            number += 1
+    return recs
+
+
+def _per_cell(group: str, per_cell: int | None) -> int:
+    n = DEV2_PER_CELL[group] if per_cell is None else int(per_cell)
+    if n < 1:
+        raise ValueError(f"{group}: per_cell must be at least 1, not {n}")
+    return n
+
+
+def _distribution(value, text: str) -> dict:
+    """A drawn value that has no cell (a style or an imbalance drawn from a distribution), as the labels record it."""
+    return {"value": value, "cell": NOT_A_CELL, "distribution": text}
+
+
+def sensitivity2(seed: int, per_cell: int | None = None) -> list[Recording]:
+    """A2, sensitivity: white noise, machine keying, 10 speed cells x 14 S500 cells (-8 ... +20 dB), per_cell signals
+    per cell (default 4, the pilot's), each 100 +/- 5 characters of VE3NEA-statistics text, starting 0.5-2 s in. One
+    batch per speed cell (56 signals at 4 per cell: 2 recordings of 28)."""
+    n = _per_cell("A2", per_cell)
+    batches = []
+    for v in SPEED_CELLS.numbers:
+        lo, hi = SPEED_CELLS.bounds(v)
+        units = []
+        for k in SNR_CELLS.numbers:
+            for rep in range(n):
+                rng = _signal_rng(seed, 1, v, k, rep)
+                wpm, d_wpm = pick(SPEED_CELLS, v, rng)
+                snr, d_snr = pick(SNR_CELLS, k, rng)
+                text = text_100(rng)
+                units.append([SignalSpec(text, 0.0, wpm, snr, _start(rng), tag=f"speed cell {v} ({lo:.2f}-{hi:.2f} WPM)",
+                                         design={"group": "A2", "speed_wpm": d_wpm, "s500_db": d_snr})])
+        batches.append((f"c{v:02d}", units))
+    return _pack(batches, prefix="A2-awgn", group="A2 sensitivity", seed=seed, code=1)
+
+
+def sensitivity2_detector(seed: int, per_cell: int | None = None) -> list[Recording]:
+    """A2 through the detector path (detection recall against S500 per speed cell): each A2 recording again, the same
+    signals and noise (the same noise seed, so the same samples), decoded without oracle channels. Not in DEV2."""
+    return [Recording(r.name.replace("A2-awgn-", "A2-detector-"), "A2 sensitivity, detector", r.sample_rate,
+                      r.duration_s, r.noise_seed, False, r.specs) for r in sensitivity2(seed, per_cell)]
+
+
+def stretch2_source(name: str) -> str | None:
+    """The A2 recording (or result) name an S2 recording copies ("S2-stretch-c05-0-s1" -> "A2-awgn-c05-0-s1"); None
+    for any other name."""
+    return "A2-awgn-" + name[len("S2-stretch-"):] if name.startswith("S2-stretch-") else None
+
+
+def stretch2(seed: int, per_cell: int | None = None) -> list[Recording]:
+    """S2, the stretch test (time-base invariance, paired; as B9's group S): every A2 recording of speed cell 5
+    (20.10-25.30 WPM) again, each signal at exactly half its speed (10.05-12.65 WPM) with the same text, frequency and
+    first-mark time, S500 lowered by 10 log10(2) = 3.01 dB and its raised-cosine edges twice as long (5 ms to 10 ms), so
+    its envelope is exactly the original's in a time base 2 times slower and its energy per dit relative to the noise
+    density is unchanged (derived). The recording lasts twice the original's; the noise is new. per_cell: A2's. The
+    labels record the stretched values with the A2 cells' ranges stretched alike (speed range halved, S500 range 3.01 dB
+    lower), the cell numbers of the A2 originals, and the source recording and signal."""
+    recs = []
+    prefix = f"A2-awgn-c{STRETCH2_FROM_CELL:02d}-"
+    for rec in sensitivity2(seed, per_cell):
+        if not rec.name.startswith(prefix):
+            continue
+        part = int(rec.name[len(prefix):].split("-")[0])
+        specs = []
+        for i, s in enumerate(rec.specs):
+            d_wpm, d_snr = s.design["speed_wpm"], s.design["s500_db"]
+            design = {"group": "S2", "source": rec.name, "source_index": i, "stretch_factor": STRETCH2_FACTOR,
+                      "speed_wpm": {**d_wpm, "value": s.wpm / STRETCH2_FACTOR,
+                                    "range": [x / STRETCH2_FACTOR for x in d_wpm["range"]], "source_value": s.wpm},
+                      "s500_db": {**d_snr, "value": s.snr_db - STRETCH2_SNR_DB,
+                                  "range": [x - STRETCH2_SNR_DB for x in d_snr["range"]], "source_value": s.snr_db}}
+            specs.append(SignalSpec(s.text, s.freq_offset_hz, s.wpm / STRETCH2_FACTOR, s.snr_db - STRETCH2_SNR_DB,
+                                    s.start_s, edge_s=s.edge_s * STRETCH2_FACTOR,
+                                    tag=f"speed cell {STRETCH2_FROM_CELL} stretched by {STRETCH2_FACTOR:g}",
+                                    design=design))
+        recs.append(Recording(rec.name.replace("A2-awgn-", "S2-stretch-"), "S2 stretch", rec.sample_rate,
+                              rec.duration_s * STRETCH2_FACTOR,
+                              DEV2_SEED_BASE * seed + DEV2_GROUP_SEED * 11 + part, True, specs))
+    return recs
+
+
+def fading2(seed: int, per_cell: int | None = None) -> list[Recording]:
+    """B2, Rayleigh fading with VE3NEA's Butterworth Doppler spectrum: 10 speed cells x 4 f_D cells (0.05-0.2, 0.2-0.6,
+    0.6-2, 2-5 Hz, drawn in ln f_D) x 2 S500 cells (0-10, 10-20 dB), per_cell signals per cell (default 2: 160 signals,
+    40 per f_D and S500 cell). Each signal's keying style from VE3NEA's mix and its imbalance from his distribution
+    (recorded, without a cell), his 2 ms centered edges. One batch per speed cell."""
+    n = _per_cell("B2", per_cell)
+    batches = []
+    for v in SPEED_CELLS.numbers:
+        units = []
+        for fc in FADING2_CELLS.numbers:
+            for k in FADING2_SNR_CELLS.numbers:
+                for rep in range(n):
+                    rng = _signal_rng(seed, 2, v, fc, k, rep)
+                    wpm, d_wpm = pick(SPEED_CELLS, v, rng)
+                    f_d, d_fd = pick(FADING2_CELLS, fc, rng)
+                    snr, d_snr = pick(FADING2_SNR_CELLS, k, rng)
+                    keying = draw_style(rng)
+                    imbalance = draw_imbalance_dits(rng)
+                    design = {"group": "B2", "speed_wpm": d_wpm, "fading_hz": d_fd, "s500_db": d_snr,
+                              "keying": _distribution(keying, STYLE_MIX_TEXT),
+                              "imbalance_dits": _distribution(imbalance, IMBALANCE_TEXT)}
+                    units.append([SignalSpec(text_100(rng), 0.0, wpm, snr, _start(rng), keying=keying,
+                                             imbalance_dits=imbalance, fading_hz=f_d, fading_shape="butterworth",
+                                             edge_s=VE3NEA_EDGE_S, edges_centered=True,
+                                             tag=f"fD cell {fc} ({FADING2_CELLS.bounds(fc)[0]:g}-"
+                                                 f"{FADING2_CELLS.bounds(fc)[1]:g} Hz)", design=design)])
+        batches.append((f"c{v:02d}", units))
+    return _pack(batches, prefix="B2-fading", group="B2 fading", seed=seed, code=2)
+
+
+def fists2(seed: int, per_cell: int | None = None) -> list[Recording]:
+    """C2, keying styles: 5 styles x 10 speed cells x 3 S500 cells (2-8, 8-14, 14-20 dB), per_cell signals per cell
+    (default 2: 300 signals, 60 per style), each with an imbalance drawn uniformly from -0.1 to +0.1 dit. One batch
+    per speed cell (30 signals at 2 per cell)."""
+    n = _per_cell("C2", per_cell)
+    batches = []
+    for v in SPEED_CELLS.numbers:
+        units = []
+        for sc, keying in enumerate(FIST_STYLES, start=1):
+            for k in FIST2_SNR_CELLS.numbers:
+                for rep in range(n):
+                    rng = _signal_rng(seed, 3, v, sc, k, rep)
+                    wpm, d_wpm = pick(SPEED_CELLS, v, rng)
+                    snr, d_snr = pick(FIST2_SNR_CELLS, k, rng)
+                    imbalance, d_imb = pick(FIST2_IMBALANCE, 1, rng)
+                    design = {"group": "C2", "speed_wpm": d_wpm, "s500_db": d_snr, "imbalance_dits": d_imb,
+                              "keying": {"value": keying, "cell": sc, "cells": list(FIST_STYLES)}}
+                    units.append([SignalSpec(text_100(rng), 0.0, wpm, snr, _start(rng), keying=keying,
+                                             imbalance_dits=imbalance, tag=keying, design=design)])
+        batches.append((f"c{v:02d}", units))
+    return _pack(batches, prefix="C2-fists", group="C2 fists", seed=seed, code=3)
+
+
+def speed2(seed: int, per_cell: int | None = None) -> list[Recording]:
+    """D2, speed changes: from each speed cell, up or down by a factor drawn in ln from 1.3 to 2.0, as a step (at the
+    middle word) or a ramp (linear per word), S500 10-20 dB; per_cell signals per (cell, direction, profile)
+    (default 3). Both speeds stay within 8-80 WPM: where part of a cell cannot change by 1.3 (up: above
+    80/1.3 = 61.54 WPM; down: below 8 x 1.3 = 10.40 WPM) the speed is drawn from the rest of the cell, and the factor
+    is drawn from 1.3 to the smaller of 2.0 and the factor that reaches the edge (both recorded as drawn_within); a
+    (cell, direction) with no such part is left out (cell 1 down, cell 10 up): 36 combinations, 108 signals at 3. The
+    end speed is recorded with its speed cell. One batch per starting speed cell; texts timed at both speeds."""
+    n = _per_cell("D2", per_cell)
+    f_lo, f_hi = SPEED2_FACTOR.edges
+    batches = []
+    for v in SPEED_CELLS.numbers:
+        lo, hi = SPEED_CELLS.bounds(v)
+        units = []
+        for dc, direction in enumerate(SPEED2_DIRECTIONS, start=1):
+            within = (0.0, SPEED_MAX_WPM / f_lo) if direction == "up" else (SPEED_MIN_WPM * f_lo, math.inf)
+            if max(lo, within[0]) > min(hi, within[1]):
+                continue
+            for pc, profile in enumerate(SPEED2_PROFILES, start=1):
+                for rep in range(n):
+                    rng = _signal_rng(seed, 4, v, dc, pc, rep)
+                    restricted = within[0] > lo or within[1] < hi
+                    wpm, d_wpm = pick(SPEED_CELLS, v, rng, within if restricted else None)
+                    reach = SPEED_MAX_WPM / wpm if direction == "up" else wpm / SPEED_MIN_WPM
+                    factor, d_f = pick(SPEED2_FACTOR, 1, rng, (f_lo, reach) if reach < f_hi else None)
+                    end = min(wpm * factor, SPEED_MAX_WPM) if direction == "up" else max(wpm / factor, SPEED_MIN_WPM)
+                    snr, d_snr = pick(SPEED2_SNR, 1, rng)
+                    design = {"group": "D2", "speed_wpm": d_wpm, "factor": d_f, "s500_db": d_snr,
+                              "end_speed_wpm": record(SPEED_CELLS, SPEED_CELLS.cell_of(end), end),
+                              "direction": {"value": direction, "cell": dc, "cells": list(SPEED2_DIRECTIONS)},
+                              "profile": {"value": profile, "cell": pc, "cells": list(SPEED2_PROFILES)}}
+                    units.append([SignalSpec(text_100(rng), 0.0, wpm, snr, _start(rng), wpm_end=end,
+                                             speed_profile=profile, tag=f"{profile} {direction}", design=design)])
+        batches.append((f"c{v:02d}", units))
+    return _pack(batches, prefix="D2-speed", group="D2 speed changes", seed=seed, code=4)
+
+
+def interference2(seed: int, per_cell: int | None = None) -> list[Recording]:
+    """E2, a neighbor station: 10 speed cells x 3 offset cells (0-25, 25-60, 60-120 Hz, the neighbor above the wanted
+    signal), per_cell wanted signals per cell (default 3: 90). The wanted signal at S500 8-14 dB; the neighbor (not
+    scored) at -6 to +12 dB relative to the wanted key-down power, its speed cell drawn uniformly from the 10 and its
+    speed within that cell, machine keying, starting with the wanted signal and keying VE3NEA-statistics text for as
+    long as the wanted signal's text lasts at exact timing (whole words). The neighbor's values are recorded in the
+    wanted signal's labels. One batch per wanted speed cell."""
+    n = _per_cell("E2", per_cell)
+    batches = []
+    for v in SPEED_CELLS.numbers:
+        units = []
+        for oc in QRM2_OFFSET_CELLS.numbers:
+            for rep in range(n):
+                rng = _signal_rng(seed, 5, v, oc, rep)
+                wpm, d_wpm = pick(SPEED_CELLS, v, rng)
+                offset, d_off = pick(QRM2_OFFSET_CELLS, oc, rng)
+                relative, d_rel = pick(QRM2_RELATIVE, 1, rng)
+                snr, d_snr = pick(QRM2_SNR, 1, rng)
+                nv = int(rng.integers(1, len(SPEED_CELLS) + 1))
+                n_wpm, d_nwpm = pick(SPEED_CELLS, nv, rng)
+                text = text_100(rng)
+                start = _start(rng)
+                design = {"group": "E2", "speed_wpm": d_wpm, "s500_db": d_snr, "offset_hz": d_off,
+                          "neighbor_relative_db": d_rel,
+                          "neighbor_speed_wpm": {**d_nwpm, "cell_drawn": "uniformly from the 10 speed cells"}}
+                wanted = SignalSpec(text, 0.0, wpm, snr, start,
+                                    tag=f"offset cell {oc} ({QRM2_OFFSET_CELLS.bounds(oc)[0]:g}-"
+                                        f"{QRM2_OFFSET_CELLS.bounds(oc)[1]:g} Hz)", design=design)
+                neighbor_text = _filler(rng, n_wpm, keying_intervals(text, wpm)[-1][1], "machine")
+                units.append(with_interferer(wanted, offset, relative, n_wpm, neighbor_text))
+        batches.append((f"c{v:02d}", units))
+    return _pack(batches, prefix="E2-qrm", group="E2 interference", seed=seed, code=5)
+
+
+def tuning2(seed: int, per_cell: int | None = None) -> list[Recording]:
+    """F2, tuning: 10 speed cells x an offset from the FFT bin center drawn from 0-12 Hz (each signal at an exact bin
+    center plus its offset), and again 10 speed cells x a drift drawn from 0-2 Hz/s; S500 0-10 dB; per_cell signals
+    per speed cell in each (default 4: 40 + 40). One batch per speed cell; F2-offset and F2-drift recordings."""
+    n = _per_cell("F2", per_cell)
+    offsets, drifts = [], []
+    for v in SPEED_CELLS.numbers:
+        units = []
+        for rep in range(n):
+            rng = _signal_rng(seed, 6, v, rep)
+            wpm, d_wpm = pick(SPEED_CELLS, v, rng)
+            offset, d_off = pick(TUNING2_OFFSET, 1, rng)
+            snr, d_snr = pick(TUNING2_SNR, 1, rng)
+            units.append([SignalSpec(text_100(rng), offset, wpm, snr, _start(rng), tag="offset from the bin center",
+                                     design={"group": "F2", "speed_wpm": d_wpm, "offset_hz": d_off,
+                                             "s500_db": d_snr})])
+        offsets.append((f"c{v:02d}", units))
+        units = []
+        for rep in range(n):
+            rng = _signal_rng(seed, 7, v, rep)
+            wpm, d_wpm = pick(SPEED_CELLS, v, rng)
+            drift, d_drift = pick(TUNING2_DRIFT, 1, rng)
+            snr, d_snr = pick(TUNING2_SNR, 1, rng)
+            units.append([SignalSpec(text_100(rng), 0.0, wpm, snr, _start(rng), drift_hz_per_s=drift, tag="drift",
+                                     design={"group": "F2", "speed_wpm": d_wpm, "drift_hz_per_s": d_drift,
+                                             "s500_db": d_snr})])
+        drifts.append((f"c{v:02d}", units))
+    return (_pack(offsets, prefix="F2-offset", group="F2 tuning", seed=seed, code=6, bin_slots=True)
+            + _pack(drifts, prefix="F2-drift", group="F2 tuning", seed=seed, code=7, bin_slots=True))
+
+
+def _qso2(rng, caller_cell: int, offsets: Cells, group: str, tag: str) -> SignalSpec:
+    """A whole ragchew (messages.ragchew, as groups G and H) by two operators: the caller's speed drawn within
+    caller_cell; the answering station's speed cell drawn uniformly from the 10 and its speed within it; each side's
+    keying style from VE3NEA's mix and its imbalance from his distribution; the answering station offsets (cell 1)
+    above the caller, at -6 to +6 dB relative to the caller's key-down power; the caller at S500 10-20 dB."""
+    a, b = random_operator(rng), random_operator(rng)
+    wpm_a, d_a = pick(SPEED_CELLS, caller_cell, rng)
+    cell_b = int(rng.integers(1, len(SPEED_CELLS) + 1))
+    wpm_b, d_b = pick(SPEED_CELLS, cell_b, rng)
+    styles = [draw_style(rng), draw_style(rng)]
+    imbalances = [draw_imbalance_dits(rng), draw_imbalance_dits(rng)]
+    offset, d_off = pick(offsets, 1, rng)
+    relative, d_rel = pick(QSO2_RELATIVE, 1, rng)
+    snr, d_snr = pick(QSO2_SNR, 1, rng)
+    senders = [Sender(a.call, wpm_a, styles[0], imbalances[0]),
+               Sender(b.call, wpm_b, styles[1], imbalances[1], offset_hz=offset, relative_db=relative)]
+    design = {"group": group, "speed_wpm": d_a,
+              "answer_speed_wpm": {**d_b, "cell_drawn": "uniformly from the 10 speed cells"},
+              "keying": _distribution(styles[0], STYLE_MIX_TEXT),
+              "answer_keying": _distribution(styles[1], STYLE_MIX_TEXT),
+              "imbalance_dits": _distribution(imbalances[0], IMBALANCE_TEXT),
+              "answer_imbalance_dits": _distribution(imbalances[1], IMBALANCE_TEXT),
+              "answer_offset_hz": d_off, "answer_relative_db": d_rel, "s500_db": d_snr}
+    return qso_spec(ragchew_overs(rng, a, b), senders, 0.0, snr, _start(rng), tag=tag, design=design)
+
+
+def _qsos2(seed: int, per_cell: int | None, group: str, code: int, offsets: Cells, prefix: str, name: str,
+           tag: str, station: bool) -> list[Recording]:
+    n = _per_cell(group, per_cell)
+    batches = [(f"c{v:02d}", [[_qso2(_signal_rng(seed, code, v, rep), v, offsets, group, tag)] for rep in range(n)])
+               for v in SPEED_CELLS.numbers]
+    return _pack(batches, prefix=prefix, group=name, seed=seed, code=code, station_labels=station)
+
+
+def qso2_same_track(seed: int, per_cell: int | None = None) -> list[Recording]:
+    """G2, overs and turnovers on one track: whole QSOs (_qso2), the answering station 0-10 Hz above the caller (one
+    track on every path, within the oracle anchor), per_cell QSOs per caller speed cell (default 2: 20 QSOs), oracle
+    channels, scored against one label per QSO (the same-track view). One batch per caller speed cell. A QSO is not
+    100 characters: it is a whole ragchew, about 680 characters (measured over 50 drawn QSOs: 364 the caller's, 317
+    the answering station's on average)."""
+    return _qsos2(seed, per_cell, "G2", 8, QSO2_SAME_OFFSET, "G2-qso", "G2 QSO, same track", "same track", False)
+
+
+def qso2_separate_tracks(seed: int, per_cell: int | None = None) -> list[Recording]:
+    """H2, overs and turnovers on two tracks: whole QSOs (_qso2), the answering station 200-300 Hz above the caller
+    (two tracks on every path; with oracle channels each station 18 dB or more down in the other's channel),
+    per_cell QSOs per caller speed cell (default 2: 20 QSOs), oracle channels, scored against one label per station
+    (the separate-track view; the per-QSO scoring of these recordings does not fit them). One batch per caller speed
+    cell."""
+    return _qsos2(seed, per_cell, "H2", 9, QSO2_SEPARATE_OFFSET, "H2-qso", "H2 QSO, separate tracks",
+                  "separate tracks", True)
+
+
+def farnsworth2(seed: int, per_cell: int | None = None) -> list[Recording]:
+    """I2, Farnsworth spacing: character speed cells 18-25, 25-33 WPM x overall speed cells 5-8, 8-12, 12-16 WPM (both
+    drawn in ln) x S500 cells 2-8, 8-14, 14-20 dB x keying machine and paddle (as group I), per_cell signals per cell
+    (default 2: 72 signals). One batch per overall speed cell (the overall speed sets the length)."""
+    n = _per_cell("I2", per_cell)
+    batches = []
+    for oc in FARNSWORTH2_OVERALL.numbers:
+        units = []
+        for cc in FARNSWORTH2_CHAR.numbers:
+            for k in FARNSWORTH2_SNR.numbers:
+                for kc, keying in enumerate(FARNSWORTH_KEYING, start=1):
+                    for rep in range(n):
+                        rng = _signal_rng(seed, 10, oc, cc, k, kc, rep)
+                        char_wpm, d_c = pick(FARNSWORTH2_CHAR, cc, rng)
+                        overall, d_o = pick(FARNSWORTH2_OVERALL, oc, rng)
+                        snr, d_snr = pick(FARNSWORTH2_SNR, k, rng)
+                        design = {"group": "I2", "speed_wpm": d_c, "farnsworth_wpm": d_o, "s500_db": d_snr,
+                                  "keying": {"value": keying, "cell": kc, "cells": list(FARNSWORTH_KEYING)}}
+                        units.append([SignalSpec(text_100(rng), 0.0, char_wpm, snr, _start(rng), keying=keying,
+                                                 farnsworth_wpm=overall, tag=f"farnsworth {keying}", design=design)])
+        batches.append((f"o{oc}", units))
+    return _pack(batches, prefix="I2-farnsworth", group="I2 Farnsworth", seed=seed, code=10)
+
+
+# The groups in order, each with its builders (A2 also through the detector path; S2 takes A2's per_cell).
+DEV2_BUILDERS = {"A2": (sensitivity2, sensitivity2_detector), "B2": (fading2,), "C2": (fists2,), "D2": (speed2,),
+                 "E2": (interference2,), "F2": (tuning2,), "G2": (qso2_same_track,), "H2": (qso2_separate_tracks,),
+                 "I2": (farnsworth2,), "S2": (stretch2,)}
+
+
+def dev2_suite(seeds: int = 1, per_cell: dict | None = None, groups=None) -> list[Recording]:
+    """The jittered development set, seeds 1 ... seeds (seed 1 is the development seed; 2 and 3 are held out).
+    per_cell: {group: signals per cell} overriding DEV2_PER_CELL (S2 follows A2's); groups: the groups to build
+    (default all, DEV2_BUILDERS' keys)."""
+    per_cell = dict(per_cell or {})
+    unknown = sorted(set(per_cell) - set(DEV2_PER_CELL)) + sorted(set(groups or ()) - set(DEV2_BUILDERS))
+    if unknown:
+        raise ValueError(f"unknown development-set group(s) {unknown}")
+    recs = []
+    for seed in range(1, seeds + 1):
+        for group, builders in DEV2_BUILDERS.items():
+            if groups is not None and group not in groups:
+                continue
+            for build in builders:
+                recs += build(seed, per_cell.get("A2" if group == "S2" else group))
+    return recs
+
+
 def smoke_suite(seeds: int = 1) -> list[Recording]:
     """The recording bench/smoke.sh makes: band scenario, 8 signals, 30 s, seed 1 (noise seed 2)."""
     specs = scenario_band(np.random.default_rng(1), 8, 30.0, 192000)
@@ -509,7 +967,7 @@ def full_suite(seeds: int = 1) -> list[Recording]:
     return recs
 
 
-SUITES = {"smoke": smoke_suite, "full": full_suite}
+SUITES = {"smoke": smoke_suite, "full": full_suite, "dev2": dev2_suite}
 
 
 def check_recording(rec: Recording) -> None:
@@ -1188,6 +1646,9 @@ def main(argv=None) -> None:
     g.add_argument("--out", type=Path, required=True)
     g.add_argument("--only", default=None, help="regular expression: write only matching recordings (the others "
                                                 "must exist)")
+    g.add_argument("--per-cell", action="append", default=[], metavar="GROUP=N",
+                   help="dev2 only: signals per cell for a group (repeatable; default DEV2_PER_CELL)")
+    g.add_argument("--groups", default=None, help="dev2 only: comma-separated groups to build (default all)")
     r = sub.add_parser("run", help="score every recording with kz4ap-bench")
     r.add_argument("--out", type=Path, required=True)
     r.add_argument("--bench", type=Path, required=True)
@@ -1198,7 +1659,18 @@ def main(argv=None) -> None:
     s.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.command == "generate":
-        write_suite(SUITES[args.suite](args.seeds), args.out, args.suite, only=args.only)
+        if args.suite == "dev2":
+            per_cell = {}
+            for item in args.per_cell:
+                group, _, count = item.partition("=")
+                per_cell[group] = int(count)
+            groups = args.groups.split(",") if args.groups else None
+            recordings = dev2_suite(args.seeds, per_cell, groups)
+        elif args.per_cell or args.groups:
+            parser.error("--per-cell and --groups apply to the dev2 suite only")
+        else:
+            recordings = SUITES[args.suite](args.seeds)
+        write_suite(recordings, args.out, args.suite, only=args.only)
     elif args.command == "run":
         run_suite(args.out, args.bench, args.front_ends or ["baseline"], only=args.only)
     else:
