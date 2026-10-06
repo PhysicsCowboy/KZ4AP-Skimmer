@@ -1165,6 +1165,14 @@ its own plan. Related item above: "Spectrum frames in linear power".
   displayed callsign should change to that call, and change back when the
   other station's call is decoded. The same rule belongs in callsign
   matching (section 4).
+- **Showing each character's confidence** (owner, 2026-10-06; much later,
+  something to consider for the UI): shade decoded characters darker or
+  lighter by the decoder's confidence in them. Needs a per-character
+  confidence that means something first: the bank decoder now publishes a
+  placeholder probability of 1 per character (signal-processing.md §8c);
+  candidates are the fit's class posteriors per element, the text model's
+  score, and whether a later correction is still possible (a character
+  inside the 20 s correction reach is provisional).
 
 ## 3. Receiver-audio input (directly after the live display)
 
