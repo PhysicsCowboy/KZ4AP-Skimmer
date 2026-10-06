@@ -61,8 +61,8 @@ def test_the_crossing_is_where_the_model_reaches_the_threshold():
 
 @pytest.mark.parametrize("method", d2.METHODS)
 def test_the_fit_recovers_a_known_s0_and_w(method):
-    """Tolerances: about 4x the spread measured over 40 synthetic sets (task D2 report): s0 0.064 dB, w 4.3%,
-    the CER-0.10 crossing 0.10 dB, the floor 0.0006 (worst cell, either method)."""
+    """Tolerances: about 4x the spread measured over 40 synthetic sets (task D2 report): s0 0.064 dB SNR in 500 Hz, w 4.3%,
+    the CER-0.10 crossing 0.10 dB SNR in 500 Hz, the floor 0.0006 (worst cell, either method)."""
     s, v, k, n = synth(np.random.default_rng(7))
     fit = d2.fit_cer(s, v, k, n, method=method)
     assert fit.converged
@@ -76,7 +76,8 @@ def test_the_fit_recovers_a_known_s0_and_w(method):
 def test_least_squares_tracks_the_mean_cer_when_whole_signals_fail():
     """3% of the signals fail as a whole (CER 0.5-1, mean 0.75): the mean CER is 0.97 f + 0.0225, whose 0.10
     crossing is where f = 0.0799. Over 40 sets, least squares (the default) follows it with a mean bias of 0.01-0.06
-    dB per cell (RMS 0.18-0.45 dB; the mean's standard error up to 0.07 dB), the binomial likelihood with 0.20-0.27 dB
+    dB SNR in 500 Hz per cell (RMS 0.18-0.45 dB; the mean's standard error up to 0.07 dB), the binomial likelihood
+    with 0.20-0.27 dB
     (RMS 0.33-0.62 dB): the measurement behind FIT_METHOD."""
     target = TRUTH.crossing_db((0.10 - 0.03 * 0.75) / 0.97, CENTERS)
     errors = {m: [] for m in d2.METHODS}
@@ -121,7 +122,7 @@ def test_the_invariance_test_accepts_an_invariant_decoder_and_rejects_a_fixed_s5
     wald = d2._wald(d2.bootstrap_fits(e, v, k, n, fit, "inv", resamples=200), fit)
     assert wald["p_value"] > 0.01
     # a decoder whose curve is fixed in S500 (s0 = 0 dB SNR in 500 Hz at every speed): s0 in E/N0 falls 4.34 dB per
-    # unit of ln v, 10 dB over 8-80 WPM
+    # unit of ln v, 10 dB of E/N0 per dit over 8-80 WPM
     fixed = d2.Fit((0.0, 0.0, 0.0, math.log(1.0), 0.0, 0.0, d2._logit(0.003)))
     s, v, k, n = synth(np.random.default_rng(6), truth=fixed)
     e = d2.en0_db(s, v)
@@ -162,6 +163,18 @@ def test_paired_differences_by_group_and_speed_cell_on_signals_both_decoders_sco
     assert out["all"]["interval_test_cases"] is None  # 2 test cases, fewer than MIN_TEST_CASES_FOR_INTERVAL
 
 
+def test_pooled_paired_sets_leave_out_the_detector_path_and_the_stretched_copies():
+    detector = {**_row("ref", "d1", 0, 10, group="A2 sensitivity, detector"), "path": "detector"}
+    rows = [_row("ref", "t1", 0, 10), _row("var", "t1", 0, 5),
+            detector, {**detector, "decoder": "var", "edits": 50},
+            _row("ref", "s1", 0, 10, group="S2 stretch", cell=2), _row("var", "s1", 0, 90, group="S2 stretch", cell=2)]
+    out = d2.paired(rows, "ref", "var")
+    assert out["all"]["signals"] == 1 and out["all"]["mean"] == pytest.approx(-0.05)
+    assert out["speed_cells"]["1"]["signals"] == 1 and "2" not in out["speed_cells"]
+    assert out["groups"]["A2 sensitivity, detector"]["mean"] == pytest.approx(0.40)
+    assert out["groups"]["S2 stretch"]["mean"] == pytest.approx(0.80)
+
+
 def test_the_interval_over_test_cases_resamples_whole_test_cases():
     # five test cases, every signal of a test case with the same difference: the resampled means are averages of
     # whole test cases' signals, so the interval lies within the test cases' range
@@ -179,7 +192,7 @@ def test_the_interval_over_test_cases_resamples_whole_test_cases():
 
 def _fixture(tmp_path):
     """A2 (one recording per speed cell, 14 S500 cells x 3 signals), A2's detector-path copies and two B2
-    recordings, with results for decoders "ref" and "var" (var's s0 0.5 dB lower) drawn from the known model."""
+    recordings, with results for decoders "ref" and "var" (var's s0 0.5 dB SNR in 500 Hz lower) drawn from the known model."""
     out = tmp_path / "suite"
     out.mkdir()
     rng = np.random.default_rng(1)
@@ -253,6 +266,12 @@ def test_the_analysis_end_to_end(tmp_path):
     (comp,) = a["paired"]
     assert comp["variant"] == "var" and comp["all"]["mean"] < 0
     assert set(comp["groups"]) == {"A2 sensitivity", "A2 sensitivity, detector", "B2 fading"}
+    # the pooled and per-speed-cell sets hold each signal once: the oracle path only (A2's detector copies are the
+    # same signals and noise; review I1); the detector path stays its own group
+    assert comp["all"]["signals"] == 10 * 14 * 3 + 2 * 12
+    assert comp["groups"]["A2 sensitivity, detector"]["signals"] == 10 * 14 * 3
+    a2_cell_1 = sum(1 for r in a["signals"] if r["decoder"] == "ref" and r["path"] == "oracle" and r["speed_cell"] == 1)
+    assert comp["speed_cells"]["1"]["signals"] == a2_cell_1
     md = path.with_suffix(".md").read_text(encoding="utf-8")
     assert "dB SNR in 500 Hz" in md and "dB re 1" in md and "Paired: var minus ref" in md
     # committed beside the results record: no machine's folders
@@ -305,3 +324,18 @@ def test_the_development_analysis_selects_dev2_and_the_detector_copies():
     # every DEV2 test case is in the analysis's selection
     for name in ("A2-awgn-c01-0-s1", "S2-stretch-c05-0-s1", "F2-drift-c02-0-s1"):
         assert re.search(experiments.DEV2, name) and re.search(d2.DEV2_ANALYSIS, name)
+
+
+def test_a_fit_that_did_not_converge_is_flagged_in_the_summary():
+    s, v, k, n = synth(np.random.default_rng(2))
+    fit = d2.fit_cer(s, v, k, n)
+    assert fit.converged and fit.stop in ("converged", "stationary")
+    assert d2.Fit.from_json(fit.to_json()) == fit
+    ok = {"converged": True, "iterations": 9}
+    entry = {"s500": {"fit": ok}, "en0": {"fit": ok, "s0_constant": {"fit": {"converged": False, "iterations": 200},
+                                                                      "objective_increase": -1.0}}}
+    warnings = d2._fit_warnings(entry)
+    assert any("s0 constant did not converge" in w for w in warnings)
+    assert any("lower objective" in w for w in warnings)
+    entry["en0"]["s0_constant"] = {"fit": ok, "objective_increase": 5.0}
+    assert d2._fit_warnings(entry) == []

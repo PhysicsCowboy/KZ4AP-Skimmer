@@ -134,7 +134,7 @@ def figure_cer_en0(a: dict, decoder: str, stem: Path) -> list[Path] | None:
     ax.set_ylim(-0.03, 1.03)
     spread = fit["en0"]["spread_db"]
     ax.set_title(f"{decoder}: CER against E/N$_0$ per dit; a time-base-invariant decoder's curves coincide\n"
-                 f"spread of the crossings at CER 0.10: {spread:.2f} dB" if spread is not None else decoder,
+                 f"spread of the crossings at CER 0.10: {spread:.2f} dB of E/N$_0$ per dit" if spread is not None else decoder,
                  fontsize=9, color=INK)
     ax.legend(loc="upper right", fontsize=7)
     return _save(fig, stem)

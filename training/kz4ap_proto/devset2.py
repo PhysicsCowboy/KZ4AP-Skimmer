@@ -21,6 +21,11 @@ model's ceiling.
 
 Fitted by weighted least squares (FIT_METHOD, the default) or by binomial maximum likelihood, both by
 Levenberg-Marquardt on the Gauss-Newton / Fisher-scoring normal equations. Why least squares: see FIT_METHOD.
+A fit stops "converged" when a step changes the objective by less than 1e-10 relative and every parameter by less
+than 1e-6, or "stationary" when no step lowers the objective even at the largest damping (a minimum to working
+precision, or a stall: Fit.stop says which). Bootstrap resamples are warm-started from the full fit (heuristic:
+standard and fast, but it can understate the spread if the objective has several minima, e.g. the floor trading
+against the width).
 """
 
 from __future__ import annotations
@@ -49,8 +54,12 @@ S0_CONSTANT = (True, False, False, True, True, True, True)   # the time-base-inv
 # The default method. Weighted least squares on each signal's CER, weights its reference symbols (measured on
 # synthetic data, test_devset2.py and the task D2 report): both methods recover s0 and w to within their tolerances
 # on binomial data, but with whole-signal failures (a signal that locks to a wrong speed prints garbage at any S500)
-# the binomial likelihood charges such a signal n ln(1/c) and lets a few of them move the floor and the slope, while
-# least squares bounds each signal's cost by its symbols; least squares also converged in every bootstrap resample.
+# the binomial likelihood charges such a signal about n ln(1/f) (f the model's CER there) and lets a few of them move
+# the floor and the slope, while least squares bounds each signal's cost by its symbols. Over 40 sets with 3% such
+# failures the mean bias of the CER-0.10 crossing was 0.01-0.06 dB SNR in 500 Hz per cell for least squares and
+# 0.20-0.27 dB for the binomial likelihood; the direction held in every cell in the review's independent check (12
+# sets, other seeds), where least squares' bias reached 0.29 dB in cell 10 (the magnitude at the speed extremes is
+# not pinned down tightly). Bootstrap failures, 0 of 200 against 1 of 200, are weak evidence and not a reason.
 FIT_METHOD = "wls"
 METHODS = ("wls", "binomial")
 MIN_SIGNALS_FOR_FIT = 20      # heuristic: about three signals per fitted parameter
@@ -62,6 +71,9 @@ DEV2_ANALYSIS = (r"^(A2-awgn|A2-detector|B2-fading|C2-fists|D2-speed|E2-qrm|F2-o
                  r"I2-farnsworth|S2-stretch)-.*-s1$")
 # Heuristic: an interval over test cases from fewer is not shown (A2 puts each speed cell's signals in 2 test cases).
 MIN_TEST_CASES_FOR_INTERVAL = 5
+# Groups whose signals copy another group's (S2: A2's speed-cell-5 signals stretched by 2), left out of the pooled
+# paired sets with the detector path (paired()).
+NOT_POOLED_GROUPS = ("S2 stretch",)
 UNITS_PER_CHARACTER = 10.0    # the genie bound's units per character, inter-character space included (heuristic)
 Z_95 = 1.959963984540054      # the standard normal's 97.5% point
 CHI2_2DOF_95 = -2.0 * math.log(0.05)  # 5.991: chi-square with 2 degrees of freedom has survival exp(-T / 2) (derived)
@@ -112,6 +124,7 @@ class Fit:
     iterations: int = 0
     signals: int = 0
     free: tuple = ALL_FREE
+    stop: str = "converged"           # "converged", "stationary" (no step lowers the objective) or "iterations"
 
     @property
     def floor(self) -> float:
@@ -140,13 +153,14 @@ class Fit:
     def to_json(self) -> dict:
         return {"params": dict(zip(PARAMETERS, self.params)), "axis": self.axis, "method": self.method,
                 "floor": self.floor, "objective": self.objective, "converged": self.converged,
-                "iterations": self.iterations, "signals": self.signals,
+                "iterations": self.iterations, "signals": self.signals, "stop": self.stop,
                 "free": [p for p, f in zip(PARAMETERS, self.free) if f]}
 
     @staticmethod
     def from_json(d: dict) -> "Fit":
         return Fit(tuple(d["params"][p] for p in PARAMETERS), d["axis"], d["method"], d["objective"],
-                   d["converged"], d["iterations"], d["signals"], tuple(p in d["free"] for p in PARAMETERS))
+                   d["converged"], d["iterations"], d["signals"], tuple(p in d["free"] for p in PARAMETERS),
+                   d.get("stop", "converged"))
 
 
 @dataclass
@@ -229,6 +243,7 @@ def _levenberg_marquardt(theta, d: _Data, method: str, free: tuple, max_iter: in
     obj, f, J, W = _evaluate(theta, d, method)
     lam = 1e-3
     converged = False
+    stop = "iterations"
     it = 0
     for it in range(1, max_iter + 1):
         Jm = J[:, mask]
@@ -253,16 +268,16 @@ def _levenberg_marquardt(theta, d: _Data, method: str, free: tuple, max_iter: in
                 break
             lam *= 4.0
         if not improved:
-            converged = True  # no step lowers the objective: a minimum to working precision
+            converged, stop = True, "stationary"  # no step lowers the objective: a minimum to working precision, or a stall
             break
         decrease = obj - new_obj
         theta = trial
         obj, f, J, W = _evaluate(theta, d, method)
         lam = max(lam / 3.0, 1e-12)
         if decrease <= rtol * (1.0 + abs(obj)) and np.max(np.abs(step)) < 1e-6:
-            converged = True
+            converged, stop = True, "converged"
             break
-    return theta, obj, converged, it
+    return theta, obj, converged, it, stop
 
 
 def fit_cer(level_db, wpm, edits, symbols, *, axis: str = "s500", method: str = FIT_METHOD, free: tuple = ALL_FREE,
@@ -276,8 +291,8 @@ def fit_cer(level_db, wpm, edits, symbols, *, axis: str = "s500", method: str = 
     if len(d.n) < MIN_SIGNALS_FOR_FIT:
         raise ValueError(f"{len(d.n)} signals: a fit needs at least {MIN_SIGNALS_FOR_FIT}")
     theta = np.array(start, float) if start is not None else _start(d, method, free)
-    theta, obj, converged, it = _levenberg_marquardt(theta, d, method, free)
-    return Fit(tuple(float(t) for t in theta), axis, method, obj, converged, it, len(d.n), tuple(free))
+    theta, obj, converged, it, stop = _levenberg_marquardt(theta, d, method, free)
+    return Fit(tuple(float(t) for t in theta), axis, method, obj, converged, it, len(d.n), tuple(free), stop)
 
 
 def bootstrap_fits(level_db, wpm, edits, symbols, fit: Fit, key, resamples: int = BOOTSTRAP_RESAMPLES) -> list:
@@ -289,12 +304,12 @@ def bootstrap_fits(level_db, wpm, edits, symbols, fit: Fit, key, resamples: int 
     for p in picks:
         sub = d.take(p)
         try:
-            theta, obj, converged, it = _levenberg_marquardt(np.array(fit.params), sub, fit.method, fit.free)
+            theta, obj, converged, it, stop = _levenberg_marquardt(np.array(fit.params), sub, fit.method, fit.free)
         except (FloatingPointError, ValueError):
             out.append(None)
             continue
-        out.append(Fit(tuple(float(t) for t in theta), fit.axis, fit.method, obj, converged, it, len(sub.n), fit.free)
-                   if converged else None)
+        out.append(Fit(tuple(float(t) for t in theta), fit.axis, fit.method, obj, converged, it, len(sub.n), fit.free,
+                       stop) if converged else None)
     return out
 
 
@@ -334,7 +349,7 @@ def ideal_en0_db(cer: float, coherent: bool = False) -> float:
     """E/N0 per dit (dB re 1) at which the genie-aided receiver (timing, speed and amplitude known; one on/off
     decision per Morse unit) reaches `cer`, with CER = UNITS_PER_CHARACTER x P_u: noncoherent P_u = 1/2 exp(-E/4N0)
     (high-SNR approximation), coherent P_u = Q(sqrt(E/2N0)). Derived (stage-1 results record 5.1.1); the 10 units per
-    character is heuristic (about +/-0.7 dB). CER 0.10: 11.9 dB noncoherent, 10.3 dB coherent."""
+    character is heuristic (about +/-0.7 dB). CER 0.10: 11.9 dB re 1 noncoherent, 10.3 dB re 1 coherent."""
     pu = cer / UNITS_PER_CHARACTER
     ratio = 2.0 * _q_inverse(pu) ** 2 if coherent else 4.0 * math.log(1.0 / (2.0 * pu))
     return 10.0 * math.log10(ratio)
@@ -408,10 +423,11 @@ def _wald(boots: list, point: Fit, names=("a1", "a2")) -> dict:
     sample = np.array([[b.params[i] for i in idx] for b in boots if b is not None])
     p = np.array([point.params[i] for i in idx])
     if len(sample) < 3:
-        return {"terms": list(names), "statistic": None, "p_value": None}
+        return {"terms": list(names), "statistic": None, "p_value": None, "resamples_used": len(sample)}
     cov = np.cov(sample, rowvar=False)
     t = float(p @ np.linalg.solve(cov, p))
     return {"terms": list(names), "statistic": t, "p_value": math.exp(-t / 2.0) if len(idx) == 2 else None,
+            "resamples_used": len(sample),
             "threshold_95": CHI2_2DOF_95,
             "intervals": {n: _pct_interval(sample[:, j]) for j, n in enumerate(names)}}
 
@@ -526,7 +542,12 @@ def paired(rows, reference: str, variant: str) -> dict:
     """variant minus reference, signal by signal (each signal's CER, edits over symbols, as experiments.compare), on
     the signals both scored: the mean difference with bootstrap 95% intervals over signals (as experiments.compare)
     and over test cases (all of a test case's signals resampled together), pooled ("all"), per group, per speed cell
-    over all groups, and per group and speed cell."""
+    over all groups, and per group and speed cell.
+
+    The pooled and per-speed-cell sets hold each signal once: oracle-path rows only, and not the groups of
+    NOT_POOLED_GROUPS. A2's detector-path copies are the same signals and noise as A2's oracle recordings, and S2's
+    are A2's cell-5 texts and timing stretched (new noise); pooled with them they would count A2 twice and narrow the
+    intervals as if the copies were independent (review I1). Both stay groups of their own."""
     by = {}
     for r in rows:
         if r["decoder"] in (reference, variant) and r["symbols"] > 0:
@@ -536,7 +557,10 @@ def paired(rows, reference: str, variant: str) -> dict:
     for key in sorted(set(ref) & set(var)):
         a, b = ref[key], var[key]
         d = b["edits"] / b["symbols"] - a["edits"] / a["symbols"]
-        for name in ("all", ("group", a["group"]), ("cell", a["speed_cell"]), ("group-cell", a["group"], a["speed_cell"])):
+        pooled = a["path"] == "oracle" and a["group"] not in NOT_POOLED_GROUPS
+        names = [("group", a["group"]), ("group-cell", a["group"], a["speed_cell"])]
+        names += ["all", ("cell", a["speed_cell"])] if pooled else []
+        for name in names:
             s = sets.setdefault(name, ([], [], [0]))
             s[0].append(d)
             s[1].append(key[0])
@@ -601,6 +625,21 @@ def _fmt(value, interval=None, fmt="+.2f") -> str:
     return f"{value:{fmt}}" + (f" ({interval[0]:{fmt}} to {interval[1]:{fmt}})" if interval else "")
 
 
+def _fit_warnings(fit: dict) -> list[str]:
+    """Visible warnings for a main or restricted fit that did not converge (review M3): its results then come from
+    the point where the optimizer stopped."""
+    out = []
+    for label, f in (("S500 fit", fit["s500"]["fit"]), ("E/N0 fit", fit["en0"]["fit"]),
+                     ("E/N0 fit with s0 constant", fit["en0"]["s0_constant"]["fit"])):
+        if not f["converged"]:
+            out.append(f"**Warning: the {label} did not converge** ({f['iterations']} iterations); its values are where "
+                       "the optimizer stopped.")
+    if fit["en0"]["s0_constant"]["objective_increase"] < 0:
+        out.append("**Warning: the fit with s0 constant has a lower objective than the full fit**: one of them is not "
+                   "at its minimum.")
+    return out + ([""] if out else [])
+
+
 def report_markdown(a: dict) -> str:
     """The analysis as a Markdown summary (every dB with its reference)."""
     m = a["meta"]
@@ -624,8 +663,10 @@ def report_markdown(a: dict) -> str:
             lines += [f"Fit against S500 on {fit['signals']} signals: s0 = {p['a0']:.2f} {p['a1']:+.2f} x "
                       f"{p['a2']:+.2f} x^2 dB SNR in 500 Hz, ln(w / 1 dB) = {p['b0']:.3f} {p['b1']:+.3f} x {p['b2']:+.3f} x^2, "
                       f"x = ln(v / {V_REF_WPM:.2f} WPM); floor {_fmt(sf['floor'], fit['s500']['floor_interval'], '.4f')}; "
-                      f"converged {sf['converged']} in {sf['iterations']} iterations; failed resamples "
-                      f"{fit['s500']['failed_resamples']}; CPU {fit['cpu_s']:.1f} s.", "",
+                      f"stopped {sf.get('stop', 'converged')} after {sf['iterations']} iterations; failed resamples "
+                      f"{fit['s500']['failed_resamples']}; CPU {fit['cpu_s']:.1f} s.", ""]
+            lines += _fit_warnings(fit)
+            lines += [
                       "| speed cell | center (WPM) | signals | S500 at CER 0.10 (dB SNR in 500 Hz) | S500 at CER 0.05 (dB SNR in 500 Hz) | "
                       "E/N0 at CER 0.10 (dB re 1) | ideal bound at 0.10, noncoherent (dB SNR in 500 Hz) |",
                       "|---|---|---|---|---|---|---|"]
@@ -647,7 +688,9 @@ def report_markdown(a: dict) -> str:
                       f"{_fmt(e['fit']['params']['a2'], inv.get('intervals', {}).get('a2'))} dB of E/N0 per dit (x = ln(v / {V_REF_WPM:.2f} WPM)); Wald statistic with the "
                       f"bootstrap covariance {_fmt(inv['statistic'], None, '.2f')} (95% point {CHI2_2DOF_95:.2f}, 2 degrees "
                       f"of freedom), p = {_fmt(inv['p_value'], None, '.3g')}. The width's speed terms b1, b2: "
-                      f"Wald {_fmt(wt['statistic'], None, '.2f')}, p = {_fmt(wt['p_value'], None, '.3g')}.",
+                      f"Wald {_fmt(wt['statistic'], None, '.2f')}, p = {_fmt(wt['p_value'], None, '.3g')}. "
+                      f"The E/N0 fit stopped {e['fit'].get('stop', 'converged')}; resamples used "
+                      f"{inv.get('resamples_used')} of {fit['resamples']} ({e['failed_resamples']} failed).",
                       "",
                       f"Fit with s0 constant in E/N0: crossing at CER 0.10 "
                       + ", ".join(f"{c['wpm']:.1f} WPM {_fmt(c['value'], None, '.2f')}" for c in e["s0_constant"]["crossings_0.10"])
@@ -667,9 +710,12 @@ def report_markdown(a: dict) -> str:
     for comp in a["paired"]:
         lines += [f"## Paired: {comp['variant']} minus {comp['reference']}", "",
                   "CER difference per signal; mean with 95% bootstrap intervals over signals and over test cases.", "",
+                  "Pooled (\"all\") and per speed cell: oracle-path signals only, without "
+                  + ", ".join(NOT_POOLED_GROUPS) + " (copies of other groups' signals); those and the detector path "
+                  "appear as groups of their own.", "",
                   "| set | signals | test cases | beyond oracle anchor | mean (signals) | mean (test cases) |",
                   "|---|---|---|---|---|---|"]
-        rows = [("all", comp["all"])] if comp["all"] else []
+        rows = [("all (oracle path)", comp["all"])] if comp["all"] else []
         rows += sorted(comp["groups"].items())
         rows += [(f"speed cell {k}", v) for k, v in sorted(comp["speed_cells"].items(), key=lambda kv: int(kv[0])
                                                           if kv[0] != "None" else 99)]
