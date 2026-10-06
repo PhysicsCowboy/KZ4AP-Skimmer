@@ -1,0 +1,4 @@
+# Analysis and figures only (kz4ap_proto.figures; docs/plans/2026-10-06-development-set-redesign.md, principle 7).
+# Not installed by CI: the figure tests skip where matplotlib is absent. Install with
+#   python -m pip install -r training/requirements.txt -r training/requirements-analysis.txt
+matplotlib==3.11.2

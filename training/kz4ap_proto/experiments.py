@@ -11,6 +11,8 @@ evaluated offline on stored branch-1 posteriors; and the synthetic speed-step fo
     python -m kz4ap_proto.experiments calibrate-x-on [--set KEY=VALUE ...] [--events 20]
     python -m kz4ap_proto.experiments stretch --out build/suite/full3 --name stretch-b4a
     python -m kz4ap_proto.experiments new-overs --out build/suite/full3 --name stretch-b4a
+    python -m kz4ap_proto.experiments devset2 --out build/suite/dev2 --name NAME --decoder matched --decoder bank-x [--reference matched] [--results DIR ...] [--method wls|binomial] [--fit-group "A2 sensitivity" ...] [--resamples 1000]
+    python -m kz4ap_proto.experiments figures --analysis build/suite/dev2/experiments/devset2-NAME.json [--dir DIR]
 Start run, batch and calibrate-x-on in the background; each writes experiments/summary-<name>.md when done.
 """
 
@@ -468,7 +470,9 @@ def main(argv=None) -> None:
     x = sub.add_parser("calibrate-x-on")
     st = sub.add_parser("stretch")
     no = sub.add_parser("new-overs")
-    for s in (r, c, p, b, pd, st, no):
+    d2 = sub.add_parser("devset2", help="the jittered development set's analysis (kz4ap_proto.devset2)")
+    fg = sub.add_parser("figures", help="the five figures from a devset2 analysis file (needs matplotlib)")
+    for s in (r, c, p, b, pd, st, no, d2):
         s.add_argument("--out", type=Path, required=True)
     for s in (r, p, f, x):
         s.add_argument("--set", dest="values", action="append", help="KEY=VALUE: a ProtoConfig value")
@@ -493,8 +497,34 @@ def main(argv=None) -> None:
     pd.add_argument("--target", type=float, default=0.95)
     for s in (st, no):
         s.add_argument("--name", required=True)
+    d2.add_argument("--name", required=True, help="the analysis's name: experiments/devset2-NAME.json and .md")
+    d2.add_argument("--decoder", dest="decoders", action="append", required=True,
+                    help="a decoder's results folder name (repeatable)")
+    d2.add_argument("--reference", default=None, help="the reference of the paired comparisons (one of --decoder)")
+    d2.add_argument("--results", dest="results_dirs", action="append", type=Path, default=None,
+                    help="a results root (repeatable; default OUT/results and OUT/experiments/results)")
+    d2.add_argument("--only", default=None, help="regular expression on result names (default: DEV2 and A2's "
+                                                 "detector-path copies, seed 1)")
+    d2.add_argument("--fit-group", dest="fit_groups", action="append", default=None,
+                    help='a group whose oracle signals the fit uses (repeatable; default "A2 sensitivity")')
+    d2.add_argument("--method", choices=("wls", "binomial"), default="wls")
+    d2.add_argument("--resamples", type=int, default=BOOTSTRAP_RESAMPLES)
+    fg.add_argument("--analysis", type=Path, required=True)
+    fg.add_argument("--dir", type=Path, default=None, help="output folder (default: figures-NAME beside the analysis)")
     args = parser.parse_args(argv)
-    if args.command == "run":
+    if args.command == "devset2":
+        from . import devset2
+        if args.reference is not None and args.reference not in args.decoders:
+            parser.error("--reference must be one of the --decoder names")
+        path = devset2.write_analysis(args.out, args.decoders, args.name, args.reference, args.results_dirs,
+                                      args.only or devset2.DEV2_ANALYSIS, tuple(args.fit_groups or devset2.FIT_GROUPS),
+                                      args.method, args.resamples)
+        print(f"wrote {path} and {path.with_suffix('.md')}")
+    elif args.command == "figures":
+        from . import figures
+        for written in figures.draw_all(args.analysis, args.dir):
+            print(f"wrote {written}")
+    elif args.command == "run":
         print(f"wrote {run(args.out, args.bench, args.name, runner.parse_values(args.values), args.keep_p1, args.jobs, SUBSETS[args.subset])}")
     elif args.command == "batch":
         print(f"wrote {batch(args.out, args.bench, args.spec, args.jobs)}")
