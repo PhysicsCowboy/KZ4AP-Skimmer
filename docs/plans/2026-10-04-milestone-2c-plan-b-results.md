@@ -104,6 +104,32 @@ Stage 1's new-over rule on the same variants:
 
 Details in section 8.
 
+**Answer (B4d, the owner's decisions of 2026-10-06).** Code `a360361`. The periodicity windows are back to 2, 5 and
+10 s for every candidate. The re-key settings stay in dits, and their clocks now start at the over's first
+provisional mark, with the stretch beginning 7 d_k before that mark; a time-out that clears nothing also moves the
+stretch's start. The 200-seed mask-bias table replaces the ten-seed one. Against `bank-b3b`:
+
+- **Pooled paired CER +0.0051 (−0.0014 to +0.0112).** The interval includes 0.
+- **Paired first-word CER +0.2081 (+0.1297 to +0.2902).** First words are worse.
+- **Groups worse** (paired interval entirely above 0):
+  - B fading: +0.0177 (+0.0026 to +0.0375).
+  - C fists: +0.0022 (+0.0004 to +0.0040).
+  - H per station: +0.0663 (+0.0159 to +0.1483).
+
+`bank-b4d-noclock` (both clock switches off, otherwise the same code) gives a pooled paired CER of
++0.0094 (+0.0019 to +0.0176) and a first-word CER of +0.1702 (+0.0629 to +0.2984). Its groups worse are H (oracle)
+and H per station. The clock fixes alone are `bank-b4d` − `bank-b4d-noclock`:
+
+- Pooled: −0.0043 (−0.0125 to +0.0034).
+- Better: I Farnsworth, −0.0593 (−0.1251 to −0.0109).
+- Worse: C, +0.0025 (+0.0013 to +0.0037), and H per station, +0.0366 (+0.0040 to +0.0844).
+- First-word CER: +0.0379 (−0.0614 to +0.1205).
+
+So on this development set the clock fixes do not recover the first-word loss of the re-key settings in dits. The
+stretch test on `bank-b4d` gives +0.1086 (+0.0524 to +0.1750), with a crossing shift of −0.48 (−0.66 to −0.11) dB of
+S₅₀₀; `bank-b3b` gave +0.117 and −0.49. CPU is 43.20 ms per channel-second (`bank-b4d-noclock` 45.33). Details in
+section 10.
+
 ## 0. Terms used in this record
 
 - **Decoder**: Envelope, Matched and the bank are the three decoders; here only the bank decoder in C++ is
@@ -2352,3 +2378,200 @@ AVX-512, what a processor without FMA computes) the development set costs
   prototype's time constants and at the default ones in dits). Before Plan B
   (the prototype's behavior) the noise estimate went NaN there and
   nothing was keyed or published.
+
+## 10. The owner's decisions of 2026-10-06 (B4d)
+
+The owner decided three things on 2026-10-06 (stage-2 spec, decision record section 6, amended in 66c8ffb and
+cb6dc15). The analysis behind them is `docs/research/2026-10-05-periodicity-windows-and-rekey-analysis.md`. Code:
+`a360361`. `docs/signal-processing.md` covers the change in body section 8c and in appendix A.8c and A.10. Every
+number here is measured unless marked otherwise.
+
+### 10.1 What changed
+
+| Part | Before (B4a/B4b defaults) | B4d default | Class | Status |
+|---|---|---|---|---|
+| A. Periodicity windows | N_w · τ_c per candidate, N_w = 41.7, 104, 208 | 2, 5 and 10 s for every candidate (`periodicity_window_mode` = "seconds", `periodicity_windows_s`) | (2) seconds: a latency after a change (owner) | values placeholder (stage 1's) |
+| B(ii). Time-out count | from the amplitude becoming unknown | from the branch's first provisional mark (`rekey_timeout_from_first_mark`) | — | heuristic (owner's rule) |
+| B(lead). Stretch start | where the amplitude became unknown | at the first provisional mark, 7 · d_k before it, if later (`rekey_lead_dits` = 7) | (1) dits | heuristic (controller's choice for the owner) |
+| B(i). Cleared time-out | restarts only the count | also moves the stretch's start to its instant (`rekey_clear_moves_stretch`) | — | heuristic (owner's rule) |
+| C. Mask bias b_mask,k | 0.8281 … 0.7713 (ten seeds, stage 1's noise) | 0.8381 … 0.7812 (200 seeds, 1001–1200, `std::mt19937_64` and Box–Muller; section 7.1) | — | measured (Plan B B4b, white noise, 200 seeds) |
+
+The per-candidate windows (B4a) and the shared window (B4a-C) remain as variants, selected with
+`periodicity_window_mode`. `periodicity_windows_s` is no longer an override. It is the default mode's field again, the
+prototype's field and values. Both clock switches off give stage 1's rule exactly. `stage1_config()` sets them off, so
+the golden tests are unmoved.
+
+**Why the lead.** As first briefed, fixes (i) and (ii) worked against each other at a stream's start. Under (ii) no
+time-out fires before the first provisional mark. In the noise before a station nothing is keyed, so (i) never moved
+the stretch's start, and the re-key still keyed the pre-station noise at the seed a ≈ 5. Test: 1 s of noise at
+S₅₀₀ = +2 dB (dB SNR in 500 Hz) before a 25 WPM station, seeds 1 to 8. Characters published starting more than half a
+dit (24 ms) before the station's first mark, at any time:
+
+| setting | characters (8 seeds) |
+|---|---|
+| (i) and (ii), no lead | 25 (6 seeds) |
+| (i) only | 0 |
+| (ii) only | 26 |
+| neither (stage 1's clocks) | 26 (7 seeds) |
+| (i), (ii) and a phantom time-out before the first mark (an experiment, not adopted) | 4 (2 seeds) |
+| **(i), (ii) and the lead 7 · d_k (adopted)** | **1 (seed 8)** |
+| (i), (ii) and a lead of 6, 5, 4, 3, 2, 1 or 0 d_k | 1 each (seed 8) |
+
+No lead from 0 to 7 d_k gives 0. The one remaining character (seed 8) is an "E" at 0.971 s, 29 ms before the
+station's first mark at 1.000 s, and branches 1 to 3 all decode it. It is a mark that the unknown-amplitude test
+keyed in the noise just before the station. That mark is itself the over's first provisional mark, so it starts the
+clocks, and no lead can exclude it. With lead 0 the character starts at 0.972 s, the mark's own key-down. The
+adopted test therefore asserts a bound that holds: no character starts more than 2 dits (96 ms) before the station's
+first mark (test bound, heuristic). The strict count is printed, and the case is stated as a known limitation in A.8c.
+
+**The later-over test** (the trace's second mechanism). A 30 WPM station on branch 14 (W_min,14 = 0.692 s,
+time-out 1.730 s) sends a second over at amplitude 3 FS (the first was at 1 FS). The second over starts 1.2 s after the
+branch's amplitude became unknown.
+
+- With B4d's clocks the branch re-keys at its own seed: it is known at 12.501 s, with 0.707 s keyed (0.686 s one block
+  before) and s² = 9.50 FS².
+- With stage 1's clocks a time-out fires first: the branch is known at 12.181 s, with 0.434 s keyed, and re-keyed at the
+  first over's amplitude, s² = 0.85 FS².
+
+**Tests** (`engine/tests/bank`):
+
+- `BankChannelClocks.NoiseBeforeAStationIsNeverPublished`, seeds 1 to 4. Stage 1's clocks fail it on seed 1.
+- `BankChannelClocks.ALaterOverReKeysAtItsOwnSeed`.
+- `BankChannelClocks.TheStretchStartsSevenDitsBeforeTheFirstProvisionalMark`.
+- `BankPeriodicitySeconds.TheDefaultWindowsAreStageOnesTwoFiveAndTenSeconds`: the default mode is bit for bit the
+  explicit {2, 5, 10} s estimator over 60 s.
+- The split test runs both the default and the per-candidate variant.
+- The per-candidate tests select that variant explicitly.
+- `bank_json`: bool fields and the three new fields.
+
+The two clock tests went from about 120 s to about 30 s on the Windows PC, by trimming seeds and settings.
+
+Results:
+
+- `ctest --preset windows`: 359 of 359 passed or skipped. `ctest --preset linux`: 359 of 359.
+- Python tests: 269 passed, 7 expected failures.
+- Smoke unchanged: Envelope CER 0.0353, Matched 0.0436.
+
+### 10.2 `bank-b4d` against `bank-b3b` (Linux machine, the development set)
+
+Texts: **408 of 525 channels decode to a different final text** (117 identical). The periodicity records differ in
+28 802 of 291 690 (T_P or its window). The windows are stage 1's again, but their input, branch 1's posterior, now
+depends on branch 1's re-key settings in dits.
+
+| group | signals | paired CER | paired first-word CER |
+|---|---|---|---|
+| all | 509 | **+0.0051 (−0.0014 to +0.0112)** | **+0.2081 (+0.1297 to +0.2902)** |
+| A sensitivity | 192 | +0.0018 (−0.0044 to +0.0083) | +0.2153 (+0.0876 to +0.3768) |
+| B fading | 30 | **+0.0177 (+0.0026 to +0.0375)** | +0.3489 (+0.0856 to +0.6809) |
+| C fists | 135 | **+0.0022 (+0.0004 to +0.0040)** | +0.1172 (−0.0077 to +0.2274) |
+| D speed | 12 | −0.0002 (−0.0121 to +0.0113) | −0.0500 (−0.3750 to +0.2500) |
+| E interference | 16 | +0.0143 (−0.0092 to +0.0378) | +0.2583 (−0.8068 to +1.2500) |
+| F tuning | 28 | +0.0035 (−0.0102 to +0.0168) | +0.5625 (+0.1321 to +1.0398) |
+| G ragchew | 12 | −0.0039 (−0.0099 to +0.0007) | −0.0195 (−0.0594 to +0.0136) |
+| H two-station QSO, oracle | 12 | +0.0040 (−0.0046 to +0.0169) | +0.0578 (−0.0129 to +0.1431) |
+| H two-station QSO, oracle (per station) | 24 | **+0.0663 (+0.0159 to +0.1483)** | +0.1853 (−0.0970 to +0.5309) |
+| I Farnsworth | 48 | −0.0107 (−0.0544 to +0.0316) | +0.2938 (+0.1364 to +0.4629) |
+
+**Groups made worse (paired interval entirely above 0), reported to the owner** (the plan's rule; not a gate).
+Regimes, CER of the test case, `bank-b3b` → `bank-b4d`:
+
+- **B:** the mixed-style fading recording, 0.579 → 0.594 (first-word CER 0.72 → 1.01).
+- **C:** small, spread over keying styles. Bug imbalance +0.1: 0.046 → 0.055. Computer +0.1: 0.006 → 0.013.
+  Paddle +0.0: 0.028 → 0.035. Hand +0.1: 0.199 → 0.208. Computer ±0.0 and −0.1 and bug +0.0 improved.
+- **H per station:**
+  - Separate-track 100 Hz: 0.104 → 0.392.
+  - Ambiguous 50 Hz: 0.585 → 0.670.
+  - Same-track 25 Hz: 1.336 → 1.375.
+  - The separate-track 100 Hz regime is volatile. B4b's table change alone moved it 0.104 → 0.053 (7.3).
+
+The pooled first-word loss is about what the re-key settings in dits cost in B4a's ablation: `bank-b4a-rekey`,
++0.1922. Group A's first words are worse at every speed: 12 WPM 0.39 → 0.46, 25 WPM 0.39 → 0.57, 40 WPM 0.64 → 0.72.
+
+### 10.3 `bank-b4d-noclock`: the clock fixes separated
+
+`bank-b4d-noclock` is the same binary with `--set rekey_clear_moves_stretch=false --set
+rekey_timeout_from_first_mark=false`. The lead acts only under (ii), so it is unused here. This run differs from
+`bank-b3b` by the re-key settings in dits and the 200-seed table, with windows in seconds as in `bank-b3b`.
+
+| group | `bank-b4d-noclock` − `bank-b3b` | first-word | `bank-b4d` − `bank-b4d-noclock` (the clock fixes) | first-word |
+|---|---|---|---|---|
+| all | **+0.0094 (+0.0019 to +0.0176)** | **+0.1702 (+0.0629 to +0.2984)** | −0.0043 (−0.0125 to +0.0034) | +0.0379 (−0.0614 to +0.1205) |
+| A sensitivity | +0.0051 (−0.0046 to +0.0188) | +0.2699 (+0.0622 to +0.5641) | −0.0033 (−0.0177 to +0.0072) | −0.0547 (−0.2423 to +0.0966) |
+| B fading | +0.0054 (−0.0087 to +0.0223) | +0.2647 (−0.0008 to +0.5975) | +0.0123 (−0.0036 to +0.0336) | +0.0842 (−0.2367 to +0.4422) |
+| C fists | −0.0003 (−0.0021 to +0.0016) | +0.0047 (−0.1180 to +0.1203) | **+0.0025 (+0.0013 to +0.0037)** | **+0.1125 (+0.0296 to +0.1883)** |
+| D speed | −0.0027 (−0.0113 to +0.0046) | −0.0833 (−0.3750 to +0.1667) | +0.0025 (−0.0077 to +0.0121) | +0.0333 (−0.1833 to +0.2333) |
+| E interference | +0.0187 (−0.0100 to +0.0489) | +0.0875 (−0.9562 to +1.0000) | −0.0044 (−0.0265 to +0.0087) | +0.1708 (−0.0544 to +0.4250) |
+| F tuning | +0.0103 (−0.0107 to +0.0349) | +0.5982 (−0.0806 to +1.5449) | −0.0068 (−0.0317 to +0.0145) | −0.0357 (−1.0376 to +0.7161) |
+| G ragchew | −0.0023 (−0.0056 to +0.0001) | −0.0184 (−0.0460 to +0.0050) | −0.0016 (−0.0049 to +0.0008) | −0.0010 (−0.0138 to +0.0103) |
+| H, oracle | **+0.0077 (+0.0018 to +0.0149)** | **+0.0742 (+0.0291 to +0.1252)** | −0.0037 (−0.0137 to +0.0051) | −0.0164 (−0.0889 to +0.0484) |
+| H, oracle (per station) | **+0.0298 (+0.0017 to +0.0684)** | +0.2084 (−0.0425 to +0.5345) | **+0.0366 (+0.0040 to +0.0844)** | −0.0231 (−0.3814 to +0.4079) |
+| I Farnsworth | +0.0486 (−0.0152 to +0.1206) | +0.0712 (−0.0899 to +0.2608) | **−0.0593 (−0.1251 to −0.0109)** | **+0.2226 (+0.0607 to +0.3590)** |
+
+Texts: `bank-b4d-noclock` differs from `bank-b3b` in 339 of 525 channels. Findings:
+
+1. **The clock fixes do not recover the first-word loss** on this development set (measured). The pooled first-word
+   change from the fixes is +0.0379, and its interval includes 0. In group A it is −0.0547 (−0.2423 to +0.0966). The
+   trace attributed group A's B4a first-word loss to pre-station noise re-keyed by branch 1 (mechanism M1). The
+   section 10.1 test shows that the fixes remove that noise in a synthetic stream. The development-set first-word loss
+   that remains must therefore have another cause. Conjectured: branch 1, still selected, re-keys early from a few
+   marks with a wrong fitted dit (the trace's channel #8 kind), which the clock rules do not touch. Not traced here.
+2. The fixes make **H per station worse (+0.0366)**, although mechanism M2 is about later overs, as in H. Not traced.
+3. The fixes improve **group I Farnsworth CER (−0.0593)** but worsen its first words (+0.2226). On the paddle test
+   case `I-farnsworth-paddle-s1`, `bank-b4d-noclock` is at 0.1194 and `bank-b4d` at 0.0780.
+4. Without the fixes, A and C sit within 0.006 of `bank-b3b` (intervals include 0). Two things are worse there: H
+   (oracle) and H per station, and first words.
+
+### 10.4 Periodicity
+
+`periodicity-decoded`, `bank-b4d`, threshold 0.03, S₅₀₀ ≥ 0 dB, constant-speed labels:
+
+- Precision 0.809 (0.785 to 0.834).
+- Coverage 0.993.
+- Median time to confident 0.55 s.
+
+For comparison: `bank-b3b` 0.804, `bank-b4a` 0.753 (6.4). The windows are stage 1's again, so the precision is back
+at stage 1's level.
+
+### 10.5 The stretch test and the new-over checks (`stretch-b4d`, B9's script, B4d's defaults)
+
+The `stretch-b4d` decodes of group A's 25 WPM recordings and group H equal `bank-b4d`'s in all 76 shared channels,
+every decoded record identical. The run reproduces the development-set run.
+
+| variant | pooled paired CER, stretched − original | CER-0.10 crossing shift, dB of S₅₀₀ (invariant +3.19) |
+|---|---|---|
+| `bank-b3b`'s settings (8.2) | +0.117 (+0.058 to +0.190) | −0.49 (−0.73 to −0.10) |
+| **`bank-b4d`** | **+0.1086 (+0.0524 to +0.1750)** | **−0.48 (−0.66 to −0.11)** |
+
+The losses sit at S₅₀₀ −2 to +2 dB of the original: +0.27, +0.77, +0.67. At 12 WPM the decoder still needs about
+3.7 dB more energy per dit than at 25 WPM, as in every earlier variant (section 8).
+
+New overs, from the same run:
+
+- 1.00 over start per same-station silence (16 of 16).
+- Group H (oracle): 0.125 false new overs per transmission (10 of 80) and 0.257 missed turnovers (18 of 70; 12 of 14
+  at separate-track 100 Hz).
+- First-word CER after a turnover: 0.47 (an upper bound).
+
+These are within the earlier variants' ranges (8.3).
+
+### 10.6 CPU and memory
+
+CPU per channel-second, Linux machine, `--jobs 10`, one run each:
+
+- `bank-b4d`: **43.20 ms**. By group: A 39.91, B 46.90, C 38.29, D 38.41, E 83.18, F 49.04, G 63.13, H 55.42, H per
+  station 55.64, I 20.62.
+- `bank-b4d-noclock`: 45.33 ms.
+- For comparison: `bank-b4b` 42.27, `bank-b4a` 57.56.
+
+The windows in seconds remove the per-candidate sliding sums (6.3). Memory per channel (derived, A.8c) is 8.3 to
+13.6 MB. In the per-candidate variant it is 9.1 to 14.4 MB.
+
+### 10.7 Raw outputs
+
+All git-ignored.
+
+- `build/suite/full3/experiments/linux/b4d/`: the compare and c2-diff files for both runs and for the fixes; the
+  periodicity, stretch and new-over files; the job log `b4d.log`.
+- `build/b4d/`: the run scripts `b4d_run.sh`, and `b9_run.sh` copied from B9.
+- On the Linux machine: the decoded files `build/suite/full3/proto/bank-b4d/`, `bank-b4d-noclock/` and
+  `stretch-b4d/`.

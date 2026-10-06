@@ -617,7 +617,7 @@ branch 1 keys up.
 - **End of stream:** every open character is ended and published.
 
 **Cost.** About 8 to 14 MB of memory per channel (derived from the arrays
-allocated), and about 42 ms of CPU per second of channel on the Linux test
+allocated), and about 43 ms of CPU per second of channel on the Linux test
 machine at the current defaults (measured, Plan B), against about 0.6 ms for
 Matched (measured).
 
@@ -2234,7 +2234,7 @@ per-character probability (1) are placeholders.
 
 **Cost.** Memory is about 8.3–13.6 MB per channel (derived from the
 allocated arrays; chiefly the 21.1 s window of |v_k|² and the fits). CPU
-is about 42 ms per channel-second at the defaults on the Linux test
+is about 43 ms per channel-second at the defaults on the Linux test
 machine, against about 0.6 ms for Matched.
 
 
