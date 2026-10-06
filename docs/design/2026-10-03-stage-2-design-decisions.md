@@ -165,3 +165,17 @@ the eligibility point); in group D's 20 → 35 WPM step the prototype's CER is 0
   callsign is trustworthy enough to spot (a busted spot cannot be recalled), belongs to the
   callsign-matching and spotting milestones, which need their own measure (correct and busted spots
   against time to spot). Rejected for now: the full CER-against-delay curve.
+
+## 6. Amendment (2026-10-06): the periodicity windows stay in seconds
+
+- **Decision (owner, 2026-10-06): fixed windows of 2, 5 and 10 s**, withdrawing §3.1's windows of N_w·T
+  per candidate. Reasoning, agreed in discussion: several windows exist so that the speed estimate
+  reacts quickly after a change (a stream's start, a new over, a speed change); that is a latency, felt
+  in seconds, so the windows are class (2), seconds with a stated reason. The speed-dependent part is
+  physics: the comb reaches 9.15·T and must fit in half the window, so a window W can measure only
+  T ≤ W/18.3 (2 s: 11 WPM and faster; 5 s: 4.4 WPM; 10 s: 2.2 WPM, beyond the decoder's 5 WPM floor),
+  and a slow station's estimate necessarily comes from the longer windows. Evidence: Plan B task B4a's
+  ablation and option C (results record §6; `docs/research/2026-10-05-periodicity-windows-and-rekey-analysis.md`):
+  per-candidate windows cost about +0.02 paired CER and let the 3T alias win 10–20% of short windows; a
+  shared window N_w·T̂ was not significantly better than the fixed windows and ties the window to the
+  decoder's own speed belief. Spec §3.1, §3.2 and §7 amended.

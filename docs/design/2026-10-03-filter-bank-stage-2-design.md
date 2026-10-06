@@ -52,13 +52,17 @@ they equal stage 1's**, so stage 1's measurements remain the reference at that s
   would fire first at 12 WPM once W_min is in dits. Values: 4.2 s at 12 WPM, 2.0 s at 25 WPM, 1.25 s at
   40 WPM. After a slow station stops, false characters stay visible up to about 4 s (inside the 20 s
   correction reach).
-- **Periodicity windows: each candidate dit T is judged over its own window of N_w·T,** with
-  N_w ∈ {41.7, 104, 208} (stage 1's 2, 5 and 10 s at T = 48 ms); the rule "the confident estimate with
-  the shortest window" is unchanged. This also removes the comb's reach limit: the comb looks out to
-  9.15·T (stage-1 spec §6), which a fixed 2 s window allowed only for T ≤ 109 ms; N_w ≥ 41.7 > 18.3
-  always allows it (derived). Consequence: at 5 WPM (T = 240 ms) the longest window is 50 s. The
-  confidence thresholds were calibrated with the fixed windows and must be re-measured
-  (placeholder).
+- ~~**Periodicity windows: each candidate dit T is judged over its own window of N_w·T,** with
+  N_w ∈ {41.7, 104, 208}.~~ **Withdrawn (owner, 2026-10-06): the periodicity windows stay in seconds**
+  (§3.2). Reason: several windows exist so that the estimator reacts quickly after a change (a stream's
+  start, a new over, a speed change), which is a latency, felt in seconds; the speed-dependent part,
+  that a slow station's rhythm needs a longer window to be seen at all (the comb reaches 9.15·T and
+  must fit in half the window, so a window W measures only T ≤ W/18.3), is physics that any window
+  rule must wait for. Evidence (Plan B task B4a, results record §6 and
+  `docs/research/2026-10-05-periodicity-windows-and-rekey-analysis.md`): windows of N_w·T per
+  candidate cost paired CER of about +0.02 and let the alias at 3T win 10–20% of short windows; a
+  shared window of N_w·T̂ was not significantly better than the fixed windows (−0.0033,
+  −0.0071 to +0.0001) and ties the window to the decoder's own speed belief.
 
 ### 3.2 Settings kept in seconds, each with its reason (class 2)
 
@@ -70,6 +74,7 @@ they equal stage 1's**, so stage 1's measurements remain the reference at that s
 | Outlier durations of the fit | 1 ms to 10 s, log-uniform | A deliberately broad prior, not an estimator. |
 | Estimate update block | 21.3 ms | Computational. |
 | Periodicity update | every 0.25 s | Latency. |
+| Periodicity windows | 2, 5, 10 s | Latency after a change (a stream's start, a new over, a speed change); a slow station's estimate comes from the longer windows (a window W measures T ≤ W/18.3: 2 s down to 11 WPM, 5 s down to 4.4 WPM, 10 s down to 2.2 WPM). Owner, 2026-10-06 (§3.1). |
 | Correction reach | 20 s | What a reader tolerates (owner). |
 
 Already counted in elements or characters, unchanged: fit memory 48 elements (8 before a fit counts);
@@ -195,8 +200,8 @@ and the projected cost of every planned run (owner, 2026-10-01: Python or C++ de
 |---|---|---|---|---|
 | Re-key wait W_min,k | 0.8 s of key-down | 16.7·d_k of key-down | (1) dits | measured at 25 WPM (E9b), scaled (derived) |
 | Re-key time-out | 2 s | 2.5 × W_min,k = 41.7·d_k, wall-clock | (1) dits | heuristic ratio (stage 1's) |
-| Periodicity windows | 2, 5, 10 s | N_w·T per candidate T, N_w ∈ {41.7, 104, 208} | (1) dits | placeholder (stage 1's at 25 WPM) |
-| Periodicity confidence thresholds | comb 0.03 | re-measured with the new windows | — | placeholder |
+| Periodicity windows | 2, 5, 10 s | unchanged: 2, 5, 10 s (the dits form, N_w·T per candidate, withdrawn by the owner 2026-10-06, §3.1) | (2) seconds: latency | placeholder (stage 1's) |
+| Periodicity confidence thresholds | comb 0.03 | unchanged, 0.03 (no re-measurement needed: the windows stay as stage 1's; owner, 2026-10-06) | — | placeholder |
 | Amplitude average τ_a | 0.5 s of key-down | (i) 0.5 s or (ii) 10.4·d_k, by the rule of §3.4 | decided in stage 2 | placeholder |
 | Noise-spectrum guard margin | 20 ms | 0.5·L_1 = 4.8 ms | (2) filter | heuristic |
 | Mask bias b_mask,k | measured with the 20 ms margin | re-measured | — | measured (stage 2) |
