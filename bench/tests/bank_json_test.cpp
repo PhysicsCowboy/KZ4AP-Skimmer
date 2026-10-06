@@ -73,7 +73,7 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     // the prototype's ProtoConfig() dump with B4a's fields in dits in place of the three in seconds they replaced and
     // B4b's guard margin and mask-bias table (pinned in BankConfig.PlanBDefaults), then Plan B's fields (noise_stuck_s,
     // B3; B4a's re-key overrides in seconds, unset; the periodicity windows in seconds, the default again since B4d, and
-    // the window mode; B4d's two re-key clock switches), the prototype's periodicity_windows_s among them at the end
+    // the window mode; B4d's two re-key clock switches and the lead; B4e's re-key wait in marks), the prototype's periodicity_windows_s among them at the end
     std::string want = g.at("config_dumps").get<std::string>();
     const kz4ap::bank::BankConfig defaults;
     for (const auto& [from, to] : std::vector<std::pair<std::string, std::string>>{
@@ -92,7 +92,8 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
                                  "\"periodicity_windows_s\": [2.0, 5.0, 10.0], \"periodicity_window_mode\": \"seconds\", "
                                  "\"periodicity_unselected_windows_s\": [2.0, 5.0, 10.0], "
                                  "\"rekey_clear_moves_stretch\": true, \"rekey_timeout_from_first_mark\": true, "
-                                 "\"rekey_lead_dits\": 7.0");
+                                 "\"rekey_lead_dits\": 7.0, \"rekey_wait_in_marks\": true, \"rekey_marks\": 8, "
+                                 "\"rekey_marks_timeout_s\": 7.0");
     EXPECT_EQ(py_dumps(cfg), want);
     // and back
     EXPECT_EQ(py_dumps(kz4ap::bench::to_json(kz4ap::bench::bank_config_from_json(cfg))), py_dumps(cfg));
@@ -115,6 +116,12 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     EXPECT_EQ(c.periodicity_window_mode, "shared");
     kz4ap::bench::set_config_value(c, "rekey_clear_moves_stretch", ordered_json(false));
     EXPECT_FALSE(c.rekey_clear_moves_stretch);
+    kz4ap::bench::set_config_value(c, "rekey_wait_in_marks", ordered_json(false));
+    kz4ap::bench::set_config_value(c, "rekey_marks", ordered_json(12));
+    kz4ap::bench::set_config_value(c, "rekey_marks_timeout_s", ordered_json(9.5));
+    EXPECT_FALSE(c.rekey_wait_in_marks);
+    EXPECT_EQ(c.rekey_marks, 12);
+    EXPECT_EQ(c.rekey_marks_timeout_s, 9.5);
     EXPECT_THROW(kz4ap::bench::set_config_value(c, "rekey_timeout_from_first_mark", ordered_json(0)),
                  std::invalid_argument);
     EXPECT_EQ(c.fit_memory, 24.0);

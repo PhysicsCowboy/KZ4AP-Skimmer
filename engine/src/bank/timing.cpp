@@ -19,7 +19,10 @@ BankTiming bank_timing(const BankConfig& cfg) {
     for (const double d : branch_dits_s(cfg)) {
         const double wait = cfg.rekey_after_s > 0.0 ? cfg.rekey_after_s : cfg.rekey_after_dits * d;
         t.rekey_wait_s.push_back(wait);
-        t.rekey_timeout_s.push_back(cfg.rekey_timeout_s > 0.0 ? cfg.rekey_timeout_s : cfg.rekey_timeout_ratio * wait);
+        // B4e (the default): the time-out in seconds of channel time, the same for every branch; the B4a-B4d variant:
+        // rekey_timeout_ratio x W_min,k.
+        const double timeout = cfg.rekey_wait_in_marks ? cfg.rekey_marks_timeout_s : cfg.rekey_timeout_ratio * wait;
+        t.rekey_timeout_s.push_back(cfg.rekey_timeout_s > 0.0 ? cfg.rekey_timeout_s : timeout);
         t.rekey_lead_s.push_back(cfg.rekey_lead_dits * d);
     }
     const std::string& mode = cfg.periodicity_window_mode;

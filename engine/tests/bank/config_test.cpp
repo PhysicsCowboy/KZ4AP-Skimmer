@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -131,6 +132,14 @@ TEST(BankConfig, PlanBDefaults) {
     EXPECT_TRUE(c.rekey_timeout_from_first_mark);
     // B4d: the re-key stretch's lead before the first provisional mark, one word gap of the branch's dits (heuristic)
     EXPECT_EQ(c.rekey_lead_dits, 7.0);
+    // B4e: the re-key wait counted in the station's marks, 8 provisional marks (heuristic), with a time-out of 7 s of
+    // channel time for every branch: 8 marks of PARIS (a mark every 50/14 dits) at the 5 WPM floor (dit 240 ms) take
+    // 6.9 s (derived), rounded to 7 s (owner, 2026-10-06, option d)
+    EXPECT_TRUE(c.rekey_wait_in_marks);
+    EXPECT_EQ(c.rekey_marks, 8);
+    EXPECT_EQ(c.rekey_marks_timeout_s, 7.0);
+    EXPECT_NEAR(8.0 * 50.0 / 14.0 * 1.2 / c.min_wpm, 6.857, 0.001);
+    EXPECT_EQ(std::round(8.0 * 50.0 / 14.0 * 1.2 / c.min_wpm), c.rekey_marks_timeout_s);
     EXPECT_EQ(c.periodicity_unselected_windows_s, (std::vector<double>{2.0, 5.0, 10.0}));
     const std::vector<double> stage1_s = {2.0, 5.0, 10.0};
     for (std::size_t i = 0; i < stage1_s.size(); ++i)

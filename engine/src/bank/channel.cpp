@@ -362,6 +362,8 @@ BankChannel::BankChannel(const BankConfig& cfg, double rate_hz, const BankTiming
       out_(cfg.correction_reach_s),
       block_(static_cast<int>(std::max<std::int64_t>(1, round_samples(cfg.block_s * rate_hz)))),
       reach_(round_samples(cfg.correction_reach_s * rate_hz)) {
+    if (cfg_.rekey_wait_in_marks && cfg_.rekey_marks < 1)
+        throw std::invalid_argument("rekey_marks must be at least 1 mark");
     if (timing.rekey_timeout_s.size() != n_.size())
         throw std::invalid_argument("rekey_timeout_s needs one time-out per branch");
     for (const double t : timing.rekey_timeout_s) timeout_.push_back(round_samples(t * rate_hz));
@@ -539,8 +541,12 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
             std::optional<int> marks;
             double from_s = 0.0;
             const char* reason = nullptr;
-            if (br.marks_in_over && keyer_.weight[ku] >= keyer_.rekey_weight[ku]) {
-                // W_min,k of keyed time since the over started
+            // The re-key wait: rekey_marks provisional marks in the over (B4e, the default), or W_min,k of keyed time
+            // since the over started (the B4a-B4d variant).
+            const bool waited = cfg_.rekey_wait_in_marks
+                                    ? br.marks_in_over >= cfg_.rekey_marks
+                                    : br.marks_in_over && keyer_.weight[ku] >= keyer_.rekey_weight[ku];
+            if (waited) {
                 std::vector<double> candidates{keyer_.amp2[ku]};
                 if (std::isfinite(keyer_.prev_amp2[ku])) candidates.push_back(keyer_.prev_amp2[ku]);
                 const auto r = br.rekey_over(p_row(k, st, n1), st, sigma2[ku], candidates, keyer_.a_min[ku], prior_);
@@ -549,7 +555,7 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
                 marks = r.marks;
                 reason = "rekey";
             } else if (br.timeout_armed && n1 - br.timeout_from_n >= timeout_[ku]) {
-                // W_min,k not reached within the branch's time-out: re-key what exists with the previous over's
+                // The wait not reached within the branch's time-out: re-key what exists with the previous over's
                 // amplitude; if there is none, or it keys nothing, the stretch's provisional characters are
                 // deleted and the amplitude stays unknown (the time-out counts again from now, or with
                 // rekey_timeout_from_first_mark from the next provisional mark; with rekey_clear_moves_stretch a
@@ -570,7 +576,7 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
                     br.timeout_from_n = n1;
                     if (cfg_.rekey_clear_moves_stretch) br.unknown_since_n = n1;     // Plan B, B4d (i)
                     if (cfg_.rekey_timeout_from_first_mark) br.timeout_armed = false;  // Plan B, B4d (ii)
-                    keyer_.start_over(k);  // still unknown: W_min,k of keyed time counts afresh from now
+                    keyer_.start_over(k);  // still unknown: the wait (marks: clear_over; keyed time) counts afresh
                 }
                 reason = "timeout";
             }

@@ -213,13 +213,14 @@ TEST(BankDecoder, TheConsumersListIsTheBanksAfterEveryUpdateWhenCharactersOverla
         SCOPED_TRACE("blocks of " + std::to_string(block));
         // The stream was found to exercise the case at the prototype's time constants in seconds (W_min 0.8 s,
         // time-out 2 s, periodicity windows 2, 5 and 10 s), stage 1's guard margin and mask-bias table and its re-key
-        // clocks (Plan B's B4d switches off), set explicitly: at Plan B's B4a defaults in dits it makes no such
+        // clocks (Plan B's B4d switches off) and wait in keyed time (B4e's wait in marks off), set explicitly: at Plan B's B4a defaults in dits it makes no such
         // correction.
         bank::BankConfig cfg;
         cfg.guard_margin_s = bank::kStage1GuardMarginS;
         cfg.mask_bias = bank::kStage1MaskBias;
         cfg.rekey_clear_moves_stretch = false;
         cfg.rekey_timeout_from_first_mark = false;
+        cfg.rekey_wait_in_marks = false;
         BankDecoder d(kRate, cfg, kOffsetHz, bank::fixed_timing(cfg, 0.8, 2.0, {2.0, 5.0, 10.0}));
         Assembled a;
         bool not_prefix = false;  // the stream must exercise a correction whose kept characters are not a prefix

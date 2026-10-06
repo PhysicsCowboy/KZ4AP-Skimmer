@@ -71,7 +71,9 @@ struct BankConfig {
     // Overrides in seconds of B4a's re-key time constants in dits, for ablations (Plan B, B4a; default unset). When set,
     // they take precedence over the fields in dits: rekey_after_s > 0 sets W_min,k = rekey_after_s of keyed time for
     // every branch (instead of rekey_after_dits x d_k), rekey_timeout_s > 0 the re-key time-out to rekey_timeout_s of
-    // channel time for every branch (instead of rekey_timeout_ratio x W_min,k). Stage 1's values are 0.8 s and 2 s.
+    // channel time for every branch (instead of rekey_timeout_ratio x W_min,k, or rekey_marks_timeout_s with
+    // rekey_wait_in_marks). Stage 1's values are 0.8 s and 2 s. With rekey_wait_in_marks, W_min,k sets only the seed's
+    // memory.
     // s; 0: unset
     double rekey_after_s = 0.0;
     double rekey_timeout_s = 0.0;
@@ -128,10 +130,11 @@ struct BankConfig {
     // probability, key up where noise alone exceeds x this often (x_off = 1.55); heuristic
     double release_probability = 0.3;
     // nominal dits of branch k, d_k = L_k / length_dits (the nominal L_k: d_k = 12 ms ... 230 ms): W_min,k =
-    // rekey_after_dits x d_k of keyed time while the amplitude is unknown. Class (1) dits: it collects enough marks to
-    // seed the amplitude, and the marks a branch is matched to last a number of its dits. Status: derived from a
-    // measurement, the prototype's 0.8 s (measured at 25 WPM by E9b) over 48 ms = 16.7 (stage-2 spec section 3.1).
-    // Plan B (B4a), replaces rekey_after_s
+    // rekey_after_dits x d_k of keyed time. With rekey_wait_in_marks off (the B4a-B4d variant) the re-key waits for
+    // W_min,k of keyed time while the amplitude is unknown; in every mode W_min,k sets the seed's memory
+    // (seed_memory_rekeys). Class (1) dits: it collects enough marks to seed the amplitude, and the marks a branch is
+    // matched to last a number of its dits. Status: derived from a measurement, the prototype's 0.8 s (measured at
+    // 25 WPM by E9b) over 48 ms = 16.7 (stage-2 spec section 3.1). Plan B (B4a), replaces rekey_after_s
     double rekey_after_dits = 16.7;
     // multiples of W_min,k, bound on the seed's memory of keyed time; heuristic
     double seed_memory_rekeys = 4.0;
@@ -216,8 +219,9 @@ struct BankConfig {
     double new_over_min_s = 0.5;
     // multiples of T_g, dimensionless; placeholder, kept by E7
     double new_over_gaps = 12.0;
-    // multiples of W_min,k, dimensionless: the channel time branch k's over may stay of unknown amplitude before it is
-    // re-keyed or cleared is rekey_timeout_ratio x W_min,k = 41.7 d_k. Class (1) dits, through W_min,k: a station is
+    // multiples of W_min,k, dimensionless; with rekey_wait_in_marks off (the B4a-B4d variant): the channel time branch
+    // k's over may stay of unknown amplitude before it is re-keyed or cleared is rekey_timeout_ratio x W_min,k =
+    // 41.75 d_k. Class (1) dits, through W_min,k: a station is
     // keyed down about 44% of the time, so it needs about W_min,k / 0.44 of channel time to reach W_min,k. Status:
     // heuristic, stage 1's ratio 2 s / 0.8 s (stage-2 spec section 3.1). Plan B (B4a), replaces rekey_timeout_s
     double rekey_timeout_ratio = 2.5;
@@ -243,6 +247,29 @@ struct BankConfig {
     // the marks it must reach are the station's, and the branch is matched to a dit of d_k. Status: heuristic (Plan B,
     // B4d; the controller's choice for the owner, 2026-10-06). Unused when rekey_timeout_from_first_mark is off
     double rekey_lead_dits = 7.0;
+    // The re-key wait counted in the station's marks (Plan B, B4e; the owner's decision of 2026-10-06, option d). On:
+    // the over's start is re-keyed once the branch has rekey_marks provisional marks, and its time-out is
+    // rekey_marks_timeout_s of channel time for every branch. Off: the B4a-B4d variant, W_min,k = rekey_after_dits x
+    // d_k of keyed time and the time-out rekey_timeout_ratio x W_min,k. Why: the wait exists to collect enough of the
+    // station's marks to choose the re-key's amplitude and seed the fit; in the branch's dits, a branch much faster
+    // than the station (branch 1, d_1 = 12 ms, under a 25 WPM station) reached its wait after one or two of the
+    // station's marks. Counting marks does not depend on the speed (by construction).
+    bool rekey_wait_in_marks = true;
+    // marks, the re-key wait K: provisional marks (keyed by the unknown-amplitude test, ended: key-down then key-up)
+    // the branch has in its over (since the over started or since the last time-out that keyed nothing) before the
+    // over's start is re-keyed. Class: counted in marks, like the fit's memory (fit_memory). Reason: stage 1's 0.8 s
+    // of keyed time at 25 WPM (E9b, measured) holds about 9 marks, as a mark averages 1.86 dits (VE3NEA's statistics:
+    // 57% dits, 43% dahs) = 89 ms at 25 WPM (derived); and the decoder already requires 8 marks and spaces before a
+    // fresh fit counts (fresh_fit_min_obs, heuristic). Status: heuristic (Plan B, B4e)
+    int rekey_marks = 8;
+    // s of channel time, the re-key time-out with rekey_wait_in_marks, the same for every branch; counted from the
+    // over's first provisional mark (rekey_timeout_from_first_mark). Class (2) seconds: a latency. Reason: a genuine
+    // station must be able to key rekey_marks marks first; in PARIS a mark comes every 50/14 = 3.57 dits, so 8 marks
+    // take 8 x 3.57 x 240 ms = 6.9 s at the decoder's 5 WPM floor (min_wpm; derived), rounded to 7 s. Noise alone
+    // keys false marks at 0.01 per second per branch (false_marks_per_s), so it reaches 8 marks only after about
+    // 800 s (derived from the calibration target). Status: derived (Plan B, B4e). rekey_timeout_s, when set, takes
+    // precedence
+    double rekey_marks_timeout_s = 7.0;
     // marks and spaces of this over a fresh fit needs before it may replace the previous over's; placeholder, heuristic
     int fresh_fit_min_obs = 8;
     // s; owner

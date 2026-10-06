@@ -19,7 +19,7 @@ namespace {
 // ablations, unset by default; periodicity_windows_s: the prototype's field, here since B4a, the default windows
 // again since B4d; periodicity_window_mode: B4a-C, "seconds" by default since B4d; periodicity_unselected_windows_s:
 // B4a-C, the shared-window variant; rekey_clear_moves_stretch, rekey_timeout_from_first_mark and rekey_lead_dits:
-// B4d, the re-key clocks).
+// B4d, the re-key clocks; rekey_wait_in_marks, rekey_marks and rekey_marks_timeout_s: B4e, the re-key wait in marks).
 #define KZ4AP_BANK_CONFIG_FIELDS(X)                                                                           \
     X(min_wpm) X(max_wpm) X(ladder_step) X(length_dits) X(block_s) X(noise_method) X(mask_bias) X(noise_tau_s) \
     X(noise_warmup_s) X(noise_guard) X(neighbor_guard) X(segment_s) X(spectrum_smoothing_hz) X(guard_margin_s) \
@@ -33,7 +33,9 @@ namespace {
     X(spectrum_confidence_min) X(eligibility_tolerance) X(switch_persistence) X(quality_tie_nats)              \
     X(text_tie_nats) X(text_window_chars) X(text_separation_nats) X(new_over_min_s) X(new_over_gaps)           \
     X(rekey_timeout_ratio) X(fresh_fit_min_obs) X(correction_reach_s) X(noise_stuck_s) X(rekey_after_s)        \
-    X(rekey_timeout_s) X(periodicity_windows_s) X(periodicity_window_mode) X(periodicity_unselected_windows_s)        X(rekey_clear_moves_stretch) X(rekey_timeout_from_first_mark) X(rekey_lead_dits)
+    X(rekey_timeout_s) X(periodicity_windows_s) X(periodicity_window_mode) X(periodicity_unselected_windows_s) \
+    X(rekey_clear_moves_stretch) X(rekey_timeout_from_first_mark) X(rekey_lead_dits) X(rekey_wait_in_marks)    \
+    X(rekey_marks) X(rekey_marks_timeout_s)
 
 ordered_json field_json(bool v) { return ordered_json(v); }
 ordered_json field_json(double v) { return ordered_json(v); }
