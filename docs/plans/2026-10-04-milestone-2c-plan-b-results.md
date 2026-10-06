@@ -152,6 +152,26 @@ time-out on branch 1 did), and branch 1, selected by default, re-keys from the s
 stretch test gives +0.1023 (+0.0531 to +0.1578), shift −0.02 (−0.54 to +0.35) dB of S₅₀₀ (`bank-b4d` −0.48). CPU
 53.07 ms per channel-second (`bank-b4d` 43.20). Details in section 11.
 
+**Answer (B4f, guards on the counted marks; the owner's option e of 2026-10-06).** Code `91ffdc6`. A provisional mark
+counts toward the 8-mark wait, and starts the 7 s time-out and the stretch, only if the branch's filter was full when
+it began (derived) and it lasted at least L_k (heuristic). Against `bank-b3b`:
+
+- **Pooled paired CER +0.0078 (−0.0047 to +0.0203).** The interval includes 0 (B4e: +0.0240, above 0).
+- **Paired first-word CER +0.1062 (+0.0091 to +0.2004).** Still above 0, about half of B4e's +0.3406.
+- **Groups worse** (paired interval entirely above 0): **H per station +0.3313 (+0.1449 to +0.5448)** (flagged;
+  B4e +0.6028). Better: I Farnsworth −0.0593.
+
+Against `bank-b4d`: pooled +0.0027 (−0.0074 to +0.0151), first-word −0.1019 (−0.2113 to +0.0053); worse H per station
++0.2650; better A, B, I. Against `bank-b4e`: −0.0161 (−0.0301 to −0.0040), first-word −0.2344. Guard 1 alone
+(`bank-b4f-g1`) recovers about a third of B4e's first-word loss; guard 2 removes about half of H per station's loss.
+Guard 2's premise, measured: 21.5% of white-noise provisional marks last L_k or more, 99.8% of a station's own, 45.6%
+in group H's silences, 7.9% to 12.9% of a station 50 to 200 Hz away. Traced (12.4): H per station's remaining loss is
+short branches (mostly 2 to 9) re-keying on the partner station's leak, whose elements are real and long enough, and
+then being selected. B4e's CPU rise was the seed's quantile, a full sort every block while unknown; selecting the two
+order statistics gives the same value bit for bit, and CPU is **41.72 ms per channel-second** (`bank-b4e` 53.07; B4e's
+rule at the fixed code 43.58). Stretch test +0.1060 (+0.0584 to +0.1619), shift −0.16 (−0.61 to +0.20) dB of S₅₀₀.
+Details in section 12.
+
 ## 0. Terms used in this record
 
 - **Decoder**: Envelope, Matched and the bank are the three decoders; here only the bank decoder in C++ is
@@ -2780,3 +2800,187 @@ All git-ignored.
   of the three runs (`res/`).
 - On the Linux machine: the decoded files `build/suite/full3/proto/bank-b4e/` and `stretch-b4e/`; the trace worktree
   `build/b4e/wt` (detached at `d90441a`, instrumented) and its decodes `build/b4e/suite/proto/trace-b4e/`.
+
+## 12. Guards on the counted marks (B4f) and B4e's CPU
+
+The owner's option e of 2026-10-06, after B4e's trace (11.4): the wait stays 8 marks with the 7 s time-out, and two
+guards decide which provisional marks count. Code: `91ffdc6`. `docs/signal-processing.md` covers the change in body
+section 8c (the re-key cycle) and in appendix A.8c and A.10. Every number here is measured unless marked otherwise.
+
+### 12.1 What changed
+
+| Setting | B4e | B4f default | Status |
+|---|---|---|---|
+| Guard 1, filter full (`rekey_guard_filter_full`) | every ended provisional mark counts | a mark counts only if N_k samples of non-zero input (inclusive) precede its key-down, since the stream's start or the last exact zero (N_1 = 14 samples, 9.3 ms; N_32 = 276) | derived: before that the boxcar's output is a partial sum divided by N_k |
+| Guard 2, minimum length (`rekey_guard_min_length`) | — | a mark counts only if it lasts at least N_k samples (L_k) | heuristic: a real element keyed on its own branch lasts about L_k or longer; a noise excursion is expected to be shorter than the filter's correlation time (12.2) |
+| The clocks | the first ended provisional mark starts the count at its key-down | the first counted mark does, from its key-down sample, when it ends | — |
+| The seed's quantile | a full sort of the kept keyed samples every block | the two order statistics by selection (`std::nth_element`) | exact: the same value bit for bit (12.5) |
+
+Marks that do not count are keyed provisionally and decoded as before. Each guard has its own switch; both off is B4e's
+rule, and `bank-b4f-noguard` (both off, B4f's binary) reproduces `bank-b4e` in all 525 channels, every decoded record
+identical, which also checks the selection quantile on the whole development set.
+
+**Tests** (`engine/tests/bank`; Windows):
+
+- `BankChannelGuards.AStartUpMarkDoesNotStartTheCount` (extends test (a)): test (a)'s stream with a channel filter's
+  start-up ramp (10 samples near zero, then a linear rise to sample 20, as the development set's streams begin: their
+  power averaged over the 32 channels of `A-awgn-25wpm-0-s1` is below 0.01 of the noise's median up to sample 10 and
+  near it from sample 20). Without the guards all 32 branches start their count before their filter is full (samples
+  10 to 11); with them none does. Characters published more than 2 dits before the station, seeds 1 to 4: **7
+  without the guards, 1 with**. The remaining one comes from a mark keyed in the noise warm-up after the filter is
+  full and longer than L_1: branch 1's count starts at sample 51 (34 ms), branch 5's at 53. The test asserts the
+  count rule and "fewer", not "none".
+- `BankChannelGuards.ABurstOfShortMarksBetweenOversDoesNotReKey` (extends test (b)): a 25 WPM station's over, then 1 s
+  later a station 100 Hz away at +9.5 dB relative keying for 6 s. The first station's branch (16) re-keys once on the
+  leak without the guards, never with them.
+- Test (a) as before (seeds 1 to 4): 0 characters more than 2 dits or half a dit before the station. Test (b) as before:
+  the second over re-keys at its own seed, known at 12.843 s with 7 counted marks one block before, s² = 9.418 FS².
+- `BankNoise.QuantileBySelectionIsTheSortedFormBitForBit`: 7 224 comparisons with a frozen sorting copy (sizes 1 to 300
+  and 23 079, ties, exact zeros, quantiles 0, 0.2, 0.5, 0.9, 1 and random), every one equal bit for bit.
+
+Results: `ctest --preset windows` 363 of 363; `ctest --preset linux` 363 of 363; Python tests 269 passed, 7 expected
+failures; smoke unchanged (Envelope CER 0.0353, Matched 0.0436).
+
+### 12.2 How long are noise marks? (guard 2's premise)
+
+Provisional marks were logged (an instrumented copy of B4e's code, which keys exactly as B4f) with their length in
+units of the branch's L_k, while the branch's amplitude was unknown. White noise alone: 600 s at 1500 samples/s, the
+re-key disabled so every branch keys provisionally throughout. Group H per station (24 channels): classified by
+whether the channel's own station transmits (±0.3 s), its partner transmits, or neither.
+
+| marks | count | median length / L_k | 10% | 90% | lasting ≥ L_k |
+|---|---|---|---|---|---|
+| white noise alone (0.0133 per second per branch) | 256 | 0.76 | 0.50 | 1.18 | **21.5%** |
+| group H, the channel's own station transmitting | 23 043 | 4.88 | 1.93 | 11.56 | **99.8%** |
+| group H, neither station (silences) | 1 468 | 0.91 | 0.26 | 2.84 | **45.6%** |
+| group H, partner transmitting, separate-track (100 and 200 Hz) | 27 848 | 0.30 | 0.10 | 0.92 | 7.9% |
+| group H, partner transmitting, ambiguous (50 Hz) | 15 574 | 0.22 | 0.10 | 1.31 | 12.9% |
+| group H, partner transmitting, same-track (0 to 25 Hz) | 15 106 | 2.81 | 0.18 | 10.26 | 68.6% |
+
+By branch, the share lasting ≥ L_k falls with k for noise and leaks: white noise 45.9% on branches 1 to 8, 3.4% on
+17 to 24; group H's silences 70.8% on 1 to 8, 11.0% on 25 to 32; separate-track partner marks 15.1% on 1 to 8.
+
+So the premise holds for white noise (78.5% of its marks are shorter than L_k) and for a station 50 to 200 Hz away
+(87% to 92% shorter), and real marks of the channel's own station pass (99.8%). It holds only partly in group H's
+silences (54.4% shorter) and not when the partner shares the frequency (31.4% shorter: those are real marks). Guard 2
+lowers the rate of counted false marks by a factor of about 2 to 13; it does not remove them.
+
+### 12.3 `bank-b4f` against `bank-b3b`, `bank-b4d` and `bank-b4e` (Linux machine, the development set)
+
+Texts differ from `bank-b3b` in 346 of 525 channels, from `bank-b4d` in 406, from `bank-b4e` in 293.
+
+| group | signals | − `bank-b3b` | first-word | − `bank-b4d` | first-word | − `bank-b4e` | first-word |
+|---|---|---|---|---|---|---|---|
+| all | 509 | +0.0078 (−0.0047 to +0.0203) | **+0.1062 (+0.0091 to +0.2004)** | +0.0027 (−0.0074 to +0.0151) | −0.1019 (−0.2113 to +0.0053) | **−0.0161 (−0.0301 to −0.0040)** | **−0.2344 (−0.3870 to −0.0894)** |
+| A sensitivity | 192 | −0.0075 (−0.0161 to −0.0000) | +0.1601 (−0.0042 to +0.3223) | **−0.0093 (−0.0177 to −0.0021)** | −0.0552 (−0.2448 to +0.1466) | −0.0049 (−0.0112 to +0.0012) | **−0.1809 (−0.3884 to −0.0106)** |
+| B fading | 30 | −0.0019 (−0.0130 to +0.0080) | **+0.6011 (+0.0222 to +1.2984)** | **−0.0196 (−0.0373 to −0.0052)** | +0.2522 (−0.3778 to +1.0167) | +0.0063 (−0.0014 to +0.0154) | +0.2011 (−0.1612 to +0.7157) |
+| C fists | 135 | +0.0018 (−0.0003 to +0.0038) | −0.0594 (−0.1604 to +0.0501) | −0.0005 (−0.0025 to +0.0014) | **−0.1765 (−0.2952 to −0.0532)** | +0.0001 (−0.0023 to +0.0023) | −0.1530 (−0.3290 to +0.0072) |
+| D speed | 12 | −0.0061 (−0.0174 to +0.0067) | −0.2500 (−0.4583 to −0.0417) | −0.0059 (−0.0150 to +0.0028) | −0.2000 (−0.3333 to −0.0750) | +0.0007 (−0.0050 to +0.0067) | +0.0000 |
+| E interference | 16 | +0.0105 (−0.0120 to +0.0370) | −0.3229 (−1.6773 to +0.7815) | −0.0037 (−0.0272 to +0.0186) | −0.5813 (−1.1776 to +0.0440) | −0.0100 (−0.0277 to +0.0058) | −0.1854 (−0.5813 to +0.1668) |
+| F tuning | 28 | −0.0053 (−0.0196 to +0.0087) | +0.4643 (−0.0179 to +0.9826) | −0.0088 (−0.0248 to +0.0074) | −0.0982 (−0.6736 to +0.5107) | −0.0090 (−0.0285 to +0.0132) | −0.3643 (−1.0001 to +0.2966) |
+| G ragchew | 12 | −0.0039 (−0.0103 to +0.0007) | −0.0234 (−0.0792 to +0.0227) | +0.0000 (−0.0028 to +0.0030) | −0.0039 (−0.0473 to +0.0456) | −0.0011 (−0.0051 to +0.0022) | −0.0099 (−0.0612 to +0.0404) |
+| H, oracle | 12 | +0.0199 (−0.0273 to +0.0816) | +0.0906 (−0.0250 to +0.2694) | +0.0158 (−0.0260 to +0.0685) | +0.0327 (−0.1263 to +0.2013) | **−0.0644 (−0.1668 to −0.0007)** | **−0.1359 (−0.2792 to −0.0181)** |
+| H, oracle (per station) | 24 | **+0.3313 (+0.1449 to +0.5448)** | **+0.4265 (+0.0891 to +0.8594)** | **+0.2650 (+0.1158 to +0.4509)** | +0.2412 (−0.2269 to +0.7538) | **−0.2715 (−0.5570 to −0.0299)** | **−2.0834 (−4.8166 to −0.1164)** |
+| I Farnsworth | 48 | **−0.0593 (−0.1121 to −0.0122)** | −0.0535 (−0.2165 to +0.1111) | **−0.0486 (−0.0825 to −0.0214)** | **−0.3472 (−0.5080 to −0.1923)** | +0.0051 (−0.0014 to +0.0113) | −0.1052 (−0.3831 to +0.0719) |
+
+**Against `bank-b3b`, H per station's interval still lies entirely above 0: reported to the owner** (the plan's rule;
+not a gate). Its regimes, `bank-b3b` → `bank-b4f` (`bank-b4e`): separate-track 100 Hz 0.104 → 1.050 (2.350);
+ambiguous 50 Hz 0.585 → 1.544 (1.807); same-track 25 Hz 1.336 → 1.378; the others within 0.015. The pooled interval
+now includes 0, and the first-word loss is about half of B4e's but still above 0. Group A's first words, `bank-b3b` →
+`bank-b4f` (`bank-b4e`): 12 WPM 0.39 → 0.28 (0.51), 25 WPM 0.39 → 0.73 (0.78), 40 WPM 0.64 → 0.71 (0.84).
+
+**The guards separated** (`bank-b4f-g1`, guard 1 only):
+
+| | pooled paired CER | first-word | H per station |
+|---|---|---|---|
+| `bank-b4f-g1` − `bank-b3b` | **+0.0221 (+0.0012 to +0.0481)** | **+0.2191 (+0.0671 to +0.4078)** | **+0.6048 (+0.2317 to +1.0475)** |
+| `bank-b4f-g1` − `bank-b4e` (guard 1) | −0.0019 (−0.0043 to +0.0005) | **−0.1215 (−0.2189 to −0.0375)** | +0.0020 (+0.0001 to +0.0043) |
+| `bank-b4f` − `bank-b4f-g1` (guard 2) | **−0.0142 (−0.0299 to −0.0026)** | −0.1129 (−0.2559 to +0.0088) | **−0.2735 (−0.5907 to −0.0270)** |
+
+Guard 1 recovers about a third of B4e's first-word loss (A −0.1731 with its interval below 0) and changes the CER little;
+guard 2 removes about half of H per station's loss.
+
+### 12.4 H per station: the worst 5 traced
+
+The B4e trace's instrumentation, applied to `91ffdc6` in a worktree on the Linux machine, reproduces `bank-b4f` in 24
+of 24 per-station channels (text, characters, corrections, selections). The 5 signals with the largest CER increase
+against `bank-b3b`: #15 (ambiguous 50 Hz, +1.743), #16 (separate-track 100 Hz, +1.273), #13 (ambiguous, +1.058),
+#19 (separate-track, +0.981), #18 (separate-track, +0.817).
+
+Findings:
+
+1. **The text comes while the partner station keys** (measured). In #16, #19 and #18 the published text changes 1 200
+   times while the partner keys, against 840 while the channel's own station keys and 17 in silences. B4e's
+   mechanism of 11.4 (the selected branch re-keying noise between overs) is nearly gone: re-keys of the selected
+   branch outside its own transmissions publish 150 non-space characters in all, in #15 and #13 only.
+2. **Short branches re-key on the partner's leak and are selected** (measured). 118 switches in the 5 channels go,
+   while the partner keys, to a branch that re-keyed during that transmission: mostly branches 2 to 9 (5: 30, 6: 23,
+   9: 17, 7: 13; 22: 9). Those re-keys came a median 1.47 s after their count started, with 0.479 s keyed, at a seed
+   a = 5.71 and a fitted T of 21.1 ms. Example (#16, 81.0 s, the partner's over starts): branches 4 to 7 count 8 marks
+   from 81.006 s and re-key at 81.86 to 82.47 s at a = 5.0 to 5.9 (their previous amplitude a = 20 to 23 loses), and
+   selection switches to them.
+3. **Why guard 2 does not stop it** (measured, 12.2; derived). The partner's elements are real marks, attenuated by
+   the short boxcars' sidelobes (a boxcar of L = 13 ms has its first null near 77 Hz): 15.1% of the leak's marks on
+   branches 1 to 8 last at least L_k, and the partner keys several marks per second, so 8 counted marks come within
+   about 1.5 s. A short branch re-keyed at the leak's own amplitude then keys it cleanly, its fit explains it, and
+   selection takes it. Stage 1's wait (0.8 s of keyed time, time-out 2 s) reached the same branches less often
+   (`bank-b3b` 0.104 at separate-track 100 Hz); not traced.
+
+### 12.5 B4e's CPU rise, explained and removed
+
+Profiling with `perf` is not allowed on the Linux machine (`perf_event_paranoid` = 4), so the instrumented B4e
+worktree timed each stage of `process_block` per channel (steady clock), decoding `A-awgn-25wpm-0-s1`,
+`C-fists-machine-s1` and `H-qso-oracle-s1.stations` with B4e's wait (marks) and with B4d's wait (keyed time), the same
+code otherwise, 4 threads. ms per channel-second:
+
+| test case | wait | total | keyer | edges and fits | re-keys | periodicity | known branch-blocks |
+|---|---|---|---|---|---|---|---|
+| A 25 WPM-0 | marks | 48.77 | **12.10** | 31.85 | 1.66 | 1.81 | 3 929 622 |
+| A 25 WPM-0 | keyed time | 38.85 | 3.93 | 31.07 | 0.94 | 1.73 | 3 977 825 |
+| C machine | marks | 60.55 | **17.52** | 39.25 | 0.61 | 2.18 | 4 174 335 |
+| C machine | keyed time | 46.35 | 3.01 | 39.80 | 0.44 | 2.11 | 4 515 593 |
+| H per station | marks | 70.51 | **8.34** | 49.96 | 8.88 | 1.95 | 9 112 823 |
+| H per station | keyed time | 53.89 | 4.46 | 42.00 | 4.15 | 1.95 | 8 676 407 |
+
+The rise is in the keyer (A +8.2, C +14.5 ms per channel-second), not in the fits: the number of known branch-blocks is
+about the same. While a branch's amplitude is unknown, the keyer recomputes the seed (the 90% quantile of the kept
+keyed samples, up to 4 · W_min,k of keyed time: 1202 samples at k = 1, 23 079 at k = 32) every block, by copying and
+fully sorting them. With the wait in marks the kept samples grow larger before the re-key (a slow branch re-keys after
+8 marks, a fast one keeps keying provisionally up to 7 s), so the per-block sort costs more (conjectured from the code;
+the buffer sizes were not logged). In H, the re-keys also cost more (8.88 against 4.15), as there are more of them
+(7 930 against 5 094). It is an inefficiency: the seed needs only two order statistics. Selecting them
+(`std::nth_element`, then the minimum above) gives the same value bit for bit (12.1). Measured on the development set
+(one run each): `bank-b4f-noguard` (B4e's rule) **43.58 ms per channel-second, against `bank-b4e`'s 53.07** with
+identical decodes; `bank-b4f` **41.72**; `bank-b4f-g1` 43.73; `bank-b4d` 43.20. By group, `bank-b4f`: A 38.88, B
+45.57, C 37.21, D 37.43, E 79.78, F 46.85, G 61.83, H 53.19, H per station 53.66, I 18.40.
+
+### 12.6 Periodicity, the stretch test and the new-over checks
+
+Periodicity (threshold 0.03, S₅₀₀ ≥ 0 dB): precision 0.809 (0.785 to 0.834), coverage 0.993, as `bank-b4e`.
+
+`stretch-b4f` equals `bank-b4f` in all 76 shared channels, every decoded record identical.
+
+| variant | pooled paired CER, stretched − original | CER-0.10 crossing shift, dB of S₅₀₀ (invariant +3.19) |
+|---|---|---|
+| `bank-b3b`'s settings (8.2) | +0.117 (+0.058 to +0.190) | −0.49 (−0.73 to −0.10) |
+| `bank-b4d` (10.5) | +0.1086 (+0.0524 to +0.1750) | −0.48 (−0.66 to −0.11) |
+| `bank-b4e` (11.3) | +0.1023 (+0.0531 to +0.1578) | −0.02 (−0.54 to +0.35) |
+| **`bank-b4f`** | **+0.1060 (+0.0584 to +0.1619)** | **−0.16 (−0.61 to +0.20)** |
+
+New overs: 16 of 16 same-station silences start an over; group H (oracle): 0.075 false new overs per transmission (6
+of 80; `bank-b4e` 0.300, `bank-b4d` 0.125), 0.271 missed turnovers (19 of 70), first-word CER after a turnover 0.54
+(an upper bound; `bank-b4e` 0.71, `bank-b4d` 0.47).
+
+### 12.7 Raw outputs
+
+All git-ignored.
+
+- `build/suite/full3/experiments/linux/b4f/`: the compare and c2-diff files, periodicity, stretch and new-over files,
+  the job log `b4f.log`.
+- `build/b4f/`: `b4f_run.sh`, `b9_run.sh`, the trace scripts (`trace_run.sh`, `patch_b4f.py`, `patch_pm.py`,
+  `fixnl.py`) and the traces (`traces/`).
+- `build/b4e/`: the mark-length measurement (`pm_run.sh`, `patch_pm.py`, `pm/`, `scripts/pm_an.py`), the CPU timing
+  (`cpu_run.sh`, `patch_cpu.py`), `scripts/h5.py`, `scripts/h5b.py`, and the scored results (`res/`).
+- On the Linux machine: `build/suite/full3/proto/bank-b4f/`, `bank-b4f-g1/`, `bank-b4f-noguard/`, `stretch-b4f/`;
+  the instrumented worktrees `build/b4e/wt` (B4e, with the timers and PM lines) and `build/b4f/wt` (detached at
+  `91ffdc6`).

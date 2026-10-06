@@ -617,7 +617,7 @@ branch 1 keys up.
 - **End of stream:** every open character is ended and published.
 
 **Cost.** About 8 to 14 MB of memory per channel (derived from the arrays
-allocated), and about 53 ms of CPU per second of channel on the Linux test
+allocated), and about 42 ms of CPU per second of channel on the Linux test
 machine at the current defaults (measured, Plan B), against about 0.6 ms for
 Matched (measured).
 
@@ -2254,7 +2254,7 @@ per-character probability (1) are placeholders.
 
 **Cost.** Memory is about 8.3–13.6 MB per channel (derived from the
 allocated arrays; chiefly the 21.1 s window of |v_k|² and the fits). CPU
-is about 53 ms per channel-second at the defaults on the Linux test
+is about 42 ms per channel-second at the defaults on the Linux test
 machine, against about 0.6 ms for Matched.
 
 
@@ -2626,7 +2626,12 @@ stream with a 20-sample start-up ramp, branch 1's count starts at sample
 more than 2 dits before it over 4 seeds (7 without the guards; measured).
 45.6% of the provisional marks in group H's silences last L_k or more
 (measured), so guard 2 alone does not stop noise from reaching 8 counted
-marks there; it relies on the false-mark rate.
+marks there; it relies on the false-mark rate. A station 50 to 100 Hz
+away is a real signal: on short branches (k = 2 to 9, wide passbands) its
+elements leak through as provisional marks, enough of them at least L_k
+long that such a branch counts 8 within a median 1.5 s of the other
+station's turnover, re-keys at a seed a ≈ 5.7 and can be selected (Plan B
+record, section 12.4; measured in group H per station).
 
 **Limitations.** After a station stops, its branch's false characters
 (provisional keying of noise) can stay published up to the time-out, 7 s

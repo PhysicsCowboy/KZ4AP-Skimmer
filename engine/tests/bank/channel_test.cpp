@@ -1262,7 +1262,7 @@ TEST(BankChannelClocks, ALaterOverReKeysAtItsOwnSeed) {
     const SecondOver b4e = run(BankConfig{});  // B4f's defaults: B4e's wait in marks with the guards
     const SecondOver b4d = run(b4d_wait());
     const SecondOver old = run(stage1_clocks());
-    for (const auto& [name, r] : {std::pair{"B4e (marks)", b4e}, std::pair{"B4d (keyed time)", b4d},
+    for (const auto& [name, r] : {std::pair{"defaults (B4f: marks, guards)", b4e}, std::pair{"B4d (keyed time)", b4d},
                                   std::pair{"stage 1", old}})
         std::printf("[ info ] %s: second over from %.3f s, known at %.3f s with %.3f s keyed (before %.3f s; "
                     "W_min,14 %.3f s), %d provisional marks the block before, s^2 %.3f FS^2\n", name, r.over_s,
