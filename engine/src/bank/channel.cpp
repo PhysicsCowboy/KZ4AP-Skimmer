@@ -205,6 +205,8 @@ void Branch::start_over(std::int64_t n_now, const Prior& prior, bool was_unknown
     }
     over_pending = true;
     marks_in_over = 0;
+    prov_down_n = -1;
+    wait_marks = 0;
     down_at.reset();
     up_at.reset();
 }
@@ -292,6 +294,8 @@ Branch::RekeyResult Branch::rekey_over(std::span<const double> P_stretch, std::i
     int marks = 0;
     for (const auto& o : b.obs) marks += o.is_mark ? 1 : 0;
     marks_in_over = marks;
+    prov_down_n = -1;
+    wait_marks = 0;
     down_at = b.down_at;
     up_at = b.up_at;
     return RekeyResult{b.amp2, !b.key.empty() && b.key.back() != 0, from_s, marks};
@@ -301,6 +305,8 @@ double Branch::clear_over(std::int64_t n0) {
     const double from_s = time(n0);
     redecode(from_s, {}, std::nullopt);
     marks_in_over = 0;
+    prov_down_n = -1;
+    wait_marks = 0;
     down_at.reset();
     up_at.reset();
     return from_s;
@@ -488,7 +494,9 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
         for (auto& br : branches_) {
             br.over_start_n = br.unknown_since_n = br.timeout_from_n = n1;
             br.timeout_armed = !cfg_.rekey_timeout_from_first_mark;
+            br.prov_down_n = -1;
         }
+        last_zero_n_ = n1 - 1;  // every sample so far is an exact zero
         return;
     }
     Matrix P;  // the block's |v|^2 (already rounded to float32, as run's P), FS^2
@@ -510,11 +518,35 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
                                                         upd.window_s ? *upd.window_s : kNaN,
                                                         periodicity_.per_window()});
     const auto changes = edges(s.key, s.before, n0);
+    const bool guarded = cfg_.rekey_guard_filter_full || cfg_.rekey_guard_min_length;  // Plan B, B4f
     for (int k = 0; k < K; ++k) {
         const auto ku = static_cast<std::size_t>(k);
         Branch& br = branches_[ku];
         if (!changes[ku].empty()) br.on_edges(changes[ku], s.a[ku], prior_, keyer_.unknown[ku]);
-        if (!br.timeout_armed && keyer_.unknown[ku]) {
+        if (guarded && keyer_.unknown[ku]) {
+            // Plan B, B4f: a provisional mark counts toward the wait in marks, and the first one that counts starts the
+            // time-out and the stretch (rekey_timeout_from_first_mark), only if it begins with the branch's filter full
+            // (N_k samples of non-zero input since the stream's start or the last exact zero) and lasts at least N_k
+            // samples (L_k), each test behind its switch. Marks are keyed and decoded as before either way.
+            for (const auto& [n, down] : changes[ku]) {
+                if (down) {
+                    br.prov_down_n = n;
+                    br.prov_full = n - last_zero_at_or_before(n, n0) >= n_[ku];
+                    continue;
+                }
+                if (br.prov_down_n < 0) continue;  // a mark under way when the over started or was cleared
+                const std::int64_t d = br.prov_down_n;
+                br.prov_down_n = -1;
+                if (cfg_.rekey_guard_filter_full && !br.prov_full) continue;
+                if (cfg_.rekey_guard_min_length && n - d < n_[ku]) continue;
+                ++br.wait_marks;
+                if (!br.timeout_armed) {
+                    br.timeout_from_n = d;
+                    br.timeout_armed = true;
+                    br.unknown_since_n = std::max(br.unknown_since_n, d - lead_[ku]);
+                }
+            }
+        } else if (!br.timeout_armed && keyer_.unknown[ku]) {
             // Plan B, B4d (ii): the time-out counts from the first provisional mark's key-down sample (a mark already
             // down when the count was stopped counts from the block's start), and the stretch a re-key keys again
             // starts rekey_lead_dits x d_k before it (never earlier than it started).
@@ -544,7 +576,7 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
             // The re-key wait: rekey_marks provisional marks in the over (B4e, the default), or W_min,k of keyed time
             // since the over started (the B4a-B4d variant).
             const bool waited = cfg_.rekey_wait_in_marks
-                                    ? br.marks_in_over >= cfg_.rekey_marks
+                                    ? (guarded ? br.wait_marks : br.marks_in_over) >= cfg_.rekey_marks
                                     : br.marks_in_over && keyer_.weight[ku] >= keyer_.rekey_weight[ku];
             if (waited) {
                 std::vector<double> candidates{keyer_.amp2[ku]};
@@ -610,6 +642,17 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
         result_.selections.push_back(Selection{t_now, now, nb.current ? nb.current->t_s : kNaN});
     }
     if (K > 0) out_.append_new(branches_[static_cast<std::size_t>(selector_.current())].chars);
+    for (std::int64_t i = n1 - 1; i >= n0; --i)  // Plan B, B4f: the last exact zero, for the next blocks
+        if (u_win_[static_cast<std::size_t>(i - base_)] == std::complex<double>(0.0, 0.0)) {
+            last_zero_n_ = i;
+            break;
+        }
+}
+
+std::int64_t BankChannel::last_zero_at_or_before(std::int64_t n, std::int64_t n0) const {
+    for (std::int64_t i = n; i >= n0; --i)
+        if (u_win_[static_cast<std::size_t>(i - base_)] == std::complex<double>(0.0, 0.0)) return i;
+    return last_zero_n_;
 }
 
 }  // namespace kz4ap::bank

@@ -93,7 +93,8 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
                                  "\"periodicity_unselected_windows_s\": [2.0, 5.0, 10.0], "
                                  "\"rekey_clear_moves_stretch\": true, \"rekey_timeout_from_first_mark\": true, "
                                  "\"rekey_lead_dits\": 7.0, \"rekey_wait_in_marks\": true, \"rekey_marks\": 8, "
-                                 "\"rekey_marks_timeout_s\": 7.0");
+                                 "\"rekey_marks_timeout_s\": 7.0, \"rekey_guard_filter_full\": true, "
+                                 "\"rekey_guard_min_length\": true");
     EXPECT_EQ(py_dumps(cfg), want);
     // and back
     EXPECT_EQ(py_dumps(kz4ap::bench::to_json(kz4ap::bench::bank_config_from_json(cfg))), py_dumps(cfg));

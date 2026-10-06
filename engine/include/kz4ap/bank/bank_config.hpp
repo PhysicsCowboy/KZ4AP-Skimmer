@@ -270,6 +270,20 @@ struct BankConfig {
     // 800 s (derived from the calibration target). Status: derived (Plan B, B4e). rekey_timeout_s, when set, takes
     // precedence
     double rekey_marks_timeout_s = 7.0;
+    // Guards on the provisional marks that count toward the re-key wait in marks and start the time-out and the
+    // stretch (Plan B, B4f; the owner's option e of 2026-10-06). Marks that fail a guard are still keyed provisionally
+    // and decoded as before; they only do not count. Each guard behind its own switch; both off is B4e.
+    // (1) Filter full: a provisional mark whose key-down sample has fewer than N_k samples of non-zero input before it
+    // (inclusive) since the stream's start or the last exact zero does not count. Why: before that the boxcar's output
+    // is a partial sum divided by N_k, not a valid average, and the noise warm-up reads it (derived). B4e's trace found
+    // every channel's first provisional mark 1.7 to 3.7 ms into the stream, so its count and stretch started there.
+    // Status: derived
+    bool rekey_guard_filter_full = true;
+    // (2) Minimum length: a provisional mark counts only if it lasts at least N_k samples (L_k, the branch's filter
+    // length; key-down to key-up). Why: a real element keyed on its own branch lasts about L_k or longer (its dit is
+    // d_k = L_k / 0.8), while a noise excursion over the provisional threshold is expected to be shorter than the
+    // filter's correlation time L_k. Status: heuristic (measured for and against in the Plan B record, section 12)
+    bool rekey_guard_min_length = true;
     // marks and spaces of this over a fresh fit needs before it may replace the previous over's; placeholder, heuristic
     int fresh_fit_min_obs = 8;
     // s; owner

@@ -221,6 +221,8 @@ TEST(BankDecoder, TheConsumersListIsTheBanksAfterEveryUpdateWhenCharactersOverla
         cfg.rekey_clear_moves_stretch = false;
         cfg.rekey_timeout_from_first_mark = false;
         cfg.rekey_wait_in_marks = false;
+        cfg.rekey_guard_filter_full = false;
+        cfg.rekey_guard_min_length = false;
         BankDecoder d(kRate, cfg, kOffsetHz, bank::fixed_timing(cfg, 0.8, 2.0, {2.0, 5.0, 10.0}));
         Assembled a;
         bool not_prefix = false;  // the stream must exercise a correction whose kept characters are not a prefix

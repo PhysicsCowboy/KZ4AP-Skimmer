@@ -140,6 +140,9 @@ TEST(BankConfig, PlanBDefaults) {
     EXPECT_EQ(c.rekey_marks_timeout_s, 7.0);
     EXPECT_NEAR(8.0 * 50.0 / 14.0 * 1.2 / c.min_wpm, 6.857, 0.001);
     EXPECT_EQ(std::round(8.0 * 50.0 / 14.0 * 1.2 / c.min_wpm), c.rekey_marks_timeout_s);
+    // B4f: the guards on the counted provisional marks, both on (owner, 2026-10-06, option e)
+    EXPECT_TRUE(c.rekey_guard_filter_full);
+    EXPECT_TRUE(c.rekey_guard_min_length);
     EXPECT_EQ(c.periodicity_unselected_windows_s, (std::vector<double>{2.0, 5.0, 10.0}));
     const std::vector<double> stage1_s = {2.0, 5.0, 10.0};
     for (std::size_t i = 0; i < stage1_s.size(); ++i)

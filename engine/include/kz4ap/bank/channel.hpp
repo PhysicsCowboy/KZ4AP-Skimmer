@@ -175,6 +175,12 @@ public:
                                              // rekey_lead_dits x d_k before that mark, if that is later (Plan B, B4d)
     bool over_pending = false;               // an over started by a silence, not yet confirmed by a re-key
     int marks_in_over = 0;
+    // Plan B, B4f (with rekey_guard_filter_full or rekey_guard_min_length): while the amplitude is unknown, the key-down
+    // sample of the provisional mark under way (-1: none) and whether the branch's filter was full there; and the
+    // provisional marks that passed the guards, which count toward the re-key wait in marks
+    std::int64_t prov_down_n = -1;
+    bool prov_full = false;
+    int wait_marks = 0;
 
 private:
     void observe(bool is_mark, double d, double var_t, const Prior& prior, bool provisional);
@@ -282,6 +288,8 @@ private:
 
     void append_sample(std::complex<double> x);
     void process_block(std::int64_t n0, std::int64_t n1);
+    // Plan B, B4f: the last exact-zero input sample at or before n (n in the current block [n0, ...)); -1: none.
+    std::int64_t last_zero_at_or_before(std::int64_t n, std::int64_t n0) const;
     void compact();
     // Row k of the |v_k|^2 window from absolute sample `from` to `to` (exclusive), converted to double
     // (exact), FS^2.
@@ -318,6 +326,9 @@ private:
     PowerMatrix p_win_;
     std::int64_t base_ = 0;
     std::int64_t keep_back_ = 0;
+    // Plan B, B4f: the last exact-zero input sample before the current block (-1: none; the stream's start counts as
+    // one), for rekey_guard_filter_full
+    std::int64_t last_zero_n_ = -1;
     std::int64_t total_ = 0;
     std::int64_t processed_ = 0;
     bool finished_ = false;

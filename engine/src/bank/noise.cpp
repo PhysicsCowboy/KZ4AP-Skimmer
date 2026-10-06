@@ -49,14 +49,16 @@ double quantile_linear(std::vector<double> x, double q) {
     if (n == 0) throw std::invalid_argument("quantile of an empty sample");
     for (double v : x)
         if (std::isnan(v)) return std::numeric_limits<double>::quiet_NaN();
-    std::sort(x.begin(), x.end());
-    // numpy "linear": virtual index (n - 1) q; at or past the last index, the last value.
+    // numpy "linear": virtual index (n - 1) q; at or past the last index, the last value. Only the order statistics
+    // x_(i) and x_(i+1) are needed: selected in linear time (Plan B, B4f; the same values as a full sort, exactly).
     const double vi = static_cast<double>(n - 1) * q;
-    if (vi >= static_cast<double>(n - 1)) return x[n - 1];
+    if (vi >= static_cast<double>(n - 1)) return *std::max_element(x.begin(), x.end());
     const double lo = std::floor(vi);
     const auto i = static_cast<std::size_t>(lo);
     const double gamma = vi - lo;
-    const double a = x[i], b = x[i + 1];
+    std::nth_element(x.begin(), x.begin() + static_cast<std::ptrdiff_t>(i), x.end());
+    const double a = x[i];
+    const double b = *std::min_element(x.begin() + static_cast<std::ptrdiff_t>(i) + 1, x.end());
     // numpy _lerp: a + (b - a) t, or b - (b - a)(1 - t) where t >= 0.5.
     const double diff = b - a;
     return gamma >= 0.5 ? b - diff * (1.0 - gamma) : a + diff * gamma;

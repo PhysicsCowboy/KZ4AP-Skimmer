@@ -901,9 +901,9 @@ TEST(BankChannelMarks, A12WpmStationReKeysAtItsEighthProvisionalMark) {
                 weight_s = ch.keyer().weight[k] / rate;
                 break;
             }
-            before = ch.branches()[k].marks_in_over;
+            before = ch.branches()[k].wait_marks;
         }
-        std::printf("[ info ] branch %zu known at %.3f s with %.3f s keyed; %d provisional marks at the block before; "
+        std::printf("[ info ] branch %zu known at %.3f s with %.3f s keyed; %d counted provisional marks at the block before; "
                     "the station's 8th mark ends at %.3f s\n", k + 1, known_s, weight_s, before, marks[7].second);
         ASSERT_GT(known_s, 0.0) << "never became known";
         EXPECT_LT(before, cfg.rekey_marks);
@@ -1092,14 +1092,26 @@ BankConfig stage1_clocks() {
     cfg.rekey_clear_moves_stretch = false;
     cfg.rekey_timeout_from_first_mark = false;
     cfg.rekey_wait_in_marks = false;
+    cfg.rekey_guard_filter_full = false;
+    cfg.rekey_guard_min_length = false;
     return cfg;
 }
 
 // B4d's re-key: its clocks (the defaults) with the wait in keyed time, W_min,k = 16.7 d_k, and the time-out 2.5 W_min,k
-// (the variant since B4e).
+// (the variant since B4e), without B4f's guards.
 BankConfig b4d_wait() {
     BankConfig cfg;
     cfg.rekey_wait_in_marks = false;
+    cfg.rekey_guard_filter_full = false;
+    cfg.rekey_guard_min_length = false;
+    return cfg;
+}
+
+// B4e's re-key: the wait in marks, without B4f's guards.
+BankConfig b4e_wait() {
+    BankConfig cfg;
+    cfg.rekey_guard_filter_full = false;
+    cfg.rekey_guard_min_length = false;
     return cfg;
 }
 
@@ -1115,14 +1127,22 @@ std::vector<std::complex<double>> to_complex(const std::vector<S>& x) {
 // at 1500 samples/s, 0.631 FS^2 in 500 Hz) before a 25 WPM station ("CQ TEST K1ABC", first mark at 1.000 s), pushed
 // block by block. Counts the characters the channel publishes at any time that start more than `before_s` before the
 // station's first mark (each character once).
-int published_before_station(const BankConfig& cfg, unsigned seed, double before_s) {
+// ramp: with ramp > 0, the stream's first `ramp` samples are scaled as a channel filter's start-up (Plan B, B4f): the
+// first 10 by 10^-3 (near zero, not exact zeros), then linearly up to 1 at sample `ramp`.
+std::vector<std::complex<double>> with_ramp(std::vector<std::complex<double>> u, int ramp) {
+    for (int i = 0; i < ramp && i < static_cast<int>(u.size()); ++i)
+        u[static_cast<std::size_t>(i)] *= i < 10 ? 1e-3 : static_cast<double>(i - 9) / (ramp - 9);
+    return u;
+}
+
+int published_before_station(const BankConfig& cfg, unsigned seed, double before_s, int ramp = 0) {
     const double rate = 1500.0, wpm = 25.0, start = 1.0;
     const std::string text = "CQ TEST K1ABC";
     const double sigma = std::sqrt(3.0 / std::pow(10.0, 0.2));  // S500 = +2 dB at amplitude 1 FS
     const auto marks = kz4ap::test::keying(text, wpm, start);
     const double limit = marks.front().first - before_s;
-    const auto u = to_complex(
-        kz4ap::test::keyed_signal(text, wpm, rate, marks.back().second + 1.5, 0.0, 1.0, sigma, seed, start));
+    const auto u = with_ramp(to_complex(
+        kz4ap::test::keyed_signal(text, wpm, rate, marks.back().second + 1.5, 0.0, 1.0, sigma, seed, start)), ramp);
     BankChannel ch(cfg, rate);
     const auto block = static_cast<std::size_t>(ch.block_samples());
     std::vector<std::pair<double, std::string>> seen;
@@ -1234,11 +1254,12 @@ TEST(BankChannelClocks, ALaterOverReKeysAtItsOwnSeed) {
                 break;
             }
             before = ch.keyer().weight[k] / rate;
-            marks = ch.branches()[k].marks_in_over;
+            marks = cfg.rekey_guard_filter_full || cfg.rekey_guard_min_length ? ch.branches()[k].wait_marks
+                                                                              : ch.branches()[k].marks_in_over;
         }
         return out;
     };
-    const SecondOver b4e = run(BankConfig{});
+    const SecondOver b4e = run(BankConfig{});  // B4f's defaults: B4e's wait in marks with the guards
     const SecondOver b4d = run(b4d_wait());
     const SecondOver old = run(stage1_clocks());
     for (const auto& [name, r] : {std::pair{"B4e (marks)", b4e}, std::pair{"B4d (keyed time)", b4d},
@@ -1286,6 +1307,110 @@ TEST(BankChannelClocks, TheStretchStartsSevenDitsBeforeTheFirstProvisionalMark) 
     }
     EXPECT_GT(checked, 0);
     EXPECT_GT(exact, 0);  // the lead itself sets the start
+}
+
+// ---- Plan B, B4f: guards on the provisional marks that count (the owner's option e of 2026-10-06) ------------------
+
+// Per branch, the sample index at which the time-out's count first started (-1: never), decoding u block by block.
+std::vector<std::int64_t> first_count_start(const BankConfig& cfg, const std::vector<std::complex<double>>& u) {
+    BankChannel ch(cfg, 1500.0);
+    const auto block = static_cast<std::size_t>(ch.block_samples());
+    std::vector<std::int64_t> first(ch.branches().size(), -1);
+    for (std::size_t i = 0; i < u.size(); i += block) {
+        ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
+        for (std::size_t k = 0; k < first.size(); ++k)
+            if (first[k] < 0 && ch.branches()[k].timeout_armed) first[k] = ch.branches()[k].timeout_from_n;
+    }
+    return first;
+}
+
+// Guard 1 (filter full): test (a)'s stream with a channel filter's start-up ramp (the first 10 samples near zero, then
+// a linear rise to sample 20; the development set's channel streams begin so: their power, averaged over the 32
+// channels of A-awgn-25wpm-0-s1, is below 0.01 of the noise's median up to sample 10 and near it from sample 20). Without the guards (B4e) the
+// unknown-amplitude test keys a mark within the first N_k samples, before the branch's boxcar holds N_k samples of
+// input, and that mark starts the count and the stretch at the stream's start; with the guards no count starts
+// there: every branch's first count starts at a mark with N_k samples of input before it (inclusive), so at sample
+// N_k - 1 or later. Characters from the noise before the station, published more than 2 dits before it, become fewer.
+TEST(BankChannelGuards, AStartUpMarkDoesNotStartTheCount) {
+    const double rate = 1500.0, wpm = 25.0, start = 1.0;
+    const std::string text = "CQ TEST K1ABC";
+    const double sigma = std::sqrt(3.0 / std::pow(10.0, 0.2));  // S500 = +2 dB at amplitude 1 FS
+    const auto marks = kz4ap::test::keying(text, wpm, start);
+    const auto u = with_ramp(
+        to_complex(kz4ap::test::keyed_signal(text, wpm, rate, marks.back().second + 1.5, 0.0, 1.0, sigma, 1, start)),
+        20);
+    const auto n = BankChannel(BankConfig{}, rate).branch_samples_n();
+    const auto guarded = first_count_start(BankConfig{}, u);
+    const auto open = first_count_start(b4e_wait(), u);
+    int early_open = 0, early_guarded = 0;
+    for (std::size_t k = 0; k < n.size(); ++k) {
+        early_open += open[k] >= 0 && open[k] < n[k] - 1;
+        early_guarded += guarded[k] >= 0 && guarded[k] < n[k] - 1;
+    }
+    int before_open = 0, before_guarded = 0;
+    const double two_dits = 2.0 * 1.2 / 25.0;
+    for (unsigned seed = 1; seed <= 4; ++seed) {
+        before_guarded += published_before_station(BankConfig{}, seed, two_dits, 20);
+        before_open += published_before_station(b4e_wait(), seed, two_dits, 20);
+    }
+    std::printf("[ info ] branches whose count starts before their filter is full: %d without the guards, %d with; "
+                "characters more than 2 dits before the station, seeds 1-4: %d without, %d with\n",
+                early_open, early_guarded, before_open, before_guarded);
+    for (std::size_t k = 0; k < n.size(); k += 4)
+        std::printf("[ info ] branch %zu: first count from sample %lld with the guards, %lld without (N_k %d)\n", k + 1,
+                    static_cast<long long>(guarded[k]), static_cast<long long>(open[k]), n[k]);
+    EXPECT_GT(early_open, 0);  // the start-up mark is reproduced
+    EXPECT_EQ(early_guarded, 0);
+    // Fewer, not none: a mark the unknown-amplitude test keys early in the noise warm-up, after the filter is full and
+    // at least L_k long, still passes both guards (measured, Windows: 7 characters without the guards, 1 with; branch
+    // 1's count from sample 51, 34 ms, branch 5's from sample 53).
+    EXPECT_LT(before_guarded, before_open);
+}
+
+// Guard 2 (minimum length): a 25 WPM station (amplitude 1 FS, S500 = +10 dB) sends an over and stops; 1 s later a second
+// station 100 Hz away (amplitude 3 FS, +9.5 dB relative) keys for 6 s, as group H's separate-track regime. Its keying
+// reaches the first station's branch only through the boxcar's sidelobes and edges, as provisional marks mostly
+// shorter than L_k. Without the guards (B4e) the station's branch counts 8 of them and re-keys, decoding the leak; with
+// the guards it does not re-key while the second station keys (it stays unknown, or a time-out clears).
+TEST(BankChannelGuards, ABurstOfShortMarksBetweenOversDoesNotReKey) {
+    const double rate = 1500.0, wpm = 25.0;
+    const double sigma = std::sqrt(3.0 / 10.0);  // S500 = +10 dB at 1 FS
+    const std::string first = "CQ DE K1ABC K";
+    const auto fm = kz4ap::test::keying(first, wpm, 0.5);
+    const double leak_s = fm.back().second + 1.0;
+    const double total_s = leak_s + 6.5;
+    const auto a = kz4ap::test::keyed_signal(first, wpm, rate, total_s, 0.0, 1.0, sigma, 5, 0.5);
+    const auto b = kz4ap::test::keyed_signal("TEST DE W9XYZ W9XYZ TEST DE W9XYZ", 25.0, rate, total_s, 100.0, 3.0, 0.0, 1,
+                                             leak_s);
+    std::vector<std::complex<double>> u(a.size());
+    for (std::size_t i = 0; i < u.size(); ++i) u[i] = {a[i].real() + b[i].real(), a[i].imag() + b[i].imag()};
+    auto rekeys_during_leak = [&](const BankConfig& cfg, std::size_t& k_sel) {
+        BankChannel ch(cfg, rate);
+        const auto block = static_cast<std::size_t>(ch.block_samples());
+        int rekeys = 0;
+        bool was_unknown = false;
+        k_sel = 0;
+        for (std::size_t i = 0; i < u.size(); i += block) {
+            ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
+            const double t = static_cast<double>(ch.processed()) / rate;
+            if (t < leak_s) {
+                k_sel = static_cast<std::size_t>(ch.selected());  // the first station's branch
+                was_unknown = ch.keyer().unknown[k_sel];
+                continue;
+            }
+            const bool unknown = ch.keyer().unknown[k_sel];
+            if (was_unknown && !unknown) ++rekeys;
+            was_unknown = unknown;
+        }
+        return rekeys;
+    };
+    std::size_t k_open = 0, k_guarded = 0;
+    const int open = rekeys_during_leak(b4e_wait(), k_open);
+    const int guarded = rekeys_during_leak(BankConfig{}, k_guarded);
+    std::printf("[ info ] re-keys of the first station's branch (%zu, %zu) while the station 100 Hz away keys: %d "
+                "without the guards, %d with\n", k_open + 1, k_guarded + 1, open, guarded);
+    EXPECT_GT(open, 0);
+    EXPECT_EQ(guarded, 0);
 }
 
 }  // namespace

@@ -13,7 +13,9 @@
 #include <cmath>
 #include <complex>
 #include <cstdint>
+#include <bit>
 #include <cstdio>
+#include <limits>
 #include <span>
 #include <random>
 #include <stdexcept>
@@ -91,6 +93,51 @@ TEST(BankNoise, QuantileLinearIsNumpysDefault) {
     EXPECT_DOUBLE_EQ(quantile_linear({3.0, 0.0, 1.0, 2.0}, 0.2), 0.6);        // index 0.6
     EXPECT_EQ(quantile_linear({7.0, 9.0}, 1.0), 9.0);
     EXPECT_TRUE(std::isnan(quantile_linear({1.0, std::nan(""), 2.0}, 0.2)));
+}
+
+// Plan B, B4f: quantile_linear selects x_(i) and x_(i+1) (std::nth_element, then the minimum above) instead of sorting
+// the whole sample. Compared bit for bit with a frozen copy of the sorting form over a randomized sweep: sizes 1 to 300
+// and 23 079 (the seed memory of branch 32), values with ties (rounded), exact zeros, the quantiles 0, 0.2, 0.5, 0.9, 1
+// and random ones.
+double quantile_linear_by_sort(std::vector<double> x, double q) {
+    const std::size_t n = x.size();
+    for (double v : x)
+        if (std::isnan(v)) return std::numeric_limits<double>::quiet_NaN();
+    std::sort(x.begin(), x.end());
+    const double vi = static_cast<double>(n - 1) * q;
+    if (vi >= static_cast<double>(n - 1)) return x[n - 1];
+    const double lo = std::floor(vi);
+    const auto i = static_cast<std::size_t>(lo);
+    const double gamma = vi - lo;
+    const double a = x[i], b = x[i + 1];
+    const double diff = b - a;
+    return gamma >= 0.5 ? b - diff * (1.0 - gamma) : a + diff * gamma;
+}
+
+TEST(BankNoise, QuantileBySelectionIsTheSortedFormBitForBit) {
+    std::mt19937_64 g(2026);
+    std::exponential_distribution<double> ex(1.0);
+    std::uniform_real_distribution<double> uq(0.0, 1.0);
+    int compared = 0;
+    std::vector<std::size_t> sizes;
+    for (std::size_t n = 1; n <= 300; ++n) sizes.push_back(n);
+    sizes.push_back(23079);
+    for (const std::size_t n : sizes)
+        for (int rep = 0; rep < 4; ++rep) {
+            std::vector<double> x(n);
+            for (auto& v : x) {
+                v = ex(g);
+                if (rep == 1) v = std::round(v * 4.0) / 4.0;  // many ties
+                if (rep == 2 && uq(g) < 0.3) v = 0.0;          // exact zeros
+            }
+            for (const double q : {0.0, 0.2, 0.5, 0.9, 1.0, uq(g)}) {
+                const double want = quantile_linear_by_sort(x, q), got = quantile_linear(x, q);
+                ASSERT_EQ(std::bit_cast<std::uint64_t>(got), std::bit_cast<std::uint64_t>(want))
+                    << "n " << n << ", rep " << rep << ", q " << q;
+                ++compared;
+            }
+        }
+    EXPECT_EQ(compared, 301 * 4 * 6);
 }
 
 TEST(BankNoise, SpectrumMatchesPrototype) { check_method("spectrum"); }
