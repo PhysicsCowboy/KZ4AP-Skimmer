@@ -2278,7 +2278,7 @@ on both machines; the cinz AVX and AVX-512 versions made it faster on the
 Linux machine only, the FMA versions on both; Plan B record, section 4);
 the block of 256 a heuristic (25 856 B of stack scratch per call, no
 measured effect claimed). Measured differences against the bounds, the
-bit-for-bit checks and the cost: Plan B record, sections 3, 4 and 9.3.
+bit-for-bit checks and the cost: Plan B record, sections 3, 4 and 9.4.
 
 **Limitations.** The fit's last bits depend on the processor's instruction
 sets (AVX2 with FMA or not). The prototype's strict expected failure,
@@ -2433,7 +2433,7 @@ windows that would correct it; when the selected dit is too long, the
 shortest row's reach admits candidates up to 2.28 times that dit. The
 default form has no such loop (its windows depend on the candidate alone).
 Measurements, the first form's fault (a nominal-dit fallback that trapped
-the start-up) and tests: Plan B record, sections 6.6, 6.6.1 and 9.4.
+the start-up) and tests: Plan B record, sections 6.6, 6.6.1, 9.2 and 9.5.
 
 **Provenance.** The method (the comb on Π = 2T): owner (E1; stage-1
 record, section 3.2). The windows N_w = 41.7, 104 and 208 dits of each
@@ -2639,11 +2639,11 @@ competition at 4 N_mem derived from the memory's weight; the 20 s
 correction reach an owner decision; the overlap cut and the choice of the
 re-key's candidate amplitudes heuristic; the window kept in memory a bound
 of the port, not a parameter. Memory and CPU measurements (B1, B4a, the
-cost of each step): Plan B record, sections 2, 3.4, 4.4, 6.3 and 9.5.
+cost of each step): Plan B record, sections 2, 3.4, 4.4, 6.3 and 9.6.
 
 **Limitations.** The measured memory per channel after B1 lies 1.7 MB above
 the derived upper end; the cause is conjectured, not traced (Plan B record,
-section 9.5).
+section 9.6).
 
 ### The bank decoder behind the engine
 

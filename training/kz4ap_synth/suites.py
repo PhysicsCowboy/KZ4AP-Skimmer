@@ -1069,7 +1069,7 @@ def format_markdown(agg: dict, cpu: dict, overs: dict | None = None, paired: dic
              f"fine-tunes only within ±{ORACLE_ANCHOR_RANGE_HZ:g} Hz of it; the bank mixes at the label, without "
              "its drift, and has no tracker (its ±"
              f"{ORACLE_ANCHOR_RANGE_HZ:g} Hz limit is heuristic: about where a 25 words/min branch loses 3 dB "
-             "relative to 0 Hz, docs/signal-processing.md section 8c), so a bank row is marked for any drifting "
+             "relative to 0 Hz, docs/signal-processing.md appendix A.8c), so a bank row is marked for any drifting "
              "label of an oracle recording too (not comparable with the prototype, which mixed with the drift). "
              "† : this group-H view does not fit the QSO. "
              "Through the detector, by the QSO's regime on the row's own path: labels per station for a "

@@ -28,7 +28,7 @@ named beside it.
 - **Oracle**: channels opened at the labeled frequencies, detector
   bypassed (benchmark only).
 - **CPU figure**: ms of process CPU time per second of channel audio
-  (ms/s), over the bench's timed window (§11, "CPU time per
+  (ms/s), over the bench's timed window ([SP] A.11, "CPU time per
   channel-second").
 - **Intervals**: bootstrap 95% intervals over signals, 1000 resamples,
   written "(low to high)". "No interval" means the source gives none.
