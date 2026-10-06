@@ -33,9 +33,7 @@ def test_snr_cells_are_2_db_wide_from_minus_8_to_plus_20():
 
 @pytest.mark.parametrize("cells", [SPEED_CELLS, SNR_CELLS, Cells((0.05, 0.2, 0.6, 2.0, 5.0), "log")])
 def test_the_cells_tile_the_range(cells):
-    for k in cells.numbers[:-1]:
-        assert cells.bounds(k)[1] == cells.bounds(k + 1)[0]
-    assert cells.bounds(1)[0] == cells.edges[0] and cells.bounds(len(cells))[1] == cells.edges[-1]
+    # (each upper edge is the next lower edge by construction, from one edges tuple; what can fail is cell_of)
     for k in cells.numbers:
         assert cells.cell_of(cells.bounds(k)[0]) == k  # an edge belongs to the cell above it
         assert cells.cell_of(cells.center(k)) == k

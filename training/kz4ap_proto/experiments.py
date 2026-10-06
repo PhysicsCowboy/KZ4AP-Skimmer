@@ -43,9 +43,10 @@ DEV = (r"^(A-awgn-.*|B-fading-mix|C-fists-.*|D-speed|E-qrm|F-offset|F-drift|G-ra
 DEV_E5 = r"^(A-awgn-25wpm-.*|C-fists-.*|D-speed|I-farnsworth-.*)-s1$"
 SUBSETS = {"dev": DEV, "e5": DEV_E5}
 # The jittered development set (docs/plans/2026-10-06-development-set-redesign.md; suites.dev2_suite): seed 1 of its
-# oracle recordings, group H2's per-station labels included; A2's detector-path copies (A2-detector-...) are not in it.
+# oracle recordings (H2's one labels file holds its per-station labels; there are no .stations scorings); A2's
+# detector-path copies (A2-detector-...) are not in it.
 DEV2 = (r"^(A2-awgn|B2-fading|C2-fists|D2-speed|E2-qrm|F2-offset|F2-drift|G2-qso|H2-qso|I2-farnsworth|S2-stretch)"
-        r"-.*-s1(\.stations)?$")
+        r"-.*-s1$")
 SUBSETS["dev2"] = DEV2
 # Plan B, B9 (not in DEV, which stays as it is for comparability): the stretch test's test cases, group A's 25 WPM
 # recordings and their stretched copies (seed 1; seeds 2-3 are held out until B12), and the new-over checks' test

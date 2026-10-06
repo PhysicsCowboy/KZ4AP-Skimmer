@@ -75,8 +75,8 @@ old set can hardly measure. The backlog also asks for tests at 12, 25, 40 and 80
 | C2 fists | keying styles | 5 styles × 10 speed cells × S₅₀₀ cells (2–8, 8–14, 14–20 dB); imbalance −0.1 to +0.1 dit |
 | D2 speed changes | steps and ramps | from each speed cell, a factor 1.3–2.0 up or down (within 8–80 WPM), step or ramp, S₅₀₀ 10–20 dB |
 | E2 interference | a neighbor station | 10 speed cells × offset cells (0–25, 25–60, 60–120 Hz); neighbor −6 to +12 dB relative to the wanted key-down power, its speed from the cells; wanted S₅₀₀ 8–14 dB |
-| F2 tuning | offsets and drift | 10 speed cells × offset 0–12 Hz, and × drift 0–2 Hz/s; S₅₀₀ 0–10 dB |
-| G2/H2 QSOs | overs, turnovers | whole QSOs (as now), each side's speed from the 10 cells, VE3NEA's style mix; same-track and separate-track views |
+| F2 tuning | offsets and drift | 10 speed cells × offset 0–12 Hz, and × drift as the total excursion over the signal, cells 0–12, 12–25, 25–40 Hz, the rate (Hz/s) derived from each signal's keying time (controller's ruling, 2026-10-06: a rate up to 2 Hz/s moved a slow signal's carrier up to about 300 Hz, outside the channel); S₅₀₀ 0–10 dB |
+| G2/H2 QSOs | overs, turnovers | whole QSOs (as now), each side's speed from the 10 cells, VE3NEA's style mix; G2 the same-track view (answering station 0–10 Hz from the caller, labels per QSO), H2 the separate-track view (200–300 Hz, labels per station only: no per-QSO oracle channels, which could not fit; controller's ruling, 2026-10-06) |
 | I2 Farnsworth | stretched gaps | character speed 18–25, 25–33 WPM × overall speed 5–8, 8–12, 12–16 WPM; S₅₀₀ 2–8, 8–14, 14–20 dB |
 | S2 stretch | time-base invariance, paired | every A2 signal of speed cell 5 (20.1–25.3 WPM), stretched by exactly 2 (to 10.1–12.7 WPM, cell 2) with S₅₀₀ lowered by 3.01 dB, as B9; kept as a paired check beside the E/N₀ fit |
 

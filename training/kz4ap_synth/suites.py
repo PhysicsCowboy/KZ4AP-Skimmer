@@ -2,7 +2,7 @@
 scores each with kz4ap-bench, and a summary.
 
     python -m kz4ap_synth.suites generate --suite full --out build/suite/full [--seeds 3]
-    python -m kz4ap_synth.suites generate --suite dev2 --out build/suite/dev2 [--seeds 3] [--per-cell A2=4 ...]         [--groups A2,S2]
+    python -m kz4ap_synth.suites generate --suite dev2 --out build/suite/dev2 [--seeds 3] [--per-cell A2=4] [--groups A2,S2]
     python -m kz4ap_synth.suites run --out build/suite/full --bench PATH/kz4ap-bench \
         --decoder baseline --decoder matched [--decoder bank]
     python -m kz4ap_synth.suites summarize --out build/suite/full
@@ -120,6 +120,9 @@ class Recording:
     oracle: bool       # score with kz4ap-bench --oracle
     specs: list[SignalSpec]
     station_labels: bool = False  # also score against one label per QSO station (generate.station_labels)
+    # Write only the labels per QSO station, as the recording's one labels file (no per-QSO label is written or
+    # scored); for a QSO group whose per-QSO labels cannot fit (H2: the stations 200-300 Hz apart)
+    per_station_only: bool = False
 
 
 def qso_regime(offset_hz: float, front_end: str = "baseline") -> str:
@@ -518,7 +521,7 @@ DEV2_SEED_BASE = 1_000_000
 DEV2_GROUP_SEED = 10_000
 # Signals per cell by default (the plan sets A2's pilot value, 4; the others are this task's choice, sized to give each
 # group's main comparison tens of signals per cell of interest; task D3's pilot scales them).
-DEV2_PER_CELL = {"A2": 4, "B2": 2, "C2": 2, "D2": 3, "E2": 3, "F2": 4, "G2": 2, "H2": 2, "I2": 2}
+DEV2_PER_CELL = {"A2": 4, "B2": 2, "C2": 2, "D2": 3, "E2": 3, "F2": 2, "G2": 2, "H2": 2, "I2": 2}
 S500_UNIT = SNR_CELLS.unit
 FADING2_CELLS = Cells((0.05, 0.2, 0.6, 2.0, 5.0), "log", "Hz (f_D, 2 sigma)")
 FADING2_SNR_CELLS = Cells((0.0, 10.0, 20.0), "linear", S500_UNIT)
@@ -532,7 +535,11 @@ QRM2_OFFSET_CELLS = Cells((0.0, 25.0, 60.0, 120.0), "linear", "Hz (neighbor abov
 QRM2_RELATIVE = Cells((-6.0, 12.0), "linear", "dB relative to the wanted key-down power")
 QRM2_SNR = Cells((8.0, 14.0), "linear", S500_UNIT)
 TUNING2_OFFSET = Cells((0.0, 12.0), "linear", "Hz above the FFT bin center (23.4375 Hz bins)")
-TUNING2_DRIFT = Cells((0.0, 2.0), "linear", "Hz/s")
+# F2's drift as the total excursion over the signal, 0-40 Hz (controller's ruling, 2026-10-06: a rate up to 2 Hz/s moved
+# a slow signal's carrier up to about 300 Hz, outside the channel; the test is following within the channel). Cells
+# (heuristic): within the oracle anchor's +/-12 Hz, up to about one bin (23.4 Hz), up to 40 Hz. The rate follows from
+# the signal's own keying time (first key-down to last key-up).
+TUNING2_EXCURSION = Cells((0.0, 12.0, 25.0, 40.0), "linear", "Hz (total drift over the signal's keying time)")
 TUNING2_SNR = Cells((0.0, 10.0), "linear", S500_UNIT)
 QSO2_SNR = Cells((10.0, 20.0), "linear", S500_UNIT + " (the caller)")
 QSO2_RELATIVE = Cells((-6.0, 6.0), "linear", "dB relative to the caller's key-down power")
@@ -585,7 +592,9 @@ def nominal_duration_s(text: str, wpm: float) -> float:
 
 
 def _signal_rng(seed: int, code: int, *key: int) -> np.random.Generator:
-    """One signal's generator: (seed, 100 + group code, 0, its cell numbers ..., its replicate)."""
+    """One signal's generator: (seed, 100 + group code, 0, its cell numbers ..., its replicate). numpy's SeedSequence
+    pads short entropy with zeros ([a, b, c] seeds as [a, b, c, 0]), so two keys must never differ only by trailing
+    zeros; the 100 + code in the second word keeps these keys apart from every old suite's and from _pack's."""
     return np.random.default_rng([seed, 100 + code, 0, *key])
 
 
@@ -791,8 +800,9 @@ def interference2(seed: int, per_cell: int | None = None) -> list[Recording]:
     signal), per_cell wanted signals per cell (default 3: 90). The wanted signal at S500 8-14 dB; the neighbor (not
     scored) at -6 to +12 dB relative to the wanted key-down power, its speed cell drawn uniformly from the 10 and its
     speed within that cell, machine keying, starting with the wanted signal and keying VE3NEA-statistics text for as
-    long as the wanted signal's text lasts at exact timing (whole words). The neighbor's values are recorded in the
-    wanted signal's labels. One batch per wanted speed cell."""
+    long as the wanted signal's text lasts at exact timing (whole words, so it may end early: its coverage, keying
+    time over the wanted's, is recorded). The neighbor's values are recorded in the wanted signal's labels. One batch
+    per wanted speed cell."""
     n = _per_cell("E2", per_cell)
     batches = []
     for v in SPEED_CELLS.numbers:
@@ -814,7 +824,12 @@ def interference2(seed: int, per_cell: int | None = None) -> list[Recording]:
                 wanted = SignalSpec(text, 0.0, wpm, snr, start,
                                     tag=f"offset cell {oc} ({QRM2_OFFSET_CELLS.bounds(oc)[0]:g}-"
                                         f"{QRM2_OFFSET_CELLS.bounds(oc)[1]:g} Hz)", design=design)
-                neighbor_text = _filler(rng, n_wpm, keying_intervals(text, wpm)[-1][1], "machine")
+                wanted_s = keying_intervals(text, wpm)[-1][1]
+                neighbor_text = _filler(rng, n_wpm, wanted_s, "machine")
+                design["neighbor_coverage"] = {
+                    "value": keying_intervals(neighbor_text, n_wpm)[-1][1] / wanted_s, "cell": NOT_A_CELL,
+                    "derived": "the neighbor's keying time over the wanted signal's (both exact timing): whole "
+                               "words, so it can end early"}
                 units.append(with_interferer(wanted, offset, relative, n_wpm, neighbor_text))
         batches.append((f"c{v:02d}", units))
     return _pack(batches, prefix="E2-qrm", group="E2 interference", seed=seed, code=5)
@@ -822,8 +837,11 @@ def interference2(seed: int, per_cell: int | None = None) -> list[Recording]:
 
 def tuning2(seed: int, per_cell: int | None = None) -> list[Recording]:
     """F2, tuning: 10 speed cells x an offset from the FFT bin center drawn from 0-12 Hz (each signal at an exact bin
-    center plus its offset), and again 10 speed cells x a drift drawn from 0-2 Hz/s; S500 0-10 dB; per_cell signals
-    per speed cell in each (default 4: 40 + 40). One batch per speed cell; F2-offset and F2-drift recordings."""
+    center plus its offset), per_cell signals per speed cell; and 10 speed cells x 3 drift-excursion cells
+    (TUNING2_EXCURSION: 0-12, 12-25, 25-40 Hz, the total frequency change over the signal; controller's ruling),
+    per_cell signals per cell, each signal's rate its excursion over its own keying time, first key-down to last
+    key-up (machine keying, so exactly keying_intervals'), recorded as derived. S500 0-10 dB. Default per_cell 2: 20
+    offset and 60 drift signals. One batch per speed cell; F2-offset and F2-drift recordings."""
     n = _per_cell("F2", per_cell)
     offsets, drifts = [], []
     for v in SPEED_CELLS.numbers:
@@ -838,14 +856,23 @@ def tuning2(seed: int, per_cell: int | None = None) -> list[Recording]:
                                              "s500_db": d_snr})])
         offsets.append((f"c{v:02d}", units))
         units = []
-        for rep in range(n):
-            rng = _signal_rng(seed, 7, v, rep)
-            wpm, d_wpm = pick(SPEED_CELLS, v, rng)
-            drift, d_drift = pick(TUNING2_DRIFT, 1, rng)
-            snr, d_snr = pick(TUNING2_SNR, 1, rng)
-            units.append([SignalSpec(text_100(rng), 0.0, wpm, snr, _start(rng), drift_hz_per_s=drift, tag="drift",
-                                     design={"group": "F2", "speed_wpm": d_wpm, "drift_hz_per_s": d_drift,
-                                             "s500_db": d_snr})])
+        for ec in TUNING2_EXCURSION.numbers:
+            for rep in range(n):
+                rng = _signal_rng(seed, 7, v, ec, rep)
+                wpm, d_wpm = pick(SPEED_CELLS, v, rng)
+                excursion, d_exc = pick(TUNING2_EXCURSION, ec, rng)
+                snr, d_snr = pick(TUNING2_SNR, 1, rng)
+                text = text_100(rng)
+                keyed = keying_intervals(text, wpm)
+                keying_s = keyed[-1][1] - keyed[0][0]
+                drift = excursion / keying_s
+                design = {"group": "F2", "speed_wpm": d_wpm, "drift_excursion_hz": d_exc, "s500_db": d_snr,
+                          "drift_hz_per_s": {"value": drift, "cell": NOT_A_CELL, "keying_time_s": keying_s,
+                                             "derived": "drift_excursion_hz over the keying time, first key-down "
+                                                        "to last key-up, Hz/s"}}
+                lo, hi = TUNING2_EXCURSION.bounds(ec)
+                units.append([SignalSpec(text, 0.0, wpm, snr, _start(rng), drift_hz_per_s=drift,
+                                         tag=f"drift cell {ec} ({lo:g}-{hi:g} Hz over the signal)", design=design)])
         drifts.append((f"c{v:02d}", units))
     return (_pack(offsets, prefix="F2-offset", group="F2 tuning", seed=seed, code=6, bin_slots=True)
             + _pack(drifts, prefix="F2-drift", group="F2 tuning", seed=seed, code=7, bin_slots=True))
@@ -878,11 +905,12 @@ def _qso2(rng, caller_cell: int, offsets: Cells, group: str, tag: str) -> Signal
 
 
 def _qsos2(seed: int, per_cell: int | None, group: str, code: int, offsets: Cells, prefix: str, name: str,
-           tag: str, station: bool) -> list[Recording]:
+           tag: str, per_station: bool) -> list[Recording]:
     n = _per_cell(group, per_cell)
     batches = [(f"c{v:02d}", [[_qso2(_signal_rng(seed, code, v, rep), v, offsets, group, tag)] for rep in range(n)])
                for v in SPEED_CELLS.numbers]
-    return _pack(batches, prefix=prefix, group=name, seed=seed, code=code, station_labels=station)
+    recs = _pack(batches, prefix=prefix, group=name, seed=seed, code=code)
+    return [replace(r, per_station_only=per_station) for r in recs]
 
 
 def qso2_same_track(seed: int, per_cell: int | None = None) -> list[Recording]:
@@ -897,9 +925,10 @@ def qso2_same_track(seed: int, per_cell: int | None = None) -> list[Recording]:
 def qso2_separate_tracks(seed: int, per_cell: int | None = None) -> list[Recording]:
     """H2, overs and turnovers on two tracks: whole QSOs (_qso2), the answering station 200-300 Hz above the caller
     (two tracks on every path; with oracle channels each station 18 dB or more down in the other's channel),
-    per_cell QSOs per caller speed cell (default 2: 20 QSOs), oracle channels, scored against one label per station
-    (the separate-track view; the per-QSO scoring of these recordings does not fit them). One batch per caller speed
-    cell."""
+    per_cell QSOs per caller speed cell (default 2: 20 QSOs), oracle channels. Only the labels per station are
+    written, as each recording's one labels file, and scored (the separate-track view; controller's ruling: a per-QSO
+    label cannot fit, the answering station being outside the caller's channel, so it gets no channel). One batch per
+    caller speed cell."""
     return _qsos2(seed, per_cell, "H2", 9, QSO2_SEPARATE_OFFSET, "H2-qso", "H2 QSO, separate tracks",
                   "separate tracks", True)
 
@@ -992,9 +1021,12 @@ def write_suite(recordings: list[Recording], out_dir: Path, suite_name: str, onl
         check_recording(rec)
         wav = out_dir / f"{rec.name}.wav"
         stations = out_dir / f"{rec.name}.stations.json"
+        if rec.per_station_only and rec.station_labels:
+            raise ValueError(f"{rec.name}: per_station_only already makes the station labels its labels")
         entries.append({"name": rec.name, "group": rec.group, "oracle": rec.oracle, "wav": wav.name,
                         "labels": wav.with_suffix(".json").name,
-                        "station_labels": stations.name if rec.station_labels else None})
+                        "station_labels": stations.name if rec.station_labels else None,
+                        **({"per_station": True} if rec.per_station_only else {})})
         if only is not None and not re.search(only, rec.name):
             needed = [wav, wav.with_suffix(".json")] + ([stations] if rec.station_labels else [])
             missing = [p.name for p in needed if not p.exists()]
@@ -1003,7 +1035,8 @@ def write_suite(recordings: list[Recording], out_dir: Path, suite_name: str, onl
             continue
         write_wav(wav, generate(rec.specs, rec.sample_rate, rec.duration_s, seed=rec.noise_seed), rec.sample_rate)
         extra = {"recording": rec.name, "group": rec.group, "oracle": rec.oracle}
-        lab = labels(rec.specs, rec.sample_rate, rec.duration_s, seed=rec.noise_seed)
+        lab = (station_labels if rec.per_station_only else labels)(rec.specs, rec.sample_rate, rec.duration_s,
+                                                                   seed=rec.noise_seed)
         wav.with_suffix(".json").write_text(json.dumps({**lab, **extra}, indent=2) + "\n")
         if rec.station_labels:
             per_station = station_labels(rec.specs, rec.sample_rate, rec.duration_s, seed=rec.noise_seed)

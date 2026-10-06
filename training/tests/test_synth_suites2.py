@@ -12,6 +12,7 @@ from kz4ap_proto import experiments
 from kz4ap_synth import suites
 from kz4ap_synth.generate import labels, plan_intervals, station_labels
 from kz4ap_synth.jitter import SNR_CELLS, SPEED_CELLS
+from kz4ap_synth.morse import keying_intervals
 from kz4ap_synth.suites import SUITES, check_recording, dev2_suite, text_100, text_chars
 
 
@@ -76,8 +77,9 @@ def test_the_other_groups_have_their_counts_per_cell(dev2):
     assert (1, 2, 1) not in d2 and (10, 1, 1) not in d2  # cell 1 cannot go down, cell 10 cannot go up
     e2 = count("E2 interference", "speed_wpm", "offset_hz")
     assert len(e2) == 30 and set(e2.values()) == {3}
-    f2 = Counter((s.design["speed_wpm"]["cell"], "drift_hz_per_s" in s.design) for s in _scored(dev2, "F2 tuning"))
-    assert len(f2) == 20 and set(f2.values()) == {4}
+    f2 = Counter((s.design["speed_wpm"]["cell"], s.design["drift_excursion_hz"]["cell"] if "drift_excursion_hz"
+                  in s.design else 0) for s in _scored(dev2, "F2 tuning"))
+    assert len(f2) == 10 * (1 + 3) and set(f2.values()) == {2}  # offsets (cell 0 here) and 3 excursion cells
     for group in ("G2 QSO, same track", "H2 QSO, separate tracks"):
         assert count(group, "speed_wpm") == Counter({(v,): 2 for v in SPEED_CELLS.numbers})
     i2 = count("I2 Farnsworth", "speed_wpm", "farnsworth_wpm", "s500_db", "keying")
@@ -104,8 +106,8 @@ def _design_values(design):
 def test_every_label_value_lies_inside_its_cell(dev2):
     checked = Counter()
     for r in dev2:
-        entries = labels(r.specs, r.sample_rate, r.duration_s, r.noise_seed)["signals"]
-        if r.station_labels:
+        entries = ([] if r.per_station_only else labels(r.specs, r.sample_rate, r.duration_s, r.noise_seed)["signals"])
+        if r.station_labels or r.per_station_only:
             entries += station_labels(r.specs, r.sample_rate, r.duration_s, r.noise_seed)["signals"]
         for e in entries:
             if not e.get("score", True):
@@ -119,7 +121,7 @@ def test_every_label_value_lies_inside_its_cell(dev2):
                 assert v["range"][0] <= v["value"] <= v["range"][1], (r.name, name, v)
                 checked[name] += 1
     assert {"speed_wpm", "s500_db", "fading_hz", "offset_hz", "factor", "end_speed_wpm", "neighbor_relative_db",
-            "neighbor_speed_wpm", "imbalance_dits", "drift_hz_per_s", "answer_speed_wpm", "answer_offset_hz",
+            "neighbor_speed_wpm", "imbalance_dits", "drift_excursion_hz", "answer_speed_wpm", "answer_offset_hz",
             "answer_relative_db", "farnsworth_wpm"} <= set(checked)
 
 
@@ -165,6 +167,20 @@ def test_e2_neighbors_and_f2_offsets_sit_where_their_labels_say(dev2):
                                                                                          abs=1e-9)
                 assert neighbor.snr_db - wanted.snr_db == pytest.approx(d["neighbor_relative_db"]["value"], abs=1e-9)
                 assert neighbor.wpm == d["neighbor_speed_wpm"]["value"] and neighbor.start_s == wanted.start_s
+        if r.name.startswith("F2-drift"):
+            for s, plan in zip(r.specs, plan_intervals(r.specs, r.noise_seed)):
+                d = s.design
+                keying_s = plan.intervals[-1][1] - plan.intervals[0][0]  # first key-down to last key-up
+                assert d["drift_excursion_hz"]["range"] in ([0.0, 12.0], [12.0, 25.0], [25.0, 40.0])
+                assert 0.0 <= s.drift_hz_per_s * keying_s <= 40.0
+                assert s.drift_hz_per_s * keying_s == pytest.approx(d["drift_excursion_hz"]["value"], abs=1e-9)
+                assert d["drift_hz_per_s"]["value"] == s.drift_hz_per_s
+                assert d["drift_hz_per_s"]["keying_time_s"] == pytest.approx(keying_s, abs=1e-12)
+        if r.group == "E2 interference":
+            for wanted, neighbor in zip(r.specs[::2], r.specs[1::2]):
+                cover = keying_intervals(neighbor.text, neighbor.wpm)[-1][1] / keying_intervals(wanted.text,
+                                                                                                wanted.wpm)[-1][1]
+                assert wanted.design["neighbor_coverage"]["value"] == pytest.approx(cover, rel=1e-12)
         if r.name.startswith("F2-offset"):
             for s in r.specs:  # an exact bin center plus the drawn offset
                 bins = (s.freq_offset_hz - s.design["offset_hz"]["value"]) / suites.BIN_HZ
@@ -174,7 +190,8 @@ def test_e2_neighbors_and_f2_offsets_sit_where_their_labels_say(dev2):
 def test_qso_groups_have_their_views(dev2):
     g2 = [r for r in dev2 if r.group == "G2 QSO, same track"]
     h2 = [r for r in dev2 if r.group == "H2 QSO, separate tracks"]
-    assert g2 and h2 and not any(r.station_labels for r in g2) and all(r.station_labels for r in h2)
+    assert g2 and h2 and not any(r.station_labels or r.per_station_only for r in g2)
+    assert all(r.per_station_only and not r.station_labels for r in h2)  # H2: per-station labels only (ruling)
     assert all(0.0 <= s.senders[1].offset_hz <= 10.0 for r in g2 for s in r.specs)
     assert all(200.0 <= s.senders[1].offset_hz <= 300.0 for r in h2 for s in r.specs)
     assert all(suites.qso_regime(s.senders[1].offset_hz, fe) == "same-track" for r in g2 for s in r.specs
@@ -231,16 +248,20 @@ def test_dev2_selects_seed_1_of_the_new_oracle_recordings(dev2):
     names = [r.name for r in dev2]
     picked = {n for n in names if re.search(experiments.DEV2, n)}
     assert picked == {r.name for r in dev2 if r.group != "A2 sensitivity, detector"}
-    assert re.search(experiments.DEV2, "H2-qso-c01-0-s1.stations")
+    assert not re.search(experiments.DEV2, "H2-qso-c01-0-s1.stations")  # H2's only labels are per station
     assert not any(re.search(experiments.DEV2, n.replace("-s1", "-s2")) for n in names)
     assert not any(re.search(experiments.DEV2, r.name) for r in SUITES["full"](1))
     assert not any(re.search(experiments.DEV, n) for n in names)
     assert experiments.SUBSETS["dev2"] == experiments.DEV2 and experiments.SUBSETS["dev"] == experiments.DEV
 
 
-def test_old_labels_carry_no_design(dev2):
-    (rec,) = SUITES["smoke"](1)
-    assert all("design" not in e for e in labels(rec.specs, rec.sample_rate, rec.duration_s, rec.noise_seed)["signals"])
+def test_old_labels_carry_no_design():
+    for rec in SUITES["smoke"](1) + SUITES["full"](1):
+        assert not rec.per_station_only
+        entries = labels(rec.specs, rec.sample_rate, rec.duration_s, rec.noise_seed)["signals"]
+        if rec.station_labels:
+            entries += station_labels(rec.specs, rec.sample_rate, rec.duration_s, rec.noise_seed)["signals"]
+        assert all("design" not in e for e in entries), rec.name
 
 
 def test_generate_writes_dev2_with_per_cell_and_groups(tmp_path):
@@ -249,8 +270,23 @@ def test_generate_writes_dev2_with_per_cell_and_groups(tmp_path):
     assert manifest["suite"] == "dev2"
     assert len(manifest["recordings"]) == 20
     lab = json.loads((tmp_path / "F2-drift-c10-0-s1.json").read_text())
-    assert len(lab["signals"]) == 1 and lab["signals"][0]["design"]["speed_wpm"]["cell"] == 10
-    assert lab["signals"][0]["design"]["drift_hz_per_s"]["range"] == [0.0, 2.0]
+    assert len(lab["signals"]) == 3 and all(e["design"]["speed_wpm"]["cell"] == 10 for e in lab["signals"])
+    assert sorted(e["design"]["drift_excursion_hz"]["range"] for e in lab["signals"]) == [[0.0, 12.0], [12.0, 25.0],
+                                                                                         [25.0, 40.0]]
+    assert "per_station" not in manifest["recordings"][0]
+
+
+def test_h2_writes_and_scores_only_per_station_labels(tmp_path):
+    suites.main(["generate", "--suite", "dev2", "--out", str(tmp_path), "--per-cell", "H2=1", "--groups", "H2"])
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert len(manifest["recordings"]) == 10
+    for rec in manifest["recordings"]:
+        assert rec["station_labels"] is None and rec["per_station"] is True
+        assert suites._scorings(rec) == [(rec["labels"], rec["name"], rec["group"])]
+        lab = json.loads((tmp_path / rec["labels"]).read_text())["signals"]
+        assert len(lab) == 2 and [e["qso_index"] for e in lab] == [0, 0]  # one entry per station, no QSO entry
+        assert abs(lab[1]["freq_offset_hz"] - lab[0]["freq_offset_hz"]) >= 200.0
+    assert not list(tmp_path.glob("*.stations.json"))
 
 
 def test_per_cell_and_groups_are_dev2_only(tmp_path):
