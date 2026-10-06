@@ -226,3 +226,38 @@ Why: B4a's per-candidate windows (N_w·T for each candidate T) score an alias at
 - [ ] **Step 2:** the measures, with tests on small hand-made decoded files.
 - [ ] **Step 3:** generate on the Linux machine (seed 1; seeds 2–3 generated but not decoded), run the variants, the measures.
 - [ ] **Step 4:** results record section 8 (the stretch test table per variant: paired CER by S₅₀₀, the crossing shift; the new-over checks), each number measured; commit.
+
+### Task B4d (full text): the owner's decisions of 2026-10-06 applied
+
+The owner's decisions after B4a's analysis (ledger; decision record §6; spec amended 66c8ffb, cb6dc15):
+**A** the periodicity windows stay in seconds, 2, 5 and 10 s (class 2: latency after a change); **B** the re-key
+settings stay in dits, with two fixes to when their clocks start (found by the re-key trace,
+`docs/research/2026-10-05-periodicity-windows-and-rekey-analysis.md` §3.2); **C** the 200-seed mask-bias table.
+
+**Files:** `engine/include/kz4ap/bank/bank_config.hpp`, `engine/src/bank/channel.cpp` (and keying/periodicity
+as needed), `bench/src/bank_json.cpp`, tests in `engine/tests/bank/`, `docs/signal-processing.md` (body §8c and
+the appendix A.8c, A.10), the Plan B results record (new section 10).
+
+1. **Periodicity windows (A).** The default becomes 2, 5 and 10 s for every candidate (stage 1's rule), with
+   `BankConfig` stating the class (2) and the reason. The per-candidate and shared-window forms stay available
+   as non-default variants for experiments (documented as such, one sentence each in the body).
+2. **Re-key clocks (B).** (i) When a time-out keys nothing (its provisional characters deleted, the amplitude
+   still unknown), the stretch's start moves to the time-out's instant, so a later re-key never reaches back
+   into pre-station noise. (ii) The time-out counts from the over's first provisional mark (on that branch),
+   not from when the amplitude became unknown; before the first provisional mark nothing is counted. Each fix
+   behind its own configuration switch (default on), so it can be measured alone. Tests reproducing the
+   trace's two mechanisms: (a) 1 s of noise at S₅₀₀ = +2 dB (dB SNR in 500 Hz) before a 25 WPM station: no
+   character published before the station's first mark at any time; (b) a station at 30 WPM whose over starts
+   1.2 s after the branch's amplitude became unknown: the station's branch re-keys at its own seed, no
+   time-out before W_min,k.
+3. **Mask-bias table (C).** The 200-seed values measured in B4b (results record §7.1) replace the 10-seed
+   table, status "measured (Plan B B4b, white noise, 200 seeds)".
+4. **Documents.** Body §8c: the periodicity section rewritten to explain the windows in steps (why windows;
+   three at once, the shortest confident one wins; the reach limit W/18.3, 2 s down to 11 WPM; fixed in
+   seconds for latency, the owner's decision), using τ_c for the candidate dit (§0's table); the re-key cycle
+   with the new clock rules; the time-constant table's periodicity row now seconds (class 2); the body stays
+   ≤ 6 000 words. Appendix A.8c exact forms, provenance, A.10 rows.
+5. **Runs** (Linux machine, the old development set, `--jobs 10`): `bank-b4d` (all three changes) against
+   `bank-b3b`; `bank-b4d-noclock` (both clock fixes off) to separate the fixes from A and C; paired CER pooled
+   and per group with intervals, first-word CER, CPU. The stretch test (B9's script) on `bank-b4d`.
+6. **Rule:** reported to the owner, not a gate.
