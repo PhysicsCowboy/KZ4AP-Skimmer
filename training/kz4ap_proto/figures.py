@@ -71,16 +71,29 @@ def _safe(name: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in name)
 
 
+OUTSIDE_PAD_DB = 1.0  # the S500 axes span the fitted data's range plus this margin, dB SNR in 500 Hz (presentation)
+
+
+def s500_axis_limits(ranges, extra=()) -> tuple[float, float]:
+    """The S500 axis span (dB SNR in 500 Hz) of figures 1 and 3: the fitted data's ranges (pairs lo, hi), widened
+    to include the finite `extra` values (e.g. the genie bound), plus OUTSIDE_PAD_DB on each side. A crossing or
+    interval outside the data (an extrapolation, which can reach hundreds of dB) does not set the scale; the
+    figures mark it at the edge with its value instead."""
+    values = [v for r in ranges for v in r] + [float(v) for v in extra if v is not None and np.isfinite(v)]
+    return min(values) - OUTSIDE_PAD_DB, max(values) + OUTSIDE_PAD_DB
+
+
 def figure_cer_s500(a: dict, decoder: str, stem: Path) -> list[Path] | None:
-    """Figure 1 for one decoder."""
+    """Figure 1 for one decoder. The S500 axis spans the data (s500_axis_limits); a crossing beyond it is marked by
+    an arrow at the edge with its value."""
     fit = a["decoders"][decoder]["fit"]
     if fit is None:
         return None
     plt = _plt()
     model = Fit.from_json(fit["s500"]["fit"])
     rows = _fit_rows(a, decoder)
-    lo, hi = fit["s500_range_db"]
-    grid = np.linspace(lo - 1.0, hi + 1.0, 200)
+    x_lo, x_hi = s500_axis_limits([fit["s500_range_db"]])
+    grid = np.linspace(x_lo, x_hi, 200)
     fig, axes = plt.subplots(2, 5, figsize=(13, 5.6), sharex=True, sharey=True)
     for ax, cell in zip(axes.flat, fit["s500"]["crossings_0.10"]):
         k = cell["cell"]
@@ -94,6 +107,13 @@ def figure_cer_s500(a: dict, decoder: str, stem: Path) -> list[Path] | None:
             if cell["interval"]:
                 ax.axvspan(*cell["interval"], color=SERIES[1], alpha=0.2, lw=0, label="crossing's 95% interval")
             ax.axvline(cell["value"], color=SERIES[1], lw=1.2, label="S$_{500}$ at CER 0.10")
+            if not x_lo <= cell["value"] <= x_hi:
+                right = cell["value"] > x_hi
+                ax.annotate(f"crossing {cell['value']:+.1f} dB\n(outside the data)", xy=(x_hi if right else x_lo, 0.5),
+                            xytext=(-4 if right else 4, 0), textcoords="offset points", ha="right" if right else "left",
+                            va="center", fontsize=7, color=SERIES[1])
+                ax.plot([x_hi if right else x_lo], [0.5], ">" if right else "<", color=SERIES[1], ms=6, clip_on=False)
+        ax.set_xlim(x_lo, x_hi)
         r_lo, r_hi = SPEED_CELLS.bounds(k)
         ax.set_title(f"cell {k}: {r_lo:.1f}–{r_hi:.1f} WPM ({len(mine)} signals)", fontsize=8, color=INK)
         ax.set_ylim(-0.03, 1.03)
@@ -141,13 +161,18 @@ def figure_cer_en0(a: dict, decoder: str, stem: Path) -> list[Path] | None:
 
 
 def figure_crossings(a: dict, stem: Path, threshold: float = 0.10) -> list[Path] | None:
-    """Figure 3: every decoder's crossing against speed, beside the genie-aided bound."""
+    """Figure 3: every decoder's crossing against speed, beside the genie-aided bound. The S500 axis spans the fitted
+    data and the bound (s500_axis_limits); a cell's crossing beyond it is marked by a triangle at the edge with its
+    value, and bands beyond it are cut at the edge."""
     fitted = [(name, e["fit"]) for name, e in a["decoders"].items() if e["fit"] is not None]
     if not fitted:
         return None
     plt = _plt()
     fig, ax = plt.subplots(figsize=(7.5, 4.8))
     key = f"{threshold:.2f}"
+    v_all = np.geomspace(SPEED_CELLS.edges[0], SPEED_CELLS.edges[-1], 100)
+    y_lo, y_hi = s500_axis_limits([fit["s500_range_db"] for _, fit in fitted],
+                                  extra=[*ideal_s500_db(threshold, v_all, coherent=True), *ideal_s500_db(threshold, v_all)])
     for i, (name, fit) in enumerate(fitted):
         color = SERIES[i % len(SERIES)]
         curve = fit["s500"][f"curve_{key}"]
@@ -164,9 +189,17 @@ def figure_crossings(a: dict, stem: Path, threshold: float = 0.10) -> list[Path]
         spans = [c for c in shown if c["interval"]]
         ax.vlines([c["wpm"] for c in spans], [c["interval"][0] for c in spans], [c["interval"][1] for c in spans],
                   color=color, lw=1.2)
-    v = np.geomspace(SPEED_CELLS.edges[0], SPEED_CELLS.edges[-1], 100)
+        for c in shown:
+            if not y_lo <= c["value"] <= y_hi:
+                top = c["value"] > y_hi
+                edge = y_hi if top else y_lo
+                ax.plot([c["wpm"]], [edge], "^" if top else "v", ms=7, color=color, clip_on=False)
+                ax.annotate(f"{c['value']:+.1f} dB", xy=(c["wpm"], edge), xytext=(6, -10 if top else 4),
+                            textcoords="offset points", fontsize=7, color=color)
+    v = v_all
     ax.plot(v, ideal_s500_db(threshold, v), color=MUTED, lw=1.2, ls="--", label="genie bound, noncoherent")
     ax.plot(v, ideal_s500_db(threshold, v, coherent=True), color=MUTED, lw=1.0, ls=":", label="genie bound, coherent")
+    ax.set_ylim(y_lo, y_hi)
     ax.set_xscale("log")
     ticks = [8, 10, 12, 15, 20, 25, 30, 40, 50, 60, 80]
     ax.set_xticks(ticks)

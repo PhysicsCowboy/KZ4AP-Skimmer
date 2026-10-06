@@ -315,6 +315,32 @@ def test_each_figure_from_a_small_fixture(tmp_path):
     assert "dB SNR in 500 Hz" in svgs[5]
 
 
+def test_a_crossing_far_outside_the_data_does_not_set_the_s500_axes(tmp_path, monkeypatch):
+    """Pilot (task D3): the bank's fit put speed cell 1's crossing at +31 dB SNR in 500 Hz with an interval to +211 dB,
+    which stretched figures 1 and 3 to hundreds of dB. The S500 axes span the data (plus the genie bound in figure 3);
+    the far crossing is marked at the edge with its value."""
+    pytest.importorskip("matplotlib")
+    from kz4ap_proto import figures
+    out = _fixture(tmp_path)
+    a = json.loads(d2.write_analysis(out, ["ref", "var"], "far", reference="ref", resamples=30).read_text())
+    s = a["decoders"]["ref"]["fit"]["s500"]
+    s["crossings_0.10"][0].update(value=31.0, interval=[14.2, 210.7])
+    s["curve_0.10"][0].update(value=300.0, interval=[20.0, 5000.0])
+    lo, hi = a["decoders"]["ref"]["fit"]["s500_range_db"]
+    captured = []
+    monkeypatch.setattr(figures, "_save", lambda fig, stem: captured.append(fig) or [])
+    figures.figure_cer_s500(a, "ref", tmp_path / "f1")
+    figures.figure_crossings(a, tmp_path / "f3")
+    fig1, fig3 = captured
+    assert fig1.axes[0].get_xlim() == pytest.approx((lo - 1.0, hi + 1.0))
+    texts = [t.get_text() for t in fig1.axes[0].texts]
+    assert any("+31.0 dB" in t and "outside the data" in t for t in texts)
+    y_lo, y_hi = fig3.axes[0].get_ylim()
+    # the genie bound is lowest at 8 WPM (coherent) and stays below the data's top (about +3 dB at 80 WPM)
+    assert (y_lo, y_hi) == pytest.approx((min(lo, float(d2.ideal_s500_db(0.10, 8.0, coherent=True))) - 1.0, hi + 1.0))
+    assert any("+31.0 dB" in t.get_text() for t in fig3.axes[0].texts)
+
+
 def test_the_development_analysis_selects_dev2_and_the_detector_copies():
     import re
     assert re.search(d2.DEV2_ANALYSIS, "A2-detector-c03-1-s1")
