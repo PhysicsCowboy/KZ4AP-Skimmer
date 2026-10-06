@@ -149,7 +149,8 @@ least **6 dB** above the floor (dB SNR per bin, since the floor is the
 noise per bin) and is the highest within **±47 Hz**. A peak within the
 channel distance D_ch = 47 Hz of an existing track belongs to that track,
 so no second track is born there: two stations closer than 47 Hz share one
-channel, and a station farther away gets its own. It must stay a candidate in every hop for **0.5 s** before a
+channel, and a station farther away gets its own.
+It must stay a candidate in every hop for **0.5 s** before a
 track is born; nothing is detected in the first second (all heuristic).
 The track's frequency is refined between bins by fitting a parabola to the
 peak bin and its two neighbors (in dB).
@@ -435,9 +436,11 @@ plain threshold on its output in units of the noise: key down when
 x = |v|/σ exceeds x_on,k (4.64 on branch 1 to 4.20 on branch 32,
 **measured** so that noise alone produces 0.01 false marks per second per
 branch; the target heuristic), key up below 1.55 (noise alone exceeds it
-30% of the time; heuristic). Marks keyed this way are *provisional*: a
-fixed threshold well above the noise lengthens each of them by up to L_k
-(derived), so they are not used to fit the timing.
+30% of the time; heuristic). Marks keyed this way are *provisional*: the
+key releases only when the filter's falling ramp drops below the low
+release threshold, near the end of the ramp, so each mark comes out too
+long by up to L_k (the high on-threshold shortens its start somewhat;
+derived). They are not used to fit the timing.
 
 **The re-key cycle**, in order:
 
@@ -513,17 +516,21 @@ comb on Π = 2T chosen by the owner, E1). For each candidate dit T the
 estimator computes a *comb* score: the normalized autocorrelation of p
 (1 at lag 0) at 2T, 4T, 6T and 8T, each minus the mean of its values
 halfway on either side, averaged over the four. The score is dimensionless
-and at most about 1; for clean machine keying the true dit scores about
-0.33 and its alias at 3T about 0.22 (derived from the keying's
-autocorrelation; see the analysis in `docs/research/`). A candidate whose
-score is at least **0.03** (placeholder) is *confident*. Recomputed every
-0.25 s.
+and bounded by 2 in magnitude (an unbroken string of dits scores about
+1.5). For random machine-keyed text the true dit scores about 0.31–0.37 and
+its alias at 3T about 0.18–0.24 (derived from the keying's autocorrelation
+as measured on noise-free keying:
+`docs/research/2026-10-05-periodicity-windows-and-rekey-analysis.md`, §2).
+Recomputed every 0.25 s.
 
-Three windows run in parallel; the shortest window with a confident
-estimate gives T_P, since it is the most recent evidence. In the code now
-each candidate T is judged over its own window of 41.7·T, 104·T or 208·T.
-That removes a limit of fixed windows: the comb reaches 9.15·T, so a fixed
-2 s window could not score any candidate slower than 11 WPM. A variant, not
+Three windows run in parallel. In each, the estimate is the best-scoring
+candidate, and it is *confident* if its score is at least **0.03**
+(placeholder). T_P is the confident estimate of the shortest window, since
+that is the most recent evidence. In the code now each candidate T is
+judged over its own window of 41.7·T, 104·T or 208·T. That removes a limit
+of fixed windows: the comb's outermost lag, 9.15·T, must fit in half the
+window, so a fixed window W can score only T ≤ W/18.3, and a 2 s window
+nothing slower than 11 WPM (T ≤ 109 ms). A variant, not
 the default, judges all candidates of a window over one shared length
 41.7·T̂, T̂ the selected branch's fitted dit (stage 1's 2, 5 and 10 s until
 a fit exists). T_P never feeds back into its own estimate.
@@ -533,7 +540,7 @@ a fit exists). T_P never feeds back into its own estimate.
 A branch is **eligible** when its fitted dit matches its own filter
 (L_k within one ladder step of 0.8 × its fitted T) and its fit has seen at
 least 8 intervals (heuristic): it is decoding at its own speed. Among
-eligible branches the best fit quality wins, with two refinements:
+eligible branches the best fit quality wins, refined as follows:
 
 - Branches within 0.05 nats per interval of the best quality are a tie
   (placeholder).
