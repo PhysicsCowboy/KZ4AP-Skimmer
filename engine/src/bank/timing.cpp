@@ -20,15 +20,20 @@ BankTiming bank_timing(const BankConfig& cfg) {
         const double wait = cfg.rekey_after_s > 0.0 ? cfg.rekey_after_s : cfg.rekey_after_dits * d;
         t.rekey_wait_s.push_back(wait);
         t.rekey_timeout_s.push_back(cfg.rekey_timeout_s > 0.0 ? cfg.rekey_timeout_s : cfg.rekey_timeout_ratio * wait);
+        t.rekey_lead_s.push_back(cfg.rekey_lead_dits * d);
     }
-    if (cfg.periodicity_window_mode != "per_candidate" && cfg.periodicity_window_mode != "shared")
-        throw std::invalid_argument("periodicity_window_mode \"" + cfg.periodicity_window_mode +
-                                    "\" is neither \"per_candidate\" nor \"shared\"");
-    if (!cfg.periodicity_windows_s.empty()) {
+    const std::string& mode = cfg.periodicity_window_mode;
+    if (mode != "seconds" && mode != "per_candidate" && mode != "shared")
+        throw std::invalid_argument("periodicity_window_mode \"" + mode +
+                                    "\" is none of \"seconds\", \"per_candidate\" and \"shared\"");
+    if (mode == "seconds") {
+        // B4d (the default): stage 1's rule, every candidate over the same window, one row per value.
+        if (cfg.periodicity_windows_s.empty())
+            throw std::invalid_argument("periodicity_window_mode \"seconds\" needs periodicity_windows_s");
         for (const double w : cfg.periodicity_windows_s) t.periodicity_windows_s.push_back({w});
         return t;
     }
-    if (cfg.periodicity_window_mode == "shared") {
+    if (mode == "shared") {
         // B4a-C: one window per row shared by every candidate, N_w x T-hat (the channel passes T-hat); before any
         // selection, the windows in seconds.
         for (const double w : cfg.periodicity_unselected_windows_s) t.periodicity_windows_s.push_back({w});
@@ -51,6 +56,7 @@ BankTiming fixed_timing(const BankConfig& cfg, double rekey_wait_s, double rekey
     BankTiming t;
     t.rekey_wait_s.assign(k, rekey_wait_s);
     t.rekey_timeout_s.assign(k, rekey_timeout_s);
+    for (const double d : branch_dits_s(cfg)) t.rekey_lead_s.push_back(cfg.rekey_lead_dits * d);
     for (const double w : periodicity_windows_s) t.periodicity_windows_s.push_back({w});
     return t;
 }

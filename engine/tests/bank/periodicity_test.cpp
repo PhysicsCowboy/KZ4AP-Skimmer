@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <cstddef>
 #include <cstdio>
 #include <limits>
@@ -251,14 +252,59 @@ TEST(BankPeriodicityPython, AnUnconfidentEstimateIsNotUsed) {
     EXPECT_GT(r.confidence, 0.0);
 }
 
-// ---------------------------------------------------------------- Plan B, B4a: a window per candidate
+// ---------------------------------------------------------------- Plan B, B4a: a window per candidate (a variant
+// since B4d)
+
+// The per-candidate variant (periodicity_window_mode = "per_candidate"), the default from B4a until B4d.
+BankConfig per_candidate_mode() {
+    BankConfig cfg;
+    cfg.periodicity_window_mode = "per_candidate";
+    return cfg;
+}
+
+// The default since B4d (the owner's decision of 2026-10-06): stage 1's windows, 2, 5 and 10 s, the same for every
+// candidate (1500, 3750 and 7500 samples at 750 samples/s), computed as the prototype's comb over the most recent
+// samples: equal bit for bit to the estimator given those windows explicitly, on 60 s of keyed posteriors pushed block
+// by block.
+TEST(BankPeriodicitySeconds, TheDefaultWindowsAreStageOnesTwoFiveAndTenSeconds) {
+    const BankConfig cfg;
+    EXPECT_EQ(cfg.periodicity_window_mode, "seconds");
+    const BankTiming t = bank_timing(cfg);
+    EXPECT_EQ(t.periodicity_windows_s, (std::vector<std::vector<double>>{{2.0}, {5.0}, {10.0}}));
+    EXPECT_TRUE(t.periodicity_window_dits.empty());
+    Periodicity def(cfg, kRate);
+    Periodicity ref(cfg, kRate, shared({2.0, 5.0, 10.0}));
+    ASSERT_EQ(def.windows(), (std::vector<std::vector<int>>{{1500}, {3750}, {7500}}));
+    std::vector<double> p;
+    for (const char* name : {"5_machine", "12_machine", "25_machine", "40_machine", "25_paddle", "100_machine"}) {
+        const auto x = ten_seconds(name);
+        p.insert(p.end(), x.begin(), x.end());
+    }
+    std::size_t updates = 0;
+    for (std::size_t i = 0; i < p.size(); i += 32) {
+        const std::span<const double> piece(p.data() + i, std::min<std::size_t>(32, p.size() - i));
+        def.push(piece);
+        ref.push(piece);
+        const PeriodicityUpdate a = def.update(), b = ref.update();
+        ASSERT_EQ(a.updated, b.updated);
+        ASSERT_EQ(a.t_p_s, b.t_p_s);
+        ASSERT_EQ(std::memcmp(&a.confidence, &b.confidence, sizeof(double)), 0);
+        ASSERT_EQ(a.window_s, b.window_s);
+        updates += a.updated ? 1 : 0;
+    }
+    EXPECT_GT(updates, 200u);
+    // the mode needs windows; another mode is refused
+    BankConfig none;
+    none.periodicity_windows_s.clear();
+    EXPECT_THROW(bank_timing(none), std::invalid_argument);
+}
 
 // The configuration's windows: N_w x T for each candidate T, N_w = 41.7, 104 and 208, in samples at 750 samples/s
 // max(16, round(N_w T 750)): 375 (41.7 x 12 ms), 936 and 1872 samples for the 12 ms candidate; 7576, 18894 and 37789
 // for the 242.2 ms one (50.4 s). Every candidate is inside the comb's reach in every window, (4 + 1/2 + 0.075) 2T =
 // 9.15 T <= (n - 1) / 2: N_w >= 41.7 > 18.3 (derived; the rounding of n costs at most half a sample).
 TEST(BankPeriodicityDits, TheWindowOfACandidateIsNwTimesItsDit) {
-    const BankConfig cfg;
+    const BankConfig cfg = per_candidate_mode();
     const Periodicity per(cfg, kRate);
     ASSERT_EQ(per.rate_hz(), 750.0);
     const auto& grid = per.grid();
@@ -291,7 +337,7 @@ TEST(BankPeriodicityDits, TheWindowOfACandidateIsNwTimesItsDit) {
 // (comb_estimate: none), and the row then has no estimate, as the prototype's comb on a window with a NaN; once the
 // NaN has left a candidate's window its score is finite again and agrees.
 TEST(BankPeriodicityDits, EachCandidateIsJudgedOverItsOwnWindow) {
-    const BankConfig cfg;
+    const BankConfig cfg = per_candidate_mode();
     Periodicity per(cfg, kRate);
     std::vector<double> p;
     const auto uniform = decode_f64_base64(cases().at("noise_uniform_b64").get<std::string>());
@@ -352,7 +398,7 @@ TEST(BankPeriodicityDits, EachCandidateIsJudgedOverItsOwnWindow) {
 // The shortest confident window gives T_P, now per candidate: a 25 WPM stream (48 ms) is found in the shortest window
 // (41.7 T = 2.0 s), whose window_s is that of the chosen candidate.
 TEST(BankPeriodicityDits, TheShortestConfidentWindowGivesTp) {
-    const BankConfig cfg;
+    const BankConfig cfg = per_candidate_mode();
     Periodicity per(cfg, kRate);
     per.push(ten_seconds("25_machine"));
     const PeriodicityUpdate r = per.update(true);
@@ -396,24 +442,26 @@ std::vector<double> sixty_seconds() {
 }
 
 // The configuration's timing in the shared mode: rows of stage 1's windows in seconds (before a selection) and N_w per
-// row; the default mode has no N_w list; the override in seconds wins over either mode; another mode is refused.
+// row; the default mode ("seconds") and the per-candidate variant have no N_w list; the shared mode does not use
+// periodicity_windows_s (since B4d no longer an override); another mode is refused.
 TEST(BankPeriodicityShared, TheTimingOfTheSharedMode) {
     const BankTiming t = bank_timing(shared_mode());
     EXPECT_EQ(t.periodicity_windows_s, (std::vector<std::vector<double>>{{2.0}, {5.0}, {10.0}}));
     EXPECT_EQ(t.periodicity_window_dits, (std::vector<double>{41.7, 104.0, 208.0}));
     EXPECT_TRUE(bank_timing(BankConfig{}).periodicity_window_dits.empty());
     EXPECT_EQ(Periodicity(shared_mode(), kRate).window_dits(), t.periodicity_window_dits);  // the configuration's
-    EXPECT_EQ(BankConfig{}.periodicity_window_mode, "per_candidate");
+    EXPECT_TRUE(bank_timing(per_candidate_mode()).periodicity_window_dits.empty());
+    EXPECT_EQ(BankConfig{}.periodicity_window_mode, "seconds");
     BankConfig over = shared_mode();
     over.periodicity_windows_s = {3.0};
-    EXPECT_EQ(bank_timing(over).periodicity_windows_s, (std::vector<std::vector<double>>{{3.0}}));
-    EXPECT_TRUE(bank_timing(over).periodicity_window_dits.empty());
+    EXPECT_EQ(bank_timing(over).periodicity_windows_s, t.periodicity_windows_s);
+    EXPECT_EQ(bank_timing(over).periodicity_window_dits, t.periodicity_window_dits);
     BankConfig bad;
     bad.periodicity_window_mode = "per-candidate";
     EXPECT_THROW(bank_timing(bad), std::invalid_argument);
     // windows that follow a dit need as many shared rows in seconds
     EXPECT_THROW(Periodicity(BankConfig{}, kRate, {{2.0}, {5.0}}, {41.7, 104.0, 208.0}), std::invalid_argument);
-    const auto per_candidate = bank_timing(BankConfig{}).periodicity_windows_s;
+    const auto per_candidate = bank_timing(per_candidate_mode()).periodicity_windows_s;
     EXPECT_THROW(Periodicity(BankConfig{}, kRate, per_candidate, {41.7, 104.0, 208.0}), std::invalid_argument);
 }
 

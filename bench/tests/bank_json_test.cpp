@@ -72,7 +72,8 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     const ordered_json cfg = kz4ap::bench::to_json(kz4ap::bank::BankConfig{});
     // the prototype's ProtoConfig() dump with B4a's fields in dits in place of the three in seconds they replaced and
     // B4b's guard margin and mask-bias table (pinned in BankConfig.PlanBDefaults), then Plan B's fields (noise_stuck_s,
-    // B3; B4a's overrides in seconds, unset), which the prototype lacks
+    // B3; B4a's re-key overrides in seconds, unset; the periodicity windows in seconds, the default again since B4d, and
+    // the window mode; B4d's two re-key clock switches), the prototype's periodicity_windows_s among them at the end
     std::string want = g.at("config_dumps").get<std::string>();
     const kz4ap::bank::BankConfig defaults;
     for (const auto& [from, to] : std::vector<std::pair<std::string, std::string>>{
@@ -88,8 +89,10 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     }
     ASSERT_EQ(want.back(), '}');
     want.insert(want.size() - 1, ", \"noise_stuck_s\": 8.0, \"rekey_after_s\": 0.0, \"rekey_timeout_s\": 0.0, "
-                                 "\"periodicity_windows_s\": [], \"periodicity_window_mode\": \"per_candidate\", "
-                                 "\"periodicity_unselected_windows_s\": [2.0, 5.0, 10.0]");
+                                 "\"periodicity_windows_s\": [2.0, 5.0, 10.0], \"periodicity_window_mode\": \"seconds\", "
+                                 "\"periodicity_unselected_windows_s\": [2.0, 5.0, 10.0], "
+                                 "\"rekey_clear_moves_stretch\": true, \"rekey_timeout_from_first_mark\": true, "
+                                 "\"rekey_lead_dits\": 7.0");
     EXPECT_EQ(py_dumps(cfg), want);
     // and back
     EXPECT_EQ(py_dumps(kz4ap::bench::to_json(kz4ap::bench::bank_config_from_json(cfg))), py_dumps(cfg));
@@ -110,6 +113,10 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     EXPECT_EQ(c.mask_bias, kz4ap::bank::kStage1MaskBias);
     kz4ap::bench::set_config_value(c, "periodicity_window_mode", ordered_json("shared"));
     EXPECT_EQ(c.periodicity_window_mode, "shared");
+    kz4ap::bench::set_config_value(c, "rekey_clear_moves_stretch", ordered_json(false));
+    EXPECT_FALSE(c.rekey_clear_moves_stretch);
+    EXPECT_THROW(kz4ap::bench::set_config_value(c, "rekey_timeout_from_first_mark", ordered_json(0)),
+                 std::invalid_argument);
     EXPECT_EQ(c.fit_memory, 24.0);
     EXPECT_TRUE(c.x_on_values.empty());
     EXPECT_EQ(c.noise_method, "branch");

@@ -64,8 +64,9 @@ TEST(BankConfig, DefaultsEqualThePrototypes) {
     EXPECT_EQ(c.refine_iterations, g.at("refine_iterations").get<int>());
     EXPECT_EQ(c.min_fit_weight, g.at("min_fit_weight").get<double>());
     EXPECT_EQ(c.periodicity_method, g.at("periodicity_method").get<std::string>());
-    // periodicity_windows_s: replaced by periodicity_windows_dits (Plan B, B4a); now an override, unset
-    EXPECT_EQ(g.at("periodicity_windows_s").get<std::vector<double>>(), (std::vector<double>{2.0, 5.0, 10.0}));
+    // periodicity_windows_s: the default windows again since Plan B's B4d (owner, 2026-10-06; B4a had replaced them by
+    // windows in dits, now variants)
+    expect_vector(c.periodicity_windows_s, g.at("periodicity_windows_s"), "periodicity_windows_s");
     EXPECT_EQ(c.periodicity_update_s, g.at("periodicity_update_s").get<double>());
     EXPECT_EQ(c.periodicity_rate_hz, g.at("periodicity_rate_hz").get<double>());
     EXPECT_EQ(c.comb_teeth, g.at("comb_teeth").get<int>());
@@ -98,8 +99,8 @@ TEST(BankConfig, PlanBDefaults) {
     EXPECT_EQ(c.noise_stuck_s, 8.0);
     EXPECT_EQ(c.noise_stuck_s, 4.0 * c.noise_tau_s);
     // B4a: time constants in nominal dits, equal to the prototype's seconds at 25 WPM (T = 48 ms; stage-2 spec
-    // section 3.1): W_min = 16.7 dits (0.8 s / 48 ms = 16.67), the time-out 2.5 W_min (2 s / 0.8 s), the periodicity
-    // windows 41.7, 104 and 208 dits (2, 5 and 10 s / 48 ms = 41.67, 104.2, 208.3)
+    // section 3.1): W_min = 16.7 dits (0.8 s / 48 ms = 16.67), the time-out 2.5 W_min (2 s / 0.8 s), the variants'
+    // periodicity windows 41.7, 104 and 208 dits (2, 5 and 10 s / 48 ms = 41.67, 104.2, 208.3)
     EXPECT_EQ(c.rekey_after_dits, 16.7);
     EXPECT_NEAR(c.rekey_after_dits * 0.048 / 0.8, 1.0, 0.0025);  // 0.2%
     EXPECT_EQ(c.rekey_timeout_ratio, 2.5);
@@ -108,21 +109,28 @@ TEST(BankConfig, PlanBDefaults) {
     // spec section 3.3), s
     EXPECT_EQ(c.guard_margin_s, 0.0048);
     EXPECT_NEAR(c.guard_margin_s, 0.5 * c.length_dits * 1.2 / c.max_wpm, 1e-15);
-    // B4b: b_mask,k re-measured at that margin (kz4ap-noise-mask stream on stage 1's Task 5 noise, seeds 101-110,
-    // 60 s each; docs/signal-processing.md A.8c), one per branch
-    const std::vector<double> b4b = {0.8281, 0.8198, 0.8165, 0.8112, 0.8068, 0.8031, 0.7988, 0.7965,
-                                     0.7936, 0.7912, 0.7892, 0.7871, 0.7854, 0.7836, 0.7822, 0.781,
-                                     0.7798, 0.7787, 0.7778, 0.7769, 0.7761, 0.7754, 0.7748, 0.7742,
-                                     0.7737, 0.7732, 0.7728, 0.7725, 0.7721, 0.7719, 0.7716, 0.7713};
+    // B4b, adopted by B4d: b_mask,k re-measured at that margin on 200 seeds (kz4ap-noise-mask white, seeds 1001-1200,
+    // 60 s each; docs/signal-processing.md A.8c), one per branch, rounded to four decimals
+    const std::vector<double> b4d = {0.8381, 0.8304, 0.8273, 0.8221, 0.8179, 0.8144, 0.8103, 0.808,
+                                     0.8051, 0.8027, 0.8007, 0.7985, 0.7967, 0.7949, 0.7934, 0.7921,
+                                     0.7909, 0.7897, 0.7887, 0.7877, 0.7869, 0.7861, 0.7854, 0.7847,
+                                     0.7842, 0.7836, 0.7831, 0.7827, 0.7823, 0.782, 0.7816, 0.7812};
     EXPECT_EQ(c.mask_bias.size(), 32u);
-    EXPECT_EQ(c.mask_bias, b4b);
+    EXPECT_EQ(c.mask_bias, b4d);
     EXPECT_EQ(kz4ap::bank::kStage1MaskBias.size(), 32u);
-    // B4a's overrides in seconds (ablations): unset
+    // B4a's overrides in seconds of the re-key settings (ablations): unset
     EXPECT_EQ(c.rekey_after_s, 0.0);
     EXPECT_EQ(c.rekey_timeout_s, 0.0);
-    EXPECT_TRUE(c.periodicity_windows_s.empty());
-    // B4a-C: the shared-window variant is not the default; its windows before a selection are stage 1's
-    EXPECT_EQ(c.periodicity_window_mode, "per_candidate");
+    // B4d: the periodicity windows in seconds, 2, 5 and 10 s for every candidate (class 2, a latency; owner,
+    // 2026-10-06); the per-candidate (B4a) and shared (B4a-C) windows in dits are variants, not the default; the shared
+    // variant's windows before a selection are stage 1's
+    EXPECT_EQ(c.periodicity_window_mode, "seconds");
+    EXPECT_EQ(c.periodicity_windows_s, (std::vector<double>{2.0, 5.0, 10.0}));
+    // B4d: both re-key clock fixes on (owner, 2026-10-06)
+    EXPECT_TRUE(c.rekey_clear_moves_stretch);
+    EXPECT_TRUE(c.rekey_timeout_from_first_mark);
+    // B4d: the re-key stretch's lead before the first provisional mark, one word gap of the branch's dits (heuristic)
+    EXPECT_EQ(c.rekey_lead_dits, 7.0);
     EXPECT_EQ(c.periodicity_unselected_windows_s, (std::vector<double>{2.0, 5.0, 10.0}));
     const std::vector<double> stage1_s = {2.0, 5.0, 10.0};
     for (std::size_t i = 0; i < stage1_s.size(); ++i)

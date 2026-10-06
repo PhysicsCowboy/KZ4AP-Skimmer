@@ -126,13 +126,16 @@ inline std::vector<std::complex<double>> channel_stream(const nlohmann::json& ch
     return read_c64(s.at("file").get<std::string>(), s.at("samples").get<std::size_t>());
 }
 
-// The prototype's configuration, which the golden files were written with: the defaults with Plan B's B4b changes
-// undone (stage 1's 20 ms guard margin and its mask-bias table). Stage 1's time constants in seconds are passed
-// separately (bank::fixed_timing, or the overrides rekey_after_s, rekey_timeout_s and periodicity_windows_s).
+// The prototype's configuration, which the golden files were written with: the defaults with Plan B's B4b and B4d
+// changes undone (stage 1's 20 ms guard margin and its mask-bias table; the re-key clocks of stage 1, both B4d switches
+// off). Stage 1's re-key time constants in seconds are passed separately (bank::fixed_timing, or the overrides
+// rekey_after_s and rekey_timeout_s); its periodicity windows, 2, 5 and 10 s, are the default again since B4d.
 inline kz4ap::bank::BankConfig stage1_config() {
     kz4ap::bank::BankConfig cfg;
     cfg.guard_margin_s = kz4ap::bank::kStage1GuardMarginS;
     cfg.mask_bias = kz4ap::bank::kStage1MaskBias;
+    cfg.rekey_clear_moves_stretch = false;
+    cfg.rekey_timeout_from_first_mark = false;
     return cfg;
 }
 

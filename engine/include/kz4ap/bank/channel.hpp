@@ -165,8 +165,14 @@ public:
     std::optional<double> down_at;
     std::optional<double> up_at;             // this over's last key-up (none: none yet)
     std::int64_t over_start_n = 0;           // sample index of the latest over start
-    std::int64_t unknown_since_n = 0;        // sample index where the amplitude became unknown
-    std::int64_t timeout_from_n = 0;         // the re-key time-out counts from this sample index
+    std::int64_t unknown_since_n = 0;        // sample index where the stretch a re-key keys again starts: where the
+                                             // amplitude became unknown (with rekey_clear_moves_stretch, or the last
+                                             // time-out that keyed nothing)
+    std::int64_t timeout_from_n = 0;         // the re-key time-out counts from this sample index ...
+    bool timeout_armed = true;               // ... while this is set; with rekey_timeout_from_first_mark it is set at
+                                             // the first provisional mark since the amplitude became unknown or the
+                                             // last time-out that keyed nothing, and the stretch's start then moves to
+                                             // rekey_lead_dits x d_k before that mark, if that is later (Plan B, B4d)
     bool over_pending = false;               // an over started by a silence, not yet confirmed by a re-key
     int marks_in_over = 0;
 
@@ -249,6 +255,8 @@ public:
     // The keyer (each branch's amplitude state and W_min,k) and each branch's re-key time-out, samples.
     const BankKeyer& keyer() const { return keyer_; }
     const std::vector<std::int64_t>& rekey_timeout_samples() const { return timeout_; }
+    // Each branch's lead of the re-key stretch before an over's first provisional mark, samples (Plan B, B4d).
+    const std::vector<std::int64_t>& rekey_lead_samples() const { return lead_; }
     std::size_t periodicity_records() const { return result_.periodicity.size(); }
     // The shared-window variant (B4a-C): the T-hat passed to the periodicity estimate at the last block, s (the
     // selected branch's fitted T, only when that fit is eligible and its over's start has been re-keyed); none
@@ -294,6 +302,8 @@ private:
     int block_;
     std::int64_t reach_;
     std::vector<std::int64_t> timeout_;  // per branch: the re-key time-out, samples
+    std::vector<std::int64_t> lead_;     // per branch: the re-key stretch's lead before the first provisional mark,
+                                         // samples (Plan B, B4d)
     bool shared_windows_ = false;        // the shared-window variant (B4a-C): the windows follow T-hat
     std::optional<double> periodicity_dit_;
     Prior prior_;
