@@ -72,8 +72,9 @@ the threshold is not the limit today; an ideal decoder would reach CER 0.10
 at about −1.9 dB at 25 WPM and −5.1 dB at 12 WPM (derived bound, stage-1
 results record §5.1), below the threshold.
 
-Measure: detection recall against S₅₀₀ by speed (group A through the
-detector path, not only oracle), next to the chosen decoder's oracle CER
+Measure: detection recall against S₅₀₀ at 12, 25, 40 and 80 WPM (owner;
+group A has only 12, 25 and 40 WPM, so 80 WPM needs new recordings),
+through the detector path, not only oracle, next to the chosen decoder's oracle CER
 against S₅₀₀; the gap between the two curves is what the detector costs.
 If it matters, candidates (heuristic until measured): a longer average, or
 a lower birth threshold with longer persistence (the threshold sits about
