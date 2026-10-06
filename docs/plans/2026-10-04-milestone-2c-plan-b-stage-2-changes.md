@@ -261,3 +261,32 @@ the appendix A.8c, A.10), the Plan B results record (new section 10).
    `bank-b3b`; `bank-b4d-noclock` (both clock fixes off) to separate the fixes from A and C; paired CER pooled
    and per group with intervals, first-word CER, CPU. The stretch test (B9's script) on `bank-b4d`.
 6. **Rule:** reported to the owner, not a gate.
+
+### Task B4e (full text): the re-key wait counted in the station's marks (owner, 2026-10-06, option d)
+
+Why: B4d's re-key wait in the branch's dits (16.7·d_k) still costs first-word CER +0.21 against stage 1's
+seconds, and the clock fixes did not recover it. The wait exists to collect enough of the **station's** marks
+to choose the re-key's amplitude and seed the fit; a mismatched fast branch (branch 1 at 200 ms) re-keys after
+one or two marks. Counting marks is speed-independent by construction.
+
+- **Re-key wait: K = 8 provisional marks** on the branch (class: counted in marks, like the fit's memory).
+  Reason: stage 1's measured 0.8 s of key-down at 25 WPM holds about 9 marks (a mark averages 1.86 dits,
+  VE3NEA's statistics: 57% dits, 43% dahs; 89 ms at 25 WPM; derived), and the decoder already requires 8
+  marks and spaces before a fit counts (heuristic). The amplitude seed is still the 90% quantile of the keyed
+  samples of those marks.
+- **Re-key time-out: 7 s of channel time**, counted from the over's first provisional mark (fix ii), class
+  (2) seconds: latency. Reason: a genuine station must be able to key 8 marks first; in PARIS a mark comes
+  every 50/14 = 3.57 dits, so 8 marks take 8 × 3.57 × 240 ms = 6.9 s at the decoder's 5 WPM floor (derived),
+  rounded to 7 s. Noise alone keys false marks at 0.01 per second per branch, so it reaches 8 marks only after
+  about 800 s (derived from the calibration target).
+- Fix (i), fix (ii) and the lead stay as in B4d (switches, on); state in the documents that under (ii) with
+  the lead, switch (i) is nearly inert (B4d review).
+- Configuration: new fields with unit, default, status and reason; the B4d dits fields stay as non-default
+  variants (switch).
+- Carried B4d review minors: A.10 says the periodicity default is "per_candidate" (now 2/5/10 s for every
+  candidate); note in record §10.3 that fix (i) may itself cost first words (conjectured).
+- **Runs** (old development set): `bank-b4e` against `bank-b3b` and `bank-b4d`: paired CER pooled and per
+  group, first-word CER, CPU; the stretch test; test (a) and (b) counts. If the first-word CER against
+  `bank-b3b` is still above 0 with its interval, trace the worst 10 first words (which branch, when it
+  re-keyed, how many marks, the fit's dit) and report the mechanism.
+- **Documents:** signal-processing.md body (≤ 6 000 words) and appendix; results record section 11.
