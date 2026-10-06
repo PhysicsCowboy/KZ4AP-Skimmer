@@ -172,6 +172,14 @@ order statistics gives the same value bit for bit, and CPU is **41.72 ms per cha
 rule at the fixed code 43.58). Stretch test +0.1060 (+0.0584 to +0.1619), shift −0.16 (−0.61 to +0.20) dB of S₅₀₀.
 Details in section 12.
 
+**Answer (B4g, stage 1's re-key settings as the default again; the owner's option a′ of 2026-10-06).** Code `d95e5fa`.
+W_min = 0.8 s of key-down and a 2 s time-out on every branch with stage 1's clocks; every Plan B re-key variant stays
+switchable and off (B4f's settings reproduce `bank-b4f` exactly). Against `bank-b3b` the difference is only B4b's guard
+margin and the 200-seed table: **pooled +0.0008 (−0.0018 to +0.0034), first-word +0.0115 (−0.0301 to +0.0650)**, no
+group's interval entirely above 0 (G improves, −0.0023). Against `bank-b4b` (the table alone) +0.0004 (+0.0001 to
++0.0009), just above 0. Against `bank-b4f` −0.0070 (−0.0200 to +0.0058), first-word −0.0947 (−0.2037 to −0.0003).
+CPU 41.98 ms per channel-second. Details in section 13.
+
 ## 0. Terms used in this record
 
 - **Decoder**: Envelope, Matched and the bank are the three decoders; here only the bank decoder in C++ is
@@ -2984,3 +2992,72 @@ All git-ignored.
 - On the Linux machine: `build/suite/full3/proto/bank-b4f/`, `bank-b4f-g1/`, `bank-b4f-noguard/`, `stretch-b4f/`;
   the instrumented worktrees `build/b4e/wt` (B4e, with the timers and PM lines) and `build/b4f/wt` (detached at
   `91ffdc6`).
+
+## 13. Stage 1's re-key settings as the default again (B4g)
+
+The owner's option a′ of 2026-10-06: the re-key wait and time-out are stage 1's again, W_min = 0.8 s of key-down and a
+2 s time-out on every branch, with stage 1's clocks; every Plan B re-key variant (the wait and time-out in dits, B4d's
+clocks and lead, the wait in marks and its two guards) stays switchable and off, pending their comparison on the
+redesigned development set. The periodicity windows (2, 5 and 10 s), the 200-seed mask-bias table and the
+selection-based seed quantile are unchanged. The stage-2 spec is not edited. Code: `d95e5fa`. `docs/signal-processing.md`
+body section 8c, A.8c (with each variant's measured result) and A.10. Every number here is measured unless marked
+otherwise.
+
+### 13.1 What changed
+
+| Setting | B4f default | B4g default |
+|---|---|---|
+| `rekey_after_s`, `rekey_timeout_s` | unset (0) | 0.8 s, 2 s |
+| `rekey_clear_moves_stretch`, `rekey_timeout_from_first_mark` | on | off |
+| `rekey_wait_in_marks` | on | off |
+| `rekey_guard_filter_full`, `rekey_guard_min_length` | on | off |
+
+`BankConfig` states the class of the re-key fields as "seconds (stage 1's measured 0.8 s, E9b), pending the comparison
+of the variants on the redesigned development set (owner, 2026-10-06)". The variants are selected with `--set`
+(A.8c): `bank-b4g-asb4f` (B4g's binary with B4f's seven settings) equals `bank-b4f` in all 525 channels, every decoded
+record identical.
+
+Tests: `BankChannelDefaults.TheReKeyTimingIsStageOnesInSeconds` (the default configuration at its own timing decodes
+three golden streams bit for bit as at `fixed_timing(0.8 s, 2 s, {2, 5, 10} s)`); the variant tests select their
+variants explicitly (`dits_config`, `b4d_config`, `b4e_config`, `b4f_config` in `engine/tests/bank/golden.hpp`), with
+the results of sections 10 to 12 unchanged. `ctest --preset windows` 364 of 364; `ctest --preset linux` 364 of 364;
+smoke unchanged (Envelope CER 0.0353, Matched 0.0436).
+
+### 13.2 `bank-b4g` against `bank-b3b`, `bank-b4b` and the B4f runs (Linux machine, the development set)
+
+`bank-b4g` differs from `bank-b3b` by B4b's guard margin (4.8 ms) and the 200-seed table, and from `bank-b4b` (B4b's
+margin with the ten-seed table, time constants in seconds) by the table alone (the seed quantile is exact). Texts
+differ from `bank-b3b` in 115 of 525 channels, from `bank-b4b` in 37.
+
+| group | signals | − `bank-b3b` | first-word | − `bank-b4b` | first-word |
+|---|---|---|---|---|---|
+| all | 509 | +0.0008 (−0.0018 to +0.0034) | +0.0115 (−0.0301 to +0.0650) | **+0.0004 (+0.0001 to +0.0009)** | −0.0001 (−0.0026 to +0.0017) |
+| A sensitivity | 192 | +0.0025 (−0.0019 to +0.0069) | −0.0260 (−0.0612 to +0.0013) | +0.0004 (−0.0004 to +0.0013) | −0.0013 (−0.0078 to +0.0039) |
+| B fading | 30 | −0.0028 (−0.0133 to +0.0060) | +0.3433 (−0.0300 to +1.0267) | +0.0011 (−0.0013 to +0.0041) | +0.0000 |
+| C fists | 135 | +0.0001 (−0.0001 to +0.0003) | +0.0000 | +0.0000 (+0.0000 to +0.0001) | +0.0000 |
+| D speed | 12 | +0.0000 | +0.0000 | +0.0000 | +0.0000 |
+| E interference | 16 | +0.0030 (−0.0115 to +0.0156) | +0.1958 (−0.0253 to +0.6250) | +0.0018 (+0.0000 to +0.0038) | +0.0000 |
+| F tuning | 28 | −0.0005 (−0.0020 to +0.0011) | −0.0179 (−0.0536 to +0.0000) | +0.0009 (+0.0000 to +0.0026) | +0.0000 |
+| G ragchew | 12 | **−0.0023 (−0.0049 to −0.0002)** | −0.0183 (−0.0442 to +0.0018) | +0.0000 | +0.0000 |
+| H, oracle | 12 | +0.0002 (−0.0005 to +0.0010) | −0.0028 (−0.0083 to +0.0000) | +0.0001 (+0.0000 to +0.0004) | +0.0000 |
+| H, oracle (per station) | 24 | −0.0035 (−0.0411 to +0.0255) | −0.1179 (−0.6865 to +0.3096) | **+0.0021 (+0.0001 to +0.0057)** | +0.0084 (+0.0000 to +0.0191) |
+| I Farnsworth | 48 | +0.0018 (+0.0000 to +0.0054) | +0.0208 (+0.0000 to +0.0625) | +0.0000 | +0.0000 |
+
+As expected, against `bank-b3b` the difference is B4b's and the table's only: the pooled and first-word intervals
+include 0; no group's interval lies entirely above 0 (I's starts at exactly 0, one regime, as with B4b in 7.3); G
+improves. Against `bank-b4b` the 200-seed table alone gives +0.0004 (+0.0001 to +0.0009) pooled and +0.0021 in H per
+station, intervals just above 0 (reported; one-tenth of a percent of CER). Group A's first words: 12 WPM 0.39 → 0.37,
+25 WPM 0.39 → 0.38, 40 WPM 0.64 → 0.63; H per station separate-track 100 Hz 0.104 → 0.053.
+
+Against the B4f runs: `bank-b4g` − `bank-b4f` −0.0070 (−0.0200 to +0.0058), first-word −0.0947 (−0.2037 to −0.0003),
+H per station −0.3348 (−0.5476 to −0.1539), I Farnsworth +0.0611 (+0.0143 to +0.1180) (the variants' one clear gain,
+section 12.3), A +0.0100 (+0.0012 to +0.0209); `bank-b4g` − `bank-b4f-noguard` (B4e's rule) −0.0231 (−0.0508 to
+−0.0018), first-word −0.3291 (−0.5357 to −0.1654).
+
+Periodicity (threshold 0.03, S₅₀₀ ≥ 0 dB): precision 0.804 (0.779 to 0.828), coverage 0.993 (`bank-b3b` 0.804).
+CPU per channel-second, one run: **`bank-b4g` 41.98 ms** (`bank-b3b` 42.61, `bank-b4b` 42.27, `bank-b4f` 41.72).
+
+### 13.3 Raw outputs
+
+All git-ignored: `build/suite/full3/experiments/linux/b4g/` (compare and c2-diff files, periodicity, the job log
+`b4g.log`); `build/b4g/b4g_run.sh`; on the Linux machine `build/suite/full3/proto/bank-b4g/` and `bank-b4g-asb4f/`.
