@@ -59,6 +59,28 @@ The current development set has almost nothing above 40 WPM (D's 60 WPM
 step, a few B signals), so this needs its own test group. Related: the
 development set's distribution (above).
 
+### Does the detector miss stations the chosen decoder could copy? (owner, 2026-10-06)
+
+Once the decoder is decided, check whether the live detector misses tracks
+at low SNR that the decoder could still copy. The detector's birth
+threshold (6 dB above the floor, dB SNR per bin, on a 1 s average)
+corresponds to about S₅₀₀ = −1.0 dB at 25 WPM, −1.9 dB for slow keying and
++1.6 dB for very fast keying (dB SNR in 500 Hz; derived, white noise, tone
+on a bin center; up to 1.4 dB more between bins). The bank's and Matched's
+CER-0.10 crossings lie at about 0 to +2 dB (measured, group A, oracle), so
+the threshold is not the limit today; an ideal decoder would reach CER 0.10
+at about −1.9 dB at 25 WPM and −5.1 dB at 12 WPM (derived bound, stage-1
+results record §5.1), below the threshold.
+
+Measure: detection recall against S₅₀₀ by speed (group A through the
+detector path, not only oracle), next to the chosen decoder's oracle CER
+against S₅₀₀; the gap between the two curves is what the detector costs.
+If it matters, candidates (heuristic until measured): a longer average, or
+a lower birth threshold with longer persistence (the threshold sits about
+10 standard deviations of the averaged noise above the floor, derived, so
+there is room), each traded against latency and the false-track rate (also
+to be measured on pure noise, which has not been done).
+
 ### Top priority: research, then implement a probabilistic decoder
 
 The classical decoder is a hard-decision baseline (see
