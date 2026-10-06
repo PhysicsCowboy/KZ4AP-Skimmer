@@ -83,13 +83,14 @@ text window 10 characters.
 ### 3.3 Noise-spectrum guard margin tied to branch 1's filter (owner, 2026-10-03)
 
 The spectrum leaves out every sample whose branch-1 outputs, or any within the guard margin of them, are
-flagged as a mark. With stage 1's 20 ms margin this adds about 50 ms to every gap (20 ms before, 20 ms
-plus L_1 after), so element spaces are fully excluded at 25 and 40 WPM, and the clean fraction while a
+flagged as a mark. With stage 1's 20 ms margin this adds about 57 ms to every gap (20 ms plus L_1 on
+each side: N₁ − 1 + R samples per side, 2 · (13 + 30) = 86 samples at 1500 samples/s; erratum, owner,
+2026-10-06: this said "about 50 ms … 20 ms plus L_1 after", counting L_1 once), so element spaces are fully excluded at 25 and 40 WPM, and the clean fraction while a
 station sends is about 21% (40 WPM), 28% (25 WPM) and 42% (12 WPM) (derived, PARIS); with the 50%
 acceptance rule the spectrum's shape then updates mostly between transmissions at high speed. The
 margin covers what the flag misses near a mark (keying transients, sub-threshold edges): properties of
 the filter and the transmitter, not of the station's speed. **New margin: 0.5·L_1 = 4.8 ms**
-(heuristic). Because the mask changes, the per-branch mask-bias table b_mask,k must be re-measured
+(heuristic); a gap then loses 2 · (13 + 7) = 40 samples, 26.7 ms (derived). Because the mask changes, the per-branch mask-bias table b_mask,k must be re-measured
 (stage 1, Task 5 method), and stage 2 reports accepted segments per second at 12, 25 and 40 WPM.
 
 ### 3.4 Amplitude average τ_a: decided by measurement in stage 2 (owner, 2026-10-03)
