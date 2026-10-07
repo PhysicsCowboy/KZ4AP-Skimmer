@@ -32,6 +32,9 @@
   Treat a stale description as a bug.
 - Any agent doing implementation work on this project must be told the rule
   above.
+- **Test sets and parameter sweeps use a jittered grid** (owner,
+  2026-10-06): cells over each condition's range, each value drawn at random
+  within its cell; see `docs/plans/2026-10-06-development-set-redesign.md`.
 - **Results data and figures** (owner, 2026-10-07):
   - Commit the **per-signal score table** (CSV: one row per signal with its
     conditions, cell, CER and character count) of every run a results record
