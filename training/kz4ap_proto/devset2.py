@@ -38,6 +38,7 @@ against the width).
 
 from __future__ import annotations
 
+import csv
 import json
 import math
 import re
@@ -216,26 +217,30 @@ class _Data:
     wpm: np.ndarray
     k: np.ndarray        # edits, clipped to n
     n: np.ndarray        # reference symbols
+    cell: np.ndarray | None = None         # each signal's speed cell index, 0 ... N_CELLS - 1 (default: of its wpm)
     X: np.ndarray = field(init=False)
-    cell: np.ndarray = field(init=False)   # each signal's speed cell index, 0 ... N_CELLS - 1
 
     def __post_init__(self) -> None:
         self.X = _design(self.wpm)
-        self.cell = cell_index(self.wpm)
+        self.cell = cell_index(self.wpm) if self.cell is None else np.asarray(self.cell, int)
 
     @property
     def y(self) -> np.ndarray:
         return self.k / self.n
 
     def take(self, idx) -> "_Data":
-        return _Data(self.level[idx], self.wpm[idx], self.k[idx], self.n[idx])
+        return _Data(self.level[idx], self.wpm[idx], self.k[idx], self.n[idx], self.cell[idx])
 
 
-def _data(level_db, wpm, edits, symbols) -> _Data:
+def _data(level_db, wpm, edits, symbols, cells=None) -> _Data:
+    """cells: each signal's speed cell index (0 ... N_CELLS - 1), which selects its floor; default cell_index(wpm).
+    The analysis passes the rows' own speed cells (row_cells): a speed rounded in a score table can fall on the
+    other side of a cell edge, and the signal must keep the floor of the cell it was drawn in."""
     level, wpm = np.asarray(level_db, float), np.asarray(wpm, float)
     edits, symbols = np.asarray(edits, float), np.asarray(symbols, float)
     keep = symbols > 0
-    return _Data(level[keep], wpm[keep], np.minimum(edits[keep], symbols[keep]), symbols[keep])
+    return _Data(level[keep], wpm[keep], np.minimum(edits[keep], symbols[keep]), symbols[keep],
+                 None if cells is None else np.asarray(cells, int)[keep])
 
 
 def _evaluate(theta, d: _Data, method: str, jacobian: bool = True):
@@ -365,13 +370,14 @@ def _levenberg_marquardt(theta, d: _Data, method: str, free: tuple, max_iter: in
 
 
 def fit_cer(level_db, wpm, edits, symbols, *, axis: str = "s500", method: str = FIT_METHOD, free: tuple = ALL_FREE,
-            start=None) -> Fit:
+            start=None, cells=None) -> Fit:
     """Fits the module's model to signals: level_db (on `axis`, dB), wpm, edits and reference symbols per signal.
     free: which PARAMETERS are fitted (the others held at start's values, or 0 for a1, a2 when no start is given).
-    start: initial parameters (a bootstrap warm-starts from the full fit); otherwise a coarse grid (_start)."""
+    start: initial parameters (a bootstrap warm-starts from the full fit); otherwise a coarse grid (_start).
+    cells: each signal's speed cell index (see _data)."""
     if method not in METHODS:
         raise ValueError(f"unknown method {method!r}")
-    d = _data(level_db, wpm, edits, symbols)
+    d = _data(level_db, wpm, edits, symbols, cells)
     if len(d.n) < MIN_SIGNALS_FOR_FIT:
         raise ValueError(f"{len(d.n)} signals: a fit needs at least {MIN_SIGNALS_FOR_FIT}")
     if len(free) != len(PARAMETERS):
@@ -387,10 +393,11 @@ def fit_cer(level_db, wpm, edits, symbols, *, axis: str = "s500", method: str = 
     return Fit(tuple(float(t) for t in theta), axis, method, obj, converged, it, len(d.n), mask, stop, cells)
 
 
-def bootstrap_fits(level_db, wpm, edits, symbols, fit: Fit, key, resamples: int = BOOTSTRAP_RESAMPLES) -> list:
+def bootstrap_fits(level_db, wpm, edits, symbols, fit: Fit, key, resamples: int = BOOTSTRAP_RESAMPLES,
+                   cells=None) -> list:
     """The fit again on `resamples` resamples of the signals (with replacement, all signals pooled), each warm-started
     from `fit`, seeded by key; a resample whose fit fails or does not converge gives None."""
-    d = _data(level_db, wpm, edits, symbols)
+    d = _data(level_db, wpm, edits, symbols, cells)
     picks = _rng_for(("devset2", key)).integers(len(d.n), size=(resamples, len(d.n)))
     out = []
     for p in picks:
@@ -410,10 +417,11 @@ def _pct_interval(values) -> list | None:
     return None if v is None else [v[0], v[1]]
 
 
-def top_levels(level_db, wpm) -> np.ndarray:
+def top_levels(level_db, wpm, cells=None) -> np.ndarray:
     """The highest level (dB, on the fit's axis) among each speed cell's signals, per cell index (NaN for a cell
-    without signals): where the data end, for the "no crossing" rule."""
-    level, cell = np.asarray(level_db, float), cell_index(wpm)
+    without signals): where the data end, for the "no crossing" rule. cells: as in _data."""
+    level = np.asarray(level_db, float)
+    cell = cell_index(wpm) if cells is None else np.asarray(cells, int)
     return np.array([level[cell == j].max() if np.any(cell == j) else np.nan for j in range(N_CELLS)])
 
 
@@ -530,11 +538,95 @@ def load_rows(out_dir, decoders, results_dirs=None, only: str | None = DEV2_ANAL
     return out
 
 
+# --- score tables: the committed per-signal rows (CSV) ---
+#
+# The project's results-data rule (CLAUDE.md, owner 2026-10-07): every run a results record reports is committed as
+# its per-signal score table, rounded to meaningful precision, and the record's numbers are computed from that
+# rounded table. A table holds the columns of load_rows' rows. Rounding (round_row): speed_wpm and s500_db to 0.01 (WPM
+# and dB SNR in 500 Hz); en0_db is NOT rounded independently but recomputed exactly from the rounded speed and S500
+# (en0_db), and written to the table at 0.01 dB re 1 for reading only: read_scores recomputes it again and checks the
+# column. The cells (speed_cell, s500_cell) are kept as drawn, not recomputed from the rounded values (the label's
+# design cell); integers stay integers; booleans are written 0/1; None (no cell) is an empty field. A speed rounded to
+# 0.01 WPM can land on the other side of a speed cell edge (34 of DEV2 seed 1's 49 062 rows); the fit therefore takes
+# each signal's floor from its row's speed cell (row_cells), not from its rounded speed.
+
+SCORE_COLUMNS = ("decoder", "group", "test_case", "index", "path", "speed_wpm", "speed_cell", "s500_db", "s500_cell",
+                 "en0_db", "edits", "symbols", "detected", "beyond_oracle_anchor")
+_SCORE_INTS = ("index", "edits", "symbols")
+_SCORE_CELLS = ("speed_cell", "s500_cell")
+_SCORE_BOOLS = ("detected", "beyond_oracle_anchor")
+EN0_COLUMN_TOLERANCE_DB = 0.005 + 1e-9   # the en0_db column is the recomputed value at 0.01 dB re 1
+
+
+def _hundredths(x) -> float:
+    """x rounded to 0.01, as the table writes it (the double nearest the two-decimal string)."""
+    return float(f"{float(x):.2f}")
+
+
+def round_row(r: dict) -> dict:
+    """The row as the score table holds it: speed (WPM) and S500 (dB SNR in 500 Hz) rounded to 0.01, E/N0 per dit
+    recomputed from them (dB re 1, not rounded), integers and booleans as they are."""
+    wpm, s500 = _hundredths(r["speed_wpm"]), _hundredths(r["s500_db"])
+    return {"decoder": r["decoder"], "group": r["group"], "test_case": r["test_case"], "index": int(r["index"]),
+            "path": r["path"], "speed_wpm": wpm, "speed_cell": r["speed_cell"], "s500_db": s500,
+            "s500_cell": r["s500_cell"], "en0_db": float(en0_db(s500, wpm)), "edits": int(r["edits"]),
+            "symbols": int(r["symbols"]), "detected": bool(r["detected"]),
+            "beyond_oracle_anchor": bool(r["beyond_oracle_anchor"])}
+
+
+def write_scores(rows, path) -> Path:
+    """Writes rows (load_rows' or an analysis JSON's "signals") as a rounded score table, in their order (the
+    bootstrap draws index the rows in order, so the order is kept)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f, lineterminator="\n")
+        w.writerow(SCORE_COLUMNS)
+        for r in map(round_row, rows):
+            w.writerow([f"{r[c]:.2f}" if c in ("speed_wpm", "s500_db", "en0_db")
+                        else "" if r[c] is None else int(r[c]) if c in _SCORE_BOOLS else r[c] for c in SCORE_COLUMNS])
+    return path
+
+
+def read_scores(paths, decoders=None, only: str | None = None) -> list[dict]:
+    """The rows of one or more score tables, in file order and row order, as round_row gives them: E/N0 per dit is
+    recomputed from the table's speed and S500 (and checked against the en0_db column). `decoders` and `only` (a
+    regular expression on test_case) select rows, as load_rows does."""
+    out = []
+    for path in [paths] if isinstance(paths, (str, Path)) else paths:
+        with Path(path).open(encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            if tuple(reader.fieldnames or ()) != SCORE_COLUMNS:
+                raise ValueError(f"{path}: columns {reader.fieldnames}, expected {list(SCORE_COLUMNS)}")
+            for line, raw in enumerate(reader, start=2):
+                if decoders is not None and raw["decoder"] not in decoders:
+                    continue
+                if only is not None and not re.search(only, raw["test_case"]):
+                    continue
+                row = round_row({**raw, **{c: int(raw[c]) for c in _SCORE_INTS},
+                                 **{c: (int(raw[c]) if raw[c] != "" else None) for c in _SCORE_CELLS},
+                                 **{c: raw[c] == "1" for c in _SCORE_BOOLS},
+                                 "speed_wpm": float(raw["speed_wpm"]), "s500_db": float(raw["s500_db"])})
+                if abs(row["en0_db"] - float(raw["en0_db"])) > EN0_COLUMN_TOLERANCE_DB:
+                    raise ValueError(f"{path}, line {line}: en0_db {raw['en0_db']} is not E/N0 per dit of its speed "
+                                     f"and S500 ({row['en0_db']:.4f} dB re 1)")
+                out.append(row)
+    return out
+
+
 # --- the fits for one decoder ---
 
 def _columns(rows, axis):
     return ([r[f"{axis}_db"] for r in rows], [r["speed_wpm"] for r in rows], [r["edits"] for r in rows],
             [r["symbols"] for r in rows])
+
+
+def row_cells(rows) -> np.ndarray:
+    """Each row's speed cell index (0 ... N_CELLS - 1): its own speed_cell (the cell it was drawn in, from the label),
+    or the cell of its speed where it has none. Equal to cell_index(speed) for unrounded speeds; a score table's
+    speed rounded to 0.01 WPM can cross a cell edge (e.g. 10.0716 WPM -> 10.07 WPM, below the 10.0715 WPM edge)."""
+    return np.array([r["speed_cell"] - 1 if r["speed_cell"] is not None else int(cell_index(r["speed_wpm"]))
+                     for r in rows], int)
 
 
 def _cell_centers() -> list[float]:
@@ -568,11 +660,12 @@ def fit_decoder(rows, method: str = FIT_METHOD, resamples: int = BOOTSTRAP_RESAM
     started = time.process_time()
     out = {"signals": len(rows), "method": method, "resamples": resamples,
            "s500_range_db": [min(levels), max(levels)] if levels else None}
+    rc = row_cells(rows)
     s_cols = _columns(rows, "s500")
-    s_top = top_levels(s_cols[0], s_cols[1])
-    s_bottom = -top_levels(-np.asarray(s_cols[0], float), s_cols[1])   # each cell's lowest level (NaN without data)
-    s_fit = fit_cer(*s_cols, axis="s500", method=method)
-    s_boots = bootstrap_fits(*s_cols, s_fit, (key, "s500", method), resamples)
+    s_top = top_levels(s_cols[0], s_cols[1], rc)
+    s_bottom = -top_levels(-np.asarray(s_cols[0], float), s_cols[1], rc)   # each cell's lowest level (NaN without data)
+    s_fit = fit_cer(*s_cols, axis="s500", method=method, cells=rc)
+    s_boots = bootstrap_fits(*s_cols, s_fit, (key, "s500", method), resamples, cells=rc)
     out["s500"] = {"fit": s_fit.to_json(), "failed_resamples": sum(b is None for b in s_boots),
                    "param_intervals": {p: _pct_interval([b.params[i] if b else None for b in s_boots])
                                        for i, p in enumerate(PARAMETERS)},
@@ -589,9 +682,9 @@ def fit_decoder(rows, method: str = FIT_METHOD, resamples: int = BOOTSTRAP_RESAM
         out["s500"][f"crossings_{t:.2f}"] = per_cell
         out["s500"][f"curve_{t:.2f}"] = crossings(s_fit, s_boots, FINE_SPEEDS_WPM, t, s_top)
     e_cols = _columns(rows, "en0")
-    e_top = top_levels(e_cols[0], e_cols[1])
-    e_fit = fit_cer(*e_cols, axis="en0", method=method)
-    e_boots = bootstrap_fits(*e_cols, e_fit, (key, "en0", method), resamples)
+    e_top = top_levels(e_cols[0], e_cols[1], rc)
+    e_fit = fit_cer(*e_cols, axis="en0", method=method, cells=rc)
+    e_boots = bootstrap_fits(*e_cols, e_fit, (key, "en0", method), resamples, cells=rc)
     e_per_cell = [{**c, "cell": k, "signals": counts[k]} for k, c in
                   zip(cells, crossings(e_fit, e_boots, centers, 0.10, e_top))]
     # the spread over the cells that cross at the full fit (a cell with no crossing has no E/N0 value to compare)
@@ -603,7 +696,7 @@ def fit_decoder(rows, method: str = FIT_METHOD, resamples: int = BOOTSTRAP_RESAM
         v = None if b is None else _within_data(b.crossing_db(0.10, spread_centers), spread_centers, e_top)
         spreads.append(None if v is None or len(v) < 2 or not np.all(np.isfinite(v)) else float(np.ptp(v)))
     restricted = fit_cer(*e_cols, axis="en0", method=method, free=S0_CONSTANT,
-                         start=[e_fit.params[0], 0.0, 0.0, *e_fit.params[3:]])
+                         start=[e_fit.params[0], 0.0, 0.0, *e_fit.params[3:]], cells=rc)
     out["en0"] = {"fit": e_fit.to_json(), "failed_resamples": sum(b is None for b in e_boots),
                   "crossings_0.10": e_per_cell,
                   "spread_cells": [cells[i] for i in crossing_cells],
@@ -794,11 +887,18 @@ def _fit_warnings(fit: dict) -> list[str]:
     return out + ([""] if out else [])
 
 
+def _source_text(m: dict) -> str:
+    """Where the analysis's rows came from: its score tables, or its results roots relative to the suite folder."""
+    if m.get("scores"):
+        return f"score tables {', '.join(m['scores'])}, rounded (speed 0.01 WPM, S500 0.01 dB SNR in 500 Hz)"
+    return f"results roots {', '.join(m.get('results_dirs', []))}, relative to the suite folder"
+
+
 def report_markdown(a: dict) -> str:
     """The analysis as a Markdown summary (every dB with its reference)."""
     m = a["meta"]
     lines = [f"# Development set analysis: {', '.join(m['decoders'])}", "",
-             f"Runs: {', '.join(m['decoders'])} (results roots {', '.join(m.get('results_dirs', []))}, relative to the suite folder); "
+             f"Runs: {', '.join(m['decoders'])} ({_source_text(m)}); "
              f"test cases `{m.get('only')}`; fit groups {', '.join(m['fit_groups'])} (oracle); method {m['method']}; "
              f"{m['resamples']} bootstrap resamples over signals; code at {m.get('commit')}"
              + (" with uncommitted changes" if m.get("modified") else "") + ".", "",
@@ -897,16 +997,26 @@ def _relative(path: Path, root: Path) -> str:
 
 def write_analysis(out_dir, decoders, name: str, reference: str | None = None, results_dirs=None,
                    only: str | None = DEV2_ANALYSIS, fit_groups=FIT_GROUPS, method: str = FIT_METHOD,
-                   resamples: int = BOOTSTRAP_RESAMPLES) -> Path:
+                   resamples: int = BOOTSTRAP_RESAMPLES, scores=None) -> Path:
     """Loads the rows, analyzes them and writes experiments/devset2-<name>.json (everything, the figures' input) and
-    .md (the summary). Returns the JSON's path."""
+    .md (the summary). Returns the JSON's path.
+
+    The rows come from the suite folder out_dir (its manifest, labels and scored files), or, when `scores` names
+    score tables (write_scores), from those tables alone: out_dir is then only where experiments/ is written, and
+    nothing of the suite is read."""
     out_dir = Path(out_dir)
-    dirs = [Path(d) for d in (results_dirs or default_results_dirs(out_dir))]
-    rows = load_rows(out_dir, decoders, dirs, only)
-    # paths relative to the suite folder: the summary and the captions are committed beside the results record and
-    # must not name a machine's folders
-    a = analyze(rows, decoders, reference, fit_groups, method, resamples,
-                meta={"name": name, "results_dirs": [_relative(d, out_dir) for d in dirs], "only": only})
+    if scores:
+        tables = [Path(t) for t in ([scores] if isinstance(scores, (str, Path)) else scores)]
+        rows = read_scores(tables, decoders, only)
+        # the tables by their path relative to the working folder (the repository), else by name: no machine's folders
+        meta = {"name": name, "scores": [_relative(t, Path.cwd()) for t in tables], "results_dirs": [], "only": only}
+    else:
+        dirs = [Path(d) for d in (results_dirs or default_results_dirs(out_dir))]
+        rows = load_rows(out_dir, decoders, dirs, only)
+        # paths relative to the suite folder: the summary and the captions are committed beside the results record
+        # and must not name a machine's folders
+        meta = {"name": name, "results_dirs": [_relative(d, out_dir) for d in dirs], "only": only}
+    a = analyze(rows, decoders, reference, fit_groups, method, resamples, meta=meta)
     path = out_dir / "experiments" / f"devset2-{name}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(a) + "\n", encoding="utf-8")

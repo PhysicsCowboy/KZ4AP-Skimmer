@@ -486,3 +486,109 @@ def test_figures_name_decoders_not_folders():
     assert figures.display_name("baseline") == "Envelope"
     assert figures.display_name("matched") == "Matched"
     assert figures.display_name("d4-bank") == "bank (d4-bank)"
+
+
+# --- score tables (the results-data rule: the record's numbers come from the committed, rounded tables) ---
+
+def _without_cpu(x):
+    """The analysis without its measured CPU times (fit_decoder's cpu_s), which differ from run to run."""
+    if isinstance(x, dict):
+        return {k: _without_cpu(v) for k, v in x.items() if k != "cpu_s"}
+    return [_without_cpu(v) for v in x] if isinstance(x, list) else x
+
+
+def test_round_row_rounds_speed_and_s500_and_recomputes_e_n0():
+    r = {**_row("ref", "t1", 3, 7), "speed_wpm": 12.345678, "s500_db": -3.14159, "s500_cell": None, "en0_db": 99.0,
+         "detected": False, "beyond_oracle_anchor": True}
+    out = d2.round_row(r)
+    assert out["speed_wpm"] == 12.35 and out["s500_db"] == -3.14
+    assert out["en0_db"] == pytest.approx(float(d2.en0_db(-3.14, 12.35)), abs=1e-12)  # from the rounded values
+    assert out["s500_cell"] is None and out["speed_cell"] == 1 and out["index"] == 3
+    assert out["detected"] is False and out["beyond_oracle_anchor"] is True
+
+
+def test_a_score_table_round_trips_the_rounded_rows(tmp_path):
+    rng = np.random.default_rng(5)
+    rows = []
+    for i in range(40):
+        v, s = float(np.exp(rng.uniform(np.log(8), np.log(80)))), float(rng.uniform(-8, 20))
+        rows.append({**_row("ref" if i % 2 else "var", f"A2-awgn-c01-{i // 10}-s1", i, int(rng.integers(0, 200))),
+                     "group": "A2 sensitivity, detector" if i % 7 == 0 else "A2 sensitivity",
+                     "path": "detector" if i % 7 == 0 else "oracle", "speed_wpm": v, "s500_db": s,
+                     "speed_cell": SPEED_CELLS.cell_of(v), "s500_cell": None if i % 9 == 0 else SNR_CELLS.cell_of(s),
+                     "en0_db": float(d2.en0_db(s, v)), "detected": bool(i % 3), "beyond_oracle_anchor": i % 5 == 0})
+    path = d2.write_scores(rows, tmp_path / "t.csv")
+    text = path.read_text(encoding="utf-8")
+    assert text.splitlines()[0] == ",".join(d2.SCORE_COLUMNS)
+    assert '"A2 sensitivity, detector"' in text and "True" not in text and "\r" not in text
+    back = d2.read_scores(path)
+    assert back == [d2.round_row(r) for r in rows]
+    assert all(isinstance(r["edits"], int) and isinstance(r["detected"], bool) for r in back)
+    # selection as load_rows: by decoder and by a regular expression on the test case
+    assert {r["decoder"] for r in d2.read_scores(path, decoders=["ref"])} == {"ref"}
+    assert {r["test_case"] for r in d2.read_scores(path, only="-[02]-s1$")} == {"A2-awgn-c01-0-s1", "A2-awgn-c01-2-s1"}
+    # an en0_db column that is not the speed's and S500's E/N0 per dit is refused
+    lines = text.splitlines()
+    cols = lines[2].split(",")  # row i = 1: no comma inside a field
+    cols[d2.SCORE_COLUMNS.index("en0_db")] = f"{float(cols[d2.SCORE_COLUMNS.index('en0_db')]) + 0.02:.2f}"
+    (tmp_path / "bad.csv").write_text("\n".join([lines[0], ",".join(cols)]) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="en0_db"):
+        d2.read_scores(tmp_path / "bad.csv")
+
+
+def test_the_analysis_from_the_score_tables_equals_the_analysis_of_the_rounded_rows(tmp_path):
+    """The rule's guarantee: a record computed from the committed tables is the analysis of the original rows rounded
+    as the tables round them, with the same bootstrap draws. The tables are exported by the command line, one per
+    run (decoder and path), and analyzed with no suite folder."""
+    suite = _fixture(tmp_path)
+    original = json.loads(d2.write_analysis(suite, ["ref", "var"], "orig", reference="ref", resamples=60).read_text())
+    rounded = [d2.round_row(r) for r in original["signals"]]
+    expected = d2.analyze(rounded, ["ref", "var"], "ref", resamples=60)
+    tables = []
+    for decoder, path in (("ref", "oracle"), ("ref", "detector"), ("var", "oracle"), ("var", "detector")):
+        tables.append(tmp_path / "tables" / f"{decoder}-{path}.csv")
+        experiments.main(["scores", "--analysis", str(suite / "experiments" / "devset2-orig.json"), "--decoder", decoder,
+                          "--path", path, "--csv", str(tables[-1])])
+    # the suite is gone: the analysis reads the tables alone
+    import shutil
+    shutil.rmtree(suite)
+    out = tmp_path / "analysis"
+    experiments.main(["devset2", "--out", str(out), "--name", "tables", "--decoder", "ref", "--decoder", "var",
+                      "--reference", "ref", "--resamples", "60"] + sum((["--scores", str(t)] for t in tables), []))
+    got = json.loads((out / "experiments" / "devset2-tables.json").read_text())
+    # each decoder's oracle rows keep their order across the per-path tables, so the fits' bootstrap draws are the
+    # same (everything but the fits' CPU time); the signals list is the tables' concatenation
+    assert _without_cpu(got["decoders"]) == _without_cpu(json.loads(json.dumps(expected["decoders"])))
+    assert got["paired"] == json.loads(json.dumps(expected["paired"]))
+    assert sorted(map(json.dumps, got["signals"])) == sorted(json.dumps(r) for r in json.loads(json.dumps(rounded)))
+    assert got["meta"]["scores"] and got["meta"]["results_dirs"] == []
+    md = (out / "experiments" / "devset2-tables.md").read_text(encoding="utf-8")
+    assert "score tables" in md and str(tmp_path) not in md
+    # rounding moves the fit, but only slightly: the crossings agree with the unrounded analysis to 0.05 dB
+    for name in ("ref", "var"):
+        for c, o in zip(got["decoders"][name]["fit"]["s500"]["crossings_0.10"],
+                        original["decoders"][name]["fit"]["s500"]["crossings_0.10"]):
+            assert (c["value"] is None) == (o["value"] is None)
+            if c["value"] is not None:
+                assert c["value"] == pytest.approx(o["value"], abs=0.05)
+
+
+def test_a_rounded_speed_across_a_cell_edge_keeps_the_floor_of_its_drawn_cell():
+    """Rounding to 0.01 WPM can carry a speed across a cell edge (10.0716 WPM in cell 2 -> 10.07 WPM, below the
+    10.0715 WPM edge). The fit takes each signal's floor from its row's speed cell, so the rounded rows of a fit over
+    cells 2-10 still fit no cell-1 floor (before this, one such signal fitted cell 1's floor alone, to CER 1)."""
+    s, v, k, n = synth(np.random.default_rng(3), per_cell=2)
+    keep = v >= SPEED_CELLS.edges[1]
+    rows = [{**_row("ref", f"A2-awgn-c{SPEED_CELLS.cell_of(vi):02d}-0-s1", i, int(ki), int(ni),
+                    cell=SPEED_CELLS.cell_of(vi)), "speed_wpm": float(vi), "s500_db": float(si),
+             "en0_db": float(d2.en0_db(si, vi))}
+            for i, (si, vi, ki, ni) in enumerate(zip(s[keep], v[keep], k[keep], n[keep]))]
+    edge = SPEED_CELLS.edges[1]
+    rows[0] = {**rows[0], "speed_wpm": edge + 0.0004, "speed_cell": 2, "s500_db": -7.5, "edits": 120, "symbols": 120}
+    rounded = [d2.round_row(r) for r in rows]
+    assert rounded[0]["speed_wpm"] < edge and SPEED_CELLS.cell_of(rounded[0]["speed_wpm"]) == 1
+    assert list(d2.row_cells(rounded)) == [r["speed_cell"] - 1 for r in rows]
+    assert list(d2.row_cells(rows)) == list(d2.cell_index([r["speed_wpm"] for r in rows]))  # unrounded: the same
+    fit = d2.fit_decoder(rounded, resamples=10, key=("edge",))
+    assert fit["s500"]["fit"]["fitted_cells"] == list(range(2, 11)) and fit["s500"]["fit"]["floors"]["1"] is None
+    assert fit["s500"]["crossings_0.10"][0]["no_crossing"] == "no data"

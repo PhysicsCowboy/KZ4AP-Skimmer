@@ -26,7 +26,7 @@ import numpy as np
 
 from kz4ap_synth.jitter import SPEED_CELLS
 
-from .devset2 import Fit, cell_index, git_commit, ideal_s500_db
+from .devset2 import Fit, _source_text, cell_index, git_commit, ideal_s500_db
 
 DPI = 150
 S500_LABEL = "S$_{500}$ (dB SNR in 500 Hz)"
@@ -382,8 +382,8 @@ def draw_all(analysis_path, out_dir=None) -> list[Path]:
              f"Drawn from `{analysis_path.name}` (analysis code at {m.get('commit')}"
              f"{' with uncommitted changes' if m.get('modified') else ''}; figures code at {now['commit']}"
              f"{' with uncommitted changes' if now['modified'] else ''}).",
-             f"Runs (decoders by results folder): {runs}; reference {m.get('reference')}; results roots "
-             f"{', '.join(m.get('results_dirs', []))} (relative to the suite folder); test cases `{m.get('only')}`; fit groups "
+             f"Runs (decoders by results folder): {runs}; reference {m.get('reference')}; {_source_text(m)}; "
+             f"test cases `{m.get('only')}`; fit groups "
              f"{', '.join(m['fit_groups'])} (oracle); fit method {m['method']}; {m['resamples']} bootstrap resamples.",
              ""]
     for tag, what, paths in sorted(drawn, key=lambda d: (d[0], d[1])):

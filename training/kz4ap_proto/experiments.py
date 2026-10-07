@@ -11,7 +11,8 @@ evaluated offline on stored branch-1 posteriors; and the synthetic speed-step fo
     python -m kz4ap_proto.experiments calibrate-x-on [--set KEY=VALUE ...] [--events 20]
     python -m kz4ap_proto.experiments stretch --out build/suite/full3 --name stretch-b4a
     python -m kz4ap_proto.experiments new-overs --out build/suite/full3 --name stretch-b4a
-    python -m kz4ap_proto.experiments devset2 --out build/suite/dev2 --name NAME --decoder matched --decoder bank-x [--reference matched] [--results DIR ...] [--method wls|binomial] [--fit-group "A2 sensitivity" ...] [--resamples 1000]
+    python -m kz4ap_proto.experiments devset2 --out build/suite/dev2 --name NAME --decoder matched --decoder bank-x [--reference matched] [--results DIR ...] [--scores TABLE.csv ...] [--method wls|binomial] [--fit-group "A2 sensitivity" ...] [--resamples 1000]
+    python -m kz4ap_proto.experiments scores --analysis build/suite/dev2/experiments/devset2-NAME.json --decoder matched [--path oracle|detector] --csv TABLE.csv
     python -m kz4ap_proto.experiments figures --analysis build/suite/dev2/experiments/devset2-NAME.json [--dir DIR]
 Start run, batch and calibrate-x-on in the background; each writes experiments/summary-<name>.md when done.
 """
@@ -472,6 +473,7 @@ def main(argv=None) -> None:
     no = sub.add_parser("new-overs")
     d2 = sub.add_parser("devset2", help="the jittered development set's analysis (kz4ap_proto.devset2)")
     fg = sub.add_parser("figures", help="the five figures from a devset2 analysis file (needs matplotlib)")
+    sc = sub.add_parser("scores", help="a run's per-signal score table (CSV, rounded) from a devset2 analysis or a suite")
     for s in (r, c, p, b, pd, st, no, d2):
         s.add_argument("--out", type=Path, required=True)
     for s in (r, p, f, x):
@@ -507,9 +509,21 @@ def main(argv=None) -> None:
                                                  "detector-path copies, seed 1)")
     d2.add_argument("--fit-group", dest="fit_groups", action="append", default=None,
                     help='a group whose oracle signals the fit uses (repeatable; default "A2 sensitivity")')
+    d2.add_argument("--scores", dest="scores", action="append", type=Path, default=None,
+                    help="a score table (experiments scores; repeatable): the rows come from the tables alone, and "
+                         "OUT is only where experiments/ is written")
     d2.add_argument("--method", choices=("wls", "binomial"), default="wls")
     d2.add_argument("--resamples", type=int, default=BOOTSTRAP_RESAMPLES)
     fg.add_argument("--analysis", type=Path, required=True)
+    sc_from = sc.add_mutually_exclusive_group(required=True)
+    sc_from.add_argument("--analysis", type=Path, help="a devset2 analysis JSON: its signals")
+    sc_from.add_argument("--out", type=Path, help="a suite folder: its scored files (as devset2 loads them)")
+    sc.add_argument("--decoder", required=True, help="the run: a decoder's results folder name")
+    sc.add_argument("--path", choices=("oracle", "detector"), default=None, help="only this path's signals")
+    sc.add_argument("--results", dest="results_dirs", action="append", type=Path, default=None,
+                    help="with --out: a results root (repeatable)")
+    sc.add_argument("--only", default=None, help="with --out: regular expression on result names (default as devset2)")
+    sc.add_argument("--csv", type=Path, required=True, help="the table to write")
     fg.add_argument("--dir", type=Path, default=None, help="output folder (default: figures-NAME beside the analysis)")
     args = parser.parse_args(argv)
     if args.command == "devset2":
@@ -518,8 +532,18 @@ def main(argv=None) -> None:
             parser.error("--reference must be one of the --decoder names")
         path = devset2.write_analysis(args.out, args.decoders, args.name, args.reference, args.results_dirs,
                                       args.only or devset2.DEV2_ANALYSIS, tuple(args.fit_groups or devset2.FIT_GROUPS),
-                                      args.method, args.resamples)
+                                      args.method, args.resamples, args.scores)
         print(f"wrote {path} and {path.with_suffix('.md')}")
+    elif args.command == "scores":
+        from . import devset2
+        if args.analysis is not None:
+            rows = json.loads(args.analysis.read_text(encoding="utf-8"))["signals"]
+        else:
+            rows = devset2.load_rows(args.out, [args.decoder], args.results_dirs, args.only or devset2.DEV2_ANALYSIS)
+        rows = [r for r in rows if r["decoder"] == args.decoder and (args.path is None or r["path"] == args.path)]
+        if not rows:
+            parser.error(f"no signals of {args.decoder}" + (f" on the {args.path} path" if args.path else ""))
+        print(f"wrote {devset2.write_scores(rows, args.csv)} ({len(rows)} signals)")
     elif args.command == "figures":
         from . import figures
         for written in figures.draw_all(args.analysis, args.dir):
