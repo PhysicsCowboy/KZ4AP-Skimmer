@@ -162,3 +162,24 @@ refused, stop and report.
   every group and the run time at the measured CPU.
 - [ ] **Step 4:** a short pilot section in a new results record `docs/plans/2026-10-06-development-set-results.md`,
   with figures 1–3 for the pilot; commit. **Stop: the owner sees the sizes before the full generation.**
+
+### Owner's decisions after the pilot (2026-10-06)
+
+- **Size: option B**, 48 signals per (speed, S₅₀₀) cell in A2; B2, C2 and I2 scaled by the same factor (12) to 24
+  per cell (heuristic); D2, E2, F2, G2, H2 at their defaults; S2 follows A2.
+- **Separate floors per speed cell** in the fit: a cell that never reaches CER 0.10 is reported as "no
+  crossing" and cannot distort its neighbors.
+- **Trace the bank's failure below 10 WPM** (pilot: CER 0.25–0.74 at every S₅₀₀ from 8.0 to 9.9 WPM) before
+  the full generation's bank runs are interpreted.
+
+### Task D4 (full text): the per-cell floor, the full generation and the reference runs
+
+- [ ] **Step 1:** the fit with a floor per speed cell (c_floor,j ≥ 0 for cell j, replacing the single floor);
+  a cell whose fitted curve never reaches CER 0.10 (or 0.05) within the data reports "no crossing"; tests on
+  synthetic data with one failing cell (its neighbors' crossings unaffected within stated tolerances); the
+  pilot re-analyzed with it (results record §3 updated, figures redrawn).
+- [ ] **Step 2:** generate DEV2 at the decided sizes, seeds 1–3 (only seed 1 decoded), on the Linux machine;
+  record the oracle channels.
+- [ ] **Step 3:** reference runs on seed 1: Envelope and Matched (`kz4ap-bench`, oracle), the bank at its
+  current defaults (`kz4ap-bank-replay`); A2's detector-path copies once with Matched for detection recall.
+- [ ] **Step 4:** the analysis and the five figures; results record §5, the new set's baseline; commit.
