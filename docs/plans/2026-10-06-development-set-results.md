@@ -4,6 +4,19 @@ Plan: `docs/plans/2026-10-06-development-set-redesign.md` (approved by the owner
 is **measured** unless marked otherwise. CPU and wall times are from the Linux machine: Linux (Ubuntu 22.04),
 10-core Intel Xeon (Ice Lake).
 
+**Answer (D5, periodicity windows 5 and 10 s; section 6).** The owner dropped the bank's 2 s periodicity window
+(2026-10-07). On DEV2 seed 1, against the same decoder with 2, 5 and 10 s:
+
+- **Below 10 WPM the failure is gone**: speed cell 1 crosses CER 0.10 at −0.92 (−1.07 to −0.77) dB SNR in 500 Hz
+  (floor 0.525 → 0.022), and cells 2–4 cross 0.50–1.71 dB SNR in 500 Hz lower.
+- **At 25–50 WPM it costs 0.25–0.31 dB SNR in 500 Hz**, and +0.011 to +0.040 paired CER per signal in cells 5–10,
+  mostly with fists and fading.
+- **Pooled, the paired CER improves by −0.0243 (−0.0275 to −0.0211)**; the bank is now better than Matched pooled
+  (−0.0639) and in 9 of 10 speed cells.
+- **The first word is worse in the final text** (+0.136 pooled, +0.08 to +0.34 per cell from 11 WPM up) but not as
+  first displayed (−0.068 pooled): the corrections repair it less, a permanent cost rather than a latency.
+- The bank uses 5.1% less CPU (28.85 ms per channel-second).
+
 **Answer (D4, the new set's baseline; section 5).** DEV2 is generated at the owner's sizes: 48 signals per
 (speed, S₅₀₀) cell in A2, 1.07 M oracle channel-seconds for seed 1, and seeds 1–3. The fit now has one floor per
 speed cell (section 3.5).
@@ -79,7 +92,10 @@ crossing (S₅₀₀ at CER 0.10) per speed cell for both decoders, with 95% boo
   run the record reports is committed as its per-signal score table in `docs/plans/data/2026-10-06-development-set/`, at commit `2160428`:
   - the pilot: `pilot-matched.csv` (Matched) and `pilot-bank.csv` (the bank, results folder `pilot-bank`);
   - the baseline: `d4-baseline.csv` (Envelope, results folder `baseline`), `d4-matched.csv`,
-    `d4-matched-detector.csv` (Matched through the detector path, A2's copies) and `d4-bank.csv`.
+    `d4-matched-detector.csv` (Matched through the detector path, A2's copies) and `d4-bank.csv`;
+  - task D5 (section 6, at `ae90e0e`): `d5-bank.csv`, `d5-bank-immediate.csv`, `d5-bank-w2510-immediate.csv`, and
+    `d4-bank.csv` re-exported with three more columns (first-word edits and symbols, corrections), its first 14
+    columns unchanged.
 
   Each holds one row per signal: decoder, group, test case, index, path, speed (0.01 WPM), speed cell, S₅₀₀
   (0.01 dB SNR in 500 Hz), S₅₀₀ cell, E/N₀ per dit (recomputed from the rounded speed and S₅₀₀; the column shows
@@ -885,3 +901,216 @@ analysis `d4-c2to10`; its summary `devset2-d4-c2to10.md` is the record's source 
 
 - `fig5-matched`: detection recall through the detector path against S₅₀₀ per speed cell, beside Matched's oracle
   CER.
+
+## 6. Periodicity windows 5 and 10 s (task D5)
+
+**Answer.** The owner dropped the 2 s periodicity window on 2026-10-07 (stage-2 decision record, section 7): the
+bank's default windows are now 5 and 10 s (`d5-bank`). On DEV2 seed 1, against the same decoder with 2, 5 and 10 s
+(`d4-bank`):
+
+- **Below 10 WPM the failure is gone.** Speed cell 1 crosses CER 0.10 at −0.92 (−1.07 to −0.77) dB SNR in 500 Hz,
+  0.12 dB below Matched; its floor fell from 0.525 to 0.022. Cells 2–4 cross 0.50–1.71 dB SNR in 500 Hz lower than
+  before.
+- **Above 25 WPM it costs a little.** Cells 6–8 cross 0.25–0.31 dB SNR in 500 Hz higher. The paired CER is worse by
+  +0.013 to +0.040 per signal in cells 5–9, mostly in C2 (fists, up to +0.099) and near the crossing.
+- **Pooled over the set the paired CER improves**: d5-bank − d4-bank −0.0243 (−0.0275 to −0.0211)
+  [−0.0413 to −0.0105], all from cells 1–3. Against Matched the bank is now better pooled by −0.0639
+  (−0.0685 to −0.0596).
+- **The first word costs more, and the cost is permanent, not latency.** The immediate text's first-word CER is
+  the same or better with 5 and 10 s (paired −0.068 pooled; −0.045 to +0.038 per cell from cell 2 up). The final
+  text's is worse by +0.08 to +0.34 per cell from cell 2 up (+0.136 pooled): with 2 s the later corrections
+  repaired the first word far more often than they now do.
+
+### 6.1 Why, and the conditions
+
+- **The trace that led to the decision** (measured on the pilot's speed cells 1 and 2, code `84413e9`, an
+  instrumented copy of the replay tool; its outputs were identical to `pilot-bank` on all 112 channels traced):
+  - Below about 10 WPM the true dit is out of the 2 s window's reach (τ_c ≤ 2 s / 18.3 = 109 ms, derived). The
+    2 s window then returned an alias near d/3 scoring 0.035 to 0.052 (median 0.041), just above the 0.03
+    threshold, in 2 265 of its 2 786 updates on `A2-awgn-c01-1-s1` at S₅₀₀ ≥ +4 dB SNR in 500 Hz.
+  - As the shortest confident window it replaced the 5 s window's correct estimate (score 0.2 to 0.36) in about
+    one update in five. While it stood, the T_P prior pulled the fits to T ≈ 0.51 d, and 615 of 620 element spaces
+    shorter than 2 d were read as character or word gaps (none of 2 859 under T_P ≈ d).
+  - In cell 2 (10.09–12.66 WPM) the 2 s window's top candidate within reach (0.91–0.97 d) still won.
+  - A diagnostic replay of cell 1 (56 signals) with 5 and 10 s alone: mean CER 0.008 on the 32 signals at
+    S₅₀₀ ≥ +4 dB SNR in 500 Hz, against 0.497 at 2, 5 and 10 s; the re-key variants left it at 0.50 to 0.55.
+
+- **Code.** Branch `milestone-2c-stage2`. The default changed at `fa6cee3` (`BankConfig::periodicity_windows_s`
+  = {5, 10} s; stage 1's 2, 5 and 10 s with `--set periodicity_windows_s=[2,5,10]`). The replay tool's
+  `--immediate` at `9076e20`; the first-word and correction columns at `51b23da`. On the Linux machine
+  `ctest --preset linux` passed at `9076e20` (367 tests; the 8 prototype tests skipped as always); on Windows
+  `ctest --preset windows` passed at `fa6cee3` and the bench tests again at `9076e20`.
+- **Runs** (job script `build/d5-run.sh`, git-ignored; 10 threads; the machine not shared):
+
+| run | command | wall | decoding CPU | CPU per channel-second |
+|---|---|---|---|---|
+| `d5-bank` (+ `d5-bank-immediate`) | `kz4ap-bank-replay --name d5-bank --immediate d5-bank-immediate --jobs 10`, defaults | 3 081.6 s | 30 746.3 s | **28.85 ms** |
+| `d5-bank-w2510` (+ `d5-bank-w2510-immediate`) | the same with `--set periodicity_windows_s=[2,5,10]` | 3 241.5 s | 32 342.5 s | 30.35 ms |
+| scoring, four folders | `runner.score` (`kz4ap-bench --score-decoded`) | 0.7–2.0 s each | — | — |
+
+- **The immediate text.** With `--immediate NAME2` the replay tool pushes each channel one bank block at a time, as
+  the engine's `BankDecoder` does, and writes a second decoded folder whose texts are every character as first
+  published, corrections ignored (`kz4ap-bench`'s `cer_immediate`). Scoring that folder scores the immediate text
+  exactly as the final text is scored. The block-wise push gives the same result as one push (tested on three golden
+  streams), and `d5-bank-w2510`'s final texts equal `d4-bank`'s on all 14 204 channels (measured). So
+  `d5-bank-w2510-immediate` is `d4-bank`'s immediate text, and `d4-bank` stands for the 2, 5 and 10 s final text.
+- **CPU.** Dropping the 2 s window saves 5.1% of the bank's CPU (28.85 against 30.35 ms per channel-second, same
+  machine, same thread count).
+- **Score tables** (committed at `ae90e0e` in `docs/plans/data/2026-10-06-development-set/`): `d5-bank.csv`,
+  `d5-bank-immediate.csv`, `d5-bank-w2510-immediate.csv`, and `d4-bank.csv` re-exported with the new columns (its
+  first 14 columns are unchanged, measured). The new columns:
+  - `first_word_edits`, `first_word_symbols`: the bench's counts for the first word of each transmission
+    (`first_word_ranges` in `bench/src/scoring.cpp`), summed over the signal's transmissions;
+  - `corrections`: the number of corrections the bank made on the signal's channel (its decoded file); empty for
+    the immediate folders.
+- **Analyses** (local, from the tables; `build/d5-analysis.sh`, git-ignored; 1 000 resamples):
+  - `devset2-d5`: `--decoder d4-bank --decoder d5-bank --decoder matched --reference d4-bank`;
+  - `devset2-d5-matched`: the same decoders, `--reference matched`;
+  - `devset2-d5-immediate`: `--decoder d5-bank-w2510-immediate --decoder d5-bank-immediate --reference
+    d5-bank-w2510-immediate`.
+
+  Each `--scores` the tables named. The analyses record commit `ae90e0e`, unmodified.
+- **First-word CER** is pooled: the first words' edits over their symbols, over the oracle path without S2.
+  The pooled CER can exceed 1, because insertions count. There are 3.2 first-word symbols per signal on average
+  (42 399 over 13 442 signals). Its paired difference is per signal, as the CER's.
+
+### 6.2 Crossings per speed cell
+
+S₅₀₀ at CER 0.10, dB SNR in 500 Hz, 95% bootstrap intervals over signals (A2, 672 signals per speed cell).
+
+| speed cell | center (WPM) | d4-bank (2, 5, 10 s) | d5-bank (5, 10 s) | d5 − d4 | Matched | d5-bank floor (d4-bank) |
+|---|---|---|---|---|---|---|
+| 1 | 8.98 | no crossing (floor 0.525) | **−0.92 (−1.07 to −0.77)** | — | −0.80 (−1.19 to −0.47) | 0.022 (0.525) |
+| 2 | 11.30 | +0.64 (+0.43 to +0.86) | −1.07 (−1.21 to −0.93) | −1.71 | −0.52 (−0.81 to −0.29) | 0.025 (0.006) |
+| 3 | 14.23 | +0.16 (+0.01 to +0.31) | −0.93 (−1.07 to −0.80) | −1.09 | −0.42 (−0.61 to −0.27) | 0.026 (0.013) |
+| 4 | 17.91 | −0.02 (−0.13 to +0.08) | −0.52 (−0.67 to −0.38) | −0.50 | +0.18 (−0.01 to +0.33) | 0.027 (0.010) |
+| 5 | 22.55 | +0.17 (+0.06 to +0.28) | +0.14 (−0.03 to +0.30) | −0.03 | +0.82 (+0.64 to +0.99) | 0.030 (0.012) |
+| 6 | 28.39 | +0.74 (+0.60 to +0.87) | +1.04 (+0.86 to +1.22) | +0.30 | +1.73 (+1.52 to +1.93) | 0.034 (0.015) |
+| 7 | 35.73 | +1.73 (+1.58 to +1.88) | +2.04 (+1.86 to +2.22) | +0.31 | +2.68 (+2.49 to +2.88) | 0.034 (0.024) |
+| 8 | 44.99 | +2.98 (+2.81 to +3.12) | +3.23 (+3.04 to +3.43) | +0.25 | +3.86 (+3.67 to +4.08) | 0.037 (0.027) |
+| 9 | 56.64 | +4.46 (+4.28 to +4.64) | +4.42 (+4.21 to +4.62) | −0.04 | +6.03 (+5.54 to +6.64) | 0.032 (0.022) |
+| 10 | 71.30 | +6.44 (+6.14 to +6.73) | +6.25 (+5.92 to +6.58) | −0.19 | no crossing (floor 0.126) | 0.057 (0.030) |
+
+Findings:
+
+1. **Measured: the slow-speed failure is removed.** Cell 1 now crosses, 0.12 dB SNR in 500 Hz below Matched, as the
+   trace's diagnostic predicted. In cells 2–4 the bank now needs 0.50–1.71 dB SNR in 500 Hz less than before, and
+   0.51–0.70 dB SNR in 500 Hz less than Matched. Section 5's "Matched is better at 11–14 WPM" no longer holds.
+2. **Measured: cells 6–8 (25–50 WPM) cross 0.25–0.31 dB SNR in 500 Hz higher**, about 1.5–2 interval half-widths.
+   The bank stays 0.63–0.69 dB SNR in 500 Hz below Matched there.
+3. **Measured: the fitted floors rose in every cell from 2 to 10**, by 0.010 to 0.027. The mean CER of A2 at
+   S₅₀₀ ≥ +6 dB SNR in 500 Hz moved less: by +0.002 to +0.007 in cells 2–5, by −0.004 to −0.001 in cells 6–8, and
+   by +0.007 and +0.022 in cells 9 and 10. The floor and the width w trade off in the fit, so the floors overstate
+   the change at high S₅₀₀.
+4. **Measured: the E/N₀ crossings span 3.04 (2.80 to 3.31) dB of E/N₀ per dit** over cells 1–10 (d4-bank: 3.91
+   over cells 2–10). The bank is still not time-base invariant (Wald T = 6 753).
+
+### 6.3 Paired CER
+
+Variant minus reference, per signal, 95% bootstrap intervals over signals and [over test cases]; oracle path
+without S2 for "all" and the speed cells (section 2.5).
+
+| set | signals | d5-bank − d4-bank, final text | immediate text, 5/10 s − 2/5/10 s | d5-bank − Matched |
+|---|---|---|---|---|
+| **all (oracle path)** | 13 442 | **−0.0243 (−0.0275 to −0.0211)** [−0.0413 to −0.0105] | −0.0346 (−0.0380 to −0.0310) | −0.0639 (−0.0685 to −0.0596) |
+| A2 sensitivity | 6 720 | −0.0526 (−0.0578 to −0.0473) | −0.0675 (−0.0736 to −0.0617) | −0.0040 (−0.0075 to −0.0004) |
+| B2 fading | 1 920 | −0.0260 (−0.0339 to −0.0182) | −0.0304 (−0.0377 to −0.0234) | −0.1127 (−0.1228 to −0.1023) |
+| C2 fists | 3 600 | **+0.0227 (+0.0179 to +0.0276)** | +0.0155 (+0.0109 to +0.0197) | −0.0669 (−0.0752 to −0.0583) |
+| D2 speed changes | 108 | −0.0300 (−0.0508 to −0.0128) | −0.0353 (−0.0545 to −0.0186) | −0.0346 (−0.0588 to −0.0147) |
+| E2 interference | 90 | −0.0349 (−0.1107 to +0.0258) | −0.0644 (−0.1317 to −0.0080) | +0.3727 (+0.1992 to +0.5732) |
+| F2 tuning | 80 | −0.0157 (−0.0508 to +0.0189) | −0.0383 (−0.0725 to −0.0094) | −0.0639 (−0.1102 to −0.0184) |
+| G2 QSO, same track | 20 | +0.0463 (+0.0114 to +0.0849) | +0.0433 (+0.0088 to +0.0795) | −0.0652 (−0.1813 to +0.0674) |
+| H2 QSO, separate tracks | 40 | +0.0420 (−0.0242 to +0.1124) | +0.0405 (−0.0298 to +0.1036) | −0.0091 (−0.0858 to +0.0767) |
+| I2 Farnsworth | 864 | −0.0001 (−0.0069 to +0.0060) | +0.0019 (−0.0052 to +0.0092) | −0.4613 (−0.4862 to −0.4334) |
+| S2 stretch (its own group) | 672 | −0.0569 (−0.0737 to −0.0411) | −0.0662 (−0.0849 to −0.0494) | −0.0072 (−0.0158 to +0.0023) |
+| speed cell 1 | 1 255 | −0.3703 (−0.3922 to −0.3490) | −0.3941 (−0.4191 to −0.3688) | −0.0423 (−0.0564 to −0.0281) |
+| speed cell 2 | 1 258 | −0.0417 (−0.0521 to −0.0318) | −0.0544 (−0.0672 to −0.0432) | −0.0561 (−0.0698 to −0.0394) |
+| speed cell 3 | 1 259 | −0.0180 (−0.0254 to −0.0108) | −0.0238 (−0.0313 to −0.0170) | −0.0517 (−0.0623 to −0.0418) |
+| speed cell 4 | 1 407 | +0.0048 (−0.0005 to +0.0099) | −0.0038 (−0.0083 to +0.0003) | −0.0915 (−0.1039 to −0.0794) |
+| speed cell 5 | 1 563 | +0.0131 (+0.0085 to +0.0171) | +0.0077 (+0.0039 to +0.0112) | −0.1285 (−0.1426 to −0.1152) |
+| speed cell 6 | 1 618 | +0.0247 (+0.0190 to +0.0300) | +0.0182 (+0.0135 to +0.0230) | −0.1265 (−0.1433 to −0.1103) |
+| speed cell 7 | 1 311 | +0.0401 (+0.0333 to +0.0466) | +0.0328 (+0.0267 to +0.0396) | −0.0173 (−0.0294 to −0.0051) |
+| speed cell 8 | 1 260 | +0.0393 (+0.0328 to +0.0453) | +0.0277 (+0.0216 to +0.0345) | +0.0035 (−0.0083 to +0.0141) |
+| speed cell 9 | 1 259 | +0.0239 (+0.0189 to +0.0296) | +0.0147 (+0.0093 to +0.0200) | −0.0204 (−0.0338 to −0.0077) |
+| speed cell 10 | 1 252 | +0.0109 (+0.0054 to +0.0164) | −0.0032 (−0.0075 to +0.0007) | −0.0739 (−0.0890 to −0.0589) |
+
+Findings:
+
+1. **Measured: the pooled gain comes from cells 1–3; cells 5–10 lose +0.011 to +0.040** (final text).
+2. **Measured: the loss above 22 WPM is largest in C2 (fists)**: d5 − d4 per speed cell in C2 is +0.054, +0.080,
+   +0.099, +0.085 and +0.050 in cells 5–9; in B2 (fading) +0.022 to +0.046 in cells 6–9; in A2 +0.010 to +0.014
+   in cells 6–10 (the analysis's group-and-cell sets, `devset2-d5.json`).
+3. **Measured: in A2 the loss sits near the crossing.** The mean difference per (speed, S₅₀₀) cell is +0.04 to
+   +0.08 at 0 to +6 dB SNR in 500 Hz in cells 4–8, and within ±0.02 from +6 dB SNR in 500 Hz up (cells 2–9).
+4. **Conjectured, not traced:** at 22–57 WPM the 2 s window holds the true dit within its reach (109 ms), so it
+   was the shortest confident window and followed timing changes (a fist's drift, a fade) within about 2 s; the 5 s
+   window follows them more slowly, and the prior then pulls the fit to an older speed.
+5. **Measured: against Matched the bank is now better in every speed cell but cell 8** (+0.0035, interval
+   across 0), and pooled by −0.0639. E2 (interference) remains the bank's largest deficit (+0.37).
+
+### 6.4 First words and corrections
+
+First-word CER per speed cell, all S₅₀₀ (pooled edits over symbols); the paired difference per signal, 5/10 s
+minus 2/5/10 s, with its 95% interval over signals; the bank's corrections per signal.
+
+| speed cell | first-word CER, final: 2/5/10 → 5/10 s | paired, final | first-word CER, immediate: 2/5/10 → 5/10 s | paired, immediate | corrections per signal: 2/5/10 → 5/10 s |
+|---|---|---|---|---|---|
+| 1 | 1.391 → 0.847 | −0.618 (−0.770 to −0.489) | 1.364 → 0.776 | −0.675 (−0.855 to −0.528) | 6.07 → 2.80 |
+| 2 | 0.627 → 0.801 | +0.216 (+0.131 to +0.313) | 0.761 → 0.723 | −0.040 (−0.103 to +0.025) | 3.30 → 2.89 |
+| 3 | 0.525 → 0.711 | +0.243 (+0.181 to +0.312) | 0.656 → 0.683 | +0.023 (−0.008 to +0.056) | 2.88 → 2.95 |
+| 4 | 0.428 → 0.700 | +0.336 (+0.272 to +0.403) | 0.712 → 0.757 | +0.038 (+0.012 to +0.064) | 2.66 → 2.94 |
+| 5 | 0.441 → 0.660 | +0.272 (+0.214 to +0.333) | 0.777 → 0.796 | +0.013 (−0.008 to +0.035) | 2.55 → 2.96 |
+| 6 | 0.489 → 0.716 | +0.291 (+0.226 to +0.356) | 0.857 → 0.876 | +0.016 (−0.026 to +0.064) | 2.58 → 2.97 |
+| 7 | 0.484 → 0.654 | +0.197 (+0.135 to +0.270) | 0.878 → 0.852 | −0.033 (−0.061 to −0.006) | 2.77 → 2.77 |
+| 8 | 0.497 → 0.622 | +0.152 (+0.099 to +0.211) | 0.924 → 0.880 | −0.045 (−0.068 to −0.025) | 3.11 → 2.74 |
+| 9 | 0.507 → 0.583 | +0.087 (+0.053 to +0.123) | 0.924 → 0.903 | −0.030 (−0.048 to −0.011) | 3.11 → 2.46 |
+| 10 | 0.592 → 0.653 | +0.083 (+0.055 to +0.112) | 0.932 → 0.922 | −0.012 (−0.029 to +0.004) | 3.12 → 2.31 |
+| all | 0.590 → 0.695 | +0.136 (+0.112 to +0.160) | 0.874 → 0.817 | −0.068 (−0.088 to −0.051) | 3.17 → 2.79 |
+
+At S₅₀₀ ≥ +6 dB SNR in 500 Hz (8 433 signals; `build/d5-tmp/fw_high.py`, git-ignored, from the same tables), the
+final first-word CER is 0.384 → 0.412 pooled, and 0.276–0.414 → 0.353–0.493 per cell from cell 2 up; the immediate
+0.774 → 0.754.
+
+Findings:
+
+1. **Measured: the cost to the first word is not latency.** With 5 and 10 s the first word as first displayed is as
+   good as with 2, 5 and 10 s (−0.045 to +0.038 per cell from cell 2 up; −0.068 pooled). Waiting 5 s instead of 2 s
+   for a T_P does not make the first characters worse when they appear.
+2. **Measured: the corrections repair the first word less.** With 2, 5 and 10 s the corrections lowered the first
+   word's CER from 0.87 (immediate) to 0.59 (final) pooled; with 5 and 10 s from 0.82 to 0.69. The final first-word
+   CER is therefore worse by +0.08 to +0.34 per cell from cell 2 up, a permanent cost in the text a user is left
+   with.
+3. **Measured: corrections are fewer at 40–80 WPM** (2.31–2.74 per signal against 3.11–3.12) and more at 16–32 WPM
+   (2.94–2.97 against 2.55–2.66). In cell 1 they fell from 6.07 to 2.80; conjectured: the alias's re-decodes are
+   gone.
+4. **Conjectured, not traced:** a correction re-decodes from an over's start with the fit then in force. The 2 s
+   window's T_P, available 3 s earlier, put the fit's prior on the right speed while the first word was still
+   within the correction's reach; with 5 s the first correction that would rewrite the first word comes after a
+   later, or no, T_P-guided refit.
+
+### 6.5 Decisions and open items for the owner
+
+a. **Keep 5 and 10 s as the default** (recommended). It removes the bank's worst failure (A2's mean CER in cell 1 at
+   S₅₀₀ ≥ +6 dB SNR in 500 Hz: 0.515 → 0.006), improves the pooled paired CER by 0.024, saves 5% of the CPU, and leaves the bank
+   better than Matched in 9 of 10 speed cells.
+b. **The cost to examine next** (options, not decided):
+   1. Trace the C2 and B2 loss at 22–57 WPM, and the first-word repair, on a few signals (as the slow trace did).
+   2. Restore the 2 s window only where it reaches: a window counts toward T_P only for candidates it can score with
+      margin, or a shorter window's estimate must agree with a longer confident one (the slow trace's untested
+      options, section 2.3 there).
+   3. Accept the cost.
+
+   **Recommendation: 1, then 2.** The losses are at most +0.04 per signal and 0.3 dB SNR in 500 Hz, but the
+   first-word cost (+0.14 pooled) bears on spotting, where the first word often holds the callsign.
+c. **Section 5's statements about cell 1 and the 11–14 WPM comparison are superseded** by this section for the
+   default; section 5 remains the record of the 2, 5 and 10 s default.
+
+### 6.6 Figures
+
+Drawn into `build/figures/2026-10-06-development-set/` (git-ignored) from the analyses of section 6.1: `figures
+--analysis …/devset2-d5.json --dir …/d5` (and `d5-matched`, `d5-immediate`), plus two figures for this section from
+`build/d5-tmp/fig_d5.py` (git-ignored). Not committed; they await the owner's choice. The candidates:
+
+- `d5/fig3.png`: the crossing against speed, d4-bank, d5-bank and Matched;
+- `d5/fig-d5-paired-by-cell.png`: paired CER per speed cell, final and immediate text;
+- `d5/fig-d5-first-word.png`: first-word CER per speed cell, final and immediate, both settings.
