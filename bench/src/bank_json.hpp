@@ -12,6 +12,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <complex>
+#include <span>
 #include <string>
 
 namespace kz4ap::bench {
@@ -44,5 +46,11 @@ void set_config_value(bank::BankConfig& cfg, const std::string& name, const orde
 // A BankConfig from defaults with every field of the object j set (the "config" of a decoded file, or the
 // --set values); throws std::invalid_argument as set_config_value.
 bank::BankConfig bank_config_from_json(const ordered_json& j);
+
+// Pushes u (the mixed channel stream, FS) into the channel one bank block at a time, as the engine's BankDecoder does,
+// then finishes it, and returns the immediate text: every character as first published (appended), in order,
+// corrections ignored, the text a user sees the instant each character appears (the engine's immediate text,
+// kz4ap-bench's cer_immediate). The channel's result equals that of one push of u (tested).
+std::string push_collecting_immediate(bank::BankChannel& channel, std::span<const std::complex<double>> u);
 
 }  // namespace kz4ap::bench

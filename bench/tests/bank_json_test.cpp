@@ -150,6 +150,32 @@ TEST_P(BankJsonResult, ToJsonDumpsAsThePrototypes) {
               g.at("results").at(GetParam()).at("dumps").get<std::string>());
 }
 
+// Development-set task D5: the replay tool's --immediate path pushes one bank block at a time and collects the
+// characters as first published. Its result is the one-push result byte for byte (at the default configuration and
+// at stage 1's); the immediate text holds every character append_new published, in order, so it equals the final text
+// when the stream made no correction and differs from it when a correction changed published text.
+TEST_P(BankJsonResult, BlockwisePushKeepsTheResultAndCollectsTheImmediateText) {
+    const auto g = kz4ap::test::load_golden("channel");
+    const auto u = kz4ap::test::channel_stream(g, GetParam());
+    const double rate = g.at("streams").at(GetParam()).at("rate_hz").get<double>();
+    for (const kz4ap::bank::BankConfig& cfg : {kz4ap::bank::BankConfig{}, kz4ap::test::stage1_config()}) {
+        kz4ap::bank::BankChannel whole(cfg, rate), blocks(cfg, rate);
+        whole.push(u);
+        whole.finish();
+        const std::string immediate = kz4ap::bench::push_collecting_immediate(blocks, u);
+        const auto r = blocks.result();
+        EXPECT_EQ(py_dumps(kz4ap::bench::to_json(r)), py_dumps(kz4ap::bench::to_json(whole.result())));
+        EXPECT_FALSE(r.text.empty());
+        if (r.corrections.empty()) {
+            EXPECT_EQ(immediate, r.text);
+        } else {
+            // the replaced characters stay in the immediate text, the replacing ones are not in it
+            EXPECT_NE(immediate, r.text);
+        }
+        EXPECT_EQ(blocks.output().appended(), whole.output().appended());
+    }
+}
+
 // "zero_pad" (1 s of exact zeros, then a station) left this list in Plan B's B3: its golden pinned the prototype's
 // exact-zero defect (it keyed nothing); BankChannel.LeadingExactZerosDecodeAsTheStationAlone (engine tests) now
 // requires it to decode as the station alone.

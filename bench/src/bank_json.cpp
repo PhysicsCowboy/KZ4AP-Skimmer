@@ -1,5 +1,6 @@
 #include "bank_json.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -269,6 +270,33 @@ ordered_json to_json(const bank::ChannelResult& r) {
     out["over_starts"] = std::move(over_starts);
     out["switches"] = r.switches;
     return out;
+}
+
+std::string push_collecting_immediate(bank::BankChannel& channel, std::span<const std::complex<double>> u) {
+    std::string immediate;
+    std::size_t seen = 0;
+    // A block's last operation is publishing the selected branch's new characters, so after each block the characters
+    // it appended are the last ones of the list (BankDecoder::push_mixed and collect_appended).
+    auto collect = [&]() {
+        const auto& out = channel.output();
+        const std::size_t fresh = out.appended() - seen;
+        seen = out.appended();
+        const auto& chars = out.chars();
+        for (std::size_t k = chars.size() - std::min(fresh, chars.size()); k < chars.size(); ++k)
+            immediate += chars[k].text;
+    };
+    const auto block = static_cast<std::int64_t>(channel.block_samples());
+    std::size_t i = 0;
+    while (i < u.size()) {
+        const std::int64_t room = block - (channel.samples() - channel.processed());
+        const std::size_t take = std::min(u.size() - i, static_cast<std::size_t>(std::max<std::int64_t>(room, 1)));
+        channel.push(u.subspan(i, take));
+        i += take;
+        collect();
+    }
+    channel.finish();
+    collect();
+    return immediate;
 }
 
 ordered_json to_json(const bank::BankConfig& cfg) {

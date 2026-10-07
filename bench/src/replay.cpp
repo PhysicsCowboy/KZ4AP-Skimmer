@@ -3,7 +3,7 @@
 // (kz4ap_proto.runner score, kz4ap_proto.experiments compare) reads them unchanged. The C++ counterpart of
 // `python -m kz4ap_proto.runner decode` for oracle test cases:
 //
-//   kz4ap-bank-replay --out DIR --name NAME [--only REGEX] [--set KEY=VALUE ...] [--jobs N]
+//   kz4ap-bank-replay --out DIR --name NAME [--only REGEX] [--set KEY=VALUE ...] [--jobs N] [--immediate NAME2]
 //
 // reads DIR/manifest.json and, for every oracle test case (the oracle recordings' test cases and the oracle copies
 // of the detector-path groups, as kz4ap_synth.suites names them) whose result name matches REGEX (searched, as
@@ -13,6 +13,13 @@
 // runner.decode's format (json.dumps of the same keys and values; "config" is the BankConfig with the --set
 // values). A test case whose decoded file exists with an equal config is skipped, as runner.decode does. The
 // channels of the detector path (non-oracle recordings) are not decoded here.
+//
+// --immediate NAME2 (development-set task D5): each channel is pushed one bank block at a time, as the engine's
+// BankDecoder does (the result is the same as one push, tested in bench/tests/bank_json_test.cpp), and a second file
+// DIR/proto/NAME2/<result>.decoded.json is written beside the first, the same except that its "texts" are the
+// immediate texts, every character as first published with corrections ignored (kz4ap-bench's cer_immediate), and its
+// "channels" hold only label_index, the immediate "text" and channel_s. Scoring NAME2 (kz4ap_proto.runner score) scores
+// the immediate text exactly as NAME's final text. The skip rule then needs both files with an equal config.
 #include "bank_json.hpp"
 #include "cpu_time.hpp"
 
@@ -48,12 +55,13 @@ struct Args {
     std::optional<std::string> only;
     std::vector<std::pair<std::string, std::string>> sets;
     int jobs = 0;
+    std::optional<std::string> immediate;  // NAME2: also write the immediate texts there
 };
 
 [[noreturn]] void usage(const std::string& why) {
     throw std::invalid_argument(why +
                                 "\nusage: kz4ap-bank-replay --out DIR --name NAME [--only REGEX] [--set KEY=VALUE ...] "
-                                "[--jobs N]");
+                                "[--jobs N] [--immediate NAME2]");
 }
 
 Args parse_args(int argc, char** argv) {
@@ -77,11 +85,15 @@ Args parse_args(int argc, char** argv) {
             a.sets.emplace_back(kv.substr(0, eq), kv.substr(eq + 1));
         } else if (arg == "--jobs") {
             a.jobs = std::stoi(value());
+        } else if (arg == "--immediate") {
+            a.immediate = value();
         } else {
             usage("unknown argument " + arg);
         }
     }
     if (a.out.empty() || a.name.empty()) usage("--out and --name are required");
+    if (a.immediate && (a.immediate->empty() || *a.immediate == a.name))
+        usage("--immediate needs a name other than --name");
     return a;
 }
 
@@ -186,7 +198,7 @@ struct Pending {
     std::vector<ordered_json> channels;
 };
 
-ordered_json decode_one(const kz4ap::bank::BankConfig& cfg, const Pending& p, int position) {
+ordered_json decode_one(const kz4ap::bank::BankConfig& cfg, const Pending& p, int position, bool immediate) {
     const auto& ch = p.manifest.at("channels").at(static_cast<std::size_t>(position));
     const double rate = p.manifest.at("sample_rate_hz").get<double>();
     const int label_index = ch.at("label_index").get<int>();
@@ -203,8 +215,13 @@ ordered_json decode_one(const kz4ap::bank::BankConfig& cfg, const Pending& p, in
     const double started = kz4ap::bench::thread_cpu_seconds();
     const auto u = baseband(y, rate, f_off, drift, start_s, first);
     kz4ap::bank::BankChannel channel(cfg, rate);
-    channel.push(u);
-    channel.finish();
+    std::string immediate_text;
+    if (immediate) {
+        immediate_text = kz4ap::bench::push_collecting_immediate(channel, u);
+    } else {
+        channel.push(u);
+        channel.finish();
+    }
     ordered_json out = kz4ap::bench::to_json(channel.result());
     out["label_index"] = label_index;
     out["rate_hz"] = rate;
@@ -213,13 +230,40 @@ ordered_json decode_one(const kz4ap::bank::BankConfig& cfg, const Pending& p, in
     out["noise_recoveries"] = channel.noise_recoveries();
     out["noise_zero_blocks"] = channel.noise_zero_blocks();
     out["channel_s"] = static_cast<double>(samples) / rate;
+    if (immediate) out["text_immediate"] = immediate_text;  // moved to NAME2's file by write_decoded
     return out;
 }
 
-void write_decoded(const fs::path& target, const std::string& name, const ordered_json& cfg_json, Pending& p) {
+void write_body(const fs::path& target, const ordered_json& body, const Pending& p) {
+    const fs::path path = target / (p.job.result + ".decoded.json");
+    const fs::path partial = target / (p.job.result + ".decoded.json.partial");
+    {
+        std::ofstream out(partial, std::ios::binary);
+        out << kz4ap::bench::py_dumps(body) << "\n";
+        if (!out) throw std::runtime_error("cannot write " + partial.string());
+    }
+    fs::rename(partial, path);  // a crash mid-write leaves no complete-looking decoded file
+}
+
+// NAME's decoded file and, with --immediate, NAME2's (immediate_target non-empty), written last so that an
+// interrupted run leaves no NAME2 file without its NAME file.
+void write_decoded(const fs::path& target, const std::string& name, const fs::path& immediate_target,
+                   const std::string& immediate_name, const ordered_json& cfg_json, Pending& p) {
     std::sort(p.channels.begin(), p.channels.end(), [](const ordered_json& a, const ordered_json& b) {
         return a.at("label_index").get<int>() < b.at("label_index").get<int>();
     });
+    ordered_json immediate_texts = ordered_json::array(), immediate_channels = ordered_json::array();
+    if (!immediate_target.empty()) {
+        for (auto& c : p.channels) {
+            ordered_json ic = ordered_json::object();
+            ic["label_index"] = c.at("label_index");
+            ic["text"] = c.at("text_immediate");
+            ic["channel_s"] = c.at("channel_s");
+            immediate_texts.push_back(c.at("text_immediate"));
+            immediate_channels.push_back(std::move(ic));
+            c.erase("text_immediate");
+        }
+    }
     ordered_json body = ordered_json::object();
     body["front_end"] = name;
     body["recording"] = p.job.wav;
@@ -229,14 +273,13 @@ void write_decoded(const fs::path& target, const std::string& name, const ordere
     for (const auto& c : p.channels) texts.push_back(c.at("text"));
     body["texts"] = std::move(texts);
     body["channels"] = ordered_json(p.channels);
-    const fs::path path = target / (p.job.result + ".decoded.json");
-    const fs::path partial = target / (p.job.result + ".decoded.json.partial");
-    {
-        std::ofstream out(partial, std::ios::binary);
-        out << kz4ap::bench::py_dumps(body) << "\n";
-        if (!out) throw std::runtime_error("cannot write " + partial.string());
+    write_body(target, body, p);
+    if (!immediate_target.empty()) {
+        body["front_end"] = immediate_name;
+        body["texts"] = std::move(immediate_texts);
+        body["channels"] = std::move(immediate_channels);
+        write_body(immediate_target, body, p);
     }
-    fs::rename(partial, path);  // a crash mid-write leaves no complete-looking decoded file
     std::cout << "decoded " << p.job.result << std::endl;
 }
 
@@ -249,21 +292,26 @@ int run(const Args& args) {
     const ordered_json manifest = read_json(args.out / "manifest.json");
     const fs::path target = args.out / "proto" / args.name;
     fs::create_directories(target);
+    const fs::path immediate_target = args.immediate ? args.out / "proto" / *args.immediate : fs::path();
+    if (args.immediate) fs::create_directories(immediate_target);
+    const std::string immediate_name = args.immediate ? *args.immediate : std::string();
+    auto same_config = [&](const fs::path& decoded) {
+        if (!fs::exists(decoded)) return false;
+        try {
+            return read_json(decoded).value("config", ordered_json()) == cfg_json;
+        } catch (const ordered_json::exception&) {
+            return false;  // unreadable: decode it again
+        }
+    };
 
     std::vector<Pending> pending;
     std::vector<Work> work;
     int skipped = 0;
     for (const auto& job : oracle_jobs(manifest, only)) {
-        const fs::path decoded = target / (job.result + ".decoded.json");
-        if (fs::exists(decoded)) {
-            try {
-                if (read_json(decoded).value("config", ordered_json()) == cfg_json) {
-                    ++skipped;
-                    continue;
-                }
-            } catch (const ordered_json::exception&) {
-                // unreadable: decode it again
-            }
+        if (same_config(target / (job.result + ".decoded.json")) &&
+            (!args.immediate || same_config(immediate_target / (job.result + ".decoded.json")))) {
+            ++skipped;
+            continue;
         }
         Pending p;
         p.job = job;
@@ -278,7 +326,7 @@ int run(const Args& args) {
     if (skipped) std::cout << "skipped " << skipped << " recordings already decoded with this config" << std::endl;
     std::mutex mutex;
     for (auto& p : pending)
-        if (p.count == 0) write_decoded(target, args.name, cfg_json, p);
+        if (p.count == 0) write_decoded(target, args.name, immediate_target, immediate_name, cfg_json, p);
 
     std::atomic<std::size_t> next{0};
     std::vector<std::string> errors;
@@ -289,11 +337,11 @@ int run(const Args& args) {
             const Work& w = work[i];
             Pending& p = pending[w.job];
             try {
-                ordered_json channel = decode_one(cfg, p, w.position);
+                ordered_json channel = decode_one(cfg, p, w.position, args.immediate.has_value());
                 const std::lock_guard<std::mutex> lock(mutex);
                 p.channels.push_back(std::move(channel));
                 if (p.channels.size() == p.count) {
-                    write_decoded(target, args.name, cfg_json, p);
+                    write_decoded(target, args.name, immediate_target, immediate_name, cfg_json, p);
                     p.channels.clear();
                     p.channels.shrink_to_fit();
                 }
