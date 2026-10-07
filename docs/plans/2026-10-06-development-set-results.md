@@ -114,7 +114,9 @@ center and width vary smoothly with speed v (WPM):
 (s₀ and w are in dB SNR in 500 Hz on the S₅₀₀ axis and in dB re 1 on the E/N₀ axis.)
 
 - **The floor** c = logistic(g) is one value for all speeds (0 < c < 1). It is the CER the decoder keeps at
-  high S₅₀₀.
+  high S₅₀₀. **From task D4 (owner's decision after the pilot), the floor is one value per speed cell**,
+  c_j = logistic(g_j) for cell j, so the model has 6 shape parameters and 10 floors (section 3.5). Sections 3.1–3.4
+  are the pilot as first analyzed, with one floor.
 - **25.30 WPM** = √(8 × 80) WPM is the speed range's geometric center. It is a centering for conditioning
   only (derived: the fitted curves do not depend on it).
 - **The crossing** at threshold t is s₀ − w·logit((t − c)/(1 − c)), derived. There is none if c ≥ t.
@@ -306,6 +308,113 @@ lists the runs and the commits. The subfolder `cells-2-10/` holds the same figur
 Figures 1 and 3 were first drawn with axes reaching +211 dB and +5 000 dB SNR in 500 Hz, because the bank's
 cell-1 extrapolation set the scale. From `9f751c5`, the S₅₀₀ axes span the data (plus the genie bound in
 figure 3); the change is presentation only, with a test.
+
+### 3.5 The pilot re-analyzed with one floor per speed cell (task D4)
+
+The owner's decision after the pilot: separate floors per speed cell, so that a cell that never reaches CER 0.10
+is reported as "no crossing" and cannot distort its neighbors. Code at `aaffd90` (`devset2.py`), figures at
+`e882c8a`.
+
+**What changed in the fit** (`training/kz4ap_proto/devset2.py`):
+
+- **The model**: CER(L, v) = c_j(v) + (1 − c_j(v))·logistic(−(L − s₀(v))/w(v)), with c_j = logistic(g_j) the
+  floor of speed cell j. That is 16 parameters: a₀…a₂, b₀…b₂ as before, and g₁…g₁₀. A cell with no fit signals
+  keeps its floor unfitted, and the floor is reported as none.
+- **Bounds on the floors** (heuristic): each floor is held within [10⁻⁵, 1 − 10⁻⁵].
+  - Without the bound, a cell with no errors at high S₅₀₀ drives its floor toward 0. The objective flattens there,
+    and the fit stopped on its iteration limit; the bank's pilot fit did, after 200 iterations.
+  - The bound is enforced by a projected Levenberg–Marquardt step: a floor at its bound whose descent direction
+    points outward is held for that iteration. With it, the bank's pilot fit converged in 18 iterations to the
+    same objective (326.598287, against 326.598289 after 325 unbounded iterations).
+- **Two starting points** (heuristic): every floor at 0.002, and each cell's floor from the mean CER of the
+  quarter of its signals at the highest S₅₀₀. The fit keeps the lower objective.
+- **"No crossing"**, at a cell's center, for one of two reasons:
+  - the cell's floor is at or above the threshold, so the curve never reaches it;
+  - the crossing lies above the highest S₅₀₀ among the cell's fit signals, so the curve does not reach the
+    threshold within the data.
+
+  The same rule is applied to every bootstrap resample. The summary gives the share of resamples that cross,
+  and gives an interval only when at least 95% of them do. A crossing below the data (an extrapolation
+  downward) is still reported, marked *.
+- **The E/N₀ spread** is taken over the cells that cross.
+
+**Measured properties on synthetic data** (`test_devset2.py`; git-ignored scripts `build/d4-tmp/`). The data are
+A2-like: 10 × 14 cells × 4 signals, with the model of task D2's tests.
+
+1. **A failing speed cell whose data have the model's form** (cell 1's floor 0.5, the same transition):
+   - Over 10 sets, cells 2–10's crossings differ from the fit without cell 1 by at most 0.09 dB SNR in 500 Hz
+     (mean 0.005 dB).
+   - With task D2's single floor, they moved by up to 7.3 dB.
+2. **A failing cell whose data do not have the model's form.** This imitates the bank: the transition is 1 dB
+   higher, and the floor falls from 0.70 at 0 dB to 0.45 at +20 dB SNR in 500 Hz.
+   - Cell 2 moves by +0.40 dB on average (at most 0.49 dB), and cell 3 by +0.19 dB.
+   - With the single floor, cell 2 moved by up to 8.2 dB.
+   - The per-cell floor removes the floor's coupling. The shared s₀(v) and w(v) still couple the cells.
+3. **Whole-signal failures** (3% of signals, CER 0.5–1 at any S₅₀₀; section 2.2):
+   - Least squares' mean bias of the CER-0.10 crossing is +0.05 to +0.15 dB SNR in 500 Hz per cell, with RMS
+     0.38–0.75 dB (200 sets, 4 signals per cell). The binomial likelihood gives +0.18 to +0.29 dB.
+   - At 48 signals per cell (20 sets): least squares +0.00 to +0.11 dB (RMS 0.08–0.17 dB), binomial +0.14 to
+     +0.29 dB. Least squares stays the method.
+   - The single floor gave least squares a bias of 0.01–0.06 dB with RMS 0.18–0.45 dB. Each cell's floor now
+     absorbs its own few failures, at the cost of more spread at 4 signals per cell.
+4. **The bootstrap's coverage** of the true crossing is 0.907 with per-cell floors and 0.895 with the single floor
+   (40 sets × 10 cells, 200 resamples, the same sets). So the percentile intervals cover about 90%, not 95%,
+   whichever model is used. This is a property of the interval, measured, and is not corrected here.
+
+**The pilot's crossings at CER 0.10** (S₅₀₀ in dB SNR in 500 Hz; 95% intervals; 56 signals per speed cell),
+with each cell's fitted floor (a CER). Analyses `devset2-pilot-d4` and `devset2-pilot-d4-c2to10`, run on
+the pilot's files, which are now in `build/suite/dev2/pilot/` on the Linux machine.
+
+| speed cell | center (WPM) | Matched floor | Matched | bank floor | bank, all cells | bank, cells 2–10 |
+|---|---|---|---|---|---|---|
+| 1 | 8.98 | 0.045 | −0.01 (−1.68 to +0.96) | 0.518 (0.460 to 0.574) | no crossing (floor) | — |
+| 2 | 11.30 | 0.029 | −0.21 (−1.18 to +0.34) | 0.000 | +1.21 (−0.12 to +1.82) | +0.24 (−0.60 to +0.71) |
+| 3 | 14.23 | 0.010 | −0.16 (−0.91 to +0.32) | 0.008 | +0.31 (−0.51 to +0.67) | −0.18 (−0.78 to +0.15) |
+| 4 | 17.91 | 0.010 | +0.30 (−0.36 to +0.95) | 0.002 | −0.24 (−0.75 to +0.12) | −0.38 (−0.81 to +0.04) |
+| 5 | 22.55 | 0.001 | +0.91 (+0.27 to +1.66) | 0.019 | −0.20 (−0.75 to +0.36) | −0.10 (−0.61 to +0.49) |
+| 6 | 28.39 | 0.013 | +1.96 (+1.21 to +3.08) | 0.020 | +0.14 (−0.41 to +0.77) | +0.39 (−0.15 to +0.99) |
+| 7 | 35.73 | 0.019 | +3.26 (+2.47 to +4.04) | 0.032 | +1.00 (+0.44 to +1.65) | +1.28 (+0.76 to +1.80) |
+| 8 | 44.99 | 0.004 | +4.57 (+3.72 to +5.62) | 0.039 | +2.29 (+1.66 to +3.07) | +2.54 (+1.78 to +3.13) |
+| 9 | 56.64 | 0.001 | +6.41 (+5.11 to +7.85) | 0.028 | +3.85 (+2.82 to +4.42) | +3.91 (+2.62 to +4.42) |
+| 10 | 71.30 | 0.121 (0.048 to 0.215) | no crossing (floor) | 0.020 | +5.96 (+3.81 to +6.75) | +5.68 (+3.67 to +6.44) |
+
+Findings:
+
+1. **The bank's cell 1 reports no crossing** (measured). Its floor is 0.518 (0.460 to 0.574), and no resample
+   crosses. With the single floor, the fit put cell 1's crossing at +31 dB SNR in 500 Hz and raised the one
+   floor to 0.050.
+2. **Matched's cell 10 now has no crossing at CER 0.10 either** (measured). Its floor is 0.121 (0.048 to 0.215), and
+   29% of the resamples cross.
+   - Matched's whole-signal failures at 63–80 WPM (finding 3 of section 3.1) set this cell's own floor.
+   - With the single floor, they were shared with the other cells, and cell 10 crossed at +10.93 dB SNR in 500 Hz.
+   - Whether Matched crosses CER 0.10 in cell 10 at all is not settled by 56 signals; the interval of the floor
+     straddles 0.10.
+3. **The bank's cell 1 still moves its neighbors through the shared s₀ and w** (measured; figure 1,
+   `per-cell-floor/fig1-pilot-bank`).
+   - Cell 1 rises from CER 1 to about 0.5 near 0 dB SNR in 500 Hz and then falls slowly to about 0.45 at
+     +20 dB. The quadratic s₀(v) and ln w(v) bend to follow that.
+   - Cell 2's crossing is +1.21 dB SNR in 500 Hz with cell 1 in the fit, against +0.24 dB without it: +0.97 dB.
+     Cell 3 moves by +0.49 dB, and cells 4–10 by −0.28 to +0.28 dB.
+   - With the single floor, cell 2 moved by +4.6 dB (+4.84 against +0.23, section 3.2).
+   - The synthetic misfit of the same kind (above) moved cell 2 by +0.40 dB. The bank's real cell 1 departs further
+     from the model's form.
+   - The owner's decision ("cannot distort its neighbors") is therefore met for the floor, but not fully for the
+     shape: a decision for the owner (section 5.6).
+4. **Matched is not affected by its cell 1** (measured). Its crossings in cells 2–9 change by at most 0.02 dB
+   SNR in 500 Hz when cell 1 is left out.
+5. **Per-cell floors move Matched's fast cells down** (measured). Against the single floor, cells 8 and 9 are
+   0.45 and 1.08 dB SNR in 500 Hz lower. Their own floors (0.004 and 0.001) are below the old common floor of
+   0.020, which cell 10's failures had raised.
+6. **The E/N₀ view** (dB re 1 of E/N₀ per dit):
+   - Matched's Wald statistic is T = 39.3, p = 3·10⁻⁹.
+   - For the bank with cell 1, T = 357, p = 4·10⁻⁷⁸.
+   - Neither decoder is time-base invariant, as before.
+7. **The paired difference** does not depend on the fit and is unchanged: bank − Matched +0.0384 (+0.0165 to
+   +0.0605).
+
+The redrawn figures are in `docs/plans/figures/2026-10-06-pilot/per-cell-floor/` (all cells) and
+`per-cell-floor/cells-2-10/`. Figures 1–4 are PNG at 150 dpi and SVG, with `captions.md`. The figures of section
+3.4 stay as drawn with one floor.
 
 ## 4. The proposed sizes
 
