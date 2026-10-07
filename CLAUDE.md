@@ -32,11 +32,20 @@
   Treat a stale description as a bug.
 - Any agent doing implementation work on this project must be told the rule
   above.
-- **Figures** (owner, 2026-10-07): commit the analysis files a figure is
-  drawn from (small JSON) and only the few figures a results record actually
-  shows, as PNG. All other figures are written to `build/` (git-ignored) and
-  redrawn from the committed analysis files when needed (`experiments
-  figures`); send them to the owner directly rather than committing them.
+- **Results data and figures** (owner, 2026-10-07):
+  - Commit the **per-signal score table** (CSV: one row per signal with its
+    conditions, cell, CER and character count) of every run a results record
+    reports, so every number in the record can be checked and every fit and
+    figure redrawn in minutes on any machine. Records cite the commit and the
+    score file each number comes from.
+  - Do not commit recordings, decoded files, analysis files (fits,
+    bootstraps) or figures by default: they stay in `build/` (git-ignored)
+    and are rebuilt from the committed scores (fits and figures, minutes) or
+    from the seeds (everything, hours).
+  - **Committing any figure needs the owner's approval, each time.** An
+    approved figure is a PNG embedded in its results record (at most about
+    three per results section: the ones a conclusion rests on). Other figures
+    are sent to the owner directly, not committed.
 - **Units:** every displayed, logged or documented quantity carries an
   explicit unit. Every dB value names its reference (dBFS, dB SNR in a stated
   bandwidth, dB relative to the passband, etc.); a bare "dB" is a bug. Linear
