@@ -9,13 +9,15 @@ is **measured** unless marked otherwise. CPU and wall times are from the Linux m
 speed cell (section 3.5).
 
 - **The crossings.** On seed 1 the bank's crossing (S₅₀₀ at CER 0.10) is known to ±0.11 to ±0.29 dB SNR in
-  500 Hz in speed cells 2–10.
+  500 Hz in speed cells 2–10. These are 95% percentile intervals, which cover about 90% (measured at 4 signals per
+  cell, section 5.6 c); calibrated, they would be about 1.19 times wider.
   - It is 0.65–1.57 dB SNR in 500 Hz below Matched's from 22.5 to 57 WPM.
-  - It is +6.44 dB at 71 WPM, where Matched never reaches CER 0.10 (floor 0.126).
-  - It is 0.58–1.16 dB above Matched's at 11–14 WPM.
-- **Pooled over the whole set**, bank − Matched is −0.0396 (−0.0448 to −0.0342) in CER per signal. The bank is
-  clearly better with Farnsworth timing (−0.46), fading and keying styles (about −0.09). It is clearly worse with
-  an interfering neighbor (+0.41).
+  - It is +6.44 dB SNR in 500 Hz at 71 WPM, where Matched never reaches CER 0.10 (floor 0.126).
+  - It is 0.58–1.16 dB SNR in 500 Hz above Matched's at 11–14 WPM.
+- **Pooled over the whole set**, bank − Matched is −0.0396 (−0.0448 to −0.0342) in CER per signal.
+  - The bank is clearly better with Farnsworth timing (−0.46), and with fading and keying styles (about −0.09).
+  - It is clearly worse with an interfering neighbor (+0.41). The old set's group E showed the same deficit
+    (+0.30, section 5.4).
 - **Below 10 WPM** the bank fails at every S₅₀₀ (floor 0.525). That is being traced separately, and those results
   are not interpreted here.
 - **A bank run** on DEV2 took 1 h 48 min at 5 threads (30.41 ms CPU per channel-second).
@@ -567,12 +569,13 @@ current defaults: Envelope and Matched through `kz4ap-bench` with oracle channel
 `kz4ap-bank-replay`. Matched also ran once on A2's detector-path copies, for detection recall.
 
 - **Precision.** With 672 signals per speed cell, the bank's crossing (S₅₀₀ at CER 0.10) is known to ±0.11 to
-  ±0.29 dB SNR in 500 Hz in speed cells 2–10.
+  ±0.29 dB SNR in 500 Hz in speed cells 2–10. These 95% percentile intervals cover about 90% (measured at 4
+  signals per cell; section 5.6 c), so calibrated half-widths would be about 1.19 times larger.
 - **The bank against Matched.**
-  - From 22.5 to 57 WPM the bank's crossing lies 0.65–1.57 dB SNR in 500 Hz below Matched's. At 17.9 WPM the two
-    are equal within their intervals.
-  - At 63.5–80 WPM the bank crosses at +6.44 dB, and Matched does not reach CER 0.10 at all.
-  - At 11.3 and 14.2 WPM Matched is better by 1.16 and 0.58 dB.
+  - From 22.5 to 57 WPM the bank's crossing lies 0.65–1.57 dB SNR in 500 Hz below Matched's. At 17.9 WPM their
+    intervals overlap, so these unpaired intervals do not resolve the difference.
+  - At 63.5–80 WPM the bank crosses at +6.44 dB SNR in 500 Hz, and Matched does not reach CER 0.10 at all.
+  - At 11.3 and 14.2 WPM Matched is better by 1.16 and 0.58 dB SNR in 500 Hz.
 - **Pooled over every oracle-path signal of the set**, the bank's CER is lower than Matched's: paired difference
   −0.0396 (−0.0448 to −0.0342).
 - **In speed cell 1 (8.0–10.1 WPM) the bank fails at every S₅₀₀**, as in the pilot; its floor is 0.525. **That
@@ -657,22 +660,24 @@ Findings (all measured):
 
 1. **The bank needs the least S₅₀₀ from 22.5 to 80 WPM; Matched needs the least at 11–14 WPM.**
    - Bank minus Matched in cells 2–9 is +1.16, +0.58, −0.20, −0.65, −0.99, −0.95, −0.89 and −1.57 dB SNR in
-     500 Hz. Cell 4's difference lies within both intervals.
+     500 Hz. In cell 4 the two intervals overlap (−0.13 to +0.08 against −0.01 to +0.33); these unpaired
+     intervals do not resolve the difference. The paired CER in speed cell 4 favors the bank (section 5.4).
    - In cell 10 (63.5–80 WPM) the bank crosses at +6.44 dB SNR in 500 Hz, and Matched does not cross.
 2. **Matched does not reach CER 0.10 at 63.5–80 WPM at any S₅₀₀**: cell 10's floor is 0.126 (0.102 to 0.152).
    - The pilot's single-floor fit gave +10.93 dB SNR in 500 Hz here.
    - The pilot's per-cell refit (section 3.5) found the floor's interval straddling 0.10. With 12 times the
      signals, it lies above 0.10.
 3. **The bank's cell 1 moves its neighbors little at this size.**
-   - Cell 2's crossing is +0.64 dB SNR in 500 Hz with cell 1 in the fit and +0.46 dB without it: +0.18 dB, about
-     one interval half-width (±0.21 dB).
-   - Cell 3 moves by +0.09 dB, and cells 4–10 by at most 0.07 dB.
-   - In the pilot, the same comparison gave +0.97 dB (section 3.5).
+   - Cell 2's crossing is +0.64 dB SNR in 500 Hz with cell 1 in the fit and +0.46 dB without it: +0.18 dB SNR in
+     500 Hz, about one interval half-width (±0.21 dB SNR in 500 Hz).
+   - Cell 3 moves by +0.09 dB SNR in 500 Hz, and cells 4–10 by at most 0.07 dB SNR in 500 Hz.
+   - In the pilot, the same comparison gave +0.97 dB SNR in 500 Hz (section 3.5).
 4. **The shared quadratic shape couples the cells in general, not only through a failing cell.**
-   - For Envelope, which has no failing cell, leaving out cell 1 moves cell 2 by +0.64 dB and cell 3 by +0.30 dB.
+   - For Envelope, which has no failing cell, leaving out cell 1 moves cell 2 by +0.64 dB and cell 3 by +0.30 dB
+     SNR in 500 Hz.
      Envelope's s₀(v) bends strongly (a₂ = +4.38 dB SNR in 500 Hz).
    - Crossings near the ends of a fitted range therefore depend on which cells are fitted, here by up to about
-     half a dB.
+     half a dB SNR in 500 Hz.
    - This is a property of the quadratic-in-ln v model, and the bootstrap intervals do not contain it.
 5. **The precision reached**, as half-widths of the 95% intervals at CER 0.10 in dB SNR in 500 Hz, with section
    4.4's prediction in brackets:
@@ -681,10 +686,14 @@ Findings (all measured):
    - Matched, cells 1–9: 0.36, 0.26, 0.17, 0.17, 0.17, 0.21, 0.20, 0.20, 0.55 [0.36, 0.22, 0.18, 0.18, 0.21,
      0.22, 0.22, 0.28, 0.50].
    - The ±0.5 dB SNR in 500 Hz target is met everywhere a crossing exists, except Matched's cell 9 (0.55).
-   - The 1/√n scaling of section 4.1 held to within about 0.1 dB.
-   - Envelope's intervals in cells 7 and 8 (±3.0 and ±1.4 dB) are wide, because its floors there (0.084 and
+   - **Caveat:** these are 95% percentile intervals, whose coverage measured about 0.90 (40 synthetic sets at 4
+     signals per cell, section 3.5; not measured at 48). Calibrated to 95% under a normal approximation, the
+     half-widths would be about 1.96/1.645 = 1.19 times larger: the bank 0.13–0.35, Matched's cell 9 about 0.65
+     dB SNR in 500 Hz (derived). The conclusions of this section do not change.
+   - The 1/√n scaling of section 4.1 held to within about 0.1 dB SNR in 500 Hz.
+   - Envelope's intervals in cells 7 and 8 (±3.0 and ±1.4 dB SNR in 500 Hz) are wide, because its floors there (0.084 and
      0.062) lie close to 0.10.
-6. **Envelope** needs 6.8–9.2 dB SNR in 500 Hz from 11 to 32 WPM, 5.9–9.7 dB more than Matched.
+6. **Envelope** needs 6.8–9.2 dB SNR in 500 Hz from 11 to 32 WPM, 5.9–9.7 dB SNR in 500 Hz more than Matched.
    - Above 32 WPM its floor rises to 0.06–0.26.
    - From 50.5 WPM up it does not reach CER 0.10.
 
@@ -743,11 +752,15 @@ Findings (measured):
    - Pooled, its CER is 0.040 lower.
    - In A2 alone it is 0.049 higher, because of cell 1: over all groups, the bank is 0.33 worse there.
 2. **The bank is clearly better with Farnsworth timing** (I2, −0.46), and on fading and keying styles (B2 and C2,
-   about −0.09).
+   about −0.09). The old set's group I gave −0.470 (−0.510 to −0.430) for the bank at milestone 2c
+   (`docs/plans/2026-10-03-milestone-2c-bank-results.md`, section 4.3).
 3. **The bank is clearly worse with a neighboring station** (E2, +0.41).
    - In E2 the wanted signal is at 8–14 dB SNR in 500 Hz. The neighbor is 0–120 Hz above it, at −6 to +12 dB
      relative to the wanted signal's key-down power.
-   - This is new with the jittered set. The old set's group E was at 25 WPM, with the neighbor 20–150 Hz away.
+   - **This deficit is not new.** On the old set, group E gave bank − Matched +0.299 (+0.142 to +0.481) for the
+     bank at milestone 2c (`docs/plans/2026-10-03-milestone-2c-bank-results.md`, section 4.3); group E was at
+     25 WPM, with the neighbor 20–150 Hz away. E2 confirms the deficit with the bank at its B4g defaults, across
+     10 speed cells and offsets of 0–120 Hz, at a similar size.
 4. **F2 has 40 signals beyond the oracle anchor's ±12 Hz** (a drift excursion above 12 Hz), as task D1 expected.
    They are counted, not excluded.
 
@@ -764,14 +777,17 @@ intervals are in `summary.md` and figure 5.
 | −2 to 0 | 48 | 48 | 48 | 48 | 48 | 48 | 48 | 47 | 37 | 33 |
 | each 2 dB cell from 0 to +20 | 48 | 48 | 48 | 48 | 48 | 48 | 48 | 48 | 48 | 48 |
 
-1. **The detector finds every signal from 0 dB SNR in 500 Hz up, at every speed**, and from −2 dB up to 40 WPM
-   (one miss at 40–50 WPM).
-2. **The detector's edge moves up by about 2 dB from 8 to 80 WPM.** At −4 to −2 dB it finds all 48 signals at
+1. **The detector finds every signal from 0 dB SNR in 500 Hz up, at every speed**, and from −2 dB SNR in 500 Hz up to
+   40 WPM (one miss at 40–50 WPM).
+2. **The detector's edge moves up by about 2 dB SNR in 500 Hz from 8 to 80 WPM.** At −4 to −2 dB SNR in 500 Hz
+   it finds all 48 signals at
    9 WPM, but 2 at 71 WPM.
 3. **Detection does not limit the oracle crossings measured here.** In every speed cell, recall reaches 48 of 48
-   at least 1 dB below Matched's crossing at CER 0.10.
-   - Cells 1–5: recall is complete from −4 or −2 dB, against crossings at −0.8 to +0.8 dB.
-   - Cells 9 and 10: recall is complete from 0 dB, against Matched's +6.0 dB and the bank's +4.5 and +6.4 dB.
+   at least 1 dB SNR in 500 Hz below Matched's crossing at CER 0.10.
+   - Cells 1–5: recall is complete from −4 or −2 dB SNR in 500 Hz, against crossings at −0.8 to +0.8 dB SNR in
+     500 Hz.
+   - Cells 9 and 10: recall is complete from 0 dB SNR in 500 Hz, against Matched's +6.0 and the bank's +4.5 and
+     +6.4 dB SNR in 500 Hz.
    - The margin grows with speed.
 
 ### 5.6 Decisions and open items for the owner
@@ -780,11 +796,12 @@ a. **The bank below 10 WPM** (cell 1: floor 0.525, no crossing; paired +0.33 ove
    signals). The trace runs separately, and the bank's reference run here is at its current defaults. After the
    trace, these should be read again:
    - the bank's cell-1 numbers;
-   - everything pooled over cell 1: A2's paired mean, and the pooled mean to a smaller degree.
+   - everything pooled over cell 1: every group's paired mean (each group spans the 10 speed cells; A2's most,
+     the others by roughly a tenth of the bank's cell-1 excess, an estimate), and the pooled mean.
 b. **How strictly "a failing cell cannot distort its neighbors" should hold.**
    - Per-cell floors removed the coupling through the floor.
    - The shared quadratic s₀(v) and w(v) still move the bank's cell 2: by +0.18 dB SNR in 500 Hz at 48 signals per
-     cell (about one half-width), and by +0.97 dB in the pilot.
+     cell (about one half-width), and by +0.97 dB SNR in 500 Hz in the pilot.
    - The options:
      1. Accept it as is.
      2. Fit without the cells whose floor is at or above 0.10: a two-pass rule, D3's option 1.
@@ -801,15 +818,25 @@ d. **E2 (interference).** The bank's +0.41 against Matched is the largest group 
 ### 5.7 Figures
 
 The figures are in `docs/plans/figures/2026-10-06-dev2-baseline/`, as PNG at 150 dpi and SVG. Beside them are
-`captions.md`, which lists the runs and the commits, and `summary.md`, the analysis summary. The subfolder
-`cells-2-10/` holds the same figures and summary from the fit over cells 2–10.
+`captions.md`, which lists the runs and the commits, and `summary.md`, the analysis summary. The figures in
+the folder's top level were redrawn in task D4's fix round 1. In that redraw:
+- figure 3 breaks every curve and band at each cell edge;
+- the point clouds of figures 1 and 2 are raster images inside the SVGs;
+- the legends name the decoders (Envelope, Matched, bank) instead of their results folders.
+
+The subfolder `cells-2-10/` holds the fit over cells 2–10. Its `summary.md` is the record's source for that
+comparison. Its figures are from the first drawing, which joined the curves across cell edges, and are no longer
+redrawn: duplicate figures are not produced by default from now on. They stay committed until the owner decides.
+The same holds for `docs/plans/figures/2026-10-06-pilot/per-cell-floor/cells-2-10/`.
 
 - `fig1-baseline`, `fig1-matched`, `fig1-d4-bank`: CER against S₅₀₀ per speed cell. Each panel shows the signals,
   the fit at the cell's center, and either the crossing with its interval or "no crossing" with the floor.
 - `fig2-…`: CER against E/N₀ per dit, every speed cell's fitted curve.
 - `fig3`: the crossing against speed for the three decoders, beside the genie bound.
-  - An x at the top marks a cell without a crossing.
-  - The curves step at cell edges where neighboring floors differ (Envelope at 31.85 and 40.09 WPM).
+  - An x near the top marks a cell without a crossing, one row of marks per decoder.
+  - Each decoder's curve and band are drawn one speed cell at a time and break at every cell edge. The floor is one
+    value per speed cell, so the crossing can jump at an edge (Envelope at 31.85 and 40.09 WPM). A jump between
+    cells is a property of the model's cells, not a measured slope.
 - `fig4`: paired differences by group, bank − Matched and Envelope − Matched.
 - `fig5-matched`: detection recall through the detector path against S₅₀₀ per speed cell, beside Matched's oracle
   CER.
