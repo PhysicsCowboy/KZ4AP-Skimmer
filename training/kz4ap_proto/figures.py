@@ -26,7 +26,7 @@ import numpy as np
 
 from kz4ap_synth.jitter import SPEED_CELLS
 
-from .devset2 import Fit, git_commit, ideal_s500_db
+from .devset2 import Fit, cell_index, git_commit, ideal_s500_db
 
 DPI = 150
 S500_LABEL = "S$_{500}$ (dB SNR in 500 Hz)"
@@ -71,6 +71,27 @@ def _safe(name: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in name)
 
 
+# Decoder names for the figures, by results folder (the analysis names decoders by folder; "baseline" is the
+# Envelope decoder's folder, FRONT_ENDS in kz4ap_synth.suites)
+DISPLAY_NAMES = {"baseline": "Envelope", "matched": "Matched", "bank": "bank"}
+
+
+def display_name(folder: str) -> str:
+    """A decoder's name for figures: Envelope, Matched, or "bank (<folder>)" for a bank run's folder."""
+    if folder in DISPLAY_NAMES:
+        return DISPLAY_NAMES[folder]
+    return f"bank ({folder})" if "bank" in folder else folder
+
+
+def break_at_cell_edges(wpm, *series):
+    """(wpm, *series) with a NaN inserted between consecutive points in different speed cells, so that a line or
+    band drawn through them stops at every cell edge. The fit's floor is one value per speed cell, so its crossing
+    jumps at cell edges; joined across an edge, the jump would draw as a slope (task D4 review, I2)."""
+    wpm = np.asarray(wpm, float)
+    cut = np.flatnonzero(np.diff(cell_index(wpm)) != 0) + 1
+    return (np.insert(wpm, cut, np.nan),) + tuple(np.insert(np.asarray(x, float), cut, np.nan) for x in series)
+
+
 OUTSIDE_PAD_DB = 1.0  # the S500 axes span the fitted data's range plus this margin, dB SNR in 500 Hz (presentation)
 
 
@@ -99,7 +120,8 @@ def figure_cer_s500(a: dict, decoder: str, stem: Path) -> list[Path] | None:
         k = cell["cell"]
         mine = [r for r in rows if r["speed_cell"] == k]
         ax.scatter([r["s500_db"] for r in mine], [min(r["edits"] / r["symbols"], 1.0) for r in mine], s=9,
-                   color=SERIES[0], alpha=0.55, linewidths=0, label="signals (CER clipped at 1)")
+                   color=SERIES[0], alpha=0.55, linewidths=0, label="signals (CER clipped at 1)",
+                   rasterized=True)  # the point cloud as an image inside the SVG; axes, curves and text stay vector
         ax.plot(grid, model.cer(grid, np.full_like(grid, cell["wpm"])), color=INK, lw=1.5,
                 label="fit at the cell's center")
         ax.axhline(0.10, color=MUTED, lw=0.8, ls=":")
@@ -109,14 +131,15 @@ def figure_cer_s500(a: dict, decoder: str, stem: Path) -> list[Path] | None:
             ax.axvline(cell["value"], color=SERIES[1], lw=1.2, label="S$_{500}$ at CER 0.10")
             if not x_lo <= cell["value"] <= x_hi:
                 right = cell["value"] > x_hi
-                ax.annotate(f"crossing {cell['value']:+.1f} dB\n(outside the data)", xy=(x_hi if right else x_lo, 0.5),
+                ax.annotate(f"crossing {cell['value']:+.1f} dB\nSNR in 500 Hz\n(outside the data)", xy=(x_hi if right else x_lo, 0.5),
                             xytext=(-4 if right else 4, 0), textcoords="offset points", ha="right" if right else "left",
                             va="center", fontsize=7, color=SERIES[1])
                 ax.plot([x_hi if right else x_lo], [0.5], ">" if right else "<", color=SERIES[1], ms=6, clip_on=False)
         elif cell.get("no_crossing"):
             # top right: the curve sits at the top only at low S500 (left) and at its floor at high S500
             ax.text(0.97, 0.95, f"no crossing at CER 0.10\n(floor {cell['floor']:.3f})", transform=ax.transAxes,
-                    ha="right", va="top", fontsize=7, color=SERIES[1])
+                    ha="right", va="top", fontsize=7, color=SERIES[1],
+                    bbox={"facecolor": "white", "alpha": 0.85, "edgecolor": "none", "pad": 1.5})
         ax.set_xlim(x_lo, x_hi)
         r_lo, r_hi = SPEED_CELLS.bounds(k)
         ax.set_title(f"cell {k}: {r_lo:.1f}–{r_hi:.1f} WPM ({len(mine)} signals)", fontsize=8, color=INK)
@@ -133,7 +156,8 @@ def figure_cer_s500(a: dict, decoder: str, stem: Path) -> list[Path] | None:
                 handles.append(h)
                 labels.append(lab)
     fig.legend(handles, labels, loc="upper center", ncol=4, bbox_to_anchor=(0.5, 1.03))
-    fig.suptitle(f"{decoder}: CER against S$_{{500}}$ per speed cell (dotted: CER 0.10)", y=1.07, color=INK)
+    fig.suptitle(f"{display_name(decoder)}: CER against S$_{{500}}$ per speed cell (dotted: CER 0.10)", y=1.07,
+                 color=INK)
     return _save(fig, stem)
 
 
@@ -153,7 +177,7 @@ def figure_cer_en0(a: dict, decoder: str, stem: Path) -> list[Path] | None:
         color = SPEED_RAMP[k - 1]
         mine = [r for r in rows if r["speed_cell"] == k]
         ax.scatter([r["en0_db"] for r in mine], [min(r["edits"] / r["symbols"], 1.0) for r in mine], s=5,
-                   color=color, alpha=0.25, linewidths=0)
+                   color=color, alpha=0.25, linewidths=0, rasterized=True)  # an image inside the SVG
         ax.plot(grid, model.cer(grid, np.full_like(grid, cell["wpm"])), color=color, lw=1.5,
                 label=f"cell {k}, {cell['wpm']:.1f} WPM")
     ideal = fit["en0"]["ideal_noncoherent_db"]
@@ -163,8 +187,9 @@ def figure_cer_en0(a: dict, decoder: str, stem: Path) -> list[Path] | None:
     ax.set_ylabel(CER_LABEL)
     ax.set_ylim(-0.03, 1.03)
     spread = fit["en0"]["spread_db"]
-    ax.set_title(f"{decoder}: CER against E/N$_0$ per dit; a time-base-invariant decoder's curves coincide\n"
-                 f"spread of the crossings at CER 0.10: {spread:.2f} dB of E/N$_0$ per dit" if spread is not None else decoder,
+    name = display_name(decoder)
+    ax.set_title(f"{name}: CER against E/N$_0$ per dit; a time-base-invariant decoder's curves coincide\n"
+                 f"spread of the crossings at CER 0.10: {spread:.2f} dB of E/N$_0$ per dit" if spread is not None else name,
                  fontsize=9, color=INK)
     ax.legend(loc="upper right", fontsize=7)
     return _save(fig, stem)
@@ -190,8 +215,10 @@ def figure_crossings(a: dict, stem: Path, threshold: float = 0.10) -> list[Path]
         y = np.array([np.nan if c["value"] is None else c["value"] for c in curve])
         lo = np.array([np.nan if not c["interval"] else c["interval"][0] for c in curve])
         hi = np.array([np.nan if not c["interval"] else c["interval"][1] for c in curve])
+        # one segment per speed cell: the floor (one per cell) makes the crossing jump at cell edges
+        v, y, lo, hi = break_at_cell_edges(v, y, lo, hi)
         ax.fill_between(v, lo, hi, color=color, alpha=0.15, lw=0)
-        ax.plot(v, y, color=color, lw=1.8, label=f"{name} (fit, pointwise 95% interval)")
+        ax.plot(v, y, color=color, lw=1.8, label=f"{display_name(name)} (fit per speed cell, pointwise 95% interval)")
         cells = fit["s500"][f"crossings_{key}"]
         # a percentile interval need not contain the point estimate: drawn as its own segment, not as error bars
         shown = [c for c in cells if c["value"] is not None]
@@ -204,15 +231,18 @@ def figure_crossings(a: dict, stem: Path, threshold: float = 0.10) -> list[Path]
                 top = c["value"] > y_hi
                 edge = y_hi if top else y_lo
                 ax.plot([c["wpm"]], [edge], "^" if top else "v", ms=7, color=color, clip_on=False)
-                ax.annotate(f"{c['value']:+.1f} dB", xy=(c["wpm"], edge), xytext=(6, -10 if top else 4),
+                ax.annotate(f"{c['value']:+.1f} dB SNR in 500 Hz", xy=(c["wpm"], edge), xytext=(6, -10 if top else 4),
                             textcoords="offset points", fontsize=7, color=color)
         missing = [c for c in cells if c["value"] is None and c.get("no_crossing")]
+        # x markers at the top, one row per decoder so that two decoders' marks in one cell do not hide each other
+        mark_y = y_hi - 0.035 * i * (y_hi - y_lo)
         for c in missing:
-            ax.plot([c["wpm"]], [y_hi], "x", ms=7, mew=1.5, color=color, clip_on=False)
+            ax.plot([c["wpm"]], [mark_y], "x", ms=7, mew=1.5, color=color, clip_on=False)
         if missing:
-            # one line per decoder, stacked under the top edge at the axis's middle (cells' x markers sit at the edge)
-            ax.text(0.5, 0.97 - 0.045 * i, f"{name}: no crossing in speed cell{'s' if len(missing) > 1 else ''} "
-                    + ", ".join(str(c["cell"]) for c in missing if "cell" in c) + " (x at the top)",
+            # one line per decoder, stacked under the top edge at the axis's middle
+            ax.text(0.5, 0.90 - 0.045 * i, f"{display_name(name)}: no crossing in speed "
+                    f"cell{'s' if len(missing) > 1 else ''} " + ", ".join(str(c["cell"]) for c in missing if "cell" in c)
+                    + " (x near the top)",
                     transform=ax.transAxes, ha="center", va="top", fontsize=7, color=color)
     v = v_all
     ax.plot(v, ideal_s500_db(threshold, v), color=MUTED, lw=1.2, ls="--", label="genie bound, noncoherent")
@@ -252,7 +282,7 @@ def figure_paired(a: dict, stem: Path) -> list[Path] | None:
             if iv:
                 ax.plot(iv, [y, y], color=color, lw=1.5)
             ax.plot([s["mean"]], [y], "o", ms=5, color=color,
-                    label=f"{comp['variant']} − {comp['reference']}" if j == 0 else None)
+                    label=f"{display_name(comp['variant'])} − {display_name(comp['reference'])}" if j == 0 else None)
     ax.axvline(0.0, color=MUTED, lw=0.8)
     ax.set_yticks(range(len(labels)))
     ax.set_yticklabels([f"{lab}" for lab in labels])
@@ -306,7 +336,7 @@ def figure_recall(a: dict, decoder: str, stem: Path) -> list[Path] | None:
                 handles.append(h)
                 labels.append(lab)
     fig.legend(handles, labels, loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.03))
-    fig.suptitle(f"{decoder}: detection recall through the detector path, beside the oracle CER", y=1.07, color=INK)
+    fig.suptitle(f"{display_name(decoder)}: detection recall through the detector path, beside the oracle CER", y=1.07, color=INK)
     return _save(fig, stem)
 
 
@@ -319,7 +349,8 @@ CAPTIONS = {
     "fig3": "S500 at CER 0.10 (dB SNR in 500 Hz) against speed (WPM), per decoder: the fit with its pointwise 95% "
             "interval and the cell centers' intervals (x at the top: no crossing in that cell), beside the genie-aided "
             "bound (noncoherent dashed, coherent dotted; derived, stage-1 results record section 5.1.1, 10 units per "
-            "character heuristic). The fitted curve steps at cell edges where the floors of neighboring cells differ.",
+            "character heuristic). The fitted curve and its band are drawn one speed cell at a time and break at every "
+            "cell edge: the floor is one value per speed cell, so the crossing can jump there.",
     "fig4": "Paired CER differences, variant minus reference, per signal, by group and pooled: mean and 95% bootstrap "
             "interval over signals.",
     "fig5": "Detection recall through the detector path (A2's detector copies) against S500 (dB SNR in 500 Hz), per "

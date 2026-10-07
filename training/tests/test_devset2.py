@@ -117,10 +117,33 @@ def test_the_bootstrap_intervals_cover_the_truth_and_are_reproducible():
     cross = d2.crossings(fit, boots, CENTERS, 0.10)
     truth = TRUTH.crossing_db(0.10, CENTERS)
     covered = sum(c["interval"][0] <= t <= c["interval"][1] for c, t in zip(cross, truth))
-    assert covered >= 7  # measured coverage about 0.90 per cell (docstring)
+    assert covered >= 7  # measured coverage about 0.90 per cell (docstring); the pooled test below is the sharper one
     assert all(0.0 < c["interval"][1] - c["interval"][0] < 1.0 for c in cross)
     again = d2.crossings(fit, d2.bootstrap_fits(s, v, k, n, fit, "test", resamples=200), CENTERS, 0.10)
     assert again == cross
+
+
+def test_the_bootstrap_coverage_pooled_over_sets():
+    """Coverage pooled over 10 sets x 10 cells (100 resamples each), so that it can tell about 0.90 from 0.80 (task D4
+    review, M3). Measured: 0.91 over seeds 11-20, 0.95 over seeds 100-109; 40 x 10 cells at 200 resamples gave 0.907.
+    The cells of one set share the fit, so the 100 trials are not independent; 0.82 leaves a margin below 0.91."""
+    truth = TRUTH.crossing_db(0.10, CENTERS)
+    covered = []
+    for seed in range(11, 21):
+        s, v, k, n = synth(np.random.default_rng(seed))
+        fit = d2.fit_cer(s, v, k, n)
+        cross = d2.crossings(fit, d2.bootstrap_fits(s, v, k, n, fit, ("cov", seed), resamples=100), CENTERS, 0.10)
+        covered += [c["interval"] is not None and c["interval"][0] <= t <= c["interval"][1] for c, t in zip(cross, truth)]
+    assert np.mean(covered) >= 0.82
+
+
+def test_task_d2_fits_are_read_with_their_single_floor_in_every_cell():
+    old = {"params": {"a0": 1.0, "a1": 1.5, "a2": 1.0, "b0": math.log(1.2), "b1": 0.2, "b2": 0.0, "g": d2._logit(0.02)},
+           "axis": "s500", "method": "wls", "objective": 1.0, "converged": True, "iterations": 9, "signals": 560,
+           "free": ["a0", "a1", "a2", "b0", "b1", "b2", "g"], "floor": 0.02}
+    fit = d2.Fit.from_json(old)
+    assert fit.floors == pytest.approx((0.02,) * 10) and all(fit.free)
+    assert np.allclose(fit.crossing_db(0.10, CENTERS), model(floors=(0.02,) * 10).crossing_db(0.10, CENTERS))
 
 
 def _failing_cell_1(rng, form):
@@ -441,3 +464,25 @@ def test_a_fit_that_did_not_converge_is_flagged_in_the_summary():
     assert any("lower objective" in w for w in warnings)
     entry["en0"]["s0_constant"] = {"fit": ok, "objective_increase": 5.0}
     assert d2._fit_warnings(entry) == []
+
+
+def test_figure_curves_break_at_every_speed_cell_edge():
+    """Figure 3 draws the per-cell-floor curve one speed cell at a time (task D4 review, I2): a NaN separates
+    consecutive points in different cells, so no line or band joins two cells."""
+    from kz4ap_proto import figures
+    v = np.array(d2.FINE_SPEEDS_WPM)
+    y = np.arange(len(v), dtype=float)
+    vb, yb = figures.break_at_cell_edges(v, y)
+    gaps = np.flatnonzero(np.isnan(vb))
+    assert len(gaps) == len(SPEED_CELLS) - 1 and np.all(np.isnan(yb[gaps]))
+    for segment in np.split(vb, gaps):
+        cells = set(d2.cell_index(segment[np.isfinite(segment)]))
+        assert len(cells) == 1
+    assert list(yb[np.isfinite(yb)]) == list(y)
+
+
+def test_figures_name_decoders_not_folders():
+    from kz4ap_proto import figures
+    assert figures.display_name("baseline") == "Envelope"
+    assert figures.display_name("matched") == "Matched"
+    assert figures.display_name("d4-bank") == "bank (d4-bank)"

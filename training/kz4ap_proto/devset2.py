@@ -197,8 +197,16 @@ class Fit:
 
     @staticmethod
     def from_json(d: dict) -> "Fit":
-        return Fit(tuple(d["params"][p] for p in PARAMETERS), d["axis"], d["method"], d["objective"],
-                   d["converged"], d["iterations"], d["signals"], tuple(p in d["free"] for p in PARAMETERS),
+        """Reads to_json's output; also task D2's, whose single floor "g" becomes every cell's floor."""
+        params = dict(d["params"])
+        free = list(d["free"])
+        if "g" in params:   # task D2: one floor for all speed cells
+            g = params.pop("g")
+            params.update({f"g{k}": g for k in SPEED_CELLS.numbers})
+            if "g" in free:
+                free += [f"g{k}" for k in SPEED_CELLS.numbers]
+        return Fit(tuple(params[p] for p in PARAMETERS), d["axis"], d["method"], d["objective"],
+                   d["converged"], d["iterations"], d["signals"], tuple(p in free for p in PARAMETERS),
                    d.get("stop", "converged"), tuple(d.get("fitted_cells", SPEED_CELLS.numbers)))
 
 
@@ -562,6 +570,7 @@ def fit_decoder(rows, method: str = FIT_METHOD, resamples: int = BOOTSTRAP_RESAM
            "s500_range_db": [min(levels), max(levels)] if levels else None}
     s_cols = _columns(rows, "s500")
     s_top = top_levels(s_cols[0], s_cols[1])
+    s_bottom = -top_levels(-np.asarray(s_cols[0], float), s_cols[1])   # each cell's lowest level (NaN without data)
     s_fit = fit_cer(*s_cols, axis="s500", method=method)
     s_boots = bootstrap_fits(*s_cols, s_fit, (key, "s500", method), resamples)
     out["s500"] = {"fit": s_fit.to_json(), "failed_resamples": sum(b is None for b in s_boots),
@@ -573,7 +582,8 @@ def fit_decoder(rows, method: str = FIT_METHOD, resamples: int = BOOTSTRAP_RESAM
         per_cell = crossings(s_fit, s_boots, centers, t, s_top)
         for k, c in zip(cells, per_cell):
             c.update(cell=k, signals=counts[k], en0_db=None if c["value"] is None else float(en0_db(c["value"], c["wpm"])),
-                     outside_data=c["value"] is not None and c["value"] < min(levels),
+                     # below the cell's own lowest level, as "above the data" uses the cell's highest
+                     outside_data=c["value"] is not None and bool(c["value"] < s_bottom[k - 1]),
                      ideal_noncoherent_db=float(ideal_s500_db(t, c["wpm"])),
                      ideal_coherent_db=float(ideal_s500_db(t, c["wpm"], coherent=True)))
         out["s500"][f"crossings_{t:.2f}"] = per_cell
