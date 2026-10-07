@@ -76,7 +76,7 @@ crossing (S₅₀₀ at CER 0.10) per speed cell for both decoders, with 95% boo
 ## 1. Conditions
 
 - **Score tables: the source of every number in this record** (the results-data rule, owner 2026-10-07). Every
-  run the record reports is committed as its per-signal score table in `docs/plans/data/2026-10-06-development-set/`, at commit `4b2e60e`:
+  run the record reports is committed as its per-signal score table in `docs/plans/data/2026-10-06-development-set/`, at commit `2160428`:
   - the pilot: `pilot-matched.csv` (Matched) and `pilot-bank.csv` (the bank, results folder `pilot-bank`);
   - the baseline: `d4-baseline.csv` (Envelope, results folder `baseline`), `d4-matched.csv`,
     `d4-matched-detector.csv` (Matched through the detector path, A2's copies) and `d4-bank.csv`.
@@ -84,7 +84,7 @@ crossing (S₅₀₀ at CER 0.10) per speed cell for both decoders, with 95% boo
   Each holds one row per signal: decoder, group, test case, index, path, speed (0.01 WPM), speed cell, S₅₀₀
   (0.01 dB SNR in 500 Hz), S₅₀₀ cell, E/N₀ per dit (recomputed from the rounded speed and S₅₀₀; the column shows
   it at 0.01 dB re 1), edits, reference symbols, detected (0/1) and beyond the oracle anchor (0/1).
-  - **The record's numbers are computed from these committed, rounded tables, at commit `4b2e60e`**, with the same
+  - **The record's numbers are computed from these committed, rounded tables, at commit `2160428`**, with the same
     bootstrap seeds and 1 000 resamples as the first analyses. Against the unrounded rows, the S₅₀₀ crossings moved by
     at most 0.02 dB SNR in 500 Hz and their interval ends by at most 0.08 dB SNR in 500 Hz, except the single-floor
     extrapolation of the pilot bank's cell 1 (section 3.1). Paired differences and the detection counts do not use the
@@ -363,8 +363,8 @@ figure 3); the change is presentation only, with a test.
 ### 3.5 The pilot re-analyzed with one floor per speed cell (task D4)
 
 The owner's decision after the pilot: separate floors per speed cell, so that a cell that never reaches CER 0.10
-is reported as "no crossing" and cannot distort its neighbors. Code at `aaffd90` (`devset2.py`), figures at
-`e882c8a`; the numbers below are recomputed from the score tables at `4b2e60e` (section 1).
+is reported as "no crossing" and cannot distort its neighbors. Code at `8e7e7d2` (`devset2.py`), figures at
+`f0a0737`; the numbers below are recomputed from the score tables at `2160428` (section 1).
 
 **What changed in the fit** (`training/kz4ap_proto/devset2.py`):
 
@@ -468,7 +468,7 @@ build/analysis/2026-10-06-development-set/experiments/devset2-pilot-d4.json --di
 build/figures/2026-10-06-development-set/pilot-d4` (all cells), and `pilot-d4-c2to10` for cells 2–10. Figures 1–4
 are PNG at 150 dpi and SVG, with `captions.md`. Figure 3, the crossing against speed for both decoders:
 
-<!-- FIGURE: pilot fig3 -->
+![Pilot: S₅₀₀ at CER 0.10 against speed, Matched and the bank, per-cell floors (dB SNR in 500 Hz)](figures/2026-10-06-development-set/pilot-crossing-vs-speed.png)
 
 ## 4. The proposed sizes
 
@@ -628,8 +628,8 @@ All times are from the Linux machine. Another investigation shared it, using up 
 step here ran with 5 workers.
 
 - **Code.** Branch `milestone-2c-stage2`. The engine was unchanged since `84413e9` (built there with preset `linux`,
-  task D3). The analysis code is at `aaffd90`, and the figures at `af8a9b3`. The numbers below are recomputed from
-  the score tables at `4b2e60e` (section 1).
+  task D3). The analysis code is at `8e7e7d2`, and the figures at `0000000`. The numbers below are recomputed from
+  the score tables at `2160428` (section 1).
 - **Generation**: `kz4ap_synth.suites.dev2_suite(3, {"A2": 48, "B2": 24, "C2": 24, "I2": 24})`, written by
   the committed `write_suite`.
   - The recordings were written 5 at a time by a git-ignored driver (`build/d4-gen.py`). Each recording was
@@ -868,7 +868,7 @@ analysis `d4-c2to10`; its summary `devset2-d4-c2to10.md` is the record's source 
   the fit at the cell's center, and either the crossing with its interval or "no crossing" with the floor. The
   bank's:
 
-<!-- FIGURE: baseline fig1-d4-bank -->
+![Baseline: the bank's CER against S₅₀₀, one panel per speed cell (dB SNR in 500 Hz)](figures/2026-10-06-development-set/baseline-bank-cer-by-cell.png)
 
 - `fig2-…`: CER against E/N₀ per dit, every speed cell's fitted curve.
 - `fig3`: the crossing against speed for the three decoders, beside the genie bound.
@@ -877,11 +877,11 @@ analysis `d4-c2to10`; its summary `devset2-d4-c2to10.md` is the record's source 
     value per speed cell, so the crossing can jump at an edge (Envelope at 31.85 and 40.09 WPM). A jump between
     cells is a property of the model's cells, not a measured slope.
 
-<!-- FIGURE: baseline fig3 -->
+![Baseline: S₅₀₀ at CER 0.10 against speed for Envelope, Matched and the bank (dB SNR in 500 Hz)](figures/2026-10-06-development-set/baseline-crossing-vs-speed.png)
 
 - `fig4`: paired differences by group, bank − Matched and Envelope − Matched.
 
-<!-- FIGURE: baseline fig4 -->
+![Baseline: paired CER, bank − Matched, by group](figures/2026-10-06-development-set/baseline-bank-minus-matched-by-group.png)
 
 - `fig5-matched`: detection recall through the detector path against S₅₀₀ per speed cell, beside Matched's oracle
   CER.
