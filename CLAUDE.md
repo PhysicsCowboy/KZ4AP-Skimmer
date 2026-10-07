@@ -38,9 +38,17 @@
     reports, so every number in the record can be checked and every fit and
     figure redrawn in minutes on any machine. Records cite the commit and the
     score file each number comes from.
+  - Score tables are **rounded** to meaningful precision (speed 0.01 WPM,
+    S₅₀₀ and E/N₀ 0.01 dB; counts are integers), and a record's numbers are
+    computed **from the committed, rounded table**, so the table reproduces
+    them exactly. Exact drawn values, if ever needed, come back from the seed
+    by rerunning the generator's label step (seconds, no audio).
   - Commit the **few figures a results record shows**: PNGs embedded in the
     record, at most about three per results section, the ones a conclusion
-    rests on. **Each figure commit needs the owner's approval.**
+    rests on. No approval is needed when the record's embedded PNGs, added
+    up, are no larger on disk than the rounded score tables committed for
+    that record; **otherwise, and for any other figure, the owner approves
+    each figure commit.**
   - Do not commit recordings, decoded files, analysis files (fits,
     bootstraps) or any other figure: they stay in `build/` (git-ignored) and
     are rebuilt from the committed scores (fits and figures, minutes) or from
