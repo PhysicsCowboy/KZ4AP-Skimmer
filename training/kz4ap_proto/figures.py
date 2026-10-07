@@ -125,7 +125,13 @@ def figure_cer_s500(a: dict, decoder: str, stem: Path) -> list[Path] | None:
         ax.set_xlabel(S500_LABEL)
     for ax in axes[:, 0]:
         ax.set_ylabel(CER_LABEL)
-    handles, labels = axes.flat[0].get_legend_handles_labels()
+    # the entries of every panel (a first panel without a crossing has no crossing entries)
+    handles, labels = [], []
+    for ax in axes.flat:
+        for h, lab in zip(*ax.get_legend_handles_labels()):
+            if lab not in labels:
+                handles.append(h)
+                labels.append(lab)
     fig.legend(handles, labels, loc="upper center", ncol=4, bbox_to_anchor=(0.5, 1.03))
     fig.suptitle(f"{decoder}: CER against S$_{{500}}$ per speed cell (dotted: CER 0.10)", y=1.07, color=INK)
     return _save(fig, stem)
