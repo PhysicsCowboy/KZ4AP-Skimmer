@@ -71,6 +71,7 @@ def _safe(name: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in name)
 
 
+V_MID_WPM = float(np.sqrt(SPEED_CELLS.edges[0] * SPEED_CELLS.edges[-1]))  # the log speed axis's middle (presentation)
 OUTSIDE_PAD_DB = 1.0  # the S500 axes span the fitted data's range plus this margin, dB SNR in 500 Hz (presentation)
 
 
@@ -114,8 +115,9 @@ def figure_cer_s500(a: dict, decoder: str, stem: Path) -> list[Path] | None:
                             va="center", fontsize=7, color=SERIES[1])
                 ax.plot([x_hi if right else x_lo], [0.5], ">" if right else "<", color=SERIES[1], ms=6, clip_on=False)
         elif cell.get("no_crossing"):
-            ax.text(0.97, 0.55, f"no crossing at CER 0.10\n(floor {cell['floor']:.3f})", transform=ax.transAxes,
-                    ha="right", va="center", fontsize=7, color=SERIES[1])
+            # top right: the curve sits at the top only at low S500 (left) and at its floor at high S500
+            ax.text(0.97, 0.95, f"no crossing at CER 0.10\n(floor {cell['floor']:.3f})", transform=ax.transAxes,
+                    ha="right", va="top", fontsize=7, color=SERIES[1])
         ax.set_xlim(x_lo, x_hi)
         r_lo, r_hi = SPEED_CELLS.bounds(k)
         ax.set_title(f"cell {k}: {r_lo:.1f}–{r_hi:.1f} WPM ({len(mine)} signals)", fontsize=8, color=INK)
@@ -202,8 +204,9 @@ def figure_crossings(a: dict, stem: Path, threshold: float = 0.10) -> list[Path]
         for c in cells:
             if c["value"] is None and c.get("no_crossing"):
                 ax.plot([c["wpm"]], [y_hi], "x", ms=7, mew=1.5, color=color, clip_on=False)
-                ax.annotate(f"{name}: no crossing", xy=(c["wpm"], y_hi), xytext=(6, -10 - 9 * i),
-                            textcoords="offset points", fontsize=7, color=color)
+                right = c["wpm"] > V_MID_WPM   # labels on the right half extend leftward, inside the axes
+                ax.annotate(f"{name}: no crossing", xy=(c["wpm"], y_hi), xytext=(-6 if right else 6, -10 - 9 * i),
+                            textcoords="offset points", fontsize=7, color=color, ha="right" if right else "left")
     v = v_all
     ax.plot(v, ideal_s500_db(threshold, v), color=MUTED, lw=1.2, ls="--", label="genie bound, noncoherent")
     ax.plot(v, ideal_s500_db(threshold, v, coherent=True), color=MUTED, lw=1.0, ls=":", label="genie bound, coherent")
