@@ -113,6 +113,9 @@ def figure_cer_s500(a: dict, decoder: str, stem: Path) -> list[Path] | None:
                             xytext=(-4 if right else 4, 0), textcoords="offset points", ha="right" if right else "left",
                             va="center", fontsize=7, color=SERIES[1])
                 ax.plot([x_hi if right else x_lo], [0.5], ">" if right else "<", color=SERIES[1], ms=6, clip_on=False)
+        elif cell.get("no_crossing"):
+            ax.text(0.97, 0.55, f"no crossing at CER 0.10\n(floor {cell['floor']:.3f})", transform=ax.transAxes,
+                    ha="right", va="center", fontsize=7, color=SERIES[1])
         ax.set_xlim(x_lo, x_hi)
         r_lo, r_hi = SPEED_CELLS.bounds(k)
         ax.set_title(f"cell {k}: {r_lo:.1f}–{r_hi:.1f} WPM ({len(mine)} signals)", fontsize=8, color=INK)
@@ -195,6 +198,11 @@ def figure_crossings(a: dict, stem: Path, threshold: float = 0.10) -> list[Path]
                 edge = y_hi if top else y_lo
                 ax.plot([c["wpm"]], [edge], "^" if top else "v", ms=7, color=color, clip_on=False)
                 ax.annotate(f"{c['value']:+.1f} dB", xy=(c["wpm"], edge), xytext=(6, -10 if top else 4),
+                            textcoords="offset points", fontsize=7, color=color)
+        for c in cells:
+            if c["value"] is None and c.get("no_crossing"):
+                ax.plot([c["wpm"]], [y_hi], "x", ms=7, mew=1.5, color=color, clip_on=False)
+                ax.annotate(f"{name}: no crossing", xy=(c["wpm"], y_hi), xytext=(6, -10 - 9 * i),
                             textcoords="offset points", fontsize=7, color=color)
     v = v_all
     ax.plot(v, ideal_s500_db(threshold, v), color=MUTED, lw=1.2, ls="--", label="genie bound, noncoherent")
@@ -294,13 +302,14 @@ def figure_recall(a: dict, decoder: str, stem: Path) -> list[Path] | None:
 
 CAPTIONS = {
     "fig1": "CER against S500 (dB SNR in 500 Hz), one panel per speed cell: the signals (points), the fitted curve at "
-            "the cell's center (the smooth fit over S500 and ln WPM), the crossing at CER 0.10 with its 95% bootstrap "
-            "interval over signals.",
+            "the cell's center (the smooth fit over S500 and ln WPM, one floor per speed cell), the crossing at CER "
+            "0.10 with its 95% bootstrap interval over signals, or \"no crossing\" with the cell's floor.",
     "fig2": "CER against E/N0 per dit (dB re 1), every speed cell's fitted curve at its center: a time-base-invariant "
             "decoder's curves coincide; the dashed line is the genie-aided bound at CER 0.10 (noncoherent).",
     "fig3": "S500 at CER 0.10 (dB SNR in 500 Hz) against speed (WPM), per decoder: the fit with its pointwise 95% "
-            "interval and the cell centers' intervals, beside the genie-aided bound (noncoherent dashed, coherent "
-            "dotted; derived, stage-1 results record section 5.1.1, 10 units per character heuristic).",
+            "interval and the cell centers' intervals (x at the top: no crossing in that cell), beside the genie-aided "
+            "bound (noncoherent dashed, coherent dotted; derived, stage-1 results record section 5.1.1, 10 units per "
+            "character heuristic). The fitted curve steps at cell edges where the floors of neighboring cells differ.",
     "fig4": "Paired CER differences, variant minus reference, per signal, by group and pooled: mean and 95% bootstrap "
             "interval over signals.",
     "fig5": "Detection recall through the detector path (A2's detector copies) against S500 (dB SNR in 500 Hz), per "

@@ -11,13 +11,21 @@ Quantities and units:
 
 The model (the plan's, principle 6; this module's choices are marked derived, measured or heuristic):
 
-    CER(L, v) = c + (1 - c) * logistic(-(L - s0(v)) / w(v))
+    CER(L, v) = c_j(v) + (1 - c_j(v)) * logistic(-(L - s0(v)) / w(v))
 
 L the level (S500 or E/N0 per dit, dB), v the speed (WPM), x = ln(v / V_REF_WPM),
-s0(v) = a0 + a1 x + a2 x^2 (dB), ln w(v) = b0 + b1 x + b2 x^2 (w in dB), c = logistic(g) the floor (0 < c < 1).
+s0(v) = a0 + a1 x + a2 x^2 (dB), ln w(v) = b0 + b1 x + b2 x^2 (w in dB), and c_j = logistic(g_j) the floor of
+speed cell j(v) (0 < c_j < 1), one per speed cell (owner, 2026-10-06, after the pilot; task D4). It replaced task
+D2's single floor, which a speed cell failing at every S500 pulled up for every cell. A speed outside 8-80 WPM takes
+the nearest cell's floor. A cell with no signals keeps its floor at the start value: not fitted, reported as None.
 V_REF_WPM = sqrt(8 * 80) = 25.30 WPM, the speed range's geometric center: a centering for conditioning only, the
 fitted curves do not depend on it (derived). CER above 1 (more edits than reference symbols) is clipped to 1, the
 model's ceiling.
+
+A crossing (the level where the fitted CER falls to a threshold t, at a speed) is "no crossing" when the floor of the
+speed's cell is at or above t (the curve never reaches t; reason "floor"), or when the crossing lies above the
+highest level of that cell's fit signals (the curve does not reach t within the data; reason "above the data"). A
+crossing below the data's lowest level is still reported, flagged outside_data.
 
 Fitted by weighted least squares (FIT_METHOD, the default) or by binomial maximum likelihood, both by
 Levenberg-Marquardt on the Gauss-Newton / Fisher-scoring normal equations. Why least squares: see FIT_METHOD.
@@ -48,9 +56,19 @@ DIT_S_WPM = 1.2               # the dit, s, is 1.2 s / WPM (PARIS)
 SNR_BANDWIDTH_HZ = 500.0      # S500's noise bandwidth, Hz
 CER_LEVELS = (0.10, 0.05)     # the crossings reported (the plan's, principle 6; the old suite's CER_THRESHOLDS)
 AXES = {"s500": "S500 (dB SNR in 500 Hz)", "en0": "E/N0 per dit (dB re 1)"}
-PARAMETERS = ("a0", "a1", "a2", "b0", "b1", "b2", "g")
-ALL_FREE = (True,) * 7
-S0_CONSTANT = (True, False, False, True, True, True, True)   # the time-base-invariant hypothesis: a1 = a2 = 0
+N_CELLS = len(SPEED_CELLS)
+# a: s0's coefficients (dB); b: ln(w / 1 dB)'s; g1 ... g10: the speed cells' floors' logits (one floor per speed cell)
+PARAMETERS = ("a0", "a1", "a2", "b0", "b1", "b2") + tuple(f"g{k}" for k in SPEED_CELLS.numbers)
+N_SHAPE = 6                   # the shape parameters a0 ... b2 come first, the floors' logits after them
+ALL_FREE = (True,) * len(PARAMETERS)
+S0_CONSTANT = (True, False, False, True, True, True) + (True,) * N_CELLS  # time-base-invariant hypothesis: a1 = a2 = 0
+START_FLOOR = 0.002           # the floors' first starting value (heuristic; _starts)
+# The floors are held within [FLOOR_LIMIT, 1 - FLOOR_LIMIT] (their logits within +/-G_LIMIT). Heuristic: a cell with no
+# errors at high S500 drives its floor toward 0, where the objective flattens and the logit would drift without end
+# (the fit would stop on its iteration limit); 1e-5 is far below anything these data resolve (a few times 10^4
+# symbols per speed cell, one error in them is above 1e-5).
+FLOOR_LIMIT = 1e-5
+G_LIMIT = math.log((1.0 - FLOOR_LIMIT) / FLOOR_LIMIT)
 # The default method. Weighted least squares on each signal's CER, weights its reference symbols (measured on
 # synthetic data, test_devset2.py and the task D2 report): both methods recover s0 and w to within their tolerances
 # on binomial data, but with whole-signal failures (a signal that locks to a wrong speed prints garbage at any S500)
@@ -60,6 +78,9 @@ S0_CONSTANT = (True, False, False, True, True, True, True)   # the time-base-inv
 # 0.20-0.27 dB for the binomial likelihood; the direction held in every cell in the review's independent check (12
 # sets, other seeds), where least squares' bias reached 0.29 dB in cell 10 (the magnitude at the speed extremes is
 # not pinned down tightly). Bootstrap failures, 0 of 200 against 1 of 200, are weak evidence and not a reason.
+# Re-measured with one floor per speed cell (task D4; each cell's floor then absorbs its own few failures): over 200
+# sets of 4 signals per cell, least squares +0.05 to +0.15 dB per cell (RMS 0.38-0.75 dB), the binomial likelihood
+# +0.18 to +0.29 dB (RMS 0.50-0.76 dB); at 48 signals per cell (20 sets) +0.00 to +0.11 dB against +0.14 to +0.29 dB.
 FIT_METHOD = "wls"
 METHODS = ("wls", "binomial")
 MIN_SIGNALS_FOR_FIT = 20      # heuristic: about three signals per fitted parameter
@@ -112,10 +133,18 @@ def _design(wpm) -> np.ndarray:
     return np.stack([np.ones_like(x), x, x * x], axis=-1)
 
 
+def cell_index(wpm) -> np.ndarray:
+    """The speed cell of each speed as an index 0 ... N_CELLS - 1 (the cell number minus 1). An edge belongs to the
+    cell above it and the top edge to the top cell, as in SPEED_CELLS.cell_of; a speed outside 8-80 WPM gets the
+    nearest cell."""
+    return np.searchsorted(np.asarray(SPEED_CELLS.edges[1:-1], float), np.asarray(wpm, float), side="right")
+
+
 @dataclass(frozen=True)
 class Fit:
-    """A fitted model. params: PARAMETERS' values (a in dB, b for ln(w / 1 dB), g the floor's logit); axis "s500" or
-    "en0" (the level the curve is a function of)."""
+    """A fitted model. params: PARAMETERS' values (a in dB, b for ln(w / 1 dB), g1 ... g10 the speed cells' floors'
+    logits); axis "s500" or "en0" (the level the curve is a function of). fitted_cells: the speed cells whose floor
+    was fitted (a cell without signals keeps its start value, and its floor is reported as None)."""
     params: tuple
     axis: str = "s500"
     method: str = FIT_METHOD
@@ -125,10 +154,16 @@ class Fit:
     signals: int = 0
     free: tuple = ALL_FREE
     stop: str = "converged"           # "converged", "stationary" (no step lowers the objective) or "iterations"
+    fitted_cells: tuple = tuple(SPEED_CELLS.numbers)
 
     @property
-    def floor(self) -> float:
-        return float(_expit(np.array([self.params[6]]))[0])
+    def floors(self) -> tuple:
+        """Each speed cell's floor c_j (cells 1 ... 10), a CER."""
+        return tuple(float(c) for c in _expit(np.asarray(self.params[N_SHAPE:], float)))
+
+    def floor_at(self, wpm):
+        """The floor of the speed cell holding each speed."""
+        return np.asarray(self.floors)[cell_index(wpm)]
 
     def s0_db(self, wpm):
         return _design(wpm) @ np.asarray(self.params[0:3])
@@ -138,29 +173,33 @@ class Fit:
 
     def cer(self, level_db, wpm):
         """The model's CER at level_db (on the fit's axis) and wpm."""
-        z = -(np.asarray(level_db, float) - self.s0_db(wpm)) / self.w_db(wpm)
-        c = self.floor
+        level_db, wpm = np.broadcast_arrays(np.asarray(level_db, float), np.asarray(wpm, float))
+        z = -(level_db - self.s0_db(wpm)) / self.w_db(wpm)
+        c = self.floor_at(wpm)
         return c + (1.0 - c) * _expit(np.atleast_1d(z)).reshape(np.shape(z))
 
     def crossing_db(self, threshold: float, wpm):
         """The level (dB, on the fit's axis) at which the model's CER falls to threshold at wpm: s0 - w logit(q),
-        q = (threshold - c) / (1 - c) (derived); NaN where the floor c is at or above the threshold."""
-        c = self.floor
-        if c >= threshold:
-            return np.full(np.shape(wpm), np.nan)
-        return self.s0_db(wpm) - self.w_db(wpm) * _logit((threshold - c) / (1.0 - c))
+        q = (threshold - c_j) / (1 - c_j), c_j the floor of wpm's speed cell (derived); NaN where that floor is at or
+        above the threshold (the curve never reaches it)."""
+        wpm = np.asarray(wpm, float)
+        c = self.floor_at(wpm)
+        reach = c < threshold
+        q = np.where(reach, (threshold - c) / (1.0 - c), 0.5)
+        return np.where(reach, self.s0_db(wpm) - self.w_db(wpm) * np.log(q / (1.0 - q)), np.nan)
 
     def to_json(self) -> dict:
+        floors = {str(k): (c if k in self.fitted_cells else None) for k, c in zip(SPEED_CELLS.numbers, self.floors)}
         return {"params": dict(zip(PARAMETERS, self.params)), "axis": self.axis, "method": self.method,
-                "floor": self.floor, "objective": self.objective, "converged": self.converged,
+                "floors": floors, "objective": self.objective, "converged": self.converged,
                 "iterations": self.iterations, "signals": self.signals, "stop": self.stop,
-                "free": [p for p, f in zip(PARAMETERS, self.free) if f]}
+                "free": [p for p, f in zip(PARAMETERS, self.free) if f], "fitted_cells": list(self.fitted_cells)}
 
     @staticmethod
     def from_json(d: dict) -> "Fit":
         return Fit(tuple(d["params"][p] for p in PARAMETERS), d["axis"], d["method"], d["objective"],
                    d["converged"], d["iterations"], d["signals"], tuple(p in d["free"] for p in PARAMETERS),
-                   d.get("stop", "converged"))
+                   d.get("stop", "converged"), tuple(d.get("fitted_cells", SPEED_CELLS.numbers)))
 
 
 @dataclass
@@ -170,9 +209,11 @@ class _Data:
     k: np.ndarray        # edits, clipped to n
     n: np.ndarray        # reference symbols
     X: np.ndarray = field(init=False)
+    cell: np.ndarray = field(init=False)   # each signal's speed cell index, 0 ... N_CELLS - 1
 
     def __post_init__(self) -> None:
         self.X = _design(self.wpm)
+        self.cell = cell_index(self.wpm)
 
     @property
     def y(self) -> np.ndarray:
@@ -196,7 +237,8 @@ def _evaluate(theta, d: _Data, method: str, jacobian: bool = True):
     lw = d.X @ theta[3:6]
     w = np.exp(lw)
     z = -(d.level - s0) / w
-    c = float(_expit(np.array([theta[6]]))[0])
+    g = np.asarray(theta[N_SHAPE:], float)[d.cell]
+    c = _expit(g)                     # each signal's floor: its speed cell's
     sig = _expit(z)
     f = c + (1.0 - c) * sig
     one_minus_f = (1.0 - c) * _expit(-z)
@@ -205,8 +247,9 @@ def _evaluate(theta, d: _Data, method: str, jacobian: bool = True):
         obj = float(np.sum(d.n * (y - f) ** 2))
         W = d.n
     elif method == "binomial":
-        log_f = np.logaddexp(math.log(c) if c > 0 else -np.inf, math.log1p(-c) + _log_expit(z))
-        log_1mf = math.log1p(-c) + _log_expit(-z)
+        log_1mc = _log_expit(-g)
+        log_f = np.logaddexp(_log_expit(g), log_1mc + _log_expit(z))
+        log_1mf = log_1mc + _log_expit(-z)
         with np.errstate(divide="ignore", invalid="ignore"):
             sat = (np.where(d.k > 0, d.k * np.log(np.where(d.k > 0, y, 1.0)), 0.0)
                    + np.where(d.n - d.k > 0, (d.n - d.k) * np.log(np.where(d.n > d.k, 1.0 - y, 1.0)), 0.0))
@@ -217,24 +260,48 @@ def _evaluate(theta, d: _Data, method: str, jacobian: bool = True):
     if not jacobian:
         return obj, f, None, W
     ds = (1.0 - c) * sig * (1.0 - sig)
-    J = np.empty((len(f), 7))
+    J = np.zeros((len(f), len(PARAMETERS)))
     J[:, 0:3] = (ds / w)[:, None] * d.X
     J[:, 3:6] = (ds * -z)[:, None] * d.X
-    J[:, 6] = c * (1.0 - c) * (1.0 - sig)
+    J[np.arange(len(f)), N_SHAPE + d.cell] = c * (1.0 - c) * (1.0 - sig)
     return obj, f, J, W
 
 
-def _start(d: _Data, method: str, free: tuple) -> np.ndarray:
-    """A coarse grid over a0 (the data's level range, 29 points) and b0 (w = 0.5, 1, 2, 4 dB), the floor 0.002, the
-    speed terms 0: the best point by the objective (heuristic starting point)."""
-    best = None
-    for a0 in np.linspace(d.level.min(), d.level.max(), 29):
-        for w0 in (0.5, 1.0, 2.0, 4.0):
-            theta = np.array([a0, 0, 0, math.log(w0), 0, 0, _logit(0.002)], float)
-            obj = _evaluate(theta, d, method, jacobian=False)[0]
-            if best is None or obj < best[0]:
-                best = (obj, theta)
-    return best[1]
+def _data_floors(d: _Data) -> np.ndarray:
+    """Each speed cell's starting floor from its data: the mean CER of the quarter of its signals at the highest
+    levels, clipped to [START_FLOOR, 0.9] (START_FLOOR for a cell without signals). Heuristic: a starting point."""
+    out = np.full(N_CELLS, START_FLOOR)
+    for j in range(N_CELLS):
+        mine = np.flatnonzero(d.cell == j)
+        if len(mine):
+            top = mine[np.argsort(d.level[mine])[-max(1, len(mine) // 4):]]
+            out[j] = min(max(float(np.mean(d.y[top])), START_FLOOR), 0.9)
+    return out
+
+
+def _starts(d: _Data, method: str) -> list[np.ndarray]:
+    """Two starting points (heuristic), each the best point of a coarse grid over a0 (the data's level range, 29
+    points) and b0 (w = 0.5, 1, 2, 4 dB) with the speed terms 0: one with every floor at START_FLOOR, one with each
+    cell's floor from its data (_data_floors). fit_cer runs Levenberg-Marquardt from both and keeps the lower
+    objective."""
+    out = []
+    for floors in (np.full(N_CELLS, START_FLOOR), _data_floors(d)):
+        g = np.log(floors / (1.0 - floors))
+        best = None
+        for a0 in np.linspace(d.level.min(), d.level.max(), 29):
+            for w0 in (0.5, 1.0, 2.0, 4.0):
+                theta = np.concatenate([[a0, 0.0, 0.0, math.log(w0), 0.0, 0.0], g])
+                obj = _evaluate(theta, d, method, jacobian=False)[0]
+                if best is None or obj < best[0]:
+                    best = (obj, theta)
+        out.append(best[1])
+    return out
+
+
+def _fitted_mask(d: _Data, free: tuple) -> tuple:
+    """free, with the floors of speed cells that hold no signals held fixed (no data determines them)."""
+    present = np.bincount(d.cell, minlength=N_CELLS) > 0
+    return tuple(bool(f) and (i < N_SHAPE or bool(present[i - N_SHAPE])) for i, f in enumerate(free))
 
 
 def _levenberg_marquardt(theta, d: _Data, method: str, free: tuple, max_iter: int = 200, rtol: float = 1e-10):
@@ -246,9 +313,16 @@ def _levenberg_marquardt(theta, d: _Data, method: str, free: tuple, max_iter: in
     stop = "iterations"
     it = 0
     for it in range(1, max_iter + 1):
-        Jm = J[:, mask]
+        # active set: a floor's logit at its bound whose descent direction points out of the bounds is held for this
+        # iteration (projected Levenberg-Marquardt), so that it does not distort the other parameters' joint step
+        full_grad = J.T @ (W * (d.y - f))
+        g = theta[N_SHAPE:]
+        held = np.zeros(len(theta), bool)
+        held[N_SHAPE:] = ((g <= -G_LIMIT) & (full_grad[N_SHAPE:] < 0)) | ((g >= G_LIMIT) & (full_grad[N_SHAPE:] > 0))
+        use = mask & ~held
+        Jm = J[:, use]
         A = Jm.T @ (W[:, None] * Jm)
-        grad = Jm.T @ (W * (d.y - f))
+        grad = full_grad[use]
         improved = False
         while lam < 1e12:
             M = A + lam * np.diag(np.diag(A)) + 1e-12 * np.eye(len(A))
@@ -258,7 +332,8 @@ def _levenberg_marquardt(theta, d: _Data, method: str, free: tuple, max_iter: in
                 lam *= 4.0
                 continue
             trial = theta.copy()
-            trial[mask] += step
+            trial[use] += step
+            trial[N_SHAPE:] = np.clip(trial[N_SHAPE:], -G_LIMIT, G_LIMIT)
             if not np.all(np.isfinite(trial)):
                 lam *= 4.0
                 continue
@@ -271,10 +346,11 @@ def _levenberg_marquardt(theta, d: _Data, method: str, free: tuple, max_iter: in
             converged, stop = True, "stationary"  # no step lowers the objective: a minimum to working precision, or a stall
             break
         decrease = obj - new_obj
+        change = np.max(np.abs(trial - theta))
         theta = trial
         obj, f, J, W = _evaluate(theta, d, method)
         lam = max(lam / 3.0, 1e-12)
-        if decrease <= rtol * (1.0 + abs(obj)) and np.max(np.abs(step)) < 1e-6:
+        if decrease <= rtol * (1.0 + abs(obj)) and change < 1e-6:
             converged, stop = True, "converged"
             break
     return theta, obj, converged, it, stop
@@ -290,9 +366,17 @@ def fit_cer(level_db, wpm, edits, symbols, *, axis: str = "s500", method: str = 
     d = _data(level_db, wpm, edits, symbols)
     if len(d.n) < MIN_SIGNALS_FOR_FIT:
         raise ValueError(f"{len(d.n)} signals: a fit needs at least {MIN_SIGNALS_FOR_FIT}")
-    theta = np.array(start, float) if start is not None else _start(d, method, free)
-    theta, obj, converged, it, stop = _levenberg_marquardt(theta, d, method, free)
-    return Fit(tuple(float(t) for t in theta), axis, method, obj, converged, it, len(d.n), tuple(free), stop)
+    if len(free) != len(PARAMETERS):
+        raise ValueError(f"free has {len(free)} entries, not {len(PARAMETERS)}")
+    mask = _fitted_mask(d, free)
+    cells = tuple(k for k in SPEED_CELLS.numbers if np.any(d.cell == k - 1))
+    best = None
+    for theta in ([np.array(start, float)] if start is not None else _starts(d, method)):
+        result = _levenberg_marquardt(theta, d, method, mask)
+        if best is None or result[1] < best[1]:
+            best = result
+    theta, obj, converged, it, stop = best
+    return Fit(tuple(float(t) for t in theta), axis, method, obj, converged, it, len(d.n), mask, stop, cells)
 
 
 def bootstrap_fits(level_db, wpm, edits, symbols, fit: Fit, key, resamples: int = BOOTSTRAP_RESAMPLES) -> list:
@@ -309,7 +393,7 @@ def bootstrap_fits(level_db, wpm, edits, symbols, fit: Fit, key, resamples: int 
             out.append(None)
             continue
         out.append(Fit(tuple(float(t) for t in theta), fit.axis, fit.method, obj, converged, it, len(sub.n), fit.free,
-                       stop) if converged else None)
+                       stop, fit.fitted_cells) if converged else None)
     return out
 
 
@@ -318,16 +402,49 @@ def _pct_interval(values) -> list | None:
     return None if v is None else [v[0], v[1]]
 
 
-def crossings(fit: Fit, boots: list, speeds_wpm, threshold: float) -> list[dict]:
+def top_levels(level_db, wpm) -> np.ndarray:
+    """The highest level (dB, on the fit's axis) among each speed cell's signals, per cell index (NaN for a cell
+    without signals): where the data end, for the "no crossing" rule."""
+    level, cell = np.asarray(level_db, float), cell_index(wpm)
+    return np.array([level[cell == j].max() if np.any(cell == j) else np.nan for j in range(N_CELLS)])
+
+
+def _within_data(values, speeds, top) -> np.ndarray:
+    """values with every crossing above its cell's highest level (top, per cell index) set to NaN."""
+    values = np.array(values, float)
+    if top is not None:
+        limit = np.asarray(top, float)[cell_index(speeds)]
+        values[~(values <= limit)] = np.nan   # also NaN where the cell has no data (limit NaN)
+    return values
+
+
+def crossings(fit: Fit, boots: list, speeds_wpm, threshold: float, top=None) -> list[dict]:
     """The fit's crossing at threshold at each speed, with its 95% bootstrap interval (None unless 95% of the
-    resamples give a crossing)."""
-    point = np.atleast_1d(fit.crossing_db(threshold, np.asarray(speeds_wpm, float)))
-    per = np.array([np.atleast_1d(b.crossing_db(threshold, np.asarray(speeds_wpm, float))) if b is not None
+    resamples give a crossing). top: the highest level of each speed cell's signals (top_levels); a crossing above
+    it is "no crossing" (the curve does not reach the threshold within the data), as is a cell whose floor is at or
+    above the threshold, for the point and for each resample alike. Each entry gives the reason ("floor", "above the
+    data" or None), the cell's floor, the fitted CER at the cell's highest level, and the share of the resamples
+    that give a crossing."""
+    speeds = np.asarray(speeds_wpm, float)
+    raw = np.atleast_1d(fit.crossing_db(threshold, speeds))
+    point = _within_data(raw, speeds, top)
+    per = np.array([_within_data(np.atleast_1d(b.crossing_db(threshold, speeds)), speeds, top) if b is not None
                     else np.full(len(point), np.nan) for b in boots]) if boots else np.empty((0, len(point)))
+    floors = fit.floor_at(speeds)
     out = []
-    for i, v in enumerate(speeds_wpm):
-        out.append({"wpm": float(v), "value": None if not np.isfinite(point[i]) else float(point[i]),
-                    "interval": _pct_interval(per[:, i]) if len(per) else None})
+    for i, v in enumerate(speeds):
+        j = int(cell_index(v))
+        top_db = None if top is None or not np.isfinite(top[j]) else float(top[j])
+        reason = None
+        if not np.isfinite(point[i]):
+            reason = ("floor" if floors[i] >= threshold else
+                      "no data" if top is not None and top_db is None else "above the data")
+        out.append({"wpm": float(v), "value": None if reason else float(point[i]),
+                    "interval": _pct_interval(per[:, i]) if len(per) else None,
+                    "no_crossing": reason, "floor": float(floors[i]),
+                    "top_db": top_db,
+                    "cer_at_top": None if top_db is None else float(fit.cer(top_db, v)),
+                    "resamples_with_crossing": float(np.mean(np.isfinite(per[:, i]))) if len(per) else None})
     return out
 
 
@@ -443,36 +560,49 @@ def fit_decoder(rows, method: str = FIT_METHOD, resamples: int = BOOTSTRAP_RESAM
     started = time.process_time()
     out = {"signals": len(rows), "method": method, "resamples": resamples,
            "s500_range_db": [min(levels), max(levels)] if levels else None}
-    s_fit = fit_cer(*_columns(rows, "s500"), axis="s500", method=method)
-    s_boots = bootstrap_fits(*_columns(rows, "s500"), s_fit, (key, "s500", method), resamples)
+    s_cols = _columns(rows, "s500")
+    s_top = top_levels(s_cols[0], s_cols[1])
+    s_fit = fit_cer(*s_cols, axis="s500", method=method)
+    s_boots = bootstrap_fits(*s_cols, s_fit, (key, "s500", method), resamples)
     out["s500"] = {"fit": s_fit.to_json(), "failed_resamples": sum(b is None for b in s_boots),
                    "param_intervals": {p: _pct_interval([b.params[i] if b else None for b in s_boots])
                                        for i, p in enumerate(PARAMETERS)},
-                   "floor_interval": _pct_interval([b.floor if b else None for b in s_boots])}
+                   "floor_intervals": {str(k): _pct_interval([b.floors[k - 1] if b else None for b in s_boots])
+                                       if k in s_fit.fitted_cells else None for k in cells}}
     for t in CER_LEVELS:
-        per_cell = crossings(s_fit, s_boots, centers, t)
+        per_cell = crossings(s_fit, s_boots, centers, t, s_top)
         for k, c in zip(cells, per_cell):
             c.update(cell=k, signals=counts[k], en0_db=None if c["value"] is None else float(en0_db(c["value"], c["wpm"])),
-                     outside_data=c["value"] is not None and not (min(levels) <= c["value"] <= max(levels)),
+                     outside_data=c["value"] is not None and c["value"] < min(levels),
                      ideal_noncoherent_db=float(ideal_s500_db(t, c["wpm"])),
                      ideal_coherent_db=float(ideal_s500_db(t, c["wpm"], coherent=True)))
         out["s500"][f"crossings_{t:.2f}"] = per_cell
-        out["s500"][f"curve_{t:.2f}"] = crossings(s_fit, s_boots, FINE_SPEEDS_WPM, t)
-    e_fit = fit_cer(*_columns(rows, "en0"), axis="en0", method=method)
-    e_boots = bootstrap_fits(*_columns(rows, "en0"), e_fit, (key, "en0", method), resamples)
-    e_cross = np.atleast_1d(e_fit.crossing_db(0.10, np.array(centers)))
-    spreads = [float(np.ptp(b.crossing_db(0.10, np.array(centers)))) if b is not None else None for b in e_boots]
-    restricted = fit_cer(*_columns(rows, "en0"), axis="en0", method=method, free=S0_CONSTANT,
+        out["s500"][f"curve_{t:.2f}"] = crossings(s_fit, s_boots, FINE_SPEEDS_WPM, t, s_top)
+    e_cols = _columns(rows, "en0")
+    e_top = top_levels(e_cols[0], e_cols[1])
+    e_fit = fit_cer(*e_cols, axis="en0", method=method)
+    e_boots = bootstrap_fits(*e_cols, e_fit, (key, "en0", method), resamples)
+    e_per_cell = [{**c, "cell": k, "signals": counts[k]} for k, c in
+                  zip(cells, crossings(e_fit, e_boots, centers, 0.10, e_top))]
+    # the spread over the cells that cross at the full fit (a cell with no crossing has no E/N0 value to compare)
+    crossing_cells = [i for i, c in enumerate(e_per_cell) if c["value"] is not None]
+    spread_centers = np.array(centers)[crossing_cells]
+    e_cross = np.array([e_per_cell[i]["value"] for i in crossing_cells])
+    spreads = []
+    for b in e_boots:
+        v = None if b is None else _within_data(b.crossing_db(0.10, spread_centers), spread_centers, e_top)
+        spreads.append(None if v is None or len(v) < 2 or not np.all(np.isfinite(v)) else float(np.ptp(v)))
+    restricted = fit_cer(*e_cols, axis="en0", method=method, free=S0_CONSTANT,
                          start=[e_fit.params[0], 0.0, 0.0, *e_fit.params[3:]])
     out["en0"] = {"fit": e_fit.to_json(), "failed_resamples": sum(b is None for b in e_boots),
-                  "crossings_0.10": [{**c, "cell": k, "signals": counts[k]} for k, c in
-                                     zip(cells, crossings(e_fit, e_boots, centers, 0.10))],
-                  "spread_db": None if not np.all(np.isfinite(e_cross)) else float(np.ptp(e_cross)),
+                  "crossings_0.10": e_per_cell,
+                  "spread_cells": [cells[i] for i in crossing_cells],
+                  "spread_db": float(np.ptp(e_cross)) if len(e_cross) >= 2 else None,
                   "spread_interval": _pct_interval(spreads),
                   "invariance": _wald(e_boots, e_fit),
                   "w_terms": _wald(e_boots, e_fit, ("b1", "b2")),
                   "s0_constant": {"fit": restricted.to_json(),
-                                  "crossings_0.10": crossings(restricted, [], centers, 0.10),
+                                  "crossings_0.10": crossings(restricted, [], centers, 0.10, e_top),
                                   "objective_increase": restricted.objective - e_fit.objective},
                   "ideal_noncoherent_db": ideal_en0_db(0.10), "ideal_coherent_db": ideal_en0_db(0.10, True)}
     out["cpu_s"] = time.process_time() - started
@@ -625,6 +755,20 @@ def _fmt(value, interval=None, fmt="+.2f") -> str:
     return f"{value:{fmt}}" + (f" ({interval[0]:{fmt}} to {interval[1]:{fmt}})" if interval else "")
 
 
+def _crossing_text(c: dict, unit: str = "dB SNR in 500 Hz") -> str:
+    """A crossing with its interval, * if below the data, or "no crossing" with its reason and the fitted CER at the
+    cell's highest level; the share of resamples that cross when it is below 95% (no interval then)."""
+    share = c.get("resamples_with_crossing")
+    note = f"; {100 * share:.0f}% of resamples cross" if share is not None and share < 0.95 else ""
+    if c["value"] is None:
+        why = {"floor": "floor at or above the threshold", "above the data": "not within the data",
+               "no data": "no signals"}.get(c.get("no_crossing"), "")
+        at_top = (f"; fitted CER {c['cer_at_top']:.3f} at {c['top_db']:+.1f} {unit}"
+                  if c.get("cer_at_top") is not None else "")
+        return f"no crossing ({why}{at_top}{note})"
+    return _fmt(c["value"], c["interval"]) + (" *" if c.get("outside_data") else "") + (f" ({note[2:]})" if note else "")
+
+
 def _fit_warnings(fit: dict) -> list[str]:
     """Visible warnings for a main or restricted fit that did not converge (review M3): its results then come from
     the point where the optimizer stopped."""
@@ -650,7 +794,9 @@ def report_markdown(a: dict) -> str:
              + (" with uncommitted changes" if m.get("modified") else "") + ".", "",
              "S500 in dB SNR in 500 Hz; E/N0 per dit in dB re 1 (E = key-down energy in one dit of 1.2 s / WPM). "
              "Crossings: the level at which the fitted CER falls to 0.10 or 0.05, at each speed cell's center "
-             "(geometric mean of its edges); 95% intervals by bootstrap over signals. * = outside the fitted S500 range.",
+             "(geometric mean of its edges); 95% intervals by bootstrap over signals. * = below the fitted S500 range. "
+             "No crossing: the cell's floor is at or above the threshold, or the crossing lies above the cell's "
+             "highest level (not within the data).",
              ""]
     for name, entry in a["decoders"].items():
         lines += [f"## {name}", ""]
@@ -662,25 +808,30 @@ def report_markdown(a: dict) -> str:
             p = sf["params"]
             lines += [f"Fit against S500 on {fit['signals']} signals: s0 = {p['a0']:.2f} {p['a1']:+.2f} x "
                       f"{p['a2']:+.2f} x^2 dB SNR in 500 Hz, ln(w / 1 dB) = {p['b0']:.3f} {p['b1']:+.3f} x {p['b2']:+.3f} x^2, "
-                      f"x = ln(v / {V_REF_WPM:.2f} WPM); floor {_fmt(sf['floor'], fit['s500']['floor_interval'], '.4f')}; "
+                      f"x = ln(v / {V_REF_WPM:.2f} WPM); one floor per speed cell (table); "
                       f"stopped {sf.get('stop', 'converged')} after {sf['iterations']} iterations; failed resamples "
                       f"{fit['s500']['failed_resamples']}; CPU {fit['cpu_s']:.1f} s.", ""]
             lines += _fit_warnings(fit)
             lines += [
-                      "| speed cell | center (WPM) | signals | S500 at CER 0.10 (dB SNR in 500 Hz) | S500 at CER 0.05 (dB SNR in 500 Hz) | "
-                      "E/N0 at CER 0.10 (dB re 1) | ideal bound at 0.10, noncoherent (dB SNR in 500 Hz) |",
-                      "|---|---|---|---|---|---|---|"]
+                      "| speed cell | center (WPM) | signals | floor (CER) | S500 at CER 0.10 (dB SNR in 500 Hz) | "
+                      "S500 at CER 0.05 (dB SNR in 500 Hz) | E/N0 at CER 0.10 (dB re 1) | "
+                      "ideal bound at 0.10, noncoherent (dB SNR in 500 Hz) |",
+                      "|---|---|---|---|---|---|---|---|"]
+            floor_iv = fit["s500"].get("floor_intervals", {})
             for c10, c05 in zip(fit["s500"]["crossings_0.10"], fit["s500"]["crossings_0.05"]):
+                floor = sf.get("floors", {}).get(str(c10["cell"]))
                 lines.append(f"| {c10['cell']} | {c10['wpm']:.2f} | {c10['signals']} | "
-                             f"{_fmt(c10['value'], c10['interval'])}{' *' if c10['outside_data'] else ''} | "
-                             f"{_fmt(c05['value'], c05['interval'])}{' *' if c05['outside_data'] else ''} | "
+                             f"{_fmt(floor, floor_iv.get(str(c10['cell'])), '.4f')} | "
+                             f"{_crossing_text(c10)} | {_crossing_text(c05)} | "
                              f"{_fmt(c10['en0_db'], None)} | {c10['ideal_noncoherent_db']:+.2f} |")
             e = fit["en0"]
             inv, wt = e["invariance"], e["w_terms"]
             lines += ["", "### Against E/N0 per dit (time-base invariance)", "",
                       f"Per-cell crossings at CER 0.10 in E/N0 per dit (dB re 1): "
-                      + ", ".join(f"{c['cell']}: {_fmt(c['value'], None, '.2f')}" for c in e["crossings_0.10"])
-                      + f". Spread (largest minus smallest): {_fmt(e['spread_db'], e['spread_interval'], '.2f')} dB "
+                      + ", ".join(f"{c['cell']}: {_fmt(c['value'], None, '.2f') if c['value'] is not None else 'no crossing'}"
+                                  for c in e["crossings_0.10"])
+                      + f". Spread (largest minus smallest, over cells {', '.join(str(k) for k in e.get('spread_cells', []))}): "
+                      f"{_fmt(e['spread_db'], e['spread_interval'], '.2f')} dB "
                       "of E/N0 per dit (descriptive: the spread of noisy estimates is above 0 even for an invariant decoder).",
                       "",
                       f"Test of invariance (s0's speed terms a1, a2 in the E/N0 fit = 0): a1 "

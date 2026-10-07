@@ -11,8 +11,16 @@ from kz4ap_proto import devset2 as d2
 from kz4ap_proto import experiments
 from kz4ap_synth.jitter import SNR_CELLS, SPEED_CELLS
 
-# A known model: s0 = 1 + 1.5 x + 1.0 x^2 dB SNR in 500 Hz, w = 1.2 exp(0.2 x) dB, floor 0.003 (x = ln(v / 25.30 WPM)).
-TRUTH = d2.Fit((1.0, 1.5, 1.0, math.log(1.2), 0.2, 0.0, d2._logit(0.003)))
+# A known model: s0 = 1 + 1.5 x + 1.0 x^2 dB SNR in 500 Hz, w = 1.2 exp(0.2 x) dB, floor 0.003 in every speed cell
+# (x = ln(v / 25.30 WPM)).
+SHAPE = (1.0, 1.5, 1.0, math.log(1.2), 0.2, 0.0)
+
+
+def model(shape=SHAPE, floors=(0.003,) * 10, axis="s500"):
+    return d2.Fit(tuple(shape) + tuple(d2._logit(c) for c in floors), axis=axis)
+
+
+TRUTH = model()
 CENTERS = np.array([SPEED_CELLS.center(k) for k in SPEED_CELLS.numbers])
 
 
@@ -55,8 +63,12 @@ def test_the_crossing_is_where_the_model_reaches_the_threshold():
     for t in d2.CER_LEVELS:
         x = TRUTH.crossing_db(t, CENTERS)
         assert np.allclose(TRUTH.cer(x, CENTERS), t, atol=1e-12)
-    high_floor = d2.Fit(TRUTH.params[:6] + (d2._logit(0.2),))
-    assert np.all(np.isnan(high_floor.crossing_db(0.10, CENTERS)))
+    high_floor = model(floors=(0.2,) + (0.003,) * 9)
+    x = high_floor.crossing_db(0.10, CENTERS)
+    assert np.isnan(x[0]) and np.allclose(x[1:], TRUTH.crossing_db(0.10, CENTERS[1:]))
+    # each speed takes its own cell's floor: an edge belongs to the cell above it, the top edge to the top cell
+    assert list(d2.cell_index([8.0, 10.06, SPEED_CELLS.edges[1], 79.9, 80.0, 90.0])) == [0, 0, 1, 9, 9, 9]
+    assert list(high_floor.floor_at([9.0, 11.0])) == pytest.approx([0.2, 0.003])
 
 
 @pytest.mark.parametrize("method", d2.METHODS)
@@ -70,15 +82,18 @@ def test_the_fit_recovers_a_known_s0_and_w(method):
     assert np.max(np.abs(fit.w_db(CENTERS) / TRUTH.w_db(CENTERS) - 1)) < 0.20
     assert np.max(np.abs(fit.crossing_db(0.10, CENTERS) - TRUTH.crossing_db(0.10, CENTERS))) < 0.4
     assert np.max(np.abs(fit.crossing_db(0.05, CENTERS) - TRUTH.crossing_db(0.05, CENTERS))) < 0.4
-    assert abs(fit.floor - TRUTH.floor) < 0.003
+    assert np.max(np.abs(np.array(fit.floors) - 0.003)) < 0.006
 
 
 def test_least_squares_tracks_the_mean_cer_when_whole_signals_fail():
     """3% of the signals fail as a whole (CER 0.5-1, mean 0.75): the mean CER is 0.97 f + 0.0225, whose 0.10
-    crossing is where f = 0.0799. Over 40 sets, least squares (the default) follows it with a mean bias of 0.01-0.06
-    dB SNR in 500 Hz per cell (RMS 0.18-0.45 dB; the mean's standard error up to 0.07 dB), the binomial likelihood
-    with 0.20-0.27 dB
-    (RMS 0.33-0.62 dB): the measurement behind FIT_METHOD."""
+    crossing is where f = 0.0799. With one floor per speed cell (task D4), each cell's floor absorbs its own few
+    failures. Over 200 sets of 4 signals per cell, least squares (the default) follows the mean with a mean bias of
+    +0.05 to +0.15 dB SNR in 500 Hz per cell (RMS 0.38-0.75 dB; the mean's standard error up to 0.05 dB), the binomial
+    likelihood with +0.18 to +0.29 dB (RMS 0.50-0.76 dB); at 48 signals per cell (20 sets) +0.00 to +0.11 dB against
+    +0.14 to +0.29 dB. Task D2's single floor gave 0.01-0.06 dB and 0.20-0.27 dB. This test's 40 sets: least squares
+    at most 0.22 dB in any cell (the 40-set mean's standard error is up to 0.12 dB), on average under a third of the
+    binomial likelihood's. The measurement behind FIT_METHOD."""
     target = TRUTH.crossing_db((0.10 - 0.03 * 0.75) / 0.97, CENTERS)
     errors = {m: [] for m in d2.METHODS}
     for rep in range(40):
@@ -87,11 +102,14 @@ def test_least_squares_tracks_the_mean_cer_when_whole_signals_fail():
             errors[m].append(d2.fit_cer(s, v, k, n, method=m).crossing_db(0.10, CENTERS) - target)
     bias = {m: np.abs(np.mean(e, axis=0)) for m, e in errors.items()}
     assert d2.FIT_METHOD == "wls"
-    assert np.max(bias["wls"]) < 0.15
+    assert np.max(bias["wls"]) < 0.3
     assert np.mean(bias["wls"]) < 0.5 * np.mean(bias["binomial"])
 
 
 def test_the_bootstrap_intervals_cover_the_truth_and_are_reproducible():
+    """The percentile intervals' coverage, measured over 40 sets x 10 cells (200 resamples, task D4): 0.907 with one
+    floor per speed cell, 0.895 with task D2's single floor (same sets): about 0.90, not 0.95, for both. At 0.90 per
+    cell, 7 or fewer of 10 has probability about 0.07; this set covers 7 with the per-cell floors (at least 8 with D2's)."""
     s, v, k, n = synth(np.random.default_rng(11))
     fit = d2.fit_cer(s, v, k, n)
     boots = d2.bootstrap_fits(s, v, k, n, fit, "test", resamples=200)
@@ -99,10 +117,68 @@ def test_the_bootstrap_intervals_cover_the_truth_and_are_reproducible():
     cross = d2.crossings(fit, boots, CENTERS, 0.10)
     truth = TRUTH.crossing_db(0.10, CENTERS)
     covered = sum(c["interval"][0] <= t <= c["interval"][1] for c, t in zip(cross, truth))
-    assert covered >= 8  # 95% intervals: 10 of 10 expected, 8 allowed
+    assert covered >= 7  # measured coverage about 0.90 per cell (docstring)
     assert all(0.0 < c["interval"][1] - c["interval"][0] < 1.0 for c in cross)
     again = d2.crossings(fit, d2.bootstrap_fits(s, v, k, n, fit, "test", resamples=200), CENTERS, 0.10)
     assert again == cross
+
+
+def _failing_cell_1(rng, form):
+    """synth()'s A2-like signals with speed cell 1 failing at every S500. form "model": cell 1's floor 0.5, the same
+    transition (the model's own form); "misfit": the transition 1 dB higher, then a floor falling from 0.70 at 0 dB to
+    0.45 at +20 dB SNR in 500 Hz (like the bank in the pilot; not the model's form)."""
+    s, v, _, n = synth(rng)
+    p = TRUTH.cer(s, v)
+    one = d2.cell_index(v) == 0
+    if form == "model":
+        p[one] = 0.5 + 0.5 * (p[one] - 0.003) / 0.997
+    else:
+        z = -(s[one] - (TRUTH.s0_db(v[one]) + 1.0)) / TRUTH.w_db(v[one])
+        floor = 0.70 - 0.25 * np.clip(s[one] / 20.0, 0.0, 1.0)
+        p[one] = floor + (1.0 - floor) / (1.0 + np.exp(-z))
+    return s, v, rng.binomial(n, p).astype(float), n
+
+
+@pytest.mark.parametrize("form, tolerance_db", [
+    # measured over 10 sets (task D4), the largest |difference| per cell 2 ... 10, dB SNR in 500 Hz:
+    # model form 0.09 0.04 0.01 0.02 0.03 0.04 0.02 0.01 0.04; misfit 0.49 0.23 0.06 0.08 0.13 0.14 0.09 0.03 0.24
+    # (a single floor for all cells, task D2's model: 7.3 and 8.2 dB in cell 2, 0.3-3.6 dB in cells 3-10)
+    ("model", (0.25,) * 9),
+    ("misfit", (0.8, 0.4) + (0.4,) * 7)])
+def test_a_failing_speed_cell_reports_no_crossing_and_leaves_its_neighbors(form, tolerance_db):
+    """One floor per speed cell (owner, 2026-10-06): a speed cell that fails at every S500 reports "no crossing", and
+    its neighbors' crossings stay within the stated tolerances of the fit without that cell."""
+    for rep in range(3):
+        s, v, k, n = _failing_cell_1(np.random.default_rng(200 + rep), form)
+        keep = d2.cell_index(v) > 0
+        fit = d2.fit_cer(s, v, k, n)
+        without = d2.fit_cer(s[keep], v[keep], k[keep], n[keep])
+        assert fit.converged and without.converged
+        top = d2.top_levels(s, v)
+        cells = d2.crossings(fit, [], CENTERS, 0.10, top)
+        assert cells[0]["value"] is None and cells[0]["no_crossing"] == "floor" and cells[0]["floor"] > 0.3
+        assert cells[0]["cer_at_top"] > 0.3
+        diff = np.abs(np.array([c["value"] for c in cells[1:]]) - without.crossing_db(0.10, CENTERS[1:]))
+        assert np.all(diff < np.array(tolerance_db)), diff
+        # the fit without cell 1 has no floor there and reports it as without data
+        assert without.fitted_cells == tuple(range(2, 11)) and without.to_json()["floors"]["1"] is None
+        assert d2.crossings(without, [], CENTERS[:1], 0.10, d2.top_levels(s[keep], v[keep]))[0]["no_crossing"] == "no data"
+
+
+def test_a_crossing_above_the_data_is_no_crossing_and_one_below_is_kept():
+    # s0 = 15 + 8 x dB SNR in 500 Hz: about +24 dB at 71 WPM (cell 10) and +4 dB at 9 WPM (cell 1)
+    steep = model((15.0, 8.0, 0.0, math.log(1.0), 0.0, 0.0))
+    top = np.full(10, 20.0)
+    cells = d2.crossings(steep, [], CENTERS, 0.10, top)
+    assert cells[9]["value"] is None and cells[9]["no_crossing"] == "above the data"
+    assert cells[9]["cer_at_top"] > 0.10 and cells[9]["top_db"] == 20.0
+    assert cells[0]["value"] == pytest.approx(float(steep.crossing_db(0.10, CENTERS[0])))
+    # without top (no data range given) every crossing is reported
+    assert all(c["value"] is not None for c in d2.crossings(steep, [], CENTERS, 0.10))
+    # the resamples follow the same rule: those above the data give no value, and the share that cross is reported
+    shifted = [model((15.0 + dz, 8.0, 0.0, math.log(1.0), 0.0, 0.0)) for dz in np.linspace(-6.0, 0.0, 20)]
+    c10 = d2.crossings(steep, shifted, CENTERS[9:], 0.10, top)[0]
+    assert 0.0 < c10["resamples_with_crossing"] < 0.95 and c10["interval"] is None
 
 
 def test_the_fit_against_e_n0_is_the_s500_fit_in_other_coordinates():
@@ -115,7 +191,7 @@ def test_the_fit_against_e_n0_is_the_s500_fit_in_other_coordinates():
 
 
 def test_the_invariance_test_accepts_an_invariant_decoder_and_rejects_a_fixed_s500_one():
-    invariant = d2.Fit((12.0, 0.0, 0.0, math.log(1.0), 0.0, 0.0, d2._logit(0.003)), axis="en0")
+    invariant = model((12.0, 0.0, 0.0, math.log(1.0), 0.0, 0.0), axis="en0")
     s, v, k, n = synth(np.random.default_rng(5), truth=invariant, axis="en0")
     e = d2.en0_db(s, v)
     fit = d2.fit_cer(e, v, k, n, axis="en0")
@@ -123,7 +199,7 @@ def test_the_invariance_test_accepts_an_invariant_decoder_and_rejects_a_fixed_s5
     assert wald["p_value"] > 0.01
     # a decoder whose curve is fixed in S500 (s0 = 0 dB SNR in 500 Hz at every speed): s0 in E/N0 falls 4.34 dB per
     # unit of ln v, 10 dB of E/N0 per dit over 8-80 WPM
-    fixed = d2.Fit((0.0, 0.0, 0.0, math.log(1.0), 0.0, 0.0, d2._logit(0.003)))
+    fixed = model((0.0, 0.0, 0.0, math.log(1.0), 0.0, 0.0))
     s, v, k, n = synth(np.random.default_rng(6), truth=fixed)
     e = d2.en0_db(s, v)
     fit = d2.fit_cer(e, v, k, n, axis="en0")
