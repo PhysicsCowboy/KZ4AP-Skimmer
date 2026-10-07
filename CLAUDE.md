@@ -38,14 +38,14 @@
     reports, so every number in the record can be checked and every fit and
     figure redrawn in minutes on any machine. Records cite the commit and the
     score file each number comes from.
+  - Commit the **few figures a results record shows**: PNGs embedded in the
+    record, at most about three per results section, the ones a conclusion
+    rests on. **Each figure commit needs the owner's approval.**
   - Do not commit recordings, decoded files, analysis files (fits,
-    bootstraps) or figures by default: they stay in `build/` (git-ignored)
-    and are rebuilt from the committed scores (fits and figures, minutes) or
-    from the seeds (everything, hours).
-  - **Committing any figure needs the owner's approval, each time.** An
-    approved figure is a PNG embedded in its results record (at most about
-    three per results section: the ones a conclusion rests on). Other figures
-    are sent to the owner directly, not committed.
+    bootstraps) or any other figure: they stay in `build/` (git-ignored) and
+    are rebuilt from the committed scores (fits and figures, minutes) or from
+    the seeds (everything, hours); other figures are sent to the owner
+    directly.
 - **Units:** every displayed, logged or documented quantity carries an
   explicit unit. Every dB value names its reference (dBFS, dB SNR in a stated
   bandwidth, dB relative to the passband, etc.); a bare "dB" is a bug. Linear
