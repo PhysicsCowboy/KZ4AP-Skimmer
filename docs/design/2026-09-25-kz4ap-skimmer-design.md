@@ -345,6 +345,32 @@ following the survey's ranking:
      decoder. The comparison uses the jittered development set, by the
      owner's priorities: noise across speeds (A2), speed changes (D2), overs
      and first words (G2, H2), then poor fists and Farnsworth (C2, I2).
+
+   **Amendment (2026-10-07, later, owner): Bell 1977 instead of manta.**
+   manta's `hsmm` was studied in its code
+   (`docs/research/2026-10-07-manta-hsmm-study.md`) and dropped: in pure
+   noise about 195 false characters per minute, phantom characters in
+   pauses, whole slow messages lost after a silent lead-in, and no
+   per-candidate amplitude or speed jumps at overs. The skeleton is **Bell
+   1977** (`docs/research/bell-1977-notes.md`), whose model already carries
+   what the owner's priorities need: a Kalman amplitude per candidate whose
+   uncertainty grows in gaps and may jump after a pause, and speed changes
+   at element boundaries sized to the boundary (up to ±20 WPM after a
+   pause).
+   - **Stage 1, Bell as published,** in C++, including his input (the
+     envelope of a 100 Hz filter sampled every 5 ms, emulated from our
+     channel). Faithfulness is checked by unit tests of his formulas and
+     tables, and by reproducing his published simulation results under his
+     conditions with our generator.
+   - **Stage 2, measured modernizations one at a time,** each with its rule
+     written before its run: the filter bank's matched likelihoods (each
+     candidate reading the branch matched to its speed), the speed range
+     extended to the owner's 8–80 WPM and beyond, efficiency (merging
+     identical candidates), a text model, Farnsworth gap timing.
+   - The rest of the earlier amendment stands: the bank decoder frozen as the
+     reference; Plan B paused except B8 and B10; judged on the jittered
+     development set by the owner's priorities. The manta port is dropped,
+     and with it the license question it raised.
 4. **Hybrids,** once both 2 and 3 exist.
 
 **Training data** for the neural decoder is generated synthetically in
