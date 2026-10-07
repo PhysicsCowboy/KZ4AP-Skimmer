@@ -323,6 +323,28 @@ following the survey's ranking:
    in the style of Bell 1977: Kalman tracking of the key-down amplitude and
    discrete speed states. It starts from Bell 1977's parameters and the
    lessons of manta's `hsmm` decoder (backlog, "Top priority", option 3).
+
+   **Amendment (2026-10-07, owner).** Step 3 starts now, ahead of step 2,
+   by following an established algorithm rather than extending the filter
+   bank's own back end (`docs/research/2026-10-07-decoder-chain-audit.md`):
+   - **First, a faithful port of manta's `hsmm` decoder** (an explicit-
+     duration HMM with token passing and a beam), from its Rust code into
+     the C++ engine (owner: no Python prototype), keeping manta's MIT/Apache
+     copyright and license notice on the ported files (owner's approval,
+     2026-10-07). Faithful as Plan A was to the prototype: the port is
+     checked against manta's own behavior before anything is changed.
+   - **Then measured changes, one at a time,** each with its rule written
+     before its run: re-seeding candidates at several speeds after a silence
+     and periodically (for speed jumps and new overs); the filter bank's
+     matched likelihoods in place of manta's single short filter (each
+     candidate reads the branch matched to its own speed); Bell-style Kalman
+     tracking of the amplitude per candidate.
+   - **The filter-bank decoder is frozen** at its current defaults as the
+     reference; the remaining stage-2 tasks of Plan B pause, except the
+     frequency tracker (B8) and strong neighbors (B10), which matter for any
+     decoder. The comparison uses the jittered development set, by the
+     owner's priorities: noise across speeds (A2), speed changes (D2), overs
+     and first words (G2, H2), then poor fists and Farnsworth (C2, I2).
 4. **Hybrids,** once both 2 and 3 exist.
 
 **Training data** for the neural decoder is generated synthetically in
