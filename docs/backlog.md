@@ -212,6 +212,8 @@ Optional, later: once the software suite works, offer several classical
 decoders as a user choice.
 
 ### Stage-2 evaluation of the filter bank through the detector
+**Status (2026-10-07): obsolete** — specific to the filter-bank decoder, frozen as the reference now that the project follows Bell 1977 (design spec §5.2, amendments of 2026-10-07). Kept for the record.
+
 
 The filter-bank redesign (`docs/design/2026-09-30-filter-bank-speed-estimator-design.md`)
 is prototyped in stage 1 on oracle channels and on the channels the Matched
@@ -228,6 +230,8 @@ evaluation). Which tracks the detector opens is unchanged by the redesign. No
 acceptance gate: the owner decides from the comparison.
 
 ### Let the text model take part in character decisions (stage 2)
+**Status (2026-10-07): applies to the Bell decoder** (design spec §5.2, amendments of 2026-10-07); written for the filter-bank decoder, the measure carries over.
+
 
 In the stage-1 prototype the character model (VE3NEA's weights; invalid codes very unlikely) is used
 only to break near-ties between branches, and it has almost no effect: turning it off raised the CER
@@ -244,6 +248,8 @@ Owner, 2026-10-03: deferred until after stage 2 (`docs/design/2026-10-03-filter-
 text model can pull unusual callsigns toward plausible but wrong text.
 
 ### Following a speed jump: no switch setting meets the 10-mark target (stage 2)
+**Status (2026-10-07): obsolete** — specific to the filter-bank decoder's branch selection, frozen as the reference now that the project follows Bell 1977 (design spec §5.2, amendments of 2026-10-07). Kept for the record.
+
 
 Spec §4.6 asks the decoder to follow a jump in speed within about 10 marks. Stage 1's E6 measured the
 marks needed to follow a 15 → 30 WPM step (10 seeds) at switch persistence M = 1, 2, 4, 6 and 8: medians
@@ -255,6 +261,8 @@ section 3.7). Stage 2: find what limits following (fit memory, eligibility, the 
 tuning M.
 
 ### Farnsworth word gaps start false overs (stage 2)
+**Status (2026-10-07): obsolete** — specific to the filter-bank decoder's new-over rule, frozen as the reference now that the project follows Bell 1977 (design spec §5.2, amendments of 2026-10-07). Kept for the record.
+
 
 A silence longer than T_new = max(0.5 s, 12·T_g) starts a new over (fresh fit and amplitude, first marks
 re-keyed). Farnsworth's long word gaps pass that test inside a transmission: in the reference before
@@ -265,6 +273,8 @@ fit and amplitude mid-transmission. Stage 2: make the over-start test aware of t
 spacing, for example from its fitted word gaps, rather than a fixed multiple of T_g.
 
 ### Time-base invariance of the decoder (stage 2; known issue)
+**Status (2026-10-07): applies to the Bell decoder** (design spec §5.2, amendments of 2026-10-07); written for the filter-bank decoder, the measure carries over.
+
 
 A decoder whose every time constant scales with the dit has a CER that depends only on the energy per
 dit, E/N₀ = S₅₀₀ × 500 Hz × T, so its CER crossings in S₅₀₀ must move 10·log₁₀ k lower when the speed
@@ -301,6 +311,8 @@ plan set many time constants in seconds. Before the stretch test, list every tim
 The result is a table in the stage-2 spec; the stretch test then checks it.
 
 ### A validated offline measure for the speed estimate T_P (stage 2)
+**Status (2026-10-07): obsolete** — specific to the filter-bank decoder's periodicity estimate, frozen as the reference now that the project follows Bell 1977 (design spec §5.2, amendments of 2026-10-07). Kept for the record.
+
 
 Stage 1's E1 judged the periodicity methods offline, by precision and coverage
 inside transmissions of constant-speed stations at S₅₀₀ ≥ 0 dB, and that
@@ -321,6 +333,8 @@ conjectured: whether the edge comb is confident and wrong outside
 transmissions, in fading gaps and under interference.
 
 ### Milestone 2b, stage 2: items found in stage 1's final evaluation
+**Status (2026-10-07): obsolete** — specific to the filter-bank decoder, frozen as the reference now that the project follows Bell 1977 (design spec §5.2, amendments of 2026-10-07). Kept for the record.
+
 
 From `docs/plans/2026-09-30-milestone-2b-stage-1-results.md`, sections 4–6
 (the Python prototype on the 3-seed full suite, against the engine's Matched
@@ -864,6 +878,8 @@ turnover on both paths. How many real answers fall in each band
 therefore matters.
 
 ### Tune the Matched front end by measurement
+**Status (2026-10-07): obsolete** — specific to the Matched decoder (kept as a baseline, no longer tuned), frozen as the reference now that the project follows Bell 1977 (design spec §5.2, amendments of 2026-10-07). Kept for the record.
+
 
 Tuning waits for evidence from the benchmark (owner, 2026-09-27 and
 2026-09-29: only with strong evidence; the benchmark exists to find better

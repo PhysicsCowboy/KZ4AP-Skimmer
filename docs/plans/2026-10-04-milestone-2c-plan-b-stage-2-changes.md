@@ -1,5 +1,7 @@
 # Milestone 2c, Plan B: the stage-2 design changes on the verified bank decoder (DRAFT for the owner's review)
 
+> **Superseded (owner, 2026-10-07).** The project follows Bell 1977 as its decoder skeleton (design spec `docs/design/2026-09-25-kz4ap-skimmer-design.md` §5.2, amendments of 2026-10-07; audit `docs/research/2026-10-07-decoder-chain-audit.md`). The filter-bank decoder is frozen at its current defaults as the reference; this document records how it was designed and is not to be followed for new work.
+
 > **Status: draft, written overnight 2026-10-03/04 at the owner's request (Q2 A); the owner's four decisions recorded 2026-10-04 (end of this plan). Nothing executed.** Once approved, each task gets its full step-by-step text (tests, code, commands) in the same form as Plan A before it is dispatched; this draft fixes the scope, order, measurements and decision rules.
 
 **Goal:** Apply the stage-2 design changes (`docs/design/2026-10-03-filter-bank-stage-2-design.md`, "the stage-2 spec") to the C++ bank decoder that Plan A verified against the prototype, make it affordable in CPU and memory, put the frequency tracker in the loop, investigate the regimes where it loses to Matched, and end with the full comparison the owner decides from.

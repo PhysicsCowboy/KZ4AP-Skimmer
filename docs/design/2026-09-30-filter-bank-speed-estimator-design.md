@@ -1,5 +1,7 @@
 # Filter bank and speed estimator for the Matched decoder — design
 
+> **Superseded (owner, 2026-10-07).** The project follows Bell 1977 as its decoder skeleton (design spec `docs/design/2026-09-25-kz4ap-skimmer-design.md` §5.2, amendments of 2026-10-07; audit `docs/research/2026-10-07-decoder-chain-audit.md`). The filter-bank decoder is frozen at its current defaults as the reference; this document records how it was designed and is not to be followed for new work.
+
 Status: **approved by the owner, 2026-09-30.** Designed with the owner on
 2026-09-30. Replaces the Matched front end's single dit-matched
 boxcar, whose length follows the decoder's own speed estimate (milestone 2
