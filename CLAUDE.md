@@ -32,6 +32,11 @@
   Treat a stale description as a bug.
 - Any agent doing implementation work on this project must be told the rule
   above.
+- **Figures** (owner, 2026-10-07): commit the analysis files a figure is
+  drawn from (small JSON) and only the few figures a results record actually
+  shows, as PNG. All other figures are written to `build/` (git-ignored) and
+  redrawn from the committed analysis files when needed (`experiments
+  figures`); send them to the owner directly rather than committing them.
 - **Units:** every displayed, logged or documented quantity carries an
   explicit unit. Every dB value names its reference (dBFS, dB SNR in a stated
   bandwidth, dB relative to the passband, etc.); a bare "dB" is a bug. Linear
