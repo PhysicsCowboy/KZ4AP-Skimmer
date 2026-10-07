@@ -129,11 +129,13 @@ inline std::vector<std::complex<double>> channel_stream(const nlohmann::json& ch
 // The prototype's configuration, which the golden files were written with: the defaults with Plan B's B4b and B4d
 // changes undone (stage 1's 20 ms guard margin and its mask-bias table; the re-key clocks of stage 1, both B4d switches
 // off; the re-key wait in keyed time, B4e's wait in marks off; B4f's guards off). Stage 1's re-key time constants in seconds are passed separately (bank::fixed_timing, or the overrides
-// rekey_after_s and rekey_timeout_s); its periodicity windows, 2, 5 and 10 s, are the default again since B4d.
+// rekey_after_s and rekey_timeout_s); its periodicity windows, 2, 5 and 10 s, are set here (the default was the same
+// from B4d until the owner's amendment of 2026-10-07, which dropped the 2 s window).
 inline kz4ap::bank::BankConfig stage1_config() {
     kz4ap::bank::BankConfig cfg;
     cfg.guard_margin_s = kz4ap::bank::kStage1GuardMarginS;
     cfg.mask_bias = kz4ap::bank::kStage1MaskBias;
+    cfg.periodicity_windows_s = kz4ap::bank::kStage1PeriodicityWindowsS;  // 2, 5 and 10 s (default 5 and 10 s since 2026-10-07)
     cfg.rekey_clear_moves_stretch = false;
     cfg.rekey_timeout_from_first_mark = false;
     cfg.rekey_wait_in_marks = false;

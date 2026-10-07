@@ -262,19 +262,23 @@ BankConfig per_candidate_mode() {
     return cfg;
 }
 
-// The default since B4d (the owner's decision of 2026-10-06): stage 1's windows, 2, 5 and 10 s, the same for every
-// candidate (1500, 3750 and 7500 samples at 750 samples/s), computed as the prototype's comb over the most recent
-// samples: equal bit for bit to the estimator given those windows explicitly, on 60 s of keyed posteriors pushed block
-// by block.
-TEST(BankPeriodicitySeconds, TheDefaultWindowsAreStageOnesTwoFiveAndTenSeconds) {
+// The default since B4d (the owner's decision of 2026-10-06): windows in seconds, the same for every candidate; since
+// the owner's amendment of 2026-10-07, 5 and 10 s (3750 and 7500 samples at 750 samples/s; stage 1's 2 s window
+// dropped), computed as the prototype's comb over the most recent samples: equal bit for bit to the estimator given
+// those windows explicitly, on 60 s of keyed posteriors pushed block by block. Stage 1's 2, 5 and 10 s stay settable.
+TEST(BankPeriodicitySeconds, TheDefaultWindowsAreFiveAndTenSeconds) {
     const BankConfig cfg;
     EXPECT_EQ(cfg.periodicity_window_mode, "seconds");
     const BankTiming t = bank_timing(cfg);
-    EXPECT_EQ(t.periodicity_windows_s, (std::vector<std::vector<double>>{{2.0}, {5.0}, {10.0}}));
+    EXPECT_EQ(t.periodicity_windows_s, (std::vector<std::vector<double>>{{5.0}, {10.0}}));
     EXPECT_TRUE(t.periodicity_window_dits.empty());
     Periodicity def(cfg, kRate);
-    Periodicity ref(cfg, kRate, shared({2.0, 5.0, 10.0}));
-    ASSERT_EQ(def.windows(), (std::vector<std::vector<int>>{{1500}, {3750}, {7500}}));
+    Periodicity ref(cfg, kRate, shared({5.0, 10.0}));
+    ASSERT_EQ(def.windows(), (std::vector<std::vector<int>>{{3750}, {7500}}));
+    BankConfig stage1 = cfg;
+    stage1.periodicity_windows_s = kz4ap::bank::kStage1PeriodicityWindowsS;
+    EXPECT_EQ(bank_timing(stage1).periodicity_windows_s, (std::vector<std::vector<double>>{{2.0}, {5.0}, {10.0}}));
+    EXPECT_EQ(Periodicity(stage1, kRate).windows(), (std::vector<std::vector<int>>{{1500}, {3750}, {7500}}));
     std::vector<double> p;
     for (const char* name : {"5_machine", "12_machine", "25_machine", "40_machine", "25_paddle", "100_machine"}) {
         const auto x = ten_seconds(name);
@@ -414,7 +418,7 @@ TEST(BankPeriodicityDits, AWindowRowNeedsOneValueOrOnePerCandidate) {
     EXPECT_THROW(Periodicity(cfg, kRate, {{1.0, 2.0}}), std::invalid_argument);
     EXPECT_THROW(Periodicity(cfg, kRate, {}), std::invalid_argument);
     EXPECT_NO_THROW(Periodicity(cfg, kRate, {{2.0}}));
-    EXPECT_EQ(bank_timing(cfg).periodicity_windows_s.size(), 3u);
+    EXPECT_EQ(bank_timing(cfg).periodicity_windows_s.size(), 2u);  // 5 and 10 s since 2026-10-07
 }
 
 // ---------------------------------------------------------------- Plan B, B4a-C: one window per row, N_w x T-hat

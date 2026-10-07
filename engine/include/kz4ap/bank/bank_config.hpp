@@ -7,10 +7,12 @@
 // prototype does not have (marked "Plan B"); their defaults are checked by the same test file. Plan B's B4a
 // replaced two of the prototype's fields in seconds by fields in dits (rekey_after_dits, rekey_timeout_ratio) and
 // added periodicity windows in dits; B4d (the owner's decisions of 2026-10-06) put the periodicity windows back in
-// seconds (periodicity_windows_s, the prototype's 2, 5 and 10 s; the windows in dits are variants) and added two
+// seconds (periodicity_windows_s, then the prototype's 2, 5 and 10 s; the windows in dits are variants) and added two
 // switches for when the re-key clocks start. timing.hpp converts the values in dits to seconds per branch and per
 // candidate dit. Plan B's B4b changed two prototype defaults, guard_margin_s (20 ms to 4.8 ms) and mask_bias
 // (re-measured; B4d adopted the 200-seed measurement); stage 1's values are kStage1GuardMarginS and kStage1MaskBias.
+// The owner's amendment of 2026-10-07 dropped the 2 s periodicity window (default 5 and 10 s); stage 1's windows are
+// kStage1PeriodicityWindowsS.
 #pragma once
 
 #include <cmath>
@@ -27,6 +29,10 @@ inline const std::vector<double> kStage1MaskBias = {
     0.7988, 0.7973, 0.7958, 0.7945, 0.7935, 0.7924, 0.7914, 0.7907, 0.7899, 0.7892, 0.7885,
     0.788, 0.7875, 0.7871, 0.7867, 0.7864, 0.7861, 0.7858, 0.7856, 0.7854, 0.7852,
 };
+
+// Stage 1's periodicity windows (the prototype's periodicity_windows_s), s: 2, 5 and 10 s; the default until the owner's
+// amendment of 2026-10-07 (golden tests, ablations: --set periodicity_windows_s=[2,5,10]).
+inline const std::vector<double> kStage1PeriodicityWindowsS = {2.0, 5.0, 10.0};
 
 struct BankConfig {
     // words/min; owner
@@ -80,14 +86,23 @@ struct BankConfig {
     double rekey_after_s = 0.8;
     double rekey_timeout_s = 2.0;
     // s, the periodicity windows of the default mode (periodicity_window_mode "seconds"): every candidate dit tau_c of
-    // the comb is judged over the same window, one row per value (stage 1's rule and values; the prototype's field).
+    // the comb is judged over the same window, one row per value (stage 1's rule; the prototype's field).
     // Class (2) seconds, a latency (owner, 2026-10-06; stage-2 spec sections 3.2 and 6): several windows exist so that
     // the estimate reacts quickly after a change (a stream's start, a new over, a speed change), and how quickly is
     // felt in seconds; the shortest confident window wins. The part that depends on speed is physics any rule must
     // wait for: a window W can measure only tau_c <= W / 18.3 (the comb's reach, (4.5 + 0.075) x 2 tau_c <= W / 2), so
-    // 2 s reaches down to 11 WPM, 5 s to 4.4 WPM and 10 s to 2.2 WPM. Status: placeholder (stage 1's values, E1).
-    // Plan B (B4d) made them the default again after B4a's windows in dits
-    std::vector<double> periodicity_windows_s = {2.0, 5.0, 10.0};
+    // 2 s reaches down to 11 WPM, 5 s to 4.4 WPM and 10 s to 2.2 WPM. Plan B (B4d) made stage 1's 2, 5 and 10 s the
+    // default again after B4a's windows in dits. Owner, 2026-10-07 (stage-2 decisions, section 7): the 2 s window is
+    // dropped, the default is 5 and 10 s. Reason: below about 10 WPM the 2 s window cannot score the true dit (reach
+    // 109 ms) and returns a false match near a third of the dit, scoring just above comb_confidence_min (0.03); as the
+    // shortest confident window it sets T_P, and the T_P prior pulls the fits to about half the dit (measured, the
+    // development set's slow trace). Diagnostic replay with 5 and 10 s alone (development-set pilot, speed cell 8 to
+    // 10 WPM, S500 >= +4 dB SNR in 500 Hz, 32 signals): mean CER 0.008 against 0.497 with 2, 5 and 10 s. Cost: a window
+    // scores only once full, so the first T_P comes after 5 s of the channel's stream instead of 2 s, and after a
+    // speed change the estimate follows over 5 s rather than 2 s (derived). Stage 1's windows remain
+    // reachable (kStage1PeriodicityWindowsS; --set periodicity_windows_s=[2,5,10]). Status: placeholder (E1), 2 s
+    // dropped on the measured failure
+    std::vector<double> periodicity_windows_s = {5.0, 10.0};
     // kappa, dimensionless; mask_bias measured with this default
     double noise_guard = 1.75;
     // kappa_n, dimensionless; also the spectrum's mark flag; mask_bias measured with this default

@@ -74,7 +74,7 @@ they equal stage 1's**, so stage 1's measurements remain the reference at that s
 | Outlier durations of the fit | 1 ms to 10 s, log-uniform | A deliberately broad prior, not an estimator. |
 | Estimate update block | 21.3 ms | Computational. |
 | Periodicity update | every 0.25 s | Latency. |
-| Periodicity windows | 2, 5, 10 s | Latency after a change (a stream's start, a new over, a speed change); a slow station's estimate comes from the longer windows (a window W measures T ≤ W/18.3: 2 s down to 11 WPM, 5 s down to 4.4 WPM, 10 s down to 2.2 WPM). Owner, 2026-10-06 (§3.1). |
+| Periodicity windows | 5, 10 s | Latency after a change (a stream's start, a new over, a speed change); a slow station's estimate comes from the longer windows (a window W measures T ≤ W/18.3: 5 s down to 4.4 WPM, 10 s down to 2.2 WPM). Owner, 2026-10-06 (§3.1). Stage 1's 2 s window dropped (owner, 2026-10-07): below about 10 WPM it cannot score the true dit (reach 109 ms, 11.0 WPM), returns a false match near T/3 scoring just above the 0.03 threshold, and as the shortest confident window sets T_P, whose prior pulls the fits to about T/2 (measured); cost: a window scores only once full, so the first T_P comes after 5 s of a channel's stream instead of 2 s, and after a speed change the estimate follows over 5 s instead of 2 s (derived). Decision record §7. |
 | Correction reach | 20 s | What a reader tolerates (owner). |
 
 Already counted in elements or characters, unchanged: fit memory 48 elements (8 before a fit counts);
@@ -201,8 +201,8 @@ and the projected cost of every planned run (owner, 2026-10-01: Python or C++ de
 |---|---|---|---|---|
 | Re-key wait W_min,k | 0.8 s of key-down | 16.7·d_k of key-down | (1) dits | measured at 25 WPM (E9b), scaled (derived) |
 | Re-key time-out | 2 s | 2.5 × W_min,k = 41.7·d_k, wall-clock | (1) dits | heuristic ratio (stage 1's) |
-| Periodicity windows | 2, 5, 10 s | unchanged: 2, 5, 10 s (the dits form, N_w·T per candidate, withdrawn by the owner 2026-10-06, §3.1) | (2) seconds: latency | placeholder (stage 1's) |
-| Periodicity confidence thresholds | comb 0.03 | unchanged, 0.03 (no re-measurement needed: the windows stay as stage 1's; owner, 2026-10-06) | — | placeholder |
+| Periodicity windows | 2, 5, 10 s | 5, 10 s (the dits form, N_w·T per candidate, withdrawn by the owner 2026-10-06, §3.1; the 2 s window dropped by the owner 2026-10-07: its false match below about 10 WPM, §3.2) | (2) seconds: latency | placeholder (stage 1's, less the 2 s window) |
+| Periodicity confidence thresholds | comb 0.03 | unchanged, 0.03 (no re-measurement needed: the windows stay as stage 1's; owner, 2026-10-06; the 5 and 10 s windows that remain after 2026-10-07 are stage 1's) | — | placeholder |
 | Amplitude average τ_a | 0.5 s of key-down | (i) 0.5 s or (ii) 10.4·d_k, by the rule of §3.4 | decided in stage 2 | placeholder |
 | Noise-spectrum guard margin | 20 ms | 0.5·L_1 = 4.8 ms | (2) filter | heuristic |
 | Mask bias b_mask,k | measured with the 20 ms margin | re-measured | — | measured (stage 2) |

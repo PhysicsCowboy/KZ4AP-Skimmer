@@ -17,7 +17,8 @@ namespace {
 // for periodicity_windows_s, rekey_timeout_ratio for rekey_timeout_s), then Plan B's BankConfig fields, which the
 // prototype does not have (noise_stuck_s: B3; the overrides in seconds rekey_after_s and rekey_timeout_s: B4a, for
 // ablations, unset by default; periodicity_windows_s: the prototype's field, here since B4a, the default windows
-// again since B4d; periodicity_window_mode: B4a-C, "seconds" by default since B4d; periodicity_unselected_windows_s:
+// again since B4d, 5 and 10 s since 2026-10-07 (stage 1's 2, 5 and 10 s by --set); periodicity_window_mode:
+// B4a-C, "seconds" by default since B4d; periodicity_unselected_windows_s:
 // B4a-C, the shared-window variant; rekey_clear_moves_stretch, rekey_timeout_from_first_mark and rekey_lead_dits:
 // B4d, the re-key clocks; rekey_wait_in_marks, rekey_marks and rekey_marks_timeout_s: B4e, the re-key wait in marks;
 // rekey_guard_filter_full and rekey_guard_min_length: B4f, the guards on the counted marks).

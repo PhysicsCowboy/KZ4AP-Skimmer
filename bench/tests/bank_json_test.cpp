@@ -73,7 +73,7 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     // the prototype's ProtoConfig() dump with B4a's fields in dits in place of the three in seconds they replaced and
     // B4b's guard margin and mask-bias table (pinned in BankConfig.PlanBDefaults), then Plan B's fields (noise_stuck_s,
     // B3; the re-key wait and time-out in seconds, stage 1's 0.8 s and 2 s, the default again since B4g; the periodicity
-    // windows in seconds, the default again since B4d, and the window mode; B4d's two re-key clock switches and the lead;
+    // windows in seconds, the default again since B4d, 5 and 10 s since 2026-10-07, and the window mode; B4d's two re-key clock switches and the lead;
     // B4e's re-key wait in marks; B4f's two guards; the switches off since B4g), the prototype's periodicity_windows_s among them at the end
     std::string want = g.at("config_dumps").get<std::string>();
     const kz4ap::bank::BankConfig defaults;
@@ -90,7 +90,7 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     }
     ASSERT_EQ(want.back(), '}');
     want.insert(want.size() - 1, ", \"noise_stuck_s\": 8.0, \"rekey_after_s\": 0.8, \"rekey_timeout_s\": 2.0, "
-                                 "\"periodicity_windows_s\": [2.0, 5.0, 10.0], \"periodicity_window_mode\": \"seconds\", "
+                                 "\"periodicity_windows_s\": [5.0, 10.0], \"periodicity_window_mode\": \"seconds\", "
                                  "\"periodicity_unselected_windows_s\": [2.0, 5.0, 10.0], "
                                  "\"rekey_clear_moves_stretch\": false, \"rekey_timeout_from_first_mark\": false, "
                                  "\"rekey_lead_dits\": 7.0, \"rekey_wait_in_marks\": false, \"rekey_marks\": 8, "

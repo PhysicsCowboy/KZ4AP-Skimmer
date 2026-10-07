@@ -66,8 +66,9 @@ TEST(BankConfig, DefaultsEqualThePrototypes) {
     EXPECT_EQ(c.min_fit_weight, g.at("min_fit_weight").get<double>());
     EXPECT_EQ(c.periodicity_method, g.at("periodicity_method").get<std::string>());
     // periodicity_windows_s: the default windows again since Plan B's B4d (owner, 2026-10-06; B4a had replaced them by
-    // windows in dits, now variants)
-    expect_vector(c.periodicity_windows_s, g.at("periodicity_windows_s"), "periodicity_windows_s");
+    // windows in dits, now variants) until the owner's amendment of 2026-10-07 dropped the 2 s window (PlanBDefaults
+    // below); stage 1's values are kept as kStage1PeriodicityWindowsS
+    expect_vector(kz4ap::bank::kStage1PeriodicityWindowsS, g.at("periodicity_windows_s"), "periodicity_windows_s");
     EXPECT_EQ(c.periodicity_update_s, g.at("periodicity_update_s").get<double>());
     EXPECT_EQ(c.periodicity_rate_hz, g.at("periodicity_rate_hz").get<double>());
     EXPECT_EQ(c.comb_teeth, g.at("comb_teeth").get<int>());
@@ -122,11 +123,13 @@ TEST(BankConfig, PlanBDefaults) {
     // B4g: stage 1's re-key wait and time-out in seconds are the default again (owner, 2026-10-06, option a')
     EXPECT_EQ(c.rekey_after_s, 0.8);
     EXPECT_EQ(c.rekey_timeout_s, 2.0);
-    // B4d: the periodicity windows in seconds, 2, 5 and 10 s for every candidate (class 2, a latency; owner,
-    // 2026-10-06); the per-candidate (B4a) and shared (B4a-C) windows in dits are variants, not the default; the shared
-    // variant's windows before a selection are stage 1's
+    // B4d: the periodicity windows in seconds for every candidate (class 2, a latency; owner, 2026-10-06), stage 1's
+    // 2, 5 and 10 s until the owner's amendment of 2026-10-07, which dropped the 2 s window (below 10 WPM its false
+    // match at about a third of the dit set T_P): 5 and 10 s; the per-candidate (B4a) and shared (B4a-C) windows in
+    // dits are variants, not the default; the shared variant's windows before a selection are stage 1's
     EXPECT_EQ(c.periodicity_window_mode, "seconds");
-    EXPECT_EQ(c.periodicity_windows_s, (std::vector<double>{2.0, 5.0, 10.0}));
+    EXPECT_EQ(c.periodicity_windows_s, (std::vector<double>{5.0, 10.0}));
+    EXPECT_EQ(kz4ap::bank::kStage1PeriodicityWindowsS, (std::vector<double>{2.0, 5.0, 10.0}));
     // B4d's re-key clock fixes: variants since B4g, off
     EXPECT_FALSE(c.rekey_clear_moves_stretch);
     EXPECT_FALSE(c.rekey_timeout_from_first_mark);

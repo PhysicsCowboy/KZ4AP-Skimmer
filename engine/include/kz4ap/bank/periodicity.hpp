@@ -3,8 +3,8 @@
 // T_P comes from branch 1's squelched keying probability p, averaged down to periodicity_rate_hz, over several
 // windows; the confident estimate of the shortest window is T_P. The prototype's other two methods (the
 // sign-weighted edge comb and the spectrum fit) were not adopted and are not ported. By default (stage 1's rule, the
-// default again since Plan B's B4d) every candidate is judged over the same windows in seconds, 2, 5 and 10 s, computed
-// as the prototype computes them; Plan B's B4a added a variant, not the default since B4d, in which each candidate dit
+// default again since Plan B's B4d) every candidate is judged over the same windows in seconds, computed as the
+// prototype computes them: 5 and 10 s since the owner's amendment of 2026-10-07 (stage 1's were 2, 5 and 10 s); Plan B's B4a added a variant, not the default since B4d, in which each candidate dit
 // T is judged over its own window N_w x T (timing.hpp).
 // Plan B's B4a-C adds a variant, not the default (periodicity_window_mode = "shared"): every candidate of a row is
 // judged over one window N_w x T-hat, T-hat the selected branch's dit, which the channel passes to update().

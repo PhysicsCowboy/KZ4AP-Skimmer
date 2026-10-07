@@ -913,7 +913,8 @@ TEST(BankChannelMarks, A12WpmStationReKeysAtItsEighthProvisionalMark) {
 }
 
 // The overrides in seconds (BankConfig::rekey_after_s, rekey_timeout_s; for ablations, settable with --set in the
-// replay tool) set to stage 1's values, with the default periodicity windows in seconds (2, 5 and 10 s since B4d),
+// replay tool) set to stage 1's values, with stage 1's periodicity windows in seconds (2, 5 and 10 s, set explicitly:
+// the default since 2026-10-07 is 5 and 10 s),
 // reproduce the prototype's timing, which bank-b3b ran: the result equals the fixed_timing result bit for bit and the
 // prototype's golden, on three golden streams. With stage 1's guard margin, mask-bias table and re-key clocks (Plan B:
 // B4b changed the first two defaults, B4d the clocks; --set guard_margin_s, mask_bias, rekey_clear_moves_stretch and
@@ -938,19 +939,20 @@ TEST(BankChannelDits, OverridesInSecondsReproduceStageOnesTimingBitForBit) {
 // seconds, the per-candidate variant's), and the periodicity mode leaves W_min,k and the time-out in dits.
 // Plan B, B4g: the default re-key timing is stage 1's, W_min = 0.8 s and the time-out 2 s on every branch, with stage
 // 1's clocks: the default configuration at its own timing decodes three golden streams bit for bit as at
-// fixed_timing(0.8 s, 2 s, {2, 5, 10} s) (the guard margin and mask-bias table stay Plan B's, B4b and B4d).
+// fixed_timing(0.8 s, 2 s, {5, 10} s) (the guard margin and mask-bias table stay Plan B's, B4b and B4d; the periodicity
+// windows the default's 5 and 10 s since 2026-10-07).
 TEST(BankChannelDefaults, TheReKeyTimingIsStageOnesInSeconds) {
     const BankConfig cfg;
     for (const std::string name : {"clean", "turnover", "farnsworth"}) {
         SCOPED_TRACE(name);
         expect_identical(decode(stream_of(name), rate_of(name), 0, bank_timing(cfg), cfg),
-                         decode(stream_of(name), rate_of(name), 0, fixed_timing(cfg, 0.8, 2.0, {2.0, 5.0, 10.0}), cfg));
+                         decode(stream_of(name), rate_of(name), 0, fixed_timing(cfg, 0.8, 2.0, {5.0, 10.0}), cfg));
     }
 }
 
 TEST(BankChannelDits, EachOverrideActsAlone) {
     const BankTiming dits = bank_timing(kz4ap::test::dits_config());  // the variant in dits
-    EXPECT_EQ(dits.periodicity_windows_s, (std::vector<std::vector<double>>{{2.0}, {5.0}, {10.0}}));
+    EXPECT_EQ(dits.periodicity_windows_s, (std::vector<std::vector<double>>{{5.0}, {10.0}}));  // the default's (2026-10-07)
     // B4g's default: the seconds set, stage 1's 0.8 s and 2 s on every branch; the windows unchanged
     const BankTiming a = bank_timing(BankConfig{});
     EXPECT_EQ(a.rekey_wait_s, std::vector<double>(32, 0.8));
@@ -1072,7 +1074,7 @@ TEST(BankChannelShared, NoTHatFromBranchOnesUnfittedStart) {
 }
 
 // The default mode ("seconds", B4d) and the per-candidate variant are unchanged by the shared variant's code: the
-// channel passes no T-hat; the default's windows are stage 1's 2, 5 and 10 s (1500, 3750, 7500 samples at 750
+// channel passes no T-hat; the default's windows are 5 and 10 s since 2026-10-07 (3750 and 7500 samples at 750
 // samples/s), the per-candidate variant's one per candidate.
 TEST(BankChannelShared, TheDefaultModeHasNoTHat) {
     BankConfig per_candidate;
@@ -1085,7 +1087,7 @@ TEST(BankChannelShared, TheDefaultModeHasNoTHat) {
         EXPECT_FALSE(ch.periodicity_dit_s().has_value());
         EXPECT_TRUE(ch.periodicity().window_dits().empty());
         if (cfg.periodicity_window_mode == "seconds")
-            EXPECT_EQ(ch.periodicity().windows(), (std::vector<std::vector<int>>{{1500}, {3750}, {7500}}));
+            EXPECT_EQ(ch.periodicity().windows(), (std::vector<std::vector<int>>{{3750}, {7500}}));
         else
             EXPECT_EQ(ch.periodicity().windows()[0].size(), ch.periodicity().grid().size());
     }

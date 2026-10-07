@@ -179,3 +179,18 @@ the eligibility point); in group D's 20 → 35 WPM step the prototype's CER is 0
   per-candidate windows cost about +0.02 paired CER and let the 3T alias win 10–20% of short windows; a
   shared window N_w·T̂ was not significantly better than the fixed windows and ties the window to the
   decoder's own speed belief. Spec §3.1, §3.2 and §7 amended.
+
+## 7. Amendment (2026-10-07): the 2 s periodicity window dropped
+
+- **Decision (owner, 2026-10-07): the periodicity windows are 5 and 10 s**, amending §6's 2, 5 and 10 s;
+  stage 1's three windows stay available as a setting. Reason (measured on the development set's pilot,
+  speed cell 8–10 WPM): below about 10 WPM the 2 s window cannot score the true dit (it reaches
+  T ≤ 2 s/18.3 = 109 ms, 11.0 WPM). It then returns a false match at about T/3, scoring 0.035–0.052,
+  just above the 0.03 threshold; because the shortest confident window wins, that estimate replaces the
+  5 s window's correct one (score 0.2–0.36) in about one update in five, and the T_P prior pulls the
+  fits to about T/2, so element spaces read as character gaps. A diagnostic replay with 5 and 10 s alone
+  gave mean CER 0.008 on that cell's 32 signals at S₅₀₀ ≥ +4 dB SNR in 500 Hz, against 0.497 with
+  2, 5 and 10 s. Cost: a window scores only once full, so the first T_P comes after 5 s of a channel's
+  stream instead of 2 s, and after a speed change the estimate follows over 5 s instead of 2 s.
+  Measurement on the full development set: `docs/plans/2026-10-06-development-set-results.md` §6. Spec
+  §3.2 and §7 amended.

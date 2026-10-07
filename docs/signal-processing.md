@@ -436,7 +436,7 @@ defaults, each with its class (owner):
 |---|---|---|---|
 | Re-key wait | 0.8 s of keyed time, every branch | the same | seconds (stage 1's, measured by E9b), pending the variants' comparison on a new development set (owner) |
 | Re-key time-out | 2 s from the amplitude becoming unknown | the same | seconds; heuristic, pending as above |
-| Periodicity windows | 2, 5, 10 s for every candidate | the same | seconds, class 2: latency (owner); values placeholder |
+| Periodicity windows | 5, 10 s for every candidate | 2, 5, 10 s | seconds, class 2: latency (owner); values placeholder; 2 s dropped (owner, 2026-10-07) |
 
 ### Keying
 
@@ -552,15 +552,20 @@ Recomputed every 0.25 s.
 
 **Windows.** The estimate uses only recent p, because the station
 changes (a stream starts, an over begins, the speed changes): a short window
-follows a change quickly, a long one is steadier. Three run at once,
-**2, 5 and 10 s** (placeholder values); in each the best-scoring candidate
+follows a change quickly, a long one is steadier. Two run at once,
+**5 and 10 s** (placeholder values); in each the best-scoring candidate
 is *confident* at a score of at least **0.03** (placeholder), and T_P is
 the confident estimate of the shortest window. The comb's outermost lag,
 9.15·τ_c, must fit in half the window, so a window W scores only
-τ_c ≤ W/18.3 (derived): 2 s reaches down to 11 WPM, 5 s to 4.4 WPM, 10 s to
-2.2 WPM. The windows are fixed in seconds for every candidate (owner,
-2026-10-06): they exist for latency after a change, felt in seconds; the
-reach limit is physics any rule must wait for. Windows in dits (one per
+τ_c ≤ W/18.3 (derived): 5 s reaches down to 4.4 WPM, 10 s to 2.2 WPM. The
+windows are fixed in seconds for every candidate (owner, 2026-10-06): they
+exist for latency after a change, felt in seconds; the reach limit is
+physics any rule must wait for. Stage 1's 2 s window (reach 11 WPM) was
+dropped (owner, 2026-10-07): below about 10 WPM it returned a false match
+near a third of the dit, scoring just above 0.03, which as the shortest
+confident window set T_P and pulled the fits to half the dit (measured).
+The cost: a window scores only once full, so the first T_P comes after 5 s
+of a stream, not 2 s. Windows in dits (one per
 candidate, or one following the selected branch's dit) remain as
 variants. T_P never feeds back into its own estimate.
 
@@ -2047,9 +2052,10 @@ default: the wait and time-out in each branch's nominal dit d_k = L_k/0.8
 the re-key clocks started at the first provisional mark with the lead
 7·d_k (B4d), the wait counted in marks (8, time-out 7 s; B4e) and its two
 guards (B4f); their measured results are in "Keying time constants"
-below. The periodicity windows are in seconds, **2, 5 and 10 s** for every
+below. The periodicity windows are in seconds, **5 and 10 s** for every
 candidate (class 2: latency after a change; owner, 2026-10-06; values
-placeholder); windows in dits are variants.
+placeholder; stage 1's 2 s window dropped by the owner, 2026-10-07, see
+"Periodicity" below); windows in dits are variants.
 
 #### Keying (bank decoder)
 
@@ -2132,9 +2138,10 @@ feeds the fits' prior and selection's fallback, and never itself.
 - **Input:** branch 1's squelched posterior p, averaged in pairs to
   r_P = 750 samples/s; recomputed every 0.25 s (heuristic).
 - **Candidates:** the fit's T grid (303 points τ_c, 12–242.2 ms), all
-  judged over the same three windows (rows) of W = 2, 5 and 10 s
-  (`periodicity_windows_s`; mode "seconds", the default since B4d),
-  N = max(16, round(W r_P)) = 1500, 3750 and 7500 samples of the most
+  judged over the same two windows (rows) of W = 5 and 10 s
+  (`periodicity_windows_s`; mode "seconds", the default since B4d; 5 and
+  10 s since 2026-10-07, stage 1's 2, 5 and 10 s by `--set`),
+  N = max(16, round(W r_P)) = 3750 and 7500 samples of the most
   recent p; a row whose window is not yet full gives no estimate.
 - **Autocorrelation:** x = p − mean(p), biased normalized
   ρ[τ] = Σx[m]x[m+τ]/Σx² (by FFT, as the prototype).
@@ -2143,8 +2150,8 @@ feeds the fits' prior and selection's fallback, and never itself.
   mean over k = 1…4 of tooth(kΠ) − ½(tooth((k−½)Π) + tooth((k+½)Π)),
   dimensionless (teeth and width placeholders, E3), with T = τ_c. A
   candidate counts only if 9.15τ_c ≤ (N − 1)/2, i.e. τ_c ≤ W/18.3 (derived):
-  109 ms (11 WPM) in the 2 s row, every candidate in the 5 and 10 s rows
-  (273 and 546 ms).
+  every candidate in the 5 and 10 s rows (273 and 546 ms; a 2 s row, stage
+  1's, reaches 109 ms, 11 WPM).
 - **T_P:** per row the best candidate; T_P is the shortest row's estimate
   whose score is ≥ **0.03** (placeholder); else none.
 - Variants, not the default: `periodicity_window_mode = "per_candidate"`
@@ -2564,7 +2571,7 @@ them.
 | W_min,k (`rekey_after_dits`) | 16.7 · d_k of keyed (key-down) time: 200.4 ms (k = 1), 837.1 ms (k = 16), 1.631 s (k = 23), 3.847 s (k = 32); with `rekey_after_s` unset (variants): the re-key wait in the dits variant (B4a–B4d), the seed's memory (4 · W_min,k) in both variants | (1) dits: it collects enough of the over's marks to seed the amplitude, and a branch's marks last a number of its dits | derived: E9b's 0.8 s (measured at 25 words/min) over 48 ms = 16.67, rounded to 16.7 (stage-2 spec) |
 | Re-key time-out, variant (`rekey_timeout_ratio`) | dits variant (both seconds fields unset, `rekey_wait_in_marks` off): 2.5 · W_min,k = 41.75 · d_k of channel time from the over's first provisional mark: 501 ms, 2.093 s, 4.078 s, 9.616 s | (1) dits, through W_min,k: a station is keyed down about 44% of the time (PARIS), so it needs about W_min,k / 0.44 of channel time to reach W_min,k (derived) | heuristic: stage 1's ratio 2 s / 0.8 s |
 | Re-key lead (`rekey_lead_dits`) | variant (with `rekey_timeout_from_first_mark`): 7 · d_k before the over's first provisional mark: 84 ms (k = 1), 350.9 ms (k = 16), 1.612 s (k = 32) | (1) dits: the marks it must reach are the station's, one word gap of the branch's dit | heuristic (Plan B, B4d) |
-| Periodicity windows (`periodicity_windows_s`) | 2, 5 and 10 s, the same for every candidate (`periodicity_window_mode` "seconds") | (2) seconds: a latency after a change (a stream's start, a new over, a speed change), felt in seconds; the reach limit τ_c ≤ W/18.3 (11, 4.4 and 2.2 words/min) is physics any rule must wait for (owner, 2026-10-06) | placeholder: stage 1's values (E1) |
+| Periodicity windows (`periodicity_windows_s`) | 5 and 10 s, the same for every candidate (`periodicity_window_mode` "seconds"); stage 1's 2, 5 and 10 s until 2026-10-07 | (2) seconds: a latency after a change (a stream's start, a new over, a speed change), felt in seconds; the reach limit τ_c ≤ W/18.3 (4.4 and 2.2 words/min; 11 words/min for a 2 s window) is physics any rule must wait for (owner, 2026-10-06) | placeholder: stage 1's values (E1) less the 2 s window, dropped on a measured failure below 10 words/min (owner, 2026-10-07; "Periodicity" below) |
 | Periodicity windows, variants (`periodicity_windows_dits`) | `"per_candidate"`: N_w · τ_c for each candidate, N_w ∈ {41.7, 104, 208} (0.500 to 2.496 s at τ_c = 12 ms, 10.10 to 50.39 s at 242.2 ms); `"shared"`: N_w · T̂ | (1) dits | placeholder: stage 1's 2, 5 and 10 s over 48 ms; not the default (B4d) |
 
 **Derivations.** At 25 words/min (T = 48 ms) the values are stage 1's
@@ -2600,8 +2607,10 @@ dits the time-out then follows it by `rekey_timeout_ratio` unless
 `rekey_timeout_s` is set too; with the wait in marks it sets only the
 seed's memory), and `rekey_timeout_s` gives every branch that time-out in
 either mode. With both clock switches off (the default) they are stage 1's
-timing bit for bit (`fixed_timing(cfg, 0.8, 2.0, {2, 5, 10})`; tested on
-three golden streams at the default configuration). The variants are
+re-key timing bit for bit (`fixed_timing(cfg, 0.8, 2.0, {5, 10})` at the
+default windows; tested on three golden streams at the default
+configuration; with `periodicity_windows_s` set to 2, 5 and 10 s, stage
+1's whole timing, tested on the prototype's golden streams). The variants are
 selected with `--set` in the replay tool: the dits (B4a) with
 `rekey_after_s=0 rekey_timeout_s=0`; B4d's clocks with
 `rekey_clear_moves_stretch=true rekey_timeout_from_first_mark=true` added;
@@ -2990,10 +2999,12 @@ adopted and are not ported; any other `periodicity_method` is an error
   samples, the longest window (7500 samples, 10 s, at 750 samples/s, by
   default; 37 789 samples, 50.4 s, in the per-candidate variant, which
   also keeps the samples that arrived since the last recomputation).
-- **Windows and updates (Plan B, B4d: stage 1's).** By default
-  (`periodicity_window_mode` "seconds") three windows W = 2, 5 and 10 s
-  shared by every candidate: N = max(16, round(W · r_P)) = 1500, 3750 and
-  7500 samples, each the most recent N samples, each computed by one FFT.
+- **Windows and updates (Plan B, B4d: stage 1's; 2 s dropped 2026-10-07).**
+  By default (`periodicity_window_mode` "seconds") two windows W = 5 and
+  10 s shared by every candidate: N = max(16, round(W · r_P)) = 3750 and
+  7500 samples, each the most recent N samples, each computed by one FFT
+  (stage 1's 2 s window, 1500 samples, by `--set
+  periodicity_windows_s=[2,5,10]`).
   The estimate is recomputed once round(0.25 s · r) samples of p (375 at
   1500 samples/s) have arrived since the last recomputation; between
   recomputations the last result stands. A window the buffer does not yet
@@ -3005,7 +3016,7 @@ adopted and are not ported; any other `periodicity_method` is an error
   ρ[τ] = Σ_{m=0}^{N−1−τ} x[m] x[m+τ] / Σ_m x[m]², τ = 0 … N − 1
   (dimensionless; 1 at τ = 0); by FFT zero-padded to the smallest power of
   two ≥ 2N (so the circular correlation equals the linear one) for a
-  shared window (4096, 8192 and 16 384 points by default). No estimate when N < 16 or Σ x² ≤ 10⁻¹² · N (p does not
+  shared window (8192 and 16 384 points by default; 4096 for a 2 s window). No estimate when N < 16 or Σ x² ≤ 10⁻¹² · N (p does not
   vary; for instance all zero while the squelch is closed).
 - **Sliding sums (the per-candidate variant only).** For a band of lags [lo, hi]
   (a tooth) over the window [s, e) of N samples, with S the running sum of
@@ -3033,8 +3044,8 @@ adopted and are not ported; any other `periodicity_method` is an error
   (3 × 0.52 M per recomputation on average), and the bands' tails and
   S-sums 5 L per candidate and band (0.26 M): about 3.9 M multiply-adds
   per recomputation, 15 M per channel-second at 3.9 recomputations per
-  second (the FFT form: three FFTs of 4096 to 16 384 points per
-  recomputation).
+  second (the FFT form: two FFTs of 8192 and 16 384 points per
+  recomputation by default).
 - **Candidates.** The duration fit's grid; the 1.01 is written into
   `t_grid` itself, not read from `t_grid_step`.
 - **Comb.** For each candidate T, Π = 2T, in samples Π · r_P. A tooth at
@@ -3048,9 +3059,9 @@ adopted and are not ported; any other `periodicity_method` is an error
 - **Reach.** A candidate counts only if its outermost lag,
   (4 + ½ + 0.075) Π = 9.15 T, is at most (N − 1)/2 samples. With the
   default fixed windows this caps T at (N − 1) / (18.3 r_P) ≈ W / 18.3:
-  109 ms (11 words/min) in the 2 s window, 273 ms (4.4 words/min) in 5 s
-  and 546 ms (2.2 words/min) in 10 s, so every candidate of the grid
-  (≤ 242.2 ms) is within reach of the 5 and 10 s windows; a window whose
+  273 ms (4.4 words/min) in 5 s and 546 ms (2.2 words/min) in 10 s, so
+  every candidate of the grid (≤ 242.2 ms) is within reach of both default
+  windows (stage 1's 2 s window: 109 ms, 11 words/min); a window whose
   true T is beyond its cap still returns its best candidate within reach
   (often an alias at a fraction of T, or a candidate that is not
   confident). With a window per candidate (the variant) the reach always
@@ -3060,9 +3071,9 @@ adopted and are not ported; any other `periodicity_method` is an error
   is within reach.
 - **Taper.** The biased estimate tapers each tooth by about (1 − τ/N), so
   a tooth's contrast shrinks with its lag. With the default fixed windows
-  it depends on speed: at the 8T tooth 1 − 8 T/W, 0.81 at 25 words/min
-  (T = 48 ms) in the 2 s window, about 0.62 for 5 words/min (8T = 1.92 s)
-  in the 5 s window; it lowers long-T scores in short windows relative to
+  it depends on speed: at the 8T tooth 1 − 8 T/W, 0.92 at 25 words/min
+  (T = 48 ms) in the 5 s window (0.81 in a 2 s window), about 0.62 for
+  5 words/min (8T = 1.92 s) in the 5 s window; it lowers long-T scores in short windows relative to
   short-T ones. With a window per candidate (the variant) it is the same
   at every speed: 1 − 8/41.7 = 0.81 in the shortest window.
 - **T_P.** At each recomputation the windows are estimated shortest first;
@@ -3131,11 +3142,31 @@ Measurements, the first form's fault (a nominal-dit fallback that trapped
 the start-up) and tests: Plan B record, sections 6.6, 6.6.1, 9.2 and 9.5.
 
 **Provenance.** The method (the comb on Π = 2T): owner (E1; stage-1
-record, section 3.2). The windows 2, 5 and 10 s for every candidate: a
-placeholder (E2; stage-1 record, section 3.3), class (2) seconds, a
-latency after a change (the owner's decision of 2026-10-06, after B4a's
-windows in dits raised the paired CER and the aliases near 3 T₀; stage-2
-spec, decision record section 6; Plan B record, sections 6 and 10). The
+record, section 3.2). The windows for every candidate: stage 1's 2, 5
+and 10 s, a placeholder (E2; stage-1 record, section 3.3), class (2)
+seconds, a latency after a change (the owner's decision of 2026-10-06,
+after B4a's windows in dits raised the paired CER and the aliases near
+3 T₀; stage-2 spec, decision record section 6; Plan B record, sections 6
+and 10); the 2 s window dropped by the owner on 2026-10-07 (decision
+record section 7), leaving 5 and 10 s.
+
+**Why the 2 s window was dropped** (measured on the development set's
+pilot, speed cell 8–10 words/min, by tracing the decoder; development-set
+results record, section 6). A window W scores only T ≤ W/18.3, 109 ms at
+2 s, so for a station slower than about 10 words/min the 2 s window's best
+candidate within reach is an alias, most often near T₀/3, scoring 0.035 to
+0.052 (median 0.041), just above the 0.03 threshold. The rule "the
+shortest confident window gives T_P" then let it replace the 5 s window's
+correct estimate (score 0.2 to 0.36) in about one update in five, and
+while it stood the T_P prior (σ_P = 0.1 in ln T) pulled the fits to
+T ≈ 0.51 T₀: ½ (ln 3 / 0.1)² = 60 nats at T = T₀ against 9 nats at
+T = 0.51 T₀ (derived), more than the likelihood the fit loses (measured
+outcome). An element space then read as a character gap ("S" as "EEE").
+Between 10 and 11 words/min the 2 s window's top candidate within reach
+(108 ms, 0.91 to 0.97 T₀) still won and did little harm. The 5 and 10 s
+windows reach every candidate, so the failure cannot arise from the reach;
+an alias of the 5 s window can still win when it is the shortest
+confident one. The
 variants' N_w = 41.7, 104 and 208 dits: stage 1's windows at 48 ms. The
 confidence threshold 0.03: a placeholder (E1, set with the fixed windows;
 re-measured with the windows in dits by Plan B's B4a and kept, Plan B
@@ -3150,9 +3181,12 @@ a candidate whose window the buffer does not yet fill takes no part (Plan
 B, B4a; heuristic, like the reach rule's exclusion). The 10⁻¹² · N variance floor and the 16-sample
 minimum: numerical choices.
 
-**Limitations.** The 2 s window cannot measure a station slower than
-11 words/min (the reach), so T_P for such a station comes from the 5 s
-window at the earliest 5 s after a change. The prototype's strict expected
+**Limitations.** A window scores only once full, so at a stream's start
+there is no T_P for the first 5 s (2 s with stage 1's windows), and after
+a speed change the 5 s window is the quickest to follow it (derived); the
+fits meanwhile run without the prior or under the previous T_P. The rule
+still takes the shortest confident window regardless of a longer window's
+higher score. The prototype's strict expected
 failure (Farnsworth 18/10 words/min, where the comb locks near the gap
 timebase) holds in the port. In the per-candidate variant a row's estimate
 is over the short candidates only for up to 10.1 s (shortest) to 50.4 s
@@ -3647,7 +3681,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Bank fit exp and ln | SLEEF 3.9.0 `_u10` (stated error bound 1.0 ulp) on arrays: grid points in blocks of 256, the retained history at once; finz (FMA) on AVX-512F (8 doubles) or AVX2 + FMA (4), else cinz on AVX-512F, AVX or SSE2 (8, 4, 2), chosen at run time; changes ℓ_total by ≤ 1.001 · 2^−52 · (5 \|ℓ_total\| + 14.3 + \|ln σ_ln²\|) nats against the C library's | `bank::vecmath` (`engine/src/bank/vecmath*.cpp`); `bank::DurationFit::grid_loglik`, `terms`, `refine` | the bound derived (1 ulp per call through the formula, assuming the C library's exp and ln within 1 ulp as SLEEF's; tested on the sweeps); the implementation order measured (Plan B B2(b)); the block of 256 a heuristic (stack scratch of 25 856 B, no measured effect claimed) |
 | Bank periodicity method | the comb on Π = 2T over branch 1's posterior p (the edge comb and the spectrum fit are not ported) | `BankConfig::periodicity_method`; `bank::Periodicity` | owner (E1); Π = 2T derived |
 | Bank periodicity input and updates | p averaged to r_P = r / max(1, round(r / 750 samples/s)) (750 samples/s at r = 1500 samples/s); recomputed every 0.25 s of p (375 samples at 1500 samples/s) | `BankConfig::periodicity_rate_hz`, `periodicity_update_s` | heuristic |
-| Bank periodicity windows | 2, 5 and 10 s (1500, 3750 and 7500 samples at 750 samples/s), the same for every candidate τ_c; the shortest confident window gives T_P; the comb's reach τ_c ≤ W/18.3 (109 ms, 11 words/min, in the 2 s window); class (2) seconds, a latency after a change | `BankConfig::periodicity_windows_s`, `periodicity_window_mode` = "seconds"; `bank::bank_timing`, `bank::Periodicity` | values placeholder (stage 1's, E2); seconds the owner's decision (2026-10-06; Plan B, B4d); reach derived |
+| Bank periodicity windows | 5 and 10 s (3750 and 7500 samples at 750 samples/s), the same for every candidate τ_c; the shortest confident window gives T_P; the comb's reach τ_c ≤ W/18.3 (273 ms, 4.4 words/min, in the 5 s window), so every candidate is in reach of both; class (2) seconds, a latency after a change; stage 1's 2, 5 and 10 s with `--set periodicity_windows_s=[2,5,10]` | `BankConfig::periodicity_windows_s` (`kStage1PeriodicityWindowsS`), `periodicity_window_mode` = "seconds"; `bank::bank_timing`, `bank::Periodicity` | values placeholder (stage 1's, E2) less the 2 s window, dropped on a measured failure below 10 words/min (owner, 2026-10-07); seconds the owner's decision (2026-10-06; Plan B, B4d); reach derived |
 | Bank periodicity windows, per-candidate variant (not the default) | `periodicity_window_mode` = "per_candidate": each candidate τ_c over its own N_w · τ_c, N_w = 41.7, 104 and 208 (0.50 to 2.50 s at 12 ms, 10.1 to 50.4 s at 242.2 ms); class (1) dits | `BankConfig::periodicity_windows_dits` | placeholder (Plan B, B4a; the default until B4d) |
 | Bank periodicity windows, shared variant (not the default) | `periodicity_window_mode` = "shared": each row one window for every candidate, N_w · T̂ (N_w = 41.7, 104, 208; T̂ the selected branch's eligible fitted T of its current over, capped at 0.2530 s); without such a fit (stream start, from an over start until its re-key) 2, 5 and 10 s; a candidate counts only within the comb's reach (T ≤ about N_w T̂ / 18.3); feeds back through T_P (fit prior, selection fallback) | `BankConfig::periodicity_window_mode` (default "seconds"), `periodicity_unselected_windows_s`; `bank::bank_timing`, `bank::Periodicity`, `bank::BankChannel` | heuristic, an experiment (Plan B, B4a-C); the cap and reach derived |
 | Bank comb teeth and width | 4 teeth at kΠ, k = 1…4, negative teeth at (k ± ½)Π, each ±0.075 Π (±15% of T) wide; score = mean contrast, dimensionless; biased autocorrelation | `BankConfig::comb_teeth`, `comb_width`; `bank::comb_estimate` | placeholder (E3), not measured for the comb on 2T; biased estimate heuristic |
