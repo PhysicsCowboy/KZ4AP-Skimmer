@@ -512,15 +512,30 @@ def default_results_dirs(out_dir: Path) -> list[Path]:
     return [p for p in (Path(out_dir) / "results", Path(out_dir) / "experiments" / "results") if p.exists()]
 
 
+def _corrections_count(out_dir: Path, decoder: str, test_case: str, index: int, cache: dict):
+    """The number of corrections the bank made on signal `index`'s channel: len(corrections) of the channel with
+    that label_index in out_dir/proto/<decoder>/<test_case>.decoded.json (kz4ap-bank-replay's file); None when the
+    file or the channel's corrections are missing (another decoder; an immediate-text folder)."""
+    path = Path(out_dir) / "proto" / decoder / f"{test_case}.decoded.json"
+    if path not in cache:
+        cache[path] = ({c.get("label_index"): c.get("corrections") for c in json.loads(path.read_text())["channels"]}
+                       if path.exists() else {})
+    corrections = cache[path].get(index)
+    return None if corrections is None else len(corrections)
+
+
 def load_rows(out_dir, decoders, results_dirs=None, only: str | None = DEV2_ANALYSIS) -> list[dict]:
     """One row per scored signal of each decoder (results folder name) on the test cases matching `only`: its
     speed (the label's wpm, WPM; I2's is the character speed), speed cell (SPEED_CELLS.cell_of), S500 (the label's
     snr_db, dB SNR in 500 Hz), S500 cell, E/N0 per dit (dB re 1), edits and reference symbols, whether the detector
-    path found it, and whether its sound leaves the oracle anchor's +/-12 Hz."""
+    path found it, and whether its sound leaves the oracle anchor's +/-12 Hz; the first words' edits and symbols
+    (the first word of each transmission, the bench's first_word counts); and the corrections the bank made on the
+    signal's channel (None where there is no bank decoded file, _corrections_count)."""
     out_dir = Path(out_dir)
     rows, _ = load_results(out_dir, results_dirs or default_results_dirs(out_dir), list(decoders))
     files = _label_files(out_dir)
     cache: dict = {}
+    decoded: dict = {}
     out = []
     for r in rows:
         if not r["scored"] or (only is not None and not re.search(only, r["recording"])):
@@ -534,7 +549,10 @@ def load_rows(out_dir, decoders, results_dirs=None, only: str | None = DEV2_ANAL
                     "path": "detector" if detector else "oracle", "speed_wpm": wpm,
                     "speed_cell": SPEED_CELLS.cell_of(wpm), "s500_db": s500, "s500_cell": SNR_CELLS.cell_of(s500),
                     "en0_db": float(en0_db(s500, wpm)), "edits": int(r["edits"]), "symbols": int(r["symbols"]),
-                    "detected": bool(r["detected"]), "beyond_oracle_anchor": bool(r["beyond_oracle_anchor"])})
+                    "detected": bool(r["detected"]), "beyond_oracle_anchor": bool(r["beyond_oracle_anchor"]),
+                    "first_word_edits": int(r["first_word_edits"]), "first_word_symbols": int(r["first_word_symbols"]),
+                    "corrections": (_corrections_count(out_dir, r["front_end"], r["recording"], r["index"], decoded)
+                                    if not detector else None)})
     return out
 
 
@@ -552,6 +570,10 @@ def load_rows(out_dir, decoders, results_dirs=None, only: str | None = DEV2_ANAL
 
 SCORE_COLUMNS = ("decoder", "group", "test_case", "index", "path", "speed_wpm", "speed_cell", "s500_db", "s500_cell",
                  "en0_db", "edits", "symbols", "detected", "beyond_oracle_anchor")
+# Optional columns (task D5, 2026-10-07), written after SCORE_COLUMNS when the rows have them: the first words' edits
+# and symbols (the first word of each transmission) and the bank's corrections on the signal's channel (empty for
+# another decoder). Tables written before them (task "scores", 2160428) have none, and read as rows without them.
+OPTIONAL_SCORE_COLUMNS = ("first_word_edits", "first_word_symbols", "corrections")
 _SCORE_INTS = ("index", "edits", "symbols")
 _SCORE_CELLS = ("speed_cell", "s500_cell")
 _SCORE_BOOLS = ("detected", "beyond_oracle_anchor")
@@ -567,11 +589,15 @@ def round_row(r: dict) -> dict:
     """The row as the score table holds it: speed (WPM) and S500 (dB SNR in 500 Hz) rounded to 0.01, E/N0 per dit
     recomputed from them (dB re 1, not rounded), integers and booleans as they are."""
     wpm, s500 = _hundredths(r["speed_wpm"]), _hundredths(r["s500_db"])
-    return {"decoder": r["decoder"], "group": r["group"], "test_case": r["test_case"], "index": int(r["index"]),
-            "path": r["path"], "speed_wpm": wpm, "speed_cell": r["speed_cell"], "s500_db": s500,
-            "s500_cell": r["s500_cell"], "en0_db": float(en0_db(s500, wpm)), "edits": int(r["edits"]),
-            "symbols": int(r["symbols"]), "detected": bool(r["detected"]),
-            "beyond_oracle_anchor": bool(r["beyond_oracle_anchor"])}
+    out = {"decoder": r["decoder"], "group": r["group"], "test_case": r["test_case"], "index": int(r["index"]),
+           "path": r["path"], "speed_wpm": wpm, "speed_cell": r["speed_cell"], "s500_db": s500,
+           "s500_cell": r["s500_cell"], "en0_db": float(en0_db(s500, wpm)), "edits": int(r["edits"]),
+           "symbols": int(r["symbols"]), "detected": bool(r["detected"]),
+           "beyond_oracle_anchor": bool(r["beyond_oracle_anchor"])}
+    for c in OPTIONAL_SCORE_COLUMNS:
+        if c in r:
+            out[c] = None if r[c] is None or r[c] == "" else int(r[c])
+    return out
 
 
 def write_scores(rows, path) -> Path:
@@ -579,12 +605,15 @@ def write_scores(rows, path) -> Path:
     bootstrap draws index the rows in order, so the order is kept)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    rows = list(map(round_row, rows))
+    # an optional column is written when every row has it
+    columns = SCORE_COLUMNS + tuple(c for c in OPTIONAL_SCORE_COLUMNS if rows and all(c in r for r in rows))
     with path.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
-        w.writerow(SCORE_COLUMNS)
-        for r in map(round_row, rows):
+        w.writerow(columns)
+        for r in rows:
             w.writerow([f"{r[c]:.2f}" if c in ("speed_wpm", "s500_db", "en0_db")
-                        else "" if r[c] is None else int(r[c]) if c in _SCORE_BOOLS else r[c] for c in SCORE_COLUMNS])
+                        else "" if r[c] is None else int(r[c]) if c in _SCORE_BOOLS else r[c] for c in columns])
     return path
 
 
@@ -596,14 +625,19 @@ def read_scores(paths, decoders=None, only: str | None = None) -> list[dict]:
     for path in [paths] if isinstance(paths, (str, Path)) else paths:
         with Path(path).open(encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
-            if tuple(reader.fieldnames or ()) != SCORE_COLUMNS:
-                raise ValueError(f"{path}: columns {reader.fieldnames}, expected {list(SCORE_COLUMNS)}")
+            names = tuple(reader.fieldnames or ())
+            extra = names[len(SCORE_COLUMNS):]
+            if names[:len(SCORE_COLUMNS)] != SCORE_COLUMNS or extra != tuple(c for c in OPTIONAL_SCORE_COLUMNS
+                                                                           if c in extra):
+                raise ValueError(f"{path}: columns {reader.fieldnames}, expected {list(SCORE_COLUMNS)} and optionally "
+                                 f"{list(OPTIONAL_SCORE_COLUMNS)} in that order")
             for line, raw in enumerate(reader, start=2):
                 if decoders is not None and raw["decoder"] not in decoders:
                     continue
                 if only is not None and not re.search(only, raw["test_case"]):
                     continue
-                row = round_row({**raw, **{c: int(raw[c]) for c in _SCORE_INTS},
+                row = round_row({**{k: v for k, v in raw.items() if k not in OPTIONAL_SCORE_COLUMNS},
+                                 **{c: raw[c] for c in extra}, **{c: int(raw[c]) for c in _SCORE_INTS},
                                  **{c: (int(raw[c]) if raw[c] != "" else None) for c in _SCORE_CELLS},
                                  **{c: raw[c] == "1" for c in _SCORE_BOOLS},
                                  "speed_wpm": float(raw["speed_wpm"]), "s500_db": float(raw["s500_db"])})
@@ -812,6 +846,77 @@ def paired(rows, reference: str, variant: str) -> dict:
     return out
 
 
+# --- first words and corrections (task D5) ---
+
+def _fw_cer(r) -> float | None:
+    return r["first_word_edits"] / r["first_word_symbols"] if r.get("first_word_symbols") else None
+
+
+def first_words(rows, decoders, reference: str | None = None) -> dict | None:
+    """The first word of each transmission, per decoder that has the first-word columns: per set (pooled "all" and
+    per speed cell, the paired sets' signals: oracle path, without NOT_POOLED_GROUPS) the signals, the first words'
+    symbols and edits, their pooled CER (edits over symbols), and the bank's corrections (sum and mean per signal,
+    when the rows have them); and, against `reference`, the paired difference of each signal's first-word CER
+    (variant minus reference, on the signals both scored with first-word symbols > 0), mean with 95% bootstrap
+    intervals over signals and over test cases, as paired(). None when no decoder has the columns."""
+    have = [d for d in decoders if any(r["decoder"] == d and "first_word_symbols" in r for r in rows)]
+    if not have:
+        return None
+    def sets_of(r):
+        if r["path"] != "oracle" or r["group"] in NOT_POOLED_GROUPS:
+            return []
+        return ["all", str(r["speed_cell"])]
+    out = {"decoders": {}, "paired": []}
+    for d in have:
+        acc: dict = {}
+        for r in rows:
+            if r["decoder"] != d or r["symbols"] <= 0:
+                continue
+            for name in sets_of(r):
+                a = acc.setdefault(name, {"signals": 0, "symbols": 0, "edits": 0, "corrections": 0,
+                                          "with_corrections": 0})
+                a["signals"] += 1
+                a["symbols"] += r["first_word_symbols"]
+                a["edits"] += r["first_word_edits"]
+                if r.get("corrections") is not None:
+                    a["corrections"] += r["corrections"]
+                    a["with_corrections"] += 1
+        out["decoders"][d] = {name: {"signals": a["signals"], "symbols": a["symbols"], "edits": a["edits"],
+                                     "cer": a["edits"] / a["symbols"] if a["symbols"] else None,
+                                     "corrections": a["corrections"] if a["with_corrections"] else None,
+                                     "corrections_per_signal": (a["corrections"] / a["with_corrections"]
+                                                                if a["with_corrections"] else None)}
+                              for name, a in acc.items()}
+    if reference in have:
+        ref = {(r["test_case"], r["index"]): r for r in rows if r["decoder"] == reference and r["symbols"] > 0}
+        for v in have:
+            if v == reference:
+                continue
+            sets: dict = {}
+            for r in rows:
+                key = (r["test_case"], r["index"])
+                if r["decoder"] != v or key not in ref or r["symbols"] <= 0:
+                    continue
+                a = ref[key]
+                fa, fb = _fw_cer(a), _fw_cer(r)
+                if fa is None or fb is None:
+                    continue
+                for name in sets_of(a):
+                    s_ = sets.setdefault(name, ([], [], [0]))
+                    s_[0].append(fb - fa)
+                    s_[1].append(key[0])
+                    s_[2][0] += a["beyond_oracle_anchor"]
+            out["paired"].append({"reference": reference, "variant": v,
+                                  "sets": {name: _paired_stats(diffs, cases, anchor[0],
+                                                               ("first-word", reference, v, name))
+                                           for name, (diffs, cases, anchor) in sets.items()}})
+    return out
+
+
+def _set_order(name: str) -> int:
+    return -1 if name == "all" else 99 if name == "None" else int(name)
+
+
 # --- the whole analysis ---
 
 def git_commit(repo: Path | None = None) -> dict:
@@ -849,6 +954,9 @@ def analyze(rows, decoders, reference: str | None = None, fit_groups=FIT_GROUPS,
         result["decoders"][name] = entry
     if reference is not None:
         result["paired"] = [paired(rows, reference, v) for v in decoders if v != reference]
+    fw = first_words(rows, decoders, reference)
+    if fw is not None:
+        result["first_words"] = fw
     return result
 
 
@@ -984,6 +1092,34 @@ def report_markdown(a: dict) -> str:
             lines.append(f"| {label} | {s['signals']} | {s['test_cases']} | {s['beyond_oracle_anchor']} | "
                          f"{_fmt(s['mean'], s['interval'], '+.4f')} | {_fmt(s['mean'], s['interval_test_cases'], '+.4f')} |")
         lines.append("")
+    fw = a.get("first_words")
+    if fw:
+        lines += ["## First words (the first word of each transmission) and corrections", "",
+                  "Oracle-path signals without " + ", ".join(NOT_POOLED_GROUPS) + ". First-word CER pooled: the first "
+                  "words' edits over their symbols. Corrections: the bank's, on the signals' channels (sum; mean per "
+                  "signal).", "",
+                  "| decoder | set | signals | first-word symbols | first-word CER | corrections | per signal |",
+                  "|---|---|---|---|---|---|---|"]
+        for d, sets in fw["decoders"].items():
+            for name in sorted(sets, key=_set_order):
+                x = sets[name]
+                label = "all (oracle path)" if name == "all" else f"speed cell {name}"
+                lines.append(f"| {d} | {label} | {x['signals']} | {x['symbols']} | {_fmt(x['cer'], None, '.4f')} | "
+                             f"{x['corrections'] if x['corrections'] is not None else '—'} | "
+                             f"{_fmt(x['corrections_per_signal'], None, '.2f')} |")
+        lines.append("")
+        for comp in fw["paired"]:
+            lines += [f"### First-word CER, paired: {comp['variant']} minus {comp['reference']}", "",
+                      "Each signal's first-word CER (signals with first-word symbols in both); mean with 95% bootstrap "
+                      "intervals over signals and over test cases.", "",
+                      "| set | signals | test cases | mean (signals) | mean (test cases) |", "|---|---|---|---|---|"]
+            for name in sorted(comp["sets"], key=_set_order):
+                s = comp["sets"][name]
+                label = "all (oracle path)" if name == "all" else f"speed cell {name}"
+                lines.append(f"| {label} | {s['signals']} | {s['test_cases']} | "
+                             f"{_fmt(s['mean'], s['interval'], '+.4f')} | "
+                             f"{_fmt(s['mean'], s['interval_test_cases'], '+.4f')} |")
+            lines.append("")
     return "\n".join(lines) + "\n"
 
 

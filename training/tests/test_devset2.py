@@ -592,3 +592,74 @@ def test_a_rounded_speed_across_a_cell_edge_keeps_the_floor_of_its_drawn_cell():
     fit = d2.fit_decoder(rounded, resamples=10, key=("edge",))
     assert fit["s500"]["fit"]["fitted_cells"] == list(range(2, 11)) and fit["s500"]["fit"]["floors"]["1"] is None
     assert fit["s500"]["crossings_0.10"][0]["no_crossing"] == "no data"
+
+
+# --- task D5: first words and corrections ---
+
+def _fw_row(decoder, case, index, fw_edits, fw_symbols, corrections=None, cell=1, **kw):
+    return {**_row(decoder, case, index, 10, cell=cell, **kw), "first_word_edits": fw_edits,
+            "first_word_symbols": fw_symbols, "corrections": corrections}
+
+
+def test_score_tables_carry_the_first_word_and_correction_columns_and_read_older_tables(tmp_path):
+    rows = [_fw_row("ref", "A2-awgn-c01-0-s1", i, i % 3, 20, corrections=None if i % 4 == 0 else i) for i in range(8)]
+    path = d2.write_scores(rows, tmp_path / "t.csv")
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == ",".join(d2.SCORE_COLUMNS + d2.OPTIONAL_SCORE_COLUMNS)
+    back = d2.read_scores(path)
+    assert back == [d2.round_row(r) for r in rows]
+    assert back[0]["corrections"] is None and back[1]["corrections"] == 1 and back[2]["first_word_edits"] == 2
+    # a table written before the columns (task "scores") reads as rows without them
+    old = d2.write_scores([_row("ref", "A2-awgn-c01-0-s1", 0, 3)], tmp_path / "old.csv")
+    assert old.read_text(encoding="utf-8").splitlines()[0] == ",".join(d2.SCORE_COLUMNS)
+    (r,) = d2.read_scores(old)
+    assert "first_word_edits" not in r and "corrections" not in r
+    # optional columns out of order are refused
+    swapped = lines[0].replace("first_word_edits,first_word_symbols", "first_word_symbols,first_word_edits")
+    (tmp_path / "bad.csv").write_text("\n".join([swapped] + lines[1:]) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="columns"):
+        d2.read_scores(tmp_path / "bad.csv")
+
+
+def test_first_words_pool_per_speed_cell_and_pair_signal_by_signal():
+    rows = []
+    for i in range(6):
+        rows.append(_fw_row("ref", f"A2-awgn-c01-{i}-s1", 0, 4, 10, corrections=2, cell=1))
+        rows.append(_fw_row("var", f"A2-awgn-c01-{i}-s1", 0, 1, 10, corrections=0, cell=1))
+        rows.append(_fw_row("ref", f"A2-awgn-c02-{i}-s1", 0, 0, 10, corrections=1, cell=2))
+        rows.append(_fw_row("var", f"A2-awgn-c02-{i}-s1", 0, 2, 10, corrections=3, cell=2))
+    # not pooled: the stretched copies; no first-word symbols: left out of the paired set
+    rows.append(_fw_row("ref", "S2-stretch-c05-0-s1", 0, 9, 10, cell=5, group="S2 stretch"))
+    rows.append(_fw_row("var", "S2-stretch-c05-0-s1", 0, 0, 10, cell=5, group="S2 stretch"))
+    rows.append(_fw_row("ref", "A2-awgn-c02-9-s1", 0, 0, 0, cell=2))
+    rows.append(_fw_row("var", "A2-awgn-c02-9-s1", 0, 0, 0, cell=2))
+    fw = d2.first_words(rows, ["ref", "var", "matched"], "ref")
+    assert set(fw["decoders"]) == {"ref", "var"}  # matched has no rows
+    ref = fw["decoders"]["ref"]
+    assert ref["1"]["cer"] == pytest.approx(0.4) and ref["2"]["cer"] == 0.0 and "5" not in ref
+    assert ref["all"]["signals"] == 13 and ref["all"]["symbols"] == 120
+    assert ref["all"]["cer"] == pytest.approx(24 / 120)
+    assert ref["1"]["corrections"] == 12 and ref["1"]["corrections_per_signal"] == pytest.approx(2.0)
+    (comp,) = fw["paired"]
+    assert comp["variant"] == "var"
+    assert comp["sets"]["1"]["mean"] == pytest.approx(-0.3) and comp["sets"]["2"]["mean"] == pytest.approx(0.2)
+    assert comp["sets"]["all"]["signals"] == 12 and comp["sets"]["all"]["mean"] == pytest.approx(-0.05)
+    assert d2.first_words([_row("ref", "x", 0, 1)], ["ref"], "ref") is None  # no first-word columns
+    md = d2.report_markdown({**d2.analyze(rows, ["ref", "var"], "ref", resamples=20)})
+    assert "First words" in md and "First-word CER, paired: var minus ref" in md
+
+
+def test_load_rows_takes_the_first_words_and_counts_the_banks_corrections(tmp_path):
+    out = _fixture(tmp_path)
+    proto = out / "proto" / "ref"
+    proto.mkdir(parents=True)
+    (proto / "A2-awgn-c01-0-s1.decoded.json").write_text(json.dumps(
+        {"texts": [], "channels": [{"label_index": 0, "corrections": [{}, {}]}, {"label_index": 1, "corrections": []}]}))
+    rows = d2.load_rows(out, ["ref", "var"])
+    by = {(r["decoder"], r["test_case"], r["index"]): r for r in rows}
+    assert by[("ref", "A2-awgn-c01-0-s1", 0)]["corrections"] == 2
+    assert by[("ref", "A2-awgn-c01-0-s1", 1)]["corrections"] == 0
+    assert by[("ref", "A2-awgn-c01-0-s1", 2)]["corrections"] is None  # no channel in the file
+    assert by[("var", "A2-awgn-c01-0-s1", 0)]["corrections"] is None  # no decoded file
+    assert by[("ref", "A2-detector-c01-0-s1", 0)]["corrections"] is None  # the detector path
+    assert all(r["first_word_edits"] == 0 and r["first_word_symbols"] == 0 for r in rows)  # the fixture's counts
