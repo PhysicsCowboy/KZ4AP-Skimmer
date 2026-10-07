@@ -71,7 +71,6 @@ def _safe(name: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in name)
 
 
-V_MID_WPM = float(np.sqrt(SPEED_CELLS.edges[0] * SPEED_CELLS.edges[-1]))  # the log speed axis's middle (presentation)
 OUTSIDE_PAD_DB = 1.0  # the S500 axes span the fitted data's range plus this margin, dB SNR in 500 Hz (presentation)
 
 
@@ -201,12 +200,14 @@ def figure_crossings(a: dict, stem: Path, threshold: float = 0.10) -> list[Path]
                 ax.plot([c["wpm"]], [edge], "^" if top else "v", ms=7, color=color, clip_on=False)
                 ax.annotate(f"{c['value']:+.1f} dB", xy=(c["wpm"], edge), xytext=(6, -10 if top else 4),
                             textcoords="offset points", fontsize=7, color=color)
-        for c in cells:
-            if c["value"] is None and c.get("no_crossing"):
-                ax.plot([c["wpm"]], [y_hi], "x", ms=7, mew=1.5, color=color, clip_on=False)
-                right = c["wpm"] > V_MID_WPM   # labels on the right half extend leftward, inside the axes
-                ax.annotate(f"{name}: no crossing", xy=(c["wpm"], y_hi), xytext=(-6 if right else 6, -10 - 9 * i),
-                            textcoords="offset points", fontsize=7, color=color, ha="right" if right else "left")
+        missing = [c for c in cells if c["value"] is None and c.get("no_crossing")]
+        for c in missing:
+            ax.plot([c["wpm"]], [y_hi], "x", ms=7, mew=1.5, color=color, clip_on=False)
+        if missing:
+            # one line per decoder, stacked under the top edge at the axis's middle (cells' x markers sit at the edge)
+            ax.text(0.5, 0.97 - 0.045 * i, f"{name}: no crossing in speed cell{'s' if len(missing) > 1 else ''} "
+                    + ", ".join(str(c["cell"]) for c in missing if "cell" in c) + " (x at the top)",
+                    transform=ax.transAxes, ha="center", va="top", fontsize=7, color=color)
     v = v_all
     ax.plot(v, ideal_s500_db(threshold, v), color=MUTED, lw=1.2, ls="--", label="genie bound, noncoherent")
     ax.plot(v, ideal_s500_db(threshold, v, coherent=True), color=MUTED, lw=1.0, ls=":", label="genie bound, coherent")
