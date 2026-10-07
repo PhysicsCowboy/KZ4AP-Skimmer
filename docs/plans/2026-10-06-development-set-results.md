@@ -28,7 +28,8 @@ crossing (S₅₀₀ at CER 0.10) per speed cell for both decoders, with 95% boo
 ±3.7 dB SNR in 500 Hz (half-widths).
 
 - **Sizes.** Scaling the intervals as 1/√n (an assumption, section 4.1), ±0.5 dB SNR in 500 Hz in every speed cell for both
-  decoders needs **224 signals per cell**: 56 times the pilot, 4.76 M channel-seconds, about 4.3 h per bank run.
+  decoders needs **223 signals per cell** (first computed as 224, from the half-width rounded up; option A,
+  section 4.4, was sized at 224: 56 times the pilot, 4.76 M channel-seconds, about 4.3 h per bank run).
   Matched's 80 WPM cell alone sets that number. Every other (decoder, cell) pair reaches the target at
   **48 signals per cell**. The proposed size is therefore 48 signals per cell (option B, section 4.4):
   - 6 720 A2 signals;
@@ -74,6 +75,36 @@ crossing (S₅₀₀ at CER 0.10) per speed cell for both decoders, with 95% boo
 
 ## 1. Conditions
 
+- **Score tables: the source of every number in this record** (the results-data rule, owner 2026-10-07). Every
+  run the record reports is committed as its per-signal score table in `docs/plans/data/2026-10-06-development-set/`, at commit `4b2e60e`:
+  - the pilot: `pilot-matched.csv` (Matched) and `pilot-bank.csv` (the bank, results folder `pilot-bank`);
+  - the baseline: `d4-baseline.csv` (Envelope, results folder `baseline`), `d4-matched.csv`,
+    `d4-matched-detector.csv` (Matched through the detector path, A2's copies) and `d4-bank.csv`.
+
+  Each holds one row per signal: decoder, group, test case, index, path, speed (0.01 WPM), speed cell, S₅₀₀
+  (0.01 dB SNR in 500 Hz), S₅₀₀ cell, E/N₀ per dit (recomputed from the rounded speed and S₅₀₀; the column shows
+  it at 0.01 dB re 1), edits, reference symbols, detected (0/1) and beyond the oracle anchor (0/1).
+  - **The record's numbers are computed from these committed, rounded tables, at commit `4b2e60e`**, with the same
+    bootstrap seeds and 1 000 resamples as the first analyses. Against the unrounded rows, the S₅₀₀ crossings moved by
+    at most 0.02 dB SNR in 500 Hz and their interval ends by at most 0.08 dB SNR in 500 Hz, except the single-floor
+    extrapolation of the pilot bank's cell 1 (section 3.1). Paired differences and the detection counts do not use the
+    rounded quantities and are unchanged.
+  - The fit takes each signal's floor from its row's speed cell, not from its rounded speed: rounding to 0.01 WPM
+    carries 34 of the baseline's 49 062 rows across a speed cell edge.
+  - **To recompute** (minutes; `PYTHONPATH=training`, no suite files needed):
+    `python -m kz4ap_proto.experiments devset2 --out build/analysis/2026-10-06-development-set --name d4
+    --decoder baseline --decoder matched --decoder d4-bank --reference matched --scores docs/plans/data/2026-10-06-development-set/d4-baseline.csv
+    --scores docs/plans/data/2026-10-06-development-set/d4-matched.csv --scores docs/plans/data/2026-10-06-development-set/d4-matched-detector.csv --scores docs/plans/data/2026-10-06-development-set/d4-bank.csv`; the same with
+    `--name d4-c2to10 --only '^A2-awgn-c(0[2-9]|10)-.*-s1$'`; and for the pilot `--name pilot-d4 --decoder matched
+    --decoder pilot-bank --reference matched --scores docs/plans/data/2026-10-06-development-set/pilot-matched.csv --scores docs/plans/data/2026-10-06-development-set/pilot-bank.csv` (and
+    `pilot-d4-c2to10` with the same `--only`). Each writes `experiments/devset2-<name>.json` and its summary
+    `devset2-<name>.md` there.
+  - Sections 3.1–3.3 and 4 use task D2's single-floor model, which the current code no longer has. They were
+    recomputed with `devset2.analyze` of commit `84413e9` (in a separate worktree), on the rows of the two pilot
+    tables as `read_scores` reads them.
+  - **Figures** are not committed by default. They are redrawn from an analysis with `python -m
+    kz4ap_proto.experiments figures --analysis build/analysis/2026-10-06-development-set/experiments/devset2-<name>.json
+    --dir build/figures/2026-10-06-development-set/<name>`.
 - **Code**: branch `milestone-2c-stage2` at `84413e9` (tasks D1 and D2). On the Linux machine it was built with
   CMake preset `linux` (Release, exact math). `ctest --preset linux` at that commit exited 0 (no test failed).
   The figures were redrawn at `9f751c5` (section 3.4): that commit changes presentation only.
@@ -117,7 +148,8 @@ crossing (S₅₀₀ at CER 0.10) per speed cell for both decoders, with 95% boo
   - Figures: `python -m kz4ap_proto.experiments figures --analysis
     build/suite/dev2/experiments/devset2-<name>.json`.
 - **Raw outputs** (git-ignored, copied back from the Linux machine to `build/suite/dev2/experiments/`):
-  `devset2-pilot.{json,md}` and `devset2-pilot-c2to10.{json,md}`. The figures are committed (section 3.4).
+  `devset2-pilot.{json,md}` and `devset2-pilot-c2to10.{json,md}`. The numbers below are recomputed from the score
+  tables (above).
 
 ## 2. The analysis method
 
@@ -213,26 +245,26 @@ The data span −8 to +20 dB SNR in 500 Hz. * marks a crossing outside the data,
 
 | speed cell | center (WPM) | Matched | half-width | bank | half-width | genie bound, noncoherent |
 |---|---|---|---|---|---|---|
-| 1 | 8.98 | −0.08 (−1.59 to +0.90) | 1.25 | +30.99 (+14.21 to +210.71) * | — | −6.31 |
-| 2 | 11.30 | −0.29 (−1.25 to +0.24) | 0.75 | +4.84 (−0.23 to +7.32) | 3.78 | −5.31 |
-| 3 | 14.23 | −0.20 (−0.90 to +0.32) | 0.61 | +0.00 (−1.58 to +2.46) | 2.02 | −4.31 |
-| 4 | 17.91 | +0.19 (−0.44 to +0.84) | 0.64 | −1.35 (−1.99 to +0.42) | 1.21 | −3.31 |
-| 5 | 22.55 | +0.87 (+0.20 to +1.63) | 0.72 | −1.69 (−2.07 to −0.37) | 0.85 | −2.31 |
-| 6 | 28.39 | +1.85 (+1.15 to +2.67) | 0.76 | −1.48 (−1.82 to −0.38) | 0.72 | −1.31 |
-| 7 | 35.73 | +3.21 (+2.47 to +4.01) | 0.77 | −0.79 (−1.13 to +0.32) | 0.73 | −0.31 |
-| 8 | 44.99 | +5.02 (+4.09 to +6.04) | 0.98 | +0.42 (−0.21 to +1.76) | 0.99 | +0.69 |
-| 9 | 56.64 | +7.49 (+5.70 to +9.16) | 1.73 | +2.43 (+1.08 to +4.27) | 1.60 | +1.69 |
-| 10 | 71.30 | +10.93 (+7.14 to +14.61) | 3.74 | +6.74 (+3.47 to +9.52) | 3.03 | +2.69 |
+| 1 | 8.98 | −0.08 (−1.59 to +0.90) | 1.24 | +31.01 (+14.26 to +214.62) * | — | −6.31 |
+| 2 | 11.30 | −0.29 (−1.25 to +0.24) | 0.74 | +4.82 (−0.15 to +7.32) | 3.74 | −5.31 |
+| 3 | 14.23 | −0.20 (−0.91 to +0.32) | 0.61 | −0.00 (−1.53 to +2.46) | 2.00 | −4.31 |
+| 4 | 17.91 | +0.19 (−0.44 to +0.84) | 0.64 | −1.35 (−1.98 to +0.43) | 1.20 | −3.31 |
+| 5 | 22.55 | +0.87 (+0.20 to +1.63) | 0.71 | −1.69 (−2.07 to −0.37) | 0.85 | −2.31 |
+| 6 | 28.39 | +1.86 (+1.15 to +2.67) | 0.76 | −1.48 (−1.82 to −0.38) | 0.72 | −1.31 |
+| 7 | 35.73 | +3.21 (+2.47 to +4.01) | 0.77 | −0.79 (−1.13 to +0.32) | 0.72 | −0.31 |
+| 8 | 44.99 | +5.02 (+4.09 to +6.05) | 0.98 | +0.42 (−0.22 to +1.75) | 0.98 | +0.69 |
+| 9 | 56.64 | +7.49 (+5.70 to +9.16) | 1.73 | +2.43 (+1.08 to +4.27) | 1.59 | +1.69 |
+| 10 | 71.30 | +10.93 (+7.14 to +14.60) | 3.73 | +6.74 (+3.47 to +9.52) | 3.03 | +2.69 |
 
 **Matched's fit:**
-- s₀ = −0.89 + 3.15x + 1.60x² dB SNR in 500 Hz, and ln(w / 1 dB) = −0.093 + 0.513x + 0.558x².
+- s₀ = −0.89 + 3.15x + 1.60x² dB SNR in 500 Hz, and ln(w / 1 dB) = −0.092 + 0.513x + 0.557x².
 - The floor is 0.0204 (0.0155 to 0.0267).
 - It converged in 11 iterations; 1 of 1 000 resamples failed.
 
 **The bank's fit:**
-- s₀ = −1.88 + 1.19x + 3.64x² dB SNR in 500 Hz, and ln(w / 1 dB) = −2.529 − 1.042x + 3.533x².
-- The floor is 0.0504 (0.0330 to 0.0600).
-- It converged in 49 iterations; 11 resamples failed.
+- s₀ = −1.88 + 1.19x + 3.64x² dB SNR in 500 Hz, and ln(w / 1 dB) = −2.536 − 1.043x + 3.540x².
+- The floor is 0.0504 (0.0331 to 0.0599).
+- It converged in 49 iterations; 13 resamples failed.
 - The floor is at 0.05, so the bank has no crossing at CER 0.05.
 
 Findings:
@@ -246,10 +278,10 @@ Findings:
      the old set had no speed below 12 WPM in group A.
 2. **That failure distorts the bank's whole smooth fit** (measured, figure 1, `fig1-pilot-bank`).
    - The quadratic s₀(v) and ln w(v) must bend up steeply at 9 WPM. Doing so moves cell 2's crossing to
-     +4.84 dB SNR in 500 Hz, although cell 2's signals switch from failing to decoding near −1 dB SNR in
+     +4.82 dB SNR in 500 Hz, although cell 2's signals switch from failing to decoding near −1 dB SNR in
      500 Hz.
    - The one global floor rises to 0.050, against the bank's own CER of 0.005 at high S₅₀₀ in cells 2–5.
-   - The bank's intervals in cells 2–3 (±3.8 and ±2.0 dB SNR in 500 Hz) therefore measure model misfit, not sampling noise.
+   - The bank's intervals in cells 2–3 (±3.7 and ±2.0 dB SNR in 500 Hz) therefore measure model misfit, not sampling noise.
 3. **Matched has whole-signal failures at 63–80 WPM** (measured). Of cell 10's 20 signals at S₅₀₀ ≥ 10 dB SNR in
    500 Hz, 4 have CER above 0.1 and 2 above 0.3 (up to 0.94). Its fitted width w there is about 2.8 dB SNR in 500 Hz.
    Together these make cell 10's crossing the least precise in the table (±3.7 dB SNR in 500 Hz).
@@ -266,22 +298,21 @@ an extrapolation from no signals and is not used.
 
 | speed cell | center (WPM) | Matched | half-width | bank | half-width |
 |---|---|---|---|---|---|
-| 2 | 11.30 | −0.17 (−1.59 to +1.00) | 1.30 | +0.23 (−0.56 to +0.71) | 0.64 |
-| 3 | 14.23 | −0.14 (−1.04 to +0.53) | 0.79 | −0.19 (−0.77 to +0.15) | 0.46 |
-| 4 | 17.91 | +0.20 (−0.50 to +0.80) | 0.65 | −0.30 (−0.75 to +0.11) | 0.43 |
+| 2 | 11.30 | −0.17 (−1.60 to +1.00) | 1.30 | +0.24 (−0.56 to +0.71) | 0.63 |
+| 3 | 14.23 | −0.14 (−1.05 to +0.53) | 0.79 | −0.19 (−0.78 to +0.15) | 0.47 |
+| 4 | 17.91 | +0.20 (−0.51 to +0.81) | 0.66 | −0.30 (−0.75 to +0.11) | 0.43 |
 | 5 | 22.55 | +0.84 (+0.14 to +1.62) | 0.74 | −0.10 (−0.59 to +0.43) | 0.51 |
 | 6 | 28.39 | +1.80 (+1.04 to +2.72) | 0.84 | +0.42 (−0.10 to +0.99) | 0.55 |
-| 7 | 35.73 | +3.14 (+2.33 to +4.06) | 0.87 | +1.26 (+0.73 to +1.80) | 0.54 |
-| 8 | 44.99 | +4.95 (+3.93 to +5.89) | 0.98 | +2.41 (+1.71 to +2.90) | 0.60 |
-| 9 | 56.64 | +7.45 (+5.65 to +8.99) | 1.67 | +3.89 (+2.60 to +4.41) | 0.91 |
-| 10 | 71.30 | +11.02 (+7.34 to +14.67) | 3.67 | +5.69 (+3.66 to +6.40) | 1.37 |
+| 7 | 35.73 | +3.14 (+2.33 to +4.06) | 0.87 | +1.26 (+0.73 to +1.80) | 0.53 |
+| 8 | 44.99 | +4.95 (+3.93 to +5.90) | 0.98 | +2.41 (+1.71 to +2.90) | 0.59 |
+| 9 | 56.64 | +7.45 (+5.65 to +8.99) | 1.67 | +3.89 (+2.60 to +4.41) | 0.90 |
+| 10 | 71.30 | +11.02 (+7.33 to +14.67) | 3.67 | +5.69 (+3.66 to +6.40) | 1.37 |
 
 **The bank's fit without cell 1:**
-- s₀ = −1.56 + 1.62x + 2.86x² dB SNR in 500 Hz, and ln(w / 1 dB) = −0.361 + 0.377x + 0.008x².
+- s₀ = −1.56 + 1.62x + 2.86x² dB SNR in 500 Hz, and ln(w / 1 dB) = −0.361 + 0.377x + 0.007x².
 - The floor is 0.0190 (0.0152 to 0.0239).
 - It converged in 14 iterations; no resample failed.
-- The bank's width now hardly varies with speed, and its curves follow the data (figure 1 in
-  `cells-2-10/`).
+- The bank's width now hardly varies with speed, and its curves follow the data (figure 1 of this fit).
 - With that fit, the bank's crossing is at or below Matched's in every cell from 3 to 10. From 35 WPM up, it is
   1.9 to 5.3 dB SNR in 500 Hz better.
 
@@ -291,14 +322,14 @@ The crossing at CER 0.10 in E/N₀ per dit (dB re 1), at each cell center:
 
 | speed cell (center WPM) | 1 (8.98) | 2 (11.30) | 3 (14.23) | 4 (17.91) | 5 (22.55) | 6 (28.39) | 7 (35.73) | 8 (44.99) | 9 (56.64) | 10 (71.30) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Matched (all cells) | 18.17 | 16.96 | 16.05 | 15.44 | 15.12 | 15.10 | 15.46 | 16.27 | 17.74 | 20.18 |
+| Matched (all cells) | 18.17 | 16.96 | 16.05 | 15.44 | 15.12 | 15.11 | 15.46 | 16.28 | 17.74 | 20.18 |
 | bank (cells 2–10) | — | 17.49 | 16.06 | 14.95 | 14.15 | 13.67 | 13.51 | 13.66 | 14.14 | 14.94 |
 
 The genie bound is 11.94 dB re 1 (noncoherent) and 10.34 dB re 1 (coherent).
 
 1. **Neither decoder is time-base invariant** (measured; Wald test of a₁ = a₂ = 0 in the E/N₀ fit):
-   - Matched: T = 41.3, p = 1.1·10⁻⁹. Without cell 1: T = 20.7, p = 3.2·10⁻⁵.
-   - The bank, cells 2–10: T = 536, p = 4·10⁻¹¹⁷. With cell 1: T = 153.
+   - Matched: T = 41.4, p = 1.0·10⁻⁹. Without cell 1: T = 20.7, p = 3.2·10⁻⁵.
+   - The bank, cells 2–10: T = 534, p = 9·10⁻¹¹⁷. With cell 1: T = 155.
 2. **At the slow end, both decoders waste the energy a slower dit carries** (measured).
    - From 22.5 to 11.3 WPM a dit carries 3.0 dB re 1 more energy (10·log₁₀(22.55 / 11.30)). A time-base-invariant decoder's S₅₀₀
      crossing would fall by the same 3.0 dB SNR in 500 Hz.
@@ -313,8 +344,10 @@ The genie bound is 11.94 dB re 1 (noncoherent) and 10.34 dB re 1 (coherent).
 
 ### 3.4 Figures
 
-The figures are committed in `docs/plans/figures/2026-10-06-pilot/`, as PNG at 150 dpi and SVG. `captions.md`
-lists the runs and the commits. The subfolder `cells-2-10/` holds the same figures from the fit over cells 2–10.
+These figures of the single-floor fit were drawn by the figures code of `9f751c5` (as PNG at 150 dpi and SVG, with
+`captions.md` listing the runs and the commits); they are not committed. They are redrawn by that commit's
+`experiments figures` from the single-floor analysis recomputed as in section 1 (the current figures code draws
+per-cell floors, section 3.5). The same figures exist for the fit over cells 2–10.
 
 - `fig1-matched`, `fig1-pilot-bank`: CER against S₅₀₀, one panel per speed cell. Each panel shows the signals,
   the fitted curve at the cell center, and the crossing with its interval. A crossing outside the data is
@@ -331,7 +364,7 @@ figure 3); the change is presentation only, with a test.
 
 The owner's decision after the pilot: separate floors per speed cell, so that a cell that never reaches CER 0.10
 is reported as "no crossing" and cannot distort its neighbors. Code at `aaffd90` (`devset2.py`), figures at
-`e882c8a`.
+`e882c8a`; the numbers below are recomputed from the score tables at `4b2e60e` (section 1).
 
 **What changed in the fit** (`training/kz4ap_proto/devset2.py`):
 
@@ -386,14 +419,14 @@ the pilot's files, which are now in `build/suite/dev2/pilot/` on the Linux machi
 | speed cell | center (WPM) | Matched floor | Matched | bank floor | bank, all cells | bank, cells 2–10 |
 |---|---|---|---|---|---|---|
 | 1 | 8.98 | 0.045 | −0.01 (−1.68 to +0.96) | 0.518 (0.460 to 0.574) | no crossing (floor) | — |
-| 2 | 11.30 | 0.029 | −0.21 (−1.18 to +0.34) | 0.000 | +1.21 (−0.12 to +1.82) | +0.24 (−0.60 to +0.71) |
-| 3 | 14.23 | 0.010 | −0.16 (−0.91 to +0.32) | 0.008 | +0.31 (−0.51 to +0.67) | −0.18 (−0.78 to +0.15) |
-| 4 | 17.91 | 0.010 | +0.30 (−0.36 to +0.95) | 0.002 | −0.24 (−0.75 to +0.12) | −0.38 (−0.81 to +0.04) |
-| 5 | 22.55 | 0.001 | +0.91 (+0.27 to +1.66) | 0.019 | −0.20 (−0.75 to +0.36) | −0.10 (−0.61 to +0.49) |
-| 6 | 28.39 | 0.013 | +1.96 (+1.21 to +3.08) | 0.020 | +0.14 (−0.41 to +0.77) | +0.39 (−0.15 to +0.99) |
-| 7 | 35.73 | 0.019 | +3.26 (+2.47 to +4.04) | 0.032 | +1.00 (+0.44 to +1.65) | +1.28 (+0.76 to +1.80) |
-| 8 | 44.99 | 0.004 | +4.57 (+3.72 to +5.62) | 0.039 | +2.29 (+1.66 to +3.07) | +2.54 (+1.78 to +3.13) |
-| 9 | 56.64 | 0.001 | +6.41 (+5.11 to +7.85) | 0.028 | +3.85 (+2.82 to +4.42) | +3.91 (+2.62 to +4.42) |
+| 2 | 11.30 | 0.029 | −0.22 (−1.18 to +0.34) | 0.000 | +1.21 (−0.13 to +1.82) | +0.24 (−0.60 to +0.71) |
+| 3 | 14.23 | 0.010 | −0.16 (−0.91 to +0.32) | 0.008 | +0.32 (−0.51 to +0.68) | −0.18 (−0.78 to +0.15) |
+| 4 | 17.91 | 0.010 | +0.31 (−0.36 to +0.95) | 0.001 | −0.24 (−0.75 to +0.12) | −0.38 (−0.81 to +0.04) |
+| 5 | 22.55 | 0.001 | +0.91 (+0.27 to +1.66) | 0.019 | −0.20 (−0.74 to +0.36) | −0.10 (−0.61 to +0.49) |
+| 6 | 28.39 | 0.012 | +1.96 (+1.21 to +3.08) | 0.020 | +0.14 (−0.41 to +0.77) | +0.39 (−0.15 to +0.98) |
+| 7 | 35.73 | 0.019 | +3.26 (+2.47 to +4.04) | 0.031 | +1.00 (+0.44 to +1.65) | +1.28 (+0.76 to +1.80) |
+| 8 | 44.99 | 0.004 | +4.57 (+3.72 to +5.62) | 0.038 | +2.29 (+1.66 to +3.07) | +2.54 (+1.78 to +3.13) |
+| 9 | 56.64 | 0.001 | +6.41 (+5.11 to +7.85) | 0.028 | +3.85 (+2.80 to +4.41) | +3.91 (+2.63 to +4.42) |
 | 10 | 71.30 | 0.121 (0.048 to 0.215) | no crossing (floor) | 0.020 | +5.96 (+3.81 to +6.75) | +5.68 (+3.67 to +6.44) |
 
 Findings:
@@ -407,13 +440,13 @@ Findings:
    - With the single floor, they were shared with the other cells, and cell 10 crossed at +10.93 dB SNR in 500 Hz.
    - Whether Matched crosses CER 0.10 in cell 10 at all is not settled by 56 signals; the interval of the floor
      straddles 0.10.
-3. **The bank's cell 1 still moves its neighbors through the shared s₀ and w** (measured; figure 1,
-   `per-cell-floor/fig1-pilot-bank`).
+3. **The bank's cell 1 still moves its neighbors through the shared s₀ and w** (measured; figure 1 of
+   `pilot-d4`, `fig1-pilot-bank`).
    - Cell 1 rises from CER 1 to about 0.5 near 0 dB SNR in 500 Hz and then falls slowly to about 0.45 at
      +20 dB. The quadratic s₀(v) and ln w(v) bend to follow that.
    - Cell 2's crossing is +1.21 dB SNR in 500 Hz with cell 1 in the fit, against +0.24 dB without it: +0.97 dB.
-     Cell 3 moves by +0.49 dB, and cells 4–10 by −0.28 to +0.28 dB.
-   - With the single floor, cell 2 moved by +4.6 dB (+4.84 against +0.23, section 3.2).
+     Cell 3 moves by +0.50 dB, and cells 4–10 by −0.28 to +0.28 dB.
+   - With the single floor, cell 2 moved by +4.6 dB (+4.82 against +0.24, section 3.2).
    - The synthetic misfit of the same kind (above) moved cell 2 by +0.40 dB. The bank's real cell 1 departs further
      from the model's form.
    - The owner's decision ("cannot distort its neighbors") is therefore met for the floor, but not fully for the
@@ -425,14 +458,17 @@ Findings:
    0.020, which cell 10's failures had raised.
 6. **The E/N₀ view** (dB re 1 of E/N₀ per dit):
    - Matched's Wald statistic is T = 39.3, p = 3·10⁻⁹.
-   - For the bank with cell 1, T = 357, p = 4·10⁻⁷⁸.
+   - For the bank with cell 1, T = 357, p = 3·10⁻⁷⁸.
    - Neither decoder is time-base invariant, as before.
 7. **The paired difference** does not depend on the fit and is unchanged: bank − Matched +0.0384 (+0.0165 to
    +0.0605).
 
-The redrawn figures are in `docs/plans/figures/2026-10-06-pilot/per-cell-floor/` (all cells) and
-`per-cell-floor/cells-2-10/`. Figures 1–4 are PNG at 150 dpi and SVG, with `captions.md`. The figures of section
-3.4 stay as drawn with one floor.
+The figures of this fit are redrawn from the score tables (section 1): `--analysis
+build/analysis/2026-10-06-development-set/experiments/devset2-pilot-d4.json --dir
+build/figures/2026-10-06-development-set/pilot-d4` (all cells), and `pilot-d4-c2to10` for cells 2–10. Figures 1–4
+are PNG at 150 dpi and SVG, with `captions.md`. Figure 3, the crossing against speed for both decoders:
+
+<!-- FIGURE: pilot fig3 -->
 
 ## 4. The proposed sizes
 
@@ -458,9 +494,14 @@ h₄ at 4 signals per cell:
 
 | speed cell | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Matched (h₄ from section 3.1) | 25 | 9 | 6 | 7 | 9 | 10 | 10 | 16 | 48 | **224** |
-| bank (h₄ from section 3.2) | no crossing | 7 | 4 | 3 | 5 | 5 | 5 | 6 | 14 | 31 |
-| the larger | 25 | 9 | 6 | 7 | 9 | 10 | 10 | 16 | 48 | 224 |
+| Matched (h₄ from section 3.1) | 25 | 9 | 6 | 7 | 9 | 10 | 10 | 16 | 48 | **223** |
+| bank (h₄ from section 3.2) | no crossing | 7 | 4 | 3 | 5 | 5 | 5 | 6 | 14 | 30 |
+| the larger | 25 | 9 | 6 | 7 | 9 | 10 | 10 | 16 | 48 | 223 |
+
+Computed from the score tables (section 1) with each half-width unrounded. The record first gave 224 for Matched's
+cell 10, from the half-width rounded to 3.74 dB SNR in 500 Hz (3.730 unrounded), and 31 for the bank's, whose
+half-width was 1.371 dB SNR in 500 Hz on the unrounded rows and is 1.368 on the table. Option A (section 4.4) keeps
+the 224 per cell it was sized at.
 
 A2 draws one per-cell number for every cell, so A2's size is the largest entry of the cells it must cover.
 
@@ -529,7 +570,7 @@ Other costs at option B:
 
 **At option B, the predicted half-widths** are h₄·√(4/48) = 0.289·h₄, in dB SNR in 500 Hz:
 
-- Matched: 0.36, 0.22, 0.18, 0.18, 0.21, 0.22, 0.22, 0.28, 0.50 and 1.08 in cells 1–10.
+- Matched: 0.36, 0.21, 0.18, 0.18, 0.21, 0.22, 0.22, 0.28, 0.50 and 1.08 in cells 1–10.
 - The bank: 0.18, 0.13, 0.12, 0.15, 0.16, 0.15, 0.17, 0.26 and 0.40 in cells 2–10.
 
 The bank is the decoder Plan B tunes, and it reaches ±0.5 dB SNR in 500 Hz from 14 per cell. Matched's cells 8–10 set
@@ -587,7 +628,8 @@ All times are from the Linux machine. Another investigation shared it, using up 
 step here ran with 5 workers.
 
 - **Code.** Branch `milestone-2c-stage2`. The engine was unchanged since `84413e9` (built there with preset `linux`,
-  task D3). The analysis code is at `aaffd90`, and the figures at `af8a9b3`.
+  task D3). The analysis code is at `aaffd90`, and the figures at `af8a9b3`. The numbers below are recomputed from
+  the score tables at `4b2e60e` (section 1).
 - **Generation**: `kz4ap_synth.suites.dev2_suite(3, {"A2": 48, "B2": 24, "C2": 24, "I2": 24})`, written by
   the committed `write_suite`.
   - The recordings were written 5 at a time by a git-ignored driver (`build/d4-gen.py`). Each recording was
@@ -625,7 +667,7 @@ step here ran with 5 workers.
   `proto/d4-bank/`, `results/{baseline,matched,d4-bank}/` and `experiments/`.
   - The analyses `devset2-d4.{json,md}` and `devset2-d4-c2to10.{json,md}` were copied to the local
     `build/suite/dev2/experiments/`.
-  - Their summaries are committed as `summary.md` beside the figures (section 5.7).
+  - Their summaries (`devset2-d4.md`, `devset2-d4-c2to10.md`) are rebuilt from the score tables (section 1).
 
 ### 5.2 Crossings per speed cell
 
@@ -638,13 +680,13 @@ The table gives S₅₀₀ at CER 0.10 in dB SNR in 500 Hz, with 95% bootstrap i
 | speed cell | center (WPM) | Envelope | Matched | bank | bank, fit over cells 2–10 | genie bound, noncoherent |
 |---|---|---|---|---|---|---|
 | 1 | 8.98 | +11.19 (+10.41 to +11.84) | −0.80 (−1.19 to −0.47) | no crossing (floor 0.525) | — | −6.31 |
-| 2 | 11.30 | +9.16 (+8.76 to +9.48) | −0.52 (−0.81 to −0.29) | +0.64 (+0.43 to +0.86) | +0.46 (+0.30 to +0.66) | −5.31 |
-| 3 | 14.23 | +7.51 (+7.23 to +7.75) | −0.42 (−0.60 to −0.27) | +0.16 (+0.01 to +0.31) | +0.07 (−0.06 to +0.20) | −4.31 |
+| 2 | 11.30 | +9.16 (+8.76 to +9.48) | −0.52 (−0.81 to −0.29) | +0.64 (+0.43 to +0.86) | +0.46 (+0.29 to +0.66) | −5.31 |
+| 3 | 14.23 | +7.51 (+7.23 to +7.75) | −0.42 (−0.61 to −0.27) | +0.16 (+0.01 to +0.31) | +0.07 (−0.06 to +0.20) | −4.31 |
 | 4 | 17.91 | +6.80 (+6.58 to +7.02) | +0.18 (−0.01 to +0.33) | −0.02 (−0.13 to +0.08) | −0.04 (−0.15 to +0.06) | −3.31 |
 | 5 | 22.55 | +6.79 (+6.55 to +7.02) | +0.82 (+0.64 to +0.99) | +0.17 (+0.06 to +0.28) | +0.21 (+0.10 to +0.31) | −2.31 |
 | 6 | 28.39 | +7.63 (+7.33 to +7.99) | +1.73 (+1.52 to +1.93) | +0.74 (+0.60 to +0.87) | +0.81 (+0.68 to +0.93) | −1.31 |
-| 7 | 35.73 | +13.60 (+11.97 to +17.96) | +2.68 (+2.48 to +2.88) | +1.73 (+1.57 to +1.88) | +1.80 (+1.65 to +1.94) | −0.31 |
-| 8 | 44.99 | +14.68 (+13.67 to +16.47) | +3.87 (+3.67 to +4.08) | +2.98 (+2.81 to +3.12) | +3.03 (+2.88 to +3.19) | +0.69 |
+| 7 | 35.73 | +13.60 (+11.97 to +17.96) | +2.68 (+2.49 to +2.88) | +1.73 (+1.58 to +1.88) | +1.80 (+1.65 to +1.94) | −0.31 |
+| 8 | 44.99 | +14.68 (+13.67 to +16.47) | +3.86 (+3.67 to +4.08) | +2.98 (+2.81 to +3.12) | +3.03 (+2.88 to +3.19) | +0.69 |
 | 9 | 56.64 | no crossing (not within the data: fitted CER 0.118 at +20 dB; floor 0.085) | +6.03 (+5.54 to +6.64) | +4.46 (+4.28 to +4.64) | +4.46 (+4.28 to +4.66) | +1.69 |
 | 10 | 71.30 | no crossing (floor 0.264) | no crossing (floor 0.126, 0.102 to 0.152) | +6.44 (+6.14 to +6.73) | +6.38 (+6.08 to +6.69) | +2.69 |
 
@@ -654,12 +696,12 @@ The floors (CER) in speed cells 1–10:
 - Matched: 0.053, 0.046, 0.010, 0.010, 0.003, 0.007, 0.003, 0.005, 0.046 and 0.126.
 - The bank: 0.525, 0.006, 0.013, 0.010, 0.012, 0.015, 0.024, 0.027, 0.022 and 0.030.
 
-The crossings at CER 0.05 are in `summary.md`.
+The crossings at CER 0.05 are in the analysis summary `devset2-d4.md` (section 1).
 
 Findings (all measured):
 
 1. **The bank needs the least S₅₀₀ from 22.5 to 80 WPM; Matched needs the least at 11–14 WPM.**
-   - Bank minus Matched in cells 2–9 is +1.16, +0.58, −0.20, −0.65, −0.99, −0.95, −0.89 and −1.57 dB SNR in
+   - Bank minus Matched in cells 2–9 is +1.16, +0.58, −0.20, −0.65, −0.99, −0.95, −0.88 and −1.57 dB SNR in
      500 Hz. In cell 4 the two intervals overlap (−0.13 to +0.08 against −0.01 to +0.33); these unpaired
      intervals do not resolve the difference. The paired CER in speed cell 4 favors the bank (section 5.4).
    - In cell 10 (63.5–80 WPM) the bank crosses at +6.44 dB SNR in 500 Hz, and Matched does not cross.
@@ -688,7 +730,7 @@ Findings (all measured):
    - The ±0.5 dB SNR in 500 Hz target is met everywhere a crossing exists, except Matched's cell 9 (0.55).
    - **Caveat:** these are 95% percentile intervals, whose coverage measured about 0.90 (40 synthetic sets at 4
      signals per cell, section 3.5; not measured at 48). Calibrated to 95% under a normal approximation, the
-     half-widths would be about 1.96/1.645 = 1.19 times larger: the bank 0.13–0.35, Matched's cell 9 about 0.65
+     half-widths would be about 1.96/1.645 = 1.19 times larger: the bank 0.13–0.35, Matched's cell 9 about 0.66
      dB SNR in 500 Hz (derived). The conclusions of this section do not change.
    - The 1/√n scaling of section 4.1 held to within about 0.1 dB SNR in 500 Hz.
    - Envelope's intervals in cells 7 and 8 (±3.0 and ±1.4 dB SNR in 500 Hz) are wide, because its floors there (0.084 and
@@ -710,7 +752,7 @@ The table gives the crossing at CER 0.10 in E/N₀ per dit, dB re 1, at each cel
 
 1. **No decoder is time-base invariant.** The Wald test of s₀'s speed terms in the E/N₀ fit gives:
    - Matched T = 1 052, p = 4·10⁻²²⁹;
-   - the bank T = 8 210;
+   - the bank T = 8 175;
    - Envelope T = 2 491.
 2. **The spread of the crossings** (descriptive), in dB of E/N₀ per dit:
    - Matched 2.52 (2.04 to 2.97) over cells 1–9;
@@ -767,7 +809,7 @@ Findings (measured):
 ### 5.5 Detection recall (Matched, through the detector path)
 
 The table gives the A2 detector-path labels detected, out of 48, per speed cell and S₅₀₀ cell. The Wilson 95%
-intervals are in `summary.md` and figure 5.
+intervals are in the analysis summary `devset2-d4.md` and figure 5 (section 1).
 
 | S₅₀₀ cell (dB SNR in 500 Hz) | cell 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -817,26 +859,29 @@ d. **E2 (interference).** The bank's +0.41 against Matched is the largest group 
 
 ### 5.7 Figures
 
-The figures are in `docs/plans/figures/2026-10-06-dev2-baseline/`, as PNG at 150 dpi and SVG. Beside them are
-`captions.md`, which lists the runs and the commits, and `summary.md`, the analysis summary. The figures in
-the folder's top level were redrawn in task D4's fix round 1. In that redraw:
-- figure 3 breaks every curve and band at each cell edge;
-- the point clouds of figures 1 and 2 are raster images inside the SVGs;
-- the legends name the decoders (Envelope, Matched, bank) instead of their results folders.
-
-The subfolder `cells-2-10/` holds the fit over cells 2–10. Its `summary.md` is the record's source for that
-comparison. Its figures are from the first drawing, which joined the curves across cell edges, and are no longer
-redrawn: duplicate figures are not produced by default from now on. They stay committed until the owner decides.
-The same holds for `docs/plans/figures/2026-10-06-pilot/per-cell-floor/cells-2-10/`.
+The figures are redrawn from the score tables (section 1): `--analysis
+build/analysis/2026-10-06-development-set/experiments/devset2-d4.json --dir build/figures/2026-10-06-development-set/d4`,
+as PNG at 150 dpi and SVG, with `captions.md`, which lists the runs and the commits. The fit over cells 2–10 is
+analysis `d4-c2to10`; its summary `devset2-d4-c2to10.md` is the record's source for that comparison.
 
 - `fig1-baseline`, `fig1-matched`, `fig1-d4-bank`: CER against S₅₀₀ per speed cell. Each panel shows the signals,
-  the fit at the cell's center, and either the crossing with its interval or "no crossing" with the floor.
+  the fit at the cell's center, and either the crossing with its interval or "no crossing" with the floor. The
+  bank's:
+
+<!-- FIGURE: baseline fig1-d4-bank -->
+
 - `fig2-…`: CER against E/N₀ per dit, every speed cell's fitted curve.
 - `fig3`: the crossing against speed for the three decoders, beside the genie bound.
   - An x near the top marks a cell without a crossing, one row of marks per decoder.
   - Each decoder's curve and band are drawn one speed cell at a time and break at every cell edge. The floor is one
     value per speed cell, so the crossing can jump at an edge (Envelope at 31.85 and 40.09 WPM). A jump between
     cells is a property of the model's cells, not a measured slope.
+
+<!-- FIGURE: baseline fig3 -->
+
 - `fig4`: paired differences by group, bank − Matched and Envelope − Matched.
+
+<!-- FIGURE: baseline fig4 -->
+
 - `fig5-matched`: detection recall through the detector path against S₅₀₀ per speed cell, beside Matched's oracle
   CER.
