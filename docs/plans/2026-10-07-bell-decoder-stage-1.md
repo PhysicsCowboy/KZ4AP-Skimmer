@@ -1,6 +1,8 @@
 # Bell 1977 decoder, stage 1: Bell as published
 
-> **Status: draft for the owner's approval, 2026-10-07. No code before approval.**
+> **Status: draft for the owner's approval, 2026-10-07. No code before approval.** The owner's decisions of
+> 2026-10-08 are recorded at the top of §3; D6 is still open, for discussion. The owner is reading the plan while
+> Task 1 (research, no code) starts.
 >
 > **Spec:** `docs/design/2026-09-25-kz4ap-skimmer-design.md` §5.2 step 3, amendment "Bell 1977 instead of
 > manta" (owner, 2026-10-07). **Evidence:** `docs/research/bell-1977-notes.md` (the thesis as read for the
@@ -106,6 +108,20 @@ confirms or corrects each.
   | Noise window | 240 samples | buffers of 200 and 50 |
 
 ## 3. Decisions for the owner
+
+### The owner's decisions (2026-10-08)
+
+| Decision | The owner's answer | What it changes in this plan |
+|---|---|---|
+| D1 | The listing (his Fortran) is the authority. | As written. |
+| D2 | (a) Compile his program as a running reference. | As written (Task 3). |
+| D3 | Both: (A) the oracle gain and (B) the AGC. | As written (§6). |
+| D4 | Yes, the reproduction at his fixed speeds and S₁₀₀ values. In addition, his tables are made from our jittered development set as well, or our jittered-set results are overlaid with his values at his fixed points. | §6 and Task 9 gain the Bell-format tables and the overlay from the jittered set. |
+| D5 | Yes, his conditions in our Python generator. Our own fist, fading and text models stay as they are; his are added as further options. | Task 7: added, nothing replaced. |
+| D6 | Open, for discussion. The owner needs the body of `docs/signal-processing.md` only for the processing chains under discussion while this code is developed. Chains not under discussion (the Envelope decoder, for example) get a very short summary that points to the appendix. | Task 6's documentation step follows the outcome. |
+| D7 | No sentence on the thesis's status. The owner: "if it's in the public domain, it's in the public domain"; it is not a legal question. | Task 1's README cites the thesis and says nothing more. |
+| D8 | `bell-stage-1`, from `main`. | The branch was started at 00210b3, the head of PR #1 (`milestone-2c-stage2` into `main`), whose content `main` will hold after that merge. |
+| §7, the stage-2 order | Not yet decided. | Revisited with stage 1's results. |
 
 **D1. The listing is the authority.**
 - The listing is the program that produced the published results.
@@ -360,6 +376,22 @@ proposal.
     (50.5–80 WPM) lie partly or wholly above it.
 - **Noise only:** false characters per minute in pure noise (the suite's group N, §Task 7), for Bell and for
   the bank. This is the audit's test 4, and the failure that ruled out manta (about 195 per minute).
+- **Bell's tables from the jittered set** (owner, D4). His tables are made a second time from our jittered
+  development set, for Bell's decoder and for the bank.
+  - **The table.** The devset2 fit is a logistic in S₅₀₀ whose crossing and slope vary smoothly with ln WPM. It
+    is evaluated at his speeds (20, 30 and 50 WPM) and at his S₁₀₀ values, using S₁₀₀ = S₅₀₀ + 6.99 dB. The
+    result is set beside his published letter errors, in the layout of his Tables XV and XVI.
+  - **The groups:** A2 for Table XV's columns: white noise and machine keying, i.e. his keyboard Morse, without his
+    fading. C2 (our fists) for Table XVI's.
+  - **Interval:** each value carries its bootstrap interval from the fit.
+  - **The overlay:** a figure of character CER against S₁₀₀ per speed. It shows the jittered set's signals and
+    the fitted curve, with his published points marked at his fixed values.
+  - **The conditions differ, and the record states each difference:**
+    - our fists against his Gaussian fists;
+    - our fading (none in A2) against his fading channel;
+    - our text against his random letters.
+
+    So this comparison is descriptive; the reproduction rule of §5.2 applies only to V2 and V5.
 - **Expectations, stated now** (judgment, to be compared with the results):
   - Bell's observation is an envelope of fixed bandwidth, not matched to the speed. At slow speeds it lets
     in more noise per element than the bank's matched branch; summing likelihoods over an element's samples
@@ -481,8 +513,9 @@ Research only; no engine code.
 **Files:**
 - Create `reference/bell1977/listing.txt`: the transcription, verbatim, page by page, with Bell's sequence
   numbers and a header per page, `=== p. N (PDF page 2N + 3) ===`.
-- Create `reference/bell1977/README.md`: what the folder is, the page map, the reading conventions, and the
-  marks for uncertain characters.
+- Create `reference/bell1977/README.md`: what the folder is, the thesis cited in full, the page map, the reading
+  conventions, and the marks for uncertain characters. It says nothing about the thesis's legal status (owner,
+  D7).
 - Create `docs/research/bell-1977-reference.md`: the reference sheet.
 - Modify `docs/research/bell-1977-notes.md`: a pointer to the two new documents, and a dated correction
   wherever the transcription contradicts a statement.
@@ -723,8 +756,8 @@ Research only; no engine code.
     noise level, and the channelizer's gain for a tone (derived, `docs/signal-processing.md` §7). A test on a
     generated tone checks it;
   - the bench tests;
-  - `docs/signal-processing.md`: the body's §8d "Bell decoder", about 900 words; appendix A.8d with the exact
-    form; A.10 rows; the bank's body section condensed per D6;
+  - `docs/signal-processing.md`: the body's section on the Bell decoder; appendix A.8d with the exact form; A.10
+    rows. The body's shape follows D6, which is still being discussed with the owner;
   - the results record, section 5 (CPU).
 
 **Interfaces:**
@@ -755,7 +788,8 @@ Research only; no engine code.
   random text.
 - Create `training/tests/test_bell_conditions.py`.
 - Modify `training/kz4ap_synth/keying.py`: a style "bell", with Gaussian durations per KEY, its floor, and
-  EDEV per fist.
+  EDEV per fist. Our own fist, fading and text models stay exactly as they are (owner, D5); Bell's are added as
+  further options, and no existing recording changes. Every existing generator test passes unchanged.
 - Modify `training/kz4ap_synth/generate.py`: hooks for the above.
 - Modify `training/kz4ap_synth/suites.py`: the suite `BELL`, with three groups:
   - XV: keyboard Morse;
@@ -799,6 +833,8 @@ Research only; no engine code.
 - [ ] **Step 2: Analyze** per §6.
   - Score tables in `docs/plans/data/2026-10-07-bell-stage-1/`.
   - Figures by the rule, in `docs/plans/figures/2026-10-07-bell-stage-1/`.
+  - Bell's tables from the jittered set, and the overlay figure: Bell's decoder and the bank on A2 and C2, the
+    fit evaluated at his speeds and S₁₀₀ values, beside his published values (owner, D4; §6).
 - [ ] **Step 3: The results record's section 7.** It lays out the stage-2 order, revised by the results, as
   options for the owner. It gives no verdict.
 - [ ] **Step 4: Commit.**
