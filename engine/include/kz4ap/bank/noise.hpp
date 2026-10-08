@@ -1,4 +1,4 @@
-// The bank decoder's noise estimates: a port of training/kz4ap_proto/noise.py (docs/signal-processing.md
+// The bank decoder's noise estimates: a port of the removed prototype's noise.py (docs/signal-processing.md
 // section 8c, "Noise"). Branch 1's level by the milestone-2 three-tap guard and every branch's by the shape
 // of the shared noise spectrum ("spectrum", the default), the spectrum's own level ("spectrum-level"), or
 // the recorded fallback, a three-tap estimate per branch ("branch"). Variances are per real component of

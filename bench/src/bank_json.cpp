@@ -13,7 +13,7 @@ namespace kz4ap::bench {
 
 namespace {
 
-// Every BankConfig field: the ProtoConfig fields in their declaration order (training/kz4ap_proto/params.py), except
+// Every BankConfig field: the ProtoConfig fields in their declaration order (the removed prototype's params.py), except
 // three that Plan B's B4a moved after Plan B's noise_stuck_s (B3; the one field the prototype does not have) and that
 // stay there, so that the decoded files' "config" keeps its order: rekey_after_s, rekey_timeout_s and
 // periodicity_windows_s. Plan B's variant fields (B4a to B4f) were removed on 2026-10-07; a --set of one of them is an

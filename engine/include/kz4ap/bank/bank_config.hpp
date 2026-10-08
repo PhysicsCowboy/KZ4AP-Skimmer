@@ -1,16 +1,17 @@
 // The bank decoder's configuration: every field of the stage-1 prototype's ProtoConfig that its decoder modules read
-// (training/kz4ap_proto/params.py), with the prototype's settled default, unit and status (owner, measured, heuristic
-// or placeholder). Parameters are in physical units (Hz, s, FS, nats, dB with a named reference); lengths become
-// samples only at the point of use. Defaults are checked against the prototype's by engine/tests/bank/config_test.cpp
-// (golden file engine/tests/data/bank/config.json). Plan B adds one field the prototype does not have (noise_stuck_s,
-// marked "Plan B"), checked by the same test file. Plan B's B4b changed two prototype defaults, guard_margin_s (20 ms
-// to 4.8 ms) and mask_bias (re-measured; B4d adopted the 200-seed measurement); stage 1's values are
-// kStage1GuardMarginS and kStage1MaskBias. The owner's amendment of 2026-10-07 dropped the 2 s periodicity window
-// (default 5 and 10 s); stage 1's windows are kStage1PeriodicityWindowsS. Plan B's experimental variants (the re-key
-// wait and time-out in dits, periodicity windows in dits per candidate or following the selected branch's dit, the
-// re-key clocks started at the first provisional mark with a lead, the re-key wait counted in marks and its two
-// guards) were measured, off by default, and removed on 2026-10-07 when the bank was frozen as the reference
-// (results: docs/plans/2026-10-04-milestone-2c-plan-b-results.md, sections 6 and 10 to 13; the code in git history).
+// (training/kz4ap_proto/params.py, removed on 2026-10-07: engine/tests/data/bank/README.md), with the prototype's
+// settled default, unit and status (owner, measured, heuristic or placeholder). Parameters are in physical units (Hz,
+// s, FS, nats, dB with a named reference); lengths become samples only at the point of use. Defaults are checked
+// against the prototype's by engine/tests/bank/config_test.cpp (golden file engine/tests/data/bank/config.json).
+// Plan B adds one field the prototype does not have (noise_stuck_s, marked "Plan B"), checked by the same test file.
+// Plan B's B4b changed two prototype defaults, guard_margin_s (20 ms to 4.8 ms) and mask_bias (re-measured; B4d
+// adopted the 200-seed measurement); stage 1's values are kStage1GuardMarginS and kStage1MaskBias. The owner's
+// amendment of 2026-10-07 dropped the 2 s periodicity window (default 5 and 10 s); stage 1's windows are
+// kStage1PeriodicityWindowsS. Plan B's experimental variants (the re-key wait and time-out in dits, periodicity
+// windows in dits per candidate or following the selected branch's dit, the re-key clocks started at the first
+// provisional mark with a lead, the re-key wait counted in marks and its two guards) were measured, off by default,
+// and removed on 2026-10-07 when the bank was frozen as the reference (results:
+// docs/plans/2026-10-04-milestone-2c-plan-b-results.md, sections 6 and 10 to 13; the code in git history).
 #pragma once
 
 #include <cmath>

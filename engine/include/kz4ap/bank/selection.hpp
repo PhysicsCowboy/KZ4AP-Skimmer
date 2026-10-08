@@ -1,4 +1,4 @@
-// The bank decoder's characters, text model and branch selection: a port of training/kz4ap_proto/text.py and
+// The bank decoder's characters, text model and branch selection: a port of the removed prototype's text.py and
 // select.py (docs/signal-processing.md section 8c, "Text model and branch selection").
 #pragma once
 

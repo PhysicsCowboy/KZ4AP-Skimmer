@@ -1,4 +1,4 @@
-// The bank decoder's keying: a port of training/kz4ap_proto/keying.py (docs/signal-processing.md section
+// The bank decoder's keying: a port of the removed prototype's keying.py (docs/signal-processing.md section
 // 8c, "Keying"). Per branch: the amplitude s_k (online EM, tau_a of key-down weight), the envelope
 // log-likelihood ratio with the PARIS prior, hysteresis +/- h nats, the squelch a_min,k, and, while a
 // branch is at the start of an over (`unknown`), the unknown-amplitude threshold test x_on,k / x_off with

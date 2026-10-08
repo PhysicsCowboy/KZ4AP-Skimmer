@@ -1,19 +1,16 @@
-"""Measurements on the prototype's decoded files (proto/<name>/<result>.decoded.json) against their labels,
-for the report (Task 12) and the experiments (Tasks 13-14). Intervals: bootstrap 95% over channels."""
+"""Measurements on a run's decoded files (proto/<name>/<result>.decoded.json, as kz4ap-bank-replay writes them)
+against their labels, for the report and the experiments. Intervals: bootstrap 95% over channels."""
 
 from __future__ import annotations
 
 import json
 import math
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
 
 from kz4ap_synth.suites import BOOTSTRAP_RESAMPLES, _interval, _rng_for, crossing_snr
 
-from .periodicity import Periodicity
-from .power import disable_power_throttling
 from .runner import oracle_scorings
 
 PERIODICITY_GROUPS = ("A sensitivity", "B fading", "C fists", "G ragchew", "H two-station QSO, oracle (per station)",
@@ -157,49 +154,11 @@ def cpu_per_channel_second(out_dir, name, only=None) -> float:
     return cpu / seconds if seconds else 0.0
 
 
-def _points_of(work) -> list[dict]:
-    p1_path, cfg, rate, label, unit, group = work
-    truth = true_dit_s(label)
-    p1 = np.load(p1_path)
-    per = Periodicity(cfg, rate)
-    txs = transmissions(label)
-    points = []
-    for i in range(0, len(p1), per.update_every):
-        per.push(p1[i:i + per.update_every])
-        t = min(i + per.update_every, len(p1)) / rate
-        inside = [k for k, (a, b) in enumerate(txs) if a <= t <= b]
-        if not inside:
-            continue
-        per.update(force=True)
-        points.append({"group": group, "unit": unit, "tx": inside[0], "truth": truth,
-                       "since_start": t - txs[inside[0]][0], "per": list(per.per_window)})
-    return points
-
-
-def periodicity_points(out_dir, name, cfg, only=None, groups=PERIODICITY_GROUPS, min_snr_db=0.0, jobs=None) -> list:
-    """Runs cfg's periodicity estimator offline on the stored branch-1 posteriors (decode --keep-p1), every
-    window logged: one point per update inside a transmission of a scored, constant-speed label at
-    S500 >= min_snr_db in the given groups. Exact: T_P never feeds back into branch 1's posterior."""
-    out_dir = Path(out_dir)
-    work = []
-    for job, label, ch, _ in iter_channels(out_dir, name, only):
-        if job["group"] not in groups or true_dit_s(label) is None or not label.get("score", True):
-            continue
-        if label["snr_db"] < min_snr_db:
-            continue
-        p1 = out_dir / "proto" / name / "p1" / job["result"] / f"{ch['label_index']}.npy"
-        work.append((str(p1), cfg, ch["rate_hz"], label, (job["result"], ch["label_index"]), job["group"]))
-    disable_power_throttling()
-    with ProcessPoolExecutor(max_workers=jobs, initializer=disable_power_throttling) as pool:
-        return [p for points in pool.map(_points_of, work, chunksize=1) for p in points]
-
-
 def periodicity_points_decoded(out_dir, name, only=None, groups=PERIODICITY_GROUPS, min_snr_db=0.0) -> list:
     """The decoder's own periodicity records (Plan B, B4a), one point per recorded recomputation inside a
     transmission of a scored, constant-speed label at S500 >= min_snr_db in the given groups, with every window's
-    (T, score) as the decoded file records it (scores rounded to 4 decimals). The same points as
-    periodicity_points, but read from what the decoder computed (its windows, whatever their form) rather than
-    recomputed from stored posteriors; "per" lists the windows shortest first."""
+    (T, score) as the decoded file records it (scores rounded to 4 decimals); "per" lists the windows shortest
+    first."""
     points = []
     for job, label, ch, _ in iter_channels(out_dir, name, only):
         if job["group"] not in groups or true_dit_s(label) is None or not label.get("score", True):

@@ -1,13 +1,13 @@
-"""Keeps Windows from running a long prototype run in its power-saving mode (Task 11p).
+"""Keeps Windows from running a long Python run in its power-saving mode (Task 11p).
 
 Windows 11 power-throttles a process it considers background work (EcoQoS: on a hybrid CPU it is run on the
-efficiency cores at their most efficient clock). Started from the agent's shell, the prototype is such a
+efficiency cores at their most efficient clock). Started from the agent's shell, a Python run is such a
 process: on this i7-12700H a fresh process ran the duration fit at about 2 ms per observation, and 2-4 s later
 at 8-13 ms, and a pure-Python loop slowed by the same factor of about 4.4 (measured, Task 11p report). Opting
 the process out restores full speed; it changes no result, only how fast the same arithmetic runs.
 
-Call disable_power_throttling() once in every process that decodes (the runner's main process and each
-worker's initializer). It is a no-op on other systems."""
+Call disable_power_throttling() once in every process that runs long (the runner's and the experiments' main
+processes, and each worker's initializer). It is a no-op on other systems."""
 
 from __future__ import annotations
 

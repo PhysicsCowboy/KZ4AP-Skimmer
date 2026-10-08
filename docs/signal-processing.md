@@ -1954,8 +1954,10 @@ The rules of this section as the code implements them (moved verbatim from the b
 Instead of one boxcar following an estimated speed, 32 boxcars run at
 once, one per speed; each branch keys, times, fits and spells its own
 text, and a selector publishes one branch's text, with corrections. It is
-the C++ port of the stage-1 Python prototype (`training/kz4ap_proto`),
-in `engine/src/bank/` and `engine/src/bank_decoder.cpp`.
+the C++ port of the stage-1 Python prototype (`training/kz4ap_proto`,
+removed on 2026-10-07; `engine/tests/data/bank/README.md` says where its
+last version is), in `engine/src/bank/` and `engine/src/bank_decoder.cpp`.
+"prototype" in this section means that removed code.
 
 **Input: anchor mixing (no tracker).** Each channel block y (FS) is mixed
 by the anchor Δ = f_det − f_c (Hz; the detector's current frequency for
@@ -2237,11 +2239,11 @@ the text model and branch selection (`selection.cpp`), the channel decoder
 (`channel.cpp`), and the engine's `BankDecoder` (`engine/src/bank_decoder.cpp`;
 `kz4ap-bench --decoder bank`). The replay tool `kz4ap-bank-replay` (bench)
 runs it on recorded channel streams. Each module is a port of the stage-1
-prototype's module of the same name (`training/kz4ap_proto`), checked
-against the prototype's golden values (relative 10⁻⁹; discrete outputs
-exactly); the port checks are in the Plan A record, section 6.1. Status
-labels below are as `training/kz4ap_proto/params.py` marks them, updated by
-Plan B.
+prototype's module of the same name (`training/kz4ap_proto`, removed),
+checked against the prototype's golden values (relative 10⁻⁹; discrete
+outputs exactly), which stay in `engine/tests/data/bank/`; the port checks
+are in the Plan A record, section 6.1. Status labels below are as the
+prototype's `params.py` marked them, updated by Plan B.
 
 ### The bank: ladder, filters, likelihood
 
@@ -2976,8 +2978,8 @@ timebase) holds in the port.
 
 ### Text model and branch selection
 
-`decode_pattern`, `TextModel` (`text.py`), `BranchView`, `Selector`
-(`select.py`). Every branch decodes its own text; selection chooses the
+`decode_pattern`, `TextModel`, `BranchView`, `Selector` (`selection.cpp`;
+the prototype's `text.py` and `select.py`). Every branch decodes its own text; selection chooses the
 branch whose text is published (spec 4.6).
 
 **Derivations.**
@@ -3195,9 +3197,9 @@ stated under "Keying time constants" above).
   changes. This is the prototype's `streams.anchored_baseband` with the
   same order of operations (the cumulative sum, minus the sample's own Δ,
   times 2π, divided by r; cos(−φ) and sin(−φ); the complex product written
-  out as numpy computes it), so the engine and the prototype run on
-  recorded detector channels see the same u up to libm's last-bit rounding
-  of cos and sin.
+  out as numpy computes it), so the engine saw the same u as the prototype
+  run on recorded detector channels, up to libm's last-bit rounding of cos
+  and sin.
 - **The residual through a branch.** The bank has no frequency tracker: the
   residual (the station's frequency minus f_det) stays in u, where the
   branch boxcars attenuate it by |H(f)|². For a boxcar of 58 samples
@@ -3705,8 +3707,9 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   sits at f_off = labeled frequency − channel center (up to ±½Δf =
   ±11.7 Hz); `channels.json` gives each channel's label index, labeled
   frequency, center (Hz from the span's center), first sample index and
-  sample count. The prototype mixes the stream down by f_off (and a
-  labeled drift) itself.
+  sample count. The decoder that reads them (`kz4ap-bank-replay`, as the
+  stage-1 prototype did) mixes the stream down by f_off (and a labeled
+  drift) itself.
   **Detector form** (`--record-channels DIR` without `--oracle`, used with
   `--decoder matched`): `channel-<track id>.c64` holds the channelizer
   output of every channel the detector opens, from its first block to its
@@ -3718,8 +3721,9 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   block where the detector's frequency for the track changed
   (`ChannelBlock::anchor_hz`). `label_index` and `label_freq_hz` are null
   (and `birth_freq_hz` is null for oracle channels, whose entries carry
-  `open_s`, `close_s` and `anchors` too). The prototype
-  (`streams.anchored_baseband`) mixes a detector channel down by
+  `open_s`, `close_s` and `anchors` too). The stage-1 prototype
+  (`streams.anchored_baseband`; removed on 2026-10-07) decoded these: it
+  mixed a detector channel down by
   anchor − center, block by block, with a continuous phase: the anchor the
   Matched path's NCO starts from and follows (option 1), without the
   tracker's fine-tuning within ±12 Hz of it. Mixing at the channel's
@@ -3742,26 +3746,29 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   `print_score`); `tracked_freq_hz` is each track's `last_freq_hz`. A file
   must give either `texts` or `tracks`, not both. Checked identical on the
   smoke recording's Matched detector path (apart from `tracked_freq_hz`).
-- **Stage-1 prototype runs** (`training/kz4ap_proto/runner.py`,
-  `metrics.py`, `report.py`; milestone 2b, stage 1; Python, not the
-  engine). **Oracle copies:** the recordings of the groups normally decoded
+- **Runs on recorded channels** (`training/kz4ap_proto/runner.py` records
+  the channels and scores the decoded files, `metrics.py`, `report.py`;
+  built in milestone 2b, stage 1, for the Python prototype, removed on
+  2026-10-07; `kz4ap-bank-replay` now writes the decoded files, oracle
+  test cases only). **Oracle copies:** the recordings of the groups normally decoded
   through the detector path (pauses, strong, tune-up, first sample, band,
   crowded; `suites.ORACLE_COPY_GROUPS`) are decoded once more on oracle
   channels, as result `<recording>.oracle` in
   group `<group>, oracle`, by Envelope and Matched (`kz4ap-bench --oracle`)
-  and by the prototype, so every regime has a like-for-like decoder
+  and by the bank (`kz4ap-bank-replay`), so every regime has a like-for-like decoder
   comparison; group H already has its own oracle copy. **Channels:** the
   oracle test cases' channels are recorded with `--oracle --decoder envelope
   --record-channels` and mixed at the label; every non-oracle recording is
   recorded once more through the Matched path's detector (`--decoder
   matched`, no `--oracle`, D_ch = 47 Hz) as `<recording>.detector`, each
   channel decoded from its opening and mixed by the detector's frequency
-  block by block, and scored in the tracks form under the engine's own
-  result names, so on the detector path the prototype pairs with Matched
+  block by block (by the prototype; the replay tool decodes oracle test
+  cases only), and scored in the tracks form under the engine's own
+  result names, so on the detector path such a run pairs with Matched
   per track (the same tracks) and with Envelope per label (Envelope's
   detector opens its own tracks). **Comparison** (no acceptance gate;
   owner, 2026-09-30): for each (group, tag), the mean over signals of the
-  per-signal CER difference (prototype minus reference, on the same
+  per-signal CER difference (the run minus the reference, on the same
   labels), with a paired bootstrap 95% interval; "better" if the
   interval's upper end is below 0, "worse" if its lower end is above 0,
   else "unchanged"; "no interval" below 2 signals. The CER columns beside
@@ -3778,14 +3785,14 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   0.05·R that are truly unchanged are expected to read better or worse by
   chance; the report prints that number beside its counts. Rows not comparable by construction are marked and not
   counted: group F drift (the oracle mix follows the labeled drift,
-  favoring the prototype) and group H oracle QSO labels with a nonzero
+  favoring the run) and group H oracle QSO labels with a nonzero
   answering offset (the answering station is off the mix, handicapping
   it). **Detection measures** on the detector path, per decoder and
   group: labels scored, labels detected, detection recall (detected /
   scored) and false tracks (tracks that decoded text and matched no
   label), summed over each recording's main test case, and tracks per QSO
   (group H, as in the suite summary); as the bench counts them they depend
-  on the decoder. **The prototype's own statistics** (oracle channels,
+  on the decoder. **The bank's own statistics** (oracle channels,
   scored labels): *speed error* — at each selection instant from 3 s after
   a transmission's start to its end, the selected branch's fitted dit T is
   "off" if |ln(T/T_true)| > ln 1.5 or there is no fit, T_true = 1.2 s/WPM,
@@ -3798,8 +3805,9 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   over starts from 1 s after a transmission's start to its end, per
   transmission; *false characters*, final characters other than word
   spaces starting outside every transmission padded by 0.5 s, per minute
-  outside the padded transmissions; *decoding CPU*, process CPU time per
-  channel-second (s/s), Python, not comparable with the engine's C++. All
+  outside the padded transmissions; *decoding CPU*, the decoded files'
+  CPU time per channel-second (s/s; the replay tool's per-channel thread
+  time). All
   thresholds here (×1.5, 3 s, 5 s, 1 s, 0.5 s, 6 dB) are heuristic choices
   of the report, not measured.
 - **Bank corrections in the bench** (`kz4ap-bench`, any decoder): the

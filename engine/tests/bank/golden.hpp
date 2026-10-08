@@ -1,6 +1,8 @@
-// Golden values for the bank decoder's tests: JSON files written by the prototype
+// Golden values for the bank decoder's tests: JSON files written by the stage-1 prototype
 // (python -m kz4ap_proto.golden, run in training/) under engine/tests/data/bank/. Test-only: the engine
-// library does not link nlohmann/json.
+// library does not link nlohmann/json. The prototype (training/kz4ap_proto) and the tests of its decoder modules
+// (training/tests/test_proto_*.py), which these tests' comments name as the source of their cases, were removed on
+// 2026-10-07; where to find them: engine/tests/data/bank/README.md.
 #pragma once
 
 #include "kz4ap/bank/filters.hpp"

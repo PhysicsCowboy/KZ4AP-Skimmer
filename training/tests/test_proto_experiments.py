@@ -3,7 +3,6 @@ import re
 import pytest
 
 from kz4ap_proto import experiments
-from kz4ap_proto.params import ProtoConfig
 
 
 def row(fe, index, edits, symbols=100, group="A sensitivity"):
@@ -28,35 +27,8 @@ def test_pooled_paired_differences_by_group_and_overall():
     assert d["D speed"]["interval"] is None  # one signal: no interval
 
 
-def test_calibrated_thresholds_make_noise_key_at_the_target_rate():
-    # Calibrated at 0.5 key-downs per second (fast to measure); fresh channel-shaped noise must then key branch 1
-    # near that rate: 100 expected in 200 s (Poisson spread about 10).
-    import numpy as np
-    from kz4ap_proto.bank import boxcar
-    from kz4ap_proto.keying import BankKeyer, edges
-    cfg = ProtoConfig(false_marks_per_s=0.5)
-    x_on = experiments.calibrate_x_on(cfg, events=200)
-    assert len(x_on) == 32 and all(1.55 < x < 7.0 for x in x_on)
-    rng = np.random.default_rng(99)
-    n = int(200 * 1500)
-    h = experiments.lowpass()
-    u = np.convolve((rng.standard_normal(n) + 1j * rng.standard_normal(n)) / np.sqrt(2), h, mode="same")
-    sigma2 = 0.5 * np.sum(np.convolve(h, np.ones(14) / 14) ** 2)
-    keyer = BankKeyer(cfg.with_values(x_on_values=x_on), 1500.0, np.array([14 / 1500] + [0.1] * 31))
-    P = np.abs(boxcar(u, 14)) ** 2
-    key, _, _, _ = keyer.step(np.vstack([P] * 32)[:, :], np.full(32, sigma2))
-    downs = sum(1 for _, down in edges(key[:1], np.zeros(1, bool), 0)[0] if down)
-    assert 60 <= downs <= 150
-
-
-def test_follow_marks_counts_marks_until_a_matched_branch_is_selected():
-    counts = experiments.follow_marks(ProtoConfig(), [1])
-    assert len(counts) == 1 and (counts[0] is None or 0 <= counts[0] <= 40)
-
-
-def test_compare_takes_its_statistics_over_the_batch_subset(tmp_path, monkeypatch):
-    # Review M9: an E5 batch (DEV_E5) must not compare the base's statistics over all of DEV.
-    import json
+def test_compare_takes_its_statistics_over_its_subset(tmp_path, monkeypatch):
+    # Review M9: a comparison over a subset (here STRETCH) must not summarize the base's statistics over all of DEV.
     seen = []
 
     def stat(out_dir, name, only=None, *args, **kwargs):
@@ -67,16 +39,8 @@ def test_compare_takes_its_statistics_over_the_batch_subset(tmp_path, monkeypatc
     for f in ("speed_errors", "switch_stats", "spurious_over_starts", "false_characters"):
         monkeypatch.setattr(experiments.metrics, f, stat)
     monkeypatch.setattr(experiments.metrics, "cpu_per_channel_second", lambda o, n, only=None: seen.append(only) or 0.0)
-    experiments.compare(tmp_path, "base", "variant", only=experiments.DEV_E5)
-    assert seen and all(o == experiments.DEV_E5 for o in seen)
-
-    seen.clear()
-    monkeypatch.setattr(experiments, "run", lambda out, bench, name, values, jobs=None, only=None: tmp_path / "s.md")
-    spec = tmp_path / "spec.json"
-    spec.write_text(json.dumps({"name": "B", "base": "base", "subset": "e5", "runs": [{"name": "v", "set": {}}]}))
-    (tmp_path / "experiments").mkdir(exist_ok=True)
-    experiments.batch(tmp_path, "bench", spec)
-    assert seen and all(o == experiments.DEV_E5 for o in seen)
+    experiments.compare(tmp_path, "base", "variant", only=experiments.STRETCH)
+    assert seen and all(o == experiments.STRETCH for o in seen)
 
 
 def _b9_suite(tmp_path):

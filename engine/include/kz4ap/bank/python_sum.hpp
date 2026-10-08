@@ -1,4 +1,4 @@
-// Python's built-in sum() of floats, reproduced so that the bank decoder's sums match the prototype's
+// Python's built-in sum() of floats, reproduced so that the bank decoder's sums match the removed prototype's
 // (training/kz4ap_proto) bit for bit. Since CPython 3.12, sum() of floats is not a left-to-right loop: it is
 // Neumaier's compensated summation (the prototype runs on Python 3.12). numpy's np.sum is different again
 // (pairwise; numpy_sum.hpp).

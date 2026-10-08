@@ -1,6 +1,7 @@
-// JSON forms of the bank decoder's configuration and channel result, as the prototype writes them
-// (training/kz4ap_proto: ChannelResult.to_json, runner.decode's decoded files), so that stage 1's Python tooling
-// reads the C++ replay's files unchanged. Bench only: the engine library does not link nlohmann/json.
+// JSON forms of the bank decoder's configuration and channel result, as the stage-1 prototype wrote them
+// (training/kz4ap_proto: ChannelResult.to_json, runner.decode's decoded files; the prototype was removed on
+// 2026-10-07, engine/tests/data/bank/README.md), so that the Python tooling (kz4ap_proto.runner score, metrics,
+// experiments) reads the C++ replay's files. Bench only: the engine library does not link nlohmann/json.
 //
 // Objects are nlohmann::ordered_json (insertion order, as Python dicts), and py_dumps serializes them byte for
 // byte as Python's json.dumps does with its defaults: separators ", " and ": ", ASCII only, floats as repr()
@@ -36,7 +37,8 @@ std::string py_dumps(const ordered_json& value);
 // new, reason; the port's from_index is not part of it).
 ordered_json to_json(const bank::ChannelResult& result);
 
-// The configuration as runner.decode stores it (dataclasses.asdict(ProtoConfig), every field in order).
+// The configuration as the prototype's runner.decode stored it (dataclasses.asdict(ProtoConfig), every field in
+// order; bank_json.cpp gives the order).
 ordered_json to_json(const bank::BankConfig& cfg);
 
 // Sets one field by its ProtoConfig name from a JSON value (numbers, strings, lists of numbers); throws

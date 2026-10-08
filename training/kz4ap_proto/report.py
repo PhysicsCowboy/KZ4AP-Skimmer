@@ -1,6 +1,8 @@
-"""The prototype against the engine's front ends on the same signals, every regime included (oracle channels, and
+"""The prototype against the engine's decoders on the same signals, every regime included (oracle channels, and
 the detector path: the Matched path's detector's channels): the full comparison the owner decides on (spec
-section 7; owner, 2026-09-30: no acceptance gate), from the suite's results (plan Task 12)."""
+section 7; owner, 2026-09-30: no acceptance gate), from the suite's results (plan Task 12). "The prototype" in this
+module's text and in the report it writes is the run being reported: the stage-1 Python prototype's decoded files when
+this was written; since the prototype's removal (2026-10-07), kz4ap-bank-replay's (oracle test cases only)."""
 
 from __future__ import annotations
 
@@ -295,7 +297,7 @@ def write_report(out_dir, name, results_dirs=None, only=None, suffix="") -> Path
                      f"{_fmt(overs.get(g, {}).get('per_transmission'), None, '.3f')} | "
                      f"{_fmt(false.get(g, {}).get('per_min'), None, '.3f')} |")
     lines += ["", f"Decoding CPU: {1000 * metrics.cpu_per_channel_second(out_dir, name, only):.1f} ms per "
-              "channel-second (Python prototype; not comparable with the engine's C++)."]
+              "channel-second (the decoded files' cpu_s)."]
     path = out_dir / f"report-{name}{('-' + suffix) if suffix else ''}.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     (path.with_suffix(".json")).write_text(json.dumps({"comparison": comp, "coverage": cover, "detector_measures": measures,

@@ -1,5 +1,5 @@
 // numpy's pairwise summation (np.sum of a contiguous float64 array, numpy's pairwise_sum in
-// loops_utils), reproduced so that the bank decoder's sums match the prototype's (training/kz4ap_proto)
+// loops_utils), reproduced so that the bank decoder's sums match the removed prototype's (training/kz4ap_proto)
 // bit for bit: floating-point addition is not associative, and numpy does not add left to right.
 // Measured: equal to np.sum on 900 random arrays of 1 to 299 values (numpy 2.5.3, Task 5).
 #pragma once

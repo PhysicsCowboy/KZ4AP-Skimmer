@@ -1,8 +1,6 @@
 import json
 import subprocess
 
-import numpy as np
-
 from kz4ap_proto import runner
 
 
@@ -29,74 +27,6 @@ def test_record_runs_the_bench_on_every_oracle_scoring(tmp_path, monkeypatch):
         str(tmp_path / "channels" / "b.detector")]
 
 
-def test_decode_writes_one_text_per_label_in_label_order(tmp_path):
-    manifest(tmp_path, [rec("a", True)])
-    (tmp_path / "a.json").write_text(json.dumps({"signals": [
-        {"text": "E", "start_s": 0.5, "end_s": 1.0, "wpm": 25.0, "snr_db": 10.0},
-        {"text": "T", "start_s": 0.5, "end_s": 1.0, "wpm": 25.0, "snr_db": 10.0}]}))
-    record_dir = tmp_path / "channels" / "a"
-    record_dir.mkdir(parents=True)
-    rng = np.random.default_rng(1)
-    channels = []
-    for i in (1, 2):
-        y = ((rng.standard_normal(3000) + 1j * rng.standard_normal(3000)) * 0.1).astype("<c8")
-        y.tofile(record_dir / f"channel-{i}.c64")
-        channels.append({"track_id": i, "label_index": i - 1, "label_freq_hz": 0.0, "center_hz": 0.0,
-                         "first_sample_index": 0, "samples": 3000, "file": f"channel-{i}.c64"})
-    (record_dir / "channels.json").write_text(json.dumps({"sample_rate_hz": 1500.0, "channels": channels}))
-    runner.decode(tmp_path, "t-proto", jobs=1, keep_p1=True)
-    decoded = json.loads((tmp_path / "proto" / "t-proto" / "a.decoded.json").read_text())
-    assert decoded["front_end"] == "t-proto" and len(decoded["texts"]) == 2
-    assert [c["label_index"] for c in decoded["channels"]] == [0, 1]
-    assert decoded["channels"][0]["channel_s"] == 2.0 and decoded["channels"][0]["rate_hz"] == 1500.0
-    assert np.load(tmp_path / "proto" / "t-proto" / "p1" / "a" / "1.npy").shape == (3000,)
-
-
-def two_channel_recording(tmp_path, samples=(3000, 3000)):
-    """Oracle recording "a": two labels, two 2 s noise channels at 1500 samples/s (the second's file holds
-    samples[1] samples while the manifest says 3000)."""
-    manifest(tmp_path, [rec("a", True)])
-    (tmp_path / "a.json").write_text(json.dumps({"signals": [
-        {"text": "E", "start_s": 0.5, "end_s": 1.0, "wpm": 25.0, "snr_db": 10.0},
-        {"text": "T", "start_s": 0.5, "end_s": 1.0, "wpm": 25.0, "snr_db": 10.0}]}))
-    record_dir = tmp_path / "channels" / "a"
-    record_dir.mkdir(parents=True)
-    rng = np.random.default_rng(3)
-    channels = []
-    for i, n in zip((1, 2), samples):
-        ((rng.standard_normal(n) + 1j * rng.standard_normal(n)) * 0.1).astype("<c8").tofile(record_dir / f"channel-{i}.c64")
-        channels.append({"track_id": i, "label_index": i - 1, "label_freq_hz": 0.0, "center_hz": 0.0,
-                         "first_sample_index": 0, "samples": 3000, "file": f"channel-{i}.c64"})
-    (record_dir / "channels.json").write_text(json.dumps({"sample_rate_hz": 1500.0, "channels": channels}))
-
-
-def test_decode_resumes_skipping_recordings_decoded_with_the_same_config(tmp_path, capsys):
-    two_channel_recording(tmp_path)
-    runner.decode(tmp_path, "t-proto", jobs=1)
-    path = tmp_path / "proto" / "t-proto" / "a.decoded.json"
-    decoded = json.loads(path.read_text())
-    path.write_text(json.dumps({**decoded, "marker": 1}))  # a file this run must leave alone
-    capsys.readouterr()
-    runner.decode(tmp_path, "t-proto", jobs=1)
-    assert json.loads(path.read_text())["marker"] == 1
-    assert "skipped 1 recordings" in capsys.readouterr().out
-    # another config value: decoded again
-    runner.decode(tmp_path, "t-proto", values={"correction_reach_s": 19.0}, jobs=1)
-    again = json.loads(path.read_text())
-    assert "marker" not in again and again["config"]["correction_reach_s"] == 19.0
-    # keep_p1 with the posteriors missing: decoded again, and the posteriors written
-    runner.decode(tmp_path, "t-proto", values={"correction_reach_s": 19.0}, jobs=1, keep_p1=True)
-    assert (tmp_path / "proto" / "t-proto" / "p1" / "a" / "1.npy").exists()
-
-
-def test_a_failing_channel_is_named_by_its_recording_and_position(tmp_path):
-    import pytest
-    two_channel_recording(tmp_path, samples=(3000, 2999))  # channel position 1 is one sample short
-    with pytest.raises(runner.ChannelFailed, match=r"channels.a, channel position 1 failed: ValueError"):
-        runner.decode(tmp_path, "t-proto", jobs=1)
-    assert not (tmp_path / "proto" / "t-proto" / "a.decoded.json").exists()  # no incomplete file
-
-
 def test_oracle_copies_are_recorded_and_scored_by_the_engine_front_ends(tmp_path, monkeypatch):
     manifest(tmp_path, [rec("a", True), {**rec("p", False), "group": "pauses"}, {**rec("h", False), "group": "H two-station QSO"}])
     assert [j["result"] for j in runner.oracle_scorings(tmp_path)] == ["a", "p.oracle"]
@@ -115,7 +45,7 @@ def test_oracle_copies_are_recorded_and_scored_by_the_engine_front_ends(tmp_path
         ("bank", str(tmp_path / "results" / "bank" / "p.oracle.json"))]
 
 
-def test_detector_path_is_recorded_decoded_as_tracks_and_scored_under_the_engine_names(tmp_path, monkeypatch):
+def test_detector_path_is_recorded_and_scored_under_the_engine_names(tmp_path, monkeypatch):
     manifest(tmp_path, [rec("a", True), {**rec("h", False, "h.stations.json"), "group": "H two-station QSO"}])
     jobs = runner.detector_jobs(tmp_path)
     assert [(j["result"], [s[1] for s in j["scorings"]]) for j in jobs] == [("h.detector", ["h", "h.stations"])]
@@ -125,19 +55,10 @@ def test_detector_path_is_recorded_decoded_as_tracks_and_scored_under_the_engine
     (cmd,) = calls
     assert "--oracle" not in cmd and cmd[cmd.index("--decoder") + 1] == "matched"
     assert cmd[cmd.index("--record-channels") + 1] == str(tmp_path / "channels" / "h.detector")
-    # a detector recording with one track, decoded as a "tracks" file
-    record_dir = tmp_path / "channels" / "h.detector"
-    record_dir.mkdir(parents=True)
-    y = ((np.random.default_rng(2).standard_normal(3000) + 0j) * 0.1).astype("<c8")
-    y.tofile(record_dir / "channel-4.c64")
-    (record_dir / "channels.json").write_text(json.dumps({"sample_rate_hz": 1500.0, "channels": [
-        {"track_id": 4, "label_index": None, "label_freq_hz": None, "birth_freq_hz": 1011.0, "center_hz": 1000.0,
-         "first_sample_index": 1500, "open_s": 1.0, "close_s": 3.0, "samples": 3000, "file": "channel-4.c64",
-         "anchors": [[1500, 1011.0]]}]}))
-    runner.decode(tmp_path, "t-proto", only="^h", jobs=1)
-    decoded = json.loads((tmp_path / "proto" / "t-proto" / "h.detector.decoded.json").read_text())
-    assert "texts" not in decoded and [(t["id"], t["freq_hz"], t["last_freq_hz"]) for t in decoded["tracks"]] == [
-        (4, 1011.0, 1011.0)]
+    # a decoded file of the detector channels (the "tracks" form) is scored under each of the recording's scorings
+    (tmp_path / "proto" / "t-proto").mkdir(parents=True)
+    (tmp_path / "proto" / "t-proto" / "h.detector.decoded.json").write_text(json.dumps(
+        {"front_end": "t-proto", "tracks": [{"id": 4, "freq_hz": 1011.0, "last_freq_hz": 1011.0, "text": "E"}]}))
     calls.clear()
     runner.score(tmp_path, tmp_path / "kz4ap-bench", "t-proto", only="^h")
     assert [(c[c.index("--labels") + 1], c[c.index("--json") + 1]) for c in calls] == [

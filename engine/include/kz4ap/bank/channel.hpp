@@ -1,4 +1,4 @@
-// The bank decoder's channel: a port of training/kz4ap_proto/channel.py (docs/signal-processing.md section 8c,
+// The bank decoder's channel: a port of the removed prototype's channel.py (docs/signal-processing.md section 8c,
 // "Channel decoder"). One station's stream through the 32 branches, each with its own amplitude, keying,
 // timing, duration fit and text; the periodicity estimate; branch selection; new overs with re-keying; and the
 // channel's published text with corrections. BankChannel is the prototype's ChannelDecoder.run made streaming:

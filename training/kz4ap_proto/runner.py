@@ -1,10 +1,10 @@
-"""Stage 1 runner (plan Task 12): record the suite's oracle channel streams with kz4ap-bench, decode them with
-the prototype, score the decoded text with kz4ap-bench --score-decoded, and report against the engine's
-results in the suite's results/ directory.
+"""Record a suite's channel streams with kz4ap-bench, score decoded files (proto/<name>/, as kz4ap-bank-replay
+writes them for the oracle test cases) with kz4ap-bench --score-decoded, and report against the engine's results in
+the suite's results/ directory. The stage-1 Python prototype's `decode` was removed with the prototype on 2026-10-07
+(git history; engine/tests/data/bank/README.md).
 
     python -m kz4ap_proto.runner record --out build/suite/full3 --bench PATH/kz4ap-bench [--only REGEX]
     python -m kz4ap_proto.runner engine-copies --out build/suite/full3 --bench PATH/kz4ap-bench [--only REGEX] [--decoder baseline|matched|bank ...]
-    python -m kz4ap_proto.runner decode --out build/suite/full3 [--name bank-proto] [--set KEY=VALUE ...] [--only REGEX] [--jobs N]
     python -m kz4ap_proto.runner score --out build/suite/full3 --bench PATH/kz4ap-bench [--name bank-proto] [--only REGEX]
     python -m kz4ap_proto.runner report --out build/suite/full3 [--name bank-proto] [--only REGEX] [--suffix TEXT]
 """
@@ -13,23 +13,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import multiprocessing
-import os
 import re
 import subprocess
-import time
-import traceback
-from dataclasses import asdict
 from pathlib import Path
-
-import numpy as np
 
 from kz4ap_synth.suites import BENCH_FRONT_END, FRONT_ENDS, _scorings, oracle_copies
 
-from .channel import ChannelDecoder
-from .params import ProtoConfig
 from .power import disable_power_throttling
-from .streams import detector_channel, load_channel, read_manifest
 
 DEFAULT_NAME = "bank-proto"
 
@@ -116,125 +106,6 @@ def score_engine_copies(out_dir: Path, bench: Path, front_ends=("baseline", "mat
                 print(f"{fe:9s} {result}: {lines[-1] if lines else ''}")
 
 
-class ChannelFailed(RuntimeError):
-    """A channel's decode failed in a worker; the message names the recording directory and channel position."""
-
-
-def _decode_one(work) -> tuple:
-    key, record_dir, labels_path, position, values, p1_path, detector = work
-    try:
-        cfg = ProtoConfig().with_values(**values)
-        # detector (rate Hz, channel entry of the manifest parsed once): a detector channel, decoded from its
-        # opening, mixed by the detector's frequency (Task 11b)
-        ch = (load_channel(record_dir, labels_path, position) if detector is None
-              else detector_channel(record_dir, *detector))
-        started = time.process_time()
-        result = ChannelDecoder(cfg, ch.rate_hz).run(ch.baseband(), keep_p1=p1_path is not None)
-        out = result.to_json()
-        out.update(label_index=ch.label_index, rate_hz=ch.rate_hz, cpu_s=time.process_time() - started,
-                   channel_s=len(ch.y) / ch.rate_hz)
-        if detector is not None:
-            out.update(track_id=ch.track_id, birth_freq_hz=ch.birth_freq_hz, last_freq_hz=ch.anchors[-1][1],
-                       open_s=ch.open_s, close_s=ch.close_s)
-        if p1_path is not None:
-            Path(p1_path).parent.mkdir(parents=True, exist_ok=True)
-            np.save(p1_path, result.p1)
-    except Exception as e:  # the worker's traceback does not survive the trip to the main process: keep its text
-        raise ChannelFailed(f"decoding {record_dir}, channel position {position} failed: {e!r}\n"
-                            f"{traceback.format_exc()}") from None
-    return key, out
-
-
-def _config_json(cfg) -> dict:
-    """The config as a decoded file stores it (JSON: tuples become lists)."""
-    return json.loads(json.dumps(asdict(cfg)))
-
-
-def _is_done(path: Path, cfg_json: dict, p1_paths) -> bool:
-    """A decoded file exists, was decoded with this config, and (with keep_p1) its posteriors exist."""
-    if not path.exists():
-        return False
-    try:
-        same = json.loads(path.read_text()).get("config") == cfg_json
-    except json.JSONDecodeError:  # unreadable: decode it again
-        return False
-    return same and all(Path(p).exists() for p in p1_paths)
-
-
-def _write_decoded(target: Path, name: str, cfg_json: dict, job: dict, channels: list) -> None:
-    common = {"front_end": name, "recording": job["wav"], "labels": job["labels"], "config": cfg_json}
-    if "scorings" in job:  # detector channels: the "tracks" form, scored by frequency (Task 11b)
-        channels.sort(key=lambda c: c["track_id"])
-        tracks = [{"id": c["track_id"], "freq_hz": c["birth_freq_hz"], "last_freq_hz": c["last_freq_hz"],
-                   "text": c["text"]} for c in channels]
-        body = {**common, "tracks": tracks, "channels": channels}
-    else:
-        channels.sort(key=lambda c: c["label_index"])
-        body = {**common, "texts": [c["text"] for c in channels], "channels": channels}
-    path = target / f"{job['result']}.decoded.json"
-    partial = path.with_name(path.name + ".partial")
-    partial.write_text(json.dumps(body) + "\n")
-    os.replace(partial, path)  # a crash mid-write leaves no complete-looking decoded file
-    print(f"decoded {job['result']}", flush=True)
-
-
-def decode(out_dir: Path, name: str = DEFAULT_NAME, values: dict | None = None, only: str | None = None,
-           jobs: int | None = None, keep_p1: bool = False) -> None:
-    """Decodes every recorded channel of the matching oracle scorings and detector jobs with
-    ProtoConfig().with_values(**values), in worker processes (each opted out of Windows power throttling).
-
-    Built for multi-hour runs: results are taken as they complete; each recording's decoded file is written as soon
-    as its last channel arrives, and its channels are then dropped from memory; a recording whose decoded file
-    already exists with an equal config (and, with keep_p1, its posteriors) is skipped, so an interrupted run
-    resumes. A failing channel raises ChannelFailed naming its recording directory and position; recordings
-    finished before it keep their files."""
-    out_dir = Path(out_dir)
-    values = values or {}
-    cfg = ProtoConfig().with_values(**values)  # validates the names before any work starts
-    cfg_json = _config_json(cfg)
-    target = out_dir / "proto" / name
-    target.mkdir(parents=True, exist_ok=True)
-    work, pending, skipped = [], {}, 0
-    for job in oracle_scorings(out_dir, only):
-        record_dir = out_dir / "channels" / job["result"]
-        count = len(read_manifest(record_dir)["channels"])
-        p1s = [str(target / "p1" / job["result"] / f"{i}.npy") if keep_p1 else None for i in range(count)]
-        if _is_done(target / f"{job['result']}.decoded.json", cfg_json, [p for p in p1s if p]):
-            skipped += 1
-            continue
-        pending[job["result"]] = [job, count, []]
-        work += [(job["result"], str(record_dir), str(out_dir / job["labels"]), i, values, p1s[i], None)
-                 for i in range(count)]
-    for job in detector_jobs(out_dir, only):
-        record_dir = out_dir / "channels" / job["result"]
-        if _is_done(target / f"{job['result']}.decoded.json", cfg_json, []):
-            skipped += 1
-            continue
-        manifest = read_manifest(record_dir)  # once per recording; each worker gets its channel's entry
-        rate_hz = float(manifest["sample_rate_hz"])
-        pending[job["result"]] = [job, len(manifest["channels"]), []]
-        work += [(job["result"], str(record_dir), None, i, values, None, (rate_hz, entry))
-                 for i, entry in enumerate(manifest["channels"])]
-    if skipped:
-        print(f"skipped {skipped} recordings already decoded with this config", flush=True)
-    # Every job gets a decoded file, even one with no channel (a detector that opened none): the bench then scores
-    # its labels as not detected, as it does the engine's.
-    for key in [k for k, (_, count, _) in pending.items() if count == 0]:
-        job, _, channels = pending.pop(key)
-        _write_decoded(target, name, cfg_json, job, channels)
-    if not work:
-        return
-    disable_power_throttling()
-    workers = jobs or max(1, (os.cpu_count() or 2) - 2)
-    with multiprocessing.get_context("spawn").Pool(workers, initializer=disable_power_throttling) as pool:
-        for key, channel in pool.imap_unordered(_decode_one, work, chunksize=1):
-            entry = pending[key]
-            entry[2].append(channel)
-            if len(entry[2]) == entry[1]:
-                job, _, channels = pending.pop(key)
-                _write_decoded(target, name, cfg_json, job, channels)
-
-
 def score(out_dir: Path, bench: Path, name: str = DEFAULT_NAME, only: str | None = None,
           results_root: Path | None = None) -> None:
     """Scores every decoded file with kz4ap-bench --score-decoded into results_root/name (default
@@ -270,23 +141,11 @@ def _label_count(path: Path) -> int:
     return len(json.loads(Path(path).read_text())["signals"]) if Path(path).exists() else 0
 
 
-def parse_values(pairs) -> dict:
-    """--set KEY=VALUE pairs; VALUE is JSON if it parses (numbers, lists), else a string."""
-    values = {}
-    for pair in pairs or []:
-        key, _, text = pair.partition("=")
-        try:
-            values[key] = json.loads(text)
-        except json.JSONDecodeError:
-            values[key] = text
-    return values
-
-
 def main(argv=None) -> None:
     disable_power_throttling()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
-    for command in ("record", "engine-copies", "decode", "score", "report"):
+    for command in ("record", "engine-copies", "score", "report"):
         p = sub.add_parser(command)
         p.add_argument("--out", type=Path, required=True)
         p.add_argument("--only", default=None, help="regular expression on result names")
@@ -294,10 +153,6 @@ def main(argv=None) -> None:
             p.add_argument("--bench", type=Path, required=True)
         if command not in ("record", "engine-copies"):
             p.add_argument("--name", default=DEFAULT_NAME)
-        if command == "decode":
-            p.add_argument("--set", dest="values", action="append", help="KEY=VALUE: a ProtoConfig value")
-            p.add_argument("--jobs", type=int, default=None)
-            p.add_argument("--keep-p1", action="store_true")
         if command == "report":
             p.add_argument("--suffix", default="")
         if command == "engine-copies":
@@ -309,8 +164,6 @@ def main(argv=None) -> None:
     elif args.command == "engine-copies":
         score_engine_copies(args.out, args.bench, front_ends=tuple(args.front_ends or ("baseline", "matched")),
                             only=args.only)
-    elif args.command == "decode":
-        decode(args.out, args.name, parse_values(args.values), args.only, args.jobs, args.keep_p1)
     elif args.command == "score":
         score(args.out, args.bench, args.name, args.only)
     else:

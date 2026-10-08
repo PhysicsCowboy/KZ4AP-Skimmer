@@ -1,4 +1,4 @@
-// The bank decoder's branch filters and envelope likelihood: a port of training/kz4ap_proto/bank.py and
+// The bank decoder's branch filters and envelope likelihood: a port of the removed prototype's bank.py and
 // detect.py (docs/signal-processing.md section 8c). Lengths are in seconds; they become samples only in
 // branch_samples (the point of use).
 #pragma once

@@ -1,17 +1,17 @@
 // kz4ap-bank-replay: decodes the recorded oracle channel streams of a suite with the C++ bank decoder
-// (kz4ap::bank::BankChannel) and writes the prototype's decoded files, so stage 1's Python tooling
-// (kz4ap_proto.runner score, kz4ap_proto.experiments compare) reads them unchanged. The C++ counterpart of
-// `python -m kz4ap_proto.runner decode` for oracle test cases:
+// (kz4ap::bank::BankChannel) and writes decoded files in the stage-1 prototype's form, so the Python tooling
+// (kz4ap_proto.runner score, kz4ap_proto.experiments compare) reads them. The C++ counterpart of the removed
+// prototype's `python -m kz4ap_proto.runner decode` for oracle test cases (engine/tests/data/bank/README.md):
 //
 //   kz4ap-bank-replay --out DIR --name NAME [--only REGEX] [--set KEY=VALUE ...] [--jobs N] [--immediate NAME2]
 //
 // reads DIR/manifest.json and, for every oracle test case (the oracle recordings' test cases and the oracle copies
 // of the detector-path groups, as kz4ap_synth.suites names them) whose result name matches REGEX (searched, as
 // Python's re.search), DIR/channels/<result>/channels.json and its channel files (complex64, little-endian);
-// mixes each channel as streams.ChannelStream.baseband() does for a labeled channel (the labeled offset, and the
-// label's drift from the label's start); decodes it; and writes DIR/proto/NAME/<result>.decoded.json in
-// runner.decode's format (json.dumps of the same keys and values; "config" is the BankConfig with the --set
-// values). A test case whose decoded file exists with an equal config is skipped, as runner.decode does. The
+// mixes each channel as the prototype's streams.ChannelStream.baseband() did for a labeled channel (the labeled
+// offset, and the label's drift from the label's start); decodes it; and writes DIR/proto/NAME/<result>.decoded.json
+// in the prototype's runner.decode format (json.dumps of the same keys and values; "config" is the BankConfig with the
+// --set values). A test case whose decoded file exists with an equal config is skipped, as runner.decode did. The
 // channels of the detector path (non-oracle recordings) are not decoded here.
 //
 // --immediate NAME2 (development-set task D5): each channel is pushed one bank block at a time, as the engine's
