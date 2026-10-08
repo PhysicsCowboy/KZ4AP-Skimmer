@@ -248,8 +248,8 @@ It turns key-down and key-up times into characters: a mark longer than
 2 dits is a dah; a space longer than 2 dits ends the character, one longer
 than 5 dits the word. After every mark the dit is re-estimated from the
 last 24 marks; while their dah/dit ratio lies in a measured band (3.0 to
-3.85), the estimate cancels a constant lengthening or shortening of every
-mark. The rest is heuristic, the 2- and 5-dit gap thresholds included (the
+3.85), the estimate cancels a constant shortening of every mark (a constant
+lengthening would put the ratio below 3.0, outside the band). The rest is heuristic, the 2- and 5-dit gap thresholds included (the
 conventional midpoints between the nominal 1, 3 and 7 dits). Exact form:
 appendix A.8.
 
@@ -289,7 +289,7 @@ tracker. Whatever offset remains, each branch's filter attenuates it.
 each 10% longer than the last (the ratio and speed range owner; the
 filter as 0.8 of a dit heuristic, as in Matched). Each is realized as
 N_k = round(L_k·r) samples at the channel rate r, 14 to 276 (derived), so
-branch 1 is 9.33 ms long. Its *nominal dit* is d_k = L_k/0.8: 12 ms
+branch 1 is 9.33 ms long. Each branch's *nominal dit* is d_k = L_k/0.8: 12 ms
 (100 WPM) on branch 1, 50 ms on branch 16 (24 WPM), 230 ms (5.2 WPM) on
 branch 32.
 
@@ -309,7 +309,7 @@ branch: the branch's own SNR, a²/2, is S₅₀₀ + 6.8 dB on branch 1, + 12.8 
 for a 25 WPM filter (38.4 ms, between branches 15 and 16) and + 19.6 dB on
 branch 32, each in dB SNR in that branch's own noise bandwidth, with the
 nominal L_k. Adding the prior log-odds of key-down gives the log-odds
-g = Λ + ln(0.44/0.56) (PARIS keys down 22 of every 50 dit units; derived),
+g = Λ + ln(0.44/0.56), in nats (PARIS keys down 22 of every 50 dit units; derived),
 and the probability of key-down is p = 1/(1 + e^(−g)).
 
 ### Noise
