@@ -249,8 +249,9 @@ It turns key-down and key-up times into characters: a mark longer than
 than 5 dits the word. After every mark the dit is re-estimated from the
 last 24 marks; while their dah/dit ratio lies in a measured band (3.0 to
 3.85), the estimate cancels a constant lengthening or shortening of every
-mark. The 2- and 5-dit gap thresholds are standard midpoints; the rest is
-heuristic. Exact form: appendix A.8.
+mark. The rest is heuristic, the 2- and 5-dit gap thresholds included (the
+conventional midpoints between the nominal 1, 3 and 7 dits). Exact form:
+appendix A.8.
 
 ## 8b. Matched decoder (the default)
 
@@ -1428,7 +1429,8 @@ the tracker's frequency estimate.
   1.45; the squelch's ~6 dB SNR (500 Hz) sensitivity limit is an estimate,
   not measured. The 3.0–3.85 ratio band: measured (it fixed 45 WPM reading
   as 51). 24 marks, the glitch limit, the dit/dah boundary and its width:
-  heuristic; the 2- and 5-dit gap thresholds: standard midpoints.
+  heuristic; the 2- and 5-dit gap thresholds: heuristic (the conventional
+  midpoints between the nominal 1, 3 and 7 dits).
 - Matched in the classical decoder: the ±1 nat hysteresis, the 8 marks
   before following and the re-acquisition times heuristic; the ×1.25
   growth bound heuristic (owner decisions 2026-09-29, option 1), applied
@@ -3150,7 +3152,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Key thresholds | 60% down / 40% up | classical_decoder.cpp | heuristic |
 | Glitch limit | 0.3 dit | `ClassicalDecoderConfig::glitch_dits` | heuristic |
 | Dit/dah boundary and width | 2 dits, 0.08 (log) | classical_decoder.cpp | heuristic |
-| Character / word gap | > 2 / > 5 dits | classical_decoder.cpp | standard midpoints |
+| Character / word gap | > 2 / > 5 dits | classical_decoder.cpp | heuristic (the conventional midpoints between the nominal 1, 3 and 7 dits) |
 | Speed window / range | 24 marks, 5–60 WPM | classical_decoder.cpp | heuristic |
 | Edge-shortening ratio band | 3.0–3.85 | classical_decoder.cpp | measured |
 | Decoder | Matched (default), Envelope or the bank | `ClassicalDecoderConfig::front_end` (`FrontEnd::Bank` makes the engine create a `BankDecoder`); `kz4ap-bench --decoder` (`--front-end` its old alias) | Matched default and Envelope owner decisions 2026-09-29; the bank selectable (owner decision D1, 2026-10-03) |
