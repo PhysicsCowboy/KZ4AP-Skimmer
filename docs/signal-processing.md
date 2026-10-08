@@ -428,15 +428,18 @@ measurement in the stage-1 prototype).
 
 ### Keying time constants
 
-Plan B stated some keying time constants in the branch's dits, so that a
-slow station is treated as a fast one; those are now variants. The
-defaults, each with its class (owner):
+The keying time constants are in seconds, the same for every branch, each
+with its class (owner):
 
 | Setting | Value | Stage 1 | Class |
 |---|---|---|---|
-| Re-key wait | 0.8 s of keyed time, every branch | the same | seconds (stage 1's, measured by E9b), pending the variants' comparison on a new development set (owner) |
-| Re-key time-out | 2 s from the amplitude becoming unknown | the same | seconds; heuristic, pending as above |
+| Re-key wait | 0.8 s of keyed time, every branch | the same | seconds (stage 1's, measured by E9b) |
+| Re-key time-out | 2 s from the amplitude becoming unknown | the same | seconds; heuristic |
 | Periodicity windows | 5, 10 s for every candidate | 2, 5, 10 s | seconds, class 2: latency (owner); values placeholder; 2 s dropped (owner, 2026-10-07) |
+
+Plan B measured variants in the branch's dits and in marks; they were
+removed when the bank was frozen as the reference (2026-10-07; Plan B
+record, sections 6 and 10–13).
 
 ### Keying
 
@@ -483,10 +486,7 @@ derived). They are not used to fit the timing.
    otherwise its provisional characters are deleted and the count starts
    afresh. This removes noise keyed after a station stops.
 
-These are stage 1's settings again (owner): the variants Plan B measured,
-the wait and time-out in dits, clocks started at the first provisional
-mark with a lead, the wait counted in marks and its two guards, remain
-switchable, off, until a new development set compares them.
+These are stage 1's settings (owner).
 
 ### Duration fit
 
@@ -565,9 +565,7 @@ dropped (owner, 2026-10-07): below about 10 WPM it returned a false match
 near a third of the dit, scoring just above 0.03, which as the shortest
 confident window set T_P and pulled the fits to half the dit (measured).
 The cost: a window scores only once full, so the first T_P comes after 5 s
-of a stream, not 2 s. Windows in dits (one per
-candidate, or one following the selected branch's dit) remain as
-variants. T_P never feeds back into its own estimate.
+of a stream, not 2 s. T_P never feeds back into its own estimate.
 
 ### Choosing which branch to publish
 
@@ -2044,18 +2042,12 @@ branches from one noise spectrum of u.
 The re-key wait is **0.8 s of keyed time** and the time-out **2 s** of
 channel time from the amplitude becoming unknown, on every branch (stage
 1's values, the default again since Plan B's B4g; class: seconds, stage
-1's measured 0.8 s (E9b), pending the comparison of the variants on the
-redesigned development set; owner, 2026-10-06; `rekey_after_s`,
-`rekey_timeout_s`). The variants Plan B measured stay switchable, off by
-default: the wait and time-out in each branch's nominal dit d_k = L_k/0.8
-(W_min,k = 16.7·d_k, time-out 2.5·W_min,k; both seconds fields unset),
-the re-key clocks started at the first provisional mark with the lead
-7·d_k (B4d), the wait counted in marks (8, time-out 7 s; B4e) and its two
-guards (B4f); their measured results are in "Keying time constants"
-below. The periodicity windows are in seconds, **5 and 10 s** for every
-candidate (class 2: latency after a change; owner, 2026-10-06; values
-placeholder; stage 1's 2 s window dropped by the owner, 2026-10-07, see
-"Periodicity" below); windows in dits are variants.
+1's measured 0.8 s (E9b); owner, 2026-10-06; `rekey_after_s`,
+`rekey_timeout_s`, both required positive). The periodicity windows are
+in seconds, **5 and 10 s** for every candidate (class 2: latency after a
+change; owner, 2026-10-06; values placeholder; stage 1's 2 s window
+dropped by the owner, 2026-10-07, see "Periodicity" below). Plan B's
+variants were removed on 2026-10-07 ("Keying time constants" below).
 
 #### Keying (bank decoder)
 
@@ -2079,14 +2071,9 @@ All 32 branches are keyed per block, from |v_k|² and σ²_v,k.
   s = min(1, max(1 − (1−α)^w, w/W)), α = 1 − e^(−1/(τ_a r)) = 1.332·10⁻³
   per sample, τ_a = 0.5 s of key-down weight (heuristic).
 - **Amplitude, unknown (seed):** keyed samples are kept (at most the last
-  4·W_min,k of keyed time; heuristic); ŝ² = max(0, Q₀.₉ − 2σ²_v,k), the
+  4·W_min of keyed time; heuristic); ŝ² = max(0, Q₀.₉ − 2σ²_v,k), the
   90% quantile because the ramps pull the mean down (heuristic). Ready to
-  re-key once W ≥ W_min of keyed time (0.8 s by default; variants: 16.7·d_k,
-  or 8 counted provisional marks). In the marks variant a provisional mark
-  counts (Plan B, B4f; each guard behind its switch) only if the branch's boxcar held N_k
-  samples of non-zero input when it began (since the stream's start or the
-  last exact zero; derived) and it lasted at least N_k samples, L_k
-  (heuristic); marks that do not count are keyed and decoded as before.
+  re-key once W ≥ W_min = 0.8 s of keyed time.
 
 #### Duration fit (bank decoder)
 
@@ -2138,11 +2125,11 @@ feeds the fits' prior and selection's fallback, and never itself.
 - **Input:** branch 1's squelched posterior p, averaged in pairs to
   r_P = 750 samples/s; recomputed every 0.25 s (heuristic).
 - **Candidates:** the fit's T grid (303 points τ_c, 12–242.2 ms), all
-  judged over the same two windows (rows) of W = 5 and 10 s
-  (`periodicity_windows_s`; mode "seconds", the default since B4d; 5 and
-  10 s since 2026-10-07, stage 1's 2, 5 and 10 s by `--set`),
+  judged over the same two windows of W = 5 and 10 s
+  (`periodicity_windows_s`; 5 and 10 s since 2026-10-07, stage 1's 2, 5
+  and 10 s by `--set`),
   N = max(16, round(W r_P)) = 3750 and 7500 samples of the most
-  recent p; a row whose window is not yet full gives no estimate.
+  recent p; a window that is not yet full gives no estimate.
 - **Autocorrelation:** x = p − mean(p), biased normalized
   ρ[τ] = Σx[m]x[m+τ]/Σx² (by FFT, as the prototype).
 - **Comb on Π = 2T** (owner, E1; 2T because consecutive edges T apart have
@@ -2150,16 +2137,14 @@ feeds the fits' prior and selection's fallback, and never itself.
   mean over k = 1…4 of tooth(kΠ) − ½(tooth((k−½)Π) + tooth((k+½)Π)),
   dimensionless (teeth and width placeholders, E3), with T = τ_c. A
   candidate counts only if 9.15τ_c ≤ (N − 1)/2, i.e. τ_c ≤ W/18.3 (derived):
-  every candidate in the 5 and 10 s rows (273 and 546 ms; a 2 s row, stage
-  1's, reaches 109 ms, 11 WPM).
-- **T_P:** per row the best candidate; T_P is the shortest row's estimate
-  whose score is ≥ **0.03** (placeholder); else none.
-- Variants, not the default: `periodicity_window_mode = "per_candidate"`
-  (B4a) judges each candidate over its own windows N_w·τ_c, N_w ∈ {41.7,
-  104, 208}, with sliding sums (equal to the FFT form up to rounding);
-  `"shared"` (B4a-C) judges every candidate of a row over one window
-  N_w·T̂, T̂ the selected branch's eligible fitted dit (2, 5 and 10 s
-  without one), which adds a feedback from selection to T_P.
+  every candidate in the 5 and 10 s windows (273 and 546 ms; a 2 s window,
+  stage 1's, reaches 109 ms, 11 WPM).
+- **T_P:** per window the best candidate; T_P is the shortest window's
+  estimate whose score is ≥ **0.03** (placeholder); else none.
+- Removed (2026-10-07): windows in dits per candidate, N_w·τ_c (Plan B,
+  B4a; Plan B record, section 6).
+- Removed (2026-10-07): one window per row following the selected
+  branch's fitted dit, N_w·T̂ (Plan B, B4a-C; Plan B record, section 6.6).
 
 #### Text model and branch selection (bank decoder)
 
@@ -2193,30 +2178,14 @@ feeds the fits' prior and selection's fallback, and never itself.
   character, keeps its fit as the previous over's, starts a fresh fit,
   decodes with the previous fit until the re-key, and its amplitude
   becomes unknown.
-- **Clocks.** Default (stage 1's rule): the time-out's count and the
-  stretch start where the amplitude became unknown; a cleared time-out
-  restarts only the count. Variant (Plan B, B4d; each behind its own
-  switch, both off by default since B4g): the
-  time-out counts from the branch's first provisional mark (its key-down
-  sample; a mark already down when the count stopped: the block's start)
-  since the amplitude became unknown or the last time-out that keyed
-  nothing; before it nothing is counted, and an over restarted while the
-  amplitude is unknown does not restart it (`rekey_timeout_from_first_mark`;
-  with B4f's guards on, the first counted mark, armed when it ends, from
-  its key-down sample).
-  At that mark the stretch's start moves to the mark less 7·d_k if that is
-  later (`rekey_lead_dits`). A time-out that keys nothing moves the
-  stretch's start to its own instant (`rekey_clear_moves_stretch`). With
-  `rekey_timeout_from_first_mark` on, `rekey_clear_moves_stretch` is
-  nearly inert: after a cleared time-out the next provisional mark moves
-  the stretch's start to that mark less 7·d_k anyway, so the switch
-  changes the outcome only when that mark comes within 7·d_k of the clear
-  (derived from the code; not measured alone).
+- **Clocks** (stage 1's rule): the time-out's count and the stretch start
+  where the amplitude became unknown; a cleared time-out restarts only the
+  count.
+- Removed (2026-10-07): the clocks started at the first provisional mark,
+  with the stretch's lead 7·d_k, and a cleared time-out moving the stretch
+  (Plan B, B4d; Plan B record, section 10).
 - **Re-key:** once the over has a mark and **0.8 s of keyed time**
-  (`rekey_after_s`; variants: W_min,k = 16.7·d_k, or 8 counted provisional
-  marks, a provisional mark being keyed by the unknown-amplitude test and
-  ended, since the over started or the last time-out that keyed nothing,
-  counted if it passes the two guards above; `rekey_marks`), the stretch (from its start, ≤ 20 s back) is keyed again
+  (`rekey_after_s`), the stretch (from its start, ≤ 20 s back) is keyed again
   with the full LLR at each candidate amplitude (the seed, and the previous
   over's if any); each candidate's marks and spaces go into a fresh fit and
   into the previous fit continued; the candidate whose fit explains the
@@ -2224,12 +2193,10 @@ feeds the fits' prior and selection's fallback, and never itself.
   replace the stretch's (reason "rekey") and the keyer switches to the full
   LLR (candidate choice heuristic).
 - **Time-out:** if the wait is not reached within **2 s** of channel time
-  from the count's start (`rekey_timeout_s`; variants: 2.5·W_min,k, or 7 s
-  with the marks), the stretch is re-keyed at the previous over's amplitude
-  if that keys anything (reason "timeout"); otherwise its provisional
-  characters are deleted and the count restarts (with the B4d variant: it
-  waits for the next provisional mark). This removes noise keyed after the
-  last over.
+  from the count's start (`rekey_timeout_s`), the stretch is re-keyed at
+  the previous over's amplitude if that keys anything (reason "timeout");
+  otherwise its provisional characters are deleted and the count
+  restarts. This removes noise keyed after the last over.
 - **Fresh fit against the previous:** the fresh fit replaces the continued
   one only with ≥ 8 of the over's marks and spaces (placeholder) and a
   log-likelihood gain > ½·4·ln n nats on them (BIC form, derived; k = 4
@@ -2264,7 +2231,7 @@ machine, against about 0.6 ms for Matched.
 
 Code: the branch filters and the envelope likelihood
 (`engine/src/bank/filters.cpp`), the noise estimates (`noise.cpp`), the
-time constants (`timing.cpp`), the keying (`keying.cpp`), the duration fit
+keying (`keying.cpp`), the duration fit
 (`fit.cpp`, `vecmath*.cpp`), the periodicity estimate (`periodicity.cpp`),
 the text model and branch selection (`selection.cpp`), the channel decoder
 (`channel.cpp`), and the engine's `BankDecoder` (`engine/src/bank_decoder.cpp`;
@@ -2546,137 +2513,51 @@ start; the spectrum's mask uses σ²_v,1 after that update. The inputs are u
 
 ### Keying time constants
 
-`engine/src/bank/timing.cpp` (`branch_dits_s`, `bank_timing`,
-`fixed_timing`); Plan B, B4a, B4d and B4e (stage-2 spec,
-`docs/design/2026-10-03-filter-bank-stage-2-design.md`, sections 2, 3.1,
-3.2 and 6; owner, 2026-10-03 and 2026-10-06). Within branch k a dit is the
-branch's nominal dit
-d_k = L_k / 0.8, with L_k = 9.6 ms · 1.1^(k−1) its nominal length
-(`branch_lengths_s`), not the realized N_k / r the keyer uses: d_k is a
-constant of the branch, d_1 = 12 ms (100 words/min), d_16 = 50.13 ms,
-d_23 = 97.68 ms, d_32 = 230.3 ms (5.2 words/min). The periodicity
-variants in dits use the comb's candidate dit τ_c. `bank_timing` converts
-the configuration's values to seconds, per branch (or per candidate in the
-periodicity variant); the keyer, the channel and
-the periodicity estimator turn the seconds into samples where they use
-them.
+Stage 1's re-key settings in seconds, the same for every branch (Plan B,
+B4g; owner, 2026-10-06, option a′), and the periodicity windows in seconds
+for every candidate (owner, 2026-10-06 and 2026-10-07). The keyer, the
+channel and the periodicity estimator turn the seconds into samples where
+they use them.
 
 | Setting (`BankConfig` field) | Value | Class | Status |
 |---|---|---|---|
-| Re-key wait and time-out, the default (`rekey_after_s`, `rekey_timeout_s`) | W_min = 0.8 s of keyed (key-down) time and the time-out 2 s of channel time from the amplitude becoming unknown, every branch; the seed's memory 4 · 0.8 s = 3.2 s of keyed time (4800 samples) | seconds (stage 1's measured 0.8 s, E9b), pending the comparison of the variants on the redesigned development set (owner, 2026-10-06) | the wait measured (E9b, 0.8 s adopted over 0.4 s and 0.2 s at 25 words/min); the time-out heuristic (stage 1); the default since B4g |
-| Re-key wait K (`rekey_marks`; variant, `rekey_wait_in_marks` on) | 8 provisional marks on the branch (keyed by the unknown-amplitude test and ended) since the over started or the last time-out that keyed nothing | counted in marks, like the fit's memory: the wait collects the station's marks, so counting them does not depend on the speed (by construction) | heuristic (Plan B, B4e; owner, 2026-10-06, option d): stage 1's measured 0.8 s of key-down at 25 words/min holds about 9 marks (a mark averages 1.86 dits, 89 ms at 25 words/min, from VE3NEA's statistics, 57% dits and 43% dahs; derived), and the decoder already requires 8 marks and spaces before a fresh fit counts (heuristic) |
-| Guard 1, filter full (`rekey_guard_filter_full`; variant of the marks variant) | a provisional mark counts only if N_k samples of non-zero input (inclusive) precede its key-down since the stream's start or the last exact zero: 14 samples (9.3 ms) at k = 1 to 276 at k = 32 | (1) of the branch: its filter length | derived (Plan B, B4f): before that the boxcar's output is a partial sum divided by N_k; B4e's trace found every channel's first provisional mark 1.7 to 3.7 ms into the stream |
-| Guard 2, minimum length (`rekey_guard_min_length`; variant of the marks variant) | a provisional mark counts only if it lasts at least N_k samples (L_k) | (1) of the branch: its filter length | heuristic (Plan B, B4f): a real element keyed on its own branch lasts about L_k or longer, a noise excursion over the provisional threshold is expected to be shorter than the filter's correlation time; measured (record section 12): ≥ L_k for 99.8% of a station's provisional marks in group H, 21.5% of white-noise marks, 45.6% of marks in group H's silences and 7.9% to 12.9% of the marks a station 50 to 100 Hz away leaves (68.6% when it shares the frequency) |
-| Re-key time-out, marks variant (`rekey_marks_timeout_s`) | 7 s of channel time, every branch, from the over's first counted provisional mark | (2) seconds: a latency; a genuine station must be able to key 8 marks first | derived (Plan B, B4e): a PARIS mark every 50/14 = 3.57 dits, so 8 marks take 8 · 3.57 · 240 ms = 6.9 s at the 5 words/min floor, rounded to 7 s; noise alone keys 0.01 false marks per second per branch, so it reaches 8 only after about 800 s (from the calibration target) |
-| W_min,k (`rekey_after_dits`) | 16.7 · d_k of keyed (key-down) time: 200.4 ms (k = 1), 837.1 ms (k = 16), 1.631 s (k = 23), 3.847 s (k = 32); with `rekey_after_s` unset (variants): the re-key wait in the dits variant (B4a–B4d), the seed's memory (4 · W_min,k) in both variants | (1) dits: it collects enough of the over's marks to seed the amplitude, and a branch's marks last a number of its dits | derived: E9b's 0.8 s (measured at 25 words/min) over 48 ms = 16.67, rounded to 16.7 (stage-2 spec) |
-| Re-key time-out, variant (`rekey_timeout_ratio`) | dits variant (both seconds fields unset, `rekey_wait_in_marks` off): 2.5 · W_min,k = 41.75 · d_k of channel time from the over's first provisional mark: 501 ms, 2.093 s, 4.078 s, 9.616 s | (1) dits, through W_min,k: a station is keyed down about 44% of the time (PARIS), so it needs about W_min,k / 0.44 of channel time to reach W_min,k (derived) | heuristic: stage 1's ratio 2 s / 0.8 s |
-| Re-key lead (`rekey_lead_dits`) | variant (with `rekey_timeout_from_first_mark`): 7 · d_k before the over's first provisional mark: 84 ms (k = 1), 350.9 ms (k = 16), 1.612 s (k = 32) | (1) dits: the marks it must reach are the station's, one word gap of the branch's dit | heuristic (Plan B, B4d) |
-| Periodicity windows (`periodicity_windows_s`) | 5 and 10 s, the same for every candidate (`periodicity_window_mode` "seconds"); stage 1's 2, 5 and 10 s until 2026-10-07 | (2) seconds: a latency after a change (a stream's start, a new over, a speed change), felt in seconds; the reach limit τ_c ≤ W/18.3 (4.4 and 2.2 words/min; 11 words/min for a 2 s window) is physics any rule must wait for (owner, 2026-10-06) | placeholder: stage 1's values (E1) less the 2 s window, dropped on a measured failure below 10 words/min (owner, 2026-10-07; "Periodicity" below) |
-| Periodicity windows, variants (`periodicity_windows_dits`) | `"per_candidate"`: N_w · τ_c for each candidate, N_w ∈ {41.7, 104, 208} (0.500 to 2.496 s at τ_c = 12 ms, 10.10 to 50.39 s at 242.2 ms); `"shared"`: N_w · T̂ | (1) dits | placeholder: stage 1's 2, 5 and 10 s over 48 ms; not the default (B4d) |
+| Re-key wait and time-out (`rekey_after_s`, `rekey_timeout_s`) | W_min = 0.8 s of keyed (key-down) time and the time-out 2 s of channel time from the amplitude becoming unknown, every branch; the seed's memory 4 · 0.8 s = 3.2 s of keyed time (4800 samples); both must be positive (0, which once selected the variants in dits, is refused) | seconds (stage 1's measured 0.8 s, E9b) | the wait measured (E9b, 0.8 s adopted over 0.4 s and 0.2 s at 25 words/min); the time-out heuristic (stage 1); the default again since B4g |
+| Periodicity windows (`periodicity_windows_s`) | 5 and 10 s, the same for every candidate; stage 1's 2, 5 and 10 s until 2026-10-07 | (2) seconds: a latency after a change (a stream's start, a new over, a speed change), felt in seconds; the reach limit τ_c ≤ W/18.3 (4.4 and 2.2 words/min; 11 words/min for a 2 s window) is physics any rule must wait for (owner, 2026-10-06) | placeholder: stage 1's values (E1) less the 2 s window, dropped on a measured failure below 10 words/min (owner, 2026-10-07; "Periodicity" below) |
 
-**Derivations.** At 25 words/min (T = 48 ms) the values are stage 1's
-within the ladder's granularity: the branch whose d_k is nearest 48 ms is
-k = 16 (50.13 ms), whose W_min,16 = 837.1 ms and time-out 2.093 s are 4.6%
-above 0.8 s and 2 s; any dit inside the ladder's range is within a factor
-1.1^(1/2) = 1.049 of the nearest d_k, and 16.7 is 0.2% above 16.67, so the
-bound is a factor 1.051. The windows at T = 48 ms are 2.002, 4.992 and
-9.984 s (the variants). The wait in marks (B4e): a mark averages
-0.57 · 1 + 0.43 · 3 = 1.86 dits (VE3NEA's statistics), 89 ms at 25
-words/min, so stage 1's 0.8 s of keyed time held 0.8 s / 89 ms ≈ 9 marks;
-in the branch's dits, branch 1's wait of 200.4 ms of keyed time was one or
-two of a 25 words/min station's marks (a dah lasts 144 ms, provisionally
-lengthened by up to L_1 = 9.6 ms), and its seed rested on them. Counting
-the branch's provisional marks makes the wait the same number of the
-station's marks on every branch it keys. The time-out: PARIS has 14 marks
-in 50 dits, a mark every 3.57 dits, so 8 marks take 28.6 dits, 6.9 s at
-the 5 words/min floor (240 ms dits; derived), 7 s; noise alone keys
-provisional marks at the calibration target 0.01 per second per branch,
-so a branch with no station reaches 8 marks after about 8 / 0.01 = 800 s
-on average (derived), far beyond the time-out, which therefore clears
-them. Branch 1's settings feed the periodicity estimate: its input p is
-branch 1's squelched posterior, which depends on branch 1's amplitude,
-seeded and re-keyed after its wait (0.8 s of keyed time by default, as in
-stage 1; variants: 200.4 ms in dits, 8 marks) and its time-out (2 s by
-default; variants: 501 ms in dits, 7 s with the marks); so the re-key
-settings change the periodicity estimate's input as well as the keying.
+**Derivations.** Branch 1's settings feed the periodicity estimate: its
+input p is branch 1's squelched posterior, which depends on branch 1's
+amplitude, seeded and re-keyed after its wait (0.8 s of keyed time) and
+its time-out (2 s); so the re-key settings change the periodicity
+estimate's input as well as the keying.
 
-**The default since B4g: the seconds fields** (`rekey_after_s` = 0.8 s,
-`rekey_timeout_s` = 2 s; 0 = unset). When set they take precedence:
-`rekey_after_s` gives every branch W_min = that value (in the variant in
-dits the time-out then follows it by `rekey_timeout_ratio` unless
-`rekey_timeout_s` is set too; with the wait in marks it sets only the
-seed's memory), and `rekey_timeout_s` gives every branch that time-out in
-either mode. With both clock switches off (the default) they are stage 1's
-re-key timing bit for bit (`fixed_timing(cfg, 0.8, 2.0, {5, 10})` at the
-default windows; tested on three golden streams at the default
-configuration; with `periodicity_windows_s` set to 2, 5 and 10 s, stage
-1's whole timing, tested on the prototype's golden streams). The variants are
-selected with `--set` in the replay tool: the dits (B4a) with
-`rekey_after_s=0 rekey_timeout_s=0`; B4d's clocks with
-`rekey_clear_moves_stretch=true rekey_timeout_from_first_mark=true` added;
-B4e with `rekey_wait_in_marks=true` added; B4f with
-`rekey_guard_filter_full=true rekey_guard_min_length=true` added. Until
-B4d, `periodicity_windows_s` was an override of the windows in dits; since
-B4d it is the default mode's windows and the modes in dits do not use it.
+**Removed variants** (off by default since B4g; removed on 2026-10-07,
+when the bank was frozen as the reference; measured on the development set
+of 21 test cases):
 
-**The variants' measured results** (development set of 21 test cases,
-paired CER with 95% bootstrap intervals; one sentence each):
-
-- Wait and time-out in dits (B4a): the re-key part alone, `bank-b4a-rekey`
-  − `bank-b3b`, cost +0.0116 (+0.0042 to +0.0202) in CER and +0.1922 in
-  first-word CER, through branch 1's early re-key of the pre-station noise
-  and later overs timing out early (Plan B record, section 6.5).
-- B4d's clocks with the lead: `bank-b4d` − `bank-b4d-noclock`, −0.0043
-  (−0.0125 to +0.0034) in CER and +0.0379 (−0.0614 to +0.1205) in
-  first-word CER, so they did not recover the first words (section 10.3).
-- The wait in marks with the 7 s time-out (B4e): `bank-b4e` − `bank-b3b`,
-  +0.0240 (+0.0044 to +0.0496) in CER and +0.3406 (+0.1801 to +0.5222) in
-  first-word CER, from a start-up mark keeping the stretch at the stream's
-  start and noise re-keyed between overs (section 11).
-- Guard 1, filter full (B4f): `bank-b4f-g1` − `bank-b4e`, −0.0019
-  (−0.0043 to +0.0005) in CER and −0.1215 (−0.2189 to −0.0375) in
-  first-word CER (section 12.3).
-- Guard 2, minimum length (B4f): `bank-b4f` − `bank-b4f-g1`, −0.0142
-  (−0.0299 to −0.0026) in CER, −0.2735 in H per station; with both guards
-  `bank-b4f` − `bank-b3b` is +0.0078 (−0.0047 to +0.0203) in CER and
-  +0.1062 (+0.0091 to +0.2004) in first-word CER (section 12.3).
+- The wait and time-out in each branch's nominal dit, W_min,k = 16.7·d_k
+  and 2.5·W_min,k (B4a): Plan B record, section 6.
+- The re-key clocks started at the first provisional mark, the stretch's
+  lead 7·d_k, and a cleared time-out moving the stretch (B4d): Plan B
+  record, section 10.
+- The wait counted in marks, 8 provisional marks with a 7 s time-out
+  (B4e): Plan B record, section 11.
+- The two guards on the counted marks, filter full and length ≥ L_k (B4f):
+  Plan B record, section 12.
 
 The default's own run, `bank-b4g` against `bank-b3b`, is in section 13.
 
 **Provenance.** The owner's decision of 2026-10-06, option a′ (Plan B,
-B4g): stage 1's re-key settings are the default again, every Plan B
-re-key variant switchable and off, pending their comparison on the
-redesigned development set; the stage-2 spec is not edited. Before it:
-the re-key settings in dits with the clocks started at the first
-provisional mark (decision record section 6; the lead 7·d_k the
-controller's choice, heuristic), the wait in marks (option d, B4e) and
-the guards (option e, B4f). Measured effects: Plan B record, sections 6,
-10, 11, 12 and 13.
-
-**Limitations (the guards, a variant).** A mark keyed early in the noise warm-up,
-after the filter is full and at least L_k long, still counts: in test (a)'s
-stream with a 20-sample start-up ramp, branch 1's count starts at sample
-51 (34 ms), and 1 character from the noise before the station is published
-more than 2 dits before it over 4 seeds (7 without the guards; measured).
-45.6% of the provisional marks in group H's silences last L_k or more
-(measured), so guard 2 alone does not stop noise from reaching 8 counted
-marks there; it relies on the false-mark rate. A station 50 to 100 Hz
-away is a real signal: on short branches (k = 2 to 9, wide passbands) its
-elements leak through as provisional marks, enough of them at least L_k
-long that such a branch counts 8 within a median 1.5 s of the other
-station's turnover, re-keys at a seed a ≈ 5.7 and can be selected (Plan B
-record, section 12.4; measured in group H per station).
+B4g): stage 1's re-key settings are the default again; the stage-2 spec is
+not edited. Plan B's variants were removed with the owner's approval of
+2026-10-07 (design spec section 5.2, the amendments of 2026-10-07: the
+bank frozen as the reference).
 
 **Limitations.** After a station stops, its branch's false characters
-(provisional keying of noise) can stay published up to the time-out, 2 s
-(7 s in the marks variant), inside the 20 s correction reach. The default
-keeps stage 1's known losses: the time-out in seconds counts from the
-amplitude becoming unknown, and the stretch reaches back to it (B4a's
-re-key trace; Plan B record, section 6.5). In the marks variant, a station
-that sends fewer than 8 marks in an over (a single "R" has 3, "TU" 4) is
-re-keyed by the time-out at the previous over's amplitude or deleted, and
-the seed's memory of 4 · W_min,k keeps only the most recent of the 8
-marks' samples on a much faster branch (derived).
+(provisional keying of noise) can stay published up to the time-out, 2 s,
+inside the 20 s correction reach. The default keeps stage 1's known
+losses: the time-out in seconds counts from the amplitude becoming
+unknown, and the stretch reaches back to it (B4a's re-key trace; Plan B
+record, section 6.5).
 
 ### Keying
 
@@ -2725,23 +2606,20 @@ it uses are the realized ones, N_k / r (s).
 - **Amplitude, unknown (seed).** While unknown, w = 0 (no EM step) and only
   keyed samples count: each block's keyed |v_k|² are appended to a memory
   of at most the most recent round(4 · W_min · r) samples (4800 samples,
-  3.2 s, on every branch at the default W_min = 0.8 s, as in stage 1; in
-  the variants 1202 samples at k = 1 to 23 079 at k = 32), W grows by the number keyed, and Q₀.₉ is
+  3.2 s, on every branch at W_min = 0.8 s, as in stage 1), W grows by the number keyed, and Q₀.₉ is
   numpy's "linear" quantile (since Plan B's B4f computed by selecting the
   two order statistics it needs, `std::nth_element`, instead of sorting:
   the same value bit for bit, tested). The 90% quantile, not the mean, because the
   mean is pulled down by the boxcar's ramps, which the test keys.
-- **Re-key bookkeeping.** `ready_to_rekey` (the default's wait; the marks
-  variant's is counted by the channel, below): unknown and W ≥ W_min · r
-  samples of keyed time (1200 samples at the default 0.8 s; in the dits
-  variant 300.6 at k = 1, 1255.7 at k = 16, 5769.8 at k = 32 at 1500
-  samples/s, not rounded). The keyer is given W_min,k per
-  branch in seconds. `start_over(k)` keeps an established ŝ² as the
+- **Re-key bookkeeping.** `ready_to_rekey`: unknown and W ≥ W_min · r
+  samples of keyed time (1200 samples at 0.8 s and 1500 samples/s, not
+  rounded). The keyer reads W_min (`rekey_after_s`, s) from the
+  configuration. `start_over(k)` keeps an established ŝ² as the
   fallback (`prev_amp2`; NaN while there is none), then sets ŝ² = 0,
   W = 0, empties the memory and marks k unknown.
   `finish_over_start(k, ŝ², key)` installs the re-keying's winning ŝ²
   (FS²), empties the memory, marks k known and sets its key state to the
-  re-keyed stretch's last; W keeps the keyed-sample count (≥ W_min,k when
+  re-keyed stretch's last; W keeps the keyed-sample count (≥ W_min when
   called once ready), so the first EM steps after the switch move ŝ² by at
   most w / W rather than replacing it. The channel calls them after each
   block's step, branch by branch: (1) `start_over(k)` when a new over is
@@ -2750,17 +2628,14 @@ it uses are the realized ones, N_k / r (s).
   current fit's, or 1.2 s / 5 = 0.24 s without a fit), whether or not the
   amplitude is known; otherwise, while k is unknown: (2)
   `finish_over_start(k, …)` after the stretch is re-keyed, once the over
-  has a mark and W ≥ W_min (marks variant: 8 counted provisional marks,
-  `Branch::wait_marks` or, without the guards, `marks_in_over`)
-  (candidates: ŝ² and, if finite, `prev_amp2`); or, if not, once branch
-  k's time-out has passed since its count started (default: the amplitude
-  becoming unknown, the stream's start or a `start_over` of a known
-  branch, or the last time-out; B4d's variant: the branch's first
-  provisional mark since then; a new over of a still-unknown branch does
-  not reset it either way), (3) `finish_over_start(k, …)` with `prev_amp2`
-  if it is finite and keys at least one sample of the stretch, and
-  otherwise (4) `start_over(k)` again, which keeps k unknown so the wait
-  (the marks, the keyed time) counts afresh from then on.
+  has a mark and W ≥ W_min (candidates: ŝ² and, if finite, `prev_amp2`);
+  or, if not, once the time-out has passed since its count started (the
+  amplitude becoming unknown, the stream's start or a `start_over` of a
+  known branch, or the last time-out; a new over of a still-unknown branch
+  does not reset it), (3) `finish_over_start(k, …)` with `prev_amp2` if it
+  is finite and keys at least one sample of the stretch, and otherwise (4)
+  `start_over(k)` again, which keeps k unknown so the keyed time counts
+  afresh from then on.
 - **Re-keying a stretch (`rekey`).** The stored |v_k|² of a stretch are
   keyed again from key up with the full LLR at fixed σ²_v,k and ŝ²
   (a = √(max(ŝ², 0) / σ²_v,k)), the same g, h = 1 nat and squelch.
@@ -2777,12 +2652,10 @@ it uses are the realized ones, N_k / r (s).
 τ_a = 0.5 s heuristic (a heuristic running form of an EM update); h = 1 nat
 heuristic; the squelch's 3 at 16 ms heuristic, its L^(1/4) scaling derived;
 R_fa = 0.01 /s a heuristic target kept by E9b; the release probability 0.3
-heuristic; the default wait W_min = 0.8 s of keyed time measured (E9b,
-at 25 words/min, adopted over 0.4 s and 0.2 s; stage-1 record, section
-3.9; the default again since Plan B's B4g); in the variants, W_min,k =
-16.7 d_k derived from that 0.8 s (B4a) and the wait of 8 provisional
-marks heuristic (B4e: about stage 1's 0.8 s at 25 words/min);
-the seed's memory of 4 × W_min and the 90% quantile heuristic; the 0.5
+heuristic; the wait W_min = 0.8 s of keyed time measured (E9b, at 25
+words/min, adopted over 0.4 s and 0.2 s; stage-1 record, section 3.9; the
+default again since Plan B's B4g); the seed's memory of 4 × W_min and the
+90% quantile heuristic; the 0.5
 clamp and the 10⁻³⁰⁰ guards numerical choices. **x_on,k** (4.6428 at k = 1
 … 4.2036 at k = 32, `BankConfig::x_on_values`): measured, prototype
 experiment E9a (stage-1 record, section 3.9): channel-shaped noise, about
@@ -2997,10 +2870,9 @@ adopted and are not ported; any other `periodicity_method` is an error
   the mean of factor consecutive samples of p; a remainder shorter than
   factor waits for the next block. A buffer keeps the last N_max averaged
   samples, the longest window (7500 samples, 10 s, at 750 samples/s, by
-  default; 37 789 samples, 50.4 s, in the per-candidate variant, which
-  also keeps the samples that arrived since the last recomputation).
-- **Windows and updates (Plan B, B4d: stage 1's; 2 s dropped 2026-10-07).**
-  By default (`periodicity_window_mode` "seconds") two windows W = 5 and
+  default).
+- **Windows and updates (stage 1's rule; 2 s dropped 2026-10-07).**
+  Two windows W = 5 and
   10 s shared by every candidate: N = max(16, round(W · r_P)) = 3750 and
   7500 samples, each the most recent N samples, each computed by one FFT
   (stage 1's 2 s window, 1500 samples, by `--set
@@ -3008,44 +2880,16 @@ adopted and are not ported; any other `periodicity_method` is an error
   The estimate is recomputed once round(0.25 s · r) samples of p (375 at
   1500 samples/s) have arrived since the last recomputation; between
   recomputations the last result stands. A window the buffer does not yet
-  fill gives no estimate (score 0). In the per-candidate variant (B4a),
-  N = max(16, round(N_w · τ_c · r_P)): 375, 936 and 1872 samples for
-  τ_c = 12 ms; 7576, 18 894 and 37 789 for τ_c = 242.2 ms; a window none of
-  whose candidates is full gives no estimate.
+  fill gives no estimate (score 0).
 - **Autocorrelation.** Over one window's N samples, x = p − mean(p) and
   ρ[τ] = Σ_{m=0}^{N−1−τ} x[m] x[m+τ] / Σ_m x[m]², τ = 0 … N − 1
   (dimensionless; 1 at τ = 0); by FFT zero-padded to the smallest power of
-  two ≥ 2N (so the circular correlation equals the linear one) for a
-  shared window (8192 and 16 384 points by default; 4096 for a 2 s window). No estimate when N < 16 or Σ x² ≤ 10⁻¹² · N (p does not
+  two ≥ 2N (so the circular correlation equals the linear one): 8192 and
+  16 384 points by default (4096 for a 2 s window). No estimate when N < 16 or Σ x² ≤ 10⁻¹² · N (p does not
   vary; for instance all zero while the squelch is closed).
-- **Sliding sums (the per-candidate variant only).** For a band of lags [lo, hi]
-  (a tooth) over the window [s, e) of N samples, with S the running sum of
-  p and m the window's mean,
-  Σ_{τ=lo}^{hi} Σ_m x[m] x[m+τ] = F + tail − m (A + B) + m² (L N − (lo + hi) L / 2),
-  L = hi − lo + 1, where F = Σ_{i=s}^{e−1−hi} p_i (S(i+hi+1) − S(i+lo))
-  holds the samples whose every lag of the band is inside the window,
-  tail = Σ_{i=e−hi}^{e−1−lo} p_i (S(e) − S(i+lo)) those whose lags reach
-  its end, A = Σ_τ (S(e−τ) − S(s)) and B = Σ_τ (S(e) − S(s+τ)), and
-  Σ x² = Σ p² − N m² (the expansion of x = p − m). F is kept per window,
-  candidate and band, and slid from one recomputation to the next: the
-  products entering at the window's end are added (computed once per
-  candidate, shared by the three windows), those leaving at its start
-  subtracted; it is recomputed directly the first time, once the window
-  has slid by its own length N, and whenever it is not finite. S, Σ p² and
-  a count of non-finite samples are recomputed over the buffer at each
-  recomputation, from the buffer's first sample; a NaN or infinity is held
-  there as 0 and counted, and a candidate whose window holds one has no
-  score (as the FFT form, whose mean is then NaN). The slid sums differ
-  from the FFT form by rounding only.
-- **Cost of the sliding sums** (the per-candidate variant; from the operation counts at
-  750 samples/s, 192 samples per recomputation and 303 candidates × 9
-  bands): entering 303 · 9 · 192 = 0.52 M products, leaving 3 × 0.52 M,
-  the direct recomputation at most 9 N per N samples of sliding
-  (3 × 0.52 M per recomputation on average), and the bands' tails and
-  S-sums 5 L per candidate and band (0.26 M): about 3.9 M multiply-adds
-  per recomputation, 15 M per channel-second at 3.9 recomputations per
-  second (the FFT form: two FFTs of 8192 and 16 384 points per
-  recomputation by default).
+- Removed (2026-10-07): windows per candidate, N_w · τ_c, computed by
+  sliding sums of lagged products (Plan B, B4a; Plan B record, sections 6
+  and 9.5).
 - **Candidates.** The duration fit's grid; the 1.01 is written into
   `t_grid` itself, not read from `t_grid_step`.
 - **Comb.** For each candidate T, Π = 2T, in samples Π · r_P. A tooth at
@@ -3064,9 +2908,7 @@ adopted and are not ported; any other `periodicity_method` is an error
   windows (stage 1's 2 s window: 109 ms, 11 words/min); a window whose
   true T is beyond its cap still returns its best candidate within reach
   (often an alias at a fraction of T, or a candidate that is not
-  confident). With a window per candidate (the variant) the reach always
-  holds: N ≥ 41.7 T r_P − ½ and 9.15 T r_P ≤ (N − 1)/2 needs only
-  N ≥ 18.3 T r_P + 1, true for T r_P ≥ 0.07 sample. The estimate is the candidate with the largest
+  confident). The estimate is the candidate with the largest
   score (the first on a tie; none if a score is NaN); none if no candidate
   is within reach.
 - **Taper.** The biased estimate tapers each tooth by about (1 − τ/N), so
@@ -3074,72 +2916,17 @@ adopted and are not ported; any other `periodicity_method` is an error
   it depends on speed: at the 8T tooth 1 − 8 T/W, 0.92 at 25 words/min
   (T = 48 ms) in the 5 s window (0.81 in a 2 s window), about 0.62 for
   5 words/min (8T = 1.92 s) in the 5 s window; it lowers long-T scores in short windows relative to
-  short-T ones. With a window per candidate (the variant) it is the same
-  at every speed: 1 − 8/41.7 = 0.81 in the shortest window.
+  short-T ones.
 - **T_P.** At each recomputation the windows are estimated shortest first;
   T_P is the estimate of the shortest window whose score is ≥ 0.03, the
-  confidence is that score, and the window (s; the chosen candidate's,
-  N / r_P) is reported with it. If no window is confident, T_P is none and
+  confidence is that score, and the window (s, N / r_P) is reported with
+  it. If no window is confident, T_P is none and
   the confidence is max(0, every window's score). T_P never feeds back into
   its own estimate (spec 4.4).
 
-**The shared-window variant (Plan B, B4a-C; an experiment, not the
-default).** `periodicity_window_mode` = `"shared"` (default `"seconds"`
-since B4d; the replay tool sets it with `--set
-periodicity_window_mode=shared`; `periodicity_windows_s` is not used in
-this mode). Each of the three rows has one window,
-the same for every candidate: N = max(16, round(N_w · T̂ · r_P)) averaged
-samples, N_w ∈ {41.7, 104, 208}, where T̂ (s) is the fitted dit T of the
-branch currently selected (by the last selection instant, an earlier
-block), and only when (a) a selection exists, (b) that branch's fit belongs
-to its current over and (c) the fit is eligible (selection's test: memory
-≥ 8 elements and |ln(L_k / (0.8 T))| ≤ ln 1.1). Otherwise there is no T̂
-and the rows are stage 1's windows in seconds,
-`periodicity_unselected_windows_s` = 2, 5 and 10 s (1500, 3750 and 7500
-samples at 750 samples/s). Condition (b) is the decoder's own turnover: a
-new over starts on a branch when its key has been up for longer than
-T_new = max(0.5 s, 12 T_g) since its last key-up (`Branch::new_over_due`,
-`start_over`); from then the branch decodes with the previous over's fit
-(`prev_fit`) until the over's first marks are re-keyed (after 0.8 s of
-keyed time by default; variants: W_min,k = 16.7·d_k, or 8 provisional
-marks; or a time-out that keys marks with the previous amplitude), when the
-fit becomes the over's own (fresh, or the previous one continued with this
-over's marks). The decoder does not tell a new station from the same
-station resuming: every pause longer than T_new withholds T̂ until the
-re-key. So T̂ is withheld at the stream's start until the selected branch
-has an eligible fit, and from every over start on the selected branch
-until that over's re-keyed fit is eligible; a switch to another branch
-gives that branch's T̂ under the same conditions. T̂ is capped at the
-longest fitted dit an eligible fit can have, L_32 / 0.8 · 1.1 = 0.2530 s at
-1500 samples/s (L_32 = 276 samples / 1500 samples/s, realized), and the
-buffer keeps 208 times that, 39 468 samples (52.6 s, 316 kB of doubles) at
-750 samples/s, instead of 37 789. Each row is then exactly the shared form,
-`comb_estimate` over its most recent N samples (one FFT per row,
-zero-padded to the power of two ≥ 2N: 4096, 8192 and 16 384 points at
-T̂ = 48 ms; 16 384, 65 536 and 131 072 at the cap), and the reach rule
-applies as in stage 1: a candidate counts in a row only if
-9.15 T ≤ (N − 1) / 2, so T ≤ about N_w T̂ / 18.3: 2.28 T̂ in the shortest
-row, 5.68 T̂ and 11.4 T̂ in the others. An alias at 3 T̂ therefore cannot
-be the shortest row's estimate; the other two rows still score it, over
-the same window as T̂ itself. T_P, the confidence and the reported window
-follow the rule above. Why (when it was designed against B4a's default):
-with a window per candidate, an alias at 3 T₀
-is scored over three times the samples of the true T₀, and the per-window
-cap T ≤ W / 18.3 is gone; the shortest window's confident wrong estimates
-near 3 T₀ rose from 3.7% (`bank-b3b`) to 26.3% (`bank-b4a`) (Plan B record,
-sections 6.5 and 6.6). Class (1) dits, through T̂. Status: heuristic, an
-experiment (owner, 2026-10-04: measured as a variant, no default changed);
-the cap and the reach derived. **It introduces a feedback the default does
-not have:** the selected branch's speed sets the windows that judge T_P,
-and T_P feeds every fit's prior (and so the fitted T that becomes T̂) and
-selection's fallback (which chooses the branch whose dit becomes T̂). A
-wrong selection with an eligible fit can therefore shorten or lengthen the
-windows that would correct it; when the selected dit is too long, the
-shortest row's reach admits candidates up to 2.28 times that dit. The
-default and the per-candidate variant have no such loop (their windows are
-fixed, or depend on the candidate alone).
-Measurements, the first form's fault (a nominal-dit fallback that trapped
-the start-up) and tests: Plan B record, sections 6.6, 6.6.1, 9.2 and 9.5.
+Removed (2026-10-07): one window per row following the selected branch's
+eligible fitted dit, N_w · T̂, which fed back from selection to T_P (Plan
+B, B4a-C; Plan B record, sections 6.6, 6.6.1 and 9.5).
 
 **Provenance.** The method (the comb on Π = 2T): owner (E1; stage-1
 record, section 3.2). The windows for every candidate: stage 1's 2, 5
@@ -3167,7 +2954,6 @@ Between 10 and 11 words/min the 2 s window's top candidate within reach
 windows reach every candidate, so the failure cannot arise from the reach;
 an alias of the 5 s window can still win when it is the shortest
 confident one. The
-variants' N_w = 41.7, 104 and 208 dits: stage 1's windows at 48 ms. The
 confidence threshold 0.03: a placeholder (E1, set with the fixed windows;
 re-measured with the windows in dits by Plan B's B4a and kept, Plan B
 record, section 6.4). The 4 teeth
@@ -3176,9 +2962,7 @@ and their half-width 0.075 Π: a placeholder (E3; stage-1 record, section
 averaged rate 750 samples/s: heuristic. Π = 2T, the reach caps and the
 taper's size: derived. The reach rule and the biased estimate: heuristic
 (the unbiased estimate is noisier at long lags). The 1% grid step: the
-duration fit's (a placeholder kept by E5). In the per-candidate variant,
-a candidate whose window the buffer does not yet fill takes no part (Plan
-B, B4a; heuristic, like the reach rule's exclusion). The 10⁻¹² · N variance floor and the 16-sample
+duration fit's (a placeholder kept by E5). The 10⁻¹² · N variance floor and the 16-sample
 minimum: numerical choices.
 
 **Limitations.** A window scores only once full, so at a stream's start
@@ -3188,10 +2972,7 @@ fits meanwhile run without the prior or under the previous T_P. The rule
 still takes the shortest confident window regardless of a longer window's
 higher score. The prototype's strict expected
 failure (Farnsworth 18/10 words/min, where the comb locks near the gap
-timebase) holds in the port. In the per-candidate variant a row's estimate
-is over the short candidates only for up to 10.1 s (shortest) to 50.4 s
-(longest), and an alias at 3 T₀ is scored over three times the samples of
-the true T₀ (above).
+timebase) holds in the port.
 
 ### Text model and branch selection
 
@@ -3263,35 +3044,14 @@ decodes one station's baseband stream u (station at 0 Hz, FS, r samples/s).
   T_g = 1.2 s / 5 = 240 ms, so T_new = 2.88 s; at 25 words/min,
   T_g = 48 ms, T_new = 0.576 s.
 - **The stretch and the time-out's count.** The stretch a re-key keys
-  again starts where the amplitude became unknown (≤ 20 s back), and by
-  default (stage 1's rule) the time-out counts from there. Variant (Plan B,
-  B4d; off by default since B4g): with `rekey_timeout_from_first_mark` the count of the
-  time-out starts at the branch's first provisional mark (its key-down
-  sample; the block's start when a mark is already down at that point)
-  since the amplitude became unknown or the last time-out that keyed
-  nothing, nothing is counted before it, and at that mark the stretch's
-  start moves to max(its start, the mark − round(7 · d_k · r) samples):
-  126 samples (84 ms) at k = 1, 526 (350.9 ms) at k = 16, 2418 (1.612 s) at
-  k = 32 (`rekey_lead_dits` = 7, heuristic: one word gap of the branch's
-  dit, so the full rule still finds weak marks just before the first
-  provisional mark that the unknown-amplitude threshold missed). With
-  `rekey_clear_moves_stretch` (a variant, off) a time-out that keys nothing
-  also moves the stretch's start to its own instant. A new over started
-  while the amplitude is still unknown moves neither. Both off: stage 1's
-  rule. Under `rekey_timeout_from_first_mark` with the lead,
-  `rekey_clear_moves_stretch` is nearly inert: the next provisional mark
-  after a cleared time-out sets the start to max(start, mark − 7·d_k)
-  whatever that switch says, so it matters only when that mark comes
-  within 7·d_k of the clear (derived from the code; B4d review). The two
-  are switches of one rule, not independent fixes. Why (the re-key trace, Plan B; `docs/research/
-  2026-10-05-periodicity-windows-and-rekey-analysis.md` §3.2): counted
-  from the amplitude becoming unknown, a median 1.23 s before an over's
-  first mark (a gap in seconds), the time-out in dits fired before W_min,k
-  for stations above about 25.6 words/min and re-keyed the over at the
-  previous over's amplitude; and a re-key whose stretch reached back to the
-  stream's start keyed the pre-station noise at a seed a ≈ 4.6 to 5.9
-  (S₅₀₀ 0 to +2 dB), where noise crosses the full-LLR threshold on 0.3% to
-  0.9% of samples (derived), into published text.
+  again starts where the amplitude became unknown (≤ 20 s back), and the
+  time-out counts from there (stage 1's rule). A new over started while
+  the amplitude is still unknown moves neither.
+- Removed (2026-10-07): the count started at the branch's first
+  provisional mark, the stretch's lead 7 · d_k before it, and a cleared
+  time-out moving the stretch (Plan B, B4d; Plan B record, section 10; the
+  re-key trace behind it: `docs/research/
+  2026-10-05-periodicity-windows-and-rekey-analysis.md` §3.2).
 - **Re-key.** The stretch is keyed again at each candidate amplitude: the
   seed s² and, if there is one, the previous over's s² (FS²). For each,
   the stretch's marks and spaces go into a fresh fit and into a copy of
@@ -3303,32 +3063,16 @@ decodes one station's baseband stream u (station at 0 Hz, FS, r samples/s).
   switches to the full LLR at that amplitude. The re-keyed characters
   replace the published ones from the stretch's start if the branch is the
   selected one.
-- **Wait.** By default the re-key comes once the over has a mark and W ≥
-  W_min = 0.8 s of keyed time (1200 samples at 1500 samples/s). Variant
-  (Plan B, B4e, B4f; off by default since B4g): the re-key comes at the first block's end
-  at which the branch has at least `rekey_marks` = 8 counted provisional
-  marks in its over (`Branch::wait_marks`, counted at each key-up of a
-  mark whose key-down the branch saw while unknown in this over; reset by
-  a new over, a re-key and a cleared time-out). The guards (B4f): with
-  `rekey_guard_filter_full` a mark counts only if its key-down sample n
-  satisfies n − z ≥ N_k, z the last exact-zero input sample at or before n
-  (−1 at the stream's start): the boxcar's output before that is a partial
-  sum divided by N_k (derived); with `rekey_guard_min_length` only if its
-  key-up comes at least N_k samples after its key-down (L_k; heuristic).
-  Under `rekey_timeout_from_first_mark` the first counted mark starts the
-  count (from its key-down sample, set when it ends) and moves the
-  stretch's start to max(start, key-down − 7·d_k); marks that do not count
-  start nothing. Both guards off: B4e's rule (every ended provisional mark
-  counts, `Branch::marks_in_over`, and the count starts at the first
-  key-down). With `rekey_wait_in_marks` off (the B4a–B4d variant) the wait
-  is a mark and W ≥ W_min,k.
-- **Time-out.** 2 s for every branch (3000 samples at 1500 samples/s;
-  variants: 7 s with the marks, 501 ms at k = 1 to 9.616 s at k = 32 in
-  dits), rounded to whole samples, counted as above. When nothing in the
+- **Wait.** The re-key comes once the over has a mark and W ≥ W_min =
+  0.8 s of keyed time (1200 samples at 1500 samples/s).
+- Removed (2026-10-07): the wait counted in provisional marks, 8 with a
+  7 s time-out (Plan B, B4e; Plan B record, section 11), and its two guards
+  on the counted marks (B4f; section 12).
+- **Time-out.** 2 s for every branch (3000 samples at 1500 samples/s),
+  rounded to whole samples, counted as above. When nothing in the
   stretch is keyed, its provisional characters are deleted (a correction
   if the branch is selected), the amplitude stays unknown, and the count
-  restarts at once (B4d's variant: it waits for the next provisional
-  mark).
+  restarts at once.
 - **Fresh fit against the previous.** The penalty ½ · k · ln n nats, k = 4
   (the fitted T, w, q, T_g), n the number of the over's (re-keyed or later)
   marks and spaces: 4.16 nats at n = 8, 4.97 at 12 (BIC, n independent
@@ -3365,7 +3109,7 @@ decodes one station's baseband stream u (station at 0 Hz, FS, r samples/s).
   exact zeros so far) a block is not keyed, nothing enters the periodicity
   or the branches, nothing is published, and every branch's clocks (over
   start, start of the unknown amplitude and of the stretch, re-key
-  time-out, which then waits for a first provisional mark) restart at the
+  time-out) restart at the
   block's end: the first block with other input finds the channel as a
   stream's first block does (its noise estimate taken from that block's
   non-zero samples only). A stream that starts with 1 s of exact zeros and
@@ -3389,17 +3133,10 @@ decodes one station's baseband stream u (station at 0 Hz, FS, r samples/s).
   82.2 kB. Each branch holds one to three fits (the decoding fit, the
   previous over's, the rival), so the fits take 32 × 82.2 kB = 2.6 MB to
   96 × 82.2 kB = 7.9 MB, and a channel 7.6 MB to 12.9 MB in all, plus small
-  per-character and per-record lists. The periodicity estimate (by
-  default the 10 s window, since B4d) keeps its buffer of averaged p,
+  per-character and per-record lists. The periodicity estimate (its
+  longest window, 10 s) keeps its buffer of averaged p,
   7500 × 8 B = 60 kB, and about 0.6 MB of FFT work arrays during a
-  recomputation; so a channel 8.3 MB to 13.6 MB in all. In the
-  per-candidate variant (the longest window 208 · 242.2 ms = 50.4 s) the
-  buffer is at most 37 789 + 192 samples × 8 B = 304 kB and, per
-  recomputation, kept allocated, the buffer with non-finite samples held
-  as 0, S and Σ p² over it (3 × 304 kB) and the non-finite count (4 B per
-  sample, 152 kB), plus the slid sums and the per-candidate terms
-  ((3 + 3) × 303 × 9 × 8 B = 131 kB) and the bands (22 kB): about 1.5 MB
-  per channel, 9.1 MB to 14.4 MB in all. The noise estimate keeps its own last 480 |v_k|² of non-zero
+  recomputation; so a channel 8.3 MB to 13.6 MB in all. The noise estimate keeps its own last 480 |v_k|² of non-zero
   input per three-tap branch for the warm-up and the recovery: 1 × 480 ×
   8 B = 3.8 kB with the default "spectrum" method (branch 1 only), 32 ×
   480 × 8 B = 123 kB with "branch"; the window's look-back still counts the
@@ -3417,13 +3154,8 @@ decodes one station's baseband stream u (station at 0 Hz, FS, r samples/s).
 
 **Provenance.** block_s heuristic (the engine's channel block); T_new's
 0.5 s and 12 T_g placeholders kept by E7 (stage-1 record, section 3.10);
-the default re-key wait 0.8 s measured (E9b) and time-out 2 s heuristic
+the re-key wait 0.8 s measured (E9b) and time-out 2 s heuristic
 (stage 1's; the default again since B4g, owner, 2026-10-06, option a′);
-in the variants, the wait of 8 provisional marks heuristic and its 7 s
-time-out derived (B4e), W_min,k = 16.7 d_k derived from E9b's 0.8 s (measured at 25 words/min) and
-the re-key time-out's ratio 2.5 to W_min,k heuristic (stage 1's 2 s / 0.8 s);
-the two clock rules the owner's decision of 2026-10-06 (heuristic), the
-lead 7 d_k heuristic (the controller's choice for the owner);
 the fresh fit's 8 marks and spaces a placeholder (heuristic); the ½ k ln n
 penalty's form derived (BIC, n independent observations), its use with k
 counting only the fresh fit's parameters heuristic; the end of the
@@ -3435,24 +3167,10 @@ cost of each step): Plan B record, sections 2, 3.4, 4.4, 6.3 and 9.6.
 
 **Limitations.** The measured memory per channel after B1 lies 1.7 MB above
 the derived upper end; the cause is conjectured, not traced (Plan B record,
-section 9.6). With the default's clocks (stage 1's) the time-out counts,
+section 9.6). With stage 1's clocks the time-out counts,
 and the re-keyed stretch reaches back, from where the amplitude became
 unknown, so the re-key can key the noise before a weak station (the loss
-stated under "Keying time constants" above). In B4d's clocks variant
-(`rekey_timeout_from_first_mark`) a mark the unknown-amplitude test keys
-in the noise just before a station starts the over instead, so the clocks
-start there and its character can be published (measured once in 8 test
-streams of 1 s of noise at S₅₀₀ = +2 dB before a 25 words/min station: an
-"E" 29 ms before the station's first mark, with any lead from 0 to 7 d_k,
-the same with the wait in marks; Plan B record, sections 10 and 11). Such
-a mark survives when the station reaches the wait before the time-out
-counted from it: with the marks variant, any noise mark up to about 7 s
-less the station's time to 8 marks before it (derived), and it is then
-published only if the re-key at the station's amplitude keys it again;
-with the dits variant, about 2.5·W_min,k − W_min,k/0.44 ≈ 0.23·W_min,k ≈
-3.8·d_k before it at 44% key-down (46 ms on branch 1; derived, B4d
-review). False marks come at 0.01 per second per branch (the calibration
-target), so a noise mark in those windows is rare.
+stated under "Keying time constants" above).
 
 ### The bank decoder behind the engine
 
@@ -3668,7 +3386,8 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Bank squelch | a_k ≥ a_min,k = 3·(L_k/16 ms)^(1/4) (2.622 at k = 1 to 5.525 at k = 32), dimensionless | `BankConfig::squelch_a`, `squelch_ref_s`, `squelch_exponent` | 3 heuristic; L^(1/4) scaling derived |
 | Bank amplitude EM | τ_a = 0.5 s of key-down weight (α = 1.332·10⁻³ per sample at 1500 samples/s), p-weighted, one step per block | `BankConfig::amplitude_tau_s`; `bank::BankKeyer` | heuristic (heuristic running form of an EM update, as Matched) |
 | Bank unknown-amplitude test | key down at x > x_on,k (4.6428 at k = 1 … 4.2036 at k = 32, dimensionless), up at x < x_off = √(−2 ln 0.3) = 1.552; target R_fa = 0.01 false marks/s per branch | `BankConfig::x_on_values`, `release_probability`, `false_marks_per_s` | x_on measured (E9a); release probability heuristic; R_fa heuristic target kept by E9b |
-| Bank amplitude seed and re-key | while unknown: ŝ² = 90% quantile (by selection, bit for bit the sorted form; B4f) of the last ≤ 4 × W_min of keyed \|v\|² − 2σ², FS²; ready to re-key after W_min = 0.8 s of keyed time on every branch (memory 3.2 s); variants: W_min,k = 16.7 d_k (200.4 ms at k = 1, 837.1 ms at k = 16, 3.847 s at k = 32), or 8 counted provisional marks; class: seconds (stage 1's measured 0.8 s, E9b), pending the comparison of the variants on the redesigned development set | `BankConfig::rekey_after_s` (0.8), `seed_memory_rekeys`; variants `rekey_after_dits`, `rekey_wait_in_marks`, `rekey_marks`; `bank::bank_timing`, `bank::BankKeyer`, `bank::rekey` | 0.8 s measured (E9b, stage 1; the default again since Plan B's B4g, owner 2026-10-06); memory and 90% quantile heuristic |
+| Bank amplitude seed and re-key | while unknown: ŝ² = 90% quantile (by selection, bit for bit the sorted form; B4f) of the last ≤ 4 × W_min of keyed \|v\|² − 2σ², FS²; ready to re-key after W_min = 0.8 s of keyed time on every branch (memory 3.2 s); class: seconds (stage 1's measured 0.8 s, E9b) | `BankConfig::rekey_after_s` (0.8), `seed_memory_rekeys`; `bank::BankKeyer`, `bank::rekey` | 0.8 s measured (E9b, stage 1; the default again since Plan B's B4g, owner 2026-10-06); memory and 90% quantile heuristic |
+| Bank re-key wait, variants (removed) | in dits, 16.7 d_k (B4a), and in marks, 8 provisional marks (B4e), with two guards (B4f); removed 2026-10-07 | — | measured: Plan B record, sections 6, 11 and 12 |
 | Bank duration-fit classes | dit T + w, dah qT + w; element space T − w, character gap 3 T_g − w, word gap 7 T_g − w (s); log-normal in ln d, s_c² = σ_ln² + σ_t²/μ_c², σ_ln = 0.15 (marks), 0.25 (spaces); priors 0.5716 / 0.4284 (marks), 0.6467 / 0.2379 / 0.1154 (spaces) | `BankConfig::sigma_ln_mark`, `sigma_ln_space`; `bank::class_priors` | σ_ln heuristic; priors derived (VE3NEA tables) |
 | Bank timing resolution | σ_t² = 2 (L_k / max(a, 1))² + 2 / (12 r²), s² | `bank::resolution_var_s2` | derived (first order, high SNR) |
 | Bank outlier class | ε = 0.05, log-uniform on 1 ms–10 s (−5.216 nats in ln d); durations clamped to that range | `BankConfig::outlier_prior`, `outlier_range_s` | heuristic |
@@ -3681,9 +3400,8 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Bank fit exp and ln | SLEEF 3.9.0 `_u10` (stated error bound 1.0 ulp) on arrays: grid points in blocks of 256, the retained history at once; finz (FMA) on AVX-512F (8 doubles) or AVX2 + FMA (4), else cinz on AVX-512F, AVX or SSE2 (8, 4, 2), chosen at run time; changes ℓ_total by ≤ 1.001 · 2^−52 · (5 \|ℓ_total\| + 14.3 + \|ln σ_ln²\|) nats against the C library's | `bank::vecmath` (`engine/src/bank/vecmath*.cpp`); `bank::DurationFit::grid_loglik`, `terms`, `refine` | the bound derived (1 ulp per call through the formula, assuming the C library's exp and ln within 1 ulp as SLEEF's; tested on the sweeps); the implementation order measured (Plan B B2(b)); the block of 256 a heuristic (stack scratch of 25 856 B, no measured effect claimed) |
 | Bank periodicity method | the comb on Π = 2T over branch 1's posterior p (the edge comb and the spectrum fit are not ported) | `BankConfig::periodicity_method`; `bank::Periodicity` | owner (E1); Π = 2T derived |
 | Bank periodicity input and updates | p averaged to r_P = r / max(1, round(r / 750 samples/s)) (750 samples/s at r = 1500 samples/s); recomputed every 0.25 s of p (375 samples at 1500 samples/s) | `BankConfig::periodicity_rate_hz`, `periodicity_update_s` | heuristic |
-| Bank periodicity windows | 5 and 10 s (3750 and 7500 samples at 750 samples/s), the same for every candidate τ_c; the shortest confident window gives T_P; the comb's reach τ_c ≤ W/18.3 (273 ms, 4.4 words/min, in the 5 s window), so every candidate is in reach of both; class (2) seconds, a latency after a change; stage 1's 2, 5 and 10 s with `--set periodicity_windows_s=[2,5,10]` | `BankConfig::periodicity_windows_s` (`kStage1PeriodicityWindowsS`), `periodicity_window_mode` = "seconds"; `bank::bank_timing`, `bank::Periodicity` | values placeholder (stage 1's, E2) less the 2 s window, dropped on a measured failure below 10 words/min (owner, 2026-10-07); seconds the owner's decision (2026-10-06; Plan B, B4d); reach derived |
-| Bank periodicity windows, per-candidate variant (not the default) | `periodicity_window_mode` = "per_candidate": each candidate τ_c over its own N_w · τ_c, N_w = 41.7, 104 and 208 (0.50 to 2.50 s at 12 ms, 10.1 to 50.4 s at 242.2 ms); class (1) dits | `BankConfig::periodicity_windows_dits` | placeholder (Plan B, B4a; the default until B4d) |
-| Bank periodicity windows, shared variant (not the default) | `periodicity_window_mode` = "shared": each row one window for every candidate, N_w · T̂ (N_w = 41.7, 104, 208; T̂ the selected branch's eligible fitted T of its current over, capped at 0.2530 s); without such a fit (stream start, from an over start until its re-key) 2, 5 and 10 s; a candidate counts only within the comb's reach (T ≤ about N_w T̂ / 18.3); feeds back through T_P (fit prior, selection fallback) | `BankConfig::periodicity_window_mode` (default "seconds"), `periodicity_unselected_windows_s`; `bank::bank_timing`, `bank::Periodicity`, `bank::BankChannel` | heuristic, an experiment (Plan B, B4a-C); the cap and reach derived |
+| Bank periodicity windows | 5 and 10 s (3750 and 7500 samples at 750 samples/s), the same for every candidate τ_c; the shortest confident window gives T_P; the comb's reach τ_c ≤ W/18.3 (273 ms, 4.4 words/min, in the 5 s window), so every candidate is in reach of both; class (2) seconds, a latency after a change; stage 1's 2, 5 and 10 s with `--set periodicity_windows_s=[2,5,10]` | `BankConfig::periodicity_windows_s` (`kStage1PeriodicityWindowsS`); `bank::Periodicity` | values placeholder (stage 1's, E2) less the 2 s window, dropped on a measured failure below 10 words/min (owner, 2026-10-07); seconds the owner's decision (2026-10-06; Plan B, B4d); reach derived |
+| Bank periodicity windows, variants (removed) | per candidate, N_w · τ_c (B4a), and one per row following the selected branch's dit, N_w · T̂ (B4a-C); removed 2026-10-07 | — | measured: Plan B record, sections 6 and 6.6 |
 | Bank comb teeth and width | 4 teeth at kΠ, k = 1…4, negative teeth at (k ± ½)Π, each ±0.075 Π (±15% of T) wide; score = mean contrast, dimensionless; biased autocorrelation | `BankConfig::comb_teeth`, `comb_width`; `bank::comb_estimate` | placeholder (E3), not measured for the comb on 2T; biased estimate heuristic |
 | Bank comb confidence | T_P counts when its window's score ≥ 0.03 (dimensionless) | `BankConfig::comb_confidence_min` | placeholder (E1) |
 | Bank text model | ln(w / 2688) nats per character (VE3NEA's table); valid codes missing from it ln(8/2688) = −5.817 nats; "*" ln(10⁻⁶) = −13.816 nats; mean over the branch's last 10 characters (word spaces not counted), applied by the channel decoder | `bank::TextModel`; `BankConfig::text_window_chars`; `bank::Branch::text_logprob` | probabilities derived (VE3NEA); the two fallbacks heuristic; window 10 characters placeholder, kept by E8 |
@@ -3693,8 +3411,9 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Bank block cadence | every stage advances once per block of round(block_s · r) samples, block_s = 32/1500 s = 21.33 ms (32 samples at 1500 samples/s); input in pieces of any length, a partial last block at the end | `BankConfig::block_s`; `bank::BankChannel::push`, `finish` | heuristic (the engine's channel block) |
 | Bank stored power | \|v_k\|² rounded to float32 as each sample arrives (as the prototype stores P), FS²; the channel's window stores it as a 4-byte float (lossless) and every read widens it to double exactly | `bank::boxcar_power_f32`; `bank::PowerMatrix`, `bank::BankChannel` | rounding a numerical choice (the prototype's, reproduced); the float storage a memory choice with no arithmetic effect (Plan B B1: development-set texts identical) |
 | Bank new over | key up longer than T_new = max(0.5 s, 12 · T_g) since the branch's last key-up (2.88 s without a fit; 0.576 s at 25 words/min) | `BankConfig::new_over_min_s`, `new_over_gaps`; `bank::Branch::new_over_due` | placeholders, kept by E7 |
-| Bank re-key and time-out | the over's start re-keyed with the full LLR once the over has a mark and 0.8 s of keyed time, at the seed s² and the previous over's s² (best mean log-likelihood per element wins), over the stretch (at most 20 s back); if that is not reached within 2 s of channel time from the amplitude becoming unknown (every branch), re-keyed at the previous over's s², or its provisional characters deleted; class: seconds, pending as above; variants (off): the wait in dits, 16.7 d_k with time-out 2.5 W_min,k (B4a), and in marks, 8 counted provisional marks with time-out 7 s (B4e), with the guards filter full and length ≥ L_k (B4f) | `BankConfig::rekey_after_s` (0.8), `rekey_timeout_s` (2.0); variants `rekey_after_dits`, `rekey_timeout_ratio`, `rekey_wait_in_marks`, `rekey_marks`, `rekey_marks_timeout_s`, `rekey_guard_filter_full`, `rekey_guard_min_length` (all off or unused by default); `bank::Branch::rekey_over`, `clear_over` | the default stage 1's (wait measured, E9b; time-out heuristic; owner, 2026-10-06, option a′); the variants' results in A.8c (Plan B record, sections 6, 10 to 13); candidate choice heuristic |
-| Bank re-key clocks | default (stage 1's): the time-out counts and the stretch starts where the amplitude became unknown; a cleared time-out restarts only the count; variants (off since B4g): the count from the branch's first provisional mark, the stretch 7 · d_k before it if later (84 ms at k = 1 to 1.612 s at k = 32), a cleared time-out moving the stretch's start (nearly inert under the first) | `BankConfig::rekey_timeout_from_first_mark`, `rekey_lead_dits`, `rekey_clear_moves_stretch` (both switches off) | the variants the owner's decision of 2026-10-06 (Plan B, B4d), heuristic; off by default since B4g (option a′); measured: A.8c |
+| Bank re-key and time-out | the over's start re-keyed with the full LLR once the over has a mark and 0.8 s of keyed time, at the seed s² and the previous over's s² (best mean log-likelihood per element wins), over the stretch (at most 20 s back); if that is not reached within 2 s of channel time from the amplitude becoming unknown (every branch), re-keyed at the previous over's s², or its provisional characters deleted; class: seconds | `BankConfig::rekey_after_s` (0.8), `rekey_timeout_s` (2.0); `bank::Branch::rekey_over`, `clear_over` | stage 1's (wait measured, E9b; time-out heuristic; the default again since Plan B's B4g, owner, 2026-10-06, option a′); candidate choice heuristic |
+| Bank re-key clocks | stage 1's: the time-out counts and the stretch starts where the amplitude became unknown; a cleared time-out restarts only the count | `bank::BankChannel` | heuristic (stage 1) |
+| Bank re-key clocks, variant (removed) | the count from the branch's first provisional mark, the stretch's lead 7 · d_k, a cleared time-out moving the stretch (B4d); removed 2026-10-07 | — | measured: Plan B record, section 10 |
 | Bank fresh fit against the previous | the over's fresh fit replaces the previous over's continued fit with ≥ 8 of the over's marks and spaces and a log-likelihood gain > ½ · 4 · ln n nats on them (4.16 nats at n = 8); the competition ends after 192 (⌈4 N_mem⌉) | `BankConfig::fresh_fit_min_obs`; `bank::kFitParameters`; `bank::Branch` | 8 a placeholder (heuristic); ½ k ln n form derived (BIC), k = 4 heuristic; the end at 4 N_mem derived (e⁻⁴ = 1.8%) |
 | Bank corrections | a replacement at t changes nothing that starts before t − 20 s; overlap cut at max(from, t − 20 s); recorded only if the text differs, with its kept-character count | `BankConfig::correction_reach_s`; `bank::Output::replace_from` | 20 s owner; overlap cut heuristic |
 | Bank switch replacement | from the start of the new branch's character containing the time its eligible run began (its own time base); a fallback pick from the switch's time | `bank::BankChannel` | heuristic (spec 4.8; the fallback rule documented behavior) |

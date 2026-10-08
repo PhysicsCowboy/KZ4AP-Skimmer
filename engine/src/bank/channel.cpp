@@ -89,11 +89,7 @@ Branch::Branch(int index_, double length_s_, int n, double rate_hz, const BankCo
       fit(cfg),
       rate_(rate_hz),
       cfg_(&cfg),
-      text_model_(&text_model) {
-    // The stream's start is an over of unknown amplitude: with rekey_timeout_from_first_mark its time-out waits for
-    // the first provisional mark.
-    timeout_armed = !cfg.rekey_timeout_from_first_mark;
-}
+      text_model_(&text_model) {}
 
 void Branch::on_edges(const std::vector<std::pair<std::int64_t, bool>>& changes, double a, const Prior& prior,
                       bool provisional) {
@@ -198,15 +194,9 @@ void Branch::start_over(std::int64_t n_now, const Prior& prior, bool was_unknown
     over_obs.clear();
     current = prev_fit ? prev_fit->best(prior.t_s, prior.weight) : std::nullopt;
     over_start_n = n_now;
-    if (!was_unknown) {
-        unknown_since_n = timeout_from_n = n_now;
-        // Plan B, B4d (ii): the time-out waits for this over's first provisional mark.
-        if (cfg_->rekey_timeout_from_first_mark) timeout_armed = false;
-    }
+    if (!was_unknown) unknown_since_n = timeout_from_n = n_now;
     over_pending = true;
     marks_in_over = 0;
-    prov_down_n = -1;
-    wait_marks = 0;
     down_at.reset();
     up_at.reset();
 }
@@ -294,8 +284,6 @@ Branch::RekeyResult Branch::rekey_over(std::span<const double> P_stretch, std::i
     int marks = 0;
     for (const auto& o : b.obs) marks += o.is_mark ? 1 : 0;
     marks_in_over = marks;
-    prov_down_n = -1;
-    wait_marks = 0;
     down_at = b.down_at;
     up_at = b.up_at;
     return RekeyResult{b.amp2, !b.key.empty() && b.key.back() != 0, from_s, marks};
@@ -305,8 +293,6 @@ double Branch::clear_over(std::int64_t n0) {
     const double from_s = time(n0);
     redecode(from_s, {}, std::nullopt);
     marks_in_over = 0;
-    prov_down_n = -1;
-    wait_marks = 0;
     down_at.reset();
     up_at.reset();
     return from_s;
@@ -336,23 +322,7 @@ std::optional<double> Branch::text_logprob(int window) const {
 
 // --- BankChannel --------------------------------------------------------------------------------------
 
-std::optional<double> BankChannel::shared_window_dit() const {
-    // The shared-window variant (B4a-C, fix round 1): T-hat is the fitted dit of the branch currently selected (by the
-    // last selection instant, in an earlier block), and only when that fit is eligible (Selector::eligible) and
-    // belongs to the branch's current over: none before the first selection, and none while the branch's over start
-    // is not yet re-keyed (prev_fit held: from Branch::start_over, the decoder's turnover, until rekey_over), when its
-    // current fit is the previous over's. Without T-hat the windows are stage 1's, in seconds.
-    if (result_.selections.empty() || branches_.empty()) return std::nullopt;
-    const Branch& sel = branches_[static_cast<std::size_t>(selector_.current())];
-    if (sel.prev_fit) return std::nullopt;
-    const BranchView view{sel.index, sel.length_s, sel.current, std::nullopt};
-    if (!selector_.eligible(view)) return std::nullopt;
-    return sel.current->t_s;
-}
-
-BankChannel::BankChannel(const BankConfig& cfg, double rate_hz) : BankChannel(cfg, rate_hz, bank_timing(cfg)) {}
-
-BankChannel::BankChannel(const BankConfig& cfg, double rate_hz, const BankTiming& timing)
+BankChannel::BankChannel(const BankConfig& cfg, double rate_hz)
     : cfg_(cfg),
       rate_(rate_hz),
       n_(branch_samples(branch_lengths_s(cfg), rate_hz)),
@@ -362,21 +332,17 @@ BankChannel::BankChannel(const BankConfig& cfg, double rate_hz, const BankTiming
           return l;
       }()),
       noise_(make_noise(cfg_, rate_hz, n_)),
-      keyer_(cfg_, rate_hz, lengths_, timing.rekey_wait_s),
-      periodicity_(cfg_, rate_hz, timing.periodicity_windows_s, timing.periodicity_window_dits),
+      keyer_(cfg_, rate_hz, lengths_),
+      periodicity_(cfg_, rate_hz),
       selector_(cfg_, lengths_),
       out_(cfg.correction_reach_s),
       block_(static_cast<int>(std::max<std::int64_t>(1, round_samples(cfg.block_s * rate_hz)))),
-      reach_(round_samples(cfg.correction_reach_s * rate_hz)) {
-    if (cfg_.rekey_wait_in_marks && cfg_.rekey_marks < 1)
-        throw std::invalid_argument("rekey_marks must be at least 1 mark");
-    if (timing.rekey_timeout_s.size() != n_.size())
-        throw std::invalid_argument("rekey_timeout_s needs one time-out per branch");
-    for (const double t : timing.rekey_timeout_s) timeout_.push_back(round_samples(t * rate_hz));
-    if (timing.rekey_lead_s.size() != n_.size())
-        throw std::invalid_argument("rekey_lead_s needs one lead per branch");
-    for (const double t : timing.rekey_lead_s) lead_.push_back(round_samples(t * rate_hz));
-    shared_windows_ = !timing.periodicity_window_dits.empty();
+      reach_(round_samples(cfg.correction_reach_s * rate_hz)),
+      timeout_(round_samples(cfg.rekey_timeout_s * rate_hz)) {
+    // Both in seconds, the same for every branch. Unset (0), they once selected Plan B's re-key variants in dits and in
+    // marks, which were removed (2026-10-07): refused rather than read as a zero wait or time-out.
+    if (!(cfg_.rekey_after_s > 0.0)) throw std::invalid_argument("rekey_after_s must be positive (s)");
+    if (!(cfg_.rekey_timeout_s > 0.0)) throw std::invalid_argument("rekey_timeout_s must be positive (s)");
     branches_.reserve(n_.size());
     for (std::size_t k = 0; k < n_.size(); ++k)
         branches_.emplace_back(static_cast<int>(k), lengths_[k], n_[k], rate_hz, cfg_, text_model_);
@@ -491,12 +457,7 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
         // the channel stays in its start state, its clocks (over start, unknown amplitude, re-key time-out)
         // restarted at the block's end: the first block with input other than exact zeros finds the channel
         // as a stream's first block does (docs/signal-processing.md appendix A.8c, "Exact zeros").
-        for (auto& br : branches_) {
-            br.over_start_n = br.unknown_since_n = br.timeout_from_n = n1;
-            br.timeout_armed = !cfg_.rekey_timeout_from_first_mark;
-            br.prov_down_n = -1;
-        }
-        last_zero_n_ = n1 - 1;  // every sample so far is an exact zero
+        for (auto& br : branches_) br.over_start_n = br.unknown_since_n = br.timeout_from_n = n1;
         return;
     }
     Matrix P;  // the block's |v|^2 (already rounded to float32, as run's P), FS^2
@@ -510,59 +471,17 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
     }
     const KeyStep s = keyer_.step(P, sigma2);
     if (K > 0) periodicity_.push(std::span<const double>(s.p.v.data(), static_cast<std::size_t>(s.p.cols)));
-    if (shared_windows_) periodicity_dit_ = shared_window_dit();
-    const PeriodicityUpdate upd = periodicity_.update(false, periodicity_dit_);
+    const PeriodicityUpdate upd = periodicity_.update(false);
     prior_ = upd.t_p_s ? Prior{upd.t_p_s, 1.0} : Prior{std::nullopt, 0.0};  // the prior counts once T_P is confident
     if (upd.updated)
         result_.periodicity.push_back(PeriodicityRecord{t_now, upd.t_p_s ? *upd.t_p_s : kNaN, upd.confidence,
                                                         upd.window_s ? *upd.window_s : kNaN,
                                                         periodicity_.per_window()});
     const auto changes = edges(s.key, s.before, n0);
-    const bool guarded = cfg_.rekey_guard_filter_full || cfg_.rekey_guard_min_length;  // Plan B, B4f
     for (int k = 0; k < K; ++k) {
         const auto ku = static_cast<std::size_t>(k);
         Branch& br = branches_[ku];
         if (!changes[ku].empty()) br.on_edges(changes[ku], s.a[ku], prior_, keyer_.unknown[ku]);
-        if (guarded && keyer_.unknown[ku]) {
-            // Plan B, B4f: a provisional mark counts toward the wait in marks, and the first one that counts starts the
-            // time-out and the stretch (rekey_timeout_from_first_mark), only if it begins with the branch's filter full
-            // (N_k samples of non-zero input since the stream's start or the last exact zero) and lasts at least N_k
-            // samples (L_k), each test behind its switch. Marks are keyed and decoded as before either way.
-            for (const auto& [n, down] : changes[ku]) {
-                if (down) {
-                    br.prov_down_n = n;
-                    br.prov_full = n - last_zero_at_or_before(n, n0) >= n_[ku];
-                    continue;
-                }
-                if (br.prov_down_n < 0) continue;  // a mark under way when the over started or was cleared
-                const std::int64_t d = br.prov_down_n;
-                br.prov_down_n = -1;
-                if (cfg_.rekey_guard_filter_full && !br.prov_full) continue;
-                if (cfg_.rekey_guard_min_length && n - d < n_[ku]) continue;
-                ++br.wait_marks;
-                if (!br.timeout_armed) {
-                    br.timeout_from_n = d;
-                    br.timeout_armed = true;
-                    br.unknown_since_n = std::max(br.unknown_since_n, d - lead_[ku]);
-                }
-            }
-        } else if (!br.timeout_armed && keyer_.unknown[ku]) {
-            // Plan B, B4d (ii): the time-out counts from the first provisional mark's key-down sample (a mark already
-            // down when the count was stopped counts from the block's start), and the stretch a re-key keys again
-            // starts rekey_lead_dits x d_k before it (never earlier than it started).
-            if (s.before[ku] != 0) {
-                br.timeout_from_n = n0;
-                br.timeout_armed = true;
-            } else {
-                for (const auto& [n, down] : changes[ku])
-                    if (down) {
-                        br.timeout_from_n = n;
-                        br.timeout_armed = true;
-                        break;
-                    }
-            }
-            if (br.timeout_armed) br.unknown_since_n = std::max(br.unknown_since_n, br.timeout_from_n - lead_[ku]);
-        }
         if (br.new_over_due(n1, keyer_.key[ku] != 0)) {
             br.start_over(n1, prior_, keyer_.unknown[ku]);
             keyer_.start_over(k);
@@ -573,12 +492,8 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
             std::optional<int> marks;
             double from_s = 0.0;
             const char* reason = nullptr;
-            // The re-key wait: W_min of keyed time since the over started (the default since B4g, 0.8 s; the dits variant
-            // W_min,k), or rekey_marks provisional marks in the over (the marks variant, B4e/B4f).
-            const bool waited = cfg_.rekey_wait_in_marks
-                                    ? (guarded ? br.wait_marks : br.marks_in_over) >= cfg_.rekey_marks
-                                    : br.marks_in_over && keyer_.weight[ku] >= keyer_.rekey_weight[ku];
-            if (waited) {
+            if (br.marks_in_over && keyer_.weight[ku] >= keyer_.rekey_weight) {
+                // W_min of keyed time since the over started
                 std::vector<double> candidates{keyer_.amp2[ku]};
                 if (std::isfinite(keyer_.prev_amp2[ku])) candidates.push_back(keyer_.prev_amp2[ku]);
                 const auto r = br.rekey_over(p_row(k, st, n1), st, sigma2[ku], candidates, keyer_.a_min[ku], prior_);
@@ -586,12 +501,10 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
                 from_s = r.from_s;
                 marks = r.marks;
                 reason = "rekey";
-            } else if (br.timeout_armed && n1 - br.timeout_from_n >= timeout_[ku]) {
-                // The wait not reached within the branch's time-out: re-key what exists with the previous over's
+            } else if (n1 - br.timeout_from_n >= timeout_) {
+                // W_min not reached within rekey_timeout_s: re-key what exists with the previous over's
                 // amplitude; if there is none, or it keys nothing, the stretch's provisional characters are
-                // deleted and the amplitude stays unknown (the time-out counts again from now, or with
-                // rekey_timeout_from_first_mark from the next provisional mark; with rekey_clear_moves_stretch a
-                // later re-key's stretch starts now).
+                // deleted and the amplitude stays unknown (the time-out counts again from now).
                 const double prev2 = keyer_.prev_amp2[ku];
                 bool keys = false;
                 if (std::isfinite(prev2)) {
@@ -606,9 +519,7 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
                 } else {
                     from_s = br.clear_over(st);
                     br.timeout_from_n = n1;
-                    if (cfg_.rekey_clear_moves_stretch) br.unknown_since_n = n1;     // Plan B, B4d (i)
-                    if (cfg_.rekey_timeout_from_first_mark) br.timeout_armed = false;  // Plan B, B4d (ii)
-                    keyer_.start_over(k);  // still unknown: the wait (marks: clear_over; keyed time) counts afresh
+                    keyer_.start_over(k);  // still unknown: W_min of keyed time counts afresh from now
                 }
                 reason = "timeout";
             }
@@ -642,17 +553,6 @@ void BankChannel::process_block(std::int64_t n0, std::int64_t n1) {
         result_.selections.push_back(Selection{t_now, now, nb.current ? nb.current->t_s : kNaN});
     }
     if (K > 0) out_.append_new(branches_[static_cast<std::size_t>(selector_.current())].chars);
-    for (std::int64_t i = n1 - 1; i >= n0; --i)  // Plan B, B4f: the last exact zero, for the next blocks
-        if (u_win_[static_cast<std::size_t>(i - base_)] == std::complex<double>(0.0, 0.0)) {
-            last_zero_n_ = i;
-            break;
-        }
-}
-
-std::int64_t BankChannel::last_zero_at_or_before(std::int64_t n, std::int64_t n0) const {
-    for (std::int64_t i = n; i >= n0; --i)
-        if (u_win_[static_cast<std::size_t>(i - base_)] == std::complex<double>(0.0, 0.0)) return i;
-    return last_zero_n_;
 }
 
 }  // namespace kz4ap::bank

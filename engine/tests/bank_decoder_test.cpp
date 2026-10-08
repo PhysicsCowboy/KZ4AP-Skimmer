@@ -211,19 +211,10 @@ TEST(BankDecoder, TheConsumersListIsTheBanksAfterEveryUpdateWhenCharactersOverla
     constexpr double kRate = 1500.0, kOffsetHz = 2.9375;
     for (const std::size_t block : {std::size_t{32}, std::size_t{1000}}) {
         SCOPED_TRACE("blocks of " + std::to_string(block));
-        // The stream was found to exercise the case at the prototype's time constants in seconds (W_min 0.8 s,
-        // time-out 2 s, periodicity windows 2, 5 and 10 s), stage 1's guard margin and mask-bias table and its re-key
-        // clocks (Plan B's B4d switches off) and wait in keyed time (B4e's wait in marks off), set explicitly: at Plan B's B4a defaults in dits it makes no such
-        // correction.
-        bank::BankConfig cfg;
-        cfg.guard_margin_s = bank::kStage1GuardMarginS;
-        cfg.mask_bias = bank::kStage1MaskBias;
-        cfg.rekey_clear_moves_stretch = false;
-        cfg.rekey_timeout_from_first_mark = false;
-        cfg.rekey_wait_in_marks = false;
-        cfg.rekey_guard_filter_full = false;
-        cfg.rekey_guard_min_length = false;
-        BankDecoder d(kRate, cfg, kOffsetHz, bank::fixed_timing(cfg, 0.8, 2.0, {2.0, 5.0, 10.0}));
+        // The stream was found to exercise the case at the prototype's configuration (W_min 0.8 s, time-out 2 s,
+        // periodicity windows 2, 5 and 10 s, stage 1's guard margin and mask-bias table), set explicitly: at Plan B's
+        // B4a defaults in dits it made no such correction.
+        BankDecoder d(kRate, test::stage1_config(), kOffsetHz);
         Assembled a;
         bool not_prefix = false;  // the stream must exercise a correction whose kept characters are not a prefix
         auto check = [&](const DecodeUpdate& u) {

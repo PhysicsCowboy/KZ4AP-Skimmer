@@ -6,14 +6,12 @@
 // exactly. Then the Review Focus tests (1: the same result however the stream is split into pushes; 2: a stream
 // cut mid-character and mid-over; 3: exact zeros, missing data since Plan B's B3; 4: the correction cut's
 // clipping; 5: 2000 samples/s) and the prototype's channel tests (training/tests/test_proto_channel.py), one for
-// one. The golden comparisons and the prototype's tests run at the prototype's time constants, in seconds and set
-// explicitly (stage1_timing: W_min 0.8 s, time-out 2 s, periodicity windows 2, 5 and 10 s); Plan B's B4a made the
-// re-key settings nominal dits and B4e marks, variants since B4g, whose default is stage 1's seconds again; the variants
-// are tested explicitly near the end.
+// one. The golden comparisons and the prototype's tests run at the prototype's configuration (stage1_config: W_min
+// 0.8 s and time-out 2 s, the defaults; periodicity windows 2, 5 and 10 s, guard margin and mask-bias table set
+// explicitly); the default configuration is tested near the end.
 #include "kz4ap/bank/channel.hpp"
 
 #include "golden.hpp"
-#include "../test_signals.hpp"
 
 #include <gtest/gtest.h>
 
@@ -52,18 +50,11 @@ const std::vector<std::complex<double>>& stream_of(const std::string& name) {
     return it->second;
 }
 
-// The prototype's time constants in seconds, the same for every branch and candidate (Plan A's, before B4a).
-const BankTiming& stage1_timing() {
-    static const BankTiming t = fixed_timing(BankConfig{}, 0.8, 2.0, {2.0, 5.0, 10.0});
-    return t;
-}
-
-// Decodes u at rate_hz, pushed in pieces of `piece` samples (0: one push), at the given timing and configuration (the
-// prototype's unless stated: stage 1's time constants in seconds, guard margin and mask-bias table).
+// Decodes u at rate_hz, pushed in pieces of `piece` samples (0: one push), at the given configuration (the
+// prototype's unless stated: stage 1's periodicity windows, guard margin and mask-bias table).
 ChannelResult decode(std::span<const std::complex<double>> u, double rate_hz, std::size_t piece = 0,
-                     const BankTiming& timing = stage1_timing(),
                      const BankConfig& cfg = kz4ap::test::stage1_config()) {
-    BankChannel ch(cfg, rate_hz, timing);
+    BankChannel ch(cfg, rate_hz);
     if (piece == 0) {
         ch.push(u);
     } else {
@@ -279,7 +270,7 @@ double port_score(const BankChannel& ch, double t_s) {
     const BankConfig cfg;
     const auto& per = ch.periodicity();
     const auto& buf = per.buffer();
-    const auto w = static_cast<std::size_t>(per.windows().front().front());
+    const auto w = static_cast<std::size_t>(per.windows().front());
     const std::span<const double> window(buf.data() + (buf.size() - w), w);
     const auto [t, score] = comb_estimate(window, per.rate_hz(), {t_s}, cfg.comb_teeth, cfg.comb_width);
     EXPECT_TRUE(t.has_value() && *t == t_s);
@@ -305,7 +296,7 @@ TEST(BankChannel, ThePeriodicityNearTiesAreRoundingOnBothSides) {
     for (const auto& c : cases) {
         SCOPED_TRACE(c.stream);
         const auto& u = stream_of(c.stream);
-        BankChannel ch(kz4ap::test::stage1_config(), 1500.0, stage1_timing());
+        BankChannel ch(kz4ap::test::stage1_config(), 1500.0);
         const auto block = static_cast<std::size_t>(ch.block_samples());
         for (std::size_t i = 0; i < u.size() && ch.periodicity_records() <= c.update; i += block)
             ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
@@ -397,16 +388,15 @@ TEST(BankChannel, AStreamCutMidCharacterPublishesThePartialCharacterAndNothingPa
 // padded stream falls 4 samples (2.67 ms) later in the station's time than the unpadded stream's, and the noise
 // estimate, the keying and the periodicity are updated once per block. A character's time may therefore move
 // by the edges' quantization to the block grid: the tolerance is one block (21.33 ms). Checked at the prototype's
-// timing (in seconds) with its configuration, and at Plan B's default timing with the default configuration.
-void expect_leading_zeros_decode_as_the_station_alone(const BankTiming& timing, const BankConfig& cfg,
-                                                      const std::string& want_text) {
+// configuration and at the default configuration.
+void expect_leading_zeros_decode_as_the_station_alone(const BankConfig& cfg, const std::string& want_text) {
     const auto& u = stream_of("zero_pad");
     const double rate = rate_of("zero_pad");
     const std::size_t zeros = 1500;
     for (std::size_t i = 0; i < zeros; ++i) ASSERT_EQ(u[i], std::complex<double>(0.0, 0.0));
     ASSERT_NE(u[zeros], std::complex<double>(0.0, 0.0));
-    const ChannelResult padded = decode(u, rate, 0, timing, cfg);
-    const ChannelResult alone = decode(std::span(u).subspan(zeros), rate, 0, timing, cfg);
+    const ChannelResult padded = decode(u, rate, 0, cfg);
+    const ChannelResult alone = decode(std::span(u).subspan(zeros), rate, 0, cfg);
     const double shift = static_cast<double>(zeros) / rate;    // 1 s
     const double tol = BankConfig{}.block_s;                    // s
     EXPECT_EQ(alone.text, want_text);
@@ -427,11 +417,11 @@ void expect_leading_zeros_decode_as_the_station_alone(const BankTiming& timing, 
 }
 
 TEST(BankChannel, LeadingExactZerosDecodeAsTheStationAlone) {
-    expect_leading_zeros_decode_as_the_station_alone(stage1_timing(), kz4ap::test::stage1_config(), "CQ TEST K1ABC ");
+    expect_leading_zeros_decode_as_the_station_alone(kz4ap::test::stage1_config(), "CQ TEST K1ABC ");
 }
 
-TEST(BankChannelDits, LeadingExactZerosDecodeAsTheStationAlone) {
-    expect_leading_zeros_decode_as_the_station_alone(bank_timing(BankConfig{}), BankConfig{}, "CQ TEST K1ABC ");
+TEST(BankChannelDefaults, LeadingExactZerosDecodeAsTheStationAlone) {
+    expect_leading_zeros_decode_as_the_station_alone(BankConfig{}, "CQ TEST K1ABC ");
 }
 
 TEST(BankChannel, ThePowerWindowStoresFourByteFloats) {
@@ -524,7 +514,7 @@ TEST(BankOutput, FromIndexCountsTheKeptCharacters) {
     for (const std::string name : {"clean", "turnover", "speed_turnover"}) {
         SCOPED_TRACE(name);
         const auto& u = stream_of(name);
-        BankChannel ch(kz4ap::test::stage1_config(), rate_of(name), stage1_timing());
+        BankChannel ch(kz4ap::test::stage1_config(), rate_of(name));
         const auto block = static_cast<std::size_t>(ch.block_samples());
         std::vector<Char> before;
         std::size_t seen = 0;
@@ -791,625 +781,24 @@ TEST(BankChannelPrototypeTests, ASpeedChangeAcrossATurnoverIsTakenUp) {
     EXPECT_EQ(r.over_starts.size(), 1u);
 }
 
-// ---- Plan B, B4a: time constants in nominal dits (a variant since B4g) and the default timing -------------------
+// ---- The default configuration ---------------------------------------------------------------------------------
 
-// Review Focus 1 at the default timing (stage 1's re-key wait 0.8 s and time-out 2 s, since B4g; the periodicity
-// windows in seconds), in B4f's variant (the wait in marks with its guards and B4d's clocks) and in the per-candidate
-// variant (a periodicity window per candidate, whose sums are slid from one
-// recomputation to the next): the split into pushes does not matter.
-class ChannelSplitDits : public ::testing::TestWithParam<std::string> {};
+// Review Focus 1 at the default configuration (stage 1's re-key wait 0.8 s and time-out 2 s; the periodicity windows 5
+// and 10 s; Plan B's guard margin and mask-bias table): the split into pushes does not matter.
+class ChannelSplitDefaults : public ::testing::TestWithParam<std::string> {};
 
-TEST_P(ChannelSplitDits, PiecesOf1And47And1000SamplesGiveTheSingleResult) {
+TEST_P(ChannelSplitDefaults, PiecesOf1And47And1000SamplesGiveTheSingleResult) {
     const auto& u = stream_of(GetParam());
-    BankConfig per_candidate;
-    per_candidate.periodicity_window_mode = "per_candidate";
-    const BankConfig variants = kz4ap::test::b4f_config();  // the wait in marks, the clocks and the guards (B4d-B4f)
-    for (const BankConfig& cfg : {BankConfig{}, per_candidate, variants}) {
-        SCOPED_TRACE("periodicity_window_mode " + cfg.periodicity_window_mode + ", rekey_wait_in_marks " +
-                     (cfg.rekey_wait_in_marks ? "on" : "off"));
-        const BankTiming timing = bank_timing(cfg);
-        const ChannelResult whole = decode(u, rate_of(GetParam()), 0, timing, cfg);
-        expect_published_finite(whole);
-        for (std::size_t piece : {std::size_t{1}, std::size_t{47}, std::size_t{1000}}) {
-            SCOPED_TRACE("pieces of " + std::to_string(piece) + " samples");
-            expect_identical(decode(u, rate_of(GetParam()), piece, timing, cfg), whole);
-        }
-    }
-}
-
-INSTANTIATE_TEST_SUITE_P(Streams, ChannelSplitDits, ::testing::Values("clean", "farnsworth", "zero_pad"),
-                         [](const auto& info) { return info.param; });
-
-// In the variant with the re-key wait in keyed time (B4a-B4d; rekey_wait_in_marks off since B4e): a 12 WPM station
-// (T = 100 ms; S500 = 15.2 dB: carrier amplitude 1 FS, noise 0.03 FS^2 in 500 Hz) re-keys the over's start on its own
-// branch, k = 23 (d_23 = 97.7 ms, the nearest), after W_min,23 = 16.7 d_23 = 1.631 s of keyed time, not stage 1's 0.8 s: the block at which the branch's amplitude becomes known (a re-key: the keyed count reached
-// W_min,23 at that block and had not at the block before) is compared with the same stream at the prototype's
-// timing, where it comes at 0.8 s of keyed time.
-TEST(BankChannelDits, A12WpmStationReKeysAfterItsBranchsWait) {
-    const double rate = 1500.0;
-    const std::string text = "PARIS PARIS PARIS";
-    const auto x = kz4ap::test::keyed_signal(text, 12.0, rate, kz4ap::test::duration_for(text, 12.0), 0.0, 1.0,
-                                             std::sqrt(0.09), 7);
-    std::vector<std::complex<double>> u(x.size());
-    for (std::size_t i = 0; i < x.size(); ++i) u[i] = {x[i].real(), x[i].imag()};
-    const std::size_t k = 22;  // branch 23
-    struct Known {
-        double t_s = -1.0;          // the block's end, s
-        double weight_s = 0.0;      // keyed time counted at that block, s
-        double weight_before_s = 0.0;
-    };
-    const BankConfig variant = kz4ap::test::dits_config();
-    auto known_at = [&](const BankTiming& timing) {
-        BankChannel ch(variant, rate, timing);
-        const auto block = static_cast<std::size_t>(ch.block_samples());
-        Known out;
-        double before = 0.0;
-        for (std::size_t i = 0; i < u.size(); i += block) {
-            ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
-            if (!ch.keyer().unknown[k]) {
-                out = Known{static_cast<double>(ch.processed()) / rate, ch.keyer().weight[k] / rate, before};
-                break;
-            }
-            before = ch.keyer().weight[k] / rate;
-        }
-        return out;
-    };
-    const BankTiming dits = bank_timing(variant);
-    const double wait = dits.rekey_wait_s[k];
-    EXPECT_NEAR(wait, 16.7 * 0.012 * std::pow(1.1, 22), 1e-12);
-    EXPECT_NEAR(wait, 1.631, 0.001);
-    EXPECT_NEAR(dits.rekey_timeout_s[k], 2.5 * wait, 1e-12);
-    const Known now = known_at(dits);
-    const Known old = known_at(stage1_timing());
-    std::printf("[ info ] branch 23 known at %.3f s with %.3f s keyed (before %.3f s); stage 1's timing: at %.3f s "
-                "with %.3f s keyed\n", now.t_s, now.weight_s, now.weight_before_s, old.t_s, old.weight_s);
-    ASSERT_GT(now.t_s, 0.0) << "branch 23 never became known";
-    ASSERT_GT(old.t_s, 0.0);
-    EXPECT_GE(now.weight_s, wait);         // re-keyed when W_min,23 was reached ...
-    EXPECT_LT(now.weight_before_s, wait);  // ... and not before (not a time-out)
-    EXPECT_GE(old.weight_s, 0.8);
-    EXPECT_LT(old.weight_before_s, 0.8);
-    EXPECT_GT(now.t_s, old.t_s + 0.5);  // about 0.8 s more keyed time: at least 0.5 s later
-}
-
-// Plan B, B4e (the default): the same 12 WPM station re-keys on its branch k = 23 at its 8th provisional mark (a mark
-// keyed by the unknown-amplitude test that has ended), counted on the branch: at the block before, the branch had
-// fewer than 8; the block's end lies after the station's 8th mark (each provisional mark ends late, by up to L_23)
-// and long before the 7 s time-out. And branch 1 (d_1 = 12 ms) under the same station waits for 8 of the station's
-// marks too, not for 16.7 d_1 = 200 ms of keyed time (one or two of its marks: a dah lasts 300 ms).
-TEST(BankChannelMarks, A12WpmStationReKeysAtItsEighthProvisionalMark) {
-    const double rate = 1500.0;
-    const std::string text = "PARIS PARIS PARIS";
-    const auto x = kz4ap::test::keyed_signal(text, 12.0, rate, kz4ap::test::duration_for(text, 12.0), 0.0, 1.0,
-                                             std::sqrt(0.09), 7);
-    const auto marks = kz4ap::test::keying(text, 12.0, 0.5);  // keyed_signal's default start, 0.5 s
-    std::vector<std::complex<double>> u(x.size());
-    for (std::size_t i = 0; i < x.size(); ++i) u[i] = {x[i].real(), x[i].imag()};
-    const BankConfig cfg = kz4ap::test::b4f_config();  // the wait in marks (a variant since B4g)
-    ASSERT_EQ(cfg.rekey_marks, 8);
-    for (const std::size_t k : {std::size_t{22}, std::size_t{0}}) {
-        SCOPED_TRACE("branch " + std::to_string(k + 1));
-        BankChannel ch(cfg, rate);
-        const auto block = static_cast<std::size_t>(ch.block_samples());
-        double known_s = -1.0, weight_s = 0.0;
-        int before = 0;
-        for (std::size_t i = 0; i < u.size(); i += block) {
-            ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
-            if (!ch.keyer().unknown[k]) {
-                known_s = static_cast<double>(ch.processed()) / rate;
-                weight_s = ch.keyer().weight[k] / rate;
-                break;
-            }
-            before = ch.branches()[k].wait_marks;
-        }
-        std::printf("[ info ] branch %zu known at %.3f s with %.3f s keyed; %d counted provisional marks at the block before; "
-                    "the station's 8th mark ends at %.3f s\n", k + 1, known_s, weight_s, before, marks[7].second);
-        ASSERT_GT(known_s, 0.0) << "never became known";
-        EXPECT_LT(before, cfg.rekey_marks);
-        EXPECT_GE(known_s, marks[7].second);  // not before the station's 8th mark has ended
-        EXPECT_LT(known_s, marks[9].second);
-        EXPECT_LT(known_s, cfg.rekey_marks_timeout_s);
-    }
-}
-
-// The overrides in seconds (BankConfig::rekey_after_s, rekey_timeout_s; for ablations, settable with --set in the
-// replay tool) set to stage 1's values, with stage 1's periodicity windows in seconds (2, 5 and 10 s, set explicitly:
-// the default since 2026-10-07 is 5 and 10 s),
-// reproduce the prototype's timing, which bank-b3b ran: the result equals the fixed_timing result bit for bit and the
-// prototype's golden, on three golden streams. With stage 1's guard margin, mask-bias table and re-key clocks (Plan B:
-// B4b changed the first two defaults, B4d the clocks; --set guard_margin_s, mask_bias, rekey_clear_moves_stretch and
-// rekey_timeout_from_first_mark).
-TEST(BankChannelDits, OverridesInSecondsReproduceStageOnesTimingBitForBit) {
-    BankConfig cfg = kz4ap::test::stage1_config();
-    cfg.rekey_after_s = 0.8;
-    cfg.rekey_timeout_s = 2.0;
-    cfg.periodicity_windows_s = {2.0, 5.0, 10.0};
-    for (const std::string name : {"clean", "turnover", "farnsworth"}) {
-        SCOPED_TRACE(name);
-        BankChannel ch(cfg, rate_of(name));
-        ch.push(stream_of(name));
-        ch.finish();
-        const ChannelResult r = ch.result();
-        expect_identical(r, result_of(name));
-        expect_matches_golden(r, golden().at("results").at(name), name);
-    }
-}
-
-// Each part acts alone: the re-key settings in seconds leave the periodicity windows as they are (the default's in
-// seconds, the per-candidate variant's), and the periodicity mode leaves W_min,k and the time-out in dits.
-// Plan B, B4g: the default re-key timing is stage 1's, W_min = 0.8 s and the time-out 2 s on every branch, with stage
-// 1's clocks: the default configuration at its own timing decodes three golden streams bit for bit as at
-// fixed_timing(0.8 s, 2 s, {5, 10} s) (the guard margin and mask-bias table stay Plan B's, B4b and B4d; the periodicity
-// windows the default's 5 and 10 s since 2026-10-07).
-TEST(BankChannelDefaults, TheReKeyTimingIsStageOnesInSeconds) {
     const BankConfig cfg;
-    for (const std::string name : {"clean", "turnover", "farnsworth"}) {
-        SCOPED_TRACE(name);
-        expect_identical(decode(stream_of(name), rate_of(name), 0, bank_timing(cfg), cfg),
-                         decode(stream_of(name), rate_of(name), 0, fixed_timing(cfg, 0.8, 2.0, {5.0, 10.0}), cfg));
+    const ChannelResult whole = decode(u, rate_of(GetParam()), 0, cfg);
+    expect_published_finite(whole);
+    for (std::size_t piece : {std::size_t{1}, std::size_t{47}, std::size_t{1000}}) {
+        SCOPED_TRACE("pieces of " + std::to_string(piece) + " samples");
+        expect_identical(decode(u, rate_of(GetParam()), piece, cfg), whole);
     }
 }
 
-TEST(BankChannelDits, EachOverrideActsAlone) {
-    const BankTiming dits = bank_timing(kz4ap::test::dits_config());  // the variant in dits
-    EXPECT_EQ(dits.periodicity_windows_s, (std::vector<std::vector<double>>{{5.0}, {10.0}}));  // the default's (2026-10-07)
-    // B4g's default: the seconds set, stage 1's 0.8 s and 2 s on every branch; the windows unchanged
-    const BankTiming a = bank_timing(BankConfig{});
-    EXPECT_EQ(a.rekey_wait_s, std::vector<double>(32, 0.8));
-    EXPECT_EQ(a.rekey_timeout_s, std::vector<double>(32, 2.0));
-    EXPECT_EQ(a.periodicity_windows_s, dits.periodicity_windows_s);
-    BankConfig windows = kz4ap::test::dits_config();
-    windows.periodicity_window_mode = "per_candidate";
-    const BankTiming b = bank_timing(windows);
-    EXPECT_EQ(b.rekey_wait_s, dits.rekey_wait_s);
-    EXPECT_EQ(b.rekey_timeout_s, dits.rekey_timeout_s);
-    EXPECT_EQ(b.periodicity_windows_s.size(), 3u);
-    EXPECT_EQ(b.periodicity_windows_s[0].size(), t_grid(windows).size());
-    windows.rekey_after_s = 0.8;
-    EXPECT_EQ(bank_timing(windows).periodicity_windows_s, b.periodicity_windows_s);
-    // only the wait set, in the variant with the wait in keyed time: the time-out follows it by the ratio
-    BankConfig wait = kz4ap::test::dits_config();
-    wait.rekey_after_s = 0.8;
-    EXPECT_EQ(bank_timing(wait).rekey_timeout_s, std::vector<double>(32, 2.5 * 0.8));
-    // the variant in marks (B4e): the time-out 7 s of channel time for every branch (rekey_after_s then sets only the
-    // seed's memory); rekey_timeout_s, when set, still takes precedence
-    BankConfig marks = kz4ap::test::b4e_config();
-    EXPECT_EQ(bank_timing(marks).rekey_timeout_s, std::vector<double>(32, 7.0));
-    marks.rekey_after_s = 0.8;
-    EXPECT_EQ(bank_timing(marks).rekey_timeout_s, std::vector<double>(32, 7.0));
-    EXPECT_EQ(bank_timing(marks).rekey_wait_s, std::vector<double>(32, 0.8));
-    marks.rekey_timeout_s = 2.0;
-    EXPECT_EQ(bank_timing(marks).rekey_timeout_s, std::vector<double>(32, 2.0));
-}
-
-// The shared-window variant (B4a-C, periodicity_window_mode = "shared"; not the default; fix round 1), on golden
-// streams pushed block by block. The rule, checked at every block against the state before it: T-hat is the selected
-// branch's fitted T only if a selection exists, the branch's over start has been re-keyed (no previous over's fit
-// held) and the fit is eligible (Selector::eligible); otherwise none. At every recomputation each filled row's window
-// is max(16, round(N_w T-hat 750)) samples with a T-hat, stage 1's 1500, 3750 and 7500 samples without. Both
-// transitions occur: none at the stream's start until the first eligible fit (no T-hat from branch 1's unfitted state,
-// the start-up trap of the nominal-dit fallback this replaces), and none from a new over's start on the selected branch
-// (the decoder's turnover) until that over is re-keyed with an eligible fit.
-TEST(BankChannelShared, THatIsTheSelectedBranchsEligibleFitOfItsCurrentOver) {
-    BankConfig cfg;
-    cfg.periodicity_window_mode = "shared";
-    const BankConfig plain;
-    const Selector sel_rule(plain, [] {
-        BankChannel probe(BankConfig{}, 1500.0);
-        return probe.lengths_s();
-    }());
-    const double n_w[] = {41.7, 104.0, 208.0};
-    const int stage1[] = {1500, 3750, 7500};
-    std::size_t turnover_withheld = 0, start_withheld = 0;
-    for (const std::string name : {"clean", "turnover", "two_speeds", "slow"}) {
-        SCOPED_TRACE(name);
-        const auto& u = stream_of(name);
-        BankChannel ch(cfg, rate_of(name));
-        const auto block = static_cast<std::size_t>(ch.block_samples());
-        std::size_t records = 0, without = 0, with = 0;
-        std::optional<double> first_t;   // stream time of the first T-hat, s
-        std::optional<double> first_sel;  // of the first selection, s
-        bool had = false;
-        for (std::size_t i = 0; i < u.size(); i += block) {
-            // the expected T-hat, from the state before the block
-            std::optional<double> want;
-            bool pending_over = false;
-            if (ch.processed() > 0 && !ch.result().selections.empty()) {
-                const Branch& b = ch.branches()[static_cast<std::size_t>(ch.selected())];
-                pending_over = b.prev_fit.has_value();
-                if (!pending_over && sel_rule.eligible(BranchView{b.index, b.length_s, b.current, std::nullopt}))
-                    want = b.current->t_s;
-                if (!first_sel) first_sel = ch.result().selections.front().t_s;
-            }
-            EXPECT_EQ(ch.shared_window_dit(), want);
-            ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
-            const auto& dit = ch.periodicity_dit_s();
-            ASSERT_EQ(dit, want) << "block at " << i;
-            if (had && !dit && pending_over) ++turnover_withheld;
-            if (!had && !dit && first_sel) ++start_withheld;  // selected, but no eligible fit yet
-            if (dit && !first_t) first_t = static_cast<double>(ch.processed()) / rate_of(name);
-            had = dit.has_value();
-            if (ch.periodicity_records() == records) continue;
-            records = ch.periodicity_records();
-            const auto& used = ch.periodicity().used_windows();
-            ASSERT_EQ(used.size(), 3u);
-            for (std::size_t r = 0; r < 3; ++r) {
-                if (used[r] == 0) continue;  // the buffer does not hold the window yet
-                const int expect =
-                    dit ? std::max(16, static_cast<int>(std::nearbyint(n_w[r] * *dit * 750.0))) : stage1[r];
-                EXPECT_EQ(used[r], expect) << "row " << r << ", block at " << i;
-            }
-            (dit ? with : without) += 1;
-        }
-        ch.finish();
-        ASSERT_TRUE(first_t.has_value());
-        ASSERT_TRUE(first_sel.has_value());
-        EXPECT_GT(*first_t, *first_sel);  // not from the first selection on: from the first eligible fit
-        std::printf("[ info ] %s: first selection at %.3f s, first T-hat at %.3f s; %zu recomputations with stage 1's "
-                    "windows, %zu following T-hat; last T-hat %s\n", name.c_str(), *first_sel, *first_t, without, with,
-                    ch.periodicity_dit_s() ? std::to_string(*ch.periodicity_dit_s()).c_str() : "none");
-    }
-    std::printf("[ info ] blocks withheld after a selection before the first eligible fit: %zu; after an over start on "
-                "the selected branch: %zu\n", start_withheld, turnover_withheld);
-    EXPECT_GT(start_withheld, 0u);
-    EXPECT_GT(turnover_withheld, 0u);
-}
-
-// At the start, the selected branch is branch 1 (the selector's initial value) whose fit is not eligible for a
-// 25 WPM station, so no T-hat (the windows stay 2, 5 and 10 s) where the replaced rule took d_1 = 12 ms; the first
-// T-hat of the clean 25 WPM stream is a dit near 48 ms.
-TEST(BankChannelShared, NoTHatFromBranchOnesUnfittedStart) {
-    BankConfig cfg;
-    cfg.periodicity_window_mode = "shared";
-    const auto& u = stream_of("clean");
-    BankChannel ch(cfg, rate_of("clean"));
-    const auto block = static_cast<std::size_t>(ch.block_samples());
-    for (std::size_t i = 0; i < u.size(); i += block) {
-        ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
-        if (const auto& dit = ch.periodicity_dit_s()) {
-            EXPECT_GT(*dit, 0.040) << "at " << ch.processed() / 1500.0 << " s";
-            EXPECT_LT(*dit, 0.058) << "at " << ch.processed() / 1500.0 << " s";
-        }
-    }
-}
-
-// The default mode ("seconds", B4d) and the per-candidate variant are unchanged by the shared variant's code: the
-// channel passes no T-hat; the default's windows are 5 and 10 s since 2026-10-07 (3750 and 7500 samples at 750
-// samples/s), the per-candidate variant's one per candidate.
-TEST(BankChannelShared, TheDefaultModeHasNoTHat) {
-    BankConfig per_candidate;
-    per_candidate.periodicity_window_mode = "per_candidate";
-    for (const BankConfig& cfg : {BankConfig{}, per_candidate}) {
-        SCOPED_TRACE(cfg.periodicity_window_mode);
-        BankChannel ch(cfg, rate_of("clean"));
-        ch.push(stream_of("clean"));
-        ch.finish();
-        EXPECT_FALSE(ch.periodicity_dit_s().has_value());
-        EXPECT_TRUE(ch.periodicity().window_dits().empty());
-        if (cfg.periodicity_window_mode == "seconds")
-            EXPECT_EQ(ch.periodicity().windows(), (std::vector<std::vector<int>>{{3750}, {7500}}));
-        else
-            EXPECT_EQ(ch.periodicity().windows()[0].size(), ch.periodicity().grid().size());
-    }
-}
-
-// ---- Plan B, B4d: when the re-key clocks start (the owner's decision B of 2026-10-06) -------------------------------
-
-// Both off, with the wait in keyed time: stage 1's (and the prototype's) re-key clocks, at the wait and time-out in
-// dits (B4a).
-BankConfig stage1_clocks() {
-    BankConfig cfg = kz4ap::test::dits_config();
-    cfg.rekey_clear_moves_stretch = false;
-    cfg.rekey_timeout_from_first_mark = false;
-    cfg.rekey_wait_in_marks = false;
-    cfg.rekey_guard_filter_full = false;
-    cfg.rekey_guard_min_length = false;
-    return cfg;
-}
-
-// B4d's re-key variant: its clocks with the wait in dits, W_min,k = 16.7 d_k, and the time-out 2.5 W_min,k, without
-// B4f's guards.
-BankConfig b4d_wait() { return kz4ap::test::b4d_config(); }
-
-// B4e's re-key: the wait in marks, without B4f's guards.
-BankConfig b4e_wait() { return kz4ap::test::b4e_config(); }
-
-template <class S>
-std::vector<std::complex<double>> to_complex(const std::vector<S>& x) {
-    std::vector<std::complex<double>> u(x.size());
-    for (std::size_t i = 0; i < x.size(); ++i) u[i] = {x[i].real(), x[i].imag()};
-    return u;
-}
-
-// The re-key trace's first mechanism (docs/research/2026-10-05-periodicity-windows-and-rekey-analysis.md section 3.2,
-// item 1): 1 s of noise at S500 = +2 dB (dB SNR in 500 Hz: carrier amplitude 1 FS, complex noise 1.893 FS^2 per sample
-// at 1500 samples/s, 0.631 FS^2 in 500 Hz) before a 25 WPM station ("CQ TEST K1ABC", first mark at 1.000 s), pushed
-// block by block. Counts the characters the channel publishes at any time that start more than `before_s` before the
-// station's first mark (each character once).
-// ramp: with ramp > 0, the stream's first `ramp` samples are scaled as a channel filter's start-up (Plan B, B4f): the
-// first 10 by 10^-3 (near zero, not exact zeros), then linearly up to 1 at sample `ramp`.
-std::vector<std::complex<double>> with_ramp(std::vector<std::complex<double>> u, int ramp) {
-    for (int i = 0; i < ramp && i < static_cast<int>(u.size()); ++i)
-        u[static_cast<std::size_t>(i)] *= i < 10 ? 1e-3 : static_cast<double>(i - 9) / (ramp - 9);
-    return u;
-}
-
-int published_before_station(const BankConfig& cfg, unsigned seed, double before_s, int ramp = 0) {
-    const double rate = 1500.0, wpm = 25.0, start = 1.0;
-    const std::string text = "CQ TEST K1ABC";
-    const double sigma = std::sqrt(3.0 / std::pow(10.0, 0.2));  // S500 = +2 dB at amplitude 1 FS
-    const auto marks = kz4ap::test::keying(text, wpm, start);
-    const double limit = marks.front().first - before_s;
-    const auto u = with_ramp(to_complex(
-        kz4ap::test::keyed_signal(text, wpm, rate, marks.back().second + 1.5, 0.0, 1.0, sigma, seed, start)), ramp);
-    BankChannel ch(cfg, rate);
-    const auto block = static_cast<std::size_t>(ch.block_samples());
-    std::vector<std::pair<double, std::string>> seen;
-    auto check = [&] {
-        for (const auto& c : ch.output().chars()) {
-            if (c.text == " " || !(c.start_s < limit)) continue;
-            const std::pair<double, std::string> key{c.start_s, c.text};
-            if (std::find(seen.begin(), seen.end(), key) == seen.end()) seen.push_back(key);
-        }
-    };
-    for (std::size_t i = 0; i < u.size(); i += block) {
-        ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
-        check();
-    }
-    ch.finish();
-    check();
-    return static_cast<int>(seen.size());
-}
-
-// With B4d's clocks (fix (i), fix (ii) and the stretch's lead of 7 d_k before the first provisional mark) no character
-// from the noise before the station is published: none starts more than 2 dits (96 ms) before the station's first
-// mark, at any time; with stage 1's clocks branch 1's re-key publishes the pre-station noise. The bound is a test bound
-// (heuristic): what lies closer is the over's first provisional mark itself, which no clock rule can exclude. Measured
-// (Windows, seeds 1 to 8, B4d): counted from half a dit (24 ms) before the first mark, 1 character with B4d's clocks
-// (seed 8: an 'E' at 0.971 s, a mark the unknown-amplitude test keyed in the noise 29 ms before the station, which
-// starts the over; the same with any lead from 0 to 7 dits), 0 with fix (i) alone, 26 (7 seeds) with stage 1's
-// clocks. B4e (the default: B4d's clocks with the wait in marks): the same counts, seeds 1 to 8 (Windows): 0 beyond
-// 2 dits, 1 beyond half a dit (the same 'E' of seed 8). Seeds 1 to 4 here (a run of seeds 1 to 8 takes about a minute).
-TEST(BankChannelClocks, NoiseBeforeAStationIsNotPublishedBeyondTwoDits) {
-    const double two_dits = 2.0 * 1.2 / 25.0;
-    int strict = 0;
-    for (unsigned seed = 1; seed <= 4; ++seed) {
-        EXPECT_EQ(published_before_station(b4d_wait(), seed, two_dits), 0) << "seed " << seed;
-        strict += published_before_station(b4d_wait(), seed, 0.5 * 1.2 / 25.0);
-    }
-    const int old = published_before_station(stage1_clocks(), 1, two_dits);
-    EXPECT_GT(old, 0);  // the mechanism is present in this stream with stage 1's clocks
-    std::printf("[ info ] seeds 1-4: %d characters from half a dit before the station's first mark with B4d's clocks; "
-                "seed 1 with stage 1's clocks: %d from 2 dits before\n", strict, old);
-}
-
-// The re-key trace's second mechanism (section 3.2, item 2): a station at 30 WPM (dit 40 ms; its branch k = 14, d_14 =
-// 41.4 ms) sends an over at S500 = +10 dB (amplitude 1 FS), stops, and sends a second over at amplitude 3 FS
-// (+9.5 dB relative to the first) that starts 1.2 s after branch 14's amplitude became unknown (found by decoding the
-// first over alone; T_new = max(0.5 s, 12 T_g)). With stage 1's clocks and the wait in keyed time (W_min,14 = 16.7 d_14
-// = 0.692 s, time-out 2.5 W_min,14 = 1.730 s counted from where the amplitude became unknown) the time-out fires
-// 0.53 s into the over, before the station can have keyed 0.692 s, and re-keys at the first over's amplitude. Counted
-// from the over's first provisional mark (B4d), the branch re-keys at its own seed: with B4e's wait (the default) at
-// its 8th provisional mark (it had fewer at the block before), well within the 7 s time-out; with B4d's wait in keyed
-// time when the keyed time has just reached W_min,14 (it had not at the block before: not a time-out). Either way the
-// amplitude is the second over's (s^2 above the geometric mean of 1 and 9 FS^2). Measured (Windows): see the
-// [ info ] lines; B4d's wait: known at 12.501 s with 0.707 s keyed (0.686 s before), s^2 9.50 FS^2; stage 1's clocks
-// at 12.181 s with 0.434 s keyed, s^2 0.85 FS^2.
-struct SecondOver {
-    double over_s = -1.0;      // the second over's first mark, s
-    double known_s = -1.0;     // the amplitude known again, s
-    double weight_s = 0.0;     // keyed time at that block, s
-    double weight_before_s = 0.0;
-    int marks_before = -1;     // the branch's provisional marks at the block before
-    double amp2 = 0.0;         // FS^2
-};
-
-TEST(BankChannelClocks, ALaterOverReKeysAtItsOwnSeed) {
-    const double rate = 1500.0, wpm = 30.0;
-    const std::size_t k = 13;  // branch 14
-    const double wait = bank_timing(b4d_wait()).rekey_wait_s[k];
-    EXPECT_NEAR(wait, 16.7 * 0.012 * std::pow(1.1, 13), 1e-12);
-    const double sigma = std::sqrt(3.0 / 10.0);  // S500 = +10 dB at 1 FS
-    const std::string first = "CQ CQ DE K1ABC K1ABC K";
-    const auto first_marks = kz4ap::test::keying(first, wpm, 0.5);
-    const double total_s = first_marks.back().second + 6.0;
-    const auto over1 = to_complex(kz4ap::test::keyed_signal(first, wpm, rate, total_s, 0.0, 1.0, sigma, 3, 0.5));
-    // Pass 1: the first over alone; branch 14's amplitude becomes unknown at the same block with any clock or wait (they
-    // act only while it is unknown, and the first over is re-keyed long before either time-out).
-    double unknown_s = -1.0;
-    {
-        BankChannel ch(kz4ap::test::b4f_config(), rate);
-        const auto block = static_cast<std::size_t>(ch.block_samples());
-        bool known = false;
-        for (std::size_t i = 0; i < over1.size() && unknown_s < 0.0; i += block) {
-            ch.push(std::span(over1).subspan(i, std::min(block, over1.size() - i)));
-            if (!ch.keyer().unknown[k]) known = true;
-            if (known && ch.keyer().unknown[k]) unknown_s = static_cast<double>(ch.processed()) / rate;
-        }
-    }
-    ASSERT_GT(unknown_s, 0.0);
-    const double over_s = unknown_s + 1.2;
-    const auto over2 = to_complex(kz4ap::test::keyed_signal("OK2E OK2E TU", wpm, rate, total_s, 0.0, 3.0, 0.0, 1, over_s));
-    std::vector<std::complex<double>> u(over1.size());
-    for (std::size_t i = 0; i < u.size(); ++i) u[i] = over1[i] + over2[i];
-    auto run = [&](const BankConfig& cfg) {
-        BankChannel ch(cfg, rate);
-        const auto block = static_cast<std::size_t>(ch.block_samples());
-        SecondOver out;
-        out.over_s = over_s;
-        bool unknown_again = false;
-        double before = 0.0;
-        int marks = 0;
-        for (std::size_t i = 0; i < u.size(); i += block) {
-            ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
-            const double t = static_cast<double>(ch.processed()) / rate;
-            if (t > unknown_s - 1e-9 && ch.keyer().unknown[k]) unknown_again = true;
-            if (unknown_again && !ch.keyer().unknown[k]) {
-                out.known_s = t;
-                out.weight_s = ch.keyer().weight[k] / rate;
-                out.weight_before_s = before;
-                out.marks_before = marks;
-                out.amp2 = ch.keyer().amp2[k];
-                break;
-            }
-            before = ch.keyer().weight[k] / rate;
-            marks = cfg.rekey_guard_filter_full || cfg.rekey_guard_min_length ? ch.branches()[k].wait_marks
-                                                                              : ch.branches()[k].marks_in_over;
-        }
-        return out;
-    };
-    const SecondOver b4e = run(kz4ap::test::b4f_config());  // B4f's variant: B4e's wait in marks with the guards
-    const SecondOver b4d = run(b4d_wait());
-    const SecondOver old = run(stage1_clocks());
-    for (const auto& [name, r] : {std::pair{"B4f (marks, guards)", b4e}, std::pair{"B4d (keyed time)", b4d},
-                                  std::pair{"stage 1", old}})
-        std::printf("[ info ] %s: second over from %.3f s, known at %.3f s with %.3f s keyed (before %.3f s; "
-                    "W_min,14 %.3f s), %d provisional marks the block before, s^2 %.3f FS^2\n", name, r.over_s,
-                    r.known_s, r.weight_s, r.weight_before_s, wait, r.marks_before, r.amp2);
-    const BankConfig defaults;
-    ASSERT_GT(b4e.known_s, over_s);
-    EXPECT_LT(b4e.marks_before, defaults.rekey_marks);  // re-keyed at the 8th provisional mark, not before ...
-    EXPECT_GE(b4e.marks_before, defaults.rekey_marks - 2);
-    EXPECT_LT(b4e.known_s - over_s, defaults.rekey_marks_timeout_s);  // ... and not by the time-out
-    EXPECT_GT(b4e.amp2, 3.0);  // the second over's own amplitude (9 FS^2), not the first's (1 FS^2)
-    ASSERT_GT(b4d.known_s, over_s);
-    EXPECT_GE(b4d.weight_s, wait);         // re-keyed when W_min,14 was reached ...
-    EXPECT_LT(b4d.weight_before_s, wait);  // ... and not before: not a time-out
-    EXPECT_GT(b4d.amp2, 3.0);
-    EXPECT_LT(old.weight_s, wait);         // stage 1's clock: a time-out before W_min,14 ...
-    EXPECT_LT(old.amp2, 3.0);              // ... at the first over's amplitude
-}
-
-// The stretch's lead: at the first provisional mark the start of the stretch a re-key keys again moves to 7 d_k before
-// it (when that is later than where the amplitude became unknown): 7 x 12 ms = 84 ms, 126 samples, on branch 1;
-// 7 x 230 ms on branch 32. Checked on the noise-then-station stream (seed 1): while branch 1's count runs and its amplitude is
-// unknown, its stretch starts at most 126 samples before the count's start and not after it, and exactly 126 at times.
-TEST(BankChannelClocks, TheStretchStartsSevenDitsBeforeTheFirstProvisionalMark) {
-    const BankConfig cfg = b4d_wait();  // B4d's clocks (a variant since B4g)
-    BankChannel ch(cfg, 1500.0);
-    EXPECT_EQ(ch.rekey_lead_samples().front(), 126);
-    EXPECT_EQ(ch.rekey_lead_samples().back(), static_cast<std::int64_t>(std::nearbyint(7.0 * 0.012 * std::pow(1.1, 31) * 1500.0)));
-    const auto marks = kz4ap::test::keying("CQ TEST K1ABC", 25.0, 1.0);
-    const auto u = to_complex(kz4ap::test::keyed_signal("CQ TEST K1ABC", 25.0, 1500.0, marks.back().second + 1.5, 0.0,
-                                                        1.0, std::sqrt(3.0 / std::pow(10.0, 0.2)), 1, 1.0));
-    const auto block = static_cast<std::size_t>(ch.block_samples());
-    int checked = 0, exact = 0;
-    for (std::size_t i = 0; i < u.size(); i += block) {
-        ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
-        const Branch& b = ch.branches().front();
-        if (!ch.keyer().unknown[0] || !b.timeout_armed) continue;
-        // never further back than the lead, never after the mark (a later cleared time-out may have moved it closer)
-        EXPECT_GE(b.unknown_since_n, b.timeout_from_n - 126) << "at " << ch.processed() / 1500.0 << " s";
-        EXPECT_LE(b.unknown_since_n, b.timeout_from_n) << "at " << ch.processed() / 1500.0 << " s";
-        if (b.unknown_since_n == b.timeout_from_n - 126) ++exact;
-        ++checked;
-    }
-    EXPECT_GT(checked, 0);
-    EXPECT_GT(exact, 0);  // the lead itself sets the start
-}
-
-// ---- Plan B, B4f: guards on the provisional marks that count (the owner's option e of 2026-10-06) ------------------
-
-// Per branch, the sample index at which the time-out's count first started (-1: never), decoding u block by block.
-std::vector<std::int64_t> first_count_start(const BankConfig& cfg, const std::vector<std::complex<double>>& u) {
-    BankChannel ch(cfg, 1500.0);
-    const auto block = static_cast<std::size_t>(ch.block_samples());
-    std::vector<std::int64_t> first(ch.branches().size(), -1);
-    for (std::size_t i = 0; i < u.size(); i += block) {
-        ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
-        for (std::size_t k = 0; k < first.size(); ++k)
-            if (first[k] < 0 && ch.branches()[k].timeout_armed) first[k] = ch.branches()[k].timeout_from_n;
-    }
-    return first;
-}
-
-// Guard 1 (filter full): test (a)'s stream with a channel filter's start-up ramp (the first 10 samples near zero, then
-// a linear rise to sample 20; the development set's channel streams begin so: their power, averaged over the 32
-// channels of A-awgn-25wpm-0-s1, is below 0.01 of the noise's median up to sample 10 and near it from sample 20). Without the guards (B4e) the
-// unknown-amplitude test keys a mark within the first N_k samples, before the branch's boxcar holds N_k samples of
-// input, and that mark starts the count and the stretch at the stream's start; with the guards no count starts
-// there: every branch's first count starts at a mark with N_k samples of input before it (inclusive), so at sample
-// N_k - 1 or later. Characters from the noise before the station, published more than 2 dits before it, become fewer.
-TEST(BankChannelGuards, AStartUpMarkDoesNotStartTheCount) {
-    const double rate = 1500.0, wpm = 25.0, start = 1.0;
-    const std::string text = "CQ TEST K1ABC";
-    const double sigma = std::sqrt(3.0 / std::pow(10.0, 0.2));  // S500 = +2 dB at amplitude 1 FS
-    const auto marks = kz4ap::test::keying(text, wpm, start);
-    const auto u = with_ramp(
-        to_complex(kz4ap::test::keyed_signal(text, wpm, rate, marks.back().second + 1.5, 0.0, 1.0, sigma, 1, start)),
-        20);
-    const auto n = BankChannel(BankConfig{}, rate).branch_samples_n();
-    const auto guarded = first_count_start(kz4ap::test::b4f_config(), u);
-    const auto open = first_count_start(b4e_wait(), u);
-    int early_open = 0, early_guarded = 0;
-    for (std::size_t k = 0; k < n.size(); ++k) {
-        early_open += open[k] >= 0 && open[k] < n[k] - 1;
-        early_guarded += guarded[k] >= 0 && guarded[k] < n[k] - 1;
-    }
-    int before_open = 0, before_guarded = 0;
-    const double two_dits = 2.0 * 1.2 / 25.0;
-    for (unsigned seed = 1; seed <= 4; ++seed) {
-        before_guarded += published_before_station(kz4ap::test::b4f_config(), seed, two_dits, 20);
-        before_open += published_before_station(b4e_wait(), seed, two_dits, 20);
-    }
-    std::printf("[ info ] branches whose count starts before their filter is full: %d without the guards, %d with; "
-                "characters more than 2 dits before the station, seeds 1-4: %d without, %d with\n",
-                early_open, early_guarded, before_open, before_guarded);
-    for (std::size_t k = 0; k < n.size(); k += 4)
-        std::printf("[ info ] branch %zu: first count from sample %lld with the guards, %lld without (N_k %d)\n", k + 1,
-                    static_cast<long long>(guarded[k]), static_cast<long long>(open[k]), n[k]);
-    EXPECT_GT(early_open, 0);  // the start-up mark is reproduced
-    EXPECT_EQ(early_guarded, 0);
-    // Fewer, not none: a mark the unknown-amplitude test keys early in the noise warm-up, after the filter is full and
-    // at least L_k long, still passes both guards (measured, Windows: 7 characters without the guards, 1 with; branch
-    // 1's count from sample 51, 34 ms, branch 5's from sample 53).
-    EXPECT_LT(before_guarded, before_open);
-}
-
-// Guard 2 (minimum length): a 25 WPM station (amplitude 1 FS, S500 = +10 dB) sends an over and stops; 1 s later a second
-// station 100 Hz away (amplitude 3 FS, +9.5 dB relative) keys for 6 s, as group H's separate-track regime. Its keying
-// reaches the first station's branch only through the boxcar's sidelobes and edges, as provisional marks mostly
-// shorter than L_k. Without the guards (B4e) the station's branch counts 8 of them and re-keys, decoding the leak; with
-// the guards it does not re-key while the second station keys (it stays unknown, or a time-out clears).
-TEST(BankChannelGuards, ABurstOfShortMarksBetweenOversDoesNotReKey) {
-    const double rate = 1500.0, wpm = 25.0;
-    const double sigma = std::sqrt(3.0 / 10.0);  // S500 = +10 dB at 1 FS
-    const std::string first = "CQ DE K1ABC K";
-    const auto fm = kz4ap::test::keying(first, wpm, 0.5);
-    const double leak_s = fm.back().second + 1.0;
-    const double total_s = leak_s + 6.5;
-    const auto a = kz4ap::test::keyed_signal(first, wpm, rate, total_s, 0.0, 1.0, sigma, 5, 0.5);
-    const auto b = kz4ap::test::keyed_signal("TEST DE W9XYZ W9XYZ TEST DE W9XYZ", 25.0, rate, total_s, 100.0, 3.0, 0.0, 1,
-                                             leak_s);
-    std::vector<std::complex<double>> u(a.size());
-    for (std::size_t i = 0; i < u.size(); ++i) u[i] = {a[i].real() + b[i].real(), a[i].imag() + b[i].imag()};
-    auto rekeys_during_leak = [&](const BankConfig& cfg, std::size_t& k_sel) {
-        BankChannel ch(cfg, rate);
-        const auto block = static_cast<std::size_t>(ch.block_samples());
-        int rekeys = 0;
-        bool was_unknown = false;
-        k_sel = 0;
-        for (std::size_t i = 0; i < u.size(); i += block) {
-            ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
-            const double t = static_cast<double>(ch.processed()) / rate;
-            if (t < leak_s) {
-                k_sel = static_cast<std::size_t>(ch.selected());  // the first station's branch
-                was_unknown = ch.keyer().unknown[k_sel];
-                continue;
-            }
-            const bool unknown = ch.keyer().unknown[k_sel];
-            if (was_unknown && !unknown) ++rekeys;
-            was_unknown = unknown;
-        }
-        return rekeys;
-    };
-    std::size_t k_open = 0, k_guarded = 0;
-    const int open = rekeys_during_leak(b4e_wait(), k_open);
-    const int guarded = rekeys_during_leak(kz4ap::test::b4f_config(), k_guarded);
-    std::printf("[ info ] re-keys of the first station's branch (%zu, %zu) while the station 100 Hz away keys: %d "
-                "without the guards, %d with\n", k_open + 1, k_guarded + 1, open, guarded);
-    EXPECT_GT(open, 0);
-    EXPECT_EQ(guarded, 0);
-}
+INSTANTIATE_TEST_SUITE_P(Streams, ChannelSplitDefaults, ::testing::Values("clean", "farnsworth", "zero_pad"),
+                         [](const auto& info) { return info.param; });
 
 }  // namespace

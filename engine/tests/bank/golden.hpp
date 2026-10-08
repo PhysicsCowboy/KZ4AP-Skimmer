@@ -126,48 +126,14 @@ inline std::vector<std::complex<double>> channel_stream(const nlohmann::json& ch
     return read_c64(s.at("file").get<std::string>(), s.at("samples").get<std::size_t>());
 }
 
-// The prototype's configuration, which the golden files were written with: the defaults with Plan B's B4b and B4d
-// changes undone (stage 1's 20 ms guard margin and its mask-bias table; the re-key clocks of stage 1, both B4d switches
-// off; the re-key wait in keyed time, B4e's wait in marks off; B4f's guards off). Stage 1's re-key time constants in seconds are passed separately (bank::fixed_timing, or the overrides
-// rekey_after_s and rekey_timeout_s); its periodicity windows, 2, 5 and 10 s, are set here (the default was the same
-// from B4d until the owner's amendment of 2026-10-07, which dropped the 2 s window).
+// The prototype's configuration, which the golden files were written with: the defaults with Plan B's B4b change and
+// the owner's amendment of 2026-10-07 undone (stage 1's 20 ms guard margin and its mask-bias table; stage 1's
+// periodicity windows, 2, 5 and 10 s). Stage 1's re-key wait (0.8 s) and time-out (2 s) are the defaults.
 inline kz4ap::bank::BankConfig stage1_config() {
     kz4ap::bank::BankConfig cfg;
     cfg.guard_margin_s = kz4ap::bank::kStage1GuardMarginS;
     cfg.mask_bias = kz4ap::bank::kStage1MaskBias;
     cfg.periodicity_windows_s = kz4ap::bank::kStage1PeriodicityWindowsS;  // 2, 5 and 10 s (default 5 and 10 s since 2026-10-07)
-    cfg.rekey_clear_moves_stretch = false;
-    cfg.rekey_timeout_from_first_mark = false;
-    cfg.rekey_wait_in_marks = false;
-    cfg.rekey_guard_filter_full = false;
-    cfg.rekey_guard_min_length = false;
-    return cfg;
-}
-
-// Plan B's re-key variants, off by default since B4g (the default is stage 1's wait 0.8 s and time-out 2 s): the wait
-// and time-out in dits (B4a; rekey_after_s and rekey_timeout_s unset) with stage 1's clocks; with B4d's clocks; the wait
-// in marks (B4e); and with B4f's guards.
-inline kz4ap::bank::BankConfig dits_config() {
-    kz4ap::bank::BankConfig cfg;
-    cfg.rekey_after_s = 0.0;
-    cfg.rekey_timeout_s = 0.0;
-    return cfg;
-}
-inline kz4ap::bank::BankConfig b4d_config() {
-    kz4ap::bank::BankConfig cfg = dits_config();
-    cfg.rekey_clear_moves_stretch = true;
-    cfg.rekey_timeout_from_first_mark = true;
-    return cfg;
-}
-inline kz4ap::bank::BankConfig b4e_config() {
-    kz4ap::bank::BankConfig cfg = b4d_config();
-    cfg.rekey_wait_in_marks = true;
-    return cfg;
-}
-inline kz4ap::bank::BankConfig b4f_config() {
-    kz4ap::bank::BankConfig cfg = b4e_config();
-    cfg.rekey_guard_filter_full = true;
-    cfg.rekey_guard_min_length = true;
     return cfg;
 }
 

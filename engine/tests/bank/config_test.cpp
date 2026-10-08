@@ -49,8 +49,7 @@ TEST(BankConfig, DefaultsEqualThePrototypes) {
     EXPECT_EQ(c.false_marks_per_s, g.at("false_marks_per_s").get<double>());
     expect_vector(c.x_on_values, g.at("x_on_values"), "x_on_values");
     EXPECT_EQ(c.release_probability, g.at("release_probability").get<double>());
-    // rekey_after_s: replaced by rekey_after_dits (Plan B, B4a; PlanBDefaults below); the name is now an override, unset
-    EXPECT_EQ(g.at("rekey_after_s").get<double>(), 0.8);
+    EXPECT_EQ(c.rekey_after_s, g.at("rekey_after_s").get<double>());
     EXPECT_EQ(c.seed_memory_rekeys, g.at("seed_memory_rekeys").get<double>());
     EXPECT_EQ(c.fit_memory, g.at("fit_memory").get<double>());
     EXPECT_EQ(c.t_grid_step, g.at("t_grid_step").get<double>());
@@ -65,9 +64,8 @@ TEST(BankConfig, DefaultsEqualThePrototypes) {
     EXPECT_EQ(c.refine_iterations, g.at("refine_iterations").get<int>());
     EXPECT_EQ(c.min_fit_weight, g.at("min_fit_weight").get<double>());
     EXPECT_EQ(c.periodicity_method, g.at("periodicity_method").get<std::string>());
-    // periodicity_windows_s: the default windows again since Plan B's B4d (owner, 2026-10-06; B4a had replaced them by
-    // windows in dits, now variants) until the owner's amendment of 2026-10-07 dropped the 2 s window (PlanBDefaults
-    // below); stage 1's values are kept as kStage1PeriodicityWindowsS
+    // periodicity_windows_s: the owner's amendment of 2026-10-07 dropped the 2 s window (PlanBDefaults below); stage 1's
+    // values are kept as kStage1PeriodicityWindowsS
     expect_vector(kz4ap::bank::kStage1PeriodicityWindowsS, g.at("periodicity_windows_s"), "periodicity_windows_s");
     EXPECT_EQ(c.periodicity_update_s, g.at("periodicity_update_s").get<double>());
     EXPECT_EQ(c.periodicity_rate_hz, g.at("periodicity_rate_hz").get<double>());
@@ -87,26 +85,19 @@ TEST(BankConfig, DefaultsEqualThePrototypes) {
     EXPECT_EQ(c.text_separation_nats, g.at("text_separation_nats").get<double>());
     EXPECT_EQ(c.new_over_min_s, g.at("new_over_min_s").get<double>());
     EXPECT_EQ(c.new_over_gaps, g.at("new_over_gaps").get<double>());
-    // rekey_timeout_s: replaced by rekey_timeout_ratio (Plan B, B4a); now an override, unset
-    EXPECT_EQ(g.at("rekey_timeout_s").get<double>(), 2.0);
+    EXPECT_EQ(c.rekey_timeout_s, g.at("rekey_timeout_s").get<double>());
     EXPECT_EQ(c.fresh_fit_min_obs, g.at("fresh_fit_min_obs").get<int>());
     EXPECT_EQ(c.correction_reach_s, g.at("correction_reach_s").get<double>());
     EXPECT_EQ(g.size(), 61u) << "ProtoConfig has a field that BankConfig does not mirror";
 }
 
-// Plan B's fields, which the prototype does not have (docs/signal-processing.md section 8c).
+// Plan B's field, which the prototype does not have, and the defaults Plan B and the owner changed
+// (docs/signal-processing.md section 8c).
 TEST(BankConfig, PlanBDefaults) {
     const kz4ap::bank::BankConfig c{};
     // B3: the stuck-level recovery after 4 tau_n of non-zero input with no accepted tap (heuristic), s
     EXPECT_EQ(c.noise_stuck_s, 8.0);
     EXPECT_EQ(c.noise_stuck_s, 4.0 * c.noise_tau_s);
-    // B4a: time constants in nominal dits, equal to the prototype's seconds at 25 WPM (T = 48 ms; stage-2 spec
-    // section 3.1): W_min = 16.7 dits (0.8 s / 48 ms = 16.67), the time-out 2.5 W_min (2 s / 0.8 s), the variants'
-    // periodicity windows 41.7, 104 and 208 dits (2, 5 and 10 s / 48 ms = 41.67, 104.2, 208.3)
-    EXPECT_EQ(c.rekey_after_dits, 16.7);
-    EXPECT_NEAR(c.rekey_after_dits * 0.048 / 0.8, 1.0, 0.0025);  // 0.2%
-    EXPECT_EQ(c.rekey_timeout_ratio, 2.5);
-    EXPECT_EQ(c.periodicity_windows_dits, (std::vector<double>{41.7, 104.0, 208.0}));
     // B4b: the spectrum mask's guard margin 0.5 L_1, L_1 = 0.8 dits at max_wpm = 0.8 x 1.2 s / 100 = 9.6 ms (stage-2
     // spec section 3.3), s
     EXPECT_EQ(c.guard_margin_s, 0.0048);
@@ -120,34 +111,12 @@ TEST(BankConfig, PlanBDefaults) {
     EXPECT_EQ(c.mask_bias.size(), 32u);
     EXPECT_EQ(c.mask_bias, b4d);
     EXPECT_EQ(kz4ap::bank::kStage1MaskBias.size(), 32u);
-    // B4g: stage 1's re-key wait and time-out in seconds are the default again (owner, 2026-10-06, option a')
+    // Stage 1's re-key wait and time-out in seconds (the default again since B4g; owner, 2026-10-06, option a')
     EXPECT_EQ(c.rekey_after_s, 0.8);
     EXPECT_EQ(c.rekey_timeout_s, 2.0);
-    // B4d: the periodicity windows in seconds for every candidate (class 2, a latency; owner, 2026-10-06), stage 1's
-    // 2, 5 and 10 s until the owner's amendment of 2026-10-07, which dropped the 2 s window (below 10 WPM its false
-    // match at about a third of the dit set T_P): 5 and 10 s; the per-candidate (B4a) and shared (B4a-C) windows in
-    // dits are variants, not the default; the shared variant's windows before a selection are stage 1's
-    EXPECT_EQ(c.periodicity_window_mode, "seconds");
+    // The periodicity windows in seconds for every candidate (class 2, a latency; owner, 2026-10-06), stage 1's 2, 5
+    // and 10 s until the owner's amendment of 2026-10-07, which dropped the 2 s window (below 10 WPM its false match at
+    // about a third of the dit set T_P): 5 and 10 s
     EXPECT_EQ(c.periodicity_windows_s, (std::vector<double>{5.0, 10.0}));
     EXPECT_EQ(kz4ap::bank::kStage1PeriodicityWindowsS, (std::vector<double>{2.0, 5.0, 10.0}));
-    // B4d's re-key clock fixes: variants since B4g, off
-    EXPECT_FALSE(c.rekey_clear_moves_stretch);
-    EXPECT_FALSE(c.rekey_timeout_from_first_mark);
-    // B4d: the re-key stretch's lead before the first provisional mark, one word gap of the branch's dits (heuristic)
-    EXPECT_EQ(c.rekey_lead_dits, 7.0);
-    // B4e: the re-key wait counted in the station's marks, 8 provisional marks (heuristic), with a time-out of 7 s of
-    // channel time for every branch: 8 marks of PARIS (a mark every 50/14 dits) at the 5 WPM floor (dit 240 ms) take
-    // 6.9 s (derived), rounded to 7 s (owner, 2026-10-06, option d)
-    EXPECT_FALSE(c.rekey_wait_in_marks);  // a variant since B4g
-    EXPECT_EQ(c.rekey_marks, 8);
-    EXPECT_EQ(c.rekey_marks_timeout_s, 7.0);
-    EXPECT_NEAR(8.0 * 50.0 / 14.0 * 1.2 / c.min_wpm, 6.857, 0.001);
-    EXPECT_EQ(std::round(8.0 * 50.0 / 14.0 * 1.2 / c.min_wpm), c.rekey_marks_timeout_s);
-    // B4f: the guards on the counted provisional marks; variants since B4g, off
-    EXPECT_FALSE(c.rekey_guard_filter_full);
-    EXPECT_FALSE(c.rekey_guard_min_length);
-    EXPECT_EQ(c.periodicity_unselected_windows_s, (std::vector<double>{2.0, 5.0, 10.0}));
-    const std::vector<double> stage1_s = {2.0, 5.0, 10.0};
-    for (std::size_t i = 0; i < stage1_s.size(); ++i)
-        EXPECT_NEAR(c.periodicity_windows_dits[i] * 0.048 / stage1_s[i], 1.0, 0.002) << i;  // 0.08%, 0.16%, 0.16%
 }

@@ -14,7 +14,6 @@
 #include "kz4ap/bank/noise.hpp"
 #include "kz4ap/bank/periodicity.hpp"
 #include "kz4ap/bank/selection.hpp"
-#include "kz4ap/bank/timing.hpp"
 
 #include <complex>
 #include <cstddef>
@@ -47,8 +46,7 @@ struct Correction {
     std::string old_text;  // the replaced characters' text
     std::string new_text;  // the text that replaced it
     std::string reason;    // "switch" (branch selection), "rekey" (an over's first marks re-keyed) or "timeout"
-                           // (re-keyed, or deleted, because the over's amplitude stayed unknown for the branch's
-                           // re-key time-out)
+                           // (re-keyed, or deleted, because the over's amplitude stayed unknown rekey_timeout_s)
     // The number of published characters kept before the replacement (the prototype's len(kept)): the
     // characters from this index on were replaced by new_text's characters. Not in the prototype's JSON.
     std::size_t from_index = 0;
@@ -166,21 +164,11 @@ public:
     std::optional<double> up_at;             // this over's last key-up (none: none yet)
     std::int64_t over_start_n = 0;           // sample index of the latest over start
     std::int64_t unknown_since_n = 0;        // sample index where the stretch a re-key keys again starts: where the
-                                             // amplitude became unknown (with rekey_clear_moves_stretch, or the last
-                                             // time-out that keyed nothing)
-    std::int64_t timeout_from_n = 0;         // the re-key time-out counts from this sample index ...
-    bool timeout_armed = true;               // ... while this is set; with rekey_timeout_from_first_mark it is set at
-                                             // the first provisional mark since the amplitude became unknown or the
-                                             // last time-out that keyed nothing, and the stretch's start then moves to
-                                             // rekey_lead_dits x d_k before that mark, if that is later (Plan B, B4d)
+                                             // amplitude became unknown
+    std::int64_t timeout_from_n = 0;         // the re-key time-out counts from this sample index (where the amplitude
+                                             // became unknown, or the last time-out that keyed nothing)
     bool over_pending = false;               // an over started by a silence, not yet confirmed by a re-key
     int marks_in_over = 0;
-    // Plan B, B4f (with rekey_guard_filter_full or rekey_guard_min_length): while the amplitude is unknown, the key-down
-    // sample of the provisional mark under way (-1: none) and whether the branch's filter was full there; and the
-    // provisional marks that passed the guards, which count toward the re-key wait in marks
-    std::int64_t prov_down_n = -1;
-    bool prov_full = false;
-    int wait_marks = 0;
 
 private:
     void observe(bool is_mark, double d, double var_t, const Prior& prior, bool provisional);
@@ -228,11 +216,8 @@ struct ChannelResult {
 // One channel through the bank, streaming (the prototype's ChannelDecoder.run).
 class BankChannel {
 public:
-    // The configuration's timing (bank_timing(cfg)).
+    // Throws std::invalid_argument if rekey_after_s or rekey_timeout_s is not positive (s).
     BankChannel(const BankConfig& cfg, double rate_hz);
-    // An explicit timing (e.g. fixed_timing, stage 1's constants in seconds, for the golden tests). Throws
-    // std::invalid_argument if a per-branch list does not hold one value per branch.
-    BankChannel(const BankConfig& cfg, double rate_hz, const BankTiming& timing);
     ~BankChannel();
     BankChannel(const BankChannel&) = delete;
     BankChannel& operator=(const BankChannel&) = delete;
@@ -258,22 +243,11 @@ public:
     // The periodicity estimator and the number of its recomputations recorded so far (for tests that look
     // inside a recomputation).
     const Periodicity& periodicity() const { return periodicity_; }
-    // The keyer (each branch's amplitude state and W_min,k) and each branch's re-key time-out, samples.
+    // The keyer (each branch's amplitude state, and W_min) and the re-key time-out, samples (the same for every
+    // branch).
     const BankKeyer& keyer() const { return keyer_; }
-    const std::vector<std::int64_t>& rekey_timeout_samples() const { return timeout_; }
-    // Each branch's lead of the re-key stretch before an over's first provisional mark, samples (Plan B, B4d).
-    const std::vector<std::int64_t>& rekey_lead_samples() const { return lead_; }
+    std::int64_t rekey_timeout_samples() const { return timeout_; }
     std::size_t periodicity_records() const { return result_.periodicity.size(); }
-    // The shared-window variant (B4a-C): the T-hat passed to the periodicity estimate at the last block, s (the
-    // selected branch's fitted T, only when that fit is eligible and its over's start has been re-keyed); none
-    // otherwise, before any selection and in the default mode.
-    const std::optional<double>& periodicity_dit_s() const { return periodicity_dit_; }
-    // The T-hat the shared mode's next block would use, from the channel's state now (the rule above). It evaluates
-    // the rule in either mode when called; only the shared mode's blocks use it. For tests.
-    std::optional<double> shared_window_dit() const;
-    // The branches and the selected branch (read-only, for tests).
-    const std::vector<Branch>& branches() const { return branches_; }
-    int selected() const { return selector_.current(); }
     // The |v_k|^2 window's storage: values allocated (branches x columns) and their size, bytes.
     std::size_t p_window_values() const { return p_win_.v.size(); }
     std::size_t p_window_bytes() const { return p_win_.v.size() * sizeof(p_win_.v[0]); }
@@ -288,8 +262,6 @@ private:
 
     void append_sample(std::complex<double> x);
     void process_block(std::int64_t n0, std::int64_t n1);
-    // Plan B, B4f: the last exact-zero input sample at or before n (n in the current block [n0, ...)); -1: none.
-    std::int64_t last_zero_at_or_before(std::int64_t n, std::int64_t n0) const;
     void compact();
     // Row k of the |v_k|^2 window from absolute sample `from` to `to` (exclusive), converted to double
     // (exact), FS^2.
@@ -309,11 +281,7 @@ private:
     ChannelResult result_;
     int block_;
     std::int64_t reach_;
-    std::vector<std::int64_t> timeout_;  // per branch: the re-key time-out, samples
-    std::vector<std::int64_t> lead_;     // per branch: the re-key stretch's lead before the first provisional mark,
-                                         // samples (Plan B, B4d)
-    bool shared_windows_ = false;        // the shared-window variant (B4a-C): the windows follow T-hat
-    std::optional<double> periodicity_dit_;
+    std::int64_t timeout_;  // the re-key time-out, samples
     Prior prior_;
 
     // Streaming state. The cumulative sum c[j] = u[0] + ... + u[j-1] (complex, FS) in a ring of the last
@@ -326,9 +294,6 @@ private:
     PowerMatrix p_win_;
     std::int64_t base_ = 0;
     std::int64_t keep_back_ = 0;
-    // Plan B, B4f: the last exact-zero input sample before the current block (-1: none; the stream's start counts as
-    // one), for rekey_guard_filter_full
-    std::int64_t last_zero_n_ = -1;
     std::int64_t total_ = 0;
     std::int64_t processed_ = 0;
     bool finished_ = false;

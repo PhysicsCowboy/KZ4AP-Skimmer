@@ -9,15 +9,7 @@
 namespace kz4ap {
 
 BankDecoder::BankDecoder(double rate_hz, const bank::BankConfig& cfg, double residual_hz)
-    : BankDecoder(rate_hz, cfg, residual_hz, bank::bank_timing(cfg)) {}
-
-BankDecoder::BankDecoder(double rate_hz, const bank::BankConfig& cfg, double residual_hz,
-                         const bank::BankTiming& timing)
-    : rate_(rate_hz),
-      cfg_(cfg),
-      timing_(timing),
-      anchor_hz_(residual_hz),
-      channel_(std::make_unique<bank::BankChannel>(cfg, rate_hz, timing)) {}
+    : rate_(rate_hz), cfg_(cfg), anchor_hz_(residual_hz), channel_(std::make_unique<bank::BankChannel>(cfg, rate_hz)) {}
 
 DecodedSymbol BankDecoder::symbol(const bank::Char& c) const {
     // The bank gives no per-character probability: 1, as Envelope and Matched give a word space.
@@ -129,7 +121,7 @@ DecodeUpdate BankDecoder::flush() {
 }
 
 void BankDecoder::reset() {
-    channel_ = std::make_unique<bank::BankChannel>(cfg_, rate_, timing_);
+    channel_ = std::make_unique<bank::BankChannel>(cfg_, rate_);
     origin_s_.reset();
     phase_sum_hz_ = 0;
     appended_seen_ = 0;

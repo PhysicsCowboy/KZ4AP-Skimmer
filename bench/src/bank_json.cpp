@@ -13,34 +13,25 @@ namespace kz4ap::bench {
 
 namespace {
 
-// Every ProtoConfig field, in its declaration order (training/kz4ap_proto/params.py), with Plan B's B4a fields in
-// dits in place of the three in seconds they replaced (rekey_after_dits for rekey_after_s, periodicity_windows_dits
-// for periodicity_windows_s, rekey_timeout_ratio for rekey_timeout_s), then Plan B's BankConfig fields, which the
-// prototype does not have (noise_stuck_s: B3; the overrides in seconds rekey_after_s and rekey_timeout_s: B4a, for
-// ablations, unset by default; periodicity_windows_s: the prototype's field, here since B4a, the default windows
-// again since B4d, 5 and 10 s since 2026-10-07 (stage 1's 2, 5 and 10 s by --set); periodicity_window_mode:
-// B4a-C, "seconds" by default since B4d; periodicity_unselected_windows_s:
-// B4a-C, the shared-window variant; rekey_clear_moves_stretch, rekey_timeout_from_first_mark and rekey_lead_dits:
-// B4d, the re-key clocks; rekey_wait_in_marks, rekey_marks and rekey_marks_timeout_s: B4e, the re-key wait in marks;
-// rekey_guard_filter_full and rekey_guard_min_length: B4f, the guards on the counted marks).
+// Every BankConfig field: the ProtoConfig fields in their declaration order (training/kz4ap_proto/params.py), except
+// three that Plan B's B4a moved after Plan B's noise_stuck_s (B3; the one field the prototype does not have) and that
+// stay there, so that the decoded files' "config" keeps its order: rekey_after_s, rekey_timeout_s and
+// periodicity_windows_s. Plan B's variant fields (B4a to B4f) were removed on 2026-10-07; a --set of one of them is an
+// unknown parameter.
 #define KZ4AP_BANK_CONFIG_FIELDS(X)                                                                           \
-    X(min_wpm) X(max_wpm) X(ladder_step) X(length_dits) X(block_s) X(noise_method) X(mask_bias) X(noise_tau_s) \
-    X(noise_warmup_s) X(noise_guard) X(neighbor_guard) X(segment_s) X(spectrum_smoothing_hz) X(guard_margin_s) \
-    X(min_clean_fraction) X(amplitude_tau_s) X(prior_key_down) X(hysteresis_nats) X(squelch_a)                 \
-    X(squelch_ref_s) X(squelch_exponent) X(false_marks_per_s) X(x_on_values) X(release_probability)           \
-    X(rekey_after_dits) X(seed_memory_rekeys) X(fit_memory) X(t_grid_step) X(q_grid) X(w_grid) X(tg_grid)      \
+    X(min_wpm) X(max_wpm) X(ladder_step) X(length_dits) X(block_s) X(noise_method) X(mask_bias)               \
+    X(noise_tau_s) X(noise_warmup_s) X(noise_guard) X(neighbor_guard) X(segment_s) X(spectrum_smoothing_hz)   \
+    X(guard_margin_s) X(min_clean_fraction) X(amplitude_tau_s) X(prior_key_down) X(hysteresis_nats)           \
+    X(squelch_a) X(squelch_ref_s) X(squelch_exponent) X(false_marks_per_s) X(x_on_values)                     \
+    X(release_probability) X(seed_memory_rekeys) X(fit_memory) X(t_grid_step) X(q_grid) X(w_grid) X(tg_grid)  \
     X(sigma_ln_mark) X(sigma_ln_space) X(outlier_prior) X(outlier_range_s) X(prior_sigma_ln)                  \
-    X(refine_iterations) X(min_fit_weight) X(periodicity_method) X(periodicity_windows_dits)                   \
-    X(periodicity_update_s) X(periodicity_rate_hz) X(comb_teeth) X(comb_width) X(spectrum_nulls)               \
-    X(spectrum_null_width) X(spectrum_front_floor_db) X(comb_confidence_min) X(edge_confidence_min)            \
-    X(spectrum_confidence_min) X(eligibility_tolerance) X(switch_persistence) X(quality_tie_nats)              \
-    X(text_tie_nats) X(text_window_chars) X(text_separation_nats) X(new_over_min_s) X(new_over_gaps)           \
-    X(rekey_timeout_ratio) X(fresh_fit_min_obs) X(correction_reach_s) X(noise_stuck_s) X(rekey_after_s)        \
-    X(rekey_timeout_s) X(periodicity_windows_s) X(periodicity_window_mode) X(periodicity_unselected_windows_s) \
-    X(rekey_clear_moves_stretch) X(rekey_timeout_from_first_mark) X(rekey_lead_dits) X(rekey_wait_in_marks)    \
-    X(rekey_marks) X(rekey_marks_timeout_s) X(rekey_guard_filter_full) X(rekey_guard_min_length)
+    X(refine_iterations) X(min_fit_weight) X(periodicity_method) X(periodicity_update_s)                      \
+    X(periodicity_rate_hz) X(comb_teeth) X(comb_width) X(spectrum_nulls) X(spectrum_null_width)               \
+    X(spectrum_front_floor_db) X(comb_confidence_min) X(edge_confidence_min) X(spectrum_confidence_min)       \
+    X(eligibility_tolerance) X(switch_persistence) X(quality_tie_nats) X(text_tie_nats) X(text_window_chars)  \
+    X(text_separation_nats) X(new_over_min_s) X(new_over_gaps) X(fresh_fit_min_obs) X(correction_reach_s)     \
+    X(noise_stuck_s) X(rekey_after_s) X(rekey_timeout_s) X(periodicity_windows_s)
 
-ordered_json field_json(bool v) { return ordered_json(v); }
 ordered_json field_json(double v) { return ordered_json(v); }
 ordered_json field_json(int v) { return ordered_json(v); }
 ordered_json field_json(const std::string& v) { return ordered_json(v); }
@@ -50,10 +41,6 @@ ordered_json field_json(const std::vector<double>& v) {
     return a;
 }
 
-void assign(const std::string& name, bool& dst, const ordered_json& v) {
-    if (!v.is_boolean()) throw std::invalid_argument(name + ": true or false is needed");
-    dst = v.get<bool>();
-}
 void assign(const std::string& name, double& dst, const ordered_json& v) {
     if (!v.is_number()) throw std::invalid_argument(name + ": a number is needed");
     dst = v.get<double>();

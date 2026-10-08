@@ -1,18 +1,16 @@
-// The bank decoder's configuration: every ProtoConfig field (training/kz4ap_proto/params.py) that the
-// prototype's decoder modules read, with the prototype's settled default, unit and status (owner,
-// measured, heuristic or placeholder). The port is faithful: change a value only together with the
-// prototype's. Parameters are in physical units (Hz, s, FS, nats, dB with a named reference); lengths
-// become samples only at the point of use. Defaults are checked against the prototype's by
-// engine/tests/bank/config_test.cpp (golden file engine/tests/data/bank/config.json). Plan B adds fields the
-// prototype does not have (marked "Plan B"); their defaults are checked by the same test file. Plan B's B4a
-// replaced two of the prototype's fields in seconds by fields in dits (rekey_after_dits, rekey_timeout_ratio) and
-// added periodicity windows in dits; B4d (the owner's decisions of 2026-10-06) put the periodicity windows back in
-// seconds (periodicity_windows_s, then the prototype's 2, 5 and 10 s; the windows in dits are variants) and added two
-// switches for when the re-key clocks start. timing.hpp converts the values in dits to seconds per branch and per
-// candidate dit. Plan B's B4b changed two prototype defaults, guard_margin_s (20 ms to 4.8 ms) and mask_bias
-// (re-measured; B4d adopted the 200-seed measurement); stage 1's values are kStage1GuardMarginS and kStage1MaskBias.
-// The owner's amendment of 2026-10-07 dropped the 2 s periodicity window (default 5 and 10 s); stage 1's windows are
-// kStage1PeriodicityWindowsS.
+// The bank decoder's configuration: every field of the stage-1 prototype's ProtoConfig that its decoder modules read
+// (training/kz4ap_proto/params.py), with the prototype's settled default, unit and status (owner, measured, heuristic
+// or placeholder). Parameters are in physical units (Hz, s, FS, nats, dB with a named reference); lengths become
+// samples only at the point of use. Defaults are checked against the prototype's by engine/tests/bank/config_test.cpp
+// (golden file engine/tests/data/bank/config.json). Plan B adds one field the prototype does not have (noise_stuck_s,
+// marked "Plan B"), checked by the same test file. Plan B's B4b changed two prototype defaults, guard_margin_s (20 ms
+// to 4.8 ms) and mask_bias (re-measured; B4d adopted the 200-seed measurement); stage 1's values are
+// kStage1GuardMarginS and kStage1MaskBias. The owner's amendment of 2026-10-07 dropped the 2 s periodicity window
+// (default 5 and 10 s); stage 1's windows are kStage1PeriodicityWindowsS. Plan B's experimental variants (the re-key
+// wait and time-out in dits, periodicity windows in dits per candidate or following the selected branch's dit, the
+// re-key clocks started at the first provisional mark with a lead, the re-key wait counted in marks and its two
+// guards) were measured, off by default, and removed on 2026-10-07 when the bank was frozen as the reference
+// (results: docs/plans/2026-10-04-milestone-2c-plan-b-results.md, sections 6 and 10 to 13; the code in git history).
 #pragma once
 
 #include <cmath>
@@ -30,8 +28,8 @@ inline const std::vector<double> kStage1MaskBias = {
     0.788, 0.7875, 0.7871, 0.7867, 0.7864, 0.7861, 0.7858, 0.7856, 0.7854, 0.7852,
 };
 
-// Stage 1's periodicity windows (the prototype's periodicity_windows_s), s: 2, 5 and 10 s; the default until the owner's
-// amendment of 2026-10-07 (golden tests, ablations: --set periodicity_windows_s=[2,5,10]).
+// Stage 1's periodicity windows (the prototype's periodicity_windows_s), s: 2, 5 and 10 s; the default until the
+// owner's amendment of 2026-10-07 (golden tests, ablations: --set periodicity_windows_s=[2,5,10]).
 inline const std::vector<double> kStage1PeriodicityWindowsS = {2.0, 5.0, 10.0};
 
 struct BankConfig {
@@ -74,35 +72,6 @@ struct BankConfig {
     // level is set again by the warm-up rule (the stuck-level recovery); 4 tau_n; heuristic. Seconds, not dits:
     // the noise has no keying speed. Plan B (B3), not a prototype field
     double noise_stuck_s = 8.0;
-    // The re-key wait and time-out in seconds, the same for every branch: W_min = rekey_after_s of key-down time while
-    // the amplitude is unknown, and the time-out rekey_timeout_s of channel time. The default since Plan B's B4g
-    // (owner, 2026-10-06, option a'): stage 1's values, 0.8 s (measured at 25 WPM by E9b) and 2 s (heuristic).
-    // Class: seconds (stage 1's measured 0.8 s, E9b), pending the comparison of the variants on the redesigned
-    // development set (owner, 2026-10-06). When set (> 0) they take precedence: rekey_after_s over the wait in dits
-    // (rekey_after_dits x d_k), rekey_timeout_s over the time-outs in dits (rekey_timeout_ratio x W_min,k) and in marks
-    // (rekey_marks_timeout_s). Set both to 0 for the variants in dits (B4a-B4d) or in marks (B4e, B4f); with
-    // rekey_wait_in_marks the wait is counted in marks and W_min,k sets only the seed's memory.
-    // s; 0: unset
-    double rekey_after_s = 0.8;
-    double rekey_timeout_s = 2.0;
-    // s, the periodicity windows of the default mode (periodicity_window_mode "seconds"): every candidate dit tau_c of
-    // the comb is judged over the same window, one row per value (stage 1's rule; the prototype's field).
-    // Class (2) seconds, a latency (owner, 2026-10-06; stage-2 spec sections 3.2 and 6): several windows exist so that
-    // the estimate reacts quickly after a change (a stream's start, a new over, a speed change), and how quickly is
-    // felt in seconds; the shortest confident window wins. The part that depends on speed is physics any rule must
-    // wait for: a window W can measure only tau_c <= W / 18.3 (the comb's reach, (4.5 + 0.075) x 2 tau_c <= W / 2), so
-    // 2 s reaches down to 11 WPM, 5 s to 4.4 WPM and 10 s to 2.2 WPM. Plan B (B4d) made stage 1's 2, 5 and 10 s the
-    // default again after B4a's windows in dits. Owner, 2026-10-07 (stage-2 decisions, section 7): the 2 s window is
-    // dropped, the default is 5 and 10 s. Reason: below about 10 WPM the 2 s window cannot score the true dit (reach
-    // 109 ms) and returns a false match near a third of the dit, scoring just above comb_confidence_min (0.03); as the
-    // shortest confident window it sets T_P, and the T_P prior pulls the fits to about half the dit (measured, the
-    // development set's slow trace). Diagnostic replay with 5 and 10 s alone (development-set pilot, speed cell 8 to
-    // 10 WPM, S500 >= +4 dB SNR in 500 Hz, 32 signals): mean CER 0.008 against 0.497 with 2, 5 and 10 s. Cost: a window
-    // scores only once full, so the first T_P comes after 5 s of the channel's stream instead of 2 s, and after a
-    // speed change the estimate follows over 5 s rather than 2 s (derived). Stage 1's windows remain
-    // reachable (kStage1PeriodicityWindowsS; --set periodicity_windows_s=[2,5,10]). Status: placeholder (E1), 2 s
-    // dropped on the measured failure
-    std::vector<double> periodicity_windows_s = {5.0, 10.0};
     // kappa, dimensionless; mask_bias measured with this default
     double noise_guard = 1.75;
     // kappa_n, dimensionless; also the spectrum's mark flag; mask_bias measured with this default
@@ -146,14 +115,12 @@ struct BankConfig {
     };
     // probability, key up where noise alone exceeds x this often (x_off = 1.55); heuristic
     double release_probability = 0.3;
-    // nominal dits of branch k, d_k = L_k / length_dits (the nominal L_k: d_k = 12 ms ... 230 ms): W_min,k =
-    // rekey_after_dits x d_k of keyed time. With rekey_wait_in_marks off (the B4a-B4d variant) the re-key waits for
-    // W_min,k of keyed time while the amplitude is unknown; in every mode W_min,k sets the seed's memory
-    // (seed_memory_rekeys). Class (1) dits: it collects enough marks to seed the amplitude, and the marks a branch is
-    // matched to last a number of its dits. Status: derived from a measurement, the prototype's 0.8 s (measured at
-    // 25 WPM by E9b) over 48 ms = 16.7 (stage-2 spec section 3.1). Plan B (B4a), replaces rekey_after_s
-    double rekey_after_dits = 16.7;
-    // multiples of W_min,k, bound on the seed's memory of keyed time; heuristic
+    // s, W_min: the keyed (key-down) time a branch collects while its amplitude is unknown before the over's start is
+    // re-keyed, the same for every branch; also sets the seed's memory (seed_memory_rekeys x W_min). Must be positive.
+    // Class: seconds. Status: measured (E9b, stage 1: 0.8 s adopted over 0.4 s and 0.2 s at 25 WPM); the default again
+    // since Plan B's B4g (owner, 2026-10-06, option a')
+    double rekey_after_s = 0.8;
+    // multiples of rekey_after_s, bound on the seed's memory of keyed time; heuristic
     double seed_memory_rekeys = 4.0;
     // N_mem, marks and spaces; measured (E4)
     double fit_memory = 48.0;
@@ -181,24 +148,22 @@ struct BankConfig {
     double min_fit_weight = 8.0;
     // "comb" (on Pi = 2T; owner), "edge" or "spectrum"; E1
     std::string periodicity_method = "comb";
-    // N_w, dimensionless, the windows in dits of the two variants of periodicity_window_mode below (not the default):
-    // "per_candidate" judges each candidate dit tau_c over its own window N_w x tau_c (B4a), "shared" every candidate of
-    // a row over N_w x T-hat (B4a-C). Class (1) dits. Status: placeholder, stage 1's 2, 5 and 10 s at 48 ms (stage-2
-    // spec section 3.1, withdrawn for the default by the owner's decision of 2026-10-06). Plan B (B4a)
-    std::vector<double> periodicity_windows_dits = {41.7, 104.0, 208.0};
-    // How the periodicity windows apply (Plan B: B4a, B4a-C, B4d). Default "seconds" (B4d, the owner's decision of
-    // 2026-10-06): the windows periodicity_windows_s, the same for every candidate (stage 1's rule). Variants for
-    // experiments, not the default: "per_candidate" (B4a), each candidate tau_c over its own window N_w x tau_c of
-    // periodicity_windows_dits; "shared" (B4a-C), every candidate of a row over one window N_w x T-hat, T-hat the dit
-    // of the branch currently selected (its fitted T, only if that fit is eligible and is not a previous over's fit
-    // held across a new over's start: at the stream's start the first over's fit counts once eligible; after a new
-    // over's start, only once the over's start has been re-keyed), so candidates beyond N_w T-hat / 18.3 are out of
-    // the comb's reach in that row; without such a T-hat the windows periodicity_unselected_windows_s. The two
-    // variants do not use periodicity_windows_s
-    std::string periodicity_window_mode = "seconds";
-    // s, the "shared" variant's windows while there is no T-hat: stage 1's 2, 5 and 10 s. Plan B (B4a-C); unused in the
-    // other modes
-    std::vector<double> periodicity_unselected_windows_s = {2.0, 5.0, 10.0};
+    // s, the periodicity windows: every candidate dit tau_c of the comb is judged over the same windows (stage 1's
+    // rule). Class (2) seconds, a latency (owner, 2026-10-06; stage-2 spec sections 3.2 and 6): several windows exist
+    // so that the estimate reacts quickly after a change (a stream's start, a new over, a speed change), and how
+    // quickly is felt in seconds; the shortest confident window wins. The part that depends on speed is physics any
+    // rule must wait for: a window W can measure only tau_c <= W / 18.3 (the comb's reach, (4.5 + 0.075) x 2 tau_c <=
+    // W / 2), so 2 s reaches down to 11 WPM, 5 s to 4.4 WPM and 10 s to 2.2 WPM. Owner, 2026-10-07 (stage-2
+    // decisions, section 7): the 2 s window is dropped, the default is 5 and 10 s. Reason: below about 10 WPM the 2 s
+    // window cannot score the true dit (reach 109 ms) and returns a false match near a third of the dit, scoring just
+    // above comb_confidence_min (0.03); as the shortest confident window it sets T_P, and the T_P prior pulls the
+    // fits to about half the dit (measured, the development set's slow trace). Diagnostic replay with 5 and 10 s
+    // alone (development-set pilot, speed cell 8 to 10 WPM, S500 >= +4 dB SNR in 500 Hz, 32 signals): mean CER 0.008
+    // against 0.497 with 2, 5 and 10 s. Cost: a window scores only once full, so the first T_P comes after 5 s of the
+    // channel's stream instead of 2 s, and after a speed change the estimate follows over 5 s rather than 2 s
+    // (derived). Stage 1's windows remain reachable (kStage1PeriodicityWindowsS; --set
+    // periodicity_windows_s=[2,5,10]). Status: placeholder (E1), 2 s dropped on the measured failure
+    std::vector<double> periodicity_windows_s = {5.0, 10.0};
     // s; heuristic
     double periodicity_update_s = 0.25;
     // samples/s, p is averaged down to this rate; heuristic
@@ -236,74 +201,11 @@ struct BankConfig {
     double new_over_min_s = 0.5;
     // multiples of T_g, dimensionless; placeholder, kept by E7
     double new_over_gaps = 12.0;
-    // multiples of W_min,k, dimensionless; with rekey_wait_in_marks off (the B4a-B4d variant): the channel time branch
-    // k's over may stay of unknown amplitude before it is re-keyed or cleared is rekey_timeout_ratio x W_min,k =
-    // 41.75 d_k. Class (1) dits, through W_min,k: a station is
-    // keyed down about 44% of the time, so it needs about W_min,k / 0.44 of channel time to reach W_min,k. Status:
-    // heuristic, stage 1's ratio 2 s / 0.8 s (stage-2 spec section 3.1). Plan B (B4a), replaces rekey_timeout_s
-    double rekey_timeout_ratio = 2.5;
-    // Variants since B4g, off by default (owner, 2026-10-06, option a'): the clock switches, the lead, the wait in marks
-    // and its guards below (measured results: docs/signal-processing.md A.8c; Plan B record sections 10 to 13).
-    // When the re-key clocks start (Plan B, B4d; owner, 2026-10-06; found by the re-key trace,
-    // docs/research/2026-10-05-periodicity-windows-and-rekey-analysis.md section 3.2). Each switch can be measured
-    // alone; both off is stage 1's (and the prototype's) rule, the default since B4g. Status: heuristic.
-    // (i) A time-out that keys nothing (its provisional characters deleted, the amplitude still unknown) also moves
-    // the start of the stretch a later re-key keys again to the time-out's instant, so that a re-key does not reach back
-    // into the noise the time-out cleared. Off: the stretch starts where the amplitude became unknown, however many
-    // time-outs cleared nothing since (the stream's start for the first over).
-    bool rekey_clear_moves_stretch = false;  // a variant since B4g (off)
-    // (ii) The time-out counts from the branch's first provisional mark (the key-down sample of the first mark the
-    // unknown-amplitude test keys) since the amplitude became unknown or since the last time-out that keyed nothing;
-    // before that mark nothing is counted. A new over started while the amplitude is still unknown does not restart
-    // the count. Off: it counts from when the amplitude became unknown, a gap in seconds before an over's first mark,
-    // so a time-out in dits could fire before the station had keyed W_min,k
-    bool rekey_timeout_from_first_mark = false;  // a variant since B4g (off)
-    // nominal dits of branch k (d_k), the lead of the re-key stretch under rekey_timeout_from_first_mark: when the count
-    // starts at the first provisional mark, the stretch a later re-key keys again starts rekey_lead_dits x d_k before
-    // that mark's key-down sample (or where it started, if later), so that the full rule can still find weak marks
-    // just before the first provisional mark that the unknown-amplitude threshold missed, while noise further back
-    // (before a station's start) is not keyed again. 7 d_k is one word gap in the branch's own dits. Class (1) dits:
-    // the marks it must reach are the station's, and the branch is matched to a dit of d_k. Status: heuristic (Plan B,
-    // B4d; the controller's choice for the owner, 2026-10-06). Unused when rekey_timeout_from_first_mark is off
-    double rekey_lead_dits = 7.0;
-    // The re-key wait counted in the station's marks (Plan B, B4e; the owner's decision of 2026-10-06, option d). On:
-    // the over's start is re-keyed once the branch has rekey_marks provisional marks, and its time-out is
-    // rekey_marks_timeout_s of channel time for every branch (with rekey_after_s and rekey_timeout_s unset). Off: the
-    // wait in keyed time (W_min = rekey_after_s, stage 1's, the default; or, unset, the B4a-B4d variant
-    // rekey_after_dits x d_k with the time-out rekey_timeout_ratio x W_min,k). Why: the wait exists to collect enough of the
-    // station's marks to choose the re-key's amplitude and seed the fit; in the branch's dits, a branch much faster
-    // than the station (branch 1, d_1 = 12 ms, under a 25 WPM station) reached its wait after one or two of the
-    // station's marks. Counting marks does not depend on the speed (by construction).
-    bool rekey_wait_in_marks = false;  // a variant since B4g (off)
-    // marks, the re-key wait K: provisional marks (keyed by the unknown-amplitude test, ended: key-down then key-up)
-    // the branch has in its over (since the over started or since the last time-out that keyed nothing) before the
-    // over's start is re-keyed. Class: counted in marks, like the fit's memory (fit_memory). Reason: stage 1's 0.8 s
-    // of keyed time at 25 WPM (E9b, measured) holds about 9 marks, as a mark averages 1.86 dits (VE3NEA's statistics:
-    // 57% dits, 43% dahs) = 89 ms at 25 WPM (derived); and the decoder already requires 8 marks and spaces before a
-    // fresh fit counts (fresh_fit_min_obs, heuristic). Status: heuristic (Plan B, B4e)
-    int rekey_marks = 8;
-    // s of channel time, the re-key time-out with rekey_wait_in_marks, the same for every branch; counted from the
-    // over's first provisional mark (rekey_timeout_from_first_mark). Class (2) seconds: a latency. Reason: a genuine
-    // station must be able to key rekey_marks marks first; in PARIS a mark comes every 50/14 = 3.57 dits, so 8 marks
-    // take 8 x 3.57 x 240 ms = 6.9 s at the decoder's 5 WPM floor (min_wpm; derived), rounded to 7 s. Noise alone
-    // keys false marks at 0.01 per second per branch (false_marks_per_s), so it reaches 8 marks only after about
-    // 800 s (derived from the calibration target). Status: derived (Plan B, B4e). rekey_timeout_s, when set, takes
-    // precedence
-    double rekey_marks_timeout_s = 7.0;
-    // Guards on the provisional marks that count toward the re-key wait in marks and start the time-out and the
-    // stretch (Plan B, B4f; the owner's option e of 2026-10-06; off by default since B4g). Marks that fail a guard are still keyed provisionally
-    // and decoded as before; they only do not count. Each guard behind its own switch; both off is B4e.
-    // (1) Filter full: a provisional mark whose key-down sample has fewer than N_k samples of non-zero input before it
-    // (inclusive) since the stream's start or the last exact zero does not count. Why: before that the boxcar's output
-    // is a partial sum divided by N_k, not a valid average, and the noise warm-up reads it (derived). B4e's trace found
-    // every channel's first provisional mark 1.7 to 3.7 ms into the stream, so its count and stretch started there.
-    // Status: derived
-    bool rekey_guard_filter_full = false;  // a variant since B4g (off)
-    // (2) Minimum length: a provisional mark counts only if it lasts at least N_k samples (L_k, the branch's filter
-    // length; key-down to key-up). Why: a real element keyed on its own branch lasts about L_k or longer (its dit is
-    // d_k = L_k / 0.8), while a noise excursion over the provisional threshold is expected to be shorter than the
-    // filter's correlation time L_k. Status: heuristic (measured for and against in the Plan B record, section 12)
-    bool rekey_guard_min_length = false;  // a variant since B4g (off)
+    // s of channel time an over's amplitude may stay unknown before it is re-keyed at the previous over's amplitude or
+    // cleared, the same for every branch, counted from where the amplitude became unknown (and again from each time-out
+    // that keyed nothing). Must be positive. Class: seconds. Status: heuristic (stage 1); the default again since Plan
+    // B's B4g (owner, 2026-10-06, option a')
+    double rekey_timeout_s = 2.0;
     // marks and spaces of this over a fresh fit needs before it may replace the previous over's; placeholder, heuristic
     int fresh_fit_min_obs = 8;
     // s; owner

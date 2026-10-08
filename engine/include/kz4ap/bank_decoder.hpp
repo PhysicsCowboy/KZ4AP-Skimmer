@@ -22,9 +22,6 @@ public:
     // rate_hz: the channel's sample rate, samples/s. residual_hz: the station's offset from the channel's center,
     // Hz, the anchor used until set_frequency_anchor_hz is called (the engine calls it before every block).
     BankDecoder(double rate_hz, const bank::BankConfig& cfg, double residual_hz);
-    // An explicit timing for the bank (bank::fixed_timing: the prototype's time constants in seconds, for tests whose
-    // streams were chosen under them); the configuration's timing otherwise (bank::bank_timing).
-    BankDecoder(double rate_hz, const bank::BankConfig& cfg, double residual_hz, const bank::BankTiming& timing);
 
     // Mixes the block down by the latest anchor (phase continuous across blocks and anchor changes, as the
     // prototype's streams.anchored_baseband) and pushes it to the bank. Returns the characters published since
@@ -53,7 +50,6 @@ private:
 
     double rate_;
     bank::BankConfig cfg_;
-    bank::BankTiming timing_;
     double anchor_hz_;
     std::unique_ptr<bank::BankChannel> channel_;
     std::optional<double> origin_s_;          // the channel's time origin, s (the first block's t0_s)

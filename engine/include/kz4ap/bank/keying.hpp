@@ -3,8 +3,7 @@
 // log-likelihood ratio with the PARIS prior, hysteresis +/- h nats, the squelch a_min,k, and, while a
 // branch is at the start of an over (`unknown`), the unknown-amplitude threshold test x_on,k / x_off with
 // the amplitude seeded from the keyed samples; rekey keys a stored stretch again with the full LLR. All
-// branches advance one block at a time. Times are in seconds and become samples only at the point of use; W_min,k
-// is given per branch (timing.hpp: rekey_after_dits nominal dits of the branch since Plan B's B4a).
+// branches advance one block at a time. Times are in seconds and become samples only at the point of use.
 #pragma once
 
 #include "kz4ap/bank/bank_config.hpp"
@@ -39,15 +38,13 @@ struct KeyStep {
 // The prototype's BankKeyer. Its state is public, as the channel reads (and the prototype exposes) it.
 class BankKeyer {
 public:
-    // lengths_s: the branches' realized lengths L_k, s; rekey_wait_s: W_min,k per branch, s of keyed time
-    // (BankTiming::rekey_wait_s). Throws std::invalid_argument if x_on_values is set and does not hold one value per
-    // branch, or rekey_wait_s does not.
-    BankKeyer(const BankConfig& cfg, double rate_hz, const std::vector<double>& lengths_s,
-              const std::vector<double>& rekey_wait_s);
+    // lengths_s: the branches' realized lengths L_k, s. W_min is cfg.rekey_after_s for every branch. Throws
+    // std::invalid_argument if x_on_values is set and does not hold one value per branch.
+    BankKeyer(const BankConfig& cfg, double rate_hz, const std::vector<double>& lengths_s);
 
     // P: (K, n) |v_k|^2 of the block, FS^2; sigma2: (K) sigma_v,k^2, FS^2.
     KeyStep step(const Matrix& P, const std::vector<double>& sigma2);
-    // unknown & (weight >= rekey_weight[k]), per branch.
+    // unknown & (weight >= rekey_weight), per branch.
     std::vector<bool> ready_to_rekey() const;
     // A possible new over: a fresh amplitude and the unknown-amplitude test; an established amplitude is kept
     // as the fallback (prev_amp2).
@@ -62,13 +59,13 @@ public:
     std::vector<double> a_min;        // squelch per branch, dimensionless
     std::vector<double> x_on;         // unknown-amplitude key-down threshold per branch, dimensionless
     double x_off;                     // unknown-amplitude key-up threshold, dimensionless
-    std::vector<double> rekey_weight; // W_min,k per branch, samples of keyed time (W_min,k x r, not rounded)
+    double rekey_weight;              // W_min, samples of keyed time (rekey_after_s x r, not rounded)
     std::vector<double> amp2;         // s_k^2, FS^2
     std::vector<double> weight;       // W behind s_k^2, samples
     std::vector<double> prev_amp2;    // the previous over's s_k^2, FS^2 (NaN: none)
     std::vector<bool> unknown;        // at the start of an over (the stream's start is one)
     std::vector<std::vector<double>> keyed;  // |v|^2 of the keyed samples while unknown, FS^2 (last keyed_cap)
-    std::vector<int> keyed_cap;       // per branch, samples: seed_memory_rekeys x W_min,k, rounded
+    int keyed_cap;                    // samples: seed_memory_rekeys x W_min, rounded
     std::vector<int> key;             // key state at the end of the last block (0/1)
 
 private:

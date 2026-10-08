@@ -11,7 +11,6 @@ set(KZ4AP_BANK_SOURCES
   src/bank/vecmath_avx512.cpp
   src/bank/periodicity.cpp
   src/bank/selection.cpp
-  src/bank/timing.cpp
   src/bank/channel.cpp
 )
 
