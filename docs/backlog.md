@@ -608,7 +608,9 @@ Matched CER 0.0622 → 0.0436 (60 → 42 edits in 964 symbols), its
 per speed (machine keying, S₅₀₀ 25 and 10 dB), openings worse than
 Envelope by at least 5 edits went 6 → 0 and 3 → 0 at 18.5 WPM, 0 → 0
 and 2 → 1 at 25 WPM, and 5 → 6 and 12 → 15 at 12 WPM, where a milder
-loss is new (the first characters read as T's; §8, cause inferred), and
+loss is new (the first characters read as T's; cause inferred in
+`docs/signal-processing.md` appendix A.8, "Slow stations at start-up
+(12 WPM)"), and
 every opening that had lost the rest of its text now decodes after its
 first word (one channel at 25 WPM, S₅₀₀ 10 dB, still decodes nothing;
 not diagnosed). This item stays open: replay is still the fix for the
@@ -873,7 +875,8 @@ decides the result: the ambiguous band (47–70 Hz on the Envelope path,
 where Matched does worst on the QSO label (2 of 6 grid QSOs at 50 Hz above
 CER 0.4 in Task 14, 0.533 and 0.415, and still the two worst after Tasks
 15 and 16, 0.557 and 0.374: exactly the two that split into two tracks on
-the Matched path; §8b), and separate-track QSOs are dominated by track
+the Matched path; `docs/plans/2026-09-27-milestone-2a-results.md` §8.3,
+"Groups G and H"), and separate-track QSOs are dominated by track
 turnover on both paths. How many real answers fall in each band
 therefore matters.
 
@@ -885,7 +888,7 @@ Tuning waits for evidence from the benchmark (owner, 2026-09-27 and
 2026-09-29: only with strong evidence; the benchmark exists to find better
 values). The Matched front end is the default from milestone 2, part 1
 (owner decision 2026-09-29). Its parameters are heuristic
-(`docs/signal-processing.md` appendix A.7, A.8, A.8b): the filter length
+(`docs/signal-processing.md` appendix A.6, A.7, A.8, A.8b): the filter length
 β = 0.8 dit (sweep 0.6, 0.8, 1.0), the amplitude and noise time constants (0.5 s, 2 s;
 the fading group is the test), the squelch a_min = 3·(T_v/16 ms)^(1/4)
 (T_v the filter's duration), the keying hysteresis ±1 nat, the noise guards
@@ -932,7 +935,8 @@ Three mechanisms were diagnosed in Task 14; one is fixed, one partly:
   widened again, so the filter reached its target within one mark (20 →
   95 ms in 35 ms, measured). With a wrong estimate it jumped to the wrong
   width at once. Measured after the fix: the two start-up runaways of
-  §8b read Matched CER 0.000 and 0.015 (were 0.464 and 0.981), and group
+  `docs/plans/2026-09-27-milestone-2a-results.md` §8.3 ("Limits
+  measured") read Matched CER 0.000 and 0.015 (were 0.464 and 0.981), and group
   A's CER-0.10 crossing at 25 WPM is 1.1 dB (0.4 to 1.4 dB; was 2.7 dB,
   −0.0 to 10.4 dB).
 - **A misleading first mark** (the front end's 0.32 s warm-up ending inside
@@ -952,8 +956,8 @@ Three mechanisms were diagnosed in Task 14; one is fixed, one partly:
   at 12 WPM 6 and 15 of 80 are (was 5 and 12), now by a milder loss: the
   first characters of a station slower than 12.5 WPM read as a string of
   T's (group A, 12 WPM, first-word CER 0.591 → 0.985 at S₅₀₀ 6–20 dB;
-  cause inferred in §8, "Marks whose start was not observed", not
-  instrumented).
+  cause inferred in `docs/signal-processing.md` appendix A.8, "Slow
+  stations at start-up (12 WPM)", not instrumented).
 - **Tune-up carriers of 1 s or more** leave the Matched channel silent when
   the channel opens during the carrier (measured by cutting the recording;
   a 2 s carrier also when the channel is open before it; unchanged by
@@ -1114,17 +1118,20 @@ the after figures include Task 16; Task 15 alone was also scored, and
 its figures are given where they differ): group A, Matched S₅₀₀ at CER 0.10
 (dB): 0.2 (−0.5 to 2.2) → −0.2 (−0.5 to 0.7) at 12 WPM, 2.7 (−0.0 to
 10.4) → 1.1 (0.4 to 1.4) at 25 WPM, 3.1 (2.0 to 3.6) → 2.9 (2.2 to 3.3)
-at 40 WPM; the two start-up runaways of §8b, Matched CER 0.464 → 0.000
+at 40 WPM; the two start-up runaways of
+`docs/plans/2026-09-27-milestone-2a-results.md` §8.3 ("Limits measured"),
+Matched CER 0.464 → 0.000
 (`A-awgn-25wpm-1-s1`, +6606.5 Hz, S₅₀₀ 10 dB) and 0.981 → 0.015
 (`A-awgn-25wpm-0-s2`, −2991.9 Hz, S₅₀₀ 2 dB; 0.074 with Task 15 alone);
 a regression from Task 15 alone, group D's speed step from 20 to 35 WPM,
 0.113 → 0.394, the text stopping after the step in 5 of 6 signals (not
-diagnosed; §8b, "Where Matched is worse"); group H through the
+diagnosed; the same record's §8.3, "Where Matched is worse than
+Envelope"); group H through the
 detector at 50 Hz (grid, 6 QSOs), QSO-label CER 0.533, 0.154, 0.046,
 0.415, 0.032, 0.040 → 0.557, 0.234, 0.046, 0.374, 0.025, 0.043: the two
 QSOs that split into two tracks (the same two; tracks per QSO 1.33 before
 and after) still read worst, consistent with the split, not a runaway,
-failing them (inferred; §8b, "Groups G and H").
+failing them (inferred; the same record's §8.3, "Groups G and H").
 
 ### A mark whose key-up the squelch forces (possible limit; derived from the code, not observed)
 
