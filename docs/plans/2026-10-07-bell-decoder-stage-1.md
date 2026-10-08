@@ -1,8 +1,8 @@
 # Bell 1977 decoder, stage 1: Bell as published
 
 > **Status: draft for the owner's approval, 2026-10-07. No code before approval.** The owner's decisions of
-> 2026-10-08 are recorded at the top of §3; D6 is still open, for discussion. The owner is reading the plan while
-> Task 1 (research, no code) starts.
+> 2026-10-08 are recorded at the top of §3, D6 included. The owner is reading the plan while Task 1 (research, no
+> code) runs.
 >
 > **Spec:** `docs/design/2026-09-25-kz4ap-skimmer-design.md` §5.2 step 3, amendment "Bell 1977 instead of
 > manta" (owner, 2026-10-07). **Evidence:** `docs/research/bell-1977-notes.md` (the thesis as read for the
@@ -118,7 +118,7 @@ confirms or corrects each.
 | D3 | Both: (A) the oracle gain and (B) the AGC. | As written (§6). |
 | D4 | Yes, the reproduction at his fixed speeds and S₁₀₀ values. In addition, his tables are made from our jittered development set as well, or our jittered-set results are overlaid with his values at his fixed points. | §6 and Task 9 gain the Bell-format tables and the overlay from the jittered set. |
 | D5 | Yes, his conditions in our Python generator. Our own fist, fading and text models stay as they are; his are added as further options. | Task 7: added, nothing replaced. |
-| D6 | Open, for discussion. The owner needs the body of `docs/signal-processing.md` only for the processing chains under discussion while this code is developed. Chains not under discussion (the Envelope decoder, for example) get a very short summary that points to the appendix. | Task 6's documentation step follows the outcome. |
+| D6 | Decided after discussion (2026-10-08). The body of `docs/signal-processing.md` covers in full the processing chains under development or discussion; every other chain gets a short summary that points to its appendix section (the `CLAUDE.md` rule, reworded). For this plan: Bell's receiver chain and decoder in full; the signal detector and channelizer at medium detail; the bank's filter bank, likelihood and noise estimate at medium detail; the bank's back end, Matched, Envelope and the shared back end one short paragraph each. The restructuring is done now, as a separate docs-only change, reviewed like a task (option a: the owner keeps the document up to date). Nothing leaves the document: what leaves the body is in the appendix. | The docs-only change runs between Task 1 and Task 6; Task 6 then only adds Bell's body section. |
 | D7 | No sentence on the thesis's status. The owner: "if it's in the public domain, it's in the public domain"; it is not a legal question. | Task 1's README cites the thesis and says nothing more. |
 | D8 | `bell-stage-1`, from `main`. | The branch was started at 00210b3, the head of PR #1 (`milestone-2c-stage2` into `main`), whose content `main` will hold after that merge. |
 | §7, the stage-2 order | Not yet decided. | Revisited with stage 1's results. |
@@ -756,8 +756,8 @@ Research only; no engine code.
     noise level, and the channelizer's gain for a tone (derived, `docs/signal-processing.md` §7). A test on a
     generated tone checks it;
   - the bench tests;
-  - `docs/signal-processing.md`: the body's section on the Bell decoder; appendix A.8d with the exact form; A.10
-    rows. The body's shape follows D6, which is still being discussed with the owner;
+  - `docs/signal-processing.md`: the body's section on the Bell decoder, in full (about 900 words); appendix A.8d
+    with the exact form; A.10 rows. The rest of the body was already restructured per D6;
   - the results record, section 5 (CPU).
 
 **Interfaces:**

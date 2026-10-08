@@ -16,10 +16,12 @@
   resetting commits); fix mistakes with a new commit.
 - **`docs/signal-processing.md` describes the engine's signal processing as it
   actually is** (one document; owner, 2026-10-05). Its **body** is readable
-  with concentration in about 30 minutes (6 000 words at most): how the
-  system works, each stage in order with its formulas, every value with its
-  unit and whether it is derived, measured or heuristic; the default signal
-  path first, each variant that is not the default in a sentence. Its
+  with concentration in about 30 minutes (6 000 words at most). The body
+  covers in full the processing chains under development or discussion: how
+  each works, each stage in order with its formulas, every value with its
+  unit and whether it is derived, measured or heuristic, each variant that is
+  not the default in a sentence. Every other chain gets a short summary
+  pointing to its appendix section (owner, 2026-10-08). Its
   **appendix**, organized by the body's sections, holds the derivations, the
   provenance of every measured or heuristic value with its validity
   conditions, the known limitations and defects, the full parameter table and
