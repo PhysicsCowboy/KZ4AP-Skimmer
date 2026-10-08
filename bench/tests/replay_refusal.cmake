@@ -1,4 +1,4 @@
-# kz4ap-bank-replay refuses a --set rekey_after_s or rekey_timeout_s that is not positive (a 0 once selected Plan B's
+# kz4ap-bank-replay refuses a --set rekey_after_s or rekey_timeout_s that is not positive (0 s once selected Plan B's
 # removed re-key variants) once, before it reads the suite: exit status 1 and one line on stderr. SUITE is a folder
 # that does not exist, so the check must come before the manifest is read; a positive value is not refused and then
 # fails on the missing manifest (exit status 2). Nothing is written.
