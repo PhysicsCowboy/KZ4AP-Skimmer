@@ -1,12 +1,16 @@
 # Signal Processing Pipeline
 
 How KZ4AP Skimmer turns a radio's I/Q samples into Morse text. This body is
-written to be read: for each stage, what it is for, the idea behind it, the
-formula or two that carry the idea, and the values that matter. Every value
-carries its unit and its class: **derived** (it follows from the
-mathematics), **measured** (set by an experiment), **heuristic** (a judgment
-call, not measured), **placeholder** (kept until an experiment settles it)
-or **owner** (the owner's decision).
+written to be read. It covers in full what is under development or
+discussion: the stages every decoder shares (sections 1–7) and the bank
+decoder's filter bank, likelihood and noise estimate (section 8c); for each
+stage, what it is for, the idea behind it, the formula or two that carry
+the idea, and the values that matter. Every other chain gets a short
+summary that points to its appendix section. Every value carries its unit
+and its class: **derived** (it follows from the mathematics), **measured**
+(set by an experiment), **heuristic** (a judgment call, not measured),
+**placeholder** (kept until an experiment settles it) or **owner** (the
+owner's decision).
 
 The **appendix** (section A) is the reference. For each section it gives the
 exact form of every rule as the code implements it (update orders,
@@ -41,17 +45,7 @@ dits where the text says so.
 | r | the rate of one station's channel, fs/128 | 1500 samples/s |
 | dit | 1.2 s / WPM (the PARIS convention) | 48 ms at 25 WPM |
 | S₅₀₀ | key-down carrier power over the noise power in 500 Hz | |
-
-Several dit-like quantities appear in the bank decoder (section 8c); they
-are different things:
-
-| Symbol | What it is |
-|---|---|
-| dit | the generic dit of a speed, 1.2 s / WPM |
-| d_k | branch k's nominal dit, fixed: L_k / 0.8 (12 ms on branch 1 to 230 ms on branch 32) |
-| T | the dit a branch has fitted to its own marks and spaces (the duration fit) |
-| τ_c | a candidate dit tried by the periodicity estimator (303 values, 12 to 242 ms) |
-| T_P | the periodicity estimator's result: the best confident candidate |
+| d_k | nominal dit of the bank decoder's branch k, fixed: L_k / 0.8 (section 8c), not the station's dit | 12 ms (branch 1) to 230 ms (branch 32) |
 
 ## Overview
 
@@ -73,7 +67,8 @@ a *track* with a frequency. For every track the **channelizer** cuts a
 narrow stream out of the band, about ±150 Hz around the station, at 1500
 samples/s. A **decoder** per channel turns that stream into characters.
 There are three decoders: **Matched** (the default), **Envelope** (the
-original baseline) and the **bank** (the current development focus). Before
+original baseline) and the **bank**, selectable and frozen at its current
+defaults as the reference for new decoders (design spec §5.2). Before
 each block of samples the engine tells the decoder where the detector now
 thinks the station is (the *anchor*).
 
@@ -220,17 +215,11 @@ one sample in 128.
   and decimating directly, up to rounding (derived).
 
 **Frequency re-centering (Matched only).** The station may sit up to
-11.7 Hz off 0 Hz and may drift. The Matched decoder's tracker measures the
-offset and shifts it out, sample by sample. It compares the matched
-filter's output with itself 5.33 ms earlier: the phase change over that
-lag is 2π × offset × 5.33 ms, so the offset is read directly (no feedback
-loop; derived). Only key-down samples count (weighted by Matched's
-probability of key-down), averaged over **0.5 s** of key-down time
-(heuristic). The detector decides which station; the tracker only
-fine-tunes: its estimate is accepted only within **±12 Hz** of the
-detector's frequency (heuristic; owner), and it can shift by at most
-±75 Hz within the channel (heuristic; the channel filter is 0.34 dB below
-its passband there). The channel itself never moves.
+11.7 Hz off 0 Hz and may drift. The Matched decoder's tracker reads that
+offset from the phase change of its filter's output over 5.33 ms (no
+feedback loop; derived) and shifts it out. The detector decides which
+station; the tracker only fine-tunes, within **±12 Hz** of the detector's
+frequency (heuristic; owner). The bank decoder has no tracker (section 8c).
 
 Appendix: A.7.
 
@@ -246,122 +235,46 @@ into characters; the bank has its own.
 
 ### Envelope (not the default)
 
-The milestone-1 baseline, heuristic throughout. It takes the magnitude of
-the channel stream, smooths it over about a quarter dit, and follows two
-levels: a *mark level* that jumps up quickly (4 ms) and decays slowly (3 s),
-and a *space level* that does the opposite. The key is down when the
-smoothed magnitude is above 60% of the way from the space level to the mark
-level, and up below 40% (hysteresis). It keys nothing unless the mark level
-is at least 3 times the space level (a squelch).
+The milestone-1 baseline, heuristic throughout. It smooths the magnitude
+of the channel stream over about a quarter dit and follows a *mark level*
+and a *space level*. The key goes down when the smoothed magnitude rises
+above 60% of the way from the space level to the mark level, and up when
+it falls below 40% (hysteresis); nothing is keyed unless the mark level is
+at least 3 times the space level (a squelch). Exact form: appendix A.8.
 
 ### The shared back end (Envelope and Matched)
 
-From key-down and key-up times to characters:
-
-- Marks shorter than 0.3 dit are ignored, and key-up gaps shorter than
-  0.3 dit are bridged.
-- A mark longer than 2 dits is a dah. A space longer than 2 dits ends the
-  character; longer than 5 dits also ends the word.
-- Characters come from a 62-symbol table; eight or more dits read `<HH>`
-  (the error signal), and a pattern not in the table reads `*`.
-- **Speed.** After every mark, the dit is re-estimated from the last
-  **24 marks**: they are sorted and split into dits and dahs at the largest
-  ratio between neighbors; when the dah/dit ratio is plausible (3.0 to
-  3.85), dit = (mean dah − mean dit)/2, which cancels a constant lengthening
-  or shortening of every mark (measured band). The speed is kept within 5 to
-  60 WPM and starts at 25 WPM. Heuristic apart from the measured band.
-
-Appendix: A.8.
+It turns key-down and key-up times into characters: a mark longer than
+2 dits is a dah; a space longer than 2 dits ends the character, one longer
+than 5 dits the word. After every mark the dit is re-estimated from the
+last 24 marks, in a form that cancels a constant lengthening or shortening
+of every mark. Heuristic apart from a measured band of dah/dit ratios.
+Exact form: appendix A.8.
 
 ## 8b. Matched decoder (the default)
 
-The Matched decoder replaces Envelope's thresholds with a matched filter and
-a likelihood ratio. Per channel, in order: frequency re-centering
-(section 7), a filter 0.8 dit long, a probability of key-down for every
-sample, keying on that probability, then the shared back end.
+The default decoder (owner). Its key idea: replace Envelope's thresholds
+with a matched filter and a likelihood ratio. A mark is a rectangular burst
+of carrier, and the filter that maximizes its SNR is a moving average (a
+*boxcar*) as long as the burst (derived). After frequency re-centering
+(section 7), a boxcar 0.8 dit long (heuristic; 0.97 dB of output SNR below
+the full dit, derived) gives every sample the likelihood ratio and
+probability of key-down of section 8c; the key goes down above +1 nat of
+log-odds and up below −1 nat (heuristic), then the shared back end makes
+the characters. The filter's length follows the decoder's own speed
+estimate, from a 60 WPM start: a feedback loop, which the bank removes. The
+station's amplitude and the noise are estimated on the air, and after a
+long silence the decoder re-acquires. Exact form: appendix A.8b.
 
-**The filter.** A dit is a rectangular burst of carrier; the filter that
-maximizes its SNR is a moving average (a *boxcar*) as long as the burst
-(derived). The decoder uses a boxcar of **0.8 dit** (K samples; 58 at
-25 WPM), a heuristic that costs 0.97 dB of output SNR relative to the full
-dit (derived) but keeps short marks resolvable. Its noise bandwidth at
-25 WPM is 25.9 Hz, so it passes 9.9 dB less noise power than the 252 Hz
-channel. The filter starts at the 60 WPM width (16 ms). Once the speed
-estimate rests on 8 marks, the length follows the decoder's own speed
-estimate, growing at most ×1.25 per mark (heuristic; owner). A mark whose
-start was not seen (it began while keying was impossible) is decoded but
-not counted for speed.
-
-**The probability of key-down.** With v the filter output, σ the noise per
-real component and ŝ the station's amplitude, each filter output gets the
-log-likelihood ratio of key-down against key-up: how much more likely the
-observed |v| is with a carrier plus noise (Rician) than with noise alone
-(Rayleigh):
-
-  Λ = −a²/2 + ln I₀(a·x)  (nats),  x = |v|/σ,  a = ŝ/σ.
-
-(The Bessel function I₀ is what remains of the Rician density once the
-carrier's unknown phase is averaged out.) The amplitude-to-noise ratio a is
-tied to S₅₀₀ by a² = 2·S₅₀₀·(500 Hz)·K/r, S₅₀₀ as a linear ratio
-(derived, for noise flat across the filter): a = 6.2 at S₅₀₀ = 0 dB and
-25 WPM. Adding the prior log-odds of key-down, ln(0.44/0.56) (PARIS text keys down
-22 of every 50 dit units; derived), gives g; the probability is
-p = 1/(1 + e^(−g)). The key goes down when g > +1 nat and up when
-g < −1 nat (heuristic hysteresis). Each sample is judged on its own: neighboring outputs of the
-boxcar share most of their input, so they are strongly correlated, and the decoder does not add
-their likelihood ratios up as independent evidence.
-
-**What it must estimate.** The rule needs ŝ and σ, both learned on the air:
-
-- **Station amplitude ŝ²:** a running average of |v|² − 2σ² over key-down
-  samples (weighted by p), with a memory of **0.5 s** of key-down time
-  (heuristic). The mean of |v|² while keyed is ŝ² + 2σ², hence the
-  subtraction.
-- **Noise σ²:** the *three-tap guard*. It looks at three filter outputs
-  K samples apart, which share no input samples. If the middle one is
-  small (|v|²/2σ² below κ = 1.75) and both neighbors are small too (below
-  4), the middle sample is taken as noise. Accepting only small samples
-  biases the average low by a known factor, the mean of an exponential
-  truncated at κ, m(κ) = 0.632, which the update divides out (derived). Its
-  memory is **2 s** (heuristic). In noise alone, the only stable value is
-  the true σ² (derived).
-- A floor (the 10th percentile of recent |v|², scaled) keeps σ² from
-  sinking below what noise can produce, and a 0.32 s warm-up sets both
-  estimates at the start (both heuristic forms with derived scaling).
-
-**Squelch.** p is forced to 0 while the station's amplitude is below
-a_min = 3 × (filter length / 16 ms)^(1/4) in units of σ: the scaling keeps
-noise's false-pass rate the same at every filter length (derived), the 3 is
-heuristic. Since a station is acquired at the 16 ms width, this sets the
-squelch threshold at S₅₀₀ = −2.5 dB at every speed (derived, with the true
-amplitude; up to 1.4 dB higher with the estimate's bias). That is a lower
-bound on sensitivity, not the decoder's working sensitivity.
-
-**Re-acquisition.** After the key has been up for the longer of 0.5 s and
-12 dits, the decoder assumes a new transmission may start at a new speed:
-the filter returns to its acquisition width, the amplitude and frequency
-estimates restart, and the speed window is set aside so the next station's
-marks are not mixed with the last one's. If nothing is keyed within 2 s,
-the old speed window and filter width come back (the amplitude and
-frequency estimates stay restarted). Heuristic.
-
-Appendix: A.8b.
-
-## 8c. Bank decoder (selectable; the current development focus)
+## 8c. Bank decoder (selectable; frozen as the reference)
 
 **The idea.** Matched's filter has to know the speed to be the right
 length, and the speed comes from what the filter decodes: a feedback loop
 that can lock onto a wrong speed. The bank removes the loop. It runs
-**32 filters at once**, one per speed, from 100 WPM down to 5 WPM; each
-*branch* keys, times and spells its own text with no knowledge of the
-others; a selector then decides which branch's text to publish, and
-corrects published text when it changes its mind.
-
-Two words recur below. An **over** is one station's turn to transmit (from
-radio practice); the decoder treats a long enough silence as the end of an
-over, because the next transmission may come from another station, at
-another speed and level. A branch's **amplitude** is its estimate of the
-station's key-down carrier amplitude, which the likelihood ratio needs.
+**32 filters at once**, one per speed from 100 down to 5 WPM; each
+*branch* decodes its own text with no knowledge of the others, and a
+selector publishes one branch's text. It is frozen at its current
+defaults as the reference for new decoders (design spec §5.2).
 
 **Input.** The channel stream is shifted by the detector's current
 frequency (the anchor) so the station sits near 0 Hz; there is no separate
@@ -374,17 +287,26 @@ tracker. Whatever offset remains, each branch's filter attenuates it.
 each 10% longer than the last (the ratio and speed range owner; the
 filter as 0.8 of a dit heuristic, as in Matched). Its *nominal dit* is
 d_k = L_k/0.8: 12 ms (100 WPM) on branch 1, 50 ms on branch 16 (24 WPM),
-230 ms (5.2 WPM) on branch 32. A longer branch passes less noise, so a slow
-station gets a cleaner signal on its own branch. In Matched's terms the
-branch sees a² = 2·S₅₀₀·(500 Hz)·L_k (derived, white noise): its own SNR,
-a²/2, is S₅₀₀ + 6.8 dB on branch 1, + 12.8 dB for a 25 WPM filter (38.4 ms,
-between branches 15 and 16) and + 19.6 dB on branch 32 (each in dB SNR in
-that branch's own noise bandwidth). Each branch computes Matched's
-likelihood ratio Λ and probability p from its own output.
+230 ms (5.2 WPM) on branch 32.
 
-Everything advances in blocks of **32 samples (21.33 ms)**: noise, keying,
-the speed estimate, the branches' fits and decisions, selection, and
-publishing, in that order.
+**The likelihood.** Each branch gives every output sample v the
+log-likelihood ratio of key-down against key-up: how much more likely the
+observed |v| is with a carrier plus noise (Rician) than with noise alone
+(Rayleigh),
+
+  Λ = −a²/2 + ln I₀(a·x)  (nats),  x = |v|/σ_k,  a = ŝ/σ_k,
+
+with σ_k the branch's noise per real component, ŝ its *amplitude* (its
+estimate of the station's key-down carrier amplitude) and I₀ the modified
+Bessel function of order 0 (the form derived). In white noise
+a² = 2·S₅₀₀·(500 Hz)·L_k, S₅₀₀ as a linear ratio (derived). A longer branch
+passes less noise, so a slow station gets a cleaner signal on its own
+branch: the branch's own SNR, a²/2, is S₅₀₀ + 6.8 dB on branch 1, + 12.8 dB
+for a 25 WPM filter (38.4 ms, between branches 15 and 16) and + 19.6 dB on
+branch 32, each in dB SNR in that branch's own noise bandwidth. With the
+prior log-odds of key-down, ln(0.44/0.56) (PARIS keys down 22 of every 50
+dit units; derived), Λ gives the log-odds g and the probability of
+key-down p = 1/(1 + e^(−g)).
 
 ### Noise
 
@@ -396,228 +318,57 @@ The bank therefore takes the **level** from branch 1 and the **ratios**
 between branches from a measured noise spectrum (the method chosen by
 measurement in the stage-1 prototype).
 
-- **Level.** Branch 1 runs Matched's three-tap guard (memory 2 s). For the
-  first 0.32 s of non-zero input, a warm-up sets it from the 20% quantile of the
-  output power (scaling derived for noise). Unlike Matched, the bank has no
-  floor that lifts σ².
+- **Level.** Branch 1 runs Matched's *three-tap guard*: of three outputs
+  one filter length apart (9.33 ms), which share no input samples, the
+  middle one is taken as noise if it is small (|v_1|²/2σ²_1 below
+  κ = 1.75) and both neighbors are below 4 (heuristic values). Accepting
+  only small samples biases the average low by a known factor,
+  m(κ) = 0.632, the mean of an exponential truncated at κ, which the update
+  divides out (derived). Memory 2 s (heuristic). For the first 0.32 s of
+  non-zero input, a warm-up sets the level from the 20% quantile of the
+  output power (the duration heuristic, the scaling derived for noise).
 - **Spectrum.** The channel stream is cut into segments of 171 ms
   (5.86 Hz bins). Samples near any output of branch 1 stronger than
-  4 × its noise power (|v_1|²/2σ² ≥ 4, the guard's neighbor threshold) are
-  left out, with a margin of **4.8 ms** on each side (half of branch 1's
-  filter; heuristic, owner); a segment counts only if at least half of it
-  is left (heuristic). This is a level test on branch 1's output, not its
-  keying: no keying decision feeds the noise estimate. The kept segments
-  build an averaged spectrum (2 s memory), smoothed over ±25 Hz
+  4 × its noise power (|v_1|²/2σ²_1 ≥ 4, the guard's neighbor threshold)
+  are left out, with a margin of **4.8 ms** on each side (half of branch
+  1's filter; heuristic, owner); a segment counts only if at least half of
+  it is left (heuristic). This is a level test on branch 1's output, not
+  its keying: no keying decision feeds the noise estimate. The kept
+  segments build an averaged spectrum (2 s memory), smoothed over ±25 Hz
   (heuristic).
-- **Ratios.** Each branch's noise is that spectrum weighted by its filter
-  response, divided by branch 1's, times branch 1's level. Leaving out
-  samples near signals removes mostly low-frequency power, which the long
-  branches weight most, so the masked spectrum reads each branch's noise
-  slightly low; a factor per branch, 0.84 (branch 1) to 0.78 (branch 32),
-  corrects it (measured in white noise, 200 seeds; valid only for these
-  defaults).
-- **Exact zeros** are treated as missing data: a receiver's output always
-  carries noise, so a run of exact zeros is padding or a dead channel, not
-  a measurement (derived). Until the first non-zero sample the channel
+- **Ratios.** Branch k's noise is branch 1's level times
+  ∫ S·|H_k|² df / ∫ S·|H_1|² df, S that spectrum. Leaving out samples near
+  signals removes mostly low-frequency power, which the long branches
+  weight most, so the masked spectrum reads each branch's noise slightly
+  low; a factor per branch, 0.84 (branch 1) to 0.78 (branch 32), corrects
+  it (measured in white noise, 200 seeds; valid only for these defaults).
+- **Exact zeros** are missing data: a receiver's output always carries
+  noise, so a run of exact zeros is padding or a dead channel, not a
+  measurement (derived). Until the first non-zero sample the channel
   decodes nothing.
-- **Recovery.** If the noise rises suddenly by a large factor, the guard can
-  accept no sample again and the estimate would stay stuck low. If branch 1
-  accepts nothing for **8 s** (4 × the 2 s memory; heuristic), every
-  branch's noise is re-initialized from its recent input. In seconds, not
-  dits, because noise has no keying speed.
+- **Recovery.** If branch 1 accepts nothing for **8 s** (4 × the 2 s
+  memory; heuristic), as after a sudden large rise of the noise, which
+  would leave the estimate stuck low, every branch's noise is
+  re-initialized from its recent input; in seconds, not dits, because
+  noise has no keying speed.
 
-### Keying time constants
+### The back end, in outline
 
-The keying time constants are in seconds, the same for every branch, each
-with its class (owner):
-
-| Setting | Value | Stage 1 | Class |
-|---|---|---|---|
-| Re-key wait | 0.8 s of keyed time, every branch | the same | seconds (stage 1's, measured by E9b) |
-| Re-key time-out | 2 s from the amplitude becoming unknown | the same | seconds; heuristic |
-| Periodicity windows | 5, 10 s for every candidate | 2, 5, 10 s | seconds, class 2: latency (owner); values placeholder; 2 s dropped (owner, 2026-10-07) |
-
-Plan B measured variants in the branch's dits and in marks; they were
-removed when the bank was frozen as the reference (2026-10-07; Plan B
-record, sections 6 and 10–13).
-
-### Keying
-
-Each branch decides key-down or key-up for every sample, in one of two
-modes.
-
-**When the amplitude is known**, it uses Matched's rule: key down when the
-log-odds g exceeds +1 nat, up below −1 nat, with a per-branch squelch,
-a_min,k = 3 × (L_k/16 ms)^(1/4) (2.6 on branch 1 to 5.5 on branch 32, in
-units of σ_k). The amplitude keeps tracking the station: in every block,
-the key-down samples (weighted by p) give a fresh estimate of the carrier
-power, their mean |v|² less the noise's 2σ², and the running estimate ŝ²
-moves part of the way toward it, with a memory of **0.5 s** of key-down
-time (heuristic). It starts from the seed below, counted as the keyed time
-the seed rests on.
-
-**When the amplitude is unknown** (at the stream's start and at every new
-over), the likelihood ratio cannot be computed. The branch then keys with a
-plain threshold on its output in units of the noise: key down when
-x = |v|/σ exceeds x_on,k (4.64 on branch 1 to 4.20 on branch 32,
-**measured** so that noise alone produces 0.01 false marks per second per
-branch; the target heuristic), key up below 1.55 (noise alone exceeds it
-30% of the time; heuristic). Marks keyed this way are *provisional*: the
-key releases only when the filter's falling ramp drops below the low
-release threshold, near the end of the ramp, so each mark comes out too
-long by up to L_k (the high on-threshold shortens its start somewhat;
-derived). They are not used to fit the timing.
-
-**The re-key cycle:**
-
-1. A new over begins (or the stream starts): the amplitude becomes unknown,
-   and the branch keys provisionally.
-2. The time-out counts from that moment, and the stretch to be re-keyed
-   starts there.
-3. After **0.8 s of keyed time** (stage 1's value, measured at 25 WPM), it
-   seeds the amplitude from the keyed samples: their 90% quantile less the
-   noise (heuristic).
-4. It **re-keys** the stretch (at most 20 s back) with the full rule, at
-   two candidate amplitudes: the seed, and the previous over's amplitude if
-   any. The candidate whose fit explains the stretch better wins
-   (heuristic); its characters replace the provisional ones.
-5. **Time-out:** without 0.8 s keyed within **2 s**, the stretch is
-   re-keyed at the previous over's amplitude if that keys anything;
-   otherwise its provisional characters are deleted and the count starts
-   afresh. This removes noise keyed after a station stops.
-
-These are stage 1's settings (owner).
-
-### Duration fit
-
-Each branch learns the station's timing from the durations of its marks
-and spaces. Five kinds of interval are modeled, each around a median:
-
-| Interval | Median |
-|---|---|
-| dit | T + w |
-| dah | qT + w |
-| space inside a character | T − w |
-| space between characters | 3T_g − w |
-| space between words | 7T_g − w |
-
-T is the dit, q the dah/dit ratio, w the *weighting* (how much every mark is
-lengthened and every space shortened, e.g. by a transmitter's keying or by
-the filter), and T_g the gap timebase (equal to T in standard spacing,
-longer in Farnsworth spacing). Around each median, ln(duration) scatters as
-a normal distribution, of width 0.15 for marks and 0.25 for spaces
-(heuristic), widened by the branch's timing resolution (each edge can be
-moved by noise by about L_k/a, derived). The five kinds' prior
-probabilities come from VE3NEA's character and word statistics (derived);
-5% of intervals are allowed to be anything between 1 ms and 10 s (outliers;
-heuristic).
-
-**Finding the best fit.** For every point of a grid over (T, q, w, T_g),
-the branch keeps the log-likelihood of all intervals seen so far, with older
-intervals fading out: memory of **48 intervals** (measured). The grid: T in
-1% steps from 12 to 242 ms (step a placeholder); q ∈ {3, 4, 5}; w/T ∈
-{−0.4, 0, 0.4, 0.8}; T_g/T ∈ {1, 1.59, 2.52, 4, 6.35} (grids measured).
-The best grid point, nudged toward the speed estimate T_P when one exists
-(next section), is refined by two Gauss–Newton steps on the last 192
-intervals, and kept only if it does not lower the likelihood (heuristic).
-The fit's **quality** is its mean log-likelihood per interval, in nats. A
-mark is then a dah if the dah explains it better than the dit; a space is
-whichever of the three kinds explains it best.
-
-(The likelihood over the grid is the decoder's main cost; it is evaluated
-in a fast, vectorized form that agrees with the plain formula to the last
-bits. A.8c.)
-
-### Periodicity: a coarse speed from the rhythm
-
-A second, independent speed estimate T_P helps the fits find the right
-speed quickly and helps selection when no fit is yet trustworthy. It looks
-for the rhythm of the keying rather than for individual marks.
-
-The input is branch 1's probability of key-down p over a recent window.
-Morse keying is not periodic, but it lives on a grid of dits, and
-consecutive edges one dit apart have opposite signs. So p's autocorrelation
-is low at odd multiples of the dit and high at even ones, and the natural
-period to test is a dit plus a space (the argument derived; the comb on it
-chosen by the owner, E1). For each candidate dit τ_c the estimator computes
-a *comb* score: the normalized autocorrelation of p (1 at lag 0) at 2τ_c,
-4τ_c, 6τ_c and 8τ_c, each minus the mean of its values halfway on either
-side, averaged over the four. The score is dimensionless
-and bounded by 2 in magnitude (an unbroken string of dits scores about
-1.5). For random machine-keyed text the true dit scores about 0.31–0.37 and
-its alias at three times it about 0.18–0.24 (derived from the keying's autocorrelation
-as measured on noise-free keying:
-`docs/research/2026-10-05-periodicity-windows-and-rekey-analysis.md`, §2).
-Recomputed every 0.25 s.
-
-**Windows.** The estimate uses only recent p, because the station
-changes (a stream starts, an over begins, the speed changes): a short window
-follows a change quickly, a long one is steadier. Two run at once,
-**5 and 10 s** (placeholder values); in each the best-scoring candidate
-is *confident* at a score of at least **0.03** (placeholder), and T_P is
-the confident estimate of the shortest window. The comb's outermost lag,
-9.15·τ_c, must fit in half the window, so a window W scores only
-τ_c ≤ W/18.3 (derived): 5 s reaches down to 4.4 WPM, 10 s to 2.2 WPM. The
-windows are fixed in seconds for every candidate (owner, 2026-10-06): they
-exist for latency after a change, felt in seconds; the reach limit is
-physics any rule must wait for. Stage 1's 2 s window (reach 11 WPM) was
-dropped (owner, 2026-10-07): below about 10 WPM it returned a false match
-near a third of the dit, scoring just above 0.03, which as the shortest
-confident window set T_P and pulled the fits to half the dit (measured).
-The cost: a window scores only once full, so the first T_P comes after 5 s
-of a stream, not 2 s. T_P never feeds back into its own estimate.
-
-### Choosing which branch to publish
-
-A branch is **eligible** when its fitted dit matches its own filter
-(L_k within one ladder step of 0.8 × its fitted T) and its fit has seen at
-least 8 intervals (heuristic): it is decoding at its own speed. Among
-eligible branches the best fit quality wins, refined as follows:
-
-- Branches within 0.05 nats per interval of the best quality are a tie
-  (placeholder).
-- If every tied branch has text, only those whose text is within 0.1 nats
-  per character of the likeliest text stay tied (heuristic). The text score
-  is a per-character language score over the last 10 characters
-  (placeholder window), from VE3NEA's character frequencies (derived);
-  codes missing from his table and `*` are penalized (heuristic values).
-- Of what remains tied, the **longest branch** wins: it has the best SNR.
-
-If no branch is eligible, selection falls back to clearly better text (a
-lead of at least 1 nat per character; heuristic), else to the branch
-nearest the speed estimate T_P, else to branch 1. To avoid flicker, the
-published branch changes only after the same other branch has been best at
-**4** consecutive selection instants (placeholder). Selection runs whenever
-branch 1 keys up.
-
-### Channel decoder: overs and corrections
-
-- **Marks and spaces** are timed with each branch's filter delay removed
-  and fed to that branch's fit; provisional ones are not fitted.
-- **A new over.** When a branch's key has been up longer than the larger of
-  0.5 s and 12 gap units T_g (0.58 s at 25 WPM; before any fit, T_g is
-  taken as 240 ms, so 2.88 s; placeholders), the branch ends its character,
-  keeps its fit as "the previous over's", starts a fresh fit, and its
-  amplitude becomes unknown (the re-key cycle above). Until the re-key it
-  keeps decoding with the previous over's fit.
-- **Fresh fit or previous fit.** After a new over, both fits keep running;
-  the fresh one takes over only when it has 8 of the over's intervals
-  (placeholder) and explains them clearly better (a penalized likelihood
-  test in the BIC form; the form derived, its constant heuristic).
-- **Corrections.** When selection switches branch, or a re-key or time-out
-  changes a branch's text, the published text is corrected from the point
-  where it changed, but never more than **20 s** back (owner). The engine
-  passes each correction to the display as "keep the first n characters,
-  then append these"; the *final* text has every correction applied, the
-  *immediate* text none. The bank publishes text only: the speed,
-  confidence and per-character probability fields of its output are
-  placeholders.
-- **End of stream:** every open character is ended and published.
-
-**Cost.** About 8 to 14 MB of memory per channel (derived from the arrays
-allocated), and about 42 ms of CPU per second of channel on the Linux test
-machine at the current defaults (measured, Plan B), against about 0.6 ms for
-Matched (measured).
+Everything advances in blocks of 32 samples (21.33 ms; heuristic). While a
+branch knows the station's amplitude, it keys every sample with the
+log-odds g, ±1 nat of hysteresis (heuristic) and a squelch. At the
+stream's start and at each new *over* (one station's turn to transmit,
+which a long enough silence ends) the amplitude is unknown: the branch
+keys with a plain threshold on x until 0.8 s of keyed time (measured) lets
+it seed the amplitude and key that stretch again with the likelihood. Each
+branch fits the station's timing (dit, dah/dit ratio, weighting, gap
+timebase) to its own marks and spaces, helped by a coarse speed from the
+rhythm of branch 1's keying. A selector publishes the text of a branch
+whose fitted dit matches its own filter and whose fit explains its
+intervals best, and corrects published text up to 20 s back (owner). The
+bank costs about 42 ms of CPU per channel-second against 0.6 ms for
+Matched (measured, Linux test machine). Exact form: appendix A.8c,
+sections "Keying time constants" to "The bank decoder behind the engine".
 
 Appendix: A.8c.
 
@@ -739,6 +490,18 @@ relates its numbers to volts or dBm at the antenna.
 | τ_f | time constant of the frequency average, s of key-down weight 1 | 0.5 s |
 | D_ch | channel distance: a detector track follows its own peak within D_ch of its current frequency, and a new peak within D_ch of a track belongs to it (Matched path, `Attribution::Distance`), Hz | 47 Hz |
 | f_sep | separation of two stations' carriers (for example an answering station's offset from the caller), Hz | |
+
+**Dit-like quantities** (moved from the body on 2026-10-08). Several
+dit-like quantities appear in the bank decoder (section 8c, A.8c); they are
+different things:
+
+| Symbol | What it is |
+|---|---|
+| dit | the generic dit of a speed, 1.2 s / WPM |
+| d_k | branch k's nominal dit, fixed: L_k / 0.8 (12 ms on branch 1 to 230 ms on branch 32) |
+| T | the dit a branch has fitted to its own marks and spaces (the duration fit) |
+| τ_c | a candidate dit tried by the periodicity estimator (303 values, 12 to 242 ms) |
+| T_P | the periodicity estimator's result: the best confident candidate |
 
 ## A.2 The FFT size N and bin width Δf
 
@@ -1751,13 +1514,15 @@ steps 6–10.
 - **Squelch.** p = 0 while a < a_min = 3·(T_v/16 ms)^(1/4), T_v = K/r: the
   scaling keeps noise's pass rate the same at every K (derived), the 3 is
   heuristic. A station is acquired at K = 24, so the acquisition floor is
-  S₅₀₀ = −2.5 dB at every speed (derived).
+  S₅₀₀ = −2.5 dB at every speed (derived): a lower bound on sensitivity,
+  not the decoder's working sensitivity.
 - **Keying.** Down when g > +1 nat, up when g < −1 nat (heuristic
   hysteresis); never down while squelched or warming up.
 - **Re-acquisition** (heuristic): after the key has been up for
   max(0.5 s, 12 dits), K returns to 24, ŝ² restarts, the frequency average
   restarts, and the speed window is set aside; if nothing is keyed within
-  2 s, the old window and width come back.
+  2 s, the old window and width come back (the amplitude and frequency
+  estimates stay restarted).
 
 
 `MatchedFrontEnd` (matched_front_end.cpp; the class name is a code
@@ -1796,10 +1561,12 @@ the re-centered stream u[n], before any envelope is taken.
   about S₅₀₀ ≥ 0 dB at 25 Hz. The first mark after it, keyed when it lifts
   ŝ past the squelch (early on its ramp at high S₅₀₀, late at low S₅₀₀),
   is not counted for speed (A.8).
-- **Likelihood** (Proakis eq. 4.5–21). ln I₀ from Abramowitz & Stegun
-  9.8.1–9.8.2 without overflow. P₁ = 0.44: PARIS keys down 22 of 50 dit
-  units. For noise flat across the filter, a² = 2·S₅₀₀·(500 Hz)·K/r, S₅₀₀
-  as a linear ratio: a = 6.2 at S₅₀₀ = 0 dB and 25 WPM.
+- **Likelihood** (Proakis eq. 4.5–21). The Bessel function I₀ is what
+  remains of the Rician density once the carrier's unknown phase is
+  averaged out. ln I₀ from Abramowitz & Stegun 9.8.1–9.8.2 without
+  overflow. P₁ = 0.44: PARIS keys down 22 of 50 dit units. For noise flat
+  across the filter, a² = 2·S₅₀₀·(500 Hz)·K/r, S₅₀₀ as a linear ratio:
+  a = 6.2 at S₅₀₀ = 0 dB and 25 WPM.
 - **Amplitude's ramp bias.** Samples on the filter's ramps bias ŝ low: 0.79
   of s for dits alone (noise-free trapezoid at K = 58). The decision point
   near ŝ/2 then lengthens each mark (about 7 ms at 25 WPM, simulated).
@@ -2081,8 +1848,10 @@ All 32 branches are keyed per block, from |v_k|² and σ²_v,k.
 
 Each branch fits its marks and spaces (s; densities in ln d).
 
-- **Parameters** θ = (T, w, qT, T_g): dit, weighting, dah, gap timebase
-  (T_g > T for Farnsworth spacing).
+- **Parameters** θ = (T, w, qT, T_g): dit, weighting (how much every mark
+  is lengthened and every space shortened, e.g. by a transmitter's keying
+  or by the filter), dah, gap timebase (equal to T in standard spacing;
+  T_g > T for Farnsworth spacing).
 - **Classes**, log-normal around medians: dit T + w, dah qT + w; element
   space T − w, character gap 3T_g − w, word gap 7T_g − w;
   ln d ~ N(ln μ_c, s_c²), s_c² = σ_ln² + σ_t²/μ_c², σ_ln = 0.15 (marks),
@@ -2114,7 +1883,8 @@ Each branch fits its marks and spaces (s; densities in ln d).
   log-likelihood on the retained history does not drop (heuristic).
 - **Quality** Q = Σλ^age ℓ_total / Σλ^age, nats per element. A mark is a
   dah if ℓ_dah > ℓ_dit; a space takes its likeliest class.
-- **Fast evaluation:** ℓ_total is computed in one pass as
+- **Fast evaluation:** the likelihood over the grid is the decoder's main
+  cost. ℓ_total is computed in one pass as
   m + ln(1 + Σe^(x−m)) (terms more than 40 nats below the largest m left
   out), with SLEEF's vectorized exp and ln (stated bound 1 ulp); this
   changes ℓ_total only in its last bits (bounds derived in A.8c).
@@ -2122,7 +1892,8 @@ Each branch fits its marks and spaces (s; densities in ln d).
 #### Periodicity (bank decoder)
 
 A coarse speed T_P from branch 1's keying, independent of the fits; it
-feeds the fits' prior and selection's fallback, and never itself.
+feeds the fits' prior (so that they find the right speed quickly) and
+selection's fallback (when no fit is yet trustworthy), and never itself.
 
 - **Input:** branch 1's squelched posterior p, averaged in pairs to
   r_P = 750 samples/s; recomputed every 0.25 s (heuristic).
@@ -2155,7 +1926,8 @@ feeds the fits' prior and selection's fallback, and never itself.
   −13.816 nats (heuristic). A branch's text score is the mean over its
   last **10** characters (placeholder), word spaces not counted.
 - **Eligibility:** |ln(L_k/(0.8T_k))| ≤ ln 1.1 (one ladder step), with fit
-  memory ≥ 8 elements (heuristic).
+  memory ≥ 8 elements (heuristic): the branch's fitted dit matches its own
+  filter, so it is decoding at its own speed.
 - **Best branch:** among eligible branches, those within ε_Q = 0.05 nats
   per element of the best quality Q tie (placeholder); if all tied
   branches have text, only those within 0.1 nats per character of the
@@ -2163,9 +1935,9 @@ feeds the fits' prior and selection's fallback, and never itself.
   (better SNR). With none eligible: the likeliest text if it leads by
   ≥ 1.0 nats per character, else the branch with L_k nearest 0.8T_P, else
   branch 1.
-- **Switching:** the published branch changes only after the same other
-  branch has been best for **M = 4** consecutive instants, all eligible or
-  all fallback picks (placeholder).
+- **Switching:** to avoid flicker, the published branch changes only after
+  the same other branch has been best for **M = 4** consecutive instants,
+  all eligible or all fallback picks (placeholder).
 
 #### Channel decoder (bank decoder)
 
@@ -2174,12 +1946,14 @@ feeds the fits' prior and selection's fallback, and never itself.
   known-amplitude test enter the branch's fit (re-maximized with the T_P
   prior); provisional ones enter none. Classification by the current fit;
   a character gap ends a character, a word gap adds a word space.
-- **New over:** when the key has been up longer than
-  T_new = max(0.5 s, 12·T_g) since the branch's last key-up (2.88 s
-  without a fit; 0.576 s at 25 WPM; placeholders), the branch ends its
-  character, keeps its fit as the previous over's, starts a fresh fit,
-  decodes with the previous fit until the re-key, and its amplitude
-  becomes unknown.
+- **New over:** an *over* is one station's turn to transmit (from radio
+  practice); a long enough silence ends it, because the next transmission
+  may come from another station, at another speed and level. When the key
+  has been up longer than T_new = max(0.5 s, 12·T_g) since the branch's
+  last key-up (2.88 s without a fit; 0.576 s at 25 WPM; placeholders), the
+  branch ends its character, keeps its fit as the previous over's, starts
+  a fresh fit, decodes with the previous fit until the re-key, and its
+  amplitude becomes unknown.
 - **Clocks** (stage 1's rule): the time-out's count and the stretch start
   where the amplitude became unknown; a cleared time-out restarts only the
   count.
@@ -2874,7 +2648,9 @@ adopted and are not ported; any other `periodicity_method` is an error
   samples, the longest window (7500 samples, 10 s, at 750 samples/s, by
   default).
 - **Windows and updates (stage 1's rule; 2 s dropped 2026-10-07).**
-  Two windows W = 5 and
+  The estimate uses only recent p, because the station changes (a stream
+  starts, an over begins, the speed changes): a short window follows a
+  change quickly, a long one is steadier. Two windows W = 5 and
   10 s shared by every candidate: N = max(16, round(W · r_P)) = 3750 and
   7500 samples, each the most recent N samples, each computed by one FFT
   (stage 1's 2 s window, 1500 samples, by `--set
@@ -2897,11 +2673,18 @@ adopted and are not ported; any other `periodicity_method` is an error
 - **Comb.** For each candidate T, Π = 2T, in samples Π · r_P. A tooth at
   lag c is the mean of ρ over the lags ⌊c − 0.075 Π⌋ … ⌈c + 0.075 Π⌉ (±15%
   of T), clipped to 0 … N − 1; teeth at 2T, 4T, 6T and 8T, negative teeth
-  halfway between. **Why 2T and not T:** consecutive keying edges T apart
-  have opposite signs, so p's structure repeats at 2T; its autocorrelation
-  is low at odd and high at even multiples of T, and a comb with teeth at
+  halfway between. **Why 2T and not T:** Morse keying is not periodic, but
+  it lives on a grid of dits, and consecutive keying edges T apart have
+  opposite signs, so p's structure repeats at 2T; its autocorrelation is
+  low at odd and high at even multiples of T, and a comb with teeth at
   multiples of T would peak at 2T (the comb was corrected to Π = 2T on
-  2026-09-30, spec 4.4).
+  2026-09-30, spec 4.4). **Score values.** The score is dimensionless and
+  bounded by 2 in magnitude (an unbroken string of dits scores about 1.5).
+  For random machine-keyed text the true dit scores about 0.31–0.37 and its
+  alias at three times it about 0.18–0.24 (derived from the keying's
+  autocorrelation as measured on noise-free keying:
+  `docs/research/2026-10-05-periodicity-windows-and-rekey-analysis.md`,
+  §2).
 - **Reach.** A candidate counts only if its outermost lag,
   (4 + ½ + 0.075) Π = 9.15 T, is at most (N − 1)/2 samples. With the
   default fixed windows this caps T at (N − 1) / (18.3 r_P) ≈ W / 18.3:

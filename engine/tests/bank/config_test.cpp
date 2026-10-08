@@ -92,7 +92,7 @@ TEST(BankConfig, DefaultsEqualThePrototypes) {
 }
 
 // Plan B's field, which the prototype does not have, and the defaults Plan B and the owner changed
-// (docs/signal-processing.md section 8c).
+// (docs/signal-processing.md section 8c and appendix A.8c).
 TEST(BankConfig, PlanBDefaults) {
     const kz4ap::bank::BankConfig c{};
     // B3: the stuck-level recovery after 4 tau_n of non-zero input with no accepted tap (heuristic), s

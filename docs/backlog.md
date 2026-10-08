@@ -885,8 +885,8 @@ Tuning waits for evidence from the benchmark (owner, 2026-09-27 and
 2026-09-29: only with strong evidence; the benchmark exists to find better
 values). The Matched front end is the default from milestone 2, part 1
 (owner decision 2026-09-29). Its parameters are heuristic
-(`docs/signal-processing.md` §7, §8, §8b): the filter length β = 0.8 dit
-(sweep 0.6, 0.8, 1.0), the amplitude and noise time constants (0.5 s, 2 s;
+(`docs/signal-processing.md` appendix A.7, A.8, A.8b): the filter length
+β = 0.8 dit (sweep 0.6, 0.8, 1.0), the amplitude and noise time constants (0.5 s, 2 s;
 the fading group is the test), the squelch a_min = 3·(T_v/16 ms)^(1/4)
 (T_v the filter's duration), the keying hysteresis ±1 nat, the noise guards
 κ = 1.75 and κ_n = 4, the noise floor's margin (2.5), clean fraction (0.25)
@@ -1185,7 +1185,8 @@ its own plan. Related item above: "Spectrum frames in linear power".
   something to consider for the UI): shade decoded characters darker or
   lighter by the decoder's confidence in them. Needs a per-character
   confidence that means something first: the bank decoder now publishes a
-  placeholder probability of 1 per character (signal-processing.md §8c);
+  placeholder probability of 1 per character (signal-processing.md appendix
+  A.8c, "The bank decoder behind the engine");
   candidates are the fit's class posteriors per element, the text model's
   score, and whether a later correction is still possible (a character
   inside the 20 s correction reach is provisional).

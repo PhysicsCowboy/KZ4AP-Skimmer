@@ -1,5 +1,5 @@
 // The bank decoder's periodicity estimator: a port of the removed prototype's periodicity.py, the comb on the
-// dit-plus-space period Pi = 2T only (docs/signal-processing.md section 8c, "Periodicity"). The coarse speed
+// dit-plus-space period Pi = 2T only (docs/signal-processing.md appendix A.8c, "Periodicity"). The coarse speed
 // T_P comes from branch 1's squelched keying probability p, averaged down to periodicity_rate_hz, over several
 // windows; the confident estimate of the shortest window is T_P. The prototype's other two methods (the
 // sign-weighted edge comb and the spectrum fit) were not adopted and are not ported. Every candidate is judged over

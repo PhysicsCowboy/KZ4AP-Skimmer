@@ -1,4 +1,4 @@
-// The bank decoder behind the engine's Decoder interface (docs/signal-processing.md section 8c, "The bank decoder
+// The bank decoder behind the engine's Decoder interface (docs/signal-processing.md appendix A.8c, "The bank decoder
 // behind the engine"): one kz4ap::bank::BankChannel per channel, fed the channel's blocks mixed down by the
 // engine's frequency anchor, its published characters and corrections returned as DecodeUpdates.
 #pragma once
