@@ -52,10 +52,11 @@ inline std::vector<std::pair<double, double>> keying(const std::string& text, do
 }
 
 // A keyed carrier at freq_hz (0 = baseband) with 5 ms raised-cosine edges, plus
-// complex white noise of total power noise_sigma^2.
+// complex white noise of total power noise_sigma^2. drift_hz_per_s: the carrier's frequency
+// is freq_hz + drift_hz_per_s * t, Hz (t in s from the first sample).
 inline std::vector<Sample> keyed_signal(const std::string& text, double wpm, double rate, double duration_s,
                                         double freq_hz = 0, double amplitude = 1.0, double noise_sigma = 0.0,
-                                        unsigned seed = 1, double start_s = 0.5) {
+                                        unsigned seed = 1, double start_s = 0.5, double drift_hz_per_s = 0.0) {
     const auto n = static_cast<std::size_t>(duration_s * rate);
     std::vector<double> env(n, 0.0);
     constexpr double kRise = 0.005;
@@ -74,7 +75,9 @@ inline std::vector<Sample> keyed_signal(const std::string& text, double wpm, dou
     std::normal_distribution<double> gauss(0.0, std::max(noise_sigma, 1e-12) / std::sqrt(2.0));
     std::vector<Sample> x(n);
     for (std::size_t i = 0; i < n; ++i) {
-        const double ph = 2 * std::numbers::pi * freq_hz * static_cast<double>(i) / rate;
+        const double t_i = static_cast<double>(i) / rate;
+        double ph = 2 * std::numbers::pi * freq_hz * static_cast<double>(i) / rate;
+        if (drift_hz_per_s != 0) ph += std::numbers::pi * drift_hz_per_s * t_i * t_i;  // frequency freq_hz + drift * t
         const double a = amplitude * env[i];
         Sample s(static_cast<float>(a * std::cos(ph)), static_cast<float>(a * std::sin(ph)));
         if (noise_sigma > 0) s += Sample(static_cast<float>(gauss(rng)), static_cast<float>(gauss(rng)));

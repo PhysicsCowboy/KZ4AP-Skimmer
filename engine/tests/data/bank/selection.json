@@ -1,0 +1,2808 @@
+{
+ "char_logprob": [
+  -2.125111578513024,
+  -2.4327208966174303,
+  -3.0523656151844487,
+  -5.18850250054083,
+  -5.123963979403259,
+  -4.9521137224766,
+  -5.4116460518550396,
+  -5.699328124306821,
+  -5.49865742884467,
+  -5.2574953720277815,
+  -3.6770449964669334,
+  -5.4116460518550396,
+  -5.817111159963204,
+  -5.817111159963204,
+  -5.123963979403259,
+  -5.817111159963204,
+  -5.817111159963204,
+  -5.817111159963204,
+  -5.817111159963204,
+  -5.817111159963204,
+  -5.817111159963204,
+  -13.815510557964274,
+  -13.815510557964274,
+  -13.815510557964274,
+  -13.815510557964274,
+  -13.815510557964274,
+  -13.815510557964274,
+  -13.815510557964274,
+  -5.817111159963204,
+  -5.817111159963204
+ ],
+ "decoded": [
+  "A",
+  "<BT>",
+  "<SK>",
+  "?",
+  "<HH>",
+  "<HH>",
+  "*",
+  "*",
+  "E",
+  "<KN>",
+  "<SOS>",
+  "<CL>"
+ ],
+ "lengths_s": [
+  0.009333333333333334,
+  0.010666666666666666,
+  0.011333333333333334,
+  0.012666666666666666,
+  0.014,
+  0.015333333333333332,
+  0.017333333333333333,
+  0.018666666666666668,
+  0.020666666666666667,
+  0.02266666666666667,
+  0.024666666666666667,
+  0.027333333333333334,
+  0.03,
+  0.03333333333333333,
+  0.03666666666666667,
+  0.04,
+  0.044,
+  0.048666666666666664,
+  0.05333333333333334,
+  0.058666666666666666,
+  0.06466666666666666,
+  0.07133333333333333,
+  0.078,
+  0.086,
+  0.09466666666666666,
+  0.104,
+  0.11466666666666667,
+  0.126,
+  0.13866666666666666,
+  0.152,
+  0.16733333333333333,
+  0.184
+ ],
+ "mean_logprob": [
+  -2.278916237565227,
+  null,
+  null,
+  -3.6130647920520227,
+  -8.551015378046749
+ ],
+ "patterns": [
+  ".-",
+  "-...-",
+  "...-.-",
+  "..--..",
+  "........",
+  ".........",
+  "--.--.",
+  "",
+  ".",
+  "-.--.",
+  "...---...",
+  "-.-..-.."
+ ],
+ "steps": [
+  {
+   "best": [
+    15,
+    true
+   ],
+   "candidate": [
+    15,
+    true
+   ],
+   "count": 1,
+   "current": 0,
+   "eligible": "00000000000000010000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    0.5,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.5,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "v15",
+   "t_now_s": 0.5,
+   "texts": []
+  },
+  {
+   "best": [
+    15,
+    true
+   ],
+   "candidate": [
+    15,
+    true
+   ],
+   "count": 2,
+   "current": 0,
+   "eligible": "00000000000000010000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    0.5,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.5,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "v15",
+   "t_now_s": 1.0,
+   "texts": []
+  },
+  {
+   "best": [
+    15,
+    true
+   ],
+   "candidate": [
+    15,
+    true
+   ],
+   "count": 3,
+   "current": 0,
+   "eligible": "00000000000000010000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    0.5,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.5,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "v15",
+   "t_now_s": 1.5,
+   "texts": []
+  },
+  {
+   "best": [
+    16,
+    true
+   ],
+   "candidate": [
+    16,
+    true
+   ],
+   "count": 1,
+   "current": 0,
+   "eligible": "00000000000000001000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    2.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     16,
+     0.05499999999999999,
+     3.0,
+     0.0,
+     0.05499999999999999,
+     -0.5,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "v16",
+   "t_now_s": 2.0,
+   "texts": []
+  },
+  {
+   "best": [
+    16,
+    true
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 16,
+   "eligible": "00000000000000001000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    2.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     16,
+     0.05499999999999999,
+     3.0,
+     0.0,
+     0.05499999999999999,
+     -0.5,
+     24.0
+    ]
+   ],
+   "instants": 3,
+   "prior_t_s": null,
+   "scenario": "v16",
+   "t_now_s": 2.5,
+   "texts": []
+  },
+  {
+   "best": [
+    0,
+    false
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 16,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    2.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 0,
+   "prior_t_s": null,
+   "scenario": "empty",
+   "t_now_s": 3.0,
+   "texts": []
+  },
+  {
+   "best": [
+    16,
+    false
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 16,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "fallback16",
+   "t_now_s": 3.5,
+   "texts": [
+    [
+     16,
+     -2.0
+    ],
+    [
+     20,
+     -4.0
+    ]
+   ]
+  },
+  {
+   "best": [
+    16,
+    false
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 16,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "fallback16",
+   "t_now_s": 4.0,
+   "texts": [
+    [
+     16,
+     -2.0
+    ],
+    [
+     20,
+     -4.0
+    ]
+   ]
+  },
+  {
+   "best": [
+    3,
+    false
+   ],
+   "candidate": [
+    3,
+    false
+   ],
+   "count": 1,
+   "current": 16,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "fallback3",
+   "t_now_s": 4.5,
+   "texts": [
+    [
+     3,
+     -2.0
+    ],
+    [
+     20,
+     -4.0
+    ]
+   ]
+  },
+  {
+   "best": [
+    3,
+    false
+   ],
+   "candidate": [
+    3,
+    false
+   ],
+   "count": 2,
+   "current": 16,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "fallback3",
+   "t_now_s": 5.0,
+   "texts": [
+    [
+     3,
+     -2.0
+    ],
+    [
+     20,
+     -4.0
+    ]
+   ]
+  },
+  {
+   "best": [
+    14,
+    true
+   ],
+   "candidate": [
+    14,
+    true
+   ],
+   "count": 1,
+   "current": 16,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    5.5,
+    5.5,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -0.5,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.52,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "tie_text14",
+   "t_now_s": 5.5,
+   "texts": [
+    [
+     14,
+     -2.0
+    ],
+    [
+     15,
+     -3.5
+    ]
+   ]
+  },
+  {
+   "best": [
+    14,
+    true
+   ],
+   "candidate": [
+    14,
+    true
+   ],
+   "count": 2,
+   "current": 16,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    5.5,
+    5.5,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -0.5,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.52,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "tie_text14",
+   "t_now_s": 6.0,
+   "texts": [
+    [
+     14,
+     -2.0
+    ],
+    [
+     15,
+     -3.5
+    ]
+   ]
+  },
+  {
+   "best": [
+    14,
+    true
+   ],
+   "candidate": [
+    14,
+    true
+   ],
+   "count": 3,
+   "current": 16,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    5.5,
+    5.5,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -0.5,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.52,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "tie_text14",
+   "t_now_s": 6.5,
+   "texts": [
+    [
+     14,
+     -2.0
+    ],
+    [
+     15,
+     -3.5
+    ]
+   ]
+  },
+  {
+   "best": [
+    14,
+    true
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 14,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    5.5,
+    5.5,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -0.5,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.52,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "tie_text14",
+   "t_now_s": 7.0,
+   "texts": [
+    [
+     14,
+     -2.0
+    ],
+    [
+     15,
+     -3.5
+    ]
+   ]
+  },
+  {
+   "best": [
+    15,
+    false
+   ],
+   "candidate": [
+    15,
+    false
+   ],
+   "count": 1,
+   "current": 14,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 1,
+   "prior_t_s": 0.048,
+   "scenario": "no_clear_text",
+   "t_now_s": 7.5,
+   "texts": [
+    [
+     3,
+     -2.0
+    ],
+    [
+     20,
+     -2.5
+    ]
+   ]
+  },
+  {
+   "best": [
+    15,
+    false
+   ],
+   "candidate": [
+    15,
+    false
+   ],
+   "count": 3,
+   "current": 14,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 2,
+   "prior_t_s": 0.048,
+   "scenario": "no_clear_text",
+   "t_now_s": 8.0,
+   "texts": [
+    [
+     3,
+     -2.0
+    ],
+    [
+     20,
+     -2.5
+    ]
+   ]
+  },
+  {
+   "best": [
+    15,
+    false
+   ],
+   "candidate": [
+    15,
+    false
+   ],
+   "count": 3,
+   "current": 14,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 0,
+   "prior_t_s": 0.048,
+   "scenario": "no_clear_text",
+   "t_now_s": 8.5,
+   "texts": [
+    [
+     3,
+     -2.0
+    ],
+    [
+     20,
+     -2.5
+    ]
+   ]
+  },
+  {
+   "best": [
+    15,
+    false
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 15,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 1,
+   "prior_t_s": 0.048,
+   "scenario": "no_clear_text",
+   "t_now_s": 9.0,
+   "texts": [
+    [
+     3,
+     -2.0
+    ],
+    [
+     20,
+     -2.5
+    ]
+   ]
+  },
+  {
+   "best": [
+    15,
+    false
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 15,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 1,
+   "prior_t_s": 0.048,
+   "scenario": "no_clear_text",
+   "t_now_s": 9.5,
+   "texts": [
+    [
+     3,
+     -2.0
+    ],
+    [
+     20,
+     -2.5
+    ]
+   ]
+  },
+  {
+   "best": [
+    0,
+    false
+   ],
+   "candidate": [
+    0,
+    false
+   ],
+   "count": 2,
+   "current": 15,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 2,
+   "prior_t_s": null,
+   "scenario": "empty",
+   "t_now_s": 10.0,
+   "texts": []
+  },
+  {
+   "best": [
+    0,
+    false
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 0,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 2,
+   "prior_t_s": null,
+   "scenario": "empty",
+   "t_now_s": 10.5,
+   "texts": []
+  },
+  {
+   "best": [
+    15,
+    true
+   ],
+   "candidate": [
+    15,
+    true
+   ],
+   "count": 1,
+   "current": 0,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    11.0,
+    11.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -0.5,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.52,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "tie_texts_tie",
+   "t_now_s": 11.0,
+   "texts": [
+    [
+     14,
+     -2.0
+    ],
+    [
+     15,
+     -2.05
+    ]
+   ]
+  },
+  {
+   "best": [
+    15,
+    true
+   ],
+   "candidate": [
+    15,
+    true
+   ],
+   "count": 2,
+   "current": 0,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    11.0,
+    11.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -0.5,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.52,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "tie_texts_tie",
+   "t_now_s": 11.5,
+   "texts": [
+    [
+     14,
+     -2.0
+    ],
+    [
+     15,
+     -2.05
+    ]
+   ]
+  },
+  {
+   "best": [
+    15,
+    true
+   ],
+   "candidate": [
+    15,
+    true
+   ],
+   "count": 3,
+   "current": 0,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    11.0,
+    11.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -0.5,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.52,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "tie_texts_tie",
+   "t_now_s": 12.0,
+   "texts": [
+    [
+     14,
+     -2.0
+    ],
+    [
+     15,
+     -2.05
+    ]
+   ]
+  },
+  {
+   "best": [
+    15,
+    true
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 15,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    11.0,
+    11.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -0.5,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.52,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "tie_texts_tie",
+   "t_now_s": 12.5,
+   "texts": [
+    [
+     14,
+     -2.0
+    ],
+    [
+     15,
+     -2.05
+    ]
+   ]
+  },
+  {
+   "best": [
+    15,
+    true
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 15,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    11.0,
+    11.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -1.0,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.5,
+     24.0
+    ],
+    [
+     20,
+     0.12125,
+     3.0,
+     0.0,
+     0.12125,
+     0.0,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "best_eligible",
+   "t_now_s": 13.0,
+   "texts": []
+  },
+  {
+   "best": [
+    16,
+    true
+   ],
+   "candidate": [
+    16,
+    true
+   ],
+   "count": 1,
+   "current": 15,
+   "eligible": "00000000000000001000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    13.5,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     15,
+     0.056,
+     3.0,
+     0.0,
+     0.056,
+     -1.0,
+     24.0
+    ],
+    [
+     16,
+     0.059949999999999996,
+     3.0,
+     0.0,
+     0.059949999999999996,
+     -1.0,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "ineligible_scale",
+   "t_now_s": 13.5,
+   "texts": []
+  },
+  {
+   "best": [
+    17,
+    true
+   ],
+   "candidate": [
+    17,
+    true
+   ],
+   "count": 1,
+   "current": 15,
+   "eligible": "00000000000000000100000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    14.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -1.0,
+     3.0
+    ],
+    [
+     17,
+     0.06083333333333333,
+     3.0,
+     0.0,
+     0.06083333333333333,
+     -0.2,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "ineligible_weight",
+   "t_now_s": 14.0,
+   "texts": []
+  },
+  {
+   "best": [
+    16,
+    false
+   ],
+   "candidate": [
+    16,
+    false
+   ],
+   "count": 2,
+   "current": 15,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 2,
+   "prior_t_s": null,
+   "scenario": "fallback16",
+   "t_now_s": 14.5,
+   "texts": [
+    [
+     16,
+     -2.0
+    ],
+    [
+     20,
+     -4.0
+    ]
+   ]
+  },
+  {
+   "best": [
+    16,
+    true
+   ],
+   "candidate": [
+    16,
+    true
+   ],
+   "count": 1,
+   "current": 15,
+   "eligible": "00000000000000001000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    15.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     16,
+     0.05499999999999999,
+     3.0,
+     0.0,
+     0.05499999999999999,
+     -0.5,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "eligible16",
+   "t_now_s": 15.0,
+   "texts": []
+  },
+  {
+   "best": [
+    16,
+    true
+   ],
+   "candidate": [
+    16,
+    true
+   ],
+   "count": 3,
+   "current": 15,
+   "eligible": "00000000000000001000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    15.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     16,
+     0.05499999999999999,
+     3.0,
+     0.0,
+     0.05499999999999999,
+     -0.5,
+     24.0
+    ]
+   ],
+   "instants": 2,
+   "prior_t_s": null,
+   "scenario": "eligible16",
+   "t_now_s": 15.5,
+   "texts": []
+  },
+  {
+   "best": [
+    15,
+    true
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 15,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    16.0,
+    16.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -0.5,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.52,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "tie_no_text",
+   "t_now_s": 16.0,
+   "texts": []
+  },
+  {
+   "best": [
+    15,
+    true
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 15,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    16.0,
+    16.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -0.5,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.52,
+     24.0
+    ]
+   ],
+   "instants": 2,
+   "prior_t_s": null,
+   "scenario": "tie_text_15_only",
+   "t_now_s": 16.5,
+   "texts": [
+    [
+     15,
+     -2.0
+    ]
+   ]
+  },
+  {
+   "best": [
+    15,
+    true
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 15,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    16.0,
+    16.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -0.5,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.52,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": null,
+   "scenario": "tie_text_14_only",
+   "t_now_s": 17.0,
+   "texts": [
+    [
+     14,
+     -2.0
+    ]
+   ]
+  },
+  {
+   "best": [
+    14,
+    true
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 14,
+   "eligible": "00000000000000110000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    16.0,
+    16.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     14,
+     0.04583333333333333,
+     3.0,
+     0.0,
+     0.04583333333333333,
+     -0.5,
+     24.0
+    ],
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.52,
+     24.0
+    ]
+   ],
+   "instants": 4,
+   "prior_t_s": null,
+   "scenario": "tie_text14",
+   "t_now_s": 17.5,
+   "texts": [
+    [
+     14,
+     -2.0
+    ],
+    [
+     15,
+     -3.5
+    ]
+   ]
+  },
+  {
+   "best": [
+    15,
+    false
+   ],
+   "candidate": [
+    15,
+    false
+   ],
+   "count": 1,
+   "current": 14,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 1,
+   "prior_t_s": 0.048,
+   "scenario": "empty",
+   "t_now_s": 18.0,
+   "texts": []
+  },
+  {
+   "best": [
+    0,
+    false
+   ],
+   "candidate": [
+    0,
+    false
+   ],
+   "count": 3,
+   "current": 14,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 3,
+   "prior_t_s": null,
+   "scenario": "no_clear_text",
+   "t_now_s": 18.5,
+   "texts": [
+    [
+     3,
+     -2.0
+    ],
+    [
+     20,
+     -2.5
+    ]
+   ]
+  },
+  {
+   "best": [
+    30,
+    false
+   ],
+   "candidate": [
+    30,
+    false
+   ],
+   "count": 1,
+   "current": 14,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 1,
+   "prior_t_s": 0.2,
+   "scenario": "empty",
+   "t_now_s": 19.0,
+   "texts": []
+  },
+  {
+   "best": [
+    30,
+    false
+   ],
+   "candidate": null,
+   "count": 0,
+   "current": 30,
+   "eligible": "00000000000000000000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [],
+   "instants": 3,
+   "prior_t_s": 0.2,
+   "scenario": "empty",
+   "t_now_s": 19.5,
+   "texts": []
+  },
+  {
+   "best": [
+    15,
+    true
+   ],
+   "candidate": [
+    15,
+    true
+   ],
+   "count": 1,
+   "current": 30,
+   "eligible": "00000000000000010000000000000000",
+   "eligible_since": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    20.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "fits": [
+    [
+     15,
+     0.049999999999999996,
+     3.0,
+     0.0,
+     0.049999999999999996,
+     -0.5,
+     24.0
+    ]
+   ],
+   "instants": 1,
+   "prior_t_s": 0.2,
+   "scenario": "v15",
+   "t_now_s": 20.0,
+   "texts": []
+  }
+ ],
+ "strings": [
+  [
+   "E",
+   " ",
+   "T"
+  ],
+  [
+   " "
+  ],
+  [],
+  [
+   "C",
+   "Q",
+   " ",
+   "D",
+   "E",
+   " ",
+   "K",
+   "Z",
+   "4",
+   "A",
+   "P"
+  ],
+  [
+   "*",
+   "<KN>",
+   "e",
+   "5",
+   " ",
+   "?"
+  ]
+ ],
+ "symbols": [
+  "E",
+  "T",
+  "A",
+  "<BT>",
+  "?",
+  "/",
+  ".",
+  ",",
+  "0",
+  "9",
+  "Q",
+  "Z",
+  "J",
+  "6",
+  "X",
+  "<KN>",
+  "<SK>",
+  "<HH>",
+  "<AR>",
+  ";",
+  "@",
+  "*",
+  "e",
+  "",
+  " ",
+  "<XX>",
+  "AB",
+  "=",
+  "<SOS>",
+  "_"
+ ]
+}

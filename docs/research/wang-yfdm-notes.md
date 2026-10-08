@@ -82,7 +82,7 @@ hand-keying variability:
 **How "SNR" is defined: not stated.** No bandwidth, and no statement of
 key-on vs. average power, appears anywhere in the paper. "8 dB" and "−3 dB"
 cannot be converted to this project's S₅₀₀ convention (key-down carrier over
-noise in 500 Hz; `docs/signal-processing.md` §5, §11) without knowing that
+noise in 500 Hz; `docs/signal-processing.md` §5, A.11) without knowing that
 bandwidth. **What "low SNR" means numerically here** is exactly these two
 values: 8 dB is the trained/nominal condition, −3 dB is the one out-of-
 distribution stress test. There is no sweep and no lower bound beyond −3 dB.

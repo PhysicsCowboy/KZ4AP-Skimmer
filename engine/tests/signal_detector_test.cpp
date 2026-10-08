@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <random>
 #include <stdexcept>
 #include <utility>
@@ -23,6 +24,12 @@ DetectorConfig config() {
     c.average_s = 0.05;
     c.birth_s = 0.5;
     c.death_s = 2.0;
+    // Milestone 1's rules (the Envelope path): attribution by bins, and its +/-2-bin, +/-1-bin and
+    // 1-bin neighborhoods, stated in Hz at this test's 100 Hz bins.
+    c.attribution = Attribution::Bins;
+    c.peak_radius_hz = 200.0;
+    c.level_radius_hz = 100.0;
+    c.candidate_step_hz = 100.0;
     return c;
 }
 
@@ -159,4 +166,77 @@ TEST(SignalDetector, RejectsInvalidConfig) {
     bad([](DetectorConfig& c) { c.max_tracks = 0; });
     bad([](DetectorConfig& c) { c.min_separation_bins = 0; });
     bad([](DetectorConfig& c) { c.min_separation_bins = -1; });
+}
+
+namespace {
+
+const Track* find_track(const std::vector<Track>& tracks, std::uint32_t id) {
+    for (const auto& t : tracks)
+        if (t.id == id) return &t;
+    return nullptr;
+}
+
+}  // namespace
+
+TEST(SignalDetector, TrackFollowsItsOwnPeakWithinTheDistance) {
+    // Option 1 (owner decisions 2026-09-29): each track follows its own spectral peak within the
+    // attribution distance of its current frequency; a peak farther away is a track of its own.
+    // Here the distance is 250 Hz, 2.5 of this test's 100 Hz bins, and the peak neighborhood
+    // +/-200 Hz (2 bins). Single-bin peaks on a flat floor interpolate to the bin exactly (derived).
+    auto c = config();
+    c.attribution = Attribution::Distance;
+    c.attribution_distance_hz = 250.0;
+    SignalDetector d(c);
+    int i = 0;
+    for (; i < 200; ++i) d.process(frame(frame_time(i), {{100, -70.0f}}));
+    ASSERT_EQ(d.tracks().size(), 1u);
+    const auto id = d.tracks()[0].id;
+    std::size_t born = 0;
+    // The station moves 200 Hz (within the distance), then another 200 Hz, 400 Hz from where the
+    // track was born: the track follows it step by step and no second track is born.
+    for (; i < 400; ++i) born += d.process(frame(frame_time(i), {{102, -70.0f}})).born.size();
+    ASSERT_EQ(d.tracks().size(), 1u);
+    EXPECT_DOUBLE_EQ(d.tracks()[0].freq_hz, (102 - kN / 2) * 100.0);
+    for (; i < 600; ++i) born += d.process(frame(frame_time(i), {{104, -70.0f}})).born.size();
+    EXPECT_EQ(born, 0u);
+    ASSERT_EQ(d.tracks().size(), 1u);
+    EXPECT_EQ(d.tracks()[0].id, id);
+    EXPECT_DOUBLE_EQ(d.tracks()[0].freq_hz, (104 - kN / 2) * 100.0);
+    // A station 300 Hz from the track's current frequency is a track of its own; the old track,
+    // its peak gone, holds its frequency (it dies only after death_s = 2 s).
+    for (; i < 800; ++i) born += d.process(frame(frame_time(i), {{107, -70.0f}})).born.size();
+    EXPECT_EQ(born, 1u);
+    const auto tracks = d.tracks();
+    const auto* old_track = find_track(tracks, id);
+    ASSERT_NE(old_track, nullptr);
+    EXPECT_DOUBLE_EQ(old_track->freq_hz, (104 - kN / 2) * 100.0);
+}
+
+TEST(SignalDetector, MilestoneOneRuleKeepsTheTrackFrequencyFixed) {
+    // Attribution::Bins (the Envelope path): the frequency is fixed at birth, and a peak less than
+    // 3 bins from the track's bin belongs to it (milestone 1, bit for bit).
+    SignalDetector d(config());
+    int i = 0;
+    for (; i < 200; ++i) d.process(frame(frame_time(i), {{100, -70.0f}}));
+    ASSERT_EQ(d.tracks().size(), 1u);
+    std::size_t born = 0;
+    for (; i < 400; ++i) born += d.process(frame(frame_time(i), {{102, -70.0f}})).born.size();
+    EXPECT_EQ(born, 0u);
+    ASSERT_EQ(d.tracks().size(), 1u);
+    EXPECT_DOUBLE_EQ(d.tracks()[0].freq_hz, (100 - kN / 2) * 100.0);
+}
+
+TEST(SignalDetector, RejectsInvalidDistances) {
+    auto c = config();
+    c.attribution_distance_hz = 0.0;
+    EXPECT_THROW(SignalDetector d(c), std::invalid_argument);
+    c = config();
+    c.peak_radius_hz = 0.0;
+    EXPECT_THROW(SignalDetector d(c), std::invalid_argument);
+    c = config();
+    c.level_radius_hz = -1.0;
+    EXPECT_THROW(SignalDetector d(c), std::invalid_argument);
+    c = config();
+    c.candidate_step_hz = -1.0;
+    EXPECT_THROW(SignalDetector d(c), std::invalid_argument);
 }

@@ -1,0 +1,364 @@
+"""Measurements on a run's decoded files (proto/<name>/<result>.decoded.json, as kz4ap-bank-replay writes them)
+against their labels, for the report and the experiments. Intervals: bootstrap 95% over channels."""
+
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+
+import numpy as np
+
+from kz4ap_synth.suites import BOOTSTRAP_RESAMPLES, _interval, _rng_for, crossing_snr
+
+from .runner import oracle_scorings
+
+PERIODICITY_GROUPS = ("A sensitivity", "B fading", "C fists", "G ragchew", "H two-station QSO, oracle (per station)",
+                      "I Farnsworth")
+
+
+def iter_channels(out_dir, name: str, only: str | None = None):
+    """(job, label, decoded channel, decoded config) for every decoded channel."""
+    out_dir = Path(out_dir)
+    for job in oracle_scorings(out_dir, only):
+        path = out_dir / "proto" / name / f"{job['result']}.decoded.json"
+        if not path.exists():
+            continue
+        decoded = json.loads(path.read_text(encoding="utf-8"))
+        labels = json.loads((out_dir / job["labels"]).read_text(encoding="utf-8"))["signals"]
+        for ch in decoded["channels"]:
+            yield job, labels[ch["label_index"]], ch, decoded["config"]
+
+
+def true_dit_s(label: dict) -> float | None:
+    """The label's dit, 1.2 s / WPM, if its speed is constant (no wpm_end; a QSO only if all senders share it)."""
+    if label.get("wpm_end") is not None:
+        return None
+    senders = label.get("senders") or []
+    if senders and len({s["wpm"] for s in senders}) > 1:
+        return None
+    return 1.2 / label["wpm"]
+
+
+def transmissions(label: dict, pad_s: float = 0.0) -> list[tuple[float, float]]:
+    txs = label.get("transmissions") or [{"start_s": label["start_s"], "end_s": label["end_s"]}]
+    return [(t["start_s"] - pad_s, t["end_s"] + pad_s) for t in txs]
+
+
+def bootstrap_ratio(units, key):
+    """95% interval of sum(numerators) / sum(denominators), resampling units (channels)."""
+    if len(units) < 2:
+        return None
+    num = np.array([u[0] for u in units], float)
+    den = np.array([u[1] for u in units], float)
+    picks = _rng_for(key).integers(len(units), size=(BOOTSTRAP_RESAMPLES, len(units)))
+    return _interval([num[p].sum() / den[p].sum() if den[p].sum() > 0 else None for p in picks])
+
+
+def speed_errors(out_dir, name, only=None, min_snr_db=6.0, factor=1.5, settle_s=3.0, run_s=3.0) -> dict:
+    """Per group, scored constant-speed labels at S500 >= min_snr_db: the fraction of selection instants inside a
+    transmission (from settle_s after its start) whose selected dit is off the label's by more than `factor`
+    (no fit counts as off), and lock-ins: transmissions with such instants for run_s or longer in a row."""
+    groups: dict = {}
+    for job, label, ch, _ in iter_channels(out_dir, name, only):
+        truth = true_dit_s(label)
+        if truth is None or not label.get("score", True) or label["snr_db"] < min_snr_db:
+            continue
+        g = groups.setdefault(job["group"], {"units": [], "lock_ins": 0, "transmissions": 0})
+        bad = total = 0
+        for a, b in transmissions(label):
+            g["transmissions"] += 1
+            run_start, locked = None, False
+            for t, _, T in ch["selections"]:
+                if not a + settle_s <= t <= b:
+                    continue
+                total += 1
+                off = T is None or abs(math.log(T / truth)) > math.log(factor)
+                bad += off
+                if off:
+                    run_start = t if run_start is None else run_start
+                    locked = locked or t - run_start >= run_s
+                else:
+                    run_start = None
+            g["lock_ins"] += locked
+        g["units"].append((bad, total))
+    out = {}
+    for grp, g in groups.items():
+        bad, total = sum(u[0] for u in g["units"]), sum(u[1] for u in g["units"])
+        out[grp] = {"instants": total, "error_fraction": bad / total if total else None,
+                    "interval": bootstrap_ratio(g["units"], ("speed", grp)), "lock_ins": g["lock_ins"],
+                    "transmissions": g["transmissions"]}
+    return out
+
+
+def switch_stats(out_dir, name, only=None, back_within_s=5.0) -> dict:
+    """Per group, scored labels: branch switches and alternations (a switch straight back within back_within_s),
+    per minute of transmission time."""
+    groups: dict = {}
+    for job, label, ch, _ in iter_channels(out_dir, name, only):
+        if not label.get("score", True):
+            continue
+        g = groups.setdefault(job["group"], {"switches": 0, "alternations": 0, "minutes": 0.0})
+        g["minutes"] += sum(b - a for a, b in transmissions(label)) / 60.0
+        last = None  # (t, from, to)
+        sel = ch["selections"]
+        for (_, k0, _), (t1, k1, _) in zip(sel, sel[1:]):
+            if k1 == k0:
+                continue
+            g["switches"] += 1
+            if last is not None and last[1] == k1 and last[2] == k0 and t1 - last[0] <= back_within_s:
+                g["alternations"] += 1
+            last = (t1, k0, k1)
+    return {grp: {**g, "switches_per_min": g["switches"] / g["minutes"] if g["minutes"] else None,
+                  "alternations_per_min": g["alternations"] / g["minutes"] if g["minutes"] else None}
+            for grp, g in groups.items()}
+
+
+def spurious_over_starts(out_dir, name, only=None, settle_s=1.0) -> dict:
+    """Per group, scored labels: over starts of the selected branch inside a transmission (from settle_s after
+    its start; a real over starts in the silence before it), per transmission."""
+    groups: dict = {}
+    for job, label, ch, _ in iter_channels(out_dir, name, only):
+        if not label.get("score", True):
+            continue
+        g = groups.setdefault(job["group"], {"over_starts": 0, "transmissions": 0})
+        txs = transmissions(label)
+        g["transmissions"] += len(txs)
+        g["over_starts"] += sum(1 for t in ch["over_starts"] if any(a + settle_s <= t <= b for a, b in txs))
+    return {grp: {**g, "per_transmission": g["over_starts"] / g["transmissions"] if g["transmissions"] else None}
+            for grp, g in groups.items()}
+
+
+def false_characters(out_dir, name, only=None, pad_s=0.5) -> dict:
+    """Per group, scored labels: final characters (not word spaces) that start outside every transmission
+    (padded by pad_s), per minute outside transmissions."""
+    groups: dict = {}
+    for job, label, ch, _ in iter_channels(out_dir, name, only):
+        if not label.get("score", True):
+            continue
+        g = groups.setdefault(job["group"], {"characters": 0, "minutes": 0.0})
+        txs = [(max(0.0, a), min(ch["channel_s"], b)) for a, b in transmissions(label, pad_s)]
+        g["minutes"] += (ch["channel_s"] - sum(max(0.0, b - a) for a, b in txs)) / 60.0
+        g["characters"] += sum(1 for text, start, _ in ch["chars"]
+                               if text != " " and not any(a <= start <= b for a, b in txs))
+    return {grp: {**g, "per_min": g["characters"] / g["minutes"] if g["minutes"] else None}
+            for grp, g in groups.items()}
+
+
+def cpu_per_channel_second(out_dir, name, only=None) -> float:
+    """Decoding CPU time per channel-second, s/s."""
+    cpu = seconds = 0.0
+    for _, _, ch, _ in iter_channels(out_dir, name, only):
+        cpu += ch["cpu_s"]
+        seconds += ch["channel_s"]
+    return cpu / seconds if seconds else 0.0
+
+
+def periodicity_points_decoded(out_dir, name, only=None, groups=PERIODICITY_GROUPS, min_snr_db=0.0) -> list:
+    """The decoder's own periodicity records (Plan B, B4a), one point per recorded recomputation inside a
+    transmission of a scored, constant-speed label at S500 >= min_snr_db in the given groups, with every window's
+    (T, score) as the decoded file records it (scores rounded to 4 decimals); "per" lists the windows shortest
+    first."""
+    points = []
+    for job, label, ch, _ in iter_channels(out_dir, name, only):
+        if job["group"] not in groups or true_dit_s(label) is None or not label.get("score", True):
+            continue
+        if label["snr_db"] < min_snr_db:
+            continue
+        txs = transmissions(label)
+        unit = (job["result"], ch["label_index"])
+        for t, _, _, _, per in ch["periodicity"]:
+            inside = [k for k, (a, b) in enumerate(txs) if a <= t <= b]
+            if inside:
+                points.append({"group": job["group"], "unit": unit, "tx": inside[0], "truth": true_dit_s(label),
+                               "since_start": t - txs[inside[0]][0], "per": [tuple(w) for w in per]})
+    return points
+
+
+SPEED_BINS_WPM = ((5.0, 15.0), (15.0, 22.0), (22.0, 30.0), (30.0, 50.0), (50.0, 100.01))
+
+
+def periodicity_by_speed(points, threshold: float, bins=SPEED_BINS_WPM, tolerance: float = math.log(1.05)) -> list:
+    """Per speed bin of the true dit (WPM = 1.2 s / T, [low, high)) and per window (index, shortest first), and for
+    the rule over all windows ("rule"): points, the fraction confident (score >= threshold), and the precision of the
+    confident estimates (within 5% of the true dit). Pooled counts, no intervals."""
+    rows = []
+    n = max((len(p["per"]) for p in points), default=0)
+    for lo, hi in bins:
+        sel = [p for p in points if lo <= 1.2 / p["truth"] < hi]
+        for w in list(range(n)) + ["rule"]:
+            confident = correct = 0
+            for p in sel:
+                if w == "rule":
+                    est = next((e for e in p["per"] if e[0] is not None and e[1] >= threshold), None)
+                else:
+                    e = p["per"][w]
+                    est = e if e[0] is not None and e[1] >= threshold else None
+                if est is None:
+                    continue
+                confident += 1
+                correct += abs(math.log(est[0] / p["truth"])) <= tolerance
+            rows.append({"bin": (lo, hi), "window": w, "points": len(sel),
+                         "confident": confident / len(sel) if sel else None,
+                         "precision": correct / confident if confident else None})
+    return rows
+
+
+def evaluate_rule(points, windows_s, subset, threshold: float, tolerance: float = math.log(1.05)) -> dict:
+    """The rule "the confident estimate (score >= threshold) with the shortest window in subset": precision
+    (confident estimates within 5% of the true dit), coverage (points with a confident estimate), and the median
+    time from a transmission's start to its first confident estimate, s."""
+    order = [list(windows_s).index(w) for w in sorted(subset)]
+    units: dict = {}
+    firsts: dict = {}
+    for p in points:
+        u = units.setdefault(p["unit"], [0, 0, 0])  # points, confident, correct
+        u[0] += 1
+        est = next((p["per"][i] for i in order if p["per"][i][0] is not None and p["per"][i][1] >= threshold), None)
+        if est is None:
+            continue
+        u[1] += 1
+        u[2] += abs(math.log(est[0] / p["truth"])) <= tolerance
+        firsts.setdefault((p["unit"], p["tx"]), p["since_start"])
+    total = sum(u[0] for u in units.values())
+    confident = sum(u[1] for u in units.values())
+    correct = sum(u[2] for u in units.values())
+    key = (tuple(sorted(subset)), round(threshold, 6))
+    return {"points": total, "confident": confident,
+            "precision": correct / confident if confident else None,
+            "precision_interval": bootstrap_ratio([(u[2], u[1]) for u in units.values()], ("precision",) + key),
+            "coverage": confident / total if total else None,
+            "coverage_interval": bootstrap_ratio([(u[1], u[0]) for u in units.values()], ("coverage",) + key),
+            "median_time_to_confident_s": float(np.median(list(firsts.values()))) if firsts else None}
+
+
+def calibrate(points, windows_s, subset, target: float = 0.95):
+    """(threshold, evaluate_rule result): the lowest of 100 quantiles of the scores seen at which the rule's
+    precision reaches target; (None, None) if none does."""
+    scores = [s for p in points for t, s in p["per"] if t is not None]
+    if not scores:
+        return None, None
+    for threshold in np.unique(np.quantile(scores, np.linspace(0.0, 0.99, 100))):
+        r = evaluate_rule(points, windows_s, subset, float(threshold))
+        if r["precision"] is not None and r["precision"] >= target:
+            return float(threshold), r
+    return None, None
+
+
+# --- Plan B, B9: the stretch test (stage-2 spec section 4.1) and the new-over checks (section 4.3) ---
+
+def _crossing_or_bound(points, threshold: float):
+    """(crossing S500 dB, True if it is only an upper bound: no point fails) by suites.crossing_snr."""
+    c = crossing_snr(points, threshold)
+    return c, c is not None and all(v <= threshold for _, v in points)
+
+
+def stretch_measures(pairs, snr_step_db: float, threshold: float = 0.10, key=("stretch",)) -> dict:
+    """The stretch test's measures over pairs of signals, the original and its stretched copy (the same text and
+    condition): each pair {"snr_db": the original's S500, dB; "orig": (edits, symbols); "stretched": (edits,
+    symbols)}. The stretched copy's S500 is the original's minus snr_step_db.
+
+    Per original S500 step and pooled ("all"): pairs, each side's pooled CER (summed edits over summed symbols),
+    and the paired CER, the mean over pairs of (stretched CER - original CER), with a bootstrap 95% interval over
+    pairs. The S500 at which each side's CER curve (pooled per step) crosses `threshold` (suites.crossing_snr:
+    linear interpolation; an upper bound if no step fails), the stretched copy's on its own S500 axis, and the shift
+    original - stretched, dB of S500 (a time-base-invariant decoder: snr_step_db), with a bootstrap 95% interval
+    that resamples pairs within each step, the same pairs for both sides. Pairs with no symbols are left out."""
+    pairs = [p for p in pairs if p["orig"][1] > 0 and p["stretched"][1] > 0]
+    steps: dict = {}
+    for p in pairs:
+        steps.setdefault(p["snr_db"], []).append(p)
+    rate = lambda e, s: e / s if s else 0.0  # noqa: E731
+
+    def side(ps, which):
+        return rate(sum(p[which][0] for p in ps), sum(p[which][1] for p in ps))
+
+    def paired(ps, k):
+        d = np.array([rate(*p["stretched"]) - rate(*p["orig"]) for p in ps])
+        picks = _rng_for(key + ("paired", k)).integers(len(d), size=(BOOTSTRAP_RESAMPLES, len(d)))
+        return {"pairs": len(d), "orig": side(ps, "orig"), "stretched": side(ps, "stretched"),
+                "mean": float(d.mean()),
+                "interval": _interval([float(d[q].mean()) for q in picks]) if len(d) >= 2 else None}
+
+    out = {"by_snr": {s: paired(ps, s) for s, ps in sorted(steps.items())}}
+    out["all"] = paired(pairs, "all") if pairs else None
+
+    def crossings(by_step):
+        o = [(s, side(ps, "orig")) for s, ps in by_step]
+        t = [(s - snr_step_db, side(ps, "stretched")) for s, ps in by_step]
+        (co, bo), (ct, bt) = _crossing_or_bound(o, threshold), _crossing_or_bound(t, threshold)
+        return co, bo, ct, bt
+
+    ordered = sorted(steps.items())
+    co, bo, ct, bt = crossings(ordered) if len(ordered) >= 3 else (None, False, None, False)
+    shifts = []
+    if co is not None and ct is not None:
+        rng = _rng_for(key + ("shift",))
+        for _ in range(BOOTSTRAP_RESAMPLES):
+            sample = [(s, [ps[i] for i in rng.integers(len(ps), size=len(ps))]) for s, ps in ordered]
+            a, _, b, _ = crossings(sample)
+            shifts.append(None if a is None or b is None else a - b)
+    out.update(threshold=threshold, snr_step_db=snr_step_db, crossing_orig_db=co, crossing_orig_upper_bound=bo,
+               crossing_stretched_db=ct, crossing_stretched_upper_bound=bt,
+               shift_db=None if co is None or ct is None else co - ct,
+               shift_interval=_interval(shifts) if shifts else None)
+    return out
+
+
+def _gap_kind(txs, k: int) -> str:
+    """The silence before transmission k: "first" (none), "turnover" (another station sent the one before),
+    "same station"."""
+    if k == 0:
+        return "first"
+    a, b = txs[k - 1].get("sender_index"), txs[k].get("sender_index")
+    return "turnover" if a is not None and b is not None and a != b else "same station"
+
+
+def new_over_counts(label: dict, over_starts, within_s: float = 2.0, settle_s: float = 0.1) -> dict:
+    """The new-over checks (stage-2 spec section 4.3) of one channel against its label:
+    - false new overs: over starts inside a transmission, later than settle_s after its first key-down and before its
+      last key-up (a real new over is recorded in the silence before it: at the last key-up plus the silence threshold,
+      at most as late as the next first key-down; settle_s, heuristic, covers the few milliseconds by which the
+      decoder's time base and the labels' millisecond-rounded times differ, far shorter than any silence that starts
+      a new over, at least 0.5 s), except an over start that found a turnover late (below);
+    - turnovers: transmissions after one by the other station (a QSO label's sender_index changes), each found on
+      time (an over start after the previous transmission's last key-up and no later than settle_s after its own
+      first key-down), found late (the first over start after the previous last key-up lies later than settle_s and
+      no later than within_s after its first key-down; its delay from the first key-down is recorded, s, and that
+      over start is not a false new over: review of B9, I1) or missed (neither);
+    - same-station silences (a transmission after one by the same station: the pauses group's repeats) and the over
+      starts in them (informative: whether the decoder starts a new over when the station did not change)."""
+    txs = label.get("transmissions") or [{"start_s": label["start_s"], "end_s": label["end_s"]}]
+    out = {"transmissions": len(txs), "false_new_overs": 0, "turnovers": 0, "missed_turnovers": 0,
+           "late_turnovers": 0, "late_delays_s": [], "same_station_gaps": 0, "same_station_new_overs": 0}
+    late_finds = set()  # indices into over_starts of the over starts that found a turnover late
+    for k in range(1, len(txs)):
+        kind = _gap_kind(txs, k)
+        prev_end, start = txs[k - 1]["end_s"], txs[k]["start_s"]
+        if kind == "turnover":
+            out["turnovers"] += 1
+            found = [(t, i) for i, t in enumerate(over_starts) if prev_end < t <= start + within_s]
+            if not found:
+                out["missed_turnovers"] += 1
+            elif min(found)[0] > start + settle_s:
+                t, i = min(found)
+                out["late_turnovers"] += 1
+                out["late_delays_s"].append(t - start)
+                late_finds.add(i)
+        else:
+            out["same_station_gaps"] += 1
+            out["same_station_new_overs"] += any(prev_end < t <= start + settle_s for t in over_starts)
+    out["false_new_overs"] = sum(1 for i, t in enumerate(over_starts) if i not in late_finds
+                                 and any(x["start_s"] + settle_s < t < x["end_s"] for x in txs))
+    return out
+
+
+def first_word_by_over(label: dict, signal: dict) -> list[dict]:
+    """Per transmission of one scored signal (the bench's per-transmission counts, signal["transmissions"]): the
+    silence kind before it (_gap_kind) and its first word's symbols and edits."""
+    txs = label.get("transmissions") or []
+    counts = signal.get("transmissions") or []
+    if len(counts) != len(txs):
+        raise ValueError(f"the bench scored {len(counts)} transmissions, the label has {len(txs)}")
+    return [{"kind": _gap_kind(txs, k), "symbols": c["first_word_symbols"], "edits": c["first_word_edits"]}
+            for k, c in enumerate(counts)]

@@ -6,6 +6,12 @@
 
 namespace kz4ap::bench {
 
+struct Transmission {
+    std::string text;
+    double start_s;
+    double end_s;
+};
+
 struct LabeledSignal {
     std::string text;
     double freq_offset_hz;
@@ -13,6 +19,8 @@ struct LabeledSignal {
     double snr_db;
     double start_s;
     double end_s;
+    std::vector<Transmission> transmissions;  // empty in older labels files: the whole text is one transmission
+    bool score = true;                        // false: an interferer, left out of every error rate
 };
 
 struct Labels {

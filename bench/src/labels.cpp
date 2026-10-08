@@ -5,6 +5,7 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 namespace kz4ap::bench {
 
@@ -15,9 +16,17 @@ Labels parse_labels(const std::string& json_text) {
         labels.sample_rate = j.at("sample_rate").get<int>();
         labels.duration_s = j.at("duration_s").get<double>();
         for (const auto& s : j.at("signals")) {
-            labels.signals.push_back({s.at("text").get<std::string>(), s.at("freq_offset_hz").get<double>(),
-                                      s.at("wpm").get<double>(), s.at("snr_db").get<double>(),
-                                      s.at("start_s").get<double>(), s.at("end_s").get<double>()});
+            LabeledSignal signal{s.at("text").get<std::string>(), s.at("freq_offset_hz").get<double>(),
+                                 s.at("wpm").get<double>(),       s.at("snr_db").get<double>(),
+                                 s.at("start_s").get<double>(),   s.at("end_s").get<double>()};
+            if (const auto t = s.find("transmissions"); t != s.end()) {
+                for (const auto& tx : *t) {
+                    signal.transmissions.push_back({tx.at("text").get<std::string>(), tx.at("start_s").get<double>(),
+                                                    tx.at("end_s").get<double>()});
+                }
+            }
+            signal.score = s.value("score", true);
+            labels.signals.push_back(std::move(signal));
         }
         return labels;
     } catch (const nlohmann::json::exception& e) {

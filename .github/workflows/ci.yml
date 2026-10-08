@@ -9,13 +9,16 @@ permissions:
 
 jobs:
   build-and-test:
+    # Fixed check names, independent of the runner image: the main ruleset requires
+    # "build-and-test (windows)" and "build-and-test (linux)".
+    name: build-and-test (${{ matrix.preset }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             preset: windows
-          - os: ubuntu-latest
+          - os: ubuntu-24.04   # pinned: ubuntu-latest moves to Ubuntu 26 from 2026-10-19 (owner, 2026-10-02)
             preset: linux
     runs-on: ${{ matrix.os }}
     steps:
