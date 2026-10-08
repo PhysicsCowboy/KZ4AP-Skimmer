@@ -12,37 +12,37 @@ FIGURE 18i.  Output Waveforms
 --- page number: 158 ---
 === p. 159 (PDF page 321) ===
 COMPUTER PROGRAMS
-[?]0100           INTEGER ELMHAT,XHAT
-[?]0200           DIMENSION S1(512),S2(512),S3(512)
-[?]0300           DIMENSION S4(512)
-[?]0400           DATA RN/.1/
-[?]0500           DATA NP/0/
-[?]0600
-[?]0700           CALL INITL
-[?]0800           CALL INPUTL
-[?]0900
-[?]1000    1      DO 2 N1=1,512
-[?]1100           DO 3 N2=1,18
-[?]1200           CALL SIMSG1(X,ZSIG)
-[?]1300
-[?]1400           CALL RCVR(ZSIG,ZRCV)
-[?]1500           CALL BPFDET(ZRCV,ZDET)
-[?]1600
-[?]1700           NP=NP+1
-[?]1800           IF(NP.LT.40) GO TO 3
-[?]1900           NP=0
-[?]2000           CALL NOISE(ZDET,RN,Z)
-[?]2100           CALL PROCES(Z,RN,XHAT,PX,ELMHAT,LTRHAT)
-[?]2200    3      CONTINUE
-[?]2300
-[?]2400           N=N1
-[?]2500           CALL STATS(ZDET,Z   ,PX  ,XHAT,S1,S2,S3,S4,N)
-[?]2600    2      CONTINUE
-[?]2700           CALL DISPLA(S1,S2,S3,S4)
-[?]2800
-[?]2900           GO TO 1
-[?]3000           STOP
-[?]3100           END
+{0}0100           INTEGER ELMHAT,XHAT
+{0}0200           DIMENSION S1(512),S2(512),S3(512)
+{0}0300           DIMENSION S4(512)
+{0}0400           DATA RN/.1/
+{0}0500           DATA NP/0/
+{0}0600
+{0}0700           CALL INITL
+{0}0800           CALL INPUTL
+{0}0900
+{0}1000    1      DO 2 N1=1,512
+{0}1100           DO 3 N2=1,18
+{0}1200           CALL SIMSG1(X,ZSIG)
+{0}1300
+{0}1400           CALL RCVR(ZSIG,ZRCV)
+{0}1500           CALL BPFDET(ZRCV,ZDET)
+{0}1600
+{0}1700           NP=NP+1
+{0}1800           IF(NP.LT.40) GO TO 3
+{0}1900           NP=0
+{0}2000           CALL NOISE(ZDET,RN,Z)
+{0}2100           CALL PROCES(Z,RN,XHAT,PX,ELMHAT,LTRHAT)
+{0}2200    3      CONTINUE
+{0}2300
+{0}2400           N=N1
+{0}2500           CALL STATS(ZDET,Z   ,PX  ,XHAT,S1,S2,S3,S4,N)
+{0}2600    2      CONTINUE
+{0}2700           CALL DISPLA(S1,S2,S3,S4)
+{0}2800
+{0}2900           GO TO 1
+{0}3000           STOP
+{0}3100           END
 --- page number: 159 ---
 === p. 160 (PDF page 323) ===
 00100           SUBROUTINE INPUTL
@@ -208,7 +208,7 @@ COMPUTER PROGRAMS
 {0}2000         BFADE=GAMMA*BFADE+W
 {0}2100
 {0}2200         AMPB=AMP+BFADE
-{0}2300         IF(AMPB.LT.0.001) BFADE=0.021-AMP
+{0}2300         IF(AMPB.LT.0.001) BFADE=0.001-AMP
 {0}2400         AMPB=AMP+BFADE
 {0}2500         TDUR=1000.*TAU*BETA
 {0}2600         WCHRP=X*WCHIRP*EXP(-TDUR/TCHIRP)
@@ -448,7 +448,7 @@ COMPUTER PROGRAMS
 07100           IPATH=I
 07200
 07300           CALL TRPROB(IPATH,LAMBDA(I),DUR(I),ILRATE(I),PIN)
-07400           CALL PATH(IPATH,LAMBDA(I),DUR(I),ILRATE(I),LAMSAV,DURSAV,ILR[cut off at the scan's right edge]
+07400           CALL PATH(IPATH,LAMBDA(I),DUR(I),ILRATE(I),LAMSAV,DURSAV,ILR[cut off at the right edge of the reproduced printout]
 07500           CALL LIKHD(Z,RN,IPATH,LAMBDA(I),DUR(I),
 07600        2  ILRATE(I),PIN,LKHD)
 07700
@@ -1221,7 +1221,7 @@ COMPUTER PROGRAMS
 30500
 30600           COMMON/BLKSV1/YKKIP,PKKIP,YKKSV,PKKSV
 30700
-30800           DATA POPT/.99/
+30800           DATA POPT/.90/
 30900
 31000           NSAV=0
 31100           PSUM=0.

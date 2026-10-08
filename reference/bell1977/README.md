@@ -26,12 +26,12 @@ task will add a version made to compile, with each change marked.
 | 159-191 | 321-385 | The listing. p. 159 is headed "COMPUTER PROGRAMS". |
 
 Bell's sequence numbers are the line numbers of the DEC editor, not part of the Fortran. They fall into eight numbering
-groups. Every group after the first starts at 00100 (in the first, on p. 159, the first digit is cut off). Within a
+groups, and every group starts at 00100. On p. 159 the first digit is cut off and is reconstructed as `{0}`. Within a
 group the numbers step by 100, with the exceptions listed in `transcription-log.md`.
 
 | Group | Pages | Sequence numbers | Routines: page and sequence number where each starts |
 |---|---|---|---|
-| 1 | 159 | `[?]0100`-`[?]3100` | main program (p. 159) |
+| 1 | 159 | `{0}0100`-`{0}3100` | main program (p. 159) |
 | 2 | 160-162 | 00100-13500 | INPUTL (p. 160, 00100); INITL (p. 160, 04900) |
 | 3 | 163-165 | `{0}0100`-12300 | SIMSG1 (p. 163, `{0}0100`); KEY (p. 163, `{0}4400`) |
 | 4 | 166 | 00100-05600 | DISPLA (00100); STATS (01700); AUTOCR (03200) |
@@ -47,7 +47,8 @@ group the numbers step by 100, with the exceptions listed in `transcription-log.
   - The images were rendered with Ghostscript, for example
     `gswin64c -q -dNOPAUSE -dBATCH -sDEVICE=pnggray -r170 -dFirstPage=M -dLastPage=M -sOutputFile=pM.png <thesis PDF>`.
   - The readers worked at 170 dpi and zoomed at 300 dpi and above.
-- **Agreement.** The two readings agree on 1 715 of the 1 814 lines.
+- **Agreement.** The two readings agree on 1 715 of the 1 814 lines. Both readers misread one of those lines alike: p. 181
+  30800 prints `DATA POPT/.90/`, and both read .99. It is corrected.
 - **Settling.** Every difference, and every character that either reader marked as uncertain, was settled on the page
   image.
   - Each page was rendered at the scan's native resolution, about 350 dpi, at which the rendering reproduces the scan's
@@ -55,6 +56,12 @@ group the numbers step by 100, with the exceptions listed in `transcription-log.
   - Each doubtful glyph was compared with the same printer's glyphs on the same pages.
   - Where the image could not decide, the Fortran context decided: a statement label that must exist, a variable name
     used elsewhere, or the syntax.
+- **Review.** A review checked five random pages character by character, every numeric constant, and every
+  settlement. It found two wrong constants:
+  - p. 163 02300, `BFADE=0.001-AMP`, which had first been settled as 0.021;
+  - p. 181 30800, `.90`.
+
+  Both are corrected and recorded in the log.
 - **The log.** `transcription-log.md` gives each decision with its reason, and the counts.
 - **Kept out of the repository.** The page images and the two readings are working files and are not committed. The
   log quotes both readings for every line it lists.
@@ -69,13 +76,16 @@ group the numbers step by 100, with the exceptions listed in `transcription-log.
   - The file has no tabs and no trailing spaces.
 - **Zeros.** Bell's slashed zero is written `0`. The letter O is written `O`.
 - **Marks.**
-  - `[?]`: a character that cannot be read. One is left on each of the 31 numbered lines of p. 159: the first digit of
-    the sequence number, which the scan's left edge cuts off. It is probably 0, but no neighbor fixes it.
+  - `[?]`: a character that cannot be read. None is left.
   - `[?x|y]`: a character that is x or y. None is left.
-  - `{d}`: a digit cut off by the scan's left edge and reconstructed with certainty from the neighboring sequence
-    numbers. There are 140, all the first digit of a sequence number, on pp. 163, 169, 177 and 178.
-  - `[cut off at the scan's right edge]`: the rest of the line is not in the scan. This occurs once, on p. 168 at line
-    07400, after `...,ILR`.
+  - `{d}`: a digit cut off by the scan's left edge and reconstructed from the sequence numbering. There are 171, all
+    the first digit of a sequence number:
+    - 140 on pp. 163, 169, 177 and 178, fixed by the legible numbers around them;
+    - 31 on p. 159, where the main program is alone in its numbering group. These come from the group's start at
+      00100, as in every other group.
+  - `[cut off at the right edge of the reproduced printout]`: the rest of the line is not on the thesis page. The
+    reproduction of the printout ends there, inside the scan. This occurs once, on p. 168 at line 07400, after
+    `...,ILR`.
   - `[?]`, `[?x|y]` and `{d}` each stand for one printed column. The text after one of them is shifted to the right by
     its extra characters.
 - **Descriptions.** A line in brackets on its own, on p. 158, is a description, not a transcription.
