@@ -391,7 +391,7 @@ def main(argv=None) -> None:
         print(f"wrote {stretch_table(args.out, args.name)}")
     elif args.command == "new-overs":
         print(f"wrote {new_over_table(args.out, args.name)}")
-    else:
+    elif args.command == "periodicity-decoded":
         print(f"wrote {periodicity_decoded_table(args.out, args.name, args.threshold, args.target)}")
 
 

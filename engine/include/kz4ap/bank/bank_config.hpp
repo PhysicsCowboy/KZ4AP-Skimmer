@@ -15,6 +15,7 @@
 #pragma once
 
 #include <cmath>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -212,5 +213,14 @@ struct BankConfig {
     // s; owner
     double correction_reach_s = 20.0;
 };
+
+// Throws std::invalid_argument unless rekey_after_s and rekey_timeout_s are positive (s), as they are by default: a 0
+// once selected Plan B's re-key variants in dits and in marks, which were removed (2026-10-07), and is refused rather
+// than read as a zero wait or time-out. BankChannel's constructor calls it, and kz4ap-bank-replay calls it once on
+// its --set values before it reads any channel.
+inline void check_rekey_times(const BankConfig& cfg) {
+    if (!(cfg.rekey_after_s > 0.0)) throw std::invalid_argument("rekey_after_s must be positive (s)");
+    if (!(cfg.rekey_timeout_s > 0.0)) throw std::invalid_argument("rekey_timeout_s must be positive (s)");
+}
 
 }  // namespace kz4ap::bank

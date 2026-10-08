@@ -9,7 +9,8 @@
 //       offered and accepted, the kept fraction, masked_branch_power and N_k; with --from/--to, the same counts for
 //       the segments starting in [S, S) of stream time, and accepted segments per second there.
 //
-// --set takes the ProtoConfig names of kz4ap-bank-replay (for example guard_margin_s=0.02). Output: JSON on stdout.
+// --set takes the configuration's field names, as kz4ap-bank-replay's does (for example guard_margin_s=0.02). Output:
+// JSON on stdout.
 #include "bank_json.hpp"
 #include "noise_mask.hpp"
 

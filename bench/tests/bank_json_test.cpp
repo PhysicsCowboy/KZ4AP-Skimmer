@@ -1,6 +1,6 @@
 // The bank decoder's JSON forms (bench/src/bank_json.cpp) against Python's: float repr and round, json.dumps's
-// formatting, the configuration as runner.decode stores it, and ChannelResult.to_json() byte for byte on golden
-// streams (engine/tests/data/bank/channel.json "dumps", the prototype's json.dumps(result.to_json())).
+// formatting, the configuration as the prototype's runner.decode stored it, and ChannelResult.to_json() byte for
+// byte on golden streams (engine/tests/data/bank/channel.json "dumps", the prototype's json.dumps(result.to_json())).
 #include "bank_json.hpp"
 
 #include "golden.hpp"
@@ -108,9 +108,12 @@ TEST(BankJson, ConfigAsRunnerDecodeStoresIt) {
     kz4ap::bench::set_config_value(c, "mask_bias", ordered_json(kz4ap::bank::kStage1MaskBias));
     EXPECT_EQ(c.guard_margin_s, kz4ap::bank::kStage1GuardMarginS);
     EXPECT_EQ(c.mask_bias, kz4ap::bank::kStage1MaskBias);
-    // Plan B's removed variant fields are unknown parameters
+    // Plan B's 13 removed variant fields are unknown parameters
     for (const char* removed : {"rekey_after_dits", "rekey_timeout_ratio", "periodicity_windows_dits",
-                                "periodicity_window_mode", "rekey_wait_in_marks", "rekey_guard_min_length"})
+                                "periodicity_window_mode", "periodicity_unselected_windows_s",
+                                "rekey_clear_moves_stretch", "rekey_timeout_from_first_mark", "rekey_lead_dits",
+                                "rekey_wait_in_marks", "rekey_marks", "rekey_marks_timeout_s",
+                                "rekey_guard_filter_full", "rekey_guard_min_length"})
         EXPECT_THROW(kz4ap::bench::set_config_value(c, removed, ordered_json(1)), std::invalid_argument) << removed;
     EXPECT_EQ(c.fit_memory, 24.0);
     EXPECT_TRUE(c.x_on_values.empty());

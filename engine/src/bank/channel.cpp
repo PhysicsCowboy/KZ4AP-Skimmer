@@ -339,10 +339,7 @@ BankChannel::BankChannel(const BankConfig& cfg, double rate_hz)
       block_(static_cast<int>(std::max<std::int64_t>(1, round_samples(cfg.block_s * rate_hz)))),
       reach_(round_samples(cfg.correction_reach_s * rate_hz)),
       timeout_(round_samples(cfg.rekey_timeout_s * rate_hz)) {
-    // Both in seconds, the same for every branch. Unset (0), they once selected Plan B's re-key variants in dits and in
-    // marks, which were removed (2026-10-07): refused rather than read as a zero wait or time-out.
-    if (!(cfg_.rekey_after_s > 0.0)) throw std::invalid_argument("rekey_after_s must be positive (s)");
-    if (!(cfg_.rekey_timeout_s > 0.0)) throw std::invalid_argument("rekey_timeout_s must be positive (s)");
+    check_rekey_times(cfg_);  // both in seconds, the same for every branch; a 0 once selected removed variants
     branches_.reserve(n_.size());
     for (std::size_t k = 0; k < n_.size(); ++k)
         branches_.emplace_back(static_cast<int>(k), lengths_[k], n_[k], rate_hz, cfg_, text_model_);

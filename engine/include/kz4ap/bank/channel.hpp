@@ -46,7 +46,7 @@ struct Correction {
     std::string old_text;  // the replaced characters' text
     std::string new_text;  // the text that replaced it
     std::string reason;    // "switch" (branch selection), "rekey" (an over's first marks re-keyed) or "timeout"
-                           // (re-keyed, or deleted, because the over's amplitude stayed unknown rekey_timeout_s)
+                           // (re-keyed, or deleted, because the over's amplitude stayed unknown for rekey_timeout_s)
     // The number of published characters kept before the replacement (the prototype's len(kept)): the
     // characters from this index on were replaced by new_text's characters. Not in the prototype's JSON.
     std::size_t from_index = 0;
@@ -216,7 +216,7 @@ struct ChannelResult {
 // One channel through the bank, streaming (the prototype's ChannelDecoder.run).
 class BankChannel {
 public:
-    // Throws std::invalid_argument if rekey_after_s or rekey_timeout_s is not positive (s).
+    // Throws std::invalid_argument if rekey_after_s or rekey_timeout_s is not positive (s; check_rekey_times).
     BankChannel(const BankConfig& cfg, double rate_hz);
     ~BankChannel();
     BankChannel(const BankChannel&) = delete;

@@ -103,7 +103,7 @@ ordered_json read_json(const fs::path& path) {
     return ordered_json::parse(in);
 }
 
-// runner.parse_values: VALUE is JSON if it parses, else a string.
+// As the removed prototype's runner.parse_values did: VALUE is JSON if it parses, else a string.
 ordered_json parse_value(const std::string& text) {
     try {
         return ordered_json::parse(text);
@@ -145,10 +145,10 @@ std::vector<Job> oracle_jobs(const ordered_json& manifest, const std::optional<s
     return jobs;
 }
 
-// streams.baseband for a labeled channel: u[n] = y[n] exp(-j(2 pi f_off t + pi fdot max(t - t0, 0)^2)),
-// t = (first index + n) / r, in numpy's order of operations: 2 pi f_off first, then times t; the drift term
-// (pi fdot) times the square; exp(-j phase) = cos(phase) - j sin(phase) as numpy's complex exp gives it for a
-// zero real part; the complex product written out as numpy computes it.
+// As the removed prototype's streams.baseband did for a labeled channel: u[n] = y[n] exp(-j(2 pi f_off t + pi fdot
+// max(t - t0, 0)^2)), t = (first index + n) / r, in numpy's order of operations: 2 pi f_off first, then times t; the
+// drift term (pi fdot) times the square; exp(-j phase) = cos(phase) - j sin(phase) as numpy's complex exp gives it for
+// a zero real part; the complex product written out as numpy computes it.
 std::vector<std::complex<double>> baseband(const std::vector<std::complex<double>>& y, double rate_hz, double f_off_hz,
                                            double drift_hz_per_s, double start_s, std::int64_t first_sample_index) {
     std::vector<std::complex<double>> u(y.size());
@@ -286,6 +286,13 @@ void write_decoded(const fs::path& target, const std::string& name, const fs::pa
 int run(const Args& args) {
     kz4ap::bank::BankConfig cfg;
     for (const auto& [key, text] : args.sets) kz4ap::bench::set_config_value(cfg, key, parse_value(text));
+    try {
+        // Refused once, before the suite is read (BankChannel would refuse it again for every channel).
+        kz4ap::bank::check_rekey_times(cfg);
+    } catch (const std::invalid_argument& e) {
+        std::cerr << "kz4ap-bank-replay: " << e.what() << "\n";
+        return 1;
+    }
     const ordered_json cfg_json = kz4ap::bench::to_json(cfg);
     std::optional<std::regex> only;
     if (args.only) only.emplace(*args.only, std::regex::ECMAScript);

@@ -54,3 +54,10 @@ target_include_directories(kz4ap_bench_tests PRIVATE ${PROJECT_SOURCE_DIR}/engin
 target_compile_definitions(kz4ap_bench_tests PRIVATE
   KZ4AP_BANK_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/engine/tests/data/bank")
 gtest_discover_tests(kz4ap_bench_tests)
+
+# kz4ap-bank-replay refuses a --set rekey_after_s or rekey_timeout_s that is not positive once, before it reads the
+# suite: exit status 1 and one message (tests/replay_refusal.cmake; it needs no suite and writes nothing).
+add_test(NAME BankReplay.RefusesANonPositiveReKeyTimeOnceBeforeReadingTheSuite
+         COMMAND ${CMAKE_COMMAND} -DREPLAY=$<TARGET_FILE:kz4ap-bank-replay>
+                 -DSUITE=${CMAKE_CURRENT_BINARY_DIR}/no-such-suite
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/replay_refusal.cmake)

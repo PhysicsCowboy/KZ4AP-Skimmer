@@ -12,6 +12,7 @@
 #include "kz4ap/bank/channel.hpp"
 
 #include "golden.hpp"
+#include "../test_signals.hpp"
 
 #include <gtest/gtest.h>
 
@@ -800,5 +801,44 @@ TEST_P(ChannelSplitDefaults, PiecesOf1And47And1000SamplesGiveTheSingleResult) {
 
 INSTANTIATE_TEST_SUITE_P(Streams, ChannelSplitDefaults, ::testing::Values("clean", "farnsworth", "zero_pad"),
                          [](const auto& info) { return info.param; });
+
+// The default re-key wait at the channel level: a 12 WPM station (T = 100 ms; S500 = 15.2 dB SNR in 500 Hz: carrier
+// amplitude 1 FS, noise 0.03 FS^2 in 500 Hz) keyed from 0.5 s. Its own branch, k = 23 (d_23 = 97.7 ms, the nearest),
+// becomes known (its over's start re-keyed) at the block where its keyed time reaches W_min = 0.8 s, 1200 samples at
+// 1500 samples/s, having been below it at the block before, and before the 2 s time-out counted from the stream's
+// start could fire: re-keyed by the wait, not through the time-out (which, with no previous amplitude, would have
+// cleared the stretch and restarted the count). Measured (Windows): known at 1.387 s with 0.813 s keyed, 0.792 s at the
+// block before. The stage-1 half of Plan B's BankChannelDits.A12WpmStationReKeysAfterItsBranchsWait (removed with the
+// variants), at the default configuration.
+TEST(BankChannelDefaults, A12WpmStationReKeysWhenItsKeyedTimeReachesTheWait) {
+    const double rate = 1500.0;
+    const std::string text = "PARIS PARIS PARIS";
+    const auto x = kz4ap::test::keyed_signal(text, 12.0, rate, kz4ap::test::duration_for(text, 12.0), 0.0, 1.0,
+                                             std::sqrt(0.09), 7);
+    std::vector<std::complex<double>> u(x.size());
+    for (std::size_t i = 0; i < x.size(); ++i) u[i] = {x[i].real(), x[i].imag()};
+    const std::size_t k = 22;  // branch 23
+    BankChannel ch(BankConfig{}, rate);
+    ASSERT_EQ(ch.keyer().rekey_weight, 1200.0);       // W_min, samples of keyed time
+    ASSERT_EQ(ch.rekey_timeout_samples(), 3000);      // the time-out, samples of channel time
+    const auto block = static_cast<std::size_t>(ch.block_samples());
+    std::int64_t known_n = -1;  // the end of the block at which branch 23 became known, samples
+    double weight = 0.0, before = 0.0;  // its keyed samples then, and at the block before
+    for (std::size_t i = 0; i < u.size(); i += block) {
+        ch.push(std::span(u).subspan(i, std::min(block, u.size() - i)));
+        if (!ch.keyer().unknown[k]) {
+            known_n = ch.processed();
+            weight = ch.keyer().weight[k];
+            break;
+        }
+        before = ch.keyer().weight[k];
+    }
+    std::printf("[ info ] branch 23 known at %.3f s with %.3f s keyed (%.3f s at the block before)\n",
+                static_cast<double>(known_n) / rate, weight / rate, before / rate);
+    ASSERT_GE(known_n, 0) << "branch 23 never became known";
+    EXPECT_GE(weight, ch.keyer().rekey_weight);         // re-keyed when the keyed time reached W_min ...
+    EXPECT_LT(before, ch.keyer().rekey_weight);         // ... and not before
+    EXPECT_LT(known_n, ch.rekey_timeout_samples());     // before the time-out, counted from the stream's start
+}
 
 }  // namespace

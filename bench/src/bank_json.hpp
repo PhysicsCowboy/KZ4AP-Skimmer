@@ -32,16 +32,16 @@ std::string py_float_repr(double x);
 // Python's json.dumps(value) with the default arguments.
 std::string py_dumps(const ordered_json& value);
 
-// The prototype's ChannelResult.to_json(): times rounded to 4 decimals (s), T and windows to 6 (s; null for
-// NaN), confidences and scores to 4; corrections unrounded (dataclasses.asdict: t_s, from_s, reach_s, old,
-// new, reason; the port's from_index is not part of it).
+// As the prototype's ChannelResult.to_json() wrote it: times rounded to 4 decimals (s), T and windows to 6 (s;
+// null for NaN), confidences and scores to 4; corrections unrounded (dataclasses.asdict: t_s, from_s, reach_s,
+// old, new, reason; the port's from_index is not part of it).
 ordered_json to_json(const bank::ChannelResult& result);
 
 // The configuration as the prototype's runner.decode stored it (dataclasses.asdict(ProtoConfig), every field in
 // order; bank_json.cpp gives the order).
 ordered_json to_json(const bank::BankConfig& cfg);
 
-// Sets one field by its ProtoConfig name from a JSON value (numbers, strings, lists of numbers); throws
+// Sets one field by its name from a JSON value (numbers, strings, lists of numbers); throws
 // std::invalid_argument for an unknown name or a value of the wrong kind.
 void set_config_value(bank::BankConfig& cfg, const std::string& name, const ordered_json& value);
 
