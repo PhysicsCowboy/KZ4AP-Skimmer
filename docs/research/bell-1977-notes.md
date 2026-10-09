@@ -6,11 +6,19 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
 
 **Labels.** [fact, p. N] means Bell states it on that page, checked against the page image where math, tables or figures are involved. [fact, code p. N] means it comes from his Fortran listing (pp. 159–191). [inference] means reasoning by this note, not by Bell. [uncertain] means the scan, the OCR or a hand-drawn graph could not be read precisely.
 
+**Transcription and reference sheet (added 2026-10-08).** Bell's listing is now transcribed, read twice independently and reviewed: `reference/bell1977/listing.txt`, with `reference/bell1977/README.md` and `reference/bell1977/transcription-log.md`. `docs/research/bell-1977-reference.md` gives every constant, formula and setting of his program with its source, derived from that transcription, for the stage-1 port. This note was written before the transcription, partly from the scan's text layer. Where it and those documents disagree, they are right: each statement the transcription contradicts carries a dated correction below, and the original statement is kept. Where the listing and the thesis text disagree, the listing is the authority (owner's decision D1); the reference sheet's section (g) lists every such difference.
+
 ## 0. Bottom line
 
 - Bell's decoder is a **multiple-hypothesis tracker**. The discrete state is (letter/trie state, Morse element type, key state, time spent in the current element, speed). Each hypothesis carries its own **scalar Kalman filter on the received signal amplitude**, and the Kalman innovation gives that hypothesis's measurement likelihood. Paths are extended every 5 ms sample and pruned M-path style. At most 25 paths are kept, and each extends into at most 30 successors [fact, pp. 119–123; code pp. 167–181].
 - The measurement is **not I/Q**. It is the output of a real-valued envelope detector behind a 100 Hz band-pass filter, sampled at 200 samples/s. The mean of the noise floor is subtracted, and the result is then treated as if it were zero-mean white Gaussian noise [fact, pp. 110–114, 123–124].
+
+  > **Correction (2026-10-08, from the transcription):** in the listing the band before the detector is 64.4 Hz wide at −3 dB relative to its gain at the carrier (noise bandwidth 78.5 Hz), formed by RCVR's quadrature low-pass and two resonators; the detector is a full-wave rectifier followed by a low-pass with its −3 dB point (relative to its DC gain) at 31.1 Hz. NOISE subtracts 2.4·YMAVG + 0.05 and scales the result by 1.1, where YMAVG is a smoothed 1.0 s minimum of the envelope. The 5 ms noise samples are correlated (0.71 at lag 1). See `bell-1977-reference.md`, sections (b) and (c).
+
 - The only text model actually coded and tested is **independent, equally likely letters** [fact, p. 106]. Bell says the biggest remaining gain lies in better text (language) models [fact, pp. 106–108, 146].
+
+  > **Correction (2026-10-08, from the transcription):** in the listing the letters' probabilities follow from the second-order element table ELEMTR, so the decoder's letters are not equally likely (see §2.2 below and `bell-1977-reference.md`, section (f)).
+
 - Headline results. Simulated hand-keyed Morse with a "fair" fist (10% of letters mis-sent) at 20 wpm gives 4% letter error at S₁₀₀ = 9 dB (key-on, 100 Hz). The error rises to 8% at S₁₀₀ = 4 dB and 34% at S₁₀₀ = 3 dB [fact, Table XVI, p. 134]. On real off-air recordings at S₁₀₀ = 16–22 dB, letter error was 1–10% (keyboard senders) and 3–15% (hand senders) [fact, Tables XXI–XXII, pp. 141–142]. None of Bell's results, and none of his lower bounds, gets anywhere near 10⁻⁵ letter error.
 
 ## 1. Symbols and units
@@ -85,6 +93,8 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
 
   Pr[change] = 1 − Pr[stay] [fact, pp. 100–101]. The code implements exactly this, with durations kept in ms and incremented by 5 ms per sample [fact, code pp. 170, 174].
 
+  > **Correction (2026-10-08, from the transcription):** the middle case printed on p. 100 (D₀ ≤ m ≤ D₀ + ε) is a misprint: it takes, in numerator and denominator, the expressions of the other ranges. The listing (XTRANS, p. 170 23600–23800) computes ½e^{−α(D₀+ε−m)} / (1 − ½e^{α(D₀−m)}), the quotient of the survival functions for this range, so the code does not implement the printed form. See `bell-1977-reference.md`, sections (b) and (g).
+
   **Note.** This is an explicit-duration (semi-Markov) model. The survival probability past the mode decays with a constant hazard α·ε, so a long element never becomes "impossible" [inference].
 
 **Speed model (Section VI.B, pp. 101–104)**:
@@ -102,6 +112,9 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
   | pause | −20, −10, 0, +10, +20 | .15, .2, .3, .2, .15 | 10.0 |
 
   The "0" column is lost in the OCR of Table X. It is restored here from the averages and from the ±2i rule on p. 103 [inference; consistent with the code's 5 rate branches (I−3)·IDEL, code p. 174].
+
+  > **Correction (2026-10-08, from the transcription):** the "0" column is printed on p. 104 (checked on the page image), and the listing's tables RTRANS, MEMDEL and MEMPR (p. 161 09500–10000) reproduce Table X exactly, including that column. See `bell-1977-reference.md`, section (b), INITL.
+
 - The justification is TSC's data: hand-sent speed differs by about 2.5 wpm on average between 10-mark/space-pair segments, and 8–10 wpm differences are not rare [fact, pp. 101–102].
 - Initialization: the 25 starting paths are 5 each at 10, 20, 30, 40 and 50 wpm [fact, code p. 167].
 - Output speed estimate: the conditional mean over saved paths [fact, p. 121; code p. 180].
@@ -109,8 +122,17 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
 **Element and letter models (pp. 104–108)**:
 
 - Tables XI and XII (p. 105) give first- and second-order Markov element transition matrices. The first-order matrix has rows dot → (e-sp .58, c-sp .33, w-sp .07, pause .02), dash → (.54, .37, .07, .02), and any space → (dot .5–.55, dash .45–.5) [fact, p. 105]. Several printed rows of Table XII do not sum to 1, for example "−^ : .55, .5" [fact, p. 105; probably typos].
+
+  > **Correction (2026-10-08, from the transcription):** the listing's table ELEMTR (p. 161 08700–09200) is Table XII with rows that sum to 1: .55/.45 for "−^", .5/.5 for "·~" and "−~", and 0 to dash and .067 to w-sp for "^·" where the table prints .5 and .069. See `bell-1977-reference.md`, sections (b) and (g).
+
 - In the "independent letters" model, the element sequence is fixed by the letter (probability 0 or 1). A letter transition is allowed only when α_{k−1} shows a letter-ending space. Letters are then uniform [fact, pp. 104–106].
+
+  > **Correction (2026-10-08, from the transcription):** in the listing the transition probabilities come from ELEMTR through each state's element-state; the letter tree only decides which successors exist, and a successor it does not allow still takes its share of probability for one step and then dies. The decoder's letters are therefore not equally likely. See `bell-1977-reference.md`, section (f).
+
 - The code carries a letter state LAMBDA with tables of up to 400 entries (IELMST, MEMFCN) and a 16×6 element-transition table ELEMTR. From these dimensions, LAMBDA appears to be a node in the Morse code tree [uncertain: code pp. 169–171 only partly read].
+
+  > **Correction (2026-10-08, from the transcription):** INITL reads the tree from a file `MORSEM`, 300 rows of eight integers (LTRMAP, IELMST, MEMFCN(1..6)) (p. 161 10300–11000); the file is not printed. A state is a tree node together with its element-state (previous and current element). The 16 rows in DATA are the second-order element model of Table XII, not the beginning of the tree, and three of them (5, 9, 10) cannot belong to any letter tree. `bell-1977-reference.md`, section (f), gives the meaning of the tables and a rule that reconstructs the file.
+
 - Bell notes that a third-order letter model would need 36⁴ = 1,679,616 words of storage and recommends language/grammar/dictionary models instead [fact, pp. 107–108].
 
 ## 3. Channel, observation model and Kalman filters
@@ -137,6 +159,9 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
   - Key-up: Φ = 10^(−2/(22.4·Δ_ms)), with Δ_ms = 1200/r, and Q_A = 0.
 
   [fact, code p. 178]
+
+  > **Correction (2026-10-08, from the transcription):** the key-up Φ becomes 1 once the space has lasted 14 bauds (p. 178 14100), so the amplitude estimate decays by at most 10^−0.25 (−5.0 dB of amplitude relative to its value at the space's start). The Q formula's B is the space's length so far at the saved path's speed, capped at 14 bauds; Q at a mark after a pause is 0.160 (amplitude)² per 5 ms step, not the text's 0.25. See `bell-1977-reference.md`, section (b), MODEL.
+
 - Kalman initialization: ŷ = 0.5 and P = 0.1 for every path. ŷ is floored at 0.01 after each update [fact, code pp. 176–177].
 
 ### 3.2 What each filter estimates and how the likelihood is formed (Section V, pp. 66–85)
@@ -158,10 +183,16 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
   5. sampling at **200 samples/s** (τ = 5 ms).
 
   At τ ≥ 1/(2·B_BPF) the noise samples are independent [fact, pp. 110–112]. Bell notes that the optimal filter for 50 wpm would be 25 Hz wide (0.613/0.024 s, 0.56 dB worse than matched), and 10 Hz for 20 wpm. So the fixed 100 Hz filter costs **6 dB at 50 wpm and 10 dB at 20 wpm**, relative to a matched filter. He chose 100 Hz to tolerate chirp of about 50 Hz [fact, pp. 111–112].
+
+  > **Correction (2026-10-08, from the transcription):** this list is the thesis text's description; the listing differs. (Its "front end" is Bell's receiver chain: RCVR, BPFDET and NOISE.) In the listing: (2) RCVR's filter is a one-pole low-pass on I and Q, −3 dB relative to its DC gain at ±92.4 Hz from the carrier, not 500 Hz; (3) the two resonators (pole radii 0.90 and 0.97, at 1000.2 Hz) are 72.3 Hz wide at −3 dB relative to their peak, and with RCVR the band is 64.4 Hz wide, noise bandwidth 78.5 Hz; (4) the detector is |x| and the low-pass after it is monotone, −3 dB relative to its DC gain at 31.1 Hz, with a DC gain of 7.99, not a 100 Hz Chebyshev. Consecutive 5 ms samples of the noise envelope have correlation 0.71. See `bell-1977-reference.md`, section (c).
+
 - **Noise handling** [fact, pp. 110–114, 124]:
   - The envelope noise is Rayleigh (Rician with signal present), not Gaussian, not zero-mean, and correlated with the signal. Bell keeps only the first two moments.
   - Mean and variance: μ_n = E[Z] and R = 2μ_n² (Bell's statement from Davenport).
   - NOISE subroutine: at each sample, take the minimum of the envelope over 240 samples (1.2 s), average it and scale it by an empirical factor to estimate μ_n. Subtract μ_n and pass R = 2μ_n² to the filters [fact, p. 124]. The listing uses buffers of 200 and 50 samples, so the implemented windows may differ [uncertain, code p. 190].
+
+    > **Correction (2026-10-08, from the transcription):** the listing's NOISE takes the minimum over the last 200 samples (1.0 s; the 50-sample buffer never changes it), averages it with coefficient 0.004 per 5 ms step (YMAVG, time constant 1.25 s), passes z = 1.1·(Z − 2.4·YMAVG − 0.05) and R = 0.30·YMAVG, at least 0.005 (amplitude)² (p. 191 14300–14700). R is not 2μ_n². See `bell-1977-reference.md`, sections (b) and (c).
+
   - Sensitivity to a wrong R is small (Table XIII, p. 130): at 20 wpm keyboard Morse with true S₁₀₀ = 3 dB, using an assumed S₁₀₀ of 9, 6, 3 or 1 dB gave 9, 6, 5 and 5% letter error [fact, p. 130].
 
 ## 4. Trellis/tree decoder (Chapters V.B–C and VIII)
@@ -178,9 +209,18 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
      - then add nodes in decreasing probability until the saved total reaches **P_opt = 0.90**, with at most **25 paths** in all;
      - the code comment says the minimum is 7 paths;
      - paths are re-sorted and a back-pointer array is kept.
+
+     > **Correction (2026-10-08, from the transcription):** the constant is 0.000001 (p. 181 32500). The code keeps at least 2 paths, not 7. After the element-best nodes it adds the rest by decreasing probability, without re-sorting the whole set; it then deletes a saved path equal in state, duration and speed to an earlier one (dropping its probability), and its final normalization leaves the first path's probability out of the sum, which does not change the decoding. See `bell-1977-reference.md`, section (b), SAVEP.
+
   7. TRELIS: **decoding delay.** Find a node, at sufficient delay, that all surviving paths share. If none exists within **200 samples (1 s)**, output the node at 200-sample delay on the current best path, and delete every path that does not descend from it [fact, p. 123]. Translation is a table lookup from elements to letters [fact, p. 123].
+
+     > **Correction (2026-10-08, from the transcription):** in the listing the forced decision reads the node 199 samples (995 ms) back on the best path (p. 185 07300–07400, p. 186 14500–14700). See `bell-1977-reference.md`, section (b), TRELIS.
+
 - **Printed algorithm gap.** Section V.C lists Steps 1–4 and then jumps to Step 8. Steps 5–7 are missing from the printed thesis. The printed pages 81 and 82 are consecutive, so this is not a scan gap [fact, pp. 80–82]. The Fortran fills the gap.
 - **No merging.** Paths reaching the same (element, speed, letter, duration) state are *not* merged. The decoder is a pruned tree, not a Viterbi trellis [inference from pp. 119–123 and the SAVEP code].
+
+  > **Correction (2026-10-08, from the transcription):** SAVEP deletes a saved path whose letter-tree state, duration and speed equal those of an earlier saved path (p. 182 38800–42400). The deleted path's probability is dropped, not added to the survivor, and the survivor keeps its own amplitude estimate. So equal paths are not merged, but duplicates do not survive a step. See `bell-1977-reference.md`, section (b), SAVEP.
+
 - **Choosing P_opt and the delay** (Table XIV, p. 131; 50 wpm keyboard Morse, first-order element model):
 
   | P_opt | Avg paths saved | Letter error at delay 0 / 40 / 200 samples, S₁₀₀ = 9 dB | Same, S₁₀₀ = 6 dB |
@@ -214,6 +254,14 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
 | Test speeds | 20, 30 and 50 wpm; 15 wpm and 10–20 wpm in Howe's files; 16–35 wpm field | [fact, pp. 131–142] |
 | Test size | about 200 letters per experiment | [fact, p. 139] |
 | Field recordings | 4 kHz IF; fast-attack AGC with about 200 ms decay; digitized at 8 kHz; about 50 s per cut | [fact, p. 141] |
+
+> **Corrections to this table (2026-10-08, from the transcription):** several rows give the thesis text where the listing differs. See `bell-1977-reference.md`, sections (b)–(e) and (g).
+> - Pre-filter: one-pole low-pass on I and Q, −3 dB relative to its DC gain at ±92.4 Hz, then two resonators; together 64.4 Hz wide at −3 dB relative to the gain at the carrier, noise bandwidth 78.5 Hz.
+> - Detector and post-filter: |x|, then a low-pass with its −3 dB point (relative to its DC gain) at 31.1 Hz and a DC gain of 7.99.
+> - Amplitude model in the code: Q up to 0.160 (amplitude)² per 5 ms step after spaces of 14 bauds or more, not 0.25.
+> - Pruning: at least 2 paths, not 7; duplicates deleted.
+> - Decision delay: the forced decision is at 199 samples (995 ms).
+> - Simulated fists: the listing's simulator draws durations uniformly, mean ± EDEV × the dot length, with a 20 ms floor and no ceiling (p. 164 11300–11800); the values of EDEV are not given.
 
 ## 6. Results, with SNR definitions
 
@@ -362,10 +410,19 @@ Off-air tape recordings, 4 kHz IF, about 50 s per cut, context-free text, high S
 
 - The decoder has no model of interference or impulse noise: every energy burst must be either signal or Gaussian noise. That caused both field failures, where static was taken as faded marks and a weak interferer was decoded during spaces [fact for the failures, pp. 142–143].
 - The code and the text disagree on several constants: α, the mark Φ, the transition-variance rule, and the noise-estimator windows [fact, code pp. 170, 178, 190 vs text pp. 98, 116–117, 124]. An implementation should follow one of them consistently.
+
+  > **Correction (2026-10-08, from the transcription):** they disagree on more than these: the noise variance R, the detector, the filter bandwidths, the simulator's duration law and text, the decision delay and the pruning minimum. `bell-1977-reference.md`, section (g), lists every difference; the stage-1 port follows the listing (owner's decision D1).
+
 - The simulator drew durations from truncated Gaussians while the decoder assumed Laplacians [fact, pp. 96–98, 125]. This mismatch is realistic but uncontrolled.
+
+  > **Correction (2026-10-08, from the transcription):** the listing's simulator draws uniform durations, mean ± EDEV × the dot length, floored at 20 ms (KEY, p. 164 11300–11800). See `bell-1977-reference.md`, sections (b) and (e).
+
 - The printed algorithm omits Steps 5–7, and Table XII has rows that do not sum to 1 [fact, pp. 81–82, 105].
 - Probabilities are carried in linear form with renormalization, not in the log domain [fact, code pp. 176–178].
 - There is no path merging, so equivalent hypotheses consume several of the 25 slots.
+
+  > **Correction (2026-10-08, from the transcription):** SAVEP deletes saved paths equal in letter-tree state, duration and speed to an earlier one (p. 182 38800–42400), so such hypotheses do not occupy several slots; their probabilities are dropped, not combined. See `bell-1977-reference.md`, section (b), SAVEP.
+
 - Statistical power is low: about 200 letters per cell, so a "5%" result has a 90% confidence interval of roughly 3–8% [fact for the table, p. 139].
 
 ## 8. Assessment for a modern implementation (all [inference])
