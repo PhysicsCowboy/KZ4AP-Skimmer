@@ -16,7 +16,8 @@ texts  One line per finished run, tab-separated: the key <name>/r<NN>, the refer
        (below), in the project's conventions (A.11): a prosign is one "<..>" token, a word space one blank. The C++
        scorer kz4ap-bell-score reads these lines. Runs that stopped (FAILED) are listed on stderr.
 table  The score table (CSV), one row per run: the cell's conditions, Bell's value, run, seed, zero_sum (1: the run
-       stopped on SIGFPE at SAVEP's zero sum, and its counts are empty), the scorer's counts and the two rates
+       stopped on SIGFPE at SAVEP's zero sum, and its counts are empty), guard_steps (the decoder steps at which
+       change 11 acted, G records), the scorer's counts and the two rates
        (count over chars, 4 decimals). Settings named kam-<WPM>wpm-<S100>db (run/kam-grid, the S100 grid of
        keyboard Morse) get table "grid" and no Bell value.
 rule   Plan section 5.2's rule on the score table, with the Bell-style count (decision D10) and Table XVI's reading
@@ -247,7 +248,7 @@ def parse_name(name):
 
 
 TABLE_COLUMNS = ["table", "speed_wpm", "sender", "reading", "s100_db", "bell_pct", "run", "seed", "zero_sum",
-                 "chars", "bell_count", "char_edits", "spaces", "space_edits", "bell_rate", "char_cer"]
+                 "guard_steps", "chars", "bell_count", "char_edits", "spaces", "space_edits", "bell_rate", "char_cer"]
 
 
 def cmd_table(args):
@@ -265,12 +266,14 @@ def cmd_table(args):
             folder = os.path.join(folder_base, r)
             _, seed = read_settings(os.path.join(folder, "SETTINGS"))
             row = [table.upper(), f"{wpm:.2f}", sender, reading, f"{s100:.2f}", bell, int(r[1:]), seed]
+            events = os.path.join(folder, "EVENTS.TXT")
+            guard = sum(1 for ln in open(events, encoding="ascii") if ln.startswith("G ")) if os.path.exists(events) else 0
             if os.path.exists(os.path.join(folder, "FAILED")):
-                out.writerow(row + [1, "", "", "", "", "", "", ""])
+                out.writerow(row + [1, guard, "", "", "", "", "", "", ""])
                 continue
             sc = scores[f"{name}/{r}"]
             chars = int(sc["chars"])
-            out.writerow(row + [0, chars, sc["bell_count"], sc["char_edits"], sc["spaces"], sc["space_edits"],
+            out.writerow(row + [0, guard, chars, sc["bell_count"], sc["char_edits"], sc["spaces"], sc["space_edits"],
                                 f"{int(sc['bell_count']) / chars:.4f}", f"{int(sc['char_edits']) / chars:.4f}"])
     return 0
 

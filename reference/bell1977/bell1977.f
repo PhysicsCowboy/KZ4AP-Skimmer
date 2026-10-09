@@ -16,7 +16,8 @@ C KZ4AP:    the loop redirected to a new label after the loop;
 C KZ4AP:  8 stubs for the display library routines ERASE, PLOTR, VIEW;
 C KZ4AP:  9 KEY's duration law selectable: uniform as printed (LAW 0) or
 C KZ4AP:    the text's truncated Gaussian, reading C (LAW 1);
-C KZ4AP: 10 golden input 3 only: a rate change at a set time (off: 0).
+C KZ4AP: 10 golden input 3 only: a rate change at a set time (off: 0);
+C KZ4AP: 11 SAVEP: P(1) added to its sum only when that sum is 0.
 C KZ4AP: See README.md for the files, the settings and the reasons.
       INTEGER ELMHAT,XHAT                                               00100
       DIMENSION S1(512),S2(512),S3(512)                                 00200
@@ -1298,6 +1299,8 @@ C                                                                       29700
       DIMENSION ICONV(25)                                               30400
 C                                                                       30500
       COMMON/BLKSV1/YKKIP,PKKIP,YKKSV,PKKSV                             30600
+C KZ4AP: change 11: the trace level and the decoder step.
+      COMMON/KZ4AP/RATE2,KZTRC,KZLAW,NSTOP,NSW,KZSTP
 C                                                                       30700
       DATA POPT/.90/                                                    30800
 C                                                                       30900
@@ -1413,6 +1416,17 @@ C                                                                       40700
 C                                                                       42300
       ISAVE=N                                                           42400
 C                                                                       42500
+C KZ4AP: change 11 (plan section 9 item 6, controller's ruling R1):
+C KZ4AP: the sum above leaves out P(1); when it is 0 (every slot
+C KZ4AP: after the first has P = 0) the division below would give
+C KZ4AP: +INF and NaN, from which the listing does not recover. Only
+C KZ4AP: then, P(1) is added to the sum. A documented deviation; the
+C KZ4AP: C++ does the same. Record G (trace level 1) marks each use.
+      IF(PSUM.NE.0.) GO TO 9425
+      PSUM=P(1)+PSUM
+      IF(KZTRC.GE.1) WRITE(22,9424) KZSTP,ISAVE
+9424  FORMAT('G ',I8,1X,I2)
+9425  CONTINUE
       PMAX=0.                                                           42550
       DO 950 I=1,ISAVE                                                  42600
       P(I)=P(I)/PSUM                                                    42700

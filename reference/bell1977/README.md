@@ -108,8 +108,9 @@ character for character (blanks aside); this was checked by comparing the two st
 
 ### The changes
 
-Each is marked `C KZ4AP: change N` in the code, with its reason. Changes 1–9 are the plan's list (Task 3); change 10 is
-an addition, used only by golden input 3.
+Each is marked `C KZ4AP: change N` in the code, with its reason. Changes 1–9 are the plan's list (Task 3). Change 10 is
+an addition used only by golden input 3, and change 11 the guard of plan §9 item 6 (controller's ruling R1, Task 3);
+both were accepted by the controller.
 
 | # | Change | Reason |
 |---|---|---|
@@ -123,6 +124,7 @@ an addition, used only by golden input 3.
 | 8 | Stubs that do nothing for ERASE, PLOTR and VIEW. | Display library routines, not in gfortran. |
 | 9 | KEY's duration law is chosen by `LAW`: 0, the printed uniform law; 1, reading C of decision D9: a Gaussian of mean ESEP·Δ and standard deviation EDEV·Δ, redrawn while below 16 ms and, for dot, dash, e-sp and c-sp, while above 360 ms. | Decision D9 (a): the text's truncated Gaussian (p. 125) for Table XVI, readings A and B run with the printed law (reference sheet (e)). |
 | 10 | MAIN sets KEY's dot length to 1200/`RATE2` ms at sample `TSW`·8000 (`TSW` = 0: never). | Golden input 3 needs a speed change, which the printed KEY cannot make. Off in every V2 run. |
+| 11 | SAVEP: when the sum PSUM of slots 2 … ISAVE is 0, P(1) is added to it before the division at 42700, so the single survivor gets P = 1; otherwise nothing changes. Each use writes a record `G step isave` to EVENTS.TXT. | The listing's sum leaves out P(1), and when every slot after the first holds P = 0 it divides by 0: +∞ and NaN, from which the decoder does not recover (reference sheet (b)). V2 reached it in 270 of 1 440 runs without the guard (results record §3.4). A documented deviation; the C++ does the same (plan §9 item 6). |
 
 Compiler semantics (reference sheet (h)): `-fno-automatic -finit-local-zero` give static locals that start at 0, as
 on the PDP-10; DO loops follow FORTRAN 77 (no trip when the count is 0 or negative); every REAL is double precision
@@ -135,7 +137,7 @@ avoided by its order.
 `build.sh [OUTDIR]` compiles with `$FC` (default `gfortran`):
 `-std=legacy -fdec -fno-automatic -finit-local-zero -fdefault-real-8 -fdefault-double-8 -O2`, and the same with
 `-ffpe-trap=invalid,zero` as `bell1977-fpe`, which stops with SIGFPE at a division by zero or an invalid operation
-(SAVEP's zero sum, plan §9 item 6) and otherwise gives identical output. On the Linux machine gfortran comes from
+(SAVEP's zero sum before change 11, or any other) and otherwise gives identical output. On the Linux machine gfortran comes from
 conda-forge, installed with micromamba inside the repository's `build/` folder:
 
 ```
@@ -187,6 +189,7 @@ Outputs:
   - `L call step code nblank`: TRANSL prints a letter: its call count (one call per decided trellis stage, in time
     order), the decoder step (5 ms) at which it prints, the IALPH code and the blanks that follow (0, 1 or 2);
   - `D call step lambda` (TRACE = 2): every decided state passed to TRANSL;
+  - `G step isave` (TRACE ≥ 1): change 11 acted in SAVEP at this decoder step, leaving ISAVE slots;
 - `SIGNAL.BIN` (TRACE = 2): per 8 kHz sample, three little-endian float64: s_n (AU), the key state x_n, the envelope
   Z (AU);
 - `STEPS.BIN` (TRACE = 2): per decoder step, eight float64 (step, z in AU, R in AU², ISAVE, IMAX, PX, XHAT, SPDHAT in
