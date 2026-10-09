@@ -3,7 +3,7 @@
 Three inputs of 1 s, each run through Bell's program as compiled in `reference/bell1977/` (Bell stage-1 plan,
 Task 3), with the trace at level 2. The C++ receiver chain (Task 4) and decoder (Task 5, V3) read them and must give
 the same values. They were made at commit 0ea2b05 with GNU Fortran 16.2.0 (conda-forge gcc 16.2.0-7) on the Linux
-machine:
+machine, and made again at 6fb721b, with change 11 (SAVEP's guard), byte-identical:
 
 ```
 python reference/bell1977/v2.py run --bin BIN/bell1977-fpe --tables build/linux/bench/kz4ap-bell-tables \
