@@ -65,7 +65,8 @@ std::vector<int> iblank(const MorseTree& tree, const BellConfig& config);
 
 // Writes MORSEM as INITL reads it: exactly kMorseFileRows lines of FORMAT(8I3) (eight right-justified 3-column
 // integers, 24 characters, then '\n'): LTRMAP, IELMST, MEMFCN(1..6) of state 1, 2, ..., then rows of zeros. Throws
-// std::invalid_argument if the tree has more than kMorseFileRows states or a value outside 0 ... 999 (I3).
+// std::invalid_argument, before writing anything, if the tree has more than kMorseFileRows states or a value outside
+// 0 ... 999 (I3).
 void write_morse_file(const MorseTree& tree, std::ostream& out);
 
 }  // namespace kz4ap::bell

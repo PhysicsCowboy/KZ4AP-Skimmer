@@ -177,6 +177,11 @@ struct BellConfig {
     // per baud, APARM: the Laplacian density's rate α for dot, dash, e-sp, c-sp; w-sp; pause; XTRANS uses
     // α_m = m·APARM [p. 170 20600, 21800-22400]. The text derives 3.61, 1.81, 0.90 (p. 98); the listing's are used
     std::array<double, 3> xtrans_aparm = {3.000, 1.500, 1.000};
+    // dots: the factors of α_m for the w-sp and the pause, literals in the listing (7.*APARM(2), 14.*APARM(3)), not
+    // read from KIMAP; equal to KIMAP(5) and KIMAP(6) at the defaults [p. 170 22100, 22400]. For dot ... c-sp,
+    // α_m = KIMAP(e)·APARM(1) [p. 170 21800]
+    double xtrans_alpha_dots_word_space = 7.0;
+    double xtrans_alpha_dots_pause = 14.0;
 
     // ---- SPDTR (p. 172) ----
     // WPM: a speed branch leaving [min_wpm, max_wpm] has probability 0 [p. 172 35100-35200]

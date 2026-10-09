@@ -108,11 +108,13 @@ TEST(BellXtrans, IsTheSurvivalRatioOfTheLaplacianWithTheListingsAlpha) {
     const BellConfig c;
     int below = 0, straddle = 0, above = 0;
     for (int e = 1; e <= 6; ++e) {
-        for (int wpm : {10, 20, 33, 60}) {
+        // 6 and 64 WPM lie outside SPDTR's 10-60 WPM: PATH does not clip ILRSAV, and SAVEP can keep a
+        // zero-probability node 4 WPM beyond the range (review of Task 2, Minor 3), so XTRANS meets them
+        for (int wpm : {6, 10, 20, 33, 60, 64}) {
             const double delta_ms = 1200.0 / wpm;
             const double mode_ms = at1(kNominalDots, e) * delta_ms;
-            for (double d0 : {0.0, 0.5 * mode_ms, mode_ms - 7.5, mode_ms - 2.5, mode_ms, mode_ms + 2.5, 1.5 * mode_ms,
-                              3.0 * mode_ms}) {
+            for (double d0 : {0.0, 0.5 * mode_ms, mode_ms - 7.5, mode_ms - 5.0, mode_ms - 2.5, mode_ms, mode_ms + 2.5,
+                              1.5 * mode_ms, 3.0 * mode_ms}) {
                 if (d0 < 0.0) continue;
                 const double b0 = d0 / mode_ms, b1 = (d0 + 5.0) / mode_ms;
                 const double expected = survival(b1, at1(kAlphaM, e)) / survival(b0, at1(kAlphaM, e));
@@ -129,6 +131,25 @@ TEST(BellXtrans, IsTheSurvivalRatioOfTheLaplacianWithTheListingsAlpha) {
     EXPECT_GT(below, 0);
     EXPECT_GT(straddle, 0);
     EXPECT_GT(above, 0);
+}
+
+// The listing's α for the w-sp and the pause uses the literals 7. and 14. (p. 170 22100, 22400), not KIMAP: a
+// configuration whose KIMAP differs moves the mode m·Δ but not α_m.
+TEST(BellXtrans, AlphaOfWordSpaceAndPauseIsTheListingsLiteral) {
+    BellConfig c;
+    EXPECT_EQ(c.xtrans_alpha_dots_word_space, 7.0);
+    EXPECT_EQ(c.xtrans_alpha_dots_pause, 14.0);
+    at1(c.xtrans_kimap, 5) = 8;
+    at1(c.xtrans_kimap, 6) = 15;
+    for (int e : {5, 6}) {
+        const double delta_ms = 1200.0 / 20;
+        const double mode_ms = at1(c.xtrans_kimap, e) * delta_ms;
+        for (double d0 : {100.0, mode_ms - 2.5, 1.2 * mode_ms}) {
+            const double alpha_m = at1(kAlphaM, e);  // 10.5 and 14, whatever KIMAP holds
+            const double expected = survival((d0 + 5.0) / mode_ms, alpha_m) / survival(d0 / mode_ms, alpha_m);
+            EXPECT_LT(rel(kz4ap::bell::xtrans(e, d0, 20, c), expected), 1e-12) << e << " " << d0;
+        }
+    }
 }
 
 // The stay probabilities telescope: their product over the steps from 0 to D is S(D/mΔ)/S(0). A dot at 20 WPM
@@ -182,7 +203,7 @@ TEST(BellModel, SpaceToMarkQ) {
     const BellConfig c;
     const std::array<std::pair<double, double>, 5> cases = {
         {{1.0, 0.01006}, {3.0, 0.02031}, {7.0, 0.02333}, {14.0, 0.16040}, {20.0, 0.16040}}};
-    for (int wpm : {10, 20, 60}) {
+    for (int wpm : {6, 10, 20, 60, 64}) {  // 6 and 64 WPM: outside 10-60 WPM, as XTRANS's test
         const double delta_ms = 1200.0 / wpm;
         for (const auto& [b, sheet] : cases) {
             for (int ielm = 3; ielm <= 6; ++ielm) {
@@ -205,9 +226,10 @@ TEST(BellModel, MarkPath) {
     const BellConfig c;
     for (int ielm = 1; ielm <= 2; ++ielm)
         for (int ixs = 0; ixs <= 1; ++ixs)
+            for (int wpm : {6, 20, 64})
             for (double dur : {5.0, 60.0, 900.0}) {
                 double phi = -1.0, qa = -1.0, hz = -1.0;
-                kz4ap::bell::model(dur, ielm, 20, 1, ixs, phi, qa, hz, c);
+                kz4ap::bell::model(dur, ielm, wpm, 1, ixs, phi, qa, hz, c);
                 EXPECT_EQ(phi, 1.0);
                 EXPECT_EQ(qa, 0.0001);
                 EXPECT_EQ(hz, static_cast<double>(ixs));
@@ -233,6 +255,16 @@ TEST(BellModel, KeyUpPhi) {
             kz4ap::bell::model(13.9 * delta_ms, ielm, wpm, 3, 0, phi, qa, hz, c);
             EXPECT_LT(phi, 1.0) << "below 14 bauds";
         }
+    }
+    // the same law outside 10-60 WPM (6 and 64 WPM) and inside: Φ = 10^(-(5 ms/Δ)/56) per 5 ms step
+    for (int wpm : {6, 10, 20, 60, 64}) {
+        const double delta_ms = 1200.0 / wpm;
+        double phi = -1.0, qa = -1.0, hz = -1.0;
+        kz4ap::bell::model(3.0 * delta_ms, 5, wpm, 3, 0, phi, qa, hz, c);
+        EXPECT_LT(rel(phi, std::pow(10.0, -(5.0 / delta_ms) / 56.0)), 1e-13) << wpm;
+        EXPECT_EQ(qa, 0.0);
+        kz4ap::bell::model(14.0 * delta_ms, 5, wpm, 3, 0, phi, qa, hz, c);
+        EXPECT_EQ(phi, 1.0) << wpm;
     }
 }
 

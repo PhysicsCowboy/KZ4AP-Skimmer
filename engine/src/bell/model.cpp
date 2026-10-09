@@ -1,6 +1,6 @@
 // Bell's model routines XTRANS, PTRANS, SPDTR and MODEL (listing pp. 170-178); see model.hpp. Each statement follows
-// the listing's, in its order and with its operations, so that the double-precision results equal those of the
-// listing compiled in double precision.
+// the listing's: the same operations in the same order, so the double-precision results equal those of the listing
+// compiled in double precision up to the math library's exp and pow.
 #include "kz4ap/bell/model.hpp"
 
 #include <cmath>
@@ -14,9 +14,9 @@ double xtrans(int ielem, double d0_ms, int irate, const BellConfig& config) {
     const double b1 = (d0_ms + ms(config.step_s)) / (mscale * rscale);  // 21400
     double alpha = 0.0;
     if (ielem == kPause)
-        alpha = at1(config.xtrans_kimap, kPause) * at1(config.xtrans_aparm, 3);      // 22400: 14.*APARM(3)
+        alpha = config.xtrans_alpha_dots_pause * at1(config.xtrans_aparm, 3);       // 22400: 14.*APARM(3)
     else if (ielem == kWordSpace)
-        alpha = at1(config.xtrans_kimap, kWordSpace) * at1(config.xtrans_aparm, 2);  // 22100: 7.*APARM(2)
+        alpha = config.xtrans_alpha_dots_word_space * at1(config.xtrans_aparm, 2);  // 22100: 7.*APARM(2)
     else
         alpha = mscale * at1(config.xtrans_aparm, 1);                                 // 21800
     if (b1 <= 1.0) {                                                  // 22600, 23100-23300

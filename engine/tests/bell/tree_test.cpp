@@ -436,6 +436,16 @@ TEST(BellTree, MorseFileReadsBackAsInitlReadsIt) {
     EXPECT_EQ(text.substr(8 * 25, 25).substr(0, 9), "  9  9  9");
 }
 
+// A tree INITL cannot read leaves nothing written: every row is checked before the first is written (review of
+// Task 2, Minor 5).
+TEST(BellTree, MorseFileWritesNothingWhenALateRowIsInvalid) {
+    MorseTree t = bell_tree();
+    at1(at1(t.memfcn, t.states()), 6) = 1000;
+    std::ostringstream out;
+    EXPECT_THROW(kz4ap::bell::write_morse_file(t, out), std::invalid_argument);
+    EXPECT_EQ(out.str(), "");
+}
+
 TEST(BellTree, MorseFileRefusesWhatInitlCannotRead) {
     MorseTree t = bell_tree();
     MorseTree big = t;

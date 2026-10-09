@@ -210,6 +210,9 @@ void write_morse_file(const MorseTree& tree, std::ostream& out) {
         std::string text = std::to_string(value);
         return std::string(3 - text.size(), ' ') + text;
     };
+    // Every row is formatted, and so checked, before the first is written: a refused tree leaves nothing behind.
+    std::string text;
+    text.reserve(static_cast<std::size_t>(kMorseFileRows) * 25);
     for (int lambda = 1; lambda <= kMorseFileRows; ++lambda) {
         std::array<int, 8> row{};
         if (lambda <= tree.states()) {
@@ -217,9 +220,10 @@ void write_morse_file(const MorseTree& tree, std::ostream& out) {
             row[1] = at1(tree.ielmst, lambda);
             for (int k = 1; k <= kElements; ++k) at1(row, k + 2) = at1(at1(tree.memfcn, lambda), k);
         }
-        for (int value : row) out << field(value);
-        out << '\n';
+        for (int value : row) text += field(value);
+        text += '\n';
     }
+    out << text;
 }
 
 }  // namespace kz4ap::bell
