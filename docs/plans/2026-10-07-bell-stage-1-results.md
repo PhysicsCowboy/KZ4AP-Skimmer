@@ -3,26 +3,30 @@
 Plan: `docs/plans/2026-10-07-bell-decoder-stage-1.md` (owner's go-ahead, 2026-10-08). Branch `bell-stage-1`. Every
 number here is **measured** unless marked otherwise, and is computed from the committed score tables named with it.
 
-**Answer (V2, Task 3): FAIL, and the task is stopped for two rulings (plan §5.3).** Bell's own program, compiled with
-gfortran and run on his simulator at the settings of his Tables XV and XVI as the reference sheet reads them, decodes
-far worse than his tables. Under reading C of decision D9 (the rule's reading), **28 of the 30 cells are
+**Answer (V2, Task 3): FAIL.** Bell's own program, compiled with gfortran and run on his simulator at the settings of
+his Tables XV and XVI as the reference sheet reads them, decodes far worse than his tables. In the final run (with the
+guard of change 11, section 3.6), under reading C of decision D9 (the rule's reading), **28 of the 30 cells are
 inconsistent** with his values (criterion (i) allows 5), and our error is above his in **all 30 cells** (two-sided
 sign test p = 1.9·10⁻⁹; criterion (ii) needs p ≥ 0.05). Readings A and B fail as well (28 and 22 inconsistent
-cells). Two findings need a ruling before V2 can be completed (section 3.6):
+cells).
 
-1. **SAVEP's zero sum is reached** (plan §9 item 6): 270 of the 1 440 runs stop on it, in 19 of the 30 cells under
-   reading C. The traces show both routes the reference sheet predicted: one live path is left (by a forced
-   decision, or by the likelihoods), and every successor of it other than staying has a transition probability of at
-   most 10⁻⁴.
-2. **Our error curve sits 1.9–3.9 dB S₁₀₀ to the right of his** (keyboard Morse, Table XV; median of the seven
-   cells with a nonzero value: 2.7 dB S₁₀₀). The reference sheet ((d), (j) item 21) names the noise density's
-   convention, one-sided or two-sided (3.01 dB), as the first suspect. Nothing here applies it.
+- **SAVEP's zero sum** (plan §9 item 6) is reached in 270 of the 1 440 runs. The first run, without a guard, stopped
+  there (sections 3.1–3.4). By the controller's ruling R1 the guard of change 11 now adds P(1) to SAVEP's sum only
+  when that sum is 0; it acts in exactly those 270 runs, and the other 1 170 runs are unchanged.
+- **The gap.** On keyboard Morse our curve reaches his nonzero Table XV values 1.86–3.89 dB S₁₀₀ later (median of
+  seven cells 2.71 dB S₁₀₀; section 3.5). The S₁₀₀ convention stays one-sided, as the thesis states it (pp. 33, 113;
+  ruling R2).
+- **The cause is unresolved** (section 3.7). Checked and excluded: the conversion to fixed form, the receiver chain,
+  the optimizer, the trap, precision. Not excluded: the printed program differing from the one behind the tables, the
+  noise convention, his marking by eye, and his single 200-letter experiments.
 
 ## 1. Conditions
 
 - **Machine.** The Linux machine: Linux (Ubuntu 22.04), 10-core Intel Xeon (Ice Lake). gfortran: GNU Fortran 16.2.0
   (conda-forge gcc 16.2.0-7), installed with micromamba 2.9.0 inside the repository's `build/` folder.
-- **Program.** `reference/bell1977/bell1977.f` at commit 0ea2b05, built by `reference/bell1977/build.sh` with
+- **Program.** `reference/bell1977/bell1977.f`: the first run (sections 3.1–3.5) at commit 0ea2b05; the final run
+  (section 3.6) at commit 6fb721b, which adds change 11 (SAVEP's guard, 327e6e3) and a fix to `v2.py rule`'s
+  beta-binomial at a fitted correlation of 1 (6fb721b; the first run's verdicts are unchanged by it). Built by `reference/bell1977/build.sh` with
   `-std=legacy -fdec -fno-automatic -finit-local-zero -fdefault-real-8 -fdefault-double-8 -O2` and
   `-ffpe-trap=invalid,zero` (the binary `bell1977-fpe`). The trap changes no result: on the 293 runs of a 5-run pilot
   of every cell that did not stop, `bell1977` and `bell1977-fpe` wrote byte-identical TRANSL.TXT and EVENTS.TXT; and
@@ -48,11 +52,15 @@ cells). Two findings need a ruling before V2 can be completed (section 3.6):
   unbiased variance s² of the 20 (or fewer) per-run rates; Bell's x = 2·b errors of 200 letters for his b %; a
   beta-binomial over 200 letters with mean p̂ and its overdispersion from s² by moments (binomial when s² ≤
   p̂(1 − p̂)/200); consistent if P(X ≤ x) ≥ 0.05 and P(X ≥ x) ≥ 0.05, or P(X = 0) ≥ 0.05 for x = 0.
-- **Score tables** (committed with this record): `docs/plans/data/2026-10-07-bell-stage-1/v2-fortran.csv`, one row
-  per run of the 72 settings files (1 440 rows); `.../v2-fortran-kam-grid.csv`, the S₁₀₀ grid of section 3.5
-  (480 rows). Columns: table, speed (WPM), sender, reading, S₁₀₀ (dB S₁₀₀), Bell's value (%), run, seed, zero_sum
-  (1: stopped on the trap), reference letters, Bell-style count, character edits, reference word spaces, space edits,
-  and the two rates.
+- **Score tables** (`docs/plans/data/2026-10-07-bell-stage-1/`), one row per run:
+  - first run, without the guard (committed in 0f41a21): `v2-fortran.csv`, the 72 settings files (1 440 rows), and
+    `v2-fortran-kam-grid.csv`, the S₁₀₀ grid (480 rows);
+  - final run, with change 11 (committed with this section): `v2-fortran-guard.csv` and
+    `v2-fortran-kam-grid-guard.csv`, the same runs and seeds.
+
+  Columns: table, speed (WPM), sender, reading, S₁₀₀ (dB S₁₀₀), Bell's value (%), run, seed, zero_sum (1: stopped on
+  the trap), guard_steps (final run only: decoder steps at which change 11 acted), reference letters, Bell-style
+  count, character edits, reference word spaces, space edits, and the two rates.
 
 ## 2. V1: the transcription and the letter tree
 
@@ -73,7 +81,7 @@ cells). Two findings need a ruling before V2 can be completed (section 3.6):
 
 ## 3. V2: Bell's program against his Tables XV and XVI
 
-### 3.1 The result per cell
+### 3.1 First run, without the guard: the result per cell
 
 Bell-style count (%, pooled over the runs that finished) for Table XV and for Table XVI under reading C, the
 character CER beside it, and readings A and B; "stops" counts the runs of 20 that stopped at SAVEP's zero sum.
@@ -113,7 +121,7 @@ character CER beside it, and readings A and B; "stops" counts the runs of 20 tha
 
 Rates above 100 % come from insertions: at 3 dB S₁₀₀ the decoder prints more letters than were sent.
 
-### 3.2 The rule
+### 3.2 First run: the rule
 
 | Reading of Table XVI | Inconsistent cells (at most 5) | Bell above ours / below ours | Sign test, two-sided p (at least 0.05) | Cells with a stopped run | Verdict |
 |---|---|---|---|---|---|
@@ -125,7 +133,7 @@ The two consistent cells under every reading are Table XV's zeros (50 WPM 12 dB 
 9 dB S₁₀₀, P(X = 0) = 0.060). Under B, six of Table XVI's 9 dB S₁₀₀ cells are also consistent. The per-cell
 statistics (p̂, s, the fitted correlation, both tail probabilities) are printed by `v2.py rule`.
 
-### 3.3 Readings A, B and C
+### 3.3 First run: readings A, B and C
 
 - **A** (the printed uniform law, half-widths about 1 dot) is the worst at 9 and 6 dB S₁₀₀ (50.06–78.28 %), and stops at
   SAVEP's zero sum in 167 of its 420 runs: at 20 WPM, 10–16 of 20 runs per cell.
@@ -134,7 +142,7 @@ statistics (p̂, s, the fitted correlation, both tail probabilities) are printed
 - **C** (the text's truncated Gaussian) lies between them: 10.78–48.45 % at 9 dB S₁₀₀, 78 of 420 runs stopped.
 - These are reported, not ruled on: the rule's reading is C (D9), and the gap of section 3.5 affects all three.
 
-### 3.4 SAVEP's zero sum (plan §9 item 6)
+### 3.4 First run: SAVEP's zero sum (plan §9 item 6)
 
 - **How often.** 270 of 1 440 runs stop on the trap: Table XV 6 of 180; Table XVI reading C 78 of 420, A 167 of
   420, B 19 of 420; in the S₁₀₀ grid, 12 of 480.
@@ -156,19 +164,23 @@ statistics (p̂, s, the fitted correlation, both tail probabilities) are printed
 - Without a guard, a stopped run has no score, and the cells with many stops are scored on few runs (reading C,
   20 WPM poor fist 4 dB S₁₀₀: 7 of 20).
 
-### 3.5 The S₁₀₀ shift (plan §5.2, "also reported")
+### 3.5 The S₁₀₀ gap per cell (plan §5.2, "also reported")
 
-Keyboard Morse at 20 and 50 WPM, 20 runs per point at S₁₀₀ 3–13 and 15 dB S₁₀₀ (`run/kam-grid`; score table
-`v2-fortran-kam-grid.csv`). Bell-style count, %:
+Keyboard Morse at 20 and 50 WPM, 20 runs per point at 3–13 and 15 dB S₁₀₀ (`run/kam-grid`), final run with
+change 11 (`v2-fortran-kam-grid-guard.csv`; the guard acts in 12 of the 480 runs). Bell-style count, %:
 
 | S₁₀₀ (dB S₁₀₀) | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 15 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 20 WPM | 85.00 | 63.08 | 42.83 | 23.78 | 10.12 | 5.47 | 2.00 | 0.82 | 0.53 | 0.65 | 0.55 | 0.53 |
+| 20 WPM | 84.97 | 62.77 | 42.83 | 23.75 | 10.12 | 5.47 | 2.00 | 0.82 | 0.57 | 0.65 | 0.55 | 0.55 |
 | 50 WPM | 79.30 | 76.80 | 77.40 | 67.38 | 47.62 | 33.00 | 19.98 | 10.03 | 6.45 | 3.15 | 1.95 | 0.97 |
 
-Where our curve (linear between grid points) reaches each of his nonzero values:
+In the first run (`v2-fortran-kam-grid.csv`, its 12 stopped runs left out), only the 20 WPM points with a stopped run
+differ: 85.00, 63.08, 23.78, 0.53 and 0.53 % at 3, 4, 6, 11 and 15 dB S₁₀₀.
 
-| Table XV cell | Bell (%) | Ours reaches it at (dB S₁₀₀) | Shift (dB S₁₀₀) |
+Where our curve (linear between grid points) reaches each of his nonzero values; the gap is the same, to 0.01 dB, in
+both runs:
+
+| Table XV cell | Bell (%) | Ours reaches it at (dB S₁₀₀) | Gap (dB S₁₀₀) |
 |---|---|---|---|
 | 20 WPM, 6 dB S₁₀₀ | 3 | 8.71 | +2.71 |
 | 20 WPM, 4 dB S₁₀₀ | 6 | 7.89 | +3.89 |
@@ -178,39 +190,126 @@ Where our curve (linear between grid points) reaches each of his nonzero values:
 | 50 WPM, 7 dB S₁₀₀ | 16 | 9.40 | +2.40 |
 | 50 WPM, 6 dB S₁₀₀ | 35 | 7.86 | +1.86 |
 
-- The shift is 1.86–3.89 dB S₁₀₀ (median 2.71). It is near the 3.01 dB that the two-sided reading of N₀ would give
-  (reference sheet (d), (j) item 21), but not uniform: it is smaller where his error is large. A 3.01 dB shift alone
-  would leave our 50 WPM curve at 10.03 % where he has 16 % and at 19.98 % where he has 35 % (derived from the grid).
-- The floor at high S₁₀₀ (0.5–1.0 % at 20 WPM) is mostly the first letter, T read as M (section 2): 0.5 % of a
-  200-letter run.
-- **The receiver chain is as the sheet derived** (one 100 s run per level at trace level 2, keyboard Morse at
-  20 WPM, built before change 2's warm-up was added, which does not touch the chain; samples more
-  than 40 ms from a key change, after the first 10 s): the noise variance of s_n on key-up samples is within 0.1 % of
-  NOISE, and z and R match sheet (c)'s table: at 12 dB S₁₀₀, z on marks 1.082 AU (variance 0.034 AU²), on spaces
-  −0.055 AU (0.011 AU²), R 0.0319 AU² (sheet: 1.116, 0.029; −0.046, 0.011; 0.031); at 6 dB S₁₀₀ 0.870 (0.112),
-  −0.044 (0.042), 0.0623 (sheet 0.910, 0.108; −0.035, 0.042; 0.061); at 3 dB S₁₀₀ 0.737 (0.200), −0.023 (0.083),
-  0.0862 (sheet 0.773, 0.196; −0.025, 0.083; 0.085). The sheet's values are for a 400 ms on/off carrier at 1500 Hz;
-  ours for Morse at 1000 Hz, whose shorter marks lower the mean on marks slightly. These runs are diagnostic and
-  their scores are not committed.
-- **Precision does not explain it**: the program in single precision (built without `-fdefault-real-8`; the
-  PDP-10's own was single) gives the same curve within the runs' scatter (5-run pilot of the grid, built before
-  change 2's warm-up was added; not committed).
+His two zero cells, 20 WPM at 9 dB S₁₀₀ (ours 1.40 % in the final V2 run) and 50 WPM at 12 dB S₁₀₀ (ours 2.88 %),
+are both consistent with his 0 under the rule.
 
-### 3.6 What §5.3 allows, and the open questions
+![Keyboard Morse, Bell-style count against S₁₀₀: our curves at 20 and 50 WPM (lines, 20 runs per point) and his
+Table XV values (open diamonds)](figures/2026-10-07-bell-stage-1-v2-table-xv.png)
 
-§5.3 allows correcting a transcription error, a reading of his settings or definitions that the thesis supports, or
-our scoring, and forbids changing his decoder's constants. None was changed. The task stops here for two rulings:
+- The gap is 1.86–3.89 dB S₁₀₀ (median 2.71). It is not uniform: it is smaller where his error is large. A shift of
+  3.01 dB is the difference between a two-sided and a one-sided noise density. It would still leave our 50 WPM curve
+  at 10.03 % where he has 16 %, and at 19.98 % where he has 35 % (derived from the grid).
+- The floor at high S₁₀₀ (0.55–0.82 % at 20 WPM from 10 dB S₁₀₀ up) is mostly the first letter, T read as M
+  (section 2): 0.5 % of a 200-letter run.
 
-1. **SAVEP's zero sum.** V2 reaches it (section 3.4). Plan §9 item 6's ruling foresees a guard acting only when the
-   sum is 0, marked and applied identically in the Fortran and the C++. Its form is open: for example, include P(1)
-   in the sum when the others sum to 0 (the single survivor gets P = 1), or skip the division when PSUM = 0 (PROBP
-   renormalizes at the next step anyway). Without it, V2 and V5 cannot score the stopped runs.
-2. **The S₁₀₀ gap.** Our curves lie about 2–4 dB S₁₀₀ to the right of his tables (section 3.5). The reference
-   sheet's first suspect is the noise density's convention, two-sided N₀ = NOISE/8000 Hz instead of the one-sided
-   NOISE/4000 Hz of the thesis's pp. 33 and 113, which would label every one of our S₁₀₀ values 3.01 dB higher.
-   Whether the thesis supports that reading is not decided here. A 3.01 dB correction alone would still leave the
-   low-S₁₀₀ cells of Table XV inconsistent, with Bell's values then above ours (section 3.5).
+### 3.6 Final run, with change 11
 
-The rest of Task 3 does not depend on these rulings. The golden data for the C++ tests are committed
-(`engine/tests/data/bell/`, three inputs of 1 s, none reaching the zero sum), and so are the program, its settings
-and the scorer.
+Change 11 (commit 327e6e3; `reference/bell1977/README.md`, change list) adds P(1) to SAVEP's renormalizing sum only
+when that sum is 0. It is the controller's ruling R1 under plan §9 item 6, a documented deviation that the C++ will
+repeat. All 1 440 runs and the 480 grid runs were run again with it at commit 6fb721b (score tables
+`v2-fortran-guard.csv` and `v2-fortran-kam-grid-guard.csv`).
+
+- **No run stops.** The guard acts in exactly the 270 runs that stopped in the first run:
+
+  | Table and reading | Runs where the guard acts | Decoder steps at which it acts (sum) |
+  |---|---|---|
+  | XV | 6 of 180 | 84 |
+  | XVI, reading C | 78 of 420 | 2 421 |
+  | XVI, reading A | 167 of 420 | 8 751 |
+  | XVI, reading B | 19 of 420 | 462 |
+  | S₁₀₀ grid | 12 of 480 | — |
+
+- **The other 1 170 runs are unchanged**: their Bell-style counts and character edits equal the first run's.
+- **The golden data are unchanged**: the three golden inputs, rerun with change 11, give byte-identical files.
+- **Per cell.** Bell-style count, %, pooled over the 20 runs. For reading C the character CER is given beside it;
+  "guard" counts the runs in which change 11 acted.
+
+| Table | Speed (WPM) | Sender | S₁₀₀ (dB S₁₀₀) | Bell (%) | C: Bell-style (%) | C: char CER (%) | C: guard | A: Bell-style (%) | A: guard | B: Bell-style (%) | B: guard |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| XV | 50 | keyboard | 12 | 0 | 2.88 | 3.35 | 0 | | | | |
+| XV | 50 | keyboard | 9 | 3 | 18.73 | 19.68 | 0 | | | | |
+| XV | 50 | keyboard | 8 | 5 | 34.42 | 35.85 | 0 | | | | |
+| XV | 50 | keyboard | 7 | 16 | 49.15 | 50.67 | 0 | | | | |
+| XV | 50 | keyboard | 6 | 35 | 64.85 | 68.83 | 0 | | | | |
+| XV | 20 | keyboard | 9 | 0 | 1.40 | 1.43 | 1 | | | | |
+| XV | 20 | keyboard | 6 | 3 | 22.00 | 22.48 | 2 | | | | |
+| XV | 20 | keyboard | 4 | 6 | 66.47 | 67.35 | 1 | | | | |
+| XV | 20 | keyboard | 3 | 31 | 83.38 | 85.53 | 2 | | | | |
+| XVI | 30 | good | 9 | 3 | 15.12 | 16.20 | 1 | 49.98 | 2 | 5.08 | 0 |
+| XVI | 30 | good | 6 | 5 | 52.95 | 54.23 | 1 | 76.22 | 0 | 37.83 | 0 |
+| XVI | 30 | good | 4 | 36 | 81.78 | 85.85 | 0 | 83.60 | 1 | 76.42 | 1 |
+| XVI | 30 | fair | 9 | 5 | 30.55 | 32.23 | 0 | 54.10 | 1 | 7.72 | 0 |
+| XVI | 30 | fair | 6 | 7 | 62.00 | 64.85 | 0 | 76.55 | 1 | 44.67 | 1 |
+| XVI | 30 | fair | 4 | 42 | 86.83 | 91.17 | 2 | 85.70 | 0 | 80.90 | 0 |
+| XVI | 30 | poor | 9 | 12 | 48.45 | 50.85 | 0 | 57.50 | 1 | 14.57 | 0 |
+| XVI | 30 | poor | 6 | 13 | 70.58 | 75.42 | 1 | 78.28 | 0 | 50.98 | 0 |
+| XVI | 30 | poor | 4 | 46 | 89.45 | 93.67 | 0 | 85.15 | 0 | 82.65 | 0 |
+| XVI | 20 | good | 9 | 1 | 10.78 | 11.68 | 0 | 52.23 | 12 | 3.90 | 0 |
+| XVI | 20 | good | 6 | 4 | 42.73 | 44.35 | 2 | 71.47 | 16 | 28.10 | 1 |
+| XVI | 20 | good | 4 | 6 | 78.65 | 80.97 | 2 | 85.40 | 15 | 68.50 | 1 |
+| XVI | 20 | good | 3 | 31 | 95.70 | 98.05 | 2 | 92.35 | 15 | 90.83 | 3 |
+| XVI | 20 | fair | 9 | 4 | 27.68 | 30.02 | 8 | 54.30 | 10 | 4.40 | 0 |
+| XVI | 20 | fair | 6 | 6 | 59.48 | 62.17 | 6 | 73.53 | 10 | 35.15 | 0 |
+| XVI | 20 | fair | 4 | 8 | 86.78 | 90.17 | 12 | 87.75 | 16 | 72.67 | 2 |
+| XVI | 20 | fair | 3 | 34 | 102.67 | 105.33 | 7 | 99.62 | 13 | 94.33 | 1 |
+| XVI | 20 | poor | 9 | 11 | 48.30 | 51.95 | 5 | 60.80 | 12 | 8.60 | 1 |
+| XVI | 20 | poor | 6 | 13 | 70.50 | 74.62 | 7 | 72.33 | 16 | 39.92 | 2 |
+| XVI | 20 | poor | 4 | 14 | 88.62 | 92.75 | 13 | 89.85 | 13 | 78.92 | 2 |
+| XVI | 20 | poor | 3 | 38 | 101.85 | 104.35 | 9 | 99.95 | 13 | 99.40 | 4 |
+
+- **The rule** (`v2.py rule` on `v2-fortran-guard.csv`):
+
+  | Reading of Table XVI | Inconsistent cells (at most 5) | Bell above ours / below ours | Sign test, two-sided p (at least 0.05) | Verdict |
+  |---|---|---|---|---|
+  | C (the rule's, D9) | 28 | 0 / 30 | 1.9·10⁻⁹ | **FAIL** |
+  | A | 28 | 0 / 30 | 1.9·10⁻⁹ | FAIL |
+  | B | 22 | 1 / 29 | 5.8·10⁻⁸ | FAIL |
+
+  Under every reading, Table XV's two zeros are consistent (P(X = 0) = 0.057 at 50 WPM and 12 dB S₁₀₀, 0.060 at
+  20 WPM and 9 dB S₁₀₀). Under B, the six Table XVI cells at 9 dB S₁₀₀ are consistent as well.
+
+### 3.7 Checked, excluded, unresolved
+
+§5.3 allows three corrections: a transcription error, a reading of his settings or definitions that the thesis
+supports, or our scoring. It forbids changing his decoder's constants. No constant was changed. By ruling R2 the
+S₁₀₀ convention stays one-sided (the thesis states N₀ as the one-sided density, pp. 33 and 113), and no other reading
+or change was tried.
+
+**Checked and excluded:**
+- **The conversion to fixed form**: the program's statements equal the listing's, blanks aside, except at the marked
+  changes (statement-by-statement comparison).
+- **The receiver chain**: the noise and the statistics of z and R match sheet (c). The runs: one 100 s run per level
+  at trace level 2, keyboard Morse at 20 WPM, built before change 2's warm-up was added (the warm-up does not touch
+  the chain); samples more than 40 ms from a key change, after the first 10 s. The noise variance of s_n on key-up
+  samples is within 0.1 % of NOISE, and z and R are:
+
+  | S₁₀₀ (dB S₁₀₀) | z on marks: mean (AU), var (AU²) | z on spaces: mean (AU), var (AU²) | R (AU²) | Sheet (c): marks; spaces; R |
+  |---|---|---|---|---|
+  | 12 | 1.082, 0.034 | −0.055, 0.011 | 0.0319 | 1.116, 0.029; −0.046, 0.011; 0.031 |
+  | 6 | 0.870, 0.112 | −0.044, 0.042 | 0.0623 | 0.910, 0.108; −0.035, 0.042; 0.061 |
+  | 3 | 0.737, 0.200 | −0.023, 0.083 | 0.0862 | 0.773, 0.196; −0.025, 0.083; 0.085 |
+
+  The sheet's values are for a 400 ms on/off carrier at 1500 Hz; ours are for Morse at 1000 Hz, whose shorter marks
+  lower the mean on marks slightly. These runs are diagnostic, and their scores are not committed.
+- **The optimizer**: `-O0` and `-O2` builds give identical scores (120-run pilot).
+- **The trap**: `bell1977-fpe` and `bell1977` write byte-identical outputs on the 293 pilot runs that did not stop.
+- **Precision**: the program in single precision (built without `-fdefault-real-8`; the PDP-10 itself used single
+  precision) gives the same curve within the runs' scatter (5-run pilot of the grid, built before change 2's warm-up
+  was added; not committed).
+- **The scoring**: the scorer is the project's tested C++ one (Bell's samples B, C and D give the reference sheet's
+  counts). The smoke test decodes 199 of 200 letters right.
+
+**Candidate causes the evidence does not exclude; each is unresolved:**
+- **The printed program may differ from the one behind the tables** (*unresolved*). The reference sheet already found
+  that the simulator behind his printed samples was not the printed KEY: it sent fixed texts, keyed a period, and keyed
+  C correctly (sheet (e)).
+- **The noise convention** (*unresolved*). With a two-sided density N₀ = NOISE/8000 Hz, every S₁₀₀ here would read
+  3.01 dB higher. The thesis states the one-sided convention, so it is not applied (ruling R2). That shift alone would
+  not reconcile the low-S₁₀₀ cells (section 3.5).
+- **His marking by eye** (*unresolved*). His printed samples show unmarked errors (sheet (i)), so his counts may be
+  low by an unknown amount.
+- **Single 200-letter experiments** (*unresolved*). Each of his values is one experiment of about 200 letters. The
+  rule allows for that scatter in each cell. It does not explain a difference in the same direction in all 30 cells.
+
+The golden data for the C++ tests (`engine/tests/data/bell/`: three inputs of 1 s, none reaching the zero sum), the
+program, its settings and the scorer are committed.
