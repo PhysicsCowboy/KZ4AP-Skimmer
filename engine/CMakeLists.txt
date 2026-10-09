@@ -14,6 +14,12 @@ set(KZ4AP_BANK_SOURCES
   src/bank/channel.cpp
 )
 
+# Bell's 1977 decoder (docs/plans/2026-10-07-bell-decoder-stage-1.md); later tasks add to this list.
+set(KZ4AP_BELL_SOURCES
+  src/bell/tree.cpp
+  src/bell/model.cpp
+)
+
 add_library(kz4ap_engine
   src/morse.cpp
   src/wav_reader.cpp
@@ -26,6 +32,7 @@ add_library(kz4ap_engine
   src/frequency_tracker.cpp
   src/bank_decoder.cpp
   ${KZ4AP_BANK_SOURCES}
+  ${KZ4AP_BELL_SOURCES}
 )
 add_library(kz4ap::engine ALIAS kz4ap_engine)
 target_include_directories(kz4ap_engine PUBLIC include PRIVATE src)
@@ -93,3 +100,14 @@ gtest_discover_tests(kz4ap_bank_tests)
 # the presets windows-full-sweep and linux-full-sweep run only it.
 add_test(NAME BankFitB2a.FullSweep COMMAND kz4ap_bank_tests --gtest_filter=BankFitB2a.*)
 set_tests_properties(BankFitB2a.FullSweep PROPERTIES ENVIRONMENT KZ4AP_FIT_FULL_SWEEP=1 LABELS full-sweep)
+
+# Bell's decoder: the model's tables and functions and the letter tree (plan Task 2).
+add_executable(kz4ap_bell_tests
+  tests/bell/tree_test.cpp
+  tests/bell/model_test.cpp
+)
+target_link_libraries(kz4ap_bell_tests PRIVATE kz4ap::engine GTest::gtest_main)
+if(MSVC)
+  target_compile_options(kz4ap_bell_tests PRIVATE /utf-8)
+endif()
+gtest_discover_tests(kz4ap_bell_tests)
