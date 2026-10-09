@@ -34,7 +34,11 @@ table those tasks need, each with its source, its unit and its status.
   - **AU** is the amplitude unit of Bell's simulator: its key-down carrier has amplitude 1 AU nominally
     [fact, code p. 163 00700: `AMP/1./`], and its noise variance RNOISE is in AU² per 8 kHz sample. The receiver
     chain is linear up to its rectifier, and the rectifier and the envelope low-pass are homogeneous of degree one,
-    so the envelope Z, the decoder's measurement z and its variance R are also in AU and AU² [derived].
+    so the envelope Z is in AU and scales with the input level [derived]. NOISE is not homogeneous: in
+    z = 1.1·(Z − 2.4·YMAVG − 0.05 AU) the offset 0.05 carries AU (1.1 and 2.4 are dimensionless), and
+    R = 0.30 AU·YMAVG is in AU² only because its factor 0.30 carries AU (YMAVG is in AU); the floor 0.005 is in AU².
+    So R grows linearly, not quadratically, with the input level, which matters for the level options of the plan's
+    decision D3 [derived].
   - Per-step quantities state their step: "per 8 kHz sample" (0.125 ms) or "per 5 ms step".
   - Every dB names its reference: dB S₁₀₀ and dB S₅₀₀ (key-down carrier power over the noise power in 100 Hz or
     500 Hz, section (d)), E/N₀ in dB (energy of one dot over the one-sided noise density), dB relative to a stated
@@ -42,36 +46,50 @@ table those tasks need, each with its source, its unit and its status.
 - **Elements** are numbered as Bell numbers them: 1 dot, 2 dash, 3 element space (e-sp), 4 character space (c-sp),
   5 word space (w-sp), 6 pause [fact, code p. 160 00600 (mean lengths 1, 3, 1, 3, 7, 14 dots); p. 161 06300 (key
   state 1, 1, 0, 0, 0, 0); p. 164 07100 (printed as `.`, `_`, blank, `/`, `;`, `\`)].
-- **Terms.** KAM is keyboard-sent Morse, exact timing; HKM is hand-keyed Morse [fact, p. 11]. "Fist" means a
-  simulated hand sender (good, fair, poor). A "path" is one saved hypothesis of the decoder. Bell's RCVR, BPFDET and
-  NOISE are his **receiver chain**.
+- **Terms.** KAM is Morse "sent by a keyboard", HKM hand-keyed Morse [fact, p. 11]; the KAM signal is synchronous,
+  with transitions only at element boundaries [fact, p. 126: "the possible transition times of a synchronous KAM
+  signal"]. "Fist" means a simulated hand sender (good, fair, poor). A "path" is one saved hypothesis of the
+  decoder. Bell's RCVR, BPFDET and NOISE are his **receiver chain**.
 
 ## Read first: findings that change what the plan assumed
 
 Each is detailed in the section named.
 
-1. **The simulator's element durations are uniform, not Gaussian.** KEY draws each duration as
-   mean ± U·EDEV·Δ with U uniform on (−1, 1), floored at 20 ms, with no ceiling. The text says a truncated Gaussian
-   between 16 and 360 ms (p. 125). The fist settings follow from this (sections (d), (e)).
+1. **The printed simulator's element durations are uniform, not Gaussian.** KEY draws each duration as
+   mean ± U·EDEV·Δ with U uniform on (−1, 1), floored at 20 ms, with no ceiling. The text states a truncated Gaussian
+   between 16 and 360 ms for "the results presented here" (p. 125), and the simulator that made the printed output
+   samples was not the printed KEY. The fist settings follow from the uniform law only under D1; which law produced
+   Table XVI is the owner's decision D9 (sections (d), (e)).
 2. **The receiver chain is narrower than the text says.** The two resonators and RCVR's quadrature low-pass give a
    pre-detection band 64.4 Hz wide at −3 dB relative to its gain at the carrier, with a noise bandwidth of
    78.5 Hz. The envelope low-pass is not a 100 Hz Chebyshev: its response is monotone, −3 dB relative to its DC gain
    at 31.1 Hz, and its DC gain is 7.99 (section (c)).
-3. **NOISE does not compute R = 2μ².** It sets R = 0.30·YMAVG, floored at 0.005 AU², and
-   z = 1.1·(Z − 2.4·YMAVG − 0.05), where YMAVG is a smoothed 1.0 s running minimum of the envelope. R never reaches
-   0, so the plan's §9 item 1 (division by zero) cannot occur through R (sections (b), (c)).
+3. **NOISE does not compute R = 2μ².** It sets R = 0.30 AU·YMAVG, floored at 0.005 AU², and
+   z = 1.1·(Z − 2.4·YMAVG − 0.05 AU), where YMAVG is a smoothed 1.0 s running minimum of the envelope. R never
+   reaches 0, so the plan's §9 item 1 (division by zero) cannot occur through R (sections (b), (c)).
 4. **The letter tree file is `MORSEM`, and INITL reads 300 rows of it,** not 400. Its 16 rows in DATA are the
-   second-order element model of Table XII, and no letter tree can contain three of them (rows 5, 9 and 10). The
-   plan's test "the 16 DATA rows are reproduced" is replaced by an exact one (section (f)).
+   second-order element model of Table XII, and no letter tree can hold more than 13 of them (dropping rows 5, 9
+   and 10, or 1, 9 and 10). The plan's test "the 16 DATA rows are reproduced" is replaced by an exact one
+   (section (f)).
 5. **The simulator sends random letters only.** The text-file branch in KEY is unreachable code. The random draw
    sends A with probability 0.001 instead of 1/36, and the MORSE table sends C with B's code (section (d)).
-6. **The decoder's longest decision delay is 199 samples (995 ms)**, not 200; SAVEP keeps at least 2 paths, not 7;
-   it deletes duplicate paths; and its final renormalization leaves out the first path's probability (section (b)).
+6. **The decoder's longest decision delay is 199 samples (995 ms)**, not 200, for converged and forced decisions
+   alike. SAVEP keeps at least 2 paths before it deletes duplicates (not 7), possibly 1 after, and may keep
+   zero-probability dead paths; its final renormalization leaves out the first path's probability, and when every
+   other slot holds probability 0 it divides by 0 (+∞ and NaN in IEEE arithmetic), after which the decoder does
+   not recover (section (b)).
 7. **Bell's error marks differ from our character CER.** In his printed samples a merged pair of letters is one
-   error; the character CER counts two edits. The reproduction rule should take this into account (sections (i),
-   (j)).
-8. **The compiled reference needs one guard the plan does not list:** LIKHD reads `IELMST(0)` for dead paths
-   (section (h)).
+   error; the character CER counts two edits. The samples establish this convention and nothing finer. The count
+   used by the reproduction rule is the owner's decision D10; the sheet proposes one (sections (i), (j)).
+8. **The compiled reference needs changes the plan's list (Task 3) does not allow** (sections (h), (j) item 10):
+   - a guard in LIKHD before 47800, which reads `IELMST(0)` for dead paths;
+   - the five jumps to a DO loop's terminal statement from outside the loop (PROCES 09750; TRANSL 22900, 24100,
+     25300, 27600), whose effect under gfortran is undefined, redirected to new labels after their loops;
+   - stubs for the display library routines ERASE, PLOTR and VIEW, which gfortran does not provide;
+   - under reading C of decision D9 only, KEY's duration law.
+
+   Plan change 2 must also replace every RAN call and `DATA IK`: gfortran has an intrinsic RAN that would compile
+   silently and return the same number at every call.
 
 ## (a) Program structure
 
@@ -135,7 +153,8 @@ The main loop is `DO 2 N1=1,512` around `DO 3 N2=1,18` [fact, code p. 159 01000�
 5. `TRELIS`: store the saved nodes in a 200-stage circular trellis, find the node all paths share or force a
    decision at 199 stages, and pass each decided node to `TRANSL`, which prints letters.
 
-The debug printout in PROCES is skipped by `GO TO 1` [fact, code p. 168 09750]. PROCES never assigns its outputs
+The debug printout in PROCES is skipped by `GO TO 1` [fact, code p. 168 09750], a jump to `1 CONTINUE`, the terminal
+statement of `DO 1 IN=1,ISAVE` (10000–10400), from outside that loop (section (h)). PROCES never assigns its outputs
 ELMHAT and LTRHAT [fact, code pp. 167–168].
 
 ### Runs and operator pauses
@@ -162,7 +181,7 @@ between calls, and several rely on starting at zero (section (h)). Line numbers 
 
   | Constant | Value | Line | Meaning |
   |---|---|---|---|
-  | RN | 0.1 | 00400 | initial R; overwritten by NOISE before PROCES first uses it [derived] |
+  | RN | 0.1 AU² | 00400 | initial R; overwritten by NOISE before PROCES first uses it [derived] |
   | NP | 0 | 00500 | sample counter for the decimation |
   | inner loop | 18 | 01100 | 8 kHz samples per display point (display only) |
   | outer loop | 512 | 01000 | display points per frame |
@@ -196,7 +215,13 @@ between calls, and several rely on starting at zero (section (h)). Line numbers 
 - **Computation:** ASIGMA = √AVAR, BSIGMA = √BVAR, PHISGM = √PHIVAR, RSIGM = √RNOISE (02400–02700);
   DMEAN = 1200/RATE ms, the dot length Δ (02900); WC = 6.28319·FC rad/s (03000); WCHIRP = 6.28319·FCHIRP rad/s
   (03100). If ESEP(1) = 0, ESEP is set to 1, 3, 1, 3, 7, 14 (03400–04000).
-- **Notes:** 6.28319 stands for 2π throughout the listing (relative error +7.5·10⁻⁷) [derived].
+- **Notes:** 6.28319 stands for 2π throughout the listing (relative error +7.5·10⁻⁷), both as a multiplier
+  (03000, 03100) and as the modulus of every phase wrap, `AMOD(…, 6.28319)` (p. 163 02800, 03200; p. 189 01500,
+  02300) [fact]. SIN and COS have period 2π, so an oscillator advancing by Δθ per sample and wrapped at 6.28319 runs
+  at Δθ/6.28319 cycles per sample [derived]. The carrier and RCVR's down-mixer advance by WC·TAU =
+  6.28319·FC·TAU and so run at exactly FC; RCVR's up-mixer advances by 6283.2·TAU, not scaled by 6.28319, and runs
+  at 6283.2/6.28319 = 1000.00159 Hz, 7.5·10⁻⁷ (relative) below its nominal 6283.2/2π = 1000.00234 Hz [derived;
+  section (c)].
 
 ### INITL (pp. 160–162, 04900–13500)
 
@@ -305,7 +330,7 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
 
   | Constant | Value | Line | Meaning |
   |---|---|---|---|
-  | IK | octal 001000000000 = 2²⁷ = 134 217 728 | 05000 | argument (seed) of the library function RAN |
+  | IK | octal 001000000000 = 2²⁷ = 134 217 728 | 05000 | the argument of the library function RAN; whether RAN uses it as a seed is not visible in the listing (section (h)) |
   | LTR | 20 | 05100 | first letter: column 20 of MORSE, T |
   | NELM, N, NLTR | 0, 0, 1 | 05100 | element index in the letter; element count of the run; text index |
   | MORSE(10,40) | element codes of 36 symbols, then 4 empty columns | 05200–07000 | below |
@@ -334,6 +359,8 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
 - **What it produces** [derived]:
   - **Durations** are uniform on (m − e, m + e)·Δ for an element of mean m dots and EDEV e, floored at 20 ms, with
     no ceiling. The prompt calls EDEV a "standard deviation"; under this law the standard deviation is e/√3 dots.
+    The text states a truncated Gaussian for its results (p. 125); which law produced Table XVI is the owner's
+    decision D9 (section (e)).
   - **Quantization.** An element ends at the first sample at which DUR/8 ms ≥ XDUR, so it lasts ⌈8·XDUR/ms⌉
     samples of 0.125 ms (the first element of a session one sample less).
   - **Letters.** With RAN uniform on (0, 1): LTR = 1 (A) needs Y < 0.001, probability 0.001; LTR = 2 … 35 have
@@ -361,7 +388,8 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
   - θ ← (θ + WC·TAU) mod 6.28319; i = ZIN·cos θ, q = ZIN·sin θ;
   - i_LP ← i_LP + 0.070·(i − i_LP), q_LP ← q_LP + 0.070·(q − q_LP), i.e. y_n = 0.93·y_{n−1} + 0.07·x_n;
   - θ_LO ← (θ_LO + 6283.2·TAU) mod 6.28319; ZOUT = i_LP·cos θ_LO + q_LP·sin θ_LO.
-- **Constants:** 0.070 (01900, 02000); 6283.2 rad/s (02200), i.e. 1000.0023 Hz; 6.28319 (01500, 02300).
+- **Constants:** 0.070 (01900, 02000); 6283.2 rad/s (02200), which with the wrap at 6.28319 (02300) gives the
+  up-mixer a mean frequency of 1000.00159 Hz (INPUTL's note); 6.28319 (01500, 02300).
 - Derived responses: section (c).
 
 ### BPFDET(ZIN, Z) (pp. 189–190, 03700–09100)
@@ -400,19 +428,20 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
   2. If KKS > 2 (from the second call on): store ZIN at YLONG(KL) and YSHORT(KS), and set YMIN1 = YMIN2 = ZIN.
   3. YMIN1 = min(YMIN1, YLONG(1..KKL)); YMIN2 = min(YMIN2, YSHORT(1..KKS)); YMIN = min(YMIN1, YMIN2).
   4. YMAVG ← YMAVG + 0.004·(YMIN − YMAVG).
-  5. R = 0.30·YMAVG, floored at 0.005 AU².
-  6. z = 1.1·(ZIN − 2.4·YMAVG − 0.05).
+  5. R = 0.30 AU·YMAVG, floored at 0.005 AU².
+  6. z = 1.1·(ZIN − 2.4·YMAVG − 0.05 AU).
 - **What it computes** [derived]:
   - YSHORT holds the last 50 values, which are also among YLONG's last 200, so YMIN2 ≥ YMIN1 always and YSHORT
     never changes the result. YMIN is the minimum of the envelope over the last 200 decoder samples (1.0 s),
     current sample included. (During the first 200 steps the initial values 1.0 AU take part, harmlessly unless
     the envelope exceeds 1.0 AU throughout.)
   - YMAVG is an exponential average of that minimum with coefficient 0.004 per 5 ms step: time constant
-    5 ms/0.004 = 1.25 s.
+    5 ms/0.004 = 1.25 s (exactly −5 ms/ln 0.996 = 1.2475 s).
   - The subtracted level 2.4·YMAVG + 0.05 is the estimate of the noise-only mean of the envelope, μ_n; R is
     proportional to YMAVG, not to μ_n²; z is scaled by 1.1 but R is not.
   - The floor makes R ≥ 0.005 AU², so the Kalman innovation variance R + h·P⁻ is never 0.
-- **Constants:** 200 and 50 samples (10900); 0.004 (14300); 0.30 and 0.005 (14500–14600); 1.1, 2.4, 0.05 (14700).
+- **Constants:** 200 and 50 samples (10900); 0.004 per 5 ms step (14300); 0.30 AU and 0.005 AU² (14500–14600);
+  1.1 and 2.4 (dimensionless) and 0.05 AU (14700); initial YMAVG 0.05 AU and buffer values 1.0 AU (11100–11300).
   Bell calls the scale "selected empirically" [fact, p. 124]; their class is heuristic.
 - Calibration against S₁₀₀: section (c).
 
@@ -445,10 +474,12 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
   PROCES's only 750-element array beginning with ILR is ILRSAV (05100); line 07500 starts a new statement (no
   continuation mark), so the statement and its closing parenthesis end on 07400. The printed statement is 60
   characters long and begins at Fortran column 7 to 9 (depending on how the line was indented), so the missing
-  `SAV)` ends at column 70 to 72, inside the 72-column statement field, and a further argument would not fit
-  [derived]. Passing ILRATE instead would let PATH write 750 elements into a 25-element
-  array. Certainty: as high as an inference can be; the program cannot be correct otherwise.
-- **Notes:** the debug printout (09800–10400) is skipped by `GO TO 1` (09750).
+  `SAV)` ends at column 70 to 72, inside the 72-column statement field [derived]; the field alone would leave room
+  for at most a one-character further argument, so the conclusion rests on PATH's seven dummy arguments and on
+  ILRSAV. Passing ILRATE instead would let PATH write 750 elements into a 25-element array. Certainty: as high as
+  an inference can be; the program cannot be correct otherwise.
+- **Notes:** the debug printout (09800–10400) is skipped by `GO TO 1` (09750), which jumps to the terminal statement
+  of `DO 1` (10400) from outside the loop (section (h)).
 
 ### TRPROB(IP, LAMBDA, DUR, ILRATE, P) (pp. 169–170, 12300–18300)
 
@@ -525,8 +556,8 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
   i_r = 1 … 5: x_new = ISX(k), p = P(IP, n), `KALFIL(Z,IP,RN,x_old,x_new,e,j,i_r,DUR,ILRATE,p,L)`; LKHD(j) = L.
 - **Notes:**
   - KALFIL's KELEM argument is the saved path's element e, though KALFIL's comment calls it the "elem state of new
-    node" [fact, code p. 174 47800, p. 176 01500]; MODEL uses it as the element being left. The rate passed is the
-    branch index i_r, which MODEL ignores [fact, code p. 175 49000, p. 177 09500–p. 178 14500].
+    node" [fact, code p. 174 47800, p. 176 01500]; MODEL uses it as the path's current element (IELM). The rate
+    passed is the branch index i_r, which MODEL ignores [fact, code p. 175 49000, p. 177 09500–p. 178 14500].
   - For λ = 0, `IELMST(0)` is read outside the array (section (h)); the value is not used, because every p is 0.
   - The `TYPE` at 50300 follows `GO TO 100` and is never executed.
 
@@ -539,22 +570,24 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
   - If PIN ≤ 10⁻⁴: L = 0, and YKKSV, PKKSV of the node are not written.
   - Else MODEL gives Φ, Q, h. With ŷ = YKKIP(IP), P = PKKIP(IP):
     ŷ⁻ = Φ·ŷ; P⁻ = Φ²·P + Q; S = h·P⁻ + R; G = P⁻·h/S; P⁺ = (1 − G·h)·P⁻; ν = z − h·ŷ⁻;
-    ŷ⁺ = ŷ⁻ + G·ν, raised to 0.01 AU if it is ≤ 0.01; a = ν²/(2S); L = 0 if a > 1000, else L = S^{−1/2}·e^{−a}.
+    ŷ⁺ = ŷ⁻ + G·ν, raised to 0.01 AU if it is ≤ 0.01 AU; a = ν²/(2S); L = 0 if a > 1000, else L = S^{−1/2}·e^{−a}.
   - Units: ŷ AU, P and S AU², L in AU⁻¹ (a Gaussian density without its constant 1/√(2π)).
 - **Notes:** h is 0 or 1, so h·P⁻ equals h²·P⁻. ILX is passed but not used. The `TYPE` at 08500 is never executed.
 
 ### MODEL(DUR, IELM, ILR, ISR, IXS, PHI, QA, HZ) (pp. 177–178, 09500–14500)
 
 - **Purpose:** the amplitude model of a transition: Φ, Q per 5 ms step, and the measurement coefficient h.
-- **Arguments:** DUR (ms in the element being left); IELM (that element); ILR (path speed, WPM); ISR (unused);
+- **Arguments:** DUR (ms so far in the path's current element); IELM (the path's current element); ILR (path
+  speed, WPM); ISR (unused);
   IXS (key state of the successor); PHI, QA, HZ (out).
 - **Constants:** 1200 (12400); 14 bauds (12600, 14100); 0.0001 (12900); 0.15, 0.6, 14 (13500); 0.01, 0.2
   (13600); 22.4, −2 (13900–14000).
 - **Computation** [fact, code pp. 177–178 11900–14200]: h = IXS. Δ = R1 = 1200/ILR ms; B = min(DUR/Δ, 14)
   bauds.
-  - Leaving a mark (IELM ≤ 2), to any successor: Φ = 1, Q = 10⁻⁴ AU².
-  - Leaving a space for a mark (IELM ≥ 3, IXS = 1): Φ = 1, Q(B) = 0.15·e^{0.6(B−14)} + 0.01·B·e^{0.2(1−B)} AU².
-  - Staying in a space (IELM ≥ 3, IXS = 0): Φ = 10^{−2/(22.4·Δ/ms)} per step, Φ = 1 once B ≥ 14; Q = 0.
+  - Path in a mark (IELM ≤ 2), for every successor, staying included: Φ = 1, Q = 10⁻⁴ AU².
+  - Path in a space, successor a mark (IELM ≥ 3, IXS = 1): Φ = 1, Q(B) = 0.15·e^{0.6(B−14)} + 0.01·B·e^{0.2(1−B)} AU².
+  - Path in a space, successor a space (IELM ≥ 3, IXS = 0; in practice staying, since space-to-space transitions
+    have probability 0): Φ = 10^{−2/(22.4·Δ/ms)} per step, Φ = 1 once B ≥ 14; Q = 0.
 - **Values** [derived]:
 
   | B (bauds) | 0.5 | 1 | 2 | 3 | 5 | 7 | 10 | ≥ 14 |
@@ -582,8 +615,11 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
 - **Computation** [fact, code pp. 179–180 23300–25800]: PSELEM(k) = Σ over paths and speed branches of P(j) for
   element k; PX = Σ over k ≤ 2 (key down); SPDHAT = Σ ILRSAV(j)·P(j) (WPM); PELM = max_k PSELEM(k) and KHAT its
   element (the last one on ties).
-- **Notes:** only PX is used afterwards (XHAT in PROCES). SPDHAT includes nodes of state 0 whose ILRSAV was not
-  rewritten (PATH), so it is a display value only [derived].
+- **Notes:** only PX is used afterwards (XHAT in PROCES); the listing neither uses nor prints SPDHAT, KHAT or PELM
+  [fact, code pp. 167–168]. SPDHAT = Σ ILRSAV(j)·P(j) runs over every new node, including the state-0 successors
+  of live paths. These can have P > 0, because PTRANS ignores the tree, and PATH does not rewrite their ILRSAV
+  (p. 173 41400), so each adds a speed left at that index by an earlier step [derived]. The plan reports SPDHAT as
+  `DecodeUpdate.wpm` (§4.1 item 7), so the reported speed carries this contamination.
 
 ### SAVEP(P, PATHSV, ISAVE, IMAX, LAMSAV, DURSAV, ILRSAV, LAMBDA, DUR, ILRATE, SORT) (pp. 180–183, 26400–43100)
 
@@ -591,25 +627,47 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
 - **COMMON:** /BLKSV1/ (moves the Kalman estimates of the kept nodes into the saved slots).
 - **Constants:** POPT = 0.90 (30800); 0.000001 (32500); 25 paths (36200).
 - **Computation** [fact, code pp. 181–183 31000–42800]:
-  1. **One per element.** For k = 1 … 6: the node of element k with the largest P over all paths and speed
-     branches (on ties the last in index order, test `.LT.`); it is kept if P ≥ 10⁻⁶.
-  2. **Fill.** Repeat: among nodes not yet kept, the one with the largest P (on ties the first, test `.LE.`) is kept;
-     stop when the kept total ≥ 0.90 or 25 nodes are kept. At least one node is added here even if step 1 already
-     reached 0.90. If no unkept node has P > 0, the node found last is added again with P = 0 (it is removed in
-     step 4).
+  1. **One per element.** For k = 1 … 6: with PMAX = 0, scan the nodes of element k over all paths and speed
+     branches; `IF(P(J).LT.PMAX) GO TO 100` lets every node with P ≥ PMAX through, those with P = 0 included, so
+     the locals JSAV (the node) and IPSAV (its parent path) are assigned for every element, to the last node in
+     index order among those with the largest P (31500–32400). The node is kept if P ≥ 10⁻⁶ (32500). After this
+     step JSAV and IPSAV hold element 6's best node, kept or not.
+  2. **Fill.** Repeat: with PMAX = 0, scan the nodes not yet kept; `IF(P(J).LE.PMAX) GO TO 500` takes only a
+     strictly larger P, so ties go to the first node in index order and a node with P = 0 is never taken
+     (34200–35400). Then the node in JSAV, IPSAV is added with probability PMAX (35600–36000). Stop when the kept
+     total ≥ 0.90 or 25 nodes are kept. At least one node is added here, even if step 1 already reached 0.90.
+     If no unkept node has P > 0, JSAV and IPSAV keep their values from step 1, so element 6's best node is added
+     with probability 0, whether or not step 1 kept it. While the probabilities sum to 1 this can happen only in
+     the first fill iteration, since afterwards the kept total is 1 [derived].
   3. **Re-index.** ISAVE = number kept; P(i) = P(kept i)/Σ kept; LAMBDA, DUR, ILRATE, YKKIP, PKKIP of slot i are
      copied from the kept node; PATHSV(i) is its parent path. The order is the order of selection: the
      element-best nodes in element order, then the rest by decreasing probability.
   4. **Duplicates.** A kept node with the same (ILRATE, DUR, LAMBDA) as an earlier kept node is deleted. Its
-     probability is dropped, not added to the survivor, and the survivor keeps its own Kalman estimate.
-  5. **Renormalize.** The survivors are moved up; PSUM is summed over slots 2 … ISAVE only, and every P(i), including
-     P(1), is divided by it. IMAX is the slot with the largest P (the first on ties).
+     probability is dropped, not added to the survivor, and the survivor keeps its own Kalman estimate. A
+     zero-probability fill node is deleted only if it equals an earlier node in this sense (as it does when it is
+     a node step 1 kept); otherwise it stays, possibly a dead node (state 0) with stale DUR and ILRATE [derived].
+  5. **Renormalize.** The survivors are moved up. PSUM is set to 0 (40800) and the loop `DO 900 I=2,ISAVE` (41000)
+     adds the P of each survivor moved into slots 2 … ISAVE, so P(1) is never in the sum. Every P(i), P(1)
+     included, is then divided by PSUM (42700). IMAX is the slot with the largest P, the first on ties
+     (`IF(P(I).LE.PMAX) GO TO 950`, 42710).
 - **Notes** [derived]:
-  - Bounds: step 1 keeps at least one node (some node has P ≥ 1/750), step 2 at least one more, so at least 2 nodes
-    before step 4; at most 25. The comment's "minimum of 7 paths" (27100) is not what the code does.
-  - Step 5 omits P(1) from the sum, so the saved probabilities sum to more than 1. PROBP renormalizes at the next
-    step, and the ratios between paths are unchanged, so decoding is unaffected. If step 4 leaves a single path,
-    PSUM = 0 and the division fails (a latent defect; not observed to matter).
+  - Bounds: while the probabilities sum to 1, step 1 keeps at least one node (the largest P is ≥ 1/750) and step 2
+    adds at least one more, so at least 2 slots before step 4, possibly 1 after it, and at most 25. The slots may
+    include zero-probability nodes, dead ones (state 0) among them. The comment's "minimum of 7 paths" (27100) is
+    not what the code does.
+  - Step 5 omits P(1) from the sum, so the saved probabilities sum to more than 1. While PSUM > 0, PROBP
+    renormalizes at the next step and the ratios between paths are unchanged, so decoding is unaffected.
+  - **PSUM = 0 whenever every slot after the first holds P = 0 after step 4.** Two routes: (i) step 4 leaves a
+    single slot; (ii) the first slot is followed only by zero-probability fill nodes. Both occur when a single
+    node has P > 0: one live path early in a long element, whose transitions all have PIN ≤ 10⁻⁴ and so get
+    likelihood 0 in KALFIL (p. 176 04400), with every other saved path dead (at 20 WPM, 5 ms into a dash,
+    1 − p_stay = 2.25·10⁻⁵). Step 2 then adds element 6's best node with P = 0. If that is the kept node itself
+    (the live path is in a pause), step 4 deletes it: route (i). If it is another node, it stays: route (ii). In
+    IEEE arithmetic P(1)/0 = +∞ and 0/0 = NaN in every other slot. Every comparison with NaN is false, so each NaN
+    slot replaces the maximum and IMAX ends on the last slot (with two slots, slot 2, the first NaN slot). At the
+    next step every successor of slot 1 with PIN = 0 (all speed branches but 3 of the stay successor, p. 171
+    28000) gives ∞·0 = NaN in PROBP, so every P is NaN; SAVEP's comparisons then fail, it fills 25 slots, and the
+    decoder does not recover [derived]. Tasks 3 and 5 test for it (section (j) item 12).
   - The "duplicates" are equal in state, duration and speed but may differ in their amplitude estimates.
 
 ### TRELIS(ISAVE, PATHSV, LAMBDA, IMAX) (pp. 184–186, 00100–16200)
@@ -634,13 +692,20 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
      best path (LMDSAV(N − 199, IPMAX)); set λ = 0 for every saved path whose ancestor at that stage is not IPMAX.
   6. NDELST = NDEL.
 - **Notes** [derived]:
-  - A converged decision has a delay of K = 1 … 198 samples; the forced decision reads the node **199 samples
-    (995 ms) back**. The text says 200 samples, 1 s (p. 123).
+  - A converged decision has a delay of K = 1 … 199 samples, since the trace-back runs K = 1 … 199 before it forces
+    a decision (07300–08600); the forced decision reads the node 199 samples back. Converged and forced decisions
+    share the maximum, **199 samples (995 ms)**. The text says 200 samples, 1 s (p. 123).
   - Paths set to λ = 0 die at the next step (TRPROB gives them no successors).
   - At the first call NDELST = 0 and the trace-back reaches the initial stages (all state 5), so NDEL > NDELST + 1
     and `DO 400 K=NDEL,NDELST` has a negative trip count: it runs once under FORTRAN-66 rules, not at all under
     FORTRAN-77 rules (section (h)). The node it would translate is in state 5, which prints nothing.
-  - The decided sequence is always a valid path of the state graph, so TRANSL never receives state 0.
+  - `DO 300 IEQ=2,ISAVE` (08400) has a zero trip count when ISAVE = 1, which happens only through SAVEP's route
+    (i) above. Under FORTRAN-77 rules the single path converges at K = 1. Under FORTRAN-66 rules the loop runs once
+    and compares IPNOD(1) with the stale IPNOD(2), so the trace-back goes on until path 1's ancestor index happens
+    to equal it, or until the decision is forced (section (h)).
+  - The decided sequence is always a valid path of the state graph. While the probabilities are finite, each decided
+    node is an ancestor (K ≥ 1 stages back) of a saved path with P > 0; such an ancestor had successors with PIN > 0,
+    so its state is not 0, and TRANSL never receives state 0. After a NaN (SAVEP above) this no longer holds.
 
 ### TRANSL(LTR) (pp. 186–188, 16800–29400)
 
@@ -658,7 +723,7 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
 
     | Code c | Output |
     |---|---|
-    | 43 | if the previous output ended without a blank: as below for ≤ 44; else two blanks, the character, a new line |
+    | 43 | if SPFLAG = 0: as for 1–42, 44; if SPFLAG = 1: two blanks, the character, a new line (NCHAR = 0) |
     | 1–42, 44 | the character (A1), then NBLANK blanks |
     | 45, 46 | two characters (A2), then NBLANK blanks |
     | 47–60 | two blanks, two characters, two blanks, then NBLANK blanks |
@@ -667,11 +732,20 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
     | any other | two blanks, three characters, two blanks, then NBLANK blanks |
 
     A new line with 10 blanks follows when NCHAR reaches 52. Then x, e and λ are remembered.
+  - **SPFLAG, as coded** [fact, code pp. 187–188 21700–27700]: set to 0 after codes 1–46 and the "other" codes,
+    then to 1 if NBLANK > 0 blanks follow; always 1 after codes 47–60, 61 and 66 and after the line-ending X (code
+    43 with SPFLAG = 1). So SPFLAG = 0 does not mean that the output ended without a blank: the "other" codes'
+    format 1700 ends with two blanks of its own and leaves SPFLAG = 0 when NBLANK = 0 (27200–27500).
+  - **Word spaces in the output** are the NBLANK blanks only, IBLANK of the decided space state (1 after a w-sp,
+    2 after a pause). The blanks of formats 1200, 1300, 1500 and 1700 (codes 47–60, 61, the line-ending X and the
+    other codes), the new line with 10 blanks when NCHAR reaches 52 (format 1600) and the new lines of formats 1400
+    (code 66) and 1500 are layout, and a scorer must not read them as word spaces [derived].
 - **Notes:**
   - A letter is printed only when the next letter's first mark is decided, so the last letter of a transmission is
     printed only if another mark follows [derived].
-  - `IF(NBLANK.EQ.0) GO TO 110` jumps to the terminal statement of `DO 110` from outside the loop (also 210, 310,
-    560); its effect is to skip the blanks (section (h)).
+  - `IF(NBLANK.EQ.0) GO TO 110` (22900) jumps to the terminal statement of `DO 110` from outside the loop, as do
+    the jumps to 210 (24100), 310 (25300) and 560 (27600). Their evident intent is to skip the blanks; FORTRAN 77
+    forbids the transfer, and its effect under gfortran is undefined (section (h)).
   - Lines 20300–20500 (printing the element number instead of the letter) are skipped by `GO TO 40` (20200).
 
 ### DISPLA, STATS, AUTOCR (p. 166)
@@ -687,17 +761,21 @@ the same steps with .3, .2, .15; after a w-sp by 0, ±5, ±10 WPM (.4, .2, .1); 
 ## (c) The receiver chain, derived
 
 **Method.** Each filter's transfer function is written from the listing's difference equation; responses, poles,
-half-power points (−3 dB relative to the peak or DC gain), noise bandwidths and group delays are evaluated on the
-unit circle in double precision (frequency grid 0.01 Hz or finer; noise bandwidths as Σh² of the impulse response,
-20 000 samples, or as the integral of |H|²).
-Time-domain values come from a sample-by-sample simulation of SIMSG1's carrier and noise, RCVR, BPFDET and NOISE
-exactly as listed (240 s of carrier, 120 s of noise, 100 s of keyed signal). The scripts are working files and are
-not committed; every number below is reproducible from the formulas given. f_s = 8000 Hz throughout.
+half-power points (−3 dB relative to the peak gain, the DC gain or the gain at the carrier, as each row states) and
+group delays are evaluated on the unit circle in double precision (frequency grid 0.01 Hz or finer). The **one-sided
+noise bandwidth** relative to a reference gain H_ref is B_n = ∫₀^{f_s/2} |H(f)|² df / |H_ref|², which equals
+Σh²·(f_s/2)/|H_ref|² for a real impulse response h (Parseval); a white input of variance σ² per sample, whose
+one-sided density is σ²/(f_s/2), then gives an output variance (σ²/(f_s/2))·|H_ref|²·B_n = σ²·Σh². Time-domain
+values come from simulations of SIMSG1's carrier and noise, RCVR, BPFDET and NOISE as listed, phases wrapped at
+6.28319 as in the listing, filters applied by their recurrences or by their impulse responses truncated below
+10⁻¹⁵: 700 s of carrier and 640 s of noise, each at f_c = 1000 Hz and 1500 Hz, and one 100 s window of keyed
+signal. The scripts are working files and are not committed; every number below is reproducible from the formulas
+given. f_s = 8000 Hz throughout.
 
 ### Signal path
 
 ```
-s (AU, carrier at f_c) → RCVR: mix by e^{jθ}, one-pole low-pass on I and Q, remix at 1000.0023 Hz
+s (AU, carrier at f_c) → RCVR: mix by e^{jθ}, one-pole low-pass on I and Q, remix at 1000.00159 Hz (mean)
   → resonator 1 (r = 0.90) → resonator 2 (r = 0.97) → |·| → 3-pole low-pass (DC gain 7.99) → Z (8 kHz)
   → every 40th sample → NOISE → z, R (200 samples/s)
 ```
@@ -710,19 +788,23 @@ s (AU, carrier at f_c) → RCVR: mix by e^{jθ}, one-pole low-pass on I and Q, r
   - Σh² = 0.07²/(1 − 0.93²) = 0.036269; noise bandwidth of the low-pass 145.08 Hz (one-sided), i.e. **290.2 Hz** as a
     band-pass around the carrier [derived].
   - Group delay at 0 Hz: 1.661 ms (13.29 samples) [derived].
-- **Oscillators:** the down-mixer advances by WC·TAU per sample from 0, exactly as the simulator's carrier phase does
-  without chirp; the up-mixer runs at 6283.2 rad/s = **1000.0023 Hz** [derived from code p. 189 01400, 02200].
+- **Oscillators:** the down-mixer advances by WC·TAU = 6.28319·FC·TAU per sample from 0, exactly as the simulator's
+  carrier phase does without chirp, and both wrap at 6.28319, so both run at exactly f_c [fact, code p. 189
+  01400–01500; derived, section (b) INPUTL]. The up-mixer advances by 6283.2·TAU = 0.78540 rad per sample and also
+  wraps at 6.28319 (02200–02300), so its mean frequency is 6283.2/6.28319 = **1000.00159 Hz**, not
+  6283.2/2π = 1000.00234 Hz [derived]. Each wrap removes 4.69·10⁻⁶ rad more than 2π.
 - **Carrier gain:** with c = (i + j·q) = s·e^{jθ}, ZOUT = Re{c_LP·e^{−jθ_LO}}. A carrier a·sin(θ + φ) at f_c gives
-  ZOUT = (a/2)·sin(θ_LO + φ): amplitude gain **1/2**, translated to 1000.0023 Hz, spectrum not inverted
-  [derived]. The carrier phase θ cancels.
+  ZOUT = (a/2)·sin(θ_LO + φ): amplitude gain **1/2**, translated to the up-mixer's 1000.00159 Hz, spectrum not
+  inverted [derived]. The carrier phase θ cancels.
 - **Image term:** the mixer also produces a component at 2f_c, attenuated by H_L(2f_c), which the up-mixer moves to
-  2f_c − 1000.0023 Hz [derived].
+  2f_c − 1000.00159 Hz [derived].
   - For f_c far from 1000 Hz it falls outside the resonators (for f_c = 1500 Hz at 2000 Hz) and is negligible.
-  - **For f_c = 1000 Hz it lands on 999.998 Hz** with relative amplitude |H_L(2000 Hz)| = 0.05126 (−25.8 dB
+  - **For f_c = 1000 Hz it lands on 999.9984 Hz** with relative amplitude |H_L(2000 Hz)| = 0.05126 (−25.8 dB
     relative to the DC gain): the output carrier amplitude is (a/2)·|1 + 0.05126·e^{jψ}|, between 0.474a and 0.526a,
-    with ψ drifting through 2π every 1/(2 × 0.0023 Hz) = **213.8 s** [derived].
+    with ψ drifting through 2π every 1/(2 × 0.00159 Hz) = **314 s** [derived].
   - The same coherence makes the output noise variance at f_c = 1000 Hz vary slowly between 0.01628 and 0.01999
-    AU² per AU² of input noise (period 213.8 s); for f_c away from 1000 Hz it is 0.018134 = Σh²/2 [derived].
+    AU² per AU² of input noise (period 314 s); for f_c away from 1000 Hz it is 0.018134 = Σh²/2 [derived]. Over
+    640 s (about two periods) the simulated mean is 0.018100 at 1000 Hz and 0.018122 at 1500 Hz.
 
 ### BPFDET resonators
 
@@ -736,24 +818,27 @@ H₁(z) = 0.19/(1 − 1.2726·z⁻¹ + 0.81·z⁻²), first in the path; H₂(z)
 | gain at 1000 Hz | 1.41215 | 0.35886 | 0.50677 |
 | −3 dB band (relative to the peak) | 849.47–1121.89 Hz (272.4 Hz) | 960.18–1037.83 Hz (77.6 Hz) | 962.10–1034.43 Hz (72.3 Hz) |
 | (1 − r)·f_s/π | 254.6 Hz | 76.4 Hz | |
-| noise bandwidth, one-sided, relative to the peak gain | 830.6 Hz | 243.4 Hz | 190.7 Hz |
+| noise bandwidth, one-sided, relative to the peak gain | 415.3 Hz | 121.7 Hz | 95.4 Hz |
+| noise bandwidth / −3 dB width (both relative to the peak) | 1.52 | 1.57 | 1.32 |
 | group delay at 1000 Hz | 1.069 ms | 3.981 ms | 5.050 ms |
 
-[derived] The resonators have no zeros, so their skirts stay high (resonator 2 is −22.7 dB relative to its peak at
-0 Hz); this is why their noise bandwidths are three times their half-power widths. The text gives 1.22 for the
-ratio of two single-tuned circuits (p. 111); that holds for identical analog circuits, not for these.
+[derived] Each resonator's ratio of noise bandwidth to −3 dB width (both relative to its peak) is close to
+π/2 = 1.571, the value for a single-tuned analog circuit, so their skirts add little noise. The text gives 1.22 for
+the ratio of two identical single-tuned circuits (p. 111); the cascade of these two unequal resonators gives 1.32,
+and the whole pre-detection chain, with RCVR's low-pass, gives 78.49/64.43 = 1.22 (below).
 
 ### The whole pre-detection chain
 
 From the input carrier to ZBPF, as a function of the offset δf of a component from the carrier (RCVR × 1/2 ×
-cascade at 1000 + δf Hz) [derived]:
+cascade at 1000.00159 + δf Hz) [derived]:
 
 - gain at the carrier: 0.5 × 0.50677 = **0.25339**;
-- −3 dB band, relative to the gain at the carrier: **δf = −33.47 … +30.93 Hz, 64.40 Hz wide** (slightly
-  asymmetric: the cascade peaks at 999.10 Hz);
-- noise bandwidth, referred to the gain at the carrier: **78.49 Hz**. A white input noise of RNOISE AU² per sample
-  (one-sided density RNOISE/4000 Hz) gives at ZBPF a variance of RNOISE/4000 × 78.49 × 0.25339² =
-  0.0012599·RNOISE AU² (simulated at f_c = 1000 Hz: 0.001216);
+- −3 dB band, relative to the gain at the carrier: **δf = −33.49 … +30.95 Hz, 64.43 Hz wide** (slightly
+  asymmetric: the chain peaks 0.025 % above its gain at the carrier, at δf = −0.77 Hz; relative to that peak the
+  band is −33.47 … +30.93 Hz, 64.40 Hz wide);
+- noise bandwidth, one-sided, referred to the gain at the carrier: **78.49 Hz**. A white input noise of RNOISE AU²
+  per sample (one-sided density RNOISE/4000 Hz) gives at ZBPF a variance of RNOISE/4000 × 78.49 × 0.25339² =
+  0.0012599·RNOISE AU² (simulated over 640 s: 0.0012548·RNOISE at f_c = 1000 Hz, 0.0012566·RNOISE at 1500 Hz);
 - envelope (group) delay at the carrier: 1.661 + 5.050 = **6.71 ms**.
 
 The text says a 100 Hz band-pass filter, with noise samples independent at 5 ms (pp. 111–112, 123). With this chain
@@ -780,24 +865,31 @@ the noise in the detector is that of 78.5 Hz, so its SNR is 10·log₁₀(100/78
 The text and the comment call it a "3-pole Chebyshev 100 Hz" low-pass (p. 124; code p. 189 04500). The
 coefficients give neither: the response has no ripple, its −3 dB point (relative to the DC gain) is at 31.1 Hz,
 and for a Chebyshev type I response of order 3 the real pole would lie at twice the real part of the complex pair,
-not at 1.06 times it [derived]. The DC gain of 8 comes from the numerator 1 + 3 + 3 + 1 = 8 with A₁ ≈ 1 − A₂ + A₃ + A₄ (to 0.09 %): A₁
-appears to have been set for a gain of 1 on a numerator normalized to 1 [inference]. The transcription review
-confirmed all four coefficients on the image [fact, `transcription-log.md`, p. 189 05200].
+not at 1.06 times it [derived]. The DC gain of 8 comes from the numerator 1 + 3 + 3 + 1 = 8 with
+A₁ ≈ 1 − A₂ + A₃ + A₄ (to 0.09 %): A₁ appears to have been set for a gain of 1 on a numerator normalized to 1
+[inference]. The transcription review confirmed all four coefficients on the image [fact, `transcription-log.md`,
+p. 189 05200].
 
 ### Envelope of a key-down carrier of 1 AU
 
 [derived; simulation and analysis]
 
 - Steady state, carrier away from 1000 Hz: Z = 7.99282 × 0.25339 × m, where m is the mean of |sin| over the 8 samples
-  per cycle of the 1000.0023 Hz tone. m depends on the sampling phase: 0.60355 … 0.65328, 2/π = 0.63662 on average.
-  The phase drifts slowly, because the rectified tone's 8 kHz harmonic aliases to 8 × 0.0023 Hz: period **53.5 s**.
-  So **Z = 1.2893 AU on average, between 1.2224 and 1.3231 AU** (−5.2 % … +2.6 %).
+  per cycle of the 1000.00159 Hz tone. m depends on the sampling phase: 0.60355 … 0.65328, 2/π = 0.63662 on average.
+  The phase drifts slowly, because the rectified tone's 8 kHz harmonic aliases to 8 × 0.00159 Hz = 0.0127 Hz:
+  period **78.5 s** (simulated over 700 s at 1500 Hz: 78.6 s). So **Z = 1.2893 AU on average, between 1.2224 and
+  1.3231 AU** (−5.2 % … +2.6 %); simulated: 1.22237 … 1.32307 AU.
 - Carrier at 1000 Hz: in addition the image term of RCVR multiplies the amplitude by 0.9487 … 1.0513 with period
-  213.8 s: Z between 1.160 and 1.391 AU. Simulated over 240 s (1 s means): 1.171 … 1.337 AU, mean 1.270 AU.
+  314 s. Both slow processes are harmonics of d = 0.00159 Hz (8d and 2d), and both start from θ = θ_LO = 0 at the
+  first sample, so with PHIVAR = 0 and FCHIRP = 0 Hz they are phase-locked: the envelope is one fixed waveform of
+  period 314 s, and the low end of the product of the two ranges (1.160 … 1.391 AU) is never reached. Simulated
+  over 700 s, the 8 kHz envelope stays within **1.169 … 1.390 AU** (1 s means 1.171 … 1.390 AU, mean 1.2915 AU,
+  period 313.8 s).
 - Keying: after a key-down the 8 kHz envelope reaches 10 %, 50 %, 90 % of its final value in 8.1, 14.5, 26.8 ms
   (carrier at 1000 Hz; 8.3, 14.6, 26.9 ms at 1500 Hz); after a key-up it falls to 50 % in 14.5 ms. A mark is
   therefore seen about **14.5 ms late** at its 50 % points, with its length preserved.
-- After NOISE with no noise (YMAVG → 0 once the 1 s minimum falls in spaces): z = 1.1 × (1.2893 − 0.05) = 1.363 AU.
+- After NOISE with no noise (YMAVG → 0 once the 1 s minimum falls in spaces): z = 1.1 × (1.2893 AU − 0.05 AU) =
+  1.363 AU.
 
 ### Decimation phase
 
@@ -807,31 +899,32 @@ No sample between the 40th ones is used.
 
 ### Noise statistics
 
-[derived numerically; one 120 s noise realization at f_c = 1000 Hz, scaled by √RNOISE]
+[derived numerically; 640 s of noise at f_c = 1000 Hz and at 1500 Hz, scaled by √RNOISE]
 
-- ZBPF is Gaussian (mean |ZBPF| = 0.7979σ to within 0.05 %).
-- Noise-only envelope: E[Z] = 7.99282 × 0.7979 × √(0.0012599·RNOISE) = **0.2264·√RNOISE AU** in the long run
-  (0.2223·√RNOISE over the 120 s realization); standard deviation 0.0783·√RNOISE AU.
+- ZBPF is Gaussian (mean |ZBPF| = 0.7979σ to within 0.1 %).
+- Noise-only envelope: E[Z] = 7.99282 × 0.7979 × √(0.0012599·RNOISE) = **0.2264·√RNOISE AU** (simulated:
+  0.2257·√RNOISE at 1000 Hz, 0.2260·√RNOISE at 1500 Hz); standard deviation 0.0797·√RNOISE AU at 1000 Hz,
+  0.0792·√RNOISE AU at 1500 Hz.
 - Relative to a 1 AU carrier's envelope (1.2893 AU), the noise-only mean is 0.1756·√RNOISE, i.e.
   0.785/√(S₁₀₀ as a power ratio) with S₁₀₀ as defined in section (d).
-- **The 5 ms samples are correlated:** correlation 0.71 at lag 1 (5 ms), 0.27 at lag 2 (10 ms), a consequence of
-  the 31 Hz envelope low-pass and the 64 Hz band-pass. The decoder treats the samples as independent, which the
-  text justifies for a 100 Hz band-pass sampled every 5 ms (pp. 110–112).
+- **The 5 ms samples are correlated:** correlation 0.70–0.71 at lag 1 (5 ms), 0.26–0.27 at lag 2 (10 ms), a
+  consequence of the 31 Hz envelope low-pass and the 64 Hz band-pass. The decoder treats the samples as
+  independent, which the text justifies for a 100 Hz band-pass sampled every 5 ms (pp. 110–112).
 
 ### NOISE's calibration
 
-Noise only, carrier at 1000 Hz [derived numerically]:
+Noise only, carrier at 1000 Hz, 640 s, statistics after the first 10 s [derived numerically]:
 
 | S₁₀₀ (dB S₁₀₀) | RNOISE (AU²) | mean Z (AU) | YMAVG (AU) | subtracted 2.4·YMAVG + 0.05 (AU) | mean z (AU) | var z (AU²) | R (AU²) |
 |---|---|---|---|---|---|---|---|
-| 3 | 10.02 | 0.700 | 0.253 | 0.656 | +0.049 | 0.0753 | 0.0758 |
-| 4 | 7.96 | 0.624 | 0.225 | 0.590 | +0.037 | 0.0598 | 0.0675 |
-| 6 | 5.02 | 0.496 | 0.179 | 0.479 | +0.018 | 0.0377 | 0.0537 |
-| 9 | 2.52 | 0.351 | 0.127 | 0.354 | −0.003 | 0.0189 | 0.0380 |
-| 12 | 1.26 | 0.249 | 0.090 | 0.265 | −0.018 | 0.0095 | 0.0269 |
+| 3 | 10.02 | 0.714 | 0.256 | 0.665 | +0.054 | 0.0788 | 0.0769 |
+| 4 | 7.96 | 0.637 | 0.228 | 0.598 | +0.043 | 0.0626 | 0.0685 |
+| 6 | 5.02 | 0.506 | 0.181 | 0.485 | +0.023 | 0.0395 | 0.0544 |
+| 9 | 2.52 | 0.358 | 0.128 | 0.358 | 0.000 | 0.0198 | 0.0385 |
+| 12 | 1.26 | 0.253 | 0.091 | 0.268 | −0.016 | 0.0099 | 0.0273 |
 
-Keyed carrier of 1 AU, 400 ms on, 400 ms off, carrier at 1500 Hz, samples more than 40 ms from a transition
-[derived numerically]:
+Keyed carrier of 1 AU, 400 ms on, 400 ms off, carrier at 1500 Hz, samples more than 40 ms from a transition; one
+100 s window, so these are single-window values [derived numerically]:
 
 | S₁₀₀ (dB S₁₀₀) | z on marks: mean, var (AU, AU²) | z on spaces: mean, var (AU, AU²) | R (AU²) |
 |---|---|---|---|
@@ -844,12 +937,12 @@ Keyed carrier of 1 AU, 400 ms on, 400 ms off, carrier at 1500 Hz, samples more t
 Reading [derived]:
 - The constants put a 1 AU key-down carrier near z = 1 AU at 6–12 dB S₁₀₀, where the Kalman filter starts
   (ŷ = 0.5 AU, P = 0.1 AU²); the subtraction makes z nearly zero-mean in noise around 9 dB S₁₀₀.
-- R equals the noise-only variance of z near 3 dB S₁₀₀ and exceeds it at higher SNR (2.0 times at 9 dB S₁₀₀,
-  2.8 times at 12 dB S₁₀₀), since R grows with the noise amplitude and the variance with its square. The variance
-  of z on marks is 2.4–2.8 times that on spaces (the signal-times-noise term), which the decoder's model, with one
+- R equals the noise-only variance of z near 3 dB S₁₀₀ and exceeds it at higher SNR (1.9 times at 9 dB S₁₀₀,
+  2.7 times at 12 dB S₁₀₀), since R grows with the noise amplitude and the variance with its square. The variance
+  of z on marks is about 2.5 times that on spaces (the signal-times-noise term), which the decoder's model, with one
   R for both, ignores.
-- YMAVG settles with a 1.25 s time constant from its start value 0.05 AU, so the first seconds of a session are
-  decoded with a biased offset and R.
+- YMAVG settles with a 1.25 s time constant (1.2475 s, section (b)) from its start value 0.05 AU, so the first
+  seconds of a session are decoded with a biased offset and R.
 
 ## (d) The simulator
 
@@ -860,7 +953,7 @@ Reading [derived]:
 | Process | Rule | Parameter (unit) | Step |
 |---|---|---|---|
 | keying | elements in sequence: the letter's marks with e-sps between them, then one letter-ending space | — | per element |
-| durations | uniform on (m − e, m + e)·Δ, floored at 20 ms, no ceiling; lasts ⌈8·XDUR/ms⌉ samples | m = ESEP(k), e = EDEV(k) (dots); Δ = 1200/RATE ms | per element |
+| durations | uniform on (m − e, m + e)·Δ, floored at 20 ms, no ceiling; lasts ⌈8·XDUR/ms⌉ samples (the printed KEY; the text states a truncated Gaussian for its results, and which law made Table XVI is the owner's decision D9, section (e)) | m = ESEP(k), e = EDEV(k) (dots); Δ = 1200/RATE ms | per element |
 | text | random letters (KEY, section (b)); the text-file branch is unreachable | — | per letter |
 | letter-ending space | c-sp 0.8, w-sp 0.1, pause 0.1 | — | per letter |
 | amplitude steps | AMP ← max(AMP + N(0, AVAR), 0.01 AU) at each key-down | AVAR (AU² per key-down) | per key-down |
@@ -886,9 +979,11 @@ with a floor; nothing pulls it back to 1 AU [derived].
   (b)), so an operator comparing the decoded text with that printout reads −··· as B, and a decoded B counts as
   correct. Table XV reports 0 % at 12 dB S₁₀₀ (50 WPM) and 9 dB S₁₀₀ (20 WPM) [fact, p. 132]; had a "C" keyed as B
   been counted against a decoded B, those cells would show about 2.9 % (1/35 of the letters). Either the printed
-  C-row was not in the version that made the tables, or it was not counted as an error. Either way, for the
-  reproduction the sent symbol must be labeled by the code actually keyed (B), not by the column drawn (section
-  (j)).
+  C-row was not in the version that made the tables, or it was not counted as an error. The simulator that made
+  the printed samples keyed C correctly (F, G and H print C, p. 148; section (e)), which favors the first: the
+  printed C-row was not in the version that made the samples, and plausibly not in the one that made the tables.
+  For a reproduction with the printed KEY, the sent symbol must be labeled by the code actually keyed (B), not by
+  the column drawn (section (j)).
 - **IALPH(43) = 'X'** repeats IALPH(24) = 'X' [fact, code p. 161 08100; `transcription-log.md`]. It is in the
   decoder's print table, not in KEY, so it does not affect what the simulator sends; it affects only how a decoded
   X is printed (section (f)) [derived].
@@ -900,8 +995,9 @@ with a floor; nothing pulls it back to 1 AU [derived].
   - the tables label it "SNR (dB) (100 Hz)" [fact, pp. 130–134];
   - Table IV gives E/N₀ = S₁₀₀ + 10·log₁₀(100 Hz × Δ) to within 0.1 dB at 50, 30 and 20 WPM: E/N₀ exceeds S₁₀₀ by
     3.80, 6.02 and 7.78 dB, and the table's E/N₀ column is 3.8, 6.0 and 7.8 dB above its S₁₀₀ column, except 7.7 at
-    0 dB S₁₀₀, 20 WPM [fact, p. 35; derived]; E is the energy of one dot at key-down power and N₀ the one-sided
-    density [fact, p. 33];
+    0 dB S₁₀₀, 20 WPM [fact, p. 35; derived]; E is the energy of one dot at key-down power;
+  - the thesis's noise density is one-sided: "N_o = one-sided noise spectral density" [fact, p. 33] and "a white
+    gaussian random process with one-sided density N_o" [fact, p. 113];
   - Figure 14's two SNR scales show the same offsets: E/N₀ 4 dB above S₁₀₀ at 50 WPM, 8 dB above at 20 WPM
     [fact, p. 128].
 - **In the simulator** [derived]: the key-down power is a²/2 (a = a_n in AU); the noise has variance RNOISE per
@@ -922,13 +1018,16 @@ with a floor; nothing pulls it back to 1 AU [derived].
 
 - With fading, a varies; the nominal a = 1 AU is meant [inference]. With the fading proposed in section (e) the mean
   key-down power is (1 + 0.0017)/2, a difference of 0.007 dB in S₁₀₀ [derived].
-- How Bell set RNOISE for a given S₁₀₀ is not stated. A two-sided convention would shift every S₁₀₀ by 3.01 dB; the
-  Table IV relation supports the one-sided one [inference].
+- How Bell converted RNOISE to N₀ is not stated, and Table IV, which ties S₁₀₀ to E/N₀ through the same N₀, is
+  silent on it. The one-sided convention of pp. 33 and 113 gives N₀ = RNOISE/4000 Hz, used above; taking
+  RNOISE/8000 Hz (the two-sided density) as N₀ would shift every S₁₀₀ by 3.01 dB [inference]. Section (j) lists this
+  conversion as the first suspect if V2 shows a uniform shift near 3 dB in S₁₀₀.
 
 ## (e) The settings behind Tables XV and XVI
 
 Bell typed his settings at run time (INPUTL), so they are not in the listing; the thesis gives some of them. Each
-value below carries its page, or "not given" with our proposal.
+value below carries its page, or "not given" with our proposal. The fists' duration law is left open: it is the
+owner's decision D9 (last subsection but one).
 
 ### Stated or fixed by the listing
 
@@ -940,7 +1039,7 @@ value below carries its page, or "not given" with our proposal.
 | decision delay | 200 samples (1 s) | 200 samples | [fact, pp. 132, 134; code p. 184 02200]; effective maximum 199 samples (section (b)) |
 | speeds | 50, 20 WPM | 30, 20 WPM | [fact, pp. 132, 134] |
 | S₁₀₀ | 50 WPM: 12, 9, 8, 7, 6 dB S₁₀₀; 20 WPM: 9, 6, 4, 3 dB S₁₀₀ | 9, 6, 4, 3 dB S₁₀₀ | [fact, pp. 132, 134] |
-| fists | — | good, fair, poor: P_es = 0.00143, 0.0149, 0.0403 per element, i.e. letters with at least one wrong element E_s = 1 %, 10 %, 25 % | [fact, pp. 33, 134]; E_s = 1 − (1 − P_es)⁷ with 7 symbols per letter (p. 32 prints the relation without the "1 −") [derived] |
+| fists | — | good, fair, poor: P_es = 0.00143, 0.0149, 0.0403 per element; rows labeled "Sending Error Rate = 1%", "= 10%", "= 25%" | [fact, pp. 33, 134]; E_s = 1 − (1 − P_es)⁷ with 7 symbols per letter gives 1.0, 10.0, 25.0 % (p. 32 prints the relation as Ē_s ≜ (1 − δ)¹² = (1 − P_es)⁷, without the "1 −") [derived] |
 | text | random letters | random letters | [inference]: p. 125 offers random letters or a text file; the decoder models independent letters (pp. 106, 123) and Figure 17 compares with human operators on independent letters (p. 135); the printed KEY can only send random letters |
 | letters per experiment | about 200 | about 200 | [fact, p. 139] |
 | channel | "subjected to the fading model (VII.C) and white gaussian noise" | same | [fact, p. 125]; values not given |
@@ -951,11 +1050,9 @@ value below carries its page, or "not given" with our proposal.
 
 | Setting | Proposal | Reason |
 |---|---|---|
-| EDEV, KAM | 0 for all six elements | [inference] keyboard Morse has exact timing (p. 11); p. 125 randomizes durations to model the hand senders. Durations are then exactly m·Δ (at 20, 30, 50 WPM: 480, 320, 192 samples per dot). |
-| EDEV, fists (dot, dash, e-sp, c-sp) | good 0.3353, fair 0.4602, poor 0.5723 dots | [our choice] the Gaussian standard deviation σ for which an element crosses the midpoint threshold 1 dot away with probability P_es: σ = 1/Q⁻¹(P_es), Q⁻¹ = 2.9824, 2.1727, 1.7472. Used as KEY's half-width (reading B below). |
-| EDEV, fists (w-sp) | 0.6706, 0.9205, 1.1447 dots | [our choice] the same criterion at the w-sp/c-sp threshold, 2 dots from the mean (5 dots): 2σ |
-| EDEV, fists (pause) | 1.1736, 1.6109, 2.0032 dots | [our choice] the same at the pause/w-sp threshold, 3.5 dots from the mean (10.5 dots): 3.5σ |
-| FREQ (f_c) | 1000 Hz | [our choice] not given (p. 125: "ω₀ ≤ 4 KHZ"); RCVR's output frequency and the plan's default in §4.1. It brings in RCVR's image beat (section (c)), ±5 % of amplitude over 214 s, negligible for decoding. |
+| EDEV, KAM | 0 for all six elements | [inference] the KAM signal is synchronous ("the possible transition times of a synchronous KAM signal", p. 126), and p. 125 randomizes durations to model the hand senders. Durations are then exactly m·Δ (at 20, 30, 50 WPM: 480, 320, 192 samples per dot). |
+| EDEV, fists | open: the owner's decision D9 | three readings A, B, C below |
+| FREQ (f_c) | 1000 Hz | [our choice] not given (p. 125: "ω₀ ≤ 4 KHZ"); RCVR's output frequency and the plan's default in §4.1. It brings in RCVR's image beat (section (c)): ±5 % of amplitude with a period of 314 s, the 8 kHz envelope of a 1 AU carrier within 1.169–1.390 AU; slow against a letter, so negligible for decoding [inference]. |
 | RNOISE | 20·10^(−S₁₀₀/10) AU² | [derived] section (d), with the nominal key-down amplitude 1 AU |
 | GAMMA | 0.99923881 per 8 kHz sample | [our choice] VII.C's γ = 0.97 per 5 ms (1 Hz fading, p. 115) as 0.97^(1/40) per sample |
 | BVAR | 2.57496·10⁻⁶ AU² per 8 kHz sample | [our choice] VII.C's Var(v) = 10⁻⁴ per 5 ms (p. 116): BVAR·(1 − GAMMA⁸⁰)/(1 − GAMMA²) = 10⁻⁴. Stationary σ of BFADE 0.0411 AU, correlation time 164 ms. |
@@ -964,30 +1061,87 @@ value below carries its page, or "not given" with our proposal.
 | FCHIRP, TCHIRP | 0 Hz, 10 ms | [our choice] no chirp is stated for the simulations (the 50 Hz of p. 112 motivates the filter width); TCHIRP > 0 only to avoid a division by zero |
 | runs | 20 runs of 200 letters per cell, each with its own seed | the plan's §5.2 (Bell used about 200 letters, about 5 runs of 300 elements, per cell) |
 
-**The fist half-widths: three readings.** KEY's law is uniform (section (b)); the text's is a Gaussian truncated to
-16–360 ms (p. 125). The P_es criterion can be applied three ways:
+**The proposed fading is nearly inert** [derived]: σ_BFADE = 0.0411 AU is about ±0.36 dB of amplitude rms about
+the 1 AU carrier (20·log₁₀(1 ± 0.0411) = +0.35 dB, −0.36 dB of amplitude), far milder than the amplitude change
+of "about 3 dB" in a 1 s fade that motivates VII.C's model (p. 115). Typing VII.C's numbers directly as per-sample
+values (GAMMA 0.97, BVAR 10⁻⁴ AU²) gives the same σ, 0.0411 AU, with a correlation time of 4.1 ms. Either way the
+mean key-down power is 0.007 dB above the unfaded carrier's (section (d)), so V2 should be insensitive to this
+choice [inference].
 
-| Reading | Law | Dot, dash, e-sp, c-sp half-width or σ (good / fair / poor), dots | Status |
+### The fists' duration law: three readings (the owner's decision D9)
+
+KEY as printed draws each duration from a uniform law (section (b)). The text states, for "the results presented
+here", a Gaussian truncated to 16–360 ms whose variance gives the crossover probabilities P_es (p. 125). The P_es
+criterion turns into settings in three ways. In all three a duration d is quantized to ⌈8·d/ms⌉ samples, as KEY
+does; m is the element's mean length in dots (ESEP), Δ = 1200/RATE ms, and t is the distance from the mean to the
+threshold that a crossover passes: 1 dot for the dot, dash, e-sp and c-sp (threshold 2 dots), 2 dots for the w-sp
+(threshold 5 dots), 3.5 dots for the pause (threshold 10.5 dots).
+
+| Reading | Law of d | Spread s, dots: dot, dash, e-sp, c-sp / w-sp / pause (good; fair; poor) | Sending errors |
 |---|---|---|---|
-| A | uniform (listing), half-width set so that the uniform law crosses with probability P_es: 1/(1 − 2P_es) | 1.0029 / 1.0307 / 1.0877 (w-sp ×2, pause ×3.5) | alternative |
-| **B** | **uniform (listing), half-width = the Gaussian σ above** | **0.3353 / 0.4602 / 0.5723** | **proposed** |
-| C | Gaussian (text), σ as above, truncated to 16–360 ms | 0.3353 / 0.4602 / 0.5723 | contradicts the listing (D1); a §5.3 fallback only |
+| A | KEY as printed: d = (m + U·s)·Δ, U uniform on (−1, 1), clipped at 20 ms, no ceiling; s = t/(1 − 2P_es), the half-width at which the uniform law crosses with probability P_es | 1.0029 / 2.0057 / 3.5100; 1.0307 / 2.0614 / 3.6075; 1.0877 / 2.1753 / 3.8068 | P_es per element |
+| B | KEY as printed, as A; s = the Gaussian σ of reading C, used as the half-width | 0.3353 / 0.6706 / 1.1736; 0.4602 / 0.9205 / 1.6109; 0.5723 / 1.1447 / 2.0032 | none |
+| C | the text's: d ~ N(m·Δ, (s·Δ)²), truncated by the rule below; s = σ = t/Q⁻¹(P_es), Q⁻¹ = 2.9824, 2.1727, 1.7472 | as B | P_es per element (dots and e-sps slightly more) |
 
-Reasons for B [our choice]:
-1. The law must be the listing's (D1); only the typed values are open.
-2. Bell's prompt asks for "STD DEVIATIONS" (p. 160 01400) and his text sets "the variance … to give the error
-   crossover probabilities" for a Gaussian (p. 125), so he most likely typed Gaussian σ's [inference].
-3. The good fist's results equal the keyboard results at 20 WPM: 1, 4, 6, 31 % against 0, 3, 6, 31 % at 9, 6, 4,
-   3 dB S₁₀₀ [fact, pp. 132, 134]. Under B the good fist's dots span 40–80 ms at 20 WPM, a mild irregularity. Under A
-   they span 0–120 ms, 17 % of them clipped to 20 ms, which would cost energy at low SNR; equal results are not
-   plausible [derived; inference].
+[derived] Under A and C a letter carries at least one sending error with probability E_s = 1 − (1 − P_es)ⁿ:
+Bell's n = 7 symbols per letter (p. 32) gives 1.0, 10.0 and 25.0 %, the labels of Table XVI; KEY's random letters
+average n = 7.22 crossover opportunities (3.71 marks, 2.71 e-sps, 0.8 c-sps), giving 1.03, 10.3 and 25.7 %. Under B
+no element reaches its threshold (the poor dot stays below 1.573 dots, the poor dash above 2.427 dots, the poor
+w-sp above 5.855 and the poor pause above 11.99 dots), so E_s = 0 and the fists differ by spread alone. Under B,
+6.3 % of the poor fist's dots and e-sps are clipped at 20 ms at 30 WPM, none at 20 WPM, none for the good and fair
+fists. Under A, 17 % of the good fist's dots and e-sps are clipped at 20 ms at 20 WPM (they span 0–120 ms).
 
-Consequence of B [derived]: under the uniform law no element reaches its midpoint threshold (the poor dot stays
-below 1.573 dots, the poor dash above 2.428 dots; the w-sp above 5.86, the pause above 12.0 dots), so the simulated
-fists make no sending errors in Bell's sense. The fists differ by spread alone, and the P_es values are nominal. At
-30 WPM, 6.3 % of the poor fist's dots and e-sps are clipped at 20 ms; none at 20 WPM, and none for the good and fair
-fists at either speed. If V2 fails on Table XVI, A and then C are the readings to test (§5.3 of the plan: "correcting
-our reading of his settings … fist parameters").
+**C's truncation rule** [our choice]: redraw d while d < 16 ms (every element) and, for dots, dashes, e-sps and
+c-sps, while d > 360 ms; w-sps and pauses have no ceiling. Reasons: "truncated" means the Gaussian conditioned on
+the interval, so a redraw, not a clip (KEY's own 20 ms floor, a clip, is not used under C); and p. 125's bounds
+cannot hold for every element at Bell's speeds, since at 20 WPM every w-sp (mean 420 ms) and pause (840 ms), and at
+30 WPM every pause (560 ms), lies above 360 ms. Effects [derived]: at 20 WPM, 1.4, 5.6 and 10.0 % of the dots and
+e-sps are redrawn (good, fair, poor), which raises their crossover probability to 0.00145, 0.0158 and 0.0448; at
+30 WPM, 3.7, 9.6 and 14.7 %. The 360 ms ceiling binds for at most 8·10⁻⁸ of the dashes and c-sps at 20 and 30 WPM
+(0.4 % for the poor fist at 15 WPM, the samples' speed).
+
+**Evidence for A.** D1 makes the listing's law the authority, and A is the reading under which that law gives the
+sending error rates Table XVI's rows are labeled with. Against A: the good fist's results equal the keyboard's at
+20 WPM, 1, 4, 6, 31 % against 0, 3, 6, 31 % at 9, 6, 4, 3 dB S₁₀₀ [fact, pp. 132, 134], whereas under A 17 % of
+the good fist's dots and e-sps are clipped to 20 ms at 20 WPM, which should cost energy at low SNR [inference].
+
+**Evidence for B.** The prompt asks for "STD DEVIATIONS" (p. 160 01400), so Bell typed standard deviations
+[inference]; the prompt does not show which law turned them into durations. B keeps the listing's law (D1). The
+good fist's closeness to the keyboard results fits B, but it fits C as well: under C the good fist adds about 1 %
+of letters with a sending error, within the table's differences of 0–1 point [derived; inference].
+
+**Evidence for C.**
+1. p. 125 states the law of "the results presented here": "a truncated gaussian such that no element is ever less
+   than 16 msec or greater than 360 msec in duration. The variance was selected to give the error crossover
+   probabilities on an element basis to correspond to the good, fair, and poor operator defined in section III.B."
+   [fact, p. 125]. The printed KEY has one law and no selection [fact, code p. 164 11300–11800].
+2. Table XVI's row labels, "Sending Error Rate = 1%, 10%, 25%" [fact, p. 134], are the E_s of A and C; under B the
+   rate is 0 % [derived].
+3. The samples show the fair fist losing character spaces. G and H (15 WPM, fair key, 12 and 6 dB S₁₀₀) both decode
+   "TEST." as "NSCK" (T and E merged into N; T and the period into C and K), identically at two SNRs, so from the
+   keying [inference]; G also prints JUMPL (E and D merged into L) and 6IS (T and H into 6), H prints T5 (H and E
+   into 5) [fact, p. 148]. Under B a fair c-sp stays within 2.54–3.46 dots and never reaches its 2-dot threshold
+   [derived].
+4. Table XVI's floors at 9 dB S₁₀₀ rise with the fist: good 1 and 3 %, fair 4 and 5 %, poor 11 and 12 % at 20 and
+   30 WPM [fact, p. 134], as sending errors would make them. Under C the fair and poor floors are 39–49 % of the
+   letters that carry a sending error (E_s 10.3 % and 25.7 %), so C needs the decoder to repair about half of the
+   crossovers or more (the tree can break an over-long merge, and an element near its threshold may be read
+   right); under B the floors must come from the spread alone [derived; inference].
+
+**The samples' simulator is not the printed KEY** [fact, pp. 147–148; code pp. 163–164]: it sent fixed texts, which
+the printed KEY cannot send (its text branch is unreachable, p. 164 08800–09500); it keyed '.', for which MORSE has
+no column (p. 164 07000), and F–H contain "AFTERNOON." and "TEST."; and it keyed C correctly, since F, G and H print
+C in CWA6, QUICK, CIPU, URUC (UKUC, SKUC) and RHIC (RMIC), whereas the printed MORSE keys column 3 as B (p. 163
+05300). So D1's premise, that the listing is the program that produced the published results, is weakened for KEY:
+the version that made the samples, and plausibly the tables, differed from the printed one in at least these three
+places [inference].
+
+**The decision (D9).** Which law produced Table XVI: does D1 govern KEY's duration law when the text states the
+law of the results and the samples show that the printed KEY was not the version used? This sheet does not settle
+it. Under A or B, Task 7 draws KEY's uniform law (section (j) item 5) and Task 3 compiles KEY as printed. Under C,
+Task 7 and the compiled reference need the Gaussian law with the truncation rule above, a marked change to KEY
+outside Task 3's allowed list. Implementing both laws in Task 7 would let V2 reproduce Table XVI under each
+reading and compare.
 
 ### Tables XIV and XVII
 
@@ -1049,16 +1203,27 @@ How they combine [derived from the code]:
 | 16 | 16 | dash after pause | 2 | 0, 16, 5, 6, 7, 8 |
 
 - These rows are the **second-order element model** of Table XII: 16 states, one per element-state, with no letters
-  [derived]. Their LTRMAP is the element number, which only the skipped element printout of TRANSL (20300–20500)
-  could use [inference]. They are what the decoder would run if MORSEM were not read; Table XV's "second order"
-  column is plausibly this model [inference].
+  [derived]. They are what the decoder would run if MORSEM were not read.
+- Their LTRMAP is the state's current element (3–6 for the space states, 1 and 2 for the marks). TRANSL's skipped
+  element printout types ELMOUT = ILAM1(IELMST(LTRHAT)), not LTRMAP (p. 187 20100, 20300), and its letter path
+  prints IALPH(LTRMAP(λ_s)): with these rows it would print D, E or F (IALPH(4), IALPH(5), IALPH(6), the LTRMAP of
+  the letter-ending states 2–4 and 6–8) at every letter boundary [derived]. So the DATA model cannot produce letters
+  through the listing's TRANSL. If Table XV's "second order" column is this model, as is plausible, it needed a
+  translation step that the listing lacks [inference].
 - INITL overwrites rows 1–300 from MORSEM, these 16 included [fact, code p. 161 10400–11000].
-- **No letter tree can contain rows 5, 9 and 10** [derived]. In a tree, the element space after T must lead to the
-  marks of N (−·) and M (−−), and the one after E to I (··) and A (·−). Rows 1 and 5 both lead to 9 and 10, which
-  would have to be I and N at once. Rows 9 and 10 lead back to rows 1–8, so the c-sp after I would be E's letter
-  state and I would print as E. So the plan's test "the 16 DATA rows are reproduced" cannot be met by any file that
-  decodes letters. The other 13 rows are exactly the root of a letter tree numbered as below, which is the evidence
-  for that numbering [inference].
+- **At most 13 of the 16 rows fit any letter tree** [derived]. In a tree, within a letter the marks and element
+  spaces lead to ever deeper nodes, so apart from staying they form no cycle; the element spaces of two different
+  nodes lead to different marks (after E to those of I and A, after T to those of N and M); and each symbol has its
+  own letter-ending spaces. Against this:
+  - rows 1 and 9 form the cycle 9 →e-sp→ 1 →dot→ 9, and rows 5 and 10 the cycle 10 →e-sp→ 5 →dash→ 10;
+  - rows 1 and 5, the element spaces after a dot and after a dash, both lead to 9 and 10;
+  - row 9 leads to the letter-ending spaces 2, 3, 4, as rows 11, 13 and 15 (E's mark) do, so state 9's symbol and E
+    would share their letter states; row 10 conflicts in the same way with rows 12, 14 and 16 (T's mark).
+
+  Covering these conflicts takes three rows: {5, 9, 10} or {1, 9, 10}. So the plan's test "the 16 DATA rows are
+  reproduced" cannot be met by any file that decodes letters. Both numberings that keep 13 rows keep state 5 =
+  E(−), the start state's meaning, and decode identically; the 13 rows therefore do not single out a numbering, and
+  rule N1 below (dropping {5, 9, 10}) is our choice between the two.
 
 ### His alphabet (IALPH)
 
@@ -1076,7 +1241,7 @@ in the listing; KEY's MORSE table gives A–Z, 1–9, 0 in IALPH order (section 
 | 40 | & | character | (·−···, the same code as AS) | excluded [our choice]: one code cannot print two entries; AS has the dedicated format |
 | 41, 42 | 0 | — | — | unused |
 | 43 | X | after a word space: X and a new line; inside a word: as a character | −··− | [inference, moderate]: X written as a word stands for a full stop in message text, and TRANSL's special case for 43 makes exactly that distinction; [our choice]: map the X node to 43. The printed character is X either way. |
-| 44 | . | character | ·−·−·− | [inference]: in p. 148 sample G, "TEST." is decoded "NSCK"; T followed by the period with the letter space lost is −·−·−·−, read as C (−·−·) K (−·−), which holds only for ·−·−·− |
+| 44 | . | character | ·−·−·− | [inference]: in p. 148 samples G and H, "TEST." is decoded "NSCK"; T followed by the period with the letter space lost is −·−·−·−, read as C (−·−·) K (−·−); this exact-merge explanation holds only for ·−·−·− |
 | 45 | AS | two characters | ·−··· | [our choice] standard prosign (wait); AS appears in decoded output (p. 148, sample H) [fact] |
 | 46 | SN | two characters | ···−· | [our choice] standard prosign (understood) |
 | 47–50 | 0 | — | — | unused |
@@ -1128,10 +1293,11 @@ are all non-empty prefixes of the w_c; v ends in a dot or a dash; v is a symbol 
 
 **The start state.** PROCES starts all paths in λ = 5 with 1000 ms elapsed [fact, code p. 167 05600, 06000].
 Under this numbering λ = 5 is E(−), the element space after T; its element-state is 5 ("e-sp after a dash"), as
-is state 5's in the DATA model [derived]. The first decided letter of a session can therefore come out as a letter that begins with
-T (the simulator's first letter is always T [fact, code p. 163 05100]) [inference]. Apart from state 5, the state
-numbers are only labels: the decoder compares states for equality (SAVEP) and looks them up, so any other
-numbering decodes identically [derived].
+is state 5's in the DATA model [derived]. From E(−), MEMFCN allows only staying or the marks of N (−·) and M (−−),
+so the first decided letter of a session necessarily begins with a dash [derived]. The simulator's first letter is
+T [fact, code p. 163 05100], so its dash is read as the second element after the dash the start state presumes, and
+T most likely decodes as M [inference]. Apart from state 5, the state numbers are only labels: the decoder compares
+states for equality (SAVEP) and looks them up, so any other numbering decodes identically [derived].
 
 **Size** [derived]: 36 symbols: 39 nodes, 173 states; the proposed 47 symbols: 52 nodes, 227 states; 49 symbols
 (with ; and :): 55 nodes, 239 states. All fit in the 300 rows INITL reads.
@@ -1159,8 +1325,9 @@ proposed alphabet has 47 transitions that ELEMTR allows and the tree does not (e
 
 ## (g) Text against listing
 
-Under D1 the listing's value is the one used. "Derived" in the listing column means a property computed from the
-listed code (section (c)).
+Under D1 the listing's value is the one used, except for the fists' duration law, which is left to the owner's
+decision D9 (section (e)). "Derived" in the listing column means a property computed from the listed code
+(section (c)).
 
 | Item | Text value (page) | Listing value (line) | Used here |
 |---|---|---|---|
@@ -1173,20 +1340,20 @@ listed code (section (c)).
 | Φ during an e-sp | 1 (p. 117 (b)) | 10^{−2/(22.4·Δ/ms)} per step, 1 from 14 bauds on (p. 178 13900–14100) | listing |
 | Φ during other spaces | 0.98 (p. 117 (d)) | the same as during an e-sp: no distinction | listing |
 | noise floor window | minimum over 240 samples, 1.2 s (p. 124) | minimum over 200 samples, 1.0 s; a 50-sample buffer has no effect (pp. 190–191 10900–13800) | listing |
-| R | 2μ̂ₙ² (pp. 114, 124) | 0.30·YMAVG, floor 0.005 AU² (p. 191 14500–14600) | listing |
-| removed mean μ̂ₙ | the averaged minimum, scaled "empirically" (p. 124) | 2.4·YMAVG + 0.05, and the result × 1.1 (p. 191 14700) | listing |
+| R | 2μ̂ₙ² (pp. 114, 124) | 0.30 AU·YMAVG, floor 0.005 AU² (p. 191 14500–14600) | listing |
+| removed mean μ̂ₙ | the averaged minimum, scaled "empirically" (p. 124) | 2.4·YMAVG + 0.05 AU, and the result × 1.1 (p. 191 14700) | listing |
 | detector | square law (Figure 13, p. 113; comment p. 190 06900) | full-wave rectifier |x| (p. 190 07200) | listing |
 | envelope low-pass | "100 Hz bandwidth 3-pole Chebyshev" (p. 124; comment p. 189 04500) | monotone, −3 dB relative to the DC gain at 31.1 Hz, DC gain 7.99 (p. 189 05200; p. 190 08100–08700) [derived] | listing |
 | RCVR filter | "single-pole 500 Hz BW band-pass" (p. 123) | one-pole low-pass on I and Q, −3 dB relative to its DC gain at ±92.4 Hz, noise bandwidth 290 Hz (p. 189 01900–02000) [derived] | listing |
-| band-pass | 100 Hz, two single-tuned resonators, noise bandwidth 1.22 times the half-power bandwidth (pp. 111–112, 123) | resonators of radius 0.90 and 0.97 at 1000.2 Hz; with RCVR 64.4 Hz wide at −3 dB relative to the gain at the carrier, noise bandwidth 78.5 Hz (p. 189 05300–05400) [derived] | listing |
-| element durations of the simulated fists | truncated Gaussian, 16–360 ms (p. 125) | uniform, mean ± EDEV·Δ, floor 20 ms, no ceiling (p. 164 11300–11800) | listing |
+| band-pass | 100 Hz, two single-tuned resonators, noise bandwidth 1.22 times the half-power bandwidth (pp. 111–112, 123) | resonators of radius 0.90 and 0.97 at 1000.2 Hz; with RCVR 64.43 Hz wide at −3 dB relative to the gain at the carrier, noise bandwidth 78.49 Hz, 1.22 times that width (p. 189 05300–05400) [derived] | listing |
+| element durations of the simulated fists | truncated Gaussian, 16–360 ms (p. 125) | uniform, mean ± EDEV·Δ, floor 20 ms, no ceiling (p. 164 11300–11800) | open: the owner's decision D9; the samples' simulator was not the printed KEY (section (e)) |
 | text of the simulator | random letters or a text file (p. 125) | random letters; the text-file branch is unreachable (p. 164 08800–09500) | listing |
 | letter C in the simulator | — (not stated) | keyed as −··· (p. 163 05300) | listing, labeled as B (section (j)) |
 | second-order element probabilities | Table XII: ·~ .5/.45; −^ .55/.5; −~ .5/.45; ^· .5 to dash and .069 to w-sp (p. 105) | .5/.5; .55/.45; .5/.5; 0 to dash and .067 to w-sp (p. 161 08700–09100) | listing |
-| paths saved | at least one per element state (p. 122); the comment says at least 7 (p. 180 27100) | at least one per element only if its probability ≥ 10⁻⁶; at least 2 in all (pp. 181–182 31500–36300) [derived] | listing |
+| paths saved | at least one per element state (p. 122); the comment says at least 7 (p. 180 27100) | at least one per element only if its probability ≥ 10⁻⁶; at least 2 slots before duplicates are deleted, possibly 1 after, and zero-probability nodes may be kept (pp. 181–183 31500–42800) [derived] | listing |
 | saved paths' order | "renumbered in order of decreasing probability" (p. 122) | element-best first, then decreasing probability (p. 181) | listing |
 | equal paths | (no merging described) | duplicates in (state, duration, speed) deleted (p. 182 38800–40600) | listing |
-| decision delay | at most 200 samples, 1 s (p. 123) | at most 199 samples, 995 ms (p. 185 07300–07400, p. 186 14500–14700) [derived] | listing |
+| decision delay | at most 200 samples, 1 s (p. 123) | at most 199 samples, 995 ms, for converged and forced decisions alike (p. 185 07300–08600, p. 186 14500–14700) [derived] | listing |
 | letter tree file | — | `MORSEM`, 300 rows of `8I3` (p. 161 10300–10600) | listing |
 | speed range and steps | 10–60 WPM; Table X (pp. 102–104) | the same (p. 161 09500–10000; p. 172 35100–35200) | same |
 | speed changes only at a key-state change | p. 103 | only when the element changes (p. 172 33300–33500), the same thing since only key-state changes have nonzero probability [derived] | same |
@@ -1199,10 +1366,10 @@ listed code (section (c)).
 
 | Routine | Calls | What it must do (from its use) | Standard equivalent proposed |
 |---|---|---|---|
-| RAN(IK) | KEY: one per element (p. 164 11500) and two more at the end of each letter (07900, 08300) | a uniform pseudo-random number on (0, 1); IK = octal 001000000000 = 2²⁷ is passed as its argument [fact]; whether it is a seed that RAN updates is not visible in the listing | gfortran `RANDOM_NUMBER` with a fixed seed (the plan's change 2); in C++ and Python any uniform (0, 1) generator. Bell's exact stream cannot be reproduced. |
+| RAN(IK) | KEY: one per element (p. 164 11500) and two more at the end of each letter (07900, 08300) | a uniform pseudo-random number on (0, 1); IK = octal 001000000000 = 2²⁷ is passed as its argument [fact]; whether it is a seed that RAN updates is not visible in the listing | gfortran `RANDOM_NUMBER` with a fixed seed (the plan's change 2); in C++ and Python any uniform (0, 1) generator. Bell's exact stream cannot be reproduced. **Every RAN call must be replaced:** gfortran has its own intrinsic RAN, an alias of RAND that reseeds the generator whenever its argument is neither 0 nor 1 [fact, gfortran manual, RAND], so a `Y=RAN(IK)` left in place would compile and link silently and return the same number at every call [derived]. `DATA IK/"001000000000/` (p. 163 05000) does not compile in gfortran, where `"` opens a character constant [inference; Task 3 to confirm], and goes with RAN under change 2. |
 | RANDN(W, 1, 0., SIGMA) | SIMSG1, four per sample (p. 163 01500, 01900, 03000, 03600) | one Gaussian number with mean 0 and standard deviation SIGMA (the fourth argument is √(variance) from INPUTL) [inference from the calls] | Box–Muller from two uniforms, scaled by SIGMA; called also when SIGMA = 0, to keep the stream's order |
-| ERASE, PLOTR(S, 512, flag, scale, y), VIEW('1') | DISPLA (p. 166) | graphics terminal output | none: display only, omitted |
-| SQRT, EXP, SIN, COS, AMOD, `**` | throughout | Fortran intrinsics | the same; AMOD(x, y) = x − y·trunc(x/y), so a negative phase stays negative (harmless under sin) |
+| ERASE, PLOTR(S, 512, flag, scale, y), VIEW('1') | DISPLA (p. 166 00300–00800) | graphics terminal output | none in gfortran: stubs that do nothing, marked `C KZ4AP:`, or DISPLA's calls removed. Display only; plan change 1 covers TYPE and ACCEPT but not these, so Task 3's list must allow it (section (j)) |
+| SQRT, EXP, SIN, COS, AMOD, `**` | throughout | Fortran intrinsics | the same; AMOD(x, y) = x − y·trunc(x/y), so a negative phase stays negative (harmless under sin). The listing's modulus is 6.28319, not 2π, and the port keeps it (section (c)). |
 
 ### What the listing assumes of its compiler
 
@@ -1212,18 +1379,37 @@ These matter for the compiled reference (Task 3) and for the C++ port, which mus
    ZILP and ZQLP, BPFDET's filter states, TRANSL's IXLAST, LSTELM, LSTLTR, TRELIS's NDELST, and PROCES's DURSAV,
    whose stale values PATH leaves in place for state-0 nodes). The PDP-10 allocates locals statically [inference].
    Proposed: gfortran `-fno-automatic -finit-local-zero`; in C++ the same state in members initialized to 0.
-2. **DO loops with a negative trip count.** FORTRAN-66 compilers ran such a loop once; FORTRAN-77 runs it zero
-   times. Which rule Bell's compiler used is not stated. The listing reaches such a loop only in TRELIS's
-   first call (`DO 400 K=NDEL,NDELST` with NDEL > NDELST, section (b)), where the difference is invisible (state 5
-   prints nothing) [derived]. Proposed: FORTRAN-77 rules in both (gfortran's), recorded as an assumption.
-3. **Jumps to a DO loop's terminal statement from outside the loop** (TRANSL: `GO TO 110`, 210, 310, 560 when
-   NBLANK = 0). The intended effect, skipping the blanks, is what the C++ implements; gfortran must be checked to
-   compile it so (a warning at most).
+2. **DO loops with a zero or negative trip count.** FORTRAN-66 compilers ran such a loop once; FORTRAN-77 runs it
+   zero times. The listing reaches such a loop in two places [derived]:
+   - TRELIS's first call, `DO 400 K=NDEL,NDELST` with NDEL > NDELST (p. 185 11800), where the difference is
+     invisible (state 5 prints nothing);
+   - TRELIS's `DO 300 IEQ=2,ISAVE` (p. 185 08400) with ISAVE = 1, which happens only through SAVEP's route (i), after
+     which the decoder is NaN anyway. Under one-trip rules the loop compares the stale IPNOD(2), so convergence can
+     fail and the decision is forced (section (b)).
+
+   Which rule Bell's compiler used is not stated. His guards `IF(NBLANK.EQ.0) GO TO 110` (and 210, 310, 560) are
+   needed only on a compiler that runs `DO 110 I=1,NBLANK` at least once when NBLANK = 0, which is evidence that his
+   did [inference]. Proposed: FORTRAN-77 rules in both (gfortran's), recorded as an assumption; it changes nothing
+   while the probabilities are finite.
+3. **Jumps to a DO loop's terminal statement from outside the loop:** PROCES 09750 `GO TO 1` (to `1 CONTINUE`,
+   10400, the terminal of `DO 1 IN=1,ISAVE`, 10000), and TRANSL 22900, 24100, 25300 and 27600 (to 110, 210, 310 and
+   560, when NBLANK = 0) [fact, code p. 168, pp. 187–188]. FORTRAN 77 does not permit a transfer into the range of a
+   DO loop from outside it, and the terminal statement belongs to the range (ANSI X3.9-1978, section 11.10). gfortran
+   accepts the jump only as a legacy extension, and its DO translation sets the iteration count before the body, so
+   a branch to the terminal statement enters the end-of-iteration step with a count never set for that entry
+   [inference; Task 3 to confirm]. The effect is undefined, not a warning. In TRANSL the jump runs for every letter
+   followed by a c-sp (NBLANK = 0, about 80 % of the letters), so spurious blanks or a runaway loop would change V2's
+   text directly; in PROCES it could run the debug printout at every 5 ms step. The evident intent of each jump is
+   to skip its loop [inference: the PROCES jump sits right after SAVEP's call and skips only the debug printout, as
+   LIKHD's `GO TO 100` (50100) and KALFIL's `GO TO 400` (08400) skip theirs; the TRANSL jumps skip the blanks when
+   there are none, and are pointless otherwise]. **Task 3 needs a marked change that redirects each jump to a new
+   label just after its loop; the plan's list of allowed changes does not include it (section (j)).**
 4. **Out-of-range subscripts.** LIKHD evaluates `ILAM1(IELMST(LAMBDA))` and `ILAMX(...)` with LAMBDA = 0 for dead
-   paths; the values are unused because every transition probability of a dead path is 0 [derived]. On the PDP-10
-   this read a word outside the array. Compiled with gfortran it may read anything, and the second subscript may
-   fault. **Task 3 needs a guard here (skip LIKHD's body, or set its outputs to 0, when LAMBDA = 0), which does not
-   change any result; the plan's list of allowed changes does not include it yet.**
+   paths (p. 174 47800–47900, before its loop); the values are unused because every transition probability of a dead
+   path is 0, so KALFIL returns LKHDJ = 0 before MODEL [derived]. On the PDP-10 this read a word outside the array.
+   Compiled with gfortran it may read anything, and the second subscript may fault. **Task 3 needs a guard before
+   47800: for LAMBDA = 0, set LKHD to 0 for the path's 30 nodes and return, writing no YKKSV or PKKSV. It reproduces
+   the listing exactly; the plan's list of allowed changes does not include it yet.**
 5. **Named COMMON blocks of different lengths:** RCVR declares /BLK2/ with WC only; DATA for COMMON variables outside
    BLOCK DATA (INITL, INPUTL, KALFIL). gfortran accepts both in legacy mode (Task 3 to confirm).
 6. **Character data in integer arrays:** IALPH holds `'A'` … `'IMI'`, `'EEE'` (up to five 7-bit characters per
@@ -1232,9 +1418,13 @@ These matter for the compiled reference (Task 3) and for the C++ port, which mus
    (`"001000000000`), `ENDFILE` on files opened for reading (INITL). The plan's change 1 replaces the terminal input
    and output. Note that `ENDFILE` after reading may truncate the file under gfortran; MORSEM must hold exactly 300
    rows and TEXT exactly 105.
-8. **Precision.** The PDP-10's single precision has a 27-bit fraction (about 8 decimal digits); the plan compiles
-   and ports in double precision (§4.3). Bell's results carry that difference [inference: small against the
-   statistical spread of 200-letter experiments].
+8. **Precision.** The PDP-10's single precision has a 27-bit fraction (about 8 decimal digits) and a narrower
+   exponent range, about 1.5·10⁻³⁹ to 1.7·10³⁸: KALFIL's e^{−A} (computed for A ≤ 1000, p. 177 07800–08300)
+   underflows to 0 for A > 89 there, against A > 745 in double precision. Nodes that are tiny but positive in double
+   precision were exactly 0 on the PDP-10, which changes SAVEP's fill and its corner cases (section (b)), and
+   P(1)/PSUM could overflow there. The plan compiles and ports in double precision (§4.3). Bell's results carry
+   these differences [inference: probably small against the statistical spread of 200-letter experiments at his
+   SNRs, where R follows the noise floor].
 
 ## (i) How Bell counted letter errors
 
@@ -1250,10 +1440,28 @@ These matter for the compiled reference (Task 3) and for the C++ port, which mus
 
 **What the underlines show** [fact: the marks on pp. 147–148; inference: that the tables were counted the same way]:
 - a wrong letter is one mark (A → I, F → M, R → G);
-- two sent letters decoded as one are **one** mark: OVER → OVF (E and R merged into F), AFTERNOON → AFDRNOON
-  (T and E into D), JUMPED → JU.ED, THIS → 6IS (T and H into 6);
-- one sent letter decoded as two is a mark per output letter: SUNDAY → IUTSANO (Y → NO);
-- a spurious word space (LOGS → L OGS, the space underlined) and a missing one (A SUNNY → ASUNNY) are marked.
+- two sent letters decoded as one are **one** mark, under the output character: OVER → OVF (E and R merged into F),
+  THIS → 6IS (T and H into 6), JUMPED → JUMPL (E and D into L), THE → T5 (H and E into 5), the N of TEST. → NSCK
+  (T and E into N), and two whose output is not the exact merge, AFTERNOON → AFDRNOON (T and E decoded as D) and
+  JUMPED → JU.ED (M and P decoded as the period);
+- one sent letter decoded as two: SUNDAY → IUTSANO (Y → NO), both output characters underlined. This is the only
+  such example, and it is ambiguous: NO is also IALPH(52), a prosign printed as two characters, whose proposed code
+  −·−−− is Y (−·−−) with one more dash (section (f)), so the event may be one substitution [inference];
+- space errors are marked inconsistently: the spurious space in E's L OGS and the lost one in G's and H's ASUNNY are
+  underlined, while G's NR0GON (DOG ON) marks no lost space.
+
+**Anomalies in the marks** [fact, pp. 147–148]:
+- Unmarked errors. C prints BORWN for BROWN with no underline. G prints UKUC RMIC where F (KAM, 12 dB S₁₀₀, no
+  marks) prints URUC RHIC and H prints SKUC RHIC, so at least G's M (for H) and one of the R/K readings are
+  unmarked, and H's K is not underlined. H drops the period after AFTERNOON without a mark.
+- Marked correct letters. D underlines the Y of LSZY (LAZY), which is correct. C's underline in SUDDAS (SUNDAY) runs
+  under DD, and the second D is correct.
+
+**What follows** [inference]:
+- The samples establish the merge-once convention (at least seven instances, none against it) and nothing finer.
+- Bell counted by eye and missed some errors. His counts are probably biased low (more unmarked errors than marked
+  correct letters in these samples); the size of the bias is unknown.
+- The split rule rests on one ambiguous example.
 
 **Not stated:** the denominator (letters sent, presumably), the rule for lining the decoded text up with the sent
 text, and whether space errors entered the tables' percentages. The simulator printed the sent *elements*, not
@@ -1267,43 +1475,62 @@ two differ [derived]:
 |---|---|---|
 | wrong letter | 1 | 1 |
 | two letters merged into one | 1 | 2 (substitution and deletion) |
-| one letter split into two | 2 | 2 (substitution and insertion) |
-| spurious or missing word space | 1 | 0 (a space edit) |
+| one letter split into two | 2 (one example, ambiguous) | 2 (substitution and insertion) |
+| spurious or missing word space | marked in some samples, not in others | 0 (a space edit) |
 
-Worked example, sample B (20 WPM, fair, 9 dB S₁₀₀; 51 letters sent): Bell marks 4 errors (7.8 %); the character
-edits are 6 (11.8 %): JUMPED → JU.ED 2, OVER → OVF 2, A → I 1, AFTERNOON → AMTERNOON 1 [derived]. Merges are
-common at low SNR and with sloppy fists (a lost letter space), so the character CER runs above Bell's count.
-Section (j) proposes how to handle this.
+**A Bell-style count** [our choice, proposed for plan §5.2; the choice of count is the owner's decision D10]:
+1. **Symbols.** The sent and the decoded text become symbol strings with every word space removed; each IALPH entry
+   is one symbol, a prosign included (A.11's convention; section (j) item 14).
+2. **Count.** The minimum total cost of turning the decoded string into the sent string with five operations: a
+   match (cost 0); a substitution, one decoded symbol for one sent symbol (1); a deletion, a sent symbol with no
+   decoded symbol (1); an insertion, a decoded symbol with no sent symbol (1); and a **merge**, two consecutive sent
+   symbols decoded as one symbol (1).
+3. **Rate.** The count divided by the number of sent symbols.
+
+So a merge counts 1, a split 2 (a substitution and an insertion), a wrong or lost symbol 1. Without the merge
+operation the count is A.11's minimum edit count on the same strings. The count needs no alignment and no
+tie-break, since every minimum-cost alignment has the same cost; where an alignment is wanted (to list the errors),
+take A.11's, traced back from the end with ties broken as match or substitution, then merge, then deletion, then
+insertion. A rule stated on one alignment instead ("deletions next to a substitution are not counted") would depend
+on the tie-break: with A.11's, S S E sent and S H decoded align as deletion, match, substitution, and the merge of
+the second S and E into H would count 2 [derived].
+
+On the samples [derived]: B gives 4 (Bell's marks 4; character edits 6: JUMPED → JU.ED 2, OVER → OVF 2, A → I 1,
+AFTERNOON → AMTERNOON 1); C gives 11 (Bell's 10: BORWN unmarked, +2; the correct D of SUDDAS marked, −1); D gives 9
+(Bell's 10: the correct Y marked). Merges are common at low SNR and with sloppy fists (a lost letter space), so the
+character CER runs above this count. Section (j) item 7 proposes how to use it.
 
 The samples' sent texts are fixed sentences ("A LAZY BROWN DOG …"), which KEY as printed cannot send (its
-text-file branch is unreachable), so they come from a different version of the simulator [inference]. Their error
-rates (for example sample B, 7.8 % by Bell's marks, against 4 % in Table XVI for the same cell) are illustrations,
-not table cells.
+text-file branch is unreachable), so they come from a different version of the simulator (section (e))
+[inference]. Their error rates (for example sample B, 7.8 % by Bell's marks, against 4 % in Table XVI for the same
+cell) are illustrations, not table cells.
 
 ## (j) Gaps: what the plan must fill by its own choice
 
 Each item: the gap, the choice proposed, its reason, and the section with the detail. "Plan change" marks the ones
-that change something the plan states.
+that change something the plan states. Items 4, 5 and 7 depend on the owner's decisions D9 (the fists' duration
+law) and D10 (the count for §5.2).
 
 | # | Gap | Choice proposed | Reason |
 |---|---|---|---|
-| 1 | The letter tree file MORSEM is not printed | Rule N1 of section (f), alphabet of 47 symbols, rows up to 300 zero; variants "36 only" and "+ ; :" for V2 diagnosis | The rule follows from the code that reads the file; N1 keeps 13 of the 16 DATA rows and the start state's meaning; the alphabet takes every IALPH entry with a known or standard code |
-| 2 | The plan's tree test "the 16 DATA rows are reproduced" cannot be met (plan change) | Test 3 of section (f): IELMST(1..16) = 1..16, MEMFCN rows 1–4, 6–8, 11–16 equal to DATA, rows 5, 9, 10 differing only in their links into the tree | Rows 5, 9 and 10 cannot belong to any letter tree that prints the right letters (section (f)) |
+| 1 | The letter tree file MORSEM is not printed | Rule N1 of section (f), alphabet of 47 symbols, rows up to 300 zero; variants "36 only" and "+ ; :" for V2 diagnosis | The rule follows from the code that reads the file; N1 keeps 13 of the 16 DATA rows, the most any letter tree can (the numbering that drops rows 1, 9, 10 instead also keeps 13 and decodes identically), and the start state's meaning; the alphabet takes every IALPH entry with a known or standard code |
+| 2 | The plan's tree test "the 16 DATA rows are reproduced" cannot be met (plan change) | Test 3 of section (f): IELMST(1..16) = 1..16, MEMFCN rows 1–4, 6–8, 11–16 equal to DATA, rows 5, 9, 10 differing only in their links into the tree | No letter tree holds more than 13 of the 16 rows (section (f)) |
 | 3 | The TEXT file is not printed | 105 lines of `0` (`I2`) | INITL reads 105 values; KEY never uses them. (Bell's was probably the 51-letter sentence of samples A–E: 102 entries in KEY's space-and-letter pairs [inference].) |
-| 4 | Settings of Tables XV and XVI | Section (e): FREQ 1000 Hz; RNOISE = 20·10^(−S₁₀₀/10) AU²; GAMMA 0.99923881; BVAR 2.57496·10⁻⁶ AU²; AVAR 0; PHIVAR 0; FCHIRP 0 Hz; TCHIRP 10 ms; ESEP 1, 3, 1, 3, 7, 14; EDEV 0 (KAM) and reading B for the fists | Each reason in section (e) |
-| 5 | The simulator's duration law is uniform, not the plan's Gaussian (plan change: Task 7, "Gaussian durations per KEY") | Task 7's style "bell" draws mean ± U·EDEV·Δ, U uniform on (−1, 1), floor 20 ms, quantized to ⌈8·d/ms⌉ samples at 8 kHz; its test checks this law and the half-widths of reading B, not P_es | D1; KEY p. 164 11300–11800 |
-| 6 | The text the simulator sends (plan change: Task 7's test "letter frequencies uniform over his alphabet") | Reproduce KEY's draw: A 0.001, B 2/35 (B and the C column), C never, D–Z and 1–9 1/35 each, 0 1/35 − 0.001; letter-ending space c-sp 0.8, w-sp 0.1, pause 0.1. **Label each sent letter by the code keyed** (the C column as B). | D1; and Table XV's 0 % cells show that a "C" keyed as B was not counted as an error (section (d)) |
-| 7 | Bell's error marks count a merge once; the character CER counts it twice (plan change: §5.2) | Report both. Apply §5.2's rule to a **Bell-style count**: align decoded and sent letters, word spaces removed, by minimum edits; count substitutions and insertions, plus deletions not adjacent to a substitution or insertion; divide by the letters sent. Keep the character CER as the project's measure and report it beside. | It reproduces the marks of pp. 147–148 (merge 1, split 2, wrong letter 1); without it the comparison is biased against our decoder (sample B: 4 against 6). Space errors are left out of both, since Bell's tables do not say and the random text's word spaces are random. |
-| 8 | RAN and RANDN | gfortran `RANDOM_NUMBER`, fixed seed per run; Box–Muller for RANDN, called four times per sample in the listing's order | Plan change 2; section (h) |
-| 9 | Compiler semantics (section (h)) | gfortran `-std=legacy -fdec -fno-automatic -finit-local-zero` (with the plan's real-8 flags); FORTRAN-77 DO trip counts; the C++ keeps the same state and initial zeros | So that V3 compares like with like; the only FORTRAN-66-dependent loop is invisible |
-| 10 | LIKHD reads `IELMST(0)` for dead paths (plan change: Task 3's list of allowed changes) | Add a guard, marked `C KZ4AP:`, that skips LIKHD's loop body for LAMBDA = 0 and sets LKHD to 0 for its 30 nodes; the C++ does the same | It changes no result (every transition probability of a dead path is 0) and prevents an out-of-range read |
-| 11 | What the C++ must keep from the listing | XTRANS's three cases; PTRANS without the MEMFCN check; state-0 successors and their one-step life; SAVEP's selection order, tie rules, duplicate deletion and its normalization without P(1); TRELIS's 199-stage forced decision and pruning; MODEL's Φ and Q exactly; NOISE's constants | V3 requires identical letters and paths; each is how the listing behaves (section (b)) |
-| 12 | The plan's description of NOISE (plan change: §4.1 step 5, §9 item 1) | Replace "μₙ and R = 2μₙ²" by the listing: z = 1.1·(Z − 2.4·YMAVG − 0.05), R = 0.30·YMAVG ≥ 0.005 AU² | D1; section (b). R cannot reach 0, so §9 item 1's division by zero cannot come from R; exact-zero guards are needed only where a sum of probabilities can be 0 (PROBP; SAVEP when one path survives), and only if a test shows it |
+| 4 | Settings of Tables XV and XVI | Section (e): FREQ 1000 Hz; RNOISE = 20·10^(−S₁₀₀/10) AU²; GAMMA 0.99923881; BVAR 2.57496·10⁻⁶ AU²; AVAR 0; PHIVAR 0; FCHIRP 0 Hz; TCHIRP 10 ms; ESEP 1, 3, 1, 3, 7, 14; EDEV 0 (KAM). The fists' law and spreads: the owner's decision D9 between readings A, B and C | Each reason in section (e) |
+| 5 | The simulator's duration law (plan change: Task 7, "Gaussian durations per KEY") | Depends on D9. Under A or B: Task 7's style "bell" draws mean ± U·EDEV·Δ, U uniform on (−1, 1), floor 20 ms, quantized to ⌈8·d/ms⌉ samples at 8 kHz, and its test checks this law and the reading's spreads, not P_es. Under C: the Gaussian law with C's truncation rule (section (e)), with P_es tested, and a marked change to KEY in Task 3. Implementing both laws in Task 7 lets V2 compare the readings | The printed KEY's law is uniform (p. 164 11300–11800); the text states a truncated Gaussian for its results (p. 125); the samples' simulator was not the printed KEY (section (e)) |
+| 6 | The text the simulator sends (plan change: Task 7's test "letter frequencies uniform over his alphabet") | Reproduce KEY's draw: A 0.001, B 2/35 (B and the C column), C never, D–Z and 1–9 1/35 each, 0 1/35 − 0.001; letter-ending space c-sp 0.8, w-sp 0.1, pause 0.1. **Label each sent letter by the code keyed** (the C column as B). | D1; Table XV's 0 % cells show that a "C" keyed as B was not counted as an error, or that the tables' simulator keyed C correctly, as the samples' did (section (d)); labeling by the code keyed is right in either case |
+| 7 | Bell's error marks count a merge once; the character CER counts it twice (plan change: §5.2) | Report both. Apply §5.2's rule to the **Bell-style count** of section (i): word spaces removed, a prosign one symbol; the minimum total cost of match (0), substitution, deletion, insertion and merge of two sent symbols into one decoded symbol (1 each); divided by the sent symbols. Keep the character CER as the project's measure and report it beside. The choice is the owner's decision D10 | It follows the samples' merge-once convention (a merge 1, a wrong letter 1, a split 2 on the one, ambiguous, example) and needs no alignment tie-break. Without it the comparison is biased against our decoder (sample B: 4 against 6). Bell counted by eye and missed some errors (section (i)), so no count reproduces his marks exactly. Space errors are left out of both, since Bell's tables do not say and the random text's word spaces are random. |
+| 8 | RAN and RANDN | gfortran `RANDOM_NUMBER`, fixed seed per run; Box–Muller for RANDN, called four times per sample in the listing's order. Every RAN call and `DATA IK` replaced | Plan change 2; gfortran's own RAN intrinsic would compile silently and return one number at every call (section (h)) |
+| 9 | Compiler semantics (section (h)) | gfortran `-std=legacy -fdec -fno-automatic -finit-local-zero` (with the plan's real-8 flags); FORTRAN-77 DO trip counts; the C++ keeps the same state and initial zeros | So that V3 compares like with like; the trip-count rule shows only in TRELIS's first call (invisible) and after SAVEP's division by zero, although Bell's compiler probably ran loops at least once (his NBLANK guards) |
+| 10 | Changes Task 3 needs beyond the plan's list of allowed changes (plan change: Task 3's list) | Each marked `C KZ4AP:`, and the C++ does the same: (a) in LIKHD, a guard before 47800: for LAMBDA = 0, set LKHD to 0 for the path's 30 nodes and return, writing no YKKSV or PKKSV; (b) the five jumps to a DO loop's terminal statement (PROCES 09750; TRANSL 22900, 24100, 25300, 27600) redirected each to a new label just after its loop; (c) stubs that do nothing for ERASE, PLOTR and VIEW (or DISPLA's calls removed); (d) under reading C of D9 only, KEY's duration law | (a) LIKHD reads `IELMST(0)` (p. 174 47800–47900, before its loop); the guard reproduces the listing exactly, since every transition probability of a dead path is 0. (b) FORTRAN 77 forbids the transfer and gfortran's result is undefined; the evident intent is to skip the loop [inference: the PROCES jump skips only the debug printout, as LIKHD's and KALFIL's `GO TO`s skip theirs; the TRANSL jumps are Bell's guards that skip the blanks when NBLANK = 0]. (c) gfortran has no such routines; display only. Section (h) items 3 and 4 |
+| 11 | What the C++ must keep from the listing | XTRANS's three cases; PTRANS without the MEMFCN check; state-0 successors and their one-step life; SAVEP's selection order, tie rules, JSAV/IPSAV carry-over (the zero-probability fill node, kept unless it duplicates a kept node), duplicate deletion and its normalization without P(1); TRELIS's 199-stage forced decision and pruning; MODEL's Φ and Q exactly; NOISE's constants; 6.28319 both as the multiplier (INPUTL) and as the modulus of every AMOD phase wrap | V3 requires identical letters and paths; each is how the listing behaves (section (b)). With 2π as the modulus the up-mixer's phase departs from the Fortran's by 4.7·10⁻⁶ rad at its first wrap, 1 ms in, and Task 4's 10⁻¹² match of z_k fails at once (section (c)) |
+| 12 | The plan's description of NOISE (plan change: §4.1 step 5, §9 item 1) | Replace "μₙ and R = 2μₙ²" by the listing: z = 1.1·(Z − 2.4·YMAVG − 0.05 AU), R = 0.30 AU·YMAVG ≥ 0.005 AU². Tasks 3 and 5 test for NaN, by a check of the trace or by compiling the reference with `-ffpe-trap=invalid,zero`, on an input that reaches SAVEP's zero sum (one live path early in a long element, every other saved path dead) | D1; section (b). R cannot reach 0, so §9 item 1's division by zero cannot come from R. Sums of probabilities can be 0: SAVEP's PSUM whenever every slot after the first holds P = 0, which gives +∞ and NaN in IEEE arithmetic and stops the decoder for good (section (b)), and PROBP's sum if every likelihood is 0 |
 | 13 | The plan's file name and size (plan change: §2) | `MORSEM`, 300 rows read of the 400 dimensioned | p. 161 10300–10600 |
-| 14 | Output symbols for scoring | Each IALPH entry is one symbol; the two- and three-letter entries (AS, SN, NR, NO, GA, OK, AR, SK, IMI, BT) become prosign tokens; NBLANK ≥ 1 becomes one word space | A.11 counts a prosign as one symbol; the plan's §4.1 makes a word space or a pause one space |
+| 14 | Output symbols for scoring | Each IALPH entry is one symbol; the two- and three-letter entries (AS, SN, NR, NO, GA, OK, AR, SK, IMI, BT) become prosign tokens; NBLANK ≥ 1 becomes one word space; the layout blanks and new lines of TRANSL's formats are not word spaces | A.11 counts a prosign as one symbol; the plan's §4.1 makes a word space or a pause one space; section (b), TRANSL |
 | 15 | The end of input: TRANSL prints a letter only when the next letter's first mark is decided, and Bell's program never ends | The plan's `finish()`: at the end, decide the best path's remaining nodes and print the pending letter, as an addition recorded in the results | Without it the last letter of every transmission is lost |
-| 16 | The decoder's first letter of a session | Keep the listing's start (state 5 with 1000 ms elapsed, N1's e-sp after T) | D1; its effect is at most one letter per session |
-| 17 | Operator waits and displays | Removed (DISPLA, KEY's and TRELIS's `ACCEPT`, PLOTR) | Plan change 1; they do not touch the decoding |
-| 18 | Precision | Double precision (plan §4.3) | Plan's choice; the PDP-10 used a 27-bit fraction |
+| 16 | The decoder's first letter of a session | Keep the listing's start (state 5 with 1000 ms elapsed, N1's e-sp after T) | D1; its effect is at most one letter per session: the first decided letter begins with a dash, so the simulator's first letter, T, most likely decodes as M (section (f)) |
+| 17 | Operator waits and displays | Removed: KEY's and TRELIS's `ACCEPT` and the terminal output (plan change 1); DISPLA's display calls stubbed (item 10) | They do not touch the decoding |
+| 18 | Precision | Double precision (plan §4.3) | Plan's choice; the PDP-10 used a 27-bit fraction and a narrower exponent range (section (h) item 8) |
 | 19 | Tables XIV and XVII | Out of stage 1's reproduction | Not reproducible from the listing as printed (section (e)) |
-| 20 | Receiver-chain tests at f_c = 1000 Hz (Task 4) | Test the steady envelope against the ranges of section (c) (1.160–1.391 AU at 1000 Hz; 1.222–1.323 AU elsewhere) or at a chosen sampling phase, not against one value | The 8-samples-per-cycle rectifier and RCVR's image make the envelope vary slowly by several percent |
+| 20 | Receiver-chain tests at f_c = 1000 Hz (Task 4) | Test the steady envelope of a 1 AU carrier against the ranges of section (c), 1.169–1.390 AU at 1000 Hz (where the two slow processes are phase-locked) and 1.222–1.323 AU elsewhere, or at a chosen sampling phase, not against one value | The 8-samples-per-cycle rectifier (period 78.5 s) and RCVR's image at 1000 Hz (period 314 s) make the envelope vary slowly by several percent |
+| 21 | How Bell converted RNOISE to N₀ is not stated | RNOISE/4000 Hz (one-sided), as in section (d). If V2 shows a uniform shift near 3 dB S₁₀₀, this conversion is the first suspect: taking RNOISE/8000 Hz (the two-sided density) as N₀ labels the same RNOISE 3.01 dB higher in S₁₀₀, so Bell's noise at each labeled S₁₀₀ would have been twice ours | The thesis's convention is one-sided (pp. 33, 113); Table IV does not show the conversion (section (d)) |

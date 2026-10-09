@@ -123,7 +123,7 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
 
 - Tables XI and XII (p. 105) give first- and second-order Markov element transition matrices. The first-order matrix has rows dot → (e-sp .58, c-sp .33, w-sp .07, pause .02), dash → (.54, .37, .07, .02), and any space → (dot .5–.55, dash .45–.5) [fact, p. 105]. Several printed rows of Table XII do not sum to 1, for example "−^ : .55, .5" [fact, p. 105; probably typos].
 
-  > **Correction (2026-10-08, from the transcription):** the listing's table ELEMTR (p. 161 08700–09200) is Table XII with rows that sum to 1: .55/.45 for "−^", .5/.5 for "·~" and "−~", and 0 to dash and .067 to w-sp for "^·" where the table prints .5 and .069. See `bell-1977-reference.md`, sections (b) and (g).
+  > **Correction (2026-10-08, from the transcription):** the listing's table ELEMTR (p. 161 08700–09200) differs from Table XII in four rows: .55/.45 for "−^" and .5/.5 for "·~" and "−~", which sum to 1, and, for "^·", 0 to dash (a mark cannot follow a mark, so the table's .5 there is a misprint) and .067 to w-sp where the table prints .069, so that row sums to 0.998 in the listing (TRPROB's normalization absorbs the difference). See `bell-1977-reference.md`, sections (b) and (g).
 
 - In the "independent letters" model, the element sequence is fixed by the letter (probability 0 or 1). A letter transition is allowed only when α_{k−1} shows a letter-ending space. Letters are then uniform [fact, pp. 104–106].
 
@@ -131,7 +131,7 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
 
 - The code carries a letter state LAMBDA with tables of up to 400 entries (IELMST, MEMFCN) and a 16×6 element-transition table ELEMTR. From these dimensions, LAMBDA appears to be a node in the Morse code tree [uncertain: code pp. 169–171 only partly read].
 
-  > **Correction (2026-10-08, from the transcription):** INITL reads the tree from a file `MORSEM`, 300 rows of eight integers (LTRMAP, IELMST, MEMFCN(1..6)) (p. 161 10300–11000); the file is not printed. A state is a tree node together with its element-state (previous and current element). The 16 rows in DATA are the second-order element model of Table XII, not the beginning of the tree, and three of them (5, 9, 10) cannot belong to any letter tree. `bell-1977-reference.md`, section (f), gives the meaning of the tables and a rule that reconstructs the file.
+  > **Correction (2026-10-08, from the transcription):** INITL reads the tree from a file `MORSEM`, 300 rows of eight integers (LTRMAP, IELMST, MEMFCN(1..6)) (p. 161 10300–11000); the file is not printed. A state is a tree node together with its element-state (previous and current element). The 16 rows in DATA are the second-order element model of Table XII. No letter tree can hold all 16: at most 13 fit (dropping rows 5, 9 and 10, or rows 1, 9 and 10), and the reconstruction keeps 13 of them as the root of its tree. `bell-1977-reference.md`, section (f), gives the meaning of the tables and a rule that reconstructs the file.
 
 - Bell notes that a third-order letter model would need 36⁴ = 1,679,616 words of storage and recommends language/grammar/dictionary models instead [fact, pp. 107–108].
 
@@ -160,7 +160,7 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
 
   [fact, code p. 178]
 
-  > **Correction (2026-10-08, from the transcription):** the key-up Φ becomes 1 once the space has lasted 14 bauds (p. 178 14100), so the amplitude estimate decays by at most 10^−0.25 (−5.0 dB of amplitude relative to its value at the space's start). The Q formula's B is the space's length so far at the saved path's speed, capped at 14 bauds; Q at a mark after a pause is 0.160 (amplitude)² per 5 ms step, not the text's 0.25. See `bell-1977-reference.md`, section (b), MODEL.
+  > **Correction (2026-10-08, from the transcription):** the key-up Φ becomes 1 once the space has lasted 14 bauds (p. 178 14100), so the amplitude estimate decays by at most 10^−0.25 (−5.0 dB of amplitude relative to its value at the space's start). The Q formula's B is the space's length so far at the saved path's speed, capped at 14 bauds; Q at a mark after a space of 14 bauds or more (a nominal pause) is 0.160 (amplitude)² per 5 ms step, not the text's 0.25; after a shorter space it is smaller (0.0585 (amplitude)² at 12 bauds). See `bell-1977-reference.md`, section (b), MODEL.
 
 - Kalman initialization: ŷ = 0.5 and P = 0.1 for every path. ŷ is floored at 0.01 after each update [fact, code pp. 176–177].
 
@@ -210,11 +210,11 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
      - the code comment says the minimum is 7 paths;
      - paths are re-sorted and a back-pointer array is kept.
 
-     > **Correction (2026-10-08, from the transcription):** the constant is 0.000001 (p. 181 32500). The code keeps at least 2 paths, not 7. After the element-best nodes it adds the rest by decreasing probability, without re-sorting the whole set; it then deletes a saved path equal in state, duration and speed to an earlier one (dropping its probability), and its final normalization leaves the first path's probability out of the sum, which does not change the decoding. See `bell-1977-reference.md`, section (b), SAVEP.
+     > **Correction (2026-10-08, from the transcription):** the constant is 0.000001 (p. 181 32500). The code keeps at least 2 paths before it deletes duplicates (not 7), possibly 1 after, and it may keep zero-probability dead paths. After the element-best nodes it adds the rest by decreasing probability, without re-sorting the whole set; it then deletes a saved path equal in state, duration and speed to an earlier one (dropping its probability). Its final normalization leaves the first path's probability out of the sum, which does not change the decoding while the sum is positive; when every slot after the first holds probability 0, the sum is 0, the division gives +∞ and NaN in IEEE arithmetic, and the decoder does not recover. See `bell-1977-reference.md`, section (b), SAVEP.
 
   7. TRELIS: **decoding delay.** Find a node, at sufficient delay, that all surviving paths share. If none exists within **200 samples (1 s)**, output the node at 200-sample delay on the current best path, and delete every path that does not descend from it [fact, p. 123]. Translation is a table lookup from elements to letters [fact, p. 123].
 
-     > **Correction (2026-10-08, from the transcription):** in the listing the forced decision reads the node 199 samples (995 ms) back on the best path (p. 185 07300–07400, p. 186 14500–14700). See `bell-1977-reference.md`, section (b), TRELIS.
+     > **Correction (2026-10-08, from the transcription):** in the listing the forced decision reads the node 199 samples (995 ms) back on the best path (p. 185 07300–07400, p. 186 14500–14700), and converged decisions reach the same maximum, 199 samples (p. 185 07300–08600). See `bell-1977-reference.md`, section (b), TRELIS.
 
 - **Printed algorithm gap.** Section V.C lists Steps 1–4 and then jumps to Step 8. Steps 5–7 are missing from the printed thesis. The printed pages 81 and 82 are consecutive, so this is not a scan gap [fact, pp. 80–82]. The Fortran fills the gap.
 - **No merging.** Paths reaching the same (element, speed, letter, duration) state are *not* merged. The decoder is a pruned tree, not a Viterbi trellis [inference from pp. 119–123 and the SAVEP code].
@@ -259,9 +259,9 @@ Source: Edison Lee Bell, *Optimal Bayesian Estimation of the State of a Probabil
 > - Pre-filter: one-pole low-pass on I and Q, −3 dB relative to its DC gain at ±92.4 Hz, then two resonators; together 64.4 Hz wide at −3 dB relative to the gain at the carrier, noise bandwidth 78.5 Hz.
 > - Detector and post-filter: |x|, then a low-pass with its −3 dB point (relative to its DC gain) at 31.1 Hz and a DC gain of 7.99.
 > - Amplitude model in the code: Q up to 0.160 (amplitude)² per 5 ms step after spaces of 14 bauds or more, not 0.25.
-> - Pruning: at least 2 paths, not 7; duplicates deleted.
-> - Decision delay: the forced decision is at 199 samples (995 ms).
-> - Simulated fists: the listing's simulator draws durations uniformly, mean ± EDEV × the dot length, with a 20 ms floor and no ceiling (p. 164 11300–11800); the values of EDEV are not given.
+> - Pruning: at least 2 paths before duplicates are deleted, not 7; possibly 1 after; zero-probability dead paths may be kept.
+> - Decision delay: at most 199 samples (995 ms), for forced and converged decisions alike.
+> - Simulated fists: the listing's simulator draws durations uniformly, mean ± EDEV × the dot length, with a 20 ms floor and no ceiling (p. 164 11300–11800); the values of EDEV are not given. The text states a truncated Gaussian for its results (p. 125), and the simulator that made the printed samples was not the printed one; which law produced Table XVI is the owner's decision D9 (reference sheet, section (e)).
 
 ## 6. Results, with SNR definitions
 
@@ -415,7 +415,7 @@ Off-air tape recordings, 4 kHz IF, about 50 s per cut, context-free text, high S
 
 - The simulator drew durations from truncated Gaussians while the decoder assumed Laplacians [fact, pp. 96–98, 125]. This mismatch is realistic but uncontrolled.
 
-  > **Correction (2026-10-08, from the transcription):** the listing's simulator draws uniform durations, mean ± EDEV × the dot length, floored at 20 ms (KEY, p. 164 11300–11800). See `bell-1977-reference.md`, sections (b) and (e).
+  > **Correction (2026-10-08, from the transcription):** the listing's simulator draws uniform durations, mean ± EDEV × the dot length, floored at 20 ms (KEY, p. 164 11300–11800). The text's truncated Gaussian is stated for the published results (p. 125), and the samples' simulator was not the printed KEY, so which law produced the tables is open (the owner's decision D9). See `bell-1977-reference.md`, sections (b) and (e).
 
 - The printed algorithm omits Steps 5–7, and Table XII has rows that do not sum to 1 [fact, pp. 81–82, 105].
 - Probabilities are carried in linear form with renormalization, not in the log domain [fact, code pp. 176–178].
