@@ -27,6 +27,9 @@ rule   Plan section 5.2's rule on the score table, with the Bell-style count (de
        p(1 - p)/200. Runs that stopped are left out of the cell's statistics and counted.
 golden One golden input for the C++ tests from a run folder with TRACE = 2, in the layout of
        engine/tests/data/bell/README.md.
+compare  Per run, whether two run folders (two builds) wrote byte-identical TRANSL.TXT and EVENTS.TXT.
+chain  The receiver chain's statistics of one TRACE = 2 run (reference sheet (c)'s check), as a CSV row.
+run --alphabet  The letter tree's alphabet passed to kz4ap-bell-tables (default: the proposed 47 symbols).
 
 Reference and decoded letters, and the cut (our choices; reference sheet (b), (i), (j) items 14 and 15):
 - Sent letters come from KEY's element records (EVENTS.TXT, "E"): the marks between two letter-ending spaces, read
@@ -97,7 +100,7 @@ def no_core():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))  # no core file when bell1977-fpe stops on SIGFPE
 
 
-def run_one(binary, tables, settings, folder, seed):
+def run_one(binary, tables, settings, folder, seed, alphabet="proposed"):
     if os.path.exists(os.path.join(folder, "DONE")):
         return folder, "skipped"
     os.makedirs(folder, exist_ok=True)
@@ -108,7 +111,7 @@ def run_one(binary, tables, settings, folder, seed):
         f.write("\n".join(lines[:4] + [", ".join(ours)]) + "\n")
     with open(os.path.join(folder, "TEXT"), "w", encoding="ascii", newline="\n") as f:
         f.write(" 0\n" * 105)
-    subprocess.run([tables, "morsem", os.path.join(folder, "MORSEM")], check=True)
+    subprocess.run([tables, "--alphabet", alphabet, "morsem", os.path.join(folder, "MORSEM")], check=True)
     with open(os.path.join(folder, "stdout.txt"), "w") as out:
         proc = subprocess.run([binary], cwd=folder, stdout=out, stderr=subprocess.STDOUT, preexec_fn=no_core)
     if proc.returncode != 0:
@@ -130,7 +133,7 @@ def cmd_run(args):
     for s in args.settings:
         _, base = read_settings(s)
         for r in range(1, args.runs + 1):
-            tasks.append((binary, tables, s, os.path.join(args.out, name_of(s), f"r{r:02d}"), base + r))
+            tasks.append((binary, tables, s, os.path.join(args.out, name_of(s), f"r{r:02d}"), base + r, args.alphabet))
     failed = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
         for folder, status in pool.map(lambda t: run_one(*t), tasks):
@@ -394,6 +397,61 @@ def cmd_golden(args):
     return 0
 
 
+def cmd_compare(args):
+    """Per run: 1 if two run folders (two builds, same settings and seed) wrote byte-identical TRANSL.TXT and
+    EVENTS.TXT, else 0."""
+    import filecmp
+    print("name,run,identical")
+    for s in args.settings:
+        name = name_of(s)
+        for r in sorted(d for d in os.listdir(os.path.join(args.a, name)) if re.fullmatch(r"r\d\d", d)):
+            fa, fb = os.path.join(args.a, name, r), os.path.join(args.b, name, r)
+            same = all(filecmp.cmp(os.path.join(fa, f), os.path.join(fb, f), shallow=False)
+                       for f in ("TRANSL.TXT", "EVENTS.TXT"))
+            print(f"{name},{int(r[1:])},{int(same)}")
+    return 0
+
+
+def cmd_chain(args):
+    """Receiver-chain statistics of a TRACE = 2 run (reference sheet (c)'s check): the variance of s_n over key-up
+    samples (AU^2), and the mean and variance of z (AU, AU^2) at decoder steps whose key state, 14.5 ms earlier, has
+    been constant for 40 ms on each side, marks and spaces apart, after the first 10 s; the mean of R (AU^2)."""
+    from array import array
+    sig = array("d")
+    with open(os.path.join(args.run, "SIGNAL.BIN"), "rb") as f:
+        sig.frombytes(f.read())
+    s, x = sig[0::3], sig[1::3]
+    up = [v for v, k in zip(s, x) if k == 0.0]
+    mean_up = sum(up) / len(up)
+    var_up = sum((v - mean_up) ** 2 for v in up) / len(up)
+    raw = array("d")
+    with open(os.path.join(args.run, "STEPS.BIN"), "rb") as f:
+        raw.frombytes(f.read())
+    i, z_mark, z_space, rs = 0, [], [], []
+    delay, half = 116, 320  # 14.5 ms and 40 ms in 8 kHz samples
+    while i < len(raw):
+        step, z, r, isave = int(raw[i]), raw[i + 1], raw[i + 2], int(raw[i + 3])
+        i += 8 + 7 * isave
+        if step * 0.005 <= 10.0:
+            continue
+        rs.append(r)
+        c = 40 * step - 1 - delay
+        window = x[max(0, c - half):c + half + 1]
+        if all(v == 1.0 for v in window):
+            z_mark.append(z)
+        elif all(v == 0.0 for v in window):
+            z_space.append(z)
+
+    def mv(v):
+        m = sum(v) / len(v)
+        return m, sum((a - m) ** 2 for a in v) / len(v)
+
+    (mm, vm), (ms, vs) = mv(z_mark), mv(z_space)
+    print(f"{args.label},{args.noise},{var_up:.4f},{mm:.4f},{vm:.4f},{len(z_mark)},{ms:.4f},{vs:.4f},{len(z_space)},"
+          f"{sum(rs) / len(rs):.4f}")
+    return 0
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -403,6 +461,8 @@ def main():
     r.add_argument("--out", required=True)
     r.add_argument("--runs", type=int, default=20)
     r.add_argument("--jobs", type=int, default=10)
+    r.add_argument("--alphabet", default="proposed",
+                   help="the letter tree's alphabet for kz4ap-bell-tables (proposed, letters-digits, with-semicolon-colon)")
     r.add_argument("settings", nargs="+")
     t = sub.add_parser("texts")
     t.add_argument("--out", required=True)
@@ -420,9 +480,17 @@ def main():
     g.add_argument("--run", required=True, help="a run folder with TRACE = 2")
     g.add_argument("--dest", required=True, help="engine/tests/data/bell")
     g.add_argument("--name", required=True)
+    c = sub.add_parser("compare")
+    c.add_argument("--a", required=True)
+    c.add_argument("--b", required=True)
+    c.add_argument("settings", nargs="+")
+    ch = sub.add_parser("chain")
+    ch.add_argument("--run", required=True)
+    ch.add_argument("--noise", required=True, help="NOISE of the run, AU^2 per sample (copied to the output)")
+    ch.add_argument("--label", required=True)
     args = p.parse_args()
-    return {"run": cmd_run, "texts": cmd_texts, "table": cmd_table, "rule": cmd_rule,
-            "golden": cmd_golden}[args.cmd](args)
+    return {"run": cmd_run, "texts": cmd_texts, "table": cmd_table, "rule": cmd_rule, "golden": cmd_golden,
+            "compare": cmd_compare, "chain": cmd_chain}[args.cmd](args)
 
 
 if __name__ == "__main__":
