@@ -42,4 +42,27 @@ that structure as its starting point; every part of it is open for discussion be
 
 ## Conclusions
 
-None yet.
+### Topic 1: what a hypothesis tracks (owner, 2026-10-09)
+
+**Rule:** a hypothesis carries everything the probability of its next step or of the next observation depends on,
+and nothing that is the same for every hypothesis on the channel; that goes to channel level.
+
+Each hypothesis carries:
+1. **The kind of activity:** Morse being sent, no signal, steady carrier, or nonsense keying.
+2. **Key down or up, and the time spent in it so far.** Proposed, to be checked: a mark is held as "a mark lasting so
+   far" and becomes a dot or a dash when it ends, instead of Bell's choice at its start (same probabilities, fewer
+   hypotheses, if the check confirms it).
+3. **For key-up time, the kind of gap:** between elements, letters or words, possibly resolved when the gap ends.
+   No separate "pause" element (Bell had one): anything longer than a word space is either a long word space (the
+   over continues: same sender, same speed) or no signal (the over has ended; topic 7). Both hypotheses coexist until
+   the next marks decide.
+4. **Speed and the Farnsworth gap factor;** their form is topic 2.
+5. **The position in the Morse tree:** the letter in progress.
+6. **Past text:** open until topic 6.
+7. **The last stretch of keying,** if topic 4 finds that the expected filter output depends on keying before the
+   current element.
+8. **Its probability and a link to its parent,** to trace its text back when printing (topic 8).
+9. **A clock for each non-Morse state:** how long the carrier or the silence has lasted.
+
+At channel level, outside the hypotheses: the amplitude and the noise level (topic 3); the station's fist habits,
+per channel or per hypothesis, open (topics 2 and 7).
