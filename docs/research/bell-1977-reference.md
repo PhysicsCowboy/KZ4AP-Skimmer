@@ -47,7 +47,7 @@ table those tasks need, each with its source, its unit and its status.
   5 word space (w-sp), 6 pause [fact, code p. 160 00600 (mean lengths 1, 3, 1, 3, 7, 14 dots); p. 161 06300 (key
   state 1, 1, 0, 0, 0, 0); p. 164 07100 (printed as `.`, `_`, blank, `/`, `;`, `\`)].
 - **Terms.** KAM is Morse "sent by a keyboard", HKM hand-keyed Morse [fact, p. 11]; the KAM signal is synchronous,
-  with transitions only at element boundaries [fact, p. 126: "the possible transition times of a synchronous KAM
+  with transitions only at whole multiples of the dot length [inference from p. 126: "the possible transition times of a synchronous KAM
   signal"]. "Fist" means a simulated hand sender (good, fair, poor). A "path" is one saved hypothesis of the
   decoder. Bell's RCVR, BPFDET and NOISE are his **receiver chain**.
 
@@ -938,7 +938,7 @@ Reading [derived]:
 - The constants put a 1 AU key-down carrier near z = 1 AU at 6–12 dB S₁₀₀, where the Kalman filter starts
   (ŷ = 0.5 AU, P = 0.1 AU²); the subtraction makes z nearly zero-mean in noise around 9 dB S₁₀₀.
 - R equals the noise-only variance of z near 3 dB S₁₀₀ and exceeds it at higher SNR (1.9 times at 9 dB S₁₀₀,
-  2.7 times at 12 dB S₁₀₀), since R grows with the noise amplitude and the variance with its square. The variance
+  2.8 times at 12 dB S₁₀₀), since R grows with the noise amplitude and the variance with its square. The variance
   of z on marks is about 2.5 times that on spaces (the signal-times-noise term), which the decoder's model, with one
   R for both, ignores.
 - YMAVG settles with a 1.25 s time constant (1.2475 s, section (b)) from its start value 0.05 AU, so the first
@@ -1387,9 +1387,9 @@ These matter for the compiled reference (Task 3) and for the C++ port, which mus
      which the decoder is NaN anyway. Under one-trip rules the loop compares the stale IPNOD(2), so convergence can
      fail and the decision is forced (section (b)).
 
-   Which rule Bell's compiler used is not stated. His guards `IF(NBLANK.EQ.0) GO TO 110` (and 210, 310, 560) are
-   needed only on a compiler that runs `DO 110 I=1,NBLANK` at least once when NBLANK = 0, which is evidence that his
-   did [inference]. Proposed: FORTRAN-77 rules in both (gfortran's), recorded as an assumption; it changes nothing
+   Which rule Bell's compiler used is not stated. Of his four guards `IF(NBLANK.EQ.0) GO TO …`, three (22900,
+   24100, 27600) also skip `SPFLAG=1` and are needed under any trip-count rule; only 25300 guards nothing but
+   `DO … I=1,NBLANK`, so only it is (weak) evidence that his compiler ran loops at least once [inference]. Proposed: FORTRAN-77 rules in both (gfortran's), recorded as an assumption; it changes nothing
    while the probabilities are finite.
 3. **Jumps to a DO loop's terminal statement from outside the loop:** PROCES 09750 `GO TO 1` (to `1 CONTINUE`,
    10400, the terminal of `DO 1 IN=1,ISAVE`, 10000), and TRANSL 22900, 24100, 25300 and 27600 (to 110, 210, 310 and
@@ -1402,7 +1402,7 @@ These matter for the compiled reference (Task 3) and for the C++ port, which mus
    text directly; in PROCES it could run the debug printout at every 5 ms step. The evident intent of each jump is
    to skip its loop [inference: the PROCES jump sits right after SAVEP's call and skips only the debug printout, as
    LIKHD's `GO TO 100` (50100) and KALFIL's `GO TO 400` (08400) skip theirs; the TRANSL jumps skip the blanks when
-   there are none, and are pointless otherwise]. **Task 3 needs a marked change that redirects each jump to a new
+   there are none, and three of them also skip `SPFLAG=1`]. **Task 3 needs a marked change that redirects each jump to a new
    label just after its loop; the plan's list of allowed changes does not include it (section (j)).**
 4. **Out-of-range subscripts.** LIKHD evaluates `ILAM1(IELMST(LAMBDA))` and `ILAMX(...)` with LAMBDA = 0 for dead
    paths (p. 174 47800–47900, before its loop); the values are unused because every transition probability of a dead
@@ -1496,8 +1496,8 @@ on the tie-break: with A.11's, S S E sent and S H decoded align as deletion, mat
 the second S and E into H would count 2 [derived].
 
 On the samples [derived]: B gives 4 (Bell's marks 4; character edits 6: JUMPED → JU.ED 2, OVER → OVF 2, A → I 1,
-AFTERNOON → AMTERNOON 1); C gives 11 (Bell's 10: BORWN unmarked, +2; the correct D of SUDDAS marked, −1); D gives 9
-(Bell's 10: the correct Y marked). Merges are common at low SNR and with sloppy fists (a lost letter space), so the
+AFTERNOON → AMTERNOON 1); C gives 11 (Bell's 10: BORWN unmarked, +2; the correct D of SUDDAS marked, −1); D gives 9 with NO read as two letters, 8 with NO read as
+the prosign 52 (Bell's 10: the correct Y marked). Merges are common at low SNR and with sloppy fists (a lost letter space), so the
 character CER runs above this count. Section (j) item 7 proposes how to use it.
 
 The samples' sent texts are fixed sentences ("A LAZY BROWN DOG …"), which KEY as printed cannot send (its
@@ -1521,7 +1521,7 @@ law) and D10 (the count for §5.2).
 | 6 | The text the simulator sends (plan change: Task 7's test "letter frequencies uniform over his alphabet") | Reproduce KEY's draw: A 0.001, B 2/35 (B and the C column), C never, D–Z and 1–9 1/35 each, 0 1/35 − 0.001; letter-ending space c-sp 0.8, w-sp 0.1, pause 0.1. **Label each sent letter by the code keyed** (the C column as B). | D1; Table XV's 0 % cells show that a "C" keyed as B was not counted as an error, or that the tables' simulator keyed C correctly, as the samples' did (section (d)); labeling by the code keyed is right in either case |
 | 7 | Bell's error marks count a merge once; the character CER counts it twice (plan change: §5.2) | Report both. Apply §5.2's rule to the **Bell-style count** of section (i): word spaces removed, a prosign one symbol; the minimum total cost of match (0), substitution, deletion, insertion and merge of two sent symbols into one decoded symbol (1 each); divided by the sent symbols. Keep the character CER as the project's measure and report it beside. The choice is the owner's decision D10 | It follows the samples' merge-once convention (a merge 1, a wrong letter 1, a split 2 on the one, ambiguous, example) and needs no alignment tie-break. Without it the comparison is biased against our decoder (sample B: 4 against 6). Bell counted by eye and missed some errors (section (i)), so no count reproduces his marks exactly. Space errors are left out of both, since Bell's tables do not say and the random text's word spaces are random. |
 | 8 | RAN and RANDN | gfortran `RANDOM_NUMBER`, fixed seed per run; Box–Muller for RANDN, called four times per sample in the listing's order. Every RAN call and `DATA IK` replaced | Plan change 2; gfortran's own RAN intrinsic would compile silently and return one number at every call (section (h)) |
-| 9 | Compiler semantics (section (h)) | gfortran `-std=legacy -fdec -fno-automatic -finit-local-zero` (with the plan's real-8 flags); FORTRAN-77 DO trip counts; the C++ keeps the same state and initial zeros | So that V3 compares like with like; the trip-count rule shows only in TRELIS's first call (invisible) and after SAVEP's division by zero, although Bell's compiler probably ran loops at least once (his NBLANK guards) |
+| 9 | Compiler semantics (section (h)) | gfortran `-std=legacy -fdec -fno-automatic -finit-local-zero` (with the plan's real-8 flags); FORTRAN-77 DO trip counts; the C++ keeps the same state and initial zeros | So that V3 compares like with like; the trip-count rule shows only in TRELIS's first call (invisible) and after SAVEP's division by zero, although Bell's compiler may have run loops at least once (one NBLANK guard, 25300, is weak evidence) |
 | 10 | Changes Task 3 needs beyond the plan's list of allowed changes (plan change: Task 3's list) | Each marked `C KZ4AP:`, and the C++ does the same: (a) in LIKHD, a guard before 47800: for LAMBDA = 0, set LKHD to 0 for the path's 30 nodes and return, writing no YKKSV or PKKSV; (b) the five jumps to a DO loop's terminal statement (PROCES 09750; TRANSL 22900, 24100, 25300, 27600) redirected each to a new label just after its loop; (c) stubs that do nothing for ERASE, PLOTR and VIEW (or DISPLA's calls removed); (d) under reading C of D9 only, KEY's duration law | (a) LIKHD reads `IELMST(0)` (p. 174 47800–47900, before its loop); the guard reproduces the listing exactly, since every transition probability of a dead path is 0. (b) FORTRAN 77 forbids the transfer and gfortran's result is undefined; the evident intent is to skip the loop [inference: the PROCES jump skips only the debug printout, as LIKHD's and KALFIL's `GO TO`s skip theirs; the TRANSL jumps are Bell's guards that skip the blanks when NBLANK = 0]. (c) gfortran has no such routines; display only. Section (h) items 3 and 4 |
 | 11 | What the C++ must keep from the listing | XTRANS's three cases; PTRANS without the MEMFCN check; state-0 successors and their one-step life; SAVEP's selection order, tie rules, JSAV/IPSAV carry-over (the zero-probability fill node, kept unless it duplicates a kept node), duplicate deletion and its normalization without P(1); TRELIS's 199-stage forced decision and pruning; MODEL's Φ and Q exactly; NOISE's constants; 6.28319 both as the multiplier (INPUTL) and as the modulus of every AMOD phase wrap | V3 requires identical letters and paths; each is how the listing behaves (section (b)). With 2π as the modulus the up-mixer's phase departs from the Fortran's by 4.7·10⁻⁶ rad at its first wrap, 1 ms in, and Task 4's 10⁻¹² match of z_k fails at once (section (c)) |
 | 12 | The plan's description of NOISE (plan change: §4.1 step 5, §9 item 1) | Replace "μₙ and R = 2μₙ²" by the listing: z = 1.1·(Z − 2.4·YMAVG − 0.05 AU), R = 0.30 AU·YMAVG ≥ 0.005 AU². Tasks 3 and 5 test for NaN, by a check of the trace or by compiling the reference with `-ffpe-trap=invalid,zero`, on an input that reaches SAVEP's zero sum (one live path early in a long element, every other saved path dead) | D1; section (b). R cannot reach 0, so §9 item 1's division by zero cannot come from R. Sums of probabilities can be 0: SAVEP's PSUM whenever every slot after the first holds P = 0, which gives +∞ and NaN in IEEE arithmetic and stops the decoder for good (section (b)), and PROBP's sum if every likelihood is 0 |
