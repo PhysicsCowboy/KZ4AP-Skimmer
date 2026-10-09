@@ -9,7 +9,7 @@ This folder holds E. L. Bell's Fortran program, transcribed from the "Computer P
 | File | What it is |
 |---|---|
 | `listing.txt` | The listing, transcribed verbatim, page by page. |
-| `transcription-log.md` | How the two readings were settled. It has one row per line that differed or carried a mark, the reason for each decision, and the counts. |
+| `transcription-log.md` | How the two readings were settled. It has one row per line that differed or carried a mark, one row for the agreed line both readers misread (p. 181, 30800), the reason for each decision, and the counts. |
 
 The transcription keeps the original exactly, including its apparent errors. For example, it keeps the misspelling
 MINIIMUM in a comment on p. 180 (27100), and the DATA row for C on p. 163 (05300), which repeats the row for B. A later
@@ -26,7 +26,7 @@ task will add a version made to compile, with each change marked.
 | 159-191 | 321-385 | The listing. p. 159 is headed "COMPUTER PROGRAMS". |
 
 Bell's sequence numbers are the line numbers of the DEC editor, not part of the Fortran. They fall into eight numbering
-groups, and every group starts at 00100. On p. 159 the first digit is cut off and is reconstructed as `{0}`. Within a
+groups. Every group after the first starts at 00100; on p. 159, in the first group, the first digit is cut off and is reconstructed from that as `{0}`. Within a
 group the numbers step by 100, with the exceptions listed in `transcription-log.md`.
 
 | Group | Pages | Sequence numbers | Routines: page and sequence number where each starts |
@@ -56,8 +56,8 @@ group the numbers step by 100, with the exceptions listed in `transcription-log.
   - Each doubtful glyph was compared with the same printer's glyphs on the same pages.
   - Where the image could not decide, the Fortran context decided: a statement label that must exist, a variable name
     used elsewhere, or the syntax.
-- **Review.** A review checked five random pages character by character, every numeric constant, and every
-  settlement. It found two wrong constants:
+- **Review.** A review checked five random pages character by character, every numeric constant, every
+  context settlement and every image settlement that changes a value. It found two wrong constants:
   - p. 163 02300, `BFADE=0.001-AMP`, which had first been settled as 0.021;
   - p. 181 30800, `.90`.
 
