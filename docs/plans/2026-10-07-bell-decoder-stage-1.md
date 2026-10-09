@@ -1,12 +1,12 @@
 # Bell 1977 decoder, stage 1: Bell as published
 
-> **Status: draft for the owner's approval, 2026-10-07. No code before approval.** The owner's decisions of
-> 2026-10-08 are recorded at the top of §3, D6 included. The owner is reading the plan while Task 1 (research, no
-> code) runs.
+> **Status: owner's go-ahead, 2026-10-08** ("stick with the plan and make the best decision you can"); the
+> technical choices of the reproduction are delegated to the controller. The owner's decisions of 2026-10-08 are
+> recorded at the top of §3, D6 included.
 >
 > **Corrected 2026-10-08 from Task 1's reference sheet** (`docs/research/bell-1977-reference.md`, "Read first"):
 > §2, §4, §5.1, §6, §9 and Tasks 2, 3, 5 and 7 now state what the listing does. Two new decisions, D9 (the
-> simulated fists' duration law) and D10 (the error count of the reproduction rule), are open in §3.
+> simulated fists' duration law) and D10 (the error count of the reproduction rule), were decided in §3 (owner delegated).
 >
 > **Spec:** `docs/design/2026-09-25-kz4ap-skimmer-design.md` §5.2 step 3, amendment "Bell 1977 instead of
 > manta" (owner, 2026-10-07). **Evidence:** `docs/research/bell-1977-notes.md` (the thesis as read for the
@@ -131,8 +131,8 @@ confirms or corrects each.
 | D7 | No sentence on the thesis's status. The owner: "if it's in the public domain, it's in the public domain"; it is not a legal question. | Task 1's README cites the thesis and says nothing more. |
 | D8 | `bell-stage-1`, from `main`. | The branch was started at 00210b3, the head of PR #1 (`milestone-2c-stage2` into `main`), whose content `main` will hold after that merge. |
 | §7, the stage-2 order | Not yet decided. | Revisited with stage 1's results. |
-| D9 | Open (asked 2026-10-08). | Task 3's list (a marked change to KEY under C), V2's settings for Table XVI, Task 7. |
-| D10 | Open (asked 2026-10-08). | §5.2's count; the scorer in Tasks 3, 8 and 9. |
+| D9 | Decided by the controller, owner delegated (2026-10-08): (a), reading C primary; A and B reported. | Task 3's list (a marked change to KEY under C), V2's settings for Table XVI, Task 7. |
+| D10 | Decided by the controller, owner delegated (2026-10-08): (a), the Bell-style count; CER reported. | §5.2's count; the scorer in Tasks 3, 8 and 9. |
 
 **D1. The listing is the authority.**
 - The listing is the program that produced the published results.
