@@ -3,6 +3,13 @@
 Plan: `docs/plans/2026-10-07-bell-decoder-stage-1.md` (owner's go-ahead, 2026-10-08). Branch `bell-stage-1`. Every
 number here is **measured** unless marked otherwise, and is computed from the committed score tables named with it.
 
+**Stage 1 stopped (owner, 2026-10-09).** The printed program is not a usable reference: by its measured curves it
+decodes worse than the project's existing decoders (not compared head to head), and the cause of its gap to Bell's tables is unresolved. The faithful C++ port (Tasks 4-9)
+is cancelled. Bell's structure (speed, element duration, letter tree and amplitude estimated jointly, with delayed
+decisions) is taken up instead in the design of a new decoder fed by the bank's matched-filter observation. The
+compilable program, its tooling, the golden data and Task 2's C++ were removed from the tree afterwards (they are in
+the history at commit 38a7baf); the transcription, the reference sheet and this record with its score tables stay.
+
 **Answer (V2, Task 3): FAIL.** Bell's own program, compiled with gfortran and run on his simulator at the settings of
 his Tables XV and XVI as the reference sheet reads them, decodes far worse than his tables. In the final run (with the
 guard of change 11, section 3.6), under reading C of decision D9 (the rule's reading), **28 of the 30 cells are

@@ -84,23 +84,6 @@ std::size_t edit_distance(const std::vector<std::string_view>& a, const std::vec
 // after the end).
 Alignment align(const std::vector<std::string_view>& reference, const std::vector<std::string_view>& decoded);
 
-// Bell-style error count (signal-processing.md A.11; Bell stage-1 plan, decision D10): word spaces removed, the
-// minimum total cost of turning the decoded symbols into the reference symbols with a match (0), a substitution, a
-// deletion, an insertion, or a merge of two consecutive reference symbols into one decoded symbol (1 each). A merge
-// counts once, where the character edits count it twice; a split counts twice (substitution and insertion).
-std::size_t bell_count(const std::vector<std::string_view>& reference, const std::vector<std::string_view>& decoded);
-
-// One decoded text against its reference, both normalized (normalize_text) and split into symbols
-// (kz4ap::morse::symbols): A.11's character and space edits, and the Bell-style count.
-struct TextScore {
-    std::size_t chars = 0;        // reference symbols that are not word spaces
-    std::size_t char_edits = 0;   // A.11's character edits
-    std::size_t spaces = 0;       // reference word spaces
-    std::size_t space_edits = 0;  // A.11's space edits
-    std::size_t bell_count = 0;   // the Bell-style count (its denominator is chars)
-};
-TextScore score_text(std::string_view reference, std::string_view decoded);
-
 // [first, last) reference-symbol ranges of the first word of each transmission
 // (the whole text is one transmission if the label lists none). Throws
 // std::runtime_error if the transmissions do not add up to the label's text.

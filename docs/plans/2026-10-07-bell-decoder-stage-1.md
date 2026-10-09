@@ -1,5 +1,10 @@
 # Bell 1977 decoder, stage 1: Bell as published
 
+> **Stopped after Task 3 (owner, 2026-10-09).** Bell's printed program, compiled, did not reproduce his tables (V2
+> FAIL, cause unresolved), and by its measured curves it decodes worse than the project's existing decoders (not
+> compared head to head), so it is of no use as a benchmark. Tasks 4-9 are cancelled; see the results record
+> `docs/plans/2026-10-07-bell-stage-1-results.md`. Bell's structure is taken up in the design of a new decoder instead.
+
 > **Status: owner's go-ahead, 2026-10-08** ("stick with the plan and make the best decision you can"); the
 > technical choices of the reproduction are delegated to the controller. The owner's decisions of 2026-10-08 are
 > recorded at the top of §3, D6 included.

@@ -1,5 +1,0 @@
-20., 1., 3., 1., 3., 7., 14.   ! RATE (WPM), ESEP (dots): dot, dash, e-sp, c-sp, w-sp, pause
-0.572339, 0.572339, 0.572339, 0.572339, 1.144679, 2.003188   ! EDEV (dots), same order
-0., 2.574960E-6, 0., 10., 0.   ! AVAR (AU2), BVAR (AU2 per sample), FCHIRP (Hz), TCHIRP (ms), PHIVAR (rad2)
-0.9992388097, 1000., 5.023773   ! GAMMA (per sample), FREQ (Hz), NOISE (AU2 per sample) = 6 dB S100
-28000, 1, 224., 1, 0., 0.   ! SEED (run r adds r), LAW, TSTOP (s), TRACE, TSW (s), RATE2 (WPM)

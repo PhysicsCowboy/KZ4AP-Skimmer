@@ -2,4 +2,3 @@
 *.bat text eol=crlf
 *.wav binary
 *.c64 binary
-*.f64 binary
