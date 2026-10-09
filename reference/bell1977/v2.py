@@ -287,6 +287,8 @@ def betabinom_pmf(n, p, rho):
     logc = [math.lgamma(n + 1) - math.lgamma(k + 1) - math.lgamma(n - k + 1) for k in range(n + 1)]
     if rho <= 0.0:
         return [math.exp(logc[k] + k * math.log(p) + (n - k) * math.log1p(-p)) for k in range(n + 1)]
+    if rho >= 1.0:  # the limit of complete overdispersion: all n errors or none
+        return [1.0 - p] + [0.0] * (n - 1) + [p]
     ab = 1.0 / rho - 1.0
     a, b = p * ab, (1.0 - p) * ab
 
