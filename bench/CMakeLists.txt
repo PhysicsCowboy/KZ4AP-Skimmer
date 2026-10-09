@@ -48,6 +48,16 @@ else()
   target_compile_options(kz4ap-bell-tables PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# Scores decoded texts with the Bell-style count and the character edits: the output of Bell's compiled program
+# (Bell stage-1 plan, Task 3; reference/bell1977/v2.py).
+add_executable(kz4ap-bell-score src/bell_score_main.cpp)
+target_link_libraries(kz4ap-bell-score PRIVATE kz4ap_bench_lib)
+if(MSVC)
+  target_compile_options(kz4ap-bell-score PRIVATE /W4 /permissive- /utf-8)
+else()
+  target_compile_options(kz4ap-bell-score PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(kz4ap_bench_tests
   tests/bank_json_test.cpp
   tests/channel_recorder_test.cpp

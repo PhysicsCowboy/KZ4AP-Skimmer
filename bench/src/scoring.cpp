@@ -96,6 +96,46 @@ Alignment align(const std::vector<std::string_view>& reference, const std::vecto
     return result;
 }
 
+std::size_t bell_count(const std::vector<std::string_view>& reference, const std::vector<std::string_view>& decoded) {
+    std::vector<std::string_view> r, d;
+    for (const auto s : reference) if (s != " ") r.push_back(s);
+    for (const auto s : decoded) if (s != " ") d.push_back(s);
+    const std::size_t n = r.size();
+    const std::size_t m = d.size();
+    // c[i][j]: least cost of turning d[0, j) into r[0, i).
+    std::vector<std::size_t> c((n + 1) * (m + 1));
+    const auto at = [&](std::size_t i, std::size_t j) -> std::size_t& { return c[i * (m + 1) + j]; };
+    for (std::size_t i = 0; i <= n; ++i) {
+        for (std::size_t j = 0; j <= m; ++j) {
+            if (i == 0 || j == 0) {
+                at(i, j) = i + j;  // deletions only, or insertions only
+                continue;
+            }
+            std::size_t best = at(i - 1, j - 1) + (r[i - 1] == d[j - 1] ? 0 : 1);  // match or substitution
+            best = std::min(best, at(i - 1, j) + 1);                               // deletion
+            best = std::min(best, at(i, j - 1) + 1);                               // insertion
+            if (i >= 2) best = std::min(best, at(i - 2, j - 1) + 1);               // merge of r[i-2], r[i-1]
+            at(i, j) = best;
+        }
+    }
+    return at(n, m);
+}
+
+TextScore score_text(std::string_view reference, std::string_view decoded) {
+    const std::string ref = normalize_text(reference);
+    const std::string dec = normalize_text(decoded);
+    const auto ref_symbols = kz4ap::morse::symbols(ref);
+    const auto dec_symbols = kz4ap::morse::symbols(dec);
+    const Alignment a = align(ref_symbols, dec_symbols);
+    TextScore s;
+    s.spaces = static_cast<std::size_t>(std::count(ref_symbols.begin(), ref_symbols.end(), std::string_view(" ")));
+    s.chars = ref_symbols.size() - s.spaces;
+    s.char_edits = a.counts.char_edits;
+    s.space_edits = a.counts.space_edits;
+    s.bell_count = bell_count(ref_symbols, dec_symbols);
+    return s;
+}
+
 std::vector<std::pair<std::size_t, std::size_t>> first_word_ranges(const LabeledSignal& label) {
     const std::string reference = normalize_text(label.text);
     const std::size_t total = kz4ap::morse::symbols(reference).size();

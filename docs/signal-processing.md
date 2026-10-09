@@ -3359,6 +3359,24 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   reference and decoded symbols with every word space removed, over the
   reference symbols that are not word spaces. It differs from character
   CER when a character and a word space trade places.
+- **Bell-style count** (Bell stage-1 plan, decision D10; reference sheet
+  `docs/research/bell-1977-reference.md` (i)): with every word space
+  removed and a prosign one symbol, the minimum total cost of turning the
+  decoded symbols into the reference symbols by a match (cost 0) and by a
+  substitution, a deletion, an insertion, or a **merge** of two
+  consecutive reference symbols into one decoded symbol (cost 1 each); its
+  rate is the count over the reference symbols that are not word spaces.
+  A merge (a lost letter space: TE decoded as N) costs 1 where the
+  character CER counts 2 edits; a split costs 2. This follows the error
+  marks of Bell's printed samples (thesis pp. 147–148: a merged pair is
+  underlined once). On his samples B, C and D it gives 4, 11 and 9
+  against his 4, 10 and 10 marks; the differences are errors he left
+  unmarked and a correct letter he marked. Every minimum-cost
+  alignment has the same cost, so no tie-break is needed. Our choice
+  (decision D10): it is the count of the reproduction rule of Bell's
+  tables (plan §5.2); the character CER is reported beside it.
+  `bench/src/scoring.hpp` (`bell_count`, `score_text`); the tool
+  `kz4ap-bell-score` scores reference and decoded text pairs.
 - **Message text** (synthetic recordings, `training/kz4ap_synth/messages.py`):
   CQ calls, contest exchanges, and whole ragchew QSOs as a list of overs,
   each with its sending station: CQ, answer, RST and name and QTH, rig and
