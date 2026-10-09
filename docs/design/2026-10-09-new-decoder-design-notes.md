@@ -49,9 +49,9 @@ and nothing that is the same for every hypothesis on the channel; that goes to c
 
 Each hypothesis carries:
 1. **The kind of activity:** Morse being sent, no signal, steady carrier, or nonsense keying.
-2. **Key down or up, and the time spent in it so far.** Proposed, to be checked: a mark is held as "a mark lasting so
-   far" and becomes a dot or a dash when it ends, instead of Bell's choice at its start (same probabilities, fewer
-   hypotheses, if the check confirms it).
+2. **Key down or up, and the time spent in it so far.** A mark is held as "a mark lasting so far" and becomes a dot
+   or a dash when it ends, instead of Bell's choice at its start: fewer hypotheses for the same information (owner's
+   decision; Bell's way is not revisited).
 3. **For key-up time, the kind of gap:** between elements, letters or words, possibly resolved when the gap ends.
    No separate "pause" element (Bell had one): anything longer than a word space is either a long word space (the
    over continues: same sender, same speed) or no signal (the over has ended; topic 7). Both hypotheses coexist until
