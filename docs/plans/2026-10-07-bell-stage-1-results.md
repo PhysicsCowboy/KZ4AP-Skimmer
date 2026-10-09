@@ -17,8 +17,10 @@ cells).
   seven cells 2.71 dB S₁₀₀; section 3.5). The S₁₀₀ convention stays one-sided, as the thesis states it (pp. 33, 113;
   ruling R2).
 - **The cause is unresolved** (section 3.7). Checked and excluded: the conversion to fixed form, the receiver chain,
-  the optimizer, the trap, precision. Not excluded: the printed program differing from the one behind the tables, the
-  noise convention, his marking by eye, and his single 200-letter experiments.
+  the optimizer, the trap, precision, and the choice between our 47-symbol and the 36-symbol alphabet (the latter gives the same gap,
+  1.86–3.90 dB S₁₀₀, section 3.8). Not excluded: the printed program differing from the one behind the tables, the
+  letter tree's structure beyond its alphabet, sheet (e)'s other choices of ours, the noise convention, his marking
+  by eye, and his single 200-letter experiments.
 
 ## 1. Conditions
 
@@ -28,11 +30,10 @@ cells).
   (section 3.6) at commit 6fb721b, which adds change 11 (SAVEP's guard, 327e6e3) and a fix to `v2.py rule`'s
   beta-binomial at a fitted correlation of 1 (6fb721b; the first run's verdicts are unchanged by it). Built by `reference/bell1977/build.sh` with
   `-std=legacy -fdec -fno-automatic -finit-local-zero -fdefault-real-8 -fdefault-double-8 -O2` and
-  `-ffpe-trap=invalid,zero` (the binary `bell1977-fpe`). The trap changes no result: on the 293 runs of a 5-run pilot
-  of every cell that did not stop, `bell1977` and `bell1977-fpe` wrote byte-identical TRANSL.TXT and EVENTS.TXT; and
-  builds at `-O0` and `-O2` gave identical scores on a 120-run pilot (both pilots built before change 2's warm-up
-  was added; not committed). The changes to the listing, each marked in the
-  code, are listed in `reference/bell1977/README.md`.
+  `-ffpe-trap=invalid,zero` (the binary `bell1977-fpe`). The trap and the optimizer change no result (section 3.7).
+  The diagnostics of sections 2, 3.7 and 3.8 ran at commit 9eb99af (the Fortran of 6fb721b; `v2.py` gained `run
+  --alphabet`, `compare` and `chain`). The changes to the listing, each marked in the code, are listed in
+  `reference/bell1977/README.md`.
 - **Letter tree.** `MORSEM` written by `kz4ap-bell-tables` (rule N1, the 47-symbol alphabet; Task 2, commit ae3f28f).
 - **Settings.** `reference/bell1977/run/*.settings`, the values of reference sheet (e): FREQ 1000 Hz; NOISE =
   20·10^(−S₁₀₀/10) AU² per 8 kHz sample (S₁₀₀ with the one-sided noise density N₀ = NOISE/4000 Hz; derived, sheet
@@ -51,12 +52,21 @@ cells).
 - **Rule.** Plan §5.2 as written, implemented in `reference/bell1977/v2.py rule`: per cell the pooled rate p̂ and the
   unbiased variance s² of the 20 (or fewer) per-run rates; Bell's x = 2·b errors of 200 letters for his b %; a
   beta-binomial over 200 letters with mean p̂ and its overdispersion from s² by moments (binomial when s² ≤
-  p̂(1 − p̂)/200); consistent if P(X ≤ x) ≥ 0.05 and P(X ≥ x) ≥ 0.05, or P(X = 0) ≥ 0.05 for x = 0.
+  p̂(1 − p̂)/200); consistent if P(X ≤ x) ≥ 0.05 and P(X ≥ x) ≥ 0.05, or P(X = 0) ≥ 0.05 for x = 0. A cell whose pooled
+  rate exceeds 1 (insertions; reading C: 20 WPM fair and poor at 3 dB S₁₀₀) is modeled with p = 1, and a fitted
+  correlation above 1 is clamped at 1 (all errors or none): both make the cell inconsistent. The verdict does not
+  depend on it: counting those two cells as consistent would leave 26 inconsistent cells.
 - **Score tables** (`docs/plans/data/2026-10-07-bell-stage-1/`), one row per run:
   - first run, without the guard (committed in 0f41a21): `v2-fortran.csv`, the 72 settings files (1 440 rows), and
     `v2-fortran-kam-grid.csv`, the S₁₀₀ grid (480 rows);
-  - final run, with change 11 (committed with this section): `v2-fortran-guard.csv` and
-    `v2-fortran-kam-grid-guard.csv`, the same runs and seeds.
+  - final run, with change 11 (commit 4c9fefd): `v2-fortran-guard.csv` and `v2-fortran-kam-grid-guard.csv`, the same
+    runs and seeds;
+  - diagnostics (run at commit 9eb99af, committed with section 3.8): `v2-fortran-tree36.csv` and
+    `v2-fortran-kam-grid-tree36.csv` (the 36-symbol letter tree; Table XV, Table XVI reading C and the grid, same
+    seeds); `v2-diag-fpe-vs-plain.csv` (per run, 1 if the two binaries wrote byte-identical TRANSL.TXT and
+    EVENTS.TXT); `v2-diag-O0-vs-O2-kam-grid.csv` (the same for `-O0` against `-O2` on the grid);
+    `v2-diag-single-kam-grid.csv` (the grid in single precision); `v2-diag-chain.csv` (receiver-chain statistics,
+    one row per level); `v2-diag-smoke.csv` (the smoke test's score).
 
   Columns: table, speed (WPM), sender, reading, S₁₀₀ (dB S₁₀₀), Bell's value (%), run, seed, zero_sum (1: stopped on
   the trap), guard_steps (final run only: decoder steps at which change 11 acted), reference letters, Bell-style
@@ -73,7 +83,8 @@ cells).
 - **Letter tree** (Task 2; commits ae3f28f, 69906c1): `MORSEM` by rule N1 passes the sheet's seven tests in the C++
   tests, among them "every symbol decodes" for all 47 symbols from its noiseless element sequence.
 - **The compiled program** (Task 3, commit 0ea2b05): its statements equal the listing's, blanks aside, except at the
-  marked changes (a statement-by-statement comparison). The **smoke test** (`run/smoke.settings`: keyboard Morse,
+  marked changes (a statement-by-statement comparison). The **smoke test** (`run/smoke.settings`, score table
+  `v2-diag-smoke.csv`, commit 9eb99af: keyboard Morse,
   20 WPM, no noise, 200 letters, 34 distinct letters and digits) decodes every letter right except the first: T is
   printed as M (1 error in 200). That is the listing's start state, every path in state 5, the element space after
   T's dash, so the first dash is read as the second of M (reference sheet (f), "The start state"); it costs one
@@ -154,13 +165,14 @@ statistics (p̂, s, the fitted correlation, both tail probabilities) are printed
     a dead node (λ = 0) that SAVEP's fill carried over. Every successor of the live path except staying has a
     transition probability of at most 10⁻⁴, so KALFIL gives it likelihood 0; at step 35 118 the live path's stay
     node is the only node with P > 0, followed by a zero-probability fill node: P(1) = +∞, P(2) = NaN.
-  - *Route (i)*, a run of the 5-run pilot (`xv-20wpm-kam-4db` r01, seed 8001, built before change 2's warm-up was
-    added; the decoder's code is the same). At step 39 742 (198.710 s) a forced decision at the trellis's 199-stage
+  - *Route (i)*, an uncommitted diagnostic trace: a pilot run (`xv-20wpm-kam-4db` r01, seed 8001) of a build before
+    change 2's warm-up was added (the decoder's code is the same), so its seed does not reproduce it at 0ea2b05; the
+    route itself is derived in reference sheet (b). At step 39 742 (198.710 s) a forced decision at the trellis's 199-stage
     limit sets λ = 0 for 6 of the 7 saved paths; the survivor is in a pause (λ = 227), 805 ms into it, at 15 WPM.
     At step 39 743 its only successor with P > 0 is the stay node, which SAVEP keeps as element 6's best; the fill
     adds that node again with P = 0, and the duplicate step deletes it. One slot is left: P(1) = 1/0 = +∞.
-  - From the next step on every P is NaN, and the program prints garbage to the end of the session (1 000 % and
-    more of the letters sent, in pilot runs of the plain binary).
+  - From the next step on every P is NaN, and the plain binary prints garbage to the end of the session (seen in
+    uncommitted pilot runs; with the trap, such runs stop and have no score).
 - Without a guard, a stopped run has no score, and the cells with many stops are scored on few runs (reading C,
   20 WPM poor fist 4 dB S₁₀₀: 7 of 20).
 
@@ -177,7 +189,7 @@ change 11 (`v2-fortran-kam-grid-guard.csv`; the guard acts in 12 of the 480 runs
 In the first run (`v2-fortran-kam-grid.csv`, its 12 stopped runs left out), only the 20 WPM points with a stopped run
 differ: 85.00, 63.08, 23.78, 0.53 and 0.53 % at 3, 4, 6, 11 and 15 dB S₁₀₀.
 
-Where our curve (linear between grid points) reaches each of his nonzero values; the gap is the same, to 0.01 dB, in
+Where our curve (linear between grid points) reaches each of his nonzero values; the gap is the same, to 0.01 dB S₁₀₀, in
 both runs:
 
 | Table XV cell | Bell (%) | Ours reaches it at (dB S₁₀₀) | Gap (dB S₁₀₀) |
@@ -197,7 +209,7 @@ are both consistent with his 0 under the rule.
 Table XV values (open diamonds)](figures/2026-10-07-bell-stage-1-v2-table-xv.png)
 
 - The gap is 1.86–3.89 dB S₁₀₀ (median 2.71). It is not uniform: it is smaller where his error is large. A shift of
-  3.01 dB is the difference between a two-sided and a one-sided noise density. It would still leave our 50 WPM curve
+  3.01 dB S₁₀₀ is what a factor of 2 in N₀, a two-sided instead of a one-sided noise density, would make. It would still leave our 50 WPM curve
   at 10.03 % where he has 16 %, and at 19.98 % where he has 35 % (derived from the grid).
 - The floor at high S₁₀₀ (0.55–0.82 % at 20 WPM from 10 dB S₁₀₀ up) is mostly the first letter, T read as M
   (section 2): 0.5 % of a 200-letter run.
@@ -278,33 +290,45 @@ or change was tried.
 **Checked and excluded:**
 - **The conversion to fixed form**: the program's statements equal the listing's, blanks aside, except at the marked
   changes (statement-by-statement comparison).
-- **The receiver chain**: the noise and the statistics of z and R match sheet (c). The runs: one 100 s run per level
-  at trace level 2, keyboard Morse at 20 WPM, built before change 2's warm-up was added (the warm-up does not touch
-  the chain); samples more than 40 ms from a key change, after the first 10 s. The noise variance of s_n on key-up
-  samples is within 0.1 % of NOISE, and z and R are:
+- **The receiver chain**: the noise and the statistics of z and R match sheet (c) (`v2-diag-chain.csv`, `v2.py
+  chain`; one 100 s session per level, `run/diag/chain-*.settings`: keyboard Morse at 20 WPM, trace level 2; decoder
+  steps after the first 10 s whose key state 14.5 ms earlier was constant for 40 ms on each side). The variance of
+  s_n over key-up samples is 1.2609, 5.0196 and 10.0153 AU² against NOISE 1.2619, 5.0238 and 10.0237 AU² (0.08 % low
+  in each). z and R:
 
-  | S₁₀₀ (dB S₁₀₀) | z on marks: mean (AU), var (AU²) | z on spaces: mean (AU), var (AU²) | R (AU²) | Sheet (c): marks; spaces; R |
+  | S₁₀₀ (dB S₁₀₀) | z on marks: mean (AU), var (AU²) | z on spaces: mean (AU), var (AU²) | R mean (AU²) | Sheet (c): marks; spaces; R |
   |---|---|---|---|---|
-  | 12 | 1.082, 0.034 | −0.055, 0.011 | 0.0319 | 1.116, 0.029; −0.046, 0.011; 0.031 |
-  | 6 | 0.870, 0.112 | −0.044, 0.042 | 0.0623 | 0.910, 0.108; −0.035, 0.042; 0.061 |
-  | 3 | 0.737, 0.200 | −0.023, 0.083 | 0.0862 | 0.773, 0.196; −0.025, 0.083; 0.085 |
+  | 12 | 1.0812, 0.0320 | −0.0629, 0.0098 | 0.0317 | 1.116, 0.029; −0.046, 0.011; 0.031 |
+  | 6 | 0.8711, 0.1068 | −0.0575, 0.0382 | 0.0618 | 0.910, 0.108; −0.035, 0.042; 0.061 |
+  | 3 | 0.7379, 0.1896 | −0.0404, 0.0750 | 0.0854 | 0.773, 0.196; −0.025, 0.083; 0.085 |
 
-  The sheet's values are for a 400 ms on/off carrier at 1500 Hz; ours are for Morse at 1000 Hz, whose shorter marks
-  lower the mean on marks slightly. These runs are diagnostic, and their scores are not committed.
-- **The optimizer**: `-O0` and `-O2` builds give identical scores (120-run pilot).
-- **The trap**: `bell1977-fpe` and `bell1977` write byte-identical outputs on the 293 pilot runs that did not stop.
-- **Precision**: the program in single precision (built without `-fdefault-real-8`; the PDP-10 itself used single
-  precision) gives the same curve within the runs' scatter (5-run pilot of the grid, built before change 2's warm-up
-  was added; not committed).
+  The sheet's values are for a 400 ms on/off carrier at 1500 Hz, ours for Morse at 1000 Hz, whose shorter marks lower
+  the mean on marks slightly; the sheet's are single windows too. The agreement is within a few percent of the
+  carrier's 1 AU, far from the 2–4 dB S₁₀₀ gap.
+- **The optimizer**: `-O0` and `-O2` builds (both with the trap) write byte-identical TRANSL.TXT and EVENTS.TXT in
+  all 480 grid runs (`v2-diag-O0-vs-O2-kam-grid.csv`).
+- **The trap**: `bell1977-fpe` and `bell1977` write byte-identical outputs in all 1 440 V2 runs with change 11
+  (`v2-diag-fpe-vs-plain.csv`).
+- **Precision**: the program in single precision (built without `-fdefault-real-8 -fdefault-double-8`; the PDP-10
+  itself used single precision) gives the same curve (`v2-diag-single-kam-grid.csv`; its random numbers differ, so
+  the runs are not paired): the gaps of section 3.5 become +2.74, +3.94, +2.59 dB S₁₀₀ at 20 WPM and +3.13, +3.44,
+  +2.37, +1.85 dB S₁₀₀ at 50 WPM, within 0.06 dB S₁₀₀ of double precision's.
 - **The scoring**: the scorer is the project's tested C++ one (Bell's samples B, C and D give the reference sheet's
-  counts). The smoke test decodes 199 of 200 letters right.
+  counts). The smoke test decodes 199 of 200 letters right (`v2-diag-smoke.csv`).
+- **Our alphabet**: the letter tree with the 36 letters and digits only gives the same gap (section 3.8).
 
 **Candidate causes the evidence does not exclude; each is unresolved:**
 - **The printed program may differ from the one behind the tables** (*unresolved*). The reference sheet already found
   that the simulator behind his printed samples was not the printed KEY: it sent fixed texts, keyed a period, and keyed
   C correctly (sheet (e)).
+- **The letter tree** (*unresolved* beyond its alphabet). Bell's MORSEM is not printed; ours is rule N1 over an
+  alphabet of our choice (sheet (f)). His tree held at least `%` (sample H). The 36-symbol variant does not change the
+  gap (section 3.8); the "+ ; :" variant was not run, and the rule's structure (one numbering of the 13 DATA rows kept,
+  the start state) was not varied.
+- **Sheet (e)'s other choices** (*unresolved*): FREQ 1000 Hz (with RCVR's image beat), the fading, AVAR, PHIVAR,
+  FCHIRP and ESEP's defaults are ours, not his, and were not varied.
 - **The noise convention** (*unresolved*). With a two-sided density N₀ = NOISE/8000 Hz, every S₁₀₀ here would read
-  3.01 dB higher. The thesis states the one-sided convention, so it is not applied (ruling R2). That shift alone would
+  3.01 dB S₁₀₀ higher. The thesis states the one-sided convention, so it is not applied (ruling R2). That shift alone would
   not reconcile the low-S₁₀₀ cells (section 3.5).
 - **His marking by eye** (*unresolved*). His printed samples show unmarked errors (sheet (i)), so his counts may be
   low by an unknown amount.
@@ -313,3 +337,31 @@ or change was tried.
 
 The golden data for the C++ tests (`engine/tests/data/bell/`: three inputs of 1 s, none reaching the zero sum), the
 program, its settings and the scorer are committed.
+
+### 3.8 Diagnostic: the 36-symbol letter tree
+
+By the controller's ruling on the review, the letter tree was rebuilt with the reference sheet's "36 only" alphabet
+(`kz4ap-bell-tables --alphabet letters-digits`: the 36 letters and digits, X under code 43, 173 states; sheet (f),
+(j) item 1) and Table XV, Table XVI reading C and the keyboard grid were rerun with it, 20 runs per cell, the same
+seeds, change 11 in place (commit 9eb99af; `v2-fortran-tree36.csv`, `v2-fortran-kam-grid-tree36.csv`). This is a
+diagnostic: the primary result stays the 47-symbol tree.
+
+- **The rule** under reading C: 29 of 30 cells inconsistent (one more than with 47 symbols: 50 WPM at 12 dB S₁₀₀,
+  2.80 % with P(X = 0) = 0.049), Bell below ours in all 30 cells, sign test p = 1.9·10⁻⁹: FAIL.
+- **Per cell**, the Bell-style count changes by −1.27 to +2.92 points (mean +0.52) against the 47-symbol tree.
+- **The gap per cell** (grid, linear interpolation as in section 3.5):
+
+  | Table XV cell | Bell (%) | Gap, 47-symbol tree (dB S₁₀₀) | Gap, 36-symbol tree (dB S₁₀₀) |
+  |---|---|---|---|
+  | 20 WPM, 6 dB S₁₀₀ | 3 | +2.71 | +2.69 |
+  | 20 WPM, 4 dB S₁₀₀ | 6 | +3.89 | +3.90 |
+  | 20 WPM, 3 dB S₁₀₀ | 31 | +2.62 | +2.61 |
+  | 50 WPM, 9 dB S₁₀₀ | 3 | +3.12 | +3.08 |
+  | 50 WPM, 8 dB S₁₀₀ | 5 | +3.44 | +3.48 |
+  | 50 WPM, 7 dB S₁₀₀ | 16 | +2.40 | +2.38 |
+  | 50 WPM, 6 dB S₁₀₀ | 35 | +1.86 | +1.86 |
+
+- **The guard** acts in 5 of 180 Table XV runs, 89 of 420 reading-C runs and 14 of 480 grid runs.
+- **Reading:** the alphabet does not explain the gap. The extra hypotheses of the 47-symbol tree (period and
+  prosigns, which the simulator never sends) cost at most a few points per cell at low S₁₀₀, nothing at the
+  thresholds where the gap is measured.

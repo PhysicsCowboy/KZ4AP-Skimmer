@@ -240,7 +240,7 @@ BELL_PCT = {
 
 def parse_name(name):
     """xv-50wpm-kam-12db, xvi-20wpm-fair-6db-c or (the S100 grid, run/kam-grid) kam-20wpm-5db -> (table, WPM,
-    sender, S100 dB, reading); the grid's table is "grid"."""
+    sender, S100 in dB S100, reading); the grid's table is "grid"."""
     m = re.fullmatch(r"(xvi?)-(\d+)wpm-(kam|good|fair|poor)-(\d+)db(?:-([abc]))?", name)
     if m:
         return m.group(1), int(m.group(2)), m.group(3), int(m.group(4)), (m.group(5) or "-").upper()

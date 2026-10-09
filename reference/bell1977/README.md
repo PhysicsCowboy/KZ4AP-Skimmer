@@ -14,7 +14,7 @@ This folder holds E. L. Bell's Fortran program, transcribed from the "Computer P
 | `build.sh` | Builds `bell1977` and `bell1977-fpe` with gfortran. |
 | `v2.py` | Runs the program on settings files, turns its output into reference and decoded texts, the score table and the reproduction rule (plan §5.2). |
 | `run/*.settings` | One settings file per target cell of plan §5.1 (Table XVI: one per reading A, B, C of decision D9); `smoke.settings` (keyboard Morse, 20 WPM, no noise); `golden-1`, `-2`, `-3.settings`, the golden inputs of `engine/tests/data/bell/`. |
-| `run/kam-grid/*.settings` | Keyboard Morse at 20 and 50 WPM over S₁₀₀ 3–15 dB: the curve from which the S₁₀₀ shift between his tables and this program is estimated (plan §5.2, "also reported"). |
+| `run/kam-grid/*.settings` | Keyboard Morse at 20 and 50 WPM over 3–15 dB S₁₀₀: the curve from which the S₁₀₀ shift between his tables and this program is estimated (plan §5.2, "also reported"). |
 
 The transcription keeps the original exactly, including its apparent errors. For example, it keeps the misspelling
 MINIIMUM in a comment on p. 180 (27100), and the DATA row for C on p. 163 (05300), which repeats the row for B.

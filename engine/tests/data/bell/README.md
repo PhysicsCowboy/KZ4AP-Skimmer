@@ -18,8 +18,8 @@ version, so another gfortran may give another signal from the same seed; the fil
 
 | Name | Sender | Speed | Noise | Seed | What it holds | Letters printed |
 |---|---|---|---|---|---|---|
-| golden-1 | keyboard Morse (LAW 0, EDEV 0) | 20 WPM | NOISE 1.261915 AU² per 8 kHz sample: 12 dB S₁₀₀ (one-sided N₀ = NOISE/4000 Hz) | 101 | T, c-sp, G (--.) begun | `M` |
-| golden-2 | the fair fist, reading C (LAW 1, EDEV 0.460249, 0.460249, 0.460249, 0.460249, 0.920497, 1.610870 dots) | 30 WPM | NOISE 5.023773 AU²: 6 dB S₁₀₀ | 201 | T, c-sp, 4 (....-), c-sp | `7` |
+| golden-1 | keyboard Morse (LAW 0, EDEV 0) | 20 WPM | NOISE 1.261915 AU² per 8 kHz sample: 12 dB S₁₀₀ (one-sided N₀ = NOISE/4000 Hz) | 101 | T, c-sp, G (--.), and G's c-sp from sample 7200 | `M` |
+| golden-2 | the fair fist, reading C (LAW 1, EDEV 0.460249, 0.460249, 0.460249, 0.460249, 0.920497, 1.610870 dots) | 30 WPM | NOISE 5.023773 AU²: 6 dB S₁₀₀ | 201 | T, c-sp, 4 (....-), c-sp, and L (.-..) begun at sample 6681 | `7` |
 | golden-3 | keyboard Morse | 50 WPM, then 30 WPM | NOISE 1.261915 AU²: 12 dB S₁₀₀ | 328 | T (samples 1–575), a pause (576–3263, 336 ms at 50 WPM), then B (-...) and the start of U at 30 WPM: KEY's dot length is set to 40 ms at sample 1600 (0.2 s, change 10), inside the pause | `M`, then two blanks |
 
 All three use FREQ 1000 Hz and the fading of reference sheet (e) (GAMMA 0.9992388097, BVAR 2.574960·10⁻⁶ AU²);
@@ -48,5 +48,9 @@ Notes for the comparison:
   five, ŷ 0.5 AU, P_kk 0.1 AU²).
 - The paths are those after step k; the z_k and R_k of the same record are the inputs that produced them.
 - No step of these inputs reaches SAVEP's zero sum: the three runs used `bell1977-fpe` and finished.
+- **None of them exercises change 11** (SAVEP's guard; no G record in their EVENTS.TXT). Task 5's test of the guard
+  (plan §9 item 6) needs its own input that reaches the zero sum: a constructed path set, or a seed found by a search
+  at trace level 2, compared against the Fortran's G records (`reference/bell1977/README.md`, change 11). The V2 runs
+  list 270 such sessions (`guard_steps` > 0 in `docs/plans/data/2026-10-07-bell-stage-1/v2-fortran-guard.csv`).
 
 The data files total 565 929 bytes (the plan's limit for this folder is 1 MB).
