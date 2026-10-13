@@ -96,3 +96,27 @@ refinement without a measured need.
 
 Caution: the development set comes from the same generator, so setting the fist from it and testing on it is partly
 circular; recordings of real operators are the real check.
+
+### Topic 3: amplitude (owner, 2026-10-12)
+
+The amplitude A is the expected key-down level the hypotheses score against. One estimate per channel, independent of
+every hypothesis and speed (owner's tap idea).
+
+1. **The tap** is a fixed filter matched to the fastest speed: the bank's shortest branch, a 9.6 ms moving average.
+   Every element at every speed up to 100 WPM lasts at least 12 ms, so the tap reaches the full A on every mark
+   (derived). Its noise bandwidth is about 104 Hz against the channel's 300 Hz, about 4.6 dB less noise than the raw
+   channel (derived). It exists already.
+2. **Estimate:** A² = the weighted average of the tap's power minus the noise power, each sample weighted by its
+   probability of being key-down, judged on the tap itself (carrier plus noise against noise alone, at the current
+   estimates). Gaps get weights near zero, so the estimate freezes during gaps and silence. Feeding back the
+   decoder's own key-down probability is a later option (a loop).
+3. **Speed of following:** an average over about the last 0.5 s of key-down time (gaps do not count); heuristic, to
+   be tested on fading (QSB).
+4. **Noise level:** the bank's existing per-branch noise estimate (from a measured noise spectrum), the same measure
+   the scoring uses.
+5. **Use:** a hypothesis's expected output on its branch is A times the fraction of the branch's filter window that
+   the hypothesis says was key-down; the score compares the actual output with it, given the branch's noise.
+6. **Start of an over:** A starts from the level the signal detector measured when it found the station, then refines
+   from the first marks.
+
+Errors: A too high makes weak marks look like gaps (lost elements); too low makes noise look like marks (false dots).
