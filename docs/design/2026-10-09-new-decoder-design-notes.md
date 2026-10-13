@@ -66,3 +66,33 @@ Each hypothesis carries:
 
 At channel level, outside the hypotheses: the amplitude and the noise level (topic 3); the station's fist habits,
 per channel or per hypothesis, open (topics 2 and 7).
+
+### Topic 2: timing — speed, spacing and fists (owner, 2026-10-12)
+
+Guiding principle (owner): the simplest version of Bell's structure that works; a neural decoder may follow, so no
+refinement without a measured need.
+
+1. **Speed** is one of the bank's 32 ladder speeds (dot lengths 10% apart, 5–100 WPM), nothing finer. A 10% speed
+   error is small next to a hand sender's scatter and far inside the dot/dash (×3) and letter/word (×7/3) margins
+   (derived). A hypothesis's speed names the filter it listens to.
+2. **Speed changes only at word boundaries, by one ladder step (±10%),** with a small probability (heuristic, to be
+   measured). Drift within a word is absorbed by the fist scatter. The start of an over is not a speed change:
+   hypotheses are born at every ladder speed (topics 5 and 7). Check: the development set's speed-change group; if
+   one step per word follows too slowly, allow two steps at a smaller probability.
+3. **Farnsworth gap factors:** exactly geometric, 1, 1.68, 2.83, 4.76, 8.00 (ratio 8^(1/4)); the top value is about
+   the slowest Farnsworth practice in use (letters at 18 WPM, overall 5 WPM: gaps about 7.8 times nominal, derived
+   from the PARIS word). The factor changes only at word boundaries, by one step.
+4. **Fist model: fixed, at channel level, never learned while running.** It is the rule that scores every
+   hypothesis: how probable an element or gap of a given length is at that hypothesis's speed, when a mark or gap
+   ends, and its classification (dot or dash; element, letter or word gap). Form: length = ideal × a random factor
+   whose logarithm is Gaussian (as the generator's styles, from VE3NEA's analysis of real keying), with a slightly
+   heavy tail so that one wild element does not kill the right hypothesis. Ideal lengths 1, 3, 7 dots. Spread
+   σ ≈ 0.3 for marks and for gaps (two separate settings, both starting at 0.3: as forgiving as the generator's
+   hand style; heuristic). One forgiving model to start; two fist classes ("precise", "hand") in the hypothesis only
+   if the development set shows precise signals losing noticeably.
+5. **Telling a speed change, fist scatter and Farnsworth spacing apart:** no special logic; the hypothesis
+   probabilities do it (a speed change shifts all later lengths together; scatter is independent per element;
+   Farnsworth stretches only letter and word gaps).
+
+Caution: the development set comes from the same generator, so setting the fist from it and testing on it is partly
+circular; recordings of real operators are the real check.
