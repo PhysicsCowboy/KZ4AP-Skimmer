@@ -72,9 +72,10 @@ per channel or per hypothesis, open (topics 2 and 7).
 Guiding principle (owner): the simplest version of Bell's structure that works; a neural decoder may follow, so no
 refinement without a measured need.
 
-1. **Speed** is one of the bank's 32 ladder speeds (dot lengths 10% apart, 5–100 WPM), nothing finer. A 10% speed
-   error is small next to a hand sender's scatter and far inside the dot/dash (×3) and letter/word (×7/3) margins
-   (derived). A hypothesis's speed names the filter it listens to.
+1. **Speed** is one of 32 values whose dot lengths are 10% apart, covering 5–100 WPM (the bank's ladder, used only
+   as a grid), nothing finer. A 10% speed error is small next to a hand sender's scatter and far inside the dot/dash
+   (×3) and letter/word (×7/3) margins (derived). Speed only sets the expected lengths of elements and gaps
+   (amended by topic 4: a hypothesis does not listen to a speed-specific filter).
 2. **Speed changes only at word boundaries, by one ladder step (±10%),** with a small probability (heuristic, to be
    measured). Drift within a word is absorbed by the fist scatter. The start of an over is not a speed change:
    hypotheses are born at every ladder speed (topics 5 and 7). Check: the development set's speed-change group; if
@@ -102,21 +103,46 @@ circular; recordings of real operators are the real check.
 The amplitude A is the expected key-down level the hypotheses score against. One estimate per channel, independent of
 every hypothesis and speed (owner's tap idea).
 
-1. **The tap** is a fixed filter matched to the fastest speed: the bank's shortest branch, a 9.6 ms moving average.
-   Every element at every speed up to 100 WPM lasts at least 12 ms, so the tap reaches the full A on every mark
-   (derived). Its noise bandwidth is about 104 Hz against the channel's 300 Hz, about 4.6 dB less noise than the raw
-   channel (derived). It exists already.
+1. **The tap** is a fixed sum matched to the fastest speed: about 10 ms of the signal (5 of topic 4's 2 ms pieces),
+   the same as the bank's shortest branch (9.6 ms). Every element at every speed up to 100 WPM lasts at least 12 ms,
+   so the tap reaches the full A on every mark (derived). Its noise bandwidth is about 100 Hz against the channel's
+   300 Hz, about 4.6 dB less noise than the raw channel (derived). (Amended by topic 4: built from the pieces, not
+   from the bank.)
 2. **Estimate:** A² = the weighted average of the tap's power minus the noise power, each sample weighted by its
    probability of being key-down, judged on the tap itself (carrier plus noise against noise alone, at the current
    estimates). Gaps get weights near zero, so the estimate freezes during gaps and silence. Feeding back the
    decoder's own key-down probability is a later option (a loop).
 3. **Speed of following:** an average over about the last 0.5 s of key-down time (gaps do not count); heuristic, to
    be tested on fading (QSB).
-4. **Noise level:** the bank's existing per-branch noise estimate (from a measured noise spectrum), the same measure
-   the scoring uses.
-5. **Use:** a hypothesis's expected output on its branch is A times the fraction of the branch's filter window that
-   the hypothesis says was key-down; the score compares the actual output with it, given the branch's noise.
+4. **Noise level:** measured on the pieces that the hypotheses agree are gaps (amended by topic 4; first proposed as
+   the bank's per-branch noise estimate).
+5. **Use:** the scoring of topic 4 compares a hypothesis's summed mark with a carrier of amplitude A plus noise.
 6. **Start of an over:** A starts from the level the signal detector measured when it found the station, then refines
    from the first marks.
 
 Errors: A too high makes weak marks look like gaps (lost elements); too low makes noise look like marks (false dots).
+
+### Topic 4: the observation (owner, 2026-10-12)
+
+1. **Every hypothesis is scored on the same evidence:** the channel signal cut into short non-overlapping pieces,
+   each the sum of the complex samples over about 2 ms (3 samples at 1500 samples/s; heuristic: well under the
+   12 ms dot at 100 WPM, long enough for nearly independent noise). Reading speed-specific filters instead would
+   score hypotheses at different speeds on different data, and overlapping samples would count evidence several
+   times.
+2. **Each hypothesis does its own matched filtering:** it adds up the pieces it claims fall inside its current mark
+   (one complex running sum). A Morse carrier keeps its phase through a mark, so the sum is what a filter matched to
+   that mark would give (about 10·log₁₀ n dB gain over one piece for n pieces, derived). The score is the standard
+   carrier-of-unknown-phase-plus-noise against noise-alone statistics, with A from topic 3; gaps are scored as noise.
+   Edges fall where the hypothesis puts them (to one piece); there are no filter delays; speeds between grid values
+   do not matter for the observation.
+3. **The time step** is the piece length, about 2 ms.
+4. **Keying history (topic 1, item 7):** only the running sum of the current mark.
+5. **The bank is not used by the new decoder** (owner): signal level and noise level come from the pieces too
+   (topic 3, amended). The existing bank decoder stays frozen as the yardstick until the new decoder beats it.
+6. **Standard parts:** the noncoherent matched filter (textbook communications theory), segment scoring in hidden
+   semi-Markov models, per-survivor estimates (Raheli, Polydoros and Tzou, 1995). The combination for Morse is ours;
+   no published Morse decoder doing exactly this is known to us (not searched specifically).
+
+Risk: it relies on the carrier's phase staying steady through a mark. A residual frequency error after mixing to
+0 Hz rotates the phase (0.5 Hz over a 720 ms dash at 5 WPM: about a third of a cycle, derived), losing part of the
+gain at slow speeds; the channelizer's frequency hold is to be measured before relying on it.
