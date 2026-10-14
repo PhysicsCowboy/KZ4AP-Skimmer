@@ -146,3 +146,43 @@ Errors: A too high makes weak marks look like gaps (lost elements); too low make
 Risk: it relies on the carrier's phase staying steady through a mark. A residual frequency error after mixing to
 0 Hz rotates the phase (0.5 Hz over a 720 ms dash at 5 WPM: about a third of a cycle, derived), losing part of the
 gain at slow speeds; the channelizer's frequency hold is to be measured before relying on it.
+
+### Topic 5: hypotheses (owner, 2026-10-13)
+
+A hypothesis is one continuous story of what has been sent, for the whole over, with its text kept through a link to
+its parent. It does not end at letters or words.
+
+1. **Branching:** every piece (2 ms), a hypothesis continues as it is, or ends its current mark or gap and branches
+   into the possible successors (at a word gap also the speed and Farnsworth steps, up to 3 × 3 variants). A branch
+   is created only where the fist model gives it a non-negligible probability.
+2. **Merging:** two hypotheses in the same state (everything that affects the future: activity, key up or down and
+   when the current mark or gap began, speed, Farnsworth factor, position in the Morse tree, and the past text the
+   text model needs) can never be told apart by future evidence, so the ratio of their probabilities is fixed
+   forever (derived). The less probable is dropped; the survivor keeps its own probability and its own text
+   (probabilities are not added: that would mix the evidence for two texts). No correction is lost by this: every
+   correction future evidence could make is between hypotheses in different states, which are all kept. How far back
+   word context can correct is set by how much past text a hypothesis carries (topic 1's open item, topic 6): more
+   text, more correction, fewer merges, more CPU.
+3. **Births:** (a) from silence: while the no-signal hypothesis is alive, Morse at any of the 32 speeds, a steady
+   carrier or nonsense keying may begin at any piece; (b) **always-on rescue births**: wherever a mark plausibly
+   begins, fresh hypotheses "a new letter starts here" are seeded at all speeds, with the best current hypothesis's
+   probability times a small disruption probability. They let the decoder recover when every surviving hypothesis is
+   wrong in a way its own branching cannot repair (a speed jump beyond one step per word, a noise burst that
+   misplaces a letter boundary, a new station without silence between overs). Without them the decoder can stay lost,
+   as Bell's did.
+4. **Pruning by an error budget** (owner's target): pruning may throw away the right reading at most once per
+   1 000 letters (0.1%; negligible at the CER 0.10 crossing, a tenth of a 0.5–1% floor on clean signals). At each
+   piece, the least probable hypotheses are dropped only while their combined probability stays under the budget
+   per piece (about 3·10⁻⁶ at 20 WPM, about 300 pieces per letter; it scales with speed; derived). Reason: pruning
+   happens 500 times a second, so a fixed relative threshold such as 10⁻⁴ would add up to about a 3% chance per letter
+   of losing the right reading (derived). The model's probabilities are approximations, so the development set checks
+   that the budget holds.
+5. **Ceiling on the number of hypotheses, set by CPU, not accuracy:** a fixed CPU budget per channel; how often the
+   ceiling rather than the budget decides is counted. Rough estimate: about 50 ns per hypothesis per piece, so a budget
+   equal to the bank decoder's 42 ms per channel-second allows about 1 700 hypotheses; normally a few hundred at most
+   are needed (estimates, to be measured).
+6. **CPU as a requirement:** the target is the spec's Classical figure, 2–3 million operations per channel-second
+   for typical signals (design spec §5.1); at the ceiling the estimate is 10–25 million, so the ceiling only serves
+   hard moments. A global governor, as the spec requires for overload, lowers the ceiling on the weakest channels
+   first, then drops the weakest tracks. CPU per channel-second is measured on the first prototype, together with
+   accuracy, before any refinement.
