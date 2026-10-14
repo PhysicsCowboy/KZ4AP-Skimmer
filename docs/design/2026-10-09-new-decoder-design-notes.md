@@ -183,6 +183,16 @@ its parent. It does not end at letters or words.
    are needed (estimates, to be measured).
 6. **CPU as a requirement:** the target is the spec's Classical figure, 2–3 million operations per channel-second
    for typical signals (design spec §5.1); at the ceiling the estimate is 10–25 million, so the ceiling only serves
-   hard moments. A global governor, as the spec requires for overload, lowers the ceiling on the weakest channels
-   first, then drops the weakest tracks. CPU per channel-second is measured on the first prototype, together with
-   accuracy, before any refinement.
+   hard moments. CPU per channel-second is measured on the first prototype, together with accuracy, before any
+   refinement.
+7. **Overload governor (owner, 2026-10-14): goal, as many stations as the CPU allows.** When the machine cannot keep
+   up: (a) first decode every station with fewer hypotheses (all ceilings lowered); (b) only when the ceilings reach
+   a floor below which decoding falls apart, drop the weakest stations.
+8. **The ceiling, the floor and the cost are measured, not guessed (owner):**
+   - **Cost per hypothesis per piece:** timed on the prototype on the Linux machine (replacing the 50 ns estimate).
+   - **How many hypotheses a station needs:** the distribution of live hypotheses per piece over the development
+     set, per group (clean, weak, fists, speed changes, Farnsworth).
+   - **The ceiling and the floor:** the decoder is run on the development set at a range of ceilings; the CER
+     against the ceiling gives the knee (the default ceiling: little accuracy gained above it) and the floor (the
+     CER rises steeply below it).
+   - **Cost per station-second** follows from the three, and is reported for typical and hard signals.
