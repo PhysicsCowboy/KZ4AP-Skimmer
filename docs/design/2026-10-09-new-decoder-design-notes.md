@@ -328,8 +328,8 @@ CQ, contest and DX exchanges) and transliterating conversations (ragchews).
 
 ### After review 1 (2026-10-14)
 
-An independent review of topics 1–6 ("review 1": `build/design-review/new-decoder-review-1.md`, git-ignored; cited
-above by its item numbers, such as D7) checked every claim labeled standard, derived or sourced, classified every
+An independent review of topics 1–6 ("review 1": `docs/research/2026-10-14-new-decoder-review-1.md`, with its
+derivation scripts beside it; cited above by its item numbers, such as D7) checked every claim labeled standard, derived or sourced, classified every
 number, and listed omissions. Its corrections of labels and facts are made in place above, each marked "corrected
 2026-10-14". The owner's decisions on the rest (2026-10-14):
 
