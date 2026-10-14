@@ -58,7 +58,8 @@ Each hypothesis carries:
    the next marks decide.
 4. **Speed and the Farnsworth gap factor;** their form is topic 2.
 5. **The position in the Morse tree:** the letter in progress.
-6. **Past text:** open until topic 6.
+6. **Past text:** the current word so far, plus the kind of the previous word (and which token, if it was a fixed
+   token). Closed by topic 6.
 7. **The last stretch of keying,** if topic 4 finds that the expected filter output depends on keying before the
    current element.
 8. **Its score and a link to its parent,** to trace its text back when printing (topic 8). The score is the
@@ -115,8 +116,8 @@ every hypothesis and speed (owner's tap idea).
    decoder's own key-down probability is a later option (a loop).
 3. **Speed of following:** an average over about the last 0.5 s of key-down time (gaps do not count); heuristic, to
    be tested on fading (QSB).
-4. **Noise level:** measured on the pieces that the hypotheses agree are gaps (amended by topic 4; first proposed as
-   the bank's per-branch noise estimate).
+4. **Noise level:** measured on the pieces that the hypotheses agree are gaps, as a level per hertz (amended by
+   topic 4, items 5 and 7; first proposed as the bank's per-branch noise estimate).
 5. **Use:** the scoring of topic 4 compares a hypothesis's summed mark with a carrier of amplitude A plus noise.
 6. **Start of an over:** A starts from the level the signal detector measured when it found the station, then refines
    from the first marks.
@@ -127,12 +128,13 @@ Errors: A too high makes weak marks look like gaps (lost elements); too low make
 
 1. **Every hypothesis is scored on the same evidence:** the channel signal cut into short non-overlapping pieces,
    each the sum of the complex samples over about 2 ms (3 samples at 1500 samples/s; heuristic: well under the
-   12 ms dot at 100 WPM, long enough for nearly independent noise). Reading speed-specific filters instead would
+   12 ms dot at 100 WPM). The pieces' noise is **not** independent: the channel passes about 300 Hz, so its noise
+   stays correlated for about 3.3 ms (derived); see item 7. Reading speed-specific filters instead would
    score hypotheses at different speeds on different data, and overlapping samples would count evidence several
    times.
 2. **Each hypothesis does its own matched filtering:** it adds up the pieces it claims fall inside its current mark
    (one complex running sum). A Morse carrier keeps its phase through a mark, so the sum is what a filter matched to
-   that mark would give (about 10·log₁₀ n dB gain over one piece for n pieces, derived). The score is the standard
+   that mark would give; its noise follows from the noise level per hertz (item 7). The score is the standard
    carrier-of-unknown-phase-plus-noise against noise-alone statistics, with A from topic 3; gaps are scored as noise.
    Edges fall where the hypothesis puts them (to one piece); there are no filter delays; speeds between grid values
    do not matter for the observation.
@@ -143,6 +145,13 @@ Errors: A too high makes weak marks look like gaps (lost elements); too low make
 6. **Standard parts:** the noncoherent matched filter (textbook communications theory), segment scoring in hidden
    semi-Markov models, per-survivor estimates (Raheli, Polydoros and Tzou, 1995). The combination for Morse is ours;
    no published Morse decoder doing exactly this is known to us (not searched specifically).
+
+7. **Noise per hertz, measured on gaps (owner, 2026-10-14; standard).** The noise of any sum over a time T is
+   computed from the noise level per hertz (its variance proportional to T, for T well above about 3 ms), estimated on
+   gaps as a density, not per piece. Treating the pieces as independent would understate a mark's noise variance by a
+   factor of about 1.7–1.8 (2.2–2.6 dB) for marks of 8–720 ms on an ideal 300 Hz channel (derived), making the decoder
+   overconfident, the mistake of Bell's receiver chain. (Amended 2026-10-14: item 1 had claimed nearly independent
+   noise, and item 2 a gain of 10·log₁₀ n dB over one piece; both were wrong by that factor.)
 
 Risk: it relies on the carrier's phase staying steady through a mark. A residual frequency error after mixing to
 0 Hz rotates the phase (0.5 Hz over a 720 ms dash at 5 WPM: about a third of a cycle, derived), losing part of the
@@ -208,3 +217,50 @@ probabilities.
      against the ceiling gives the knee (the default ceiling: little accuracy gained above it) and the floor (the
      CER rises steeply below it).
    - **Cost per station-second** follows from the three, and is reported for typical and hard signals.
+
+### Topic 6: the text model (owner, 2026-10-14)
+
+The text model gives the probability of each completed letter given the text before it; it multiplies a hypothesis's
+score each time the hypothesis completes a letter. The decoder serves both uses the owner wants: skimming (callsigns,
+CQ, contest and DX exchanges) and transliterating conversations (ragchews).
+
+1. **No callsign matching in the decoder (owner).** Callsign databases (`cty.dat`, `MASTER.SCP`) belong to the
+   callsign-search step after the decoder (design spec §5, step 5; §6). Callsigns and other traffic are **never
+   matched against the Reverse Beacon Network** (owner; spec §6 amended): once this skimmer feeds RBN, our own misread
+   calls would confirm themselves.
+2. **One model, not two modes (owner).** Each word is one of five kinds: **callsign** (written pattern rules: prefix,
+   digit, suffix, optional `/P` and the like; no list of calls), **fixed token** (CQ, DE, TEST, K, KN, TU, 5NN, 73,
+   the common abbreviations and Q-codes), **number** (serials, reports, zones), **plain language** (letter-sequence
+   statistics of conversation English, abbreviations included), and a **catch-all** (any string of symbols, with a
+   small probability, so that no reading is ever impossible). Standard components: class-based language models
+   (Brown et al., 1992), interpolation with a uniform distribution (Jelinek and Mercer, 1980), a finite-state
+   grammar for callsign patterns.
+3. **The mix of kinds, without hand-written rules.** First version: one fixed mix for all channels, counted from
+   independent text. Only if tests show the fixed mix hurting one kind of traffic: a per-channel mix by counting
+   (each kind's share of the channel's last N words; a cache language model, Kuhn and De Mori, 1990); N is measured.
+4. **Strength.** The catch-all bounds how much an unusual word can be lowered: to no less than w times its probability
+   without a text model (w = 5%: 1/20; derived). It does not bound how much a common word is raised. The overall weight
+   of the text model (the standard "language model weight" of speech recognition) is set by measurement: errors on
+   ambiguous signals must fall, and random callsigns decoded as something else must not rise.
+5. **Past text (closes topic 1's open item):** the current word so far, plus the kind of the previous word (and which
+   token, for a fixed token). Merging (topic 5): hypotheses that differ within the current word stay apart until the
+   word ends (except inside a callsign, where only the position in the pattern matters); corrections reach back
+   through the current word and, through the kind, one word further.
+6. **Start simple (owner).** The first prototype has no text model (the Morse tree only, all symbols equally likely),
+   as the baseline. Kinds are added one at a time, each measured: callsign, token and number first, plain language
+   second.
+7. **Alphabet:** the engine's existing Morse table (letters, digits, 15 punctuation marks, 12 prosigns), shared with
+   the generator and the scorer.
+8. **Sources** (`docs/research/research_notes/CW conversation text sources/sources.md`). No public transcripts of real
+   ragchews exist, and no measured statistics of real CW conversation. Callsign, token and number kinds: built and
+   tested from public contest logs (CQ WW, CQ WPX, ARRL) and the standard abbreviation and Q-code lists; real copy
+   errors from the contests' public log-checking reports. Plain language (proposed): built from human-written practice
+   text, which is independent of our generator but not real traffic; the real check is a set of real recordings
+   (IZ4KBW's archive, HamSCI's recordings) transcribed later by the owner, who copies to 50 WPM, by correcting a
+   decoder's draft, with a way to mark uncopyable or garbled stretches. Whether the draft comes from another decoder,
+   or part is copied blind, so that the test does not favor the decoder whose draft was corrected, is decided in
+   topic 9. The development set's text comes from our generator, so text models are built and tested on independent
+   text.
+9. **Data and the repository (owner).** Contest logs are used for building and testing but never committed. IZ4KBW's
+   recordings, if ever included, credit him. What else, if anything, from these sources is committed (raw data,
+   derived tables) is decided when the need arises.
