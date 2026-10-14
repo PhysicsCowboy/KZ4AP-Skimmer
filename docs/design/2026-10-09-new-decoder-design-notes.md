@@ -61,7 +61,8 @@ Each hypothesis carries:
 6. **Past text:** open until topic 6.
 7. **The last stretch of keying,** if topic 4 finds that the expected filter output depends on keying before the
    current element.
-8. **Its probability and a link to its parent,** to trace its text back when printing (topic 8).
+8. **Its score and a link to its parent,** to trace its text back when printing (topic 8). The score is the
+   probability of its single best story (topic 5, amended 2026-10-14).
 9. **A clock for each non-Morse state:** how long the carrier or the silence has lasted.
 
 At channel level, outside the hypotheses: the amplitude and the noise level (topic 3); the station's fist habits,
@@ -152,33 +153,44 @@ gain at slow speeds; the channelizer's frequency hold is to be measured before r
 A hypothesis is one continuous story of what has been sent, for the whole over, with its text kept through a link to
 its parent. It does not end at letters or words.
 
+**Search algorithm (owner, 2026-10-14, on the condition that it is standard practice): Viterbi beam search,** the
+standard decoder of speech recognition (Rabiner 1989; in the "token passing" form of Young, Russell and Thornton,
+1989). Each hypothesis carries a **score**: the probability of its single best story together with the signal so far.
+Scores are not probabilities of the hypotheses: they do not sum to 1 and need not, since the decoder only asks which
+story is best. They are rescaled at every piece (divided by the best score) to keep them in numerical range, which
+changes no decision (Rabiner's "scaling"). True probabilities (per character, speed) are computed separately, by
+summing over the alternatives kept (topic 8). This replaces the earlier wording, which called the scores
+probabilities.
+
 1. **Branching:** every piece (2 ms), a hypothesis continues as it is, or ends its current mark or gap and branches
    into the possible successors (at a word gap also the speed and Farnsworth steps, up to 3 × 3 variants). A branch
    is created only where the fist model gives it a non-negligible probability.
 2. **Merging:** two hypotheses in the same state (everything that affects the future: activity, key up or down and
    when the current mark or gap began, speed, Farnsworth factor, position in the Morse tree, and the past text the
    text model needs) can never be told apart by future evidence, so the ratio of their probabilities is fixed
-   forever (derived). The less probable is dropped; the survivor keeps its own probability and its own text
-   (probabilities are not added: that would mix the evidence for two texts). No correction is lost by this: every
+   forever (derived). The lower-scoring is dropped; the survivor keeps its own score and its own text: the Viterbi
+   algorithm's merging step (standard). No correction is lost by this: every
    correction future evidence could make is between hypotheses in different states, which are all kept. How far back
    word context can correct is set by how much past text a hypothesis carries (topic 1's open item, topic 6): more
    text, more correction, fewer merges, more CPU.
 3. **Births:** (a) from silence: while the no-signal hypothesis is alive, Morse at any of the 32 speeds, a steady
    carrier or nonsense keying may begin at any piece; (b) **always-on rescue births**: wherever a mark plausibly
-   begins, fresh hypotheses "a new letter starts here" are seeded at all speeds, with the best current hypothesis's
-   probability times a small disruption probability. They let the decoder recover when every surviving hypothesis is
+   begins, fresh hypotheses "a new letter starts here" are seeded at all speeds. A birth is an ordinary transition, with
+   a small disruption probability ε, from every hypothesis; under Viterbi the newborn takes the best of these, so its
+   score is the best current score times ε (standard). They let the decoder recover when every surviving hypothesis is
    wrong in a way its own branching cannot repair (a speed jump beyond one step per word, a noise burst that
    misplaces a letter boundary, a new station without silence between overs). Without them the decoder can stay lost,
    as Bell's did.
-4. **Pruning by an error budget** (owner's target): pruning may throw away the right reading at most once per
-   1 000 letters (0.1%; negligible at the CER 0.10 crossing, a tenth of a 0.5–1% floor on clean signals). At each
-   piece, the least probable hypotheses are dropped only while their combined probability stays under the budget
-   per piece (about 3·10⁻⁶ at 20 WPM, about 300 pieces per letter; it scales with speed; derived). Reason: pruning
-   happens 500 times a second, so a fixed relative threshold such as 10⁻⁴ would add up to about a 3% chance per letter
-   of losing the right reading (derived). The model's probabilities are approximations, so the development set checks
-   that the budget holds.
+4. **Pruning: a beam plus a maximum count** (standard in speech recognition: beam search, Lowerre 1976). At each
+   piece, every hypothesis whose score falls below the best by more than a set factor is dropped. **The factor is set
+   by measurement against the owner's target:** pruning may change the decoded result at most once per 1 000 letters
+   (0.1%; negligible at the CER 0.10 crossing, a tenth of a 0.5–1% floor on clean signals). Method (standard: keeping
+   "search errors" negligible): decode the development set once with a very wide beam as the reference, then narrow
+   the beam until the result differs from the reference at most once per 1 000 letters. Amended 2026-10-14: the
+   earlier rule (drop hypotheses while their combined probability stays under a budget per piece) treated the scores
+   as probabilities summing to 1, which they are not.
 5. **Ceiling on the number of hypotheses, set by CPU, not accuracy:** a fixed CPU budget per channel; how often the
-   ceiling rather than the budget decides is counted. Rough estimate: about 50 ns per hypothesis per piece, so a budget
+   ceiling rather than the beam decides is counted (the maximum count is "histogram pruning", standard). Rough estimate: about 50 ns per hypothesis per piece, so a budget
    equal to the bank decoder's 42 ms per channel-second allows about 1 700 hypotheses; normally a few hundred at most
    are needed (estimates, to be measured).
 6. **CPU as a requirement:** the target is the spec's Classical figure, 2–3 million operations per channel-second
