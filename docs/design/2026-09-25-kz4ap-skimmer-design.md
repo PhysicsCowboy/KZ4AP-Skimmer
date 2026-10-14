@@ -437,7 +437,9 @@ in a later session. The candidates on the table:
 - `cty.dat` from country-files.com: prefix → DXCC entity, zones, continent.
 - `MASTER.SCP` from supercheckpartial.com: tens of thousands of calls active
   in contests.
-- Calls recently spotted by this skimmer or by the Reverse Beacon Network.
+- Calls recently spotted by this skimmer. **Never the Reverse Beacon
+  Network** (owner, 2026-10-14): once this skimmer feeds RBN, matching
+  against RBN would let our own misread calls confirm themselves.
 - National licensing databases (e.g. the FCC's US list); probably later, if
   ever.
 
