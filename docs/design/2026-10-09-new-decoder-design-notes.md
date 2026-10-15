@@ -61,7 +61,8 @@ Each hypothesis carries:
    No separate "pause" element (Bell had one): anything longer than a word space is either a long word space (the
    over continues: same sender, same speed) or no signal (the over has ended; topic 7). Both hypotheses coexist until
    the next marks decide.
-4. **Speed and the Farnsworth gap factor;** their form is topic 2.
+4. **Speed and the Farnsworth gap factor;** their form is topic 2. A fresh start takes its factor at its first gap
+   between letters (topic 2, item 3; added 2026-10-15).
 5. **The position in the Morse tree:** the letter in progress.
 6. **Past text:** the current word so far, plus the kind of the previous word (and which token, if it was a fixed
    token). Closed by topic 6.
@@ -72,44 +73,197 @@ Each hypothesis carries:
 9. **A clock for each non-Morse state:** how long the carrier or the silence has lasted.
 
 At channel level, outside the hypotheses: the amplitude and the noise level (topic 3); the fist model, fixed
-(topic 2, item 4; corrected 2026-10-14, this line had left it open).
+(topic 2, item 4; corrected 2026-10-14, this line had left it open). If per-sender adaptation is ever built (topic 2,
+item 6), each hypothesis carries its own adapted fist instead (added 2026-10-15).
 
-### Topic 2: timing — speed, spacing and fists (owner, 2026-10-12)
+### Topic 2: timing — speed, spacing and fists (owner, 2026-10-12; reopened and closed again 2026-10-15)
 
 Guiding principle (owner): the simplest version of Bell's structure that works; a neural decoder may follow, so no
 refinement without a measured need.
 
-1. **Speed** is one of 32 values whose dot lengths are 10% apart, covering 5.2–100 WPM (dots of 12.0–230.3 ms; the
-   bank's ladder, used only as a grid), nothing finer. A speed error of at most ±4.9% (the grid's worst) is small next
-   to a hand sender's scatter and far inside the dot/dash (×3) and letter/word (×7/3) margins (derived). Speed only
-   sets the expected lengths of elements and gaps (amended by topic 4: a hypothesis does not listen to a
-   speed-specific filter).
-2. **Speed changes only at word boundaries, by one ladder step (±10%),** with a small probability (heuristic, to be
-   measured). Drift within a word is absorbed by the fist scatter (heuristic). The start of an over is not a speed
-   change: hypotheses are born at every ladder speed (topics 5 and 7). Check: the development set's speed-change
-   group; if one step per word follows too slowly, allow two steps at a smaller probability.
-3. **Farnsworth gap factors:** exactly geometric (owner), 1, 1.68, 2.83, 4.76, 8.00 (ratio 8^(1/4)); the count, 5, is
-   heuristic. The top value matches letters at 18 WPM sent at 5 WPM overall (gaps 7.84 times nominal, derived by the
-   ARRL timing rule). No source shows that this is the slowest Farnsworth spacing in use, and the development set's
-   Farnsworth group reaches 15.7 (review 1, D9; corrected 2026-10-14): the range is reopened (see "After review 1").
-   The factor changes only at word boundaries, by one step.
-4. **Fist model: fixed, at channel level, never learned while running.** It is the rule that scores every
-   hypothesis: how probable an element or gap of a given length is at that hypothesis's speed, when a mark or gap
-   ends, and its classification (dot or dash; element, letter or word gap). Form: length = ideal × a random factor
-   whose natural logarithm is Gaussian (the generator's form, from VE3NEA's DeepCW generator; no source shows that it
-   was measured on real keying, corrected 2026-10-14), with a slightly heavy tail so that one wild element does not
-   kill the right hypothesis (its form and weight are heuristic, not yet chosen). Ideal lengths 1, 3, 7 dots (the
-   generator's hand style differs: its medians are 4.48 dots for dashes and letter gaps and 7.39 dots for word gaps).
-   Spread σ ≈ 0.3, the standard deviation of the natural logarithm, for marks and for gaps (two separate settings,
-   both starting at 0.3: as forgiving as the generator's hand style; heuristic). One forgiving model to start; two
-   fist classes ("precise", "hand") in the hypothesis only if the development set shows precise signals losing
-   noticeably.
-5. **Telling a speed change, fist scatter and Farnsworth spacing apart:** no special logic; the hypothesis
-   probabilities do it (a speed change shifts all later lengths together; scatter is independent per element;
-   Farnsworth stretches only letter and word gaps).
+Reopened 2026-10-15 for review 1's D9 and O13 and for the standard-practice check's findings (step 2, rows T2.1 to
+T2.4e). The conclusions below replace the earlier ones, which git keeps: a fixed fist with σ 0.3 from the generator
+and a fallback of two fist classes; speed changes of one grid step at word boundaries; five Farnsworth factors
+changing by one step at word boundaries.
 
-Caution: the development set comes from the same generator, so setting the fist from it and testing on it is partly
-circular; recordings of real operators are the real check.
+**A real advantage (owner, 2026-10-15)** is required of every refinement this topic holds back from the baseline. It
+means all three of:
+- "better" than the baseline where the refinement should help, by the project's paired comparison: the bootstrap 95%
+  interval of the per-signal CER difference lies below zero (`docs/signal-processing.md`, A.11; the interval rule is a
+  heuristic convention);
+- not "worse" by the same comparison anywhere else;
+- a gain the owner judges worth its cost.
+
+1. **Speed** is one of 32 values whose dot lengths are 10% apart, covering 5.2–100 WPM (dots of 12.0–230.3 ms; the
+   bank's ladder, used only as a grid). A speed error of at most ±4.9% (the grid's worst) is small next to a hand
+   sender's scatter and far inside the dot/dash (×3) and letter/word (×7/3) margins (derived). Speed only sets the
+   expected lengths of elements and gaps (amended by topic 4: a hypothesis does not listen to a speed-specific
+   filter).
+   - **Standard but adapted (owner, 2026-10-15):** log-spaced tempo values are music's tempo-tracking practice, which
+     picks their number by measured accuracy against cost (Krebs 2015: accuracy converged at 40–75 values over a 4:1
+     range, 1.9–3.6% apart).
+   - **Cost (derived):** a speed off by Δ in ln costs Δ²/(2σ²) nats per element, and r²/(24σ²) on average over a cell
+     of width r in ln. At σ 0.3 that is 0.013 nats at worst and 0.004 on average, and a gap read from its length
+     alone (letter or word, equal priors) is misread 8.0% of the time on average over the cell, against 7.9% at the
+     exact speed. At σ 0.05 it is 0.45 and 0.15 nats. The baseline's σ values are broad (pooled over senders, item
+     4), so 10% costs it little; narrow σ values come only with adaptation (item 6), which would also refine each
+     sender's speed within a cell.
+   - **Test (topic 9):** once the prototype runs, a 5% grid (61 values) is tried against it and adopted only with a
+     real advantage.
+2. **Speed changes: fresh starts only (owner, 2026-10-15).** A hypothesis keeps one speed. Every change, sudden or
+   gradual, is picked up by a fresh start (topic 5, item 3: wherever a mark plausibly begins, new hypotheses start at
+   every speed, behind the best by a factor ε). Speed is thus constant between change points, as in the change-point
+   model of Adams and MacKay (2007): standard but adapted (the label of the ε-restart itself is topic 5's, reopened).
+   This replaces one grid step at word boundaries, with a probability p that was never set, and its fallback of two
+   steps; step 2 had classed that rule as ours where a standard exists (T2.2: music lets the tempo change at every
+   beat, Krebs 2015; Bell, at every key transition).
+   - **Why fresh starts suffice** (the owner's simplification): keyers and computers hold a fixed speed and change it
+     suddenly, which is what fresh starts are for; the senders who drift are hand senders, whose loose timing makes a
+     speed error of about 5% nearly harmless (item 1); and it drops p and the three-way speed branching at every word
+     boundary.
+   - **The cost:** a newborn must make up its penalty, so slow drift is followed late. A newborn at f times the old
+     speed overtakes once the old speed's extra misfit, (ln f)²/(2σ²) nats per element, adds up to ln(1/ε): at
+     σ 0.3, 0.38 nats per element for ×1.3 and 2.7 for ×2 (derived). Since ε now carries every speed change, setting
+     it (topic 5) matters more.
+   - **Test (topic 9):** small steps are added back only with a real advantage, judged on the development set's slow
+     speed changes (D2's ramps) and on how much real senders drift (item 5's measurement).
+   - The start of an over is not a speed change: hypotheses are born at every grid speed (topics 5 and 7).
+3. **Farnsworth gap factor (owner, 2026-10-15).** One factor F stretches letter and word gaps alike, keeping their
+   3:7 ratio: the ARRL rule (Bloom 1990), F = (60c/s − 37.2)/22.8 for characters at c WPM sent at s WPM overall. The
+   form is standard; carrying F as a hidden variable of each hypothesis is the adaptation.
+   - **Grid:** 23 factors 10% apart, 1.1^k for k = 0 to 22 (1 to 8.14), like the speeds. The range, 1 to 8, is the
+     owner's decision: it covers the use known on the air (the ARRL's 18 WPM characters at 5 WPM overall give 7.84;
+     W1AW's code practice has used 15 WPM characters since 2001, at most 6.26, from a weak source). Covering the whole
+     development group (to 15.7, 30 values) would cost almost no CPU, since factors that do not fit are dropped at a
+     hypothesis's first gap between letters (derived in outline); it was declined because factors above 8 are not
+     needed. The earlier five factors (1, 1.68, 2.83, 4.76, 8.00) were too far apart: a sender midway between two is
+     off by +29.7% or −22.9%, so at σ 0.3 with equal priors 29.3% of one kind of gap is misread (letter gaps as word
+     gaps, or the reverse), against 7.9% at the exact factor and at most 10.5% on a 10% grid (derived).
+   - **Change rule: as for speed (item 2).** A hypothesis keeps one factor; a change is picked up by a fresh start. A
+     sender sets the factor for a whole transmission by choosing the two speeds. No steps at word boundaries
+     (replacing one step per word boundary, which had neither a derivation nor a plan: step 2, T2.3c).
+   - **A fresh start takes its factor at its first gap between letters,** branching into the factors that fit that
+     gap. The factor stretches only gaps between letters and words, so newborns that differ only in factor have
+     exactly the same score until then (derived): every surviving hypothesis gets the score it would have had if all
+     23 factors had been started at birth, without multiplying births by 23 or filling the beam with identical copies.
+     A computing shortcut; topic 5 settles its implementation (it may apply to speed as well).
+   - **Test signals above a factor of 8 are out of range (owner, 2026-10-15).** About a fifth of the development
+     set's Farnsworth group (I2, which reaches 15.7: review 1, D9) lies above 8 (estimated from its cells). In every
+     comparison on I2, the frozen bank decoder's reference scores included, those signals are left out on both sides
+     and listed separately; about four fifths of I2 remain. The committed score tables do not record a signal's
+     overall speed: it is recovered from the seed by rerunning the generator's label step, and the new decoder's
+     score tables will record it. The design spec names I2 in the comparison with the bank decoder, so this cut joins
+     the spec amendment ("After review 1", item 6). The older Farnsworth group (I) reaches 7.84 and is unaffected.
+4. **Fist model, baseline: fixed, at channel level, never learned while running.** It is the rule that scores every
+   hypothesis: how probable an element or gap of a given length is at that hypothesis's speed (and, for gaps between
+   letters, its Farnsworth factor), when a mark or gap ends, and its classification (dot or dash; element, letter or
+   word gap).
+   - **Form:** length = median × a random factor whose natural logarithm is Gaussian with standard deviation σ (the
+     generator's form, from VE3NEA's DeepCW generator, consistent with Mills's (1977) scatter proportional to length;
+     no source shows that it was measured on real keying), with a heavy tail so that one wild element does not kill
+     the right hypothesis: a two-component (contaminated) likelihood, the standard device of robust statistics (Huber
+     1964). The tail's form and weight, and the log-normal form itself, come from item 5's measurement.
+   - **One median and one σ for each of the five kinds (owner, 2026-10-15):** dot, dash, element gap, letter gap and
+     word gap, a table of 10 numbers in place of fixed 1:3:1:3:7 ratios and two σ's. Item 5's measurement gives them
+     at no extra cost.
+   - **Placeholders until then (heuristic):** medians 1, 3, 1, 3, 7 dots (the ITU sending standard, ITU-R M.1677-1,
+     not a measurement of senders) and σ 0.3 for every kind (as forgiving as the generator's hand style). The
+     generator's hand style itself differs (medians 4.48 dots for dashes and letter gaps, 7.39 for word gaps): its
+     letter gaps sit almost on the placeholders' letter/word boundary (√21 = 4.58 dots at equal priors), so 47% of
+     them look more like word gaps, and still 30% if letter gaps are a priori 3.7 times as likely (derived).
+   - **Published evidence on σ is thin.** TSC's 55 hand-keyed samples (1976, reported by Bell 1977) were still
+     misread at 1.35% with each sample's best threshold, which under this form means σ ≈ 0.25 if every operator had
+     the same scatter (σ = ln √3 / 2.21; if operators differ and each has σ below 0.39, their average is below 0.25,
+     the error rate being convex in σ there; derived). Mills's k ≈ 0.15 (Mills 1977) is a different quantity: his
+     standard deviation is 0.15 times the length of the (mark, space) pair, shared by both members, and includes
+     noise, fading and his receiver's slicer. Per element it gives coefficients of variation from about 0.15 for the
+     longer member of a pair up to 0.47 for a dot before a letter gap and 1.06 before a word gap (derived), so step
+     2's direct comparison of 0.15 with our σ (§3.3 and row T2.4d) overstates the match (corrected 2026-10-15).
+   - **Sender style is adaptation's job.** In the baseline, one sender's weighting (marks longer and gaps shorter by
+     the same amount), dash/dot and spacing ratios, and bug style (machine dots, hand dashes) stay scatter around the
+     pooled values; learning them per sender is item 6's. Which mix of senders the pooled values represent (ragchew,
+     contest) is part of item 5's plan. With item 6's genie test, this answers review 1's O13.
+   - **Gaps conditioned on the mark before** (after a dot or after a dash: 6 gap kinds instead of 3) are standard but
+     held back: MAUDE (1959) lengthened each space by a fraction of the mark before it, Mills kept spaces after dots
+     and after dashes apart, and speech conditions units on their neighbors (Gales and Young 2008). They need no new
+     state (a hypothesis in a gap knows which mark ended, from its place in the Morse tree), and the measurement fits
+     the 6 kinds too. Our generator draws every length independently (`training/kz4ap_synth/keying.py`), so only real
+     keying can show whether they matter. **Test (topic 9):** adopted only with a real advantage when decoding real
+     fists.
+5. **Where the fist's numbers come from: measured on real keying (owner, 2026-10-15).** This is the standard
+   practice: speech trains its speaker-independent models, durations included, on many speakers' recordings and uses
+   them as the prior for adaptation, fitting the prior's spread to the differences between speakers (parametric
+   empirical Bayes; Morris 1983); TSC and Mills measured Morse keying.
+   - **Data:** strong stretches of IZ4KBW's archive (thousands of QSOs from 2017 to 2026, as MP3s named by date,
+     calls, key used, speed and frequency; no transcripts) and of HamSCI's 2017 eclipse recordings (CC BY 4.0)
+     (`docs/research/research_notes/CW conversation text sources/sources.md`).
+   - **Labeled by machine, with no transcription** ("lightly supervised training": untranscribed audio labeled
+     automatically, keeping only what reads reliably; Lamel, Gauvain and Adda 2002). Marks and gaps are measured at
+     half amplitude: 0.3 ms rms at S₅₀₀ = 20 dB and 0.1 ms at 30 dB (simulated, with 5 ms raised-cosine edges and a
+     ±150 Hz filter; MP3 coding and receiver AGC are not included, and are checked by passing synthetic signals of
+     known timing through the same chain). Dots and dashes, and element gaps and gaps between letters, are told apart
+     by clustering each sender's own lengths (each pair is about 3 times apart or more). Word boundaries come from
+     the text (words, abbreviations and callsign patterns from topic 6's sources), never from gap length, so letter
+     and word gaps, the pair that overlaps for sloppy senders, are not cut at a timing threshold. Stretches that do
+     not read as valid text are dropped.
+   - **What it gives:** the baseline's pooled values (item 4), adaptation's prior (item 6), the tail's form and
+     weight (by likelihood on held-out senders), and a check of the log-normal form. Amounts (derived): a two-minute
+     over at 25 WPM has about 500 dots, 200 dashes, 450 element gaps, 200 letter gaps and 50 word gaps (counted on
+     PARIS), which pins that sender's σ to between ±3% (dots) and ±10% (word gaps) (relative standard error
+     1/√(2n)); a σ off by 10% costs about 0.01 nats per element (the Kullback–Leibler divergence, about δ² for a
+     fractional error δ), small next to the 4–7 nats that separate element kinds at σ 0.3. The spread between
+     senders needs about 50 senders for ±10% (1/√(2(m − 1))); a tail weight near 1% needs about 10 000 elements for
+     ±10%, and fifty two-minute overs give about 70 000.
+   - **Its weakness:** the dropped stretches may be the sloppiest, so σ and especially the tail could come out too
+     small. Running the same labeler on synthetic signals of known timing (the generator's styles, tails included)
+     measures that bias, which is then corrected or stated with the result. It cannot catch a real fist unlike any of
+     the generator's styles.
+   - **Timing:** it runs in parallel with the prototype, which starts on item 4's placeholders. It must be finished
+     before adaptation is judged (item 6) and before the baseline's numbers become final. It needs nothing from the
+     owner. The senders measured here are kept out of the real check (topic 6, item 8), as speech keeps test speakers
+     out of training (TIMIT, for example). The full plan goes in topic 9.
+   - **Also for topic 9:** the same data can check the generator's keying styles, and give a test group of real
+     fists on synthetic channels at controlled S₅₀₀, made by keying the real timing onto them (as Aurora 2 added
+     noise at set levels to clean recorded speech; Hirsch and Pearce 2000).
+6. **Per-sender adaptation: only with a real advantage (owner, 2026-10-15).** The first prototype uses the fixed fist
+   (item 4) as the baseline. Adaptation is the standard practice: MAP adaptation (Gauvain and Lee 1994); Mills's
+   online estimates (1977); and Bell (1977), on TSC's finding that individual operators are "far from gaussian":
+   "estimation of these highly individualistic densities must be accomplished on-line". Each hypothesis would adapt
+   each kind's median and σ to its sender, pulled toward the prior measured in item 5, and reset at a change of
+   station (topic 7). By topic 1's rule it lives in each hypothesis, since hypotheses that decoded different elements
+   learn different fists; merging then becomes approximate (two hypotheses that differ only in what they have
+   learned are merged, keeping the better one's estimate: the standard approximation of per-survivor processing).
+   - **Why it may matter (derived):** a broad fixed fist throws away timing evidence on precise senders. For a
+     perfectly timed element, the evidence from its length alone is (ln 3)²/(2σ²) for dot against dash, 6.7 nats at
+     σ 0.3 and 241 at σ 0.05, and (ln 7/3)²/(2σ²) for letter against word gap, 4.0 and 144 nats.
+   - **How fast it corrects (derived; the standard MAP update, with κ in the role of Gauvain and Lee's τ):** after n
+     elements of one kind the prior keeps a share κ/(κ + n), with κ = (scatter within one sender ÷ spread between
+     senders)², so a prior off by Δ leaves an error κΔ/(κ + n). Short overs are decoded mostly on the prior: a
+     contest exchange such as "K1ABC 5NN 14" has 2 word gaps and 7 letter gaps, a two-minute ragchew over at 25 WPM
+     about 50 and 200. Adaptation corrects medians and σ, but not the prior's strength, the tail or the form, so item
+     5's measurement is needed with or without it.
+   - **The gate.** A genie test first bounds the gain: the development set's keying-style group (C2: 5 styles,
+     imbalance up to ±0.1 dot) is decoded again with each signal's true timing from the generator (speed, medians, σ,
+     imbalance); the gap per style, in dB of S₅₀₀ at equal CER, is the most a better timing model can gain. If
+     adaptation is then built, it is kept only with a real advantage. This replaces the fallback of two fist classes
+     "only if the development set shows precise signals losing noticeably" (step 2, T2.4e: "noticeably" undefined).
+   - **For its design, if built:** weighting is additive, so it matters most for short elements (±0.1 dot is ±10% of
+     a dot, ±1.4% of a word gap). One weighting term shared by all kinds would learn it from every element, where five
+     separate medians each learn only from their own kind, and word gaps are scarce; sharing one adjustment across
+     many parameters is standard in speech (MLLR; Leggetter and Woodland 1995). Topic 7 may let a station's fist
+     carry over between its overs, giving adaptation more to learn from.
+7. **Telling a speed change, fist scatter and Farnsworth spacing apart:** no special logic; the hypothesis
+   probabilities do it (a speed change shifts all later lengths together and is picked up by a fresh start; scatter
+   is independent per element; Farnsworth stretches only letter and word gaps).
+
+**For topic 9,** the measurements and tests this topic needs: item 5's measurement on real keying, with its
+labeler-bias check, the check of the generator's styles and the real-fist test group; item 6's genie test on C2, and
+adaptation's own test if it is built; item 4's gaps conditioned on the mark before, on real fists; item 1's 5% speed
+grid; item 2's small speed steps (D2's ramps, real drift); item 3's cut of I2 above a factor of 8.
+
+Caution: until item 5's measurement replaces the placeholders, the fist comes from the generator that also makes the
+development set, so setting it there and testing on it is partly circular; recordings of real operators are the real
+check.
 
 ### Topic 3: amplitude (owner, 2026-10-12)
 
@@ -220,9 +374,10 @@ total. The choice belongs to topic 8. (Corrected 2026-10-14: this paragraph had 
 probabilities.) This replaces the earlier wording, which called the scores probabilities.
 
 1. **Branching:** every piece (2 ms), a hypothesis continues as it is, or ends its current mark or gap and branches
-   into the possible successors (at a word gap also the speed and Farnsworth steps, up to 3 × 3 variants). A branch
-   is created only where the fist model gives it a non-negligible probability (a pruning threshold; its value is not
-   yet set).
+   into the possible successors; a hypothesis with no Farnsworth factor yet also branches, at its first gap between
+   letters, into the factors that fit it (amended 2026-10-15 by topic 2, items 2 and 3: the speed and Farnsworth
+   steps at word gaps, up to 3 × 3 variants, are gone). A branch is created only where the fist model gives it a
+   non-negligible probability (a pruning threshold; its value is not yet set).
 2. **Merging:** two hypotheses in the same state (everything that affects the future: activity, key up or down and
    when the current mark or gap began, speed, Farnsworth factor, position in the Morse tree, the past text the text
    model needs, the clock of a non-Morse state, and the gap kind if it is resolved before the gap ends; the last two
@@ -235,14 +390,15 @@ probabilities.) This replaces the earlier wording, which called the scores proba
 3. **Births:** (a) from silence: while the no-signal hypothesis is alive, Morse at any of the 32 speeds, a steady
    carrier or nonsense keying may begin at any piece; (b) **always-on rescue births**: wherever a mark plausibly
    begins, fresh hypotheses "a new letter starts here" are seeded at all speeds (the trigger, "plausibly begins", is
-   not yet defined). A birth is an ordinary transition, with a small disruption probability ε, from every
-   hypothesis; under Viterbi the newborn takes the best of these, so its score is the best current score times ε.
-   The Viterbi arithmetic is standard; the ε-restart model is our choice (corrected 2026-10-14: it was labeled
-   standard). Derived constraint (review 1, D15): a newborn survives the beam (item 4) only if ε is larger than 1/B,
-   where B is the beam factor; otherwise narrowing the beam silently disables births. Births let the decoder recover
-   when every surviving hypothesis is wrong in a way its own branching cannot repair (a speed jump beyond one step per
-   word, a noise burst that misplaces a letter boundary, a new station without silence between overs). Without them
-   the decoder can stay lost, as Bell's did.
+   not yet defined; each newborn takes its Farnsworth factor at its first gap between letters, topic 2, item 3). A
+   birth is an ordinary transition, with a small disruption probability ε, from every hypothesis; under Viterbi the
+   newborn takes the best of these, so its score is the best current score times ε. The Viterbi arithmetic is
+   standard; the ε-restart model is our choice (corrected 2026-10-14: it was labeled standard). Derived constraint
+   (review 1, D15): a newborn survives the beam (item 4) only if ε is larger than 1/B, where B is the beam factor;
+   otherwise narrowing the beam silently disables births. Births let the decoder recover when every surviving
+   hypothesis is wrong in a way its own branching cannot repair (any change of speed or Farnsworth factor, which since
+   2026-10-15 only births carry, topic 2, items 2 and 3; a noise burst that misplaces a letter boundary; a new station
+   without silence between overs). Without them the decoder can stay lost, as Bell's did.
 4. **Pruning: a beam plus a maximum count** (standard in speech recognition: beam search, Lowerre 1976; the maximum
    count, "histogram pruning", Steinbiss, Tran and Ney 1994; citation completed 2026-10-14). At each
    piece, every hypothesis whose score falls below the best by more than a set factor is dropped. **The factor is set
@@ -351,7 +507,7 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
 2. **Topics reopened after that check, one at a time:**
    - topic 4: the frequency reference for whole-mark sums (D7), and changes of phase and amplitude within a mark
      (D8);
-   - topic 2: the Farnsworth range (D9);
+   - topic 2: the Farnsworth range (D9), with step 2's findings on timing: done 2026-10-15 (topic 2 above);
    - topic 3: whether the decoder's own decisions may feed the amplitude and noise estimates (K3);
    - topic 5: fair comparison under the beam between hypotheses in mid-element and finished ones (O4), births
      against the beam (D15), and the priors at birth and for the first prototype (K8, O7).
@@ -359,10 +515,13 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    models of the non-Morse states, and element sequences that fit no letter (O3, O6, O8). Its number is settled with
    the agenda after the check.
 4. **Also raised by review 1, not yet discussed:** whether a hypothesis commits to one word kind or carries the
-   mixture (K9, O12); an insertion penalty (O11); keyer weighting and imbalance (O13).
+   mixture (K9, O12); an insertion penalty (O11); keyer weighting and imbalance (O13; answered 2026-10-15 by
+   topic 2, items 4 and 6).
 5. **Measurement plans** for every heuristic number (the "no darts" rule above) are written in topic 9, which also
-   gets a test of how well confidence predicts correctness, for the Hybrid mode (K14).
+   gets a test of how well confidence predicts correctness, for the Hybrid mode (K14). Topic 2's are listed at the
+   end of topic 2.
 6. **The design spec** (§5.1, and §5.2 step 3) still describes a Bell-style decoder: a Kalman amplitude per
    hypothesis, each hypothesis reading a filter matched to its speed, speed changes at element boundaries. It is
-   amended, with the owner's approval, once this design settles (K12). Its ±2 Hz re-centering target (§5.2, step 1)
-   is too loose for whole-mark sums (D7, K13).
+   amended, with the owner's approval, once this design settles (K12), together with topic 2's cut of the Farnsworth
+   test signals above a factor of 8 from the comparison with the bank decoder (topic 2, item 3). Its ±2 Hz
+   re-centering target (§5.2, step 1) is too loose for whole-mark sums (D7, K13).
