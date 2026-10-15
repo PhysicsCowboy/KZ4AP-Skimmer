@@ -71,9 +71,12 @@ Each hypothesis carries:
 8. **Its score and a link to its parent,** to trace its text back when printing (topic 8). The score is the
    probability of its single best story (topic 5, amended 2026-10-14).
 9. **A clock for each non-Morse state:** how long the carrier or the silence has lasted.
+10. **Its signal level and the level's variance,** learned from its own marks (topic 3, item 1; added 2026-10-15:
+    the level differs between hypotheses because each learns it from its own decisions).
 
-At channel level, outside the hypotheses: the amplitude and the noise level (topic 3); the fist model, fixed
-(topic 2, item 4; corrected 2026-10-14, this line had left it open). If per-sender adaptation is ever built (topic 2,
+At channel level, outside the hypotheses: the hiss (noise) level (topic 3, item 3; amended 2026-10-15, the signal
+level moved into the hypotheses); the fist model, fixed (topic 2, item 4; corrected 2026-10-14, this line had left it
+open). If per-sender adaptation is ever built (topic 2,
 item 6), each hypothesis carries its own adapted fist instead (added 2026-10-15).
 
 ### Topic 2: timing — speed, spacing and fists (owner, 2026-10-12; reopened and closed again 2026-10-15)
@@ -265,43 +268,99 @@ Caution: until item 5's measurement replaces the placeholders, the fist comes fr
 development set, so setting it there and testing on it is partly circular; recordings of real operators are the real
 check.
 
-### Topic 3: amplitude (owner, 2026-10-12)
+### Topic 3: amplitude (owner, 2026-10-12; reopened and closed again 2026-10-15)
 
-The amplitude A is the expected key-down level the hypotheses score against. One estimate per channel, independent of
-every hypothesis and speed (owner's tap idea).
+Reopened 2026-10-15 for review 1's K3 and for the standard-practice check's findings (step 2, rows T3.0 to T3.6). The
+conclusions below replace the earlier ones, which git keeps: one amplitude per channel from a 10 ms tap ("owner's tap
+idea"), soft key-down weights over the last 0.5 s of key-down time, and the noise measured on the gaps the hypotheses
+agree on.
 
-1. **The tap** is a fixed sum matched to the fastest speed: about 10 ms of the signal (5 of topic 4's 2 ms pieces),
-   the same as the bank's shortest branch (9.6 ms). With nominal timing every element at every
-   speed up to 100 WPM lasts at least 12 ms, so the tap reaches the full A on every such mark (derived). Marks
-   shortened by fist scatter or key imbalance may not: a 10 ms mark peaks 0.8–1.0 dB below A² (signal power), and at
-   topic 2's σ = 0.3, 27% of dots at 100 WPM are shorter than 10 ms (review 1, D4; corrected 2026-10-14). On the real
-   channel filter the tap's noise bandwidth is about 91 Hz against the channel's 252 Hz, so its SNR is about 4.4 dB
-   (power ratio) above that of one channel sample (derived; corrected 2026-10-14 from 4.6 dB). (Amended by topic 4:
-   built from the pieces, not from the bank.)
-2. **Estimate:** A² = the weighted average of the tap's power minus the noise power, each sample weighted by its
-   probability of being key-down, judged on the tap itself (carrier plus noise against noise alone, at the current
-   estimates). Heuristic: an EM-like soft-decision estimate. The prior probability of key-down that the weights use
-   is not yet stated. Simulated bias at its fixed point: −0.9 to +0.7 dB in A² over 12–100 WPM and S₅₀₀ of 0–30 dB
-   (review 1, D5). On strong signals gaps get weights near zero, so the estimate barely moves during gaps and
-   silence. Near the decoding threshold it does not freeze: a noise-only tap gets a mean weight of 0.12 at
-   S₅₀₀ = 0 dB and 0.25 at −3 dB, so 2–4 s of silence refill the 0.5 s window with noise (review 1, D6; corrected
-   2026-10-14: this item had said the estimate freezes). Feeding back the decoder's own key-down probability is a
-   later option (a loop).
-3. **Speed of following:** an average over about the last 0.5 s of key-down time (gaps do not count); heuristic, to
-   be tested on fading (QSB).
-4. **Noise level:** measured on the pieces that the hypotheses agree are gaps, as a level per hertz (amended by
-   topic 4, items 5 and 7; first proposed as the bank's per-branch noise estimate). Measuring noise on signal-free
-   stretches is standard; choosing them by the decoder's own decisions is our method (decision-directed), and what
-   "agree" means is not yet defined. The bank decoder keeps keying decisions out of its noise estimate, yet its
-   level mask still reads the noise low by a factor 0.78–0.84 (`docs/signal-processing.md`, section 8c), so a
-   selection bias is to be expected here too (review 1, S15; corrected 2026-10-14).
-5. **Use:** the scoring of topic 4 compares a hypothesis's summed mark with a carrier of amplitude A plus noise.
-6. **Start of an over:** A starts from the level the signal detector measured when it found the station, then refines
-   from the first marks. The detector's level is an average over 1 s including key-up time, 3.6–7.1 dB below the
-   key-down SNR per bin depending on speed (`docs/signal-processing.md`, section 5); the conversion is not yet
-   stated (review 1, U8).
+**Decision feedback (owner, 2026-10-15; answers review 1's K3).** The decoder's own decisions feed an estimate only
+inside the hypothesis that made them; whatever is kept at channel level uses no decisions.
 
-Errors: A too high makes weak marks look like gaps (lost elements); too low makes noise look like marks (false dots).
+1. **The signal level: each hypothesis tracks its own (owner, 2026-10-15).** Standard: per-survivor processing
+   (Raheli, Polydoros and Tzou 1995), as in Bell (1977), who ran a Kalman filter on the amplitude for each path. This
+   replaces one level per channel (step 2, T3.0, class (iii)).
+   - Each hypothesis carries its level estimate and the estimate's variance. Each measurement of the level (the sum
+     over one of its marks, or over one block of a mark if topic 4 splits marks) moves the estimate toward the
+     measurement by the Kalman gain, variance / (variance + the measurement's own noise variance). Between
+     measurements the estimate is kept and its variance grows at the fading model's rate (item 2). Older marks
+     therefore count less and less: the level is tracked over time, never fitted as one constant.
+   - Each mark is scored against the predicted level allowing for its variance (the Kalman predictive density), not
+     against a level taken as exact. Why (derived): taken as exact, a mark more than 6 dB below the stored level reads
+     as noise on a strong signal (the crossover is at half the amplitude), so the level stops learning. In a
+     simulation of the earlier channel estimate, a drop of 8 dB or more at 20 dB S₅₀₀ was never followed in 60 s, and
+     the weaker station was not decoded at all; drops of 6 dB were followed within about 5 s. With the variance in the
+     score, a 20 WPM dot at 10 dB S₅₀₀ arriving 10 dB below the level scores 1 107 nats better as noise when the level
+     is taken as exact, but 271 nats better as a mark when the level is uncertain by ±10%, and that one dot moves the
+     estimate 98% of the way to its own level.
+   - A fresh start begins with its level uncertain and learns it from its first marks, so a fresh start picks up a
+     new station's level: hypotheses stuck at the old level read the new station's marks as noise, which costs them
+     roughly 30 to 300 nats per 20 WPM dot between 0 and 10 dB S₅₀₀ (derived). A fresh start's level prior is set
+     with topic 5's priors at birth (K8, O7).
+   - Cost: two numbers per hypothesis and an update per measurement. Merging becomes approximate: two hypotheses that
+     differ only in their levels are merged, keeping the better one's level (the standard per-survivor approximation).
+   - Dropped with the channel estimate: the 10 ms tap, its soft key-down weights (with their unstated key-down prior,
+     0.44 by step 2, C8) and the 0.5 s window, and with them review 1's D4 to D6, which concerned them.
+2. **How fast the level may change: moved to topic 4 (owner, 2026-10-15).** At slow speeds in fast fading the level
+   changes within a mark: a 5 WPM dash lasts 720 ms, while the fading's correlation halves after 0.375/spread seconds
+   (375 ms at 1 Hz, 75 ms at 5 Hz; step 1, N5). Marks must then be split into blocks shorter than the fading's
+   coherence time (the standard: step 1, P1.5), so the level's rate of change and the block length are one assumption,
+   set together in topic 4. Derived for that discussion, with one level measurement per mark:
+   - a filter that assumes faster fading than the signal has costs sensitivity on steady signals. Per mark, at 1%
+     errors, +0.4 dB of E/N₀ at ±20% level uncertainty and +2.7 dB at ±50%; at 0.1% errors, +2.1 and +12 dB. A 1 Hz
+     assumption leaves ±49% at 5 WPM, ±19% at 20 WPM and ±10% at 40 WPM;
+   - one that assumes slower fading than the signal has loses marks in deep fades whatever the SNR: a Rayleigh-faded
+     signal spends 22% of its time more than 6 dB below its average;
+   - the standard ways to cover an unknown spread are one fixed value (robust design for the fastest fading expected,
+     Li, Cimini and Sollenberger 1998, whose small mismatch loss relies on frequent channel measurements; Bell 1977
+     used one fixed model), an estimated spread (Tepedelenlioğlu, Abdi, Giannakis and Kaveh 2001), or several fading
+     models inside each hypothesis (Blom and Bar-Shalom 1988). Our spreads range 100 to 1 (0.05–5 Hz in group B2).
+3. **The hiss (noise) level: one per channel, measured without decisions (owner, 2026-10-15).** It is read from the
+   signal detector's averaged spectrum around the station: its 23.4 Hz bins (Hann window), each averaged over about
+   1 s, are inherited from the detector (`docs/signal-processing.md`, section 6). A low-ranked value of the bins
+   within a range around the station gives the hiss per bin; its bias on hiss alone is computed exactly from the
+   detector's averaging and divided out, and the result is converted to a level per hertz for topic 4's sums (topic 4,
+   item 7).
+   Standard but adapted: ordered-statistic estimation of the noise level (ordered-statistic CFAR, Rohling 1983;
+   trimmed means, Gandhi and Kassam 1988) at a lower rank than radar's usual one, since an HF band can be more
+   crowded than radar's quarter of occupied cells. This replaces the noise measured on the gaps the hypotheses agree
+   on (step 2, T3.4; "agree" was never defined).
+   - Not inside the channel: a strong signal's keying sidebands rise above the hiss right across the ±150 Hz channel,
+     at any speed. The fourth-quietest of 13 slices of 23.4 Hz reads 1.9 dB high at 20 WPM and 4.1 dB high at
+     100 WPM at 20 dB S₅₀₀, and 8.2 and 12.2 dB high at 30 dB (derived, 5 ms edges). A 100 WPM signal holds 99% of
+     its power within 212 Hz with 5 ms edges and 308 Hz with 2 ms edges (derived; the ITU's necessary bandwidth for
+     Morse, ITU-R SM.1138, gives 240–400 Hz), though the channel still passes 99% of it.
+   - Not in time (minimum statistics, Martin 2001): a steady carrier longer than the window, such as a tune-up,
+     reads as hiss.
+   - Not from the decoder's gaps: a shared estimate fed by decisions feeds on its own mistakes (the rule above).
+   - Estimators compared (derived; ±2 kHz, 170 values; bins taken as independent, and the detector's overlapping bins
+     raise the scatter by about 40%; signals at 20 times the hiss, notches at a tenth). Scatter on hiss alone, bias
+     with a quarter and with half of the values holding signals, bias with 3 values in a notch: the weakest value
+     ±4.6%, +1.2%, +2.8%, −88%; the 10th percentile ±1.4%, +1.8%, +4.8%, −1.1%; the 25th percentile ±1.1%, +2.6%,
+     +7.3%, −0.5%; the median ±1.0%, +4.4%, +28%, −0.2%; radar's 75th percentile ±1.1%, +17%, fails, −0.2%; the
+     mean of the bottom quarter ±1.2%, +1.9%, +5.2%, −6.7%; the mean of all values ±0.8%, +470%, fails, −1.6%. The
+     scatter of the 25th percentile is ±2.2%, ±1.6%, ±1.1% and ±0.7% over ±0.5, ±1, ±2 and ±5 kHz.
+   - **Set by measurement (topic 9):** on HamSCI's whole-band contest recordings, the share of values holding signals
+     within ±0.5 to ±5 kHz of CW stations, how flat the hiss is over those distances, and how often notches occur;
+     then the range and the estimator with the smallest total error at the most crowded measured conditions.
+     Placeholders until then: ±2 kHz and the 25th percentile (heuristic). Nothing is needed from the owner.
+   - An interferer inside the station's own channel is not hiss and is rightly ignored here; how the decoder copes
+     with it belongs to the new topic on the channel's other contents.
+4. **Use:** topic 4's scoring compares a hypothesis's summed mark (or block) with a carrier of the hypothesis's
+   predicted level plus the hiss.
+5. **Start of an over:** the detector's level converts to a key-down level (derived, not yet written out; review 1,
+   U8; step 2, T3.6): the track's 1 s average includes key-up time, so the key-down power is about (average − hiss)
+   divided by the key-down fraction (0.44 for PARIS text), corrected for the share of the keying sidebands that falls
+   in the bin (the track reads 3.6–7.1 dB below the key-down SNR per bin, depending on speed:
+   `docs/signal-processing.md`, section 5). It centers the level prior of a hypothesis born from silence; the prior's
+   width is topic 5's (K8, O7).
+
+Errors: a level too high makes weak marks look like gaps (lost elements), too low makes noise look like marks (false
+dots); a hiss level too low makes noise look like marks and the decoder overconfident, too high makes weak marks look
+like noise.
+
+**For topic 9:** item 3's measurement of the hiss estimator on HamSCI's recordings.
 
 ### Topic 4: the observation (owner, 2026-10-12)
 
@@ -322,22 +381,23 @@ Errors: A too high makes weak marks look like gaps (lost elements); too low make
    noise correlation across the mark's edges (about 4 ms): an approximation (review 1, U10).
 3. **The time step** is the piece length, about 2 ms.
 4. **Keying history (topic 1, item 7):** only the running sum of the current mark.
-5. **The bank is not used by the new decoder** (owner): signal level and noise level come from the pieces too
-   (topic 3, amended). The existing bank decoder stays frozen as the yardstick until the new decoder beats it.
+5. **The bank is not used by the new decoder** (owner): each hypothesis's signal level comes from its own sums of
+   the pieces, and the hiss level from the signal detector's spectrum around the station (topic 3, items 1 and 3,
+   amended 2026-10-15). The existing bank decoder stays frozen as the yardstick until the new decoder beats it.
 6. **Standard parts:** the noncoherent matched filter (textbook communications theory; Proakis and Salehi, §4.5-1),
    segment scoring in hidden semi-Markov models (Rabiner 1989, §IV.D; Ostendorf, Digalakis and Kimball, 1996). Each
-   hypothesis keeps its own running sum, the segment model's statistic; nothing is estimated per hypothesis
-   (corrected 2026-10-14: per-survivor processing, Raheli, Polydoros and Tzou 1995, was listed here, but this design
-   does not use it). The combination for Morse is ours; no published Morse decoder doing exactly this is known to us
-   (not searched specifically).
+   hypothesis keeps its own running sum, the segment model's statistic, and since 2026-10-15 its own signal level
+   (per-survivor processing, Raheli, Polydoros and Tzou 1995: topic 3, item 1; the correction of 2026-10-14, which
+   removed that citation because nothing was then estimated per hypothesis, no longer applies). The combination for
+   Morse is ours; no published Morse decoder doing exactly this is known to us (not searched specifically).
 
-7. **Noise per hertz, measured on gaps (owner, 2026-10-14; standard in principle, while choosing the gaps by the
-   decoder's own decisions is our method: topic 3, item 4).** The noise of any sum over a time T is
-   computed from the noise level per hertz (its variance proportional to T, for T well above about 3 ms), estimated on
-   gaps as a density, not per piece. Treating the pieces as independent would understate a mark's noise variance by a
-   factor of about 1.7–1.8 (2.2–2.6 dB) for marks of 8–720 ms on an ideal 300 Hz channel, and 1.9–2.1 (2.8–3.3 dB) on
-   the real channel filter, whose noise bandwidth is 252 Hz (derived; review 1, D2), making the decoder
-   overconfident. Bell's receiver chain made that assumption, though Bell himself warned that his sampling interval
+7. **Noise per hertz (owner, 2026-10-14; amended 2026-10-15 by topic 3, item 3: the level per hertz now comes from
+   the signal detector's spectrum around the station, measured without decisions, no longer from the gaps the
+   hypotheses agree on).** The noise of any sum over a time T is computed from the noise level per hertz (its variance
+   proportional to T, for T well above about 3 ms), as a density, not per piece. Treating the pieces as independent
+   would understate a mark's noise variance by a factor of about 1.7–1.8 (2.2–2.6 dB) for marks of 8–720 ms on an
+   ideal 300 Hz channel, and 1.9–2.1 (2.8–3.3 dB) on the real channel filter, whose noise bandwidth is 252 Hz
+   (derived; review 1, D2), making the decoder overconfident. Bell's receiver chain made that assumption, though Bell himself warned that his sampling interval
    "may render the independent noise assumption invalid" (Bell 1977, as read in the standard-practice check, step 2,
    §6.1; wording corrected 2026-10-14 from "the mistake of Bell's receiver chain"). The variances come from the real filter's noise autocovariance
    R[k]: a sum of n samples has variance Σ_{|k|<n} (n − |k|)·R[k] (derived, exact; "proportional to T" overstates the
@@ -386,7 +446,9 @@ probabilities.) This replaces the earlier wording, which called the scores proba
    score and its own text: the Viterbi algorithm's merging step (standard). No correction is lost by this: every
    correction future evidence could make is between hypotheses in different states, which are all kept. How far back
    word context can correct is set by how much past text a hypothesis carries (topic 1's open item, topic 6): more
-   text, more correction, fewer merges, more CPU.
+   text, more correction, fewer merges, more CPU. Amended 2026-10-15 by topic 3, item 1: each hypothesis also carries
+   a continuous signal level, which also affects the future; hypotheses that differ only in it are merged anyway,
+   keeping the better one's level (the standard per-survivor approximation), so merging is no longer exact.
 3. **Births:** (a) from silence: while the no-signal hypothesis is alive, Morse at any of the 32 speeds, a steady
    carrier or nonsense keying may begin at any piece; (b) **always-on rescue births**: wherever a mark plausibly
    begins, fresh hypotheses "a new letter starts here" are seeded at all speeds (the trigger, "plausibly begins", is
@@ -506,9 +568,10 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    findings are taken up topic by topic as the topics reopen.
 2. **Topics reopened after that check, one at a time:**
    - topic 4: the frequency reference for whole-mark sums (D7), and changes of phase and amplitude within a mark
-     (D8);
+     (D8), with how fast the signal level may change (moved from topic 3, item 2, 2026-10-15);
    - topic 2: the Farnsworth range (D9), with step 2's findings on timing: done 2026-10-15 (topic 2 above);
-   - topic 3: whether the decoder's own decisions may feed the amplitude and noise estimates (K3);
+   - topic 3: whether the decoder's own decisions may feed the amplitude and noise estimates (K3), with step 2's
+     findings on amplitude: done 2026-10-15 (topic 3 above);
    - topic 5: fair comparison under the beam between hypotheses in mid-element and finished ones (O4), births
      against the beam (D15), and the priors at birth and for the first prototype (K8, O7).
 3. **A new topic before topic 7, the channel's other contents:** other signals, impulsive noise (static crashes), the
@@ -519,9 +582,10 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    topic 2, items 4 and 6).
 5. **Measurement plans** for every heuristic number (the "no darts" rule above) are written in topic 9, which also
    gets a test of how well confidence predicts correctness, for the Hybrid mode (K14). Topic 2's are listed at the
-   end of topic 2.
+   end of topic 2, topic 3's at the end of topic 3.
 6. **The design spec** (§5.1, and §5.2 step 3) still describes a Bell-style decoder: a Kalman amplitude per
-   hypothesis, each hypothesis reading a filter matched to its speed, speed changes at element boundaries. It is
+   hypothesis (which topic 3 has chosen again, 2026-10-15), each hypothesis reading a filter matched to its speed,
+   speed changes at element boundaries. It is
    amended, with the owner's approval, once this design settles (K12), together with topic 2's cut of the Farnsworth
    test signals above a factor of 8 from the comparison with the bank decoder (topic 2, item 3). Its ±2 Hz
    re-centering target (§5.2, step 1) is too loose for whole-mark sums (D7, K13).
