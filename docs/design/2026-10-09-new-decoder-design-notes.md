@@ -183,7 +183,9 @@ Errors: A too high makes weak marks look like gaps (lost elements); too low make
    gaps as a density, not per piece. Treating the pieces as independent would understate a mark's noise variance by a
    factor of about 1.7–1.8 (2.2–2.6 dB) for marks of 8–720 ms on an ideal 300 Hz channel, and 1.9–2.1 (2.8–3.3 dB) on
    the real channel filter, whose noise bandwidth is 252 Hz (derived; review 1, D2), making the decoder
-   overconfident, the mistake of Bell's receiver chain. The variances come from the real filter's noise autocovariance
+   overconfident. Bell's receiver chain made that assumption, though Bell himself warned that his sampling interval
+   "may render the independent noise assumption invalid" (Bell 1977, as read in the standard-practice check, step 2,
+   §6.1; wording corrected 2026-10-14 from "the mistake of Bell's receiver chain"). The variances come from the real filter's noise autocovariance
    R[k]: a sum of n samples has variance Σ_{|k|<n} (n − |k|)·R[k] (derived, exact; "proportional to T" overstates the
    variance by 0.3–0.5 dB for sums of 8–12 ms, and by under 0.1 dB from 48 ms up). (Amended 2026-10-14: item 1 had
    claimed nearly independent noise, and item 2 a gain of 10·log₁₀ n dB over one piece; both were wrong by that
@@ -208,8 +210,8 @@ standard decoder of speech recognition (Rabiner 1989; in the "token passing" for
 1989). Each hypothesis carries a **score**: the probability of its single best story together with the signal so far.
 Scores are not probabilities of the hypotheses: they do not sum to 1 and need not, since the decoder only asks which
 story is best. To keep them in numerical range they are held relative to the best (divided by the best score at every
-piece, as beam pruning does; Ney and Ortmanns 2000) or as logarithms (Rabiner 1989, eq. 105); either changes no
-decision. Probabilities (per character, per speed) are **not** sums of the kept Viterbi scores: merging has already
+piece: a numerical convenience; beam pruning compares each score with the best, Ney and Ortmanns 2000) or as
+logarithms (Rabiner 1989, eq. 105); either changes no decision. Probabilities (per character, per speed) are **not** sums of the kept Viterbi scores: merging has already
 discarded the merged stories' probability, so such a sum is only an approximation. The standard routes are the
 forward (sum) recursion over the same states, or forward–backward over a lattice of the kept hypotheses (Rabiner
 1989, §III.A; Wessel et al. 2001); one option is for each hypothesis to carry both its best score and a summed
@@ -241,7 +243,8 @@ probabilities.) This replaces the earlier wording, which called the scores proba
    when every surviving hypothesis is wrong in a way its own branching cannot repair (a speed jump beyond one step per
    word, a noise burst that misplaces a letter boundary, a new station without silence between overs). Without them
    the decoder can stay lost, as Bell's did.
-4. **Pruning: a beam plus a maximum count** (standard in speech recognition: beam search, Lowerre 1976). At each
+4. **Pruning: a beam plus a maximum count** (standard in speech recognition: beam search, Lowerre 1976; the maximum
+   count, "histogram pruning", Steinbiss, Tran and Ney 1994; citation completed 2026-10-14). At each
    piece, every hypothesis whose score falls below the best by more than a set factor is dropped. **The factor is set
    by measurement against the owner's target:** pruning may change the decoded result at most once per 1 000 letters
    (0.1%; negligible at the CER 0.10 crossing, and a tenth to a fifth of the 0.5–1% floor measured on clean signals:
@@ -253,7 +256,8 @@ probabilities.) This replaces the earlier wording, which called the scores proba
    earlier rule (drop hypotheses while their combined probability stays under a budget per piece) treated the scores
    as probabilities summing to 1, which they are not.
 5. **Ceiling on the number of hypotheses, set by CPU, not accuracy:** a fixed CPU budget per channel; how often the
-   ceiling rather than the beam decides is counted (the maximum count is "histogram pruning", standard). Rough
+   ceiling rather than the beam decides is counted (the maximum count is "histogram pruning", standard: Steinbiss,
+   Tran and Ney 1994). Rough
    estimate: about 50 ns per hypothesis per piece, so a budget equal to the bank decoder's 42 ms per channel-second
    allows about 1 700 hypotheses; normally a few hundred at most are needed (estimates, to be measured).
 6. **CPU as a requirement:** the target (owner's decision) is the spec's estimate for the Classical mode, 2–3 million
@@ -279,7 +283,7 @@ score each time the hypothesis completes a letter. The decoder serves both uses 
 CQ, contest and DX exchanges) and transliterating conversations (ragchews).
 
 1. **No callsign matching in the decoder (owner).** Callsign databases (`cty.dat`, `MASTER.SCP`) belong to the
-   callsign-search step after the decoder (design spec §5, step 5; §6). Callsigns and other traffic are **never
+   callsign-search step after the decoder (design spec §4.1, item 5; §6; reference corrected 2026-10-14). Callsigns and other traffic are **never
    matched against the Reverse Beacon Network** (owner; spec §6 amended): once this skimmer feeds RBN, our own misread
    calls would confirm themselves.
 2. **One model, not two modes (owner).** Each word is one of five kinds: **callsign** (written pattern rules: prefix,
@@ -315,7 +319,8 @@ CQ, contest and DX exchanges) and transliterating conversations (ragchews).
 8. **Sources** (`docs/research/research_notes/CW conversation text sources/sources.md`). No public transcripts of real
    ragchews exist, and no measured statistics of real CW conversation. Callsign, token and number kinds: built and
    tested from public contest logs (CQ WW, CQ WPX, ARRL) and the standard abbreviation and Q-code lists; real copy
-   errors from the contests' public log-checking reports. Plain language (proposed): built from human-written practice
+   errors from the contests' public log-checking reports (public only for top-scoring stations, as CQ WW publishes
+   them; added 2026-10-14). Plain language (proposed): built from human-written practice
    text, which is independent of our generator but not real traffic; the real check is a set of real recordings
    (IZ4KBW's archive, HamSCI's recordings) transcribed later by the owner, who copies to 50 WPM, by correcting a
    decoder's draft, with a way to mark uncopyable or garbled stretches. Whether the draft comes from another decoder,
@@ -339,6 +344,10 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
      each part of the problem;
    - a second reviewer sorts every choice here as standard, standard but adapted, ours where a standard exists, or
      ours where none exists, and lists the standard practices the design does not use.
+
+   Done 2026-10-14: `docs/research/2026-10-14-standard-practice-check/` (step 1, blind:
+   `step-1-standard-practice.md`; step 2, the comparison of these notes at b51eefe: `step-2-comparison.md`). Its
+   findings are taken up topic by topic as the topics reopen.
 2. **Topics reopened after that check, one at a time:**
    - topic 4: the frequency reference for whole-mark sums (D7), and changes of phase and amplitude within a mark
      (D8);
