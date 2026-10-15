@@ -525,3 +525,10 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    amended, with the owner's approval, once this design settles (K12), together with topic 2's cut of the Farnsworth
    test signals above a factor of 8 from the comparison with the bank decoder (topic 2, item 3). Its ±2 Hz
    re-centering target (§5.2, step 1) is too loose for whole-mark sums (D7, K13).
+7. **Building starts after topics 3, 4 and 5 (owner, 2026-10-15).** Then come a short spec amendment and the first
+   prototype's plan, each for the owner's approval. Topic 6's reopened items, the new topic on the channel's other
+   contents, and topics 7, 8 and 9 follow while the prototype is built and measured, each settled before its part is
+   added. The reason: the first prototype needs only simple versions of those parts (it has no text model, topic 6,
+   item 6; it can print its best story at the end of each recording; fresh starts already follow a change of
+   station), while it cannot do without amplitude, the observation and the search. The risk accepted is rework if a
+   later topic changes something already built.
