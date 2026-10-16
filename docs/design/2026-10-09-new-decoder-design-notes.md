@@ -392,11 +392,14 @@ they answer the risk this topic used to end with, which git keeps.
    noise correlation across the mark's edges (about 4 ms): an approximation (review 1, U10). Amended 2026-10-16 by
    item 9: the running sum covers the current block of the mark, at most item 9's block length; each finished block
    is scored this way, against the hypothesis's predicted level (topic 3, item 1), and the scores of a mark's blocks
-   add (noncoherent combining). A mark no longer than one block is summed whole, as before.
+   add (noncoherent combining). A mark no longer than one block is summed whole, as before. The current block's
+   score so far counts at every piece, not only when the block finishes (topic 5, item 9; added 2026-10-16).
 3. **The time step** is the piece length, about 2 ms.
 4. **Keying history (topic 1, item 7):** only the running sum of the current mark (amended 2026-10-16 by item 9:
-   of the current block; a finished block's score goes straight into the hypothesis's score and its sum updates the
-   hypothesis's level).
+   of the current block. The block's score so far is part of the hypothesis's score at every piece, and a finished
+   block's sum updates the hypothesis's level. Corrected the same day: this amendment first said a finished block's
+   score "goes straight into the hypothesis's score", which booked the evidence late and made the beam's comparisons
+   unfair; topic 5, item 9).
 5. **The bank is not used by the new decoder** (owner): each hypothesis's signal level comes from its own sums of
    the pieces, and the hiss level from the signal detector's spectrum around the station (topic 3, items 1 and 3,
    amended 2026-10-15). The existing bank decoder stays frozen as the yardstick until the new decoder beats it.
@@ -572,12 +575,62 @@ probabilities.) This replaces the earlier wording, which called the scores proba
      against the ceiling gives the knee (the default ceiling: little accuracy gained above it) and the floor (the
      CER rises steeply below it).
    - **Cost per station-second** follows from the three, and is reported for typical and hard signals.
+9. **Complete scores at every piece, so that the beam compares like with like (Claude's ruling at the owner's
+   request, 2026-10-16; answers review 1, O4, and its caveat to D16; step 2, section 5.1, row P2.2/P4.5, and section
+   5.4).** In plain terms: each hypothesis keeps a running tally of how well its story explains the signal, and at
+   every piece the beam throws out any story too far behind the leader (item 4). That is fair only if every tally is
+   up to date. As written before, three kinds of points were booked late: the credit for the signal in a mark still
+   under way, the penalty for a mark or gap that has run long, and the cost of each letter. So a story halfway
+   through a dash, its credit not yet booked, was compared with a story that had ended a dot a moment earlier and
+   been credited for it. Every point is now booked as it is earned. No complete story's score changes; only what
+   the beam keeps along the way. A nat, below, is a factor of e in a score.
+   - **The standard:** time-synchronous Viterbi search, in which every hypothesis has been scored on the same input
+     at each step (Ney and Ortmanns 1999; step 1, P4.4).
+   - **Evidence:** the score of the current block so far is computed from its running sum at every piece, exactly as
+     a finished block's score is (topic 4, items 2 and 4), so it counts as soon as the pieces arrive and a finished
+     block scores what it did before (derived). What late booking cost (derived): at 20 WPM, with a dash 30 ms under
+     way, the rival story "a dot that ended at 30 ms" had already been credited for those 30 ms (12.9, 147 and
+     1 496 nats at S₅₀₀ 0, 10 and 20 dB) less 5.3 nats for so short a dot, so it led the true story by 7.6, 141 and
+     1 490 nats, and any narrower beam dropped the true story. Booked on time, the true story leads by 5.3 nats.
+   - **Durations, in the hazard form** (Murphy 2002; step 1, P2.2; Bell 1977 did the same: "the probability of
+     extending duration D for one more sample interval"). At each piece, a mark or gap that continues multiplies the
+     score by S(τ + 1)/S(τ), the probability of lasting one more piece, and one that ends by the probability of
+     ending in that piece; S(τ) is the probability, under the fist model (topic 2), of lasting at least τ. An
+     unfinished element has then paid S(τ). The single "mark lasting so far" hypothesis (topic 1, item 2) takes the
+     better of the dot's and the dash's survival, each times its label's probability, and a gap the best of its
+     kinds'; it then scores exactly what the better of separate hypotheses would (derived), which settles review 1's
+     caveat to D16. What late booking cost (derived, 25 WPM): an unfinished mark has used 3.4 nats at 0.25 s,
+     11.0 at 0.5 s and 23.7 at 1 s, an unfinished gap 2.4 nats at 0.5 s, 8.9 at 1 s and 20.4 at 2 s. Booked at the
+     end, a tune-up carrier was a free Morse mark at every speed for as long as it lasted, and a long silence kept
+     "a long word space" level with "no signal" until the next mark.
+   - **Text, by look-ahead** (Ney and Ortmanns 1999, §5.2, "used in many systems for large-vocabulary speech
+     recognition"; Ney and Ortmanns 2000): at each node of the Morse tree, the score carries the best probability of
+     any letter still reachable from it, corrected when the letter completes, so each letter's probability is paid in
+     full as before, only earlier (topic 6, amended). In the first prototype, with all 62 symbols equally likely,
+     this means charging each letter's 1/62 (4.1 nats) when it starts. With look-ahead, a score is the probability of
+     the story so far times the best text probability still reachable from its node.
+   - **What remains:** the probability of ending in one particular piece, 2.4 to 5.6 nats at the median lengths of
+     dots, dashes and word gaps from 12 to 40 WPM (derived). A story that has just ended an element trails one still
+     in it by about that much until the second ends too. It comes from the standard hazard form, whose survival
+     counts every end time still possible while an ended element has paid for one. A look-ahead for durations,
+     charging the best end time still possible (review 1's second remedy), would remove it, but we know of no
+     standard source for it; the beam measured in item 4 absorbs it.
+   - **Checks (topic 9):** item 4's search-error measurement, where unfair comparisons would show up as errors at
+     beams that should be safe; and strong clean signals (S₅₀₀ 20 dB and above, every speed of group A) decoded with
+     a beam of 20 nats must give the wide-beam reference's text. The 20 nats are heuristic: several times the
+     residual above plus one letter's 4.1 nats, and far below the 141 to 1 490 nats a late credit costs.
+   - **Cost:** the block's score is computed at every piece instead of once per block; the survival and look-ahead
+     factors are table lookups. Measured with the rest (item 8).
+   - **Rejected:** keeping the factors late with a beam wide enough to cover them. At good SNR that needs hundreds to
+     thousands of nats, which leaves the beam almost nothing to prune.
 
 ### Topic 6: the text model (owner, 2026-10-14)
 
 The text model gives the probability of each completed letter given the text before it; it multiplies a hypothesis's
-score each time the hypothesis completes a letter. The decoder serves both uses the owner wants: skimming (callsigns,
-CQ, contest and DX exchanges) and transliterating conversations (ragchews).
+score each time the hypothesis completes a letter (amended 2026-10-16 by topic 5, item 9: the same probability is
+paid earlier, by look-ahead; at each node of the Morse tree the score carries the best probability of a letter still
+reachable from it, corrected when the letter completes). The decoder serves both uses the owner wants: skimming
+(callsigns, CQ, contest and DX exchanges) and transliterating conversations (ragchews).
 
 1. **No callsign matching in the decoder (owner).** Callsign databases (`cty.dat`, `MASTER.SCP`) belong to the
    callsign-search step after the decoder (design spec §4.1, item 5; §6; reference corrected 2026-10-14). Callsigns and other traffic are **never
@@ -652,8 +705,9 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    - topic 2: the Farnsworth range (D9), with step 2's findings on timing: done 2026-10-15 (topic 2 above);
    - topic 3: whether the decoder's own decisions may feed the amplitude and noise estimates (K3), with step 2's
      findings on amplitude: done 2026-10-15 (topic 3 above);
-   - topic 5: fair comparison under the beam between hypotheses in mid-element and finished ones (O4), births
-     against the beam (D15), and the priors at birth and for the first prototype (K8, O7).
+   - topic 5: fair comparison under the beam between hypotheses in mid-element and finished ones (O4; done
+     2026-10-16, topic 5, item 9, Claude's ruling at the owner's request), births against the beam (D15), and the
+     priors at birth and for the first prototype (K8, O7).
 3. **A new topic before topic 7, the channel's other contents:** other signals, impulsive noise (static crashes), the
    models of the non-Morse states, and element sequences that fit no letter (O3, O6, O8). Its number is settled with
    the agenda after the check.
