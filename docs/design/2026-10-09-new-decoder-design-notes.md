@@ -302,11 +302,12 @@ inside the hypothesis that made them; whatever is kept at channel level uses no 
      differ only in their levels are merged, keeping the better one's level (the standard per-survivor approximation).
    - Dropped with the channel estimate: the 10 ms tap, its soft key-down weights (with their unstated key-down prior,
      0.44 by step 2, C8) and the 0.5 s window, and with them review 1's D4 to D6, which concerned them.
-2. **How fast the level may change: moved to topic 4 (owner, 2026-10-15).** At slow speeds in fast fading the level
-   changes within a mark: a 5 WPM dash lasts 720 ms, while the fading's correlation halves after 0.375/spread seconds
-   (375 ms at 1 Hz, 75 ms at 5 Hz; step 1, N5). Marks must then be split into blocks shorter than the fading's
-   coherence time (the standard: step 1, P1.5), so the level's rate of change and the block length are one assumption,
-   set together in topic 4. Derived for that discussion, with one level measurement per mark:
+2. **How fast the level may change: moved to topic 4 (owner, 2026-10-15), and settled there: one fixed spread,
+   chosen by measurement, sets both the block length and the level's rate (topic 4, item 9).** At slow speeds in fast
+   fading the level changes within a mark: a 5 WPM dash lasts 720 ms, while the fading's correlation halves after
+   0.375/spread seconds (375 ms at 1 Hz, 75 ms at 5 Hz; step 1, N5). Marks must then be split into blocks shorter
+   than the fading's coherence time (the standard: step 1, P1.5), so the level's rate of change and the block length
+   are one assumption, set together in topic 4. Derived for that discussion, with one level measurement per mark:
    - a filter that assumes faster fading than the signal has costs sensitivity on steady signals. Per mark, at 1%
      errors, +0.4 dB of E/N₀ at ±20% level uncertainty and +2.7 dB at ±50%; at 0.1% errors, +2.1 and +12 dB. A 1 Hz
      assumption leaves ±49% at 5 WPM, ±19% at 20 WPM and ±10% at 40 WPM;
@@ -362,25 +363,40 @@ like noise.
 
 **For topic 9:** item 3's measurement of the hiss estimator on HamSCI's recordings.
 
-### Topic 4: the observation (owner, 2026-10-12)
+### Topic 4: the observation (owner, 2026-10-12; reopened 2026-10-15, closed again 2026-10-16)
 
-1. **Every hypothesis is scored on the same evidence:** the channel signal cut into short non-overlapping pieces,
-   each the sum of the complex samples over about 2 ms (3 samples at 1500 samples/s). Its cost is derived (review 1,
-   D11; corrected 2026-10-14 from "heuristic"): placing edges only at piece boundaries costs 0.37 dB of SNR (power
-   ratio) on average and 0.72 dB at worst on a 12 ms dot (100 WPM), and under 0.1 dB on average at 25 WPM; 1.33 ms
-   pieces would save about 0.1 dB at 100 WPM for 1.5 times as many pieces. The pieces' noise is **not** independent:
-   the channel passes about 300 Hz, so its noise stays correlated for about 3.3 ms (derived; about 4 ms on the real
-   filter); see item 7. Reading speed-specific filters instead would score hypotheses at different speeds on
-   different data, and overlapping samples would count evidence several times.
+Reopened 2026-10-15 for review 1's D7 and D8 (with O1, O2 and K13), for the standard-practice check's findings
+(step 2, rows T4.1 to T4.7, of which T4.2b, whole-mark sums with no frequency reference, was "ours where a standard
+exists"), and for how fast the signal level may change (moved here from topic 3, item 2). Items 1 to 7 stand,
+amended where marked. Items 8 (the frequency reference) and 9 (blocks, and how fast the level may change) are new;
+they answer the risk this topic used to end with, which git keeps.
+
+1. **Every hypothesis is scored on the same evidence:** the channel signal, re-centered by item 8's fine frequency
+   shift (added 2026-10-16), cut into short non-overlapping pieces, each the sum of the complex samples over about
+   2 ms (3 samples at 1500 samples/s). Its cost is derived (review 1, D11; corrected 2026-10-14 from "heuristic"):
+   placing edges only at piece boundaries costs 0.37 dB of SNR (power ratio) on average and 0.72 dB at worst on a
+   12 ms dot (100 WPM), and under 0.1 dB on average at 25 WPM; 1.33 ms pieces would save about 0.1 dB at 100 WPM for
+   1.5 times as many pieces. (Checked by the standard-practice check, step 2, T4.3, added 2026-10-16: in a
+   white-noise model with unfiltered marks, 0.37 dB on average and 0.67 dB at worst; on the real channel filter with
+   its correlated noise, 0.30 dB on average and 0.41 dB at worst, against the ideal E/N₀. The figures above are
+   conservative.) The pieces' noise is **not** independent: the channel passes about 300 Hz, so its noise stays
+   correlated for about 3.3 ms (derived; about 4 ms on the real filter); see item 7. Reading speed-specific filters
+   instead would score hypotheses at different speeds on different data, and overlapping samples would count
+   evidence several times.
 2. **Each hypothesis does its own matched filtering:** it adds up the pieces it claims fall inside its current mark
    (one complex running sum). A Morse carrier keeps its phase through a mark, so the sum is what a filter matched to
    that mark would give; its noise follows from the noise level per hertz (item 7). The score is the standard
    carrier-of-unknown-phase-plus-noise against noise-alone statistics, with A from topic 3; gaps are scored as noise.
    Edges fall where the hypothesis puts them (to one piece); there are no filter delays; speeds between grid values
    do not matter for the observation. Scoring a mark's sum and the neighboring gap pieces separately ignores the
-   noise correlation across the mark's edges (about 4 ms): an approximation (review 1, U10).
+   noise correlation across the mark's edges (about 4 ms): an approximation (review 1, U10). Amended 2026-10-16 by
+   item 9: the running sum covers the current block of the mark, at most item 9's block length; each finished block
+   is scored this way, against the hypothesis's predicted level (topic 3, item 1), and the scores of a mark's blocks
+   add (noncoherent combining). A mark no longer than one block is summed whole, as before.
 3. **The time step** is the piece length, about 2 ms.
-4. **Keying history (topic 1, item 7):** only the running sum of the current mark.
+4. **Keying history (topic 1, item 7):** only the running sum of the current mark (amended 2026-10-16 by item 9:
+   of the current block; a finished block's score goes straight into the hypothesis's score and its sum updates the
+   hypothesis's level).
 5. **The bank is not used by the new decoder** (owner): each hypothesis's signal level comes from its own sums of
    the pieces, and the hiss level from the signal detector's spectrum around the station (topic 3, items 1 and 3,
    amended 2026-10-15). The existing bank decoder stays frozen as the yardstick until the new decoder beats it.
@@ -405,14 +421,77 @@ like noise.
    claimed nearly independent noise, and item 2 a gain of 10·log₁₀ n dB over one piece; both were wrong by that
    factor.)
 
-Risk: it relies on the carrier's phase staying steady through a mark. A residual frequency error after mixing to
-0 Hz rotates the phase (0.5 Hz over a 720 ms dash at 5 WPM: about a third of a cycle, derived), losing part of the
-gain at slow speeds. Corrected 2026-10-14: the channelizer has no frequency hold. It centers each channel once on the
-nearest 23.4 Hz bin, leaving the carrier up to ±11.7 Hz off 0 Hz, and never moves (`docs/signal-processing.md`,
-A.7). A whole-mark sum then loses most of its signal at slow speeds: even at ±2 Hz, 13 dB of signal power on a 5 WPM
-dash and 19 dB on an 8 WPM dash, relative to a centered station (review 1, D7). Fading within a mark costs up to
-about 7 dB of signal power on a 5 WPM dash at a 5 Hz Doppler spread (review 1, D8). The frequency reference, and
-changes of phase and amplitude within a mark, are open (see "After review 1").
+8. **The frequency reference (owner, 2026-10-15; answers review 1, D7, O1 and K13, and step 2, T4.2b).** One
+   tracker per channel follows the carrier's frequency and its drift rate. It uses none of the decoder's decisions
+   (topic 3's rule), starts from the signal detector's frequency, and steers the channel's fine frequency shift, so
+   every hypothesis reads the same re-centered pieces (item 1).
+   - **Why (derived; review 1, D7).** A carrier Δf off 0 Hz turns its phase through a full cycle every 1/Δf seconds,
+     and a coherent sum over a time T keeps |sinc(Δf·T)|² of its signal power. The channelizer centers each channel
+     once on the nearest bin of its shared FFT (192 kHz / 8 192, so 23.4 Hz apart) and never moves it
+     (`docs/signal-processing.md`, A.7), leaving the carrier up to ±11.7 Hz off 0 Hz. A whole 20 WPM dash (180 ms)
+     then loses 26 dB of signal power, and for a 5 WPM dash (720 ms) to lose under 0.3 dB the carrier must be within
+     0.2 Hz. Shifting by whole bins is the usual coarse step of FFT channelizers (free, and shared by every channel);
+     the fine shift runs on the channel's 1500 samples/s at one complex multiplication per sample.
+   - **Standard (step 1, P3.4; step 2, §3.6):** acquire the frequency at the spectrum's peak, the maximum-likelihood
+     estimate (Rife and Boorstyn 1974); then track it with its drift rate, by a Kalman filter or phase-locked loop at
+     moderate SNR, or by a hidden Markov model over frequency cells at low SNR (Streit and Barrett 1990). Review 1
+     suggested this layout: one tracker per channel, ahead of the pieces, the same for every hypothesis (O1).
+   - **Without decisions (derived).** On/off keying puts a share of the signal's average power equal to the key-down
+     fraction (0.44 for PARIS text) in a steady line at the carrier frequency, which a tracker can follow without
+     knowing when the key is down. Over 1 s at 0 dB S₅₀₀ that line alone pins the frequency to about 0.04 Hz at best
+     (the Cramér–Rao bound), while one mark says little: a 20 WPM dot pins it to about 1.2 Hz at best, a dash to
+     0.23 Hz.
+   - **Not chosen.** Each hypothesis tracking its own frequency, as it does its level (per-survivor processing),
+     would help only at a QSO turnover, when the second station transmits a few to a few tens of hertz from the
+     first. The channel's tracker follows the carrier line, which moves as soon as that station transmits, so it
+     should relock quickly on any signal strong enough to decode (expected; measured below). Matched's tracker is
+     standard, but it is steered by Matched's own key-down decisions at channel level, which topic 3's rule forbids,
+     and it lags a 1 Hz/s drift by 1.1–1.6 Hz (review 1, D7).
+   - **Accuracy needed:** item 9 caps every coherent sum at its block length T, and a residual error Δf loses under
+     1 dB of signal power while Δf·T ≤ 0.26; over a 100 ms block, 1 Hz costs 0.14 dB and 2 Hz 0.6 dB (derived). This
+     replaces the spec's ±2 Hz re-centering target in the spec amendment (K13).
+   - **Built and measured with the prototype:** the tracker's model and gains are set when it is built, from the
+     standard forms above. Its frequency error is measured on weak keyed stations, on the drift group (F2, excursions
+     up to 40 Hz) and at QSO turnovers, on the development set's detector path (topic 9). Per-hypothesis frequencies
+     are reconsidered only if the turnovers show a real loss.
+9. **Blocks, and how fast the level may change (owner, 2026-10-15; answers review 1, D8 and O2, and step 2, T4.2b;
+   settles topic 3, item 2).** A hypothesis sums its mark coherently over blocks no longer than a fixed block length,
+   combines the blocks of a mark noncoherently (item 2), and measures its level once per block (topic 3, item 1). One
+   fixed Doppler spread, the same for every signal, sets both the block length and how fast the level may change
+   (the rate of the level's Gauss–Markov model); its value is set by measurement.
+   - **Why (derived; review 1, D8).** Fading turns the carrier's phase and changes its level within a mark. For a
+     Rayleigh-fading carrier whose Doppler spectrum is Gaussian with standard deviation f_D/2 (f_D, the spread), a
+     coherent sum over T keeps (2/T²)∫₀^T (T − τ)·ρ(τ) dτ of its energy, ρ being the fading's correlation: a 5 WPM
+     dash (720 ms) loses 1.4 dB at a 1 Hz spread and 6.9 dB at 5 Hz, a 20 WPM dash 2.0 dB at 5 Hz. The faded sum also
+     stops looking like "a carrier of level A", so its score is wrong too. The development set's fading group B2
+     spans 0.05–5 Hz.
+   - **Standard (step 1, P1.5; step 2, §3.6; review 1, O2):** sum coherently only over blocks shorter than the
+     fading's coherence time and short against 1/Δf (item 8), and combine the blocks noncoherently or differentially
+     (Dovis and Ta 2012); track the level block by block with a Gauss–Markov model whose rate comes from the spread
+     (Bell 1977 ran a Kalman filter on the amplitude). A refinement is the estimator-correlator (Kailath 1969), in
+     effect a Kalman predictor of the carrier that picks its own block length from the fading model.
+   - **The trade-off (derived, one mark judged on its own).** Short blocks cost a steady signal: the extra E/N₀ for
+     1% errors per mark (missed marks and noise read as marks, averaged), against one sum over the whole mark, is
+     0.5, 1.0, 1.5, 2.4 and 3.4 dB for 2, 3, 5, 10 and 20 blocks. Long blocks cost a fading signal: the longest block
+     that loses at most 0.5 dB of energy is 78 ms at a 5 Hz spread, 195 ms at 2 Hz, 390 ms at 1 Hz and 1.3 s at
+     0.3 Hz. Example, a 5 WPM dash: blocks short enough for 5 Hz fading cut it into about 9, which costs a steady
+     signal about 2.4 dB, while left whole it loses 6.9 dB at 5 Hz. So any one value gives up about 2 dB on steady
+     slow signals or up to about 7 dB on fast-fading slow ones. It matters mostly below about 20 WPM: marks of 78 ms
+     or less are never split (dots from 16 WPM up, dashes from 46 WPM up). The block length is in milliseconds, not
+     dits, because the fading's coherence time does not scale with the sending speed. What a level rate that is too
+     fast or too slow costs is in topic 3, item 2.
+   - **The value, by measurement (topic 9):** the spread that does best on B2 without making A2 (steady signals)
+     worse, by the paired comparison (topic 2, "a real advantage"). The block length is the longest that loses at
+     most 0.5 dB of energy at that spread (heuristic; the same sweep tries 0.25 and 1 dB). A genie test on B2,
+     decoding with the generator's true fading, measures what one fixed value loses.
+   - **Only with a real advantage (topic 2):** a spread estimated per signal (Tepedelenlioğlu, Abdi, Giannakis and
+     Kaveh 2001), or two or three spreads side by side in each hypothesis, weighted by how well each fits (multiple
+     models, Blom and Bar-Shalom 1988; cheaper than it sounds, since long blocks are sums of short ones).
+     Differential combining and the estimator-correlator are refinements, tested the same way.
+   - **The block cap also** bounds the loss from any frequency error item 8's tracker leaves (review 1, O1).
+     Transmitter chirp, a frequency change at key-down (O2), is not modeled, and the development set has none.
+
+**For topic 9:** item 8's measurement of the tracker, and item 9's sweep of the spread with its genie test.
 
 ### Topic 5: hypotheses (owner, 2026-10-13)
 
@@ -568,7 +647,8 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    findings are taken up topic by topic as the topics reopen.
 2. **Topics reopened after that check, one at a time:**
    - topic 4: the frequency reference for whole-mark sums (D7), and changes of phase and amplitude within a mark
-     (D8), with how fast the signal level may change (moved from topic 3, item 2, 2026-10-15);
+     (D8), with how fast the signal level may change (moved from topic 3, item 2, 2026-10-15): done 2026-10-16
+     (topic 4 above, items 8 and 9);
    - topic 2: the Farnsworth range (D9), with step 2's findings on timing: done 2026-10-15 (topic 2 above);
    - topic 3: whether the decoder's own decisions may feed the amplitude and noise estimates (K3), with step 2's
      findings on amplitude: done 2026-10-15 (topic 3 above);
@@ -588,11 +668,133 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    speed changes at element boundaries. It is
    amended, with the owner's approval, once this design settles (K12), together with topic 2's cut of the Farnsworth
    test signals above a factor of 8 from the comparison with the bank decoder (topic 2, item 3). Its ±2 Hz
-   re-centering target (§5.2, step 1) is too loose for whole-mark sums (D7, K13).
+   re-centering target (§5.2, step 1) is too loose for whole-mark sums (D7, K13); the amendment replaces it with the
+   accuracy topic 4's blocks need (topic 4, item 8).
 7. **Building starts after topics 3, 4 and 5 (owner, 2026-10-15).** Then come a short spec amendment and the first
-   prototype's plan, each for the owner's approval. Topic 6's reopened items, the new topic on the channel's other
-   contents, and topics 7, 8 and 9 follow while the prototype is built and measured, each settled before its part is
-   added. The reason: the first prototype needs only simple versions of those parts (it has no text model, topic 6,
-   item 6; it can print its best story at the end of each recording; fresh starts already follow a change of
-   station), while it cannot do without amplitude, the observation and the search. The risk accepted is rework if a
-   later topic changes something already built.
+   prototype's plan, each for the owner's approval. Topic 6's reopened items, the new topics on the channel's other
+   contents and on opening and closing channels (below; added 2026-10-16), and topics 7, 8 and 9 follow while the
+   prototype is built and measured, each settled before its part is added. The reason: the first prototype needs
+   only simple versions of those parts (it has no text model, topic 6, item 6; it can print its best story at the
+   end of each recording; fresh starts already follow a change of station), while it cannot do without amplitude,
+   the observation and the search. The risk accepted is rework if a later topic changes something already built.
+
+### Opening and closing channels (owner, 2026-10-16; a new topic, settled during building)
+
+Raised by the owner during topic 4: whether the signal detector ends a station's track during long pauses, whether
+that matters, and how it decides that a station is there and that it is gone. There are two levels. The **signal
+detector** opens a channel when it finds a station and closes it when it judges the station gone
+(`docs/signal-processing.md`, section 6). Inside the channel, the **decoder's** no-signal hypothesis decides whether
+Morse is being sent (topic 1, items 1 and 3; the standard way, step 1, P5.1 and P5.3). This topic is the first
+level. Neither review examined it. Our records flag it: every detector number is heuristic, the noise floor is one
+value for the whole span, and track lifetimes are set "by accident, not design" (`docs/signal-processing.md`, A.6);
+the backlog items it takes up are listed at the end. Nothing here affects the first prototype, which is scored on
+oracle channels open for the whole recording.
+
+**The standard.**
+- **Opening, in two stages** (target tracking). A detector proposes: its threshold is set from a chosen false-alarm
+  rate, against noise measured around the cell under test (Neyman–Pearson detection, Kay 1998; constant false-alarm
+  rate (CFAR) detection, Rohling 1983, whose ordered statistic topic 3 uses for the hiss). A better test confirms:
+  M detections in N looks, or the track's score, the log-likelihood ratio of "target" against "nothing", crossing a
+  threshold (Blackman and Popoli 1999). For weak targets, track-before-detect sets no threshold on single looks: it
+  accumulates evidence under the target model and decides on that (Barniv 1985; Davey, Rutten and Cheung 2008).
+- **Closing:** after a run of misses, when the score falls a set amount below its peak, or when the probability that
+  the target exists falls below a threshold (Mušicki, Evans and Stanković 1994).
+- **Speech:** the recognizer's own silence model decides where speech starts and ends, with a hold time (step 1,
+  P5.1 and P5.3). Clipping the start of speech is a standard error measure of voice-activity detectors ("front-end
+  clipping"; Beritelli, Casale, Ruggeri and Serrano 2002). The usual fix, replaying a buffer from before the
+  detection, is documented only in product documentation and patents.
+
+**What the detector does now, and what follows (derived).** Its rules are heuristic (`docs/signal-processing.md`,
+section 6). The figures below come from a simulation of one detector bin with the detector's window, hop, 1 s
+average and rules; white noise; PARIS text with 5 ms raised-cosine edges; the tone at a bin's center or halfway
+between two bins; 300 stations per point. S₅₀₀ is the key-down SNR in 500 Hz.
+- **Opening:** a bin's average must be at least 6 dB above the floor (the median of all 8 192 bins) and the highest
+  within ±47 Hz, in every frame for 0.5 s. The 6 dB compares signal plus noise with noise, so the station's averaged
+  power must be 4.72 dB above the noise per bin. The bin reads 3.8 dB (12 WPM) to 5.3 dB (80 WPM) less than the
+  key-down power on a bin's center (the key-up time, and keying sidebands outside the bin), and 1.0–1.3 dB less
+  again halfway between bins.
+
+  | Speed | Opens every time within 20 s from (S₅₀₀; bin center / between bins) | Median delay there | Best possible decoder at CER 0.10, no text model | Measured CER-0.10 crossing, bank / Matched |
+  |---|---|---|---|---|
+  | 12 WPM | −3 / −2 dB | 2.9 / 3.1 s | −5.0 dB | −0.1 / −0.2 dB |
+  | 25 WPM | −2 / −1 dB | 1.8 / 3.2 s | −1.9 dB | 0.0 / +1.1 dB |
+  | 40 WPM | −2 / −1 dB | 3.6 / 3.8 s | +0.2 dB | +1.8 / +2.9 dB |
+
+  The two right-hand columns are the stage-1 results record's genie-aided bound (derived, §5.1.1) and measured
+  crossings (group A, oracle channels, §5.1). Today's decoders need more signal than the detector does, so it costs
+  them nothing. A new decoder at the bound would lose 2–3 dB at 12 WPM, up to about 1 dB at 25 WPM (between bins)
+  and nothing at 40 WPM. Near the threshold, channels open late: at 12 WPM and −3 dB, after a median 2.9 s and 5.9 s
+  in 1 case in 10, about three letters. Strong stations open in 0.7–0.8 s.
+- **On white noise, the 6 dB is set by nothing.** False channels per hour over 8 192 bins (simulated for one hour,
+  without the peak rule, so slightly pessimistic): 1 569, 89, 5 and 0 at 1.5, 1.75, 2.0 and 2.25 dB above the floor,
+  and 0 at 2.5, 3 and 6 dB. The largest averaged noise reading in the hour was 2.70 dB above the floor. At 2.25 dB,
+  every station opened within 20 s from −9 dB S₅₀₀ at 12, 25 and 40 WPM (median delays 2.0, 3.5 and 4.4 s), and
+  stations at the bound above opened after a median of at most 0.8 s. What the 6 dB does guard against has not been
+  counted on real recordings: peaks beside very strong stations (on the stage-1 strong group, Matched and Envelope
+  printed text on 12 extra channels, the bank prototype on 1; stage-1 results §5.4), signals that are not Morse, and
+  a floor that is wrong locally.
+- **Closing:** a channel stays open while its average is at least 3 dB above the floor (the station's averaged power
+  at least equal to the noise per bin: down to about −7.8, −7.5 and −7.1 dB S₅₀₀ at 12, 25 and 40 WPM, far below
+  anything copyable), and closes 10 s after its last frame above that. After a station's last mark its average takes
+  ln R seconds to decay to the noise, R being the averaged signal-to-noise power ratio per bin, so channels close
+  11–21 s after their station stops, and any longer pause closes them. A closing is not a judgment about the
+  station. What it costs: the next over opens late and loses its start, as every opening does (first-word CER on the
+  band group, bank prototype / Matched / Envelope: 0.753 / 0.842 / 0.808 through the detector against 0.068 / 0.308
+  / 0.226 on oracle channels; stage-1 results §5.3, item 11); the decoder's state is lost, which costs the new decoder
+  little (a resumed over is born from silence at every speed, topic 5, item 3, with its level from the detector,
+  topic 3, item 5, and its frequency from the detector's peak, topic 4, item 8); and the text splits between
+  channels.
+- **Correction:** the backlog item "Does the detector miss stations the chosen decoder could copy?" put the opening
+  threshold at −1.0 dB S₅₀₀ at 25 WPM, reading the 6 dB as signal over noise. Without the noise's fluctuations it is
+  −3.0, −2.7, −2.3 and −1.5 dB S₅₀₀ at 12, 25, 40 and 80 WPM on a bin's center, 1.0–1.3 dB higher between bins; the
+  simulated figures above include the fluctuations.
+
+**Decisions (owner, 2026-10-16), for when the new decoder runs behind the live detector:**
+1. **Opening: a threshold set from a false-channel rate, against a local floor, with the decoder confirming** (the
+   standard two stages). The floor is topic 3's hiss estimator (the 25th percentile of the bins within ±2 kHz,
+   corrected for its bias; topic 3, item 3), so the detector and the decoder use the same noise. The local floor is
+   what makes a low threshold safe: with today's global floor, any stretch of band whose noise sits 2–3 dB above the
+   band's median would open channels on noise alone (derived from the false-channel counts above). The rate is chosen
+   from what a false channel costs (its CPU until the decoder closes it), and the threshold follows from the rate by
+   measurement on real recordings; on white noise it would be about 2.25–2.5 dB above the floor (derived above). The
+   decoder confirms: its score of Morse against no signal is in effect the standard's track score; it gates what is
+   printed (topic 8) and closes the channel (decision 2). **Directly** (owner, 2026-10-16), not after a measurement
+   shows a gap: the 6 dB is a heuristic where a standard exists, so the standard is the default; the measurements
+   below set its numbers and size its gain.
+2. **Closing: the decoder decides.** The channel closes once no Morse hypothesis has led for a hold time: the
+   standard close, on the score or on the probability that the station exists, from what the decoder already
+   computes. The hold time is set in topic 7, from measured pause lengths and the CPU of an idle channel.
+3. **Replay at every opening:** the last few seconds of the channelizer's shared spectrum are kept, and a new channel
+   starts from the oldest of them, so its decoder hears the transmission from its start (the backlog's fix; memory:
+   8 192 complex bins × 46.9 frames/s × 8 bytes, 6.1 MB per 2 s at 192 kHz, derived). The length is set from the
+   measured opening delays at the decoder's limit; the backlog's 2 s is a placeholder.
+4. **Keeping a station through pauses** (a longer life for idle channels, or joining a new channel to one that closed
+   recently at the same frequency and passing on the station's speed and level): topic 7 (step 1, P7.3 and P7.4; in
+   tracking, track segment association, Yeom, Kirubarajan and Bar-Shalom 2004).
+
+The present decoders print text on channels that hold no station (above), so the lower threshold goes live with the
+new decoder, not before.
+
+**Open, settled during building:**
+- **Channels that hold something other than Morse.** A lower threshold opens more channels on carriers, other modes
+  and peaks beside very strong stations. If the decoder closes such a channel (decision 2), the detector reopens it
+  0.5 s later. Either such channels stay open without printing, or the detector remembers the frequencies the decoder
+  has rejected; the nearest standard is radar's clutter map, which raises the threshold in cells that keep returning
+  echoes (Nitzberg 1986). Settled with the new topic on the channel's other contents.
+- **The 1 s average and the 0.5 s persistence** (heuristic): with the threshold, they trade the opening delay against
+  the false-channel rate; they are derived with it, by the simulation above, for the chosen rate.
+- **The cap of 200 channels** (a CPU guard) binds sooner with more channels open; the overload governor (topic 5,
+  item 7) decides which stations keep theirs.
+
+**Measurements (topic 9):**
+- false channels per hour on HamSCI's recordings at thresholds from 2 to 6 dB above the local floor, with their
+  causes (noise, peaks beside strong stations, other signals), and what the new decoder prints on them per hour
+  (step 1, P5(h));
+- the CPU of a channel holding no station, and of one holding a carrier, on the prototype;
+- how often and how soon channels open against S₅₀₀ by speed through the detector, beside the new decoder's oracle
+  CER (the backlog's measure);
+- pause lengths in real traffic (topic 7).
+
+**Backlog items taken up here:** "Does the detector miss stations the chosen decoder could copy?", "Wrong or missing
+first characters", "Stray E's after a station stops", "Tracks outlive their stations; separate station identity from
+decoding", "Ghost tracks beside very strong signals", and "Detector: averaging, noise floor and detection theory".

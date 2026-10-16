@@ -63,14 +63,27 @@ development set's distribution (above).
 
 Once the decoder is decided, check whether the live detector misses tracks
 at low SNR that the decoder could still copy. The detector's birth
-threshold (6 dB above the floor, dB SNR per bin, on a 1 s average)
-corresponds to about S₅₀₀ = −1.0 dB at 25 WPM, −1.9 dB for slow keying and
-+1.6 dB for very fast keying (dB SNR in 500 Hz; derived, white noise, tone
-on a bin center; up to 1.4 dB more between bins). The bank's and Matched's
-CER-0.10 crossings lie at about 0 to +2 dB (measured, group A, oracle), so
-the threshold is not the limit today; an ideal decoder would reach CER 0.10
-at about −1.9 dB at 25 WPM and −5.1 dB at 12 WPM (derived bound, stage-1
-results record §5.1), below the threshold.
+threshold (6 dB above the floor, on a 1 s average) compares signal plus
+noise with the floor, so the station's averaged power must be 4.7 dB above
+the noise per bin: about S₅₀₀ = −3.0 dB at 12 WPM, −2.7 dB at 25 WPM,
+−2.3 dB at 40 WPM and −1.5 dB at 80 WPM (dB SNR in 500 Hz; derived, white
+noise, PARIS text with 5 ms edges, tone on a bin center, without the
+noise's fluctuations; 1.0–1.3 dB more between bins). Corrected 2026-10-16:
+these figures had read the 6 dB as signal over noise (−1.0 dB at 25 WPM,
+−1.9 dB for slow keying, +1.6 dB for very fast keying). A simulation with
+the fluctuations, and the false-track rate on white noise, are in the
+design notes' "Opening and closing channels"
+(`docs/design/2026-10-09-new-decoder-design-notes.md`). The bank's and
+Matched's CER-0.10 crossings lie at about 0 to +3 dB (measured, group A,
+oracle), so the threshold is not the limit today; an ideal decoder would
+reach CER 0.10 at about −1.9 dB at 25 WPM and −5.0 dB at 12 WPM (derived
+bound, stage-1 results record §5.1.1; corrected 2026-10-16 from −5.1 dB
+and §5.1), below the threshold at slow speeds.
+
+**Taken up by the new decoder's design (owner, 2026-10-16):** the
+threshold is to be set from a false-channel rate against a local floor,
+with the decoder confirming (design notes, "Opening and closing
+channels"). The measurement below is that topic's test.
 
 Measure: detection recall against S₅₀₀ at 12, 25, 40 and 80 WPM (owner;
 group A has only 12, 25 and 40 WPM, so 80 WPM needs new recordings),
@@ -80,7 +93,8 @@ If it matters, candidates (heuristic until measured): a longer average, or
 a lower birth threshold with longer persistence (the threshold sits about
 10 standard deviations of the averaged noise above the floor, derived, so
 there is room), each traded against latency and the false-track rate (also
-to be measured on pure noise, which has not been done).
+to be measured on pure noise, which has not been done; simulated on white
+noise 2026-10-16, design notes, "Opening and closing channels").
 
 ### Top priority: research, then implement a probabilistic decoder
 
@@ -599,6 +613,12 @@ Fix, in two parts:
 
 Must land before callsign matching.
 
+**For the new decoder (owner, 2026-10-16):** replay at every opening is
+part of its design for live use (design notes,
+`docs/design/2026-10-09-new-decoder-design-notes.md`, "Opening and closing
+channels", decision 3); its length is set there from the measured opening
+delays, and the 2 s above is a placeholder.
+
 **Matched, a channel that opens mid-mark (milestone 2, part 1, Task 16):**
 the partial mark is no longer counted for speed (`docs/signal-processing.md`
 appendix A.8, "Marks whose start was not observed"); measured before/after (Task 17;
@@ -666,6 +686,12 @@ last character): it does not cover the engine, where the track lingers
 about 8 s, nor the ~1% stray character after a silence ("Stray noise after
 a silence" below).
 
+**For the new decoder (owner, 2026-10-16):** its no-signal hypothesis
+decides when a station has stopped, and it closes the channel (design
+notes, "Opening and closing channels", decision 2); what it prints on
+noise is measured as characters per hour on noise-only channels (the
+standard-practice check, step 1, P5(h)).
+
 ### Tracks outlive their stations; separate station identity from decoding
 
 A track is dropped about 8 s after its station stops even with a 1 s timeout,
@@ -688,12 +714,26 @@ its first word (every run at 200 Hz, and at 100 Hz with the answering
 station 6–10 dB weaker than the caller's key-down power). Real overs are
 often longer.
 
+**For the new decoder (owner, 2026-10-16):** the decoder closes the
+channel when it finds no station (design notes, "Opening and closing
+channels", decision 2); whether a station's identity, speed and level
+survive a pause is topic 7's question. Derived there: a channel now closes
+11–21 s after its station stops (the average's decay, ln R seconds for an
+averaged SNR per bin R as a power ratio, plus the 10 s timeout).
+
 ### Ghost tracks beside very strong signals
 
 Around 60 dB SNR (500 Hz), extra tracks appear a few hundred Hz either side of a
 station and decode runs of `E` and `I`. Fix idea: reject a peak that sits
 inside a much stronger track's skirt (more than X dB below that track's level within
 ±N Hz).
+
+Measured (stage-1 results record §5.4): on the strong group, Matched and
+Envelope printed text on 12 extra tracks, the bank prototype on 1
+(presumably these ghosts; not checked track by track). A lower
+opening threshold, as the new decoder's design intends, opens more of
+them; they are counted on real recordings and handled with the channel's
+other contents (design notes, "Opening and closing channels", 2026-10-16).
 
 ### Express the remaining bin- and sample-counted settings in physical units
 
@@ -759,7 +799,12 @@ unchanged.
 ### Detector: averaging, noise floor and detection theory
 
 All of the detector's parameters are heuristics (see
-`docs/signal-processing.md`, section 6).
+`docs/signal-processing.md`, section 6). The new decoder's design takes
+this item up (owner, 2026-10-16; design notes, "Opening and closing
+channels"): the threshold is set from a false-channel rate against a local
+floor, topic 3's hiss estimator, and the average and persistence are
+derived with it. A simulation on white noise found no false track in an
+hour at 2.25 dB above the floor or higher, 5 at 2.0 dB.
 - **Averaging:** compare a boxcar mean over T = 1–2 s with the current
   exponential average (τ = 1 s): false tracks, detection delay, time to drop
   a track. Derive T from the false-alarm rate across N bins, an averaging time
