@@ -538,8 +538,10 @@ probabilities.) This replaces the earlier wording, which called the scores proba
    birth is an ordinary transition, with a small disruption probability ε, from every hypothesis; under Viterbi the
    newborn takes the best of these, so its score is the best current score times ε. The Viterbi arithmetic is
    standard; the ε-restart model is our choice (corrected 2026-10-14: it was labeled standard). Derived constraint
-   (review 1, D15): a newborn survives the beam (item 4) only if ε is larger than 1/B, where B is the beam factor;
-   otherwise narrowing the beam silently disables births. Births let the decoder recover when every surviving
+   (review 1, D15): a newborn starts behind the best by the cost of its birth, ε and the priors of what it starts
+   with, and survives the beam (item 4) only while that cost is inside it (with the priors left out, only if ε is
+   larger than 1/B, where B is the beam factor); otherwise narrowing the beam silently disables births. The beam
+   therefore has a minimum width (item 4; owner, 2026-10-17). Births let the decoder recover when every surviving
    hypothesis is wrong in a way its own branching cannot repair (any change of speed or Farnsworth factor, which since
    2026-10-15 only births carry, topic 2, items 2 and 3; a noise burst that misplaces a letter boundary; a new station
    without silence between overs). Without them the decoder can stay lost, as Bell's did.
@@ -555,6 +557,50 @@ probabilities.) This replaces the earlier wording, which called the scores proba
    the result differs from the reference at most once per 1 000 letters. Amended 2026-10-14: the
    earlier rule (drop hypotheses while their combined probability stays under a budget per piece) treated the scores
    as probabilities summing to 1, which they are not.
+
+   **Minimum width, so that births survive (owner, 2026-10-17; answers review 1, D15 and O5).** A newborn (item 3)
+   starts behind the best by the cost of its birth, and the beam drops it at once if that cost is larger than the
+   beam. A beam narrowed by the measurement above would then disable births, with no sign but unexplained search
+   errors.
+   - **The standard:** one beam, relative to the best, set by experiment as "a compromise between speed and avoiding
+     search errors" (the HTK Book for HTK 3.4, Young et al. 2009, §13.1). In speech recognition a word start pays
+     its language-model probability and survives only inside that beam; language-model look-ahead brings that cost
+     in early (Ney and Ortmanns 1999, §5.1–5.2). Speech recognizers' separate threshold for word starts, cited by
+     review 1, is an additional, narrower cut to save CPU, not a protection: "an additional pruning step" (Ney and
+     Ortmanns 1999, §5.1); "since the range of language model probabilities is relatively small, a narrower beam
+     can be applied to word-end nodes without incurring additional search errors" (HTK Book, §13.1).
+   - **The rule (ours, on a derived bound):** the beam the decoder runs with is never narrower, in nats, than the
+     largest starting cost of any newborn plus a margin of 10 nats. A newborn's starting cost is ln(1/ε) (born from
+     silence, ln(1/P), with P the probability that an over starts in a given piece), plus the prior cost of its
+     speed, plus that of its Farnsworth factor, paid at its first gap between letters (topic 2, item 3), plus the
+     cost of learning its level from its first marks (topic 3, item 1). These are set with the priors at birth,
+     next in this topic (review 1, K8 and O7), and so is whether ε is charged per birth point or per 2 ms piece.
+     Illustration, leaving out the level: with all 32 speeds and all 23 factors equally likely (3.5 and 3.1 nats)
+     and one change per 2 minutes, charged per mark start at 25 WPM (ε = 1/700, 6.6 nats), the minimum is about
+     23 nats; one change per 10 s to one per hour, charged per mark start or per piece, gives starting costs of 11
+     to 21 nats.
+   - **Why the starting cost and not the whole catch-up (derived):** at the right speed a newborn gains on the old
+     story by the old story's misfit, on average at every element, so its deficit shrinks from its starting value
+     apart from swings (within an element, and from the sender's jitter and the noise), which the margin and its
+     check cover; and a newborn the beam drops is replaced at the next birth by one with the same starting cost.
+     Examples (σ 0.3, PARIS mix): after a change from 20 to 30 WPM the old story misfits by 0.91 nats per element,
+     and a newborn 15 nats behind leads after about 16 elements (1.2 s); after 25 to 30 WPM, 0.19 nats per element
+     and about 81 elements (5.8 s), the late following of small changes that topic 2, item 2 accepts.
+   - **The margin, 10 nats (derived from item 9; checked by measurement):** the 5.6 nats by which a story that has
+     just ended an element can trail one still in it (the largest at median lengths, 12 to 40 WPM), plus the
+     4.1 nats of a letter charged when it starts (the first prototype's 1/62), which can coincide: 9.7 nats,
+     rounded up. Check: the largest deficit any newborn reaches before it leads, per group, in the wide-beam
+     reference run; if it exceeds the margin, the margin is raised to it.
+   - **In the measurement above:** births are on in the wide-beam reference and in every narrowed run. Search
+     errors are reported per group of the development set as well as pooled (a pooled 0.1% can hide errors
+     concentrated in a few groups: step 2, T5.4b). Two counts are kept per group: newborns the beam drops within
+     their first dot, dash or gap, and newborns removed by the ceiling (item 5), which removes the lowest
+     hypotheses first, newborns among them (in HTK, reaching the limit narrows the beam, to the same effect).
+     Births get protection from the ceiling only if that count shows a need.
+   - **Rejected:** newborns exempt from the beam for a while and compared only with each other (review 1's
+     alternative): the sources do the opposite, and it adds a duration and a width with nothing to derive them
+     from. The measurement alone, with no minimum: standard and simplest, but a pooled target could accept a beam
+     that switches births off where they are needed (speed changes; a new station without silence between overs).
 5. **Ceiling on the number of hypotheses, set by CPU, not accuracy:** a fixed CPU budget per channel; how often the
    ceiling rather than the beam decides is counted (the maximum count is "histogram pruning", standard: Steinbiss,
    Tran and Ney 1994). Rough
@@ -617,8 +663,9 @@ probabilities.) This replaces the earlier wording, which called the scores proba
      standard source for it; the beam measured in item 4 absorbs it.
    - **Checks (topic 9):** item 4's search-error measurement, where unfair comparisons would show up as errors at
      beams that should be safe; and strong clean signals (S₅₀₀ 20 dB and above, every speed of group A) decoded with
-     a beam of 20 nats must give the wide-beam reference's text. The 20 nats are heuristic: several times the
-     residual above plus one letter's 4.1 nats, and far below the 141 to 1 490 nats a late credit costs.
+     a beam of 20 nats, or item 4's minimum width if that is larger (added 2026-10-17), must give the wide-beam
+     reference's text. The 20 nats are heuristic: several times the residual above plus one letter's 4.1 nats, and
+     far below the 141 to 1 490 nats a late credit costs.
    - **Cost:** the block's score is computed at every piece instead of once per block; the survival and look-ahead
      factors are table lookups. Measured with the rest (item 8).
    - **Rejected:** keeping the factors late with a beam wide enough to cover them. At good SNR that needs hundreds to
@@ -706,8 +753,8 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    - topic 3: whether the decoder's own decisions may feed the amplitude and noise estimates (K3), with step 2's
      findings on amplitude: done 2026-10-15 (topic 3 above);
    - topic 5: fair comparison under the beam between hypotheses in mid-element and finished ones (O4; done
-     2026-10-16, topic 5, item 9, Claude's ruling at the owner's request), births against the beam (D15), and the
-     priors at birth and for the first prototype (K8, O7).
+     2026-10-16, topic 5, item 9, Claude's ruling at the owner's request), births against the beam (D15 and O5;
+     done 2026-10-17, topic 5, items 3 and 4), and the priors at birth and for the first prototype (K8, O7).
 3. **A new topic before topic 7, the channel's other contents:** other signals, impulsive noise (static crashes), the
    models of the non-Morse states, and element sequences that fit no letter (O3, O6, O8). Its number is settled with
    the agenda after the check.
