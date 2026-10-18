@@ -114,9 +114,10 @@ means all three of:
    - **Test (topic 9):** once the prototype runs, a 5% grid (61 values) is tried against it and adopted only with a
      real advantage.
 2. **Speed changes: fresh starts only (owner, 2026-10-15).** A hypothesis keeps one speed. Every change, sudden or
-   gradual, is picked up by a fresh start (topic 5, item 3: wherever a mark plausibly begins, new hypotheses start at
-   every speed, behind the best by a factor ε). Speed is thus constant between change points, as in the change-point
-   model of Adams and MacKay (2007): standard but adapted (the label of the ε-restart itself is topic 5's, reopened).
+   gradual, is picked up by a fresh start (topic 5, item 3, amended 2026-10-18: wherever a hypothesis starts a mark,
+   a newborn starts with it, behind it by a factor ε, and takes its speed when its first mark ends). Speed is thus
+   constant between change points, as in the change-point model of Adams and MacKay (2007): standard but adapted, as
+   is the ε-restart itself (topic 5, item 3; relabeled 2026-10-18).
    This replaces one grid step at word boundaries, with a probability p that was never set, and its fallback of two
    steps; step 2 had classed that rule as ours where a standard exists (T2.2: music lets the tempo change at every
    beat, Krebs 2015; Bell, at every key transition).
@@ -130,7 +131,8 @@ means all three of:
      it (topic 5) matters more.
    - **Test (topic 9):** small steps are added back only with a real advantage, judged on the development set's slow
      speed changes (D2's ramps) and on how much real senders drift (item 5's measurement).
-   - The start of an over is not a speed change: hypotheses are born at every grid speed (topics 5 and 7).
+   - The start of an over is not a speed change: hypotheses are born at every grid speed (topics 5 and 7; in
+     practice one newborn, which takes its speed when its first mark ends: topic 5, item 3, 2026-10-18).
 3. **Farnsworth gap factor (owner, 2026-10-15).** One factor F stretches letter and word gaps alike, keeping their
    3:7 ratio: the ARRL rule (Bloom 1990), F = (60c/s − 37.2)/22.8 for characters at c WPM sent at s WPM overall. The
    form is standard; carrying F as a hidden variable of each hypothesis is the adaptation.
@@ -149,7 +151,8 @@ means all three of:
      gap. The factor stretches only gaps between letters and words, so newborns that differ only in factor have
      exactly the same score until then (derived): every surviving hypothesis gets the score it would have had if all
      23 factors had been started at birth, without multiplying births by 23 or filling the beam with identical copies.
-     A computing shortcut; topic 5 settles its implementation (it may apply to speed as well).
+     A computing shortcut (topic 5, item 1). The same shortcut serves speed: a newborn takes its speed when its
+     first mark ends (topic 5, item 3; owner, 2026-10-18).
    - **Test signals above a factor of 8 are out of range (owner, 2026-10-15).** About a fifth of the development
      set's Farnsworth group (I2, which reaches 15.7: review 1, D9) lies above 8 (estimated from its cells). In every
      comparison on I2, the frozen bank decoder's reference scores included, those signals are left out on both sides
@@ -532,19 +535,68 @@ probabilities.) This replaces the earlier wording, which called the scores proba
    a continuous signal level, which also affects the future; hypotheses that differ only in it are merged anyway,
    keeping the better one's level (the standard per-survivor approximation), so merging is no longer exact.
 3. **Births:** (a) from silence: while the no-signal hypothesis is alive, Morse at any of the 32 speeds, a steady
-   carrier or nonsense keying may begin at any piece; (b) **always-on rescue births**: wherever a mark plausibly
-   begins, fresh hypotheses "a new letter starts here" are seeded at all speeds (the trigger, "plausibly begins", is
-   not yet defined; each newborn takes its Farnsworth factor at its first gap between letters, topic 2, item 3). A
-   birth is an ordinary transition, with a small disruption probability ε, from every hypothesis; under Viterbi the
-   newborn takes the best of these, so its score is the best current score times ε. The Viterbi arithmetic is
-   standard; the ε-restart model is our choice (corrected 2026-10-14: it was labeled standard). Derived constraint
-   (review 1, D15): a newborn starts behind the best by the cost of its birth, ε and the priors of what it starts
-   with, and survives the beam (item 4) only while that cost is inside it (with the priors left out, only if ε is
-   larger than 1/B, where B is the beam factor); otherwise narrowing the beam silently disables births. The beam
-   therefore has a minimum width (item 4; owner, 2026-10-17). Births let the decoder recover when every surviving
-   hypothesis is wrong in a way its own branching cannot repair (any change of speed or Farnsworth factor, which since
-   2026-10-15 only births carry, topic 2, items 2 and 3; a noise burst that misplaces a letter boundary; a new station
-   without silence between overs). Without them the decoder can stay lost, as Bell's did.
+   carrier or nonsense keying may begin at any piece; (b) **always-on rescue births, where a mark starts (owner,
+   2026-10-18; answers review 1, U7, and step 2, T5.3b)**: at every piece where at least one surviving hypothesis
+   ends a gap and starts a mark, one newborn "a new letter starts here" begins with that mark. Births let the decoder
+   recover when every surviving hypothesis is wrong in a way its own branching cannot repair (any change of speed or
+   Farnsworth factor, which since 2026-10-15 only births carry, topic 2, items 2 and 3; a noise burst that misplaces
+   a letter boundary; a new station without silence between overs). Without them the decoder can stay lost, as
+   Bell's did.
+   - **The model:** at each mark that follows a gap between letters or words, the sender begins a new story with
+     probability ε (a new speed and Farnsworth factor; the text goes on) and goes on with the old one with
+     probability 1 − ε, so ε is charged per mark start. A newborn's possible parents are the hypotheses that start a
+     mark at that piece, each with the gap before it read as a gap between letters or words: the letter before it
+     is complete, as at any letter's end, and the gap is timed by the parent's own speed and factor (derived: the
+     change comes with the mark). Under Viterbi the newborn takes the best parent: its score is that parent's score
+     times ε, and it keeps that parent's text. It starts behind the best by ln(1/ε), by the priors it pays later,
+     and by its parent's own deficit: none where the best hypothesis starts the mark, about g nats per piece where
+     the mark's start is misplaced (g, the signal's energy-to-noise ratio per piece: 1 at S₅₀₀ 0 dB).
+   - **Standard but adapted** (relabeled 2026-10-18 after step 2, section 7, item 2; labeled our choice on
+     2026-10-14, standard before that). A restart with a constant probability is the change-point model of Adams
+     and MacKay (2007): its restart, with the sum replaced by the maximum as Viterbi does, is this one (so is the
+     "fixed share" of Herbster and Warmuth 1998). Allowing it only at element boundaries is the standard for changes
+     of speed or tempo: Bell (1977), "the speed is not allowed to change except when the keystate changes"; Krebs,
+     Böck and Widmer (2015), "allow transitions to each tempo, but only at beat times", which gave "higher stability"
+     and "far fewer states and transitions" (step 1, P2.5).
+   - **Review 1's suggestion** (U7 and correction 23) was to treat the trigger as a pruning threshold, checked by a
+     wide-beam reference that seeds newborns everywhere. Here the rule is part of the model, so the reference (item
+     4) uses it too. What it can miss is a mark start that no surviving hypothesis places right; the newborn then
+     starts a piece or more off, which item 4's counts and margin check show.
+   - **Rejected:** a newborn at every piece (the change-point model's own form): 500 a second; inside a mark it
+     claims that the mark was cut in two with no gap between, which Morse cannot do, and lives on the mark's evidence
+     until the mark ends; and ε charged per piece starts every newborn 4.0 to 5.2 nats further behind (the logarithm
+     of the number of pieces per mark start, at 40 to 12 WPM). A newborn where an onset detector on the signal fires
+     (tracking's measurement-driven births, Ristic, Clark, Vo and Vo 2012): it needs a threshold that trades missed
+     dots against false starts, at low S₅₀₀ places a dot's start only to within several pieces, and repeats, less
+     well, what the hypotheses do with the whole timing model.
+   - **One newborn, which takes its speed when its first mark ends (owner, 2026-10-18).** While its first mark
+     lasts, a newborn's score depends on its speed only through the probability that a mark has lasted this long:
+     block lengths are in milliseconds and the level's rate is per second (topic 4, item 9), and the letter is
+     charged at its start (item 9). So one newborn carries, at each piece, the best over the 32 speeds and over dot
+     and dash of the speed's prior times that probability; when the mark ends it branches (item 1) into the speeds
+     and labels that fit, each charged its own prior and its own probability of ending there. Every surviving
+     hypothesis gets exactly the score it would have had from 32 newborns, and the beam keeps at least as many,
+     since the newborn falls outside it only when every speed would (derived). It is the device of the merged mark
+     (topic 1, item 2) and of the Farnsworth factor (topic 2, item 3; a newborn still takes its factor at its first
+     gap between letters), and of speech recognition's prefix tree with its look-ahead (Ney and Ortmanns 1999, §4.1
+     and §5.2). Births from silence use it too, and need it: they start at every piece. Simulated in noise (topic
+     4's observation, level known, so lower bounds; 9 nats of room, which is item 4's 10-nat margin plus the 3.1
+     nats of Farnsworth prior not yet paid, less the 4.1 nats of letter charged at birth, when births from silence
+     have the largest starting cost), the newborns alive at once in their first mark are 2, 14, 44 to 47 and 140 to
+     200 at S₅₀₀ +10, 0, −5 and −10 dB with it, against 64, 460, 1 300 to 1 400 and 3 300 to 4 100 without (ranges:
+     blocks of 78 ms to one block), when the ceiling is about 1 700 (item 5).
+   - **Open (found 2026-10-18): what a newborn from silence leaves behind in noise.** A newborn that reads a few
+     pieces of noise as a short mark branches, as that mark ends, into the speeds that fit it. Each branch is then in
+     a gap, which is scored as noise exactly as the no-signal hypothesis scores it, so it costs nothing more until
+     the gap grows too long: with the Farnsworth factor still open, up to a word gap at a factor of 8. Simulated as
+     above (only these first branches; the Farnsworth prior paid once the gap reads as one between letters; P(a
+     letter ends a word) taken as 0.2, a heuristic), they are 0, about 3 400, 18 000 to 22 000 and 55 000 to 77 000
+     alive at once at S₅₀₀ +10, 0, −5 and −10 dB, the same with or without the shortcut: in silence at 0 dB and
+     below, the decoder would sit at its ceiling. Settled next in this topic.
+   - **Derived constraint** (review 1, D15): a newborn starts behind the best by the cost of its birth, ε and the
+     priors of what it starts with, and survives the beam (item 4) only while that cost is inside it (with the
+     priors left out, only if ε is larger than 1/B, where B is the beam factor); otherwise narrowing the beam
+     silently disables births. The beam therefore has a minimum width (item 4; owner, 2026-10-17).
 4. **Pruning: a beam plus a maximum count** (standard in speech recognition: beam search, Lowerre 1976; the maximum
    count, "histogram pruning", Steinbiss, Tran and Ney 1994; citation completed 2026-10-14). At each
    piece, every hypothesis whose score falls below the best by more than a set factor is dropped. **The factor is set
@@ -574,11 +626,10 @@ probabilities.) This replaces the earlier wording, which called the scores proba
      silence, ln(1/P), with P the probability that an over starts in a given piece), plus the prior cost of its
      speed, plus that of its Farnsworth factor, paid at its first gap between letters (topic 2, item 3), plus the
      cost of learning its level from its first marks (topic 3, item 1). These are set with the priors at birth,
-     next in this topic (review 1, K8 and O7), and so is whether ε is charged per birth point or per 2 ms piece.
+     next in this topic (review 1, K8 and O7); ε is charged per mark start (item 3; owner, 2026-10-18).
      Illustration, leaving out the level: with all 32 speeds and all 23 factors equally likely (3.5 and 3.1 nats)
-     and one change per 2 minutes, charged per mark start at 25 WPM (ε = 1/700, 6.6 nats), the minimum is about
-     23 nats; one change per 10 s to one per hour, charged per mark start or per piece, gives starting costs of 11
-     to 21 nats.
+     and one change per 2 minutes at 25 WPM (ε = 1/700 per mark start, 6.6 nats), the minimum is about 23 nats; one
+     change per 10 s to one per hour gives starting costs of 11 to 17 nats (15 to 21 had ε been charged per piece).
    - **Why the starting cost and not the whole catch-up (derived):** at the right speed a newborn gains on the old
      story by the old story's misfit, on average at every element, so its deficit shrinks from its starting value
      apart from swings (within an element, and from the sender's jitter and the noise), which the margin and its
@@ -754,7 +805,9 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
      findings on amplitude: done 2026-10-15 (topic 3 above);
    - topic 5: fair comparison under the beam between hypotheses in mid-element and finished ones (O4; done
      2026-10-16, topic 5, item 9, Claude's ruling at the owner's request), births against the beam (D15 and O5;
-     done 2026-10-17, topic 5, items 3 and 4), and the priors at birth and for the first prototype (K8, O7).
+     done 2026-10-17, topic 5, items 3 and 4), where rescue births start and when a newborn takes its speed (U7;
+     done 2026-10-18, topic 5, item 3), what newborns from silence leave behind in noise (found 2026-10-18, topic 5,
+     item 3), and the priors at birth and for the first prototype (K8, O7).
 3. **A new topic before topic 7, the channel's other contents:** other signals, impulsive noise (static crashes), the
    models of the non-Morse states, and element sequences that fit no letter (O3, O6, O8). Its number is settled with
    the agenda after the check.
