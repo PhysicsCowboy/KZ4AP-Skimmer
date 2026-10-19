@@ -126,9 +126,10 @@ means all three of:
      speed error of about 5% nearly harmless (item 1); and it drops p and the three-way speed branching at every word
      boundary.
    - **The cost:** a newborn must make up its penalty, so slow drift is followed late. A newborn at f times the old
-     speed overtakes once the old speed's extra misfit, (ln f)²/(2σ²) nats per element, adds up to ln(1/ε): at
-     σ 0.3, 0.38 nats per element for ×1.3 and 2.7 for ×2 (derived). Since ε now carries every speed change, setting
-     it (topic 5) matters more.
+     speed overtakes once the old speed's extra misfit, (ln f)²/(2σ²) nats per element, adds up to ln(1/ε) plus its
+     speed and factor priors: at σ 0.3, 0.38 nats per element for ×1.3 and 2.7 for ×2 (derived), so about 35 and 5
+     elements at the first prototype's 13.5 nats (topic 5, item 3; amended 2026-10-19). Since ε now carries every
+     speed change, setting it (topic 5) matters more.
    - **Test (topic 9):** small steps are added back only with a real advantage, judged on the development set's slow
      speed changes (D2's ramps) and on how much real senders drift (item 5's measurement).
    - The start of an over is not a speed change: hypotheses are born at every grid speed (topics 5 and 7; in
@@ -214,7 +215,8 @@ means all three of:
      and word gaps, the pair that overlaps for sloppy senders, are not cut at a timing threshold. Stretches that do
      not read as valid text are dropped.
    - **What it gives:** the baseline's pooled values (item 4), adaptation's prior (item 6), the tail's form and
-     weight (by likelihood on held-out senders), and a check of the log-normal form. Amounts (derived): a two-minute
+     weight (by likelihood on held-out senders), a check of the log-normal form, and, with topic 7, the rates of
+     overs and restarts (topic 5, item 3; added 2026-10-19). Amounts (derived): a two-minute
      over at 25 WPM has about 500 dots, 200 dashes, 450 element gaps, 200 letter gaps and 50 word gaps (counted on
      PARIS), which pins that sender's σ to between ±3% (dots) and ±10% (word gaps) (relative standard error
      1/√(2n)); a σ off by 10% costs about 0.01 nats per element (the Kullback–Leibler divergence, about δ² for a
@@ -547,7 +549,8 @@ probabilities.) This replaces the earlier wording, which called the scores proba
    Bell's did.
    - **The model:** at each mark that follows a gap between letters or words, the sender begins a new story with
      probability ε (a new speed and Farnsworth factor; the text goes on) and goes on with the old one with
-     probability 1 − ε, so ε is charged per mark start. A newborn's possible parents are the hypotheses that start a
+     probability 1 − ε, so ε is charged once per letter start (wording corrected 2026-10-19 from "per mark start":
+     marks inside a letter are not charged). A newborn's possible parents are the hypotheses that start a
      mark at that piece, each with the gap before it read as a gap between letters or words: the letter before it
      is complete, as at any letter's end, and the gap is timed by the parent's own speed and factor (derived: the
      change comes with the mark). Under Viterbi the newborn takes the best parent: its score is that parent's score
@@ -567,11 +570,12 @@ probabilities.) This replaces the earlier wording, which called the scores proba
      starts a piece or more off, which item 4's counts and margin check show.
    - **Rejected:** a newborn at every piece (the change-point model's own form): 500 a second; inside a mark it
      claims that the mark was cut in two with no gap between, which Morse cannot do, and lives on the mark's evidence
-     until the mark ends; and ε charged per piece starts every newborn 4.0 to 5.2 nats further behind (the logarithm
-     of the number of pieces per mark start, at 40 to 12 WPM). A newborn where an onset detector on the signal fires
-     (tracking's measurement-driven births, Ristic, Clark, Vo and Vo 2012): it needs a threshold that trades missed
-     dots against false starts, at low S₅₀₀ places a dot's start only to within several pieces, and repeats, less
-     well, what the hypotheses do with the whole timing model.
+     until the mark ends; and ε charged per piece starts every newborn 5.0 to 6.2 nats further behind (the logarithm
+     of the number of pieces per letter start, at 40 to 12 WPM; corrected 2026-10-19 from 4.0 to 5.2, which counted
+     pieces per mark start). A newborn where an onset detector on the signal fires (tracking's measurement-driven
+     births, Ristic, Clark, Vo and Vo 2012): it needs a threshold that trades missed dots against false starts, at
+     low S₅₀₀ places a dot's start only to within several pieces, and repeats, less well, what the hypotheses do with
+     the whole timing model.
    - **One newborn, which takes its speed when its first mark ends (owner, 2026-10-18).** While its first mark
      lasts, a newborn's score depends on its speed only through the probability that a mark has lasted this long:
      block lengths are in milliseconds and the level's rate is per second (topic 4, item 9), and the letter is
@@ -670,7 +674,7 @@ probabilities.) This replaces the earlier wording, which called the scores proba
    - **The priors at birth (review 1, K8, O5 and O7, and its correction 17): what a newborn starts with before the
      signal has chosen anything, decided one at a time from 2026-10-19.** The standard is to give each value its
      probability in real traffic, either flat over a set range or measured from the population; rates of events are
-     also tuned on development data.
+     measured too, or tuned on development data where they absorb the model's errors (amended 2026-10-19).
      - **Speed and Farnsworth factor: flat (owner, 2026-10-19).** A newborn's speed is each of the 32 with
        probability 1/32 (3.47 nats), and its factor, taken at its first gap between letters, each of the 23 with
        probability 1/23 (3.14 nats). This is the simpler of the two standard forms, used by the tempo tracker that
@@ -697,9 +701,62 @@ probabilities.) This replaces the earlier wording, which called the scores proba
        measurement on real keying (item 5). **Test (topic 9):** tried only with a real advantage, judged on short
        overs (contest exchanges), where step 1 expects priors near typical values to help (P7(e)), and on ties of
        the ×3 kind, each counted separately.
-     - **Still open, in this order:** the rates of overs and restarts (P per piece, ε per mark start); where words
-       end without a text model; the level (the prior's width, its center in a long pause, and whether a rescue
-       newborn keeps its parent's level).
+     - **Rates of overs and restarts: the real rates, counted, not tuned (owner, 2026-10-19).** P, the probability
+       that an over starts in a given 2 ms piece of silence, and ε, that a sender begins a new story at a letter
+       start, are rates of real events. Step 1 (P10.1): "parameters with a physical meaning are derived from physics
+       or measured from data"; "the remaining free parameters (scale factors, penalties, beams) are tuned on
+       development data". Change-point detection uses a constant rate chosen for the data (Adams and MacKay 2007
+       set it by hand: one change per 250 or per 1 000 samples), and results can "depend strongly on the choice of
+       h" (Wilson, Nassar and Gold 2010). When a training set's mix differs from real use, the priors are reset to
+       real use's rates (Saerens, Latinne and Decaestecker 2002).
+     - **Placeholders until counted: the development set's own rates** (counted from the generator's plans: seed 1
+       at the default sizes, 1 486 oracle channels). P = 1/10 000 per piece (9.2 nats): 1 746 overs in 10.0 hours
+       of silence, 1/10 300 (by group, 1/4 000 to 1/13 600 with one over per signal, 1/6 400 for QSOs on one track,
+       1/37 000 on two), mostly silence after each channel's last over, since a recording runs until 2 s after its
+       longest signal ends (17 s per channel on average). ε = 1/1 000 per letter start (6.9 nats): the
+       speed-change group's one change per signal (54 steps, 54 ramps) in 126 600 letter starts, 1/1 170 (1/2 340
+       counting only the steps, 1/400 counting each ramp as the 10% speed steps it crosses). If the decoder is
+       right, tuning on the development set would aim at these: decisions that use the true probabilities make the
+       fewest errors (Bayes's decision rule; exactly for errors in the whole story, approximately for CER).
+     - **What they do (derived; σ 0.3, level left out).** A newborn from silence starts 16.8 nats behind (9.2 for
+       P, 3.47 for its speed, 4.1 for its first letter) and pays 3.14 for its factor at its first gap between
+       letters; a rescue newborn starts 13.5 nats behind (6.9, 3.47 and 3.14). A late lead costs delay, not letters:
+       the newborn brings every letter since its birth when it leads. At the best possible decoder's limit (S₅₀₀
+       −1.9 dB at 25 WPM) a letter carries about 59 nats against no signal (simulated, PARIS mix, level known), so
+       a newborn from silence leads within its first letter, and a tenfold change of P moves its lead by 2.3 nats,
+       about 4% of a letter. After a speed change by f the old story misfits by (ln f)²/(2σ²) per element (0.38 nats
+       at ×1.3, 2.7 at ×2: topic 2, item 2), so the newborn leads after about 35 and 5.1 elements; a tenfold change
+       of ε moves these by 6 and 0.9 elements. Bounds if the model is right (Ville's inequality): at most 500·P
+       false overs per second of noise (180 per hour) and at most ε false restarts per letter start. On white noise
+       false overs are far rarer (simulated, level known: in 50 s at each of S₅₀₀ 0 and −10 dB no noise story came
+       within 7 nats of leading; extrapolated, at most about 0.2 per hour). A false restart keeps the text, and does
+       harm only if it reads the following letters differently.
+     - **Checks on the prototype (topic 9), each rate also at ten times and a tenth of its value:** false characters
+       per hour on noise-only input (step 1, P5(h)); the first word of each over in the QSO groups (G2, H2) and the
+       delay against false alarms (P7(h)); the elements taken to follow the speed-change group's steps (D2) against
+       false restarts in the constant-speed group (A2). The sweep is a check, not a tuning: CER barely sees these
+       rates (a late lead costs delay, and the first prototype prints at the end of each recording), and a
+       better-scoring value far from the counted rate points to an error elsewhere (the fist, the level, the
+       search), to be found, not adopted. If something must be tuned, it is the insertion penalty (review 1, S20
+       and O11; not yet discussed).
+     - **The real rates (topics 7 and 2):** counted from topic 2, item 5's machine labels of IZ4KBW's and HamSCI's
+       recordings, which need no transcripts. P from the pauses between overs, in channels kept open as topic 7's
+       hold time will keep them (P is per piece of silence in an open channel, so it depends on the hold time); ε
+       from speed changes within overs and from new stations that start without a pause (how a turnover splits
+       between the two rates is settled in topic 7). They replace the placeholders when counted.
+     - **Not adopted for the rates:** P from an accepted rate of false overs (Neyman–Pearson, as for the detector's
+       threshold: opening and closing channels, decision 1): one per channel-hour by the bound needs P =
+       1/1 800 000, 5.2 nats more, which widens the beam and on white noise buys almost nothing. Both rates tuned on
+       the development set, as speech tunes its insertion penalty: tuning can at best return the generator's rates,
+       which its code gives; the development set's CER barely depends on them; its rates reflect how it was built
+       (how recordings are packed, how many speed-change signals it holds); and its white Gaussian noise cannot
+       show what a large P costs on the air, where static crashes and other signals make false overs. Speaker
+       diarization shows the risk: one of BUT's systems for DIHARD III tuned VBx's P_loop, the extra probability of
+       keeping the same speaker from one 0.25 s step to the next, to 0 on the development set (Landini et al.
+       2021), when real speakers talk for seconds. Learning the rates per channel as data arrive (Wilson, Nassar
+       and Gold 2010): a possible refinement in topic 7.
+     - **Still open, in this order:** where words end without a text model; the level (the prior's width, its
+       center in a long pause, and whether a rescue newborn keeps its parent's level).
    - **Derived constraint** (review 1, D15): a newborn starts behind the best by the cost of its birth, ε and the
      priors of what it starts with, and survives the beam (item 4) only while that cost is inside it (with the
      priors left out, only if ε is larger than 1/B, where B is the beam factor); otherwise narrowing the beam
@@ -733,11 +790,13 @@ probabilities.) This replaces the earlier wording, which called the scores proba
      silence, ln(1/P), with P the probability that an over starts in a given piece), plus the prior cost of its
      speed, plus that of its Farnsworth factor, paid at its first gap between letters (topic 2, item 3), plus the
      cost of learning its level from its first marks (topic 3, item 1). The speed and factor priors are flat, 3.47
-     and 3.14 nats (item 3; owner, 2026-10-19); ε, P and the level's prior are set with the rest of the priors at
-     birth (item 3; review 1, K8 and O7), and ε is charged per mark start (item 3; owner, 2026-10-18).
-     Illustration, leaving out the level: with one change per 2 minutes at 25 WPM (ε = 1/700 per mark start,
-     6.6 nats), the minimum is about 23 nats; one change per 10 s to one per hour gives starting costs of 11 to 17
-     nats (15 to 21 had ε been charged per piece).
+     and 3.14 nats, and P and ε are the real rates, until counted the development set's own, 1/10 000 per piece and
+     1/1 000 per letter start, 9.2 and 6.9 nats (item 3; owner, 2026-10-19); the level's prior is set with the rest
+     of the priors at birth (item 3; review 1, K8 and O7). Leaving out the level, births from silence then have the
+     largest starting cost, 15.8 nats against 13.5 for rescue births, and the minimum is 25.8 nats. (Corrected
+     2026-10-19: the earlier illustration charged ε at every mark start, 700 in 2 minutes at 25 WPM, instead of at
+     each letter start, 250; per letter start, one change per 10 s to one per hour gives rescue births starting
+     costs of 9.6 to 15.5 nats, against 15 to 21 had ε been charged per piece.)
    - **Why the starting cost and not the whole catch-up (derived):** at the right speed a newborn gains on the old
      story by the old story's misfit, on average at every element, so its deficit shrinks from its starting value
      apart from swings (within an element, and from the sender's jitter and the noise), which the margin and its
@@ -925,8 +984,9 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
      done 2026-10-17, topic 5, items 3 and 4), where rescue births start and when a newborn takes its speed (U7;
      done 2026-10-18, topic 5, item 3), what newborns from silence leave behind in noise (found and done
      2026-10-18: the beam and the ceiling alone, topic 5, item 3), and the priors at birth and for the first
-     prototype (K8, O7; topic 5, item 3): the speed and Farnsworth priors done 2026-10-19 (flat); the rates of overs
-     and restarts, where words end, and the level, with the level newborns look for in a long pause, still open.
+     prototype (K8, O7; topic 5, item 3): the speed and Farnsworth priors (flat) and the rates of overs and restarts
+     (the real rates, the development set's own until counted) done 2026-10-19; where words end, and the level, with
+     the level newborns look for in a long pause, still open.
 3. **A new topic before topic 7, the channel's other contents:** other signals, impulsive noise (static crashes), the
    models of the non-Morse states, and element sequences that fit no letter (O3, O6, O8). Its number is settled with
    the agenda after the check.
@@ -1066,7 +1126,7 @@ new decoder, not before.
 - the CPU of a channel holding no station, and of one holding a carrier, on the prototype;
 - how often and how soon channels open against S₅₀₀ by speed through the detector, beside the new decoder's oracle
   CER (the backlog's measure);
-- pause lengths in real traffic (topic 7).
+- pause lengths in real traffic (topic 7), which also give the rate of overs P (topic 5, item 3).
 
 **Backlog items taken up here:** "Does the detector miss stations the chosen decoder could copy?", "Wrong or missing
 first characters", "Stray E's after a station stops", "Tracks outlive their stations; separate station identity from
