@@ -358,7 +358,9 @@ inside the hypothesis that made them; whatever is kept at channel level uses no 
    divided by the key-down fraction (0.44 for PARIS text), corrected for the share of the keying sidebands that falls
    in the bin (the track reads 3.6–7.1 dB below the key-down SNR per bin, depending on speed:
    `docs/signal-processing.md`, section 5). It centers the level prior of a hypothesis born from silence; the prior's
-   width is topic 5's (K8, O7).
+   width is topic 5's (K8, O7). In a long pause the detector's level falls toward the hiss, and the prior's center
+   with it; what newborns should look for then is settled with topic 5's priors at birth (topic 5, item 3; added
+   2026-10-18).
 
 Errors: a level too high makes weak marks look like gaps (lost elements), too low makes noise look like marks (false
 dots); a hiss level too low makes noise look like marks and the decoder overconfident, too high makes weak marks look
@@ -585,14 +587,85 @@ probabilities.) This replaces the earlier wording, which called the scores proba
      have the largest starting cost), the newborns alive at once in their first mark are 2, 14, 44 to 47 and 140 to
      200 at S₅₀₀ +10, 0, −5 and −10 dB with it, against 64, 460, 1 300 to 1 400 and 3 300 to 4 100 without (ranges:
      blocks of 78 ms to one block), when the ceiling is about 1 700 (item 5).
-   - **Open (found 2026-10-18): what a newborn from silence leaves behind in noise.** A newborn that reads a few
-     pieces of noise as a short mark branches, as that mark ends, into the speeds that fit it. Each branch is then in
-     a gap, which is scored as noise exactly as the no-signal hypothesis scores it, so it costs nothing more until
-     the gap grows too long: with the Farnsworth factor still open, up to a word gap at a factor of 8. Simulated as
-     above (only these first branches; the Farnsworth prior paid once the gap reads as one between letters; P(a
-     letter ends a word) taken as 0.2, a heuristic), they are 0, about 3 400, 18 000 to 22 000 and 55 000 to 77 000
-     alive at once at S₅₀₀ +10, 0, −5 and −10 dB, the same with or without the shortcut: in silence at 0 dB and
-     below, the decoder would sit at its ceiling. Settled next in this topic.
+   - **What a newborn from silence leaves behind in noise: the beam and the ceiling alone, the standard (owner,
+     2026-10-18; the problem was found the same day).** A newborn that reads a few pieces of noise as a short mark
+     branches, as that mark ends, into the speeds that fit it. Each branch is then in a gap, which is scored as noise
+     exactly as the no-signal hypothesis scores it, so it costs nothing more until the gap grows too long: with the
+     Farnsworth factor still open, up to a word gap at a factor of 8. Simulated as above (only these first branches;
+     the Farnsworth prior paid once the gap reads as one between letters; P(a letter ends a word) taken as 0.2, a
+     heuristic), they are 0, about 3 400, 18 000 to 22 000 and 55 000 to 77 000 alive at once at S₅₀₀ +10, 0, −5
+     and −10 dB, the same with or without the shortcut. Followed through their whole first letter (up to four
+     marks), the beam alone would keep 1 to 2, about 4 000, 24 000 to 27 000 and 55 000 to 91 000 stories (ranges
+     over block lengths and runs). S₅₀₀ is here the level of the station the newborns look for, taken as known, so
+     these are lower bounds.
+     - **The standard: decoders do not search long silences.** Speech recognizers cut the audio at them: "A common
+       practice for processing long-form utterances is to first segment the audio upstream with a separate voice
+       activity detector (VAD)"; "At each segment boundary, the beam search finalizes the top hypothesis by
+       discarding all other hypotheses" (Huang et al. 2022, E2E Segmenter). Their detector cuts after 0.2 s of
+       silence and then discards frames until speech returns, "a practical measure to save computation", which
+       raised their word error rate by about 2% absolute. Kaldi's endpointing (online-endpoint.h) "times out after 5
+       seconds of silence, even if we decoded nothing", and after 0.5 to 2 s once something has been decoded. Inside
+       a segment, silence is decoded like everything else, under the same beam and maximum count (items 4 and 5).
+       Tracking deletes tentative tracks by their score: "The score increases with each hit and decreases with each
+       miss" (MathWorks' track logic, after Blackman and Popoli 1999). That does not carry over to stories inside a
+       channel: silence in a gap is what a Morse story predicts, so its score does not fall.
+     - **Ours:** the cut is already in the design, for whole channels: the decoder closes the channel once no Morse
+       hypothesis has led for a hold time, and the detector reopens it with a replay (opening and closing channels,
+       decisions 2 and 3). A cut that kept only the no-signal hypothesis without closing the channel would not help,
+       since births rebuild the population within a second or so. What remains is noise during the hold time and in
+       shorter pauses, where the standard is the beam and the ceiling alone. The first prototype, on oracle channels
+       open for the whole recording, makes no cut.
+     - **How the ceiling reconciles the counts (simulated; level known).** The decoder never holds more than the
+       ceiling (item 5): at every piece it keeps the best 1 700 and drops the rest. That costs a station nothing only
+       if the stories that matter rank inside the ceiling. The leader (the no-signal hypothesis) does; a station's
+       newborn is the question. A newborn born at the first piece of a real mark, at the same S₅₀₀, against the noise
+       stories above (ranges: blocks of 78 ms to one block; "ahead" means a better score):
+
+       | S₅₀₀ the newborns look for | Noise stories ahead of a fresh newborn | The 1 700th story trails a fresh newborn by | A station's newborn at birth: stories ahead | Its worst place in its first 100 ms (unluckiest tenth) |
+       |---|---|---|---|---|
+       | 0 dB | 10–12 | 7.3 nats | 9–10 | 27–29 |
+       | −5 dB | 21 | 4.5–4.8 nats | 22 | 57–58 |
+       | −10 dB | 15–21 | 4.0–4.4 nats | 16–23 | 67–80 |
+
+       Why so few rank ahead (derived): every noise story has paid a newborn's starting cost; once its mark has
+       ended, it has also paid the probability of that mark ending in that piece (1.5 nats for a 100 WPM dot;
+       2.4–5.6 nats at 12–40 WPM, item 9), and for a gap read as one between letters the Farnsworth prior (3.1
+       nats). To get ahead of a fresh newborn it must have gained more than that from the noise. About 90% of the
+       noise stories lie 5 to 9 nats behind a fresh newborn, at the edge of the beam's room. A station's newborn
+       gains from its first piece: within 100 ms the median one leads every noise story at all three levels, and
+       after its first mark a story that follows a decodable station keeps gaining on average (derived).
+     - **What the ceiling costs in a quiet channel:** the full CPU budget at S₅₀₀ 0 dB and below, for as long as the
+       quiet lasts; and an effectively narrower beam, which keeps stories within 4.0–7.3 nats of a fresh newborn
+       instead of 9, so that a waiting story (late in a long pause, the station's own "long word space" story) is
+       dropped 2 to 5 nats sooner than by the beam alone: a search error of the beam's kind, counted as one (item 4).
+     - **Limits:** with each story learning its level from its own marks, noise stories fit the noise better and
+       newborns pay to learn their level, so the ranks could shift. Only the noise stories' first letter is
+       followed, so the count ahead of a newborn is a lower bound in that respect; the population is the beam's
+       alone, an upper bound in the other (with the ceiling on, some of those ahead would have been cut earlier).
+       Checked on the prototype by item 4's count of newborns removed by the ceiling, also on quiet stretches
+       (item 8).
+     - **Considered, not adopted: a dominance rule** adapted from change-point detection's exact pruning (PELT;
+       Killick, Fearnhead and Eckley 2012, Theorem 3.1). It drops a story waiting in a gap between letters or words
+       once it trails the no-signal hypothesis by more than B + K: B is a newborn's starting cost apart from its
+       level (ln(1/P) plus the speed and factor priors), K the most the story's learned level can be worth over a
+       newborn's level prior, ln(σ0/σ) + (μ − μ0)²/(2(σ0² − σ²)), for a level estimate μ with spread σ and a prior
+       centered on μ0 with spread σ0. Simulated with K = 0, it leaves about 450, 2 700 and 6 800 to 9 500 stories
+       at S₅₀₀ 0, −5 and −10 dB. It is exact only in an idealized decoder, not in ours (derived): the newborn that
+       would replace a dropped story is born when the story would resume, by when its prior's center has followed
+       the detector's level (topic 3, item 5); a waiting story's level spread grows at the level model's rate
+       (topic 3, item 1) and can outgrow the prior's, after which no finite K exists; and merging is approximate
+       (item 2), so dropping a story can change which story survives a later merge. A sum over hypotheses (topic 8)
+       would also lose the dropped stories' share, under 2 × 10⁻⁴ of the no-signal hypothesis's at S₅₀₀ 0 dB, and a
+       text model with memory (topic 6) would need a text part in K. Taken up only if the idle channel's CPU shows a
+       need, and then as a pruning threshold judged by search errors (item 4). Extended to gaps between elements it
+       is heuristic: 17 symbols (the digits 0, 1, 3 and 9; `,` `?` `!` `'` `)` `@` `_` `$`; SK, BK, CL, HH and SOS)
+       have a prefix after which their remaining elements spell no symbol.
+     - **Open, for the priors at birth (next in this topic): the level newborns look for in a long pause.** Their
+       prior is centered on the detector's level (topic 3, item 5), which falls toward the hiss within ln R seconds
+       of the station's last mark (2.3 s at R = 10 dB, 4.6 s at 20 dB, per bin; opening and closing channels). The
+       newborns then look for ever weaker stations, down the table above, and the next over's newborns start from a
+       prior centered near the hiss. Candidates: hold the last station's level through the pause, widened at the
+       level model's rate; a floor at the weakest level worth decoding.
    - **Derived constraint** (review 1, D15): a newborn starts behind the best by the cost of its birth, ε and the
      priors of what it starts with, and survives the beam (item 4) only while that cost is inside it (with the
      priors left out, only if ε is larger than 1/B, where B is the beam factor); otherwise narrowing the beam
@@ -656,11 +729,16 @@ probabilities.) This replaces the earlier wording, which called the scores proba
    ceiling rather than the beam decides is counted (the maximum count is "histogram pruning", standard: Steinbiss,
    Tran and Ney 1994). Rough
    estimate: about 50 ns per hypothesis per piece, so a budget equal to the bank decoder's 42 ms per channel-second
-   allows about 1 700 hypotheses; normally a few hundred at most are needed (estimates, to be measured).
+   allows about 1 700 hypotheses; normally a few hundred at most are needed (estimates, to be measured). In a
+   channel holding only noise, at S₅₀₀ 0 dB and below, the ceiling rather than the beam decides at every piece until
+   the channel closes; what it drops there is noise, and a station's newborn ranks far inside it (item 3; added
+   2026-10-18).
 6. **CPU as a requirement:** the target (owner's decision) is the spec's estimate for the Classical mode, 2–3 million
    floating-point operations per channel-second for typical signals (design spec §5.1, where it is an estimate, not
-   yet measured); at the ceiling the estimate is 10–25 million, so the ceiling only serves hard moments. CPU per
-   channel-second is measured on the first prototype, together with accuracy, before any refinement.
+   yet measured); at the ceiling the estimate is 10–25 million, so the ceiling should serve only hard moments.
+   Quiet stretches at S₅₀₀ 0 dB and below also run at it until the channel closes (item 3; added 2026-10-18),
+   measured with the CPU of a channel holding no station (item 8). CPU per channel-second is measured on the first
+   prototype, together with accuracy, before any refinement.
 7. **Overload governor (owner, 2026-10-14): goal, as many stations as the CPU allows.** When the machine cannot keep
    up: (a) first decode every station with fewer hypotheses (all ceilings lowered); (b) only when the ceilings reach
    a floor below which decoding falls apart, drop the weakest stations.
@@ -668,6 +746,10 @@ probabilities.) This replaces the earlier wording, which called the scores proba
    - **Cost per hypothesis per piece:** timed on the prototype on the Linux machine (replacing the 50 ns estimate).
    - **How many hypotheses a station needs:** the distribution of live hypotheses per piece over the development
      set, per group (clean, weak, fists, speed changes, Farnsworth).
+   - **Quiet stretches (added 2026-10-18, item 3):** live hypotheses per piece split into overs and the pauses
+     between them, and on noise alone at the levels the priors at birth allow; how often the ceiling decides there;
+     and item 4's count of newborns removed by the ceiling. With the CPU of a channel holding no station (opening and
+     closing channels), they show whether quiet stretches need more than the beam and the ceiling (item 3).
    - **The ceiling and the floor:** the decoder is run on the development set at a range of ceilings; the CER
      against the ceiling gives the knee (the default ceiling: little accuracy gained above it) and the floor (the
      CER rises steeply below it).
@@ -806,8 +888,9 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    - topic 5: fair comparison under the beam between hypotheses in mid-element and finished ones (O4; done
      2026-10-16, topic 5, item 9, Claude's ruling at the owner's request), births against the beam (D15 and O5;
      done 2026-10-17, topic 5, items 3 and 4), where rescue births start and when a newborn takes its speed (U7;
-     done 2026-10-18, topic 5, item 3), what newborns from silence leave behind in noise (found 2026-10-18, topic 5,
-     item 3), and the priors at birth and for the first prototype (K8, O7).
+     done 2026-10-18, topic 5, item 3), what newborns from silence leave behind in noise (found and done
+     2026-10-18: the beam and the ceiling alone, topic 5, item 3), and the priors at birth and for the first
+     prototype (K8, O7), with the level newborns look for in a long pause (topic 5, item 3).
 3. **A new topic before topic 7, the channel's other contents:** other signals, impulsive noise (static crashes), the
    models of the non-Morse states, and element sequences that fit no letter (O3, O6, O8). Its number is settled with
    the agenda after the check.
