@@ -60,7 +60,9 @@ Each hypothesis carries:
 3. **For key-up time, the kind of gap:** between elements, letters or words, possibly resolved when the gap ends.
    No separate "pause" element (Bell had one): anything longer than a word space is either a long word space (the
    over continues: same sender, same speed) or no signal (the over has ended; topic 7). Both hypotheses coexist until
-   the next marks decide.
+   the next marks decide. After a letter, the gap is one between letters with probability 1 − p, one between words
+   with p(1 − q), or the over's end with p·q, where p is the probability that a letter ends its word and q that a
+   word ends its over (topic 5, item 3; added 2026-10-19).
 4. **Speed and the Farnsworth gap factor;** their form is topic 2. A fresh start takes its factor at its first gap
    between letters (topic 2, item 3; added 2026-10-15).
 5. **The position in the Morse tree:** the letter in progress.
@@ -216,7 +218,8 @@ means all three of:
      not read as valid text are dropped.
    - **What it gives:** the baseline's pooled values (item 4), adaptation's prior (item 6), the tail's form and
      weight (by likelihood on held-out senders), a check of the log-normal form, and, with topic 7, the rates of
-     overs and restarts (topic 5, item 3; added 2026-10-19). Amounts (derived): a two-minute
+     overs and restarts and the probabilities that a letter ends its word and a word its over (topic 5, item 3;
+     added 2026-10-19). Amounts (derived): a two-minute
      over at 25 WPM has about 500 dots, 200 dashes, 450 element gaps, 200 letter gaps and 50 word gaps (counted on
      PARIS), which pins that sender's σ to between ±3% (dots) and ±10% (word gaps) (relative standard error
      1/√(2n)); a σ off by 10% costs about 0.01 nats per element (the Kullback–Leibler divergence, about δ² for a
@@ -598,11 +601,11 @@ probabilities.) This replaces the earlier wording, which called the scores proba
      exactly as the no-signal hypothesis scores it, so it costs nothing more until the gap grows too long: with the
      Farnsworth factor still open, up to a word gap at a factor of 8. Simulated as above (only these first branches;
      the Farnsworth prior paid once the gap reads as one between letters; P(a letter ends a word) taken as 0.2, a
-     heuristic), they are 0, about 3 400, 18 000 to 22 000 and 55 000 to 77 000 alive at once at S₅₀₀ +10, 0, −5
-     and −10 dB, the same with or without the shortcut. Followed through their whole first letter (up to four
-     marks), the beam alone would keep 1 to 2, about 4 000, 24 000 to 27 000 and 55 000 to 91 000 stories (ranges
-     over block lengths and runs). S₅₀₀ is here the level of the station the newborns look for, taken as known, so
-     these are lower bounds.
+     heuristic since replaced by 1/3.06, below, which moves a gap's cost by 0.45 nats at most; not rerun), they are
+     0, about 3 400, 18 000 to 22 000 and 55 000 to 77 000 alive at once at S₅₀₀ +10, 0, −5 and −10 dB, the same
+     with or without the shortcut. Followed through their whole first letter (up to four marks), the beam alone
+     would keep 1 to 2, about 4 000, 24 000 to 27 000 and 55 000 to 91 000 stories (ranges over block lengths and
+     runs). S₅₀₀ is here the level of the station the newborns look for, taken as known, so these are lower bounds.
      - **The standard: decoders do not search long silences.** Speech recognizers cut the audio at them: "A common
        practice for processing long-form utterances is to first segment the audio upstream with a separate voice
        activity detector (VAD)"; "At each segment boundary, the beam search finalizes the top hypothesis by
@@ -755,8 +758,46 @@ probabilities.) This replaces the earlier wording, which called the scores proba
        keeping the same speaker from one 0.25 s step to the next, to 0 on the development set (Landini et al.
        2021), when real speakers talk for seconds. Learning the rates per channel as data arrive (Wilson, Nassar
        and Gold 2010): a possible refinement in topic 7.
-     - **Still open, in this order:** where words end without a text model; the level (the prior's width, its
-       center in a long pause, and whether a rescue newborn keeps its parent's level).
+     - **Where words and overs end, without a text model: constants, counted (owner, 2026-10-19).** Not priors at
+       birth, but decided with them. After each letter the gap is one between letters with probability 1 − p, one
+       between words with p(1 − q), or the over's end with p·q, where p is the probability that a letter ends its
+       word and q that a word ends its over. Review 1 lists p among what the first prototype needs (O7: "all
+       symbols equally likely" does not fix "P(word gap) after a letter"); q, which the over's end needs (topic 1,
+       item 3), had not been set anywhere. The standard: a text model's probabilities are maximum-likelihood counts
+       from in-domain text (step 1, P6.7), here words ÷ letters for p (1 ÷ the mean word length) and overs ÷ words
+       for q; the end of a sentence is a symbol of its own, counted like any other ("We need the end-symbol to make
+       the bigram grammar a true probability distribution"; Jurafsky and Martin, Speech and Language Processing,
+       chapter 3). Step 1 counts the word space as a symbol of the model by its own judgment, consistent with the
+       error metric (P6.8). The 0.2 taken until now came from Bell's simulator (after a letter, a word space with
+       probability 0.1 and a pause with 0.1: `docs/research/bell-1977-reference.md`), which nothing measured.
+     - **The values, until recounted on real traffic.** p = 1/3.06, measured by VE3NEA: the mean word length in CW
+       Skimmer's decodes of on-air traffic, the table our generator draws from (`training/kz4ap_synth/messages.py`);
+       "measured, but of all traffic (not conversation), at the unigram level, and with decoding errors" (step 2).
+       The development set gives 1/3.01 (42 661 words in 128 345 letters; seed 1, oracle channels; 1/2.80 in the
+       QSO groups, G2 and H2), within 0.02 nats. q = 1/24, the development set's own (1 746 overs of 42 661 words,
+       1/24.4, set by its 100-character signals). Real overs run from 3 words (a contest exchange, "K1ABC 5NN 14")
+       to about 50 (a two-minute ragchew over at 25 WPM), so q lies between 1/3 and 1/50 (ending an over costs 1.1
+       to 3.9 nats). Both are recounted from topic 2, item 5's machine labels, whose word boundaries come from the
+       text, where VE3NEA's come from CW Skimmer's own spacing decisions; q in topic 7, as words per over. A text
+       model (topic 6) will give its own word ends in place of p.
+     - **What they do (derived; σ 0.3).** A gap between letters costs 0.40 nats, one between words 1.16 and the
+       over's end 4.30 (ln(1/(1 − p)), ln(1/(p(1 − q))) and ln(1/(p·q))). The 0.77 nats between the first two move
+       the line between those readings from 4.58 dots (√21, at equal priors) to 4.97, times the Farnsworth factor;
+       timing alone separates a perfectly timed letter gap from a word gap by 4.0 nats (topic 2, item 6). After an
+       over's last letter, "the over has ended" overtakes "a long word space" once the gap's survival (item 9) has
+       cost ln((1 − q)/q) = 3.1 nats: after 1.67 times the median word gap, 0.56 s at 25 WPM with a factor of 1.
+       From then until the next over no Morse story leads, which starts the channel's hold time (opening and
+       closing channels, decision 2); the over's text is kept either way. Letters are hardly touched: word spaces
+       count in the CER, and the benchmark reports a space error rate of its own (`docs/signal-processing.md`,
+       A.11). Births' starting costs and item 4's minimum beam do not change.
+     - **Check on the prototype (topic 9):** the space error rate per group, beside the CER.
+     - **Not adopted:** a word end that depends on the letter's place in the word, from VE3NEA's whole table (0.18
+       after the first letter, rising to 0.62 after the fifth): each hypothesis would carry its place (1 to 16), so
+       fewer merges and more CPU, for about 0.12 nats per word (the Kullback–Leibler divergence of VE3NEA's lengths
+       from a constant end probability), and a text model that carries the current word (topic 6) gives it anyway.
+       Tuning p and q on the development set, for the reasons given for the rates.
+     - **Still open:** the level (the prior's width, its center in a long pause, and whether a rescue newborn keeps
+       its parent's level).
    - **Derived constraint** (review 1, D15): a newborn starts behind the best by the cost of its birth, ε and the
      priors of what it starts with, and survives the beam (item 4) only while that cost is inside it (with the
      priors left out, only if ε is larger than 1/B, where B is the beam factor); otherwise narrowing the beam
@@ -924,7 +965,8 @@ reachable from it, corrected when the letter completes). The decoder serves both
    words; here it adapts the prior over kinds; label corrected 2026-10-14).
 4. **Strength.** The catch-all bounds how much an unusual word can be lowered: to no less than w times its probability
    without a text model. The bound is derived, under three conditions (review 1, D12): the mixture is over whole
-   words, the catch-all includes the probability of the word ending, and the text-model weight is 1 (at weight λ the
+   words, the catch-all includes the probability of the word ending (without a text model, p: topic 5, item 3;
+   added 2026-10-19), and the text-model weight is 1 (at weight λ the
    bound is w^λ). The value w = 5% (1/20) is heuristic; standard practice (Jelinek and Mercer, 1980) sets it on
    held-out text (corrected 2026-10-14: it was labeled derived). It does not bound how much a common word is raised.
    The overall weight of the text model (the standard "language model weight" of speech recognition) is set by
@@ -935,9 +977,9 @@ reachable from it, corrected when the letter completes). The decoder serves both
    token, for a fixed token). Merging (topic 5): hypotheses that differ within the current word stay apart until the
    word ends (except inside a callsign, where only the position in the pattern matters); corrections reach back
    through the current word and, through the kind, one word further.
-6. **Start simple (owner).** The first prototype has no text model (the Morse tree only, all symbols equally likely),
-   as the baseline. Kinds are added one at a time, each measured: callsign, token and number first, plain language
-   second.
+6. **Start simple (owner).** The first prototype has no text model (the Morse tree only, all symbols equally likely,
+   and two counted constants for where words and overs end: topic 5, item 3, added 2026-10-19), as the baseline.
+   Kinds are added one at a time, each measured: callsign, token and number first, plain language second.
 7. **Alphabet:** the engine's existing Morse table (letters, digits, 14 punctuation marks, 12 prosigns; corrected
    2026-10-14 from 15), shared with the generator and the scorer.
 8. **Sources** (`docs/research/research_notes/CW conversation text sources/sources.md`). No public transcripts of real
@@ -984,9 +1026,9 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
      done 2026-10-17, topic 5, items 3 and 4), where rescue births start and when a newborn takes its speed (U7;
      done 2026-10-18, topic 5, item 3), what newborns from silence leave behind in noise (found and done
      2026-10-18: the beam and the ceiling alone, topic 5, item 3), and the priors at birth and for the first
-     prototype (K8, O7; topic 5, item 3): the speed and Farnsworth priors (flat) and the rates of overs and restarts
-     (the real rates, the development set's own until counted) done 2026-10-19; where words end, and the level, with
-     the level newborns look for in a long pause, still open.
+     prototype (K8, O7; topic 5, item 3): the speed and Farnsworth priors (flat), the rates of overs and restarts
+     (the real rates, the development set's own until counted), and where words and overs end without a text model
+     (constants, counted) done 2026-10-19; the level, with the level newborns look for in a long pause, still open.
 3. **A new topic before topic 7, the channel's other contents:** other signals, impulsive noise (static crashes), the
    models of the non-Morse states, and element sequences that fit no letter (O3, O6, O8). Its number is settled with
    the agenda after the check.
