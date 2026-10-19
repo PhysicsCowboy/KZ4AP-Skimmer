@@ -101,7 +101,7 @@ means all three of:
    bank's ladder, used only as a grid). A speed error of at most ±4.9% (the grid's worst) is small next to a hand
    sender's scatter and far inside the dot/dash (×3) and letter/word (×7/3) margins (derived). Speed only sets the
    expected lengths of elements and gaps (amended by topic 4: a hypothesis does not listen to a speed-specific
-   filter).
+   filter). A newborn takes each of the 32 with equal probability (a flat prior: topic 5, item 3; owner, 2026-10-19).
    - **Standard but adapted (owner, 2026-10-15):** log-spaced tempo values are music's tempo-tracking practice, which
      picks their number by measured accuracy against cost (Krebs 2015: accuracy converged at 40–75 values over a 4:1
      range, 1.9–3.6% apart).
@@ -148,11 +148,12 @@ means all three of:
      sender sets the factor for a whole transmission by choosing the two speeds. No steps at word boundaries
      (replacing one step per word boundary, which had neither a derivation nor a plan: step 2, T2.3c).
    - **A fresh start takes its factor at its first gap between letters,** branching into the factors that fit that
-     gap. The factor stretches only gaps between letters and words, so newborns that differ only in factor have
-     exactly the same score until then (derived): every surviving hypothesis gets the score it would have had if all
-     23 factors had been started at birth, without multiplying births by 23 or filling the beam with identical copies.
-     A computing shortcut (topic 5, item 1). The same shortcut serves speed: a newborn takes its speed when its
-     first mark ends (topic 5, item 3; owner, 2026-10-18).
+     gap, each with probability 1/23 (a flat prior: topic 5, item 3; owner, 2026-10-19). The factor stretches only
+     gaps between letters and words, so newborns that differ only in factor have exactly the same score until then
+     (derived): every surviving hypothesis gets the score it would have had if all 23 factors had been started at
+     birth, without multiplying births by 23 or filling the beam with identical copies. A computing shortcut (topic
+     5, item 1). The same shortcut serves speed: a newborn takes its speed when its first mark ends (topic 5, item 3;
+     owner, 2026-10-18).
    - **Test signals above a factor of 8 are out of range (owner, 2026-10-15).** About a fifth of the development
      set's Farnsworth group (I2, which reaches 15.7: review 1, D9) lies above 8 (estimated from its cells). In every
      comparison on I2, the frozen bank decoder's reference scores included, those signals are left out on both sides
@@ -660,12 +661,45 @@ probabilities.) This replaces the earlier wording, which called the scores proba
        need, and then as a pruning threshold judged by search errors (item 4). Extended to gaps between elements it
        is heuristic: 17 symbols (the digits 0, 1, 3 and 9; `,` `?` `!` `'` `)` `@` `_` `$`; SK, BK, CL, HH and SOS)
        have a prefix after which their remaining elements spell no symbol.
-     - **Open, for the priors at birth (next in this topic): the level newborns look for in a long pause.** Their
+     - **Open, for the priors at birth (below): the level newborns look for in a long pause.** Their
        prior is centered on the detector's level (topic 3, item 5), which falls toward the hiss within ln R seconds
        of the station's last mark (2.3 s at R = 10 dB, 4.6 s at 20 dB, per bin; opening and closing channels). The
        newborns then look for ever weaker stations, down the table above, and the next over's newborns start from a
        prior centered near the hiss. Candidates: hold the last station's level through the pause, widened at the
        level model's rate; a floor at the weakest level worth decoding.
+   - **The priors at birth (review 1, K8, O5 and O7, and its correction 17): what a newborn starts with before the
+     signal has chosen anything, decided one at a time from 2026-10-19.** The standard is to give each value its
+     probability in real traffic, either flat over a set range or measured from the population; rates of events are
+     also tuned on development data.
+     - **Speed and Farnsworth factor: flat (owner, 2026-10-19).** A newborn's speed is each of the 32 with
+       probability 1/32 (3.47 nats), and its factor, taken at its first gap between letters, each of the 23 with
+       probability 1/23 (3.14 nats). This is the simpler of the two standard forms, used by the tempo tracker that
+       our speed grid follows (Krebs, Böck and Widmer 2015): madmom, its reference implementation (55 to 215 BPM),
+       gives no initial distribution, and "if 'None' a uniform distribution is assumed". That is flat over its
+       states, which weights each tempo by the frames in its beat (slow tempi up to 3.9 times fast ones). The other
+       form is Ellis's (2007): a Gaussian in log tempo centered on 120 BPM, whose width (1.4 octaves) gave the best
+       agreement with listeners on development data; he needed it because tempi a factor of 2 or 3 apart fit the
+       same beats almost equally well, as speeds a factor of 3 apart can fit the same Morse.
+     - **Why flat:** with a flat share, a measured prior moves a newborn's starting cost by a nat or two (derived).
+       Half the everyday distribution of CQ calls on the Reverse Beacon Network (25 WPM, standard deviation
+       5.34 WPM; amateurradio.com, "The need for speed in CW") and half flat would charge 2.2 to 2.3 nats near
+       25 WPM and 4.2 at the ends of the grid, against 3.47; a single 30 WPM dot at S₅₀₀ 0 dB carries about 18 nats
+       of evidence (simulated mean, level known). So it decides only ties, and the signal soon breaks them: "EEE" at
+       10 WPM and "TTT" at 30 WPM with a factor of 3 are timed alike (120 ms marks, 360 ms gaps between letters)
+       until any other letter is sent (derived). Without a flat share a measured prior is only as good as its data:
+       the network counts stations calling CQ, mostly in contests, as read by skimmers. Fitted to a contest (about
+       31 WPM, standard deviation about 3.7 WPM: N6TV's count of CQ WW CW 2013), it would charge a 12 WPM newborn
+       30 nats as a Gaussian in log speed (14.5 nats as a Gaussian in WPM); since the largest starting cost sets the
+       beam's minimum width (item 4), slow newborns would either widen the beam (by about 27 nats to reach 12 WPM,
+       more for slower speeds) or be dropped at birth.
+     - **Not adopted: a measured prior,** mixed with a flat share so that no value becomes improbable: the
+       network's CQ speeds, and for ragchews the speeds in the names of IZ4KBW's recordings; for factors, topic 2's
+       measurement on real keying (item 5). **Test (topic 9):** tried only with a real advantage, judged on short
+       overs (contest exchanges), where step 1 expects priors near typical values to help (P7(e)), and on ties of
+       the ×3 kind, each counted separately.
+     - **Still open, in this order:** the rates of overs and restarts (P per piece, ε per mark start); where words
+       end without a text model; the level (the prior's width, its center in a long pause, and whether a rescue
+       newborn keeps its parent's level).
    - **Derived constraint** (review 1, D15): a newborn starts behind the best by the cost of its birth, ε and the
      priors of what it starts with, and survives the beam (item 4) only while that cost is inside it (with the
      priors left out, only if ε is larger than 1/B, where B is the beam factor); otherwise narrowing the beam
@@ -698,11 +732,12 @@ probabilities.) This replaces the earlier wording, which called the scores proba
      largest starting cost of any newborn plus a margin of 10 nats. A newborn's starting cost is ln(1/ε) (born from
      silence, ln(1/P), with P the probability that an over starts in a given piece), plus the prior cost of its
      speed, plus that of its Farnsworth factor, paid at its first gap between letters (topic 2, item 3), plus the
-     cost of learning its level from its first marks (topic 3, item 1). These are set with the priors at birth,
-     next in this topic (review 1, K8 and O7); ε is charged per mark start (item 3; owner, 2026-10-18).
-     Illustration, leaving out the level: with all 32 speeds and all 23 factors equally likely (3.5 and 3.1 nats)
-     and one change per 2 minutes at 25 WPM (ε = 1/700 per mark start, 6.6 nats), the minimum is about 23 nats; one
-     change per 10 s to one per hour gives starting costs of 11 to 17 nats (15 to 21 had ε been charged per piece).
+     cost of learning its level from its first marks (topic 3, item 1). The speed and factor priors are flat, 3.47
+     and 3.14 nats (item 3; owner, 2026-10-19); ε, P and the level's prior are set with the rest of the priors at
+     birth (item 3; review 1, K8 and O7), and ε is charged per mark start (item 3; owner, 2026-10-18).
+     Illustration, leaving out the level: with one change per 2 minutes at 25 WPM (ε = 1/700 per mark start,
+     6.6 nats), the minimum is about 23 nats; one change per 10 s to one per hour gives starting costs of 11 to 17
+     nats (15 to 21 had ε been charged per piece).
    - **Why the starting cost and not the whole catch-up (derived):** at the right speed a newborn gains on the old
      story by the old story's misfit, on average at every element, so its deficit shrinks from its starting value
      apart from swings (within an element, and from the sender's jitter and the noise), which the margin and its
@@ -890,7 +925,8 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
      done 2026-10-17, topic 5, items 3 and 4), where rescue births start and when a newborn takes its speed (U7;
      done 2026-10-18, topic 5, item 3), what newborns from silence leave behind in noise (found and done
      2026-10-18: the beam and the ceiling alone, topic 5, item 3), and the priors at birth and for the first
-     prototype (K8, O7), with the level newborns look for in a long pause (topic 5, item 3).
+     prototype (K8, O7; topic 5, item 3): the speed and Farnsworth priors done 2026-10-19 (flat); the rates of overs
+     and restarts, where words end, and the level, with the level newborns look for in a long pause, still open.
 3. **A new topic before topic 7, the channel's other contents:** other signals, impulsive noise (static crashes), the
    models of the non-Morse states, and element sequences that fit no letter (O3, O6, O8). Its number is settled with
    the agenda after the check.
