@@ -1110,6 +1110,18 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    can print its best story at the end of each recording; fresh starts already follow a change of station), while
    it cannot do without amplitude, the observation and the search. The risk accepted is rework if a later topic
    changes something already built.
+   - **The first prototype is written in C++, in the engine behind the bench (owner, 2026-10-20).**
+   - **What a piece costs, timed before the plan (measured 2026-10-19):** a timing slice (scratch code, not in the
+     repository) did one 2 ms piece's work for every hypothesis (continuing; ending into successors, with the
+     level's update; one rescue newborn and one birth from silence; merging; pruning by the beam and the ceiling),
+     on synthetic tables and noise alone, so that the ceiling binds. On a laptop (Intel i7-12700H, Windows, MSVC
+     /O2, one thread) it took 61 ns per hypothesis per piece, against topic 5, item 5's estimate of 50 ns: 51.6 ms
+     of CPU per channel-second at 1 700 hypotheses, 9.0 ms at 300. Python with numpy took 12 to 16 times as long. The
+     slice leaves out the Farnsworth branching, the over's end and the newborns' bookkeeping, so the prototype will
+     cost more; its own timing replaces these numbers (topic 5, item 8). At the slice's rate, one run over the
+     development set's seed 1 (1 065 742 channel-seconds; `docs/plans/2026-10-06-development-set-results.md`,
+     section 5.1) costs 2.7 to 15.3 CPU-hours; the bank decoder's run there took 9.0 CPU-hours on the Linux
+     machine.
 
 ### Opening and closing channels (owner, 2026-10-16; a new topic, settled during building)
 
