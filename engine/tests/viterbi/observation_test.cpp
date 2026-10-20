@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <limits>
 #include <numbers>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -138,10 +139,10 @@ Dense dense_uncertain(double s_abs, int m, double mu, double p, double v) {
 }
 
 // Lambda_flat and the posterior of b by direct integration over the level x, dB S500, from level_min_db to
-// level_max_db: Simpson's rule on 50 001 points (steps of 0.002 dB) of e^Lambda(S; a(x)) / (level_max_db -
-// level_min_db), b(x)^2 = 10^(x / 10) x 500 Hz x m^2 / c(m), m = 3 pieces, with reference_ln_i0, in the log. Points
-// whose bound on Lambda, z^2 - (b - z)^2 (ln I0(y) <= y), lies more than 1 000 nats below 0 are left out: Lambda at
-// the lowest level, where b <= 6, is above -37 nats.
+// level_max_db: Simpson's rule on 50 001 points (steps of 0.002 dB of x, x in dB S500) of e^Lambda(S; a(x)) /
+// (level_max_db - level_min_db), b(x)^2 = 10^(x / 10) x 500 Hz x m^2 / c(m), m = 3 pieces, with reference_ln_i0, in the
+// log. Points whose bound on Lambda, z^2 - (b - z)^2 (ln I0(y) <= y), lies more than 1 000 nats below 0 are left out:
+// Lambda at the lowest level, where b <= 6, is above -37 nats.
 Dense direct_flat(const ViterbiConfig& config, const std::vector<double>& c, int pieces, double z) {
     constexpr int kIntervals = 50000;
     const int m = 3 * pieces;
@@ -266,8 +267,9 @@ double block_variance(int m) {
 
 }  // namespace
 
-TEST(Observation, ChannelFilterTapsAreTheChannelizers) {
-    // fft_size / 2 + 1 taps, symmetric about the middle, summing to 1: 1 025 at 48 kHz and 4 097 at 192 kHz.
+TEST(Observation, ChannelFilterTapsAreSymmetricAndSumToOne) {
+    // fft_size / 2 + 1 taps, symmetric about the middle, summing to 1: 1 025 at 48 kHz and 4 097 at 192 kHz. (That they
+    // are the Channelizer's own rests on its building its filter from them, and on its unchanged tests.)
     for (const int rate : {48000, 192000}) {
         SCOPED_TRACE(std::to_string(rate) + " samples/s");
         const kz4ap::ChannelizerConfig config = channelizer_at(rate);
@@ -340,9 +342,10 @@ TEST(Observation, LongSumsGrowAt1500Hz) {
 
 TEST(Observation, IndependentPiecesUnderstateTheNoise) {
     // Summed as if its pieces of 3 samples were independent, a mark of n pieces would have the noise variance
-    // n V(3); it has V(3 n). On the real filter their ratio lies between 2.8 and 3.3 dB for marks of 8 to 720 ms (4 to
-    // 360 pieces; design notes, topic 4, item 7): 1.91 to 2.14, rising with the mark's length toward its limit for long
-    // marks, 4 500 Hz / c(3) = 2.138 (3.30 dB), as c(m) -> 1 500 Hz x m (derived).
+    // n V(3); it has V(3 n). On the real filter V(3 n) lies 2.8 to 3.3 dB above n V(3), in dB of noise variance, for
+    // marks of 8 to 720 ms (4 to 360 pieces; design notes, topic 4, item 7): a ratio of 1.91 to 2.14, rising with the
+    // mark's length toward its limit for long marks, 4 500 Hz / c(3) = 2.138 (3.30 dB of noise variance), as
+    // c(m) -> 1 500 Hz x m (derived).
     for (const int rate : {48000, 192000}) {
         SCOPED_TRACE(std::to_string(rate) + " samples/s");
         const std::vector<double> c = sum_noise_at(rate, 3 * 360);
@@ -350,12 +353,14 @@ TEST(Observation, IndependentPiecesUnderstateTheNoise) {
         Worst above;
         for (int n = 4; n <= 360; ++n) {
             const double ratio_db = 10.0 * std::log10(c[static_cast<std::size_t>(3 * n)] / (n * c[3]));
-            const auto at = [n, ratio_db] { return std::to_string(n) + " pieces: " + number(ratio_db) + " dB"; };
+            const auto at = [n, ratio_db] {
+                return std::to_string(n) + " pieces: " + number(ratio_db) + " dB of noise variance";
+            };
             below.add(2.8 - ratio_db, at);
             above.add(ratio_db - 3.3, at);
         }
-        EXPECT_LE(below.error, 0.0) << "below 2.8 dB at " << below.where;
-        EXPECT_LE(above.error, 0.0) << "above 3.3 dB at " << above.where;
+        EXPECT_LE(below.error, 0.0) << "below 2.8 dB of noise variance at " << below.where;
+        EXPECT_LE(above.error, 0.0) << "above 3.3 dB of noise variance at " << above.where;
         EXPECT_NEAR(4500.0 / c[3], 2.138, 0.0005);
     }
 }
@@ -572,10 +577,112 @@ TEST(Observation, StartingPointChangesNothing) {
             }
         }
     }
+    // A prior centered at 0 (mu = 0), where g'(0) = beta / q = 0: above z* = sqrt(1 + 1/(2 q)) the curvature there is
+    // negative, b = 0 is a minimum and the mode lies above it. Started at 0, or below 0 and so clamped to it, Newton's
+    // method must still find that mode.
+    const double unit = root_v / m;  // FS per unit of b
+    for (const double q : {0.25, 1.0, 9.0, 100.0}) {
+        const double z_star = std::sqrt(1.0 + 1.0 / (2.0 * q));
+        for (const double z : {1.2 * z_star, 2.0 * z_star, 10.0}) {
+            const double p = q * unit * unit;
+            const double s_abs = z * root_v;
+            const BlockEvidence cold = block_evidence(s_abs, m, 0.0, p, v, 5);
+            const double sd = std::sqrt(cold.level.var);
+            for (const double start : {0.0, -1.0}) {
+                const auto at = [q, z, start] {
+                    return "mu = 0, q = " + number(q) + ", z = " + number(z) + ", start " + number(start) + " FS";
+                };
+                const BlockEvidence warm = block_evidence(s_abs, m, 0.0, p, v, 5, start);
+                llr.add(std::fabs(warm.llr - cold.llr), at);
+                mean.add(std::fabs(warm.level.mean / cold.level.mean - 1.0), at);
+                var.add(std::fabs(warm.level.var / cold.level.var - 1.0), at);
+                mode.add(std::fabs(warm.mode_a - cold.mode_a) / sd, at);
+            }
+        }
+    }
     EXPECT_LE(llr.error, 1e-9) << "nats, at " << llr.where;
     EXPECT_LE(mean.error, 1e-9) << "relative, at " << mean.where;
     EXPECT_LE(var.error, 1e-9) << "relative, at " << var.where;
     EXPECT_LE(mode.error, 1e-9) << "posterior standard deviations, at " << mode.where;
+}
+
+TEST(Observation, WarmStartsFollowARunningSum) {
+    // The search's use: along a mark's running sum, each piece's call starts from the previous piece's mode_a. A prior
+    // centered at 0 (mu = 0, p = 1 FS^2), noise of unit variance per sample (V(m) = m FS^2, so q = m), a carrier of
+    // 0.3 FS and 3 samples per piece, for 200 pieces. Without noise the sum is |S| = 0.3 m FS, so z = 0.3 sqrt(m) rises
+    // through z* = sqrt(1 + 1/(2 m)): the mode lies at 0 for the first 3 pieces (to 9 samples) and above it from 12
+    // samples on. With noise (the same carrier and noise) the sum wanders. In both, at every piece the warm call's
+    // evidence and moments match a cold call's within 1e-9 nats and 1e-9 of their values.
+    const std::complex<double> carrier = std::polar(0.3, 0.7);
+    for (const bool noisy : {false, true}) {
+        SCOPED_TRACE(noisy ? "with noise" : "without noise");
+        WhiteNoise noise(20261021u, 1.0);
+        std::complex<double> sum(0.0, 0.0);
+        std::optional<double> start;
+        Worst llr;
+        Worst mean;
+        Worst var;
+        int at_zero = 0;    // pieces whose mode lies at a = 0
+        int left_zero = 0;  // pieces whose mode lies above 0 after one at 0
+        for (int n = 1; n <= 200; ++n) {
+            for (int k = 0; k < 3; ++k) {
+                sum += carrier;
+                if (noisy) {
+                    const kz4ap::Sample w = noise.next();
+                    sum += std::complex<double>(w.real(), w.imag());
+                }
+            }
+            const int m = 3 * n;
+            const double v = m;  // FS^2
+            const BlockEvidence warm = block_evidence(std::abs(sum), m, 0.0, 1.0, v, 5, start);
+            const BlockEvidence cold = block_evidence(std::abs(sum), m, 0.0, 1.0, v, 5);
+            const auto at = [n] { return std::to_string(n) + " pieces"; };
+            llr.add(std::fabs(warm.llr - cold.llr), at);
+            mean.add(std::fabs(warm.level.mean / cold.level.mean - 1.0), at);
+            var.add(std::fabs(warm.level.var / cold.level.var - 1.0), at);
+            if (cold.mode_a <= 1e-6 * std::sqrt(cold.level.var))
+                ++at_zero;
+            else if (at_zero > 0)
+                ++left_zero;
+            start = warm.mode_a;
+        }
+        EXPECT_LE(llr.error, 1e-9) << "nats, at " << llr.where;
+        EXPECT_LE(mean.error, 1e-9) << "relative, at " << mean.where;
+        EXPECT_LE(var.error, 1e-9) << "relative, at " << var.where;
+        if (!noisy) {
+            EXPECT_EQ(at_zero, 3) << "pieces with the mode at 0";
+            EXPECT_EQ(left_zero, 197) << "pieces with the mode above 0 after it";
+        }
+    }
+}
+
+TEST(Observation, TinySpreadsTendToTheExactLevel) {
+    // A level uncertain by a relative spread of 1e-6 down to 1e-17, at b = 10, against z = 10 and z = 12. Lambda_P
+    // tends to block_llr: within 1e-6 nats wherever the spread is 1e-9 or below, where the level counts as exact, and
+    // above it too, where the true difference, about q (g_L')^2 / 2 with g_L' the likelihood's slope (at most 4), is
+    // below 1e-9 nats. The posterior keeps the prior's mean and variance within 1e-6 of them.
+    const int m = 24;
+    const double v = block_variance(m);
+    const double root_v = std::sqrt(v);
+    const double mu = 10.0 * root_v / m;
+    Worst llr;
+    Worst mean;
+    Worst var;
+    for (const double z : {10.0, 12.0}) {
+        const double exact = block_llr(z * root_v, m, mu, v);
+        for (int e = 6; e <= 17; ++e) {
+            const double spread = std::pow(10.0, -e);
+            const double p = (spread * mu) * (spread * mu);
+            const auto at = [z, e] { return "z = " + number(z) + ", relative spread 1e-" + std::to_string(e); };
+            llr.add(std::fabs(block_llr_uncertain(z * root_v, m, mu, p, v, 5) - exact), at);
+            const Moments posterior = level_posterior(z * root_v, m, mu, p, v, 5);
+            mean.add(std::fabs(posterior.mean / mu - 1.0), at);
+            var.add(std::fabs(posterior.var / p - 1.0), at);
+        }
+    }
+    EXPECT_LE(llr.error, 1e-6) << "nats, at " << llr.where;
+    EXPECT_LE(mean.error, 1e-6) << "relative, at " << mean.where;
+    EXPECT_LE(var.error, 1e-6) << "relative, at " << var.where;
 }
 
 TEST(Observation, EvidenceStaysFiniteAtTheExtremes) {
@@ -613,8 +720,11 @@ TEST(Observation, EvidenceStaysFiniteAtTheExtremes) {
         EXPECT_TRUE(std::isfinite(block_llr_uncertain(z * root_v, m, unit, 0.01 * unit * unit, v, 5)));
     }
     // A level near 0 (b = 1e-6, and b = 0 with the prior a half-normal) and an uncertain level against a block of
-    // nothing and of a little: within 0.01 nats of the dense integral, taken over b from 0 to where the posterior
-    // ends (40 prior standard deviations, moved by at most 2 sd^2 z toward z, or 15 beyond z for a broad prior).
+    // nothing and of a little: finite, and within 0.01 nats of the dense integral at these points, taken over b from 0
+    // to where the posterior ends (40 prior standard deviations, moved by at most 2 sd^2 z toward z, or 15 beyond z for
+    // a broad prior). They lie away from z* = sqrt(1 + 1/(2 sd^2)), 2.56 at sd = 0.3 and 1.03 at sd = 3, where the mode
+    // leaves 0, its curvature vanishes, and the quadrature misses by up to 0.30 and 0.14 nats (the region of validity
+    // in observation.hpp).
     for (const double b : {0.0, 1e-6}) {
         for (const double z : {0.0, 0.5, 2.0}) {
             for (const double sd : {1e-3, 0.3, 3.0}) {
@@ -666,9 +776,11 @@ TEST(Observation, FlatPriorTableMatchesDirectIntegration) {
     EXPECT_LE(mean.error, 0.01) << "posterior standard deviations, at " << mean.where;
     EXPECT_LE(var.error, 0.01) << "relative, at " << var.where;
 
-    // The large-z form, z^2 - ln(2 z^2) + ln(20 / (ln 10 x 100 dB)), with b ~ N(z, 1/2), meets the table: its error,
-    // which falls as 1 / z^2, is 0.0102 nats at z = 10, 0.0025 at 20 and 0.0011 at 30 (measured), so within 0.01 from
-    // z = 20 on, and 6.3e-4 at the table's end, z = 40, where the form takes over.
+    // The large-z form, z^2 - ln(2 z^2) + ln(20 / (ln 10 x 100)), 100 being the range's width in dB S500, meets the
+    // table: its error, which falls as 1 / z^2, is 0.0102 nats at z = 10, 0.0025 at 20 and 0.0011 at 30 (measured), so
+    // within 0.01 from z = 20 on, and 6.3e-4 at the table's end, z = 40, where the form takes over. Its posterior of b,
+    // proportional to e^-(b - z)^2 b^(-3/2), has by Laplace's method one order further the mean z - 3 / (4 z) and the
+    // variance 1/2 + 3 / (8 z^2): just above z = 40 they meet the table's at 40 within 1e-3.
     const double constant = std::log(20.0 / (std::numbers::ln10 * 100.0));
     const auto large_z = [constant](double z) { return z * z - std::log(2.0 * z * z) + constant; };
     for (const int pieces : {1, 60, 195}) {
@@ -677,13 +789,14 @@ TEST(Observation, FlatPriorTableMatchesDirectIntegration) {
             EXPECT_NEAR(prior.llr(pieces, z), large_z(z), 0.01) << "z = " << z;
         EXPECT_NEAR(prior.llr(pieces, 40.0), large_z(40.0), 0.001);
         const Moments at_end = prior.posterior(pieces, 40.0);
-        EXPECT_NEAR(at_end.mean, 40.0, 0.05);
-        EXPECT_NEAR(at_end.var, 0.5, 0.005);
+        const Moments just_above = prior.posterior(pieces, std::nextafter(40.0, 41.0));
+        EXPECT_NEAR(just_above.mean, at_end.mean, 1e-3);
+        EXPECT_NEAR(just_above.var, at_end.var, 1e-3);
         for (const double z : {std::nextafter(40.0, 41.0), 40.5, 77.7, 1234.5}) {
             EXPECT_DOUBLE_EQ(prior.llr(pieces, z), large_z(z)) << "z = " << z;
             const Moments above = prior.posterior(pieces, z);
-            EXPECT_EQ(above.mean, z);
-            EXPECT_EQ(above.var, 0.5);
+            EXPECT_DOUBLE_EQ(above.mean, z - 0.75 / z) << "z = " << z;
+            EXPECT_DOUBLE_EQ(above.var, 0.5 + 0.375 / (z * z)) << "z = " << z;
         }
     }
 }

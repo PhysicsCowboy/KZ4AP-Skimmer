@@ -14,15 +14,16 @@ struct ChannelizerConfig {
     int sample_rate = 192000;
     int fft_size = 8192;       // input FFT size; the hop is fft_size / 2
     int channel_bins = 64;     // bins kept per channel; output rate = sample_rate * channel_bins / fft_size
-    // Channel low-pass cutoff (-6 dB point). Must be > 0, and cutoff_hz plus half the
+    // Channel low-pass cutoff (-6 dB relative to the passband), Hz. Must be > 0, and cutoff_hz plus half the
     // filter's transition width (about 5.5 * sample_rate / (fft_size / 2 + 1) Hz) must
     // not exceed output rate / 2: at most about 621 Hz with the other defaults.
     double cutoff_hz = 150.0;
 };
 
-// The taps of the channel low-pass filter, exactly those the Channelizer applies: a Blackman-windowed sinc of
-// fft_size / 2 + 1 taps with its -6 dB point at cutoff_hz, normalized to a sum of 1 (unit gain at 0 Hz). Throws
-// std::invalid_argument for the configurations the Channelizer refuses.
+// The taps of the channel low-pass filter, those the Channelizer builds its filter from, before their rounding to
+// float: a Blackman-windowed sinc of fft_size / 2 + 1 taps with its point 6 dB below the passband at cutoff_hz,
+// normalized to a sum of 1 (unit gain at 0 Hz). Throws std::invalid_argument for the configurations the Channelizer
+// refuses.
 std::vector<double> channel_filter_taps(const ChannelizerConfig& config);
 
 // Splits a wideband I/Q stream into narrow, decimated baseband streams, one per

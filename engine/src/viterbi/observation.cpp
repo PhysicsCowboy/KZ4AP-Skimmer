@@ -175,8 +175,9 @@ double inverse_normal_cdf(double p) {
 // likelihood without the prior's normalization, g(b) = -(b - beta)^2 / (2 q) - b^2 + ln I0(2 b z).
 struct Block {
     double beta;  // the prior's mean, b
-    double q;     // its variance; 0 for a level known exactly
+    double q;     // its variance, b^2
     double z;     // |S| / sqrt(v)
+    bool exact;   // a level known exactly: p = 0, or sqrt(q) <= 1e-9 max(beta, 1)
     double g(double b) const {
         const double d = b - beta;
         return -0.5 * d * d / q - b * b + ln_i0(2.0 * b * z);
@@ -184,6 +185,11 @@ struct Block {
 };
 
 constexpr int kNewtonSteps = 60;  // a bound for the safeguarded iteration, never reached on the tests
+// A Newton step below this many spacings of doubles at b, relatively, ends the iteration: one can be no smaller.
+constexpr double kSpacings = 4.0 * std::numeric_limits<double>::epsilon();
+// sqrt(q): a prior narrower than this share of its center, max(beta, 1), is a level known exactly; at relative spreads
+// below it the nodes would round onto the mode.
+constexpr double kExactLevel = 1e-9;
 // sigma^: from here on the Gaussian at the mode has under Phi(-8.5) = 9.5e-18 of its mass below 0, under half the
 // spacing of doubles at 1, so the truncated nodes are the standard ones; every rule's nodes (at most 7.62 for order
 // 20) then lie above 0.
@@ -206,8 +212,11 @@ Fit fit_posterior(const Block& block, int order, std::optional<double> start) {
     const double z = block.z;
     // The mode b^ of g: Newton's method on g', by default from the precision-weighted mean of the prior (beta,
     // precision 1 / q) and the likelihood's peak (z, precision 2). There g' <= 0 since d ln I0 / dx < 1, while g'(0) =
-    // beta / q >= 0, so b^ lies in the bracket [0, that mean]. It stops at a step below 1e-10 sigma^; a step that would
-    // leave the bracket, or one where g is not concave, bisects it instead, and one past b = 0 stops there.
+    // beta / q >= 0, so b^ lies in the bracket [0, that mean]. It stops at a step below 1e-10 sigma^ or below a few
+    // spacings of doubles at b, or one that leaves b where it is; a step that would leave the bracket, or one where g
+    // is not concave, bisects it instead, and one past b = 0 stops there. A zero slope is the mode only where g is
+    // concave: elsewhere it can only be b = 0 with beta = 0 (g'(0) = beta / q), a minimum once z^2 > 1 + 1/(2 q), and
+    // the mode lies above it.
     double low = 0.0;
     double high = q <= 1.0 ? (beta + 2.0 * q * z) / (1.0 + 2.0 * q) : (beta / q + 2.0 * z) / (1.0 / q + 2.0);
     double b = start ? std::clamp(*start, low, high) : high;
@@ -215,15 +224,15 @@ Fit fit_posterior(const Block& block, int order, std::optional<double> start) {
         const Slopes s = ln_i0_slopes(2.0 * b * z);
         const double slope = -(b - beta) / q - 2.0 * b + 2.0 * z * s.first;  // g'(b)
         const double curvature = 1.0 / q + 2.0 - 4.0 * z * z * s.second;    // -g''(b)
-        if (slope == 0.0) break;
-        if (slope > 0.0)
+        if (slope == 0.0 && curvature > 0.0) break;
+        if (slope >= 0.0)
             low = b;
         else
             high = b;
-        if (curvature > 0.0) {
+        if (slope != 0.0 && curvature > 0.0) {
             const double newton = slope / curvature;
             const double next = std::max(0.0, b + newton);
-            if (std::fabs(newton) <= 1e-10 / std::sqrt(curvature)) {
+            if (std::fabs(newton) <= std::max(1e-10 / std::sqrt(curvature), kSpacings * b) || next == b) {
                 b = next;
                 break;
             }
@@ -271,8 +280,9 @@ void check_block(double s_abs, int m, double v) {
         throw std::invalid_argument("block evidence: s_abs must be finite and not negative (FS)");
 }
 
-// The block in b after checking the arguments. q is 0 where p is, or where m^2 p / v is below the smallest normal
-// double, a level known exactly to the double's precision.
+// The block in b after checking the arguments. Its level counts as exact where p = 0, or where the prior is narrower
+// than 1e-9 of max(beta, 1): Lambda_P is then block_llr at mu and the posterior the prior, {mu, p}, from which the
+// true ones differ by about q relatively; narrower still, the nodes would round onto the mode.
 Block uncertain_block(double s_abs, int m, double mu, double p, double v, int order, int lowest_order) {
     check_block(s_abs, m, v);
     if (!finite_and_not_negative(mu))
@@ -282,8 +292,10 @@ Block uncertain_block(double s_abs, int m, double mu, double p, double v, int or
     if (order < lowest_order || order > kMaxOrder)
         throw std::invalid_argument("uncertain level: the quadrature's order must be 1 (2 for the posterior) to 20");
     const double root_v = std::sqrt(v);
+    const double beta = m * mu / root_v;
     const double q = static_cast<double>(m) * static_cast<double>(m) * p / v;
-    return {m * mu / root_v, q < std::numeric_limits<double>::min() ? 0.0 : q, s_abs / root_v};
+    const double narrowest = kExactLevel * std::max(beta, 1.0);
+    return {beta, q, s_abs / root_v, !(q > narrowest * narrowest)};
 }
 
 // The one quadrature behind block_llr_uncertain, level_posterior and block_evidence, after checking the arguments
@@ -293,7 +305,7 @@ BlockEvidence evaluate(double s_abs, int m, double mu, double p, double v, int o
     const Block block = uncertain_block(s_abs, m, mu, p, v, order, lowest_order);
     if (start_a && !std::isfinite(*start_a))
         throw std::invalid_argument("block evidence: start_a must be finite (FS)");
-    if (block.q == 0.0) return {block_llr(s_abs, m, mu, v), {mu, 0.0}, mu};
+    if (block.exact) return {block_llr(s_abs, m, mu, v), {mu, p}, mu};
     const double unit = std::sqrt(v) / m;  // FS per unit of b
     const Fit fit = fit_posterior(block, order, start_a ? std::optional<double>(*start_a / unit) : std::nullopt);
     double mean = 0.0;
@@ -314,7 +326,7 @@ constexpr double kS500Hz = 500.0;          // S500: the carrier's power over the
 constexpr double kTableTopZ = 40.0;
 constexpr int kTableSteps = 4000;          // the table's nodes: z = 0, 0.01, ..., 40
 constexpr double kTableNodesPerZ = 100.0;  // 1 / the table's step of 0.01
-constexpr double kLevelStepDb = 0.01;      // dB: the step of the integral over the level x
+constexpr double kLevelStepDb = 0.01;      // dB of x (x in dB S500): the step of the integral over the level x
 constexpr double kHighestLowerB = 6.0;     // b at level_min_db, at most, for every block
 constexpr double kAboveZ = 10.0;           // the integral starts at b = z + 10: e^Lambda is e^-100 of its peak there
 constexpr double kNegligible = 1e-17;      // a rest of the integral below this share of it is left out
@@ -498,7 +510,8 @@ double FlatPrior::llr(int pieces, double z) const {
 
 Moments FlatPrior::posterior(int pieces, double z) const {
     const Node* nodes = row(pieces, z);
-    if (z > kTableTopZ) return {z, 0.5};
+    // The posterior of b, proportional to e^-(b - z)^2 b^(-3/2) for large z, by Laplace's method one order further.
+    if (z > kTableTopZ) return {z - 0.75 / z, 0.5 + 0.375 / (z * z)};
     const double position = z * kTableNodesPerZ;
     const int cell = std::min(static_cast<int>(position), kTableSteps - 1);
     const double fraction = position - cell;
