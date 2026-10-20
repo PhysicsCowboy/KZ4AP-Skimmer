@@ -656,6 +656,30 @@ TEST(Observation, WarmStartsFollowARunningSum) {
     }
 }
 
+TEST(Observation, DegenerateCurvatureStaysFinite) {
+    // A strong station's story, b = 1e5, its level uncertain by a relative spread of 30, against a block of noise,
+    // z = 1 (m = 1 and v = 1 FS^2, so that b is in FS): the curvature at the mode all but vanishes, sigma^ is about 263
+    // against an integrand about 1 wide, and the nodes land where the posterior has underflowed. Summed in the log, the
+    // evidence, the moments and the mode are finite at orders 2, 3 and 5, cold and warm; at order 5 the evidence is
+    // within the accuracy the header gives for such stories, 1.2 nats, of a dense integral (orders below 5 miss there
+    // by up to 168 nats, as the header records).
+    const double beta = 1e5;
+    const double q = (30.0 * beta) * (30.0 * beta);
+    const double z = 1.0;
+    const Dense dense = dense_uncertain(z, 1, beta, q, 1.0, 0.0, 30.0);
+    for (const int order : {2, 3, 5}) {
+        SCOPED_TRACE("order " + std::to_string(order));
+        for (const std::optional<double> start : {std::optional<double>(), std::optional<double>(0.0)}) {
+            const BlockEvidence evidence = block_evidence(z, 1, beta, q, 1.0, order, start);
+            EXPECT_TRUE(std::isfinite(evidence.llr)) << evidence.llr;
+            EXPECT_TRUE(std::isfinite(evidence.level.mean)) << evidence.level.mean;
+            EXPECT_TRUE(std::isfinite(evidence.level.var)) << evidence.level.var;
+            EXPECT_TRUE(std::isfinite(evidence.mode_a)) << evidence.mode_a;
+            if (order == 5) EXPECT_NEAR(evidence.llr, dense.llr, 1.2);
+        }
+    }
+}
+
 TEST(Observation, TinySpreadsTendToTheExactLevel) {
     // A level uncertain by a relative spread of 1e-6 down to 1e-17, at b = 10, against z = 10 and z = 12. Lambda_P
     // tends to block_llr: within 1e-6 nats wherever the spread is 1e-9 or below, where the level counts as exact, and

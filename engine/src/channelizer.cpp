@@ -21,9 +21,9 @@ std::vector<double> channel_filter_taps(const ChannelizerConfig& config) {
 
     // The channel keeps only the channel_bins bins around its center, i.e. frequencies
     // within half the output rate. The filter's whole transition band must fit inside
-    // that, or part of the response is cut off (the cutoff is the -6 dB point, not the
-    // stopband edge). A Blackman window's transition width is about 5.5 / (filter length
-    // in seconds): 258 Hz for 4097 taps at 192 kHz.
+    // that, or part of the response is cut off (the cutoff is -6 dB relative to the
+    // passband, not the stopband edge). A Blackman window's transition width is about
+    // 5.5 / (filter length in seconds): 258 Hz for 4097 taps at 192 kHz.
     const double half_output_rate = static_cast<double>(config.sample_rate) / decimation / 2;
     const double transition_hz = 5.5 * config.sample_rate / taps;
     if (!std::isfinite(config.cutoff_hz) || config.cutoff_hz <= 0 ||

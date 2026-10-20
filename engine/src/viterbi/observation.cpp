@@ -78,9 +78,9 @@ Slopes ln_i0_slopes(double x) {
 constexpr int kMaxOrder = 20;
 
 struct Rule {
-    std::array<double, kMaxOrder> node{};    // t_k, standard deviations
-    std::array<double, kMaxOrder> weight{};  // w_k, summing to 1: E f(t) ~ sum_k w_k f(t_k)
-    std::array<double, kMaxOrder> tail{};    // Phi(-|t_k|), the standard normal's mass beyond the node
+    std::array<double, kMaxOrder> node{};        // t_k, standard deviations
+    std::array<double, kMaxOrder> log_weight{};  // ln w_k, the weights summing to 1: E f(t) ~ sum_k w_k f(t_k)
+    std::array<double, kMaxOrder> tail{};        // Phi(-|t_k|), the standard normal's mass beyond the node
 };
 
 // The rule of order n: the roots x of the Hermite polynomial H_n (weight e^(-x^2)), by Newton's method on its
@@ -122,7 +122,7 @@ Rule make_rule(int n) {
     Rule rule;
     for (std::size_t k = 0; k < static_cast<std::size_t>(n); ++k) {
         rule.node[k] = std::numbers::sqrt2 * x[k];
-        rule.weight[k] = w[k] * std::numbers::inv_sqrtpi;
+        rule.log_weight[k] = std::log(w[k] * std::numbers::inv_sqrtpi);
         rule.tail[k] = 0.5 * std::erfc(std::fabs(x[k]));  // Phi(-|t|) = erfc(|t| / sqrt(2)) / 2
     }
     return rule;
@@ -187,8 +187,9 @@ struct Block {
 constexpr int kNewtonSteps = 60;  // a bound for the safeguarded iteration, never reached on the tests
 // A Newton step below this many spacings of doubles at b, relatively, ends the iteration: one can be no smaller.
 constexpr double kSpacings = 4.0 * std::numeric_limits<double>::epsilon();
-// sqrt(q): a prior narrower than this share of its center, max(beta, 1), is a level known exactly; at relative spreads
-// below it the nodes would round onto the mode.
+// sqrt(q): a prior narrower than this share of its center, max(beta, 1), is a level known exactly. A heuristic margin:
+// the quadrature's error from rounding its nodes' offsets grows as epsilon b / sigma^, and is still 7e-9 nats at this
+// width at b = 10 (5.7e-5 at 1e-12, 3.2e-3 at 1e-14, 1.09 nats from about 1e-16, where the nodes coincide).
 constexpr double kExactLevel = 1e-9;
 // sigma^: from here on the Gaussian at the mode has under Phi(-8.5) = 9.5e-18 of its mass below 0, under half the
 // spacing of doubles at 1, so the truncated nodes are the standard ones; every rule's nodes (at most 7.62 for order
@@ -196,13 +197,13 @@ constexpr double kExactLevel = 1e-9;
 constexpr double kTruncationLimit = 8.5;
 
 // The quadrature of a block's posterior: the mode b^, the nodes b_k and their shares of the integral, w_k e^(g(b_k) -
-// g(b^) + s_k^2 / 2), s_k the node's distance from the mode in sigma^, and Lambda_P.
+// g(b^) + s_k^2 / 2) over the largest of them, s_k the node's distance from the mode in sigma^, and Lambda_P.
 struct Fit {
     double mode = 0.0;  // b^
     std::array<double, kMaxOrder> b{};
-    std::array<double, kMaxOrder> share{};
-    double total = 0.0;  // the sum of the shares
-    double llr = 0.0;    // Lambda_P, nats
+    std::array<double, kMaxOrder> share{};  // the largest is 1
+    double total = 0.0;                     // the sum of the shares
+    double llr = 0.0;                       // Lambda_P, nats
 };
 
 // start: where Newton's method starts, in units of b (clamped into its bracket); the bracket's top when empty.
@@ -213,8 +214,9 @@ Fit fit_posterior(const Block& block, int order, std::optional<double> start) {
     // The mode b^ of g: Newton's method on g', by default from the precision-weighted mean of the prior (beta,
     // precision 1 / q) and the likelihood's peak (z, precision 2). There g' <= 0 since d ln I0 / dx < 1, while g'(0) =
     // beta / q >= 0, so b^ lies in the bracket [0, that mean]. It stops at a step below 1e-10 sigma^ or below a few
-    // spacings of doubles at b, or one that leaves b where it is; a step that would leave the bracket, or one where g
-    // is not concave, bisects it instead, and one past b = 0 stops there. A zero slope is the mode only where g is
+    // spacings of doubles at b, or one that leaves b where it is; a step past the bracket's top goes to the top, one
+    // that would leave the bracket below, or one where g is not concave, bisects it instead, and one past b = 0 stops
+    // there. A zero slope is the mode only where g is
     // concave: elsewhere it can only be b = 0 with beta = 0 (g'(0) = beta / q), a minimum once z^2 > 1 + 1/(2 q), and
     // the mode lies above it.
     double low = 0.0;
@@ -240,34 +242,55 @@ Fit fit_posterior(const Block& block, int order, std::optional<double> start) {
                 b = next;
                 continue;
             }
+            // Past the top from below: the top, where g' <= 0, from which Newton's steps run down to the mode.
+            if (next > high && b < high) {
+                b = high;
+                continue;
+            }
         }
         b = 0.5 * (low + high);
         if (high - low <= 1e-15 * high) break;
     }
-    // -g''(b^) = 1 / q + excess. It is positive at a maximum; the fallback, the curvature of prior x e^-b^2, guards a
-    // degenerate one.
+    // -g''(b^) = 1 / q + excess. It is positive at a maximum; the fallback, the curvature of prior x e^-b^2 (so that
+    // sigma^ < 1 / sqrt(2)), guards a degenerate one and a scale beyond the doubles' range.
     double excess = 2.0 - 4.0 * z * z * ln_i0_slopes(2.0 * b * z).second;
-    if (!(q * excess > -1.0)) excess = 2.0;
-    const double sigma = std::sqrt(q / (1.0 + q * excess));
-    const double tau = b / sigma;
-    const double below = tau < kTruncationLimit ? 0.5 * std::erfc(tau / std::numbers::sqrt2) : 0.0;
+    if (!(q * excess > -1.0) || !std::isfinite(std::sqrt(q / (1.0 + q * excess)))) excess = 2.0;
     const Rule& rule = rule_of_order(order);
     const double g_mode = block.g(b);
     Fit fit;
     fit.mode = b;
+    // The nodes' terms in the log, ln w_k + g(b_k) - g(b^) + s_k^2 / 2, summed by log-sum-exp, so that no share
+    // underflows into an empty sum. A term that is not a number (a node beyond the doubles' range) counts for nothing;
+    // if no term counts, the nodes are laid again at the fallback's scale, within a few units of b of the mode.
+    std::array<double, kMaxOrder> log_term{};
+    double sigma = 0.0;
+    double below = 0.0;
+    double largest = -kInf;
+    for (int attempt = 0; attempt < 2 && !(largest > -kInf); ++attempt) {
+        if (attempt > 0) excess = 2.0;
+        sigma = std::sqrt(q / (1.0 + q * excess));
+        const double tau = b / sigma;
+        below = tau < kTruncationLimit ? 0.5 * std::erfc(tau / std::numbers::sqrt2) : 0.0;
+        for (std::size_t k = 0; k < static_cast<std::size_t>(order); ++k) {
+            // The node's quantile, in the Gaussian at the mode truncated at b = 0 when that truncation matters.
+            double s = rule.node[k];
+            if (below > 0.0)
+                s = s < 0.0 ? inverse_normal_cdf(below + (1.0 - below) * rule.tail[k])
+                            : -inverse_normal_cdf((1.0 - below) * rule.tail[k]);
+            fit.b[k] = std::max(0.0, b + sigma * s);
+            const double term = rule.log_weight[k] + block.g(fit.b[k]) - g_mode + 0.5 * s * s;
+            log_term[k] = std::isnan(term) ? -kInf : term;
+            largest = std::max(largest, log_term[k]);
+        }
+    }
     for (std::size_t k = 0; k < static_cast<std::size_t>(order); ++k) {
-        // The node's quantile, in the Gaussian at the mode truncated at b = 0 when that truncation matters.
-        double s = rule.node[k];
-        if (below > 0.0)
-            s = s < 0.0 ? inverse_normal_cdf(below + (1.0 - below) * rule.tail[k])
-                        : -inverse_normal_cdf((1.0 - below) * rule.tail[k]);
-        fit.b[k] = std::max(0.0, b + sigma * s);
-        fit.share[k] = rule.weight[k] * std::exp(block.g(fit.b[k]) - g_mode + 0.5 * s * s);
+        fit.share[k] = std::exp(log_term[k] - largest);
         fit.total += fit.share[k];
     }
     // ln of the prior's integral against the likelihood, (2 pi q)^(-1/2) integral_0^inf e^g db, which is
-    // ln(sigma^ / sqrt(q)) + ln(1 - Phi(-tau)) + g(b^) + ln(total), less ln Phi(beta / sqrt(q)) for the truncation.
-    fit.llr = -0.5 * std::log1p(q * excess) + std::log1p(-below) + g_mode + std::log(fit.total) -
+    // ln(sigma^ / sqrt(q)) + ln(1 - Phi(-tau)) + g(b^) + ln(the sum of the terms), less ln Phi(beta / sqrt(q)) for
+    // the truncation; the shares are the terms over the largest, so the sum's log is largest + ln(total).
+    fit.llr = -0.5 * std::log1p(q * excess) + std::log1p(-below) + g_mode + largest + std::log(fit.total) -
               std::log1p(-0.5 * std::erfc(beta / std::sqrt(2.0 * q)));
     return fit;
 }
@@ -281,8 +304,10 @@ void check_block(double s_abs, int m, double v) {
 }
 
 // The block in b after checking the arguments. Its level counts as exact where p = 0, or where the prior is narrower
-// than 1e-9 of max(beta, 1): Lambda_P is then block_llr at mu and the posterior the prior, {mu, p}, from which the
-// true ones differ by about q relatively; narrower still, the nodes would round onto the mode.
+// than 1e-9 of max(beta, 1) (kExactLevel): Lambda_P is then block_llr at mu, off by about q (Lambda'^2 + Lambda'') / 2
+// nats (Lambda's derivatives in b at beta), and the posterior the prior, {mu, p}. For mu > 0 the true posterior differs
+// from that by about q relatively; for mu = 0 it is a half-normal (mean 0.80 sqrt(p), variance 0.36 p), off by order 1
+// relatively but by under 1e-9 in units of b.
 Block uncertain_block(double s_abs, int m, double mu, double p, double v, int order, int lowest_order) {
     check_block(s_abs, m, v);
     if (!finite_and_not_negative(mu))

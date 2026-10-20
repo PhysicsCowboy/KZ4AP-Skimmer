@@ -55,21 +55,31 @@ double block_llr(double s_abs, int m, double a, double v);
 // e^g is Gaussian, so it is exact for a Gaussian integrand however much the truncation cuts off (an extension of the
 // standard form; above 8.5 sigma^ the two agree to the double's precision). The standard nodes put part of the
 // integral below 0: dropping the nodes there misses a dense integral by up to 0.355 nats on the tests' grid, and by
-// 0.62 with the remaining weights renormalized (measured, at b = 30, z = 0 and a relative spread of 0.5). A level
-// known exactly, p = 0 or a prior narrower than 1e-9 of max(beta, 1) (narrower still, the nodes would round onto the
-// mode), gives block_llr at mu.
+// 0.62 with the remaining weights renormalized (measured, at b = 30, z = 0 and a relative spread of 0.5). The nodes'
+// terms are summed in the log (log-sum-exp), so no share underflows into an empty sum. A level known exactly, p = 0
+// or a prior narrower than 1e-9 of max(beta, 1), gives block_llr at mu. The 1e-9 is a heuristic margin: the
+// quadrature's error from rounding its nodes' offsets grows as epsilon b / sigma^ and is still 7e-9 nats at that width
+// at b = 10, against 5.7e-5 at 1e-12, 3.2e-3 at 1e-14 and 1.09 nats from about 1e-16, where the nodes coincide.
 //
 // Accuracy at order 5, measured against dense integrals: within 0.0011 nats on the tests' grid (b = m mu / sqrt(v) of
-// 1 to 30, z = 0, b/2, b and 2 b, relative spreads sqrt(p) / mu of 0.03 to 0.5), where Newton takes at most 4 steps
-// (6 over b = 0 to 1e4, z to 3 b, spreads to 2). Beyond it the accuracy is set by beta / q, the slope of the prior's
-// log at b = 0; the worst over z = 0 to 6 (near z = 1) is 0.003 nats where beta / q >= 1/3, about 0.02 nats where it
-// is about 0.1 (a relative spread of 1 at beta = 10, or of 0.1 at beta = 1 000), and 0.03 to 0.22 nats where it is
-// 0.04 or less (relative spreads of 0.3 to 1 at beta of 100 to 1 000). There the curvature at the mode degenerates:
-// with beta = 0 the mode leaves b = 0 at z* = sqrt(1 + 1/(2 q)), where -g'' vanishes and sigma^ diverges while the
-// integrand's width is set by the quartic term of ln I0 (x^2 / 4 - x^4 / 64), so the nodes spread far wider than the
-// integrand: 0.14 to 0.41 nats for mu = 0 at sqrt(q) of 0.3 to 10 (0.04 to 0.13 at order 10). Throws
-// std::invalid_argument for what block_llr refuses, a mu or p that is negative or not finite, or an order outside
-// 1 ... 20.
+// 1 to 30, z = 0, b/2, b and 2 b, relative spreads sqrt(p) / mu of 0.03 to 0.5). Beyond it the accuracy is set by
+// beta / q, the slope of the prior's log at b = 0, and is worst near z = 1 (the worst over z = 0 to 6):
+//   - beta / q of 1/3 or more: within 0.003 nats;
+//   - beta / q about 0.1 (a relative spread of 1 at beta = 10, 0.3 at 100, 0.1 at 1 000): about 0.02 nats;
+//   - beta / q of 0.003 to 0.04 (spreads of 0.5 to 1 at beta = 100, 0.3 to 1 at 300, 0.5 at 1 000): 0.03 to 0.22;
+//   - below about 0.003 the error is no longer monotone in beta / q. Strong stations, beta of 3 000 to 1e6 (47 to
+//     97 dB S500 on a block of 195 pieces, 20 dB more for a single piece), at relative spreads of 0.5 to 2 miss by up
+//     to 1.2 nats, 4 to 10% of the evidence (0.3 to 1.2 nats in most cases measured; 0.04 at beta = 1e5, spread 0.5);
+//   - mu = 0 (beta / q = 0): 0.14 to 0.41 nats at sqrt(q) of 0.3 to 10 (0.04 to 0.13 at order 10).
+// There the curvature at the mode degenerates: with beta = 0 the mode leaves b = 0 at z* = sqrt(1 + 1/(2 q)), where
+// -g'' vanishes and sigma^ diverges while the integrand's width is set by the quartic term of ln I0 (x^2 / 4 -
+// x^4 / 64), so the nodes spread far wider than the integrand. Orders below 5 fare worse there (at beta = 1e5, z = 1
+// and a relative spread of 30, order 3 misses by 168 nats, order 5 by 0.84), and so do the moments (below).
+// Newton takes at most 4 steps on the tests' grid and 6 over b = 0 to 1e4, z to 3 b, spreads to 2; where the
+// curvature degenerates, more: 7 to 12 for mu = 0 at z = 1 and sqrt(q) of 3 to 20, 17 at beta = 1e6, z = 1 and a
+// spread of 3, and 21 at most over b and z up to 1e100 and spreads up to 1e6, cold or started at 0, within its cap of
+// 60 (measured). Throws std::invalid_argument for what block_llr refuses, a mu or p that is negative or not finite,
+// or an order outside 1 ... 20.
 double block_llr_uncertain(double s_abs, int m, double mu, double p, double v, int order);
 
 // The mean and variance of a distribution.
@@ -83,7 +93,11 @@ struct Moments {
 // item 1). At high SNR it is the Kalman update, mean mu + p / (p + v / (2 m^2)) (s_abs / m - mu) and variance
 // p (v / (2 m^2)) / (p + v / (2 m^2)): within 0.1% for b >= 30 at a relative spread of 0.1. At order 5, on the grid
 // above, the mean is within 0.0025 of the posterior's standard deviation and the variance within 0.6% of a dense
-// integral (measured). For a level known exactly it is the prior, {mu, p} ({mu, 0} with p = 0). Throws for what
+// integral (measured). Where the curvature at the mode degenerates (above) the moments fail first: at z = 1 for beta
+// of 3 000 to 1e6 and relative spreads of 1 to 30, the variance comes out 0 to 3.2 times its true 0.36 (units of b^2)
+// and the mean 0.11 to 1.27 against 0.87 (order 5, measured). For a level known exactly it is the prior, {mu, p}
+// ({mu, 0} with p = 0); for mu > 0 the true posterior differs from it by about q relatively, for mu = 0 (a half-normal
+// of mean 0.80 sqrt(p) and variance 0.36 p) by order 1 relatively but by under 1e-9 in units of b. Throws for what
 // block_llr_uncertain refuses, and for an order below 2 (one node holds no variance).
 Moments level_posterior(double s_abs, int m, double mu, double p, double v, int order);
 
@@ -97,9 +111,11 @@ struct BlockEvidence {
 // block_llr_uncertain and level_posterior in one call, from the same quadrature (the search makes one per story and
 // piece). start_a (FS), when given, is where Newton's method starts, clamped into its bracket [0, the precision-
 // weighted mean]: the story's mode_a from the previous piece. The result does not depend on it beyond Newton's
-// tolerance, a last step below 1e-10 sigma^, including at b = 0 when mu = 0, where a zero slope may be a minimum. For a
-// level known exactly: {block_llr, {mu, p}, mu}, so {block_llr, {mu, 0}, mu} with p = 0. Throws for what
-// level_posterior refuses and for a start_a that is not finite.
+// tolerance, a last step below the larger of 1e-10 sigma^ and 4 epsilon b (a few spacings of doubles at b), including
+// at b = 0 when mu = 0, where a zero slope may be a minimum. For a level known exactly: {block_llr, {mu, p}, mu}, so
+// {block_llr, {mu, 0}, mu} with p = 0. At every order from 2 its values are finite for b and z below 1e100 (beyond
+// about 1e154, b^2 leaves the doubles, as in block_llr). Throws for what level_posterior refuses and for a start_a
+// that is not finite.
 BlockEvidence block_evidence(double s_abs, int m, double mu, double p, double v, int order,
                              std::optional<double> start_a = std::nullopt);
 
@@ -120,12 +136,12 @@ BlockEvidence block_evidence(double s_abs, int m, double mu, double p, double v,
 // entry depends only on m: blocks of the same number of samples read the same values, whatever the piece. Above
 // z = 40, the large-z form (Laplace's method)
 //     Lambda_flat = z^2 - ln(2 z^2) + ln(20 / (ln 10 x (level_max_db - level_min_db))),
-// the range's width in dB S500, which meets the table within 6.3e-4 nats at z = 40 (its error falls as 1 / z^2:
-// 0.0011 at 30, 0.010 at 10). The posterior of b there is proportional to e^-(b - z)^2 b^(-3/2) (the likelihood's
-// e^-(b - z)^2 / sqrt(b) over a prior flat in ln b), and Laplace's method one order further gives its mean,
-// z - 3 / (4 z), and variance, 1/2 + 3 / (8 z^2), which meet the table's at z = 40 within 2e-5. It takes the level to
-// lie inside the range, b well below its value at level_max_db (26 002 for one piece, at the default range and on the
-// channelizer's filter); above that it does not cut the prior off.
+// with level_max_db - level_min_db the range's width in dB S500. The form meets the table within 6.3e-4 nats at
+// z = 40 (its error falls as 1 / z^2: 0.0011 at 30, 0.010 at 10). The posterior of b there is proportional to
+// e^-(b - z)^2 b^(-3/2) (the likelihood's e^-(b - z)^2 / sqrt(b) over a prior flat in ln b), and Laplace's method one
+// order further gives its mean, z - 3 / (4 z), and variance, 1/2 + 3 / (8 z^2), which meet the table's at z = 40
+// within 2e-5. The form takes the level to lie inside the range, b well below its value at level_max_db (26 002 for
+// one piece, at the default range and on the channelizer's filter); above that it does not cut the prior off.
 //
 // One FlatPrior serves every decoder of a configuration and channel filter, which hold it as
 // std::shared_ptr<const FlatPrior>: it holds 3 x 4 001 doubles per block length (18.7 MB for 195 pieces) and is not
