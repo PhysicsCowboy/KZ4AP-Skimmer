@@ -25,7 +25,7 @@ constexpr double kPi = std::numbers::pi;
 
 // s, dimensionless: the standard deviation over the mean of a Rayleigh amplitude, sqrt(4 / pi - 1) = 0.5227, written
 // out here on its own, not read from level.cpp.
-const double kRayleighSpread = std::sqrt(4.0 / kPi - 1.0);
+const double kRayleighRelativeSpread = std::sqrt(4.0 / kPi - 1.0);
 
 // A learned level of mean mu (FS) whose standard deviation is relative_spread x mu, last updated at t_s (s).
 Level learned(double mu, double relative_spread, double t_s = 0.0) {
@@ -114,16 +114,16 @@ TEST(Level, PredictionTendsToTheFadingSpread) {
     // 0.5227, from P = 0 and from a level known worse than that, sqrt(P) / mu = 2: the form interpolates between P and
     // (s mu)^2, so a level known worse than the fading's own spread becomes better known with time. The test pins that
     // behavior of the form as it stands.
-    EXPECT_NEAR(kRayleighSpread, 0.5227, 5e-5);  // the digits the header prints
+    EXPECT_NEAR(kRayleighRelativeSpread, 0.5227, 5e-5);  // the digits the header prints
     for (const double start : {0.0, 2.0}) {
         SCOPED_TRACE("start sqrt(P) / mu = " + std::to_string(start));
         const Level predicted = predict(learned(0.25, start, 1.0), 11.0, 1.0);
-        EXPECT_NEAR(relative_spread_of(predicted), kRayleighSpread, 1e-6);
+        EXPECT_NEAR(relative_spread_of(predicted), kRayleighRelativeSpread, 1e-6);
     }
     // On the way P stays on its side of (s mu)^2 and comes closer to it with every lag, rho^2 only falling: in steps of
     // 50 ms to 0.5 s, where the gap (rho^2 times what it was, at least 8%) is far above the rounding of P.
     const double mu = 0.25;
-    const double target = (kRayleighSpread * mu) * (kRayleighSpread * mu);
+    const double target = (kRayleighRelativeSpread * mu) * (kRayleighRelativeSpread * mu);
     for (const double start : {0.0, 0.1, 2.0}) {
         SCOPED_TRACE("start sqrt(P) / mu = " + std::to_string(start));
         const Level known = learned(mu, start, 0.0);
@@ -149,8 +149,8 @@ TEST(Level, PredictionMatchesTheFormula) {
                 const double mu = 0.3;
                 const Level known = learned(mu, level_spread, 7.0);
                 const double rho = std::exp(-0.5 * kPi * kPi * fading_hz * fading_hz * lag_s * lag_s);
-                const double expected =
-                    rho * rho * known.p + (kRayleighSpread * mu) * (kRayleighSpread * mu) * (1.0 - rho * rho);
+                const double stationary = kRayleighRelativeSpread * mu;  // FS: s mu
+                const double expected = rho * rho * known.p + stationary * stationary * (1.0 - rho * rho);
                 const Level predicted = predict(known, 7.0 + lag_s, fading_hz);
                 EXPECT_NEAR(predicted.p, expected, 1e-9 * expected);
             }
@@ -165,7 +165,7 @@ TEST(Level, PredictionKeepsItsPrecisionAtShortLags) {
     for (const double lag_s : {1e-9, 1e-6, 1e-3}) {
         SCOPED_TRACE("lag " + std::to_string(lag_s) + " s");
         const double x = kPi * kPi * lag_s * lag_s;
-        const double expected = kRayleighSpread * kRayleighSpread * x * (1.0 - x / 2.0 + x * x / 6.0);
+        const double expected = kRayleighRelativeSpread * kRayleighRelativeSpread * x * (1.0 - x / 2.0 + x * x / 6.0);
         const Level predicted = predict(learned(1.0, 0.0, 0.0), lag_s, 1.0);
         EXPECT_NEAR(predicted.p, expected, 1e-13 * expected);
     }
@@ -196,7 +196,7 @@ TEST(Level, OneDotMovesTheLevel) {
     // 0.984, moves the estimate 98% of the way to the dot's own amplitude; the moment-matched update must move it at
     // least 95% of the way (it moves it 98.40%).
     const int n = 30;
-    const double e_over_n0 = std::pow(10.0, 10.0 / 10.0) * 500.0 * 0.060;  // 300: S500 = 10 dB
+    const double e_over_n0 = std::pow(10.0, 10.0 / 10.0) * 500.0 * 0.060;  // 300: the dot is at 10 dB S500
     const double own = std::sqrt(e_over_n0 / n);                          // FS: sqrt(10)
     const double stored = std::pow(10.0, 10.0 / 20.0) * own;             // FS: 10
     const Level before = learned(stored, 0.1, 0.0);

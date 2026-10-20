@@ -11,7 +11,7 @@ namespace {
 // s, dimensionless: the standard deviation over the mean of a Rayleigh amplitude (derived): an amplitude of scale
 // sigma has the mean sigma sqrt(pi / 2) and the variance (2 - pi / 2) sigma^2, so its variance over its squared mean
 // is (2 - pi / 2) / (pi / 2) = 4 / pi - 1, and s = 0.5227.
-const double kRayleighSpread = std::sqrt(4.0 / std::numbers::pi - 1.0);
+const double kRayleighRelativeSpread = std::sqrt(4.0 / std::numbers::pi - 1.0);
 
 }  // namespace
 
@@ -31,7 +31,7 @@ Level predict(const Level& level, double t_s, double spread_hz) {
     const double x = pi_f_tau * pi_f_tau;
     const double kept = std::exp(-x);
     const double fresh = -std::expm1(-x);
-    const double stationary = kRayleighSpread * level.mu;  // FS: s mu, the fading's own spread about the level
+    const double stationary = kRayleighRelativeSpread * level.mu;  // FS: s mu, the fading's own spread about the level
     return {level.mu, kept * level.p + stationary * stationary * fresh, level.t_s, true};
 }
 
