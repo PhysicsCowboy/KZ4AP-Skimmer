@@ -23,9 +23,11 @@
 // mass between two edges, taken from the tail its edges lie in (the lower tail below the median, the upper above it,
 // and 1 minus both across it) so that a tiny mass keeps its relative accuracy. The edges' tail values are the ones the
 // neighboring lengths use, so the P(tau) sum to 1 to rounding, whatever the interpolation's error. The error of a
-// difference grows as the edges come closer than a table step (a long median): ln P is within 6e-7 nats at a median
-// of 6 pieces, 1.1e-5 at 115 and 2.4e-4 at the longest, 6 562 pieces (measured against std::erfc, at every length up
-// to 40 times the median).
+// difference grows as the edges come closer than a table step (a long median): ln P is within 6.2e-7 nats at a median
+// of 6 pieces (the dot at 100 WPM), 1.1e-5 at 115 (the dot at 5.2 WPM) and 2.4e-4 at the longest, 6 562 pieces (the
+// word gap at 5.2 WPM and the factor 8.14), and within 1.5e-7 M for a median of M pieces at the other ends of the
+// grids of speeds and factors. These are measured against std::erfc at every length up to 40 times the median, and
+// the tests check them.
 #pragma once
 
 #include "kz4ap/viterbi/config.hpp"

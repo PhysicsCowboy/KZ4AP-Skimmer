@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -113,6 +114,51 @@ int median_from_survival(const Fist& fist, Kind kind, int speed, int factor) {
             hi = mid;
     }
     return lo;
+}
+
+// The ends of the grid, where lengths are shortest and longest: every kind at the first and last speeds (100 and 5.2
+// WPM: dots of 12.0 and 230.3 ms) and the first and last Farnsworth factors (1 and 8.14). There a dot is 6 pieces
+// (12 ms), a dash 691 ms (345 pieces) and a word gap 13.1 s (6 562 pieces). visit(kind, speed, factor, last) gets the
+// longest length to try, 40 times the kind's median, in pieces.
+template <class Visit>
+void for_each_grid_end(const Model& model, Visit visit) {
+    for (const Kind kind : kKinds) {
+        for (const int speed : {0, 31}) {
+            for (const int factor : {0, 22}) {
+                SCOPED_TRACE(describe(kind, speed, factor));
+                const double median = model.median_pieces(kind, speed, factor);
+                visit(kind, speed, factor, static_cast<int>(std::ceil(40.0 * median)));
+            }
+        }
+    }
+}
+
+// The Fist's largest differences from the reference over the lengths first ... last: of ln S and of ln P, nats, the
+// length of the largest ln P difference, and how many lengths the reference cannot give (not finite).
+struct Worst {
+    double ln_s = 0.0;
+    double ln_p = 0.0;
+    int at_ln_p = 0;
+    int skipped = 0;
+};
+
+Worst worst_against_model(const Fist& fist, const Model& model, Kind kind, int speed, int factor, int first, int last) {
+    Worst worst;
+    for (int tau = first; tau <= last; ++tau) {
+        const double ln_s = model.log_survival(kind, speed, factor, tau);
+        const double ln_p = model.log_end(kind, speed, factor, tau);
+        if (!std::isfinite(ln_s) || !std::isfinite(ln_p)) {
+            ++worst.skipped;
+            continue;
+        }
+        worst.ln_s = std::max(worst.ln_s, std::fabs(fist.log_survival(kind, speed, factor, tau) - ln_s));
+        const double error = std::fabs(fist.log_end(kind, speed, factor, tau) - ln_p);
+        if (error > worst.ln_p) {
+            worst.ln_p = error;
+            worst.at_ln_p = tau;
+        }
+    }
+    return worst;
 }
 
 }  // namespace
@@ -276,9 +322,113 @@ TEST(Fist, SurvivalAndEndStayFiniteInTheFarTail) {
     for (const Row& row : rows) {
         SCOPED_TRACE("tau " + std::to_string(row.tau) + ", z " + std::to_string(row.z));
         const bool in_table = row.z < 40.0;
-        EXPECT_NEAR(fist.log_survival(Kind::Dot, 0, 0, row.tau), row.ln_s, in_table ? 2e-7 : 1e-8);
+        EXPECT_NEAR(fist.log_survival(Kind::Dot, 0, 0, row.tau), row.ln_s, in_table ? 1.25e-7 : 1e-8);
         EXPECT_NEAR(fist.log_end(Kind::Dot, 0, 0, row.tau), row.ln_p, in_table ? 5e-5 : 1e-5);
     }
+}
+
+TEST(Fist, SurvivalFallsFromOneOverTheGridsWholeRange) {
+    // At the ends of the grid, from the first piece to 40 times the median: ln S starts at 0 (S(1) = 1), is finite, is
+    // never above 0 and never rises, and has fallen far by the end (S there is about e^-79, z = ln 40 / sigma = 12.3).
+    const ViterbiConfig config{};
+    const Fist fist(config);
+    const Model model{config};
+    for_each_grid_end(model, [&](Kind kind, int speed, int factor, int last) {
+        double previous = fist.log_survival(kind, speed, factor, 1);
+        EXPECT_EQ(previous, 0.0);
+        int wrong_at = 0;
+        for (int tau = 2; tau <= last && wrong_at == 0; ++tau) {
+            const double ln_s = fist.log_survival(kind, speed, factor, tau);
+            if (!std::isfinite(ln_s) || ln_s > 0.0 || ln_s > previous) wrong_at = tau;
+            previous = ln_s;
+        }
+        EXPECT_EQ(wrong_at, 0) << "ln S is not finite, is above 0 or rises from the length before, at this length";
+        EXPECT_LT(previous, -75.0) << "ln S at " << last << " pieces";
+    });
+    // The extremes in time: a dash at 5.2 WPM lasts 691 ms (345 pieces of 2 ms), a word gap at the factor 8.14 13.1 s.
+    EXPECT_NEAR(median_from_survival(fist, Kind::Dash, 31, 0) * 2.0, 691.0, 2.0);
+    EXPECT_NEAR(median_from_survival(fist, Kind::WordGap, 31, 22) * 2.0, 13125.0, 2.0);
+}
+
+TEST(Fist, EndProbabilityIsTheDropInSurvivalOverTheGridsWholeRange) {
+    // The identity of fist.hpp, P(tau) = S(tau) - S(tau + 1), from the first piece to 40 times the median. Past the
+    // median (S <= 1/2) P is taken from the same upper-tail values as S, so the two agree to rounding: 1e-9 of P is
+    // allowed, 1.3e-12 measured. Up to the median they read different tail tables (S the table at z, P the lower tail's
+    // at -z), and each read is off by the table's error: at most 1.25e-7 x Phi_c x |second derivative of ln Phi_c|,
+    // which is 4.4e-8 of probability at the worst z (-0.48; 4.0e-8 from z = 0 on). Two edges, two reads each: 1.7e-7
+    // at most; 2e-7 is allowed, 7.9e-8 measured.
+    const ViterbiConfig config{};
+    const Fist fist(config);
+    const Model model{config};
+    const double ln_half = std::log(0.5);
+    for_each_grid_end(model, [&](Kind kind, int speed, int factor, int last) {
+        double worst_to_median = 0.0;
+        double worst_past_median = 0.0;
+        int at_to_median = 0;
+        int at_past_median = 0;
+        double ln_s = 0.0;  // ln S(1)
+        for (int tau = 1; tau <= last; ++tau) {
+            const double ln_s_next = fist.log_survival(kind, speed, factor, tau + 1);
+            const double end = std::exp(fist.log_end(kind, speed, factor, tau));
+            const double drop = std::exp(ln_s) - std::exp(ln_s_next);
+            if (ln_s > ln_half) {
+                if (std::fabs(end - drop) > worst_to_median) {
+                    worst_to_median = std::fabs(end - drop);
+                    at_to_median = tau;
+                }
+            } else if (std::fabs(end - drop) / drop > worst_past_median) {
+                worst_past_median = std::fabs(end - drop) / drop;
+                at_past_median = tau;
+            }
+            ln_s = ln_s_next;
+        }
+        EXPECT_LE(worst_to_median, 2e-7) << "up to the median, at tau " << at_to_median;
+        EXPECT_LE(worst_past_median, 1e-9) << "past the median (relative), at tau " << at_past_median;
+    });
+}
+
+TEST(Fist, MatchesTheReferenceAtTheGridsEnds) {
+    // ln S within the interpolation's 1.25e-7 nats of the std::erfc reference at every length from 1 to 40 times the
+    // median, at every end of the grid (measured at most 1.24e-7); ln P within 1.5e-7 M nats for a median of M pieces
+    // (measured at most 1.2e-7 M, at M = 146; 6.1e-7 at 6 pieces, 1.1e-5 at 115, 2.4e-4 at 6 562, as fist.hpp states).
+    const ViterbiConfig config{};
+    const Fist fist(config);
+    const Model model{config};
+    for_each_grid_end(model, [&](Kind kind, int speed, int factor, int last) {
+        const Worst worst = worst_against_model(fist, model, kind, speed, factor, 1, last);
+        EXPECT_EQ(worst.skipped, 0) << "lengths the reference cannot give";
+        EXPECT_LE(worst.ln_s, 1.25e-7);
+        EXPECT_LE(worst.ln_p, 1.5e-7 * model.median_pieces(kind, speed, factor)) << "at tau " << worst.at_ln_p;
+    });
+}
+
+TEST(Fist, LnPIsWithinTheAccuracyTheHeaderStates) {
+    // fist.hpp's figures for ln P, the worst over every length up to 40 times the median: 6.2e-7 nats for the dot at
+    // 100 WPM (6 pieces), 1.1e-5 for the dot at 5.2 WPM (115 pieces), 2.4e-4 for the word gap at 5.2 WPM and the
+    // factor 8.14 (6 562 pieces), where the cell of a length in z (1 / (sigma tau) = 5e-4 at the median) is narrower
+    // than the table's step and ln P is least exact.
+    struct Stated {
+        Kind kind;
+        int speed;
+        int factor;
+        double ln_p;
+    };
+    const Stated stated[] = {{Kind::Dot, 0, 0, 6.2e-7}, {Kind::Dot, 31, 0, 1.1e-5}, {Kind::WordGap, 31, 22, 2.4e-4}};
+    const ViterbiConfig config{};
+    const Fist fist(config);
+    const Model model{config};
+    for (const Stated& s : stated) {
+        SCOPED_TRACE(describe(s.kind, s.speed, s.factor));
+        const int last = static_cast<int>(std::ceil(40.0 * model.median_pieces(s.kind, s.speed, s.factor)));
+        const Worst worst = worst_against_model(fist, model, s.kind, s.speed, s.factor, 1, last);
+        EXPECT_LE(worst.ln_p, s.ln_p) << "at tau " << worst.at_ln_p;
+    }
+    // The lengths around the longest median: 1000 pieces (2 s) either side of 6 562.
+    const int median = static_cast<int>(std::lround(model.median_pieces(Kind::WordGap, 31, 22)));
+    const Worst around = worst_against_model(fist, model, Kind::WordGap, 31, 22, median - 1000, median + 1000);
+    EXPECT_EQ(around.skipped, 0);
+    EXPECT_LE(around.ln_s, 1.25e-7);
+    EXPECT_LE(around.ln_p, 2.4e-4) << "at tau " << around.at_ln_p;
 }
 
 TEST(Fist, RefusesWhatItCannotRead) {
