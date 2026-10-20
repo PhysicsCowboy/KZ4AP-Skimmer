@@ -1100,7 +1100,8 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    amended, with the owner's approval, once this design settles (K12), together with topic 2's cut of the Farnsworth
    test signals above a factor of 8 from the comparison with the bank decoder (topic 2, item 3). Its ±2 Hz
    re-centering target (§5.2, step 1) is too loose for whole-mark sums (D7, K13); the amendment replaces it with the
-   accuracy topic 4's blocks need (topic 4, item 8).
+   accuracy topic 4's blocks need (topic 4, item 8). Done 2026-10-19 (owner): spec §5.1 (the Classical mode), §5.2
+   steps 1 and 3, and §4.1 (a pointer to the decisions on opening and closing channels, below).
 7. **Building starts after topics 3, 4 and 5 (owner, 2026-10-15; all three closed by 2026-10-19).** Then come a
    short spec amendment and the first prototype's plan, each for the owner's approval. Topic 6's reopened items, the
    new topics on the channel's other contents and on opening and closing channels (below; added 2026-10-16), and
