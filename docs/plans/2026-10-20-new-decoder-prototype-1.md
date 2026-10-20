@@ -389,7 +389,7 @@ owner chooses at the stop after R0 (Task 9), when the prototype's own CPU is mea
 - Proposed: the whole of DEV2 (with the new noise group, D8) only for the default run R4, the comparison with the
   bank. Search errors, the beam and the ceiling (R1–R3) on the subset W, about 27% of DEV2: a quarter of the
   recordings of A2, B2, C2 and I2, and all of D2, E2, F2, G2 and H2. The other runs on the groups their checks name.
-  About 7–11 full-run equivalents in all, against about 21–32 if every run used the whole set (§6.3).
+  About 7–11 full-run equivalents in all, against about 23–37 if every run used the whole set (§6.3).
 
 **D8. A noise-only group, N2:** 100 channels × 360 s (10 channel-hours) of white noise, with labeled stations at
 S₅₀₀ −60 dB, so that the channels open and the decoder's false characters per hour are counted (step 1, P5(h), in
@@ -516,7 +516,7 @@ channel-second. The slice gives 9–55 ms on the Linux machine (§2.11), and the
 
 | Runs | FRE as proposed (D7) | FRE on the whole set |
 |---|---|---|
-| R1 + R1b (reference cost 3–10× the default) | 1.2–4.1 | 3–10 |
+| R1 + R1b (reference cost 3–10× the default; R1b on a quarter of R1's set at twice its cost) | 1.2–4.1 | 4.5–15 |
 | R2 (4 beams) | 0.6–1.3 | 2.2–4.6 |
 | R3 (4 new ceilings) | 0.9–1.3 | 3.3–4.8 |
 | R4 | 1.03 | 1.03 |
@@ -524,10 +524,11 @@ channel-second. The slice gives 9–55 ms on the Linux machine (§2.11), and the
 | R6 (5 runs) | 1.2 | 5 |
 | R7 (cost about 1.9×) | 0.5 | 1.9 |
 | R8, R9, R10, R11 | 0.4 | 0.5 |
-| **Total** | **about 7–11** | **about 21–32** |
+| **Total** | **about 7–11** | **about 23–37** |
 
-So the proposed sizes take about 60–260 CPU-hours (6–26 hours on the Linux machine), against 190–760 if every run
-used the whole set. R0 replaces c and the reference's multiple with measured values before the owner decides.
+So the proposed sizes take about 60–260 CPU-hours (6–26 hours on the Linux machine), against about 205–880 (20–88
+hours) if every run used the whole set. R0 replaces c and the reference's multiple with measured values before the
+owner decides.
 
 ## 7. Global constraints
 
