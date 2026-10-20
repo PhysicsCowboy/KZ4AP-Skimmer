@@ -14,6 +14,14 @@
 - **Branches:** work on feature branches. Merging into `main` and pushing need
   the owner's approval. Never rewrite commits (no `--amend`, rebase, or
   resetting commits); fix mistakes with a new commit.
+- **Languages** (owner, 2026-10-07 and 2026-10-20): new code is C++. Anything
+  that processes signals (decoders, detectors, prototypes, experiments over
+  recordings) is written in C++, in the engine behind the bench: no Python
+  prototypes and no ports. Python stays for the existing test-signal
+  generator (`training/kz4ap_synth`), the analysis of results
+  (`training/kz4ap_proto`: score tables, fits, figures) and their tests,
+  which may be extended in Python, and for scratch calculations kept out of
+  the repository. Any other new Python needs the owner's approval.
 - **`docs/signal-processing.md` describes the engine's signal processing as it
   actually is** (one document; owner, 2026-10-05). Its **body** is readable
   with concentration in about 30 minutes (6 000 words at most). The body
