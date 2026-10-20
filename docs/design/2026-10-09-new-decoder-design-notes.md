@@ -130,8 +130,9 @@ means all three of:
    - **The cost:** a newborn must make up its penalty, so slow drift is followed late. A newborn at f times the old
      speed overtakes once the old speed's extra misfit, (ln f)²/(2σ²) nats per element, adds up to ln(1/ε) plus its
      speed and factor priors: at σ 0.3, 0.38 nats per element for ×1.3 and 2.7 for ×2 (derived), so about 35 and 5
-     elements at the first prototype's 13.5 nats (topic 5, item 3; amended 2026-10-19). Since ε now carries every
-     speed change, setting it (topic 5) matters more.
+     elements at the first prototype's 13.5 nats (topic 5, item 3; amended 2026-10-19), and 43 to 47 and 6 to 7 once
+     the 2.9 to 4.5 nats of learning the level again are added (topic 5, item 3; added 2026-10-19). Since ε now
+     carries every speed change, setting it (topic 5) matters more.
    - **Test (topic 9):** small steps are added back only with a real advantage, judged on the development set's slow
      speed changes (D2's ramps) and on how much real senders drift (item 5's measurement).
    - The start of an over is not a speed change: hypotheses are born at every grid speed (topics 5 and 7; in
@@ -305,8 +306,9 @@ inside the hypothesis that made them; whatever is kept at channel level uses no 
      estimate 98% of the way to its own level.
    - A fresh start begins with its level uncertain and learns it from its first marks, so a fresh start picks up a
      new station's level: hypotheses stuck at the old level read the new station's marks as noise, which costs them
-     roughly 30 to 300 nats per 20 WPM dot between 0 and 10 dB S₅₀₀ (derived). A fresh start's level prior is set
-     with topic 5's priors at birth (K8, O7).
+     roughly 30 to 300 nats per 20 WPM dot between 0 and 10 dB S₅₀₀ (derived). A fresh start's level prior is flat
+     in dB over the range of levels the decoder must handle, and a fresh start takes its level when its first mark
+     ends (topic 5, item 3; owner, 2026-10-19).
    - Cost: two numbers per hypothesis and an update per measurement. Merging becomes approximate: two hypotheses that
      differ only in their levels are merged, keeping the better one's level (the standard per-survivor approximation).
    - Dropped with the channel estimate: the 10 ms tap, its soft key-down weights (with their unstated key-down prior,
@@ -359,14 +361,15 @@ inside the hypothesis that made them; whatever is kept at channel level uses no 
      with it belongs to the new topic on the channel's other contents.
 4. **Use:** topic 4's scoring compares a hypothesis's summed mark (or block) with a carrier of the hypothesis's
    predicted level plus the hiss.
-5. **Start of an over:** the detector's level converts to a key-down level (derived, not yet written out; review 1,
-   U8; step 2, T3.6): the track's 1 s average includes key-up time, so the key-down power is about (average − hiss)
-   divided by the key-down fraction (0.44 for PARIS text), corrected for the share of the keying sidebands that falls
-   in the bin (the track reads 3.6–7.1 dB below the key-down SNR per bin, depending on speed:
-   `docs/signal-processing.md`, section 5). It centers the level prior of a hypothesis born from silence; the prior's
-   width is topic 5's (K8, O7). In a long pause the detector's level falls toward the hiss, and the prior's center
-   with it; what newborns should look for then is settled with topic 5's priors at birth (topic 5, item 3; added
-   2026-10-18).
+5. **Start of an over: no detector level (owner, 2026-10-19).** A hypothesis born from silence starts, like every
+   newborn, from a level prior flat in dB, and takes its level from its own first mark (topic 5, item 3). This
+   replaces the detector's level as the prior's center (2026-10-15), which would have needed a conversion (derived,
+   not yet written out; review 1, U8; step 2, T3.6): the track's 1 s average includes key-up time, so the key-down
+   power is about (average − hiss) divided by the key-down fraction (0.44 for PARIS text), corrected for the share of
+   the keying sidebands that falls in the bin (the track reads 3.6–7.1 dB below the key-down SNR per bin, depending
+   on speed: `docs/signal-processing.md`, section 5). In a long pause the detector's level falls toward the hiss, so
+   that center would also have needed the detector's level over the second after each birth. A detector-centered
+   prior is tried only with a real advantage (topic 5, item 3).
 
 Errors: a level too high makes weak marks look like gaps (lost elements), too low makes noise look like marks (false
 dots); a hiss level too low makes noise look like marks and the decoder overconfident, too high makes weak marks look
@@ -660,7 +663,8 @@ probabilities.) This replaces the earlier wording, which called the scores proba
        centered on μ0 with spread σ0. Simulated with K = 0, it leaves about 450, 2 700 and 6 800 to 9 500 stories
        at S₅₀₀ 0, −5 and −10 dB. It is exact only in an idealized decoder, not in ours (derived): the newborn that
        would replace a dropped story is born when the story would resume, by when its prior's center has followed
-       the detector's level (topic 3, item 5); a waiting story's level spread grows at the level model's rate
+       the detector's level (topic 3, item 5, as it then stood; newborns' level prior is flat since 2026-10-19, so K
+       is then the flat prior's cost, below); a waiting story's level spread grows at the level model's rate
        (topic 3, item 1) and can outgrow the prior's, after which no finite K exists; and merging is approximate
        (item 2), so dropping a story can change which story survives a later merge. A sum over hypotheses (topic 8)
        would also lose the dropped stories' share, under 2 × 10⁻⁴ of the no-signal hypothesis's at S₅₀₀ 0 dB, and a
@@ -668,12 +672,11 @@ probabilities.) This replaces the earlier wording, which called the scores proba
        need, and then as a pruning threshold judged by search errors (item 4). Extended to gaps between elements it
        is heuristic: 17 symbols (the digits 0, 1, 3 and 9; `,` `?` `!` `'` `)` `@` `_` `$`; SK, BK, CL, HH and SOS)
        have a prefix after which their remaining elements spell no symbol.
-     - **Open, for the priors at birth (below): the level newborns look for in a long pause.** Their
-       prior is centered on the detector's level (topic 3, item 5), which falls toward the hiss within ln R seconds
-       of the station's last mark (2.3 s at R = 10 dB, 4.6 s at 20 dB, per bin; opening and closing channels). The
-       newborns then look for ever weaker stations, down the table above, and the next over's newborns start from a
-       prior centered near the hiss. Candidates: hold the last station's level through the pause, widened at the
-       level model's rate; a floor at the weakest level worth decoding.
+     - **Settled with the priors at birth (below; owner, 2026-10-19): the level newborns look for in a long pause.**
+       Their prior was to be centered on the detector's level (topic 3, item 5), which falls toward the hiss within
+       ln R seconds of the station's last mark (2.3 s at R = 10 dB, 4.6 s at 20 dB, per bin; opening and closing
+       channels), so newborns would have looked for ever weaker stations, down the table above. With a prior flat in
+       dB over the whole range, newborns look for every level, so nothing falls with the pause.
    - **The priors at birth (review 1, K8, O5 and O7, and its correction 17): what a newborn starts with before the
      signal has chosen anything, decided one at a time from 2026-10-19.** The standard is to give each value its
      probability in real traffic, either flat over a set range or measured from the population; rates of events are
@@ -796,8 +799,58 @@ probabilities.) This replaces the earlier wording, which called the scores proba
        fewer merges and more CPU, for about 0.12 nats per word (the Kullback–Leibler divergence of VE3NEA's lengths
        from a constant end probability), and a text model that carries the current word (topic 6) gives it anyway.
        Tuning p and q on the development set, for the reasons given for the rates.
-     - **Still open:** the level (the prior's width, its center in a long pause, and whether a rescue newborn keeps
-       its parent's level).
+     - **The level: a prior flat in dB for every newborn (owner, 2026-10-19).** A newborn's level is equally likely
+       anywhere in a set range of S₅₀₀, in dB, the form of the speed prior (flat over log-spaced values). This
+       settles the three questions left open: the prior's width (the whole range), its center in a long pause (it
+       has none, so nothing goes stale), and rescue newborns (they start their level again, like their speed and
+       factor). A newborn takes its level when its first mark (or first block) ends, as it takes its speed: until
+       then the mark is scored against the flat prior (the predictive density of the mark's running sum, a table
+       lookup per piece), and then its Kalman filter starts from that posterior's mean and variance (a Gaussian
+       approximation). It replaces topic 3, item 5's detector-centered prior.
+     - **The standard.** Priors at birth are flat over a set range or measured (above). Tracking starts a newborn
+       from the measurement it is born with, here its own first mark ("use the current measurement set Z_k to place
+       the newborn particles in the region of the state space where" they fit: Ristic, Clark, Vo and Vo 2012), and
+       draws what that measurement does not fix from a broad prior over its physical range (a velocity spread
+       "usually chosen between half and the full maximum speed of possible targets": Berger, Daun and Koch 2008). At a
+       change point the parameters start again ("the model parameters before and after the changepoint are
+       independent": Adams and MacKay 2007; at a change of station, "re-acquire the parameters that belong to the
+       sender (frequency offset, level, speed, fist and spacing) from broad priors": step 1, P7.3). Bell (1977)
+       started every path at half the nominal level with a spread of ±0.32 of it, which works only with normalized
+       levels.
+     - **The range, S₅₀₀ −15 to +85 dB (placeholder; topic 9 measures the strongest stations on HamSCI's
+       recordings).** The lower end lies below the best possible decoder's limit at 5 WPM (about −9 dB: −1.9 dB at
+       25 WPM, scaled by the energy per dot; derived). The upper end covers a station at S9+40 dB over band noise at
+       S3 in 2.4 kHz (about +83 dB, from the S-meter's S9 = −73 dBm on HF and 6 dB per unit; derived). The cost
+       grows only as the logarithm of the range's width: 20 dB more costs ln(120/100) = 0.2 nats here (derived;
+       simulated from 60 to 80 dB, 0.29 nats, which is ln(80/60)).
+     - **What learning the level costs (simulated: ideal Bayesian learning on a grid, steady level, whole marks,
+       25 WPM, the first letter of the PARIS mix).** Over a 60-dB range: 2.9, 3.1, 4.3 and 5.4 nats at S₅₀₀ −2, 0,
+       +10 and +20 dB, against 0.9, 1.1, 2.2 and 3.4 for a prior 3 dB wide centered on the true level, about the
+       same as flat when that prior is 6 dB off, and 5.8 to 8.9 nats when it is 10 dB off. The evidence with the
+       level known is 60, 99, 1 045 and 10 545 nats. The 100-dB range adds 0.5 nats.
+     - **What it does.** A newborn from silence learns its level from marks that bring more evidence than the level
+       costs, from the first dot on (at S₅₀₀ −2 dB, near the best possible decoder's limit at 25 WPM, a dot brings
+       13.1 nats and its level costs 2.7), so its starting cost stays 15.8 nats. A rescue newborn pays its level
+       against the old story, which keeps what it has learned: 2.9 to 4.5 nats over the first letter (S₅₀₀ −2 to
+       +20 dB, the old story's level known to 5–20%, simulated), so its starting cost becomes about 18 nats, now the
+       largest (item 4). Following a ×1.3 speed change then takes 43 to 47 elements instead of 35, and ×2 takes 6 to
+       7 instead of 5 (topic 2, item 2). Ville's bound on false overs holds for any proper prior (derived). The
+       counts of noise stories above (what a newborn from silence leaves behind) had the level known; with it
+       learned they change, which item 8's counts of quiet stretches show.
+     - **Checks on the prototype (topic 9):** the elements taken to follow the speed-change group's steps (D2) and
+       the first word after each turnover in the QSO groups (G2, H2), which also judge the variants not adopted
+       below; the upper end of the range, from HamSCI's recordings.
+     - **Not adopted for the level, each tried only with a real advantage (topic 2):** the detector's level as the
+       center, with its measured error as the width and the decoder reading the detector's level over the second
+       after each birth (about 2 nats less per newborn while the center is within 3 dB, and at best it is within
+       ±1.75 dB from the keying sidebands alone, since the prior may not depend on the speed; it needs the
+       conversion written out, its error measured, a 1 s lag and the detector's level emulated on oracle channels,
+       uses the newborn's marks twice, and loses to the flat prior beyond about 6 dB of error). Rescue newborns
+       that keep their parent's level (2.9 to 4.5 nats less per rescue, but a station that changes without a pause
+       then costs 4.0 to 15.2 nats if it is 6 to 20 dB weaker and 6.9 to 887 nats if 6 to 20 dB stronger,
+       simulated with the parent's level known to 20%, against 2.9 to 5.4 for starting again; and the change-point
+       standard starts again). The detector's level from the past second (10 to 20 dB low at an over's start after
+       a pause).
    - **Derived constraint** (review 1, D15): a newborn starts behind the best by the cost of its birth, ε and the
      priors of what it starts with, and survives the beam (item 4) only while that cost is inside it (with the
      priors left out, only if ε is larger than 1/B, where B is the beam factor); otherwise narrowing the beam
@@ -832,9 +885,11 @@ probabilities.) This replaces the earlier wording, which called the scores proba
      speed, plus that of its Farnsworth factor, paid at its first gap between letters (topic 2, item 3), plus the
      cost of learning its level from its first marks (topic 3, item 1). The speed and factor priors are flat, 3.47
      and 3.14 nats, and P and ε are the real rates, until counted the development set's own, 1/10 000 per piece and
-     1/1 000 per letter start, 9.2 and 6.9 nats (item 3; owner, 2026-10-19); the level's prior is set with the rest
-     of the priors at birth (item 3; review 1, K8 and O7). Leaving out the level, births from silence then have the
-     largest starting cost, 15.8 nats against 13.5 for rescue births, and the minimum is 25.8 nats. (Corrected
+     1/1 000 per letter start, 9.2 and 6.9 nats (item 3; owner, 2026-10-19); the level's prior is flat in dB (item
+     3; owner, 2026-10-19). A newborn from silence learns its level from marks that bring more evidence than the level
+     costs, so its starting cost stays 15.8 nats; a rescue newborn pays its level against the old story, up to 4.5
+     nats (simulated), so rescue births have the largest starting cost, about 18 nats, and the minimum is about 28
+     nats (amended 2026-10-19 from 25.8, which left out the level). (Corrected
      2026-10-19: the earlier illustration charged ε at every mark start, 700 in 2 minutes at 25 WPM, instead of at
      each letter start, 250; per letter start, one change per 10 s to one per hour gives rescue births starting
      costs of 9.6 to 15.5 nats, against 15 to 21 had ε been charged per piece.)
@@ -1028,7 +1083,8 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
      2026-10-18: the beam and the ceiling alone, topic 5, item 3), and the priors at birth and for the first
      prototype (K8, O7; topic 5, item 3): the speed and Farnsworth priors (flat), the rates of overs and restarts
      (the real rates, the development set's own until counted), and where words and overs end without a text model
-     (constants, counted) done 2026-10-19; the level, with the level newborns look for in a long pause, still open.
+     (constants, counted), and the level (a prior flat in dB for every newborn, which also settles the level
+     newborns look for in a long pause) done 2026-10-19. Topic 5 closed 2026-10-19.
 3. **A new topic before topic 7, the channel's other contents:** other signals, impulsive noise (static crashes), the
    models of the non-Morse states, and element sequences that fit no letter (O3, O6, O8). Its number is settled with
    the agenda after the check.
@@ -1045,13 +1101,14 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    test signals above a factor of 8 from the comparison with the bank decoder (topic 2, item 3). Its ±2 Hz
    re-centering target (§5.2, step 1) is too loose for whole-mark sums (D7, K13); the amendment replaces it with the
    accuracy topic 4's blocks need (topic 4, item 8).
-7. **Building starts after topics 3, 4 and 5 (owner, 2026-10-15).** Then come a short spec amendment and the first
-   prototype's plan, each for the owner's approval. Topic 6's reopened items, the new topics on the channel's other
-   contents and on opening and closing channels (below; added 2026-10-16), and topics 7, 8 and 9 follow while the
-   prototype is built and measured, each settled before its part is added. The reason: the first prototype needs
-   only simple versions of those parts (it has no text model, topic 6, item 6; it can print its best story at the
-   end of each recording; fresh starts already follow a change of station), while it cannot do without amplitude,
-   the observation and the search. The risk accepted is rework if a later topic changes something already built.
+7. **Building starts after topics 3, 4 and 5 (owner, 2026-10-15; all three closed by 2026-10-19).** Then come a
+   short spec amendment and the first prototype's plan, each for the owner's approval. Topic 6's reopened items, the
+   new topics on the channel's other contents and on opening and closing channels (below; added 2026-10-16), and
+   topics 7, 8 and 9 follow while the prototype is built and measured, each settled before its part is added. The
+   reason: the first prototype needs only simple versions of those parts (it has no text model, topic 6, item 6; it
+   can print its best story at the end of each recording; fresh starts already follow a change of station), while
+   it cannot do without amplitude, the observation and the search. The risk accepted is rework if a later topic
+   changes something already built.
 
 ### Opening and closing channels (owner, 2026-10-16; a new topic, settled during building)
 
