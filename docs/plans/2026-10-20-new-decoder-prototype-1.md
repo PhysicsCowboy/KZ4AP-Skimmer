@@ -142,6 +142,21 @@ topic 4, item 2):
 
   Λ(S; a) = −b² + ln I₀(2 b z),  z = |S| / √V(m),  b = m · a / √V(m)  (nats).
 
+**The mark's rise** (D10, owner, 2026-10-20; Task 4b). In a mark's first block the carrier's expected sum is
+a · m_signal instead of a · m: m_signal = 3 · Σ g_j over the block's pieces, where g_j = 1 after the rise. b becomes
+m_signal · a / √V(m); the noise is still V(m).
+- The fractions g_1 … g_J are the expected part of a full piece's carrier sum in a mark's first J pieces:
+  - the keying edge, a raised cosine of `keying_rise_s` = 5 ms (heuristic placeholder, the generator's), passed
+    through the channelizer's taps and decimation and summed into pieces (derived);
+  - averaged over the edge's position within a piece (derived: the expectation for an edge placed uniformly);
+  - from the first piece at 0.01 of full or more to the last piece more than 0.005 from full (both heuristic).
+- A newborn's first block (item 3) uses the same m_signal.
+- The fall at a mark's end is not modeled. By then the story's level is learned from the mark itself, so a weak last
+  piece only costs the story that keeps it (derived).
+- Without the rise, the story that starts its mark on a part-amplitude first piece read that piece as a fade. At
+  +20 dB S₅₀₀ that gave it a lead of about 25 nats for one piece, which narrowed the beam at every letter start to
+  about 8 nats (measured, Task 4).
+
 1. **Known level:** the formula above. ln I₀ by Abramowitz and Stegun 9.8.1 (x ≤ 3.75) and 9.8.2 (x > 3.75). Their
    stated bounds, 1.6 × 10⁻⁷ on I₀ and 1.9 × 10⁻⁷ on √x e^{−x} I₀ (whose value is at least 0.39), keep the error of
    ln I₀ below 5 × 10⁻⁷ nats (derived).
@@ -301,6 +316,7 @@ decisions (decision D6; every value here a placeholder, measured in R9).
 | Value | Default | Unit | Class and source |
 |---|---|---|---|
 | Piece | 3 samples = 2.000 | ms | derived from r = 1 500 samples/s (notes, topic 4, item 1) |
+| Keying edge, for the mark's rise | raised cosine, 5 | ms | placeholder, heuristic: the generator's edge (D10, §2.3) |
 | Speeds | 12.0 × 1.1^s, s = 0 … 31 | ms per dot | owner (notes, topic 2, item 1) |
 | Farnsworth factors | 1.1^f, f = 0 … 22 | — | owner (notes, topic 2, item 3) |
 | Fist medians | 1, 3, 1, 3F, 7F | dots | placeholder, heuristic (ITU-R M.1677-1) |
@@ -404,6 +420,35 @@ the standard-practice check). DEV2 has no such group. **Decided (owner, 2026-10-
 implementer per task and a fresh reviewer after each, then a review of the whole branch). The measuring tasks: the
 controller launches and watches the runs (hours each), and a fresh agent verifies each results section before it
 goes to the owner (the controller's proposal, in force unless he objects).
+
+**D10. The mark's rise. Decided (owner, 2026-10-20): (B), model it before the long runs.**
+
+*The problem.* The search's speed-step criterion (§5, item 2) failed at the defaults: "PARIS PARIS PARIS P<AR>5
+P<AR>IS PARIS", CER 0.143 (Task 4, measured).
+- The keying's edge and the channel filter put a mark's first piece at part of the full amplitude (0.0267 FS against
+  0.0615 FS).
+- The story that starts its mark there can explain the piece only as a fade. Under a level about 20% uncertain after
+  a 124 ms gap, it leads by about 25 nats for that one piece; the story starting one piece later then leads by 27–34
+  nats.
+- The one-piece lead raises the best score at every letter start, leaving any reading behind the leader about 8 nats
+  of the 40-nat beam. The rescue at the new speed died 7.66 nats behind.
+- The step failed at +20 to +24 dB S₅₀₀ with the 40-nat beam and at +23 to +25 dB with 80 nats. A ceiling of 17 000
+  changed nothing. Constant-speed stations decoded exactly from +19 to +24 dB.
+- DEV2's speed-change group lies at +10 to +20 dB S₅₀₀, so measuring the design as it stood would barely have shown
+  the flaw.
+
+*The standard.* The matched filter to the pulse as received: the keyed envelope passed through the receiver's filter
+(Proakis and Salehi §4.5-1). The notes' "edges fall where the hypothesis puts them (to one piece); there are no
+filter delays" (topic 4, item 2) had been costed by review 1 and the standard-practice check only as an SNR loss
+(0.37 dB). Neither looked at the beam's comparisons.
+
+*The options put to the owner:*
+- (A) keep the design and measure it, the test a known failure;
+- (B) model each mark's rise, §2.3 (recommended);
+- (C) change the test's conditions.
+
+*(B) chosen.* It is measured first on the speed step from +10 to +28 dB S₅₀₀ and on constant-speed stations (Task 4b).
+The owner hears the result if it does not remove the failing band.
 
 ### Obvious items, stated for approval
 
@@ -598,9 +643,10 @@ tested in the task named.
 | 2 | The noise model and the evidence | 1 |
 | 3 | The level | 2 |
 | 4 | The search | 1, 2, 3 |
+| 4b | The mark's rise (D10, added 2026-10-20) | 2, 3, 4 |
 | 5 | The hiss estimator in the engine | — |
 | 6 | The frequency tracker | — |
-| 7 | `ViterbiDecoder`; engine and bench; `docs/signal-processing.md`; the results record | 4, 5, 6 |
+| 7 | `ViterbiDecoder`; engine and bench; `docs/signal-processing.md`; the results record | 4, 4b, 5, 6 |
 | 8 | N2, the suite runner, the analysis (Python) | 7 |
 | 9 | R0 on the Linux machine; **stop for the owner** | 7, 8 |
 | 10 | R1–R3: the reference, the beam, the ceiling | 9 |
@@ -739,6 +785,32 @@ Farnsworth keying and a speed step.
 - [ ] **Step 3: Implement** §2.7 in its order.
 - [ ] **Step 4: Run them; they pass.** Note the CPU per piece on one test for Task 9.
 - [ ] **Step 5: Commit.**
+
+### Task 4b. The mark's rise (D10, added 2026-10-20)
+
+**Files:** modify `engine/include/kz4ap/viterbi/config.hpp` (`keying_rise_s`), `observation.hpp/.cpp`,
+`level.hpp/.cpp` and `search.hpp/.cpp` under `engine/…/viterbi/`, with their tests.
+
+**Interfaces:**
+- `std::vector<double> rise_fractions(std::span<const double> taps, double input_rate_hz, int decimation,
+  int samples_per_piece, double rise_s)`: the fractions g_1 … g_J of §2.3.
+- The evidence functions take the carrier's sum as `double m_signal` where they took `int m` for it.
+- `FlatPrior` takes the fractions.
+
+- [ ] **Step 1: Measure first.** Try the rise in a copy, without touching the branch, and measure:
+  - the speed step of §5, item 2 at +10 to +28 dB S₅₀₀, three seeds each, at beams of 40 and 80 nats;
+  - "PARIS PARIS" at 12, 25 and 40 WPM over the same range;
+  - the one-piece lead at a mark's edge.
+
+  If the step's CER exceeds 0.05 anywhere at the default beam, stop: the owner decides.
+- [ ] **Step 2: Failing tests.**
+  - the fractions against the real channelizer's output for edges at a piece's start, middle and end (48 and
+    192 kHz);
+  - the evidence with a non-whole m_signal against the formula;
+  - the flat prior with the rise against its direct integral (within 0.01 nats);
+  - `Search.FollowsASpeedStep` restored to §5's criterion;
+  - `Search.FollowsASpeedStepAtEverySnr` (label `full-sweep`): Step 1's sweep, as a test.
+- [ ] **Step 3: Implement. Step 4: they pass, and every earlier test with them. Step 5: Commit.**
 
 ### Task 5. The hiss estimator in the engine
 

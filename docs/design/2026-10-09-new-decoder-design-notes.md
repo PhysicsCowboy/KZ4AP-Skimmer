@@ -403,7 +403,21 @@ they answer the risk this topic used to end with, which git keeps.
    carrier-of-unknown-phase-plus-noise against noise-alone statistics, with A from topic 3; gaps are scored as noise.
    Edges fall where the hypothesis puts them (to one piece); there are no filter delays; speeds between grid values
    do not matter for the observation. Scoring a mark's sum and the neighboring gap pieces separately ignores the
-   noise correlation across the mark's edges (about 4 ms): an approximation (review 1, U10). Amended 2026-10-16 by
+   noise correlation across the mark's edges (about 4 ms): an approximation (review 1, U10).
+   - **Amended 2026-10-20 (owner): a mark's rise is part of its matched filter.**
+     - In a mark's first pieces, the carrier's expected sum follows the rise. The keying edge is a raised cosine of
+       5 ms, a heuristic placeholder (the generator's). It passes through the channel filter, is summed into pieces,
+       and is averaged over the edge's position within a piece (derived).
+     - It does not jump to the level at the first piece.
+     - Without the rise, a story that starts its mark on a part-amplitude first piece can explain that piece only as
+       a fade. At +20 dB S500 that gave it a lead of about 25 nats for one piece, which narrowed the beam at every
+       letter start to about 8 nats. A speed step from 20 to 30 WPM then failed at +20 to +24 dB S500 (measured in the
+       first prototype's search).
+     - Review 1 and the standard-practice check had costed piece-aligned edges only as an SNR loss.
+     - The standard is the matched filter to the pulse as received (Proakis and Salehi, §4.5-1).
+     - The fall at a mark's end stays unmodeled: by then the story's level is learned from the mark itself, so a weak
+       last piece only costs the story that keeps it.
+     - Details: the first prototype's plan, `docs/plans/2026-10-20-new-decoder-prototype-1.md`, decision D10 and §2.3. Amended 2026-10-16 by
    item 9: the running sum covers the current block of the mark, at most item 9's block length; each finished block
    is scored this way, against the hypothesis's predicted level (topic 3, item 1), and the scores of a mark's blocks
    add (noncoherent combining). A mark no longer than one block is summed whole, as before. The current block's
