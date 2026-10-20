@@ -1,11 +1,14 @@
 # New decoder: the first prototype
 
-> **Status: draft for the owner's approval (2026-10-20).** Nothing is built before the owner approves it. The
-> decisions are in §3. **The owner's answers (2026-10-20):** D1 yes, a new branch; D2 `viterbi`; D3, D4, D5 and D6
-> "whatever we've already decided": the design notes' decisions, implemented as §2 and §3 state them, where a
-> starting value only sets where its measurement begins; D5 is no tail until measured. D7 and D8 await him, with the
-> background he asked for (given in chat). The owner does not read this plan (2026-10-20): it is the executors'
-> document, and every decision is brought to him in chat, in words.
+> **Status: approved through its decisions (owner, 2026-10-20); building starts.** The owner does not read this
+> plan: it is the executors' document, and every decision is brought to him in chat, in words. **His answers
+> (2026-10-20):** D1 yes, a new branch; D2 `viterbi`; D3, D4, D5 and D6 "whatever we've already decided": the
+> design notes' decisions, implemented as §2 and §3 state them, where a starting value only sets where its
+> measurement begins (D5: no tail until measured); D7 (c), the whole development set for every measurement; D8 (a),
+> the noise-only group; D9 subagent-driven for the building tasks (1–8). For the measuring tasks (9–12) the
+> controller launches and watches the runs, and a fresh agent verifies each results section (numbers recomputed
+> from the committed tables, the rule applied as written) before it goes to the owner: the controller's proposal of
+> 2026-10-20, in force unless he objects.
 >
 > **Spec:** `docs/design/2026-09-25-kz4ap-skimmer-design.md` §5.1 (the Classical mode), §5.2 step 1 and step 3
 > (amendments of 2026-10-19) and §4.1 item 3. **Design:** `docs/design/2026-10-09-new-decoder-design-notes.md`, the
@@ -14,8 +17,8 @@
 >
 > **Branch:** `new-decoder-1`, from `bell-stage-1` (decision D1).
 >
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or
-> superpowers:executing-plans, as the owner chooses (D9). Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development (the owner's choice, D9).
+> Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** build the new decoder of the design notes in C++ in the engine, verify it, and measure it on the
 development set against the frozen bank decoder.
@@ -386,17 +389,21 @@ standard at low SNR; it is tried only if R9 shows the tracker losing lock where 
 
 **D7. Which runs use the whole development set, and which a subset.** §6 proposes the subsets and the costs. The
 owner chooses at the stop after R0 (Task 9), when the prototype's own CPU is measured.
-- Proposed: the whole of DEV2 (with the new noise group, D8) only for the default run R4, the comparison with the
-  bank. Search errors, the beam and the ceiling (R1–R3) on the subset W, about 27% of DEV2: a quarter of the
-  recordings of A2, B2, C2 and I2, and all of D2, E2, F2, G2 and H2. The other runs on the groups their checks name.
-  About 7–11 full-run equivalents in all, against about 23–37 if every run used the whole set (§6.3).
+- **Decided (owner, 2026-10-20): (c), the whole of DEV2 for every measurement**, with the noise-only group (D8)
+  where a check needs it. The reference's convergence check (R1b) covers a quarter of DEV2, as costed in that option
+  (on the whole set it alone would add 6–20 full-run equivalents, for a check of the method). The genie and tracker
+  runs cover the groups they concern, in full. About 23–37 full-run equivalents in all (§6.3). The options put to
+  him were (a) the whole set only for R4 and the subset W elsewhere (7–11), (b) the whole set also for R1–R3
+  (14–28), (c) the whole set for everything.
 
 **D8. A noise-only group, N2:** 100 channels × 360 s (10 channel-hours) of white noise, with labeled stations at
 S₅₀₀ −60 dB, so that the channels open and the decoder's false characters per hour are counted (step 1, P5(h), in
-the standard-practice check). DEV2 has no such group. *Recommended.*
+the standard-practice check). DEV2 has no such group. **Decided (owner, 2026-10-20): (a), added.**
 
-**D9. How the plan is executed:** subagent-driven (a fresh implementer per task and a fresh reviewer after each) or
-in this session (one reviewer over the whole branch at the end). Asked when the plan is approved.
+**D9. How the plan is executed. Decided (owner, 2026-10-20): subagent-driven** for the building tasks (a fresh
+implementer per task and a fresh reviewer after each, then a review of the whole branch). The measuring tasks: the
+controller launches and watches the runs (hours each), and a fresh agent verifies each results section before it
+goes to the owner (the controller's proposal, in force unless he objects).
 
 ### Obvious items, stated for approval
 
@@ -482,15 +489,15 @@ below or above zero.
 
 | Run | What it measures | Set | Rule |
 |---|---|---|---|
-| **R0** | CPU per channel-second, live stories, how often the ceiling decides, newborns' fates; at the defaults and at the reference settings | one recording per group, and one of N2 | Measurement only. **Stop:** the owner confirms §6.3's sizes with R0's costs. |
-| **R1** | the wide-beam reference (beam 80 nats, ceiling 17 000); the largest deficit any newborn reaches before it leads, per group | W | If the largest deficit exceeds the 10-nat margin, the margin and the minimum beam are raised to it (notes, topic 5, item 4). |
-| **R1b** | the reference's convergence (beam 120 nats, ceiling 34 000) | a quarter of W | R1 counts as converged if it differs from R1b by at most 0.1 per 1 000 letters; otherwise R1 is rerun at R1b's settings. |
-| **R2** | search errors at beams 28, 35, 45 and 60 nats; newborns the beam drops within their first element | W | The default beam is the narrowest, never below the minimum, with at most 1 search error per 1 000 letters in every group, not only pooled. If none meets it, the errors are split by cause (beam or ceiling, from the newborns' fates) and brought to the owner. §5, item 4 is checked on the 28-nat run. |
-| **R3** | CER against the ceiling: 300, 600, 1 000, 1 700, 3 000; newborns the ceiling removes | W | The default ceiling is the smallest whose paired CER against the 3 000 run is not worse in any group of O6 (the knee); the floor is the largest that is worse in every one. |
+| **R0** | CPU per channel-second, live stories, how often the ceiling decides, newborns' fates; at the defaults and at the reference settings | one recording per group, and one of N2 | Measurement only. **Stop:** the owner sees R0's measured costs (in words, in chat) before the long runs start. |
+| **R1** | the wide-beam reference (beam 80 nats, ceiling 17 000); the largest deficit any newborn reaches before it leads, per group | all of DEV2 | If the largest deficit exceeds the 10-nat margin, the margin and the minimum beam are raised to it (notes, topic 5, item 4). |
+| **R1b** | the reference's convergence (beam 120 nats, ceiling 34 000) | a quarter of DEV2 | R1 counts as converged if it differs from R1b by at most 0.1 per 1 000 letters; otherwise R1 is rerun at R1b's settings. |
+| **R2** | search errors at beams 28, 35, 45 and 60 nats; newborns the beam drops within their first element | all of DEV2 | The default beam is the narrowest, never below the minimum, with at most 1 search error per 1 000 letters in every group, not only pooled. If none meets it, the errors are split by cause (beam or ceiling, from the newborns' fates) and brought to the owner. §5, item 4 is checked on the 28-nat run. |
+| **R3** | CER against the ceiling: 300, 600, 1 000, 1 700, 3 000; newborns the ceiling removes | all of DEV2 | The default ceiling is the smallest whose paired CER against the 3 000 run is not worse in any group of O6 (the knee); the floor is the largest that is worse in every one. |
 | **R4** | the default against the bank, by group and speed cell, crossings and paired differences; CPU and live stories per group; the space error rate per group; false characters per hour on N2 | all of DEV2, and N2 | The main result. I2 above F = 8 left out on both sides and listed separately (O7). |
-| **R5** | each rate at 10 times and a tenth: P, then ε (four runs) | N2, D2, G2, H2, a quarter of A2 | Checks, not tuning (notes, topic 5, item 3): false characters per hour (N2), first words (G2, H2), the elements taken to follow D2's steps against false restarts in A2. A value far from the counted rate that scores better is reported as pointing to an error elsewhere, not adopted. |
-| **R6** | the fading spread: 0.3, 2 and 5 Hz against R4's 1 Hz; at the best spread, blocks losing 0.25 and 1 dB | B2, a quarter of A2 | The default spread is the one with the lowest B2 CER among those not worse on A2 than the best on A2 (notes, topic 4, item 9). |
-| **R7** | the 5% speed grid, 61 values | W | Adopted only with a real advantage (notes, topic 2, item 1): better somewhere, worse nowhere, and the owner judges the gain worth its CPU. |
+| **R5** | each rate at 10 times and a tenth: P, then ε (four runs) | all of DEV2, and N2 | Checks, not tuning (notes, topic 5, item 3): false characters per hour (N2), first words (G2, H2), the elements taken to follow D2's steps against false restarts in A2. A value far from the counted rate that scores better is reported as pointing to an error elsewhere, not adopted. |
+| **R6** | the fading spread: 0.3, 2 and 5 Hz against R4's 1 Hz; at the best spread, blocks losing 0.25 and 1 dB | all of DEV2 | The default spread is the one with the lowest B2 CER among those not worse on A2 than the best on A2 (notes, topic 4, item 9). |
+| **R7** | the 5% speed grid, 61 values | all of DEV2 | Adopted only with a real advantage (notes, topic 2, item 1): better somewhere, worse nowhere, and the owner judges the gain worth its CPU. |
 | **R8** | genie timing: each signal's true speed and fist | C2 | Measurement: the gap per style in dB S₅₀₀ at CER 0.10, the most a better timing model could gain (notes, topic 2, item 6). |
 | **R9** | the tracker's frequency error; the decoder with the genie frequency | F2, G2, E2 (neighbors 0–120 Hz away), A2's cells below S₅₀₀ +2 dB | Measurement against Δf · T ≤ 0.26 (§2.9). Per-story frequencies are reconsidered only if turnovers show a real loss (notes, topic 4, item 8). |
 | **R10** | genie fading: each signal's true spread | B2 | Measurement: what one fixed spread loses, per spread cell (notes, topic 4, item 9). |
@@ -499,14 +506,13 @@ below or above zero.
 R2 and R3 set the beam and the ceiling before R4 runs. R6 and R7 come after it and change the defaults only
 through their rules; if R6 moves the spread or R7 is adopted, R4 is rerun with the new defaults.
 
-### 6.2 The subsets
+### 6.2 The sets (D7, decided: the whole set for every measurement)
 
-- **W:** a quarter of the recordings of A2, B2, C2 and I2 (every fourth by name, in each speed cell), and all of D2,
-  E2, F2, G2 and H2: about 287 800 channel-seconds, 27% of DEV2, and roughly 280 000 letters (estimated from the
-  groups' 100-character signals), so 0.1% means about 280 search errors pooled, and each group of O6 has enough
-  letters to tell 0.1% from 1%.
-- **A quarter of A2:** every fourth A2 recording: about 104 800 channel-seconds.
-- **N2:** 36 000 channel-seconds (D8).
+- **All of DEV2:** 1 065 742 channel-seconds and roughly 1 050 000 letters (estimated from the groups' 100-character
+  signals), so a search-error rate of 0.1% means about 1 000 errors pooled.
+- **A quarter of DEV2,** for R1b only: every fourth recording of each group, by name, about 266 000 channel-seconds.
+- **The genie and tracker runs** (R8–R10) cover the groups they concern, in full; R11 reads every recording.
+- **N2:** 36 000 channel-seconds (D8), with R4 and R5.
 
 ### 6.3 What it costs
 
@@ -514,21 +520,21 @@ One full-run equivalent, all of DEV2 at the default, costs 1 065 742 channel-sec
 channel-second. The slice gives 9–55 ms on the Linux machine (§2.11), and the prototype costs more. At c = 30 and
 80 ms, one FRE is 8.9 and 23.7 CPU-hours: 0.9 and 2.4 hours on the machine's 10 cores.
 
-| Runs | FRE as proposed (D7) | FRE on the whole set |
-|---|---|---|
-| R1 + R1b (reference cost 3–10× the default; R1b on a quarter of R1's set at twice its cost) | 1.2–4.1 | 4.5–15 |
-| R2 (4 beams) | 0.6–1.3 | 2.2–4.6 |
-| R3 (4 new ceilings) | 0.9–1.3 | 3.3–4.8 |
-| R4 | 1.03 | 1.03 |
-| R5 (4 runs) | 0.7 | 4 |
-| R6 (5 runs) | 1.2 | 5 |
-| R7 (cost about 1.9×) | 0.5 | 1.9 |
-| R8, R9, R10, R11 | 0.4 | 0.5 |
-| **Total** | **about 7–11** | **about 23–37** |
+| Runs | FRE at the decided sizes |
+|---|---|
+| R1 + R1b (reference cost 3–10× the default; R1b on a quarter of DEV2 at twice R1's cost) | 4.5–15 |
+| R2 (4 beams) | 2.2–4.6 |
+| R3 (4 new ceilings) | 3.3–4.8 |
+| R4 | 1.03 |
+| R5 (4 runs) | 4 |
+| R6 (5 runs) | 5 |
+| R7 (cost about 1.9×) | 1.9 |
+| R8, R9, R10, R11 | 0.5 |
+| **Total** | **about 23–37** |
 
-So the proposed sizes take about 60–260 CPU-hours (6–26 hours on the Linux machine), against about 205–880 (20–88
-hours) if every run used the whole set. R0 replaces c and the reference's multiple with measured values before the
-owner decides.
+So the decided sizes take about 205–880 CPU-hours: 20–88 hours of the Linux machine's 10 cores. (The options put to
+the owner: 7–11 with the whole set only for R4; 14–28 with it also for R1–R3.) R0 replaces c and the reference's
+multiple with measured values, and the owner sees them before the long runs start.
 
 ## 7. Global constraints
 
@@ -825,7 +831,7 @@ statistics summary per group); tests in `training/tests/`.
 - [ ] **Step 3:** write the results record's §2: CPU per channel-second per group (and the desktop's, for
   comparison), live stories, the ceiling's share of pieces, newborns' fates, the reference's cost multiple; §6.3's
   table with the measured values; commit.
-- [ ] **Step 4: Stop.** The owner confirms the sizes (D7) before Task 10.
+- [ ] **Step 4: Stop.** The owner sees R0's measured costs, in words, in chat, before Task 10 starts the long runs.
 
 ### Task 10. R1–R3: the reference, the beam, the ceiling
 
