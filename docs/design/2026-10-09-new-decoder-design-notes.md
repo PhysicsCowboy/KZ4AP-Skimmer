@@ -1173,8 +1173,9 @@ between two bins; 300 stations per point. S₅₀₀ is the key-down SNR in 500 
   station. What it costs: the next over opens late and loses its start, as every opening does (first-word CER on the
   band group, bank prototype / Matched / Envelope: 0.753 / 0.842 / 0.808 through the detector against 0.068 / 0.308
   / 0.226 on oracle channels; stage-1 results §5.3, item 11); the decoder's state is lost, which costs the new decoder
-  little (a resumed over is born from silence at every speed, topic 5, item 3, with its level from the detector,
-  topic 3, item 5, and its frequency from the detector's peak, topic 4, item 8); and the text splits between
+  little (a resumed over is born from silence at every speed, topic 5, item 3, takes its level from its own first
+  mark, topic 5, item 3, as amended 2026-10-19 (the detector's level before), and its frequency from the detector's
+  peak, topic 4, item 8); and the text splits between
   channels.
 - **Correction:** the backlog item "Does the detector miss stations the chosen decoder could copy?" put the opening
   threshold at −1.0 dB S₅₀₀ at 25 WPM, reading the 6 dB as signal over noise. Without the noise's fluctuations it is
