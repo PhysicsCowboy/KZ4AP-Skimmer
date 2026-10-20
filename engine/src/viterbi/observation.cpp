@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <mutex>
 #include <numbers>
 #include <optional>
 #include <stdexcept>
@@ -196,6 +197,39 @@ constexpr double kExactLevel = 1e-9;
 // 20) then lie above 0.
 constexpr double kTruncationLimit = 8.5;
 
+// Node k of the order's rule in the standard normal truncated below at -tau (the Gaussian at the mode truncated at
+// b = 0), where below = Phi(-tau): the rule's node t_k mapped through the two distribution functions, Phi^-1(below +
+// (1 - below) Phi(t_k)), taken from the tail t_k lies in.
+double truncated_node(const Rule& rule, std::size_t k, double below) {
+    return rule.node[k] < 0.0 ? inverse_normal_cdf(below + (1.0 - below) * rule.tail[k])
+                              : -inverse_normal_cdf((1.0 - below) * rule.tail[k]);
+}
+
+// The truncated nodes against tau = b^ / sigma^ in [0, 8.5], at steps of 1/256 (2 177 rows: tau = j / 256 exactly),
+// tau-major (row j holds the order's nodes), read by linear interpolation; built once per order on first use, for every
+// caller (8.5 KB per node of the order: 85 KB at order 5). Exact at the rows; between them within the error the header
+// states. They replace the order's Phi^-1 evaluations, the larger part of a truncated quadrature's cost.
+constexpr int kNodeRowsPerTau = 256;
+constexpr int kNodeSteps = static_cast<int>(kTruncationLimit * kNodeRowsPerTau);  // 2 176
+
+const std::vector<double>& truncated_node_table(int order) {
+    static std::array<std::once_flag, kMaxOrder + 1> built;
+    static std::array<std::vector<double>, kMaxOrder + 1> tables;
+    const auto n = static_cast<std::size_t>(order);
+    std::call_once(built[n], [n, order] {
+        const Rule& rule = rule_of_order(order);
+        std::vector<double>& table = tables[n];
+        table.resize((static_cast<std::size_t>(kNodeSteps) + 1) * n);
+        for (int j = 0; j <= kNodeSteps; ++j) {
+            const double tau = static_cast<double>(j) / kNodeRowsPerTau;
+            const double below = 0.5 * std::erfc(tau / std::numbers::sqrt2);
+            for (std::size_t k = 0; k < n; ++k)
+                table[static_cast<std::size_t>(j) * n + k] = truncated_node(rule, k, below);
+        }
+    });
+    return tables[n];
+}
+
 // The quadrature of a block's posterior: the nodes b_k and their shares of the integral, w_k e^(g(b_k) - g(b^) +
 // s_k^2 / 2) over the largest of them, s_k the node's distance from the mode in sigma^, and Lambda_P.
 struct Fit {
@@ -254,8 +288,8 @@ double find_mode(const Block& block, std::optional<double> start) {
     return b;
 }
 
-// The adaptive quadrature at the mode b.
-Fit fit_posterior(const Block& block, int order, double b) {
+// The adaptive quadrature at the mode b, its truncated nodes read from the table or (tabulated = false) computed.
+Fit fit_posterior(const Block& block, int order, double b, bool tabulated) {
     const double beta = block.beta;
     const double q = block.q;
     const double z = block.z;
@@ -278,12 +312,21 @@ Fit fit_posterior(const Block& block, int order, double b) {
         sigma = std::sqrt(q / (1.0 + q * excess));
         const double tau = b / sigma;
         below = tau < kTruncationLimit ? 0.5 * std::erfc(tau / std::numbers::sqrt2) : 0.0;
+        // Where the truncation matters (0 <= tau < 8.5), the table's two rows around tau.
+        const double* row = nullptr;
+        double fraction = 0.0;
+        if (below > 0.0 && tabulated) {
+            const double position = tau * kNodeRowsPerTau;
+            const int cell = std::min(static_cast<int>(position), kNodeSteps - 1);
+            fraction = position - cell;
+            row = truncated_node_table(order).data() + static_cast<std::size_t>(cell) * static_cast<std::size_t>(order);
+        }
         for (std::size_t k = 0; k < static_cast<std::size_t>(order); ++k) {
             // The node's quantile, in the Gaussian at the mode truncated at b = 0 when that truncation matters.
             double s = rule.node[k];
             if (below > 0.0)
-                s = s < 0.0 ? inverse_normal_cdf(below + (1.0 - below) * rule.tail[k])
-                            : -inverse_normal_cdf((1.0 - below) * rule.tail[k]);
+                s = row ? row[k] + fraction * (row[k + static_cast<std::size_t>(order)] - row[k])
+                        : truncated_node(rule, k, below);
             fit.b[k] = std::max(0.0, b + sigma * s);
             const double term = rule.log_weight[k] + block.g(fit.b[k]) - g_mode + 0.5 * s * s;
             log_term[k] = std::isnan(term) ? -kInf : term;
@@ -448,9 +491,9 @@ Block uncertain_block(double s_abs, int m, double mu, double p, double v, int or
 // The one evaluation behind block_llr_uncertain, level_posterior and block_evidence, after checking the arguments
 // (orders from lowest_order to 20): the evidence, the level's moments and the mode, in FS. The mode comes from
 // Newton's method; the evidence and the moments from the broad-prior regime's tables where (z', kappa') lies in them,
-// and from the adaptive quadrature elsewhere.
+// and from the adaptive quadrature elsewhere, its truncated nodes from their table (or, tabulated = false, computed).
 BlockEvidence evaluate(double s_abs, int m, double mu, double p, double v, int order, int lowest_order,
-                       std::optional<double> start_a) {
+                       std::optional<double> start_a, bool tabulated = true) {
     const Block block = uncertain_block(s_abs, m, mu, p, v, order, lowest_order);
     if (start_a && !std::isfinite(*start_a))
         throw std::invalid_argument("block evidence: start_a must be finite (FS)");
@@ -467,7 +510,7 @@ BlockEvidence evaluate(double s_abs, int m, double mu, double p, double v, int o
                            0.5 * std::log1p(0.5 / block.q);
         return {llr, {w.mean / s * unit, w.var / (s * s) * unit * unit}, mode * unit};
     }
-    const Fit fit = fit_posterior(block, order, mode);
+    const Fit fit = fit_posterior(block, order, mode, tabulated);
     double mean = 0.0;
     for (std::size_t k = 0; k < static_cast<std::size_t>(order); ++k) mean += fit.share[k] * fit.b[k];
     mean /= fit.total;
@@ -546,6 +589,15 @@ BlockEvidence block_evidence(double s_abs, int m, double mu, double p, double v,
                              std::optional<double> start_a) {
     return evaluate(s_abs, m, mu, p, v, order, 2, start_a);
 }
+
+namespace detail {
+
+BlockEvidence block_evidence_direct_nodes(double s_abs, int m, double mu, double p, double v, int order,
+                                          std::optional<double> start_a) {
+    return evaluate(s_abs, m, mu, p, v, order, 2, start_a, false);
+}
+
+}  // namespace detail
 
 FlatPrior::FlatPrior(const ViterbiConfig& config, std::span<const double> c, int max_pieces, int samples_per_piece)
     : max_pieces_(max_pieces), samples_per_piece_(samples_per_piece), large_z_constant_(0.0) {

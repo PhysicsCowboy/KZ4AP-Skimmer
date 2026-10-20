@@ -542,6 +542,54 @@ TEST(Observation, CombinedCallMatchesTheSeparateOnes) {
     }
 }
 
+TEST(Observation, TruncatedNodeTableMatchesTheDirectNodes) {
+    // Where the Gaussian at the mode has mass below 0 (b^ < 8.5 sigma^), the quadrature reads its nodes from a table in
+    // tau = b^ / sigma^ (steps of 1/256, linear interpolation) instead of computing each by Phi^-1. Against the direct
+    // computation: on the tests' grid (b = m mu / sqrt(v) of 1, 3, 10 and 30, z = 0, b/2, b and 2b, relative spreads
+    // sqrt(p) / mu of 0.03 to 0.5, blocks of 24 samples, order 5) the evidence within 1e-6 nats, the posterior's mean
+    // within 1e-6 of its standard deviation, its variance within 1e-6 relatively, and the mode the same (Newton's
+    // method runs before the nodes are laid); and the same over weak and broad priors, where most quadratures are
+    // truncated (b of 0.1 to 10, relative spreads of 0.5 to 3, z of 0 to 3 b), at orders 2, 5 and 12. Some values
+    // differ: the table is read.
+    const int m = 24;
+    const double v = block_variance(m);
+    const double root_v = std::sqrt(v);
+    Worst llr;
+    Worst mean;
+    Worst var;
+    int differing = 0;
+    const auto compare = [&](double b, double z, double spread, int order) {
+        const auto at = [b, z, spread, order] {
+            return "order " + std::to_string(order) + ", b = " + number(b) + ", z = " + number(z) + ", spread " +
+                   number(spread);
+        };
+        const double mu = b * root_v / m;
+        const double p = (spread * mu) * (spread * mu);
+        const double s_abs = z * root_v;
+        const BlockEvidence table = block_evidence(s_abs, m, mu, p, v, order);
+        const BlockEvidence direct = detail::block_evidence_direct_nodes(s_abs, m, mu, p, v, order);
+        llr.add(std::fabs(table.llr - direct.llr), at);
+        mean.add(std::fabs(table.level.mean - direct.level.mean) / std::sqrt(direct.level.var), at);
+        var.add(std::fabs(table.level.var / direct.level.var - 1.0), at);
+        EXPECT_EQ(table.mode_a, direct.mode_a) << at();
+        if (table.llr != direct.llr) ++differing;
+    };
+    for (const double b : {1.0, 3.0, 10.0, 30.0})
+        for (const double z : {0.0, b / 2.0, b, 2.0 * b})
+            for (const double spread : {0.03, 0.1, 0.3, 0.5}) compare(b, z, spread, 5);
+    EXPECT_LE(llr.error, 1e-6) << "nats, on the tests' grid, at " << llr.where;
+    EXPECT_LE(mean.error, 1e-6) << "posterior standard deviations, on the tests' grid, at " << mean.where;
+    EXPECT_LE(var.error, 1e-6) << "relative, on the tests' grid, at " << var.where;
+    for (const int order : {2, 5, 12})
+        for (const double b : {0.1, 0.3, 1.0, 3.0, 10.0})
+            for (const double spread : {0.5, 1.0, 2.0, 3.0})
+                for (const double z_over_b : {0.0, 0.5, 1.0, 2.0, 3.0}) compare(b, z_over_b * b, spread, order);
+    EXPECT_LE(llr.error, 1e-6) << "nats, at " << llr.where;
+    EXPECT_LE(mean.error, 1e-6) << "posterior standard deviations, at " << mean.where;
+    EXPECT_LE(var.error, 1e-6) << "relative, at " << var.where;
+    EXPECT_GT(differing, 0);
+}
+
 TEST(Observation, StartingPointChangesNothing) {
     // Started at 0, at 0.9 and 1.1 times the mode found from the default start, and at 10 times it (beyond the bracket,
     // so clamped to its top), and from outside the bracket on either side, Newton's method ends at the same mode within
