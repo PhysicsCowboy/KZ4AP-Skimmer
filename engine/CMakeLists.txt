@@ -14,6 +14,12 @@ set(KZ4AP_BANK_SOURCES
   src/bank/channel.cpp
 )
 
+# The new decoder's sources (first prototype); later tasks add to this list.
+set(KZ4AP_VITERBI_SOURCES
+  src/viterbi/morse_tree.cpp
+  src/viterbi/fist.cpp
+)
+
 add_library(kz4ap_engine
   src/morse.cpp
   src/wav_reader.cpp
@@ -26,6 +32,7 @@ add_library(kz4ap_engine
   src/frequency_tracker.cpp
   src/bank_decoder.cpp
   ${KZ4AP_BANK_SOURCES}
+  ${KZ4AP_VITERBI_SOURCES}
 )
 add_library(kz4ap::engine ALIAS kz4ap_engine)
 target_include_directories(kz4ap_engine PUBLIC include PRIVATE src)
@@ -93,3 +100,11 @@ gtest_discover_tests(kz4ap_bank_tests)
 # the presets windows-full-sweep and linux-full-sweep run only it.
 add_test(NAME BankFitB2a.FullSweep COMMAND kz4ap_bank_tests --gtest_filter=BankFitB2a.*)
 set_tests_properties(BankFitB2a.FullSweep PROPERTIES ENVIRONMENT KZ4AP_FIT_FULL_SWEEP=1 LABELS full-sweep)
+
+# The new decoder's tests (first prototype); later tasks add to this list.
+add_executable(kz4ap_viterbi_tests
+  tests/viterbi/morse_tree_test.cpp
+  tests/viterbi/fist_test.cpp
+)
+target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)
+gtest_discover_tests(kz4ap_viterbi_tests)
