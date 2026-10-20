@@ -249,8 +249,8 @@ and a flag "not yet learned" (notes, topic 3, item 1).
    up or down; pieces in the current element; speed or "open"; factor or "open"; tree node. Continuing stories never
    collide, since a story's element began at the piece its state was created.
 5. **Pruning:** the best score is found; every story more than the beam behind it is dropped; if more than the
-   ceiling remain, the ceiling's best are kept, ties broken by the state, then by creation order (so runs are
-   identical on every platform). Every successor with a finite score is created first: there is no separate
+   ceiling remain, the ceiling's best are kept, ties broken by the state, then by creation order (so a run never
+   depends on a container's order or an address). Every successor with a finite score is created first: there is no separate
    threshold for creating branches (O12).
 6. **Scores** are then held relative to the best (subtracting the best's score; numerical convenience).
 7. **At the end of the input** (`flush()`), the best story's text is published, with each letter's start and end
@@ -551,7 +551,11 @@ multiple with measured values, and the owner sees them before the long runs star
   dB of E/N₀). Parameters are in physical units (Hz, s, FS, dB, nats), converted to pieces or bins only where used.
   Timing medians are in dots; the block length and the level's rate are in seconds, because fading does not scale
   with the sending speed.
-- **Determinism:** the same recording and settings give the same output on every run and platform (spec §4.1).
+- **Determinism:** the same recording and settings give the same output on every run on one platform (spec §4.1:
+  "the same recording with the same settings must always produce the same spots"). Builds on different platforms
+  (MSVC, glibc) may differ in the last bit of a floating-point value, so tests compare with tolerances, and every
+  measurement runs on the Linux machine (corrected 2026-10-20: this line had said "every run and platform", which
+  the spec does not ask).
 - **Git:** one git command per call, never chained; commit freely on `new-decoder-1`; never push or merge without the
   owner's approval, each time; never rewrite commits; never discard work (stash or a worktree); no attribution
   lines.
