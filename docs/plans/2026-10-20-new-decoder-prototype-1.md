@@ -1,8 +1,11 @@
 # New decoder: the first prototype
 
 > **Status: draft for the owner's approval (2026-10-20).** Nothing is built before the owner approves it. The
-> decisions are in §3, the obvious ones included, so that the owner approves them with the plan. D5 (the fist's
-> heavy tail) is already decided (owner, 2026-10-20).
+> decisions are in §3. **The owner's answers (2026-10-20):** D1 yes, a new branch; D2 `viterbi`; D3, D4, D5 and D6
+> "whatever we've already decided": the design notes' decisions, implemented as §2 and §3 state them, where a
+> starting value only sets where its measurement begins; D5 is no tail until measured. D7 and D8 await him, with the
+> background he asked for (given in chat). The owner does not read this plan (2026-10-20): it is the executors'
+> document, and every decision is brought to him in chat, in words.
 >
 > **Spec:** `docs/design/2026-09-25-kz4ap-skimmer-design.md` §5.1 (the Classical mode), §5.2 step 1 and step 3
 > (amendments of 2026-10-19) and §4.1 item 3. **Design:** `docs/design/2026-10-09-new-decoder-design-notes.md`, the
@@ -34,8 +37,9 @@ only for the generator's new noise group, the suite runner and the analysis (CLA
 - **Score:** the natural logarithm of a story's probability together with the signal so far, measured against the
   story "noise only, throughout" (so a gap piece adds 0). In **nats**; a prior of probability p costs ln(1/p) nats.
   Scores are held relative to the best at every piece.
-- **Piece:** the sum of 3 consecutive channel samples, 2.000 ms at 1 500 samples/s (derived: 192 000 × 64 / 8 192).
-  The decoder's time step (notes, topic 4, items 1 and 3).
+- **Piece:** the sum of 3 consecutive channel samples, 2.000 ms at 1 500 samples/s (derived: the input rate × 64 /
+  the FFT size, 48 000 × 64 / 2 048 for DEV2's 48 kHz recordings and 192 000 × 64 / 8 192 at 192 kHz). The
+  decoder's time step (notes, topic 4, items 1 and 3).
 - **Block:** the coherent sum of a mark's pieces, no longer than the block length; a mark longer than one block is
   several blocks, combined noncoherently (notes, topic 4, item 9).
 - **Beam:** stories more than the beam's width (nats) behind the best are dropped at every piece. **Ceiling:** the
@@ -118,10 +122,14 @@ This section is what the code must do. Each value carries its unit and its class
 1. **The hiss level per hertz, N₀** (FS²/Hz), comes from the engine's hiss estimator (§2.8) before every block. The
    decoder never estimates noise from its own gaps (notes, topic 3, item 3).
 2. **The noise of a sum** (derived, exact; notes, topic 4, item 7). The channel's noise autocovariance at a lag of k
-   channel samples is R[k] = N₀ · fs · Σ_m h[m] h[m + 128 k], with h the channelizer's 4 097 taps normalized to
-   Σh = 1 and fs = 192 000 samples/s, so R[0] = N₀ · 252 Hz. A sum of m consecutive channel samples has noise variance
-   V(m) = Σ_{|k|<m} (m − |k|) R[k] = N₀ · c(m), where c(m), in Hz, is computed once from the taps. For long sums
-   c(m) → 1 500 Hz × m (derived), so a sum over T seconds has E/N₀ = a²T/N₀.
+   channel samples is R[k] = N₀ · fs · Σ_m h[m] h[m + D k], with fs the input rate, D = N/64 the decimation and h the
+   channelizer's N/2 + 1 taps normalized to Σh = 1: at 48 kHz (DEV2's rate) N = 2 048, D = 32 and 1 025 taps; at
+   192 kHz N = 8 192, D = 128 and 4 097 taps. Both are the same 21.3 ms Blackman-windowed sinc, so R[0] ≈ N₀ · 252 Hz
+   at either rate (252 Hz measured from the taps at 192 kHz, `docs/signal-processing.md` A.7; Task 2 checks both). A
+   sum of m consecutive channel samples has noise variance V(m) = Σ_{|k|<m} (m − |k|) R[k] = N₀ · c(m), where c(m),
+   in Hz, is computed once from the channelizer's own taps, decimation and rate. For long sums c(m) → 1 500 Hz × m
+   (derived), so a sum over T seconds has E/N₀ = a²T/N₀. On DEV2's recordings, σ = 0.02 FS at 48 kHz gives
+   N₀ = σ²/fs = 8.33 × 10⁻⁹ FS²/Hz.
 
 ### 2.3 The evidence of a block
 
@@ -650,9 +658,9 @@ documents updated per §7, and one commit. Tasks 9–12 also build and run on th
     the moments in units of √V(m)/m (the caller scales to FS).
 
 - [ ] **Step 1: Failing tests.**
-  - `Observation.SumNoiseMatchesNoiseThroughTheChannelizer`: 600 s of complex white noise, σ = 0.02 FS at 192 kHz,
-    through `Channelizer`: the variance of sums of 3, 24 and 585 channel samples equals N₀ · c(m), N₀ = σ²/fs,
-    within 2%.
+  - `Observation.SumNoiseMatchesNoiseThroughTheChannelizer`: 600 s of complex white noise, σ = 0.02 FS, at 48 kHz
+    (DEV2's rate) and at 192 kHz, through `Channelizer`: the variance of sums of 3, 24 and 585 channel samples equals
+    N₀ · c(m), N₀ = σ²/fs, within 2%, with c(m) computed from that rate's taps.
   - `Observation.LongSumsGrowAt1500Hz`: c(m)/m within 0.5% of 1 500 Hz for m ≥ 300.
   - `Observation.IndependentPiecesUnderstateTheNoise`: V(m) / ((m/3) · V(3)) lies in [1.9, 2.1] for marks of 8 to
     720 ms (notes, topic 4, item 7).
@@ -731,7 +739,8 @@ Farnsworth keying and a speed step.
 exact zeros), and `double bias(int frames) const`.
 
 - [ ] **Step 1: Failing tests.**
-  - `Hiss.MeasuresTheGeneratorsNoise`: white noise, σ = 0.02 FS at 192 kHz: from 1 s on, the mean estimate over
+  - `Hiss.MeasuresTheGeneratorsNoise`: white noise, σ = 0.02 FS at 48 kHz (DEV2's rate; and at 192 kHz): from 1 s
+    on, the mean estimate over
     100 channels within ±1% of σ²/fs, and their rms deviation from it at most 2.5% (the notes: ±1.1% for
     independent bins, about 40% more for the detector's overlapping ones).
   - `Hiss.BiasMatchesSimulation`: `bias(n)` within 0.5% of the simulated ratio (171 bins, 2 000 frames) at n = 1, 10,
@@ -798,7 +807,8 @@ The bench: `--decoder viterbi`, `--set`, `--stats`, `--genie`; the statistics fi
 statistics summary per group); tests in `training/tests/`.
 
 - [ ] **Step 1: Failing tests.**
-  - `test_n2_noise_group`: 4 recordings of 25 channels × 360 s, stations at S₅₀₀ −60 dB, reproducible by seed.
+  - `test_n2_noise_group`: 4 recordings at 48 kHz (DEV2's rate, σ = 0.02 FS) of 25 channels × 360 s, stations at
+    S₅₀₀ −60 dB, reproducible by seed.
   - `test_run_suite_runs_in_parallel_with_a_name_and_settings` (with a stand-in bench).
   - `test_score_tables_carry_the_farnsworth_columns`, and older tables still read.
   - `test_the_i2_cut_leaves_out_the_same_signals_on_both_sides`.
