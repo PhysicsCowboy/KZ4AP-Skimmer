@@ -61,20 +61,38 @@ double block_llr(double s_abs, int m, double a, double v);
 // quadrature's error from rounding its nodes' offsets grows as epsilon b / sigma^ and is still 7e-9 nats at that width
 // at b = 10, against 5.7e-5 at 1e-12, 3.2e-3 at 1e-14 and 1.09 nats from about 1e-16, where the nodes coincide.
 //
-// Accuracy at order 5, measured against dense integrals: within 0.0011 nats on the tests' grid (b = m mu / sqrt(v) of
-// 1 to 30, z = 0, b/2, b and 2 b, relative spreads sqrt(p) / mu of 0.03 to 0.5). Beyond it the accuracy is set by
-// beta / q, the slope of the prior's log at b = 0, and is worst near z = 1 (the worst over z = 0 to 6):
-//   - beta / q of 1/3 or more: within 0.003 nats;
-//   - beta / q about 0.1 (a relative spread of 1 at beta = 10, 0.3 at 100, 0.1 at 1 000): about 0.02 nats;
-//   - beta / q of 0.003 to 0.04 (spreads of 0.5 to 1 at beta = 100, 0.3 to 1 at 300, 0.5 at 1 000): 0.03 to 0.22;
-//   - below about 0.003 the error is no longer monotone in beta / q. Strong stations, beta of 3 000 to 1e6 (47 to
-//     97 dB S500 on a block of 195 pieces, 20 dB more for a single piece), at relative spreads of 0.5 to 2 miss by up
-//     to 1.2 nats, 4 to 10% of the evidence (0.3 to 1.2 nats in most cases measured; 0.04 at beta = 1e5, spread 0.5);
-//   - mu = 0 (beta / q = 0): 0.14 to 0.41 nats at sqrt(q) of 0.3 to 10 (0.04 to 0.13 at order 10).
-// There the curvature at the mode degenerates: with beta = 0 the mode leaves b = 0 at z* = sqrt(1 + 1/(2 q)), where
-// -g'' vanishes and sigma^ diverges while the integrand's width is set by the quartic term of ln I0 (x^2 / 4 -
-// x^4 / 64), so the nodes spread far wider than the integrand. Orders below 5 fare worse there (at beta = 1e5, z = 1
-// and a relative spread of 30, order 3 misses by 168 nats, order 5 by 0.84), and so do the moments (below).
+// Where the prior is broad against the likelihood, the curvature at the mode degenerates: with beta = 0 the mode
+// leaves b = 0 at z* = sqrt(1 + 1/(2 q)), where -g'' vanishes while the integrand's width is set by the quartic term of
+// ln I0 (x^2 / 4 - x^4 / 64), and curvature-scaled nodes spread far wider than the integrand. Near z = 1, at order 5,
+// they missed by up to 1.2 nats for strong stations (beta of 3 000 to 1e6) at relative spreads of 0.5 to 2 and by 0.14
+// to 0.41 nats for mu = 0 at sqrt(q) of 0.3 to 10, and put the posterior's variance at 0 to 3.2 times its true value
+// at spreads of 1 to 30; at beta = 1e5 and a spread of 30, order 3 missed by 168 nats and order 5 by 0.84 (measured).
+// An exact rescaling serves there instead. In b, N(b; beta, q) = N(0; beta, q) e^(kappa b - b^2 / (2 q)) with
+// kappa = beta / q; the prior's e^(-b^2 / (2 q)) joins the likelihood's e^-b^2 as e^(-s^2 b^2), where
+// s = sqrt(1 + 1/(2 q)), and u = s b turns the integral into J(z', kappa') / s, with z' = z / s, kappa' = kappa / s and
+// J(z', kappa') = integral_0^inf e^(kappa' u - u^2) I0(2 u z') du:
+//     Lambda_P = ln N(0; beta, q) - ln Phi(beta / sqrt(q)) + ln J(z', kappa') - ln s,
+// and the posterior of b is that weight's distribution in u, over s (exact at every q, derived). Where z' <= 4 and
+// kappa' <= 1 (the broad-prior regime), ln J and the weight's mean and variance come from tables: steps of 0.01 in z'
+// and kappa', 40 501 nodes, bilinear interpolation of each less its closed form at z' = 0 (so that an empty block is
+// exact), built once (31 ms in a Release build, 0.97 MB) and shared by every caller. The curvature degenerates around
+// z' = 1 at kappa' = 0, where -g''(0) = 2 s^2 (1 - z'^2) vanishes (derived); the regime's bounds are a heuristic margin
+// around that point, and outside them the adaptive quadrature holds within 0.002 nats where measured (below). The
+// mode comes from Newton's method in both.
+//
+// Accuracy at order 5, measured against dense integrals:
+//   - in the regime, within 3.4e-5 nats, and the posterior's mean and variance within 3e-5 relatively, at every q from
+//     1e-6 to 1e12 and at every order: strong stations (beta of 100 to 1e6 at relative spreads of 0.3 to 2), weak broad
+//     priors, mu = 0 and blocks of z = 0 to 4 included;
+//   - outside it, within 0.0011 nats on the tests' grid (beta = m mu / sqrt(v) of 1 to 30, z = 0, b/2, b and 2 b,
+//     relative spreads sqrt(p) / mu of 0.03 to 0.5: 61 of its 64 points; the other 3 lie in the regime); within
+//     0.002 nats where kappa' > 1 (kappa' to 1 000, z to 10), with the mean within 0.005 posterior standard deviations
+//     and the variance within 1.1%; and within 2e-6 nats where z' > 4 (z' to 12);
+//   - across the regime's edges Lambda_P moves by at most 0.004 nats between points 2e-15 apart relatively (at
+//     kappa' = 1 and q = 1e12, where up to 0.002 nats of it is Lambda_P's own change over that step) and by at most
+//     2e-5 nats at z' = 4.
+// These were measured where beta^2 / q is at most 1e10. Where the mode lies far below beta, Lambda_P is about
+// -beta^2 / (2 q) and carries its rounding, epsilon beta^2 / q, which reaches 0.01 nats from beta^2 / q of about 1e14.
 // Newton takes at most 4 steps on the tests' grid and 6 over b = 0 to 1e4, z to 3 b, spreads to 2; where the
 // curvature degenerates, more: 7 to 12 for mu = 0 at z = 1 and sqrt(q) of 3 to 20, 17 at beta = 1e6, z = 1 and a
 // spread of 3, and 21 at most over b and z up to 1e100 and spreads up to 1e6, cold or started at 0, within its cap of
@@ -89,26 +107,26 @@ struct Moments {
 };
 
 // The level after the block: the mean (FS) and variance (FS^2) of a under the same posterior, prior x likelihood, by
-// the same nodes (moment matching), the update of a story's level after a finished block (design notes, topic 3,
+// the same evaluation (moment matching), the update of a story's level after a finished block (design notes, topic 3,
 // item 1). At high SNR it is the Kalman update, mean mu + p / (p + v / (2 m^2)) (s_abs / m - mu) and variance
 // p (v / (2 m^2)) / (p + v / (2 m^2)): within 0.1% for b >= 30 at a relative spread of 0.1. At order 5, on the grid
 // above, the mean is within 0.0025 of the posterior's standard deviation and the variance within 0.6% of a dense
-// integral (measured). Where the curvature at the mode degenerates (above) the moments fail first: at z = 1 for beta
-// of 3 000 to 1e6 and relative spreads of 1 to 30, the variance comes out 0 to 3.2 times its true 0.36 (units of b^2)
-// and the mean 0.11 to 1.27 against 0.87 (order 5, measured). For a level known exactly it is the prior, {mu, p}
-// ({mu, 0} with p = 0); for mu > 0 the true posterior differs from it by about q relatively, for mu = 0 (a half-normal
-// of mean 0.80 sqrt(p) and variance 0.36 p) by order 1 relatively but by under 1e-9 in units of b. Throws for what
-// block_llr_uncertain refuses, and for an order below 2 (one node holds no variance).
+// integral (measured). In the broad-prior regime (above) the moments come from the tables, within 3e-5 relatively; the
+// variance after a block of noise (z = 1) is near 0.36 there (units of b^2), where curvature-scaled nodes had put it at
+// 0 to 3.2 times that. For a level known exactly it is the prior, {mu, p} ({mu, 0} with p = 0); for mu > 0 the true
+// posterior differs from it by about q relatively, for mu = 0 (a half-normal of mean 0.80 sqrt(p) and variance 0.36 p)
+// by order 1 relatively but by under 1e-9 in units of b. Throws for what block_llr_uncertain refuses, and for an order
+// below 2 (one node holds no variance).
 Moments level_posterior(double s_abs, int m, double mu, double p, double v, int order);
 
-// What one quadrature gives of a block: the evidence and the level after it, and where the posterior peaks.
+// What one evaluation gives of a block: the evidence and the level after it, and where the posterior peaks.
 struct BlockEvidence {
     double llr;      // nats: Lambda_P, as block_llr_uncertain gives it
     Moments level;   // the posterior mean (FS) and variance (FS^2) of a, as level_posterior gives them
     double mode_a;   // FS: the mode of prior x likelihood
 };
 
-// block_llr_uncertain and level_posterior in one call, from the same quadrature (the search makes one per story and
+// block_llr_uncertain and level_posterior in one call, from the same evaluation (the search makes one per story and
 // piece). start_a (FS), when given, is where Newton's method starts, clamped into its bracket [0, the precision-
 // weighted mean]: the story's mode_a from the previous piece. The result does not depend on it beyond Newton's
 // tolerance, a last step below the larger of 1e-10 sigma^ and 4 epsilon b (a few spacings of doubles at b), including

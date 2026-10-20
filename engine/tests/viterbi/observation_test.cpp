@@ -659,10 +659,10 @@ TEST(Observation, WarmStartsFollowARunningSum) {
 TEST(Observation, DegenerateCurvatureStaysFinite) {
     // A strong station's story, b = 1e5, its level uncertain by a relative spread of 30, against a block of noise,
     // z = 1 (m = 1 and v = 1 FS^2, so that b is in FS): the curvature at the mode all but vanishes, sigma^ is about 263
-    // against an integrand about 1 wide, and the nodes land where the posterior has underflowed. Summed in the log, the
-    // evidence, the moments and the mode are finite at orders 2, 3 and 5, cold and warm; at order 5 the evidence is
-    // within the accuracy the header gives for such stories, 1.2 nats, of a dense integral (orders below 5 miss there
-    // by up to 168 nats, as the header records).
+    // against an integrand about 1 wide, and curvature-scaled nodes would land where the posterior has underflowed. The
+    // broad-prior regime's tables serve it: the evidence, the moments and the mode are finite at orders 2, 3 and 5,
+    // cold and warm, and the evidence is within 0.01 nats of a dense integral at every order (it no longer depends on
+    // the order there).
     const double beta = 1e5;
     const double q = (30.0 * beta) * (30.0 * beta);
     const double z = 1.0;
@@ -675,9 +675,75 @@ TEST(Observation, DegenerateCurvatureStaysFinite) {
             EXPECT_TRUE(std::isfinite(evidence.level.mean)) << evidence.level.mean;
             EXPECT_TRUE(std::isfinite(evidence.level.var)) << evidence.level.var;
             EXPECT_TRUE(std::isfinite(evidence.mode_a)) << evidence.mode_a;
-            if (order == 5) EXPECT_NEAR(evidence.llr, dense.llr, 1.2);
+            EXPECT_NEAR(evidence.llr, dense.llr, 0.01);
         }
     }
+}
+
+TEST(Observation, BroadPriorsMatchDenseIntegrals) {
+    // Where the prior is broad against the likelihood, the curvature at the mode degenerates and the evidence and the
+    // level come from the exact rescaling's tables (observation.hpp). Against dense integrals at orders 3 and 5, for
+    // blocks of z = 0 to 4 (m = 1 and v = 1 FS^2, so that b is in FS):
+    //   - strong stations, b of 100 to 1e6 at relative spreads of 0.3 to 2;
+    //   - weak broad priors, b of 0.3 to 1 with sqrt(q) = 10;
+    //   - b = 1e5 at a relative spread of 30.
+    // Lambda_P within 0.01 nats, and the posterior's mean and variance within 1%: the variance after a block of noise
+    // (z = 1) is near 0.36, where curvature-scaled nodes made it 0 to 3.2 times that.
+    Worst llr;
+    Worst mean;
+    Worst var;
+    const auto check = [&](double beta, double q, double z) {
+        const Dense dense = dense_uncertain(z, 1, beta, q, 1.0, 0.0, 30.0);
+        for (const int order : {3, 5}) {
+            const auto at = [beta, q, z, order] {
+                return "b = " + number(beta) + ", q = " + number(q) + ", z = " + number(z) + ", order " +
+                       std::to_string(order);
+            };
+            const BlockEvidence evidence = block_evidence(z, 1, beta, q, 1.0, order);
+            llr.add(std::fabs(evidence.llr - dense.llr), at);
+            mean.add(std::fabs(evidence.level.mean / dense.mean - 1.0), at);
+            var.add(std::fabs(evidence.level.var / dense.var - 1.0), at);
+        }
+    };
+    const double blocks[] = {0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0};
+    for (const double beta : {100.0, 1e3, 1e4, 1e5, 1e6})
+        for (const double spread : {0.3, 0.5, 1.0, 2.0})
+            for (const double z : blocks) check(beta, (spread * beta) * (spread * beta), z);
+    for (const double beta : {0.3, 0.5, 1.0})
+        for (const double z : blocks) check(beta, 100.0, z);
+    check(1e5, (30.0 * 1e5) * (30.0 * 1e5), 1.0);
+    EXPECT_LE(llr.error, 0.01) << "nats, at " << llr.where;
+    EXPECT_LE(mean.error, 0.01) << "relative, at " << mean.where;
+    EXPECT_LE(var.error, 0.01) << "relative, at " << var.where;
+}
+
+TEST(Observation, RegimeEdgesHaveNoJump) {
+    // The broad-prior regime is kappa' <= 1 and z' <= 4, with kappa' = (b / q) / s, z' = z / s and
+    // s = sqrt(1 + 1/(2 q)) (b and q the prior's mean and variance in units of b). Across its edges, where the evidence
+    // passes between the tables and the adaptive quadrature, Lambda_P moves by under 0.01 nats between points 1e-15
+    // inside and 1e-15 outside the edge, relatively; by itself it moves there by under kappa b x 2e-15 (0.002 nats at
+    // q = 1e12).
+    Worst jump;
+    for (const double q : {1e-3, 1e-2, 0.1, 1.0, 10.0, 100.0, 1e4, 1e6, 1e8, 1e10, 1e12}) {
+        const double s = std::sqrt(1.0 + 0.5 / q);
+        for (const double scaled : {0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 3.5, 3.999}) {
+            const double z = scaled * s;
+            const double inside = q * s * (1.0 - 1e-15);
+            const double outside = q * s * (1.0 + 1e-15);
+            const double step =
+                block_llr_uncertain(z, 1, inside, q, 1.0, 5) - block_llr_uncertain(z, 1, outside, q, 1.0, 5);
+            jump.add(std::fabs(step), [q, z] { return "kappa' = 1, q = " + number(q) + ", z = " + number(z); });
+        }
+        for (const double scaled : {0.0, 0.1, 0.25, 0.5, 0.75, 0.999}) {
+            const double beta = scaled * s * q;
+            const double inside = 4.0 * s * (1.0 - 1e-15);
+            const double outside = 4.0 * s * (1.0 + 1e-15);
+            const double step =
+                block_llr_uncertain(inside, 1, beta, q, 1.0, 5) - block_llr_uncertain(outside, 1, beta, q, 1.0, 5);
+            jump.add(std::fabs(step), [q, beta] { return "z' = 4, q = " + number(q) + ", b = " + number(beta); });
+        }
+    }
+    EXPECT_LE(jump.error, 0.01) << "nats, at " << jump.where;
 }
 
 TEST(Observation, TinySpreadsTendToTheExactLevel) {

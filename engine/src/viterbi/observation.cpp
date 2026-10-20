@@ -196,18 +196,18 @@ constexpr double kExactLevel = 1e-9;
 // 20) then lie above 0.
 constexpr double kTruncationLimit = 8.5;
 
-// The quadrature of a block's posterior: the mode b^, the nodes b_k and their shares of the integral, w_k e^(g(b_k) -
-// g(b^) + s_k^2 / 2) over the largest of them, s_k the node's distance from the mode in sigma^, and Lambda_P.
+// The quadrature of a block's posterior: the nodes b_k and their shares of the integral, w_k e^(g(b_k) - g(b^) +
+// s_k^2 / 2) over the largest of them, s_k the node's distance from the mode in sigma^, and Lambda_P.
 struct Fit {
-    double mode = 0.0;  // b^
     std::array<double, kMaxOrder> b{};
     std::array<double, kMaxOrder> share{};  // the largest is 1
     double total = 0.0;                     // the sum of the shares
     double llr = 0.0;                       // Lambda_P, nats
 };
 
-// start: where Newton's method starts, in units of b (clamped into its bracket); the bracket's top when empty.
-Fit fit_posterior(const Block& block, int order, std::optional<double> start) {
+// The mode b^ of the integrand e^g. start: where Newton's method starts, in units of b (clamped into its bracket); the
+// bracket's top when empty.
+double find_mode(const Block& block, std::optional<double> start) {
     const double beta = block.beta;
     const double q = block.q;
     const double z = block.z;
@@ -251,6 +251,14 @@ Fit fit_posterior(const Block& block, int order, std::optional<double> start) {
         b = 0.5 * (low + high);
         if (high - low <= 1e-15 * high) break;
     }
+    return b;
+}
+
+// The adaptive quadrature at the mode b.
+Fit fit_posterior(const Block& block, int order, double b) {
+    const double beta = block.beta;
+    const double q = block.q;
+    const double z = block.z;
     // -g''(b^) = 1 / q + excess. It is positive at a maximum; the fallback, the curvature of prior x e^-b^2 (so that
     // sigma^ < 1 / sqrt(2)), guards a degenerate one and a scale beyond the doubles' range.
     double excess = 2.0 - 4.0 * z * z * ln_i0_slopes(2.0 * b * z).second;
@@ -258,7 +266,6 @@ Fit fit_posterior(const Block& block, int order, std::optional<double> start) {
     const Rule& rule = rule_of_order(order);
     const double g_mode = block.g(b);
     Fit fit;
-    fit.mode = b;
     // The nodes' terms in the log, ln w_k + g(b_k) - g(b^) + s_k^2 / 2, summed by log-sum-exp, so that no share
     // underflows into an empty sum. A term that is not a number (a node beyond the doubles' range) counts for nothing;
     // if no term counts, the nodes are laid again at the fallback's scale, within a few units of b of the mode.
@@ -295,6 +302,121 @@ Fit fit_posterior(const Block& block, int order, std::optional<double> start) {
     return fit;
 }
 
+// --- The broad-prior regime: an exact rescaling and tables ---
+//
+// In b, N(b; beta, q) = N(0; beta, q) e^(kappa b - b^2 / (2 q)), kappa = beta / q, exactly. With the likelihood's
+// e^-b^2 the prior's e^(-b^2 / (2 q)) makes e^(-s^2 b^2), s = sqrt(1 + 1 / (2 q)), and u = s b maps the integral onto
+// the weight w(u) = e^(kappa' u - u^2) I0(2 u z') at kappa' = kappa / s and z' = z / s:
+//     integral_0^inf N(b; beta, q) e^(-b^2) I0(2 b z) db = N(0; beta, q) J(z', kappa') / s,
+//     J(z', kappa') = integral_0^inf w(u) du,
+// and the posterior of b is the weight's distribution in u scaled by 1 / s: its mean and variance are the weight's
+// over s and s^2. This is exact at every q (derived). Tables of ln J and the weight's mean and variance over
+// z' in [0, 4] and kappa' in [0, 1] serve every prior that maps into them. The curvature-scaled nodes fail around
+// z' = 1 at kappa' = 0, where -g''(0) = 2 s^2 (1 - z'^2) vanishes (derived); the bounds are a heuristic margin around
+// that point, and outside them the nodes hold within 0.002 nats where measured (observation.hpp).
+
+constexpr double kRegimeTopZ = 4.0;      // z', at most
+constexpr double kRegimeTopKappa = 1.0;  // kappa', at most
+constexpr int kRegimeZSteps = 400;       // the tables' nodes: z' = 0, 0.01, ..., 4
+constexpr int kRegimeKappaSteps = 100;   // and kappa' = 0, 0.01, ..., 1
+constexpr double kRegimeTopU = 12.0;     // the weight's integral runs to u = 12, e^-56 of its peak at the far corner
+constexpr int kRegimeUSteps = 600;       // by Simpson's rule in steps of 0.02 of u
+
+// The weight's ln J (nats), mean and variance in u.
+struct WeightMoments {
+    double ln_j;
+    double mean;
+    double var;
+};
+
+// At z' = 0 the weight, e^(kappa' u - u^2), is N(kappa' / 2, 1/2) truncated at u = 0, with closed forms: J =
+// e^(kappa'^2 / 4) sqrt(pi) Phi(alpha), mean kappa' / 2 + lambda / sqrt(2) and variance (1 - alpha lambda -
+// lambda^2) / 2, alpha = kappa' / sqrt(2), lambda = phi(alpha) / Phi(alpha).
+WeightMoments empty_block_weight(double kappa) {
+    const double alpha = kappa / std::numbers::sqrt2;
+    const double cdf = 0.5 * std::erfc(-alpha / std::numbers::sqrt2);
+    const double ratio = std::exp(-0.5 * alpha * alpha) / (std::sqrt(2.0 * std::numbers::pi) * cdf);
+    return {0.25 * kappa * kappa + std::log(std::sqrt(std::numbers::pi) * cdf),
+            0.5 * kappa + ratio / std::numbers::sqrt2, 0.5 * (1.0 - alpha * ratio - ratio * ratio)};
+}
+
+// The tables hold each quantity less its value on an empty block, so that they are 0 at z' = 0 and a block of nothing
+// reads the closed forms exactly. Built once, on first use, for every decoder: 40 501 nodes of 3 doubles, 0.97 MB.
+struct RegimeTable {
+    std::vector<WeightMoments> nodes;  // z'-major: i (z' = 0.01 i) x 101 + k (kappa' = 0.01 k)
+};
+
+const RegimeTable& regime_table() {
+    static const RegimeTable table = [] {
+        constexpr std::size_t kZ = kRegimeZSteps + 1;
+        constexpr std::size_t kKappa = kRegimeKappaSteps + 1;
+        constexpr std::size_t kU = kRegimeUSteps + 1;
+        constexpr double kStepZ = kRegimeTopZ / kRegimeZSteps;
+        constexpr double kStepKappa = kRegimeTopKappa / kRegimeKappaSteps;
+        constexpr double kStepU = kRegimeTopU / kRegimeUSteps;
+        RegimeTable built;
+        built.nodes.assign(kZ * kKappa, {0.0, 0.0, 0.0});
+        std::vector<double> u(kU);
+        std::vector<double> simpson(kU);
+        for (std::size_t j = 0; j < kU; ++j) {
+            u[j] = static_cast<double>(j) * kStepU;
+            simpson[j] = (j == 0 || j + 1 == kU) ? 1.0 : (j % 2 != 0 ? 4.0 : 2.0);
+        }
+        // e^(kappa' u) at every node of kappa': each row of z' becomes all its entries by one matrix-vector product.
+        std::vector<double> tilt(kKappa * kU);
+        for (std::size_t k = 0; k < kKappa; ++k)
+            for (std::size_t j = 0; j < kU; ++j)
+                tilt[k * kU + j] = std::exp(static_cast<double>(k) * kStepKappa * u[j]);
+        std::vector<double> base(kU);
+        for (std::size_t i = 1; i < kZ; ++i) {  // the row z' = 0 is the closed forms: 0 in the tables
+            const double z = static_cast<double>(i) * kStepZ;
+            for (std::size_t j = 0; j < kU; ++j)
+                base[j] = simpson[j] * std::exp(-u[j] * u[j] + ln_i0(2.0 * u[j] * z) - z * z);  // scaled by e^-z^2
+            for (std::size_t k = 0; k < kKappa; ++k) {
+                double s0 = 0.0;
+                double s1 = 0.0;
+                double s2 = 0.0;
+                for (std::size_t j = 0; j < kU; ++j) {
+                    const double w = base[j] * tilt[k * kU + j];
+                    const double d = u[j] - z;  // moments about z, near the weight's center, for precision
+                    s0 += w;
+                    s1 += w * d;
+                    s2 += w * d * d;
+                }
+                const double offset = s1 / s0;
+                const WeightMoments empty = empty_block_weight(static_cast<double>(k) * kStepKappa);
+                built.nodes[i * kKappa + k] = {z * z + std::log(s0 * kStepU / 3.0) - empty.ln_j,
+                                               z + offset - empty.mean, s2 / s0 - offset * offset - empty.var};
+            }
+        }
+        return built;
+    }();
+    return table;
+}
+
+// The weight's ln J, mean and variance at (z', kappa') in [0, 4] x [0, 1], by bilinear interpolation of the tables
+// added to the closed forms of an empty block.
+WeightMoments weight_moments(double z, double kappa) {
+    constexpr std::size_t kKappa = kRegimeKappaSteps + 1;
+    const RegimeTable& table = regime_table();
+    const double pz = z * (kRegimeZSteps / kRegimeTopZ);
+    const double pk = kappa * (kRegimeKappaSteps / kRegimeTopKappa);
+    const auto iz = static_cast<std::size_t>(std::min(static_cast<int>(pz), kRegimeZSteps - 1));
+    const auto ik = static_cast<std::size_t>(std::min(static_cast<int>(pk), kRegimeKappaSteps - 1));
+    const double fz = pz - static_cast<double>(iz);
+    const double fk = pk - static_cast<double>(ik);
+    const WeightMoments& a = table.nodes[iz * kKappa + ik];
+    const WeightMoments& b = table.nodes[iz * kKappa + ik + 1];
+    const WeightMoments& c = table.nodes[(iz + 1) * kKappa + ik];
+    const WeightMoments& d = table.nodes[(iz + 1) * kKappa + ik + 1];
+    const auto blend = [fz, fk](double va, double vb, double vc, double vd) {
+        return (1.0 - fz) * ((1.0 - fk) * va + fk * vb) + fz * ((1.0 - fk) * vc + fk * vd);
+    };
+    const WeightMoments empty = empty_block_weight(kappa);
+    return {empty.ln_j + blend(a.ln_j, b.ln_j, c.ln_j, d.ln_j), empty.mean + blend(a.mean, b.mean, c.mean, d.mean),
+            empty.var + blend(a.var, b.var, c.var, d.var)};
+}
+
 void check_block(double s_abs, int m, double v) {
     if (m < 1) throw std::invalid_argument("block evidence: m must be at least 1 channel sample");
     if (!(v > 0.0) || !std::isfinite(v))
@@ -323,8 +445,10 @@ Block uncertain_block(double s_abs, int m, double mu, double p, double v, int or
     return {beta, q, s_abs / root_v, !(q > narrowest * narrowest)};
 }
 
-// The one quadrature behind block_llr_uncertain, level_posterior and block_evidence, after checking the arguments
-// (orders from lowest_order to 20): the evidence, the level's moments and the mode, in FS.
+// The one evaluation behind block_llr_uncertain, level_posterior and block_evidence, after checking the arguments
+// (orders from lowest_order to 20): the evidence, the level's moments and the mode, in FS. The mode comes from
+// Newton's method; the evidence and the moments from the broad-prior regime's tables where (z', kappa') lies in them,
+// and from the adaptive quadrature elsewhere.
 BlockEvidence evaluate(double s_abs, int m, double mu, double p, double v, int order, int lowest_order,
                        std::optional<double> start_a) {
     const Block block = uncertain_block(s_abs, m, mu, p, v, order, lowest_order);
@@ -332,7 +456,18 @@ BlockEvidence evaluate(double s_abs, int m, double mu, double p, double v, int o
         throw std::invalid_argument("block evidence: start_a must be finite (FS)");
     if (block.exact) return {block_llr(s_abs, m, mu, v), {mu, p}, mu};
     const double unit = std::sqrt(v) / m;  // FS per unit of b
-    const Fit fit = fit_posterior(block, order, start_a ? std::optional<double>(*start_a / unit) : std::nullopt);
+    const double mode = find_mode(block, start_a ? std::optional<double>(*start_a / unit) : std::nullopt);
+    const double s = std::sqrt(1.0 + 0.5 / block.q);
+    const double kappa = block.beta / block.q;
+    if (block.z / s <= kRegimeTopZ && kappa / s <= kRegimeTopKappa) {
+        const WeightMoments w = weight_moments(block.z / s, kappa / s);
+        // ln N(0; beta, q) - ln Phi(beta / sqrt(q)) + ln J(z', kappa') - ln s
+        const double llr = -0.5 * kappa * block.beta - 0.5 * std::log(2.0 * std::numbers::pi * block.q) -
+                           std::log1p(-0.5 * std::erfc(block.beta / std::sqrt(2.0 * block.q))) + w.ln_j -
+                           0.5 * std::log1p(0.5 / block.q);
+        return {llr, {w.mean / s * unit, w.var / (s * s) * unit * unit}, mode * unit};
+    }
+    const Fit fit = fit_posterior(block, order, mode);
     double mean = 0.0;
     for (std::size_t k = 0; k < static_cast<std::size_t>(order); ++k) mean += fit.share[k] * fit.b[k];
     mean /= fit.total;
@@ -342,7 +477,7 @@ BlockEvidence evaluate(double s_abs, int m, double mu, double p, double v, int o
         var += fit.share[k] * d * d;
     }
     var /= fit.total;
-    return {fit.llr, {mean * unit, var * unit * unit}, fit.mode * unit};
+    return {fit.llr, {mean * unit, var * unit * unit}, mode * unit};
 }
 
 // --- The flat prior ---
