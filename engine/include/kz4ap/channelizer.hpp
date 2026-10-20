@@ -20,6 +20,11 @@ struct ChannelizerConfig {
     double cutoff_hz = 150.0;
 };
 
+// The taps of the channel low-pass filter, exactly those the Channelizer applies: a Blackman-windowed sinc of
+// fft_size / 2 + 1 taps with its -6 dB point at cutoff_hz, normalized to a sum of 1 (unit gain at 0 Hz). Throws
+// std::invalid_argument for the configurations the Channelizer refuses.
+std::vector<double> channel_filter_taps(const ChannelizerConfig& config);
+
 // Splits a wideband I/Q stream into narrow, decimated baseband streams, one per
 // channel, by fast convolution: one shared FFT per block, then a small inverse
 // FFT per channel over the bins around its center.

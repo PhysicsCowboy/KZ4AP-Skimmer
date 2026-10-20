@@ -18,6 +18,7 @@ set(KZ4AP_BANK_SOURCES
 set(KZ4AP_VITERBI_SOURCES
   src/viterbi/morse_tree.cpp
   src/viterbi/fist.cpp
+  src/viterbi/observation.cpp
 )
 
 add_library(kz4ap_engine
@@ -105,6 +106,7 @@ set_tests_properties(BankFitB2a.FullSweep PROPERTIES ENVIRONMENT KZ4AP_FIT_FULL_
 add_executable(kz4ap_viterbi_tests
   tests/viterbi/morse_tree_test.cpp
   tests/viterbi/fist_test.cpp
+  tests/viterbi/observation_test.cpp
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)
 gtest_discover_tests(kz4ap_viterbi_tests)
