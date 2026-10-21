@@ -585,9 +585,9 @@ TEST(Config, DefaultsAreTheDesignTable) {
     EXPECT_EQ(c.tracker_window_s, 1.0);
     EXPECT_EQ(c.tracker_hop_s, 0.5);
     EXPECT_EQ(c.tracker_search_hz, 15.0);
-    EXPECT_EQ(c.tracker_gate_db, 13.0);
-    EXPECT_EQ(c.tracker_measurement_sd_hz, 0.1);
-    EXPECT_EQ(c.tracker_drift_sd_hz_per_s, 0.1);
+    EXPECT_EQ(c.tracker_gate_db, 9.0);
+    EXPECT_EQ(c.tracker_drift_sd_hz_per_s, 0.3);
+    EXPECT_EQ(c.tracker_drift_noise, 1.5e-4);
     EXPECT_FALSE(c.genie_frequency_offset_hz.has_value());
     EXPECT_EQ(c.genie_frequency_drift_hz_per_s, 0.0);
     EXPECT_FALSE(c.genie_fading_spread_hz.has_value());
@@ -599,4 +599,7 @@ TEST(Config, DefaultsAreTheDesignTable) {
     EXPECT_NEAR(1200.0 / (c.dot_min_ms * std::pow(c.speed_ratio, c.speed_count - 1)), 5.2, 0.05);
     EXPECT_NEAR(std::pow(c.factor_ratio, c.factor_count - 1), 8.14, 0.005);
     EXPECT_NEAR(c.over_rate_per_s * c.piece_s, 1.0e-4, 1e-18);
+    // The tracker's drift noise is a change of the drift rate by its start deviation over ten minutes:
+    // (0.3 Hz/s)^2 / 600 s.
+    EXPECT_NEAR(c.tracker_drift_noise, c.tracker_drift_sd_hz_per_s * c.tracker_drift_sd_hz_per_s / 600.0, 1e-18);
 }

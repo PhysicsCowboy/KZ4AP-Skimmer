@@ -106,20 +106,25 @@ struct ViterbiConfig {
     // pole's step; the signal detector's rule and value (plan section 2.10, "Hiss average: one-pole, 1 s"; heuristic)
     double hiss_average_s = 1.0;
 
-    // --- The frequency tracker (topic 4, item 8) ---
+    // --- The frequency tracker (topic 4, item 8; the owner's decision B of 2026-10-20; tracker.hpp has the design) ---
 
-    // s: the length of the window of each measurement
+    // s: the length of the window of each measurement (placeholder)
     double tracker_window_s = 1.0;
-    // s: the time between measurements
+    // s: the time between measurements (placeholder)
     double tracker_hop_s = 0.5;
-    // Hz: the half-width of the search around the predicted frequency
+    // Hz: the half-width of the search around the oscillator's frequency (placeholder)
     double tracker_search_hz = 15.0;
-    // dB relative to the median searched bin: a peak is accepted only above this gate
-    double tracker_gate_db = 13.0;
-    // Hz: the standard deviation of a measurement
-    double tracker_measurement_sd_hz = 0.1;
-    // Hz/s per sqrt(s): the process noise of the drift rate
-    double tracker_drift_sd_hz_per_s = 0.1;
+    // dB relative to the mean noise power per bin (N0 times the window's noise bandwidth, 1.5 Hz for the 1 s Hann
+    // window): a window is measured only if its peak is at least this far above it. Derived: a steady line at the
+    // perfect decoder's threshold at 5.2 WPM (-8.6 dB S500) stands 9.5 dB above it and passes in 64% of the windows
+    double tracker_gate_db = 9.0;
+    // Hz/s: the standard deviation of the drift rate at the start, and of any carrier's drift in the agreement test
+    // of two measurements. Sourced: older rigs' specified warm-up drift, at most about 0.3 Hz/s (a Kenwood TS-830S,
+    // 1 kHz in its first hour)
+    double tracker_drift_sd_hz_per_s = 0.3;
+    // Hz^2/s^3, (Hz/s)^2 per second: the process noise of the drift rate, a change of tracker_drift_sd_hz_per_s over
+    // ten minutes, (0.3 Hz/s)^2 / 600 s (derived from the sourced drift; the ten minutes heuristic)
+    double tracker_drift_noise = 1.5e-4;
 
     // --- Genie runs only: the truth, given to the decoder in place of what it would estimate ---
 

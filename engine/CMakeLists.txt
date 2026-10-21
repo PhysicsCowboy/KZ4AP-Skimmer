@@ -22,6 +22,7 @@ set(KZ4AP_VITERBI_SOURCES
   src/viterbi/level.cpp
   src/viterbi/search.cpp
   src/viterbi/hiss.cpp
+  src/viterbi/tracker.cpp
 )
 
 add_library(kz4ap_engine
@@ -114,6 +115,7 @@ add_executable(kz4ap_viterbi_tests
   tests/viterbi/level_test.cpp
   tests/viterbi/search_test.cpp
   tests/viterbi/hiss_test.cpp
+  tests/viterbi/tracker_test.cpp
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)
 gtest_discover_tests(kz4ap_viterbi_tests)
