@@ -543,14 +543,20 @@ S₅₀₀ seed-12 point stays a known failure until R3 sets the ceiling. The op
 - **Outcome (Task 4e, measured; commit 36084bc).** The strong stations now decode exactly at every one of 16
   keying-edge positions from +30 to +60 dB S₅₀₀; before, 16, 16, 13, 10, 2, 0 and 0. Ordinary levels are unchanged and
   the CPU is the same. Three details were settled by measurement:
-  - **The carrier power** in the term comes from the data, the same for every story: the larger of the channel's
-    largest piece power over the last 390 ms and the block's own estimate. A story's own level fails, because a story
-    can then lower its own uncertainty.
+  - **The carrier power** in the term comes from the data, never from a story's level: the larger of the channel's
+    largest piece power over the last 390 ms and the block's own estimate. The block's own estimate depends on where a
+    story claims its mark began, and can only raise its variance. A story's own level fails, because a story can then
+    lower its own uncertainty.
   - **A 4 ms look-ahead** keeps the filter's pre-ringing from reading as a weak mark.
   - **A 2% floor** on the relative error (`systematic_floor`, heuristic).
-- **A neighbor check** (a weak station beside a stronger neighbor in the same channel) found the term costs nothing.
-  It also measured that the decoder loses a weak station to an equally strong neighbor 40–70 Hz away, with or without
-  the term; the plan's O2 (no interference model) stands. See `docs/backlog.md`.
+- **A neighbor check** with a stronger neighbor keying throughout found the term costs nothing. It also measured that the
+  decoder loses a weak station to an equally strong neighbor 40–70 Hz away, with or without the term; the plan's O2
+  (no interference model) stands. See `docs/backlog.md`.
+- **Then Task 4e's review measured a case the check missed.** A strong neighbor that stopped 0.15–0.30 s before a weak
+  station started still set the station's carrier power through the 390 ms memory. 39 of 72 runs were exact with the
+  term, against 72 of 72 without it.
+- **A ruling made while building:** the carrier power must come from the station's own power, a narrowband estimate
+  or a shorter memory, whichever passes every test. Being measured (Task 4e, fix round 1).
 
 ### Obvious items, stated for approval
 
