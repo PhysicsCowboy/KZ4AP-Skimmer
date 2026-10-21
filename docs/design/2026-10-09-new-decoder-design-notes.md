@@ -404,11 +404,25 @@ they answer the risk this topic used to end with, which git keeps.
    Edges fall where the hypothesis puts them (to one piece); there are no filter delays; speeds between grid values
    do not matter for the observation. Scoring a mark's sum and the neighboring gap pieces separately ignores the
    noise correlation across the mark's edges (about 4 ms): an approximation (review 1, U10).
-   - **Amended 2026-10-20 (owner): a mark's rise is part of its matched filter.**
+   - **Amended 2026-10-20 (owner): a mark's rise is part of its matched filter, and pieces are scored at the noise's
+     long-run rate.**
      - In a mark's first pieces, the carrier's expected sum follows the rise. The keying edge is a raised cosine of
        5 ms, a heuristic placeholder (the generator's). It passes through the channel filter, is summed into pieces,
        and is averaged over the edge's position within a piece (derived).
      - It does not jump to the level at the first piece.
+     - **Weighting:** a mark's first block weights each piece by its expected fraction, the matched filter
+       S_w = Σ g_j x_j.
+     - **The noise:** every block's noise is counted at the long-run rate, 4 500 Hz × N0 per piece, instead of item 7's
+       N0 c(m).
+       - c(m) is the exact variance of a sum taken in isolation. In the search, though, a block's first piece then
+         earned about twice its share (213.8 against 100.0 in |S|²/V at +20 dB S500, derived), because its noise's
+         correlation with the samples just before it was ignored: the approximation the paragraph above (review 1,
+         U10) had accepted.
+       - The long-run rate is exact for long blocks. It costs a very short mark about 7% of its evidence (derived).
+     - **Measured** in the first prototype's search:
+       - with the rise in the expected sum alone, the problem moved rather than vanishing;
+       - with both changes, a speed step decodes exactly from +11 to +28 dB S500, and constant-speed stations wherever
+         they did before.
      - Without the rise, a story that starts its mark on a part-amplitude first piece can explain that piece only as
        a fade. At +20 dB S500 that gave it a lead of about 25 nats for one piece, which narrowed the beam at every
        letter start to about 8 nats. A speed step from 20 to 30 WPM then failed at +20 to +24 dB S500 (measured in the
@@ -440,7 +454,9 @@ they answer the risk this topic used to end with, which git keeps.
 
 7. **Noise per hertz (owner, 2026-10-14; amended 2026-10-15 by topic 3, item 3: the level per hertz now comes from
    the signal detector's spectrum around the station, measured without decisions, no longer from the gaps the
-   hypotheses agree on).** The noise of any sum over a time T is computed from the noise level per hertz (its variance
+   hypotheses agree on).** (Amended 2026-10-20 by item 2's amendment, owner: the evidence counts every sum's noise at
+   the long-run rate, 4 500 Hz × N0 per piece, and c(m) below stays the exact variance of a sum taken in isolation.)
+   The noise of any sum over a time T is computed from the noise level per hertz (its variance
    proportional to T, for T well above about 3 ms), as a density, not per piece. Treating the pieces as independent
    would understate a mark's noise variance by a factor of about 1.7–1.8 (2.2–2.6 dB) for marks of 8–720 ms on an
    ideal 300 Hz channel, and 1.9–2.1 (2.8–3.3 dB) on the real channel filter, whose noise bandwidth is 252 Hz

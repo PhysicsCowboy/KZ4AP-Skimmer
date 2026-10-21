@@ -142,20 +142,36 @@ topic 4, item 2):
 
   Λ(S; a) = −b² + ln I₀(2 b z),  z = |S| / √V(m),  b = m · a / √V(m)  (nats).
 
-**The mark's rise** (D10, owner, 2026-10-20; Task 4b). In a mark's first block the carrier's expected sum is
-a · m_signal instead of a · m: m_signal = 3 · Σ g_j over the block's pieces, where g_j = 1 after the rise. b becomes
-m_signal · a / √V(m); the noise is still V(m).
-- The fractions g_1 … g_J are the expected part of a full piece's carrier sum in a mark's first J pieces:
-  - the keying edge, a raised cosine of `keying_rise_s` = 5 ms (heuristic placeholder, the generator's), passed
-    through the channelizer's taps and decimation and summed into pieces (derived);
-  - averaged over the edge's position within a piece (derived: the expectation for an edge placed uniformly);
-  - from the first piece at 0.01 of full or more to the last piece more than 0.005 from full (both heuristic).
-- A newborn's first block (item 3) uses the same m_signal.
+**The mark's rise and the pieces' noise** (D10, owner, 2026-10-20; Task 4b, second design, as built). Two changes
+replace V(m) and the plain sum in the evidence:
+1. **Pieces are scored as independent at the noise's long-run rate.** A block's sum has the variance
+   4 500 Hz × N₀ per piece (1 500 Hz × N₀ per channel sample; the R[k] add up to 1 500 Hz), instead of N₀ · c(m).
+   - This is exact for long blocks. It removes the first-piece bonus: c(3) = 2 104.66 Hz made a block's first full
+     piece earn |S|²/V = 213.8 at +20 dB S₅₀₀ against 100.0 per piece later (derived), because a block's noise was
+     counted apart from its correlation with the samples before it.
+   - Cost: a 6-piece mark (a 100 WPM dot) is credited about 7% less than c(m) would credit it in isolation (derived).
+2. **A mark's first block is the matched filter to the rise.** S_w = Σ_j g_j x_j, with E[S_w] = 3a Σ g_j² and
+   Var S_w = 4 500 Hz × N₀ × Σ g_j², so b = 3a √(Σ g_j²) / √(4 500 Hz × N₀). Later blocks keep g = 1.
+   - The fractions g_1 … g_J are the expected part of a full piece's carrier sum in a mark's first J pieces:
+     - the keying edge, a raised cosine of `keying_rise_s` = 5 ms (heuristic placeholder, the generator's), passed
+       through the channelizer's taps and decimation and summed into pieces (derived);
+     - averaged over the edge's position within a piece (derived: the expectation for an edge placed uniformly);
+     - from the first piece at 0.01 of full or more to the last piece more than 0.005 from full (both heuristic).
+   - At 48 kHz this gives J = 4: 0.1934, 0.6137, 0.9427, 1.0192 (the last is the filter's overshoot; measured
+     against the real channelizer within 1.6 × 10⁻⁷).
+- A newborn's first block (item 3) uses the same statistic: b² = 10^{x/10} · Σ g_j² (derived).
 - The fall at a mark's end is not modeled. By then the story's level is learned from the mark itself, so a weak last
   piece only costs the story that keeps it (derived).
-- Without the rise, the story that starts its mark on a part-amplitude first piece read that piece as a fade. At
-  +20 dB S₅₀₀ that gave it a lead of about 25 nats for one piece, which narrowed the beam at every letter start to
-  about 8 nats (measured, Task 4).
+- Why (measured, Task 4 and Task 4b):
+  - The approved design's piece-aligned rectangle gave the story that starts its mark on a part-amplitude first piece
+    a one-piece lead of about 25 nats at +20 dB S₅₀₀. That narrowed the 40-nat beam to about 8 nats at every letter
+    start, and the speed step failed at +20 to +24 dB S₅₀₀.
+  - The rise in the expected sum alone failed too: a newborn's scale-free prior escaped it, and the unweighted sum
+    still rewarded skipping weak pieces.
+  - With both changes the step decodes exactly from +11 to +28 dB S₅₀₀ at beams of 40 and 80 nats, and constant-speed
+    stations at all 57 points.
+  - The one remaining failure, +10 dB S₅₀₀ on one seed, is the ceiling's: rescues born in a word gap are dropped by
+    the 1 700-story ceiling (pending the owner).
 
 1. **Known level:** the formula above. ln I₀ by Abramowitz and Stegun 9.8.1 (x ≤ 3.75) and 9.8.2 (x > 3.75). Their
    stated bounds, 1.6 × 10⁻⁷ on I₀ and 1.9 × 10⁻⁷ on √x e^{−x} I₀ (whose value is at least 0.39), keep the error of
@@ -449,6 +465,21 @@ filter delays" (topic 4, item 2) had been costed by review 1 and the standard-pr
 
 *(B) chosen.* It is measured first on the speed step from +10 to +28 dB S₅₀₀ and on constant-speed stations (Task 4b).
 The owner hears the result if it does not remove the failing band.
+
+*Outcome, and the second round (owner, 2026-10-20).*
+- **The first version failed (measured).** It put the rise into the expected sum only. The band moved (+18 to
+  +23 dB S₅₀₀ at 40 nats), and constant-speed stations lost exactness at 11 points. The reasons:
+  - a newborn's scale-free prior escaped the rise;
+  - every block's first piece earned about twice its share, because the noise model ignored its correlation with
+    the samples before it;
+  - the unweighted sum rewarded starts that skip weak pieces.
+- **The owner asked whether a mark's first pieces could simply be ignored.** They cannot: ignoring moves where
+  counting starts, and the story that starts counting first jumps ahead of those still waiting.
+- **He chose to keep fixing the problem, with no fallback to the approved design.** The second version, the pieces
+  at the noise's long-run rate and the matched filter to the rise (§2.3), removes the band (measured; §2.3) and is
+  built.
+- **The remaining failure,** at +10 dB S₅₀₀ on one seed, comes from the ceiling. It is put to the owner as
+  (a) a newborn's first mark exempt from the ceiling, (b) a ceiling of 2 500, or (c) left to R3.
 
 ### Obvious items, stated for approval
 
