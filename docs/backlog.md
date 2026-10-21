@@ -353,6 +353,31 @@ A character-frequency prior would not help "EE" against "I", which are both comm
 
 **How to measure:** DEV2's QSO group (H2) and the one-word overs above, sent alone, at several levels and seeds.
 
+### A neighbor inside the channel takes over a weak station in the new decoder (found 2026-10-21; open)
+
+The new decoder's first prototype has no interference model (the plan's O2): its stories model one station per channel,
+and everything else counts as noise or as that station.
+
+Measured with the genie frequency (the tracker plays no part):
+- The setup: a station sending "PARIS PARIS" at 25 WPM, a keyed neighbor at 22 WPM above it, three seeds.
+- **Lost to its neighbor:** a station at +6 or +10 dB S500 beside an equally strong neighbor 40 or 70 Hz away, or beside
+  one 10 dB stronger within 100 Hz.
+- **Lost in every cell tried:** neighbors 20 to 40 dB stronger within 100 Hz, 54 of 54 runs.
+- **E2-like cells** (station +8 to +14 dB S500, neighbor -6 to +12 dB relative, 12 to 90 Hz away): 6 of 108 runs exact.
+- **The systematic term** (the plan's D15) changed none of this. Evidence:
+  `docs/plans/data/2026-10-20-new-decoder-prototype-1/systematic-neighbors.csv` and the prototype's results record.
+
+The channel passes about ±150 Hz around the station, so a neighbor's carrier and its keying sidebands within that range
+reach every story's sums.
+
+**Thoughts for a fix** (none tried):
+- a narrower or adaptive channel filter for the decoder;
+- stories that carry a second station, an interference state;
+- cancelling the stronger neighbor first (successive interference cancellation);
+- a level model that refuses a level jump to the neighbor's.
+
+**How to measure:** DEV2's QRM group (E2) in the measurement runs (R4, R9), and the grid above.
+
 ### Time-base invariance of the decoder (stage 2; known issue)
 **Status (2026-10-07): applies to the Bell decoder** (design spec §5.2, amendments of 2026-10-07); written for the filter-bank decoder, the measure carries over.
 
