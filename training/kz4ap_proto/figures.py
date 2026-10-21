@@ -26,7 +26,7 @@ import numpy as np
 
 from kz4ap_synth.jitter import SPEED_CELLS
 
-from .devset2 import Fit, _source_text, cell_index, git_commit, ideal_s500_db
+from .devset2 import Fit, _source_text, analysis_rows, cell_index, git_commit, ideal_s500_db
 
 DPI = 150
 S500_LABEL = "S$_{500}$ (dB SNR in 500 Hz)"
@@ -63,8 +63,11 @@ def _save(fig, stem: Path) -> list[Path]:
 
 
 def _fit_rows(a: dict, decoder: str) -> list[dict]:
+    """The signals the fit of `decoder` used: its oracle rows of the fit groups, without the signals above the
+    Farnsworth factor and the whole groups that the analysis left out (devset2.analysis_rows), so that the figures
+    show the signals the fit used (the review of Task 8, minor 2: I2 as a fit group)."""
     groups = set(a["meta"]["fit_groups"])
-    return [r for r in a["signals"] if r["decoder"] == decoder and r["path"] == "oracle" and r["group"] in groups]
+    return [r for r in analysis_rows(a) if r["decoder"] == decoder and r["path"] == "oracle" and r["group"] in groups]
 
 
 def _safe(name: str) -> str:

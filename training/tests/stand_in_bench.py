@@ -4,6 +4,10 @@ decodes nothing and it does not align: the edits it reports for --score-decoded 
 position plus the difference in length, which is the edit distance for substitutions and for a changed tail (all the
 tests use); the real bench's alignment is tested in bench/tests/scoring_test.cpp.
 
+Like the real bench it writes its result file and its statistics file under a name of their own (".partial") and renames
+them when complete, the statistics file after the result file, and the statistics file's format and version (1 with
+--stats-detail, else 2) come first in the file.
+
 Environment (all optional):
   STAND_IN_BENCH_DIR       a folder: each run leaves started-<pid> when it starts, done-<pid> when it ends, and
                            events-<pid>.json with its start and end times, s
@@ -19,6 +23,8 @@ import re
 import sys
 import time
 from pathlib import Path
+
+STATS_FORMAT = "kz4ap-viterbi-search-stats"
 
 WAIT_LIMIT_S = 10.0
 COUNTS = ("symbols", "edits", "chars", "char_edits", "spaces", "space_edits", "first_word_symbols",
@@ -59,15 +65,23 @@ def score_decoded(args) -> dict:
     return {"score": {"signals": signals}}
 
 
+def write_atomically(path, text: str) -> None:
+    """text to path under a name of its own, renamed when it is complete (the real bench's way)."""
+    partial = Path(str(path) + ".partial")
+    partial.write_text(text)
+    os.replace(partial, path)
+
+
 def run(args) -> dict:
     labels = json.loads(Path(args.labels).read_text())["signals"]
     signals = [{"index": i, "snr_db": label["snr_db"], "scored": label.get("score", True), "track_id": 1,
                 "tracked_freq_hz": None, "decoded": "", **{k: 0 for k in COUNTS}} for i, label in enumerate(labels)]
-    if args.stats:
-        Path(args.stats).write_text(json.dumps({"stand_in": True}) + "\n")
-    return {"recording": Path(args.recording).name, "decoder": args.decoder, "front_end": args.decoder,
-            "oracle": args.oracle, "settings": args.set, "stats": args.stats, "channel_seconds": 1.0 * len(labels),
-            "score": {"signals": signals}}
+    out = {"recording": Path(args.recording).name, "decoder": args.decoder, "front_end": args.decoder,
+           "oracle": args.oracle, "settings": args.set, "stats": args.stats, "stats_detail": args.stats_detail,
+           "channel_seconds": 1.0 * len(labels), "score": {"signals": signals}}
+    if args.genie:
+        out["genie"] = {"kinds": list(dict.fromkeys(args.genie)), "channels": []}   # each kind once, as the bench
+    return out
 
 
 def main(argv=None) -> int:
@@ -80,6 +94,8 @@ def main(argv=None) -> int:
     parser.add_argument("--decoder", default="matched")
     parser.add_argument("--set", action="append", default=[])
     parser.add_argument("--stats")
+    parser.add_argument("--stats-detail", action="store_true")
+    parser.add_argument("--genie", action="append", default=[])
     parser.add_argument("--score-decoded")
     args = parser.parse_args(argv)
     folder = Path(os.environ["STAND_IN_BENCH_DIR"]) if "STAND_IN_BENCH_DIR" in os.environ else None
@@ -98,7 +114,10 @@ def main(argv=None) -> int:
             return 3
         time.sleep(0.01)
     out = score_decoded(args) if args.score_decoded else run(args)
-    Path(args.json).write_text(json.dumps(out) + "\n")
+    write_atomically(args.json, json.dumps(out) + "\n")
+    if args.stats and not args.score_decoded:   # after the result file, as the real bench
+        write_atomically(args.stats, json.dumps({"format": STATS_FORMAT, "version": 1 if args.stats_detail else 2,
+                                                 "stand_in": True}) + "\n")
     if folder is not None:
         (folder / f"events-{os.getpid()}.json").write_text(json.dumps({"start": started, "end": time.time()}))
         (folder / f"done-{os.getpid()}").write_text("")

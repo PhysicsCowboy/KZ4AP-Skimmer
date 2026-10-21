@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 from collections import defaultdict
 from pathlib import Path
@@ -376,8 +377,11 @@ def test_the_run_command_takes_decoder_and_its_old_name(tmp_path, monkeypatch):
     seen = []
     monkeypatch.setattr(suites, "run_suite", lambda out, bench, fes, only=None, **options: seen.append((fes, options)))
     suites.main(["run", "--out", str(tmp_path), "--bench", "b", "--decoder", "bank", "--front-end", "matched"])
-    # without the options of a named run: one job at a time, the decoders' own results folders, no settings
-    assert seen == [(["bank", "matched"], {"jobs": 1, "name": None, "settings": [], "stats": False})]
+    # without the options of a named run: one job at a time, the decoders' own results folders, no settings, no
+    # genie, no statistics, and no existing results to overwrite or to skip
+    assert seen == [(["bank", "matched"], {"jobs": 1, "name": None, "settings": [], "stats": False,
+                                           "stats_detail": False, "genie": [], "overwrite": False,
+                                           "skip_existing": False})]
     with pytest.raises(SystemExit):
         suites.main(["run", "--out", str(tmp_path), "--bench", "b", "--decoder", "neural"])
 
@@ -388,7 +392,8 @@ def test_the_run_command_takes_jobs_a_name_settings_and_statistics(tmp_path, mon
     suites.main(["run", "--out", str(tmp_path), "--bench", "b", "--decoder", "viterbi", "--jobs", "10", "--name",
                  "r2-b35", "--set", "beam_nats=35", "--set", "ceiling=600", "--stats"])
     assert seen == [(["viterbi"], {"jobs": 10, "name": "r2-b35", "settings": ["beam_nats=35", "ceiling=600"],
-                                   "stats": True})]
+                                   "stats": True, "stats_detail": False, "genie": [], "overwrite": False,
+                                   "skip_existing": False})]
 
 
 def test_the_bank_decoder_has_the_matched_paths_regimes():
@@ -791,9 +796,9 @@ def test_run_suite_stops_with_the_failing_test_case_named(tmp_path, monkeypatch)
     _noise_cases(tmp_path, 6)
     bench = stand_in_bench.launcher(tmp_path)
     monkeypatch.setenv("STAND_IN_BENCH_FAIL", "N2-noise-3")
-    for jobs in (1, 3):
-        with pytest.raises(RuntimeError, match=r"N2-noise-3-s1 \(r2-b35\)"):
-            run_suite(tmp_path, bench, ["viterbi"], jobs=jobs, name="r2-b35")
+    for jobs in (1, 3):   # each run gets a new name: a name whose folder holds results is refused
+        with pytest.raises(RuntimeError, match=rf"N2-noise-3-s1 \(r2-b35-{jobs}\)"):
+            run_suite(tmp_path, bench, ["viterbi"], jobs=jobs, name=f"r2-b35-{jobs}")
 
 
 def test_run_suite_refuses_a_bad_name_setting_or_job_count_before_running(tmp_path, monkeypatch):
@@ -820,3 +825,192 @@ def test_run_suite_reports_a_bench_that_wrote_no_statistics(tmp_path, monkeypatc
     run_suite(tmp_path, tmp_path / "kz4ap-bench", ["bank"])  # no statistics asked for: none missing
     with pytest.raises(RuntimeError, match="statistics"):
         run_suite(tmp_path, tmp_path / "kz4ap-bench", ["bank"], stats=True)
+
+
+# --- runs that do not overwrite one another, resumable runs, the genie, the statistics in either form ---
+
+def _started(log) -> int:
+    """How many bench processes the stand-in bench saw start in `log`."""
+    return len(list(Path(log).glob("started-*")))
+
+
+def _new_log(tmp_path, monkeypatch):
+    """A fresh folder for the stand-in bench's log (the earlier one removed), set in the environment."""
+    log = tmp_path / "bench-log"
+    if log.exists():
+        shutil.rmtree(log)
+    monkeypatch.setenv("STAND_IN_BENCH_DIR", str(log))
+    return log
+
+
+def test_run_suite_refuses_a_folder_that_already_holds_results_unless_allowed(tmp_path, monkeypatch):
+    names = _noise_cases(tmp_path, 3)
+    bench = stand_in_bench.launcher(tmp_path)
+    run_suite(tmp_path, bench, ["viterbi"], name="r2-b35", settings=["beam_nats=35"])
+    folder = tmp_path / "results" / "r2-b35"
+    before = {p.name: p.read_text() for p in folder.iterdir()}
+    assert sorted(before) == sorted(f"{n}.json" for n in names)
+    # a second run under the name is refused before any bench starts, and nothing changes
+    with monkeypatch.context() as patch:
+        patch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("the bench ran"))
+        with pytest.raises(ValueError, match=r"results/r2-b35 already holds 3 result files") as refused:
+            run_suite(tmp_path, bench, ["viterbi"], name="r2-b35", settings=["beam_nats=40"])
+        assert "overwrite" in str(refused.value) and "skip_existing" in str(refused.value)
+        # the decoder's own folder is protected like a named one: the frozen references are there
+        (tmp_path / "results" / "bank").mkdir()
+        (tmp_path / "results" / "bank" / "X.json").write_text("{}")
+        with pytest.raises(ValueError, match=r"results/bank already holds 1 result file"):
+            run_suite(tmp_path, bench, ["bank"])
+    assert {p.name: p.read_text() for p in folder.iterdir()} == before
+    # a folder with only a leftover partial file (a run that died) or other files holds no results
+    other = tmp_path / "results" / "r3"
+    other.mkdir()
+    (other / f"{names[0]}.json.partial").write_text("x")
+    (other / "notes.txt").write_text("x")
+    run_suite(tmp_path, bench, ["viterbi"], name="r3", only=names[0])
+    assert (other / f"{names[0]}.json").exists() and not (other / f"{names[0]}.json.partial").exists()
+    # overwrite=True runs again over the same names: the files of the test cases it runs are replaced
+    run_suite(tmp_path, bench, ["viterbi"], name="r2-b35", settings=["beam_nats=40"], overwrite=True)
+    for n in names:
+        assert json.loads((folder / f"{n}.json").read_text())["settings"] == ["beam_nats=40"]
+
+
+def test_run_suite_skip_existing_resumes_a_run_where_it_stopped(tmp_path, monkeypatch, capsys):
+    names = _noise_cases(tmp_path, 4)
+    bench = stand_in_bench.launcher(tmp_path)
+    log = _new_log(tmp_path, monkeypatch)
+    folder = tmp_path / "results" / "r5"
+    monkeypatch.setenv("STAND_IN_BENCH_FAIL", "N2-noise-2")
+    with pytest.raises(RuntimeError, match="N2-noise-2-s1"):
+        run_suite(tmp_path, bench, ["viterbi"], name="r5", settings=["beam_nats=35"], stats=True)
+    assert sorted(p.name for p in folder.iterdir()) == sorted(
+        [f"{n}.json" for n in names[:2]] + [f"{n}.stats.json" for n in names[:2]])  # the two before the failure
+    monkeypatch.delenv("STAND_IN_BENCH_FAIL")
+    log = _new_log(tmp_path, monkeypatch)
+    capsys.readouterr()
+    run_suite(tmp_path, bench, ["viterbi"], name="r5", settings=["beam_nats=35"], stats=True, skip_existing=True)
+    assert _started(log) == 2   # only the test cases that were not done
+    out = capsys.readouterr().out
+    assert out.count("skipped") == 2 and names[0] in out and names[1] in out
+    assert sorted(p.name for p in folder.iterdir()) == sorted(
+        [f"{n}.json" for n in names] + [f"{n}.stats.json" for n in names])
+    # a finished run resumed does nothing
+    log = _new_log(tmp_path, monkeypatch)
+    run_suite(tmp_path, bench, ["viterbi"], name="r5", settings=["beam_nats=35"], stats=True, skip_existing=True)
+    assert not log.exists() or _started(log) == 0
+
+
+def test_a_resumed_run_redoes_what_is_incomplete_and_refuses_what_does_not_match(tmp_path, monkeypatch):
+    names = _noise_cases(tmp_path, 3)
+    bench = stand_in_bench.launcher(tmp_path)
+    folder = tmp_path / "results" / "r6"
+    run_suite(tmp_path, bench, ["viterbi"], name="r6", settings=["beam_nats=35"])   # asked for no statistics
+    # results without the statistics asked for now are incomplete: every test case is run again
+    log = _new_log(tmp_path, monkeypatch)
+    run_suite(tmp_path, bench, ["viterbi"], name="r6", settings=["beam_nats=35"], stats=True, skip_existing=True)
+    assert _started(log) == 3 and all((folder / f"{n}.stats.json").exists() for n in names)
+    # a result file cut short (the bench killed while writing it, before results were written under a name of their
+    # own) is not a result, and a leftover partial file of a test case that is run again is removed
+    (folder / f"{names[1]}.json").write_text('{"score": {"signals": [')
+    (folder / f"{names[1]}.json.partial").write_text("x")
+    (folder / f"{names[1]}.stats.json.partial").write_text("x")
+    log = _new_log(tmp_path, monkeypatch)
+    run_suite(tmp_path, bench, ["viterbi"], name="r6", settings=["beam_nats=35"], stats=True, skip_existing=True)
+    assert _started(log) == 1
+    assert json.loads((folder / f"{names[1]}.json").read_text())["recording"] == f"{names[1]}.wav"
+    assert sorted(p.name for p in folder.iterdir()) == sorted(
+        [f"{n}.json" for n in names] + [f"{n}.stats.json" for n in names])
+    # what was run must be what is run now: the settings, the genie, the statistics' form and the decoder
+    with monkeypatch.context() as patch:
+        patch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("the bench ran"))
+        with pytest.raises(ValueError, match="settings"):
+            run_suite(tmp_path, bench, ["viterbi"], name="r6", settings=["beam_nats=40"], stats=True,
+                      skip_existing=True)
+        with pytest.raises(ValueError, match="settings"):
+            run_suite(tmp_path, bench, ["viterbi"], name="r6", stats=True, skip_existing=True)
+        with pytest.raises(ValueError, match="genie"):
+            run_suite(tmp_path, bench, ["viterbi"], name="r6", settings=["beam_nats=35"], stats=True,
+                      genie=["fist"], skip_existing=True)
+        with pytest.raises(ValueError, match="statistics"):
+            run_suite(tmp_path, bench, ["viterbi"], name="r6", settings=["beam_nats=35"], stats=True,
+                      stats_detail=True, skip_existing=True)
+        with pytest.raises(ValueError, match="decoder"):
+            run_suite(tmp_path, bench, ["bank"], name="r6", skip_existing=True)
+
+
+def test_run_suite_does_not_take_a_stale_statistics_file_for_the_runs(tmp_path, monkeypatch):
+    names = _noise_cases(tmp_path, 1)
+    folder = tmp_path / "results" / "r7"
+    folder.mkdir(parents=True)
+    stale = folder / f"{names[0]}.stats.json"
+    stale.write_text("stale")
+    # a bench that exits 0 and writes no statistics file: the earlier run's file does not count
+    monkeypatch.setattr(subprocess, "run", lambda cmd, *a, **k: subprocess.CompletedProcess(cmd, 0, "CER 0.0\n", ""))
+    with pytest.raises(RuntimeError, match="statistics"):
+        run_suite(tmp_path, tmp_path / "kz4ap-bench", ["viterbi"], name="r7", stats=True, overwrite=True)
+    assert not stale.exists()   # removed before the bench was launched
+    # and so are the partial files of an earlier try at the test case
+    partial = folder / f"{names[0]}.stats.json.partial"
+    partial.write_text("x")
+    (folder / f"{names[0]}.json.partial").write_text("x")
+    with pytest.raises(RuntimeError, match="statistics"):
+        run_suite(tmp_path, tmp_path / "kz4ap-bench", ["viterbi"], name="r7", stats=True, overwrite=True)
+    assert not partial.exists() and not (folder / f"{names[0]}.json.partial").exists()
+
+
+def test_run_suite_hands_the_genie_and_the_statistics_form_to_the_bench(tmp_path):
+    names = _noise_cases(tmp_path, 2)
+    bench = stand_in_bench.launcher(tmp_path)
+    run_suite(tmp_path, bench, ["viterbi"], name="g1", genie=["fading", "fist"], stats=True, stats_detail=True, jobs=2)
+    folder = tmp_path / "results" / "g1"
+    for n in names:
+        out = json.loads((folder / f"{n}.json").read_text())
+        assert out["genie"]["kinds"] == ["fading", "fist"] and out["stats_detail"] is True and out["oracle"] is True
+        assert json.loads((folder / f"{n}.stats.json").read_text())["version"] == 1   # every line
+    run_suite(tmp_path, bench, ["viterbi"], name="g2", stats=True)
+    for n in names:
+        out = json.loads((tmp_path / "results" / "g2" / f"{n}.json").read_text())
+        assert "genie" not in out and out["stats_detail"] is False
+        assert json.loads((tmp_path / "results" / "g2" / f"{n}.stats.json").read_text())["version"] == 2   # summary
+    # --only picks the test cases: the others are not run
+    run_suite(tmp_path, bench, ["viterbi"], name="g3", genie=["frequency"], only=names[0])
+    assert [p.name for p in (tmp_path / "results" / "g3").iterdir()] == [f"{names[0]}.json"]
+
+
+def test_run_suite_refuses_options_the_selected_test_cases_cannot_take_before_running(tmp_path, monkeypatch):
+    names = _noise_cases(tmp_path, 2)
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    manifest["recordings"].append({"name": "A2-detector-c01-0-s1", "group": "A2 sensitivity, detector",
+                                   "oracle": False, "wav": "d.wav", "labels": "d.json", "station_labels": None})
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("the bench ran"))
+    bench = tmp_path / "kz4ap-bench"
+    # statistics and the genie are of oracle channels: a selection with a detector-path recording is refused at once,
+    # not at that recording
+    for options in ({"stats": True}, {"genie": ["fist"]}):
+        with pytest.raises(ValueError, match=r"oracle.*A2-detector-c01-0-s1.*only"):
+            run_suite(tmp_path, bench, ["viterbi"], name="x", **options)
+    assert not (tmp_path / "results" / "x").exists()
+    with pytest.raises(ValueError, match="genie"):
+        run_suite(tmp_path, bench, ["viterbi"], name="x", genie=["loud"], only=names[0])
+    with pytest.raises(ValueError, match="stats_detail"):
+        run_suite(tmp_path, bench, ["viterbi"], name="x", stats_detail=True, only=names[0])
+    with pytest.raises(ValueError, match="overwrite"):
+        run_suite(tmp_path, bench, ["viterbi"], name="x", overwrite=True, skip_existing=True, only=names[0])
+
+
+def test_the_run_command_takes_genie_the_statistics_form_and_the_options_for_existing_results(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(suites, "run_suite", lambda out, bench, fes, only=None, **options: seen.append((fes, only, options)))
+    suites.main(["run", "--out", str(tmp_path), "--bench", "b", "--decoder", "viterbi", "--name", "r8-fist", "--genie",
+                 "fist", "--genie", "fading", "--stats-detail", "--skip-existing", "--only", "^C2-"])
+    # --stats-detail asks for the statistics file, in its full form
+    assert seen == [(["viterbi"], "^C2-", {"jobs": 1, "name": "r8-fist", "settings": [], "stats": True,
+                                           "stats_detail": True, "genie": ["fist", "fading"], "overwrite": False,
+                                           "skip_existing": True})]
+    seen.clear()
+    suites.main(["run", "--out", str(tmp_path), "--bench", "b", "--decoder", "viterbi", "--name", "r9", "--overwrite"])
+    assert seen[0][2]["overwrite"] is True and seen[0][2]["skip_existing"] is False and seen[0][2]["stats"] is False
+    for bad in (["--overwrite", "--skip-existing"], ["--genie", "loud"]):
+        with pytest.raises(SystemExit):
+            suites.main(["run", "--out", str(tmp_path), "--bench", "b", "--decoder", "viterbi", *bad])

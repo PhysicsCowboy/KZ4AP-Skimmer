@@ -7,7 +7,8 @@ scores each with kz4ap-bench, and a summary.
     python -m kz4ap_synth.suites run --out build/suite/full --bench PATH/kz4ap-bench \
         --decoder baseline --decoder matched [--decoder bank] [--decoder viterbi]
     python -m kz4ap_synth.suites run --out build/suite/dev2 --bench PATH/kz4ap-bench --decoder viterbi \
-        --jobs 10 --name NAME [--set NAME=VALUE ...] [--stats]
+        --jobs 10 --name NAME [--set NAME=VALUE ...] [--genie KIND ...] [--stats [--stats-detail]] [--only REGEX] \
+        [--overwrite | --skip-existing]
     python -m kz4ap_synth.suites summarize --out build/suite/full
 
 "smoke" is the recording bench/smoke.sh makes (the CI check); "full" is for
@@ -39,6 +40,7 @@ import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 
@@ -78,6 +80,8 @@ CER_THRESHOLDS = (0.05, 0.10)
 FRONT_ENDS = ("baseline", "matched", "bank", "viterbi")
 # kz4ap-bench --decoder (--front-end is its old alias); the bench's default is Matched
 BENCH_FRONT_END = {"baseline": "envelope", "matched": "matched", "bank": "bank", "viterbi": "viterbi"}
+# kz4ap-bench --genie (the new decoder's, oracle channels only): the truth about each station that its label gives
+GENIE_KINDS = ("fist", "frequency", "fading")
 # A name for a run's results folder (results/<name>, run_suite's `name`): it must stay one folder under results/.
 RUN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 # A decoder setting handed to the bench: NAME=VALUE, NAME an identifier (a ViterbiConfig field), VALUE for the bench to
@@ -1118,8 +1122,53 @@ def oracle_copies(rec: dict) -> list[tuple[str, str, str]]:
     return [(rec["labels"], f"{rec['name']}.oracle", f"{rec['group']}, oracle")]
 
 
+def _stats_version(path: Path) -> int | None:
+    """The format version that a statistics file declares, read from its first bytes (kz4ap-bench writes "format" and
+    "version" first); None if it does not say."""
+    try:
+        with path.open(encoding="utf-8") as f:
+            head = f.read(512)
+    except OSError:
+        return None
+    found = re.search(r'"version":\s*(\d+)', head)
+    return int(found.group(1)) if found else None
+
+
+class _Job(NamedTuple):
+    """One bench call of run_suite: a test case of one decoder's run."""
+    folder: str          # the results folder, results/<folder>
+    result: str          # the test case's result name
+    cmd: list            # the bench's command
+    result_file: Path    # the bench's --json
+    stats_file: Path     # where its --stats goes (written only if the run asks for statistics)
+    decoder: str         # the bench's --decoder
+
+
+def _same_run(job: _Job, settings: list, genie: list, stats_version: int | None) -> None:
+    """Raises ValueError unless the finished test case `job` was made by the run described by the rest: the bench's
+    --set settings and --genie kinds (each once, in the order first given), and the form of its statistics file (the
+    format version; None: the run asks for none)."""
+    made = json.loads(job.result_file.read_text(encoding="utf-8"))
+    where = f"results/{job.folder}/{job.result_file.name}"
+    resume = "a run that is resumed must be the run it resumes"
+    if made.get("decoder") != job.decoder:
+        raise ValueError(f"{where} was made by the {made.get('decoder')!r} decoder, this run's is {job.decoder!r}: "
+                         + resume)
+    if made.get("settings", []) != settings:
+        raise ValueError(f"{where} was made with the settings {made.get('settings', [])}, this run's are {settings}: "
+                         + resume)
+    if made.get("genie", {}).get("kinds", []) != genie:
+        raise ValueError(f"{where} was made with the genie {made.get('genie', {}).get('kinds', [])}, this run's is "
+                         f"{genie}: " + resume)
+    if stats_version is not None and _stats_version(job.stats_file) != stats_version:
+        raise ValueError(f"the statistics file {job.stats_file.name} in results/{job.folder} is of format version "
+                         f"{_stats_version(job.stats_file)}, this run's are version {stats_version} "
+                         f"({'every line' if stats_version == 1 else 'the summary'}): " + resume)
+
+
 def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None, jobs: int = 1,
-              name: str | None = None, settings=(), stats: bool = False) -> None:
+              name: str | None = None, settings=(), stats: bool = False, stats_detail: bool = False, genie=(),
+              overwrite: bool = False, skip_existing: bool = False) -> None:
     """Scores every recording of the manifest (or those whose names match `only`, a regular
     expression) with kz4ap-bench, once per front end (and once more per front end against
     per-station labels where the manifest has them).
@@ -1129,9 +1178,22 @@ def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None, j
     - name: the results folder, results/<name>, in place of the decoder's own (a run needs one decoder to be named);
     - settings: "NAME=VALUE" strings, each handed to every bench call as --set NAME=VALUE (a decoder setting: the bench
       refuses a name it does not know);
-    - stats: the bench also writes its statistics file, results/<folder>/<test case>.stats.json.
+    - genie: kinds of GENIE_KINDS, each handed to every bench call as --genie KIND (the true speed and fist, carrier or
+      fading spread of each station, read from its label; oracle test cases only);
+    - stats: the bench also writes its statistics file, results/<folder>/<test case>.stats.json (oracle test cases
+      only): a summary for each channel, or with stats_detail every newborn line (45 kB per channel-second).
+    stats and genie are of oracle channels, so a selection with a recording that is not an oracle one is refused before
+    anything runs (select the oracle test cases with `only`; the plan's runs pass kz4ap_proto.experiments.DEV2).
+
+    Results cost hours and cannot be recovered, so a run does not write into a folder that already holds result files
+    (any *.json) unless it is told to: overwrite replaces the files of the test cases it runs; skip_existing resumes the
+    run, skipping the test cases that are done (a result file that reads, and the statistics file if asked for), which
+    must have been made by this run (decoder, settings, genie and the statistics' form, or it is refused before
+    anything runs). Before a test case is run its stale statistics file and any partial file of an earlier try are
+    removed, so that they cannot pass for this run's. The bench writes its files under a name of their own and renames
+    them when they are complete (the statistics after the result), so a file that exists is a complete one.
     The first failure stops the run (the bench processes already running finish) and names its test case."""
-    front_ends, settings = list(front_ends), list(settings)
+    front_ends, settings, genie = list(front_ends), list(settings), list(genie)
     for fe in front_ends:
         if fe not in FRONT_ENDS:
             raise ValueError(f"unknown decoder {fe!r}")
@@ -1144,50 +1206,93 @@ def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None, j
     for setting in settings:
         if not SETTING.match(setting):
             raise ValueError(f"setting {setting!r}: expected NAME=VALUE, NAME a setting's name")
+    for kind in genie:
+        if kind not in GENIE_KINDS:
+            raise ValueError(f"genie {kind!r}: one of {', '.join(GENIE_KINDS)}")
     if jobs < 1:
         raise ValueError(f"jobs must be at least 1, not {jobs}")
+    if stats_detail and not stats:
+        raise ValueError("stats_detail needs stats: it is the full form of the statistics file")
+    if overwrite and skip_existing:
+        raise ValueError("overwrite and skip_existing exclude each other: one replaces the test cases that are "
+                         "done, the other skips them")
     manifest = json.loads((out_dir / "manifest.json").read_text())
-    work = []  # (results folder name, result name, the bench's command, its statistics file or None)
+    selected = [rec for rec in manifest["recordings"] if only is None or re.search(only, rec["name"])]
+    detector_path = [rec["name"] for rec in selected if not rec["oracle"]]
+    if (stats or genie) and detector_path:
+        raise ValueError(f"stats and genie are of oracle channels, but {len(detector_path)} of the {len(selected)} "
+                         f"selected recordings are not oracle ones, the first {detector_path[0]!r}: select the oracle "
+                         "test cases with only (the plan's runs pass kz4ap_proto.experiments.DEV2)")
+    work = []
     for fe in front_ends:
         folder = name or fe
         results = out_dir / "results" / folder
-        results.mkdir(parents=True, exist_ok=True)
-        for rec in manifest["recordings"]:
-            if only is not None and not re.search(only, rec["name"]):
-                continue
+        for rec in selected:
             for label_file, result, _group in _scorings(rec):
+                result_file, stats_file = results / f"{result}.json", results / f"{result}.stats.json"
                 cmd = [str(bench), str(out_dir / rec["wav"]), "--labels", str(out_dir / label_file),
-                       "--json", str(results / f"{result}.json")]
+                       "--json", str(result_file)]
                 if rec["oracle"]:
                     cmd.append("--oracle")
                 cmd += ["--decoder", BENCH_FRONT_END[fe]]
                 for setting in settings:
                     cmd += ["--set", setting]
-                stats_file = results / f"{result}.stats.json" if stats else None
-                if stats_file is not None:
-                    cmd += ["--stats", str(stats_file)]
-                work.append((folder, result, cmd, stats_file))
+                for kind in genie:
+                    cmd += ["--genie", kind]
+                if stats:
+                    cmd += ["--stats", str(stats_file)] + (["--stats-detail"] if stats_detail else [])
+                work.append(_Job(folder, result, cmd, result_file, stats_file, BENCH_FRONT_END[fe]))
+    # Results that are there: refused, unless the run is told to replace them or to resume.
+    for folder in dict.fromkeys(name or fe for fe in front_ends):
+        held = sorted((out_dir / "results" / folder).glob("*.json")) if (out_dir / "results" / folder).is_dir() else []
+        if held and not (overwrite or skip_existing):
+            shown = ", ".join(p.name for p in held[:3]) + (", ..." if len(held) > 3 else "")
+            raise ValueError(f"results/{folder} already holds {len(held)} result file{'s' if len(held) > 1 else ''} "
+                             f"({shown}): give the run a new name, or pass overwrite (--overwrite) to replace the "
+                             "test cases it runs, or skip_existing (--skip-existing) to resume it")
+    # With skip_existing: which test cases are done (a result file that reads, and the statistics file if asked for),
+    # and were they made by this run?
+    todo, done_already = [], []
+    for job in work:
+        finished = False
+        if skip_existing and job.result_file.exists() and (not stats or job.stats_file.exists()):
+            try:
+                made = json.loads(job.result_file.read_text(encoding="utf-8"))
+                finished = isinstance(made, dict) and "score" in made   # a result file that was cut short is not one
+            except (OSError, ValueError):
+                finished = False
+        if finished:
+            _same_run(job, settings, list(dict.fromkeys(genie)), (1 if stats_detail else 2) if stats else None)
+        (done_already if finished else todo).append(job)
+    for folder in dict.fromkeys(job.folder for job in work):
+        (out_dir / "results" / folder).mkdir(parents=True, exist_ok=True)
+    # What an earlier try may have left of a test case that is run now must not pass for this run's.
+    for job in todo:
+        for stale in (job.result_file.with_name(job.result_file.name + ".partial"), job.stats_file,
+                      job.stats_file.with_name(job.stats_file.name + ".partial")):
+            stale.unlink(missing_ok=True)
 
-    def run_one(item) -> str:
-        folder, result, cmd, stats_file = item
-        done = subprocess.run(cmd, capture_output=True, text=True)
+    def run_one(job: _Job) -> str:
+        done = subprocess.run(job.cmd, capture_output=True, text=True)
         if done.returncode != 0:
-            raise RuntimeError(f"kz4ap-bench failed on {result} ({folder}):\n{done.stderr}")
+            raise RuntimeError(f"kz4ap-bench failed on {job.result} ({job.folder}):\n{done.stderr}")
         out_lines = done.stdout.strip().splitlines()
         if not out_lines:
-            raise RuntimeError(f"kz4ap-bench printed nothing on {result} ({folder}) although it exited 0; "
+            raise RuntimeError(f"kz4ap-bench printed nothing on {job.result} ({job.folder}) although it exited 0; "
                                f"stderr:\n{done.stderr}")
-        if stats_file is not None and not stats_file.exists():
-            raise RuntimeError(f"kz4ap-bench wrote no statistics file for {result} ({folder}) although asked "
+        if stats and not job.stats_file.exists():
+            raise RuntimeError(f"kz4ap-bench wrote no statistics file for {job.result} ({job.folder}) although asked "
                                f"for it; stderr:\n{done.stderr}")
-        return f"{folder:9s} {result}: {out_lines[-1]}"
+        return f"{job.folder:9s} {job.result}: {out_lines[-1]}"
 
+    for job in done_already:
+        print(f"{job.folder:9s} {job.result}: skipped (already done)")
     if jobs == 1:
-        for item in work:
-            print(run_one(item))
+        for job in todo:
+            print(run_one(job))
         return
     with ThreadPoolExecutor(max_workers=jobs) as pool:
-        futures = [pool.submit(run_one, item) for item in work]
+        futures = [pool.submit(run_one, job) for job in todo]
         try:
             for future in as_completed(futures):
                 print(future.result())
@@ -1790,14 +1895,31 @@ def main(argv=None) -> None:
     r.add_argument("--bench", type=Path, required=True)
     r.add_argument("--decoder", "--front-end", dest="front_ends", action="append", choices=FRONT_ENDS,
                    help="the decoder (repeatable; --front-end is its old name)")
-    r.add_argument("--only", default=None, help="regular expression: score only matching recordings")
+    r.add_argument("--only", default=None, help="regular expression on recording names: score only matching "
+                                                "recordings (--stats and --genie need oracle ones: the plan's runs "
+                                                "pass kz4ap_proto.experiments.DEV2, the oracle test cases)")
     r.add_argument("--jobs", type=int, default=1, help="bench processes at once, one test case each (default 1)")
     r.add_argument("--name", default=None, help="the run's results folder, results/NAME, in place of the decoder's "
                                                 "own (needs one --decoder); give every run a new name")
     r.add_argument("--set", dest="settings", action="append", default=[], metavar="NAME=VALUE",
                    help="a decoder setting, handed to the bench as --set NAME=VALUE (repeatable)")
+    r.add_argument("--genie", dest="genie", action="append", default=[], choices=GENIE_KINDS, metavar="KIND",
+                   help="the truth about each station, from its label, handed to the bench as --genie KIND: "
+                        f"{', '.join(GENIE_KINDS)} (repeatable; oracle test cases only)")
     r.add_argument("--stats", action="store_true",
-                   help="the bench also writes its statistics file, results/NAME/<test case>.stats.json")
+                   help="the bench also writes its statistics file, results/NAME/<test case>.stats.json: a summary "
+                        "for each channel (oracle test cases only)")
+    r.add_argument("--stats-detail", action="store_true",
+                   help="the statistics file in its full form, every newborn line (45 kB per channel-second, so for "
+                        "a small run); asks for --stats")
+    existing = r.add_mutually_exclusive_group()
+    existing.add_argument("--overwrite", action="store_true",
+                          help="write into a results folder that already holds result files, replacing the test "
+                               "cases this run does (without it, or --skip-existing, such a folder is refused)")
+    existing.add_argument("--skip-existing", action="store_true",
+                          help="resume a run: skip the test cases already done (result file, and statistics file if "
+                               "asked for), which must have been made with the same decoder, settings, genie and "
+                               "statistics form")
     s = sub.add_parser("summarize", help="write summary.json and summary.md")
     s.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
@@ -1816,7 +1938,9 @@ def main(argv=None) -> None:
         write_suite(recordings, args.out, args.suite, only=args.only)
     elif args.command == "run":
         run_suite(args.out, args.bench, args.front_ends or ["baseline"], only=args.only, jobs=args.jobs,
-                  name=args.name, settings=args.settings, stats=args.stats)
+                  name=args.name, settings=args.settings, stats=args.stats or args.stats_detail,
+                  stats_detail=args.stats_detail, genie=args.genie, overwrite=args.overwrite,
+                  skip_existing=args.skip_existing)
     else:
         write_summary(args.out)
 

@@ -5,7 +5,8 @@ import subprocess
 import pytest
 
 import stand_in_bench
-from kz4ap_proto import experiments
+from kz4ap_proto import devset2, experiments
+from test_search_stats import V1, V2, _suite
 
 
 def row(fe, index, edits, symbols=100, group="A sensitivity"):
@@ -145,19 +146,25 @@ def _label(text, wpm=25.0, **more):
             "score": True, "transmissions": [{"text": text, "start_s": 1.0, "end_s": 30.0}], **more}
 
 
-def _search_suite(tmp_path):
+def _search_suite(tmp_path, detector_copy=False):
     """A suite folder with an A2 test case (three scored signals and an unscored one), an I2 test case (three
     signals, the last above Farnsworth factor 8) and a second A2 test case that only the run under test, "b28", has;
     the decoded texts of "b28" and of the reference run "ref". The labels' own texts are not the decoded ones: they
-    play no part."""
+    play no part. detector_copy: also A2's detector-path copy (a recording that is not an oracle one, the same signals
+    decoded again through the detector), with one signal that differs between the two runs."""
     i2, a2 = "I2-farnsworth-o1-0-s1", "A2-awgn-c01-0-s1"
     labels = {a2: [_label("L1"), _label("L2"), _label("L3"), _label("L4", score=False)],
               i2: [_label("L1", wpm=18.0, farnsworth_wpm=10.0), _label("L2", wpm=18.0, farnsworth_wpm=5.0),
                    _label("L3", wpm=25.0, farnsworth_wpm=5.0)],
               "A2-awgn-c02-0-s1": [_label("L1")]}
     groups = {a2: "A2 sensitivity", i2: "I2 Farnsworth", "A2-awgn-c02-0-s1": "A2 sensitivity"}
+    oracle = {n: True for n in labels}
+    if detector_copy:
+        labels["A2-detector-c01-0-s1"] = [_label("L1")]
+        groups["A2-detector-c01-0-s1"] = "A2 sensitivity, detector"
+        oracle["A2-detector-c01-0-s1"] = False
     (tmp_path / "manifest.json").write_text(json.dumps({"suite": "t", "recordings": [
-        {"name": n, "group": groups[n], "oracle": True, "wav": f"{n}.wav", "labels": f"{n}.json",
+        {"name": n, "group": groups[n], "oracle": oracle[n], "wav": f"{n}.wav", "labels": f"{n}.json",
          "station_labels": None} for n in labels]}))
     for n, sigs in labels.items():
         (tmp_path / f"{n}.json").write_text(json.dumps({"sample_rate": 48000, "duration_s": 100.0, "signals": sigs}))
@@ -171,6 +178,8 @@ def _search_suite(tmp_path):
                   ("TEST TEST", "TEXT TEXT"),                 # 8 letters, 2 edits, factor 7.84
                   ("TEST TEST", "XXXX XXXX")],                # 8 letters, 8 edits, factor 11.53: above 8
              "A2-awgn-c02-0-s1": [("Q", "R")]}
+    if detector_copy:
+        texts["A2-detector-c01-0-s1"] = [("AAAA", "AAAB")]       # 4 letters, 1 edit
     for run, side in (("ref", 0), ("b28", 1)):
         folder = tmp_path / "results" / run
         folder.mkdir(parents=True)
@@ -266,3 +275,138 @@ def test_the_b9_test_cases_stay_out_of_the_development_set():
                                                                    "A-awgn-12wpm-0-s1"]
     assert [n for n in names if re.search(experiments.STRETCH, n)] == ["S-stretch-25wpm-0-s1", "A-awgn-25wpm-1-s1"]
     assert [n for n in names if re.search(experiments.B9, n)] == names[:4]
+
+
+# --- search errors: which test cases, and the rounded per-signal table ---
+
+def test_search_errors_compare_the_oracle_test_cases_unless_told_otherwise(tmp_path, capsys):
+    _search_suite(tmp_path, detector_copy=True)
+    bench = stand_in_bench.launcher(tmp_path)
+    r = experiments.search_errors(tmp_path, bench, "b28", "ref")
+    # A2's detector-path copies are the same signals and noise decoded again: pooled with the oracle test cases they
+    # would count A2's signals twice (the plan's runs are oracle runs, O9)
+    assert r["only"] == experiments.DEV2 and "A2 sensitivity, detector" not in r["groups"]
+    assert r["test_cases"]["compared"] == 2 and r["pooled"]["signals"] == 6
+    both = experiments.search_errors(tmp_path, bench, "b28", "ref", only=devset2.DEV2_ANALYSIS)
+    assert both["test_cases"]["compared"] == 3 and both["groups"]["A2 sensitivity, detector"]["errors"] == 1
+    assert both["pooled"]["signals"] == 7
+    # and the option's help says which it is
+    with pytest.raises(SystemExit):
+        experiments.main(["search-errors", "--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "oracle" in help_text and "detector" in help_text and "copies" in help_text
+    assert "DEV2, seed 1" not in help_text   # the old wording, which understated what the default selected
+
+
+def test_the_search_errors_are_also_a_rounded_per_signal_table(tmp_path):
+    _search_suite(tmp_path)
+    bench = stand_in_bench.launcher(tmp_path)
+    args = ["search-errors", "--out", str(tmp_path), "--run", "b28", "--reference", "ref", "--bench", str(bench)]
+    experiments.main(args + ["--max-farnsworth", "8"])
+    md = tmp_path / "experiments" / "search-errors-b28-vs-ref.md"
+    csv_path = md.with_suffix(".csv")
+    text = csv_path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    assert lines[0] == "run,reference,group,test_case,index,errors,letters,farnsworth_factor,left_out"
+    # one row per signal, the ones the cut left out too (left_out 1), by test case and index; the factor at 0.01
+    assert lines[1:] == [
+        "b28,ref,A2 sensitivity,A2-awgn-c01-0-s1,0,0,13,1.00,0",
+        "b28,ref,A2 sensitivity,A2-awgn-c01-0-s1,1,1,10,1.00,0",
+        "b28,ref,A2 sensitivity,A2-awgn-c01-0-s1,2,2,2,1.00,0",
+        "b28,ref,I2 Farnsworth,I2-farnsworth-o1-0-s1,0,0,8,3.11,0",
+        "b28,ref,I2 Farnsworth,I2-farnsworth-o1-0-s1,1,2,8,7.84,0",
+        "b28,ref,I2 Farnsworth,I2-farnsworth-o1-0-s1,2,8,8,11.53,1"]
+    assert str(tmp_path) not in text   # committed beside a record: no machine's folders
+    # the numbers of the table are computed from the committed file: read back, they are the JSON's
+    rows = experiments.read_search_error_scores(csv_path)
+    assert [r["left_out"] for r in rows] == [False] * 5 + [True] and rows[5]["farnsworth_factor"] == 11.53
+    saved = json.loads(md.with_suffix(".json").read_text(encoding="utf-8"))
+    kept = [r for r in rows if not r["left_out"]]
+    assert experiments._search_stats_by_group(kept) == saved["groups"] and experiments._search_stats(kept) == saved["pooled"]
+    assert experiments._search_stats_by_group([r for r in rows if r["left_out"]]) == saved["left_out"]["groups"]
+    # without the cut every row is kept
+    experiments.main(args)
+    assert [line.rsplit(",", 1)[1] for line in csv_path.read_text(encoding="utf-8").splitlines()[1:]] == ["0"] * 6
+
+
+# --- a run's search statistics, from the command line ---
+
+def test_the_search_stats_command_writes_the_tables_and_prints_the_totals(tmp_path, capsys):
+    # the suite and the statistics file are test_search_stats.py's: a real file of two oracle channels, as both forms
+    for version, path in ((1, V1), (2, V2)):
+        suite = tmp_path / f"v{version}"
+        suite.mkdir()
+        _suite(suite, path.read_text(encoding="utf-8"))
+        experiments.main(["search-stats", "--out", str(suite), "--run", "r1"])
+        out = capsys.readouterr().out
+        assert "r1: 2 test cases, 4 channels, 4.2 channel-seconds; live stories" in out
+        assert str(suite / "experiments" / "search-stats-r1.md") in out
+        assert (suite / "experiments" / "search-stats-r1.md").exists()
+        saved = json.loads((suite / "experiments" / "search-stats-r1.json").read_text(encoding="utf-8"))
+        assert saved["test_cases"] == 2 and saved["versions"] == [version]
+        experiments.main(["search-stats", "--out", str(suite), "--run", "r1", "--only", r"^B2-"])
+        assert "r1: 1 test cases, 2 channels" in capsys.readouterr().out
+    with pytest.raises(SystemExit):      # the run is needed
+        experiments.main(["search-stats", "--out", str(tmp_path)])
+
+
+# --- false characters on the noise-only group ---
+
+def test_the_symbols_of_a_decoded_text_are_counted_as_the_scorer_counts_them():
+    assert experiments.decoded_symbols("CQ DE") == ["C", "Q", " ", "D", "E"]
+    assert experiments.decoded_symbols("<AR> E <SK>") == ["<AR>", " ", "E", " ", "<SK>"]    # a prosign is one symbol
+    assert experiments.decoded_symbols("<E") == ["<", "E"]                                   # no closing bracket
+    assert experiments.decoded_symbols("<A B> C") == ["<A B>", " ", "C"]                     # the first one after it
+    assert experiments.decoded_symbols("") == []
+
+
+def _noise_run(tmp_path):
+    """Two N2 test cases of run "r1" (and a seed-2 one), whose channels decoded the texts below; the second has an
+    unscored channel."""
+    decoded = {"N2-noise-0-s1": (1800.0, [("", True), ("E T", True), ("<AR> E <SK>", True), ("<E", True)]),
+               "N2-noise-1-s1": (1800.0, [("E", True), ("", True), ("ET E", True), ("EEEEE", False)]),
+               "N2-noise-0-s2": (1800.0, [("E", True)])}
+    (tmp_path / "manifest.json").write_text(json.dumps({"suite": "n2", "recordings": [
+        {"name": n, "group": "N2 noise only", "oracle": True, "wav": f"{n}.wav", "labels": f"{n}.json",
+         "station_labels": None} for n in decoded]}))
+    folder = tmp_path / "results" / "r1"
+    folder.mkdir(parents=True)
+    for n, (channel_seconds, signals) in decoded.items():
+        (folder / f"{n}.json").write_text(json.dumps({"channel_seconds": channel_seconds, "score": {"signals": [
+            {"index": i, "scored": scored, "decoded": text} for i, (text, scored) in enumerate(signals)]}}))
+    return folder
+
+
+def test_false_characters_per_channel_hour_on_the_noise_group(tmp_path):
+    _noise_run(tmp_path)
+    r = experiments.false_characters(tmp_path, "r1")
+    # seed 1's two test cases: the decoded symbols that are not word spaces, of the channels the labels score
+    # (7 + 4 = 11), over their channel-hours: 1800 s of 4 channels, and 3 of the 4 channels' share of 1800 s (1350 s)
+    assert (r["test_cases"], r["channels"], r["characters"], r["channels_with_characters"]) == (2, 7, 11, 5)
+    assert r["channel_seconds"] == pytest.approx(3150.0) and r["channel_hours"] == pytest.approx(0.875)
+    assert r["per_channel_hour"] == pytest.approx(11 / 0.875)
+    assert [(t["test_case"], t["channels"], t["characters"]) for t in r["by_test_case"]] == [
+        ("N2-noise-0-s1", 4, 7), ("N2-noise-1-s1", 3, 4)]
+    both = experiments.false_characters(tmp_path, "r1", only=r"^N2-")
+    assert both["test_cases"] == 3 and both["characters"] == 12
+    # the table
+    path = experiments.false_character_table(tmp_path, r)
+    md = path.read_text(encoding="utf-8")
+    assert path == tmp_path / "experiments" / "false-characters-r1.md" and "12.57" in md and "N2-noise-1-s1" in md
+    assert json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))["characters"] == 11
+    # from the command line
+    experiments.main(["false-characters", "--out", str(tmp_path), "--run", "r1"])
+
+
+def test_false_characters_need_a_run_of_the_engine_and_test_cases(tmp_path):
+    folder = _noise_run(tmp_path)
+    with pytest.raises(ValueError, match="no results folder named 'nope'"):
+        experiments.false_characters(tmp_path, "nope")
+    with pytest.raises(ValueError, match="no test case"):
+        experiments.false_characters(tmp_path, "r1", only=r"^never$")
+    # results scored from decoded files (--score-decoded) carry no channel-seconds: no rate
+    bad = json.loads((folder / "N2-noise-0-s1.json").read_text(encoding="utf-8"))
+    bad["channel_seconds"] = 0.0
+    (folder / "N2-noise-0-s1.json").write_text(json.dumps(bad), encoding="utf-8")
+    with pytest.raises(ValueError, match="channel_seconds"):
+        experiments.false_characters(tmp_path, "r1")

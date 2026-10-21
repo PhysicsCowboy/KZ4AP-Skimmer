@@ -290,7 +290,11 @@ def station_labels(signals, sample_rate: int, duration_s: float, seed: int) -> d
     """labels(), but with each QSO split into one entry per station: that station's overs
     only, at its own carrier (freq_offset_hz + offset_hz) and level (snr_db + relative_db),
     so a station the receiver hears as its own track is scored against its own frequency.
-    Other signals are as in labels(). Each station entry names its QSO (qso_index)."""
+    Other signals are as in labels(). Each station entry names its QSO (qso_index) and carries the QSO's fading
+    spread (fading_hz, Hz: each station fades through its own path of that spread). LIMIT: a station's start_s is
+    its first over, while the QSO's drift (drift_hz_per_s, copied) is measured from the QSO's start, so the carrier
+    of a drifting QSO's station at its start_s is not freq_offset_hz (the bench's frequency genie refuses such a
+    label; no QSO of the development set drifts)."""
     base = labels(signals, sample_rate, duration_s, seed)
     entries = []
     for i, (s, entry) in enumerate(zip(signals, base["signals"])):
@@ -308,6 +312,9 @@ def station_labels(signals, sample_rate: int, duration_s: float, seed: int) -> d
                 "wpm": who.wpm, "snr_db": round(s.snr_db + who.relative_db, 3),
                 "start_s": mine[0]["start_s"], "end_s": mine[-1]["end_s"],
                 "keying": who.keying, "imbalance_dits": who.imbalance_dits, "drift_hz_per_s": s.drift_hz_per_s,
+                # each station fades through its own path of the QSO's spread (add_overs); the bench's fading genie
+                # reads it (a label without fading_hz does not say whether its station fades)
+                "fading_hz": s.fading_hz,
                 "score": s.score, "tag": s.tag, "qso_index": i, "sender": who.call, "transmissions": mine,
                 **({"design": s.design} if s.design else {}),
             })

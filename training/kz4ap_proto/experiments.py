@@ -9,15 +9,18 @@ removed with the prototype on 2026-10-07 (git history; engine/tests/data/bank/RE
     python -m kz4ap_proto.experiments periodicity-decoded --out build/suite/full3 --name bank-b4a [--threshold 0.03]
     python -m kz4ap_proto.experiments stretch --out build/suite/full3 --name stretch-b4a
     python -m kz4ap_proto.experiments new-overs --out build/suite/full3 --name stretch-b4a
-    python -m kz4ap_proto.experiments devset2 --out build/suite/dev2 --name NAME --decoder matched --decoder bank-x [--reference matched] [--results DIR ...] [--scores TABLE.csv ...] [--method wls|binomial] [--fit-group "A2 sensitivity" ...] [--resamples 1000] [--max-farnsworth 8]
+    python -m kz4ap_proto.experiments devset2 --out build/suite/dev2 --name NAME --decoder matched --decoder bank-x [--reference matched] [--results DIR ...] [--scores TABLE.csv ...] [--method wls|binomial] [--fit-group "A2 sensitivity" ...] [--resamples 1000] [--max-farnsworth 8] [--leave-out-group "I2 Farnsworth" ...]
     python -m kz4ap_proto.experiments scores --analysis build/suite/dev2/experiments/devset2-NAME.json --decoder matched [--path oracle|detector] --csv TABLE.csv
     python -m kz4ap_proto.experiments figures --analysis build/suite/dev2/experiments/devset2-NAME.json [--dir DIR]
     python -m kz4ap_proto.experiments search-errors --out build/suite/dev2 --run NAME --reference NAME --bench PATH/kz4ap-bench [--only REGEX] [--results DIR ...] [--max-farnsworth 8]
+    python -m kz4ap_proto.experiments search-stats --out build/suite/dev2 --run NAME [--only REGEX] [--results DIR ...]
+    python -m kz4ap_proto.experiments false-characters --out build/suite/n2 --run NAME [--only REGEX] [--results DIR ...]
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import subprocess
@@ -28,7 +31,7 @@ import numpy as np
 from kz4ap_synth.suites import (BOOTSTRAP_RESAMPLES, STRETCH_SNR_DB, _interval, _rng_for, _scorings, _with_interval,
                                 aggregate, front_end_dirs, load_results, oracle_copies, stretch_source, view_fits)
 
-from . import devset2, metrics
+from . import devset2, metrics, search_stats
 from .power import disable_power_throttling
 
 # Seed 1 of the oracle recordings, without group B's per-row recordings (60% of the channel-seconds); B's
@@ -47,6 +50,8 @@ SUBSETS["dev2"] = DEV2
 # cases, group H's oracle QSO labels and the pauses group's oracle copy.
 STRETCH = r"^(A-awgn-25wpm-.*|S-stretch-.*)-s1$"
 NEW_OVERS = r"^(H-qso-oracle-s1|pauses-s1\.oracle)$"
+# The noise-only group N2 (kz4ap_synth.suites.noise2), seed 1: a suite folder of its own (--suite n2), not part of DEV2.
+N2 = r"^N2-noise-.*-s1$"
 B9 = r"^(A-awgn-25wpm-.*-s1|S-stretch-.*-s1|H-qso-oracle-s1|pauses-s1\.oracle)$"
 SUBSETS.update(stretch=STRETCH, b9=B9)
 EXPERIMENT_RESULTS = Path("experiments") / "results"
@@ -374,17 +379,19 @@ def search_errors(out_dir, bench, run: str, reference: str, only: str | None = N
     pooled over the groups; every edit counts as an error, a word space's too. Only signals the labels score count, as
     in every CER. The edits come from the bench (_bench_edits), which therefore must be given.
 
-    only: a regular expression on the test cases' result names (default as the development set's analysis,
-    devset2.DEV2_ANALYSIS); the test cases both runs have are compared, the others are listed. max_farnsworth: the I2
-    cut (devset2.farnsworth_cut): signals above that Farnsworth factor are left out of the groups and the pooled
-    figure, for both runs alike, and counted apart under "left_out".
+    only: a regular expression on the test cases' result names (default DEV2: seed 1 of the oracle test cases. A2's
+    detector-path copies, which devset2.DEV2_ANALYSIS adds, are the same signals and noise decoded again through the
+    detector: pooled with the oracle test cases they would count A2's signals twice, and the plan's runs are oracle
+    runs, O9); the test cases both runs have are compared, the others are listed. max_farnsworth: the I2 cut
+    (devset2.farnsworth_cut): signals above that Farnsworth factor are left out of the groups and the pooled figure,
+    for both runs alike, and counted apart under "left_out".
 
     Returns {"run", "reference", "only", "max_farnsworth", "test_cases": {"compared": n, "only_in_run": [...],
     "only_in_reference": [...]}, "groups": {group: stats}, "pooled": stats, "signals": [per-signal records],
     "left_out": None or {"groups", "pooled", "signals"}}; stats are _search_stats'; a per-signal record is {"group",
     "test_case", "index", "errors", "letters", "farnsworth_factor"}."""
     out_dir = Path(out_dir)
-    only = devset2.DEV2_ANALYSIS if only is None else only
+    only = DEV2 if only is None else only
     roots = [Path(d) for d in (results_dirs if results_dirs is not None else devset2.default_results_dirs(out_dir))]
     folders = {}
     for name in (run, reference):
@@ -442,9 +449,44 @@ def _search_error_rows(groups: dict, pooled: dict) -> list[str]:
     return lines
 
 
+SEARCH_ERROR_COLUMNS = ("run", "reference", "group", "test_case", "index", "errors", "letters", "farnsworth_factor",
+                        "left_out")
+
+
+def write_search_error_scores(result: dict, path) -> Path:
+    """The per-signal counts of search_errors' result as a rounded table (CSV, one row per signal, the signals the
+    cut left out too, marked left_out 1; by test case and index): the columns of SEARCH_ERROR_COLUMNS, the counts
+    integers and the Farnsworth factor (a ratio) rounded to 0.01, as the score tables hold it (CLAUDE.md: the
+    committed table is what a record's numbers are computed from; read_search_error_scores reads it back)."""
+    rows = [(r, 0) for r in result["signals"]] + [(r, 1) for r in (result["left_out"] or {}).get("signals", [])]
+    path = Path(path)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f, lineterminator="\n")
+        w.writerow(SEARCH_ERROR_COLUMNS)
+        for r, left_out in sorted(rows, key=lambda x: (x[0]["test_case"], x[0]["index"])):
+            w.writerow([result["run"], result["reference"], r["group"], r["test_case"], r["index"], r["errors"],
+                        r["letters"], f"{devset2._hundredths(r['farnsworth_factor']):.2f}", left_out])
+    return path
+
+
+def read_search_error_scores(path) -> list[dict]:
+    """The rows of a table that write_search_error_scores wrote, in file order, as search_errors' per-signal records
+    ({"group", "test_case", "index", "errors", "letters", "farnsworth_factor"} with the rounded factor) and the run, the
+    reference and whether the cut left the signal out (left_out, a bool)."""
+    with Path(path).open(encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        if tuple(reader.fieldnames or ()) != SEARCH_ERROR_COLUMNS:
+            raise ValueError(f"{path}: columns {reader.fieldnames}, expected {list(SEARCH_ERROR_COLUMNS)}")
+        return [{"run": r["run"], "reference": r["reference"], "group": r["group"], "test_case": r["test_case"],
+                 "index": int(r["index"]), "errors": int(r["errors"]), "letters": int(r["letters"]),
+                 "farnsworth_factor": float(r["farnsworth_factor"]), "left_out": r["left_out"] == "1"}
+                for r in reader]
+
+
 def search_error_table(out_dir, result: dict) -> Path:
-    """Writes experiments/search-errors-<run>-vs-<reference>.md (the table) and .json (search_errors' result, with the
-    per-signal counts) in out_dir; returns the .md's path."""
+    """Writes experiments/search-errors-<run>-vs-<reference>.md (the table), .json (search_errors' result, with the
+    per-signal counts) and .csv (the per-signal counts, rounded: write_search_error_scores) in out_dir; returns the
+    .md's path."""
     run, reference, cases = result["run"], result["reference"], result["test_cases"]
     names = lambda k: ", ".join(f"`{t}`" for t in cases[k]) or "none"  # noqa: E731
     lines = [f"# Search errors: {run} against {reference}", "",
@@ -468,6 +510,95 @@ def search_error_table(out_dir, result: dict) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     path.with_suffix(".json").write_text(json.dumps(result) + "\n", encoding="utf-8")
+    write_search_error_scores(result, path.with_suffix(".csv"))
+    return path
+
+
+# --- false characters on the noise-only group (docs/plans/2026-10-20-new-decoder-prototype-1.md, R4 and R5) ---
+
+def decoded_symbols(text: str) -> list[str]:
+    """The symbols of a decoded text as the scorer counts them (kz4ap::morse::symbols): a prosign token such as <AR>
+    is one symbol, from a "<" to the next ">" anywhere after it, else the "<" is a symbol of its own; every other
+    character, a word space too, is one."""
+    out, i = [], 0
+    while i < len(text):
+        if text[i] == "<" and ">" in text[i:]:
+            close = text.index(">", i)
+            out.append(text[i:close + 1])
+            i = close + 1
+        else:
+            out.append(text[i])
+            i += 1
+    return out
+
+
+def false_characters(out_dir, run: str, only: str | None = None, results_dirs=None) -> dict:
+    """The characters that run `run` decoded on the noise-only group N2, where every one is false (the stations are far
+    below any decodable level; they only open the channels): the decoded symbols that are not word spaces (a prosign
+    one) of the channels the labels score, per channel-hour. The plan's R4 and R5 count them.
+
+    A channel-hour is 3 600 s of one channel. A test case's channel-seconds are its result's `channel_seconds`
+    (the engine's, over all its channels), taken in proportion to the channels counted when some are not scored (every
+    channel of a recording has its duration). only: a regular expression on the test cases' result names (default N2:
+    seed 1). Returns {"run", "only", "test_cases", "channels", "channel_seconds" (s), "channel_hours" (h), "characters",
+    "per_channel_hour" (None without channel-seconds), "channels_with_characters", "by_test_case": [{"test_case",
+    "channels", "channel_seconds", "characters", "channels_with_characters"}]}. Raises ValueError for a run without such
+    results, or whose result has no channel_seconds (results scored from decoded files carry none)."""
+    out_dir = Path(out_dir)
+    only = N2 if only is None else only
+    roots = [Path(d) for d in (results_dirs if results_dirs is not None else devset2.default_results_dirs(out_dir))]
+    found = front_end_dirs(out_dir, roots, [run])
+    if not found:
+        raise ValueError(f"no results folder named {run!r} in {[str(r) for r in roots]}")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    by_test_case = []
+    for rec in manifest["recordings"]:
+        for _labels, result, _group in _scorings(rec):
+            path = found[0] / f"{result}.json"
+            if not re.search(only, result) or not path.exists():
+                continue
+            j = json.loads(path.read_text(encoding="utf-8"))
+            signals = j["score"]["signals"]
+            scored = [s for s in signals if s["scored"]]
+            channel_seconds = float(j.get("channel_seconds", 0.0))
+            if channel_seconds <= 0.0:
+                raise ValueError(f"{path.name}: channel_seconds is {channel_seconds:g}, not a run of the engine "
+                                 "(results scored from decoded files carry none)")
+            counts = [sum(1 for x in decoded_symbols(s["decoded"]) if x != " ") for s in scored]
+            by_test_case.append({"test_case": result, "channels": len(scored),
+                                 "channel_seconds": channel_seconds * len(scored) / len(signals),
+                                 "characters": sum(counts), "channels_with_characters": sum(1 for n in counts if n)})
+    if not by_test_case:
+        raise ValueError(f"no test case matching {only!r} has results in {run}")
+    seconds = sum(t["channel_seconds"] for t in by_test_case)
+    characters = sum(t["characters"] for t in by_test_case)
+    return {"run": run, "only": only, "test_cases": len(by_test_case), "channels": sum(t["channels"] for t in by_test_case),
+            "channel_seconds": seconds, "channel_hours": seconds / 3600.0, "characters": characters,
+            "per_channel_hour": characters / (seconds / 3600.0) if seconds > 0 else None,
+            "channels_with_characters": sum(t["channels_with_characters"] for t in by_test_case),
+            "by_test_case": by_test_case}
+
+
+def false_character_table(out_dir, result: dict) -> Path:
+    """Writes experiments/false-characters-<run>.md (the table) and .json (false_characters' result) in out_dir;
+    returns the .md's path."""
+    rate = lambda x: "—" if x["per_channel_hour"] is None else f"{x['per_channel_hour']:.2f}"  # noqa: E731
+    lines = [f"# False characters on the noise-only group: {result['run']}", "",
+             "The characters a run decoded on the noise-only group N2, where every one is false: the decoded symbols "
+             "that are not word spaces (a prosign is one), of the channels the labels score, per channel-hour "
+             f"(3 600 s of one channel). Test cases matching `{result['only']}`.", "",
+             "| test case | channels | channel-seconds (s) | false characters | channels with a false character | "
+             "false characters per channel-hour |", "|---|---|---|---|---|---|"]
+    for t in result["by_test_case"]:
+        per_hour = None if t["channel_seconds"] <= 0 else t["characters"] / (t["channel_seconds"] / 3600.0)
+        lines.append(f"| {t['test_case']} | {t['channels']} | {t['channel_seconds']:.1f} | {t['characters']} | "
+                     f"{t['channels_with_characters']} | {rate({'per_channel_hour': per_hour})} |")
+    lines.append(f"| all | {result['channels']} | {result['channel_seconds']:.1f} | {result['characters']} | "
+                 f"{result['channels_with_characters']} | {rate(result)} |")
+    path = Path(out_dir) / "experiments" / f"false-characters-{result['run']}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.with_suffix(".json").write_text(json.dumps(result) + "\n", encoding="utf-8")
     return path
 
 
@@ -484,7 +615,12 @@ def main(argv=None) -> None:
     sc = sub.add_parser("scores", help="a run's per-signal score table (CSV, rounded) from a devset2 analysis or a suite")
     se = sub.add_parser("search-errors", help="a run's search errors against a wide-beam reference run: the edits "
                                               "between their texts per 1 000 letters, per group and pooled")
-    for s in (c, pd, st, no, d2, se):
+    ss = sub.add_parser("search-stats", help="a run's search statistics (kz4ap_synth.suites run --stats), reduced per "
+                                             "group: live stories, the ceiling, the newborn lines' fates, the deficit "
+                                             "before leading")
+    fc = sub.add_parser("false-characters", help="the characters a run decoded on the noise-only group N2, per "
+                                                 "channel-hour")
+    for s in (c, pd, st, no, d2, se, ss, fc):
         s.add_argument("--out", type=Path, required=True)
     c.add_argument("--base", required=True)
     c.add_argument("--variant", required=True)
@@ -512,17 +648,31 @@ def main(argv=None) -> None:
     d2.add_argument("--max-farnsworth", type=float, default=None, metavar="F",
                     help="the I2 cut: leave the signals whose Farnsworth factor (a ratio) is above F out of every fit "
                          "and comparison, for every decoder alike, and list them separately (the plan: 8)")
+    d2.add_argument("--leave-out-group", dest="leave_out_groups", action="append", default=None, metavar="GROUP",
+                    help='leave a whole group out of every fit and comparison, for every decoder alike, and list its '
+                         'signals separately (repeatable; the new decoder has no Farnsworth spacing, D14, so R4 '
+                         'passes "I2 Farnsworth"); a group with no signals is an error')
     se.add_argument("--run", required=True, help="the run under test: its results folder name")
     se.add_argument("--reference", required=True, help="the wide-beam reference run: its results folder name")
     se.add_argument("--bench", type=Path, required=True,
                     help="kz4ap-bench: its --score-decoded gives the edits, in the scorer's alignment")
     se.add_argument("--only", default=None,
-                    help="regular expression on result names (default as devset2: DEV2, seed 1)")
+                    help="regular expression on result names (default experiments.DEV2: seed 1 of the oracle test "
+                         "cases; A2's detector-path copies, the same signals decoded again, are left out so that A2 "
+                         "is not counted twice; the plan's runs pass the same expression)")
     se.add_argument("--results", dest="results_dirs", action="append", type=Path, default=None,
                     help="a results root (repeatable; default OUT/results and OUT/experiments/results)")
     se.add_argument("--max-farnsworth", type=float, default=None, metavar="F",
                     help="the I2 cut: leave the signals whose Farnsworth factor (a ratio) is above F out, for both "
                          "runs alike, and count them separately")
+    for s, what in ((ss, "search statistics"), (fc, "results")):
+        s.add_argument("--run", required=True, help=f"the run whose {what} are reduced: its results folder name")
+        s.add_argument("--results", dest="results_dirs", action="append", type=Path, default=None,
+                       help="a results root (repeatable; default OUT/results and OUT/experiments/results)")
+    ss.add_argument("--only", default=None, help="regular expression on result names (default: every test case "
+                                                 "that has a statistics file)")
+    fc.add_argument("--only", default=None, help="regular expression on result names (default experiments.N2: the "
+                                                 "noise-only group, seed 1)")
     fg.add_argument("--analysis", type=Path, required=True)
     sc_from = sc.add_mutually_exclusive_group(required=True)
     sc_from.add_argument("--analysis", type=Path, help="a devset2 analysis JSON: its signals")
@@ -540,7 +690,8 @@ def main(argv=None) -> None:
             parser.error("--reference must be one of the --decoder names")
         path = devset2.write_analysis(args.out, args.decoders, args.name, args.reference, args.results_dirs,
                                       args.only or devset2.DEV2_ANALYSIS, tuple(args.fit_groups or devset2.FIT_GROUPS),
-                                      args.method, args.resamples, args.scores, args.max_farnsworth)
+                                      args.method, args.resamples, args.scores, args.max_farnsworth,
+                                      tuple(args.leave_out_groups or ()))
         print(f"wrote {path} and {path.with_suffix('.md')}")
     elif args.command == "search-errors":
         result = search_errors(args.out, args.bench, args.run, args.reference, args.only, args.results_dirs,
@@ -550,7 +701,20 @@ def main(argv=None) -> None:
         print(f"{args.run} against {args.reference}: {pooled['errors']} search errors in {pooled['letters']} letters, "
               + ("no letters" if pooled["per_1000_letters"] is None else
                  f"{pooled['per_1000_letters']:.2f} per 1 000 letters"))
-        print(f"wrote {path} and {path.with_suffix('.json')}")
+        print(f"wrote {path}, {path.with_suffix('.json')} and {path.with_suffix('.csv')}")
+    elif args.command == "search-stats":
+        summary = search_stats.run_summary(args.out, args.run, args.only, args.results_dirs)
+        everything = summary["all"]
+        print(f"{args.run}: {summary['test_cases']} test cases, {everything['channels']} channels, "
+              f"{everything['channel_seconds']:.1f} channel-seconds; live stories "
+              f"{search_stats._fmt(everything['live_stories']['mean'], '.1f')} on average, "
+              f"{search_stats._fmt(everything['live_stories']['max'], '.0f')} at most")
+        print(f"wrote {search_stats.write_summary(args.out, summary)}")
+    elif args.command == "false-characters":
+        result = false_characters(args.out, args.run, args.only, args.results_dirs)
+        print(f"{args.run}: {result['characters']} false characters in {result['channel_hours']:.3f} channel-hours, "
+              + ("no rate" if result["per_channel_hour"] is None else f"{result['per_channel_hour']:.2f} per channel-hour"))
+        print(f"wrote {false_character_table(args.out, result)}")
     elif args.command == "scores":
         if args.analysis is not None:
             rows = json.loads(args.analysis.read_text(encoding="utf-8"))["signals"]

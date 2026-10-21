@@ -832,3 +832,81 @@ def test_the_devset2_command_applies_the_cut_to_score_tables(tmp_path):
     with pytest.raises(ValueError, match="re-export"):
         experiments.main(["devset2", "--out", str(tmp_path / "b"), "--name", "old", "--decoder", "bank",
                           "--resamples", "20", "--max-farnsworth", "8", "--scores", str(old)])
+
+
+# --- a whole group left out of the comparison and listed apart (the decoder does not handle Farnsworth spacing: D14) ---
+
+def test_a_whole_group_can_be_left_out_of_every_comparison_and_listed_apart():
+    rows = _cut_rows()
+    kept, left = d2.leave_out(rows, groups=("I2 Farnsworth",))
+    assert {r["group"] for r in kept} == {"A2 sensitivity"} and len(kept) == 2
+    assert {r["group"] for r in left} == {"I2 Farnsworth"} and len(left) == 16
+    # with the Farnsworth cut: a group goes whole, the cut applies to the others
+    kept, left = d2.leave_out(rows, max_factor=8.0, groups=("A2 sensitivity",))
+    assert {r["group"] for r in kept} == {"I2 Farnsworth"} and len(kept) == 10     # factors up to 8.00, two decoders
+    assert len(left) == 2 + 6                                                    # A2's two rows, I2's three above 8
+    assert d2.leave_out(rows) == (rows, [])                                      # nothing asked: nothing left out
+    with pytest.raises(ValueError, match="no signals"):                          # a typo is a mistake, not nothing
+        d2.leave_out(rows, groups=("I2 Farnsworh",))
+
+    a = d2.analyze(rows, ["bank", "viterbi"], "bank", resamples=20, leave_out_groups=("I2 Farnsworth",))
+    (comp,) = a["paired"]
+    assert set(comp["groups"]) == {"A2 sensitivity"} and comp["all"]["signals"] == 1
+    assert a["meta"]["leave_out_groups"] == ["I2 Farnsworth"] and a["meta"]["max_farnsworth"] is None
+    assert len(a["signals"]) == len(rows)   # the score tables still export every signal
+    out = a["left_out"]
+    assert out["left_out_groups"] == ["I2 Farnsworth"] and out["max_farnsworth"] is None
+    assert out["signals"] == 8 and out["groups"] == ["I2 Farnsworth"]
+    assert out["decoders"]["bank"] == {"signals": 8, "symbols": 800, "edits": 108, "cer": 108 / 800}
+    assert out["decoders"]["viterbi"] == {"signals": 8, "symbols": 800, "edits": 212, "cer": 212 / 800}
+    assert [(x["test_case"], x["index"]) for x in out["list"]] == [("I2-farnsworth-o1-0-s1", i) for i in range(8)]
+    md = d2.report_markdown(a)
+    assert "Left out: group I2 Farnsworth" in md and "Farnsworth factor above" not in md
+    assert "| I2-farnsworth-o1-0-s1 | 7 |" in md and "CER bank" in md
+    # both together: the heading names both, and the signals are those of the group and those above the factor
+    both = d2.analyze(rows, ["bank", "viterbi"], "bank", resamples=20, max_farnsworth=8.0,
+                      leave_out_groups=("A2 sensitivity",))
+    assert both["left_out"]["signals"] == 4 and both["left_out"]["groups"] == ["A2 sensitivity", "I2 Farnsworth"]
+    assert both["left_out"]["left_out_groups"] == ["A2 sensitivity"] and both["left_out"]["max_farnsworth"] == 8.0
+    assert both["paired"][0]["groups"]["I2 Farnsworth"]["signals"] == 5
+    assert "Left out: Farnsworth factor above 8; group A2 sensitivity" in d2.report_markdown(both)
+    # without a column the cut needs, a group can still be left out whole (a table written before the columns)
+    plain = [{k: v for k, v in r.items() if k not in FARNSWORTH_COLUMNS} for r in rows]
+    old = d2.analyze(plain, ["bank", "viterbi"], "bank", resamples=20, leave_out_groups=("I2 Farnsworth",))
+    assert old["left_out"]["signals"] == 8 and old["left_out"]["list"][0]["farnsworth_factor"] is None
+    speed = f"{SPEED_CELLS.center(5):.2f}"
+    assert f"| I2-farnsworth-o1-0-s1 | 0 | {speed} | — | — |" in d2.report_markdown(old)
+
+
+def test_the_devset2_command_leaves_a_group_out_of_the_comparison(tmp_path):
+    rows = _cut_rows()
+    tables = [d2.write_scores([r for r in rows if r["decoder"] == d], tmp_path / f"{d}.csv")
+              for d in ("bank", "viterbi")]
+    command = (["devset2", "--out", str(tmp_path / "a"), "--name", "apart", "--decoder", "bank", "--decoder",
+                "viterbi", "--reference", "bank", "--resamples", "20"] + sum((["--scores", str(t)] for t in tables), []))
+    experiments.main(command + ["--leave-out-group", "I2 Farnsworth"])
+    a = json.loads((tmp_path / "a" / "experiments" / "devset2-apart.json").read_text())
+    assert a["meta"]["leave_out_groups"] == ["I2 Farnsworth"] and a["left_out"]["signals"] == 8
+    assert set(a["paired"][0]["groups"]) == {"A2 sensitivity"}
+    assert "Left out: group I2 Farnsworth" in (tmp_path / "a" / "experiments" / "devset2-apart.md").read_text(
+        encoding="utf-8")
+    with pytest.raises(ValueError, match="no signals"):
+        experiments.main(command + ["--leave-out-group", "I2 Farnsworh"])
+
+
+def test_figures_draw_the_rows_the_analysis_used():
+    from kz4ap_proto import figures
+    rows = _cut_rows()
+
+    def analysis(**meta):
+        return {"meta": {"fit_groups": ["I2 Farnsworth"], **meta}, "signals": rows}
+
+    assert len(figures._fit_rows(analysis(), "bank")) == 8
+    # I2 as a fit group with the Farnsworth cut: the figures' points are the fit's signals, not the 864 (minor 2 of the
+    # review of Task 8)
+    cut = figures._fit_rows(analysis(max_farnsworth=8.0, leave_out_groups=[]), "bank")
+    assert [r["farnsworth_factor"] for r in cut] == [1.0, 2.02, 3.43, 7.84, 8.0]
+    assert figures._fit_rows(analysis(max_farnsworth=None, leave_out_groups=["I2 Farnsworth"]), "bank") == []
+    assert [r["decoder"] for r in figures._fit_rows(analysis(max_farnsworth=8.0), "viterbi")] == ["viterbi"] * 5
+    assert d2.analysis_rows(analysis(max_farnsworth=8.0)) == [r for r in rows if r["group"] != "I2 Farnsworth"
+                                                              or r["farnsworth_factor"] <= 8.0]

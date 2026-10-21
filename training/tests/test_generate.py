@@ -412,6 +412,17 @@ def test_station_labels_score_each_station_at_its_own_frequency():
     assert a["qso_index"] == b["qso_index"] == 0
 
 
+def test_station_labels_carry_the_qsos_fading_spread_for_the_genie():
+    # each station fades through its own path of the QSO's spread (add_overs), and the bench's fading genie reads a
+    # label's fading_hz: a per-station label without it would read as no fading (the review of Task 7b, M-9)
+    a, b = station_labels([_two_station_qso(fading_hz=1.5)], 8000, 30.0, seed=1)["signals"]
+    assert a["fading_hz"] == b["fading_hz"] == 1.5
+    c, d = station_labels([_two_station_qso()], 8000, 30.0, seed=1)["signals"]
+    assert c["fading_hz"] == d["fading_hz"] == 0.0     # written even when there is none: its absence means "not said"
+    # the QSO's own label is unchanged: it had fading_hz all along
+    assert labels([_two_station_qso(fading_hz=1.5)], 8000, 30.0, seed=1)["signals"][0]["fading_hz"] == 1.5
+
+
 def test_answer_offsets_favor_small_values():
     rng = np.random.default_rng(12)
     offsets = np.array([draw_answer_offset_hz(rng) for _ in range(4000)])
