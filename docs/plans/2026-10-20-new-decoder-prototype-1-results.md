@@ -321,5 +321,37 @@ against a misfit of 5.79 nats at k = 1.1² (derived in the document; not run).
 *What is not shown (conjectured).* Whether DEV2's QSO overs of one or two short words are read this way (the document
 gives "TU" as "X" and "EE" as "I" as plausible) has not been run.
 
-*Both findings:* the owner's decisions are pending: whether to model the fall at a mark's end, and how to treat the
-text model's and the open factor's bias toward fewer, longer symbols in short overs.
+*Both findings: the owner's decisions (2026-10-21; the plan's D13 to D15).*
+- **Finding 2.** The Farnsworth factor was removed from the decoder (D14). Then "TEST" and "TU" sent alone decode
+  exactly in 12 of 12 runs each (committed test `ViterbiDecoder.OneWordOversDecodeExactly`; measured).
+  Farnsworth-spaced signals now decode poorly: a known gap of this prototype, recorded in `docs/backlog.md`.
+- **Finding 1.** Modeling the fall at a mark's end (D13) did not fix it (§1.8). The owner then chose a systematic term
+  in the error budget (D15), tried next.
+
+### 1.8 Alternatives tried while building, and not kept
+
+Each was measured, compared with what was kept, and set aside. The figures are from the builders' scratch runs, not from
+committed tests.
+
+- **The mark's fall** (D13), the brief's form: a mark's last pieces weighted by the fall's expected fractions when the
+  mark ends.
+  - "PARIS PARIS" at 25 WPM over 16 edge positions decoded exactly at 16, 16, 15, 9 and 0 positions at +30, +40, +45,
+    +50 and +60 dB S₅₀₀, against 16, 13, 11, 3 and 0 without it.
+  - But the speed step newly failed at +21, +22 and +25 to +28 dB S₅₀₀ (up to 3 seeds at a 40-nat beam, character
+    error rate up to 0.343).
+  - A variant that also protected the mark's continuation through the fall removed most of those failures. It still
+    failed the strong stations at +50 and +60 dB S₅₀₀, and cost 79% to 212% more CPU.
+  - Why, traced: while a mark lasts its block counts the fall's pieces as full, so the correct reading falls behind the
+    one that ends a piece early. And any one edge position differs from the template, averaged over positions, by up to
+    0.087 of a full piece's energy, which at high levels outweighs the cost of a wrong reading.
+  - The fall's fractions turned out to be the rise's complement, F(p) = 1 − R(p), not the rise reversed.
+- **The tracker, confirming only from windows that share no samples** (1 s apart): relocking fell to about 92% and the
+  strong-neighbor case to 38–60%, against 100% and 73% without it (1 000 seeds each).
+- **The tracker, a keyed-carrier factor of 1.6 on each measurement's variance:** once the first window's fill factor
+  was in, the keyed scatter was 0.91–0.98 of the variance the model gave, so the factor had no basis left.
+- **The tracker's trust tolerance following the block length** (0.26 / T_block, a ruling made while building):
+  - at a 0.3 Hz fading spread (1.3 s blocks), 96.5% of runs held a keyed carrier at 0 dB S₅₀₀ within 0.667 Hz, against
+    100% at 1 Hz;
+  - the strong neighbor captured the track in 71 of 200 runs, against 4 of 200;
+  - below about a 0.57 Hz spread a keyed station at 0 dB S₅₀₀ was never confirmed.
+  - The tolerance is fixed at 0.667 Hz at every spread.

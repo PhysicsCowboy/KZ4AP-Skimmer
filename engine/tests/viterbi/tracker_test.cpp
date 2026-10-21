@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <limits>
 #include <numbers>
+#include <optional>
 #include <random>
 #include <span>
 #include <stdexcept>
@@ -36,10 +37,68 @@ constexpr double kPi = std::numbers::pi;
 
 // The design's values, restated here so that the tests compute what the tracker should do on their own.
 constexpr double kNoiseBandwidthHz = 1.5;      // Hz: the 1 s Hann window's noise bandwidth, 1.5 / T
-constexpr double kToleranceHz = 0.67;          // Hz: the decoder's tolerance, 0.26 cycles over a 390 ms block
+constexpr double kToleranceHz = 0.26 / 0.390;  // Hz: the trust rule's, 0.26 cycles over the default 390 ms block
 constexpr double kVarianceScaleHz2 = 0.2833;   // Hz^2: the variance of a measurement is this over the line's SNR
 constexpr double kBiasFloorHz = 0.08e-3;       // Hz: the floor of a measurement's standard deviation
 constexpr double kGateRatio = 7.943282347242815;  // 10^(9 dB / 10): the gate, re the mean noise power per bin
+constexpr double kCorrelation = -0.35;         // the correlation of two consecutive windows' errors
+constexpr double kDriftSdHzPerS = 0.3;         // Hz/s: tracker_drift_sd_hz_per_s
+constexpr double kDriftNoise = 1.5e-4;         // Hz^2/s^3: tracker_drift_noise
+
+// The moving-average coefficient whose lag-one correlation is kCorrelation: theta / (1 + theta^2) = rho, |theta| < 1.
+double theta() { return (1.0 - std::sqrt(1.0 - 4.0 * kCorrelation * kCorrelation)) / (2.0 * kCorrelation); }
+
+// The fill factor and the line's centroid (s from the window's center) that the design gives a 1 s window whose line
+// has the amplitude amplitude[i] (FS) at sample i, all of it at the measured frequency, under the hiss density n0
+// (FS^2/Hz): in each quarter j the line's coherent sum sum_j w_i a_i, less the noise's expected power N0 r sum_j w_i^2,
+// gives the level sqrt(...) / sum_j w_i; with the weights g_i = w_i x level,
+//     F = (sum g)^2 sum w^2 (tau - u)^2 / (sum w^2 (sum g (tau - u)^2)^2),   u = sum g tau / sum g,
+// and the factor is F over a filled window's F.
+struct Profile {
+    double factor;
+    double centroid_s;
+};
+
+Profile profile_of(const Sample* x, double n0) {
+    constexpr int kN = 1500;
+    std::vector<double> w(kN);
+    std::vector<double> tau(kN);
+    for (int i = 0; i < kN; ++i) {
+        w[static_cast<std::size_t>(i)] = 0.5 - 0.5 * std::cos(2.0 * kPi * i / kN);
+        tau[static_cast<std::size_t>(i)] = (i - kN / 2) / kRate;
+    }
+    const auto f_of = [&](const std::vector<double>& level) {
+        double g0 = 0.0, g1 = 0.0, w2 = 0.0;
+        for (std::size_t i = 0; i < w.size(); ++i) {
+            g0 += w[i] * level[i];
+            g1 += w[i] * level[i] * tau[i];
+            w2 += w[i] * w[i];
+        }
+        const double u = g1 / g0;
+        double g2 = 0.0, noise = 0.0;
+        for (std::size_t i = 0; i < w.size(); ++i) {
+            g2 += w[i] * level[i] * (tau[i] - u) * (tau[i] - u);
+            noise += w[i] * w[i] * (tau[i] - u) * (tau[i] - u);
+        }
+        return Profile{g0 * g0 * noise / (w2 * g2 * g2), u};
+    };
+    std::vector<double> level(kN);
+    for (int j = 0; j < 4; ++j) {
+        double sum = 0.0, sw = 0.0, sw2 = 0.0;
+        for (int i = j * kN / 4; i < (j + 1) * kN / 4; ++i) {
+            const auto k = static_cast<std::size_t>(i);
+            sum += w[k] * std::abs(std::complex<double>(x[i].real(), x[i].imag()));
+            sw += w[k];
+            sw2 += w[k] * w[k];
+        }
+        const double value = std::sqrt(std::max(sum * sum - n0 * kRate * sw2, 0.0)) / sw;
+        for (int i = j * kN / 4; i < (j + 1) * kN / 4; ++i) level[static_cast<std::size_t>(i)] = value;
+    }
+    if (*std::max_element(level.begin(), level.end()) <= 0.0) return {1.0, 0.0};  // no quarter above its noise
+    const Profile full = f_of(std::vector<double>(kN, 1.0));
+    const Profile got = f_of(level);
+    return {got.factor / full.factor, got.centroid_s};
+}
 
 // FS: the total (complex) noise sigma on a 1 500 samples/s stream that puts a key-down carrier of amplitude 1 FS at
 // s500_db dB S500 (key-down carrier power over the noise power in 500 Hz): S500 = 1 / (sigma^2 x 500 Hz / 1500 Hz).
@@ -51,8 +110,12 @@ double n0_for_s500(double s500_db) { return sigma_for_s500(s500_db) * sigma_for_
 // FS^2/Hz: the density that puts a line of power line_fs2 (FS^2) at `snr` times the mean noise power per bin.
 double n0_for_line_snr(double line_fs2, double snr) { return line_fs2 / (snr * kNoiseBandwidthHz); }
 
-// Hz^2: a measurement's variance for a peak at `snr` times the mean noise power per bin.
-double variance_for(double snr) { return kVarianceScaleHz2 / (snr - 1.0) + kBiasFloorHz * kBiasFloorHz; }
+// Hz^2: a measurement's variance for a peak at `snr` times the mean noise power per bin, with the line's profile.
+double variance_for(double snr, const Profile& profile) {
+    const double attribution_hz = kDriftSdHzPerS * profile.centroid_s;
+    return kVarianceScaleHz2 / (snr - 1.0) * profile.factor + attribution_hz * attribution_hz +
+           kBiasFloorHz * kBiasFloorHz;
+}
 
 // A station sending text at wpm from start_s: amplitude (FS) at freq_hz + drift_hz_per_s x t (Hz), no noise.
 std::vector<Sample> station(const std::string& text, double wpm, double start_s, double duration_s, double freq_hz,
@@ -122,44 +185,36 @@ double worst_error_hz(const std::vector<Point>& trace, Truth truth, double from_
 
 }  // namespace
 
-// The five tests below are the plan's, with the owner's changes of 2026-10-20 (Task 6b). Each runs several noise seeds,
-// since the standard library's normal distribution differs between platforms and a test on one realization would pass
-// or fail by luck of the platform. Measured over 1 000 seeds (MSVC; tracker.hpp, "Measured"), the share of seeds that
-// meet each: HoldsAKeyedCarrier 94.8%, FollowsDrift 99.6%, StaysPutOnNoise 99.5%, RelocksAtATurnover 99.9%,
-// ResistsAStrongNeighbor 43.1% and 43.0% (neighbor above and below). The three that pass run 5 seeds each, so that
-// another platform's random numbers fail them in about 2%, 2.5% and 0.5% of runs.
+// The five tests below are the plan's, with the owner's changes of 2026-10-20 (the decoder's tolerance for
+// HoldsAKeyedCarrier, a physical drift of 0.3 Hz/s for FollowsDrift). Each runs several noise seeds, since the standard
+// library's normal distribution differs between platforms and a test on one realization would pass or fail by luck of
+// the platform. Measured over 1 000 seeds at the tests' own 0.6667 Hz (MSVC; tracker.hpp, "Measured"), the share of
+// seeds that meet each: HoldsAKeyedCarrier 99.9%, FollowsDrift 100%, StaysPutOnNoise 99.2%, RelocksAtATurnover 100%,
+// ResistsAStrongNeighbor 72.3% and 72.4% (neighbor above and below). HoldsAKeyedCarrier, FollowsDrift and
+// RelocksAtATurnover run 5 seeds each: at the measured 1 failing seed in 1 000, a run of HoldsAKeyedCarrier's 5 seeds
+// on another platform's random numbers fails about once in 200 (1 - 0.999^5), and the other two failed no seed in
+// 1 000. StaysPutOnNoise holds a count condition over 20 seeds (below).
 //
-// HoldsAKeyedCarrier and ResistsAStrongNeighbor are strict expected failures at the approved values (tracker.hpp,
-// "Limitations"): each runs enough seeds that some fail on any platform (the chance that all pass is under 1e-4); it
-// fails if they all pass, so that the marker is removed once the limitation is gone, and is skipped otherwise.
+// ResistsAStrongNeighbor is a strict expected failure (tracker.hpp, "Limitations"): it runs enough seeds that some fail
+// on any platform; it fails if they all pass, so that the marker is removed once the limitation is gone, and if more
+// fail than its measured rate allows, a regression; it is skipped otherwise.
 
 TEST(Tracker, HoldsAKeyedCarrier) {
     // PARIS at 25 WPM, S500 0 dB, 7.3 Hz from the channel's center; the tracker starts 2.3 Hz off, at the anchor 5 Hz.
-    // From 3 s on it must stay within the decoder's tolerance, 0.67 Hz.
+    // From 3 s on it must stay within the decoder's tolerance, 0.667 Hz (0.26 cycles over its default 390 ms block).
     const std::string text = text_for("PARIS", 25.0, 19.0);
-    constexpr unsigned kSeeds = 200;  // 0.948^200 = 2e-5
-    unsigned failures = 0;
-    double worst = 0.0;
-    for (unsigned seed = 1; seed <= kSeeds; ++seed) {
+    for (const unsigned seed : {1u, 2u, 3u, 4u, 5u}) {
+        SCOPED_TRACE("seed " + std::to_string(seed));
         const auto x = signals::keyed_signal(text, 25.0, kRate, 20.0, 7.3, 1.0, sigma_for_s500(0.0), seed);
         CarrierTracker tracker(kRate, ViterbiConfig{}, 5.0);
-        const double error = worst_error_hz(run(tracker, x, n0_for_s500(0.0)), [](double) { return 7.3; }, 3.0);
-        failures += error > kToleranceHz ? 1u : 0u;
-        worst = std::max(worst, error);
+        const auto trace = run(tracker, x, n0_for_s500(0.0));
+        EXPECT_LE(worst_error_hz(trace, [](double) { return 7.3; }, 3.0), kToleranceHz);
     }
-    if (failures == 0)
-        FAIL() << "the known limitation is gone (all " << kSeeds << " seeds within 0.67 Hz from 3 s on): run a few "
-               << "seeds and remove the expected-failure marker here and the limitation from tracker.hpp";
-    GTEST_SKIP() << "known limitation (tracker.hpp, \"Limitations\"): " << failures << " of " << kSeeds
-                 << " seeds exceed 0.67 Hz from 3 s on (the worst " << worst << " Hz). The station's first window "
-                 << "holds half its keying, its measurement is far poorer than its signal-to-noise ratio says, and the "
-                 << "restart's drift carries the oscillator off; or two windows in a row find one of the keying's own "
-                 << "sideband lines, 10.4 Hz from the carrier, and the track moves there.";
 }
 
 TEST(Tracker, FollowsDrift) {
     // A carrier drifting 0.3 Hz/s (the older rigs' specified warm-up drift, at most) for 20 s, from -5 Hz to +1 Hz,
-    // PARIS at 25 WPM, S500 +10 dB; the anchor is 3 Hz off. Within 0.67 Hz from 3 s on.
+    // PARIS at 25 WPM, S500 +10 dB; the anchor is 3 Hz off. Within 0.667 Hz from 3 s on.
     const std::string text = text_for("PARIS", 25.0, 19.0);
     const auto truth = [](double t_s) { return -5.0 + 0.3 * t_s; };
     for (const unsigned seed : {1u, 2u, 3u, 4u, 5u}) {
@@ -174,8 +229,12 @@ TEST(Tracker, FollowsDrift) {
 }
 
 TEST(Tracker, StaysPutOnNoise) {
-    // 60 s of noise and no station: the oscillator stays within +/-15 Hz of where it began, and within 2 Hz rms.
-    for (unsigned seed = 1; seed <= 5; ++seed) {
+    // 60 s of noise and no station: the oscillator stays within +/-15 Hz of where it began on every seed, and within
+    // 2 Hz rms on all but a few. A false restart (two consecutive noise peaks that agree) moves it on 0.8% of seeds
+    // (measured, 8 of 1 000); of 20 seeds, at most 2 may then be over 2 Hz rms. The binomial tail fails that with
+    // probability 5.3e-4 on any platform's noise (P(X >= 3) for X ~ B(20, 0.008)).
+    unsigned over = 0;
+    for (unsigned seed = 1; seed <= 20; ++seed) {
         SCOPED_TRACE("seed " + std::to_string(seed));
         const auto x = noise(60.0, sigma_for_s500(0.0), seed);
         CarrierTracker tracker(kRate, ViterbiConfig{}, 3.0);
@@ -187,8 +246,9 @@ TEST(Tracker, StaysPutOnNoise) {
             worst = std::max(worst, std::abs(p.offset_hz - 3.0));
         }
         EXPECT_LE(worst, 15.0);
-        EXPECT_LE(std::sqrt(sum_squares / static_cast<double>(trace.size())), 2.0);
+        over += std::sqrt(sum_squares / static_cast<double>(trace.size())) > 2.0 ? 1u : 0u;
     }
+    EXPECT_LE(over, 2u);
 }
 
 TEST(Tracker, RelocksAtATurnover) {
@@ -217,7 +277,10 @@ TEST(Tracker, ResistsAStrongNeighbor) {
     // speed. The hiss density is the noise's own: the neighbor's keying sidebands are not in it.
     const std::string weak_text = text_for("PARIS", 25.0, 19.0);
     const std::string neighbor_text = text_for("CQ TEST DE KZ4AP", 22.0, 19.0);
-    constexpr unsigned kSeeds = 10;  // 2 x 10 runs: 0.431^20 = 5e-8
+    // 2 x 20 runs. Measured, 27.7% of runs fail (1 000 seeds each way, at 0.6667 Hz): all 40 pass with probability
+    // 2.3e-6, and more than 20 fail with probability 7.9e-4 (the binomial tail of B(40, 0.277)), which is a regression.
+    constexpr unsigned kSeeds = 20;
+    constexpr unsigned kMostFailures = 20;
     unsigned failures = 0;
     double worst = 0.0;
     for (const double separation_hz : {50.0, -50.0}) {
@@ -232,19 +295,25 @@ TEST(Tracker, ResistsAStrongNeighbor) {
         }
     }
     if (failures == 0)
-        FAIL() << "the known limitation is gone (all " << 2 * kSeeds << " runs within 0.67 Hz from 3 s on): run a few "
+        FAIL() << "the known limitation is gone (all " << 2 * kSeeds << " runs within 0.667 Hz from 3 s on): run a few "
                << "seeds and remove the expected-failure marker here and the limitation from tracker.hpp";
+    if (failures > kMostFailures)
+        FAIL() << "a regression: " << failures << " of " << 2 * kSeeds << " runs exceed 0.667 Hz from 3 s on (the "
+               << "worst " << worst << " Hz), more than the " << kMostFailures
+               << " that the measured 27.7% per run allows";
     GTEST_SKIP() << "known limitation (tracker.hpp, \"Limitations\"): " << failures << " of " << 2 * kSeeds
-                 << " runs exceed 0.67 Hz from 3 s on (the worst " << worst << " Hz). The neighbor's keying puts "
+                 << " runs exceed 0.667 Hz from 3 s on (the worst " << worst << " Hz). The neighbor's keying puts "
                  << "sideband lines into the weak station's search range: alone, their largest stands 10 to 16 dB "
                  << "above the mean noise power per bin (10th to 90th percentile), against about 17 dB re the same for "
-                 << "the weak line. The gate, against the noise floor, passes them; where they outshine the weak line "
-                 << "in two windows in a row, the two agree and the track moves there.";
+                 << "the weak line. Most often their energy near the weak line pulls one of its measurements off by "
+                 << "half a hertz or more, far beyond its variance; inside the acceptance window it updates the filter "
+                 << "and kicks the drift. Less often, while the track is unconfirmed (at the start, or after a hold), "
+                 << "two windows in a row find the same sideband line, agree, and the track moves there.";
 }
 
-// The tests below pin the redesign's parts (Task 6b): the gate against the noise floor, the measurement's variance,
-// the trust rule and its hold, the agreement test and the acceptance window's cap. Each uses a signal on which the
-// right answer is computed here, independently of the tracker.
+// The tests below pin the design's parts: the gate against the noise floor, the measurement's variance and its fill
+// factor, the trust rule and its hold, the agreement test, the acceptance window and its cap, the search inside it, and
+// the fixed tolerance. Each uses a signal on which the right answer is computed here, independently of the tracker.
 
 TEST(Tracker, TheNoisePowerPerBinIsTheHissDensityTimesTheWindowsNoiseBandwidth) {
     // In the normalization in which a tone of amplitude A reads A^2, one bin of white noise of density N0 (FS^2/Hz)
@@ -348,80 +417,117 @@ TEST(Tracker, TheGateMeasuresAPeakNineDecibelsAboveTheNoisePerBin) {
 TEST(Tracker, TheMeasurementVarianceComesFromThePeaksSignalToNoiseRatio) {
     // The Cramer-Rao form, var = c / rho, rho the line's power over the mean noise power per bin, estimated from the
     // peak as its power over the noise per bin less 1 (the noise's own share), with c = 0.2833 Hz^2 fitted to the first
-    // design's measured scatter, and a floor of (0.08 mHz)^2 for the parabola's own bias. A clean carrier at a bin's
-    // center has a known peak, 0.25 FS^2 here, so rho is set exactly by the hiss density.
+    // design's measured scatter; times the fill factor of the line's presence profile, plus the drift's share of
+    // attributing the measurement to the window's center (both computed here by profile_of), and a floor of
+    // (0.08 mHz)^2 for the parabola's own bias. A clean carrier at a bin's center has a known peak, 0.25 FS^2 here, so
+    // rho is set exactly by the hiss density; filling the window, its profile is flat but for the noise the tracker is
+    // told to expect, which the profile subtracts though none is there: a factor of 1.17 at 8 times the noise per bin,
+    // 1.03 at 30, 1.0007 at 1 000 (the outer quarters, of small window weight, lose the larger share).
     const auto x = carrier(0.0, 1.2, 1.2, 4.0, 0.5);
     for (const double snr : {8.0, 30.0, 1000.0, 1e9}) {
         SCOPED_TRACE("peak at " + std::to_string(snr) + " times the noise per bin");
         CarrierTracker tracker(kRate, ViterbiConfig{}, 4.0);
-        push_range(tracker, x, 0, 1500, n0_for_line_snr(0.25, snr));
+        const double n0 = n0_for_line_snr(0.25, snr);
+        push_range(tracker, x, 0, 1500, n0);
         ASSERT_EQ(tracker.last_window().outcome, Outcome::Pending);
-        EXPECT_NEAR(tracker.last_window().variance_hz2, variance_for(snr), 1e-5 * variance_for(snr));
+        const Profile profile = profile_of(x.data(), n0);
+        EXPECT_NEAR(tracker.last_window().fill_factor, profile.factor, 1e-6 * profile.factor);
+        EXPECT_GE(profile.factor, 1.0);
+        EXPECT_LE(profile.factor, 1.2);
+        EXPECT_NEAR(tracker.last_window().variance_hz2, variance_for(snr, profile), 1e-5 * variance_for(snr, profile));
         EXPECT_NEAR(tracker.last_window().measured_hz, 4.0, 1e-4);
     }
 }
 
+TEST(Tracker, APartlyFilledWindowGetsItsDerivedFillFactor) {
+    // A station that starts halfway through a window fills only its second half. Its peak is broad, and at the same
+    // signal-to-noise ratio its frequency is 20 times as uncertain as a filled window's (derived: F of the weights
+    // g = w on the second half only, over F of the whole window; 20.04 for a start at exactly half the window). The
+    // quarters' coherent sums show the profile, and the measurement's variance takes the factor, so that this window
+    // cannot set a restart's drift. Its line's centroid lies 0.148 s after the window's center, which the variance's
+    // drift share also takes.
+    const auto x = carrier(0.5, 3.0, 3.0, 4.0);
+    CarrierTracker tracker(kRate, ViterbiConfig{}, 4.0);
+    const double n0 = 1e-9;
+    push_range(tracker, x, 0, 1500, n0);
+    ASSERT_EQ(tracker.last_window().outcome, Outcome::Pending);
+    const Profile profile = profile_of(x.data(), n0);
+    EXPECT_NEAR(profile.factor, 20.0, 0.5);
+    EXPECT_NEAR(profile.centroid_s, 0.148, 0.002);
+    EXPECT_NEAR(tracker.last_window().fill_factor, profile.factor, 1e-6 * profile.factor);
+    const double snr = tracker.last_window().peak_fs2 / tracker.last_window().noise_per_bin_fs2;
+    EXPECT_NEAR(tracker.last_window().variance_hz2, variance_for(snr, profile), 1e-6 * variance_for(snr, profile));
+    // The next window, [0.5 s, 1.5 s], is filled: its factor is about 1.
+    push_range(tracker, x, 1500, 2250, n0);
+    EXPECT_NEAR(tracker.last_window().fill_factor, 1.0, 0.01);
+}
+
 namespace {
 
-// A clean carrier drifting 0.2 Hz/s from 4 Hz, present for t in [0 s, 1.5 s]: exactly two full windows, centered at
-// 0.5 s and 1.0 s, each with the line at `snr` times the noise per bin; the third window, [1 s, 2 s], holds half of it,
-// a quarter of the power, under the gate for the values used here. Returns the tracker after the third window.
+// A clean carrier drifting 0.2 Hz/s from 4 Hz, present for t in [0 s, 1.5 s]: two filled windows, centered at 0.5 s
+// and 1.0 s, each with the line at `snr` times the noise per bin, which agree and restart the filter at 1.0 s. Returns
+// after the second window; the signal is returned too, for the third window ([1 s, 2 s], half of the line).
 struct TwoWindows {
+    std::vector<Sample> x;  // the signal
+    double n0;              // FS^2/Hz: the hiss density the tracker is told
     double z1_hz, z2_hz;    // the two measurements
     double r1_hz2, r2_hz2;  // their variances
 };
 
 TwoWindows two_windows(CarrierTracker& tracker, double snr) {
-    const auto x = carrier(0.0, 1.5, 3.0, 4.0, 1.0, 0.2);
-    const double n0 = n0_for_line_snr(1.0, snr);
-    TwoWindows w{};
-    push_range(tracker, x, 0, 1500, n0);
+    TwoWindows w{carrier(0.0, 1.5, 3.0, 4.0, 1.0, 0.2), n0_for_line_snr(1.0, snr), 0.0, 0.0, 0.0, 0.0};
+    push_range(tracker, w.x, 0, 1500, w.n0);
     w.z1_hz = tracker.last_window().measured_hz;
     w.r1_hz2 = tracker.last_window().variance_hz2;
-    push_range(tracker, x, 1500, 2250, n0);
+    push_range(tracker, w.x, 1500, 2250, w.n0);
     w.z2_hz = tracker.last_window().measured_hz;
     w.r2_hz2 = tracker.last_window().variance_hz2;
     EXPECT_EQ(tracker.last_window().outcome, Outcome::Restarted);
-    push_range(tracker, x, 2250, 3000, n0);
-    EXPECT_EQ(tracker.last_window().outcome, Outcome::NotMeasured);
     return w;
 }
 
-// Hz^2: the variance of the offset predicted dt seconds after a restart from two measurements 0.5 s apart, of
-// variances r1 and r2 (Hz^2): the two-point estimate (f = z2, drift (z2 - z1) / 0.5 s) carried by the constant-drift
-// model with the drift's process noise q (Hz^2/s^3).
-double restart_variance_hz2(double r1, double r2, double dt, double q = 1.5e-4) {
+// Hz^2: the variance of the offset predicted dt seconds after a restart from two consecutive measurements 0.5 s apart,
+// of variances r1 and r2 (Hz^2) and covariance c12 = -0.35 sqrt(r1 r2): the two-point estimate (f = z2, drift
+// (z2 - z1) / 0.5 s), P = [[r2, (r2 - c12) / g], [(r2 - c12) / g, (r1 + r2 - 2 c12) / g^2]], carried by the
+// constant-drift model with the drift's process noise.
+double restart_variance_hz2(double r1, double r2, double dt) {
+    const double c12 = kCorrelation * std::sqrt(r1 * r2);
     const double p00 = r2;
-    const double p01 = r2 / 0.5;
-    const double p11 = (r1 + r2) / 0.25;
-    return p00 + 2.0 * dt * p01 + dt * dt * p11 + q * dt * dt * dt / 3.0;
+    const double p01 = (r2 - c12) / 0.5;
+    const double p11 = (r1 + r2 - 2.0 * c12) / 0.25;
+    return p00 + 2.0 * dt * p01 + dt * dt * p11 + kDriftNoise * dt * dt * dt / 3.0;
 }
 
 }  // namespace
 
 TEST(Tracker, TheTrustRuleSwitchesWhereThreeSigmaReachesTheTolerance) {
     // After the restart at 1.0 s, the third window's center is 0.5 s later. Its offset's predicted standard deviation
-    // sigma_f, from the two-point estimate, puts 3 sigma_f just under 0.67 Hz for a line at 29.8 times the noise per
-    // bin, and just over it at 29.0. The track is confirmed in the first case and not in the second.
-    for (const double snr : {29.8, 29.0}) {
+    // sigma_f, from the two-point estimate, puts 3 sigma_f under the decoder's tolerance, 0.26 / 0.390 s = 0.667 Hz,
+    // for a line at 50 times the noise per bin (about 0.58 Hz), and over it at 30 (about 0.75 Hz). The track is
+    // confirmed in the first case and not in the second.
+    for (const double snr : {50.0, 30.0}) {
         SCOPED_TRACE("line at " + std::to_string(snr) + " times the noise per bin");
         CarrierTracker tracker(kRate, ViterbiConfig{}, 4.0);
         const TwoWindows w = two_windows(tracker, snr);
         const double sigma_f = std::sqrt(restart_variance_hz2(w.r1_hz2, w.r2_hz2, 0.5));
-        EXPECT_NEAR(tracker.last_window().frequency_sd_hz, sigma_f, 1e-9);
         EXPECT_NEAR(tracker.frequency_sd_hz(1.5), sigma_f, 1e-9);
-        EXPECT_EQ(tracker.last_window().confirmed, snr > 29.4);
-        EXPECT_EQ(3.0 * sigma_f <= kToleranceHz, snr > 29.4);
-        EXPECT_EQ(tracker.counts().unconfirmed, snr > 29.4 ? 2u : 3u);
+        push_range(tracker, w.x, 2250, 3000, w.n0);
+        EXPECT_NEAR(tracker.last_window().frequency_sd_hz, sigma_f, 1e-9);
+        EXPECT_EQ(tracker.last_window().confirmed, snr > 40.0);
+        EXPECT_EQ(3.0 * sigma_f <= kToleranceHz, snr > 40.0);
+        EXPECT_EQ(tracker.counts().unconfirmed, snr > 40.0 ? 2u : 3u);
     }
 }
 
 TEST(Tracker, AnUnconfirmedTrackHoldsItsFrequency) {
-    // The same two windows, the line at 25 times the noise per bin (a variance of 0.0118 Hz^2 each). After the restart
-    // at 1.0 s the oscillator runs on at the measured drift while 3 sigma_f <= 0.67 Hz, until 0.43 s later, and from
-    // then on it holds its frequency: no drift extrapolation while the track is unconfirmed.
+    // The same two windows, the line at 25 times the noise per bin (a variance of about 0.012 Hz^2 each). After the
+    // restart at 1.0 s the oscillator runs on at the measured drift while 3 sigma_f <= 0.667 Hz, until about 0.34 s
+    // later, and from then on it holds its frequency: no drift extrapolation while the track is unconfirmed. The third
+    // window holds a quarter of the line's power, under the gate.
     CarrierTracker tracker(kRate, ViterbiConfig{}, 4.0);
     const TwoWindows w = two_windows(tracker, 25.0);
+    push_range(tracker, w.x, 2250, 3000, w.n0);
+    EXPECT_EQ(tracker.last_window().outcome, Outcome::NotMeasured);
     const double drift = (w.z2_hz - w.z1_hz) / 0.5;
     EXPECT_NEAR(drift, 0.2, 0.01);
     // The hold's time, found here by bisection on the two-point estimate's variance.
@@ -433,7 +539,7 @@ TEST(Tracker, AnUnconfirmedTrackHoldsItsFrequency) {
         (restart_variance_hz2(w.r1_hz2, w.r2_hz2, middle) <= limit ? low : high) = middle;
     }
     const double hold_s = 1.0 + low;
-    EXPECT_NEAR(hold_s, 1.43, 0.01);
+    EXPECT_NEAR(hold_s, 1.34, 0.03);
     for (const double t : {1.0, 1.1, 1.3, hold_s - 1e-6})
         EXPECT_NEAR(tracker.offset_hz(t), w.z2_hz + drift * (t - 1.0), 1e-9);
     const double held = w.z2_hz + drift * (hold_s - 1.0);
@@ -485,19 +591,39 @@ TEST(Tracker, TwoMeasurementsAgreeWithinThreeSigmas) {
 
 TEST(Tracker, TheAcceptanceWindowIsCappedAtTheSearchRange) {
     // A clean steady carrier at 4 Hz acquired at a high signal-to-noise ratio: the track is confirmed, and its third
-    // window's acceptance window is 3 sqrt(S), S = sigma_f^2 + the measurement's variance. Then, with a gate of 0.01 dB
-    // re the mean noise power per bin and a hiss density that puts the carrier only 1.003 times the noise per bin (rho
-    // = 0.003, a variance of 94 Hz^2), 3 sqrt(S) is 29 Hz and the window is capped at the search range's 15 Hz. (A
-    // measurement lies within 14.92 Hz of the oscillator, so the cap never changes what is accepted.)
+    // window's acceptance window is 3 sqrt(S), S the innovation's variance with the consecutive windows' correlation.
+    // Then, with a gate of 0.01 dB re the mean noise power per bin and a hiss density that puts the carrier only 1.003
+    // times the noise per bin (rho = 0.003, a variance of 94 Hz^2), 3 sqrt(S) is 29 Hz and the window is capped at the
+    // search range's 15 Hz. (A measurement lies within 14.92 Hz of the oscillator, so the cap never changes what is
+    // accepted.)
     const auto x = carrier(0.0, 3.0, 3.0, 4.0, 0.5);
     {
+        // S, computed here: the restart at 1.0 s from windows 1 and 2 (variances r1, r2, covariance c12 = -0.35
+        // sqrt(r1 r2)) leaves the offset's error equal to minus window 2's, s2 (theta a1 + a2), so a2, which window 3
+        // shares, has the covariance -s2 with the offset and -s2 / 0.5 s with the drift. Predicted 0.5 s to window 3,
+        // whose error is s3 (theta a2 + a3): S = P00 + 2 s3 theta P(f, a2) + s3^2 theta^2 + s3^2, s_k = sqrt(r_k /
+        // (1 + theta^2)).
         CarrierTracker tracker(kRate, ViterbiConfig{}, 4.0);
-        push_range(tracker, x, 0, 3000, n0_for_line_snr(0.25, 1e4));
+        const double n0 = n0_for_line_snr(0.25, 1e4);
+        push_range(tracker, x, 0, 1500, n0);
+        const double r1 = tracker.last_window().variance_hz2;
+        push_range(tracker, x, 1500, 2250, n0);
+        ASSERT_EQ(tracker.last_window().outcome, Outcome::Restarted);
+        const double r2 = tracker.last_window().variance_hz2;
+        push_range(tracker, x, 2250, 3000, n0);
         const auto& last = tracker.last_window();
         ASSERT_TRUE(last.confirmed);
         EXPECT_EQ(last.outcome, Outcome::Updated);
-        EXPECT_NEAR(last.acceptance_hz,
-                    3.0 * std::sqrt(last.frequency_sd_hz * last.frequency_sd_hz + last.variance_hz2), 1e-12);
+        const double r3 = last.variance_hz2;
+        const double t = theta();
+        const double s2 = std::sqrt(r2 / (1.0 + t * t));
+        const double s3 = std::sqrt(r3 / (1.0 + t * t));
+        const double p00 = restart_variance_hz2(r1, r2, 0.5);
+        const double p_fa = -s2 + 0.5 * (-s2 / 0.5);
+        const double s = p00 + 2.0 * s3 * t * p_fa + s3 * s3 * t * t + s3 * s3;
+        EXPECT_NEAR(last.frequency_sd_hz, std::sqrt(p00), 1e-12);
+        EXPECT_NEAR(last.acceptance_hz, 3.0 * std::sqrt(s), 1e-9);
+        EXPECT_GT(s, p00 + r3);  // the window's common samples widen the innovation (theta < 0, P(f, a2) < 0)
     }
     {
         ViterbiConfig config;
@@ -508,10 +634,116 @@ TEST(Tracker, TheAcceptanceWindowIsCappedAtTheSearchRange) {
         push_range(tracker, x, 2250, 3000, n0_for_line_snr(0.25, 1.003));
         const auto& last = tracker.last_window();
         ASSERT_TRUE(last.confirmed);
+        EXPECT_EQ(last.fill_factor, 1.0);  // no quarter above the noise the tracker is told: taken as filled
         EXPECT_GT(3.0 * std::sqrt(last.frequency_sd_hz * last.frequency_sd_hz + last.variance_hz2), 25.0);
         EXPECT_EQ(last.acceptance_hz, config.tracker_search_hz);
         EXPECT_EQ(last.outcome, Outcome::Updated);
     }
+}
+
+TEST(Tracker, TheToleranceIsFixedWhateverTheFadingSpread) {
+    // The trust rule's tolerance is 0.26 cycles over the decoder's default block, 0.390 s: 0.667 Hz, whatever the
+    // configured fading spread or the genie's (a stricter one, following a longer block, leaves weak stations
+    // unconfirmed and makes their error larger, not smaller). The same windows confirm the track, or do not, and the
+    // oscillator is the same, bit for bit, at every spread.
+    const auto config_of = [](double spread_hz, std::optional<double> genie_hz) {
+        ViterbiConfig config;
+        config.fading_spread_hz = spread_hz;
+        config.genie_fading_spread_hz = genie_hz;
+        return config;
+    };
+    const ViterbiConfig configs[] = {config_of(0.0, std::nullopt), config_of(0.3, std::nullopt),
+                                     config_of(5.0, std::nullopt), config_of(1.0, 0.3), config_of(1.0, 0.0)};
+    for (const double snr : {50.0, 30.0}) {
+        CarrierTracker reference(kRate, ViterbiConfig{}, 4.0);
+        const TwoWindows expected = two_windows(reference, snr);
+        push_range(reference, expected.x, 2250, 3000, expected.n0);
+        for (const ViterbiConfig& config : configs) {
+            SCOPED_TRACE("line at " + std::to_string(snr) + " times the noise per bin, spread " +
+                         std::to_string(config.fading_spread_hz) + " Hz, genie's " +
+                         std::to_string(config.genie_fading_spread_hz.value_or(-1.0)) + " Hz");
+            CarrierTracker tracker(kRate, config, 4.0);
+            const TwoWindows w = two_windows(tracker, snr);
+            push_range(tracker, w.x, 2250, 3000, w.n0);
+            EXPECT_EQ(tracker.last_window().confirmed, reference.last_window().confirmed);
+            for (const double t : {1.0, 1.2, 1.5, 3.0, 30.0}) EXPECT_EQ(tracker.offset_hz(t), reference.offset_hz(t));
+        }
+    }
+}
+
+TEST(Tracker, TheCorrelationOfConsecutiveWindowsFollowsTheHop) {
+    // At a hop longer than half the window, consecutive windows share fewer samples and their errors correlate less:
+    // rho_c is the measured -0.35 at half the window times the noise-only correlation at the hop over that at half the
+    // window, sum_i b_i b_(i + hop) / sum_i b_i^2 with b_i = w_i tau_i (computed here): -0.2134 at a hop of 0.6 s,
+    // -0.0402 at 0.75 s and 0 at 1 s, for 1 s windows. A clean steady carrier at 300 times the noise per bin: the
+    // second window's agreement limit is 3 sqrt(r1 + r2 - 2 c12 + (0.3 Hz/s x hop)^2), c12 = rho_c sqrt(r1 r2), and
+    // the third, confirmed after the restart at the second, has S = P00 + 2 s3 theta P(f, a2) + s3^2 theta^2 + s3^2,
+    // as at half the window but with this hop for the gap and this rho_c's theta.
+    std::vector<double> b(1500);
+    for (std::size_t i = 0; i < b.size(); ++i) {
+        const double w = 0.5 - 0.5 * std::cos(2.0 * kPi * static_cast<double>(i) / 1500.0);
+        b[i] = w * (static_cast<double>(i) - 750.0);
+    }
+    const auto noise_only = [&b](std::size_t hop) {
+        double products = 0.0;
+        double squares = 0.0;
+        for (std::size_t i = 0; i < b.size(); ++i) {
+            squares += b[i] * b[i];
+            if (i + hop < b.size()) products += b[i] * b[i + hop];
+        }
+        return products / squares;
+    };
+    const auto x = carrier(0.0, 4.0, 4.0, 4.0, 0.5);
+    const double n0 = n0_for_line_snr(0.25, 300.0);
+    for (const auto& [hop_s, expected] : {std::pair{0.6, -0.2134}, std::pair{0.75, -0.0402}, std::pair{1.0, 0.0}}) {
+        SCOPED_TRACE("hop " + std::to_string(hop_s) + " s");
+        const auto hop = static_cast<std::size_t>(std::llround(hop_s * kRate));
+        const double rho = kCorrelation * noise_only(hop) / noise_only(750);
+        EXPECT_NEAR(rho, expected, 1e-4);
+        const double t = rho == 0.0 ? 0.0 : (1.0 - std::sqrt(1.0 - 4.0 * rho * rho)) / (2.0 * rho);
+        ViterbiConfig config;
+        config.tracker_hop_s = hop_s;
+        CarrierTracker tracker(kRate, config, 4.0);
+        push_range(tracker, x, 0, 1500, n0);
+        ASSERT_EQ(tracker.last_window().outcome, Outcome::Pending);
+        const double r1 = tracker.last_window().variance_hz2;
+        push_range(tracker, x, 1500, 1500 + hop, n0);
+        ASSERT_EQ(tracker.last_window().outcome, Outcome::Restarted);
+        const double r2 = tracker.last_window().variance_hz2;
+        const double c12 = rho * std::sqrt(r1 * r2);
+        const double drift_hz = kDriftSdHzPerS * hop_s;
+        EXPECT_NEAR(tracker.last_window().agreement_hz, 3.0 * std::sqrt(r1 + r2 - 2.0 * c12 + drift_hz * drift_hz),
+                    1e-12);
+        push_range(tracker, x, 1500 + hop, 1500 + 2 * hop, n0);
+        const auto& last = tracker.last_window();
+        ASSERT_TRUE(last.confirmed);
+        EXPECT_EQ(last.outcome, Outcome::Updated);
+        // The two-point restart at the second window (P00 r2, P01 (r2 - c12) / g, P11 (r1 + r2 - 2 c12) / g^2, the
+        // offset's covariance with a2 -s2 and the drift's -s2 / g), predicted one hop, g, to the third.
+        const double g = hop_s;
+        const double p00 = r2 + 2.0 * (r2 - c12) + (r1 + r2 - 2.0 * c12) + kDriftNoise * g * g * g / 3.0;
+        const double s2 = std::sqrt(r2 / (1.0 + t * t));
+        const double s3 = std::sqrt(last.variance_hz2 / (1.0 + t * t));
+        const double p_fa = -s2 + g * (-s2 / g);
+        const double s = p00 + 2.0 * s3 * t * p_fa + s3 * s3 * t * t + s3 * s3;
+        EXPECT_NEAR(last.frequency_sd_hz, std::sqrt(p00), 1e-12);
+        EXPECT_NEAR(last.acceptance_hz, 3.0 * std::sqrt(s), 1e-9);
+    }
+}
+
+TEST(Tracker, ALineInsideTheAcceptanceWindowComesFirst) {
+    // A steady carrier at 7.3 Hz, acquired, and from 3 s on another 8 Hz above it and twice as strong. The largest bin
+    // of the search range is then the other one's, but a confirmed track looks first within the acceptance window of
+    // a filled window's peak at the gate (+/-0.61 Hz here), where its own line passes the gate: the oscillator never
+    // leaves 7.3 Hz. (Taking the largest bin, the track would keep the other carrier's measurement for the next
+    // window, which would agree, and move there.)
+    const auto x = sum_of(sum_of(carrier(0.0, 12.0, 12.0, 7.3), carrier(3.0, 12.0, 12.0, 15.3, 2.0)),
+                          noise(12.0, sigma_for_s500(30.0), 1));
+    CarrierTracker tracker(kRate, ViterbiConfig{}, 7.3);
+    const auto trace = run(tracker, x, n0_for_s500(30.0));
+    EXPECT_LE(worst_error_hz(trace, [](double) { return 7.3; }, 0.0), 0.05);
+    EXPECT_EQ(tracker.counts().restarted, 1u);  // the acquisition
+    EXPECT_EQ(tracker.counts().pending, 1u);    // its first window
 }
 
 // The tests below pin the mechanics the design keeps from the first tracker, each on a signal where the right answer
@@ -520,18 +752,25 @@ TEST(Tracker, TheAcceptanceWindowIsCappedAtTheSearchRange) {
 TEST(Tracker, ThePairOfWindowsThatAcquiresNeedsAllItsSamples) {
     // A clean carrier at 8 Hz, the tracker's start 5 Hz: the first window (complete at the 1 500th sample, 1 s) is
     // measured and kept, and nothing moves until the second window agrees with it, at the 2 250th sample (1.5 s). The
-    // filter then restarts there, at the second window's center, 1.0 s.
+    // filter then restarts there, at the second window's center, 1.0 s. The two windows share half their samples, so
+    // the agreement test allows for their errors' covariance c12 = -0.35 sqrt(r1 r2): the limit is 3 sqrt(r1 + r2 -
+    // 2 c12 + (0.3 Hz/s x 0.5 s)^2).
     const auto x = carrier(0.0, 3.0, 3.0, 8.0);
     const double n0 = 1e-10;
     CarrierTracker tracker(kRate, ViterbiConfig{}, 5.0);
     push_range(tracker, x, 0, 1500, n0);
     EXPECT_EQ(tracker.last_window().outcome, Outcome::Pending);
+    const double r1 = tracker.last_window().variance_hz2;
     push_range(tracker, x, 1500, 2249, n0);
     EXPECT_EQ(tracker.offset_hz(1.0), 5.0);
     EXPECT_EQ(tracker.offset_hz(100.0), 5.0);
     push_range(tracker, x, 2249, 2250, n0);
     EXPECT_EQ(tracker.last_window().outcome, Outcome::Restarted);
     EXPECT_NEAR(tracker.offset_hz(1.0), 8.0, 0.001);
+    const double r2 = tracker.last_window().variance_hz2;
+    const double c12 = kCorrelation * std::sqrt(r1 * r2);
+    EXPECT_NEAR(tracker.last_window().agreement_hz,
+                3.0 * std::sqrt(r1 + r2 - 2.0 * c12 + (kDriftSdHzPerS * 0.5) * (kDriftSdHzPerS * 0.5)), 1e-12);
 }
 
 TEST(Tracker, ACleanToneIsMeasuredToUnderAMillihertz) {
@@ -567,9 +806,11 @@ TEST(Tracker, AMeasurementBelongsToTheWindowsCenter) {
 TEST(Tracker, ALoneOtherCarrierIsHeldNotFollowed) {
     // A steady carrier at 7.3 Hz and, for 100 ms at the center of the window [5 s, 6 s], another at 17.3 Hz eight times
     // as strong, which outshines the steady one in that window alone (the two windows beside it barely see it, at the
-    // Hann window's ends). That peak lies 10 Hz from the confirmed track, outside its acceptance window: it is kept for
-    // the next window, which measures the steady carrier again, inside, and drops it. The oscillator never leaves the
-    // steady carrier.
+    // Hann window's ends). The confirmed track takes its own line, inside its acceptance window, first, so the burst's
+    // peak never becomes a measurement; but the burst's skirt pulls the steady line's measurement in that window to
+    // about 7.43 Hz, 0.13 Hz off, which at 55 dB re the mean noise power per bin lies far outside the acceptance
+    // window. That measurement is kept pending, and the next window, on the steady carrier again and inside, drops it.
+    // The oscillator never leaves the steady carrier.
     const auto x = sum_of(sum_of(carrier(0.0, 12.0, 12.0, 7.3), carrier(5.45, 5.55, 12.0, 17.3, 8.0)),
                           noise(12.0, sigma_for_s500(30.0), 1));
     CarrierTracker tracker(kRate, ViterbiConfig{}, 7.3);
@@ -663,6 +904,19 @@ TEST(Tracker, RefusesWhatItCannotRun) {
     refused([](ViterbiConfig& c) { c.tracker_drift_sd_hz_per_s = kInf; });
     refused([](ViterbiConfig& c) { c.tracker_drift_noise = -1e-4; });
     refused([](ViterbiConfig& c) { c.tracker_drift_noise = kNaN; });
+    refused([](ViterbiConfig& c) {  // 6 samples: the profile's first block would hold only the zero-weight sample
+        c.tracker_window_s = 0.004;
+        c.tracker_hop_s = 0.002;
+    });
+    refused([](ViterbiConfig& c) { c.tracker_hop_s = 0.4; });  // under half the window: two hops apart would overlap
+    ViterbiConfig smallest;  // 8 samples, every block with weight
+    smallest.tracker_window_s = 8.0 / kRate;
+    smallest.tracker_hop_s = 4.0 / kRate;
+    EXPECT_NO_THROW(CarrierTracker(kRate, smallest, 0.0));
+    ViterbiConfig odd_spreads;  // the fading spread is not the tracker's business: no refusal follows from it
+    odd_spreads.fading_spread_hz = 1000.0;
+    odd_spreads.genie_fading_spread_hz = kNaN;
+    EXPECT_NO_THROW(CarrierTracker(kRate, odd_spreads, 0.0));
     ViterbiConfig no_drift;
     no_drift.tracker_drift_sd_hz_per_s = 0.0;  // a drift known to be zero, and never changing, is a model, not an error
     no_drift.tracker_drift_noise = 0.0;

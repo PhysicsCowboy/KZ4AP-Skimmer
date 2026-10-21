@@ -55,7 +55,8 @@ struct ViterbiConfig {
     // --- Fading and the block (topic 4, item 9) ---
 
     // Hz: the Doppler spread f_D of the fading, twice the standard deviation of a Gaussian Doppler spectrum; sets the
-    // block length (block_length_s) and the rate of the level (placeholder, to be set by measurement)
+    // block length (block_length_s) and the rate of the level, not the frequency tracker (placeholder, to be set by
+    // measurement)
     double fading_spread_hz = 1.0;
     // dB of signal energy: the largest loss a block may have at that spread (heuristic)
     double block_loss_db = 0.5;
@@ -104,11 +105,11 @@ struct ViterbiConfig {
     // pole's step; the signal detector's rule and value (plan section 2.10, "Hiss average: one-pole, 1 s"; heuristic)
     double hiss_average_s = 1.0;
 
-    // --- The frequency tracker (topic 4, item 8; the owner's decision B of 2026-10-20; tracker.hpp has the design) ---
+    // --- The frequency tracker (topic 4, item 8; tracker.hpp has the design) ---
 
-    // s: the length of the window of each measurement (placeholder)
+    // s: the length of the window of each measurement, 8 samples at least (placeholder)
     double tracker_window_s = 1.0;
-    // s: the time between measurements (placeholder)
+    // s: the time between measurements, at least half the window (placeholder)
     double tracker_hop_s = 0.5;
     // Hz: the half-width of the search around the oscillator's frequency (placeholder)
     double tracker_search_hz = 15.0;
@@ -117,8 +118,9 @@ struct ViterbiConfig {
     // perfect decoder's threshold at 5.2 WPM (-8.6 dB S500) stands 9.5 dB above it and passes in 64% of the windows
     double tracker_gate_db = 9.0;
     // Hz/s: the standard deviation of the drift rate at the start, and of any carrier's drift in the agreement test
-    // of two measurements. Sourced: older rigs' specified warm-up drift, at most about 0.3 Hz/s (a Kenwood TS-830S,
-    // 1 kHz in its first hour)
+    // of two measurements and in a measurement's variance (for the centroid of its line). Sourced: older rigs'
+    // specified warm-up drift, at most about 0.3 Hz/s (a Kenwood TS-830S, 1 kHz in its first hour; rigpix's
+    // specification page, https://www.rigpix.com/kenwood/ts830s.htm; tracker.hpp has the other sources)
     double tracker_drift_sd_hz_per_s = 0.3;
     // Hz^2/s^3, (Hz/s)^2 per second: the process noise of the drift rate, a change of tracker_drift_sd_hz_per_s over
     // ten minutes, (0.3 Hz/s)^2 / 600 s (derived from the sourced drift; the ten minutes heuristic)
