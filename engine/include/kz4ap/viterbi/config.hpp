@@ -92,6 +92,9 @@ struct ViterbiConfig {
     double hiss_half_width_hz = 2000.0;
     // percent: the rank, among those bins, of the one taken as the hiss (placeholder, heuristic)
     double hiss_percentile = 25.0;
+    // s: the time constant of the one-pole average of each bin's power, a plain running mean while 1/n exceeds the
+    // pole's step; the signal detector's rule and value (plan section 2.10, "Hiss average: one-pole, 1 s"; heuristic)
+    double hiss_average_s = 1.0;
 
     // --- The frequency tracker (topic 4, item 8) ---
 

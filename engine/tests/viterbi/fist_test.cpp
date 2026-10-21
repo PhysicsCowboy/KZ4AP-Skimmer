@@ -580,6 +580,7 @@ TEST(Config, DefaultsAreTheDesignTable) {
     EXPECT_EQ(c.quadrature_order, 5);
     EXPECT_EQ(c.hiss_half_width_hz, 2000.0);
     EXPECT_EQ(c.hiss_percentile, 25.0);
+    EXPECT_EQ(c.hiss_average_s, 1.0);
     EXPECT_EQ(c.tracker_window_s, 1.0);
     EXPECT_EQ(c.tracker_hop_s, 0.5);
     EXPECT_EQ(c.tracker_search_hz, 15.0);
