@@ -34,8 +34,10 @@
 //              length better than a piece anyway. So each sigma is at least one piece over the kind's median length,
 //              piece_s / (median_dots x dot), in ln(length). CLASS: heuristic (an exact sender's timing known to one
 //              piece, 2 ms at the default; neither derived nor measured). It also raises the small sigmas of the
-//              other styles at fast speeds (the "computer" style at 100 WPM, for one). The Farnsworth factor is not
-//              given.
+//              other styles at fast speeds (the "computer" style at 100 WPM, for one). The decoder has no Farnsworth
+//              factor (standard spacing only, the owner's decision D14 of 2026-10-21) and the labels' farnsworth_wpm
+//              is not read: for a Farnsworth-spaced signal the genie fist gives the style's standard medians, and
+//              its stretched gaps decode poorly (docs/backlog.md, "Farnsworth spacing in the new decoder").
 // A label that has no single truth to give is refused, naming its number in the labels file: a QSO label of several
 // stations for frequency and for fist (each station has its own carrier and fist; the per-station labels of a QSO have
 // one), and a signal that changes speed (wpm_end) for fist (one dot cannot give both speeds). LIMITATION, accepted for

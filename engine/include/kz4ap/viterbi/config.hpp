@@ -14,7 +14,10 @@
 namespace kz4ap::viterbi {
 
 struct ViterbiConfig {
-    // --- Time, and the grids of speeds and Farnsworth factors (topic 2, items 1 to 3) ---
+    // --- Time, and the grid of speeds (topic 2, items 1 and 2) ---
+    // Standard spacing only: no Farnsworth factor (the owner's decision D14 of 2026-10-21; topic 2, item 3, amended).
+    // Farnsworth-spaced signals decode poorly until a later fix: docs/backlog.md, "Farnsworth spacing in the new
+    // decoder".
 
     // s: the decoder's time step, a "piece": 3 channel samples at 1500 samples/s (converted to samples where used)
     double piece_s = 0.002;
@@ -25,16 +28,11 @@ struct ViterbiConfig {
     double speed_ratio = 1.1;
     // count: speeds s = 0 ... 31, dots of 12.0 to 230.3 ms (100 to 5.2 WPM)
     int speed_count = 32;
-    // dimensionless: the Farnsworth factor f stretches the gaps between letters and between words by
-    // F_f = factor_ratio^f
-    double factor_ratio = 1.1;
-    // count: factors f = 0 ... 22, F = 1 to 8.14 (the owner's range)
-    int factor_count = 23;
 
     // --- The fist, the timing model of a sender (topic 2, items 4 and 5) ---
     // One entry per kind, in the order of Kind (fist.hpp): Dot, Dash, ElementGap, LetterGap, WordGap. A kind's length
     // is shift + a log-normal of median M and standard deviation sigma in ln(length); M is the kind's median in dots
-    // times the speed's dot, times the Farnsworth factor for LetterGap and WordGap.
+    // times the speed's dot.
 
     // dots: the medians; 1, 3, 1, 3, 7 are the ITU sending standard's ratios, not a measurement of senders
     // (placeholder, heuristic)
@@ -42,8 +40,8 @@ struct ViterbiConfig {
     // ln(length): the log-normal's standard deviation per kind (placeholder, heuristic)
     std::array<double, 5> fist_sigmas = {{0.3, 0.3, 0.3, 0.3, 0.3}};
     // dots: a constant added to each kind's length, a sender's weighting; 0 in the baseline and used only by the genie
-    // fist. The Farnsworth factor does not stretch it. The genie fist is this fist with speed_count = 1, dot_min_ms
-    // the sender's dot, and the sender's own medians, sigmas and shifts
+    // fist. The genie fist is this fist with speed_count = 1, dot_min_ms the sender's dot, and the sender's own
+    // medians, sigmas and shifts
     std::array<double, 5> fist_shifts_dots = {{0.0, 0.0, 0.0, 0.0, 0.0}};
 
     // --- The search (topic 5) ---
@@ -78,8 +76,8 @@ struct ViterbiConfig {
     // piece of silence is over_rate_per_s x piece_s = 1.0e-4 exactly (not 1 - exp(-rate x piece)). Placeholder: the
     // development set's own rate, until counted on real traffic
     double over_rate_per_s = 0.05;
-    // probability per letter start: that the sender begins a new story (a new speed, factor and level; the text goes
-    // on) at a letter start. Placeholder: the development set's own count, 1/1000, until counted on real traffic
+    // probability per letter start: that the sender begins a new story (a new speed and level; the text goes on) at a
+    // letter start. Placeholder: the development set's own count, 1/1000, until counted on real traffic
     double rescue_epsilon = 1.0e-3;
     // probability: that a letter ends its word; 1 / 3.06, the mean word length VE3NEA measured in CW Skimmer's
     // decodes, until recounted on real traffic

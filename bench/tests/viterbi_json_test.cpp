@@ -72,18 +72,17 @@ std::string setting_refusal(ViterbiConfig& config, const std::string& setting) {
 // removing a ViterbiConfig field stops this file from compiling until this list, the table in viterbi_json.cpp and the
 // expected names below are changed together.
 void every_field_is_named(const ViterbiConfig& c) {
-    [[maybe_unused]] const auto& [piece_s, dot_min_ms, speed_ratio, speed_count, factor_ratio, factor_count,
-                                  fist_medians_dots, fist_sigmas, fist_shifts_dots, beam_nats, ceiling,
-                                  fading_spread_hz, block_loss_db, keying_rise_s, over_rate_per_s, rescue_epsilon,
-                                  word_end_p, over_end_q, level_min_db, level_max_db, quadrature_order,
-                                  hiss_half_width_hz, hiss_percentile, hiss_average_s, tracker_window_s,
-                                  tracker_hop_s, tracker_search_hz, tracker_gate_db, tracker_drift_sd_hz_per_s,
-                                  tracker_drift_noise, genie_frequency_offset_hz, genie_frequency_drift_hz_per_s,
-                                  genie_fading_spread_hz, stats] = c;
+    [[maybe_unused]] const auto& [piece_s, dot_min_ms, speed_ratio, speed_count, fist_medians_dots, fist_sigmas,
+                                  fist_shifts_dots, beam_nats, ceiling, fading_spread_hz, block_loss_db,
+                                  keying_rise_s, over_rate_per_s, rescue_epsilon, word_end_p, over_end_q,
+                                  level_min_db, level_max_db, quadrature_order, hiss_half_width_hz, hiss_percentile,
+                                  hiss_average_s, tracker_window_s, tracker_hop_s, tracker_search_hz, tracker_gate_db,
+                                  tracker_drift_sd_hz_per_s, tracker_drift_noise, genie_frequency_offset_hz,
+                                  genie_frequency_drift_hz_per_s, genie_fading_spread_hz, stats] = c;
 }
 
 const std::vector<std::string> kExpectedNames = {
-    "piece_s", "dot_min_ms", "speed_ratio", "speed_count", "factor_ratio", "factor_count", "fist_medians_dots",
+    "piece_s", "dot_min_ms", "speed_ratio", "speed_count", "fist_medians_dots",
     "fist_sigmas", "fist_shifts_dots", "beam_nats", "ceiling", "fading_spread_hz", "block_loss_db", "keying_rise_s",
     "over_rate_per_s", "rescue_epsilon", "word_end_p", "over_end_q", "level_min_db", "level_max_db",
     "quadrature_order", "hiss_half_width_hz", "hiss_percentile", "hiss_average_s", "tracker_window_s",
@@ -104,7 +103,8 @@ TEST(ViterbiJson, TheConfigurationHasEveryFieldInDeclarationOrder) {
     EXPECT_EQ(j.at("dot_min_ms"), 12.0);
     EXPECT_TRUE(j.at("speed_count").is_number_integer());
     EXPECT_EQ(j.at("speed_count"), 32);
-    EXPECT_EQ(j.at("factor_count"), 23);
+    EXPECT_FALSE(j.contains("factor_count"));  // no Farnsworth factor (the owner's decision D14 of 2026-10-21)
+    EXPECT_FALSE(j.contains("factor_ratio"));
     EXPECT_EQ(j.at("fist_medians_dots"), ordered_json::array({1.0, 3.0, 1.0, 3.0, 7.0}));
     EXPECT_EQ(j.at("fist_sigmas"), ordered_json::array({0.3, 0.3, 0.3, 0.3, 0.3}));
     EXPECT_EQ(j.at("fist_shifts_dots"), ordered_json::array({0.0, 0.0, 0.0, 0.0, 0.0}));
@@ -206,8 +206,6 @@ TEST(ViterbiJson, TheConfigurationRoundTripsThroughItsJson) {
     c.dot_min_ms = 10.0;
     c.speed_ratio = 1.05;
     c.speed_count = 61;
-    c.factor_ratio = 1.2;
-    c.factor_count = 12;
     c.fist_medians_dots = {{1.0, 3.2, 1.0, 3.4, 7.5}};
     c.fist_sigmas = {{0.1, 0.12, 0.15, 0.2, 0.25}};
     c.fist_shifts_dots = {{0.05, 0.05, -0.05, -0.05, -0.05}};

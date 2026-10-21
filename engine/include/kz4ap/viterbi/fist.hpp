@@ -1,11 +1,11 @@
-// The fist: how probable the lengths of a sender's dots, dashes and gaps are, at each speed and Farnsworth factor
-// (design notes, topic 2, items 1 to 4). Lengths are counted in pieces of piece_s. For one of the five kinds, at
-// speed s and factor f, the length D is
+// The fist: how probable the lengths of a sender's dots, dashes and gaps are, at each speed (design notes, topic 2,
+// items 1, 2 and 4; item 3's Farnsworth factor is removed from the first prototype, the owner's decision D14 of
+// 2026-10-21: standard spacing only, docs/backlog.md, "Farnsworth spacing in the new decoder"). Lengths are counted in
+// pieces of piece_s. For one of the five kinds, at speed s, the length D is
 //     D = shift + M e^(sigma N),    N a standard normal variable,
 // a log-normal of median M and standard deviation sigma in ln(length), moved by a constant, where, with the speed's
-// dot T_s = dot_min_ms x speed_ratio^s, the factor F_f = factor_ratio^f and the kind's entries of the configuration,
-//     M = median_dots x T_s / (1000 piece_s)   (and x F_f for LetterGap and WordGap),
-//     shift = shift_dots x T_s / (1000 piece_s)   (the factor does not stretch it).
+// dot T_s = dot_min_ms x speed_ratio^s and the kind's entries of the configuration,
+//     M = median_dots x T_s / (1000 piece_s),    shift = shift_dots x T_s / (1000 piece_s).
 // The sender's length is rounded to the nearest piece and is never shorter than one piece: with F the distribution
 // function of D, the probability of a length of tau pieces is
 //     P(1) = F(3/2),    P(tau) = F(tau + 1/2) - F(tau - 1/2)    for tau >= 2,
@@ -23,11 +23,10 @@
 // mass between two edges, taken from the tail its edges lie in (the lower tail below the median, the upper above it,
 // and 1 minus both across it) so that a tiny mass keeps its relative accuracy. The edges' tail values are the ones the
 // neighboring lengths use, so the P(tau) sum to 1 to rounding, whatever the interpolation's error. The error of a
-// difference grows as the edges come closer than a table step (a long median): ln P is within 6.2e-7 nats at a median
-// of 6 pieces (the dot at 100 WPM), 1.1e-5 at 115 (the dot at 5.2 WPM) and 2.4e-4 at the longest, 6 562 pieces (the
-// word gap at 5.2 WPM and the factor 8.14), and within 1.5e-7 M for a median of M pieces at the other ends of the
-// grids of speeds and factors. These are measured against std::erfc at every length up to 40 times the median, and
-// the tests check them.
+// difference grows as the edges come closer in z (a long median): ln P is within 6.2e-7 nats at a median of 6 pieces
+// (the dot at 100 WPM), 1.1e-5 at 115 (the dot at 5.2 WPM) and 4.2e-5 at the longest, 806 pieces (the word gap at
+// 5.2 WPM), and within 1.5e-7 M for a median of M pieces at the other ends of the grid of speeds. These are measured
+// against std::erfc at every length up to 40 times the median, and the tests check them.
 #pragma once
 
 #include "kz4ap/viterbi/config.hpp"
@@ -42,23 +41,20 @@ enum class Kind { Dot, Dash, ElementGap, LetterGap, WordGap };
 
 class Fist {
 public:
-    // Throws std::invalid_argument for a configuration it cannot read: a piece_s, dot_min_ms, speed_ratio,
-    // factor_ratio, median or sigma that is not positive and finite, a shift that is not finite, or fewer than one
-    // speed or factor. It keeps nothing of the configuration itself.
+    // Throws std::invalid_argument for a configuration it cannot read: a piece_s, dot_min_ms, speed_ratio, median or
+    // sigma that is not positive and finite, a shift that is not finite, or fewer than one speed. It keeps nothing of
+    // the configuration itself.
     explicit Fist(const ViterbiConfig& config);
 
-    // ln S(tau), nats: the probability that a mark or gap of this kind, at this speed (0 ... speed_count - 1) and
-    // factor (0 ... factor_count - 1), lasts at least tau pieces (tau >= 1). The factor matters only to LetterGap and
-    // WordGap and is not read for the other kinds. Throws std::out_of_range for a kind, speed, tau or (where it
-    // matters) factor outside these.
-    double log_survival(Kind kind, int speed, int factor, int tau) const;
+    // ln S(tau), nats: the probability that a mark or gap of this kind, at this speed (0 ... speed_count - 1), lasts at
+    // least tau pieces (tau >= 1). Throws std::out_of_range for a kind, speed or tau outside these.
+    double log_survival(Kind kind, int speed, int tau) const;
     // ln P(tau), nats: the probability that it lasts exactly tau pieces; -infinity where that is 0 (a shift longer
     // than tau pieces). The same arguments and errors as log_survival.
-    double log_end(Kind kind, int speed, int factor, int tau) const;
+    double log_end(Kind kind, int speed, int tau) const;
 
 private:
-    // One kind's length at one speed: ln of its median in pieces (before the Farnsworth factor), its shift in pieces
-    // and its sigma in ln(length).
+    // One kind's length at one speed: ln of its median in pieces, its shift in pieces and its sigma in ln(length).
     struct Params {
         double ln_median;
         double shift;
@@ -67,13 +63,11 @@ private:
         // normal that the log-normal part of the length maps to; -infinity at or below the shift, where no length lies.
         double z(double edge) const;
     };
-    // The parameters for a kind, speed and factor (the factor's stretch included in ln_median), after checking them.
-    Params params(Kind kind, int speed, int factor, int tau) const;
+    // The parameters for a kind and speed, after checking them and tau.
+    Params params(Kind kind, int speed, int tau) const;
 
     std::vector<Params> by_kind_and_speed_;  // kind-major: kind x speed_count_ + speed
     int speed_count_;
-    int factor_count_;
-    double ln_factor_ratio_;  // ln(factor_ratio)
 };
 
 }  // namespace kz4ap::viterbi

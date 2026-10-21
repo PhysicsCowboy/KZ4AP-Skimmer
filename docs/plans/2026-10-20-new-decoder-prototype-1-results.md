@@ -24,9 +24,9 @@ commit and its committed score tables.
 - **Nat:** the natural-logarithm unit of information, used for scores: a prior of probability p costs ln(1/p) nats.
 - **Piece:** the decoder's time step, the sum of 3 channel samples: 2.000 ms at the channel's 1 500 samples/s.
 - **Story:** one continuous account of what has been sent on the channel since its start: no signal, or a mark or gap
-  that has lasted some pieces, at a speed, a Farnsworth factor, a node of the Morse tree, with its own signal level and
-  its own text. Its score, in nats, is the log-likelihood of the story and the signal so far against "noise only,
-  throughout".
+  that has lasted some pieces, at a speed, a node of the Morse tree, with its own signal level and its own text (the
+  spacing is standard: the decoder has no Farnsworth factor, the owner's decision D14 of 2026-10-21). Its score, in
+  nats, is the log-likelihood of the story and the signal so far against "noise only, throughout".
 - **Beam, ceiling:** the beam drops every story more than `beam_nats` behind the best; the ceiling keeps at most
   `ceiling` stories.
 - **Newborn, line:** a newborn is a story that starts a mark, from silence (an over starts) or as a rescue (the sender
@@ -61,7 +61,7 @@ commit and its committed score tables.
 
 `ViterbiConfig` (`engine/include/kz4ap/viterbi/config.hpp`) is the decoder's whole configuration, in physical units; the
 table gives each field's default, its unit and its class, as `docs/signal-processing.md` appendix A.10 does for the same
-values. Pieces, bins and samples appear only where a value is used. The bench records all 34 fields in every viterbi
+values. Pieces, bins and samples appear only where a value is used. The bench records all 32 fields in every viterbi
 result file (section 1.2).
 
 | Field | Default | Unit | Class and meaning |
@@ -70,13 +70,11 @@ result file (section 1.2).
 | `dot_min_ms` | 12.0 | ms | owner: the dot of the fastest speed, 100 WPM |
 | `speed_ratio` | 1.1 | none | owner: each speed's dot is this times the previous speed's |
 | `speed_count` | 32 | count | owner: speeds 0 … 31, dots of 12.0 to 230.3 ms, 100 to 5.2 WPM |
-| `factor_ratio` | 1.1 | none | owner: the Farnsworth factor F stretches the gaps between letters and words by 1.1^f |
-| `factor_count` | 23 | count | owner: factors f = 0 … 22, F = 1 to 8.14 |
-| `fist_medians_dots` | 1, 3, 1, 3, 7 | dots | placeholder, heuristic: the median length of a dot, dash, element gap, letter gap and word gap (the last two times F); the ITU sending standard's ratios, not a measurement of senders |
+| `fist_medians_dots` | 1, 3, 1, 3, 7 | dots | placeholder, heuristic: the median length of a dot, dash, element gap, letter gap and word gap, at standard spacing (no Farnsworth factor: owner, D14); the ITU sending standard's ratios, not a measurement of senders |
 | `fist_sigmas` | 0.3 for each | standard deviation of ln(length) | placeholder, heuristic |
 | `fist_shifts_dots` | 0 for each | dots | a sender's weighting added to each kind's length; 0 in the baseline, set only by the genie fist |
 | `beam_nats` | 40.0 | nats | placeholder: at least 28 nats (derived) |
-| `ceiling` | 1 700 | stories | placeholder; open: the owner's decision |
+| `ceiling` | 1 700 | stories | placeholder; left to the ceiling run, R3 (owner, D11) |
 | `fading_spread_hz` | 1.0 | Hz | placeholder, swept by the plan: the Doppler spread f_D of the fading, twice the standard deviation of a Gaussian Doppler spectrum |
 | `block_loss_db` | 0.5 | dB of signal energy | heuristic: the largest loss of a coherent block; with `fading_spread_hz` it gives the block, B = 195 pieces = 390 ms (derived) |
 | `keying_rise_s` | 0.005 | s | placeholder, heuristic: the raised-cosine rise at a mark's start, the generator's edge (S2's edges are 10 ms: section 1.4) |
@@ -101,8 +99,8 @@ result file (section 1.2).
 | `genie_fading_spread_hz` | none | Hz | genie runs only: the true spread, in place of `fading_spread_hz` |
 | `stats` | false | on or off | instrumentation: whether the search keeps its statistics (they grow with the channel's time, about 350 MB per channel-hour) |
 
-The search also pays priors that are not configuration: a speed 1/32 (3.466 nats) and a Farnsworth factor 1/23
-(3.135 nats) where taken, and a letter 1/62 (4.127 nats) at its start, all owner (flat, no text model).
+The search also pays priors that are not configuration: a speed 1/32 (3.466 nats) where a newborn's speed is taken,
+and a letter 1/62 (4.127 nats) at its start, both owner (flat, no text model).
 
 ### 1.2 The bench command line
 
@@ -129,9 +127,10 @@ The search also pays priors that are not configuration: a speed 1/32 (3.466 nats
     marks and − for the gaps. A style with an exact kind (σ = 0: "machine") cannot be given to the fist, which needs
     σ > 0, and the decoder cannot resolve a length better than a piece: every σ is at least one piece over the kind's
     median length, `piece_s` / (median × dot): an exact sender's timing taken as known to one piece, 2 ms. It binds
-    for the machine style and, at a fast speed, for the small σ of the others. The Farnsworth factor is not given,
-    only searched. **Class of the floor: heuristic** (neither derived nor measured); R8 on the machine style, and on
-    the other styles at fast speeds, depends on it.
+    for the machine style and, at a fast speed, for the small σ of the others. The decoder has no Farnsworth factor
+    and the bench does not read the labels' `farnsworth_wpm`, so for a Farnsworth-spaced signal the genie fist gives
+    the style's standard medians. **Class of the floor: heuristic** (neither derived nor measured); R8 on the machine
+    style, and on the other styles at fast speeds, depends on it.
   - **Limitation of the genie, accepted for now:** a label with no single truth to give is refused, by its number in
     the labels file: a QSO label of several stations (each has its own carrier and fist; the per-station labels of a
     QSO have one) for `frequency` and `fist`, and a signal that changes speed (`wpm_end`) for `fist`. `ViterbiGenie`
@@ -217,8 +216,10 @@ before its runs finish on a committed state.
   is `docs/plans/data/2026-10-06-development-set/d5-bank.csv`, 14 114 rows, one per scored signal, with the conditions
   of the signal, its cell, its edits and its reference symbols; Task 8 added the two columns `farnsworth_wpm` and
   `farnsworth_factor` (0.01) and left the other 17 columns byte for byte unchanged.
-- The comparisons leave out I2's signals above a Farnsworth factor of 8 on both sides, and list them apart (181 of I2's
-  864 signals: 20.9%, counted from the table's `farnsworth_factor`).
+- I2 is reported apart from the comparison with the bank, all of it, as a known gap of this prototype: the decoder has
+  no Farnsworth factor (the owner's decision D14 of 2026-10-21), so Farnsworth-spaced signals are expected to decode
+  poorly. The earlier cut at a Farnsworth factor of 8 (181 of I2's 864 signals: 20.9%, counted from the table's
+  `farnsworth_factor`) is moot.
 - The new decoder's own reference is the wide-beam run (R1: beam 80 nats, ceiling 17 000), against which its search
   errors are counted.
 

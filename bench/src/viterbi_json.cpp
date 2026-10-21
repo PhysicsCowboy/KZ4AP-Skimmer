@@ -26,7 +26,7 @@ using nlohmann::ordered_json;
 // The compile-time guard in bench/tests/viterbi_json_test.cpp stops that file from compiling when a field is added or
 // removed, until this table is changed with it.
 #define KZ4AP_VITERBI_CONFIG_FIELDS(X)                                                                              \
-    X(piece_s) X(dot_min_ms) X(speed_ratio) X(speed_count) X(factor_ratio) X(factor_count) X(fist_medians_dots)     \
+    X(piece_s) X(dot_min_ms) X(speed_ratio) X(speed_count) X(fist_medians_dots)                                     \
     X(fist_sigmas) X(fist_shifts_dots) X(beam_nats) X(ceiling) X(fading_spread_hz) X(block_loss_db)                 \
     X(keying_rise_s) X(over_rate_per_s) X(rescue_epsilon) X(word_end_p) X(over_end_q) X(level_min_db)               \
     X(level_max_db) X(quadrature_order) X(hiss_half_width_hz) X(hiss_percentile) X(hiss_average_s)                  \
@@ -388,8 +388,8 @@ viterbi::ViterbiGenie genie_from_label(const LabeledSignal& label, std::size_t i
             // fist needs sigma > 0, and "machine" is exact, sigma 0, so the sender's timing is taken as known to one
             // piece, 2 ms at the default; neither derived nor measured).
             fist.sigmas[kind] = std::max(duration.sigma, piece_s / (duration.median_dots * dot_s));
-            // the marks are longer, the spaces shorter, by the imbalance; the Farnsworth factor does not stretch it
-            // (0.0 - x, not -x: no imbalance is a shift of 0, not of -0)
+            // the marks are longer, the spaces shorter, by the imbalance; in the generator the Farnsworth factor
+            // does not stretch it (0.0 - x, not -x: no imbalance is a shift of 0, not of -0)
             fist.shifts_dots[kind] = kind < 2 ? label.imbalance_dits : 0.0 - label.imbalance_dits;
         }
         genie.fist = fist;

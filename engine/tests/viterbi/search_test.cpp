@@ -170,8 +170,8 @@ double cer(const std::string& reference, const std::string& decoded) {
 }
 
 // A story's state, as merging compares it.
-std::tuple<Activity, bool, int, int, int, int> state_of(const StoryView& story) {
-    return {story.activity, story.key_down, story.tau, story.speed, story.factor, story.node};
+std::tuple<Activity, bool, int, int, int> state_of(const StoryView& story) {
+    return {story.activity, story.key_down, story.tau, story.speed, story.node};
 }
 
 // A story's element as the booking tests recompute it (design notes, topic 5, item 9): its score against "noise only"
@@ -191,8 +191,8 @@ struct Element {
     Level last_level;  // the level the last piece's scoring call left: a successor's, if the mark ends at that piece
 };
 
-// An element's identity: key down, speed, factor, node and the piece its state was created.
-using ElementKey = std::tuple<bool, int, int, int, std::size_t>;
+// An element's identity: key down, speed, node and the piece its state was created.
+using ElementKey = std::tuple<bool, int, int, std::size_t>;
 
 // The evidence of an element's mark through piece `last`, from the pieces, advancing it from where it stands: the
 // finished blocks' and the current one's, each block of at most `block` pieces scored against the level it carries,
@@ -278,15 +278,14 @@ TEST(Search, FollowsASpeedStep) {
 TEST(Search, FollowsASpeedStepAtEverySnr) {
     // The full sweep, labeled full-sweep (the presets windows-full-sweep and linux-full-sweep run it, through the test
     // Search.FullSweep of engine/CMakeLists.txt, which sets KZ4AP_SEARCH_FULL_SWEEP=1; skipped otherwise): the step
-    // from 20 to 30 WPM at +10, +11, ... +28 dB S500 on seeds 12, 1 and 2, a CER of at most 0.05 at every point but
-    // one, and "PARIS PARIS" at 12, 25 and 40 WPM at the same levels on seeds 11, 1 and 2, exact.
+    // from 20 to 30 WPM at +10, +11, ... +28 dB S500 on seeds 12, 1 and 2, a CER of at most 0.05 at every point, and
+    // "PARIS PARIS" at 12, 25 and 40 WPM at the same levels on seeds 11, 1 and 2, exact.
     //
-    // The one recorded known failure is the ceiling's (search.hpp, "The mark's rise and what remains", item 3): at
-    // +10 dB S500 on seed 12 the step decodes "PARIS PARIS PARIS P<AR>IS PARIS PARIS", CER 0.057, because the ceiling
-    // drops the rescue newborns born in the word gap before the step; with a ceiling of 2 500 stories it decodes. That
-    // point is held to a CER of at most 0.2 only, and its CER is recorded. Measured with MSVC's standard library on the
-    // Windows PC: the test noise is std::normal_distribution's, whose algorithm is the library's, so under another
-    // library the draws differ and the point that fails, if any, may too.
+    // With the Farnsworth factor (before the owner's decision D14 of 2026-10-21) one point failed: at +10 dB S500 on
+    // seed 12 the step decoded "PARIS PARIS PARIS P<AR>IS PARIS PARIS", CER 0.057, the ceiling's (search.hpp, "The
+    // mark's rise and what remains", item 3); without it every point decodes exactly. Measured with MSVC's standard
+    // library on the Windows PC: the test noise is std::normal_distribution's, whose algorithm is the library's, so
+    // under another library the draws differ and a point may fail.
     if (!full_sweep()) GTEST_SKIP() << "the full sweep runs under the full-sweep presets (KZ4AP_SEARCH_FULL_SWEEP=1)";
     const std::string reference = "PARIS PARIS PARIS PARIS PARIS PARIS";
     const auto step = signals::keying_segments({{"PARIS PARIS PARIS", 20.0}, {"PARIS PARIS PARIS", 30.0}}, 0.5);
@@ -294,11 +293,7 @@ TEST(Search, FollowsASpeedStepAtEverySnr) {
         for (const unsigned seed : {12u, 1u, 2u}) {
             SCOPED_TRACE("the step at " + std::to_string(db) + " dB S500, seed " + std::to_string(seed));
             const std::string decoded = decode(ViterbiConfig{}, station(step, db, step.back().second + 1.5, seed));
-            const double error_rate = cer(reference, decoded);
-            const bool known_failure = db == 10 && seed == 12u;
-            if (known_failure)
-                ::testing::Test::RecordProperty("step_10_dB_S500_seed12_cer", std::to_string(error_rate));
-            EXPECT_LE(error_rate, known_failure ? 0.2 : 0.05) << "decoded \"" << decoded << "\"";
+            EXPECT_LE(cer(reference, decoded), 0.05) << "decoded \"" << decoded << "\"";
         }
     }
     for (const double wpm : {12.0, 25.0, 40.0}) {
@@ -316,12 +311,20 @@ TEST(Search, FollowsASpeedStepAtEverySnr) {
 
 TEST(Search, FarnsworthTextIsRight) {
     // Characters at 18 WPM sent at 5 WPM overall, so the gaps between letters and words are stretched by
-    // F = (50 x 18 / 5 - 31) / 19 = 7.84 (between the grid's factors 1.1^21 = 7.40 and 1.1^22 = 8.14), at +20 dB S500:
-    // the exact text (plan §5, item 2).
+    // F = (50 x 18 / 5 - 31) / 19 = 7.84, at +20 dB S500: the plan's criterion is the exact text (plan §5, item 2).
+    //
+    // A strict expected failure since the owner's decision D14 of 2026-10-21: the decoder has no Farnsworth factor
+    // (standard spacing only), so Farnsworth-spaced signals decode poorly until a later fix (docs/backlog.md,
+    // "Farnsworth spacing in the new decoder"). The test fails if the text is exact, so that the marker is removed
+    // once the fix comes, and is skipped otherwise, with the decoded text.
     const double factor = signals::farnsworth_factor(18.0, 5.0);
     ASSERT_NEAR(factor, 7.84, 0.005);
     const auto keying = signals::keying_segments({{"PARIS PARIS", 18.0, factor}}, 0.5);
-    EXPECT_EQ(decode(ViterbiConfig{}, station(keying, 20.0, keying.back().second + 1.5, 13)), "PARIS PARIS");
+    const std::string decoded = decode(ViterbiConfig{}, station(keying, 20.0, keying.back().second + 1.5, 13));
+    if (decoded == "PARIS PARIS")
+        FAIL() << "Farnsworth spacing decodes exactly: the limitation is gone, remove the expected failure";
+    GTEST_SKIP() << "strict expected failure: F = 7.84 decodes \"" << decoded
+                 << "\" (no Farnsworth factor: docs/backlog.md, \"Farnsworth spacing in the new decoder\")";
 }
 
 TEST(Search, AnOverStartsAfterSilence) {
@@ -350,7 +353,7 @@ TEST(Search, MergesIdenticalStates) {
     EXPECT_EQ(detail::merge(reversed), (std::vector<std::size_t>{1}));
 
     // In the search: after every piece no two live stories share a state, and there is at most one no-signal story. At
-    // each piece where a newborn is born (a mark at the root, speed and factor open, tau = 0), the newborn from silence
+    // each piece where a newborn is born (a mark at the root, speed open, tau = 0), the newborn from silence
     // and a rescue newborn share that state and only one is left, the better: the newborn from silence stands at the
     // continuing no-signal story's score plus ln P plus ln(1/62) (to 1e-9 nats), and a rescue newborn kept instead
     // stands above that.
@@ -458,8 +461,8 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
     //     mark's first block weighted by the rise (the matched filter), every block's pieces at the long-run rate;
     //   - in a newborn's first mark (speed open): ln(1/32) + the best over the speeds and labels of ln S, plus the
     //     first block's evidence against the flat prior and the later blocks' against the level it left;
-    //   - in a gap: the best over the kinds the node allows of the kind's cost and ln S (an open factor's letter and
-    //     word gaps the best over the factors, with ln(1/23)).
+    //   - in a gap: the best over the kinds the node allows of the kind's cost and ln S (standard spacing: a letter
+    //     gap's median 3 dots, a word gap's 7).
     ViterbiConfig config;
     config.fading_spread_hz = 5.0;
     const int block = static_cast<int>(std::floor(block_length_s(config.fading_spread_hz, config.block_loss_db) /
@@ -468,25 +471,16 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
     const Fist fist(config);
     const MorseTree tree;
     const double log_speed_prior = -std::log(32.0);
-    const double log_factor_prior = -std::log(23.0);
     const double letter_gap_cost = -std::log1p(-config.word_end_p);
     const double word_gap_cost = -std::log(config.word_end_p * (1.0 - config.over_end_q));
     const auto keying = signals::keying("AT", 25.0, 0.5);
     const auto pieces = station(keying, 20.0, keying.back().second + 1.0, 17);
-    const auto gap_timing = [&](int speed, int factor, int node, int tau) {
+    const auto gap_timing = [&](int speed, int node, int tau) {
         double best = -kInf;
-        if (tree.has_children(node)) best = fist.log_survival(Kind::ElementGap, speed, 0, tau);
+        if (tree.has_children(node)) best = fist.log_survival(Kind::ElementGap, speed, tau);
         if (!tree.symbol(node).empty()) {
-            for (const auto [kind, cost] :
-                 {std::pair{Kind::LetterGap, letter_gap_cost}, std::pair{Kind::WordGap, word_gap_cost}}) {
-                double survival = -kInf;
-                if (factor >= 0)
-                    survival = fist.log_survival(kind, speed, factor, tau);
-                else
-                    for (int f = 0; f < config.factor_count; ++f)
-                        survival = std::max(survival, log_factor_prior + fist.log_survival(kind, speed, f, tau));
-                best = std::max(best, survival - cost);
-            }
+            best = std::max(best, fist.log_survival(Kind::LetterGap, speed, tau) - letter_gap_cost);
+            best = std::max(best, fist.log_survival(Kind::WordGap, speed, tau) - word_gap_cost);
         }
         return best;
     };
@@ -502,7 +496,7 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
         for (const StoryView& story : search.live_stories()) {
             if (story.activity != Activity::Morse) continue;
             const double own = story.score_nats + offset;
-            const auto key = std::tuple{story.key_down, story.speed, story.factor, story.node};
+            const auto key = std::tuple{story.key_down, story.speed, story.node};
             if (story.tau == 0) {
                 elements[std::tuple_cat(key, std::tuple{k})] = Element{own, story.level, k + 1};
                 continue;
@@ -512,21 +506,21 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
             Element& element = at->second;
             double expected = 0.0;
             if (!story.key_down) {
-                expected = gap_timing(story.speed, story.factor, story.node, story.tau);
+                expected = gap_timing(story.speed, story.node, story.tau);
                 ++gaps;
             } else if (story.speed >= 0) {
                 if (!tree.has_children(story.node) || tree.child(story.node, false) < 0 ||
                     tree.child(story.node, true) < 0)
                     continue;
-                const double dash = fist.log_survival(Kind::Dash, story.speed, 0, story.tau);
-                ASSERT_GE(dash, fist.log_survival(Kind::Dot, story.speed, 0, story.tau));
+                const double dash = fist.log_survival(Kind::Dash, story.speed, story.tau);
+                ASSERT_GE(dash, fist.log_survival(Kind::Dot, story.speed, story.tau));
                 expected = dash + advance_to(element, k, pieces, block, config);
                 if (story.tau > block) ++long_dashes;
             } else {
                 double survival = -kInf;
                 for (int s = 0; s < config.speed_count; ++s)
                     for (const Kind label : {Kind::Dot, Kind::Dash})
-                        survival = std::max(survival, log_speed_prior + fist.log_survival(label, s, 0, story.tau));
+                        survival = std::max(survival, log_speed_prior + fist.log_survival(label, s, story.tau));
                 expected = survival + advance_to(element, k, pieces, block, config);
                 if (story.tau > block) ++first_marks;
             }
@@ -545,13 +539,13 @@ TEST(Search, BooksEveryTransition) {
     // (search.hpp, point 2) of the following, within 1e-6 nats, each parent's element recomputed from its start score:
     //   - a gap at node N, after a mark that ended: the parent mark's start score (the mark from N's parent node, by
     //     N's label), plus its blocks' evidence through this piece, the current block finished, plus ln P_label(s, tau)
-    //     at its speed s; for a newborn's first mark (speed open), ln(1/32) + ln P_label(s, tau) at the gap's speed;
+    //     at its speed s; for a newborn's first mark (speed open), ln(1/32) + ln P_label(s, tau) at the gap's speed (a
+    //     gap at E or T is reached by both: a newborn's first mark and a letter's first mark at a known speed);
     //   - a mark at a node other than the root, an element's start: the parent gap's start score plus
     //     ln P_ElementGap(s, tau);
-    //   - a mark at the root at a known speed s and factor f, a letter's start: the parent gap's start score plus
-    //     ln(1/62) + ln(1 - epsilon), less the kind's cost, plus ln P_kind(s, f, tau), for a letter gap and a word gap,
-    //     with ln(1/23) where the parent's factor was open;
-    //   - the newborn (a mark at the root, speed and factor open): the better of the birth from silence, the no-signal
+    //   - a mark at the root at a known speed s, a letter's start: the parent gap's start score plus
+    //     ln(1/62) + ln(1 - epsilon), less the kind's cost, plus ln P_kind(s, tau), for a letter gap and a word gap;
+    //   - the newborn (a mark at the root, speed open): the better of the birth from silence, the no-signal
     //     story's score plus ln(1 - P) + ln P + ln(1/62), and the rescue, the best letter start of the piece (as above,
     //     whether or not it was created) less ln(1 - epsilon) plus ln epsilon;
     //   - the no-signal story: the better of its own continuation, plus ln(1 - P), and every over's end: a mark that
@@ -569,7 +563,6 @@ TEST(Search, BooksEveryTransition) {
     const Fist fist(config);
     const MorseTree tree;
     const int speeds = config.speed_count;
-    const int factors = config.factor_count;
     const double over_start = config.over_rate_per_s * config.piece_s;  // P
     const double log_stay_silent = std::log1p(-over_start);
     const double log_over_start = std::log(over_start);
@@ -577,7 +570,6 @@ TEST(Search, BooksEveryTransition) {
     const double log_keep = std::log1p(-config.rescue_epsilon);
     const double log_restart = std::log(config.rescue_epsilon);
     const double log_speed_prior = -std::log(static_cast<double>(speeds));
-    const double log_factor_prior = -std::log(static_cast<double>(factors));
     const double letter_gap_cost = -std::log1p(-config.word_end_p);
     const double word_gap_cost = -std::log(config.word_end_p * (1.0 - config.over_end_q));
     const double over_end_cost = -std::log(config.word_end_p * config.over_end_q);
@@ -623,9 +615,8 @@ TEST(Search, BooksEveryTransition) {
     struct PreviousGap {
         StoryView view;
         double start;  // nats: its start score
-        // In `letter_starts`, at a node holding a symbol, its letter starts' scores: per kind (the letter gap, then the
-        // word gap), the start score plus ln(1/62) + ln(1 - epsilon), less the kind's cost, plus ln P_kind(s, f, tau),
-        // and ln(1/23) where the factor is open; one per factor where it is open, one at its factor else.
+        // In `letter_starts`, at a node holding a symbol, its two letter starts' scores: the letter gap's, then the
+        // word gap's, the start score plus ln(1/62) + ln(1 - epsilon), less the kind's cost, plus ln P_kind(s, tau).
         std::size_t starts = 0;
     };
 
@@ -661,10 +652,10 @@ TEST(Search, BooksEveryTransition) {
             // a parent at a checked piece, from wherever it stands).
             if (k % 3 == 0) {
                 // The parents' terms at this piece, and indexes: marks by the child their end reaches (at a known
-                // speed, by child, speed and factor), gaps by state and, at nodes holding a symbol, by speed; and the
-                // piece's best letter start, the rescue's.
+                // speed, by child and speed), gaps by state and, at nodes holding a symbol, by speed; and the piece's
+                // best letter start, the rescue's.
                 mark_ends.clear();
-                std::map<std::tuple<int, int, int>, std::vector<std::pair<std::size_t, int>>> known_marks;
+                std::map<std::tuple<int, int>, std::vector<std::pair<std::size_t, int>>> known_marks;
                 std::map<int, std::vector<std::pair<std::size_t, int>>> open_marks;
                 for (std::size_t i = 0; i < marks.size(); ++i) {
                     PreviousMark& m = marks[i];
@@ -673,12 +664,12 @@ TEST(Search, BooksEveryTransition) {
                     const int tau = m.view.tau + 1;
                     if (m.view.speed >= 0) {
                         for (int label = 0; label < 2; ++label)
-                            mark_ends.push_back(fist.log_end(mark_kind(label), m.view.speed, 0, tau));
+                            mark_ends.push_back(fist.log_end(mark_kind(label), m.view.speed, tau));
                     } else {
                         std::array<double, 2> best = {-kInf, -kInf};
                         for (int label = 0; label < 2; ++label) {
                             for (int s = 0; s < speeds; ++s) {
-                                mark_ends.push_back(fist.log_end(mark_kind(label), s, 0, tau));
+                                mark_ends.push_back(fist.log_end(mark_kind(label), s, tau));
                                 best[static_cast<std::size_t>(label)] =
                                     std::max(best[static_cast<std::size_t>(label)], log_speed_prior + mark_ends.back());
                             }
@@ -689,35 +680,27 @@ TEST(Search, BooksEveryTransition) {
                         const int child = tree.child(m.view.node, label == 1);
                         if (child < 0) continue;
                         if (m.view.speed >= 0)
-                            known_marks[{child, m.view.speed, m.view.factor}].emplace_back(i, label);
+                            known_marks[{child, m.view.speed}].emplace_back(i, label);
                         else
                             open_marks[child].emplace_back(i, label);
                     }
                 }
                 letter_starts.clear();
-                std::map<std::tuple<int, int, int>, std::vector<std::size_t>> gaps_by_state;  // node, speed, factor
+                std::map<std::tuple<int, int>, std::vector<std::size_t>> gaps_by_state;  // node, speed
                 std::vector<std::vector<std::size_t>> symbol_gaps_by_speed(static_cast<std::size_t>(speeds));
                 double best_letter_start = -kInf;
                 for (std::size_t i = 0; i < gaps.size(); ++i) {
                     PreviousGap& g = gaps[i];
-                    gaps_by_state[{g.view.node, g.view.speed, g.view.factor}].push_back(i);
+                    gaps_by_state[{g.view.node, g.view.speed}].push_back(i);
                     if (tree.symbol(g.view.node).empty()) continue;
                     symbol_gaps_by_speed[static_cast<std::size_t>(g.view.speed)].push_back(i);
                     g.starts = letter_starts.size();
                     const int tau = g.view.tau + 1;
                     for (const auto [kind, cost] :
                          {std::pair{Kind::LetterGap, letter_gap_cost}, std::pair{Kind::WordGap, word_gap_cost}}) {
-                        const double head = g.start + log_letter + log_keep - cost;
-                        if (g.view.factor >= 0) {
-                            letter_starts.push_back(head + fist.log_end(kind, g.view.speed, g.view.factor, tau));
-                            best_letter_start = std::max(best_letter_start, letter_starts.back());
-                        } else {
-                            for (int f = 0; f < factors; ++f) {
-                                const double log_end = fist.log_end(kind, g.view.speed, f, tau);
-                                letter_starts.push_back(head + log_factor_prior + log_end);
-                                best_letter_start = std::max(best_letter_start, letter_starts.back());
-                            }
-                        }
+                        letter_starts.push_back(g.start + log_letter + log_keep - cost +
+                                                fist.log_end(kind, g.view.speed, tau));
+                        best_letter_start = std::max(best_letter_start, letter_starts.back());
                     }
                 }
                 const double birth = no_signal ? *no_signal + log_stay_silent + log_over_start + log_letter : -kInf;
@@ -742,7 +725,7 @@ TEST(Search, BooksEveryTransition) {
                             }
                         }
                     } else if (!x.key_down) {  // a gap: a mark ended
-                        const auto known = known_marks.find({x.node, x.speed, x.factor});
+                        const auto known = known_marks.find({x.node, x.speed});
                         if (known != known_marks.end()) {
                             for (const auto& [i, label] : known->second) {
                                 const PreviousMark& m = marks[i];
@@ -751,7 +734,7 @@ TEST(Search, BooksEveryTransition) {
                             }
                         }
                         const auto open = open_marks.find(x.node);
-                        if (x.factor < 0 && open != open_marks.end()) {
+                        if (open != open_marks.end()) {
                             for (const auto& [i, label] : open->second) {
                                 const PreviousMark& m = marks[i];
                                 const std::size_t at = m.ends + static_cast<std::size_t>(label * speeds + x.speed);
@@ -760,28 +743,19 @@ TEST(Search, BooksEveryTransition) {
                             }
                         }
                     } else if (x.node != root) {  // an element starts
-                        const auto parents = gaps_by_state.find({x.node, x.speed, x.factor});
+                        const auto parents = gaps_by_state.find({x.node, x.speed});
                         if (parents != gaps_by_state.end()) {
                             for (const std::size_t i : parents->second) {
                                 const PreviousGap& g = gaps[i];
-                                const double log_end = fist.log_end(Kind::ElementGap, x.speed, 0, g.view.tau + 1);
+                                const double log_end = fist.log_end(Kind::ElementGap, x.speed, g.view.tau + 1);
                                 best.offer(g.start + log_end, kElementStart, g.view.level);
                             }
                         }
                     } else if (x.speed >= 0) {  // a letter starts
-                        ASSERT_GE(x.factor, 0) << "piece " << k << ": a letter start at an open factor";
                         for (const std::size_t i : symbol_gaps_by_speed[static_cast<std::size_t>(x.speed)]) {
                             const PreviousGap& g = gaps[i];
-                            std::size_t letter = g.starts;  // the letter gap's term at x's factor
-                            std::size_t step = 1;           // to the word gap's
-                            if (g.view.factor >= 0) {
-                                if (g.view.factor != x.factor) continue;
-                            } else {
-                                letter += static_cast<std::size_t>(x.factor);
-                                step = static_cast<std::size_t>(factors);
-                            }
-                            best.offer(letter_starts[letter], kLetterStart, g.view.level);
-                            best.offer(letter_starts[letter + step], kWordStart, g.view.level);
+                            best.offer(letter_starts[g.starts], kLetterStart, g.view.level);
+                            best.offer(letter_starts[g.starts + 1], kWordStart, g.view.level);
                         }
                     } else {  // the newborn
                         if (no_signal) best.offer(birth, kBirth, Level{});
@@ -789,8 +763,8 @@ TEST(Search, BooksEveryTransition) {
                     }
                     ASSERT_TRUE(std::isfinite(best.score)) << "piece " << k << ": no parent for this story";
                     ASSERT_NEAR(own, best.score, 1e-6)
-                        << "piece " << k << ", key down " << x.key_down << ", speed " << x.speed << ", factor "
-                        << x.factor << ", node " << x.node << ", decided by " << names[best.decided];
+                        << "piece " << k << ", key down " << x.key_down << ", speed " << x.speed << ", node " << x.node
+                        << ", decided by " << names[best.decided];
                     if (x.activity == Activity::Morse) {
                         const auto matches = [&](const Level& level) { return same_level(x.level, level); };
                         ASSERT_TRUE(std::any_of(best.levels.begin(), best.levels.end(), matches))
@@ -822,7 +796,7 @@ TEST(Search, BooksEveryTransition) {
             for (const StoryView& x : stories) {
                 if (x.activity != Activity::Morse) continue;
                 const double own = x.score_nats + offset;
-                const ElementKey key{x.key_down, x.speed, x.factor, x.node, k - static_cast<std::size_t>(x.tau)};
+                const ElementKey key{x.key_down, x.speed, x.node, k - static_cast<std::size_t>(x.tau)};
                 Element* element = nullptr;
                 if (x.tau == 0) {
                     element = &elements.emplace(key, Element{own, x.level, k + 1}).first->second;
@@ -908,8 +882,8 @@ TEST(Search, IsDeterministic) {
 TEST(Search, SkippingSuccessorsBeyondTheBeamChangesNothing) {
     // A successor more than beam_nats behind a score known at its piece is not created (plan §2.7, item 5): with and
     // without that skip, the same text, live stories, scores and statistics, on noise alone (the ceiling binding) and
-    // on a station at +10 dB S500. The skip includes the open factors' scan, which stops at the first factor on each
-    // side of the best that the beam drops: the skipping run cuts it short many times, the other never.
+    // on a station at +10 dB S500. The skipping run skipped many times (detail::SearchOptions' counter), the other
+    // never.
     ViterbiConfig config;
     config.stats = true;
     const auto keying = signals::keying("PARIS", 25.0, 0.8);
@@ -922,11 +896,15 @@ TEST(Search, SkippingSuccessorsBeyondTheBeamChangesNothing) {
                                      {"station", station(keying, 10.0, keying.back().second + 1.0, 21), "PARIS"}};
     for (const Case& c : cases) {
         SCOPED_TRACE(c.name);
-        std::int64_t cut_scans = 0;
-        detail::SearchOptions scanning;
-        scanning.cut_factor_scans = &cut_scans;
-        Search skipping(config, sum_noise(), flat_prior(), scanning);
-        Search creating(config, sum_noise(), flat_prior(), detail::SearchOptions{false});
+        std::int64_t skipped = 0;
+        std::int64_t skipped_without = 0;
+        detail::SearchOptions skip;
+        skip.skipped_successors = &skipped;
+        detail::SearchOptions create;
+        create.skip_successors_beyond_beam = false;
+        create.skipped_successors = &skipped_without;
+        Search skipping(config, sum_noise(), flat_prior(), skip);
+        Search creating(config, sum_noise(), flat_prior(), create);
         std::size_t most = 0;
         for (std::size_t k = 0; k < c.pieces.size(); ++k) {
             skipping.step(c.pieces[k], piece_time(k), kN0);
@@ -945,122 +923,89 @@ TEST(Search, SkippingSuccessorsBeyondTheBeamChangesNothing) {
             EXPECT_EQ(a[i].line, b[i].line);
         }
         EXPECT_TRUE(skipping.stats() == creating.stats());
-        // Not a comparison of two empty runs: the population grew, newborns were born at most pieces, and the beam cut
-        // open factors' scans short.
+        // Not a comparison of two empty runs: the population grew, newborns were born at most pieces, and the skip
+        // skipped.
         EXPECT_GT(most, 100u);
         EXPECT_GT(skipping.stats().lines.size(), c.pieces.size() / 2);
-        EXPECT_GT(cut_scans, 1000);
+        ::testing::Test::RecordProperty(c.name + "_skipped_successors", std::to_string(skipped));
+        EXPECT_GT(skipped, 1000);
+        EXPECT_EQ(skipped_without, 0);
     }
 }
 
-TEST(Search, OpenFactorScanAndTableCapChangeNothing) {
-    // Two of the search's savings against their plain forms (search.hpp, "Work saved"): the open factor's scan outward
-    // from its best factor, with the merge bound and the beam's exits, against every factor evaluated in order with no
-    // table for ln P, no bound and no exit (an open factor's survival still comes from the tables within the cap in
-    // both, so this pair does not compare the survival's cache: the next does); and the open timing's tables capped at
-    // 16 taus (every later maximum, the survival's included, computed on demand) against the default cap. On 10 s of
-    // noise (the ceiling binding, open-factor gaps living for seconds) and on a station at +10 dB S500; under the
-    // full-sweep presets (KZ4AP_SEARCH_FULL_SWEEP=1) the scan's comparison runs
-    // on 60 s of noise, the cap's on its first 10 s. Each pair gives the same live count after every piece and the same
-    // stories, scores, lines, statistics and text at the end; the scan stopped short and passed factors over many
-    // times. The three runs of a case are independent: each runs on its own thread.
+TEST(Search, OpenTimingCapChangesNothing) {
+    // The open speed's tables (search.hpp, "Work saved") capped at 16 taus, every later maximum of a newborn's first
+    // mark computed on demand, against the default cap (7 352 taus at 32 speeds): on 10 s of noise (the ceiling
+    // binding, newborns' first marks of every length) and on a station at +10 dB S500, the same live count after every
+    // piece and the same stories, scores, lines, statistics and text at the end, with newborns' first marks longer than
+    // the small cap among the live stories. The two runs of a case are independent: each runs on its own thread.
     ViterbiConfig config;
     config.stats = true;
     const auto keying = signals::keying("PARIS", 25.0, 0.8);
     struct Case {
         std::string name;
         std::vector<std::complex<double>> pieces;
-        std::size_t capped_pieces;  // the pieces of the run with the small tables
         std::string text;
     };
     // The channelizer passes whole blocks of 32 channel samples: 0.1 s more input holds the first whole seconds.
-    const int noise_s = full_sweep() ? 60 : 10;
-    std::vector<std::complex<double>> long_noise = noise(noise_s + 0.1, 18);
-    long_noise.resize(static_cast<std::size_t>(noise_s) * 500);
-    std::vector<std::complex<double>> paris = station(keying, 10.0, keying.back().second + 1.0, 21);
-    const std::size_t paris_pieces = paris.size();
-    const std::vector<Case> cases = {{"noise", std::move(long_noise), 5000, ""},
-                                     {"station", std::move(paris), paris_pieces, "PARIS"}};
+    std::vector<std::complex<double>> long_noise = noise(10.1, 18);
+    long_noise.resize(5000);
+    const std::vector<Case> cases = {{"noise", std::move(long_noise), ""},
+                                     {"station", station(keying, 10.0, keying.back().second + 1.0, 21), "PARIS"}};
     sum_noise();  // both built before the threads start
     flat_prior();
 
-    // A search's end state as the comparison reads it.
-    struct Snapshot {
+    // A run: the live count after each piece, the longest newborn's first mark among the live stories, and the end
+    // state as the comparison reads it.
+    struct Run {
+        std::vector<std::size_t> live;
+        int longest_first_mark = 0;  // pieces
         std::vector<StoryView> stories;
         SearchStats stats;
         double normalization_nats = 0.0;
         std::string text;
     };
-    // A run: the live count after each piece, and snapshots after `early` pieces and after the last.
-    struct Run {
-        std::vector<std::size_t> live;
-        Snapshot early;
-        Snapshot last;
-    };
-    const auto snapshot = [](const Search& search) {
-        return Snapshot{search.live_stories(), search.stats(), search.normalization_nats(),
-                        text_of(search.best_text())};
-    };
-    const auto run = [&config, &snapshot](const std::vector<std::complex<double>>& pieces, std::size_t count,
-                                          std::size_t early, detail::SearchOptions options) {
+    const auto run = [&config](const std::vector<std::complex<double>>& pieces, detail::SearchOptions options) {
         Run r;
         Search search(config, sum_noise(), flat_prior(), options);
-        for (std::size_t k = 0; k < count; ++k) {
+        for (std::size_t k = 0; k < pieces.size(); ++k) {
             search.step(pieces[k], piece_time(k), kN0);
             r.live.push_back(search.live());
-            if (k + 1 == early) r.early = snapshot(search);
+            for (const StoryView& s : search.live_stories())
+                if (s.activity == Activity::Morse && s.key_down && s.speed < 0)
+                    r.longest_first_mark = std::max(r.longest_first_mark, s.tau);
         }
-        r.last = snapshot(search);
+        r.stories = search.live_stories();
+        r.stats = search.stats();
+        r.normalization_nats = search.normalization_nats();
+        r.text = text_of(search.best_text());
         return r;
-    };
-    // The same runs over their first `pieces` pieces: the live counts, and the two snapshots.
-    const auto expect_same = [](const Run& a, const Snapshot& a_end, const Run& b, const Snapshot& b_end,
-                                std::size_t pieces) {
-        ASSERT_GE(a.live.size(), pieces);
-        ASSERT_GE(b.live.size(), pieces);
-        for (std::size_t k = 0; k < pieces; ++k) ASSERT_EQ(a.live[k], b.live[k]) << "piece " << k;
-        ASSERT_EQ(a_end.stories.size(), b_end.stories.size());
-        for (std::size_t i = 0; i < a_end.stories.size(); ++i) {
-            EXPECT_EQ(state_of(a_end.stories[i]), state_of(b_end.stories[i]));
-            EXPECT_EQ(a_end.stories[i].score_nats, b_end.stories[i].score_nats);
-            EXPECT_EQ(a_end.stories[i].line, b_end.stories[i].line);
-        }
-        EXPECT_TRUE(a_end.stats == b_end.stats);
-        EXPECT_EQ(a_end.normalization_nats, b_end.normalization_nats);
-        EXPECT_EQ(a_end.text, b_end.text);
     };
     for (const Case& c : cases) {
         SCOPED_TRACE(c.name);
-        std::int64_t cut_scans = 0;
-        std::int64_t passed_factors = 0;
-        detail::SearchOptions scanning;
-        scanning.cut_factor_scans = &cut_scans;
-        scanning.passed_factors = &passed_factors;
-        detail::SearchOptions every_factor;
-        every_factor.scan_open_factors = false;
         detail::SearchOptions small_tables;
         small_tables.open_timing_cap_pieces = 16;
-        const std::size_t all = c.pieces.size();
-        auto scanned_run = std::async(std::launch::async, run, std::cref(c.pieces), all, c.capped_pieces, scanning);
-        auto unscanned_run = std::async(std::launch::async, run, std::cref(c.pieces), all, all, every_factor);
-        auto capped_run =
-            std::async(std::launch::async, run, std::cref(c.pieces), c.capped_pieces, c.capped_pieces, small_tables);
-        const Run scanned = scanned_run.get();
-        const Run unscanned = unscanned_run.get();
-        const Run capped = capped_run.get();
-        EXPECT_EQ(scanned.last.text, c.text);
-        {
-            SCOPED_TRACE("every factor");
-            expect_same(scanned, scanned.last, unscanned, unscanned.last, all);
+        auto default_run = std::async(std::launch::async, run, std::cref(c.pieces), detail::SearchOptions{});
+        auto capped_run = std::async(std::launch::async, run, std::cref(c.pieces), small_tables);
+        const Run a = default_run.get();
+        const Run b = capped_run.get();
+        EXPECT_EQ(a.text, c.text);
+        ASSERT_EQ(a.live.size(), b.live.size());
+        for (std::size_t k = 0; k < a.live.size(); ++k) ASSERT_EQ(a.live[k], b.live[k]) << "piece " << k;
+        ASSERT_EQ(a.stories.size(), b.stories.size());
+        for (std::size_t i = 0; i < a.stories.size(); ++i) {
+            EXPECT_EQ(state_of(a.stories[i]), state_of(b.stories[i]));
+            EXPECT_EQ(a.stories[i].score_nats, b.stories[i].score_nats);
+            EXPECT_EQ(a.stories[i].line, b.stories[i].line);
         }
-        {
-            SCOPED_TRACE("tables capped at 16 taus");
-            expect_same(scanned, scanned.early, capped, capped.last, c.capped_pieces);
-        }
-        ::testing::Test::RecordProperty(c.name + "_cut_scans", std::to_string(cut_scans));
-        ::testing::Test::RecordProperty(c.name + "_passed_factors", std::to_string(passed_factors));
-        EXPECT_GT(cut_scans, 1000);
-        EXPECT_GT(passed_factors, 1000);
+        EXPECT_TRUE(a.stats == b.stats);
+        EXPECT_EQ(a.normalization_nats, b.normalization_nats);
+        EXPECT_EQ(a.text, b.text);
+        // Not a comparison of short marks only: newborns' first marks outlived the small cap, so the capped run
+        // computed their maxima on demand.
+        ::testing::Test::RecordProperty(c.name + "_longest_first_mark", std::to_string(b.longest_first_mark));
+        EXPECT_EQ(a.longest_first_mark, b.longest_first_mark);
+        EXPECT_GT(b.longest_first_mark, 16);
     }
 }
 

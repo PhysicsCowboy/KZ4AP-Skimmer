@@ -20,7 +20,7 @@ namespace kz4ap::viterbi {
 namespace {
 
 constexpr double kInf = std::numeric_limits<double>::infinity();
-constexpr int kOpen = -1;                    // a speed or factor not yet taken
+constexpr int kOpen = -1;                    // a speed not yet taken
 constexpr std::int32_t kNone = -1;           // no candidate
 constexpr std::string_view kWordSpace = " ";
 constexpr double kStatsWindowS = 0.1;        // s: the window of the live count's series
@@ -29,14 +29,13 @@ constexpr double kStatsWindowS = 0.1;        // s: the window of the live count'
 enum class Phase : std::uint8_t { NoSignal = 0, Mark = 1, Gap = 2 };
 
 // The state (plan §2.7, item 4) packed into 64 bits, the phase (activity and key) in the top 2, tau in the next 32,
-// then speed + 1 and factor + 1 in 8 bits each (open = 0) and node + 1 in 14. The packed order is one fixed order of
-// the states. The no-signal state, which has no clock, speed, factor or node, is 0.
-std::uint64_t pack_state(Phase phase, int tau, int speed, int factor, int node) {
+// then speed + 1 in 8 bits (open = 0) and node + 1 in 14. The packed order is one fixed order of the states. The
+// no-signal state, which has no clock, speed or node, is 0.
+std::uint64_t pack_state(Phase phase, int tau, int speed, int node) {
     if (phase == Phase::NoSignal) return 0;
     return (static_cast<std::uint64_t>(phase) << 62) |
            (static_cast<std::uint64_t>(static_cast<std::uint32_t>(tau)) << 30) |
-           (static_cast<std::uint64_t>(speed + 1) << 22) | (static_cast<std::uint64_t>(factor + 1) << 14) |
-           static_cast<std::uint64_t>(node + 1);
+           (static_cast<std::uint64_t>(speed + 1) << 22) | static_cast<std::uint64_t>(node + 1);
 }
 
 // What became of a story's parent to make it.
@@ -55,7 +54,6 @@ struct Story {
     Phase phase = Phase::NoSignal;
     std::int32_t tau = 0;        // pieces in the current element
     std::int16_t speed = kOpen;  // 0 ... speed_count - 1, or open
-    std::int16_t factor = kOpen; // 0 ... factor_count - 1, or open
     std::int16_t node = -1;      // a mark: the node it started from; a gap: the node of the mark before it
     std::uint64_t state = 0;     // the packed state
     double score = 0.0;          // nats, relative to the best
@@ -80,7 +78,6 @@ struct Origin {
     std::uint8_t label = 0;        // EndMark, EndOver: 0 for a dot, 1 for a dash
     Move rescued_gap = Move::Continue;  // BirthRescue: EndLetterGap or EndWordGap, the gap its parent ended
     std::int16_t speed = kOpen;    // the new story's
-    std::int16_t factor = kOpen;   // the new story's
     std::int64_t line = 0;
 };
 
@@ -172,10 +169,11 @@ void grow_within(std::vector<T>& v, std::size_t needed, std::size_t limit) {
     if (needed > v.capacity()) v.reserve(std::min(limit, std::max(needed, 2 * v.capacity())));
 }
 
-// The fist's maxima that open speeds and factors need (plan §2.5, items 7 and 8), each the plain maximum of Fist's own
-// values over the speeds or the factors. They depend only on the configuration: those of the first `cap` taus are kept
-// in tables, filled as first asked for, and those of any later tau are computed again whenever asked, in the same
-// way, so that no table ever holds more than `cap` taus (search.hpp, "Work saved", has the bound).
+// The fist's maxima that an open speed needs (plan §2.5, items 7 and 8): a newborn's first mark, at the root, keeps the
+// best over the speeds and both labels, each the plain maximum of Fist's own values. They depend only on the
+// configuration: those of the first `cap` taus are kept in tables, filled as first asked for, and those of any later
+// tau are computed again whenever asked, in the same way, so that no table ever holds more than `cap` taus (search.hpp,
+// "Work saved", has the bound).
 class OpenTiming {
 public:
     // ln P_label(s, tau) of a newborn's first mark for both labels and every speed (label-major; -infinity for a label
@@ -186,33 +184,14 @@ public:
         double best;               // the best of all
     };
 
-    // For kind LetterGap or WordGap at a speed and tau, a gap whose factor is open: its survival, ln S_kind at the
-    // widest factor (search.hpp, "Work saved"); the maximum over the factors f of ln P_kind(s, f, tau), the first
-    // factor where it is reached, and whether ln P, as Fist computes it, is unimodal in f: not decreasing up to that
-    // factor and not increasing after it. Where it is, the factors whose successor a threshold keeps are those around
-    // that factor up to the first on each side that the threshold drops.
-    struct FactorEntry {
-        double survival;  // nats
-        double end;       // nats
-        std::int32_t end_factor;
-        bool unimodal;
-    };
-
-    // The tables' bytes per tau with `speeds` speeds: two kinds' factor entries per speed, and a first mark's row of
-    // ends with its three maxima and its survival.
+    // The tables' bytes per tau with `speeds` speeds: a first mark's row of ends with its three maxima and its
+    // survival.
     static std::size_t bytes_per_tau(int speeds) {
         const std::size_t row = 2 * static_cast<std::size_t>(speeds);
-        return row * sizeof(FactorEntry) + row * sizeof(double) + sizeof(std::array<double, 3>) + sizeof(double);
+        return row * sizeof(double) + sizeof(std::array<double, 3>) + sizeof(double);
     }
 
-    // widest_factor: the factor with the largest median (factor_count - 1 where factor_ratio >= 1, else 0).
-    OpenTiming(const Fist& fist, const MorseTree& tree, int speeds, int factors, int widest_factor, int cap)
-        : fist_(fist),
-          speeds_(speeds),
-          factors_(factors),
-          widest_factor_(widest_factor),
-          cap_(cap),
-          by_kind_and_speed_(2 * static_cast<std::size_t>(speeds)) {
+    OpenTiming(const Fist& fist, const MorseTree& tree, int speeds, int cap) : fist_(fist), speeds_(speeds), cap_(cap) {
         for (int label = 0; label < 2; ++label) root_has_[label] = tree.child(tree.root(), label == 1) >= 0;
     }
 
@@ -244,34 +223,10 @@ public:
         return {first_ends_.data() + (static_cast<std::size_t>(tau) - 1) * row, {best[0], best[1]}, best[2]};
     }
 
-    // The entry for (kind, speed, tau). The reference holds until the next call.
-    const FactorEntry& factor_entry(Kind kind, int speed, int tau) {
-        if (tau > cap_) {
-            scratch_entry_ = factor_entry_at(kind, speed, tau);
-            return scratch_entry_;
-        }
-        std::vector<FactorEntry>& table = by_kind_and_speed_[static_cast<std::size_t>(kind == Kind::WordGap) *
-                                                                 static_cast<std::size_t>(speeds_) +
-                                                             static_cast<std::size_t>(speed)];
-        while (table.size() < static_cast<std::size_t>(tau)) {
-            grow_within(table, table.size() + 1, static_cast<std::size_t>(cap_));
-            table.push_back(factor_entry_at(kind, speed, static_cast<int>(table.size()) + 1));
-        }
-        return table[static_cast<std::size_t>(tau) - 1];
-    }
-
-    // An open factor's survival for (kind, speed, tau): the table's within the cap, one call of Fist beyond it.
-    double factor_survival(Kind kind, int speed, int tau) {
-        if (tau > cap_) return fist_.log_survival(kind, speed, widest_factor_, tau);
-        return factor_entry(kind, speed, tau).survival;
-    }
-
     // bytes: what the tables' entries hold, their vectors' capacities (search.hpp, "Work saved": at most 4 000 000).
     std::size_t bytes() const {
-        std::size_t total = first_survival_.capacity() * sizeof(double) + first_ends_.capacity() * sizeof(double) +
-                            first_best_.capacity() * sizeof(std::array<double, 3>);
-        for (const std::vector<FactorEntry>& table : by_kind_and_speed_) total += table.capacity() * sizeof(FactorEntry);
-        return total;
+        return first_survival_.capacity() * sizeof(double) + first_ends_.capacity() * sizeof(double) +
+               first_best_.capacity() * sizeof(std::array<double, 3>);
     }
 
     static Kind mark_kind(int label) { return label == 1 ? Kind::Dash : Kind::Dot; }
@@ -281,7 +236,7 @@ private:
         double best = -kInf;
         for (int label = 0; label < 2; ++label)
             if (root_has_[label])
-                for (int s = 0; s < speeds_; ++s) best = std::max(best, fist_.log_survival(mark_kind(label), s, 0, t));
+                for (int s = 0; s < speeds_; ++s) best = std::max(best, fist_.log_survival(mark_kind(label), s, t));
         return best;
     }
 
@@ -290,7 +245,7 @@ private:
         std::array<double, 3> best = {-kInf, -kInf, -kInf};
         for (int label = 0; label < 2; ++label) {
             for (int s = 0; s < speeds_; ++s) {
-                const double value = root_has_[label] ? fist_.log_end(mark_kind(label), s, 0, t) : -kInf;
+                const double value = root_has_[label] ? fist_.log_end(mark_kind(label), s, t) : -kInf;
                 row[static_cast<std::size_t>(label * speeds_ + s)] = value;
                 best[static_cast<std::size_t>(label)] = std::max(best[static_cast<std::size_t>(label)], value);
             }
@@ -299,37 +254,14 @@ private:
         return best;
     }
 
-    FactorEntry factor_entry_at(Kind kind, int speed, int t) {
-        FactorEntry entry{fist_.log_survival(kind, speed, widest_factor_, t), -kInf, 0, true};
-        row_.resize(static_cast<std::size_t>(factors_));
-        for (int f = 0; f < factors_; ++f) {
-            row_[static_cast<std::size_t>(f)] = fist_.log_end(kind, speed, f, t);
-            if (row_[static_cast<std::size_t>(f)] > entry.end) {
-                entry.end = row_[static_cast<std::size_t>(f)];
-                entry.end_factor = f;
-            }
-        }
-        for (int f = 0; f + 1 < factors_; ++f) {
-            const double here = row_[static_cast<std::size_t>(f)];
-            const double next = row_[static_cast<std::size_t>(f) + 1];
-            if (f < entry.end_factor ? next < here : next > here) entry.unimodal = false;
-        }
-        return entry;
-    }
-
     const Fist& fist_;
     int speeds_;
-    int factors_;
-    int widest_factor_;
     int cap_;  // pieces: the taus kept
     bool root_has_[2] = {false, false};
-    std::vector<double> first_survival_;                      // by tau - 1
-    std::vector<double> first_ends_;                          // by tau - 1, rows of 2 x speeds
-    std::vector<std::array<double, 3>> first_best_;           // by tau - 1
-    std::vector<std::vector<FactorEntry>> by_kind_and_speed_; // [(kind is WordGap) x speeds + speed][tau - 1]
-    std::vector<double> row_;                                 // ln P over the factors, while an entry is computed
-    std::vector<double> scratch_ends_;                        // a first mark's row beyond the cap
-    FactorEntry scratch_entry_{-kInf, -kInf, 0, true};        // an entry beyond the cap
+    std::vector<double> first_survival_;             // by tau - 1
+    std::vector<double> first_ends_;                 // by tau - 1, rows of 2 x speeds
+    std::vector<std::array<double, 3>> first_best_;  // by tau - 1
+    std::vector<double> scratch_ends_;               // a first mark's row beyond the cap
 };
 
 // bytes: the open timing's budget per Search, which sets its tables' cap (search.hpp, "Work saved").
@@ -414,7 +346,7 @@ private:
     // max over the labels the node allows of ln S_label(speed, tau): a mark at a known speed.
     double mark_survival(int speed, int node, int tau) const;
     // max over the kinds the node allows of the kind's cost and ln S: a gap.
-    double gap_survival(int speed, int factor, int node, int tau);
+    double gap_survival(int speed, int node, int tau) const;
 
     void continue_mark(const Story& s, Story& c, BlockScore& scored, std::complex<double> piece, double t, double n0);
     void end_mark(std::size_t i);
@@ -424,7 +356,11 @@ private:
     // where the options allow, except in the no-signal state. An offer replaces the candidate kept in its state as
     // detail::replaces decides: only with a better score, since the one kept was created earlier, so an offer that
     // loses costs a compare; its Origin is built only if it wins.
-    bool beyond_beam(double score) const { return skip_ && known_best_ - score > beam_nats_; }
+    bool beyond_beam(double score) const {
+        const bool beyond = skip_ && known_best_ - score > beam_nats_;
+        if (beyond && skipped_successors_) ++*skipped_successors_;
+        return beyond;
+    }
     std::uint32_t push_candidate(std::uint64_t state, double score, std::uint64_t creation, const Origin& origin);
     template <class MakeOrigin>
     void offer_general(std::uint64_t state, double score, std::int64_t line, MakeOrigin make_origin);
@@ -447,14 +383,11 @@ private:
     double noise_rate_hz_ = 0.0;  // Hz per channel sample: the noise's long-run rate, c's last increment
     OpenTiming open_;
     bool skip_;
-    bool scan_open_factors_;
-    std::int64_t* cut_factor_scans_;  // detail::SearchOptions' counters, or null
-    std::int64_t* passed_factors_;
+    std::int64_t* skipped_successors_;  // detail::SearchOptions' counter, or null
     bool stats_on_;
     double beam_nats_;
     std::size_t ceiling_;
     int speeds_;
-    int factors_;
     int samples_per_piece_;
     int block_pieces_;        // B; INT_MAX for none (f_D = 0)
     int first_block_pieces_;  // min(B, the flat prior's max_pieces)
@@ -469,7 +402,6 @@ private:
     double word_gap_cost_;    // ln(1 / (p (1 - q)))
     double over_end_cost_;    // ln(1 / (p q))
     double log_speed_prior_;  // ln(1 / speed_count)
-    double log_factor_prior_; // ln(1 / factor_count)
     int stats_window_pieces_;
 
     // --- The stories ---
@@ -491,8 +423,8 @@ private:
     std::vector<char> dead_;
     std::vector<std::uint32_t> alive_;
     StateTable general_;
-    std::vector<Slot> newborn_ends_;   // [label x speeds + speed]: gaps after newborns' first marks, factor open
-    std::vector<Slot> letter_starts_;  // [speed x factors + factor]: marks at the root at a known speed and factor
+    std::vector<Slot> root_ends_;      // [label x speeds + speed]: gaps at E and T after a mark at the root
+    std::vector<Slot> letter_starts_;  // [speed]: marks at the root at a known speed
     Slot no_signal_;
     Slot newborn_;
     double known_best_ = -kInf;  // nats: the best score offered so far at this piece
@@ -525,17 +457,13 @@ Search::Impl::Impl(const ViterbiConfig& config, std::span<const double> c, std::
     : tree_(),
       fist_(config),
       prior_(std::move(prior)),
-      open_(fist_, tree_, config.speed_count, config.factor_count,
-            config.factor_ratio >= 1.0 ? config.factor_count - 1 : 0, open_timing_cap(config, options)),
+      open_(fist_, tree_, config.speed_count, open_timing_cap(config, options)),
       skip_(options.skip_successors_beyond_beam),
-      scan_open_factors_(options.scan_open_factors),
-      cut_factor_scans_(options.cut_factor_scans),
-      passed_factors_(options.passed_factors),
+      skipped_successors_(options.skipped_successors),
       stats_on_(config.stats),
       beam_nats_(config.beam_nats),
       ceiling_(0),
       speeds_(config.speed_count),
-      factors_(config.factor_count),
       samples_per_piece_(0),
       block_pieces_(0),
       first_block_pieces_(0),
@@ -544,8 +472,7 @@ Search::Impl::Impl(const ViterbiConfig& config, std::span<const double> c, std::
     if (!prior_) throw std::invalid_argument("search: no flat prior");
     if (!(config.beam_nats > 0.0)) throw std::invalid_argument("search: beam_nats must be positive (nats)");
     if (config.ceiling < 1) throw std::invalid_argument("search: the ceiling must be at least 1 story");
-    if (config.speed_count > 255 || config.factor_count > 255)
-        throw std::invalid_argument("search: at most 255 speeds and 255 factors");
+    if (config.speed_count > 255) throw std::invalid_argument("search: at most 255 speeds");
     if (tree_.size() > 16383) throw std::invalid_argument("search: the Morse tree has too many nodes");
     const double over_start = config.over_rate_per_s * config.piece_s;  // P, per piece
     const auto probability = [](double x) { return x > 0.0 && x < 1.0; };
@@ -595,15 +522,14 @@ Search::Impl::Impl(const ViterbiConfig& config, std::span<const double> c, std::
     word_gap_cost_ = -(std::log(config.word_end_p) + std::log1p(-config.over_end_q));
     over_end_cost_ = -(std::log(config.word_end_p) + std::log(config.over_end_q));
     log_speed_prior_ = -std::log(static_cast<double>(speeds_));
-    log_factor_prior_ = -std::log(static_cast<double>(factors_));
     stats_window_pieces_ = std::max(1, static_cast<int>(std::lround(kStatsWindowS / config.piece_s)));
 
-    newborn_ends_.assign(2 * static_cast<std::size_t>(speeds_), Slot{});
-    letter_starts_.assign(static_cast<std::size_t>(speeds_) * static_cast<std::size_t>(factors_), Slot{});
+    root_ends_.assign(2 * static_cast<std::size_t>(speeds_), Slot{});
+    letter_starts_.assign(static_cast<std::size_t>(speeds_), Slot{});
 
     // At the channel's first piece there is one story: no signal, score 0, empty text, line 0.
     Story first;
-    first.state = pack_state(Phase::NoSignal, 0, kOpen, kOpen, -1);
+    first.state = pack_state(Phase::NoSignal, 0, kOpen, -1);
     population_.push_back(first);
     if (stats_on_) {
         stats_.lines.push_back(NewbornLine{});
@@ -616,21 +542,16 @@ double Search::Impl::mark_survival(int speed, int node, int tau) const {
     double best = -kInf;
     for (int label = 0; label < 2; ++label)
         if (tree_.child(node, label == 1) >= 0)
-            best = std::max(best, fist_.log_survival(OpenTiming::mark_kind(label), speed, 0, tau));
+            best = std::max(best, fist_.log_survival(OpenTiming::mark_kind(label), speed, tau));
     return best;
 }
 
-double Search::Impl::gap_survival(int speed, int factor, int node, int tau) {
+double Search::Impl::gap_survival(int speed, int node, int tau) const {
     double best = -kInf;
-    if (tree_.has_children(node)) best = fist_.log_survival(Kind::ElementGap, speed, 0, tau);
+    if (tree_.has_children(node)) best = fist_.log_survival(Kind::ElementGap, speed, tau);
     if (!tree_.symbol(node).empty()) {
-        for (const Kind kind : {Kind::LetterGap, Kind::WordGap}) {
-            const double cost = kind == Kind::LetterGap ? letter_gap_cost_ : word_gap_cost_;
-            // An open factor survives as its widest does (search.hpp, "Work saved").
-            const double survival = factor == kOpen ? log_factor_prior_ + open_.factor_survival(kind, speed, tau)
-                                                    : fist_.log_survival(kind, speed, factor, tau);
-            best = std::max(best, survival - cost);
-        }
+        best = std::max(best, fist_.log_survival(Kind::LetterGap, speed, tau) - letter_gap_cost_);
+        best = std::max(best, fist_.log_survival(Kind::WordGap, speed, tau) - word_gap_cost_);
     }
     return best;
 }
@@ -724,11 +645,18 @@ void Search::Impl::end_mark(std::size_t i) {
     const Story& s = population_[i];
     const int tau = continuation_[i].tau;
     const double with_block = s.base + scored_[i].llr;  // the block finished: its evidence for good
+    // A mark at the root ends into a gap at E or T at its speed: a state that only marks at the root reach, a
+    // newborn's first mark (at every speed) or a letter's first mark (at its own), so they merge in root_ends_.
+    const auto offer_root_end = [&](int label, int speed, double score) {
+        offer_slot(root_ends_[static_cast<std::size_t>(label * speeds_ + speed)], score, s.line, [&] {
+            return Origin{static_cast<std::int32_t>(i), Move::EndMark, static_cast<std::uint8_t>(label), Move::Continue,
+                          static_cast<std::int16_t>(speed), s.line};
+        });
+    };
     if (s.speed == kOpen) {
         // A newborn's first mark, at the root: it branches into every speed and label with a finite ln P, each paying
-        // ln(1/speed_count). Every such successor lands in a state (a gap after the first mark, factor open) that only
-        // newborns' first marks reach, so they merge in newborn_ends_. The over may end after E or T: all speeds land
-        // in the no-signal state, so only each label's best speed is offered, and always (search.hpp, step 5).
+        // ln(1/speed_count). The over may end after E or T: all speeds land in the no-signal state, so only each
+        // label's best speed is offered, and always (search.hpp, step 5).
         const OpenTiming::FirstMarkEnds ends = open_.first_mark_ends(tau);
         const double head = with_block + log_speed_prior_;
         const bool gaps_beyond = beyond_beam(head + ends.best);  // then every gap successor is beyond the beam
@@ -739,16 +667,12 @@ void Search::Impl::end_mark(std::size_t i) {
                 const double log_end = ends.log_end[static_cast<std::size_t>(label * speeds_ + speed)];
                 if (log_end == -kInf) continue;
                 const double score = head + log_end;
-                if (beyond_beam(score)) continue;
-                offer_slot(newborn_ends_[static_cast<std::size_t>(label * speeds_ + speed)], score, s.line, [&] {
-                    return Origin{static_cast<std::int32_t>(i), Move::EndMark, static_cast<std::uint8_t>(label),
-                                  Move::Continue, static_cast<std::int16_t>(speed), kOpen, s.line};
-                });
+                if (!beyond_beam(score)) offer_root_end(label, speed, score);
             }
             if (!tree_.symbol(child).empty() && ends.label_best[label] > -kInf)
                 offer_slot(no_signal_, head + ends.label_best[label] - over_end_cost_, s.line, [&] {
                     return Origin{static_cast<std::int32_t>(i), Move::EndOver, static_cast<std::uint8_t>(label),
-                                  Move::Continue, kOpen, kOpen, s.line};
+                                  Move::Continue, kOpen, s.line};
                 });
         }
         return;
@@ -756,17 +680,21 @@ void Search::Impl::end_mark(std::size_t i) {
     for (int label = 0; label < 2; ++label) {
         const int child = tree_.child(s.node, label == 1);
         if (child < 0) continue;
-        const double log_end = fist_.log_end(OpenTiming::mark_kind(label), s.speed, 0, tau);
+        const double log_end = fist_.log_end(OpenTiming::mark_kind(label), s.speed, tau);
         if (log_end == -kInf) continue;
         const double score = with_block + log_end;
-        offer_general(pack_state(Phase::Gap, 0, s.speed, s.factor, child), score, s.line, [&] {
-            return Origin{static_cast<std::int32_t>(i), Move::EndMark, static_cast<std::uint8_t>(label), Move::Continue,
-                          s.speed, s.factor, s.line};
-        });
+        if (s.node != tree_.root()) {
+            offer_general(pack_state(Phase::Gap, 0, s.speed, child), score, s.line, [&] {
+                return Origin{static_cast<std::int32_t>(i), Move::EndMark, static_cast<std::uint8_t>(label),
+                              Move::Continue, s.speed, s.line};
+            });
+        } else if (!beyond_beam(score)) {
+            offer_root_end(label, s.speed, score);
+        }
         if (!tree_.symbol(child).empty())  // the over's end: always offered (search.hpp, step 5)
             offer_slot(no_signal_, score - over_end_cost_, s.line, [&] {
                 return Origin{static_cast<std::int32_t>(i), Move::EndOver, static_cast<std::uint8_t>(label),
-                              Move::Continue, kOpen, kOpen, s.line};
+                              Move::Continue, kOpen, s.line};
             });
     }
 }
@@ -776,92 +704,28 @@ void Search::Impl::end_gap(std::size_t i) {
     const int tau = continuation_[i].tau;
     const int node = s.node;
     if (tree_.has_children(node)) {
-        const double log_end = fist_.log_end(Kind::ElementGap, s.speed, 0, tau);
+        const double log_end = fist_.log_end(Kind::ElementGap, s.speed, tau);
         if (log_end > -kInf)
-            offer_general(pack_state(Phase::Mark, 0, s.speed, s.factor, node), s.base + log_end, s.line, [&] {
-                return Origin{static_cast<std::int32_t>(i), Move::EndElementGap, 0, Move::Continue, s.speed, s.factor,
-                              s.line};
+            offer_general(pack_state(Phase::Mark, 0, s.speed, node), s.base + log_end, s.line, [&] {
+                return Origin{static_cast<std::int32_t>(i), Move::EndElementGap, 0, Move::Continue, s.speed, s.line};
             });
     }
     if (tree_.symbol(node).empty()) return;
     // A letter starts at the root: it pays the letter, ln(1/62), and ln(1/(1 - epsilon)) for not restarting. Every such
-    // successor lands in a state (a mark at the root at a known speed and factor) that only letter starts reach, so
-    // they merge in letter_starts_.
+    // successor lands in a state (a mark at the root at a known speed) that only letter starts reach, so they merge in
+    // letter_starts_.
     const double head = s.base + log_letter_ + log_keep_story_;
-    Slot* const starts = letter_starts_.data() + static_cast<std::size_t>(s.speed) * static_cast<std::size_t>(factors_);
+    Slot& start = letter_starts_[static_cast<std::size_t>(s.speed)];
     for (const Kind kind : {Kind::LetterGap, Kind::WordGap}) {
         const bool word = kind == Kind::WordGap;
         const Move move = word ? Move::EndWordGap : Move::EndLetterGap;
-        const double top = head - (word ? word_gap_cost_ : letter_gap_cost_);
-        if (s.factor != kOpen) {
-            const double log_end = fist_.log_end(kind, s.speed, s.factor, tau);
-            if (log_end == -kInf) continue;
-            const double score = top + log_end;
-            consider_rescue(score, i, move);
-            if (beyond_beam(score)) continue;
-            offer_slot(starts[s.factor], score, s.line, [&] {
-                return Origin{static_cast<std::int32_t>(i), move, 0, Move::Continue, s.speed, s.factor, s.line};
-            });
-            continue;
-        }
-        // The factor is taken here: one successor per factor, each paying ln(1/factor_count).
-        const double opened = top + log_factor_prior_;
-        // Offers the successor at factor f, whose ln P is the finite log_end; false where the beam would drop it.
-        const auto offer_factor = [&](int f, double log_end) {
-            const double score = opened + log_end;
-            if (beyond_beam(score)) return false;
-            offer_slot(starts[f], score, s.line, [&] {
-                return Origin{static_cast<std::int32_t>(i), move, 0, Move::Continue, s.speed,
-                              static_cast<std::int16_t>(f), s.line};
-            });
-            return true;
-        };
-        // Every factor in order, each considered for the rescue: for an entry that is not unimodal, and for every gap
-        // where the options turn the scan off (no table is read then).
-        const auto offer_every_factor = [&] {
-            for (int f = 0; f < factors_; ++f) {
-                const double log_end = fist_.log_end(kind, s.speed, f, tau);
-                if (log_end == -kInf) continue;
-                consider_rescue(opened + log_end, i, move);
-                offer_factor(f, log_end);
-            }
-        };
-        if (!scan_open_factors_) {
-            offer_every_factor();
-            continue;
-        }
-        const OpenTiming::FactorEntry& entry = open_.factor_entry(kind, s.speed, tau);
-        if (entry.end == -kInf) continue;
-        consider_rescue(opened + entry.end, i, move);
-        if (beyond_beam(opened + entry.end)) continue;
-        if (!entry.unimodal) {
-            offer_every_factor();
-            continue;
-        }
-        // Outward from the best factor. On each side ln P only falls, so the last value computed bounds every one
-        // further out: a factor whose bound cannot beat the score its slot keeps would lose there, and is passed over
-        // without computing its ln P; the side ends at the first factor not created, or once the bound itself is
-        // beyond the beam, since the beam's threshold only rises (known_best_ only grows) and no further factor on that
-        // side would be created.
-        const auto scan = [&](int f, int direction) {
-            double bound = entry.end;
-            for (; f >= 0 && f < factors_; f += direction) {
-                if (beyond_beam(opened + bound)) return f;
-                const Slot& slot = starts[f];
-                if (slot.piece == piece_ &&
-                    !detail::replaces(opened + bound, next_creation_, slot.score, slot.creation)) {
-                    if (passed_factors_) ++*passed_factors_;
-                    continue;
-                }
-                const double log_end = fist_.log_end(kind, s.speed, f, tau);
-                if (log_end == -kInf || !offer_factor(f, log_end)) return f;
-                bound = log_end;
-            }
-            return f;
-        };
-        const int low = scan(entry.end_factor, -1);
-        const int high = scan(entry.end_factor + 1, +1);
-        if (cut_factor_scans_ && (low >= 0 || high < factors_)) ++*cut_factor_scans_;
+        const double log_end = fist_.log_end(kind, s.speed, tau);
+        if (log_end == -kInf) continue;
+        const double score = head - (word ? word_gap_cost_ : letter_gap_cost_) + log_end;
+        consider_rescue(score, i, move);
+        if (beyond_beam(score)) continue;
+        offer_slot(start, score, s.line,
+                   [&] { return Origin{static_cast<std::int32_t>(i), move, 0, Move::Continue, s.speed, s.line}; });
     }
 }
 
@@ -911,7 +775,6 @@ Story Search::Impl::build(std::uint32_t j, double t) {
         case Move::EndMark:
             s.phase = Phase::Gap;
             s.speed = o.speed;
-            s.factor = parent.factor;
             s.node = static_cast<std::int16_t>(tree_.child(parent.node, o.label == 1));
             s.level = scored_[parent_index].level;
             text_.hold(parent.text);
@@ -930,7 +793,6 @@ Story Search::Impl::build(std::uint32_t j, double t) {
         case Move::EndElementGap:
             s.phase = Phase::Mark;
             s.speed = parent.speed;
-            s.factor = parent.factor;
             s.node = parent.node;
             s.level = parent.level;
             text_.hold(parent.text);
@@ -942,7 +804,6 @@ Story Search::Impl::build(std::uint32_t j, double t) {
         case Move::EndWordGap:
             s.phase = Phase::Mark;
             s.speed = parent.speed;
-            s.factor = o.factor;
             s.node = static_cast<std::int16_t>(tree_.root());
             s.level = parent.level;
             s.text = letter_text(parent, o.move == Move::EndWordGap, t);
@@ -1010,20 +871,19 @@ void Search::Impl::step(std::complex<double> piece, double t, double n0) {
                 break;
             case Phase::Gap:
                 c.tau = s.tau + 1;
-                c.score = s.base + gap_survival(s.speed, s.factor, s.node, c.tau);
+                c.score = s.base + gap_survival(s.speed, s.node, c.tau);
                 break;
         }
-        c.state = pack_state(c.phase, c.tau, c.speed, c.factor, c.node);
+        c.state = pack_state(c.phase, c.tau, c.speed, c.node);
         known_best_ = std::max(known_best_, c.score);
         if (s.phase != Phase::NoSignal)
             push_candidate(c.state, c.score, c.creation,
-                           Origin{static_cast<std::int32_t>(i), Move::Continue, 0, Move::Continue, c.speed, c.factor,
-                                  c.line});
+                           Origin{static_cast<std::int32_t>(i), Move::Continue, 0, Move::Continue, c.speed, c.line});
     }
     if (no_signal != kNone) {  // the first in its slot, with its own creation order
         const Story& c = continuation_[static_cast<std::size_t>(no_signal)];
-        no_signal_ = Slot{c.score, c.creation,
-                          Origin{no_signal, Move::Continue, 0, Move::Continue, kOpen, kOpen, c.line}, piece_};
+        no_signal_ =
+            Slot{c.score, c.creation, Origin{no_signal, Move::Continue, 0, Move::Continue, kOpen, c.line}, piece_};
     }
     // ... and ends, into successors that start their next element at the next piece.
     for (std::size_t i = 0; i < n_old; ++i) {
@@ -1034,36 +894,33 @@ void Search::Impl::step(std::complex<double> piece, double t, double n0) {
     }
 
     // 3. Births: from silence, off the continuing no-signal story (silent at this piece); and one rescue newborn from
-    // the best letter-starting successor. Both are marks at the root with speed and factor open: they merge.
+    // the best letter-starting successor. Both are marks at the root with their speed open: they merge.
     if (no_signal != kNone) {
         const Story& c = continuation_[static_cast<std::size_t>(no_signal)];
         const double score = c.score + log_over_start_ + log_letter_;
         const std::int64_t line = new_line(LineKind::Silence, t);
         born_.emplace_back(line, score);
         offer_slot(newborn_, score, line,
-                   [&] { return Origin{no_signal, Move::BirthFromSilence, 0, Move::Continue, kOpen, kOpen, line}; });
+                   [&] { return Origin{no_signal, Move::BirthFromSilence, 0, Move::Continue, kOpen, line}; });
     }
     if (rescue_.parent != kNone) {
         const double score = rescue_.score - log_keep_story_ + log_restart_;
         const std::int64_t line = new_line(LineKind::Rescue, t);
         born_.emplace_back(line, score);
         offer_slot(newborn_, score, line,
-                   [&] { return Origin{rescue_.parent, Move::BirthRescue, 0, rescue_.gap, kOpen, kOpen, line}; });
+                   [&] { return Origin{rescue_.parent, Move::BirthRescue, 0, rescue_.gap, kOpen, line}; });
     }
 
     // 4. Merging is done as successors are offered; the slots' winners join the candidates in the slots' order.
     const int root = tree_.root();
     for (int label = 0; label < 2; ++label)
         for (int speed = 0; speed < speeds_; ++speed)
-            emit_slot(newborn_ends_[static_cast<std::size_t>(label * speeds_ + speed)],
-                      pack_state(Phase::Gap, 0, speed, kOpen, tree_.child(root, label == 1)));
+            emit_slot(root_ends_[static_cast<std::size_t>(label * speeds_ + speed)],
+                      pack_state(Phase::Gap, 0, speed, tree_.child(root, label == 1)));
     for (int speed = 0; speed < speeds_; ++speed)
-        for (int factor = 0; factor < factors_; ++factor)
-            emit_slot(letter_starts_[static_cast<std::size_t>(speed) * static_cast<std::size_t>(factors_) +
-                                     static_cast<std::size_t>(factor)],
-                      pack_state(Phase::Mark, 0, speed, factor, root));
-    emit_slot(no_signal_, pack_state(Phase::NoSignal, 0, kOpen, kOpen, -1));
-    emit_slot(newborn_, pack_state(Phase::Mark, 0, kOpen, kOpen, root));
+        emit_slot(letter_starts_[static_cast<std::size_t>(speed)], pack_state(Phase::Mark, 0, speed, root));
+    emit_slot(no_signal_, pack_state(Phase::NoSignal, 0, kOpen, -1));
+    emit_slot(newborn_, pack_state(Phase::Mark, 0, kOpen, root));
     alive_.clear();
     for (std::size_t j = 0; j < ranked_.size(); ++j)
         if (!dead_[j]) alive_.push_back(static_cast<std::uint32_t>(j));
@@ -1174,7 +1031,7 @@ std::vector<StoryView> Search::Impl::live_stories() const {
     for (const Story* s : order) {
         const bool morse = s->phase != Phase::NoSignal;
         views.push_back(StoryView{morse ? Activity::Morse : Activity::NoSignal, s->phase == Phase::Mark, s->tau,
-                                  s->speed, s->factor, morse ? s->node : -1, s->score, s->line, s->level});
+                                  s->speed, morse ? s->node : -1, s->score, s->line, s->level});
     }
     return views;
 }

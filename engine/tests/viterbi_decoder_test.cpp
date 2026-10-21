@@ -324,7 +324,6 @@ TEST(ViterbiDecoder, InputSplitDoesNotMatter) {
             EXPECT_EQ(a.key_down, b.key_down);
             EXPECT_EQ(a.tau, b.tau);
             EXPECT_EQ(a.speed, b.speed);
-            EXPECT_EQ(a.factor, b.factor);
             EXPECT_EQ(a.node, b.node);
             EXPECT_EQ(a.score_nats, b.score_nats);
             EXPECT_EQ(a.line, b.line);
@@ -463,32 +462,87 @@ TEST(ViterbiDecoder, ExtremeLevels) {
                  << "\" (the fall is not modeled: search.hpp, \"The mark's rise and what remains\", item 4)";
 }
 
+namespace {
+
+// The text the decoder gives for `text` keyed at wpm with Farnsworth factor `factor` (1 for standard spacing) from
+// 0.6 s, at +20 dB S500 on its channel's center with DEV2's noise (seed 35), N0 the noise's own.
+std::string grid_end_text(const std::string& text, double wpm, double factor) {
+    const auto keying = signals::keying_segments({{text, wpm, factor}}, 0.6);
+    std::vector<Sample> x = silence(keying.back().second + 1.5);
+    add_station(x, keying, 750.0, 20.0);
+    add_noise(x, 35);
+    return text_of(decode(ViterbiConfig{}, default_shared(), channel_stream(x, 750.0).samples, 32, 0.0).text);
+}
+
+}  // namespace
+
 TEST(ViterbiDecoder, TheGridsEnds) {
-    // The ends of the speed and Farnsworth grids at +20 dB S500, each on its channel's center with DEV2's noise, N0 the
-    // noise's own: characters at 5.2 WPM (the slowest speed, dots of 230.3 ms, dashes of 691 ms: two 390 ms blocks)
-    // with Farnsworth spacing F = 8 (letter gaps of 5.5 s and a word gap of 12.9 s), and 100 WPM (the fastest, dots of
-    // 6 pieces): a CER of at most 0.05 (plan §5, item 2; review focus 4).
+    // The ends of the speed grid at +20 dB S500, each on its channel's center with DEV2's noise, N0 the noise's own,
+    // at standard spacing: characters at 5.2 WPM (the slowest speed, dots of 230.3 ms, dashes of 691 ms: two 390 ms
+    // blocks; letter gaps of 691 ms and a word gap of 1.61 s), and 100 WPM (the fastest, dots of 6 pieces): a CER of
+    // at most 0.05 (plan §5, item 2; review focus 4). Farnsworth spacing at 5.2 WPM is the next test's.
     struct Case {
         std::string name;
         std::string text;
         double wpm;
-        double factor;
     };
-    const std::vector<Case> cases = {{"5.2 WPM, F = 8", "CQ CQ", 5.2, 8.0}, {"100 WPM", "PARIS PARIS", 100.0, 1.0}};
+    const std::vector<Case> cases = {{"5.2 WPM", "CQ CQ", 5.2}, {"100 WPM", "PARIS PARIS", 100.0}};
     default_shared();
     std::vector<std::future<std::string>> decoded;
     for (const Case& c : cases)
-        decoded.push_back(std::async(std::launch::async, [&c] {
-            const auto keying = signals::keying_segments({{c.text, c.wpm, c.factor}}, 0.6);
-            std::vector<Sample> x = silence(keying.back().second + 1.5);
-            add_station(x, keying, 750.0, 20.0);
-            add_noise(x, 35);
-            return text_of(decode(ViterbiConfig{}, default_shared(), channel_stream(x, 750.0).samples, 32, 0.0).text);
-        }));
+        decoded.push_back(std::async(std::launch::async, [&c] { return grid_end_text(c.text, c.wpm, 1.0); }));
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const std::string text = decoded[i].get();
         EXPECT_LE(cer(cases[i].text, text), 0.05) << cases[i].name << ": decoded \"" << text << "\"";
     }
+}
+
+TEST(ViterbiDecoder, FarnsworthSpacingAtTheSlowestSpeed) {
+    // Characters at 5.2 WPM with Farnsworth spacing F = 8 (letter gaps of 5.5 s and a word gap of 12.9 s) at
+    // +20 dB S500, as in the test before: the plan's criterion is a CER of at most 0.05 (plan §5, item 2).
+    //
+    // A strict expected failure since the owner's decision D14 of 2026-10-21: the decoder has no Farnsworth factor
+    // (standard spacing only), so Farnsworth-spaced signals decode poorly until a later fix (docs/backlog.md,
+    // "Farnsworth spacing in the new decoder"). The test fails if the criterion is met, so that the marker is removed
+    // once the fix comes, and is skipped otherwise, with the decoded text.
+    const std::string text = grid_end_text("CQ CQ", 5.2, 8.0);
+    const double error_rate = cer("CQ CQ", text);
+    record("cer", error_rate);
+    std::ostringstream outcome;
+    outcome.precision(3);
+    outcome << "F = 8 at 5.2 WPM decodes \"" << text << "\", a CER of " << error_rate;
+    if (error_rate <= 0.05) FAIL() << outcome.str() << ": the limitation is gone, remove the expected failure";
+    GTEST_SKIP() << "strict expected failure: " << outcome.str()
+                 << " (no Farnsworth factor: docs/backlog.md, \"Farnsworth spacing in the new decoder\")";
+}
+
+TEST(ViterbiDecoder, OneWordOversDecodeExactly) {
+    // An over of one short word at 25 WPM, +20 dB S500, alone on its channel's center with DEV2's noise (seeds 39, 40
+    // and 41), N0 the noise's own: "TEST" (a dash, four dots and a dash) and "TU" (a dash, then two dots and a dash),
+    // each exact. Their marks are also those of one longer symbol, "-" (the code -....-) and "X" (-..-), read at a
+    // slower speed with the letter gaps taken for element gaps. With the Farnsworth factor, whose prior of ln 23 =
+    // 3.135 nats was paid at a story's first letter or word gap and never by the one-symbol reading, "TEST" alone read
+    // as "-" in 12 of 12 runs (the results record, finding 2). Without it, at exact timing, the right reading wins by
+    // 1.07 nats for "TEST" and 1.27 nats for "TU" (derived: docs/signal-processing.md, A.8d), thin margins.
+    struct Case {
+        std::string word;
+        unsigned seed;
+    };
+    std::vector<Case> cases;
+    for (const std::string word : {"TEST", "TU"})
+        for (const unsigned seed : {39u, 40u, 41u}) cases.push_back({word, seed});
+    default_shared();
+    std::vector<std::future<std::string>> decoded;
+    for (const Case& c : cases)
+        decoded.push_back(std::async(std::launch::async, [&c] {
+            const auto keying = signals::keying(c.word, 25.0, 0.5);
+            std::vector<Sample> x = silence(keying.back().second + 1.0);
+            add_station(x, keying, 750.0, 20.0);
+            add_noise(x, c.seed);
+            return text_of(decode(ViterbiConfig{}, default_shared(), channel_stream(x, 750.0).samples, 32, 0.0).text);
+        }));
+    for (std::size_t i = 0; i < cases.size(); ++i)
+        EXPECT_EQ(decoded[i].get(), cases[i].word) << cases[i].word << ", seed " << cases[i].seed;
 }
 
 TEST(ViterbiDecoder, TenMinutesOfNoise) {
@@ -714,8 +768,6 @@ TEST(ViterbiDecoder, WithGenieSetsOnlyThePartsItIsGiven) {
         EXPECT_EQ(c.beam_nats, 33.0);
         EXPECT_EQ(c.ceiling, base.ceiling);
         EXPECT_EQ(c.fading_spread_hz, base.fading_spread_hz);
-        EXPECT_EQ(c.factor_count, base.factor_count);
-        EXPECT_EQ(c.factor_ratio, base.factor_ratio);
         EXPECT_EQ(c.keying_rise_s, base.keying_rise_s);
     };
     const auto fist_unchanged = [&base](const ViterbiConfig& c) {

@@ -402,7 +402,7 @@ branch's text. The new decoder (the engine's `FrontEnd::Viterbi`,
 configured by `EngineConfig::viterbi`) weighs whole *stories* instead. A
 story is one continuous account of what the channel has carried since it
 opened: silence, or Morse in a mark or a gap that has lasted τ pieces, at a
-speed and a Farnsworth factor, at a node of the Morse tree, with its own
+speed, at a node of the Morse tree, with its own
 estimate of the carrier's level and its own text. At every *piece* (2 ms)
 each story continues and also ends its element in every way the timing and
 the code allow; stories that reach the same state merge, the better kept;
@@ -496,16 +496,17 @@ matched, becomes the level. A newborn's level is unknown: its first block
 is scored against a level flat in dB from −15 to +85 dB S₅₀₀ (placeholder)
 and leaves that posterior.
 
-**Timing and text.** 32 speeds, dots of 12.0 ms × 1.1^s (100 to 5.2 WPM),
-and 23 Farnsworth factors F = 1.1^f (1 to 8.14) (owner). Dots, dashes,
-element gaps, letter gaps and word gaps last log-normally about medians of
-1, 3, 1, 3F and 7F dots, σ = 0.3 in ln(length), rounded to whole pieces
-(placeholders, heuristic; no heavy tail, owner). A story still in its
-element at τ pieces has paid ln S(τ), the log of surviving that long, and
-one ending there ln P(τ) (the hazard form; standard). A newborn's speed,
-and a story's factor until its first letter or word gap, stay open: the
-story keeps the best over them, and each branch pays ln(1/32) = −3.466 or
-ln(1/23) = −3.135 nats where it is taken (owner: flat priors). A mark ends
+**Timing and text.** 32 speeds, dots of 12.0 ms × 1.1^s (100 to 5.2 WPM)
+(owner), at standard spacing only: there is no Farnsworth factor (owner,
+2026-10-21), so Farnsworth-spaced signals decode poorly until a later fix
+(A.8d). Dots, dashes, element gaps, letter gaps and word gaps last
+log-normally about medians of 1, 3, 1, 3 and 7 dots, σ = 0.3 in
+ln(length), rounded to whole pieces (placeholders, heuristic; no heavy
+tail, owner). A story still in its element at τ pieces has paid ln S(τ),
+the log of surviving that long, and one ending there ln P(τ) (the hazard
+form; standard). A newborn's speed stays open until its first mark ends:
+the story keeps the best over the speeds, and each speed pays
+ln(1/32) = −3.466 nats where it is taken (owner: a flat prior). A mark ends
 as a dot or a dash
 where the Morse tree (the engine's 62 symbols) continues. Every symbol is
 equally likely: a letter costs ln 62 = 4.127 nats at its start (owner: no
@@ -519,7 +520,7 @@ silence, holds score 0. At each piece every story continues; a mark also
 ends as a dot and as a dash (and, at a symbol, ends the over); a gap also
 ends as each kind its node allows. From the silent story a new over starts
 at every piece (P = 10⁻⁴ per piece, 0.05 s⁻¹, placeholder), and at every
-letter start a *rescue* newborn restarts the story, its speed, factor and
+letter start a *rescue* newborn restarts the story, its speed and
 level open and its text kept (ε = 10⁻³ per letter start, placeholder).
 Successors in one state merge, the better kept. Stories more than 40 nats
 behind the best are dropped (the beam), and beyond 1 700 stories the worst
@@ -527,24 +528,26 @@ behind the best are dropped (the beam), and beyond 1 700 stories the worst
 Scores are held relative to the best.
 
 **Cost.** On ten minutes of noise alone, where the ceiling binds, it took
-511 ms of one thread per channel-second on the development desktop
+287 ms of one thread per channel-second on the development desktop
 (measured; the plan measures it on the Linux machine). Per channel it keeps
 up to 1 700 stories, their shared text and the open timing's tables (at
 most 4 MB); the flat prior's tables (18.7 MB) are built once and shared by
 every channel.
 
-**Open.** Two decisions are the owner's: the ceiling (a speed step at
-+10 dB S₅₀₀ fails on one seed because the ceiling drops the rescue
-newborns) and the tracker's next steps (a station at 0 dB S₅₀₀ loses the
-track to a +20 dB S₅₀₀ neighbor 50 Hz away in 57% of runs). Strong
+**Open.** The ceiling binds on noise and in weak signals' gaps (with the
+Farnsworth factor, a speed step at +10 dB S₅₀₀ failed on one seed because
+of it, a point that decodes since); the owner left its value to the plan's
+ceiling run. The tracker loses a station at 0 dB S₅₀₀ to a +20 dB S₅₀₀
+neighbor 50 Hz away in 57% of runs. Strong
 stations: the fall at a mark's end is not modeled, so its energy is left
 unexplained, and a new over of one piece can claim it (derived). In scratch
 runs, not in a test, where every keying edge of a run sat at one position
 within its piece, the text was exact at all 16 positions tried up to
 +36 dB S₅₀₀ and wrong at 2 of them at +38 dB S₅₀₀ (measured); a real
 station's edges fall at mixed positions, so from about +37 dB S₅₀₀ some of
-its elements would be misread (conjectured). An over of one word can read
-as one longer symbol: "TEST" alone decoded as "-" in scratch runs (A.8d).
+its elements would be misread (conjectured). An over of one short word
+wins over one longer symbol by about 1 nat at exact timing ("TEST" against
+"-"; A.8d).
 
 Appendix: A.8d.
 
@@ -3385,9 +3388,9 @@ q(t − t_s)³/3).
 - The level predicted to t: μ unchanged, P(t) = ρ²P + (sμ)²(1 − ρ²), ρ² = e^(−π² f_D² (t − t_s)²), s = √(4/π − 1) =
   0.5227 (with 1 − ρ² computed as −expm1).
 
-**Timing.** Speed s: dot T_s = 12.0 ms × 1.1^s, s = 0 … 31; factor F_f = 1.1^f, f = 0 … 22. A kind's length is D =
-shift + M·e^(σN) pieces, N standard normal, M = median_dots × T_s / 2 ms (× F_f for letter and word gaps), shift 0 at the
-defaults; rounded to the nearest piece, at least one: P(1) = F(3/2), P(τ) = F(τ + ½) − F(τ − ½), S(1) = 1, S(τ) =
+**Timing.** Speed s: dot T_s = 12.0 ms × 1.1^s, s = 0 … 31; standard spacing, no Farnsworth factor. A kind's length
+is D = shift + M·e^(σN) pieces, N standard normal, M = median_dots × T_s / 2 ms, shift 0 at the defaults; rounded to
+the nearest piece, at least one: P(1) = F(3/2), P(τ) = F(τ + ½) − F(τ − ½), S(1) = 1, S(τ) =
 1 − F(τ − ½), F the distribution function of D; in the log, from a table of ln Φ_c (z from −8 to 40 in steps of 0.001,
 linear interpolation; direct outside it).
 
@@ -3406,8 +3409,8 @@ letter when the text is not empty.
    letter and ln(1/(1 − ε)) for not restarting); silence pays ln(1 − P), P = 0.05 s⁻¹ × 2 ms = 10⁻⁴;
 3. births: from the continuing silent story, a newborn at ln P + ln(1/62) (−9.210 − 4.127 nats); where a letter starts,
    one rescue newborn from the best letter-starting successor at ln ε (−6.908 nats) instead of ln(1 − ε), with its text;
-   both with speed, factor and level open;
-4. successors in one state (activity, key, τ, speed or open, factor or open, node) merge, the better kept, of equal
+   both with speed and level open;
+4. successors in one state (activity, key, τ, speed or open, node) merge, the better kept, of equal
    scores the earlier created; at most one silent story;
 5. those more than 40 nats behind the best are dropped, then all but the best 1 700 (ties: the state's packed order,
    then creation order); a successor already beyond the beam is not created (exact: the beam would drop it);
@@ -3565,12 +3568,14 @@ from 31 samples; 2R_k/1 500 Hz is 2.1 × 10⁻⁹ at k = 29 and 6.5 × 10⁻¹�
   within a piece (one seed) the text was exact at +30, +33 and +36 dB S₅₀₀; 2 positions failed at +38 dB S₅₀₀ (edges
   18 and 24 of a piece's 96 input samples at 48 kHz) and 3 at +40 dB S₅₀₀ (12, 18 and 24). With the edge at a piece's
   start the text was exact to +41 dB S₅₀₀ on three seeds, wrong at +42 dB S₅₀₀ on one and from +43 dB S₅₀₀ on all three
-  (measured). Near the onset the texts keep parts of the words: "PARIS ET EGA E RIS" (+38 dB S₅₀₀, edge 18), "PARIS E
-  EGARIS" (+42 dB S₅₀₀, edge 0), "PARIS PARIS E" (+43 dB S₅₀₀, edge 0). From +44 dB S₅₀₀ they break into short words,
-  mostly of E and T: at +60 dB S₅₀₀, "T EE EE ET E T EE E T EE ET E T ET E T ET ET E" for each "PARIS" (19 words and
-  28 letters for its 14 elements). A real station's edges fall at mixed positions, so from about +37 dB S₅₀₀ some of
-  its elements would be misread (conjectured). A 5 Hz fading spread, which makes the level's prior 4.4 times broader
-  across a gap, failed alike at +45 to +60 dB S₅₀₀. DEV2's stations lie at or below +20 dB S₅₀₀ (neighbors to
+  (measured; the same counts with and without the Farnsworth factor). Near the onset the texts keep parts of the
+  words: "PARIS E EGA E RIS" (+38 dB S₅₀₀, edge 18), "PARIS E EGARIS" (+42 dB S₅₀₀, edge 0), "PARIS E EGAE ENE EES"
+  (+43 dB S₅₀₀, edge 0). From +44 dB S₅₀₀ they break into short words, mostly of E and T: at +60 dB S₅₀₀, "T EE EE
+  ET E T EE E T EE ET E T ET E T ET ET E" for each "PARIS" (19 words and 28 letters for its 14 elements). A real
+  station's edges fall at mixed positions, so from about +37 dB S₅₀₀ some of its elements would be misread
+  (conjectured). A 5 Hz fading spread, which makes the level's prior 4.4 times broader across a gap, failed alike at
+  +45 to +60 dB S₅₀₀. At +45 and +50 dB S₅₀₀ (16 positions, one seed) 10 and 2 positions decoded exactly without the
+  factor, 11 and 3 with it (measured). DEV2's stations lie at or below +20 dB S₅₀₀ (neighbors to
   +26 dB S₅₀₀); real bands hold stronger ones. `ViterbiDecoder.ExtremeLevels` records the plan's +60 dB S₅₀₀ station
   as a strict expected failure. The plan's §2.3 had judged the fall harmless ("a weak last piece only costs the story
   that keeps it"); that holds for the story that keeps it, not for the one that does not.
@@ -3639,42 +3644,49 @@ flat prior's span, at most 2 s (1 000 pieces): heuristic (past the longest media
 **Derivations.**
 - **The rounding** to whole pieces, never below one, makes the P(τ) sum to 1, and P(τ) = S(τ) − S(τ + 1). ln Φ_c from
   its table is within 1.25 × 10⁻⁷ nats (step²/8 times its largest second derivative, below 1; derived), so ln S is; ln P
-  is within 6.2 × 10⁻⁷ nats at a median of 6 pieces (the 100 WPM dot), 1.1 × 10⁻⁵ at 115 and 2.4 × 10⁻⁴ at the longest,
-  6 562 pieces (the word gap at 5.2 WPM and F = 8.14) (measured against `std::erfc`; `fist_test.cpp`).
+  is within 6.2 × 10⁻⁷ nats at a median of 6 pieces (the 100 WPM dot), 1.1 × 10⁻⁵ at 115 and 4.2 × 10⁻⁵ at the longest,
+  806 pieces (the word gap at 5.2 WPM) (measured against `std::erfc`; `fist_test.cpp`).
 - **The misfit cost:** a length k times its median costs (ln k)²/(2σ²) = (ln k)²/0.18 nats more than a perfect one:
   2.7 nats at 2×, 6.7 at 3×, 10.7 at 4× (derived).
 - **The costs of text:** a letter ln 62 = 4.127 nats; a letter gap −ln(1 − p) = 0.396, a word gap −ln(p(1 − q)) = 1.161,
   an over's end −ln(pq) = 4.296 nats (derived from p and q).
-- **An open factor's survival** is its widest factor's: the factor stretches only the median, and a log-normal with a
-  larger median and the same σ survives longer at every τ (derived; checked over every speed and factor).
 
-**Provenance.** The speeds (12.0 ms × 1.1^s, 32) and factors (1.1^f, 23): owner (design notes, topic 2). The medians 1,
-3, 1, 3F and 7F dots: placeholders, heuristic (the ITU sending standard's ratios, ITU-R M.1677-1, not a measurement of
-senders). σ = 0.3 in ln(length) for every kind: placeholder, heuristic. No heavy tail until measured on real keying:
-owner (the plan's D5, 2026-10-20). The priors 1/32 and 1/23: owner (flat). The letter, 1/62: owner (no text model).
+**Provenance.** The speeds (12.0 ms × 1.1^s, 32): owner (design notes, topic 2). Standard spacing only, no Farnsworth
+factor: owner (2026-10-21, the plan's D14; the design notes' topic 2, item 3, amended). The medians 1, 3, 1, 3 and 7
+dots: placeholders, heuristic (the ITU sending standard's ratios, ITU-R M.1677-1, not a measurement of senders).
+σ = 0.3 in ln(length) for every kind: placeholder, heuristic. No heavy tail until measured on real keying: owner (the
+plan's D5, 2026-10-20). The speed's prior 1/32: owner (flat). The letter, 1/62: owner (no text model).
 p = 1/3.06: measured (VE3NEA's mean word length in CW Skimmer's decodes); q = 1/24: counted (the development set's own);
 both placeholders until recounted on real traffic. The rate of overs from silence, 0.05 s⁻¹, and ε = 10⁻³ per letter
 start: placeholders (the development set's own).
 
 **Limitations.**
-- **No text model, and the open factor's prior:** every symbol costs the same, and a story pays ln(1/23) = 3.135 nats
-  when its first letter or word gap takes its factor, so a short over with exact timing can read as one longer symbol.
-  "TEST" alone (machine keying, 25 WPM) decoded as "-" (−....−), its three letter gaps read as element gaps, in all 12
-  runs at +10, +15, +20 and +30 dB S₅₀₀ (three seeds each), and as "TEST" in all 12 with a single Farnsworth factor,
-  where that prior is 0 (measured in scratch runs through the decoder, not in a test). The accounting, at exact timing
-  (derived): the four-letter reading pays 16.70 nats more in priors, three more letters (3 × 4.127), letter gaps
-  instead of element gaps (3 × 0.396) and the factor's prior (3.135); the one-symbol reading pays the misfit of its
-  timing at a speed k times slower, [8(ln k)² + 3(ln(3/k))²]/0.18 nats (six marks and two element gaps at 1/k of their
-  medians, three letter gaps at 3/k), 14.64 nats at the grid's best k = 1.1³ = 1.331. So "-" wins by 2.06 nats; with a
-  single factor "TEST" wins by 1.07. It needs an over of one word: where a word gap follows, both readings pay the
-  factor's prior ("TEST W9XYZ" decodes exactly, `ViterbiDecoder.DecodesThroughTheEngine`). It depends on the word:
-  "PARIS" alone decodes exactly (`ViterbiDecoder.FlushesOnceAndResetStartsAfresh`), while "TU" alone would read as "X"
-  (−··−), which saves 7.66 nats against a misfit of 5.79 nats at k = 1.1² (derived; not run).
+- **Farnsworth spacing is not modeled** (owner, 2026-10-21, the plan's D14): letter and word gaps are taken at 3 and 7
+  dots of the story's speed, so a letter gap stretched F times costs (ln F)²/0.18 nats of misfit as a letter gap
+  (24.0 nats at F = 8; derived) and reads as a word gap where that costs less. "PARIS PARIS" with characters at 18 WPM
+  and F = 7.84 (5 WPM overall) at +20 dB S₅₀₀ decodes "P A R I S P A R I S" (`Search.FarnsworthTextIsRight`), and "CQ
+  CQ" at 5.2 WPM with F = 8 decodes "C Q C Q", CER 0.4 (`ViterbiDecoder.FarnsworthSpacingAtTheSlowestSpeed`); both
+  tests are strict expected failures (measured). DEV2's Farnsworth groups (I, I2) are expected to decode poorly. What
+  was found with the factor (23 factors 1.1^f, f = 0 … 22, under a flat prior) and the thoughts for a fix:
+  `docs/backlog.md`, "Farnsworth spacing in the new decoder"; the removed code is in the branch's history.
+- **No text model:** every symbol costs the same, so a short over can read as one longer symbol with the same marks at
+  a slower speed, its letter gaps taken for element gaps. At exact timing (derived), "TEST" against "-" (−....−): the
+  four-letter reading pays 13.57 nats more in priors, three more letters (3 × 4.127) and letter gaps instead of element
+  gaps (3 × 0.396); the one-symbol reading pays the misfit of its timing at a speed k times slower,
+  [8(ln k)² + 3(ln(3/k))²]/0.18 nats (six marks and two element gaps at 1/k of their medians, three letter gaps at
+  3/k), 14.64 nats at the grid's best k = 1.1³ = 1.331, so "TEST" wins by 1.07 nats. "TU" against "X" (−··−): 4.52 nats
+  of priors (4.127 + 0.396) against [6(ln k)² + (ln(3/k))²]/0.18 = 5.79 nats at k = 1.1², so "TU" wins by 1.27 nats.
+  These take the sender's speed on the grid; at 25 WPM, between two of its speeds, the margins are 1.00 and 1.16 nats.
+  "TEST" and "TU" alone (machine keying, 25 WPM, DEV2's noise) each decode exactly in all 12 runs at +10, +15, +20 and
+  +30 dB S₅₀₀ on three seeds (measured in scratch runs through the decoder; `ViterbiDecoder.OneWordOversDecodeExactly`
+  holds +20 dB S₅₀₀). With the Farnsworth factor, whose flat prior (ln 23 = 3.135 nats) was paid at a story's first
+  letter or word gap and never by the one-symbol reading, they read "-" and "X" in all 12 runs each (measured).
+  Margins of about a nat leave real senders' timing errors able to merge letters (conjectured).
 - `<HH>` is exactly eight dots: nine or more leave the tree.
-- Factors beyond 8.14 lie off the grid (the plan leaves the development set's signals above F = 8 out of its
-  comparisons).
-- After about an hour of quiet an endless word gap's log-normal tail overtakes the silent story's ln(1 − P) per piece
-  (about 59 min at the slowest speed and the largest factor; derived, in the search's review).
+- After about 2.3 hours of quiet an endless word gap's log-normal tail would overtake the silent story's ln(1 − P) per
+  piece: from equal scores, at the slowest speed, it falls 188.6 nats behind (at 25.4 min) and is level again at
+  136 min, so a beam below 188.6 nats drops it first, the 40-nat beam after 22.1 s (derived from the fist, as the
+  search's review derived 59 min with the factor).
 
 ### The search (new decoder)
 
@@ -3683,20 +3695,23 @@ the plan leaves open, decided in `search.hpp`: a birth from silence comes from t
 over's ends of the same piece merge with it (so a new over follows the last by at least one silent piece); a
 successor's score is its parent's without the element's timing, plus ln P of the element that ended and the costs
 paid at that end; a rescue's parent is the best letter-starting successor, created or not; the genie's spread, where
-set, sets B and the prediction. The savings (a successor beyond the beam not created; an open factor's scan from its
-best factor; the open timing's maxima kept in tables to a cap of 1 923 pieces, 3.846 s, so at most 4 000 000 bytes of
-entries per search) change no output (tested to the bit). The state's packed order and the creation counter break every
-tie, so a run depends on no container's order or address: the same pieces give the same text on one platform.
+set, sets B and the prediction. The savings (a successor beyond the beam not created; the open speed's maxima for a
+newborn's first mark kept in tables, 544 bytes per τ at 32 speeds, to a cap of 7 352 pieces, 14.704 s, so at most
+4 000 000 bytes of entries per search, 3 999 488 at 32 speeds) change no output (tested to the bit). The state's
+packed order and the creation counter break every tie, so a run depends on no container's order or address: the same
+pieces give the same text on one platform.
 
 **Provenance.** The beam, 40 nats: placeholder, at least the derived minimum of 28 nats (design notes, topic 5, item 4),
 set by the plan's runs. The ceiling, 1 700 stories: placeholder, set by the plan's runs.
 
 **Limitations.**
-- **The ceiling decides in word gaps:** at +10 dB S₅₀₀ on one seed the speed step from 20 to 30 WPM misreads one letter
-  pair ("P<AR>IS", CER 0.057), because in the word gap before the step every story lies within about 16 nats of the best
-  and each rescue newborn, born about 15.4 nats behind, is dropped by the ceiling at birth; with a ceiling of 2 500 every
-  point decodes, at +42% to +50% of CPU per channel-second (measured). **Open:** the owner's decision: a newborn's first
-  mark exempt from the ceiling, a larger ceiling, or the ceiling left to the plan's ceiling run.
+- **The ceiling binds in weak signals' gaps:** with the Farnsworth factor, at +10 dB S₅₀₀ on one seed the speed step
+  from 20 to 30 WPM misread one letter pair ("P<AR>IS", CER 0.057), because in the word gap before the step every story
+  lay within about 16 nats of the best and each rescue newborn, born about 15.4 nats behind, was dropped by the ceiling
+  at birth; a ceiling of 2 500 decoded every point, at +42% to +50% of CPU per channel-second (measured). Without the
+  factor that point decodes exactly at beams of 40 and 80 nats, though the ceiling still drops stories at 294 of the
+  500 pieces from 9.0 to 10.0 s there (308 with the factor); why it now decodes was not traced (measured). The owner
+  left the ceiling to the plan's ceiling run (2026-10-21).
 - The text appears only when the channel ends (the first prototype).
 - The statistics (`ViterbiConfig::stats`) grow with the channel's time, about 350 MB per hour: for bench recordings.
 
@@ -3715,11 +3730,12 @@ frame, N₀ = 0, and it is not searched; a detector channel opens after frames h
 
 **Cost** (measured, `ViterbiDecoder.TenMinutesOfNoise`: DEV2's noise alone at the defaults, where the ceiling binds;
 steady-clock time inside the decoder, one thread, Release build, on the development desktop, an Intel i7-9700F with
-MSVC): 511 ms per channel-second over 600 s of channel time (628 ms in the test's one-minute form, the default suite's);
-at most 310 entries of shared text at any block (the test allows 4 × the ceiling), and 3 913 536 bytes in the open
-timing's tables (of the 4 000 000 allowed). The plan's first run measures the cost on the Linux machine, where the bank
-takes 28.85 ms of CPU per channel-second (run `d5-bank`, the plan's reference; development-set results record,
-section 6).
+MSVC; the least of three runs, 2026-10-21): 287 ms per channel-second over 600 s of channel time (286 ms in the test's
+one-minute form, the default suite's); at most 106 entries of shared text at any block (the test allows 4 × the
+ceiling), and 557 056 bytes in the open timing's tables (their capacity, 1 024 τ of 544 bytes, grown by doubling past
+the longest first mark met; of the 4 000 000 allowed). The plan's first run measures the cost on the Linux machine,
+where the bank takes 28.85 ms of CPU per channel-second (run `d5-bank`, the plan's reference; development-set results
+record, section 6).
 
 ## A.9 Timing and latency
 
@@ -3840,9 +3856,9 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Bank events (engine) | new characters, then corrections (index: the smaller of the number kept and the first position whose text changed; the bank's characters from it on; time, reason, reach), applied in order, plus a "resync" correction if the consumer's list ever differs from the bank's (its reach not bounded by the 20 s correction reach; never on the suite, measured; tested by forcing one); final text = all corrections applied, immediate text = characters as first appended | `TextCorrection`, `DecodeUpdate::corrections`, `DecodedTextEvent::corrections`; bench `TrackText` | derived: the consumer's rule rebuilds the bank's final text exactly (proof in A.8c); not signal processing, an interface choice of the port (owner decision D1 for `--decoder`); the event's probability 1, speed 0 and confidence 0 are placeholders |
 | New decoder: piece | 3 channel samples = 2.000 ms | `ViterbiConfig::piece_s` (0.002 s; it must be a whole number of channel samples: 3 at r = 1 500 samples/s, 48 kHz × 2^j, and 4 at 2 000, 8 to 32 kHz; refused at 44.1 and 88.2 kHz, r = 1 378.125 samples/s, 2.756 samples) | derived from r |
 | New decoder: speeds | dots of 12.0 ms × 1.1^s, s = 0 … 31 (100 to 5.2 WPM) | `dot_min_ms`, `speed_ratio`, `speed_count` | owner |
-| New decoder: Farnsworth factors | F = 1.1^f, f = 0 … 22 (1 to 8.14) | `factor_ratio`, `factor_count` | owner |
-| New decoder: fist | log-normal lengths about medians of 1, 3, 1, 3F and 7F dots (dot, dash, element gap, letter gap, word gap), σ = 0.3 in ln(length), shifts 0 dots; rounded to whole pieces, at least one | `fist_medians_dots`, `fist_sigmas`, `fist_shifts_dots`; `Fist` | placeholders, heuristic (the ITU sending standard's ratios); no heavy tail: owner (the plan's D5) |
-| New decoder: speed and factor priors | 1/32 and 1/23 (3.466 and 3.135 nats) where taken | `Search` | owner (flat) |
+| New decoder: spacing | standard only: no Farnsworth factor (letter and word gaps at 3 and 7 dots of the story's speed) | — | owner (2026-10-21, the plan's D14) |
+| New decoder: fist | log-normal lengths about medians of 1, 3, 1, 3 and 7 dots (dot, dash, element gap, letter gap, word gap), σ = 0.3 in ln(length), shifts 0 dots; rounded to whole pieces, at least one | `fist_medians_dots`, `fist_sigmas`, `fist_shifts_dots`; `Fist` | placeholders, heuristic (the ITU sending standard's ratios); no heavy tail: owner (the plan's D5) |
+| New decoder: speed prior | 1/32 (3.466 nats) where a newborn's speed is taken | `Search` | owner (flat) |
 | New decoder: letter | 1/62 (4.127 nats) at a letter's start | `MorseTree`, `Search` | owner (no text model) |
 | New decoder: ends of words and overs | p = 1/3.06, q = 1/24: a letter gap costs 0.396 nats, a word gap 1.161, an over's end 4.296 | `word_end_p`, `over_end_q` | p measured (VE3NEA), q counted (the development set); placeholders |
 | New decoder: overs from silence | 0.05 s⁻¹: P = 10⁻⁴ per piece (9.210 nats at a birth) | `over_rate_per_s` | placeholder (the development set's own) |
@@ -3855,13 +3871,13 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | New decoder: the rise | a 5 ms raised-cosine keying edge: g = 0.193, 0.614, 0.943, 1.019 at 48 kHz; the rise from the first piece reaching 0.01 to the last more than 0.005 from 1; rise_s at most 1 s | `keying_rise_s`; `rise_fractions` | the edge placeholder, heuristic (the generator's); g derived; 0.01, 0.005 and 1 s heuristic |
 | New decoder: the noise of the pieces | independent at N₀ × 1 500 Hz per channel sample, c's last increment (refused unless its last two increments agree within 10⁻⁹) | `FlatPrior`, `Search` | derived (design notes, topic 4, item 2, as amended); the 10⁻⁹ heuristic |
 | New decoder: beam | 40 nats | `beam_nats` | placeholder (at least 28 nats, derived) |
-| New decoder: ceiling | 1 700 stories | `ceiling` | placeholder; open: the owner's decision |
+| New decoder: ceiling | 1 700 stories | `ceiling` | placeholder; left to the plan's ceiling run (owner, 2026-10-21) |
 | New decoder: hiss | each bin's one-pole 1 s average; ±2 000 Hz (±85 bins), the 25th percentile (the 43rd of 171); ÷ β; ÷ 1.5 bins; a frame of exact zeros not counted | `hiss_average_s`, `hiss_half_width_hz`, `hiss_percentile`; `HissEstimator` | 1 s heuristic (the detector's); width and rank placeholders, heuristic; β, the 1.5 bins and the zero rule derived; the 0.01 dB margin above −200 dBFS heuristic |
 | New decoder: tracker windows | 1.0 s every 0.5 s, periodic Hann, 8 192 points, ±15 Hz | `tracker_window_s`, `tracker_hop_s`, `tracker_search_hz` | placeholders (the plan's D6); 8 192 heuristic |
 | New decoder: tracker gate | 9 dB re the mean noise power per bin (N₀ × 1.5 Hz) | `tracker_gate_db` | derived (owner's decision B, 2026-10-20) |
 | New decoder: tracker filter | variance 0.2833 Hz²/ρ + (0.08 mHz)²; drift 0.3 Hz/s (start sd and agreement), process noise 1.5 × 10⁻⁴ Hz²/s³; start sd 5 Hz; trusted while 3σ ≤ 0.67 Hz; agreement within 3σ | `tracker_drift_sd_hz_per_s`, `tracker_drift_noise`; tracker.cpp | 0.2833 Hz² and the floor measured; 0.3 Hz/s sourced; the process noise derived from it over a heuristic ten minutes; 5 Hz placeholder; 0.67 Hz derived for the default 390 ms block, a constant that does not follow the block's length (A.8d); 3σ heuristic; open: the owner's next steps |
 | New decoder: genie | per channel, the true frequency and drift, fading spread or fist | `genie_*`, `ViterbiGenie`, `EngineConfig::viterbi_genie` | genie runs only (oracle mode) |
-| New decoder: open timing's tables | at most 4 000 000 bytes of entries per search (a cap of 1 923 pieces at 32 speeds) | search.cpp | a memory choice with no effect on the output (tested) |
+| New decoder: open timing's tables | at most 4 000 000 bytes of entries per search (544 bytes per τ and a cap of 7 352 pieces, 14.704 s, at 32 speeds) | search.cpp | a memory choice with no effect on the output (tested) |
 | New decoder: events | the whole text at `flush`; probability 1, speed 0, confidence 0; `freq_offset_hz`, the oscillator's offset at each block's last sample | `ViterbiDecoder` | placeholders (the plan's O4) |
 
 ## A.11 Definitions used in tests and the benchmark

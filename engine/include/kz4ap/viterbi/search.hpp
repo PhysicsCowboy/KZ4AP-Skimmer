@@ -1,9 +1,10 @@
 // The new decoder's search (plan §2.7; design notes, topic 5): a time-synchronous Viterbi beam search over stories, one
 // piece at a time (piece_s, 2 ms: the sum of samples_per_piece = 3 channel samples at 1 500 samples/s). A story is one
 // continuous account of what has been sent on the channel since its start: no signal, or Morse in a mark (key down) or
-// a gap (key up) that has lasted tau pieces, at a speed and a Farnsworth factor (each "open" until the story takes it),
-// at a node of the Morse tree (morse_tree.hpp), with its own level (level.hpp) and its own text, a chain of letters and
-// word spaces shared between stories.
+// a gap (key up) that has lasted tau pieces, at a speed ("open" until the story takes it), at a node of the Morse tree
+// (morse_tree.hpp), with its own level (level.hpp) and its own text, a chain of letters and word spaces shared between
+// stories. Spacing is standard: there is no Farnsworth factor (the owner's decision D14 of 2026-10-21;
+// Farnsworth-spaced signals decode poorly until a later fix, docs/backlog.md, "Farnsworth spacing in the new decoder").
 //
 // The score. A story's score, nats, is the log-likelihood of its story and the signal so far against the story "noise
 // only, throughout", so a gap piece adds 0. Scores are held relative to the best story's (normalization_nats() is the
@@ -37,13 +38,9 @@
 //     that ends there ln P(tau) instead. A mark keeps the better of ln S_dot(tau) and ln S_dash(tau), each plus its
 //     label's text cost at the node (0 where that child exists, -infinity where not), and ends into a dot and a dash,
 //     each with its own ln P. A gap keeps the best of the kinds allowed at its node, each with its own cost and
-//     survival, and ends as each kind. A newborn's first mark keeps the best over the speeds and both labels of
-//     ln(1/speed_count) + ln S_label(s, tau) (3.466 nats for 32 speeds) and ends into every speed and label with a
-//     finite ln P, each paying ln(1/speed_count) and its own ln P. A story's factor is open until its first letter or
-//     word gap: the gap keeps, for those two kinds, the best over the factors of ln(1/factor_count) +
-//     ln S_kind(s, f, tau) (3.135 nats for 23 factors; the element gap does not depend on the factor and pays no factor
-//     prior), and ending as a letter or word gap it branches into the factors, each paying ln(1/factor_count) and its
-//     own ln P; ending as an element gap leaves the factor open.
+//     survival, and ends as each kind; a letter gap's median is 3 dots and a word gap's 7 (fist.hpp). A newborn's first
+//     mark keeps the best over the speeds and both labels of ln(1/speed_count) + ln S_label(s, tau) (3.466 nats for 32
+//     speeds) and ends into every speed and label with a finite ln P, each paying ln(1/speed_count) and its own ln P.
 //   - Text, by look-ahead, with every symbol equally likely (plan §2.6): a letter costs ln(the tree's symbols) =
 //     ln 62 = 4.127 nats when it starts. After a mark at a node, the gap is between elements if the node has children
 //     (cost 0); if it holds a symbol, between letters (ln(1/(1 - p)) = 0.396 nats) or between words
@@ -64,15 +61,15 @@
 //      starts its next element at the next piece.
 //   3. Births. From silence: while the no-signal story lives, a newborn starts a mark at the next piece, with the
 //      continuing no-signal story's score (the one that was silent at this piece) plus ln P plus ln(1/62), its text
-//      with a word space after it if it is not empty, its speed, factor and level open. Rescue: where at least one
-//      story starts a letter, one newborn starts that mark, from the best such letter-starting successor (whether or
-//      not that successor is created): its score less ln(1 - epsilon) plus ln epsilon (6.908 nats behind it, epsilon =
-//      rescue_epsilon = 1e-3), its text, its speed, factor and level open.
+//      with a word space after it if it is not empty, its speed and level open. Rescue: where at least one story starts
+//      a letter, one newborn starts that mark, from the best such letter-starting successor (whether or not that
+//      successor is created): its score less ln(1 - epsilon) plus ln epsilon (6.908 nats behind it, epsilon =
+//      rescue_epsilon = 1e-3), its text, its speed and level open.
 //   4. Merging: successors created at the same piece in the same state are merged, keeping the better score (of equal
 //      scores, the earlier created), its text and its level. The state is: activity; key up or down; pieces in the
-//      current element; speed or open; factor or open; tree node. Continuing stories never collide, since a story's
-//      element began at the piece its state was created, except in the no-signal state, which has no clock: there is at
-//      most one no-signal story, and the continuing one merges with the over's ends created at the piece.
+//      current element; speed or open; tree node. Continuing stories never collide, since a story's element began at
+//      the piece its state was created, except in the no-signal state, which has no clock: there is at most one
+//      no-signal story, and the continuing one merges with the over's ends created at the piece.
 //   5. Pruning: every story more than beam_nats behind the best is dropped; if more than `ceiling` remain, the
 //      `ceiling` best are kept, ties broken by the state, then by creation order (a counter), so that a run depends on
 //      no container's order and no address. Every successor with a finite score is offered; one already more than
@@ -109,19 +106,19 @@
 // +20 dB S500 under a level about 20% uncertain (relative standard deviation, predicted across 124 ms at f_D = 1 Hz): a
 // start one piece late trails by about 41 nats one piece after the edge and by about 59 nats six pieces after it
 // (with a block's own c(m) and no rise it had led by 48.8 and about 23 nats), and a start one piece early scores within
-// 0.4 nats of the aligned one. Measured on the tests' signals (search_test.cpp): the step from 20 to 30 WPM decodes at
-// every level from +11 to +28 dB S500 on three seeds at beams of 40 and 80 nats, and at +10 dB S500 on two of the
-// three; "PARIS PARIS" at 12, 25 and 40 WPM decodes exactly at every level from +10 to +28 dB S500 on three seeds.
+// 0.4 nats of the aligned one. Measured on the tests' signals (search_test.cpp), without the Farnsworth factor: the
+// step from 20 to 30 WPM decodes at every level from +10 to +28 dB S500 on three seeds at beams of 40 and 80 nats, and
+// "PARIS PARIS" at 12, 25 and 40 WPM decodes exactly at every level from +10 to +28 dB S500 on three seeds.
 // What remains:
 //   1. The edge's position within a piece is averaged, not known: at 48 kHz a mark's first piece holds 0.048 to 0.384
 //      of a full piece, depending on where the edge falls in it, and the template has their average, 0.193.
 //   2. The keying edge's shape is assumed: the generator's 5 ms raised cosine (keying_rise_s); real transmitters vary.
-//   3. At +10 dB S500 on seed 12 the step misreads one letter pair ("P<AR>IS", CER 0.057: FollowsASpeedStepAtEverySnr's
-//      recorded failure), because of the ceiling: in the word gap before the step the population is at the ceiling,
-//      every story within about 16 nats of the best, and each rescue newborn, born about 15.4 nats behind, is dropped
-//      at birth; the first to survive starts its mark two to three pieces late, which the matched filter charges, and
-//      the ceiling drops it in the next gap. With a ceiling of 2 500 stories every point of the step and the stations
-//      decodes (measured); the ceiling is the owner's question.
+//   3. The ceiling binds in the gaps of weak signals. With the Farnsworth factor, at +10 dB S500 on seed 12 the step
+//      misread one letter pair ("P<AR>IS", CER 0.057), because the ceiling dropped the rescue newborns born in the
+//      word gap before the step (a ceiling of 2 500 stories decoded every point; measured). Without the factor that
+//      point decodes exactly at both beams, though the ceiling still drops stories at 294 of the 500 pieces from 9.0
+//      to 10.0 s there (308 with the factor; measured): why it now decodes was not traced. The ceiling is the owner's
+//      question.
 //   4. The fall at a mark's end is not modeled, and a gap piece adds 0 whatever it holds, so the energy left in the
 //      fall's tail after the mark's last piece is explained by no story that keeps the mark: a piece holding the
 //      fraction f of a full piece's carrier sum carries (3 f a)^2 / (4 500 Hz x N0) = f^2 x 10^(S500 / 10) nats of it
@@ -136,7 +133,7 @@
 //      text was exact at +30, +33 and +36 dB S500; at +38 dB S500 2 positions failed (edges 18 and 24 input samples
 //      into a piece) and at +40 dB S500 3 (12, 18 and 24); with the edge at a piece's start the text was exact to
 //      +41 dB S500 on three seeds, wrong on one of them at +42 dB S500 and on all three from +43 dB S500 (measured).
-//      Near the onset the texts keep parts of the words ("PARIS ET EGA E RIS" at +38 dB S500, edge 18; "PARIS E
+//      Near the onset the texts keep parts of the words ("PARIS E EGA E RIS" at +38 dB S500, edge 18; "PARIS E
 //      EGARIS" at +42 dB S500, edge 0); from +44 dB S500 they break into short words, mostly of E and T ("T EE EE ET E
 //      T EE E ..." at +60 dB S500: 19 words for the 14 elements of each "PARIS"). A real station's edges fall at mixed
 //      positions, so from about +37 dB S500 some of its elements would be misread (conjectured). With a fading spread
@@ -146,28 +143,14 @@
 //      expected failure.
 //
 // Work saved without changing any output:
-//   - An open factor's survival. A letter or word gap whose factor is open survives as its widest factor's does, the
-//     one with the largest median (factor_count - 1 where factor_ratio >= 1, else 0): the factor stretches only the
-//     median, and a log-normal with a larger median and the same sigma and shift survives longer at every tau. Fist
-//     keeps that order in floating point (its z falls with the median through monotone roundings; its table of
-//     ln Phi_c decreases, the differences between its nodes are exact, so the interpolation never rises), and
-//     fist_test.cpp checks it on every speed and factor, so the maximum over the factors is one value of Fist, kept in
-//     the factor entries below within the cap and computed beyond it.
-//   - The other maxima over open speeds and factors (a newborn's first mark over the speeds and labels; an open
-//     factor's ln P over the factors, with its best factor and whether it is unimodal) are kept in tables for the
-//     first `cap` taus, as the search first needs them, and computed again the same way for any tau beyond. With
-//     2 x speed_count factor entries of 24 bytes (the survival, the best ln P, its factor and the unimodal flag) and a
-//     first-mark row of 2 x speed_count + 4 values of 8 bytes per tau (2 080 bytes per tau at 32 speeds),
-//     cap = floor(4 000 000 bytes / the bytes per tau) (1 923 pieces, 3.846 s, at 32 speeds), so that one Search's
-//     tables never hold more than 4 000 000 bytes of entries (3 999 840 at 32 speeds). The 4 000 000 bytes count the
-//     entries only: the 64 factor tables' vector headers and the two scratch rows add 2 232 bytes (64 x 24 + 64 x 8 +
-//     23 x 8, at 32 speeds and 23 factors).
-//   - Where a gap with an open factor ends between letters or words, its successors are evaluated outward from the
-//     factor with the largest ln P wherever ln P is unimodal in the factor (each entry is checked when it is
-//     computed; an entry that is not is evaluated whole): on each side ln P only falls, so the last value computed
-//     bounds the rest; a factor whose successor could not beat the score its slot already keeps would lose the merge,
-//     and is passed over without computing its ln P, and a side ends at the first factor the beam would drop, or once
-//     the bound itself is beyond the beam, since every factor further out would be dropped too.
+//   - The maxima over an open speed (a newborn's first mark: its survival, the best over the speeds and both labels;
+//     its ends, ln P per speed and label and their maxima) are kept in tables for the first `cap` taus, as the search
+//     first needs them, and computed again the same way for any tau beyond. With a first-mark row of
+//     2 x speed_count + 4 values of 8 bytes per tau (544 bytes per tau at 32 speeds),
+//     cap = floor(4 000 000 bytes / the bytes per tau) (7 352 pieces, 14.704 s, at 32 speeds), so that one Search's
+//     tables never hold more than 4 000 000 bytes of entries (3 999 488 at 32 speeds). The 4 000 000 bytes count the
+//     entries only: the three tables' vector headers and the scratch row add 584 bytes (3 x 24 + 64 x 8, at 32
+//     speeds).
 //   - An offer that loses its merge costs a compare.
 // The statistics (SearchStats) are kept only when config.stats is true and never change the decoding. They grow with
 // the channel's time: about 96 bytes per newborn line (its record and its track), up to two lines per piece, about
@@ -240,7 +223,6 @@ struct StoryView {
     bool key_down;     // in a mark (Morse only)
     int tau;           // pieces in the current element: 0 for one that starts at the next piece, and for no signal
     int speed;         // 0 ... speed_count - 1, or -1 while open (and for no signal)
-    int factor;        // 0 ... factor_count - 1, or -1 while open (and for no signal)
     int node;          // a mark: the node it started from; a gap: the node of the mark before it; -1 for no signal
     double score_nats;  // relative to the best: 0 for the best, at most beam_nats behind
     std::int64_t line;  // its newborn line
@@ -253,20 +235,12 @@ namespace detail {
 struct SearchOptions {
     // Do not create a successor already more than beam_nats behind a score known at its piece (plan §2.7, item 5).
     bool skip_successors_beyond_beam = true;
-    // Evaluate an open factor's letter and word successors by the scan outward from its best factor, with the merge
-    // bound and the beam's exits (true); or, for every gap, every factor in order, with no table for ln P, no bound and
-    // no exit (false; an open factor's survival still comes from the tables within the cap).
-    bool scan_open_factors = true;
-    // The taus whose open-timing maxima are kept in tables, pieces: 0 for the cap the 4 000 000-byte budget sets
+    // The taus whose open speed's maxima are kept in tables, pieces: 0 for the cap the 4 000 000-byte budget sets
     // (search.hpp, "Work saved"); a smaller cap computes more of them on demand.
     int open_timing_cap_pieces = 0;
-    // If set, counts the open factors' scans that stopped short of an end of the factor grid (a letter or word gap with
-    // an open factor whose outward scan from its best factor ended at a factor not created), so that a test can show
-    // that the scan cut something.
-    std::int64_t* cut_factor_scans = nullptr;
-    // If set, counts the factors a scan passed over without computing their ln P, since their bound could not beat the
-    // successor their slot already kept.
-    std::int64_t* passed_factors = nullptr;
+    // If set, counts the skips: each time a successor, or a newborn's first mark's whole set of gap successors, was not
+    // created because the beam would drop it, so that a test can show that the skip cut something.
+    std::int64_t* skipped_successors = nullptr;
 };
 
 // A candidate story at a piece, as merging and pruning see it.
@@ -306,7 +280,7 @@ public:
     // and channel filter, whose samples_per_piece is the piece's and whose rise weights a mark's first block. Throws
     // std::invalid_argument for no prior, a c too short or not positive and finite from m = 1, a long-run rate that
     // differs from the prior's (by more than 1e-9 of it), and a configuration the search cannot use: a beam that is not
-    // positive, a ceiling below 1, more than 255 speeds or factors, a P (over_rate_per_s x piece_s), epsilon, p or q
+    // positive, a ceiling below 1, more than 255 speeds, a P (over_rate_per_s x piece_s), epsilon, p or q
     // outside (0, 1), a quadrature order outside 2 ... 20, or a block shorter than one piece; and what Fist and
     // block_length_s refuse.
     Search(const ViterbiConfig& config, std::span<const double> c, std::shared_ptr<const FlatPrior> prior,

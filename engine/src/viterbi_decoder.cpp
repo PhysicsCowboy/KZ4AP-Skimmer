@@ -144,7 +144,7 @@ ViterbiDecoder::ViterbiDecoder(double rate_hz, const viterbi::ViterbiConfig& con
     // Builds now the tables that would otherwise be built on first use: the evidence's (the broad-prior regime's,
     // 31 ms, and the truncated nodes') and the fist's ln Phi_c (1.8 ms), each built once for every caller.
     viterbi::build_evidence_tables(config.quadrature_order);
-    (void)viterbi::Fist(config).log_survival(viterbi::Kind::Dot, 0, 0, 1);
+    (void)viterbi::Fist(config).log_survival(viterbi::Kind::Dot, 0, 1);
 }
 
 DecodeUpdate ViterbiDecoder::process(std::span<const Sample> samples, double t0_s) {
