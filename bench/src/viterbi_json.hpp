@@ -49,7 +49,8 @@
 //
 //   "format"       "kz4ap-viterbi-search-stats"
 //   "version"      1. A reader refuses another version. A version changes when a key's meaning changes or a key is
-//                  removed; keys may be added within a version, and a reader ignores the keys it does not know
+//                  removed; keys may be added to the file's or a channel's object within a version, and a reader
+//                  ignores the ones it does not know (this C++ reader reads "config" as a ViterbiConfig it knows)
 //   "recording"    the recording's file name
 //   "config"       the ViterbiConfig the run used: every field by its C++ name, in its unit (as the result file's)
 //   "fields"       what each key of a channel is: "SearchStats" lists its members and "NewbornLine" its, each by its

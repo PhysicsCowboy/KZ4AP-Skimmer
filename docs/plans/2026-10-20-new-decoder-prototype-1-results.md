@@ -93,7 +93,7 @@ result file (section 1.2).
 | `tracker_window_s` | 1.0 | s | placeholder: the carrier tracker's window |
 | `tracker_hop_s` | 0.5 | s | placeholder: the time between its measurements |
 | `tracker_search_hz` | 15.0 | Hz | placeholder: the half-width of its search |
-| `tracker_gate_db` | 9.0 | dB relative to the mean noise power per bin | derived (owner's decision B of 2026-10-20): a window is measured only if its peak stands this far above the noise |
+| `tracker_gate_db` | 9.0 | dB relative to the mean noise power per bin | derived (the owner's decision B of 2026-10-20 on the tracker's design): a window is measured only if its peak stands this far above the noise |
 | `tracker_drift_sd_hz_per_s` | 0.3 | Hz/s | sourced: older rigs' specified warm-up drift |
 | `tracker_drift_noise` | 1.5 × 10⁻⁴ | Hz²/s³ | derived from the sourced drift over a heuristic ten minutes |
 | `genie_frequency_offset_hz` | none | Hz from the channel's center, at stream time 0 s | genie runs only |
@@ -264,9 +264,9 @@ S₅₀₀, edge 18), "PARIS E EGARIS" (+42 dB S₅₀₀, seed 34, edge at the 
 seed 41). From +44 dB S₅₀₀ they break into short words, mostly of E and T. At +60 dB S₅₀₀ the text is
 "T EE EE ET E T EE E T EE ET E T ET E T ET ET E" for each "PARIS": 19 words and 28 letters for its 14 elements (38
 words and 56 letters for the two; counted from the table). The committed test `ViterbiDecoder.ExtremeLevels` prints
-the same text at the default settings (a strict expected failure: it fails the day the text is exact). A 5 Hz fading spread, which makes the level's
-prior 4.4 times broader across a dot's gap, fails alike from +45 to +60 dB S₅₀₀, so the level's prior is not the lever
-(the first explanation tried, refuted).
+the same text at the default settings (a strict expected failure: it fails the day the text is exact). A 5 Hz fading
+spread, which makes the level's prior 4.4 times broader across a dot's gap, fails alike from +45 to +60 dB S₅₀₀, so the
+level's prior is not the lever (the first explanation tried, refuted).
 
 *What is not shown (conjectured).* A real station's edges fall at mixed positions within their pieces, so from about
 +37 dB S₅₀₀ some of its elements would be misread (conjectured: no run mixed the positions). DEV2 does not reach this
@@ -279,8 +279,8 @@ dB S₅₀₀, noise seeds 39, 40 and 41, decodes as the symbol "-" (the code �
 Farnsworth factors, and as "TEST" in 12 of 12 runs with a single factor (`factor_count` = 1), at every level and seed.
 The level did not matter in this range.
 
-*Why (derived).* The mark sequence of "TEST" (dash, dot, three dots, dash: six marks) is that of the symbol "-", if the
-three gaps between its letters are read as gaps between elements, at a slower speed. At exact timing the four-letter
+*Why (derived).* The mark sequence of "TEST" (a dash, four dots and a dash: six marks) is that of the symbol "-", if
+the three gaps between its letters are read as gaps between elements, at a slower speed. At exact timing the four-letter
 reading pays 16.70 nats more in priors than the one-symbol reading: three more letters (3 × 4.127), letter gaps instead
 of element gaps (3 × 0.396) and the factor's prior (3.135 nats, paid at a story's first letter or word gap, never paid
 by the one-symbol reading). The one-symbol reading pays the misfit of its timing at a speed k times slower,
