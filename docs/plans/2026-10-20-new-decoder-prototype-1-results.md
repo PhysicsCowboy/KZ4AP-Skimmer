@@ -139,16 +139,42 @@ and a letter 1/62 (4.127 nats) at its start, both owner (flat, no text model).
     compare the tracker with the true frequency there: that run needs a piecewise genie, a frequency for each over,
     and is decided when the run comes.
 - `--stats FILE` (with `--oracle`) turns the search's statistics on (`stats` in the configuration, recorded as true)
-  and writes them when the run ends, for each oracle channel in the order of the labels: the pieces searched, the
-  live stories (a histogram and per 0.1 s), how often the ceiling decided, and what became of each newborn line, as
-  JSON; the file's format, version 1, with its units and codes, is documented in `bench/src/viterbi_json.hpp` and
-  tested by a round trip. The suite runner's `--stats` hands it `results/NAME/<test case>.stats.json` for every test
-  case it runs, so a run with `--stats` leaves out the recordings that are not oracle ones (`--only`). Writing the
-  file comes after the timed window and does not count in the run's CPU time; the search's own bookkeeping is inside
-  the window (R0 measures what it costs). The search keeps up to two newborn lines per piece, 1 000 per second of
-  channel time, and the file holds them all, about 45 bytes each: up to about 45 kB per channel-second, so about
-  400 MB for an N2 recording of 25 channels x 360 s (derived from the format; a scratch run of two stations over 16 s
-  gave 1.45 MB, 45 kB per channel-second, and two runs wrote identical files).
+  and writes them when the run ends, after the result file, for each oracle channel in the order of the labels, as
+  JSON. The format ("kz4ap-viterbi-search-stats", with its units and codes) is documented in
+  `bench/src/viterbi_json.hpp`, in two versions (Task 8b changed what `--stats` writes: Task 7b's file is now version 1):
+  - **Version 2, the default: a summary for each channel.** The pieces searched; the live stories (a histogram of the
+    pieces by live count, their mean over the pieces and their maximum); how often the ceiling decided; the counts of
+    the newborn lines by kind (start, silence, rescue), end (alive, merge, beam, ceiling), whether they ended within
+    their first element and whether they led; and the whole record of each line that ever led. That is what the
+    reductions of R0 to R4 use (`training/kz4ap_proto/search_stats.py` defines them over the full file, and the bench's
+    summary is their output). The lines that led are kept because R1 needs each newborn's deficit before it led (its
+    maximum and upper quantiles, which no counter gives); they are few (1 or 2 for a channel of the small test file,
+    2.6 and 5.0 on average, at most 18, for the channels of two real A2 recordings, the first story among them); and a
+    line that never led never had the best story at any piece. The 0.1 s series of the live count is not kept. Size
+    (measured, DEV2's group A2, seed 1, made by `suites generate --suite dev2 --per-cell A2=1 --groups A2`; recording
+    A2-awgn-c10-0-s1, 14 channels, 307.9 channel-seconds, the defaults): 19 835 bytes, a header of 3.7 kB and, for a
+    channel, 1.4 kB on average (at most 2.1 kB), where version 1 took 14.0 MB for the same run: 707 times less. A
+    version 2 file is the header and about 1.4 kB for each channel whatever the channel's length, so one run over all of
+    DEV2 (14 204 channels in 498 oracle recordings) takes about 22 MB at the default ceiling (derived: 14 204 x 1.43 kB
+    and 498 x 3.7 kB), against 48 GB; a higher ceiling lengthens the live-count histogram, one bin for every 10
+    stories (ceiling 17 000: up to 1 701 bins, a few kilobytes more for a channel).
+  - **Version 1, with `--stats-detail`: every newborn line**, as columns, the full file of Task 7b. The search creates
+    a silence line and a rescue line at every piece, so it holds two lines per piece whatever the signal, about 45
+    bytes each: 45.5 kB per channel-second (measured: the recording above, 14.0 MB; a scratch run of two stations over
+    16 s gave 1.45 MB, 45.4 kB per channel-second), so about 400 MB for an N2 recording of 25 channels x 360 s. For a
+    small run (R0, diagnosis).
+
+  The reductions give the same numbers from either version: on the recording above, all 14 channels' summaries equal
+  the Python reductions of the full file of the same run (every member, the mean of the live stories to the last
+  digit), and the repository's tests do the same on a small real file of each version. Two runs wrote identical files
+  in both versions. The statistics file comes after the result file, which is written under a name of its own and
+  renamed when complete, so a statistics file that cannot be finished loses nothing of the run; both files'
+  destinations are tried before the run. The suite runner's `--stats` hands the bench `results/NAME/<test case>.stats.json`
+  for every test case it runs (`--stats-detail`: the full form), so a run with `--stats` or `--genie` takes only the
+  oracle recordings (`--only`; the runner refuses a selection with others before it starts). Writing the file comes
+  after the timed window and does not count in the run's CPU time; the search's own bookkeeping is inside the
+  window (R0 measures what it costs), and so is the engine's memory for the lines (96 bytes each, 0.9 GB for an N2
+  recording), which the summary does not reduce (the bench reduces channel by channel as it writes, with no copy).
 - `--set`, `--genie` and `--stats` belong to `--decoder viterbi`; `--genie` and `--stats` without `--oracle` are
   errors.
 - The result file (`--json`) of a viterbi run gains `config` (every field of `ViterbiConfig` as the run used it, so
@@ -156,8 +182,18 @@ and a letter 1/62 (4.127 nats) at its start, both owner (flat, no text model).
   kinds and each channel's values). Its other members are those of the other decoders' result files. The decoder
   prints its best story's text when the recording ends, as the text of each track, with no corrections.
 - The suite runner calls the bench once per test case, ten at a time on the Linux machine: `python -m
-  kz4ap_synth.suites run --out DIR --bench PATH --decoder viterbi --jobs 10 --name NAME [--set NAME=VALUE ...] [--only
-  REGEX]`. The results go to `DIR/results/NAME/`, and a run gets a new name every time.
+  kz4ap_synth.suites run --out DIR --bench PATH --decoder viterbi --jobs 10 --name NAME [--set NAME=VALUE ...] [--genie
+  KIND ...] [--stats [--stats-detail]] [--only REGEX] [--overwrite | --skip-existing]`. The results go to
+  `DIR/results/NAME/`, and a run gets a new name every time: a folder that already holds result files is refused
+  unless `--overwrite` (replace the test cases this run does) or `--skip-existing` (resume the run: skip the test cases
+  that are done, if they were made with the same decoder, settings, genie and statistics form) is given. The bench
+  writes each file under a name of its own and renames it when it is complete, so a file that is there is whole, and
+  the runner removes a test case's stale statistics file and partial files before it launches the bench.
+  `kz4ap_proto.experiments` reduces a run: `search-errors` (the oracle test cases, `experiments.DEV2`, by default, which
+  is what the plan's runs pass as `--only` to the runner too; the per-signal counts also as a rounded CSV),
+  `search-stats` (the statistics per group), `false-characters` (the characters decoded on N2 per channel-hour) and
+  `devset2 --leave-out-group "I2 Farnsworth"` (the new decoder has no Farnsworth spacing, D14, so all of I2 is reported
+  apart from the comparison with the bank).
 
 ### 1.3 The machines
 
