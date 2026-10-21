@@ -605,7 +605,7 @@ def test_score_tables_carry_the_first_word_and_correction_columns_and_read_older
     rows = [_fw_row("ref", "A2-awgn-c01-0-s1", i, i % 3, 20, corrections=None if i % 4 == 0 else i) for i in range(8)]
     path = d2.write_scores(rows, tmp_path / "t.csv")
     lines = path.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == ",".join(d2.SCORE_COLUMNS + d2.OPTIONAL_SCORE_COLUMNS)
+    assert lines[0] == ",".join(d2.SCORE_COLUMNS + ("first_word_edits", "first_word_symbols", "corrections"))
     back = d2.read_scores(path)
     assert back == [d2.round_row(r) for r in rows]
     assert back[0]["corrections"] is None and back[1]["corrections"] == 1 and back[2]["first_word_edits"] == 2
@@ -663,3 +663,172 @@ def test_load_rows_takes_the_first_words_and_counts_the_banks_corrections(tmp_pa
     assert by[("var", "A2-awgn-c01-0-s1", 0)]["corrections"] is None  # no decoded file
     assert by[("ref", "A2-detector-c01-0-s1", 0)]["corrections"] is None  # the detector path
     assert all(r["first_word_edits"] == 0 and r["first_word_symbols"] == 0 for r in rows)  # the fixture's counts
+
+
+# --- task 8 of the new decoder's plan: the Farnsworth columns and the I2 cut
+# (docs/plans/2026-10-20-new-decoder-prototype-1.md, O7) ---
+
+FARNSWORTH_COLUMNS = ("farnsworth_wpm", "farnsworth_factor")
+
+
+def test_a_labels_overall_speed_and_farnsworth_factor_come_from_the_generators_gap_timebase():
+    from kz4ap_synth.suites import FARNSWORTH_ROWS
+    # the generator's rows (suites.farnsworth): T_g / T = 7.84, 3.11, 3.43, 2.02
+    for (c, s), want in zip(FARNSWORTH_ROWS, (7.84, 3.11, 3.43, 2.02)):
+        overall, factor = d2.farnsworth_of({"wpm": c, "farnsworth_wpm": s})
+        assert overall == s and factor == pytest.approx(want, abs=0.005)
+        # the gap timebase T_g = (60 / s - 37.2 / c) / 19 s over the dit T = 1.2 s / c (ARRL; keying.farnsworth_gap_s)
+        assert factor == pytest.approx((60 / s - 37.2 / c) / 19 / (1.2 / c), rel=1e-12)
+    # standard spacing (no farnsworth_wpm in the label): the overall speed is the speed, the factor 1
+    assert d2.farnsworth_of({"wpm": 25.3}) == (25.3, 1.0)
+    assert d2.farnsworth_of({"wpm": 18.0, "farnsworth_wpm": 18.0})[1] == pytest.approx(1.0, abs=1e-12)
+
+
+def test_load_rows_takes_the_overall_speed_and_the_farnsworth_factor_from_the_labels(tmp_path):
+    out = tmp_path / "suite"
+    out.mkdir()
+    name = "I2-farnsworth-o1-0-s1"
+    (out / "manifest.json").write_text(json.dumps({"suite": "dev2", "recordings": [
+        {"name": name, "group": "I2 Farnsworth", "oracle": True, "wav": f"{name}.wav", "labels": f"{name}.json",
+         "station_labels": None}]}))
+    speeds = [(18.0, 5.0), (25.0, 13.0), (25.0, None)]  # (character speed, overall speed) WPM; None: standard spacing
+    (out / f"{name}.json").write_text(json.dumps({"signals": [
+        {"text": "X", "freq_offset_hz": 1000.0 * i, "wpm": c, "snr_db": 5.0, "start_s": 1.0, "end_s": 30.0, "tag": "t",
+         **({"farnsworth_wpm": s} if s else {})} for i, (c, s) in enumerate(speeds)]}))
+    folder = out / "results" / "ref"
+    folder.mkdir(parents=True)
+    scored = [{"index": i, "snr_db": 5.0, "scored": True, "track_id": 1, "tracked_freq_hz": None,
+               **{k: 0 for k in d2_count_keys()}, "symbols": 100, "edits": 10} for i in range(3)]
+    (folder / f"{name}.json").write_text(
+        json.dumps({"score": {"signals": scored}, "timing": {}, "channel_seconds": 0.0}))
+    rows = d2.load_rows(out, ["ref"])
+    assert [(r["speed_wpm"], r["farnsworth_wpm"]) for r in rows] == [(18.0, 5.0), (25.0, 13.0), (25.0, 25.0)]
+    assert [round(r["farnsworth_factor"], 2) for r in rows] == [7.84, 3.43, 1.0]
+    # the score table holds them rounded to 0.01, and reads them back
+    back = d2.read_scores(d2.write_scores(rows, out / "t.csv"))
+    assert [(r["farnsworth_wpm"], r["farnsworth_factor"]) for r in back] == [(5.0, 7.84), (13.0, 3.43), (25.0, 1.0)]
+
+
+def test_score_tables_carry_the_farnsworth_columns(tmp_path):
+    rows = [{**_fw_row("ref", "I2-farnsworth-o1-0-s1", i, i % 3, 20, corrections=i or None, group="I2 Farnsworth"),
+             "speed_wpm": 18.0 + 0.123456 * i, "farnsworth_wpm": 5.0 + 0.0049 * i,
+             "farnsworth_factor": 7.84215 - 0.1 * i} for i in range(6)]
+    path = d2.write_scores(rows, tmp_path / "t.csv")
+    lines = path.read_text(encoding="utf-8").splitlines()
+    # after the columns of the first words and corrections, so a table's other columns keep their places
+    assert lines[0] == ",".join(d2.SCORE_COLUMNS + ("first_word_edits", "first_word_symbols", "corrections")
+                                + FARNSWORTH_COLUMNS)
+    assert [line.split(",")[-2:] for line in lines[1:4]] == [["5.00", "7.84"], ["5.00", "7.74"], ["5.01", "7.64"]]
+    back = d2.read_scores(path)
+    assert back == [d2.round_row(r) for r in rows]
+    assert back[2]["farnsworth_wpm"] == 5.01 and back[2]["farnsworth_factor"] == 7.64  # rounded to 0.01
+    # a blank field reads as None, as the corrections' do
+    blank = [{**rows[0], "farnsworth_wpm": None, "farnsworth_factor": None}]
+    (r,) = d2.read_scores(d2.write_scores(blank, tmp_path / "blank.csv"))
+    assert r["farnsworth_wpm"] is None and r["farnsworth_factor"] is None
+    # the Farnsworth columns alone (rows without the first words), after the 14 columns
+    bare = [{k: v for k, v in r_.items() if k in d2.SCORE_COLUMNS or k in FARNSWORTH_COLUMNS} for r_ in rows]
+    alone = d2.write_scores(bare, tmp_path / "alone.csv")
+    assert alone.read_text(encoding="utf-8").splitlines()[0] == ",".join(d2.SCORE_COLUMNS + FARNSWORTH_COLUMNS)
+    assert d2.read_scores(alone) == [d2.round_row(r_) for r_ in bare]
+    # older tables still read, as rows without the columns: with the first words and corrections (task D5), and the
+    # 14 columns of task "scores"
+    older = d2.write_scores([{k: v for k, v in r_.items() if k not in FARNSWORTH_COLUMNS} for r_ in rows],
+                            tmp_path / "older.csv")
+    assert older.read_text(encoding="utf-8").splitlines()[0] == ",".join(
+        d2.SCORE_COLUMNS + ("first_word_edits", "first_word_symbols", "corrections"))
+    for r_ in d2.read_scores(older):
+        assert "first_word_edits" in r_ and not set(FARNSWORTH_COLUMNS) & set(r_)
+    oldest = d2.write_scores([_row("ref", "A2-awgn-c01-0-s1", 0, 3)], tmp_path / "oldest.csv")
+    (r,) = d2.read_scores(oldest)
+    assert not set(FARNSWORTH_COLUMNS) & set(r)
+    # the two new columns out of order are refused
+    swapped = lines[0].replace("farnsworth_wpm,farnsworth_factor", "farnsworth_factor,farnsworth_wpm")
+    (tmp_path / "bad.csv").write_text("\n".join([swapped] + lines[1:]) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="columns"):
+        d2.read_scores(tmp_path / "bad.csv")
+
+
+def _i2_rows(decoder, edits_of, factors):
+    """One I2 test case's signals for `decoder`, one per Farnsworth factor, and the same for every decoder."""
+    return [{**_row(decoder, "I2-farnsworth-o1-0-s1", i, edits_of(i), group="I2 Farnsworth", cell=5),
+             "farnsworth_wpm": 5.0, "farnsworth_factor": f} for i, f in enumerate(factors)]
+
+
+I2_FACTORS = (1.0, 2.02, 3.43, 7.84, 8.0, 8.01, 11.5, 15.74)
+
+
+def _cut_rows():
+    a2 = [{**_row(d, "A2-awgn-c05-0-s1", 0, e, cell=5), "farnsworth_wpm": 22.6, "farnsworth_factor": 1.0}
+          for d, e in (("bank", 4), ("viterbi", 6))]
+    return (_i2_rows("bank", lambda i: 10 + i, I2_FACTORS) + _i2_rows("viterbi", lambda i: 30 - i, I2_FACTORS) + a2)
+
+
+def test_the_i2_cut_leaves_out_the_same_signals_on_both_sides():
+    rows = _cut_rows()
+    kept, left = d2.farnsworth_cut(rows, 8.0)
+    def ids(part, decoder):
+        return sorted((r["test_case"], r["index"]) for r in part if r["decoder"] == decoder)
+
+    i2 = "I2-farnsworth-o1-0-s1"
+    assert ids(kept, "bank") == ids(kept, "viterbi") == [("A2-awgn-c05-0-s1", 0)] + [(i2, i) for i in range(5)]
+    assert ids(left, "bank") == ids(left, "viterbi") == [(i2, i) for i in (5, 6, 7)]  # 8.01, 11.50, 15.74
+    assert len(kept) + len(left) == len(rows)
+    assert sorted(r["farnsworth_factor"] for r in left) == sorted([8.01, 11.5, 15.74] * 2)
+    # "above 8": 8.00 stays; the factor is taken as the score tables hold it, rounded to 0.01
+    near = [{**rows[0], "index": 20 + k, "farnsworth_factor": f} for k, f in enumerate((8.004, 8.006))]
+    stays, goes = d2.farnsworth_cut(near, 8.0)
+    assert [r["farnsworth_factor"] for r in stays] == [8.004] and [r["farnsworth_factor"] for r in goes] == [8.006]
+    # a signal with two different factors in two runs (tables from different labels) is refused, not cut on one side
+    clash = [{**r, "farnsworth_factor": 9.0} if r["decoder"] == "viterbi" and r["index"] == 3 else r for r in rows]
+    with pytest.raises(ValueError, match="differ"):
+        d2.farnsworth_cut(clash, 8.0)
+    # so is a row from a table written before the columns
+    with pytest.raises(ValueError, match="re-export"):
+        d2.farnsworth_cut([_row("bank", "x", 0, 1)], 8.0)
+
+    # the analysis compares only the kept signals, each decoder alike; every row stays in its signals (the tables)
+    a = d2.analyze(rows, ["bank", "viterbi"], "bank", resamples=20, max_farnsworth=8.0)
+    full = d2.analyze(rows, ["bank", "viterbi"], "bank", resamples=20)
+    (comp,), (comp_full,) = a["paired"], full["paired"]
+    assert (comp["groups"]["I2 Farnsworth"]["signals"], comp["all"]["signals"]) == (5, 6)
+    assert (comp_full["groups"]["I2 Farnsworth"]["signals"], comp_full["all"]["signals"]) == (8, 9)
+    assert len(a["signals"]) == len(full["signals"]) == len(rows)
+    assert a["meta"]["max_farnsworth"] == 8.0 and full["meta"]["max_farnsworth"] is None and "left_out" not in full
+    # ... and lists the left-out signals separately, with each decoder's result on them
+    out = a["left_out"]
+    assert out["max_farnsworth"] == 8.0 and out["signals"] == 3 and out["groups"] == ["I2 Farnsworth"]
+    assert out["decoders"]["bank"] == {"signals": 3, "symbols": 300, "edits": 15 + 16 + 17, "cer": 48 / 300}
+    assert out["decoders"]["viterbi"] == {"signals": 3, "symbols": 300, "edits": 25 + 24 + 23, "cer": 72 / 300}
+    assert [(x["test_case"], x["index"], x["farnsworth_factor"]) for x in out["list"]] == [
+        (i2, 5, 8.01), (i2, 6, 11.5), (i2, 7, 15.74)]
+    assert out["list"][0]["cer"] == {"bank": 0.15, "viterbi": 0.25} and out["list"][0]["farnsworth_wpm"] == 5.0
+    md = d2.report_markdown(a)
+    assert "Left out: Farnsworth factor above 8" in md and f"| {i2} | 5 |" in md and "CER bank" in md
+    assert "Left out" not in d2.report_markdown(full)
+
+
+def test_the_devset2_command_applies_the_cut_to_score_tables(tmp_path):
+    rows = _cut_rows()
+    tables = [d2.write_scores([r for r in rows if r["decoder"] == d], tmp_path / f"{d}.csv")
+              for d in ("bank", "viterbi")]
+    def command(name, *extra):
+        return (["devset2", "--out", str(tmp_path / "a"), "--name", name, "--decoder", "bank", "--decoder", "viterbi",
+                 "--reference", "bank", "--resamples", "20", *extra]
+                + sum((["--scores", str(t)] for t in tables), []))
+
+    experiments.main(command("cut", "--max-farnsworth", "8"))
+    a = json.loads((tmp_path / "a" / "experiments" / "devset2-cut.json").read_text())
+    assert a["meta"]["max_farnsworth"] == 8.0 and a["left_out"]["signals"] == 3
+    assert a["paired"][0]["groups"]["I2 Farnsworth"]["signals"] == 5
+    assert len(a["signals"]) == len(rows)  # the score tables export every signal, cut or not
+    # without the option nothing is left out
+    experiments.main(command("uncut"))
+    b = json.loads((tmp_path / "a" / "experiments" / "devset2-uncut.json").read_text())
+    assert b["meta"]["max_farnsworth"] is None and "left_out" not in b
+    # a table written before the columns cannot be cut: refused, not silently uncut
+    old = d2.write_scores([{k: v for k, v in r.items() if k not in FARNSWORTH_COLUMNS}
+                           for r in rows if r["decoder"] == "bank"], tmp_path / "old.csv")
+    with pytest.raises(ValueError, match="re-export"):
+        experiments.main(["devset2", "--out", str(tmp_path / "b"), "--name", "old", "--decoder", "bank",
+                          "--resamples", "20", "--max-farnsworth", "8", "--scores", str(old)])

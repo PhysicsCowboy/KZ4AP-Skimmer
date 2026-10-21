@@ -1,10 +1,12 @@
 import json
 import subprocess
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 import pytest
 
+import stand_in_bench
 from kz4ap_synth.generate import Sender, SignalSpec, qso_spec, scenario_band
 from kz4ap_synth.messages import Over
 from kz4ap_synth import suites
@@ -17,6 +19,7 @@ from kz4ap_synth.suites import (
     check_recording,
     crossing_snr,
     format_markdown,
+    load_results,
     over_rows,
     paired_differences,
     qso_regime,
@@ -371,16 +374,27 @@ def test_run_scores_the_bank_decoder_into_results_bank(tmp_path, monkeypatch):
 
 def test_the_run_command_takes_decoder_and_its_old_name(tmp_path, monkeypatch):
     seen = []
-    monkeypatch.setattr(suites, "run_suite", lambda out, bench, fes, only=None: seen.append(fes))
+    monkeypatch.setattr(suites, "run_suite", lambda out, bench, fes, only=None, **options: seen.append((fes, options)))
     suites.main(["run", "--out", str(tmp_path), "--bench", "b", "--decoder", "bank", "--front-end", "matched"])
-    assert seen == [["bank", "matched"]]
+    # without the options of a named run: one job at a time, the decoders' own results folders, no settings
+    assert seen == [(["bank", "matched"], {"jobs": 1, "name": None, "settings": [], "stats": False})]
     with pytest.raises(SystemExit):
         suites.main(["run", "--out", str(tmp_path), "--bench", "b", "--decoder", "neural"])
+
+
+def test_the_run_command_takes_jobs_a_name_settings_and_statistics(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(suites, "run_suite", lambda out, bench, fes, only=None, **options: seen.append((fes, options)))
+    suites.main(["run", "--out", str(tmp_path), "--bench", "b", "--decoder", "viterbi", "--jobs", "10", "--name",
+                 "r2-b35", "--set", "beam_nats=35", "--set", "ceiling=600", "--stats"])
+    assert seen == [(["viterbi"], {"jobs": 10, "name": "r2-b35", "settings": ["beam_nats=35", "ceiling=600"],
+                                   "stats": True})]
 
 
 def test_the_bank_decoder_has_the_matched_paths_regimes():
     for df in (10.0, 50.0, 80.0, 93.8, 93.9, 150.0):
         assert qso_regime(df, "bank") == qso_regime(df, "matched")
+        assert qso_regime(df, "viterbi") == qso_regime(df, "matched")  # the new decoder runs behind the same detector
 
 
 def _drift_recording(tmp_path, oracle):
@@ -708,3 +722,101 @@ def test_the_stretch_group_is_group_as_25_wpm_recordings_stretched_25_over_12():
 def test_the_stretch_source_names_the_group_a_original():
     assert suites.stretch_source("S-stretch-25wpm-1-s2") == "A-awgn-25wpm-1-s2"
     assert suites.stretch_source("A-awgn-25wpm-1-s2") is None
+
+
+# --- named, parallel runs with settings (docs/plans/2026-10-20-new-decoder-prototype-1.md, Task 8) ---
+
+def _noise_cases(tmp_path, count=6, signals=2):
+    """A manifest of `count` oracle test cases of an N2-like suite, each with `signals` labels (no audio: the stand-in
+    bench reads only the labels); returns the test cases' names."""
+    names = [f"N2-noise-{k}-s1" for k in range(count)]
+    recordings = [{"name": n, "group": "N2 noise only", "oracle": True, "wav": f"{n}.wav", "labels": f"{n}.json",
+                   "station_labels": None} for n in names]
+    (tmp_path / "manifest.json").write_text(json.dumps({"suite": "n2", "recordings": recordings}))
+    for n in names:
+        (tmp_path / f"{n}.json").write_text(json.dumps({"sample_rate": 48000, "duration_s": 360.0, "signals": [
+            {"text": "CQ", "freq_offset_hz": 1000.0 * i, "wpm": 25.0, "snr_db": -60.0, "start_s": 1.0, "end_s": 5.0}
+            for i in range(signals)]}))
+    return names
+
+
+def _peak_overlap(folder) -> int:
+    """The most stand-in bench runs alive at once, from the start and end times each left in `folder`."""
+    events = [json.loads(p.read_text()) for p in Path(folder).glob("events-*.json")]
+    edges = sorted([(e["start"], 1) for e in events] + [(e["end"], -1) for e in events])  # an end before a start
+    alive = peak = 0
+    for _, step in edges:
+        alive += step
+        peak = max(peak, alive)
+    return peak
+
+
+def test_run_suite_runs_in_parallel_with_a_name_and_settings(tmp_path, monkeypatch):
+    names = _noise_cases(tmp_path, 6)
+    bench = stand_in_bench.launcher(tmp_path)
+    log = tmp_path / "bench-log"
+    monkeypatch.setenv("STAND_IN_BENCH_DIR", str(log))
+    monkeypatch.setenv("STAND_IN_BENCH_WAIT_FOR", "3")  # a run ends only once 3 have started: they must run at once
+    run_suite(tmp_path, bench, ["viterbi"], jobs=3, name="r2-b35", settings=["beam_nats=35", "ceiling=600"],
+              stats=True)
+    folder = tmp_path / "results" / "r2-b35"
+    assert not (tmp_path / "results" / "viterbi").exists()  # the name replaces the decoder's own folder
+    assert sorted(p.name for p in folder.iterdir()) == sorted(
+        [f"{n}.json" for n in names] + [f"{n}.stats.json" for n in names])
+    # the bench was asked for the decoder, oracle channels, each setting in order, and its statistics beside the result
+    for n in names:
+        out = json.loads((folder / f"{n}.json").read_text())
+        assert out["recording"] == f"{n}.wav" and out["decoder"] == "viterbi" and out["oracle"] is True
+        assert out["settings"] == ["beam_nats=35", "ceiling=600"]
+        assert out["stats"] == str(folder / f"{n}.stats.json")
+    # three at once and never more, all six done
+    assert _peak_overlap(log) == 3 and len(list(log.glob("done-*"))) == 6
+    # the run reads back under its name like any decoder's results
+    rows, _ = load_results(tmp_path, front_ends=["r2-b35"])
+    assert {r["front_end"] for r in rows} == {"r2-b35"} and len(rows) == 6 * 2
+
+
+def test_run_suite_without_the_new_options_runs_one_at_a_time_into_the_decoders_folder(tmp_path, monkeypatch):
+    names = _noise_cases(tmp_path, 4)
+    log = tmp_path / "bench-log"
+    monkeypatch.setenv("STAND_IN_BENCH_DIR", str(log))
+    run_suite(tmp_path, stand_in_bench.launcher(tmp_path), ["bank"])
+    assert sorted(p.name for p in (tmp_path / "results" / "bank").iterdir()) == sorted(f"{n}.json" for n in names)
+    out = json.loads((tmp_path / "results" / "bank" / f"{names[0]}.json").read_text())
+    assert out["settings"] == [] and out["stats"] is None and out["decoder"] == "bank"
+    assert _peak_overlap(log) == 1
+
+
+def test_run_suite_stops_with_the_failing_test_case_named(tmp_path, monkeypatch):
+    _noise_cases(tmp_path, 6)
+    bench = stand_in_bench.launcher(tmp_path)
+    monkeypatch.setenv("STAND_IN_BENCH_FAIL", "N2-noise-3")
+    for jobs in (1, 3):
+        with pytest.raises(RuntimeError, match=r"N2-noise-3-s1 \(r2-b35\)"):
+            run_suite(tmp_path, bench, ["viterbi"], jobs=jobs, name="r2-b35")
+
+
+def test_run_suite_refuses_a_bad_name_setting_or_job_count_before_running(tmp_path, monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("the bench ran"))  # no manifest either
+    bench = tmp_path / "kz4ap-bench"
+    with pytest.raises(ValueError, match="one decoder"):
+        run_suite(tmp_path, bench, ["bank", "viterbi"], name="both")
+    for bad in ("beam_nats", "=35", " =35"):
+        with pytest.raises(ValueError, match="NAME=VALUE"):
+            run_suite(tmp_path, bench, ["viterbi"], settings=[bad])
+    for jobs in (0, -2):
+        with pytest.raises(ValueError, match="jobs"):
+            run_suite(tmp_path, bench, ["viterbi"], jobs=jobs)
+    for bad in ("", "a/b", "..", "../x", ".hidden"):  # the name becomes a folder under results/
+        with pytest.raises(ValueError, match="name"):
+            run_suite(tmp_path, bench, ["viterbi"], name=bad)
+    with pytest.raises(ValueError, match="unknown decoder"):
+        run_suite(tmp_path, bench, ["viterbi", "neural"])
+
+
+def test_run_suite_reports_a_bench_that_wrote_no_statistics(tmp_path, monkeypatch):
+    _noise_cases(tmp_path, 1)
+    monkeypatch.setattr(subprocess, "run", lambda cmd, *a, **k: subprocess.CompletedProcess(cmd, 0, "CER 0.0\n", ""))
+    run_suite(tmp_path, tmp_path / "kz4ap-bench", ["bank"])  # no statistics asked for: none missing
+    with pytest.raises(RuntimeError, match="statistics"):
+        run_suite(tmp_path, tmp_path / "kz4ap-bench", ["bank"], stats=True)

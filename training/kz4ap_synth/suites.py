@@ -3,13 +3,18 @@ scores each with kz4ap-bench, and a summary.
 
     python -m kz4ap_synth.suites generate --suite full --out build/suite/full [--seeds 3]
     python -m kz4ap_synth.suites generate --suite dev2 --out build/suite/dev2 [--seeds 3] [--per-cell A2=4] [--groups A2,S2]
+    python -m kz4ap_synth.suites generate --suite n2 --out build/suite/n2 [--seeds 3]
     python -m kz4ap_synth.suites run --out build/suite/full --bench PATH/kz4ap-bench \
-        --decoder baseline --decoder matched [--decoder bank]
+        --decoder baseline --decoder matched [--decoder bank] [--decoder viterbi]
+    python -m kz4ap_synth.suites run --out build/suite/dev2 --bench PATH/kz4ap-bench --decoder viterbi \
+        --jobs 10 --name NAME [--set NAME=VALUE ...] [--stats]
     python -m kz4ap_synth.suites summarize --out build/suite/full
 
 "smoke" is the recording bench/smoke.sh makes (the CI check); "full" is for
-local runs, sized for --seeds 3. S500 everywhere: key-down carrier power over
-noise power in 500 Hz, dB.
+local runs, sized for --seeds 3; "dev2" is the jittered development set; "n2" is
+its noise-only group (10 channel-hours of white noise, each channel opened by a
+station far below any decodable level; not part of DEV2). S500 everywhere:
+key-down carrier power over noise power in 500 Hz, dB.
 
 Group B is anchored to VE3NEA's DeepCW benchmark: his Butterworth fading
 spectrum and f_D grid, his SNR points converted to S500 (his key-on SNR in
@@ -31,6 +36,7 @@ import math
 import re
 import subprocess
 import zlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -69,9 +75,14 @@ VE3NEA_SPREADS_HZ = (0.1, 0.3, 1.0, 3.0)  # his f_D grid, Hz
 VE3NEA_EDGE_S = 0.002  # his raised-cosine keying edges, s, centered on each element's ends
 CER_THRESHOLDS = (0.05, 0.10)
 # The engine's decoders by results folder (results/<name>); the identifiers keep their old "front end" names.
-FRONT_ENDS = ("baseline", "matched", "bank")
+FRONT_ENDS = ("baseline", "matched", "bank", "viterbi")
 # kz4ap-bench --decoder (--front-end is its old alias); the bench's default is Matched
-BENCH_FRONT_END = {"baseline": "envelope", "matched": "matched", "bank": "bank"}
+BENCH_FRONT_END = {"baseline": "envelope", "matched": "matched", "bank": "bank", "viterbi": "viterbi"}
+# A name for a run's results folder (results/<name>, run_suite's `name`): it must stay one folder under results/.
+RUN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# A decoder setting handed to the bench: NAME=VALUE, NAME an identifier (a ViterbiConfig field), VALUE for the bench to
+# parse.
+SETTING = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*=")
 COUNT_KEYS = ("symbols", "edits", "chars", "char_edits", "spaces", "space_edits",
               "first_word_symbols", "first_word_edits", "nospace_symbols", "nospace_edits")
 BOOTSTRAP_RESAMPLES = 1000
@@ -139,9 +150,9 @@ def qso_regime(offset_hz: float, front_end: str = "baseline") -> str:
     compares interpolated frequencies that can each be up to one bin from their carriers
     (derived bound; see MATCHED_AMBIGUOUS_BELOW_HZ); from there on, two tracks.
 
-    "bank": the bank decoder runs on the Matched path's detector, so its regimes are Matched's."""
+    "bank" and "viterbi": these decoders run on the Matched path's detector, so their regimes are Matched's."""
     df = abs(offset_hz)
-    if front_end in ("matched", "bank"):
+    if front_end in ("matched", "bank", "viterbi"):
         if df < CHANNEL_DISTANCE_HZ:
             return "same-track"
         if df < MATCHED_AMBIGUOUS_BELOW_HZ:
@@ -957,6 +968,48 @@ def farnsworth2(seed: int, per_cell: int | None = None) -> list[Recording]:
     return _pack(batches, prefix="I2-farnsworth", group="I2 Farnsworth", seed=seed, code=10)
 
 
+# N2, the noise-only group (docs/plans/2026-10-20-new-decoder-prototype-1.md, D8; owner, 2026-10-20): 100 channels x
+# 360 s (10 channel-hours) of white noise, to count the false characters a decoder prints per hour of channel time
+# (the standard-practice check's false-alarm measure). DEV2 has no such group, and N2 is not part of it: it is a
+# suite of its own ("n2"), so DEV2's totals and analyses stay what they were.
+N2_GROUP_CODE = 12                 # the next group code after DEV2's: A2 ... I2 use 1 ... 10 and S2's noise seeds 11
+N2_STATIONS_PER_SPEED_CELL = 10    # x the 10 speed cells = 100 channels, _pack's 4 recordings of 25
+N2_DURATION_S = 360.0              # s, every recording
+N2_S500_DB = -60.0                 # dB SNR in 500 Hz: 52 dB below A2's lowest S500 (-8 dB)
+
+
+def noise2(seed: int) -> list[Recording]:
+    """N2, noise only (plan D8): 100 channels of white noise, 360 s each, as 4 recordings of 25 channels at DEV2's
+    48 kHz and DEV2's noise (sigma 0.02 FS per complex sample, generate.DEFAULT_NOISE_SIGMA). Oracle channels open
+    at the labels' frequencies, so each channel carries a labeled station, at S500 -60 dB (dB SNR in 500 Hz; its
+    key-down power is 10^-6 of the noise power in 500 Hz): far below any decodable level, so every character a
+    decoder prints on these channels is false, and the characters per hour of channel time are what N2 measures.
+
+    A station is a DEV2 signal: 100 +/- 5 characters of VE3NEA-statistics text, machine keying, starting 0.5-2 s in,
+    at a speed drawn in one of DEV2's ten speed cells, ten stations per cell (recorded in its labels like A2's, with
+    the one fixed value, S500). _pack places them as in DEV2 (slots 1200 Hz apart around 0 Hz, each moved by up to
+    half a bin, in a shuffled order within a recording) and names the recordings N2-noise-<part>-s<seed>; the units
+    are ordered so that every recording holds every speed cell, two or three times. A recording lasts N2_DURATION_S
+    instead of _pack's fitted length. Reproducible by seed, like DEV2's groups."""
+    units = []
+    for rep in range(N2_STATIONS_PER_SPEED_CELL):
+        for v in SPEED_CELLS.numbers:
+            rng = _signal_rng(seed, N2_GROUP_CODE, v, rep)
+            wpm, d_wpm = pick(SPEED_CELLS, v, rng)
+            text = text_100(rng)
+            design = {"group": "N2", "speed_wpm": d_wpm,
+                      "s500_db": {"value": N2_S500_DB, "cell": NOT_A_CELL, "unit": S500_UNIT,
+                                  "fixed": "far below any decodable level: the station only opens the oracle channel"}}
+            units.append([SignalSpec(text, 0.0, wpm, N2_S500_DB, _start(rng), tag="noise only", design=design)])
+    recs = _pack([("noise", units)], prefix="N2", group="N2 noise only", seed=seed, code=N2_GROUP_CODE)
+    return [replace(r, duration_s=N2_DURATION_S) for r in recs]
+
+
+def n2_suite(seeds: int = 1) -> list[Recording]:
+    """The noise-only group for seeds 1 ... seeds (as dev2_suite's)."""
+    return [r for seed in range(1, seeds + 1) for r in noise2(seed)]
+
+
 # The groups in order, each with its builders (A2 also through the detector path; S2 takes A2's per_cell).
 DEV2_BUILDERS = {"A2": (sensitivity2, sensitivity2_detector), "B2": (fading2,), "C2": (fists2,), "D2": (speed2,),
                  "E2": (interference2,), "F2": (tuning2,), "G2": (qso2_same_track,), "H2": (qso2_separate_tracks,),
@@ -996,7 +1049,7 @@ def full_suite(seeds: int = 1) -> list[Recording]:
     return recs
 
 
-SUITES = {"smoke": smoke_suite, "full": full_suite, "dev2": dev2_suite}
+SUITES = {"smoke": smoke_suite, "full": full_suite, "dev2": dev2_suite, "n2": n2_suite}
 
 
 def check_recording(rec: Recording) -> None:
@@ -1065,15 +1118,39 @@ def oracle_copies(rec: dict) -> list[tuple[str, str, str]]:
     return [(rec["labels"], f"{rec['name']}.oracle", f"{rec['group']}, oracle")]
 
 
-def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None) -> None:
+def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None, jobs: int = 1,
+              name: str | None = None, settings=(), stats: bool = False) -> None:
     """Scores every recording of the manifest (or those whose names match `only`, a regular
     expression) with kz4ap-bench, once per front end (and once more per front end against
-    per-station labels where the manifest has them)."""
-    manifest = json.loads((out_dir / "manifest.json").read_text())
+    per-station labels where the manifest has them).
+
+    A run to be compared with others gets a name of its own, and its settings:
+    - jobs: bench processes running at once, one test case each (1: one after another, in the manifest's order);
+    - name: the results folder, results/<name>, in place of the decoder's own (a run needs one decoder to be named);
+    - settings: "NAME=VALUE" strings, each handed to every bench call as --set NAME=VALUE (a decoder setting: the bench
+      refuses a name it does not know);
+    - stats: the bench also writes its statistics file, results/<folder>/<test case>.stats.json.
+    The first failure stops the run (the bench processes already running finish) and names its test case."""
+    front_ends, settings = list(front_ends), list(settings)
     for fe in front_ends:
         if fe not in FRONT_ENDS:
             raise ValueError(f"unknown decoder {fe!r}")
-        results = out_dir / "results" / fe
+    if name is not None:
+        if len(front_ends) != 1:
+            raise ValueError(f"a run's name needs exactly one decoder, not {len(front_ends)}")
+        if not RUN_NAME.fullmatch(name):
+            raise ValueError(f"name {name!r}: a folder under results/ of letters, digits, '.', '_' and '-', "
+                             "starting with a letter or digit")
+    for setting in settings:
+        if not SETTING.match(setting):
+            raise ValueError(f"setting {setting!r}: expected NAME=VALUE, NAME a setting's name")
+    if jobs < 1:
+        raise ValueError(f"jobs must be at least 1, not {jobs}")
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    work = []  # (results folder name, result name, the bench's command, its statistics file or None)
+    for fe in front_ends:
+        folder = name or fe
+        results = out_dir / "results" / folder
         results.mkdir(parents=True, exist_ok=True)
         for rec in manifest["recordings"]:
             if only is not None and not re.search(only, rec["name"]):
@@ -1084,14 +1161,40 @@ def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None) -
                 if rec["oracle"]:
                     cmd.append("--oracle")
                 cmd += ["--decoder", BENCH_FRONT_END[fe]]
-                done = subprocess.run(cmd, capture_output=True, text=True)
-                if done.returncode != 0:
-                    raise RuntimeError(f"kz4ap-bench failed on {result} ({fe}):\n{done.stderr}")
-                out_lines = done.stdout.strip().splitlines()
-                if not out_lines:
-                    raise RuntimeError(f"kz4ap-bench printed nothing on {result} ({fe}) although it exited 0; "
-                                       f"stderr:\n{done.stderr}")
-                print(f"{fe:9s} {result}: {out_lines[-1]}")
+                for setting in settings:
+                    cmd += ["--set", setting]
+                stats_file = results / f"{result}.stats.json" if stats else None
+                if stats_file is not None:
+                    cmd += ["--stats", str(stats_file)]
+                work.append((folder, result, cmd, stats_file))
+
+    def run_one(item) -> str:
+        folder, result, cmd, stats_file = item
+        done = subprocess.run(cmd, capture_output=True, text=True)
+        if done.returncode != 0:
+            raise RuntimeError(f"kz4ap-bench failed on {result} ({folder}):\n{done.stderr}")
+        out_lines = done.stdout.strip().splitlines()
+        if not out_lines:
+            raise RuntimeError(f"kz4ap-bench printed nothing on {result} ({folder}) although it exited 0; "
+                               f"stderr:\n{done.stderr}")
+        if stats_file is not None and not stats_file.exists():
+            raise RuntimeError(f"kz4ap-bench wrote no statistics file for {result} ({folder}) although asked "
+                               f"for it; stderr:\n{done.stderr}")
+        return f"{folder:9s} {result}: {out_lines[-1]}"
+
+    if jobs == 1:
+        for item in work:
+            print(run_one(item))
+        return
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = [pool.submit(run_one, item) for item in work]
+        try:
+            for future in as_completed(futures):
+                print(future.result())
+        except BaseException:
+            for future in futures:
+                future.cancel()  # those not started; the ones running finish before the error is raised
+            raise
 
 
 def crossing_snr(points, threshold: float) -> float | None:
@@ -1688,6 +1791,13 @@ def main(argv=None) -> None:
     r.add_argument("--decoder", "--front-end", dest="front_ends", action="append", choices=FRONT_ENDS,
                    help="the decoder (repeatable; --front-end is its old name)")
     r.add_argument("--only", default=None, help="regular expression: score only matching recordings")
+    r.add_argument("--jobs", type=int, default=1, help="bench processes at once, one test case each (default 1)")
+    r.add_argument("--name", default=None, help="the run's results folder, results/NAME, in place of the decoder's "
+                                                "own (needs one --decoder); give every run a new name")
+    r.add_argument("--set", dest="settings", action="append", default=[], metavar="NAME=VALUE",
+                   help="a decoder setting, handed to the bench as --set NAME=VALUE (repeatable)")
+    r.add_argument("--stats", action="store_true",
+                   help="the bench also writes its statistics file, results/NAME/<test case>.stats.json")
     s = sub.add_parser("summarize", help="write summary.json and summary.md")
     s.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
@@ -1705,7 +1815,8 @@ def main(argv=None) -> None:
             recordings = SUITES[args.suite](args.seeds)
         write_suite(recordings, args.out, args.suite, only=args.only)
     elif args.command == "run":
-        run_suite(args.out, args.bench, args.front_ends or ["baseline"], only=args.only)
+        run_suite(args.out, args.bench, args.front_ends or ["baseline"], only=args.only, jobs=args.jobs,
+                  name=args.name, settings=args.settings, stats=args.stats)
     else:
         write_summary(args.out)
 

@@ -10,7 +10,7 @@ import pytest
 
 from kz4ap_proto import experiments
 from kz4ap_synth import suites
-from kz4ap_synth.generate import labels, plan_intervals, station_labels
+from kz4ap_synth.generate import DEFAULT_NOISE_SIGMA, generate, labels, plan_intervals, station_labels
 from kz4ap_synth.jitter import SNR_CELLS, SPEED_CELLS
 from kz4ap_synth.morse import keying_intervals
 from kz4ap_synth.suites import SUITES, check_recording, dev2_suite, text_100, text_chars
@@ -292,3 +292,66 @@ def test_h2_writes_and_scores_only_per_station_labels(tmp_path):
 def test_per_cell_and_groups_are_dev2_only(tmp_path):
     with pytest.raises(SystemExit):
         suites.main(["generate", "--suite", "smoke", "--out", str(tmp_path), "--groups", "A2"])
+    with pytest.raises(SystemExit):
+        suites.main(["generate", "--suite", "n2", "--out", str(tmp_path), "--per-cell", "A2=1"])
+
+
+# --- N2, the noise-only group (docs/plans/2026-10-20-new-decoder-prototype-1.md, D8) ---
+
+def test_n2_noise_group(dev2):
+    """100 channels x 360 s (10 channel-hours) of white noise as 4 recordings of 25 channels at DEV2's 48 kHz, each
+    channel opened by a labeled station at S500 -60 dB (far below any decodable level), reproducible by seed, and a
+    suite of its own: it is not part of DEV2."""
+    recs = suites.noise2(1)
+    assert [r.name for r in recs] == [f"N2-noise-{k}-s1" for k in range(4)]
+    assert SUITES["n2"](1) == recs and suites.noise2(1) == recs  # reproducible
+    for r in recs:
+        check_recording(r)
+        assert (r.sample_rate, r.duration_s, r.oracle, r.group) == (48000, 360.0, True, "N2 noise only")
+        assert len(r.specs) == 25 and not r.station_labels and not r.per_station_only
+        freqs = sorted(s.freq_offset_hz for s in r.specs)
+        # slots 1200 Hz apart, each moved by at most half a bin (11.7 Hz) and rounded to 0.1 Hz
+        assert min(np.diff(freqs)) > suites.DEV2_SLOT_HZ - suites.BIN_HZ - 0.1
+        assert abs(freqs[0]) < 0.45 * r.sample_rate and abs(freqs[-1]) < 0.45 * r.sample_rate
+    specs = [s for r in recs for s in r.specs]
+    assert sum(r.duration_s * len(r.specs) for r in recs) == 36000.0  # channel-seconds: 10 channel-hours
+    assert {s.snr_db for s in specs} == {-60.0} and all(s.score and s.keying == "machine" for s in specs)
+    assert all(95 <= text_chars(s.text) <= 105 for s in specs)
+    # ten stations in each of DEV2's speed cells, spread over the recordings (no cell is tied to a recording)
+    assert Counter(s.design["speed_wpm"]["cell"] for s in specs) == Counter({c: 10 for c in SPEED_CELLS.numbers})
+    for r in recs:
+        assert set(Counter(s.design["speed_wpm"]["cell"] for s in r.specs).values()) == {2, 3}
+    for s in specs:
+        lo, hi = SPEED_CELLS.bounds(s.design["speed_wpm"]["cell"])
+        assert lo <= s.wpm <= hi and s.wpm == s.design["speed_wpm"]["value"]
+        assert s.design["group"] == "N2" and s.design["s500_db"]["value"] == -60.0
+    # the noise is DEV2's: sigma 0.02 FS per complex sample, and a station at -60 dB adds nothing to it
+    assert DEFAULT_NOISE_SIGMA == 0.02
+    iq = generate(recs[0].specs, recs[0].sample_rate, 2.0, seed=recs[0].noise_seed)
+    assert np.sqrt(np.mean(np.abs(iq) ** 2)) == pytest.approx(0.02, rel=0.01)
+    # the next group code after DEV2's (S2's noise uses 11): noise seeds 10^6 x seed + 10^4 x 12 + the recording's
+    # number
+    assert [r.noise_seed for r in recs] == [suites.DEV2_SEED_BASE + 12 * suites.DEV2_GROUP_SEED + k for k in range(4)]
+    assert not {r.noise_seed for r in recs} & ({r.noise_seed for r in dev2} | {r.noise_seed for r in SUITES["full"](3)})
+    other = suites.noise2(2)
+    assert [r.name for r in other] == [f"N2-noise-{k}-s2" for k in range(4)]
+    assert {s.text for r in other for s in r.specs}.isdisjoint({s.text for s in specs})
+    # not in DEV2: its default groups, its analysis's test cases
+    assert not any(r.group == "N2 noise only" for r in dev2)
+    assert not any(re.search(experiments.DEV2, r.name) or re.search(experiments.DEV, r.name) for r in recs)
+    assert "N2" not in suites.DEV2_BUILDERS and "N2" not in suites.DEV2_PER_CELL
+    # its labels carry the drawn values like DEV2's, and the one fixed value
+    entry = labels(recs[0].specs, recs[0].sample_rate, recs[0].duration_s, recs[0].noise_seed)["signals"][0]
+    assert entry["design"]["speed_wpm"]["unit"] == "WPM" and entry["design"]["s500_db"]["value"] == -60.0
+    assert entry["end_s"] < 360.0
+
+
+def test_the_n2_suite_is_generated_by_name(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(suites, "write_suite", lambda recs, out, name, only=None: seen.append((name, recs, out)))
+    suites.main(["generate", "--suite", "n2", "--out", str(tmp_path)])
+    ((name, recs, out),) = seen
+    assert name == "n2" and out == tmp_path and [r.name for r in recs] == [f"N2-noise-{k}-s1" for k in range(4)]
+    seen.clear()
+    suites.main(["generate", "--suite", "n2", "--seeds", "2", "--out", str(tmp_path)])
+    assert len(seen[0][1]) == 8
