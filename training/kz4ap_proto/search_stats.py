@@ -30,7 +30,8 @@ bench keeps. The reductions over summaries are one function per run's question:
   born that far behind the story it was born from), and the part beyond that starting cost. The design notes' rule is
   that the beam is never narrower than the largest starting cost of any newborn plus a margin of 10 nats (topic 5,
   item 4), so the margin (MARGIN_NATS) is compared with the part beyond the starting cost, and the count of newborns
-  above it is of that part. The starting cost is derived from the run's configuration (starting_costs_nats).
+  above it is of that part. The starting cost is derived from the run's configuration (starting_costs_nats): the cost of
+  the birth and the prior of the speed, and for a rescue newborn the notes' simulated 4.5 nats to learn its level.
 - R2 dropped_by_beam: the lines the beam dropped, how many of them within their first element (before any story of the
   line had left the newborn's first mark) and how many never led.
 - R3 removed_by_ceiling: the lines the ceiling removed, with the same split.
@@ -62,6 +63,13 @@ STATS_WINDOW_S = 0.1
 # notes, topic 5, item 4; the plan, section 6.1). Derived there from the swings of a story's score (5.6 nats for a story
 # that has just ended an element against one still in it, 4.1 nats for the letter charged at a letter's start), rounded up
 MARGIN_NATS = 10.0
+# nats: what a rescue newborn pays to learn its level against the old story, which keeps what it has learned: "up to 4.5
+# nats (simulated)", so a rescue newborn's starting cost is the largest. Source: the design notes, topic 5, item 4 ("The
+# rule"), docs/design/2026-10-09-new-decoder-design-notes.md, which takes it from the level's simulation in topic 3 ("What
+# it does"): 2.9 to 4.5 nats over the first letter, at S500 -2 to +20 dB, the old story's level known to 5-20%. Class:
+# simulated (the upper end of that range, so not a measurement and not a configuration value); a newborn from silence
+# pays nothing net, because it learns its level from marks that bring more evidence than the level costs.
+RESCUE_LEVEL_NATS = 4.5
 # The upper quantiles reported for R1's distribution (heuristic: the tail the rule looks at, beside the maximum)
 DEFICIT_QUANTILES = (0.5, 0.9, 0.99, 0.999)
 _SUMMARY_KEYS = ("track_id", "label_index", "pieces", "ceiling_pieces", "live_histogram", "live_mean_stories",
@@ -243,22 +251,26 @@ def starting_costs_nats(config: dict, genie_fist: bool = False) -> dict:
     """nats: what a newborn starts behind the story it was born from, by the kind of its line, derived from the run's
     configuration (a statistics file's "config"). The design notes' rule for the beam (topic 5, item 4) is "never
     narrower than the largest starting cost of any newborn plus a margin of 10 nats", and a newborn's starting cost is
-    there the cost of its birth plus the prior of its speed:
+    there the cost of its birth, plus the prior of its speed, plus the cost of learning its level from its first marks:
 
-        Silence   ln(1/P) + ln(speed_count)         P = over_rate_per_s x piece_s: the probability that an over starts in
-                                                    one piece of silence (9.210 nats at the defaults)
-        Rescue    ln(1/epsilon) + ln(speed_count)   epsilon = rescue_epsilon: the probability per letter start that the
-                                                    sender begins a new story (6.908 nats at the defaults)
+        Silence   ln(1/P) + ln(speed_count)                              P = over_rate_per_s x piece_s: the probability
+                                                                         that an over starts in one piece of silence
+                                                                         (9.210 nats at the defaults); it learns its
+                                                                         level from marks that bring more evidence than
+                                                                         the level costs: nothing net
+        Rescue    ln(1/epsilon) + ln(speed_count) + RESCUE_LEVEL_NATS    epsilon = rescue_epsilon: the probability per
+                                                                         letter start that the sender begins a new
+                                                                         story (6.908 nats at the defaults); it pays its
+                                                                         level against the old story: 4.5 nats
 
     ln(speed_count) is the prior of the speed a newborn takes, flat over the grid (3.466 nats at 32 speeds); the genie
     fist gives every channel one speed (genie_fist: the base configuration does not show it, the run's result file
-    does), so a newborn pays none. Derived, not measured, from the configuration's values: the line's record in the file
-    holds no starting cost, and the engine's statistics do not keep one. It leaves out what the design notes put in the
-    margin or in a cost that depends on the signal, not on the configuration: the cost of the newborn's first letter
-    (ln 62 = 4.127 nats, which the 10 nats include), and the cost of learning the level (nothing net for a newborn from
-    silence, 2.9 to 4.5 nats for a rescue newborn, simulated in the notes), which therefore stays in the part of a
-    deficit beyond the starting cost. Raises ValueError for a configuration without these values or that gives a
-    probability outside 0 to 1."""
+    does), so a newborn pays none; the genie does not give the level, so a rescue newborn still pays RESCUE_LEVEL_NATS.
+    Derived from the configuration's values, with RESCUE_LEVEL_NATS simulated in the design notes: the line's record in
+    the file holds no starting cost, and the engine's statistics do not keep one. It leaves out the cost of the
+    newborn's first letter (ln 62 = 4.127 nats), which the notes put in the 10 nats of the margin, so it stays in the
+    part of a deficit beyond the starting cost. Raises ValueError for a configuration without these values or that
+    gives a probability outside 0 to 1."""
     values = {}
     for key in ("piece_s", "over_rate_per_s", "rescue_epsilon", "speed_count"):
         if key not in config:
@@ -277,7 +289,8 @@ def starting_costs_nats(config: dict, genie_fist: bool = False) -> dict:
     if not values["speed_count"] >= 1:
         raise ValueError(f"config.speed_count must be at least 1, not {values['speed_count']!r}")
     speed_prior = math.log(1 if genie_fist else values["speed_count"])
-    return {"Silence": -math.log(over_start) + speed_prior, "Rescue": -math.log(values["rescue_epsilon"]) + speed_prior}
+    return {"Silence": -math.log(over_start) + speed_prior,
+            "Rescue": -math.log(values["rescue_epsilon"]) + speed_prior + RESCUE_LEVEL_NATS}
 
 
 # --- the reductions over channels (a group, a run) ---
@@ -564,14 +577,15 @@ def format_markdown(summary: dict) -> str:
               f"{margin:g} nats (design notes, topic 5, item 4), so the margin is compared with the part of a "
               "newborn's deficit beyond its own starting cost, not with the whole deficit. The starting cost is "
               f"derived from the run's configuration: ln(1/P) + ln(speed count) = {costs['Silence']:.2f} nats for a "
-              "newborn from silence (P = over_rate_per_s x piece_s, the probability that an over starts in a piece) "
-              f"and ln(1/ε) + ln(speed count) = {costs['Rescue']:.2f} nats for a rescue newborn (ε = rescue_epsilon, "
-              "the probability per letter start that the sender begins a new story), where ln(speed count) is the "
-              "prior of the speed a newborn takes (none for a genie fist, which gives a channel one speed). It "
-              "leaves out the cost of the newborn's first letter (ln 62 = 4.13 nats in the first prototype), which "
-              "the margin includes, and the cost of learning the level (nothing net for a newborn from silence, 2.9 "
-              "to 4.5 nats for a rescue newborn, simulated in the design notes), which stays in the part beyond. A "
-              "part below zero: the newborn never trailed by as much as its starting cost.", "",
+              "newborn from silence (P = over_rate_per_s x piece_s, the probability that an over starts in a piece; "
+              "it learns its level from marks that bring more evidence than the level costs, so that adds nothing) "
+              f"and ln(1/ε) + ln(speed count) + {RESCUE_LEVEL_NATS:g} = {costs['Rescue']:.2f} nats for a rescue "
+              "newborn (ε = rescue_epsilon, the probability per letter start that the sender begins a new story; "
+              f"{RESCUE_LEVEL_NATS:g} nats is the design notes' simulated bound on the cost of learning its level "
+              "against the old story), where ln(speed count) is the prior of the speed a newborn takes (none for a "
+              "genie fist, which gives a channel one speed). It leaves out the cost of the newborn's first letter "
+              "(ln 62 = 4.13 nats in the first prototype), which the margin includes. A part below zero: the "
+              "newborn never trailed by as much as its starting cost.", "",
               "| group | newborns that led | maximum | 99.9th percentile | 99th percentile | 90th percentile | median | "
               f"above {margin:g} nats | maximum, Silence | maximum, Rescue |", "|---|---|---|---|---|---|---|---|---|---|"]
     for name, g in rows:

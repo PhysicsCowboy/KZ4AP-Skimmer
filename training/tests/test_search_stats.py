@@ -21,9 +21,10 @@ from kz4ap_proto import search_stats
 DATA = Path(__file__).parent / "data" / "search-stats"
 V1 = DATA / "tiny.v1.stats.json"
 # nats: a newborn's starting cost at the fixtures' configuration, the defaults, written out here and not computed by the
-# code under test: ln(1/P) + ln(32) with P = 0.05 /s x 2 ms = 1e-4 (9.2103 + 3.4657) for a newborn from silence, and
-# ln(1/epsilon) + ln(32) with epsilon = 1e-3 (6.9078 + 3.4657) for a rescue newborn
-COSTS = {"Silence": 12.676076274775909, "Rescue": 10.373491181781864}
+# code under test: ln(1/P) + ln(32) with P = 0.05 /s x 2 ms = 1e-4 (9.2103 + 3.4657) for a newborn from silence, which
+# pays nothing net for its level, and ln(1/epsilon) + ln(32) + 4.5 with epsilon = 1e-3 (6.9078 + 3.4657 + 4.5) for a
+# rescue newborn, which pays up to 4.5 nats (simulated, the design notes) to learn its level against the old story
+COSTS = {"Silence": 12.676076274775909, "Rescue": 14.873491181781864}
 
 
 def v1_file():
@@ -174,22 +175,24 @@ def test_a_newborns_starting_cost_is_derived_from_the_runs_configuration_by_its_
     assert list(costs) == ["Silence", "Rescue"]
     assert costs == pytest.approx(COSTS, abs=1e-12)
     # the terms: from silence ln(1/P) = 9.2103 nats, as a rescue ln(1/epsilon) = 6.9078 nats, and the prior of the speed
-    # a newborn takes, ln(32) = 3.4657 nats (a flat share of the speed grid)
+    # a newborn takes, ln(32) = 3.4657 nats (a flat share of the speed grid); and the cost of learning its level: none
+    # net for a newborn from silence, the design notes' 4.5 nats (simulated, an upper bound) for a rescue newborn
+    assert search_stats.RESCUE_LEVEL_NATS == 4.5
     assert costs["Silence"] == pytest.approx(math.log(1e4) + math.log(32))
-    assert costs["Rescue"] == pytest.approx(math.log(1e3) + math.log(32))
+    assert costs["Rescue"] == pytest.approx(math.log(1e3) + math.log(32) + 4.5)
     # each term follows its configuration value
     assert search_stats.starting_costs_nats({**config, "over_rate_per_s": 0.5})["Silence"] == pytest.approx(
         math.log(1e3) + math.log(32))
     assert search_stats.starting_costs_nats({**config, "piece_s": 0.004})["Silence"] == pytest.approx(
         math.log(1 / 2e-4) + math.log(32))
     assert search_stats.starting_costs_nats({**config, "rescue_epsilon": 1e-2})["Rescue"] == pytest.approx(
-        math.log(100) + math.log(32))
+        math.log(100) + math.log(32) + 4.5)
     finer = search_stats.starting_costs_nats({**config, "speed_count": 61})
     assert finer["Silence"] == pytest.approx(math.log(1e4) + math.log(61))
-    assert finer["Rescue"] == pytest.approx(math.log(1e3) + math.log(61))
-    # the genie fist gives each channel one speed: no speed prior is paid
+    assert finer["Rescue"] == pytest.approx(math.log(1e3) + math.log(61) + 4.5)
+    # the genie fist gives each channel one speed: no speed prior is paid; the level is still learned
     assert search_stats.starting_costs_nats(config, genie_fist=True) == pytest.approx(
-        {"Silence": math.log(1e4), "Rescue": math.log(1e3)})
+        {"Silence": math.log(1e4), "Rescue": math.log(1e3) + 4.5})
     # a configuration that gives no cost is refused, naming what is wrong
     for bad, why in (({"over_rate_per_s": 0.0}, "over_rate_per_s"), ({"over_rate_per_s": 600.0}, "over_rate_per_s"),
                      ({"rescue_epsilon": 1.0}, "rescue_epsilon"), ({"rescue_epsilon": 0.0}, "rescue_epsilon"),
@@ -252,7 +255,7 @@ def test_the_lines_that_led_keep_their_kind_end_and_first_element_and_the_fates_
                                        "by_kind": {"Start": 0, "Silence": 1, "Rescue": 1}}
     # newborns that led: the deficits of the silence newborn and the rescue newborn, not the first story's. Both are above
     # 10 nats; beyond its own starting cost the silence newborn's 25.0 nats are 12.32 and the rescue newborn's 17.0 are
-    # 6.63, so one of the two is above the 10-nat margin
+    # 2.13, so one of the two is above the 10-nat margin
     d = g["led_deficits_nats"]
     assert d["newborns"] == 2 and d["deficit"]["max"] == 25.0
     assert d["deficit"]["by_kind"] == {"Silence": {"newborns": 1, "max": 25.0}, "Rescue": {"newborns": 1, "max": 17.0}}
@@ -266,17 +269,18 @@ def test_the_lines_that_led_keep_their_kind_end_and_first_element_and_the_fates_
 
 
 def test_the_part_beyond_the_starting_cost_is_each_newborns_own_and_may_be_negative():
-    # a silence newborn at 20.0 nats (7.32 beyond its 12.68) and a rescue newborn at 19.0 nats (8.63 beyond its 10.37):
+    # a silence newborn at 20.0 nats (7.32 beyond its 12.68) and a rescue newborn at 21.0 nats (6.13 beyond its 14.87):
     # the larger whole deficit is not the larger part beyond. A newborn that never trailed by as much as its starting
     # cost (a strong signal at once) has a negative part, which is kept, not cut at zero.
-    lines = [(1, 0, 0, 0.040, 20.0), (2, 0, 0, 0.050, 19.0), (1, 0, 0, 0.060, 5.0)]
+    lines = [(1, 0, 0, 0.040, 20.0), (2, 0, 0, 0.050, 21.0), (1, 0, 0, 0.060, 5.0)]
     g = search_stats.reduce_group([search_stats.reduce_channel(line_channel(lines), 0.002)], 0.002, COSTS)
     d = g["led_deficits_nats"]
-    assert d["deficit"]["max"] == 20.0
+    assert d["deficit"]["max"] == 21.0
     beyond = d["beyond_starting_cost"]
-    assert beyond["max"] == pytest.approx(19.0 - COSTS["Rescue"])
+    assert beyond["max"] == pytest.approx(20.0 - COSTS["Silence"])           # the silence newborn: 7.32 against 6.13
     assert beyond["by_kind"]["Silence"]["max"] == pytest.approx(20.0 - COSTS["Silence"])
-    assert beyond["quantiles"]["0.5"] == pytest.approx(20.0 - COSTS["Silence"])
+    assert beyond["by_kind"]["Rescue"]["max"] == pytest.approx(21.0 - COSTS["Rescue"])
+    assert beyond["quantiles"]["0.5"] == pytest.approx(21.0 - COSTS["Rescue"])    # -7.68, 6.13, 7.32
     assert beyond["above_margin"]["newborns"] == 0
     only_low = search_stats.reduce_group(
         [search_stats.reduce_channel(line_channel([(1, 0, 0, 0.040, 5.0)]), 0.002)], 0.002, COSTS)
@@ -285,7 +289,7 @@ def test_the_part_beyond_the_starting_cost_is_each_newborns_own_and_may_be_negat
 
 
 def test_the_margin_is_a_parameter_of_the_comparison_with_the_part_beyond():
-    lines = [(1, 0, 0, 0.040, 25.0), (2, 0, 0, 0.050, 17.0)]    # 12.32 and 6.63 nats beyond their starting costs
+    lines = [(1, 0, 0, 0.040, 25.0), (2, 0, 0, 0.050, 21.5)]    # 12.32 and 6.63 nats beyond their starting costs
     channels = [search_stats.reduce_channel(line_channel(lines), 0.002)]
     for margin, count in ((5.0, 2), (6.7, 1), (12.4, 0)):
         d = search_stats.led_deficits(channels, COSTS, margin_nats=margin)
@@ -398,8 +402,9 @@ def test_a_runs_summary_is_written_as_tables_and_data(tmp_path):
     assert "| A2 sensitivity | 1 | 17.38 |" in first_table and "above 10 nats" not in first_table
     assert "| A2 sensitivity | 1 | 4.71 |" in second_table and "above 10 nats" in second_table
     assert "beyond its own starting cost" in second_table and "margin of 10 nats" in second_table
-    assert "12.68" in second_table and "10.37" in second_table                       # the starting costs, nats
-    assert "ln(1/P) + ln(speed count)" in second_table and "ln(1/ε) + ln(speed count)" in second_table
+    assert "12.68" in second_table and "14.87" in second_table                       # the starting costs, nats
+    assert "ln(1/P) + ln(speed count)" in second_table and "ln(1/ε) + ln(speed count) + 4.5" in second_table
+    assert "learning its level" in second_table                                       # what the 4.5 nats are
 
 
 def test_a_run_with_nothing_to_reduce_or_mixed_pieces_is_refused(tmp_path):
@@ -430,7 +435,7 @@ def test_the_starting_costs_follow_the_genie_the_run_was_given(tmp_path):
     _suite(tmp_path, V1.read_text(encoding="utf-8"), genie=both)
     s = search_stats.run_summary(tmp_path, "r1")
     assert s["genie_fist"] is True
-    assert s["starting_cost_nats"] == pytest.approx({"Silence": math.log(1e4), "Rescue": math.log(1e3)})
+    assert s["starting_cost_nats"] == pytest.approx({"Silence": math.log(1e4), "Rescue": math.log(1e3) + 4.5})
     assert s["all"]["led_deficits_nats"]["starting_cost_nats"] == s["starting_cost_nats"]
     assert s["all"]["led_deficits_nats"]["beyond_starting_cost"]["max"] == pytest.approx(
         17.382956934607172 - math.log(1e4))

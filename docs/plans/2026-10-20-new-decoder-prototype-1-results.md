@@ -214,15 +214,23 @@ and a letter 1/62 (4.127 nats) at its start, both owner (flat, no text model).
   starting cost (its maximum, upper quantiles and maximum by kind), and counts the newborns above the margin in the
   second. The line's record in the file holds no starting cost and the engine's statistics keep none, so it is
   **derived** from the run's configuration (the statistics file's `config`) by the line's kind, not stored (the format
-  is unchanged): ln(1/P) + ln(speed count) for a newborn from silence, with P = `over_rate_per_s` × `piece_s`, and
-  ln(1/ε) + ln(speed count) for a rescue newborn, with ε = `rescue_epsilon`; at the defaults 9.210 + 3.466 = 12.676
-  nats and 6.908 + 3.466 = 10.373 nats (derived). ln(speed count) is the speed's prior, none for a run given the genie
-  fist (one speed per channel), which the runner's result files record and the statistics file's base configuration
-  does not; the files of one run must give one pair of costs. The starting cost leaves out two things that the part
-  beyond therefore holds: the newborn's first letter, 4.127 nats, which the notes' derivation of the 10 nats includes,
-  and the cost of learning the level, which the notes simulate at nothing net for a newborn from silence and 2.9 to 4.5
-  nats for a rescue newborn, so a rescue newborn's part beyond holds up to 4.5 nats of it. The part may be negative
-  (kept, not cut at zero): the newborn never trailed by as much as its starting cost.
+  is unchanged), as the notes define it: the cost of the birth, plus the prior of the speed, plus the cost of learning
+  the level from the first marks.
+  - A newborn from silence: ln(1/P) + ln(speed count), with P = `over_rate_per_s` × `piece_s`; its level adds nothing
+    (it "learns its level from marks that bring more evidence than the level costs"). At the defaults 9.210 + 3.466 =
+    12.676 nats (derived).
+  - A rescue newborn: ln(1/ε) + ln(speed count) + 4.5, with ε = `rescue_epsilon`. The 4.5 nats are what it pays to
+    learn its level against the old story, the notes' "up to 4.5 nats (simulated)" (`RESCUE_LEVEL_NATS` in
+    `search_stats.py`; class: **simulated**, design notes, topic 5, item 4, from the simulation of 2.9 to 4.5 nats over
+    the first letter at S₅₀₀ −2 to +20 dB with the old story's level known to 5–20%; the upper end of that range, not a
+    measurement and not a configuration value). At the defaults 6.908 + 3.466 + 4.5 = 14.873 nats.
+
+  ln(speed count) is the speed's prior, none for a run given the genie fist (one speed per channel), which the runner's
+  result files record and the statistics file's base configuration does not; the genie does not give the level, so a
+  rescue newborn still pays the 4.5 nats. The files of one run must give one pair of costs. The starting cost leaves out
+  the newborn's first letter, 4.127 nats, which the notes' derivation of the 10 nats includes, so the letter stays in
+  the part beyond. The part may be negative (kept, not cut at zero): the newborn never trailed by as much as its
+  starting cost.
 
 ### 1.3 The machines
 
