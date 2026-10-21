@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -24,6 +25,9 @@ constexpr int kOpen = -1;                    // a speed not yet taken
 constexpr std::int32_t kNone = -1;           // no candidate
 constexpr std::string_view kWordSpace = " ";
 constexpr double kStatsWindowS = 0.1;        // s: the window of the live count's series
+// s: how far the systematic term's carrier power looks ahead, past the channel filter's ringing before a mark's first
+// template piece (search.hpp, "The systematic term"; measured)
+constexpr double kLookaheadS = 0.004;
 
 // What a story is doing. Its order is the first part of the state's order.
 enum class Phase : std::uint8_t { NoSignal = 0, Mark = 1, Gap = 2 };
@@ -334,6 +338,7 @@ struct Search::Impl {
          detail::SearchOptions options);
 
     void step(std::complex<double> piece, double t, double n0);
+    void finish();
     std::vector<DecodedSymbol> best_text() const;
     std::vector<StoryView> live_stories() const;
     const SearchStats& stats() const { return stats_; }
@@ -341,8 +346,13 @@ struct Search::Impl {
     double normalization() const { return normalization_; }
     std::size_t text_entries() const { return text_.size(); }
     std::size_t open_timing_bytes() const { return open_.bytes(); }
+    int lookahead_pieces() const { return lookahead_pieces_; }
 
 private:
+    // The oldest piece held, searched with the largest |piece|^2 of those still held after it as its look-ahead.
+    void search_oldest();
+    // One piece (search.hpp, "One piece searched, in this order"); ahead, FS^2, is the look-ahead's largest |piece|^2.
+    void search_piece(std::complex<double> piece, double t, double n0, double ahead);
     // max over the labels the node allows of ln S_label(speed, tau): a mark at a known speed.
     double mark_survival(int speed, int node, int tau) const;
     // max over the kinds the node allows of the kind's cost and ln S: a gap.
@@ -393,6 +403,8 @@ private:
     int first_block_pieces_;  // min(B, the flat prior's max_pieces)
     double spread_hz_;        // f_D
     int order_;
+    double floor_squared_;    // systematic_floor^2: the floor's share of the systematic term, per unit squared weight
+    int lookahead_pieces_;    // ceil(kLookaheadS / piece_s): the pieces held back for the look-ahead
     double log_stay_silent_;  // ln(1 - P)
     double log_over_start_;   // ln P
     double log_letter_;       // ln(1 / the tree's symbols)
@@ -410,9 +422,22 @@ private:
     SharedText text_;
     double normalization_ = 0.0;
     std::int64_t piece_ = 0;  // pieces searched
-    double last_t_ = 0.0;
     std::uint64_t next_creation_ = 1;
     std::int64_t next_line_ = 1;
+
+    // --- The pieces given and not yet searched, and the channel's carrier power (the systematic term) ---
+    struct Pending {
+        std::complex<double> piece;  // FS
+        double t;                    // s
+        double n0;                   // FS^2/Hz
+    };
+    std::deque<Pending> pending_;  // oldest first, at most lookahead_pieces_ after a step
+    std::int64_t given_ = 0;       // pieces given to step
+    double last_given_t_ = 0.0;    // s: the last piece given
+    // The last first_block_pieces_ pieces searched, this one included, as (piece index, |piece|^2 in FS^2), the powers
+    // falling from the front (a monotonic queue: its front is their largest).
+    std::deque<std::pair<std::int64_t, double>> window_;
+    double carrier_power_ = 0.0;  // FS^2: the window's largest |piece|^2 and the look-ahead's, at this piece
 
     // --- One piece's work, kept between pieces for its storage ---
     std::vector<Story> continuation_;  // [i]: population_[i] one piece on
@@ -468,8 +493,12 @@ Search::Impl::Impl(const ViterbiConfig& config, std::span<const double> c, std::
       block_pieces_(0),
       first_block_pieces_(0),
       spread_hz_(config.genie_fading_spread_hz.value_or(config.fading_spread_hz)),
-      order_(config.quadrature_order) {
+      order_(config.quadrature_order),
+      floor_squared_(config.systematic_floor * config.systematic_floor),
+      lookahead_pieces_(0) {
     if (!prior_) throw std::invalid_argument("search: no flat prior");
+    if (!(config.systematic_floor >= 0.0 && config.systematic_floor <= 1.0))
+        throw std::invalid_argument("search: systematic_floor must lie in [0, 1] (relative amplitude)");
     if (!(config.beam_nats > 0.0)) throw std::invalid_argument("search: beam_nats must be positive (nats)");
     if (config.ceiling < 1) throw std::invalid_argument("search: the ceiling must be at least 1 story");
     if (config.speed_count > 255) throw std::invalid_argument("search: at most 255 speeds");
@@ -494,6 +523,10 @@ Search::Impl::Impl(const ViterbiConfig& config, std::span<const double> c, std::
                             : static_cast<int>(pieces);
     }
     first_block_pieces_ = std::min(block_pieces_, prior_->max_pieces());
+    // The look-ahead in whole pieces, covering kLookaheadS: 2 at 2 ms (the tolerance keeps an exact ratio exact).
+    const double lookahead = std::ceil(kLookaheadS / config.piece_s - 1e-9);
+    if (!(lookahead <= 1e6)) throw std::invalid_argument("search: piece_s is too short for the look-ahead (s)");
+    lookahead_pieces_ = static_cast<int>(lookahead);
     samples_per_piece_ = prior_->samples_per_piece();
     const int longest =
         block_pieces_ == std::numeric_limits<int>::max() ? first_block_pieces_ : block_pieces_;  // pieces
@@ -562,13 +595,22 @@ void Search::Impl::continue_mark(const Story& s, Story& c, BlockScore& scored, s
     c.block_pieces = s.block_pieces + 1;
     // A mark's first block is the matched filter to the rise: each piece weighted by its expected fraction, g = 1 past
     // the rise; a later block is the plain sum. The pieces count as independent at the noise's long-run rate, so the
-    // sum's variance is N0 x rate x m_signal, m_signal = samples_per_piece x the sum of the squared weights.
+    // sum's noise variance is N0 x rate x m_signal, m_signal = samples_per_piece x the sum of the squared weights.
     const bool first_block = c.block_pieces == c.tau;
     c.block_sum = s.block_sum + (first_block ? prior_->weight(c.tau) : 1.0) * piece;
     const double m_signal = first_block ? prior_->signal_samples(c.block_pieces)
                                         : static_cast<double>(samples_per_piece_ * c.block_pieces);
-    const double v = n0 * noise_rate_hz_ * m_signal;  // FS^2
-    const double s_abs = std::abs(c.block_sum);       // FS
+    const double s_abs = std::abs(c.block_sum);  // FS
+    // The error budget (search.hpp, "The systematic term"): the systematic term C^2 (E_n + floor^2 W_n) added in
+    // quadrature to the noise, C^2 the larger of the channel's carrier power and the block's own estimate of a full
+    // piece's squared carrier sum, (samples_per_piece |S| / m_signal)^2; E_n the edge's term in a mark's first block
+    // (0 in a later one); W_n = m_signal / samples_per_piece, the sum of the squared weights.
+    const double per_piece = static_cast<double>(samples_per_piece_);
+    const double own = per_piece * s_abs / m_signal;                    // FS
+    const double carrier_squared = std::max(carrier_power_, own * own);  // FS^2
+    const double edge = first_block ? prior_->template_error(c.block_pieces) : 0.0;
+    const double v = n0 * noise_rate_hz_ * m_signal +
+                     carrier_squared * (edge + floor_squared_ * (m_signal / per_piece));  // FS^2
     int limit = 0;
     if (s.level.learned) {
         scored = score_block(predict(s.level, t, spread_hz_), s_abs, m_signal, v, order_, t,
@@ -835,11 +877,37 @@ Story Search::Impl::build(std::uint32_t j, double t) {
 void Search::Impl::step(std::complex<double> piece, double t, double n0) {
     if (!positive_and_finite(n0))
         throw std::invalid_argument("search: n0_fs2_per_hz must be positive and finite (FS^2/Hz)");
-    if (!std::isfinite(t) || (piece_ > 0 && !(t > last_t_)))
+    if (!std::isfinite(t) || (given_ > 0 && !(t > last_given_t_)))
         throw std::invalid_argument("search: t_s must be finite and later than the previous piece's (s)");
     if (!std::isfinite(piece.real()) || !std::isfinite(piece.imag()))
         throw std::invalid_argument("search: piece_fs must be finite (FS)");
+    pending_.push_back(Pending{piece, t, n0});
+    ++given_;
+    last_given_t_ = t;
+    while (pending_.size() > static_cast<std::size_t>(lookahead_pieces_)) search_oldest();
+}
+
+void Search::Impl::finish() {
+    while (!pending_.empty()) search_oldest();
+}
+
+void Search::Impl::search_oldest() {
+    const Pending oldest = pending_.front();
+    pending_.pop_front();
+    double ahead = 0.0;  // FS^2
+    for (const Pending& later : pending_) ahead = std::max(ahead, std::norm(later.piece));
+    search_piece(oldest.piece, oldest.t, oldest.n0, ahead);
+}
+
+void Search::Impl::search_piece(std::complex<double> piece, double t, double n0, double ahead) {
     if (stats_on_ && piece_ == 0) stats_.lines[0].birth_s = t;
+    // The channel's carrier power for the systematic term, the same for every story at this piece: the largest
+    // |piece|^2 of the last first_block_pieces_ pieces, this one included, and of the look-ahead's.
+    const double power = std::norm(piece);  // FS^2
+    while (!window_.empty() && window_.back().second <= power) window_.pop_back();
+    window_.emplace_back(piece_, power);
+    while (window_.front().first <= piece_ - first_block_pieces_) window_.pop_front();
+    carrier_power_ = std::max(window_.front().second, ahead);
 
     const std::size_t n_old = population_.size();
     continuation_.resize(n_old);
@@ -953,7 +1021,6 @@ void Search::Impl::step(std::complex<double> piece, double t, double n0) {
         if (!transferred_[i]) text_.release(population_[i].text);
     population_.swap(next_population_);
     normalization_ += best_score;
-    last_t_ = t;
 
     if (stats_on_) update_stats(t, ceiling_dropped_.size());
     ++piece_;
@@ -1046,6 +1113,8 @@ Search& Search::operator=(Search&&) noexcept = default;
 void Search::step(std::complex<double> piece_fs, double t_s, double n0_fs2_per_hz) {
     impl_->step(piece_fs, t_s, n0_fs2_per_hz);
 }
+void Search::finish() { impl_->finish(); }
+int Search::lookahead_pieces() const { return impl_->lookahead_pieces(); }
 std::vector<DecodedSymbol> Search::best_text() const { return impl_->best_text(); }
 const SearchStats& Search::stats() const { return impl_->stats(); }
 std::size_t Search::live() const { return impl_->live(); }

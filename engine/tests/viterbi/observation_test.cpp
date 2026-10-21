@@ -1118,6 +1118,90 @@ TEST(Observation, RiseFractionsMatchTheChannelizer) {
     EXPECT_NEAR(rise[3], 1.019171, 5e-6);
 }
 
+TEST(Observation, TemplateErrorsMatchThePerPositionFractions) {
+    // The systematic term's edge share, rise_template_errors (search.hpp, "The systematic term"), recomputed here from
+    // the per-position fractions that RiseFractionsMatchTheChannelizer holds against the real channelizer, at 48 kHz
+    // with the 5 ms edge: over the template's pieces from its first (the first whose average over the 96 positions
+    // reaches 0.01), t_j the rise's average (rise_fractions) and 1 past it, the error of the weighted sum of a mark's
+    // first n pieces for an edge at position p is e_n(p) = sum_{j <= n} t_j (f_j(p) - t_j), and E_n is the mean of
+    // e_n(p)^2 over the positions (derived: one edge makes every piece's error, so they are summed before squaring).
+    // Equal within 1e-12 for every n of the table, which ends where every position's pieces are full (its last two
+    // entries equal: E_n has settled). The values the design records state: E_1 = 0.00037, E_2 = 0.0095,
+    // E_3 = 0.0224 and 0.0210 from n = 7. The errors are positively correlated: as independent pieces (each piece's
+    // mean square, summed over j) the error at n = 3 would be 0.0093, less than half of E_3.
+    const kz4ap::ChannelizerConfig config = channelizer_at(48000);
+    const std::vector<double> taps = kz4ap::channel_filter_taps(config);
+    const int decimation = config.fft_size / config.channel_bins;
+    constexpr int kPerPiece = 3;
+    constexpr int kPieces = 40;
+    const std::vector<std::vector<double>> by_position =
+        detail::rise_fractions_by_position(taps, 48000.0, decimation, kPerPiece, 0.005, kPieces);
+    const std::vector<double> rise = rise_fractions(taps, 48000.0, decimation, kPerPiece, 0.005);
+    const std::vector<double> errors = rise_template_errors(taps, 48000.0, decimation, kPerPiece, 0.005);
+    std::vector<double> average(kPieces, 0.0);
+    for (const std::vector<double>& row : by_position)
+        for (int p = 0; p < kPieces; ++p) average[static_cast<std::size_t>(p)] += row[static_cast<std::size_t>(p)];
+    for (double& fraction : average) fraction /= static_cast<double>(by_position.size());
+    std::size_t first = 0;
+    while (!(average[first] >= 0.01)) ++first;
+    ASSERT_GT(errors.size(), rise.size());
+    ASSERT_LE(first + errors.size(), static_cast<std::size_t>(kPieces));
+    std::vector<double> sums(by_position.size(), 0.0);
+    double independent = 0.0;
+    Worst worst;
+    for (std::size_t n = 1; n <= errors.size(); ++n) {
+        const std::size_t j = first + n - 1;
+        const double t = n <= rise.size() ? rise[n - 1] : 1.0;
+        double mean_square = 0.0;
+        double piece_square = 0.0;
+        for (std::size_t p = 0; p < by_position.size(); ++p) {
+            const double error = t * (by_position[p][j] - t);
+            sums[p] += error;
+            mean_square += sums[p] * sums[p];
+            piece_square += error * error;
+        }
+        mean_square /= static_cast<double>(by_position.size());
+        independent += piece_square / static_cast<double>(by_position.size());
+        worst.add(std::fabs(errors[n - 1] - mean_square), [n] { return "n = " + std::to_string(n); });
+        if (n == 3) {
+            EXPECT_NEAR(independent, 0.0093, 5e-5);
+            EXPECT_LT(independent, 0.5 * mean_square);
+        }
+    }
+    EXPECT_LE(worst.error, 1e-12) << "at " << worst.where;
+    EXPECT_NEAR(errors.back(), errors[errors.size() - 2], 1e-12);
+    for (const std::vector<double>& row : by_position) EXPECT_NEAR(row[first + errors.size() - 1], 1.0, 1e-9);
+    EXPECT_NEAR(errors[0], 0.00037, 5e-6);
+    EXPECT_NEAR(errors[1], 0.0095, 5e-5);
+    EXPECT_NEAR(errors[2], 0.0224, 5e-5);
+    ASSERT_GE(errors.size(), 7u);
+    for (std::size_t n = 7; n <= errors.size(); ++n) EXPECT_NEAR(errors[n - 1], 0.0210, 5e-5) << "n = " << n;
+}
+
+TEST(Observation, FlatPriorHoldsTheTemplateErrors) {
+    // FlatPrior::template_error(n), the systematic term's edge share of a mark's first block of n pieces: the table's
+    // E_n for n = 1 ... N and E_N past it; 0 with no table. n below 1 is refused (std::out_of_range), and so is a table
+    // with an entry that is negative or not finite (std::invalid_argument).
+    const ViterbiConfig config{};
+    const std::vector<double> c = sum_noise_at(48000, 600);
+    const std::vector<double> rise = {0.2, 0.6, 0.95};
+    const std::vector<double> errors = {0.001, 0.01, 0.02};
+    const FlatPrior prior(config, c, 8, 3, rise, errors);
+    EXPECT_EQ(prior.template_error(1), 0.001);
+    EXPECT_EQ(prior.template_error(2), 0.01);
+    EXPECT_EQ(prior.template_error(3), 0.02);
+    EXPECT_EQ(prior.template_error(4), 0.02);
+    EXPECT_EQ(prior.template_error(1000), 0.02);
+    EXPECT_THROW((void)prior.template_error(0), std::out_of_range);
+    const FlatPrior none(config, c, 8, 3, rise);
+    EXPECT_EQ(none.template_error(1), 0.0);
+    EXPECT_EQ(none.template_error(8), 0.0);
+    for (const double bad : {-1e-3, kNaN, kInf}) {
+        const std::vector<double> broken = {0.001, bad};
+        EXPECT_THROW(FlatPrior(config, c, 8, 3, rise, broken), std::invalid_argument) << bad;
+    }
+}
+
 TEST(Observation, EvidenceTakesTheSignalCount) {
     // m_signal, the carrier's expected sum over a in channel samples, need not be whole: in a mark's first block it is
     // 3 x the sum of the squared weights. For 3 x 0.193444^2 (the rise's first piece), 3 x (0.193444^2 + 0.613661^2)

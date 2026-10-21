@@ -74,17 +74,18 @@ std::string setting_refusal(ViterbiConfig& config, const std::string& setting) {
 void every_field_is_named(const ViterbiConfig& c) {
     [[maybe_unused]] const auto& [piece_s, dot_min_ms, speed_ratio, speed_count, fist_medians_dots, fist_sigmas,
                                   fist_shifts_dots, beam_nats, ceiling, fading_spread_hz, block_loss_db,
-                                  keying_rise_s, over_rate_per_s, rescue_epsilon, word_end_p, over_end_q,
-                                  level_min_db, level_max_db, quadrature_order, hiss_half_width_hz, hiss_percentile,
-                                  hiss_average_s, tracker_window_s, tracker_hop_s, tracker_search_hz, tracker_gate_db,
-                                  tracker_drift_sd_hz_per_s, tracker_drift_noise, genie_frequency_offset_hz,
-                                  genie_frequency_drift_hz_per_s, genie_fading_spread_hz, stats] = c;
+                                  keying_rise_s, systematic_floor, over_rate_per_s, rescue_epsilon, word_end_p,
+                                  over_end_q, level_min_db, level_max_db, quadrature_order, hiss_half_width_hz,
+                                  hiss_percentile, hiss_average_s, tracker_window_s, tracker_hop_s, tracker_search_hz,
+                                  tracker_gate_db, tracker_drift_sd_hz_per_s, tracker_drift_noise,
+                                  genie_frequency_offset_hz, genie_frequency_drift_hz_per_s, genie_fading_spread_hz,
+                                  stats] = c;
 }
 
 const std::vector<std::string> kExpectedNames = {
     "piece_s", "dot_min_ms", "speed_ratio", "speed_count", "fist_medians_dots",
     "fist_sigmas", "fist_shifts_dots", "beam_nats", "ceiling", "fading_spread_hz", "block_loss_db", "keying_rise_s",
-    "over_rate_per_s", "rescue_epsilon", "word_end_p", "over_end_q", "level_min_db", "level_max_db",
+    "systematic_floor", "over_rate_per_s", "rescue_epsilon", "word_end_p", "over_end_q", "level_min_db", "level_max_db",
     "quadrature_order", "hiss_half_width_hz", "hiss_percentile", "hiss_average_s", "tracker_window_s",
     "tracker_hop_s", "tracker_search_hz", "tracker_gate_db", "tracker_drift_sd_hz_per_s", "tracker_drift_noise",
     "genie_frequency_offset_hz", "genie_frequency_drift_hz_per_s", "genie_fading_spread_hz", "stats"};
@@ -111,6 +112,7 @@ TEST(ViterbiJson, TheConfigurationHasEveryFieldInDeclarationOrder) {
     EXPECT_EQ(j.at("beam_nats"), 40.0);
     EXPECT_EQ(j.at("ceiling"), 1700);
     EXPECT_EQ(j.at("fading_spread_hz"), 1.0);
+    EXPECT_EQ(j.at("systematic_floor"), 0.02);
     EXPECT_EQ(j.at("level_max_db"), 85.0);
     EXPECT_EQ(j.at("quadrature_order"), 5);
     EXPECT_EQ(j.at("tracker_gate_db"), 9.0);
@@ -214,6 +216,7 @@ TEST(ViterbiJson, TheConfigurationRoundTripsThroughItsJson) {
     c.fading_spread_hz = 0.3;
     c.block_loss_db = 0.25;
     c.keying_rise_s = 0.0;
+    c.systematic_floor = 0.05;
     c.over_rate_per_s = 0.5;
     c.rescue_epsilon = 1e-2;
     c.word_end_p = 0.25;
@@ -266,6 +269,10 @@ TEST(ViterbiJson, TheEngineRefusesWhatTheLibraryRefuses) {
     engine.viterbi.beam_nats = 40.0;
     engine.viterbi.fading_spread_hz = -2.0;
     EXPECT_NE(refusal_of([&] { check_engine_accepts(engine); }), "(accepted)");
+    engine.viterbi.fading_spread_hz = 1.0;
+    engine.viterbi.systematic_floor = 1.5;  // a relative amplitude outside [0, 1]
+    const std::string floor = refusal_of([&] { check_engine_accepts(engine); });
+    EXPECT_TRUE(contains(floor, "systematic_floor")) << floor;
 }
 
 // ---- The rules among the options ----

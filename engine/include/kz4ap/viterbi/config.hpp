@@ -71,6 +71,16 @@ struct ViterbiConfig {
     // own rise alone; more than 1 s is refused (rise_fractions)
     double keying_rise_s = 0.005;
 
+    // --- The model's systematic uncertainty (the owner's decision D15 of 2026-10-21; search.hpp has the design) ---
+
+    // relative amplitude, of a full piece's carrier sum: the floor of the systematic term, the model's systematic
+    // uncertainty in each piece of a mark for what the matched filter leaves out (chirp, clicks, phase noise, fading
+    // within a block), added in quadrature to the noise in the error budget; the edge's position within its piece
+    // adds its own term in a mark's first block (rise_template_errors, observation.hpp). Placeholder (heuristic): of
+    // 0, 0.01, 0.02 and 0.05, the only value measured clean both on strong stations (+30 to +60 dB S500) and at
+    // ordinary levels (+10 to +28 dB S500). 0 to 1
+    double systematic_floor = 0.02;
+
     // --- Overs, restarts and the ends of words (topic 5, item 3) ---
 
     // 1/s: the rate at which an over (one transmission of one station) starts in silence. The probability in one

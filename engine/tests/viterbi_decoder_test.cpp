@@ -236,8 +236,8 @@ void record(const std::string& key, double value) {
     ::testing::Test::RecordProperty(key, text.str());
 }
 
-// Whether the decoder's full-size test runs: KZ4AP_VITERBI_FULL_SWEEP=1, which the full-sweep presets set through the
-// test ViterbiDecoder.FullSweep (engine/CMakeLists.txt).
+// Whether the decoder's full-size tests run: KZ4AP_VITERBI_FULL_SWEEP=1, which the full-sweep presets set through the
+// tests ViterbiDecoder.FullSweep and ViterbiDecoder.StrongFullSweep (engine/CMakeLists.txt).
 bool full_sweep() {
     const char* value = std::getenv("KZ4AP_VITERBI_FULL_SWEEP");
     return value != nullptr && std::string(value) == "1";
@@ -412,28 +412,18 @@ TEST(ViterbiDecoder, ANoiseDensityOfZeroMidStreamSplicesTheStream) {
 }
 
 TEST(ViterbiDecoder, ExtremeLevels) {
-    // A station at +60 dB S500 (a piece's z = |S| / sqrt(V) near 1 000, a 390 ms block's near 14 000, far above the
-    // flat prior's table: its large-z form) and one at -10 dB S500, each alone on its channel's center with DEV2's
-    // noise, N0 the noise's own: after every block every live story's score is finite and the best is 0, and the
-    // normalization is finite (plan §5, item 2). The plan's other criterion, the +60 dB S500 station's exact text,
-    // fails at the design as built, and is a strict expected failure (below); a station at +30 dB S500 decodes exactly.
-    //
-    // The known limitation (search.hpp, "The mark's rise and what remains", item 4): the fall at a mark's end is not
-    // modeled and a gap piece adds 0 whatever it holds, so the energy of the fall's tail, f^2 x 10^(S500 / 10) nats in
-    // a piece holding the fraction f of a full piece's carrier sum, is explained by no story that keeps the mark
-    // (derived). A story that ends the over after the mark and starts a new over of one piece in the fall can claim it
-    // where the piece carries at least about 34 nats (that over's own costs, 34.3 nats, and what follows it). In
-    // scratch runs, not in a test ("PARIS PARIS" at 25 WPM with this noise; in each run every keying edge at one
-    // position within its piece, so a position's result holds for every element of its run), all 16 positions of the
-    // edge tried decoded exactly at +30, +33 and +36 dB S500, 2 failed at +38 dB S500 and 3 at +40 dB S500, and at this
-    // test's position (the edge at a piece's start) on this seed from +42 dB S500. A real station's edges fall at
-    // mixed positions, so from about +37 dB S500 some of its elements would be misread (conjectured). At +60 dB S500
-    // this test decodes "T EE EE ET E T EE E T EE ET E T ET E T ET ET E" for each "PARIS" (19 words for 14 elements).
-    // The test fails if the +60 dB S500 text is exact, so that the marker is removed once the limitation is gone, and
-    // is skipped otherwise.
+    // A station at +60 dB S500 (a piece's z = |S| / sqrt(V) near 1 000 without the systematic term, a 390 ms block's
+    // near 14 000, far above the flat prior's table: its large-z form) and one at -10 dB S500, each alone on its
+    // channel's center with DEV2's noise, N0 the noise's own: after every block every live story's score is finite and
+    // the best is 0, and the normalization is finite (plan §5, item 2). The plan's other criterion, the +60 dB S500
+    // station's exact text, holds with the systematic term (search.hpp, "The systematic term"; the owner's decision
+    // D15 of 2026-10-21); a station at +30 dB S500 decodes exactly too. Without the term the fall's tail, which no
+    // story that keeps the mark explains, was claimed by new one-piece overs from about +38 dB S500, and +60 dB S500
+    // decoded "T EE EE ET E T EE E T EE ET E T ET E T ET ET E" for each "PARIS" (search.hpp, "The mark's rise and what
+    // remains", item 4). ViterbiDecoder.StrongStationsAtEveryEdgePosition, a full-sweep test, holds +30 to +60 dB S500
+    // at 16 positions of the edge within a piece.
     const std::string text = "PARIS PARIS";
     const auto keying = signals::keying(text, 25.0, 0.5);
-    std::string strong_decoded;
     for (const double s500_db : {60.0, 30.0, -10.0}) {
         SCOPED_TRACE(std::to_string(s500_db) + " dB S500");
         std::vector<Sample> x = silence(keying.back().second + 1.0);
@@ -454,12 +444,34 @@ TEST(ViterbiDecoder, ExtremeLevels) {
             ASSERT_TRUE(std::isfinite(decoder.search().normalization_nats())) << "sample " << first;
         }
         const std::string decoded = text_of(decoder.flush().chars);
-        if (s500_db == 30.0) EXPECT_EQ(decoded, text);
-        if (s500_db == 60.0) strong_decoded = decoded;
+        if (s500_db != -10.0) EXPECT_EQ(decoded, text);
     }
-    if (strong_decoded == text) FAIL() << "+60 dB S500 decodes exactly: the fall's limitation is gone; remove the marker";
-    GTEST_SKIP() << "strict expected failure: +60 dB S500 decodes \"" << strong_decoded
-                 << "\" (the fall is not modeled: search.hpp, \"The mark's rise and what remains\", item 4)";
+}
+
+TEST(ViterbiDecoder, StrongStationsAtEveryEdgePosition) {
+    // The full sweep, labeled full-sweep (the presets windows-full-sweep and linux-full-sweep run it, through the test
+    // ViterbiDecoder.StrongFullSweep of engine/CMakeLists.txt, which sets KZ4AP_VITERBI_FULL_SWEEP=1; skipped
+    // otherwise): "PARIS PARIS" at 25 WPM, alone on its channel's center with DEV2's noise (seed 34), N0 the noise's
+    // own, the decoder at its defaults, at +30, +36, +40, +45, +50, +55 and +60 dB S500, the key-down starting 0.5 s
+    // plus q input samples, q = 0, 6, ..., 90: 16 positions of the edge within a piece of 96 input samples. Each mark
+    // and gap is a whole number of pieces, so every edge of a run sits at its position. The exact text at every point
+    // (the systematic term, search.hpp; without it 16, 16, 13, 10, 2, 0 and 0 positions decoded exactly at those
+    // levels, measured).
+    if (!full_sweep()) GTEST_SKIP() << "the full sweep runs under the full-sweep presets (KZ4AP_VITERBI_FULL_SWEEP=1)";
+    const std::string text = "PARIS PARIS";
+    for (const double s500_db : {30.0, 36.0, 40.0, 45.0, 50.0, 55.0, 60.0}) {
+        for (int q = 0; q < 96; q += 6) {
+            SCOPED_TRACE(std::to_string(s500_db) + " dB S500, the edge " + std::to_string(q) + " input samples in");
+            // whole input samples (the margin keeps the edge's sample against rounding)
+            const double start_s = (24000.0 + q + 1e-6) / kInputRate;
+            const auto keying = signals::keying(text, 25.0, start_s);
+            std::vector<Sample> x = silence(keying.back().second + 1.0);
+            add_station(x, keying, 750.0, s500_db);
+            add_noise(x, 34);
+            const Decoded run = decode(ViterbiConfig{}, default_shared(), channel_stream(x, 750.0).samples, 32, 0.0);
+            EXPECT_EQ(text_of(run.text), text);
+        }
+    }
 }
 
 namespace {
@@ -610,8 +622,9 @@ TEST(ViterbiDecoder, IsTheSearchOfTheRecenteredPiecesWithTheRise) {
     // without the matched filter). With the genie's frequency at 0 Hz and no drift the oscillator stays at phase 0, so
     // the decoder's pieces are the channel's own sums of 3 samples. A search given those pieces, at their times, with
     // N0, and a flat prior built here with rise_fractions from the channelizer's taps at 48 kHz (5 ms edges: 0.193,
-    // 0.614, 0.943 and 1.019) ends with the decoder's stories, scores and normalization, to the bit; one whose flat
-    // prior has no rise does not.
+    // 0.614, 0.943 and 1.019) and rise_template_errors from the same (the systematic term's edge share), then finished
+    // (its look-ahead's last pieces, as the decoder's flush does), ends with the decoder's stories, scores and
+    // normalization, to the bit; one whose flat prior has no rise does not.
     ViterbiConfig config;
     config.genie_frequency_offset_hz = 0.0;
     const auto keying = signals::keying("PARIS", 25.0, 0.5);
@@ -628,7 +641,9 @@ TEST(ViterbiDecoder, IsTheSearchOfTheRecenteredPiecesWithTheRise) {
     const std::vector<double> rise = viterbi::rise_fractions(taps, kInputRate, 32, kSamplesPerPiece, 0.005);
     ASSERT_EQ(rise.size(), 4u);
     EXPECT_NEAR(rise[0], 0.193444, 5e-6);
-    const auto with_rise = std::make_shared<const viterbi::FlatPrior>(config, c, 195, kSamplesPerPiece, rise);
+    const std::vector<double> errors = viterbi::rise_template_errors(taps, kInputRate, 32, kSamplesPerPiece, 0.005);
+    const auto with_rise =
+        std::make_shared<const viterbi::FlatPrior>(config, c, 195, kSamplesPerPiece, rise, errors);
     const auto without = std::make_shared<const viterbi::FlatPrior>(config, c, 195, kSamplesPerPiece,
                                                                     std::span<const double>{});
     viterbi::Search matched(config, c, with_rise);
@@ -643,6 +658,8 @@ TEST(ViterbiDecoder, IsTheSearchOfTheRecenteredPiecesWithTheRise) {
         matched.step(piece, t, kN0);
         plain.step(piece, t, kN0);
     }
+    matched.finish();
+    plain.finish();
     EXPECT_EQ(matched.normalization_nats(), run.normalization_nats);
     const std::vector<viterbi::StoryView> stories = matched.live_stories();
     ASSERT_EQ(stories.size(), run.stories.size());

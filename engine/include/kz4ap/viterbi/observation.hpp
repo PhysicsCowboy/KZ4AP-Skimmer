@@ -64,6 +64,25 @@ std::vector<double> sum_noise_hz(std::span<const double> taps, double input_rate
 std::vector<double> rise_fractions(std::span<const double> taps, double input_rate_hz, int decimation,
                                    int samples_per_piece, double rise_s);
 
+// The matched filter's systematic error at a mark's start (the systematic term of the error budget; the owner's
+// decision D15 of 2026-10-21): E_n for n = 1 ... N, dimensionless, in units of a full piece's squared carrier sum
+// (samples_per_piece a)^2. The template t_j is rise_fractions' g_j (1 past the rise); a mark whose edge lies at
+// position p within its piece holds f_j(p) of a full piece's carrier sum in its j-th piece instead (rise_fractions'
+// positions, before their average), so the weighted sum of its first n pieces, sum_j t_j x_j, misses the template's
+// by (samples_per_piece a) e_n(p), e_n(p) = sum_{j <= n} t_j (f_j(p) - t_j), and
+//     E_n = the mean of e_n(p)^2 over the positions, equally likely (derived).
+// The pieces' errors come from one edge, so they are summed before squaring, not treated as independent (they are
+// positively correlated: the edge moving later lowers every piece of the rise). The table starts at the template's
+// first piece and ends where every position's fractions are 1 (the filter and the edge lie behind), past which
+// E_n = E_N. The pieces before the template's first, which hold the filter's ringing before a mark (up to 0.046 of a
+// full piece's amplitude), are not in it: the search's look-ahead covers them (search.hpp, "The systematic term"). On
+// the channelizer's filter at 48 kHz with the default 5 ms edge, E_1 = 0.00037, E_2 = 0.0095, E_3 = 0.0224 and
+// E_n = 0.0210 from n = 7 on (measured; Observation.TemplateErrorsMatchThePerPositionFractions), so the weighted
+// sum's systematic error is 0.145 of a full piece's carrier sum (its standard deviation). Empty where rise_fractions
+// finds no piece of the rise at all (no piece reaches 0.01). The same arguments and errors as rise_fractions.
+std::vector<double> rise_template_errors(std::span<const double> taps, double input_rate_hz, int decimation,
+                                         int samples_per_piece, double rise_s);
+
 namespace detail {
 
 // rise_fractions before the average: [position][piece], the fractions of pieces 0 ... pieces - 1 for an edge that
@@ -267,8 +286,10 @@ public:
     // empty, or one the tables cannot hold: for some block length, b at level_min_db above 6 (at 6 the integrand there
     // falls by e every 12 steps of the grid, and the trapezoid and the reading between nodes lose up to 0.0014 nats,
     // derived) or b at level_max_db below 50 (the table's top, z = 40, plus 10).
+    // template_errors: rise_template_errors' E_1 ... E_N for the same rise (empty: no edge term); each must be finite
+    // and not negative.
     FlatPrior(const ViterbiConfig& config, std::span<const double> c, int max_pieces, int samples_per_piece,
-              std::span<const double> rise = {});
+              std::span<const double> rise = {}, std::span<const double> template_errors = {});
     FlatPrior(const FlatPrior&) = delete;
     FlatPrior& operator=(const FlatPrior&) = delete;
 
@@ -285,10 +306,16 @@ public:
     // samples_per_piece x (g_1^2 + ... + g_n^2), g_j = 1 past the rise; the weighted sum's noise variance is
     // N0 x noise_rate_hz() x m_signal(n). Throws std::out_of_range for n below 1.
     double signal_samples(int pieces) const;
+    // E_n (rise_template_errors), dimensionless: the mean square of the systematic error of the weighted sum of a
+    // mark's first n pieces (n >= 1), in units of a full piece's squared carrier sum; E_N past the table, 0 without
+    // one. Throws std::out_of_range for n below 1.
+    double template_error(int pieces) const;
 
     // Lambda_flat(n, z), nats, for a block of `pieces` pieces (1 ... max_pieces) with z = |S| / sqrt(V) >= 0, S the
-    // weighted sum and V = N0 x noise_rate_hz() x m_signal(n) its noise variance. Throws std::out_of_range for pieces
-    // outside 1 ... max_pieces and std::invalid_argument for a z that is negative or not finite.
+    // weighted sum and V = N0 x noise_rate_hz() x m_signal(n) its noise variance. (The search passes z with the
+    // systematic term in V as well, so that the table's level range stands for levels higher by 10 log10(V / the
+    // noise's share) in dB S500: search.hpp, "The systematic term".) Throws std::out_of_range for pieces outside
+    // 1 ... max_pieces and std::invalid_argument for a z that is negative or not finite.
     double llr(int pieces, double z) const;
     // The posterior mean and variance of b, in units of sqrt(V) / m_signal(n) and V / m_signal(n)^2. The same errors
     // as llr.
@@ -310,6 +337,7 @@ private:
     double noise_rate_hz_ = 0.0;      // Hz per channel sample
     std::vector<double> rise_;          // g_1 ... g_J
     std::vector<double> rise_squares_;  // [n]: g_1^2 + ... + g_n^2 for n = 0 ... J
+    std::vector<double> template_errors_;  // E_1 ... E_N
 };
 
 }  // namespace kz4ap::viterbi

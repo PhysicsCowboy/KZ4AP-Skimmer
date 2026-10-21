@@ -25,15 +25,17 @@
 //     observation.hpp): S = sum_j g_j x_j over its pieces x_j, with the rise's fractions g_j (0.193, 0.614, 0.943 and
 //     1.019 at 48 kHz with a keying edge of keying_rise_s = 5 ms; g_j = 1 past the rise), the flat prior's
 //     (FlatPrior::weight), so that a weak first piece adds little and a start that skips it gains nothing; its
-//     m_signal = samples_per_piece x (g_1^2 + ... + g_n^2) and V = N0 x rate x m_signal. A later block is the plain
-//     sum: m_signal = m = samples_per_piece x n and V = N0 x rate x m. While a mark lasts, its current block's
-//     evidence so far is part of the score at every piece; a finished block's evidence enters the score for good and
-//     its posterior becomes the story's level. Every story in a mark makes exactly one scoring call per piece, and its
-//     continuation and all its successors at that piece use that call's evidence and level: a learned story calls
-//     score_block with its level predicted to the piece's time t_k (the update stamps a level with its block's end, so
-//     the prior of the block in hand is predicted end to end; a predicted level is used once and never stored),
-//     starting Newton's method from the previous piece's mode in the same block; a newborn's first block, of at most
-//     min(B, the flat prior's max_pieces) pieces, calls score_first_block, and the level is learned when it finishes.
+//     m_signal = samples_per_piece x (g_1^2 + ... + g_n^2) and the noise's share of V is N0 x rate x m_signal. A later
+//     block is the plain sum: m_signal = m = samples_per_piece x n and the noise's share N0 x rate x m. V adds the
+//     systematic term to the noise in quadrature (below, "The systematic term"). While a mark lasts, its current
+//     block's evidence so far is part of the score at every piece; a finished block's evidence enters the score for
+//     good and its posterior becomes the story's level. Every story in a mark makes exactly one scoring call per piece,
+//     and its continuation and all its successors at that piece use that call's evidence and level: a learned story
+//     calls score_block with its level predicted to the piece's time t_k (the update stamps a level with its block's
+//     end, so the prior of the block in hand is predicted end to end; a predicted level is used once and never
+//     stored), starting Newton's method from the previous piece's mode in the same block; a newborn's first block, of
+//     at most min(B, the flat prior's max_pieces) pieces, calls score_first_block, and the level is learned when it
+//     finishes.
 //   - Durations, in the hazard form (fist.hpp): a story still in its mark or gap at tau pieces has paid ln S(tau), one
 //     that ends there ln P(tau) instead. A mark keeps the better of ln S_dot(tau) and ln S_dash(tau), each plus its
 //     label's text cost at the node (0 where that child exists, -infinity where not), and ends into a dot and a dash,
@@ -47,7 +49,9 @@
 //     (ln(1/(p (1 - q))) = 1.161 nats), and the over may end, ln(1/(p q)) = 4.296 nats, taken at the mark's end as a
 //     step to the no-signal state; p = word_end_p = 1/3.06 and q = over_end_q = 1/24 (counted constants).
 //
-// One piece, in this order (plan §2.7):
+// The search runs lookahead_pieces() pieces behind the pieces it is given (2 at 2 ms, 4 ms: the systematic term's
+// look-ahead, below): step holds each piece until that many more have come, then searches it with the time and N0 given
+// with it, and finish searches those still held. One piece searched, in this order (plan §2.7):
 //   1. At the channel's first piece there is one story: no signal, score 0, empty text.
 //   2. Every story continues and ends. In a mark: the piece joins the block's sum; a full block is finished and the
 //      next opened; the story continues; it also ends here as a dot and as a dash, each a successor in a gap at the
@@ -102,16 +106,18 @@
 //
 // The mark's rise (design notes, topic 4, item 2, as amended 2026-10-20) and what remains. With the pieces at the
 // long-run rate and the matched filter in a mark's first block, the start aligned with the rise wins and keeps winning,
-// and a newborn whose level is free gains nothing at a strong first piece. Measured on noise-free pieces at
-// +20 dB S500 under a level about 20% uncertain (relative standard deviation, predicted across 124 ms at f_D = 1 Hz): a
-// start one piece late trails by about 41 nats one piece after the edge and by about 59 nats six pieces after it
-// (with a block's own c(m) and no rise it had led by 48.8 and about 23 nats), and a start one piece early scores within
-// 0.4 nats of the aligned one. Measured on the tests' signals (search_test.cpp), without the Farnsworth factor: the
-// step from 20 to 30 WPM decodes at every level from +10 to +28 dB S500 on three seeds at beams of 40 and 80 nats, and
-// "PARIS PARIS" at 12, 25 and 40 WPM decodes exactly at every level from +10 to +28 dB S500 on three seeds.
+// and a newborn whose level is free gains nothing at a strong first piece. Measured before the systematic term, on
+// noise-free pieces at +20 dB S500 under a level about 20% uncertain (relative standard deviation, predicted across
+// 124 ms at f_D = 1 Hz): a start one piece late trails by about 41 nats one piece after the edge and by about 59 nats
+// six pieces after it (with a block's own c(m) and no rise it had led by 48.8 and about 23 nats), and a start one piece
+// early scores within 0.4 nats of the aligned one. Measured on the tests' signals (search_test.cpp), without the
+// Farnsworth factor, with and without the systematic term: the step from 20 to 30 WPM decodes at every level from +10
+// to +28 dB S500 on three seeds at beams of 40 and 80 nats, and "PARIS PARIS" at 12, 25 and 40 WPM decodes exactly at
+// every level from +10 to +28 dB S500 on three seeds (Search.FollowsASpeedStepAtEverySnr holds the beam of 40 nats).
 // What remains:
 //   1. The edge's position within a piece is averaged, not known: at 48 kHz a mark's first piece holds 0.048 to 0.384
-//      of a full piece, depending on where the edge falls in it, and the template has their average, 0.193.
+//      of a full piece, depending on where the edge falls in it, and the template has their average, 0.193. The
+//      systematic term's edge share, E_n, carries that spread into the error budget (below).
 //   2. The keying edge's shape is assumed: the generator's 5 ms raised cosine (keying_rise_s); real transmitters vary.
 //   3. The ceiling binds in the gaps of weak signals. With the Farnsworth factor, at +10 dB S500 on seed 12 the step
 //      misread one letter pair ("P<AR>IS", CER 0.057), because the ceiling dropped the rescue newborns born in the
@@ -126,21 +132,81 @@
 //      of one piece in the tail can claim that energy. That over alone costs 34.3 nats (the over's end 4.30, the
 //      birth's ln P 9.21, the letter 4.13, the speed's prior 3.47 and a one-piece dot at 100 WPM 13.17), and the story
 //      also pays for what follows it, so the claim wins only where the piece carries at least about 34 nats (derived).
-//      Scratch runs through the decoder for the plan's Task 7, not in a test ("PARIS PARIS" at 25 WPM on DEV2's noise,
-//      N0 the noise's own): in each run every keying edge sits at the same position within its piece (the dot is
-//      exactly 24 pieces and the start a whole number of pieces), so a position's result holds for every element of
-//      its run. At 16 positions of the edge within a piece (steps of 6 of its 96 input samples at 48 kHz; one seed) the
-//      text was exact at +30, +33 and +36 dB S500; at +38 dB S500 2 positions failed (edges 18 and 24 input samples
-//      into a piece) and at +40 dB S500 3 (12, 18 and 24); with the edge at a piece's start the text was exact to
-//      +41 dB S500 on three seeds, wrong on one of them at +42 dB S500 and on all three from +43 dB S500 (measured).
-//      Near the onset the texts keep parts of the words ("PARIS E EGA E RIS" at +38 dB S500, edge 18; "PARIS E
-//      EGARIS" at +42 dB S500, edge 0); from +44 dB S500 they break into short words, mostly of E and T ("T EE EE ET E
-//      T EE E ..." at +60 dB S500: 19 words for the 14 elements of each "PARIS"). A real station's edges fall at mixed
-//      positions, so from about +37 dB S500 some of its elements would be misread (conjectured). With a fading spread
-//      of 5 Hz instead of 1 Hz (the level's prior 4.4 times broader across a dot's gap) +45 to +60 dB S500 failed
-//      alike, so the level's prior is not the lever. DEV2's stations lie at or below +20 dB S500 (neighbors to
-//      +26 dB S500); real bands hold stronger ones. ViterbiDecoder.ExtremeLevels records +60 dB S500 as a strict
-//      expected failure.
+//      Without the systematic term that broke strong stations. Through the decoder ("PARIS PARIS" at 25 WPM on DEV2's
+//      noise, N0 the noise's own; in each run every keying edge at one of 16 positions within its piece, steps of 6 of
+//      its 96 input samples at 48 kHz), 16, 16, 13, 10, 2, 0 and 0 positions decoded exactly at +30, +36, +40, +45,
+//      +50, +55 and +60 dB S500, the first failures at +38 dB S500; from +44 dB S500 the texts broke into short words,
+//      mostly of E and T ("T EE EE ET E T EE E ..." at +60 dB S500), and a fading spread of 5 Hz instead of 1 Hz failed
+//      alike (measured; the results record, section 1.7). With the systematic term (below) a newborn's one-piece first
+//      block claims at most g_1^2 f^2 / (E_1 + floor^2 g_1^2) = 97 f^2 nats where the mark just seen sets C^2
+//      (derived), and every position decodes exactly at every one of those levels (measured;
+//      ViterbiDecoder.StrongStationsAtEveryEdgePosition, a full-sweep test, and ViterbiDecoder.ExtremeLevels at
+//      +60 dB S500). DEV2's stations lie at or below +20 dB S500 (neighbors to +26 dB S500); real bands hold stronger
+//      ones.
+//
+// The systematic term (the owner's decision D15 of 2026-10-21). The model is close to the signal, not exact: the
+// template of a mark's first block is the rise averaged over where the edge falls in its piece, the channel filter
+// rings before a mark where the template has nothing, and real signals add chirp, clicks, phase noise and fading within
+// a block. At ordinary levels the noise hides the mismatch. At +60 dB S500 a full piece is worth 10^6 nats (its
+// f^2 x 10^(S500 / 10) with f = 1), so a mismatch of 1% of one piece's carrier amplitude is worth about 100 nats, more
+// than inventing a one-piece over costs (34.3 nats). So the model's systematic uncertainty is added in quadrature to
+// the noise in the error budget of every block of a mark:
+//     V = N0 x rate x m_signal + C^2 (E_n + floor^2 x W_n)   (FS^2),
+//   - W_n = m_signal / samples_per_piece, the sum of the block's squared weights (n in a later block);
+//   - floor = systematic_floor, 0.02 of a full piece's carrier amplitude (placeholder, heuristic): what the template
+//     leaves out, independent from piece to piece;
+//   - E_n, in a mark's first block only (a newborn's or a learned story's; 0 in a later block): the template's own
+//     systematic error at a mark's start, FlatPrior::template_error (rise_template_errors, observation.hpp), the mean
+//     square over the edge's positions of the weighted sum's miss, the pieces' errors summed before squaring since one
+//     edge makes them all (derived): 0.00037, 0.0095 and 0.0224 at n = 1, 2 and 3 pieces and 0.0210 from 7 on, at
+//     48 kHz with 5 ms edges (measured);
+//   - C^2 = (samples_per_piece x a)^2, a full piece's squared carrier sum, taken from the data, the same for every
+//     story with this block and never a story's level: the larger of the channel's carrier power, the largest
+//     |piece|^2 of the last min(B, the flat prior's span) pieces (195, 390 ms, at the defaults: the longest block a
+//     story can hold, heuristic) and of the next lookahead_pieces(), and the block's own estimate,
+//     (samples_per_piece |S| / m_signal)^2.
+// The evidence keeps its form, Lambda = -b^2 + ln I0(2 b z) with this V in b and z: the carrier and noise alone are
+// judged against the same error budget, as a least-squares fit treats a systematic error. A newborn's flat prior is
+// read at z = |S| / sqrt(V), so its range in b, built for the noise's V, stands for levels higher than its bounds by
+// 10 log10(V / the noise's share) in dB S500 (derived): it moves up with the strongest stations.
+// Derived: at large SNR Lambda is about (|S|^2 - |S - m_signal a|^2) / V, so a hypothesis that lowers its own V raises
+// its evidence. With a story's own level k a in V (k the level over the true one) a mark scores about
+// (2k - k^2) z0^2 / (1 + k^2 rho), z0^2 its energy over the noise and rho the systematic share of V over the noise's at
+// the true level, which is largest near k = 1 / sqrt(rho), not at k = 1: a 24-piece dot at +60 dB S500 (z0^2 =
+// 2.2 x 10^7, rho = 1 340) scores about 6 x 10^5 nats at k = 0.027 against 1.7 x 10^4 at k = 1. The exact form, V(a)
+// inside the level's integral, is dominated by that same a and grows as z0^2 / sqrt(rho) instead of being capped. With
+// C^2 at the true carrier, a first block of n pieces has z^2 at most G_n^2 / (E_n + floor^2 G_n), G_n = g_1^2 + ... +
+// g_n^2: 3.6 nats for one piece and 17.7 for two (below the 34.3 nats of an invented over), and a later block's
+// z^2 / n at most 1 / floor^2 = 2 500.
+// Measured (scratch runs on the grid above, in a copy of the branch; the results record, section 1.7), each part of
+// C^2 alone fails: the channel's carrier power alone left an over's first mark uncapped, since the channel holds no
+// recent carrier there ("E PARIS PARIS" from +40 dB S500); the block's own estimate alone over- or understated the
+// carrier as the template sat on the rise, and so did a story's level (0 of 16 edge positions exact at every level from
+// +30 to +60 dB S500, with either). Without the look-ahead, E_n summed over independent pieces left 3 of 16 positions
+// exact at +60 dB S500, against 14 with E_n as one edge's.
+// The look-ahead (measured): the two pieces before a mark's first template piece carry the channel filter's ringing,
+// up to 0.046 and 0.022 of a full piece's amplitude (the third below 0.002); at +60 dB S500 a newborn read them as the
+// end of a weak mark, worth about 87 nats, before the mark's power reached the window, and 2 of 16 positions failed.
+// So the channel's carrier power also takes the next lookahead_pieces() = ceil(4 ms / piece_s) pieces, and the search
+// runs that far behind the pieces it is given (2 pieces, 4 ms, at the defaults; 3 gave the same at +50 to +60 dB S500).
+// The floor (measured without the look-ahead on the same grid, and at ordinary levels: the speed step of
+// Search.FollowsASpeedStepAtEverySnr at beams of 40 and 80 nats and its constant-speed stations, and "TEST" and "TU"
+// sent alone at +10 to +30 dB S500 on three seeds): 0 failed the strong grid from +45 dB S500 (two marks merged
+// across a gap: a budget that does not grow with the block's length makes merging across g pieces pay when
+// E_n > floor^2 g, derived) and lost a speed-step point and a one-word over; 0.01 lost two one-word overs at
+// +30 dB S500; 0.05 was clean but costs as much evidence as 1.3 to 1.6 dB of S500 at +20 dB S500. At 0.02 a mark's
+// evidence drops as if S500 were 0.05, 0.24 and 1.12 dB lower in a 195-piece later block at +10, +20 and
+// +28 dB S500, and 0.12, 0.70 and 2.88 dB lower in a 24-piece first block (measured; 10 log10(1 + floor^2 x
+// 10^(S500 / 10)) = 0.02, 0.17 and 0.98 dB of S500 for a later block, derived), and the search's CPU time stays within
+// 1% of its own without the term (measured).
+// A neighbor: C^2 is the channel's, so a strong neighbor inside the channel raises a weak station's term. A steady
+// neighbor whose pieces are p, delta Hz away, leaves on average |p|^2 / (2 sin^2(pi delta piece_s)) in the power of a
+// block sum of n pieces, while the floor's share of the term is floor^2 |p|^2 n, at most 2 n floor^2 of that residual
+// (0.019 for a 24-piece block, 0.16 for a 195-piece one), and the edge's share at most 2 E_n (0.045; derived): where
+// the term's share reaches the noise, the neighbor's own residual in the same block is on average at least 5 times
+// larger.
+// Measured: a station at +6 or +10 dB S500 with a keyed neighbor 0 to 40 dB stronger 40 to 200 Hz away, and cells like
+// DEV2's E2 group's, never lost an exact text to the term (the results record, section 1.7).
 //
 // Work saved without changing any output:
 //   - The maxima over an open speed (a newborn's first mark: its survival, the best over the speeds and both labels;
@@ -281,7 +347,8 @@ public:
     // std::invalid_argument for no prior, a c too short or not positive and finite from m = 1, a long-run rate that
     // differs from the prior's (by more than 1e-9 of it), and a configuration the search cannot use: a beam that is not
     // positive, a ceiling below 1, more than 255 speeds, a P (over_rate_per_s x piece_s), epsilon, p or q
-    // outside (0, 1), a quadrature order outside 2 ... 20, or a block shorter than one piece; and what Fist and
+    // outside (0, 1), a quadrature order outside 2 ... 20, a block shorter than one piece, a systematic_floor outside
+    // [0, 1], or a piece_s so short that the look-ahead would hold more than a million pieces; and what Fist and
     // block_length_s refuse.
     Search(const ViterbiConfig& config, std::span<const double> c, std::shared_ptr<const FlatPrior> prior,
            detail::SearchOptions options = {});
@@ -295,16 +362,26 @@ public:
     // (s), computed by the caller from one expression, t_k = t_first + samples_per_piece x (k + 1) / r, never from sums
     // of increments; n0_fs2_per_hz, the hiss N0 (FS^2/Hz). Throws std::invalid_argument, before changing anything, for
     // an N0 that is not positive and finite, a t_s that is not finite or not later than the previous piece's, and a
-    // piece that is not finite.
+    // piece that is not finite. The piece is held for the look-ahead and searched, with its own t_s and N0, once
+    // lookahead_pieces() more have been given (or at finish), so after a step the stories, the text and the statistics
+    // are those of the pieces searched: all but the last lookahead_pieces() given.
     void step(std::complex<double> piece_fs, double t_s, double n0_fs2_per_hz);
+
+    // Searches the pieces held for the look-ahead, oldest first, each with the look-ahead of those held after it, so
+    // that every piece given has been searched; pieces given later are held again. Call it at the channel's end,
+    // before best_text() (ViterbiDecoder::flush does).
+    void finish();
+
+    // pieces: how many pieces the search holds back for the look-ahead, ceil(4 ms / piece_s), 2 at 2 ms.
+    int lookahead_pieces() const;
 
     // The best story's text (plan §2.7, item 7): " " is a word space; each symbol's probability is 1.
     std::vector<DecodedSymbol> best_text() const;
 
     const SearchStats& stats() const;
 
-    // For tests: the live stories after the last piece's pruning, and each one's state and score, in the order of their
-    // states (the order of detail::Ranked::state).
+    // For tests: the live stories after the last searched piece's pruning, and each one's state and score, in the order
+    // of their states (the order of detail::Ranked::state).
     std::size_t live() const;
     std::vector<StoryView> live_stories() const;
     // nats: the sum of the best scores subtracted so far; a story's score against "noise only, throughout" is its

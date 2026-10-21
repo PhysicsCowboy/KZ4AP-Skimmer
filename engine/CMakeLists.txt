@@ -103,7 +103,7 @@ gtest_discover_tests(kz4ap_bank_tests)
 # Plan B task B2(a): the fit's frozen-copy sweeps at their full sizes (10^6 observations per configuration at
 # every grid point, 2000 random fits per configuration and number of refinement steps), about 6 min on the
 # Linux machine and 41 min on the Windows PC (since B2(b)). Labeled full-sweep: the default test presets exclude it,
-# the presets windows-full-sweep and linux-full-sweep run only the tests so labeled (this one and Search.FullSweep
+# the presets windows-full-sweep and linux-full-sweep run only the tests so labeled (this one and the new decoder's
 # below; ctest's -R picks one).
 add_test(NAME BankFitB2a.FullSweep COMMAND kz4ap_bank_tests --gtest_filter=BankFitB2a.*)
 set_tests_properties(BankFitB2a.FullSweep PROPERTIES ENVIRONMENT KZ4AP_FIT_FULL_SWEEP=1 LABELS full-sweep)
@@ -130,3 +130,9 @@ set_tests_properties(Search.FullSweep PROPERTIES ENVIRONMENT KZ4AP_SEARCH_FULL_S
 # Labeled full-sweep as above (without KZ4AP_VITERBI_FULL_SWEEP the test runs on one minute of noise).
 add_test(NAME ViterbiDecoder.FullSweep COMMAND kz4ap_viterbi_tests --gtest_filter=ViterbiDecoder.TenMinutesOfNoise)
 set_tests_properties(ViterbiDecoder.FullSweep PROPERTIES ENVIRONMENT KZ4AP_VITERBI_FULL_SWEEP=1 LABELS full-sweep)
+# The strong stations, +30 to +60 dB S500 at 16 positions of the keying edge within a piece (the systematic term).
+# Labeled full-sweep as above (without KZ4AP_VITERBI_FULL_SWEEP the test skips).
+add_test(NAME ViterbiDecoder.StrongFullSweep COMMAND kz4ap_viterbi_tests
+         --gtest_filter=ViterbiDecoder.StrongStationsAtEveryEdgePosition)
+set_tests_properties(ViterbiDecoder.StrongFullSweep PROPERTIES ENVIRONMENT KZ4AP_VITERBI_FULL_SWEEP=1
+                     LABELS full-sweep)

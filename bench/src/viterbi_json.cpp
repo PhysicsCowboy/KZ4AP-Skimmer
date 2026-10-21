@@ -28,8 +28,8 @@ using nlohmann::ordered_json;
 #define KZ4AP_VITERBI_CONFIG_FIELDS(X)                                                                              \
     X(piece_s) X(dot_min_ms) X(speed_ratio) X(speed_count) X(fist_medians_dots)                                     \
     X(fist_sigmas) X(fist_shifts_dots) X(beam_nats) X(ceiling) X(fading_spread_hz) X(block_loss_db)                 \
-    X(keying_rise_s) X(over_rate_per_s) X(rescue_epsilon) X(word_end_p) X(over_end_q) X(level_min_db)               \
-    X(level_max_db) X(quadrature_order) X(hiss_half_width_hz) X(hiss_percentile) X(hiss_average_s)                  \
+    X(keying_rise_s) X(systematic_floor) X(over_rate_per_s) X(rescue_epsilon) X(word_end_p) X(over_end_q)          \
+    X(level_min_db) X(level_max_db) X(quadrature_order) X(hiss_half_width_hz) X(hiss_percentile) X(hiss_average_s)  \
     X(tracker_window_s) X(tracker_hop_s) X(tracker_search_hz) X(tracker_gate_db) X(tracker_drift_sd_hz_per_s)       \
     X(tracker_drift_noise) X(genie_frequency_offset_hz) X(genie_frequency_drift_hz_per_s)                           \
     X(genie_fading_spread_hz) X(stats)

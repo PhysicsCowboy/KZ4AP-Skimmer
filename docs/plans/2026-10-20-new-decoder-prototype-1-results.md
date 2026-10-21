@@ -61,7 +61,7 @@ commit and its committed score tables.
 
 `ViterbiConfig` (`engine/include/kz4ap/viterbi/config.hpp`) is the decoder's whole configuration, in physical units; the
 table gives each field's default, its unit and its class, as `docs/signal-processing.md` appendix A.10 does for the same
-values. Pieces, bins and samples appear only where a value is used. The bench records all 32 fields in every viterbi
+values. Pieces, bins and samples appear only where a value is used. The bench records all 33 fields in every viterbi
 result file (section 1.2).
 
 | Field | Default | Unit | Class and meaning |
@@ -78,6 +78,7 @@ result file (section 1.2).
 | `fading_spread_hz` | 1.0 | Hz | placeholder, swept by the plan: the Doppler spread f_D of the fading, twice the standard deviation of a Gaussian Doppler spectrum |
 | `block_loss_db` | 0.5 | dB of signal energy | heuristic: the largest loss of a coherent block; with `fading_spread_hz` it gives the block, B = 195 pieces = 390 ms (derived) |
 | `keying_rise_s` | 0.005 | s | placeholder, heuristic: the raised-cosine rise at a mark's start, the generator's edge (S2's edges are 10 ms: section 1.4) |
+| `systematic_floor` | 0.02 | of a full piece's carrier amplitude | placeholder, heuristic (the owner's decision D15 on the systematic term; section 1.7): the floor of the model's systematic uncertainty per piece, added in quadrature to the noise in the error budget |
 | `over_rate_per_s` | 0.05 | 1/s | placeholder (the development set's own rate): P = 1.0 × 10⁻⁴ per piece of silence that an over starts |
 | `rescue_epsilon` | 1.0 × 10⁻³ | probability per letter start | placeholder (the development set's own count) |
 | `word_end_p` | 1/3.06 = 0.3268 | probability | measured (VE3NEA's mean word length in CW Skimmer's decodes); a placeholder until recounted on real traffic |
@@ -227,10 +228,11 @@ before its runs finish on a committed state.
 
 Task 7a found two behaviors of the decoder while building it. Both stand in `docs/signal-processing.md` (section 8d,
 "Open", and appendix A.8d, limitations) and in `engine/include/kz4ap/viterbi/search.hpp` ("what remains", item 4).
-**The owner's decisions on both are pending.** The measurements were scratch runs through the decoder (temporary tests,
-removed before the commit, not tests); this section states what they showed, with the conditions known, and the
-outputs of the runs are committed as three tables in `docs/plans/data/2026-10-20-new-decoder-prototype-1/`, the
-console's wrapped lines joined. Each claim carries its class.
+The owner decided both on 2026-10-21 (the end of this section); the fix of finding 1, the systematic term, has its own
+part below. The measurements were scratch runs through the decoder (temporary tests, removed before the commit, not
+tests); this section states what they showed, with the conditions known, and the outputs of the runs are committed as
+tables in `docs/plans/data/2026-10-20-new-decoder-prototype-1/`, the console's wrapped lines joined. Each claim carries
+its class.
 
 **Conditions of the runs.** The signal "PARIS PARIS" (finding 1) or "TEST" (finding 2) at 25 WPM, machine keying (exact
 PARIS timing), 5 ms raised-cosine keying edges inside each key-down interval, as the generator makes them, on DEV2's
@@ -250,6 +252,8 @@ sent):
 | `fall-edge-positions.csv` | 80 | `s500_db` (dB S₅₀₀); `edge_input_samples_of_96`, the key-down's offset after 0.5 s in input samples of 1/48 000 s, a piece being 96; `exact`; `decoded` |
 | `fall-levels.csv` | 48 | `s500_db`; `decoder_fading_spread_hz` (Hz, the decoder's setting); `start_s` (s, the key-down's start); `seed` (the noise's); `exact`; `decoded` |
 | `one-word-over.csv` | 24 | `s500_db`; `seed`; `factor_count`; `exact`; `decoded` |
+| `systematic-strong-grid.csv` | 224 | `systematic_term` (0 without the term, at ae8f65d; 1 with it); `s500_db`; `edge_input_samples_of_96`; `exact`; `decoded` |
+| `systematic-neighbors.csv` | 777 | `grid` (1, 2, or `E-qrm-s3 label 9`, the existing tests' stream); `station_s500_db` and `neighbor_relative_db` (dB S₅₀₀, and dB relative to the station's key-down power, to 0.01 dB); `neighbor_offset_hz` (Hz above the station; 0.01 Hz); `seed`; `systematic_term` (`without`, `floor_0`, `with`); `edits`; `reference_symbols`; `exact` |
 
 #### Finding 1: strong stations decode wrongly above about +37 dB S₅₀₀
 
@@ -286,8 +290,8 @@ the 5 Hz spread, and the three later starts) fail.
 S₅₀₀, edge 18), "PARIS E EGARIS" (+42 dB S₅₀₀, seed 34, edge at the piece's start) and "PARIS PARIS E" (+43 dB S₅₀₀,
 seed 41). From +44 dB S₅₀₀ they break into short words, mostly of E and T. At +60 dB S₅₀₀ the text is
 "T EE EE ET E T EE E T EE ET E T ET E T ET ET E" for each "PARIS": 19 words and 28 letters for its 14 elements (38
-words and 56 letters for the two; counted from the table). The committed test `ViterbiDecoder.ExtremeLevels` prints
-the same text at the default settings (a strict expected failure: it fails the day the text is exact). A 5 Hz fading
+words and 56 letters for the two; counted from the table). The committed test `ViterbiDecoder.ExtremeLevels` printed
+the same text at the default settings (a strict expected failure until the systematic term, below). A 5 Hz fading
 spread, which makes the level's prior 4.4 times broader across a dot's gap, fails alike from +45 to +60 dB S₅₀₀, so the
 level's prior is not the lever (the first explanation tried, refuted).
 
@@ -326,7 +330,83 @@ gives "TU" as "X" and "EE" as "I" as plausible) has not been run.
   exactly in 12 of 12 runs each (committed test `ViterbiDecoder.OneWordOversDecodeExactly`; measured).
   Farnsworth-spaced signals now decode poorly: a known gap of this prototype, recorded in `docs/backlog.md`.
 - **Finding 1.** Modeling the fall at a mark's end (D13) did not fix it (§1.8). The owner then chose a systematic term
-  in the error budget (D15), tried next.
+  in the error budget (D15), which fixes it (below).
+
+#### The systematic term (D15): the fix of finding 1
+
+*The design* (`docs/signal-processing.md`, section 8d and appendix A.8d; `search.hpp`, "The systematic term"). The model
+is close to the signal, not exact, and each block of a mark is now judged against an error budget that adds the model's
+systematic uncertainty to the noise in quadrature: V = N₀ × 1 500 Hz × m_signal + C²(E_n + f²W), W the sum of the
+block's squared weights. E_n is the template's error over where the keying edge falls in its piece (a mark's first
+block only); f = `systematic_floor` = 0.02 is a floor for everything else; C² is a full piece's squared carrier sum,
+taken from the data and the same for every story: the channel's largest piece over the last 390 ms and the next 4 ms,
+or the block's own estimate where larger. The search runs 4 ms behind its pieces for that look-ahead.
+
+*What the runs showed (measured, `systematic-strong-grid.csv`).* Finding 1's grid through the decoder at its defaults
+(the tracker re-centers): "PARIS PARIS" at 25 WPM on DEV2's noise (seed 34), N₀ the noise's own, the station on its
+channel's center, the key-down at 0.5 s plus q input samples, q = 0, 6, …, 90, so that every keying edge of a run sits
+at one of 16 positions within its piece. Exact texts, of 16:
+
+| Code | +30 | +36 | +40 | +45 | +50 | +55 | +60 dB S₅₀₀ |
+|---|---|---|---|---|---|---|---|
+| without the term (ae8f65d), `systematic_term` 0 | 16 | 16 | 13 | 10 | 2 | 0 | 0 |
+| with it (the commit that adds this part), `systematic_term` 1 | 16 | 16 | 16 | 16 | 16 | 16 | 16 |
+
+The new full-sweep test `ViterbiDecoder.StrongStationsAtEveryEdgePosition` holds the second row, and
+`ViterbiDecoder.ExtremeLevels` now requires the exact text at +60 dB S₅₀₀ (the edge at a piece's start); it was a
+strict expected failure.
+
+*Ordinary levels (tested, and measured in scratch runs).* `Search.FollowsASpeedStepAtEverySnr` (the step from 20 to
+30 WPM and the constant-speed stations at 12, 25 and 40 WPM, every level from +10 to +28 dB S₅₀₀, three seeds each, at
+the 40-nat beam) passes at the commit. In scratch runs in a copy of the branch at 20f0e4f with the term (the same
+arithmetic as the commit; not committed), the speed step at an 80-nat beam and "TEST" and "TU" sent alone at +10, +15,
++20 and +30 dB S₅₀₀ on three seeds stayed exact too. What the term costs a mark's evidence at these levels, as the drop
+in S₅₀₀, in dB of S₅₀₀, that would give the same mean evidence without it (scratch: the copy's scoring path, a learned
+story's level known to 2%, the carrier at the template's fractions, 2 000 noise draws per point):
+
+| Block | at +10 dB S₅₀₀ | at +20 dB S₅₀₀ | at +28 dB S₅₀₀ |
+|---|---|---|---|
+| first block, 24 pieces (a dot at 25 WPM) | 0.12 | 0.70 | 2.88 |
+| first block, 72 pieces (a dash) | 0.07 | 0.40 | 1.77 |
+| later block, 195 pieces | 0.05 | 0.24 | 1.12 |
+
+The later block's figure is 10 log₁₀(1 + f²·10^(S₅₀₀/10)) = 0.02, 0.17 and 0.98 dB of S₅₀₀ with C² at the true carrier
+(derived); the measured values are higher because the channel's largest piece is a maximum over noisy pieces.
+
+*A strong neighbor (measured, `systematic-neighbors.csv`).* C² is the channel's, so a neighbor inside the channel's
+passband raises a weak station's term. Derived (A.8d): where the term's share of a block's variance reaches the noise,
+the neighbor's own residual in the same block sum is already, on average, at least 5 times larger. Two grids through
+the decoder with the genie's frequency (so the tracker plays no part): "PARIS PARIS" at 25 WPM from 0.5 s, and above
+it the neighbor "CQ TEST DE KZ4AP KZ4AP" at 22 WPM from 0.3 s, both machine keying, on DEV2's noise, seeds 1, 2 and 3:
+(1) the station at +6 and +10 dB S₅₀₀, the neighbor 0, 10, 20, 30 and 40 dB stronger (relative to the station's
+key-down power) and 40, 70, 100, 150 and 200 Hz away; (2) cells like the development set's E2 group, the station at
++8, +11 and +14 dB S₅₀₀, the neighbor −6, 0, +6 and +12 dB relative, 12, 40 and 90 Hz away. Each run three ways:
+without the term (the search of 20f0e4f, which ae8f65d's equals), with the term at a floor of 0 (the edge's share
+alone), and with the term. Exact texts:
+
+| Grid | Runs | Without the term | Floor 0 | With the term |
+|---|---|---|---|---|
+| (1) | 150 | 23 | 27 | 27 |
+| (2) | 108 | 6 | 6 | 6 |
+
+No run exact without the term is wrong with it, at either floor; four more are exact with it (the station at
++6 dB S₅₀₀ with the neighbor 10 dB stronger 150 Hz away on one seed, and 20 dB stronger 200 Hz away on all three).
+Where the term's share would matter, a neighbor 20 to 40 dB stronger within 100 Hz, the station is lost without the
+term too (54 of 54 runs; CER 74.8 to 176.5 without it, 18.3 to 26.5 with it, the false text shorter). Without the term
+the decoder also loses the station to an equally strong neighbor 40 or 70 Hz away and to one 10 dB stronger within
+100 Hz: its block sums keep much of a carrier inside the channel's passband (a limitation of the decoder, A.8d). The
+development set's QRM case in the existing tests, `overlap_stream.c64` (10 s of E-qrm-s3, label 9: a station at
+0 dB S₅₀₀ and one at +10 dB S₅₀₀ 50 Hz below it), decoded with the genie's frequency, is lost all three ways: 146, 143
+and 143 edits for the 23 symbols of "CQ CQ DE N7RL N7RL K CQ" (the rows `E-qrm-s3 label 9`; with the tracker the texts
+are the same).
+
+*Cost (measured).* The search alone on the channelizer's pieces, statistics off, the least of three rounds in scratch
+runs (other processes used 0.61 to 0.83 cores of 8): 335 → 337 ns per story per piece on 60 s of noise, 423 → 425 at
++20 dB S₅₀₀ and 456 → 459 at +10 dB S₅₀₀, within the rounds' own spread (up to 2.2%). The decoder at the commit, in
+`ViterbiDecoder.TenMinutesOfNoise`'s full form (600 s of DEV2's noise at the defaults, the development desktop): 287.3,
+288.2 and 291.5 ms of one thread per channel-second in three runs, so 287 ms at the least, as without the term (287 ms,
+the least of three, 2026-10-21; the machine's other load not measured); at most 82 entries of shared text at any block,
+against 106 without it.
 
 ### 1.8 Alternatives tried while building, and not kept
 
@@ -355,3 +435,28 @@ committed tests.
   - the strong neighbor captured the track in 71 of 200 runs, against 4 of 200;
   - below about a 0.57 Hz spread a keyed station at 0 dB S₅₀₀ was never confirmed.
   - The tolerance is fixed at 0.667 Hz at every spread.
+- **The systematic term's other forms** (D15; scratch runs on finding 1's grid in a copy of the branch at 20f0e4f, with
+  switches for each form; exact texts of 16 at +30, +36, +40, +45, +50, +55 and +60 dB S₅₀₀):
+  - **The carrier power from a story's own level** (the predicted level of a learned story, the block's own estimate
+    for a newborn's first block): 0 at every level, texts like "AETA ET ATTT ETETAE …" at +30 dB S₅₀₀. Derived: a story
+    that lowers its own level lowers its own V and gains (A.8d). **The exact form, V(a) inside the level's integral,**
+    is dominated by the same small a and grows as z₀²/√ρ instead of being capped (derived; not built).
+  - **The block's own estimate alone, for every story:** 0 at every level. It over- or understates the carrier as the
+    template sits on the rise (traced with it or the block's strongest piece as C², which gave 16, 1, 0, 0, 0, 0 and 0:
+    with the edge at 24 of 96 input samples, a template one piece early led the aligned one by about 45 nats after two
+    pieces at +36 dB S₅₀₀).
+  - **The channel's largest piece alone:** 16, 16, 7, 2, 1, 0 and 0; at an over's first mark the channel holds no
+    recent carrier, so the claim's budget uses that piece's own small power ("E PARIS PARIS" from +40 dB S₅₀₀).
+  - **The edge's error over independent pieces** (the mean squares summed): 3 of 16 at +60 dB S₅₀₀, against 14 with
+    the error summed as one edge's, both without the look-ahead.
+  - **The edge's term in a newborn's first block only** (with the block's own estimate or its strongest piece as C²):
+    0, 0, 0, 0, 2, 1 and 0; a story whose level was learned on noise (54 times too low) took a strong mark, and every
+    mark then read as T at three times the speed.
+  - **No look-ahead:** 16 everywhere but +60 dB S₅₀₀, 14 (the edge at 48 and 54 of 96 input samples, "E PARIS PARIS":
+    the filter's ringing before the mark read as the end of a weak mark, about 87 nats). With 2 or 3 pieces: 16.
+  - **Other floors** (without the look-ahead): 0 gave 16, 16, 16, 0, 0, 3 and 5 (two marks merged across a gap: "T
+    NARIS PARIS" at +45 dB S₅₀₀), and at ordinary levels lost the speed step at +28 dB S₅₀₀ (beam 40, seed 1:
+    "PARIS PARIS PARIS PA<AS>S PARIS PARIS", CER 0.114) and "TEST" at +30 dB S₅₀₀ (seed 41: "-"); 0.01 gave 14 at
+    +60 dB S₅₀₀ and lost "TEST" and "TU" at +30 dB S₅₀₀ (seed 40: "-" and "X"); 0.05 gave 15 at +60 dB S₅₀₀ and was
+    clean at ordinary levels, but costs as much evidence as 1.3 to 1.6 dB of S₅₀₀ at +20 dB S₅₀₀, against 0.24 to
+    0.70 dB of S₅₀₀ at 0.02.

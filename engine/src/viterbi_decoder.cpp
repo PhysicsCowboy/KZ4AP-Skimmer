@@ -92,8 +92,12 @@ std::shared_ptr<const ViterbiShared> make_viterbi_shared(std::span<const viterbi
     // every newborn's first block is scored with (the decoder cannot be given a prior without it).
     shared->rise_ = viterbi::rise_fractions(taps, channel.sample_rate, decimation, shared->samples_per_piece_,
                                             first.keying_rise_s);
-    shared->flat_prior_ = std::make_shared<const viterbi::FlatPrior>(first, shared->c_, first_block,
-                                                                     shared->samples_per_piece_, shared->rise_);
+    // The template's systematic error at a mark's start, from the same taps and edge: the edge's share of the
+    // systematic term, which the flat prior hands to the search.
+    shared->template_errors_ = viterbi::rise_template_errors(taps, channel.sample_rate, decimation,
+                                                             shared->samples_per_piece_, first.keying_rise_s);
+    shared->flat_prior_ = std::make_shared<const viterbi::FlatPrior>(
+        first, shared->c_, first_block, shared->samples_per_piece_, shared->rise_, shared->template_errors_);
     shared->piece_s_ = first.piece_s;
     shared->keying_rise_s_ = first.keying_rise_s;
     shared->level_min_db_ = first.level_min_db;
@@ -192,6 +196,7 @@ DecodeUpdate ViterbiDecoder::process(std::span<const Sample> samples, double t0_
 DecodeUpdate ViterbiDecoder::flush() {
     if (flushed_) return {};
     flushed_ = true;
+    search_.finish();  // the pieces the search holds for its look-ahead
     DecodeUpdate update;
     update.chars = search_.best_text();
     if (started_) update.freq_offset_hz = offset_hz_;

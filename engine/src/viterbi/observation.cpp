@@ -697,34 +697,84 @@ std::vector<std::vector<double>> rise_fractions_by_position(std::span<const doub
 
 }  // namespace detail
 
-std::vector<double> rise_fractions(std::span<const double> taps, double input_rate_hz, int decimation,
-                                   int samples_per_piece, double rise_s) {
+namespace {
+
+// The rise's fractions by position over enough pieces to cover the whole rise from every position, their average, and
+// the rise's pieces among them: the template starts at `first`, the first piece whose average reaches kFirstFraction
+// (pieces where none does), and the rise ends at `last`, the last piece whose average differs from 1 by more than
+// kFullPiece (below first where none does: no rise).
+struct RiseAnalysis {
+    std::vector<std::vector<double>> by_position;  // [position][piece]
+    std::vector<double> average;                    // [piece]
+    int first = 0;
+    int last = -1;
+};
+
+RiseAnalysis analyze_rise(std::span<const double> taps, double input_rate_hz, int decimation, int samples_per_piece,
+                          double rise_s) {
     detail::checked_rise_arguments(taps, input_rate_hz, decimation, samples_per_piece, rise_s);
     // Enough pieces to cover the whole rise from every position: the filter's length and the edge, plus one piece.
     const double span = static_cast<double>(taps.size()) + std::ceil(rise_s * input_rate_hz);
     const int pieces = static_cast<int>(std::ceil(span / (static_cast<double>(decimation) * samples_per_piece))) + 2;
-    const std::vector<std::vector<double>> by_position =
+    RiseAnalysis rise;
+    rise.by_position =
         detail::rise_fractions_by_position(taps, input_rate_hz, decimation, samples_per_piece, rise_s, pieces);
-    std::vector<double> average(static_cast<std::size_t>(pieces), 0.0);
-    for (const std::vector<double>& row : by_position)
-        for (int p = 0; p < pieces; ++p) average[static_cast<std::size_t>(p)] += row[static_cast<std::size_t>(p)];
-    for (double& fraction : average) fraction /= static_cast<double>(by_position.size());
+    rise.average.assign(static_cast<std::size_t>(pieces), 0.0);
+    for (const std::vector<double>& row : rise.by_position)
+        for (int p = 0; p < pieces; ++p) rise.average[static_cast<std::size_t>(p)] += row[static_cast<std::size_t>(p)];
+    for (double& fraction : rise.average) fraction /= static_cast<double>(rise.by_position.size());
     constexpr double kFirstFraction = 0.01;  // below it a piece counts as gap (about -40 dB relative to a full piece)
     constexpr double kFullPiece = 0.005;     // within it of 1, a piece counts as full
-    int first = 0;
-    while (first < pieces && !(average[static_cast<std::size_t>(first)] >= kFirstFraction)) ++first;
-    int last = pieces - 1;
-    while (last >= first && !(std::fabs(average[static_cast<std::size_t>(last)] - 1.0) > kFullPiece)) --last;
-    if (first >= pieces || last < first) return {};
-    return std::vector<double>(average.begin() + first, average.begin() + last + 1);
+    const auto average = [&rise](int piece) { return rise.average[static_cast<std::size_t>(piece)]; };
+    rise.first = 0;
+    while (rise.first < pieces && !(average(rise.first) >= kFirstFraction)) ++rise.first;
+    rise.last = pieces - 1;
+    while (rise.last >= rise.first && !(std::fabs(average(rise.last) - 1.0) > kFullPiece)) --rise.last;
+    return rise;
+}
+
+}  // namespace
+
+std::vector<double> rise_fractions(std::span<const double> taps, double input_rate_hz, int decimation,
+                                   int samples_per_piece, double rise_s) {
+    const RiseAnalysis rise = analyze_rise(taps, input_rate_hz, decimation, samples_per_piece, rise_s);
+    const auto pieces = static_cast<int>(rise.average.size());
+    if (rise.first >= pieces || rise.last < rise.first) return {};
+    return std::vector<double>(rise.average.begin() + rise.first, rise.average.begin() + rise.last + 1);
+}
+
+std::vector<double> rise_template_errors(std::span<const double> taps, double input_rate_hz, int decimation,
+                                         int samples_per_piece, double rise_s) {
+    const RiseAnalysis rise = analyze_rise(taps, input_rate_hz, decimation, samples_per_piece, rise_s);
+    const auto pieces = static_cast<int>(rise.average.size());
+    if (rise.first >= pieces) return {};
+    // e_n(p) = sum_{j <= n} t_j (f_j(p) - t_j) for every position p, the template t_j being the rise's average and 1
+    // past it (1 throughout where there is no rise, as the flat prior's weights are), and E_n its mean square. The
+    // table's last pieces are 1 at every position (the filter and the edge lie behind them), so E_n has settled.
+    std::vector<double> sums(rise.by_position.size(), 0.0);
+    std::vector<double> errors;
+    errors.reserve(static_cast<std::size_t>(pieces - rise.first));
+    for (int j = rise.first; j < pieces; ++j) {
+        const double t = j <= rise.last ? rise.average[static_cast<std::size_t>(j)] : 1.0;
+        double mean_square = 0.0;
+        for (std::size_t p = 0; p < sums.size(); ++p) {
+            sums[p] += t * (rise.by_position[p][static_cast<std::size_t>(j)] - t);
+            mean_square += sums[p] * sums[p];
+        }
+        errors.push_back(mean_square / static_cast<double>(sums.size()));
+    }
+    return errors;
 }
 
 FlatPrior::FlatPrior(const ViterbiConfig& config, std::span<const double> c, int max_pieces, int samples_per_piece,
-                     std::span<const double> rise)
+                     std::span<const double> rise, std::span<const double> template_errors)
     : max_pieces_(max_pieces), samples_per_piece_(samples_per_piece), large_z_constant_(0.0),
-      rise_(rise.begin(), rise.end()) {
+      rise_(rise.begin(), rise.end()), template_errors_(template_errors.begin(), template_errors.end()) {
     if (max_pieces < 1) throw std::invalid_argument("flat prior: max_pieces must be at least 1");
     if (samples_per_piece < 1) throw std::invalid_argument("flat prior: samples_per_piece must be at least 1");
+    for (const double e : template_errors_)
+        if (!finite_and_not_negative(e))
+            throw std::invalid_argument("flat prior: every template error must be finite and not negative");
     rise_squares_.assign(1, 0.0);
     for (const double g : rise_) {
         if (!(g > 0.0) || !std::isfinite(g))
@@ -853,6 +903,12 @@ double FlatPrior::weight(int piece) const {
     if (piece < 1) throw std::out_of_range("flat prior: a mark's pieces count from 1");
     const auto j = static_cast<std::size_t>(piece);
     return j <= rise_.size() ? rise_[j - 1] : 1.0;
+}
+
+double FlatPrior::template_error(int pieces) const {
+    if (pieces < 1) throw std::out_of_range("flat prior: a mark's first block has at least 1 piece");
+    if (template_errors_.empty()) return 0.0;
+    return template_errors_[std::min(static_cast<std::size_t>(pieces), template_errors_.size()) - 1];
 }
 
 const FlatPrior::Node* FlatPrior::row(int pieces, double z) const {

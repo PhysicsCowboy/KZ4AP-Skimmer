@@ -506,6 +506,7 @@ TEST(Config, DefaultsAreTheDesignTable) {
     EXPECT_EQ(c.fading_spread_hz, 1.0);
     EXPECT_EQ(c.block_loss_db, 0.5);
     EXPECT_EQ(c.keying_rise_s, 0.005);
+    EXPECT_EQ(c.systematic_floor, 0.02);
     EXPECT_EQ(c.over_rate_per_s, 0.05);
     EXPECT_EQ(c.rescue_epsilon, 1.0e-3);
     EXPECT_EQ(c.word_end_p, 1.0 / 3.06);

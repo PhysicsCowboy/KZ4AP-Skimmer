@@ -2,8 +2,8 @@
 // appendix A.8d): one per channel. Each block of the channel's stream goes, sample by sample, to the carrier tracker
 // (viterbi/tracker.hpp), is re-centered by a phase-continuous oscillator at minus the tracker's offset (or the genie's
 // frequency), and is summed into pieces of samples_per_piece samples (piece_s, 2 ms: 3 samples at 1 500 samples/s), which
-// the search (viterbi/search.hpp) takes one by one with the engine's hiss N0. The text is the best story's, published
-// when the channel ends (flush).
+// the search (viterbi/search.hpp) takes one by one with the engine's hiss N0, searching each 2 pieces (4 ms) later, the
+// look-ahead of its systematic term. The text is the best story's, published when the channel ends (flush).
 #pragma once
 
 #include "kz4ap/channelizer.hpp"
@@ -44,8 +44,12 @@ public:
     // g_1 ... g_J: the expected fraction of a full piece's carrier sum in a mark's first pieces (viterbi::rise_fractions),
     // from the channelizer's taps, its decimation, samples_per_piece and keying_rise_s
     const std::vector<double>& rise() const { return rise_; }
-    // the flat prior of a newborn's first block (viterbi::FlatPrior), built with rise(), for blocks of 1 ...
-    // max_pieces() pieces: the longest first block among the configurations (viterbi_first_block_pieces)
+    // E_1 ... E_N: the matched filter's systematic error at a mark's start (viterbi::rise_template_errors), from the
+    // same taps and edge: the edge's share of the systematic term (search.hpp)
+    const std::vector<double>& template_errors() const { return template_errors_; }
+    // the flat prior of a newborn's first block (viterbi::FlatPrior), built with rise() and template_errors(), for
+    // blocks of 1 ... max_pieces() pieces: the longest first block among the configurations
+    // (viterbi_first_block_pieces)
     const std::shared_ptr<const viterbi::FlatPrior>& flat_prior() const { return flat_prior_; }
     // What it was built from, which every decoder that uses it must share: s, s, dB S500, dB S500
     double piece_s() const { return piece_s_; }
@@ -62,6 +66,7 @@ private:
     int samples_per_piece_ = 0;
     std::vector<double> c_;
     std::vector<double> rise_;
+    std::vector<double> template_errors_;
     std::shared_ptr<const viterbi::FlatPrior> flat_prior_;
     double piece_s_ = 0.0;
     double keying_rise_s_ = 0.0;
@@ -118,7 +123,8 @@ public:
     // its index over rate_hz), then re-centered by the oscillator's offset at that time, the tracker's offset_hz(t) or
     // the genie's frequency, then summed into the current piece; a piece completed goes to the search with its time,
     // the end of its last sample (t_first + samples_per_piece x (k + 1) / rate_hz for piece k), and N0, unless N0 is 0,
-    // when it is not searched (exact zeros, or no hiss frame yet; the search refuses an N0 that is not positive). A
+    // when it is not searched (exact zeros, or no hiss frame yet; the search refuses an N0 that is not positive). The
+    // search holds the last pieces it was given for its look-ahead (Search::step) until more come or flush. A
     // piece not searched still counts in time, so if N0 falls to 0 and returns mid-stream the search sees the stream
     // spliced: every story goes on from where it stood, the length of its element frozen across the skipped pieces and
     // its level predicted across the time (the engine holds N0 through frames of exact zeros, so after its first
@@ -129,8 +135,9 @@ public:
     // as freq_offset_hz. After flush() the samples are ignored. The output does not depend on how the stream is split
     // into blocks.
     DecodeUpdate process(std::span<const Sample> samples, double t0_s) override;
-    // End of the channel: the best story's text (Search::best_text; each character's probability 1, speed and
-    // confidence 0: placeholders), all of it at once. A partial piece is dropped. Further calls return nothing.
+    // End of the channel: the search takes the pieces it held for its look-ahead (Search::finish), then the best
+    // story's text (Search::best_text; each character's probability 1, speed and confidence 0: placeholders), all of
+    // it at once. A partial piece is dropped. Further calls return nothing.
     DecodeUpdate flush() override;
     // Starts afresh: a new search and tracker, a new time origin at the next block, the oscillator's phase at 0. The
     // anchor and N0 last set are kept (the engine sets both before every block).
@@ -145,7 +152,8 @@ public:
 
     // The search's instrumentation (kept only when config.stats is true).
     const viterbi::SearchStats& stats() const { return search_.stats(); }
-    // For tests and the bench: the search, and the tracker (null before the channel's first block).
+    // For tests and the bench: the search (until flush, as of the pieces it has searched: all but those it holds for
+    // its look-ahead), and the tracker (null before the channel's first block).
     const viterbi::Search& search() const { return search_; }
     const viterbi::CarrierTracker* tracker() const { return tracker_ ? &*tracker_ : nullptr; }
 

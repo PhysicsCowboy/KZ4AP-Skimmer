@@ -78,18 +78,47 @@ const std::vector<double>& rise() {
     return g;
 }
 
+// The matched filter's systematic error at a mark's start on the same filter and edge: E_1 ... E_N (0.00037, 0.0095,
+// 0.0224, ..., 0.0210 from n = 7), the edge's share of the systematic term (search.hpp, "The systematic term").
+const std::vector<double>& template_errors() {
+    static const std::vector<double> e = [] {
+        const kz4ap::ChannelizerConfig config = channelizer_config();
+        return rise_template_errors(kz4ap::channel_filter_taps(config), config.sample_rate,
+                                    config.fft_size / config.channel_bins, kSamplesPerPiece,
+                                    ViterbiConfig{}.keying_rise_s);
+    }();
+    return e;
+}
+
 // The noise's long-run rate, Hz per channel sample: c's last increment, 1 500 Hz.
 double noise_rate_hz() {
     const std::vector<double>& c = sum_noise();
     return c[c.size() - 1] - c[c.size() - 2];
 }
 
-// The default configuration's flat prior for blocks of 1 to 195 pieces of 3 samples, with the rise, built once (0.22 s,
-// 18.7 MB).
+// The default configuration's flat prior for blocks of 1 to 195 pieces of 3 samples, with the rise and its template
+// errors, as the decoder's shared parts build it, built once (0.22 s, 18.7 MB).
 std::shared_ptr<const FlatPrior> flat_prior() {
     static const auto prior = std::make_shared<const FlatPrior>(ViterbiConfig{}, sum_noise(), kDefaultBlockPieces,
-                                                                kSamplesPerPiece, rise());
+                                                                kSamplesPerPiece, rise(), template_errors());
     return prior;
+}
+
+// The pieces the search holds back for the look-ahead of its systematic term at 2 ms: ceil(4 ms / 2 ms).
+constexpr std::size_t kLookahead = 2;
+
+// The systematic term's carrier power at every piece (search.hpp, "The systematic term"), FS^2, recomputed from the
+// pieces: at piece j, the largest |piece|^2 of pieces j - window + 1 ... j + kLookahead that exist, window being
+// min(B, the flat prior's span) pieces; with lookahead false, of pieces j - window + 1 ... j only.
+std::vector<double> carrier_powers(const std::vector<std::complex<double>>& pieces, int window, bool lookahead = true) {
+    std::vector<double> powers(pieces.size(), 0.0);
+    for (std::size_t j = 0; j < pieces.size(); ++j) {
+        const std::size_t span = static_cast<std::size_t>(window);
+        const std::size_t from = j + 1 >= span ? j + 1 - span : 0;
+        const std::size_t to = lookahead ? std::min(pieces.size() - 1, j + kLookahead) : j;
+        for (std::size_t i = from; i <= to; ++i) powers[j] = std::max(powers[j], std::norm(pieces[i]));
+    }
+    return powers;
 }
 
 // The station's frequency, Hz: the center of channel bin 32 (23.4375 Hz per bin at 48 kHz).
@@ -137,8 +166,10 @@ double piece_time(std::size_t k) {
     return static_cast<double>(kSamplesPerPiece) * static_cast<double>(k + 1) / kChannelRate;
 }
 
+// Every piece given, then those the look-ahead held searched.
 void search_all(Search& search, const std::vector<std::complex<double>>& pieces) {
     for (std::size_t k = 0; k < pieces.size(); ++k) search.step(pieces[k], piece_time(k), kN0);
+    search.finish();
 }
 
 std::string text_of(const std::vector<kz4ap::DecodedSymbol>& symbols) {
@@ -194,15 +225,28 @@ struct Element {
 // An element's identity: key down, speed, node and the piece its state was created.
 using ElementKey = std::tuple<bool, int, int, std::size_t>;
 
+// The systematic term's carrier power at every piece, with and without the look-ahead (carrier_powers), and counts of
+// which part decided C^2 in the reference's evaluations, so that a test can show that each part did.
+struct Carrier {
+    std::vector<double> power;   // FS^2: the window and the look-ahead
+    std::vector<double> causal;  // FS^2: the window alone
+    std::int64_t by_window = 0;     // evaluations where the window's own pieces decided
+    std::int64_t by_lookahead = 0;  // where a piece of the look-ahead decided
+    std::int64_t by_own = 0;        // where the block's own estimate decided
+};
+
 // The evidence of an element's mark through piece `last`, from the pieces, advancing it from where it stands: the
 // finished blocks' and the current one's, each block of at most `block` pieces scored against the level it carries,
 // predicted to the piece's time at config.fading_spread_hz, starting Newton's method from the previous piece's mode in
 // the block; a newborn's first block (of at most min(block, the flat prior's max_pieces) pieces) against the flat
-// prior. The pieces are independent at the long-run rate: a block's V is N0 x rate x m_signal. The mark's first block
-// is the matched filter to the rise: piece j of the mark weighted by g_j (rise(), and 1 past it), m_signal = 3 x the
-// sum of the squared weights; a later block is the plain sum, m_signal = 3 n.
+// prior. The mark's first block is the matched filter to the rise: piece j of the mark weighted by g_j (rise(), and 1
+// past it), m_signal = 3 x the sum of the squared weights W_n; a later block is the plain sum, m_signal = 3 n. The
+// error budget, recomputed here (search.hpp, "The systematic term"): V = N0 x rate x m_signal, the pieces independent
+// at the long-run rate, plus C^2 (E_n + floor^2 W_n), C^2 the larger of the carrier power at the piece (`carrier`) and
+// the block's own estimate (3 |S| / m_signal)^2, E_n the flat prior's template error in the mark's first block (0 in a
+// later one; Observation.TemplateErrorsMatchThePerPositionFractions holds the table), floor = systematic_floor.
 double advance_to(Element& element, std::size_t last, const std::vector<std::complex<double>>& pieces, int block,
-                  const ViterbiConfig& config) {
+                  const ViterbiConfig& config, Carrier& carrier) {
     const std::vector<double>& g = rise();
     for (; element.next_piece <= last; ++element.next_piece) {
         const std::size_t j = element.next_piece;
@@ -216,7 +260,17 @@ double advance_to(Element& element, std::size_t last, const std::vector<std::com
         element.squares += weight * weight;
         ++element.n;
         const double m_signal = kSamplesPerPiece * element.squares;
-        const double v = kN0 * noise_rate_hz() * m_signal;
+        const double own = kSamplesPerPiece * std::abs(element.sum) / m_signal;  // FS
+        const double c2 = std::max(carrier.power[j], own * own);                 // FS^2
+        if (own * own >= carrier.power[j])
+            ++carrier.by_own;
+        else if (carrier.power[j] > carrier.causal[j])
+            ++carrier.by_lookahead;
+        else
+            ++carrier.by_window;
+        const double edge = first_block ? flat_prior()->template_error(element.n) : 0.0;
+        const double floor = config.systematic_floor;
+        const double v = kN0 * noise_rate_hz() * m_signal + c2 * (edge + floor * floor * (m_signal / kSamplesPerPiece));
         const double t = piece_time(j);
         const int limit = element.level.learned ? block : std::min(block, flat_prior()->max_pieces());
         const BlockScore score =
@@ -352,11 +406,12 @@ TEST(Search, MergesIdenticalStates) {
     const std::vector<Ranked> reversed = {{5, -1.0, 9}, {5, -1.0, 2}};
     EXPECT_EQ(detail::merge(reversed), (std::vector<std::size_t>{1}));
 
-    // In the search: after every piece no two live stories share a state, and there is at most one no-signal story. At
-    // each piece where a newborn is born (a mark at the root, speed open, tau = 0), the newborn from silence
+    // In the search: after every piece searched no two live stories share a state, and there is at most one no-signal
+    // story. At each piece where a newborn is born (a mark at the root, speed open, tau = 0), the newborn from silence
     // and a rescue newborn share that state and only one is left, the better: the newborn from silence stands at the
     // continuing no-signal story's score plus ln P plus ln(1/62) (to 1e-9 nats), and a rescue newborn kept instead
-    // stands above that.
+    // stands above that. (The search holds the last kLookahead pieces given for its look-ahead: the step that gives
+    // piece k + kLookahead searches piece k.)
     ViterbiConfig config;
     config.stats = true;
     const double log_over_start = std::log(config.over_rate_per_s * config.piece_s);
@@ -364,12 +419,15 @@ TEST(Search, MergesIdenticalStates) {
     const auto keying = signals::keying("PARIS", 25.0, 0.6);
     const auto pieces = station(keying, 5.0, keying.back().second + 1.0, 15);
     Search search(config, sum_noise(), flat_prior());
+    ASSERT_EQ(static_cast<std::size_t>(search.lookahead_pieces()), kLookahead);
     std::optional<double> no_signal_before;  // the no-signal story's own score after the previous piece, nats
     int newborns = 0;
     int rescues_kept = 0;
     int births_kept = 0;
-    for (std::size_t k = 0; k < pieces.size(); ++k) {
-        search.step(pieces[k], piece_time(k), kN0);
+    for (std::size_t given = 0; given < pieces.size(); ++given) {
+        search.step(pieces[given], piece_time(given), kN0);
+        if (given < kLookahead) continue;  // nothing searched yet
+        const std::size_t k = given - kLookahead;  // the piece searched
         const double offset = search.normalization_nats();
         const std::vector<StoryView> stories = search.live_stories();
         int no_signal = 0;
@@ -428,16 +486,18 @@ TEST(Search, PrunesByBeamThenCeiling) {
     EXPECT_TRUE(detail::ranks_before({9, -4.0, 9}, {1, -5.0, 1}));
 
     // In the search, at a ceiling of 10 stories on a station at +5 dB S500 after a second of noise: after every piece
-    // at most 10 stories live, every one within the beam of the best, the best at 0; the ceiling decided at some
-    // pieces.
+    // searched at most 10 stories live, every one within the beam of the best, the best at 0; the ceiling decided at
+    // some pieces.
     ViterbiConfig config;
     config.ceiling = 10;
     config.stats = true;
     const auto keying = signals::keying("PARIS", 25.0, 1.0);
     const auto pieces = station(keying, 5.0, keying.back().second + 1.0, 16);
     Search search(config, sum_noise(), flat_prior());
-    for (std::size_t k = 0; k < pieces.size(); ++k) {
-        search.step(pieces[k], piece_time(k), kN0);
+    for (std::size_t given = 0; given < pieces.size(); ++given) {
+        search.step(pieces[given], piece_time(given), kN0);
+        if (given < kLookahead) continue;  // nothing searched yet
+        const std::size_t k = given - kLookahead;  // the piece searched
         ASSERT_LE(search.live(), 10u) << "piece " << k;
         double best = -kInf;
         for (const StoryView& story : search.live_stories()) {
@@ -458,11 +518,17 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
     //     (the dash's, whose median is three times the dot's), plus the evidence of its blocks so far, recomputed here
     //     from the pieces: the finished blocks' and the current one's, each block scored against the level it carries,
     //     predicted to the piece's time, starting Newton's method from the previous piece's mode in the block, the
-    //     mark's first block weighted by the rise (the matched filter), every block's pieces at the long-run rate;
+    //     mark's first block weighted by the rise (the matched filter), every block's pieces at the long-run rate, and
+    //     the systematic term added in quadrature to the noise in each block's error budget, its carrier power from
+    //     the pieces of the last 39 (the window: min(B, the flat prior's span)) and the next 2 (the look-ahead), or the
+    //     block's own estimate where larger (advance_to);
     //   - in a newborn's first mark (speed open): ln(1/32) + the best over the speeds and labels of ln S, plus the
     //     first block's evidence against the flat prior and the later blocks' against the level it left;
     //   - in a gap: the best over the kinds the node allows of the kind's cost and ln S (standard spacing: a letter
     //     gap's median 3 dots, a word gap's 7).
+    // At +20 dB S500 the systematic term is 4% of a later block's noise variance and about 13% of a 24-piece first
+    // block's, far above the tolerance; each part of the carrier power (the window's own pieces, the look-ahead and the
+    // block's own estimate) decides it in many of the evaluations.
     ViterbiConfig config;
     config.fading_spread_hz = 5.0;
     const int block = static_cast<int>(std::floor(block_length_s(config.fading_spread_hz, config.block_loss_db) /
@@ -489,9 +555,12 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
     int long_dashes = 0;   // known-speed marks checked past their first block
     int first_marks = 0;   // newborns' first marks checked past their first block
     int gaps = 0;
+    Carrier carrier{carrier_powers(pieces, block), carrier_powers(pieces, block, false)};
     Search search(config, sum_noise(), flat_prior());
-    for (std::size_t k = 0; k < pieces.size(); ++k) {
-        search.step(pieces[k], piece_time(k), kN0);
+    for (std::size_t given = 0; given < pieces.size(); ++given) {
+        search.step(pieces[given], piece_time(given), kN0);
+        if (given < kLookahead) continue;  // nothing searched yet
+        const std::size_t k = given - kLookahead;  // the piece searched
         const double offset = search.normalization_nats();
         for (const StoryView& story : search.live_stories()) {
             if (story.activity != Activity::Morse) continue;
@@ -514,14 +583,14 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
                     continue;
                 const double dash = fist.log_survival(Kind::Dash, story.speed, story.tau);
                 ASSERT_GE(dash, fist.log_survival(Kind::Dot, story.speed, story.tau));
-                expected = dash + advance_to(element, k, pieces, block, config);
+                expected = dash + advance_to(element, k, pieces, block, config, carrier);
                 if (story.tau > block) ++long_dashes;
             } else {
                 double survival = -kInf;
                 for (int s = 0; s < config.speed_count; ++s)
                     for (const Kind label : {Kind::Dot, Kind::Dash})
                         survival = std::max(survival, log_speed_prior + fist.log_survival(label, s, story.tau));
-                expected = survival + advance_to(element, k, pieces, block, config);
+                expected = survival + advance_to(element, k, pieces, block, config, carrier);
                 if (story.tau > block) ++first_marks;
             }
             ASSERT_NEAR(own - element.start_score_nats, expected, 1e-6)
@@ -531,6 +600,12 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
     EXPECT_GT(long_dashes, 10);
     EXPECT_GT(first_marks, 10);
     EXPECT_GT(gaps, 100);
+    ::testing::Test::RecordProperty("carrier_by_window", std::to_string(carrier.by_window));
+    ::testing::Test::RecordProperty("carrier_by_lookahead", std::to_string(carrier.by_lookahead));
+    ::testing::Test::RecordProperty("carrier_by_own_estimate", std::to_string(carrier.by_own));
+    EXPECT_GT(carrier.by_window, 100000);
+    EXPECT_GT(carrier.by_lookahead, 10000);
+    EXPECT_GT(carrier.by_own, 5000);
 }
 
 TEST(Search, BooksEveryTransition) {
@@ -553,10 +628,12 @@ TEST(Search, BooksEveryTransition) {
     // Each must also carry its level: after a mark, the posterior of the block finished there; after a gap, the parent
     // gap's; none (not learned) for the newborn. A newborn that is not kept (it loses the merge, or the beam or the
     // ceiling drops it) is checked too, from the statistics: its line ends at its birth piece, and its deficit at birth
-    // is the best score less its own. The stories of one piece in three are checked (a sample). On a station ("PARIS
-    // PARIS" at 25 WPM, +10 dB S500) every kind of transition decides many of the stories checked. On 4 s of noise,
-    // where the no-signal story leads, no over's end, word start or rescue decides one (counted), and every newborn
-    // from silence is kept; the rescues there are checked as newborns not kept.
+    // is the best score less its own. The stories of one piece in three are checked (a sample), after the step that
+    // searches it (the look-ahead holds the last kLookahead pieces given). A mark's evidence is advance_to's, with the
+    // systematic term in each block's error budget. On a station ("PARIS PARIS" at 25 WPM, +10 dB S500) every kind of
+    // transition decides many of the stories checked. On 4 s of noise, where the no-signal story leads, no over's end,
+    // word start or rescue decides one (counted), and every newborn from silence is kept; the rescues there are checked
+    // as newborns not kept.
     ViterbiConfig config;
     config.stats = true;
     const int block = kDefaultBlockPieces;
@@ -636,11 +713,14 @@ TEST(Search, BooksEveryTransition) {
         std::vector<double> mark_ends;
         std::vector<double> letter_starts;
         std::optional<double> no_signal = 0.0;  // the no-signal story's score after the previous piece, nats
+        Carrier carrier{carrier_powers(c.pieces, block), carrier_powers(c.pieces, block, false)};
         Search search(config, sum_noise(), flat_prior());
         std::size_t lines_before = search.stats().lines.size();  // line 0, the channel's first story
-        for (std::size_t k = 0; k < c.pieces.size(); ++k) {
+        for (std::size_t given = 0; given < c.pieces.size(); ++given) {
+            search.step(c.pieces[given], piece_time(given), kN0);
+            if (given < kLookahead) continue;  // nothing searched yet
+            const std::size_t k = given - kLookahead;  // the piece searched
             const double t = piece_time(k);
-            search.step(c.pieces[k], t, kN0);
             const double offset = search.normalization_nats();
             const std::vector<StoryView> stories = search.live_stories();
 
@@ -659,7 +739,8 @@ TEST(Search, BooksEveryTransition) {
                 std::map<int, std::vector<std::pair<std::size_t, int>>> open_marks;
                 for (std::size_t i = 0; i < marks.size(); ++i) {
                     PreviousMark& m = marks[i];
-                    m.with_block = m.element->start_score_nats + advance_to(*m.element, k, c.pieces, block, config);
+                    m.with_block =
+                        m.element->start_score_nats + advance_to(*m.element, k, c.pieces, block, config, carrier);
                     m.ends = mark_ends.size();
                     const int tau = m.view.tau + 1;
                     if (m.view.speed >= 0) {
@@ -825,8 +906,8 @@ TEST(Search, BooksEveryTransition) {
 
 TEST(Search, NoiseKeepsScoresFinite) {
     // 60 s of DEV2's noise alone at the defaults, where the ceiling binds (design notes, topic 5, item 5): after every
-    // piece every live score is finite and the best is 0; never more stories than the ceiling (plan §8, item 1). The
-    // statistics count every piece.
+    // step every live score is finite and the best is 0; never more stories than the ceiling (plan §8, item 1). The
+    // statistics count every piece, once finish has searched those the look-ahead held.
     ViterbiConfig config;
     config.stats = true;
     // The channelizer passes whole blocks of 32 channel samples: 60.1 s of input holds the first 60 s of pieces.
@@ -844,6 +925,8 @@ TEST(Search, NoiseKeepsScoresFinite) {
         }
         ASSERT_EQ(best, 0.0) << "piece " << k;
     }
+    EXPECT_EQ(search.stats().pieces, 30000 - static_cast<std::int64_t>(kLookahead));
+    search.finish();
     EXPECT_TRUE(std::isfinite(search.normalization_nats()));
     const SearchStats& stats = search.stats();
     EXPECT_EQ(stats.pieces, 30000);
@@ -912,6 +995,8 @@ TEST(Search, SkippingSuccessorsBeyondTheBeamChangesNothing) {
             ASSERT_EQ(skipping.live(), creating.live()) << "piece " << k;
             most = std::max(most, skipping.live());
         }
+        skipping.finish();
+        creating.finish();
         EXPECT_EQ(text_of(skipping.best_text()), c.text);
         EXPECT_EQ(text_of(creating.best_text()), c.text);
         const auto a = skipping.live_stories();
@@ -975,6 +1060,7 @@ TEST(Search, OpenTimingCapChangesNothing) {
                 if (s.activity == Activity::Morse && s.key_down && s.speed < 0)
                     r.longest_first_mark = std::max(r.longest_first_mark, s.tau);
         }
+        search.finish();
         r.stories = search.live_stories();
         r.stats = search.stats();
         r.normalization_nats = search.normalization_nats();
@@ -1046,19 +1132,75 @@ TEST(Search, RefusesWhatItCannotUse) {
     refuses([](ViterbiConfig& config) { config.fading_spread_hz = 1000.0; });  // a block of 0.39 ms: under one piece
     refuses([](ViterbiConfig& config) { config.fading_spread_hz = -1.0; });    // block_length_s refuses it
     refuses([](ViterbiConfig& config) { config.dot_min_ms = 0.0; });           // Fist refuses it
+    refuses([](ViterbiConfig& config) { config.systematic_floor = -0.01; });   // a relative amplitude in [0, 1]
+    refuses([](ViterbiConfig& config) { config.systematic_floor = 1.01; });
+    refuses([](ViterbiConfig& config) { config.systematic_floor = kNaN; });
+    EXPECT_NO_THROW([&] {
+        ViterbiConfig ends = defaults;
+        ends.systematic_floor = 0.0;
+        Search none(ends, c, flat_prior());
+        ends.systematic_floor = 1.0;
+        Search whole(ends, c, flat_prior());
+    }());
 
-    // A refused piece changes nothing.
-    Search search(defaults, c, flat_prior());
-    search.step({0.01, 0.0}, piece_time(0), kN0);
+    // A refused piece changes nothing: neither the stories nor the pieces held for the look-ahead. Three pieces given,
+    // the first searched; a time not later than the last piece given, held or not, is refused.
+    ViterbiConfig with_stats = defaults;
+    with_stats.stats = true;
+    Search search(with_stats, c, flat_prior());
+    for (std::size_t k = 0; k < 3; ++k) search.step({0.01, 0.0}, piece_time(k), kN0);
+    ASSERT_EQ(search.stats().pieces, 1);
     const double offset = search.normalization_nats();
     const std::size_t live = search.live();
     for (const double n0 : {0.0, -kN0, kNaN, kInf})
-        EXPECT_THROW(search.step({0.01, 0.0}, piece_time(1), n0), std::invalid_argument) << n0;
-    EXPECT_THROW(search.step({0.01, 0.0}, piece_time(0), kN0), std::invalid_argument);  // not later than the last
+        EXPECT_THROW(search.step({0.01, 0.0}, piece_time(3), n0), std::invalid_argument) << n0;
+    EXPECT_THROW(search.step({0.01, 0.0}, piece_time(2), kN0), std::invalid_argument);  // not later than the last
     EXPECT_THROW(search.step({0.01, 0.0}, kNaN, kN0), std::invalid_argument);
-    EXPECT_THROW(search.step({kNaN, 0.0}, piece_time(1), kN0), std::invalid_argument);
-    EXPECT_THROW(search.step({0.0, kInf}, piece_time(1), kN0), std::invalid_argument);
+    EXPECT_THROW(search.step({kNaN, 0.0}, piece_time(3), kN0), std::invalid_argument);
+    EXPECT_THROW(search.step({0.0, kInf}, piece_time(3), kN0), std::invalid_argument);
     EXPECT_EQ(search.normalization_nats(), offset);
     EXPECT_EQ(search.live(), live);
-    EXPECT_NO_THROW(search.step({0.01, 0.0}, piece_time(1), kN0));
+    EXPECT_EQ(search.stats().pieces, 1);
+    EXPECT_NO_THROW(search.step({0.01, 0.0}, piece_time(3), kN0));
+    EXPECT_EQ(search.stats().pieces, 2);
+    search.finish();
+    EXPECT_EQ(search.stats().pieces, 4);
+}
+
+TEST(Search, HoldsTheLookAheadsPiecesUntilTheyAreSearched) {
+    // The search runs lookahead_pieces() = ceil(4 ms / piece_s) pieces behind the pieces it is given (search.hpp, "The
+    // systematic term"): 2 at the default 2 ms, 4 at 1 ms, 2 at 3 ms and 1 at 5 ms (without fading, so that the blocks
+    // fit c at every piece). After k pieces given, max(k - 2, 0) have been searched (the statistics count them);
+    // finish searches the rest, a second finish nothing, and a piece given after it is held again. The text after
+    // finish is the text of the pieces given ("E" at 25 WPM and +20 dB S500, then 100 ms of noise).
+    for (const auto& [piece_s, held] : {std::pair{0.002, 2}, std::pair{0.001, 4}, std::pair{0.003, 2},
+                                        std::pair{0.005, 1}}) {
+        ViterbiConfig config;
+        config.piece_s = piece_s;
+        config.fading_spread_hz = 0.0;
+        EXPECT_EQ(Search(config, sum_noise(), flat_prior()).lookahead_pieces(), held) << piece_s << " s";
+    }
+    ViterbiConfig config;
+    config.stats = true;
+    const auto keying = signals::keying("E", 25.0, 0.5);
+    auto pieces = station(keying, 20.0, keying.back().second + 0.2, 25);
+    // The pieces to 100 ms after the mark's end (0.548 s, the end of the 274th piece).
+    ASSERT_GE(pieces.size(), 324u);
+    pieces.resize(324);
+    Search search(config, sum_noise(), flat_prior());
+    for (std::size_t k = 0; k < pieces.size(); ++k) {
+        search.step(pieces[k], piece_time(k), kN0);
+        ASSERT_EQ(search.stats().pieces, static_cast<std::int64_t>(k + 1 >= 2 ? k + 1 - 2 : 0)) << "piece " << k;
+    }
+    search.finish();
+    EXPECT_EQ(search.stats().pieces, 324);
+    const double offset = search.normalization_nats();
+    search.finish();
+    EXPECT_EQ(search.stats().pieces, 324);
+    EXPECT_EQ(search.normalization_nats(), offset);
+    EXPECT_EQ(text_of(search.best_text()), "E");
+    search.step(pieces[0], piece_time(324), kN0);
+    EXPECT_EQ(search.stats().pieces, 324);
+    search.finish();
+    EXPECT_EQ(search.stats().pieces, 325);
 }
