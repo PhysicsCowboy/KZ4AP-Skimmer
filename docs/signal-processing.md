@@ -560,8 +560,9 @@ within its piece, the text was exact at all 16 positions tried up to
 +36 dB S₅₀₀ and wrong at 2 of them at +38 dB S₅₀₀ (measured); a real
 station's edges fall at mixed positions, so from about +37 dB S₅₀₀ some of
 its elements would be misread (conjectured). An over of one short word
-wins over one longer symbol by about 1 nat at exact timing ("TEST" against
-"-"; A.8d).
+can lose to one longer symbol with the same marks: at exact timing "TEST"
+and "TU" win by about 1 nat, but "EE" alone reads as "I" by 0.06 nats,
+"EEE" as "S" by 1.05 and "EEEE" as "H" by 2.07 (derived, not run; A.8d).
 
 Appendix: A.8d.
 
@@ -3762,7 +3763,19 @@ start: placeholders (the development set's own).
   +30 dB S₅₀₀ on three seeds (measured in scratch runs through the decoder; `ViterbiDecoder.OneWordOversDecodeExactly`
   holds +20 dB S₅₀₀). With the Farnsworth factor, whose flat prior (ln 23 = 3.135 nats) was paid at a story's first
   letter or word gap and never by the one-symbol reading, they read "-" and "X" in all 12 runs each (measured).
-  Margins of about a nat leave real senders' timing errors able to merge letters (conjectured).
+  Overs of repeated dots lose (derived with the fist's own ln P at 25 WPM, the method that gives 1.00 and 1.16 nats
+  above; not run through the decoder):
+  - "EE" alone reads as "I" by 0.06 nats; "TT", "ET" and "TE" behave alike. "EE" is the "dit dit" that often closes
+    a contact.
+  - "EEE" alone reads as "S" by 1.05 nats, and "EEEE" alone as "H" by 2.07.
+  - With no other elements to pin the speed, the merged reading takes a speed about 1.44 times slower. There a 3-dot
+    gap read as a 1-dot gap costs about 4.5 nats of misfit, against the 4.52 nats an extra letter and its gap's kind
+    cost.
+  - In a longer over, the other elements pin the speed and the correct reading wins.
+
+  Margins of about a nat leave real senders' timing errors able to merge letters (conjectured). A character-frequency
+  prior would not help "EE" against "I", both common letters. A measured, tighter timing spread for well-sent code
+  (the fist's 0.3 in ln(length) is a placeholder) or a model of whole words would (`docs/backlog.md`).
 - `<HH>` is exactly eight dots: nine or more leave the tree.
 - After about 2.3 hours of quiet an endless word gap's log-normal tail would overtake the silent story's ln(1 − P) per
   piece: from equal scores, at the slowest speed, it falls 188.6 nats behind (at 25.4 min) and is level again at

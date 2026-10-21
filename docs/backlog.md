@@ -331,6 +331,28 @@ until a future fix ... That will help with CPU and will restore proper decoding 
 - the speed step and the constant-speed stations, against the standard-spacing default;
 - CPU per channel-second on noise.
 
+### Short overs of dots read as one longer symbol in the new decoder (found 2026-10-21; open)
+
+The new decoder's first prototype has no text model (every symbol costs ln 62 = 4.127 nats) and a broad timing model
+(0.3 in ln(length), a placeholder). With the Farnsworth factor removed, "TEST" and "TU" sent alone decode correctly, but
+only by about 1 nat at exact timing. Overs of repeated dots lose (derived with the fist's own ln P at 25 WPM; not run
+through the decoder):
+- "EE" alone reads as "I" by 0.06 nats; "TT", "ET" and "TE" behave alike.
+- "EEE" alone reads as "S" by 1.05 nats, and "EEEE" as "H" by 2.07.
+
+With no other elements to pin the speed, the merged reading takes a speed about 1.44 times slower. There a 3-dot gap
+read as a 1-dot gap costs about 4.5 nats of misfit, against the 4.52 nats an extra letter and its gap's kind cost.
+"EE" is the "dit dit" that often closes a contact.
+
+**Thoughts for a fix** (none tried):
+- A timing spread measured on real keying, which is likely tighter for well-sent code.
+- A model of whole words or of a contact's closing words ("EE", "TU", "73").
+- A speed prior that keeps a one-word over near the speed of the transmission before it.
+
+A character-frequency prior would not help "EE" against "I", which are both common letters.
+
+**How to measure:** DEV2's QSO group (H2) and the one-word overs above, sent alone, at several levels and seeds.
+
 ### Time-base invariance of the decoder (stage 2; known issue)
 **Status (2026-10-07): applies to the Bell decoder** (design spec §5.2, amendments of 2026-10-07); written for the filter-bank decoder, the measure carries over.
 
