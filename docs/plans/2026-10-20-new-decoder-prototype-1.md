@@ -334,7 +334,7 @@ decisions (decision D6; every value here a placeholder, measured in R9).
 | Piece | 3 samples = 2.000 | ms | derived from r = 1 500 samples/s (notes, topic 4, item 1) |
 | Keying edge, for the mark's rise | raised cosine, 5 | ms | placeholder, heuristic: the generator's edge (D10, §2.3) |
 | Speeds | 12.0 × 1.1^s, s = 0 … 31 | ms per dot | owner (notes, topic 2, item 1) |
-| Farnsworth factors | 1.1^f, f = 0 … 22 | — | owner (notes, topic 2, item 3) |
+| Farnsworth factors | 1 only (D14, 2026-10-21); the grid 1.1^f, f = 0 … 22, a non-default variant | — | owner (notes, topic 2, item 3, amended) |
 | Fist medians | 1, 3, 1, 3F, 7F | dots | placeholder, heuristic (ITU-R M.1677-1) |
 | Fist σ | 0.3, every kind | ln(length) | placeholder, heuristic |
 | Fist tail | none until measured on real keying | — | owner (D5, 2026-10-20) |
@@ -480,6 +480,43 @@ The owner hears the result if it does not remove the failing band.
   built.
 - **The remaining failure,** at +10 dB S₅₀₀ on one seed, comes from the ceiling. It is put to the owner as
   (a) a newborn's first mark exempt from the ceiling, (b) a ceiling of 2 500, or (c) left to R3.
+
+**D11. The ceiling at the speed step's last failing point. Decided (owner, 2026-10-21): (c), left to R3.** The +10 dB
+S₅₀₀ seed-12 point stays a known failure until R3 sets the ceiling. The options were:
+- (a) a newborn's first mark exempt from the ceiling;
+- (b) a ceiling of 2 500, measured to fix it at 42–50% more CPU;
+- (c) left to R3.
+
+**D12. The tracker's two remaining failures. Decided (owner, 2026-10-21): (B), then (A).**
+- The failures (Task 6b, 1 000 seeds): a weak station beside one 20 dB stronger 50 Hz away passed 43%; holding a keyed
+  carrier passed 94.8%.
+- **(B):** four standard steps, each kept only if measured to help:
+  - association inside the acceptance window first;
+  - confirmation from windows that share no samples;
+  - a larger uncertainty for a station's first, partly filled window;
+  - each measurement's uncertainty corrected for keyed carriers and for the correlation between windows.
+- The trust tolerance follows the block length, 0.26 / T_block.
+- **(A):** whatever still fails stays a known failure, measured in R9.
+
+**D13. Very strong stations. Decided (owner, 2026-10-21): (A), model the fall.**
+- Task 7a found that stations above about +37 dB S₅₀₀ decode wrongly: the unmodeled fall leaves the tail's evidence for
+  a one-piece over to claim.
+- Task 4c models the mark's fall as the other half of the matched filter, and measures it from +30 to +60 dB S₅₀₀.
+
+**D14. Farnsworth spacing. Decided (owner, 2026-10-21): removed from the first prototype.**
+- **Why** (Task 7a and its review, measured): the flat prior over 23 factors cost every reading of standard code 3.1 nats
+  at its first letter gap, which a reading that merges letters avoids, so "TEST" sent alone decoded as "-". The
+  factor's branching was also the search's largest CPU cost.
+- **The owner:** "we eliminate the Farnsworth factor entirely for now and allow any Farnsworth decoding to fail until a
+  future fix, recording somewhere what we've discovered and our thoughts for how to fix it."
+- **What changes** (Task 4d):
+  - The default factor grid is the single factor F = 1. The grid stays in the code as a variant a run may switch on.
+  - The Farnsworth tests become known failures; TheGridsEnds' slow end is sent at standard spacing.
+- **What is recorded:** the findings and the thoughts for a fix are in `docs/backlog.md`, "Farnsworth spacing in the
+  new decoder"; the design notes' topic 2, item 3 is amended.
+- **Consequence for the measurements:** DEV2's Farnsworth groups (I, I2) are expected to decode poorly. In R4 all of
+  I2 is reported apart from the comparison with the bank, as a known gap of this prototype, and O7's cut at F = 8 is
+  moot.
 
 ### Obvious items, stated for approval
 

@@ -140,6 +140,15 @@ means all three of:
 3. **Farnsworth gap factor (owner, 2026-10-15).** One factor F stretches letter and word gaps alike, keeping their
    3:7 ratio: the ARRL rule (Bloom 1990), F = (60c/s − 37.2)/22.8 for characters at c WPM sent at s WPM overall. The
    form is standard; carrying F as a hidden variable of each hypothesis is the adaptation.
+   - **Amended 2026-10-21 (owner): removed from the first prototype.** The decoder assumes standard spacing (F = 1),
+     and Farnsworth-spaced signals decode poorly until a later fix.
+     - Measured in the prototype: the flat prior over 23 factors cost every reading of standard code ln 23 = 3.1 nats
+       at its first letter gap, which a reading that merges letters avoids, so "TEST" sent alone decoded as "-".
+     - The factor's branching was also the search's largest CPU cost.
+     - The owner: "The vast majority of on air code is not Farnsworth."
+     - What was found, and the thoughts for a fix (a concentrated prior, Farnsworth readings started on demand, or
+       spacing learned per sender): `docs/backlog.md`, "Farnsworth spacing in the new decoder".
+     - The grid below stays in the code as a variant that a run may switch on; it is not the default.
    - **Grid:** 23 factors 10% apart, 1.1^k for k = 0 to 22 (1 to 8.14), like the speeds. The range, 1 to 8, is the
      owner's decision: it covers the use known on the air (the ARRL's 18 WPM characters at 5 WPM overall give 7.84;
      W1AW's code practice has used 15 WPM characters since 2001, at most 6.26, from a weak source). Covering the whole

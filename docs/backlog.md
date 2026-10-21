@@ -286,6 +286,49 @@ threshold was kept (measured, E7; results section 3.10). A false over start disc
 fit and amplitude mid-transmission. Stage 2: make the over-start test aware of the station's own
 spacing, for example from its fitted word gaps, rather than a fixed multiple of T_g.
 
+### Farnsworth spacing in the new decoder (owner, 2026-10-21: removed from the first prototype)
+**Status (2026-10-21): open.** The new decoder's first prototype (viterbi) assumes standard spacing only: the
+Farnsworth factor is fixed at 1. Farnsworth-spaced signals (DEV2's groups I and I2) are expected to decode poorly until
+a fix. Owner's decision: "we eliminate the Farnsworth factor entirely for now and allow any Farnsworth decoding to fail
+until a future fix ... That will help with CPU and will restore proper decoding of properly sent Morse."
+
+**What was found** (the first prototype; measured unless marked):
+- **How it worked.** Each reading carried a factor F. There were 23 values, 10% apart from 1 to 8.14, all equally
+  likely (the flat prior, owner 2026-10-19). A reading chose its F at its first gap between letters or words, paying
+  ln 23 = 3.1 nats.
+- **The cost to standard code.** Every reading of well-sent standard code pays those 3.1 nats at its first letter gap,
+  as if F = 8 were as likely as F = 1. A reading that never takes a letter gap avoids the payment.
+- **The misreading.** Add the uniform letter cost (ln 62 = 4.13 nats) and the timing model's spread (0.3 in ln length;
+  a 3-dot gap read as a 1-dot gap costs about 6.7 nats, derived), and merging letters into one longer symbol can win.
+  - "TEST" sent alone decoded as "-" (-....-) in 12 of 12 runs at +10 to +30 dB S500. The one-symbol reading misfits
+    by 14.6 nats at a speed 1.33 times slower, but saves 16.7 nats of priors.
+  - With a single factor, "TEST" decoded correctly, by 1.1 nats.
+  - "TU" sent alone would read as "X" by about 1 nat even at the right speed (derived).
+  - Evidence: `docs/plans/data/2026-10-20-new-decoder-prototype-1/one-word-over.csv` and the prototype's results
+    record.
+- **The CPU.** The factor's branching, 23 factors × 2 gap kinds at every possible gap end, was the search's largest
+  cost: 82% of its time on noise before the exact speed-ups.
+- **Thin margins even at F = 1.** At a later letter gap the correct reading wins by only about 2 nats at exact timing
+  (derived), so real fists may still merge letters.
+
+**Thoughts for the fix** (the discussion of 2026-10-21; none tried):
+- (a) **A starting probability concentrated on standard spacing,** counted from on-air traffic: the design notes'
+  "measured from the population" form, the alternative to flat. For example, F = 1 with most of the mass, and
+  Farnsworth readings paying a few nats once.
+- (b) **Standard spacing by default, Farnsworth on demand.** Farnsworth readings would be started as rescues when a
+  letter gap is much longer than standard spacing allows. This removes most of the branching.
+- (c) **Spacing learned per sender,** like the level: each reading estimates its own letter-gap and word-gap stretch
+  from its gaps. This covers Farnsworth and irregular hand senders alike.
+- **Independently of Farnsworth:**
+  - a character-frequency prior instead of the uniform 1/62, since merged symbols are usually rare ones;
+  - over the factors, an exact average instead of the best one (about ln(23/k), with k the factors that fit).
+
+**How to measure a fix:**
+- DEV2's Farnsworth groups (I, I2);
+- the one-word overs (TEST, TU);
+- the speed step and the constant-speed stations, against the standard-spacing default;
+- CPU per channel-second on noise.
+
 ### Time-base invariance of the decoder (stage 2; known issue)
 **Status (2026-10-07): applies to the Bell decoder** (design spec §5.2, amendments of 2026-10-07); written for the filter-bank decoder, the measure carries over.
 
