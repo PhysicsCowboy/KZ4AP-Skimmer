@@ -266,6 +266,14 @@ public:
         return factor_entry(kind, speed, tau).survival;
     }
 
+    // bytes: what the tables' entries hold, their vectors' capacities (search.hpp, "Work saved": at most 4 000 000).
+    std::size_t bytes() const {
+        std::size_t total = first_survival_.capacity() * sizeof(double) + first_ends_.capacity() * sizeof(double) +
+                            first_best_.capacity() * sizeof(std::array<double, 3>);
+        for (const std::vector<FactorEntry>& table : by_kind_and_speed_) total += table.capacity() * sizeof(FactorEntry);
+        return total;
+    }
+
     static Kind mark_kind(int label) { return label == 1 ? Kind::Dash : Kind::Dot; }
 
 private:
@@ -399,6 +407,8 @@ struct Search::Impl {
     const SearchStats& stats() const { return stats_; }
     std::size_t live() const { return population_.size(); }
     double normalization() const { return normalization_; }
+    std::size_t text_entries() const { return text_.size(); }
+    std::size_t open_timing_bytes() const { return open_.bytes(); }
 
 private:
     // max over the labels the node allows of ln S_label(speed, tau): a mark at a known speed.
@@ -1184,5 +1194,7 @@ const SearchStats& Search::stats() const { return impl_->stats(); }
 std::size_t Search::live() const { return impl_->live(); }
 std::vector<StoryView> Search::live_stories() const { return impl_->live_stories(); }
 double Search::normalization_nats() const { return impl_->normalization(); }
+std::size_t Search::text_entries() const { return impl_->text_entries(); }
+std::size_t Search::open_timing_bytes() const { return impl_->open_timing_bytes(); }
 
 }  // namespace kz4ap::viterbi

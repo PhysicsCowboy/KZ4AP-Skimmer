@@ -6,6 +6,7 @@
 #include "kz4ap/event_bus.hpp"
 #include "kz4ap/signal_detector.hpp"
 #include "kz4ap/spectrum.hpp"
+#include "kz4ap/viterbi/config.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -16,6 +17,11 @@
 #include <vector>
 
 namespace kz4ap {
+
+namespace viterbi {
+class HissEstimator;
+}  // namespace viterbi
+struct ViterbiShared;
 
 // The FFT size the engine uses when EngineConfig::fft_size is 0: the largest power
 // of two with sample_rate / fft_size >= 20 Hz, so bins stay about 23 Hz wide at
@@ -41,8 +47,15 @@ struct EngineConfig {
     double channel_cutoff_hz = 150.0;
     DetectorConfig detector;  // sample_rate, fft_size, hop and attribution_distance_hz (from
                               // channel_distance_hz) are overwritten by the engine
-    ClassicalDecoderConfig decoder;  // decoder.front_end selects the decoder: Envelope, Matched or Bank
+    ClassicalDecoderConfig decoder;  // decoder.front_end selects the decoder: Envelope, Matched, Bank or Viterbi
     bank::BankConfig bank;           // the bank decoder's configuration (decoder.front_end == FrontEnd::Bank)
+    // The new decoder's configuration (decoder.front_end == FrontEnd::Viterbi); its hiss_* fields also configure the
+    // engine's hiss estimator, which then reads every spectrum frame (in oracle mode too).
+    viterbi::ViterbiConfig viterbi;
+    // Genie runs only (FrontEnd::Viterbi, oracle mode; the controller's Ruling 7): empty, or one entry per oracle
+    // channel, in the order of oracle_frequencies_hz, whose genie values replace those of `viterbi` for that channel
+    // (viterbi::with_genie, at the channel's center).
+    std::vector<viterbi::ViterbiGenie> viterbi_genie;
 
     // Oracle mode, for the benchmark: when not empty, a channel is opened at each of
     // these frequencies (Hz from the span's center, rounded to the nearest FFT bin)
@@ -80,7 +93,9 @@ struct EngineStats {
 class Engine {
 public:
     // Throws std::invalid_argument if config.sample_rate is below 8000 Hz or
-    // config.channel_distance_hz is not positive.
+    // config.channel_distance_hz is not positive; with FrontEnd::Viterbi, for viterbi_genie entries without oracle
+    // mode or not one per oracle frequency, and for a new decoder's configuration that HissEstimator,
+    // make_viterbi_shared or ViterbiDecoder refuses.
     Engine(const EngineConfig& config, EventBus& bus);
     ~Engine();
 
@@ -121,6 +136,10 @@ private:
     std::uint64_t channel_samples_ = 0;
     double decoder_seconds_ = 0;
     ChannelTap tap_;
+    // FrontEnd::Viterbi only: the hiss estimator, fed every spectrum frame, whose N0 at each channel's center bin the
+    // channel's decoder gets before every block; and the parts its decoders share.
+    std::unique_ptr<viterbi::HissEstimator> hiss_;
+    std::shared_ptr<const ViterbiShared> viterbi_shared_;
 };
 
 }  // namespace kz4ap

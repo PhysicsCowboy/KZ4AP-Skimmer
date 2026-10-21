@@ -1,6 +1,8 @@
 #include "kz4ap/engine.hpp"
 
 #include "kz4ap/bank_decoder.hpp"
+#include "kz4ap/viterbi/hiss.hpp"
+#include "kz4ap/viterbi_decoder.hpp"
 
 #include <chrono>
 #include <stdexcept>
@@ -45,6 +47,21 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
                                      config_.channel_cutoff_hz}) {
     pending_.reserve(static_cast<std::size_t>(hop_));
     oracle_ = !config_.oracle_frequencies_hz.empty();
+    if (config_.decoder.front_end == FrontEnd::Viterbi) {
+        // The new decoder: the hiss estimator reads every spectrum frame (in oracle mode too), and its decoders share
+        // one set of parts built for every channel's configuration (the genie's spreads may lengthen the blocks).
+        if (!config_.viterbi_genie.empty() && config_.viterbi_genie.size() != config_.oracle_frequencies_hz.size())
+            throw std::invalid_argument("viterbi_genie needs oracle mode and one entry per oracle frequency");
+        hiss_ = std::make_unique<viterbi::HissEstimator>(config_.sample_rate, config_.fft_size, config_.viterbi);
+        std::vector<viterbi::ViterbiConfig> configs = {config_.viterbi};
+        for (const viterbi::ViterbiGenie& genie : config_.viterbi_genie)
+            configs.push_back(viterbi::with_genie(config_.viterbi, genie, 0.0));  // the frequency does not matter here
+        viterbi_shared_ = make_viterbi_shared(configs, ChannelizerConfig{config_.sample_rate, config_.fft_size,
+                                                                          config_.channel_bins,
+                                                                          config_.channel_cutoff_hz});
+    } else if (!config_.viterbi_genie.empty()) {
+        throw std::invalid_argument("viterbi_genie needs the new decoder (FrontEnd::Viterbi)");
+    }
     for (std::size_t i = 0; i < config_.oracle_frequencies_hz.size(); ++i) {
         const int bin = channelizer_.hz_to_bin(config_.oracle_frequencies_hz[i]);
         Track track;
@@ -95,6 +112,7 @@ void Engine::process_hop(std::span<const Sample> hop) {
     for (auto& frame : spectrum_.push(hop)) {
         DetectorUpdate update;
         if (!oracle_) update = detector_.process(frame);
+        if (hiss_) hiss_->push(frame);  // the new decoder's hiss, before the frame moves on
         bus_.publish(Event{std::move(frame)});
         for (const auto id : update.died) close_channel(id);
         for (const auto& track : update.born) open_channel(track, channelizer_.hz_to_bin(track.freq_hz));
@@ -115,7 +133,8 @@ void Engine::process_hop(std::span<const Sample> hop) {
         const double center_hz = channelizer_.bin_to_hz(channel.bin);
         if (tap_) tap_(ChannelBlock{id, first_index, center_hz, s, channel.detector_freq_hz});
         channel.decoder->set_frequency_anchor_hz(channel.detector_freq_hz - center_hz);  // Envelope: ignored
-        // Bank: the block is mixed down by this anchor
+        // Bank: the block is mixed down by this anchor. The new decoder: its N0 at the channel's center bin (Ruling 3).
+        if (hiss_) channel.decoder->set_noise_density_fs2_per_hz(hiss_->noise_density_fs2_per_hz(channel.bin));
         const auto started = std::chrono::steady_clock::now();
         auto update = channel.decoder->process(s, t0);
         decoder_seconds_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
@@ -130,10 +149,19 @@ void Engine::open_channel(const Track& track, int bin) {
     channelizer_.add_channel(track.id, bin);
     const double residual_hz = track.freq_hz - channelizer_.bin_to_hz(bin);
     std::unique_ptr<Decoder> decoder;
-    if (config_.decoder.front_end == FrontEnd::Bank)
+    if (config_.decoder.front_end == FrontEnd::Bank) {
         decoder = std::make_unique<BankDecoder>(channelizer_.output_rate(), config_.bank, residual_hz);
-    else
+    } else if (config_.decoder.front_end == FrontEnd::Viterbi) {
+        // Oracle channels are tracks 1, 2, ... in the order of oracle_frequencies_hz, and so of viterbi_genie.
+        viterbi::ViterbiConfig channel_config = config_.viterbi;
+        if (oracle_ && !config_.viterbi_genie.empty())
+            channel_config = viterbi::with_genie(config_.viterbi, config_.viterbi_genie.at(track.id - 1),
+                                                 channelizer_.bin_to_hz(bin));
+        decoder = std::make_unique<ViterbiDecoder>(channelizer_.output_rate(), channel_config, residual_hz,
+                                                   viterbi_shared_);
+    } else {
         decoder = std::make_unique<ClassicalDecoder>(channelizer_.output_rate(), config_.decoder, residual_hz);
+    }
     channels_.emplace(track.id, Channel{track, bin, std::move(decoder), track.freq_hz});
     bus_.publish(Event{TrackEvent{TrackEvent::Kind::Born, track}});
 }

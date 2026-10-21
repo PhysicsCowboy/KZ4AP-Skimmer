@@ -154,6 +154,10 @@ double HissEstimator::beta_of(const Weights& weights) const {
 void HissEstimator::push(const SpectrumFrame& frame) {
     if (frame.power_db.size() != average_.size())
         throw std::invalid_argument("hiss: the frame must hold fft_size bins");
+    // A frame of exact zeros in every bin is missing data, not a measurement (hiss.hpp, stage 2): it is not counted and
+    // changes nothing.
+    if (std::all_of(frame.power_db.begin(), frame.power_db.end(), [](float db) { return db <= kZeroReadingDb; }))
+        return;
     ++frames_;
     const double step = std::max(alpha_, 1.0 / static_cast<double>(frames_));
     for (std::size_t i = 0; i < average_.size(); ++i) {

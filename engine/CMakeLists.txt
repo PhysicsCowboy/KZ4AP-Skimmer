@@ -36,6 +36,7 @@ add_library(kz4ap_engine
   src/matched_front_end.cpp
   src/frequency_tracker.cpp
   src/bank_decoder.cpp
+  src/viterbi_decoder.cpp
   ${KZ4AP_BANK_SOURCES}
   ${KZ4AP_VITERBI_SOURCES}
 )
@@ -116,6 +117,7 @@ add_executable(kz4ap_viterbi_tests
   tests/viterbi/search_test.cpp
   tests/viterbi/hiss_test.cpp
   tests/viterbi/tracker_test.cpp
+  tests/viterbi_decoder_test.cpp
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)
 gtest_discover_tests(kz4ap_viterbi_tests)
@@ -126,3 +128,7 @@ gtest_discover_tests(kz4ap_viterbi_tests)
 add_test(NAME Search.FullSweep COMMAND kz4ap_viterbi_tests
          --gtest_filter=Search.FollowsASpeedStepAtEverySnr:Search.OpenFactorScanAndTableCapChangeNothing)
 set_tests_properties(Search.FullSweep PROPERTIES ENVIRONMENT KZ4AP_SEARCH_FULL_SWEEP=1 LABELS full-sweep)
+# The decoder's ten minutes of noise at the ceiling, with its CPU per channel-second; about 5 min on the Windows PC.
+# Labeled full-sweep as above (without KZ4AP_VITERBI_FULL_SWEEP the test runs on one minute of noise).
+add_test(NAME ViterbiDecoder.FullSweep COMMAND kz4ap_viterbi_tests --gtest_filter=ViterbiDecoder.TenMinutesOfNoise)
+set_tests_properties(ViterbiDecoder.FullSweep PROPERTIES ENVIRONMENT KZ4AP_VITERBI_FULL_SWEEP=1 LABELS full-sweep)

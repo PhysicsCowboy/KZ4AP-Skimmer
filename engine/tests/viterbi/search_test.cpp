@@ -296,7 +296,8 @@ TEST(Search, FollowsASpeedStepAtEverySnr) {
             const std::string decoded = decode(ViterbiConfig{}, station(step, db, step.back().second + 1.5, seed));
             const double error_rate = cer(reference, decoded);
             const bool known_failure = db == 10 && seed == 12u;
-            if (known_failure) ::testing::Test::RecordProperty("step_10dB_seed12_cer", std::to_string(error_rate));
+            if (known_failure)
+                ::testing::Test::RecordProperty("step_10_dB_S500_seed12_cer", std::to_string(error_rate));
             EXPECT_LE(error_rate, known_failure ? 0.2 : 0.05) << "decoded \"" << decoded << "\"";
         }
     }
@@ -955,9 +956,11 @@ TEST(Search, SkippingSuccessorsBeyondTheBeamChangesNothing) {
 TEST(Search, OpenFactorScanAndTableCapChangeNothing) {
     // Two of the search's savings against their plain forms (search.hpp, "Work saved"): the open factor's scan outward
     // from its best factor, with the merge bound and the beam's exits, against every factor evaluated in order with no
-    // table, no bound and no exit; and the open timing's tables capped at 16 taus (every later maximum computed on
-    // demand) against the default cap. On 10 s of noise (the ceiling binding, open-factor gaps living for seconds) and
-    // on a station at +10 dB S500; under the full-sweep presets (KZ4AP_SEARCH_FULL_SWEEP=1) the scan's comparison runs
+    // table for ln P, no bound and no exit (an open factor's survival still comes from the tables within the cap in
+    // both, so this pair does not compare the survival's cache: the next does); and the open timing's tables capped at
+    // 16 taus (every later maximum, the survival's included, computed on demand) against the default cap. On 10 s of
+    // noise (the ceiling binding, open-factor gaps living for seconds) and on a station at +10 dB S500; under the
+    // full-sweep presets (KZ4AP_SEARCH_FULL_SWEEP=1) the scan's comparison runs
     // on 60 s of noise, the cap's on its first 10 s. Each pair gives the same live count after every piece and the same
     // stories, scores, lines, statistics and text at the end; the scan stopped short and passed factors over many
     // times. The three runs of a case are independent: each runs on its own thread.

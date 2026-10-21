@@ -11,12 +11,15 @@
 //
 // The search's model (design notes, topic 4, item 2, as amended 2026-10-20). A block's pieces count as independent at
 // the noise's long-run rate: N0 x rate per channel sample, the rate being c's last increment (1 500 Hz on the
-// channelizer's filter, the sum of the R_k below). That is exact for long blocks and credits a short block a little
-// less than its own c(m) would (about 7% of a 100 WPM dot's evidence, derived). A block's own c(m) ignores the noise's
-// correlation with the samples before the block: one piece's three samples are nearly fully correlated
-// (c(3) = 2 104.66 Hz against 4 500 Hz per piece in a long block), so a block's first full piece earned |S|^2 / V =
-// 213.8 at +20 dB S500 against 100.0 for each piece after it (derived), and a story that skipped a weak first piece
-// gained by it. A mark's first block is the matched filter to the pulse as received, which rises over its first pieces
+// channelizer's filter, the sum of the R_k below). That is exact for long blocks and credits a short block less than
+// its own correlated noise would (derived, the credit being the true variance over the model's): a plain block of 6
+// pieces 7.2% less (c(18) = 25 056.47 Hz against 27 000 Hz), the 100 WPM dot, a mark's first block of 6 pieces weighted
+// by the rise, 5.8% less, and first blocks of 1, 2, 3 and 4 pieces 53%, 37%, 22% and 12% less, by design: that removes
+// the first piece's bonus below. A block's own c(m) ignores the noise's correlation with the samples before the block,
+// and one piece's three samples are nearly fully correlated (c(3) = 2 104.66 Hz = 0.93 x 9 R_0, R_0 = 251.86 Hz), so with
+// c(m) a block's first full piece earned |S|^2 / V = 213.8 at +20 dB S500 against 100.0 for each piece after it
+// (derived; c(3) against the 4 500 Hz of a piece in a long block), and a story that skipped a weak first piece gained
+// by it. A mark's first block is the matched filter to the pulse as received, which rises over its first pieces
 // (rise_fractions): the sum of the pieces weighted by their expected fractions g_j, so that a weak piece adds little.
 // So m_signal = samples_per_piece x the sum of the squared weights (m for a block of full pieces) and
 // V = N0 x rate x m_signal.
@@ -53,9 +56,11 @@ std::vector<double> sum_noise_hz(std::span<const double> taps, double input_rate
 // piece with equal probability (derived). The rise starts at the first piece whose average is at least 0.01 (heuristic:
 // below it, about -40 dB relative to a full piece's power, a piece counts as gap) and ends at the last piece whose
 // average differs from 1 by more than 0.005 (heuristic); every later piece is a full piece. Throws
-// std::invalid_argument for no taps, taps that do not add up to a positive and finite sum, an input_rate_hz that is not
-// positive and finite, a decimation or samples_per_piece below 1, or a rise_s that is negative or not finite (0 gives
-// the filter's own rise).
+// std::invalid_argument, before converting anything, for no taps, taps that do not add up to a positive and finite
+// sum, an input_rate_hz that is not positive and finite, a decimation or samples_per_piece below 1, a rise_s outside
+// [0, 1] s (0 gives the filter's own rise; the 1 s bound is heuristic: a transmitter's edge lasts a few ms, and the
+// bound keeps the work finite, about 8e8 multiply-adds at 192 kHz), or an edge and filter spanning 2^31 input samples
+// or more.
 std::vector<double> rise_fractions(std::span<const double> taps, double input_rate_hz, int decimation,
                                    int samples_per_piece, double rise_s);
 
@@ -63,7 +68,8 @@ namespace detail {
 
 // rise_fractions before the average: [position][piece], the fractions of pieces 0 ... pieces - 1 for an edge that
 // starts at input sample `position` (0 ... decimation x samples_per_piece - 1), piece 0's channel samples being the
-// filter's outputs at input samples 0, decimation, ... (samples_per_piece - 1) x decimation.
+// filter's outputs at input samples 0, decimation, ... (samples_per_piece - 1) x decimation. Throws what rise_fractions
+// throws, and for pieces below 0.
 std::vector<std::vector<double>> rise_fractions_by_position(std::span<const double> taps, double input_rate_hz,
                                                             int decimation, int samples_per_piece, double rise_s,
                                                             int pieces);
@@ -111,10 +117,12 @@ double block_llr(double s_abs, double m_signal, double a, double v);
 //
 // Where the prior is broad against the likelihood, the curvature at the mode degenerates: with beta = 0 the mode
 // leaves b = 0 at z* = sqrt(1 + 1/(2 q)), where -g'' vanishes while the integrand's width is set by the quartic term of
-// ln I0 (x^2 / 4 - x^4 / 64), and curvature-scaled nodes spread far wider than the integrand. Near z = 1, at order 5,
-// they missed by up to 1.2 nats for strong stations (beta of 3 000 to 1e6) at relative spreads of 0.5 to 2 and by 0.14
-// to 0.41 nats for mu = 0 at sqrt(q) of 0.3 to 10, and put the posterior's variance at 0 to 3.2 times its true value
-// at spreads of 1 to 30; at beta = 1e5 and a spread of 30, order 3 missed by 168 nats and order 5 by 0.84 (measured).
+// ln I0 (x^2 / 4 - x^4 / 64), and curvature-scaled nodes spread far wider than the integrand. Near z' = 1 (z' = z / s,
+// below), at order 5, they missed by up to 1.2 nats for strong stations (beta of 3 000 to 1e6) at relative spreads of
+// 0.3 to 2 (1.18 nats at 0.3, with the variance 3.86 times its true value) and by 0.14 to 0.41 nats for mu = 0 at
+// sqrt(q) of 0.3 to 10 (at z = 2.55 for sqrt(q) = 0.3 and z = 1.20 for sqrt(q) = 1), and put the posterior's variance
+// at 0 to 3.2 times its true value at spreads of 1 to 30; at beta = 1e5 and a spread of 30, order 3 missed by 168 nats
+// and order 5 by 0.84 (measured).
 // An exact rescaling serves there instead. In b, N(b; beta, q) = N(0; beta, q) e^(kappa b - b^2 / (2 q)) with
 // kappa = beta / q; the prior's e^(-b^2 / (2 q)) joins the likelihood's e^-b^2 as e^(-s^2 b^2), where
 // s = sqrt(1 + 1/(2 q)), and u = s b turns the integral into J(z', kappa') / s, with z' = z / s, kappa' = kappa / s and
@@ -123,10 +131,13 @@ double block_llr(double s_abs, double m_signal, double a, double v);
 // and the posterior of b is that weight's distribution in u, over s (exact at every q, derived). Where z' <= 4 and
 // kappa' <= 1 (the broad-prior regime), ln J and the weight's mean and variance come from tables: steps of 0.01 in z'
 // and kappa', 40 501 nodes, bilinear interpolation of each less its closed form at z' = 0 (so that an empty block is
-// exact), built once (31 ms in a Release build, 0.97 MB) and shared by every caller. The curvature degenerates around
-// z' = 1 at kappa' = 0, where -g''(0) = 2 s^2 (1 - z'^2) vanishes (derived); the regime's bounds are a heuristic margin
-// around that point, and outside them the adaptive quadrature holds within 0.002 nats where measured (below). The
-// mode comes from Newton's method in both.
+// exact), built once (31 ms in a Release build, 0.97 MB; build_evidence_tables builds it ahead) and shared by every
+// caller. Each node's integral is Simpson's rule over u in [0, 12] in steps of 0.02: the upper limit derived (the
+// weight is e^-56 of its peak there at the far corner, z' = 4, kappa' = 1), the u step and the 0.01 grid steps
+// heuristic, their adequacy measured (3.4e-5 nats, below). The curvature degenerates around z' = 1 at kappa' = 0,
+// where -g''(0) = 2 s^2 (1 - z'^2) vanishes (derived); the regime's bounds are a heuristic margin around that point,
+// and outside them the adaptive quadrature holds within 0.0022 nats where measured (below). The mode comes from
+// Newton's method in both.
 //
 // Accuracy at order 5, measured against dense integrals:
 //   - in the regime, within 3.4e-5 nats, and the posterior's mean and variance within 3e-5 relatively, at every q from
@@ -134,13 +145,18 @@ double block_llr(double s_abs, double m_signal, double a, double v);
 //     priors, mu = 0 and blocks of z = 0 to 4 included;
 //   - outside it, within 0.0011 nats on the tests' grid (beta = m_signal mu / sqrt(v) of 1 to 30, z = 0, b/2, b and
 //     2 b, relative spreads sqrt(p) / mu of 0.03 to 0.5: 61 of its 64 points; the other 3 lie in the regime); within
-//     0.002 nats where kappa' > 1 (kappa' to 1 000, z to 10), with the mean within 0.005 posterior standard deviations
-//     and the variance within 1.1%; and within 2e-6 nats where z' > 4 (z' to 12);
-//   - across the regime's edges Lambda_P moves by at most 0.004 nats between points 2e-15 apart relatively (at
-//     kappa' = 1 and q = 1e12, where up to 0.002 nats of it is Lambda_P's own change over that step) and by at most
+//     0.0022 nats where kappa' > 1 (kappa' to 1 000, z' to 10; 2.11e-3 measured just above kappa' = 1, at z' = 1.295),
+//     with the mean within 0.0054 posterior standard deviations and the variance within 1.1%; and within 2e-6 nats where
+//     z' > 4 (z' to 12);
+//   - across the regime's edges Lambda_P moves by up to 0.0042 nats between points 2e-15 apart relatively at
+//     kappa' = 1 (4.09e-3 on the test's points, 4.15e-3 on a finer grid, both at q = 1e12, where up to 0.002 nats of it
+//     is Lambda_P's own change over that step and the rest the quadrature's own error at the edge: 2.1e-3 nats at
+//     order 5, 7.7e-3 at order 3 and 1.6e-2 to 1.8e-2 at order 2, orders the search does not use) and by at most
 //     2e-5 nats at z' = 4.
-// These were measured where beta^2 / q is at most 1e10. Where the mode lies far below beta, Lambda_P is about
-// -beta^2 / (2 q) and carries its rounding, epsilon beta^2 / q, which reaches 0.01 nats from beta^2 / q of about 1e14.
+// These hold where beta^2 / q is at most 1e10, apart from that edge's q = 1e12. Beyond it Lambda_P is large, about
+// -beta^2 / (2 q) where the mode lies far below beta, and carries the rounding of a double of that size: 3e-5 to
+// 1.2e-4 nats at |Lambda_P| of 1e11 to 5e11 nats (at q = 1e12 the z' = 4 edge moves by 6.1e-5 nats, one spacing of
+// doubles there), and 0.01 nats from beta^2 / q of about 1e14.
 // Newton takes at most 4 steps on the tests' grid and 6 over b = 0 to 1e4, z to 3 b, spreads to 2; where the
 // curvature degenerates, more: 7 to 12 for mu = 0 at z = 1 and sqrt(q) of 3 to 20, 17 at beta = 1e6, z = 1 and a
 // spread of 3, and 21 at most over b and z up to 1e100 and spreads up to 1e6, cold or started at 0, within its cap of
@@ -162,9 +178,10 @@ struct Moments {
 // 0.6% of a dense integral (measured). In the broad-prior regime (above) the moments come from the tables, within 3e-5
 // relatively; the variance after a block of noise (z = 1) is near 0.36 there (units of b^2), where curvature-scaled
 // nodes had put it at 0 to 3.2 times that. For a level known exactly it is the prior, {mu, p} ({mu, 0} with p = 0); for
-// mu > 0 the true posterior differs from it by about q relatively, for mu = 0 (a half-normal of mean 0.80 sqrt(p) and
-// variance 0.36 p) by order 1 relatively but by under 1e-9 in units of b. Throws for what block_llr_uncertain refuses,
-// and for an order below 2 (one node holds no variance).
+// beta well above sqrt(q) the true posterior differs from it by about q relatively; for mu = 0 (a half-normal of mean
+// 0.80 sqrt(p) and variance 0.36 p), and for 0 < beta below about sqrt(q), which only a level at the absolute threshold
+// can be (beta < 1, sqrt(q) <= 1e-9), by order 1 relatively but by under 1e-9 in units of b. Throws for what
+// block_llr_uncertain refuses, and for an order below 2 (one node holds no variance).
 Moments level_posterior(double s_abs, double m_signal, double mu, double p, double v, int order);
 
 // What one evaluation gives of a block: the evidence and the level after it, and where the posterior peaks.
@@ -180,10 +197,17 @@ struct BlockEvidence {
 // tolerance, a last step below the larger of 1e-10 sigma^ and 4 epsilon b (a few spacings of doubles at b), including
 // at b = 0 when mu = 0, where a zero slope may be a minimum. For a level known exactly: {block_llr, {mu, p}, mu}, so
 // {block_llr, {mu, 0}, mu} with p = 0. At every order from 2 its values are finite for b and z below 1e100 (beyond
-// about 1e154, b^2 leaves the doubles, as in block_llr). Throws for what level_posterior refuses and for a start_a
-// that is not finite.
+// about 1e154, b^2 leaves the doubles, as in block_llr) and q below 2.86e307 in units of b^2 (in the broad-prior
+// regime ln(2 pi q) overflows above it; that is a prior standard deviation of 5e153 units of b, which no physical
+// noise floor produces). Throws for what level_posterior refuses and for a start_a that is not finite.
 BlockEvidence block_evidence(double s_abs, double m_signal, double mu, double p, double v, int order,
                              std::optional<double> start_a = std::nullopt);
+
+// Builds, once for every caller, the tables block_evidence reads: the broad-prior regime's (31 ms in a Release build,
+// 0.97 MB) and the truncated nodes' of this order (87.1 KB at order 5). Each is otherwise built on its first use, a stall
+// in the middle of a stream; the decoder calls this when it is made. Thread-safe, and a no-op once built. Throws
+// std::invalid_argument for an order outside 1 ... 20.
+void build_evidence_tables(int order);
 
 namespace detail {
 
@@ -211,9 +235,13 @@ BlockEvidence block_evidence_direct_nodes(double s_abs, double m_signal, double 
 // set of cumulative integrals: in u = ln b the integrand, e^(-e^(2u)) I0(2 e^u z), does not depend on n, which sets
 // only the lower limit, u_lo(n) = ln b at level_min_db (the upper limit lies far above every tabulated z), so one
 // integral per z from the top of a grid in u down, by the trapezoid rule in steps of 0.01 dB of x, read at every
-// u_lo(n), serves every n: within 4.3e-5 nats of a direct integration over x, and built in 0.22 s for 195 pieces
-// (measured, on the channelizer's filter at 48 kHz). The grid's nodes are whole multiples of the step in u, so an
-// entry depends only on m_signal(n). Above z = 40, the large-z form (Laplace's method)
+// u_lo(n), serves every n. With the default rise the lowest limit is b = 0.0344 (the rise's first piece at
+// level_min_db; it was 0.2600 for one piece under c(m), before the rise), so the grid in ln b is 7.28 long where it had
+// been 5.26, 38% more nodes; the table is within 4.4e-5 nats of a direct integration over x, the posterior's mean within
+// 1.0e-4 of its standard deviation and its variance within 1.2e-4 relatively, on FlatPriorWithTheRise's 15 points, and
+// is built in 0.26 s for 195 pieces (measured, on the channelizer's filter at 48 kHz, a Release build on the
+// development desktop; the test records them). The grid's nodes are whole multiples of the step in u, so an entry
+// depends only on m_signal(n). Above z = 40, the large-z form (Laplace's method)
 //     Lambda_flat = z^2 - ln(2 z^2) + ln(20 / (ln 10 x (level_max_db - level_min_db))),
 // with level_max_db - level_min_db the range's width in dB S500. The form meets the table within 6.3e-4 nats at
 // z = 40 (its error falls as 1 / z^2: 0.0011 at 30, 0.010 at 10). The posterior of b there is proportional to
@@ -231,11 +259,14 @@ public:
     // c: sum_noise_hz's c(m), Hz, up to m = samples_per_piece x max_pieces at least, read only for its last increment,
     // the noise's long-run rate (which it is once m passes the filter's correlation length, 33 lags on the
     // channelizer's filter); rise: rise_fractions' g_1 ... g_J for the same filter (empty: no rise, every g_j = 1).
-    // Throws std::invalid_argument for max_pieces or samples_per_piece below 1, a c shorter than that or whose last
-    // increment is not positive and finite, a rise fraction that is not positive and finite, a level range that is not
-    // finite or empty, or one the tables cannot hold: for some block length, b at level_min_db above 6 (at 6 the
-    // integrand there falls by e every 12 steps of the grid, and the trapezoid and the reading between nodes lose up to
-    // 0.0014 nats, derived) or b at level_max_db below 50 (the table's top, z = 40, plus 10).
+    // Throws std::invalid_argument for max_pieces or samples_per_piece below 1, a c shorter than that, a c whose last
+    // increment is not positive and finite or has not settled (its last two increments differ by 2 R_(M-1); they must
+    // agree within 1e-9 of the last, heuristic, which on the channelizer's filter holds from 31 samples on, where the
+    // last increment is within 2.8e-11 of the long-run rate, and at no shorter length: 12 samples would give
+    // 1 482.27 Hz, 1.2% low), a rise fraction that is not positive and finite, a level range that is not finite or
+    // empty, or one the tables cannot hold: for some block length, b at level_min_db above 6 (at 6 the integrand there
+    // falls by e every 12 steps of the grid, and the trapezoid and the reading between nodes lose up to 0.0014 nats,
+    // derived) or b at level_max_db below 50 (the table's top, z = 40, plus 10).
     FlatPrior(const ViterbiConfig& config, std::span<const double> c, int max_pieces, int samples_per_piece,
               std::span<const double> rise = {});
     FlatPrior(const FlatPrior&) = delete;

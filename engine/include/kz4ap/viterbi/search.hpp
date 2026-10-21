@@ -14,12 +14,13 @@
 //     390.37 ms; with f_D = 0, no limit), f_D being genie_fading_spread_hz if set, else fading_spread_hz. The pieces
 //     count as independent at the noise's long-run rate, N0 x rate per channel sample, rate being c's last increment
 //     (1 500 Hz on the channelizer's filter), with N0 the hiss passed with the current piece (FS^2/Hz) for the whole
-//     running block. That is exact for long blocks (c(m) / m tends to the rate) and credits a short block a little less
-//     than its own c(m) would (about 7% of a 100 WPM dot's evidence, derived). A block's own c(m) is not used, because
-//     it ignores the noise's correlation with the samples before the block: one piece's three samples are nearly fully
-//     correlated (c(3) = 2 104.66 Hz against 4 500 Hz per piece in a long block), so a block's first full piece earned
-//     |S|^2 / V = 213.8 at +20 dB S500 against 100.0 per piece later (derived), and starts that skipped a weak first
-//     piece gained by it. A mark's first block is the matched filter to the pulse as received (rise_fractions,
+//     running block. That is exact for long blocks (c(m) / m tends to the rate) and credits a short block less than its
+//     own correlated noise would (derived: a weighted first block of 6 pieces, the 100 WPM dot, 5.8% less; first blocks
+//     of 1 to 4 pieces 53% to 12% less; observation.hpp). A block's own c(m) is not used, because it ignores the noise's
+//     correlation with the samples before the block: one piece's three samples are nearly fully correlated
+//     (c(3) = 2 104.66 Hz = 0.93 x 9 R_0), so a block's first full piece earned |S|^2 / V = 213.8 at +20 dB S500 against
+//     100.0 per piece later (derived; c(3) against 4 500 Hz per piece in a long block), and starts that skipped a weak
+//     first piece gained by it. A mark's first block is the matched filter to the pulse as received (rise_fractions,
 //     observation.hpp): S = sum_j g_j x_j over its pieces x_j, with the rise's fractions g_j (0.193, 0.614, 0.943 and
 //     1.019 at 48 kHz with a keying edge of keying_rise_s = 5 ms; g_j = 1 past the rise), the flat prior's
 //     (FlatPrior::weight), so that a weak first piece adds little and a start that skips it gains nothing; its
@@ -121,6 +122,21 @@
 //      at birth; the first to survive starts its mark two to three pieces late, which the matched filter charges, and
 //      the ceiling drops it in the next gap. With a ceiling of 2 500 stories every point of the step and the stations
 //      decodes (measured); the ceiling is the owner's question.
+//   4. The fall at a mark's end is not modeled, and a gap piece adds 0 whatever it holds, so the energy left in the
+//      fall's tail after the mark's last piece is explained by no story that keeps the mark: a piece holding the
+//      fraction f of a full piece's carrier sum carries (3 f a)^2 / (4 500 Hz x N0) = f^2 x 10^(S500 / 10) nats of it
+//      (derived: a^2 = 10^(S500 / 10) x N0 x 500 Hz). For a strong station, a story that ends the over after the mark
+//      and starts a new over of one piece in the tail claims that energy for about 34 nats (the over's end 4.30, the
+//      birth's ln P 9.21, the letter 4.13, the speed's prior 3.47 and a one-piece dot at 100 WPM about 13), and wins:
+//      each element then reads as its own over, each followed by a one-piece "E". Measured (Task 7a, through the
+//      decoder: "PARIS PARIS" at 25 WPM on DEV2's noise, N0 the noise's own, one seed): at every one of 16 positions of
+//      the keying edge within a piece (steps of 6 of its 96 input samples at 48 kHz) the text was exact at +30, +33
+//      and +36 dB S500; at +38 dB S500 2 positions failed and at +40 dB 3 (edges 12 to 24 input samples into a piece);
+//      with the edge at a piece's start the text was exact to +41 dB S500 on three seeds and wrong on one of three at
+//      +42 dB, all three at +43 dB and above. With a fading spread of 5 Hz instead of 1 Hz (the level's prior 4.4 times
+//      broader across a dot's gap) +45 to +60 dB S500 failed the same way, so the level's prior is not the lever. DEV2's
+//      stations lie at or below +20 dB S500 (neighbors to +26 dB S500); real bands hold stronger ones.
+//      ViterbiDecoder.ExtremeLevels records +60 dB S500 as a strict expected failure.
 //
 // Work saved without changing any output:
 //   - An open factor's survival. A letter or word gap whose factor is open survives as its widest factor's does, the
@@ -231,8 +247,8 @@ struct SearchOptions {
     // Do not create a successor already more than beam_nats behind a score known at its piece (plan §2.7, item 5).
     bool skip_successors_beyond_beam = true;
     // Evaluate an open factor's letter and word successors by the scan outward from its best factor, with the merge
-    // bound and the beam's exits (true); or, for every gap, every factor in order, with no table, no bound and no exit
-    // (false).
+    // bound and the beam's exits (true); or, for every gap, every factor in order, with no table for ln P, no bound and
+    // no exit (false; an open factor's survival still comes from the tables within the cap).
     bool scan_open_factors = true;
     // The taus whose open-timing maxima are kept in tables, pieces: 0 for the cap the 4 000 000-byte budget sets
     // (search.hpp, "Work saved"); a smaller cap computes more of them on demand.
@@ -313,6 +329,10 @@ public:
     // nats: the sum of the best scores subtracted so far; a story's score against "noise only, throughout" is its
     // relative score plus this.
     double normalization_nats() const;
+    // For tests: the entries of the shared text in use (letters and word spaces that a live story's text holds), and the
+    // bytes the open timing's tables hold in entries, their vectors' capacities ("Work saved": at most 4 000 000).
+    std::size_t text_entries() const;
+    std::size_t open_timing_bytes() const;
 
 private:
     struct Impl;

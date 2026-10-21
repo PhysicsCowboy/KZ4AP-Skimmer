@@ -252,8 +252,10 @@ struct GroupMean {
 // simulation the mean of an order statistic of 171 bins, which sits above it by +0.34% at n = 1 (a numerical integral for
 // independent bins; 2 000 000 windows of independent exponentials gave +0.32%) and within 0.1% from n = 2 on; and the
 // Hann window's neighboring bins are correlated (4/9 in power), which adds +0.6% at n = 1. The offset falls fast with n:
-// +0.85% at 2, +0.48% at 3, +0.20% at 5, +0.01% at 10 and -0.02% at 47. So the plan's 0.5% is kept from n = 5 on and n = 1
-// is checked at 1.5%. One frame is 21 ms, and the estimate's own spread then is 17.7% (relative standard deviation).
+// +0.85% at 2 and +0.48% at 3 (the same scratch run), and in this test's own run (the properties it records; hiss.hpp
+// cites them) +0.96% at 1, +0.23% at 5, +0.03% at 10, -0.06% at 47 and -0.07% in steady state. So the plan's 0.5% is kept
+// from n = 5 on and n = 1 is checked at 1.5%. One frame is 21 ms, and the estimate's own spread then is 17.7% (relative
+// standard deviation).
 TEST(Hiss, BiasMatchesSimulation) {
     constexpr int kFrames = 20000;
     const Rate rate = k48;
@@ -644,6 +646,32 @@ TEST(Hiss, ExactZerosGiveZero) {
             EXPECT_GT(n0, 0.0) << zeros << " zero bins";
         else
             EXPECT_EQ(n0, 0.0) << zeros << " zero bins";
+    }
+}
+
+TEST(Hiss, AFrameOfExactZerosIsMissingData) {
+    // A frame that reads exact zeros in every bin is not a measurement (as the bank decoder treats exact zeros): it is
+    // not counted and changes nothing. After any number of such frames, before, between and among noise frames, the
+    // estimate at every frame is the one the noise frames alone give, to the bit; a run of them leaves N0 at 0 until a
+    // frame of noise arrives.
+    for (const Rate& rate : {k48, k192}) {
+        std::mt19937 rng(41);
+        const auto frames = frames_of(white_noise(static_cast<std::size_t>(2 * rate.sample_rate), kSigmaFs, rng), rate);
+        ASSERT_GE(frames.size(), 90u);
+        const SpectrumFrame zeros = flat_frame(rate.fft_size, -200.0f);
+        HissEstimator alone(rate.sample_rate, rate.fft_size, ViterbiConfig{});
+        HissEstimator with_zeros(rate.sample_rate, rate.fft_size, ViterbiConfig{});
+        for (int i = 0; i < 100; ++i) with_zeros.push(zeros);  // 2.1 s of exact zeros
+        EXPECT_EQ(with_zeros.noise_density_fs2_per_hz(0), 0.0);
+        for (std::size_t n = 0; n < frames.size(); ++n) {
+            alone.push(frames[n]);
+            with_zeros.push(frames[n]);
+            if (n % 7 == 3)
+                for (int i = 0; i < 5; ++i) with_zeros.push(zeros);
+            for (const int bin : {-rate.fft_size / 4, 0, 300})
+                ASSERT_EQ(with_zeros.noise_density_fs2_per_hz(bin), alone.noise_density_fs2_per_hz(bin))
+                    << "frame " << n << ", bin " << bin << ", " << rate.sample_rate << " Hz";
+        }
     }
 }
 

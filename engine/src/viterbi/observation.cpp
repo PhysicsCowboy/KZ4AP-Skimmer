@@ -251,9 +251,8 @@ double find_mode(const Block& block, std::optional<double> start) {
     // beta / q >= 0, so b^ lies in the bracket [0, that mean]. It stops at a step below 1e-10 sigma^ or below a few
     // spacings of doubles at b, or one that leaves b where it is; a step past the bracket's top goes to the top, one
     // that would leave the bracket below, or one where g is not concave, bisects it instead, and one past b = 0 stops
-    // there. A zero slope is the mode only where g is
-    // concave: elsewhere it can only be b = 0 with beta = 0 (g'(0) = beta / q), a minimum once z^2 > 1 + 1/(2 q), and
-    // the mode lies above it.
+    // there. A zero slope is the mode only where g is concave: elsewhere it can only be b = 0 with beta = 0
+    // (g'(0) = beta / q), a minimum once z^2 > 1 + 1/(2 q), and the mode lies above it.
     double low = 0.0;
     double high = q <= 1.0 ? (beta + 2.0 * q * z) / (1.0 + 2.0 * q) : (beta / q + 2.0 * z) / (1.0 / q + 2.0);
     double b = start ? std::clamp(*start, low, high) : high;
@@ -357,7 +356,7 @@ Fit fit_posterior(const Block& block, int order, double b, bool tabulated) {
 // over s and s^2. This is exact at every q (derived). Tables of ln J and the weight's mean and variance over
 // z' in [0, 4] and kappa' in [0, 1] serve every prior that maps into them. The curvature-scaled nodes fail around
 // z' = 1 at kappa' = 0, where -g''(0) = 2 s^2 (1 - z'^2) vanishes (derived); the bounds are a heuristic margin around
-// that point, and outside them the nodes hold within 0.002 nats where measured (observation.hpp).
+// that point, and outside them the nodes hold within 0.0022 nats where measured (observation.hpp).
 
 constexpr double kRegimeTopZ = 4.0;      // z', at most
 constexpr double kRegimeTopKappa = 1.0;  // kappa', at most
@@ -472,9 +471,10 @@ void check_block(double s_abs, double m_signal, double v) {
 
 // The block in b after checking the arguments. Its level counts as exact where p = 0, or where the prior is narrower
 // than 1e-9 of max(beta, 1) (kExactLevel): Lambda_P is then block_llr at mu, off by about q (Lambda'^2 + Lambda'') / 2
-// nats (Lambda's derivatives in b at beta), and the posterior the prior, {mu, p}. For mu > 0 the true posterior differs
-// from that by about q relatively; for mu = 0 it is a half-normal (mean 0.80 sqrt(p), variance 0.36 p), off by order 1
-// relatively but by under 1e-9 in units of b.
+// nats (Lambda's derivatives in b at beta), and the posterior the prior, {mu, p}. For beta well above sqrt(q) the true
+// posterior differs from that by about q relatively; for mu = 0 it is a half-normal (mean 0.80 sqrt(p), variance
+// 0.36 p), and for 0 < beta below about sqrt(q) (only at the absolute threshold: beta < 1, sqrt(q) <= 1e-9) nearly one,
+// off by order 1 relatively but by under 1e-9 in units of b.
 Block uncertain_block(double s_abs, double m_signal, double mu, double p, double v, int order, int lowest_order) {
     check_block(s_abs, m_signal, v);
     if (!finite_and_not_negative(mu))
@@ -536,6 +536,19 @@ constexpr double kHighestLowerB = 6.0;     // b at level_min_db, at most, for ev
 constexpr double kAboveZ = 10.0;           // the integral starts at b = z + 10: e^Lambda is e^-100 of its peak there
 constexpr double kNegligible = 1e-17;      // a rest of the integral below this share of it is left out
 
+// s: the longest keying edge rise_fractions takes (heuristic: a transmitter's edge lasts a few ms; the bound keeps the
+// work finite, about 5e7 multiply-adds at 48 kHz and 8e8 at 192 kHz at the bound, and every count of input samples an
+// int).
+constexpr double kLongestRiseS = 1.0;
+
+// The flat prior's c must reach past the channel filter's correlation length, where its increments no longer change
+// (c(m) - c(m - 1) = R_0 + 2 (R_1 + ... + R_(m-1)), constant once R_k = 0): its last two increments, which differ by
+// 2 R_(M-1), must agree within this share of the last (heuristic). On the channelizer's filter (the same R_k at 48 and
+// 192 kHz) 2 R_k / 1 500 Hz falls from 0.32 at k = 1 to 2.1e-9 at k = 29 and 6.5e-10 at k = 30 (scratch computation from
+// the taps), so a c reaching 31 samples or more passes, its last increment then within 2.8e-11 of the long-run rate,
+// and no shorter one does; the rounding of c is about 1e-13 of the increment at 600 samples.
+constexpr double kSettledIncrement = 1e-9;
+
 }  // namespace
 
 std::vector<double> sum_noise_hz(std::span<const double> taps, double input_rate_hz, int decimation, int max_samples) {
@@ -592,6 +605,13 @@ BlockEvidence block_evidence(double s_abs, double m_signal, double mu, double p,
     return evaluate(s_abs, m_signal, mu, p, v, order, 2, start_a);
 }
 
+void build_evidence_tables(int order) {
+    if (order < 1 || order > kMaxOrder)
+        throw std::invalid_argument("build_evidence_tables: the quadrature's order must be 1 to 20");
+    (void)regime_table();
+    (void)truncated_node_table(order);
+}
+
 namespace detail {
 
 BlockEvidence block_evidence_direct_nodes(double s_abs, double m_signal, double mu, double p, double v, int order,
@@ -599,21 +619,39 @@ BlockEvidence block_evidence_direct_nodes(double s_abs, double m_signal, double 
     return evaluate(s_abs, m_signal, mu, p, v, order, 2, start_a, false);
 }
 
-std::vector<std::vector<double>> rise_fractions_by_position(std::span<const double> taps, double input_rate_hz,
-                                                            int decimation, int samples_per_piece, double rise_s,
-                                                            int pieces) {
+namespace {
+
+// rise_fractions' arguments, checked before any is converted to a count (an absurd but finite rise_s would otherwise
+// overflow an int): taps whose sum is positive and finite, a positive and finite input rate, a decimation and samples
+// per piece of at least 1, a rise_s of 0 to kLongestRiseS, and an edge, a filter and a few pieces that an int counts in
+// input samples. Returns the sum of the taps, a steady carrier's gain.
+double checked_rise_arguments(std::span<const double> taps, double input_rate_hz, int decimation,
+                              int samples_per_piece, double rise_s) {
     if (taps.empty()) throw std::invalid_argument("rise_fractions: no taps");
     if (!(input_rate_hz > 0.0) || !std::isfinite(input_rate_hz))
         throw std::invalid_argument("rise_fractions: input_rate_hz must be positive and finite (Hz)");
     if (decimation < 1) throw std::invalid_argument("rise_fractions: decimation must be at least 1");
     if (samples_per_piece < 1) throw std::invalid_argument("rise_fractions: samples_per_piece must be at least 1");
-    if (!(rise_s >= 0.0) || !std::isfinite(rise_s))
-        throw std::invalid_argument("rise_fractions: rise_s must be finite and not negative (s)");
-    if (pieces < 0) throw std::invalid_argument("rise_fractions: pieces must not be negative");
-    double total = 0.0;  // the sum of the taps: a steady carrier's gain
+    if (!(rise_s >= 0.0 && rise_s <= kLongestRiseS))
+        throw std::invalid_argument("rise_fractions: rise_s must lie in [0, 1] s");
+    const double span = static_cast<double>(taps.size()) + std::ceil(rise_s * input_rate_hz) +
+                        4.0 * static_cast<double>(decimation) * static_cast<double>(samples_per_piece);
+    if (!(span < static_cast<double>(std::numeric_limits<int>::max())))
+        throw std::invalid_argument("rise_fractions: the edge and the filter must span fewer than 2^31 input samples");
+    double total = 0.0;
     for (const double h : taps) total += h;
     if (!(total > 0.0) || !std::isfinite(total))
         throw std::invalid_argument("rise_fractions: the taps must add up to a positive, finite sum");
+    return total;
+}
+
+}  // namespace
+
+std::vector<std::vector<double>> rise_fractions_by_position(std::span<const double> taps, double input_rate_hz,
+                                                            int decimation, int samples_per_piece, double rise_s,
+                                                            int pieces) {
+    const double total = checked_rise_arguments(taps, input_rate_hz, decimation, samples_per_piece, rise_s);
+    if (pieces < 0) throw std::invalid_argument("rise_fractions: pieces must not be negative");
     // The keyed envelope at input sample t after the edge's start: 0.5 - 0.5 cos(pi t / R) for 0 <= t < R input samples
     // (R = rise_s x input_rate_hz), 1 after; 0 before the edge.
     const double rise_samples = rise_s * input_rate_hz;
@@ -661,12 +699,7 @@ std::vector<std::vector<double>> rise_fractions_by_position(std::span<const doub
 
 std::vector<double> rise_fractions(std::span<const double> taps, double input_rate_hz, int decimation,
                                    int samples_per_piece, double rise_s) {
-    if (!(rise_s >= 0.0) || !std::isfinite(rise_s))
-        throw std::invalid_argument("rise_fractions: rise_s must be finite and not negative (s)");
-    if (!(input_rate_hz > 0.0) || !std::isfinite(input_rate_hz))
-        throw std::invalid_argument("rise_fractions: input_rate_hz must be positive and finite (Hz)");
-    if (decimation < 1 || samples_per_piece < 1)
-        throw std::invalid_argument("rise_fractions: decimation and samples_per_piece must be at least 1");
+    detail::checked_rise_arguments(taps, input_rate_hz, decimation, samples_per_piece, rise_s);
     // Enough pieces to cover the whole rise from every position: the filter's length and the edge, plus one piece.
     const double span = static_cast<double>(taps.size()) + std::ceil(rise_s * input_rate_hz);
     const int pieces = static_cast<int>(std::ceil(span / (static_cast<double>(decimation) * samples_per_piece))) + 2;
@@ -705,6 +738,12 @@ FlatPrior::FlatPrior(const ViterbiConfig& config, std::span<const double> c, int
     noise_rate_hz_ = c[c.size() - 1] - c[c.size() - 2];
     if (!(noise_rate_hz_ > 0.0) || !std::isfinite(noise_rate_hz_))
         throw std::invalid_argument("flat prior: c's last increment, the noise's long-run rate, must be positive (Hz)");
+    // The last increment is the long-run rate only past the filter's correlation length, where the increments settle
+    // (kSettledIncrement): 12 samples, for instance, would give 1 482.27 Hz, 1.2% low.
+    if (c.size() < 3 || !(std::fabs(noise_rate_hz_ - (c[c.size() - 2] - c[c.size() - 3])) <=
+                          kSettledIncrement * noise_rate_hz_))
+        throw std::invalid_argument(
+            "flat prior: c must reach past the channel filter's correlation length (its last two increments equal)");
     if (!std::isfinite(config.level_min_db) || !std::isfinite(config.level_max_db) ||
         !(config.level_min_db < config.level_max_db))
         throw std::invalid_argument("flat prior: the level range must be finite and not empty (dB S500)");

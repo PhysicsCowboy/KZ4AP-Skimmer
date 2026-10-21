@@ -212,6 +212,40 @@ TEST(Level, OneDotMovesTheLevel) {
     EXPECT_NEAR(score.level.p, before.p * r / (before.p + r), 0.03 * before.p * r / (before.p + r));
     EXPECT_EQ(score.level.t_s, 0.060);
     EXPECT_TRUE(score.level.learned);
+    // The figures level.hpp gives: the moment-matched update moves the level 98.40% of the way (0.983974), where the
+    // linear gain P / (P + R) gives 98.36% (0.983607), and leaves P within 0.1% of the Kalman filter's (1.00077 of it);
+    // the dot scores 270.8 nats as a mark (the notes say about 271), here against a dense integral of
+    // N(a; 10, 1) e^Lambda(S; a) over a (Simpson's rule on 40 001 points from 0 to 20 FS; ln I0 by std::cyl_bessel_i up
+    // to 700 and its asymptotic series above, Abramowitz and Stegun 9.7.1), less ln Phi(10), within 0.01 nats.
+    EXPECT_NEAR(moved, 0.9840, 5e-5);
+    EXPECT_NEAR(before.p / (before.p + r), 0.9836, 5e-5);
+    EXPECT_NEAR(score.level.p / (before.p * r / (before.p + r)), 1.0, 1e-3);
+    const auto reference_ln_i0 = [](double x) {
+        if (x <= 700.0) return std::log(std::cyl_bessel_i(0.0, x));
+        const double y = 1.0 / x;
+        return x - 0.5 * std::log(2.0 * kPi * x) + std::log(1.0 + y * (1.0 / 8.0 + y * (9.0 / 128.0 + y * 225.0 / 3072.0)));
+    };
+    constexpr int kIntervals = 40000;
+    const double step = 20.0 / kIntervals;
+    const double z = n * own / std::sqrt(v);
+    double top = -kInf;
+    std::vector<double> log_f(kIntervals + 1);
+    for (int i = 0; i <= kIntervals; ++i) {
+        const double a = i * step;
+        const double b = n * a / std::sqrt(v);
+        log_f[static_cast<std::size_t>(i)] = -0.5 * (a - stored) * (a - stored) / before.p -
+                                             0.5 * std::log(2.0 * kPi * before.p) - b * b +
+                                             reference_ln_i0(2.0 * b * z);
+        top = std::max(top, log_f[static_cast<std::size_t>(i)]);
+    }
+    double sum = 0.0;
+    for (int i = 0; i <= kIntervals; ++i) {
+        const double weight = (i == 0 || i == kIntervals) ? 1.0 : (i % 2 != 0 ? 4.0 : 2.0);
+        sum += weight * std::exp(log_f[static_cast<std::size_t>(i)] - top);
+    }
+    const double dense = top + std::log(sum * step / 3.0) - std::log(0.5 * std::erfc(-stored / std::sqrt(2.0 * before.p)));
+    EXPECT_NEAR(dense, 270.8, 0.05);
+    EXPECT_NEAR(score.llr, dense, 0.01);
 }
 
 TEST(Level, ANewbornStartsFromItsFirstBlock) {

@@ -65,11 +65,11 @@ struct BlockScore {
 // The level is the update of the story's level by the block: at high SNR the Kalman update, with the gain
 // P / (P + v / (2 m_signal^2)) (observation.hpp has the accuracy). The design notes' dot (20 WPM, 10 dB S500, arriving
 // 10 dB below a level known to +/-10%) moves it 98.40% of the way to the dot's own amplitude, where the linear gain
-// gives 98.36%, and leaves P within 0.1% of the Kalman filter's; it scores 270.8 nats as a mark (measured,
-// level_test.cpp). start_a (FS) is the previous piece's mode_a of the same block, where Newton's method starts; the
-// result does not depend on it beyond Newton's tolerance. Throws std::invalid_argument for a predicted level that is
-// not learned (a newborn's first block goes to score_first_block), a t_s that is not finite, and what block_evidence
-// refuses.
+// gives 98.36%, and leaves P within 0.1% of the Kalman filter's; it scores 270.8 nats as a mark, within 0.01 nats of a
+// dense integral (measured; level_test.cpp, OneDotMovesTheLevel, holds each of these figures). start_a (FS) is the
+// previous piece's mode_a of the same block, where Newton's method starts; the result does not depend on it beyond
+// Newton's tolerance. Throws std::invalid_argument for a predicted level that is not learned (a newborn's first block
+// goes to score_first_block), a t_s that is not finite, and what block_evidence refuses.
 BlockScore score_block(const Level& predicted, double s_abs, double m_signal, double v, int order, double t_s,
                        std::optional<double> start_a = std::nullopt);
 

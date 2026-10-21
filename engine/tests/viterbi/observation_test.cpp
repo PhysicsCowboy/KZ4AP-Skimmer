@@ -7,12 +7,14 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <numbers>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -862,9 +864,9 @@ TEST(Observation, EvidenceStaysFiniteAtTheExtremes) {
     // A level near 0 (b = 1e-6, and b = 0 with the prior a half-normal) and an uncertain level against a block of
     // nothing and of a little: finite, and within 0.01 nats of the dense integral at these points, taken over b from 0
     // to where the posterior ends (40 prior standard deviations, moved by at most 2 sd^2 z toward z, or 15 beyond z for
-    // a broad prior). They lie away from z* = sqrt(1 + 1/(2 sd^2)), 2.56 at sd = 0.3 and 1.03 at sd = 3, where the mode
-    // leaves 0, its curvature vanishes, and the quadrature misses by up to 0.30 and 0.14 nats (the region of validity
-    // in observation.hpp).
+    // a broad prior). Every one of these points lies in the broad-prior regime (kappa' from 0 to 1.4e-3, z' up to 1.95),
+    // so the regime's tables serve them, within 3.4e-5 nats (observation.hpp); the curvature-scaled quadrature they
+    // replaced missed near z* = sqrt(1 + 1/(2 sd^2)), where the mode leaves 0 and its curvature vanishes.
     for (const double b : {0.0, 1e-6}) {
         for (const double z : {0.0, 0.5, 2.0}) {
             for (const double sd : {1e-3, 0.3, 3.0}) {
@@ -960,7 +962,10 @@ TEST(Observation, FlatPriorWithTheRise) {
     ASSERT_EQ(rise.size(), 4u);
     const std::vector<double> c = sum_noise_at(48000, 3 * 195);
     const double rate = c[c.size() - 1] - c[c.size() - 2];
+    const auto started = std::chrono::steady_clock::now();
     const FlatPrior prior(config, c, 195, 3, rise);
+    const double build_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+    ::testing::Test::RecordProperty("build_s_195_pieces", std::to_string(build_s));
     ASSERT_EQ(prior.rise().size(), rise.size());
     std::vector<double> m_signal(196, 0.0);  // [n]: 3 x the sum of the first n squared weights
     double squares = 0.0;
@@ -986,6 +991,10 @@ TEST(Observation, FlatPriorWithTheRise) {
         mean.add(std::fabs(posterior.mean - direct.mean) / std::sqrt(direct.var), at);
         var.add(std::fabs(posterior.var / direct.var - 1.0), at);
     }
+    // The errors measured, left in the test's record (observation.hpp cites them).
+    ::testing::Test::RecordProperty("worst_llr_error_nats", std::to_string(llr.error));
+    ::testing::Test::RecordProperty("worst_mean_error_sd", std::to_string(mean.error));
+    ::testing::Test::RecordProperty("worst_var_error_relative", std::to_string(var.error));
     EXPECT_LE(llr.error, 0.01) << "nats, at " << llr.where;
     EXPECT_LE(mean.error, 0.01) << "posterior standard deviations, at " << mean.where;
     EXPECT_LE(var.error, 0.01) << "relative, at " << var.where;
@@ -999,8 +1008,8 @@ TEST(Observation, RiseFractionsMatchTheChannelizer) {
     // against the steady carrier's, matches the fraction within 5e-7 absolute: the channelizer computes in float and
     // keeps the channel's 64 bins (1.6e-7 at most, measured), so no relative tolerance near 1e-9 is reachable.
     // rise_fractions is their average over every position, from the first piece whose average reaches 0.01 to the last
-    // that differs from 1 by more than 0.005 (4 pieces at both rates); with no keying edge the filter's own rise is
-    // faster.
+    // that differs from 1 by more than 0.005 (4 pieces at both rates). With no keying edge it is the filter's own rise,
+    // which the taps' cumulative sum gives in closed form.
     for (const int rate : {48000, 192000}) {
         SCOPED_TRACE(std::to_string(rate) + " Hz");
         const kz4ap::ChannelizerConfig config = channelizer_at(rate);
@@ -1061,9 +1070,43 @@ TEST(Observation, RiseFractionsMatchTheChannelizer) {
         EXPECT_EQ(rise.size(), 4u);
         for (std::size_t j = 0; j < rise.size(); ++j)
             EXPECT_NEAR(rise[j], average[static_cast<std::size_t>(first) + j], 1e-12) << "g_" << j + 1;
+
+        // With no keying edge (rise_s = 0) the envelope is a step, and the filter's output t input samples after it is
+        // the cumulative sum of the taps, h[0] + ... + h[t] (their whole sum once t passes the last tap): the filter's own
+        // rise, here from std::partial_sum, piece by piece at every position, then averaged and trimmed as above.
+        std::vector<double> cumulative(taps.size());
+        std::partial_sum(taps.begin(), taps.end(), cumulative.begin());
+        const double total = cumulative.back();
+        const auto step_response = [&](long long t) {
+            if (t < 0) return 0.0;
+            return t < static_cast<long long>(cumulative.size()) ? cumulative[static_cast<std::size_t>(t)] : total;
+        };
+        const std::vector<std::vector<double>> own_by_position =
+            detail::rise_fractions_by_position(taps, rate, decimation, kPerPiece, 0.0, kPieces);
+        std::vector<double> own_average(kPieces, 0.0);
+        Worst own_worst;
+        for (int q = 0; q < positions; ++q) {
+            for (int p = 0; p < kPieces; ++p) {
+                double sum = 0.0;
+                for (int i = 0; i < kPerPiece; ++i)
+                    sum += step_response(static_cast<long long>(p * kPerPiece + i) * decimation - q);
+                const double fraction = sum / (kPerPiece * total);
+                own_average[static_cast<std::size_t>(p)] += fraction / positions;
+                own_worst.add(std::fabs(own_by_position[static_cast<std::size_t>(q)][static_cast<std::size_t>(p)] -
+                                        fraction),
+                              [q, p] { return "the step at " + std::to_string(q) + ", piece " + std::to_string(p); });
+            }
+        }
+        EXPECT_LE(own_worst.error, 1e-12) << "of a full piece, at " << own_worst.where;
+        int own_first = 0;
+        while (!(own_average[static_cast<std::size_t>(own_first)] >= 0.01)) ++own_first;
+        int own_last = kPieces - 1;
+        while (!(std::fabs(own_average[static_cast<std::size_t>(own_last)] - 1.0) > 0.005)) --own_last;
         const std::vector<double> own = rise_fractions(taps, rate, decimation, kPerPiece, 0.0);
-        ASSERT_FALSE(own.empty());
-        EXPECT_GT(own.front(), rise.front() + 0.03);
+        ASSERT_EQ(own.size(), static_cast<std::size_t>(own_last - own_first + 1));
+        for (std::size_t j = 0; j < own.size(); ++j)
+            EXPECT_NEAR(own[j], own_average[static_cast<std::size_t>(own_first) + j], 1e-12) << "own g_" << j + 1;
+        EXPECT_GT(own.front(), rise.front());  // the filter alone rises faster than with a 5 ms edge
     }
     // The values the design records state, at 48 kHz with 5 ms edges.
     const kz4ap::ChannelizerConfig config = channelizer_at(48000);
@@ -1174,15 +1217,23 @@ TEST(Observation, RefusesWhatItCannotRead) {
     refuses([&taps] { return sum_noise_hz(taps, 48000.0, 0, 10); });
     refuses([&taps] { return sum_noise_hz(taps, 48000.0, 32, -1); });
     EXPECT_EQ(sum_noise_hz(taps, 48000.0, 32, 0), std::vector<double>{0.0});
-    // The flat prior: at least one piece of at least one sample, a c long enough for its blocks, a level range it can
-    // tabulate.
-    const std::vector<double> c = sum_noise_hz(taps, 48000.0, 32, 30);
+    // The flat prior: at least one piece of at least one sample, a c long enough for its blocks and past the filter's
+    // correlation length, a level range it can tabulate.
+    const std::vector<double> c = sum_noise_hz(taps, 48000.0, 32, 60);
     const ViterbiConfig config{};
     refuses([&] { return FlatPrior(config, c, 0, 3); });
     refuses([&] { return FlatPrior(config, c, 10, 0); });
-    refuses([&] { return FlatPrior(config, c, 11, 3); });  // c reaches 30 samples: 10 pieces of 3, 5 of 6
-    refuses([&] { return FlatPrior(config, c, 6, 6); });
-    EXPECT_NO_THROW((void)FlatPrior(config, c, 5, 6));
+    refuses([&] { return FlatPrior(config, c, 21, 3); });  // c reaches 60 samples: 20 pieces of 3, 10 of 6
+    refuses([&] { return FlatPrior(config, c, 11, 6); });
+    EXPECT_NO_THROW((void)FlatPrior(config, c, 10, 6));
+    // c's last increment is the long-run rate only once c has passed the filter's correlation length, where its last
+    // two increments agree within 1e-9 of the last: from 31 samples on (they differ by 2 R_30 = 6.5e-10 of it there and
+    // by 2 R_29 = 2.1e-9 at 30 samples). 12 samples would give 1 482.27 Hz, 1.2% low.
+    const std::vector<double> c12 = sum_noise_hz(taps, 48000.0, 32, 12);
+    EXPECT_NEAR(c12[12] - c12[11], 1482.27, 0.01);
+    refuses([&] { return FlatPrior(config, c12, 4, 3); });
+    refuses([&] { return FlatPrior(config, sum_noise_hz(taps, 48000.0, 32, 30), 10, 3); });
+    EXPECT_NO_THROW((void)FlatPrior(config, sum_noise_hz(taps, 48000.0, 32, 31), 10, 3));
     ViterbiConfig empty_range = config;
     empty_range.level_max_db = empty_range.level_min_db;
     refuses([&] { return FlatPrior(empty_range, c, 10, 3); });
@@ -1202,6 +1253,25 @@ TEST(Observation, RefusesWhatItCannotRead) {
     // Every rise fraction must be positive and finite.
     refuses([&] { return FlatPrior(config, c, 10, 3, std::vector<double>{0.2, 0.0}); });
     refuses([&] { return FlatPrior(config, c, 10, 3, std::vector<double>{0.2, kNaN}); });
+    // The rise: taps that add up to a positive, finite sum, a positive and finite input rate, a decimation and samples
+    // per piece of at least 1, and a rise_s of 0 to 1 s, each checked before anything is converted (an absurd rise_s,
+    // 1e10 s, would overflow the count of pieces), and an edge and filter that an int counts in input samples.
+    refuses([] { return rise_fractions({}, 48000.0, 32, 3, 0.005); });
+    refuses([] { return rise_fractions(std::vector<double>{0.5, -0.5}, 48000.0, 32, 3, 0.005); });
+    refuses([] { return rise_fractions(std::vector<double>{1.0, kInf}, 48000.0, 32, 3, 0.005); });
+    refuses([&taps] { return rise_fractions(taps, 0.0, 32, 3, 0.005); });
+    refuses([&taps] { return rise_fractions(taps, kNaN, 32, 3, 0.005); });
+    refuses([&taps] { return rise_fractions(taps, kInf, 32, 3, 0.005); });
+    refuses([&taps] { return rise_fractions(taps, 48000.0, 0, 3, 0.005); });
+    refuses([&taps] { return rise_fractions(taps, 48000.0, 32, 0, 0.005); });
+    for (const double rise_s : {-1e-9, kNaN, kInf, -kInf, 1.0001, 1e10, 1e300})
+        refuses([&taps, rise_s] { return rise_fractions(taps, 48000.0, 32, 3, rise_s); });
+    refuses([&taps] { return rise_fractions(taps, 1e12, 32, 3, 0.005); });  // an edge of 5e9 input samples
+    EXPECT_NO_THROW((void)rise_fractions(taps, 48000.0, 32, 3, 0.0));
+    EXPECT_NO_THROW((void)rise_fractions(taps, 48000.0, 32, 3, 0.02));
+    refuses([&taps] { return detail::rise_fractions_by_position(taps, 48000.0, 32, 3, 0.005, -1); });
+    refuses([&taps] { return detail::rise_fractions_by_position(taps, 48000.0, 32, 3, 1e10, 4); });
+    refuses([] { return detail::rise_fractions_by_position({}, 48000.0, 32, 3, 0.005, 4); });
     const FlatPrior prior(config, c, 10, 3);
     EXPECT_THROW((void)prior.llr(0, 1.0), std::out_of_range);
     EXPECT_THROW((void)prior.llr(11, 1.0), std::out_of_range);

@@ -69,7 +69,7 @@ struct ViterbiConfig {
     // (rise_fractions, observation.hpp: 0.193, 0.614, 0.943 and 1.019 of a full piece at 48 kHz), which weight a
     // mark's first block, the matched filter to the rise (search.hpp). Placeholder (heuristic): the generator's default
     // edge; real transmitters vary, commonly a few ms; to be measured on real recordings. 0 is allowed: the filter's
-    // own rise alone
+    // own rise alone; more than 1 s is refused (rise_fractions)
     double keying_rise_s = 0.005;
 
     // --- Overs, restarts and the ends of words (topic 5, item 3) ---
@@ -128,7 +128,9 @@ struct ViterbiConfig {
 
     // --- Genie runs only: the truth, given to the decoder in place of what it would estimate ---
 
-    // Hz from the channel's center: the carrier's true frequency, in place of the tracker's estimate (empty: none)
+    // Hz from the channel's center: the carrier's true frequency at stream time 0 s (the recording's first sample), in
+    // place of the tracker's estimate (empty: none). The decoder re-centers sample time t, s, at
+    // genie_frequency_offset_hz + genie_frequency_drift_hz_per_s x t
     std::optional<double> genie_frequency_offset_hz;
     // Hz/s: the carrier's true drift rate, with genie_frequency_offset_hz
     double genie_frequency_drift_hz_per_s = 0.0;
@@ -140,6 +142,51 @@ struct ViterbiConfig {
     // on or off: the decoder's instrumentation
     bool stats = false;
 };
+
+// One oracle channel's genie values (genie runs only; EngineConfig::viterbi_genie, the controller's Ruling 7): the truth
+// its decoder is given in place of what it would estimate. Each part is used only where it is set; with_genie puts them
+// into the channel's configuration.
+struct ViterbiGenie {
+    // The carrier: frequency_hz, Hz from the span's center (the frame of EngineConfig::oracle_frequencies_hz), at stream
+    // time frequency_time_s, s, and its drift rate, Hz/s, so that it is at frequency_hz + drift_hz_per_s x
+    // (t - frequency_time_s) at time t (the labels' convention: the drift counts from the signal's start)
+    std::optional<double> frequency_hz;
+    double frequency_time_s = 0.0;
+    double drift_hz_per_s = 0.0;
+    // Hz: the fading's true Doppler spread (genie_fading_spread_hz)
+    std::optional<double> fading_spread_hz;
+    // The sender's fist: its dot, ms, and its per kind medians (dots), sigmas (ln(length)) and shifts (dots), in the
+    // order of Kind (fist.hpp). The speed grid collapses to that one speed (the genie fist of fist_shifts_dots above).
+    struct Fist {
+        double dot_ms = 0.0;
+        std::array<double, 5> medians_dots = {{1.0, 3.0, 1.0, 3.0, 7.0}};
+        std::array<double, 5> sigmas = {{0.3, 0.3, 0.3, 0.3, 0.3}};
+        std::array<double, 5> shifts_dots = {{0.0, 0.0, 0.0, 0.0, 0.0}};
+    };
+    std::optional<Fist> fist;
+};
+
+// The configuration of one channel whose center is channel_center_hz (Hz from the span's center), with the genie's
+// values in place: the carrier as genie_frequency_offset_hz = frequency_hz - channel_center_hz - drift_hz_per_s x
+// frequency_time_s (the offset at stream time 0) and genie_frequency_drift_hz_per_s = drift_hz_per_s; the spread as
+// genie_fading_spread_hz; the fist as speed_count = 1, dot_min_ms = its dot and its medians, sigmas and shifts. The
+// parts not set leave the configuration as it was.
+inline ViterbiConfig with_genie(ViterbiConfig config, const ViterbiGenie& genie, double channel_center_hz) {
+    if (genie.frequency_hz) {
+        config.genie_frequency_offset_hz =
+            *genie.frequency_hz - channel_center_hz - genie.drift_hz_per_s * genie.frequency_time_s;
+        config.genie_frequency_drift_hz_per_s = genie.drift_hz_per_s;
+    }
+    if (genie.fading_spread_hz) config.genie_fading_spread_hz = genie.fading_spread_hz;
+    if (genie.fist) {
+        config.speed_count = 1;
+        config.dot_min_ms = genie.fist->dot_ms;
+        config.fist_medians_dots = genie.fist->medians_dots;
+        config.fist_sigmas = genie.fist->sigmas;
+        config.fist_shifts_dots = genie.fist->shifts_dots;
+    }
+    return config;
+}
 
 // The block length, s: the longest T over which a coherent sum of a Rayleigh-fading carrier keeps at least
 // 10^(-loss_db / 10) of its energy, (2 / T^2) integral_0^T (T - tau) rho(tau) dtau, where rho(tau) = exp(-pi^2 f^2

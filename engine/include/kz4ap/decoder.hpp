@@ -60,6 +60,11 @@ public:
     // owner decisions 2026-09-29: the detector decides which station a channel follows). The
     // engine calls it before every block. Decoders that do not track frequency ignore it.
     virtual void set_frequency_anchor_hz(double /*offset_hz*/) {}
+    // The density of the noise around the channel, N0 (FS^2/Hz), from the engine's hiss estimator (the new decoder's
+    // HissEstimator, viterbi/hiss.hpp; 0 before it has a frame and on exact zeros). The engine calls it before every
+    // block, as it does the frequency anchor, when the decoder is the new decoder (FrontEnd::Viterbi); the other
+    // decoders estimate their noise themselves and ignore it.
+    virtual void set_noise_density_fs2_per_hz(double /*n0_fs2_per_hz*/) {}
 };
 
 }  // namespace kz4ap

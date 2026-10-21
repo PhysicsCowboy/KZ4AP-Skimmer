@@ -9,12 +9,18 @@
 //
 // 1. Reading to power. A SpectrumFrame holds fft_size bins, lowest frequency first, bin i at (i - fft_size / 2) x
 //    sample_rate / fft_size Hz, each in dB re 1 FS^2 (a tone of amplitude A reads 20 log10 A). A reading P becomes the
-//    power p = 10^(P / 10), FS^2 per bin. A reading at or below -199.99 dB re 1 FS^2 becomes p = 0 (derived from the
-//    analyzer's guard): SpectrumAnalyzer computes 10 log10(power + 1e-20), so a bin of exactly zero power reads
-//    -200 dB re 1 FS^2, and a power below 2.3e-23 FS^2 (-226 dB re 1 FS^2, far under the quantization noise of any
-//    recording) reads within 0.01 dB of that. A frame made by hand with -infinity converts to 0 as well.
+//    power p = 10^(P / 10), FS^2 per bin. A reading at or below -199.99 dB re 1 FS^2 becomes p = 0, an exact zero: the
+//    -200 dB re 1 FS^2 is derived from the analyzer's guard (SpectrumAnalyzer computes 10 log10(power + 1e-20), so a bin
+//    of exactly zero power reads -200 dB re 1 FS^2), and the 0.01 dB margin above it is heuristic: it need only exceed
+//    the float rounding of that reading and stay far below any recording's noise per bin (about -130 dB re 1 FS^2 for
+//    16-bit samples at 2 048 bins); a power below 2.3e-23 FS^2 (-226 dB re 1 FS^2) reads within it. A frame made by hand
+//    with -infinity converts to 0 as well.
 //
-// 2. Average, per bin. The n-th frame (n = 1 for the first) moves every bin's average toward its p by the step
+// 2. Average, per bin. A frame that reads exact zeros in every bin (stage 1) is missing data, not a measurement, as the
+//    bank decoder treats exact zeros (docs/signal-processing.md, A.8c: a receiver's output always carries noise, so
+//    exact zeros are padding or a dead channel): it is not counted and changes nothing, so that the estimate after a
+//    run of them is the one the frames after it alone give. The n-th frame counted (n = 1 for the first) moves every
+//    bin's average toward its p by the step
 //        a_n = max(alpha, 1 / n),    average += a_n (p - average),
 //    with alpha = 1 - exp(-hop_s / tau) (derived), hop_s = (fft_size / 2) / sample_rate, s, the engine's hop, and
 //    tau = hiss_average_s, s. This is the signal detector's rule (engine/src/signal_detector.cpp), a plain running mean
@@ -68,12 +74,14 @@
 // 5. Per hertz. N0 = (the r-th smallest average / beta) / ENBW, with ENBW = 1.5 x sample_rate / fft_size Hz the
 //    equivalent noise bandwidth of one bin of the Hann window (derived: fft_size x sum w^2 / (sum w)^2 = 1.5 bins; 35.156
 //    Hz at the engine's bins; docs/signal-processing.md, section 4), the width over which the noise density N0 makes one
-//    bin's power. N0 = 0 before any frame, and when the selected average is exactly zero (every frame read as exact
-//    zeros there): the decoder decodes nothing while N0 = 0.
+//    bin's power. N0 = 0 before any frame is counted, and when the selected average is exactly zero (every counted
+//    frame read exact zeros in at least the rank's number of the neighborhood's bins): the decoder decodes nothing while
+//    N0 = 0.
 //
 // Values. hiss_average_s = 1 s: heuristic (the detector's). hiss_half_width_hz = 2 000 Hz and hiss_percentile = 25%:
-// placeholders, heuristic. hop = fft_size / 2 samples, alpha, the 1/36 and 1/6, ENBW, k, beta and the -199.99 dB re
-// 1 FS^2 rule: derived. Nothing here is measured; the tests measure how well it works.
+// placeholders, heuristic. The hop, fft_size / 2 samples: the engine's. alpha, the 1/36 and 1/6, ENBW, k and beta:
+// derived. The exact zero: its -200 dB re 1 FS^2 derived, its 0.01 dB margin heuristic (stage 1); a frame of them
+// missing data: derived (stage 2). Nothing here is measured; the tests measure how well it works.
 //
 // Accuracy on noise alone (hiss_test.cpp, MeasuresTheGeneratorsNoise: the generator's white noise, sigma = 0.02 FS, 8
 // realizations pooled, 100 channels each spread over the band): the mean estimate is within 0.25% of sigma^2 / fs at every
@@ -84,10 +92,12 @@
 //
 // Limits. The estimate is of white noise: a floor that is not flat across the neighborhood (a passband edge, a slope)
 // reads at its lower quartile, not its mean, and the 1 / beta correction does not cover that. It is the average of the
-// power: a short burst of interference lifts every bin for about tau. At the span's edge the neighborhood is clipped and
-// the rank r of the c bins left sits, on average, at the level r / (c + 1) of their distribution, not at the 25% that
-// beta assumes (22 / 87 = 25.3% at the edge's 86 bins, 23 / 90 = 25.6% at 89); that moves the estimate by at most 0.19% in
-// steady state (0.27% at n = 47) for 86 to 171 bins (scratch, 2026-10-20), and is not corrected. It is noisy in the
+// power: a short burst of interference lifts every bin for about tau. The rank r of c bins sits, on average, at the level
+// r / (c + 1) of their distribution, which is the 25% that beta assumes only when c leaves 3 over a multiple of 4, as 171
+// does; at the span's edge, where the neighborhood is clipped (22 / 87 = 25.3% at the edge's 86 bins, 23 / 90 = 25.6% at
+// 89), and at other bin widths (185 bins at 44.1 kHz, 47 / 186 = 25.27%; 129 at 32 kHz, 33 / 130 = 25.38%) it does not;
+// that moves the estimate by at most 0.19% in steady state (0.27% at n = 47) for 86 to 171 bins (scratch, 2026-10-20),
+// and is not corrected. It is noisy in the
 // first second or so: the relative standard deviation of one estimate (one window of 171 bins of real frames; scratch,
 // 2026-10-20) is 17.7% after 1 frame, 6.7% after 5, 4.6% after 10 and 2.0% after 47, and the design leaves it to the
 // decoder to decide how much to trust it then.
@@ -95,7 +105,8 @@
 // Known limitation (measured). The percentile ignores stations only while they leave most of the neighborhood alone,
 // and a strong station does not. A keyed carrier at +30 dB S500 with 5 ms edges (the generator's) stands more than 0.5 dB
 // over the noise out to about +/-280 Hz in an 8 s average, 22 to 24 of the 171 bins and 13 to 15 of them more than 3 dB
-// over (scratch run, 15 and 25 WPM), so four such stations within +/-2 kHz lift more than half of the neighborhood and the
+// over the noise (scratch run, 15 and 25 WPM), so four such stations within +/-2 kHz lift more than half of the
+// neighborhood and the
 // estimate reads 7.2% high on average over 8 noise realizations (4.7% to 11.2%; the plan asks at most 5%). One station
 // adds 0.6% to the estimate of the same noise alone, two 2.5% and four 8.3% (hiss_test.cpp, ToleratesNeighbors and
 // NeighborsLiftTheEstimateByWhatTheirSkirtsOccupy). In scratch runs of one realization the excess grew with the level
@@ -124,8 +135,9 @@ public:
     // not positive and finite.
     HissEstimator(int sample_rate, int fft_size, const ViterbiConfig& config);
 
-    // Adds one frame to the averages (stages 1 and 2) and updates the bias. Throws std::invalid_argument, changing
-    // nothing, if the frame does not hold fft_size bins.
+    // Adds one frame to the averages (stages 1 and 2) and updates the bias; a frame of exact zeros in every bin is not
+    // counted and changes nothing. Throws std::invalid_argument, changing nothing, if the frame does not hold fft_size
+    // bins.
     void push(const SpectrumFrame& frame);
 
     // N0, FS^2/Hz, around the channel whose center is the channelizer's signed bin center_bin (Channelizer::hz_to_bin,
