@@ -11,9 +11,11 @@
 #include <cstddef>
 #include <fstream>
 #include <functional>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
 #include <system_error>
+#include <tuple>
 #include <utility>
 
 namespace kz4ap::bench {
@@ -151,6 +153,14 @@ const char* const kLineKindNames[] = {"Start", "Silence", "Rescue"};
 const char* const kLineEndNames[] = {"Alive", "Merge", "Beam", "Ceiling"};
 constexpr int kLineKinds = 3;
 constexpr int kLineEnds = 4;
+static_assert(std::size(kLineKindNames) == kLineKinds && std::size(kLineEndNames) == kLineEnds,
+              "the legends' names are as many as the codes");
+// ChannelSummary::fates is [kind][end][ended_in_first_element][led]: the legends' sizes, then false or true twice
+static_assert(std::tuple_size_v<FateCounts> == kLineKinds &&
+                  std::tuple_size_v<FateCounts::value_type> == kLineEnds &&
+                  std::tuple_size_v<FateCounts::value_type::value_type> == 2 &&
+                  std::tuple_size_v<FateCounts::value_type::value_type::value_type> == 2,
+              "the fates table follows the kinds' and the ends' legends");
 static_assert(static_cast<int>(viterbi::LineKind::Start) == 0 && static_cast<int>(viterbi::LineKind::Silence) == 1 &&
                   static_cast<int>(viterbi::LineKind::Rescue) == 2,
               "the file's line_kinds legend follows viterbi::LineKind");
@@ -322,8 +332,10 @@ ordered_json channel_json(std::uint32_t track_id, const std::optional<int>& labe
 
 // Writes a statistics file under a name of its own, `path` plus ".partial", renamed when complete: the header's keys,
 // then the channels one at a time, each turned into JSON when its turn comes (a full channel is large, so not all of
-// them at once). A failure (a statistic that is not finite, a channel without statistics, a full disk, a name that
-// cannot be taken) removes the partial file and leaves `path` as it was.
+// them at once). A failure to write it (a statistic that is not finite, a channel without statistics, a full disk)
+// removes the partial file and leaves `path` as it was. A failure of the rename alone (the destination is a folder or a
+// read-only file, or on Windows is held open by another program) leaves a whole file, so it stays as the partial file
+// and the message says where it is, for a person to rename.
 void write_stats_stream(const std::filesystem::path& path, const ordered_json& header, std::size_t channels,
                         const std::function<ordered_json(std::size_t)>& channel_object) {
     const std::filesystem::path partial = path.string() + ".partial";
@@ -339,15 +351,17 @@ void write_stats_stream(const std::filesystem::path& path, const ordered_json& h
         out << "]\n}\n";
         out.close();
         if (!out) throw std::runtime_error("cannot write " + partial.string());
-        std::error_code error;
-        std::filesystem::rename(partial, path, error);
-        if (error) throw std::runtime_error("cannot write " + path.string() + ": " + error.message());
     } catch (...) {
         out.close();
         std::error_code ignored;
         std::filesystem::remove(partial, ignored);
         throw;
     }
+    std::error_code error;
+    std::filesystem::rename(partial, path, error);
+    if (error)
+        throw std::runtime_error("cannot write " + path.string() + ": " + error.message() +
+                                 "; the finished file is kept as " + partial.string());
 }
 
 // ---- Reading the statistics file ----
@@ -787,11 +801,12 @@ ordered_json to_json(const ChannelSummary& c) {
     j["live_max_stories"] = finite_or_throw(c.live_max_stories, "live_max_stories");
     j["lines"] = c.lines;
     ordered_json fates = ordered_json::array();
-    for (const auto& by_end : c.fates) {
+    for (const auto& of_kind : c.fates) {  // the fates of one kind, an array indexed by end
         ordered_json ends = ordered_json::array();
-        for (const auto& by_first : by_end) {
+        for (const auto& of_end : of_kind) {  // of one kind and end, indexed by ended_in_first_element
             ordered_json firsts = ordered_json::array();
-            for (const auto& by_led : by_first) firsts.push_back(ordered_json::array({by_led[0], by_led[1]}));
+            for (const auto& of_first : of_end)  // of one kind, end and first-element flag, indexed by led
+                firsts.push_back(ordered_json::array({of_first[0], of_first[1]}));
             ends.push_back(std::move(firsts));
         }
         fates.push_back(std::move(ends));
@@ -843,8 +858,17 @@ ChannelSummary channel_summary_from_json(const ordered_json& j) {
     if (!label.is_null()) c.label_index = static_cast<int>(integer(label, "label_index", at));
     c.pieces = integer(member(j, "pieces", at), "pieces", at);
     c.ceiling_pieces = integer(member(j, "ceiling_pieces", at), "ceiling_pieces", at);
-    for (const ordered_json& count : array_member(j, "live_histogram", at))
-        c.live_histogram.push_back(integer(count, "live_histogram", at));
+    std::int64_t in_histogram = 0;
+    for (const ordered_json& count : array_member(j, "live_histogram", at)) {
+        const std::int64_t n = integer(count, "live_histogram", at);
+        if (n < 0) bad(at, "live_histogram holds a negative count");
+        c.live_histogram.push_back(n);
+        in_histogram += n;
+    }
+    // each piece is in one bin
+    if (in_histogram != c.pieces)
+        bad(at, "live_histogram counts " + std::to_string(in_histogram) + " pieces, not the " + std::to_string(c.pieces) +
+                    " searched");
     c.live_mean_stories = number(member(j, "live_mean_stories", at), "live_mean_stories", at);
     c.live_max_stories = number(member(j, "live_max_stories", at), "live_max_stories", at);
     c.lines = integer(member(j, "lines", at), "lines", at);
@@ -899,6 +923,7 @@ ChannelSummary channel_summary_from_json(const ordered_json& j) {
         bad(at, "the fates count " + std::to_string(led_in_fates) + " lines that led, led_lines holds " +
                     std::to_string(n));
     std::int64_t previous = -1;
+    std::int64_t led_tally[kLineKinds][kLineEnds][2] = {};  // the lines kept, by kind, end and first element
     for (std::size_t i = 0; i < n; ++i) {
         const std::int64_t line_id = integer(ids[i], "line", in_led);
         if (line_id <= previous)
@@ -921,9 +946,23 @@ ChannelSummary channel_summary_from_json(const ordered_json& j) {
         if (!end_s[i].is_null()) line.end_s = number(end_s[i], "end_s", in_led);
         if (!first_element[i].is_boolean()) bad(in_led, "ended_in_first_element must be true or false");
         line.ended_in_first_element = first_element[i].get<bool>();
+        ++led_tally[k][e][line.ended_in_first_element ? 1 : 0];
         c.led_line_ids.push_back(line_id);
         c.led_lines.push_back(line);
     }
+    // the lines kept agree with the fates' led counts, kind by kind, end by end, first element by first element (the
+    // count of them alone, checked above, would pass columns that contradict the table)
+    for (int k = 0; k < kLineKinds; ++k)
+        for (int e = 0; e < kLineEnds; ++e)
+            for (int f = 0; f < 2; ++f) {
+                const std::int64_t counted = c.fates[static_cast<std::size_t>(k)][static_cast<std::size_t>(e)]
+                                                    [static_cast<std::size_t>(f)][1];
+                if (led_tally[k][e][f] != counted)
+                    bad(at, "led_lines holds " + std::to_string(led_tally[k][e][f]) + " line(s) of kind " +
+                                kLineKindNames[k] + " that ended " + kLineEndNames[e] + (f == 1 ? " within" : " after") +
+                                " their first element, but fates[" + std::to_string(k) + "][" + std::to_string(e) + "][" +
+                                std::to_string(f) + "][1] counts " + std::to_string(counted));
+            }
     return c;
 }
 

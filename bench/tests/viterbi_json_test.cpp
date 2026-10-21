@@ -23,6 +23,7 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -1047,6 +1048,82 @@ TEST(ViterbiJsonSummary, AReaderRefusesWhatItCannotRead) {
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["led_lines"]["end"][0] = -1; }), "end"));
     EXPECT_NE(refusal_of([&] { kz4ap::bench::stats_summary_file_from_json(ordered_json::array()); }), "(accepted)");
     EXPECT_THROW(kz4ap::bench::read_stats_summary_file(temp_file_name("missing_summary")), std::runtime_error);
+}
+
+TEST(ViterbiJsonSummary, AReaderChecksWhatTheWriterGuarantees) {
+    // The channel in counted_summary_file(): 120 pieces; 5 lines, 3 of which led: line 0 (Start, merged, not in its first
+    // element), line 2 (Rescue, alive) and line 3 (Silence, dropped by the beam after its first element). A file edited
+    // or assembled by hand must not pass with columns that contradict the counts.
+    const ordered_json good = to_json(counted_summary_file());
+    const auto refused_after = [&](auto edit) {
+        ordered_json j = good;
+        edit(j);
+        return refusal_of([&] { kz4ap::bench::stats_summary_file_from_json(j); });
+    };
+    // the lines that led, by kind, end and first element, are the fates' led counts
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["led_lines"]["kind"][0] = 1; }), "fates"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["led_lines"]["kind"][1] = 1; }), "fates"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["led_lines"]["end"][1] = 3; }), "fates"));
+    EXPECT_TRUE(contains(
+        refused_after([](ordered_json& j) { j["channels"][0]["led_lines"]["ended_in_first_element"][2] = true; }),
+        "fates"));
+    // a swap of two lines' ends keeps the counts of ends and does not keep the counts of (kind, end)
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) {
+                             std::swap(j["channels"][0]["led_lines"]["end"][1], j["channels"][0]["led_lines"]["end"][2]);
+                         }),
+                         "fates"));
+    // the histogram counts the pieces, each in one bin
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["live_histogram"][0] = 59; }),
+                         "live_histogram"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["live_histogram"][2] = 21; }),
+                         "live_histogram"));
+    EXPECT_TRUE(contains(
+        refused_after([](ordered_json& j) { j["channels"][0]["live_histogram"] = ordered_json::array({-60, 160, 20}); }),
+        "live_histogram"));  // adds up to the 120 pieces, and a count cannot be negative
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["pieces"] = 121; }), "live_histogram"));
+    // and what is consistent is accepted: the channel that searched nothing, and the others as they are
+    EXPECT_EQ(refused_after([](ordered_json&) {}), "(accepted)");
+}
+
+// ---- A file whose last step fails ----
+
+TEST(ViterbiJsonStats, AFileThatCannotBeRenamedIntoPlaceIsKeptWholeAndTheMessageSaysWhere) {
+    // The destination is a folder: everything is written, and only the rename into place fails. The finished file is
+    // not thrown away (a person can rename it), whichever form was written; a file that could not be written still
+    // leaves nothing behind (AStatisticThatIsNotFiniteIsNotWritten).
+    const std::string summary_target = temp_file_name("summary_is_a_folder");
+    const std::string lines_target = temp_file_name("lines_is_a_folder");
+    std::filesystem::create_directories(summary_target);
+    std::filesystem::create_directories(lines_target);
+    const StatsSummaryFile summary = counted_summary_file();
+    const StatsFile lines = sample_file();
+    const auto failure = [](auto call) {
+        try {
+            call();
+        } catch (const std::runtime_error& e) {
+            return std::string(e.what());
+        }
+        return std::string("(accepted)");
+    };
+    const std::string summary_why = failure([&] { kz4ap::bench::write_stats_summary_file(summary_target, summary); });
+    const std::string lines_why = failure([&] { kz4ap::bench::write_stats_file(lines_target, lines); });
+    EXPECT_TRUE(contains(summary_why, summary_target + ".partial")) << summary_why;
+    EXPECT_TRUE(contains(lines_why, lines_target + ".partial")) << lines_why;
+    ASSERT_TRUE(std::filesystem::exists(summary_target + ".partial"));
+    ASSERT_TRUE(std::filesystem::exists(lines_target + ".partial"));
+    // each reads back as the file that was to be written
+    const StatsSummaryFile summary_back = kz4ap::bench::read_stats_summary_file(summary_target + ".partial");
+    const StatsFile lines_back = kz4ap::bench::read_stats_file(lines_target + ".partial");
+    ASSERT_EQ(summary_back.channels.size(), summary.channels.size());
+    for (std::size_t i = 0; i < summary.channels.size(); ++i) EXPECT_EQ(summary_back.channels[i], summary.channels[i]) << i;
+    ASSERT_EQ(lines_back.channels.size(), lines.channels.size());
+    for (std::size_t i = 0; i < lines.channels.size(); ++i) EXPECT_EQ(lines_back.channels[i], lines.channels[i]) << i;
+    EXPECT_TRUE(std::filesystem::is_directory(summary_target));
+    EXPECT_TRUE(std::filesystem::is_directory(lines_target));
+    std::filesystem::remove(summary_target + ".partial");
+    std::filesystem::remove(lines_target + ".partial");
+    std::filesystem::remove(summary_target);
+    std::filesystem::remove(lines_target);
 }
 
 TEST(ViterbiJsonSummary, TheTwoVersionsHaveTheirOwnReaders) {

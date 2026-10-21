@@ -49,19 +49,22 @@
 // ViterbiConfig::stats is true (kz4ap-bench sets it for a run that writes the file). A run writes it at its end, from
 // Engine::viterbi_stats, for its oracle channels (a channel of the detector path is gone once its track dies, so
 // --stats needs --oracle), after it has written the result file (--json), so that a failure to write the statistics
-// loses nothing of the run; both files are written under a name of their own and renamed when complete, and whether
-// each can be created is tried before the engine runs. One JSON object, ASCII, with one line for each top-level key and
-// for each channel; the Python analysis reads it with json.load (training/kz4ap_proto/search_stats.py, which also holds
-// the reductions the runs need: they define what version 2 keeps). The numbers are exact: a double is written with the
-// digits that read back to the same double and a float as the double it equals.
+// loses nothing of the run (so --json and --stats may not name one file: the bench refuses that at once); both files
+// are written under a name of their own and renamed when complete, and whether each can be created is tried before the
+// engine runs; a file that is whole but cannot be renamed stays as FILE.partial, and the message says so. One JSON
+// object, ASCII, with one line for each top-level key and for each channel; the Python analysis reads it with
+// json.load (training/kz4ap_proto/search_stats.py, which also holds the reductions the runs need: they define what
+// version 2 keeps). The numbers are exact: a double is written with the digits that read back to the same double and a
+// float as the double it equals.
 //
 // Two versions of the one format; a reader refuses a version it does not read. A version changes when a key's meaning
 // changes or a key is removed; keys may be added to the file's or a channel's object within a version, and a reader
 // ignores the ones it does not know (this C++ reader reads "config" as a ViterbiConfig it knows).
 //   version 2, the default of --stats: a summary for each channel (below), which holds what the reductions of the plan's
 //     runs R0 to R4 need and no record of a line except of the lines that ever led: a header of 3.7 kB and, for each
-//     channel, about 1.4 kB (1.3 to 2.1 kB) whatever its length, about 60 bytes of it for each line that led (measured on
-//     a real recording of 14 channels, 307.9 channel-seconds, DEV2's group A2: 19.8 kB, where version 1 took 14.0 MB).
+//     channel, about 1.15 kB (0.9 to 1.75 kB) whatever its length, about 60 bytes of it for each line that led
+//     (measured on a real recording of 14 channels, 307.9 channel-seconds, DEV2's group A2, the file's own bytes: 19.8
+//     kB, where version 1 took 14.0 MB); one run over all of DEV2 (14 204 channels in 498 recordings) is about 18 MB.
 //   version 1, --stats-detail: every newborn line of each channel (NewbornLine), as columns. The search creates a
 //     Silence line and a Rescue line at every piece, so the file holds two lines per piece, always: 45 kB per channel-
 //     second, whatever the signal (measured: 45.5 kB on the real recording above, 45.4 kB on a recording of two
@@ -240,7 +243,10 @@ StatsFile stats_file_from_json(const nlohmann::ordered_json& j);
 
 // Writes the file, under a name of its own that is renamed when the file is complete (so that a failure leaves no
 // file that looks complete): std::runtime_error if it cannot, std::invalid_argument for a statistic that is not
-// finite. Reads it: std::runtime_error if it cannot be opened, else as stats_file_from_json.
+// finite. A file that could not be written is removed. A file that was written and only could not be renamed (the
+// destination is a folder or a read-only file, or on Windows is held open by another program) is whole, so it stays
+// under its own name, `path` plus ".partial", and the std::runtime_error's message says so. Reads it:
+// std::runtime_error if it cannot be opened, else as stats_file_from_json.
 void write_stats_file(const std::filesystem::path& path, const StatsFile& file);
 StatsFile read_stats_file(const std::filesystem::path& path);
 
@@ -295,7 +301,8 @@ nlohmann::ordered_json to_json(const StatsSummaryFile& file);
 
 // The reverse. Throw std::invalid_argument, naming the key, for another format or version (a version 1 file is read by
 // stats_file_from_json), a missing or mistyped key, a code outside its legend, columns of unequal length, line ids that
-// do not ascend, or counts that do not agree (the fates add up to the lines, the lines that led to the led_lines).
+// do not ascend, or counts that do not agree (the histogram adds up to the pieces, the fates to the lines, and the
+// lines that led, by kind, end and first element, are the fates' led counts).
 ChannelSummary channel_summary_from_json(const nlohmann::ordered_json& j);
 StatsSummaryFile stats_summary_file_from_json(const nlohmann::ordered_json& j);
 

@@ -7,8 +7,9 @@
 // genie in the result file, and --stats forcing the statistics on; the statistics file in both forms (version 2, the
 // default, and version 1 with --stats-detail) and that the summary is the reduction of the full file of the same run;
 // that two runs write byte-identical files (the determinism the plan asks for); the result file written before the
-// statistics, so that a statistics file that cannot be finished loses nothing of the run; and a destination that cannot
-// be created refused before the run, not after it.
+// statistics, so that a statistics file that cannot be finished loses nothing of the run; a finished file whose last
+// step, the rename into place, fails kept under its own name (the message says where); a destination that cannot be
+// created refused before the run, not after it; and one path given for the result and the statistics refused.
 #include "viterbi_json.hpp"
 
 #include "test_signals.hpp"
@@ -285,8 +286,58 @@ TEST_F(BenchRun, TheResultFileIsWrittenFirstSoAStatisticsFileThatFailsLosesNothi
     EXPECT_EQ(r.at("decoder"), "viterbi");
     EXPECT_EQ(r.at("tracks").size(), 2u);
     EXPECT_TRUE(fs::is_directory(blocked));
-    EXPECT_FALSE(fs::exists(blocked.string() + ".partial"));  // and no half-written file is left
     EXPECT_FALSE(fs::exists(path("result.json.partial")));
+    // The statistics file was finished: only its last step failed. It stays under the name it was written with, whole,
+    // and the message says where it is, so that a person can rename it.
+    const std::string kept = blocked.string() + ".partial";
+    EXPECT_TRUE(contains(o.err, kept)) << o.err;
+    ASSERT_TRUE(fs::exists(kept));
+    const json s = read_json(kept);
+    EXPECT_EQ(s.at("format"), "kz4ap-viterbi-search-stats");
+    EXPECT_EQ(s.at("version"), 2);
+    EXPECT_EQ(s.at("channels").size(), 2u);
+}
+
+TEST_F(BenchRun, AResultFileThatCannotBeRenamedIntoPlaceIsKeptWhole) {
+    // the result file's name is a folder: the run is scored and printed, the file is written, and only the rename fails
+    const fs::path blocked = dir_ / "result-is-a-folder";
+    fs::create_directories(blocked);
+    const Outcome o = run(viterbi(blocked.string(), path("stats.json")));
+    EXPECT_EQ(o.status, 2);
+    EXPECT_TRUE(contains(o.out, "CER")) << o.out;
+    const std::string kept = blocked.string() + ".partial";
+    EXPECT_TRUE(contains(o.err, kept)) << o.err;  // the message says where the finished result is
+    ASSERT_TRUE(fs::exists(kept));
+    const json r = read_json(kept);  // the whole result of the run
+    EXPECT_EQ(r.at("decoder"), "viterbi");
+    EXPECT_EQ(r.at("tracks").size(), 2u);
+    EXPECT_EQ(r.at("score").at("signals").size(), 2u);
+    EXPECT_TRUE(fs::is_directory(blocked));
+}
+
+TEST_F(BenchRun, TheResultAndTheStatisticsMayNotBeTheSameFile) {
+    // One path for both would let the statistics replace the result, which costs the run: refused at once, before the
+    // recording is read, however the one path is spelled (and nothing is printed or written).
+    const std::vector<std::string> spellings = {path("same.json"), (dir_ / "." / "same.json").string(),
+                                                (dir_ / "no-such-folder" / ".." / "same.json").string()};
+    for (const std::string& stats : spellings) {
+        const Outcome o = run(viterbi(path("same.json"), stats));
+        EXPECT_EQ(o.status, 2) << stats;
+        EXPECT_TRUE(contains(o.err, "--json and --stats name the same file")) << o.err;
+        EXPECT_TRUE(o.out.empty()) << o.out;
+        EXPECT_FALSE(fs::exists(path("same.json"))) << stats;
+        EXPECT_FALSE(fs::exists(path("same.json.partial"))) << stats;
+    }
+    // a result that is already there is left as it is, whichever option names it
+    ASSERT_EQ(run({"--oracle", "--decoder", "viterbi", "--no-timing", "--json", path("same.json")}).status, 0);
+    const std::string before = slurp(path("same.json"));
+    ASSERT_FALSE(before.empty());
+    for (const std::string& stats : spellings) {
+        EXPECT_EQ(run(viterbi(path("same.json"), stats)).status, 2) << stats;
+        EXPECT_EQ(slurp(path("same.json")), before) << stats;
+    }
+    // two files in one folder are two files
+    EXPECT_EQ(run(viterbi(path("result.json"), path("stats.json"))).status, 0);
 }
 
 TEST_F(BenchRun, ADestinationThatCannotBeCreatedIsRefusedBeforeTheRun) {

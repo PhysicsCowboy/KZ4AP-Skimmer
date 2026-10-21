@@ -69,6 +69,24 @@ constexpr const char* kUsage =
     "                   for each channel, or with --stats-detail every newborn line, which is 45 kB per channel-second)\n"
     "       kz4ap-bench --labels LABELS.json --score-decoded DECODED.json [--json OUT.json] [--baseline BASELINE.json]\n";
 
+// Whether two paths name the same file, which need not exist yet: the file itself where both exist (another spelling, a
+// link, on Windows another letter case), else the paths made absolute with `.`, `..` and links resolved as far as they
+// exist. False when either cannot be resolved.
+bool same_file(const std::filesystem::path& a, const std::filesystem::path& b) {
+    std::error_code error;
+    if (std::filesystem::exists(a, error) && std::filesystem::exists(b, error)) {
+        const bool same = std::filesystem::equivalent(a, b, error);
+        if (!error) return same;
+    }
+    std::error_code absolute_a, absolute_b, resolved_a, resolved_b;
+    const auto full_a = std::filesystem::absolute(a, absolute_a);
+    const auto full_b = std::filesystem::absolute(b, absolute_b);
+    if (absolute_a || absolute_b) return false;
+    const auto canonical_a = std::filesystem::weakly_canonical(full_a, resolved_a);
+    const auto canonical_b = std::filesystem::weakly_canonical(full_b, resolved_b);
+    return !resolved_a && !resolved_b && canonical_a == canonical_b;
+}
+
 Args parse_args(int argc, char** argv) {
     Args args;
     for (int i = 1; i < argc; ++i) {
@@ -113,6 +131,11 @@ Args parse_args(int argc, char** argv) {
         else throw std::runtime_error(std::string("more than one recording given\n") + kUsage);
     }
     check_viterbi_options(args.front_end == FrontEnd::Viterbi, args.oracle, args.viterbi_options);
+    // The statistics are written after the result so that a statistics file that fails loses nothing of the run; one
+    // path for both would let the statistics replace the result.
+    if (args.json && args.stats && same_file(*args.json, *args.stats))
+        throw std::runtime_error("--json and --stats name the same file (" + args.json->string() +
+                                 "): the statistics would replace the result");
     if (args.baseline && !args.labels) throw std::runtime_error("--baseline needs --labels");
     if (args.score_decoded) {
         if (args.recording) throw std::runtime_error("--score-decoded takes no recording\n" + std::string(kUsage));
@@ -169,7 +192,9 @@ void require_writable(const std::filesystem::path& path) {
 }
 
 // The result file, written under a name of its own and renamed when complete, so that no failure leaves a file that
-// looks complete (a result file costs a run).
+// looks complete (a result file costs a run). A file that could not be written is removed; a file that was written and
+// only could not be renamed (the destination is a folder or a read-only file, or on Windows is held open by another
+// program) is whole, so it stays as `path` plus ".partial" and the message says so, for a person to rename.
 void write_json(const std::optional<std::filesystem::path>& path, const nlohmann::json& out) {
     if (!path) return;
     const std::filesystem::path partial = path->string() + ".partial";
@@ -185,11 +210,9 @@ void write_json(const std::optional<std::filesystem::path>& path, const nlohmann
     }
     std::error_code error;
     std::filesystem::rename(partial, *path, error);
-    if (error) {
-        std::error_code ignored;
-        std::filesystem::remove(partial, ignored);
-        throw std::runtime_error("cannot write " + path->string() + ": " + error.message());
-    }
+    if (error)
+        throw std::runtime_error("cannot write " + path->string() + ": " + error.message() +
+                                 "; the finished file is kept as " + partial.string());
 }
 
 // "text" is the final text; "text_immediate" (when immediate is given, one per track in the same order) the text as

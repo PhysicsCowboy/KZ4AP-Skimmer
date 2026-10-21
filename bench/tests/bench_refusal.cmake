@@ -32,6 +32,9 @@ expect_stderr("--stats-detail needs --stats" --stats-detail)
 expect_stderr("--set belongs to --decoder viterbi" --set beam_nats=30)
 expect_stderr("--genie belongs to --decoder viterbi" --oracle --labels no-such-labels.json --genie fist)
 expect_stderr("--stats belongs to --decoder viterbi" --oracle --labels no-such-labels.json --stats no-such-stats.json)
+# --json and --stats may not name the same file: the statistics would replace the result
+expect_stderr("--json and --stats name the same file" --decoder viterbi --oracle --labels no-such-labels.json
+              --json same.json --stats same.json)
 # --set names a field of ViterbiConfig, and the value must fit it
 expect_stderr("unknown parameter 'no_such_field'" --decoder viterbi --set no_such_field=1)
 expect_stderr("unknown parameter 'beam_nat'" --decoder viterbi --set beam_nats=30 --set beam_nat=30)
@@ -47,3 +50,5 @@ expect_stderr("cannot open" --decoder viterbi --oracle --labels no-such-labels.j
 expect_stderr("cannot open" --decoder viterbi --oracle --labels no-such-labels.json --stats no-such-stats.json)
 expect_stderr("cannot open" --decoder viterbi --oracle --labels no-such-labels.json --stats no-such-stats.json
               --stats-detail)
+expect_stderr("cannot open" --decoder viterbi --oracle --labels no-such-labels.json --json one.json
+              --stats another.json)
