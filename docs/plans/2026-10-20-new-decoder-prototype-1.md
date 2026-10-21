@@ -495,8 +495,12 @@ S₅₀₀ seed-12 point stays a known failure until R3 sets the ceiling. The op
   - confirmation from windows that share no samples;
   - a larger uncertainty for a station's first, partly filled window;
   - each measurement's uncertainty corrected for keyed carriers and for the correlation between windows.
-- The trust tolerance follows the block length, 0.26 / T_block.
 - **(A):** whatever still fails stays a known failure, measured in R9.
+- **Not the owner's decision: the trust tolerance.** It was first ruled while building to follow the block length,
+  0.26 / T_block. The tracker's review then measured that this makes tracking worse wherever it acts: below about a
+  0.57 Hz spread a keyed station at 0 dB S₅₀₀ is never confirmed. So it was fixed at 0.667 Hz, the default block's
+  value, at every spread (decided 2026-10-21 from those measurements, and reported to the owner). The decoder's
+  stricter need at longer blocks is a stated limitation, measured in R6.
 
 **D13. Very strong stations. Decided (owner, 2026-10-21): (A), model the fall.**
 - Task 7a found that stations above about +37 dB S₅₀₀ decode wrongly: the unmodeled fall leaves the tail's evidence for
