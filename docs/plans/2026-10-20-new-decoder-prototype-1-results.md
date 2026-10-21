@@ -106,7 +106,7 @@ and a letter 1/62 (4.127 nats) at its start, both owner (flat, no text model).
 ### 1.2 The bench command line
 
     kz4ap-bench RECORDING.wav --labels LABELS.json --json RESULT.json --oracle --decoder viterbi
-                [--set NAME=VALUE ...] [--genie fist|frequency|fading ...] [--stats STATS.json]
+                [--set NAME=VALUE ...] [--genie fist|frequency|fading ...] [--stats STATS.json [--stats-detail]]
 
 - `--oracle` opens the oracle channels from the labels (`--labels` is then required). `--decoder viterbi`
   selects the new decoder (`--front-end` is the option's old name).
@@ -151,13 +151,16 @@ and a letter 1/62 (4.127 nats) at its start, both owner (flat, no text model).
     maximum and upper quantiles, which no counter gives); they are few (1 or 2 for a channel of the small test file,
     2.6 and 5.0 on average, at most 18, for the channels of two real A2 recordings, the first story among them); and a
     line that never led never had the best story at any piece. The 0.1 s series of the live count is not kept. Size
-    (measured, DEV2's group A2, seed 1, made by `suites generate --suite dev2 --per-cell A2=1 --groups A2`; recording
-    A2-awgn-c10-0-s1, 14 channels, 307.9 channel-seconds, the defaults): 19 835 bytes, a header of 3.7 kB and, for a
-    channel, 1.4 kB on average (at most 2.1 kB), where version 1 took 14.0 MB for the same run: 707 times less. A
-    version 2 file is the header and about 1.4 kB for each channel whatever the channel's length, so one run over all of
-    DEV2 (14 204 channels in 498 oracle recordings) takes about 22 MB at the default ceiling (derived: 14 204 x 1.43 kB
-    and 498 x 3.7 kB), against 48 GB; a higher ceiling lengthens the live-count histogram, one bin for every 10
-    stories (ceiling 17 000: up to 1 701 bins, a few kilobytes more for a channel).
+    (measured with the bench of commit c50cc68, which the build of commit 256af1c reproduces byte for byte; DEV2's
+    group A2, seed 1, made by `suites generate --suite dev2 --per-cell A2=1 --groups A2`; recording A2-awgn-c10-0-s1, 14
+    channels, 307.9 channel-seconds, the defaults): 19 835 bytes, a header of 3.7 kB (3 685 bytes) and, for a channel,
+    1.15 kB on average (a channel's line of the file is 0.9 to 1.75 kB: 927 to 1 747 bytes, mean 1 153), where version 1
+    took 14.0 MB (14 021 408 bytes) for the same run: 707 times less. (The other recording measured, A2-awgn-c05-0-s1:
+    18 912 bytes, a channel 1 087 bytes on average.) A version 2 file is the header and about 1.15 kB for each channel
+    whatever the channel's length, so one run over all of DEV2 (14 204 channels in 498 oracle recordings) takes about 18
+    MB at the default ceiling (derived: 14 204 x 1.15 kB + 498 x 3.7 kB = 16.4 MB + 1.8 MB), against 48 GB; a higher
+    ceiling lengthens the live-count histogram, one bin for every 10 stories (ceiling 17 000: up to 1 701 bins, a few
+    kilobytes more for a channel).
   - **Version 1, with `--stats-detail`: every newborn line**, as columns, the full file of Task 7b. The search creates
     a silence line and a rescue line at every piece, so it holds two lines per piece whatever the signal, about 45
     bytes each: 45.5 kB per channel-second (measured: the recording above, 14.0 MB; a scratch run of two stations over
@@ -169,7 +172,13 @@ and a letter 1/62 (4.127 nats) at its start, both owner (flat, no text model).
   digit), and the repository's tests do the same on a small real file of each version. Two runs wrote identical files
   in both versions. The statistics file comes after the result file, which is written under a name of its own and
   renamed when complete, so a statistics file that cannot be finished loses nothing of the run; both files'
-  destinations are tried before the run. The suite runner's `--stats` hands the bench `results/NAME/<test case>.stats.json`
+  destinations are tried before the run, and `--json` and `--stats` may not name one file (the bench refuses it at
+  once: the statistics would replace the result). A file that was written whole and only could not be renamed into
+  place (the destination is a folder or a read-only file, or on Windows is held open by another program) stays as
+  `FILE.partial`, and the message says where; a file that could not be written is removed. The version 2 reader (the
+  bench's and the Python one) checks that a channel agrees with itself, as the writer guarantees: the histogram adds
+  up to the pieces, the fates to the lines, and the lines that led, by kind, end and first element, are the fates' led
+  counts. The suite runner's `--stats` hands the bench `results/NAME/<test case>.stats.json`
   for every test case it runs (`--stats-detail`: the full form), so a run with `--stats` or `--genie` takes only the
   oracle recordings (`--only`; the runner refuses a selection with others before it starts). Writing the file comes
   after the timed window and does not count in the run's CPU time; the search's own bookkeeping is inside the
@@ -186,14 +195,34 @@ and a letter 1/62 (4.127 nats) at its start, both owner (flat, no text model).
   KIND ...] [--stats [--stats-detail]] [--only REGEX] [--overwrite | --skip-existing]`. The results go to
   `DIR/results/NAME/`, and a run gets a new name every time: a folder that already holds result files is refused
   unless `--overwrite` (replace the test cases this run does) or `--skip-existing` (resume the run: skip the test cases
-  that are done, if they were made with the same decoder, settings, genie and statistics form) is given. The bench
-  writes each file under a name of its own and renames it when it is complete, so a file that is there is whole, and
-  the runner removes a test case's stale statistics file and partial files before it launches the bench.
+  that are done, if they were made with the same decoder, settings, genie and statistics form: none, the summary or
+  every line, so a resume that leaves out `--stats` is refused when a finished test case has a statistics file) is
+  given. A refusal (a reused folder, a resume that is not the run it resumes) is a usage error whose last line is the
+  reason, before any bench starts. The bench writes each file under a name of its own and renames it when it is
+  complete, so a file that is there is whole, and the runner removes a test case's stale statistics file and partial
+  files before it launches the bench.
   `kz4ap_proto.experiments` reduces a run: `search-errors` (the oracle test cases, `experiments.DEV2`, by default, which
   is what the plan's runs pass as `--only` to the runner too; the per-signal counts also as a rounded CSV),
   `search-stats` (the statistics per group), `false-characters` (the characters decoded on N2 per channel-hour) and
   `devset2 --leave-out-group "I2 Farnsworth"` (the new decoder has no Farnsworth spacing, D14, so all of I2 is reported
   apart from the comparison with the bank).
+- **What `search-stats` compares with the 10-nat margin (R1).** The design notes' rule is a beam never narrower than
+  the largest starting cost of any newborn plus a margin of 10 nats (topic 5, item 4), so R1 does not compare the whole
+  of a newborn's deficit with the margin: a newborn is born behind the story it was born from, by its starting cost,
+  and the margin covers the swings beyond that. `search-stats` reports each newborn that led twice, as the largest
+  deficit it reached before it first led (nats behind the best story of the piece), whole, and less the newborn's own
+  starting cost (its maximum, upper quantiles and maximum by kind), and counts the newborns above the margin in the
+  second. The line's record in the file holds no starting cost and the engine's statistics keep none, so it is
+  **derived** from the run's configuration (the statistics file's `config`) by the line's kind, not stored (the format
+  is unchanged): ln(1/P) + ln(speed count) for a newborn from silence, with P = `over_rate_per_s` × `piece_s`, and
+  ln(1/ε) + ln(speed count) for a rescue newborn, with ε = `rescue_epsilon`; at the defaults 9.210 + 3.466 = 12.676
+  nats and 6.908 + 3.466 = 10.373 nats (derived). ln(speed count) is the speed's prior, none for a run given the genie
+  fist (one speed per channel), which the runner's result files record and the statistics file's base configuration
+  does not; the files of one run must give one pair of costs. The starting cost leaves out two things that the part
+  beyond therefore holds: the newborn's first letter, 4.127 nats, which the notes' derivation of the 10 nats includes,
+  and the cost of learning the level, which the notes simulate at nothing net for a newborn from silence and 2.9 to 4.5
+  nats for a rescue newborn, so a rescue newborn's part beyond holds up to 4.5 nats of it. The part may be negative
+  (kept, not cut at zero): the newborn never trailed by as much as its starting cost.
 
 ### 1.3 The machines
 

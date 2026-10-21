@@ -89,6 +89,14 @@ section 3.1):
     .venv\Scripts\python -m kz4ap_synth.suites run --out build/suite/full --bench build\windows\bench\Release\kz4ap-bench.exe --decoder baseline --decoder matched
     .venv\Scripts\python -m kz4ap_synth.suites summarize --out build/suite/full
 
+The second `run` into the same `--out` is refused: results cost hours, so a run
+does not write into a results folder (`results/baseline`, `results/matched`, or
+`results/NAME` for a run given `--name NAME`) that already holds result files.
+Give a run a new `--name`, or pass `--overwrite` to replace the test cases it
+runs, or `--skip-existing` to resume a run where it stopped (the test cases that
+are done must have been made with the same decoder, settings, genie and
+statistics form, or the resume is refused before anything runs).
+
 `kz4ap-bench --decoder` selects the decoder (`--front-end` is its old name and
 still works). `--decoder matched` (the default) selects the dit-matched decoder
 with frequency re-centering, each channel following the station the signal
@@ -106,12 +114,14 @@ needs `--oracle` and takes the true timing, carrier or fading spread from the
 labels), and `--stats FILE` (with `--oracle`), which writes the search's
 statistics for each channel as JSON: a summary (live stories, how often the
 ceiling decided, what became of each newborn by kind and end, and the newborns
-that ever led), about 1.4 kB for a channel, or with `--stats-detail` every
+that ever led), about 1.15 kB for a channel, or with `--stats-detail` every
 newborn line, 45 kB per channel-second (the format, versions 2 and 1, is
 documented in `bench/src/viterbi_json.hpp`, the reductions in
 `training/kz4ap_proto/search_stats.py`). The result file is written first,
 under a name of its own that is renamed when it is complete, then the
-statistics file. For example, the wide-beam reference of the
+statistics file (`--json` and `--stats` may not name one file; a finished file
+whose rename fails stays under its own name, `FILE.partial`, and the message
+says where). For example, the wide-beam reference of the
 first prototype's plan: `kz4ap-bench band.wav --labels band.json --oracle
 --decoder viterbi --set beam_nats=80 --set ceiling=17000`. The bench writes
 each track's final text (`text`, corrections applied) and its immediate text
