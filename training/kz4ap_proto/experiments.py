@@ -709,6 +709,7 @@ def main(argv=None) -> None:
               f"{everything['channel_seconds']:.1f} channel-seconds; live stories "
               f"{search_stats._fmt(everything['live_stories']['mean'], '.1f')} on average, "
               f"{search_stats._fmt(everything['live_stories']['max'], '.0f')} at most")
+        print(search_stats.r1_line(summary))
         print(f"wrote {search_stats.write_summary(args.out, summary)}")
     elif args.command == "false-characters":
         result = false_characters(args.out, args.run, args.only, args.results_dirs)

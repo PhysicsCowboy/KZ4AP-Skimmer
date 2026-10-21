@@ -938,6 +938,38 @@ def test_a_resumed_run_redoes_what_is_incomplete_and_refuses_what_does_not_match
             run_suite(tmp_path, bench, ["bank"], name="r6", skip_existing=True)
 
 
+def test_a_resume_that_drops_the_statistics_is_refused_before_anything_runs(tmp_path, monkeypatch):
+    names = _noise_cases(tmp_path, 3)
+    bench = stand_in_bench.launcher(tmp_path)
+    folder = tmp_path / "results" / "r11"
+    monkeypatch.setenv("STAND_IN_BENCH_FAIL", "N2-noise-1")
+    with pytest.raises(RuntimeError, match="N2-noise-1-s1"):
+        run_suite(tmp_path, bench, ["viterbi"], name="r11", stats=True)   # the first test case is done, with statistics
+    monkeypatch.delenv("STAND_IN_BENCH_FAIL")
+    assert (folder / f"{names[0]}.stats.json").exists() and not (folder / f"{names[1]}.json").exists()
+    # --stats left out of the resume by mistake: the finished test case has statistics, the rest would have none, and
+    # the folder would hold a mixture; refused, naming the file, before a bench starts
+    log = _new_log(tmp_path, monkeypatch)
+    before = sorted(p.name for p in folder.iterdir())
+    with pytest.raises(ValueError, match="asks for no statistics") as refused:
+        run_suite(tmp_path, bench, ["viterbi"], name="r11", skip_existing=True)
+    assert f"{names[0]}.stats.json" in str(refused.value) and "resume" in str(refused.value)
+    assert not log.exists() or _started(log) == 0
+    assert sorted(p.name for p in folder.iterdir()) == before
+    # the run resumed as it was started finishes, and then every test case has its statistics
+    run_suite(tmp_path, bench, ["viterbi"], name="r11", stats=True, skip_existing=True)
+    assert _started(log) == 2 and all((folder / f"{n}.stats.json").exists() for n in names)
+    # a run that never asked for statistics resumes as it did
+    monkeypatch.setenv("STAND_IN_BENCH_FAIL", "N2-noise-2")
+    with pytest.raises(RuntimeError, match="N2-noise-2-s1"):
+        run_suite(tmp_path, bench, ["viterbi"], name="r12")
+    monkeypatch.delenv("STAND_IN_BENCH_FAIL")
+    log = _new_log(tmp_path, monkeypatch)
+    run_suite(tmp_path, bench, ["viterbi"], name="r12", skip_existing=True)
+    assert _started(log) == 1
+    assert sorted(p.name for p in (tmp_path / "results" / "r12").iterdir()) == sorted(f"{n}.json" for n in names)
+
+
 def test_run_suite_does_not_take_a_stale_statistics_file_for_the_runs(tmp_path, monkeypatch):
     names = _noise_cases(tmp_path, 1)
     folder = tmp_path / "results" / "r7"
@@ -1014,3 +1046,32 @@ def test_the_run_command_takes_genie_the_statistics_form_and_the_options_for_exi
     for bad in (["--overwrite", "--skip-existing"], ["--genie", "loud"]):
         with pytest.raises(SystemExit):
             suites.main(["run", "--out", str(tmp_path), "--bench", "b", "--decoder", "viterbi", *bad])
+
+
+def test_the_run_command_reports_a_refusal_as_a_usage_error_and_not_as_a_traceback(tmp_path, monkeypatch, capsys):
+    _noise_cases(tmp_path, 2)
+    run = ["run", "--out", str(tmp_path), "--bench", str(stand_in_bench.launcher(tmp_path)), "--decoder", "viterbi"]
+    suites.main([*run, "--name", "m7"])
+    capsys.readouterr()
+    # a results folder that is already there (the message names the options that allow it)
+    with pytest.raises(SystemExit) as refused:
+        suites.main([*run, "--name", "m7"])
+    assert refused.value.code == 2
+    err = capsys.readouterr().err
+    assert "error: results/m7 already holds 2 result files" in err
+    assert "--overwrite" in err and "--skip-existing" in err and "Traceback" not in err
+    # a resume that is not the run it resumes, and a setting that is not NAME=VALUE
+    with pytest.raises(SystemExit) as mismatch:
+        suites.main([*run, "--name", "m7", "--set", "beam_nats=35", "--skip-existing"])
+    assert mismatch.value.code == 2
+    err = capsys.readouterr().err
+    assert "error: results/m7/" in err and "settings" in err and "Traceback" not in err
+    with pytest.raises(SystemExit) as setting:
+        suites.main([*run, "--name", "m8", "--set", "beam_nats"])
+    assert setting.value.code == 2
+    err = capsys.readouterr().err
+    assert "NAME=VALUE" in err and "Traceback" not in err
+    # a bench that fails is not a usage error: the failing test case and the bench's message stay
+    monkeypatch.setenv("STAND_IN_BENCH_FAIL", "N2-noise-0")
+    with pytest.raises(RuntimeError, match=r"N2-noise-0-s1 \(m9\)"):
+        suites.main([*run, "--name", "m9"])

@@ -20,6 +20,10 @@ from kz4ap_proto import search_stats
 
 DATA = Path(__file__).parent / "data" / "search-stats"
 V1 = DATA / "tiny.v1.stats.json"
+# nats: a newborn's starting cost at the fixtures' configuration, the defaults, written out here and not computed by the
+# code under test: ln(1/P) + ln(32) with P = 0.05 /s x 2 ms = 1e-4 (9.2103 + 3.4657) for a newborn from silence, and
+# ln(1/epsilon) + ln(32) with epsilon = 1e-3 (6.9078 + 3.4657) for a rescue newborn
+COSTS = {"Silence": 12.676076274775909, "Rescue": 10.373491181781864}
 
 
 def v1_file():
@@ -111,7 +115,7 @@ def test_the_group_reductions_of_the_real_file():
     stats = v1_file()
     piece_s = stats["config"]["piece_s"]
     channels = [search_stats.reduce_channel(c, piece_s) for c in stats["channels"]]
-    g = search_stats.reduce_group(channels, piece_s)
+    g = search_stats.reduce_group(channels, piece_s, COSTS)
     assert (g["channels"], g["pieces"]) == (2, 1046) and g["channel_seconds"] == pytest.approx(2.092)
     # R0: live stories (mean over the pieces, maximum), the share of pieces where the ceiling decided
     assert g["live_stories"]["max"] == 1700.0
@@ -132,13 +136,23 @@ def test_the_group_reductions_of_the_real_file():
     assert g["lines"]["by_kind_and_end"] == {kn: {en: count(kind=k, end=e) for e, en in enumerate(ends)}
                                              for k, kn in enumerate(kinds)}
     assert g["lines"]["led"] == count(led=1) == 3 and g["lines"]["ended_in_first_element"] == count(first=1)
-    # R1: the largest deficit a newborn reaches before it leads: the newborns (not the first story) that led
+    # R1: the largest deficit a newborn reaches before it leads: the newborns (not the first story) that led, the whole
+    # deficit (17.38 nats for the newborn from silence that reads TEST) and the part beyond its starting cost (12.68
+    # nats for a newborn from silence), which is what the 10-nat margin is compared with
     d = g["led_deficits_nats"]
-    assert d["newborns"] == 1 and d["max"] == pytest.approx(17.382956934607172)
-    assert d["quantiles"] == {"0.5": d["max"], "0.9": d["max"], "0.99": d["max"], "0.999": d["max"]}
-    assert d["above_margin"] == {"margin_nats": 10.0, "newborns": 1}
-    assert d["by_kind"]["Silence"] == {"newborns": 1, "max": d["max"]}
-    assert d["by_kind"]["Rescue"] == {"newborns": 0, "max": None}
+    assert d["newborns"] == 1 and d["starting_cost_nats"] == COSTS
+    whole, beyond = d["deficit"], d["beyond_starting_cost"]
+    assert whole["max"] == pytest.approx(17.382956934607172)
+    assert whole["quantiles"] == {"0.5": whole["max"], "0.9": whole["max"], "0.99": whole["max"], "0.999": whole["max"]}
+    assert whole["by_kind"]["Silence"] == {"newborns": 1, "max": whole["max"]}
+    assert whole["by_kind"]["Rescue"] == {"newborns": 0, "max": None}
+    assert beyond["max"] == pytest.approx(17.382956934607172 - COSTS["Silence"])
+    assert beyond["max"] == pytest.approx(4.706880659831263)
+    assert beyond["quantiles"] == {"0.5": beyond["max"], "0.9": beyond["max"], "0.99": beyond["max"],
+                                   "0.999": beyond["max"]}
+    assert beyond["by_kind"]["Silence"] == {"newborns": 1, "max": beyond["max"]}
+    assert beyond["by_kind"]["Rescue"] == {"newborns": 0, "max": None}
+    assert beyond["above_margin"] == {"margin_nats": 10.0, "newborns": 0}    # not 1: 17.38 nats is above 10, 4.71 is not
     # R2: the newborns the beam drops within their first element; R3: those the ceiling removes
     beam = g["dropped_by_beam"]
     assert beam["lines"] == count(end=2) and beam["in_first_element"] == count(end=2, first=1)
@@ -148,6 +162,44 @@ def test_the_group_reductions_of_the_real_file():
     assert ceiling["lines"] == count(end=3) == 100 + 155 + 394
     assert ceiling["in_first_element"] == count(end=3, first=1) and ceiling["never_led"] == ceiling["lines"]
     assert ceiling["by_kind"] == {"Start": 0, "Silence": 100 + 394, "Rescue": 155}
+
+
+# --- a newborn's starting cost: derived from the configuration, by the kind of line ---
+
+def test_a_newborns_starting_cost_is_derived_from_the_runs_configuration_by_its_kind():
+    config = search_stats.read_stats(V1)["config"]   # the defaults: P = 0.05 /s x 2 ms, epsilon = 1e-3, 32 speeds
+    assert (config["over_rate_per_s"], config["piece_s"], config["rescue_epsilon"], config["speed_count"]) == (
+        0.05, 0.002, 1e-3, 32)
+    costs = search_stats.starting_costs_nats(config)
+    assert list(costs) == ["Silence", "Rescue"]
+    assert costs == pytest.approx(COSTS, abs=1e-12)
+    # the terms: from silence ln(1/P) = 9.2103 nats, as a rescue ln(1/epsilon) = 6.9078 nats, and the prior of the speed
+    # a newborn takes, ln(32) = 3.4657 nats (a flat share of the speed grid)
+    assert costs["Silence"] == pytest.approx(math.log(1e4) + math.log(32))
+    assert costs["Rescue"] == pytest.approx(math.log(1e3) + math.log(32))
+    # each term follows its configuration value
+    assert search_stats.starting_costs_nats({**config, "over_rate_per_s": 0.5})["Silence"] == pytest.approx(
+        math.log(1e3) + math.log(32))
+    assert search_stats.starting_costs_nats({**config, "piece_s": 0.004})["Silence"] == pytest.approx(
+        math.log(1 / 2e-4) + math.log(32))
+    assert search_stats.starting_costs_nats({**config, "rescue_epsilon": 1e-2})["Rescue"] == pytest.approx(
+        math.log(100) + math.log(32))
+    finer = search_stats.starting_costs_nats({**config, "speed_count": 61})
+    assert finer["Silence"] == pytest.approx(math.log(1e4) + math.log(61))
+    assert finer["Rescue"] == pytest.approx(math.log(1e3) + math.log(61))
+    # the genie fist gives each channel one speed: no speed prior is paid
+    assert search_stats.starting_costs_nats(config, genie_fist=True) == pytest.approx(
+        {"Silence": math.log(1e4), "Rescue": math.log(1e3)})
+    # a configuration that gives no cost is refused, naming what is wrong
+    for bad, why in (({"over_rate_per_s": 0.0}, "over_rate_per_s"), ({"over_rate_per_s": 600.0}, "over_rate_per_s"),
+                     ({"rescue_epsilon": 1.0}, "rescue_epsilon"), ({"rescue_epsilon": 0.0}, "rescue_epsilon"),
+                     ({"speed_count": 0}, "speed_count"), ({"piece_s": -0.002}, "piece_s")):
+        with pytest.raises(ValueError, match=why):
+            search_stats.starting_costs_nats({**config, **bad})
+    for key in ("over_rate_per_s", "rescue_epsilon", "speed_count", "piece_s"):
+        without = {k: v for k, v in config.items() if k != key}
+        with pytest.raises(ValueError, match=key):
+            search_stats.starting_costs_nats(without)
 
 
 # --- the definitions, on hand-made channels ---
@@ -179,8 +231,8 @@ def test_the_mean_live_stories_weights_each_window_by_its_pieces():
 
 def test_the_lines_that_led_keep_their_kind_end_and_first_element_and_the_fates_count_everything():
     lines = [(0, 1, 0, 0.002, 0.0),     # the first story: led at once, merged later
-             (1, 0, 0, 0.040, 12.5),    # a newborn from silence that led and is alive
-             (2, 2, 1, 0.050, 7.0),     # a rescue newborn that led, then was dropped by the beam in its first element
+             (1, 0, 0, 0.040, 25.0),    # a newborn from silence that led and is alive
+             (2, 2, 1, 0.050, 17.0),    # a rescue newborn that led, then was dropped by the beam in its first element
              (1, 2, 1, None, 41.0),     # a newborn the beam dropped in its first element, never led
              (2, 3, 0, None, 9.5),      # a rescue newborn the ceiling removed after its first element, never led
              (1, 3, 1, None, 3.0)]      # a newborn the ceiling removed in its first element
@@ -189,51 +241,95 @@ def test_the_lines_that_led_keep_their_kind_end_and_first_element_and_the_fates_
     assert s["led_lines"]["kind"] == [0, 1, 2] and s["led_lines"]["end"] == [1, 0, 2]
     assert s["led_lines"]["ended_in_first_element"] == [0, 0, 1]
     assert s["led_lines"]["end_s"][1] is None            # alive at the end: no end time
-    assert s["led_lines"]["largest_deficit_nats"] == [0.0, 12.5, 7.0]
+    assert s["led_lines"]["largest_deficit_nats"] == [0.0, 25.0, 17.0]
     assert s["fates"][2][2][1][1] == 1 and s["fates"][1][2][1][0] == 1 and s["fates"][2][3][0][0] == 1
     assert s["fates"][1][3][1][0] == 1 and s["fates"][1][0][0][1] == 1 and s["fates"][0][1][0][1] == 1
     assert sum(n for a in s["fates"] for b in a for c in b for n in c) == s["lines"] == 6
-    g = search_stats.reduce_group([s], 0.002)
+    g = search_stats.reduce_group([s], 0.002, COSTS)
     assert g["dropped_by_beam"] == {"lines": 2, "in_first_element": 2, "never_led": 1,
                                     "by_kind": {"Start": 0, "Silence": 1, "Rescue": 1}}
     assert g["removed_by_ceiling"] == {"lines": 2, "in_first_element": 1, "never_led": 2,
                                        "by_kind": {"Start": 0, "Silence": 1, "Rescue": 1}}
-    # newborns that led: the deficits of the silence newborn and the rescue newborn, not the first story's
+    # newborns that led: the deficits of the silence newborn and the rescue newborn, not the first story's. Both are above
+    # 10 nats; beyond its own starting cost the silence newborn's 25.0 nats are 12.32 and the rescue newborn's 17.0 are
+    # 6.63, so one of the two is above the 10-nat margin
     d = g["led_deficits_nats"]
-    assert d["newborns"] == 2 and d["max"] == 12.5
-    assert d["above_margin"] == {"margin_nats": 10.0, "newborns": 1}
-    assert d["by_kind"] == {"Silence": {"newborns": 1, "max": 12.5}, "Rescue": {"newborns": 1, "max": 7.0}}
+    assert d["newborns"] == 2 and d["deficit"]["max"] == 25.0
+    assert d["deficit"]["by_kind"] == {"Silence": {"newborns": 1, "max": 25.0}, "Rescue": {"newborns": 1, "max": 17.0}}
+    beyond = d["beyond_starting_cost"]
+    assert beyond["max"] == pytest.approx(25.0 - COSTS["Silence"])
+    assert beyond["max"] == pytest.approx(12.323923725224091)
+    assert beyond["by_kind"]["Silence"]["max"] == pytest.approx(25.0 - COSTS["Silence"])
+    assert beyond["by_kind"]["Rescue"]["max"] == pytest.approx(17.0 - COSTS["Rescue"])
+    assert beyond["by_kind"]["Rescue"]["newborns"] == 1
+    assert beyond["above_margin"] == {"margin_nats": 10.0, "newborns": 1}
+
+
+def test_the_part_beyond_the_starting_cost_is_each_newborns_own_and_may_be_negative():
+    # a silence newborn at 20.0 nats (7.32 beyond its 12.68) and a rescue newborn at 19.0 nats (8.63 beyond its 10.37):
+    # the larger whole deficit is not the larger part beyond. A newborn that never trailed by as much as its starting
+    # cost (a strong signal at once) has a negative part, which is kept, not cut at zero.
+    lines = [(1, 0, 0, 0.040, 20.0), (2, 0, 0, 0.050, 19.0), (1, 0, 0, 0.060, 5.0)]
+    g = search_stats.reduce_group([search_stats.reduce_channel(line_channel(lines), 0.002)], 0.002, COSTS)
+    d = g["led_deficits_nats"]
+    assert d["deficit"]["max"] == 20.0
+    beyond = d["beyond_starting_cost"]
+    assert beyond["max"] == pytest.approx(19.0 - COSTS["Rescue"])
+    assert beyond["by_kind"]["Silence"]["max"] == pytest.approx(20.0 - COSTS["Silence"])
+    assert beyond["quantiles"]["0.5"] == pytest.approx(20.0 - COSTS["Silence"])
+    assert beyond["above_margin"]["newborns"] == 0
+    only_low = search_stats.reduce_group(
+        [search_stats.reduce_channel(line_channel([(1, 0, 0, 0.040, 5.0)]), 0.002)], 0.002, COSTS)
+    low = only_low["led_deficits_nats"]["beyond_starting_cost"]["max"]
+    assert low == pytest.approx(5.0 - COSTS["Silence"]) and low < 0
+
+
+def test_the_margin_is_a_parameter_of_the_comparison_with_the_part_beyond():
+    lines = [(1, 0, 0, 0.040, 25.0), (2, 0, 0, 0.050, 17.0)]    # 12.32 and 6.63 nats beyond their starting costs
+    channels = [search_stats.reduce_channel(line_channel(lines), 0.002)]
+    for margin, count in ((5.0, 2), (6.7, 1), (12.4, 0)):
+        d = search_stats.led_deficits(channels, COSTS, margin_nats=margin)
+        assert d["beyond_starting_cost"]["above_margin"] == {"margin_nats": margin, "newborns": count}
 
 
 def test_the_deficit_quantiles_are_values_of_the_data_by_the_inverted_cdf():
     # 1 000 newborns that led, deficits 0.001 ... 1.000 nats: the q quantile is the smallest value with a share q of the
     # values at or below it (no interpolation), so the 99th percentile is the 990th value
     lines = [(1, 1, 0, 0.5, k / 1000.0) for k in range(1, 1001)]
-    g = search_stats.reduce_group([search_stats.reduce_channel(line_channel(lines), 0.002)], 0.002)
+    g = search_stats.reduce_group([search_stats.reduce_channel(line_channel(lines), 0.002)], 0.002, COSTS)
     d = g["led_deficits_nats"]
-    assert d["newborns"] == 1000 and d["max"] == 1.0
-    assert d["quantiles"] == {"0.5": 0.5, "0.9": 0.9, "0.99": 0.99, "0.999": 0.999}
-    assert d["above_margin"]["newborns"] == 0
+    assert d["newborns"] == 1000 and d["deficit"]["max"] == 1.0
+    assert d["deficit"]["quantiles"] == {"0.5": 0.5, "0.9": 0.9, "0.99": 0.99, "0.999": 0.999}
+    # all of kind Silence: each part beyond is the deficit less 12.68 nats, so the quantiles are the same data points
+    assert {q: v + COSTS["Silence"] for q, v in d["beyond_starting_cost"]["quantiles"].items()} == pytest.approx(
+        d["deficit"]["quantiles"])
+    assert d["beyond_starting_cost"]["above_margin"]["newborns"] == 0
+    assert d["deficit"]["by_kind"]["Rescue"] == {"newborns": 0, "max": None}
 
 
 def test_a_group_pools_channels_by_pieces_and_takes_the_largest_maximum():
     a = line_channel([(0, 1, 0, 0.002, 0.0)], pieces=100, ceiling_pieces=10, means=[10.0, 10.0], maxima=[11.0, 12.0])
     b = line_channel([(0, 0, 0, 0.002, 0.0)], pieces=300, ceiling_pieces=90, means=[30.0] * 6, maxima=[31.0] * 6,
                      track_id=2)
-    g = search_stats.reduce_group([search_stats.reduce_channel(c, 0.002) for c in (a, b)], 0.002)
+    g = search_stats.reduce_group([search_stats.reduce_channel(c, 0.002) for c in (a, b)], 0.002, COSTS)
     assert g["live_stories"] == {"mean": pytest.approx((100 * 10.0 + 300 * 30.0) / 400), "max": 31.0}
     assert g["ceiling_share"] == pytest.approx(100 / 400) and g["channel_seconds"] == pytest.approx(0.8)
-    none = search_stats.reduce_group([], 0.002)
+    none = search_stats.reduce_group([], 0.002, COSTS)
     assert none["channels"] == 0 and none["live_stories"] == {"mean": None, "max": None}
-    assert none["ceiling_share"] is None and none["led_deficits_nats"]["max"] is None
-    assert none["led_deficits_nats"]["quantiles"] == {"0.5": None, "0.9": None, "0.99": None, "0.999": None}
+    assert none["ceiling_share"] is None and none["led_deficits_nats"]["newborns"] == 0
+    for part in ("deficit", "beyond_starting_cost"):
+        assert none["led_deficits_nats"][part]["max"] is None
+        assert none["led_deficits_nats"][part]["quantiles"] == {"0.5": None, "0.9": None, "0.99": None, "0.999": None}
+    assert none["led_deficits_nats"]["beyond_starting_cost"]["above_margin"] == {"margin_nats": 10.0, "newborns": 0}
+    assert none["led_deficits_nats"]["starting_cost_nats"] == COSTS
 
 
 # --- a run's statistics files ---
 
-def _suite(tmp_path, stats_text, run="r1"):
+def _suite(tmp_path, stats_text, run="r1", genie=None):
     """A suite folder: three oracle test cases of two groups (A2 twice, B2 once) and an A2 detector-path copy, results
-    for `run` with a statistics file for the first two (A2 and B2) and a result without one for the third."""
+    for `run` with a statistics file for the first two (A2 and B2) and a result without one for the third. genie: a
+    dict of test case to the genie kinds its result file records (the bench writes "genie" only for a run given one)."""
     recs = [("A2-awgn-c01-0-s1", "A2 sensitivity", True), ("B2-fading-c01-0-s1", "B2 fading", True),
             ("A2-awgn-c02-0-s1", "A2 sensitivity", True), ("A2-detector-c01-0-s1", "A2 sensitivity, detector", False)]
     (tmp_path / "manifest.json").write_text(json.dumps({"suite": "t", "recordings": [
@@ -242,7 +338,10 @@ def _suite(tmp_path, stats_text, run="r1"):
     folder = tmp_path / "results" / run
     folder.mkdir(parents=True)
     for n, _g, _o in recs[:3]:
-        (folder / f"{n}.json").write_text(json.dumps({"score": {"signals": []}}))
+        result = {"score": {"signals": []}}
+        if genie and n in genie:
+            result["genie"] = {"kinds": list(genie[n]), "channels": []}
+        (folder / f"{n}.json").write_text(json.dumps(result))
     for n in ("A2-awgn-c01-0-s1", "B2-fading-c01-0-s1"):
         (folder / f"{n}.stats.json").write_text(stats_text, encoding="utf-8")
     return folder
@@ -257,10 +356,13 @@ def test_a_runs_statistics_are_reduced_per_group_and_pooled(tmp_path):
     assert s["groups"]["A2 sensitivity"]["channels"] == s["groups"]["B2 fading"]["channels"] == 2
     assert s["all"]["channels"] == 4 and s["all"]["lines"]["total"] == 4 * 1045
     # each group is the reduction of the file's two channels, and all is the four channels
-    one = search_stats.reduce_group(search_stats.channel_summaries(v1_file()), 0.002)
+    one = search_stats.reduce_group(search_stats.channel_summaries(v1_file()), 0.002, COSTS)
     assert s["groups"]["A2 sensitivity"] == one == s["groups"]["B2 fading"]
     assert s["all"]["pieces"] == 2 * one["pieces"] and s["all"]["ceiling_pieces"] == 2 * one["ceiling_pieces"]
     assert s["all"]["led_deficits_nats"]["newborns"] == 2
+    # the starting costs come from the files' configuration (the defaults), once for the run
+    assert s["starting_cost_nats"] == pytest.approx(COSTS) and s["genie_fist"] is False
+    assert s["all"]["led_deficits_nats"]["starting_cost_nats"] == s["starting_cost_nats"]
     # a row for each channel, to join with the run's per-signal results
     assert len(s["channels"]) == 4
     first = s["channels"][0]
@@ -268,7 +370,9 @@ def test_a_runs_statistics_are_reduced_per_group_and_pooled(tmp_path):
         "A2 sensitivity", "A2-awgn-c01-0-s1", 0, 523)
     assert first["dropped_by_beam_in_first_element"] > 0 and first["removed_by_ceiling"] == 100 + 155
     assert first["led_deficit_max_nats"] == pytest.approx(17.382956934607172)
+    assert first["led_beyond_start_max_nats"] == pytest.approx(17.382956934607172 - COSTS["Silence"])
     assert s["channels"][1]["led_deficit_max_nats"] is None    # the noise channel: only its first story led
+    assert s["channels"][1]["led_beyond_start_max_nats"] is None
     # a selection of test cases
     only = search_stats.run_summary(tmp_path, "r1", only=r"^B2-")
     assert list(only["groups"]) == ["B2 fading"] and only["test_cases"] == 1 and only["without_statistics"] == []
@@ -282,10 +386,20 @@ def test_a_runs_summary_is_written_as_tables_and_data(tmp_path):
     md = path.read_text(encoding="utf-8")
     assert md.startswith("# Search statistics: r1")
     assert "| A2 sensitivity | 2 | 2.1 |" in md and "| all | 4 | 4.2 |" in md       # channels, channel-seconds (s)
-    assert "| A2 sensitivity | Silence |" in md and "17.38" in md and "above 10 nats" in md
+    assert "| A2 sensitivity | Silence |" in md
     assert "nats" in md and "Test cases with a result but no statistics file: `A2-awgn-c02-0-s1`" in md
     assert str(tmp_path) not in md                                                   # committed beside records: no folders
     assert json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))["all"]["channels"] == 4
+    # R1: two tables, the whole deficit (17.38 nats) and the part beyond the starting cost (4.71 nats), and the 10 nats
+    # are compared with the second; the caption says so, with the starting costs of the run
+    whole, beyond = md.index("## Largest deficit a newborn reaches before it leads"), md.index("## The part of that deficit")
+    assert whole < beyond
+    first_table, second_table = md[whole:beyond], md[beyond:md.index("## Lines the beam dropped")]
+    assert "| A2 sensitivity | 1 | 17.38 |" in first_table and "above 10 nats" not in first_table
+    assert "| A2 sensitivity | 1 | 4.71 |" in second_table and "above 10 nats" in second_table
+    assert "beyond its own starting cost" in second_table and "margin of 10 nats" in second_table
+    assert "12.68" in second_table and "10.37" in second_table                       # the starting costs, nats
+    assert "ln(1/P) + ln(speed count)" in second_table and "ln(1/ε) + ln(speed count)" in second_table
 
 
 def test_a_run_with_nothing_to_reduce_or_mixed_pieces_is_refused(tmp_path):
@@ -307,6 +421,40 @@ def test_a_run_with_nothing_to_reduce_or_mixed_pieces_is_refused(tmp_path):
     (empty / "manifest.json").write_text(json.dumps({"suite": "t", "recordings": []}))
     with pytest.raises(ValueError, match="no statistics files"):
         search_stats.run_summary(empty, "r1")
+
+
+def test_the_starting_costs_follow_the_genie_the_run_was_given(tmp_path):
+    # a genie fist gives each channel's decoder one speed (the base configuration in the statistics file does not show
+    # it; the result file's "genie" does), so no speed prior of ln(32) is paid
+    both = {"A2-awgn-c01-0-s1": ["fading", "fist"], "B2-fading-c01-0-s1": ["fist"]}
+    _suite(tmp_path, V1.read_text(encoding="utf-8"), genie=both)
+    s = search_stats.run_summary(tmp_path, "r1")
+    assert s["genie_fist"] is True
+    assert s["starting_cost_nats"] == pytest.approx({"Silence": math.log(1e4), "Rescue": math.log(1e3)})
+    assert s["all"]["led_deficits_nats"]["starting_cost_nats"] == s["starting_cost_nats"]
+    assert s["all"]["led_deficits_nats"]["beyond_starting_cost"]["max"] == pytest.approx(
+        17.382956934607172 - math.log(1e4))
+    # genie kinds without the fist leave the speed prior
+    other = tmp_path / "other"
+    other.mkdir()
+    _suite(other, V1.read_text(encoding="utf-8"), genie={"A2-awgn-c01-0-s1": ["fading"], "B2-fading-c01-0-s1": ["fading"]})
+    plain = search_stats.run_summary(other, "r1")
+    assert plain["genie_fist"] is False and plain["starting_cost_nats"] == pytest.approx(COSTS)
+    # a run given the fist for some test cases only is not one run: its starting costs differ, and it is refused
+    mixed = tmp_path / "mixed"
+    mixed.mkdir()
+    _suite(mixed, V1.read_text(encoding="utf-8"), genie={"A2-awgn-c01-0-s1": ["fist"]})
+    with pytest.raises(ValueError, match=r"B2-fading-c01-0-s1.*starting costs"):
+        search_stats.run_summary(mixed, "r1")
+
+
+def test_a_run_whose_files_have_different_starting_costs_is_refused(tmp_path):
+    folder = _suite(tmp_path, V1.read_text(encoding="utf-8"))
+    other = v1_file()
+    other["config"]["over_rate_per_s"] = 0.5      # a run made with another over rate is another run
+    (folder / "B2-fading-c01-0-s1.stats.json").write_text(json.dumps(other), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"B2-fading-c01-0-s1.*starting costs"):
+        search_stats.run_summary(tmp_path, "r1")
 
 
 # --- the two versions give the same numbers ---
@@ -361,8 +509,8 @@ def test_the_committed_summary_is_the_reduction_of_the_committed_full_file():
 def test_either_version_gives_the_same_group_and_run_reductions(tmp_path):
     full, summary = search_stats.read_stats(V1), search_stats.read_stats(V2)
     piece_s = full["config"]["piece_s"]
-    assert_same(search_stats.reduce_group(search_stats.channel_summaries(full), piece_s),
-                search_stats.reduce_group(search_stats.channel_summaries(summary), piece_s))
+    assert_same(search_stats.reduce_group(search_stats.channel_summaries(full), piece_s, COSTS),
+                search_stats.reduce_group(search_stats.channel_summaries(summary), piece_s, COSTS))
     runs = []
     for version, path in ((1, V1), (2, V2)):
         suite = tmp_path / f"v{version}"
@@ -387,6 +535,59 @@ def test_a_version_2_channel_that_lacks_a_member_is_refused():
     del summary["channels"][1]["fates"]
     with pytest.raises(ValueError, match="fates"):
         search_stats.channel_summaries(summary)
+
+
+def test_a_version_2_channel_that_contradicts_itself_is_refused():
+    # The reader checks what the bench's writer guarantees (a file edited or assembled by hand is the case): the
+    # histogram adds up to the pieces, the fates to the lines, and the lines that led, by kind, end and first element, are
+    # the fates' led counts. The real file's first channel: 523 pieces, 1 045 lines, two of which led (line 0, the first
+    # story, kind Start, merged; line 89, kind Silence, alive).
+    base = search_stats.read_stats(V2)
+    assert len(search_stats.channel_summaries(base)) == 2
+
+    def refusal(edit):
+        summary = json.loads(json.dumps(base))
+        edit(summary["channels"][0])
+        with pytest.raises(ValueError) as refused:
+            search_stats.channel_summaries(summary)
+        return str(refused.value)
+
+    def bump_histogram(c):
+        c["live_histogram"][0] += 1
+
+    def bump_pieces(c):
+        c["pieces"] += 1
+
+    assert "live_histogram" in refusal(bump_histogram) and "channel 1" in refusal(bump_histogram)
+    assert "live_histogram" in refusal(bump_pieces)
+    assert "fates" in refusal(lambda c: c.update(lines=c["lines"] + 1))
+    assert "fates" in refusal(lambda c: c["fates"][2][3][1].__setitem__(1, c["fates"][2][3][1][1] + 1))
+    assert "fates" in refusal(lambda c: c["fates"].pop())                       # 2 kinds, not 3
+    assert "fates" in refusal(lambda c: c["fates"][0].pop())                    # 3 ends, not 4
+    assert "fates" in refusal(lambda c: c["fates"][1][1].append([0, 0]))        # 3 values of ended_in_first_element
+    assert "fates" in refusal(lambda c: c["fates"][1][1][0].__setitem__(0, -1))
+    # the lines that led against the fates' led counts
+    assert "fates" in refusal(lambda c: c["led_lines"]["kind"].__setitem__(0, 1))
+    assert "fates" in refusal(lambda c: c["led_lines"]["kind"].__setitem__(1, 2))
+    assert "fates" in refusal(lambda c: c["led_lines"].__setitem__("end", [0, 1]))   # the two ends swapped
+    assert "fates" in refusal(lambda c: c["led_lines"]["ended_in_first_element"].__setitem__(1, True))
+    # the columns of the lines that led
+    assert "led_lines" in refusal(lambda c: c["led_lines"]["largest_deficit_nats"].pop())
+    assert "led_lines" in refusal(lambda c: c["led_lines"].__setitem__("line", [0, 5000]))   # not below the 1 045 lines
+    assert "led_lines" in refusal(lambda c: c["led_lines"].__setitem__("line", [89, 0]))     # not ascending
+    assert "first_led_s" in refusal(lambda c: c["led_lines"]["first_led_s"].__setitem__(1, None))
+    assert "kind" in refusal(lambda c: c["led_lines"]["kind"].__setitem__(1, 7))
+    assert "end" in refusal(lambda c: c["led_lines"]["end"].__setitem__(1, 4))
+    assert "led_lines" in refusal(lambda c: c.update(led_lines={k: v for k, v in c["led_lines"].items() if k != "end_s"}))
+
+
+def test_what_the_reduction_makes_passes_the_checks_of_a_summary():
+    for channel in v1_file()["channels"]:
+        search_stats.check_summary_channel(search_stats.reduce_channel(channel, 0.002))
+    lines = [(0, 1, 0, 0.002, 0.0), (1, 0, 0, 0.040, 25.0), (2, 2, 1, 0.050, 17.0), (1, 2, 1, None, 41.0),
+             (2, 3, 0, None, 9.5)]
+    search_stats.check_summary_channel(search_stats.reduce_channel(line_channel(lines), 0.002))
+    search_stats.check_summary_channel(search_stats.reduce_channel(line_channel([], pieces=0, means=[], maxima=[]), 0.002))
 
 
 # --- the reader ---

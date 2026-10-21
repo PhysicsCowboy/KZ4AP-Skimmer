@@ -1147,7 +1147,8 @@ class _Job(NamedTuple):
 def _same_run(job: _Job, settings: list, genie: list, stats_version: int | None) -> None:
     """Raises ValueError unless the finished test case `job` was made by the run described by the rest: the bench's
     --set settings and --genie kinds (each once, in the order first given), and the form of its statistics file (the
-    format version; None: the run asks for none)."""
+    format version; None: the run asks for none, so the test case must have none: a run that drops --stats on a resume
+    would leave a folder in which only some test cases have statistics)."""
     made = json.loads(job.result_file.read_text(encoding="utf-8"))
     where = f"results/{job.folder}/{job.result_file.name}"
     resume = "a run that is resumed must be the run it resumes"
@@ -1164,6 +1165,9 @@ def _same_run(job: _Job, settings: list, genie: list, stats_version: int | None)
         raise ValueError(f"the statistics file {job.stats_file.name} in results/{job.folder} is of format version "
                          f"{_stats_version(job.stats_file)}, this run's are version {stats_version} "
                          f"({'every line' if stats_version == 1 else 'the summary'}): " + resume)
+    if stats_version is None and job.stats_file.exists():
+        raise ValueError(f"the statistics file {job.stats_file.name} in results/{job.folder} was written by the run "
+                         "being resumed, but this run asks for no statistics (--stats): " + resume)
 
 
 def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None, jobs: int = 1,
@@ -1188,8 +1192,8 @@ def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None, j
     Results cost hours and cannot be recovered, so a run does not write into a folder that already holds result files
     (any *.json) unless it is told to: overwrite replaces the files of the test cases it runs; skip_existing resumes the
     run, skipping the test cases that are done (a result file that reads, and the statistics file if asked for), which
-    must have been made by this run (decoder, settings, genie and the statistics' form, or it is refused before
-    anything runs). Before a test case is run its stale statistics file and any partial file of an earlier try are
+    must have been made by this run (decoder, settings, genie and the statistics' form: none, the summary or every
+    line; or it is refused before anything runs). Before a test case is run its stale statistics file and any partial file of an earlier try are
     removed, so that they cannot pass for this run's. The bench writes its files under a name of their own and renames
     them when they are complete (the statistics after the result), so a file that exists is a complete one.
     The first failure stops the run (the bench processes already running finish) and names its test case."""
@@ -1937,10 +1941,13 @@ def main(argv=None) -> None:
             recordings = SUITES[args.suite](args.seeds)
         write_suite(recordings, args.out, args.suite, only=args.only)
     elif args.command == "run":
-        run_suite(args.out, args.bench, args.front_ends or ["baseline"], only=args.only, jobs=args.jobs,
-                  name=args.name, settings=args.settings, stats=args.stats or args.stats_detail,
-                  stats_detail=args.stats_detail, genie=args.genie, overwrite=args.overwrite,
-                  skip_existing=args.skip_existing)
+        try:
+            run_suite(args.out, args.bench, args.front_ends or ["baseline"], only=args.only, jobs=args.jobs,
+                      name=args.name, settings=args.settings, stats=args.stats or args.stats_detail,
+                      stats_detail=args.stats_detail, genie=args.genie, overwrite=args.overwrite,
+                      skip_existing=args.skip_existing)
+        except ValueError as refusal:  # a refusal before anything ran, reported as a usage error, not a traceback
+            r.error(str(refusal))
     else:
         write_summary(args.out)
 

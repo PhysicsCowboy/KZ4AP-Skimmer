@@ -340,6 +340,10 @@ def test_the_search_stats_command_writes_the_tables_and_prints_the_totals(tmp_pa
         experiments.main(["search-stats", "--out", str(suite), "--run", "r1"])
         out = capsys.readouterr().out
         assert "r1: 2 test cases, 4 channels, 4.2 channel-seconds; live stories" in out
+        # R1 in one line: the whole deficit, and the part beyond each newborn's own starting cost against the margin
+        assert ("R1: 2 newborns led; the largest deficit 17.38 nats; the largest part beyond a newborn's own starting "
+                "cost (12.68 nats from silence, 10.37 nats as a rescue) 4.71 nats; 0 newborns above the 10-nat margin"
+                ) in out
         assert str(suite / "experiments" / "search-stats-r1.md") in out
         assert (suite / "experiments" / "search-stats-r1.md").exists()
         saved = json.loads((suite / "experiments" / "search-stats-r1.json").read_text(encoding="utf-8"))
