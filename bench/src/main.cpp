@@ -45,6 +45,7 @@ struct Args {
     // anything else is done).
     ViterbiOptions viterbi_options;
     viterbi::ViterbiConfig viterbi;
+    std::optional<std::filesystem::path> stats;  // --stats: where the new decoder's statistics file goes
 };
 
 const char* decoder_name(FrontEnd d) {
@@ -62,8 +63,9 @@ constexpr const char* kUsage =
     "                   [--no-timing] [--baseline BASELINE.json] [--oracle]\n"
     "                   [--decoder envelope|matched|bank|viterbi]\n"
     "                   [--record-channels DIR (with --oracle: the oracle channels; without: the detector's)]\n"
-    "                   [--set NAME=VALUE ...] [--genie fist|frequency|fading ...]   (--decoder viterbi; --genie\n"
-    "                   needs --oracle and takes its values from the labels; NAME is a field of ViterbiConfig)\n"
+    "                   [--set NAME=VALUE ...] [--genie fist|frequency|fading ...] [--stats STATS.json]\n"
+    "                   (--decoder viterbi; NAME is a field of ViterbiConfig; --genie reads the labels;\n"
+    "                   --genie and --stats need --oracle; --stats writes the decoder's search statistics)\n"
     "       kz4ap-bench --labels LABELS.json --score-decoded DECODED.json [--json OUT.json] [--baseline BASELINE.json]\n";
 
 Args parse_args(int argc, char** argv) {
@@ -99,6 +101,10 @@ Args parse_args(int argc, char** argv) {
             const GenieKind kind = parse_genie_kind(text());
             auto& kinds = args.viterbi_options.genie;
             if (std::find(kinds.begin(), kinds.end(), kind) == kinds.end()) kinds.push_back(kind);
+        }
+        else if (a == "--stats") {  // the new decoder's search statistics, written when the run ends
+            args.stats = value();
+            args.viterbi_options.stats = true;
         }
         else if (!a.empty() && a[0] == '-') throw std::runtime_error("unknown option " + a + "\n" + kUsage);
         else if (!args.recording) args.recording = a;
@@ -212,6 +218,7 @@ int run_engine(const Args& args) {
     }
     if (args.front_end == FrontEnd::Viterbi) {
         config.viterbi = args.viterbi;
+        if (args.stats) config.viterbi.stats = true;  // the search keeps its statistics only when asked
         // --genie: each oracle channel gets the truth of its station from its label, in the order of the labels, which
         // is the order of oracle_frequencies_hz and of the channels' track ids (EngineConfig::viterbi_genie)
         if (!args.viterbi_options.genie.empty()) {
@@ -246,6 +253,10 @@ int run_engine(const Args& args) {
     const double cpu_s = process_cpu_seconds() - cpu_started;
     const EngineStats stats = engine.stats();
     const double duration_s = static_cast<double>(reader.total_samples()) / reader.sample_rate();
+    if (args.stats) {  // after the timed window: writing the file is not decoding
+        write_stats_file(*args.stats, collect_stats_file(engine, args.recording->filename().string(), config.viterbi,
+                                                         labels->signals.size()));
+    }
 
     nlohmann::json out;
     out["recording"] = args.recording->filename().string();

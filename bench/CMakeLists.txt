@@ -57,8 +57,8 @@ target_compile_definitions(kz4ap_bench_tests PRIVATE
   KZ4AP_BANK_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/engine/tests/data/bank")
 gtest_discover_tests(kz4ap_bench_tests)
 
-# kz4ap-bench refuses the new decoder's --set and --genie options that it cannot run before it reads the recording:
-# exit status 2 and one message (tests/bench_refusal.cmake; it needs no recording and writes nothing).
+# kz4ap-bench refuses the new decoder's --set, --genie and --stats options that it cannot run before it reads the
+# recording: exit status 2 and one message (tests/bench_refusal.cmake; it needs no recording and writes nothing).
 add_test(NAME Bench.RefusesTheNewDecodersOptionsItCannotRunBeforeReadingTheRecording
          COMMAND ${CMAKE_COMMAND} -DBENCH=$<TARGET_FILE:kz4ap-bench>
                  -DRECORDING=${CMAKE_CURRENT_BINARY_DIR}/no-such-recording.wav

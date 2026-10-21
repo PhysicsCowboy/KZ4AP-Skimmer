@@ -384,7 +384,9 @@ viterbi::ViterbiGenie genie_from_label(const LabeledSignal& label, std::size_t i
         for (std::size_t kind = 0; kind < 5; ++kind) {
             const Duration& duration = style->kinds[kind];
             fist.medians_dots[kind] = duration.median_dots;
-            // at least one piece over the median length, in ln(length): the heuristic floor of the header
+            // At least one piece over the median length, in ln(length): the floor of the header (class: heuristic; the
+            // fist needs sigma > 0, and "machine" is exact, sigma 0, so the sender's timing is taken as known to one
+            // piece, 2 ms at the default; neither derived nor measured).
             fist.sigmas[kind] = std::max(duration.sigma, piece_s / (duration.median_dots * dot_s));
             // the marks are longer, the spaces shorter, by the imbalance; the Farnsworth factor does not stretch it
             // (0.0 - x, not -x: no imbalance is a shift of 0, not of -0)
@@ -421,12 +423,38 @@ void check_viterbi_options(bool decoder_is_viterbi, bool oracle, const ViterbiOp
         throw std::invalid_argument("--set belongs to --decoder viterbi (the other decoders take no settings here)");
     if (!decoder_is_viterbi && !options.genie.empty())
         throw std::invalid_argument("--genie belongs to --decoder viterbi");
+    if (!decoder_is_viterbi && options.stats)
+        throw std::invalid_argument("--stats belongs to --decoder viterbi (it writes the new decoder's statistics)");
     if (!options.genie.empty() && !oracle)
         throw std::invalid_argument(
             "--genie needs --oracle: its values come from the labels of the oracle channels, one set for each");
+    if (options.stats && !oracle)
+        throw std::invalid_argument(
+            "--stats needs --oracle: the statistics of a channel are read when the run ends, and a channel of the "
+            "detector path is gone once its track dies");
 }
 
 // ---- The statistics file ----
+
+StatsFile collect_stats_file(const Engine& engine, const std::string& recording, const viterbi::ViterbiConfig& config,
+                             std::size_t channels) {
+    StatsFile file;
+    file.recording = recording;
+    file.config = config;
+    for (std::size_t i = 0; i < channels; ++i) {
+        const auto track = static_cast<std::uint32_t>(i + 1);
+        const viterbi::SearchStats* stats = engine.viterbi_stats(track);
+        if (!stats)
+            throw std::runtime_error("no search statistics for track " + std::to_string(track) +
+                                     " (no such channel, or its decoder is not the new decoder)");
+        ChannelStats channel;
+        channel.track_id = track;
+        channel.label_index = static_cast<int>(i);
+        channel.stats = *stats;
+        file.channels.push_back(std::move(channel));
+    }
+    return file;
+}
 
 ordered_json to_json(const ChannelStats& channel) {
     const viterbi::SearchStats& s = channel.stats;

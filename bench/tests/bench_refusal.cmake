@@ -23,9 +23,12 @@ endfunction()
 expect_stderr("--genie needs --oracle" --decoder viterbi --genie fist)
 expect_stderr("--genie needs --oracle" --genie frequency --decoder viterbi --genie fading)
 expect_stderr("fist, frequency or fading" --decoder viterbi --oracle --labels no-such-labels.json --genie loud)
-# --set and --genie belong to the new decoder
+# --stats reads the statistics of the oracle channels at the end of the run
+expect_stderr("--stats needs --oracle" --decoder viterbi --stats no-such-stats.json)
+# --set, --genie and --stats belong to the new decoder
 expect_stderr("--set belongs to --decoder viterbi" --set beam_nats=30)
 expect_stderr("--genie belongs to --decoder viterbi" --oracle --labels no-such-labels.json --genie fist)
+expect_stderr("--stats belongs to --decoder viterbi" --oracle --labels no-such-labels.json --stats no-such-stats.json)
 # --set names a field of ViterbiConfig, and the value must fit it
 expect_stderr("unknown parameter 'no_such_field'" --decoder viterbi --set no_such_field=1)
 expect_stderr("unknown parameter 'beam_nat'" --decoder viterbi --set beam_nats=30 --set beam_nat=30)
@@ -38,3 +41,4 @@ expect_stderr("cannot open" --decoder viterbi --set beam_nats=30 --set ceiling=6
               --set "fist_sigmas=[0.1,0.1,0.1,0.1,0.1]")
 expect_stderr("cannot open" --decoder viterbi --oracle --labels no-such-labels.json --genie fist --genie frequency
               --genie fading --set stats=true)
+expect_stderr("cannot open" --decoder viterbi --oracle --labels no-such-labels.json --stats no-such-stats.json)

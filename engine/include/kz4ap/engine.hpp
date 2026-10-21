@@ -20,6 +20,7 @@ namespace kz4ap {
 
 namespace viterbi {
 class HissEstimator;
+struct SearchStats;
 }  // namespace viterbi
 class ViterbiShared;
 
@@ -110,6 +111,12 @@ public:
     // observes only; decoding is the same with or without it. Set it before process().
     void set_channel_tap(ChannelTap tap) { tap_ = std::move(tap); }
     double channel_rate() const;  // the channelizer's output rate, samples/s
+
+    // Benchmark tooling: the statistics of the new decoder's search on the channel with this track id
+    // (viterbi/search.hpp; they are empty unless ViterbiConfig::stats is true), or nullptr if no open channel has that
+    // id (a channel of the detector path is gone once its track dies) or its decoder is not the new decoder. Read only;
+    // the pointer stays valid until the channel closes or the engine is destroyed.
+    const viterbi::SearchStats* viterbi_stats(std::uint32_t track_id) const;
 
 private:
     struct Channel {

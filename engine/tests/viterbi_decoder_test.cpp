@@ -221,6 +221,13 @@ EngineConfig viterbi_engine() {
     return config;
 }
 
+// Feeds x to the engine in chunks and finishes it, so that the test can read what the engine keeps afterwards.
+void run_to_the_end(Engine& engine, const std::vector<Sample>& x, std::size_t chunk = 65536) {
+    for (std::size_t i = 0; i < x.size(); i += chunk)
+        engine.process(std::span<const Sample>(x).subspan(i, std::min(chunk, x.size() - i)));
+    engine.finish();
+}
+
 // Leaves a measured number in the test's record (the XML report's properties).
 void record(const std::string& key, double value) {
     std::ostringstream text;
@@ -626,6 +633,73 @@ TEST(ViterbiDecoder, TheEngineGivesEachChannelItsGenie) {
     ASSERT_TRUE(run.freq_hz.count(1) && run.freq_hz.count(2));
     EXPECT_NEAR(run.freq_hz.at(1), kFirstHz + 0.1 * last_s, 1e-9);
     EXPECT_NEAR(run.freq_hz.at(2), kSecondHz, 0.67);
+}
+
+TEST(ViterbiDecoder, TheEngineGivesTheBenchEachChannelsSearchStatistics) {
+    // Two oracle channels with the statistics on (ViterbiConfig::stats), a station at +15 dB S500 on the first and
+    // noise alone on the second: Engine::viterbi_stats(id) is that channel's decoder's SearchStats, read after the
+    // run. Its pieces are the channel's less the first block, which is not searched (N0 is 0 until the first spectrum
+    // frame: 10 pieces of 3 samples in the block's 32); the histogram holds one count per piece searched, the first
+    // newborn line is the channel's first story, and the two channels' statistics differ. An id that is no channel
+    // gives nullptr.
+    const auto keying = signals::keying("CQ TEST", 25.0, 0.6);
+    std::vector<Sample> x = silence(keying.back().second + 1.0);
+    add_station(x, keying, 1203.0, 15.0);
+    add_noise(x, 41);
+    EngineConfig config = viterbi_engine();
+    config.oracle_frequencies_hz = {1203.0, -2501.0};
+    config.viterbi.stats = true;
+    EventBus bus;
+    Engine engine(config, bus);
+    run_to_the_end(engine, x);
+    const viterbi::SearchStats* first = engine.viterbi_stats(1);
+    const viterbi::SearchStats* second = engine.viterbi_stats(2);
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_NE(first, second);
+    const auto channel_pieces = static_cast<std::int64_t>(engine.stats().channel_samples / 2) / kSamplesPerPiece;
+    for (const viterbi::SearchStats* s : {first, second}) {
+        EXPECT_LE(s->pieces, channel_pieces);
+        EXPECT_GE(s->pieces, channel_pieces - 25);
+        std::int64_t counted = 0;
+        for (const std::int64_t count : s->live_histogram) counted += count;
+        EXPECT_EQ(counted, s->pieces);
+        ASSERT_FALSE(s->lines.empty());
+        EXPECT_EQ(s->lines[0].kind, viterbi::LineKind::Start);
+        EXPECT_FALSE(s->live_mean_100ms.empty());
+        EXPECT_EQ(s->live_mean_100ms.size(), s->live_max_100ms.size());
+    }
+    EXPECT_FALSE(*first == *second);  // SearchStats' own comparison: different signals, different statistics
+    EXPECT_EQ(engine.viterbi_stats(0), nullptr);
+    EXPECT_EQ(engine.viterbi_stats(3), nullptr);
+    EXPECT_EQ(engine.viterbi_stats(4294967295u), nullptr);
+}
+
+TEST(ViterbiDecoder, TheEnginesStatisticsAreForTheNewDecoderAndEmptyUnlessKept) {
+    // A channel of another decoder has no statistics to give: nullptr. The new decoder's channel with the statistics
+    // off gives its SearchStats, empty (the search keeps nothing then).
+    std::vector<Sample> x = silence(1.0);
+    add_noise(x, 43);
+    for (const FrontEnd front_end : {FrontEnd::Envelope, FrontEnd::Matched, FrontEnd::Bank}) {
+        EngineConfig config;
+        config.sample_rate = kInputRate;
+        config.decoder.front_end = front_end;
+        config.oracle_frequencies_hz = {1203.0};
+        EventBus bus;
+        Engine engine(config, bus);
+        run_to_the_end(engine, x);
+        EXPECT_EQ(engine.viterbi_stats(1), nullptr) << "decoder " << static_cast<int>(front_end);
+    }
+    EngineConfig config = viterbi_engine();
+    config.oracle_frequencies_hz = {1203.0};
+    ASSERT_FALSE(config.viterbi.stats);
+    EventBus bus;
+    Engine engine(config, bus);
+    run_to_the_end(engine, x);
+    const viterbi::SearchStats* stats = engine.viterbi_stats(1);
+    ASSERT_NE(stats, nullptr);
+    EXPECT_EQ(*stats, viterbi::SearchStats{});
+    EXPECT_EQ(engine.viterbi_stats(2), nullptr);
 }
 
 TEST(ViterbiDecoder, WithGenieSetsOnlyThePartsItIsGiven) {

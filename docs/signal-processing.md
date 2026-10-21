@@ -234,10 +234,9 @@ Appendix: A.7.
 
 ### Which decoder runs
 
-Four decoders exist; the bench's `--decoder envelope|matched|bank` picks
-one of the first three (`--front-end` is the old name of that option, still
-accepted), and the engine's `FrontEnd::Viterbi` the new decoder (the
-bench's option for it is not built yet).
+Four decoders exist; the bench's `--decoder envelope|matched|bank|viterbi`
+picks one (`--front-end` is the old name of that option, still accepted);
+the engine's `FrontEnd::Viterbi` is the new decoder.
 **Matched is the default** (owner). The bank and the new decoder are
 selectable, not the default (owner). Envelope and Matched share a common
 back end that turns marks into characters; the bank and the new decoder
@@ -1390,10 +1389,9 @@ The rules of this section as the code implements them (moved verbatim from the b
 #### Which decoder runs
 
 There are four decoders. `ClassicalDecoderConfig::front_end` (a code
-identifier) selects one, and `kz4ap-bench --decoder envelope|matched|bank`
-sets the first three (`--front-end` is the option's old name, kept as an
-alias); `FrontEnd::Viterbi` selects the new decoder in the engine (the
-bench's option for it is not built yet). **Matched
+identifier) selects one, and `kz4ap-bench --decoder envelope|matched|bank|viterbi`
+sets it from the bench (`--front-end` is the option's old name, kept as an
+alias); `FrontEnd::Viterbi` is the new decoder in the engine. **Matched
 is the default** (the code's and the bench's; owner, 2026-09-29); Envelope
 also switches the detector to the Envelope path's rules; the bank is
 selectable, not the default (owner decision D1), and so is the new decoder
@@ -3777,7 +3775,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Character / word gap | > 2 / > 5 dits | classical_decoder.cpp | heuristic (the conventional midpoints between the nominal 1, 3 and 7 dits) |
 | Speed window / range | 24 marks, 5–60 WPM | classical_decoder.cpp | heuristic |
 | Edge-shortening ratio band | 3.0–3.85 | classical_decoder.cpp | measured |
-| Decoder | Matched (default), Envelope, the bank or the new decoder | `ClassicalDecoderConfig::front_end` (`FrontEnd::Bank` makes the engine create a `BankDecoder`, `FrontEnd::Viterbi` a `ViterbiDecoder`); `kz4ap-bench --decoder` (`--front-end` its old alias; not yet for the new decoder) | Matched default and Envelope owner decisions 2026-09-29; the bank selectable (owner decision D1, 2026-10-03); the new decoder selectable (the first prototype's plan, D2) |
+| Decoder | Matched (default), Envelope, the bank or the new decoder | `ClassicalDecoderConfig::front_end` (`FrontEnd::Bank` makes the engine create a `BankDecoder`, `FrontEnd::Viterbi` a `ViterbiDecoder`); `kz4ap-bench --decoder` (`--front-end` its old alias) | Matched default and Envelope owner decisions 2026-09-29; the bank selectable (owner decision D1, 2026-10-03); the new decoder selectable (the first prototype's plan, D2) |
 | LLR keying hysteresis (Matched) | g > +1 nat down, g < −1 nat up; the key-up threshold, −1 nat, is also the evidence that a mark's start was observed (row "Marks not counted for speed", Task 16) | `ClassicalDecoderConfig::llr_hysteresis` | heuristic |
 | Filter follows speed after (Matched) | 8 marks in the speed window (8 new ones after a re-acquisition) | `ClassicalDecoderConfig::follow_after_marks` | heuristic |
 | Dit-estimate growth bound (Matched) | decided: at most ×1.25 per mark while the filter follows the speed, and the filter's own dit at most ×1.25 per mark from its first follow step (from the 20 ms acquisition dit). Applied at each key-up counted for speed; a dropout merge restores the state before the merged mark's update, so each physical mark is bounded once (Task 15) | `ClassicalDecoderConfig::max_dit_growth` | heuristic value (owner decisions 2026-09-29); applied per physical mark (derived from the code, Task 15; re-measured in Task 17: 2a record, sections 3.7, 3.8 and 8.3) |

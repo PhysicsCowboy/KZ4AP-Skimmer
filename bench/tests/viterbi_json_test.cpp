@@ -3,6 +3,7 @@
 #include "viterbi_json.hpp"
 
 #include "kz4ap/engine.hpp"
+#include "kz4ap/event_bus.hpp"
 #include "kz4ap/viterbi/config.hpp"
 #include "kz4ap/viterbi/search.hpp"
 
@@ -18,6 +19,7 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -284,6 +286,21 @@ TEST(ViterbiJson, GenieWithoutOracleFails) {
     EXPECT_TRUE(contains(refusal_of([&] { check_viterbi_options(false, false, with_set); }), "--set"));
     EXPECT_EQ(refusal_of([&] { check_viterbi_options(true, false, with_set); }), "(accepted)");  // no oracle needed
     EXPECT_EQ(refusal_of([&] { check_viterbi_options(false, false, ViterbiOptions{}); }), "(accepted)");
+}
+
+TEST(ViterbiJson, StatsNeedsOracleAndTheNewDecoder) {
+    ViterbiOptions options;
+    options.stats = true;
+    const std::string why = refusal_of([&] { check_viterbi_options(true, false, options); });
+    EXPECT_TRUE(contains(why, "--stats")) << why;
+    EXPECT_TRUE(contains(why, "--oracle")) << why;
+    EXPECT_EQ(refusal_of([&] { check_viterbi_options(true, true, options); }), "(accepted)");
+    EXPECT_TRUE(contains(refusal_of([&] { check_viterbi_options(false, true, options); }), "--decoder viterbi"));
+    // with --genie and --set as well
+    options.genie = {GenieKind::Fading};
+    options.settings = {"ceiling=600"};
+    EXPECT_EQ(refusal_of([&] { check_viterbi_options(true, true, options); }), "(accepted)");
+    EXPECT_NE(refusal_of([&] { check_viterbi_options(true, false, options); }), "(accepted)");
 }
 
 TEST(ViterbiJson, GenieKindsAreNamedAsTheCommandLineNamesThem) {
@@ -611,6 +628,62 @@ TEST(ViterbiJsonStats, TheStatisticsFileRoundTrips) {
     EXPECT_EQ(to_json(back.config), to_json(file.config));
     ASSERT_EQ(back.channels.size(), file.channels.size());
     for (std::size_t i = 0; i < file.channels.size(); ++i) EXPECT_EQ(back.channels[i], file.channels[i]) << i;
+}
+
+// 2 s of white noise at 48 kHz (sigma 0.02 FS per complex sample, DEV2's): the statistics below do not depend on its
+// values, only that the search runs.
+std::vector<kz4ap::Sample> noise_of(double seconds, unsigned seed) {
+    std::mt19937 rng(seed);
+    std::normal_distribution<float> gauss(0.0f, 0.02f / std::sqrt(2.0f));
+    std::vector<kz4ap::Sample> x(static_cast<std::size_t>(seconds * 48000.0));
+    for (auto& sample : x) sample = {gauss(rng), gauss(rng)};
+    return x;
+}
+
+TEST(ViterbiJsonStats, TheFileOfARunHoldsEachOracleChannelsStatistics) {
+    // What --stats writes at the end of a run: oracle channel i is track i + 1 and label i, its statistics are the
+    // engine's for that track, the configuration is the run's, and the file reads back the same.
+    EngineConfig config;
+    config.sample_rate = 48000;
+    config.decoder.front_end = kz4ap::FrontEnd::Viterbi;
+    config.oracle_frequencies_hz = {1203.0, -2501.0};
+    config.viterbi.stats = true;
+    config.viterbi.beam_nats = 35.0;
+    kz4ap::EventBus bus;
+    kz4ap::Engine engine(config, bus);
+    engine.process(noise_of(2.0, 7));
+    engine.finish();
+    const StatsFile file = kz4ap::bench::collect_stats_file(engine, "noise.wav", config.viterbi, 2);
+    EXPECT_EQ(file.recording, "noise.wav");
+    EXPECT_EQ(file.config.beam_nats, 35.0);
+    EXPECT_TRUE(file.config.stats);
+    ASSERT_EQ(file.channels.size(), 2u);
+    for (std::uint32_t track = 1; track <= 2; ++track) {
+        const ChannelStats& channel = file.channels[track - 1];
+        EXPECT_EQ(channel.track_id, track);
+        ASSERT_TRUE(channel.label_index.has_value());
+        EXPECT_EQ(*channel.label_index, static_cast<int>(track - 1));
+        ASSERT_NE(engine.viterbi_stats(track), nullptr);
+        EXPECT_EQ(channel.stats, *engine.viterbi_stats(track));
+        EXPECT_GT(channel.stats.pieces, 0);
+        EXPECT_FALSE(channel.stats.lines.empty());
+    }
+    const std::string path = temp_file_name("collected");
+    kz4ap::bench::write_stats_file(path, file);
+    const StatsFile back = kz4ap::bench::read_stats_file(path);
+    std::filesystem::remove(path);
+    ASSERT_EQ(back.channels.size(), 2u);
+    for (std::size_t i = 0; i < 2; ++i) EXPECT_EQ(back.channels[i], file.channels[i]) << i;
+    // a channel the engine does not have, and one that is not the new decoder's
+    EXPECT_THROW(kz4ap::bench::collect_stats_file(engine, "noise.wav", config.viterbi, 3), std::runtime_error);
+    EngineConfig matched;
+    matched.sample_rate = 48000;
+    matched.decoder.front_end = kz4ap::FrontEnd::Matched;
+    matched.oracle_frequencies_hz = {1203.0};
+    kz4ap::EventBus other_bus;
+    kz4ap::Engine other(matched, other_bus);
+    other.finish();
+    EXPECT_THROW(kz4ap::bench::collect_stats_file(other, "x.wav", config.viterbi, 1), std::runtime_error);
 }
 
 TEST(ViterbiJsonStats, AReaderRefusesWhatItCannotRead) {

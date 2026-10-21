@@ -87,6 +87,13 @@ EngineStats Engine::stats() const {
 
 double Engine::channel_rate() const { return channelizer_.output_rate(); }
 
+const viterbi::SearchStats* Engine::viterbi_stats(std::uint32_t track_id) const {
+    const auto it = channels_.find(track_id);
+    if (it == channels_.end()) return nullptr;
+    const auto* decoder = dynamic_cast<const ViterbiDecoder*>(it->second.decoder.get());
+    return decoder ? &decoder->stats() : nullptr;
+}
+
 void Engine::process(std::span<const Sample> samples) {
     // Work in whole hops so the spectrum analyzer and channelizer stay in lockstep,
     // whatever size the caller's chunks are.

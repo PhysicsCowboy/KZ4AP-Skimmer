@@ -79,7 +79,7 @@ result file (section 1.2).
 | `ceiling` | 1 700 | stories | placeholder; open: the owner's decision |
 | `fading_spread_hz` | 1.0 | Hz | placeholder, swept by the plan: the Doppler spread f_D of the fading, twice the standard deviation of a Gaussian Doppler spectrum |
 | `block_loss_db` | 0.5 | dB of signal energy | heuristic: the largest loss of a coherent block; with `fading_spread_hz` it gives the block, B = 195 pieces = 390 ms (derived) |
-| `keying_rise_s` | 0.005 | s | placeholder, heuristic: the raised-cosine rise at a mark's start, the generator's edge |
+| `keying_rise_s` | 0.005 | s | placeholder, heuristic: the raised-cosine rise at a mark's start, the generator's edge (S2's edges are 10 ms: section 1.4) |
 | `over_rate_per_s` | 0.05 | 1/s | placeholder (the development set's own rate): P = 1.0 × 10⁻⁴ per piece of silence that an over starts |
 | `rescue_epsilon` | 1.0 × 10⁻³ | probability per letter start | placeholder (the development set's own count) |
 | `word_end_p` | 1/3.06 = 0.3268 | probability | measured (VE3NEA's mean word length in CW Skimmer's decodes); a placeholder until recounted on real traffic |
@@ -107,7 +107,7 @@ The search also pays priors that are not configuration: a speed 1/32 (3.466 nats
 ### 1.2 The bench command line
 
     kz4ap-bench RECORDING.wav --labels LABELS.json --json RESULT.json --oracle --decoder viterbi
-                [--set NAME=VALUE ...] [--genie fist|frequency|fading ...]
+                [--set NAME=VALUE ...] [--genie fist|frequency|fading ...] [--stats STATS.json]
 
 - `--oracle` opens the oracle channels from the labels (`--labels` is then required). `--decoder viterbi`
   selects the new decoder (`--front-end` is the option's old name).
@@ -128,13 +128,29 @@ The search also pays priors that are not configuration: a speed 1/32 (3.466 nats
     checked against it by `training/tests/test_keying.py`), and the label's `imbalance_dits` as the shifts, + for the
     marks and − for the gaps. A style with an exact kind (σ = 0: "machine") cannot be given to the fist, which needs
     σ > 0, and the decoder cannot resolve a length better than a piece: every σ is at least one piece over the kind's
-    median length, `piece_s` / (median × dot) (heuristic: an exact sender's timing known to one piece, 2 ms; it binds
-    for the machine style and, at a fast speed, for the small σ of the others). The Farnsworth factor is not given,
-    only searched.
-  - A label with no single truth to give is refused, by its number in the labels file: a QSO label of several stations
-    (each has its own carrier and fist; the per-station labels of a QSO have one) for `frequency` and `fist`, and a
-    signal that changes speed (`wpm_end`) for `fist`.
-- `--set` and `--genie` belong to `--decoder viterbi`; `--genie` without `--oracle` is an error.
+    median length, `piece_s` / (median × dot): an exact sender's timing taken as known to one piece, 2 ms. It binds
+    for the machine style and, at a fast speed, for the small σ of the others. The Farnsworth factor is not given,
+    only searched. **Class of the floor: heuristic** (neither derived nor measured); R8 on the machine style, and on
+    the other styles at fast speeds, depends on it.
+  - **Limitation of the genie, accepted for now:** a label with no single truth to give is refused, by its number in
+    the labels file: a QSO label of several stations (each has its own carrier and fist; the per-station labels of a
+    QSO have one) for `frequency` and `fist`, and a signal that changes speed (`wpm_end`) for `fist`. `ViterbiGenie`
+    holds one frequency and one drift, so the tracker's measurement run on the QSOs on one track (G2) cannot yet
+    compare the tracker with the true frequency there: that run needs a piecewise genie, a frequency for each over,
+    and is decided when the run comes.
+- `--stats FILE` (with `--oracle`) turns the search's statistics on (`stats` in the configuration, recorded as true)
+  and writes them when the run ends, for each oracle channel in the order of the labels: the pieces searched, the
+  live stories (a histogram and per 0.1 s), how often the ceiling decided, and what became of each newborn line, as
+  JSON; the file's format, version 1, with its units and codes, is documented in `bench/src/viterbi_json.hpp` and
+  tested by a round trip. The suite runner's `--stats` hands it `results/NAME/<test case>.stats.json` for every test
+  case it runs, so a run with `--stats` leaves out the recordings that are not oracle ones (`--only`). Writing the
+  file comes after the timed window and does not count in the run's CPU time; the search's own bookkeeping is inside
+  the window (R0 measures what it costs). The search keeps up to two newborn lines per piece, 1 000 per second of
+  channel time, and the file holds them all, about 45 bytes each: up to about 45 kB per channel-second, so about
+  400 MB for an N2 recording of 25 channels x 360 s (derived from the format; a scratch run of two stations over 16 s
+  gave 1.45 MB, 45 kB per channel-second, and two runs wrote identical files).
+- `--set`, `--genie` and `--stats` belong to `--decoder viterbi`; `--genie` and `--stats` without `--oracle` are
+  errors.
 - The result file (`--json`) of a viterbi run gains `config` (every field of `ViterbiConfig` as the run used it, so
   the run can be repeated from the file), `settings` (the `--set` arguments as given) and, with `--genie`, `genie` (the
   kinds and each channel's values). Its other members are those of the other decoders' result files. The decoder
@@ -175,6 +191,12 @@ The search also pays priors that are not configuration: a speed 1/32 (3.466 nats
   The scored signals' S₅₀₀ lies between −10.98 and +21.33 dB S₅₀₀ (the three signals above +20 dB S₅₀₀ are H2
   stations, whose labels shift each station's S₅₀₀ by up to ±6 dB from the QSO's); E2's unscored neighbors reach
   higher (to +26 dB S₅₀₀ by the design: `docs/signal-processing.md`, A.8d; not counted here).
+
+  **A condition on S2: its keying edges are 10 ms, and `keying_rise_s` is 5 ms by default.** S2's envelope is
+  exactly A2's in a time base 2 times slower, edges included. The decoder's matched filter to a mark's rise takes the
+  edge from `keying_rise_s`, in seconds and not in dots (the design takes the edge as a property of the transmitter,
+  not of the sending speed), so at the default it assumes an edge half as long as S2's. A run on S2 that is to be a pure time-base test against A2 sets
+  `--set keying_rise_s=0.010`; a run at the default measures the decoder with an edge it does not expect.
 - **N2, the noise-only group:** 4 recordings at 48 kHz (DEV2's rate, noise σ = 0.02 FS per complex sample) of 25
   channels × 360 s, 36 000 channel-seconds. Each channel is opened at the frequency of a labeled station at S₅₀₀ −60 dB
   (its key-down power is 10⁻⁶ of the noise power in 500 Hz), which only opens the oracle channel, so every character

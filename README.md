@@ -100,14 +100,18 @@ the suites write to `results/bank`; `--decoder viterbi` selects the new decoder
 its best story's text when the recording ends. Its settings are `--set
 NAME=VALUE` (repeatable; NAME is a field of `ViterbiConfig` in
 `engine/include/kz4ap/viterbi/config.hpp`, the value in the field's own
-physical unit, and the result file's `config` block records every field), and
-for genie runs on oracle channels `--genie fist|frequency|fading` (repeatable;
-it needs `--oracle` and takes the true timing, carrier or fading spread from
-the labels). For example, the wide-beam reference of the first prototype's
-plan: `kz4ap-bench band.wav --labels band.json --oracle --decoder viterbi --set
-beam_nats=80 --set ceiling=17000`. The bench writes each track's final text
-(`text`, corrections applied) and its immediate text (`text_immediate`, the
-characters as first published) and scores both (`cer`, `cer_immediate`).
+physical unit, and the result file's `config` block records every field), for
+genie runs on oracle channels `--genie fist|frequency|fading` (repeatable; it
+needs `--oracle` and takes the true timing, carrier or fading spread from the
+labels), and `--stats FILE` (with `--oracle`), which writes the search's
+statistics for each channel as JSON (live stories, how often the ceiling
+decided, what became of each newborn; the format is documented in
+`bench/src/viterbi_json.hpp`). For example, the wide-beam reference of the
+first prototype's plan: `kz4ap-bench band.wav --labels band.json --oracle
+--decoder viterbi --set beam_nats=80 --set ceiling=17000`. The bench writes
+each track's final text (`text`, corrections applied) and its immediate text
+(`text_immediate`, the characters as first published) and scores both (`cer`,
+`cer_immediate`).
 
 ## Known limitations
 

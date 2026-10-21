@@ -1,6 +1,6 @@
 // The new decoder (viterbi) in the bench: its configuration as JSON and as `--set NAME=VALUE`, the genie values read
-// from the labels (`--genie`), the rules among those options, and the statistics file. Bench only: the engine library
-// does not link nlohmann/json.
+// from the labels (`--genie`), the rules among those options, and the statistics file (`--stats FILE`). Bench only:
+// the engine library does not link nlohmann/json.
 //
 // THE CONFIGURATION. to_json(ViterbiConfig) writes every field by its C++ name (engine/include/kz4ap/viterbi/
 // config.hpp) in declaration order, each in its own physical unit: the field's comment says which, and most names end
@@ -32,20 +32,24 @@
 //              length = shift + median x exp(sigma N).
 //              The fist needs sigma > 0, and the style "machine" is exact (sigma 0); the decoder cannot resolve a
 //              length better than a piece anyway. So each sigma is at least one piece over the kind's median length,
-//              piece_s / (median_dots x dot), in ln(length) (a heuristic: an exact sender's timing known to one
-//              piece, 2 ms at the default; it also raises the small sigmas of the other styles at fast speeds). The
-//              Farnsworth factor is not given.
+//              piece_s / (median_dots x dot), in ln(length). CLASS: heuristic (an exact sender's timing known to one
+//              piece, 2 ms at the default; neither derived nor measured). It also raises the small sigmas of the
+//              other styles at fast speeds (the "computer" style at 100 WPM, for one). The Farnsworth factor is not
+//              given.
 // A label that has no single truth to give is refused, naming its number in the labels file: a QSO label of several
 // stations for frequency and for fist (each station has its own carrier and fist; the per-station labels of a QSO have
-// one), and a signal that changes speed (wpm_end) for fist (one dot cannot give both speeds).
+// one), and a signal that changes speed (wpm_end) for fist (one dot cannot give both speeds). LIMITATION, accepted for
+// now: the tracker's measurement run on the QSOs on one track needs a piecewise genie (a frequency for each over)
+// before it can compare with the true frequency there; ViterbiGenie holds one frequency and one drift.
 //
-// THE STATISTICS FILE, format version 1: the decoder's SearchStats (engine/include/kz4ap/viterbi/search.hpp) for every
-// channel of a run, with the newborn lines (NewbornLine), which the search keeps when ViterbiConfig::stats is true.
-// (This header and its tests fix the format and write and read it; kz4ap-bench does not write the file yet, because
-// the engine gives it no access to a channel's decoder.) One JSON object, ASCII, written by write_stats_file with one
-// line for each top-level key and for each channel, and read by read_stats_file; the Python analysis reads it with
-// json.load. The numbers are exact: a double is written with the digits that read back to the same double and a
-// float as the double it equals, so read_stats_file returns the SearchStats that was written.
+// THE STATISTICS FILE (--stats FILE), format version 1: the decoder's SearchStats (engine/include/kz4ap/viterbi/
+// search.hpp) for every channel of a run, with the newborn lines (NewbornLine), which the search keeps when
+// ViterbiConfig::stats is true (kz4ap-bench sets it for a run that writes the file). A run writes it at its end, from
+// Engine::viterbi_stats, for its oracle channels (a channel of the detector path is gone once its track dies, so
+// --stats needs --oracle). One JSON object, ASCII, written by write_stats_file with one line for each top-level key and
+// for each channel, and read by read_stats_file; the Python analysis reads it with json.load. The numbers are exact: a
+// double is written with the digits that read back to the same double and a float as the double it equals, so
+// read_stats_file returns the SearchStats that was written.
 //
 //   "format"       "kz4ap-viterbi-search-stats"
 //   "version"      1. A reader refuses another version. A version changes when a key's meaning changes or a key is
@@ -148,10 +152,13 @@ nlohmann::ordered_json to_json(const viterbi::ViterbiGenie& genie);
 struct ViterbiOptions {
     std::vector<std::string> settings;  // each --set, as given ("NAME=VALUE")
     std::vector<GenieKind> genie;       // --genie, each kind once, in the order first given
+    bool stats = false;                 // --stats was given
 };
 
-// The rules between the bench's options: --set and --genie belong to --decoder viterbi, and --genie takes its values
-// from the labels of the oracle channels, so it needs --oracle. Throws std::invalid_argument, naming the options.
+// The rules between the bench's options: --set, --genie and --stats belong to --decoder viterbi; --genie takes its
+// values from the labels of the oracle channels, and --stats reads the statistics of the oracle channels at the end of
+// the run (a channel of the detector path is gone once its track dies), so both need --oracle. Throws
+// std::invalid_argument, naming the options.
 void check_viterbi_options(bool decoder_is_viterbi, bool oracle, const ViterbiOptions& options);
 
 // ---- The statistics file ----
@@ -173,6 +180,14 @@ struct StatsFile {
     viterbi::ViterbiConfig config;
     std::vector<ChannelStats> channels;
 };
+
+// The statistics file of a finished run on `channels` oracle channels: oracle channel i has the track id i + 1 and the
+// label i (EngineConfig::oracle_frequencies_hz), and its statistics are Engine::viterbi_stats(i + 1), copied.
+// `recording` is the recording's file name and `config` the configuration the run used. Throws std::runtime_error,
+// naming the track, for a channel that has no statistics (the engine has no such channel, or its decoder is not the
+// new decoder).
+StatsFile collect_stats_file(const Engine& engine, const std::string& recording, const viterbi::ViterbiConfig& config,
+                             std::size_t channels);
 
 // A channel's object / the whole file's object (see above). to_json(StatsFile) is the whole object in memory;
 // write_stats_file writes the same object channel by channel. Both throw std::invalid_argument, naming the member,
