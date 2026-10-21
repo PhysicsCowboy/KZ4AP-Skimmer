@@ -5,8 +5,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <limits>
 #include <numbers>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 
@@ -23,6 +25,22 @@ bool positive_and_finite(double x) { return x > 0.0 && std::isfinite(x); }
 
 void require(bool ok, const char* message) {
     if (!ok) throw std::invalid_argument(message);
+}
+
+// The channel samples in a piece of piece_s seconds at rate_hz samples/s, which must be a whole number (within 1e-9 of
+// one): 2 ms is 3 samples at 1 500 samples/s, but 2.756 at 1 378.125 samples/s (44.1 and 88.2 kHz), refused with the
+// numbers. `who` names the caller in the message.
+int whole_samples_per_piece(double piece_s, double rate_hz, const char* who) {
+    const double per_piece = piece_s * rate_hz;
+    const double whole = std::round(per_piece);
+    if (positive_and_finite(per_piece) && whole >= 1.0 && whole <= std::numeric_limits<int>::max() &&
+        std::fabs(per_piece - whole) <= 1e-9 * per_piece)
+        return static_cast<int>(whole);
+    std::ostringstream message;
+    message << std::setprecision(10) << who << ": a piece of " << piece_s << " s is " << per_piece
+            << " channel samples at " << rate_hz << " samples/s; piece_s x the channel rate must be a whole number of "
+            << "samples (the default 2 ms piece is not one at 44.1 or 88.2 kHz)";
+    throw std::invalid_argument(message.str());
 }
 
 }  // namespace
@@ -54,14 +72,11 @@ std::shared_ptr<const ViterbiShared> make_viterbi_shared(std::span<const viterbi
                 "make_viterbi_shared: the configurations must agree on piece_s, keying_rise_s and the level range");
     const std::vector<double> taps = channel_filter_taps(channel);  // checks the channelizer's configuration
     const int decimation = channel.fft_size / channel.channel_bins;
-    auto shared = std::make_shared<ViterbiShared>();
-    shared->channel_rate_hz = static_cast<double>(channel.sample_rate) / decimation;
-    // Ruling 9: the piece is a time, converted here to channel samples, which must be a whole number.
-    const double per_piece = first.piece_s * shared->channel_rate_hz;
-    require(positive_and_finite(per_piece) && std::round(per_piece) >= 1.0 &&
-                std::fabs(per_piece - std::round(per_piece)) <= 1e-9 * per_piece,
-            "make_viterbi_shared: piece_s must be a whole number of channel samples (s)");
-    shared->samples_per_piece = static_cast<int>(std::round(per_piece));
+    std::shared_ptr<ViterbiShared> shared(new ViterbiShared());  // its constructor is private: this is its only maker
+    shared->channel_rate_hz_ = static_cast<double>(channel.sample_rate) / decimation;
+    // The piece is a time, converted here to channel samples, which must be a whole number of them.
+    shared->samples_per_piece_ =
+        whole_samples_per_piece(first.piece_s, shared->channel_rate_hz_, "make_viterbi_shared");
     int first_block = 1;  // pieces: the longest first block, the flat prior's span
     int longest = 1;      // pieces: the longest block, c's span
     for (const viterbi::ViterbiConfig& config : configs) {
@@ -69,18 +84,20 @@ std::shared_ptr<const ViterbiShared> make_viterbi_shared(std::span<const viterbi
         first_block = std::max(first_block, first_pieces);
         longest = std::max(longest, viterbi_block_pieces(config).value_or(first_pieces));
     }
-    const auto samples = static_cast<std::int64_t>(shared->samples_per_piece) * longest;
+    const auto samples = static_cast<std::int64_t>(shared->samples_per_piece_) * longest;
     require(samples < std::numeric_limits<int>::max(),
             "make_viterbi_shared: the longest block must stay below 2^31 channel samples");
-    shared->c = viterbi::sum_noise_hz(taps, channel.sample_rate, decimation, static_cast<int>(samples));
-    shared->rise = viterbi::rise_fractions(taps, channel.sample_rate, decimation, shared->samples_per_piece,
-                                           first.keying_rise_s);
-    shared->flat_prior = std::make_shared<const viterbi::FlatPrior>(first, shared->c, first_block,
-                                                                    shared->samples_per_piece, shared->rise);
-    shared->piece_s = first.piece_s;
-    shared->keying_rise_s = first.keying_rise_s;
-    shared->level_min_db = first.level_min_db;
-    shared->level_max_db = first.level_max_db;
+    shared->c_ = viterbi::sum_noise_hz(taps, channel.sample_rate, decimation, static_cast<int>(samples));
+    // The rise from the channelizer's own taps, and the flat prior built with it: the matched filter to the rise that
+    // every newborn's first block is scored with (the decoder cannot be given a prior without it).
+    shared->rise_ = viterbi::rise_fractions(taps, channel.sample_rate, decimation, shared->samples_per_piece_,
+                                            first.keying_rise_s);
+    shared->flat_prior_ = std::make_shared<const viterbi::FlatPrior>(first, shared->c_, first_block,
+                                                                     shared->samples_per_piece_, shared->rise_);
+    shared->piece_s_ = first.piece_s;
+    shared->keying_rise_s_ = first.keying_rise_s;
+    shared->level_min_db_ = first.level_min_db;
+    shared->level_max_db_ = first.level_max_db;
     return shared;
 }
 
@@ -91,17 +108,19 @@ namespace {
 std::shared_ptr<const ViterbiShared> checked(double rate_hz, const viterbi::ViterbiConfig& config,
                                              std::shared_ptr<const ViterbiShared> shared) {
     require(positive_and_finite(rate_hz), "ViterbiDecoder: rate_hz must be positive and finite (samples/s)");
-    require(shared && shared->flat_prior, "ViterbiDecoder: no shared parts");
-    require(std::fabs(shared->channel_rate_hz - rate_hz) <= 1e-9 * rate_hz,
+    (void)whole_samples_per_piece(config.piece_s, rate_hz, "ViterbiDecoder");
+    require(shared && shared->flat_prior(), "ViterbiDecoder: no shared parts");
+    require(std::fabs(shared->channel_rate_hz() - rate_hz) <= 1e-9 * rate_hz,
             "ViterbiDecoder: the shared parts were built for another channel rate");
-    require(shared->piece_s == config.piece_s && shared->keying_rise_s == config.keying_rise_s &&
-                shared->level_min_db == config.level_min_db && shared->level_max_db == config.level_max_db,
+    require(shared->piece_s() == config.piece_s && shared->keying_rise_s() == config.keying_rise_s &&
+                shared->level_min_db() == config.level_min_db && shared->level_max_db() == config.level_max_db,
             "ViterbiDecoder: the shared parts were built for another piece_s, keying_rise_s or level range");
     const int first_block = viterbi_first_block_pieces(config);
-    require(shared->flat_prior->max_pieces() >= first_block,
+    require(shared->flat_prior()->max_pieces() >= first_block,
             "ViterbiDecoder: the shared flat prior is shorter than this configuration's first block");
-    const int longest = viterbi_block_pieces(config).value_or(shared->flat_prior->max_pieces());
-    require(shared->c.size() > static_cast<std::size_t>(shared->samples_per_piece) * static_cast<std::size_t>(longest),
+    const int longest = viterbi_block_pieces(config).value_or(shared->flat_prior()->max_pieces());
+    require(shared->c().size() >
+                static_cast<std::size_t>(shared->samples_per_piece()) * static_cast<std::size_t>(longest),
             "ViterbiDecoder: the shared c is shorter than this configuration's blocks");
     if (config.genie_frequency_offset_hz)
         require(std::isfinite(*config.genie_frequency_offset_hz) &&
@@ -117,13 +136,13 @@ ViterbiDecoder::ViterbiDecoder(double rate_hz, const viterbi::ViterbiConfig& con
     : rate_(rate_hz),
       config_(config),
       shared_(checked(rate_hz, config, std::move(shared))),
-      search_(config, shared_->c, shared_->flat_prior),
+      search_(config, shared_->c(), shared_->flat_prior()),
       anchor_hz_(residual_hz) {
     require(std::isfinite(residual_hz), "ViterbiDecoder: residual_hz must be finite (Hz)");
     // The tracker's configuration is checked now; the tracker itself starts at the first block's anchor.
     (void)viterbi::CarrierTracker(rate_hz, config, residual_hz);
-    // The tables read lazily: the evidence's (the broad-prior regime's, 31 ms, and the truncated nodes') and the
-    // fist's ln Phi_c (1.8 ms), each built once for every caller.
+    // Builds now the tables that would otherwise be built on first use: the evidence's (the broad-prior regime's,
+    // 31 ms, and the truncated nodes') and the fist's ln Phi_c (1.8 ms), each built once for every caller.
     viterbi::build_evidence_tables(config.quadrature_order);
     (void)viterbi::Fist(config).log_survival(viterbi::Kind::Dot, 0, 0, 1);
 }
@@ -143,10 +162,11 @@ DecodeUpdate ViterbiDecoder::process(std::span<const Sample> samples, double t0_
     const bool genie = config_.genie_frequency_offset_hz.has_value();
     const double genie_hz = config_.genie_frequency_offset_hz.value_or(0.0);
     const double genie_drift = config_.genie_frequency_drift_hz_per_s;
-    const auto per_piece = static_cast<std::uint64_t>(shared_->samples_per_piece);
+    const int samples_per_piece = shared_->samples_per_piece();
+    const auto per_piece = static_cast<std::uint64_t>(samples_per_piece);
     for (const Sample& y : samples) {
-        // Sample n's time, one expression from the origin; the tracker first (Ruling 8), so that the oscillator's offset
-        // includes every window its samples complete, then the offset at that time.
+        // Sample n's time, one expression from the origin; the tracker takes the sample first, so that the oscillator's
+        // offset includes every window the sample completes, then the offset at that time is read.
         const double t = origin_s_ + static_cast<double>(samples_) / rate_;
         tracker_->push(std::span<const Sample>(&y, 1), t, n0_);
         offset_hz_ = genie ? genie_hz + genie_drift * t : tracker_->offset_hz(t);
@@ -156,7 +176,7 @@ DecodeUpdate ViterbiDecoder::process(std::span<const Sample> samples, double t0_
         phase_cycles_ += offset_hz_ / rate_;
         phase_cycles_ -= std::floor(phase_cycles_);
         ++samples_;
-        if (++held_ < shared_->samples_per_piece) continue;
+        if (++held_ < samples_per_piece) continue;
         // Piece k ends with its last sample: t_first + samples_per_piece x (k + 1) / r.
         ++pieces_;
         const double t_piece = origin_s_ + static_cast<double>(per_piece * pieces_) / rate_;
@@ -179,7 +199,7 @@ DecodeUpdate ViterbiDecoder::flush() {
 }
 
 void ViterbiDecoder::reset() {
-    search_ = viterbi::Search(config_, shared_->c, shared_->flat_prior);
+    search_ = viterbi::Search(config_, shared_->c(), shared_->flat_prior());
     tracker_.reset();
     started_ = false;
     flushed_ = false;

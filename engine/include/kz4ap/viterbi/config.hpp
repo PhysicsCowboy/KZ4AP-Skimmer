@@ -143,9 +143,9 @@ struct ViterbiConfig {
     bool stats = false;
 };
 
-// One oracle channel's genie values (genie runs only; EngineConfig::viterbi_genie, the controller's Ruling 7): the truth
-// its decoder is given in place of what it would estimate. Each part is used only where it is set; with_genie puts them
-// into the channel's configuration.
+// One oracle channel's genie values (genie runs only; EngineConfig::viterbi_genie, one per oracle channel, since each
+// channel's station has its own): the truth its decoder is given in place of what it would estimate. Each part is used
+// only where it is set; with_genie puts them into the channel's configuration.
 struct ViterbiGenie {
     // The carrier: frequency_hz, Hz from the span's center (the frame of EngineConfig::oracle_frequencies_hz), at stream
     // time frequency_time_s, s, and its drift rate, Hz/s, so that it is at frequency_hz + drift_hz_per_s x

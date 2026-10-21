@@ -10,8 +10,9 @@ carry the idea, and the values that matter. Every other chain gets a short
 summary that points to its appendix section. Every value carries its unit
 and its class: **derived** (it follows from the mathematics), **measured**
 (set by an experiment), **heuristic** (a judgment call, not measured),
-**placeholder** (kept until an experiment settles it) or **owner** (the
-owner's decision).
+**placeholder** (kept until an experiment settles it), **owner** (the
+owner's decision) or **sourced** (taken from a published specification or
+reference, named where it is used).
 
 The **appendix** (section A) is the reference. For each section it gives the
 exact form of every rule as the code implements it (update orders,
@@ -386,10 +387,12 @@ weighting, gap timebase) to its own marks and spaces, helped by a coarse
 speed from the rhythm of branch 1's keying. A selector publishes the text
 of a branch whose fitted dit matches its own filter and whose fit explains
 its intervals best, and corrects published text up to 20 s back (owner).
-The bank costs about 42 ms of CPU per channel-second against 0.6 ms for
-Matched (measured, Linux test machine). Exact form: appendix A.8c, "Block
-cadence and order" and the sections "Keying time constants" to "The bank
-decoder behind the engine".
+The bank costs 28.85 ms of CPU per channel-second at its defaults on the
+development set (measured on the Linux machine: the development-set results
+record, section 6, run `d5-bank`), against about 0.6 ms for Matched in
+another run (milestone 2c bank results record, section 4.6). Exact form:
+appendix A.8c, "Block cadence and order" and the sections "Keying time
+constants" to "The bank decoder behind the engine".
 
 Appendix: A.8c.
 
@@ -437,8 +440,8 @@ data, not counted (derived: the bank's rule for exact zeros).
 uses none of their decisions: on/off keying leaves a steady line at the
 carrier, 0.44² of the key-down power for PARIS text (derived). Every 0.5 s
 the last 1 s of samples (placeholders), shifted by the oscillator itself and
-Hann-windowed, is zero-padded to 8 192 points: bins 0.183 Hz apart, which
-interpolate; the 1 s window resolves about 1 Hz. The largest bin within
+Hann-windowed, is zero-padded to 8 192 points (heuristic): bins 0.183 Hz
+apart, which interpolate; the 1 s window resolves about 1 Hz. The largest bin within
 ±15 Hz (placeholder) is measured only if it stands 9 dB above the mean
 noise power per bin, N₀ × 1.5 Hz (derived from the perfect decoder's
 threshold at 5.2 WPM; noise alone passes in 1.48% of windows, measured). A
@@ -448,14 +451,17 @@ gives the offset at the window's center, of variance 0.2833 Hz² / ρ, ρ the li
 (drift noise 1.5 × 10⁻⁴ Hz²/s³, from older rigs' warm-up drift of
 0.3 Hz/s; sourced). The track is trusted while three standard deviations of
 its offset stay within 0.67 Hz, the residual that costs a 390 ms block
-1 dB of signal power (derived); untrusted, the oscillator holds its
+1 dB of signal power (derived; a constant, so it does not yet follow a
+longer block, A.8d); untrusted, the oscillator holds its
 frequency, and two consecutive measurements that agree within three
 standard deviations restart the filter. The oscillator is phase-continuous
 and starts at the engine's anchor (oracle mode: the label's frequency). A
 genie variant re-centers on the true frequency and drift.
 
 **Pieces and evidence.** A piece is the sum of 3 consecutive re-centered
-samples, 2.000 ms (derived from r). A mark's evidence comes in *blocks*,
+samples, 2.000 ms (derived from r; it must be a whole number of samples, so
+the decoder does not run at 44.1 or 88.2 kHz). A mark's evidence comes in
+*blocks*,
 coherent sums S of its pieces, at most B = 195 pieces (390 ms): the longest
 that keeps the energy of a carrier fading with a Gaussian Doppler spectrum
 of spread f_D = 1 Hz within 0.5 dB of signal energy (derived from f_D, a
@@ -480,8 +486,9 @@ evidence stays; a gap piece adds 0.
 
 **The level.** Each story carries a Gaussian N(μ, P) for the key-down
 amplitude a (FS), and scores a block by integrating Λ over it
-(Gauss–Hermite quadrature of order 5 at the integrand's mode, or exact
-tables where the prior is broad; within 0.0022 nats where measured).
+(Gauss–Hermite quadrature of order 5, the owner's choice, at the
+integrand's mode; or exact tables where the prior is broad; within
+0.0022 nats where measured).
 Predicted to time t, μ stays and P(t) = ρ²P + (sμ)²(1 − ρ²), with
 ρ = exp(−π² f_D² Δt²/2) the fading's correlation over the time since the
 last update and s = 0.523 the spread of a Rayleigh amplitude over its mean
@@ -499,7 +506,8 @@ element at τ pieces has paid ln S(τ), the log of surviving that long, and
 one ending there ln P(τ) (the hazard form; standard). A newborn's speed,
 and a story's factor until its first letter or word gap, stay open: the
 story keeps the best over them, and each branch pays ln(1/32) = −3.466 or
-ln(1/23) = −3.135 nats where it is taken. A mark ends as a dot or a dash
+ln(1/23) = −3.135 nats where it is taken (owner: flat priors). A mark ends
+as a dot or a dash
 where the Morse tree (the engine's 62 symbols) continues. Every symbol is
 equally likely: a letter costs ln 62 = 4.127 nats at its start (owner: no
 text model yet). After a symbol the gap is between letters (0.396 nats),
@@ -529,10 +537,15 @@ every channel.
 **Open.** Two decisions are the owner's: the ceiling (a speed step at
 +10 dB S₅₀₀ fails on one seed because the ceiling drops the rescue
 newborns) and the tracker's next steps (a station at 0 dB S₅₀₀ loses the
-track to a +20 dB S₅₀₀ neighbor 50 Hz away in 57% of runs). Above about
-+37 dB S₅₀₀ the decoder fails (measured): the fall at a mark's end is not
-modeled, and a new over of one piece claims its energy. An over of one
-word can read as one longer symbol: "TEST" alone decodes as "-" (A.8d).
+track to a +20 dB S₅₀₀ neighbor 50 Hz away in 57% of runs). Strong
+stations: the fall at a mark's end is not modeled, so its energy is left
+unexplained, and a new over of one piece can claim it (derived). In scratch
+runs, not in a test, where every keying edge of a run sat at one position
+within its piece, the text was exact at all 16 positions tried up to
++36 dB S₅₀₀ and wrong at 2 of them at +38 dB S₅₀₀ (measured); a real
+station's edges fall at mixed positions, so from about +37 dB S₅₀₀ some of
+its elements would be misread (conjectured). An over of one word can read
+as one longer symbol: "TEST" alone decoded as "-" in scratch runs (A.8d).
 
 Appendix: A.8d.
 
@@ -547,7 +560,7 @@ Appendix: A.8d.
 | Matched | 0.32 s warm-up per channel; filter delay 19 ms at 25 WPM |
 | Envelope, Matched | a character appears once a gap of more than 2 dits follows it |
 | Bank | a character appears when the space after it is classified (at the next key-down), at a new over, or at the stream's end; corrections reach up to 20 s back |
-| New decoder | the whole text when the channel ends (first prototype); nothing searched in the channel's first block (21.33 ms, before the first spectrum frame); the tracker holds the anchor until two windows agree (about 1.5 s) |
+| New decoder | the whole text when the channel ends (first prototype); a channel opened at the stream's start (oracle mode) searches nothing in its first block (21.33 ms, before the first spectrum frame); the tracker holds the anchor until two windows agree (from 1.5 s after the channel opens) |
 | Track removal | about 6–7 s for the average to decay (S₅₀₀ = 20 dB), plus the 10 s timeout |
 
 Appendix: A.6, A.8d, A.9 and A.10.
@@ -2171,8 +2184,16 @@ per-character probability (1) are placeholders.
 
 **Cost.** Memory is about 8.3–13.6 MB per channel (derived from the
 allocated arrays; chiefly the 21.1 s window of |v_k|² and the fits). CPU
-is about 42 ms per channel-second at the defaults on the Linux test
-machine, against about 0.6 ms for Matched.
+is 28.85 ms per channel-second at the defaults (measured: run `d5-bank` on
+the development set, the replay tool with 10 threads on the Linux machine;
+development-set results record, section 6), against about 0.6 ms for
+Matched (0.61 ms of process CPU through the engine on 26 check runs;
+milestone 2c bank results record, section 4.6). The figure of about 42 ms
+cited before (41.98 ms, run `bank-b4g`, Plan B results record, section 13)
+was measured on the old development set, with the 2 s periodicity window
+that task D5 later dropped; on the current set that configuration takes
+30.35 ms (development-set results record, section 6), so the material
+accounts for most of the difference.
 
 
 Code: the branch filters and the envelope likelihood
@@ -3293,6 +3314,14 @@ t_n = t_first + n / r, one expression, and is taken alone, in order:
 4. added to the current piece; at every third sample piece k is complete at t_k = t_first + 3(k + 1) / r (the end of its
    last sample) and goes to `Search::step(piece, t_k, N₀)` if N₀ > 0; with N₀ = 0 it is skipped, its time still counted.
 
+So if N₀ falls to 0 and returns mid-stream, the search sees the stream spliced: every story goes on from where it stood,
+the length τ of its element frozen across the skipped pieces and its level predicted across the elapsed time (tested,
+`ViterbiDecoder.ANoiseDensityOfZeroMidStreamSplicesTheStream`: 1 s of N₀ = 0 in the silence between two words of
+"PARIS" leaves the text exact). The engine holds N₀ through frames of exact zeros (the hiss estimator, below), so after
+its first counted frame it gives N₀ = 0 only if at least a quarter of a channel's neighborhood reads exact zeros in
+counted frames long enough for those bins' averages to underflow to 0, about 12 minutes from −130 dBFS per bin
+(derived); a direct caller can give it at any time.
+
 A sample is re-centered with exactly the tracker windows that its own and earlier samples complete, so the output
 does not depend on how the stream is split into blocks, to the bit (tested: blocks of 1, 7, 32 and 1 000 samples). A
 block must start within half a sample of where the previous one ended. The tracker starts at the first block, at the
@@ -3454,8 +3483,9 @@ the mean estimate within 0.25% of σ²/fs at every second from 1 to 6 s, at 48 a
   changing by about its own spread over ten minutes (the ten minutes heuristic).
 
 **Provenance.** Window 1.0 s, hop 0.5 s, search ±15 Hz: placeholders (the plan, D6). 8 192 points: heuristic. The 9 dB
-gate: derived (owner's decision B, 2026-10-20). c = 0.2833 Hz²: measured (the least-squares fit of ln(variance) = ln c −
-ln ρ to the first tracker's scatter of a keyed carrier at −5 to +20 dB S₅₀₀). The floor, 0.08 mHz: measured (the same
+gate re the mean noise power per bin: derived (owner's decision B, 2026-10-20). c = 0.2833 Hz²: measured (the
+least-squares fit of ln(variance) = ln c − ln ρ to the first tracker's scatter of a keyed carrier at −5 to
++20 dB S₅₀₀). The floor, 0.08 mHz: measured (the same
 estimator on clean tones). The start's 5 Hz: placeholder. 0.3 Hz/s: sourced. 3σ: the standard choice (heuristic). Over
 1 000 seeds of each test (`tracker_test.cpp`): a keyed carrier at 0 dB S₅₀₀ held within 0.67 Hz from 3 s on in 94.8%,
 a 0.3 Hz/s drift followed in 99.6%, noise alone left alone in 99.5%, a turnover relocked in 99.9% (measured).
@@ -3478,6 +3508,12 @@ a 0.3 Hz/s drift followed in 99.6%, noise alone left alone in 99.5%, a turnover 
 - A drift faster than about 1 Hz/s is not acquired (99.5%, 98.5% and 77.5% of runs within 0.67 Hz at 0.5, 0.7 and
   1.0 Hz/s; none from 1.5 Hz/s): the development set's tuning group, to 2.7 Hz/s, lies beyond the physical range and is
   not tuned for (owner, 2026-10-20).
+- **The trust tolerance is a constant, 0.67 Hz,** derived for the default 390 ms block (Δf·T ≤ 0.26): the tracker reads
+  neither `fading_spread_hz` nor `genie_fading_spread_hz`, so the tolerance does not follow a longer block (0.26/T_B).
+  At a spread of 0.3 Hz (blocks of 1.30 s) a residual at that limit keeps sinc²(0.67 Hz × 1.30 s) = 0.020 of a block's
+  power (−16.9 dB relative to the block's power); a tolerance of 0.20 Hz would hold the loss there to 1 dB of signal
+  power (derived). This bears on the plan's runs at that spread (R6's 0.3 Hz cells and the genie's fading runs, R10);
+  it goes with the tracker's next steps.
 - The engine's anchor is read once, at the channel's first block.
 - **Open:** the tracker's next steps are the owner's decision (pending: association inside the acceptance window,
   confirmation from windows that share no samples, a rule for the first window, the variance corrected for keyed
@@ -3519,20 +3555,33 @@ from 31 samples; 2R_k/1 500 Hz is 2.1 × 10⁻⁹ at k = 29 and 6.5 × 10⁻¹�
 - **The edge's position within a piece is averaged, not known:** at 48 kHz a mark's first piece holds 0.048 to 0.384 of
   a full piece, depending on where the edge falls in it; the template holds their average, 0.193.
 - **The edge's shape is assumed:** the generator's 5 ms raised cosine.
-- **The fall is not modeled, and a gap piece adds 0 whatever it holds** (measured, the first prototype's integration):
-  a piece holding the fraction f of a full piece's carrier sum carries f²·10^(S₅₀₀/10) nats of energy (derived), which
-  no story that keeps the mark explains once the mark has ended. For a strong station a story that ends the over and
-  starts a new one-piece over in the fall's tail claims it for about 34 nats (the over's end 4.30, the birth's ln P 9.21,
-  the letter 4.13, the speed's prior 3.47, a one-piece dot at 100 WPM about 13): each element then reads as its own
-  over followed by a one-piece "E". On "PARIS PARIS" at 25 WPM in DEV2's noise (N₀ the noise's own, one seed) every one
-  of 16 positions of the edge within a piece decoded exactly at +30, +33 and +36 dB S₅₀₀, 2 failed at +38 dB S₅₀₀ and
-  3 at +40 dB S₅₀₀ (edges 12 to 24 of a piece's 96 input samples); with the edge at a piece's start the text was exact
-  to +41 dB S₅₀₀ on three seeds, and wrong at +42 dB S₅₀₀ (one seed) and from +43 dB S₅₀₀ (all three). A 5 Hz fading
-  spread, which makes the level's prior 4.4 times broader across a gap, failed alike at +45 to +60 dB S₅₀₀. DEV2's
-  stations lie at or below +20 dB S₅₀₀ (neighbors to +26 dB S₅₀₀); real bands hold stronger ones. `ViterbiDecoder.ExtremeLevels` records the
-  plan's +60 dB S₅₀₀ station as a strict expected failure. The plan's §2.3 had judged the fall harmless ("a weak last
-  piece only costs the story that keeps it"); that holds for the story that keeps it, not for the one that does not.
+- **The fall is not modeled, and a gap piece adds 0 whatever it holds:** a piece holding the fraction f of a full
+  piece's carrier sum carries f²·10^(S₅₀₀/10) nats of energy (derived), which no story that keeps the mark explains
+  once the mark has ended. A story that ends the over and starts a new one-piece over in the fall's tail can claim it.
+  That over alone costs 34.3 nats (the over's end 4.30, the birth's ln P 9.21, the letter 4.13, the speed's prior 3.47,
+  a one-piece dot at 100 WPM 13.17), and the story also pays for what follows it, so the claim wins only where the
+  piece carries at least about 34 nats (derived).
+  Scratch runs through the decoder, not in a test ("PARIS PARIS" at 25 WPM in DEV2's noise, N₀ the noise's own): in
+  each run every keying edge sits at the same position within its piece (the dot is exactly 24 pieces and the start a
+  whole number of pieces), so a position's result holds for every element of its run. At 16 positions of the edge
+  within a piece (one seed) the text was exact at +30, +33 and +36 dB S₅₀₀; 2 positions failed at +38 dB S₅₀₀ (edges
+  18 and 24 of a piece's 96 input samples at 48 kHz) and 3 at +40 dB S₅₀₀ (12, 18 and 24). With the edge at a piece's
+  start the text was exact to +41 dB S₅₀₀ on three seeds, wrong at +42 dB S₅₀₀ on one and from +43 dB S₅₀₀ on all three
+  (measured). Near the onset the texts keep parts of the words: "PARIS ET EGA E RIS" (+38 dB S₅₀₀, edge 18), "PARIS E
+  EGARIS" (+42 dB S₅₀₀, edge 0), "PARIS PARIS E" (+43 dB S₅₀₀, edge 0). From +44 dB S₅₀₀ they break into short words,
+  mostly of E and T: at +60 dB S₅₀₀, "T EE EE ET E T EE E T EE ET E T ET E T ET ET E" for each "PARIS" (19 words and
+  28 letters for its 14 elements). A real station's edges fall at mixed positions, so from about +37 dB S₅₀₀ some of
+  its elements would be misread (conjectured). A 5 Hz fading spread, which makes the level's prior 4.4 times broader
+  across a gap, failed alike at +45 to +60 dB S₅₀₀. DEV2's stations lie at or below +20 dB S₅₀₀ (neighbors to
+  +26 dB S₅₀₀); real bands hold stronger ones. `ViterbiDecoder.ExtremeLevels` records the plan's +60 dB S₅₀₀ station
+  as a strict expected failure. The plan's §2.3 had judged the fall harmless ("a weak last piece only costs the story
+  that keeps it"); that holds for the story that keeps it, not for the one that does not.
 - Short first blocks are credited less evidence than their correlated noise would allow (above), by design.
+- **The piece must be a whole number of channel samples,** `piece_s` × r. At the default 2 ms and the engine's
+  automatic FFT sizes that holds at r = 1 500 samples/s (48 kHz × 2^j, 3 samples) and 2 000 samples/s (8, 16 and
+  32 kHz, 4 samples), but not at 44.1 or 88.2 kHz, where r = 1 378.125 samples/s and 2 ms is 2.756 samples:
+  `make_viterbi_shared`, and so the engine, and the decoder refuse it there with those numbers, unless `piece_s`
+  changes. The tests run the decoder at 48 kHz.
 
 ### The evidence and the level (new decoder)
 
@@ -3614,10 +3663,15 @@ start: placeholders (the development set's own).
   when its first letter or word gap takes its factor, so a short over with exact timing can read as one longer symbol.
   "TEST" alone (machine keying, 25 WPM) decoded as "-" (−....−), its three letter gaps read as element gaps, in all 12
   runs at +10, +15, +20 and +30 dB S₅₀₀ (three seeds each), and as "TEST" in all 12 with a single Farnsworth factor,
-  where that prior is 0 (measured, the first prototype's integration). The likely accounting (conjectured): three
-  letters (12.4 nats), their gaps (1.2) and the factor's prior (3.1) against the misfit of reading the whole as one
-  symbol at a slower speed (about 15 nats). It needs an over of one word: where a word gap follows, both readings pay
-  the factor's prior ("TEST W9XYZ" decodes exactly, `ViterbiDecoder.DecodesThroughTheEngine`).
+  where that prior is 0 (measured in scratch runs through the decoder, not in a test). The accounting, at exact timing
+  (derived): the four-letter reading pays 16.70 nats more in priors, three more letters (3 × 4.127), letter gaps
+  instead of element gaps (3 × 0.396) and the factor's prior (3.135); the one-symbol reading pays the misfit of its
+  timing at a speed k times slower, [8(ln k)² + 3(ln(3/k))²]/0.18 nats (six marks and two element gaps at 1/k of their
+  medians, three letter gaps at 3/k), 14.64 nats at the grid's best k = 1.1³ = 1.331. So "-" wins by 2.06 nats; with a
+  single factor "TEST" wins by 1.07. It needs an over of one word: where a word gap follows, both readings pay the
+  factor's prior ("TEST W9XYZ" decodes exactly, `ViterbiDecoder.DecodesThroughTheEngine`). It depends on the word:
+  "PARIS" alone decodes exactly (`ViterbiDecoder.FlushesOnceAndResetStartsAfresh`), while "TU" alone would read as "X"
+  (−··−), which saves 7.66 nats against a misfit of 5.79 nats at k = 1.1² (derived; not run).
 - `<HH>` is exactly eight dots: nine or more leave the tree.
 - Factors beyond 8.14 lie off the grid (the plan leaves the development set's signals above F = 8 out of its
   comparisons).
@@ -3651,19 +3705,23 @@ set by the plan's runs. The ceiling, 1 700 stories: placeholder, set by the plan
 ### The new decoder behind the engine
 
 `ViterbiShared` holds what every decoder of a configuration on one channel filter shares: c(m), the rise and the flat
-prior (18.7 MB at the defaults, built in about 0.26 s), held through `std::shared_ptr`; a decoder refuses shared parts
-built for another channel rate, piece, rise, level range, or for shorter blocks than its own. The genie's carrier
-(`ViterbiGenie`) is given in the frame of the oracle frequencies, at a stream time with its drift; the engine converts it
-to the decoder's offset from the channel's center at stream time 0. The detector path runs the decoder too, but the first
-prototype is built and measured on oracle channels (its anchor is read once, and the text comes at the end). The channel's
-first block (21.33 ms) comes before the first spectrum frame, so N₀ = 0 and it is not searched.
+prior built with that rise (18.7 MB at the defaults, built in about 0.26 s), held through `std::shared_ptr`.
+`make_viterbi_shared` is its only maker (its constructor is private and it cannot be copied), so the rise and the prior
+always come from the channelizer's taps and no decoder runs without the matched filter to the rise. A decoder refuses
+shared parts built for another channel rate, piece, rise, level range, or for shorter blocks than its own. The genie's
+carrier (`ViterbiGenie`) is given in the frame of the oracle frequencies, at a stream time with its drift; the engine
+converts it to the decoder's offset from the channel's center at stream time 0. The detector path runs the decoder too,
+but the first prototype is built and measured on oracle channels (its anchor is read once, and the text comes at the
+end). An oracle channel opens at the stream's start, so its first block (21.33 ms) comes before the first spectrum
+frame, N₀ = 0, and it is not searched; a detector channel opens after frames have been counted, with N₀ set.
 
 **Cost** (measured, `ViterbiDecoder.TenMinutesOfNoise`: DEV2's noise alone at the defaults, where the ceiling binds;
 steady-clock time inside the decoder, one thread, Release build, on the development desktop, an Intel i7-9700F with
 MSVC): 511 ms per channel-second over 600 s of channel time (628 ms in the test's one-minute form, the default suite's);
 at most 310 entries of shared text at any block (the test allows 4 × the ceiling), and 3 913 536 bytes in the open
 timing's tables (of the 4 000 000 allowed). The plan's first run measures the cost on the Linux machine, where the bank
-takes 28.85 ms per channel-second (the plan's reference run).
+takes 28.85 ms of CPU per channel-second (run `d5-bank`, the plan's reference; development-set results record,
+section 6).
 
 ## A.9 Timing and latency
 
@@ -3680,7 +3738,7 @@ The rules of this section as the code implements them (moved verbatim from the b
 | Matched | 0.32 s warm-up per channel; boxcar delay (K − 1)/2 samples, 19 ms at 25 WPM |
 | Envelope, Matched | a character is emitted once a > 2-dit gap follows it |
 | Bank | block 21.33 ms; branch delay (N_k − 1)/(2r) = 4.3–91.7 ms (removed from character times); a character is published when its following space is classified (at the next key-down), at a new over or at the stream's end; corrections reach up to 20 s back (a resync is not bounded by it) |
-| New decoder | the whole text at `flush` (the channel's end); the channel's first block (21.33 ms) is not searched, N₀ being 0 before the first spectrum frame; the tracker holds the anchor until two windows 0.5 s apart agree (the first at 1.0 s of signal) |
+| New decoder | the whole text at `flush` (the channel's end); a channel opened at the stream's start (oracle mode) does not search its first block (21.33 ms), N₀ being 0 before the first spectrum frame (a detector channel opens later, with N₀ already set); the tracker holds the anchor until two windows 0.5 s apart agree (the first complete 1.0 s after the channel opens) |
 | Track removal | the average's decay (~6–7 s at S₅₀₀ = 20 dB) plus the 10 s timeout |
 
 
@@ -3782,7 +3840,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Bank switch replacement | from the start of the new branch's character containing the time its eligible run began (its own time base); a fallback pick from the switch's time | `bank::BankChannel` | heuristic (spec 4.8; the fallback rule documented behavior) |
 | Bank anchor mixing (engine) | u[n] = y[n] exp(−jφ[n]), φ[n] = 2π (Σ_{m≤n} Δ[m] − Δ[n]) / r, Δ = detector frequency (oracle: the label's, without its drift) − channel center, Hz, per channel block; no tracker | `BankDecoder::process` | derived: the prototype's `anchored_baseband`, mixing at the frequency where option 1 (the detector decides where the station is) puts the station; the oracle anchor without drift is the plan's choice, not tuned |
 | Bank events (engine) | new characters, then corrections (index: the smaller of the number kept and the first position whose text changed; the bank's characters from it on; time, reason, reach), applied in order, plus a "resync" correction if the consumer's list ever differs from the bank's (its reach not bounded by the 20 s correction reach; never on the suite, measured; tested by forcing one); final text = all corrections applied, immediate text = characters as first appended | `TextCorrection`, `DecodeUpdate::corrections`, `DecodedTextEvent::corrections`; bench `TrackText` | derived: the consumer's rule rebuilds the bank's final text exactly (proof in A.8c); not signal processing, an interface choice of the port (owner decision D1 for `--decoder`); the event's probability 1, speed 0 and confidence 0 are placeholders |
-| New decoder: piece | 3 channel samples = 2.000 ms | `ViterbiConfig::piece_s` (0.002 s, a whole number of channel samples where used) | derived from r |
+| New decoder: piece | 3 channel samples = 2.000 ms | `ViterbiConfig::piece_s` (0.002 s; it must be a whole number of channel samples: 3 at r = 1 500 samples/s, 48 kHz × 2^j, and 4 at 2 000, 8 to 32 kHz; refused at 44.1 and 88.2 kHz, r = 1 378.125 samples/s, 2.756 samples) | derived from r |
 | New decoder: speeds | dots of 12.0 ms × 1.1^s, s = 0 … 31 (100 to 5.2 WPM) | `dot_min_ms`, `speed_ratio`, `speed_count` | owner |
 | New decoder: Farnsworth factors | F = 1.1^f, f = 0 … 22 (1 to 8.14) | `factor_ratio`, `factor_count` | owner |
 | New decoder: fist | log-normal lengths about medians of 1, 3, 1, 3F and 7F dots (dot, dash, element gap, letter gap, word gap), σ = 0.3 in ln(length), shifts 0 dots; rounded to whole pieces, at least one | `fist_medians_dots`, `fist_sigmas`, `fist_shifts_dots`; `Fist` | placeholders, heuristic (the ITU sending standard's ratios); no heavy tail: owner (the plan's D5) |
@@ -3803,7 +3861,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | New decoder: hiss | each bin's one-pole 1 s average; ±2 000 Hz (±85 bins), the 25th percentile (the 43rd of 171); ÷ β; ÷ 1.5 bins; a frame of exact zeros not counted | `hiss_average_s`, `hiss_half_width_hz`, `hiss_percentile`; `HissEstimator` | 1 s heuristic (the detector's); width and rank placeholders, heuristic; β, the 1.5 bins and the zero rule derived; the 0.01 dB margin above −200 dBFS heuristic |
 | New decoder: tracker windows | 1.0 s every 0.5 s, periodic Hann, 8 192 points, ±15 Hz | `tracker_window_s`, `tracker_hop_s`, `tracker_search_hz` | placeholders (the plan's D6); 8 192 heuristic |
 | New decoder: tracker gate | 9 dB re the mean noise power per bin (N₀ × 1.5 Hz) | `tracker_gate_db` | derived (owner's decision B, 2026-10-20) |
-| New decoder: tracker filter | variance 0.2833 Hz²/ρ + (0.08 mHz)²; drift 0.3 Hz/s (start sd and agreement), process noise 1.5 × 10⁻⁴ Hz²/s³; start sd 5 Hz; trusted while 3σ ≤ 0.67 Hz; agreement within 3σ | `tracker_drift_sd_hz_per_s`, `tracker_drift_noise`; tracker.cpp | 0.2833 Hz² and the floor measured; 0.3 Hz/s sourced; the process noise derived from it over a heuristic ten minutes; 5 Hz placeholder; 0.67 Hz derived; 3σ heuristic; open: the owner's next steps |
+| New decoder: tracker filter | variance 0.2833 Hz²/ρ + (0.08 mHz)²; drift 0.3 Hz/s (start sd and agreement), process noise 1.5 × 10⁻⁴ Hz²/s³; start sd 5 Hz; trusted while 3σ ≤ 0.67 Hz; agreement within 3σ | `tracker_drift_sd_hz_per_s`, `tracker_drift_noise`; tracker.cpp | 0.2833 Hz² and the floor measured; 0.3 Hz/s sourced; the process noise derived from it over a heuristic ten minutes; 5 Hz placeholder; 0.67 Hz derived for the default 390 ms block, a constant that does not follow the block's length (A.8d); 3σ heuristic; open: the owner's next steps |
 | New decoder: genie | per channel, the true frequency and drift, fading spread or fist | `genie_*`, `ViterbiGenie`, `EngineConfig::viterbi_genie` | genie runs only (oracle mode) |
 | New decoder: open timing's tables | at most 4 000 000 bytes of entries per search (a cap of 1 923 pieces at 32 speeds) | search.cpp | a memory choice with no effect on the output (tested) |
 | New decoder: events | the whole text at `flush`; probability 1, speed 0, confidence 0; `freq_offset_hz`, the oscillator's offset at each block's last sample | `ViterbiDecoder` | placeholders (the plan's O4) |

@@ -133,7 +133,8 @@ void Engine::process_hop(std::span<const Sample> hop) {
         const double center_hz = channelizer_.bin_to_hz(channel.bin);
         if (tap_) tap_(ChannelBlock{id, first_index, center_hz, s, channel.detector_freq_hz});
         channel.decoder->set_frequency_anchor_hz(channel.detector_freq_hz - center_hz);  // Envelope: ignored
-        // Bank: the block is mixed down by this anchor. The new decoder: its N0 at the channel's center bin (Ruling 3).
+        // Bank: the block is mixed down by this anchor. The new decoder: its N0, the hiss estimator's density at the
+        // channel's center bin, set before every block.
         if (hiss_) channel.decoder->set_noise_density_fs2_per_hz(hiss_->noise_density_fs2_per_hz(channel.bin));
         const auto started = std::chrono::steady_clock::now();
         auto update = channel.decoder->process(s, t0);

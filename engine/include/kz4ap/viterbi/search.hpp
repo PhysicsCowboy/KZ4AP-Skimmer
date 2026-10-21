@@ -125,18 +125,25 @@
 //   4. The fall at a mark's end is not modeled, and a gap piece adds 0 whatever it holds, so the energy left in the
 //      fall's tail after the mark's last piece is explained by no story that keeps the mark: a piece holding the
 //      fraction f of a full piece's carrier sum carries (3 f a)^2 / (4 500 Hz x N0) = f^2 x 10^(S500 / 10) nats of it
-//      (derived: a^2 = 10^(S500 / 10) x N0 x 500 Hz). For a strong station, a story that ends the over after the mark
-//      and starts a new over of one piece in the tail claims that energy for about 34 nats (the over's end 4.30, the
-//      birth's ln P 9.21, the letter 4.13, the speed's prior 3.47 and a one-piece dot at 100 WPM about 13), and wins:
-//      each element then reads as its own over, each followed by a one-piece "E". Measured (Task 7a, through the
-//      decoder: "PARIS PARIS" at 25 WPM on DEV2's noise, N0 the noise's own, one seed): at every one of 16 positions of
-//      the keying edge within a piece (steps of 6 of its 96 input samples at 48 kHz) the text was exact at +30, +33
-//      and +36 dB S500; at +38 dB S500 2 positions failed and at +40 dB 3 (edges 12 to 24 input samples into a piece);
-//      with the edge at a piece's start the text was exact to +41 dB S500 on three seeds and wrong on one of three at
-//      +42 dB, all three at +43 dB and above. With a fading spread of 5 Hz instead of 1 Hz (the level's prior 4.4 times
-//      broader across a dot's gap) +45 to +60 dB S500 failed the same way, so the level's prior is not the lever. DEV2's
-//      stations lie at or below +20 dB S500 (neighbors to +26 dB S500); real bands hold stronger ones.
-//      ViterbiDecoder.ExtremeLevels records +60 dB S500 as a strict expected failure.
+//      (derived: a^2 = 10^(S500 / 10) x N0 x 500 Hz). A story that ends the over after the mark and starts a new over
+//      of one piece in the tail can claim that energy. That over alone costs 34.3 nats (the over's end 4.30, the
+//      birth's ln P 9.21, the letter 4.13, the speed's prior 3.47 and a one-piece dot at 100 WPM 13.17), and the story
+//      also pays for what follows it, so the claim wins only where the piece carries at least about 34 nats (derived).
+//      Scratch runs through the decoder for the plan's Task 7, not in a test ("PARIS PARIS" at 25 WPM on DEV2's noise,
+//      N0 the noise's own): in each run every keying edge sits at the same position within its piece (the dot is
+//      exactly 24 pieces and the start a whole number of pieces), so a position's result holds for every element of
+//      its run. At 16 positions of the edge within a piece (steps of 6 of its 96 input samples at 48 kHz; one seed) the
+//      text was exact at +30, +33 and +36 dB S500; at +38 dB S500 2 positions failed (edges 18 and 24 input samples
+//      into a piece) and at +40 dB S500 3 (12, 18 and 24); with the edge at a piece's start the text was exact to
+//      +41 dB S500 on three seeds, wrong on one of them at +42 dB S500 and on all three from +43 dB S500 (measured).
+//      Near the onset the texts keep parts of the words ("PARIS ET EGA E RIS" at +38 dB S500, edge 18; "PARIS E
+//      EGARIS" at +42 dB S500, edge 0); from +44 dB S500 they break into short words, mostly of E and T ("T EE EE ET E
+//      T EE E ..." at +60 dB S500: 19 words for the 14 elements of each "PARIS"). A real station's edges fall at mixed
+//      positions, so from about +37 dB S500 some of its elements would be misread (conjectured). With a fading spread
+//      of 5 Hz instead of 1 Hz (the level's prior 4.4 times broader across a dot's gap) +45 to +60 dB S500 failed
+//      alike, so the level's prior is not the lever. DEV2's stations lie at or below +20 dB S500 (neighbors to
+//      +26 dB S500); real bands hold stronger ones. ViterbiDecoder.ExtremeLevels records +60 dB S500 as a strict
+//      expected failure.
 //
 // Work saved without changing any output:
 //   - An open factor's survival. A letter or word gap whose factor is open survives as its widest factor's does, the

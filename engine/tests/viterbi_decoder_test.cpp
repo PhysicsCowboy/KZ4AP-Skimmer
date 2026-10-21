@@ -37,6 +37,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -270,9 +271,11 @@ TEST(ViterbiDecoder, DecodesThroughTheEngine) {
 TEST(ViterbiDecoder, InputSplitDoesNotMatter) {
     // One channel's stream, a station at +12 dB S500, 25 WPM, 5.3 Hz from the channel's center and drifting at
     // 0.2 Hz/s, the tracker's anchor 5.0 Hz, given to the decoder in blocks of 1, 7, 32 and 1 000 samples: the same
-    // text with the same times, the same statistics, live stories and normalization, and the same tracker windows, to
-    // the bit (plan §5, item 3). A piece straddles blocks, marks straddle blocks, and the tracker measures its windows
-    // in mid-block; it restarts and updates on the way (counted).
+    // text with the same times, the same statistics and normalization, the same live stories (state, score, line and
+    // level), the same tracker counts and last window, and the same oscillator offset at every block's last sample as
+    // the run in blocks of 1 sample, which reports it at every sample, to the bit (plan §5, item 3). A piece straddles
+    // blocks, marks straddle blocks, and the tracker measures its windows in mid-block; it restarts and updates on the
+    // way (counted).
     ViterbiConfig config;
     config.stats = true;
     const std::string text = "PARIS PARIS PARIS";
@@ -283,8 +286,9 @@ TEST(ViterbiDecoder, InputSplitDoesNotMatter) {
     const Stream stream = channel_stream(x, 3000.0);
     ASSERT_EQ(stream.center_hz, 3000.0);
     default_shared();  // built before the threads start
+    const std::vector<std::size_t> blocks = {1, 7, 32, 1000};
     std::vector<std::future<Decoded>> runs;
-    for (const std::size_t block : {std::size_t{1}, std::size_t{7}, std::size_t{32}, std::size_t{1000}})
+    for (const std::size_t block : blocks)
         runs.push_back(std::async(std::launch::async, [&, block] {
             return decode(config, default_shared(), stream.samples, block, 5.0);
         }));
@@ -293,8 +297,9 @@ TEST(ViterbiDecoder, InputSplitDoesNotMatter) {
     const Decoded& one = results.front();
     EXPECT_EQ(text_of(one.text), text);
     EXPECT_GT(one.counts.restarted + one.counts.updated, 5u);
+    ASSERT_EQ(one.offsets_hz.size(), stream.samples.size());  // blocks of 1: the offset at every sample
     for (std::size_t r = 1; r < results.size(); ++r) {
-        SCOPED_TRACE("split " + std::to_string(r));
+        SCOPED_TRACE("blocks of " + std::to_string(blocks[r]) + " samples");
         const Decoded& other = results[r];
         ASSERT_EQ(other.text.size(), one.text.size());
         for (std::size_t i = 0; i < one.text.size(); ++i) {
@@ -306,20 +311,39 @@ TEST(ViterbiDecoder, InputSplitDoesNotMatter) {
         EXPECT_EQ(other.normalization_nats, one.normalization_nats);
         ASSERT_EQ(other.stories.size(), one.stories.size());
         for (std::size_t i = 0; i < one.stories.size(); ++i) {
-            EXPECT_EQ(other.stories[i].score_nats, one.stories[i].score_nats);
-            EXPECT_EQ(other.stories[i].tau, one.stories[i].tau);
-            EXPECT_EQ(other.stories[i].line, one.stories[i].line);
+            const viterbi::StoryView& a = other.stories[i];
+            const viterbi::StoryView& b = one.stories[i];
+            EXPECT_EQ(a.activity, b.activity);
+            EXPECT_EQ(a.key_down, b.key_down);
+            EXPECT_EQ(a.tau, b.tau);
+            EXPECT_EQ(a.speed, b.speed);
+            EXPECT_EQ(a.factor, b.factor);
+            EXPECT_EQ(a.node, b.node);
+            EXPECT_EQ(a.score_nats, b.score_nats);
+            EXPECT_EQ(a.line, b.line);
+            EXPECT_EQ(a.level.learned, b.level.learned);
+            EXPECT_EQ(a.level.mu, b.level.mu);
+            EXPECT_EQ(a.level.p, b.level.p);
+            EXPECT_EQ(a.level.t_s, b.level.t_s);
         }
         EXPECT_EQ(other.counts.windows, one.counts.windows);
+        EXPECT_EQ(other.counts.not_measured, one.counts.not_measured);
         EXPECT_EQ(other.counts.updated, one.counts.updated);
+        EXPECT_EQ(other.counts.pending, one.counts.pending);
         EXPECT_EQ(other.counts.restarted, one.counts.restarted);
+        EXPECT_EQ(other.counts.unconfirmed, one.counts.unconfirmed);
         EXPECT_EQ(other.last_window.center_s, one.last_window.center_s);
         EXPECT_EQ(other.last_window.outcome, one.last_window.outcome);
         // NaN where the last window was not measured: the same in both
         const auto same = [](double a, double b) { return a == b || (std::isnan(a) && std::isnan(b)); };
         EXPECT_TRUE(same(other.last_window.measured_hz, one.last_window.measured_hz));
         EXPECT_EQ(other.last_window.peak_fs2, one.last_window.peak_fs2);
-        EXPECT_EQ(other.offsets_hz.back(), one.offsets_hz.back());
+        // The offset at each of this run's block ends is the 1-sample run's at that sample.
+        ASSERT_EQ(other.offsets_hz.size(), (stream.samples.size() + blocks[r] - 1) / blocks[r]);
+        for (std::size_t j = 0; j < other.offsets_hz.size(); ++j) {
+            const std::size_t last = std::min((j + 1) * blocks[r], stream.samples.size()) - 1;
+            ASSERT_EQ(other.offsets_hz[j], one.offsets_hz[last]) << "block " << j << ", sample " << last;
+        }
     }
 }
 
@@ -340,23 +364,67 @@ TEST(ViterbiDecoder, ExactZerosThenAStation) {
     EXPECT_EQ(run.text.count(1) ? run.text.at(1) : std::string("(nothing)"), text);
 }
 
+TEST(ViterbiDecoder, ANoiseDensityOfZeroMidStreamSplicesTheStream) {
+    // N0 = 0 means no estimate: the decoder does not search those pieces but keeps counting time, so when N0 returns
+    // every story goes on from where it stood, the length of its element frozen across the skipped pieces and its level
+    // predicted across the time: the search sees the stream spliced (A.8d). The engine holds N0 through frames of exact
+    // zeros, so after its first counted spectrum frame it gives N0 = 0 only if a quarter of a channel's neighborhood
+    // reads exact zeros for minutes; a direct caller can give it at any time. Two transmissions of "PARIS"
+    // (+15 dB S500, 25 WPM) 3 s apart: with N0 = 0 for 1 s inside the silence between them, no failure and the text
+    // exact; with N0 = 0 for 1 s inside the second, no failure, every score finite, and the first word still decoded.
+    auto keying = signals::keying("PARIS", 25.0, 0.5);
+    const double first_end_s = keying.back().second;
+    const double second_start_s = first_end_s + 3.0;
+    const auto second = signals::keying("PARIS", 25.0, second_start_s);
+    keying.insert(keying.end(), second.begin(), second.end());
+    std::vector<Sample> x = silence(keying.back().second + 1.0);
+    add_station(x, keying, 750.0, 15.0);
+    add_noise(x, 42);
+    const Stream stream = channel_stream(x, 750.0);
+    struct Case {
+        double zero_from_s;
+        double zero_to_s;
+        bool inside_a_transmission;
+    };
+    for (const Case& c : {Case{first_end_s + 1.0, first_end_s + 2.0, false},
+                          Case{second_start_s + 0.3, second_start_s + 1.3, true}}) {
+        SCOPED_TRACE("N0 = 0 from " + std::to_string(c.zero_from_s) + " s to " + std::to_string(c.zero_to_s) + " s");
+        ViterbiDecoder decoder(kChannelRate, ViterbiConfig{}, 0.0, default_shared());
+        for (std::size_t first = 0; first < stream.samples.size(); first += 32) {
+            const double t = static_cast<double>(first) / kChannelRate;
+            decoder.set_noise_density_fs2_per_hz(t >= c.zero_from_s && t < c.zero_to_s ? 0.0 : kN0);
+            ASSERT_NO_THROW(decoder.process(std::span<const Sample>(stream.samples).subspan(first, 32), t));
+        }
+        for (const viterbi::StoryView& story : decoder.search().live_stories())
+            ASSERT_TRUE(std::isfinite(story.score_nats));
+        const std::string decoded = text_of(decoder.flush().chars);
+        if (c.inside_a_transmission)
+            EXPECT_EQ(decoded.substr(0, 6), "PARIS ") << "decoded \"" << decoded << "\"";
+        else
+            EXPECT_EQ(decoded, "PARIS PARIS");
+    }
+}
+
 TEST(ViterbiDecoder, ExtremeLevels) {
-    // A station at +60 dB S500 (a piece's z = |S| / sqrt(V) near 1 000, a 390 ms block's near 14 000, far above the flat
-    // prior's table: its large-z form) and one at -10 dB S500, each alone on its channel's center with DEV2's noise, N0
-    // the noise's own: after every block every live story's score is finite and the best is 0, and the normalization
-    // is finite (plan §5, item 2). The plan's other criterion, the +60 dB S500 station's exact text, fails at the design
-    // as built, and is a strict expected failure (below); a station at +30 dB S500 decodes exactly.
+    // A station at +60 dB S500 (a piece's z = |S| / sqrt(V) near 1 000, a 390 ms block's near 14 000, far above the
+    // flat prior's table: its large-z form) and one at -10 dB S500, each alone on its channel's center with DEV2's
+    // noise, N0 the noise's own: after every block every live story's score is finite and the best is 0, and the
+    // normalization is finite (plan §5, item 2). The plan's other criterion, the +60 dB S500 station's exact text,
+    // fails at the design as built, and is a strict expected failure (below); a station at +30 dB S500 decodes exactly.
     //
-    // The known limitation (measured; search.hpp, "The mark's rise and what remains", item 4): the fall at a mark's end
-    // is not modeled and a gap piece adds 0 whatever it holds, so the energy of the fall's tail, f^2 x 10^(S500 / 10)
-    // nats in a piece holding the fraction f of a full piece's carrier sum, is explained by no story that keeps the
-    // mark. Above about +37 dB S500 a story that ends the over after the mark and starts a new one of a single piece in
-    // the fall wins by that energy less about 34 nats (the over's end, the birth, the letter, the speed's prior and a
-    // one-piece dot at 100 WPM): +60 dB S500 decodes "T EE EE ET E T ..." (each element its own over, each followed by a
-    // one-piece "E"). On "PARIS PARIS" at 25 WPM with this noise, every one of 16 positions of the edge within a piece
-    // decoded exactly at +30, +33 and +36 dB S500; 2 failed at +38 dB S500 and 3 at +40 dB S500 (edges 12 to 24 of a
-    // piece's 96 input samples), and at the position of this test from +42 dB S500. The test fails if the +60 dB S500
-    // text is exact, so that the marker is removed once the limitation is gone, and is skipped otherwise.
+    // The known limitation (search.hpp, "The mark's rise and what remains", item 4): the fall at a mark's end is not
+    // modeled and a gap piece adds 0 whatever it holds, so the energy of the fall's tail, f^2 x 10^(S500 / 10) nats in
+    // a piece holding the fraction f of a full piece's carrier sum, is explained by no story that keeps the mark
+    // (derived). A story that ends the over after the mark and starts a new over of one piece in the fall can claim it
+    // where the piece carries at least about 34 nats (that over's own costs, 34.3 nats, and what follows it). In
+    // scratch runs, not in a test ("PARIS PARIS" at 25 WPM with this noise; in each run every keying edge at one
+    // position within its piece, so a position's result holds for every element of its run), all 16 positions of the
+    // edge tried decoded exactly at +30, +33 and +36 dB S500, 2 failed at +38 dB S500 and 3 at +40 dB S500, and at this
+    // test's position (the edge at a piece's start) on this seed from +42 dB S500. A real station's edges fall at
+    // mixed positions, so from about +37 dB S500 some of its elements would be misread (conjectured). At +60 dB S500
+    // this test decodes "T EE EE ET E T EE E T EE ET E T ET E T ET ET E" for each "PARIS" (19 words for 14 elements).
+    // The test fails if the +60 dB S500 text is exact, so that the marker is removed once the limitation is gone, and
+    // is skipped otherwise.
     const std::string text = "PARIS PARIS";
     const auto keying = signals::keying(text, 25.0, 0.5);
     std::string strong_decoded;
@@ -418,11 +486,13 @@ TEST(ViterbiDecoder, TheGridsEnds) {
 
 TEST(ViterbiDecoder, TenMinutesOfNoise) {
     // DEV2's noise alone on one channel, N0 its own, at the defaults, where the ceiling binds (plan §5, item 5; review
-    // focus 1): after every block every live story's score is finite, the best is 0 and no more stories live than the
-    // ceiling; the shared text holds at most 4 x the ceiling entries (bounded: it does not grow with the channel's time)
-    // and the open timing's tables at most the 4 000 000 bytes search.hpp states. Ten minutes under the full-sweep
-    // presets (KZ4AP_VITERBI_FULL_SWEEP=1, the test ViterbiDecoder.FullSweep), one minute otherwise. The steady-clock
-    // time inside the decoder per channel-second is recorded (the CPU of one thread on an idle machine).
+    // focus 1): after every block no more stories live than the ceiling and the shared text holds at most 4 x the
+    // ceiling entries (bounded: it does not grow with the channel's time); after every eighth block (5.9 times a
+    // second) every live story's score is finite, the best is 0 and the normalization is finite; at the end the open
+    // timing's tables hold at most the 4 000 000 bytes search.hpp states, and the ceiling was reached. Ten minutes
+    // under the full-sweep presets (KZ4AP_VITERBI_FULL_SWEEP=1, the test ViterbiDecoder.FullSweep), one minute
+    // otherwise. The steady-clock time inside the decoder per channel-second is recorded (the CPU of one thread on an
+    // idle machine).
     const double duration_s = full_sweep() ? 600.0 : 60.0;
     const ViterbiConfig config;
     ViterbiDecoder decoder(kChannelRate, config, 0.0, default_shared());
@@ -558,6 +628,101 @@ TEST(ViterbiDecoder, TheEngineGivesEachChannelItsGenie) {
     EXPECT_NEAR(run.freq_hz.at(2), kSecondHz, 0.67);
 }
 
+TEST(ViterbiDecoder, WithGenieSetsOnlyThePartsItIsGiven) {
+    // with_genie (config.hpp) puts one oracle channel's genie values into its configuration: the carrier as an offset
+    // from the channel's center at stream time 0 and a drift, the fading's spread, and the fist (one speed, the
+    // sender's dot, and its medians, sigmas and shifts); a part not given leaves the configuration as it was. A decoder
+    // runs on each (a station decoded with the genie's fist and with its spread). The engine refuses genie values for
+    // any other decoder.
+    ViterbiConfig base;
+    base.beam_nats = 33.0;  // a field no genie touches
+    const auto rest_unchanged = [&base](const ViterbiConfig& c) {
+        EXPECT_EQ(c.beam_nats, 33.0);
+        EXPECT_EQ(c.ceiling, base.ceiling);
+        EXPECT_EQ(c.fading_spread_hz, base.fading_spread_hz);
+        EXPECT_EQ(c.factor_count, base.factor_count);
+        EXPECT_EQ(c.factor_ratio, base.factor_ratio);
+        EXPECT_EQ(c.keying_rise_s, base.keying_rise_s);
+    };
+    const auto fist_unchanged = [&base](const ViterbiConfig& c) {
+        EXPECT_EQ(c.speed_count, base.speed_count);
+        EXPECT_EQ(c.dot_min_ms, base.dot_min_ms);
+        EXPECT_EQ(c.fist_medians_dots, base.fist_medians_dots);
+        EXPECT_EQ(c.fist_sigmas, base.fist_sigmas);
+        EXPECT_EQ(c.fist_shifts_dots, base.fist_shifts_dots);
+    };
+    {
+        SCOPED_TRACE("nothing given");
+        const ViterbiConfig c = viterbi::with_genie(base, viterbi::ViterbiGenie{}, 1000.0);
+        EXPECT_FALSE(c.genie_frequency_offset_hz.has_value());
+        EXPECT_EQ(c.genie_frequency_drift_hz_per_s, 0.0);
+        EXPECT_FALSE(c.genie_fading_spread_hz.has_value());
+        fist_unchanged(c);
+        rest_unchanged(c);
+    }
+    {
+        SCOPED_TRACE("the carrier");  // 1 007.5 Hz at 2.0 s, 0.25 Hz/s: 7.0 Hz from a center at 1 000 Hz at 0 s
+        viterbi::ViterbiGenie genie;
+        genie.frequency_hz = 1007.5;
+        genie.frequency_time_s = 2.0;
+        genie.drift_hz_per_s = 0.25;
+        const ViterbiConfig c = viterbi::with_genie(base, genie, 1000.0);
+        ASSERT_TRUE(c.genie_frequency_offset_hz.has_value());
+        EXPECT_DOUBLE_EQ(*c.genie_frequency_offset_hz, 7.0);
+        EXPECT_EQ(c.genie_frequency_drift_hz_per_s, 0.25);
+        EXPECT_FALSE(c.genie_fading_spread_hz.has_value());
+        fist_unchanged(c);
+        rest_unchanged(c);
+    }
+    const auto keying = signals::keying("PARIS", 25.0, 0.5);
+    std::vector<Sample> x = silence(keying.back().second + 1.0);
+    add_station(x, keying, 750.0, 15.0);
+    add_noise(x, 43);
+    const Stream stream = channel_stream(x, 750.0);
+    {
+        SCOPED_TRACE("the spread");
+        viterbi::ViterbiGenie genie;
+        genie.fading_spread_hz = 0.6;
+        const ViterbiConfig c = viterbi::with_genie(base, genie, 1000.0);
+        ASSERT_TRUE(c.genie_fading_spread_hz.has_value());
+        EXPECT_EQ(*c.genie_fading_spread_hz, 0.6);
+        EXPECT_FALSE(c.genie_frequency_offset_hz.has_value());
+        fist_unchanged(c);
+        rest_unchanged(c);
+        // Its blocks, 650 ms (325 pieces) at 0.6 Hz, need shared parts built for it: the default ones are refused.
+        EXPECT_EQ(viterbi_block_pieces(c), std::optional<int>(325));
+        EXPECT_THROW(ViterbiDecoder(kChannelRate, c, 0.0, default_shared()), std::invalid_argument);
+        EXPECT_EQ(text_of(decode(c, make_viterbi_shared(c, channelizer_config()), stream.samples, 32, 0.0).text),
+                  "PARIS");
+    }
+    {
+        SCOPED_TRACE("the fist");  // the sender's: 25 WPM, the ITU ratios, sigmas and shifts of its own
+        viterbi::ViterbiGenie genie;
+        genie.fist = viterbi::ViterbiGenie::Fist{48.0, {{1.0, 3.0, 1.0, 3.0, 7.0}}, {{0.1, 0.12, 0.15, 0.2, 0.25}},
+                                                 {{0.02, -0.02, 0.0, 0.0, 0.05}}};
+        const ViterbiConfig c = viterbi::with_genie(base, genie, 1000.0);
+        EXPECT_EQ(c.speed_count, 1);
+        EXPECT_EQ(c.dot_min_ms, 48.0);
+        EXPECT_EQ(c.fist_medians_dots, genie.fist->medians_dots);
+        EXPECT_EQ(c.fist_sigmas, genie.fist->sigmas);
+        EXPECT_EQ(c.fist_shifts_dots, genie.fist->shifts_dots);
+        EXPECT_FALSE(c.genie_frequency_offset_hz.has_value());
+        EXPECT_FALSE(c.genie_fading_spread_hz.has_value());
+        rest_unchanged(c);
+        EXPECT_EQ(text_of(decode(c, default_shared(), stream.samples, 32, 0.0).text), "PARIS");
+    }
+    // Genie values belong to the new decoder's oracle channels only.
+    EventBus bus;
+    for (const FrontEnd other : {FrontEnd::Matched, FrontEnd::Envelope, FrontEnd::Bank}) {
+        EngineConfig engine;
+        engine.sample_rate = kInputRate;
+        engine.decoder.front_end = other;
+        engine.oracle_frequencies_hz = {1000.0};
+        engine.viterbi_genie = {viterbi::ViterbiGenie{}};
+        EXPECT_THROW(Engine(engine, bus), std::invalid_argument) << static_cast<int>(other);
+    }
+}
+
 TEST(ViterbiDecoder, FlushesOnceAndResetStartsAfresh) {
     // flush publishes the whole text once: a second flush and later blocks publish nothing. reset starts afresh: the same
     // stream again gives the same text with the same times as a new decoder.
@@ -596,14 +761,26 @@ TEST(ViterbiDecoder, FlushesOnceAndResetStartsAfresh) {
 TEST(ViterbiDecoder, RefusesWhatItCannotUse) {
     const ViterbiConfig defaults;
     const std::shared_ptr<const ViterbiShared>& shared = default_shared();
-    // The shared parts of the defaults at 48 kHz: 3 samples per piece, c to 3 x 195 samples, the rise, the flat prior
-    // over 195 pieces built with it.
-    EXPECT_EQ(shared->channel_rate_hz, 1500.0);
-    EXPECT_EQ(shared->samples_per_piece, 3);
-    EXPECT_EQ(shared->c.size(), 586u);
-    EXPECT_EQ(shared->rise.size(), 4u);
-    EXPECT_EQ(shared->flat_prior->max_pieces(), 195);
-    EXPECT_EQ(shared->flat_prior->rise().size(), 4u);
+    // Shared parts are made only by make_viterbi_shared, which computes the rise from the channelizer's taps and builds
+    // the flat prior with it, so no decoder can be given a prior without the matched filter to the rise: they cannot be
+    // made, copied or assigned otherwise.
+    static_assert(!std::is_default_constructible_v<ViterbiShared>);
+    static_assert(!std::is_copy_constructible_v<ViterbiShared>);
+    static_assert(!std::is_move_constructible_v<ViterbiShared>);
+    static_assert(!std::is_copy_assignable_v<ViterbiShared>);
+    static_assert(!std::is_aggregate_v<ViterbiShared>);
+    // The shared parts of the defaults at 48 kHz: 3 samples per piece, c to 3 x 195 samples, the rise from the taps
+    // (computed here), the flat prior over 195 pieces built with that rise.
+    EXPECT_EQ(shared->channel_rate_hz(), 1500.0);
+    EXPECT_EQ(shared->samples_per_piece(), 3);
+    EXPECT_EQ(shared->c().size(), 586u);
+    const ChannelizerConfig channel = channelizer_config();
+    const std::vector<double> rise =
+        viterbi::rise_fractions(channel_filter_taps(channel), kInputRate, 32, kSamplesPerPiece, defaults.keying_rise_s);
+    ASSERT_EQ(rise.size(), 4u);
+    EXPECT_TRUE(std::ranges::equal(shared->rise(), rise));
+    EXPECT_EQ(shared->flat_prior()->max_pieces(), 195);
+    EXPECT_TRUE(std::ranges::equal(shared->flat_prior()->rise(), rise));
     EXPECT_EQ(viterbi_first_block_pieces(defaults), 195);
     EXPECT_EQ(viterbi_block_pieces(defaults), std::optional<int>(195));
     ViterbiConfig no_fading;
@@ -632,9 +809,34 @@ TEST(ViterbiDecoder, RefusesWhatItCannotUse) {
     slow_fading.genie_fading_spread_hz = 0.5;  // B = 390 pieces
     const std::vector<ViterbiConfig> both = {defaults, slow_fading};
     const auto wide = make_viterbi_shared(both, channelizer_config());
-    EXPECT_EQ(wide->flat_prior->max_pieces(), 390);
+    EXPECT_EQ(wide->flat_prior()->max_pieces(), 390);
     EXPECT_NO_THROW(ViterbiDecoder(kChannelRate, slow_fading, 0.0, wide));
     EXPECT_NO_THROW(ViterbiDecoder(kChannelRate, defaults, 0.0, wide));
+
+    // A piece must be a whole number of channel samples: at 44.1 and 88.2 kHz the channel rate is 1 378.125 samples/s,
+    // where 2 ms is 2.756 samples, so neither the engine nor the decoder runs there (with the default piece), and each
+    // says why.
+    const auto message_of = [](const auto& make) -> std::string {
+        try {
+            make();
+        } catch (const std::invalid_argument& e) {
+            return e.what();
+        }
+        return "(nothing thrown)";
+    };
+    const std::string decoder_message =
+        message_of([&] { return ViterbiDecoder(44100.0 / 32.0, defaults, 0.0, shared); });
+    EXPECT_NE(decoder_message.find("whole number"), std::string::npos) << decoder_message;
+    EXPECT_NE(decoder_message.find("1378.125"), std::string::npos) << decoder_message;
+    for (const int rate : {44100, 88200}) {
+        EngineConfig engine = viterbi_engine();
+        engine.sample_rate = rate;
+        engine.oracle_frequencies_hz = {1000.0};
+        EventBus no_bus;
+        const std::string engine_message = message_of([&] { Engine refused(engine, no_bus); });
+        EXPECT_NE(engine_message.find("whole number"), std::string::npos) << rate << " Hz: " << engine_message;
+        EXPECT_NE(engine_message.find("1378.125"), std::string::npos) << rate << " Hz: " << engine_message;
+    }
 
     // The decoder: a positive rate, a finite residual, shared parts built for its rate, piece, rise, level range and
     // blocks, a finite genie, and what the tracker and the search refuse.

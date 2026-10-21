@@ -111,11 +111,14 @@
 // adds 0.6% to the estimate of the same noise alone, two 2.5% and four 8.3% (hiss_test.cpp, ToleratesNeighbors and
 // NeighborsLiftTheEstimateByWhatTheirSkirtsOccupy). In scratch runs of one realization the excess grew with the level
 // (+2%, +6%, +9%, +13% at +10, +20, +30, +40 dB S500) and was smaller, 4% to 5%, when the four stations sat close together
-// or near the window's edges, where their skirts fall outside it. A wider neighborhood helps more than a lower rank
-// (scratch, 12 realizations, mean excess of four stations at +30 dB S500: 8.3% at +/-2 kHz and the 25th percentile, 3.8%
-// at +/-3 kHz, 2.8% at +/-4 kHz; 5.7% at the 10th percentile and +/-2 kHz, 2.5% with +/-3 kHz), while the design notes
-// give the scatter of the 25th percentile as +/-2.2%, +/-1.6%, +/-1.1% and +/-0.7% over +/-0.5, 1, 2 and 5 kHz. The
-// range and the rank are placeholders to be set by measurement on real recordings (design notes, topic 3, item 3).
+// or near the window's edges, where their skirts fall outside it. The excess depends on the density of stations, the
+// share of the neighborhood's bins their sidebands lift, not on the neighborhood's width (owner, 2026-10-20), and the
+// rank is the lever: in scratch runs (12 realizations, mean excess of four stations at +30 dB S500) the 10th percentile
+// read 5.7% high where the 25th read 8.3%, both at +/-2 kHz. Runs that widened the neighborhood kept the same four
+// stations, so they lowered the density (3.8% at +/-3 kHz and 2.8% at +/-4 kHz at the 25th percentile, 2.5% at the
+// 10th and +/-3 kHz): they do not show that width helps in a band as full at every width. The design notes give the
+// scatter of the 25th percentile as +/-2.2%, +/-1.6%, +/-1.1% and +/-0.7% over +/-0.5, 1, 2 and 5 kHz. The range and
+// the rank are placeholders to be set by measurement on real recordings (design notes, topic 3, item 3).
 #pragma once
 
 #include "kz4ap/spectrum.hpp"

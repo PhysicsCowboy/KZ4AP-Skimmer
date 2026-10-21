@@ -21,7 +21,7 @@ namespace kz4ap {
 namespace viterbi {
 class HissEstimator;
 }  // namespace viterbi
-struct ViterbiShared;
+class ViterbiShared;
 
 // The FFT size the engine uses when EngineConfig::fft_size is 0: the largest power
 // of two with sample_rate / fft_size >= 20 Hz, so bins stay about 23 Hz wide at
@@ -52,9 +52,9 @@ struct EngineConfig {
     // The new decoder's configuration (decoder.front_end == FrontEnd::Viterbi); its hiss_* fields also configure the
     // engine's hiss estimator, which then reads every spectrum frame (in oracle mode too).
     viterbi::ViterbiConfig viterbi;
-    // Genie runs only (FrontEnd::Viterbi, oracle mode; the controller's Ruling 7): empty, or one entry per oracle
-    // channel, in the order of oracle_frequencies_hz, whose genie values replace those of `viterbi` for that channel
-    // (viterbi::with_genie, at the channel's center).
+    // Genie runs only (FrontEnd::Viterbi, oracle mode): empty, or one entry per oracle channel, in the order of
+    // oracle_frequencies_hz, whose genie values replace those of `viterbi` for that channel (viterbi::with_genie, at
+    // the channel's center), since each channel's station has its own true frequency, spread and fist.
     std::vector<viterbi::ViterbiGenie> viterbi_genie;
 
     // Oracle mode, for the benchmark: when not empty, a channel is opened at each of
