@@ -26,8 +26,8 @@ owner's approval.
 
 ## Building
 
-Windows: Visual Studio Build Tools 2026 (C++ workload). Linux: GCC 13+ or
-Clang 17+, CMake 3.25+, Ninja.
+Windows: Visual Studio Build Tools 2026 (C++ workload). Linux: GCC 11.4 or
+later, or Clang 17+, CMake 3.25+, Ninja.
 
     cmake --preset windows      # or: linux
     cmake --build --preset windows
@@ -95,7 +95,17 @@ with frequency re-centering, each channel following the station the signal
 detector assigns it (see `docs/signal-processing.md`, sections 6 and 8b);
 `--decoder envelope` (also `baseline`) selects the milestone-1 pipeline;
 `--decoder bank` selects the filter-bank decoder (section 8c), whose results
-the suites write to `results/bank`. The bench writes each track's final text
+the suites write to `results/bank`; `--decoder viterbi` selects the new decoder
+(the first prototype, section 8d; selectable, not the default), which prints
+its best story's text when the recording ends. Its settings are `--set
+NAME=VALUE` (repeatable; NAME is a field of `ViterbiConfig` in
+`engine/include/kz4ap/viterbi/config.hpp`, the value in the field's own
+physical unit, and the result file's `config` block records every field), and
+for genie runs on oracle channels `--genie fist|frequency|fading` (repeatable;
+it needs `--oracle` and takes the true timing, carrier or fading spread from
+the labels). For example, the wide-beam reference of the first prototype's
+plan: `kz4ap-bench band.wav --labels band.json --oracle --decoder viterbi --set
+beam_nats=80 --set ceiling=17000`. The bench writes each track's final text
 (`text`, corrections applied) and its immediate text (`text_immediate`, the
 characters as first published) and scores both (`cer`, `cer_immediate`).
 

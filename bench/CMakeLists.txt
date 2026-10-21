@@ -6,6 +6,7 @@ add_library(kz4ap_bench_lib
   src/noise_mask.cpp
   src/report.cpp
   src/scoring.cpp
+  src/viterbi_json.cpp
 )
 target_include_directories(kz4ap_bench_lib PUBLIC src)
 target_link_libraries(kz4ap_bench_lib PUBLIC kz4ap::engine nlohmann_json::nlohmann_json)
@@ -47,6 +48,7 @@ add_executable(kz4ap_bench_tests
   tests/noise_mask_test.cpp
   tests/report_test.cpp
   tests/scoring_test.cpp
+  tests/viterbi_json_test.cpp
 )
 target_link_libraries(kz4ap_bench_tests PRIVATE kz4ap_bench_lib GTest::gtest_main)
 # bank_json_test reads the bank decoder's golden values with the engine tests' helper.
@@ -54,6 +56,13 @@ target_include_directories(kz4ap_bench_tests PRIVATE ${PROJECT_SOURCE_DIR}/engin
 target_compile_definitions(kz4ap_bench_tests PRIVATE
   KZ4AP_BANK_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/engine/tests/data/bank")
 gtest_discover_tests(kz4ap_bench_tests)
+
+# kz4ap-bench refuses the new decoder's --set and --genie options that it cannot run before it reads the recording:
+# exit status 2 and one message (tests/bench_refusal.cmake; it needs no recording and writes nothing).
+add_test(NAME Bench.RefusesTheNewDecodersOptionsItCannotRunBeforeReadingTheRecording
+         COMMAND ${CMAKE_COMMAND} -DBENCH=$<TARGET_FILE:kz4ap-bench>
+                 -DRECORDING=${CMAKE_CURRENT_BINARY_DIR}/no-such-recording.wav
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/bench_refusal.cmake)
 
 # kz4ap-bank-replay refuses a --set rekey_after_s or rekey_timeout_s that is not positive once, before it reads the
 # suite: exit status 1 and one message (tests/replay_refusal.cmake; it needs no suite and writes nothing).

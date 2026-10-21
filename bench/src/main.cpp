@@ -6,12 +6,14 @@
 #include "labels.hpp"
 #include "report.hpp"
 #include "scoring.hpp"
+#include "viterbi_json.hpp"
 
 #include "kz4ap/engine.hpp"
 #include "kz4ap/wav_reader.hpp"
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -38,6 +40,11 @@ struct Args {
     bool timing = true;
     bool oracle = false;
     FrontEnd front_end = FrontEnd::Matched;  // the decoder (--decoder; --front-end is its old name, kept as an alias)
+    // The new decoder (--decoder viterbi): its --set and --genie options as given, and its configuration with the
+    // settings applied (each is applied as it is read, so that an unknown name or a wrong kind of value fails before
+    // anything else is done).
+    ViterbiOptions viterbi_options;
+    viterbi::ViterbiConfig viterbi;
 };
 
 const char* decoder_name(FrontEnd d) {
@@ -45,24 +52,29 @@ const char* decoder_name(FrontEnd d) {
         case FrontEnd::Envelope: return "envelope";
         case FrontEnd::Matched: return "matched";
         case FrontEnd::Bank: return "bank";
+        case FrontEnd::Viterbi: return "viterbi";
     }
     return "?";
 }
 
 constexpr const char* kUsage =
     "usage: kz4ap-bench RECORDING.wav [--labels LABELS.json] [--json OUT.json]\n"
-    "                   [--no-timing] [--baseline BASELINE.json] [--oracle] [--decoder envelope|matched|bank]\n"
+    "                   [--no-timing] [--baseline BASELINE.json] [--oracle]\n"
+    "                   [--decoder envelope|matched|bank|viterbi]\n"
     "                   [--record-channels DIR (with --oracle: the oracle channels; without: the detector's)]\n"
+    "                   [--set NAME=VALUE ...] [--genie fist|frequency|fading ...]   (--decoder viterbi; --genie\n"
+    "                   needs --oracle and takes its values from the labels; NAME is a field of ViterbiConfig)\n"
     "       kz4ap-bench --labels LABELS.json --score-decoded DECODED.json [--json OUT.json] [--baseline BASELINE.json]\n";
 
 Args parse_args(int argc, char** argv) {
     Args args;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
-        auto value = [&]() -> std::filesystem::path {
+        auto text = [&]() -> std::string {
             if (i + 1 >= argc) throw std::runtime_error(a + " needs a value\n" + kUsage);
             return argv[++i];
         };
+        auto value = [&]() -> std::filesystem::path { return text(); };
         if (a == "--labels") args.labels = value();
         else if (a == "--json") args.json = value();
         else if (a == "--baseline") args.baseline = value();
@@ -75,12 +87,24 @@ Args parse_args(int argc, char** argv) {
             if (v == "envelope" || v == "baseline") args.front_end = FrontEnd::Envelope;
             else if (v == "matched") args.front_end = FrontEnd::Matched;
             else if (v == "bank") args.front_end = FrontEnd::Bank;
-            else throw std::runtime_error(a + " must be envelope, matched or bank\n" + std::string(kUsage));
+            else if (v == "viterbi") args.front_end = FrontEnd::Viterbi;
+            else throw std::runtime_error(a + " must be envelope, matched, bank or viterbi\n" + std::string(kUsage));
+        }
+        else if (a == "--set") {  // the new decoder's configuration: NAME=VALUE, repeatable
+            const std::string setting = text();
+            apply_setting(args.viterbi, setting);  // std::invalid_argument for an unknown name or a wrong kind of value
+            args.viterbi_options.settings.push_back(setting);
+        }
+        else if (a == "--genie") {  // the new decoder's genie, from the labels: repeatable, each kind once
+            const GenieKind kind = parse_genie_kind(text());
+            auto& kinds = args.viterbi_options.genie;
+            if (std::find(kinds.begin(), kinds.end(), kind) == kinds.end()) kinds.push_back(kind);
         }
         else if (!a.empty() && a[0] == '-') throw std::runtime_error("unknown option " + a + "\n" + kUsage);
         else if (!args.recording) args.recording = a;
         else throw std::runtime_error(std::string("more than one recording given\n") + kUsage);
     }
+    check_viterbi_options(args.front_end == FrontEnd::Viterbi, args.oracle, args.viterbi_options);
     if (args.baseline && !args.labels) throw std::runtime_error("--baseline needs --labels");
     if (args.score_decoded) {
         if (args.recording) throw std::runtime_error("--score-decoded takes no recording\n" + std::string(kUsage));
@@ -186,6 +210,19 @@ int run_engine(const Args& args) {
     if (args.oracle) {
         for (const auto& s : labels->signals) config.oracle_frequencies_hz.push_back(s.freq_offset_hz);
     }
+    if (args.front_end == FrontEnd::Viterbi) {
+        config.viterbi = args.viterbi;
+        // --genie: each oracle channel gets the truth of its station from its label, in the order of the labels, which
+        // is the order of oracle_frequencies_hz and of the channels' track ids (EngineConfig::viterbi_genie)
+        if (!args.viterbi_options.genie.empty()) {
+            for (std::size_t i = 0; i < labels->signals.size(); ++i)
+                config.viterbi_genie.push_back(
+                    genie_from_label(labels->signals[i], i, args.viterbi_options.genie, config.viterbi.piece_s));
+        }
+        // With oracle channels the engine builds their decoders now and refuses what the library cannot use; on the
+        // detector path no decoder exists until a track is born, so the configuration is tried first.
+        if (!args.oracle) check_engine_accepts(config);
+    }
     Engine engine(config, bus);
     if (args.record_channels) {
         recorder.emplace(*args.record_channels, engine.channel_rate());
@@ -215,6 +252,19 @@ int run_engine(const Args& args) {
     out["duration_s"] = duration_s;
     out["front_end"] = decoder_name(args.front_end);  // the old key, read by stage 1's tooling
     out["decoder"] = decoder_name(args.front_end);
+    if (args.front_end == FrontEnd::Viterbi) {
+        // everything a run needs to be repeated from its result file: the configuration with every field, the --set
+        // arguments as given, and the genie's kinds with each channel's values (the labels give them again)
+        out["config"] = nlohmann::json(to_json(config.viterbi));
+        out["settings"] = args.viterbi_options.settings;
+        if (!args.viterbi_options.genie.empty()) {
+            nlohmann::json genie = {{"kinds", nlohmann::json::array()}, {"channels", nlohmann::json::array()}};
+            for (const GenieKind kind : args.viterbi_options.genie) genie["kinds"].push_back(genie_kind_name(kind));
+            for (const auto& per_channel : config.viterbi_genie)
+                genie["channels"].push_back(nlohmann::json(to_json(per_channel)));
+            out["genie"] = std::move(genie);
+        }
+    }
     std::vector<DecodedTrack> track_list;     // final text
     std::vector<DecodedTrack> immediate_list; // immediate text
     std::map<std::uint32_t, double> tracked_freq_hz;
