@@ -521,6 +521,19 @@ S₅₀₀ seed-12 point stays a known failure until R3 sets the ceiling. The op
   I2 is reported apart from the comparison with the bank, as a known gap of this prototype, and O7's cut at F = 8 is
   moot.
 
+**D15. Very strong stations, after the fall. Decided (owner, 2026-10-21): add the model's own error to the noise.**
+- Modeling the mark's fall (D13, Task 4c) did not fix stations above about +38 dB S₅₀₀ (measured), and it broke the
+  speed step at +21 to +28 dB S₅₀₀. It is set aside, not committed.
+- The cause: the decoder's error budget had a statistical term, the receiver's noise, and no systematic term. At
+  high SNR a pulse-model mismatch of a percent reads as overwhelming evidence (about 100 nats at +60 dB S₅₀₀, against a
+  new over's 34 nats). The mismatches are the edge's position within a piece and the filter's ringing.
+- The owner: "how this decoder can be failing on strong stations, period. They should be the ones that have the least
+  trouble with anything, period."
+- **The remedy (Task 4e), the standard one:** each piece's variance gains a term proportional to the carrier's power,
+  with a relative error from the template's spread over edge positions plus a floor (`model_error_floor`, placeholder
+  0.02). Evidence then levels off at what the model supports.
+- Measured first in a copy, on strong stations to +60 dB S₅₀₀ and on everything that passes now.
+
 ### Obvious items, stated for approval
 
 - **O1.** Only Morse and no-signal stories: no steady-carrier or nonsense-keying states (stated 2026-10-19).
