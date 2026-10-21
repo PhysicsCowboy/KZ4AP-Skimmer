@@ -63,9 +63,10 @@ constexpr const char* kUsage =
     "                   [--no-timing] [--baseline BASELINE.json] [--oracle]\n"
     "                   [--decoder envelope|matched|bank|viterbi]\n"
     "                   [--record-channels DIR (with --oracle: the oracle channels; without: the detector's)]\n"
-    "                   [--set NAME=VALUE ...] [--genie fist|frequency|fading ...] [--stats STATS.json]\n"
+    "                   [--set NAME=VALUE ...] [--genie fist|frequency|fading ...] [--stats STATS.json [--stats-detail]]\n"
     "                   (--decoder viterbi; NAME is a field of ViterbiConfig; --genie reads the labels;\n"
-    "                   --genie and --stats need --oracle; --stats writes the decoder's search statistics)\n"
+    "                   --genie and --stats need --oracle; --stats writes the decoder's search statistics: a summary\n"
+    "                   for each channel, or with --stats-detail every newborn line, which is 45 kB per channel-second)\n"
     "       kz4ap-bench --labels LABELS.json --score-decoded DECODED.json [--json OUT.json] [--baseline BASELINE.json]\n";
 
 Args parse_args(int argc, char** argv) {
@@ -106,6 +107,7 @@ Args parse_args(int argc, char** argv) {
             args.stats = value();
             args.viterbi_options.stats = true;
         }
+        else if (a == "--stats-detail") args.viterbi_options.stats_detail = true;  // the full form of that file
         else if (!a.empty() && a[0] == '-') throw std::runtime_error("unknown option " + a + "\n" + kUsage);
         else if (!args.recording) args.recording = a;
         else throw std::runtime_error(std::string("more than one recording given\n") + kUsage);
@@ -154,12 +156,40 @@ int score_and_report(const Labels& labels, const std::vector<DecodedTrack>& trac
     return 0;
 }
 
+// Whether `path` can be created, found out before a run that takes minutes to hours and not after it: creates and
+// removes the file that the writers use first (path plus ".partial", renamed to path when the file is complete).
+void require_writable(const std::filesystem::path& path) {
+    const std::filesystem::path partial = path.string() + ".partial";
+    {
+        std::ofstream probe(partial);
+        if (!probe) throw std::runtime_error("cannot write " + partial.string() + " (the folder must exist)");
+    }
+    std::error_code ignored;
+    std::filesystem::remove(partial, ignored);
+}
+
+// The result file, written under a name of its own and renamed when complete, so that no failure leaves a file that
+// looks complete (a result file costs a run).
 void write_json(const std::optional<std::filesystem::path>& path, const nlohmann::json& out) {
     if (!path) return;
-    std::ofstream f(*path);
-    f << out.dump(2) << '\n';
-    f.close();
-    if (!f) throw std::runtime_error("cannot write " + path->string());
+    const std::filesystem::path partial = path->string() + ".partial";
+    {
+        std::ofstream f(partial);
+        f << out.dump(2) << '\n';
+        f.close();
+        if (!f) {
+            std::error_code ignored;
+            std::filesystem::remove(partial, ignored);
+            throw std::runtime_error("cannot write " + path->string());
+        }
+    }
+    std::error_code error;
+    std::filesystem::rename(partial, *path, error);
+    if (error) {
+        std::error_code ignored;
+        std::filesystem::remove(partial, ignored);
+        throw std::runtime_error("cannot write " + path->string() + ": " + error.message());
+    }
 }
 
 // "text" is the final text; "text_immediate" (when immediate is given, one per track in the same order) the text as
@@ -230,6 +260,9 @@ int run_engine(const Args& args) {
         // detector path no decoder exists until a track is born, so the configuration is tried first.
         if (!args.oracle) check_engine_accepts(config);
     }
+    // The run takes minutes to hours: a file it cannot write is found now, not when the run is over.
+    if (args.json) require_writable(*args.json);
+    if (args.stats) require_writable(*args.stats);
     Engine engine(config, bus);
     if (args.record_channels) {
         recorder.emplace(*args.record_channels, engine.channel_rate());
@@ -253,10 +286,6 @@ int run_engine(const Args& args) {
     const double cpu_s = process_cpu_seconds() - cpu_started;
     const EngineStats stats = engine.stats();
     const double duration_s = static_cast<double>(reader.total_samples()) / reader.sample_rate();
-    if (args.stats) {  // after the timed window: writing the file is not decoding
-        write_stats_file(*args.stats, collect_stats_file(engine, args.recording->filename().string(), config.viterbi,
-                                                         labels->signals.size()));
-    }
 
     nlohmann::json out;
     out["recording"] = args.recording->filename().string();
@@ -310,6 +339,13 @@ int run_engine(const Args& args) {
             score_and_report(*labels, track_list, tracked_freq_hz, args.oracle, args.baseline, out, &immediate_list);
     }
     write_json(args.json, out);
+    // After the result file, and after the timed window (writing is not decoding): a statistics file that cannot be
+    // finished then loses nothing of the run. The channels are read from the engine one at a time, with no copy.
+    if (args.stats) {
+        write_run_stats(*args.stats, engine, args.recording->filename().string(), config.viterbi,
+                        labels->signals.size(),
+                        args.viterbi_options.stats_detail ? StatsDetail::Lines : StatsDetail::Summary);
+    }
     return exit_code;
 }
 

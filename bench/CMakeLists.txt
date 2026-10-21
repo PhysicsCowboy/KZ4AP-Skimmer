@@ -42,6 +42,7 @@ endif()
 
 add_executable(kz4ap_bench_tests
   tests/bank_json_test.cpp
+  tests/bench_run_test.cpp
   tests/channel_recorder_test.cpp
   tests/cpu_time_test.cpp
   tests/labels_test.cpp
@@ -51,10 +52,17 @@ add_executable(kz4ap_bench_tests
   tests/viterbi_json_test.cpp
 )
 target_link_libraries(kz4ap_bench_tests PRIVATE kz4ap_bench_lib GTest::gtest_main)
-# bank_json_test reads the bank decoder's golden values with the engine tests' helper.
-target_include_directories(kz4ap_bench_tests PRIVATE ${PROJECT_SOURCE_DIR}/engine/tests/bank)
+# bank_json_test reads the bank decoder's golden values with the engine tests' helper; bench_run_test makes its
+# recording with the engine tests' signals (test_signals.hpp).
+target_include_directories(kz4ap_bench_tests PRIVATE ${PROJECT_SOURCE_DIR}/engine/tests/bank
+                                                    ${PROJECT_SOURCE_DIR}/engine/tests)
+# bench_run_test runs kz4ap-bench itself, so it is built first; viterbi_json_test reads the statistics files that the
+# Python reductions' tests read too (training/tests/data/search-stats).
+add_dependencies(kz4ap_bench_tests kz4ap-bench)
 target_compile_definitions(kz4ap_bench_tests PRIVATE
-  KZ4AP_BANK_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/engine/tests/data/bank")
+  KZ4AP_BANK_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/engine/tests/data/bank"
+  KZ4AP_BENCH_EXE="$<TARGET_FILE:kz4ap-bench>"
+  KZ4AP_SEARCH_STATS_FIXTURES="${PROJECT_SOURCE_DIR}/training/tests/data/search-stats")
 gtest_discover_tests(kz4ap_bench_tests)
 
 # kz4ap-bench refuses the new decoder's --set, --genie and --stats options that it cannot run before it reads the

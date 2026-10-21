@@ -38,6 +38,13 @@ struct LabeledSignal {
     std::optional<double> wpm_end;
     // the stations of a QSO label (its "senders"); 0 for a label of one station
     int sender_count = 0;
+    // One of a QSO's per-station labels (training/kz4ap_synth.generate.station_labels), which names its QSO
+    // (qso_index): a label of one station, but its start_s is the station's first over, not the QSO's start from
+    // which the QSO's drift is measured.
+    bool per_station = false;
+    // Whether the file wrote fading_hz (not null). The per-station labels written before 2026-10-21 did not, so for
+    // them the default above, 0, is a guess and not a truth.
+    bool fading_hz_written = false;
 };
 
 struct Labels {

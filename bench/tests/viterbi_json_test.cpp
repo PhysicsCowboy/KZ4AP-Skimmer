@@ -18,6 +18,7 @@
 #include <initializer_list>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <random>
 #include <stdexcept>
@@ -37,6 +38,7 @@ using kz4ap::bench::LabeledSignal;
 using kz4ap::bench::parse_genie_kind;
 using kz4ap::bench::parse_labels;
 using kz4ap::bench::StatsFile;
+using kz4ap::bench::StatsSummaryFile;
 using kz4ap::bench::to_json;
 using kz4ap::bench::ViterbiOptions;
 using kz4ap::viterbi::LineEnd;
@@ -369,7 +371,8 @@ TEST(ViterbiJsonGenie, TheFadingSpreadIsTheLabelsAndZeroForASignalThatDoesNotFad
     EXPECT_EQ(*fading.fading_spread_hz, 0.6);
     EXPECT_FALSE(fading.frequency_hz.has_value());
     EXPECT_FALSE(fading.fist.has_value());
-    // no fading_hz in the label (older files, a QSO's per-station labels), or 0: the truth is no fading
+    // no fading_hz in the label of a single station (older files), or 0: the truth is no fading (a per-station label
+    // of a QSO must say: APerStationLabelOfAQsoNeedsItsFadingSpreadAndNoDrift)
     for (const std::string& extra : {std::string(), std::string(R"("fading_hz": 0.0)")}) {
         const ViterbiGenie none = genie_of(signal_with(extra), {GenieKind::Fading});
         ASSERT_TRUE(none.fading_spread_hz.has_value());
@@ -467,6 +470,39 @@ TEST(ViterbiJsonGenie, ALabelWithNoSingleTruthIsRefusedByNumber) {
     EXPECT_EQ(genie_refusal(fiddle, {GenieKind::Frequency}, 4), "(accepted)");
     EXPECT_NE(genie_refusal(signal_with("", 0.0), {GenieKind::Fist}, 5), "(accepted)");
     EXPECT_NE(genie_refusal(signal_with(), {GenieKind::Fist}, 5, 0.0), "(accepted)");
+}
+
+TEST(ViterbiJsonGenie, APerStationLabelOfAQsoNeedsItsFadingSpreadAndNoDrift) {
+    // training/kz4ap_synth.generate.station_labels writes, for each station of a QSO, an entry that names its QSO
+    // (qso_index) and, since Task 8b, its fading spread (the QSO's: each station fades through its own path of that
+    // spread). Its start_s is the station's first over, not the QSO's start, from which the QSO's drift is measured.
+    const ViterbiGenie fading = genie_of(signal_with(R"("qso_index": 3, "fading_hz": 0.6)"), {GenieKind::Fading});
+    ASSERT_TRUE(fading.fading_spread_hz.has_value());
+    EXPECT_EQ(*fading.fading_spread_hz, 0.6);
+    const ViterbiGenie none = genie_of(signal_with(R"("qso_index": 3, "fading_hz": 0.0)"), {GenieKind::Fading});
+    ASSERT_TRUE(none.fading_spread_hz.has_value());
+    EXPECT_EQ(*none.fading_spread_hz, 0.0);
+    // written by the generator of before: no fading_hz, so whether the station fades is not known, and 0 would be a
+    // guess that looks like a truth
+    const LabeledSignal old = signal_with(R"("qso_index": 3)");
+    const std::string why = genie_refusal(old, {GenieKind::Fading}, 5);
+    EXPECT_TRUE(contains(why, "signal 5")) << why;
+    EXPECT_TRUE(contains(why, "fading_hz")) << why;
+    EXPECT_TRUE(contains(why, "per-station")) << why;
+    EXPECT_EQ(genie_refusal(old, {GenieKind::Fist, GenieKind::Frequency}, 5), "(accepted)");  // not what they read
+    // a drifting QSO: the label's frequency is at the QSO's start and its start_s is not, so the carrier at start_s
+    // would be off by the drift over the difference
+    const LabeledSignal drifting = signal_with(R"("qso_index": 3, "fading_hz": 0.0, "drift_hz_per_s": 0.5)");
+    const std::string drift = genie_refusal(drifting, {GenieKind::Frequency}, 6);
+    EXPECT_TRUE(contains(drift, "signal 6")) << drift;
+    EXPECT_TRUE(contains(drift, "drift")) << drift;
+    EXPECT_EQ(genie_refusal(drifting, {GenieKind::Fading, GenieKind::Fist}, 6), "(accepted)");
+    // a per-station label that does not drift gives its carrier, and a signal of one station that drifts still does
+    const ViterbiGenie still = genie_of(signal_with(R"("qso_index": 3, "fading_hz": 0.0, "drift_hz_per_s": 0.0)"),
+                                        {GenieKind::Frequency});
+    ASSERT_TRUE(still.frequency_hz.has_value());
+    EXPECT_EQ(*still.frequency_hz, -1234.5);
+    EXPECT_EQ(genie_refusal(signal_with(R"("drift_hz_per_s": 0.5)"), {GenieKind::Frequency}, 7), "(accepted)");
 }
 
 TEST(ViterbiJsonGenie, TheResultFileRecordsEachChannelsValues) {
@@ -600,6 +636,8 @@ TEST(ViterbiJsonStats, TheFileNamesItsKeysUnitsAndCodes) {
     EXPECT_EQ(line_fields.at("birth_s").get<std::string>().substr(0, 2), "s:");
     EXPECT_EQ(line_fields.at("largest_deficit_nats").get<std::string>().substr(0, 5), "nats:");
     EXPECT_EQ(stats_fields.at("live_mean_100ms").get<std::string>().substr(0, 8), "stories:");
+    EXPECT_EQ(stats_fields.at("live_histogram").get<std::string>().substr(0, 7), "counts:");  // a reader splitting at the
+    EXPECT_EQ(stats_fields.at("lines").get<std::string>().substr(0, 8), "columns:");          // first colon gets a kind
     // a channel: its place, the members of SearchStats, and the lines as columns named by NewbornLine's members
     const ordered_json& channel = j.at("channels").at(0);
     EXPECT_EQ(channel.at("track_id"), 1);
@@ -737,6 +775,416 @@ TEST(ViterbiJsonStats, AStatisticThatIsNotFiniteIsNotWritten) {
     EXPECT_NE(refusal_of([&] { kz4ap::bench::write_stats_file(path, file); }), "(accepted)");
     EXPECT_FALSE(std::filesystem::exists(path));
     EXPECT_FALSE(std::filesystem::exists(path + ".partial"));
+}
+
+// ---- The statistics file, version 2: the summary ----
+
+// Statistics that follow the search's own rules, which the summary checks: 120 pieces are windows of 50, 50 and 20
+// (round(0.1 s / 2 ms) = 50 pieces), the histogram adds up to the pieces. Five lines: the first story (led, merged), a
+// newborn from silence the beam dropped in its first element (never led), a rescue newborn that led and is alive, a
+// newborn from silence that led and was dropped by the beam after its first element, and a rescue newborn the ceiling
+// removed in its first element (never led).
+SearchStats counted_stats() {
+    SearchStats s;
+    s.pieces = 120;
+    s.ceiling_pieces = 7;
+    s.live_histogram = {60, 40, 20};
+    s.live_mean_100ms = {10.0f, 20.0f, 40.0f};
+    s.live_max_100ms = {12.0f, 25.0f, 41.0f};
+    NewbornLine first;
+    first.birth_s = 0.002;
+    first.kind = LineKind::Start;
+    first.first_led_s = 0.002;
+    first.end = LineEnd::Merge;
+    first.end_s = 0.1;
+    NewbornLine dropped;
+    dropped.birth_s = 0.2;
+    dropped.kind = LineKind::Silence;
+    dropped.largest_deficit_nats = 41.25;
+    dropped.end = LineEnd::Beam;
+    dropped.end_s = 0.21;
+    dropped.ended_in_first_element = true;
+    NewbornLine rescued;
+    rescued.birth_s = 0.1;
+    rescued.kind = LineKind::Rescue;
+    rescued.first_led_s = 0.12;
+    rescued.largest_deficit_nats = 12.5;
+    NewbornLine overtaken;
+    overtaken.birth_s = 0.05;
+    overtaken.kind = LineKind::Silence;
+    overtaken.first_led_s = 0.07;
+    overtaken.largest_deficit_nats = 7.0 / 3.0;
+    overtaken.end = LineEnd::Beam;
+    overtaken.end_s = 0.15;
+    NewbornLine capped;
+    capped.birth_s = 0.3;
+    capped.kind = LineKind::Rescue;
+    capped.largest_deficit_nats = 3.0;
+    capped.end = LineEnd::Ceiling;
+    capped.end_s = 0.3;
+    capped.ended_in_first_element = true;
+    s.lines = {first, dropped, rescued, overtaken, capped};
+    return s;
+}
+
+StatsSummaryFile counted_summary_file() {
+    StatsSummaryFile file;
+    file.recording = "A2-awgn-c05-0-s1.wav";
+    file.config.beam_nats = 35.0;
+    file.config.stats = true;
+    file.channels.push_back(kz4ap::bench::summarize_channel(1, 0, counted_stats(), file.config.piece_s));
+    file.channels.push_back(kz4ap::bench::summarize_channel(2, 1, SearchStats{}, file.config.piece_s));
+    file.channels.push_back(kz4ap::bench::summarize_channel(9, std::nullopt, counted_stats(), file.config.piece_s));
+    return file;
+}
+
+TEST(ViterbiJsonSummary, TheSummaryCountsTheLinesByFateAndKeepsTheLinesThatLed) {
+    const SearchStats stats = counted_stats();
+    const kz4ap::bench::ChannelSummary c = kz4ap::bench::summarize_channel(4, 3, stats, 0.002);
+    EXPECT_EQ(c.track_id, 4u);
+    ASSERT_TRUE(c.label_index.has_value());
+    EXPECT_EQ(*c.label_index, 3);
+    EXPECT_EQ(c.pieces, 120);
+    EXPECT_EQ(c.ceiling_pieces, 7);
+    EXPECT_EQ(c.live_histogram, stats.live_histogram);
+    EXPECT_DOUBLE_EQ(c.live_mean_stories, (50 * 10.0 + 50 * 20.0 + 20 * 40.0) / 120.0);
+    EXPECT_EQ(c.live_max_stories, 41.0);
+    EXPECT_EQ(c.lines, 5);
+    // fates[kind][end][ended_in_first_element][led]; LineKind: Start 0, Silence 1, Rescue 2; LineEnd: Alive 0, Merge 1,
+    // Beam 2, Ceiling 3
+    EXPECT_EQ(c.fates[0][1][0][1], 1);  // the first story: merged, led
+    EXPECT_EQ(c.fates[1][2][1][0], 1);  // dropped by the beam in its first element, never led
+    EXPECT_EQ(c.fates[2][0][0][1], 1);  // the rescue newborn: alive, led
+    EXPECT_EQ(c.fates[1][2][0][1], 1);  // the overtaken newborn: beam, after its first element, led
+    EXPECT_EQ(c.fates[2][3][1][0], 1);  // removed by the ceiling in its first element, never led
+    std::int64_t total = 0;
+    for (const auto& by_end : c.fates)
+        for (const auto& by_first : by_end)
+            for (const auto& by_led : by_first)
+                for (const std::int64_t n : by_led) total += n;
+    EXPECT_EQ(total, c.lines);
+    // the lines that led, with their ids, and nothing of the others
+    EXPECT_EQ(c.led_line_ids, (std::vector<std::int64_t>{0, 2, 3}));
+    ASSERT_EQ(c.led_lines.size(), 3u);
+    EXPECT_EQ(c.led_lines[0], stats.lines[0]);
+    EXPECT_EQ(c.led_lines[1], stats.lines[2]);
+    EXPECT_EQ(c.led_lines[2], stats.lines[3]);
+}
+
+TEST(ViterbiJsonSummary, AChannelThatSearchedNothingHasAnEmptySummary) {
+    const kz4ap::bench::ChannelSummary c = kz4ap::bench::summarize_channel(2, 1, SearchStats{}, 0.002);
+    EXPECT_EQ(c.pieces, 0);
+    EXPECT_EQ(c.lines, 0);
+    EXPECT_EQ(c.live_mean_stories, 0.0);
+    EXPECT_EQ(c.live_max_stories, 0.0);
+    EXPECT_TRUE(c.led_line_ids.empty() && c.led_lines.empty() && c.live_histogram.empty());
+    kz4ap::bench::ChannelSummary expected;  // all zeros and empty, but for the channel's place
+    expected.track_id = 2;
+    expected.label_index = 1;
+    EXPECT_EQ(c, expected);
+}
+
+TEST(ViterbiJsonSummary, TheWindowsOfTheLiveSeriesMustCoverThePieces) {
+    // 120 pieces at 2 ms are windows of 50, 50 and 20 pieces
+    const auto refusal = [](auto edit) {
+        SearchStats s = counted_stats();
+        edit(s);
+        return refusal_of([&] { kz4ap::bench::summarize_channel(1, 0, s, 0.002); });
+    };
+    EXPECT_TRUE(contains(refusal([](SearchStats& s) { s.live_mean_100ms.pop_back(); s.live_max_100ms.pop_back(); }),
+                         "windows"));  // two windows hold at most 100 pieces
+    EXPECT_TRUE(contains(refusal([](SearchStats& s) { s.live_mean_100ms.push_back(1.0f); s.live_max_100ms.push_back(1.0f); }),
+                         "windows"));  // a fourth window would be empty
+    EXPECT_TRUE(contains(refusal([](SearchStats& s) { s.live_max_100ms.pop_back(); }), "windows"));
+    EXPECT_TRUE(contains(refusal([](SearchStats& s) { s.pieces = 0; }), "windows"));  // windows without pieces
+    // a piece of 4 ms makes windows of 25 pieces: the same 120 pieces would be 5 windows
+    EXPECT_NE(refusal_of([&] { kz4ap::bench::summarize_channel(1, 0, counted_stats(), 0.004); }), "(accepted)");
+    // a line whose kind or end is not in the legends
+    SearchStats odd = counted_stats();
+    odd.lines[1].kind = static_cast<LineKind>(7);
+    EXPECT_NE(refusal_of([&] { kz4ap::bench::summarize_channel(1, 0, odd, 0.002); }), "(accepted)");
+    odd = counted_stats();
+    odd.lines[1].end = static_cast<LineEnd>(4);
+    EXPECT_NE(refusal_of([&] { kz4ap::bench::summarize_channel(1, 0, odd, 0.002); }), "(accepted)");
+}
+
+TEST(ViterbiJsonSummary, TheSummaryOfAFileSummarizesEachChannelAtTheFilesPiece) {
+    StatsFile file;
+    file.recording = "x.wav";
+    file.config.piece_s = 0.004;  // windows of 25 pieces: 60 pieces are 25, 25 and 10
+    ChannelStats channel;
+    channel.track_id = 3;
+    channel.label_index = 2;
+    channel.stats = counted_stats();
+    channel.stats.pieces = 60;
+    channel.stats.live_histogram = {60};
+    file.channels = {channel};
+    const StatsSummaryFile summary = kz4ap::bench::summarize(file);
+    EXPECT_EQ(summary.recording, "x.wav");
+    EXPECT_EQ(to_json(summary.config), to_json(file.config));
+    ASSERT_EQ(summary.channels.size(), 1u);
+    EXPECT_EQ(summary.channels[0], kz4ap::bench::summarize(channel, 0.004));
+    EXPECT_DOUBLE_EQ(summary.channels[0].live_mean_stories, (25 * 10.0 + 25 * 20.0 + 10 * 40.0) / 60.0);
+}
+
+TEST(ViterbiJsonSummary, TheSummaryRoundTripsExactly) {
+    const StatsSummaryFile file = counted_summary_file();
+    // a channel, in memory and through the text a file holds
+    const ordered_json j = to_json(file.channels[0]);
+    EXPECT_EQ(kz4ap::bench::channel_summary_from_json(j), file.channels[0]);
+    EXPECT_EQ(kz4ap::bench::channel_summary_from_json(ordered_json::parse(j.dump())), file.channels[0]);
+    // the whole file: written channel by channel, the same object as to_json gives; read back, every member exact
+    const std::string path = temp_file_name("summary_round_trip");
+    kz4ap::bench::write_stats_summary_file(path, file);
+    std::ifstream in(path, std::ios::binary);
+    ASSERT_TRUE(in.good());
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    EXPECT_EQ(ordered_json::parse(text), to_json(file));
+    EXPECT_EQ(text.back(), '\n');
+    const StatsSummaryFile back = kz4ap::bench::read_stats_summary_file(path);
+    std::filesystem::remove(path);
+    EXPECT_FALSE(std::filesystem::exists(path + ".partial"));
+    EXPECT_EQ(back.recording, file.recording);
+    EXPECT_EQ(to_json(back.config), to_json(file.config));
+    ASSERT_EQ(back.channels.size(), file.channels.size());
+    for (std::size_t i = 0; i < file.channels.size(); ++i) EXPECT_EQ(back.channels[i], file.channels[i]) << i;
+    EXPECT_EQ(back.channels[0].led_lines[2].largest_deficit_nats, 7.0 / 3.0);  // a double that is not short in decimal
+}
+
+TEST(ViterbiJsonSummary, TheSummaryFileNamesItsKeysUnitsAndCodes) {
+    const ordered_json j = to_json(counted_summary_file());
+    EXPECT_EQ(j.at("format"), "kz4ap-viterbi-search-stats");
+    EXPECT_EQ(j.at("version"), 2);
+    EXPECT_EQ(j.at("recording"), "A2-awgn-c05-0-s1.wav");
+    EXPECT_EQ(j.at("config").at("beam_nats"), 35.0);
+    EXPECT_EQ(j.at("line_kinds"), ordered_json::array({"Start", "Silence", "Rescue"}));
+    EXPECT_EQ(j.at("line_ends"), ordered_json::array({"Alive", "Merge", "Beam", "Ceiling"}));
+    EXPECT_EQ(j.at("fate_axes"), ordered_json::array({"kind", "end", "ended_in_first_element", "led"}));
+    // what each key of a channel is, by its name, the unit or the kind of value first
+    const ordered_json& fields = j.at("fields").at("ChannelSummary");
+    for (const char* name : {"pieces", "ceiling_pieces", "live_histogram", "live_mean_stories", "live_max_stories",
+                             "lines", "fates", "led_lines"})
+        EXPECT_TRUE(fields.contains(name)) << name;
+    EXPECT_EQ(fields.at("pieces").get<std::string>().substr(0, 6), "count:");
+    EXPECT_EQ(fields.at("live_histogram").get<std::string>().substr(0, 7), "counts:");
+    EXPECT_EQ(fields.at("live_mean_stories").get<std::string>().substr(0, 8), "stories:");
+    EXPECT_EQ(fields.at("live_max_stories").get<std::string>().substr(0, 8), "stories:");
+    EXPECT_EQ(fields.at("fates").get<std::string>().substr(0, 7), "counts:");
+    EXPECT_EQ(fields.at("led_lines").get<std::string>().substr(0, 8), "columns:");
+    const ordered_json& line_fields = j.at("fields").at("NewbornLine");
+    for (const char* name : {"line", "birth_s", "kind", "first_led_s", "largest_deficit_nats", "end", "end_s",
+                             "ended_in_first_element"})
+        EXPECT_TRUE(line_fields.contains(name)) << name;
+    EXPECT_EQ(line_fields.at("line").get<std::string>().substr(0, 6), "count:");
+    // a channel
+    ASSERT_EQ(j.at("channels").size(), 3u);
+    const ordered_json& channel = j.at("channels").at(0);
+    EXPECT_EQ(channel.at("track_id"), 1);
+    EXPECT_EQ(channel.at("label_index"), 0);
+    EXPECT_TRUE(j.at("channels").at(2).at("label_index").is_null());
+    EXPECT_EQ(channel.at("pieces"), 120);
+    EXPECT_EQ(channel.at("ceiling_pieces"), 7);
+    EXPECT_EQ(channel.at("live_histogram"), ordered_json::array({60, 40, 20}));
+    EXPECT_EQ(channel.at("live_max_stories"), 41.0);
+    EXPECT_EQ(channel.at("lines"), 5);
+    ASSERT_EQ(channel.at("fates").size(), 3u);
+    ASSERT_EQ(channel.at("fates").at(0).size(), 4u);
+    ASSERT_EQ(channel.at("fates").at(0).at(0).size(), 2u);
+    ASSERT_EQ(channel.at("fates").at(0).at(0).at(0).size(), 2u);
+    EXPECT_EQ(channel.at("fates").at(0).at(1).at(0).at(1), 1);  // [Start][Merge][not first element][led]
+    const ordered_json& led = channel.at("led_lines");
+    EXPECT_EQ(led.at("line"), ordered_json::array({0, 2, 3}));
+    EXPECT_EQ(led.at("kind"), ordered_json::array({0, 2, 1}));
+    EXPECT_EQ(led.at("end"), ordered_json::array({1, 0, 2}));
+    EXPECT_EQ(led.at("first_led_s"), ordered_json::array({0.002, 0.12, 0.07}));
+    EXPECT_EQ(led.at("end_s"), ordered_json::array({0.1, nullptr, 0.15}));
+    EXPECT_EQ(led.at("ended_in_first_element"), ordered_json::array({false, false, false}));
+    // a channel that searched nothing has empty columns, not missing ones
+    const ordered_json& empty = j.at("channels").at(1);
+    EXPECT_EQ(empty.at("pieces"), 0);
+    EXPECT_TRUE(empty.at("led_lines").at("line").empty());
+    EXPECT_TRUE(empty.at("live_histogram").empty());
+}
+
+TEST(ViterbiJsonSummary, AReaderRefusesWhatItCannotRead) {
+    const ordered_json good = to_json(counted_summary_file());
+    ASSERT_EQ(refusal_of([&] { kz4ap::bench::stats_summary_file_from_json(good); }), "(accepted)");
+    const auto refused_after = [&](auto edit) {
+        ordered_json j = good;
+        edit(j);
+        return refusal_of([&] { kz4ap::bench::stats_summary_file_from_json(j); });
+    };
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["format"] = "something-else"; }), "format"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["version"] = 1; }), "version"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["version"] = 3; }), "version"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j.erase("channels"); }), "channels"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0].erase("fates"); }), "fates"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["pieces"] = "many"; }), "pieces"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["live_mean_stories"] = "ten"; }),
+                         "live_mean_stories"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["live_histogram"][1] = 0.5; }),
+                         "live_histogram"));
+    // the fates: 3 x 4 x 2 x 2 counts that add up to the lines
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["fates"].erase(2); }), "fates"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["fates"][0][0][0].push_back(0); }),
+                         "fates"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["fates"][0][0][0][0] = -1; }), "fates"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["fates"][0][0][0][0] = 1; }), "fates"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["lines"] = 6; }), "lines"));
+    // the lines that led: equal columns, ascending ids below the number of lines, each with a time it first led
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["led_lines"].erase("end_s"); }),
+                         "end_s"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["led_lines"]["end"].push_back(0); }),
+                         "led_lines"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["led_lines"]["line"] = {0, 3, 2}; }),
+                         "line"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["led_lines"]["line"] = {0, 2, 5}; }),
+                         "line"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["led_lines"]["first_led_s"][1] = nullptr; }),
+                         "first_led_s"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["led_lines"]["kind"][0] = 3; }), "kind"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["led_lines"]["end"][0] = -1; }), "end"));
+    EXPECT_NE(refusal_of([&] { kz4ap::bench::stats_summary_file_from_json(ordered_json::array()); }), "(accepted)");
+    EXPECT_THROW(kz4ap::bench::read_stats_summary_file(temp_file_name("missing_summary")), std::runtime_error);
+}
+
+TEST(ViterbiJsonSummary, TheTwoVersionsHaveTheirOwnReaders) {
+    const ordered_json summary = to_json(counted_summary_file());
+    const std::string why = refusal_of([&] { kz4ap::bench::stats_file_from_json(summary); });
+    EXPECT_TRUE(contains(why, "version")) << why;
+    const ordered_json full = to_json(sample_file());
+    const std::string other = refusal_of([&] { kz4ap::bench::stats_summary_file_from_json(full); });
+    EXPECT_TRUE(contains(other, "version")) << other;
+}
+
+TEST(ViterbiJsonSummary, AStatisticThatIsNotFiniteIsNotSummarized) {
+    kz4ap::bench::ChannelSummary c = kz4ap::bench::summarize_channel(1, 0, counted_stats(), 0.002);
+    c.live_mean_stories = kNaN;
+    EXPECT_TRUE(contains(refusal_of([&] { to_json(c); }), "live_mean_stories"));
+    c = kz4ap::bench::summarize_channel(1, 0, counted_stats(), 0.002);
+    c.led_lines[1].first_led_s = kInf;
+    EXPECT_TRUE(contains(refusal_of([&] { to_json(c); }), "first_led_s"));
+    // and the file is not left behind, begun or finished
+    StatsSummaryFile file = counted_summary_file();
+    file.channels[2].led_lines[0].birth_s = kInf;  // the third channel: the file is begun when it is reached
+    const std::string path = temp_file_name("summary_not_finite");
+    EXPECT_NE(refusal_of([&] { kz4ap::bench::write_stats_summary_file(path, file); }), "(accepted)");
+    EXPECT_FALSE(std::filesystem::exists(path));
+    EXPECT_FALSE(std::filesystem::exists(path + ".partial"));
+}
+
+// A finished run of the engine on two oracle channels of white noise (2 s), with the statistics on.
+struct FinishedRun {
+    EngineConfig config;
+    kz4ap::EventBus bus;
+    std::unique_ptr<kz4ap::Engine> engine;
+    explicit FinishedRun(unsigned seed) {
+        config.sample_rate = 48000;
+        config.decoder.front_end = kz4ap::FrontEnd::Viterbi;
+        config.oracle_frequencies_hz = {1203.0, -2501.0};
+        config.viterbi.stats = true;
+        config.viterbi.beam_nats = 35.0;
+        engine = std::make_unique<kz4ap::Engine>(config, bus);
+        engine->process(noise_of(2.0, seed));
+        engine->finish();
+    }
+};
+
+TEST(ViterbiJsonSummary, TheSummaryOfARunIsTheSummaryOfItsFullStatistics) {
+    FinishedRun run(11);
+    const StatsFile full = kz4ap::bench::collect_stats_file(*run.engine, "noise.wav", run.config.viterbi, 2);
+    const StatsSummaryFile reduced = kz4ap::bench::summarize(full);
+    const StatsSummaryFile direct = kz4ap::bench::collect_stats_summary(*run.engine, "noise.wav", run.config.viterbi, 2);
+    EXPECT_EQ(direct.recording, "noise.wav");
+    EXPECT_EQ(to_json(direct.config), to_json(reduced.config));
+    ASSERT_EQ(direct.channels.size(), 2u);
+    for (std::size_t i = 0; i < 2; ++i) {
+        EXPECT_EQ(direct.channels[i], reduced.channels[i]) << i;
+        const auto& c = direct.channels[i];
+        EXPECT_EQ(c.track_id, i + 1);
+        EXPECT_GT(c.pieces, 900);
+        EXPECT_EQ(c.lines, static_cast<std::int64_t>(full.channels[i].stats.lines.size()));
+        EXPECT_GE(c.led_lines.size(), 1u);  // the first story led
+        EXPECT_GT(c.live_mean_stories, 0.0);
+        EXPECT_LE(c.live_mean_stories, c.live_max_stories);
+    }
+    // the file a run writes is the same object, in either form, and reads back as what was collected
+    const std::string summary_path = temp_file_name("run_summary");
+    const std::string lines_path = temp_file_name("run_lines");
+    kz4ap::bench::write_run_stats(summary_path, *run.engine, "noise.wav", run.config.viterbi, 2,
+                                  kz4ap::bench::StatsDetail::Summary);
+    kz4ap::bench::write_run_stats(lines_path, *run.engine, "noise.wav", run.config.viterbi, 2,
+                                  kz4ap::bench::StatsDetail::Lines);
+    const StatsSummaryFile summary_back = kz4ap::bench::read_stats_summary_file(summary_path);
+    const StatsFile lines_back = kz4ap::bench::read_stats_file(lines_path);
+    std::filesystem::remove(summary_path);
+    std::filesystem::remove(lines_path);
+    ASSERT_EQ(summary_back.channels.size(), 2u);
+    ASSERT_EQ(lines_back.channels.size(), 2u);
+    for (std::size_t i = 0; i < 2; ++i) {
+        EXPECT_EQ(summary_back.channels[i], direct.channels[i]) << i;
+        EXPECT_EQ(lines_back.channels[i], full.channels[i]) << i;
+    }
+    // a channel the engine does not have is refused, and no file is left
+    const std::string missing_path = temp_file_name("run_missing_channel");
+    EXPECT_THROW(kz4ap::bench::write_run_stats(missing_path, *run.engine, "noise.wav", run.config.viterbi, 3,
+                                               kz4ap::bench::StatsDetail::Summary),
+                 std::runtime_error);
+    EXPECT_FALSE(std::filesystem::exists(missing_path));
+    EXPECT_FALSE(std::filesystem::exists(missing_path + ".partial"));
+}
+
+TEST(ViterbiJsonSummary, TwoRunsOfTheEngineGiveTheSameStatisticsInBothForms) {
+    // Determinism (the plan's constraint): the same recording and settings give the same output.
+    FinishedRun a(5), b(5), other(6);
+    const auto lines_of = [](FinishedRun& r) {
+        return kz4ap::bench::collect_stats_file(*r.engine, "noise.wav", r.config.viterbi, 2);
+    };
+    const auto summary_of = [](FinishedRun& r) {
+        return kz4ap::bench::collect_stats_summary(*r.engine, "noise.wav", r.config.viterbi, 2);
+    };
+    EXPECT_EQ(to_json(lines_of(a)), to_json(lines_of(b)));
+    EXPECT_EQ(to_json(summary_of(a)), to_json(summary_of(b)));
+    EXPECT_NE(to_json(summary_of(a)), to_json(summary_of(other)));  // and the test can tell a different recording
+}
+
+std::filesystem::path fixture_path(const char* name) { return std::filesystem::path(KZ4AP_SEARCH_STATS_FIXTURES) / name; }
+
+TEST(ViterbiJsonSummary, TheCommittedSummaryIsTheSummaryOfTheCommittedFullFile) {
+    // training/tests/data/search-stats/: a real run of two oracle channels over 1.05 s, written once in each form. The
+    // Python reductions (training/tests/test_search_stats.py) turn the full file into the summary too, so this ties the
+    // bench's reducer to the reductions on a real file without Python at test time.
+    const StatsFile full = kz4ap::bench::read_stats_file(fixture_path("tiny.v1.stats.json"));
+    const StatsSummaryFile committed = kz4ap::bench::read_stats_summary_file(fixture_path("tiny.v2.stats.json"));
+    const StatsSummaryFile reduced = kz4ap::bench::summarize(full);
+    EXPECT_EQ(reduced.recording, committed.recording);
+    EXPECT_EQ(to_json(reduced.config), to_json(committed.config));
+    ASSERT_EQ(reduced.channels.size(), 2u);
+    ASSERT_EQ(committed.channels.size(), 2u);
+    for (std::size_t i = 0; i < 2; ++i) {
+        kz4ap::bench::ChannelSummary mine = reduced.channels[i];
+        const kz4ap::bench::ChannelSummary& theirs = committed.channels[i];
+        EXPECT_DOUBLE_EQ(mine.live_mean_stories, theirs.live_mean_stories) << i;  // a sum of products: to the last digit
+        mine.live_mean_stories = theirs.live_mean_stories;
+        EXPECT_EQ(mine, theirs) << i;
+        EXPECT_EQ(mine.pieces, 523);
+    }
+    EXPECT_EQ(reduced.channels[0].led_line_ids, (std::vector<std::int64_t>{0, 89}));
+}
+
+TEST(ViterbiJsonSummary, StatsDetailNeedsStatsAndTheNewDecoder) {
+    ViterbiOptions options;
+    options.stats_detail = true;
+    const std::string alone = refusal_of([&] { check_viterbi_options(true, true, options); });
+    EXPECT_TRUE(contains(alone, "--stats-detail")) << alone;
+    EXPECT_TRUE(contains(alone, "--stats")) << alone;
+    options.stats = true;
+    EXPECT_EQ(refusal_of([&] { check_viterbi_options(true, true, options); }), "(accepted)");
+    EXPECT_NE(refusal_of([&] { check_viterbi_options(true, false, options); }), "(accepted)");  // --stats needs --oracle
+    EXPECT_TRUE(contains(refusal_of([&] { check_viterbi_options(false, true, options); }), "--decoder viterbi"));
+    options.stats_detail = false;
+    EXPECT_EQ(refusal_of([&] { check_viterbi_options(true, true, options); }), "(accepted)");
 }
 
 }  // namespace

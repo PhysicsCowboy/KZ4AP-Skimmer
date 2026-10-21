@@ -41,6 +41,8 @@ Labels parse_labels(const std::string& json_text) {
             signal.score = s.value("score", true);
             signal.drift_hz_per_s = number_or(s, "drift_hz_per_s", signal.drift_hz_per_s);
             signal.fading_hz = number_or(s, "fading_hz", signal.fading_hz);
+            signal.fading_hz_written = s.contains("fading_hz") && !s.at("fading_hz").is_null();
+            signal.per_station = s.contains("qso_index");
             signal.imbalance_dits = number_or(s, "imbalance_dits", signal.imbalance_dits);
             if (const auto it = s.find("keying"); it != s.end()) signal.keying = it->get<std::string>();
             if (const auto it = s.find("wpm_end"); it != s.end() && !it->is_null()) {

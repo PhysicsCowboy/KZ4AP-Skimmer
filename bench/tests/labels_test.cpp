@@ -95,6 +95,27 @@ TEST(Labels, TheFieldsTheGenieReadsDefaultToTheGeneratorsDefaults) {
     EXPECT_EQ(station.signals.at(0).imbalance_dits, -0.03);
 }
 
+TEST(Labels, APerStationLabelNamesItsQsoAndSaysWhetherItWroteItsFadingSpread) {
+    // training/kz4ap_synth.generate.station_labels writes an entry for each station of a QSO, which names the QSO
+    // (qso_index); since Task 8b it also writes the QSO's fading_hz. A label with no fading_hz, or a null one, did not
+    // say (the generator's default, 0, is then a guess, not a truth).
+    const std::string base = R"("text": "CQ", "freq_offset_hz": 0.0, "wpm": 25.0, "snr_db": 15.0, "start_s": 0.5,
+                                "end_s": 2.0)";
+    const auto labels = parse_labels(R"({"sample_rate": 48000, "duration_s": 30.0, "signals": [)" +
+                                     std::string("{") + base + "}, {" + base + R"(, "fading_hz": 0.6}, {)" + base +
+                                     R"(, "fading_hz": null}, {)" + base + R"(, "qso_index": 3, "fading_hz": 0.0}, {)" +
+                                     base + R"(, "qso_index": 3}]})");
+    ASSERT_EQ(labels.signals.size(), 5u);
+    const bool per_station[] = {false, false, false, true, true};
+    const bool written[] = {false, true, false, true, false};
+    for (std::size_t i = 0; i < 5; ++i) {
+        EXPECT_EQ(labels.signals[i].per_station, per_station[i]) << i;
+        EXPECT_EQ(labels.signals[i].fading_hz_written, written[i]) << i;
+    }
+    EXPECT_EQ(labels.signals[1].fading_hz, 0.6);
+    EXPECT_EQ(labels.signals[3].fading_hz, 0.0);
+}
+
 TEST(Labels, ANullSpeedEndAndAnEmptyListOfSendersAreAbsent) {
     // dataclasses.asdict writes wpm_end: null for a constant speed, senders: [] for one station, farnsworth_wpm
     // only when set
