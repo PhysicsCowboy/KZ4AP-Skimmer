@@ -360,8 +360,8 @@ void write_stats_stream(const std::filesystem::path& path, const ordered_json& h
     std::error_code error;
     std::filesystem::rename(partial, path, error);
     if (error)
-        throw std::runtime_error("cannot write " + path.string() + ": " + error.message() +
-                                 "; the finished file is kept as " + partial.string());
+        throw std::runtime_error("cannot write " + path.string() + ": the finished file is kept as " +
+                                 partial.string() + ", because renaming it failed: " + error.message());
 }
 
 // ---- Reading the statistics file ----

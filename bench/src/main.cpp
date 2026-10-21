@@ -211,8 +211,8 @@ void write_json(const std::optional<std::filesystem::path>& path, const nlohmann
     std::error_code error;
     std::filesystem::rename(partial, *path, error);
     if (error)
-        throw std::runtime_error("cannot write " + path->string() + ": " + error.message() +
-                                 "; the finished file is kept as " + partial.string());
+        throw std::runtime_error("cannot write " + path->string() + ": the finished file is kept as " +
+                                 partial.string() + ", because renaming it failed: " + error.message());
 }
 
 // "text" is the final text; "text_immediate" (when immediate is given, one per track in the same order) the text as
