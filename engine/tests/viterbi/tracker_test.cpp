@@ -237,9 +237,9 @@ TEST(Tracker, ResistsAStrongNeighbor) {
     GTEST_SKIP() << "known limitation (tracker.hpp, \"Limitations\"): " << failures << " of " << 2 * kSeeds
                  << " runs exceed 0.67 Hz from 3 s on (the worst " << worst << " Hz). The neighbor's keying puts "
                  << "sideband lines into the weak station's search range: alone, their largest stands 10 to 16 dB "
-                 << "above the mean noise power per bin (10th to 90th percentile), against about 17 dB for the weak "
-                 << "line. The gate, against the noise floor, passes them; where they outshine the weak line in two "
-                 << "windows in a row, the two agree and the track moves there.";
+                 << "above the mean noise power per bin (10th to 90th percentile), against about 17 dB re the same for "
+                 << "the weak line. The gate, against the noise floor, passes them; where they outshine the weak line "
+                 << "in two windows in a row, the two agree and the track moves there.";
 }
 
 // The tests below pin the redesign's parts (Task 6b): the gate against the noise floor, the measurement's variance,
@@ -535,9 +535,10 @@ TEST(Tracker, ThePairOfWindowsThatAcquiresNeedsAllItsSamples) {
 }
 
 TEST(Tracker, ACleanToneIsMeasuredToUnderAMillihertz) {
-    // The parabola through the peak's three bins in dB, on the Hann-windowed zero-padded transform, places a clean
-    // carrier to under 1 mHz wherever it falls between the 0.18 Hz bins (0.08 mHz at most by a calculation of the same
-    // estimator). The restart puts the state on the second window's measurement, read at its center, 1.0 s.
+    // The parabola through the peak's three bins (their powers in dB re any one reference), on the Hann-windowed
+    // zero-padded transform, places a clean carrier to under 1 mHz wherever it falls between the 0.18 Hz bins
+    // (0.08 mHz at most by a calculation of the same estimator). The restart puts the state on the second window's
+    // measurement, read at its center, 1.0 s.
     for (const double residual_hz : {0.0, 0.03, 0.06, 0.09, 0.12, 0.15, 0.18, 0.21, -0.07, 3.0, -11.0}) {
         SCOPED_TRACE("carrier " + std::to_string(residual_hz) + " Hz from the start");
         const auto x = carrier(0.0, 1.7, 1.7, 5.0 + residual_hz);

@@ -68,11 +68,13 @@
 //        per bin (10^0.9 = 7.94 times N0 x 1.5 Hz), and the peak is a strict local maximum with a strictly concave
 //        parabola (e): at the range's edge the bin outside may be larger (a line out there, or its skirt), and a flat
 //        top has no vertex. Otherwise nothing changes, except that the pending measurement (h) is dropped.
-//     e. The measurement. A parabola through the peak and its two neighbors, their powers in dB, has its vertex v bins
-//        from the peak: z = f_o + (k_peak + v) r / 8 192 Hz, the offset at t_c (a window's residual is its weighted
-//        average, the value at its center under a steady drift; the controller's Ruling 26).
+//     e. The measurement. A parabola through the peak and its two neighbors, their powers in dB re any one reference
+//        (the vertex does not depend on it), has its vertex v bins from the peak: z = f_o + (k_peak + v) r / 8 192 Hz,
+//        the offset at t_c (a window's residual is its weighted average, the value at its center under a steady drift;
+//        the controller's Ruling 26).
 //     f. Its variance, from the line's signal-to-noise ratio rho = |X_peak|^2 / (N0 r sum(w^2)) - 1, the peak's power
-//        over the noise per bin less the noise's own share (positive, the gate being above 0 dB):
+//        over the noise per bin less the noise's own share (positive, the gate being above 0 dB re the mean noise
+//        power per bin):
 //            R = c / rho + (0.08 mHz)^2,
 //        the Cramer-Rao form, a variance inversely proportional to the signal-to-noise ratio, with c = 0.2833 Hz^2
 //        (kVarianceScaleHz2) and a floor (kBiasFloorHz) for the parabola's own bias on a clean tone.
@@ -116,9 +118,9 @@
 // Derived.
 //   - The gate. A keyed carrier's line stands 10 log10(0.44^2 / (1.5 Hz / 500 Hz)) = 18.1 dB + S500 above the mean
 //     noise power per bin. The perfect decoder's threshold at 5.2 WPM, the plan's slowest speed, is S500 = 12 dB -
-//     10 log10(600 / 5.2) = -8.6 dB, where the line stands 9.5 dB above it, and a steady line there passes a 9 dB gate
-//     in 63.6% of windows (the Rician distribution of |line + noise|^2; 88.2% at 7 dB, 24.3% at 11 dB): the tracker
-//     updates at least half the time there.
+//     10 log10(600 / 5.2) = -8.6 dB, where the line stands 9.5 dB above it, and a steady line there passes the 9 dB
+//     gate in 63.6% of windows (the Rician distribution of |line + noise|^2; 88.2% for a gate of 7 dB and 24.3% for
+//     one of 11 dB re the mean noise power per bin): the tracker updates at least half the time there.
 //   - Noise alone. One bin's power is exponential and passes 9 dB re its mean with probability e^-7.94 = 3.55e-4; 163
 //     independent bins would put 5.6% of windows over the gate. The bins are correlated (the Hann window, the 5.46-fold
 //     zero padding), and 1.48% is measured, as from 42 independent bins.
@@ -161,7 +163,7 @@
 //     scatter, which the fit follows, came from the windows above its 13 dB gate re the median bin: those with strong
 //     lines.
 //   - Off the line: of the keyed carrier's measured windows 10.2%, 4.6% and 0.3% lay more than 1 Hz from it at -5, 0
-//     and +5 dB S500 (a keying sideband or a noise peak was larger), none at +10 dB and above.
+//     and +5 dB S500 (a keying sideband or a noise peak was larger), none at +10 dB S500 and above.
 //   - Consecutive windows share half their samples, and their measurements' errors correlate at -0.35 (the keyed
 //     carrier at 0 dB S500).
 //   - Drift beyond the physical range (FollowsDrift's signal at other rates, 200 seeds each): 99.5%, 98.5% and 77.5% of
@@ -189,7 +191,8 @@
 //   - The agreement test and the two-point covariance take consecutive windows' errors as independent; at a
 //     correlation of -0.35 the difference of two has 1.35 times the variance assumed.
 //   - The hiss estimate's own error moves the gate: an N0 2% low (its relative rms error in steady state) puts it at
-//     8.9 dB re the true mean noise power per bin, and one 18% low (one standard deviation after one frame) at 8.1 dB.
+//     8.9 dB re the true mean noise power per bin, and one 18% low (one standard deviation after one frame) at 8.1 dB
+//     re it.
 //   - Two carriers inside the search range give a peak at the larger, and two within about 2 Hz look like one.
 //   - A drift faster than about 1 Hz/s is not acquired (Measured): the development set's tuning group, up to 2.7 Hz/s,
 //     is beyond the physical range and not tuned for (the owner, 2026-10-20).

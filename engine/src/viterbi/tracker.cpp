@@ -52,11 +52,12 @@ void require(bool ok, const char* message) {
 // The trust rule: an offset predicted with this variance (Hz^2) is trusted while 3 sigma_f <= 0.67 Hz.
 bool trusted(double variance_hz2) { return kSigmas * std::sqrt(variance_hz2) <= kToleranceHz; }
 
-// The vertex, in bins from the middle point, of the parabola through three equally spaced values in dB whose middle one
-// is not below the others: 0.5 (below - above) / (below - 2 middle + above), within +/- 0.5. NaN when the three do not
-// make a strictly concave parabola (a flat top has no vertex).
+// The vertex, in bins from the middle point, of the parabola through three equally spaced values in dB re any one
+// reference, whose middle one is not below the others: 0.5 (below - above) / (below - 2 middle + above), within
+// +/- 0.5. NaN when the three do not make a strictly concave parabola (a flat top has no vertex).
 double parabola_vertex_bins(double db_below, double db_middle, double db_above) {
-    const double curvature = db_below - 2.0 * db_middle + db_above;  // dB, negative at a strict local maximum
+    // dB of power ratio (the reference cancels), negative at a strict local maximum
+    const double curvature = db_below - 2.0 * db_middle + db_above;
     return curvature < 0.0 ? 0.5 * (db_below - db_above) / curvature : kNaN;
 }
 
@@ -251,7 +252,8 @@ void CarrierTracker::measure(std::uint64_t first, double noise_density_fs2_per_h
     window.peak_fs2 = finite ? peak_power / norm : kNaN;
     bool measured = finite && noise_power > 0.0 && peak_power > 0.0 && peak_power >= gate_ratio_ * noise_power;
 
-    // e. A parabola through the peak and its two neighbors, in dB: its vertex is the measured residual of the window.
+    // e. A parabola through the peak and its two neighbors, in dB re 1 FS^2 in the transform's scale (the vertex does
+    // not depend on the reference): its vertex is the measured residual of the window.
     // The peak must be a strict local maximum: at the edge of the search range the bin outside may be larger (a line
     // out there, or the skirt of one), and a flat top has no vertex.
     double vertex_bins = kNaN;
@@ -272,7 +274,8 @@ void CarrierTracker::measure(std::uint64_t first, double noise_density_fs2_per_h
     }
 
     // f. The measurement, the offset at the center, and its variance from the line's signal-to-noise ratio: the peak's
-    // power over the noise per bin, less the noise's own share (positive, the gate being above 0 dB).
+    // power over the noise per bin, less the noise's own share (positive, the gate being above 0 dB re the mean noise
+    // power per bin).
     const double residual_hz = (static_cast<double>(peak_k) + vertex_bins) * rate / static_cast<double>(kFftPoints);
     const double measured_hz = oscillator_hz + residual_hz;
     const double snr = peak_power / noise_power - 1.0;
