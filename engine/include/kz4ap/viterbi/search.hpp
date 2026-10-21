@@ -106,8 +106,8 @@
 // long-run rate and the matched filter in a mark's first block, the start aligned with the rise wins and keeps winning,
 // and a newborn whose level is free gains nothing at a strong first piece. Measured on noise-free pieces at
 // +20 dB S500 under a level about 20% uncertain (relative standard deviation, predicted across 124 ms at f_D = 1 Hz): a
-// start one piece late trails by about 41 nats one piece after the edge and by about 59 nats six pieces later (with a
-// block's own c(m) and no rise it had led by 48.8 and about 23 nats), and a start one piece early scores within
+// start one piece late trails by about 41 nats one piece after the edge and by about 59 nats six pieces after it
+// (with a block's own c(m) and no rise it had led by 48.8 and about 23 nats), and a start one piece early scores within
 // 0.4 nats of the aligned one. Measured on the tests' signals (search_test.cpp): the step from 20 to 30 WPM decodes at
 // every level from +11 to +28 dB S500 on three seeds at beams of 40 and 80 nats, and at +10 dB S500 on two of the
 // three; "PARIS PARIS" at 12, 25 and 40 WPM decodes exactly at every level from +10 to +28 dB S500 on three seeds.
