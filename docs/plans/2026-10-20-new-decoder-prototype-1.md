@@ -334,7 +334,7 @@ decisions (decision D6; every value here a placeholder, measured in R9).
 | Piece | 3 samples = 2.000 | ms | derived from r = 1 500 samples/s (notes, topic 4, item 1) |
 | Keying edge, for the mark's rise | raised cosine, 5 | ms | placeholder, heuristic: the generator's edge (D10, §2.3) |
 | Speeds | 12.0 × 1.1^s, s = 0 … 31 | ms per dot | owner (notes, topic 2, item 1) |
-| Farnsworth factors | 1 only (D14, 2026-10-21); the grid 1.1^f, f = 0 … 22, a non-default variant | — | owner (notes, topic 2, item 3, amended) |
+| Farnsworth factor | none: standard spacing only (D14, 2026-10-21; the grid 1.1^f, f = 0 … 22, removed) | — | owner (notes, topic 2, item 3, amended) |
 | Fist medians | 1, 3, 1, 3F, 7F | dots | placeholder, heuristic (ITU-R M.1677-1) |
 | Fist σ | 0.3, every kind | ln(length) | placeholder, heuristic |
 | Fist tail | none until measured on real keying | — | owner (D5, 2026-10-20) |
@@ -510,7 +510,10 @@ S₅₀₀ seed-12 point stays a known failure until R3 sets the ceiling. The op
 - **The owner:** "we eliminate the Farnsworth factor entirely for now and allow any Farnsworth decoding to fail until a
   future fix, recording somewhere what we've discovered and our thoughts for how to fix it."
 - **What changes** (Task 4d):
-  - The default factor grid is the single factor F = 1. The grid stays in the code as a variant a run may switch on.
+  - The factor is removed from the decoder: no factor in a reading's state, no factor grid, no open-factor tables or
+    scan. Letter and word gaps have medians of 3 and 7 dots.
+  - The owner asked why a run would want the 23-factor code. No measurement here needs it, and the branch's history
+    keeps it for the later fix.
   - The Farnsworth tests become known failures; TheGridsEnds' slow end is sent at standard spacing.
 - **What is recorded:** the findings and the thoughts for a fix are in `docs/backlog.md`, "Farnsworth spacing in the
   new decoder"; the design notes' topic 2, item 3 is amended.

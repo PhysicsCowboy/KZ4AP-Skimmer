@@ -287,9 +287,11 @@ fit and amplitude mid-transmission. Stage 2: make the over-start test aware of t
 spacing, for example from its fitted word gaps, rather than a fixed multiple of T_g.
 
 ### Farnsworth spacing in the new decoder (owner, 2026-10-21: removed from the first prototype)
-**Status (2026-10-21): open.** The new decoder's first prototype (viterbi) assumes standard spacing only: the
-Farnsworth factor is fixed at 1. Farnsworth-spaced signals (DEV2's groups I and I2) are expected to decode poorly until
-a fix. Owner's decision: "we eliminate the Farnsworth factor entirely for now and allow any Farnsworth decoding to fail
+**Status (2026-10-21): open.** The new decoder's first prototype (viterbi) assumes standard spacing only.
+- The Farnsworth factor is removed from its code: the factor in each reading's state, the 23-factor grid, and the
+  open-factor tables and scan.
+- The removed code is in the branch's history, in the commits before the prototype's Task 4d.
+- Farnsworth-spaced signals (DEV2's groups I and I2) are expected to decode poorly until a fix. Owner's decision: "we eliminate the Farnsworth factor entirely for now and allow any Farnsworth decoding to fail
 until a future fix ... That will help with CPU and will restore proper decoding of properly sent Morse."
 
 **What was found** (the first prototype; measured unless marked):

@@ -148,7 +148,7 @@ means all three of:
      - The owner: "The vast majority of on air code is not Farnsworth."
      - What was found, and the thoughts for a fix (a concentrated prior, Farnsworth readings started on demand, or
        spacing learned per sender): `docs/backlog.md`, "Farnsworth spacing in the new decoder".
-     - The grid below stays in the code as a variant that a run may switch on; it is not the default.
+     - The factor and the grid below are removed from the code; the branch's history keeps them for the later fix.
    - **Grid:** 23 factors 10% apart, 1.1^k for k = 0 to 22 (1 to 8.14), like the speeds. The range, 1 to 8, is the
      owner's decision: it covers the use known on the air (the ARRL's 18 WPM characters at 5 WPM overall give 7.84;
      W1AW's code practice has used 15 WPM characters since 2001, at most 6.26, from a weak source). Covering the whole
