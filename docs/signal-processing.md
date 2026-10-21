@@ -441,12 +441,11 @@ uses none of their decisions: on/off keying leaves a steady line at the
 carrier, 0.44² of the key-down power for PARIS text (derived). Every 0.5 s
 the last 1 s of samples (placeholders), shifted by the oscillator itself and
 Hann-windowed, is zero-padded to 8 192 points (heuristic): bins 0.183 Hz
-apart, which interpolate; the 1 s window resolves about 1 Hz. The largest bin
-within ±15 Hz (placeholder) is measured only if it stands 9 dB above the mean
-noise power per bin, N₀ × 1.5 Hz (derived from the perfect decoder's
-threshold at 5.2 WPM; noise alone passes in 1.48% of windows, measured); a
-trusted track first takes the largest bin near its own line (±0.61 Hz once
-settled; derived), if that one passes. A parabola through the peak and its
+apart. The largest bin within ±15 Hz (placeholder) is measured only if it
+stands 9 dB above the mean noise power per bin, N₀ × 1.5 Hz (derived; noise
+alone passes in 1.48% of windows, measured); a trusted track first takes
+the largest bin near its own line (±0.61 Hz once settled; derived), if that
+one passes. A parabola through the peak and its
 neighbors, in dB re any one reference, gives the offset at the window's
 center. Its variance is 0.2833 Hz²/ρ, ρ the line's SNR in its bin (a
 measured fit), times a fill factor, how much less a window measures whose
@@ -459,10 +458,9 @@ rate (drift noise 1.5 × 10⁻⁴ Hz²/s³, from older rigs' warm-up drift of
 0.3 Hz/s; sourced). The track is trusted while three standard deviations of
 its offset stay within 0.667 Hz, the residual that costs the default 390 ms
 block 1 dB of signal power (derived), at every fading spread (decided
-2026-10-21 from measurements, A.8d: a stricter value leaves more tracks
-untrusted, not better estimated). Untrusted, the oscillator holds its
-frequency, and two consecutive measurements that agree within three standard
-deviations restart the filter. The oscillator is phase-continuous and starts
+2026-10-21; A.8d). Untrusted, the oscillator holds its frequency, and two
+consecutive measurements that agree within three standard deviations
+restart the filter. The oscillator is phase-continuous and starts
 at the engine's anchor (oracle mode: the label's frequency). A genie variant
 re-centers on the true frequency and drift.
 
@@ -497,13 +495,14 @@ signal, not exact, and at +60 dB S₅₀₀ a full piece is worth 10⁶ nats, so
 mismatch of 1% of one piece's amplitude would outweigh inventing an over
 (34.3 nats). So V adds the model's systematic uncertainty to the noise in
 quadrature: V = 4 500 Hz × N₀ × W + C²(E_n + f²W) (FS²). C² is a full
-piece's squared carrier sum, from the data and the same for every story:
-the larger of the channel's largest |piece|² over the last 390 ms and the
-next 4 ms, and the block's own estimate (3|S|/m_signal)². E_n, in a mark's
-first block only, is the template's mean-square error over where the edge
-falls (0.0004 to 0.022 of C², measured); f = 0.02 of a piece's amplitude is
-a floor for chirp, clicks and fading within a block (placeholder,
-heuristic).
+piece's squared carrier sum, from the data, never a story's level: the
+larger of the channel's largest |piece|² over the last 390 ms and the next
+4 ms, common to every story, and the block's own estimate
+(3|S|/m_signal)², a story's own but never to its advantage (A.8d). E_n, in
+a mark's first block only, is the template's mean-square error over where
+the edge falls (0.0004 to 0.022 of C², measured); f = 0.02 of a piece's
+amplitude is a floor for chirp, clicks and fading within a block
+(placeholder, heuristic).
 
 **The level.** Each story carries a Gaussian N(μ, P) for the key-down
 amplitude a (FS), and scores a block by integrating Λ over it
@@ -519,9 +518,8 @@ is scored against a level flat in dB from −15 to +85 dB S₅₀₀ (placeholde
 and leaves that posterior.
 
 **Timing and text.** 32 speeds, dots of 12.0 ms × 1.1^s (100 to 5.2 WPM)
-(owner), at standard spacing only: there is no Farnsworth factor (owner,
-2026-10-21), so Farnsworth-spaced signals decode poorly until a later fix
-(A.8d). Dots, dashes, element gaps, letter gaps and word gaps last
+(owner), at standard spacing only (owner, 2026-10-21: Farnsworth-spaced
+signals decode poorly; A.8d). Dots, dashes, element gaps, letter gaps and word gaps last
 log-normally about medians of 1, 3, 1, 3 and 7 dots, σ = 0.3 in
 ln(length), rounded to whole pieces (placeholders, heuristic; no heavy
 tail, owner). A story still in its element at τ pieces has paid ln S(τ),
@@ -551,32 +549,34 @@ Scores are held relative to the best.
 
 **Cost.** On ten minutes of noise alone, where the ceiling binds, it took
 287 ms of one thread per channel-second on the development desktop
-(measured; the plan measures it on the Linux machine). Per channel it keeps
+(measured). Per channel it keeps
 up to 1 700 stories, their shared text and the open timing's tables (at
 most 4 MB); the flat prior's tables (18.7 MB) are built once and shared by
 every channel.
 
-**Open.** The ceiling binds on noise and in weak signals' gaps (with the
-Farnsworth factor, a speed step at +10 dB S₅₀₀ failed on one seed because
-of it, a point that decodes since); the owner left its value to the plan's
-ceiling run. The tracker loses a station at 0 dB S₅₀₀ to a +20 dB S₅₀₀
-neighbor 50 Hz away in 28% of runs. After a restart it trusts the next
-window only if the two windows that restarted it have variances under about
-7.7 × 10⁻³ Hz², for a keyed station on average above about −2.5 dB S₅₀₀
-(derived; the boundary is soft: at −4 dB S₅₀₀, 53% of windows are trusted,
-measured), while the perfect decoder's threshold at 5.2 WPM is
-−8.6 dB S₅₀₀. At fading spreads below 1 Hz the decoder's longer blocks ask
+**Open.** The ceiling binds on noise and in weak signals' gaps; its value
+awaits the plan's ceiling run (owner). The tracker loses a station at
+0 dB S₅₀₀ to a +20 dB S₅₀₀ neighbor 50 Hz away in 28% of runs. After a
+restart it trusts a keyed station only above about −2.5 dB S₅₀₀ on average
+(derived; a soft boundary, A.8d), against the perfect decoder's −8.6 dB S₅₀₀
+at 5.2 WPM. At fading spreads below 1 Hz the decoder's longer blocks ask
 for a closer frequency than the tracker gives (A.8d). Strong stations
 decode exactly to +60 dB S₅₀₀ at every edge position tried (measured;
-without the systematic term, wrong from +38 dB S₅₀₀). The term's carrier
-power is the channel's, so a strong neighbor raises a weak station's term;
-where that matters, the neighbor's own residual is larger still (derived;
-A.8d). A neighbor inside the channel's passband defeats the decoder with
+without the systematic term, wrong from +38 dB S₅₀₀). Because C² is the
+channel's, the term has two measured costs (A.8d): a neighbor 30 to 40 dB
+stronger that stops 0.10 to 0.30 s before a weak station starts costs the
+station its exact text in 194 of 288 runs exact without the term, and a
+station fading up loses marks when a key-up overshoot raises C² inside them
+(under fading the term's character error rate was worse in 29 of 360 runs,
+better in 242). The first is a limitation of the missing interference
+model (`docs/backlog.md`). **Fading is
+under diagnosis:** at f_D = 2 Hz no run decoded exactly from +10 to
++60 dB S₅₀₀, with or without the term, and at 1 Hz few did (measured; marks
+split). A neighbor inside the channel's passband defeats the decoder with
 or without the term: an equally strong one 40 or 70 Hz away loses a station
-at +6 or +10 dB S₅₀₀ (measured). An over of one short word
-can lose to one longer symbol with the same marks: at exact timing "TEST"
-and "TU" win by about 1 nat, but "EE" alone reads as "I" by 0.06 nats,
-"EEE" as "S" by 1.05 and "EEEE" as "H" by 2.07 (derived, not run; A.8d).
+at +6 or +10 dB S₅₀₀ (measured). An over of one short word can read as one
+longer symbol with the same marks ("EE" as "I", "EEE" as "S"; derived, not
+run; A.8d).
 
 Appendix: A.8d.
 
@@ -3671,18 +3671,18 @@ from 31 samples; 2R_k/1 500 Hz is 2.1 × 10⁻⁹ at k = 29 and 6.5 × 10⁻¹�
   a full piece, depending on where the edge falls in it; the template holds their average, 0.193. The spread enters
   the error budget as the systematic term's E_n (below).
 - **The edge's shape is assumed:** the generator's 5 ms raised cosine.
-- **The fall is not modeled, and a gap piece adds 0 whatever it holds:** a piece holding the fraction f of a full
-  piece's carrier sum carries f²·10^(S₅₀₀/10) nats of energy (derived), which no story that keeps the mark explains
+- **The fall is not modeled, and a gap piece adds 0 whatever it holds:** a piece holding the fraction φ of a full
+  piece's carrier sum carries φ²·10^(S₅₀₀/10) nats of energy (derived), which no story that keeps the mark explains
   once the mark has ended. A story that ends the over and starts a new one-piece over in the fall's tail can claim it.
   That over alone costs 34.3 nats (the over's end 4.30, the birth's ln P 9.21, the letter 4.13, the speed's prior 3.47,
   a one-piece dot at 100 WPM 13.17), and the story also pays for what follows it, so the claim wins only where the
   piece carries at least about 34 nats (derived). Without the systematic term that broke strong stations from about
   +38 dB S₅₀₀, and at +60 dB S₅₀₀ every "PARIS" read "T EE EE ET E T EE E T EE ET E T ET E T ET ET E" (measured; the
-  results record, section 1.7, has the runs). The term caps the claim of a newborn's one-piece first block at
-  g₁²f²/(E₁ + 0.02²·g₁²) = 97.1 f² nats where the mark just seen sets C² (derived), below the over's cost for
-  f < 0.59, and with it every edge position tried decodes exactly from +30 to +60 dB S₅₀₀ (measured; below). The plan's
-  §2.3 had judged the fall harmless ("a weak last piece only costs the story that keeps it"); that holds for the story
-  that keeps it, not for the one that does not.
+  results record, section 1.7, has the runs). With the term a one-piece first block claims at most 3.63 nats whatever
+  the data, and 97.1 φ² while the mark is still in the term's window (derived; the systematic term, below), far below
+  the over's cost, and every edge position tried decodes exactly from +30 to +60 dB S₅₀₀ (measured; below). The
+  plan's §2.3 had judged the fall harmless ("a weak last piece only costs the story that keeps it"); that holds for
+  the story that keeps it, not for the one that does not.
 - Short first blocks are credited less evidence than their correlated noise would allow (above), by design.
 - **The piece must be a whole number of channel samples,** `piece_s` × r. At the default 2 ms and the engine's
   automatic FFT sizes that holds at r = 1 500 samples/s (48 kHz × 2^j, 3 samples) and 2 000 samples/s (8, 16 and
@@ -3706,20 +3706,38 @@ The owner's decision D15 of 2026-10-21 (the plan); `search.hpp`, "The systematic
   deviation, √E_n = 0.145 from n = 7, is the template's error in units of a full piece's carrier sum.
 - **The floor's share.** A relative error of variance f² in each piece, independent from piece to piece, adds
   (3a)²·f²·Σ g_j² = C²·f²·W.
-- **The carrier power is the data's, not a story's.** At large SNR Λ ≈ (|S|² − |S − m_signal·a|²)/V, so a hypothesis
-  that lowers its own V raises its own evidence. With a story's level k·a in V (k its level over the true one) a mark
-  scores about (2k − k²)·z₀²/(1 + k²ρ), z₀² its energy over the noise and ρ the systematic share of V over the
-  noise's at the true level, which is largest near k = 1/√ρ: a 24-piece dot at +60 dB S₅₀₀ (z₀² = 2.2 × 10⁷,
+- **What the score is.** Noise alone is judged against the same V as the carrier, so Λ is no longer a likelihood ratio
+  against noise alone, but an approximate evidence under a widened error budget, the χ² fit's treatment of a
+  systematic error (the form heuristic, the owner's decision; E_n's form derived; the floor's independence from piece
+  to piece assumed). A likelihood with the systematic variance on the carrier alone caps nothing: noise alone cannot
+  explain a strong piece, so that ratio stays about |S|²/V₀, V₀ the noise's share (derived).
+- **The carrier power is the data's, not a story's level.** At large SNR Λ ≈ (|S|² − |S − m_signal·a|²)/V, so a
+  hypothesis that lowers its own V raises its own evidence. With a story's level k·a in V (k its level over the true
+  one) a mark scores about (2k − k²)·z₀²/(1 + k²ρ), z₀² its energy over the noise and ρ the systematic share of V over
+  the noise's at the true level, which is largest near k = 1/√ρ: a 24-piece dot at +60 dB S₅₀₀ (z₀² = 2.2 × 10⁷,
   ρ = 1 340) scores about 6 × 10⁵ nats at k = 0.027 against 1.7 × 10⁴ at k = 1. The exact form, V(a) inside the
   level's integral, is dominated by the same a and grows as z₀²/√ρ instead of being capped.
-- **What it caps.** With C² at the true carrier, a first block of n pieces has z² ≤ G_n²/(E_n + f²G_n),
-  G_n = g₁² + … + g_n²: 3.63, 17.7 and 73.9 nats for n = 1, 2 and 3, below the 34.3 nats of an invented over for one
-  and two pieces; a later block of n pieces has z² ≤ n/f², 2 500 nats per piece, a piece's energy at +34 dB S₅₀₀
-  without the term. A piece of the fall holding the fraction φ of the carrier sum of the mark just seen, read as a
-  one-piece first block: z² ≤ g₁²φ²/(E₁ + f²g₁²) = 97.1 φ² (above).
-- **Merging needs the floor.** At high SNR two marks of n full pieces read apart score about 2n²/(E + f²n) and read
-  as one mark across their gap of g pieces about (2n)²/(E + f²(2n + g)), so the merged reading wins where E > f²g:
-  with f = 0, across every gap.
+- **The block's own estimate is a story's own, and safe.** (3|S|/m_signal)² depends on where a story claims its
+  mark began (its block's pieces and weights), never on its level, and it can only raise that story's V above the
+  common part. That never helps a story whose evidence is positive: a newborn's Λ_flat rises with z, and a learned
+  story gains from a larger V only where its predicted sum m_signal·μ exceeds twice |S|, where its evidence is
+  already negative (at large SNR the main term is (2m_signal·μ|S| − m_signal²μ²)/V; derived).
+- **What it caps.** Whatever the data, C² ≥ (3|S|/m_signal)², so every first block of n pieces has
+  z² ≤ W_n²/(E_n + f²W_n), W_n = g₁² + … + g_n²: 3.63, 17.7 and 73.9 nats for n = 1, 2 and 3, below the 34.3 nats of
+  an invented over for one and two pieces; every later block of n pieces has z² ≤ n/f², 2 500 nats per piece, a
+  piece's energy at +34 dB S₅₀₀ without the term. A piece of the fall holding the fraction φ of the carrier sum of a
+  mark still in the window, read as a one-piece first block, claims at most min(97.1 φ², 3.63) nats:
+  g₁²φ²/(E₁ + f²g₁²) = 97.1 φ² while the mark sets C², the own estimate's 3.63 from φ = g₁ = 0.193 up.
+- **What keeps two marks apart: the beam.** At high SNR two marks of n full pieces read apart score about
+  2n²/(E + f²n), and read as one mark across their gap of g pieces about (2n)²/(E + f²(2n + g)); so a merged story
+  that survived the gap would win where E > f²g, across any gap shorter than E/f² = 52.5 pieces (105 ms) at the
+  default floor. It does not survive: once its mark's pieces end, each empty piece adds f²C² to V and nothing to S,
+  and z² = W²/(E + f²(W + k)) after k empty pieces, so a run-on 24-piece dot falls behind by about
+  W²f²/(E + f²W)² ≈ 220 nats per empty piece (derived) and the 40-nat beam drops it at its first. With f = 0 it loses
+  nothing per empty piece, survives the gap and merges. Measured ("PARIS PARIS" at 25 WPM, the edge at a piece's
+  start, the search alone on the search tests' noise, seed 34; scratch runs): at f = 0 marks of 28 and 47 pieces were
+  still alive in P's first element gap at +45 and +60 dB S₅₀₀, 39.0 and 39.5 nats behind the best, and +60 dB S₅₀₀
+  read "A NARIS PARIS"; at 0.02 no live mark there was longer than the dot's 24 pieces and 2 of its fall.
 - **The flat prior.** Read at z = |S|/√V, a newborn's level range stands for levels higher than its bounds by
   10 log₁₀(V / the noise's share) in dB S₅₀₀, so the range moves up with the strongest stations; at +20 dB S₅₀₀ the
   shift is 0.55 dB of S₅₀₀ in a 24-piece first block.
@@ -3731,7 +3749,8 @@ The owner's decision D15 of 2026-10-21 (the plan); `search.hpp`, "The systematic
   pieces (the average of |Σ_k e^(i2πδ×2 ms×k)|² over the block's length); the floor's share of the term is f²|p|²n, at
   most 2nf² of that residual (0.019 for a 24-piece block, 0.16 for 195 pieces), and the edge's at most 2E_n (0.045).
   Where the term's share reaches the noise, the neighbor's own residual in the same block is on average at least 5
-  times larger.
+  times larger. That holds only while the neighbor is in the block: one that has stopped leaves no residual but stays
+  in C² for up to 390 ms (limitations, below).
 
 **Provenance.** f = 0.02: placeholder, heuristic; of 0, 0.01, 0.02 and 0.05, the only one measured clean on both the
 strong grid and the ordinary levels (the results record, section 1.7). E_n: derived from the per-position fractions,
@@ -3741,18 +3760,51 @@ the larger of the channel's power and the block's own estimate: measured (each a
 look-ahead of 4 ms: measured; the two pieces before a mark's first template piece carry the channel filter's ringing,
 up to 0.046 and 0.022 of a full piece's amplitude (the third below 0.002), and at +60 dB S₅₀₀ a newborn read them as
 the end of a weak mark, worth about 87 nats, before the mark reached the window (2 of 16 positions failed without
-it, none with 2 or 3 pieces).
+it, none with 2 or 3 pieces). The ringing is the same at 192 kHz (0.0456, 0.0223 and 0.0019 of a full piece's
+amplitude at 48 and 192 kHz alike, computed from the taps); the strong grid ran at 48 kHz only.
 
 **Limitations.**
 - **Evidence lost at ordinary levels** (measured, a learned story's level known to 2%): as much as 0.05, 0.24 and
   1.12 dB of S₅₀₀ in a 195-piece later block at +10, +20 and +28 dB S₅₀₀; 0.12, 0.70 and 2.88 dB of S₅₀₀ in a 24-piece
   first block. No decoding measured at those levels changed (the results record).
-- **A strong neighbor raises a weak station's term,** for up to 390 ms after its last strong piece. Derived above to
-  matter only where the neighbor's residual is already larger; measured: no exact text lost with a keyed neighbor 0 to
-  40 dB stronger 40 to 200 Hz away (the results record). Without the term too, the decoder loses a station at +6 or
-  +10 dB S₅₀₀ to an equally strong neighbor 40 or 70 Hz away and to one 10 dB stronger within 100 Hz (measured): its
-  block sums keep much of a carrier inside the channel's passband (the residual above). Should the decoder learn to
-  reject such a neighbor, C² would have to come from the station's own narrowband power (conjectured).
+- **A neighbor that has stopped costs a weak station its text** (measured; a limitation of the missing interference
+  model, `docs/backlog.md`, "A neighbor inside the channel takes over a weak station"). Its last strong pieces stay in
+  C² for up to 390 ms, and a weak station that starts within that time is judged against the neighbor's power: the
+  term then caps the station's evidence, and the search misreads its first element ("GARIS PARIS", "NARIS PARIS").
+  The grid: "PARIS
+  PARIS" at 25 WPM from 1.6 s at +6 and +10 dB S₅₀₀; the neighbor one key-down from 0.3 s that ends a gap before it,
+  20, 30 or 40 dB stronger (relative to the station's key-down power), 15 to 200 Hz above it; seeds 1 to 3; the search
+  alone. Exact texts of 108 runs per gap:
+
+  | Gap (s) | 0.05 | 0.10 | 0.15 | 0.20 | 0.30 | 0.45 | 0.60 | All 756 |
+  |---|---|---|---|---|---|---|---|---|
+  | without the term | 20 | 108 | 108 | 108 | 108 | 108 | 108 | 668 |
+  | with the term | 48 | 50 | 64 | 66 | 57 | 108 | 108 | 501 |
+
+  At gaps of 0.10 to 0.30 s the term keeps 143 of 144 runs with a neighbor 20 dB stronger, but 79 of 144 with one 30 dB
+  stronger and 15 of 144 with one 40 dB stronger (64 of 96 and 13 of 96 at 50 to 200 Hz, 15 of 48 and 2 of 48 at 15 to
+  30 Hz). At 0.05 s the neighbor's own tail still reaches the station, and the term, which caps it, is the better (48
+  against 20).
+  The alternatives measured to keep the cap without the trade (a narrowband C², a shorter memory, a story's own last
+  mark) each broke the strong stations (the results record, section 1.8).
+  Without the term too, the decoder loses a station at +6 or +10 dB S₅₀₀ to an equally strong neighbor 40 or 70 Hz
+  away and to one 10 dB stronger within 100 Hz, while the neighbor is keyed (measured): its block sums keep much of a
+  carrier inside the channel's passband (the residual above).
+- **A station fading up loses marks to the term** (measured and traced). C² must not rise while a block lasts, since
+  the block's evidence is recomputed with the current V at every piece while a finished block's stays. On a steady
+  carrier the window holds an earlier key-up overshoot, so a new one does not raise C²; on a carrier fading up, each
+  key-up overshoot (about 1.03 to 1.05 of the preceding piece's power in the traces) sets a new maximum inside the
+  mark, through the look-ahead 2 pieces before the mark ends. A 67-piece first block at +30 dB S₅₀₀ then loses about
+  1 600 nats of evidence (derived), and the story that ended the mark 3 pieces earlier wins; the carrier's last pieces
+  become a new letter ("PARIS" read "A RARIS"). Under Rayleigh fading at f_D = 0.3, 1 and 2 Hz from +10 to +60 dB
+  S₅₀₀ (360 runs, the decoder at its defaults), the term's character error rate was worse in 29 runs and better in
+  242 (mean 60.6% against 304.4% without it), and 11 strong runs exact without the term were wrong with it (the
+  results record, section 1.7).
+- **Fading defeats the decoder, with or without the term** (measured; open, under diagnosis). At f_D = 2 Hz no run
+  decoded exactly at any level from +10 to +60 dB S₅₀₀ (nor, from +30 dB S₅₀₀, with the true spread), and at 1 Hz
+  7 of 20 runs at +20 dB S₅₀₀ did with the term, none without it; the texts split marks ("PA" read "W I").
+  Conjectured: the amplitude moving inside a block is a misfit the error budget leaves out beyond the floor f. The
+  diagnosis is the next piece of work (owner, 2026-10-21; `docs/backlog.md`).
 - **The floor is measured on synthetic signals** (machine keying, the generator's edge, no chirp or clicks): real
   transmitters may need a larger one (conjectured).
 - **The search runs 4 ms behind its pieces,** invisible while the text comes at the channel's end.
@@ -4053,11 +4105,11 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | New decoder: the level's evidence | Gauss–Hermite quadrature of order 5 at the integrand's mode; exact tables where z′ ≤ 4 and κ′ ≤ 1 (steps of 0.01) | `quadrature_order`; `block_evidence` | order: the plan's D4; the regime's bounds and steps heuristic, their accuracy measured |
 | New decoder: the rise | a 5 ms raised-cosine keying edge: g = 0.193, 0.614, 0.943, 1.019 at 48 kHz; the rise from the first piece reaching 0.01 to the last more than 0.005 from 1; rise_s at most 1 s | `keying_rise_s`; `rise_fractions` | the edge placeholder, heuristic (the generator's); g derived; 0.01, 0.005 and 1 s heuristic |
 | New decoder: the noise of the pieces | independent at N₀ × 1 500 Hz per channel sample, c's last increment (refused unless its last two increments agree within 10⁻⁹) | `FlatPrior`, `Search` | derived (design notes, topic 4, item 2, as amended); the 10⁻⁹ heuristic |
-| New decoder: the systematic term | added in quadrature to the noise in every block's error budget: C²(E_n + f²W), W the sum of the block's squared weights (owner, D15) | `Search` | the form derived |
+| New decoder: the systematic term | added in quadrature to the noise in every block's error budget: C²(E_n + f²W), W the sum of the block's squared weights; noise alone is judged against the same V, so Λ is an approximate evidence, not a likelihood ratio | `Search` | owner (D15); the error-budget form heuristic; E_n's form derived; the floor's independence from piece to piece assumed |
 | New decoder: the systematic floor | f = 0.02 of a full piece's carrier amplitude, independent per piece; 0 to 1 | `systematic_floor` | placeholder, heuristic (of 0, 0.01, 0.02 and 0.05 the only one measured clean at strong and ordinary levels) |
 | New decoder: the template's error | E_n in a mark's first block, the mean square over the edge's positions of the weighted sum's error (one edge's, summed before squaring): 0.00037, 0.0095, 0.0224 at n = 1, 2, 3 and 0.0210 from n = 7 of C² at 48 kHz with 5 ms edges; 0 in a later block | `rise_template_errors`; `FlatPrior::template_error` | derived; the values measured on the channelizer's filter |
-| New decoder: the carrier power C² | the larger of the largest \|piece\|² over the last min(B, the flat prior's span) = 195 pieces (390 ms) and the next 2, and the block's own estimate (3\|S\|/m_signal)²; the same for every story | `Search` | the window heuristic; taking the larger of the two measured (each alone fails) |
-| New decoder: the look-ahead | ⌈4 ms / piece⌉ = 2 pieces: the search runs that far behind the pieces it is given | `Search::lookahead_pieces` (search.cpp's 4 ms) | measured (the channel filter's ringing before a mark reaches 2 pieces) |
+| New decoder: the carrier power C² | the larger of the largest \|piece\|² over the last min(B, the flat prior's span) = 195 pieces (390 ms) and the next 2, common to every story, and the block's own estimate (3\|S\|/m_signal)², a story's own; never a story's level | `Search` | the window heuristic; taking the larger of the two measured (each alone fails) |
+| New decoder: the look-ahead | ⌈4 ms / piece⌉ = 2 pieces: the search runs that far behind the pieces it is given | `Search::lookahead_pieces` (search.cpp's 4 ms) | measured (the channel filter's ringing before a mark reaches 2 pieces; the same at 192 kHz, computed; the strong grid ran at 48 kHz only) |
 | New decoder: beam | 40 nats | `beam_nats` | placeholder (at least 28 nats, derived) |
 | New decoder: ceiling | 1 700 stories | `ceiling` | placeholder; left to the plan's ceiling run (owner, 2026-10-21) |
 | New decoder: hiss | each bin's one-pole 1 s average; ±2 000 Hz (±85 bins), the 25th percentile (the 43rd of 171); ÷ β; ÷ 1.5 bins; a frame of exact zeros not counted | `hiss_average_s`, `hiss_half_width_hz`, `hiss_percentile`; `HissEstimator` | 1 s heuristic (the detector's); width and rank placeholders, heuristic; β, the 1.5 bins and the zero rule derived; the 0.01 dB margin above −200 dBFS heuristic |

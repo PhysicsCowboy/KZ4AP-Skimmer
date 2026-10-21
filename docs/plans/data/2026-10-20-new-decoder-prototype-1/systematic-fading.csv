@@ -1,0 +1,1201 @@
+s500_db,fading_hz,decoder_spread,edge_input_samples_of_96,seed,systematic_term,min_gain_db,max_gain_db,exact,decoded
+10,0.3,default,0,1,without,-19.09,3.26,0,PANIS PARIS
+10,0.3,default,0,2,without,-14.88,5.85,0,"PARIS P""IS"
+10,0.3,default,0,3,without,-15.26,4.21,0,PARIS PAR S
+10,0.3,default,0,4,without,-1.06,4.11,1,PARIS PARIS
+10,0.3,default,0,5,without,-9.24,5.16,1,PARIS PARIS
+10,0.3,default,24,1,without,-19.09,3.25,0,PANIS PARIS
+10,0.3,default,24,2,without,-14.88,5.85,0,"PARIS P""IS"
+10,0.3,default,24,3,without,-15.26,4.21,0,PARIS PAR S
+10,0.3,default,24,4,without,-1.06,4.11,1,PARIS PARIS
+10,0.3,default,24,5,without,-9.24,5.16,1,PARIS PARIS
+10,0.3,default,48,1,without,-19.09,3.25,0,PANIS PARIS
+10,0.3,default,48,2,without,-14.88,5.85,0,"PARIS P""IS"
+10,0.3,default,48,3,without,-15.26,4.21,0,PARIS PAR S
+10,0.3,default,48,4,without,-1.06,4.11,1,PARIS PARIS
+10,0.3,default,48,5,without,-9.24,5.16,1,PARIS PARIS
+10,0.3,default,72,1,without,-19.09,3.25,0,PANIS PARIS
+10,0.3,default,72,2,without,-14.88,5.84,0,"PARIS P""IS"
+10,0.3,default,72,3,without,-15.26,4.21,0,PARIS PAR S
+10,0.3,default,72,4,without,-1.06,4.11,1,PARIS PARIS
+10,0.3,default,72,5,without,-9.24,5.15,1,PARIS PARIS
+20,0.3,default,0,1,without,-19.09,3.26,1,PARIS PARIS
+20,0.3,default,0,2,without,-14.88,5.85,1,PARIS PARIS
+20,0.3,default,0,3,without,-15.26,4.21,1,PARIS PARIS
+20,0.3,default,0,4,without,-1.06,4.11,1,PARIS PARIS
+20,0.3,default,0,5,without,-9.24,5.16,1,PARIS PARIS
+20,0.3,default,24,1,without,-19.09,3.25,1,PARIS PARIS
+20,0.3,default,24,2,without,-14.88,5.85,1,PARIS PARIS
+20,0.3,default,24,3,without,-15.26,4.21,1,PARIS PARIS
+20,0.3,default,24,4,without,-1.06,4.11,1,PARIS PARIS
+20,0.3,default,24,5,without,-9.24,5.16,1,PARIS PARIS
+20,0.3,default,48,1,without,-19.09,3.25,1,PARIS PARIS
+20,0.3,default,48,2,without,-14.88,5.85,1,PARIS PARIS
+20,0.3,default,48,3,without,-15.26,4.21,1,PARIS PARIS
+20,0.3,default,48,4,without,-1.06,4.11,1,PARIS PARIS
+20,0.3,default,48,5,without,-9.24,5.16,1,PARIS PARIS
+20,0.3,default,72,1,without,-19.09,3.25,1,PARIS PARIS
+20,0.3,default,72,2,without,-14.88,5.84,1,PARIS PARIS
+20,0.3,default,72,3,without,-15.26,4.21,1,PARIS PARIS
+20,0.3,default,72,4,without,-1.06,4.11,1,PARIS PARIS
+20,0.3,default,72,5,without,-9.24,5.15,1,PARIS PARIS
+30,0.3,default,0,1,without,-19.09,3.26,1,PARIS PARIS
+30,0.3,default,0,2,without,-14.88,5.85,1,PARIS PARIS
+30,0.3,default,0,3,without,-15.26,4.21,1,PARIS PARIS
+30,0.3,default,0,4,without,-1.06,4.11,1,PARIS PARIS
+30,0.3,default,0,5,without,-9.24,5.16,1,PARIS PARIS
+30,0.3,default,24,1,without,-19.09,3.25,1,PARIS PARIS
+30,0.3,default,24,2,without,-14.88,5.85,1,PARIS PARIS
+30,0.3,default,24,3,without,-15.26,4.21,1,PARIS PARIS
+30,0.3,default,24,4,without,-1.06,4.11,1,PARIS PARIS
+30,0.3,default,24,5,without,-9.24,5.16,1,PARIS PARIS
+30,0.3,default,48,1,without,-19.09,3.25,1,PARIS PARIS
+30,0.3,default,48,2,without,-14.88,5.85,1,PARIS PARIS
+30,0.3,default,48,3,without,-15.26,4.21,1,PARIS PARIS
+30,0.3,default,48,4,without,-1.06,4.11,1,PARIS PARIS
+30,0.3,default,48,5,without,-9.24,5.16,1,PARIS PARIS
+30,0.3,default,72,1,without,-19.09,3.25,1,PARIS PARIS
+30,0.3,default,72,2,without,-14.88,5.84,1,PARIS PARIS
+30,0.3,default,72,3,without,-15.26,4.21,1,PARIS PARIS
+30,0.3,default,72,4,without,-1.06,4.11,1,PARIS PARIS
+30,0.3,default,72,5,without,-9.24,5.15,1,PARIS PARIS
+40,0.3,default,0,1,without,-19.09,3.26,0,PARII E A TEARIS
+40,0.3,default,0,2,without,-14.88,5.85,0,E EE ENARIS PARE T TT ET E
+40,0.3,default,0,3,without,-15.26,4.21,0,A TT TS EEE EES A TEARIS
+40,0.3,default,0,4,without,-1.06,4.11,0,T EE EE EEARIS PARIS
+40,0.3,default,0,5,without,-9.24,5.16,0,E EE ENARIS E M EEE ETRIE TT
+40,0.3,default,24,1,without,-19.09,3.25,0,T EE EE ET E ARIS PE EE E A ET E T EEI ET E
+40,0.3,default,24,2,without,-14.88,5.85,0,T EE EE ET E A E T EN E TT E S PARIS
+40,0.3,default,24,3,without,-15.26,4.21,0,PARI E T ET ET E PA E RIS
+40,0.3,default,24,4,without,-1.06,4.11,0,A EE EEA E A EEIS A EE EEA E T EE EEI E T EI
+40,0.3,default,24,5,without,-9.24,5.16,0,A EE ET E T EE E T ENIS PA E T ENIS
+40,0.3,default,48,1,without,-19.09,3.25,1,PARIS PARIS
+40,0.3,default,48,2,without,-14.88,5.85,1,PARIS PARIS
+40,0.3,default,48,3,without,-15.26,4.21,1,PARIS PARIS
+40,0.3,default,48,4,without,-1.06,4.11,1,PARIS PARIS
+40,0.3,default,48,5,without,-9.24,5.16,1,PARIS PARIS
+40,0.3,default,72,1,without,-19.09,3.25,1,PARIS PARIS
+40,0.3,default,72,2,without,-14.88,5.84,1,PARIS PARIS
+40,0.3,default,72,3,without,-15.26,4.21,1,PARIS PARIS
+40,0.3,default,72,4,without,-1.06,4.11,1,PARIS PARIS
+40,0.3,default,72,5,without,-9.24,5.15,1,PARIS PARIS
+50,0.3,default,0,1,without,-19.09,3.26,0,T EE EE EE E AA T TT TI E E EE EE ET E T EE E T EE EE E E EE E E EE EE E
+50,0.3,default,0,2,without,-14.88,5.85,0,T EE EE ET E T EE E T EE EE E E EE E E EE EE E PAE NE EE E T ET ET E
+50,0.3,default,0,3,without,-15.26,4.21,0,TM EE E T EE E T EE ET E T ET E T ET EE E E EE EE EE E T EE E E ENE T TT EE E
+50,0.3,default,0,4,without,-1.06,4.11,0,T EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE EE E T EE E T EE EE E
+50,0.3,default,0,5,without,-9.24,5.16,0,T EE EE ET E T EE E E EE EE E IS E E EE EE ET E T EE E T EE ET TEE EE EE E
+50,0.3,default,24,1,without,-19.09,3.25,0,E T EE E EE ET E T ETRIS A EE E EE E E E E EE E E T EE E ET E T EES
+50,0.3,default,24,2,without,-14.88,5.85,0,E T EE E EE E EE T E T EE E E A EEI E TT ET E T EE EE ET E T ETA EI E E E EE E EE E E
+50,0.3,default,24,3,without,-15.26,4.21,0,PE EE E E E EE E EE E E E E EE T E T ET ET E PA E T EE ET E IS
+50,0.3,default,24,4,without,-1.06,4.11,0,E E EE E EE E EE E E E E EE E E T EE E EE E E E EE E E E E EE E EE E E E E EE E EE E EE E E E E EE E E E A EEIS E
+50,0.3,default,24,5,without,-9.24,5.16,0,E E EE E EE E EE T E T EE E E T EE ET E T ET E S E EE E EE E EE E E E E EE E E T EE ET E IS E
+50,0.3,default,48,1,without,-19.09,3.25,0,T EGA E RIS PARIS
+50,0.3,default,48,2,without,-14.88,5.85,0,E EE EE EEARIS PARIE ET EE E
+50,0.3,default,48,3,without,-15.26,4.21,0,PAE EE ET E E EES PARIS
+50,0.3,default,48,4,without,-1.06,4.11,0,T EE EE EEE ETRIS A EE EEARIS
+50,0.3,default,48,5,without,-9.24,5.16,0,E EE EE ET E E ETRIS A EE ET E ARIS
+50,0.3,default,72,1,without,-19.09,3.25,0,T EE ENARIS W EI ETRIS
+50,0.3,default,72,2,without,-14.88,5.84,0,T EE EE ET E ARIS PARIE ET ET E
+50,0.3,default,72,3,without,-15.26,4.21,0,PE EI EE ET E T ET E T EI PARIS
+50,0.3,default,72,4,without,-1.06,4.11,0,T EE EE EI EI ENE EI ET EE E EE EE ET TH5
+50,0.3,default,72,5,without,-9.24,5.15,0,T EE EE ET E T ETRIS E E EE ET E T EE E RIS
+60,0.3,default,0,1,without,-19.09,3.26,0,T EE EE ET E T EE E TE EE E E EE E T ET ET E T EE EE ET E T EE E T EE ET E T ET E T ET ET E
+60,0.3,default,0,2,without,-14.88,5.85,0,T EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE EE E E EE E E EE ET E T ET E T ET ET E
+60,0.3,default,0,3,without,-15.26,4.21,0,E EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE EE E E EE E T ET ET E
+60,0.3,default,0,4,without,-1.06,4.11,0,T EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE ET E T ET E T ET ET E
+60,0.3,default,0,5,without,-9.24,5.16,0,T EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE ET E T ET E T ET ET E
+60,0.3,default,24,1,without,-19.09,3.25,0,E T E EE E E EE E EE T E E T EE E E T ENIE EE E EE E E E E EE E EE E E EE E E E E EE E E E E T EE E EE T E E E EE E E E E EE E EE E E
+60,0.3,default,24,2,without,-14.88,5.85,0,E T E EE E E EE E E EE T E E E T EE E E E E EE E EE E E E E EE E E E T EE T EE T E E T EE E EE E ET E T EE E A EE E E E E EE E E E E EE E EE E E
+60,0.3,default,24,3,without,-15.26,4.21,0,A EE E EE E E E E EE E E E E EE E EE E E E E EE T E E E T E EE T E EE T E E E EE E EE E EE E E E E EE E E E T EE E ET E TT T EE E EE E E
+60,0.3,default,24,4,without,-1.06,4.11,0,E E EE E E EE E E EE E E E E EE E E E E E EE E E EE E E E E EE E E E E EE E EE E E E E EE E E EE E E EE E E E E EE E E E E EE E EE E E E E EE E E E E EE E EE E E
+60,0.3,default,24,5,without,-9.24,5.16,0,E E EE E E EE E E EE T E E E T E EE E E E T EE E EE T E E T EE T E E E EE E EE E E E E EE E EE E EE E E E E EE E E E E T EE E EE T E E E EE E E E E EE E EE E E
+60,0.3,default,48,1,without,-19.09,3.25,0,E ET EE EE E T EE E RII ET E E EE A ET E T A E T A EE E E EE E E EE EE E
+60,0.3,default,48,2,without,-14.88,5.85,0,E EE EE EE E T EE E E EE EE E E EE E E EE EE E TGAA EE E E EE E T ET EE E
+60,0.3,default,48,3,without,-15.26,4.21,0,A E EE E E EE E T EE EE E E EE E T EE EE E T EE EE EE E E EE E E ENIE ET EE E
+60,0.3,default,48,4,without,-1.06,4.11,0,E EE EE ET E T EE E T ET EE E E EE E T EE ET E E ET A EE E T A E T EE EE E E EE E E EE EE E
+60,0.3,default,48,5,without,-9.24,5.16,0,E EE EE EE E T ET E E EE EE E IE ET EE E E EE EE EE E T EE E E EE EE E I E E EE EE E
+60,0.3,default,72,1,without,-19.09,3.25,0,E EE EE ET E T ETRIE T ET E T EE EE EE E E EE E E EE ET E T ET E T ET ET E
+60,0.3,default,72,2,without,-14.88,5.84,0,E EE EE EE E E EE E E EE ET E T ET E T ET ET E T EE E EEAA ET E T ET E E EE EE E
+60,0.3,default,72,3,without,-15.26,4.21,0,A EE ET E E EE E E EE EE E E EE E E EE ET E T EE EE ET E T EE E T EE EEIE ET ET E
+60,0.3,default,72,4,without,-1.06,4.11,0,E EE EE EE E E EE E E EE EE E E EE E E EE EE E E EE EE EE E E EE E E EE ET E T ET E T ET ET E
+60,0.3,default,72,5,without,-9.24,5.15,0,E EE EE EE E E EE E E EE ET E T EI ET ET E T EE EE EE E E EE E E EE ET E T ET E T ET ET E
+10,1.0,default,0,1,without,-16.19,4.89,0,"P""IS PAA IIS"
+10,1.0,default,0,2,without,-22.95,3.09,0,PAIEIS PI S IIS
+10,1.0,default,0,3,without,-44.26,6.45,1,PARIS PARIS
+10,1.0,default,0,4,without,-41.78,4.86,0,PARIS I TMT TG RIS
+10,1.0,default,0,5,without,-13.84,6.03,0,PARIS PAA IS
+10,1.0,default,24,1,without,-16.19,4.89,0,"P""IS PAI IIS"
+10,1.0,default,24,2,without,-22.95,3.08,0,PAIEIS PI S IIS
+10,1.0,default,24,3,without,-44.26,6.45,1,PARIS PARIS
+10,1.0,default,24,4,without,-41.78,4.86,0,PARIS I TMT TG RIS
+10,1.0,default,24,5,without,-13.84,6.03,0,PARIS PAA IS
+10,1.0,default,48,1,without,-16.19,4.89,0,"P""IS PAI IIS"
+10,1.0,default,48,2,without,-22.95,3.07,0,PAIEIS PI S IIS
+10,1.0,default,48,3,without,-44.26,6.45,1,PARIS PARIS
+10,1.0,default,48,4,without,-41.78,4.86,0,PARIS I TMT TG RIS
+10,1.0,default,48,5,without,-13.84,6.03,0,PARIS PAA IS
+10,1.0,default,72,1,without,-16.19,4.89,0,"P""IS PAI IIS"
+10,1.0,default,72,2,without,-22.95,3.06,0,W AIEIS PSI IIS
+10,1.0,default,72,3,without,-44.26,6.45,1,PARIS PARIS
+10,1.0,default,72,4,without,-41.78,4.86,0,PARIS I TMT TG RIS
+10,1.0,default,72,5,without,-13.84,6.03,0,PARIS PAA IS
+20,1.0,default,0,1,without,-16.19,4.89,0,R IARIS PARIS
+20,1.0,default,0,2,without,-22.95,3.09,0,W IAS EIS PARIS
+20,1.0,default,0,3,without,-44.26,6.45,0,PARIS PAA IIS
+20,1.0,default,0,4,without,-41.78,4.86,0,PARIS PA ERIS
+20,1.0,default,0,5,without,-13.84,6.03,0,PI ERIS PAA ET IS
+20,1.0,default,24,1,without,-16.19,4.89,0,R IARIS PARIS
+20,1.0,default,24,2,without,-22.95,3.08,0,W IAS EIS PARIS
+20,1.0,default,24,3,without,-44.26,6.45,0,PARIS PAA IIS
+20,1.0,default,24,4,without,-41.78,4.86,0,PARIS PA ERIS
+20,1.0,default,24,5,without,-13.84,6.03,0,PI ERIS PAA ET IS
+20,1.0,default,48,1,without,-16.19,4.89,0,R IARIS PARIS
+20,1.0,default,48,2,without,-22.95,3.07,0,W IAS EIS PARIS
+20,1.0,default,48,3,without,-44.26,6.45,0,PARIS PAA IIS
+20,1.0,default,48,4,without,-41.78,4.86,0,PARIS PA ERIS
+20,1.0,default,48,5,without,-13.84,6.03,0,PI ERIS PAA ET IS
+20,1.0,default,72,1,without,-16.19,4.89,0,R IARIS PARIS
+20,1.0,default,72,2,without,-22.95,3.06,0,W IAS EIS PARIS
+20,1.0,default,72,3,without,-44.26,6.45,0,PARIS PAA IIS
+20,1.0,default,72,4,without,-41.78,4.86,0,PARIS PA ERIS
+20,1.0,default,72,5,without,-13.84,6.03,0,PI ERIS PAA ET IS
+30,1.0,default,0,1,without,-16.19,4.89,0,W IARIS PARIS
+30,1.0,default,0,2,without,-22.95,3.09,0,PAI UEIS PARIS
+30,1.0,default,0,3,without,-44.26,6.45,0,PE TRIS PAA IIS
+30,1.0,default,0,4,without,-41.78,4.86,0,PARIS W EA ERIS
+30,1.0,default,0,5,without,-13.84,6.03,1,PARIS PARIS
+30,1.0,default,24,1,without,-16.19,4.89,0,W IARIS PARIS
+30,1.0,default,24,2,without,-22.95,3.08,0,PAI UEIS PARIS
+30,1.0,default,24,3,without,-44.26,6.45,0,PARIS PAA IIS
+30,1.0,default,24,4,without,-41.78,4.86,0,PARIS PA ERIS
+30,1.0,default,24,5,without,-13.84,6.03,0,PARIS PAA EEIS
+30,1.0,default,48,1,without,-16.19,4.89,0,W IARIS PARIS
+30,1.0,default,48,2,without,-22.95,3.07,0,PAI UEIS PARIS
+30,1.0,default,48,3,without,-44.26,6.45,0,PARIS PAA IIS
+30,1.0,default,48,4,without,-41.78,4.86,0,PARIS PA ERIS
+30,1.0,default,48,5,without,-13.84,6.03,1,PARIS PARIS
+30,1.0,default,72,1,without,-16.19,4.89,0,W IAE NIS PE TRIS
+30,1.0,default,72,2,without,-22.95,3.06,0,PAI UEIS PARIS
+30,1.0,default,72,3,without,-44.26,6.45,0,PARIS PAA IIS
+30,1.0,default,72,4,without,-41.78,4.86,0,PARIS PA ERIS
+30,1.0,default,72,5,without,-13.84,6.03,1,PARIS PARIS
+40,1.0,default,0,1,without,-16.19,4.89,0,W EEAE TEIS E EE ET IE TRIS
+40,1.0,default,0,2,without,-22.95,3.09,0,PAI TEIE I W EAE TEIS
+40,1.0,default,0,3,without,-44.26,6.45,0,W T TTA EE E E EE E E EI A NE TA ITES
+40,1.0,default,0,4,without,-41.78,4.86,0,TTNARIE TE E EGA E TNE ES
+40,1.0,default,0,5,without,-13.84,6.03,0,E EE ENAA EEIS E TTEE EE E E ENETT TI
+40,1.0,default,24,1,without,-16.19,4.89,0,T EM EEARE EES A ET IAA ET E T EEI ET E
+40,1.0,default,24,2,without,-22.95,3.08,0,T EGAI TEI E S E PE ETA EEE ET E T ET ET E
+40,1.0,default,24,3,without,-44.26,6.45,0,PE TRIE ET ET E P E T ETE EE II E T ETT
+40,1.0,default,24,4,without,-41.78,4.86,0,W ET E T EE E RIS E EE ENE EE ERI E T ET ET
+40,1.0,default,24,5,without,-13.84,6.03,0,A EE ET E AA ET E T ET E T EI PA E T ET EEI E S
+40,1.0,default,48,1,without,-16.19,4.89,0,A ET EEARIS A ET IARIS
+40,1.0,default,48,2,without,-22.95,3.07,0,A ENAI TEIS PA E RIS
+40,1.0,default,48,3,without,-44.26,6.45,0,W ET TTRIS PAA IIS
+40,1.0,default,48,4,without,-41.78,4.86,0,PAA EEIS A ENA ERIS
+40,1.0,default,48,5,without,-13.84,6.03,0,W EEARIS PAA ET IS
+40,1.0,default,72,1,without,-16.19,4.89,0,PARIS A ET IARIS
+40,1.0,default,72,2,without,-22.95,3.06,0,PAI TEIS PARIS
+40,1.0,default,72,3,without,-44.26,6.45,0,PARIS PAA IIS
+40,1.0,default,72,4,without,-41.78,4.86,0,PARIS PA ERIS
+40,1.0,default,72,5,without,-13.84,6.03,0,PARIS PAA EEIS
+50,1.0,default,0,1,without,-16.19,4.89,0,T EE EE EEAE E EE E E EE E E EE EE E T EE E EE T EEA E T EE ET E E EE E T ET ET E
+50,1.0,default,0,2,without,-22.95,3.09,0,T EE ENAI TE E T ET E T ET ET E TE EE EE E E EE E E EE ET E T ET E E EE EE E
+50,1.0,default,0,3,without,-44.26,6.45,0,E EE EE EEE EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T ET IE EE E E EE ET
+50,1.0,default,0,4,without,-41.78,4.86,0,E EE EE ET E E EE E E EE EEIE EE ET E T EE ET ET E T ET E T EE EE E T ET E T EE EE
+50,1.0,default,0,5,without,-13.84,6.03,0,T EE EE EE E AT EE ET E T ET E T EE EE E E EE EE ET E T EE E T EE EEE EE E E EE EE E
+50,1.0,default,24,1,without,-16.19,4.89,0,E T EE E ET ET T EE E TTEE ET E T ET ET E E E EE E ET T ET E TE E E E EE E EE T E T EE E E E EE T ET E
+50,1.0,default,24,2,without,-22.95,3.08,0,E T EE E EE EEAE ET TEE EE T E T EE E EE T E T ETNE EE E A EE E E E T ET E T ET ET E
+50,1.0,default,24,3,without,-44.26,6.45,0,A EE ET E TE E E E EE E EE E E E E EE E E E T EE T ET E T EE E EE E EE T E E T EE E E E T EE IIE ET ET E
+50,1.0,default,24,4,without,-41.78,4.86,0,A EE E EE T E T EE E A ET E IS E E T EE E EE EE E E E T EE E E E RI E E T ET ET E
+50,1.0,default,24,5,without,-13.84,6.03,0,E E EE E EE E ET E T ET E E EE E EE T E E T EE T E T ET EE W EE E E E E EE E E E T EE T EEI E S E
+50,1.0,default,48,1,without,-16.19,4.89,0,T EE ET EEA E TNIS E EE ET IAE EE ET E IE EI
+50,1.0,default,48,2,without,-22.95,3.07,0,A ET ET AI TEIS PA E RIS
+50,1.0,default,48,3,without,-44.26,6.45,0,W ET TTE EE ET E E EE E E EI W ET E A E T EE E ET IS
+50,1.0,default,48,4,without,-41.78,4.86,0,W EEARIS E EE ET ET E A ERIS
+50,1.0,default,48,5,without,-13.84,6.03,0,T EE ENAE EE ET E IS W EI EE E T EE ET IS
+50,1.0,default,72,1,without,-16.19,4.89,0,T EM ET TN TNIS E EE E EE IAE EE ET E IE EI
+50,1.0,default,72,2,without,-22.95,3.06,0,T EM EEAI TEE EI ET EE PARE EES
+50,1.0,default,72,3,without,-44.26,6.45,0,PAE EE ET E T ET E T ET EE E EE EE ET E T EE E T ET IIS
+50,1.0,default,72,4,without,-41.78,4.86,0,A EE EEARIS E EM ET E T EE ERIS
+50,1.0,default,72,5,without,-13.84,6.03,0,T EE ENAT EE ET E T EES W EI EE E T EE EEIS
+60,1.0,default,0,1,without,-16.19,4.89,0,T EE EE EE E T EE E E EE ET E T ET E T ET ET E T EE E EE T ET E T EE E T EE ET E T ET E T ET ET E
+60,1.0,default,0,2,without,-22.95,3.09,0,T EE EE EE E T EE E T ET TT E T ET E T ET ET E T EE EE ET E T EE E T EE ET E T ET E T ET ET E
+60,1.0,default,0,3,without,-44.26,6.45,0,T EE EE ET E E EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE E ET E T ET E T ET ET E
+60,1.0,default,0,4,without,-41.78,4.86,0,T EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T ET E E T EE ET E T ET E T ET ET E
+60,1.0,default,0,5,without,-13.84,6.03,0,T EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE E EE E T ET E T ET ET E
+60,1.0,default,24,1,without,-16.19,4.89,0,E T E EE E EE T ET E E T EE E E T I E EE E E E T EE T E E T EE T EE T E E E EE E E EE T T EE T E T EE E E E E EE E E EE T E E E T EE E E E E EE T E EE T E
+60,1.0,default,24,2,without,-22.95,3.08,0,E T E EE E EE E EEE EE E E E T EE T TE E E E E EE T E E E EE E EE T E E E E EE E EE E EE E E E T EE E E E E EE E EE E E E T E EE T E E T EE T EE T E
+60,1.0,default,24,3,without,-44.26,6.45,0,E E EE E EE E EE T E E E EE E E E E EE E EE E E E E EE E E E T E EE T E EE T E E E EE E EE E EE T E E E T E EE E E E E T E EE E E EE E E E EE E E E T EE T EE T E
+60,1.0,default,24,4,without,-41.78,4.86,0,E E EE E EE E E EE T E E T EE E E E E EE E EE T E E E EE E E E E EE E EE E E E T E EE E EE E EE E E E T E EE E E E E E EE E EE E E E E EE E E E T EE T EE T E
+60,1.0,default,24,5,without,-13.84,6.03,0,E E EE E E EE E EE T E E T ET E E E EE E E EE T E E E T E EE T E E E T EE T EE E E E E EE E EE E EE E E E E EE E E E E T E EE T E ET E E EE T E E E EE E EE E E
+60,1.0,default,48,1,without,-16.19,4.89,0,E ET E EE ET T EE E TE EE E E EE E E EE EE E E EE E EE T ET E T EE E T A ET E E EE E T ET EE E
+60,1.0,default,48,2,without,-22.95,3.07,0,E A E EE ET TE E I TT E E EE E E ET EE E E EE EE EE E E EE E E T EE EE E T EE E E EE EE E
+60,1.0,default,48,3,without,-44.26,6.45,0,T EE EE ET T EE E T A EE E E EE E E EE EE E E ET ET ET E T EE E T EE E ET E E EE E E EE ET
+60,1.0,default,48,4,without,-41.78,4.86,0,E EE ET ET E E EE E E EE ET E T ET E E EE EE E E EE E EE EE E E ET E T EE EE E E EE E T EE EE E
+60,1.0,default,48,5,without,-13.84,6.03,0,E EE ET EE E A E T EE EE E T EE E E EE ET E E EE EE EE E T EE E E EE ET E EE E E EE EE E
+60,1.0,default,72,1,without,-16.19,4.89,0,E EE ENT E T EN TE ET E T ET E T ET ET E E EE E EE T ET E T EE E E EE EE E E ET E E EE EE E
+60,1.0,default,72,2,without,-22.95,3.06,0,E EE EE ET T EE E T EE TT E E EE E E EE EE E T EE EE ET E E EE E T EE EE E E EE E T ET ET E
+60,1.0,default,72,3,without,-44.26,6.45,0,T EE EE EI EE E E EE EE E E EE E E EE EE E T EE EE EE E E EE E E EE I E E ET E T ET ET
+60,1.0,default,72,4,without,-41.78,4.86,0,T EE EE EE E T EE E T EE ET E T ET E T ET ET E E EE EE EE E E ET E T EE ET E T EE E E ET ET E
+60,1.0,default,72,5,without,-13.84,6.03,0,E EE EE ET E A E E EE EE E E EE E E ET ET E T EE EE EE E E EE E E EE E EET ET E T ET ET E
+10,2.0,default,0,1,without,-36.81,5.61,0,I RIS EI I REAA IIS
+10,2.0,default,0,2,without,-45.34,4.60,0,<AS> TRIS PRI III
+10,2.0,default,0,3,without,-15.91,6.32,0,F ITRIS R IARIS
+10,2.0,default,0,4,without,-27.88,5.88,0,PAA IIS I TMT TM TOEIS
+10,2.0,default,0,5,without,-55.56,7.28,0,W II RIS PI TRIS
+10,2.0,default,24,1,without,-36.81,5.61,0,I RIS EI I REAA IIS
+10,2.0,default,24,2,without,-45.34,4.60,0,<AS> TRIS PRI III
+10,2.0,default,24,3,without,-15.91,6.32,0,F ITRIS R IARIS
+10,2.0,default,24,4,without,-27.88,5.88,0,PAA IIS I OT TM TGT IS
+10,2.0,default,24,5,without,-55.56,7.28,0,W II RIS PI TRIS
+10,2.0,default,48,1,without,-36.81,5.61,0,I RIS EI I REAA IIS
+10,2.0,default,48,2,without,-45.34,4.60,0,<AS> TRIS PSI III
+10,2.0,default,48,3,without,-15.91,6.32,0,F ITRIS R IARIS
+10,2.0,default,48,4,without,-27.88,5.88,0,PAA IIS I OT TM TGT IS
+10,2.0,default,48,5,without,-55.56,7.28,0,W II RIS PI TRIS
+10,2.0,default,72,1,without,-36.81,5.61,0,I RIS EI I REAA IIS
+10,2.0,default,72,2,without,-45.34,4.60,0,<AS> TRIS PSI III
+10,2.0,default,72,3,without,-15.91,6.32,0,F ITRIS R IARIS
+10,2.0,default,72,4,without,-27.88,5.88,0,PAA IIS I OT TM TM IIS
+10,2.0,default,72,5,without,-55.56,7.28,0,W II RIS PI TRIS
+20,2.0,default,0,1,without,-36.81,5.61,0,A RSS TEII R MEARIS
+20,2.0,default,0,2,without,-45.34,4.60,0,R NT TE TRIS PA EI NIS
+20,2.0,default,0,3,without,-15.91,6.32,0,W IE TRIS PAA ET IS
+20,2.0,default,0,4,without,-27.88,5.88,0,PA ERIS A OS N A IIS
+20,2.0,default,0,5,without,-55.56,7.28,0,PSRIS I I IAI T III T
+20,2.0,default,24,1,without,-36.81,5.61,0,A RSS II I R MEARIS
+20,2.0,default,24,2,without,-45.34,4.60,0,R IARIS PA EI NIS
+20,2.0,default,24,3,without,-15.91,6.32,0,W IE TRIS PAA IIS
+20,2.0,default,24,4,without,-27.88,5.88,0,PA ERIS A OEI N A IIS
+20,2.0,default,24,5,without,-55.56,7.28,0,PSRIS I I IAI T III E
+20,2.0,default,48,1,without,-36.81,5.61,0,A RSS II I R MEARIS
+20,2.0,default,48,2,without,-45.34,4.60,0,R IARIS PI EI NIS
+20,2.0,default,48,3,without,-15.91,6.32,0,W IE TRIS PAA IIS
+20,2.0,default,48,4,without,-27.88,5.88,0,PA ERIS A OEI N A IIS
+20,2.0,default,48,5,without,-55.56,7.28,0,PSRIS I I IAI T III E
+20,2.0,default,72,1,without,-36.81,5.61,0,A RSS II I R MEARIS
+20,2.0,default,72,2,without,-45.34,4.60,0,R IARIS PI EI NIS
+20,2.0,default,72,3,without,-15.91,6.32,0,W IE TRIS PAA IIS
+20,2.0,default,72,4,without,-27.88,5.88,0,PA ERIS A OEA EA IIS
+20,2.0,default,72,5,without,-55.56,7.28,0,PSRIS I I IAI T III E
+30,2.0,default,0,1,without,-36.81,5.61,0,A RI A I E TEINI R AEAA EIS
+30,2.0,default,0,2,without,-45.34,4.60,0,W NEARIS PA EA EII E
+30,2.0,default,0,3,without,-15.91,6.32,0,W IE TRIS W T TTA EEIS
+30,2.0,default,0,4,without,-27.88,5.88,0,A NARIS W EA E RIS
+30,2.0,default,0,5,without,-55.56,7.28,0,A T EEI N ERE ES A NE TA III T
+30,2.0,default,24,1,without,-36.81,5.61,0,A A ET TT A I E TEIITE R AEARIS
+30,2.0,default,24,2,without,-45.34,4.60,0,W NEAA ET IS PA EA EIS
+30,2.0,default,24,3,without,-15.91,6.32,0,W IE TRIS PAA ET IS
+30,2.0,default,24,4,without,-27.88,5.88,0,PARIS W EA E RIS
+30,2.0,default,24,5,without,-55.56,7.28,0,A NI N ERIS A NAA III E
+30,2.0,default,48,1,without,-36.81,5.61,0,A A ET TT A I E TEIII R AEARIS
+30,2.0,default,48,2,without,-45.34,4.60,0,W NEARIS PA EA EIS
+30,2.0,default,48,3,without,-15.91,6.32,0,W IE TRIS PAA ET IS
+30,2.0,default,48,4,without,-27.88,5.88,0,PAA EEIS W EA E RIS
+30,2.0,default,48,5,without,-55.56,7.28,0,PI N ERIS PAA III E
+30,2.0,default,72,1,without,-36.81,5.61,0,A A ET TT A I E TEIII R AT TTRIS
+30,2.0,default,72,2,without,-45.34,4.60,0,W NT TTRIS PA EA EIS
+30,2.0,default,72,3,without,-15.91,6.32,0,W IE TRIS PAA ET TES
+30,2.0,default,72,4,without,-27.88,5.88,0,PAA EEIS A ETEA E RIS
+30,2.0,default,72,5,without,-55.56,7.28,0,W ET TT N ERIS A ET IAI T ET II E
+40,2.0,default,0,1,without,-36.81,5.61,0,T ET A ET I A I TEIITE E EN E TT TTA EIE EI
+40,2.0,default,0,2,without,-45.34,4.60,0,TM TT TTE T ET IE TE A NA E TTT TEI E E
+40,2.0,default,0,3,without,-15.91,6.32,0,A E ET TE E A EEI E S P E TTA ET TETI
+40,2.0,default,0,4,without,-27.88,5.88,0,A NE T E TNT TT TTE A E E E A E TNIS
+40,2.0,default,0,5,without,-55.56,7.28,0,W EEI A A EEIS A TT TE E E ET ITEI T
+40,2.0,default,24,1,without,-36.81,5.61,0,A A EEI A I TEE ET NTT E A ET E TEAE EE EEE ET I ET E
+40,2.0,default,24,2,without,-45.34,4.60,0,A ET IAE ENT ET E S E P E A EAEII ET E
+40,2.0,default,24,3,without,-15.91,6.32,0,A E IE TE ENIE ET ET T EE ETEE ETE ET EEE ET T EI
+40,2.0,default,24,4,without,-27.88,5.88,0,A E ET E AA EEIE EI E EE ETEE ET E RE ET E T ET ET
+40,2.0,default,24,5,without,-55.56,7.28,0,T ETE ET T EN A A ET E TT E T EI A E ET E AE ET II E TTE
+40,2.0,default,48,1,without,-36.81,5.61,0,A RI A I TEIII R E TT NTRIS
+40,2.0,default,48,2,without,-45.34,4.60,0,A ET IAA ET IS PA EAEIS E
+40,2.0,default,48,3,without,-15.91,6.32,0,W IE TRIS PAA E ET IS E
+40,2.0,default,48,4,without,-27.88,5.88,0,PAA EEIS A ETEA E A ET IS
+40,2.0,default,48,5,without,-55.56,7.28,0,W ET TT A RIS W EEAA III E
+40,2.0,default,72,1,without,-36.81,5.61,0,A A ET TT A I TEIII R E TEARIS
+40,2.0,default,72,2,without,-45.34,4.60,0,W IAA ET IS PA EAEII E E
+40,2.0,default,72,3,without,-15.91,6.32,0,W TT NTRIS PAA E ET IS
+40,2.0,default,72,4,without,-27.88,5.88,0,PA E A EEIS A ETEA E A ET IS
+40,2.0,default,72,5,without,-55.56,7.28,0,W EEI A RII ET W EEAA NT II E
+50,2.0,default,0,1,without,-36.81,5.61,0,T EE A ET T EE E E ETE TE E T ET E IT ET E T EE EE E TE E TE E T EE ET E T EE E T ET EE E
+50,2.0,default,0,2,without,-45.34,4.60,0,E EE EE TT TE E T EE EET ET E E ET ET E E EE EE EE E E EE E T EE ET E T EE E E EE EE E
+50,2.0,default,0,3,without,-15.91,6.32,0,A ET I E TE E T EE ET E T ET E T ET EE E T ET EE ET E T EE E T ET E EI EE E T EE EE
+50,2.0,default,0,4,without,-27.88,5.88,0,T EE EE ET E E EE E T EE ET E E EE E E EE EE E T EE EE ET E T ET E E EE EE E T ET E T EE EE E
+50,2.0,default,0,5,without,-55.56,7.28,0,T EE EE E EE E E EE E A T EE ET E T ET E T EI E E EE EE EE E E EE E T EE IE ET E TT EE E
+50,2.0,default,24,1,without,-36.81,5.61,0,E E EE E E ET ET T ET E E EI TE E T ET E E IE EE T E E E EE E EE E E TE E T EE E E T EE E EE E E T ET E E E EE T ET E
+50,2.0,default,24,2,without,-45.34,4.60,0,A EE TT E TTE EE E ET E T ET E T EE E EE T E T EG E A E E T EE EE E E T EEI ET E
+50,2.0,default,24,3,without,-15.91,6.32,0,T EE EE E E EEE EE E T EE EE T E E E EE E E E T ET ET T EE EE EE E E E T EE E E T EE E E EE E E T ET T ET ET E
+50,2.0,default,24,4,without,-27.88,5.88,0,A EE E EE T E TE E E EE T ET T EEE ET EE E E T EE E ET EE E E E T EE E E E EE E EEE T EE T E T ET ET E
+50,2.0,default,24,5,without,-55.56,7.28,0,E T EE EE E EEE ET E A E E EE E EE T E E E EE T E T ET EE E ETE ET E TE E E T EE T E ET E E EE T E TTE E
+50,2.0,default,48,1,without,-36.81,5.61,0,T EE A ET TT E E EI TEI E E II E T EE EE E TEE EI EE ET E IE EI
+50,2.0,default,48,2,without,-45.34,4.60,0,A ET NEAA ET T EEI EE PA EA EE E IS E
+50,2.0,default,48,3,without,-15.91,6.32,0,W IE EE E A EI EE E E EI W ET E A E T ET IIS E
+50,2.0,default,48,4,without,-27.88,5.88,0,PA E A EEIS A ETT E A E E A ET T EES
+50,2.0,default,48,5,without,-55.56,7.28,0,A EE ET TT E A E EE ET E T ET E I EE W EEA E E EE E EEII E
+50,2.0,default,72,1,without,-36.81,5.61,0,T ET A ET TT E E EI NIE II E T EE ET E I E A E T EE ET E TT T EI
+50,2.0,default,72,2,without,-45.34,4.60,0,W IAA ET T ET TT ET E PA EA ET E IS E
+50,2.0,default,72,3,without,-15.91,6.32,0,A EE IE EE E TT ET E T ET E T EI E EM ET E A E T EE EEIS
+50,2.0,default,72,4,without,-27.88,5.88,0,W EEA E TE EEIS E EE EE ET E T ET E TNT T EES
+50,2.0,default,72,5,without,-55.56,7.28,0,A EE EEI E A T EE ET E T ET E TNT W E EEA E T EE IE EEI E
+60,2.0,default,0,1,without,-36.81,5.61,0,T EE E EE ET E T ET E EE ET T ET E T ET E T E EE ET E T EE EE E E ET E T EE E T EE ET E T ET E T ET ET E
+60,2.0,default,0,2,without,-45.34,4.60,0,T EE EE E EE E E EE E T EE EE E T ET E T ET ET E T EE EE ET E T EE E E T EE ET E T ET E T ET ET I
+60,2.0,default,0,3,without,-15.91,6.32,0,T EE ET E ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T ET E EE E T ET E T ET ET E
+60,2.0,default,0,4,without,-27.88,5.88,0,T EE EE ET E T EE E E T EE E ET E T ET E T ET ET E T EE EE ET E T ET E E T EE ET E T ET E T ET ET E
+60,2.0,default,0,5,without,-55.56,7.28,0,T EE EE E ET E T EE E E E E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE E ET E T ET E T ET ET E
+60,2.0,default,24,1,without,-36.81,5.61,0,E E EE E E EE T ET E E T EE T E EE EE E T EE E E E T EE T E E E EE E EE T E E E E EE E E EE E E E EE E E E T EE E E E T E EE E E EE E E E T EE T E E E EE T E EE T E
+60,2.0,default,24,2,without,-45.34,4.60,0,E E EE E EE E E ET E T EE E E E T EE E EE E E E T E EE T E E E EE E EE T E E E T EE E EE E EE T E E E EE T E E E T EE E EE E E E T EE E E E E EE T ET I
+60,2.0,default,24,3,without,-15.91,6.32,0,E T EE E EE E E EE E E E T EE E E E T EE E EE T E E E E EE E E E T E EE T EE E E E T E EE E EE E EE E E E T EE E E E E T E EE E E EE E E E T E EE E E E T EE T EE T E
+60,2.0,default,24,4,without,-27.88,5.88,0,E E EE E EE E E EE T E E E EE E E E E EE T E EE E E E T EE E E E T EE T EE E E E T E EE E EE E EE E E E T E EE E E E E E EE E EE E E E T E EE E E E T EE T EE T E
+60,2.0,default,24,5,without,-55.56,7.28,0,E T EE E EE E E EE E E E T ET E E T E E EE E E EE T E E E E EE T E E E T EE T EE E E E T EE E EE E E EE T E E E EE E E E T E EE T E EE E E E EE T E E E E EE E EE E E
+60,2.0,default,48,1,without,-36.81,5.61,0,E EE E EE ET E E EE E EE EE T EE E E ET E E E I ET E E EE EE E E EE E E EE E T A ET E E EE E E EE EE E
+60,2.0,default,48,2,without,-45.34,4.60,0,E ET E ET NEA E E EE E ET E E EE E E ET EE E E EE EE EE E E EE E T EE EE E E EE E E EE EE I
+60,2.0,default,48,3,without,-15.91,6.32,0,A ET EE E E EE E E EE EE E T ET E E EE ET E E EE EE ET E E EE E T A E ET E E ET E T EE ET E
+60,2.0,default,48,4,without,-27.88,5.88,0,T EE ET EE E T EE E E EE E ET E E EE E E EE EE E E ET E EE EE E E ET E E E EE E ET E T EE E T EE EE E
+60,2.0,default,48,5,without,-55.56,7.28,0,E EE EE E EE E E ET E E EE EE EE E T EE E T ET ET E T EE EE E EE E E EE E E EE E EE E T EE E I EE E
+60,2.0,default,72,1,without,-36.81,5.61,0,E EE E EE ET E T EE E EE EE E ET E E ET E E ET EE E E EE EE E E EE E T EE E E EE EE E E ET E E EE ET E
+60,2.0,default,72,2,without,-45.34,4.60,0,T ET EE IA E T EE E ET E E EE E T EE EE E T EE EE ET E T EE E T EE EE E T ET E T ET ET I
+60,2.0,default,72,3,without,-15.91,6.32,0,T EE ET E ET E E EE E E EE EE E E EE E E EE ET E E EE EE EE E E EE E E EE E ET E E ET E E ET ET E
+60,2.0,default,72,4,without,-27.88,5.88,0,T EE EE EE E T EE E T EE E ET E T ET E T ET ET E E EE EE EE E E ET E T EE E ET E E EE E E ET ET E
+60,2.0,default,72,5,without,-55.56,7.28,0,E EE EE E ET E E EE E E EE EE EE E E EE E E ENT E T EE EE E ET E T EE E E EE I E E EE E TT ET E
+10,0.3,default,0,1,with,-19.09,3.26,0,PANIS PARIS
+10,0.3,default,0,2,with,-14.88,5.85,0,PARIS PANIS
+10,0.3,default,0,3,with,-15.26,4.21,0,PARIS PAR S
+10,0.3,default,0,4,with,-1.06,4.11,1,PARIS PARIS
+10,0.3,default,0,5,with,-9.24,5.16,1,PARIS PARIS
+10,0.3,default,24,1,with,-19.09,3.25,0,PANIS PARIS
+10,0.3,default,24,2,with,-14.88,5.85,0,PARIS PANIS
+10,0.3,default,24,3,with,-15.26,4.21,0,PARIS PAR S
+10,0.3,default,24,4,with,-1.06,4.11,1,PARIS PARIS
+10,0.3,default,24,5,with,-9.24,5.16,1,PARIS PARIS
+10,0.3,default,48,1,with,-19.09,3.25,0,PANIS PARIS
+10,0.3,default,48,2,with,-14.88,5.85,0,PARIS PANIS
+10,0.3,default,48,3,with,-15.26,4.21,0,PARIS PAR S
+10,0.3,default,48,4,with,-1.06,4.11,1,PARIS PARIS
+10,0.3,default,48,5,with,-9.24,5.16,1,PARIS PARIS
+10,0.3,default,72,1,with,-19.09,3.25,0,PANIS PARIS
+10,0.3,default,72,2,with,-14.88,5.84,0,PARIS PANIS
+10,0.3,default,72,3,with,-15.26,4.21,0,PARIS PAR S
+10,0.3,default,72,4,with,-1.06,4.11,1,PARIS PARIS
+10,0.3,default,72,5,with,-9.24,5.15,1,PARIS PARIS
+20,0.3,default,0,1,with,-19.09,3.26,1,PARIS PARIS
+20,0.3,default,0,2,with,-14.88,5.85,1,PARIS PARIS
+20,0.3,default,0,3,with,-15.26,4.21,1,PARIS PARIS
+20,0.3,default,0,4,with,-1.06,4.11,1,PARIS PARIS
+20,0.3,default,0,5,with,-9.24,5.16,1,PARIS PARIS
+20,0.3,default,24,1,with,-19.09,3.25,1,PARIS PARIS
+20,0.3,default,24,2,with,-14.88,5.85,1,PARIS PARIS
+20,0.3,default,24,3,with,-15.26,4.21,1,PARIS PARIS
+20,0.3,default,24,4,with,-1.06,4.11,1,PARIS PARIS
+20,0.3,default,24,5,with,-9.24,5.16,1,PARIS PARIS
+20,0.3,default,48,1,with,-19.09,3.25,1,PARIS PARIS
+20,0.3,default,48,2,with,-14.88,5.85,1,PARIS PARIS
+20,0.3,default,48,3,with,-15.26,4.21,1,PARIS PARIS
+20,0.3,default,48,4,with,-1.06,4.11,1,PARIS PARIS
+20,0.3,default,48,5,with,-9.24,5.16,1,PARIS PARIS
+20,0.3,default,72,1,with,-19.09,3.25,1,PARIS PARIS
+20,0.3,default,72,2,with,-14.88,5.84,1,PARIS PARIS
+20,0.3,default,72,3,with,-15.26,4.21,1,PARIS PARIS
+20,0.3,default,72,4,with,-1.06,4.11,1,PARIS PARIS
+20,0.3,default,72,5,with,-9.24,5.15,1,PARIS PARIS
+30,0.3,default,0,1,with,-19.09,3.26,1,PARIS PARIS
+30,0.3,default,0,2,with,-14.88,5.85,1,PARIS PARIS
+30,0.3,default,0,3,with,-15.26,4.21,1,PARIS PARIS
+30,0.3,default,0,4,with,-1.06,4.11,1,PARIS PARIS
+30,0.3,default,0,5,with,-9.24,5.16,1,PARIS PARIS
+30,0.3,default,24,1,with,-19.09,3.25,1,PARIS PARIS
+30,0.3,default,24,2,with,-14.88,5.85,1,PARIS PARIS
+30,0.3,default,24,3,with,-15.26,4.21,1,PARIS PARIS
+30,0.3,default,24,4,with,-1.06,4.11,1,PARIS PARIS
+30,0.3,default,24,5,with,-9.24,5.16,0,PARIS A RARIS
+30,0.3,default,48,1,with,-19.09,3.25,1,PARIS PARIS
+30,0.3,default,48,2,with,-14.88,5.85,1,PARIS PARIS
+30,0.3,default,48,3,with,-15.26,4.21,1,PARIS PARIS
+30,0.3,default,48,4,with,-1.06,4.11,1,PARIS PARIS
+30,0.3,default,48,5,with,-9.24,5.16,0,PARIS A RARIS
+30,0.3,default,72,1,with,-19.09,3.25,1,PARIS PARIS
+30,0.3,default,72,2,with,-14.88,5.84,1,PARIS PARIS
+30,0.3,default,72,3,with,-15.26,4.21,1,PARIS PARIS
+30,0.3,default,72,4,with,-1.06,4.11,1,PARIS PARIS
+30,0.3,default,72,5,with,-9.24,5.15,0,PARIS A RARIS
+40,0.3,default,0,1,with,-19.09,3.26,1,PARIS PARIS
+40,0.3,default,0,2,with,-14.88,5.85,1,PARIS PARIS
+40,0.3,default,0,3,with,-15.26,4.21,0,PA ERIS A A IARIS
+40,0.3,default,0,4,with,-1.06,4.11,1,PARIS PARIS
+40,0.3,default,0,5,with,-9.24,5.16,0,PARIS A RARIS
+40,0.3,default,24,1,with,-19.09,3.25,0,PARIS W IARIS
+40,0.3,default,24,2,with,-14.88,5.85,1,PARIS PARIS
+40,0.3,default,24,3,with,-15.26,4.21,0,PA E M IIS A A IARIS
+40,0.3,default,24,4,with,-1.06,4.11,1,PARIS PARIS
+40,0.3,default,24,5,with,-9.24,5.16,0,PARIS A ET A M RIS
+40,0.3,default,48,1,with,-19.09,3.25,0,PARIS A A IARIS
+40,0.3,default,48,2,with,-14.88,5.85,1,PARIS PARIS
+40,0.3,default,48,3,with,-15.26,4.21,0,W IA E M IIS A A IARIS
+40,0.3,default,48,4,with,-1.06,4.11,1,PARIS PARIS
+40,0.3,default,48,5,with,-9.24,5.16,0,PARIS A A IARIS
+40,0.3,default,72,1,with,-19.09,3.25,0,PARIS W IARIS
+40,0.3,default,72,2,with,-14.88,5.84,1,PARIS PARIS
+40,0.3,default,72,3,with,-15.26,4.21,0,W IA E M IIS A A IARIS
+40,0.3,default,72,4,with,-1.06,4.11,1,PARIS PARIS
+40,0.3,default,72,5,with,-9.24,5.15,0,PARIS A A IARIS
+50,0.3,default,0,1,with,-19.09,3.26,0,PARIS A RARIS
+50,0.3,default,0,2,with,-14.88,5.85,0,PARIS PAA IIS
+50,0.3,default,0,3,with,-15.26,4.21,0,A A IA EA IIS A A IARIS
+50,0.3,default,0,4,with,-1.06,4.11,1,PARIS PARIS
+50,0.3,default,0,5,with,-9.24,5.16,0,PARIS A A IARIS
+50,0.3,default,24,1,with,-19.09,3.25,0,PARIS A A A M O M O
+50,0.3,default,24,2,with,-14.88,5.85,0,PARIS PAA EEIS
+50,0.3,default,24,3,with,-15.26,4.21,0,A ET A M E TT IIS A ET A M RIS
+50,0.3,default,24,4,with,-1.06,4.11,1,PARIS PARIS
+50,0.3,default,24,5,with,-9.24,5.16,0,PARIS A A IARIS
+50,0.3,default,48,1,with,-19.09,3.25,0,PARIS A A IARIS
+50,0.3,default,48,2,with,-14.88,5.85,0,PARIS PAA IIS
+50,0.3,default,48,3,with,-15.26,4.21,0,A A IA E M IIS A A IARIS
+50,0.3,default,48,4,with,-1.06,4.11,1,PARIS PARIS
+50,0.3,default,48,5,with,-9.24,5.16,0,PARIS A A IARIS
+50,0.3,default,72,1,with,-19.09,3.25,0,PARIS A A IARIS
+50,0.3,default,72,2,with,-14.88,5.84,0,PARIS PAA IIS
+50,0.3,default,72,3,with,-15.26,4.21,0,A ENT TN TT IIS A A IARIS
+50,0.3,default,72,4,with,-1.06,4.11,1,PARIS PARIS
+50,0.3,default,72,5,with,-9.24,5.15,0,PARIS A A IARIS
+60,0.3,default,0,1,with,-19.09,3.26,0,PARIS A A IARIS
+60,0.3,default,0,2,with,-14.88,5.85,0,PARIS PAA IIS
+60,0.3,default,0,3,with,-15.26,4.21,0,A A IA EA IIS A A IARIS
+60,0.3,default,0,4,with,-1.06,4.11,1,PARIS PARIS
+60,0.3,default,0,5,with,-9.24,5.16,0,PARIS A A IARIS
+60,0.3,default,24,1,with,-19.09,3.25,0,PARIS A A A M O M O
+60,0.3,default,24,2,with,-14.88,5.85,0,PARIS PAA E<HH>
+60,0.3,default,24,3,with,-15.26,4.21,0,A A A M E TT IIS A A A M RIS
+60,0.3,default,24,4,with,-1.06,4.11,1,PARIS PARIS
+60,0.3,default,24,5,with,-9.24,5.16,0,PARIS A A IARIS
+60,0.3,default,48,1,with,-19.09,3.25,0,PARIS A A IARIS
+60,0.3,default,48,2,with,-14.88,5.85,0,PARIS PAA IIS
+60,0.3,default,48,3,with,-15.26,4.21,0,A A IA E M IIS A A IARIS
+60,0.3,default,48,4,with,-1.06,4.11,1,PARIS PARIS
+60,0.3,default,48,5,with,-9.24,5.16,0,PARIS A A IARIS
+60,0.3,default,72,1,with,-19.09,3.25,0,PARIS A A IARIS
+60,0.3,default,72,2,with,-14.88,5.84,0,PARIS PAA IIS
+60,0.3,default,72,3,with,-15.26,4.21,0,A ENT TN TT IIS A A IARIS
+60,0.3,default,72,4,with,-1.06,4.11,1,PARIS PARIS
+60,0.3,default,72,5,with,-9.24,5.15,0,PARIS A A IARIS
+10,1.0,default,0,1,with,-16.19,4.89,0,"P""IS PARIS"
+10,1.0,default,0,2,with,-22.95,3.09,0,W AIEIS PRRIS
+10,1.0,default,0,3,with,-44.26,6.45,1,PARIS PARIS
+10,1.0,default,0,4,with,-41.78,4.86,0,PARIS A I IARIS
+10,1.0,default,0,5,with,-13.84,6.03,0,PEFIS PAA IS
+10,1.0,default,24,1,with,-16.19,4.89,0,"P""IS PARIS"
+10,1.0,default,24,2,with,-22.95,3.08,0,W AIEIS PRRIS
+10,1.0,default,24,3,with,-44.26,6.45,1,PARIS PARIS
+10,1.0,default,24,4,with,-41.78,4.86,0,PARIS A I IARIS
+10,1.0,default,24,5,with,-13.84,6.03,0,PEFIS PAA IS
+10,1.0,default,48,1,with,-16.19,4.89,0,"P""IS PARIS"
+10,1.0,default,48,2,with,-22.95,3.07,0,W AIEIS PRRIS
+10,1.0,default,48,3,with,-44.26,6.45,1,PARIS PARIS
+10,1.0,default,48,4,with,-41.78,4.86,0,PARIS A I IARIS
+10,1.0,default,48,5,with,-13.84,6.03,0,PEFIS PAA IS
+10,1.0,default,72,1,with,-16.19,4.89,0,"P""IS PARIS"
+10,1.0,default,72,2,with,-22.95,3.06,0,W AIEIS PSRIS
+10,1.0,default,72,3,with,-44.26,6.45,1,PARIS PARIS
+10,1.0,default,72,4,with,-41.78,4.86,0,PARIS A I IARIS
+10,1.0,default,72,5,with,-13.84,6.03,0,PEFIS PAA IS
+20,1.0,default,0,1,with,-16.19,4.89,1,PARIS PARIS
+20,1.0,default,0,2,with,-22.95,3.09,0,PAHIS PARIS
+20,1.0,default,0,3,with,-44.26,6.45,0,PARIS PAA IIS
+20,1.0,default,0,4,with,-41.78,4.86,0,PARIS PA ERIS
+20,1.0,default,0,5,with,-13.84,6.03,1,PARIS PARIS
+20,1.0,default,24,1,with,-16.19,4.89,1,PARIS PARIS
+20,1.0,default,24,2,with,-22.95,3.08,0,PAHIS PARIS
+20,1.0,default,24,3,with,-44.26,6.45,0,PARIS PAA IIS
+20,1.0,default,24,4,with,-41.78,4.86,0,PARIS PA ERIS
+20,1.0,default,24,5,with,-13.84,6.03,0,PE M RIS PARIS
+20,1.0,default,48,1,with,-16.19,4.89,1,PARIS PARIS
+20,1.0,default,48,2,with,-22.95,3.07,0,PAHIS PARIS
+20,1.0,default,48,3,with,-44.26,6.45,0,PARIS PAA IIS
+20,1.0,default,48,4,with,-41.78,4.86,0,PARIS PA ERIS
+20,1.0,default,48,5,with,-13.84,6.03,1,PARIS PARIS
+20,1.0,default,72,1,with,-16.19,4.89,1,PARIS PARIS
+20,1.0,default,72,2,with,-22.95,3.06,0,PAHIS PARIS
+20,1.0,default,72,3,with,-44.26,6.45,0,PARIS PAA IIS
+20,1.0,default,72,4,with,-41.78,4.86,0,PARIS PA ERIS
+20,1.0,default,72,5,with,-13.84,6.03,1,PARIS PARIS
+30,1.0,default,0,1,with,-16.19,4.89,1,PARIS PARIS
+30,1.0,default,0,2,with,-22.95,3.09,0,PAA TEIS PARIS
+30,1.0,default,0,3,with,-44.26,6.45,0,PARIS W ET TN RIS
+30,1.0,default,0,4,with,-41.78,4.86,1,PARIS PARIS
+30,1.0,default,0,5,with,-13.84,6.03,0,PARIS PA ERIS
+30,1.0,default,24,1,with,-16.19,4.89,1,PARIS PARIS
+30,1.0,default,24,2,with,-22.95,3.08,0,PAA TEIS PARIS
+30,1.0,default,24,3,with,-44.26,6.45,0,PARIS W IA ERIS
+30,1.0,default,24,4,with,-41.78,4.86,1,PARIS PARIS
+30,1.0,default,24,5,with,-13.84,6.03,1,PARIS PARIS
+30,1.0,default,48,1,with,-16.19,4.89,1,PARIS PARIS
+30,1.0,default,48,2,with,-22.95,3.07,0,PAA TEIS PARIS
+30,1.0,default,48,3,with,-44.26,6.45,0,PARIS W IA ERIS
+30,1.0,default,48,4,with,-41.78,4.86,1,PARIS PARIS
+30,1.0,default,48,5,with,-13.84,6.03,0,PARIS A RARIS
+30,1.0,default,72,1,with,-16.19,4.89,1,PARIS PARIS
+30,1.0,default,72,2,with,-22.95,3.06,0,PAA TEIS PARIS
+30,1.0,default,72,3,with,-44.26,6.45,0,PARIS W IA ERIS
+30,1.0,default,72,4,with,-41.78,4.86,1,PARIS PARIS
+30,1.0,default,72,5,with,-13.84,6.03,1,PARIS PARIS
+40,1.0,default,0,1,with,-16.19,4.89,0,PAA IIS W A T TRIS
+40,1.0,default,0,2,with,-22.95,3.09,0,PAA TEIS A RAA IIS
+40,1.0,default,0,3,with,-44.26,6.45,0,PA ERIS W IA ERIS
+40,1.0,default,0,4,with,-41.78,4.86,1,PARIS PARIS
+40,1.0,default,0,5,with,-13.84,6.03,0,PARIS A RA ERTS
+40,1.0,default,24,1,with,-16.19,4.89,0,PAA IIS W A T T E O M O
+40,1.0,default,24,2,with,-22.95,3.08,0,PA E M TEIS A ENAA ET IS
+40,1.0,default,24,3,with,-44.26,6.45,0,PAA IIS W ET TN TNIS
+40,1.0,default,24,4,with,-41.78,4.86,1,PARIS PARIS
+40,1.0,default,24,5,with,-13.84,6.03,0,PARIS A A A M E METS
+40,1.0,default,48,1,with,-16.19,4.89,0,PAA IIS W A T N RIS
+40,1.0,default,48,2,with,-22.95,3.07,0,PA E M TEIS A A IAA IIS
+40,1.0,default,48,3,with,-44.26,6.45,0,PA E M IIS W IA ERIS
+40,1.0,default,48,4,with,-41.78,4.86,1,PARIS PARIS
+40,1.0,default,48,5,with,-13.84,6.03,0,PARIS A A IA ERTS
+40,1.0,default,72,1,with,-16.19,4.89,0,PAA IIS W A T T ERIS
+40,1.0,default,72,2,with,-22.95,3.06,0,PA E M TEIS A RAA IIS
+40,1.0,default,72,3,with,-44.26,6.45,0,PA E M IIS W IA ERIS
+40,1.0,default,72,4,with,-41.78,4.86,1,PARIS PARIS
+40,1.0,default,72,5,with,-13.84,6.03,0,PARIS A ENT TN RTS
+50,1.0,default,0,1,with,-16.19,4.89,0,J AA IIS W IT ERIS
+50,1.0,default,0,2,with,-22.95,3.09,0,J E T E M TEIS A A IAA IIS
+50,1.0,default,0,3,with,-44.26,6.45,0,PA EA IIS W IA ERIS
+50,1.0,default,0,4,with,-41.78,4.86,1,PARIS PARIS
+50,1.0,default,0,5,with,-13.84,6.03,0,PARIS A A IA ERTS
+50,1.0,default,24,1,with,-16.19,4.89,0,J AA ET TES W IT E TTT TT TTT
+50,1.0,default,24,2,with,-22.95,3.08,0,J E T E M TEIS A A IAA IIS
+50,1.0,default,24,3,with,-44.26,6.45,0,PA E TT A M O O IA ERIS
+50,1.0,default,24,4,with,-41.78,4.86,0,A RARIS PAA A M O
+50,1.0,default,24,5,with,-13.84,6.03,0,PARIS A A A M E METS
+50,1.0,default,48,1,with,-16.19,4.89,0,J AA IIS W IT ERIS
+50,1.0,default,48,2,with,-22.95,3.07,0,J E T E M TEIS A A IAA IIS
+50,1.0,default,48,3,with,-44.26,6.45,0,PA E M IIS W IA ERIS
+50,1.0,default,48,4,with,-41.78,4.86,0,A RARIS PAA IIS
+50,1.0,default,48,5,with,-13.84,6.03,0,PARIS A A IA ERTS
+50,1.0,default,72,1,with,-16.19,4.89,0,J AA IIS W IT ERIS
+50,1.0,default,72,2,with,-22.95,3.06,0,J E T E M TEIS A A IAA IIS
+50,1.0,default,72,3,with,-44.26,6.45,0,PA E M IIS W IA ERIS
+50,1.0,default,72,4,with,-41.78,4.86,0,A RARIS PAA IIS
+50,1.0,default,72,5,with,-13.84,6.03,0,PARIS A ENT TN RTS
+60,1.0,default,0,1,with,-16.19,4.89,0,J AA IIS W IT ERIS
+60,1.0,default,0,2,with,-22.95,3.09,0,J E T E M TEIS A A IAA IIS
+60,1.0,default,0,3,with,-44.26,6.45,0,PA EA IIS W IA ERIS
+60,1.0,default,0,4,with,-41.78,4.86,0,A RARIS PARIS
+60,1.0,default,0,5,with,-13.84,6.03,0,PARIS A A IA ERTS
+60,1.0,default,24,1,with,-16.19,4.89,0,J AA A M S W IT E TTT TT TTT
+60,1.0,default,24,2,with,-22.95,3.08,0,J E T E M TEIS A A IAA IIS
+60,1.0,default,24,3,with,-44.26,6.45,0,PA E TT A M O O IA E O IS
+60,1.0,default,24,4,with,-41.78,4.86,0,A RARIS PAA A M O
+60,1.0,default,24,5,with,-13.84,6.03,0,PARIS A A A M E METS
+60,1.0,default,48,1,with,-16.19,4.89,0,J AA IIS W IT ERIS
+60,1.0,default,48,2,with,-22.95,3.07,0,J E T E M TEIS A A IAA IIS
+60,1.0,default,48,3,with,-44.26,6.45,0,PA E M IIS W IA ERIS
+60,1.0,default,48,4,with,-41.78,4.86,0,A RARIS PAA IIS
+60,1.0,default,48,5,with,-13.84,6.03,0,PARIS A A IA ERTS
+60,1.0,default,72,1,with,-16.19,4.89,0,J AA IIS W IT ERIS
+60,1.0,default,72,2,with,-22.95,3.06,0,J E T E M TEIS A A IAA IIS
+60,1.0,default,72,3,with,-44.26,6.45,0,PA E M IIS W IA ERIS
+60,1.0,default,72,4,with,-41.78,4.86,0,A RARIS PAA IIS
+60,1.0,default,72,5,with,-13.84,6.03,0,PARIS A ENT TN RTS
+10,2.0,default,0,1,with,-36.81,5.61,0,I RIS EI I REAA IIS
+10,2.0,default,0,2,with,-45.34,4.60,0,<AS> TRIS PRI III
+10,2.0,default,0,3,with,-15.91,6.32,0,F ITRIS PARIS
+10,2.0,default,0,4,with,-27.88,5.88,0,PARIS A TMT TM TT IIS
+10,2.0,default,0,5,with,-55.56,7.28,0,PI RIS PARIS
+10,2.0,default,24,1,with,-36.81,5.61,0,I RIS EI I REAA IIS
+10,2.0,default,24,2,with,-45.34,4.60,0,<AS> TRIS PRI III
+10,2.0,default,24,3,with,-15.91,6.32,0,F ITRIS PARIS
+10,2.0,default,24,4,with,-27.88,5.88,0,PARIS A TMT TM TOEIS
+10,2.0,default,24,5,with,-55.56,7.28,0,PIRIS PARIS
+10,2.0,default,48,1,with,-36.81,5.61,0,I RIS EI I REAA IIS
+10,2.0,default,48,2,with,-45.34,4.60,0,<AS> TRIS PSI III
+10,2.0,default,48,3,with,-15.91,6.32,0,F ITRIS PARIS
+10,2.0,default,48,4,with,-27.88,5.88,0,PARIS A TMT TM TOEIS
+10,2.0,default,48,5,with,-55.56,7.28,0,PIRIS PARIS
+10,2.0,default,72,1,with,-36.81,5.61,0,I RIS EI I REAA IIS
+10,2.0,default,72,2,with,-45.34,4.60,0,<AS> TRIS PSI III
+10,2.0,default,72,3,with,-15.91,6.32,0,F ITRIS PARIS
+10,2.0,default,72,4,with,-27.88,5.88,0,PARIS A TMT TM TOEIS
+10,2.0,default,72,5,with,-55.56,7.28,0,PI RIS PARIS
+20,2.0,default,0,1,with,-36.81,5.61,0,A RSS EI I <AS>ARIS
+20,2.0,default,0,2,with,-45.34,4.60,0,<AS>ARIS PA EA EIS
+20,2.0,default,0,3,with,-15.91,6.32,0,W IETRIS PARIS
+20,2.0,default,0,4,with,-27.88,5.88,0,PARIS R TEA EA IIS
+20,2.0,default,0,5,with,-55.56,7.28,0,PSRIS A A IAI III E
+20,2.0,default,24,1,with,-36.81,5.61,0,A RSS EI I <AS>ARIS
+20,2.0,default,24,2,with,-45.34,4.60,0,<AS>ARIS PA EA EIS
+20,2.0,default,24,3,with,-15.91,6.32,0,W IARIS PARIS
+20,2.0,default,24,4,with,-27.88,5.88,0,PARIS R TT TM A IIS
+20,2.0,default,24,5,with,-55.56,7.28,0,PSRIS A A IAI III E
+20,2.0,default,48,1,with,-36.81,5.61,0,A RSS EI I <AS>ARIS
+20,2.0,default,48,2,with,-45.34,4.60,0,<AS>ARIS PA EA EIS
+20,2.0,default,48,3,with,-15.91,6.32,0,W IARIS PARIS
+20,2.0,default,48,4,with,-27.88,5.88,0,PARIS R TEA EA IIS
+20,2.0,default,48,5,with,-55.56,7.28,0,PSRIS A A IAI III E
+20,2.0,default,72,1,with,-36.81,5.61,0,A RSS EI I <AS>ARIS
+20,2.0,default,72,2,with,-45.34,4.60,0,<AS>ARIS PA EA EIS
+20,2.0,default,72,3,with,-15.91,6.32,0,W IARIS PARIS
+20,2.0,default,72,4,with,-27.88,5.88,0,PARIS R TEA EA IIS
+20,2.0,default,72,5,with,-55.56,7.28,0,PSRIS A A IAI III E
+30,2.0,default,0,1,with,-36.81,5.61,0,PI T TMEI I W TEARIS
+30,2.0,default,0,2,with,-45.34,4.60,0,W IARIS PAA EIS
+30,2.0,default,0,3,with,-15.91,6.32,0,PE TRIS W IARIS
+30,2.0,default,0,4,with,-27.88,5.88,0,A RARIS W EARIS
+30,2.0,default,0,5,with,-55.56,7.28,0,PSRIS PA ERII T
+30,2.0,default,24,1,with,-36.81,5.61,0,PSI TEI I W TEARIS
+30,2.0,default,24,2,with,-45.34,4.60,0,W IA ERIS PAA EIS
+30,2.0,default,24,3,with,-15.91,6.32,0,PE TRIS W IARIS
+30,2.0,default,24,4,with,-27.88,5.88,0,A RARIS W EARIS
+30,2.0,default,24,5,with,-55.56,7.28,0,PSRIS PARII T
+30,2.0,default,48,1,with,-36.81,5.61,0,PSI TEI I W TEARIS
+30,2.0,default,48,2,with,-45.34,4.60,0,W IA ERIS A RAA EIS
+30,2.0,default,48,3,with,-15.91,6.32,0,PE TRIS W IARIS
+30,2.0,default,48,4,with,-27.88,5.88,0,A RARIS W EARIS
+30,2.0,default,48,5,with,-55.56,7.28,0,A RSRIS PARII T
+30,2.0,default,72,1,with,-36.81,5.61,0,PSI TEI I W TEARIS
+30,2.0,default,72,2,with,-45.34,4.60,0,W IA ERIS PAA EIS
+30,2.0,default,72,3,with,-15.91,6.32,0,PE TRIS W IARIS
+30,2.0,default,72,4,with,-27.88,5.88,0,A RARIS W EARIS
+30,2.0,default,72,5,with,-55.56,7.28,0,A RSRIS A A IA EA III T
+40,2.0,default,0,1,with,-36.81,5.61,0,JA EI TEI I W TEARIS
+40,2.0,default,0,2,with,-45.34,4.60,0,W IA ERIS A RAA EIS
+40,2.0,default,0,3,with,-15.91,6.32,0,A RT TRIS W IARIS
+40,2.0,default,0,4,with,-27.88,5.88,0,PARIS W EARIS
+40,2.0,default,0,5,with,-55.56,7.28,0,A RWRIS A RA ERII E
+40,2.0,default,24,1,with,-36.81,5.61,0,JA EI TEI I W TEARIS
+40,2.0,default,24,2,with,-45.34,4.60,0,W IA ERIS A RAA EIS
+40,2.0,default,24,3,with,-15.91,6.32,0,A RT TRIS W IARIS
+40,2.0,default,24,4,with,-27.88,5.88,0,A ENARIS W EARIS
+40,2.0,default,24,5,with,-55.56,7.28,0,A RWA IIS A ENA E TNII T
+40,2.0,default,48,1,with,-36.81,5.61,0,JA EI TEI I W TEA ERIS
+40,2.0,default,48,2,with,-45.34,4.60,0,W IA ERIS A RAA IIS
+40,2.0,default,48,3,with,-15.91,6.32,0,A RT N RIS W IARIS
+40,2.0,default,48,4,with,-27.88,5.88,0,A RARIS W EARIS
+40,2.0,default,48,5,with,-55.56,7.28,0,A RWA IIS A RA ERII E
+40,2.0,default,72,1,with,-36.81,5.61,0,JA EI TEI I W TT TTRIS
+40,2.0,default,72,2,with,-45.34,4.60,0,W IA ERIS A RAA EIS
+40,2.0,default,72,3,with,-15.91,6.32,0,A RT TRIS W IARIS
+40,2.0,default,72,4,with,-27.88,5.88,0,A RARIS W EARIS
+40,2.0,default,72,5,with,-55.56,7.28,0,A RWA IIS A RA ERII E
+50,2.0,default,0,1,with,-36.81,5.61,0,JA EI TEI I W TEARIS
+50,2.0,default,0,2,with,-45.34,4.60,0,W IT T ERIS A RAA EIS
+50,2.0,default,0,3,with,-15.91,6.32,0,A RT TRIS W IARIS
+50,2.0,default,0,4,with,-27.88,5.88,0,A RARTS W EARIS
+50,2.0,default,0,5,with,-55.56,7.28,0,A RWRIS A RA ERII E
+50,2.0,default,24,1,with,-36.81,5.61,0,JA S TEI I W TEA E TNIS
+50,2.0,default,24,2,with,-45.34,4.60,0,W IT E ERIS A A IAA EEIS
+50,2.0,default,24,3,with,-15.91,6.32,0,A RT TRIS W IARIS
+50,2.0,default,24,4,with,-27.88,5.88,0,A RARTS W EARIS
+50,2.0,default,24,5,with,-55.56,7.28,0,A RMA ET IS A ENA ERII T
+50,2.0,default,48,1,with,-36.81,5.61,0,JA S TEI I W TEA ERIS
+50,2.0,default,48,2,with,-45.34,4.60,0,W IT E ERIS A A IAA IIS
+50,2.0,default,48,3,with,-15.91,6.32,0,A RT N RIS W IARIS
+50,2.0,default,48,4,with,-27.88,5.88,0,A RARTS W EARIS
+50,2.0,default,48,5,with,-55.56,7.28,0,A RMA IIS A RA ERII E
+50,2.0,default,72,1,with,-36.81,5.61,0,JA S TEI I W TEA ERIS
+50,2.0,default,72,2,with,-45.34,4.60,0,W IT T ERIS A A IAA IIS
+50,2.0,default,72,3,with,-15.91,6.32,0,A RT T E RIS W IARIS
+50,2.0,default,72,4,with,-27.88,5.88,0,A RARTS W EARIS
+50,2.0,default,72,5,with,-55.56,7.28,0,A RMA IIS A RA ERII E
+60,2.0,default,0,1,with,-36.81,5.61,0,JA EI TEI I W TEA ERIS
+60,2.0,default,0,2,with,-45.34,4.60,0,W IT E ERIS A RAA EIS
+60,2.0,default,0,3,with,-15.91,6.32,0,A RT TRIS W IARIS
+60,2.0,default,0,4,with,-27.88,5.88,0,A RARTS W EARIS
+60,2.0,default,0,5,with,-55.56,7.28,0,A RWA IIS A RA ERII E
+60,2.0,default,24,1,with,-36.81,5.61,0,JA EI TEI I W TEA E TNIS
+60,2.0,default,24,2,with,-45.34,4.60,0,W IT E ERIS A A IAA EEIS
+60,2.0,default,24,3,with,-15.91,6.32,0,A RT T ERIS W IARIS
+60,2.0,default,24,4,with,-27.88,5.88,0,A RARTS W EARIS
+60,2.0,default,24,5,with,-55.56,7.28,0,A RMA IIS A ET ET TN RII T
+60,2.0,default,48,1,with,-36.81,5.61,0,JA S TEI I W TEA ERIS
+60,2.0,default,48,2,with,-45.34,4.60,0,W IT E ERIS A A IAA IIS
+60,2.0,default,48,3,with,-15.91,6.32,0,A RT N RIS W IARIS
+60,2.0,default,48,4,with,-27.88,5.88,0,A RARTS W EARIS
+60,2.0,default,48,5,with,-55.56,7.28,0,A RMA IIS A ENT TN RII E
+60,2.0,default,72,1,with,-36.81,5.61,0,JA S TEI I W TEA ERIS
+60,2.0,default,72,2,with,-45.34,4.60,0,W IT T ERIS A A IAA IIS
+60,2.0,default,72,3,with,-15.91,6.32,0,A RT T E RIS W IARIS
+60,2.0,default,72,4,with,-27.88,5.88,0,A RARTS W EARIS
+60,2.0,default,72,5,with,-55.56,7.28,0,A RMA IIS A RA ERII E
+30,0.3,genie,0,1,without,-19.09,3.26,0,TTNAA EIS PARIS
+30,0.3,genie,0,2,without,-14.88,5.85,0,TTNARIS PAE TETT TTT
+30,0.3,genie,0,3,without,-15.26,4.21,0,W T TTA T TETTE PAA EIS
+30,0.3,genie,0,4,without,-1.06,4.11,0,TTTEE TRIS PARIS
+30,0.3,genie,0,5,without,-9.24,5.16,0,TTNARIS TTTT TTE TEITTT
+30,0.3,genie,24,1,without,-19.09,3.25,0,PAA EIS PARIS
+30,0.3,genie,24,2,without,-14.88,5.85,0,PARIS PAE TEIS
+30,0.3,genie,24,3,without,-15.26,4.21,0,PARIS PAA EIS
+30,0.3,genie,24,4,without,-1.06,4.11,1,PARIS PARIS
+30,0.3,genie,24,5,without,-9.24,5.16,1,PARIS PARIS
+30,0.3,genie,48,1,without,-19.09,3.25,0,PAA EIS PARIS
+30,0.3,genie,48,2,without,-14.88,5.85,0,PARIS PAE TEIS
+30,0.3,genie,48,3,without,-15.26,4.21,0,PARIS PAA EIS
+30,0.3,genie,48,4,without,-1.06,4.11,1,PARIS PARIS
+30,0.3,genie,48,5,without,-9.24,5.16,1,PARIS PARIS
+30,0.3,genie,72,1,without,-19.09,3.25,0,PAA EIS PARIS
+30,0.3,genie,72,2,without,-14.88,5.84,0,PARIS PAA EIS
+30,0.3,genie,72,3,without,-15.26,4.21,0,PARIS PAA EIS
+30,0.3,genie,72,4,without,-1.06,4.11,1,PARIS PARIS
+30,0.3,genie,72,5,without,-9.24,5.15,1,PARIS PARIS
+40,0.3,genie,0,1,without,-19.09,3.26,0,T ETTT TTA EII E TTTETTE TT TETTT
+40,0.3,genie,0,2,without,-14.88,5.85,0,E EE ETT TTE TETT TTE PAE TETETT ET E
+40,0.3,genie,0,3,without,-15.26,4.21,0,A TETTE EE EE E E ET TTE E TTETTA T TETTT
+40,0.3,genie,0,4,without,-1.06,4.11,0,T EE EE EE E E ETE TETETTE E TTETTE TETETTT
+40,0.3,genie,0,5,without,-9.24,5.16,0,E EE ETT TI TT TT TI TE EE EEE ETE TT TETTT
+40,0.3,genie,24,1,without,-19.09,3.25,0,T EE EE ET E TTA EIS A TEE EE E A ET E T EEI ET E
+40,0.3,genie,24,2,without,-14.88,5.85,0,T EE EE ET E A E R E I E S PAE TETT TTE
+40,0.3,genie,24,3,without,-15.26,4.21,0,A TEE TE TT TT E T ET ET E A NA E A EIS
+40,0.3,genie,24,4,without,-1.06,4.11,0,TE EE EEA E A EEIE TE E E EE EEA E T EE EEI E T EI
+40,0.3,genie,24,5,without,-9.24,5.16,0,TE EE ET E T EE E T ENII E TTTT NE E T EE EEITTE
+40,0.3,genie,48,1,without,-19.09,3.25,0,PAA EIS PARIS
+40,0.3,genie,48,2,without,-14.88,5.85,0,PARIS PAA EIS
+40,0.3,genie,48,3,without,-15.26,4.21,0,PARIS PAA EIS
+40,0.3,genie,48,4,without,-1.06,4.11,1,PARIS PARIS
+40,0.3,genie,48,5,without,-9.24,5.16,0,PARIS PAA EIS
+40,0.3,genie,72,1,without,-19.09,3.25,0,TTTEAA EIS PE TRIS
+40,0.3,genie,72,2,without,-14.88,5.84,0,TTTT TTRIS PAA EII E
+40,0.3,genie,72,3,without,-15.26,4.21,0,PAE TT TT TTE PAA EIS
+40,0.3,genie,72,4,without,-1.06,4.11,0,TTTT TTE NIS E TTT TTRIS
+40,0.3,genie,72,5,without,-9.24,5.15,0,TTTT TTRIS W T TTE TEIS
+50,0.3,genie,0,1,without,-19.09,3.26,0,T EE EE EE E E ETTTETETTE E E EE EE ET E T EE E T EE EE E E EE E E EE EE E
+50,0.3,genie,0,2,without,-14.88,5.85,0,T EE EE ET E T EE E E EE EE E E EE E E EE EE E TTTT TTE TE E E EE E T ET ET E
+50,0.3,genie,0,3,without,-15.26,4.21,0,TTE EE E T EE E T EE ET E T ET E T ET EE E E EE EE EE E E EE E E ETT TETT EE E
+50,0.3,genie,0,4,without,-1.06,4.11,0,T EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE EE E E EE E T EE EE E
+50,0.3,genie,0,5,without,-9.24,5.16,0,T EE EE ET E T EE E E EE EE E TETE EE E E EE EE ET E T EE E E EE ET TEE EE EE E
+50,0.3,genie,24,1,without,-19.09,3.25,0,E T EE E EE ET E T EE E TTEIE TE E EE EE E EE E E E E EE E E E E EE E ET E T ET TTE
+50,0.3,genie,24,2,without,-14.88,5.85,0,E T EE E EE E EE T E T EE E E TE ET TT E TT ET E T EE EE ET E T ETE TETE E E E EE E EE E E
+50,0.3,genie,24,3,without,-15.26,4.21,0,TTTEE EE E E E EE E EE E E E E EE T E E T ET ET E TTTT TE E T EE ET E TETTE
+50,0.3,genie,24,4,without,-1.06,4.11,0,E E EE E EE E EE E E E E EE E E E E EE E EEE EE E E E E EE E EE E E E E EE E EE E EE E E E E EE E E E E EE EEE EE T TTE E
+50,0.3,genie,24,5,without,-9.24,5.16,0,E E EE E EE E EE T E E T EE E E T EE ET E T ET E TTE E EE E EE E EE E E E E EE E E T EE ET E TETTE E
+50,0.3,genie,48,1,without,-19.09,3.25,0,T EGA E A EIS PARIS
+50,0.3,genie,48,2,without,-14.88,5.85,0,E EE EE EEARIS PAA EIE ET EE E
+50,0.3,genie,48,3,without,-15.26,4.21,0,PAT EE ET E E EE E S PAA T TES
+50,0.3,genie,48,4,without,-1.06,4.11,0,T EE EE EEE ETRIS A EE EEARIS
+50,0.3,genie,48,5,without,-9.24,5.16,0,E EE EE ET E E ETRIS A EE ET E AA EIS
+50,0.3,genie,72,1,without,-19.09,3.25,0,T EE ETT TTA EIS W EET ETA T TT TTE
+50,0.3,genie,72,2,without,-14.88,5.84,0,T EE EE ET E AE TT TT TTE E TTEAA ETET ET ET E
+50,0.3,genie,72,3,without,-15.26,4.21,0,PE EE E T EE ET E T ET E T EI E TTT TTE TT TEI E
+50,0.3,genie,72,4,without,-1.06,4.11,0,T EE EE ET E T EE E T ENT EI ET EE E EE EE ET E TTA T TT TTE
+50,0.3,genie,72,5,without,-9.24,5.15,0,T EE EE ET E T ETE TT TES TE EE ET E T EE E A EITTE
+60,0.3,genie,0,1,without,-19.09,3.26,0,T EE EE ET E T EE E TE EE E E EE E E ET ET E T EE EE ET E T EE E T EE ET E T ET E T ET ET E
+60,0.3,genie,0,2,without,-14.88,5.85,0,T EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE EE E E EE E E EE ET E T ET E T ET ET E
+60,0.3,genie,0,3,without,-15.26,4.21,0,E EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE EE E E EE E T ET ET E
+60,0.3,genie,0,4,without,-1.06,4.11,0,T EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE ET E T ET E T ET ET E
+60,0.3,genie,0,5,without,-9.24,5.16,0,T EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE ET E T ET E T ET ET E
+60,0.3,genie,24,1,without,-19.09,3.25,0,E T E EE E E EE E EE T E E T EE E E T ETI EE EE E EE E E E E EE E EE E E EE E E E E EE E E E E T EE E EE T E E E EE E E E E EE E EE E E
+60,0.3,genie,24,2,without,-14.88,5.85,0,E T E EE E E EE E E EE T E E E T EE E E E E EE E EE E E E E EE E E E T EE T EE T E E T EE E EE E ET E T EE E TE EE E E E E EE E E E E EE E EE E E
+60,0.3,genie,24,3,without,-15.26,4.21,0,TE EE E EE E E E E EE E E E E EE E EE E E E E EE T E E E T E EE T E EE T E E E EE E EE E EE E E E E EE E E E T EE E ET E TEE E EE E EE E E
+60,0.3,genie,24,4,without,-1.06,4.11,0,E E EE E E EE E E EE E E E E EE E E E E E EE E E EE E E E E EE E E E E EE E EE E E E E EE E E EE E E EE E E E E EE E E E E EE E EE E E E E EE E E E E EE E EE E E
+60,0.3,genie,24,5,without,-9.24,5.16,0,E E EE E E EE E E EE T E E E T E EE E E E T EE E EE T E E T EE T E E E EE E EE E E E E EE E EE E EE E E E E EE E E E E T EE E EE T E E E EE E E E E EE E EE E E
+60,0.3,genie,48,1,without,-19.09,3.25,0,E EE EE EE E T EE E A EII ET E E EE EE EE E T EE E E EE EE E E EE E E EE EE E
+60,0.3,genie,48,2,without,-14.88,5.85,0,E EE EE EE E E EE E E EE EE E E EE E E EE EE E TGAA EE E E EE E E ET EE E
+60,0.3,genie,48,3,without,-15.26,4.21,0,A E EE E T EE E T EE EE E E EE E T EE EE E T EE EE EE E E EE E E EE ET TEE ET EE E
+60,0.3,genie,48,4,without,-1.06,4.11,0,E EE EE EE E E EE E E ET EE E E EE E T EE ET E E ET EE EE E T EE E T EE EE E E EE E E EE EE E
+60,0.3,genie,48,5,without,-9.24,5.16,0,E EE EE EE E E ET E E EE EE E IE ET ET E E EE EE EE E T EE E E EE EE E I E E EE EE E
+60,0.3,genie,72,1,without,-19.09,3.25,0,E EE EE ET E T ETA T TETT ET E T EE EE EE E E EE E E EE ET E T ET E T ET ET E
+60,0.3,genie,72,2,without,-14.88,5.84,0,E EE EE EE E E EE E T EE ET E T ET E T ET ET E T EE E ET TTA ET E T ET E E EE EE E
+60,0.3,genie,72,3,without,-15.26,4.21,0,A EE ET E E EE E E EE EE E E EE E E EE ET E T EE EE ET E T EE E T EE ET TET ET ET E
+60,0.3,genie,72,4,without,-1.06,4.11,0,E EE EE EE E E EE E E EE EE E T EE E E EE EE E E EE EE EE E E EE E E EE ET E T ET E T ET ET E
+60,0.3,genie,72,5,without,-9.24,5.15,0,E EE EE EE E E EE E T EE ET E T ET E T ET ET E T EE EE EE E E EE E T EE ET E T ET E T ET ET E
+30,1.0,genie,0,1,without,-16.19,4.89,0,W IARIS PARIS
+30,1.0,genie,0,2,without,-22.95,3.09,0,PAI UEIS PARIS
+30,1.0,genie,0,3,without,-44.26,6.45,0,PE TRIS PAA IIS
+30,1.0,genie,0,4,without,-41.78,4.86,0,PARIS W EA ERIS
+30,1.0,genie,0,5,without,-13.84,6.03,1,PARIS PARIS
+30,1.0,genie,24,1,without,-16.19,4.89,0,W IARIS PARIS
+30,1.0,genie,24,2,without,-22.95,3.08,0,PAI UEIS PARIS
+30,1.0,genie,24,3,without,-44.26,6.45,0,PARIS PAA IIS
+30,1.0,genie,24,4,without,-41.78,4.86,0,PARIS PA ERIS
+30,1.0,genie,24,5,without,-13.84,6.03,0,PARIS PAA EEIS
+30,1.0,genie,48,1,without,-16.19,4.89,0,W IARIS PARIS
+30,1.0,genie,48,2,without,-22.95,3.07,0,PAI UEIS PARIS
+30,1.0,genie,48,3,without,-44.26,6.45,0,PARIS PAA IIS
+30,1.0,genie,48,4,without,-41.78,4.86,0,PARIS PA ERIS
+30,1.0,genie,48,5,without,-13.84,6.03,1,PARIS PARIS
+30,1.0,genie,72,1,without,-16.19,4.89,0,W IAE NIS PE TRIS
+30,1.0,genie,72,2,without,-22.95,3.06,0,PAI UEIS PARIS
+30,1.0,genie,72,3,without,-44.26,6.45,0,PARIS PAA IIS
+30,1.0,genie,72,4,without,-41.78,4.86,0,PARIS PA ERIS
+30,1.0,genie,72,5,without,-13.84,6.03,1,PARIS PARIS
+40,1.0,genie,0,1,without,-16.19,4.89,0,W EEAE TEIS E EE ET IE TRIS
+40,1.0,genie,0,2,without,-22.95,3.09,0,PAI TEIE I W EAE TEIS
+40,1.0,genie,0,3,without,-44.26,6.45,0,W T TTA EE E E EE E E EI A NE TA ITES
+40,1.0,genie,0,4,without,-41.78,4.86,0,TTNARIE TE E EGA E TNE ES
+40,1.0,genie,0,5,without,-13.84,6.03,0,E EE ENAA EEIS E TTEE EE E E ENETT TI
+40,1.0,genie,24,1,without,-16.19,4.89,0,T EM EEARE EES A ET IAA ET E T EEI ET E
+40,1.0,genie,24,2,without,-22.95,3.08,0,T EGAI TEI E S E PE ETA EEE ET E T ET ET E
+40,1.0,genie,24,3,without,-44.26,6.45,0,PE TRIE ET ET E P E T ETE EE II E T ETT
+40,1.0,genie,24,4,without,-41.78,4.86,0,W ET E T EE E RIS E EE ENE EE ERI E T ET ET
+40,1.0,genie,24,5,without,-13.84,6.03,0,A EE ET E AA ET E T ET E T EI PA E T ET EEI E S
+40,1.0,genie,48,1,without,-16.19,4.89,0,A ET EEARIS A ET IARIS
+40,1.0,genie,48,2,without,-22.95,3.07,0,A ENAI TEIS PA E RIS
+40,1.0,genie,48,3,without,-44.26,6.45,0,W ET TTRIS PAA IIS
+40,1.0,genie,48,4,without,-41.78,4.86,0,PAA EEIS A ENA ERIS
+40,1.0,genie,48,5,without,-13.84,6.03,0,W EEARIS PAA ET IS
+40,1.0,genie,72,1,without,-16.19,4.89,0,PARIS A ET IARIS
+40,1.0,genie,72,2,without,-22.95,3.06,0,PAI TEIS PARIS
+40,1.0,genie,72,3,without,-44.26,6.45,0,PARIS PAA IIS
+40,1.0,genie,72,4,without,-41.78,4.86,0,PARIS PA ERIS
+40,1.0,genie,72,5,without,-13.84,6.03,0,PARIS PAA EEIS
+50,1.0,genie,0,1,without,-16.19,4.89,0,T EE EE EEAE E EE E E EE E E EE EE E T EE E EE T EEA E T EE ET E E EE E T ET ET E
+50,1.0,genie,0,2,without,-22.95,3.09,0,T EE ENAI TE E T ET E T ET ET E TE EE EE E E EE E E EE ET E T ET E E EE EE E
+50,1.0,genie,0,3,without,-44.26,6.45,0,E EE EE EEE EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T ET IE EE E E EE ET
+50,1.0,genie,0,4,without,-41.78,4.86,0,E EE EE ET E E EE E E EE EEIE EE ET E T EE ET ET E T ET E T EE EE E T ET E T EE EE
+50,1.0,genie,0,5,without,-13.84,6.03,0,T EE EE EE E AT EE ET E T ET E T EE EE E E EE EE ET E T EE E T EE EEE EE E E EE EE E
+50,1.0,genie,24,1,without,-16.19,4.89,0,E T EE E ET ET T EE E TTEE ET E T ET ET E E E EE E ET T ET E TE E E E EE E EE T E T EE E E E EE T ET E
+50,1.0,genie,24,2,without,-22.95,3.08,0,E T EE E EE EEAE ET TEE EE T E T EE E EE T E T ETNE EE E A EE E E E T ET E T ET ET E
+50,1.0,genie,24,3,without,-44.26,6.45,0,A EE ET E TE E E E EE E EE E E E E EE E E E T EE T ET E T EE E EE E EE T E E T EE E E E T EE IIE ET ET E
+50,1.0,genie,24,4,without,-41.78,4.86,0,A EE E EE T E T EE E A ET E IS E E T EE E EE EE E E E T EE E E E RI E E T ET ET E
+50,1.0,genie,24,5,without,-13.84,6.03,0,E E EE E EE E ET E T ET E E EE E EE T E E T EE T E T ET EE W EE E E E E EE E E E T EE T EEI E S E
+50,1.0,genie,48,1,without,-16.19,4.89,0,T EE ET EEA E TNIS E EE ET IAE EE ET E IE EI
+50,1.0,genie,48,2,without,-22.95,3.07,0,A ET ET AI TEIS PA E RIS
+50,1.0,genie,48,3,without,-44.26,6.45,0,W ET TTE EE ET E E EE E E EI W ET E A E T EE E ET IS
+50,1.0,genie,48,4,without,-41.78,4.86,0,W EEARIS E EE ET ET E A ERIS
+50,1.0,genie,48,5,without,-13.84,6.03,0,T EE ENAE EE ET E IS W EI EE E T EE ET IS
+50,1.0,genie,72,1,without,-16.19,4.89,0,T EM ET TN TNIS E EE E EE IAE EE ET E IE EI
+50,1.0,genie,72,2,without,-22.95,3.06,0,T EM EEAI TEE EI ET EE PARE EES
+50,1.0,genie,72,3,without,-44.26,6.45,0,PAE EE ET E T ET E T ET EE E EE EE ET E T EE E T ET IIS
+50,1.0,genie,72,4,without,-41.78,4.86,0,A EE EEARIS E EM ET E T EE ERIS
+50,1.0,genie,72,5,without,-13.84,6.03,0,T EE ENAT EE ET E T EES W EI EE E T EE EEIS
+60,1.0,genie,0,1,without,-16.19,4.89,0,T EE EE EE E T EE E E EE ET E T ET E T ET ET E T EE E EE T ET E T EE E T EE ET E T ET E T ET ET E
+60,1.0,genie,0,2,without,-22.95,3.09,0,T EE EE EE E T EE E T ET TT E T ET E T ET ET E T EE EE ET E T EE E T EE ET E T ET E T ET ET E
+60,1.0,genie,0,3,without,-44.26,6.45,0,T EE EE ET E E EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE E ET E T ET E T ET ET E
+60,1.0,genie,0,4,without,-41.78,4.86,0,T EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T ET E E T EE ET E T ET E T ET ET E
+60,1.0,genie,0,5,without,-13.84,6.03,0,T EE EE ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T EE E EE E T ET E T ET ET E
+60,1.0,genie,24,1,without,-16.19,4.89,0,E T E EE E EE T ET E E T EE E E T I E EE E E E T EE T E E T EE T EE T E E E EE E E EE T T EE T E T EE E E E E EE E E EE T E E E T EE E E E E EE T E EE T E
+60,1.0,genie,24,2,without,-22.95,3.08,0,E T E EE E EE E EEE EE E E E T EE T TE E E E E EE T E E E EE E EE T E E E E EE E EE E EE E E E T EE E E E E EE E EE E E E T E EE T E E T EE T EE T E
+60,1.0,genie,24,3,without,-44.26,6.45,0,E E EE E EE E EE T E E E EE E E E E EE E EE E E E E EE E E E T E EE T E EE T E E E EE E EE E EE T E E E T E EE E E E E T E EE E E EE E E E EE E E E T EE T EE T E
+60,1.0,genie,24,4,without,-41.78,4.86,0,E E EE E EE E E EE T E E T EE E E E E EE E EE T E E E EE E E E E EE E EE E E E T E EE E EE E EE E E E T E EE E E E E E EE E EE E E E E EE E E E T EE T EE T E
+60,1.0,genie,24,5,without,-13.84,6.03,0,E E EE E E EE E EE T E E T ET E E E EE E E EE T E E E T E EE T E E E T EE T EE E E E E EE E EE E EE E E E E EE E E E E T E EE T E ET E E EE T E E E EE E EE E E
+60,1.0,genie,48,1,without,-16.19,4.89,0,E ET E EE ET T EE E TE EE E E EE E E EE EE E E EE E EE T ET E T EE E T A ET E E EE E T ET EE E
+60,1.0,genie,48,2,without,-22.95,3.07,0,E A E EE ET TE E I TT E E EE E E ET EE E E EE EE EE E E EE E E T EE EE E T EE E E EE EE E
+60,1.0,genie,48,3,without,-44.26,6.45,0,T EE EE ET T EE E T A EE E E EE E E EE EE E E ET ET ET E T EE E T EE E ET E E EE E E EE ET
+60,1.0,genie,48,4,without,-41.78,4.86,0,E EE ET ET E E EE E E EE ET E T ET E E EE EE E E EE E EE EE E E ET E T EE EE E E EE E T EE EE E
+60,1.0,genie,48,5,without,-13.84,6.03,0,E EE ET EE E A E T EE EE E T EE E E EE ET E E EE EE EE E T EE E E EE ET E EE E E EE EE E
+60,1.0,genie,72,1,without,-16.19,4.89,0,E EE ENT E T EN TE ET E T ET E T ET ET E E EE E EE T ET E T EE E E EE EE E E ET E E EE EE E
+60,1.0,genie,72,2,without,-22.95,3.06,0,E EE EE ET T EE E T EE TT E E EE E E EE EE E T EE EE ET E E EE E T EE EE E E EE E T ET ET E
+60,1.0,genie,72,3,without,-44.26,6.45,0,T EE EE EI EE E E EE EE E E EE E E EE EE E T EE EE EE E E EE E E EE I E E ET E T ET ET
+60,1.0,genie,72,4,without,-41.78,4.86,0,T EE EE EE E T EE E T EE ET E T ET E T ET ET E E EE EE EE E E ET E T EE ET E T EE E E ET ET E
+60,1.0,genie,72,5,without,-13.84,6.03,0,E EE EE ET E A E E EE EE E E EE E E ET ET E T EE EE EE E E EE E E EE E EET ET E T ET ET E
+30,2.0,genie,0,1,without,-36.81,5.61,0,A RI A TT E TT TT II R MEARIS
+30,2.0,genie,0,2,without,-45.34,4.60,0,W E IARIS PA ERIS
+30,2.0,genie,0,3,without,-15.91,6.32,0,W IE TRIS W EAA EEIS
+30,2.0,genie,0,4,without,-27.88,5.88,0,A NARIS W EA E RIS
+30,2.0,genie,0,5,without,-55.56,7.28,0,A T ET TT A RIS A NAA III T
+30,2.0,genie,24,1,without,-36.81,5.61,0,A A ET TT A TT E TT TT II R MEARIS
+30,2.0,genie,24,2,without,-45.34,4.60,0,W E IAA ET IS PA ERIS
+30,2.0,genie,24,3,without,-15.91,6.32,0,W IE TRIS PAA EEIS
+30,2.0,genie,24,4,without,-27.88,5.88,0,PARIS W EA E RIS
+30,2.0,genie,24,5,without,-55.56,7.28,0,PI A RIS PAA IIS
+30,2.0,genie,48,1,without,-36.81,5.61,0,A A ET TT II E TEIII R AEARIS
+30,2.0,genie,48,2,without,-45.34,4.60,0,W E IARIS PA ERIS
+30,2.0,genie,48,3,without,-15.91,6.32,0,W IE TRIS PAA EEIS
+30,2.0,genie,48,4,without,-27.88,5.88,0,PAA EEIS W EA E RIS
+30,2.0,genie,48,5,without,-55.56,7.28,0,PI A RIS PAA IIS
+30,2.0,genie,72,1,without,-36.81,5.61,0,A A ET TT II E TT TT II R AEARIS
+30,2.0,genie,72,2,without,-45.34,4.60,0,W E IARIS PA ERIS
+30,2.0,genie,72,3,without,-15.91,6.32,0,W IE TRIS PAA IIS
+30,2.0,genie,72,4,without,-27.88,5.88,0,PAA EEIS A ETEA E RIS
+30,2.0,genie,72,5,without,-55.56,7.28,0,W ET TT A RIS A ET IAI T IIS
+40,2.0,genie,0,1,without,-36.81,5.61,0,T ET A ET TT A TT TEIITE R E TEARIE EI
+40,2.0,genie,0,2,without,-45.34,4.60,0,W IE TA ET IS PA ERIS E
+40,2.0,genie,0,3,without,-15.91,6.32,0,A E IE E E RI E S PAA IIS
+40,2.0,genie,0,4,without,-27.88,5.88,0,PA E TNT TT S W E E A E RIS
+40,2.0,genie,0,5,without,-55.56,7.28,0,W ET TT A A EEIS A NA E E ET III T
+40,2.0,genie,24,1,without,-36.81,5.61,0,A A ET TT A TT TEE ET NI E A ET E TEAE ET EEE ET I ET E
+40,2.0,genie,24,2,without,-45.34,4.60,0,A ET IAE ENE ET E TTT E P E A EAEII ET E
+40,2.0,genie,24,3,without,-15.91,6.32,0,W IE TE ENIE ET ET T ET ENE ETE ET ET T ET T ETT
+40,2.0,genie,24,4,without,-27.88,5.88,0,W ET E AA EEIE EI E ET ETEE ET E RE ET E T ET ET
+40,2.0,genie,24,5,without,-55.56,7.28,0,T EM ET T EK A ET E TT E T EI W ET E AE ET II E TTT
+40,2.0,genie,48,1,without,-36.81,5.61,0,A RI A TT TEIII R E TT NTRIS
+40,2.0,genie,48,2,without,-45.34,4.60,0,A ET IAA ET IS PA ERIS E
+40,2.0,genie,48,3,without,-15.91,6.32,0,W IE TRIS PAA E EEIS E
+40,2.0,genie,48,4,without,-27.88,5.88,0,PAA EEIS A ETEA E A EEIS
+40,2.0,genie,48,5,without,-55.56,7.28,0,W ET TT A RIS W EEAA IIS
+40,2.0,genie,72,1,without,-36.81,5.61,0,A A ET TT A TT TEIII R E TEARIS
+40,2.0,genie,72,2,without,-45.34,4.60,0,W IAA ET IS PA ERIS E
+40,2.0,genie,72,3,without,-15.91,6.32,0,W TT NTRIS PAA E EEIS
+40,2.0,genie,72,4,without,-27.88,5.88,0,PA E A EEIS A ETEA E A EEIS
+40,2.0,genie,72,5,without,-55.56,7.28,0,W ET TT A RII EE W EEAA IIS
+50,2.0,genie,0,1,without,-36.81,5.61,0,T EE A ET T ET E E EI N E T ET DT ET E T EE ET E I E A E T EE ET E T EE E T ET ET E
+50,2.0,genie,0,2,without,-45.34,4.60,0,E EE EE TT TE E T EE EI ET E E ET ET E T EE ET EE E E EE E T EE ET E T EE E E ET EE E
+50,2.0,genie,0,3,without,-15.91,6.32,0,A ET I E TE E T EE ET E T ET E T ET EE E T EE EE ET E T EE E T ET E EI ET E T EE EE
+50,2.0,genie,0,4,without,-27.88,5.88,0,T EE EE ET E E EE E T EE ET E E EE E E EE ET E T EE EE ET E T ET E T EE EE E T ET E T EE EE E
+50,2.0,genie,0,5,without,-55.56,7.28,0,T EE EE E EE E T EE E A T EE ET E T ET E T ETT E A EE ET E T EE E T ET IE ET E TT EE E
+50,2.0,genie,24,1,without,-36.81,5.61,0,E E EE E E ET ET T ET E E EI TE E T ET E SE EE T E E E EE E ET E TE E T EE E E T EE E EE E E E T ET E E E EE T ET E
+50,2.0,genie,24,2,without,-45.34,4.60,0,A ET I E AE EE E ET E T ET E T EE E EE T E T EG E A E E T ET EE E E T EEI ET E
+50,2.0,genie,24,3,without,-15.91,6.32,0,T EE EE E E EEE EE E E T EE EE T E E E EE E E E T ET ET T ET EE EE E E E T EE E E T EE E E EE E E T ET T ET ET E
+50,2.0,genie,24,4,without,-27.88,5.88,0,W ET E A E E EE T ET T ET T ET EE E E T EE E ET EE E E E T ET E E E EE E ET E T ET E T ET ET E
+50,2.0,genie,24,5,without,-55.56,7.28,0,E T EE EE E ET T ET E A E E EE E EE T E E E EE T E T ET EE E EM ET E A E E T EE T IE EE T E TTE E
+50,2.0,genie,48,1,without,-36.81,5.61,0,T EE A ET TT E E EI TEI E SI E T EE EE E TEE ETR E IE EI
+50,2.0,genie,48,2,without,-45.34,4.60,0,A ET NEAA ET T EEI EE PA ER E IS E
+50,2.0,genie,48,3,without,-15.91,6.32,0,W IE EE E A EI EE E E EI W ET E A E T ET IIS E
+50,2.0,genie,48,4,without,-27.88,5.88,0,PA E A EEIS A ETT E A E E A ET T EES
+50,2.0,genie,48,5,without,-55.56,7.28,0,A EE ET TT U T EE ET E T ET E I EE W EEA E E EE E EEIS
+50,2.0,genie,72,1,without,-36.81,5.61,0,T ET A ET TT E E EI TEISI E T EE ET E TT E A E R E TT T EI
+50,2.0,genie,72,2,without,-45.34,4.60,0,W IAA ET T EEI ET E PA EA ET E IS E
+50,2.0,genie,72,3,without,-15.91,6.32,0,W IE EE E TT ET E T ET E T EI P E A E T EE EEIS
+50,2.0,genie,72,4,without,-27.88,5.88,0,PA E A EEIS A ETT E T ET EA ET T EES
+50,2.0,genie,72,5,without,-55.56,7.28,0,A EE ET TT U T EE ET E T ET E TNE W E EEA E T EE IIS
+60,2.0,genie,0,1,without,-36.81,5.61,0,T EE E EE ET E T ET E I ET T ET E T ET E T E EE ET E T EE ET E E ET E T EE E T EE ET E T ET E T ET ET E
+60,2.0,genie,0,2,without,-45.34,4.60,0,T EE ET I E E EE E T EE EE E T ET E T ET ET E T EE EE ET E T EE E E T EE ET E T ET E T ET ET I
+60,2.0,genie,0,3,without,-15.91,6.32,0,T EE ET E ET E T EE E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T ET E EE E T ET E T ET ET E
+60,2.0,genie,0,4,without,-27.88,5.88,0,T EE EE ET E T EE E E T EE E ET E T ET E T ET ET E T EE EE ET E T ET E E T EE ET E T ET E T ET ET E
+60,2.0,genie,0,5,without,-55.56,7.28,0,T EE EE E ET E T ET E E E E T EE ET E T ET E T ET ET E T EE EE ET E T EE E T ET E ET E T ET E T ET ET E
+60,2.0,genie,24,1,without,-36.81,5.61,0,E E EE E E EE T ET E E T EE T E I EE E T EE E E E T EE T E E E EE E EE T E E E E EE E E EE E E E EE E E E T EE E E E T E EE E E EE E E E T EE T E E E EE T E EE T E
+60,2.0,genie,24,2,without,-45.34,4.60,0,E E EE E EE E E ET E T EE E E E T EE E ET E E T E EE T E E E EE E EE T E E E T EE E EE E EE T E E E EE T E E E T EE E EE E E E T EE E E E E EE T ET I
+60,2.0,genie,24,3,without,-15.91,6.32,0,E T EE E EE E E EE E E E T EE E E E T EE E EE T E E E E EE E E E T E EE T EE E E E T E EE E EE E EE E E E T EE E E E E T E EE E E EE E E E T E EE E E E T EE T EE T E
+60,2.0,genie,24,4,without,-27.88,5.88,0,E E EE E EE E E EE T E E E EE E E E E EE T E EE E E E T EE E E E T EE T EE E E E T E EE E EE E EE E E E T E EE E E E E E EE E EE E E E T E EE E E E T EE T EE T E
+60,2.0,genie,24,5,without,-55.56,7.28,0,E T EE E EE E E EE E E E T ET E E T E E EE E E EE T E E E E EE T E E E T EE T EE E E E T EE E EE E E EE T E E E EE E E E T E EE T E EE E E E EE T E E E E EE E EE E E
+60,2.0,genie,48,1,without,-36.81,5.61,0,E EE A ET E E EE E EI T EE E E ET E E E EE ET E E EE ET E E EE E A E T ET ET E E EE E E EE EE E
+60,2.0,genie,48,2,without,-45.34,4.60,0,E A E ET NEA E E A E ET E E EE E E ET ET E E EE EE EE E E EE E T EE EE E E EE E E EE EE I
+60,2.0,genie,48,3,without,-15.91,6.32,0,A ET I E E EE E E EE EE E E ET E E EE ET E E EE EE ET E E EE E T ET E ET E E ET E T EE ET E
+60,2.0,genie,48,4,without,-27.88,5.88,0,T EE A ET E T EE E T EE E ET E E EE E E EE EE E E A E EE EE E E ET E E E EE E ET E T ET E T EE EE E
+60,2.0,genie,48,5,without,-55.56,7.28,0,E EE EE E EE E E ET E E I EE EE E E EE E T ET ET E T EE EE E EE E E EE E E EE E ET E T ET E I EE E
+60,2.0,genie,72,1,without,-36.81,5.61,0,E EE A ET E T EE E EI E ET E E ET E E ET EE E E EE EE E E EE E T EE E E EE EE E E ET E E EE ET E
+60,2.0,genie,72,2,without,-45.34,4.60,0,T ET EE IA E T EE E ET E E EE E T EE EE E T EE EE EE E T EE E T EE EE E T ET E T EE EE I
+60,2.0,genie,72,3,without,-15.91,6.32,0,A ET I E E EE E E EE EE E E EE E E EE ET E E EE EE EE E E ET E E EE E ET E E ET E E ET ET E
+60,2.0,genie,72,4,without,-27.88,5.88,0,T EE EE EE E T EE E T EE E ET E T ET E T ET ET E E EE EE EE E E ET E T EN ET E E EE E E ET ET E
+60,2.0,genie,72,5,without,-55.56,7.28,0,E EE EE E ET E E EE E E EE EE EE E E EE E E ENT E T EE EE E ET E T EE E E EE I E E EE E TT ET E
+30,0.3,genie,0,1,with,-19.09,3.26,1,PARIS PARIS
+30,0.3,genie,0,2,with,-14.88,5.85,0,PARIS PAA EIS
+30,0.3,genie,0,3,with,-15.26,4.21,0,PARIS PAA EIS
+30,0.3,genie,0,4,with,-1.06,4.11,1,PARIS PARIS
+30,0.3,genie,0,5,with,-9.24,5.16,1,PARIS PARIS
+30,0.3,genie,24,1,with,-19.09,3.25,1,PARIS PARIS
+30,0.3,genie,24,2,with,-14.88,5.85,0,PARIS PAE TEIS
+30,0.3,genie,24,3,with,-15.26,4.21,0,PARIS PAA EIS
+30,0.3,genie,24,4,with,-1.06,4.11,1,PARIS PARIS
+30,0.3,genie,24,5,with,-9.24,5.16,0,PARIS A ENARIS
+30,0.3,genie,48,1,with,-19.09,3.25,1,PARIS PARIS
+30,0.3,genie,48,2,with,-14.88,5.85,0,PARIS PAE TEIS
+30,0.3,genie,48,3,with,-15.26,4.21,0,PARIS PAA EIS
+30,0.3,genie,48,4,with,-1.06,4.11,1,PARIS PARIS
+30,0.3,genie,48,5,with,-9.24,5.16,0,PARIS A RAA EIS
+30,0.3,genie,72,1,with,-19.09,3.25,1,PARIS PARIS
+30,0.3,genie,72,2,with,-14.88,5.84,0,PARIS PAE NIS
+30,0.3,genie,72,3,with,-15.26,4.21,0,PARIS PAA EIS
+30,0.3,genie,72,4,with,-1.06,4.11,1,PARIS PARIS
+30,0.3,genie,72,5,with,-9.24,5.15,0,PARIS A RAA EIS
+40,0.3,genie,0,1,with,-19.09,3.26,1,PARIS PARIS
+40,0.3,genie,0,2,with,-14.88,5.85,0,PARIS PAE E EIS
+40,0.3,genie,0,3,with,-15.26,4.21,0,PA E RIS PAA EIS
+40,0.3,genie,0,4,with,-1.06,4.11,1,PARIS PARIS
+40,0.3,genie,0,5,with,-9.24,5.16,0,PARIS A ENAA EIS
+40,0.3,genie,24,1,with,-19.09,3.25,0,PARIS W EEARIS
+40,0.3,genie,24,2,with,-14.88,5.85,0,PARIS PAE E EIS
+40,0.3,genie,24,3,with,-15.26,4.21,0,PA E A EEIS PAA EIS
+40,0.3,genie,24,4,with,-1.06,4.11,1,PARIS PARIS
+40,0.3,genie,24,5,with,-9.24,5.16,0,PARIS A ET EEAA EIS
+40,0.3,genie,48,1,with,-19.09,3.25,0,PARIS A A IARIS
+40,0.3,genie,48,2,with,-14.88,5.85,0,PARIS PAE E EIS
+40,0.3,genie,48,3,with,-15.26,4.21,0,W EEA E A IIS PAA EIS
+40,0.3,genie,48,4,with,-1.06,4.11,1,PARIS PARIS
+40,0.3,genie,48,5,with,-9.24,5.16,0,PARIS A A IAA EIS
+40,0.3,genie,72,1,with,-19.09,3.25,0,PARIS W IARIS
+40,0.3,genie,72,2,with,-14.88,5.84,0,PARIS PAE E EIS
+40,0.3,genie,72,3,with,-15.26,4.21,0,W EEA E M IIS PAA EIS
+40,0.3,genie,72,4,with,-1.06,4.11,1,PARIS PARIS
+40,0.3,genie,72,5,with,-9.24,5.15,0,PARIS A A IAA EIS
+50,0.3,genie,0,1,with,-19.09,3.26,0,PARIS A ENARIS
+50,0.3,genie,0,2,with,-14.88,5.85,0,PARIS PAE E EIS
+50,0.3,genie,0,3,with,-15.26,4.21,0,A ENEA E A EEIS PAA EIS
+50,0.3,genie,0,4,with,-1.06,4.11,1,PARIS PARIS
+50,0.3,genie,0,5,with,-9.24,5.16,0,PARIS A A EEAA EIS
+50,0.3,genie,24,1,with,-19.09,3.25,0,PARIS A ET EEARIS
+50,0.3,genie,24,2,with,-14.88,5.85,0,PARIS PAE E EIS
+50,0.3,genie,24,3,with,-15.26,4.21,0,A ET EEA E A EEIS PAA EIS
+50,0.3,genie,24,4,with,-1.06,4.11,1,PARIS PARIS
+50,0.3,genie,24,5,with,-9.24,5.16,0,PARIS A ET EEAA EIS
+50,0.3,genie,48,1,with,-19.09,3.25,0,PARIS A A IARIS
+50,0.3,genie,48,2,with,-14.88,5.85,0,PARIS PAE E EIS
+50,0.3,genie,48,3,with,-15.26,4.21,0,A ET EEA E A IIS PAA EIS
+50,0.3,genie,48,4,with,-1.06,4.11,1,PARIS PARIS
+50,0.3,genie,48,5,with,-9.24,5.16,0,PARIS A A IAA EIS
+50,0.3,genie,72,1,with,-19.09,3.25,0,PARIS A A IARIS
+50,0.3,genie,72,2,with,-14.88,5.84,0,PARIS PAE E EIS
+50,0.3,genie,72,3,with,-15.26,4.21,0,A ENEA E M IIS PAA EIS
+50,0.3,genie,72,4,with,-1.06,4.11,1,PARIS PARIS
+50,0.3,genie,72,5,with,-9.24,5.15,0,PARIS A A IAA EIS
+60,0.3,genie,0,1,with,-19.09,3.26,0,PARIS A ENT ARIS
+60,0.3,genie,0,2,with,-14.88,5.85,0,PARIS PAE E EIS
+60,0.3,genie,0,3,with,-15.26,4.21,0,A ET EEA E A EEIS PAA EIS
+60,0.3,genie,0,4,with,-1.06,4.11,1,PARIS PARIS
+60,0.3,genie,0,5,with,-9.24,5.16,0,PARIS A A EEAA EIS
+60,0.3,genie,24,1,with,-19.09,3.25,0,PARIS A ET EEARIS
+60,0.3,genie,24,2,with,-14.88,5.85,0,PARIS PAE E EIS
+60,0.3,genie,24,3,with,-15.26,4.21,0,A ET EEA E A EEIS PAA EIS
+60,0.3,genie,24,4,with,-1.06,4.11,1,PARIS PARIS
+60,0.3,genie,24,5,with,-9.24,5.16,0,PARIS A ET EEAA EIS
+60,0.3,genie,48,1,with,-19.09,3.25,0,PARIS A A IARIS
+60,0.3,genie,48,2,with,-14.88,5.85,0,PARIS PAE E EIS
+60,0.3,genie,48,3,with,-15.26,4.21,0,A ET EEA E A IIS PAA EIS
+60,0.3,genie,48,4,with,-1.06,4.11,1,PARIS PARIS
+60,0.3,genie,48,5,with,-9.24,5.16,0,PARIS A A IAA EIS
+60,0.3,genie,72,1,with,-19.09,3.25,0,PARIS A A IARIS
+60,0.3,genie,72,2,with,-14.88,5.84,0,PARIS PAE E EIS
+60,0.3,genie,72,3,with,-15.26,4.21,0,A ENEA E M IIS PAA EIS
+60,0.3,genie,72,4,with,-1.06,4.11,1,PARIS PARIS
+60,0.3,genie,72,5,with,-9.24,5.15,0,PARIS A A IAA EIS
+30,1.0,genie,0,1,with,-16.19,4.89,1,PARIS PARIS
+30,1.0,genie,0,2,with,-22.95,3.09,0,PAA TEIS PARIS
+30,1.0,genie,0,3,with,-44.26,6.45,0,PARIS W ET TN RIS
+30,1.0,genie,0,4,with,-41.78,4.86,1,PARIS PARIS
+30,1.0,genie,0,5,with,-13.84,6.03,0,PARIS PA ERIS
+30,1.0,genie,24,1,with,-16.19,4.89,1,PARIS PARIS
+30,1.0,genie,24,2,with,-22.95,3.08,0,PAA TEIS PARIS
+30,1.0,genie,24,3,with,-44.26,6.45,0,PARIS W IA ERIS
+30,1.0,genie,24,4,with,-41.78,4.86,1,PARIS PARIS
+30,1.0,genie,24,5,with,-13.84,6.03,1,PARIS PARIS
+30,1.0,genie,48,1,with,-16.19,4.89,1,PARIS PARIS
+30,1.0,genie,48,2,with,-22.95,3.07,0,PAA TEIS PARIS
+30,1.0,genie,48,3,with,-44.26,6.45,0,PARIS W IA ERIS
+30,1.0,genie,48,4,with,-41.78,4.86,1,PARIS PARIS
+30,1.0,genie,48,5,with,-13.84,6.03,0,PARIS A RARIS
+30,1.0,genie,72,1,with,-16.19,4.89,1,PARIS PARIS
+30,1.0,genie,72,2,with,-22.95,3.06,0,PAA TEIS PARIS
+30,1.0,genie,72,3,with,-44.26,6.45,0,PARIS W IA ERIS
+30,1.0,genie,72,4,with,-41.78,4.86,1,PARIS PARIS
+30,1.0,genie,72,5,with,-13.84,6.03,1,PARIS PARIS
+40,1.0,genie,0,1,with,-16.19,4.89,0,PAA IIS W A T TRIS
+40,1.0,genie,0,2,with,-22.95,3.09,0,PAA TEIS A RAA IIS
+40,1.0,genie,0,3,with,-44.26,6.45,0,PA ERIS W IA ERIS
+40,1.0,genie,0,4,with,-41.78,4.86,1,PARIS PARIS
+40,1.0,genie,0,5,with,-13.84,6.03,0,PARIS A RA ERTS
+40,1.0,genie,24,1,with,-16.19,4.89,0,PAA IIS W A T T E O M O
+40,1.0,genie,24,2,with,-22.95,3.08,0,PA E M TEIS A ENAA ET IS
+40,1.0,genie,24,3,with,-44.26,6.45,0,PAA IIS W ET TN TNIS
+40,1.0,genie,24,4,with,-41.78,4.86,1,PARIS PARIS
+40,1.0,genie,24,5,with,-13.84,6.03,0,PARIS A A A M E METS
+40,1.0,genie,48,1,with,-16.19,4.89,0,PAA IIS W A T N RIS
+40,1.0,genie,48,2,with,-22.95,3.07,0,PA E M TEIS A A IAA IIS
+40,1.0,genie,48,3,with,-44.26,6.45,0,PA E M IIS W IA ERIS
+40,1.0,genie,48,4,with,-41.78,4.86,1,PARIS PARIS
+40,1.0,genie,48,5,with,-13.84,6.03,0,PARIS A A IA ERTS
+40,1.0,genie,72,1,with,-16.19,4.89,0,PAA IIS W A T T ERIS
+40,1.0,genie,72,2,with,-22.95,3.06,0,PA E M TEIS A RAA IIS
+40,1.0,genie,72,3,with,-44.26,6.45,0,PA E M IIS W IA ERIS
+40,1.0,genie,72,4,with,-41.78,4.86,1,PARIS PARIS
+40,1.0,genie,72,5,with,-13.84,6.03,0,PARIS A ENT TN RTS
+50,1.0,genie,0,1,with,-16.19,4.89,0,J AA IIS W IT ERIS
+50,1.0,genie,0,2,with,-22.95,3.09,0,J E T E M TEIS A A IAA IIS
+50,1.0,genie,0,3,with,-44.26,6.45,0,PA EA IIS W IA ERIS
+50,1.0,genie,0,4,with,-41.78,4.86,1,PARIS PARIS
+50,1.0,genie,0,5,with,-13.84,6.03,0,PARIS A A IA ERTS
+50,1.0,genie,24,1,with,-16.19,4.89,0,J AA ET TES W IT E TTT TT TTT
+50,1.0,genie,24,2,with,-22.95,3.08,0,J E T E M TEIS A A IAA IIS
+50,1.0,genie,24,3,with,-44.26,6.45,0,PA E TT A M O O IA ERIS
+50,1.0,genie,24,4,with,-41.78,4.86,0,A RARIS PAA A M O
+50,1.0,genie,24,5,with,-13.84,6.03,0,PARIS A A A M E METS
+50,1.0,genie,48,1,with,-16.19,4.89,0,J AA IIS W IT ERIS
+50,1.0,genie,48,2,with,-22.95,3.07,0,J E T E M TEIS A A IAA IIS
+50,1.0,genie,48,3,with,-44.26,6.45,0,PA E M IIS W IA ERIS
+50,1.0,genie,48,4,with,-41.78,4.86,0,A RARIS PAA IIS
+50,1.0,genie,48,5,with,-13.84,6.03,0,PARIS A A IA ERTS
+50,1.0,genie,72,1,with,-16.19,4.89,0,J AA IIS W IT ERIS
+50,1.0,genie,72,2,with,-22.95,3.06,0,J E T E M TEIS A A IAA IIS
+50,1.0,genie,72,3,with,-44.26,6.45,0,PA E M IIS W IA ERIS
+50,1.0,genie,72,4,with,-41.78,4.86,0,A RARIS PAA IIS
+50,1.0,genie,72,5,with,-13.84,6.03,0,PARIS A ENT TN RTS
+60,1.0,genie,0,1,with,-16.19,4.89,0,J AA IIS W IT ERIS
+60,1.0,genie,0,2,with,-22.95,3.09,0,J E T E M TEIS A A IAA IIS
+60,1.0,genie,0,3,with,-44.26,6.45,0,PA EA IIS W IA ERIS
+60,1.0,genie,0,4,with,-41.78,4.86,0,A RARIS PARIS
+60,1.0,genie,0,5,with,-13.84,6.03,0,PARIS A A IA ERTS
+60,1.0,genie,24,1,with,-16.19,4.89,0,J AA A M S W IT E TTT TT TTT
+60,1.0,genie,24,2,with,-22.95,3.08,0,J E T E M TEIS A A IAA IIS
+60,1.0,genie,24,3,with,-44.26,6.45,0,PA E TT A M O O IA E O IS
+60,1.0,genie,24,4,with,-41.78,4.86,0,A RARIS PAA A M O
+60,1.0,genie,24,5,with,-13.84,6.03,0,PARIS A A A M E METS
+60,1.0,genie,48,1,with,-16.19,4.89,0,J AA IIS W IT ERIS
+60,1.0,genie,48,2,with,-22.95,3.07,0,J E T E M TEIS A A IAA IIS
+60,1.0,genie,48,3,with,-44.26,6.45,0,PA E M IIS W IA ERIS
+60,1.0,genie,48,4,with,-41.78,4.86,0,A RARIS PAA IIS
+60,1.0,genie,48,5,with,-13.84,6.03,0,PARIS A A IA ERTS
+60,1.0,genie,72,1,with,-16.19,4.89,0,J AA IIS W IT ERIS
+60,1.0,genie,72,2,with,-22.95,3.06,0,J E T E M TEIS A A IAA IIS
+60,1.0,genie,72,3,with,-44.26,6.45,0,PA E M IIS W IA ERIS
+60,1.0,genie,72,4,with,-41.78,4.86,0,A RARIS PAA IIS
+60,1.0,genie,72,5,with,-13.84,6.03,0,PARIS A ENT TN RTS
+30,2.0,genie,0,1,with,-36.81,5.61,0,PRU <HH>W TEARIS
+30,2.0,genie,0,2,with,-45.34,4.60,0,W IARIS PARIS
+30,2.0,genie,0,3,with,-15.91,6.32,0,PE TRIS W IA E O M O
+30,2.0,genie,0,4,with,-27.88,5.88,0,A RARIS W EARIS
+30,2.0,genie,0,5,with,-55.56,7.28,0,PSRIS PA ERIS
+30,2.0,genie,24,1,with,-36.81,5.61,0,PRU E5 W TEARIS
+30,2.0,genie,24,2,with,-45.34,4.60,0,W IA ERIS PARIS
+30,2.0,genie,24,3,with,-15.91,6.32,0,PE TRIS W IARIS
+30,2.0,genie,24,4,with,-27.88,5.88,0,A RARIS W EARIS
+30,2.0,genie,24,5,with,-55.56,7.28,0,PSRIS PARIS
+30,2.0,genie,48,1,with,-36.81,5.61,0,PRU E5 W TEARIS
+30,2.0,genie,48,2,with,-45.34,4.60,0,W IA ERIS A RARIS
+30,2.0,genie,48,3,with,-15.91,6.32,0,PE TRIS W IARIS
+30,2.0,genie,48,4,with,-27.88,5.88,0,A RARIS W EARIS
+30,2.0,genie,48,5,with,-55.56,7.28,0,A RSRIS PARIS
+30,2.0,genie,72,1,with,-36.81,5.61,0,PSFIS W TEARIS
+30,2.0,genie,72,2,with,-45.34,4.60,0,W IA E TTT IS PARIS
+30,2.0,genie,72,3,with,-15.91,6.32,0,PE TRIS W IARIS
+30,2.0,genie,72,4,with,-27.88,5.88,0,A RARIS W EARIS
+30,2.0,genie,72,5,with,-55.56,7.28,0,A RSRIS A A IA EA IIS
+40,2.0,genie,0,1,with,-36.81,5.61,0,PRI TEIE EI W TEARIS
+40,2.0,genie,0,2,with,-45.34,4.60,0,PA ERIS A RARIS
+40,2.0,genie,0,3,with,-15.91,6.32,0,A WETRIS W IA ERIS
+40,2.0,genie,0,4,with,-27.88,5.88,0,PARIS W EARIS
+40,2.0,genie,0,5,with,-55.56,7.28,0,A @RIS A RA EWIS
+40,2.0,genie,24,1,with,-36.81,5.61,0,PRI TEIE EI W TEARIS
+40,2.0,genie,24,2,with,-45.34,4.60,0,PA ERIS A RARIS
+40,2.0,genie,24,3,with,-15.91,6.32,0,A WETA ET TT TI W IA ERIS
+40,2.0,genie,24,4,with,-27.88,5.88,0,A RARIS W EEARIS
+40,2.0,genie,24,5,with,-55.56,7.28,0,A WSA IIS A RA E TZS
+40,2.0,genie,48,1,with,-36.81,5.61,0,PRI TEIE EI W TEA ERIS
+40,2.0,genie,48,2,with,-45.34,4.60,0,PA ERIS A RAA IIS
+40,2.0,genie,48,3,with,-15.91,6.32,0,A WEN TNEIS W IA ERIS
+40,2.0,genie,48,4,with,-27.88,5.88,0,A RARIS W IARIS
+40,2.0,genie,48,5,with,-55.56,7.28,0,A @A IIS A RA EWIS
+40,2.0,genie,72,1,with,-36.81,5.61,0,PRI TEIE EI W TEARIS
+40,2.0,genie,72,2,with,-45.34,4.60,0,PA ERIS A RARIS
+40,2.0,genie,72,3,with,-15.91,6.32,0,A WETA IIS W ET TN RIS
+40,2.0,genie,72,4,with,-27.88,5.88,0,A RARIS W IARIS
+40,2.0,genie,72,5,with,-55.56,7.28,0,A @A IIS A RA EWIS
+50,2.0,genie,0,1,with,-36.81,5.61,0,PRI IIE EI W TEARIS
+50,2.0,genie,0,2,with,-45.34,4.60,0,JA ERIS A RARIS
+50,2.0,genie,0,3,with,-15.91,6.32,0,A WETRIS W IA EWIS
+50,2.0,genie,0,4,with,-27.88,5.88,0,A RAWIS W EA<AS>S
+50,2.0,genie,0,5,with,-55.56,7.28,0,A @RIS A RA EWIS
+50,2.0,genie,24,1,with,-36.81,5.61,0,PRI TEIE EI W TEA E O M S
+50,2.0,genie,24,2,with,-45.34,4.60,0,JA E TTT IS A ET IAA IIS
+50,2.0,genie,24,3,with,-15.91,6.32,0,A ETT TTA ET TT TI W A M EWIS
+50,2.0,genie,24,4,with,-27.88,5.88,0,A ETT TT TTTIS W EEAWIS
+50,2.0,genie,24,5,with,-55.56,7.28,0,A @ M IIS A RA EWIS
+50,2.0,genie,48,1,with,-36.81,5.61,0,PRI TEIE EI W TEA ERIS
+50,2.0,genie,48,2,with,-45.34,4.60,0,JA ERIS A A IAA IIS
+50,2.0,genie,48,3,with,-15.91,6.32,0,A WEN TNEIS W IA EWIS
+50,2.0,genie,48,4,with,-27.88,5.88,0,A RAWIS W EEA<AS>S
+50,2.0,genie,48,5,with,-55.56,7.28,0,A @A IIS A RA EWIS
+50,2.0,genie,72,1,with,-36.81,5.61,0,PRI IIE EI W TEA ERIS
+50,2.0,genie,72,2,with,-45.34,4.60,0,JA ERIS A A IAA IIS
+50,2.0,genie,72,3,with,-15.91,6.32,0,A WET E M IIS W ET TN <AS>S
+50,2.0,genie,72,4,with,-27.88,5.88,0,A RAWIS W IAWIS
+50,2.0,genie,72,5,with,-55.56,7.28,0,A @A IIS A RA EWIS
+60,2.0,genie,0,1,with,-36.81,5.61,0,PRI IIE EI W TEA ERIS
+60,2.0,genie,0,2,with,-45.34,4.60,0,JA ERIS A RARIS
+60,2.0,genie,0,3,with,-15.91,6.32,0,A WETRIS W IAWIS
+60,2.0,genie,0,4,with,-27.88,5.88,0,A RAWIS W EA<AS>S
+60,2.0,genie,0,5,with,-55.56,7.28,0,A @A IIS A RA EWIS
+60,2.0,genie,24,1,with,-36.81,5.61,0,PRI TEIE EI W TEA E TNIS
+60,2.0,genie,24,2,with,-45.34,4.60,0,JA ERIS A ET IAA IIS
+60,2.0,genie,24,3,with,-15.91,6.32,0,A WEN TNT TT S W A M EWIS
+60,2.0,genie,24,4,with,-27.88,5.88,0,A RAWIS W EEAWIS
+60,2.0,genie,24,5,with,-55.56,7.28,0,A @M IIS A A ET TN <AS>S
+60,2.0,genie,48,1,with,-36.81,5.61,0,PRI TEIE EI W TEA ERIS
+60,2.0,genie,48,2,with,-45.34,4.60,0,JA ERIS A A IAA IIS
+60,2.0,genie,48,3,with,-15.91,6.32,0,A WEN TNEIS W IA EWIS
+60,2.0,genie,48,4,with,-27.88,5.88,0,A RAWIS W EEA<AS>S
+60,2.0,genie,48,5,with,-55.56,7.28,0,A @A IIS A ENT TN <AS>S
+60,2.0,genie,72,1,with,-36.81,5.61,0,PRI IIE EI W TEA ERIS
+60,2.0,genie,72,2,with,-45.34,4.60,0,JA ERIS A A IAA IIS
+60,2.0,genie,72,3,with,-15.91,6.32,0,A WET E M IIS W ET TN <AS>S
+60,2.0,genie,72,4,with,-27.88,5.88,0,A RAWIS W IAWIS
+60,2.0,genie,72,5,with,-55.56,7.28,0,A @A IIS A RA EWIS

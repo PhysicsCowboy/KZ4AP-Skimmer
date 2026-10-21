@@ -364,8 +364,13 @@ Measured with the genie frequency (the tracker plays no part):
   one 10 dB stronger within 100 Hz.
 - **Lost in every cell tried:** neighbors 20 to 40 dB stronger within 100 Hz, 54 of 54 runs.
 - **E2-like cells** (station +8 to +14 dB S500, neighbor -6 to +12 dB relative, 12 to 90 Hz away): 6 of 108 runs exact.
-- **The systematic term** (the plan's D15) changed none of this. Evidence:
+- **The systematic term** (the plan's D15) changed none of this while the neighbor is keyed. Evidence:
   `docs/plans/data/2026-10-20-new-decoder-prototype-1/systematic-neighbors.csv` and the prototype's results record.
+- **A neighbor that has stopped** (the search alone, a neighbor 30 to 40 dB stronger, one key-down, 15 to 200 Hz away,
+  stopping 0.10 to 0.30 s before the station starts): the systematic term remembers its power for 390 ms and costs
+  the station its first element in 194 of 288 runs, all exact without the term (owner, 2026-10-21: kept as a measured
+  trade). Evidence: `systematic-stopped-neighbor.csv` beside the table above, and the results record, section 1.7.
+  A fix that tells the station's own power from a neighbor's would remove the trade.
 
 The channel passes about ±150 Hz around the station, so a neighbor's carrier and its keying sidebands within that range
 reach every story's sums.
@@ -377,6 +382,23 @@ reach every story's sums.
 - a level model that refuses a level jump to the neighbor's.
 
 **How to measure:** DEV2's QRM group (E2) in the measurement runs (R4, R9), and the grid above.
+
+### Fading splits marks in the new decoder (found 2026-10-21; next, under diagnosis)
+
+The owner made this the next piece of work (2026-10-21): diagnose first, then a principled fix proposed to him.
+
+Measured: "PARIS PARIS" at 25 WPM under flat Rayleigh fading with the generator's Gaussian Doppler spectrum, through
+the decoder.
+- **At f_D = 2 Hz** no run decoded exactly at any level from +10 to +60 dB S500, with or without the systematic term.
+- **At f_D = 1 Hz** 7 of 20 runs at +20 dB S500 decoded exactly with the term, none without it.
+- **The texts split marks:** "PA" reads "W I" or "A A".
+- **The systematic term** was better in 242 of 360 runs, by character error rate, and worse in 29. Those 29 come from
+  a mechanism of their own: the key-up overshoot of a station fading up raises C² inside its mark.
+
+Evidence: `docs/plans/data/2026-10-20-new-decoder-prototype-1/systematic-fading.csv` and the prototype's results
+record, section 1.7.
+
+**How to measure:** that grid, DEV2's fading group (B2), and the genie fading spread.
 
 ### Time-base invariance of the decoder (stage 2; known issue)
 **Status (2026-10-07): applies to the Bell decoder** (design spec §5.2, amendments of 2026-10-07); written for the filter-bank decoder, the measure carries over.

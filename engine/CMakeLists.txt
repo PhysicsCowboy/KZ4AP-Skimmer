@@ -130,8 +130,8 @@ set_tests_properties(Search.FullSweep PROPERTIES ENVIRONMENT KZ4AP_SEARCH_FULL_S
 # Labeled full-sweep as above (without KZ4AP_VITERBI_FULL_SWEEP the test runs on one minute of noise).
 add_test(NAME ViterbiDecoder.FullSweep COMMAND kz4ap_viterbi_tests --gtest_filter=ViterbiDecoder.TenMinutesOfNoise)
 set_tests_properties(ViterbiDecoder.FullSweep PROPERTIES ENVIRONMENT KZ4AP_VITERBI_FULL_SWEEP=1 LABELS full-sweep)
-# The strong stations, +30 to +60 dB S500 at 16 positions of the keying edge within a piece (the systematic term).
-# Labeled full-sweep as above (without KZ4AP_VITERBI_FULL_SWEEP the test skips).
+# The strong stations, +30 to +60 dB S500 at 16 positions of the keying edge within a piece (the systematic term);
+# about 2.5 min on the Windows PC. Labeled full-sweep as above (without KZ4AP_VITERBI_FULL_SWEEP the test skips).
 add_test(NAME ViterbiDecoder.StrongFullSweep COMMAND kz4ap_viterbi_tests
          --gtest_filter=ViterbiDecoder.StrongStationsAtEveryEdgePosition)
 set_tests_properties(ViterbiDecoder.StrongFullSweep PROPERTIES ENVIRONMENT KZ4AP_VITERBI_FULL_SWEEP=1

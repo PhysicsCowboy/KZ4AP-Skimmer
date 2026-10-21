@@ -192,11 +192,12 @@
 // The floor (measured without the look-ahead on the same grid, and at ordinary levels: the speed step of
 // Search.FollowsASpeedStepAtEverySnr at beams of 40 and 80 nats and its constant-speed stations, and "TEST" and "TU"
 // sent alone at +10 to +30 dB S500 on three seeds): 0 failed the strong grid from +45 dB S500 (two marks merged
-// across a gap: a budget that does not grow with the block's length makes merging across g pieces pay when
-// E_n > floor^2 g, derived) and lost a speed-step point and a one-word over; 0.01 lost two one-word overs at
-// +30 dB S500; 0.05 was clean but costs as much evidence as 1.3 to 1.6 dB of S500 at +20 dB S500. At 0.02 a mark's
-// evidence drops as if S500 were 0.05, 0.24 and 1.12 dB lower in a 195-piece later block at +10, +20 and
-// +28 dB S500, and 0.12, 0.70 and 2.88 dB lower in a 24-piece first block (measured; 10 log10(1 + floor^2 x
+// across a gap: with no floor a mark that runs on into the gap loses nothing per empty piece and survives it, while
+// at 0.02 it falls behind by about W^2 floor^2 / (E + floor^2 W)^2 = 220 nats per empty piece, a 24-piece dot, and the
+// beam drops it at its first; derived and traced) and lost a speed-step point and a one-word over; 0.01 lost two
+// one-word overs at +30 dB S500; 0.05 was clean but costs as much evidence as 1.3 to 1.6 dB of S500 at +20 dB S500.
+// At 0.02 a mark's evidence drops as if S500 were 0.05, 0.24 and 1.12 dB lower in a 195-piece later block at +10,
+// +20 and +28 dB S500, and 0.12, 0.70 and 2.88 dB lower in a 24-piece first block (measured; 10 log10(1 + floor^2 x
 // 10^(S500 / 10)) = 0.02, 0.17 and 0.98 dB of S500 for a later block, derived), and the search's CPU time stays within
 // 1% of its own without the term (measured).
 // A neighbor: C^2 is the channel's, so a strong neighbor inside the channel raises a weak station's term. A steady
@@ -206,7 +207,13 @@
 // the term's share reaches the noise, the neighbor's own residual in the same block is on average at least 5 times
 // larger.
 // Measured: a station at +6 or +10 dB S500 with a keyed neighbor 0 to 40 dB stronger 40 to 200 Hz away, and cells like
-// DEV2's E2 group's, never lost an exact text to the term (the results record, section 1.7).
+// DEV2's E2 group's, never lost an exact text to the term. But a neighbor that stops 0.10 to 0.30 s before the station
+// starts does lose it: its last pieces stay in C^2 for 390 ms, and with a neighbor 30 to 40 dB stronger 194 of 288 such
+// runs lost the exact text that they keep without the term (a measured limitation of the missing interference model;
+// docs/backlog.md). And a station fading up raises C^2 inside its own mark: each key-up overshoot (1.03 to 1.09 of the
+// carrier's power) sets a new maximum, the mark's evidence, recomputed with the larger V, drops by thousands of nats,
+// and a story that ended the mark a few pieces early wins (traced). Under Rayleigh fading at 0.3 to 2 Hz the term was
+// worse in 29 of 360 runs and better in 242 (the results record, section 1.7, has both).
 //
 // Work saved without changing any output:
 //   - The maxima over an open speed (a newborn's first mark: its survival, the best over the speeds and both labels;

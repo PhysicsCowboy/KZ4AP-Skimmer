@@ -528,7 +528,8 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
     //     gap's median 3 dots, a word gap's 7).
     // At +20 dB S500 the systematic term is 4% of a later block's noise variance and about 13% of a 24-piece first
     // block's, far above the tolerance; each part of the carrier power (the window's own pieces, the look-ahead and the
-    // block's own estimate) decides it in many of the evaluations.
+    // block's own estimate) decides it in many of the evaluations. The last piece, searched by finish() with no
+    // look-ahead left, is checked too (its stories in an element begun at least 2 pieces before it).
     ViterbiConfig config;
     config.fading_spread_hz = 5.0;
     const int block = static_cast<int>(std::floor(block_length_s(config.fading_spread_hz, config.block_loss_db) /
@@ -557,10 +558,11 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
     int gaps = 0;
     Carrier carrier{carrier_powers(pieces, block), carrier_powers(pieces, block, false)};
     Search search(config, sum_noise(), flat_prior());
-    for (std::size_t given = 0; given < pieces.size(); ++given) {
-        search.step(pieces[given], piece_time(given), kN0);
-        if (given < kLookahead) continue;  // nothing searched yet
-        const std::size_t k = given - kLookahead;  // the piece searched
+    // The check after the search of piece k; first_tau: the shortest element checked (2 after finish(), whose last
+    // pieces are searched together: an element begun at piece k - 1 started at a piece not observed).
+    int checked = 0;  // the stories the last call checked
+    const auto check = [&](std::size_t k, int first_tau) {
+        checked = 0;
         const double offset = search.normalization_nats();
         for (const StoryView& story : search.live_stories()) {
             if (story.activity != Activity::Morse) continue;
@@ -570,6 +572,7 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
                 elements[std::tuple_cat(key, std::tuple{k})] = Element{own, story.level, k + 1};
                 continue;
             }
+            if (story.tau < first_tau) continue;
             const auto at = elements.find(std::tuple_cat(key, std::tuple{k - static_cast<std::size_t>(story.tau)}));
             ASSERT_NE(at, elements.end()) << "piece " << k;
             Element& element = at->second;
@@ -595,8 +598,20 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
             }
             ASSERT_NEAR(own - element.start_score_nats, expected, 1e-6)
                 << "piece " << k << ", tau " << story.tau << ", speed " << story.speed << ", node " << story.node;
+            ++checked;
         }
+    };
+    for (std::size_t given = 0; given < pieces.size(); ++given) {
+        search.step(pieces[given], piece_time(given), kN0);
+        if (given < kLookahead) continue;  // nothing searched yet
+        check(given - kLookahead, 1);      // the piece searched
+        if (::testing::Test::HasFatalFailure()) return;
     }
+    // The last pieces, searched by finish() with the look-ahead that remains (none for the last): the last checked.
+    search.finish();
+    check(pieces.size() - 1, 2);
+    if (::testing::Test::HasFatalFailure()) return;
+    EXPECT_GT(checked, 0);
     EXPECT_GT(long_dashes, 10);
     EXPECT_GT(first_marks, 10);
     EXPECT_GT(gaps, 100);

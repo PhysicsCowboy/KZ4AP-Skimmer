@@ -326,7 +326,9 @@ sent):
 | `fall-levels.csv` | 48 | `s500_db`; `decoder_fading_spread_hz` (Hz, the decoder's setting); `start_s` (s, the key-down's start); `seed` (the noise's); `exact`; `decoded` |
 | `one-word-over.csv` | 24 | `s500_db`; `seed`; `factor_count`; `exact`; `decoded` |
 | `systematic-strong-grid.csv` | 224 | `systematic_term` (0 without the term, at ae8f65d; 1 with it); `s500_db`; `edge_input_samples_of_96`; `exact`; `decoded` |
-| `systematic-neighbors.csv` | 777 | `grid` (1, 2, or `E-qrm-s3 label 9`, the existing tests' stream); `station_s500_db` and `neighbor_relative_db` (dB S₅₀₀, and dB relative to the station's key-down power, to 0.01 dB); `neighbor_offset_hz` (Hz above the station; 0.01 Hz); `seed`; `systematic_term` (`without`, `floor_0`, `with`); `edits`; `reference_symbols`; `exact` |
+| `systematic-neighbors.csv` | 777 | `grid` (1, 2, or `E-qrm-s3 label 9`, the existing tests' stream); `station_s500_db` and `neighbor_relative_db` (dB S₅₀₀, and dB relative to the station's key-down power, to 0.01 dB); `neighbor_offset_hz` (Hz above the station; 0.01 Hz); `seed` (the noise's; for the `E-qrm-s3 label 9` rows the recording's noise seed, 3050 = 1 000 × 3 + 50, as the suite's generator sets it for E-qrm-s3); `systematic_term` (`without`, `floor_0`, `with`); `edits`; `reference_symbols`; `exact` |
+| `systematic-stopped-neighbor.csv` | 1 512 | `station_s500_db` (dB S₅₀₀); `neighbor_relative_db` (dB relative to the station's key-down power); `neighbor_offset_hz` (Hz above the station); `gap_s` (s from the neighbor's end to the station's start, to 0.01 s); `seed` (the noise's); `systematic_term` (`without`, `with`); `exact`; `station_text` (the symbols from 1.55 s on) |
+| `systematic-fading.csv` | 1 200 | `s500_db` (the mean level, dB S₅₀₀); `fading_hz` (the fading's f_D, Hz); `decoder_spread` (`default`, the decoder's 1 Hz, or `genie`, the true f_D); `edge_input_samples_of_96`; `seed` (the noise's and the fading's); `systematic_term` (`without`, `with`); `min_gain_db` and `max_gain_db` (the fading's power gain over the key-downs, dB relative to its mean, to 0.01 dB); `exact`; `decoded` |
 
 #### Finding 1: strong stations decode wrongly above about +37 dB S₅₀₀
 
@@ -462,7 +464,8 @@ alone), and with the term. Exact texts:
 | (1) | 150 | 23 | 27 | 27 |
 | (2) | 108 | 6 | 6 | 6 |
 
-No run exact without the term is wrong with it, at either floor; four more are exact with it (the station at
+In these two grids, where the neighbor is keyed while the station sends, no run exact without the term is wrong with
+it, at either floor; four more are exact with it (the station at
 +6 dB S₅₀₀ with the neighbor 10 dB stronger 150 Hz away on one seed, and 20 dB stronger 200 Hz away on all three).
 Where the term's share would matter, a neighbor 20 to 40 dB stronger within 100 Hz, the station is lost without the
 term too (54 of 54 runs; CER 74.8 to 176.5 without it, 18.3 to 26.5 with it, the false text shorter). Without the term
@@ -473,13 +476,77 @@ development set's QRM case in the existing tests, `overlap_stream.c64` (10 s of 
 and 143 edits for the 23 symbols of "CQ CQ DE N7RL N7RL K CQ" (the rows `E-qrm-s3 label 9`; with the tracker the texts
 are the same).
 
-*Cost (measured).* The search alone on the channelizer's pieces, statistics off, the least of three rounds in scratch
-runs (other processes used 0.61 to 0.83 cores of 8): 335 → 337 ns per story per piece on 60 s of noise, 423 → 425 at
-+20 dB S₅₀₀ and 456 → 459 at +10 dB S₅₀₀, within the rounds' own spread (up to 2.2%). The decoder at the commit, in
-`ViterbiDecoder.TenMinutesOfNoise`'s full form (600 s of DEV2's noise at the defaults, the development desktop): 287.3,
-288.2 and 291.5 ms of one thread per channel-second in three runs, so 287 ms at the least, as without the term (287 ms,
-the least of three, 2026-10-21; the machine's other load not measured); at most 82 entries of shared text at any block,
-against 106 without it.
+*A neighbor that has stopped (measured, `systematic-stopped-neighbor.csv`; the review's case C-1, extended).* C²
+remembers the channel's largest piece for 390 ms, so a neighbor that stops just before a weak station starts still
+sets the station's term. The search alone (as in `Search`'s tests: the station on its channel's center, the noise
+`std::normal_distribution` with seeds 1, 2 and 3, MSVC's draws), in scratch runs in a copy of the branch at 180fb4d
+(36084bc's search, with a switch that removes the term and gives ae8f65d's): "PARIS PARIS" at 25 WPM from 1.6 s at +6
+and +10 dB S₅₀₀; the neighbor one key-down from 0.3 s that ends a gap before 1.6 s, 20, 30 and 40 dB stronger
+(relative to the station's key-down power), 15, 30, 50, 100, 150 and 200 Hz above it, 5 ms edges; exact when the
+symbols from 1.55 s on read "PARIS PARIS". Exact texts of 108 runs per gap:
+
+| Gap (s) | 0.05 | 0.10 | 0.15 | 0.20 | 0.30 | 0.45 | 0.60 | All 756 |
+|---|---|---|---|---|---|---|---|---|
+| without the term | 20 | 108 | 108 | 108 | 108 | 108 | 108 | 668 |
+| with the term | 48 | 50 | 64 | 66 | 57 | 108 | 108 | 501 |
+
+At gaps of 0.10 to 0.30 s, with the term: 143 of 144 runs exact with the neighbor 20 dB stronger; 79 of 144 with it
+30 dB stronger (64 of 96 at 50 to 200 Hz, 15 of 48 at 15 and 30 Hz); 15 of 144 with it 40 dB stronger (13 of 96 and 2
+of 48). So 194 of the 288 runs with a neighbor 30 to 40 dB stronger lose the exact text, all 288 being exact without
+the term; most read "GARIS PARIS" or "NARIS PARIS". At 0.05 s the term is the better (48 against 20): it caps the
+neighbor's own tail. The owner kept the term with this trade (2026-10-21): a measured limitation of the missing
+interference model (`docs/backlog.md`). Three alternatives that would avoid it each broke the strong stations (§1.8).
+
+*Fading (measured, `systematic-fading.csv`).* The owner asked for strong stations under fading before the long runs.
+Scratch runs through the decoder (the tracker on, N₀ the noise's own) in the same copy, with the term and without it:
+"PARIS PARIS" at 25 WPM, machine keying, 5 ms edges, on the channel's center, the key-down at 0.5 s plus q input
+samples, q = 0, 24, 48 and 72 of a piece's 96; flat Rayleigh fading with the generator's Gaussian Doppler spectrum
+(`training/kz4ap_synth/fading.py`: f_D = 2σ, synthesized at 50 samples/s by shaping white complex Gaussian noise in
+the frequency domain to an expected power of exactly 1, linearly interpolated), ported into the scratch program with
+its own draws (the Mersenne twister's bits, seed 1 000 + s), so the level is the mean S₅₀₀; DEV2's noise (seed
+34 + s), s = 1 to 5; 20 runs per cell. Exact texts of 20, the decoder at its default spread (1 Hz), with the term /
+without it:
+
+| f_D | +10 | +20 | +30 | +40 | +50 | +60 dB S₅₀₀ |
+|---|---|---|---|---|---|---|
+| 0.3 Hz | 8 / 8 | 20 / 20 | 17 / 20 | 9 / 10 | 4 / 0 | 4 / 0 |
+| 1 Hz | 4 / 4 | 7 / 0 | 10 / 3 | 4 / 0 | 1 / 0 | 0 / 0 |
+| 2 Hz | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+
+- **Overall, the term is the better:** by character error rate it is better in 242 of the 360 runs, worse in 29 and
+  equal in 89; the mean is 60.6% with it and 304.4% without. Of the 240 runs from +30 dB S₅₀₀ up, 49 are exact with
+  it and 33 without.
+- **But 11 strong runs exact without the term are wrong with it:** at 0.3 Hz, +30 dB S₅₀₀ (q = 24, 48 and 72, seed 5:
+  "PARIS A RARIS") and +40 dB S₅₀₀ (q = 48 and 72, seeds 1, 3 and 5), and at 1 Hz, +30 dB S₅₀₀ (q = 0 and 48, seed 5).
+  None at +10 or +20 dB S₅₀₀.
+- **Why (traced, the search alone on the same signal, which gives the decoder's texts):** C² must not rise while a
+  block lasts, because the block's evidence is recomputed with the current V at every piece and a finished block's
+  is not. In the run at 0.3 Hz, +30 dB S₅₀₀, q = 24, seed 5, the station is fading up (its power gain 1.81 to 1.86
+  over the second P's first dash). At 3.140 s the look-ahead sees the dash's key-up overshoot (a piece at 1.924 of
+  the mean level's full piece, against 1.79 to 1.85 before it), and C² rises from 1.830 to 1.924 inside the mark. The
+  mark that goes on loses about 1 600 nats (derived: a 67-piece first block), and the story that ended the mark at
+  3.140 s, its block scored at the lower C², leads; the dash's last pieces become a new letter, and P reads "A R".
+  At +40 dB S₅₀₀ (seed 1, q = 48) every dash of the second P breaks so, C² rising by 2.9% at the overshoot (about
+  2 000 nats); C²'s gradual rise from 1.058 to 1.079 earlier in the mark did not break it. On a steady carrier the
+  window holds an earlier overshoot, so a new one does not raise C²; on a station fading up each one is a new maximum.
+- **Fading defeats the decoder with or without the term (open, under diagnosis).** At 2 Hz no run is exact at any
+  level, even +20 dB S₅₀₀ with the station never below +4 dB S₅₀₀ (seed 3: "W IETRIS PARIS"); the texts split marks,
+  "PA" reading "W I" or "A A". The decoder told the true spread (`decoder_spread` `genie`, from +30 dB S₅₀₀) did no
+  better: 9, 5, 4 and 4 exact at 0.3 Hz with the term against 6, 1, 0 and 0 without; 1 Hz as at the default; none at
+  2 Hz. The cause is conjectured: the amplitude moves inside a block, a misfit the error budget leaves out beyond the
+  floor f. The owner made its diagnosis the next piece of work (2026-10-21; `docs/backlog.md`).
+
+The numbers above are computed from the committed tables (character error rate: the edit distance to "PARIS PARIS"
+over its 11 characters).
+
+*Cost (measured).* The search alone on the channelizer's pieces, statistics off, thread CPU time, the least of three
+rounds, alternating the two builds, in scratch runs in the copy at 20f0e4f (with the term but without the look-ahead,
+against 20f0e4f itself; other processes used 0.61 to 0.83 cores of 8): 335 → 337 ns per story per piece on 60 s of
+noise, 423 → 425 at +20 dB S₅₀₀ and 456 → 459 at +10 dB S₅₀₀, within the rounds' own spread (up to 2.2%). The decoder
+at the commit, in `ViterbiDecoder.TenMinutesOfNoise`'s full form (600 s of DEV2's noise at the defaults, the
+development desktop): 287.3, 288.2 and 291.5 ms of one thread per channel-second in three runs, so 287 ms at the least,
+as without the term (287 ms, the least of three, 2026-10-21; the machine's other load not measured); at most 82
+entries of shared text at any block, against 106 without it.
 
 ### 1.8 Alternatives tried while building, and not kept
 
@@ -533,3 +600,15 @@ committed tests.
     +60 dB S₅₀₀ and lost "TEST" and "TU" at +30 dB S₅₀₀ (seed 40: "-" and "X"); 0.05 gave 15 at +60 dB S₅₀₀ and was
     clean at ordinary levels, but costs as much evidence as 1.3 to 1.6 dB of S₅₀₀ at +20 dB S₅₀₀, against 0.24 to
     0.70 dB of S₅₀₀ at 0.02.
+- **C² without the stopped neighbor's trade** (the review's case C-1; scratch runs in a copy of the branch at 180fb4d,
+  with switches for each form). Exact texts of 16 on finding 1's grid at +30, +36, +40, +45, +50, +55 and +60 dB S₅₀₀,
+  and of 756 on the stopped-neighbor grid (36084bc: 16 at every level, and 501):
+  - **A shorter memory** (the channel's last 20 ms): 0, 1, 1, 1, 1, 1 and 2, and 696; the speed step and the
+    constant-speed stations failed from +22 dB S₅₀₀. Traced: the dash's key-up overshoot (1.091 of the carrier's power)
+    raised C² inside the mark, where the 390 ms window held an earlier peak (1.099).
+  - **A narrowband C²** (a 76 ms Blackman filter around the station's frequency): 0, 0, 0, 0, 0, 1 and 2, and 663; it
+    keeps losing neighbors within 30 Hz, inside its band. Traced: the estimate rises inside a mark while its filter
+    fills.
+  - **A story's own memory** (the largest piece of its last finished mark, with the channel's window cut to 20 ms or to
+    the piece itself): 0 at every level, and 544 and 556; the ordinary levels failed from +12 dB S₅₀₀. A newborn
+    without a memory is judged against a smaller V and keeps taking over.
