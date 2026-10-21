@@ -207,8 +207,9 @@ double truncated_node(const Rule& rule, std::size_t k, double below) {
 
 // The truncated nodes against tau = b^ / sigma^ in [0, 8.5], at steps of 1/256 (2 177 rows: tau = j / 256 exactly),
 // tau-major (row j holds the order's nodes), read by linear interpolation; built once per order on first use, for every
-// caller (8.5 KB per node of the order: 85 KB at order 5). Exact at the rows; between them within the error the header
-// states. They replace the order's Phi^-1 evaluations, the larger part of a truncated quadrature's cost.
+// caller (2 177 rows of 8 bytes, 17.4 KB, per node of the order: 87.1 KB at order 5). Exact at the rows; between them
+// within the error the header states. They replace the order's Phi^-1 evaluations, the larger part of a truncated
+// quadrature's cost.
 constexpr int kNodeRowsPerTau = 256;
 constexpr int kNodeSteps = static_cast<int>(kTruncationLimit * kNodeRowsPerTau);  // 2 176
 

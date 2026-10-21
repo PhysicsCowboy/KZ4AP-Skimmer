@@ -54,14 +54,14 @@ double block_llr(double s_abs, int m, double a, double v);
 // distribution functions. The rule then integrates e^g divided by that truncated Gaussian's density, a constant when
 // e^g is Gaussian, so it is exact for a Gaussian integrand however much the truncation cuts off (an extension of the
 // standard form; above 8.5 sigma^ the two agree to the double's precision). The truncated nodes are read from a table
-// in tau (steps of 1/256 from 0 to 8.5, linear interpolation; built once per order on first use, 8.5 KB per node, 85 KB
-// at order 5), which costs a truncated call about 510 ns instead of 800 ns (measured). Against the nodes computed by
-// Phi^-1 (detail::block_evidence_direct_nodes) the evidence moves by at most 4.8e-8 nats on the tests' grid below (15
-// of its 64 points are truncated) and 1.2e-7 nats over orders 2 to 20, b of 0.02 to 200, relative spreads of 0.03 to 5
-// and z of 0 to 3 b; the posterior's mean by at most 7.4e-7 of its standard deviation and its variance by 7.8e-7
-// relatively (measured); the mode not at all, since it is found first. The standard nodes put part of the integral
-// below 0: dropping the nodes there misses a dense integral by up to 0.355 nats on the tests' grid, and by 0.62 with
-// the remaining weights renormalized (measured, at b = 30, z = 0 and a relative spread of 0.5). The nodes'
+// in tau (steps of 1/256 from 0 to 8.5, linear interpolation; built once per order on first use, 17.4 KB per node,
+// 87.1 KB at order 5), which costs a truncated call about 510 ns instead of 800 ns (measured). Against the nodes
+// computed by Phi^-1 (detail::block_evidence_direct_nodes) the evidence moves by at most 4.8e-8 nats on the tests' grid
+// below (15 of its 64 points are truncated) and 1.2e-7 nats over orders 2 to 20, b of 0.02 to 200, relative spreads
+// of 0.03 to 5 and z of 0 to 3 b; the posterior's mean by at most 7.4e-7 of its standard deviation and its variance
+// by 7.8e-7 relatively (measured); the mode not at all, since it is found first. The standard nodes put part of the
+// integral below 0: dropping the nodes there misses a dense integral by up to 0.355 nats on the tests' grid, and by
+// 0.62 with the remaining weights renormalized (measured, at b = 30, z = 0 and a relative spread of 0.5). The nodes'
 // terms are summed in the log (log-sum-exp), so no share underflows into an empty sum. A level known exactly, p = 0
 // or a prior narrower than 1e-9 of max(beta, 1), gives block_llr at mu. The 1e-9 is a heuristic margin: the
 // quadrature's error from rounding its nodes' offsets grows as epsilon b / sigma^ and is still 7e-9 nats at that width

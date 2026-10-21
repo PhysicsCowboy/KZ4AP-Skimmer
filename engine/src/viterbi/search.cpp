@@ -134,12 +134,6 @@ private:
     std::uint64_t generation_ = 0;
 };
 
-// Whether a candidate offered into a state replaces the one kept there: the better score, and of equal scores the
-// earlier created (plan §2.7, item 4).
-bool replaces(double score, std::uint64_t creation, double kept_score, std::uint64_t kept_creation) {
-    return score > kept_score || (score == kept_score && creation < kept_creation);
-}
-
 // Pruning in place (plan §2.7, item 5): `alive` holds indices into `ranked`. Those more than beam_nats behind the best
 // are dropped, keeping the order of the rest; then, if more than `ceiling` remain, the `ceiling` first by ranks_before
 // are kept (in the order std::nth_element leaves them). Returns the index of the best. The dropped go to the lists
@@ -171,30 +165,19 @@ std::uint32_t prune_alive(const detail::Ranked* ranked, std::vector<std::uint32_
     return best;
 }
 
+// Grows v's capacity to hold `needed` elements, at most doubling it and never beyond `limit` elements (needed <=
+// limit), so that v's storage never exceeds `limit` elements, whatever the library's own growth.
+template <class T>
+void grow_within(std::vector<T>& v, std::size_t needed, std::size_t limit) {
+    if (needed > v.capacity()) v.reserve(std::min(limit, std::max(needed, 2 * v.capacity())));
+}
+
 // The fist's maxima that open speeds and factors need (plan §2.5, items 7 and 8), each the plain maximum of Fist's own
-// values over the speeds or the factors, computed once per tau when first asked for and kept: they depend only on the
-// configuration.
+// values over the speeds or the factors. They depend only on the configuration: those of the first `cap` taus are kept
+// in tables, filled as first asked for, and those of any later tau are computed again whenever asked, in the same
+// way, so that no table ever holds more than `cap` taus (search.hpp, "Work saved", has the bound).
 class OpenTiming {
 public:
-    OpenTiming(const Fist& fist, const MorseTree& tree, int speeds, int factors)
-        : fist_(fist), speeds_(speeds), factors_(factors), by_kind_and_speed_(2 * static_cast<std::size_t>(speeds)) {
-        for (int label = 0; label < 2; ++label) root_has_[label] = tree.child(tree.root(), label == 1) >= 0;
-    }
-
-    // max over speeds s and the labels the root allows of ln S_label(s, tau): a newborn's first mark.
-    double first_mark_survival(int tau) {
-        while (first_survival_.size() < static_cast<std::size_t>(tau)) {
-            const int t = static_cast<int>(first_survival_.size()) + 1;
-            double best = -kInf;
-            for (int label = 0; label < 2; ++label)
-                if (root_has_[label])
-                    for (int s = 0; s < speeds_; ++s)
-                        best = std::max(best, fist_.log_survival(mark_kind(label), s, 0, t));
-            first_survival_.push_back(best);
-        }
-        return first_survival_[static_cast<std::size_t>(tau) - 1];
-    }
-
     // ln P_label(s, tau) of a newborn's first mark for both labels and every speed (label-major; -infinity for a label
     // the root does not allow), and its maxima. The pointer holds until the next call.
     struct FirstMarkEnds {
@@ -202,76 +185,144 @@ public:
         double label_best[2];      // the best over the speeds, per label
         double best;               // the best of all
     };
+
+    // For kind LetterGap or WordGap at a speed and tau, a gap whose factor is open: the maximum over the factors f of
+    // ln P_kind(s, f, tau), the first factor where it is reached, and whether ln P, as Fist computes it, is unimodal in
+    // f: not decreasing up to that factor and not increasing after it. Where it is, the factors whose successor a
+    // threshold keeps are those around that factor up to the first on each side that the threshold drops.
+    struct FactorEntry {
+        double end;  // nats
+        std::int32_t end_factor;
+        bool unimodal;
+    };
+
+    // The tables' bytes per tau with `speeds` speeds: two kinds' factor entries per speed, and a first mark's row of
+    // ends with its three maxima and its survival.
+    static std::size_t bytes_per_tau(int speeds) {
+        const std::size_t row = 2 * static_cast<std::size_t>(speeds);
+        return row * sizeof(FactorEntry) + row * sizeof(double) + sizeof(std::array<double, 3>) + sizeof(double);
+    }
+
+    OpenTiming(const Fist& fist, const MorseTree& tree, int speeds, int factors, int cap)
+        : fist_(fist),
+          speeds_(speeds),
+          factors_(factors),
+          cap_(cap),
+          by_kind_and_speed_(2 * static_cast<std::size_t>(speeds)) {
+        for (int label = 0; label < 2; ++label) root_has_[label] = tree.child(tree.root(), label == 1) >= 0;
+    }
+
+    // max over speeds s and the labels the root allows of ln S_label(s, tau): a newborn's first mark.
+    double first_mark_survival(int tau) {
+        if (tau > cap_) return first_survival_at(tau);
+        while (first_survival_.size() < static_cast<std::size_t>(tau)) {
+            grow_within(first_survival_, first_survival_.size() + 1, static_cast<std::size_t>(cap_));
+            first_survival_.push_back(first_survival_at(static_cast<int>(first_survival_.size()) + 1));
+        }
+        return first_survival_[static_cast<std::size_t>(tau) - 1];
+    }
+
     FirstMarkEnds first_mark_ends(int tau) {
         const std::size_t row = 2 * static_cast<std::size_t>(speeds_);
+        if (tau > cap_) {
+            scratch_ends_.resize(row);
+            const std::array<double, 3> best = first_ends_at(tau, scratch_ends_.data());
+            return {scratch_ends_.data(), {best[0], best[1]}, best[2]};
+        }
         while (first_best_.size() < static_cast<std::size_t>(tau)) {
-            const int t = static_cast<int>(first_best_.size()) + 1;
-            std::array<double, 3> best = {-kInf, -kInf, -kInf};
-            for (int label = 0; label < 2; ++label) {
-                for (int s = 0; s < speeds_; ++s) {
-                    const double value = root_has_[label] ? fist_.log_end(mark_kind(label), s, 0, t) : -kInf;
-                    first_ends_.push_back(value);
-                    best[static_cast<std::size_t>(label)] = std::max(best[static_cast<std::size_t>(label)], value);
-                }
-            }
-            best[2] = std::max(best[0], best[1]);
-            first_best_.push_back(best);
+            const std::size_t t = first_best_.size() + 1;
+            grow_within(first_ends_, t * row, static_cast<std::size_t>(cap_) * row);
+            grow_within(first_best_, t, static_cast<std::size_t>(cap_));
+            first_ends_.resize(t * row);
+            first_best_.push_back(first_ends_at(static_cast<int>(t), first_ends_.data() + (t - 1) * row));
         }
         const std::array<double, 3>& best = first_best_[static_cast<std::size_t>(tau) - 1];
         return {first_ends_.data() + (static_cast<std::size_t>(tau) - 1) * row, {best[0], best[1]}, best[2]};
     }
 
-    // For kind LetterGap or WordGap at a speed and tau, a gap whose factor is open: the maximum over the factors f of
-    // ln S_kind(s, f, tau) and of ln P_kind(s, f, tau), the first factor where ln P reaches its maximum, and whether
-    // ln P, as Fist computes it, is unimodal in f: not decreasing up to that factor and not increasing after it. Where
-    // it is, the factors whose successor a threshold keeps are those around that factor up to the first on each side
-    // that the threshold drops.
-    struct FactorEntry {
-        double survival;  // nats
-        double end;       // nats
-        int end_factor;
-        bool unimodal;
-    };
+    // The entry for (kind, speed, tau). The reference holds until the next call.
     const FactorEntry& factor_entry(Kind kind, int speed, int tau) {
+        if (tau > cap_) {
+            scratch_entry_ = factor_entry_at(kind, speed, tau);
+            return scratch_entry_;
+        }
         std::vector<FactorEntry>& table = by_kind_and_speed_[static_cast<std::size_t>(kind == Kind::WordGap) *
                                                                  static_cast<std::size_t>(speeds_) +
                                                              static_cast<std::size_t>(speed)];
         while (table.size() < static_cast<std::size_t>(tau)) {
-            const int t = static_cast<int>(table.size()) + 1;
-            FactorEntry entry{-kInf, -kInf, 0, true};
-            row_.resize(static_cast<std::size_t>(factors_));
-            for (int f = 0; f < factors_; ++f) {
-                entry.survival = std::max(entry.survival, fist_.log_survival(kind, speed, f, t));
-                row_[static_cast<std::size_t>(f)] = fist_.log_end(kind, speed, f, t);
-                if (row_[static_cast<std::size_t>(f)] > entry.end) {
-                    entry.end = row_[static_cast<std::size_t>(f)];
-                    entry.end_factor = f;
-                }
-            }
-            for (int f = 0; f + 1 < factors_; ++f) {
-                const double here = row_[static_cast<std::size_t>(f)];
-                const double next = row_[static_cast<std::size_t>(f) + 1];
-                if (f < entry.end_factor ? next < here : next > here) entry.unimodal = false;
-            }
-            table.push_back(entry);
+            grow_within(table, table.size() + 1, static_cast<std::size_t>(cap_));
+            table.push_back(factor_entry_at(kind, speed, static_cast<int>(table.size()) + 1));
         }
         return table[static_cast<std::size_t>(tau) - 1];
     }
-    double factor_survival(Kind kind, int speed, int tau) { return factor_entry(kind, speed, tau).survival; }
 
     static Kind mark_kind(int label) { return label == 1 ? Kind::Dash : Kind::Dot; }
 
 private:
+    double first_survival_at(int t) const {
+        double best = -kInf;
+        for (int label = 0; label < 2; ++label)
+            if (root_has_[label])
+                for (int s = 0; s < speeds_; ++s) best = std::max(best, fist_.log_survival(mark_kind(label), s, 0, t));
+        return best;
+    }
+
+    // Fills `row` (2 x speeds values) with the first mark's ln P at tau t and returns the maxima: per label, of all.
+    std::array<double, 3> first_ends_at(int t, double* row) const {
+        std::array<double, 3> best = {-kInf, -kInf, -kInf};
+        for (int label = 0; label < 2; ++label) {
+            for (int s = 0; s < speeds_; ++s) {
+                const double value = root_has_[label] ? fist_.log_end(mark_kind(label), s, 0, t) : -kInf;
+                row[static_cast<std::size_t>(label * speeds_ + s)] = value;
+                best[static_cast<std::size_t>(label)] = std::max(best[static_cast<std::size_t>(label)], value);
+            }
+        }
+        best[2] = std::max(best[0], best[1]);
+        return best;
+    }
+
+    FactorEntry factor_entry_at(Kind kind, int speed, int t) {
+        FactorEntry entry{-kInf, 0, true};
+        row_.resize(static_cast<std::size_t>(factors_));
+        for (int f = 0; f < factors_; ++f) {
+            row_[static_cast<std::size_t>(f)] = fist_.log_end(kind, speed, f, t);
+            if (row_[static_cast<std::size_t>(f)] > entry.end) {
+                entry.end = row_[static_cast<std::size_t>(f)];
+                entry.end_factor = f;
+            }
+        }
+        for (int f = 0; f + 1 < factors_; ++f) {
+            const double here = row_[static_cast<std::size_t>(f)];
+            const double next = row_[static_cast<std::size_t>(f) + 1];
+            if (f < entry.end_factor ? next < here : next > here) entry.unimodal = false;
+        }
+        return entry;
+    }
+
     const Fist& fist_;
     int speeds_;
     int factors_;
+    int cap_;  // pieces: the taus kept
     bool root_has_[2] = {false, false};
     std::vector<double> first_survival_;                      // by tau - 1
     std::vector<double> first_ends_;                          // by tau - 1, rows of 2 x speeds
     std::vector<std::array<double, 3>> first_best_;           // by tau - 1
     std::vector<std::vector<FactorEntry>> by_kind_and_speed_; // [(kind is WordGap) x speeds + speed][tau - 1]
-    std::vector<double> row_;                                 // ln P over the factors, while an entry is built
+    std::vector<double> row_;                                 // ln P over the factors, while an entry is computed
+    std::vector<double> scratch_ends_;                        // a first mark's row beyond the cap
+    FactorEntry scratch_entry_{-kInf, 0, true};               // an entry beyond the cap
 };
+
+// bytes: the open timing's budget per Search, which sets its tables' cap (search.hpp, "Work saved").
+constexpr std::size_t kOpenTimingBudgetBytes = 4'000'000;
+
+// The open timing's cap, pieces: the options' where set (positive), else the most taus the budget holds.
+int open_timing_cap(const ViterbiConfig& config, const detail::SearchOptions& options) {
+    if (options.open_timing_cap_pieces > 0) return options.open_timing_cap_pieces;
+    const std::size_t taus = kOpenTimingBudgetBytes / OpenTiming::bytes_per_tau(std::max(config.speed_count, 1));
+    const std::size_t most = static_cast<std::size_t>(std::numeric_limits<int>::max());
+    return static_cast<int>(std::clamp<std::size_t>(taus, 1, most));
+}
 
 bool positive_and_finite(double x) { return x > 0.0 && std::isfinite(x); }
 
@@ -283,6 +334,10 @@ bool ranks_before(const Ranked& a, const Ranked& b) {
     if (a.score_nats != b.score_nats) return a.score_nats > b.score_nats;
     if (a.state != b.state) return a.state < b.state;
     return a.creation < b.creation;
+}
+
+bool replaces(double score, std::uint64_t creation, double kept_score, std::uint64_t kept_creation) {
+    return score > kept_score || (score == kept_score && creation < kept_creation);
 }
 
 std::vector<std::size_t> merge(std::span<const Ranked> candidates) {
@@ -351,9 +406,9 @@ private:
     void end_gap(std::size_t i);
 
     // Offers, made in creation order. A successor more than the beam behind a score known at this piece is skipped
-    // where the options allow. An offer replaces the candidate kept in its state only with a better score (of equal
-    // scores the earlier created, the one kept, stays), so an offer that loses costs a compare; its Origin is built
-    // only if it wins.
+    // where the options allow, except in the no-signal state. An offer replaces the candidate kept in its state as
+    // detail::replaces decides: only with a better score, since the one kept was created earlier, so an offer that
+    // loses costs a compare; its Origin is built only if it wins.
     bool beyond_beam(double score) const { return skip_ && known_best_ - score > beam_nats_; }
     std::uint32_t push_candidate(std::uint64_t state, double score, std::uint64_t creation, const Origin& origin);
     template <class MakeOrigin>
@@ -377,7 +432,10 @@ private:
     std::vector<double> c_;  // Hz
     OpenTiming open_;
     bool skip_;
-    std::int64_t* cut_factor_scans_;  // detail::SearchOptions' counter, or null
+    bool scan_open_factors_;
+    std::int64_t* cut_factor_scans_;  // detail::SearchOptions' counters, or null
+    std::int64_t* passed_factors_;
+    int widest_factor_;               // the factor with the largest median: an open factor's survival
     bool stats_on_;
     double beam_nats_;
     std::size_t ceiling_;
@@ -453,9 +511,12 @@ Search::Impl::Impl(const ViterbiConfig& config, std::span<const double> c, std::
     : tree_(),
       fist_(config),
       prior_(std::move(prior)),
-      open_(fist_, tree_, config.speed_count, config.factor_count),
+      open_(fist_, tree_, config.speed_count, config.factor_count, open_timing_cap(config, options)),
       skip_(options.skip_successors_beyond_beam),
+      scan_open_factors_(options.scan_open_factors),
       cut_factor_scans_(options.cut_factor_scans),
+      passed_factors_(options.passed_factors),
+      widest_factor_(config.factor_ratio >= 1.0 ? config.factor_count - 1 : 0),
       stats_on_(config.stats),
       beam_nats_(config.beam_nats),
       ceiling_(0),
@@ -545,8 +606,10 @@ double Search::Impl::gap_survival(int speed, int factor, int node, int tau) {
     if (!tree_.symbol(node).empty()) {
         for (const Kind kind : {Kind::LetterGap, Kind::WordGap}) {
             const double cost = kind == Kind::LetterGap ? letter_gap_cost_ : word_gap_cost_;
-            const double survival = factor == kOpen ? log_factor_prior_ + open_.factor_survival(kind, speed, tau)
-                                                    : fist_.log_survival(kind, speed, factor, tau);
+            // An open factor survives as its widest does (search.hpp, "Work saved").
+            const double survival = factor == kOpen
+                                        ? log_factor_prior_ + fist_.log_survival(kind, speed, widest_factor_, tau)
+                                        : fist_.log_survival(kind, speed, factor, tau);
             best = std::max(best, survival - cost);
         }
     }
@@ -597,7 +660,8 @@ void Search::Impl::offer_general(std::uint64_t state, double score, std::int64_t
     if (beyond_beam(score)) return;
     std::int32_t& kept = general_[state];
     if (kept != kNone) {
-        if (!(score > ranked_[static_cast<std::size_t>(kept)].score_nats)) {
+        const detail::Ranked& incumbent = ranked_[static_cast<std::size_t>(kept)];
+        if (!detail::replaces(score, next_creation_, incumbent.score_nats, incumbent.creation)) {
             if (stats_on_) removed(line, LineEnd::Merge);
             return;
         }
@@ -611,7 +675,7 @@ void Search::Impl::offer_general(std::uint64_t state, double score, std::int64_t
 template <class MakeOrigin>
 void Search::Impl::offer_slot(Slot& slot, double score, std::int64_t line, MakeOrigin make_origin) {
     if (slot.piece == piece_) {
-        if (!(score > slot.score)) {
+        if (!detail::replaces(score, next_creation_, slot.score, slot.creation)) {
             if (stats_on_) removed(line, LineEnd::Merge);
             return;
         }
@@ -640,14 +704,14 @@ void Search::Impl::end_mark(std::size_t i) {
         // A newborn's first mark, at the root: it branches into every speed and label with a finite ln P, each paying
         // ln(1/speed_count). Every such successor lands in a state (a gap after the first mark, factor open) that only
         // newborns' first marks reach, so they merge in newborn_ends_. The over may end after E or T: all speeds land
-        // in the no-signal state, so only each label's best speed is offered.
+        // in the no-signal state, so only each label's best speed is offered, and always (search.hpp, step 5).
         const OpenTiming::FirstMarkEnds ends = open_.first_mark_ends(tau);
         const double head = with_block + log_speed_prior_;
-        if (beyond_beam(head + ends.best)) return;
+        const bool gaps_beyond = beyond_beam(head + ends.best);  // then every gap successor is beyond the beam
         for (int label = 0; label < 2; ++label) {
             const int child = tree_.child(tree_.root(), label == 1);
             if (child < 0) continue;
-            for (int speed = 0; speed < speeds_; ++speed) {
+            for (int speed = 0; speed < speeds_ && !gaps_beyond; ++speed) {
                 const double log_end = ends.log_end[static_cast<std::size_t>(label * speeds_ + speed)];
                 if (log_end == -kInf) continue;
                 const double score = head + log_end;
@@ -657,14 +721,11 @@ void Search::Impl::end_mark(std::size_t i) {
                                   Move::Continue, static_cast<std::int16_t>(speed), kOpen, s.line};
                 });
             }
-            if (!tree_.symbol(child).empty() && ends.label_best[label] > -kInf) {
-                const double score = head + ends.label_best[label] - over_end_cost_;
-                if (!beyond_beam(score))
-                    offer_slot(no_signal_, score, s.line, [&] {
-                        return Origin{static_cast<std::int32_t>(i), Move::EndOver, static_cast<std::uint8_t>(label),
-                                      Move::Continue, kOpen, kOpen, s.line};
-                    });
-            }
+            if (!tree_.symbol(child).empty() && ends.label_best[label] > -kInf)
+                offer_slot(no_signal_, head + ends.label_best[label] - over_end_cost_, s.line, [&] {
+                    return Origin{static_cast<std::int32_t>(i), Move::EndOver, static_cast<std::uint8_t>(label),
+                                  Move::Continue, kOpen, kOpen, s.line};
+                });
         }
         return;
     }
@@ -678,14 +739,11 @@ void Search::Impl::end_mark(std::size_t i) {
             return Origin{static_cast<std::int32_t>(i), Move::EndMark, static_cast<std::uint8_t>(label), Move::Continue,
                           s.speed, s.factor, s.line};
         });
-        if (!tree_.symbol(child).empty()) {
-            const double over = score - over_end_cost_;
-            if (!beyond_beam(over))
-                offer_slot(no_signal_, over, s.line, [&] {
-                    return Origin{static_cast<std::int32_t>(i), Move::EndOver, static_cast<std::uint8_t>(label),
-                                  Move::Continue, kOpen, kOpen, s.line};
-                });
-        }
+        if (!tree_.symbol(child).empty())  // the over's end: always offered (search.hpp, step 5)
+            offer_slot(no_signal_, score - over_end_cost_, s.line, [&] {
+                return Origin{static_cast<std::int32_t>(i), Move::EndOver, static_cast<std::uint8_t>(label),
+                              Move::Continue, kOpen, kOpen, s.line};
+            });
     }
 }
 
@@ -724,14 +782,8 @@ void Search::Impl::end_gap(std::size_t i) {
         }
         // The factor is taken here: one successor per factor, each paying ln(1/factor_count).
         const double opened = top + log_factor_prior_;
-        const OpenTiming::FactorEntry& entry = open_.factor_entry(kind, s.speed, tau);
-        if (entry.end == -kInf) continue;
-        consider_rescue(opened + entry.end, i, move);
-        if (beyond_beam(opened + entry.end)) continue;
-        // Offers the successor at factor f; false where it is not created (ln P = -infinity, or beyond the beam).
-        const auto offer = [&](int f) {
-            const double log_end = fist_.log_end(kind, s.speed, f, tau);
-            if (log_end == -kInf) return false;
+        // Offers the successor at factor f, whose ln P is the finite log_end; false where the beam would drop it.
+        const auto offer_factor = [&](int f, double log_end) {
             const double score = opened + log_end;
             if (beyond_beam(score)) return false;
             offer_slot(starts[f], score, s.line, [&] {
@@ -740,34 +792,52 @@ void Search::Impl::end_gap(std::size_t i) {
             });
             return true;
         };
-        if (entry.unimodal) {
-            // Outward from the best factor. On each side ln P only falls, so the last value computed bounds every one
-            // further out: a factor whose bound cannot beat the score its slot keeps would lose there, and is passed
-            // over without computing its ln P; the side ends at the first factor not created, or once the bound itself
-            // is beyond the beam, since the beam's threshold only rises (known_best_ only grows) and no further factor
-            // on that side would be created.
-            const auto scan = [&](int f, int direction) {
-                double bound = entry.end;
-                for (; f >= 0 && f < factors_; f += direction) {
-                    if (beyond_beam(opened + bound)) return f;
-                    const Slot& slot = starts[f];
-                    if (slot.piece == piece_ && !(opened + bound > slot.score)) continue;
-                    const double log_end = fist_.log_end(kind, s.speed, f, tau);
-                    if (log_end == -kInf || beyond_beam(opened + log_end)) return f;
-                    bound = log_end;
-                    offer_slot(starts[f], opened + log_end, s.line, [&] {
-                        return Origin{static_cast<std::int32_t>(i), move, 0, Move::Continue, s.speed,
-                                      static_cast<std::int16_t>(f), s.line};
-                    });
-                }
-                return f;
-            };
-            const int low = scan(entry.end_factor, -1);
-            const int high = scan(entry.end_factor + 1, +1);
-            if (cut_factor_scans_ && (low >= 0 || high < factors_)) ++*cut_factor_scans_;
-        } else {
-            for (int f = 0; f < factors_; ++f) offer(f);
+        // Every factor in order, each considered for the rescue: for an entry that is not unimodal, and for every gap
+        // where the options turn the scan off (no table is read then).
+        const auto offer_every_factor = [&] {
+            for (int f = 0; f < factors_; ++f) {
+                const double log_end = fist_.log_end(kind, s.speed, f, tau);
+                if (log_end == -kInf) continue;
+                consider_rescue(opened + log_end, i, move);
+                offer_factor(f, log_end);
+            }
+        };
+        if (!scan_open_factors_) {
+            offer_every_factor();
+            continue;
         }
+        const OpenTiming::FactorEntry& entry = open_.factor_entry(kind, s.speed, tau);
+        if (entry.end == -kInf) continue;
+        consider_rescue(opened + entry.end, i, move);
+        if (beyond_beam(opened + entry.end)) continue;
+        if (!entry.unimodal) {
+            offer_every_factor();
+            continue;
+        }
+        // Outward from the best factor. On each side ln P only falls, so the last value computed bounds every one
+        // further out: a factor whose bound cannot beat the score its slot keeps would lose there, and is passed over
+        // without computing its ln P; the side ends at the first factor not created, or once the bound itself is
+        // beyond the beam, since the beam's threshold only rises (known_best_ only grows) and no further factor on that
+        // side would be created.
+        const auto scan = [&](int f, int direction) {
+            double bound = entry.end;
+            for (; f >= 0 && f < factors_; f += direction) {
+                if (beyond_beam(opened + bound)) return f;
+                const Slot& slot = starts[f];
+                if (slot.piece == piece_ &&
+                    !detail::replaces(opened + bound, next_creation_, slot.score, slot.creation)) {
+                    if (passed_factors_) ++*passed_factors_;
+                    continue;
+                }
+                const double log_end = fist_.log_end(kind, s.speed, f, tau);
+                if (log_end == -kInf || !offer_factor(f, log_end)) return f;
+                bound = log_end;
+            }
+            return f;
+        };
+        const int low = scan(entry.end_factor, -1);
+        const int high = scan(entry.end_factor + 1, +1);
+        if (cut_factor_scans_ && (low >= 0 || high < factors_)) ++*cut_factor_scans_;
     }
 }
 

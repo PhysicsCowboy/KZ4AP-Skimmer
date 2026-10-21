@@ -350,6 +350,30 @@ TEST(Fist, SurvivalFallsFromOneOverTheGridsWholeRange) {
     EXPECT_NEAR(median_from_survival(fist, Kind::WordGap, 31, 22) * 2.0, 13125.0, 2.0);
 }
 
+TEST(Fist, LetterAndWordGapsSurviveLongerAtEveryLargerFactor) {
+    // The search takes an open factor's survival from its widest factor (search.hpp, "Work saved"), which is exact only
+    // if ln S, as Fist computes it in floating point, never falls as the factor grows. For both kinds and every speed,
+    // with no tolerance: at every tau from 1 to 20 000 pieces (40 s), and at every 997th tau on to 8 000 000 pieces
+    // (4.4 hours), past the table's end at z = 40 (reached from 2.9e6 pieces by the letter gap at the fastest speed).
+    const ViterbiConfig config{};
+    const Fist fist(config);
+    for (const Kind kind : {Kind::LetterGap, Kind::WordGap}) {
+        for (int speed = 0; speed < config.speed_count; ++speed) {
+            int falls_at = 0;
+            for (int tau = 1; tau <= 8'000'000 && falls_at == 0; tau += tau < 20'000 ? 1 : 997) {
+                double previous = fist.log_survival(kind, speed, 0, tau);
+                for (int factor = 1; factor < config.factor_count; ++factor) {
+                    const double ln_s = fist.log_survival(kind, speed, factor, tau);
+                    if (ln_s < previous) falls_at = tau;
+                    previous = ln_s;
+                }
+            }
+            EXPECT_EQ(falls_at, 0) << "kind " << static_cast<int>(kind) << ", speed " << speed
+                                   << ": ln S falls from one factor to the next at this tau";
+        }
+    }
+}
+
 TEST(Fist, EndProbabilityIsTheDropInSurvivalOverTheGridsWholeRange) {
     // The identity of fist.hpp, P(tau) = S(tau) - S(tau + 1), from the first piece to 40 times the median. Past the
     // median (S <= 1/2) P is taken from the same upper-tail values as S, so the two agree to rounding: 1e-9 of P is

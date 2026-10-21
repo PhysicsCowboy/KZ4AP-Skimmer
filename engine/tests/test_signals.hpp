@@ -14,43 +14,6 @@
 
 namespace kz4ap::test {
 
-// Key-down intervals (start_s, end_s) for text at wpm, PARIS timing, beginning at start_s.
-inline std::vector<std::pair<double, double>> keying(const std::string& text, double wpm, double start_s) {
-    const double dit = 1.2 / wpm;
-    std::vector<std::string> words;
-    std::string word;
-    for (char c : text) {
-        if (c == ' ') {
-            if (!word.empty()) words.push_back(word);
-            word.clear();
-        } else {
-            word += c;
-        }
-    }
-    if (!word.empty()) words.push_back(word);
-
-    std::vector<std::pair<double, double>> out;
-    double t = start_s;
-    for (std::size_t wi = 0; wi < words.size(); ++wi) {
-        std::vector<std::string_view> codes;
-        for (const auto symbol : morse::symbols(words[wi])) {
-            const auto p = morse::encode(symbol);
-            if (!p.empty()) codes.push_back(p);
-        }
-        for (std::size_t ci = 0; ci < codes.size(); ++ci) {
-            for (std::size_t ei = 0; ei < codes[ci].size(); ++ei) {
-                const double len = codes[ci][ei] == '.' ? dit : 3 * dit;
-                out.emplace_back(t, t + len);
-                t += len;
-                if (ei + 1 < codes[ci].size()) t += dit;
-            }
-            if (ci + 1 < codes.size()) t += 3 * dit;
-        }
-        if (wi + 1 < words.size()) t += 7 * dit;
-    }
-    return out;
-}
-
 // One stretch of text sent at its own timing: elements and element gaps at wpm (a dot of 1.2 s / wpm), the gaps between
 // letters and between words stretched by `factor`, 3 and 7 dots x factor. Farnsworth spacing for characters at c WPM in
 // an overall speed of s WPM has the factor farnsworth_factor(c, s); factor 1 is standard spacing.
@@ -106,6 +69,12 @@ inline std::vector<std::pair<double, double>> keying_segments(const std::vector<
         if (si + 1 < segments.size()) t += 7 * dit * segment.factor;
     }
     return out;
+}
+
+// Key-down intervals (start_s, end_s) for text at wpm, PARIS timing, beginning at start_s: one segment at standard
+// spacing (factor 1, so 3 and 7 dots exactly).
+inline std::vector<std::pair<double, double>> keying(const std::string& text, double wpm, double start_s) {
+    return keying_segments({{text, wpm}}, start_s);
 }
 
 // A carrier keyed by the given key-down intervals (s), at freq_hz (0 = baseband) with 5 ms raised-cosine edges, plus

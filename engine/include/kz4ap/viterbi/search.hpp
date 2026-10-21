@@ -66,9 +66,11 @@
 //   5. Pruning: every story more than beam_nats behind the best is dropped; if more than `ceiling` remain, the
 //      `ceiling` best are kept, ties broken by the state, then by creation order (a counter), so that a run depends on
 //      no container's order and no address. Every successor with a finite score is offered; one already more than
-//      beam_nats behind a score known at the piece is not created, since the beam would drop it (which changes no
+//      beam_nats behind a score known at the piece is not created, since the beam would drop it, except an over's end:
+//      the continuing no-signal story reaches pruning only through the no-signal state, where the over's ends merge
+//      with it, so they are always offered there (at most two compares per mark story and piece). This changes no
 //      output: a successor the beam drops survives nothing, and merging keeps the better of two, so the stories after
-//      pruning, their order and the statistics are the same; detail::SearchOptions turns the skip off for the tests
+//      pruning, their order and the statistics are the same (detail::SearchOptions turns the skip off for the tests
 //      that show it).
 //   6. Scores are held relative to the best.
 //   7. best_text() gives the best story's text, each symbol with its start and end times and the probability 1; if the
@@ -92,31 +94,45 @@
 //      the configuration defines it as used in place of fading_spread_hz.
 //
 // Known limitation (measured; the search as designed, the edge question with the owner): the search does not follow a
-// step from 20 to 30 WPM at +20 dB S500 (plan §5, item 2; search_test.cpp, FollowsASpeedStep, a strict expected
-// failure). At each mark's start the channel filter's step response (about 10 ms, with the test's 5 ms raised-cosine
-// keying edges) leaves a piece at partial amplitude: 0.0267 FS against 0.0615 FS for a full piece. Under a level about
-// 20% uncertain (relative standard deviation), as predicted across a 124 ms gap at f_D = 1 Hz, a story that starts its
-// mark on that piece reads it as a partial fade and leads by about 25 nats at that piece; one piece later the story
-// that starts the mark one piece later leads by 27 to 34 nats, since a coherent block of the weak and the full piece
-// falls short of the learned amplitude. A line behind the leader keeps both starts only while within about 8 nats of it
-// at a letter start (40 nats of beam, less the 25-nat swing and about 7 nats of letter-start costs: ln 62, the gap kind
-// and ln P), so a rescue newborn, born about 15.5 nats behind and gaining about 0.5 nats per element after the step, is
-// dropped by the beam before it can lead. The swing grows in proportion to the carrier's power (S500 as a power ratio),
-// so the failing band moves with the beam: at 40 nats the step fails at +20 to +24 dB S500 (and decodes at +10 to +19
-// and +25 to +28 dB S500), at 80 nats at +23 to +25 dB S500; a ceiling of 17 000 stories changes nothing; stations at a
-// constant speed decode exactly at +19 to +24 dB S500. The design places a mark's edges on piece boundaries with no
-// filter delay (design notes, topic 4, item 2).
+// step from 20 to 30 WPM at +20 dB S500 (plan §5, item 2; search_test.cpp, FollowsASpeedStep, a known failure that
+// the test reports as a skip). At each mark's start the channel filter's step response (about 10 ms, with the test's
+// 5 ms raised-cosine keying edges) leaves a piece at partial amplitude: 0.0267 FS against 0.0615 FS for a full piece.
+// Under a level about 20% uncertain (relative standard deviation), as predicted across a 124 ms gap at f_D = 1 Hz, a
+// story that starts its mark on that piece reads it as a partial fade and leads by about 25 nats at that piece; one
+// piece later the story that starts the mark one piece later leads by 27 to 34 nats, since a coherent block of the weak
+// and the full piece falls short of the learned amplitude. A line behind the leader keeps both starts only while within
+// about 8 nats of it at a letter start (40 nats of beam, less the 25-nat swing and about 7 nats of letter-start costs:
+// ln 62, the gap kind and ln P), so a rescue newborn, born about 15.5 nats behind and gaining about 0.5 nats per
+// element after the step, is dropped by the beam before it can lead. The swing grows in proportion to the carrier's
+// power (S500 as a power ratio), so the failing band moves with the beam: at 40 nats the step fails at +20 to
+// +24 dB S500 (and decodes at +10 to +19 and +25 to +28 dB S500), at 80 nats at +23 to +25 dB S500; a ceiling of
+// 17 000 stories changes nothing; stations at a constant speed decode exactly at +19 to +24 dB S500. The design places
+// a mark's edges on piece boundaries with no filter delay (design notes, topic 4, item 2).
 //
-// Work saved without changing any output. The fist's maxima over open speeds and factors are computed once per tau as
-// the search first needs them (each the plain maximum of Fist's values). Where a gap with an open factor ends between
-// letters or words, its successors are evaluated outward from the factor with the largest ln P wherever the table found
-// ln P unimodal in the factor (each entry is checked when it is built; an entry that is not is evaluated whole): on
-// each side ln P only falls, so the last value computed bounds the rest; a factor whose successor could not beat the
-// score its slot already keeps would lose the merge, and is passed over without computing its ln P, and a side ends at
-// the first factor the beam would drop, or once the bound itself is beyond the beam, since every factor further out
-// would be dropped too. An offer that loses its merge costs a compare. The statistics (SearchStats) are kept only when
-// config.stats is true and never change the decoding. A Search is deterministic: the same pieces give the same text and
-// statistics.
+// Work saved without changing any output:
+//   - An open factor's survival. A letter or word gap whose factor is open survives as its widest factor's does, the
+//     one with the largest median (factor_count - 1 where factor_ratio >= 1, else 0): the factor stretches only the
+//     median, and a log-normal with a larger median and the same sigma and shift survives longer at every tau. Fist
+//     keeps that order in floating point (its z falls with the median through monotone roundings; its table of
+//     ln Phi_c decreases, the differences between its nodes are exact, so the interpolation never rises), and
+//     fist_test.cpp checks it on every speed and factor, so the maximum over the factors is one call of Fist.
+//   - The other maxima over open speeds and factors (a newborn's first mark over the speeds and labels; an open
+//     factor's ln P over the factors, with its best factor and whether it is unimodal) are kept in tables for the
+//     first `cap` taus, as the search first needs them, and computed again the same way for any tau beyond. With
+//     2 x speed_count factor entries of 16 bytes and a first-mark row of 2 x speed_count + 4 values of 8 bytes per
+//     tau (1 568 bytes per tau at 32 speeds), cap = floor(4 000 000 bytes / the bytes per tau) (2 551 pieces, 5.102 s,
+//     at 32 speeds), so that one Search's tables never take more than 4 000 000 bytes (3 999 968 at 32 speeds).
+//   - Where a gap with an open factor ends between letters or words, its successors are evaluated outward from the
+//     factor with the largest ln P wherever ln P is unimodal in the factor (each entry is checked when it is
+//     computed; an entry that is not is evaluated whole): on each side ln P only falls, so the last value computed
+//     bounds the rest; a factor whose successor could not beat the score its slot already keeps would lose the merge,
+//     and is passed over without computing its ln P, and a side ends at the first factor the beam would drop, or once
+//     the bound itself is beyond the beam, since every factor further out would be dropped too.
+//   - An offer that loses its merge costs a compare.
+// The statistics (SearchStats) are kept only when config.stats is true and never change the decoding. They grow with
+// the channel's time: about 96 bytes per newborn line (its record and its track), up to two lines per piece, about
+// 350 MB per hour; they are meant for bench recordings, not for an engine that runs for hours. A Search is
+// deterministic: the same pieces give the same text and statistics.
 #pragma once
 
 #include "kz4ap/decoder.hpp"
@@ -197,10 +213,20 @@ namespace detail {
 struct SearchOptions {
     // Do not create a successor already more than beam_nats behind a score known at its piece (plan §2.7, item 5).
     bool skip_successors_beyond_beam = true;
+    // Evaluate an open factor's letter and word successors by the scan outward from its best factor, with the merge
+    // bound and the beam's exits (true); or, for every gap, every factor in order, with no table, no bound and no exit
+    // (false).
+    bool scan_open_factors = true;
+    // The taus whose open-timing maxima are kept in tables, pieces: 0 for the cap the 4 000 000-byte budget sets
+    // (search.hpp, "Work saved"); a smaller cap computes more of them on demand.
+    int open_timing_cap_pieces = 0;
     // If set, counts the open factors' scans that stopped short of an end of the factor grid (a letter or word gap with
     // an open factor whose outward scan from its best factor ended at a factor not created), so that a test can show
     // that the scan cut something.
     std::int64_t* cut_factor_scans = nullptr;
+    // If set, counts the factors a scan passed over without computing their ln P, since their bound could not beat the
+    // successor their slot already kept.
+    std::int64_t* passed_factors = nullptr;
 };
 
 // A candidate story at a piece, as merging and pruning see it.
@@ -213,8 +239,11 @@ struct Ranked {
 // The pruning order: the better score first, then the lower state, then the earlier creation.
 bool ranks_before(const Ranked& a, const Ranked& b);
 
-// Merging (plan §2.7, item 4): of the candidates in one state, the one with the better score is kept (of equal scores,
-// the earlier created). The indices of those kept, in the order given. The search merges by the same rule.
+// The merging rule (plan §2.7, item 4): whether a candidate offered into a state replaces the one kept there, by the
+// better score and, of equal scores, the earlier created. The search's offers decide by this function.
+bool replaces(double score, std::uint64_t creation, double kept_score, std::uint64_t kept_creation);
+
+// Merging: of the candidates in one state, the one `replaces` keeps. The indices of those kept, in the order given.
 std::vector<std::size_t> merge(std::span<const Ranked> candidates);
 
 // Pruning (plan §2.7, item 5): those more than beam_nats behind the best are dropped by the beam; then, if more than
