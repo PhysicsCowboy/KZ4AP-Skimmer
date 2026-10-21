@@ -18,6 +18,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <future>
 #include <limits>
@@ -66,10 +67,28 @@ const std::vector<double>& sum_noise() {
     return c;
 }
 
-// The default configuration's flat prior for blocks of 1 to 195 pieces of 3 samples, built once (0.22 s, 18.7 MB).
+// The rise of a mark's first pieces on the channelizer's filter at 48 kHz with the default 5 ms keying edges:
+// g_1 ... g_4 (0.193, 0.614, 0.943 and 1.019 of a full piece), the matched filter's weights in a mark's first block.
+const std::vector<double>& rise() {
+    static const std::vector<double> g = [] {
+        const kz4ap::ChannelizerConfig config = channelizer_config();
+        return rise_fractions(kz4ap::channel_filter_taps(config), config.sample_rate,
+                              config.fft_size / config.channel_bins, kSamplesPerPiece, ViterbiConfig{}.keying_rise_s);
+    }();
+    return g;
+}
+
+// The noise's long-run rate, Hz per channel sample: c's last increment, 1 500 Hz.
+double noise_rate_hz() {
+    const std::vector<double>& c = sum_noise();
+    return c[c.size() - 1] - c[c.size() - 2];
+}
+
+// The default configuration's flat prior for blocks of 1 to 195 pieces of 3 samples, with the rise, built once (0.22 s,
+// 18.7 MB).
 std::shared_ptr<const FlatPrior> flat_prior() {
-    static const auto prior =
-        std::make_shared<const FlatPrior>(ViterbiConfig{}, sum_noise(), kDefaultBlockPieces, kSamplesPerPiece);
+    static const auto prior = std::make_shared<const FlatPrior>(ViterbiConfig{}, sum_noise(), kDefaultBlockPieces,
+                                                                kSamplesPerPiece, rise());
     return prior;
 }
 
@@ -164,8 +183,10 @@ struct Element {
     std::size_t next_piece;  // the next piece to add to the mark
     double finished = 0.0;   // nats: the finished blocks' evidence
     double current = 0.0;    // nats: the current block's evidence so far
-    std::complex<double> sum = 0.0;
-    int n = 0;
+    std::complex<double> sum = 0.0;  // FS: the current block's sum, weighted in the mark's first block
+    int n = 0;                       // pieces in the current block
+    double squares = 0.0;            // the current block's sum of squared weights
+    int mark_pieces = 0;             // pieces of the mark so far
     std::optional<double> start;
     Level last_level;  // the level the last piece's scoring call left: a successor's, if the mark ends at that piece
 };
@@ -177,21 +198,30 @@ using ElementKey = std::tuple<bool, int, int, int, std::size_t>;
 // finished blocks' and the current one's, each block of at most `block` pieces scored against the level it carries,
 // predicted to the piece's time at config.fading_spread_hz, starting Newton's method from the previous piece's mode in
 // the block; a newborn's first block (of at most min(block, the flat prior's max_pieces) pieces) against the flat
-// prior.
+// prior. The pieces are independent at the long-run rate: a block's V is N0 x rate x m_signal. The mark's first block
+// is the matched filter to the rise: piece j of the mark weighted by g_j (rise(), and 1 past it), m_signal = 3 x the
+// sum of the squared weights; a later block is the plain sum, m_signal = 3 n.
 double advance_to(Element& element, std::size_t last, const std::vector<std::complex<double>>& pieces, int block,
                   const ViterbiConfig& config) {
-    const std::vector<double>& c = sum_noise();
+    const std::vector<double>& g = rise();
     for (; element.next_piece <= last; ++element.next_piece) {
         const std::size_t j = element.next_piece;
-        element.sum += pieces[j];
+        ++element.mark_pieces;
+        const bool first_block = element.mark_pieces == element.n + 1;  // no block of the mark has finished yet
+        const double weight =
+            first_block && element.mark_pieces <= static_cast<int>(g.size())
+                ? g[static_cast<std::size_t>(element.mark_pieces) - 1]
+                : 1.0;
+        element.sum += weight * pieces[j];
+        element.squares += weight * weight;
         ++element.n;
-        const int m = kSamplesPerPiece * element.n;
-        const double v = kN0 * c[static_cast<std::size_t>(m)];
+        const double m_signal = kSamplesPerPiece * element.squares;
+        const double v = kN0 * noise_rate_hz() * m_signal;
         const double t = piece_time(j);
         const int limit = element.level.learned ? block : std::min(block, flat_prior()->max_pieces());
         const BlockScore score =
             element.level.learned
-                ? score_block(predict(element.level, t, config.fading_spread_hz), std::abs(element.sum), m, v,
+                ? score_block(predict(element.level, t, config.fading_spread_hz), std::abs(element.sum), m_signal, v,
                               config.quadrature_order, t, element.start)
                 : score_first_block(*flat_prior(), std::abs(element.sum), element.n, v, t);
         element.current = score.llr;
@@ -203,6 +233,7 @@ double advance_to(Element& element, std::size_t last, const std::vector<std::com
             element.current = 0.0;
             element.sum = 0.0;
             element.n = 0;
+            element.squares = 0.0;
             element.start.reset();
         }
     }
@@ -214,6 +245,13 @@ bool same_level(const Level& a, const Level& b) {
     if (a.learned != b.learned) return false;
     if (!a.learned) return true;
     return a.t_s == b.t_s && std::fabs(a.mu - b.mu) <= 1e-12 * std::fabs(b.mu) && std::fabs(a.p - b.p) <= 1e-12 * b.p;
+}
+
+// Whether the search's full-size tests run: the environment variable KZ4AP_SEARCH_FULL_SWEEP=1, which the full-sweep
+// presets set through the test Search.FullSweep (engine/CMakeLists.txt).
+bool full_sweep() {
+    const char* value = std::getenv("KZ4AP_SEARCH_FULL_SWEEP");
+    return value != nullptr && std::string(value) == "1";
 }
 
 }  // namespace
@@ -232,19 +270,47 @@ TEST(Search, FollowsASpeedStep) {
     // A step from 20 to 30 WPM in mid-text, at +20 dB S500: a CER of at most 0.05 over the text (plan §5, item 2). The
     // old story misfits the new speed by (ln 1.5)^2 / (2 x 0.3^2) = 0.91 nats per element; a rescue newborn takes the
     // new speed when its first mark ends.
-    //
-    // A known failure: at the defaults the search does not meet it (search.hpp, "Known limitation"). The decode runs
-    // and the test is skipped with its CER, its text and the mechanism, whatever the CER: whether this one draw of the
-    // test noise meets the criterion proves nothing either way, and the draw differs between standard libraries
-    // (std::normal_distribution's algorithm is the library's).
     const auto keying = signals::keying_segments({{"PARIS PARIS PARIS", 20.0}, {"PARIS PARIS PARIS", 30.0}}, 0.5);
     const std::string decoded = decode(ViterbiConfig{}, station(keying, 20.0, keying.back().second + 1.5, 12));
-    const double error_rate = cer("PARIS PARIS PARIS PARIS PARIS PARIS", decoded);
-    GTEST_SKIP() << "known limitation (search.hpp, \"Known limitation\"): CER " << error_rate << ", decoded \""
-                 << decoded
-                 << "\". At each mark's start a piece at partial amplitude swings the scores of stories that start the "
-                    "mark one piece apart by 25 to 34 nats at +20 dB S500, so the rescue line that follows the step, "
-                    "still behind the leader, loses both starts to the 40-nat beam.";
+    EXPECT_LE(cer("PARIS PARIS PARIS PARIS PARIS PARIS", decoded), 0.05) << "decoded \"" << decoded << "\"";
+}
+
+TEST(Search, FollowsASpeedStepAtEverySnr) {
+    // The full sweep, labeled full-sweep (the presets windows-full-sweep and linux-full-sweep run it, through the test
+    // Search.FullSweep of engine/CMakeLists.txt, which sets KZ4AP_SEARCH_FULL_SWEEP=1; skipped otherwise): the step
+    // from 20 to 30 WPM at +10, +11, ... +28 dB S500 on seeds 12, 1 and 2, a CER of at most 0.05 at every point but
+    // one, and "PARIS PARIS" at 12, 25 and 40 WPM at the same levels on seeds 11, 1 and 2, exact.
+    //
+    // The one recorded known failure is the ceiling's (search.hpp, "The mark's rise and what remains", item 3): at
+    // +10 dB S500 on seed 12 the step decodes "PARIS PARIS PARIS P<AR>IS PARIS PARIS", CER 0.057, because the ceiling
+    // drops the rescue newborns born in the word gap before the step; with a ceiling of 2 500 stories it decodes. That
+    // point is held to a CER of at most 0.2 only, and its CER is recorded. Measured with MSVC's standard library on the
+    // Windows PC: the test noise is std::normal_distribution's, whose algorithm is the library's, so under another
+    // library the draws differ and the point that fails, if any, may too.
+    if (!full_sweep()) GTEST_SKIP() << "the full sweep runs under the full-sweep presets (KZ4AP_SEARCH_FULL_SWEEP=1)";
+    const std::string reference = "PARIS PARIS PARIS PARIS PARIS PARIS";
+    const auto step = signals::keying_segments({{"PARIS PARIS PARIS", 20.0}, {"PARIS PARIS PARIS", 30.0}}, 0.5);
+    for (int db = 10; db <= 28; ++db) {
+        for (const unsigned seed : {12u, 1u, 2u}) {
+            SCOPED_TRACE("the step at " + std::to_string(db) + " dB S500, seed " + std::to_string(seed));
+            const std::string decoded = decode(ViterbiConfig{}, station(step, db, step.back().second + 1.5, seed));
+            const double error_rate = cer(reference, decoded);
+            const bool known_failure = db == 10 && seed == 12u;
+            if (known_failure) ::testing::Test::RecordProperty("step_10dB_seed12_cer", std::to_string(error_rate));
+            EXPECT_LE(error_rate, known_failure ? 0.2 : 0.05) << "decoded \"" << decoded << "\"";
+        }
+    }
+    for (const double wpm : {12.0, 25.0, 40.0}) {
+        const auto keying = signals::keying("PARIS PARIS", wpm, 0.5);
+        for (int db = 10; db <= 28; ++db) {
+            for (const unsigned seed : {11u, 1u, 2u}) {
+                SCOPED_TRACE(std::to_string(wpm) + " WPM at " + std::to_string(db) + " dB S500, seed " +
+                             std::to_string(seed));
+                EXPECT_EQ(decode(ViterbiConfig{}, station(keying, db, keying.back().second + 1.5, seed)),
+                          "PARIS PARIS");
+            }
+        }
+    }
 }
 
 TEST(Search, FarnsworthTextIsRight) {
@@ -387,7 +453,8 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
     //   - in a mark at a known speed, at a node with both children: ln S_dash(tau), the merged mark's better survival
     //     (the dash's, whose median is three times the dot's), plus the evidence of its blocks so far, recomputed here
     //     from the pieces: the finished blocks' and the current one's, each block scored against the level it carries,
-    //     predicted to the piece's time, starting Newton's method from the previous piece's mode in the block;
+    //     predicted to the piece's time, starting Newton's method from the previous piece's mode in the block, the
+    //     mark's first block weighted by the rise (the matched filter), every block's pieces at the long-run rate;
     //   - in a newborn's first mark (speed open): ln(1/32) + the best over the speeds and labels of ln S, plus the
     //     first block's evidence against the flat prior and the later blocks' against the level it left;
     //   - in a gap: the best over the kinds the node allows of the kind's cost and ln S (an open factor's letter and
@@ -888,11 +955,12 @@ TEST(Search, SkippingSuccessorsBeyondTheBeamChangesNothing) {
 TEST(Search, OpenFactorScanAndTableCapChangeNothing) {
     // Two of the search's savings against their plain forms (search.hpp, "Work saved"): the open factor's scan outward
     // from its best factor, with the merge bound and the beam's exits, against every factor evaluated in order with no
-    // table, no bound and no exit, on 60 s of noise (the ceiling binding, open-factor gaps living for seconds) and on a
-    // station at +10 dB S500; and the open timing's tables capped at 16 taus (every later maximum computed on demand)
-    // against the default cap, on the noise's first 10 s and on the station. Each pair gives the same live count after
-    // every piece and the same stories, scores, lines, statistics and text at the end; the scan stopped short and
-    // passed factors over many times. The three runs of a case are independent: each runs on its own thread.
+    // table, no bound and no exit; and the open timing's tables capped at 16 taus (every later maximum computed on
+    // demand) against the default cap. On 10 s of noise (the ceiling binding, open-factor gaps living for seconds) and
+    // on a station at +10 dB S500; under the full-sweep presets (KZ4AP_SEARCH_FULL_SWEEP=1) the scan's comparison runs
+    // on 60 s of noise, the cap's on its first 10 s. Each pair gives the same live count after every piece and the same
+    // stories, scores, lines, statistics and text at the end; the scan stopped short and passed factors over many
+    // times. The three runs of a case are independent: each runs on its own thread.
     ViterbiConfig config;
     config.stats = true;
     const auto keying = signals::keying("PARIS", 25.0, 0.8);
@@ -902,9 +970,10 @@ TEST(Search, OpenFactorScanAndTableCapChangeNothing) {
         std::size_t capped_pieces;  // the pieces of the run with the small tables
         std::string text;
     };
-    // The channelizer passes whole blocks of 32 channel samples: 60.1 s of input holds the first 60 s of pieces.
-    std::vector<std::complex<double>> long_noise = noise(60.1, 18);
-    long_noise.resize(30000);
+    // The channelizer passes whole blocks of 32 channel samples: 0.1 s more input holds the first whole seconds.
+    const int noise_s = full_sweep() ? 60 : 10;
+    std::vector<std::complex<double>> long_noise = noise(noise_s + 0.1, 18);
+    long_noise.resize(static_cast<std::size_t>(noise_s) * 500);
     std::vector<std::complex<double>> paris = station(keying, 10.0, keying.back().second + 1.0, 21);
     const std::size_t paris_pieces = paris.size();
     const std::vector<Case> cases = {{"noise", std::move(long_noise), 5000, ""},
@@ -1005,6 +1074,10 @@ TEST(Search, RefusesWhatItCannotUse) {
         broken[100] = bad;
         EXPECT_THROW(Search(defaults, broken, flat_prior()), std::invalid_argument) << bad;
     }
+    // c is read for the noise's long-run rate, its last increment, which must agree with the flat prior's.
+    std::vector<double> other_rate = c;
+    other_rate.back() += 1.0;  // Hz: a last increment 1 Hz off
+    EXPECT_THROW(Search(defaults, other_rate, flat_prior()), std::invalid_argument);
     const auto refuses = [&](auto change) {
         ViterbiConfig config;
         change(config);

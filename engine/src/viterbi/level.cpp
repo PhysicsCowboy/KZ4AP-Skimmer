@@ -35,13 +35,13 @@ Level predict(const Level& level, double t_s, double spread_hz) {
     return {level.mu, kept * level.p + stationary * stationary * fresh, level.t_s, true};
 }
 
-BlockScore score_block(const Level& predicted, double s_abs, int m, double v, int order, double t_s,
+BlockScore score_block(const Level& predicted, double s_abs, double m_signal, double v, int order, double t_s,
                        std::optional<double> start_a) {
     if (!predicted.learned)
         throw std::invalid_argument(
             "score_block: the predicted level has not been learned (a newborn's first block is score_first_block's)");
     if (!std::isfinite(t_s)) throw std::invalid_argument("score_block: t_s must be finite (s)");
-    const BlockEvidence evidence = block_evidence(s_abs, m, predicted.mu, predicted.p, v, order, start_a);
+    const BlockEvidence evidence = block_evidence(s_abs, m_signal, predicted.mu, predicted.p, v, order, start_a);
     return {evidence.llr, {evidence.level.mean, evidence.level.var, t_s, true}, evidence.mode_a};
 }
 
@@ -56,8 +56,8 @@ BlockScore score_first_block(const FlatPrior& prior, double s_abs, int pieces, d
     const double z = s_abs / root_v;
     const double llr = prior.llr(pieces, z);
     const Moments b = prior.posterior(pieces, z);
-    const double m = static_cast<double>(prior.samples_per_piece()) * pieces;  // channel samples
-    const Level level{b.mean * (root_v / m), b.var * (v / (m * m)), t_s, true};
+    const double m_signal = prior.signal_samples(pieces);  // channel samples: the carrier's expected sum over a
+    const Level level{b.mean * (root_v / m_signal), b.var * (v / (m_signal * m_signal)), t_s, true};
     return {llr, level, level.mu};
 }
 

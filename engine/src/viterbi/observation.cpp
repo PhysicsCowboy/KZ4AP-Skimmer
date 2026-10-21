@@ -461,8 +461,9 @@ WeightMoments weight_moments(double z, double kappa) {
             empty.var + blend(a.var, b.var, c.var, d.var)};
 }
 
-void check_block(double s_abs, int m, double v) {
-    if (m < 1) throw std::invalid_argument("block evidence: m must be at least 1 channel sample");
+void check_block(double s_abs, double m_signal, double v) {
+    if (!(m_signal > 0.0) || !std::isfinite(m_signal))
+        throw std::invalid_argument("block evidence: m_signal must be positive and finite (channel samples)");
     if (!(v > 0.0) || !std::isfinite(v))
         throw std::invalid_argument("block evidence: v must be positive and finite (FS^2)");
     if (!finite_and_not_negative(s_abs))
@@ -474,8 +475,8 @@ void check_block(double s_abs, int m, double v) {
 // nats (Lambda's derivatives in b at beta), and the posterior the prior, {mu, p}. For mu > 0 the true posterior differs
 // from that by about q relatively; for mu = 0 it is a half-normal (mean 0.80 sqrt(p), variance 0.36 p), off by order 1
 // relatively but by under 1e-9 in units of b.
-Block uncertain_block(double s_abs, int m, double mu, double p, double v, int order, int lowest_order) {
-    check_block(s_abs, m, v);
+Block uncertain_block(double s_abs, double m_signal, double mu, double p, double v, int order, int lowest_order) {
+    check_block(s_abs, m_signal, v);
     if (!finite_and_not_negative(mu))
         throw std::invalid_argument("uncertain level: mu must be finite and not negative (FS)");
     if (!finite_and_not_negative(p))
@@ -483,8 +484,8 @@ Block uncertain_block(double s_abs, int m, double mu, double p, double v, int or
     if (order < lowest_order || order > kMaxOrder)
         throw std::invalid_argument("uncertain level: the quadrature's order must be 1 (2 for the posterior) to 20");
     const double root_v = std::sqrt(v);
-    const double beta = m * mu / root_v;
-    const double q = static_cast<double>(m) * static_cast<double>(m) * p / v;
+    const double beta = m_signal * mu / root_v;
+    const double q = m_signal * m_signal * p / v;
     const double narrowest = kExactLevel * std::max(beta, 1.0);
     return {beta, q, s_abs / root_v, !(q > narrowest * narrowest)};
 }
@@ -493,13 +494,13 @@ Block uncertain_block(double s_abs, int m, double mu, double p, double v, int or
 // (orders from lowest_order to 20): the evidence, the level's moments and the mode, in FS. The mode comes from
 // Newton's method; the evidence and the moments from the broad-prior regime's tables where (z', kappa') lies in them,
 // and from the adaptive quadrature elsewhere, its truncated nodes from their table (or, tabulated = false, computed).
-BlockEvidence evaluate(double s_abs, int m, double mu, double p, double v, int order, int lowest_order,
+BlockEvidence evaluate(double s_abs, double m_signal, double mu, double p, double v, int order, int lowest_order,
                        std::optional<double> start_a, bool tabulated = true) {
-    const Block block = uncertain_block(s_abs, m, mu, p, v, order, lowest_order);
+    const Block block = uncertain_block(s_abs, m_signal, mu, p, v, order, lowest_order);
     if (start_a && !std::isfinite(*start_a))
         throw std::invalid_argument("block evidence: start_a must be finite (FS)");
-    if (block.exact) return {block_llr(s_abs, m, mu, v), {mu, p}, mu};
-    const double unit = std::sqrt(v) / m;  // FS per unit of b
+    if (block.exact) return {block_llr(s_abs, m_signal, mu, v), {mu, p}, mu};
+    const double unit = std::sqrt(v) / m_signal;  // FS per unit of b
     const double mode = find_mode(block, start_a ? std::optional<double>(*start_a / unit) : std::nullopt);
     const double s = std::sqrt(1.0 + 0.5 / block.q);
     const double kappa = block.beta / block.q;
@@ -570,57 +571,153 @@ double ln_i0(double x) {
     return x + std::log(polynomial(kLarge, kBesselSplit / x) / std::sqrt(x));
 }
 
-double block_llr(double s_abs, int m, double a, double v) {
-    check_block(s_abs, m, v);
+double block_llr(double s_abs, double m_signal, double a, double v) {
+    check_block(s_abs, m_signal, v);
     if (!finite_and_not_negative(a)) throw std::invalid_argument("block_llr: a must be finite and not negative (FS)");
     const double root_v = std::sqrt(v);
-    const double b = m * a / root_v;
+    const double b = m_signal * a / root_v;
     return -b * b + ln_i0(2.0 * b * (s_abs / root_v));
 }
 
-double block_llr_uncertain(double s_abs, int m, double mu, double p, double v, int order) {
-    return evaluate(s_abs, m, mu, p, v, order, 1, std::nullopt).llr;
+double block_llr_uncertain(double s_abs, double m_signal, double mu, double p, double v, int order) {
+    return evaluate(s_abs, m_signal, mu, p, v, order, 1, std::nullopt).llr;
 }
 
-Moments level_posterior(double s_abs, int m, double mu, double p, double v, int order) {
-    return evaluate(s_abs, m, mu, p, v, order, 2, std::nullopt).level;
+Moments level_posterior(double s_abs, double m_signal, double mu, double p, double v, int order) {
+    return evaluate(s_abs, m_signal, mu, p, v, order, 2, std::nullopt).level;
 }
 
-BlockEvidence block_evidence(double s_abs, int m, double mu, double p, double v, int order,
+BlockEvidence block_evidence(double s_abs, double m_signal, double mu, double p, double v, int order,
                              std::optional<double> start_a) {
-    return evaluate(s_abs, m, mu, p, v, order, 2, start_a);
+    return evaluate(s_abs, m_signal, mu, p, v, order, 2, start_a);
 }
 
 namespace detail {
 
-BlockEvidence block_evidence_direct_nodes(double s_abs, int m, double mu, double p, double v, int order,
+BlockEvidence block_evidence_direct_nodes(double s_abs, double m_signal, double mu, double p, double v, int order,
                                           std::optional<double> start_a) {
-    return evaluate(s_abs, m, mu, p, v, order, 2, start_a, false);
+    return evaluate(s_abs, m_signal, mu, p, v, order, 2, start_a, false);
+}
+
+std::vector<std::vector<double>> rise_fractions_by_position(std::span<const double> taps, double input_rate_hz,
+                                                            int decimation, int samples_per_piece, double rise_s,
+                                                            int pieces) {
+    if (taps.empty()) throw std::invalid_argument("rise_fractions: no taps");
+    if (!(input_rate_hz > 0.0) || !std::isfinite(input_rate_hz))
+        throw std::invalid_argument("rise_fractions: input_rate_hz must be positive and finite (Hz)");
+    if (decimation < 1) throw std::invalid_argument("rise_fractions: decimation must be at least 1");
+    if (samples_per_piece < 1) throw std::invalid_argument("rise_fractions: samples_per_piece must be at least 1");
+    if (!(rise_s >= 0.0) || !std::isfinite(rise_s))
+        throw std::invalid_argument("rise_fractions: rise_s must be finite and not negative (s)");
+    if (pieces < 0) throw std::invalid_argument("rise_fractions: pieces must not be negative");
+    double total = 0.0;  // the sum of the taps: a steady carrier's gain
+    for (const double h : taps) total += h;
+    if (!(total > 0.0) || !std::isfinite(total))
+        throw std::invalid_argument("rise_fractions: the taps must add up to a positive, finite sum");
+    // The keyed envelope at input sample t after the edge's start: 0.5 - 0.5 cos(pi t / R) for 0 <= t < R input samples
+    // (R = rise_s x input_rate_hz), 1 after; 0 before the edge.
+    const double rise_samples = rise_s * input_rate_hz;
+    const auto rising = static_cast<long long>(std::ceil(rise_samples));  // samples within the edge: t < R
+    std::vector<double> edge(static_cast<std::size_t>(rising));
+    for (long long t = 0; t < rising; ++t) {
+        const double x = static_cast<double>(t);
+        edge[static_cast<std::size_t>(t)] = 0.5 - 0.5 * std::cos(std::numbers::pi * x / rise_samples);
+    }
+    const auto envelope = [&](long long t) {
+        return t < 0 ? 0.0 : t < rising ? edge[static_cast<std::size_t>(t)] : 1.0;
+    };
+    // The edge's response: the filter's output t input samples after the edge's start, sum_j h[j] e(t - j); 0 before
+    // the edge, the taps' sum once the whole filter lies past the rise.
+    const auto length = static_cast<long long>(taps.size());
+    const long long settled = length - 1 + rising;
+    std::vector<double> response(static_cast<std::size_t>(settled) + 1);
+    for (long long t = 0; t <= settled; ++t) {
+        double sum = 0.0;
+        for (long long j = 0; j < length && j <= t; ++j) sum += taps[static_cast<std::size_t>(j)] * envelope(t - j);
+        response[static_cast<std::size_t>(t)] = sum;
+    }
+    const auto at = [&](long long t) {
+        if (t < 0) return 0.0;
+        if (t > settled) return total;
+        return response[static_cast<std::size_t>(t)];
+    };
+    const long long stride = static_cast<long long>(decimation);
+    const long long per_piece = stride * samples_per_piece;  // input samples in a piece
+    std::vector<std::vector<double>> fractions(static_cast<std::size_t>(per_piece));
+    for (long long position = 0; position < per_piece; ++position) {
+        std::vector<double>& row = fractions[static_cast<std::size_t>(position)];
+        row.resize(static_cast<std::size_t>(pieces));
+        for (int p = 0; p < pieces; ++p) {
+            double sum = 0.0;
+            for (int i = 0; i < samples_per_piece; ++i)
+                sum += at((static_cast<long long>(p) * samples_per_piece + i) * stride - position);
+            row[static_cast<std::size_t>(p)] = sum / (samples_per_piece * total);
+        }
+    }
+    return fractions;
 }
 
 }  // namespace detail
 
-FlatPrior::FlatPrior(const ViterbiConfig& config, std::span<const double> c, int max_pieces, int samples_per_piece)
-    : max_pieces_(max_pieces), samples_per_piece_(samples_per_piece), large_z_constant_(0.0) {
+std::vector<double> rise_fractions(std::span<const double> taps, double input_rate_hz, int decimation,
+                                   int samples_per_piece, double rise_s) {
+    if (!(rise_s >= 0.0) || !std::isfinite(rise_s))
+        throw std::invalid_argument("rise_fractions: rise_s must be finite and not negative (s)");
+    if (!(input_rate_hz > 0.0) || !std::isfinite(input_rate_hz))
+        throw std::invalid_argument("rise_fractions: input_rate_hz must be positive and finite (Hz)");
+    if (decimation < 1 || samples_per_piece < 1)
+        throw std::invalid_argument("rise_fractions: decimation and samples_per_piece must be at least 1");
+    // Enough pieces to cover the whole rise from every position: the filter's length and the edge, plus one piece.
+    const double span = static_cast<double>(taps.size()) + std::ceil(rise_s * input_rate_hz);
+    const int pieces = static_cast<int>(std::ceil(span / (static_cast<double>(decimation) * samples_per_piece))) + 2;
+    const std::vector<std::vector<double>> by_position =
+        detail::rise_fractions_by_position(taps, input_rate_hz, decimation, samples_per_piece, rise_s, pieces);
+    std::vector<double> average(static_cast<std::size_t>(pieces), 0.0);
+    for (const std::vector<double>& row : by_position)
+        for (int p = 0; p < pieces; ++p) average[static_cast<std::size_t>(p)] += row[static_cast<std::size_t>(p)];
+    for (double& fraction : average) fraction /= static_cast<double>(by_position.size());
+    constexpr double kFirstFraction = 0.01;  // below it a piece counts as gap (about -40 dB relative to a full piece)
+    constexpr double kFullPiece = 0.005;     // within it of 1, a piece counts as full
+    int first = 0;
+    while (first < pieces && !(average[static_cast<std::size_t>(first)] >= kFirstFraction)) ++first;
+    int last = pieces - 1;
+    while (last >= first && !(std::fabs(average[static_cast<std::size_t>(last)] - 1.0) > kFullPiece)) --last;
+    if (first >= pieces || last < first) return {};
+    return std::vector<double>(average.begin() + first, average.begin() + last + 1);
+}
+
+FlatPrior::FlatPrior(const ViterbiConfig& config, std::span<const double> c, int max_pieces, int samples_per_piece,
+                     std::span<const double> rise)
+    : max_pieces_(max_pieces), samples_per_piece_(samples_per_piece), large_z_constant_(0.0),
+      rise_(rise.begin(), rise.end()) {
     if (max_pieces < 1) throw std::invalid_argument("flat prior: max_pieces must be at least 1");
     if (samples_per_piece < 1) throw std::invalid_argument("flat prior: samples_per_piece must be at least 1");
+    rise_squares_.assign(1, 0.0);
+    for (const double g : rise_) {
+        if (!(g > 0.0) || !std::isfinite(g))
+            throw std::invalid_argument("flat prior: every rise fraction must be positive and finite");
+        rise_squares_.push_back(rise_squares_.back() + g * g);
+    }
     const auto pieces_count = static_cast<std::size_t>(max_pieces);
     const auto piece_samples = static_cast<std::size_t>(samples_per_piece);
-    if (c.size() <= piece_samples * pieces_count)
+    if (c.size() <= piece_samples * pieces_count || c.size() < 2)
         throw std::invalid_argument("flat prior: c must reach m = samples_per_piece x max_pieces channel samples");
+    noise_rate_hz_ = c[c.size() - 1] - c[c.size() - 2];
+    if (!(noise_rate_hz_ > 0.0) || !std::isfinite(noise_rate_hz_))
+        throw std::invalid_argument("flat prior: c's last increment, the noise's long-run rate, must be positive (Hz)");
     if (!std::isfinite(config.level_min_db) || !std::isfinite(config.level_max_db) ||
         !(config.level_min_db < config.level_max_db))
         throw std::invalid_argument("flat prior: the level range must be finite and not empty (dB S500)");
     large_z_constant_ = std::log(20.0 / (std::numbers::ln10 * (config.level_max_db - config.level_min_db)));
 
-    // u = ln b at the ends of the range, for each block length: ln b = x ln 10 / 20 + ln(500 Hz m^2 / c(m)) / 2.
+    // u = ln b at the ends of the range, for each block length: with the pieces independent at the long-run rate and
+    // the block the matched filter to the rise, b^2 = 10^(x / 10) x 500 Hz x m_signal(n) / rate, so ln b =
+    // x ln 10 / 20 + ln(500 Hz m_signal(n) / rate) / 2.
     const double u_per_db = std::numbers::ln10 / 20.0;
     std::vector<double> lower(pieces_count);
     for (std::size_t n = 1; n <= pieces_count; ++n) {
-        const std::size_t m = piece_samples * n;
-        if (!(c[m] > 0.0) || !std::isfinite(c[m]))
-            throw std::invalid_argument("flat prior: c(m) must be positive and finite (Hz)");
-        const double half_ln_gain = 0.5 * std::log(kS500Hz * static_cast<double>(m) * static_cast<double>(m) / c[m]);
+        const double m_signal = signal_samples(static_cast<int>(n));
+        const double half_ln_gain = 0.5 * std::log(kS500Hz * m_signal / noise_rate_hz_);
         lower[n - 1] = config.level_min_db * u_per_db + half_ln_gain;
         const double upper = config.level_max_db * u_per_db + half_ln_gain;
         if (lower[n - 1] > std::log(kHighestLowerB) || upper < std::log(kTableTopZ + kAboveZ))
@@ -629,8 +726,8 @@ FlatPrior::FlatPrior(const ViterbiConfig& config, std::span<const double> c, int
     }
 
     // The grid in u, in steps of 0.01 dB of x: the nodes are whole multiples of the step (b = 1 is one), so that an
-    // entry depends only on its block's m, and j counts them from the one at or below the lowest lower limit up to
-    // b = 40 + 10. Each block length's lower limit lies in a cell [u_j, u_j+1), at a fraction of the step; they are
+    // entry depends only on its block's m_signal, and j counts them from the one at or below the lowest lower limit up
+    // to b = 40 + 10. Each block length's lower limit lies in a cell [u_j, u_j+1), at a fraction of the step; they are
     // read from the top down (ties by length).
     const double step = u_per_db * kLevelStepDb;
     const auto first = static_cast<long long>(std::floor(*std::min_element(lower.begin(), lower.end()) / step));
@@ -702,6 +799,21 @@ FlatPrior::FlatPrior(const ViterbiConfig& config, std::span<const double> c, int
             e2 = d * d * e;
         }
     }
+}
+
+double FlatPrior::signal_samples(int pieces) const {
+    if (pieces < 1) throw std::out_of_range("flat prior: a mark's first block has at least 1 piece");
+    const auto n = static_cast<std::size_t>(pieces);
+    const std::size_t rise = rise_.size();
+    // g_1^2 + ... + g_n^2, g_j = 1 past the rise: n itself without one.
+    const double sum = n <= rise ? rise_squares_[n] : rise_squares_[rise] + static_cast<double>(n - rise);
+    return static_cast<double>(samples_per_piece_) * sum;
+}
+
+double FlatPrior::weight(int piece) const {
+    if (piece < 1) throw std::out_of_range("flat prior: a mark's pieces count from 1");
+    const auto j = static_cast<std::size_t>(piece);
+    return j <= rise_.size() ? rise_[j - 1] : 1.0;
 }
 
 const FlatPrior::Node* FlatPrior::row(int pieces, double z) const {

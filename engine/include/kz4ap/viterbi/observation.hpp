@@ -5,9 +5,21 @@
 //
 // A block is m consecutive channel samples; S (FS) is their complex sum and V (FS^2) its noise variance. A carrier of
 // amplitude a (FS, in the channel) and unknown phase has, against noise alone, the log-likelihood ratio, in nats,
-//     Lambda(S; a) = -b^2 + ln I0(2 b z),    z = |S| / sqrt(V),    b = m a / sqrt(V),
+//     Lambda(S; a) = -b^2 + ln I0(2 b z),    z = |S| / sqrt(V),    b = m_signal a / sqrt(V),
 // the noncoherent matched filter's (Proakis and Salehi, section 4.5-1); b^2 is the energy of the carrier's sum over
-// the noise variance of the sum.
+// the noise variance of the sum. m_signal is the carrier's expected sum over a, in channel samples.
+//
+// The search's model (design notes, topic 4, item 2, as amended 2026-10-20). A block's pieces count as independent at
+// the noise's long-run rate: N0 x rate per channel sample, the rate being c's last increment (1 500 Hz on the
+// channelizer's filter, the sum of the R_k below). That is exact for long blocks and credits a short block a little
+// less than its own c(m) would (about 7% of a 100 WPM dot's evidence, derived). A block's own c(m) ignores the noise's
+// correlation with the samples before the block: one piece's three samples are nearly fully correlated
+// (c(3) = 2 104.66 Hz against 4 500 Hz per piece in a long block), so a block's first full piece earned |S|^2 / V =
+// 213.8 at +20 dB S500 against 100.0 for each piece after it (derived), and a story that skipped a weak first piece
+// gained by it. A mark's first block is the matched filter to the pulse as received, which rises over its first pieces
+// (rise_fractions): the sum of the pieces weighted by their expected fractions g_j, so that a weak piece adds little.
+// So m_signal = samples_per_piece x the sum of the squared weights (m for a block of full pieces) and
+// V = N0 x rate x m_signal.
 #pragma once
 
 #include "kz4ap/viterbi/config.hpp"
@@ -29,26 +41,56 @@ namespace kz4ap::viterbi {
 // that is not positive and finite, a decimation below 1 or a negative max_samples.
 std::vector<double> sum_noise_hz(std::span<const double> taps, double input_rate_hz, int decimation, int max_samples);
 
+// The rise of a mark's first pieces: g_1 ... g_J, the expected carrier sum of each of a mark's first J pieces as a
+// fraction of a full piece's (a x samples_per_piece), computed from the channel filter's taps as sum_noise_hz is. The
+// keyed envelope at the input rate is 0 before the edge, 0.5 - 0.5 cos(pi t / rise_s) for 0 <= t < rise_s and 1 after
+// (the generator's raised cosine), on a carrier at the channel's center, so that the filter's real taps keep its phase.
+// It is convolved with the taps at the input rate; every decimation-th output is a channel sample (channel sample n is
+// the filter's output at input sample n x decimation, as in the channelizer), and samples_per_piece of them make a
+// piece, whose sum over samples_per_piece x sum(taps), a full piece's, is its fraction. That is done for each of the
+// decimation x samples_per_piece positions of the edge within one piece (96 at 48 kHz, 384 at 192 kHz), and the
+// fractions are averaged over the positions piece by piece: the expected fraction for an edge placed anywhere in a
+// piece with equal probability (derived). The rise starts at the first piece whose average is at least 0.01 (heuristic:
+// below it, about -40 dB relative to a full piece's power, a piece counts as gap) and ends at the last piece whose
+// average differs from 1 by more than 0.005 (heuristic); every later piece is a full piece. Throws
+// std::invalid_argument for no taps, taps that do not add up to a positive and finite sum, an input_rate_hz that is not
+// positive and finite, a decimation or samples_per_piece below 1, or a rise_s that is negative or not finite (0 gives
+// the filter's own rise).
+std::vector<double> rise_fractions(std::span<const double> taps, double input_rate_hz, int decimation,
+                                   int samples_per_piece, double rise_s);
+
+namespace detail {
+
+// rise_fractions before the average: [position][piece], the fractions of pieces 0 ... pieces - 1 for an edge that
+// starts at input sample `position` (0 ... decimation x samples_per_piece - 1), piece 0's channel samples being the
+// filter's outputs at input samples 0, decimation, ... (samples_per_piece - 1) x decimation.
+std::vector<std::vector<double>> rise_fractions_by_position(std::span<const double> taps, double input_rate_hz,
+                                                            int decimation, int samples_per_piece, double rise_s,
+                                                            int pieces);
+
+}  // namespace detail
+
 // ln I0(x), nats, for every x (I0 is even): Abramowitz and Stegun 9.8.1 for |x| <= 3.75 and 9.8.2 above, the latter
 // in the log with one logarithm, |x| + ln(polynomial / sqrt|x|), so that it never overflows (I0 itself passes the
 // largest double at x = 714). The errors A&S state make it exact to 4.8e-7 nats (derived; 4.7e-7 measured against
 // std::cyl_bessel_i). +infinity at infinity, NaN for NaN.
 double ln_i0(double x);
 
-// Lambda(S; a), nats: the evidence of a block of m channel samples whose sum has the magnitude s_abs (FS) and the
-// noise variance v (FS^2), for a carrier of known amplitude a (FS). Throws std::invalid_argument for m < 1, a v that is
-// not positive and finite, or an s_abs or a that is negative or not finite.
-double block_llr(double s_abs, int m, double a, double v);
+// Lambda(S; a), nats: the evidence of a block whose sum has the magnitude s_abs (FS) and the noise variance v (FS^2),
+// for a carrier of known amplitude a (FS) whose expected sum is m_signal x a (m_signal in channel samples; a whole m
+// for a block of full samples). Throws std::invalid_argument for an m_signal that is not positive and finite, a v that
+// is not positive and finite, or an s_abs or a that is negative or not finite.
+double block_llr(double s_abs, double m_signal, double a, double v);
 
 // Lambda_P, nats: the evidence of the same block when the level is uncertain, a ~ N(mu, p) (mu in FS, p in FS^2)
 // truncated to a >= 0 and renormalized, the Kalman predictive density (design notes, topic 3, item 1):
 //     Lambda_P = ln integral_0^inf N(a; mu, p) e^Lambda(S; a) da - ln Phi(mu / sqrt(p)),
 // Phi the standard normal distribution function. By adaptive Gauss-Hermite quadrature with `order` nodes (Liu and
-// Pierce 1994; Pinheiro and Bates 1995), in b, where the prior is N(beta, q), beta = m mu / sqrt(v), q = m^2 p / v:
-// the nodes are centered at the mode b^ of the integrand e^g(b) (prior x likelihood) and scaled by its curvature
-// there, sigma^ = (-g''(b^))^(-1/2), not spread over the prior. Newton's method finds b^, starting from the
-// precision-weighted mean of the prior and the likelihood's peak, (beta + 2 q z) / (1 + 2 q), which is never below it
-// (g' <= 0 there, as d ln I0 / dx < 1), with bisection as a safeguard. Where N(b^, sigma^^2) has mass below 0
+// Pierce 1994; Pinheiro and Bates 1995), in b, where the prior is N(beta, q), beta = m_signal mu / sqrt(v),
+// q = m_signal^2 p / v: the nodes are centered at the mode b^ of the integrand e^g(b) (prior x likelihood) and scaled
+// by its curvature there, sigma^ = (-g''(b^))^(-1/2), not spread over the prior. Newton's method finds b^, starting
+// from the precision-weighted mean of the prior and the likelihood's peak, (beta + 2 q z) / (1 + 2 q), which is never
+// below it (g' <= 0 there, as d ln I0 / dx < 1), with bisection as a safeguard. Where N(b^, sigma^^2) has mass below 0
 // (b^ < 8.5 sigma^), the nodes are those of that Gaussian truncated at 0: node k is b^ + sigma^ Phi^-1(Phi(-tau) +
 // (1 - Phi(-tau)) Phi(t_k)), tau = b^ / sigma^, the standard normal mapped onto the truncated Gaussian through their
 // distribution functions. The rule then integrates e^g divided by that truncated Gaussian's density, a constant when
@@ -90,8 +132,8 @@ double block_llr(double s_abs, int m, double a, double v);
 //   - in the regime, within 3.4e-5 nats, and the posterior's mean and variance within 3e-5 relatively, at every q from
 //     1e-6 to 1e12 and at every order: strong stations (beta of 100 to 1e6 at relative spreads of 0.3 to 2), weak broad
 //     priors, mu = 0 and blocks of z = 0 to 4 included;
-//   - outside it, within 0.0011 nats on the tests' grid (beta = m mu / sqrt(v) of 1 to 30, z = 0, b/2, b and 2 b,
-//     relative spreads sqrt(p) / mu of 0.03 to 0.5: 61 of its 64 points; the other 3 lie in the regime); within
+//   - outside it, within 0.0011 nats on the tests' grid (beta = m_signal mu / sqrt(v) of 1 to 30, z = 0, b/2, b and
+//     2 b, relative spreads sqrt(p) / mu of 0.03 to 0.5: 61 of its 64 points; the other 3 lie in the regime); within
 //     0.002 nats where kappa' > 1 (kappa' to 1 000, z to 10), with the mean within 0.005 posterior standard deviations
 //     and the variance within 1.1%; and within 2e-6 nats where z' > 4 (z' to 12);
 //   - across the regime's edges Lambda_P moves by at most 0.004 nats between points 2e-15 apart relatively (at
@@ -104,7 +146,7 @@ double block_llr(double s_abs, int m, double a, double v);
 // spread of 3, and 21 at most over b and z up to 1e100 and spreads up to 1e6, cold or started at 0, within its cap of
 // 60 (measured). Throws std::invalid_argument for what block_llr refuses, a mu or p that is negative or not finite,
 // or an order outside 1 ... 20.
-double block_llr_uncertain(double s_abs, int m, double mu, double p, double v, int order);
+double block_llr_uncertain(double s_abs, double m_signal, double mu, double p, double v, int order);
 
 // The mean and variance of a distribution.
 struct Moments {
@@ -114,16 +156,16 @@ struct Moments {
 
 // The level after the block: the mean (FS) and variance (FS^2) of a under the same posterior, prior x likelihood, by
 // the same evaluation (moment matching), the update of a story's level after a finished block (design notes, topic 3,
-// item 1). At high SNR it is the Kalman update, mean mu + p / (p + v / (2 m^2)) (s_abs / m - mu) and variance
-// p (v / (2 m^2)) / (p + v / (2 m^2)): within 0.1% for b >= 30 at a relative spread of 0.1. At order 5, on the grid
-// above, the mean is within 0.0025 of the posterior's standard deviation and the variance within 0.6% of a dense
-// integral (measured). In the broad-prior regime (above) the moments come from the tables, within 3e-5 relatively; the
-// variance after a block of noise (z = 1) is near 0.36 there (units of b^2), where curvature-scaled nodes had put it at
-// 0 to 3.2 times that. For a level known exactly it is the prior, {mu, p} ({mu, 0} with p = 0); for mu > 0 the true
-// posterior differs from it by about q relatively, for mu = 0 (a half-normal of mean 0.80 sqrt(p) and variance 0.36 p)
-// by order 1 relatively but by under 1e-9 in units of b. Throws for what block_llr_uncertain refuses, and for an order
-// below 2 (one node holds no variance).
-Moments level_posterior(double s_abs, int m, double mu, double p, double v, int order);
+// item 1). At high SNR it is the Kalman update, mean mu + p / (p + v / (2 m_signal^2)) (s_abs / m_signal - mu) and
+// variance p (v / (2 m_signal^2)) / (p + v / (2 m_signal^2)): within 0.1% for b >= 30 at a relative spread of 0.1. At
+// order 5, on the grid above, the mean is within 0.0025 of the posterior's standard deviation and the variance within
+// 0.6% of a dense integral (measured). In the broad-prior regime (above) the moments come from the tables, within 3e-5
+// relatively; the variance after a block of noise (z = 1) is near 0.36 there (units of b^2), where curvature-scaled
+// nodes had put it at 0 to 3.2 times that. For a level known exactly it is the prior, {mu, p} ({mu, 0} with p = 0); for
+// mu > 0 the true posterior differs from it by about q relatively, for mu = 0 (a half-normal of mean 0.80 sqrt(p) and
+// variance 0.36 p) by order 1 relatively but by under 1e-9 in units of b. Throws for what block_llr_uncertain refuses,
+// and for an order below 2 (one node holds no variance).
+Moments level_posterior(double s_abs, double m_signal, double mu, double p, double v, int order);
 
 // What one evaluation gives of a block: the evidence and the level after it, and where the posterior peaks.
 struct BlockEvidence {
@@ -140,25 +182,30 @@ struct BlockEvidence {
 // {block_llr, {mu, 0}, mu} with p = 0. At every order from 2 its values are finite for b and z below 1e100 (beyond
 // about 1e154, b^2 leaves the doubles, as in block_llr). Throws for what level_posterior refuses and for a start_a
 // that is not finite.
-BlockEvidence block_evidence(double s_abs, int m, double mu, double p, double v, int order,
+BlockEvidence block_evidence(double s_abs, double m_signal, double mu, double p, double v, int order,
                              std::optional<double> start_a = std::nullopt);
 
 namespace detail {
 
 // block_evidence with every truncated node computed by Phi^-1 rather than read from the table (the form before the
 // table), for the test that the table matches it.
-BlockEvidence block_evidence_direct_nodes(double s_abs, int m, double mu, double p, double v, int order,
+BlockEvidence block_evidence_direct_nodes(double s_abs, double m_signal, double mu, double p, double v, int order,
                                           std::optional<double> start_a = std::nullopt);
 
 }  // namespace detail
 
 // The evidence of a newborn story's first block (design notes, topic 5, item 3): its level x, dB S500, is equally
-// likely anywhere in [level_min_db, level_max_db], with a^2 = 10^(x / 10) N0 x 500 Hz. For a block of n pieces of
-// samples_per_piece channel samples each, m = samples_per_piece x n (3 x n for pieces of 2 ms at 1 500 samples/s),
-// b^2 = 10^(x / 10) x 500 Hz x m^2 / c(m), whatever N0, and
+// likely anywhere in [level_min_db, level_max_db], with a^2 = 10^(x / 10) N0 x 500 Hz. The block, of n pieces of
+// samples_per_piece channel samples each, is a mark's first, so it is the matched filter to the rise: the weighted sum
+// S = sum_j g_j x_j of its pieces x_j, with the rise's fractions (rise_fractions; g_j = 1 past the rise, and every
+// g_j = 1 without one). With the pieces independent at the noise's long-run rate (N0 x rate per channel sample,
+// rate = c's last increment), the carrier's expected S is a m_signal(n), m_signal(n) = samples_per_piece x
+// (g_1^2 + ... + g_n^2), and its noise variance V = N0 x rate x m_signal(n), so b^2 = 10^(x / 10) x 500 Hz x
+// m_signal(n) / rate, whatever N0 (with 3 samples per piece and a rate of 1 500 Hz, b^2 = 10^(x / 10) x the sum of the
+// squared weights), and
 //     Lambda_flat(n, z) = ln[ integral e^Lambda(S; a(x)) dx / (level_max_db - level_min_db) ],
-// with the posterior mean and variance of b beside it, in units of sqrt(V(m)) / m and V(m) / m^2 (the caller scales
-// to FS: mean_a = mean_b sqrt(V) / m, var_a = var_b V / m^2).
+// with the posterior mean and variance of b beside it, in units of sqrt(V) / m_signal(n) and V / m_signal(n)^2 (the
+// caller scales to FS: mean_a = mean_b sqrt(V) / m_signal(n), var_a = var_b V / m_signal(n)^2).
 //
 // Tables for n = 1 ... max_pieces and z = 0, 0.01, ..., 40, read with linear interpolation in z. They come from one
 // set of cumulative integrals: in u = ln b the integrand, e^(-e^(2u)) I0(2 e^u z), does not depend on n, which sets
@@ -166,39 +213,54 @@ BlockEvidence block_evidence_direct_nodes(double s_abs, int m, double mu, double
 // integral per z from the top of a grid in u down, by the trapezoid rule in steps of 0.01 dB of x, read at every
 // u_lo(n), serves every n: within 4.3e-5 nats of a direct integration over x, and built in 0.22 s for 195 pieces
 // (measured, on the channelizer's filter at 48 kHz). The grid's nodes are whole multiples of the step in u, so an
-// entry depends only on m: blocks of the same number of samples read the same values, whatever the piece. Above
-// z = 40, the large-z form (Laplace's method)
+// entry depends only on m_signal(n). Above z = 40, the large-z form (Laplace's method)
 //     Lambda_flat = z^2 - ln(2 z^2) + ln(20 / (ln 10 x (level_max_db - level_min_db))),
 // with level_max_db - level_min_db the range's width in dB S500. The form meets the table within 6.3e-4 nats at
 // z = 40 (its error falls as 1 / z^2: 0.0011 at 30, 0.010 at 10). The posterior of b there is proportional to
 // e^-(b - z)^2 b^(-3/2) (the likelihood's e^-(b - z)^2 / sqrt(b) over a prior flat in ln b), and Laplace's method one
 // order further gives its mean, z - 3 / (4 z), and variance, 1/2 + 3 / (8 z^2), which meet the table's at z = 40
-// within 2e-5. The form takes the level to lie inside the range, b well below its value at level_max_db (26 002 for
-// one piece, at the default range and on the channelizer's filter); above that it does not cut the prior off.
+// within 2e-5. The form takes the level to lie inside the range, b well below its value at level_max_db (17 783 for
+// one full piece, 3 440 for a first piece of the default rise, at the default range); above that it does not cut the
+// prior off.
 //
 // One FlatPrior serves every decoder of a configuration and channel filter, which hold it as
 // std::shared_ptr<const FlatPrior>: it holds 3 x 4 001 doubles per block length (18.7 MB for 195 pieces) and is not
 // copied.
 class FlatPrior {
 public:
-    // c: sum_noise_hz's c(m), Hz, up to m = samples_per_piece x max_pieces at least. Throws std::invalid_argument for
-    // max_pieces or samples_per_piece below 1, a c shorter than that or not positive and finite where read, a level
-    // range that is not finite or empty, or one the tables cannot hold: for some block length, b at level_min_db above
-    // 6 (at 6 the integrand there falls by e every 12 steps of the grid, and the trapezoid and the reading between
-    // nodes lose up to 0.0014 nats, derived) or b at level_max_db below 50 (the table's top, z = 40, plus 10).
-    FlatPrior(const ViterbiConfig& config, std::span<const double> c, int max_pieces, int samples_per_piece);
+    // c: sum_noise_hz's c(m), Hz, up to m = samples_per_piece x max_pieces at least, read only for its last increment,
+    // the noise's long-run rate (which it is once m passes the filter's correlation length, 33 lags on the
+    // channelizer's filter); rise: rise_fractions' g_1 ... g_J for the same filter (empty: no rise, every g_j = 1).
+    // Throws std::invalid_argument for max_pieces or samples_per_piece below 1, a c shorter than that or whose last
+    // increment is not positive and finite, a rise fraction that is not positive and finite, a level range that is not
+    // finite or empty, or one the tables cannot hold: for some block length, b at level_min_db above 6 (at 6 the
+    // integrand there falls by e every 12 steps of the grid, and the trapezoid and the reading between nodes lose up to
+    // 0.0014 nats, derived) or b at level_max_db below 50 (the table's top, z = 40, plus 10).
+    FlatPrior(const ViterbiConfig& config, std::span<const double> c, int max_pieces, int samples_per_piece,
+              std::span<const double> rise = {});
     FlatPrior(const FlatPrior&) = delete;
     FlatPrior& operator=(const FlatPrior&) = delete;
 
-    // The constructor's values: the longest block, in pieces, and the channel samples in a piece.
+    // The constructor's values: the longest block, in pieces, the channel samples in a piece, and the rise; and the
+    // noise's long-run rate, Hz per channel sample, c's last increment (1 500 Hz on the channelizer's filter).
     int max_pieces() const { return max_pieces_; }
     int samples_per_piece() const { return samples_per_piece_; }
+    std::span<const double> rise() const { return rise_; }
+    double noise_rate_hz() const { return noise_rate_hz_; }
+    // g_j, the weight of a mark's j-th piece (j >= 1) in its first block: the rise's fraction, 1 past the rise.
+    // Throws std::out_of_range for j below 1.
+    double weight(int piece) const;
+    // m_signal(n), channel samples: the expected weighted sum of a mark's first n pieces over a (n >= 1, any n),
+    // samples_per_piece x (g_1^2 + ... + g_n^2), g_j = 1 past the rise; the weighted sum's noise variance is
+    // N0 x noise_rate_hz() x m_signal(n). Throws std::out_of_range for n below 1.
+    double signal_samples(int pieces) const;
 
-    // Lambda_flat(n, z), nats, for a block of `pieces` pieces (1 ... max_pieces) with z = |S| / sqrt(V(m)) >= 0.
-    // Throws std::out_of_range for pieces outside 1 ... max_pieces and std::invalid_argument for a z that is negative
-    // or not finite.
+    // Lambda_flat(n, z), nats, for a block of `pieces` pieces (1 ... max_pieces) with z = |S| / sqrt(V) >= 0, S the
+    // weighted sum and V = N0 x noise_rate_hz() x m_signal(n) its noise variance. Throws std::out_of_range for pieces
+    // outside 1 ... max_pieces and std::invalid_argument for a z that is negative or not finite.
     double llr(int pieces, double z) const;
-    // The posterior mean and variance of b, in units of sqrt(V(m)) / m and V(m) / m^2. The same errors as llr.
+    // The posterior mean and variance of b, in units of sqrt(V) / m_signal(n) and V / m_signal(n)^2. The same errors
+    // as llr.
     Moments posterior(int pieces, double z) const;
 
 private:
@@ -214,6 +276,9 @@ private:
     int max_pieces_;
     int samples_per_piece_;
     double large_z_constant_;  // nats: ln(20 / (ln 10 x the range's width in dB S500))
+    double noise_rate_hz_ = 0.0;      // Hz per channel sample
+    std::vector<double> rise_;          // g_1 ... g_J
+    std::vector<double> rise_squares_;  // [n]: g_1^2 + ... + g_n^2 for n = 0 ... J
 };
 
 }  // namespace kz4ap::viterbi

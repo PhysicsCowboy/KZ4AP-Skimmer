@@ -9,20 +9,29 @@
 // only, throughout", so a gap piece adds 0. Scores are held relative to the best story's (normalization_nats() is the
 // sum of the best scores subtracted, so a story's own score is its relative score plus that sum). Every point is booked
 // at the piece it is earned (design notes, topic 5, item 9):
-//   - Evidence. A mark is scored in blocks: a block is the coherent sum S of a mark's pieces, at most
+//   - Evidence. A mark is scored in blocks: a block is a coherent sum S of a mark's pieces, at most
 //     B = floor(block_length_s(f_D, block_loss_db) / piece_s) pieces (195 at f_D = 1 Hz and 0.5 dB of signal energy:
-//     390.37 ms; with f_D = 0, no limit), f_D being genie_fading_spread_hz if set, else fading_spread_hz. A block of n
-//     pieces has m = samples_per_piece x n samples and the noise V = N0 c(m), FS^2, with N0 the hiss passed with the
-//     current piece (FS^2/Hz) for the whole running block, and c beyond its end extended by its last increment,
-//     c(m) = c(M) + (m - M)(c(M) - c(M - 1)), exact once m exceeds the filter's correlation length (33 lags). While a
-//     mark lasts, its current block's evidence so far is part of the score at every piece; a finished block's evidence
-//     enters the score for good and its posterior becomes the story's level. Every story in a mark makes exactly one
-//     scoring call per piece, and its continuation and all its successors at that piece use that call's evidence and
-//     level: a learned story calls score_block with its level predicted to the piece's time t_k (the update stamps a
-//     level with its block's end, so the prior of the block in hand is predicted end to end; a predicted level is used
-//     once and never stored), starting Newton's method from the previous piece's mode in the same block; a newborn's
-//     first block, of at most min(B, the flat prior's max_pieces) pieces, calls score_first_block, and the level is
-//     learned when it finishes.
+//     390.37 ms; with f_D = 0, no limit), f_D being genie_fading_spread_hz if set, else fading_spread_hz. The pieces
+//     count as independent at the noise's long-run rate, N0 x rate per channel sample, rate being c's last increment
+//     (1 500 Hz on the channelizer's filter), with N0 the hiss passed with the current piece (FS^2/Hz) for the whole
+//     running block. That is exact for long blocks (c(m) / m tends to the rate) and credits a short block a little less
+//     than its own c(m) would (about 7% of a 100 WPM dot's evidence, derived). A block's own c(m) is not used, because
+//     it ignores the noise's correlation with the samples before the block: one piece's three samples are nearly fully
+//     correlated (c(3) = 2 104.66 Hz against 4 500 Hz per piece in a long block), so a block's first full piece earned
+//     |S|^2 / V = 213.8 at +20 dB S500 against 100.0 per piece later (derived), and starts that skipped a weak first
+//     piece gained by it. A mark's first block is the matched filter to the pulse as received (rise_fractions,
+//     observation.hpp): S = sum_j g_j x_j over its pieces x_j, with the rise's fractions g_j (0.193, 0.614, 0.943 and
+//     1.019 at 48 kHz with a keying edge of keying_rise_s = 5 ms; g_j = 1 past the rise), the flat prior's
+//     (FlatPrior::weight), so that a weak first piece adds little and a start that skips it gains nothing; its
+//     m_signal = samples_per_piece x (g_1^2 + ... + g_n^2) and V = N0 x rate x m_signal. A later block is the plain
+//     sum: m_signal = m = samples_per_piece x n and V = N0 x rate x m. While a mark lasts, its current block's
+//     evidence so far is part of the score at every piece; a finished block's evidence enters the score for good and
+//     its posterior becomes the story's level. Every story in a mark makes exactly one scoring call per piece, and its
+//     continuation and all its successors at that piece use that call's evidence and level: a learned story calls
+//     score_block with its level predicted to the piece's time t_k (the update stamps a level with its block's end, so
+//     the prior of the block in hand is predicted end to end; a predicted level is used once and never stored),
+//     starting Newton's method from the previous piece's mode in the same block; a newborn's first block, of at most
+//     min(B, the flat prior's max_pieces) pieces, calls score_first_block, and the level is learned when it finishes.
 //   - Durations, in the hazard form (fist.hpp): a story still in its mark or gap at tau pieces has paid ln S(tau), one
 //     that ends there ln P(tau) instead. A mark keeps the better of ln S_dot(tau) and ln S_dash(tau), each plus its
 //     label's text cost at the node (0 where that child exists, -infinity where not), and ends into a dot and a dash,
@@ -93,21 +102,25 @@
 //   4. The Doppler spread f_D that sets B and the level's prediction is genie_fading_spread_hz when it is set, since
 //      the configuration defines it as used in place of fading_spread_hz.
 //
-// Known limitation (measured; the search as designed, the edge question with the owner): the search does not follow a
-// step from 20 to 30 WPM at +20 dB S500 (plan §5, item 2; search_test.cpp, FollowsASpeedStep, a known failure that
-// the test reports as a skip). At each mark's start the channel filter's step response (about 10 ms, with the test's
-// 5 ms raised-cosine keying edges) leaves a piece at partial amplitude: 0.0267 FS against 0.0615 FS for a full piece.
-// Under a level about 20% uncertain (relative standard deviation), as predicted across a 124 ms gap at f_D = 1 Hz, a
-// story that starts its mark on that piece reads it as a partial fade and leads by about 25 nats at that piece; one
-// piece later the story that starts the mark one piece later leads by 27 to 34 nats, since a coherent block of the weak
-// and the full piece falls short of the learned amplitude. A line behind the leader keeps both starts only while within
-// about 8 nats of it at a letter start (40 nats of beam, less the 25-nat swing and about 7 nats of letter-start costs:
-// ln 62, the gap kind and ln P), so a rescue newborn, born about 15.5 nats behind and gaining about 0.5 nats per
-// element after the step, is dropped by the beam before it can lead. The swing grows in proportion to the carrier's
-// power (S500 as a power ratio), so the failing band moves with the beam: at 40 nats the step fails at +20 to
-// +24 dB S500 (and decodes at +10 to +19 and +25 to +28 dB S500), at 80 nats at +23 to +25 dB S500; a ceiling of
-// 17 000 stories changes nothing; stations at a constant speed decode exactly at +19 to +24 dB S500. The design places
-// a mark's edges on piece boundaries with no filter delay (design notes, topic 4, item 2).
+// The mark's rise (design notes, topic 4, item 2, as amended 2026-10-20) and what remains. With the pieces at the
+// long-run rate and the matched filter in a mark's first block, the start aligned with the rise wins and keeps winning,
+// and a newborn whose level is free gains nothing at a strong first piece. Measured on noise-free pieces at
+// +20 dB S500 under a level about 20% uncertain (relative standard deviation, predicted across 124 ms at f_D = 1 Hz): a
+// start one piece late trails by about 41 nats one piece after the edge and by about 59 nats six pieces later (with a
+// block's own c(m) and no rise it had led by 48.8 and about 23 nats), and a start one piece early scores within
+// 0.4 nats of the aligned one. Measured on the tests' signals (search_test.cpp): the step from 20 to 30 WPM decodes at
+// every level from +11 to +28 dB S500 on three seeds at beams of 40 and 80 nats, and at +10 dB S500 on two of the
+// three; "PARIS PARIS" at 12, 25 and 40 WPM decodes exactly at every level from +10 to +28 dB S500 on three seeds.
+// What remains:
+//   1. The edge's position within a piece is averaged, not known: at 48 kHz a mark's first piece holds 0.048 to 0.384
+//      of a full piece, depending on where the edge falls in it, and the template has their average, 0.193.
+//   2. The keying edge's shape is assumed: the generator's 5 ms raised cosine (keying_rise_s); real transmitters vary.
+//   3. At +10 dB S500 on seed 12 the step misreads one letter pair ("P<AR>IS", CER 0.057: FollowsASpeedStepAtEverySnr's
+//      recorded failure), because of the ceiling: in the word gap before the step the population is at the ceiling,
+//      every story within about 16 nats of the best, and each rescue newborn, born about 15.4 nats behind, is dropped
+//      at birth; the first to survive starts its mark two to three pieces late, which the matched filter charges, and
+//      the ceiling drops it in the next gap. With a ceiling of 2 500 stories every point of the step and the stations
+//      decodes (measured); the ceiling is the owner's question.
 //
 // Work saved without changing any output:
 //   - An open factor's survival. A letter or word gap whose factor is open survives as its widest factor's does, the
@@ -115,13 +128,17 @@
 //     median, and a log-normal with a larger median and the same sigma and shift survives longer at every tau. Fist
 //     keeps that order in floating point (its z falls with the median through monotone roundings; its table of
 //     ln Phi_c decreases, the differences between its nodes are exact, so the interpolation never rises), and
-//     fist_test.cpp checks it on every speed and factor, so the maximum over the factors is one call of Fist.
+//     fist_test.cpp checks it on every speed and factor, so the maximum over the factors is one value of Fist, kept in
+//     the factor entries below within the cap and computed beyond it.
 //   - The other maxima over open speeds and factors (a newborn's first mark over the speeds and labels; an open
 //     factor's ln P over the factors, with its best factor and whether it is unimodal) are kept in tables for the
 //     first `cap` taus, as the search first needs them, and computed again the same way for any tau beyond. With
-//     2 x speed_count factor entries of 16 bytes and a first-mark row of 2 x speed_count + 4 values of 8 bytes per
-//     tau (1 568 bytes per tau at 32 speeds), cap = floor(4 000 000 bytes / the bytes per tau) (2 551 pieces, 5.102 s,
-//     at 32 speeds), so that one Search's tables never take more than 4 000 000 bytes (3 999 968 at 32 speeds).
+//     2 x speed_count factor entries of 24 bytes (the survival, the best ln P, its factor and the unimodal flag) and a
+//     first-mark row of 2 x speed_count + 4 values of 8 bytes per tau (2 080 bytes per tau at 32 speeds),
+//     cap = floor(4 000 000 bytes / the bytes per tau) (1 923 pieces, 3.846 s, at 32 speeds), so that one Search's
+//     tables never hold more than 4 000 000 bytes of entries (3 999 840 at 32 speeds). The 4 000 000 bytes count the
+//     entries only: the 64 factor tables' vector headers and the two scratch rows add 2 232 bytes (64 x 24 + 64 x 8 +
+//     23 x 8, at 32 speeds and 23 factors).
 //   - Where a gap with an open factor ends between letters or words, its successors are evaluated outward from the
 //     factor with the largest ln P wherever ln P is unimodal in the factor (each entry is checked when it is
 //     computed; an entry that is not is evaluated whole): on each side ln P only falls, so the last value computed
@@ -262,11 +279,13 @@ class Search {
 public:
     // c: sum_noise_hz's c(m), Hz, at index m = m channel samples (c(0) = 0), covering at least the longest block in
     // samples: samples_per_piece x B, or samples_per_piece x the flat prior's max_pieces when B is unlimited (f_D = 0);
-    // prior: the flat prior of this configuration and channel filter, whose samples_per_piece is the piece's. Throws
-    // std::invalid_argument for no prior, a c too short or not positive and finite from m = 1, and a configuration the
-    // search cannot use: a beam that is not positive, a ceiling below 1, more than 255 speeds or factors, a P
-    // (over_rate_per_s x piece_s), epsilon, p or q outside (0, 1), a quadrature order outside 2 ... 20, or a block
-    // shorter than one piece; and what Fist and block_length_s refuse.
+    // it is read only for its last increment, the noise's long-run rate; prior: the flat prior of this configuration
+    // and channel filter, whose samples_per_piece is the piece's and whose rise weights a mark's first block. Throws
+    // std::invalid_argument for no prior, a c too short or not positive and finite from m = 1, a long-run rate that
+    // differs from the prior's (by more than 1e-9 of it), and a configuration the search cannot use: a beam that is not
+    // positive, a ceiling below 1, more than 255 speeds or factors, a P (over_rate_per_s x piece_s), epsilon, p or q
+    // outside (0, 1), a quadrature order outside 2 ... 20, or a block shorter than one piece; and what Fist and
+    // block_length_s refuse.
     Search(const ViterbiConfig& config, std::span<const double> c, std::shared_ptr<const FlatPrior> prior,
            detail::SearchOptions options = {});
     ~Search();

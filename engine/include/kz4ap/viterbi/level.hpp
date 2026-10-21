@@ -55,26 +55,30 @@ struct BlockScore {
     double mode_a;  // FS: the mode of the posterior of a, which the search hands back as the next piece's start_a
 };
 
-// The score of a block of m channel samples of a story whose level is learned: the sum's magnitude s_abs, FS, and
-// noise variance v, FS^2 (observation.hpp), against the level predicted to the block's end time, t_s, s. It is one
-// call of block_evidence with predicted.mu and predicted.p as the Gaussian prior, and with the order and start_a given,
-// and it costs no more: the evidence Lambda_P, the posterior's mean and variance as the new level, and its mode. The
-// search scores every story in a mark at every piece, and the score and the level come from the one quadrature, never
-// two. The level is the update of the story's level by the block: at high SNR the Kalman update, with the gain
-// P / (P + v / (2 m^2)) (observation.hpp has the accuracy). The design notes' dot (20 WPM, 10 dB S500, arriving 10 dB
-// below a level known to +/-10%) moves it 98.40% of the way to the dot's own amplitude, where the linear gain gives
-// 98.36%, and leaves P within 0.1% of the Kalman filter's; it scores 270.8 nats as a mark (measured, level_test.cpp).
-// start_a (FS) is the previous piece's mode_a of the same block, where Newton's method starts; the result does not
-// depend on it beyond Newton's tolerance. Throws std::invalid_argument for a predicted level that is not learned (a
-// newborn's first block goes to score_first_block), a t_s that is not finite, and what block_evidence refuses.
-BlockScore score_block(const Level& predicted, double s_abs, int m, double v, int order, double t_s,
+// The score of a block of a story whose level is learned: the sum's magnitude s_abs, FS, and noise variance v, FS^2
+// (observation.hpp), the carrier's expected sum being m_signal x a (m_signal in channel samples: the block's m for a
+// plain sum of full pieces; in a mark's first block, the matched filter to the rise, samples_per_piece x the sum of the
+// squared weights; observation.hpp), against the level predicted to the block's end time, t_s, s. It is one call of
+// block_evidence with predicted.mu and predicted.p as the Gaussian prior, and with the order and start_a given, and it
+// costs no more: the evidence Lambda_P, the posterior's mean and variance as the new level, and its mode. The search
+// scores every story in a mark at every piece, and the score and the level come from the one quadrature, never two.
+// The level is the update of the story's level by the block: at high SNR the Kalman update, with the gain
+// P / (P + v / (2 m_signal^2)) (observation.hpp has the accuracy). The design notes' dot (20 WPM, 10 dB S500, arriving
+// 10 dB below a level known to +/-10%) moves it 98.40% of the way to the dot's own amplitude, where the linear gain
+// gives 98.36%, and leaves P within 0.1% of the Kalman filter's; it scores 270.8 nats as a mark (measured,
+// level_test.cpp). start_a (FS) is the previous piece's mode_a of the same block, where Newton's method starts; the
+// result does not depend on it beyond Newton's tolerance. Throws std::invalid_argument for a predicted level that is
+// not learned (a newborn's first block goes to score_first_block), a t_s that is not finite, and what block_evidence
+// refuses.
+BlockScore score_block(const Level& predicted, double s_abs, double m_signal, double v, int order, double t_s,
                        std::optional<double> start_a = std::nullopt);
 
-// The score of a newborn story's first block of `pieces` pieces, m = prior.samples_per_piece() x pieces channel
-// samples, with the sum's magnitude s_abs (FS) and noise variance v = V(m) (FS^2): the flat prior's evidence
-// Lambda_flat(pieces, z), z = s_abs / sqrt(v), and the level the block leaves from the flat prior's posterior of
-// b = m a / sqrt(v), mean_b and var_b, converted to FS:
-//     mu = mean_b sqrt(v) / m,    P = var_b v / m^2,
+// The score of a newborn story's first block of `pieces` pieces, with the magnitude s_abs (FS) of its sum, weighted by
+// the rise (the matched filter: the block is a mark's first), and its noise variance v (FS^2), N0 x the long-run rate x
+// m_signal: the flat prior's evidence Lambda_flat(pieces, z), z = s_abs / sqrt(v), and the level the block leaves from
+// the flat prior's posterior of b = m_signal a / sqrt(v), m_signal = prior.signal_samples(pieces), mean_b and var_b,
+// converted to FS:
+//     mu = mean_b sqrt(v) / m_signal,    P = var_b v / m_signal^2,
 // a Gaussian with the posterior's mean and variance (moment matching, as in every update); learned, with t_s the given
 // end time, s. mode_a is mu, the posterior's mean, which stands in for the mode that the table does not hold. Two
 // reads of the flat prior's table, and nothing more. Throws what FlatPrior::llr throws (std::out_of_range for pieces

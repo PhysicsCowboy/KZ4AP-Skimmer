@@ -62,6 +62,16 @@ struct ViterbiConfig {
     // dB of signal energy: the largest loss a block may have at that spread (heuristic)
     double block_loss_db = 0.5;
 
+    // --- The mark's rise (design notes, topic 4, item 2, as amended 2026-10-20) ---
+
+    // s: the length of the raised-cosine edge with which the keyed envelope rises at a mark's start,
+    // 0.5 - 0.5 cos(pi t / keying_rise_s); with the channel filter's own rise it sets how a mark's first pieces grow
+    // (rise_fractions, observation.hpp: 0.193, 0.614, 0.943 and 1.019 of a full piece at 48 kHz), which weight a
+    // mark's first block, the matched filter to the rise (search.hpp). Placeholder (heuristic): the generator's default
+    // edge; real transmitters vary, commonly a few ms; to be measured on real recordings. 0 is allowed: the filter's
+    // own rise alone
+    double keying_rise_s = 0.005;
+
     // --- Overs, restarts and the ends of words (topic 5, item 3) ---
 
     // 1/s: the rate at which an over (one transmission of one station) starts in silence. The probability in one

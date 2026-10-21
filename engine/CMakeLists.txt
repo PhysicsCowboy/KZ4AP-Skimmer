@@ -116,3 +116,10 @@ add_executable(kz4ap_viterbi_tests
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)
 gtest_discover_tests(kz4ap_viterbi_tests)
+# The search's full-size tests: the speed step and the constant-speed stations at every level from +10 to +28 dB S500
+# on three seeds, and the identity test of the open factor's scan on 60 s of noise. Labeled full-sweep: the default
+# test presets exclude it (without KZ4AP_SEARCH_FULL_SWEEP the sweep's test skips and the identity test runs on 10 s
+# of noise), the presets windows-full-sweep and linux-full-sweep run it.
+add_test(NAME Search.FullSweep COMMAND kz4ap_viterbi_tests
+         --gtest_filter=Search.FollowsASpeedStepAtEverySnr:Search.OpenFactorScanAndTableCapChangeNothing)
+set_tests_properties(Search.FullSweep PROPERTIES ENVIRONMENT KZ4AP_SEARCH_FULL_SWEEP=1 LABELS full-sweep)

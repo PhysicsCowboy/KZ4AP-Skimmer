@@ -94,7 +94,7 @@ struct Dense {
 // points of N(a; mu, p) e^Lambda(S; a), Lambda = -b^2 + ln I0(2 b z) with reference_ln_i0, in the log so that nothing
 // overflows, less ln Phi(mu / sqrt(p)) for the truncation at a = 0. The posterior's mean and mode are in FS, its
 // variance FS^2; the mode is the grid's highest point, refined by the parabola through it and its neighbors.
-Dense dense_uncertain(double s_abs, int m, double mu, double p, double v, double a_from, double a_to) {
+Dense dense_uncertain(double s_abs, double m_signal, double mu, double p, double v, double a_from, double a_to) {
     constexpr int kIntervals = 20000;
     const double step = (a_to - a_from) / kIntervals;
     const double root_v = std::sqrt(v);
@@ -104,7 +104,7 @@ Dense dense_uncertain(double s_abs, int m, double mu, double p, double v, double
     double top = -kInf;
     for (int i = 0; i <= kIntervals; ++i) {
         a[i] = a_from + i * step;
-        const double b = m * a[i] / root_v;
+        const double b = m_signal * a[i] / root_v;
         log_f[i] = -0.5 * (a[i] - mu) * (a[i] - mu) / p - 0.5 * std::log(2.0 * kPi * p) - b * b +
                    reference_ln_i0(2.0 * b * z);
         top = std::max(top, log_f[i]);
@@ -129,24 +129,26 @@ Dense dense_uncertain(double s_abs, int m, double mu, double p, double v, double
     return {top + std::log(s0 * step / 3.0) - std::log(normal_cdf(mu / std::sqrt(p))), mean, s2 / s0, mode};
 }
 
-// The same over the whole of a >= 0 where the integrand is not negligible: from 0 to (max(b, z) + 15) sqrt(v) / m,
-// b = m mu / sqrt(v) the prior's center and z = s_abs / sqrt(v). The posterior's mode lies below max(b, z), and above
-// it the integrand falls at least as fast as the likelihood's bound e^(z^2 - (b - z)^2) (ln I0(y) <= y).
-Dense dense_uncertain(double s_abs, int m, double mu, double p, double v) {
+// The same over the whole of a >= 0 where the integrand is not negligible: from 0 to (max(b, z) + 15) sqrt(v) /
+// m_signal, b = m_signal mu / sqrt(v) the prior's center and z = s_abs / sqrt(v). The posterior's mode lies below
+// max(b, z), and above it the integrand falls at least as fast as the likelihood's bound e^(z^2 - (b - z)^2)
+// (ln I0(y) <= y).
+Dense dense_uncertain(double s_abs, double m_signal, double mu, double p, double v) {
     const double root_v = std::sqrt(v);
-    const double top_b = std::max(m * mu / root_v, s_abs / root_v) + 15.0;
-    return dense_uncertain(s_abs, m, mu, p, v, 0.0, top_b * root_v / m);
+    const double top_b = std::max(m_signal * mu / root_v, s_abs / root_v) + 15.0;
+    return dense_uncertain(s_abs, m_signal, mu, p, v, 0.0, top_b * root_v / m_signal);
 }
 
 // Lambda_flat and the posterior of b by direct integration over the level x, dB S500, from level_min_db to
 // level_max_db: Simpson's rule on 50 001 points (steps of 0.002 dB of x, x in dB S500) of e^Lambda(S; a(x)) /
-// (level_max_db - level_min_db), b(x)^2 = 10^(x / 10) x 500 Hz x m^2 / c(m), m = 3 pieces, with reference_ln_i0, in the
-// log. Points whose bound on Lambda, z^2 - (b - z)^2 (ln I0(y) <= y), lies more than 1 000 nats below 0 are left out:
-// Lambda at the lowest level, where b <= 6, is above -37 nats.
-Dense direct_flat(const ViterbiConfig& config, const std::vector<double>& c, int pieces, double z) {
+// (level_max_db - level_min_db), with reference_ln_i0, in the log. The block's pieces are independent at the long-run
+// rate, rate_hz per channel sample, and m_signal (channel samples) is the carrier's expected weighted sum over a, so
+// V = N0 x rate_hz x m_signal and b(x)^2 = (m_signal a)^2 / V = 10^(x / 10) x 500 Hz x m_signal / rate_hz. Points
+// whose bound on Lambda, z^2 - (b - z)^2 (ln I0(y) <= y), lies more than 1 000 nats below 0 are left out: Lambda at the
+// lowest level, where b <= 6, is above -37 nats.
+Dense direct_flat(const ViterbiConfig& config, double m_signal, double rate_hz, double z) {
     constexpr int kIntervals = 50000;
-    const int m = 3 * pieces;
-    const double gain = 500.0 * m * m / c[static_cast<std::size_t>(m)];
+    const double gain = 500.0 * m_signal / rate_hz;
     const double width_db = config.level_max_db - config.level_min_db;
     const double step = width_db / kIntervals;
     std::vector<double> b(kIntervals + 1);
@@ -886,14 +888,18 @@ TEST(Observation, EvidenceStaysFiniteAtTheExtremes) {
 
 TEST(Observation, FlatPriorTableMatchesDirectIntegration) {
     // Blocks of 1 to 195 pieces, the block length at the default 1 Hz spread (0.39037 s / 2 ms), on the channelizer's
-    // filter at 48 kHz. At 20 points (n, z), on and between the table's nodes, Lambda_flat within 0.01 nats of a direct
-    // integration over the level x; the posterior's mean within 0.01 standard deviations and its variance within 1%.
+    // filter at 48 kHz, with no rise (every weight 1, m_signal = 3 n). At 20 points (n, z), on and between the table's
+    // nodes, Lambda_flat within 0.01 nats of a direct integration over the level x; the posterior's mean within 0.01
+    // standard deviations and its variance within 1%. The rate is c's last increment, the long-run rate: 1 500 Hz.
     const ViterbiConfig config{};
     const int max_pieces = static_cast<int>(block_length_s(config.fading_spread_hz, config.block_loss_db) /
                                             config.piece_s);
     ASSERT_EQ(max_pieces, 195);
     const std::vector<double> c = sum_noise_at(48000, 3 * max_pieces);
+    const double rate = c[c.size() - 1] - c[c.size() - 2];
+    ASSERT_NEAR(rate, 1500.0, 1e-6);
     const FlatPrior prior(config, c, max_pieces, 3);
+    EXPECT_EQ(prior.noise_rate_hz(), rate);
     const std::pair<int, double> points[] = {
         {1, 0.0},    {1, 0.37},  {1, 2.5},   {1, 39.99},  {2, 1.0},    {3, 7.255},  {7, 0.05},
         {7, 4.321},  {20, 1.234}, {20, 12.5}, {33, 0.8},  {64, 3.3},   {100, 0.0},  {100, 19.876},
@@ -904,7 +910,7 @@ TEST(Observation, FlatPriorTableMatchesDirectIntegration) {
     Worst var;
     for (const auto& [pieces, z] : points) {
         const auto at = [pieces, z] { return std::to_string(pieces) + " pieces, z = " + number(z); };
-        const Dense direct = direct_flat(config, c, pieces, z);
+        const Dense direct = direct_flat(config, 3.0 * pieces, rate, z);
         llr.add(std::fabs(prior.llr(pieces, z) - direct.llr), at);
         const Moments posterior = prior.posterior(pieces, z);
         mean.add(std::fabs(posterior.mean - direct.mean) / std::sqrt(direct.var), at);
@@ -939,10 +945,165 @@ TEST(Observation, FlatPriorTableMatchesDirectIntegration) {
     }
 }
 
+TEST(Observation, FlatPriorWithTheRise) {
+    // The flat prior of a mark's first block with the rise (rise_fractions at 48 kHz, 5 ms keying edges), the matched
+    // filter: weight(j) is the rise's fraction g_j and 1 past it, and signal_samples(n) is 3 (g_1^2 + ... + g_n^2),
+    // summed here. At points (n, z) on and between the table's nodes, from blocks inside the rise to the longest,
+    // Lambda_flat within 0.01 nats of the direct integration with b(x)^2 = 10^(x / 10) x 500 Hz x m_signal(n) / rate
+    // (m_signal(n) from the sums here), the posterior's mean within 0.01 standard deviations and its variance within
+    // 1%.
+    const ViterbiConfig config{};
+    const kz4ap::ChannelizerConfig channelizer = channelizer_at(48000);
+    const std::vector<double> rise = rise_fractions(kz4ap::channel_filter_taps(channelizer), 48000.0,
+                                                    channelizer.fft_size / channelizer.channel_bins, 3,
+                                                    config.keying_rise_s);
+    ASSERT_EQ(rise.size(), 4u);
+    const std::vector<double> c = sum_noise_at(48000, 3 * 195);
+    const double rate = c[c.size() - 1] - c[c.size() - 2];
+    const FlatPrior prior(config, c, 195, 3, rise);
+    ASSERT_EQ(prior.rise().size(), rise.size());
+    std::vector<double> m_signal(196, 0.0);  // [n]: 3 x the sum of the first n squared weights
+    double squares = 0.0;
+    for (int j = 1; j <= 195; ++j) {
+        const double g = j <= 4 ? rise[static_cast<std::size_t>(j) - 1] : 1.0;
+        EXPECT_EQ(prior.weight(j), g) << "piece " << j;
+        squares += g * g;
+        m_signal[static_cast<std::size_t>(j)] = 3.0 * squares;
+        EXPECT_NEAR(prior.signal_samples(j), 3.0 * squares, 1e-12 * squares) << j << " pieces";
+    }
+    EXPECT_EQ(prior.weight(400), 1.0);
+    const std::pair<int, double> points[] = {{1, 0.0},   {1, 0.37},  {1, 2.5},  {1, 39.99}, {2, 1.0},
+                                             {2, 6.0},   {3, 0.05},  {3, 7.255}, {4, 4.321}, {5, 1.234},
+                                             {7, 12.5},  {20, 0.8},  {64, 3.3}, {195, 0.0}, {195, 19.876}};
+    Worst llr;
+    Worst mean;
+    Worst var;
+    for (const auto& [pieces, z] : points) {
+        const auto at = [pieces, z] { return std::to_string(pieces) + " pieces, z = " + number(z); };
+        const Dense direct = direct_flat(config, m_signal[static_cast<std::size_t>(pieces)], rate, z);
+        llr.add(std::fabs(prior.llr(pieces, z) - direct.llr), at);
+        const Moments posterior = prior.posterior(pieces, z);
+        mean.add(std::fabs(posterior.mean - direct.mean) / std::sqrt(direct.var), at);
+        var.add(std::fabs(posterior.var / direct.var - 1.0), at);
+    }
+    EXPECT_LE(llr.error, 0.01) << "nats, at " << llr.where;
+    EXPECT_LE(mean.error, 0.01) << "posterior standard deviations, at " << mean.where;
+    EXPECT_LE(var.error, 0.01) << "relative, at " << var.where;
+}
+
+TEST(Observation, RiseFractionsMatchTheChannelizer) {
+    // The rise's fractions before the average (detail::rise_fractions_by_position) against the real Channelizer: a
+    // noise-free carrier at the channel's center, keyed on with the generator's 5 ms raised cosine at input sample
+    // 200 x 96 + q at 48 kHz (200 x 384 + q at 192 kHz), the edge at a piece's start, middle and end, its channel
+    // samples summed into pieces of 3 as the decoder does. Each piece's sum over a full piece's, signed by its phase
+    // against the steady carrier's, matches the fraction within 5e-7 absolute: the channelizer computes in float and
+    // keeps the channel's 64 bins (1.6e-7 at most, measured), so no relative tolerance near 1e-9 is reachable.
+    // rise_fractions is their average over every position, from the first piece whose average reaches 0.01 to the last
+    // that differs from 1 by more than 0.005 (4 pieces at both rates); with no keying edge the filter's own rise is
+    // faster.
+    for (const int rate : {48000, 192000}) {
+        SCOPED_TRACE(std::to_string(rate) + " Hz");
+        const kz4ap::ChannelizerConfig config = channelizer_at(rate);
+        const std::vector<double> taps = kz4ap::channel_filter_taps(config);
+        const int decimation = config.fft_size / config.channel_bins;
+        constexpr int kPerPiece = 3;
+        constexpr int kPieces = 30;
+        const int positions = decimation * kPerPiece;
+        const std::vector<std::vector<double>> by_position =
+            detail::rise_fractions_by_position(taps, rate, decimation, kPerPiece, 0.005, kPieces);
+        ASSERT_EQ(by_position.size(), static_cast<std::size_t>(positions));
+        const double amplitude = 0.01;                           // FS
+        const double center_hz = 32.0 * rate / config.fft_size;  // bin 32, the channel's center: 750 Hz
+        const double rise_samples = 0.005 * rate;
+        constexpr int kStart = 200;  // the piece the edge falls in, far from the stream's start
+        Worst worst;
+        for (const int q : {0, positions / 2, positions - 1}) {
+            const long long edge = static_cast<long long>(kStart) * positions + q;
+            std::vector<kz4ap::Sample> input(static_cast<std::size_t>(edge + (kPieces + 10) * positions));
+            for (std::size_t i = 0; i < input.size(); ++i) {
+                const double t = static_cast<double>(static_cast<long long>(i) - edge);
+                const double envelope =
+                    t < 0.0 ? 0.0 : t < rise_samples ? 0.5 - 0.5 * std::cos(kPi * t / rise_samples) : 1.0;
+                const double phase = 2.0 * kPi * center_hz * static_cast<double>(i) / rate;
+                input[i] = kz4ap::Sample(static_cast<float>(amplitude * envelope * std::cos(phase)),
+                                         static_cast<float>(amplitude * envelope * std::sin(phase)));
+            }
+            kz4ap::Channelizer channelizer(config);
+            channelizer.add_channel(1, 32);
+            std::vector<std::complex<double>> channel;
+            channelizer.push(input, [&](std::uint32_t, std::uint64_t, std::span<const kz4ap::Sample> samples) {
+                for (const kz4ap::Sample& s : samples) channel.emplace_back(s.real(), s.imag());
+            });
+            ASSERT_GE(channel.size(), static_cast<std::size_t>((kStart + kPieces) * kPerPiece));
+            const std::complex<double> steady = channel[static_cast<std::size_t>((kStart + 25) * kPerPiece)];
+            for (int p = 0; p < kPieces; ++p) {
+                std::complex<double> sum = 0.0;
+                for (int i = 0; i < kPerPiece; ++i)
+                    sum += channel[static_cast<std::size_t>((kStart + p) * kPerPiece + i)];
+                const double sign = std::real(sum * std::conj(steady)) >= 0.0 ? 1.0 : -1.0;
+                const double measured = sign * std::abs(sum) / (kPerPiece * amplitude);
+                worst.add(std::fabs(measured - by_position[static_cast<std::size_t>(q)][static_cast<std::size_t>(p)]),
+                          [q, p] { return "the edge at " + std::to_string(q) + ", piece " + std::to_string(p); });
+            }
+        }
+        EXPECT_LE(worst.error, 5e-7) << "of a full piece, at " << worst.where;
+
+        std::vector<double> average(kPieces, 0.0);
+        for (const std::vector<double>& row : by_position)
+            for (int p = 0; p < kPieces; ++p) average[static_cast<std::size_t>(p)] += row[static_cast<std::size_t>(p)];
+        for (double& fraction : average) fraction /= static_cast<double>(by_position.size());
+        int first = 0;
+        while (!(average[static_cast<std::size_t>(first)] >= 0.01)) ++first;
+        int last = kPieces - 1;
+        while (!(std::fabs(average[static_cast<std::size_t>(last)] - 1.0) > 0.005)) --last;
+        const std::vector<double> rise = rise_fractions(taps, rate, decimation, kPerPiece, 0.005);
+        ASSERT_EQ(rise.size(), static_cast<std::size_t>(last - first + 1));
+        EXPECT_EQ(rise.size(), 4u);
+        for (std::size_t j = 0; j < rise.size(); ++j)
+            EXPECT_NEAR(rise[j], average[static_cast<std::size_t>(first) + j], 1e-12) << "g_" << j + 1;
+        const std::vector<double> own = rise_fractions(taps, rate, decimation, kPerPiece, 0.0);
+        ASSERT_FALSE(own.empty());
+        EXPECT_GT(own.front(), rise.front() + 0.03);
+    }
+    // The values the design records state, at 48 kHz with 5 ms edges.
+    const kz4ap::ChannelizerConfig config = channelizer_at(48000);
+    const std::vector<double> rise = rise_fractions(kz4ap::channel_filter_taps(config), 48000.0, 32, 3, 0.005);
+    ASSERT_EQ(rise.size(), 4u);
+    EXPECT_NEAR(rise[0], 0.193444, 5e-6);
+    EXPECT_NEAR(rise[1], 0.613661, 5e-6);
+    EXPECT_NEAR(rise[2], 0.942699, 5e-6);
+    EXPECT_NEAR(rise[3], 1.019171, 5e-6);
+}
+
+TEST(Observation, EvidenceTakesTheSignalCount) {
+    // m_signal, the carrier's expected sum over a in channel samples, need not be whole: in a mark's first block it is
+    // 3 x the sum of the squared weights. For 3 x 0.193444^2 (the rise's first piece), 3 x (0.193444^2 + 0.613661^2)
+    // and the whole 6: block_llr is -b^2 + ln I0(2 b z) with b = m_signal a / sqrt(v) and z = |S| / sqrt(v), computed
+    // here (within 1e-6 nats, the accuracy of ln_i0), and block_evidence's evidence and posterior, in FS through
+    // m_signal, match a dense integration over a (within 0.002 nats, 0.01 posterior standard deviations and 1%).
+    const double v = 2.0e-6;  // FS^2
+    for (const double m_signal : {3.0 * 0.193444 * 0.193444, 3.0 * (0.193444 * 0.193444 + 0.613661 * 0.613661), 6.0}) {
+        SCOPED_TRACE("m_signal " + number(m_signal));
+        const double root_v = std::sqrt(v);
+        const double mu = 8.0 * root_v / m_signal;  // FS: the prior's b is 8
+        const double s_abs = 7.5 * root_v;           // FS: z = 7.5
+        for (const double a : {0.5 * mu, mu, 1.7 * mu}) {
+            const double b = m_signal * a / root_v;
+            EXPECT_NEAR(block_llr(s_abs, m_signal, a, v), -b * b + reference_ln_i0(2.0 * b * 7.5), 1e-6) << "a " << a;
+        }
+        const double p = (0.2 * mu) * (0.2 * mu);
+        const BlockEvidence evidence = block_evidence(s_abs, m_signal, mu, p, v, 5);
+        const Dense dense = dense_uncertain(s_abs, m_signal, mu, p, v);
+        EXPECT_NEAR(evidence.llr, dense.llr, 0.002);
+        EXPECT_LE(std::fabs(evidence.level.mean - dense.mean) / std::sqrt(dense.var), 0.01);
+        EXPECT_LE(std::fabs(evidence.level.var / dense.var - 1.0), 0.01);
+    }
+}
+
 TEST(Observation, FlatPriorDependsOnlyOnTheSamplesInABlock) {
-    // The tables depend on a block only through its number of samples, m: with 6 samples per piece, n pieces read what
-    // 3 samples per piece read at 2 n pieces, on and between the table's nodes and above its top (the grid in u is the
-    // same for both, so the two agree to rounding).
+    // The tables depend on a block only through m_signal, which with no rise is its number of samples, m: with 6
+    // samples per piece, n pieces read what 3 samples per piece read at 2 n pieces, on and between the table's nodes
+    // and above its top (the grid in u is the same for both, so the two agree to rounding).
     const ViterbiConfig config{};
     const std::vector<double> c = sum_noise_at(48000, 600);
     const FlatPrior threes(config, c, 200, 3);
@@ -973,8 +1134,13 @@ TEST(Observation, FlatPriorDependsOnlyOnTheSamplesInABlock) {
 
 TEST(Observation, RefusesWhatItCannotRead) {
     const auto refuses = [](auto call) { EXPECT_THROW(call(), std::invalid_argument); };
-    // A block: at least one sample, a positive and finite noise variance, a finite |S| and level, not negative.
+    // A block: an m_signal positive and finite (any real number of samples), a positive and finite noise variance, a
+    // finite |S| and level, not negative.
     refuses([] { return block_llr(1.0, 0, 1.0, 1.0); });
+    refuses([] { return block_llr(1.0, -0.5, 1.0, 1.0); });
+    refuses([] { return block_llr(1.0, kNaN, 1.0, 1.0); });
+    refuses([] { return block_llr(1.0, kInf, 1.0, 1.0); });
+    EXPECT_NO_THROW((void)block_llr(1.0, 0.112, 1.0, 1.0));
     refuses([] { return block_llr(1.0, 3, 1.0, 0.0); });
     refuses([] { return block_llr(1.0, 3, 1.0, kInf); });
     refuses([] { return block_llr(-1.0, 3, 1.0, 1.0); });
@@ -1020,19 +1186,28 @@ TEST(Observation, RefusesWhatItCannotRead) {
     ViterbiConfig empty_range = config;
     empty_range.level_max_db = empty_range.level_min_db;
     refuses([&] { return FlatPrior(empty_range, c, 10, 3); });
-    ViterbiConfig too_low = config;  // b at level_max_db must reach 50 for every block: 14.6 at 20 dB S500, 1 piece
+    ViterbiConfig too_low = config;  // b at level_max_db must reach 50 for every block: 10 at 20 dB S500, 1 piece
     too_low.level_max_db = 20.0;
     refuses([&] { return FlatPrior(too_low, c, 10, 3); });
-    ViterbiConfig too_high = config;  // b at level_min_db must stay at most 6 for every block: 46 at 30 dB S500
+    ViterbiConfig too_high = config;  // b at level_min_db must stay at most 6 for every block: 31.6 at 30 dB S500
     too_high.level_min_db = 30.0;
     refuses([&] { return FlatPrior(too_high, c, 10, 3); });
-    std::vector<double> broken = c;
-    broken[6] = 0.0;
-    refuses([&] { return FlatPrior(config, broken, 10, 3); });
+    // c is read only for its last increment, the noise's long-run rate, which must be positive and finite.
+    std::vector<double> flat_end = c;
+    flat_end.back() = flat_end[flat_end.size() - 2];
+    refuses([&] { return FlatPrior(config, flat_end, 10, 3); });
+    std::vector<double> broken_end = c;
+    broken_end.back() = kNaN;
+    refuses([&] { return FlatPrior(config, broken_end, 10, 3); });
+    // Every rise fraction must be positive and finite.
+    refuses([&] { return FlatPrior(config, c, 10, 3, std::vector<double>{0.2, 0.0}); });
+    refuses([&] { return FlatPrior(config, c, 10, 3, std::vector<double>{0.2, kNaN}); });
     const FlatPrior prior(config, c, 10, 3);
     EXPECT_THROW((void)prior.llr(0, 1.0), std::out_of_range);
     EXPECT_THROW((void)prior.llr(11, 1.0), std::out_of_range);
     EXPECT_THROW((void)prior.posterior(-1, 1.0), std::out_of_range);
+    EXPECT_THROW((void)prior.weight(0), std::out_of_range);
+    EXPECT_THROW((void)prior.signal_samples(0), std::out_of_range);
     refuses([&prior] { return prior.llr(1, -0.5); });
     refuses([&prior] { return prior.llr(1, kNaN); });
     refuses([&prior] { return prior.posterior(1, kInf); });

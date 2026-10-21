@@ -51,9 +51,10 @@ double block_variance(int m) {
 }
 
 // The flat prior of the default configuration for blocks of 1 to 4 pieces of 3 samples, built once for the tests that
-// read it (its tables take a fraction of a second).
+// read it (its tables take a fraction of a second), with no rise. Its c reaches 60 samples, past the filter's
+// correlation length (33 lags), so that c's last increment is the long-run rate, 1 500 Hz.
 const FlatPrior& flat_prior() {
-    static const std::vector<double> c = sum_noise_48k(12);
+    static const std::vector<double> c = sum_noise_48k(60);
     static const FlatPrior prior(ViterbiConfig{}, c, 4, 3);
     return prior;
 }
@@ -292,6 +293,47 @@ TEST(Level, ScoreBlockIsOneEvidenceCall) {
                     check(3.0 * cold.mode_a + 0.1 * predicted.mu);
                 }
             }
+        }
+    }
+}
+
+TEST(Level, ScoreBlockTakesANonWholeSignalCount) {
+    // In a mark's first block, the matched filter to the rise, m_signal is 3 x the sum of the squared weights, not a
+    // whole number of samples. score_block passes it to block_evidence as it is (the same doubles, at m_signal =
+    // 3 x 0.193444^2 and 3 x (0.193444^2 + 0.613661^2)); and score_first_block, with a flat prior that has the rise,
+    // converts the posterior of b to FS with the prior's m_signal(n) = 3 (g_1^2 + ... + g_n^2), summed here:
+    // mu = mean_b sqrt(V) / m_signal, P = var_b V / m_signal^2, V being N0 x the long-run rate x m_signal.
+    const double v = block_variance(6);  // FS^2
+    const double root_v = std::sqrt(v);
+    for (const double m_signal : {3.0 * 0.193444 * 0.193444, 3.0 * (0.193444 * 0.193444 + 0.613661 * 0.613661)}) {
+        SCOPED_TRACE("m_signal " + std::to_string(m_signal));
+        const Level predicted = learned(8.0 * root_v / m_signal, 0.2, 1.0);  // the prior's b is 8
+        const double s_abs = 7.5 * root_v;                                    // z = 7.5
+        const BlockEvidence expected = block_evidence(s_abs, m_signal, predicted.mu, predicted.p, v, 5);
+        const BlockScore score = score_block(predicted, s_abs, m_signal, v, 5, 1.5);
+        EXPECT_EQ(score.llr, expected.llr);
+        EXPECT_EQ(score.level.mu, expected.level.mean);
+        EXPECT_EQ(score.level.p, expected.level.var);
+        EXPECT_EQ(score.mode_a, expected.mode_a);
+    }
+    const std::vector<double> rise = {0.193444, 0.613661, 0.942699, 1.019171};
+    const std::vector<double> c = sum_noise_48k(60);
+    const FlatPrior prior(ViterbiConfig{}, c, 4, 3, rise);
+    const double n0 = 0.02 * 0.02 / 48000.0;  // FS^2/Hz
+    double squares = 0.0;
+    for (int pieces = 1; pieces <= 4; ++pieces) {
+        squares += rise[static_cast<std::size_t>(pieces) - 1] * rise[static_cast<std::size_t>(pieces) - 1];
+        const double m_signal = 3.0 * squares;
+        ASSERT_NEAR(prior.signal_samples(pieces), m_signal, 1e-12 * m_signal);
+        const double block_v = n0 * prior.noise_rate_hz() * m_signal;
+        for (const double z : {0.37, 5.0, 20.0}) {
+            SCOPED_TRACE(std::to_string(pieces) + " pieces, z = " + std::to_string(z));
+            const double s_abs = z * std::sqrt(block_v);
+            const BlockScore score = score_first_block(prior, s_abs, pieces, block_v, 0.5);
+            const Moments b = prior.posterior(pieces, s_abs / std::sqrt(block_v));
+            EXPECT_NEAR(score.level.mu, b.mean * std::sqrt(block_v) / m_signal, 1e-12 * score.level.mu);
+            EXPECT_NEAR(score.level.p, b.var * block_v / (m_signal * m_signal), 1e-12 * score.level.p);
+            EXPECT_TRUE(score.level.learned);
         }
     }
 }

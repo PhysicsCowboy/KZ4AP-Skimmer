@@ -186,12 +186,14 @@ public:
         double best;               // the best of all
     };
 
-    // For kind LetterGap or WordGap at a speed and tau, a gap whose factor is open: the maximum over the factors f of
-    // ln P_kind(s, f, tau), the first factor where it is reached, and whether ln P, as Fist computes it, is unimodal in
-    // f: not decreasing up to that factor and not increasing after it. Where it is, the factors whose successor a
-    // threshold keeps are those around that factor up to the first on each side that the threshold drops.
+    // For kind LetterGap or WordGap at a speed and tau, a gap whose factor is open: its survival, ln S_kind at the
+    // widest factor (search.hpp, "Work saved"); the maximum over the factors f of ln P_kind(s, f, tau), the first
+    // factor where it is reached, and whether ln P, as Fist computes it, is unimodal in f: not decreasing up to that
+    // factor and not increasing after it. Where it is, the factors whose successor a threshold keeps are those around
+    // that factor up to the first on each side that the threshold drops.
     struct FactorEntry {
-        double end;  // nats
+        double survival;  // nats
+        double end;       // nats
         std::int32_t end_factor;
         bool unimodal;
     };
@@ -203,10 +205,12 @@ public:
         return row * sizeof(FactorEntry) + row * sizeof(double) + sizeof(std::array<double, 3>) + sizeof(double);
     }
 
-    OpenTiming(const Fist& fist, const MorseTree& tree, int speeds, int factors, int cap)
+    // widest_factor: the factor with the largest median (factor_count - 1 where factor_ratio >= 1, else 0).
+    OpenTiming(const Fist& fist, const MorseTree& tree, int speeds, int factors, int widest_factor, int cap)
         : fist_(fist),
           speeds_(speeds),
           factors_(factors),
+          widest_factor_(widest_factor),
           cap_(cap),
           by_kind_and_speed_(2 * static_cast<std::size_t>(speeds)) {
         for (int label = 0; label < 2; ++label) root_has_[label] = tree.child(tree.root(), label == 1) >= 0;
@@ -256,6 +260,12 @@ public:
         return table[static_cast<std::size_t>(tau) - 1];
     }
 
+    // An open factor's survival for (kind, speed, tau): the table's within the cap, one call of Fist beyond it.
+    double factor_survival(Kind kind, int speed, int tau) {
+        if (tau > cap_) return fist_.log_survival(kind, speed, widest_factor_, tau);
+        return factor_entry(kind, speed, tau).survival;
+    }
+
     static Kind mark_kind(int label) { return label == 1 ? Kind::Dash : Kind::Dot; }
 
 private:
@@ -282,7 +292,7 @@ private:
     }
 
     FactorEntry factor_entry_at(Kind kind, int speed, int t) {
-        FactorEntry entry{-kInf, 0, true};
+        FactorEntry entry{fist_.log_survival(kind, speed, widest_factor_, t), -kInf, 0, true};
         row_.resize(static_cast<std::size_t>(factors_));
         for (int f = 0; f < factors_; ++f) {
             row_[static_cast<std::size_t>(f)] = fist_.log_end(kind, speed, f, t);
@@ -302,6 +312,7 @@ private:
     const Fist& fist_;
     int speeds_;
     int factors_;
+    int widest_factor_;
     int cap_;  // pieces: the taus kept
     bool root_has_[2] = {false, false};
     std::vector<double> first_survival_;                      // by tau - 1
@@ -310,7 +321,7 @@ private:
     std::vector<std::vector<FactorEntry>> by_kind_and_speed_; // [(kind is WordGap) x speeds + speed][tau - 1]
     std::vector<double> row_;                                 // ln P over the factors, while an entry is computed
     std::vector<double> scratch_ends_;                        // a first mark's row beyond the cap
-    FactorEntry scratch_entry_{-kInf, 0, true};               // an entry beyond the cap
+    FactorEntry scratch_entry_{-kInf, -kInf, 0, true};        // an entry beyond the cap
 };
 
 // bytes: the open timing's budget per Search, which sets its tables' cap (search.hpp, "Work saved").
@@ -390,12 +401,6 @@ struct Search::Impl {
     double normalization() const { return normalization_; }
 
 private:
-    // c(m), Hz, extended past its end by its last increment.
-    double noise_hz(int m) const {
-        const std::size_t top = c_.size() - 1;
-        if (static_cast<std::size_t>(m) <= top) return c_[static_cast<std::size_t>(m)];
-        return c_[top] + static_cast<double>(static_cast<std::size_t>(m) - top) * (c_[top] - c_[top - 1]);
-    }
     // max over the labels the node allows of ln S_label(speed, tau): a mark at a known speed.
     double mark_survival(int speed, int node, int tau) const;
     // max over the kinds the node allows of the kind's cost and ln S: a gap.
@@ -429,13 +434,12 @@ private:
     MorseTree tree_;
     Fist fist_;
     std::shared_ptr<const FlatPrior> prior_;
-    std::vector<double> c_;  // Hz
+    double noise_rate_hz_ = 0.0;  // Hz per channel sample: the noise's long-run rate, c's last increment
     OpenTiming open_;
     bool skip_;
     bool scan_open_factors_;
     std::int64_t* cut_factor_scans_;  // detail::SearchOptions' counters, or null
     std::int64_t* passed_factors_;
-    int widest_factor_;               // the factor with the largest median: an open factor's survival
     bool stats_on_;
     double beam_nats_;
     std::size_t ceiling_;
@@ -511,12 +515,12 @@ Search::Impl::Impl(const ViterbiConfig& config, std::span<const double> c, std::
     : tree_(),
       fist_(config),
       prior_(std::move(prior)),
-      open_(fist_, tree_, config.speed_count, config.factor_count, open_timing_cap(config, options)),
+      open_(fist_, tree_, config.speed_count, config.factor_count,
+            config.factor_ratio >= 1.0 ? config.factor_count - 1 : 0, open_timing_cap(config, options)),
       skip_(options.skip_successors_beyond_beam),
       scan_open_factors_(options.scan_open_factors),
       cut_factor_scans_(options.cut_factor_scans),
       passed_factors_(options.passed_factors),
-      widest_factor_(config.factor_ratio >= 1.0 ? config.factor_count - 1 : 0),
       stats_on_(config.stats),
       beam_nats_(config.beam_nats),
       ceiling_(0),
@@ -560,7 +564,13 @@ Search::Impl::Impl(const ViterbiConfig& config, std::span<const double> c, std::
         throw std::invalid_argument("search: c must reach m = samples_per_piece x the longest block (channel samples)");
     for (std::size_t m = 1; m < c.size(); ++m)
         if (!positive_and_finite(c[m])) throw std::invalid_argument("search: c(m) must be positive and finite (Hz)");
-    c_.assign(c.begin(), c.end());
+    // c is read only for the noise's long-run rate: its last increment, past the filter's correlation length. The flat
+    // prior reads the same from its own c, and the two must agree.
+    noise_rate_hz_ = c[c.size() - 1] - c[c.size() - 2];
+    if (!positive_and_finite(noise_rate_hz_))
+        throw std::invalid_argument("search: c's last increment, the noise's long-run rate, must be positive (Hz)");
+    if (!(std::fabs(noise_rate_hz_ - prior_->noise_rate_hz()) <= 1e-9 * noise_rate_hz_))
+        throw std::invalid_argument("search: c and the flat prior's c give different long-run noise rates");
     ceiling_ = static_cast<std::size_t>(config.ceiling);
 
     int symbols = 0;
@@ -607,9 +617,8 @@ double Search::Impl::gap_survival(int speed, int factor, int node, int tau) {
         for (const Kind kind : {Kind::LetterGap, Kind::WordGap}) {
             const double cost = kind == Kind::LetterGap ? letter_gap_cost_ : word_gap_cost_;
             // An open factor survives as its widest does (search.hpp, "Work saved").
-            const double survival = factor == kOpen
-                                        ? log_factor_prior_ + fist_.log_survival(kind, speed, widest_factor_, tau)
-                                        : fist_.log_survival(kind, speed, factor, tau);
+            const double survival = factor == kOpen ? log_factor_prior_ + open_.factor_survival(kind, speed, tau)
+                                                    : fist_.log_survival(kind, speed, factor, tau);
             best = std::max(best, survival - cost);
         }
     }
@@ -619,14 +628,19 @@ double Search::Impl::gap_survival(int speed, int factor, int node, int tau) {
 void Search::Impl::continue_mark(const Story& s, Story& c, BlockScore& scored, std::complex<double> piece, double t,
                                  double n0) {
     c.tau = s.tau + 1;
-    c.block_sum = s.block_sum + piece;
     c.block_pieces = s.block_pieces + 1;
-    const int m = samples_per_piece_ * c.block_pieces;  // channel samples in the block
-    const double v = n0 * noise_hz(m);                  // FS^2
-    const double s_abs = std::abs(c.block_sum);         // FS
+    // A mark's first block is the matched filter to the rise: each piece weighted by its expected fraction, g = 1 past
+    // the rise; a later block is the plain sum. The pieces count as independent at the noise's long-run rate, so the
+    // sum's variance is N0 x rate x m_signal, m_signal = samples_per_piece x the sum of the squared weights.
+    const bool first_block = c.block_pieces == c.tau;
+    c.block_sum = s.block_sum + (first_block ? prior_->weight(c.tau) : 1.0) * piece;
+    const double m_signal = first_block ? prior_->signal_samples(c.block_pieces)
+                                        : static_cast<double>(samples_per_piece_ * c.block_pieces);
+    const double v = n0 * noise_rate_hz_ * m_signal;  // FS^2
+    const double s_abs = std::abs(c.block_sum);       // FS
     int limit = 0;
     if (s.level.learned) {
-        scored = score_block(predict(s.level, t, spread_hz_), s_abs, m, v, order_, t,
+        scored = score_block(predict(s.level, t, spread_hz_), s_abs, m_signal, v, order_, t,
                              s.block_pieces > 0 ? std::optional<double>(s.mode_a) : std::nullopt);
         limit = block_pieces_;
     } else {
