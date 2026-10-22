@@ -366,11 +366,12 @@ Measured with the genie frequency (the tracker plays no part):
 - **E2-like cells** (station +8 to +14 dB S500, neighbor -6 to +12 dB relative, 12 to 90 Hz away): 6 of 108 runs exact.
 - **The systematic term** (the plan's D15) changed none of this while the neighbor is keyed. Evidence:
   `docs/plans/data/2026-10-20-new-decoder-prototype-1/systematic-neighbors.csv` and the prototype's results record.
-- **A neighbor that has stopped** (the search alone, a neighbor 30 to 40 dB stronger, one key-down, 15 to 200 Hz away,
-  stopping 0.10 to 0.30 s before the station starts): the systematic term remembers its power for 390 ms and costs
-  the station its first element in 194 of 288 runs, all exact without the term (owner, 2026-10-21: kept as a measured
-  trade). Evidence: `systematic-stopped-neighbor.csv` beside the table above, and the results record, section 1.7.
-  A fix that tells the station's own power from a neighbor's would remove the trade.
+- **A neighbor that has stopped** (the search alone, a neighbor 30 to 40 dB stronger (dB relative to the station's
+  key-down power), one key-down, 15 to 200 Hz away, stopping 0.10 to 0.30 s before the station starts): the systematic
+  term remembers its power for 390 ms and costs the station its first element in 194 of 288 runs, all exact without the
+  term (owner, 2026-10-21: kept as a measured trade). Evidence: `systematic-stopped-neighbor.csv` beside the table
+  above, and the results record, section 1.7. A fix that tells the station's own power from a neighbor's would remove
+  the trade.
 
 The channel passes about ±150 Hz around the station, so a neighbor's carrier and its keying sidebands within that range
 reach every story's sums.

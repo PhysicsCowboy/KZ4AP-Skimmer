@@ -529,7 +529,8 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
     // At +20 dB S500 the systematic term is 4% of a later block's noise variance and about 13% of a 24-piece first
     // block's, far above the tolerance; each part of the carrier power (the window's own pieces, the look-ahead and the
     // block's own estimate) decides it in many of the evaluations. The last piece, searched by finish() with no
-    // look-ahead left, is checked too (its stories in an element begun at least 2 pieces before it).
+    // look-ahead left, is checked too (its stories in an element begun at least 2 pieces before it), on the whole
+    // recording, which ends in silence, and on one cut in the middle of the T's dash, where it holds stories in a mark.
     ViterbiConfig config;
     config.fading_spread_hz = 5.0;
     const int block = static_cast<int>(std::floor(block_length_s(config.fading_spread_hz, config.block_loss_db) /
@@ -552,75 +553,101 @@ TEST(Search, BooksEveryPointAtEveryPiece) {
         return best;
     };
 
-    std::map<ElementKey, Element> elements;
     int long_dashes = 0;   // known-speed marks checked past their first block
     int first_marks = 0;   // newborns' first marks checked past their first block
     int gaps = 0;
-    Carrier carrier{carrier_powers(pieces, block), carrier_powers(pieces, block, false)};
-    Search search(config, sum_noise(), flat_prior());
-    // The check after the search of piece k; first_tau: the shortest element checked (2 after finish(), whose last
-    // pieces are searched together: an element begun at piece k - 1 started at a piece not observed).
-    int checked = 0;  // the stories the last call checked
-    const auto check = [&](std::size_t k, int first_tau) {
-        checked = 0;
-        const double offset = search.normalization_nats();
-        for (const StoryView& story : search.live_stories()) {
-            if (story.activity != Activity::Morse) continue;
-            const double own = story.score_nats + offset;
-            const auto key = std::tuple{story.key_down, story.speed, story.node};
-            if (story.tau == 0) {
-                elements[std::tuple_cat(key, std::tuple{k})] = Element{own, story.level, k + 1};
-                continue;
-            }
-            if (story.tau < first_tau) continue;
-            const auto at = elements.find(std::tuple_cat(key, std::tuple{k - static_cast<std::size_t>(story.tau)}));
-            ASSERT_NE(at, elements.end()) << "piece " << k;
-            Element& element = at->second;
-            double expected = 0.0;
-            if (!story.key_down) {
-                expected = gap_timing(story.speed, story.node, story.tau);
-                ++gaps;
-            } else if (story.speed >= 0) {
-                if (!tree.has_children(story.node) || tree.child(story.node, false) < 0 ||
-                    tree.child(story.node, true) < 0)
-                    continue;
-                const double dash = fist.log_survival(Kind::Dash, story.speed, story.tau);
-                ASSERT_GE(dash, fist.log_survival(Kind::Dot, story.speed, story.tau));
-                expected = dash + advance_to(element, k, pieces, block, config, carrier);
-                if (story.tau > block) ++long_dashes;
-            } else {
-                double survival = -kInf;
-                for (int s = 0; s < config.speed_count; ++s)
-                    for (const Kind label : {Kind::Dot, Kind::Dash})
-                        survival = std::max(survival, log_speed_prior + fist.log_survival(label, s, story.tau));
-                expected = survival + advance_to(element, k, pieces, block, config, carrier);
-                if (story.tau > block) ++first_marks;
-            }
-            ASSERT_NEAR(own - element.start_score_nats, expected, 1e-6)
-                << "piece " << k << ", tau " << story.tau << ", speed " << story.speed << ", node " << story.node;
-            ++checked;
-        }
+    std::int64_t by_window = 0, by_lookahead = 0, by_own = 0;  // the carrier power's deciding part, over both runs
+    // One run on the pieces `used`, every piece checked as the search takes it, then finish() and the last piece
+    // checked; it returns the stories checked at the last piece, and those of them in a mark.
+    struct Last {
+        int checked = 0;
+        int in_mark = 0;
     };
-    for (std::size_t given = 0; given < pieces.size(); ++given) {
-        search.step(pieces[given], piece_time(given), kN0);
-        if (given < kLookahead) continue;  // nothing searched yet
-        check(given - kLookahead, 1);      // the piece searched
-        if (::testing::Test::HasFatalFailure()) return;
-    }
-    // The last pieces, searched by finish() with the look-ahead that remains (none for the last): the last checked.
-    search.finish();
-    check(pieces.size() - 1, 2);
+    const auto run = [&](const std::vector<std::complex<double>>& used) {
+        std::map<ElementKey, Element> elements;
+        Carrier carrier{carrier_powers(used, block), carrier_powers(used, block, false)};
+        Search search(config, sum_noise(), flat_prior());
+        // The check after the search of piece k; first_tau: the shortest element checked (2 after finish(), whose last
+        // pieces are searched together: an element begun at piece k - 1 started at a piece not observed).
+        Last last;  // the stories the last call checked
+        const auto check = [&](std::size_t k, int first_tau) {
+            last = Last{};
+            const double offset = search.normalization_nats();
+            for (const StoryView& story : search.live_stories()) {
+                if (story.activity != Activity::Morse) continue;
+                const double own = story.score_nats + offset;
+                const auto key = std::tuple{story.key_down, story.speed, story.node};
+                if (story.tau == 0) {
+                    elements[std::tuple_cat(key, std::tuple{k})] = Element{own, story.level, k + 1};
+                    continue;
+                }
+                if (story.tau < first_tau) continue;
+                const auto at = elements.find(std::tuple_cat(key, std::tuple{k - static_cast<std::size_t>(story.tau)}));
+                ASSERT_NE(at, elements.end()) << "piece " << k;
+                Element& element = at->second;
+                double expected = 0.0;
+                if (!story.key_down) {
+                    expected = gap_timing(story.speed, story.node, story.tau);
+                    ++gaps;
+                } else if (story.speed >= 0) {
+                    if (!tree.has_children(story.node) || tree.child(story.node, false) < 0 ||
+                        tree.child(story.node, true) < 0)
+                        continue;
+                    const double dash = fist.log_survival(Kind::Dash, story.speed, story.tau);
+                    ASSERT_GE(dash, fist.log_survival(Kind::Dot, story.speed, story.tau));
+                    expected = dash + advance_to(element, k, used, block, config, carrier);
+                    if (story.tau > block) ++long_dashes;
+                } else {
+                    double survival = -kInf;
+                    for (int s = 0; s < config.speed_count; ++s)
+                        for (const Kind label : {Kind::Dot, Kind::Dash})
+                            survival = std::max(survival, log_speed_prior + fist.log_survival(label, s, story.tau));
+                    expected = survival + advance_to(element, k, used, block, config, carrier);
+                    if (story.tau > block) ++first_marks;
+                }
+                ASSERT_NEAR(own - element.start_score_nats, expected, 1e-6)
+                    << "piece " << k << ", tau " << story.tau << ", speed " << story.speed << ", node " << story.node;
+                ++last.checked;
+                if (story.key_down) ++last.in_mark;
+            }
+        };
+        for (std::size_t given = 0; given < used.size(); ++given) {
+            search.step(used[given], piece_time(given), kN0);
+            if (given < kLookahead) continue;  // nothing searched yet
+            check(given - kLookahead, 1);      // the piece searched
+            if (::testing::Test::HasFatalFailure()) return last;
+        }
+        // The last pieces, searched by finish() with the look-ahead that remains (none for the last): the last checked.
+        search.finish();
+        check(used.size() - 1, 2);
+        by_window += carrier.by_window;
+        by_lookahead += carrier.by_lookahead;
+        by_own += carrier.by_own;
+        return last;
+    };
+
+    // The whole recording, which ends in 1 s of silence: at its last piece the stories are in gaps.
+    const Last whole = run(pieces);
     if (::testing::Test::HasFatalFailure()) return;
-    EXPECT_GT(checked, 0);
+    EXPECT_GT(whole.checked, 0);
+    // The recording cut in the middle of the T's dash, so that finish() searches the last pieces of a mark, whose
+    // evidence depends on the carrier power that finish() leaves without a look-ahead.
+    const double dash_middle_s = 0.5 * (keying.back().first + keying.back().second);
+    const std::vector<std::complex<double>> cut(
+        pieces.begin(), pieces.begin() + static_cast<std::ptrdiff_t>(std::floor(dash_middle_s / config.piece_s)));
+    const Last in_dash = run(cut);
+    if (::testing::Test::HasFatalFailure()) return;
+    EXPECT_GT(in_dash.in_mark, 0);
     EXPECT_GT(long_dashes, 10);
     EXPECT_GT(first_marks, 10);
     EXPECT_GT(gaps, 100);
-    ::testing::Test::RecordProperty("carrier_by_window", std::to_string(carrier.by_window));
-    ::testing::Test::RecordProperty("carrier_by_lookahead", std::to_string(carrier.by_lookahead));
-    ::testing::Test::RecordProperty("carrier_by_own_estimate", std::to_string(carrier.by_own));
-    EXPECT_GT(carrier.by_window, 100000);
-    EXPECT_GT(carrier.by_lookahead, 10000);
-    EXPECT_GT(carrier.by_own, 5000);
+    ::testing::Test::RecordProperty("carrier_by_window", std::to_string(by_window));
+    ::testing::Test::RecordProperty("carrier_by_lookahead", std::to_string(by_lookahead));
+    ::testing::Test::RecordProperty("carrier_by_own_estimate", std::to_string(by_own));
+    ::testing::Test::RecordProperty("last_piece_in_mark_checked", std::to_string(in_dash.in_mark));
+    EXPECT_GT(by_window, 100000);
+    EXPECT_GT(by_lookahead, 10000);
+    EXPECT_GT(by_own, 5000);
 }
 
 TEST(Search, BooksEveryTransition) {

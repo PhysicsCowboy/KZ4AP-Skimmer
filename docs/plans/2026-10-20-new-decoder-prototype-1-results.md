@@ -333,12 +333,12 @@ sent):
 #### Finding 1: strong stations decode wrongly above about +37 dB S₅₀₀
 
 *Why (derived).* The decoder does not model the fall at a mark's end, and a gap piece adds 0 to a story's score whatever
-it holds. A piece of the fall's tail that holds the fraction f of a full piece's carrier sum carries
-f² × 10^(S₅₀₀/10) nats of energy (because (3 f a)² / (4 500 Hz × N₀) with a² = 10^(S₅₀₀/10) × N₀ × 500 Hz), which no
+it holds. A piece of the fall's tail that holds the fraction φ of a full piece's carrier sum carries
+φ² × 10^(S₅₀₀/10) nats of energy (because (3 φ a)² / (4 500 Hz × N₀) with a² = 10^(S₅₀₀/10) × N₀ × 500 Hz), which no
 story that keeps the mark explains once the mark has ended. A story that ends the over after the mark and starts a new
 over of one piece in the tail can claim it, and that over alone costs 34.3 nats: the over's end 4.30, the birth's
 ln P 9.21, the letter 4.13, the speed's prior 3.47 and a one-piece dot at 100 WPM 13.17 (34.27 nats). The story also
-pays for what follows, so the claim wins only where the piece carries at least about 34 nats, which is f = 0.093, 0.074
+pays for what follows, so the claim wins only where the piece carries at least about 34 nats, which is φ = 0.093, 0.074
 and 0.059 at +36, +38 and +40 dB S₅₀₀. The plan's design had judged the fall harmless; that holds for the story that
 keeps the mark, not for the one that does not.
 
@@ -414,8 +414,9 @@ is close to the signal, not exact, and each block of a mark is now judged agains
 systematic uncertainty to the noise in quadrature: V = N₀ × 1 500 Hz × m_signal + C²(E_n + f²W), W the sum of the
 block's squared weights. E_n is the template's error over where the keying edge falls in its piece (a mark's first
 block only); f = `systematic_floor` = 0.02 is a floor for everything else; C² is a full piece's squared carrier sum,
-taken from the data and the same for every story: the channel's largest piece over the last 390 ms and the next 4 ms,
-or the block's own estimate where larger. The search runs 4 ms behind its pieces for that look-ahead.
+taken from the data, never a story's level: the larger of the channel's largest piece over the last 390 ms and the next
+4 ms (common to every story) and the block's own estimate, a story's own but never to its advantage (A.8d). The search
+runs 4 ms behind its pieces for that look-ahead.
 
 *What the runs showed (measured, `systematic-strong-grid.csv`).* Finding 1's grid through the decoder at its defaults
 (the tracker re-centers): "PARIS PARIS" at 25 WPM on DEV2's noise (seed 34), N₀ the noise's own, the station on its
@@ -543,10 +544,10 @@ over its 11 characters).
 rounds, alternating the two builds, in scratch runs in the copy at 20f0e4f (with the term but without the look-ahead,
 against 20f0e4f itself; other processes used 0.61 to 0.83 cores of 8): 335 → 337 ns per story per piece on 60 s of
 noise, 423 → 425 at +20 dB S₅₀₀ and 456 → 459 at +10 dB S₅₀₀, within the rounds' own spread (up to 2.2%). The decoder
-at the commit, in `ViterbiDecoder.TenMinutesOfNoise`'s full form (600 s of DEV2's noise at the defaults, the
-development desktop): 287.3, 288.2 and 291.5 ms of one thread per channel-second in three runs, so 287 ms at the least,
-as without the term (287 ms, the least of three, 2026-10-21; the machine's other load not measured); at most 82
-entries of shared text at any block, against 106 without it.
+at 36084bc (the commit that adds the term), in `ViterbiDecoder.TenMinutesOfNoise`'s full form (600 s of DEV2's noise
+at the defaults, the development desktop): 287.3, 288.2 and 291.5 ms of one thread per channel-second in three runs, so
+287 ms at the least, as without the term (287 ms, the least of three, 2026-10-21; the machine's other load not
+measured); at most 82 entries of shared text at any block, against 106 without it.
 
 ### 1.8 Alternatives tried while building, and not kept
 

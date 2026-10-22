@@ -127,7 +127,7 @@
 //      question.
 //   4. The fall at a mark's end is not modeled, and a gap piece adds 0 whatever it holds, so the energy left in the
 //      fall's tail after the mark's last piece is explained by no story that keeps the mark: a piece holding the
-//      fraction f of a full piece's carrier sum carries (3 f a)^2 / (4 500 Hz x N0) = f^2 x 10^(S500 / 10) nats of it
+//      fraction phi of a full piece's carrier sum carries (3 phi a)^2 / (4 500 Hz x N0) = phi^2 x 10^(S500 / 10) nats
 //      (derived: a^2 = 10^(S500 / 10) x N0 x 500 Hz). A story that ends the over after the mark and starts a new over
 //      of one piece in the tail can claim that energy. That over alone costs 34.3 nats (the over's end 4.30, the
 //      birth's ln P 9.21, the letter 4.13, the speed's prior 3.47 and a one-piece dot at 100 WPM 13.17), and the story
@@ -208,12 +208,14 @@
 // larger.
 // Measured: a station at +6 or +10 dB S500 with a keyed neighbor 0 to 40 dB stronger 40 to 200 Hz away, and cells like
 // DEV2's E2 group's, never lost an exact text to the term. But a neighbor that stops 0.10 to 0.30 s before the station
-// starts does lose it: its last pieces stay in C^2 for 390 ms, and with a neighbor 30 to 40 dB stronger 194 of 288 such
-// runs lost the exact text that they keep without the term (a measured limitation of the missing interference model;
-// docs/backlog.md). And a station fading up raises C^2 inside its own mark: each key-up overshoot (1.03 to 1.09 of the
-// carrier's power) sets a new maximum, the mark's evidence, recomputed with the larger V, drops by thousands of nats,
-// and a story that ended the mark a few pieces early wins (traced). Under Rayleigh fading at 0.3 to 2 Hz the term was
-// worse in 29 of 360 runs and better in 242 (the results record, section 1.7, has both).
+// starts does lose it: its last pieces stay in C^2 for 390 ms, and with a neighbor 30 to 40 dB stronger (relative to
+// the station's key-down power) 194 of 288 such runs lost the exact text that they keep without the term (a measured
+// limitation of the missing interference model; docs/backlog.md). And a station fading up raises C^2 inside its own
+// mark: a fading-up station's key-up overshoot (a piece 3% to 7% above the maximum before it in the traces; a steady
+// carrier's is 1.091 of its power, below the window's earlier peak) sets a new maximum, the mark's evidence,
+// recomputed with the larger V, drops by thousands of nats, and a story that ended the mark a few pieces early wins
+// (traced). Under Rayleigh fading at 0.3 to 2 Hz the term was worse in 29 of 360 runs and better in 242 (the results
+// record, section 1.7, has both).
 //
 // Work saved without changing any output:
 //   - The maxima over an open speed (a newborn's first mark: its survival, the best over the speeds and both labels;

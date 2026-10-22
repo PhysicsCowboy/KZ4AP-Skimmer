@@ -562,10 +562,11 @@ restart it trusts a keyed station only above about −2.5 dB S₅₀₀ on avera
 at 5.2 WPM. At fading spreads below 1 Hz the decoder's longer blocks ask
 for a closer frequency than the tracker gives (A.8d). Strong stations
 decode exactly to +60 dB S₅₀₀ at every edge position tried (measured;
-without the systematic term, wrong from +38 dB S₅₀₀). Because C² is the
-channel's, the term has two measured costs (A.8d): a neighbor 30 to 40 dB
-stronger that stops 0.10 to 0.30 s before a weak station starts costs the
-station its exact text in 194 of 288 runs exact without the term, and a
+without the systematic term, wrong from +38 dB S₅₀₀). Because C²'s first
+part is the channel's, the term has two measured costs (A.8d): a neighbor
+30 to 40 dB stronger (dB relative to the station's key-down power) that
+stops 0.10 to 0.30 s before a weak station starts costs the station its
+exact text in 194 of 288 runs exact without the term, and a
 station fading up loses marks when a key-up overshoot raises C² inside them
 (under fading the term's character error rate was worse in 29 of 360 runs,
 better in 242). The first is a limitation of the missing interference
@@ -3744,13 +3745,13 @@ The owner's decision D15 of 2026-10-21 (the plan); `search.hpp`, "The systematic
 - **The cost at ordinary levels.** In a later block, with C² at the true carrier, the evidence falls as if the
   station's S₅₀₀ were lower by 10 log₁₀(1 + f²·10^(x/10)) dB: 0.02, 0.17 and 0.98 dB of S₅₀₀ at +10, +20 and
   +28 dB S₅₀₀.
-- **A neighbor in the channel.** C² is the channel's, so a stronger neighbor raises a weak station's term. A steady
-  neighbor δ Hz away whose pieces are p leaves on average |p|²/(2 sin²(πδ × 2 ms)) in the power of a block sum of n
-  pieces (the average of |Σ_k e^(i2πδ×2 ms×k)|² over the block's length); the floor's share of the term is f²|p|²n, at
-  most 2nf² of that residual (0.019 for a 24-piece block, 0.16 for 195 pieces), and the edge's at most 2E_n (0.045).
-  Where the term's share reaches the noise, the neighbor's own residual in the same block is on average at least 5
-  times larger. That holds only while the neighbor is in the block: one that has stopped leaves no residual but stays
-  in C² for up to 390 ms (limitations, below).
+- **A neighbor in the channel.** C²'s first part is the channel's, so a stronger neighbor raises a weak station's term.
+  A steady neighbor δ Hz away whose pieces are p leaves on average |p|²/(2 sin²(πδ × 2 ms)) in the power of a block sum
+  of n pieces (the average of |Σ_k e^(i2πδ×2 ms×k)|² over the block's length); the floor's share of the term is f²|p|²n,
+  at most 2nf² of that residual (0.019 for a 24-piece block, 0.16 for 195 pieces), and the edge's at most 2E_n (0.045).
+  Where the term's share reaches the noise, the neighbor's own residual in the same block is on average at least 5 times
+  larger. That holds only while the neighbor is in the block: one that has stopped leaves no residual but stays in C²
+  for up to 390 ms (limitations, below).
 
 **Provenance.** f = 0.02: placeholder, heuristic; of 0, 0.01, 0.02 and 0.05, the only one measured clean on both the
 strong grid and the ordinary levels (the results record, section 1.7). E_n: derived from the per-position fractions,
@@ -3790,16 +3791,16 @@ amplitude at 48 and 192 kHz alike, computed from the taps); the strong grid ran 
   Without the term too, the decoder loses a station at +6 or +10 dB S₅₀₀ to an equally strong neighbor 40 or 70 Hz
   away and to one 10 dB stronger within 100 Hz, while the neighbor is keyed (measured): its block sums keep much of a
   carrier inside the channel's passband (the residual above).
-- **A station fading up loses marks to the term** (measured and traced). C² must not rise while a block lasts, since
-  the block's evidence is recomputed with the current V at every piece while a finished block's stays. On a steady
-  carrier the window holds an earlier key-up overshoot, so a new one does not raise C²; on a carrier fading up, each
-  key-up overshoot (about 1.03 to 1.05 of the preceding piece's power in the traces) sets a new maximum inside the
-  mark, through the look-ahead 2 pieces before the mark ends. A 67-piece first block at +30 dB S₅₀₀ then loses about
-  1 600 nats of evidence (derived), and the story that ended the mark 3 pieces earlier wins; the carrier's last pieces
-  become a new letter ("PARIS" read "A RARIS"). Under Rayleigh fading at f_D = 0.3, 1 and 2 Hz from +10 to +60 dB
-  S₅₀₀ (360 runs, the decoder at its defaults), the term's character error rate was worse in 29 runs and better in
-  242 (mean 60.6% against 304.4% without it), and 11 strong runs exact without the term were wrong with it (the
-  results record, section 1.7).
+- **A station fading up loses marks to the term** (measured and traced). C² must not rise while a block lasts, since the
+  block's evidence is recomputed with the current V at every piece while a finished block's stays. On a steady carrier
+  the window holds an earlier key-up overshoot, so a new one does not raise C²; on a carrier fading up, each key-up
+  overshoot (a piece 3% to 7% above the maximum before it in the traces; a steady carrier's is 1.091 of its power) sets
+  a new maximum inside the mark, through the look-ahead 2 pieces before the mark ends. A 67-piece first block at +30 dB
+  S₅₀₀ then loses about 1 600 nats of evidence (derived), and the story that ended the mark 3 pieces earlier wins; the
+  carrier's last pieces become a new letter ("PARIS" read "A RARIS"). Under Rayleigh fading at f_D = 0.3, 1 and 2 Hz
+  from +10 to +60 dB S₅₀₀ (360 runs, the decoder at its defaults), the term's character error rate was worse in 29 runs
+  and better in 242 (mean 60.6% against 304.4% without it), and 11 strong runs exact without the term were wrong with it
+  (the results record, section 1.7).
 - **Fading defeats the decoder, with or without the term** (measured; open, under diagnosis). At f_D = 2 Hz no run
   decoded exactly at any level from +10 to +60 dB S₅₀₀ (nor, from +30 dB S₅₀₀, with the true spread), and at 1 Hz
   7 of 20 runs at +20 dB S₅₀₀ did with the term, none without it; the texts split marks ("PA" read "W I").
