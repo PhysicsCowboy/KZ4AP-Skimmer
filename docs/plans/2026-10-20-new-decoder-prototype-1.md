@@ -610,6 +610,11 @@ owner before any code.**
     as a recommendation).** CW Skimmer's and the RBN's 50 Hz decoders: a coherent sum of about 20 ms, with longer marks
     combined noncoherently. Rule for the rest of this design: the standard value is the choice; departures only with a
     stated, measured reason, put to the owner.
+  - **The layout: a 50 Hz filter in front of the decoder, which works on its envelope (owner, 2026-10-22: "Yes").** The
+    standard layout (CW Skimmer, fldigi, Bell): one filter per channel instead of per-story coherent sums. The filter's
+    output samples are correlated over about 20 ms, and the evidence must count them as such. Detail 2 (the strength
+    tracking) is still open; the owner asked first why the decoder adds up pieces instead of filtering, then how often
+    the filter's output needs sampling.
 
 ### Obvious items, stated for approval
 
