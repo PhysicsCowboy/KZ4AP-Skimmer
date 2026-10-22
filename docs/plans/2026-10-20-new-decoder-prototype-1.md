@@ -631,6 +631,15 @@ owner before any code.**
   - **CPU (owner, 2026-10-22):** "something like B, and all the other choices which add to the number of potential
     stories needs to be considered very carefully given how much CPU we're currently requiring per channel." Any
     option that multiplies stories or hypotheses within them comes to the owner with its measured CPU cost.
+  - **The long-run amplitude: each story's RMS of its own key-down samples since its over began, with a hang AGC as
+    the backup (owner, 2026-10-22: "adopt it with the hang AGC as the backup").** As CW Skimmer measures strength
+    (key-on samples only, VE3NEA). Per sample: predict from the estimate so far, score, then update. A new story's first
+    mark is scored against the owner's flat prior (−15 to +85 dB S₅₀₀) and seeds the RMS. Its weak spot, a start in a
+    deep fade (10 dB or more down in about 10% of starts, 20 dB in about 1%), is measured in the prototype. The backup,
+    measured beside it: a decision-free hang AGC on the channel (rises at once, holds 1.6 s, the word gap at 5.2 WPM,
+    then falls quickly). The owner rejected time constants not derived for this decoder (fldigi's 0.4 s and 2 s, an
+    instant attack, a 24 ms hold-off: "Every single one of these three options is completely arbitrary and made up")
+    and a full Bayesian estimate per story as too complicated.
 
 ### Obvious items, stated for approval
 
