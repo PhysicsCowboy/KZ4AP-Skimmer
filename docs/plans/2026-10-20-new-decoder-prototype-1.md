@@ -635,9 +635,10 @@ owner before any code.**
     the backup (owner, 2026-10-22: "adopt it with the hang AGC as the backup").** As CW Skimmer measures strength
     (key-on samples only, VE3NEA). Per sample: predict from the estimate so far, score, then update. A new story's first
     mark is scored against the owner's flat prior (−15 to +85 dB S₅₀₀) and seeds the RMS. Its weak spot, a start in a
-    deep fade (10 dB or more down in about 10% of starts, 20 dB in about 1%), is measured in the prototype. The backup,
-    measured beside it: a decision-free hang AGC on the channel (rises at once, holds 1.6 s, the word gap at 5.2 WPM,
-    then falls quickly). The owner rejected time constants not derived for this decoder (fldigi's 0.4 s and 2 s, an
+    deep fade (10 dB or more down in about 10% of starts, 20 dB in about 1%), is measured in the prototype. The backup: a
+    decision-free hang AGC on the channel; **its parameters (rise, hang, release) are not decided** (owner,
+    2026-10-22). The values discussed (rising at once, holding 1.6 s, the word gap at 5.2 WPM, then falling quickly)
+    were a proposal only. The owner rejected time constants not derived for this decoder (fldigi's 0.4 s and 2 s, an
     instant attack, a 24 ms hold-off: "Every single one of these three options is completely arbitrary and made up")
     and a full Bayesian estimate per story as too complicated.
 
