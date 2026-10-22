@@ -624,6 +624,8 @@ owner before any code.**
     amplitude times √((1 − ρ²)/2), ρ = exp(−π² f_D² Δt²/2) over the time Δt since the story's last estimate, and the
     predicted value drifts from the last estimate toward the long-run amplitude as Δt grows (Rayleigh fading; Bell's
     form). At 2 Hz: 0.013 after 3 ms, 0.21 after 48 ms, 0.53 after 144 ms, 0.70 after 336 ms (derived).
+  - **Limitations (owner, 2026-10-22: "Agreed"):** chirp beyond about ±25 Hz (the 80 Hz filter's reach), key clicks
+    and static crashes are known limitations, as in standard practice; recorded in `docs/backlog.md`.
 
 ### Obvious items, stated for approval
 

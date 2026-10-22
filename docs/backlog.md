@@ -404,6 +404,20 @@ record, section 1.7.
 **The fix chosen (owner, 2026-10-22; plan D16):** standard practice, noncoherent detection behind a fixed filter, with
 each story's strength tracked as an amplitude. Chirp, key clicks and static are declared limitations.
 
+### Chirp, key clicks and static crashes: known limitations of the new decoder (owner, 2026-10-22)
+
+Standard practice accepts these rather than modeling them (survey,
+`.superpowers/sdd/2026-10-20-new-decoder-prototype-1/detection-standard-practice.md`); the owner agreed (plan D16).
+- **Chirp,** a transmitter's frequency jump at key-down: the 80 Hz front filter passes up to about ±25 Hz; beyond
+  that a mark is lost. A model that learns each sender's chirp from its recent marks is possible later.
+- **Key clicks,** splatter from hard keying: mainly a neighbor's problem; on the station itself, edges sharper than the
+  template.
+- **Static crashes** (impulsive noise): a filtered crash has the shape of a short dot, so a strong one will likely print
+  a false E or T. A wideband noise blanker ahead of the channelizer, as CW Skimmer offers, is the standard remedy, for
+  later.
+
+The test generator has none of these; measuring them needs generator changes, which need the owner's approval.
+
 ### A narrower filter for slower signals in the new decoder (owner, 2026-10-22; later)
 
 The owner chose one fixed filter for every speed: about 80 Hz wide, matched to a 12 ms dot at 100 WPM, sampled every
