@@ -619,6 +619,11 @@ owner before any code.**
     5.2 to 100 WPM. 80 Hz is the filter matched to a 100 WPM dot of 12 ms (Bell used 100 Hz); 3 ms is a quarter of that
     dot, the standard frame step. Slower signals pay up to about 2 dB against a 50 Hz filter (derived); a narrower
     filter for slower signals is in the backlog (owner).
+  - **A story's amplitude prediction (owner, 2026-10-22):** "It should be set by the long run amplitude but it depends
+    heavily on how long since the last estimate of the story's amplitude was made." The spread is the long-run
+    amplitude times √((1 − ρ²)/2), ρ = exp(−π² f_D² Δt²/2) over the time Δt since the story's last estimate, and the
+    predicted value drifts from the last estimate toward the long-run amplitude as Δt grows (Rayleigh fading; Bell's
+    form). At 2 Hz: 0.013 after 3 ms, 0.21 after 48 ms, 0.53 after 144 ms, 0.70 after 336 ms (derived).
 
 ### Obvious items, stated for approval
 
