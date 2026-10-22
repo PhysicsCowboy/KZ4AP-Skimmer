@@ -557,6 +557,32 @@ S₅₀₀ seed-12 point stays a known failure until R3 sets the ceiling. The op
   term, against 72 of 72 without it.
 - **A ruling made while building:** the carrier power must come from the station's own power, a narrowband estimate
   or a shorter memory, whichever passes every test. Being measured (Task 4e, fix round 1).
+- **Neither passed** (fix round 1, measured): a narrowband estimate and a shorter memory each broke strong stations.
+  **Decided (owner, 2026-10-21): keep the term as 36084bc has it, with its trades recorded as limitations** (commits
+  4813600, b229b79 and 2160978): a neighbor 30 to 40 dB stronger (dB relative to the station's key-down power) that
+  stops 0.10 to 0.30 s before a weak station starts costs the station its exact text in 194 of 288 runs; under Rayleigh
+  fading the term is better in 242 of 360 runs and worse in 29. Tables in
+  `docs/plans/data/2026-10-20-new-decoder-prototype-1/`.
+
+**D16. Fading: model the change in gain. Decided (owner, 2026-10-21): the direction; the design's details come to the
+owner before any code.**
+- **The finding (Task 4e's fading check and diagnosis, measured).** At a fading spread of 2 Hz no run decoded exactly
+  from +10 to +60 dB S₅₀₀, with or without the systematic term; at 1 Hz few did. Three causes: the gain moves inside a
+  block, which the decoder scores as one constant gain (the misfit grows with the signal's energy, while a wrong reading
+  costs a fixed 20 nats or so); the level's prediction across gaps scales its spread by the current level instead of the
+  station's long-run power; and deep fades, partly beyond any decoder.
+- **The owner (2026-10-21):** "Yes but don't do the cheap solutions" (on fixing only the power estimate), then "I didn't
+  know we were doing anything with blocks, and I don't even understand what their purpose was in the first place,
+  period. It seems to me that we have to model the change in gain."
+- **The direction:** each story tracks the station's complex gain, amplitude and phase, with a Kalman filter on a model
+  of the fading, and scores each piece by the filter's prediction (the estimator–correlator; per-survivor processing;
+  the standard answer of the 2026-10-14 standard-practice check, P1.4 and P1.5). It replaces the blocks and the
+  level's prediction (design notes, topic 3 item 1 and topic 4 item 9, which record blocks as decided on 2026-10-15; the
+  owner did not know of them, so that decision is reopened), and may reopen per-story frequency (topic 4, item 8).
+- **Next:** a design amendment (the fading model's order, an unknown fading rate, the station's unknown long-run power,
+  the leftover frequency error, the systematic term, cost), reviewed against standard practice; each decision to the
+  owner in chat; then a prototype in a copy, measured against today's decoder, before anything enters the branch. The
+  long runs wait.
 
 ### Obvious items, stated for approval
 
