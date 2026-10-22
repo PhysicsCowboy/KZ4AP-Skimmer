@@ -626,6 +626,11 @@ owner before any code.**
     form). At 2 Hz: 0.013 after 3 ms, 0.21 after 48 ms, 0.53 after 144 ms, 0.70 after 336 ms (derived).
   - **Limitations (owner, 2026-10-22: "Agreed"):** chirp beyond about ±25 Hz (the 80 Hz filter's reach), key clicks
     and static crashes are known limitations, as in standard practice; recorded in `docs/backlog.md`.
+  - **The fading rate: one fixed rate on the fast side, 2 Hz (owner, 2026-10-22: "A, with B in backlog").** Bell used
+    1 Hz; 2 Hz covers the development set's 5 Hz fading better. Several rates per story are in the backlog.
+  - **CPU (owner, 2026-10-22):** "something like B, and all the other choices which add to the number of potential
+    stories needs to be considered very carefully given how much CPU we're currently requiring per channel." Any
+    option that multiplies stories or hypotheses within them comes to the owner with its measured CPU cost.
 
 ### Obvious items, stated for approval
 

@@ -418,6 +418,15 @@ Standard practice accepts these rather than modeling them (survey,
 
 The test generator has none of these; measuring them needs generator changes, which need the owner's approval.
 
+### Several fading rates per story in the new decoder (owner, 2026-10-22; later)
+
+The owner chose one fixed fading rate, 2 Hz, on the fast side as Bell did (plan D16). Real fading runs from about
+0.05 to 5 Hz. Running a few rates side by side in each story (for example 0.3, 1 and 3 Hz), weighted by the evidence
+(multiple models: Magill 1965; Blom and Bar-Shalom 1988), would follow each station's own time scale, at about 3 times
+the work per story. The owner (2026-10-22): "something like B, and all the other choices which add to the number of
+potential stories needs to be considered very carefully given how much CPU we're currently requiring per channel."
+Measure the CPU first.
+
 ### A narrower filter for slower signals in the new decoder (owner, 2026-10-22; later)
 
 The owner chose one fixed filter for every speed: about 80 Hz wide, matched to a 12 ms dot at 100 WPM, sampled every
