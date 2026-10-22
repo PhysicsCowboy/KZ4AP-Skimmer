@@ -583,6 +583,19 @@ owner before any code.**
   the leftover frequency error, the systematic term, cost), reviewed against standard practice; each decision to the
   owner in chat; then a prototype in a copy, measured against today's decoder, before anything enters the branch. The
   long runs wait.
+- **The design's decisions (owner, 2026-10-22),** on the draft amendment
+  (`.superpowers/sdd/2026-10-20-new-decoder-prototype-1/fading-design-draft.md`, reviewed three times):
+  - **The model's order: second order** (the gain and its rate of change, the Butterworth shape fitted to the Gaussian
+    spectrum); higher orders a measured variant.
+  - **The carrier's phase across key-up: both assumptions inside each story** (continuous, and restarted at key-down),
+    chosen by the evidence.
+  - **Clicks: left a known limitation** for later, with the interference work (backlog); no click model now.
+  - **The systematic term** carries on as decided in D15, per piece, with both parts of C²; not a new decision. The
+    length of the channel peak's memory (390 ms today, 16 ms proposed) is measured in the prototype.
+  - **Still open, one at a time:** the unknown fading rate (the owner asks why a per-story estimate is not tried
+    first), the station's unknown long-run power (the owner: the 6.25 dB grid is "too arbitrary"), and the leftover
+    frequency error (the owner: how can a fading model absorb a detuning under coherent detection?).
+- **How decisions reach the owner (owner, 2026-10-22):** one decision at a time, and he gives one answer.
 
 ### Obvious items, stated for approval
 
