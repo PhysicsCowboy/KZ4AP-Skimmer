@@ -638,7 +638,16 @@ owner before any code.**
     deep fade (10 dB or more down in about 10% of starts, 20 dB in about 1%), is measured in the prototype. The backup: a
     decision-free hang AGC on the channel; **its parameters (rise, hang, release) are not decided** (owner,
     2026-10-22). The values discussed (rising at once, holding 1.6 s, the word gap at 5.2 WPM, then falling quickly)
-    were a proposal only. The owner rejected time constants not derived for this decoder (fldigi's 0.4 s and 2 s, an
+    were a proposal only.
+  - **The amplitude prediction's exact form, to be derived (owner, 2026-10-22: "Then that is what we should do.
+    Proceed.").** A start in a fade showed the design over-confident in its long-run amplitude, which rests on few
+    independent fades early in an over. Before choosing any form: (1) derive the exact predictive distribution of the
+    amplitude after a time Δt (Rician given the last amplitude and Ω; Ω inverse-gamma after ν independent fades under
+    the owner's flat prior; their mixture), with its exact mean and variance; (2) check it against the generator's
+    fading by simulation, including ν's count (Satterthwaite) and conditioning on the last amplitude only (Bell's
+    simplification); (3) measure the evidence each simple form loses against it (a Gaussian with the exact moments, the
+    rough three-term formula, the owner's rule as decided), with the threshold argued, not picked; (4) independent
+    review; then to the owner. Scratch calculations only; nothing built. The owner rejected time constants not derived for this decoder (fldigi's 0.4 s and 2 s, an
     instant attack, a 24 ms hold-off: "Every single one of these three options is completely arbitrary and made up")
     and a full Bayesian estimate per story as too complicated.
 
