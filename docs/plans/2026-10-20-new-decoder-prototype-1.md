@@ -606,6 +606,10 @@ owner before any code.**
   tracks its amplitude, with its spread within marks and across gaps scaled by a decision-free long-run level, not by
   the story's current level; chirp beyond about ±10 Hz, key clicks and static are limitations. The coherent draft's
   answers above (second order, both phases) are void; its details are worked out again, one decision at a time.
+  - **The coherent window: standard practice (owner, 2026-10-22: "Standard fucking practice!", on being offered 60 ms
+    as a recommendation).** CW Skimmer's and the RBN's 50 Hz decoders: a coherent sum of about 20 ms, with longer marks
+    combined noncoherently. Rule for the rest of this design: the standard value is the choice; departures only with a
+    stated, measured reason, put to the owner.
 
 ### Obvious items, stated for approval
 
