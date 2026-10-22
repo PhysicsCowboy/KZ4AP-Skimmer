@@ -596,6 +596,16 @@ owner before any code.**
     first), the station's unknown long-run power (the owner: the 6.25 dB grid is "too arbitrary"), and the leftover
     frequency error (the owner: how can a fading model absorb a detuning under coherent detection?).
 - **How decisions reach the owner (owner, 2026-10-22):** one decision at a time, and he gives one answer.
+- **Superseded the same day: standard practice, not coherent detection (owner, 2026-10-22).** The owner: "Are we perhaps
+  crazy to be trying to do phase-sensitive detection for Morse code? ... Should we be doing amplitude detection
+  instead?", then "We want *standard practice*!". A blind survey
+  (`.superpowers/sdd/2026-10-20-new-decoder-prototype-1/detection-standard-practice.md`) found that every working Morse
+  decoder detects noncoherently, behind a filter 30 to 100 Hz wide, tracks strength as an amplitude, and accepts
+  chirp, key clicks and static as limitations. **Decided: the standard-practice direction** ("I want to go in this
+  direction"): today's noncoherent evidence with the coherent sum capped at about 60 ms instead of 390 ms; each story
+  tracks its amplitude, with its spread within marks and across gaps scaled by a decision-free long-run level, not by
+  the story's current level; chirp beyond about ±10 Hz, key clicks and static are limitations. The coherent draft's
+  answers above (second order, both phases) are void; its details are worked out again, one decision at a time.
 
 ### Obvious items, stated for approval
 
