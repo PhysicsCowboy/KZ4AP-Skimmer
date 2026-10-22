@@ -401,6 +401,21 @@ record, section 1.7.
 
 **How to measure:** that grid, DEV2's fading group (B2), and the genie fading spread.
 
+**The fix chosen (owner, 2026-10-22; plan D16):** standard practice, noncoherent detection behind a fixed filter, with
+each story's strength tracked as an amplitude. Chirp, key clicks and static are declared limitations.
+
+### A narrower filter for slower signals in the new decoder (owner, 2026-10-22; later)
+
+The owner chose one fixed filter for every speed: about 80 Hz wide, matched to a 12 ms dot at 100 WPM, sampled every
+3 ms (plan D16). A slower signal pays for the extra width:
+- the extra noise against a 50 Hz filter is 10·log₁₀(80/50) = 2.0 dB (derived);
+- summing the envelope over longer marks recovers part of it, not all.
+
+The owner (2026-10-22): "record in the backlog that we can look later at how we might want to make the filter narrower
+for slower signals." Possible forms: a few filters of different widths, each story reading the one matched to its
+speed (as the bank decoder's speed ladder does), or a narrower filter once a station's speed is known. To be measured
+against the single filter on DEV2's slow signals.
+
 ### Time-base invariance of the decoder (stage 2; known issue)
 **Status (2026-10-07): applies to the Bell decoder** (design spec §5.2, amendments of 2026-10-07); written for the filter-bank decoder, the measure carries over.
 

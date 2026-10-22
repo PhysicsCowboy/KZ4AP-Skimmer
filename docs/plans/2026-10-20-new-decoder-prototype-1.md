@@ -615,6 +615,10 @@ owner before any code.**
     output samples are correlated over about 20 ms, and the evidence must count them as such. Detail 2 (the strength
     tracking) is still open; the owner asked first why the decoder adds up pieces instead of filtering, then how often
     the filter's output needs sampling.
+  - **The filter's width and the sampling: about 80 Hz, sampled every 3 ms (owner, 2026-10-22: "A").** The range stays
+    5.2 to 100 WPM. 80 Hz is the filter matched to a 100 WPM dot of 12 ms (Bell used 100 Hz); 3 ms is a quarter of that
+    dot, the standard frame step. Slower signals pay up to about 2 dB against a 50 Hz filter (derived); a narrower
+    filter for slower signals is in the backlog (owner).
 
 ### Obvious items, stated for approval
 
