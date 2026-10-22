@@ -449,7 +449,7 @@ story's level known to 2%, the carrier at the template's fractions, 2 000 noise 
 The later block's figure is 10 log₁₀(1 + f²·10^(S₅₀₀/10)) = 0.02, 0.17 and 0.98 dB of S₅₀₀ with C² at the true carrier
 (derived); the measured values are higher because the channel's largest piece is a maximum over noisy pieces.
 
-*A strong neighbor (measured, `systematic-neighbors.csv`).* C² is the channel's, so a neighbor inside the channel's
+*A strong neighbor (measured, `systematic-neighbors.csv`).* C²'s first part is the channel's, so a neighbor inside the channel's
 passband raises a weak station's term. Derived (A.8d): where the term's share of a block's variance reaches the noise,
 the neighbor's own residual in the same block sum is already, on average, at least 5 times larger. Two grids through
 the decoder with the genie's frequency (so the tracker plays no part): "PARIS PARIS" at 25 WPM from 0.5 s, and above

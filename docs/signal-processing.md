@@ -3794,7 +3794,7 @@ amplitude at 48 and 192 kHz alike, computed from the taps); the strong grid ran 
 - **A station fading up loses marks to the term** (measured and traced). C² must not rise while a block lasts, since the
   block's evidence is recomputed with the current V at every piece while a finished block's stays. On a steady carrier
   the window holds an earlier key-up overshoot, so a new one does not raise C²; on a carrier fading up, each key-up
-  overshoot (a piece 3% to 7% above the maximum before it in the traces; a steady carrier's is 1.091 of its power) sets
+  overshoot (a piece 3% to 5% above the maximum before it in the traces; a steady carrier's is 1.091 of its power) sets
   a new maximum inside the mark, through the look-ahead 2 pieces before the mark ends. A 67-piece first block at +30 dB
   S₅₀₀ then loses about 1 600 nats of evidence (derived), and the story that ended the mark 3 pieces earlier wins; the
   carrier's last pieces become a new letter ("PARIS" read "A RARIS"). Under Rayleigh fading at f_D = 0.3, 1 and 2 Hz

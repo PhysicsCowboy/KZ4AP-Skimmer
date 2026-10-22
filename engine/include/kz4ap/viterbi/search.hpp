@@ -200,8 +200,8 @@
 // +20 and +28 dB S500, and 0.12, 0.70 and 2.88 dB lower in a 24-piece first block (measured; 10 log10(1 + floor^2 x
 // 10^(S500 / 10)) = 0.02, 0.17 and 0.98 dB of S500 for a later block, derived), and the search's CPU time stays within
 // 1% of its own without the term (measured).
-// A neighbor: C^2 is the channel's, so a strong neighbor inside the channel raises a weak station's term. A steady
-// neighbor whose pieces are p, delta Hz away, leaves on average |p|^2 / (2 sin^2(pi delta piece_s)) in the power of a
+// A neighbor: C^2's first part is the channel's, so a strong neighbor inside the channel raises a weak station's term.
+// A steady neighbor whose pieces are p, delta Hz away, leaves on average |p|^2 / (2 sin^2(pi delta piece_s)) in the power of a
 // block sum of n pieces, while the floor's share of the term is floor^2 |p|^2 n, at most 2 n floor^2 of that residual
 // (0.019 for a 24-piece block, 0.16 for a 195-piece one), and the edge's share at most 2 E_n (0.045; derived): where
 // the term's share reaches the noise, the neighbor's own residual in the same block is on average at least 5 times
@@ -211,7 +211,7 @@
 // starts does lose it: its last pieces stay in C^2 for 390 ms, and with a neighbor 30 to 40 dB stronger (relative to
 // the station's key-down power) 194 of 288 such runs lost the exact text that they keep without the term (a measured
 // limitation of the missing interference model; docs/backlog.md). And a station fading up raises C^2 inside its own
-// mark: a fading-up station's key-up overshoot (a piece 3% to 7% above the maximum before it in the traces; a steady
+// mark: a fading-up station's key-up overshoot (a piece 3% to 5% above the maximum before it in the traces; a steady
 // carrier's is 1.091 of its power, below the window's earlier peak) sets a new maximum, the mark's evidence,
 // recomputed with the larger V, drops by thousands of nats, and a story that ended the mark a few pieces early wins
 // (traced). Under Rayleigh fading at 0.3 to 2 Hz the term was worse in 29 of 360 runs and better in 242 (the results
