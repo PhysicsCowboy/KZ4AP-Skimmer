@@ -710,6 +710,14 @@ long run; the timing convention and rise times wait for the research.**
   dot (the research's heuristic); today's generator edge is 5 ms full length, a 2.95 ms 10–90% rise, so the rise is
   about 15% shorter than now, and the main change at high speed is the placement. Real transmit paths' bias is not added to every group. **This is for the generator
   only (owner, 2026-10-23): the decoder's filter shape (D16) is not decided.**
+- **The decoder's filter shape (D16), decided (owner, 2026-10-23: "Agreed"):** the matched filter to a real 100 WPM
+  dot, 12 ms at half amplitude with raised-cosine edges of 2.5 ms 10–90% (full length 4.23 ms), as the generator now
+  keys; noise bandwidth 76 Hz. Against a plain 12 ms running sum (83 Hz) it gains 0.17 dB on the dot and suppresses
+  neighbors more: −15.5 against −14.8 dB at 70 Hz, −15.4 against −13.3 dB at 120 Hz, −24.5 against −18.0 dB at 200 Hz
+  (derived; scratch `filt_resp.py`). The owner's concern about the ITU's necessary bandwidth (250 to 417 Hz at
+  100 WPM) was answered: that is a transmitter's occupied bandwidth for its waveform's shape; a detector's best
+  bandwidth is the matched filter's, about 1/T (Turin 1960), and a 250 to 417 Hz filter would admit 5.3 to 7.5 dB
+  more noise.
 
 ### Obvious items, stated for approval
 
