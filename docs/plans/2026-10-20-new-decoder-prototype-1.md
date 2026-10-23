@@ -780,6 +780,21 @@ long run; the timing convention and rise times wait for the research.**
   was meant to back up, and a channel-level AGC knows a new station's level only from an earlier transmission within
   its hang. Recorded in `docs/backlog.md` as a fallback, its role and settings to be worked out only if the prototype
   shows the per-story RMS failing.
+- **The systematic term's memory: 10 samples, 26.67 ms (owner, 2026-10-23: "I agree"), replacing 390 ms.** The owner:
+  "The 390 ms is arbitrary at this point and hence stupid": it was the old block length (the longest block losing at
+  most 0.5 dB at 1 Hz), and the blocks are gone. The memory supplies C² on a mark's fall, where the template still
+  tails off after the signal has dropped; elsewhere it adds nothing (on the flat part the peak equals the current
+  power, on the rise the look-ahead does the work, in a gap the template is zero). Derived: it reaches from the last
+  sample at full carrier (99% of full amplitude or more; 99.9% gives the same) to the last sample where the leeway
+  C²(f²s_k² + v_k) can equal the noise σ_y², for the strongest station the newborn prior allows (+85 dB S₅₀₀), over
+  every position of the edge within a sample: 10 samples (8 at +60 dB S₅₀₀, 7 at +40 dB S₅₀₀). A first proposal of
+  16 ms rested on a 1% tail cutoff borrowed from the own-power rule and was withdrawn. Noise in the peak (scratch
+  simulation, correlated filter noise): it reads high only, 1.77, 1.20, 1.06 and 1.02 times the true power at 0, +10,
+  +20 and +30 dB S₅₀₀, while the leeway is 0.005, 0.03, 0.28 and 2.7 times the noise, so it matters only where the
+  peak is within a few percent. Task 4e's failure of a 20 ms memory came from per-block booking, which per-sample
+  booking removes (derived, not yet measured); the prototype measures 26.67 ms on the strong-station grid, the
+  stopped-neighbor grid, the speed step and TEST/TU, with no other variants. The look-ahead's mirror question is
+  decided separately.
 
 ### Obvious items, stated for approval
 
