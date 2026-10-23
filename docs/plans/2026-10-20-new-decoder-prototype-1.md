@@ -705,8 +705,10 @@ long run; the timing convention and rise times wait for the research.**
   length, so the generator's full edge length is 1.5 ms / 0.5903 = 2.54 ms (derived).
   **Revised (owner, 2026-10-23):** "I want to use 2.5 milliseconds instead of 1.5 milliseconds as the default in the
   generator, but I want to decrease the rise time at higher speeds where it makes more of a difference." The default
-  10–90% time is 2.5 ms (full length 2.5 / 0.5903 = 4.23 ms); the rule for shortening it at high speed is being
-  decided with the owner. Real transmit paths' bias is not added to every group. **This is for the generator
+  10–90% time is 2.5 ms (full length 2.5 / 0.5903 = 4.23 ms). **Settled (owner, 2026-10-23: "Agreed"): 2.5 ms at
+  every speed, no shortening at high speed.** At 100 WPM a dot is 65% flat, about the ITU-based guide of a fifth of a
+  dot (the research's heuristic); today's generator edge is 5 ms full length, a 2.95 ms 10–90% rise, so the rise is
+  about 15% shorter than now, and the main change at high speed is the placement. Real transmit paths' bias is not added to every group. **This is for the generator
   only (owner, 2026-10-23): the decoder's filter shape (D16) is not decided.**
 
 ### Obvious items, stated for approval
