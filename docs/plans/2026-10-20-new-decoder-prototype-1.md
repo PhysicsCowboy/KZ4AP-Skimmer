@@ -693,6 +693,15 @@ long run; the timing convention and rise times wait for the research.**
   to the keyed timing, and the rise and fall times, wait for the research on real transmitters' keying envelopes
   (`.superpowers/sdd/2026-10-20-new-decoder-prototype-1/keying-envelope-research.md`). The 80 Hz filter's exact shape
   (D16) waits for the same research.
+- **The research (2026-10-23):** every keying shaper whose design could be read starts the rise at key-down and the
+  fall at key-up, so a mark keeps its keyed length at half amplitude (QRP Labs AN005, KE3HO, Morse Runner, DeepCW);
+  current rigs' rise-time settings run 1 to 8 ms (defaults 2 to 6 ms), ARRL lab 10–90% rise times 2.5 to 4.7 ms at
+  defaults; real transmit paths add a mark bias of −7 to +4.7 ms, both signs; at 100 WPM a 12 ms running sum loses
+  only 0.08 to 0.33 dB against a filter matched to real dots, while a 5 ms short mark costs 4.7 dB.
+- **Decided (owner, 2026-10-23: "I choose A with a one and a half millisecond raised cosine profile"):** the
+  generator's edges start the rise at key-down and the fall at key-up (each mark keeps its keyed length at half
+  amplitude), with a 1.5 ms raised-cosine edge. Whether 1.5 ms is the edge's full length (0 to 100%) or its 10–90% rise
+  is being confirmed with the owner. Real transmit paths' bias is not added to every group.
 
 ### Obvious items, stated for approval
 
