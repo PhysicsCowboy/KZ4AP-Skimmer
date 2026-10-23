@@ -418,29 +418,23 @@ Standard practice accepts these rather than modeling them (survey,
 
 The test generator has none of these; measuring them needs generator changes, which need the owner's approval.
 
-### Following a station's frequency in the new decoder: a web of issues (owner, 2026-10-23; later)
+### The detector's frequency following and the fixed channel (owner, 2026-10-23; later)
 
-Found while deciding the new decoder's tracker tolerance (plan D16/D17). The owner: "There seem to be a web of issues
-here which I don't think we need to tackle right now, but which should be recorded in the backlog." All from
-`docs/signal-processing.md` §6, §7, §8d and A.8d:
-- **The anchor is read once.** The engine gives the decoder the detector's current frequency (the anchor) before every
-  block of 32 samples (21.33 ms), but the new decoder reads it only at the channel's first block, where its tracker
-  starts; later anchors are ignored. The Matched decoder follows it at every block; the bank mixes by it.
-- **An untrusted tracker holds and searches only near itself.** It holds its last frequency (with its drift up to the
-  moment trust was lost), searches every 0.5 s for the strongest line within ±15 Hz of its own frequency, and restarts
-  when two consecutive measurements agree. It never returns to the detector's frequency.
-- **So the detector's knowledge is unused.** A station that drifts more than 15 Hz from where an untrusted tracker was
-  left, or an answering station 15 to 47 Hz away (inside the detector's track spacing, D_ch = 47 Hz), is lost although
-  the detector's track follows it.
-- **The channel never moves.** It stays centered on the track's birth frequency (rounded to a 23.44 Hz bin; the
-  station starts within ±11.7 Hz), flat to ±39 Hz, −6 dB at ±150 Hz. Through the decoder's 76 Hz front filter a station
-  40 Hz off loses about 4 dB (derived); the drift group (excursions up to 40 Hz) tests it.
-- **The tracker's trust tolerance** (3σ within 0.667 Hz) was derived for the old 390 ms block. The 76 Hz filter loses
-  0.5 dB at 15 Hz and 1 dB at 21 Hz off (derived), so the tolerance is about 30 times stricter than the decoder now
-  needs; re-deriving it by the same 1 dB rule gives about 21 Hz. Left at 0.667 Hz for now. Within the channel's
-  ±11.7 Hz starting offset the filter loses under 0.5 dB even with the tracker doing nothing.
-- **Unmeasured:** QSO turnovers and drift on the detector path; the first prototype is measured on oracle channels
-  only, where the anchor is the labeled frequency.
+Found while discussing the new decoder's tracker (plan D17). The owner: "There seem to be a web of issues here which I
+don't think we need to tackle right now, but which should be recorded in the backlog", then: "My decision was only
+about the detector, but I would say all the decisions that have to do with the decoder are still open." From
+`docs/signal-processing.md` §6 and §7:
+- **The detector follows a station's frequency after its first determination:** every hop (21.33 ms) each track moves
+  to the strongest qualifying peak within D_ch = 47 Hz of where it is. What that serves today: keeping a drifting
+  station from being born again as a second track, the Matched decoder (which follows it at every block) and the bank
+  (which mixes by it). The new decoder reads it only at its channel's first block (a decoder matter, still open in the
+  plan).
+- **The channel never moves:** it stays centered on the track's birth frequency, rounded to a 23.44 Hz bin (the station
+  starts within ±11.7 Hz of 0 Hz), flat to ±39 Hz, −6 dB at ±150 Hz relative to the passband. A station that drifts
+  beyond the channel's flat part is attenuated whatever the decoder does; through the new decoder's 76 Hz front filter
+  a station 40 Hz off loses about 4 dB (derived). The drift group (excursions up to 40 Hz) tests it.
+- **Unmeasured on the detector path:** QSO turnovers (an answering station within 47 Hz moves the track) and drift;
+  the new decoder's first prototype is measured on oracle channels only.
 
 ### The amplitude model inside marks under fast fading (owner, 2026-10-22: a known limitation)
 
