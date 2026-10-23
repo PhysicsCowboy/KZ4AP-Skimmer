@@ -418,6 +418,25 @@ Standard practice accepts these rather than modeling them (survey,
 
 The test generator has none of these; measuring them needs generator changes, which need the owner's approval.
 
+### The amplitude model inside marks under fast fading (owner, 2026-10-22: a known limitation)
+
+The new decoder's amplitude per story is one number (Bell 1977's form), updated every 3 ms with the owner's rule for its
+change. Fading is smooth, so a fade keeps its direction for a while; a one-number model treats each 3 ms change as an
+independent step, so over n steps it expects √n times one step's movement instead of about n. Inside long marks during
+fading it is therefore over-confident, even when it knows the station's true level and rate: about three times too
+many 1% surprises at 2 Hz and 25 WPM (measured in scratch;
+`.superpowers/sdd/2026-10-20-new-decoder-prototype-1/amp-predictive.md` and its review).
+
+Where it matters: the fading rate times the mark length, and mainly strong signals. Steady signals and fading up to
+about 1 Hz at 25 WPM are unaffected (the fixed 2 Hz rule is calibrated or cautious there); 2 Hz and faster at 25 WPM is
+affected; at slow speeds, with longer marks, it starts at slower fading (an 8 WPM dash of 450 ms, likely from about
+1 Hz; derived, the 8 WPM check unfinished).
+
+A possible remedy is a second number per story, the amplitude's rate of change. That is standard in target tracking
+(the nearly-constant-velocity model, Bar-Shalom) and in fading-channel estimation of the complex gain (Baddour and
+Beaulieu 2005), but not established for amplitude-only tracking in a Morse decoder, and a Rayleigh amplitude turns
+sharply at deep nulls, where a trend model misjudges. It needs a standard-practice check before being offered.
+
 ### Several fading rates per story in the new decoder (owner, 2026-10-22; later)
 
 The owner chose one fixed fading rate, 2 Hz, on the fast side as Bell did (plan D16). Real fading runs from about

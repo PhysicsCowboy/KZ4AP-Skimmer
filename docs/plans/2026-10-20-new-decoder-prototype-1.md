@@ -665,7 +665,10 @@ owner before any code.**
       fixed 2 Hz costs hundreds of nats per message. A predictor using the full complex history could gain 18 to 342
       nats per message at 2 Hz: an upper bound using phase the decoder does not see.
     - **Splits** come from the loss of the continuing story relative to a fresh one (for example a start in a fade, then
-      a recovery), not from losses every reading shares. The owner rejected time constants not derived for this decoder (fldigi's 0.4 s and 2 s, an
+      a recovery), not from losses every reading shares.
+  - **The amplitude model's over-confidence inside marks under fast fading: a known limitation, backlogged (owner,
+    2026-10-22: "I think we record that as a known limitation and backlog it").** It matters with fading of about 2 Hz
+    and faster at 25 WPM, earlier at slow speeds, and mainly on strong signals (`docs/backlog.md`). The owner rejected time constants not derived for this decoder (fldigi's 0.4 s and 2 s, an
     instant attack, a 24 ms hold-off: "Every single one of these three options is completely arbitrary and made up")
     and a full Bayesian estimate per story as too complicated.
 
