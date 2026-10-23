@@ -753,6 +753,11 @@ long run; the timing convention and rise times wait for the research.**
   within a 3 ms sample; the misfit for other rigs' edges (1.2 to 3% of full for 0 to 4 ms rises, 6 to 12.5% for 8 ms;
   derived) goes into the systematic term. The filter's output rises 9.9 ms (10–90%) for a long mark; a 100 WPM dot
   peaks at 0.90 of full (derived; scratch `template_shape.py`).
+- **The sampling interval: 2.667 ms, every 4th channel sample (owner, 2026-10-23: "Agreed"), replacing 3 ms.** The
+  owner asked "Why would we not just change our own sampling rate to be a multiple of the channel sample rate"; 3 ms is
+  4.5 channel samples (1 500 samples/s), so every other instant fell between samples. 2.667 ms (375 samples/s) keeps
+  the rule of at most a quarter of a 100 WPM dot (12 ms / 4 = 3 ms); 3.333 ms (5 samples) would break it. About 12%
+  more computation than 3 ms (3 / 2.667 = 1.125).
 - **The backup hang AGC: dropped from the design for now (owner, 2026-10-23: "A").** The Ω̄ fix covers the starts it
   was meant to back up, and a channel-level AGC knows a new station's level only from an earlier transmission within
   its hang. Recorded in `docs/backlog.md` as a fallback, its role and settings to be worked out only if the prototype
