@@ -666,6 +666,13 @@ owner before any code.**
       nats per message at 2 Hz: an upper bound using phase the decoder does not see.
     - **Splits** come from the loss of the continuing story relative to a fresh one (for example a start in a fade, then
       a recovery), not from losses every reading shares.
+  - **The fix for starts: settled (owner, 2026-10-22: "Isn't omega bar already a well defined number?").** The rule's
+    long-run power is Ω̄, the expected long-run power given the story's key-down samples and the owner's flat prior (the
+    law of total variance: the rule's variance term is linear in Ω, so averaging over Ω's uncertainty replaces it by
+    its expectation), not the plain RMS Ω̂. About Ω̂·ν/(ν − 1) once ν exceeds 1, ν counted on key-down sample times; on
+    the first fade or two it depends on the prior's top, +85 dB S₅₀₀ (a placeholder). The third term of the rough
+    formula is dropped as negligible (within 0.2 nats, measured). The 95% confidence bound offered beside it is not
+    part of the design.
   - **The amplitude model's over-confidence inside marks under fast fading: a known limitation, backlogged (owner,
     2026-10-22: "I think we record that as a known limitation and backlog it").** It matters with fading of about 2 Hz
     and faster at 25 WPM, earlier at slow speeds, and mainly on strong signals (`docs/backlog.md`). The owner rejected time constants not derived for this decoder (fldigi's 0.4 s and 2 s, an
