@@ -793,8 +793,16 @@ long run; the timing convention and rise times wait for the research.**
   +20 and +30 dB S₅₀₀, while the leeway is 0.005, 0.03, 0.28 and 2.7 times the noise, so it matters only where the
   peak is within a few percent. Task 4e's failure of a 20 ms memory came from per-block booking, which per-sample
   booking removes (derived, not yet measured); the prototype measures 26.67 ms on the strong-station grid, the
-  stopped-neighbor grid, the speed step and TEST/TU, with no other variants. The look-ahead's mirror question is
-  decided separately.
+  stopped-neighbor grid, the speed step and TEST/TU, with no other variants.
+- **The look-ahead: 10 samples, 26.67 ms, the mirror of the memory (owner, 2026-10-23: "Agree"), replacing 2 samples.**
+  On a rise the template climbs while the signal at the sample may still be low, so C² must come from the flat part
+  ahead. Derived by the memory's rule, computed on the rise separately: from the first sample where the leeway can
+  equal the noise to the first sample at full carrier, at +85 dB S₅₀₀, over every edge position: 10 samples (8 at
+  +60 dB S₅₀₀, 7 at +40 dB S₅₀₀). It covers D15's 4 ms minimum against the filter's ringing before a mark. C² is thus
+  the largest e² over a symmetric window of 21 samples (10 back, the current one, 10 ahead), with the sample's own
+  e_k²/s_k² as before. Costs: 26.67 ms more delay before a sample is scored; one running maximum per channel, not per
+  story. For reference (derived, scratch `memspan\risetimes.py`), the decoder's input rises 10.04 ms (10–90%),
+  14.75 ms (1–99%) and 19.04 ms (0.1–99.9%) for a 2.5 ms keyed edge through the channelizer and the 76 Hz filter.
 
 ### Obvious items, stated for approval
 
