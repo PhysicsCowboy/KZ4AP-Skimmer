@@ -702,7 +702,11 @@ long run; the timing convention and rise times wait for the research.**
   generator's edges start the rise at key-down and the fall at key-up (each mark keeps its keyed length at half
   amplitude), with a raised-cosine edge whose 10–90% rise (and fall) time is 1.5 ms (owner, 2026-10-23: "the 10% to
   90% time is actually 1.5 milliseconds"). A raised cosine's 10–90% time is (π − 2·arccos 0.8)/π = 0.5903 of its full
-  length, so the generator's full edge length is 1.5 ms / 0.5903 = 2.54 ms (derived). Real transmit paths' bias is not added to every group. **This is for the generator
+  length, so the generator's full edge length is 1.5 ms / 0.5903 = 2.54 ms (derived).
+  **Revised (owner, 2026-10-23):** "I want to use 2.5 milliseconds instead of 1.5 milliseconds as the default in the
+  generator, but I want to decrease the rise time at higher speeds where it makes more of a difference." The default
+  10–90% time is 2.5 ms (full length 2.5 / 0.5903 = 4.23 ms); the rule for shortening it at high speed is being
+  decided with the owner. Real transmit paths' bias is not added to every group. **This is for the generator
   only (owner, 2026-10-23): the decoder's filter shape (D16) is not decided.**
 
 ### Obvious items, stated for approval
