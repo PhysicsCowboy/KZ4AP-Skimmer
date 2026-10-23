@@ -638,7 +638,9 @@ owner before any code.**
     deep fade (10 dB or more down in about 10% of starts, 20 dB in about 1%), is measured in the prototype. The backup: a
     decision-free hang AGC on the channel; **its parameters (rise, hang, release) are not decided** (owner,
     2026-10-22). The values discussed (rising at once, holding 1.6 s, the word gap at 5.2 WPM, then falling quickly)
-    were a proposal only.
+    were a proposal only. The owner rejected time constants not derived for this decoder (fldigi's 0.4 s and 2 s, an
+    instant attack, a 24 ms hold-off: "Every single one of these three options is completely arbitrary and made up")
+    and a full Bayesian estimate per story as too complicated.
   - **The amplitude prediction's exact form, to be derived (owner, 2026-10-22: "Then that is what we should do.
     Proceed.").** A start in a fade showed the design over-confident in its long-run amplitude, which rests on few
     independent fades early in an over. Before choosing any form: (1) derive the exact predictive distribution of the
@@ -675,9 +677,22 @@ owner before any code.**
     part of the design.
   - **The amplitude model's over-confidence inside marks under fast fading: a known limitation, backlogged (owner,
     2026-10-22: "I think we record that as a known limitation and backlog it").** It matters with fading of about 2 Hz
-    and faster at 25 WPM, earlier at slow speeds, and mainly on strong signals (`docs/backlog.md`). The owner rejected time constants not derived for this decoder (fldigi's 0.4 s and 2 s, an
-    instant attack, a 24 ms hold-off: "Every single one of these three options is completely arbitrary and made up")
-    and a full Bayesian estimate per story as too complicated.
+    and faster at 25 WPM, earlier at slow speeds, and mainly on strong signals (`docs/backlog.md`).
+
+**D17. The test set's keying edges. Decided (owner, 2026-10-23): fix the generator and remake the test set, before any
+long run; the timing convention and rise times wait for the research.**
+- **The finding (the owner's, 2026-10-22):** "the development set can't be making good code at 100 WPM if it uses 5 ms
+  rise and fall times." The generator (`training/kz4ap_synth/generate.py`) uses 5 ms raised-cosine edges at every
+  speed (`RISE_S`), placed by default inside each element, so every mark is 5 ms short at half amplitude and every space
+  5 ms long: 3% at 8 WPM, 10% at 25 WPM, 33% at 80 WPM (the development set's top speed cell). The groups built on
+  VE3NEA's centered 2 ms edges are unaffected.
+- **Decided:** fix the generator, regenerate the development set from the same seeds, and rerun the bank decoder's
+  reference on it, before the new decoder's long runs. Old and new scores are not compared.
+- **Not decided (owner, 2026-10-23):** "you are assuming without evidence that the intended length should be measured
+  between edge centers. That decision needs to wait for your agent to finish its research." Where the edges sit relative
+  to the keyed timing, and the rise and fall times, wait for the research on real transmitters' keying envelopes
+  (`.superpowers/sdd/2026-10-20-new-decoder-prototype-1/keying-envelope-research.md`). The 80 Hz filter's exact shape
+  (D16) waits for the same research.
 
 ### Obvious items, stated for approval
 
