@@ -735,7 +735,13 @@ long run; the timing convention and rise times wait for the research.**
   1.6 Hz behind; an equally strong answering station moves the peak after about 0.7 s, during which a station 30 Hz
   off loses about 2 dB in the 76 Hz filter. This reverses the fixed channel recorded in the backlog the same day (that
   item updated). The bank's and Matched's own shifts by the detector's frequency become redundant; how they adapt is
-  for the implementation plan. Next: whether the new decoder needs its own tracker at all.
+  for the implementation plan.
+- **No frequency tracker in the new decoder (owner, 2026-10-23: "A").** With the channelizer following the detector,
+  the station arrives off-center only by the detector's error (about 0.2 Hz steady, 1.1 to 1.6 Hz behind a 1 Hz/s
+  drift, briefly up to 47 Hz for about 0.7 s at a turnover); the 76 Hz filter loses almost nothing at 2 Hz and under
+  0.5 dB at 15 Hz (derived). The tracker's trust tolerance, its untrusted search and its use of the detector's frequency
+  are no longer decisions. Consequence for measurement: on oracle channels the detector's frequency is the label's,
+  without drift, so drifting test stations need the label's true, drifting frequency supplied (a test-harness change).
 
 ### Obvious items, stated for approval
 
