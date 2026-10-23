@@ -742,6 +742,11 @@ long run; the timing convention and rise times wait for the research.**
   0.5 dB at 15 Hz (derived). The tracker's trust tolerance, its untrusted search and its use of the detector's frequency
   are no longer decisions. Consequence for measurement: on oracle channels the detector's frequency is the label's,
   without drift, so drifting test stations need the label's true, drifting frequency supplied (a test-harness change).
+- **A mark's expected shape: the smeared prediction (owner, 2026-10-23: "I want option B, but we need to discuss the
+  exact shape").** Each story predicts the filter's actual output for its claimed keying (the gradual rise and fall),
+  not a square on/off shape, which would misread every mark's timing by several milliseconds. Standard in sequence
+  detection over a smearing channel (MLSE with intersymbol interference, Forney 1972). The exact shape is being
+  discussed with the owner.
 
 ### Obvious items, stated for approval
 
