@@ -725,6 +725,17 @@ long run; the timing convention and rise times wait for the research.**
   derived for the old block, against about 21 Hz by the same 1 dB rule for the 76 Hz filter); whether the decoder reads
   the detector's frequency after its first block; and how an untrusted tracker searches and restarts (today: it holds,
   searches ±15 Hz of its own frequency and restarts on two agreeing measurements).
+- **The channelizer follows the detector (owner, 2026-10-23: "B"; asked first: "we need to decide on what kind of
+  frequency tracking the channelizer does before we worry about the decoder's frequency tracking").** Each channel
+  block is shifted by the detector's current frequency for the track (a phase-continuous rotation on the 1 500
+  samples/s stream, one complex multiplication per sample), and the channel's bins move when the track moves by more
+  than half a bin (11.7 Hz): the usual coarse-plus-fine layout of FFT channelizers (design notes, topic 4, item 8).
+  Decision-free: the detector decides where the station is (the owner's rule of 2026-09-29). Every decoder receives
+  the station near 0 Hz. Response (derived from the detector's 1 s average): a drift of 1 Hz/s is followed 1.1 to
+  1.6 Hz behind; an equally strong answering station moves the peak after about 0.7 s, during which a station 30 Hz
+  off loses about 2 dB in the 76 Hz filter. This reverses the fixed channel recorded in the backlog the same day (that
+  item updated). The bank's and Matched's own shifts by the detector's frequency become redundant; how they adapt is
+  for the implementation plan. Next: whether the new decoder needs its own tracker at all.
 
 ### Obvious items, stated for approval
 

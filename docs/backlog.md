@@ -429,10 +429,8 @@ about the detector, but I would say all the decisions that have to do with the d
   station from being born again as a second track, the Matched decoder (which follows it at every block) and the bank
   (which mixes by it). The new decoder reads it only at its channel's first block (a decoder matter, still open in the
   plan).
-- **The channel never moves:** it stays centered on the track's birth frequency, rounded to a 23.44 Hz bin (the station
-  starts within ±11.7 Hz of 0 Hz), flat to ±39 Hz, −6 dB at ±150 Hz relative to the passband. A station that drifts
-  beyond the channel's flat part is attenuated whatever the decoder does; through the new decoder's 76 Hz front filter
-  a station 40 Hz off loses about 4 dB (derived). The drift group (excursions up to 40 Hz) tests it.
+- **The channel never moves (decided away the same day):** the owner then chose that the channelizer follow the
+  detector's frequency at every block (plan D17), so this item is no longer deferred.
 - **Unmeasured on the detector path:** QSO turnovers (an answering station within 47 Hz moves the track) and drift;
   the new decoder's first prototype is measured on oracle channels only.
 
