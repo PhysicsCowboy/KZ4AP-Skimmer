@@ -758,6 +758,11 @@ long run; the timing convention and rise times wait for the research.**
   4.5 channel samples (1 500 samples/s), so every other instant fell between samples. 2.667 ms (375 samples/s) keeps
   the rule of at most a quarter of a 100 WPM dot (12 ms / 4 = 3 ms); 3.333 ms (5 samples) would break it. About 12%
   more computation than 3 ms (3 / 2.667 = 1.125).
+- **The samples in a story's long-run RMS (owner, 2026-10-23: "B"):** every sample where the story expects signal,
+  each counting in proportion to the square of its template value (the least-squares estimate, Σ(e_k² − σ_y²)/Σ s_k²);
+  on a mark's flat part this is CW Skimmer's average, and the edge samples count less instead of being discarded.
+  A departure from Skimmer's practice, for a derived reason: at 100 WPM a dot's output peaks at 0.90 of full and has
+  no flat part, so discarding edges would leave dots at high speed, and an all-dot word, with no estimate.
 - **The backup hang AGC: dropped from the design for now (owner, 2026-10-23: "A").** The Ω̄ fix covers the starts it
   was meant to back up, and a channel-level AGC knows a new station's level only from an earlier transmission within
   its hang. Recorded in `docs/backlog.md` as a fallback, its role and settings to be worked out only if the prototype
