@@ -763,6 +763,13 @@ long run; the timing convention and rise times wait for the research.**
   on a mark's flat part this is CW Skimmer's average, and the edge samples count less instead of being discarded.
   A departure from Skimmer's practice, for a derived reason: at 100 WPM a dot's output peaks at 0.90 of full and has
   no flat part, so discarding edges would leave dots at high speed, and an all-dot word, with no estimate.
+- **Counting the independent fades ν: binned, exact on the bins (owner, 2026-10-23: "Agreed"; his idea: "What if we
+  just did a very long-term average and decimated...").** Each story sums its key-down weight (s_k²) in bins of
+  42.67 ms (two engine blocks) and computes ν = (Σw)² / ΣΣ w_i w_j ρ²(t_i − t_j) over the bins; binning changes ν by
+  about (π f_D b)²/12 = 0.6% at 2 Hz (derived), against the Satterthwaite form's own ~3%. Each story keeps its last
+  10 bins (ρ² < 0.001 beyond 0.42 s). Cost about 1.6 operations per story per sample (1 addition each sample,
+  10 multiply-adds per closed bin) and about 12 numbers per story; option (C), an exponential-sum fit, would take about
+  10 operations per sample, 4 numbers, and an unchecked fit error (rough counts).
 - **The backup hang AGC: dropped from the design for now (owner, 2026-10-23: "A").** The Ω̄ fix covers the starts it
   was meant to back up, and a channel-level AGC knows a new station's level only from an earlier transmission within
   its hang. Recorded in `docs/backlog.md` as a fallback, its role and settings to be worked out only if the prototype
