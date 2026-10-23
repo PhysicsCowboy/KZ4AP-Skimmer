@@ -770,6 +770,12 @@ long run; the timing convention and rise times wait for the research.**
   10 bins (ρ² < 0.001 beyond 0.42 s). Cost about 1.6 operations per story per sample (1 addition each sample,
   10 multiply-adds per closed bin) and about 12 numbers per story; option (C), an exponential-sum fit, would take about
   10 operations per sample, 4 numbers, and an unchecked fit error (rough counts).
+- **The amplitude prediction in full (owner, 2026-10-23: "agreed"):** after a time Δt since the story's last estimate
+  r̂₀ (uncertainty P_m), the predicted amplitude is ρ_a·r̂₀ + (1 − ρ_a)·0.886·√Ω̄ and its variance ρ_a²·P_m +
+  ½(1 − ρ²)·Ω̄. ρ = exp(−π² f_D² Δt²/2) is the signal's correlation at f_D = 2 Hz; ρ_a is the amplitude's own
+  correlation, (π/4)(₂F₁(−½, −½; 1; ρ²) − 1)/(1 − π/4) (Rayleigh; 0.902, 0.416 and 0.011 at 48, 144 and 336 ms, against
+  ρ = 0.956, 0.664 and 0.108); 0.886·√Ω̄ = (√π/2)·√Ω̄ is the Rayleigh mean amplitude. The owner's rule (the middle
+  term) is unchanged. Form (iv) of the derivation, within 0.2 nats of the exact predictive (measured in scratch).
 - **The backup hang AGC: dropped from the design for now (owner, 2026-10-23: "A").** The Ω̄ fix covers the starts it
   was meant to back up, and a channel-level AGC knows a new station's level only from an earlier transmission within
   its hang. Recorded in `docs/backlog.md` as a fallback, its role and settings to be worked out only if the prototype
