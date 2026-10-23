@@ -718,6 +718,10 @@ long run; the timing convention and rise times wait for the research.**
   100 WPM) was answered: that is a transmitter's occupied bandwidth for its waveform's shape; a detector's best
   bandwidth is the matched filter's, about 1/T (Turin 1960), and a 250 to 417 Hz filter would admit 5.3 to 7.5 dB
   more noise.
+- **The tracker's tolerance and the new decoder's frequency following: deferred to the backlog (owner, 2026-10-23:
+  "a web of issues here which I don't think we need to tackle right now, but which should be recorded in the
+  backlog").** The tolerance stays at 0.667 Hz for now; the anchor read once, the tracker's search around its own held
+  frequency, the fixed channel and turnovers on the detector path are recorded in `docs/backlog.md`.
 
 ### Obvious items, stated for approval
 
