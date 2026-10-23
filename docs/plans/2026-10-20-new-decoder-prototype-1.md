@@ -647,7 +647,25 @@ owner before any code.**
     fading by simulation, including ν's count (Satterthwaite) and conditioning on the last amplitude only (Bell's
     simplification); (3) measure the evidence each simple form loses against it (a Gaussian with the exact moments, the
     rough three-term formula, the owner's rule as decided), with the threshold argued, not picked; (4) independent
-    review; then to the owner. Scratch calculations only; nothing built. The owner rejected time constants not derived for this decoder (fldigi's 0.4 s and 2 s, an
+    review; then to the owner. Scratch calculations only; nothing built.
+  - **Findings of that derivation (2026-10-22; reviewed: 0 Critical, 3 Important, 4 Minor; scratch only, 25 WPM; the
+    8 WPM calibration run unfinished).** Files: `.superpowers/sdd/2026-10-20-new-decoder-prototype-1/amp-predictive.md`
+    and `fading-amp-predictive-review.md`.
+    - **Exact predictive (derived):** given the long-run power Ω and the last amplitude r₀, the amplitude after Δt is
+      Rician (center ρr₀, spread Ω(1 − ρ²)/2 per component); averaged over Ω's truncated inverse-gamma after ν
+      independent fades, its density and mean are closed forms (₂F₁) and E[r²] = ρ²(r̂₀² + P_m) + (1 − ρ²)Ω̄ exactly. Its
+      tail is a power law, (1 + x²/(2κS))^(−ν), so no Gaussian fits it at small ν.
+    - **ν (measured):** counted on the key-down sample times it matches simulation within 3% at 0.1 to 5 Hz; counted on
+      elapsed time it over-counts (10% at 25 WPM, up to 46% at 8 WPM, at 2 Hz).
+    - **The starts (measured):** the rule as decided, with the early RMS taken as exact, loses up to about 12 nats per
+      gap in the first half-second and up to about 100 nats per message in marks (2 Hz, +30 dB S₅₀₀). Any of the
+      widened forms cuts this to a few nats, and they differ by about a nat or less. **Which form is not decided.**
+    - **Larger losses elsewhere (measured):** the one-number amplitude model updated every 3 ms is over-confident inside
+      marks even with the true level and rate (about three times too many 1% surprises); 5 Hz fading predicted at the
+      fixed 2 Hz costs hundreds of nats per message. A predictor using the full complex history could gain 18 to 342
+      nats per message at 2 Hz: an upper bound using phase the decoder does not see.
+    - **Splits** come from the loss of the continuing story relative to a fresh one (for example a start in a fade, then
+      a recovery), not from losses every reading shares. The owner rejected time constants not derived for this decoder (fldigi's 0.4 s and 2 s, an
     instant attack, a 24 ms hold-off: "Every single one of these three options is completely arbitrary and made up")
     and a full Bayesian estimate per story as too complicated.
 
