@@ -745,8 +745,14 @@ long run; the timing convention and rise times wait for the research.**
 - **A mark's expected shape: the smeared prediction (owner, 2026-10-23: "I want option B, but we need to discuss the
   exact shape").** Each story predicts the filter's actual output for its claimed keying (the gradual rise and fall),
   not a square on/off shape, which would misread every mark's timing by several milliseconds. Standard in sequence
-  detection over a smearing channel (MLSE with intersymbol interference, Forney 1972). The exact shape is being
-  discussed with the owner.
+  detection over a smearing channel (MLSE with intersymbol interference, Forney 1972). **The exact shape (owner,
+  2026-10-23: "OK agreed"):** a keyed carrier with 2.5 ms (10–90%) raised-cosine edges, through the channelizer's filter
+  (Blackman-windowed sinc, 21.3 ms, −6 dB at ±150 Hz; included because it is known exactly and costs nothing in a
+  precomputed table, though it changes the shape by at most 0.6% of full at 25 WPM and 1.2% at 100 WPM), then through
+  the 76 Hz filter, computed from the story's claimed key-down and key-up times, averaged over where an edge falls
+  within a 3 ms sample; the misfit for other rigs' edges (1.2 to 3% of full for 0 to 4 ms rises, 6 to 12.5% for 8 ms;
+  derived) goes into the systematic term. The filter's output rises 9.9 ms (10–90%) for a long mark; a 100 WPM dot
+  peaks at 0.90 of full (derived; scratch `template_shape.py`).
 
 ### Obvious items, stated for approval
 
