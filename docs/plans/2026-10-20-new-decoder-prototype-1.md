@@ -701,7 +701,8 @@ long run; the timing convention and rise times wait for the research.**
 - **Decided (owner, 2026-10-23: "I choose A with a one and a half millisecond raised cosine profile"):** the
   generator's edges start the rise at key-down and the fall at key-up (each mark keeps its keyed length at half
   amplitude), with a 1.5 ms raised-cosine edge. Whether 1.5 ms is the edge's full length (0 to 100%) or its 10–90% rise
-  is being confirmed with the owner. Real transmit paths' bias is not added to every group.
+  is being confirmed with the owner. Real transmit paths' bias is not added to every group. **This is for the generator
+  only (owner, 2026-10-23): the decoder's filter shape (D16) is not decided.**
 
 ### Obvious items, stated for approval
 
