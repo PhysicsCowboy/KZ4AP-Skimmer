@@ -700,8 +700,9 @@ long run; the timing convention and rise times wait for the research.**
   only 0.08 to 0.33 dB against a filter matched to real dots, while a 5 ms short mark costs 4.7 dB.
 - **Decided (owner, 2026-10-23: "I choose A with a one and a half millisecond raised cosine profile"):** the
   generator's edges start the rise at key-down and the fall at key-up (each mark keeps its keyed length at half
-  amplitude), with a 1.5 ms raised-cosine edge. Whether 1.5 ms is the edge's full length (0 to 100%) or its 10–90% rise
-  is being confirmed with the owner. Real transmit paths' bias is not added to every group. **This is for the generator
+  amplitude), with a raised-cosine edge whose 10–90% rise (and fall) time is 1.5 ms (owner, 2026-10-23: "the 10% to
+  90% time is actually 1.5 milliseconds"). A raised cosine's 10–90% time is (π − 2·arccos 0.8)/π = 0.5903 of its full
+  length, so the generator's full edge length is 1.5 ms / 0.5903 = 2.54 ms (derived). Real transmit paths' bias is not added to every group. **This is for the generator
   only (owner, 2026-10-23): the decoder's filter shape (D16) is not decided.**
 
 ### Obvious items, stated for approval
