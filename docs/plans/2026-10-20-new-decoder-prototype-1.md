@@ -753,6 +753,10 @@ long run; the timing convention and rise times wait for the research.**
   within a 3 ms sample; the misfit for other rigs' edges (1.2 to 3% of full for 0 to 4 ms rises, 6 to 12.5% for 8 ms;
   derived) goes into the systematic term. The filter's output rises 9.9 ms (10–90%) for a long mark; a 100 WPM dot
   peaks at 0.90 of full (derived; scratch `template_shape.py`).
+- **The backup hang AGC: dropped from the design for now (owner, 2026-10-23: "A").** The Ω̄ fix covers the starts it
+  was meant to back up, and a channel-level AGC knows a new station's level only from an earlier transmission within
+  its hang. Recorded in `docs/backlog.md` as a fallback, its role and settings to be worked out only if the prototype
+  shows the per-story RMS failing.
 
 ### Obvious items, stated for approval
 

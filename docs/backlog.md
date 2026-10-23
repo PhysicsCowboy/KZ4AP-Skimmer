@@ -418,6 +418,14 @@ Standard practice accepts these rather than modeling them (survey,
 
 The test generator has none of these; measuring them needs generator changes, which need the owner's approval.
 
+### A hang AGC as a fallback for the new decoder's long-run amplitude (owner, 2026-10-23; only if needed)
+
+The new decoder takes each story's long-run amplitude from the RMS of its own key-down samples, with Ω̄, the expected
+long-run power given the fades seen and the owner's flat prior (plan D16). A decision-free hang AGC on the channel was
+adopted as its backup, then dropped from the design (owner, 2026-10-23): the Ω̄ fix covers the starts, and a
+channel-level AGC knows a new station's level only from an earlier transmission within its hang. Its role and its
+settings (rise, hang, release) are undecided; work them out only if the prototype shows the per-story RMS failing.
+
 ### The detector's frequency following and the fixed channel (owner, 2026-10-23; later)
 
 Found while discussing the new decoder's tracker (plan D17). The owner: "There seem to be a web of issues here which I
