@@ -812,6 +812,18 @@ long run; the timing convention and rise times wait for the research.**
   (the label), the scatter of strong stations' flat-part samples about the model's prediction beyond the noise,
   relative to the carrier, on the synthetic set and on real recordings; the value chosen from that comes back to the
   owner, and f goes to zero if the scatter is negligible on both.
+- **Other transmitters' edges go into the edge term v_k (owner, 2026-10-23: "Agree"; option B).** v_k = the average
+  over u and r of (s_k(u, r) − s̄_k)², with u the edge's position within the 2.667 ms sample (uniform) and r the
+  transmitter's 10–90% rise time, uniform over 0.8 to 4.7 ms (the ARRL Lab's measured range,
+  `keying-envelope-research.md`; uniform is the maximum-entropy choice given only the range); each rise's edge is
+  aligned to the template at its half-amplitude point, the story absorbing the delay in its timing; s̄_k stays the
+  2.5 ms template. Zero on the flat part and in gaps; one precomputed number per template sample; no CPU per story, no
+  stories added. Misfit after alignment (derived, scratch `memspan\misfit.py`, through the channelizer and the 76 Hz
+  filter, 48 ms mark and 12 ms dot): 0.9–1.6% of full at 0.8 ms, 0.6–1.1% at 1.5 ms, 0.8–1.5% at 3.5 ms, 3.8–4.6% at
+  4.7 ms; unshaped keying (about 5.3%) stays outside, with key clicks a known limitation. Chosen over the floor alone
+  because f is now a placeholder that may go to zero. The prototype tests stations keyed at 0.8 and 4.7 ms. (An
+  earlier figure of 6–12.5% for "8 ms rises" used a 13.5 ms full edge, outside the measured range, without the
+  alignment; withdrawn.)
 
 ### Obvious items, stated for approval
 
