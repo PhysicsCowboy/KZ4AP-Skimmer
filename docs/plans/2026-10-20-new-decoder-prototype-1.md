@@ -803,6 +803,15 @@ long run; the timing convention and rise times wait for the research.**
   e_k²/s_k² as before. Costs: 26.67 ms more delay before a sample is scored; one running maximum per channel, not per
   story. For reference (derived, scratch `memspan\risetimes.py`), the decoder's input rises 10.04 ms (10–90%),
   14.75 ms (1–99%) and 19.04 ms (0.1–99.9%) for a 2.5 ms keyed edge through the channelizer and the 76 Hz filter.
+- **The floor f: 2%, a placeholder until the prototype measures it (owner, 2026-10-23).** The owner: "F seems like it
+  might depend on a huge number of things that we have zero control over, and it seems very hard to choose an
+  appropriate value." Its 2% was measured in the block design (D15), where any amplitude change within a block had
+  nowhere else to go; the new design models the amplitude per sample and gives edges their own term v_k. What remains
+  for f is unmodeled and uncontrolled: a fading rate other than 2 Hz or non-Rayleigh fading, transmitter amplitude
+  ripple, the receiving radio's AGC, a neighbor's leakage. The prototype measures it: decoding with the true story
+  (the label), the scatter of strong stations' flat-part samples about the model's prediction beyond the noise,
+  relative to the carrier, on the synthetic set and on real recordings; the value chosen from that comes back to the
+  owner, and f goes to zero if the scatter is negligible on both.
 
 ### Obvious items, stated for approval
 
