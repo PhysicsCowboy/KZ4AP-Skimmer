@@ -824,6 +824,16 @@ long run; the timing convention and rise times wait for the research.**
   because f is now a placeholder that may go to zero. The prototype tests stations keyed at 0.8 and 4.7 ms. (An
   earlier figure of 6–12.5% for "8 ms rises" used a 13.5 ms full edge, outside the measured range, without the
   alignment; withdrawn.)
+- **Merging: on the state as it is, per-survivor (owner, 2026-10-23: "I agree"; option A), replacing the amendment
+  draft's ruling.** An edge shapes the expected output for about 10 samples (26.67 ms), so above about 45 WPM two
+  stories that agree on the current element, its start, the speed and the text position can still expect different
+  outputs because a previous element was shorter than that. The merge keeps the state (element kind, time in it,
+  speed, text node); each story computes its expected output from its own history, so every score is exact, and of
+  two stories differing only in an older edge the better so far survives (reduced-state, per-survivor processing:
+  Duel-Hallen & Heegard 1989, Eyuboglu & Qureshi 1988; as already done for the amplitude). No stories added. Option B,
+  the previous element's length in the state when shorter than 10 samples (full maximum-likelihood sequence
+  estimation, Forney 1972), is measured as a variant on the high-speed signals, its CPU and any decoding gain brought
+  to the owner before anything changes.
 
 ### Obvious items, stated for approval
 
