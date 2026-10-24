@@ -841,6 +841,13 @@ long run; the timing convention and rise times wait for the research.**
   mark's keyed length at half amplitude, differing from the default by a constant delay; his edge lies inside the
   measured range of rises and misfits the template by about 1% of full after alignment, so the two groups also test
   the edge term on a sharper transmitter.
+- **The noise figures: from the noise the decoder actually reads (owner, 2026-10-23: "I honestly don't think this
+  decision makes any difference at all"; so handled as obvious).** σ_y² = N₀ × 74.48 Hz and w = 0.1986, fixed
+  constants computed from the channelizer's and the 76 Hz filter's taps at the 2.667 ms spacing (the white-noise
+  figures, 75.98 Hz and 0.2026, differ by 2%); N₀ alone is measured, by the engine's hiss estimator as today. Check:
+  w = Δ·σ_y²/N₀ = 2.667 ms × 74.48 Hz, since the channelizer leaves no noise at multiples of 375 Hz. The amendment
+  draft's w = 0.2235 was for 3 ms samples and is replaced everywhere; the flat-part cap w/f² becomes 497 nats
+  (derived, scratch `memspan\noise_w.py`).
 
 ### Obvious items, stated for approval
 
