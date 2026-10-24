@@ -848,6 +848,13 @@ long run; the timing convention and rise times wait for the research.**
   w = Δ·σ_y²/N₀ = 2.667 ms × 74.48 Hz, since the channelizer leaves no noise at multiples of 375 Hz. The amendment
   draft's w = 0.2235 was for 3 ms samples and is replaced everywhere; the flat-part cap w/f² becomes 497 nats
   (derived, scratch `memspan\noise_w.py`).
+- **Every CPU measurement of the prototype reports where the time goes (owner, 2026-10-24: "Sure, that sounds
+  good").** The owner: "It would pay to know the most time consuming portions of the decoder algorithm." Each report
+  gives ms of CPU per channel-second for making successors, ordinary scoring, the newborn's integral, merging and
+  pruning, and the rest, with the story counts behind them. Known now: about 287 ms per channel-second on noise
+  (Task 4d, desktop, one thread; the bank decoder 29 ms); the only breakdown (Task 4, before 4d removed most gap
+  branching) was successors 64%, carrying forward 29% (scoring 16%), merging and pruning 4%, building the population
+  3%; the newborn's integral is estimated at 17 to 33 ms per channel-second, not measured.
 
 ### Obvious items, stated for approval
 
