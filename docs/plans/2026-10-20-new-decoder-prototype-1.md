@@ -834,6 +834,13 @@ long run; the timing convention and rise times wait for the research.**
   the previous element's length in the state when shorter than 10 samples (full maximum-likelihood sequence
   estimation, Forney 1972), is measured as a variant on the high-speed signals, its CPU and any decoding gain brought
   to the owner before anything changes.
+- **The fading groups built on VE3NEA's benchmark keep his edges (owner, 2026-10-23: "A").** B ("fading", stage-1
+  benchmark) and B2 ("fading", development set) keep his 2 ms raised-cosine edges (full length; 1.18 ms 10–90%)
+  centered on each element's ends (`training/kz4ap_synth/suites.py`, `VE3NEA_EDGE_S`, `edges_centered=True`), so they
+  still reproduce his DeepCW conditions; every other group takes the 2.5 ms default. His convention also keeps each
+  mark's keyed length at half amplitude, differing from the default by a constant delay; his edge lies inside the
+  measured range of rises and misfits the template by about 1% of full after alignment, so the two groups also test
+  the edge term on a sharper transmitter.
 
 ### Obvious items, stated for approval
 
