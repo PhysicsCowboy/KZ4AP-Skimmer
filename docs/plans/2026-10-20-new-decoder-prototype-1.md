@@ -1001,7 +1001,14 @@ long run; the timing convention and rise times wait for the research.**
     apart on noise alone).
   - **Stated as obvious:** the Ω̄ table's κ axis runs down to 0 and its ζ axis up to about 400, covering first marks of
     1 or 2 samples (κ 0.10 and 0.38, ζ 19); the newborn's latest switch is the last sample of its first mark's template
-    with s_k ≠ 0.
+    with s_k ≠ 0. **Revised in the fix round** (scratch `amendment-rev3\obar_table3.py`, `obar_axes2–4`): with κ on
+    uniform nodes down to 0 the table erred by up to 66% where ζ > 10, so the fourth input is tabulated as λ = κζ
+    instead; inputs 1/ν, asinh(Ω̂/SE₀), ln ζ (0.003 to 400, 42 nodes), ln λ (10⁻³ to 1 120, 29 nodes); 31 × 85 × 42 × 29
+    = 3 209 430 nodes, **12.8 MB** in single precision (was 2.1 MB); interpolation error on 4 000 physically motivated
+    points median 0.090%, 99th percentile 0.87%, largest 2.5%; λ < 10⁻³ read at 10⁻³ moves Ω̄ by at most 0.076%. Built
+    in 24 minutes on 7 cores in scratch, so it is computed ahead of time or with a much faster integrator. At 12.8 MB it
+    exceeds a core's cache, so the lookup estimate of 40 to 60 ns is at risk (named in the amendment; told to the owner
+    2026-10-25).
 
 ### Obvious items, stated for approval
 
