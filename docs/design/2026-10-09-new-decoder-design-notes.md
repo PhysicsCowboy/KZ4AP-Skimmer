@@ -71,13 +71,14 @@ Each hypothesis carries:
    token). Closed by topic 6.
 7. **The last stretch of keying (amended 2026-10-25, owner; plan D17).** The expected front-filter output does depend
    on keying before the current element. An edge moves the expected output by 0.01 of full or more through the 11th
-   sample after it (j = 0 to 10, 29.3 ms, of which the first 5 are the delay; derived), the plan's "about 10 samples
-   (26.67 ms)" (amendment of 2026-10-25, part 5: the last section of these conclusions). The template itself is not
-   truncated there: it is nonzero through j = 15 after an edge and exactly 0 from j = 16 (42.7 ms; 1 − S(j) is 9 × 10⁻⁷
-   at j = 14 and 4 × 10⁻¹¹ at j = 15; derived; plan D17, 4896e97: "The template stays nonzero for 16 samples (42.7 ms)
-   after each key-up"). Each story computes its template (part 5) from its own key-down and key-up times within those 16
-   samples; merging does not compare them (topic 5, item 2). (Until 2026-10-25 this item read: "The last stretch of
-   keying, if topic 4 finds that the expected filter output depends on keying before the current element.")
+   sample after it (j = 0 to 10, j counting samples from the first at or after the edge; 29.3 ms, of which the first 5
+   are the delay; derived), the plan's "about 10 samples (26.67 ms)" (amendment of 2026-10-25, part 5: the last section
+   of these conclusions). The template itself is not truncated there: it is nonzero through j = 15 after an edge and
+   exactly 0 from j = 16 (42.7 ms; 1 − s_j, the template's distance from full, is 9 × 10⁻⁷ at j = 14 and 4 × 10⁻¹¹ at
+   j = 15; derived; plan D17, 4896e97: "The template stays nonzero for 16 samples (42.7 ms) after each key-up"). Each
+   story computes its template (part 5) from its own key-down and key-up times within those 16 samples; merging does not
+   compare them (topic 5, item 2). (Until 2026-10-25 this item read: "The last stretch of keying, if topic 4 finds that
+   the expected filter output depends on keying before the current element.")
 8. **Its score and a link to its parent,** to trace its text back when printing (topic 8). The score is the
    probability of its single best story (topic 5, amended 2026-10-14).
 9. **A clock for each non-Morse state:** how long the carrier or the silence has lasted.
@@ -85,9 +86,10 @@ Each hypothesis carries:
     plan D16, D17;** replacing "its signal level and the level's variance, learned from its own marks", added
     2026-10-15: the level differs between hypotheses because each learns it from its own decisions). A story carries:
     - a Gaussian amplitude N(μ, P) and the time of its last update;
-    - the two running sums of its RMS since its over began (amendment of 2026-10-25, part 7; the noise-in-Ω̄ variant
-      adds two for the RMS's noise variance);
-    - for ν, the running sums and its last 10 bins of key-down weight (part 7).
+    - the two running sums of its RMS since its over began (amendment of 2026-10-25, part 7; the variant with the
+      noise in Ω̄, the expected long-run power, adds two for the RMS's noise variance);
+    - for ν, the number of independent fades behind its RMS, the running sums and its last 10 bins of key-down weight
+      (part 7).
 
     All are learned from its own samples (topic 3, item 1).
 
@@ -450,7 +452,7 @@ section of these conclusions.
    2026-10-22 and 2026-10-23; plan D16, D17; amended 2026-10-25).**
    - The channelizer's stream, already following the detector's frequency (item 8), passes through one filter per
      channel, matched to a 100 WPM dot: 12 ms at half amplitude, 2.5 ms (10–90%) raised-cosine edges, noise bandwidth
-     76 Hz (amendment of 2026-10-25, part 2).
+     B_N = 76 Hz (amendment of 2026-10-25, part 2).
    - Its envelope is sampled at every 4th channel sample, 2.667 ms (part 3).
    - Consecutive samples are correlated, 0.878 at one step. Each sample's log-likelihood is counted at a weight w_k
      that follows the sample's expected SNR, from 0.275 for weak samples to 0.1986 for strong ones, both from that
@@ -573,9 +575,13 @@ total. The choice belongs to topic 8. (Corrected 2026-10-14: this paragraph had 
 probabilities.) This replaces the earlier wording, which called the scores probabilities.
 
 **Amended 2026-10-25 (owner, 2026-10-23; plan D17): the decoder's step is the 2.667 ms envelope sample** (topic 4,
-item 3), no longer the 2 ms piece. Where the items below still say "piece", read "sample", except where a figure is
-stated as derived or simulated for 2 ms pieces or for the block observation of 2026-10-16; such figures are kept as
-history and are not recomputed here. Items 1, 2 and 9 are restated (amendment of 2026-10-25, part 11).
+item 3), no longer the 2 ms piece. Where the items below still say "piece" for a step of the search, read "sample".
+Every number in items 3 to 9 counted per piece or per second of pieces (for example g nats per piece, 500 newborns a
+second, the 5.0 to 6.2 nats of ε charged per piece, 50 ns per hypothesis per piece), and every figure simulated with
+the block observation of 2026-10-16, is for the 2 ms pieces of 2026-10-17 to 2026-10-19 and is kept as history, not
+recomputed here. Items 1, 2 and 9 are restated (amendment of 2026-10-25, part 11). The Farnsworth factor is removed
+from the first prototype (topic 2, item 3, amended 2026-10-21); where items 3 to 9 mention it, or count its prior, it
+applies only to a later prototype.
 
 1. **Branching: every 2.667 ms sample (amended 2026-10-25;** until then every 2 ms piece).
    - A story continues as it is, or ends its current mark or gap and branches into the possible successors (amended
@@ -1590,9 +1596,9 @@ measure; part 16, standard practice for each stage; part 17, the values.
   both causal (derived):
   - half amplitude at 20.8 ms after key-down: 2.12 ms (the edge's half point), plus 10.67 ms (the channelizer), plus
     8.00 ms (the front filter's 12 taps of delay); 20.79 ms computed;
-  - 10–90% rise 10.04 ms through the channelizer and the front filter, 9.9 ms through the front filter alone (plan D17,
-    corrected 2026-10-24; 10.03 ms with the 25 taps);
-  - 1–99% rise 14.75 ms (plan D17; 14.73 ms with the 25 taps); 0.1–99.9% rise 16.1 ms on the signed response. The plan's
+  - 10–90% rise 10.03 ms through the channelizer and the front filter, 9.9 ms through the front filter alone (plan
+    D17, corrected 2026-10-24 and 2026-10-25);
+  - 1–99% rise 14.73 ms (plan D17, corrected 2026-10-25); 0.1–99.9% rise 16.1 ms on the signed response. The plan's
     19.04 ms for the 0.1–99.9% rise (the look-ahead bullet) is measured on |y| from its first crossing of 0.001 of full,
     which falls on the channel filter's negative precursor ahead of the main rise (|y| first reaches 0.001 of full 9.8
     ms after key-down; derived); it is for reference only.
@@ -1639,9 +1645,10 @@ measure; part 16, standard practice for each stage; part 17, the values.
     adds little to the edge-position spread: after alignment the rises differ from the template by about 1% of full
     or less on most samples.
   - **Misfit after alignment,** the largest |difference| from the 2.5 ms template through the channelizer and the
-    front filter (derived, 48 ms mark and 12 ms dot): 0.9–1.6% of full at 0.8 ms (plan D17; 0.78–1.56% in a second
-    computation), 0.55–1.10% at
-    1.5 ms, 0.77–1.54% at 3.5 ms, 1.92–3.83% at 4.7 ms. VE3NEA's 2 ms full edge (1.18 ms 10–90%): 0.67–1.35%.
+    front filter (derived, 48 ms mark and 12 ms dot, each rise aligned at its half-amplitude point on the decided
+    chain): 0.78–1.56% of full at 0.8 ms, 0.55–1.10% at 1.5 ms, 0.77–1.54% at 3.5 ms, 1.92–3.83% at 4.7 ms. The plan
+    records the 0.8 ms figure as "corrected 2026-10-25 from 0.9–1.6%, which took the best shift on a coarse 41.7 µs grid
+    instead of aligning at half amplitude" (plan D17). VE3NEA's 2 ms full edge (1.18 ms 10–90%): 0.67–1.35%.
     The plan records 1.92–3.83% at 4.7 ms, "corrected 2026-10-24 by the amendment's revision: the first figure,
     3.8–4.6%, searched shifts of only ±1.5 ms, while half-amplitude alignment at 4.7 ms needs 1.86 ms" (plan D17).
     Both curves pass through the same filters, so the 25 taps' delay does not change these figures.
@@ -1841,11 +1848,11 @@ measure; part 16, standard practice for each stage; part 17, the values.
   - Measured against the generator's fading, ν matches the empirical number of looks within 3% at 0.1 to 5 Hz true
     rates, when counted at the true rate. Counted on elapsed time it over-counts: 10% at 25 WPM and up to 46% at 8 WPM
     (plan D16, "Findings of that derivation").
-  - At 25 WPM, at 2 Hz: ν = 2.10 after 0.5 s and 6.72 after 2 s (plan D16's derivation, on sample times with every
-    s = 1). With the decided template and weights s_k⁴, "PARIS" at 25 WPM (1.94 s) gives ν = 6.55 (6.63 with weights
-    s_k²; measured).
+  - At 25 WPM, at 2 Hz: ν = 2.10 after 0.5 s and 6.72 after 2 s (derived, on sample times with every s = 1, in
+    scratch computations of 2026-10-22 not in the repository). With the decided template and weights s_k⁴, "PARIS" at
+    25 WPM (1.94 s) gives ν = 6.55 (6.63 with weights s_k²; measured).
   - At other true rates the fixed 2 Hz count is off: 1.07 true looks against 6.72 at 0.1 Hz after 2 s, and 13.9 at
-    5 Hz.
+    5 Hz (measured in scratch computations of 2026-10-22 not in the repository).
 - **Ω̄, the expected long-run power: by default from the RMS clipped at zero, through the fading-only closed form**
   (owner, 2026-10-22: "Isn't omega bar already a well defined number?", plan D16; the default, owner, 2026-10-25: "We
   clip as the default, and we test option 7's improvement in decoding and in speed against that default", plan D17,
@@ -2024,13 +2031,13 @@ measure; part 16, standard practice for each stage; part 17, the values.
     - **Per channel-second** at the 1 700-story ceiling (637 500 story-samples per channel-second; rough, plan D17,
       4896e97): the variant's lookup about 13 to 38 ms, in place of the default's 6.5 to 13 ms, plus its
       noise-variance sums, about 1 to 3 ms. Both are lines of the CPU breakdown (part 15, item 17).
-- **What it fixes** (measured with 3 ms samples; plan D16, "Findings of that derivation"). The rule with Ω̂ taken as
-  exact lost up to about 12 nats per gap in an over's first half-second, and up to about 100 nats per message in marks
-  (2 Hz, +30 dB S₅₀₀). With Ω̄, about 1 nat per gap at ν = 1 and 8.8 to 20 nats per message against the exact predictive
-  (+20 to +30 dB S₅₀₀).
+- **What it fixes** (measured with 3 ms samples). The rule with Ω̂ taken as exact lost up to about 12 nats per gap in
+  an over's first half-second, and up to about 100 nats per message in marks (2 Hz, +30 dB S₅₀₀; plan D16, "Findings of
+  that derivation"). With Ω̄, about 1 nat per gap at ν = 1 and 8.8 to 20 nats per message against the exact predictive
+  (+20 to +30 dB S₅₀₀; measured in scratch computations of 2026-10-22 not in the repository).
 - **Starts and restarts:**
   - a new story's first mark seeds the sums (part 8);
-  - a rescue newborn restarts them (a rescue is "a new speed and level"; topic 5, item 3);
+  - a rescue newborn restarts them, as it starts its level again (topic 5, item 3, the level prior);
   - an over's end restarts them, so every over starts with no level.
 - **Its CPU** (estimated, not timed; rough ms per channel-second at the 1 700-story ceiling; the prototype measures
   it in the breakdown of part 15, and the implementation plan carries it against the new decoder's projected total,
@@ -2531,7 +2538,7 @@ In the table, "survey" is the standard-practice survey of 2026-10-22 (plan D16).
 | w table | q_k from −40 to +40 dB SNR (in 74.48 Hz), clamped to the limits outside; 129 nodes uniform in q_k/(1 + q_k); error ≤ 0.0002 | 1 | grid heuristic, error measured |
 | Quadrature order K | 5 | — | plan D4 |
 | Front filter delay (causal) | 8.000 (12 taps) | ms | derived |
-| Template | S(τ): half point 20.8 ms after key-down; 10–90% 10.04 ms; tail ≥ 0.01 of full through 11 samples, nonzero through 16 (42.7 ms) | ms | derived (D17's shape, the 25 taps) |
+| Template | S(τ): half point 20.8 ms after key-down; 10–90% 10.03 ms; tail ≥ 0.01 of full through 11 samples, nonzero through 16 (42.7 ms) | ms | derived (D17's shape, the 25 taps) |
 | Edge term v_k | over u uniform in a sample and t_r uniform over 0.8–4.7 ms, aligned at half amplitude | 1 | owner, 2026-10-23 (D17); values derived |
 | Sample convention | j = 0 the first sample at or after the edge, u uniform on [0, Δ) | — | owner, 2026-10-25 |
 | f_D | 2 | Hz | owner, 2026-10-22 (D16) |
