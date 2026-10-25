@@ -1030,6 +1030,12 @@ long run; the timing convention and rise times wait for the research.**
   sums all run over the samples with a nonzero template. Rejected: (b) s_k > 0, which differs only at j = 3 and 4
   (s = −0.00064 and −0.00080, weight in Ω̂ about 10⁻⁶ of a full-carrier sample's) and adds a special case for no
   effect; (c) a threshold such as |s_k| > 0.01, an arbitrary constant, already rejected for C².
+- **The newborn's latest switch: the last sample of its first mark's template with s_k ≠ 0, j = 15 after the claimed
+  key-up (owner, 2026-10-25: "A"; stated earlier as obvious in 4896e97).** It switches earlier when σ_u falls below
+  0.1. Rejected: (b) the claimed key-up, at which a short mark's newborn would switch before any sample with
+  s ≥ 0.01 (half point 20.8 ms after key-down against a 24 ms dit at 50 WPM); (c) no latest moment, against the
+  owner's 2026-10-24 "Agree" (the level from the first mark) and outside the constant-amplitude integral's validity
+  under fading.
 
 ### Obvious items, stated for approval
 
