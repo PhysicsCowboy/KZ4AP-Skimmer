@@ -1036,6 +1036,13 @@ long run; the timing convention and rise times wait for the research.**
   s ≥ 0.01 (half point 20.8 ms after key-down against a 24 ms dit at 50 WPM); (c) no latest moment, against the
   owner's 2026-10-24 "Agree" (the level from the first mark) and outside the constant-amplitude integral's validity
   under fading.
+- **The variant's noise variance by two exact running sums over 6 lags (owner, 2026-10-25: "A"; stated earlier as the
+  variant's implementation detail).** a₂ and b₂ accumulate at each sample with s_k ≠ 0 its products with its 6
+  predecessors; the output noise's correlation ρ_m is 0 beyond 6 samples, and the cut changes the sums by under
+  0.01% (measured); about 1–3 ms per channel-second at the 1 700-story ceiling (rough). Rejected: (b) ignoring the
+  correlation, which understates A by about 3.6 times on a flat part (1 + 2Σρ_m², derived), making the variant
+  overconfident about buried stories; (c) sums precomputed per mark length and patched at the edges, saving a
+  fraction of 1–3 ms for added edge cases.
 
 ### Obvious items, stated for approval
 
