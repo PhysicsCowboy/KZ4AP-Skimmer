@@ -371,10 +371,14 @@ Measured with the genie frequency (the tracker plays no part):
   term remembers its power for 390 ms and costs the station its first element in 194 of 288 runs, all exact without the
   term (owner, 2026-10-21: kept as a measured trade). Evidence: `systematic-stopped-neighbor.csv` beside the table
   above, and the results record, section 1.7. A fix that tells the station's own power from a neighbor's would remove
-  the trade.
+  the trade. Updated 2026-10-25 to the design of plan D16–D17: the systematic term's memory is now 10 samples, 26.67 ms
+  (owner, 2026-10-23; plan D17), replacing 390 ms; the prototype measures it on this stopped-neighbor grid.
 
 The channel passes about ±150 Hz around the station, so a neighbor's carrier and its keying sidebands within that range
-reach every story's sums.
+reached every story's sums. Updated 2026-10-25 to the design of plan D16–D17: the decoder now reads one front filter per
+channel, matched to a 100 WPM dot (noise bandwidth 76 Hz), which rejects neighbors 70 Hz or more away by 15.3 dB (dB
+relative to 0 Hz) or more; a likely gain, to be measured. A neighbor inside the filter still reaches the station's
+envelope samples and its long-run power estimate (design notes, amendment of 2026-10-25, part 13).
 
 **Thoughts for a fix** (none tried):
 - a narrower or adaptive channel filter for the decoder;
@@ -382,7 +386,9 @@ reach every story's sums.
 - cancelling the stronger neighbor first (successive interference cancellation);
 - a level model that refuses a level jump to the neighbor's.
 
-**How to measure:** DEV2's QRM group (E2) in the measurement runs (R4, R9), and the grid above.
+**How to measure:** DEV2's QRM group (E2) in the measurement runs (R4; R9, the tracker's run, is void, since the new
+decoder has no tracker; updated 2026-10-25 to the design of plan D16–D17), the grid above, and neighbors 40 to 70 Hz
+away (design notes, amendment of 2026-10-25, part 15, item 15).
 
 ### Fading splits marks in the new decoder (found 2026-10-21; next, under diagnosis)
 
@@ -404,25 +410,36 @@ record, section 1.7.
 **The fix chosen (owner, 2026-10-22; plan D16):** standard practice, noncoherent detection behind a fixed filter, with
 each story's strength tracked as an amplitude. Chirp, key clicks and static are declared limitations.
 
+**Status updated 2026-10-25 to the design of plan D16–D17:** the diagnosis is done and the fix is designed: one 76 Hz
+front filter per channel, envelope samples every 2.667 ms, each story's predicted output (the smeared prediction), its
+amplitude predicted from the long-run power Ω̄ at a fixed 2 Hz fading spread, and no blocks (design notes, amendment of
+2026-10-25). The grid above is the prototype's first measurement of it (part 15, item 3), with the same grid at 8 and
+5.2 WPM.
+
 ### Chirp, key clicks and static crashes: known limitations of the new decoder (owner, 2026-10-22)
 
 Standard practice accepts these rather than modeling them (survey,
 `.superpowers/sdd/2026-10-20-new-decoder-prototype-1/detection-standard-practice.md`); the owner agreed (plan D16).
-- **Chirp,** a transmitter's frequency jump at key-down: the 80 Hz front filter passes up to about ±25 Hz; beyond
-  that a mark is lost. A model that learns each sender's chirp from its recent marks is possible later.
+- **Chirp,** a transmitter's frequency jump at key-down: the front filter passes up to about ±25 Hz; beyond
+  that a mark's first samples are lost. Updated 2026-10-25 to the design of plan D16–D17: the filter is the 76 Hz one
+  decided on 2026-10-23 (plan D17), −1.42 dB at 25 Hz and −3.8 dB at 40 Hz (dB relative to 0 Hz); "80 Hz" was D16's
+  first figure. A model that learns each sender's chirp from its recent marks is possible later.
 - **Key clicks,** splatter from hard keying: mainly a neighbor's problem; on the station itself, edges sharper than the
   template.
 - **Static crashes** (impulsive noise): a filtered crash has the shape of a short dot, so a strong one will likely print
-  a false E or T. A wideband noise blanker ahead of the channelizer, as CW Skimmer offers, is the standard remedy, for
-  later.
+  a false E or T. A crash inside a story's key-down samples also enters its long-run power estimate, raising it, the
+  safe direction (updated 2026-10-25 to the design of plan D16–D17). A wideband noise blanker ahead of the channelizer,
+  as CW Skimmer offers, is the standard remedy, for later.
 
 The test generator has none of these; measuring them needs generator changes, which need the owner's approval.
 
 ### A hang AGC as a fallback for the new decoder's long-run amplitude (owner, 2026-10-23; only if needed)
 
 The new decoder takes each story's long-run amplitude from the RMS of its own key-down samples, with Ω̄, the expected
-long-run power given the fades seen and the owner's flat prior (plan D16). A decision-free hang AGC on the channel was
-adopted as its backup, then dropped from the design (owner, 2026-10-23): the Ω̄ fix covers the starts, and a
+long-run power given the fades seen and the owner's flat prior (plan D16). Updated 2026-10-25 to the design of plan
+D16–D17: the RMS is the ordinary-least-squares fit Σ s_k²(e_k² − σ_y²)/Σ s_k⁴ over every sample where the story's
+template is nonzero, and Ω̄ takes it clipped at zero (owner, 2026-10-25; plan D17). A decision-free hang AGC on the
+channel was adopted as its backup, then dropped from the design (owner, 2026-10-23): the Ω̄ fix covers the starts, and a
 channel-level AGC knows a new station's level only from an earlier transmission within its hang. Its role and its
 settings (rise, hang, release) are undecided; work them out only if the prototype shows the per-story RMS failing.
 
@@ -436,7 +453,9 @@ about the detector, but I would say all the decisions that have to do with the d
   to the strongest qualifying peak within D_ch = 47 Hz of where it is. What that serves today: keeping a drifting
   station from being born again as a second track, the Matched decoder (which follows it at every block) and the bank
   (which mixes by it). The new decoder reads it only at its channel's first block (a decoder matter, still open in the
-  plan).
+  plan). Updated 2026-10-25 to the design of plan D16–D17: since decided, the new decoder has no frequency tracker and
+  does not read the detector's frequency (owner, 2026-10-23: "A"; plan D17); the channelizer's following brings it the
+  station near 0 Hz.
 - **The channel never moves (decided away the same day):** the owner then chose that the channelizer follow the
   detector's frequency at every block (plan D17), so this item is no longer deferred.
 - **Unmeasured on the detector path:** QSO turnovers (an answering station within 47 Hz moves the track) and drift;
@@ -444,11 +463,12 @@ about the detector, but I would say all the decisions that have to do with the d
 
 ### The amplitude model inside marks under fast fading (owner, 2026-10-22: a known limitation)
 
-The new decoder's amplitude per story is one number (Bell 1977's form), updated every 3 ms with the owner's rule for its
-change. Fading is smooth, so a fade keeps its direction for a while; a one-number model treats each 3 ms change as an
-independent step, so over n steps it expects √n times one step's movement instead of about n. Inside long marks during
-fading it is therefore over-confident, even when it knows the station's true level and rate: about three times too
-many 1% surprises at 2 Hz and 25 WPM (measured in scratch;
+The new decoder's amplitude per story is one number (Bell 1977's form), updated at every envelope sample, every
+2.667 ms (updated 2026-10-25 to the design of plan D16–D17; 3 ms when this was measured), with the owner's rule for its
+change. Fading is smooth, so a fade keeps its direction for a while; a one-number model treats each sample's change as
+an independent step, so over n steps it expects √n times one step's movement instead of about n. Inside long marks
+during fading it is therefore over-confident, even when it knows the station's true level and rate: about three times
+too many 1% surprises at 2 Hz and 25 WPM (measured in scratch with 3 ms samples, not remeasured at 2.667 ms;
 `.superpowers/sdd/2026-10-20-new-decoder-prototype-1/amp-predictive.md` and its review).
 
 Where it matters: the fading rate times the mark length, and mainly strong signals. Steady signals and fading up to
@@ -473,8 +493,11 @@ Measure the CPU first.
 ### A narrower filter for slower signals in the new decoder (owner, 2026-10-22; later)
 
 The owner chose one fixed filter for every speed: about 80 Hz wide, matched to a 12 ms dot at 100 WPM, sampled every
-3 ms (plan D16). A slower signal pays for the extra width:
-- the extra noise against a 50 Hz filter is 10·log₁₀(80/50) = 2.0 dB (derived);
+3 ms (plan D16). Updated 2026-10-25 to the design of plan D16–D17: the filter is matched to a real 100 WPM dot (12 ms at
+half amplitude, 2.5 ms raised-cosine edges), noise bandwidth 76 Hz, sampled every 2.667 ms (owner, 2026-10-23; plan
+D17). A slower signal pays for the extra width:
+- the extra noise against a 50 Hz filter is 10·log₁₀(76/50) = 1.8 dB of noise power (derived; 2.0 dB with D16's
+  80 Hz);
 - summing the envelope over longer marks recovers part of it, not all.
 
 The owner (2026-10-22): "record in the backlog that we can look later at how we might want to make the filter narrower
