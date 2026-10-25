@@ -921,6 +921,21 @@ long run; the timing convention and rise times wait for the research.**
   edge position's scatter; it needs Ω in its own weights; a division per sample per story). Edges still count less
   instead of being discarded, the departure from CW Skimmer's practice kept. Same cost: two running sums. Follow-ons,
   derived, to be stated in the amendment: ν's bin weights Σ s_k⁴; the noise's standard error with weights s_k².
+- **The weight w follows each sample's expected signal-to-noise ratio (owner, 2026-10-25: "Well, yes"; option D),
+  with the fixed 0.1986 a measured variant.** The weight that makes w·ΣΛ carry the samples' true information runs from
+  0.275 (weak signals: Λ follows e_k², whose neighbors correlate as ρ²) to 0.1986 (strong: Λ follows e_k, correlation
+  ρ); measured for a steady carrier at full template (scratch `amendment-rev\wcheck.py`): 0.259, 0.240, 0.217, 0.208,
+  0.203, 0.200 and 0.1987 at −18, −13, −8, −5, −2, +2 and +12 dB S₅₀₀, so the fixed 0.1986 undercounts evidence by 9%
+  at −8 dB S₅₀₀ (roughly 0.2 to 0.4 dB of signal, a rough estimate). Each story looks w up per carrier sample from that
+  curve at μ²s_k²/σ_y², μ its predicted amplitude (space samples have Λ = 0); the newborn takes 0.275 or 0.1986 with the
+  weak- or strong-signal form of ln I₀ it already picks per sample. Standard: the composite-likelihood magnitude
+  adjustment evaluated at the parameter (Chandler & Bate 2007; Varin, Reid & Firth 2011). Approximate on edges, where
+  neighbors differ in strength. Cost about 3 ms per channel-second at the 1 700-story ceiling (rough estimate). Rejected:
+  0.275 fixed (overcounts strong signals by 38%); 0.217 fixed at "the threshold" (a made-up operating point, 9%
+  overcount); the exact joint likelihood (a redesign). The owner doubts it changes decoding in practice ("it's not
+  clear to me that it will have any impact in real life at all except on the extra CPU cost"): the prototype scores
+  the fixed 0.1986 beside it on the weak-signal groups, and if the curve shows no measurable gain the decoder goes back
+  to the fixed value.
 
 ### Obvious items, stated for approval
 
