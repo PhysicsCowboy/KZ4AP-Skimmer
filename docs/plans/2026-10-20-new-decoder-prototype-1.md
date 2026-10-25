@@ -1019,6 +1019,12 @@ long run; the timing convention and rise times wait for the research.**
   2026-10-25: "I care about the fraction of the total time we think we're going to achieve, not what some garbage
   decoder is doing today"): costs are compared with the new decoder's projected total, not today's 287 ms per
   channel-second; the implementation plan carries that projected budget by part.
+- **The sampling grid's convention for a claimed edge (owner, 2026-10-25: "Approved", option (a)).** Sample j = 0 is
+  the first sample at or after the key-down, so the offset u from the key-down to that sample is uniform on [0, Δ), and
+  s_j is S(jΔ + u) averaged over u. Rejected: (b) the nearest sample (u uniform on [−Δ/2, +Δ/2)), equally correct but a
+  half-sample shift that would mean redoing the derived counts for no gain; (c) the last sample before the edge is (a)
+  relabeled by one sample, not a separate model. The timing reference in tests uses the same rule; the memory and
+  look-ahead are 9 samples at +85 dB S₅₀₀ under it, inside the 10 budgeted for any labeling.
 
 ### Obvious items, stated for approval
 
