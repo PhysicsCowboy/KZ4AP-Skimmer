@@ -754,7 +754,8 @@ long run; the timing convention and rise times wait for the research.**
   systematic term (how, and its corrected size: the edge-term bullet below; the figures first given here, 1.2 to 3%
   for 0 to 4 ms rises and 6 to 12.5% for 8 ms, are withdrawn there). The output rises 10.04 ms (10–90%) for a long
   mark through the channelizer and the 76 Hz filter (9.9 ms through the 76 Hz filter alone, the figure first given
-  here; corrected 2026-10-24, scratch `memspan\risetimes.py`); a 100 WPM dot peaks at 0.90 of full (derived; scratch
+  here; corrected 2026-10-24, scratch `memspan\risetimes.py`; corrected again 2026-10-25 to 10.03 ms, the 10.04 ms
+  being one step of that script's 48 kHz grid, recomputed at 192 kHz on the decided chain); a 100 WPM dot peaks at 0.90 of full (derived; scratch
   `template_shape.py`).
 - **The sampling interval: 2.667 ms, every 4th channel sample (owner, 2026-10-23: "Agreed"), replacing 3 ms.** The
   owner asked "Why would we not just change our own sampling rate to be a multiple of the channel sample rate"; 3 ms is
@@ -814,8 +815,10 @@ long run; the timing convention and rise times wait for the research.**
   +60 dB S₅₀₀, 7 at +40 dB S₅₀₀). It covers D15's 4 ms minimum against the filter's ringing before a mark. C² is thus
   the largest e² over a symmetric window of 21 samples (10 back, the current one, 10 ahead), with the sample's own
   e_k²/s_k² as before. Costs: 26.67 ms more delay before a sample is scored; one running maximum per channel, not per
-  story. For reference (derived, scratch `memspan\risetimes.py`), the decoder's input rises 10.04 ms (10–90%),
-  14.75 ms (1–99%) and 19.04 ms (0.1–99.9%) for a 2.5 ms keyed edge through the channelizer and the 76 Hz filter.
+  story. For reference (derived, scratch `memspan\risetimes.py`), the decoder's input rises 10.03 ms (10–90%),
+  14.73 ms (1–99%) and 19.04 ms (0.1–99.9%) for a 2.5 ms keyed edge through the channelizer and the 76 Hz filter
+  (corrected 2026-10-25 from 10.04 and 14.75 ms, one step of the first script's 48 kHz grid; recomputed at 192 kHz on
+  the decided chain by the review of the notes' amendment).
 - **The floor f: 2%, a placeholder until the prototype measures it (owner, 2026-10-23).** The owner: "F seems like it
   might depend on a huge number of things that we have zero control over, and it seems very hard to choose an
   appropriate value." Its 2% was measured in the block design (D15), where any amplitude change within a block had
@@ -833,7 +836,8 @@ long run; the timing convention and rise times wait for the research.**
   aligned to the template at its half-amplitude point, the story absorbing the delay in its timing; s̄_k stays the
   2.5 ms template. Zero on the flat part and in gaps; one precomputed number per template sample; no CPU per story, no
   stories added. Misfit after alignment (derived, scratch `memspan\misfit.py`, through the channelizer and the 76 Hz
-  filter, 48 ms mark and 12 ms dot): 0.9–1.6% of full at 0.8 ms, 0.6–1.1% at 1.5 ms, 0.8–1.5% at 3.5 ms, 1.92–3.83% at
+  filter, 48 ms mark and 12 ms dot): 0.78–1.56% of full at 0.8 ms (corrected 2026-10-25 from 0.9–1.6%, which took the best shift on a coarse 41.7 µs
+  grid instead of aligning at half amplitude; recomputed by the review of the notes' amendment), 0.6–1.1% at 1.5 ms, 0.8–1.5% at 3.5 ms, 1.92–3.83% at
   4.7 ms (corrected 2026-10-24 by the amendment's revision: the first figure, 3.8–4.6%, searched shifts of only
   ±1.5 ms, while half-amplitude alignment at 4.7 ms needs 1.86 ms); unshaped keying (about 5.3%) stays outside, with key clicks a known limitation. Chosen over the floor alone
   because f is now a placeholder that may go to zero. The prototype tests stations keyed at 0.8 and 4.7 ms. (An
