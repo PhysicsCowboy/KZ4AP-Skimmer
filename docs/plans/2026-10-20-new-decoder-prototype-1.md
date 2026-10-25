@@ -936,6 +936,18 @@ long run; the timing convention and rise times wait for the research.**
   clear to me that it will have any impact in real life at all except on the extra CPU cost"): the prototype scores
   the fixed 0.1986 beside it on the weak-signal groups, and if the curve shows no measurable gain the decoder goes back
   to the fixed value.
+- **C²'s own part, e_k²/s_k², on every sample with s_k ≠ 0 (owner, 2026-10-25: "B"), replacing the amendment draft's
+  ruling of a 0.01 threshold.** The own part reads a² plus noise/s_k²; the noise dominates exactly where the sample's own
+  signal-to-noise ratio a²s_k²/σ_y² is below about 0 dB, where the sample carries at most 0.06 to 0.09 nats of expected
+  evidence (w·E[Λ]: 0.001, 0.008, 0.06–0.09, 0.5–0.7 and 1.6–2.2 nats at −10, −5, 0, +6 and +10 dB; scratch
+  `omegabar\kl.py`), and a noisy own part can only raise V′, so it only shrinks that evidence, never adds to it. Where a
+  sample carries evidence the own part is accurate even far below s = 0.01 (a +60 dB S₅₀₀ station at s = 0.005: +22 dB
+  of its own), and the window's peak covers those samples anyway (derived). Spaces (s = 0) have no own part and no
+  leeway (v_k = 0). Rejected: keeping 0.01 (a made-up constant; its second reason, the same cut in Ω̂, went with ordinary
+  least squares); dropping the own part (C² 19% low on 100 WPM dots, their evidence bound 23% higher on strong
+  stations, the failure D15 guards against; it would reverse part of D15); a strength-dependent threshold (another
+  made-up factor). The prototype still counts how often the own part sets C²; the sweep of the threshold at 0.001 and
+  0.1 is dropped.
 
 ### Obvious items, stated for approval
 
