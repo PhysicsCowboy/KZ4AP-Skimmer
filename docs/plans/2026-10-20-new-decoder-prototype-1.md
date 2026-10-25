@@ -1043,6 +1043,14 @@ long run; the timing convention and rise times wait for the research.**
   correlation, which understates A by about 3.6 times on a flat part (1 + 2Σρ_m², derived), making the variant
   overconfident about buried stories; (c) sums precomputed per mark length and patched at the edges, saving a
   fraction of 1–3 ms for added edge cases.
+- **The variant's Ω̄ table: four inputs, the fourth as ln λ at 29 nodes, 12.8 MB (owner, 2026-10-25: "a"; stated
+  earlier as the variant's implementation detail, 354d93f).** Error against the direct integral median 0.09%, 99th
+  percentile 0.87%, largest 2.5% (measured); the cache risk to the 40–60 ns lookup is read from the CPU breakdown's Ω̄
+  line in the variant's test against the default. Rejected: (b) κ on a uniform axis (error up to 66% at 8 nodes, 23%
+  at 15 dense near 0); (c) three inputs with κ fixed at 2.6 (0.44 MB, but error up to 306%, 99th percentile 65%, on
+  fast first marks and below Ω̂ = 0); (e) the integral per lookup (2–4 ms each against 637 500 lookups per
+  channel-second). (d), the same table stored ragged in (ζ, λ), about 7.5 MB (rough count) and still beyond a core's
+  cache, is a drop-in refinement if memory matters later.
 
 ### Obvious items, stated for approval
 
