@@ -766,13 +766,16 @@ long run; the timing convention and rise times wait for the research.**
   on a mark's flat part this is CW Skimmer's average, and the edge samples count less instead of being discarded.
   A departure from Skimmer's practice, for a derived reason: at 100 WPM a dot's output peaks at 0.90 of full and has
   no flat part, so discarding edges would leave dots at high speed, and an all-dot word, with no estimate.
+  (The formula is corrected to ordinary least squares, Σ s_k²(e_k² − σ_y²)/Σ s_k⁴, by the owner's decision of
+  2026-10-25 below; the formula given here is not the least-squares estimate.)
 - **Counting the independent fades ν: binned, exact on the bins (owner, 2026-10-23: "Agreed"; his idea: "What if we
   just did a very long-term average and decimated...").** Each story sums its key-down weight (s_k²) in bins of
   42.67 ms (two engine blocks) and computes ν = (Σw)² / ΣΣ w_i w_j ρ²(t_i − t_j) over the bins, t_i each bin's center (the time the binning-error formula assumes; stated 2026-10-24 as obvious); binning changes ν by
   about (π f_D b)²/12 = 0.6% at 2 Hz (derived), against the Satterthwaite form's own ~3%. Each story keeps its last
   10 bins (ρ² < 0.001 beyond 0.42 s). Cost about 1.6 operations per story per sample (1 addition each sample,
   10 multiply-adds per closed bin) and about 12 numbers per story; option (C), an exponential-sum fit, would take about
-  10 operations per sample, 4 numbers, and an unchecked fit error (rough counts).
+  10 operations per sample, 4 numbers, and an unchecked fit error (rough counts). (With the RMS corrected to ordinary
+  least squares on 2026-10-25, below, the bin weights become w_i = Σ s_k⁴ over the bin's samples.)
 - **The amplitude prediction in full (owner, 2026-10-23: "agreed"):** after a time Δt since the story's last estimate
   r̂₀ (uncertainty P_m), the predicted amplitude is ρ_a·r̂₀ + (1 − ρ_a)·0.886·√Ω̄ and its variance ρ_a²·P_m +
   ½(1 − ρ²)·Ω̄. ρ = exp(−π² f_D² Δt²/2) is the signal's correlation at f_D = 2 Hz; ρ_a is the amplitude's own
@@ -899,6 +902,25 @@ long run; the timing convention and rise times wait for the research.**
   today's table, before that halving (the owner: "that is 3x the CPU cost"). Ω̄ is its own line in the CPU breakdown;
   if this model does not earn its cost against the clipping variant, the owner switches to clipping. A lookup once
   per mark's end (well under 1 ms per channel-second) was offered as a further, approximate saving, not adopted.
+  (The SE formula above is for the RMS as decided on 2026-10-23; with ordinary least squares, next bullet, it is
+  restated with weights s_k².)
+- **Which samples count in Ω̂, and how: ordinary least squares, every sample (owner, 2026-10-25: "OK Option 3"),
+  correcting the formula recorded with the decision of 2026-10-23.** Ω̂ = Σ_k s_k²(e_k² − σ_y²) / Σ_k s_k⁴ over every
+  sample of the story's marks: the least-squares fit of e_k² − σ_y² = s_k²·Ω, each sample's e_k² counted in proportion
+  to s_k², which is the owner's 2026-10-23 wording. The formula recorded then, Σ(e_k² − σ_y²)/Σ s_k², weights each
+  sample's own estimate by s_k², so every sample's noise counts in full however small its template; it was mislabeled
+  "the least-squares estimate". The open question it raised (samples with s_k > 0, or a cut at |s_k| ≥ 0.01) is gone:
+  a tiny template value weighs almost nothing, with no threshold. Derived: at low SNR every e_k² has the same noise
+  variance, so ordinary least squares is optimal there, the only place Ω̂'s precision affects decoding. Simulated
+  (scratch `omegabar\samples.py`, steady carrier, the filter's correlated noise, one mark; variance relative to the
+  best of four): on noise alone, the 2026-10-23 formula 3.60 (100 WPM dot), 1.61 (25 WPM dot), 1.16 (25 WPM dash); the
+  0.01 cut 2.04, 1.34, 1.08; ordinary least squares 1.00, 1.00, 1.00; at −8 dB S₅₀₀, 2.10, 1.14, 1.04 against 0.95,
+  1.01, 1.00. Rejected: the 0.01 cut (a made-up threshold, still twice the variance at 100 WPM); weighting by each
+  sample's variance σ_y⁴ + 2s_k²Ωσ_y² (at most 2% better, at +10 to +20 dB S₅₀₀ where the noise is under 0.1% of Ω̂'s
+  variance beside the fading's, 8% worse on a 100 WPM dot since that variance leaves out neighbor correlation and the
+  edge position's scatter; it needs Ω in its own weights; a division per sample per story). Edges still count less
+  instead of being discarded, the departure from CW Skimmer's practice kept. Same cost: two running sums. Follow-ons,
+  derived, to be stated in the amendment: ν's bin weights Σ s_k⁴; the noise's standard error with weights s_k².
 
 ### Obvious items, stated for approval
 
