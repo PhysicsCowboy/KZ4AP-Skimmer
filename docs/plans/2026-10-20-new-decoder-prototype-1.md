@@ -1025,6 +1025,11 @@ long run; the timing convention and rise times wait for the research.**
   half-sample shift that would mean redoing the derived counts for no gain; (c) the last sample before the edge is (a)
   relabeled by one sample, not a separate model. The timing reference in tests uses the same rule; the memory and
   look-ahead are 9 samples at +85 dB S₅₀₀ under it, inside the 10 budgeted for any labeling.
+- **One sample set for every per-story sum, s_k ≠ 0 (owner, 2026-10-25: "Yes", option (a); stated earlier as obvious
+  in 51e6fab).** Ω̂, ν's bins, Ω̄'s lookups, w_k, the amplitude update, C²'s own part and the variant's noise-variance
+  sums all run over the samples with a nonzero template. Rejected: (b) s_k > 0, which differs only at j = 3 and 4
+  (s = −0.00064 and −0.00080, weight in Ω̂ about 10⁻⁶ of a full-carrier sample's) and adds a special case for no
+  effect; (c) a threshold such as |s_k| > 0.01, an arbitrary constant, already rejected for C².
 
 ### Obvious items, stated for approval
 
