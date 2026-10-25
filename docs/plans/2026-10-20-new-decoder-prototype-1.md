@@ -948,6 +948,37 @@ long run; the timing convention and rise times wait for the research.**
   stations, the failure D15 guards against; it would reverse part of D15); a strength-dependent threshold (another
   made-up factor). The prototype still counts how often the own part sets C²; the sweep of the threshold at 0.001 and
   0.1 is dropped.
+- **Corrections and derived details from the amendment's revision of 2026-10-25** (scratch `amendment-rev3\`):
+  - **Ω̂'s noise variance, for ordinary least squares** (`se.py`): given the realized power ΩG (the noise is correlated
+    over 6 samples, 16 ms, where the fading's correlation is at least 0.9965 at 2 Hz), Var(N) = A + B·ΩG, with
+    A = σ_y⁴·ΣΣ s_j²s_l²ρ²_{j−l}/(Σs⁴)² (noise with noise, Isserlis) and B = 2σ_y²·ΣΣ s_j³s_l³ρ_{j−l}/(Σs⁴)² (signal
+    with noise); simulated with the decided chain's noise, steady and at 2 and 5 Hz, noise alone to +10 dB S₅₀₀:
+    0.981 to 1.010 of the prediction. This replaces the SE formula in the Ω̄ bullet above (it used Ω, not ΩG, and the
+    old estimator). Computed by two exact running sums over the 6 lags, about 16 multiply-adds per story per carrier
+    sample (about 2 to 3 ms per channel-second at the ceiling, rough); the one-sum form Σs⁴/w₂ errs by +24% (+58% for
+    B) on a 4-sample mark. N is skewed on a story's first marks (skewness +1.8 after one 4-sample mark on noise).
+  - **The Ω̄ table** (`obar*.py`): four inputs, 1/ν, Ω̂/SE₀, SE₀/σ_y² and κ = Bσ_y²/A (SE₀ = √A; κ from 0.78 to 2.77;
+    fixing κ errs by up to 306% for negative Ω̂); 31 × 85 × 29 × 7 nodes, 2.1 MB in single precision; interpolation
+    error against the direct integral median 0.064%, 99th percentile 1.2%, largest 5.7% (negative tail); about 40 to
+    60 ns per lookup, roughly 15 to 30 ms per channel-second at the ceiling (rough). It reduces to the fading-only
+    closed form from Ω̂ = 100 SE₀ up (0.9986 to 1.0000) and stays positive and finite at Ω̂ ≤ 0. Ω̄ is not monotonic:
+    below Ω̂ ≈ −0.5 to −3.7 SE₀ it rises again as Ω̂ falls (a very negative reading is better explained by a larger
+    power with its larger noise variance), by 0.4 to 1.8 dB within Ω̂'s physical floor; the prototype counts how often.
+    Building it takes about 4 ms per node with the scratch integrator, so "built at startup" needs a faster integrator
+    or a table computed ahead of time (the implementation plan decides).
+  - **The w table** (`wtable.py`): 129 nodes uniform in q/(1 + q), q = μ²s_k²/σ_y², error at most 0.0002, about 5 to
+    10 ns per lookup; within 1% of 0.2754 below −18.5 dB and of 0.1986 above +8.75 dB of q. Where a cap can be reached,
+    w is at most 0.2057 (j = 5), 0.1998 (j = 6) and within 0.2% of 0.1986 from j = 7 and on the plateau, so the caps
+    hold within 4% at j = 5 and 0.6% elsewhere; w/f² stays 497 nats; the newborn's switch timing is unchanged at 0 to
+    +30 dB S₅₀₀. The newborn's broad-prior tables now depend on w (left to the implementation plan).
+  - **ν's binning error** (`nu_bins.py`, with W_i = Σs⁴): measured 0.03% to 2.3% against the exact sum (2.3% for one
+    "PARIS" at 100 WPM, ν = 1.9); (π f_D b)²/12 = 0.6% gives the scale, not a bound; all under the Satterthwaite form's
+    own ~3%.
+  - **One sample set** (stated 2026-10-25 as obvious): every per-story sum and update (Ω̂, ν, SE, Ω̄'s lookups, w, the
+    amplitude update, C²'s own part) runs over the samples with s_k ≠ 0; "s_k > 0" and "every sample of the story's
+    marks" differ from it only at j = 3 and 4, where |s_k| < 0.001.
+  - **C²'s bullet corrected:** only where s_k = 0 exactly is there no own part and no leeway; at j = 0 to 4, |s_k| <
+    0.001 and v_k is not zero (up to 2.8 × 10⁻⁵), and the own part applies.
 
 ### Obvious items, stated for approval
 
