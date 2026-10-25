@@ -750,9 +750,12 @@ long run; the timing convention and rise times wait for the research.**
   (Blackman-windowed sinc, 21.3 ms, −6 dB at ±150 Hz; included because it is known exactly and costs nothing in a
   precomputed table, though it changes the shape by at most 0.6% of full at 25 WPM and 1.2% at 100 WPM), then through
   the 76 Hz filter, computed from the story's claimed key-down and key-up times, averaged over where an edge falls
-  within a 3 ms sample; the misfit for other rigs' edges (1.2 to 3% of full for 0 to 4 ms rises, 6 to 12.5% for 8 ms;
-  derived) goes into the systematic term. The filter's output rises 9.9 ms (10–90%) for a long mark; a 100 WPM dot
-  peaks at 0.90 of full (derived; scratch `template_shape.py`).
+  within a 3 ms sample (2.667 ms since the sampling decision below); the misfit for other rigs' edges goes into the
+  systematic term (how, and its corrected size: the edge-term bullet below; the figures first given here, 1.2 to 3%
+  for 0 to 4 ms rises and 6 to 12.5% for 8 ms, are withdrawn there). The output rises 10.04 ms (10–90%) for a long
+  mark through the channelizer and the 76 Hz filter (9.9 ms through the 76 Hz filter alone, the figure first given
+  here; corrected 2026-10-24, scratch `memspan\risetimes.py`); a 100 WPM dot peaks at 0.90 of full (derived; scratch
+  `template_shape.py`).
 - **The sampling interval: 2.667 ms, every 4th channel sample (owner, 2026-10-23: "Agreed"), replacing 3 ms.** The
   owner asked "Why would we not just change our own sampling rate to be a multiple of the channel sample rate"; 3 ms is
   4.5 channel samples (1 500 samples/s), so every other instant fell between samples. 2.667 ms (375 samples/s) keeps
@@ -765,7 +768,7 @@ long run; the timing convention and rise times wait for the research.**
   no flat part, so discarding edges would leave dots at high speed, and an all-dot word, with no estimate.
 - **Counting the independent fades ν: binned, exact on the bins (owner, 2026-10-23: "Agreed"; his idea: "What if we
   just did a very long-term average and decimated...").** Each story sums its key-down weight (s_k²) in bins of
-  42.67 ms (two engine blocks) and computes ν = (Σw)² / ΣΣ w_i w_j ρ²(t_i − t_j) over the bins; binning changes ν by
+  42.67 ms (two engine blocks) and computes ν = (Σw)² / ΣΣ w_i w_j ρ²(t_i − t_j) over the bins, t_i each bin's center (the time the binning-error formula assumes; stated 2026-10-24 as obvious); binning changes ν by
   about (π f_D b)²/12 = 0.6% at 2 Hz (derived), against the Satterthwaite form's own ~3%. Each story keeps its last
   10 bins (ρ² < 0.001 beyond 0.42 s). Cost about 1.6 operations per story per sample (1 addition each sample,
   10 multiply-adds per closed bin) and about 12 numbers per story; option (C), an exponential-sum fit, would take about
@@ -787,7 +790,9 @@ long run; the timing convention and rise times wait for the research.**
   power, on the rise the look-ahead does the work, in a gap the template is zero). Derived: it reaches from the last
   sample at full carrier (99% of full amplitude or more; 99.9% gives the same) to the last sample where the leeway
   C²(f²s_k² + v_k) can equal the noise σ_y², for the strongest station the newborn prior allows (+85 dB S₅₀₀), over
-  every position of the edge within a sample: 10 samples (8 at +60 dB S₅₀₀, 7 at +40 dB S₅₀₀). A first proposal of
+  every position of the edge within a sample: 10 samples (8 at +60 dB S₅₀₀, 7 at +40 dB S₅₀₀). The amendment's
+  revision (2026-10-24) found 9 to 10 samples depending on where the sampling grid falls relative to the edge, 10 the
+  worst case; 10 covers every position, as the derivation requires. A first proposal of
   16 ms rested on a 1% tail cutoff borrowed from the own-power rule and was withdrawn. Noise in the peak (scratch
   simulation, correlated filter noise): it reads high only, 1.77, 1.20, 1.06 and 1.02 times the true power at 0, +10,
   +20 and +30 dB S₅₀₀, while the leeway is 0.005, 0.03, 0.28 and 2.7 times the noise, so it matters only where the
@@ -811,7 +816,8 @@ long run; the timing convention and rise times wait for the research.**
   ripple, the receiving radio's AGC, a neighbor's leakage. The prototype measures it: decoding with the true story
   (the label), the scatter of strong stations' flat-part samples about the model's prediction beyond the noise,
   relative to the carrier, on the synthetic set and on real recordings; the value chosen from that comes back to the
-  owner, and f goes to zero if the scatter is negligible on both.
+  owner, and f goes to zero if the scatter is negligible on both. A consequence to weigh then (noted 2026-10-24): with
+  f = 0 the flat-part cap w/f² disappears and a strong station's flat part counts in full.
 - **Other transmitters' edges go into the edge term v_k (owner, 2026-10-23: "Agree"; option B).** v_k = the average
   over u and r of (s_k(u, r) − s̄_k)², with u the edge's position within the 2.667 ms sample (uniform) and r the
   transmitter's 10–90% rise time, uniform over 0.8 to 4.7 ms (the ARRL Lab's measured range,
@@ -819,8 +825,9 @@ long run; the timing convention and rise times wait for the research.**
   aligned to the template at its half-amplitude point, the story absorbing the delay in its timing; s̄_k stays the
   2.5 ms template. Zero on the flat part and in gaps; one precomputed number per template sample; no CPU per story, no
   stories added. Misfit after alignment (derived, scratch `memspan\misfit.py`, through the channelizer and the 76 Hz
-  filter, 48 ms mark and 12 ms dot): 0.9–1.6% of full at 0.8 ms, 0.6–1.1% at 1.5 ms, 0.8–1.5% at 3.5 ms, 3.8–4.6% at
-  4.7 ms; unshaped keying (about 5.3%) stays outside, with key clicks a known limitation. Chosen over the floor alone
+  filter, 48 ms mark and 12 ms dot): 0.9–1.6% of full at 0.8 ms, 0.6–1.1% at 1.5 ms, 0.8–1.5% at 3.5 ms, 1.92–3.83% at
+  4.7 ms (corrected 2026-10-24 by the amendment's revision: the first figure, 3.8–4.6%, searched shifts of only
+  ±1.5 ms, while half-amplitude alignment at 4.7 ms needs 1.86 ms); unshaped keying (about 5.3%) stays outside, with key clicks a known limitation. Chosen over the floor alone
   because f is now a placeholder that may go to zero. The prototype tests stations keyed at 0.8 and 4.7 ms. (An
   earlier figure of 6–12.5% for "8 ms rises" used a 13.5 ms full edge, outside the measured range, without the
   alignment; withdrawn.)
@@ -854,7 +861,8 @@ long run; the timing convention and rise times wait for the research.**
   pruning, and the rest, with the story counts behind them. Known now: about 287 ms per channel-second on noise
   (Task 4d, desktop, one thread; the bank decoder 29 ms); the only breakdown (Task 4, before 4d removed most gap
   branching) was successors 64%, carrying forward 29% (scoring 16%), merging and pruning 4%, building the population
-  3%; the newborn's integral is estimated at 17 to 33 ms per channel-second, not measured.
+  3%; the newborn's integral is estimated at 19 to 38 ms per channel-second at 375 samples/s, not measured (17 to 33 ms
+  was the figure for 3 ms samples; corrected 2026-10-24).
 - **The newborn's first mark: kept as designed (owner, 2026-10-24: "Agree").** Until its belief in log-amplitude
   narrows to a spread of σ_u = 0.1, a newborn scores against the exact belief p₀(a)·exp(Σ w·Λ_j(a)) under the flat
   prior, with the amplitude held constant, carried by running totals (the low- and high-signal forms of ln I₀, chosen
