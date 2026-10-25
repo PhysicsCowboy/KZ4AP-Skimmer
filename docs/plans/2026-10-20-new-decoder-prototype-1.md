@@ -1009,6 +1009,16 @@ long run; the timing convention and rise times wait for the research.**
     in 24 minutes on 7 cores in scratch, so it is computed ahead of time or with a much faster integrator. At 12.8 MB it
     exceeds a core's cache, so the lookup estimate of 40 to 60 ns is at risk (named in the amendment; told to the owner
     2026-10-25).
+- **Clipping is the default; the noise-in-Ω̄ model is the measured variant (owner, 2026-10-25: "We clip as the
+  default, and we test option 7's improvement in decoding and in speed against that default"), reversing the default of
+  the Ω̄ bullet above after the corrected costs and the table's growth to 12.8 MB.** The default: Ω̂ clipped at zero,
+  max(Ω̂, 0), and Ω̄ from the fading-only closed form (inverse gamma under the flat prior) by its two-input table; no
+  noise-variance sums. The variant: the model Ω̂ = Ω·G + N with its four-input table and the two running sums, scored
+  against the default for decoding and for CPU in the breakdown. The remedy for the variant's Gaussian artifact (Ω̄'s
+  rise for very negative Ω̂) is decided only if the variant earns its place. **How CPU is stated from now on** (owner,
+  2026-10-25: "I care about the fraction of the total time we think we're going to achieve, not what some garbage
+  decoder is doing today"): costs are compared with the new decoder's projected total, not today's 287 ms per
+  channel-second; the implementation plan carries that projected budget by part.
 
 ### Obvious items, stated for approval
 
