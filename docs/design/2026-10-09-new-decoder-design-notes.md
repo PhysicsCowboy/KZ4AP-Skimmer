@@ -64,17 +64,32 @@ Each hypothesis carries:
    with p(1 − q), or the over's end with p·q, where p is the probability that a letter ends its word and q that a
    word ends its over (topic 5, item 3; added 2026-10-19).
 4. **Speed and the Farnsworth gap factor;** their form is topic 2. A fresh start takes its factor at its first gap
-   between letters (topic 2, item 3; added 2026-10-15).
+   between letters (topic 2, item 3; added 2026-10-15). (The factor is removed from the first prototype, which assumes
+   standard spacing: topic 2, item 3, amended 2026-10-21.)
 5. **The position in the Morse tree:** the letter in progress.
 6. **Past text:** the current word so far, plus the kind of the previous word (and which token, if it was a fixed
    token). Closed by topic 6.
-7. **The last stretch of keying,** if topic 4 finds that the expected filter output depends on keying before the
-   current element.
+7. **The last stretch of keying (amended 2026-10-25, owner; plan D17).** The expected front-filter output does depend
+   on keying before the current element. An edge moves the expected output by 0.01 of full or more through the 11th
+   sample after it (j = 0 to 10, 29.3 ms, of which the first 5 are the delay; derived), the plan's "about 10 samples
+   (26.67 ms)" (amendment of 2026-10-25, part 5: the last section of these conclusions). The template itself is not
+   truncated there: it is nonzero through j = 15 after an edge and exactly 0 from j = 16 (42.7 ms; 1 − S(j) is 9 × 10⁻⁷
+   at j = 14 and 4 × 10⁻¹¹ at j = 15; derived; plan D17, 4896e97: "The template stays nonzero for 16 samples (42.7 ms)
+   after each key-up"). Each story computes its template (part 5) from its own key-down and key-up times within those 16
+   samples; merging does not compare them (topic 5, item 2). (Until 2026-10-25 this item read: "The last stretch of
+   keying, if topic 4 finds that the expected filter output depends on keying before the current element.")
 8. **Its score and a link to its parent,** to trace its text back when printing (topic 8). The score is the
    probability of its single best story (topic 5, amended 2026-10-14).
 9. **A clock for each non-Morse state:** how long the carrier or the silence has lasted.
-10. **Its signal level and the level's variance,** learned from its own marks (topic 3, item 1; added 2026-10-15:
-    the level differs between hypotheses because each learns it from its own decisions).
+10. **Its amplitude and the amplitude's variance, and its long-run power's statistics (amended 2026-10-25, owner;
+    plan D16, D17;** replacing "its signal level and the level's variance, learned from its own marks", added
+    2026-10-15: the level differs between hypotheses because each learns it from its own decisions). A story carries:
+    - a Gaussian amplitude N(μ, P) and the time of its last update;
+    - the two running sums of its RMS since its over began (amendment of 2026-10-25, part 7; the noise-in-Ω̄ variant
+      adds two for the RMS's noise variance);
+    - for ν, the running sums and its last 10 bins of key-down weight (part 7).
+
+    All are learned from its own samples (topic 3, item 1).
 
 At channel level, outside the hypotheses: the hiss (noise) level (topic 3, item 3; amended 2026-10-15, the signal
 level moved into the hypotheses); the fist model, fixed (topic 2, item 4; corrected 2026-10-14, this line had left it
@@ -176,8 +191,8 @@ means all three of:
      the spec amendment ("After review 1", item 6). The older Farnsworth group (I) reaches 7.84 and is unaffected.
 4. **Fist model, baseline: fixed, at channel level, never learned while running.** It is the rule that scores every
    hypothesis: how probable an element or gap of a given length is at that hypothesis's speed (and, for gaps between
-   letters, its Farnsworth factor), when a mark or gap ends, and its classification (dot or dash; element, letter or
-   word gap).
+   letters, its Farnsworth factor, removed from the first prototype by item 3's amendment of 2026-10-21), when a mark
+   or gap ends, and its classification (dot or dash; element, letter or word gap).
    - **Form:** length = median × a random factor whose natural logarithm is Gaussian with standard deviation σ (the
      generator's form, from VE3NEA's DeepCW generator, consistent with Mills's (1977) scatter proportional to length;
      no source shows that it was measured on real keying), with a heavy tail so that one wild element does not kill
@@ -210,6 +225,15 @@ means all three of:
      the 6 kinds too. Our generator draws every length independently (`training/kz4ap_synth/keying.py`), so only real
      keying can show whether they matter. **Test (topic 9):** adopted only with a real advantage when decoding real
      fists.
+   - **The fist's lengths are counted in 2.667 ms samples (amended 2026-10-25; owner, 2026-10-23: "Agreed"; plan D17,
+     "every 4th channel sample", replacing D16's 3 ms and, before it, the 2 ms pieces of topic 5, item 1 and the
+     plan's §2.5, item 3).**
+     - The forms are unchanged: log-normal lengths, medians 1, 3, 1, 3 and 7 dots, σ = 0.3 in ln(length)
+       (placeholders, above), and the hazard form (topic 5, item 9).
+     - The rounding is the plan's §2.5, item 3's, with "piece" read as "sample": a kind's median is M = (its median in
+       dots × the speed's dot) / 2.667 ms. A 100 WPM dot has a median of 4.50 samples; the longest median, a word gap
+       at 5.2 WPM with standard spacing, is 605 samples (derived; amendment of 2026-10-25, part 11).
+     - The 32 speeds are unchanged. Item 3 (Farnsworth) stands as amended on 2026-10-21 (the plan's D14).
 5. **Where the fist's numbers come from: measured on real keying (owner, 2026-10-15).** This is the standard
    practice: speech trains its speaker-independent models, durations included, on many speakers' recordings and uses
    them as the prior for adaptation, fitting the prior's spread to the differences between speakers (parametric
@@ -294,55 +318,77 @@ conclusions below replace the earlier ones, which git keeps: one amplitude per c
 idea"), soft key-down weights over the last 0.5 s of key-down time, and the noise measured on the gaps the hypotheses
 agree on.
 
+Amended 2026-10-25 (owner, 2026-10-21 to 2026-10-25; plan D16, D17): items 1, 2 and 4 are restated for an amplitude
+per story updated at every 2.667 ms envelope sample, with no blocks; the design in full, with its formulas and values,
+is the amendment of 2026-10-25, the last section of these conclusions ("Detection, amplitude, frequency and the
+mark's shape").
+
 **Decision feedback (owner, 2026-10-15; answers review 1's K3).** The decoder's own decisions feed an estimate only
 inside the hypothesis that made them; whatever is kept at channel level uses no decisions.
 
-1. **The signal level: each hypothesis tracks its own (owner, 2026-10-15).** Standard: per-survivor processing
-   (Raheli, Polydoros and Tzou 1995), as in Bell (1977), who ran a Kalman filter on the amplitude for each path. This
-   replaces one level per channel (step 2, T3.0, class (iii)).
-   - Each hypothesis carries its level estimate and the estimate's variance. Each measurement of the level (the sum
-     over one of its marks, or over one block of a mark if topic 4 splits marks) moves the estimate toward the
-     measurement by the Kalman gain, variance / (variance + the measurement's own noise variance). Between
-     measurements the estimate is kept and its variance grows at the fading model's rate (item 2). Older marks
-     therefore count less and less: the level is tracked over time, never fitted as one constant.
-   - Each mark is scored against the predicted level allowing for its variance (the Kalman predictive density), not
-     against a level taken as exact. Why (derived): taken as exact, a mark more than 6 dB below the stored level reads
-     as noise on a strong signal (the crossover is at half the amplitude), so the level stops learning. In a
-     simulation of the earlier channel estimate, a drop of 8 dB or more at 20 dB S₅₀₀ was never followed in 60 s, and
+1. **The amplitude: each story tracks its own, every 2.667 ms (owner, 2026-10-15; amended 2026-10-25, owner; plan
+   D16, D17).** Standard: per-survivor processing (Raheli, Polydoros and Tzou 1995), with Bell's (1977) form, one
+   scalar Gaussian amplitude per path. This replaces one level per channel (step 2, T3.0, class (iii)), and, since
+   2026-10-25, the level measured once per mark or block and kept between measurements (2026-10-15).
+   - **Prediction** (owner, 2026-10-22, the rule; owner, 2026-10-23: "agreed", the prediction in full; plan D16, D17):
+     a story's amplitude a at the front filter's output is predicted at each envelope sample (amendment of 2026-10-25,
+     part 6).
+     - The mean drifts from the last estimate toward the Rayleigh mean amplitude 0.886·√Ω̄ = (√π/2)·√Ω̄, at the
+       amplitude's own correlation ρ_a over the time Δt since the story's last estimate.
+     - The variance is ρ_a²·P + ½(1 − ρ²)·Ω̄. Its second term is the owner's rule: the spread √(½(1 − ρ²)Ω̄), the
+       long-run amplitude times √((1 − ρ²)/2).
+     - ρ is the fading's correlation at a fixed 2 Hz (item 2).
+   - **Ω̄** is the expected long-run power given the story's RMS clipped at zero, the count of fades ν and the owner's
+     flat prior (part 7; owner, 2026-10-25, the default; the noise in its likelihood a measured variant).
+   - **Update:** each sample where the story's template is nonzero (s_k ≠ 0, the one sample set of part 7) updates
+     N(μ, P) by the tempered Rician likelihood (part 4), moment-matched to a Gaussian.
+   - **The prediction's spread** is set by the long-run amplitude, never by the story's current amplitude: the cause of
+     the fading failure of 2026-10-21 (plan D16).
+   - **A fresh start** scores its first mark against the owner's flat prior (part 8). Why it must learn its own level
+     (derived, 2026-10-15): stories stuck at the old level read a new station's marks as noise, which costs them
+     roughly 30 to 300 nats per 20 WPM dot between 0 and 10 dB S₅₀₀.
+   - **The cost:** per story, the Gaussian's two numbers, the time of the last update, the RMS's two sums (two more for
+     its noise variance in the noise-in-Ω̄ variant), about 12 numbers for ν (part 7) and the over's start time.
+   - **Merging** is per-survivor, as before: of two stories in the same state, the better one's amplitude and sums are
+     kept (topic 5, item 2).
+   - **The derivation kept (2026-10-15):** the reasons for scoring against the predictive density rather than a level
+     taken as exact stand. Why (derived): taken as exact, a mark more than 6 dB below the stored level reads as noise
+     on a strong signal (the crossover is at half the amplitude), so the level stops learning. In a simulation of the
+     earlier channel estimate, a drop of 8 dB or more at 20 dB S₅₀₀ was never followed in 60 s, and
      the weaker station was not decoded at all; drops of 6 dB were followed within about 5 s. With the variance in the
      score, a 20 WPM dot at 10 dB S₅₀₀ arriving 10 dB below the level scores 1 107 nats better as noise when the level
      is taken as exact, but 271 nats better as a mark when the level is uncertain by ±10%, and that one dot moves the
      estimate 98% of the way to its own level.
-   - A fresh start begins with its level uncertain and learns it from its first marks, so a fresh start picks up a
-     new station's level: hypotheses stuck at the old level read the new station's marks as noise, which costs them
-     roughly 30 to 300 nats per 20 WPM dot between 0 and 10 dB S₅₀₀ (derived). A fresh start's level prior is flat
-     in dB over the range of levels the decoder must handle, and a fresh start takes its level when its first mark
-     ends (topic 5, item 3; owner, 2026-10-19).
-   - Cost: two numbers per hypothesis and an update per measurement. Merging becomes approximate: two hypotheses that
-     differ only in their levels are merged, keeping the better one's level (the standard per-survivor approximation).
    - Dropped with the channel estimate: the 10 ms tap, its soft key-down weights (with their unstated key-down prior,
      0.44 by step 2, C8) and the 0.5 s window, and with them review 1's D4 to D6, which concerned them.
-2. **How fast the level may change: moved to topic 4 (owner, 2026-10-15), and settled there: one fixed spread,
-   chosen by measurement, sets both the block length and the level's rate (topic 4, item 9).** At slow speeds in fast
-   fading the level changes within a mark: a 5 WPM dash lasts 720 ms, while the fading's correlation halves after
-   0.375/spread seconds (375 ms at 1 Hz, 75 ms at 5 Hz; step 1, N5). Marks must then be split into blocks shorter
-   than the fading's coherence time (the standard: step 1, P1.5), so the level's rate of change and the block length
-   are one assumption, set together in topic 4. Derived for that discussion, with one level measurement per mark:
-   - a filter that assumes faster fading than the signal has costs sensitivity on steady signals. Per mark, at 1%
-     errors, +0.4 dB of E/N₀ at ±20% level uncertainty and +2.7 dB at ±50%; at 0.1% errors, +2.1 and +12 dB. A 1 Hz
-     assumption leaves ±49% at 5 WPM, ±19% at 20 WPM and ±10% at 40 WPM;
-   - one that assumes slower fading than the signal has loses marks in deep fades whatever the SNR: a Rayleigh-faded
-     signal spends 22% of its time more than 6 dB below its average;
-   - the standard ways to cover an unknown spread are one fixed value (robust design for the fastest fading expected,
-     Li, Cimini and Sollenberger 1998, whose small mismatch loss relies on frequent channel measurements; Bell 1977
-     used one fixed model), an estimated spread (Tepedelenlioğlu, Abdi, Giannakis and Kaveh 2001), or several fading
-     models inside each hypothesis (Blom and Bar-Shalom 1988). Our spreads range 100 to 1 (0.05–5 Hz in group B2).
+2. **How fast the amplitude may change: one fixed Doppler spread, f_D = 2 Hz (owner, 2026-10-22: "A, with B in
+   backlog"; plan D16; amended 2026-10-25).** This replaces one fixed spread chosen by measurement that set both the
+   block length and the level's rate (topic 4, item 9, 2026-10-15).
+   - There are no blocks, so the spread sets only the amplitude's prediction (amendment of 2026-10-25, part 6) and ν's
+     count (part 7).
+   - Bell used 1 Hz. 2 Hz covers the development set's 5 Hz fading better.
+   - Several rates per story are in the backlog.
+   - The genie test (decoding with the generator's true spread) measures what the one fixed value loses (part 15).
+   - **Background, kept (2026-10-15):** the derivations of what a too fast or too slow rate costs stand. At slow
+     speeds in fast fading the level changes within a mark: a 5 WPM dash lasts 720 ms, while the fading's correlation
+     halves after 0.375/spread seconds (375 ms at 1 Hz, 75 ms at 5 Hz; step 1, N5). Derived then, with one level
+     measurement per mark:
+     - a filter that assumes faster fading than the signal has costs sensitivity on steady signals. Per mark, at 1%
+       errors, +0.4 dB of E/N₀ at ±20% level uncertainty and +2.7 dB at ±50%; at 0.1% errors, +2.1 and +12 dB. A
+       1 Hz assumption leaves ±49% at 5 WPM, ±19% at 20 WPM and ±10% at 40 WPM;
+     - one that assumes slower fading than the signal has loses marks in deep fades whatever the SNR: a
+       Rayleigh-faded signal spends 22% of its time more than 6 dB below its average;
+     - the standard ways to cover an unknown spread are one fixed value (robust design for the fastest fading
+       expected, Li, Cimini and Sollenberger 1998, whose small mismatch loss relies on frequent channel measurements;
+       Bell 1977 used one fixed model), an estimated spread (Tepedelenlioğlu, Abdi, Giannakis and Kaveh 2001), or
+       several fading models inside each hypothesis (Blom and Bar-Shalom 1988). Our spreads range 100 to 1
+       (0.05–5 Hz in group B2).
 3. **The hiss (noise) level: one per channel, measured without decisions (owner, 2026-10-15).** It is read from the
    signal detector's averaged spectrum around the station: its 23.4 Hz bins (Hann window), each averaged over about
    1 s, are inherited from the detector (`docs/signal-processing.md`, section 6). A low-ranked value of the bins
    within a range around the station gives the hiss per bin; its bias on hiss alone is computed exactly from the
-   detector's averaging and divided out, and the result is converted to a level per hertz for topic 4's sums (topic 4,
-   item 7).
+   detector's averaging and divided out, and the result is converted to a level per hertz, N₀, for topic 4's noise
+   (topic 4, item 7; "sums" until 2026-10-25).
    Standard but adapted: ordered-statistic estimation of the noise level (ordered-statistic CFAR, Rohling 1983;
    trimmed means, Gandhi and Kassam 1988) at a lower rank than radar's usual one, since an HF band can be more
    crowded than radar's quarter of occupied cells. This replaces the noise measured on the gaps the hypotheses agree
@@ -368,8 +414,9 @@ inside the hypothesis that made them; whatever is kept at channel level uses no 
      Placeholders until then: ±2 kHz and the 25th percentile (heuristic). Nothing is needed from the owner.
    - An interferer inside the station's own channel is not hiss and is rightly ignored here; how the decoder copes
      with it belongs to the new topic on the channel's other contents.
-4. **Use:** topic 4's scoring compares a hypothesis's summed mark (or block) with a carrier of the hypothesis's
-   predicted level plus the hiss.
+4. **Use (amended 2026-10-25; plan D17):** each envelope sample is scored against a carrier of the story's predicted
+   amplitude, shaped by its template, plus the hiss and the systematic term (amendment of 2026-10-25, parts 4 and 9).
+   This replaces comparing a hypothesis's summed mark (or block) with a carrier of its predicted level plus the hiss.
 5. **Start of an over: no detector level (owner, 2026-10-19).** A hypothesis born from silence starts, like every
    newborn, from a level prior flat in dB, and takes its level from its own first mark (topic 5, item 3). This
    replaces the detector's level as the prior's center (2026-10-15), which would have needed a conversion (derived,
@@ -394,160 +441,117 @@ exists"), and for how fast the signal level may change (moved here from topic 3,
 amended where marked. Items 8 (the frequency reference) and 9 (blocks, and how fast the level may change) are new;
 they answer the risk this topic used to end with, which git keeps.
 
-1. **Every hypothesis is scored on the same evidence:** the channel signal, re-centered by item 8's fine frequency
-   shift (added 2026-10-16), cut into short non-overlapping pieces, each the sum of the complex samples over about
-   2 ms (3 samples at 1500 samples/s). Its cost is derived (review 1, D11; corrected 2026-10-14 from "heuristic"):
-   placing edges only at piece boundaries costs 0.37 dB of SNR (power ratio) on average and 0.72 dB at worst on a
-   12 ms dot (100 WPM), and under 0.1 dB on average at 25 WPM; 1.33 ms pieces would save about 0.1 dB at 100 WPM for
-   1.5 times as many pieces. (Checked by the standard-practice check, step 2, T4.3, added 2026-10-16: in a
-   white-noise model with unfiltered marks, 0.37 dB on average and 0.67 dB at worst; on the real channel filter with
-   its correlated noise, 0.30 dB on average and 0.41 dB at worst, against the ideal E/N₀. The figures above are
-   conservative.) The pieces' noise is **not** independent: the channel passes about 300 Hz, so its noise stays
-   correlated for about 3.3 ms (derived; about 4 ms on the real filter); see item 7. Reading speed-specific filters
-   instead would score hypotheses at different speeds on different data, and overlapping samples would count
-   evidence several times.
-2. **Each hypothesis does its own matched filtering:** it adds up the pieces it claims fall inside its current mark
-   (one complex running sum). A Morse carrier keeps its phase through a mark, so the sum is what a filter matched to
-   that mark would give; its noise follows from the noise level per hertz (item 7). The score is the standard
-   carrier-of-unknown-phase-plus-noise against noise-alone statistics, with A from topic 3; gaps are scored as noise.
-   Edges fall where the hypothesis puts them (to one piece); there are no filter delays; speeds between grid values
-   do not matter for the observation. Scoring a mark's sum and the neighboring gap pieces separately ignores the
-   noise correlation across the mark's edges (about 4 ms): an approximation (review 1, U10).
-   - **Amended 2026-10-20 (owner): a mark's rise is part of its matched filter, and pieces are scored at the noise's
-     long-run rate.**
-     - In a mark's first pieces, the carrier's expected sum follows the rise. The keying edge is a raised cosine of
-       5 ms, a heuristic placeholder (the generator's). It passes through the channel filter, is summed into pieces,
-       and is averaged over the edge's position within a piece (derived).
-     - It does not jump to the level at the first piece.
-     - **Weighting:** a mark's first block weights each piece by its expected fraction, the matched filter
-       S_w = Σ g_j x_j.
-     - **The noise:** every block's noise is counted at the long-run rate, 4 500 Hz × N0 per piece, instead of item 7's
-       N0 c(m).
-       - c(m) is the exact variance of a sum taken in isolation. In the search, though, a block's first piece then
-         earned about twice its share (213.8 against 100.0 in |S|²/V at +20 dB S500, derived), because its noise's
-         correlation with the samples just before it was ignored: the approximation the paragraph above (review 1,
-         U10) had accepted.
-       - The long-run rate is exact for long blocks. It costs a very short mark about 7% of its evidence (derived).
-     - **Measured** in the first prototype's search:
-       - with the rise in the expected sum alone, the problem moved rather than vanishing;
-       - with both changes, a speed step decodes exactly from +11 to +28 dB S500, and constant-speed stations wherever
-         they did before.
-     - Without the rise, a story that starts its mark on a part-amplitude first piece can explain that piece only as
-       a fade. At +20 dB S500 that gave it a lead of about 25 nats for one piece, which narrowed the beam at every
-       letter start to about 8 nats. A speed step from 20 to 30 WPM then failed at +20 to +24 dB S500 (measured in the
-       first prototype's search).
-     - Review 1 and the standard-practice check had costed piece-aligned edges only as an SNR loss.
-     - The standard is the matched filter to the pulse as received (Proakis and Salehi, §4.5-1).
-     - The fall at a mark's end stays unmodeled: by then the story's level is learned from the mark itself, so a weak
-       last piece only costs the story that keeps it.
-     - Details: the first prototype's plan, `docs/plans/2026-10-20-new-decoder-prototype-1.md`, decision D10 and §2.3. Amended 2026-10-16 by
-   item 9: the running sum covers the current block of the mark, at most item 9's block length; each finished block
-   is scored this way, against the hypothesis's predicted level (topic 3, item 1), and the scores of a mark's blocks
-   add (noncoherent combining). A mark no longer than one block is summed whole, as before. The current block's
-   score so far counts at every piece, not only when the block finishes (topic 5, item 9; added 2026-10-16).
-3. **The time step** is the piece length, about 2 ms.
-4. **Keying history (topic 1, item 7):** only the running sum of the current mark (amended 2026-10-16 by item 9:
-   of the current block. The block's score so far is part of the hypothesis's score at every piece, and a finished
-   block's sum updates the hypothesis's level. Corrected the same day: this amendment first said a finished block's
-   score "goes straight into the hypothesis's score", which booked the evidence late and made the beam's comparisons
-   unfair; topic 5, item 9).
-5. **The bank is not used by the new decoder** (owner): each hypothesis's signal level comes from its own sums of
-   the pieces, and the hiss level from the signal detector's spectrum around the station (topic 3, items 1 and 3,
-   amended 2026-10-15). The existing bank decoder stays frozen as the yardstick until the new decoder beats it.
-6. **Standard parts:** the noncoherent matched filter (textbook communications theory; Proakis and Salehi, §4.5-1),
-   segment scoring in hidden semi-Markov models (Rabiner 1989, §IV.D; Ostendorf, Digalakis and Kimball, 1996). Each
-   hypothesis keeps its own running sum, the segment model's statistic, and since 2026-10-15 its own signal level
-   (per-survivor processing, Raheli, Polydoros and Tzou 1995: topic 3, item 1; the correction of 2026-10-14, which
-   removed that citation because nothing was then estimated per hypothesis, no longer applies). The combination for
-   Morse is ours; no published Morse decoder doing exactly this is known to us (not searched specifically).
+Amended 2026-10-25 (owner, 2026-10-21 to 2026-10-25; plan D16, D17): every item below is restated for one front
+filter per channel, envelope samples every 2.667 ms, each story's predicted output, the channelizer following the
+detector and no blocks. The design in full, with its formulas and values, is the amendment of 2026-10-25, the last
+section of these conclusions.
 
-7. **Noise per hertz (owner, 2026-10-14; amended 2026-10-15 by topic 3, item 3: the level per hertz now comes from
-   the signal detector's spectrum around the station, measured without decisions, no longer from the gaps the
-   hypotheses agree on).** (Amended 2026-10-20 by item 2's amendment, owner: the evidence counts every sum's noise at
-   the long-run rate, 4 500 Hz × N0 per piece, and c(m) below stays the exact variance of a sum taken in isolation.)
-   The noise of any sum over a time T is computed from the noise level per hertz (its variance
-   proportional to T, for T well above about 3 ms), as a density, not per piece. Treating the pieces as independent
-   would understate a mark's noise variance by a factor of about 1.7–1.8 (2.2–2.6 dB) for marks of 8–720 ms on an
-   ideal 300 Hz channel, and 1.9–2.1 (2.8–3.3 dB) on the real channel filter, whose noise bandwidth is 252 Hz
-   (derived; review 1, D2), making the decoder overconfident. Bell's receiver chain made that assumption, though Bell himself warned that his sampling interval
-   "may render the independent noise assumption invalid" (Bell 1977, as read in the standard-practice check, step 2,
-   §6.1; wording corrected 2026-10-14 from "the mistake of Bell's receiver chain"). The variances come from the real filter's noise autocovariance
-   R[k]: a sum of n samples has variance Σ_{|k|<n} (n − |k|)·R[k] (derived, exact; "proportional to T" overstates the
-   variance by 0.3–0.5 dB for sums of 8–12 ms, and by under 0.1 dB from 48 ms up). (Amended 2026-10-14: item 1 had
-   claimed nearly independent noise, and item 2 a gain of 10·log₁₀ n dB over one piece; both were wrong by that
-   factor.)
+1. **Every story is scored on the same evidence: envelope samples of one front filter, every 2.667 ms (owner,
+   2026-10-22 and 2026-10-23; plan D16, D17; amended 2026-10-25).**
+   - The channelizer's stream, already following the detector's frequency (item 8), passes through one filter per
+     channel, matched to a 100 WPM dot: 12 ms at half amplitude, 2.5 ms (10–90%) raised-cosine edges, noise bandwidth
+     76 Hz (amendment of 2026-10-25, part 2).
+   - Its envelope is sampled at every 4th channel sample, 2.667 ms (part 3).
+   - Consecutive samples are correlated, 0.878 at one step. Each sample's log-likelihood is counted at a weight w_k
+     that follows the sample's expected SNR, from 0.275 for weak samples to 0.1986 for strong ones, both from that
+     correlation (owner, 2026-10-25; part 4).
+   - The pieces, their sums and their noise c(m) are gone. (They were the channel signal, re-centered by item 8's
+     fine frequency shift, cut into non-overlapping pieces, each the sum of the complex samples over about 2 ms, with
+     the cost of placing edges at piece boundaries derived in review 1, D11, and step 2, T4.3.) Reading
+     speed-specific filters would still score stories at different speeds on different data, which one filter per
+     channel avoids.
+2. **The matched filtering is done once per channel, and each story predicts its output: the smeared prediction
+   (owner, 2026-10-23: "I want option B"; "OK agreed"; plan D17; amended 2026-10-25).** This replaces each hypothesis's
+   own matched filtering (a complex running sum of the pieces it claimed inside its current mark, 2026-10-12, or block,
+   2026-10-16) and its amendment of 2026-10-20 (a mark's rise in its matched filter).
+   - Each story scores each envelope sample with today's noncoherent statistic, tempered by w and integrated over its
+     predicted amplitude (amendment of 2026-10-25, part 4).
+   - The carrier's expected envelope is the story's template s_k (part 5). That is the front filter's output for the
+     story's claimed keying, rise and fall, including the channelizer's filter, averaged over the edge's position
+     within a sample.
+   - The fall is now modeled: a story keeps scoring its carrier after a key-up wherever its template is nonzero, through
+     j = 15 (16 samples, 42.7 ms); it is at or above 0.01 of full through j = 10.
+   - Standard: sequence detection over a smearing channel (MLSE with intersymbol interference, Forney 1972).
+   - The rise template of 2026-10-20 (5 ms placeholder, piece fractions g_j) and the noise rate 4 500 Hz × N₀ per piece
+     are replaced. What that amendment found stands as history: without a rise, a story that starts its mark on a
+     part-amplitude first piece explained it only as a fade, and a speed step from 20 to 30 WPM failed at +20 to
+     +24 dB S₅₀₀ (measured in the first prototype's search; plan D10).
+3. **The time step is the envelope sample, 2.667 ms, every 4th channel sample (owner, 2026-10-23: "Agreed"; plan D17,
+   replacing D16's 3 ms; amended 2026-10-25;** it was the piece length, about 2 ms). It keeps the rule of at most a
+   quarter of the 100 WPM dot (12 ms / 4 = 3 ms), the standard frame step, and every instant is a channel sample.
+4. **Keying history (topic 1, item 7; amended 2026-10-25):** each story's own key-down and key-up times within the
+   template's span, 16 samples, 42.7 ms. No running sums (until 2026-10-25: the running sum of the current mark, then
+   of the current block).
+5. **The bank is not used by the new decoder** (owner): each story's amplitude comes from its own envelope samples
+   where its template is nonzero (amended 2026-10-25; until then "its own sums of the pieces"), and the hiss level
+   from the signal detector's spectrum around the station (topic 3, items 1 and 3, amended 2026-10-15). The existing
+   bank decoder stays frozen as the yardstick until the new decoder beats it.
+6. **Standard parts:** one matched filter per channel and envelope detection (CW Skimmer, fldigi, Bell 1977), the
+   smeared prediction (Forney 1972) (amended 2026-10-25, in place of the noncoherent matched filter of textbook
+   communications theory, Proakis and Salehi, §4.5-1, which the front filter still is); segment scoring in hidden
+   semi-Markov models (Rabiner 1989, §IV.D; Ostendorf, Digalakis and Kimball, 1996). Each story scores its own
+   segments from its own template (since 2026-10-25; until then its own running sum, the segment model's statistic),
+   and since 2026-10-15 keeps its own signal level (per-survivor processing, Raheli, Polydoros and Tzou 1995: topic
+   3, item 1; the correction of 2026-10-14, which removed that citation because nothing was then estimated per
+   hypothesis, no longer applies). The combination for Morse is ours; no published Morse decoder doing exactly this is
+   known to us (not searched specifically).
 
-8. **The frequency reference (owner, 2026-10-15; answers review 1, D7, O1 and K13, and step 2, T4.2b).** One
-   tracker per channel follows the carrier's frequency and its drift rate. It uses none of the decoder's decisions
-   (topic 3's rule), starts from the signal detector's frequency, and steers the channel's fine frequency shift, so
-   every hypothesis reads the same re-centered pieces (item 1).
-   - **Why (derived; review 1, D7).** A carrier Δf off 0 Hz turns its phase through a full cycle every 1/Δf seconds,
-     and a coherent sum over a time T keeps |sinc(Δf·T)|² of its signal power. The channelizer centers each channel
-     once on the nearest bin of its shared FFT (192 kHz / 8 192, so 23.4 Hz apart) and never moves it
-     (`docs/signal-processing.md`, A.7), leaving the carrier up to ±11.7 Hz off 0 Hz. A whole 20 WPM dash (180 ms)
-     then loses 26 dB of signal power, and for a 5 WPM dash (720 ms) to lose under 0.3 dB the carrier must be within
-     0.2 Hz. Shifting by whole bins is the usual coarse step of FFT channelizers (free, and shared by every channel);
-     the fine shift runs on the channel's 1500 samples/s at one complex multiplication per sample.
-   - **Standard (step 1, P3.4; step 2, §3.6):** acquire the frequency at the spectrum's peak, the maximum-likelihood
-     estimate (Rife and Boorstyn 1974); then track it with its drift rate, by a Kalman filter or phase-locked loop at
-     moderate SNR, or by a hidden Markov model over frequency cells at low SNR (Streit and Barrett 1990). Review 1
-     suggested this layout: one tracker per channel, ahead of the pieces, the same for every hypothesis (O1).
-   - **Without decisions (derived).** On/off keying puts a share of the signal's average power equal to the key-down
-     fraction (0.44 for PARIS text) in a steady line at the carrier frequency, which a tracker can follow without
-     knowing when the key is down. Over 1 s at 0 dB S₅₀₀ that line alone pins the frequency to about 0.04 Hz at best
-     (the Cramér–Rao bound), while one mark says little: a 20 WPM dot pins it to about 1.2 Hz at best, a dash to
-     0.23 Hz.
-   - **Not chosen.** Each hypothesis tracking its own frequency, as it does its level (per-survivor processing),
-     would help only at a QSO turnover, when the second station transmits a few to a few tens of hertz from the
-     first. The channel's tracker follows the carrier line, which moves as soon as that station transmits, so it
-     should relock quickly on any signal strong enough to decode (expected; measured below). Matched's tracker is
-     standard, but it is steered by Matched's own key-down decisions at channel level, which topic 3's rule forbids,
-     and it lags a 1 Hz/s drift by 1.1–1.6 Hz (review 1, D7).
-   - **Accuracy needed:** item 9 caps every coherent sum at its block length T, and a residual error Δf loses under
-     1 dB of signal power while Δf·T ≤ 0.26; over a 100 ms block, 1 Hz costs 0.14 dB and 2 Hz 0.6 dB (derived). This
-     replaces the spec's ±2 Hz re-centering target in the spec amendment (K13).
-   - **Built and measured with the prototype:** the tracker's model and gains are set when it is built, from the
-     standard forms above. Its frequency error is measured on weak keyed stations, on the drift group (F2, excursions
-     up to 40 Hz) and at QSO turnovers, on the development set's detector path (topic 9). Per-hypothesis frequencies
-     are reconsidered only if the turnovers show a real loss.
-9. **Blocks, and how fast the level may change (owner, 2026-10-15; answers review 1, D8 and O2, and step 2, T4.2b;
-   settles topic 3, item 2).** A hypothesis sums its mark coherently over blocks no longer than a fixed block length,
-   combines the blocks of a mark noncoherently (item 2), and measures its level once per block (topic 3, item 1). One
-   fixed Doppler spread, the same for every signal, sets both the block length and how fast the level may change
-   (the rate of the level's Gauss–Markov model); its value is set by measurement.
-   - **Why (derived; review 1, D8).** Fading turns the carrier's phase and changes its level within a mark. For a
-     Rayleigh-fading carrier whose Doppler spectrum is Gaussian with standard deviation f_D/2 (f_D, the spread), a
-     coherent sum over T keeps (2/T²)∫₀^T (T − τ)·ρ(τ) dτ of its energy, ρ being the fading's correlation: a 5 WPM
-     dash (720 ms) loses 1.4 dB at a 1 Hz spread and 6.9 dB at 5 Hz, a 20 WPM dash 2.0 dB at 5 Hz. The faded sum also
-     stops looking like "a carrier of level A", so its score is wrong too. The development set's fading group B2
-     spans 0.05–5 Hz.
-   - **Standard (step 1, P1.5; step 2, §3.6; review 1, O2):** sum coherently only over blocks shorter than the
-     fading's coherence time and short against 1/Δf (item 8), and combine the blocks noncoherently or differentially
-     (Dovis and Ta 2012); track the level block by block with a Gauss–Markov model whose rate comes from the spread
-     (Bell 1977 ran a Kalman filter on the amplitude). A refinement is the estimator-correlator (Kailath 1969), in
-     effect a Kalman predictor of the carrier that picks its own block length from the fading model.
-   - **The trade-off (derived, one mark judged on its own).** Short blocks cost a steady signal: the extra E/N₀ for
-     1% errors per mark (missed marks and noise read as marks, averaged), against one sum over the whole mark, is
-     0.5, 1.0, 1.5, 2.4 and 3.4 dB for 2, 3, 5, 10 and 20 blocks. Long blocks cost a fading signal: the longest block
-     that loses at most 0.5 dB of energy is 78 ms at a 5 Hz spread, 195 ms at 2 Hz, 390 ms at 1 Hz and 1.3 s at
-     0.3 Hz. Example, a 5 WPM dash: blocks short enough for 5 Hz fading cut it into about 9, which costs a steady
-     signal about 2.4 dB, while left whole it loses 6.9 dB at 5 Hz. So any one value gives up about 2 dB on steady
-     slow signals or up to about 7 dB on fast-fading slow ones. It matters mostly below about 20 WPM: marks of 78 ms
-     or less are never split (dots from 16 WPM up, dashes from 46 WPM up). The block length is in milliseconds, not
-     dits, because the fading's coherence time does not scale with the sending speed. What a level rate that is too
-     fast or too slow costs is in topic 3, item 2.
-   - **The value, by measurement (topic 9):** the spread that does best on B2 without making A2 (steady signals)
-     worse, by the paired comparison (topic 2, "a real advantage"). The block length is the longest that loses at
-     most 0.5 dB of energy at that spread (heuristic; the same sweep tries 0.25 and 1 dB). A genie test on B2,
-     decoding with the generator's true fading, measures what one fixed value loses.
-   - **Only with a real advantage (topic 2):** a spread estimated per signal (Tepedelenlioğlu, Abdi, Giannakis and
-     Kaveh 2001), or two or three spreads side by side in each hypothesis, weighted by how well each fits (multiple
-     models, Blom and Bar-Shalom 1988; cheaper than it sounds, since long blocks are sums of short ones).
-     Differential combining and the estimator-correlator are refinements, tested the same way.
-   - **The block cap also** bounds the loss from any frequency error item 8's tracker leaves (review 1, O1).
-     Transmitter chirp, a frequency change at key-down (O2), is not modeled, and the development set has none.
+7. **Noise (owner, 2026-10-14; amended 2026-10-15 by topic 3, item 3; amended 2026-10-25, plan D17, the noise
+   figures, 2026-10-23).**
+   - The hiss density N₀ comes from the signal detector's spectrum around the station, as before; it is the only
+     measured noise quantity.
+   - The front filter's output noise is σ_y² = N₀ × 74.48 Hz on the channel's colored noise, a fixed constant computed
+     from a 48 kHz model of the channel filter and the continuous pulse (derived; the decided 25 taps give 74.50 Hz,
+     0.03% apart; amendment of 2026-10-25, part 2).
+   - Its correlation between samples is counted by w (part 4).
+   - **The derivation kept (2026-10-14; review 1, D2), the reason for w:** treating correlated samples as
+     independent overstates the evidence. On the pieces it would have understated a mark's noise variance by a factor
+     of about 1.7–1.8 (2.2–2.6 dB) for marks of 8–720 ms on an ideal 300 Hz channel, and 1.9–2.1 (2.8–3.3 dB) on the
+     real channel filter, whose noise bandwidth is 252 Hz (derived), making the decoder overconfident. Bell's receiver
+     chain made that assumption, though Bell himself warned that his sampling interval "may render the independent
+     noise assumption invalid" (Bell 1977, as read in the standard-practice check, step 2, §6.1).
+   - Replaced on 2026-10-25: the noise of a sum over a time T computed from the noise per hertz (a sum of n samples
+     has variance Σ_{|k|<n} (n − |k|)·R[k]), and the long-run rate 4 500 Hz × N₀ per piece of 2026-10-20.
 
-**For topic 9:** item 8's measurement of the tracker, and item 9's sweep of the spread with its genie test.
+8. **The frequency reference: the channelizer follows the detector, and the new decoder has no frequency tracker
+   (owner, 2026-10-23: "B", then "A"; plan D17; amended 2026-10-25).** This replaces one tracker per channel following
+   the carrier's frequency and drift rate and steering the channel's fine frequency shift (owner, 2026-10-15; review
+   1, D7, O1 and K13; step 2, T4.2b), whose purpose was to keep whole-mark coherent sums within 0.2 Hz.
+   - Each channel block is shifted by the detector's current frequency for the track: a phase-continuous rotation on
+     the 1 500 samples/s stream, one complex multiplication per sample. The channel's bins move when the track moves by
+     more than half a bin (11.7 Hz). This is the usual coarse-plus-fine layout of FFT channelizers.
+   - It is decision-free: the detector decides where the station is (the owner's rule of 2026-09-29).
+   - Every decoder receives the station near 0 Hz. Its error is the detector's: about 0.2 Hz steady, 1.1 to 1.6 Hz
+     behind a 1 Hz/s drift, up to 47 Hz for about 0.7 s at a QSO turnover. The front filter loses 0.01 dB at 2 Hz,
+     0.50 dB at 15 Hz and 2.1 dB at 30 Hz (dB relative to 0 Hz; derived).
+   - The tracker, its trust tolerance, its untrusted search and its use of the detector's frequency are no longer
+     decisions (amendment of 2026-10-25, part 10).
+   - The bank's and Matched's own shifts by the detector's frequency become redundant; how they adapt is for the
+     implementation plan.
+9. **No blocks (owner, 2026-10-21: "I didn't know we were doing anything with blocks …"; 2026-10-22: the
+   standard-practice direction; plan D16; amended 2026-10-25).** This replaces blocks (owner, 2026-10-15): a
+   hypothesis summing its mark coherently over blocks no longer than a fixed block length, one fixed Doppler spread
+   setting both the block length and how fast the level may change, its value set by measurement.
+   - The coherent integration is the front filter's alone, an equivalent window of 1/B_N = 13.2 ms. That loses
+     0.01 dB of energy at 5 Hz fading (derived).
+   - Marks are combined noncoherently, sample by sample, at weight w_k (amendment of 2026-10-25, part 4).
+   - How fast the amplitude may change is topic 3, item 2: one fixed 2 Hz.
+   - The owner accepts the cost of the 76 Hz filter: slow signals pay up to 1.8 dB of noise power against a 50 Hz
+     filter (10·log₁₀(76/50); derived; the plan's D16 "about 2 dB"), and a narrower filter for slow signals is in the
+     backlog.
+   - **Background, kept (2026-10-15): what any coherent window costs** (derived, one mark judged on its own). Short
+     blocks cost a steady signal: the extra E/N₀ for 1% errors per mark (missed marks and noise read as marks,
+     averaged), against one sum over the whole mark, is 0.5, 1.0, 1.5, 2.4 and 3.4 dB for 2, 3, 5, 10 and 20 blocks.
+     Long blocks cost a fading signal: the longest block that loses at most 0.5 dB of energy is 78 ms at a 5 Hz
+     spread, 195 ms at 2 Hz, 390 ms at 1 Hz and 1.3 s at 0.3 Hz. Example, a 5 WPM dash: blocks short enough for 5 Hz
+     fading cut it into about 9, which costs a steady signal about 2.4 dB, while left whole it loses 6.9 dB at 5 Hz.
+     So any one value gives up about 2 dB on steady slow signals or up to about 7 dB on fast-fading slow ones.
+
+**For topic 9 (amended 2026-10-25):** item 8's measurement of the tracker and item 9's sweep of the spread are replaced
+by the prototype's measurements (amendment of 2026-10-25, part 15), including the genie spread. Of the plan's runs
+(§6.1): R6 (the fading spread with block losses: the spread is a fixed 2 Hz and there are no blocks) and R9 (the
+tracker: there is none) are void under the decided design; R10 (genie fading) is part 15, item 8; R2 (the beam), R3
+(the ceiling), R5 (the over and rescue rates P and ε) and R11 (the hiss estimator) still set placeholders.
 
 ### Topic 5: hypotheses (owner, 2026-10-13)
 
@@ -568,11 +572,24 @@ total. The choice belongs to topic 8. (Corrected 2026-10-14: this paragraph had 
 "scaling", which divides the forward variables by their sum, and had called the sum of kept scores true
 probabilities.) This replaces the earlier wording, which called the scores probabilities.
 
-1. **Branching:** every piece (2 ms), a hypothesis continues as it is, or ends its current mark or gap and branches
-   into the possible successors; a hypothesis with no Farnsworth factor yet also branches, at its first gap between
-   letters, into the factors that fit it (amended 2026-10-15 by topic 2, items 2 and 3: the speed and Farnsworth
-   steps at word gaps, up to 3 × 3 variants, are gone). A branch is created only where the fist model gives it a
-   non-negligible probability (a pruning threshold; its value is not yet set).
+**Amended 2026-10-25 (owner, 2026-10-23; plan D17): the decoder's step is the 2.667 ms envelope sample** (topic 4,
+item 3), no longer the 2 ms piece. Where the items below still say "piece", read "sample", except where a figure is
+stated as derived or simulated for 2 ms pieces or for the block observation of 2026-10-16; such figures are kept as
+history and are not recomputed here. Items 1, 2 and 9 are restated (amendment of 2026-10-25, part 11).
+
+1. **Branching: every 2.667 ms sample (amended 2026-10-25;** until then every 2 ms piece).
+   - A story continues as it is, or ends its current mark or gap and branches into the possible successors (amended
+     2026-10-15 by topic 2, items 2 and 3: the speed and Farnsworth steps at word gaps, up to 3 × 3 variants, are
+     gone; the branching into Farnsworth factors at a hypothesis's first gap between letters is removed from the first
+     prototype with the factor, topic 2, item 3, amended 2026-10-21).
+   - A branch is created only where the fist model gives it a non-negligible probability (a pruning threshold; its
+     value is not yet set).
+   - Each sample's evidence is booked at that sample, so every story's score is complete at every sample by
+     construction (each sample is booked 26.67 ms late, after the systematic term's look-ahead; amendment of
+     2026-10-25, part 9).
+   - The hazard form and the look-ahead for text stand, counted in samples (item 9).
+   - **The over-start probability per sample:** the placeholder rate of overs, 0.05/s, gives 0.05/s × 2.667 ms =
+     1.333 × 10⁻⁴ per sample of silence (8.92 nats; derived from the rate). It replaces 10⁻⁴ per 2 ms piece (item 3).
 2. **Merging:** two hypotheses in the same state (everything that affects the future: activity, key up or down and
    when the current mark or gap began, speed, Farnsworth factor, position in the Morse tree, the past text the text
    model needs, the clock of a non-Morse state, and the gap kind if it is resolved before the gap ends; the last two
@@ -583,7 +600,27 @@ probabilities.) This replaces the earlier wording, which called the scores proba
    word context can correct is set by how much past text a hypothesis carries (topic 1's open item, topic 6): more
    text, more correction, fewer merges, more CPU. Amended 2026-10-15 by topic 3, item 1: each hypothesis also carries
    a continuous signal level, which also affects the future; hypotheses that differ only in it are merged anyway,
-   keeping the better one's level (the standard per-survivor approximation), so merging is no longer exact.
+   keeping the better one's level (the standard per-survivor approximation), so merging is no longer exact. (The
+   Farnsworth factor left the state with the factor itself, topic 2, item 3, amended 2026-10-21.)
+   - **Amended 2026-10-25: merging on the state as it is, per-survivor (owner, 2026-10-23: "I agree", option A; plan
+     D17).** No recent edges are added to the merge state.
+     - The merge state is the plan's (§2.7, item 4, without the Farnsworth factor D14 removed), counted in samples:
+       activity, key up or down, samples in the current element, speed or "open", tree node (D17: "element kind, time
+       in it, speed, text node").
+     - Each story computes its expected output from its own history, so every score is exact. Of two stories that
+       differ only in an older edge, the better so far survives.
+     - Standard: reduced-state sequence estimation with per-survivor processing (Duel-Hallen and Heegard 1989;
+       Eyuboglu and Qureshi 1988), as already done for the amplitude. No stories are added.
+     - Where it matters: an edge shapes the expected output for about 10 samples (26.67 ms), so above about 45 WPM two
+       stories that agree on the state can still expect different outputs, because a previous element was shorter
+       than that.
+     - **A measured variant** (option B): the previous element's length in the state when shorter than 10 samples
+       (full maximum-likelihood sequence estimation, Forney 1972), measured on the high-speed signals; its CPU and any
+       decoding gain go to the owner before anything changes (amendment of 2026-10-25, part 15, item 13), under his
+       CPU rule (plan D16, 2026-10-22: "all the other choices which add to the number of potential stories needs to
+       be considered very carefully").
+   - Stories that differ only in their amplitude, RMS sums (and the noise-in-Ω̄ variant's noise-variance sums) and ν
+     sums are merged keeping the better one's (the per-survivor approximation, as before).
 3. **Births:** (a) from silence: while the no-signal hypothesis is alive, Morse at any of the 32 speeds, a steady
    carrier or nonsense keying may begin at any piece; (b) **always-on rescue births, where a mark starts (owner,
    2026-10-18; answers review 1, U7, and step 2, T5.3b)**: at every piece where at least one surviving hypothesis
@@ -623,8 +660,9 @@ probabilities.) This replaces the earlier wording, which called the scores proba
      the whole timing model.
    - **One newborn, which takes its speed when its first mark ends (owner, 2026-10-18).** While its first mark
      lasts, a newborn's score depends on its speed only through the probability that a mark has lasted this long:
-     block lengths are in milliseconds and the level's rate is per second (topic 4, item 9), and the letter is
-     charged at its start (item 9). So one newborn carries, at each piece, the best over the 32 speeds and over dot
+     block lengths are in milliseconds and the level's rate is per second (topic 4, item 9; since 2026-10-25 the
+     template is in milliseconds and the amplitude's rate per second, topic 3, item 2), and the letter is charged at
+     its start (item 9). So one newborn carries, at each piece, the best over the 32 speeds and over dot
      and dash of the speed's prior times that probability; when the mark ends it branches (item 1) into the speeds
      and labels that fit, each charged its own prior and its own probability of ending there. Every surviving
      hypothesis gets exactly the score it would have had from 32 newborns, and the beam keeps at least as many,
@@ -755,7 +793,8 @@ probabilities.) This replaces the earlier wording, which called the scores proba
        h" (Wilson, Nassar and Gold 2010). When a training set's mix differs from real use, the priors are reset to
        real use's rates (Saerens, Latinne and Decaestecker 2002).
      - **Placeholders until counted: the development set's own rates** (counted from the generator's plans: seed 1
-       at the default sizes, 1 486 oracle channels). P = 1/10 000 per piece (9.2 nats): 1 746 overs in 10.0 hours
+       at the default sizes, 1 486 oracle channels; per 2.667 ms sample since 2026-10-25, P = 1.333 × 10⁻⁴, 8.92 nats,
+       the same rate of 0.05/s: item 1). P = 1/10 000 per piece (9.2 nats): 1 746 overs in 10.0 hours
        of silence, 1/10 300 (by group, 1/4 000 to 1/13 600 with one over per signal, 1/6 400 for QSOs on one track,
        1/37 000 on two), mostly silence after each channel's last over, since a recording runs until 2 s after its
        longest signal ends (17 s per channel on average). ε = 1/1 000 per letter start (6.9 nats): the
@@ -842,10 +881,19 @@ probabilities.) This replaces the earlier wording, which called the scores proba
        anywhere in a set range of S₅₀₀, in dB, the form of the speed prior (flat over log-spaced values). This
        settles the three questions left open: the prior's width (the whole range), its center in a long pause (it
        has none, so nothing goes stale), and rescue newborns (they start their level again, like their speed and
-       factor). A newborn takes its level when its first mark (or first block) ends, as it takes its speed: until
-       then the mark is scored against the flat prior (the predictive density of the mark's running sum, a table
-       lookup per piece), and then its Kalman filter starts from that posterior's mean and variance (a Gaussian
-       approximation). It replaces topic 3, item 5's detector-centered prior.
+       factor). It replaces topic 3, item 5's detector-centered prior.
+       - **Amended 2026-10-25: integrated while broad, then Gaussian** (plan D16, "A new story's first mark is scored
+         against the owner's flat prior (−15 to +85 dB S₅₀₀) and seeds the RMS"; owner, 2026-10-24: "Agree", the
+         first mark kept as designed; plan D17). A newborn's first mark is scored sample by sample against the flat
+         prior, by an integral over the amplitude (amendment of 2026-10-25, part 8). When the posterior is narrow
+         enough (σ_u < 0.1 in ln a), or at the latest at the last sample of its first mark's template with s_k ≠ 0,
+         the story continues with the Gaussian amplitude of topic 3, item 1. Its samples seed its RMS. A rescue
+         newborn restarts its RMS, as it restarts its speed. The integral's approximations are measured in the
+         prototype (part 15, item 2).
+       - This replaces (until 2026-10-25): a newborn took its level when its first mark (or first block) ended, the
+         mark scored until then against the flat prior by the predictive density of the mark's running sum, a table
+         lookup per piece, and its Kalman filter started from that posterior's mean and variance.
+       - **What stands:** the range (placeholder), the standard and the cost figures below.
      - **The standard.** Priors at birth are flat over a set range or measured (above). Tracking starts a newborn
        from the measurement it is born with, here its own first mark ("use the current measurement set Z_k to place
        the newborn particles in the region of the state space where" they fit: Ristic, Clark, Vo and Vo 2012), and
@@ -928,7 +976,9 @@ probabilities.) This replaces the earlier wording, which called the scores proba
      3; owner, 2026-10-19). A newborn from silence learns its level from marks that bring more evidence than the level
      costs, so its starting cost stays 15.8 nats; a rescue newborn pays its level against the old story, up to 4.5
      nats (simulated), so rescue births have the largest starting cost, about 18 nats, and the minimum is about 28
-     nats (amended 2026-10-19 from 25.8, which left out the level). (Corrected
+     nats (amended 2026-10-19 from 25.8, which left out the level; since 2026-10-25 P is per 2.667 ms sample,
+     8.92 nats, item 1, and the Farnsworth factor's 3.14 nats is not paid in the first prototype, topic 2, item 3,
+     amended 2026-10-21; the minimum is not recomputed here). (Corrected
      2026-10-19: the earlier illustration charged ε at every mark start, 700 in 2 minutes at 25 WPM, instead of at
      each letter start, 250; per letter start, one change per 10 s to one per hour gives rescue births starting
      costs of 9.6 to 15.5 nats, against 15 to 21 had ε been charged per piece.)
@@ -994,12 +1044,14 @@ probabilities.) This replaces the earlier wording, which called the scores proba
    the beam keeps along the way. A nat, below, is a factor of e in a score.
    - **The standard:** time-synchronous Viterbi search, in which every hypothesis has been scored on the same input
      at each step (Ney and Ortmanns 1999; step 1, P4.4).
-   - **Evidence:** the score of the current block so far is computed from its running sum at every piece, exactly as
-     a finished block's score is (topic 4, items 2 and 4), so it counts as soon as the pieces arrive and a finished
-     block scores what it did before (derived). What late booking cost (derived): at 20 WPM, with a dash 30 ms under
-     way, the rival story "a dot that ended at 30 ms" had already been credited for those 30 ms (12.9, 147 and
-     1 496 nats at S₅₀₀ 0, 10 and 20 dB) less 5.3 nats for so short a dot, so it led the true story by 7.6, 141 and
-     1 490 nats, and any narrower beam dropped the true story. Booked on time, the true story leads by 5.3 nats.
+   - **Evidence (amended 2026-10-25):** each envelope sample's evidence is booked at that sample, so every story's
+     score is complete at every sample by construction; each sample is booked 26.67 ms late, after the systematic
+     term's look-ahead (topic 4, item 2; amendment of 2026-10-25, parts 4 and 9). This replaces the current block's
+     score so far, computed from its running sum at every piece (2026-10-16). What late booking cost (derived, with
+     the block observation): at 20 WPM, with a dash 30 ms under way, the rival story "a dot that ended at 30 ms" had
+     already been credited for those 30 ms (12.9, 147 and 1 496 nats at S₅₀₀ 0, 10 and 20 dB) less 5.3 nats for so
+     short a dot, so it led the true story by 7.6, 141 and 1 490 nats, and any narrower beam dropped the true story.
+     Booked on time, the true story leads by 5.3 nats.
    - **Durations, in the hazard form** (Murphy 2002; step 1, P2.2; Bell 1977 did the same: "the probability of
      extending duration D for one more sample interval"). At each piece, a mark or gap that continues multiplies the
      score by S(τ + 1)/S(τ), the probability of lasting one more piece, and one that ends by the probability of
@@ -1028,8 +1080,9 @@ probabilities.) This replaces the earlier wording, which called the scores proba
      a beam of 20 nats, or item 4's minimum width if that is larger (added 2026-10-17), must give the wide-beam
      reference's text. The 20 nats are heuristic: several times the residual above plus one letter's 4.1 nats, and
      far below the 141 to 1 490 nats a late credit costs.
-   - **Cost:** the block's score is computed at every piece instead of once per block; the survival and look-ahead
-     factors are table lookups. Measured with the rest (item 8).
+   - **Cost:** each sample's score is computed once, at that sample (amended 2026-10-25; until then the block's score
+     at every piece instead of once per block); the survival and look-ahead factors are table lookups. Measured with
+     the rest (item 8).
    - **Rejected:** keeping the factors late with a beam wide enough to cover them. At good SNR that needs hundreds to
      thousands of nats, which leaves the beam almost nothing to prune.
 
@@ -1140,7 +1193,9 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
    test signals above a factor of 8 from the comparison with the bank decoder (topic 2, item 3). Its ±2 Hz
    re-centering target (§5.2, step 1) is too loose for whole-mark sums (D7, K13); the amendment replaces it with the
    accuracy topic 4's blocks need (topic 4, item 8). Done 2026-10-19 (owner): spec §5.1 (the Classical mode), §5.2
-   steps 1 and 3, and §4.1 (a pointer to the decisions on opening and closing channels, below).
+   steps 1 and 3, and §4.1 (a pointer to the decisions on opening and closing channels, below). (Superseded in the
+   notes since 2026-10-25: there are no blocks and no decoder tracker, and the channelizer follows the detector;
+   topic 4, items 8 and 9, and the amendment of 2026-10-25. The spec's text is not changed by these notes.)
 7. **Building starts after topics 3, 4 and 5 (owner, 2026-10-15; all three closed by 2026-10-19).** Then come a
    short spec amendment and the first prototype's plan, each for the owner's approval. Topic 6's reopened items, the
    new topics on the channel's other contents and on opening and closing channels (below; added 2026-10-16), and
@@ -1160,7 +1215,8 @@ number, and listed omissions. Its corrections of labels and facts are made in pl
      cost more; its own timing replaces these numbers (topic 5, item 8). At the slice's rate, one run over the
      development set's seed 1 (1 065 742 channel-seconds; `docs/plans/2026-10-06-development-set-results.md`,
      section 5.1) costs 2.7 to 15.3 CPU-hours; the bank decoder's run there took 9.0 CPU-hours on the Linux
-     machine.
+     machine. (History since 2026-10-25: the piece is replaced by the 2.667 ms sample, topic 4, item 3, and the new
+     decoder's costs are stated against its projected total, amendment of 2026-10-25, part 15.)
 
 ### Opening and closing channels (owner, 2026-10-16; a new topic, settled during building)
 
@@ -1283,3 +1339,1221 @@ new decoder, not before.
 **Backlog items taken up here:** "Does the detector miss stations the chosen decoder could copy?", "Wrong or missing
 first characters", "Stray E's after a station stops", "Tracks outlive their stations; separate station identity from
 decoding", "Ghost tracks beside very strong signals", and "Detector: averaging, noise floor and detection theory".
+
+### Detection, amplitude, frequency and the mark's shape (owner, 2026-10-21 to 2026-10-25; plan D15–D17)
+
+This section is the amendment of 2026-10-25. It consolidates the owner's decisions D15 to D17 of the first
+prototype's plan (`docs/plans/2026-10-20-new-decoder-prototype-1.md`, "the plan"), taken one at a time from
+2026-10-21 to 2026-10-25, the last of them recorded in plan D17 by commits 484b16a to 3e8e7ea: one front filter per
+channel and envelope samples every 2.667 ms, each story's predicted output (the smeared prediction), its amplitude
+and long-run power, the newborn's first mark, the systematic term per sample, the channelizer following the detector,
+the test generator's edges, and what the prototype must measure. The plan's D15 to D17 record each decision with the
+owner's words and are the authority where this section and the plan differ. Topics 1 to 5 above are amended in place
+where this section changes them and cite it as "the amendment of 2026-10-25, part n".
+
+Parts 1 to 11 give the decided design in the order the signal passes; part 12, what is removed from today's decoder;
+part 13, the known limitations and backlog items; part 14, the test generator; part 15, what the prototype must
+measure; part 16, standard practice for each stage; part 17, the values.
+
+**How values are marked:**
+- *derived*: by algebra or exact computation;
+- *measured*: by simulation or computation in scratch programs, which are not in the repository (the plan's D16 and
+  D17 record the main results);
+- *heuristic*: a choice with a reason but no derivation;
+- *placeholder*: kept until a measurement replaces it;
+- *owner, date*: the owner's decision, with the plan's record.
+
+**Symbols** (each is defined again where it first appears in a formula):
+
+| Symbol | Meaning | Unit |
+|---|---|---|
+| r | the channel's sample rate, 1 500 | samples/s |
+| x[n] | the channelizer's complex output for the station's channel | FS |
+| h[j] | the front filter's taps | 1 |
+| y(t) | the front filter's complex output; e = \|y\| its envelope | FS |
+| Δ | the decoder's sample interval, 4/r = 2.667 ms | s |
+| t_k, e_k | the k-th sample time and envelope sample | s, FS |
+| N₀ | the hiss density, from the hiss estimator | FS²/Hz |
+| σ_y² | the front filter's output noise power | FS² |
+| B_N | the front filter's noise bandwidth | Hz |
+| w, w_k | the weight of one envelope sample's log-likelihood; w_k at sample k, from the sample's expected SNR | 1 |
+| w₂ | the effective count per sample of a sum of e², 1/(1 + 2Σ\|ρ_m\|²) | 1 |
+| ρ_m | the output noise's correlation between samples m apart (ρ_0 = 1; part 4); ρ alone is the fading's (part 6) | 1 |
+| q | a carrier's power over the output noise, a²/σ_y² | 1 |
+| s_k, v_k | a story's mark template at sample k, and its edge term (variance over the edge's position and the transmitter's rise) | 1, 1 |
+| u | the offset from a true edge to the first sample at or after it | s |
+| t_r | a transmitter's 10–90% rise (and fall) time | s |
+| a | a story's key-down amplitude at the front filter's output | FS |
+| μ, P | the mean and variance of a story's Gaussian amplitude (the plan's r̂₀ and P_m) | FS, FS² |
+| Ω̂ | a story's RMS power: the ordinary-least-squares fit of its samples' e_k² − σ_y² to s_k²·Ω | FS² |
+| Ω, G | a story's long-run power, and the fading's power gain over its samples (mean 1) | FS², 1 |
+| ν | the number of independent fades behind Ω̂ | 1 |
+| W_i, b | a story's key-down weight in bin i (Σ s_k⁴), and the bin length, 42.67 ms | 1, s |
+| A, B | (variant) Ω̂'s noise variance: A from noise with noise, B·ΩG from signal with noise | FS⁴, FS² |
+| SE₀, ζ, κ, λ | (variant) √A, Ω̂'s standard error on noise alone; ζ = SE₀/σ_y²; κ = B·σ_y²/A; λ = κζ = B/SE₀ | FS², 1, 1, 1 |
+| χ, υ, P_r | (variant) the Ω̄ table's inputs Ω̂/SE₀ and 1/ν; the realized signal power ΩG in Ω̄'s integral | 1, 1, FS² |
+| ξ | the w table's coordinate, q_k/(1 + q_k) | 1 |
+| Ω̄ | the expected long-run power given Ω̂ clipped at zero, ν and the owner's flat prior (the variant adds Ω̂'s noise) | FS² |
+| f_D | the fading's Doppler spread, two standard deviations of a Gaussian Doppler spectrum | Hz |
+| ρ, ρ_a | the complex gain's and the envelope's correlation over a time Δt | 1 |
+| C_k², f | the systematic term's carrier power and its floor | FS², 1 |
+| S₅₀₀ | dB SNR: key-down carrier power over the noise power in 500 Hz | dB S₅₀₀ |
+
+#### Part 1. The channelizer follows the detector
+
+- **Input:** the channelizer's stream for the track, complex, in FS, at r = 1 500 samples/s, after the channel
+  filter: a Blackman-windowed sinc, 21.3 ms, −6 dB at ±150 Hz (dB relative to 0 Hz), noise bandwidth 252 Hz, group
+  delay 10.67 ms (`docs/signal-processing.md` §7).
+- **Coarse step:** the channel is cut from the shared FFT at the bin nearest the detector's current frequency for the
+  track, f_det(t). It moves when the track moves more than half a bin, 11.7 Hz (192 kHz / 8 192 = 23.4 Hz bins;
+  derived).
+- **Fine step:** the stream is multiplied by a phase-continuous oscillator at −(f_det(t) − f_bin), one complex
+  multiplication per sample. Every story reads the same samples.
+- **Response** (derived from the detector's 1 s average; plan D17):
+  - a drift of 1 Hz/s is followed 1.1 to 1.6 Hz behind;
+  - an equally strong answering station moves the detector's peak after about 0.7 s, during which a station 30 Hz
+    off loses about 2.1 dB (dB relative to 0 Hz) in the front filter.
+- **Oracle channels** (measurement only): the detector's frequency is the label's. Drifting test stations need the
+  label's true, drifting frequency supplied (a test-harness change; plan D17).
+- **Practice:** fldigi's decoder has no AFC; Bell's frequency was fixed; CW Skimmer states nothing
+  (the standard-practice survey of 2026-10-22, plan D16). Coarse-plus-fine shifting is the usual FFT-channelizer layout
+  (topic 4, item 8). The detector's following itself predates this decision; its open questions are in the backlog.
+
+#### Part 2. The front filter: 76 Hz, matched to a real 100 WPM dot
+
+- **The pulse it is matched to** (owner, 2026-10-23: "Agreed"; plan D17): a dot keyed for T = 12 ms. The rise starts at
+  key-down and the fall at key-up, each a raised cosine of full length E = 2.5 ms / 0.5903 = 4.235 ms.
+  - 0.5903 = (π − 2·arccos 0.8)/π is a raised cosine's 10–90% time as a fraction of its full length (derived).
+  - The dot is 12 ms at half amplitude, as the generator now keys (part 14):
+    p(t) = c(t)·(1 − c(t − T)), c(x) = ½ − ½cos(π·clip(x/E, 0, 1)).
+- **The taps** (derived): h[j] = p(t_c + j/r)/Σ p, j = −12 … 12, with t_c = (T + E)/2 =
+  8.12 ms the pulse's center. That is 25 taps at 1 500 samples/s, symmetric, unity gain at 0 Hz, so a steady carrier of
+  amplitude a gives |y| = a:
+
+  0.00011, 0.00457, 0.01459, 0.02778, 0.04096, 0.05099, 0.05545, 0.05556 (× 11), 0.05545, 0.05099, 0.04096, 0.02778,
+  0.01459, 0.00457, 0.00011.
+
+  - The matched filter of a symmetric pulse is the pulse itself.
+  - Run causally, its delay is 12 samples, 8.000 ms (derived); the continuous pulse's center, t_c = 8.12 ms, is
+    0.117 ms (0.044 of a sample) later.
+  - One tap set serves every sample: every 2.667 ms instant is a channel sample (part 3).
+- **Its noise bandwidth and output noise** (plan D17, the noise figures, 2026-10-23; the owner: "I honestly don't think
+  this decision makes any difference at all", so it was handled as obvious):
+  - B_N = r·Σh[j]² = 76.0 Hz on white noise (75.98 Hz continuous): the filter's own figure, the plan's "76 Hz".
+  - **σ_y² = N₀ × 74.48 Hz,** the output noise power on the channel's colored noise, enters the evidence (derived,
+    from a 48 kHz model of the channel filter and the continuous pulse). The decided 25 taps
+    after the 4 097-tap channel filter at 192 kHz give 74.50 Hz and w = 0.1987, 0.03% apart, which is
+    immaterial; the plan's figures stand. The decoder's input is the channelizer's output, whose noise is not white,
+    and σ_y² is what the envelope samples actually carry. It is a fixed constant; N₀ alone is measured.
+  - **w and its two limits come from the output noise's actual correlation** on the same colored noise (part 4).
+- **Its power response,** dB relative to 0 Hz (derived): −0.01 at 2 Hz, −0.22 at 10 Hz, −0.50 at 15 Hz, −0.90 at 20 Hz,
+  −1.42 at 25 Hz, −2.07 at 30 Hz, −3.82 at 40 Hz, −6.31 at 50 Hz, −15.5 at 70 Hz, −15.4 at 120 Hz, −24.5 at 200 Hz.
+- **Against a plain 12 ms running sum (83 Hz)** (plan D17): it gains 0.17 dB of SNR on the dot (relative to the
+  running sum) and suppresses neighbors more:
+  −15.5 against −14.8 dB at 70 Hz, −15.4 against −13.3 dB at 120 Hz, −24.5 against −18.0 dB at 200 Hz (dB relative to
+  0 Hz).
+- **Its width against the ITU's necessary bandwidth** (250 to 417 Hz at 100 WPM): that is a transmitter's occupied
+  bandwidth. A detector's best bandwidth is the matched filter's, about 1/T (Turin 1960), and a 250 to 417 Hz filter
+  would admit 5.3 to 7.5 dB more noise power (plan D17).
+- **Practice:**
+  - CW Skimmer extracts each signal "through a 50 Hz filter";
+  - fldigi's "matched filter" mode is 5/T_dit wide (83 Hz at 20 WPM);
+  - Bell 1977 used 64 to 100 Hz (the standard-practice survey of 2026-10-22, plan D16).
+- **[departure, owner's decision] in width from CW Skimmer's 50 Hz,** to reach 100 WPM. Slower signals pay up to
+  10·log₁₀(76/50) = 1.8 dB of noise power against a 50 Hz filter, part of which post-detection summing recovers
+  (derived). A narrower filter for slower signals is in the backlog.
+
+#### Part 3. Envelope samples every 2.667 ms
+
+- **The sample:** e_k = |y(t_k)|, t_k = t₀ + kΔ, Δ = 4/r = 2.667 ms, every 4th channel sample, 375 samples/s (owner,
+  2026-10-23: "Agreed"; plan D17, replacing D16's 3 ms).
+  - The owner asked "Why would we not just change our own sampling rate to be a multiple of the channel sample rate":
+    3 ms is 4.5 channel samples, so every other instant fell between samples.
+  - 2.667 ms keeps the rule of at most a quarter of a 100 WPM dot (12 ms / 4 = 3 ms); 3.333 ms (5 channel samples)
+    would break it.
+- **Exact instants:** every instant is a channel sample, so the filter is evaluated there directly with the one tap set
+  of part 2.
+- **The cost:** 25 complex multiply-adds per instant, 375 instants per second per channel; about 12% more computation
+  than 3 ms in everything done per sample (3 / 2.667 = 1.125; plan D17).
+- **Practice:** fldigi decimates its envelope to 500 samples/s (2 ms); Bell sampled every 5 ms
+  (the standard-practice survey of 2026-10-22, plan D16).
+
+#### Part 4. The evidence per sample
+
+- **The statistic.** For a story whose template at sample k is s_k (part 5) and whose amplitude is a, the
+  log-likelihood ratio of e_k against noise alone (derived; the Rician envelope of a carrier of unknown phase in
+  complex Gaussian noise; Proakis and Salehi §4.5-1) is:
+
+    Λ_k(a) = −b_k² + ln I₀(2 b_k z_k),   b_k = s_k a / √V′_k,   z_k = e_k / √V′_k   (nats),
+
+  with V′_k = σ_y² + C_k²(f²s_k² + v_k) the noise plus the systematic term (part 9).
+  - ln I₀ is computed as today (Abramowitz and Stegun 9.8.1 and 9.8.2).
+  - Where s_k = 0, Λ_k = 0: such samples add nothing, as gap pieces did.
+- **The score** (derived):
+
+    score_k = ln ∫ exp(w_k·Λ_k(a)) N(a; μ_k|k−1, P_k|k−1) da,
+
+  with the posterior ∝ exp(w_k·Λ_k(a)) N(a; μ_k|k−1, P_k|k−1). N(μ_k|k−1, P_k|k−1) is the story's prediction for this
+  sample (part 6), and w_k the sample's weight (below).
+  - The integral and the posterior's mean and variance come from today's Gauss–Hermite quadrature of order K = 5 (nodes
+    with a < 0 dropped and the weights renormalized; plan D4), applied to the tempered integrand.
+  - A newborn's first mark uses part 8 instead.
+- **The weight w_k follows each sample's expected SNR** (owner, 2026-10-25: "Well, yes", option D; plan D17), with the
+  fixed 0.1986 a measured variant (part 15, item 18).
+  - **The correlation it counts:** the output noise's correlation on the channel's colored noise at 2.667, 5.333,
+    8.000, 10.67, 13.33 and 16.00 ms is 0.878, 0.626, 0.367, 0.138, 0.014 and −0.005, then 0 (derived;
+    the same to 0.001 with the decided 25 taps). These ρ_m (ρ_0 = 1)
+    also enter Ω̂'s noise variance in the noise-in-Ω̄ variant (part 7).
+  - **Its two limits** (derived): 1/(1 + 2Σ_m ρ_m) is the effective count per sample for a statistic
+    linear in the noise, and Λ_k is linear in e_k at high SNR (ln I₀(x) ≈ x): w = 0.1986. At low SNR Λ_k is quadratic
+    (ln I₀(x) ≈ x²/4, so Λ_k ∝ e_k² − V′_k), and the e² of complex Gaussian noise correlate as |ρ_m|²: w₂ =
+    1/(1 + 2Σ_m|ρ_m|²) = 0.2754.
+    - Check of the strong limit: 0.1986 equals Δ·σ_y²/N₀ = 2.667 ms × 74.48 Hz. By Poisson summation, the sum of the
+      autocovariance at multiples of Δ is N₀/Δ, because the channel filter leaves no noise at multiples of 1/Δ =
+      375 Hz. The white-noise figure Δ·B_N = 0.2026 differs by 2%. It replaces 0.2235, the figure for
+      3 ms samples (plan D17).
+  - **Between the limits** (measured in scratch; a steady carrier at full template in noise with the decided chain's
+    correlation, 2²² samples, two seeds): the weight that makes w·ΣΛ carry the samples' true information about a,
+    w_eff = Var(ψ)/(Var(Σψ)/n) with ψ_k = ∂Λ_k/∂a, is
+
+    | q = a²/σ_y² per sample | −20 dB | −10 dB | −5 dB | 0 dB | +3 dB | +6 dB | +10 dB | +15 dB | +20 dB | +30 dB |
+    |---|---|---|---|---|---|---|---|---|---|---|
+    | S₅₀₀ at s = 1 (q − 8.27 dB) | −28.3 | −18.3 | −13.3 | −8.3 | −5.3 | −2.3 | +1.7 | +6.7 | +11.7 | +21.7 |
+    | w_eff | 0.273 | 0.259 | 0.240 | 0.217 | 0.208 | 0.203 | 0.200 | 0.199 | 0.1987 | 0.1986 |
+
+    (q in dB SNR in the filter's 74.48 Hz; seed-to-seed spread about ±0.0006.) The ratio for Λ_k's own scatter is the
+    same to 0.0007. Extended from q = −40 to +40 dB (two new seeds, all 11 lags; seed-to-seed difference up to 0.0016),
+    w is within 1% of the weak limit below q = −18.5 dB and within 1% of the strong limit above q = +8.75 dB (q in dB
+    SNR in the filter's 74.48 Hz throughout). The fixed 0.1986 undercounts evidence by 9% at −8 dB S₅₀₀ (roughly 0.2 to
+    0.4 dB of signal, a rough estimate; plan D17).
+  - **The rule** (plan D17): each story looks w_k up per sample with s_k ≠ 0 (where Λ_k ≠ 0) from that curve, at the
+    sample's expected SNR
+
+    q_k = (μ_k|k−1)²·s_k²/σ_y²,
+
+    μ_k|k−1 the story's predicted amplitude (part 6); space samples have Λ_k = 0 and need no weight. The newborn
+    takes 0.275 or 0.1986 with the weak- or strong-signal form of ln I₀ it already picks per sample (part 8).
+    - **Standard:** the composite-likelihood magnitude adjustment evaluated at the parameter (Chandler and Bate 2007;
+      Varin, Reid and Firth 2011).
+    - **Approximate on edges,** where neighboring samples differ in strength: the curve is for neighbors of equal
+      strength (plan D17).
+    - **Rejected** (plan D17): 0.275 fixed (overcounts strong signals by 38%); 0.217 fixed at "the threshold" (a
+      made-up operating point, 9% overcount); the exact joint likelihood (a redesign).
+    - **The fixed 0.1986, a measured variant:** the owner doubts the curve changes decoding ("it's not clear to me
+      that it will have any impact in real life at all except on the extra CPU cost"); the prototype scores the fixed
+      0.1986 beside it on the weak-signal groups, and if the curve shows no measurable gain the decoder goes back to
+      the fixed value (part 15, item 18).
+  - **The table** (its node values computed ahead of time and compiled in: the curve is a Monte Carlo result, 2²²
+    samples and two seeds per point, too slow to rebuild at startup):
+    - **Input and range:** q_k from −40 to +40 dB SNR in the filter's 74.48 Hz, clamped outside to the limits, 0.2754
+      below and 0.1986 above (the curve is within 0.0002 of them at the ends).
+    - **Grid** (heuristic, its adequacy measured against the curve, whose two seeds share their noise across q, so its
+      shape is smooth below the Monte Carlo scatter): 129 nodes uniform in ξ = q_k/(1 + q_k) on [0, 1], the end nodes
+      at the derived limits, linear interpolation: |error| at most 0.0002 (0.1% of w), set by the end node against the
+      curve's Monte Carlo value at −40 dB; 65 nodes do as well. A grid every 1 dB of q (81 nodes) errs by at most
+      0.00007 but needs a logarithm per lookup.
+    - **Cost per lookup** (rough estimate, not timed): q_k from μ² (2 multiplications), ξ = q_k/(1 + q_k) (an
+      addition and a division), an index and one interpolation: about 5 to 10 ns; at the 1 700-story ceiling (637 500
+      story-samples per channel-second), on the samples with s_k ≠ 0, about 2 to 6 ms per channel-second (plan D17,
+      4896e97; rough).
+  - **Which numbers derived from w change** (derived; values below and in parts 8 and 9):
+    - **The caps** become w_k·s_k²/(f²s_k² + v_k) (part 9): where a cap can bind, the story predicts a strong
+      sample, and w_k is at most 0.2057 at j = 5, 0.1998 at j = 6 and the strong limit within 0.2% from j = 7 on and
+      on the plateau, so the stated caps hold within 4% at j = 5 and 0.6% elsewhere; the guaranteed bound for a story
+      predicting a weak signal is at most 0.2754/0.1986 = 1.387 times them.
+    - **The newborn's switch timing** (part 8): unchanged at 0 to +30 dB S₅₀₀.
+    - **The flat-part cap w/f²** (part 9): 497 nats where it binds (the sample's SNR above 1/f² = +34.0 dB SNR in
+      the filter's 74.48 Hz, where w_k is the strong limit), unchanged.
+    - **Ω̂'s noise variance** (the noise-in-Ω̄ variant, part 7) does not use w_k: it is computed from the
+      correlation ρ_m directly.
+  - w_k tempers the likelihood inside the integral. V′ is not divided by w: that would cut the low-SNR evidence by a
+    further factor w (measured in scratch, with 3 ms samples and w = 0.2235: a 25 WPM dot at −5 dB S₅₀₀ scored −2.6
+    against +3.1 nats).
+- **Practice:** decimating to about the filter's bandwidth, or weighting each log-likelihood accordingly, is the
+  standard treatment of correlated samples (Kay; acoustic scaling in speech recognition, Gales and Young).
+  - Bell 1977 treated his correlated 5 ms samples as independent, which over-counts. Not copying that is a correction,
+    not a departure.
+- **The evidence of a mark** is the sum of its samples' scores (standard post-detection integration). Every sample's
+  score is booked at that sample, so scores are complete at every sample (topic 5, item 9).
+
+#### Part 5. The mark template: the smeared prediction
+
+- **The decision** (owner, 2026-10-23: "I want option B, but we need to discuss the exact shape"; then "OK agreed";
+  plan D17): each story predicts the front filter's actual output for its claimed keying, not a square on/off shape.
+  A square shape would misread every mark's timing by several milliseconds.
+- **The shape:** a carrier keyed with 2.5 ms (10–90%) raised-cosine edges, the rise starting at the claimed key-down
+  and the fall at the claimed key-up, passed through:
+  - the channelizer's filter. It is included because it is known exactly and costs nothing in a precomputed table,
+    though it changes the shape by at most 0.6% of full at 25 WPM and 1.2% at 100 WPM (plan D17);
+  - then the front filter.
+- **The step response S(τ),** τ the time after key-down, through the 4 097-tap channel filter and the 25 decided taps,
+  both causal (derived):
+  - half amplitude at 20.8 ms after key-down: 2.12 ms (the edge's half point), plus 10.67 ms (the channelizer), plus
+    8.00 ms (the front filter's 12 taps of delay); 20.79 ms computed;
+  - 10–90% rise 10.04 ms through the channelizer and the front filter, 9.9 ms through the front filter alone (plan D17,
+    corrected 2026-10-24; 10.03 ms with the 25 taps);
+  - 1–99% rise 14.75 ms (plan D17; 14.73 ms with the 25 taps); 0.1–99.9% rise 16.1 ms on the signed response. The plan's
+    19.04 ms for the 0.1–99.9% rise (the look-ahead bullet) is measured on |y| from its first crossing of 0.001 of full,
+    which falls on the channel filter's negative precursor ahead of the main rise (|y| first reaches 0.001 of full 9.8
+    ms after key-down; derived); it is for reference only.
+- **The template of a story** with key-down at t_d and key-up at t_u, and of any earlier marks within the span:
+  s_k = Σ_marks [S(t_k − t_d) − S(t_k − t_u)].
+  - Its superposition of a fall and the next rise assumes the carrier's phase continuous across the key-up. That
+    matters only when an element gap is shorter than the response, above about 67 WPM (derived).
+- **Averaged over the edge's position** (derived; owner's shape, "averaged over where an edge falls within a sample"):
+  a story claims its edges on the 2.667 ms grid. The true edge lies anywhere within the sample interval.
+  - **The convention** (owner, 2026-10-25: "Approved"; rejected the nearest sample, u on [−Δ/2, +Δ/2)): sample j = 0 is
+    the first sample at or after the key-down, so the offset u from the key-down to that sample is uniform on [0, Δ).
+    s_j is S(jΔ + u) averaged over u. Reason: it makes the claimed edge sample a definite function of the true edge, so
+    the template and the timing reference (part 11) agree. Which sample is labeled j = 0 changes the memory's and
+    look-ahead's derived counts by one sample (part 9).
+  - The values below are for the decided chain, the 4 097-tap channel filter and the 25 taps, both causal, averaged
+    over all 512 offsets u of the 192 kHz grid within [0, Δ) (derived). Values computed
+    with the continuous pulse's 8.12 ms delay instead lie 0.117 ms late (up to 0.0095 of full lower, at j = 7).
+  - With j counted that way:
+
+| j | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| s_j | 0.0505 | 0.2126 | 0.4334 | 0.6590 | 0.8661 | 0.9825 | 1.0023 | 0.9999 | 0.9999 | 1.0000 |
+| v_j (edge term: over u and t_r) | 1.0 × 10⁻³ | 3.6 × 10⁻³ | 4.2 × 10⁻³ | 4.2 × 10⁻³ | 2.6 × 10⁻³ | 3.4 × 10⁻⁴ | 2.7 × 10⁻⁶ | 1.4 × 10⁻⁷ | 2.9 × 10⁻⁹ | < 3 × 10⁻¹¹ |
+| variance over u alone (for reference) | 9.5 × 10⁻⁴ | 3.6 × 10⁻³ | 4.2 × 10⁻³ | 4.2 × 10⁻³ | 2.6 × 10⁻³ | 2.7 × 10⁻⁴ | 6.4 × 10⁻⁷ | 6.5 × 10⁻⁸ | 3.2 × 10⁻⁹ | < 3 × 10⁻¹² |
+
+  - Samples j = 0 to 4 have |s| < 0.001 (the delay): s = 0.00000, 0.00001, 0.00016, −0.00064 and −0.00080, the
+    channel filter's precursor; v_j there is 8 × 10⁻¹⁴, 3.1 × 10⁻¹⁰, 7.8 × 10⁻⁹, 5.8 × 10⁻⁷ and 2.8 × 10⁻⁵.
+  - **The values far below the table's precision matter at the prior's top:** at +85 dB S₅₀₀ the carrier is
+    q = a²/σ_y² = 2.1 × 10⁹ times the noise, so the leeway C²v_j reaches the noise wherever v_j ≥ 5 × 10⁻¹⁰. The
+    memory's and look-ahead's derived counts there (part 9) rest on the template's ringing at about 10⁻⁴ of full
+    in amplitude (j = 1 or 2 on the rise, j = 12 or 13 after key-up). The owner's 10 samples are not affected.
+  - The fall is the mirror: after a key-up the template stays at or above 0.01 of full through j = 10, 11 samples, and
+    nonzero through j = 15 (16 samples); exactly 0 from j = 16.
+  - **Dot peaks** (derived): a 100 WPM dot peaks at 0.900 of a steady carrier, an 80
+    WPM dot at 0.984, and slower dots at 1.00. The template carries this.
+- **Other transmitters' edges go into the edge term v_k** (owner, 2026-10-23: "Agree", option B; plan D17).
+  - **The definition:** v_k is the average over u and t_r of (s_k(u, t_r) − s̄_k)², with u uniform within the
+    2.667 ms sample and t_r, the transmitter's 10–90% rise time, uniform over 0.8 to 4.7 ms (the ARRL Lab's measured
+    range, plan D17's keying-envelope research; uniform is the maximum-entropy choice given only the range). Each rise's
+    edge is aligned to the template at its half-amplitude point, the story absorbing the delay in its timing. s̄_k
+    stays the 2.5 ms template (the table's s_j).
+  - Zero on the flat part and in gaps; one precomputed number per template sample; no CPU per story, no stories added.
+  - **Its values** (derived, 79 rise times over the range): the table's v_j row. The rise-time spread
+    adds little to the edge-position spread: after alignment the rises differ from the template by about 1% of full
+    or less on most samples.
+  - **Misfit after alignment,** the largest |difference| from the 2.5 ms template through the channelizer and the
+    front filter (derived, 48 ms mark and 12 ms dot): 0.9–1.6% of full at 0.8 ms (plan D17; 0.78–1.56% in a second
+    computation), 0.55–1.10% at
+    1.5 ms, 0.77–1.54% at 3.5 ms, 1.92–3.83% at 4.7 ms. VE3NEA's 2 ms full edge (1.18 ms 10–90%): 0.67–1.35%.
+    The plan records 1.92–3.83% at 4.7 ms, "corrected 2026-10-24 by the amendment's revision: the first figure,
+    3.8–4.6%, searched shifts of only ±1.5 ms, while half-amplitude alignment at 4.7 ms needs 1.86 ms" (plan D17).
+    Both curves pass through the same filters, so the 25 taps' delay does not change these figures.
+  - Unshaped keying (about 5.3% of full) stays outside v_k, with key clicks a known limitation (part 13).
+  - Chosen over the floor alone because f is now a placeholder that may go to zero (part 9). An earlier figure
+    of 6–12.5% for "8 ms rises" used a 13.5 ms full edge outside the measured range, without the alignment, and is
+    withdrawn (plan D17).
+- **The timing convention** (owner, 2026-10-23): edges start at key-down and key-up, so a mark keeps its keyed length at
+  half amplitude. Every keying shaper whose design could be read does this (QRP Labs AN005, KE3HO, Morse Runner, DeepCW;
+  plan D17's keying-envelope research). Real transmit paths add a mark bias of −7 to +4.7 ms; the fist absorbs it, and
+  the prototype tests it (part 15).
+- **Practice:**
+  - **[departure] from Bell's** measurement, which is 0 or 1 (H = x_k);
+  - **standard** in sequence detection over a smearing channel (MLSE with intersymbol interference, Forney 1972).
+  - **The reason:** scoring the filter's tail as noise would end every mark about half the response late, a timing
+    bias of several ms on every mark, and would leave the tail for an invented over to claim.
+
+#### Part 6. The amplitude per story: Bell's form, the owner's rule for its change
+
+- **The form:** each story carries one Gaussian amplitude N(μ, P), in FS at the front filter's output, and the time t_m
+  of its last update [practice: Bell 1977, one scalar Kalman filter per path; per-survivor processing, Raheli et al.
+  1995].
+- **The prediction** to sample k (owner, 2026-10-22: "It should be set by the long run amplitude but it depends heavily
+  on how long since the last estimate of the story's amplitude was made"; plan D16; the prediction in full, owner,
+  2026-10-23: "agreed"; plan D17), with Δt = t_k − t_m:
+
+    ρ = exp(−π² f_D² Δt²/2),   f_D = 2 Hz (owner, 2026-10-22),
+    ρ_a = (π/4)·(₂F₁(−½, −½; 1; ρ²) − 1)/(1 − π/4),
+    ā = (√π/2)·√Ω̄ = 0.886·√Ω̄,
+    μ_k|k−1 = ρ_a·μ + (1 − ρ_a)·ā,
+    P_k|k−1 = ρ_a²·P + ½(1 − ρ²)·Ω̄.
+
+  - **ρ** is the correlation of the complex gain of Rayleigh fading with a Gaussian Doppler spectrum of spread f_D
+    (derived).
+  - **ρ_a** is the amplitude's own correlation for the same ρ (derived; a table over Δt, since f_D is fixed).
+  - **ā** is the Rayleigh mean amplitude for the long-run power Ω̄ (part 7).
+  - **The owner's rule** is the variance's second term, unchanged. The whole is form (iv) of the derivation of
+    2026-10-22 (plan D16, D17), within 0.2 nats of the exact predictive (measured in scratch; plan D17).
+  - **The values at 2 Hz** (derived):
+
+| Δt | ρ | ρ_a | spread factor √((1 − ρ²)/2) |
+|---|---|---|---|
+| 2.667 ms (1 sample) | 0.99986 | 0.99967 | 0.012 |
+| 48 ms (18 samples) | 0.9555 | 0.902 | 0.208 |
+| 144 ms (54 samples) | 0.664 | 0.416 | 0.529 |
+| 336 ms (126 samples) | 0.108 | 0.011 | 0.703 |
+
+  - **Inside a mark** every sample is an estimate, so Δt = 2.667 ms. Across a gap, Δt runs from the mark's last
+    updated sample.
+  - **Its properties** (derived):
+    - ½(1 − ρ²)Ω̄ is the Rician conditional variance near the story's level, exact for short gaps;
+    - as ρ → 0 it tends to Ω̄/2, 2.33 times the Rayleigh envelope's variance (1 − π/4)Ω̄: under-confident, the safe
+      side, at long gaps;
+    - the rough formula's third term, (1 − ρ)²(π/16)Ω̄/ν, is dropped as negligible (within 0.2 nats, measured; plan
+      D16).
+- **The update** at each sample with s_k ≠ 0: the posterior of part 4, moment-matched to N(μ, P); t_m = t_k.
+  Samples with s_k = 0 do not update. Λ_k is even in s_k, so the slightly negative template values at j = 3 and 4
+  are well defined.
+- **The order at each sample** (plan D16): predict from the estimates so far (μ, P, Ω̄), score, then update the
+  amplitude and, if s_k ≠ 0, the RMS and ν sums (and the variant's noise-variance sums; part 7).
+- **Practice and departures:**
+  - Bell's scalar amplitude, per path, with a larger spread after a long space: practice.
+  - **[departure, owner's decision] in scale:** the spread is set by the long-run amplitude, not by the story's current
+    amplitude or a receiver AGC's units. Today's decoder scaled it by the current amplitude, the cause of the fading
+    failure (plan D16).
+  - **[departure in value, owner's decision]:** 2 Hz against Bell's 1 Hz.
+  - **A measured variant:** Bell's decay toward zero across spaces, against the decided drift toward 0.886·√Ω̄ (the
+    owner's question of 2026-10-22; recorded in the plan 2026-10-24, D17, 6a13f77; part 15, item 16).
+- **Known limitation** (owner, 2026-10-22: "I think we record that as a known limitation and backlog it"; plan D16):
+  inside marks under fast fading the one-number model is over-confident, even with the true level and rate. A
+  Gaussian-spectrum gain is smooth. Over n unobserved steps, a chain of n first-order steps understates its drift
+  variance by the factor n (derived). Inside a mark every step is observed, so what applies
+  there is the measured effect below (both measured with 3 ms samples; not remeasured at 2.667 ms).
+  - About three times too many 1% surprises at 2 Hz, 25 WPM, E[z²] ≈ 1.6 in marks (measured).
+  - 5 Hz fading predicted at the fixed 2 Hz loses 1.15 to 1.69 nats per mark sample, +20 and +30 dB S₅₀₀ (measured in
+    scratch).
+
+#### Part 7. The long-run amplitude: each story's RMS, and Ω̄
+
+- **The decision** (owner, 2026-10-22: "adopt it", the backup since dropped; plan D16): each story's RMS of its own
+  samples since its over began, as CW Skimmer measures strength from key-on samples (VE3NEA, quoted by N4ZR on the
+  RBN blog, 2014-03-05: "key-off and transition samples are discarded"; the standard-practice survey of 2026-10-22, plan
+  D16).
+- **The RMS power: ordinary least squares over every sample** (owner, 2026-10-23: "B", every sample where the story
+  expects signal, each counting in proportion to the square of its template value; the formula corrected by the
+  owner, 2026-10-25: "OK Option 3"; plan D17):
+
+    Ω̂ = Σ_k s_k²(e_k² − σ_y²) / Σ_k s_k⁴,
+
+  over every sample since the story's over began, the fall's tail included. A sample with s_k = 0 adds nothing to
+  either sum, so no threshold is needed.
+  - **One sample set** (owner, 2026-10-25: "Yes"; rejected s_k > 0 and a threshold on |s_k|): every per-story sum and
+    update runs over the samples with s_k ≠ 0: Ω̂, ν's bins, the variant's noise-variance sums, Ω̄'s lookups, w_k, the
+    amplitude update and C²'s own part. "s_k > 0" and "every sample of the story's marks" differ from it only at j = 3
+    and 4, where s = −0.00064 and −0.00080.
+  - **It is the least-squares fit** of e_k² − σ_y² = s_k²·Ω, each sample's e_k² counted in proportion to s_k², the
+    owner's 2026-10-23 wording (derived). It is unbiased: E[e_k²] = s_k²a² + σ_y² on a steady carrier, so E[Ω̂] = a²,
+    and under fading E[Ω̂] = Ω (derived).
+  - **The correction** (plan D17, 2026-10-25): the formula recorded with the decision of 2026-10-23,
+    Σ(e_k² − σ_y²)/Σs_k², weights each sample's own estimate (e_k² − σ_y²)/s_k² by s_k², so every sample's noise
+    counts in full however small its template; the plan mislabeled it "the least-squares
+    estimate". The question it raised, which samples count (every s_k > 0, or a cut at |s_k| ≥ 0.01), is gone: a tiny
+    template value weighs almost nothing (s_k² in the numerator, s_k⁴ in the denominator).
+  - **Why ordinary least squares** (plan D17): at low SNR every e_k² has the same noise variance, σ_y⁴, so ordinary
+    least squares is optimal there for uncorrelated samples (derived), and low SNR is the only place Ω̂'s precision
+    affects decoding. With the filter's correlated noise (steady carrier, one mark; variance
+    relative to the best of four estimators; measured): on noise alone, the 2026-10-23 formula 3.60, 1.61 and 1.16 (a
+    100 WPM dot, a 25 WPM dot, a 25 WPM dash), the 0.01 cut 2.04, 1.34 and 1.08, ordinary least squares 1.00, 1.00 and
+    1.00; at −8 dB S₅₀₀, 2.10, 1.14 and 1.04 against 0.95, 1.01 and 1.00.
+  - **Rejected** (plan D17): the 0.01 cut (a made-up threshold, still twice the variance at 100 WPM); weighting by each
+    sample's variance σ_y⁴ + 2s_k²Ωσ_y² (at most 2% better, at +10 to +20 dB S₅₀₀, where the noise is under 0.1% of
+    Ω̂'s variance beside the fading's; 8% worse on a 100 WPM dot, since that variance leaves out the neighbors'
+    correlation and the edge position's scatter; it needs Ω in its own weights and a division per sample per story).
+  - **Its cost:** two running sums per story, as before.
+  - **Its physical floor** (derived): e_k² ≥ 0, so Ω̂ ≥ −σ_y²·Σs_k²/Σs_k⁴: −2.09 σ_y² after a 4-sample mark, −1.30 σ_y²
+    after "PARIS" at 100 WPM and −1.05 σ_y² after "PARIS" at 25 WPM.
+  - **[departure, owner's decision, for a derived reason] from CW Skimmer's practice:** on a mark's flat part (s = 1)
+    it is Skimmer's average of key-on samples; the edge samples count less instead of being discarded. At 100 WPM a
+    dot's output peaks at 0.90 of full and has no flat part, so discarding edges would leave dots at high speed, and an
+    all-dot word, with no estimate (plan D17; kept on 2026-10-25).
+- **Ω̂'s noise variance, for the noise-in-Ω̄ variant** (derived; the plan's
+  follow-on of 2026-10-25, "the noise's standard error with weights s_k²"). The default (clipping) does not compute
+  it. Write each sample as x_k = s_k α_k + n_k, with α_k the story's complex
+  carrier at the front filter's output (E|α_k|² = Ω under fading) and n_k the complex Gaussian noise (E|n_k|² = σ_y²,
+  E[n_j n_l*] = σ_y² ρ_{j−l}, ρ_m the noise correlation of part 4, ρ_0 = 1). Then
+
+    e_k² = s_k²|α_k|² + 2 s_k Re(α_k* n_k) + |n_k|²,   so   Ω̂ = Ω·G + N,
+
+  with Ω·G = Σ s_k⁴|α_k|²/Σ s_k⁴ the fading's part (G the fading's power gain over the story's samples, mean 1) and
+  N = [Σ 2 s_k³ Re(α_k* n_k) + Σ s_k²(|n_k|² − σ_y²)]/Σ s_k⁴ the noise's part.
+  - **Noise with noise:** variance σ_y⁴·a₂/(Σs_k⁴)², a₂ = Σ_j Σ_l s_j² s_l² ρ_{j−l}², since Cov(|n_j|², |n_l|²) =
+    |E n_j n_l*|² for circular complex Gaussian noise (Isserlis' theorem; derived). On contiguous samples with s = 1
+    this is σ_y⁴/(w₂·n), n the count, as first stated for the 2026-10-23 formula (plan D17).
+  - **Signal with noise:** given the fading, variance 2σ_y²·Σ_j Σ_l s_j³ s_l³ ρ_{j−l} Re(α_j* α_l)/(Σs_k⁴)² (derived).
+    The two parts are uncorrelated (an odd moment of the noise).
+  - **How fading enters** (derived): the noise's correlation spans 6 samples (16.0 ms; ρ_7 and beyond are below 3 ×
+    10⁻⁴), over which the fading's own correlation is at least 0.9950 at 2 Hz (0.969 at 5 Hz; at 16.0 ms; plan D17,
+    4896e97), so Re(α_j* α_l) is the local power |α|². With the local power replaced by the story's realized power ΩG,
+
+    Var(N | Ω, G) = A + B·ΩG,   A = σ_y⁴·a₂/(Σs_k⁴)²,   B = 2σ_y²·b₂/(Σs_k⁴)²,   b₂ = Σ_j Σ_l s_j³ s_l³ ρ_{j−l}.
+
+    The signal-with-noise part follows the realized power ΩG, not the long-run Ω: a story in a fade carries less of
+    it. This replaces the plan's approximation, [σ_y⁴·n/0.275 + 2σ_y²·Ω·Σs_k²/0.1986]/(Σs_k²)², which was for the
+    2026-10-23 formula, used Ω, and was marked "to be checked before the amendment states it".
+  - **Checked by simulation** (the decided chain's correlation, 60 000 trials per case; a 100 WPM dot claimed as 4
+    samples, a 25 WPM dot and dash, and "PARIS" at 100, 25 and 12 WPM; steady and with 2 Hz and 5 Hz Rayleigh fading;
+    noise alone and −10 to +10 dB S₅₀₀; measured): E[N²]/(A + B·Ω) lies between 0.984 and 1.010, and
+    E[N²/(A + B·ΩG)] between 0.981 and 1.010. The exact conditional variance of the signal-with-noise part against
+    B·ΩG: mean ratio 0.983 to 0.999; 5–95% range within 3% on single marks at 2 Hz and on "PARIS" at 25 and 12 WPM,
+    0.92 to 1.01 on a 25 WPM dot at 5 Hz, and 0.84 to 1.07 on "PARIS" at 100 WPM, where the fading changes within
+    the word.
+  - **N is not Gaussian on the first marks** (the owner's model treats it as Gaussian, "an approximation over a story's
+    first few samples", plan D17): its skewness on noise alone is +1.8 after one 4-sample mark, +1.1 after a 25 WPM
+    dot and +0.2 after "PARIS" at 25 WPM, and it falls with the SNR (+0.3 at +10 dB S₅₀₀ on the 4-sample mark)
+    (measured in scratch).
+  - **How the decoder computes it: two exact running sums per story** over the 6 lags (truncating at 6 lags changes
+    a₂ and b₂ by under 0.01% on the cases above; measured): at each sample with s_k ≠ 0,
+
+    a₂ += s_k²·(s_k² + 2Σ_{m=1…6} ρ_m² s_{k−m}²),   b₂ += s_k³·(s_k³ + 2Σ_{m=1…6} ρ_m s_{k−m}³),
+
+    with s_{k−m} the story's own template at its previous 6 samples (final once booked, since both filters are
+    causal; 0 before the over began). A and B then use the Σs_k⁴ that Ω̂ already sums.
+    - **Cost** (rough count, not timed): about 16 multiply-adds, some 3 to 5 ns, per story per sample with s_k ≠ 0;
+      on the share of samples with s_k ≠ 0 (given with Ω̄'s table below) roughly 1 to 3 ms per channel-second at
+      the 1 700-story ceiling, and two numbers per story, in the variant only.
+    - **The one-sum approximation** a₂ ≈ Σs_k⁴/w₂, b₂ ≈ Σs_k⁶/w (w = 0.1986) errs by +24% and +58% on a 4-sample mark,
+      +8% and +15% on "PARIS" at 100 WPM and +2% and +3% at 25 WPM (measured in scratch): too far on the first marks
+      of fast signals, where the noise matters most. The exact sums are the owner's decision (2026-10-25: "A"; plan
+      D17); reason: their cost is small and the approximation's error is largest where the variant differs from
+      the default.
+- **ν, the number of independent fades behind Ω̂: binned, exact on the bins** (owner, 2026-10-23: "Agreed"; his idea:
+  "What if we just did a very long-term average and decimated..."; plan D17).
+  - Each story sums its key-down weight in bins of b = 42.67 ms (16 samples, two engine blocks): W_i = Σ s_k⁴ over
+    the samples of bin i (owner, 2026-10-25, with the RMS by ordinary least squares; plan D17: "the bin weights become
+    w_i = Σ s_k⁴ over the bin's samples"). Then (derived: Satterthwaite's 1946 moment match):
+
+    ν = (Σ_i W_i)² / Σ_i Σ_j W_i W_j ρ²(t_i − t_j),   ρ² = exp(−π² f_D² τ²) at the rule's 2 Hz,
+
+    with ρ here the fading's correlation (part 6) and t_i each bin's center, the time the binning-error formula
+    assumes (stated 2026-10-24 as obvious; plan D17).
+  - **The weights, re-derived for ordinary least squares:** Ω̂'s fading part is ΩG with G = Σ s_k⁴|g_k|²/Σ s_k⁴ (g_k
+    the complex fading gain, E|g_k|² = 1). For a complex Gaussian gain Cov(|g_j|², |g_l|²) = ρ²(t_j − t_l), so
+    Var(G) = ΣΣ s_j⁴s_l⁴ρ²/(Σ s⁴)²; matching it to the variance of a Gamma of shape ν and mean 1, 1/ν, gives
+    ν = (Σ s_k⁴)²/ΣΣ s_j⁴s_l⁴ρ²(t_j − t_l) on the samples, and the binned form above (derived). With every s = 1 and no
+    binning it is n²/ΣΣρ², the plan's count on key-down sample times (D16). The 2026-10-23 weights s_k² matched the
+    formula of that date, now corrected.
+  - **Binning:** the estimate (π f_D b)²/12 = 0.6% at 2 Hz (derived for weight spread evenly within each bin) gives the
+    scale, not a bound. Measured against the exact sample sum with weights s_k⁴ ("PARIS" once, twice and four times):
+    +0.30 to +0.32% at 8 WPM, +0.03 to +0.11% at 25 WPM, and −0.15 to +2.30% at 100 WPM, the largest on a single "PARIS"
+    (0.54 s, ν = 1.93). With the old weights s_k², +0.05 to +1.71% on the same texts. Both stay within the Satterthwaite
+    form's own ~3%. Keeping only the last 10 bins changes ν by under 0.01% more.
+  - **Each story keeps its last 10 bins:** ρ² < 0.001 beyond 0.42 s, so older pairs are dropped. The double sum is
+    kept as a running total: each closed bin adds its own term and its products with the last 10.
+  - **Its cost** (rough counts; plan D17): about 1.6 operations per story per sample (1 addition each sample, 10
+    multiply-adds per closed bin) and about 12 numbers per story. Option C, an exponential-sum fit, would take about 10
+    operations per sample, 4 numbers, and an unchecked fit error.
+  - Measured against the generator's fading, ν matches the empirical number of looks within 3% at 0.1 to 5 Hz true
+    rates, when counted at the true rate. Counted on elapsed time it over-counts: 10% at 25 WPM and up to 46% at 8 WPM
+    (plan D16, "Findings of that derivation").
+  - At 25 WPM, at 2 Hz: ν = 2.10 after 0.5 s and 6.72 after 2 s (plan D16's derivation, on sample times with every
+    s = 1). With the decided template and weights s_k⁴, "PARIS" at 25 WPM (1.94 s) gives ν = 6.55 (6.63 with weights
+    s_k²; measured).
+  - At other true rates the fixed 2 Hz count is off: 1.07 true looks against 6.72 at 0.1 Hz after 2 s, and 13.9 at
+    5 Hz.
+- **Ω̄, the expected long-run power: by default from the RMS clipped at zero, through the fading-only closed form**
+  (owner, 2026-10-22: "Isn't omega bar already a well defined number?", plan D16; the default, owner, 2026-10-25: "We
+  clip as the default, and we test option 7's improvement in decoding and in speed against that default", plan D17,
+  f507812, reversing the same day's default of the noise in Ω̄'s likelihood after the corrected costs and that table's
+  growth to 12.8 MB; that model is the measured variant below).
+  - **Why clipping:** on a buried signal Ω̂ scatters about zero and goes negative often, and the fading-only model of
+    D16, νΩ̂/Ω ~ Gamma(ν), gives no answer for Ω̂ ≤ 0 (plan D17). The default replaces Ω̂ by Ω̂₊ = max(Ω̂, 0), the
+    standard point estimate of a variance component (Searle, Casella and McCulloch 1992). It keeps no noise-variance
+    sums.
+  - **The model:** νΩ̂₊/Ω ~ Gamma(ν), with the owner's flat-in-dB prior p(Ω) ∝ 1/Ω on [Ω_lo, Ω_hi], −15 to +85 dB S₅₀₀
+    (Ω = 10^(L/10)·N₀·500 Hz at L dB S₅₀₀, so 0.212 σ_y² to 2.12 × 10⁹ σ_y²). The posterior is an inverse gamma of
+    shape ν and scale β = νΩ̂₊, truncated to that range (derived; plan D16):
+
+    Ω̄ = β·[Γ(ν − 1, β/Ω_hi) − Γ(ν − 1, β/Ω_lo)] / [Γ(ν, β/Ω_hi) − Γ(ν, β/Ω_lo)],
+
+    with Γ(a, x) the upper incomplete gamma function.
+  - **Why Ω̄** (derived, the law of total variance): the rule's variance term is linear in Ω, so averaging it over Ω's
+    uncertainty replaces Ω by its expectation.
+  - **Its values** (D16, unchanged): about Ω̂·ν/(ν − 1) once ν exceeds about 1.5 (3.00, 2.00
+    and 1.25 times Ω̂ at ν = 1.5, 2 and 5). On the first fade or two (ν ≈ 1) it depends on the prior's top, +85 dB
+    S₅₀₀, a placeholder: at ν = 1, Ω̄/Ω̂ is 14.4 at +20 dB S₅₀₀ and 12.1 at +30 dB S₅₀₀; with a +60 dB S₅₀₀ top, 8.6 and
+    6.3.
+  - **At Ω̂ ≤ 0** (derived): β = 0, and Ω̄ = Ω_lo·ν/(ν − 1) for ν > 1 (the prior's top negligible) and
+    Ω_lo·ln(Ω_hi/Ω_lo) = 23.0·Ω_lo (−1.4 dB S₅₀₀) at ν = 1: a buried story's Ω̄ rests on the prior's −15 dB S₅₀₀ edge,
+    a placeholder. On simulated samples, noise alone gives −1.4 to −1.9 dB S₅₀₀ after a first mark (ν ≈ 1), −11.6 to
+    −11.8 at ν ≈ 1.9 and −14.3 after "PARIS" at 25 WPM (ν = 6.55) (medians, measured; the table in the variant
+    below).
+  - **Its table:** D16's, over ν and ln(β/Ω_hi), with the β = 0 limit above; its grid and error are for the
+    implementation plan.
+  - **Looked up only after a sample with s_k ≠ 0** (plan D17: "looked up only after a sample where the story expects
+    carrier, Ω̂ standing still otherwise"): elsewhere Ω̂ does not change, and neither does ν (a closed bin of zero
+    weight adds nothing), so holding Ω̄ is exact.
+    - **The share of samples looked up** (measured; plan D17, 4896e97; each over from its first key-down to the end of
+      its last tail): because the template stays nonzero for 16 samples after a key-up, the samples with s_k ≠ 0 are 63
+      to 71% of an over of "PARIS" at 5.2 to 12 WPM, 86% at 25 WPM and 95 to 100% from 40 WPM ("TEST" 61 to 100%; "E E E
+      E" 29 to 93%), against a key-down share of about 55%. Holding Ω̄ between those samples is exact but saves far less
+      than the halving first estimated (plan D17, 4896e97: "The lookup saving is not a halving").
+  - **Its cost** (rough, not timed; plan D17, 4896e97): about 6.5 to 13 ms per channel-second at the 1 700-story
+    ceiling (637 500 story-samples per channel-second), its own line in the CPU breakdown. The implementation plan
+    carries it against the new decoder's projected total, by part (owner, 2026-10-25; plan D17, f507812).
+  - **Rejected** (plan D17): holding Ω̂ at one standard error (a made-up constant); |Ω̂| (it reports the noise's size
+    as signal, mean 0.80 SE₀ on noise, and leaves the noise out of Ω̄); Σ|e_k² − σ_y²| (settles at 0.74 σ_y² on noise);
+    counting the noise as extra fades (it cannot explain a negative Ω̂); fitting Ω to the raw samples (the cost grows
+    with every sample).
+  - **The 95% confidence bound** offered beside it is not part of the design (plan D16).
+- **The measured variant: the noise in Ω̄'s likelihood** (owner, 2026-10-25: "Acceptable", plan D17, 63d9bfb, first as
+  the default; made the variant by f507812; part 15, item 17). It keeps the information a buried story's samples
+  carry instead of clipping it, at the cost of two more running sums per story (Ω̂'s noise variance, derived above)
+  and a four-input table of 12.8 MB. Its derivations follow.
+  - **The model** (plan D17, 63d9bfb): Ω̂ = Ω·G + N, with G the fading's power gain (Gamma, shape ν, mean 1) and N the
+    noise's part (Gaussian, mean 0, variance A + B·ΩG as derived above; the plan's "standard deviation SE"):
+
+    p(Ω̂ | Ω) = ∫ Gamma(G; ν)·Normal(Ω̂ − ΩG; 0, A + B·ΩG) dG,
+
+    with the default's flat-in-dB prior p(Ω), and Ω̄ = ∫ Ω p(Ω̂ | Ω) p(Ω) dΩ / ∫ p(Ω̂ | Ω) p(Ω) dΩ.
+  - **Computed in scratch** (derived): with P_r = ΩG, the realized signal power, the
+    integral over Ω at fixed P_r is a partial moment of the Gamma, so Ω̄ = ∫ φ(P_r) E[G⁻¹; G ∈ (P_r/Ω_hi, P_r/Ω_lo)]
+    dP_r / ∫ φ(P_r) Pr[G ∈ (P_r/Ω_hi, P_r/Ω_lo)]/P_r dP_r, with φ(P_r) = Normal(Ω̂ − P_r; 0, A + B·P_r). Checked in the
+    fading-only limit against an independent quadrature of the default's closed form: within 0.0003%;
+    a second, brute-force quadrature reproduces its values to 0.01 dB.
+  - **Limits** (derived; checked at ν = 1, 2, 6.7 and 50 and ζ = SE₀/σ_y² = 0.02, 0.3 and
+    1.6, with κ = 2.6):
+    - **Ω̂ ≫ SE₀:** N's share vanishes and Ω̄ reduces to the default's closed form (above). The ratio to it is 0.9986 to
+      0.9999 at Ω̂ = 100 SE₀, 0.9998 to 1.0000 at 1 000 SE₀ and 1.0000 at 10⁴ SE₀. The mean approaches it as about 1 −
+      1/χ² (χ = Ω̂/SE₀): a constant variance A lowers the mean by about that factor, while B's term barely moves it,
+      since with the prior flat in ln Ω and a noise variance proportional to the power the posterior is inverse
+      Gaussian, whose mean is exactly Ω̂ (derived). The checks follow it (0.9898 at χ = 10,
+      0.9999 at χ = 100 for ν = 2 to 50), even where B's share of the variance exceeds the fading's; only ν ≈ 1 with
+      large ζ converges more slowly (0.9986 at χ = 100, ζ = 1.6).
+    - **Ω̂ ≤ 0:** Ω̄ stays positive and finite, since the prior confines Ω to [Ω_lo, Ω_hi]; for example 6.5, 1.1 and
+      −1.2 dB S₅₀₀ at Ω̂ = 0, ν = 1 and ζ = 1.6, 0.3 and 0.02, and −4.9, −11.0 and −14.2 dB S₅₀₀ at ν = 6.7.
+    - **Not monotonic far below zero: an artifact of treating N as Gaussian, not physics** (plan D17,
+      4896e97). With N Gaussian of variance A + B·ΩG, Ω̄ reaches a minimum at Ω̂ between −0.5 and −3.7 SE₀ (lower as
+      the story's sums grow) and rises below it (derived). Ω̂'s physical floor bounds the rise:
+      at the floor Ω̄ is 0.36, 0.71, 0.95, 1.83 and 1.54 dB above its minimum (dB relative to the minimum's Ω̄) after a
+      4-sample mark, a 25 WPM dot, "E E" at 25 WPM, "PARIS" at 100 WPM and "PARIS" at 25 WPM. On noise alone Ω̂ falls
+      below the minimum's position 37%, 22%, 11%, 1.6% and 0% of the time on those cases (measured).
+      - **The true likelihood does the opposite** (derived; plan D17, 4896e97): every e_k² ≥ 0, so a reading near the
+        floor, −σ_y²·Σs_k²/Σs_k⁴, needs the noise to cancel the carrier on every sample, and that grows less likely as
+        the carrier grows (the lower tail of a noncentral χ², whose density at 0 falls as exp(−noncentrality)). The true
+        family of likelihoods has a monotone likelihood ratio in Ω̂, so the exact Ω̄ does not rise as Ω̂ falls. The
+        Gaussian's variance grows with ΩG without bound while the true lower tail stays bounded at the floor; that is
+        what breaks it. The earlier explanation, "a very negative reading is better explained by a larger power with its
+        larger noise variance", describes the model only and is withdrawn (plan D17, 4896e97).
+      - **Measured** (steady carrier, so ΩG is fixed; the decided
+        chain's noise; 2 × 10⁶ trials per power): the density of Ω̂ in a low bin over its density near the minimum
+        falls with the power in the true distribution (25 WPM dot, χ from −1.90 to −1.50 against −0.90 to −0.70:
+        0.106, 0.079, 0.061, 0.040 and 0.016 at ΩG = 0, 0.25, 0.5, 1 and 2 σ_y²) and rises in the Gaussian model (0.33,
+        0.38, 0.41, 0.44 and 0.46). Near the floor the Gaussian's tail at ΩG = 0 is 70 to 900 times too heavy.
+      - **Does it matter:** a buried story then expects a stronger signal than it should; on noise that likely only
+        scores it lower (the safe side for false characters), but for a weak real station with an unlucky low first
+        reading it overstates Ω̄. Probably a small effect on decoding (a judgment, not measured).
+      - **Its remedy is decided only if the variant earns its place** (owner, 2026-10-25; plan D17, f507812). The
+        candidates:
+        - (A) keep it and count it (part 15, item 7);
+        - (B) build the table monotone: below the minimum's position, hold Ω̄ at its minimum. Computed offline when
+          the table is built; no cost at run time, no new input;
+        - (C) a better model of N on the first marks, for example a distribution with N's mean (0) and variance
+          (A + B·ΩG) and a lower bound that puts Ω̂ at or above its floor (N ≥ floor − ΩG), such as a shifted gamma. It
+          would need one more running sum per story (Σs_k², for the floor), one more table input (the floor in units
+          of SE₀: a five-input table, roughly 10 to 20 times the size at the same resolution, about 130 to 260 MB from
+          this grid's 12.8 MB unless reparametrized), the direct integral
+          redone with that density, and a check against the measured density above that it removes the rise. Matching
+          N's third moment as well would need a third running sum over pairs of lags (N's third cumulant, some 20 to 30
+          lag pairs within the 6-sample correlation) and possibly a sixth input.
+  - **On simulated samples** (measured; e_k from the decided chain's correlated noise and 2 Hz
+    Rayleigh fading, so N has its true, skewed distribution; each case's own ν, A and B; 600 trials per cell;
+    medians):
+
+| Story's samples (ν) | noise alone | −10 dB S₅₀₀ | −5 dB S₅₀₀ | 0 dB S₅₀₀ | +10 dB S₅₀₀ |
+|---|---|---|---|---|---|
+| one 4-sample mark (1.00) | +5.5 / −1.4 | +5.6 / −0.4 | +6.1 / +4.8 | +10.1 / +10.9 | +20.6 / +20.6 |
+| one 25 WPM dot (1.01) | +1.9 / −1.9 | +2.5 / +1.2 | +5.6 / +6.0 | +11.1 / +11.1 | +21.2 / +21.2 |
+| "E E", 25 WPM (1.82) | −8.3 / −11.6 | −6.9 / −7.6 | −2.6 / −2.5 | +2.4 / +2.4 | +12.6 / +12.6 |
+| "PARIS", 100 WPM (1.93) | −9.6 / −11.8 | −7.6 / −7.7 | −2.6 / −2.5 | +2.5 / +2.5 | +12.2 / +12.2 |
+| "PARIS", 25 WPM (6.55) | −13.2 / −14.3 | −9.8 / −9.7 | −4.5 / −4.5 | +0.5 / +0.5 | +10.3 / +10.3 |
+
+    (Ω̄ in dB S₅₀₀, noise-in-Ω̄ variant / clipping default.) From −10 dB S₅₀₀ up, once ν ≥ 1.8, the two agree within 0.7
+    dB in median (dB relative to each other); on noise alone the default reads 1.1 to 6.9 dB lower; on a first mark (ν =
+    1) both read far above the truth, as the plan records. The plan's Ω̄ bullet quotes other figures (within about 1 dB
+    from −8 dB S₅₀₀ once ν ≥ 2; on noise alone clipping −12 to −14 dB S₅₀₀ and this model 1.5 to 6 dB more): they came
+    from a simulation whose noise was drawn from the Gaussian model itself, and this simulation on true, skewed
+    samples supersedes them (plan D17, 4896e97).
+  - **Its table** (on its build cost see the grid below):
+    - **Inputs** (derived): υ = 1/ν in [0, 1] (ν ≥ 1 by the Satterthwaite form); χ = Ω̂/SE₀; ζ = SE₀/σ_y²; and the
+      signal-with-noise term's size, κ = B·σ_y²/A, tabulated as λ = κζ = B/SE₀ (with powers counted in units of SE₀,
+      the likelihood's variance is SE₀²·(1 + λ·ΩG/SE₀), so λ is the combination that enters; derived). The prior's
+      bounds are fixed multiples of σ_y² (Ω_lo = 0.212 σ_y², Ω_hi = 2.12 × 10⁹ σ_y²), so they add no input; if the
+      owner moves them, the table is rebuilt.
+    - **The fourth input** (derived and measured): κ = 2b₂/a₂ runs
+      from 0.10, 0.38, 0.78 and 1.20 after a single first mark of 1, 2, 3 and 4 samples (ζ = 19.2, 5.1, 2.5 and 1.6)
+      to 2.59 after a 25 WPM dot and toward 2w₂/w = 2.77 on long runs; partway through a long mark's rise it is 0.005,
+      0.085, 0.32 and 0.71 through j = 5 to 8. Where ζ ≥ 0.2 (the first marks), Ω̄ at Ω̂ from 0 to 2 SE₀ moves by up to
+      23% between κ = 1.2 and 2.6, and by up to 42% at Ω̂ = −3 SE₀; at ζ = 0.05 by 2% or less. Fixing κ at 2.6 in a
+      three-input table errs by up to 306% (99th percentile 65%; κ from 0.4 to 2.8), at Ω̂ below
+      zero and small κ, where Ω̄'s rise toward the floor depends on κ; above Ω̂ = 30 SE₀ it does as well as the
+      four-input table (99th percentile 0.69%). The four-input table is the owner's decision (2026-10-25: "a"; plan
+      D17); reason: the three-input table's error falls on the first marks of fast signals, where the noise term
+      matters, and the fourth input costs only memory and 8 more table reads per lookup.
+    - **Why λ, on a logarithmic axis** (measured): with κ's axis extended to 0 at 8 uniform nodes, as
+      the plan states, the interpolation error reached 66% (99th percentile 34% where ζ > 10), because at large ζ Ω̄
+      changes strongly between κ = 0 and 0.05 (λ from 0 to 5 at ζ = 100); 15 κ nodes dense near 0 still erred by up to
+      23%. On ln λ the error along that axis is 0.5% at most (one axis at a time, 29 nodes). λ below 10⁻³ is read at
+      10⁻³ (κ = 0 included); the clamp moves Ω̄ by 0.076% at most (measured). The axis covers κ = 0 to 2.8
+      at every ζ in the table. The choice of axis is part of the same decision.
+    - **Ranges and grid** (the grid heuristic, chosen from each axis's own interpolation error, measured;
+      its adequacy measured below): υ at 31 nodes, υ = 1 − (1 − p)², p uniform
+      on [0, 1] (denser toward ν = 1); χ from −8 to 10⁴ at 85 nodes uniform in asinh(χ) (steps of 0.15); ln ζ from
+      ln 0.003 to ln 400 at 42 nodes (steps of 0.29; plan D17, 4896e97: ζ "up to about 400"); ln λ from ln 10⁻³ to
+      ln 1 120 (κ = 2.8 at ζ = 400) at 29 nodes (steps of 0.50). Output ln(Ω̄/σ_y²), multilinear interpolation (16
+      corners). 3 209 430 nodes, 12.8 MB in single precision (the first grid, with κ from 0.4 and ζ to 10, was 2.1 MB;
+      today's broad-prior J tables: 0.97 MB). Built from the direct integral at about 2 to 4 ms per node in the
+      scratch program (24 minutes on 7 cores), so "built at startup" needs a much faster integrator or the table
+      computed ahead of time and shipped (for the implementation plan). Most of the λ axis above κ = 2.8 at small ζ
+      is never read; a table ragged in (ζ, λ) would be smaller.
+    - **Beyond the ranges:** above χ = 10⁴ the fading-only closed form (D16's table), within 0.01% there (above).
+      Below χ = −8, the value at −8, which only ζ below about 0.26 can reach: Ω̂'s floor is −1.0 to −2.1 σ_y² on long
+      runs and about −1.0 to −1.3 SE₀ after a single short first mark or a partial rise; there Ω̄ is flat in χ (−1.35
+      against −1.32 dB S₅₀₀ at χ = −10 and −3, ν = 1, ζ = 0.02). ζ stays within [0.003, 400]: with the newborn's
+      latest switch at the last sample of its first mark's template with s_k ≠ 0 (part 8), its first lookup comes
+      after at least one sample with s ≥ 0.01, so ζ ≤ 393 (after j = 5 alone; 23 after j = 6, 19.2 after a whole
+      1-sample mark); ζ falls to 0.003 only after about 4 × 10⁵ key-down samples in one over (18 minutes of key-down,
+      about 36 minutes of keying). λ stays within the axis for κ ≤ 2.8, which κ ≤ 2w₂/w = 2.77 on long runs keeps
+      (derived for contiguous s = 1; measured below it on every case computed).
+    - **Interpolation error against the direct integral** (measured; 4 000
+      points in two physically motivated halves: ζ from 0.003 to 4 with κ from 0.4 to 2.8 and ν log-uniform on 1 to
+      1 000; and first marks, ζ from 4 to 400 with κ from 0 to 1.2 (κ = 0 on 200 points) and ν from 1 to 3; χ uniform in
+      asinh(χ) from Ω̂'s floor, χ ≥ −max(2.1/ζ, 1.3) and ≥ −8, to 30 or to 10⁴): |relative error| median 0.090%, 99th
+      percentile 0.87%, largest 2.5% (at Ω̂ = −6.4 SE₀, in the rise toward the floor). By region (99th percentile,
+      largest): ζ < 4, 1.1% and 2.5%; first marks, 0.58% and 0.70%; χ ≤ 30, 0.91% and 2.5%; χ > 30, 0.38% and 1.3%;
+      κ = 0, 0.58% and 0.70%. 1% of Ω̄ is 0.04 dB.
+    - **Cost per lookup** (rough estimate, not timed): a square root, a logarithm, an asinh, two divisions and the 16
+      corners' 15 interpolations, about 40 to 60 ns. The main risk to that figure is the cache: the table is larger
+      than a typical per-core second-level cache, and each lookup reads its 16 corners in about 8 cache lines, at
+      random across the stories; the CPU breakdown's Ω̄ line is to be read against it.
+    - **Per channel-second** at the 1 700-story ceiling (637 500 story-samples per channel-second; rough, plan D17,
+      4896e97): the variant's lookup about 13 to 38 ms, in place of the default's 6.5 to 13 ms, plus its
+      noise-variance sums, about 1 to 3 ms. Both are lines of the CPU breakdown (part 15, item 17).
+- **What it fixes** (measured with 3 ms samples; plan D16, "Findings of that derivation"). The rule with Ω̂ taken as
+  exact lost up to about 12 nats per gap in an over's first half-second, and up to about 100 nats per message in marks
+  (2 Hz, +30 dB S₅₀₀). With Ω̄, about 1 nat per gap at ν = 1 and 8.8 to 20 nats per message against the exact predictive
+  (+20 to +30 dB S₅₀₀).
+- **Starts and restarts:**
+  - a new story's first mark seeds the sums (part 8);
+  - a rescue newborn restarts them (a rescue is "a new speed and level"; topic 5, item 3);
+  - an over's end restarts them, so every over starts with no level.
+- **Its CPU** (estimated, not timed; rough ms per channel-second at the 1 700-story ceiling; the prototype measures
+  it in the breakdown of part 15, and the implementation plan carries it against the new decoder's projected total,
+  by part; owner, 2026-10-25, plan D17, f507812):
+  - Ω̂: two running sums per story;
+  - ν: about 1.6 operations per story per sample;
+  - Ω̄ by default: D16's two-input table, after samples with s_k ≠ 0 only, about 6.5 to 13 ms;
+  - the noise-in-Ω̄ variant instead: its four-input table, about 13 to 38 ms, and its noise-variance sums, about 1 to
+    3 ms (part 15, item 17).
+- **The units:** μ, P, Ω̂ and Ω̄ are absolute (FS, FS²), so nothing is converted.
+- **The backup hang AGC is dropped from the design for now** (owner, 2026-10-23: "A"; plan D17). The Ω̄ fix covers the
+  starts it was meant to back up, and a channel-level AGC knows a new station's level only from an earlier
+  transmission within its hang. It is in the backlog as a fallback, its role and settings to be worked out only if
+  the prototype shows the per-story RMS failing.
+
+#### Part 8. The newborn: the owner's flat prior, integrated while broad, then Gaussian
+
+- **The decision** (owner, 2026-10-19, topic 5, item 3; plan D16): a new story's first mark is scored against a prior
+  flat in dB over −15 to +85 dB S₅₀₀ (placeholder), and it seeds the RMS. Topic 5, item 3's standard (Ristic et al.
+  2012; Berger, Daun and Koch 2008; Adams and MacKay 2007) and cost figures stand.
+- **Kept as designed** (owner, 2026-10-24: "Agree"; plan D17): until its belief in log-amplitude narrows to a spread
+  of σ_u = 0.1, a newborn scores against the exact belief p₀(a)·exp(Σ_j w_j·Λ_j(a)) under the flat prior p₀, with the
+  amplitude held constant, then switches to N(μ, P).
+- **How it is integrated** (derived): in log-amplitude u = ln a, centered on the mode.
+  The integral, its two regimes and the switch compute the owner's flat prior's score; they add no assumption to the
+  model beyond the amplitude held constant (approximation (b) below).
+  - Each sample's tempered likelihood w_k·Λ_k(a) is carried by running sums, exact in two limits:
+    - at low SNR (2b_k z_k ≲ 1, ln I₀(x) ≈ x²/4): Σ w_k s_k²(z_k² − 1)/V′_k, with w_k = 0.275;
+    - at high SNR (ln I₀(x) ≈ x − ½ln 2πx): Σ w_k s_k²/V′_k, Σ 2w_k s_k e_k/V′_k, Σ w_k (for the −½w_k·ln a per
+      sample) and Σ ½w_k·ln(4π s_k e_k/V′_k), with w_k = 0.1986. The last does not depend on a, so the posterior does
+      not need it, but the score does.
+  - The regime is chosen per sample, and with it the weight: 0.275 with the weak-signal form of ln I₀, 0.1986 with the
+    strong-signal form (owner, 2026-10-25, with w per sample; plan D17: "the newborn takes 0.275 or 0.1986 with the
+    weak- or strong-signal form of ln I₀ it already picks per sample"). These are w's two limits (part 4), so the
+    newborn's sums stay sums of fixed weights. The crossover value of 2b_k z_k is not yet stated: the implementation
+    plan sets it, and approximation (a) measures its error.
+  - **The mode** follows by Newton's method from the previous sample's mode.
+  - **The integral** is Gauss–Hermite of order 5, scaled by the curvature.
+- **Its approximations** (plan D17), each measured in the prototype (part 15); anything over a fraction of a nat goes
+  to the owner:
+  - **(a) the running sums,** exact only in the two limits. The mid range (2b_k z_k ≈ 1 to 3), the weak-signal
+    threshold region, is exact in neither. Measured against a brute-force integral.
+  - **(b) fading ignored before the switch** (the amplitude held constant): 0.4 to 0.9 nats at 0 dB S₅₀₀ and 2 Hz, and
+    about 3 nats at 5 Hz (derived, rough). Measured under fading.
+  - **(c) the switch,** about 0.008 nats (derived, below).
+- **The switch to N(μ, P)** (derived):
+  - **When:** when the posterior's standard deviation in u falls below σ_u = 0.1, or at the latest at the last sample
+    of its first mark's template with s_k ≠ 0, j = 15 after the claimed key-up (owner, 2026-10-25: "A"; rejected
+    the claimed key-up and no latest moment). Read as the claimed key-up instead, a short mark's newborn would switch
+    before any sample with s ≥ 0.01, and in the noise-in-Ω̄ variant Ω̄ would be looked up at ζ in the hundreds and κ
+    near 0.
+  - **How:** moment matching, μ = e^(û + σ_u²/2), P = μ²(e^(σ_u²) − 1).
+  - **Why 0.1:** below it the log-normal's skew costs under 0.01 nats against the matched Gaussian: (3σ_u)²/12 =
+    0.0075, about 0.008 nats (derived, an Edgeworth estimate).
+  - **When it happens** (derived; high-SNR curvature): σ_u ≈ 1/√(2Σ_k w_k s_k²a²/V′_k), with
+    V′_k = σ_y²·(1 + q(f²s_k² + v_k)), q = a²/σ_y² = 10^(S₅₀₀/10) × 500 Hz / 74.48 Hz, and C_k² ≈ a² (the flat part
+    inside the look-ahead). Counting rise samples from j = 5, the first with s ≥ 0.01 (f = 0.02, the template and v_k
+    above; w = 0.1986 on every sample):
+
+| S₅₀₀ | with the systematic term (the design) | with V′ = σ_y² (for reference) |
+|---|---|---|
+| +30 dB | 5th rise sample (j = 9, about 25 ms after key-down) | 2nd (j = 6, about 17 ms) |
+| +20 dB | 5th (j = 9, about 25 ms) | 4th (j = 8, about 23 ms) |
+| +10 dB | 8th (j = 12, about 33 ms); the 7th gives σ_u = 0.111 | 8th (j = 12); the 7th gives 0.105 |
+| 0 dB | 42nd (j = 46, about 124 ms); the 41st gives σ_u = 0.1003 | 42nd (j = 46); the 41st gives 0.1002 |
+
+    - **With w per regime (2026-10-25) the timings are unchanged** (derived): the weak form, and so 0.275, applies only
+      to the rise's first samples, where 2b_k² is below the crossover (with the crossover at 1, 2 or 3: none at +30 dB
+      S₅₀₀, at most 1 at +20 and +10 dB S₅₀₀, 2 or 3 at 0 dB S₅₀₀), and those samples carry too little information to
+      move the switch: the same sample at every level, with the previous sample's σ_u within 0.0002 of the values above.
+    - The systematic term caps each sample's information at strong levels, so the switch comes later there; at
+      +10 dB S₅₀₀ and below it changes nothing.
+    - The rule itself (σ_u < 0.1 on the actual posterior) is computed at run time; only these stated timings depend
+      on the approximation.
+    - In ms the V′ = σ_y² timings are within one sample of the 3 ms figures (about 20, 23, 35 and 124 ms), since σ_u
+      depends on w·Σs_k² ∝ Δ·Σs_k² (at the strong limit w ∝ Δ), nearly independent of Δ (derived).
+- **Its CPU** (estimated): about 5 node evaluations and a Newton step per newborn per sample, 100 to 200 ns. With
+  about 500 newborns inside the integral at once on noise (an estimate to be counted), that is 19 to 38 ms per
+  channel-second at 375 samples/s (plan D17: "17 to 33 ms was the figure for 3 ms samples; corrected 2026-10-24").
+  It multiplies no stories. Its CPU is its own line in the breakdown (part 15).
+- **Practice:** Bell had no mid-stream newborns: every path started at ŷ = 0.5, P = 0.1 (AGC units), and a new station
+  entered through the larger process noise after a space. The flat prior over a physical range is the tracking
+  literature's standard for births (topic 5, item 3).
+
+#### Part 9. The systematic term, per sample
+
+- **D15's meaning, unchanged** (owner, 2026-10-21; D16: "carries on as decided in D15 … with both parts of C²"): the
+  model's systematic uncertainty is added in quadrature to the noise in the error budget, proportional to the
+  carrier's amplitude, with a relative size from the template's spread (now the edge term v_k) plus a floor. The term is
+  a systematic effect, never noise. **Per sample:** its memory, look-ahead, floor and edge term were each decided on
+  the per-sample form (owner, 2026-10-23; plan D17, below).
+- **Per sample:** V′_k = σ_y² + C_k²·(f²s_k² + v_k), on both sides of Λ_k's ratio (b_k and z_k), inside the score of
+  part 4. V′ is not divided by w.
+- **C_k²** is the larger of two parts, both from the data, never from a story's level (D15; plan D17):
+  - the channel's largest e² over a symmetric window of 21 samples: 10 back (the memory), the current one, 10 ahead
+    (the look-ahead);
+  - the sample's own e_k²/s_k², on every sample with s_k ≠ 0 (owner, 2026-10-25: "B"; plan D17), replacing a
+    threshold at s_k ≥ 0.01, which goes with its sweep.
+    - **Why no threshold** (plan D17, derived): the own part reads a² plus the noise divided by s_k². The noise
+      dominates exactly where the sample's own SNR a²s_k²/σ_y² is below about 0 dB (dB SNR in the filter's 74.48 Hz),
+      where the sample carries at most 0.06 to 0.09 nats of expected evidence (w·E[Λ]: 0.001, 0.008, 0.06–0.09, 0.5–0.7
+      and 1.6–2.2 nats at −10, −5, 0, +6 and +10 dB; measured). A noisy own part can only raise V′,
+      so it only shrinks that evidence, never adds to it.
+    - Where a sample carries evidence, the own part is accurate even far below s = 0.01 (a +60 dB S₅₀₀ station at
+      s = 0.005 has +22 dB SNR of its own), and the window's peak covers those samples anyway (derived).
+    - Spaces (s_k = 0) have no own part and no leeway (v_k = 0 there).
+    - **Rejected** (plan D17): keeping 0.01 (a made-up constant; its second reason, the same cut in Ω̂, went with
+      ordinary least squares); dropping the own part (C² 19% low on 100 WPM dots and their evidence bound 23% higher on
+      strong stations, the failure D15 guards against); a strength-dependent threshold (another made-up factor).
+    - The prototype still counts how often the own part sets C² (part 15, item 10).
+- **The memory: 10 samples, 26.67 ms** (owner, 2026-10-23: "I agree"; plan D17), replacing 390 ms. The owner: "The
+  390 ms is arbitrary at this point and hence stupid": it was the old block length, and the blocks are gone.
+  - **Its role:** it supplies C² on a mark's fall, where the template still tails off after the signal has dropped.
+    Elsewhere it adds nothing: on the flat part the peak equals the current power, on the rise the look-ahead does the
+    work, and in a gap the template is zero.
+  - **Derived:** from the last sample at full carrier (99% of full amplitude or more; 99.9%
+    gives the same) to the last sample where the leeway C²(f²s_k² + v_k) can equal the noise σ_y², for the strongest
+    station the newborn prior allows (+85 dB S₅₀₀), over every edge position: 10 samples (8 at +60 dB S₅₀₀, 7 at
+    +40 dB S₅₀₀). The plan adds (corrected 2026-10-24): "The amendment's revision (2026-10-24) found 9 to 10 samples
+    depending on where the sampling grid falls relative to the edge, 10 the worst case; 10 covers every position, as
+    the derivation requires."
+  - **Rechecked with the decided chain** (the 25 taps' 8.000 ms delay, the decided v_k):
+    over the eight choices of which sample is labeled j = 0 (the grid's phase, in steps of Δ/8), the memory is 9 or
+    10 samples at +85 dB S₅₀₀ (7 or 8 at +60, 6 or 7 at +40) and the look-ahead the same; **the worst case is still
+    10 samples**, at +85 dB S₅₀₀. Under the convention of part 5 (u uniform on [0, Δ)) both are 9 (7 and 8 at
+    +60, 6 and 6 at +40). Under any one labeling, averaging over u already covers every edge position; the worst case
+    over labelings, 10, covers whichever labeling the implementation finally uses, so finding 9 under the stated
+    convention does not make 10 wrong. These counts rest on the template's ringing (part 5).
+  - **Noise in the peak** (scratch simulation, correlated filter noise; plan D17): it reads high only, 1.77, 1.20, 1.06
+    and 1.02 times the true power at 0, +10, +20 and +30 dB S₅₀₀, while the leeway is 0.005, 0.03, 0.28 and 2.7 times
+    the noise, so it matters only where the peak is within a few percent.
+  - Task 4e's failure of a 20 ms memory came from per-block booking, which per-sample booking removes (derived, not
+    yet measured). A first proposal of 16 ms (a 1% tail cutoff borrowed from the own-power rule) is withdrawn, and the
+    390 ms memory is gone. The prototype measures 26.67 ms
+    with no other variants (part 15).
+- **The look-ahead: 10 samples, 26.67 ms, the mirror of the memory** (owner, 2026-10-23: "Agree"; plan D17), replacing
+  2 samples.
+  - On a rise the template climbs while the signal at the sample may still be low, so C² must come from the flat part
+    ahead.
+  - **Derived** by the memory's rule, computed on the rise: from the first sample where the leeway
+    can equal the noise to the first sample at full carrier, at +85 dB S₅₀₀, over every edge position: 10 samples (8
+    at +60 dB S₅₀₀, 7 at +40 dB S₅₀₀). Rechecked with the decided chain: 9 or 10 across the labelings, 10 the worst
+    case, 9 under the stated convention (as for the memory, above).
+  - It covers D15's 4 ms minimum against the filter's ringing before a mark.
+  - **Its costs:** 26.67 ms more delay before a sample is scored; one running maximum per channel, not per story.
+- **The floor f = 0.02: a placeholder until the prototype measures it** (owner, 2026-10-23; plan D17).
+  - The owner: "F seems like it might depend on a huge number of things that we have zero control over, and it seems
+    very hard to choose an appropriate value."
+  - Its 2% was measured in the block design (D15), where any amplitude change within a block had nowhere else to go.
+    The new design models the amplitude per sample and gives edges their own term v_k. What remains for f is
+    unmodeled and uncontrolled: a fading rate other than 2 Hz or non-Rayleigh fading, transmitter amplitude ripple,
+    the receiving radio's AGC, a neighbor's leakage.
+  - **The measurement that sets it** (part 15): decoding with the true story (the label), the scatter of strong
+    stations' flat-part samples about the model's prediction beyond the noise, relative to the carrier, on the
+    synthetic set and on real recordings. The value chosen comes back to the owner, and f goes to zero if the scatter
+    is negligible on both.
+  - **A consequence to weigh then** (noted 2026-10-24; plan D17): with f = 0 the flat-part cap w/f² (below)
+    disappears and a strong station's flat part counts in full. Part 15, item 11 reruns the strong grid and the
+    crashes at the proposed f before the value goes to the owner.
+- **v_k** is the edge term of part 5: zero on the flat part and in gaps.
+- **The caps** (derived, any data; the prior integrates to 1): score_k ≤ w_k·s_k²/(f²s_k² + v_k), since
+  w_k·Λ_k ≤ w_k·z_k² and the own part keeps C² ≥ e_k²/s_k², so z_k² ≤ s_k²/(f²s_k² + v_k).
+  - On the rise's samples j = 5 to 11: 0.50, 2.51, 8.65, 19.8, 51.6, 265 and 493 nats (w = 0.1986, f = 0.02, the
+    decided v_k, the 25 taps). The value at j = 11, below the plateau's, comes from v_11 =
+    2.7 × 10⁻⁶.
+  - On the plateau: w/f² = 497 nats (496.5; plan D17).
+  - **With w per sample (2026-10-25), checked rather than assumed** (derived): a cap is approached only where the
+    systematic term dominates V′, which needs the sample's SNR e_k²/σ_y² well above q*_k = s_k²/(f²s_k² + v_k), and only
+    for a story whose prediction sits near a = e_k/s_k, so that its expected SNR q_k is about e_k²/σ_y² ≥ q*_k. Since w
+    falls with q, w_k ≤ w(q*_k) wherever a cap can bind. w(q*_k) is 0.2057 at j = 5 (q* = +4.0 dB, dB SNR in the
+    filter's 74.48 Hz), 0.1998 at j = 6 (+11.0 dB SNR), 0.1990 at j = 7 (+16.4 dB SNR), and 0.1987 from j = 8 on and on
+    the plateau (q* = 1/f² = +34.0 dB SNR), 0.1987 being the curve's Monte Carlo value of the strong limit. The caps at
+    those weights are 0.52, 2.52, 8.67, 19.8, 51.6, 265 and 493 nats on the rise and 497 nats on the plateau: the stated
+    caps hold within 4% at j = 5, where the cap is loose anyway, and within 0.6% elsewhere.
+  - **For a story predicting a weak sample** (q_k small, w_k up to 0.2754) the guaranteed bound is up to
+    0.2754/0.1986 = 1.387 times the caps above (689 nats on the plateau). Such a story's prior puts little weight
+    near a = e_k/s_k, so its score is expected to stay well below that bound (an argument, not a derivation; the
+    caps and crashes of part 15, item 6 test it).
+  - The bound protects the first samples of a newborn, not a fall's tail; there, protection rests on the right story
+    explaining the tail.
+- **A static crash or click is the dot's shape** after a matched filter. The systematic term does not stop it: a known
+  limitation (part 13).
+- **Booked once per sample** with that sample's V′, so a later rise of C² takes nothing back. The key-up overshoot
+  failure of 2026-10-21 goes by construction (derived).
+
+#### Part 10. No frequency tracker in the decoder
+
+- **The decision** (owner, 2026-10-23: "A"; plan D17). With the channelizer following the detector, the station
+  arrives off-center only by the detector's error (part 1). The front filter loses almost nothing at 2 Hz and
+  0.5 dB (dB relative to 0 Hz) at 15 Hz.
+- The decoder neither re-centers nor reads the detector's frequency.
+- Practice: no Morse decoder found estimates frequency inside the decoder (fldigi: none; Bell: fixed;
+  the standard-practice survey of 2026-10-22, plan D16).
+
+#### Part 11. The timing model, in 2.667 ms samples
+
+- **The fist:** unchanged in form (topic 2, items 4 and 5; plan §2.5): log-normal lengths about medians of 1, 3, 1, 3
+  and 7 dots, σ = 0.3 in ln(length), placeholders, heuristic; the hazard form (Murphy 2002; Bell 1977).
+- **Counted in 2.667 ms samples** (owner, 2026-10-23; plan D17). A 100 WPM dot has a median of 4.50 samples, a 5.2 WPM
+  dot 86.4; the longest median, a word gap of 7 dots at 5.2 WPM with standard spacing (D14), is 7 × 230.3 ms /
+  2.667 ms = 605 samples (604.5; derived). The plan's §2.5, item 3 (6 562 pieces with a Farnsworth factor of 8.14)
+  predates D14.
+  - ±1 sample is ±22% of a 100 WPM dot, against σ = 0.3 (35% at one standard deviation): finer than the standard
+    quarter-dot resolution (derived).
+- **Timing reference:** a story's claimed key-down and key-up times are the keyed times. The template carries the
+  20.8 ms from key-down to the response's half point (part 5), so printed letter times are keyed times, to within
+  the sample convention of part 5 (a claimed edge sample lies 0 to 2.667 ms after the true edge).
+- **Unchanged:** speeds (32, 12.0 to 230.3 ms per dot), standard spacing only (D14), text costs (ln 62 per letter;
+  p = 1/3.06, q = 1/24), births, rescue rate ε = 10⁻³ per letter start, beam 40 nats and ceiling 1 700 stories
+  (placeholders), merging (topic 5, item 2) and pruning, each counted per sample.
+
+#### Part 12. What is removed from today's decoder
+
+By name, in `engine/include/kz4ap/viterbi/` and `engine/src/viterbi/` (the implementation plan decides the code's
+form):
+- **The pieces** (`piece_s` = 2 ms) as the decoder's step and evidence; the complex running sums of marks and blocks.
+- **The blocks:**
+  - the block length derived from the spread (`block_length_s`, 390.37 ms at 1 Hz) and its heuristic `block_loss_db`
+    (0.5 dB);
+  - `score_block`, `score_first_block` and `BlockScore` as block-level scoring.
+- **The noise of sums:** `sum_noise_hz`, c(m), and the 4 500 Hz × N₀ per piece rate.
+- **The rise of 2026-10-20:**
+  - `keying_rise_s` (5 ms, placeholder);
+  - `rise_fractions`, `rise_fractions_by_position` and `rise_template_errors` (the piece fractions g_j and their
+    errors).
+  - They are replaced by the template and edge term of part 5.
+- **The level's old prediction:** `predict` in `level.hpp`, P(t) = ρ²P + (0.523μ)²(1 − ρ²) with μ held. Its spread was
+  scaled by the story's current level, the cause of the fading failure.
+- **The flat prior's block tables:** `FlatPrior`'s Λ_flat(n, z) per block length and its large-z form. They are replaced
+  by part 8's integral.
+- **The block-level evidence calls:** `block_llr`, `block_llr_uncertain` and `block_evidence` in their block form.
+  - The per-sample score reuses `ln_i0`, the Gauss–Hermite quadrature and the posterior's moments, with the tempering
+    by w.
+  - The broad-prior regime's J tables are rebuilt with the tempering. Tempered, the integrand carries I₀(·)^(w_k) in
+    place of I₀(·), so J depends on w_k (derived): with w per sample (owner, 2026-10-25) the tables gain w as an input
+    over 0.1986 to 0.2754, or that regime is served another way; the implementation plan decides. With the fixed-w
+    variant one table serves.
+- **The frequency tracker:** `CarrierTracker` (`tracker.hpp`, `tracker.cpp`) and its parameters:
+  - `tracker_window_s` (1.0 s), `tracker_hop_s` (0.5 s), `tracker_search_hz` (15 Hz);
+  - `tracker_gate_db` (9.0 dB in the code; 13 dB in the plan's §2.10; moot with the tracker removed, the difference
+    noted only);
+  - `tracker_drift_sd_hz_per_s` (0.3 Hz/s), `tracker_drift_noise` (1.5 × 10⁻⁴ Hz²/s³);
+  - the trust tolerance (0.667 Hz), the untrusted search and the restart on two agreeing measurements;
+  - the decoder's re-centering oscillator.
+  - The genie frequency (`genie_frequency_offset_hz`, `genie_frequency_drift_hz_per_s`) moves to the test harness,
+    which gives oracle channels the label's drifting frequency (plan D17).
+- **The fading spread as a placeholder to sweep** (`fading_spread_hz` = 1 Hz, "set by measurement"): it becomes the
+  owner's fixed 2 Hz. `genie_fading_spread_hz` stays, for the genie test.
+- **The systematic term's 390 ms memory** of the channel's peak power: replaced by 10 samples (26.67 ms; owner,
+  2026-10-23). `lookahead_pieces` (4 ms) becomes a look-ahead of 10 samples (owner, 2026-10-23).
+
+**Kept:**
+- the hiss estimator;
+- the Morse tree and the text costs;
+- the fist (in samples);
+- the search's skeleton (births from silence, rescue, merging, pruning, beam, ceiling);
+- the systematic term's rule (C² from the data, the floor, booked per sample);
+- the Gauss–Hermite quadrature;
+- the instrumentation.
+
+#### Part 13. Known limitations and backlog items
+
+Each is recorded in `docs/backlog.md` under the heading given.
+- **Chirp beyond about ±25 Hz, key clicks and static crashes** (owner, 2026-10-22: "Agreed"; plan D16): "Chirp, key
+  clicks and static crashes: known limitations of the new decoder".
+  - **Chirp:** the front filter is −1.42 dB at 25 Hz and −3.8 dB at 40 Hz (dB relative to 0 Hz); beyond about ±25 Hz a
+    mark's first samples are lost.
+  - **Key clicks:** edges sharper than the template, mainly a neighbor's problem. Unshaped keying misfits the template
+    by about 5.3% of full, outside the edge term's 0.8 to 4.7 ms range (part 5).
+  - **Static crashes:** a filtered crash has the dot's shape, so a strong one will likely print a false E or T. A crash
+    inside a story's key-down samples also enters its RMS: a 40 dB crash (dB relative to the key-down power) of 3
+    samples in a 100-sample mark raises it 301-fold in power (17-fold in amplitude; derived), decaying as 1/n over the
+    over, which is the safe direction.
+  - **The standard remedy for crashes** is a wideband noise blanker ahead of the channelizer, as CW Skimmer offers; for
+    later.
+- **The amplitude model's over-confidence inside marks under fast fading** (owner, 2026-10-22): "The amplitude model
+  inside marks under fast fading".
+  - It matters with fading of about 2 Hz and faster at 25 WPM, earlier at slow speeds, mainly on strong signals.
+  - A second number per story (the amplitude's rate of change) is the possible remedy, pending a standard-practice
+    check.
+- **Several fading rates per story** (owner, 2026-10-22: "B in backlog"): "Several fading rates per story in the new
+  decoder". About 3 times the work per story; measure the CPU first.
+- **A narrower filter for slower signals** (owner, 2026-10-22): "A narrower filter for slower signals in the new
+  decoder". Slow signals pay up to about 1.8 dB of noise power against a 50 Hz filter.
+- **The hang AGC as a fallback** (owner, 2026-10-23): "A hang AGC as a fallback for the new decoder's long-run
+  amplitude". Work out its role and settings only if the prototype shows the per-story RMS failing.
+- **The detector's frequency following** (owner, 2026-10-23: "a web of issues"): "The detector's frequency following
+  and the fixed channel". The fixed channel is decided away (part 1). QSO turnovers and drift on the detector path
+  stay unmeasured until the detector path is run.
+- **Farnsworth spacing** (owner, 2026-10-21; plan D14): "Farnsworth spacing in the new decoder". Standard spacing only;
+  Farnsworth-spaced groups (I, I2) decode poorly until a fix.
+- **Others already in the backlog that apply:**
+  - "Short overs of dots read as one longer symbol in the new decoder" (no text model; broad timing);
+  - "A neighbor inside the channel takes over a weak station in the new decoder" (no interference model, O2). The
+    76 Hz filter now rejects neighbors 70 Hz or more away by 15.3 dB (dB relative to 0 Hz) or more (its largest
+    sidelobe, at 116.5 Hz; derived), so this is a likely gain, to be measured. A neighbor inside the filter also
+    enters a story's RMS, widening its spread (the safe side) and raising its drift target.
+  - "Fading splits marks in the new decoder": the diagnosis this design answers; its grid is the first measurement.
+- **The approximations in the decisions of 2026-10-25** (no backlog item; each derived or measured in parts 1 to 11 and
+  counted or measured in part 15):
+  - **The default's Ω̄ clips Ω̂ at zero:** a buried story's Ω̄ then rests on the prior's −15 dB S₅₀₀ edge, a
+    placeholder, and the information in a negative reading is dropped (part 7).
+  - **In the noise-in-Ω̄ variant only** (part 15, item 17), the next three. Ω̄'s noise N is treated as Gaussian; on
+    the first marks it is skewed (+1.8 after one 4-sample mark on noise alone; part 7).
+  - With that Gaussian, Ω̄ rises again as Ω̂ falls below a point between −0.5 and −3.7 SE₀ (lower as the story's
+    sums grow), at most 0.4 to 1.8 dB above its minimum (dB relative to the minimum's Ω̄) at Ω̂'s physical floor. This
+    is an artifact of the Gaussian N, not physics: the true likelihood has a monotone likelihood ratio, so the exact
+    Ω̄ does not rise (plan D17, 4896e97). Its remedy is decided only if the variant earns its place (owner,
+    2026-10-25; plan D17, f507812); part 15, item 17 counts it meanwhile.
+  - The signal-with-noise variance follows the story's realized power ΩG, not the local power at each sample: within
+    3% on single marks at 2 Hz, 0.84 to 1.07 (5–95%) on "PARIS" at 100 WPM (part 7).
+  - w_k is evaluated at the sample's own expected SNR, approximate on edges, where neighboring samples differ in
+    strength (part 4; plan D17).
+- **A start in a fade** (no new backlog item: the plan's findings under D16, "Findings of that derivation" and "The
+  fix for starts: settled", record it; a residual of the decided design, inherent, counted by part 15, item 7).
+  - About 9.5% of starts are 10 dB or more down, and 1.0% are 20 dB (dB relative to the long-run power; derived).
+  - Ω̄ cuts their loss to a few nats in the measurements of 2026-10-22 (plan D16), but the residual at 95th percentiles
+    is not zero.
+  - Most of it is inherent: after one fade, a 10-fold recovery has the Rayleigh odds, about 9.5%.
+  - Part 15, item 7 counts the splits.
+
+#### Part 14. The test generator (D17)
+
+- **The finding** (owner, 2026-10-22): "the development set can't be making good code at 100 WPM if it uses 5 ms rise
+  and fall times."
+  - The generator (`training/kz4ap_synth/generate.py`, `RISE_S`) used 5 ms raised-cosine edges at every speed, placed
+    by default inside each element.
+  - So every mark was 5 ms short at half amplitude and every space 5 ms long: 3% at 8 WPM, 10% at 25 WPM and 33% at
+    80 WPM (the development set's top speed cell).
+- **Decided** (owner, 2026-10-23: "I choose A …"; revised: "2.5 milliseconds"; settled: "Agreed"):
+  - **Placement:** each edge starts the rise at key-down and the fall at key-up, so each mark keeps its keyed length at
+    half amplitude.
+  - **Shape:** a raised cosine with a 10–90% rise (and fall) time of 2.5 ms, full length 2.5 ms / 0.5903 = 4.23 ms
+    (derived), at every speed, with no shortening at high speed.
+  - At 100 WPM a dot is 65% flat, about the ITU-based guide of a fifth of a dot (a heuristic).
+  - Real transmit paths' mark bias is not added to every group.
+- **The fading groups built on VE3NEA's benchmark keep his edges** (owner, 2026-10-23: "A"; plan D17). B ("fading",
+  stage-1 benchmark) and B2 ("fading", development set) keep his 2 ms raised-cosine edges (full length; 1.18 ms
+  10–90%) centered on each element's ends (`training/kz4ap_synth/suites.py`, `VE3NEA_EDGE_S`, `edges_centered=True`),
+  so they still reproduce his DeepCW conditions; every other group takes the 2.5 ms default.
+  - His convention also keeps each mark's keyed length at half amplitude, differing from the default by a constant
+    delay.
+  - His edge lies inside the measured range of rises and misfits the template by about 1% of full after alignment
+    (0.67–1.35%, derived; part 5), so the two groups also test the edge term on a sharper transmitter.
+- **Then, before the new decoder's long runs:**
+  - regenerate the development set from the same seeds;
+  - rerun the bank decoder's reference on it. Old and new scores are not compared.
+- **Oracle channels** get the label's true, drifting frequency, since the channelizer now follows the detector's
+  frequency and on oracle channels that frequency is the label's, without drift (a test-harness change; plan D17).
+
+#### Part 15. What the prototype must measure before anything is called done
+
+Built in a copy and run paired against today's decoder, on the regenerated development set (part 14).
+
+**Every CPU measurement reports where the time goes** (owner, 2026-10-24: "Sure, that sounds good"; plan D17): ms of
+CPU per channel-second for making successors, ordinary scoring, the newborn's integral, merging and pruning, and the
+rest, with the story counts behind them; Ω̄'s lookups are a line of their own (plan D17, 2026-10-25), and so are w's
+lookups and the variant's noise-variance sums, so that items 17 and 18 can weigh them. **Costs are stated as
+fractions of the new decoder's projected total, not of today's decoder** (owner, 2026-10-25: "I care about the
+fraction of the total time we think we're going to achieve, not what some garbage decoder is doing today"; plan
+D17, f507812): this section gives rough absolute ms per channel-second, and the implementation plan carries the
+projected budget by part.
+
+1. **Correctness:**
+   - the front filter's taps, response and noise bandwidth against part 2;
+   - σ_y² and w against the measured output-noise power and correlation at 2.667 ms;
+   - score_k against a direct numerical integral of the tempered Rician likelihood;
+   - the binned ν against the exact double sum on the same samples (0.03 to 2.3% apart in scratch, part 7; a
+     check of the code);
+   - the default's Ω̄ table against the closed form, and the w table against its curve (parts 7 and 4);
+   - for the noise-in-Ω̄ variant: its noise-variance sums a₂ and b₂ against the exact double sums, Var(N) against
+     A + B·ΩG on the decoder's own samples, and its table against the direct integral (part 7);
+   - the template and the edge term against the channelizer and front filter run on the generator's keying, at each
+     edge position and at rises of 0.8 to 4.7 ms;
+   - the marks' timing offset (claimed against keyed times);
+   - Ω̂, ν and Ω̄ against simulation of the generator's fading (the check of plan D16's derivation, on the decoder's own
+     sums);
+   - determinism across block splits of the input.
+2. **The newborn's approximations** (owner, 2026-10-24; plan D17); anything over a fraction of a nat goes to the owner:
+   - (a) the running sums against a brute-force integral, across the mid range of SNR (2b_k z_k ≈ 1 to 3);
+   - (b) the amplitude held constant before the switch, under fading (0 dB S₅₀₀ at 2 Hz and 5 Hz);
+   - its CPU, its own line in the breakdown.
+3. **The fading diagnosis's grid:** f_D = 0.1, 0.3, 1, 2 and 5 Hz × +10, +20 and +30 dB S₅₀₀, "PARIS PARIS" at
+   25 WPM, 4 edge positions, 5 seeds; exact texts and character error rate, against today's table.
+   - **The same grid at 8 WPM and at 5.2 WPM**, with the in-mark E[z²]. The in-mark limitation "matters … earlier at
+     slow speeds", and the derivation's 8 WPM run was never finished, so its size at slow speeds is otherwise
+     unknown.
+4. **The strong grid** to +60 dB S₅₀₀ at 16 edge positions, steady and at 0.3, 1, 2 and 5 Hz; mark splits and invented
+   overs.
+5. **The speed step** (20 to 30 WPM, +10 to +28 dB S₅₀₀).
+6. **The caps and crashes:** the fall's tail, the filter's ringing and a filtered click, scored at every edge position
+   (part 9's bounds made exact); false characters per crash at +20 to +60 dB S₅₀₀.
+7. **The long-run amplitude in the loop:**
+   - starts in a fade (10 and 20 dB down, dB relative to the long-run power) and normal starts at 1, 2 and 5 Hz:
+     splits in an over's first 3 s;
+   - rescues and over boundaries (the sums restarted);
+   - a weak station beside a neighbor inside the filter;
+   - crashes of 20 and 40 dB and static bursts of 10 to 100 ms inside marks (dB relative to the key-down power): the
+     RMS's rise and its cost;
+   - noise alone;
+   - Ω̄'s dependence on the prior's top at ν ≈ 1 (+85 against +60 dB S₅₀₀), and on its bottom for weak stations
+     (−15 dB S₅₀₀ against a bottom 10 dB higher);
+   - how often Ω̂ ≤ 0, where the default's Ω̄ rests on the prior's bottom, on noise alone (item 14) and on steady
+     weak signals (item 9);
+   - the noise-in-Ω̄ variant is item 17.
+8. **The fixed 2 Hz against the genie spread** on the grids of item 3 (25, 8 and 5.2 WPM), with the in-mark
+   calibration E[z²]. This sizes what several rates (backlog) and the in-mark limitation cost; no several-rate variant
+   is run.
+9. **Steady weak signals** at 5, 12, 25, 40 and 100 WPM: the S₅₀₀ at 50% character error, against today and the bank.
+   Slow signals are expected to pay up to 1.8 dB of noise power against a 50 Hz filter, part of which post-detection
+   summing recovers, the owner's accepted cost; the measured cost is reported in dB S₅₀₀ at 50% character error.
+10. **The systematic term's memory and look-ahead, 10 samples each (26.67 ms)** (owner, 2026-10-23; plan D17): on the
+    strong-station grid (item 4), the stopped-neighbor grid, the speed step (item 5) and TEST/TU, with no other
+    variants. Also how often a sample's own e_k²/s_k² sets C² (the own part on every sample with s_k ≠ 0; owner,
+    2026-10-25; part 9), with the template value and the sample's SNR where it does. No threshold is swept.
+11. **The floor f, which this measurement sets** (owner, 2026-10-23; plan D17): decoding with the true story (the
+    label), the scatter of strong stations' flat-part samples about the model's prediction beyond the noise, relative
+    to the carrier, on the synthetic set and on real recordings. The value chosen comes back to the owner; f goes to
+    zero if the scatter is negligible on both. Before it goes to the owner, the strong grid (item 4) and the crashes
+    (item 6) are rerun at the proposed f, since with f = 0 the flat-part cap disappears (noted 2026-10-24; plan
+    D17).
+12. **Other transmitters' edges** (owner, 2026-10-23; plan D17):
+    - stations keyed with 0.8 ms and 4.7 ms rises (10–90%), the ends of the edge term's range;
+    - stations keyed with a transmit-path mark bias over −7 to +4.7 ms, both signs (the measured range;
+      plan D17's keying-envelope research), for example −7, −3.5, 0, +2.5 and +4.7 ms;
+    - at 25 and 100 WPM and at +10 to +40 dB S₅₀₀;
+    - each scored for the template's misfit per sample against v_k, and decoded;
+    - groups B and B2 (VE3NEA's 1.18 ms edges) test the edge term on a sharper transmitter (part 14).
+13. **The merge variant** (owner, 2026-10-23; plan D17): the previous element's length in the state when shorter than
+    10 samples, against the per-survivor default, on the high-speed signals (above about 45 WPM): its CPU (with the
+    breakdown and the story counts) and any decoding gain, brought to the owner before anything changes.
+14. **Noise alone:** false characters per hour (no more than today's decoder), the newborns alive in the integral, and
+    CPU time per channel-second with the breakdown, each part against the implementation plan's projected budget.
+15. **Neighbors and frequency:**
+    - neighbors 40 to 70 Hz away (today a failure);
+    - drifting stations and QSO turnovers on oracle channels given the label's drifting frequency.
+16. **A measured variant: Bell's decay toward zero across spaces,** against the decided drift toward the Rayleigh mean
+    amplitude 0.886·√Ω̄ (the owner's question, 2026-10-22: "How will Bell's choice to decay towards zero compared to
+    our choice to decay towards the mean play out in all of the different test recordings…?"; recorded in the plan
+    2026-10-24, D17, 6a13f77). A close neighbor is the case to watch; the results go to the owner.
+    - **Bell's form:** across a space the amplitude decays by Φ = 10^(−2/(22.4·T_dot,ms)) per 5 ms (about 0.36 dB of
+      amplitude per dot), so by Φ^(Δ/5 ms) = Φ^0.5333 per 2.667 ms sample, by at most 5 dB of amplitude. On re-entry
+      to a mark Q = 0.15·e^(0.6(B−14)) +
+      0.01·B·e^(0.2(1−B)) is added, in units of the story's Ω̄, with B the space in bauds capped at 14 (Bell 1977;
+      `docs/research/bell-1977-notes.md`).
+    - **The comparison:** both are scored paired on every group (steady signals against speed, fading, keying styles,
+      speed changes, a neighbor 0 to 120 Hz away, QSOs, noise only), reporting exact texts, character error rate,
+      splits and false characters.
+17. **A measured variant: the noise in Ω̄'s likelihood** (Ω̂ = Ω·G + N, its four-input table and its two
+    noise-variance sums) against the default, Ω̂ clipped at zero in the fading-only closed form (owner, 2026-10-25:
+    "We clip as the default, and we test option 7's improvement in decoding and in speed against that default"; plan
+    D17, f507812; part 7). Both are scored paired on every group, with the weak-signal groups, starts (item 7)
+    and noise alone (item 14) the cases to watch, reporting exact texts, character error rate, splits and false
+    characters, and for CPU the Ω̄ line and the noise-variance sums' line of the breakdown. The variant also counts
+    how often Ω̂ falls below the point where its Ω̄ stops falling (the Gaussian artifact, part 7), on noise alone
+    and on steady weak signals; the artifact's remedy (A to C, part 7) is decided only if the variant earns its
+    place (plan D17, f507812).
+18. **A measured variant: the fixed w = 0.1986** against w per sample (owner, 2026-10-25; plan D17; part 4), on
+    the weak-signal groups (item 9's steady weak signals and the development set's weak groups): the S₅₀₀ at 50%
+    character error, exact texts and character error rate, and the CPU of w's lookups. If the curve shows no
+    measurable gain, the decoder goes back to the fixed value (plan D17).
+
+Every reported run's rounded per-signal score table is committed with its results record (CLAUDE.md).
+
+#### Part 16. Standard practice for each stage
+
+In the table, "survey" is the standard-practice survey of 2026-10-22 (plan D16).
+
+| Stage | Practice (source) | This design | Departure and reason |
+|---|---|---|---|
+| Frequency | fldigi: no AFC; Bell: fixed; Skimmer: not stated; coarse-plus-fine FFT channelizers (survey; topic 4, item 8) | channelizer follows the detector; no decoder tracker | none |
+| Predetection filter | Skimmer 50 Hz; fldigi 5/T_dit; Bell 64–100 Hz (survey); matched filter (Proakis and Salehi §4.5-1; Turin 1960) | 76 Hz, matched to a 12 ms dot with 2.5 ms edges | width above Skimmer's 50 Hz, to reach 100 WPM (owner's decision); slow signals pay up to 1.8 dB of noise power |
+| Detection | envelope \|z\| in every decoder found (survey) | e = \|y\| | none |
+| Sampling | fldigi 2 ms, Bell 5 ms | 2.667 ms, every 4th channel sample, at most a quarter of the 100 WPM dot | none (owner's standard frame step, on the channel's sample grid) |
+| Correlated samples | decimate or weight (Kay; Gales and Young); the composite-likelihood magnitude adjustment evaluated at the parameter (Chandler and Bate 2007; Varin, Reid and Firth 2011); Bell treated them as independent | weight w_k per sample from its expected SNR, 0.275 (weak) to 0.1986 (strong), from the actual correlation; the fixed 0.1986 a measured variant | corrects Bell's over-count |
+| Statistic | noncoherent Rician likelihood (Proakis and Salehi) | Λ_k(a), integrated over the amplitude | none |
+| Mark shape | Bell: 0/1; MLSE with ISI (Forney 1972) | the smeared prediction | [departure] from Bell, for timing (several ms per mark otherwise) |
+| Amplitude | Bell's scalar Kalman per path; per-survivor processing (Raheli et al. 1995) | N(μ, P) per story, every 2.667 ms, drifting toward the Rayleigh mean amplitude | spread scaled by the long-run amplitude (owner); 2 Hz against Bell's 1 Hz (owner) |
+| Long-run level | Skimmer: RMS of key-on samples, transitions discarded; Bell, fldigi: AGC; a variance component estimated below zero is clipped at zero (Searle, Casella and McCulloch 1992) | story's RMS by ordinary least squares over every sample (e_k² counted in proportion to s_k²), clipped at zero, with Ω̄ (posterior mean of the fading-only inverse gamma under the flat prior; Satterthwaite's ν on 42.67 ms bins, weights s_k⁴) | edges counted less instead of discarded: a dot at 100 WPM has no flat part (owner, derived reason); Ω̄ is the derived correction for few fades; the noise in Ω̄'s likelihood a measured variant |
+| Newborn level | Morse practice (Bell 1977): no mid-stream newborns; paths start at 0.5 ± 0.32 of the AGC level, and a new station enters through larger process noise after a space. Tracking practice: flat over a physical range, or from the first measurement (topic 5, item 3) | flat in dB, −15 to +85 dB S₅₀₀ | [departure] from Bell's Morse practice, standard in tracking (owner, 2026-10-19): a rescue or a new over must learn a new level from its own marks |
+| Model error | systematic term in quadrature (D15, standard) | per sample, both parts of C² (the window's peak over 21 samples; the sample's own e_k²/s_k² wherever s_k ≠ 0); edge term v_k over 0.8–4.7 ms rises; floor a placeholder | none |
+| Merging | reduced-state, per-survivor processing (Duel-Hallen and Heegard 1989; Eyuboglu and Qureshi 1988) | the state as it is; each story's own history | none; full MLSE (Forney 1972) a measured variant |
+| Chirp, clicks, static | accepted as limitations; optional noise blanker (survey) | limitations; blanker in backlog | none |
+| Timing | hazard form (Murphy 2002; Bell 1977) | in 2.667 ms samples | none |
+
+#### Part 17. The values
+
+| Value | Default | Unit | Class and source |
+|---|---|---|---|
+| Channel rate r | 1 500 | samples/s | `docs/signal-processing.md` §7 |
+| Coarse step | 23.4, moved at ±11.7 | Hz | derived (192 kHz / 8 192) |
+| Front filter | 12 ms dot at half amplitude, 2.5 ms 10–90% raised-cosine edges (4.235 ms full) | ms | owner, 2026-10-23 (D17) |
+| Taps | 25 at 1 500 samples/s, unity gain at 0 Hz | — | derived |
+| B_N | 76.0 | Hz | derived |
+| σ_y² | N₀ × 74.48 | FS² | derived (channel's colored noise); owner, 2026-10-23, handled as obvious (D17) |
+| Δ | 2.667 (4 channel samples; 375 samples/s) | ms | owner, 2026-10-23 (D17) |
+| w_k | per sample from q_k = μ²s_k²/σ_y²: 0.2754 (weak limit) to 0.1986 (strong limit) | 1 | owner, 2026-10-25 (D17); limits derived (actual correlation on colored noise), curve measured; fixed 0.1986 a measured variant |
+| w table | q_k from −40 to +40 dB SNR (in 74.48 Hz), clamped to the limits outside; 129 nodes uniform in q_k/(1 + q_k); error ≤ 0.0002 | 1 | grid heuristic, error measured |
+| Quadrature order K | 5 | — | plan D4 |
+| Front filter delay (causal) | 8.000 (12 taps) | ms | derived |
+| Template | S(τ): half point 20.8 ms after key-down; 10–90% 10.04 ms; tail ≥ 0.01 of full through 11 samples, nonzero through 16 (42.7 ms) | ms | derived (D17's shape, the 25 taps) |
+| Edge term v_k | over u uniform in a sample and t_r uniform over 0.8–4.7 ms, aligned at half amplitude | 1 | owner, 2026-10-23 (D17); values derived |
+| Sample convention | j = 0 the first sample at or after the edge, u uniform on [0, Δ) | — | owner, 2026-10-25 |
+| f_D | 2 | Hz | owner, 2026-10-22 (D16) |
+| Amplitude drift target | 0.886·√Ω̄ at correlation ρ_a | FS | owner, 2026-10-23 (D17) |
+| ν bins | 42.67 (16 samples), last 10 kept | ms | owner, 2026-10-23 (D17); binning 0.03–2.3% from exact (measured) |
+| Ω̂ | Σ s_k²(e_k² − σ_y²)/Σ s_k⁴ over every sample of the over | FS² | owner, 2026-10-25 (D17), ordinary least squares |
+| ν bin weights | W_i = Σ s_k⁴ over the bin's samples | 1 | owner, 2026-10-25 (D17); Satterthwaite match derived |
+| Ω̂'s noise variance (variant only) | A + B·ΩG; A = σ_y⁴a₂/(Σs⁴)², B = 2σ_y²b₂/(Σs⁴)², exact sums over 6 lags | FS⁴ | derived; checked by simulation within 2%; exact sums over 6 lags (owner, 2026-10-25) |
+| Ω̄ (default) | posterior mean of the inverse gamma of shape ν and scale ν·max(Ω̂, 0) under the flat prior | FS² | owner, 2026-10-25 (D17, f507812); closed form derived |
+| Ω̄ (variant) | posterior mean under Ω̂ = ΩG + N, G ~ Gamma(ν), N ~ Normal(0, A + B·ΩG), flat prior | FS² | owner, 2026-10-25 (D17, f507812): a measured variant against the default |
+| Ω̄ lookups | after each sample with s_k ≠ 0 only | — | owner, 2026-10-25 (D17); exact |
+| Ω̄ table (default) | D16's, over ν and ln(β/Ω_hi), β = ν·max(Ω̂, 0), with the β = 0 limit | — | grid and error for the implementation plan |
+| Ω̄ table (variant) | inputs 1/ν, asinh(Ω̂/SE₀), ln(SE₀/σ_y²) to ζ = 400, ln λ (λ = κζ, κ from 0 to 2.8); 31 × 85 × 42 × 29 nodes, 12.8 MB; error 99th percentile 0.87%, largest 2.5% | — | inputs derived; the fourth input and its λ axis owner, 2026-10-25 (D17); grid heuristic, error measured; the Gaussian artifact's remedy decided only if the variant earns its place |
+| Level prior | flat, −15 to +85 | dB S₅₀₀ | placeholder (topic 5, item 3) |
+| Newborn switch | σ_u < 0.1 in ln a | 1 | derived (0.0075 nats skew cost); owner, 2026-10-24 (D17) |
+| Systematic floor f | 0.02 | relative amplitude | placeholder until measured (owner, 2026-10-23, D17) |
+| C² memory | 10 (26.67 ms) | samples | owner, 2026-10-23 (D17) |
+| C² look-ahead | 10 (26.67 ms) | samples | owner, 2026-10-23 (D17) |
+| C² own part | e_k²/s_k² on every sample with s_k ≠ 0, no threshold | FS² | owner, 2026-10-25 (D17) |
+| Caps | rise j = 5–11: 0.50 to 493; plateau w/f² = 497 (at w = 0.1986, where they bind; at most 1.387 times them for a story predicting a weak sample) | nats | derived |
+| Fist medians, σ | 1, 3, 1, 3, 7 dots; 0.3 | dots; ln(length) | placeholders, heuristic |
+| Over start per sample | 1.333 × 10⁻⁴ (rate 0.05/s; 8.92 nats) | per sample | placeholder rate, set by the plan's R5; per sample derived |
+| Rescue ε | 10⁻³ | per letter start | placeholder, set by the plan's R5 |
+| Beam, ceiling | 40; 1 700 | nats; stories | placeholders, set by the plan's R2 and R3 |
+| Hiss neighborhood, rank | ±2 kHz, 25th percentile | Hz, % | placeholders, measured by the plan's R11 |
