@@ -876,6 +876,29 @@ long run; the timing convention and rise times wait for the research.**
   totals, exact only in the two limits; (b) fading ignored before the switch, 0.4–0.9 nats at 0 dB S₅₀₀ and 2 Hz;
   (c) the switch, about 0.008 nats (derived). The prototype measures (a) against a brute-force integral and (b) under
   fading; anything over a fraction of a nat goes to the owner; its CPU is its own line in the breakdown.
+- **Ω̄ when a story's signal is buried: the noise goes into Ω̄'s likelihood (owner, 2026-10-25: "Acceptable"),
+  replacing the amendment draft's ruling that held Ω̂ at one standard error.** On a buried signal Ω̂ =
+  Σ(e_k² − σ_y²)/Σs_k² scatters about zero and goes negative half the time, and Ω̄'s fading-only model (νΩ̂/Ω ~
+  Gamma(ν)) gives no answer for Ω̂ ≤ 0. The model becomes Ω̂ = Ω·G + N, G the fading's power gain (Gamma, shape ν,
+  mean 1) and N the noise's part (Gaussian, mean 0, standard deviation SE), so p(Ω̂ | Ω) = ∫ Gamma(G; ν)·
+  Normal(Ω̂ − ΩG; 0, SE²) dG, and Ω̄ is the mean of Ω under that likelihood and the flat prior, as before. SE² =
+  [σ_y⁴·n/0.275 + 2σ_y²·Ω·Σs_k²/0.1986]/(Σs_k²)², n the samples summed: the first term (noise with noise) derived
+  (scratch `amendment-rev\rev2.py`), the second (signal with noise) an approximation to be checked before the
+  amendment states it; N Gaussian is an approximation over a story's first few samples. Rejected: holding Ω̂ at one
+  SE (a made-up constant); |Ω̂| (the owner's question, 2026-10-25: "Why wouldn't we just take the absolute value";
+  it reports the noise's size as signal, mean 0.80 SE on noise, and leaves the noise out of Ω̄); Σ|e_k² − σ_y²|
+  (settles at 0.74 σ_y² on noise); counting the noise as extra fades (cannot explain a negative Ω̂); fitting Ω to the
+  raw samples (cost grows with every sample). **Clipping, max(Ω̂, 0)** (the standard point estimate; Searle, Casella &
+  McCulloch 1992) is **a measured variant**: the same lookup with the fading-only table; a buried story's Ω̄ then
+  rests on the prior's −15 dB S₅₀₀ edge, a placeholder. In simulation (scratch `omegabar\opt67.py`, its noise drawn
+  from this model) the two agree within about 1 dB at −8 dB S₅₀₀ and above once ν ≥ 2; on noise alone clipping gives
+  −12 to −14 dB S₅₀₀ and this model 1.5 to 6 dB more; on a first dot (ν = 1) both read far above the truth.
+  **CPU:** Ω̄ comes from a table built at startup, now with SE (and perhaps a fourth input) beside ν and Ω̂; it is
+  looked up only after a sample where the story expects carrier, Ω̂ standing still otherwise (exact, roughly halving
+  the cost). Estimated, not timed: 20 to 40 ms per channel-second at the 1 700-story ceiling against about 13 ms for
+  today's table, before that halving (the owner: "that is 3x the CPU cost"). Ω̄ is its own line in the CPU breakdown;
+  if this model does not earn its cost against the clipping variant, the owner switches to clipping. A lookup once
+  per mark's end (well under 1 ms per channel-second) was offered as a further, approximate saving, not adopted.
 
 ### Obvious items, stated for approval
 
