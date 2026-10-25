@@ -855,6 +855,14 @@ long run; the timing convention and rise times wait for the research.**
   (Task 4d, desktop, one thread; the bank decoder 29 ms); the only breakdown (Task 4, before 4d removed most gap
   branching) was successors 64%, carrying forward 29% (scoring 16%), merging and pruning 4%, building the population
   3%; the newborn's integral is estimated at 17 to 33 ms per channel-second, not measured.
+- **The newborn's first mark: kept as designed (owner, 2026-10-24: "Agree").** Until its belief in log-amplitude
+  narrows to a spread of σ_u = 0.1, a newborn scores against the exact belief p₀(a)·exp(Σ w·Λ_j(a)) under the flat
+  prior, with the amplitude held constant, carried by running totals (the low- and high-signal forms of ln I₀, chosen
+  per sample) and integrated by 5-point Gauss–Hermite quadrature about the peak (Newton); then it switches to
+  N(μ, P) by matching mean and variance, by the end of its first mark at the latest. Approximations: (a) the running
+  totals, exact only in the two limits; (b) fading ignored before the switch, 0.4–0.9 nats at 0 dB S₅₀₀ and 2 Hz;
+  (c) the switch, about 0.008 nats (derived). The prototype measures (a) against a brute-force integral and (b) under
+  fading; anything over a fraction of a nat goes to the owner; its CPU is its own line in the breakdown.
 
 ### Obvious items, stated for approval
 
