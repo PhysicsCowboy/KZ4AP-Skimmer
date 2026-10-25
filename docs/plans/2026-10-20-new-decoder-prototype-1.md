@@ -979,6 +979,29 @@ long run; the timing convention and rise times wait for the research.**
     marks" differ from it only at j = 3 and 4, where |s_k| < 0.001.
   - **C²'s bullet corrected:** only where s_k = 0 exactly is there no own part and no leeway; at j = 0 to 4, |s_k| <
     0.001 and v_k is not zero (up to 2.8 × 10⁻⁵), and the own part applies.
+- **Corrections from the amendment's review 3 (2026-10-25,** `design-amendment-review-3.md`, scratch
+  `amendment-rev3-review\`**):**
+  - **The lookup saving is not a halving.** The template stays nonzero for 16 samples (42.7 ms) after each key-up, so
+    the samples with s_k ≠ 0 are 63 to 71% of an over of "PARIS" at 5.2 to 12 WPM, 86% at 25 WPM and 95 to 100% from
+    40 WPM (the key-down share, about 55%, is what "roughly halving" described). Rough costs at the 1 700-story
+    ceiling, corrected: the Ω̄ lookup about 13 to 38 ms per channel-second; the clipping variant's, on the same basis,
+    about 6.5 to 13 ms; w about 2 to 6 ms; Ω̂'s noise-variance sums scale the same way (they and the four-input table
+    serve only the decided model). Told to the owner 2026-10-25.
+  - **The noise's correlation span:** over 6 samples (16 ms) the fading's correlation is at least 0.9950 at 2 Hz
+    (0.969 at 5 Hz), not 0.9965 (that is 5 samples); the argument for A + B·ΩG is unchanged.
+  - **Ω̄'s rise for very negative Ω̂ is an artifact of treating N as Gaussian,** not physics: every e_k² ≥ 0, so a
+    reading near Ω̂'s floor needs the noise to cancel the carrier on every sample, which grows less likely as the
+    carrier grows; the true likelihood falls with power there (a monotone likelihood ratio), so the exact Ω̄ does not
+    rise (derived; simulated with the decided chain's noise, `out_c4.txt`; near the floor the Gaussian's tail is 70 to
+    900 times too heavy). The explanation given above ("better explained by a larger power with its larger noise
+    variance") is withdrawn. On noise alone Ω̂ falls below Ω̄'s minimum 11 to 37% of the time after a first mark. The
+    remedy goes to the owner.
+  - **The simulation figures in the Ω̄ bullet** (`omegabar\opt67.py`, noise drawn from the Gaussian model itself) are
+    superseded by the amendment's simulation on true, skewed samples (0.7 dB agreement at threshold; 1.1 to 6.9 dB
+    apart on noise alone).
+  - **Stated as obvious:** the Ω̄ table's κ axis runs down to 0 and its ζ axis up to about 400, covering first marks of
+    1 or 2 samples (κ 0.10 and 0.38, ζ 19); the newborn's latest switch is the last sample of its first mark's template
+    with s_k ≠ 0.
 
 ### Obvious items, stated for approval
 
