@@ -779,6 +779,11 @@ long run; the timing convention and rise times wait for the research.**
   correlation, (π/4)(₂F₁(−½, −½; 1; ρ²) − 1)/(1 − π/4) (Rayleigh; 0.902, 0.416 and 0.011 at 48, 144 and 336 ms, against
   ρ = 0.956, 0.664 and 0.108); 0.886·√Ω̄ = (√π/2)·√Ω̄ is the Rayleigh mean amplitude. The owner's rule (the middle
   term) is unchanged. Form (iv) of the derivation, within 0.2 nats of the exact predictive (measured in scratch).
+- **Bell's decay toward zero, a measured variant (the owner's question, 2026-10-22: "How will Bell's choice to decay
+  towards zero compared to our choice to decay towards the mean play out in all of the different test
+  recordings…?").** The prototype scores, side by side on every test group, the amplitude prediction drifting toward
+  zero (Bell 1977) against the decided drift toward the Rayleigh mean amplitude 0.886·√Ω̄, with a close neighbor as the
+  case to watch; the results go to the owner (recorded 2026-10-24; told to the owner 2026-10-22).
 - **The backup hang AGC: dropped from the design for now (owner, 2026-10-23: "A").** The Ω̄ fix covers the starts it
   was meant to back up, and a channel-level AGC knows a new station's level only from an earlier transmission within
   its hang. Recorded in `docs/backlog.md` as a fallback, its role and settings to be worked out only if the prototype
