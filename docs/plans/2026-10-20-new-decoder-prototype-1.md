@@ -1042,7 +1042,9 @@ long run; the timing convention and rise times wait for the research.**
   0.01% (measured); about 1–3 ms per channel-second at the 1 700-story ceiling (rough). Rejected: (b) ignoring the
   correlation, which understates A by about 3.6 times on a flat part (1 + 2Σρ_m², derived), making the variant
   overconfident about buried stories; (c) sums precomputed per mark length and patched at the edges, saving a
-  fraction of 1–3 ms for added edge cases.
+  fraction of 1–3 ms for added edge cases; (d), added after the answer and decided the same way (owner, 2026-10-25:
+  "a"), the one-sum approximation a₂ ≈ Σs⁴/w₂, b₂ ≈ Σs⁶/w, which errs by +24% and +58% on a 4-sample first mark (+8%
+  and +15% on "PARIS" at 100 WPM; measured), largest where the variant matters.
 - **The variant's Ω̄ table: four inputs, the fourth as ln λ at 29 nodes, 12.8 MB (owner, 2026-10-25: "a"; stated
   earlier as the variant's implementation detail, 354d93f).** Error against the direct integral median 0.09%, 99th
   percentile 0.87%, largest 2.5% (measured); the cache risk to the 40–60 ns lookup is read from the CPU breakdown's Ω̄
