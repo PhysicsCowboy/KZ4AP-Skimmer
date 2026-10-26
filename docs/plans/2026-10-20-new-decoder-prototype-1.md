@@ -1080,6 +1080,17 @@ long run; the timing convention and rise times wait for the research.**
   CPU measurement keeps the breakdown by part, stated against the projected total, so the later speed work starts
   from measurements.
 
+**D19. Real recordings for the systematic floor f (owner, 2026-10-26: "Yes c").** f (placeholder 2%, D17) is set
+from strong stations' flat-part scatter about the model's prediction given the true story; synthetic recordings
+contain only what the generator models, and real recordings carry no label. Decided: live W1AW code-practice sessions,
+recorded off the air by the owner as I/Q, with the ARRL's published text for the same session aligned to the signal
+(forced alignment, the standard way to get a reference without hand labels): a real transmitter, real propagation and
+the owner's receiver. The ARRL's downloadable MP3 files are probably rendered from the text (not confirmed) and are
+lossy, so they only check the alignment tooling. Rejected: the owner's recordings with the truth taken where the new
+decoder and the bank agree (biased low: it keeps the samples the model fits; kept as a cross-check); hand-labeled
+excerpts (the owner's time); synthetic only. Not chosen: the owner keying his own transmitter into a receiver with
+the key line recorded (exact edges, but no propagation), which the plan's writer had preferred.
+
 ### Obvious items, stated for approval
 
 - **O1.** Only Morse and no-signal stories: no steady-carrier or nonsense-keying states (stated 2026-10-19).
