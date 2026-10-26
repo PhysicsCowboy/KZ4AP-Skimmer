@@ -1422,7 +1422,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
 - **Oracle channels** (measurement only): the detector's frequency is the label's. Drifting test stations need the
   label's true, drifting frequency supplied (a test-harness change; plan D17).
 - **Practice:** fldigi's decoder has no AFC; Bell's frequency was fixed; CW Skimmer states nothing
-  (the standard-practice survey of 2026-10-22, plan D16). Coarse-plus-fine shifting is the usual FFT-channelizer layout
+  (`docs/research/2026-10-22-cw-detection-standard-practice.md`). Coarse-plus-fine shifting is the usual FFT-channelizer layout
   (topic 4, item 8). The detector's following itself predates this decision; its open questions are in the backlog.
 
 #### Part 2. The front filter: 76 Hz, matched to a real 100 WPM dot
@@ -1464,7 +1464,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
 - **Practice:**
   - CW Skimmer extracts each signal "through a 50 Hz filter";
   - fldigi's "matched filter" mode is 5/T_dit wide (83 Hz at 20 WPM);
-  - Bell 1977 used 64 to 100 Hz (the standard-practice survey of 2026-10-22, plan D16).
+  - Bell 1977 used 64 to 100 Hz (`docs/research/2026-10-22-cw-detection-standard-practice.md`).
 - **[departure, owner's decision] in width from CW Skimmer's 50 Hz,** to reach 100 WPM. Slower signals pay up to
   10·log₁₀(76/50) = 1.8 dB of noise power against a 50 Hz filter, part of which post-detection summing recovers
   (derived). A narrower filter for slower signals is in the backlog.
@@ -1482,7 +1482,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
 - **The cost:** 25 complex multiply-adds per instant, 375 instants per second per channel; about 12% more computation
   than 3 ms in everything done per sample (3 / 2.667 = 1.125; plan D17).
 - **Practice:** fldigi decimates its envelope to 500 samples/s (2 ms); Bell sampled every 5 ms
-  (the standard-practice survey of 2026-10-22, plan D16).
+  (`docs/research/2026-10-22-cw-detection-standard-practice.md`).
 
 #### Part 4. The evidence per sample
 
@@ -1637,7 +1637,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
 - **Other transmitters' edges go into the edge term v_k** (owner, 2026-10-23: "Agree", option B; plan D17).
   - **The definition:** v_k is the average over u and t_r of (s_k(u, t_r) − s̄_k)², with u uniform within the
     2.667 ms sample and t_r, the transmitter's 10–90% rise time, uniform over 0.8 to 4.7 ms (the ARRL Lab's measured
-    range, plan D17's keying-envelope research; uniform is the maximum-entropy choice given only the range). Each rise's
+    range, `docs/research/2026-10-23-keying-envelopes.md`; uniform is the maximum-entropy choice given only the range). Each rise's
     edge is aligned to the template at its half-amplitude point, the story absorbing the delay in its timing. s̄_k
     stays the 2.5 ms template (the table's s_j).
   - Zero on the flat part and in gaps; one precomputed number per template sample; no CPU per story, no stories added.
@@ -1658,7 +1658,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
     withdrawn (plan D17).
 - **The timing convention** (owner, 2026-10-23): edges start at key-down and key-up, so a mark keeps its keyed length at
   half amplitude. Every keying shaper whose design could be read does this (QRP Labs AN005, KE3HO, Morse Runner, DeepCW;
-  plan D17's keying-envelope research). Real transmit paths add a mark bias of −7 to +4.7 ms; the fist absorbs it, and
+  `docs/research/2026-10-23-keying-envelopes.md`). Real transmit paths add a mark bias of −7 to +4.7 ms; the fist absorbs it, and
   the prototype tests it (part 15).
 - **Practice:**
   - **[departure] from Bell's** measurement, which is 0 or 1 (H = x_k);
@@ -1730,8 +1730,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
 
 - **The decision** (owner, 2026-10-22: "adopt it", the backup since dropped; plan D16): each story's RMS of its own
   samples since its over began, as CW Skimmer measures strength from key-on samples (VE3NEA, quoted by N4ZR on the
-  RBN blog, 2014-03-05: "key-off and transition samples are discarded"; the standard-practice survey of 2026-10-22, plan
-  D16).
+  RBN blog, 2014-03-05: "key-off and transition samples are discarded"; `docs/research/2026-10-22-cw-detection-standard-practice.md`).
 - **The RMS power: ordinary least squares over every sample** (owner, 2026-10-23: "B", every sample where the story
   expects signal, each counting in proportion to the square of its template value; the formula corrected by the
   owner, 2026-10-25: "OK Option 3"; plan D17):
@@ -2230,7 +2229,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
   0.5 dB (dB relative to 0 Hz) at 15 Hz.
 - The decoder neither re-centers nor reads the detector's frequency.
 - Practice: no Morse decoder found estimates frequency inside the decoder (fldigi: none; Bell: fixed;
-  the standard-practice survey of 2026-10-22, plan D16).
+  `docs/research/2026-10-22-cw-detection-standard-practice.md`).
 
 #### Part 11. The timing model, in 2.667 ms samples
 
@@ -2462,7 +2461,7 @@ projected budget by part.
 12. **Other transmitters' edges** (owner, 2026-10-23; plan D17):
     - stations keyed with 0.8 ms and 4.7 ms rises (10–90%), the ends of the edge term's range;
     - stations keyed with a transmit-path mark bias over −7 to +4.7 ms, both signs (the measured range;
-      plan D17's keying-envelope research), for example −7, −3.5, 0, +2.5 and +4.7 ms;
+      `docs/research/2026-10-23-keying-envelopes.md`), for example −7, −3.5, 0, +2.5 and +4.7 ms;
     - at 25 and 100 WPM and at +10 to +40 dB S₅₀₀;
     - each scored for the template's misfit per sample against v_k, and decoded;
     - groups B and B2 (VE3NEA's 1.18 ms edges) test the edge term on a sharper transmitter (part 14).
@@ -2504,7 +2503,7 @@ Every reported run's rounded per-signal score table is committed with its result
 
 #### Part 16. Standard practice for each stage
 
-In the table, "survey" is the standard-practice survey of 2026-10-22 (plan D16).
+In the table, "survey" is the standard-practice survey of 2026-10-22, `docs/research/2026-10-22-cw-detection-standard-practice.md`.
 
 | Stage | Practice (source) | This design | Departure and reason |
 |---|---|---|---|

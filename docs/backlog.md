@@ -390,7 +390,7 @@ envelope samples and its long-run power estimate (design notes, amendment of 202
 decoder has no tracker; updated 2026-10-25 to the design of plan D16–D17), the grid above, and neighbors 40 to 70 Hz
 away (design notes, amendment of 2026-10-25, part 15, item 15).
 
-### Fading splits marks in the new decoder (found 2026-10-21; next, under diagnosis)
+### Fading splits marks in the new decoder (found 2026-10-21; fix designed 2026-10-25, plan D16–D17)
 
 The owner made this the next piece of work (2026-10-21): diagnose first, then a principled fix proposed to him.
 
@@ -419,7 +419,7 @@ amplitude predicted from the long-run power Ω̄ at a fixed 2 Hz fading spread, 
 ### Chirp, key clicks and static crashes: known limitations of the new decoder (owner, 2026-10-22)
 
 Standard practice accepts these rather than modeling them (survey,
-`.superpowers/sdd/2026-10-20-new-decoder-prototype-1/detection-standard-practice.md`); the owner agreed (plan D16).
+`docs/research/2026-10-22-cw-detection-standard-practice.md`); the owner agreed (plan D16).
 - **Chirp,** a transmitter's frequency jump at key-down: the front filter passes up to about ±25 Hz; beyond
   that a mark's first samples are lost. Updated 2026-10-25 to the design of plan D16–D17: the filter is the 76 Hz one
   decided on 2026-10-23 (plan D17), −1.42 dB at 25 Hz and −3.8 dB at 40 Hz (dB relative to 0 Hz); "80 Hz" was D16's

@@ -599,7 +599,7 @@ owner before any code.**
 - **Superseded the same day: standard practice, not coherent detection (owner, 2026-10-22).** The owner: "Are we perhaps
   crazy to be trying to do phase-sensitive detection for Morse code? ... Should we be doing amplitude detection
   instead?", then "We want *standard practice*!". A blind survey
-  (`.superpowers/sdd/2026-10-20-new-decoder-prototype-1/detection-standard-practice.md`) found that every working Morse
+  (`docs/research/2026-10-22-cw-detection-standard-practice.md`) found that every working Morse
   decoder detects noncoherently, behind a filter 30 to 100 Hz wide, tracks strength as an amplitude, and accepts
   chirp, key clicks and static as limitations. **Decided: the standard-practice direction** ("I want to go in this
   direction"): today's noncoherent evidence with the coherent sum capped at about 60 ms instead of 390 ms; each story
@@ -691,7 +691,7 @@ long run; the timing convention and rise times wait for the research.**
 - **Not decided (owner, 2026-10-23):** "you are assuming without evidence that the intended length should be measured
   between edge centers. That decision needs to wait for your agent to finish its research." Where the edges sit relative
   to the keyed timing, and the rise and fall times, wait for the research on real transmitters' keying envelopes
-  (`.superpowers/sdd/2026-10-20-new-decoder-prototype-1/keying-envelope-research.md`). The 80 Hz filter's exact shape
+  (`docs/research/2026-10-23-keying-envelopes.md`). The 80 Hz filter's exact shape
   (D16) waits for the same research.
 - **The research (2026-10-23):** every keying shaper whose design could be read starts the rise at key-down and the
   fall at key-up, so a mark keeps its keyed length at half amplitude (QRP Labs AN005, KE3HO, Morse Runner, DeepCW);
@@ -832,7 +832,7 @@ long run; the timing convention and rise times wait for the research.**
 - **Other transmitters' edges go into the edge term v_k (owner, 2026-10-23: "Agree"; option B).** v_k = the average
   over u and r of (s_k(u, r) − s̄_k)², with u the edge's position within the 2.667 ms sample (uniform) and r the
   transmitter's 10–90% rise time, uniform over 0.8 to 4.7 ms (the ARRL Lab's measured range,
-  `keying-envelope-research.md`; uniform is the maximum-entropy choice given only the range); each rise's edge is
+  `docs/research/2026-10-23-keying-envelopes.md`; uniform is the maximum-entropy choice given only the range); each rise's edge is
   aligned to the template at its half-amplitude point, the story absorbing the delay in its timing; s̄_k stays the
   2.5 ms template. Zero on the flat part and in gaps; one precomputed number per template sample; no CPU per story, no
   stories added. Misfit after alignment (derived, scratch `memspan\misfit.py`, through the channelizer and the 76 Hz
