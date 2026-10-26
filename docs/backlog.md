@@ -744,7 +744,7 @@ Two stages:
 2. **Later, only if the benchmark shows it beats option 2 on the stations
    where it would run:** an opt-in, channel-capped "second-opinion"
    decoder for low-confidence stations (survey option 4, arbitration),
-   for example at most about 10 stations on a desktop and none on a Pi.
+   for example at most about 10 stations on a desktop.
 
 Work items:
 - **Runtime:** export the encoder plus CTC head once to ONNX (15.9 MB,
@@ -791,7 +791,7 @@ Work items:
 Risks, most serious first:
 1. **CPU:** about 2.1 GMAC per channel-second, roughly 100–140× option 2;
    measured 7–20 channels per performance core (ONNX Runtime, fp32, one
-   thread, i7-12700H), and an estimated 8–20 channels per Raspberry Pi 5.
+   thread, i7-12700H).
 2. **Speed range:** trained on 16–28 WPM only; contest speeds above about
    30 WPM are out of distribution.
 3. **Latency:** up to 4 s, fixed 6 s window; the model is not robust to
@@ -1081,8 +1081,11 @@ The decoder estimates speed from the last 24 marks (a heuristic; about 4 s at
 ### max_tracks
 
 `DetectorConfig::max_tracks` = 200 is a guess at a CPU guard, not exposed to
-users. Measure throughput against the number of tracks (on this PC and on a
-Raspberry Pi), set the default with margin, and expose it in the app.
+users. Measure throughput against the number of tracks (on the desktop and the
+Linux machine), set the default with margin, and expose it in the app. A
+Raspberry Pi is not a target (owner, 2026-10-26). A contest band holds a
+few hundred signals (CW Skimmer copied 326 on 40 m in CQ WW CW); the
+new decoder's eventual target is about 500 tracks on one band (plan D18).
 
 ### Spectrum frames in linear power
 

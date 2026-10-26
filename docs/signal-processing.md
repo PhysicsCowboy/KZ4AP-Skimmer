@@ -4300,8 +4300,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   only steady-clock time inside decoders (the engine runs on one thread).
   Measured values: 2a record, sections 3.3 and 8.4 (Envelope and
   Matched; they vary by about a fifth between sessions on one machine);
-  Plan A record, section 4.6, and the Plan B record (the bank). A
-  Raspberry Pi 5 is not yet measured.
+  Plan A record, section 4.6, and the Plan B record (the bank).
 - **Smoke check** (`bench/smoke.sh`; CI runs it on Windows and Linux):
   generates the `smoke` recording (band scenario, 8 stations, 30 s,
   192 kHz, seed 1) and scores it twice on each path. The Envelope path

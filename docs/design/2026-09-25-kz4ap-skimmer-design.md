@@ -503,7 +503,8 @@ ships at all, is left to the benchmark.
   call appears (backlog, "Real-recording scoring: manta's oracle").
 - **Metrics:** CER, with each prosign counted as one symbol and word spaces
   scored separately from characters; S₅₀₀ as generated; and CPU time per
-  channel-second on a desktop and on a Raspberry Pi 5.
+  channel-second on a desktop and on the Linux machine (amended
+  2026-10-26, owner: a Raspberry Pi is not a target).
 
 **Benchmark candidates, not shipped.** Each would need a change to this
 spec to enter the app:
