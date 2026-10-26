@@ -178,8 +178,10 @@ replace V(m) and the plain sum in the evidence:
    ln I₀ below 5 × 10⁻⁷ nats (derived).
 2. **A level known to a Gaussian spread** a ~ N(μ, P) (the Kalman predictive density; notes, topic 3, item 1):
    Λ_P(S) = ln ∫ N(a; μ, P) e^{Λ(S; a)} da, by Gauss–Hermite quadrature of order K = 5 in a (Abramowitz and
-   Stegun 25.4.46), nodes with a < 0 dropped and the weights renormalized (decision D4). It is exact to 0.01 nats over
-   the tested range (Task 2's test).
+   Stegun 25.4.46) (decision D4), its nodes mapped onto N(μ, P) truncated at a = 0 where that Gaussian has mass below
+   0 (as built, the build's Ruling 15: dropping the nodes with a < 0 and renormalizing, this item's first wording,
+   missed the dense integral by 0.355 nats; the mapping by 0.0011). It is exact to 0.01 nats over the tested range
+   (Task 2's test).
 3. **A newborn's first block, against the flat prior** (notes, topic 5, item 3, the level): the level x, in dB S₅₀₀,
    is uniform over [−15, +85] dB, with a² = 10^{x/10} · N₀ · 500 Hz, so b² = 10^{x/10} · 500 Hz · m² / c(m) does not
    depend on N₀ (derived). Λ_flat(n, z) = ln (1/(100 dB)) ∫_{−15 dB}^{+85 dB} e^{Λ(S; a(x))} dx is tabulated once
