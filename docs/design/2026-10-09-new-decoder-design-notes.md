@@ -1502,10 +1502,12 @@ measure; part 16, standard practice for each stage; part 17, the values.
   with the posterior ∝ exp(w_k·Λ_k(a)) N(a; μ_k|k−1, P_k|k−1). N(μ_k|k−1, P_k|k−1) is the story's prediction for this
   sample (part 6), and w_k the sample's weight (below).
   - The integral and the posterior's mean and variance come from today's Gauss–Hermite quadrature of order K = 5 (plan D4),
-    its nodes mapped onto N(μ, P) truncated at a = 0 wherever that Gaussian has mass below 0, as built (`docs/signal-processing.md`;
-    dropping the nodes with a < 0 and renormalizing, the plan's first wording, missed the dense integral by 0.355 nats
-    against D4's 0.01, the mapping by 0.0011 nats; measured in the prototype's Task 2), applied to the tempered
-    integrand.
+    as built (`docs/signal-processing.md`): adaptive, its nodes centered at the integrand's mode (Newton's method,
+    started from the previous mode) and scaled by its curvature (Liu and Pierce 1994; the build's Ruling 11, since nodes
+    spread over the prior miss a strong signal's narrow peak), and mapped onto that Gaussian truncated at a = 0 where it
+    has mass below 0 (Ruling 15: dropping the nodes with a < 0 and renormalizing, the plan's first wording, missed the
+    dense integral by 0.355 nats against D4's 0.01, the mapping by 0.0011 nats; measured in the prototype's Task 2),
+    applied to the tempered integrand.
   - A newborn's first mark uses part 8 instead.
 - **The weight w_k follows each sample's expected SNR** (owner, 2026-10-25: "Well, yes", option D; plan D17), with the
   fixed 0.1986 a measured variant (part 15, item 18).
