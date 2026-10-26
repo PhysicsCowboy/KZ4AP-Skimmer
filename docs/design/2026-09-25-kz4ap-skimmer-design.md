@@ -274,7 +274,7 @@ Symbols and conventions used below:
 
 | Mode | How it works | CPU cost |
 |---|---|---|
-| **Classical** | Statistical decoding: an explicit-duration (semi-Markov) hidden Markov model (HMM), searched by Viterbi beam search, finds the most probable story of what was sent (text, timing, speed, signal level) given timing statistics and a prior over likely text. Each hypothesis reads the channel's signal directly, summing it over the marks it claims (its own matched filter), and tracks its own signal level (§5.2, step 3, amendment of 2026-10-19). Same family as CW Skimmer's Bayesian decoder and Bell 1977. | Target 2–3 million floating-point operations per channel-second for typical signals. Estimated 10–25 million at the ceiling on the number of hypotheses, which quiet channels at S₅₀₀ 0 dB and below also reach until they close (design notes, topic 5, items 5 and 6). Not yet measured. (Amended 2026-10-19.) |
+| **Classical** | Statistical decoding: an explicit-duration (semi-Markov) hidden Markov model (HMM), searched by Viterbi beam search, finds the most probable story of what was sent (text, timing, speed, signal level) given timing statistics and a prior over likely text. One fixed filter per channel (76 Hz noise bandwidth, matched to a 100 WPM dot) feeds an envelope sampled every 2.667 ms; each hypothesis predicts that envelope from the marks it claims and tracks its own signal level (§5.2, step 3, amendments of 2026-10-19 and 2026-10-25). Same family as CW Skimmer's Bayesian decoder and Bell 1977. | Target 2–3 million floating-point operations per channel-second for typical signals. Estimated 10–25 million at the ceiling on the number of hypotheses, which quiet channels at S₅₀₀ 0 dB and below also reach until they close (design notes, topic 5, items 5 and 6). Not yet measured. (Amended 2026-10-19.) |
 | **Neural** | A small streaming neural network reads a narrow spectrogram strip for each track and outputs characters directly. It is trained with CTC (connectionist temporal classification), the standard speech-recognition technique for learning to output text from audio without hand-aligned labels. | Highest (estimated 15–20 million multiply-accumulates (MAC) per channel-second; not yet measured) |
 | **Hybrid** | A cascade: Classical decodes every track; only results whose confidence falls below a threshold are re-decoded by the neural network. | Between the two, depending on how many tracks are handed over |
 
@@ -332,6 +332,16 @@ following the survey's ranking:
    2 Hz 0.6 dB; derived). One frequency tracker per channel, using none of
    the decoder's decisions, provides it. It is built and measured with the
    first prototype (review 1, K13; design notes, topic 4, item 8).
+
+   **Amendment (2026-10-25, owner).** The amendment of 2026-10-19 above is
+   superseded. The new decoder sums nothing coherently and has no frequency
+   tracker of its own: the channelizer follows the detector's frequency for
+   the track (the shared FFT's nearest bin, then a fine shift), and the
+   decoder reads a fixed 76 Hz filter, which loses 0.5 dB at 15 Hz off and
+   1.42 dB at 25 Hz (dB relative to 0 Hz). Chirp beyond about ±25 Hz is a
+   known limitation. Design: `docs/design/2026-10-09-new-decoder-design-notes.md`,
+   "Detection, amplitude, frequency and the mark's shape", parts 1, 2 and
+   10 (plan D16–D17).
 2. **Neural: a small streaming CNN+LSTM+CTC network** (a convolutional
    front end, then a long short-term memory recurrent layer, trained with
    CTC) following VE3NEA's DeepCW recipe. DeepCW is MIT-licensed, so the
@@ -435,6 +445,29 @@ following the survey's ranking:
    leaves them out on both sides and lists them separately (design notes,
    topic 2, item 3). Building starts once this amendment and the first
    prototype's plan are approved.
+
+   **Amendment (2026-10-25, owner).** Three bullets of the amendment of
+   2026-10-19 change:
+   - **Observation:** each hypothesis no longer sums the channel's 2 ms
+     pieces in blocks as a carrier of unknown phase. The channel passes one
+     fixed 76 Hz filter matched to a 100 WPM dot; its envelope, sampled
+     every 2.667 ms, is scored against each hypothesis's predicted envelope
+     (its claimed marks, smeared by the filter) by the Rician density of a
+     carrier in noise, with a systematic term for the model's own mismatch.
+     The noise level still comes from the signal detector's spectrum around
+     the station.
+   - **Level:** the Kalman filter per hypothesis stays; its prediction
+     drifts toward the station's long-run amplitude, learned from the
+     hypothesis's own samples since its over began, at a fading rate fixed
+     at 2 Hz. Each newborn still starts from a prior flat in dB of S₅₀₀.
+   - **Timing:** the Farnsworth factor was removed from the first prototype
+     on 2026-10-21; the speed grid stands.
+
+   Standard practice for this chain: every working Morse decoder found
+   detects noncoherently behind a 30–100 Hz filter and tracks the amplitude
+   (`docs/research/2026-10-22-cw-detection-standard-practice.md`). Design
+   and evidence: the design notes' section named in step 1's amendment of
+   2026-10-25 (plan D15–D17).
 4. **Hybrids,** once both 2 and 3 exist.
 
 **Training data** for the neural decoder is generated synthetically in
