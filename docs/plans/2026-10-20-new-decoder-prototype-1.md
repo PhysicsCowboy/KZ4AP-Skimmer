@@ -1061,6 +1061,25 @@ long run; the timing convention and rise times wait for the research.**
   channel-second). (d), the same table stored ragged in (ζ, λ), about 7.5 MB (rough count) and still beyond a core's
   cache, is a drop-in refinement if memory matters later.
 
+**D18. The CPU target and what comes first (owner, 2026-10-26).**
+- **The projected budget** (measured, C++ timing slice of 2026-10-25 on the desktop, i7-9700F; the Linux machine
+  about 0.7 times these by one earlier comparison): 49, 123 and 411 ms of CPU per channel-second at 200, 500 and
+  1 700 stories, the default with today's adaptive quadrature; at 1 700 stories, scoring and the amplitude update
+  194 ms (47%), today's search (successors, merging, pruning, measured in a copy of the built code) 191 ms (46%), Ω̄'s
+  default lookup 18 ms, template and loop 9 ms, Ω̂ and ν 1.8 ms, w 0.7 ms; the noise-in-Ω̄ variant adds 22–47 ms. At
+  the ceiling that is about 20 channels on all 8 desktop cores.
+- **The owner's point and the comparison:** "You are basically telling me that this design will only allow decoding
+  a handful of tracks simultaneously." On 40 m in CQ WW CW, CW Skimmer's first public release copied 326 signals at
+  once (Reverse Beacon Network's description); CW Skimmer Server decodes up to 7 bands of 192 kHz on a Core i7. A
+  contest band at 500 tracks on half this desktop's cores means about 8 ms per channel-second, 15 to 50 times below
+  the projection at the ceiling.
+- **The decision:** "Yes and no to your question on the number of stations to target. I'd like to see how well the
+  algorithm we've designed works from a decoding error perspective before we throw all this work away and start
+  targeting something much faster." The designed algorithm is built and measured for its decoding errors first, as
+  designed; the CPU target (about 500 tracks on one band) is recorded but does not yet constrain the design. Every
+  CPU measurement keeps the breakdown by part, stated against the projected total, so the later speed work starts
+  from measurements.
+
 ### Obvious items, stated for approval
 
 - **O1.** Only Morse and no-signal stories: no steady-carrier or nonsense-keying states (stated 2026-10-19).
