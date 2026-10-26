@@ -2083,9 +2083,11 @@ measure; part 16, standard practice for each stage; part 17, the values.
     derived from the high-SNR curvature below). At h = 0.0906 the bound is 7 × 10⁻¹¹ at σ = 0.1, 4 × 10⁻⁷ at 0.08,
     4 × 10⁻⁴ at 0.06 and 5 × 10⁻³ at 0.05; 64 points (h = 0.18) give 0.045 at 0.08. Measured on 36 000 first marks
     (noise and −10 to +40 dB S₅₀₀, 25 and 50 WPM): at most 0.003 nats per sample against a dense integral; 96 points,
-    0.044; 64 points, 0.28. **Not yet measured above +40 dB S₅₀₀:** there one sample can narrow the belief further, to
-    roughly f/√(2w) ≈ 0.03 at the floor f = 0.02 (a rough derivation), where 128 points would err about 0.17 nats
-    and 192 points 0.008. The prototype records the narrowest σ_u at handover (part 15, item 2); a value below 0.05
+    0.044; 64 points, 0.28. **Not yet measured above +40 dB S₅₀₀**, and two rough derivations disagree there: the
+    floor f alone limits one sample's precision to about f/√(2w) ≈ 0.03 nepers (f = 0.02), where 128 points would err
+    about 0.17 nats; but the caps (part 9) limit each sample's precision more, to about twice its cap, which puts the
+    width at handover near 0.074–0.078 nepers above about +30 dB S₅₀₀ (the amended build's re-review, 2026-10-26),
+    where 128 points suffice. The prototype records the narrowest σ_u at handover (part 15, item 2); a value below 0.05
     goes to the owner.
   - **The live range (heuristic, with a measured margin):** to save CPU, only grid points within 80 nats of the
     largest are evaluated; a point that falls more than 80 nats below it (its weight in Z is under e⁻⁸⁰ ≈ 10⁻³⁵ of

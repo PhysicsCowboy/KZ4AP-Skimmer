@@ -1120,8 +1120,9 @@ Gauss–Hermite of order 5 as designed, or cut off at the prior's edge (0.3–0.
 slow, estimated). **The two constants, as explained to the owner** (he said: "I don't understand your two heuristic
 constants at all. Those seem like abbreviated descriptions"): 128 points from the trapezoid rule's error bound,
 2·exp(−2π²σ²/h²) for a belief of width σ (derived), at the narrowest width the newborn reaches before it hands over
-(about 0.08 nepers at +40 dB S₅₀₀), checked by measurement; above +40 dB S₅₀₀ (not measured) one sample may narrow it
-to roughly 0.03, where 128 points would err about 0.17 nats, so the prototype records the narrowest width at handover
+(about 0.08 nepers at +40 dB S₅₀₀), checked by measurement; above +40 dB S₅₀₀ (not measured) the floor f alone would let one sample
+narrow it to roughly 0.03, where 128 points would err about 0.17 nats, but the caps limit it to about 0.074–0.078
+(both rough; the second from the plan's re-review of 2026-10-26, after the owner was told the first), so the prototype records the narrowest width at handover
 and a value below 0.05 goes to the owner. 80 nats is heuristic: about twice the deepest a point was measured to fall
 and come back (41.5 nats; every other case under 17.3); keeping every point would remove it at about +40% of the
 projected total instead of +3.6% (estimated); the prototype records the deepest revival, and one deeper than 40 nats
