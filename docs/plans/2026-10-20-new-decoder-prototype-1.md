@@ -1097,6 +1097,17 @@ drifting toward 0.886·√Ω̄; the variance follows the decided rule, ρ_a²P +
 re-entry is not added. Rejected: the decided rule plus Q (counts the gap's uncertainty twice); Bell's form in full in
 this run (two changes at once), which may follow as a second variant if this one shows a difference worth explaining.
 
+**D21. A newborn's weight follows the curve at each amplitude (owner, 2026-10-26: "a").** The newborn's integral
+weights each sample's evidence by part 4's curve w(q) at each amplitude a of the integral, q = a²s_k²/σ_y², the rule
+ordinary stories use (D17, 2026-10-25), evaluated at the parameter (Chandler and Bate 2007). It replaces the two fixed
+weights 0.275 and 0.1986 by regime of ln I₀ (D17), which existed only for part 8's running sums. Measured 2026-10-26
+(the amended build's review and its newborn study, scratch): the running sums with a form frozen per sample let the
+integrand run to the prior's top on 82–100% of first marks (noise and stations at −5 to +10 dB S₅₀₀; per-sample
+scores near 10⁷ nats); the fixed weights' jump costs a grid up to 0.50 nats per sample, differs from the curve by up
+to 1.5 nats per first mark (0.8 at −5 dB S₅₀₀) and switches to N(μ, P) early on 83% of first marks at 0 dB S₅₀₀.
+Rejected: the two fixed weights; the fixed 0.1986 (the ordinary stories' fallback variant, undercounting weak evidence
+by about 9%). Same CPU as the fixed weights.
+
 ### Obvious items, stated for approval
 
 - **O1.** Only Morse and no-signal stories: no steady-carrier or nonsense-keying states (stated 2026-10-19).

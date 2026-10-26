@@ -1543,7 +1543,8 @@ measure; part 16, standard practice for each stage; part 17, the values.
     q_k = (μ_k|k−1)²·s_k²/σ_y²,
 
     μ_k|k−1 the story's predicted amplitude (part 6); space samples have Λ_k = 0 and need no weight. The newborn
-    takes 0.275 or 0.1986 with the weak- or strong-signal form of ln I₀ it already picks per sample (part 8).
+    reads the same curve at each amplitude a of its integral, q = a²s_k²/σ_y² (owner, 2026-10-26: "a"; plan D21;
+    part 8).
     - **Standard:** the composite-likelihood magnitude adjustment evaluated at the parameter (Chandler and Bate 2007;
       Varin, Reid and Firth 2011).
     - **Approximate on edges,** where neighboring samples differ in strength: the curve is for neighbors of equal
@@ -2073,11 +2074,13 @@ measure; part 16, standard practice for each stage; part 17, the values.
     - at high SNR (ln I₀(x) ≈ x − ½ln 2πx): Σ w_k s_k²/V′_k, Σ 2w_k s_k e_k/V′_k, Σ w_k (for the −½w_k·ln a per
       sample) and Σ ½w_k·ln(4π s_k e_k/V′_k), with w_k = 0.1986. The last does not depend on a, so the posterior does
       not need it, but the score does.
-  - The regime is chosen per sample, and with it the weight: 0.275 with the weak-signal form of ln I₀, 0.1986 with the
-    strong-signal form (owner, 2026-10-25, with w per sample; plan D17: "the newborn takes 0.275 or 0.1986 with the
-    weak- or strong-signal form of ln I₀ it already picks per sample"). These are w's two limits (part 4), so the
-    newborn's sums stay sums of fixed weights. The crossover value of 2b_k z_k is not yet stated: the implementation
-    plan sets it, and approximation (a) measures its error.
+  - **The weight (amended 2026-10-26, owner: "a"; plan D21):** w follows part 4's curve at each amplitude of the
+    integral, w(q) with q = a²s_k²/σ_y², the same rule as an ordinary story's, evaluated at the parameter. It replaces
+    the two fixed weights first decided (0.275 with the weak-signal form of ln I₀, 0.1986 with the strong-signal form;
+    owner, 2026-10-25), which existed only to keep these running sums: measured 2026-10-26, the running sums with a
+    form frozen per sample let the score run to the prior's top on 82–100% of first marks, and the fixed weights'
+    jump costs a grid up to 0.50 nats per sample and differs from the curve by up to 1.5 nats per first mark. How the
+    integral is computed is decided next (the running sums, Newton and Gauss–Hermite below are under review).
   - **The mode** follows by Newton's method from the previous sample's mode.
   - **The integral** is Gauss–Hermite of order 5, scaled by the curvature.
 - **Its approximations** (plan D17), each measured in the prototype (part 15); anything over a fraction of a nat goes
