@@ -1091,6 +1091,12 @@ decoder and the bank agree (biased low: it keeps the samples the model fits; kep
 excerpts (the owner's time); synthetic only. Not chosen: the owner keying his own transmitter into a receiver with
 the key line recorded (exact edges, but no propagation), which the plan's writer had preferred.
 
+**D20. Bell's decay variant changes only the mean's target (owner, 2026-10-26: "Sure iii").** Across a space the
+variant's predicted amplitude decays toward zero by Bell's rate (Φ per 5 ms, at most 5 dB of amplitude) instead of
+drifting toward 0.886·√Ω̄; the variance follows the decided rule, ρ_a²P + ½(1 − ρ²)Ω̄, unchanged, and Bell's Q on
+re-entry is not added. Rejected: the decided rule plus Q (counts the gap's uncertainty twice); Bell's form in full in
+this run (two changes at once), which may follow as a second variant if this one shows a difference worth explaining.
+
 ### Obvious items, stated for approval
 
 - **O1.** Only Morse and no-signal stories: no steady-carrier or nonsense-keying states (stated 2026-10-19).

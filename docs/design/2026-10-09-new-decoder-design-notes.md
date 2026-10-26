@@ -2483,10 +2483,14 @@ projected budget by part.
     our choice to decay towards the mean play out in all of the different test recordings…?"; recorded in the plan
     2026-10-24, D17, 6a13f77). A close neighbor is the case to watch; the results go to the owner.
     - **Bell's form:** across a space the amplitude decays by Φ = 10^(−2/(22.4·T_dot,ms)) per 5 ms (about 0.36 dB of
-      amplitude per dot), so by Φ^(Δ/5 ms) = Φ^0.5333 per 2.667 ms sample, by at most 5 dB of amplitude. On re-entry
-      to a mark Q = 0.15·e^(0.6(B−14)) +
-      0.01·B·e^(0.2(1−B)) is added, in units of the story's Ω̄, with B the space in bauds capped at 14 (Bell 1977;
+      amplitude per dot), so by Φ^(Δ/5 ms) = Φ^0.5333 per 2.667 ms sample, by at most 5 dB of amplitude (Bell 1977;
       `docs/research/bell-1977-notes.md`).
+    - **Only the mean's target changes** (owner, 2026-10-26: "Sure iii"; plan D20): the variance across the space
+      follows the decided rule, ρ_a²P + ½(1 − ρ²)Ω̄, unchanged. Bell's own variance, P + Q on re-entry to a mark with
+      Q = 0.15·e^(0.6(B−14)) + 0.01·B·e^(0.2(1−B)) in units of the story's Ω̄ (B the space in bauds, capped at 14),
+      is left out: adding it to the decided rule would count the gap's uncertainty twice, and putting it in place of
+      that rule would change two things at once. Bell's form in full may follow as a second variant if this one shows a
+      difference worth explaining.
     - **The comparison:** both are scored paired on every group (steady signals against speed, fading, keying styles,
       speed changes, a neighbor 0 to 120 Hz away, QSOs, noise only), reporting exact texts, character error rate,
       splits and false characters.
