@@ -2066,27 +2066,59 @@ measure; part 16, standard practice for each stage; part 17, the values.
 - **Kept as designed** (owner, 2026-10-24: "Agree"; plan D17): until its belief in log-amplitude narrows to a spread
   of σ_u = 0.1, a newborn scores against the exact belief p₀(a)·exp(Σ_j w_j·Λ_j(a)) under the flat prior p₀, with the
   amplitude held constant, then switches to N(μ, P).
-- **How it is integrated** (derived): in log-amplitude u = ln a, centered on the mode.
-  The integral, its two regimes and the switch compute the owner's flat prior's score; they add no assumption to the
-  model beyond the amplitude held constant (approximation (b) below).
-  - Each sample's tempered likelihood w_k·Λ_k(a) is carried by running sums, exact in two limits:
-    - at low SNR (2b_k z_k ≲ 1, ln I₀(x) ≈ x²/4): Σ w_k s_k²(z_k² − 1)/V′_k, with w_k = 0.275;
-    - at high SNR (ln I₀(x) ≈ x − ½ln 2πx): Σ w_k s_k²/V′_k, Σ 2w_k s_k e_k/V′_k, Σ w_k (for the −½w_k·ln a per
-      sample) and Σ ½w_k·ln(4π s_k e_k/V′_k), with w_k = 0.1986. The last does not depend on a, so the posterior does
-      not need it, but the score does.
+- **How it is integrated (amended 2026-10-26, owner: "Okay with A"; plan D22):** on a fixed grid in log-amplitude
+  u = ln a, the point-mass (grid) method of Bayesian filtering (Bucy and Senne 1971), its support thresholded as in the
+  advanced point-mass method (Šimandl, Královec and Söderström 2006). The integral and the switch compute the owner's
+  flat prior's score; they add no assumption to the model beyond the amplitude held constant (approximation (b)
+  below).
+  - **The grid:** N = 128 points u_i evenly spaced over the prior's 11.51 nepers (−15 to +85 dB S₅₀₀), spacing
+    h = 11.51/127 = 0.0906 nepers (0.79 dB); each point carries ln of the unnormalized belief, Σ_j w_j(a_i)·Λ_j(a_i),
+    with the exact ln I₀ and the weight of D21. The integral Z_k is the trapezoid sum h·Σ_i (ends halved)
+    exp(Σ_j w_j Λ_j(a_i)), computed as a log-sum-exp; the sample's score is ln Z_k − ln Z_(k−1). No mode, curvature or
+    stored samples: on noise, where the belief is highest at the prior's bottom edge, the edge is simply the grid's
+    end.
+  - **Why 128 points** (derived bound, measured check): the trapezoid rule's relative error on a belief of width σ
+    (in u) is about 2·exp(−2π²σ²/h²) (Poisson summation). The belief is narrowest at the sample where the newborn
+    hands over (σ_u falls below 0.1; on a strong rise one sample takes it from about 0.13 to 0.08 at +40 dB S₅₀₀,
+    derived from the high-SNR curvature below). At h = 0.0906 the bound is 7 × 10⁻¹¹ at σ = 0.1, 4 × 10⁻⁷ at 0.08,
+    4 × 10⁻⁴ at 0.06 and 5 × 10⁻³ at 0.05; 64 points (h = 0.18) give 0.045 at 0.08. Measured on 36 000 first marks
+    (noise and −10 to +40 dB S₅₀₀, 25 and 50 WPM): at most 0.003 nats per sample against a dense integral; 96 points,
+    0.044; 64 points, 0.28. **Not yet measured above +40 dB S₅₀₀:** there one sample can narrow the belief further, to
+    roughly f/√(2w) ≈ 0.03 at the floor f = 0.02 (a rough derivation), where 128 points would err about 0.17 nats
+    and 192 points 0.008. The prototype records the narrowest σ_u at handover (part 15, item 2); a value below 0.05
+    goes to the owner.
+  - **The live range (heuristic, with a measured margin):** to save CPU, only grid points within 80 nats of the
+    largest are evaluated; a point that falls more than 80 nats below it (its weight in Z is under e⁻⁸⁰ ≈ 10⁻³⁵ of
+    the largest's) is dropped for good. The risk is a point that is negligible now but becomes the best later (a
+    rise or a misaligned story favoring small amplitudes before the flat part favors large ones). Measured over the
+    36 000 first marks: the deepest a point fell and later came back to within 10 nats of the largest was 41.5 nats
+    (one case, a misaligned story at +40 dB S₅₀₀; every other case under 17.3), so 80 is about twice the deepest
+    seen. Keeping all 128 points would remove the constant at about 1 300 ns per newborn-sample instead of 490
+    (estimated from the measured 9.5 ns per point), about +40% of the projected total instead of +3.6%. The
+    prototype records the deepest revival (part 15, item 2); one deeper than 40 nats goes to the owner.
+  - **The tables** (derived; their error measured): on a grid even in u, ln x = ln κ + u_i and ln q = 2u_i + ln s_k²
+    for every point, so ln I₀ and w at every point are two fixed tables shifted by one offset per sample: no
+    logarithm, polynomial or division per point. ln I₀(x) = x − ½ln x + G(ln x), G tabulated at steps of 0.023
+    nepers of ln x over [−20, +165] with 4-point Lagrange interpolation (ln I₀ = x²/4 where every point has
+    x < 10⁻³); w tabulated against ln q at steps of 0.18 with linear interpolation. Against direct evaluation: at
+    most 3.1 × 10⁻⁴ nats per sample and 0.0037 nats per first mark.
   - **The weight (amended 2026-10-26, owner: "a"; plan D21):** w follows part 4's curve at each amplitude of the
     integral, w(q) with q = a²s_k²/σ_y², the same rule as an ordinary story's, evaluated at the parameter. It replaces
     the two fixed weights first decided (0.275 with the weak-signal form of ln I₀, 0.1986 with the strong-signal form;
-    owner, 2026-10-25), which existed only to keep these running sums: measured 2026-10-26, the running sums with a
-    form frozen per sample let the score run to the prior's top on 82–100% of first marks, and the fixed weights'
-    jump costs a grid up to 0.50 nats per sample and differs from the curve by up to 1.5 nats per first mark. How the
-    integral is computed is decided next (the running sums, Newton and Gauss–Hermite below are under review).
-  - **The mode** follows by Newton's method from the previous sample's mode.
-  - **The integral** is Gauss–Hermite of order 5, scaled by the curvature.
+    owner, 2026-10-25), which existed only for the running sums this grid replaces.
+  - **What it replaces** (measured 2026-10-26; the amended build's review and its newborn study, scratch): the running
+    sums of two forms of ln I₀ with the form frozen per sample let the integrand run to the prior's top on 82–100% of
+    first marks (per-sample scores near 10⁷ nats); Newton's method plus Gauss–Hermite of order 5 scaled by the
+    curvature has no mode to find where the belief is highest at the prior's bottom edge (66–81% of noise samples)
+    and misses by 0.3–0.9 nats per sample at the 95th percentile (13 nats at worst) at every level; adaptive
+    Gauss–Kronrod is exact but about 10⁴ times too slow (estimated).
+  - **Its CPU** (timed in C++, desktop, 500 newborns): 490 ns per newborn-sample on noise, 595 on a mix of levels
+    (43.5 and 53.8 live points); net of the ordinary scoring its samples replace, +14.7 and +34.3 ms per
+    channel-second, +3.6% and +8.3% of the projected 411 ms. Its state is about 1 KB per newborn; copying it when a
+    newborn's story branches costs about 60 ns (estimated, not timed).
 - **Its approximations** (plan D17), each measured in the prototype (part 15); anything over a fraction of a nat goes
   to the owner:
-  - **(a) the running sums,** exact only in the two limits. The mid range (2b_k z_k ≈ 1 to 3), the weak-signal
-    threshold region, is exact in neither. Measured against a brute-force integral.
+  - **(a) the grid:** at most 0.003 nats per sample on the measured range (above); above +40 dB S₅₀₀ as stated above.
   - **(b) fading ignored before the switch** (the amplitude held constant): 0.4 to 0.9 nats at 0 dB S₅₀₀ and 2 Hz, and
     about 3 nats at 5 Hz (derived, rough). Measured under fading.
   - **(c) the switch,** about 0.008 nats (derived, below).
@@ -2121,10 +2153,10 @@ measure; part 16, standard practice for each stage; part 17, the values.
       on the approximation.
     - In ms the V′ = σ_y² timings are within one sample of the 3 ms figures (about 20, 23, 35 and 124 ms), since σ_u
       depends on w·Σs_k² ∝ Δ·Σs_k² (at the strong limit w ∝ Δ), nearly independent of Δ (derived).
-- **Its CPU** (estimated): about 5 node evaluations and a Newton step per newborn per sample, 100 to 200 ns. With
-  about 500 newborns inside the integral at once on noise (an estimate to be counted), that is 19 to 38 ms per
-  channel-second at 375 samples/s (plan D17: "17 to 33 ms was the figure for 3 ms samples; corrected 2026-10-24").
-  It multiplies no stories. Its CPU is its own line in the breakdown (part 15).
+- **Its CPU** (timed 2026-10-26 for the grid of plan D22; the earlier estimate of 100 to 200 ns per newborn-sample
+  was for the running sums it replaces): 490 ns per newborn-sample on noise, 595 on a mix of levels; with about 500
+  newborns inside the integral at once on noise (an estimate to be counted), +14.7 to +34.3 ms per channel-second net
+  of the ordinary scoring their samples replace. It multiplies no stories. Its CPU is its own line in the breakdown (part 15).
 - **Practice:** Bell had no mid-stream newborns: every path started at ŷ = 0.5, P = 0.1 (AGC units), and a new station
   entered through the larger process noise after a space. The flat prior over a physical range is the tracking
   literature's standard for births (topic 5, item 3).
@@ -2424,7 +2456,9 @@ projected budget by part.
      sums);
    - determinism across block splits of the input.
 2. **The newborn's approximations** (owner, 2026-10-24; plan D17); anything over a fraction of a nat goes to the owner:
-   - (a) the running sums against a brute-force integral, across the mid range of SNR (2b_k z_k ≈ 1 to 3);
+   - (a) the grid (plan D22) against a dense integral, per sample and per first mark, including levels above
+     +40 dB S₅₀₀; the narrowest σ_u at handover (below 0.05 goes to the owner) and the deepest revival of a point
+     below the largest (deeper than 40 nats goes to the owner);
    - (b) the amplitude held constant before the switch, under fading (0 dB S₅₀₀ at 2 Hz and 5 Hz);
    - its CPU, its own line in the breakdown.
 3. **The fading diagnosis's grid:** f_D = 0.1, 0.3, 1, 2 and 5 Hz × +10, +20 and +30 dB S₅₀₀, "PARIS PARIS" at
@@ -2565,6 +2599,7 @@ In the table, "survey" is the standard-practice survey of 2026-10-22, `docs/rese
 | Ω̄ table (variant) | inputs 1/ν, asinh(Ω̂/SE₀), ln(SE₀/σ_y²) to ζ = 400, ln λ (λ = κζ, κ from 0 to 2.8); 31 × 85 × 42 × 29 nodes, 12.8 MB; error 99th percentile 0.87%, largest 2.5% | — | inputs derived; the fourth input and its λ axis owner, 2026-10-25 (D17); grid heuristic, error measured; the Gaussian artifact's remedy decided only if the variant earns its place |
 | Level prior | flat, −15 to +85 | dB S₅₀₀ | placeholder (topic 5, item 3) |
 | Newborn switch | σ_u < 0.1 in ln a | 1 | derived (0.0075 nats skew cost); owner, 2026-10-24 (D17) |
+| Newborn grid | 128 points even in u = ln a over the prior (h = 0.0906 nepers), trapezoid; live range 80 nats | 1, nats | owner, 2026-10-26 (D22); 128 from the trapezoid bound and measured (0.003 nats per sample at worst); 80 heuristic, twice the deepest revival measured (41.5 nats) |
 | Systematic floor f | 0.02 | relative amplitude | placeholder until measured (owner, 2026-10-23, D17) |
 | C² memory | 10 (26.67 ms) | samples | owner, 2026-10-23 (D17) |
 | C² look-ahead | 10 (26.67 ms) | samples | owner, 2026-10-23 (D17) |

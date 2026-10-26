@@ -1108,6 +1108,25 @@ to 1.5 nats per first mark (0.8 at −5 dB S₅₀₀) and switches to N(μ, P) 
 Rejected: the two fixed weights; the fixed 0.1986 (the ordinary stories' fallback variant, undercounting weak evidence
 by about 9%). Same CPU as the fixed weights.
 
+**D22. The newborn's integral on a fixed grid in u = ln a (owner, 2026-10-26: "Okay with A").** The point-mass method
+(Bucy and Senne 1971): 128 points even over the prior's 11.51 nepers (h = 0.0906 nepers), each carrying
+Σ_j w_j(a_i)·Λ_j(a_i) with the exact ln I₀ and D21's weight; the trapezoid sum as a log-sum-exp; points more than
+80 nats below the largest dropped for good; ln I₀ and w from two tables shifted by one offset per sample. Measured on
+36 000 first marks (noise, −10 to +40 dB S₅₀₀, 25 and 50 WPM; scratch study of 2026-10-26): at most 0.003 nats per
+sample against a dense integral; 490 ns per newborn-sample on noise (595 on a mix), +3.6% (+8.3%) of the projected
+411 ms per channel-second net of the ordinary scoring it replaces. Rejected: the running sums, Newton and
+Gauss–Hermite of order 5 as designed, or cut off at the prior's edge (0.3–0.9 nats per sample at the 95th percentile,
+13 at worst, at every level); 96 points (0.044 nats at worst); adaptive Gauss–Kronrod (exact, about 10⁴ times too
+slow, estimated). **The two constants, as explained to the owner** (he said: "I don't understand your two heuristic
+constants at all. Those seem like abbreviated descriptions"): 128 points from the trapezoid rule's error bound,
+2·exp(−2π²σ²/h²) for a belief of width σ (derived), at the narrowest width the newborn reaches before it hands over
+(about 0.08 nepers at +40 dB S₅₀₀), checked by measurement; above +40 dB S₅₀₀ (not measured) one sample may narrow it
+to roughly 0.03, where 128 points would err about 0.17 nats, so the prototype records the narrowest width at handover
+and a value below 0.05 goes to the owner. 80 nats is heuristic: about twice the deepest a point was measured to fall
+and come back (41.5 nats; every other case under 17.3); keeping every point would remove it at about +40% of the
+projected total instead of +3.6% (estimated); the prototype records the deepest revival, and one deeper than 40 nats
+goes to the owner.
+
 ### Obvious items, stated for approval
 
 - **O1.** Only Morse and no-signal stories: no steady-carrier or nonsense-keying states (stated 2026-10-19).
