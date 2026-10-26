@@ -461,6 +461,20 @@ about the detector, but I would say all the decisions that have to do with the d
 - **Unmeasured on the detector path:** QSO turnovers (an answering station within 47 Hz moves the track) and drift;
   the new decoder's first prototype is measured on oracle channels only.
 
+### Matched and the channelizer's frequency following (coordinator's ruling, 2026-10-26; later)
+
+The spec's amendment of 2026-10-25 (§5.2, step 1) says the channelizer follows the signal detector's frequency for
+each track (the shared FFT's nearest bin, moved at more than half a bin, 11.72 Hz, then a fine phase-continuous
+shift), and D17 left to the implementation plan how the bank and Matched adapt, since their own shifts by the
+detector's frequency become redundant. The amended build (`docs/plans/2026-10-26-new-decoder-prototype-1b.md`, O2)
+applies the following to the new decoder's channels only. The bank stays frozen as the reference: its replay decodes
+fixed-bin channel streams and mixes by the label's offset and drift itself. **Matched, the product's default, still
+receives fixed-bin channels and re-centers with its own frequency tracker, which diverges from the spec's
+amendment.** To settle later: whether Matched takes the followed channel (its tracker then sees the station near
+0 Hz, and its re-centering becomes a residual correction or is removed), what that changes in its scores on the
+development set, and whether the frozen bank reference must then be re-recorded. Until then the spec's sentence holds
+for the new decoder only.
+
 ### The amplitude model inside marks under fast fading (owner, 2026-10-22: a known limitation)
 
 The new decoder's amplitude per story is one number (Bell 1977's form), updated at every envelope sample, every
