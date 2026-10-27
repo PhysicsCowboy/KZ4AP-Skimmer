@@ -740,7 +740,7 @@ documents updated per §8, and one commit. Task numbers are this plan's own.
 - [ ] **Step 5: Document** (same commit): §7, a paragraph: for the new decoder's channels the channelizer follows
   the detector's frequency (oracle: the label's), the coarse move at more than half a bin (11.72 Hz) and the fine
   phase-continuous shift, so the decoder receives its station near 0 Hz; derived response (a 1 Hz/s drift followed
-  1.1 to 1.6 Hz behind; an answering station moves the peak after about 0.7 s). A.7: the exact form (bin rule, the
+  about 1.0 Hz behind, corrected in Task 2's review; an answering station moves the peak after about 0.7 s). A.7: the exact form (bin rule, the
   phase rule at a move, the shift held per block), the response's derivation from the detector's 1 s average (plan
   D17), O2 and O3. §8d: the tracker's paragraph removed; the decoder reads its channel as received. A.8d: "The carrier
   tracker (new decoder)" removed; "behind the engine" states the oracle's segments. A.10: the eight removed rows.

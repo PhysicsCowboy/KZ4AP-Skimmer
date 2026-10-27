@@ -523,8 +523,8 @@ section of these conclusions.
      the 1 500 samples/s stream, one complex multiplication per sample. The channel's bins move when the track moves by
      more than half a bin (11.7 Hz). This is the usual coarse-plus-fine layout of FFT channelizers.
    - It is decision-free: the detector decides where the station is (the owner's rule of 2026-09-29).
-   - Every decoder receives the station near 0 Hz. Its error is the detector's: about 0.2 Hz steady, 1.1 to 1.6 Hz
-     behind a 1 Hz/s drift, up to 47 Hz for about 0.7 s at a QSO turnover. The front filter loses 0.01 dB at 2 Hz,
+   - Every decoder receives the station near 0 Hz. Its error is the detector's: about 0.2 Hz steady,
+     about 1.0 Hz behind a 1 Hz/s drift (derived: the detector's 1 s average lags a ramp by ḟ·τ; stage 1 measured 0.94–1.23 Hz on the detector track; corrected 2026-10-27 from 1.1 to 1.6 Hz, which were the Matched path's tracker figures), up to 47 Hz for about 0.7 s at a QSO turnover. The front filter loses 0.01 dB at 2 Hz,
      0.50 dB at 15 Hz and 2.1 dB at 30 Hz (dB relative to 0 Hz; derived).
    - The tracker, its trust tolerance, its untrusted search and its use of the detector's frequency are no longer
      decisions (amendment of 2026-10-25, part 10).
@@ -1416,7 +1416,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
 - **Fine step:** the stream is multiplied by a phase-continuous oscillator at −(f_det(t) − f_bin), one complex
   multiplication per sample. Every story reads the same samples.
 - **Response** (derived from the detector's 1 s average; plan D17):
-  - a drift of 1 Hz/s is followed 1.1 to 1.6 Hz behind;
+  - a drift of 1 Hz/s is followed about 1.0 Hz behind (derived: the detector's 1 s average lags a ramp by ḟ·τ; stage 1 measured 0.94–1.23 Hz on the detector track; corrected 2026-10-27 from 1.1 to 1.6 Hz, which were the Matched path's tracker figures);
   - an equally strong answering station moves the detector's peak after about 0.7 s, during which a station 30 Hz
     off loses about 2.1 dB (dB relative to 0 Hz) in the front filter.
 - **Oracle channels** (measurement only): the detector's frequency is the label's. Drifting test stations need the
