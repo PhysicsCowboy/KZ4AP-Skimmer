@@ -20,6 +20,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <functional>
 #include <limits>
 #include <numbers>
@@ -236,6 +237,10 @@ TEST(ChannelFollower, AStationParkedOnABinBoundary) {
         for (const std::size_t k : moved) worst_step = std::max(worst_step, std::abs(extra_step(out, ref, 32 * k)));
         EXPECT_LT(worst_step, 0.01);
         ::testing::Test::RecordProperty("worst_phase_error_rad_" + std::to_string(rate), std::to_string(worst));
+        ::testing::Test::RecordProperty("moves_" + std::to_string(rate), static_cast<int>(moved.size()));
+        ::testing::Test::RecordProperty("blocks_" + std::to_string(rate), static_cast<int>(out.bins.size()));
+        std::printf("[ info ] %d samples/s: the bin moved on %zu of %zu blocks; worst phase error %.2e rad\n", rate,
+                    moved.size(), out.bins.size(), worst);
     }
 }
 

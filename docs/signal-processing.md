@@ -240,10 +240,11 @@ block (21.33 ms, the detector's update interval); then, if f_det lies more
 than half a bin (11.72 Hz) from f_bin, the channel moves to the bin
 nearest f_det from the next block on, the oscillator's phase adjusted so
 that the station's phase does not step (derived). The usual coarse-plus-fine
-layout of FFT channelizers. Response (derived from the detector's 1 s
-average; design Part 1): a 1 Hz/s drift is followed 1.1 to 1.6 Hz behind,
-and an equally strong answering station moves the detector's peak after
-about 0.7 s.
+layout of FFT channelizers. Response (derived: the detector's power
+average, τ = 1 s, lags a ramp of ḟ by ḟ·τ; A.7): a 1 Hz/s drift is
+followed about 1.0 Hz behind (0.94 to 1.23 Hz measured on the detector's
+track in stage 1), and an equally strong answering station moves the
+detector's peak after about 0.7 s.
 
 Appendix: A.7.
 
@@ -546,8 +547,9 @@ every channel.
 **Open.** The ceiling binds on noise and in weak signals' gaps; its value
 awaits the plan's ceiling run (owner). The station arrives off-center by
 the detector's error: oracle channels follow the label's frequency, but on
-the detector path the 1.1 to 1.6 Hz lag behind a 1 Hz/s drift costs a
-390 ms block 2.8 to 6.5 dB of signal power (derived; A.7). Strong stations
+the detector path the lag of about 1.0 Hz behind a 1 Hz/s drift costs a
+390 ms block about 2.3 dB of signal power (2.0 to 3.6 dB over the measured
+0.94 to 1.23 Hz; derived; A.7). Strong stations
 decode exactly to +60 dB S₅₀₀ at every edge position tried (measured;
 without the systematic term, wrong from +38 dB S₅₀₀). Because C²'s first
 part is the channel's, the term has two measured costs (A.8d): a neighbor
@@ -1414,26 +1416,30 @@ channel streams are bit-identical to the fixed-bin channelizer's (tested, `Engin
   0.027 rad per block. Both are the detector's frequency doing its job, not a defect of the shift, so the tests compare
   with an independent reference (the input delayed by D_g, demodulated by the running sum of the held f_det) and
   find the output within about 10⁻⁶ rad of it at every sample, at 48 and 192 kHz, through two moves and through a station
-  parked 0.00125 Hz beyond a bin boundary that moves the channel on about half the blocks (measured, the tests'
-  recorded worst error; limit 0.01 rad).
+  parked 0.00125 Hz beyond a bin boundary that moves the channel on 1 380 of 2 812 blocks (measured, the tests'
+  recorded worst error, 7.3 × 10⁻⁷ rad at 48 kHz and 6.5 × 10⁻⁷ rad at 192 kHz for the parked station; limit
+  0.01 rad).
 - **Response** (derived from the detector's one-pole power average, τ = 1 s, section 6; design Part 1, plan D17).
   A ramp of ḟ Hz/s is followed ḟ·τ behind (exact for the power-weighted centroid of the averaged spectrum, A.6): 1.0 Hz
   at 1 Hz/s. The stage-1 simulation through the whole engine (A.6) found the track's own frequency, which the follower
-  uses, 0.94 to 1.23 Hz behind, and the Matched path's reported frequency 1.49 to 1.63 Hz behind (measured). The design
-  and plan D17 quote 1.1 to 1.6 Hz. An equally strong answering station, starting as the first stops, overtakes the
+  uses, 0.94 to 1.23 Hz behind, and the Matched path's reported frequency 1.49 to 1.63 Hz behind (measured). The
+  design's earlier 1.1 to 1.6 Hz were Matched-path figures (its tracker's derived lag ḟ·τ_f/P₁ = 1.1 Hz, and its
+  measured end-to-end lag up to 1.6 Hz), which the follower does not go through. An equally strong answering station,
+  starting as the first stops, overtakes the
   first station's decaying average when 1 − e^(−t/τ) = e^(−t/τ), at t = τ·ln 2 = 0.69 s (derived), "about 0.7 s".
 - **Cost.** One complex multiplication and one cos/sin pair per channel sample, 1 500 per channel-second, and a
   compare per block (derived); not measured.
 
 **Limitations: following the detector.**
 
-- The coarse rule has no hysteresis: a station parked on a bin boundary moves the channel on about half the blocks
-  (measured above). The moves are phase-continuous, and such a station lies 11.7 Hz from either bin, inside the channel
+- The coarse rule has no hysteresis: a station parked on a bin boundary moves the channel on 1 380 of 2 812 blocks,
+  49% (measured above; about half, as derived for f_det scattered symmetrically about the boundary). The moves are phase-continuous, and such a station lies 11.7 Hz from either bin, inside the channel
   filter's passband (flat to 0.015 dB relative to 0 Hz out to about 39 Hz), so the decoder sees nothing of them.
 - On the detector path the station is off-center by the detector's error (section 6), which the first prototype's
   390 ms blocks feel: a residual δ costs a coherent block of T seconds the energy fraction sinc²(δT) (A.7, "The cost
-  of a residual offset"), 1 dB of signal power at 0.667 Hz, 2.8 dB at 1.1 Hz and 6.5 dB at 1.6 Hz for T = 390 ms
-  (derived). The plan's measurements run on oracle channels.
+  of a residual offset"), for T = 390 ms 1 dB of signal power at 0.667 Hz, 2.3 dB at the derived 1.0 Hz lag behind
+  a 1 Hz/s drift, and 2.0 to 3.6 dB over the measured 0.94 to 1.23 Hz (derived). The plan's measurements run on
+  oracle channels.
 - `--record-channels` stops the run when a channel's center moves; a followed channel's recorded center is its f_det,
   so only a constant oracle frequency records.
 

@@ -168,7 +168,8 @@ viterbi::ViterbiConfig viterbi_config_from_json(const nlohmann::ordered_json& j)
 // engine, the shared parts and the decoder make of the configuration is made now, with their own messages
 // (std::invalid_argument), instead of when the first track is born in the middle of a recording on the detector path.
 // The engine builds the shared parts from its own channelizer's filter, as for its own decoders. Takes
-// config.decoder.front_end as FrontEnd::Viterbi and ignores config.oracle_frequencies_hz and config.viterbi_genie.
+// config.decoder.front_end as FrontEnd::Viterbi and ignores config.oracle_frequencies_hz, config.oracle_frequency_tracks
+// and config.viterbi_genie (the probe has one oracle channel at 0 Hz, with no track and no genie).
 void check_engine_accepts(const EngineConfig& config);
 
 // ---- The genie ----
