@@ -22,6 +22,7 @@ set(KZ4AP_VITERBI_SOURCES
   src/viterbi/level.cpp
   src/viterbi/search.cpp
   src/viterbi/hiss.cpp
+  src/viterbi/front_filter.cpp
 )
 
 add_library(kz4ap_engine
@@ -117,6 +118,7 @@ add_executable(kz4ap_viterbi_tests
   tests/viterbi/level_test.cpp
   tests/viterbi/search_test.cpp
   tests/viterbi/hiss_test.cpp
+  tests/viterbi/front_filter_test.cpp
   tests/viterbi_decoder_test.cpp
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)
@@ -135,4 +137,11 @@ set_tests_properties(ViterbiDecoder.FullSweep PROPERTIES ENVIRONMENT KZ4AP_VITER
 add_test(NAME ViterbiDecoder.StrongFullSweep COMMAND kz4ap_viterbi_tests
          --gtest_filter=ViterbiDecoder.StrongStationsAtEveryEdgePosition)
 set_tests_properties(ViterbiDecoder.StrongFullSweep PROPERTIES ENVIRONMENT KZ4AP_VITERBI_FULL_SWEEP=1
+                     LABELS full-sweep)
+# The front filter's output noise measured through the channelizer: 600 s of white noise at 48 and 192 kHz (Part 15,
+# item 1 of the design notes' amendment of 2026-10-25). Labeled full-sweep as above (without
+# KZ4AP_FRONT_FILTER_FULL_SWEEP the test skips).
+add_test(NAME OutputNoise.FullSweep COMMAND kz4ap_viterbi_tests
+         --gtest_filter=OutputNoise.MeasuredThroughTheChannelizer)
+set_tests_properties(OutputNoise.FullSweep PROPERTIES ENVIRONMENT KZ4AP_FRONT_FILTER_FULL_SWEEP=1
                      LABELS full-sweep)
