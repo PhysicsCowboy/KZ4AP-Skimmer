@@ -734,8 +734,8 @@ long run; the timing convention and rise times wait for the research.**
   samples/s stream, one complex multiplication per sample), and the channel's bins move when the track moves by more
   than half a bin (11.7 Hz): the usual coarse-plus-fine layout of FFT channelizers (design notes, topic 4, item 8).
   Decision-free: the detector decides where the station is (the owner's rule of 2026-09-29). Every decoder receives
-  the station near 0 Hz. Response (derived from the detector's 1 s average): a drift of 1 Hz/s is followed 1.1 to
-  1.6 Hz behind; an equally strong answering station moves the peak after about 0.7 s, during which a station 30 Hz
+  the station near 0 Hz. Response (derived from the detector's 1 s average): a drift of 1 Hz/s is followed about
+  1.0 Hz behind (corrected 2026-10-27 from 1.1 to 1.6 Hz, the Matched path's tracker figures; 0.94–1.23 Hz measured); an equally strong answering station moves the peak after about 0.7 s, during which a station 30 Hz
   off loses about 2 dB in the 76 Hz filter. This reverses the fixed channel recorded in the backlog the same day (that
   item updated). The bank's and Matched's own shifts by the detector's frequency become redundant; how they adapt is
   for the implementation plan.
