@@ -31,6 +31,12 @@
       "filter": { "include": { "label": "full-sweep" } } },
     { "name": "linux-full-sweep", "configurePreset": "linux",
       "output": { "outputOnFailure": true, "verbosity": "verbose" },
-      "filter": { "include": { "label": "full-sweep" } } }
+      "filter": { "include": { "label": "full-sweep" } } },
+    { "name": "windows-measurement", "configurePreset": "windows", "configuration": "Release",
+      "output": { "outputOnFailure": true, "verbosity": "verbose" },
+      "filter": { "include": { "label": "measurement" } } },
+    { "name": "linux-measurement", "configurePreset": "linux",
+      "output": { "outputOnFailure": true, "verbosity": "verbose" },
+      "filter": { "include": { "label": "measurement" } } }
   ]
 }

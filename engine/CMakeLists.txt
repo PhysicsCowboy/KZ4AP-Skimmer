@@ -27,6 +27,7 @@ set(KZ4AP_VITERBI_SOURCES
   src/viterbi/systematic.cpp
   src/viterbi/amplitude.cpp
   src/viterbi/long_run.cpp
+  src/viterbi/newborn.cpp
 )
 
 # The generated tables (plan 1b, Ruling 72, N6): sources written by kz4ap-viterbi-tables
@@ -146,6 +147,7 @@ add_executable(kz4ap_viterbi_tests
   tests/viterbi/systematic_test.cpp
   tests/viterbi/amplitude_test.cpp
   tests/viterbi/long_run_test.cpp
+  tests/viterbi/newborn_test.cpp
   tests/viterbi_decoder_test.cpp
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)
@@ -185,3 +187,14 @@ set(KZ4AP_OMEGA_BAR_VARIANT_TABLE ${PROJECT_SOURCE_DIR}/build/viterbi-tables/ome
 set_tests_properties(OmegaBarVariant.NeedsTable PROPERTIES
                      ENVIRONMENT KZ4AP_OMEGA_BAR_VARIANT_TABLE=${KZ4AP_OMEGA_BAR_VARIANT_TABLE}
                      LABELS needs-table SKIP_REGULAR_EXPRESSION "\\[  SKIPPED \\]")
+# The newborn integral's approximations (plan 1b, Task 9; design notes part 15, item 2, run in Task 16): the grid against
+# a dense integral from noise to +85 dB S500 and the amplitude held constant under fading, written to
+# build/measurements/newborn/. Labeled measurement (without KZ4AP_MEASUREMENT the test skips).
+add_test(NAME Newborn.Measurement COMMAND kz4ap_viterbi_tests --gtest_filter=Newborn.ApproximationsMeasured)
+set_tests_properties(Newborn.Measurement PROPERTIES
+                     ENVIRONMENT "KZ4AP_MEASUREMENT=1;KZ4AP_MEASUREMENT_DIR=${PROJECT_SOURCE_DIR}/build/measurements"
+                     LABELS measurement)
+# The newborn integral's CPU per newborn-sample, 500 newborns on noise and on a mix of levels (plan 1b, Task 9, step 4).
+# Labeled measurement as above.
+add_test(NAME Newborn.CpuMeasurement COMMAND kz4ap_viterbi_tests --gtest_filter=Newborn.CpuPerNewbornSample)
+set_tests_properties(Newborn.CpuMeasurement PROPERTIES ENVIRONMENT KZ4AP_MEASUREMENT=1 LABELS measurement)
