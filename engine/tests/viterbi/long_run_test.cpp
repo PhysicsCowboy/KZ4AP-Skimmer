@@ -11,9 +11,11 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <complex>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <functional>
 #include <iomanip>
@@ -175,6 +177,30 @@ private:
 
 // FS^2 per sigma_y^2: the power of L dB S500, 10^(L/10) x 500 Hz / 74.4998 Hz.
 double power_of_db(double db) { return std::pow(10.0, db / 10.0) * kS500BandwidthHz / kOmegaBarSigma2PerN0Hz; }
+
+// A path in the system's temporary directory that no other run shares (the stem, the process's clock and a random
+// 64-bit suffix, in hexadecimal), whose file is removed when the object goes out of scope.
+class TemporaryFile {
+public:
+    explicit TemporaryFile(const std::string& stem) {
+        std::random_device device;
+        const auto now = static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+        const std::uint64_t suffix = ((static_cast<std::uint64_t>(device()) << 32) | device()) ^ now;
+        char hex[17];
+        std::snprintf(hex, sizeof hex, "%016llx", static_cast<unsigned long long>(suffix));
+        path_ = std::filesystem::temp_directory_path() / (stem + "_" + hex + ".bin");
+    }
+    TemporaryFile(const TemporaryFile&) = delete;
+    TemporaryFile& operator=(const TemporaryFile&) = delete;
+    ~TemporaryFile() {
+        std::error_code ignored;
+        std::filesystem::remove(path_, ignored);
+    }
+    const std::filesystem::path& path() const { return path_; }
+
+private:
+    std::filesystem::path path_;
+};
 
 }  // namespace
 
@@ -533,7 +559,8 @@ TEST(OmegaBar, BoundsAreChecked) {
     EXPECT_EQ(defaults->omega_bar().values(), OmegaBarTable::compiled().values());
 
     const OmegaBarTable built = OmegaBarTable::build(-5.0, 60.0, OmegaBarLayout{});
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "kz4ap_omega_bar_bounds_test.bin";
+    const TemporaryFile file("kz4ap_omega_bar_bounds_test");
+    const std::filesystem::path& path = file.path();
     built.save(path.string());
     const OmegaBarTable loaded = OmegaBarTable::load(path.string());
     EXPECT_EQ(loaded.values(), built.values());
@@ -559,8 +586,6 @@ TEST(OmegaBar, BoundsAreChecked) {
     }
     for (const char* bound : {"-5", "60", "-15", "85"})
         EXPECT_NE(mismatch.find(bound), std::string::npos) << bound << " in: " << mismatch;
-    std::error_code ignored;
-    std::filesystem::remove(path, ignored);
     EXPECT_EQ(table.lo_db(), -5.0);
     EXPECT_EQ(table.hi_db(), 60.0);
     std::mt19937_64 rng(5);
@@ -576,8 +601,8 @@ TEST(OmegaBar, BoundsAreChecked) {
     }
     std::cout << "the -5 to +60 dB S500 table: largest relative error " << std::setprecision(3) << worst << "\n";
     EXPECT_LE(worst, 1e-3);
-    EXPECT_THROW((void)OmegaBarTable::load((std::filesystem::temp_directory_path() / "kz4ap_no_such_table.bin").string()),
-                 std::runtime_error);
+    const TemporaryFile missing("kz4ap_no_such_table");  // never written
+    EXPECT_THROW((void)OmegaBarTable::load(missing.path().string()), std::runtime_error);
 }
 
 TEST(OmegaBar, NoiseBandwidthIsTheChains) {

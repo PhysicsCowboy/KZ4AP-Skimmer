@@ -270,6 +270,13 @@ BlockEvidence block_evidence(double s_abs, double m_signal, double mu, double p,
 // relative spreads of 0.01 to 3 and w of 0.1986, 0.23, 0.2754 and 1 (Evidence.ScoreMatchesADenseIntegral); within
 // 9.1e-4 nats, 1.9e-4 and 0.037% across the regime's tables at 17 values of w and at 1
 // (Evidence.BroadPriorsMatchDenseIntegralsAcrossW).
+//
+// The broad-prior regime's w axis (1): its tables serve w in [kBroadPriorLowestW, kBroadPriorHighestW] (the fixed
+// weight's 0.1986 to the 192 kHz chain's weak limit 0.27544, rounded up) and w = 1; the weight table's nodes must lie
+// within it (Weight.TableLiesWithinTheBroadPriorRegimesAxis).
+inline constexpr double kBroadPriorLowestW = 0.1986;
+inline constexpr double kBroadPriorHighestW = 0.2755;
+
 struct SampleEvidence {
     double score_nats;  // nats
     Moments amplitude;  // the posterior mean (FS) and variance (FS^2) of a

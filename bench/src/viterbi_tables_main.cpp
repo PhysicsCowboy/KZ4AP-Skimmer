@@ -74,23 +74,14 @@ std::uint64_t splitmix64(std::uint64_t& state) {
     return z ^ (z >> 31);
 }
 
-class Noise {
+// Uniform deviates on [0, 1), 53 bits, from xoshiro256** seeded by splitmix64: the tool's one generator (the weight
+// table's noise and the Omega_bar table's random points).
+class Uniform {
 public:
-    explicit Noise(std::uint64_t seed) {
+    explicit Uniform(std::uint64_t seed) {
         for (auto& s : state_) s = splitmix64(seed);
     }
-    // A complex deviate of E|n|^2 = 1 (each component N(0, 1/2)).
-    std::complex<double> next() {
-        const double u1 = 1.0 - uniform();  // (0, 1]
-        const double u2 = uniform();
-        const double r = std::sqrt(-std::log(u1));
-        const double phase = 2.0 * std::numbers::pi * u2;
-        return {r * std::cos(phase), r * std::sin(phase)};
-    }
-
-private:
-    static std::uint64_t rotl(std::uint64_t x, int k) { return (x << k) | (x >> (64 - k)); }
-    double uniform() {  // [0, 1), 53 bits
+    double next() {
         const std::uint64_t result = rotl(state_[1] * 5, 7) * 9;
         const std::uint64_t t = state_[1] << 17;
         state_[2] ^= state_[0];
@@ -101,7 +92,27 @@ private:
         state_[3] = rotl(state_[3], 45);
         return static_cast<double>(result >> 11) * 0x1.0p-53;
     }
+
+private:
+    static std::uint64_t rotl(std::uint64_t x, int k) { return (x << k) | (x >> (64 - k)); }
     std::array<std::uint64_t, 4> state_{};
+};
+
+// Complex Gaussian deviates by Box-Muller from Uniform.
+class Noise {
+public:
+    explicit Noise(std::uint64_t seed) : uniform_(seed) {}
+    // A complex deviate of E|n|^2 = 1 (each component N(0, 1/2)).
+    std::complex<double> next() {
+        const double u1 = 1.0 - uniform_.next();  // (0, 1]
+        const double u2 = uniform_.next();
+        const double r = std::sqrt(-std::log(u1));
+        const double phase = 2.0 * std::numbers::pi * u2;
+        return {r * std::cos(phase), r * std::sin(phase)};
+    }
+
+private:
+    Uniform uniform_;
 };
 
 // --- I1(x) / I0(x) for x >= 0: Abramowitz and Stegun 9.8.1 to 9.8.4 (relative errors below 2.2e-7) ---
@@ -410,29 +421,6 @@ int run_weight(int argc, char** argv) {
 }
 
 // --- The default Omega_bar table (long_run.hpp) ---
-
-// Uniform deviates on [0, 1) from xoshiro256** seeded by splitmix64 (as Noise), for the error's random points.
-class Uniform {
-public:
-    explicit Uniform(std::uint64_t seed) {
-        for (auto& s : state_) s = splitmix64(seed);
-    }
-    double next() {
-        const std::uint64_t result = rotl(state_[1] * 5, 7) * 9;
-        const std::uint64_t t = state_[1] << 17;
-        state_[2] ^= state_[0];
-        state_[3] ^= state_[1];
-        state_[1] ^= state_[2];
-        state_[0] ^= state_[3];
-        state_[2] ^= t;
-        state_[3] = rotl(state_[3], 45);
-        return static_cast<double>(result >> 11) * 0x1.0p-53;
-    }
-
-private:
-    static std::uint64_t rotl(std::uint64_t x, int k) { return (x << k) | (x >> (64 - k)); }
-    std::array<std::uint64_t, 4> state_{};
-};
 
 // The table's error against the closed form on `points` random points: nu log-uniform on [1, nu_max], Omega_hat /
 // sigma_y^2 uniform in asinh on [-5, ratio_max] (plan 1b, Task 7: nu_max 1 000, ratio_max 10^9).

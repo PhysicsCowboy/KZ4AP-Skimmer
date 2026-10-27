@@ -50,8 +50,11 @@
 //    beyond. nu below 1 (rounding only: nu >= 1 by the Satterthwaite form) and nu not a number read as 1. Measured
 //    against the closed form (the generator's 10 000 points, nu log-uniform on [1, 1 000], Omega_hat / sigma_y^2
 //    uniform in asinh on [-5, 10^9]): at most 0.055%; with nu up to 10^6, 0.056% (the generated file records the run).
-//    Known limitation: above nu of about 10^4 (hours of key-down in one over) a corner is narrower than the fine step,
-//    and within it the error can pass 0.1% (0.14% measured at nu = 7.4 x 10^4 on a table for -5 and +60 dB S500).
+//    Known limitation, on the compiled table as on any other: above nu of about 1.5 x 10^4 (more than about an hour of
+//    key-down in one over: 12 763 after an hour) a corner is narrower than the fine step, and within it the error
+//    passes 0.1%, up to about 0.14% (measured on the compiled table within 0.3 of the corners in Task 7's review: 0.096%
+//    at nu = 1.5 x 10^4, 0.140% at 3 x 10^4 and 10^5, 0.105% at 3 x 10^5, 0.066% at 10^6; 0.14% at nu = 7.4 x 10^4 on
+//    a table for -5 and +60 dB S500). The random points above miss the corners.
 //    The plan's axes, 1/nu and x = ln(beta / Omega_hi) = z + ln nu, were not used: on them the corners move with ln nu
 //    and the row 1/nu = 0 is degenerate (Omega_bar = Omega_lo at every x), so the plan's 31 x 256 grid missed by up to
 //    100% (measured in scratch), and meeting 0.1% on them would need fine x everywhere the corners pass and hundreds

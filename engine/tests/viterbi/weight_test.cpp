@@ -2,6 +2,7 @@
 
 #include "kz4ap/channelizer.hpp"
 #include "kz4ap/viterbi/front_filter.hpp"
+#include "kz4ap/viterbi/observation.hpp"
 
 #include <gtest/gtest.h>
 
@@ -52,12 +53,13 @@ TEST(Weight, MatchesTheCurve) {
 }
 
 TEST(Weight, TableLiesWithinTheBroadPriorRegimesAxis) {
-    // Every node of the table lies within the w axis of the per-sample score's broad-prior regime, [0.1986, 0.2755]
-    // (observation.cpp, kTemperedLowestW and kTemperedHighestW): outside it the regime's tables do not serve and broad
-    // priors fall back to the bare quadrature (plan 1b, Task 5's review). Today the nodes lie 5e-5 and 6e-5 inside.
+    // Every node of the table lies within the w axis of the per-sample score's broad-prior regime,
+    // [kBroadPriorLowestW, kBroadPriorHighestW] = [0.1986, 0.2755] (observation.hpp): outside it the regime's tables do
+    // not serve and broad priors fall back to the bare quadrature (plan 1b, Task 5's review). Today the nodes lie 5e-5
+    // and 6e-5 inside.
     for (std::size_t i = 0; i < kWeightTable.size(); ++i) {
-        EXPECT_GE(kWeightTable[i], 0.1986) << "node " << i;
-        EXPECT_LE(kWeightTable[i], 0.2755) << "node " << i;
+        EXPECT_GE(kWeightTable[i], kBroadPriorLowestW) << "node " << i;
+        EXPECT_LE(kWeightTable[i], kBroadPriorHighestW) << "node " << i;
     }
 }
 

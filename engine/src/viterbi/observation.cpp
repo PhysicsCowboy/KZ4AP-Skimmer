@@ -496,8 +496,8 @@ WeightMoments weight_moments(double z, double kappa) {
 // read only at w = 1 exactly). Elsewhere in w the adaptive quadrature alone serves (unmeasured there). Built once, on
 // first use, for every caller: 1.93 MB per node of w, 11.6 MB in all, 0.31 s (measured, a Release build).
 
-constexpr double kTemperedLowestW = 0.1986;   // 1
-constexpr double kTemperedHighestW = 0.2755;  // 1
+constexpr double kTemperedLowestW = kBroadPriorLowestW;    // 1 (observation.hpp)
+constexpr double kTemperedHighestW = kBroadPriorHighestW;  // 1 (observation.hpp)
 constexpr int kTemperedWNodes = 5;            // nodes of w over [kTemperedLowestW, kTemperedHighestW]
 constexpr double kTemperedTopY = 4.0;         // y = sqrt(w) zeta, at most (the same steps as the block form's tables)
 constexpr int kTemperedYSteps = 400;          // y = 0, 0.01, ..., 4
