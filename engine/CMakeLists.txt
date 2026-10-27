@@ -23,6 +23,7 @@ set(KZ4AP_VITERBI_SOURCES
   src/viterbi/search.cpp
   src/viterbi/hiss.cpp
   src/viterbi/front_filter.cpp
+  src/viterbi/mark_template.cpp
 )
 
 add_library(kz4ap_engine
@@ -119,6 +120,7 @@ add_executable(kz4ap_viterbi_tests
   tests/viterbi/search_test.cpp
   tests/viterbi/hiss_test.cpp
   tests/viterbi/front_filter_test.cpp
+  tests/viterbi/mark_template_test.cpp
   tests/viterbi_decoder_test.cpp
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)
@@ -145,3 +147,7 @@ add_test(NAME OutputNoise.FullSweep COMMAND kz4ap_viterbi_tests
          --gtest_filter=OutputNoise.MeasuredThroughTheChannelizer)
 set_tests_properties(OutputNoise.FullSweep PROPERTIES ENVIRONMENT KZ4AP_FRONT_FILTER_FULL_SWEEP=1
                      LABELS full-sweep)
+# make_template_tables' build time at 192 kHz, under 1 s on the desktop (heuristic bound; plan 1b, Task 4). Labeled
+# measurement: the default test presets exclude it (without KZ4AP_MEASUREMENT the test skips).
+add_test(NAME MarkTemplate.Measurement COMMAND kz4ap_viterbi_tests --gtest_filter=MarkTemplate.BuildsQuickly)
+set_tests_properties(MarkTemplate.Measurement PROPERTIES ENVIRONMENT KZ4AP_MEASUREMENT=1 LABELS measurement)

@@ -22,10 +22,10 @@
   "testPresets": [
     { "name": "windows", "configurePreset": "windows", "configuration": "Release",
       "output": { "outputOnFailure": true },
-      "filter": { "exclude": { "label": "full-sweep" } } },
+      "filter": { "exclude": { "label": "full-sweep|measurement" } } },
     { "name": "linux", "configurePreset": "linux",
       "output": { "outputOnFailure": true },
-      "filter": { "exclude": { "label": "full-sweep" } } },
+      "filter": { "exclude": { "label": "full-sweep|measurement" } } },
     { "name": "windows-full-sweep", "configurePreset": "windows", "configuration": "Release",
       "output": { "outputOnFailure": true, "verbosity": "verbose" },
       "filter": { "include": { "label": "full-sweep" } } },
