@@ -25,6 +25,7 @@ set(KZ4AP_VITERBI_SOURCES
   src/viterbi/front_filter.cpp
   src/viterbi/mark_template.cpp
   src/viterbi/systematic.cpp
+  src/viterbi/amplitude.cpp
 )
 
 # The generated tables (plan 1b, Ruling 72, N6): sources written by kz4ap-viterbi-tables
@@ -140,6 +141,7 @@ add_executable(kz4ap_viterbi_tests
   tests/viterbi/mark_template_test.cpp
   tests/viterbi/weight_test.cpp
   tests/viterbi/systematic_test.cpp
+  tests/viterbi/amplitude_test.cpp
   tests/viterbi_decoder_test.cpp
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)
