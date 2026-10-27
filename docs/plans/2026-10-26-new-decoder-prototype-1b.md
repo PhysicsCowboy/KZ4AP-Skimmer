@@ -848,7 +848,7 @@ documents updated per §8, and one commit. Task numbers are this plan's own.
   - `MarkTemplate.StepResponseFigures`: half amplitude 20.79 ± 0.02 ms after key-down; 10–90% rise 10.03 ± 0.02 ms;
     1–99% rise 14.73 ± 0.03 ms; S = 1 within 10⁻¹² from 16 samples after any offset.
   - `MarkTemplate.DotPeaks`: a 12 ms dot (100 WPM) peaks at 0.900 ± 0.002, a 15 ms dot (80 WPM) at 0.984 ± 0.002,
-    a 48 ms dot (25 WPM) at 1.000 ± 0.001.
+    a 48 ms dot (25 WPM) at 1.003 ± 0.001 (the response overshoots: s_11 = 1.0023; corrected in Task 4).
   - `MarkTemplate.MatchesTheChainOnKeyedCarriers` (Part 15, item 1): `keyed_signal_d17` noise-free, a 48 ms mark and
     a 12 ms dot at 8 edge positions u = (i + ½)Δ/8, through `Channelizer` and `EnvelopeSampler`: each e_k equals
     S(jΔ + u) (fall: its mirror) within 10⁻⁴ of full. This also fixes the channelizer's time reference: if channel
