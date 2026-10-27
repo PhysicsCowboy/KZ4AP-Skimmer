@@ -1,6 +1,7 @@
 # New decoder: the amended build (prototype 1b) Implementation Plan
 
-> **Status: draft (2026-10-26), reviewed; its questions decided by the owner (D19–D22, §3.3); fix round 2 applied.**
+> **Status: approved by the owner, 2026-10-26 ("Approved"), after two reviews and four fix rounds; its questions
+> decided by him (D19–D22, §3.3).**
 > The owner does not read this plan: it is the executors' document, and every decision reaches him in chat, in words.
 > His answers are recorded here by the coordinator.
 >
