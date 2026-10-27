@@ -2105,8 +2105,9 @@ measure; part 16, standard practice for each stage; part 17, the values.
     for every point, so ln I₀ and w at every point are two fixed tables shifted by one offset per sample: no
     logarithm, polynomial or division per point. ln I₀(x) = x − ½ln x + G(ln x), G tabulated at steps of 0.023
     nepers of ln x over [−20, +165] with 4-point Lagrange interpolation (ln I₀ = x²/4 where every point has
-    x < 10⁻³); w tabulated against ln q at steps of 0.18 with linear interpolation. Against direct evaluation: at
-    most 3.1 × 10⁻⁴ nats per sample and 0.0037 nats per first mark.
+    x < 10⁻³); w tabulated against ln q at steps of 0.0906 (h; 0.18 at first, refined in the build's Task 9) with linear
+    interpolation. Against direct evaluation: at most 6.5 × 10⁻⁵ nats per sample and 9.7 × 10⁻⁴ nats per first mark
+    (measured; 3.1 × 10⁻⁴ and 0.0037 at the first step).
   - **The weight (amended 2026-10-26, owner: "a"; plan D21):** w follows part 4's curve at each amplitude of the
     integral, w(q) with q = a²s_k²/σ_y², the same rule as an ordinary story's, evaluated at the parameter. It replaces
     the two fixed weights first decided (0.275 with the weak-signal form of ln I₀, 0.1986 with the strong-signal form;

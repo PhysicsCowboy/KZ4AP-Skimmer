@@ -1135,7 +1135,7 @@ method, Gauss–Hermite and the newborn's two regime weights (0.275 and 0.1986) 
     ln q_i = 2u_i + ln(s²/σ_y²), so ln I₀ and w at every point are two fixed tables shifted by one offset per sample,
     with one interpolation fraction for all points. ln I₀(x) = x − ½ln x + G(ln x), G tabulated at steps of h/4 =
     0.023 nepers of ln x over [−20, +165], 4-point Lagrange interpolation; where every point has x < 10⁻³,
-    ln I₀ = x²/4. w tabulated against ln q at steps of 2h = 0.18, linear interpolation, built from Task 5's 129-node
+    ln I₀ = x²/4. w tabulated against ln q at steps of h = 0.0906 (Ruling 81; 2h at first), linear interpolation, built from Task 5's 129-node
     ξ table (heuristic steps, measured).
   - **The switch** (owner, 2026-10-24 and 2026-10-25): when the grid's own posterior standard deviation in u falls
     below 0.1, or at the latest at the last sample of the first mark's template with s ≠ 0, j = 15 after the claimed
