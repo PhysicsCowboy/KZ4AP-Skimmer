@@ -9,7 +9,8 @@
 // that two runs write byte-identical files (the determinism the plan asks for); the result file written before the
 // statistics, so that a statistics file that cannot be finished loses nothing of the run; a finished file whose last
 // step, the rename into place, fails kept under its own name (the message says where); a destination that cannot be
-// created refused before the run, not after it; and one path given for the result and the statistics refused.
+// created refused before the run, not after it; one path given for the result and the statistics refused; the oracle
+// channels reported at their labels' frequencies, which they follow; and a per-station label of a drifting QSO refused.
 #include "viterbi_json.hpp"
 
 #include "test_signals.hpp"
@@ -374,6 +375,40 @@ TEST_F(BenchRun, ARunWithoutStatsWritesNoStatisticsAndStatsDetailAloneIsRefused)
     EXPECT_EQ(o.status, 2);
     EXPECT_TRUE(contains(o.err, "--stats-detail needs --stats")) << o.err;
     EXPECT_FALSE(fs::exists(path("never.json")));
+}
+
+TEST_F(BenchRun, TheOracleChannelsFollowTheLabelsFrequency) {
+    // --oracle --decoder viterbi gives each oracle channel its label's frequency (design Part 1; plan O3): the
+    // channel follows it, and the track is reported there (the labels' 300 and -900 Hz, not their bins' centers,
+    // 304.6875 and -890.625 Hz). The other decoders' channels stay on their bins.
+    const Outcome o = run({"--oracle", "--decoder", "viterbi", "--no-timing", "--json", path("result.json")});
+    ASSERT_EQ(o.status, 0) << o.err;
+    const json r = read_json(path("result.json"));
+    ASSERT_EQ(r.at("tracks").size(), 2u);
+    EXPECT_EQ(r.at("tracks").at(0).at("freq_hz"), 300.0);
+    EXPECT_EQ(r.at("tracks").at(1).at("freq_hz"), -900.0);
+    const Outcome envelope = run({"--oracle", "--decoder", "envelope", "--no-timing", "--json", path("envelope.json")});
+    ASSERT_EQ(envelope.status, 0) << envelope.err;
+    EXPECT_EQ(read_json(path("envelope.json")).at("tracks").at(0).at("freq_hz"), 304.6875);
+}
+
+TEST_F(BenchRun, APerStationLabelOfADriftingQsoIsRefused) {
+    // A per-station label of a QSO that drifts (qso_index, drift_hz_per_s): its start_s is the station's first over,
+    // not the QSO's start from which the drift counts, so its carrier is not known; the run is refused before it
+    // decodes anything, naming the label, and writes no result. The same label without drift runs.
+    json labels = read_json(labels_);
+    labels["signals"][1]["qso_index"] = 0;
+    labels["signals"][1]["drift_hz_per_s"] = 0.5;
+    std::ofstream(labels_) << labels.dump(2) << '\n';
+    const Outcome o = run({"--oracle", "--decoder", "viterbi", "--no-timing", "--json", path("result.json")});
+    EXPECT_EQ(o.status, 2);
+    EXPECT_TRUE(contains(o.err, "signal 1")) << o.err;
+    EXPECT_TRUE(contains(o.err, "drift")) << o.err;
+    EXPECT_FALSE(fs::exists(path("result.json")));
+    labels["signals"][1]["drift_hz_per_s"] = 0.0;
+    std::ofstream(labels_) << labels.dump(2) << '\n';
+    const Outcome still = run({"--oracle", "--decoder", "viterbi", "--no-timing", "--json", path("result.json")});
+    EXPECT_EQ(still.status, 0) << still.err;
 }
 
 }  // namespace

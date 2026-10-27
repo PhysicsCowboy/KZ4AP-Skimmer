@@ -6,6 +6,7 @@
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
+#include <string>
 
 namespace kz4ap {
 
@@ -80,9 +81,21 @@ double Channelizer::bin_to_hz(int bin) const {
     return static_cast<double>(bin) * config_.sample_rate / config_.fft_size;
 }
 
-void Channelizer::add_channel(std::uint32_t id, int center_bin) { channels_[id] = center_bin; }
+void Channelizer::add_channel(std::uint32_t id, int center_bin) {
+    channels_[id] = center_bin;
+    moves_.erase(id);
+}
 
-void Channelizer::remove_channel(std::uint32_t id) { channels_.erase(id); }
+void Channelizer::remove_channel(std::uint32_t id) {
+    channels_.erase(id);
+    moves_.erase(id);
+}
+
+void Channelizer::set_center_bin(std::uint32_t id, int center_bin) {
+    if (channels_.find(id) == channels_.end())
+        throw std::invalid_argument("Channelizer::set_center_bin: no channel " + std::to_string(id));
+    moves_[id] = center_bin;  // applied when the next block starts, so that a sink's call never changes the current one
+}
 
 void Channelizer::push(std::span<const Sample> in, const Sink& sink) {
     for (const Sample& s : in) {
@@ -104,6 +117,10 @@ void Channelizer::process_block(const Sink& sink) {
     const std::int64_t block_start = static_cast<std::int64_t>(block_index_) * hop_ - (n - hop_);
     const int keep = hop_ / decimation_;
     const std::uint64_t first_index = block_index_ * static_cast<std::uint64_t>(keep);
+
+    // The moves asked for since the last block (set_center_bin) take effect now, before any channel is cut.
+    for (const auto& [id, center] : moves_) channels_.at(id) = center;
+    moves_.clear();
 
     for (const auto& [id, center] : channels_) {
         for (int k = -m / 2; k < m / 2; ++k) {

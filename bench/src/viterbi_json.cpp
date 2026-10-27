@@ -33,8 +33,6 @@ using nlohmann::ordered_json;
     X(fist_sigmas) X(fist_shifts_dots) X(beam_nats) X(ceiling) X(fading_spread_hz) X(block_loss_db)                 \
     X(keying_rise_s) X(systematic_floor) X(over_rate_per_s) X(rescue_epsilon) X(word_end_p) X(over_end_q)          \
     X(level_min_db) X(level_max_db) X(quadrature_order) X(hiss_half_width_hz) X(hiss_percentile) X(hiss_average_s)  \
-    X(tracker_window_s) X(tracker_hop_s) X(tracker_search_hz) X(tracker_gate_db) X(tracker_drift_sd_hz_per_s)       \
-    X(tracker_drift_noise) X(genie_frequency_offset_hz) X(genie_frequency_drift_hz_per_s)                           \
     X(genie_fading_spread_hz) X(stats)
 
 ordered_json field_json(double v) { return ordered_json(v); }
@@ -457,6 +455,7 @@ void check_engine_accepts(const EngineConfig& config) {
     EngineConfig probe = config;
     probe.decoder.front_end = FrontEnd::Viterbi;
     probe.oracle_frequencies_hz = {0.0};  // one oracle channel: the engine builds a decoder for it now
+    probe.oracle_frequency_tracks.clear();
     probe.viterbi_genie.clear();
     EventBus bus;
     Engine engine(probe, bus);  // throws what the engine, the shared parts or the decoder refuse; discarded
@@ -466,15 +465,16 @@ void check_engine_accepts(const EngineConfig& config) {
 
 GenieKind parse_genie_kind(const std::string& name) {
     if (name == "fist") return GenieKind::Fist;
-    if (name == "frequency") return GenieKind::Frequency;
     if (name == "fading") return GenieKind::Fading;
-    throw std::invalid_argument("--genie '" + name + "': must be fist, frequency or fading");
+    if (name == "frequency")
+        throw std::invalid_argument(
+            "the frequency genie is removed: oracle channels follow the label's frequency (design Part 1)");
+    throw std::invalid_argument("--genie '" + name + "': must be fist or fading");
 }
 
 const char* genie_kind_name(GenieKind kind) {
     switch (kind) {
         case GenieKind::Fist: return "fist";
-        case GenieKind::Frequency: return "frequency";
         case GenieKind::Fading: return "fading";
     }
     return "?";
@@ -487,19 +487,6 @@ viterbi::ViterbiGenie genie_from_label(const LabeledSignal& label, std::size_t i
     const bool several_stations = label.sender_count > 1;
     const std::string stations = std::to_string(label.sender_count) + " stations, each with its own ";
     viterbi::ViterbiGenie genie;
-    if (wants(GenieKind::Frequency)) {
-        if (several_stations)
-            throw std::invalid_argument(who + ": the label holds " + stations +
-                                        "carrier; the genie frequency needs the per-station labels");
-        if (label.per_station && label.drift_hz_per_s != 0.0)
-            throw std::invalid_argument(who + ": a per-station label of a QSO that drifts (" +
-                                        std::to_string(label.drift_hz_per_s) +
-                                        " Hz/s): its start_s is the station's first over, not the QSO's start from "
-                                        "which the drift is measured, so its carrier at start_s is not known");
-        genie.frequency_hz = label.freq_offset_hz;
-        genie.frequency_time_s = label.start_s;
-        genie.drift_hz_per_s = label.drift_hz_per_s;
-    }
     if (wants(GenieKind::Fading)) {
         if (label.per_station && !label.fading_hz_written)
             throw std::invalid_argument(who + ": a per-station label of a QSO written without fading_hz (by a "
@@ -547,9 +534,6 @@ viterbi::ViterbiGenie genie_from_label(const LabeledSignal& label, std::size_t i
 
 ordered_json to_json(const viterbi::ViterbiGenie& genie) {
     ordered_json j = ordered_json::object();
-    j["frequency_hz"] = field_json(genie.frequency_hz);
-    j["frequency_time_s"] = genie.frequency_time_s;
-    j["drift_hz_per_s"] = genie.drift_hz_per_s;
     j["fading_spread_hz"] = field_json(genie.fading_spread_hz);
     if (genie.fist) {
         ordered_json fist = ordered_json::object();
@@ -562,6 +546,30 @@ ordered_json to_json(const viterbi::ViterbiGenie& genie) {
         j["fist"] = nullptr;
     }
     return j;
+}
+
+// ---- The oracle's frequency ----
+
+std::vector<OracleSegment> oracle_frequency_track(const LabeledSignal& label, std::size_t index) {
+    if (label.per_station && label.drift_hz_per_s != 0.0)
+        throw std::invalid_argument("oracle frequency, signal " + std::to_string(index) +
+                                    ": a per-station label of a QSO that drifts (" +
+                                    std::to_string(label.drift_hz_per_s) +
+                                    " Hz/s): its start_s is the station's first over, not the QSO's start from which "
+                                    "the drift is measured, so its carrier is not known");
+    // A QSO on one track: the over in progress, at its sender's carrier, from each transmission's start (the first
+    // from 0 s), held through the silence after it.
+    if (label.sender_count > 0 && !label.transmissions.empty()) {
+        std::vector<OracleSegment> track;
+        for (std::size_t i = 0; i < label.transmissions.size(); ++i) {
+            const Transmission& t = label.transmissions[i];
+            track.push_back({i == 0 ? 0.0 : t.start_s, label.freq_offset_hz + t.offset_hz, label.drift_hz_per_s,
+                             label.start_s});
+        }
+        return track;
+    }
+    // One station: its frequency at start_s with its drift from there, from 0 s.
+    return {{0.0, label.freq_offset_hz, label.drift_hz_per_s, label.start_s}};
 }
 
 // ---- The rules among the options ----

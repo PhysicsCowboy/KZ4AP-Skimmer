@@ -63,8 +63,9 @@ constexpr const char* kUsage =
     "                   [--no-timing] [--baseline BASELINE.json] [--oracle]\n"
     "                   [--decoder envelope|matched|bank|viterbi]\n"
     "                   [--record-channels DIR (with --oracle: the oracle channels; without: the detector's)]\n"
-    "                   [--set NAME=VALUE ...] [--genie fist|frequency|fading ...] [--stats STATS.json [--stats-detail]]\n"
-    "                   (--decoder viterbi; NAME is a field of ViterbiConfig; --genie reads the labels;\n"
+    "                   [--set NAME=VALUE ...] [--genie fist|fading ...] [--stats STATS.json [--stats-detail]]\n"
+    "                   (--decoder viterbi, whose oracle channels follow the labels' frequencies;\n"
+    "                   NAME is a field of ViterbiConfig; --genie reads the labels;\n"
     "                   --genie and --stats need --oracle; --stats writes the decoder's search statistics: a summary\n"
     "                   for each channel, or with --stats-detail every newborn line, which is 45 kB per channel-second)\n"
     "       kz4ap-bench --labels LABELS.json --score-decoded DECODED.json [--json OUT.json] [--baseline BASELINE.json]\n";
@@ -272,6 +273,12 @@ int run_engine(const Args& args) {
     if (args.front_end == FrontEnd::Viterbi) {
         config.viterbi = args.viterbi;
         if (args.stats) config.viterbi.stats = true;  // the search keeps its statistics only when asked
+        // Each oracle channel follows its label's true frequency, drifting or switching at a QSO's overs (design Part 1;
+        // plan O3), in the order of the labels (EngineConfig::oracle_frequency_tracks).
+        if (args.oracle) {
+            for (std::size_t i = 0; i < labels->signals.size(); ++i)
+                config.oracle_frequency_tracks.push_back(oracle_frequency_track(labels->signals[i], i));
+        }
         // --genie: each oracle channel gets the truth of its station from its label, in the order of the labels, which
         // is the order of oracle_frequencies_hz and of the channels' track ids (EngineConfig::viterbi_genie)
         if (!args.viterbi_options.genie.empty()) {

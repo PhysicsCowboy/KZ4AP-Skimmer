@@ -5,6 +5,10 @@
 #include "kz4ap/viterbi_decoder.hpp"
 
 #include <chrono>
+#include <cmath>
+#include <cstddef>
+#include <optional>
+#include <span>
 #include <stdexcept>
 #include <utility>
 
@@ -35,7 +39,38 @@ DetectorConfig detector_config(const EngineConfig& c) {
     return d;
 }
 
+// The oracle tracks' rules (EngineConfig::oracle_frequency_tracks).
+void check_oracle_tracks(const EngineConfig& c) {
+    if (c.oracle_frequency_tracks.empty()) return;
+    if (c.decoder.front_end != FrontEnd::Viterbi)
+        throw std::invalid_argument("oracle_frequency_tracks needs the new decoder (FrontEnd::Viterbi)");
+    if (c.oracle_frequency_tracks.size() != c.oracle_frequencies_hz.size())
+        throw std::invalid_argument("oracle_frequency_tracks needs oracle mode and one track per oracle frequency");
+    for (const std::vector<OracleSegment>& track : c.oracle_frequency_tracks) {
+        if (!track.empty() && !(track.front().start_s <= 0.0))
+            throw std::invalid_argument("an oracle track's first segment must start at or before 0 s");
+        for (std::size_t i = 0; i < track.size(); ++i) {
+            const OracleSegment& s = track[i];
+            if (!std::isfinite(s.start_s) || !std::isfinite(s.frequency_hz) || !std::isfinite(s.drift_hz_per_s) ||
+                !std::isfinite(s.drift_origin_s))
+                throw std::invalid_argument("an oracle segment's values must be finite (s, Hz, Hz/s, s)");
+            if (i > 0 && s.start_s < track[i - 1].start_s)
+                throw std::invalid_argument("an oracle track's segments must be in the order of their starts");
+        }
+    }
+}
+
 }  // namespace
+
+double oracle_frequency_hz(std::span<const OracleSegment> track, double t_s) {
+    if (track.empty()) throw std::invalid_argument("oracle_frequency_hz: no segment");
+    const OracleSegment* in_force = &track.front();
+    for (const OracleSegment& s : track) {
+        if (s.start_s > t_s) break;
+        in_force = &s;
+    }
+    return in_force->frequency_hz + in_force->drift_hz_per_s * (t_s - in_force->drift_origin_s);
+}
 
 Engine::Engine(const EngineConfig& config, EventBus& bus)
     : config_(resolved(config)),
@@ -47,6 +82,7 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
                                      config_.channel_cutoff_hz}) {
     pending_.reserve(static_cast<std::size_t>(hop_));
     oracle_ = !config_.oracle_frequencies_hz.empty();
+    check_oracle_tracks(config_);
     if (config_.decoder.front_end == FrontEnd::Viterbi) {
         // The new decoder: the hiss estimator reads every spectrum frame (in oracle mode too), and its decoders share
         // one set of parts built for every channel's configuration (the genie's spreads may lengthen the blocks).
@@ -55,23 +91,29 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
         hiss_ = std::make_unique<viterbi::HissEstimator>(config_.sample_rate, config_.fft_size, config_.viterbi);
         std::vector<viterbi::ViterbiConfig> configs = {config_.viterbi};
         for (const viterbi::ViterbiGenie& genie : config_.viterbi_genie)
-            configs.push_back(viterbi::with_genie(config_.viterbi, genie, 0.0));  // the frequency does not matter here
+            configs.push_back(viterbi::with_genie(config_.viterbi, genie));
         viterbi_shared_ = make_viterbi_shared(configs, ChannelizerConfig{config_.sample_rate, config_.fft_size,
                                                                           config_.channel_bins,
                                                                           config_.channel_cutoff_hz});
     } else if (!config_.viterbi_genie.empty()) {
         throw std::invalid_argument("viterbi_genie needs the new decoder (FrontEnd::Viterbi)");
     }
+    const bool following = config_.decoder.front_end == FrontEnd::Viterbi;
     for (std::size_t i = 0; i < config_.oracle_frequencies_hz.size(); ++i) {
-        const int bin = channelizer_.hz_to_bin(config_.oracle_frequencies_hz[i]);
+        // The detector's frequency at the stream's start: the label's (its track's at 0 s, if it has one).
+        const bool tracked = !config_.oracle_frequency_tracks.empty() && !config_.oracle_frequency_tracks[i].empty();
+        const double f_det = tracked ? oracle_frequency_hz(config_.oracle_frequency_tracks[i], 0.0)
+                                     : config_.oracle_frequencies_hz[i];
+        const int bin = channelizer_.hz_to_bin(f_det);
         Track track;
         track.id = static_cast<std::uint32_t>(i + 1);
-        track.freq_hz = channelizer_.bin_to_hz(bin);
+        // The new decoder's channel is centered on the detector's frequency (ChannelFollower); the others on the bin.
+        track.freq_hz = following ? f_det : channelizer_.bin_to_hz(bin);
         open_channel(track, bin);
-        // Oracle mode: the tracker's anchor is the labeled frequency itself, not the bin center the
-        // channel is rounded to (the NCO still starts at the bin center, so the tracker must find the
-        // residual; it fine-tunes within +/-12 Hz of the label).
-        channels_.at(track.id).detector_freq_hz = config_.oracle_frequencies_hz[i];
+        // Oracle mode: the anchor is the labeled frequency itself, not the bin center the channel is rounded to (on the
+        // Matched path the NCO still starts at the bin center, so the tracker must find the residual; it fine-tunes
+        // within +/-12 Hz of the label).
+        channels_.at(track.id).detector_freq_hz = f_det;
     }
 }
 
@@ -137,14 +179,37 @@ void Engine::process_hop(std::span<const Sample> hop) {
         if (it == channels_.end()) return;
         auto& channel = it->second;
         const double t0 = static_cast<double>(first_index) / channelizer_.output_rate();
-        const double center_hz = channelizer_.bin_to_hz(channel.bin);
-        if (tap_) tap_(ChannelBlock{id, first_index, center_hz, s, channel.detector_freq_hz});
-        channel.decoder->set_frequency_anchor_hz(channel.detector_freq_hz - center_hz);  // Envelope: ignored
-        // Bank: the block is mixed down by this anchor. The new decoder: its N0, the hiss estimator's density at the
-        // channel's center bin, set before every block.
-        if (hiss_) channel.decoder->set_noise_density_fs2_per_hz(hiss_->noise_density_fs2_per_hz(channel.bin));
+        const int block_bin = channel.bin;  // the bin this block was cut at
+        const double center_hz = channelizer_.bin_to_hz(block_bin);
+        std::span<const Sample> samples = s;
+        double block_center_hz = center_hz;
+        if (channel.follower) {
+            // The new decoder: the channel follows the detector (design Part 1; plan O2, O3). An oracle channel's
+            // detector frequency is its track's at the block's start, held over the block.
+            if (oracle_ && !config_.oracle_frequency_tracks.empty() &&
+                !config_.oracle_frequency_tracks.at(id - 1).empty())
+                channel.detector_freq_hz = oracle_frequency_hz(config_.oracle_frequency_tracks[id - 1], t0);
+            const double f_det = channel.detector_freq_hz;
+            shifted_.assign(s.begin(), s.end());
+            channel.follower->shift(shifted_, first_index, f_det, center_hz);
+            samples = shifted_;
+            block_center_hz = f_det;
+            // The coarse step, from the next block on.
+            const int next = channel.follower->bin_for(f_det, block_bin, channelizer_);
+            if (next != block_bin) {
+                channelizer_.set_center_bin(id, next);
+                channel.bin = next;
+            }
+            channel.track.freq_hz = f_det;  // the station is reported where its channel is centered
+        } else {
+            channel.decoder->set_frequency_anchor_hz(channel.detector_freq_hz - center_hz);  // Envelope: ignored
+            // Bank: the block is mixed down by this anchor.
+        }
+        if (tap_) tap_(ChannelBlock{id, first_index, block_center_hz, samples, channel.detector_freq_hz});
+        // The new decoder: its N0, the hiss estimator's density at the bin this block was cut at, set before every block.
+        if (hiss_) channel.decoder->set_noise_density_fs2_per_hz(hiss_->noise_density_fs2_per_hz(block_bin));
         const auto started = std::chrono::steady_clock::now();
-        auto update = channel.decoder->process(s, t0);
+        auto update = channel.decoder->process(samples, t0);
         decoder_seconds_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
         channel_samples_ += s.size();
         // Matched mode: the decoder re-centers on the carrier; report the station there. Bank: the anchor.
@@ -163,14 +228,16 @@ void Engine::open_channel(const Track& track, int bin) {
         // Oracle channels are tracks 1, 2, ... in the order of oracle_frequencies_hz, and so of viterbi_genie.
         viterbi::ViterbiConfig channel_config = config_.viterbi;
         if (oracle_ && !config_.viterbi_genie.empty())
-            channel_config = viterbi::with_genie(config_.viterbi, config_.viterbi_genie.at(track.id - 1),
-                                                 channelizer_.bin_to_hz(bin));
-        decoder = std::make_unique<ViterbiDecoder>(channelizer_.output_rate(), channel_config, residual_hz,
-                                                   viterbi_shared_);
+            channel_config = viterbi::with_genie(config_.viterbi, config_.viterbi_genie.at(track.id - 1));
+        decoder = std::make_unique<ViterbiDecoder>(channelizer_.output_rate(), channel_config, viterbi_shared_);
     } else {
         decoder = std::make_unique<ClassicalDecoder>(channelizer_.output_rate(), config_.decoder, residual_hz);
     }
-    channels_.emplace(track.id, Channel{track, bin, std::move(decoder), track.freq_hz});
+    Channel channel{track, bin, std::move(decoder), track.freq_hz, std::nullopt};
+    // The new decoder's channel follows the detector (plan O2: its channels only).
+    if (config_.decoder.front_end == FrontEnd::Viterbi)
+        channel.follower.emplace(channelizer_.output_rate(), channelizer_.bin_to_hz(1) - channelizer_.bin_to_hz(0));
+    channels_.emplace(track.id, std::move(channel));
     bus_.publish(Event{TrackEvent{TrackEvent::Kind::Born, track}});
 }
 

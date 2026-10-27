@@ -21,8 +21,11 @@ endfunction()
 
 # --genie takes its values from the labels of the oracle channels
 expect_stderr("--genie needs --oracle" --decoder viterbi --genie fist)
-expect_stderr("--genie needs --oracle" --genie frequency --decoder viterbi --genie fading)
-expect_stderr("fist, frequency or fading" --decoder viterbi --oracle --labels no-such-labels.json --genie loud)
+expect_stderr("--genie needs --oracle" --genie fist --decoder viterbi --genie fading)
+# the frequency genie is removed: oracle channels follow the label's frequency (design Part 1)
+expect_stderr("the frequency genie is removed: oracle channels follow the label's frequency .design Part 1."
+              --decoder viterbi --oracle --labels no-such-labels.json --genie frequency)
+expect_stderr("fist or fading" --decoder viterbi --oracle --labels no-such-labels.json --genie loud)
 # --stats reads the statistics of the oracle channels at the end of the run
 expect_stderr("--stats needs --oracle" --decoder viterbi --stats no-such-stats.json)
 # --stats-detail asks for the full form of the statistics file, so it needs --stats
@@ -45,7 +48,7 @@ expect_stderr("NAME=VALUE" --decoder viterbi --set beam_nats)
 # what is accepted goes on to the recording
 expect_stderr("cannot open" --decoder viterbi --set beam_nats=30 --set ceiling=600
               --set "fist_sigmas=[0.1,0.1,0.1,0.1,0.1]")
-expect_stderr("cannot open" --decoder viterbi --oracle --labels no-such-labels.json --genie fist --genie frequency
+expect_stderr("cannot open" --decoder viterbi --oracle --labels no-such-labels.json --genie fist
               --genie fading --set stats=true)
 expect_stderr("cannot open" --decoder viterbi --oracle --labels no-such-labels.json --stats no-such-stats.json)
 expect_stderr("cannot open" --decoder viterbi --oracle --labels no-such-labels.json --stats no-such-stats.json

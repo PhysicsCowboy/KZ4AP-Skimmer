@@ -75,7 +75,8 @@ original baseline), the **bank**, selectable and frozen at its current
 defaults as the reference for new decoders (design spec §5.2), and the
 **new decoder**, selectable and under development. Before
 each block of samples the engine tells the decoder where the detector now
-thinks the station is (the *anchor*), and, for the new decoder, the noise
+thinks the station is (the *anchor*); the new decoder's channel instead
+follows that frequency (section 7), and its decoder gets the noise
 density around the station (N₀) that a hiss estimator reads from the
 spectrum.
 
@@ -206,8 +207,8 @@ one sample in 128.
 
 - **Center.** The channel is centered on the track's birth frequency
   rounded to the nearest bin, so the station starts within ±11.7 Hz of
-  0 Hz. The channel never moves; the decoder sees no signal from before the
-  track's birth.
+  0 Hz. For Envelope, Matched and the bank the channel never moves; the
+  decoder sees no signal from before the track's birth.
 - **Rate.** Decimating by 128 gives **r = 1500 samples/s** (0.67 ms per
   sample, far shorter than a 20 ms dit at 60 WPM).
 - **Filter.** A linear-phase low-pass of 4097 taps (21.3 ms; the longest
@@ -227,6 +228,22 @@ offset from the phase change of its filter's output over 5.33 ms (no
 feedback loop; derived) and shifts it out. The detector decides which
 station; the tracker only fine-tunes, within **±12 Hz** of the detector's
 frequency (heuristic; owner). The bank decoder has no tracker (section 8c).
+
+**Following the detector (new decoder only).** For the new decoder's
+channels the channelizer follows the detector's frequency for the track,
+f_det (oracle channels: the label's, drifting or switching at a QSO's
+overs), so the decoder receives its station near 0 Hz (owner, plan D17;
+the other decoders keep their fixed bin: plan 1b, O2). Two steps, before each
+32-sample block: the block, cut at bin f_bin, is multiplied by a
+phase-continuous oscillator at −(f_det − f_bin), f_det held over the
+block (21.33 ms, the detector's update interval); then, if f_det lies more
+than half a bin (11.72 Hz) from f_bin, the channel moves to the bin
+nearest f_det from the next block on, the oscillator's phase adjusted so
+that the station's phase does not step (derived). The usual coarse-plus-fine
+layout of FFT channelizers. Response (derived from the detector's 1 s
+average; design Part 1): a 1 Hz/s drift is followed 1.1 to 1.6 Hz behind,
+and an equally strong answering station moves the detector's peak after
+about 0.7 s.
 
 Appendix: A.7.
 
@@ -415,14 +432,14 @@ plan's starting values, placeholders until its measurements set them
 (`docs/plans/2026-10-20-new-decoder-prototype-1.md`).
 
 **Order.** Every spectrum frame (21.33 ms) goes to the engine's hiss
-estimator. Before each channel block (32 samples) the engine gives the
-decoder the detector's anchor and the noise density N₀ at the channel's
-center. The decoder takes the block sample by sample: (1) the carrier
-tracker, (2) re-centering, (3) summing into pieces, (4) the search, one
-piece at a time with N₀, 2 pieces (4 ms) behind, the look-ahead of its
-systematic term. While N₀ = 0 nothing is searched. The best story's
-text is published when the channel ends, nothing earlier, each character's
-probability reported as 1.
+estimator. Before each channel block (32 samples) the engine shifts the
+block to the station (section 7) and gives the decoder the noise density
+N₀ at the bin it was cut at. The decoder reads the block as received, with
+no frequency tracker (owner, plan D17): (1) summing into pieces, (2) the
+search, one piece at a time with N₀, 2 pieces (4 ms) behind, the
+look-ahead of its systematic term. While N₀ = 0 nothing is searched. The
+best story's text is published when the channel ends, nothing earlier,
+each character's probability reported as 1.
 
 **The hiss N₀** (FS²/Hz; in the engine, for every channel). Each bin's
 power is averaged as the detector averages it: one-pole, 1 s, a plain mean
@@ -436,35 +453,7 @@ N₀ = (percentile / β) / 35.16 Hz, one bin's equivalent noise bandwidth
 (derived). A frame reading exact zeros (−200 dBFS) in every bin is missing
 data, not counted (derived: the bank's rule for exact zeros).
 
-**The carrier tracker.** It re-centers the channel once for every story and
-uses none of their decisions: on/off keying leaves a steady line at the
-carrier, 0.44² of the key-down power for PARIS text (derived). Every 0.5 s
-the last 1 s of samples (placeholders), shifted by the oscillator itself and
-Hann-windowed, is zero-padded to 8 192 points (heuristic): bins 0.183 Hz
-apart. The largest bin within ±15 Hz (placeholder) is measured only if it
-stands 9 dB above the mean noise power per bin, N₀ × 1.5 Hz (derived; noise
-alone passes in 1.48% of windows, measured); a trusted track first takes
-the largest bin near its own line (±0.61 Hz once settled; derived), if that
-one passes. A parabola through the peak and its
-neighbors, in dB re any one reference, gives the offset at the window's
-center. Its variance is 0.2833 Hz²/ρ, ρ the line's SNR in its bin (a
-measured fit), times a fill factor, how much less a window measures whose
-line fills it unevenly (derived: 20 for a station that starts halfway
-through; read from the window's four quarters, measured), plus the drift's
-share where the line's centroid is off center (derived). Consecutive windows
-share half their samples, and their errors correlate at −0.35 (measured),
-which the filter allows for. A Kalman filter tracks the offset and its drift
-rate (drift noise 1.5 × 10⁻⁴ Hz²/s³, from older rigs' warm-up drift of
-0.3 Hz/s; sourced). The track is trusted while three standard deviations of
-its offset stay within 0.667 Hz, the residual that costs the default 390 ms
-block 1 dB of signal power (derived), at every fading spread (decided
-2026-10-21; A.8d). Untrusted, the oscillator holds its frequency, and two
-consecutive measurements that agree within three standard deviations
-restart the filter. The oscillator is phase-continuous and starts
-at the engine's anchor (oracle mode: the label's frequency). A genie variant
-re-centers on the true frequency and drift.
-
-**Pieces and evidence.** A piece is the sum of 3 consecutive re-centered
+**Pieces and evidence.** A piece is the sum of 3 consecutive channel
 samples, 2.000 ms (derived from r; it must be a whole number of samples, so
 the decoder does not run at 44.1 or 88.2 kHz). A mark's evidence comes in
 *blocks*,
@@ -555,12 +544,10 @@ most 4 MB); the flat prior's tables (18.7 MB) are built once and shared by
 every channel.
 
 **Open.** The ceiling binds on noise and in weak signals' gaps; its value
-awaits the plan's ceiling run (owner). The tracker loses a station at
-0 dB S₅₀₀ to a +20 dB S₅₀₀ neighbor 50 Hz away in 28% of runs. After a
-restart it trusts a keyed station only above about −2.5 dB S₅₀₀ on average
-(derived; a soft boundary, A.8d), against the perfect decoder's −8.6 dB S₅₀₀
-at 5.2 WPM. At fading spreads below 1 Hz the decoder's longer blocks ask
-for a closer frequency than the tracker gives (A.8d). Strong stations
+awaits the plan's ceiling run (owner). The station arrives off-center by
+the detector's error: oracle channels follow the label's frequency, but on
+the detector path the 1.1 to 1.6 Hz lag behind a 1 Hz/s drift costs a
+390 ms block 2.8 to 6.5 dB of signal power (derived; A.7). Strong stations
 decode exactly to +60 dB S₅₀₀ at every edge position tried (measured;
 without the systematic term, wrong from +38 dB S₅₀₀). Because C²'s first
 part is the channel's, the term has two measured costs (A.8d): a neighbor
@@ -592,7 +579,7 @@ Appendix: A.8d.
 | Matched | 0.32 s warm-up per channel; filter delay 19 ms at 25 WPM |
 | Envelope, Matched | a character appears once a gap of more than 2 dits follows it |
 | Bank | a character appears when the space after it is classified (at the next key-down), at a new over, or at the stream's end; corrections reach up to 20 s back |
-| New decoder | the whole text when the channel ends (first prototype); the search runs 4 ms behind its pieces (the systematic term's look-ahead); a channel opened at the stream's start (oracle mode) searches nothing in its first block (21.33 ms, before the first spectrum frame); the tracker holds the anchor until two windows agree (from 1.5 s after the channel opens) |
+| New decoder | the whole text when the channel ends (first prototype); the search runs 4 ms behind its pieces (the systematic term's look-ahead); a channel opened at the stream's start (oracle mode) searches nothing in its first block (21.33 ms, before the first spectrum frame); its channel follows the detector's frequency of each block's start (section 7) |
 | Track removal | about 6–7 s for the average to decay (S₅₀₀ = 20 dB), plus the 10 s timeout |
 
 Appendix: A.6, A.8d, A.9 and A.10.
@@ -1157,7 +1144,8 @@ rounded to the nearest bin (so the station is within ±11.7 Hz of 0 Hz in
 the channel); in effect (1) mix down by e^(−j2πf_c t), (2) low-pass,
 (3) decimate by D. The channel opens when the track is born and closes
 when it dies; the decoder never sees signal from before the birth. The
-channel does not move.
+channel of Envelope, Matched and the bank does not move; the new decoder's
+follows the detector (below).
 
 - **Decimation.** D = N/64 = **128**, r = fs/D = **1500 samples/s** at
   every 48 kHz × 2^j rate (1378 samples/s at 44.1 kHz). channel_bins = 64
@@ -1203,6 +1191,37 @@ channel does not move.
   returns to f_a; if f_a moves more than 12 Hz from f̂, f̂ jumps to it
   (heuristic, owner). The detector decides which station; the tracker only
   fine-tunes.
+
+#### Following the detector (new decoder only)
+
+`ChannelFollower` (`engine/include/kz4ap/channel_follower.hpp`), one per channel of `FrontEnd::Viterbi`, driven by the
+engine (`Engine::process_hop`). The other decoders' channels are not followed (plan O2, the coordinator's ruling: the
+bank stays the frozen reference, whose replay decodes fixed-bin channel streams; Matched is left as it is), and their
+channel streams are bit-identical to the fixed-bin channelizer's (tested, `Engine.OtherDecodersChannelsAreUnchanged`).
+
+- **The detector's frequency f_det** (Hz from the span's center), per channel block of 32 samples starting at
+  t₀ = first index / r: on the detector path the detector's track frequency after the hop's frame (the track's own,
+  section 6); in oracle mode the label's (plan O3): `EngineConfig::oracle_frequency_tracks[i]`, a list of segments
+  (start_s, frequency_hz, drift_hz_per_s, drift_origin_s), f_det = frequency_hz + drift_hz_per_s·(t₀ − drift_origin_s)
+  of the last segment with start_s ≤ t₀; without a track, the constant `oracle_frequencies_hz[i]`. f_det is held over
+  the block (21.33 ms, the detector's own update interval). The bench gives a single station one segment from 0 s (its
+  label's freq_offset_hz at its start_s and its drift from there, the generator's angle 2πft + πḟ(t − start_s)²), and a
+  QSO label one segment per transmission from its start_s (the first from 0 s) at freq_offset_hz + the sender's
+  offset_hz with the QSO's drift from the QSO's start_s, held through the silence after each over; a per-station label
+  of a drifting QSO is refused (its start_s is not the QSO's).
+- **Order, per block.** (1) The block, cut at bin c (center f_bin = c·Δf), is shifted (below) with f_det; (2) the coarse
+  rule picks the bin for the next block (`Channelizer::set_center_bin`, applied when the next block starts); (3) the tap
+  and the decoder receive the shifted block; the decoder's N₀ is read at c; the track's reported frequency is f_det. An
+  oracle channel opens at the bin nearest f_det(0).
+- **Coarse rule** (`bin_for`): keep c while |f_det − f_bin| ≤ Δf/2 = 11.71875 Hz (Δf = 23.4375 Hz at 48 and 192 kHz;
+  derived: within half a bin c is the nearest bin), else the bin nearest f_det (`hz_to_bin`, ties away from zero). No
+  hysteresis.
+- **Fine shift** (`shift`): y′_n = y_n·e^(−j2πφ_n), φ advancing by (f_det − f_bin)/r cycles per sample (kept in [0, 1)),
+  the phasor computed from φ at each sample (cos and sin, so nothing accumulates from sample to sample); one complex
+  multiplication per sample.
+- **Phase rule at a move.** When f_bin changes from f₁ to f₂ at a block starting at t₀, φ ← φ + (f₁ − f₂)(t₀ − D_g)
+  cycles, D_g = (N/2)/2/fs = 1/(4Δf) = 10.667 ms, the channel filter's group delay. Then the total demodulating phase
+  seen by the station, 2πf_bin(t − D_g) + 2πφ, is continuous, and between moves it advances by 2πf_det/r per sample.
 
 
 **Derivations.**
@@ -1378,6 +1397,45 @@ channel does not move.
   the next station, if it is within ±12 Hz of the anchor, is found within
   about 0.5 s of key-down weight (the average needs weight 0.6); one
   farther away is reached when the detector moves the anchor.
+
+**Derivations: following the detector (new decoder).**
+
+- **Why D_g in the phase rule.** The channelizer demodulates before it filters: channel sample j (input sample
+  n = j·D) is Σ_l h[l]·x[n − l]·e^(−j2πc(n − l)/N) (from the per-block re-reference of the inverse FFT's mixer to the
+  stream's start). For a station narrow against the passband, and exactly for a steady tone through the symmetric
+  filter, this is |H|·x(n − D_g)·e^(−j2πc(n − D_g)/N): the station's phase in the channel is its input phase at
+  n − D_g, demodulated at that instant. Keeping 2πf_bin(t − D_g) + 2πφ continuous at a move keeps the station's phase
+  continuous. Without D_g the phase would step by (f₁ − f₂)·D_g = (bins moved)/4 cycles, a quarter turn per bin
+  (derived; tested: removing D_g makes `ChannelFollower.PhaseIsContinuousAcrossABinMove` fail by 1.5708 rad at each
+  move).
+- **The phase the hold leaves** (derived). With f_det held from the block's start, a drift ḟ leaves a residual rising
+  from 0 to ḟ·21.33 ms over the block: 0.0213 Hz at 1 Hz/s (mean 0.0107 Hz), a phase of πḟ(21.33 ms)² =
+  1.43 × 10⁻³ rad per block, always of one sign; scatter of 0.2 Hz in f_det steps the phase by 2π·0.2 Hz·21.33 ms =
+  0.027 rad per block. Both are the detector's frequency doing its job, not a defect of the shift, so the tests compare
+  with an independent reference (the input delayed by D_g, demodulated by the running sum of the held f_det) and
+  find the output within about 10⁻⁶ rad of it at every sample, at 48 and 192 kHz, through two moves and through a station
+  parked 0.00125 Hz beyond a bin boundary that moves the channel on about half the blocks (measured, the tests'
+  recorded worst error; limit 0.01 rad).
+- **Response** (derived from the detector's one-pole power average, τ = 1 s, section 6; design Part 1, plan D17).
+  A ramp of ḟ Hz/s is followed ḟ·τ behind (exact for the power-weighted centroid of the averaged spectrum, A.6): 1.0 Hz
+  at 1 Hz/s. The stage-1 simulation through the whole engine (A.6) found the track's own frequency, which the follower
+  uses, 0.94 to 1.23 Hz behind, and the Matched path's reported frequency 1.49 to 1.63 Hz behind (measured). The design
+  and plan D17 quote 1.1 to 1.6 Hz. An equally strong answering station, starting as the first stops, overtakes the
+  first station's decaying average when 1 − e^(−t/τ) = e^(−t/τ), at t = τ·ln 2 = 0.69 s (derived), "about 0.7 s".
+- **Cost.** One complex multiplication and one cos/sin pair per channel sample, 1 500 per channel-second, and a
+  compare per block (derived); not measured.
+
+**Limitations: following the detector.**
+
+- The coarse rule has no hysteresis: a station parked on a bin boundary moves the channel on about half the blocks
+  (measured above). The moves are phase-continuous, and such a station lies 11.7 Hz from either bin, inside the channel
+  filter's passband (flat to 0.015 dB relative to 0 Hz out to about 39 Hz), so the decoder sees nothing of them.
+- On the detector path the station is off-center by the detector's error (section 6), which the first prototype's
+  390 ms blocks feel: a residual δ costs a coherent block of T seconds the energy fraction sinc²(δT) (A.7, "The cost
+  of a residual offset"), 1 dB of signal power at 0.667 Hz, 2.8 dB at 1.1 Hz and 6.5 dB at 1.6 Hz for T = 390 ms
+  (derived). The plan's measurements run on oracle channels.
+- `--record-channels` stops the run when a channel's center moves; a followed channel's recorded center is its f_det,
+  so only a constant oracle frequency records.
 
 **Provenance.**
 
@@ -3316,7 +3374,7 @@ branch, 0.8 dit at 25 words/min, is −3.33 dB relative to 0 Hz at 12 Hz).
 
 The new decoder of section 8d as the code implements it (`engine/src/viterbi_decoder.cpp`, `engine/src/viterbi/`,
 `engine/src/engine.cpp`). The headers (`engine/include/kz4ap/viterbi_decoder.hpp` and `engine/include/kz4ap/viterbi/`:
-`config.hpp`, `morse_tree.hpp`, `fist.hpp`, `observation.hpp`, `level.hpp`, `search.hpp`, `hiss.hpp`, `tracker.hpp`) keep
+`config.hpp`, `morse_tree.hpp`, `fist.hpp`, `observation.hpp`, `level.hpp`, `search.hpp`, `hiss.hpp`) keep
 the full design records, with each measurement this appendix cites at its source and the test that holds it. Where
 the first prototype's plan (`docs/plans/2026-10-20-new-decoder-prototype-1.md`, §2) and the code differ, this describes
 the code, and says so.
@@ -3329,24 +3387,24 @@ the code, and says so.
   the rise g and the template's errors E_n from the channelizer's taps, and the flat prior over the longest first
   block, min(B, 1 000 pieces), which holds both;
 - per channel (`open_channel`), a `ViterbiDecoder` with that channel's configuration: `EngineConfig::viterbi`, or, for
-  oracle channel i when `EngineConfig::viterbi_genie` is not empty, `with_genie(viterbi, viterbi_genie[i], f_c)`.
-  `viterbi_genie` must be empty or hold one entry per oracle frequency, and is refused for the other decoders.
+  oracle channel i when `EngineConfig::viterbi_genie` is not empty, `with_genie(viterbi, viterbi_genie[i])` (the
+  genie's fading spread and fist; the carrier is no genie value). `viterbi_genie` must be empty or hold one entry per
+  oracle frequency, and is refused for the other decoders;
+- per channel, a `ChannelFollower` (A.7, "Following the detector").
 
-Before every channel block (32 samples) the engine calls `set_frequency_anchor_hz(f_det − f_c)` and
-`set_noise_density_fs2_per_hz(N₀)`, N₀ being the hiss estimator's density at the channel's center bin (the channelizer's
-signed bin c, the frame's bin c + N/2), then `process(block, t₀)`, t₀ = (the block's first sample index) / r.
+Before every channel block (32 samples) the engine shifts the block to the detector's frequency and re-bins the channel
+from the next block on (A.7), calls `set_noise_density_fs2_per_hz(N₀)`, N₀ being the hiss estimator's density at the
+bin c the block was cut at (the channelizer's signed bin c, the frame's bin c + N/2), then `process(block, t₀)` with the
+shifted block, t₀ = (the block's first sample index) / r. It sets no anchor: `set_frequency_anchor_hz` is the Decoder
+interface's empty default here, and the decoder reports no frequency (the track's is f_det).
 
-**In the decoder.** Sample n, counted from the channel's first sample (the first block's t₀ is t_first), is at
-t_n = t_first + n / r, one expression, and is taken alone, in order:
-1. pushed to the tracker with t_n and the block's N₀;
-2. the oscillator's offset f_n = the tracker's offset_hz(t_n), or with the genie f₀ + ḟ·t_n (f₀ =
-   `genie_frequency_offset_hz`, from the channel's center at stream time 0 s; ḟ = `genie_frequency_drift_hz_per_s`);
-3. re-centered: y′_n = y_n·e^(−j2πφ_n), φ₀ = 0, φ_(n+1) = frac(φ_n + f_n / r) (cycles; the phase before the sample's own
-   advance);
-4. added to the current piece; at every third sample piece k is complete at t_k = t_first + 3(k + 1) / r (the end of its
-   last sample) and goes to `Search::step(piece, t_k, N₀)` if N₀ > 0; with N₀ = 0 it is skipped, its time still counted.
-   The search holds the last 2 pieces given (`Search::lookahead_pieces`, ⌈4 ms / piece⌉) and searches each, with its own
-   t_k and N₀, when 2 more have come; `flush` first searches those held (`Search::finish`).
+**In the decoder.** The decoder reads its channel as received: no frequency tracker, no oscillator (owner, 2026-10-23,
+plan D17; design Part 10). Sample n, counted from the channel's first sample (the first block's t₀ is t_first), is at
+t_n = t_first + n / r, one expression; it is added to the current piece; at every third sample piece k is complete at
+t_k = t_first + 3(k + 1) / r (the end of its last sample) and goes to `Search::step(piece, t_k, N₀)` if N₀ > 0; with
+N₀ = 0 it is skipped, its time still counted. The search holds the last 2 pieces given (`Search::lookahead_pieces`,
+⌈4 ms / piece⌉) and searches each, with its own t_k and N₀, when 2 more have come; `flush` first searches those held
+(`Search::finish`).
 
 So if N₀ falls to 0 and returns mid-stream, the search sees the stream spliced: every story goes on from where it stood,
 the length τ of its element frozen across the skipped pieces and its level predicted across the elapsed time (tested,
@@ -3356,15 +3414,12 @@ its first counted frame it gives N₀ = 0 only if at least a quarter of a channe
 counted frames long enough for those bins' averages to underflow to 0, about 12 minutes from −130 dBFS per bin
 (derived); a direct caller can give it at any time.
 
-A sample is re-centered with exactly the tracker windows that its own and earlier samples complete, so, for the same
-N₀ at each sample, the output does not depend on how the stream is split into blocks, to the bit (tested: blocks of 1,
-7, 32 and 1 000 samples; a tracker window takes the N₀ of its last sample). A block must start within half a sample of
-where the previous one ended. The tracker starts at the first block, at the
-anchor in force then; later anchors are not read. `process` returns no characters and the oscillator's offset at the
-block's last sample (`freq_offset_hz`; the engine reports the track's frequency from it). `flush` searches the pieces
-the look-ahead holds, returns the best story's whole text once (`Search::best_text`; each character's probability 1,
-speed and confidence 0: placeholders) and drops a partial piece; `reset` starts a new search and tracker and a new time
-origin. The decoder builds the evidence's
+For the same N₀ at each sample, the output does not depend on how the stream is split into blocks, to the bit (tested:
+blocks of 1, 7, 32 and 1 000 samples). A block must start within half a sample of where the previous one ended.
+`process` returns nothing (no characters, no `freq_offset_hz`). `flush` searches the pieces the look-ahead holds,
+returns the best story's whole text once (`Search::best_text`; each character's probability 1, speed and confidence 0:
+placeholders) and drops a partial piece; `reset` starts a new search and a new time origin. The decoder builds the
+evidence's
 tables and the fist's table of ln Φ_c when it is made, so that no block stalls on them (31 ms and 1.8 ms otherwise).
 
 **The hiss estimator** (N the FFT size, frames every N/2 samples, Δf = fs/N):
@@ -3376,40 +3431,6 @@ tables and the fist's table of ln Φ_c when it is made, so that no block stalls 
 4. the bias: A_n = (1 − a_n)²A_(n−1) + a_n², C_n = (1 − a_n)²C_(n−1) + (1 − a_n)a_n a_(n−1), v_n = A_n + 2C_n/36,
    k = 1/v_n, β = Q(k, 0.25)/k, Q the Gamma distribution's quantile (shape k, scale 1);
 5. N₀ = (the selected average / β) / (1.5 Δf); 0 before a frame is counted and where the selected average is 0.
-
-**The tracker** (r = 1 500 samples/s): windows of N_w = 1 500 samples (1.0 s) every 750 (0.5 s), measured when their last
-sample arrives, each at its center t_c (a window of 8 samples at least, a hop of at least half the window):
-- (a) the state (offset f̂, drift d) predicted to t_c, P_p = F P Fᵀ + Q, the continuous white-noise acceleration model
-  with q = 1.5 × 10⁻⁴ Hz²/s³; confirmed while 3√(P_p,00) ≤ τ = 0.26/0.390 s = 0.667 Hz, whatever the fading spread;
-- (b) the window shifted by the oscillator's own phase about t_c; (c) a periodic Hann window, zero-padded to 8 192
-  points, bins r/8 192 = 0.1831 Hz;
-- (d) the peak: on a confirmed track the largest bin within min(3√(P_p,00 + c/(10^0.9 − 1)), 15 Hz) of the shift
-  (rounded out to the next bin), if it passes the gate and is a strict local maximum; otherwise the largest of
-  k = −81 … 81 (±15 Hz). It is measured if N₀ > 0, it reaches 10^0.9 = 7.94 times N₀·r·Σw² (the mean noise power per
-  bin, N₀ × 1.5 Hz in units where a tone of amplitude A reads A²), and it is a strict local maximum under a strictly
-  concave parabola;
-- (e) z = f_o + (k + v)·r/8 192, v the vertex of the parabola through the peak and its neighbors in dB re any one
-  reference;
-- (f) R = (c/ρ)·F(p)/F(1) + (σ_d·u)² + (0.08 mHz)², c = 0.2833 Hz², ρ the peak's power over the mean noise power per
-  bin, less 1, σ_d = 0.3 Hz/s; F(p) = (Σg)²·Σw²(τ − u)² / (Σw²·(Σg(τ − u)²)²), g_i = w_i·p_j for sample i in quarter j
-  of the window, u = Σgτ/Σg the line's centroid (s from t_c), p_j = √max(|S_j|² − N₀·r·Σ_j w², 0) / Σ_j w, S_j the
-  coherent sum of the quarter's shifted, windowed samples at the measured frequency (p = 1 where no quarter exceeds
-  its noise);
-- (g) a confirmed track takes z in a Kalman update (Joseph form) if |z − f_p − sθâ| ≤ min(3√S, 15 Hz), the state
-  augmented with the previous window's noise component a (unit variance; estimate â, covariances P_fa, P_da, P_aa):
-  H = [1, 0, sθ, s], S = P_p,00 + 2sθ·P_fa + s²θ²·P_aa + s², s = √(R/(1 + θ²)), θ = −0.408 the root with |θ| < 1 of
-  θ/(1 + θ²) = ρ_c, ρ_c = −0.35 at a hop of half the window (at another hop, times the ratio of the noise-only
-  correlations Σb_i·b_(i+hop)/Σb_i², b_i = w_i·τ_i, at that hop and at half the window); the update's new component is
-  the next window's a;
-- (h) otherwise z must agree with the previous window's pending measurement, |z₂ − z₁| ≤ 3√(R₁ + R₂ − 2c₁₂ +
-  (0.3 Hz/s × 0.5 s)²), c₁₂ = ρ_c·√(R₁R₂); two that agree restart the filter at f̂ = z₂, d = (z₂ − z₁)/g,
-  P = [[R₂, (R₂ − c₁₂)/g], [(R₂ − c₁₂)/g, (R₁ + R₂ − 2c₁₂)/g²]], P_fa = −s₂, P_da = −s₂/g, P_aa = 1, g = 0.5 s, and z₂
-  stays pending; a window not measured drops the pending one, and a window not measured or not used leaves the next
-  one's a unknown (â = 0, P_aa = 1, uncorrelated with the state).
-
-The start: f̂ = the anchor, d = 0, P = diag((5 Hz)², (0.3 Hz/s)²). The oscillator: offset_hz(t) = f̂ + d·min(t − t_s,
-t_hold − t_s), t_hold the last time at which 3σ_f(t) ≤ 0.667 Hz (σ_f(t)² = P₀₀ + 2(t − t_s)P₀₁ + (t − t_s)²P₁₁ +
-q(t − t_s)³/3).
 
 **Blocks and evidence.**
 - c(m) = Σ_(|k|<m) (m − |k|)·R_k, R_k = fs·Σ_j h[j]·h[j + Dk] (h the channelizer's taps, Σh = 1; D = N/64): a sum of m
@@ -3521,118 +3542,6 @@ the mean estimate within 0.25% of σ²/fs at every second from 1 to 6 s, at 48 a
   do not): at most 0.19% in steady state for 86 to 171 bins (scratch), not corrected.
 - After a run of exact zeros, the first counted frame can straddle the data's start and read part of a window's power;
   the plain mean carries it with weight 1/n, so the estimate reads low for the first fraction of a second.
-
-### The carrier tracker (new decoder)
-
-**Derivations.**
-- **The line.** On/off keying with key-down fraction D puts D² of the key-down power in a steady line at the carrier:
-  0.44² = 0.19 for PARIS text (22 of its 50 units are key-down). For a carrier at S₅₀₀ the line stands
-  10·log₁₀(0.44²/(1.5 Hz/500 Hz)) = 18.1 dB + S₅₀₀ above the mean noise power per bin.
-- **The noise per bin.** White noise of density N₀ gives every bin E|X_k|² = N₀·r·Σw²; in the units where a tone of
-  amplitude A reads A² (dividing by (Σw)²) that is N₀ × 1.5 Hz for the 1 s Hann window (Σw = N_w/2, Σw² = 3N_w/8). The
-  zero padding adds nothing to it. The channel filter is within 0.003 dB of its gain at 0 Hz over every searched bin of a
-  station within ±11.7 Hz of the center (computed from the taps), and is taken as 1.
-- **The gate.** The perfect decoder's threshold at 5.2 WPM, the slowest speed, is S₅₀₀ = −8.6 dB: 12 dB of E/N₀ per
-  dot (at 600 WPM, a 2 ms dot, E/N₀ equals S₅₀₀) less 10·log₁₀(600/5.2) = 20.6 dB for a dot 600/5.2 times longer.
-  There the line stands 9.5 dB above the mean noise power per bin, and a steady line passes the 9 dB gate (re the same)
-  in 63.6% of windows (the Rician distribution of |line + noise|²). One bin of noise passes 9 dB above its mean with
-  probability e^(−7.94) = 3.55 × 10⁻⁴, 163 independent bins in 5.6% of windows; the bins are correlated, and 1.48% is
-  measured (as from 42 independent bins).
-- **The tolerance.** A residual Δf over a coherent block of T keeps sinc²(Δf·T) of its power: a loss under 1 dB of
-  signal power (0.797) while Δf·T ≤ 0.26, τ = 0.26/0.390 s = 0.667 Hz for the default block (195 pieces of 2 ms at
-  f_D = 1 Hz).
-- **The variance.** The Cramér–Rao bound for a tone's frequency is 1/(π²T²ρ) = 0.1013 Hz²/ρ with this ρ; the Hann
-  window's peak has 2.343 times it asymptotically, 0.2374 Hz²/ρ; the fit's c = 0.2833 Hz² is 1.19 times that.
-- **The fill factor.** For a line of weights g_i = w_i·p_i (p its presence: 1 for a steady carrier, the keying envelope
-  for a keyed one) in noise weighted by w_i, the peak's first-order frequency error gives var(ω) = F(p)/(2ρ),
-  F(p) = (Σg)²·Σw²(τ − u)² / (Σw²·(Σg(τ − u)²)²), u = Σgτ/Σg the line's centroid; F(1) = 18.74 s⁻², the Hann peak's
-  0.2374 Hz²/ρ. A station present from 0.4, 0.5 and 0.6 of the window on has F(p)/F(1) = 6.18, 20.04 and 80.97 (its
-  centroid 0.148 s after the center at 0.5): a station's first window cannot set a restart's drift. The window needs
-  8 samples at least, so that each quarter holds a sample of positive weight (the periodic Hann window's first is 0).
-- **The drift's share.** A measurement belongs to t_c, but its line's centroid lies u away: the drift adds (σ_d·u)²,
-  σ_d = 0.3 Hz/s (0.045 Hz for a half-filled window). On a confirmed track the drift left after the shift has the
-  standard deviation √P₁₁, usually far below σ_d, and is correlated with the state, so the term is larger than needed
-  (the standard form, u in the measurement's row, H = [1, u, …], is not used). In the agreement test both windows'
-  terms and the gap's (σ_d·g)² come from one drift, exactly σ_d²(g + u₂ − u₁)²; their sum exceeds that by
-  2σ_d²(g(u₁ − u₂) + u₁u₂): more whenever u₁ > u₂ (a station's start or end), less where the line is weaker in the
-  half both windows share (u₁ < 0 < u₂; 0.031 Hz² short for two windows half filled that way, beside each one's own
-  variance, 20 times a filled window's).
-- **The correlation of consecutive windows.** A window's frequency error is, from the noise, proportional to
-  Σw_i·τ_i·Im(n_i·e^(…)); two windows a hop apart correlate by Σb_i·b_(i+hop)/Σb_i², b_i = w_i·τ_i: −0.4526 at half
-  the window, −0.276 at 0.6 of it, −0.052 at 0.75, 0 from a whole window on. The errors are then a moving average of
-  order one, e_k = s_k(a_k + θa_(k−1)), s_k = √(R_k/(1 + θ²)), θ/(1 + θ²) = ρ_c, while windows two hops apart share no
-  sample (hence a hop of at least half the window); θ = −0.408 for ρ_c = −0.35. The filter carries a_(k−1) in its
-  state (H = [1, 0, sθ, s]); a restart from windows 1 and 2 leaves the offset's error minus window 2's, so
-  P_fa = −s₂ and P_da = −s₂/g.
-- **The confirmation boundary.** After a restart from windows of variances R₁ and R₂ and covariance c₁₂, the next
-  window's predicted offset has the variance 4R₂ + R₁ − 4c₁₂ + qg³/3: 6.4R for R₁ = R₂ = R and c₁₂ = −0.35R
-  (qg³/3 = 6 × 10⁻⁶ Hz²). It is trusted only if 3√(6.4R) ≤ τ, R ≤ τ²/57.6 = 7.7 × 10⁻³ Hz²: for keyed PARIS at a
-  fill factor of 1 (R = 0.2833 Hz²/ρ, ρ = 64.5 × 10^(S₅₀₀/10) at its expected value), above −2.45 dB S₅₀₀. Each
-  window's R moves with its noise and its keying (the measured ρ and the fill factor), so the boundary is soft.
-- **The drift** (sourced): older rigs' specified warm-up drift, at most about 0.3 Hz/s (a Kenwood TS-830S, within
-  1 kHz in its first hour after a 1-minute warm-up and 100 Hz per 30 minutes after; a Yaesu FT-77, under 300 Hz in the
-  first 30 minutes after a 10-minute warm-up; rigpix's specification pages, https://www.rigpix.com/kenwood/ts830s.htm
-  and https://www.rigpix.com/yaesu/ft77.htm), 0.06 Hz/s after warm-up; ionospheric Doppler 0.5 to 1.2 Hz over about
-  an hour around sunrise and sunset ("HF Signal Propagation and Frequency Accuracy", febo.com,
-  https://febo.com/pages/hf_stability/; "Reflection Height", RSGB RadCom, August 2024, pp. 42–44,
-  https://hamsci.org/sites/default/files/publications/p42_44_Reflection_Height_RSGB_RadCom_Aug24.pdf);
-  q = (0.3 Hz/s)²/600 s, the drift changing by about its own spread over ten minutes (the ten minutes heuristic).
-
-**Provenance.** Window 1.0 s, hop 0.5 s, search ±15 Hz: placeholders (the plan, §2.9); the window's 8 samples at least
-and the hop of at least half the window: derived (above). 8 192 points: heuristic. The 9 dB gate re the mean noise
-power per bin: derived. τ = 0.667 Hz: derived for the default block, and fixed at every fading spread (decided
-2026-10-21 from the measurement that follows): it guards against a false update moving the frequency further than the
-default block tolerates, and a tolerance following the block, 0.26/T_B, left a keyed carrier at 0 dB S₅₀₀ and a spread
-of 0.3 Hz (0.200 Hz) unconfirmed in every window from 3 s on, with a median worst error of 0.267 Hz against 0.145 Hz
-(200 seeds; measured). c = 0.2833 Hz²: measured (the least-squares fit of ln(variance) = ln c − ln ρ to the scatter of
-a keyed carrier at −5 to +20 dB S₅₀₀, measured with the tracker's first design). The floor, 0.08 mHz: measured (the
-same estimator on clean tones). The fill factor: derived; its four quarters: measured (against 2, 3 and 8, over 1 000
-seeds). ρ_c = −0.35: measured on the keyed carrier at half the window (0 dB S₅₀₀, 25 WPM; −0.4526 derived for the noise
-alone); at another hop, the noise-only value for it times −0.35/−0.4526 (heuristic). θ: derived. The search near the
-track's own line, the fill factor and the correlation were each kept because they raised the tests' pass rates on the
-same 1 000 seeds (measured; the alternatives tried are in the prototype's results record). The start's 5 Hz:
-placeholder. 0.3 Hz/s: sourced. 3σ: the standard choice (heuristic). Over 1 000 seeds of
-each test (`tracker_test.cpp`, at its 0.6667 Hz; the same at fading spreads of 0 and 0.3 Hz): a keyed carrier at
-0 dB S₅₀₀ held from 3 s on in 99.9% (the worst error's median 0.13 Hz), a 0.3 Hz/s drift followed in 100%, noise
-alone kept within 2 Hz rms in 99.2%, a turnover relocked in 100% (measured).
-
-**Limitations.**
-- **A strong neighbor's sidebands:** a keyed carrier at +20 dB S₅₀₀ 50 Hz from a station at 0 dB S₅₀₀ puts sideband
-  lines into the search range, 13.7 dB (median) above the mean noise power per bin, passing the gate in 96.7% of
-  windows. Their energy near the weak line pulls a measurement off by half a hertz or more, far beyond its variance,
-  and inside the acceptance window it updates the filter and kicks the drift; less often, while the track is
-  unconfirmed, two windows in a row agree on a sideband line. The track leaves 0.667 Hz in 27.7% of runs
-  (`Tracker.ResistsAStrongNeighbor`, a strict expected failure).
-- **The confirmation boundary:** when the two windows that restart a track have variances over τ²/57.6 =
-  7.7 × 10⁻³ Hz² (equal variances; on average below −2.45 dB S₅₀₀ for keyed PARIS at a fill factor of 1, derived
-  above), the next window is not trusted. A track that stays so is never updated: it restarts from each agreeing pair
-  of windows, averages no more than two and loses the search near its own line. The boundary is soft, each window's
-  variance moving with its noise and its keying: at −4 dB S₅₀₀ and 25 WPM, 53.1% of the windows from 3 s on are
-  trusted, 85.7% of runs stay within 0.667 Hz, and 5.1% are captured, the oscillator more than 2 Hz off the carrier
-  (1 000 seeds; measured). Slower stations decode lower: the perfect decoder's threshold is −8.6 dB S₅₀₀ at 5.2 WPM.
-- **Longer blocks:** below a fading spread of 1 Hz the decoder's blocks are longer than 390 ms (1.30 s at 0.3 Hz), and
-  a coherent sum of length T loses under 1 dB of signal power only while the residual is within 0.26/T (0.20 Hz at
-  1.30 s); the decoder sums coherently only within a mark, so T is at most the mark's length (a dash's median: 0.144 s
-  at 25 WPM, 0.691 s at 5.2 WPM). The tracker's error does not follow the block: from 3 s on, for keyed PARIS at
-  25 WPM and 0 dB S₅₀₀, its worst has a median of 0.13 Hz and a 90th percentile of 0.28 Hz at every spread (measured).
-  The plan's fading-spread run (0.3, 2 and 5 Hz against 1 Hz) measures the cost.
-- **The fill factor's quarters** average a station's start over its quarter and read the factor low: from 0.3, 0.4,
-  0.6 and 0.7 of the window on, 1.90, 2.68, 16.18 and 23.13 against the exact 2.53, 6.18, 80.97 and 415.08, up to
-  18 times low (derived; exact at 0.5). A start anywhere in the last quarter reads 1 075, so a later start reads lower
-  still: 3.0 times at 0.8 of the window (exact 3 229), 69 times at 0.9 (exact 74 258; derived). With starts drawn
-  anywhere in [0.5 s, 1 s), a keyed carrier at 0 dB S₅₀₀ is still held within 0.667 Hz in 99.8% of seeds (measured).
-- The variance model is right within about 25% for keyed carriers from 12 to 40 WPM below +10 dB S₅₀₀ and conservative
-  above (measured); at 12 WPM the error stops falling at about 0.13 Hz rms from +5 dB S₅₀₀ on, which it leaves out.
-- Noise alone restarts the filter once per 91 min (two weak peaks with wide variances agree easily) and moves the
-  oscillator over 2 Hz rms in 0.8% of 60 s runs (measured).
-- The hiss estimate's own error moves the gate: an N₀ 2% low puts it at 8.9 dB, one 18% low at 8.1 dB re the true mean
-  noise power per bin.
-- Two carriers within about 2 Hz look like one; two within ±15 Hz give the larger, unless a trusted track's own line
-  passes the gate.
-- A drift faster than about 1.5 Hz/s is rarely acquired (100%, 100%, 99%, 64.5% and 9% of runs within 0.67 Hz at 0.5,
-  0.7, 1.0, 1.5 and 2.0 Hz/s, and none at 2.7 Hz/s; measured): the development set's tuning group, to 2.7 Hz/s, lies
-  beyond the physical range and is not tuned for (owner, 2026-10-20).
-- The engine's anchor is read once, at the channel's first block.
 
 ### Pieces and the noise model (new decoder)
 
@@ -3957,12 +3866,15 @@ set by the plan's runs. The ceiling, 1 700 stories: placeholder, set by the plan
 prior built with that rise (18.7 MB at the defaults, built in about 0.26 s), held through `std::shared_ptr`.
 `make_viterbi_shared` is its only maker (its constructor is private and it cannot be copied), so the rise and the prior
 always come from the channelizer's taps and no decoder runs without the matched filter to the rise. A decoder refuses
-shared parts built for another channel rate, piece, rise, level range, or for shorter blocks than its own. The genie's
-carrier (`ViterbiGenie`) is given in the frame of the oracle frequencies, at a stream time with its drift; the engine
-converts it to the decoder's offset from the channel's center at stream time 0. The detector path runs the decoder too,
-but the first prototype is built and measured on oracle channels (its anchor is read once, and the text comes at the
-end). An oracle channel opens at the stream's start, so its first block (21.33 ms) comes before the first spectrum
-frame, N₀ = 0, and it is not searched; a detector channel opens after frames have been counted, with N₀ set.
+shared parts built for another channel rate, piece, rise, level range, or for shorter blocks than its own. An oracle
+channel's frequency is the label's, given as segments (`EngineConfig::oracle_frequency_tracks`, `OracleSegment`: from
+start_s, frequency_hz + drift_hz_per_s·(t − drift_origin_s), Hz from the span's center), which the channel follows (A.7,
+"Following the detector"): the bench gives a single station one segment and a QSO label one per transmission at its
+sender's offset; the decoder is given no frequency (the frequency genie is removed). The detector path runs the decoder
+too, its channel following the detector's track, but the first prototype is built and measured on oracle channels (the
+text comes at the end). An oracle channel opens at the stream's start, so its first block (21.33 ms) comes before the
+first spectrum frame, N₀ = 0, and it is not searched; a detector channel opens after frames have been counted, with N₀
+set.
 
 **Cost** (measured, `ViterbiDecoder.TenMinutesOfNoise`: DEV2's noise alone at the defaults, where the ceiling binds;
 steady-clock time inside the decoder, one thread, Release build, on the development desktop, an Intel i7-9700F with
@@ -3988,7 +3900,7 @@ The rules of this section as the code implements them (moved verbatim from the b
 | Matched | 0.32 s warm-up per channel; boxcar delay (K − 1)/2 samples, 19 ms at 25 WPM |
 | Envelope, Matched | a character is emitted once a > 2-dit gap follows it |
 | Bank | block 21.33 ms; branch delay (N_k − 1)/(2r) = 4.3–91.7 ms (removed from character times); a character is published when its following space is classified (at the next key-down), at a new over or at the stream's end; corrections reach up to 20 s back (a resync is not bounded by it) |
-| New decoder | the whole text at `flush` (the channel's end); the search takes each piece 2 pieces (4 ms) after it is given, the systematic term's look-ahead, and `flush` searches the last two; a channel opened at the stream's start (oracle mode) does not search its first block (21.33 ms), N₀ being 0 before the first spectrum frame (a detector channel opens later, with N₀ already set); the tracker holds the anchor until two windows 0.5 s apart agree (the first complete 1.0 s after the channel opens) |
+| New decoder | the whole text at `flush` (the channel's end); the search takes each piece 2 pieces (4 ms) after it is given, the systematic term's look-ahead, and `flush` searches the last two; a channel opened at the stream's start (oracle mode) does not search its first block (21.33 ms), N₀ being 0 before the first spectrum frame (a detector channel opens later, with N₀ already set); its channel is shifted to the detector's frequency of each block's start, held over the block (21.33 ms; A.7) |
 | Track removal | the average's decay (~6–7 s at S₅₀₀ = 20 dB) plus the 10 s timeout |
 
 
@@ -4018,6 +3930,8 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Channel filter cutoff | ±150 Hz (−6 dB relative to the passband) | `EngineConfig::channel_cutoff_hz` | heuristic |
 | Channel filter | Blackman-windowed sinc, N/2+1 taps (21.3 ms) | channelizer.cpp | standard choice; length derived from the hop |
 | Cutoff limit | cutoff + ½·5.5·fs/taps ≤ r/2 | channelizer.cpp | derived |
+| Following the detector (new decoder only) | the channel's bin moves, from the next block, to the bin nearest f_det when \|f_det − f_bin\| > Δf/2 = 11.71875 Hz; the block is shifted by −(f_det − f_bin), f_det held over the 32-sample block (21.33 ms); at a move the shift's phase gains (f₁ − f₂)(t₀ − D_g), D_g = 1/(4Δf) = 10.667 ms | `ChannelFollower`, `Channelizer::set_center_bin`; engine.cpp | half a bin derived; the hold per block the plan's (O3: the detector's update interval); D_g derived (the channel filter's group delay); for the new decoder only, a ruling (plan O2) |
+| Oracle frequency (new decoder) | the label's: f = frequency_hz + drift_hz_per_s·(t − drift_origin_s) of the segment in force at the block's start; one segment for a single station, one per transmission of a QSO at freq_offset_hz + the sender's offset_hz | `EngineConfig::oracle_frequency_tracks`, `OracleSegment`; `oracle_frequency_track` (bench) | the generator's own frequency law (A.11, "Oracle frequency") |
 | Envelope smoothing | ¼ dit | `ClassicalDecoderConfig::smoothing_dits` | heuristic |
 | Level attack / decay | 4 ms / 3 s | `ClassicalDecoderConfig` | heuristic, test-confirmed |
 | Squelch | mark ≥ 3 × space | `ClassicalDecoderConfig::squelch_ratio` | heuristic, test-confirmed |
@@ -4114,12 +4028,9 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | New decoder: beam | 40 nats | `beam_nats` | placeholder (at least 28 nats, derived) |
 | New decoder: ceiling | 1 700 stories | `ceiling` | placeholder; left to the plan's ceiling run (owner, 2026-10-21) |
 | New decoder: hiss | each bin's one-pole 1 s average; ±2 000 Hz (±85 bins), the 25th percentile (the 43rd of 171); ÷ β; ÷ 1.5 bins; a frame of exact zeros not counted | `hiss_average_s`, `hiss_half_width_hz`, `hiss_percentile`; `HissEstimator` | 1 s heuristic (the detector's); width and rank placeholders, heuristic; β, the 1.5 bins and the zero rule derived; the 0.01 dB margin above −200 dBFS heuristic |
-| New decoder: tracker windows | 1.0 s every 0.5 s, periodic Hann, 8 192 points, ±15 Hz; a window of 8 samples at least, a hop of at least half the window | `tracker_window_s`, `tracker_hop_s`, `tracker_search_hz` | placeholders (the plan, §2.9); 8 192 heuristic; the two bounds derived (A.8d) |
-| New decoder: tracker gate | 9 dB re the mean noise power per bin (N₀ × 1.5 Hz) | `tracker_gate_db` | derived from the perfect decoder's threshold at 5.2 WPM (A.8d) |
-| New decoder: tracker filter | variance (0.2833 Hz²/ρ)·F(p)/F(1) + (0.3 Hz/s × u)² + (0.08 mHz)², the fill factor read in four quarters; consecutive windows' errors correlated at −0.35 (θ = −0.408); drift 0.3 Hz/s (start sd, agreement, the centroid's share), process noise 1.5 × 10⁻⁴ Hz²/s³; start sd 5 Hz; trusted while 3σ ≤ 0.667 Hz at every fading spread; on a trusted track, the search near its own line first (±0.61 Hz once settled); agreement within 3σ | `tracker_drift_sd_hz_per_s`, `tracker_drift_noise`; tracker.cpp | 0.2833 Hz² and the floor measured; the fill factor derived, its four quarters measured; −0.35 measured at half the window (other hops heuristic), θ derived; 0.3 Hz/s sourced; the process noise derived from it over a heuristic ten minutes; 5 Hz placeholder; 0.667 Hz derived for the default 390 ms block and fixed at every spread (decided 2026-10-21 from measurements; A.8d); ±0.61 Hz derived; 3σ heuristic |
-| New decoder: genie | per channel, the true frequency and drift, fading spread or fist | `genie_*`, `ViterbiGenie`, `EngineConfig::viterbi_genie` | genie runs only (oracle mode) |
+| New decoder: genie | per channel, the true fading spread or fist (no frequency: oracle channels follow the label's) | `genie_fading_spread_hz`, `ViterbiGenie`, `EngineConfig::viterbi_genie` | genie runs only (oracle mode) |
 | New decoder: open timing's tables | at most 4 000 000 bytes of entries per search (544 bytes per τ and a cap of 7 352 pieces, 14.704 s, at 32 speeds) | search.cpp | a memory choice with no effect on the output (tested) |
-| New decoder: events | the whole text at `flush`; probability 1, speed 0, confidence 0; `freq_offset_hz`, the oscillator's offset at each block's last sample | `ViterbiDecoder` | placeholders (the plan's O4) |
+| New decoder: events | the whole text at `flush`; probability 1, speed 0, confidence 0; no `freq_offset_hz` (the track's frequency is the detector's, which its channel follows) | `ViterbiDecoder`, engine.cpp | placeholders (the plan's O4) |
 
 ## A.11 Definitions used in tests and the benchmark
 
@@ -4245,6 +4156,22 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   time base, 2 × 4.235 ms = 8.470 ms, placement "start" (plan 1b,
   Ruling 62). The labels carry `edge_s` and `edge_placement` (an older
   field, `edges_centered`, is gone: "centered" is its True).
+- **Oracle frequency** (the new decoder's oracle channels, `kz4ap-bench
+  --oracle --decoder viterbi`; design Part 1, plan O3): the detector
+  frequency an oracle channel follows is its label's true carrier, as the
+  generator makes it (angle 2πft + πḟ(t − start_s)²): f(t) =
+  `freq_offset_hz` + `drift_hz_per_s`·(t − `start_s`), Hz from the span's
+  center, for a signal of one station; for a QSO label, the over in
+  progress, `freq_offset_hz` + its sender's `offset_hz` (+ the same drift
+  term, from the QSO's `start_s`), switching at each transmission's
+  `start_s` (the first from 0 s) and held through the silence after it.
+  It is evaluated at each 32-sample channel block's start (21.33 ms) and
+  held over the block. A per-station label of a drifting QSO is refused
+  (its `start_s` is the station's first over, not the QSO's). The other
+  decoders' oracle channels keep the label's frequency at `start_s` as
+  their anchor (Matched) or mixing frequency (the bank), unchanged. The
+  frequency genie (`--genie frequency`), which gave the decoder the
+  carrier, is removed: the channel now carries it.
 - **Character error rate (CER):** the minimum number of symbol insertions,
   deletions and substitutions to turn the decoded text into the reference,
   divided by the number of reference symbols. A prosign token counts as one
@@ -4453,7 +4380,10 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   frequency, center (Hz from the span's center), first sample index and
   sample count. The decoder that reads them (`kz4ap-bank-replay`, as the
   stage-1 prototype did) mixes the stream down by f_off (and a labeled
-  drift) itself.
+  drift) itself. With `--decoder viterbi` the stream is the followed one
+  (A.7), its center the label's frequency, and a channel whose center
+  moves (a drifting or QSO label) stops the run with an error when it
+  first moves.
   **Detector form** (`--record-channels DIR` without `--oracle`, used with
   `--decoder matched`): `channel-<track id>.c64` holds the channelizer
   output of every channel the detector opens, from its first block to its

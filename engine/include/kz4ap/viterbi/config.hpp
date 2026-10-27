@@ -55,8 +55,7 @@ struct ViterbiConfig {
     // --- Fading and the block (topic 4, item 9) ---
 
     // Hz: the Doppler spread f_D of the fading, twice the standard deviation of a Gaussian Doppler spectrum; sets the
-    // block length (block_length_s) and the rate of the level, not the frequency tracker (placeholder, to be set by
-    // measurement)
+    // block length (block_length_s) and the rate of the level (placeholder, to be set by measurement)
     double fading_spread_hz = 1.0;
     // dB of signal energy: the largest loss a block may have at that spread (heuristic)
     double block_loss_db = 0.5;
@@ -115,35 +114,13 @@ struct ViterbiConfig {
     // pole's step; the signal detector's rule and value (plan section 2.10, "Hiss average: one-pole, 1 s"; heuristic)
     double hiss_average_s = 1.0;
 
-    // --- The frequency tracker (topic 4, item 8; tracker.hpp has the design) ---
-
-    // s: the length of the window of each measurement, 8 samples at least (placeholder)
-    double tracker_window_s = 1.0;
-    // s: the time between measurements, at least half the window (placeholder)
-    double tracker_hop_s = 0.5;
-    // Hz: the half-width of the search around the oscillator's frequency (placeholder)
-    double tracker_search_hz = 15.0;
-    // dB relative to the mean noise power per bin (N0 times the window's noise bandwidth, 1.5 Hz for the 1 s Hann
-    // window): a window is measured only if its peak is at least this far above it. Derived: a steady line at the
-    // perfect decoder's threshold at 5.2 WPM (-8.6 dB S500) stands 9.5 dB above it and passes in 64% of the windows
-    double tracker_gate_db = 9.0;
-    // Hz/s: the standard deviation of the drift rate at the start, and of any carrier's drift in the agreement test
-    // of two measurements and in a measurement's variance (for the centroid of its line). Sourced: older rigs'
-    // specified warm-up drift, at most about 0.3 Hz/s (a Kenwood TS-830S, 1 kHz in its first hour; rigpix's
-    // specification page, https://www.rigpix.com/kenwood/ts830s.htm; tracker.hpp has the other sources)
-    double tracker_drift_sd_hz_per_s = 0.3;
-    // Hz^2/s^3, (Hz/s)^2 per second: the process noise of the drift rate, a change of tracker_drift_sd_hz_per_s over
-    // ten minutes, (0.3 Hz/s)^2 / 600 s (derived from the sourced drift; the ten minutes heuristic)
-    double tracker_drift_noise = 1.5e-4;
+    // (No frequency tracker: the channelizer follows the detector, and the decoder reads its channel as received;
+    // design Part 10, ChannelFollower.)
 
     // --- Genie runs only: the truth, given to the decoder in place of what it would estimate ---
+    // (The carrier's frequency is no genie value: an oracle channel follows its label's frequency, EngineConfig::
+    // oracle_frequency_tracks.)
 
-    // Hz from the channel's center: the carrier's true frequency at stream time 0 s (the recording's first sample), in
-    // place of the tracker's estimate (empty: none). The decoder re-centers sample time t, s, at
-    // genie_frequency_offset_hz + genie_frequency_drift_hz_per_s x t
-    std::optional<double> genie_frequency_offset_hz;
-    // Hz/s: the carrier's true drift rate, with genie_frequency_offset_hz
-    double genie_frequency_drift_hz_per_s = 0.0;
     // Hz: the true Doppler spread of the fading, in place of fading_spread_hz (empty: none)
     std::optional<double> genie_fading_spread_hz;
 
@@ -157,12 +134,6 @@ struct ViterbiConfig {
 // channel's station has its own): the truth its decoder is given in place of what it would estimate. Each part is used
 // only where it is set; with_genie puts them into the channel's configuration.
 struct ViterbiGenie {
-    // The carrier: frequency_hz, Hz from the span's center (the frame of EngineConfig::oracle_frequencies_hz), at stream
-    // time frequency_time_s, s, and its drift rate, Hz/s, so that it is at frequency_hz + drift_hz_per_s x
-    // (t - frequency_time_s) at time t (the labels' convention: the drift counts from the signal's start)
-    std::optional<double> frequency_hz;
-    double frequency_time_s = 0.0;
-    double drift_hz_per_s = 0.0;
     // Hz: the fading's true Doppler spread (genie_fading_spread_hz)
     std::optional<double> fading_spread_hz;
     // The sender's fist: its dot, ms, and its per kind medians (dots), sigmas (ln(length)) and shifts (dots), in the
@@ -176,17 +147,10 @@ struct ViterbiGenie {
     std::optional<Fist> fist;
 };
 
-// The configuration of one channel whose center is channel_center_hz (Hz from the span's center), with the genie's
-// values in place: the carrier as genie_frequency_offset_hz = frequency_hz - channel_center_hz - drift_hz_per_s x
-// frequency_time_s (the offset at stream time 0) and genie_frequency_drift_hz_per_s = drift_hz_per_s; the spread as
-// genie_fading_spread_hz; the fist as speed_count = 1, dot_min_ms = its dot and its medians, sigmas and shifts. The
-// parts not set leave the configuration as it was.
-inline ViterbiConfig with_genie(ViterbiConfig config, const ViterbiGenie& genie, double channel_center_hz) {
-    if (genie.frequency_hz) {
-        config.genie_frequency_offset_hz =
-            *genie.frequency_hz - channel_center_hz - genie.drift_hz_per_s * genie.frequency_time_s;
-        config.genie_frequency_drift_hz_per_s = genie.drift_hz_per_s;
-    }
+// The configuration of one oracle channel with the genie's values in place: the spread as genie_fading_spread_hz; the
+// fist as speed_count = 1, dot_min_ms = its dot and its medians, sigmas and shifts. The parts not set leave the
+// configuration as it was.
+inline ViterbiConfig with_genie(ViterbiConfig config, const ViterbiGenie& genie) {
     if (genie.fading_spread_hz) config.genie_fading_spread_hz = genie.fading_spread_hz;
     if (genie.fist) {
         config.speed_count = 1;

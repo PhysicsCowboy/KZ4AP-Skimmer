@@ -7,9 +7,11 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <cstdint>
 #include <limits>
 #include <map>
 #include <numbers>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -569,4 +571,192 @@ TEST(Engine, ChannelTapReportsTheAnchorOfEachBlock) {
             EXPECT_NEAR(anchors.back(), 12009.0, 1.0);
         }
     }
+}
+
+// ---- The channelizer follows the detector: the new decoder's channels only (design Part 1; plan O2, O3) ----
+
+namespace {
+
+double frac(double cycles) { return cycles - std::floor(cycles); }
+
+// Adds to x (48 kHz) a carrier of amplitude a, FS, present in [from_s, to_s), whose frequency is f0 + drift x t Hz from
+// the span's center (t in s from the recording's first sample).
+void add_carrier(std::vector<Sample>& x, double f0_hz, double drift_hz_per_s, double a, double from_s, double to_s) {
+    const auto first = static_cast<std::size_t>(std::llround(from_s * 48000.0));
+    const auto last = std::min(x.size(), static_cast<std::size_t>(std::llround(to_s * 48000.0)));
+    for (std::size_t n = first; n < last; ++n) {
+        const double t = static_cast<double>(n) / 48000.0;
+        const double angle = 2.0 * std::numbers::pi * frac(f0_hz * t + 0.5 * drift_hz_per_s * t * t);
+        x[n] += Sample(static_cast<float>(a * std::cos(angle)), static_cast<float>(a * std::sin(angle)));
+    }
+}
+
+// duration_s of complex white noise of kNoiseSigma (DEV2's) at 48 kHz.
+std::vector<Sample> noise_48k(double duration_s, unsigned seed) {
+    return kz4ap::test::keyed_signal_of(std::vector<std::pair<double, double>>{}, 48000.0, duration_s, 0.0, 1.0,
+                                        kNoiseSigma, seed);
+}
+
+// One channel's blocks as the engine's tap saw them.
+struct TappedChannel {
+    std::vector<Sample> samples;
+    std::vector<std::uint64_t> first_index;  // per block
+    std::vector<double> center_hz;           // per block
+    std::vector<double> anchor_hz;           // per block
+};
+
+std::map<std::uint32_t, TappedChannel> tapped(const EngineConfig& config, const std::vector<Sample>& x) {
+    EventBus bus;
+    Engine engine(config, bus);
+    std::map<std::uint32_t, TappedChannel> channels;
+    engine.set_channel_tap([&](const ChannelBlock& b) {
+        TappedChannel& c = channels[b.track_id];
+        c.samples.insert(c.samples.end(), b.samples.begin(), b.samples.end());
+        c.first_index.push_back(b.first_index);
+        c.center_hz.push_back(b.center_hz);
+        c.anchor_hz.push_back(b.anchor_hz);
+    });
+    for (std::size_t i = 0; i < x.size(); i += 65536)
+        engine.process(std::span<const Sample>(x).subspan(i, std::min<std::size_t>(65536, x.size() - i)));
+    engine.finish();
+    return channels;
+}
+
+// Hz: the frequency of the carrier in samples [from, to) of a channel stream at 1 500 samples/s, from the phase of
+// sum y[n] y*[n - L] with L = 375 samples (0.25 s; unambiguous within +-2 Hz), over 2 pi L / r.
+double carrier_hz(const std::vector<Sample>& y, std::size_t from, std::size_t to) {
+    constexpr std::size_t kLag = 375;
+    std::complex<double> sum = 0.0;
+    for (std::size_t n = from + kLag; n < to; ++n)
+        sum += std::complex<double>(y[n]) * std::conj(std::complex<double>(y[n - kLag]));
+    return std::arg(sum) * 1500.0 / (2.0 * std::numbers::pi * static_cast<double>(kLag));
+}
+
+// The new decoder at 48 kHz, its ceiling lowered to 100 stories to keep its CPU down: these tests read the channel.
+EngineConfig following_config() {
+    EngineConfig c;
+    c.sample_rate = 48000;
+    c.decoder.front_end = FrontEnd::Viterbi;
+    c.viterbi.ceiling = 100;
+    return c;
+}
+
+}  // namespace
+
+TEST(Engine, OracleChannelsFollowTheLabelsDrift) {
+    // A carrier at +30 dB S500 over DEV2's noise, 5 Hz above the center of bin 32 (755 Hz) at 0 s and drifting at
+    // 1 Hz/s for 30 s, its oracle segment given (755 Hz at 0 s, 1 Hz/s from 0 s): every block's demodulating frequency
+    // (the tap's center_hz, and its anchor) is the label's frequency at the block's start, and the tap's samples hold
+    // the carrier within 0.05 Hz of 0 Hz in every 1 s window (the held frequency leaves 0 to 0.021 Hz; derived). The bin
+    // moves once, at 16.75 s, without a trace in the windows.
+    std::vector<Sample> x = noise_48k(30.0, 51);
+    add_carrier(x, 755.0, 1.0, amplitude_48k(30.0), 0.0, 30.0);
+    EngineConfig config = following_config();
+    config.oracle_frequencies_hz = {755.0};
+    config.oracle_frequency_tracks = {{OracleSegment{0.0, 755.0, 1.0, 0.0}}};
+    const auto channels = tapped(config, x);
+    ASSERT_EQ(channels.size(), 1u);
+    const TappedChannel& c = channels.at(1);
+    for (std::size_t k = 0; k < c.first_index.size(); ++k) {
+        const double expected = 755.0 + 1.0 * static_cast<double>(c.first_index[k]) / 1500.0;
+        ASSERT_NEAR(c.center_hz[k], expected, 1e-9) << "block " << k;
+        ASSERT_EQ(c.anchor_hz[k], c.center_hz[k]) << "block " << k;
+    }
+    ASSERT_GE(c.samples.size(), 30u * 1500u);
+    for (std::size_t w = 0; w < 30; ++w)
+        EXPECT_NEAR(carrier_hz(c.samples, std::max<std::size_t>(32, w * 1500), (w + 1) * 1500), 0.0, 0.05)
+            << "window " << w;
+}
+
+TEST(Engine, AnOracleQsoSwitchesAtEachOver) {
+    // A QSO on one oracle channel: station A at 750 Hz until 5 s, then B at 775 Hz until 10 s, each a carrier at
+    // +30 dB S500 over DEV2's noise; the segments 750 Hz from 0 s and 775 Hz from 5 s. The shift changes at the first
+    // block starting at or after 5 s, the block of channel sample 7 520 (5.0133 s: 5 s x 1 500 samples/s = 7 500 is
+    // not a multiple of 32), and B arrives within 0.05 Hz of 0 Hz from that block on (in 1 s windows from 0.1 s after
+    // it, past the tail of the first station in the channel filter), as A did before.
+    std::vector<Sample> x = noise_48k(10.0, 52);
+    add_carrier(x, 750.0, 0.0, amplitude_48k(30.0), 0.0, 5.0);
+    add_carrier(x, 775.0, 0.0, amplitude_48k(30.0), 5.0, 10.0);
+    EngineConfig config = following_config();
+    config.oracle_frequencies_hz = {750.0};
+    config.oracle_frequency_tracks = {{OracleSegment{0.0, 750.0, 0.0, 0.0}, OracleSegment{5.0, 775.0, 0.0, 0.0}}};
+    const TappedChannel c = tapped(config, x).at(1);
+    ASSERT_GT(c.first_index.size(), 236u);
+    ASSERT_EQ(c.first_index[235], 7520u);
+    for (std::size_t k = 0; k < c.first_index.size(); ++k)
+        ASSERT_EQ(c.center_hz[k], c.first_index[k] >= 7520 ? 775.0 : 750.0) << "block " << k;
+    for (std::size_t from = 32; from + 1500 <= 7400; from += 1500)
+        EXPECT_NEAR(carrier_hz(c.samples, from, from + 1500), 0.0, 0.05) << "A from sample " << from;
+    for (std::size_t from = 7520 + 150; from < 15000; from += 1500)
+        EXPECT_NEAR(carrier_hz(c.samples, from, std::min<std::size_t>(from + 1500, 15000)), 0.0, 0.05)
+            << "B from sample " << from;
+}
+
+TEST(Engine, OtherDecodersChannelsAreUnchanged) {
+    // Following is for the new decoder's channels only (plan O2). For Envelope, Matched and the bank in oracle mode, on
+    // a 10 s recording of two stations (7.69 Hz above and 4.06 Hz below their bins' centers), the tap's blocks are
+    // bit-identical to the fixed-bin channelizer's output, at the bins' centers. The new decoder's are not (followed).
+    const double duration_s = 10.0;
+    std::vector<Sample> x = noise_48k(duration_s, 53);
+    add_to(x, keyed_signal("CQ TEST K1ABC", 25, 48000.0, duration_s, 1203.0, amplitude_48k(15.0), 0.0, 1, 0.5));
+    add_to(x, keyed_signal("PARIS PARIS", 20, 48000.0, duration_s, -2501.0, amplitude_48k(15.0), 0.0, 1, 0.8));
+    // The engine pads its last hop of 1 024 samples with zeros; the reference gets the same input.
+    std::vector<Sample> padded = x;
+    padded.resize((x.size() + 1023) / 1024 * 1024);
+    ChannelizerConfig channel_config;
+    channel_config.sample_rate = 48000;
+    channel_config.fft_size = 2048;
+    Channelizer reference(channel_config);
+    const int bins[] = {reference.hz_to_bin(1203.0), reference.hz_to_bin(-2501.0)};
+    reference.add_channel(1, bins[0]);
+    reference.add_channel(2, bins[1]);
+    std::map<std::uint32_t, std::vector<Sample>> fixed;
+    reference.push(padded, [&](std::uint32_t id, std::uint64_t, std::span<const Sample> s) {
+        fixed[id].insert(fixed[id].end(), s.begin(), s.end());
+    });
+    for (const FrontEnd front_end : {FrontEnd::Envelope, FrontEnd::Matched, FrontEnd::Bank}) {
+        SCOPED_TRACE("decoder " + std::to_string(static_cast<int>(front_end)));
+        EngineConfig config;
+        config.sample_rate = 48000;
+        config.decoder.front_end = front_end;
+        config.oracle_frequencies_hz = {1203.0, -2501.0};
+        const auto channels = tapped(config, x);
+        for (const std::uint32_t id : {1u, 2u}) {
+            const TappedChannel& c = channels.at(id);
+            ASSERT_EQ(c.samples.size(), fixed.at(id).size()) << "track " << id;
+            EXPECT_TRUE(c.samples == fixed.at(id)) << "track " << id;
+            for (const double center : c.center_hz) ASSERT_EQ(center, reference.bin_to_hz(bins[id - 1]));
+        }
+    }
+    EngineConfig followed = following_config();
+    followed.oracle_frequencies_hz = {1203.0, -2501.0};
+    const auto channels = tapped(followed, x);
+    EXPECT_FALSE(channels.at(1).samples == fixed.at(1));
+    EXPECT_EQ(channels.at(1).center_hz.front(), 1203.0);
+}
+
+TEST(Engine, RefusesOracleTracksItCannotUse) {
+    // Oracle tracks belong to the new decoder's oracle channels: one per oracle frequency (or none), each empty (that
+    // channel's constant frequency) or starting at or before 0 s, its segments in the order of their starts, every
+    // value finite.
+    EventBus bus;
+    EngineConfig config = following_config();
+    config.oracle_frequencies_hz = {750.0, 1500.0};
+    config.oracle_frequency_tracks = {{OracleSegment{0.0, 750.0, 0.0, 0.0}}, {}};
+    EXPECT_NO_THROW(Engine(config, bus));
+    const auto refused = [&](std::vector<std::vector<OracleSegment>> tracks, FrontEnd front_end = FrontEnd::Viterbi) {
+        EngineConfig c = config;
+        c.decoder.front_end = front_end;
+        c.oracle_frequency_tracks = std::move(tracks);
+        EXPECT_THROW(Engine(c, bus), std::invalid_argument);
+    };
+    refused({{OracleSegment{0.0, 750.0, 0.0, 0.0}}});      // one track for two channels
+    refused({{OracleSegment{0.5, 750.0, 0.0, 0.0}}, {}});  // starts after 0 s
+    refused({{OracleSegment{0.0, 750.0, 0.0, 0.0}, OracleSegment{3.0, 760.0, 0.0, 0.0},
+              OracleSegment{2.0, 770.0, 0.0, 0.0}},
+             {}});  // out of order
+    refused({{OracleSegment{0.0, std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0}}, {}});
+    refused({{OracleSegment{0.0, 750.0, std::numeric_limits<double>::infinity(), 0.0}}, {}});
+    for (const FrontEnd other : {FrontEnd::Envelope, FrontEnd::Matched, FrontEnd::Bank})
+        refused({{OracleSegment{0.0, 750.0, 0.0, 0.0}}, {}}, other);
 }

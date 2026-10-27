@@ -11,6 +11,9 @@ struct Transmission {
     std::string text;
     double start_s;
     double end_s;
+    // Hz: the sender's carrier offset from the signal's freq_offset_hz (a QSO's transmissions; 0 when the file has none:
+    // a signal of one station, or a per-station label of a QSO, whose transmissions are at its own frequency)
+    double offset_hz = 0;
 };
 
 struct LabeledSignal {

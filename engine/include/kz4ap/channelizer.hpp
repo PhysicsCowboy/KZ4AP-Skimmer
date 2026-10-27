@@ -43,6 +43,18 @@ public:
 
     void add_channel(std::uint32_t id, int center_bin);
     void remove_channel(std::uint32_t id);
+    // Moves a channel: its output from its next block on is cut at center_bin (a signed bin, as add_channel's); the
+    // blocks already delivered are unchanged. Called from inside the sink it also takes effect from the channel's next
+    // block: moves are applied when a block starts, before any channel is cut. Throws std::invalid_argument for an id
+    // that is not a channel.
+    // The phase: channel sample j (absolute index, input sample n = j x decimation) is
+    //     y_c[j] = sum_l h[l] x[n - l] exp(-j 2 pi c (n - l) / fft_size),
+    // the input demodulated at center c from the stream's start, then filtered (derived from process_block: the inverse
+    // FFT mixes relative to the block's start, re-referenced to the stream's start). For a station narrow against the
+    // filter's passband this is the input as of n - D demodulated by exp(-j 2 pi c (n - D) / fft_size), D = (taps - 1) / 2
+    // = fft_size / 4 input samples, the filter's group delay (1 / (4 x bin width) s: 10.667 ms). So at a move from c1 to
+    // c2 the station's phase in the channel steps by 2 pi (c1 - c2) (n - D) / fft_size; ChannelFollower compensates it.
+    void set_center_bin(std::uint32_t id, int center_bin);
     std::size_t channel_count() const { return channels_.size(); }
 
     // Consumes samples; calls sink once per channel for every block they complete.
@@ -62,6 +74,7 @@ private:
     std::vector<Sample> channel_out_;
     std::uint64_t block_index_ = 0;
     std::map<std::uint32_t, int> channels_;  // id -> center bin; ordered for deterministic sink order
+    std::map<std::uint32_t, int> moves_;     // id -> center bin from the next block on (set_center_bin)
 };
 
 }  // namespace kz4ap

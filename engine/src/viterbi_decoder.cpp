@@ -4,10 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <iomanip>
 #include <limits>
-#include <numbers>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -126,25 +126,17 @@ std::shared_ptr<const ViterbiShared> checked(double rate_hz, const viterbi::Vite
     require(shared->c().size() >
                 static_cast<std::size_t>(shared->samples_per_piece()) * static_cast<std::size_t>(longest),
             "ViterbiDecoder: the shared c is shorter than this configuration's blocks");
-    if (config.genie_frequency_offset_hz)
-        require(std::isfinite(*config.genie_frequency_offset_hz) &&
-                    std::isfinite(config.genie_frequency_drift_hz_per_s),
-                "ViterbiDecoder: the genie's frequency and drift must be finite (Hz, Hz/s)");
     return shared;
 }
 
 }  // namespace
 
-ViterbiDecoder::ViterbiDecoder(double rate_hz, const viterbi::ViterbiConfig& config, double residual_hz,
+ViterbiDecoder::ViterbiDecoder(double rate_hz, const viterbi::ViterbiConfig& config,
                                std::shared_ptr<const ViterbiShared> shared)
     : rate_(rate_hz),
       config_(config),
       shared_(checked(rate_hz, config, std::move(shared))),
-      search_(config, shared_->c(), shared_->flat_prior()),
-      anchor_hz_(residual_hz) {
-    require(std::isfinite(residual_hz), "ViterbiDecoder: residual_hz must be finite (Hz)");
-    // The tracker's configuration is checked now; the tracker itself starts at the first block's anchor.
-    (void)viterbi::CarrierTracker(rate_hz, config, residual_hz);
+      search_(config, shared_->c(), shared_->flat_prior()) {
     // Builds now the tables that would otherwise be built on first use: the evidence's (the broad-prior regime's,
     // 31 ms, and the truncated nodes') and the fist's ln Phi_c (1.8 ms), each built once for every caller.
     viterbi::build_evidence_tables(config.quadrature_order);
@@ -155,7 +147,6 @@ DecodeUpdate ViterbiDecoder::process(std::span<const Sample> samples, double t0_
     if (flushed_ || samples.empty()) return {};
     require(std::isfinite(t0_s), "ViterbiDecoder::process: t0_s must be finite (s)");
     if (!started_) {
-        tracker_.emplace(rate_, config_, anchor_hz_);  // the anchor in force at the channel's first block
         origin_s_ = t0_s;
         started_ = true;
     } else {
@@ -163,22 +154,11 @@ DecodeUpdate ViterbiDecoder::process(std::span<const Sample> samples, double t0_
         require(std::fabs(t0_s - expected_s) <= 0.5 / rate_,
                 "ViterbiDecoder::process: a block must start where the previous one ended (to within half a sample)");
     }
-    const bool genie = config_.genie_frequency_offset_hz.has_value();
-    const double genie_hz = config_.genie_frequency_offset_hz.value_or(0.0);
-    const double genie_drift = config_.genie_frequency_drift_hz_per_s;
     const int samples_per_piece = shared_->samples_per_piece();
     const auto per_piece = static_cast<std::uint64_t>(samples_per_piece);
     for (const Sample& y : samples) {
-        // Sample n's time, one expression from the origin; the tracker takes the sample first, so that the oscillator's
-        // offset includes every window the sample completes, then the offset at that time is read.
-        const double t = origin_s_ + static_cast<double>(samples_) / rate_;
-        tracker_->push(std::span<const Sample>(&y, 1), t, n0_);
-        offset_hz_ = genie ? genie_hz + genie_drift * t : tracker_->offset_hz(t);
-        // Re-centered by the oscillator's phase before this sample's own advance: exp(-j 2 pi phase).
-        const std::complex<double> turn = std::polar(1.0, -2.0 * std::numbers::pi * phase_cycles_);
-        piece_sum_ += std::complex<double>(y.real(), y.imag()) * turn;
-        phase_cycles_ += offset_hz_ / rate_;
-        phase_cycles_ -= std::floor(phase_cycles_);
+        // The sample as received: the channel is already centered on its station (ChannelFollower).
+        piece_sum_ += std::complex<double>(y.real(), y.imag());
         ++samples_;
         if (++held_ < samples_per_piece) continue;
         // Piece k ends with its last sample: t_first + samples_per_piece x (k + 1) / r.
@@ -188,9 +168,7 @@ DecodeUpdate ViterbiDecoder::process(std::span<const Sample> samples, double t0_
         piece_sum_ = 0.0;
         held_ = 0;
     }
-    DecodeUpdate update;
-    update.freq_offset_hz = offset_hz_;
-    return update;
+    return {};
 }
 
 DecodeUpdate ViterbiDecoder::flush() {
@@ -199,13 +177,11 @@ DecodeUpdate ViterbiDecoder::flush() {
     search_.finish();  // the pieces the search holds for its look-ahead
     DecodeUpdate update;
     update.chars = search_.best_text();
-    if (started_) update.freq_offset_hz = offset_hz_;
     return update;
 }
 
 void ViterbiDecoder::reset() {
     search_ = viterbi::Search(config_, shared_->c(), shared_->flat_prior());
-    tracker_.reset();
     started_ = false;
     flushed_ = false;
     origin_s_ = 0.0;
@@ -213,11 +189,7 @@ void ViterbiDecoder::reset() {
     pieces_ = 0;
     piece_sum_ = 0.0;
     held_ = 0;
-    phase_cycles_ = 0.0;
-    offset_hz_ = 0.0;
 }
-
-void ViterbiDecoder::set_frequency_anchor_hz(double offset_hz) { anchor_hz_ = offset_hz; }
 
 void ViterbiDecoder::set_noise_density_fs2_per_hz(double n0_fs2_per_hz) {
     require(std::isfinite(n0_fs2_per_hz) && n0_fs2_per_hz >= 0.0,

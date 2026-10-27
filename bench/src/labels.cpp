@@ -35,7 +35,7 @@ Labels parse_labels(const std::string& json_text) {
             if (const auto t = s.find("transmissions"); t != s.end()) {
                 for (const auto& tx : *t) {
                     signal.transmissions.push_back({tx.at("text").get<std::string>(), tx.at("start_s").get<double>(),
-                                                    tx.at("end_s").get<double>()});
+                                                    tx.at("end_s").get<double>(), number_or(tx, "offset_hz", 0.0)});
                 }
             }
             signal.score = s.value("score", true);

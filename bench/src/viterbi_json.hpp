@@ -15,12 +15,21 @@
 // engine, the shared parts and the decoder refuse what they cannot use when they are built (std::invalid_argument,
 // with their message), so the bench copies none of their rules.
 //
-// THE GENIE (--genie fist|frequency|fading, repeatable, with --oracle). genie_from_label reads, from the label of an
+// THE ORACLE'S FREQUENCY (--oracle --decoder viterbi). Each oracle channel follows its label's true frequency (design
+// Part 1; plan O3), given to the engine as EngineConfig::oracle_frequency_tracks, one track per label, in the order of
+// the labels (oracle_frequency_track): for a label of one station one segment from 0 s, its freq_offset_hz in Hz from
+// the span's center at its start_s and its drift_hz_per_s in Hz/s from there, so that the carrier is at freq_offset_hz +
+// drift_hz_per_s x (t - start_s) at stream time t, in s, as the generator makes it (the angle is 2 pi f t + pi drift
+// (t - start_s)^2); for a QSO label (its "senders") one segment per transmission, from the transmission's start_s (the
+// first from 0 s), at freq_offset_hz + the sender's offset_hz with the QSO's drift from the QSO's start_s: the over in
+// progress, held through the silence after it. A per-station label of a QSO that drifts is refused, naming its number in
+// the labels file: its start_s is the station's first over, not the QSO's start from which the drift is measured. The
+// engine evaluates the track at each channel block's start and holds it over the block. The frequency genie that gave
+// the decoder the carrier (--genie frequency) is removed, and refused with that reason.
+//
+// THE GENIE (--genie fist|fading, repeatable, with --oracle). genie_from_label reads, from the label of an
 // oracle channel's station, the truth the decoder is given in place of what it estimates, in the form the engine takes
 // (EngineConfig::viterbi_genie, one entry per oracle channel, in the order of the labels):
-//   frequency  the label's freq_offset_hz, its frequency at start_s in Hz from the span's center, and its
-//              drift_hz_per_s, in Hz/s: the carrier is at freq_offset_hz + drift_hz_per_s x (t - start_s) at stream
-//              time t, in s, as the generator makes it (the angle is 2 pi f t + pi drift (t - start_s)^2);
 //   fading     the label's fading_hz, the Rayleigh fading's frequency spread f_D in Hz (twice its standard deviation),
 //              which is 0 for a signal that does not fade: that is the truth, and it is given (a block is then the
 //              whole mark);
@@ -39,10 +48,8 @@
 //              is not read: for a Farnsworth-spaced signal the genie fist gives the style's standard medians, and
 //              its stretched gaps decode poorly (docs/backlog.md, "Farnsworth spacing in the new decoder").
 // A label that has no single truth to give is refused, naming its number in the labels file: a QSO label of several
-// stations for frequency and for fist (each station has its own carrier and fist; the per-station labels of a QSO have
-// one), and a signal that changes speed (wpm_end) for fist (one dot cannot give both speeds). LIMITATION, accepted for
-// now: the tracker's measurement run on the QSOs on one track needs a piecewise genie (a frequency for each over)
-// before it can compare with the true frequency there; ViterbiGenie holds one frequency and one drift.
+// stations for fist (each station has its own fist; the per-station labels of a QSO have one), and a signal that
+// changes speed (wpm_end) for fist (one dot cannot give both speeds).
 //
 // THE STATISTICS FILE (--stats FILE, with --stats-detail), format "kz4ap-viterbi-search-stats": the decoder's
 // SearchStats (engine/include/kz4ap/viterbi/search.hpp) for every channel of a run, which the search keeps when
@@ -76,8 +83,8 @@
 //   "recording"    the recording's file name
 //   "config"       the ViterbiConfig the run used, as the result file's "config": every field by its C++ name, in its
 //                  unit. It is the run's base configuration: in a --genie run each channel ran with its own genie
-//                  values (the true speed and fist, carrier or fading spread of its station), which only the result
-//                  file's "genie" records
+//                  values (the true speed and fist or fading spread of its station), which only the result file's
+//                  "genie" records
 //   "fields"       what each key of a channel is: "SearchStats" (version 1) or "ChannelSummary" (version 2) lists the
 //                  members of a channel and "NewbornLine" those of a line, each by its name, as a string that starts
 //                  with the unit or the kind of the value (count, counts, stories, s, nats, a code into "line_kinds"
@@ -166,9 +173,10 @@ void check_engine_accepts(const EngineConfig& config);
 
 // ---- The genie ----
 
-enum class GenieKind { Fist, Frequency, Fading };
+enum class GenieKind { Fist, Fading };
 
-// "fist", "frequency" or "fading"; throws std::invalid_argument for anything else.
+// "fist" or "fading"; throws std::invalid_argument for anything else ("frequency": "the frequency genie is removed:
+// oracle channels follow the label's frequency (design Part 1)").
 GenieKind parse_genie_kind(const std::string& name);
 const char* genie_kind_name(GenieKind kind);
 
@@ -179,9 +187,15 @@ const char* genie_kind_name(GenieKind kind);
 viterbi::ViterbiGenie genie_from_label(const LabeledSignal& label, std::size_t index, std::span<const GenieKind> kinds,
                                        double piece_s);
 
-// A channel's genie values as the result file records them: frequency_hz (or null), frequency_time_s, drift_hz_per_s,
-// fading_spread_hz (or null) and fist (or null; else dot_ms, medians_dots, sigmas, shifts_dots).
+// A channel's genie values as the result file records them: fading_spread_hz (or null) and fist (or null; else dot_ms,
+// medians_dots, sigmas, shifts_dots).
 nlohmann::ordered_json to_json(const viterbi::ViterbiGenie& genie);
+
+// ---- The oracle's frequency ----
+
+// The track of the oracle channel of one label (see above); `index` is the label's number in the labels file, for the
+// message. Throws std::invalid_argument, naming the signal, for a per-station label of a QSO that drifts.
+std::vector<OracleSegment> oracle_frequency_track(const LabeledSignal& label, std::size_t index);
 
 // ---- The rules among the options ----
 

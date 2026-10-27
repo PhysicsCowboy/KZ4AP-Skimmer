@@ -79,19 +79,19 @@ void every_field_is_named(const ViterbiConfig& c) {
                                   fist_shifts_dots, beam_nats, ceiling, fading_spread_hz, block_loss_db,
                                   keying_rise_s, systematic_floor, over_rate_per_s, rescue_epsilon, word_end_p,
                                   over_end_q, level_min_db, level_max_db, quadrature_order, hiss_half_width_hz,
-                                  hiss_percentile, hiss_average_s, tracker_window_s, tracker_hop_s, tracker_search_hz,
-                                  tracker_gate_db, tracker_drift_sd_hz_per_s, tracker_drift_noise,
-                                  genie_frequency_offset_hz, genie_frequency_drift_hz_per_s, genie_fading_spread_hz,
-                                  stats] = c;
+                                  hiss_percentile, hiss_average_s, genie_fading_spread_hz, stats] = c;
 }
 
 const std::vector<std::string> kExpectedNames = {
     "piece_s", "dot_min_ms", "speed_ratio", "speed_count", "fist_medians_dots",
     "fist_sigmas", "fist_shifts_dots", "beam_nats", "ceiling", "fading_spread_hz", "block_loss_db", "keying_rise_s",
     "systematic_floor", "over_rate_per_s", "rescue_epsilon", "word_end_p", "over_end_q", "level_min_db", "level_max_db",
-    "quadrature_order", "hiss_half_width_hz", "hiss_percentile", "hiss_average_s", "tracker_window_s",
-    "tracker_hop_s", "tracker_search_hz", "tracker_gate_db", "tracker_drift_sd_hz_per_s", "tracker_drift_noise",
-    "genie_frequency_offset_hz", "genie_frequency_drift_hz_per_s", "genie_fading_spread_hz", "stats"};
+    "quadrature_order", "hiss_half_width_hz", "hiss_percentile", "hiss_average_s", "genie_fading_spread_hz", "stats"};
+
+// The fields that the decoder's frequency tracker and the frequency genie had (removed: design Parts 10 and 12).
+const std::vector<std::string> kRemovedNames = {
+    "tracker_window_s",          "tracker_hop_s",   "tracker_search_hz",         "tracker_gate_db",
+    "tracker_drift_sd_hz_per_s", "tracker_drift_noise", "genie_frequency_offset_hz", "genie_frequency_drift_hz_per_s"};
 
 // ---- The configuration and --set ----
 
@@ -118,10 +118,8 @@ TEST(ViterbiJson, TheConfigurationHasEveryFieldInDeclarationOrder) {
     EXPECT_EQ(j.at("systematic_floor"), 0.02);
     EXPECT_EQ(j.at("level_max_db"), 85.0);
     EXPECT_EQ(j.at("quadrature_order"), 5);
-    EXPECT_EQ(j.at("tracker_gate_db"), 9.0);
-    EXPECT_TRUE(j.at("genie_frequency_offset_hz").is_null());
-    EXPECT_EQ(j.at("genie_frequency_drift_hz_per_s"), 0.0);
     EXPECT_TRUE(j.at("genie_fading_spread_hz").is_null());
+    for (const std::string& removed : kRemovedNames) EXPECT_FALSE(j.contains(removed)) << removed;
     EXPECT_TRUE(j.at("stats").is_boolean());
     EXPECT_EQ(j.at("stats"), false);
 }
@@ -175,9 +173,9 @@ TEST(ViterbiJson, SettingsOfEveryKind) {
     EXPECT_EQ(*c.genie_fading_spread_hz, 0.6);
     apply_setting(c, "genie_fading_spread_hz=null");
     EXPECT_FALSE(c.genie_fading_spread_hz.has_value());
-    apply_setting(c, "genie_frequency_offset_hz=-3.5");
-    ASSERT_TRUE(c.genie_frequency_offset_hz.has_value());
-    EXPECT_EQ(*c.genie_frequency_offset_hz, -3.5);
+    // the removed fields are unknown names now
+    for (const std::string& removed : kRemovedNames)
+        EXPECT_TRUE(contains(setting_refusal(c, removed + "=1"), "unknown parameter")) << removed;
     // a double's field refuses null, text and booleans
     EXPECT_TRUE(contains(setting_refusal(c, "beam_nats=null"), "beam_nats"));
     EXPECT_TRUE(contains(setting_refusal(c, "beam_nats=true"), "beam_nats"));
@@ -230,14 +228,6 @@ TEST(ViterbiJson, TheConfigurationRoundTripsThroughItsJson) {
     c.hiss_half_width_hz = 1500.0;
     c.hiss_percentile = 10.0;
     c.hiss_average_s = 2.0;
-    c.tracker_window_s = 2.0;
-    c.tracker_hop_s = 1.0;
-    c.tracker_search_hz = 10.0;
-    c.tracker_gate_db = 11.0;
-    c.tracker_drift_sd_hz_per_s = 0.5;
-    c.tracker_drift_noise = 2.5e-4;
-    c.genie_frequency_offset_hz = -4.25;
-    c.genie_frequency_drift_hz_per_s = 0.125;
     c.genie_fading_spread_hz = 0.6;
     c.stats = true;
     const ordered_json j = to_json(c);
@@ -247,8 +237,9 @@ TEST(ViterbiJson, TheConfigurationRoundTripsThroughItsJson) {
     EXPECT_EQ(to_json(back), j);
     EXPECT_EQ(back.speed_count, 61);
     EXPECT_EQ(back.fist_sigmas, c.fist_sigmas);
-    EXPECT_EQ(back.genie_frequency_offset_hz, c.genie_frequency_offset_hz);
+    EXPECT_EQ(back.genie_fading_spread_hz, c.genie_fading_spread_hz);
     EXPECT_TRUE(back.stats);
+    for (const std::string& removed : kRemovedNames) EXPECT_FALSE(j.contains(removed)) << removed;
     // an object with fewer fields is the defaults with those set; what is not an object, or has a field that does not
     // exist, is refused
     EXPECT_EQ(to_json(kz4ap::bench::viterbi_config_from_json(ordered_json::object())), defaults);
@@ -313,14 +304,19 @@ TEST(ViterbiJson, StatsNeedsOracleAndTheNewDecoder) {
 
 TEST(ViterbiJson, GenieKindsAreNamedAsTheCommandLineNamesThem) {
     EXPECT_EQ(parse_genie_kind("fist"), GenieKind::Fist);
-    EXPECT_EQ(parse_genie_kind("frequency"), GenieKind::Frequency);
     EXPECT_EQ(parse_genie_kind("fading"), GenieKind::Fading);
-    for (const GenieKind kind : {GenieKind::Fist, GenieKind::Frequency, GenieKind::Fading})
+    for (const GenieKind kind : {GenieKind::Fist, GenieKind::Fading})
         EXPECT_EQ(parse_genie_kind(kz4ap::bench::genie_kind_name(kind)), kind);
     const std::string why = refusal_of([&] { parse_genie_kind("loud"); });
     EXPECT_TRUE(contains(why, "loud")) << why;
-    EXPECT_TRUE(contains(why, "fist, frequency or fading")) << why;
+    EXPECT_TRUE(contains(why, "fist or fading")) << why;
     EXPECT_NE(refusal_of([&] { parse_genie_kind("Fist"); }), "(accepted)");
+}
+
+TEST(ViterbiJson, TheFrequencyGenieIsRemoved) {
+    // Oracle channels follow the label's frequency (design Part 1), so no genie gives the decoder a frequency.
+    EXPECT_EQ(refusal_of([&] { parse_genie_kind("frequency"); }),
+              "the frequency genie is removed: oracle channels follow the label's frequency (design Part 1)");
 }
 
 // ---- The genie from the labels ----
@@ -347,30 +343,72 @@ std::string genie_refusal(const LabeledSignal& label, std::initializer_list<Geni
     return refusal_of([&] { genie_of(label, kinds, index, piece_s); });
 }
 
-TEST(ViterbiJsonGenie, TheFrequencyIsTheLabelsAtItsStartWithItsDrift) {
-    const LabeledSignal s = signal_with(R"("drift_hz_per_s": 0.5)");
-    const ViterbiGenie g = genie_of(s, {GenieKind::Frequency}, 3);
-    ASSERT_TRUE(g.frequency_hz.has_value());
-    EXPECT_EQ(*g.frequency_hz, -1234.5);
-    EXPECT_EQ(g.frequency_time_s, 0.75);
-    EXPECT_EQ(g.drift_hz_per_s, 0.5);
-    EXPECT_FALSE(g.fading_spread_hz.has_value());
-    EXPECT_FALSE(g.fist.has_value());
-    // the engine's convention end to end: at stream time t the carrier is at f + drift (t - start_s), the generator's
-    // angle 2 pi f t + pi drift (t - start_s)^2, from the channel's center (an FFT bin's center at 48 kHz)
-    const double center_hz = -1242.1875;
-    const ViterbiConfig c = kz4ap::viterbi::with_genie(ViterbiConfig{}, g, center_hz);
-    for (const double t : {0.75, 4.0, 11.0}) {
-        const double from_center_hz = *c.genie_frequency_offset_hz + c.genie_frequency_drift_hz_per_s * t;
-        EXPECT_NEAR(from_center_hz, (-1234.5 + 0.5 * (t - 0.75)) - center_hz, 1e-12) << "t = " << t << " s";
+// ---- The oracle's frequency from the labels ----
+
+std::string track_refusal(const LabeledSignal& label, std::size_t index) {
+    return refusal_of([&] { kz4ap::bench::oracle_frequency_track(label, index); });
+}
+
+TEST(ViterbiJsonOracle, ASingleStationIsOneSegmentWithItsDrift) {
+    // the label's frequency at its start_s and its drift from there: the generator's angle 2 pi f t + pi drift
+    // (t - start_s)^2, so the carrier is at f + drift (t - start_s) at stream time t (design Part 1, plan O3)
+    const auto track = kz4ap::bench::oracle_frequency_track(signal_with(R"("drift_hz_per_s": 0.5)"), 3);
+    ASSERT_EQ(track.size(), 1u);
+    EXPECT_EQ(track[0].start_s, 0.0);
+    EXPECT_EQ(track[0].frequency_hz, -1234.5);
+    EXPECT_EQ(track[0].drift_hz_per_s, 0.5);
+    EXPECT_EQ(track[0].drift_origin_s, 0.75);
+    for (const double t : {0.0, 0.75, 4.0, 11.0})
+        EXPECT_NEAR(kz4ap::oracle_frequency_hz(track, t), -1234.5 + 0.5 * (t - 0.75), 1e-12) << "t = " << t << " s";
+    // a label of older files, with no drift, and a per-station label of a QSO that does not drift: one constant segment
+    for (const std::string& extra : {std::string(), std::string(R"("qso_index": 3, "drift_hz_per_s": 0.0)")}) {
+        const auto constant = kz4ap::bench::oracle_frequency_track(signal_with(extra), 0);
+        ASSERT_EQ(constant.size(), 1u);
+        EXPECT_EQ(constant[0].frequency_hz, -1234.5);
+        EXPECT_EQ(constant[0].drift_hz_per_s, 0.0);
     }
+}
+
+TEST(ViterbiJsonOracle, AQsoIsOneSegmentPerTransmissionAtItsSendersOffset) {
+    // a QSO label of two stations on one track: the over in progress, freq_offset_hz + the sender's offset_hz, with the
+    // QSO's drift from the QSO's start_s, switching at each transmission's start_s (the first from 0 s) and held
+    // through the silence after it (plan O3)
+    const LabeledSignal qso = signal_with(
+        R"("drift_hz_per_s": 0.25, "senders": [{"call": "K1ABC"}, {"call": "W9XYZ"}],
+           "transmissions": [{"text": "CQ", "start_s": 0.75, "end_s": 3.0, "sender_index": 0, "offset_hz": 0.0},
+                             {"text": "K1ABC", "start_s": 4.5, "end_s": 7.0, "sender_index": 1, "offset_hz": 18.5},
+                             {"text": "R", "start_s": 8.25, "end_s": 9.0, "sender_index": 0, "offset_hz": 0.0}])");
+    const auto track = kz4ap::bench::oracle_frequency_track(qso, 2);
+    ASSERT_EQ(track.size(), 3u);
+    const double starts[3] = {0.0, 4.5, 8.25};
+    const double frequencies[3] = {-1234.5, -1234.5 + 18.5, -1234.5};
+    for (std::size_t i = 0; i < 3; ++i) {
+        EXPECT_EQ(track[i].start_s, starts[i]) << i;
+        EXPECT_EQ(track[i].frequency_hz, frequencies[i]) << i;
+        EXPECT_EQ(track[i].drift_hz_per_s, 0.25) << i;
+        EXPECT_EQ(track[i].drift_origin_s, 0.75) << i;
+    }
+    EXPECT_NEAR(kz4ap::oracle_frequency_hz(track, 4.0), -1234.5 + 0.25 * 3.25, 1e-12);  // A's over and its silence
+    EXPECT_NEAR(kz4ap::oracle_frequency_hz(track, 4.5), -1216.0 + 0.25 * 3.75, 1e-12);  // B's from its start
+    EXPECT_NEAR(kz4ap::oracle_frequency_hz(track, 8.0), -1216.0 + 0.25 * 7.25, 1e-12);
+    EXPECT_NEAR(kz4ap::oracle_frequency_hz(track, 20.0), -1234.5 + 0.25 * 19.25, 1e-12);
+}
+
+TEST(ViterbiJsonOracle, APerStationLabelOfADriftingQsoIsRefusedByNumber) {
+    // its start_s is the station's first over, not the QSO's start from which the drift is measured, so its carrier is
+    // not known
+    const LabeledSignal drifting = signal_with(R"("qso_index": 3, "fading_hz": 0.0, "drift_hz_per_s": 0.5)");
+    const std::string why = track_refusal(drifting, 6);
+    EXPECT_TRUE(contains(why, "signal 6")) << why;
+    EXPECT_TRUE(contains(why, "drift")) << why;
+    EXPECT_TRUE(contains(why, "per-station")) << why;
+    EXPECT_EQ(track_refusal(signal_with(R"("drift_hz_per_s": 0.5)"), 7), "(accepted)");  // one station that drifts
 }
 
 TEST(ViterbiJsonGenie, TheFadingSpreadIsTheLabelsAndZeroForASignalThatDoesNotFade) {
     const ViterbiGenie fading = genie_of(signal_with(R"("fading_hz": 0.6)"), {GenieKind::Fading});
     ASSERT_TRUE(fading.fading_spread_hz.has_value());
     EXPECT_EQ(*fading.fading_spread_hz, 0.6);
-    EXPECT_FALSE(fading.frequency_hz.has_value());
     EXPECT_FALSE(fading.fist.has_value());
     // no fading_hz in the label of a single station (older files), or 0: the truth is no fading (a per-station label
     // of a QSO must say: APerStationLabelOfAQsoNeedsItsFadingSpreadAndNoDrift)
@@ -393,7 +431,6 @@ TEST(ViterbiJsonGenie, TheFistOfAMachineIsExactToAPiece) {
     const double medians[5] = {1.0, 3.0, 1.0, 3.0, 7.0};
     for (std::size_t kind = 0; kind < 5; ++kind)
         EXPECT_NEAR(g.fist->sigmas[kind], 0.002 / (medians[kind] * 0.048), 1e-12) << kind;
-    EXPECT_FALSE(g.frequency_hz.has_value());
     EXPECT_FALSE(g.fading_spread_hz.has_value());
     // a coarser piece, a larger floor
     const ViterbiGenie coarse = genie_of(signal_with(), {GenieKind::Fist}, 0, 0.004);
@@ -435,15 +472,12 @@ TEST(ViterbiJsonGenie, AStylesSmallSigmasAreRaisedToAPieceAtAFastSpeed) {
 
 TEST(ViterbiJsonGenie, SeveralKindsAtOnceAndNoKindAtAll) {
     const ViterbiGenie all = genie_of(signal_with(R"("fading_hz": 2.0, "drift_hz_per_s": -1.5)"),
-                                      {GenieKind::Fist, GenieKind::Frequency, GenieKind::Fading});
+                                      {GenieKind::Fist, GenieKind::Fading});
     EXPECT_TRUE(all.fist.has_value());
-    ASSERT_TRUE(all.frequency_hz.has_value());
-    EXPECT_EQ(all.drift_hz_per_s, -1.5);
     ASSERT_TRUE(all.fading_spread_hz.has_value());
     EXPECT_EQ(*all.fading_spread_hz, 2.0);
     const ViterbiGenie none = genie_of(signal_with(), {});
     EXPECT_FALSE(none.fist.has_value());
-    EXPECT_FALSE(none.frequency_hz.has_value());
     EXPECT_FALSE(none.fading_spread_hz.has_value());
 }
 
@@ -453,30 +487,29 @@ TEST(ViterbiJsonGenie, ALabelWithNoSingleTruthIsRefusedByNumber) {
     const std::string speed = genie_refusal(changes, {GenieKind::Fist}, 7);
     EXPECT_TRUE(contains(speed, "signal 7")) << speed;
     EXPECT_TRUE(contains(speed, "speed")) << speed;
-    EXPECT_EQ(genie_refusal(changes, {GenieKind::Frequency, GenieKind::Fading}, 7), "(accepted)");
+    EXPECT_EQ(genie_refusal(changes, {GenieKind::Fading}, 7), "(accepted)");
     // a speed "change" to the same speed is no change
     EXPECT_EQ(genie_refusal(signal_with(R"("wpm_end": 25.0)"), {GenieKind::Fist}), "(accepted)");
-    // a QSO label of two stations: each has its own carrier and fist, the fading is the signal's
+    // a QSO label of two stations: each has its own fist, the fading is the signal's
     const LabeledSignal qso = signal_with(R"("senders": [{"call": "K1ABC"}, {"call": "W9XYZ"}])");
-    for (const GenieKind kind : {GenieKind::Fist, GenieKind::Frequency}) {
-        const std::string why = genie_refusal(qso, {kind}, 2);
-        EXPECT_TRUE(contains(why, "signal 2")) << why;
-        EXPECT_TRUE(contains(why, "stations")) << why;
-    }
+    const std::string why = genie_refusal(qso, {GenieKind::Fist}, 2);
+    EXPECT_TRUE(contains(why, "signal 2")) << why;
+    EXPECT_TRUE(contains(why, "stations")) << why;
     EXPECT_EQ(genie_refusal(qso, {GenieKind::Fading}, 2), "(accepted)");
     // a style the table does not have, a speed that is not a speed, a piece that is not a length
     const LabeledSignal fiddle = signal_with(R"("keying": "fiddle")");
     const std::string style = genie_refusal(fiddle, {GenieKind::Fist}, 4);
     EXPECT_TRUE(contains(style, "fiddle")) << style;
-    EXPECT_EQ(genie_refusal(fiddle, {GenieKind::Frequency}, 4), "(accepted)");
+    EXPECT_EQ(genie_refusal(fiddle, {GenieKind::Fading}, 4), "(accepted)");
     EXPECT_NE(genie_refusal(signal_with("", 0.0), {GenieKind::Fist}, 5), "(accepted)");
     EXPECT_NE(genie_refusal(signal_with(), {GenieKind::Fist}, 5, 0.0), "(accepted)");
 }
 
-TEST(ViterbiJsonGenie, APerStationLabelOfAQsoNeedsItsFadingSpreadAndNoDrift) {
+TEST(ViterbiJsonGenie, APerStationLabelOfAQsoNeedsItsFadingSpread) {
     // training/kz4ap_synth.generate.station_labels writes, for each station of a QSO, an entry that names its QSO
     // (qso_index) and, since Task 8b, its fading spread (the QSO's: each station fades through its own path of that
-    // spread). Its start_s is the station's first over, not the QSO's start, from which the QSO's drift is measured.
+    // spread). (Its start_s is the station's first over, not the QSO's start, from which the QSO's drift is measured:
+    // the oracle's frequency refuses such a label of a drifting QSO, APerStationLabelOfADriftingQsoIsRefusedByNumber.)
     const ViterbiGenie fading = genie_of(signal_with(R"("qso_index": 3, "fading_hz": 0.6)"), {GenieKind::Fading});
     ASSERT_TRUE(fading.fading_spread_hz.has_value());
     EXPECT_EQ(*fading.fading_spread_hz, 0.6);
@@ -490,35 +523,21 @@ TEST(ViterbiJsonGenie, APerStationLabelOfAQsoNeedsItsFadingSpreadAndNoDrift) {
     EXPECT_TRUE(contains(why, "signal 5")) << why;
     EXPECT_TRUE(contains(why, "fading_hz")) << why;
     EXPECT_TRUE(contains(why, "per-station")) << why;
-    EXPECT_EQ(genie_refusal(old, {GenieKind::Fist, GenieKind::Frequency}, 5), "(accepted)");  // not what they read
-    // a drifting QSO: the label's frequency is at the QSO's start and its start_s is not, so the carrier at start_s
-    // would be off by the drift over the difference
+    EXPECT_EQ(genie_refusal(old, {GenieKind::Fist}, 5), "(accepted)");  // not what it reads
+    // a drifting QSO's per-station label gives its fading spread and its fist (the oracle's frequency refuses it)
     const LabeledSignal drifting = signal_with(R"("qso_index": 3, "fading_hz": 0.0, "drift_hz_per_s": 0.5)");
-    const std::string drift = genie_refusal(drifting, {GenieKind::Frequency}, 6);
-    EXPECT_TRUE(contains(drift, "signal 6")) << drift;
-    EXPECT_TRUE(contains(drift, "drift")) << drift;
     EXPECT_EQ(genie_refusal(drifting, {GenieKind::Fading, GenieKind::Fist}, 6), "(accepted)");
-    // a per-station label that does not drift gives its carrier, and a signal of one station that drifts still does
-    const ViterbiGenie still = genie_of(signal_with(R"("qso_index": 3, "fading_hz": 0.0, "drift_hz_per_s": 0.0)"),
-                                        {GenieKind::Frequency});
-    ASSERT_TRUE(still.frequency_hz.has_value());
-    EXPECT_EQ(*still.frequency_hz, -1234.5);
-    EXPECT_EQ(genie_refusal(signal_with(R"("drift_hz_per_s": 0.5)"), {GenieKind::Frequency}, 7), "(accepted)");
 }
 
 TEST(ViterbiJsonGenie, TheResultFileRecordsEachChannelsValues) {
     const ordered_json empty = to_json(ViterbiGenie{});
-    EXPECT_TRUE(empty.at("frequency_hz").is_null());
-    EXPECT_EQ(empty.at("frequency_time_s"), 0.0);
-    EXPECT_EQ(empty.at("drift_hz_per_s"), 0.0);
     EXPECT_TRUE(empty.at("fading_spread_hz").is_null());
     EXPECT_TRUE(empty.at("fist").is_null());
+    for (const char* removed : {"frequency_hz", "frequency_time_s", "drift_hz_per_s"})
+        EXPECT_FALSE(empty.contains(removed)) << removed;
     const ViterbiGenie g = genie_of(signal_with(R"("fading_hz": 0.6, "drift_hz_per_s": 0.5, "keying": "paddle")"),
-                                    {GenieKind::Fist, GenieKind::Frequency, GenieKind::Fading});
+                                    {GenieKind::Fist, GenieKind::Fading});
     const ordered_json j = to_json(g);
-    EXPECT_EQ(j.at("frequency_hz"), -1234.5);
-    EXPECT_EQ(j.at("frequency_time_s"), 0.75);
-    EXPECT_EQ(j.at("drift_hz_per_s"), 0.5);
     EXPECT_EQ(j.at("fading_spread_hz"), 0.6);
     EXPECT_NEAR(j.at("fist").at("dot_ms").get<double>(), 48.0, 1e-12);
     EXPECT_EQ(j.at("fist").at("medians_dots").size(), 5u);

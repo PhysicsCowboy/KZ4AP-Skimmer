@@ -136,3 +136,27 @@ TEST(Labels, RejectsAFieldOfTheWrongKind) {
                    "keying": 3}]})"),
                  std::runtime_error);
 }
+
+TEST(Labels, TransmissionsCarryTheirOffset) {
+    // A QSO label's transmissions name their sender's carrier offset from the label's freq_offset_hz (offset_hz, Hz;
+    // training/kz4ap_synth.generate.labels), which the oracle's frequency reads (kz4ap-bench --oracle --decoder viterbi);
+    // a transmission without one is at the label's own frequency, offset 0.
+    const auto labels = parse_labels(R"({
+      "sample_rate": 48000, "duration_s": 30.0,
+      "signals": [{"text": "CQ DE K1ABC K1ABC DE W9XYZ", "freq_offset_hz": 700.0, "wpm": 25.0, "snr_db": 15.0,
+                   "start_s": 0.5, "end_s": 12.0,
+                   "transmissions": [{"text": "CQ DE K1ABC", "start_s": 0.5, "end_s": 4.0, "sender_index": 0,
+                                      "offset_hz": 0.0},
+                                     {"text": "K1ABC DE W9XYZ", "start_s": 5.0, "end_s": 12.0, "sender_index": 1,
+                                      "offset_hz": -37.25},
+                                     {"text": "73", "start_s": 13.0, "end_s": 14.0}]}]})");
+    const auto& t = labels.signals.at(0).transmissions;
+    ASSERT_EQ(t.size(), 3u);
+    EXPECT_EQ(t[0].offset_hz, 0.0);
+    EXPECT_EQ(t[1].offset_hz, -37.25);
+    EXPECT_EQ(t[2].offset_hz, 0.0);
+    EXPECT_THROW(parse_labels(R"({"sample_rate": 48000, "duration_s": 30.0,
+      "signals": [{"text": "CQ", "freq_offset_hz": 0.0, "wpm": 25.0, "snr_db": 15.0, "start_s": 0.5, "end_s": 2.0,
+                   "transmissions": [{"text": "CQ", "start_s": 0.5, "end_s": 2.0, "offset_hz": "high"}]}]})"),
+                 std::runtime_error);
+}

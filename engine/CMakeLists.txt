@@ -22,7 +22,6 @@ set(KZ4AP_VITERBI_SOURCES
   src/viterbi/level.cpp
   src/viterbi/search.cpp
   src/viterbi/hiss.cpp
-  src/viterbi/tracker.cpp
 )
 
 add_library(kz4ap_engine
@@ -30,6 +29,7 @@ add_library(kz4ap_engine
   src/wav_reader.cpp
   src/spectrum.cpp
   src/channelizer.cpp
+  src/channel_follower.cpp
   src/signal_detector.cpp
   src/classical_decoder.cpp
   src/engine.cpp
@@ -72,6 +72,7 @@ add_executable(kz4ap_engine_tests
   tests/wav_reader_test.cpp
   tests/spectrum_test.cpp
   tests/channelizer_test.cpp
+  tests/channel_follower_test.cpp
   tests/signal_detector_test.cpp
   tests/classical_decoder_test.cpp
   tests/engine_test.cpp
@@ -116,7 +117,6 @@ add_executable(kz4ap_viterbi_tests
   tests/viterbi/level_test.cpp
   tests/viterbi/search_test.cpp
   tests/viterbi/hiss_test.cpp
-  tests/viterbi/tracker_test.cpp
   tests/viterbi_decoder_test.cpp
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)
