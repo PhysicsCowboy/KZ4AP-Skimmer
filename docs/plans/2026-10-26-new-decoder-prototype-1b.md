@@ -633,7 +633,7 @@ documents updated per §8, and one commit. Task numbers are this plan's own.
     transmissions' start and end times, speeds and noise seeds identical; the label schema changes everywhere
     (`edges_centered` becomes `edge_placement`, B2's included, where it reads "centered"), and the values of
     `edge_s` and the placement change only outside B2.
-  - `test_s2_scales_its_edges` (Ruling 62): S2's `edge_s` = 2 × A2's (8.4699 ms), placement "start".
+  - `test_s2_scales_its_edges` (Ruling 62): S2's `edge_s` = 2 × A2's (8.4698 ms), placement "start".
   - `test_suites.py` lines 62–63 (the full, milestone-1 suite) become: B "centered" with `edge_s` 0.002; S
     "inside" with `RISE_S` × 25/12; every other group "inside" with `RISE_S`. The DEV2 suite's test
     (`test_synth_suites2.py`): B2 "centered" with 0.002; S2 "start" with 2 × `EDGE_S`; every other group "start"
