@@ -176,3 +176,12 @@ set_tests_properties(OutputNoise.FullSweep PROPERTIES ENVIRONMENT KZ4AP_FRONT_FI
 # measurement: the default test presets exclude it (without KZ4AP_MEASUREMENT the test skips).
 add_test(NAME MarkTemplate.Measurement COMMAND kz4ap_viterbi_tests --gtest_filter=MarkTemplate.BuildsQuickly)
 set_tests_properties(MarkTemplate.Measurement PROPERTIES ENVIRONMENT KZ4AP_MEASUREMENT=1 LABELS measurement)
+# The noise-in-Omega_bar variant's table against its direct integral (plan 1b, Task 8). The table is generated into
+# build/viterbi-tables/ by kz4ap-viterbi-tables omega-bar-variant and never committed (Ruling 65); labeled needs-table,
+# and reported as skipped while the file is absent (without KZ4AP_OMEGA_BAR_VARIANT_TABLE the test skips).
+add_test(NAME OmegaBarVariant.NeedsTable COMMAND kz4ap_viterbi_tests
+         --gtest_filter=OmegaBarVariant.TableMatchesTheDirectIntegral)
+set(KZ4AP_OMEGA_BAR_VARIANT_TABLE ${PROJECT_SOURCE_DIR}/build/viterbi-tables/omega-bar-variant-v1.bin)
+set_tests_properties(OmegaBarVariant.NeedsTable PROPERTIES
+                     ENVIRONMENT KZ4AP_OMEGA_BAR_VARIANT_TABLE=${KZ4AP_OMEGA_BAR_VARIANT_TABLE}
+                     LABELS needs-table SKIP_REGULAR_EXPRESSION "\\[  SKIPPED \\]")
