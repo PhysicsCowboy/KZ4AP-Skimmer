@@ -2146,7 +2146,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
 | +30 dB | 5th rise sample (j = 9, about 25 ms after key-down) | 2nd (j = 6, about 17 ms) |
 | +20 dB | 5th (j = 9, about 25 ms) | 4th (j = 8, about 23 ms) |
 | +10 dB | 8th (j = 12, about 33 ms); the 7th gives σ_u = 0.111 | 8th (j = 12); the 7th gives 0.105 |
-| 0 dB | 42nd (j = 46, about 124 ms); the 41st gives σ_u = 0.1003 | 42nd (j = 46); the 41st gives 0.1002 |
+| 0 dB | 42nd (j = 46, about 124 ms); the 41st gives σ_u = 0.1003; **by the exact integral j = 56, about 150 ms** (the build's Task 9 and its review, 2026-10-27: at +8.3 dB SNR in the filter's band the high-SNR curvature overstates each plateau sample's information by about 20%) | 42nd (j = 46); the 41st gives 0.1002 |
 
     - **With w per regime (2026-10-25) the timings are unchanged** (derived): the weak form, and so 0.275, applies only
       to the rise's first samples, where 2b_k² is below the crossover (with the crossover at 1, 2 or 3: none at +30 dB

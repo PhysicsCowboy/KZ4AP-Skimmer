@@ -1169,7 +1169,7 @@ method, Gauss–Hermite and the newborn's two regime weights (0.275 and 0.1986) 
     integral's on at least **99.5%** of first marks and is never more than one sample away (measured: none earlier,
     0.1% later).
   - `Newborn.SwitchTimings` (Part 8): noise-free e_k = a·s_k, V′ = σ_y²(1 + q(f²s_k² + v_k)), f = 0.02: the switch at
-    j = 9 (+30 and +20 dB S₅₀₀), 12 (+10) and 46 (0 dB S₅₀₀), each ±1 sample.
+    j = 9 (+30 and +20 dB S₅₀₀), 12 (+10) and 56 (0 dB S₅₀₀, by the exact integral; the high-SNR formula's 46 corrected in Task 9), each ±1 sample.
   - `Newborn.StrongEdgeOfThePrior` (not measured in the study): a +60 dB S₅₀₀ first mark (25 dB, 2.9 nepers, inside
     the prior's top): scores finite and within 0.005 nats per sample of the dense integral. A +85 dB S₅₀₀ first mark
     (at the top): scores finite; the per-sample and first-mark differences from the dense integral are **reported,
