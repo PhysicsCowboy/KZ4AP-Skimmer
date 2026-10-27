@@ -44,7 +44,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from .generate import (MESSAGES, Sender, SignalSpec, draw_answer_offset_hz, fill_text, generate, labels,
+from .generate import (D17_EDGES, MESSAGES, Sender, SignalSpec, draw_answer_offset_hz, fill_text, generate, labels,
                        plan_intervals, qso_spec, random_callsign, scenario_band, signal_end_s, station_labels,
                        with_interferer, write_wav)
 from .jitter import SNR_CELLS, SPEED_CELLS, Cells, pick, record
@@ -274,7 +274,7 @@ def stretch(seed: int) -> list[Recording]:
             continue
         part = int(rec.name[len(prefix):].split("-")[0])
         specs = [SignalSpec(s.text, s.freq_offset_hz, STRETCH_TO_WPM, s.snr_db - STRETCH_SNR_DB, s.start_s,
-                            edge_s=s.edge_s * STRETCH_FACTOR,
+                            edge_s=s.edge_s * STRETCH_FACTOR, edge_placement=s.edge_placement,
                             tag=f"{STRETCH_TO_WPM:g} wpm, stretched from {STRETCH_FROM_WPM:g} wpm")
                  for s in rec.specs]
         recs.append(Recording(rec.name.replace("A-awgn-", "S-stretch-"), "S stretch", rec.sample_rate,
@@ -298,7 +298,7 @@ def fading(seed: int) -> list[Recording]:
             specs.append(SignalSpec(_filler(rng, wpm, duration - 2.0 - start, keying), f, wpm, snr, start,
                                     keying=keying,
                                     imbalance_dits=round(draw_imbalance_dits(rng), 3), fading_hz=f_d,
-                                    fading_shape="butterworth", edge_s=VE3NEA_EDGE_S, edges_centered=True,
+                                    fading_shape="butterworth", edge_s=VE3NEA_EDGE_S, edge_placement="centered",
                                     tag=f"{keying} {wpm:g} wpm fD {f_d:g} Hz"))
         recs.append(Recording(f"B-fading-{keying}-{wpm:g}wpm-{f_d:g}Hz-s{seed}", "B fading", 48000, duration,
                               1000 * seed + 20 + code, True, specs))
@@ -311,7 +311,7 @@ def fading(seed: int) -> list[Recording]:
         keying = draw_style(rng)
         specs.append(SignalSpec(_filler(rng, wpm, 178.0 - start, keying), f, wpm, snr, start, keying=keying,
                                 imbalance_dits=round(draw_imbalance_dits(rng), 3), fading_hz=f_d,
-                                fading_shape="butterworth", edge_s=VE3NEA_EDGE_S, edges_centered=True,
+                                fading_shape="butterworth", edge_s=VE3NEA_EDGE_S, edge_placement="centered",
                                 tag="VE3NEA mix"))
     recs.append(Recording(f"B-fading-mix-s{seed}", "B fading", 48000, 180.0, 1000 * seed + 20 + len(FADING_ROWS),
                           True, specs))
@@ -670,6 +670,7 @@ def sensitivity2(seed: int, per_cell: int | None = None) -> list[Recording]:
                 snr, d_snr = pick(SNR_CELLS, k, rng)
                 text = text_100(rng)
                 units.append([SignalSpec(text, 0.0, wpm, snr, _start(rng), tag=f"speed cell {v} ({lo:.2f}-{hi:.2f} WPM)",
+                                         **D17_EDGES,
                                          design={"group": "A2", "speed_wpm": d_wpm, "s500_db": d_snr})])
         batches.append((f"c{v:02d}", units))
     return _pack(batches, prefix="A2-awgn", group="A2 sensitivity", seed=seed, code=1)
@@ -711,7 +712,8 @@ def stretch2(seed: int, per_cell: int | None = None) -> list[Recording]:
                       "s500_db": {**d_snr, "value": s.snr_db - STRETCH2_SNR_DB,
                                   "range": [x - STRETCH2_SNR_DB for x in d_snr["range"]], "source_value": s.snr_db}}
             specs.append(SignalSpec(s.text, s.freq_offset_hz, s.wpm / STRETCH2_FACTOR, s.snr_db - STRETCH2_SNR_DB,
-                                    s.start_s, edge_s=s.edge_s * STRETCH2_FACTOR,
+                                    s.start_s, edge_s=s.edge_s * STRETCH2_FACTOR,  # D17's edges x 2 (Ruling 62)
+                                    edge_placement=s.edge_placement,
                                     tag=f"speed cell {STRETCH2_FROM_CELL} stretched by {STRETCH2_FACTOR:g}",
                                     design=design))
         recs.append(Recording(rec.name.replace("A2-awgn-", "S2-stretch-"), "S2 stretch", rec.sample_rate,
@@ -743,7 +745,7 @@ def fading2(seed: int, per_cell: int | None = None) -> list[Recording]:
                               "imbalance_dits": _distribution(imbalance, IMBALANCE_TEXT)}
                     units.append([SignalSpec(text_100(rng), 0.0, wpm, snr, _start(rng), keying=keying,
                                              imbalance_dits=imbalance, fading_hz=f_d, fading_shape="butterworth",
-                                             edge_s=VE3NEA_EDGE_S, edges_centered=True,
+                                             edge_s=VE3NEA_EDGE_S, edge_placement="centered",
                                              tag=f"fD cell {fc} ({FADING2_CELLS.bounds(fc)[0]:g}-"
                                                  f"{FADING2_CELLS.bounds(fc)[1]:g} Hz)", design=design)])
         batches.append((f"c{v:02d}", units))
@@ -768,7 +770,7 @@ def fists2(seed: int, per_cell: int | None = None) -> list[Recording]:
                     design = {"group": "C2", "speed_wpm": d_wpm, "s500_db": d_snr, "imbalance_dits": d_imb,
                               "keying": {"value": keying, "cell": sc, "cells": list(FIST_STYLES)}}
                     units.append([SignalSpec(text_100(rng), 0.0, wpm, snr, _start(rng), keying=keying,
-                                             imbalance_dits=imbalance, tag=keying, design=design)])
+                                             imbalance_dits=imbalance, tag=keying, **D17_EDGES, design=design)])
         batches.append((f"c{v:02d}", units))
     return _pack(batches, prefix="C2-fists", group="C2 fists", seed=seed, code=3)
 
@@ -805,7 +807,8 @@ def speed2(seed: int, per_cell: int | None = None) -> list[Recording]:
                               "direction": {"value": direction, "cell": dc, "cells": list(SPEED2_DIRECTIONS)},
                               "profile": {"value": profile, "cell": pc, "cells": list(SPEED2_PROFILES)}}
                     units.append([SignalSpec(text_100(rng), 0.0, wpm, snr, _start(rng), wpm_end=end,
-                                             speed_profile=profile, tag=f"{profile} {direction}", design=design)])
+                                             speed_profile=profile, tag=f"{profile} {direction}", **D17_EDGES,
+                                             design=design)])
         batches.append((f"c{v:02d}", units))
     return _pack(batches, prefix="D2-speed", group="D2 speed changes", seed=seed, code=4)
 
@@ -838,7 +841,7 @@ def interference2(seed: int, per_cell: int | None = None) -> list[Recording]:
                           "neighbor_speed_wpm": {**d_nwpm, "cell_drawn": "uniformly from the 10 speed cells"}}
                 wanted = SignalSpec(text, 0.0, wpm, snr, start,
                                     tag=f"offset cell {oc} ({QRM2_OFFSET_CELLS.bounds(oc)[0]:g}-"
-                                        f"{QRM2_OFFSET_CELLS.bounds(oc)[1]:g} Hz)", design=design)
+                                        f"{QRM2_OFFSET_CELLS.bounds(oc)[1]:g} Hz)", **D17_EDGES, design=design)
                 wanted_s = keying_intervals(text, wpm)[-1][1]
                 neighbor_text = _filler(rng, n_wpm, wanted_s, "machine")
                 design["neighbor_coverage"] = {
@@ -867,8 +870,8 @@ def tuning2(seed: int, per_cell: int | None = None) -> list[Recording]:
             offset, d_off = pick(TUNING2_OFFSET, 1, rng)
             snr, d_snr = pick(TUNING2_SNR, 1, rng)
             units.append([SignalSpec(text_100(rng), offset, wpm, snr, _start(rng), tag="offset from the bin center",
-                                     design={"group": "F2", "speed_wpm": d_wpm, "offset_hz": d_off,
-                                             "s500_db": d_snr})])
+                                     **D17_EDGES,
+                                     design={"group": "F2", "speed_wpm": d_wpm, "offset_hz": d_off, "s500_db": d_snr})])
         offsets.append((f"c{v:02d}", units))
         units = []
         for ec in TUNING2_EXCURSION.numbers:
@@ -887,7 +890,8 @@ def tuning2(seed: int, per_cell: int | None = None) -> list[Recording]:
                                                         "to last key-up, Hz/s"}}
                 lo, hi = TUNING2_EXCURSION.bounds(ec)
                 units.append([SignalSpec(text, 0.0, wpm, snr, _start(rng), drift_hz_per_s=drift,
-                                         tag=f"drift cell {ec} ({lo:g}-{hi:g} Hz over the signal)", design=design)])
+                                         tag=f"drift cell {ec} ({lo:g}-{hi:g} Hz over the signal)", **D17_EDGES,
+                                         design=design)])
         drifts.append((f"c{v:02d}", units))
     return (_pack(offsets, prefix="F2-offset", group="F2 tuning", seed=seed, code=6, bin_slots=True)
             + _pack(drifts, prefix="F2-drift", group="F2 tuning", seed=seed, code=7, bin_slots=True))
@@ -916,7 +920,7 @@ def _qso2(rng, caller_cell: int, offsets: Cells, group: str, tag: str) -> Signal
               "imbalance_dits": _distribution(imbalances[0], IMBALANCE_TEXT),
               "answer_imbalance_dits": _distribution(imbalances[1], IMBALANCE_TEXT),
               "answer_offset_hz": d_off, "answer_relative_db": d_rel, "s500_db": d_snr}
-    return qso_spec(ragchew_overs(rng, a, b), senders, 0.0, snr, _start(rng), tag=tag, design=design)
+    return qso_spec(ragchew_overs(rng, a, b), senders, 0.0, snr, _start(rng), tag=tag, **D17_EDGES, design=design)
 
 
 def _qsos2(seed: int, per_cell: int | None, group: str, code: int, offsets: Cells, prefix: str, name: str,
@@ -967,7 +971,8 @@ def farnsworth2(seed: int, per_cell: int | None = None) -> list[Recording]:
                         design = {"group": "I2", "speed_wpm": d_c, "farnsworth_wpm": d_o, "s500_db": d_snr,
                                   "keying": {"value": keying, "cell": kc, "cells": list(FARNSWORTH_KEYING)}}
                         units.append([SignalSpec(text_100(rng), 0.0, char_wpm, snr, _start(rng), keying=keying,
-                                                 farnsworth_wpm=overall, tag=f"farnsworth {keying}", design=design)])
+                                                 farnsworth_wpm=overall, tag=f"farnsworth {keying}", **D17_EDGES,
+                                                 design=design)])
         batches.append((f"o{oc}", units))
     return _pack(batches, prefix="I2-farnsworth", group="I2 Farnsworth", seed=seed, code=10)
 
@@ -1004,7 +1009,8 @@ def noise2(seed: int) -> list[Recording]:
             design = {"group": "N2", "speed_wpm": d_wpm,
                       "s500_db": {"value": N2_S500_DB, "cell": NOT_A_CELL, "unit": S500_UNIT,
                                   "fixed": "far below any decodable level: the station only opens the oracle channel"}}
-            units.append([SignalSpec(text, 0.0, wpm, N2_S500_DB, _start(rng), tag="noise only", design=design)])
+            units.append([SignalSpec(text, 0.0, wpm, N2_S500_DB, _start(rng), tag="noise only", **D17_EDGES,
+                                     design=design)])
     recs = _pack([("noise", units)], prefix="N2", group="N2 noise only", seed=seed, code=N2_GROUP_CODE)
     return [replace(r, duration_s=N2_DURATION_S) for r in recs]
 

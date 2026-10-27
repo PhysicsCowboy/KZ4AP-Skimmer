@@ -1,12 +1,19 @@
 import json
+import math
 import wave
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from kz4ap_synth.generate import (
+    D17_EDGES,
     DEFAULT_NOISE_SIGMA,
+    EDGE_RISE_10_90_S,
+    EDGE_S,
     MESSAGES,
+    RAISED_COSINE_10_90,
+    RISE_S,
     TUNE_GAP_S,
     Sender,
     SignalSpec,
@@ -227,10 +234,135 @@ def test_centered_edges_keep_the_marked_length_at_half_amplitude():
 
 def test_centered_edges_reach_the_signal():
     fs = 8000
-    spec = SignalSpec("E", 500.0, 20.0, 20.0, 0.5, edge_s=0.002, edges_centered=True)
+    spec = SignalSpec("E", 500.0, 20.0, 20.0, 0.5, edge_s=0.002, edge_placement="centered")
     iq = generate([spec], fs, 1.0, seed=1, add_noise=False)
     level = np.abs(iq) / amplitude_for_snr(20.0, fs)
     assert np.sum(level >= 0.5) / fs == pytest.approx(0.06, abs=2 / fs)  # one 20 WPM dit at 50% amplitude
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# D17's keying edges (plan 1b, Part 14; owner, 2026-10-23): the rise starts at key-down and the fall at key-up.
+
+def _c(x):
+    """The raised cosine rising from 0 at x = 0 to 1 at x = 1."""
+    return 0.5 - 0.5 * np.cos(np.pi * np.clip(x, 0.0, 1.0))
+
+
+def test_edge_constants():
+    assert RAISED_COSINE_10_90 == pytest.approx(0.590334, abs=1e-6)
+    assert RAISED_COSINE_10_90 == pytest.approx((math.pi - 2 * math.acos(0.8)) / math.pi, abs=1e-15)
+    assert EDGE_RISE_10_90_S == 0.0025
+    assert EDGE_S == pytest.approx(4.2349e-3, abs=0.0001e-3)
+    assert RISE_S == 0.005  # milestone 1's edge stays (Ruling 70)
+    assert D17_EDGES == {"edge_s": EDGE_S, "edge_placement": "start"}
+
+
+def test_start_edges_keep_the_keyed_length():
+    fs = 192000
+    on, off = 0.100, 0.112  # one 12 ms dot
+    env = keying_envelope([(on, off)], 0.0, fs // 4, fs, rise_s=EDGE_S, placement="start")
+    t = np.arange(len(env)) / fs
+    first = lambda level: t[np.argmax(env >= level)]  # noqa: E731  (the first sample at or above a level)
+    assert first(0.5) == pytest.approx(on + EDGE_S / 2, abs=1 / fs)
+    last_half = t[len(env) - 1 - np.argmax(env[::-1] >= 0.5)]
+    assert last_half == pytest.approx(off + EDGE_S / 2, abs=1 / fs)
+    assert first(0.9) - first(0.1) == pytest.approx(0.0025, abs=0.010e-3)  # the 10-90% rise
+    assert np.sum(env >= 0.5) / fs == pytest.approx(0.012, abs=0.010e-3)   # the keyed length at half amplitude
+    flat = np.sum(env >= 1.0 - 1e-12) / fs
+    assert flat == pytest.approx(0.012 - EDGE_S, abs=1 / fs)               # 7.765 ms, 65% of the dot
+    assert flat / 0.012 == pytest.approx(0.647, abs=0.002)
+    assert env[0] == 0.0 and env[-1] == 0.0
+
+
+def test_short_mark_is_the_product():
+    fs = 192000
+    on, off, offset = 0.100, 0.103, 0.0  # a 3 ms mark, shorter than the edge's 4.235 ms
+    assert off - on < EDGE_S
+    env = keying_envelope([(on, off)], offset, fs // 4, fs, rise_s=EDGE_S, placement="start")
+    t = np.arange(len(env)) / fs
+    want = _c((t - on) / EDGE_S) * (1.0 - _c((t - off) / EDGE_S))
+    assert np.max(np.abs(env - want)) < 1e-12
+    assert 0.0 < env.max() < 1.0  # the mark never reaches full amplitude
+
+
+def test_start_edges_of_a_gap_shorter_than_an_edge_add_and_stay_at_or_below_1():
+    fs = 192000
+    marks = [(0.100, 0.110), (0.1125, 0.125), (0.1262, 0.140)]  # gaps of 2.5 and 1.2 ms, both shorter than 4.235 ms
+    env = keying_envelope(marks, 0.0, fs // 4, fs, rise_s=EDGE_S, placement="start")
+    t = np.arange(len(env)) / fs
+    want = sum(_c((t - on) / EDGE_S) * (1.0 - _c((t - off) / EDGE_S)) for on, off in marks)
+    assert np.max(np.abs(env - want)) < 1e-12
+    assert env.max() <= 1.0 + 1e-12
+
+
+def _pre_change_keying_envelope(intervals, offset_s, n, sample_rate, rise_s=RISE_S, centered=False):
+    """The function as it was before D17's edges (commit cbc4ecd), copied as the reference."""
+    env = np.zeros(n)
+    ramp_len = max(1, int(round(rise_s * sample_rate)))
+    ramp = 0.5 - 0.5 * np.cos(np.pi * (np.arange(ramp_len) + 0.5) / ramp_len)
+    shift = rise_s / 2 if centered else 0.0
+    for on, off in intervals:
+        i0 = max(0, int(round((offset_s + on - shift) * sample_rate)))
+        i1 = min(n, int(round((offset_s + off + shift) * sample_rate)))
+        if i1 <= i0:
+            continue
+        env[i0:i1] = 1.0
+        r = min(ramp_len, (i1 - i0) // 2)
+        if r > 0:
+            env[i0:i0 + r] *= ramp[:r]
+            env[i1 - r:i1] *= ramp[:r][::-1]
+    return env
+
+
+def test_centered_and_inside_are_unchanged():
+    marks = [(0.1, 0.2), (0.21, 0.215), (0.3, 0.301), (0.35, 0.5)]
+    for fs in (8000, 48000, 192000):
+        n = fs // 2
+        want_inside = _pre_change_keying_envelope(marks, 0.0013, n, fs)
+        want_centered = _pre_change_keying_envelope(marks, 0.0013, n, fs, rise_s=0.002, centered=True)
+        assert np.array_equal(keying_envelope(marks, 0.0013, n, fs), want_inside)
+        assert np.array_equal(keying_envelope(marks, 0.0013, n, fs, placement="inside"), want_inside)
+        assert np.array_equal(keying_envelope(marks, 0.0013, n, fs, rise_s=0.002, centered=True), want_centered)
+        assert np.array_equal(keying_envelope(marks, 0.0013, n, fs, rise_s=0.002, placement="centered"),
+                              want_centered)
+        # placement, when given, overrides centered
+        assert np.array_equal(keying_envelope(marks, 0.0013, n, fs, rise_s=0.002, centered=True,
+                                              placement="inside"),
+                              _pre_change_keying_envelope(marks, 0.0013, n, fs, rise_s=0.002))
+
+
+def test_unknown_edge_placement_is_rejected():
+    with pytest.raises(ValueError):
+        keying_envelope([(0.1, 0.2)], 0.0, 100, 1000, placement="middle")
+
+
+def test_signal_defaults_are_milestone_1s_edges_and_labels_carry_the_placement():
+    spec = SignalSpec("E", 500.0, 20.0, 20.0, 0.5)
+    assert (spec.edge_s, spec.edge_placement) == (RISE_S, "inside")
+    entry = labels([spec], 8000, 2.0, seed=1)["signals"][0]
+    assert entry["edge_s"] == RISE_S and entry["edge_placement"] == "inside"
+    assert "edges_centered" not in entry
+    d17 = SignalSpec("E", 500.0, 20.0, 20.0, 0.5, **D17_EDGES)
+    entry = labels([d17], 8000, 2.0, seed=1)["signals"][0]
+    assert entry["edge_s"] == EDGE_S and entry["edge_placement"] == "start"
+
+
+def test_start_edges_reach_the_signal_and_a_qso():
+    fs = 8000
+    spec = SignalSpec("E", 500.0, 20.0, 20.0, 0.5, **D17_EDGES)
+    iq = generate([spec], fs, 1.0, seed=1, add_noise=False)
+    level = np.abs(iq) / amplitude_for_snr(20.0, fs)
+    assert np.sum(level >= 0.5) / fs == pytest.approx(0.06, abs=2 / fs)  # one 20 WPM dit at half amplitude
+    assert level[int(0.5 * fs) - 1] == 0.0                                # nothing before the key-down
+    assert level[int((0.5 + 0.06) * fs) + int(EDGE_S * fs) // 2] > 0.0    # the fall reaches past the key-up
+    qso = _two_station_qso(**D17_EDGES)
+    assert qso.edge_placement == "start"
+    iq = generate([qso], fs, 30.0, seed=1, add_noise=False)
+    plan = plan_intervals([qso], seed=1)[0]
+    last_off = qso.start_s + plan.intervals[-1][1]
+    tail = np.abs(iq[int(np.ceil(last_off * fs)) - 1:int((last_off + EDGE_S) * fs) + 2])
+    assert tail.max() > 0.0  # the last fall is not cut off at the key-up
+    assert np.abs(iq[int((last_off + EDGE_S) * fs) + 2:]).max() == 0.0
 
 
 def test_faded_signal_keeps_its_mean_key_down_power():

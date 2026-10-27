@@ -4209,13 +4209,42 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   from `turn_s` (default 0.5–2.0 s) separates two overs. The labels list
   each over as a transmission with its sender, speed, style, imbalance,
   offset and level, so the first word of every over is scored.
-- **Keying edges** (synthetic recordings, `edge_s`, `edges_centered`):
-  raised-cosine rise and fall of `edge_s` (default 5 ms). By default each
-  edge lies inside its mark, so a mark is `edge_s` shorter, and a space
-  `edge_s` longer, at 50% amplitude than its nominal length: an imbalance
-  of −5 ms/T, −0.10 dit at 24 WPM (derived). With `edges_centered`, edges
-  are centered on the mark's ends and the 50%-amplitude length is the
-  nominal one (VE3NEA's convention; he uses 2 ms edges).
+- **Keying edges** (synthetic recordings, `edge_s`, `edge_placement`):
+  every mark rises and falls as a raised cosine, c(x) = ½ − ½ cos(π x) for
+  x = (t − t₀)/`edge_s` from 0 to 1 (0 before, 1 after), where `edge_s` is
+  the cosine's **full length** (s), not its 10–90% time (10–90% = 0.5903 ×
+  `edge_s`, derived: (π − 2 acos 0.8)/π). `edge_placement` says where the
+  edges lie, one of three values:
+  - **"start"** (D17; owner, 2026-10-23): the rise starts at key-down and the
+    fall at key-up, so env(t) = c(t − on) · (1 − c(t − off)) for each mark
+    (summed over marks), 2.5 ms 10–90% (owner), full length
+    `edge_s` = 2.5 ms / 0.5903 = 4.235 ms (derived). Each mark keeps its
+    keyed length at half amplitude at every speed (its envelope crosses ½ at
+    on + `edge_s`/2 and off + `edge_s`/2) and reaches `edge_s` past its
+    key-up; a 12 ms dot is 7.765 ms flat (65%). A mark shorter than
+    `edge_s` follows the product and never reaches 1; a gap shorter than
+    `edge_s` sums the fall and the next rise, which stays at or below 1
+    because c does not decrease (derived). These are the edges of DEV2
+    (DEV2e) and of every new suite, **set explicitly by their builders**
+    (`D17_EDGES` in `training/kz4ap_synth/generate.py`): they are not the
+    code's default.
+  - **"centered"**: each edge is centered on the mark's end, so the
+    50%-amplitude length is the nominal one: VE3NEA's convention with his
+    2 ms edges (groups B and B2).
+  - **"inside"**: milestone 1's: each edge lies inside its mark (5 ms, the
+    default of `SignalSpec` and of `keying_envelope`), so a mark is `edge_s`
+    shorter, and a space `edge_s` longer, at 50% amplitude than its nominal
+    length: an imbalance of −5 ms/T, −0.10 dit at 24 WPM (derived). **The
+    milestone-1 scenarios and suites (single, band, `smoke`, `full`,
+    including the stage-1 benchmark's groups) keep these edges, because they
+    are frozen evidence: the smoke check's figures below rest on them**
+    (new decoder plan 1b, Ruling 70). Group S scales its 5 ms with its time
+    base (× 25/12).
+
+  S2 (the stretch test of the development set) scales D17's edges with its
+  time base, 2 × 4.235 ms = 8.470 ms, placement "start" (plan 1b,
+  Ruling 62). The labels carry `edge_s` and `edge_placement` (an older
+  field, `edges_centered`, is gone: "centered" is its True).
 - **Character error rate (CER):** the minimum number of symbol insertions,
   deletions and substitutions to turn the decoded text into the reference,
   divided by the number of reference symbols. A prosign token counts as one
@@ -4317,7 +4346,9 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   of milestone 1's code), reading the engine's Envelope path (final branch
   review, 2026-09-30), and its smoke CER, 34 edits in 964 symbols (0.0353,
   measured), the same as at milestone 2a's Task 2, before any engine
-  change. **Provenance of the Matched limit 0.07 (heuristic):** the
+  change. These figures stay valid: the `smoke` recording keeps milestone 1's
+  "inside" edges (Keying edges, above), so D17's edges change none of them.
+  **Provenance of the Matched limit 0.07 (heuristic):** the
   measured 0.0622 = 60/964 (Windows, before milestone 2a's Tasks 15 and
   16) plus a margin of 3/482 = 6/964 (0.0685), rounded up to two decimals:
   the check fails from 68 edits (Envelope's 0.09 fails from 87 edits, a

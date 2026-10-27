@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import stand_in_bench
-from kz4ap_synth.generate import Sender, SignalSpec, qso_spec, scenario_band
+from kz4ap_synth.generate import RISE_S, Sender, SignalSpec, qso_spec, scenario_band
 from kz4ap_synth.messages import Over
 from kz4ap_synth import suites
 from kz4ap_synth.morse import symbols
@@ -38,6 +38,25 @@ def test_smoke_suite_is_the_smoke_script_recording():
     assert (rec.sample_rate, rec.duration_s, rec.noise_seed, rec.oracle) == (192000, 30.0, 2, False)
 
 
+def test_milestone1_suites_keep_inside_edges():
+    # Ruling 70 (plan 1b): milestone 1's scenarios and suites are frozen evidence (the generator's frozen copies in
+    # test_generate.py and the appendix's smoke check rest on them), so they keep their edges: placement "inside" with
+    # RISE_S, except B (VE3NEA's "centered", 0.002 s) and S (RISE_S x 25/12, its time base).
+    (smoke,) = SUITES["smoke"](1)
+    assert smoke.specs and all((s.edge_placement, s.edge_s) == ("inside", RISE_S) for s in smoke.specs)
+    seen = set()
+    for r in SUITES["full"](1):
+        for s in r.specs:
+            seen.add((r.group == "B fading", r.group == "S stretch"))
+            if r.group == "B fading":
+                assert (s.edge_placement, s.edge_s) == ("centered", 0.002)
+            elif r.group == "S stretch":
+                assert s.edge_placement == "inside" and s.edge_s == pytest.approx(RISE_S * 25 / 12, abs=1e-15)
+            else:
+                assert (s.edge_placement, s.edge_s) == ("inside", RISE_S)
+    assert seen == {(True, False), (False, True), (False, False)}
+
+
 def test_full_suite_recordings_are_valid_and_uniquely_named():
     recs = SUITES["full"](1)
     names = [r.name for r in recs]
@@ -59,8 +78,16 @@ def test_full_suite_covers_the_scenarios():
     assert {s.fading_hz for s in specs} >= {0.1, 0.3, 1.0, 3.0}
     assert {s.keying for s in specs} == {"machine", "computer", "paddle", "bug", "hand"}
     assert {s.fading_shape for s in specs if s.fading_hz > 0} == {"butterworth"}
-    assert all(s.edges_centered and s.edge_s == 0.002 for s in specs if s.fading_hz > 0)
-    assert not any(s.edges_centered for s in specs if s.fading_hz == 0)
+    # the milestone-1 suites keep milestone 1's edges (Ruling 70): B VE3NEA's 2 ms centered, S 5 ms x 25/12 inside,
+    # every other group 5 ms inside
+    for r in recs:
+        for s in r.specs:
+            if r.group == "B fading":
+                assert (s.edge_placement, s.edge_s) == ("centered", 0.002)
+            elif r.group == "S stretch":
+                assert s.edge_placement == "inside" and s.edge_s == pytest.approx(RISE_S * 25 / 12, abs=1e-15)
+            else:
+                assert (s.edge_placement, s.edge_s) == ("inside", RISE_S)
     assert any(not s.score for s in specs)
     assert {s.pause_s for s in specs if s.repeats > 1} == {2.0, 5.0, 10.0, 20.0}
     assert {s.tune_s for s in specs if s.tune_s > 0} == {0.3, 0.6, 1.0, 2.0}
