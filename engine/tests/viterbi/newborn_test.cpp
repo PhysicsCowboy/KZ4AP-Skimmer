@@ -337,10 +337,12 @@ struct Scores {
 };
 
 // The same integrand on `points` points with ln_i0 and sample_weight at every point (the direct evaluation), trapezoid
-// with the ends halved, live range live_nats (+infinity: every point). Stops after the switch when asked.
-Scores direct_grid(const Sequence& q, int points, double live_nats, bool stop_at_switch) {
+// with the ends halved, over [u_lo, u_lo + span_nepers], live range live_nats (+infinity: every point); fixed_weight, if
+// set, in place of sample_weight. Stops after the switch when asked.
+Scores direct_grid(const Sequence& q, int points, double live_nats, bool stop_at_switch,
+                   double span_nepers = kNewbornPriorSpanNepers, std::optional<double> fixed_weight = std::nullopt) {
     const Chain& c = chain();
-    const double h = (c.u_hi - c.u_lo) / (points - 1);
+    const double h = span_nepers / (points - 1);
     std::vector<double> a(static_cast<std::size_t>(points));
     std::vector<double> a2(static_cast<std::size_t>(points));
     for (int i = 0; i < points; ++i) {
@@ -362,7 +364,8 @@ Scores direct_grid(const Sequence& q, int points, double live_nats, bool stop_at
         int at = lo;
         for (int i = lo; i <= hi; ++i) {
             const auto ii = static_cast<std::size_t>(i);
-            f[ii] += sample_weight(a2[ii] * q_per_a2) * (-lambda * a2[ii] + ln_i0(kappa * a[ii]));
+            const double w = fixed_weight ? *fixed_weight : sample_weight(a2[ii] * q_per_a2);
+            f[ii] += w * (-lambda * a2[ii] + ln_i0(kappa * a[ii]));
             if (f[ii] > m) {
                 m = f[ii];
                 at = i;
@@ -396,7 +399,7 @@ Scores direct_grid(const Sequence& q, int points, double live_nats, bool stop_at
 }
 
 Scores newborn_run(const Sequence& q, double live_nats, bool stop_at_switch, const NewbornTables& t = tables()) {
-    NewbornIntegral newborn(t, chain().u_lo, chain().u_hi, t.points(), live_nats);
+    NewbornIntegral newborn(t, chain().u_lo, chain().u_lo + t.span_nepers(), t.points(), live_nats);
     Scores run;
     const int n = static_cast<int>(q.size());
     for (int k = 0; k < n; ++k) {
@@ -531,11 +534,10 @@ TEST(Newborn, LiveRangeLosesNothing) {
 
 TEST(Newborn, TablesMatchDirectEvaluation) {
     // G against ln_i0 within 1e-6 nats over x from 1e-3 to 1e6 (40 001 points even in ln x); the shifted G and w tables
-    // against ln_i0 and the xi table at the same 128 points (the same live range) within 5e-4 nats per sample and
-    // 0.005 nats per first mark (measured in the study 3.1e-4 and 0.0037), through the direct grid's switch, on the set the
-    // study measured them on: the 32 level cases (noise to +40 dB S500). The misaligned stress cases are reported, not
-    // bounded (the study did not measure the tables on them; the 25 WPM dash at +20 dB S500 claimed 4 samples early
-    // reaches 7.0e-4 nats per sample).
+    // (w at steps of h, Ruling 81) against ln_i0 and the xi table at the same 128 points (the same live range) within
+    // 5e-4 nats per sample and 0.005 nats per first mark (the study measured 3.1e-4 and 0.0037 with w at 2h), through the
+    // direct grid's switch, on the 32 level cases and the misaligned stress cases (Ruling 81; with w at 2h the 25 WPM dash
+    // at +20 dB S500 claimed 4 samples early reached 7.0e-4 nats per sample).
     double worst_g = 0.0;
     for (int i = 0; i <= 40000; ++i) {
         const double x = std::exp(std::log(1e-3) + i * (std::log(1e6) - std::log(1e-3)) / 40000.0);
@@ -543,7 +545,7 @@ TEST(Newborn, TablesMatchDirectEvaluation) {
     }
     std::cout << "measured: G table against ln_i0 over x of 1e-3 to 1e6: " << worst_g << " nats\n";
     EXPECT_LE(worst_g, 1e-6);
-    // The w table against sample_weight (linear interpolation in ln q at 2h = 0.18), reported.
+    // The w table against sample_weight (linear interpolation in ln q at h = 0.0906; Ruling 81), reported.
     double worst_w = 0.0;
     for (int i = 0; i <= 4000; ++i) {
         const double ln_q = -12.0 + i * 24.0 / 4000.0;
@@ -565,8 +567,7 @@ TEST(Newborn, TablesMatchDirectEvaluation) {
             total = std::max(total, x.total);
         }
         std::cout << "measured: " << c.spec.name << ": tables against direct, per sample " << per_sample
-                  << " nats, per first mark " << total << " nats" << (c.spec.shift != 0 ? " (reported)" : "") << "\n";
-        if (c.spec.shift != 0) continue;
+                  << " nats, per first mark " << total << " nats\n";
         EXPECT_LE(per_sample, 5e-4) << c.spec.name;
         EXPECT_LE(total, 0.005) << c.spec.name;
     }
@@ -799,6 +800,148 @@ double log_normal_score(const Observation& o, double u_mean, double u_sigma, dou
 }
 
 }  // namespace
+
+TEST(Newborn, NarrowestSigmaUIsTheSmallestSoFar) {
+    // narrowest_sigma_u() is +infinity before any sample and then the smallest sigma_u() after any sample so far, also on
+    // samples past the switch where sigma_u() widens again (a 25 WPM dash at +20 dB S500 claimed 4 samples late: the
+    // story's template stays up 4 samples after the true key-up), checked on every sample of 20 first marks of each case.
+    const std::vector<Case> cases = make_cases({{"dash25_+20_shift+4", 20.0, 54, 4, 611},
+                                                {"dash25_+10", 10.0, 54, 0, 612},
+                                                {"dot25_noise", std::nullopt, 18, 0, 613}},
+                                               20);
+    int widened = 0;
+    for (const Case& c : cases) {
+        for (const Sequence& q : c.sequences) {
+            NewbornIntegral newborn(tables(), chain().u_lo, chain().u_hi, kNewbornGridPoints, kNewbornLiveRangeNats);
+            EXPECT_EQ(newborn.narrowest_sigma_u(), std::numeric_limits<double>::infinity());
+            double smallest = std::numeric_limits<double>::infinity();
+            for (const Observation& o : q) {
+                newborn.add(o.e, o.s, o.vp, kSigma2);
+                widened += newborn.sigma_u() > smallest;
+                smallest = std::min(smallest, newborn.sigma_u());
+                ASSERT_EQ(newborn.narrowest_sigma_u(), smallest) << c.spec.name;
+            }
+        }
+    }
+    std::cout << "measured: samples where sigma_u widened again: " << widened << "\n";
+    EXPECT_GT(widened, 0);  // the counter is not just the current sigma_u
+}
+
+TEST(Newborn, FixedWeightIsConstantAtEveryPoint) {
+    // The fixed-weight variant (O12; Task 12): tables built with fixed_weight = w_strong read that constant at every
+    // ln q, and the integral with them matches the direct grid with that constant w at every point within the tables'
+    // 5e-4 nats per sample; it differs from the curve's integral (w varies by point there).
+    const double w = chain().noise.w_strong;
+    const NewbornTables fixed(chain().noise, chain().noise.sigma2_per_n0_hz, w);
+    ASSERT_TRUE(fixed.fixed_weight().has_value());
+    for (int i = 0; i <= 4000; ++i) EXPECT_EQ(fixed.weight_from_table(-40.0 + i * 80.0 / 4000.0), w);
+    const std::vector<Case> cases = make_cases({{"dash25_+0", 0.0, 54, 0, 621},
+                                                {"dash25_noise", std::nullopt, 54, 0, 622},
+                                                {"dot50_+20", 20.0, 9, 0, 623}},
+                                               50);
+    double worst = 0.0;
+    double from_curve = 0.0;
+    for (const Case& c : cases) {
+        for (const Sequence& q : c.sequences) {
+            const Scores grid = newborn_run(q, kNewbornLiveRangeNats, false, fixed);
+            const Scores direct =
+                direct_grid(q, kNewbornGridPoints, kNewbornLiveRangeNats, false, kNewbornPriorSpanNepers, w);
+            const Scores curve = newborn_run(q, kNewbornLiveRangeNats, false);
+            for (std::size_t k = 0; k < q.size(); ++k) {
+                worst = std::max(worst, std::fabs(grid.score[k] - direct.score[k]));
+                from_curve = std::max(from_curve, std::fabs(grid.score[k] - curve.score[k]));
+            }
+        }
+    }
+    std::cout << "measured: fixed w = " << w << ": against the direct grid " << worst
+              << " nats per sample; against the curve's integral up to " << from_curve << " nats\n";
+    EXPECT_LE(worst, 5e-4);
+    EXPECT_GT(from_curve, 1e-3);
+}
+
+TEST(Newborn, OtherGridsMatchTheirDirectEvaluation) {
+    // A grid other than the default: 200 points over a prior of 120 dB (13.82 nepers, h = 0.0694 nepers), whose G table
+    // reaches below -20 nepers of ln x. Against the direct evaluation on the same grid within 5e-4 nats per sample, and
+    // against a 4 001-point dense integral over the same prior within 0.005 nats per sample, on 50 first marks of noise,
+    // 0 and +40 dB S500.
+    const double span = 6.0 * std::numbers::ln10;  // 120 dB of amplitude, nepers
+    const NewbornTables other(chain().noise, chain().noise.sigma2_per_n0_hz, std::nullopt, 200, span);
+    EXPECT_NEAR(other.step_nepers(), span / 199.0, 1e-15);
+    const std::vector<Case> cases = make_cases({{"dash25_noise", std::nullopt, 54, 0, 631},
+                                                {"dash25_+0", 0.0, 54, 0, 632},
+                                                {"dash25_+40", 40.0, 54, 0, 633}},
+                                               50);
+    double worst_direct = 0.0;
+    double worst_dense = 0.0;
+    for (const Case& c : cases) {
+        std::vector<Difference> direct(c.sequences.size());
+        std::vector<Difference> dense(c.sequences.size());
+        parallel_for(static_cast<int>(c.sequences.size()), [&](int i) {
+            const Sequence& q = c.sequences[static_cast<std::size_t>(i)];
+            const Scores grid = newborn_run(q, kNewbornLiveRangeNats, false, other);
+            direct[static_cast<std::size_t>(i)] = difference(grid, direct_grid(q, 200, kNewbornLiveRangeNats, true, span));
+            dense[static_cast<std::size_t>(i)] = difference(grid, direct_grid(q, 4001, INFINITY, true, span));
+        });
+        for (std::size_t i = 0; i < c.sequences.size(); ++i) {
+            worst_direct = std::max(worst_direct, direct[i].per_sample);
+            worst_dense = std::max(worst_dense, dense[i].per_sample);
+        }
+    }
+    std::cout << "measured: 200 points over 120 dB: against the direct grid " << worst_direct
+              << " nats per sample, against the dense integral " << worst_dense << " nats per sample\n";
+    EXPECT_LE(worst_direct, 5e-4);
+    EXPECT_LE(worst_dense, 0.005);
+}
+
+TEST(Newborn, RefusesBadArguments) {
+    // The constructors' and add's checks (newborn.hpp); +infinity is a valid live range.
+    const OutputNoise& noise = chain().noise;
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(NewbornTables(noise, 0.0, std::nullopt), std::invalid_argument);
+    EXPECT_THROW(NewbornTables(noise, nan, std::nullopt), std::invalid_argument);
+    EXPECT_THROW(NewbornTables(noise, inf, std::nullopt), std::invalid_argument);
+    OutputNoise bad = noise;
+    bad.sigma2_per_n0_hz = -1.0;
+    EXPECT_THROW(NewbornTables(bad, noise.sigma2_per_n0_hz, std::nullopt), std::invalid_argument);
+    for (const double w : {0.0, -0.2, nan, inf})
+        EXPECT_THROW(NewbornTables(noise, noise.sigma2_per_n0_hz, w), std::invalid_argument) << "w = " << w;
+    EXPECT_THROW(NewbornTables(noise, noise.sigma2_per_n0_hz, std::nullopt, 1), std::invalid_argument);
+    for (const double span : {0.0, -1.0, nan, inf})
+        EXPECT_THROW(NewbornTables(noise, noise.sigma2_per_n0_hz, std::nullopt, 128, span), std::invalid_argument);
+    EXPECT_THROW((void)tables().ln_i0_from_table(0.0), std::invalid_argument);
+    EXPECT_THROW((void)tables().ln_i0_from_table(nan), std::invalid_argument);
+
+    const double lo = chain().u_lo;
+    const double hi = chain().u_hi;
+    const NewbornTables& t = tables();
+    EXPECT_THROW(NewbornIntegral(t, nan, hi, 128, 80.0), std::invalid_argument);
+    EXPECT_THROW(NewbornIntegral(t, lo, inf, 128, 80.0), std::invalid_argument);
+    EXPECT_THROW(NewbornIntegral(t, hi, lo, 128, 80.0), std::invalid_argument);
+    EXPECT_THROW(NewbornIntegral(t, lo, hi, 127, 80.0), std::invalid_argument);         // not the tables' points
+    EXPECT_THROW(NewbornIntegral(t, lo, hi + 0.01, 128, 80.0), std::invalid_argument);  // not the tables' span
+    for (const double live : {0.0, -1.0, nan})
+        EXPECT_THROW(NewbornIntegral(t, lo, hi, 128, live), std::invalid_argument) << "live = " << live;
+    EXPECT_NO_THROW(NewbornIntegral(t, lo, hi, 128, inf));
+
+    NewbornIntegral newborn(t, lo, hi, 128, 80.0);
+    EXPECT_THROW(newborn.add(-0.1, 0.5, 1.0, 1.0), std::invalid_argument);
+    EXPECT_THROW(newborn.add(nan, 0.5, 1.0, 1.0), std::invalid_argument);
+    EXPECT_THROW(newborn.add(inf, 0.5, 1.0, 1.0), std::invalid_argument);
+    EXPECT_THROW(newborn.add(1.0, nan, 1.0, 1.0), std::invalid_argument);
+    EXPECT_THROW(newborn.add(1.0, inf, 1.0, 1.0), std::invalid_argument);
+    for (const double v : {0.0, -1.0, nan, inf}) {
+        EXPECT_THROW(newborn.add(1.0, 0.5, v, 1.0), std::invalid_argument) << "V' = " << v;
+        EXPECT_THROW(newborn.add(1.0, 0.5, 1.0, v), std::invalid_argument) << "sigma_y^2 = " << v;
+    }
+    // The refused calls changed nothing; s = 0 scores 0 and changes nothing either.
+    EXPECT_EQ(newborn.ln_z(), 0.0);
+    const double mean = newborn.mean_u();
+    newborn.add(1.0, 0.0, 1.0, 1.0);
+    EXPECT_EQ(newborn.last_score_nats(), 0.0);
+    EXPECT_EQ(newborn.mean_u(), mean);
+    EXPECT_EQ(newborn.narrowest_sigma_u(), inf);
+}
 
 TEST(Newborn, MomentMatching) {
     // to_gaussian: mu = e^(u^ + sigma_u^2 / 2), P = mu^2 (e^(sigma_u^2) - 1) from the grid's u^ and sigma_u, to 1e-12

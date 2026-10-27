@@ -21,14 +21,18 @@
 //        Z_k = h p0 sum_i c_i exp(F_i) = (1 / (N - 1)) sum_i c_i exp(F_i),   c_0 = c_(N-1) = 1/2, else c_i = 1,
 //    computed as a log-sum-exp about the largest F_i. 128 is heuristic with a derived bound and a measured check: the
 //    trapezoid rule's relative error on a belief of width sigma (in u) is about 2 exp(-2 pi^2 sigma^2 / h^2) (Poisson
-//    summation; derived), 4e-7 at sigma = 0.08, the narrowest measured at handover; measured on 36 000 first marks
-//    (noise and -10 to +40 dB S500) at most 0.003 nats per sample against a dense integral (the newborn study, 2026-10-26).
+//    summation; derived): 5e-4 at sigma = 0.0585 nepers, the narrowest at handover measured on the level cases, and
+//    3.0e-3 at 0.052 nepers, the narrowest on a misaligned story (+40 dB S500 claimed 4 samples early; plan 1b, Task 9),
+//    which matches the measured worst 0.0029 nats per sample there; measured on 36 000 first marks (noise to +40 dB S500
+//    and the misaligned stories) at most 0.003 nats per sample against a dense integral (the newborn study, 2026-10-26;
+//    Task 9).
 //    Where the belief is cut by the prior's top (a station near +85 dB S500), the error is instead the end-point term of
 //    Euler-Maclaurin, about h^2 |F'(u_hi)| / 12 (derived), which the interior bound does not cover.
 // 2. The live range (D22; thresholded support as in Simandl, Kralovec and Soderstrom 2006). Only the points lo ... hi are
 //    evaluated; after each sample the range's end points more than live_range_nats (80 nats, heuristic: about twice the
-//    deepest revival measured, 41.5 nats) below the largest F_i are dropped for good, so [lo, hi] only shrinks. A dropped
-//    point counts as 0 in Z from then on.
+//    deepest revival in the study, 41.5 nats; 1.8 times the deepest in Task 9's measurement, 44.7 nats, on a 25 WPM dash
+//    at +20 dB S500 claimed 4 samples early) below the largest F_i are dropped for good, so [lo, hi] only shrinks. A
+//    dropped point counts as 0 in Z from then on.
 // 3. The tables (D22; derived, their error measured). On a grid even in u the per-point arguments are one offset per
 //    sample plus a multiple of the step:
 //        ln x_i = ln(2 |s| e / V') + u_i,     ln q_i = 2 u_i + ln(s^2 / sigma_y^2),
@@ -40,11 +44,13 @@
 //      x = 10^6 and from the large-x series ln I0(x) = x - (1/2) ln(2 pi x) + ln(1 + 1/(8x) + 9/(128 x^2)) (Abramowitz
 //      and Stegun 9.7.1) above, where ln_i0(x) - x loses digits to rounding (the two meet within 1e-9 nats at 10^6).
 //      Where every live point has x < 1e-3, ln I0(x) = x^2 / 4 (error below 1e-13 nats).
-//    - w tabulated against ln q at steps of 2h = 0.18 from sample_weight (Task 5's 129-node xi table), read by linear
-//      interpolation; the table reaches past the curve's clamps at q = 1e-4 and 1e4 by the grid's span, beyond which w
+//    - w tabulated against ln q at steps of h = 0.0906 (Ruling 81; D22 stated 2h) from sample_weight (Task 5's 129-node
+//      xi table), read by linear interpolation; ln q steps by 2h from point to point, so point i reads the base node
+//      plus 2i. The table reaches past the curve's clamps at q = 1e-4 and 1e4 by twice the grid's span, beyond which w
 //      is constant.
-//    Against direct evaluation (ln_i0 and sample_weight at each point): at most 3.1e-4 nats per sample and 0.0037 nats
-//    per first mark (measured in the study, heuristic steps).
+//    Against direct evaluation (ln_i0 and sample_weight at each point; heuristic steps, measured): at most 6.5e-5 nats per
+//    sample and 9.7e-4 nats per first mark on 7 200 first marks from noise to +40 dB S500 and the misaligned stories
+//    (Task 9, Newborn.TablesMatchDirectEvaluation; the study, with w at 2h: 3.1e-4 and 0.0037).
 // 4. The switch (owner, 2026-10-24 and 2026-10-25). After each sample the grid's own posterior mean u^ and standard
 //    deviation sigma_u in u (trapezoid moments over the live points); the newborn switches when sigma_u < 0.1 nepers or,
 //    at the latest, at the last scored sample of its first mark's template, j = 15 after the claimed key-up (should_switch),
@@ -118,7 +124,7 @@ private:
     std::vector<double> g_;
     double g_lo_ = 0.0;
     double g_step_ = 0.0;
-    // w at ln q = w_lo_ + j w_step_, w_step_ = 2 h.
+    // w at ln q = w_lo_ + j w_step_, w_step_ = h (Ruling 81).
     std::vector<double> w_;
     double w_lo_ = 0.0;
     double w_step_ = 0.0;

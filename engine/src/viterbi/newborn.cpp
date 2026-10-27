@@ -71,14 +71,14 @@ NewbornTables::NewbornTables(const OutputNoise& noise, double sigma2_per_n0_hz, 
     g_.resize(g_nodes);
     for (std::size_t j = 0; j < g_nodes; ++j) g_[j] = g_of(g_lo_ + static_cast<double>(j) * g_step_);
 
-    // w at steps of 2h in ln q, reaching the grid's span plus one step beyond the curve's clamps at q = 1e-4 and 1e4, so
-    // that a base offset clamped to either end reads only the constant w there.
-    w_step_ = 2.0 * step_;
+    // w at steps of h in ln q (Ruling 81), reaching twice the grid's span plus two steps beyond the curve's clamps at
+    // q = 1e-4 and 1e4, so that a base offset clamped to either end reads only the constant w there.
+    w_step_ = step_;  // h (Ruling 81; D22 stated 2h): point i reads node w_node + 2 i
     const double lq_lo = std::log(kWeightLowestQ);
     const double lq_hi = std::log(kWeightHighestQ);
-    w_lo_ = lq_lo - w_step_ * (points + 1);
+    w_lo_ = lq_lo - w_step_ * (2 * points + 2);
     const auto w_nodes =
-        static_cast<std::size_t>(std::ceil((lq_hi + w_step_ * (points + 1) - w_lo_) / w_step_)) + 1;
+        static_cast<std::size_t>(std::ceil((lq_hi + w_step_ * (2 * points + 2) - w_lo_) / w_step_)) + 1;
     w_.resize(w_nodes);
     for (std::size_t j = 0; j < w_nodes; ++j)
         w_[j] = fixed_weight ? *fixed_weight : sample_weight(std::exp(w_lo_ + static_cast<double>(j) * w_step_));
@@ -170,10 +170,10 @@ void NewbornIntegral::add(double e_fs, double s, double v_prime_fs2, double sigm
     const int lo = lo_;
     const int hi = hi_;
 
-    // The w table's base node and fraction: ln q_i = ln q_0 + i 2h (header, 3).
+    // The w table's base node and fraction: ln q_i = ln q_0 + 2h i, node w_node + 2 i (header, 3).
     const double ln_q0 = 2.0 * u_lo_ + std::log(s * s / sigma2_fs2);
     const double w_position = (ln_q0 - t.w_lo_) / t.w_step_;
-    const auto w_top = static_cast<long long>(t.w_.size()) - 1 - points;
+    const auto w_top = static_cast<long long>(t.w_.size()) - 1 - 2LL * points;
     long long w_node;
     double w_t;
     if (!(w_position >= 0.0)) {
@@ -191,7 +191,7 @@ void NewbornIntegral::add(double e_fs, double s, double v_prime_fs2, double sigm
     if (x_top < kNewbornSmallX) {
         // ln I0(x) = x^2 / 4 at every live point: the term is (kappa^2 / 4 - lambda) a^2.
         const double c = (0.25 * kappa * kappa - lambda) * a2_lo;
-        for (int i = lo; i <= hi; ++i) f[i] += (w[i] + w_t * (w[i + 1] - w[i])) * c * e2[i];
+        for (int i = lo; i <= hi; ++i) f[i] += (w[2 * i] + w_t * (w[2 * i + 1] - w[2 * i])) * c * e2[i];
     } else {
         // ln x_i = ln x_0 + i h; the G table's node for point i is g_node + 4 i, with one fraction for all points.
         const double ln_x0 = std::log(kappa) + u_lo_;
@@ -213,7 +213,7 @@ void NewbornIntegral::add(double e_fs, double s, double v_prime_fs2, double sigm
             const auto j = static_cast<std::size_t>(g_node + 4LL * i);  // >= 2 at every live point here
             const double gi = c.c0 * g[j - 1] + c.c1 * g[j] + c.c2 * g[j + 1] + c.c3 * g[j + 2];
             const double term = -la * e2[i] + ka * e1[i] - half_ln_x0 - half_h * i + gi;
-            f[i] += (w[i] + w_t * (w[i + 1] - w[i])) * term;
+            f[i] += (w[2 * i] + w_t * (w[2 * i + 1] - w[2 * i])) * term;
         }
     }
 
