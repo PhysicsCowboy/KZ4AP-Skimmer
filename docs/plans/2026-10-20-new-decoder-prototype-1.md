@@ -979,7 +979,8 @@ long run; the timing convention and rise times wait for the research.**
     hold within 4% at j = 5 and 0.6% elsewhere; w/f² stays 497 nats; the newborn's switch timing is unchanged at 0 to
     +30 dB S₅₀₀. The newborn's broad-prior tables now depend on w (left to the implementation plan).
   - **ν's binning error** (`nu_bins.py`, with W_i = Σs⁴): measured 0.03% to 2.3% against the exact sum (2.3% for one
-    "PARIS" at 100 WPM, ν = 1.9); (π f_D b)²/12 = 0.6% gives the scale, not a bound; all under the Satterthwaite form's
+    "PARIS" at 100 WPM, ν = 1.9; corrected 2026-10-27 by the build's Task 7 and its review to −0.57 to +0.62%, the
+    scratch having keyed shorter words); (π f_D b)²/12 = 0.6% gives the scale, not a bound; all under the Satterthwaite form's
     own ~3%.
   - **One sample set** (stated 2026-10-25 as obvious): every per-story sum and update (Ω̂, ν, SE, Ω̄'s lookups, w, the
     amplitude update, C²'s own part) runs over the samples with s_k ≠ 0; "s_k > 0" and "every sample of the story's

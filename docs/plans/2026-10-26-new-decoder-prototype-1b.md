@@ -1027,11 +1027,11 @@ documents updated per §8, and one commit. Task numbers are this plan's own.
     nothing.
   - `LongRun.OmegaHatIsUnbiased`: 20 000 trials of a steady carrier on the template of "PARIS" at 25 WPM in complex
     Gaussian noise with the chain's ρ_m (σ_y² = 1): mean Ω̂ = a² within 3 standard errors at 0 and +10 dB S₅₀₀.
-  - `LongRun.PhysicalFloor`: −σ_y²Σs²/Σs⁴ = −2.09, −1.30 and −1.05 σ_y² (±0.01) for a 100 WPM dot claimed as 4
+  - `LongRun.PhysicalFloor`: −σ_y²Σs²/Σs⁴ = −2.09, −1.29 or −1.34 (by the edges' grid phase) and −1.05 σ_y² (±0.01; corrected in Task 7 from −1.30) for a 100 WPM dot claimed as 4
     samples with its tail, "PARIS" at 100 WPM and "PARIS" at 25 WPM.
   - `LongRun.BinnedNuMatchesTheExactSum` (Part 15, item 1): "PARIS" once, twice and four times at 8, 25 and 100 WPM,
     the template's s⁴ as weights, after the last tail: |ν_binned/ν_exact − 1| ≤ 2.5%; "PARIS" at 25 WPM gives
-    ν = 6.55 ± 0.05.
+    ν = 6.90 ± 0.05 binned (6.85 exact; corrected in Task 7 from the design's 6.55).
   - `LongRun.NuOnKeyDownTimes`: contiguous samples with s = 1: ν = 2.17 after 0.5 s and 7.42 after 2 s at 2 Hz
     within 0.7% (the exact sample sum, recomputed in the review of this plan; the binning adds up to 0.6%); on the
     key-down sample times of "PARIS" repeated at 25 WPM (s = 1 on key-down samples, 0 elsewhere) the value is

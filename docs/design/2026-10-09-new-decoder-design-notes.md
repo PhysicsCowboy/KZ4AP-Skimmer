@@ -1768,8 +1768,9 @@ measure; part 16, standard practice for each stage; part 17, the values.
     Ω̂'s variance beside the fading's; 8% worse on a 100 WPM dot, since that variance leaves out the neighbors'
     correlation and the edge position's scatter; it needs Ω in its own weights and a division per sample per story).
   - **Its cost:** two running sums per story, as before.
-  - **Its physical floor** (derived): e_k² ≥ 0, so Ω̂ ≥ −σ_y²·Σs_k²/Σs_k⁴: −2.09 σ_y² after a 4-sample mark, −1.30 σ_y²
-    after "PARIS" at 100 WPM and −1.05 σ_y² after "PARIS" at 25 WPM.
+  - **Its physical floor** (derived): e_k² ≥ 0, so Ω̂ ≥ −σ_y²·Σs_k²/Σs_k⁴: −2.09 σ_y² after a 4-sample mark, −1.29 or
+    −1.34 σ_y² after "PARIS" at 100 WPM (by where the edges fall on the sample grid) and −1.05 σ_y² after "PARIS" at
+    25 WPM (corrected 2026-10-27 in the build's Task 7, recomputed independently by its review: the earlier scratch keyed a shorter word).
   - **[departure, owner's decision, for a derived reason] from CW Skimmer's practice:** on a mark's flat part (s = 1)
     it is Skimmer's average of key-on samples; the edge samples count less instead of being discarded. At 100 WPM a
     dot's output peaks at 0.90 of full and has no flat part, so discarding edges would leave dots at high speed, and an
@@ -1842,8 +1843,8 @@ measure; part 16, standard practice for each stage; part 17, the values.
     formula of that date, now corrected.
   - **Binning:** the estimate (π f_D b)²/12 = 0.6% at 2 Hz (derived for weight spread evenly within each bin) gives the
     scale, not a bound. Measured against the exact sample sum with weights s_k⁴ ("PARIS" once, twice and four times):
-    +0.30 to +0.32% at 8 WPM, +0.03 to +0.11% at 25 WPM, and −0.15 to +2.30% at 100 WPM, the largest on a single "PARIS"
-    (0.54 s, ν = 1.93). With the old weights s_k², +0.05 to +1.71% on the same texts. Both stay within the Satterthwaite
+    +0.32 to +0.34% at 8 WPM, +0.26 to +0.62% at 25 WPM, and −0.57 to −0.36% at 100 WPM (corrected 2026-10-27 in the build's Task 7, recomputed independently by its review: the earlier scratch keyed a shorter word); the earlier
+    figures, +0.03 to +0.11% at 25 WPM and up to +2.30% on a single "PARIS" at 100 WPM, came from that shorter keying. With the old weights s_k², +0.05 to +1.71% on the same texts. Both stay within the Satterthwaite
     form's own ~3%. Keeping only the last 10 bins changes ν by under 0.01% more.
   - **Each story keeps its last 10 bins:** ρ² < 0.001 beyond 0.42 s, so older pairs are dropped. The double sum is
     kept as a running total: each closed bin adds its own term and its products with the last 10.
@@ -1855,7 +1856,8 @@ measure; part 16, standard practice for each stage; part 17, the values.
     (plan D16, "Findings of that derivation").
   - At 25 WPM, at 2 Hz: ν = 2.10 after 0.5 s and 6.72 after 2 s (derived, on sample times with every s = 1, in
     scratch computations of 2026-10-22 not in the repository). With the decided template and weights s_k⁴, "PARIS" at
-    25 WPM (1.94 s) gives ν = 6.55 (6.63 with weights s_k²; measured).
+    25 WPM (2.064 s keyed) gives ν = 6.85 exact, 6.90 binned (6.96 with weights s_k²) (corrected 2026-10-27 in the build's Task 7, recomputed independently by its review: the earlier scratch keyed a shorter word); the earlier 6.55
+    (6.63) came from a word cut at 1.94 s.
   - At other true rates the fixed 2 Hz count is off: 1.07 true looks against 6.72 at 0.1 Hz after 2 s, and 13.9 at
     5 Hz (measured in scratch computations of 2026-10-22 not in the repository).
 - **Ω̄, the expected long-run power: by default from the RMS clipped at zero, through the fading-only closed form**
@@ -1883,7 +1885,8 @@ measure; part 16, standard practice for each stage; part 17, the values.
   - **At Ω̂ ≤ 0** (derived): β = 0, and Ω̄ = Ω_lo·ν/(ν − 1) for ν > 1 (the prior's top negligible) and
     Ω_lo·ln(Ω_hi/Ω_lo) = 23.0·Ω_lo (−1.4 dB S₅₀₀) at ν = 1: a buried story's Ω̄ rests on the prior's −15 dB S₅₀₀ edge,
     a placeholder. On simulated samples, noise alone gives −1.4 to −1.9 dB S₅₀₀ after a first mark (ν ≈ 1), −11.6 to
-    −11.8 at ν ≈ 1.9 and −14.3 after "PARIS" at 25 WPM (ν = 6.55) (medians, measured; the table in the variant
+    −11.8 at ν ≈ 1.9 and −14.3 after "PARIS" at 25 WPM (ν = 6.55 on the shorter keying of that scratch; the decided keying gives 6.85, not
+    rerun) (medians, measured; the table in the variant
     below).
   - **Its table:** D16's, over ν and ln(β/Ω_hi), with the β = 0 limit above; its grid and error are for the
     implementation plan.
@@ -1973,7 +1976,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
 | one 25 WPM dot (1.01) | +1.9 / −1.9 | +2.5 / +1.2 | +5.6 / +6.0 | +11.1 / +11.1 | +21.2 / +21.2 |
 | "E E", 25 WPM (1.82) | −8.3 / −11.6 | −6.9 / −7.6 | −2.6 / −2.5 | +2.4 / +2.4 | +12.6 / +12.6 |
 | "PARIS", 100 WPM (1.93) | −9.6 / −11.8 | −7.6 / −7.7 | −2.6 / −2.5 | +2.5 / +2.5 | +12.2 / +12.2 |
-| "PARIS", 25 WPM (6.55) | −13.2 / −14.3 | −9.8 / −9.7 | −4.5 / −4.5 | +0.5 / +0.5 | +10.3 / +10.3 |
+| "PARIS", 25 WPM (6.55; the decided keying gives 6.85, not rerun) | −13.2 / −14.3 | −9.8 / −9.7 | −4.5 / −4.5 | +0.5 / +0.5 | +10.3 / +10.3 |
 
     (Ω̄ in dB S₅₀₀, noise-in-Ω̄ variant / clipping default.) From −10 dB S₅₀₀ up, once ν ≥ 1.8, the two agree within 0.7
     dB in median (dB relative to each other); on noise alone the default reads 1.1 to 6.9 dB lower; on a first mark (ν =
@@ -2590,7 +2593,7 @@ In the table, "survey" is the standard-practice survey of 2026-10-22, `docs/rese
 | Sample convention | j = 0 the first sample at or after the edge, u uniform on [0, Δ) | — | owner, 2026-10-25 |
 | f_D | 2 | Hz | owner, 2026-10-22 (D16) |
 | Amplitude drift target | 0.886·√Ω̄ at correlation ρ_a | FS | owner, 2026-10-23 (D17) |
-| ν bins | 42.67 (16 samples), last 10 kept | ms | owner, 2026-10-23 (D17); binning 0.03–2.3% from exact (measured) |
+| ν bins | 42.67 (16 samples), last 10 kept | ms | owner, 2026-10-23 (D17); binning −0.57 to +0.62% from exact (measured; corrected 2026-10-27, Task 7) |
 | Ω̂ | Σ s_k²(e_k² − σ_y²)/Σ s_k⁴ over every sample of the over | FS² | owner, 2026-10-25 (D17), ordinary least squares |
 | ν bin weights | W_i = Σ s_k⁴ over the bin's samples | 1 | owner, 2026-10-25 (D17); Satterthwaite match derived |
 | Ω̂'s noise variance (variant only) | A + B·ΩG; A = σ_y⁴a₂/(Σs⁴)², B = 2σ_y²b₂/(Σs⁴)², exact sums over 6 lags | FS⁴ | derived; checked by simulation within 2%; exact sums over 6 lags (owner, 2026-10-25) |
