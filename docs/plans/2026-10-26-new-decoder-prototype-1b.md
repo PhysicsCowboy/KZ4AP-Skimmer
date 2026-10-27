@@ -82,7 +82,7 @@ It delivers:
 3. **The test generator's D17 edges** in Python, and a new-decoder-only C++ test-signal helper with the same edges
    (Part 14; Ruling 63).
 4. **Table generators** as a C++ tool in the repository (Ruling 65): the weight table and the default Ω̄ table
-   compiled in; the variant's 12.8 MB table generated into `build/` and loaded only when the variant runs.
+   compiled in; the variant's table (37.8 MB as built in Task 8) generated into `build/` and loaded only when the variant runs.
 5. **Instrumentation:** the CPU breakdown by part in every measurement (Part 15's preamble; D18), Part 15's counters,
    and a true-story trace (the model run along the label's keying) for the measurements that need it.
 6. **The measured variants behind switches,** off by default: the fixed w (Part 15, item 18), Bell's decay (item 16),

@@ -2011,7 +2011,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
       on [0, 1] (denser toward ν = 1); χ from −8 to 10⁴ at 85 nodes uniform in asinh(χ) (steps of 0.15); ln ζ from
       ln 0.003 to ln 400 at 42 nodes (steps of 0.29; plan D17, 4896e97: ζ "up to about 400"); ln λ from ln 10⁻³ to
       ln 1 120 (κ = 2.8 at ζ = 400) at 29 nodes (steps of 0.50). Output ln(Ω̄/σ_y²), multilinear interpolation (16
-      corners). 3 209 430 nodes, 12.8 MB in single precision (the first grid, with κ from 0.4 and ζ to 10, was 2.1 MB;
+      corners). 3 209 430 nodes, 12.8 MB in single precision (as built (2026-10-27, the build's Task 8): ζ at 63 nodes and λ at 57, 37.8 MB, 99th percentile 0.55%, largest 2.08%, because on the decided chain the 12.8 MB grid erred up to 5.7% against the 3% bound; the first grid, with κ from 0.4 and ζ to 10, was 2.1 MB;
       today's broad-prior J tables: 0.97 MB). Built from the direct integral at about 2 to 4 ms per node in the
       scratch program (24 minutes on 7 cores), so "built at startup" needs a much faster integrator or the table
       computed ahead of time and shipped (for the implementation plan). Most of the λ axis above κ = 2.8 at small ζ
@@ -2601,7 +2601,7 @@ In the table, "survey" is the standard-practice survey of 2026-10-22, `docs/rese
 | Ω̄ (variant) | posterior mean under Ω̂ = ΩG + N, G ~ Gamma(ν), N ~ Normal(0, A + B·ΩG), flat prior | FS² | owner, 2026-10-25 (D17, f507812): a measured variant against the default |
 | Ω̄ lookups | after each sample with s_k ≠ 0 only | — | owner, 2026-10-25 (D17); exact |
 | Ω̄ table (default) | D16's, over ν and ln(β/Ω_hi), β = ν·max(Ω̂, 0), with the β = 0 limit | — | grid and error for the implementation plan |
-| Ω̄ table (variant) | inputs 1/ν, asinh(Ω̂/SE₀), ln(SE₀/σ_y²) to ζ = 400, ln λ (λ = κζ, κ from 0 to 2.8); 31 × 85 × 42 × 29 nodes, 12.8 MB; error 99th percentile 0.87%, largest 2.5% | — | inputs derived; the fourth input and its λ axis owner, 2026-10-25 (D17); grid heuristic, error measured; the Gaussian artifact's remedy decided only if the variant earns its place |
+| Ω̄ table (variant) | inputs 1/ν, asinh(Ω̂/SE₀), ln(SE₀/σ_y²) to ζ = 400, ln λ (λ = κζ, κ from 0 to 2.8); 31 × 85 × 42 × 29 nodes, 12.8 MB; error 99th percentile 0.87%, largest 2.5% (as built (2026-10-27, the build's Task 8): ζ at 63 nodes and λ at 57, 37.8 MB, 99th percentile 0.55%, largest 2.08%, because on the decided chain the 12.8 MB grid erred up to 5.7% against the 3% bound) | — | inputs derived; the fourth input and its λ axis owner, 2026-10-25 (D17); grid heuristic, error measured; the Gaussian artifact's remedy decided only if the variant earns its place |
 | Level prior | flat, −15 to +85 | dB S₅₀₀ | placeholder (topic 5, item 3) |
 | Newborn switch | σ_u < 0.1 in ln a | 1 | derived (0.0075 nats skew cost); owner, 2026-10-24 (D17) |
 | Newborn grid | 128 points even in u = ln a over the prior (h = 0.0906 nepers), trapezoid; live range 80 nats | 1, nats | owner, 2026-10-26 (D22); 128 from the trapezoid bound and measured (0.003 nats per sample at worst); 80 heuristic, twice the deepest revival measured (41.5 nats) |

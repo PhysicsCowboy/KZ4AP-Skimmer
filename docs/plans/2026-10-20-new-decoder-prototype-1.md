@@ -1055,7 +1055,7 @@ long run; the timing convention and rise times wait for the research.**
   and +15% on "PARIS" at 100 WPM; measured), largest where the variant matters.
 - **The variant's Ω̄ table: four inputs, the fourth as ln λ at 29 nodes, 12.8 MB (owner, 2026-10-25: "a"; stated
   earlier as the variant's implementation detail, 354d93f).** Error against the direct integral median 0.09%, 99th
-  percentile 0.87%, largest 2.5% (measured); the cache risk to the 40–60 ns lookup is read from the CPU breakdown's Ω̄
+  percentile 0.87%, largest 2.5% (measured; as built (2026-10-27, the build's Task 8): ζ at 63 nodes and λ at 57, 37.8 MB, 99th percentile 0.55%, largest 2.08%, because on the decided chain the 12.8 MB grid erred up to 5.7% against the 3% bound); the cache risk to the 40–60 ns lookup is read from the CPU breakdown's Ω̄
   line in the variant's test against the default. Rejected: (b) κ on a uniform axis (error up to 66% at 8 nodes, 23%
   at 15 dense near 0); (c) three inputs with κ fixed at 2.6 (0.44 MB, but error up to 306%, 99th percentile 65%, on
   fast first marks and below Ω̂ = 0); (e) the integral per lookup (2–4 ms each against 637 500 lookups per
