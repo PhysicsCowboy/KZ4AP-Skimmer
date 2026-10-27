@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -78,6 +79,10 @@ struct EngineConfig {
     // oracle_frequencies_hz, whose genie values replace those of `viterbi` for that channel (viterbi::with_genie),
     // since each channel's station has its own true spread and fist.
     std::vector<viterbi::ViterbiGenie> viterbi_genie;
+    // FrontEnd::Viterbi only: the path of a default Omega_bar table for viterbi.level_min_db and level_max_db
+    // (kz4ap-viterbi-tables omega-bar --lo-db L --hi-db H), or empty for the compiled table, which serves -15 and
+    // +85 dB S500 only; another level range without a table for it is refused (make_viterbi_shared).
+    std::string viterbi_omega_bar_default_table;
 
     // Oracle mode, for the benchmark: when not empty, a channel is opened at each of
     // these frequencies (Hz from the span's center, rounded to the nearest FFT bin)

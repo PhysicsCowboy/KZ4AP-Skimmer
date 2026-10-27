@@ -41,9 +41,17 @@ else()
 endif()
 
 # Generates the new decoder's compiled-in tables (plan 1b, Ruling 65). It links the engine's sources without the
-# generated tables (kz4ap_engine_core), so it builds before any table exists (Ruling 72, N6).
+# generated tables, so it builds before any table exists (Ruling 72, N6), through its own static archive of
+# kz4ap_engine_core's objects (Ruling 76): the linker takes from an archive only the objects the tool needs, so engine
+# code that reads a generated table (the decoder's, through OmegaBarTable::compiled() or sample_weight) stays out of the
+# tool, where linking the object library itself would take every object and leave those references unresolved.
+# kz4ap_engine stays one archive of the core objects and the generated tables (engine/CMakeLists.txt).
+add_library(kz4ap_viterbi_tables_core STATIC $<TARGET_OBJECTS:kz4ap_engine_core>)
+target_include_directories(kz4ap_viterbi_tables_core PUBLIC ${PROJECT_SOURCE_DIR}/engine/include)
+target_compile_features(kz4ap_viterbi_tables_core PUBLIC cxx_std_20)
+target_link_libraries(kz4ap_viterbi_tables_core PRIVATE sleef)
 add_executable(kz4ap-viterbi-tables src/viterbi_tables_main.cpp)
-target_link_libraries(kz4ap-viterbi-tables PRIVATE kz4ap_engine_core)
+target_link_libraries(kz4ap-viterbi-tables PRIVATE kz4ap_viterbi_tables_core)
 if(MSVC)
   target_compile_options(kz4ap-viterbi-tables PRIVATE /W4 /permissive- /utf-8)
 else()

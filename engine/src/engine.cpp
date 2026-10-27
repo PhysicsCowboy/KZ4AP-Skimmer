@@ -94,7 +94,8 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
             configs.push_back(viterbi::with_genie(config_.viterbi, genie));
         viterbi_shared_ = make_viterbi_shared(configs, ChannelizerConfig{config_.sample_rate, config_.fft_size,
                                                                           config_.channel_bins,
-                                                                          config_.channel_cutoff_hz});
+                                                                          config_.channel_cutoff_hz},
+                                              config_.viterbi_omega_bar_default_table);
     } else if (!config_.viterbi_genie.empty()) {
         throw std::invalid_argument("viterbi_genie needs the new decoder (FrontEnd::Viterbi)");
     }

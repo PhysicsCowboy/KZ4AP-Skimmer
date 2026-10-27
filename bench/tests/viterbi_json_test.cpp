@@ -287,6 +287,16 @@ TEST(ViterbiJson, GenieWithoutOracleFails) {
     EXPECT_EQ(refusal_of([&] { check_viterbi_options(false, false, ViterbiOptions{}); }), "(accepted)");
 }
 
+TEST(ViterbiJson, OmegaBarDefaultTableBelongsToTheNewDecoder) {
+    // --omega-bar-default-table FILE: the new decoder's table for other level bounds (plan 1b, Task 7); no oracle needed.
+    ViterbiOptions options;
+    options.omega_bar_default_table = "table.bin";
+    const std::string why = refusal_of([&] { check_viterbi_options(false, true, options); });
+    EXPECT_TRUE(contains(why, "--omega-bar-default-table")) << why;
+    EXPECT_TRUE(contains(why, "--decoder viterbi")) << why;
+    EXPECT_EQ(refusal_of([&] { check_viterbi_options(true, false, options); }), "(accepted)");
+}
+
 TEST(ViterbiJson, StatsNeedsOracleAndTheNewDecoder) {
     ViterbiOptions options;
     options.stats = true;

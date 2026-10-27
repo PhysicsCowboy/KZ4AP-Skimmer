@@ -11,6 +11,7 @@
 #include "kz4ap/decoder.hpp"
 #include "kz4ap/types.hpp"
 #include "kz4ap/viterbi/config.hpp"
+#include "kz4ap/viterbi/long_run.hpp"
 #include "kz4ap/viterbi/observation.hpp"
 #include "kz4ap/viterbi/search.hpp"
 
@@ -19,6 +20,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace kz4ap {
@@ -56,11 +58,15 @@ public:
     double keying_rise_s() const { return keying_rise_s_; }
     double level_min_db() const { return level_min_db_; }
     double level_max_db() const { return level_max_db_; }
+    // The default Omega_bar table for that level range (viterbi/long_run.hpp; omega_bar_default_table): the compiled one,
+    // or the one loaded for other bounds. Not read by the decoder yet (plan 1b, Task 10).
+    const viterbi::OmegaBarTable& omega_bar() const { return *omega_bar_; }
 
 private:
     ViterbiShared() = default;
     friend std::shared_ptr<const ViterbiShared> make_viterbi_shared(std::span<const viterbi::ViterbiConfig> configs,
-                                                                    const ChannelizerConfig& channel);
+                                                                    const ChannelizerConfig& channel,
+                                                                    const std::string& omega_bar_default_table);
 
     double channel_rate_hz_ = 0.0;
     int samples_per_piece_ = 0;
@@ -72,7 +78,14 @@ private:
     double keying_rise_s_ = 0.0;
     double level_min_db_ = 0.0;
     double level_max_db_ = 0.0;
+    std::shared_ptr<const viterbi::OmegaBarTable> omega_bar_;
 };
+
+// The default Omega_bar table for the prior's bounds level_min_db and level_max_db (dB S500; viterbi/long_run.hpp): the
+// compiled table (-15 and +85 dB S500) when path is empty, else the table in the file at path (kz4ap-viterbi-tables
+// omega-bar --lo-db L --hi-db H). Throws std::invalid_argument naming both pairs of bounds when the table's differ from
+// them (Ruling 72, N14), and std::runtime_error for a file that is not such a table.
+viterbi::OmegaBarTable omega_bar_default_table(double level_min_db, double level_max_db, const std::string& path);
 
 // pieces: the longest block of a configuration, B = floor(block_length_s(f_D, block_loss_db) / piece_s), f_D being
 // genie_fading_spread_hz where set, else fading_spread_hz (195 at the defaults); empty with no fading (f_D = 0), where
@@ -95,12 +108,16 @@ int viterbi_first_block_pieces(const viterbi::ViterbiConfig& config);
 // Throws std::invalid_argument for no configuration, configurations that disagree, a piece_s that is not a whole
 // number of channel samples (within 1e-9 of one: 2 ms is 3 samples at 1 500 samples/s, 48 kHz x 2^j, and 4 at 2 000,
 // 32 kHz, but 2.756 at 1 378.125 samples/s, 44.1 and 88.2 kHz, which is refused, with the numbers), and what
-// channel_filter_taps, rise_fractions and FlatPrior refuse.
+// channel_filter_taps, rise_fractions and FlatPrior refuse. omega_bar_default_table: the path of a default Omega_bar
+// table for the configurations' level range, or empty for the compiled one; a range other than the compiled table's
+// (-15 and +85 dB S500) without a table for it is refused, naming both (omega_bar_default_table above).
 std::shared_ptr<const ViterbiShared> make_viterbi_shared(std::span<const viterbi::ViterbiConfig> configs,
-                                                         const ChannelizerConfig& channel);
+                                                         const ChannelizerConfig& channel,
+                                                         const std::string& omega_bar_default_table = {});
 inline std::shared_ptr<const ViterbiShared> make_viterbi_shared(const viterbi::ViterbiConfig& config,
-                                                                const ChannelizerConfig& channel) {
-    return make_viterbi_shared(std::span<const viterbi::ViterbiConfig>(&config, 1), channel);
+                                                                const ChannelizerConfig& channel,
+                                                                const std::string& omega_bar_default_table = {}) {
+    return make_viterbi_shared(std::span<const viterbi::ViterbiConfig>(&config, 1), channel, omega_bar_default_table);
 }
 
 class ViterbiDecoder final : public Decoder {

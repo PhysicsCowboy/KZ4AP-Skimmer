@@ -64,10 +64,13 @@ constexpr const char* kUsage =
     "                   [--decoder envelope|matched|bank|viterbi]\n"
     "                   [--record-channels DIR (with --oracle: the oracle channels; without: the detector's)]\n"
     "                   [--set NAME=VALUE ...] [--genie fist|fading ...] [--stats STATS.json [--stats-detail]]\n"
+    "                   [--omega-bar-default-table FILE]\n"
     "                   (--decoder viterbi, whose oracle channels follow the labels' frequencies;\n"
     "                   NAME is a field of ViterbiConfig; --genie reads the labels;\n"
     "                   --genie and --stats need --oracle; --stats writes the decoder's search statistics: a summary\n"
-    "                   for each channel, or with --stats-detail every newborn line, which is 45 kB per channel-second)\n"
+    "                   for each channel, or with --stats-detail every newborn line, which is 45 kB per channel-second;\n"
+    "                   --omega-bar-default-table: the default Omega_bar table for a level_min_db and level_max_db\n"
+    "                   other than -15 and +85 dB S500, from kz4ap-viterbi-tables omega-bar --lo-db L --hi-db H)\n"
     "       kz4ap-bench --labels LABELS.json --score-decoded DECODED.json [--json OUT.json] [--baseline BASELINE.json]\n";
 
 // Whether two paths name the same file, which need not exist yet: the file itself where both exist (another spelling, a
@@ -127,6 +130,11 @@ Args parse_args(int argc, char** argv) {
             args.viterbi_options.stats = true;
         }
         else if (a == "--stats-detail") args.viterbi_options.stats_detail = true;  // the full form of that file
+        else if (a == "--omega-bar-default-table") {  // the default Omega_bar table for other level bounds
+            args.viterbi_options.omega_bar_default_table = text();
+            if (args.viterbi_options.omega_bar_default_table.empty())
+                throw std::runtime_error("--omega-bar-default-table needs a file\n" + std::string(kUsage));
+        }
         else if (!a.empty() && a[0] == '-') throw std::runtime_error("unknown option " + a + "\n" + kUsage);
         else if (!args.recording) args.recording = a;
         else throw std::runtime_error(std::string("more than one recording given\n") + kUsage);
@@ -273,6 +281,8 @@ int run_engine(const Args& args) {
     if (args.front_end == FrontEnd::Viterbi) {
         config.viterbi = args.viterbi;
         if (args.stats) config.viterbi.stats = true;  // the search keeps its statistics only when asked
+        // A default Omega_bar table for level bounds other than the compiled table's (make_viterbi_shared)
+        config.viterbi_omega_bar_default_table = args.viterbi_options.omega_bar_default_table;
         // Each oracle channel follows its label's true frequency, drifting or switching at a QSO's overs (design Part 1;
         // plan O3), in the order of the labels (EngineConfig::oracle_frequency_tracks).
         if (args.oracle) {
@@ -327,6 +337,8 @@ int run_engine(const Args& args) {
         // arguments as given, and the genie's kinds with each channel's values (the labels give them again)
         out["config"] = nlohmann::json(to_json(config.viterbi));
         out["settings"] = args.viterbi_options.settings;
+        if (!args.viterbi_options.omega_bar_default_table.empty())
+            out["omega_bar_default_table"] = args.viterbi_options.omega_bar_default_table;
         if (!args.viterbi_options.genie.empty()) {
             nlohmann::json genie = {{"kinds", nlohmann::json::array()}, {"channels", nlohmann::json::array()}};
             for (const GenieKind kind : args.viterbi_options.genie) genie["kinds"].push_back(genie_kind_name(kind));

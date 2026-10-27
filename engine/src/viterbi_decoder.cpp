@@ -56,6 +56,23 @@ std::optional<int> viterbi_block_pieces(const viterbi::ViterbiConfig& config) {
                                                                           : static_cast<int>(pieces);
 }
 
+viterbi::OmegaBarTable omega_bar_default_table(double level_min_db, double level_max_db, const std::string& path) {
+    viterbi::OmegaBarTable table =
+        path.empty() ? viterbi::OmegaBarTable::compiled() : viterbi::OmegaBarTable::load(path);
+    // The bounds are configuration values, compared as written (within 1e-9 dB, for a file's rounding).
+    if (std::fabs(table.lo_db() - level_min_db) > 1e-9 || std::fabs(table.hi_db() - level_max_db) > 1e-9) {
+        std::ostringstream message;
+        message << "the level range " << level_min_db << " to " << level_max_db << " dB S500 (level_min_db, "
+                << "level_max_db) differs from the default Omega_bar table's, " << table.lo_db() << " to "
+                << table.hi_db() << " dB S500 ("
+                << (path.empty() ? std::string("the compiled table") : "the table in " + path)
+                << "): give a table generated for that range (kz4ap-viterbi-tables omega-bar --lo-db L --hi-db H; "
+                << "EngineConfig::viterbi_omega_bar_default_table, kz4ap-bench --omega-bar-default-table)";
+        throw std::invalid_argument(message.str());
+    }
+    return table;
+}
+
 int viterbi_first_block_pieces(const viterbi::ViterbiConfig& config) {
     const std::optional<int> block = viterbi_block_pieces(config);
     const int cap = std::max(1, static_cast<int>(std::floor(kFirstBlockCapS / config.piece_s)));
@@ -63,13 +80,17 @@ int viterbi_first_block_pieces(const viterbi::ViterbiConfig& config) {
 }
 
 std::shared_ptr<const ViterbiShared> make_viterbi_shared(std::span<const viterbi::ViterbiConfig> configs,
-                                                         const ChannelizerConfig& channel) {
+                                                         const ChannelizerConfig& channel,
+                                                         const std::string& omega_bar_default_table_path) {
     require(!configs.empty(), "make_viterbi_shared: no configuration");
     const viterbi::ViterbiConfig& first = configs.front();
     for (const viterbi::ViterbiConfig& config : configs)
         require(config.piece_s == first.piece_s && config.keying_rise_s == first.keying_rise_s &&
                     config.level_min_db == first.level_min_db && config.level_max_db == first.level_max_db,
                 "make_viterbi_shared: the configurations must agree on piece_s, keying_rise_s and the level range");
+    // The default Omega_bar table for their level range, first: a range without one is refused before any building.
+    auto omega_bar = std::make_shared<const viterbi::OmegaBarTable>(
+        omega_bar_default_table(first.level_min_db, first.level_max_db, omega_bar_default_table_path));
     const std::vector<double> taps = channel_filter_taps(channel);  // checks the channelizer's configuration
     const int decimation = channel.fft_size / channel.channel_bins;
     std::shared_ptr<ViterbiShared> shared(new ViterbiShared());  // its constructor is private: this is its only maker
@@ -102,6 +123,7 @@ std::shared_ptr<const ViterbiShared> make_viterbi_shared(std::span<const viterbi
     shared->keying_rise_s_ = first.keying_rise_s;
     shared->level_min_db_ = first.level_min_db;
     shared->level_max_db_ = first.level_max_db;
+    shared->omega_bar_ = std::move(omega_bar);
     return shared;
 }
 

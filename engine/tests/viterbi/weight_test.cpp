@@ -51,6 +51,16 @@ TEST(Weight, MatchesTheCurve) {
     }
 }
 
+TEST(Weight, TableLiesWithinTheBroadPriorRegimesAxis) {
+    // Every node of the table lies within the w axis of the per-sample score's broad-prior regime, [0.1986, 0.2755]
+    // (observation.cpp, kTemperedLowestW and kTemperedHighestW): outside it the regime's tables do not serve and broad
+    // priors fall back to the bare quadrature (plan 1b, Task 5's review). Today the nodes lie 5e-5 and 6e-5 inside.
+    for (std::size_t i = 0; i < kWeightTable.size(); ++i) {
+        EXPECT_GE(kWeightTable[i], 0.1986) << "node " << i;
+        EXPECT_LE(kWeightTable[i], 0.2755) << "node " << i;
+    }
+}
+
 TEST(Weight, EndNodesAreTheChainsLimits) {
     // The table's end nodes are the derived limits of the 192 kHz chain (output_noise): w_weak at xi = 0 and w_strong at
     // xi = 1, within 1e-6.

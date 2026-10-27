@@ -1,5 +1,6 @@
 // kz4ap-viterbi-tables: generates the new decoder's compiled-in tables (plan 1b, Ruling 65). It links the engine's
-// sources without the generated tables (kz4ap_engine_core), so it builds before any table exists.
+// sources without the generated tables (a static archive of kz4ap_engine_core's objects; Ruling 76), so it builds
+// before any table exists.
 //
 //   kz4ap-viterbi-tables weight --out FILE [--seeds 1,2] [--samples 4194304]
 //       The weight w of a sample's evidence against its expected SNR q (design notes, "Detection, amplitude, frequency
@@ -17,9 +18,21 @@
 //       limits w_weak (xi = 0) and w_strong (xi = 1) from output_noise. It also evaluates the curve at the 128
 //       midpoints and reports the linear interpolation's largest error there, the seeds' largest difference, and the
 //       curve at the design's points. Progress and results go to stdout.
+//
+//   kz4ap-viterbi-tables omega-bar [--lo-db L --hi-db H] --out FILE
+//       The default Omega_bar table (engine/include/kz4ap/viterbi/long_run.hpp, stage 4; design notes, part 7) for the
+//       prior's bounds L and H (dB S500; -15 and +85 by default), every node from omega_bar_closed_form. The grid starts
+//       at OmegaBarLayout's defaults and is refined (every step in z halved, the intervals in p and in the beta = 0
+//       row's p doubled) until the table's largest relative error against the closed form on 10 000 random points
+//       (seed 1; nu log-uniform on [1, 1 000], Omega_hat / sigma_y^2 uniform in asinh on [-5, 10^9]) is at most plan
+//       O8's 0.1%; the error with nu up to 10^6 is reported too. At -15 and +85 dB S500 it writes the C++ source
+//       of the compiled table (engine/src/viterbi/omega_bar_table.cpp: its command, grid and errors in its header);
+//       at other bounds a binary file (OmegaBarTable::save) for EngineConfig::viterbi_omega_bar_default_table and
+//       kz4ap-bench --omega-bar-default-table, kept in build/, not committed.
 #include "kz4ap/channelizer.hpp"
 #include "kz4ap/types.hpp"
 #include "kz4ap/viterbi/front_filter.hpp"
+#include "kz4ap/viterbi/long_run.hpp"
 
 #include <algorithm>
 #include <array>
@@ -29,11 +42,13 @@
 #include <complex>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <numbers>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -45,7 +60,9 @@ namespace {
 using kz4ap::Sample;
 
 [[noreturn]] void usage(const std::string& why) {
-    throw std::invalid_argument(why + "\nusage: kz4ap-viterbi-tables weight --out FILE [--seeds 1,2] [--samples N]");
+    throw std::invalid_argument(why +
+                                "\nusage: kz4ap-viterbi-tables weight --out FILE [--seeds 1,2] [--samples N]"
+                                "\n       kz4ap-viterbi-tables omega-bar [--lo-db L --hi-db H] --out FILE");
 }
 
 // --- A portable generator: xoshiro256** seeded by splitmix64, Box-Muller for the normal deviates ---
@@ -392,6 +409,240 @@ int run_weight(int argc, char** argv) {
     return 0;
 }
 
+// --- The default Omega_bar table (long_run.hpp) ---
+
+// Uniform deviates on [0, 1) from xoshiro256** seeded by splitmix64 (as Noise), for the error's random points.
+class Uniform {
+public:
+    explicit Uniform(std::uint64_t seed) {
+        for (auto& s : state_) s = splitmix64(seed);
+    }
+    double next() {
+        const std::uint64_t result = rotl(state_[1] * 5, 7) * 9;
+        const std::uint64_t t = state_[1] << 17;
+        state_[2] ^= state_[0];
+        state_[3] ^= state_[1];
+        state_[1] ^= state_[2];
+        state_[0] ^= state_[3];
+        state_[2] ^= t;
+        state_[3] = rotl(state_[3], 45);
+        return static_cast<double>(result >> 11) * 0x1.0p-53;
+    }
+
+private:
+    static std::uint64_t rotl(std::uint64_t x, int k) { return (x << k) | (x >> (64 - k)); }
+    std::array<std::uint64_t, 4> state_{};
+};
+
+// The table's error against the closed form on `points` random points: nu log-uniform on [1, nu_max], Omega_hat /
+// sigma_y^2 uniform in asinh on [-5, ratio_max] (plan 1b, Task 7: nu_max 1 000, ratio_max 10^9).
+struct TableError {
+    double largest = 0.0;  // relative
+    double p99 = 0.0;
+    double median = 0.0;
+    double at_nu = 0.0;
+    double at_ratio = 0.0;  // Omega_hat / sigma_y^2
+};
+
+TableError table_error(const kz4ap::viterbi::OmegaBarTable& table, int points, std::uint64_t seed, double nu_max,
+                       double ratio_max) {
+    Uniform uniform(seed);
+    const double sigma2 = 1.0;  // FS^2: the relative error does not depend on it
+    std::vector<double> errors;
+    errors.reserve(static_cast<std::size_t>(points));
+    TableError out;
+    for (int i = 0; i < points; ++i) {
+        const double nu = std::exp(uniform.next() * std::log(nu_max));
+        const double ratio =
+            std::sinh(std::asinh(-5.0) + uniform.next() * (std::asinh(ratio_max) - std::asinh(-5.0)));
+        const double want =
+            kz4ap::viterbi::omega_bar_closed_form(nu, ratio * sigma2, sigma2, table.lo_db(), table.hi_db());
+        const double got = table.omega_bar_fs2(nu, ratio * sigma2, sigma2);
+        const double error = std::fabs(got / want - 1.0);
+        errors.push_back(error);
+        if (error > out.largest) {
+            out.largest = error;
+            out.at_nu = nu;
+            out.at_ratio = ratio;
+        }
+    }
+    std::sort(errors.begin(), errors.end());
+    out.p99 = errors[static_cast<std::size_t>(0.99 * static_cast<double>(errors.size() - 1))];
+    out.median = errors[errors.size() / 2];
+    return out;
+}
+
+// x as a C++ literal that reads back as exactly x: the shortest of 15 to 17 significant digits that does, with a
+// decimal point.
+std::string literal(double x) {
+    char text[40];
+    for (int digits = 15; digits <= 17; ++digits) {
+        std::snprintf(text, sizeof text, "%.*g", digits, x);
+        if (std::strtod(text, nullptr) == x) break;
+    }
+    std::string s = text;
+    if (s.find_first_of(".e") == std::string::npos) s += ".0";
+    return s;
+}
+
+std::string percent(double x) { return fixed(100.0 * x, 4) + "%"; }
+
+std::string describe(const TableError& e) {
+    char at[128];
+    std::snprintf(at, sizeof at, "nu = %.4g, Omega_hat = %.4g sigma_y^2", e.at_nu, e.at_ratio);
+    return "largest " + percent(e.largest) + " (at " + at + "), 99th percentile " + percent(e.p99) + ", median " +
+           percent(e.median);
+}
+
+std::string layout_text(const kz4ap::viterbi::OmegaBarLayout& layout) {
+    char text[320];
+    std::snprintf(text, sizeof text,
+                  "p_nodes %d, zero_row_nodes %d, below_lo %.4g, z_max %.4g, fine_half_width %.4g, fine_step %.4g, "
+                  "medium_half_width %.4g, medium_step %.4g, coarse_step %.4g",
+                  layout.p_nodes, layout.zero_row_nodes, layout.below_lo, layout.z_max, layout.fine_half_width,
+                  layout.fine_step, layout.medium_half_width, layout.medium_step, layout.coarse_step);
+    return text;
+}
+
+int run_omega_bar(int argc, char** argv) {
+    std::string out_path;
+    double lo_db = -15.0;
+    double hi_db = 85.0;
+    std::string lo_text = "-15";
+    std::string hi_text = "85";
+    for (int i = 2; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (i + 1 >= argc) usage(arg + " needs a value");
+        if (arg == "--out") {
+            out_path = argv[++i];
+        } else if (arg == "--lo-db") {
+            lo_text = argv[++i];
+            lo_db = std::stod(lo_text);
+        } else if (arg == "--hi-db") {
+            hi_text = argv[++i];
+            hi_db = std::stod(hi_text);
+        } else {
+            usage("unknown option " + arg);
+        }
+    }
+    if (out_path.empty()) usage("--out is required");
+    if (!std::isfinite(lo_db) || !std::isfinite(hi_db) || !(lo_db < hi_db)) usage("--lo-db must be below --hi-db");
+    // The compiled table is C++ source; a table for other bounds is a binary file (OmegaBarTable::save).
+    const bool compiled = lo_db == -15.0 && hi_db == 85.0;
+    // The command as recorded: the output's file name only, never a path.
+    std::string command = "kz4ap-viterbi-tables omega-bar";
+    if (!compiled) command += " --lo-db " + lo_text + " --hi-db " + hi_text;
+    command += " --out " + std::filesystem::path(out_path).filename().generic_string();
+    const auto started = std::chrono::steady_clock::now();
+    const auto elapsed = [&] {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+    };
+    std::cout << command << "\n";
+
+    // The grid: the default layout, refined (every step in z halved, the intervals in p doubled) until the error on the
+    // 10 000 points is at most O8's 0.1%.
+    constexpr double kTarget = 1e-3;
+    constexpr int kPoints = 10000;
+    constexpr std::uint64_t kSeed = 1;
+    kz4ap::viterbi::OmegaBarLayout layout;
+    std::optional<kz4ap::viterbi::OmegaBarTable> table;
+    TableError error;
+    for (int round = 0;; ++round) {
+        table.emplace(kz4ap::viterbi::OmegaBarTable::build(lo_db, hi_db, layout));
+        error = table_error(*table, kPoints, kSeed, 1000.0, 1e9);
+        std::cout << "grid " << layout_text(layout) << ": " << table->values().size() + table->zero_row().size()
+                  << " values, built after " << fixed(elapsed(), 1) << " s; error " << describe(error) << "\n";
+        if (error.largest <= kTarget) break;
+        if (round == 4) throw std::runtime_error("the grid's error stays above the target after 4 refinements");
+        layout.p_nodes = 2 * layout.p_nodes - 1;
+        layout.zero_row_nodes = 2 * layout.zero_row_nodes - 1;
+        layout.fine_step /= 2.0;
+        layout.medium_step /= 2.0;
+        layout.coarse_step /= 2.0;
+    }
+    // Beyond the test's range, for the record: nu up to 10^6.
+    const TableError wide = table_error(*table, kPoints, kSeed + 1, 1e6, 1e9);
+    std::cout << "nu log-uniform on [1, 10^6]: " << describe(wide) << "\n";
+    std::cout << "done after " << fixed(elapsed(), 1) << " s\n";
+
+    const std::string file = std::filesystem::path(out_path).filename().generic_string();
+    if (!compiled) {
+        table->save(out_path);
+        std::cout << "wrote " << file << " (a binary table for " << lo_text << " and " << hi_text << " dB S500)\n";
+        return 0;
+    }
+    std::ofstream out(out_path, std::ios::binary);
+    if (!out) throw std::runtime_error("cannot write " + out_path);
+    const kz4ap::viterbi::OmegaBarLayout& used = table->layout();
+    const std::size_t z_count = table->z_nodes().size();
+    out << "// Generated by kz4ap-viterbi-tables (bench/src/viterbi_tables_main.cpp); do not edit by hand.\n"
+        << "//\n"
+        << "// Command: " << command << "\n"
+        << "// The default Omega_bar table (engine/include/kz4ap/viterbi/long_run.hpp, stage 4; design notes, part 7) for\n"
+        << "// the prior's bounds -15 and +85 dB S500: ln(Omega_bar / Omega_hi) at p = 1 / (1 + sqrt(nu - 1)) on "
+        << used.p_nodes << " nodes\n"
+        << "// uniform on [0, 1] and z = ln(Omega_hat_+ / Omega_hi) on " << z_count
+        << " nodes piecewise uniform (the layout below), and\n"
+        << "// the beta = 0 row; every node from omega_bar_closed_form (at p = 0, nu = infinity, Omega_hat_+ clipped to "
+        << "the\n"
+        << "// prior's range). Values rounded to 6 decimals (at most 5e-7 relative in Omega_bar).\n"
+        << "// Layout: p_nodes " << used.p_nodes << ", zero_row_nodes " << used.zero_row_nodes << ", below_lo "
+        << literal(used.below_lo) << ", z_max " << literal(used.z_max) << ", fine_half_width "
+        << literal(used.fine_half_width) << ",\n"
+        << "// fine_step " << literal(used.fine_step) << ", medium_half_width " << literal(used.medium_half_width)
+        << ", medium_step " << literal(used.medium_step) << ", coarse_step " << literal(used.coarse_step) << ".\n"
+        << "// Error of the bilinear table against omega_bar_closed_form on 10 000 random points (seed " << kSeed
+        << "; nu\n"
+        << "// log-uniform on [1, 1 000], Omega_hat / sigma_y^2 uniform in asinh on [-5, 10^9]; plan O8: at most "
+        << "0.1%):\n"
+        << "//   " << describe(error) << ".\n"
+        << "// With nu log-uniform on [1, 10^6] (seed " << kSeed + 1 << "):\n"
+        << "//   " << describe(wide) << ".\n"
+        << "#include \"kz4ap/viterbi/long_run.hpp\"\n\n"
+        << "#include <iterator>\n"
+        << "#include <vector>\n\n"
+        << "namespace kz4ap::viterbi {\n\n"
+        << "namespace {\n\n";
+    const auto write_values = [&](const char* name, const std::vector<double>& values) {
+        out << "const double " << name << "[" << values.size() << "] = {\n";
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            if (i % 9 == 0) out << "   ";
+            char item[32];
+            std::snprintf(item, sizeof item, " %.6f", values[i]);
+            out << item << (i + 1 < values.size() ? "," : "");
+            if (i % 9 == 8 || i + 1 == values.size()) out << "\n";
+        }
+        out << "};\n\n";
+    };
+    write_values("kZeroRow", table->zero_row());
+    write_values("kValues", table->values());
+    std::ostringstream layout_code;
+    layout_code << "        layout.p_nodes = " << used.p_nodes << ";\n"
+                << "        layout.zero_row_nodes = " << used.zero_row_nodes << ";\n"
+                << "        layout.below_lo = " << literal(used.below_lo) << ";\n"
+                << "        layout.z_max = " << literal(used.z_max) << ";\n"
+                << "        layout.fine_half_width = " << literal(used.fine_half_width) << ";\n"
+                << "        layout.fine_step = " << literal(used.fine_step) << ";\n"
+                << "        layout.medium_half_width = " << literal(used.medium_half_width) << ";\n"
+                << "        layout.medium_step = " << literal(used.medium_step) << ";\n"
+                << "        layout.coarse_step = " << literal(used.coarse_step) << ";\n";
+    out << "}  // namespace\n\n"
+        << "OmegaBarTable OmegaBarTable::compiled() {\n"
+        << "    static const OmegaBarTable table = [] {\n"
+        << "        OmegaBarLayout layout;\n"
+        << layout_code.str()
+        << "        return OmegaBarTable(-15.0, 85.0, layout, std::vector<double>(std::begin(kZeroRow), "
+           "std::end(kZeroRow)),\n"
+        << "                             std::vector<double>(std::begin(kValues), std::end(kValues)));\n"
+        << "    }();\n"
+        << "    return table;\n"
+        << "}\n\n"
+        << "}  // namespace kz4ap::viterbi\n";
+    if (!out) throw std::runtime_error("cannot write " + out_path);
+    std::cout << "wrote " << file << "\n";
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -399,6 +650,7 @@ int main(int argc, char** argv) {
         if (argc < 2) usage("no table named");
         const std::string table = argv[1];
         if (table == "weight") return run_weight(argc, argv);
+        if (table == "omega-bar") return run_omega_bar(argc, argv);
         usage("unknown table " + table);
     } catch (const std::exception& e) {
         std::cerr << "kz4ap-viterbi-tables: " << e.what() << "\n";

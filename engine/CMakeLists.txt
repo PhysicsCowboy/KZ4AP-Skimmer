@@ -26,13 +26,16 @@ set(KZ4AP_VITERBI_SOURCES
   src/viterbi/mark_template.cpp
   src/viterbi/systematic.cpp
   src/viterbi/amplitude.cpp
+  src/viterbi/long_run.cpp
 )
 
 # The generated tables (plan 1b, Ruling 72, N6): sources written by kz4ap-viterbi-tables
-# (bench/src/viterbi_tables_main.cpp) and committed. The tool links kz4ap_engine_core only, so it builds before any of
-# them exists.
+# (bench/src/viterbi_tables_main.cpp) and committed. The tool links a static archive of kz4ap_engine_core's objects
+# only (bench/CMakeLists.txt; Ruling 76), so it builds before any of them exists; no source the tool needs may read a
+# generated table (OmegaBarTable::compiled() is defined in the generated omega_bar_table.cpp itself).
 set(KZ4AP_GENERATED_SOURCES
   src/viterbi/weight_table.cpp
+  src/viterbi/omega_bar_table.cpp
 )
 
 # Every engine source except the generated tables, as an object library; kz4ap_engine is it plus the generated tables.
@@ -142,6 +145,7 @@ add_executable(kz4ap_viterbi_tests
   tests/viterbi/weight_test.cpp
   tests/viterbi/systematic_test.cpp
   tests/viterbi/amplitude_test.cpp
+  tests/viterbi/long_run_test.cpp
   tests/viterbi_decoder_test.cpp
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)

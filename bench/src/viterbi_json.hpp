@@ -205,12 +205,14 @@ struct ViterbiOptions {
     std::vector<GenieKind> genie;       // --genie, each kind once, in the order first given
     bool stats = false;                 // --stats was given
     bool stats_detail = false;          // --stats-detail was given: the statistics file in its full form (version 1)
+    std::string omega_bar_default_table;  // --omega-bar-default-table FILE, or empty (the compiled table)
 };
 
-// The rules between the bench's options: --set, --genie and --stats belong to --decoder viterbi; --genie takes its
-// values from the labels of the oracle channels, and --stats reads the statistics of the oracle channels at the end of
-// the run (a channel of the detector path is gone once its track dies), so both need --oracle; --stats-detail changes
-// what --stats writes, so it needs --stats. Throws std::invalid_argument, naming the options.
+// The rules between the bench's options: --set, --genie, --stats and --omega-bar-default-table belong to --decoder
+// viterbi; --genie takes its values from the labels of the oracle channels, and --stats reads the statistics of the
+// oracle channels at the end of the run (a channel of the detector path is gone once its track dies), so both need
+// --oracle; --stats-detail changes what --stats writes, so it needs --stats. Throws std::invalid_argument, naming the
+// options.
 void check_viterbi_options(bool decoder_is_viterbi, bool oracle, const ViterbiOptions& options);
 
 // ---- The statistics file ----

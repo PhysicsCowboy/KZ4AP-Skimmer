@@ -583,6 +583,9 @@ void check_viterbi_options(bool decoder_is_viterbi, bool oracle, const ViterbiOp
         throw std::invalid_argument("--genie belongs to --decoder viterbi");
     if (!decoder_is_viterbi && options.stats)
         throw std::invalid_argument("--stats belongs to --decoder viterbi (it writes the new decoder's statistics)");
+    if (!decoder_is_viterbi && !options.omega_bar_default_table.empty())
+        throw std::invalid_argument(
+            "--omega-bar-default-table belongs to --decoder viterbi (it is the new decoder's Omega_bar table)");
     if (!options.genie.empty() && !oracle)
         throw std::invalid_argument(
             "--genie needs --oracle: its values come from the labels of the oracle channels, one set for each");
