@@ -24,9 +24,18 @@ set(KZ4AP_VITERBI_SOURCES
   src/viterbi/hiss.cpp
   src/viterbi/front_filter.cpp
   src/viterbi/mark_template.cpp
+  src/viterbi/systematic.cpp
 )
 
-add_library(kz4ap_engine
+# The generated tables (plan 1b, Ruling 72, N6): sources written by kz4ap-viterbi-tables
+# (bench/src/viterbi_tables_main.cpp) and committed. The tool links kz4ap_engine_core only, so it builds before any of
+# them exists.
+set(KZ4AP_GENERATED_SOURCES
+  src/viterbi/weight_table.cpp
+)
+
+# Every engine source except the generated tables, as an object library; kz4ap_engine is it plus the generated tables.
+add_library(kz4ap_engine_core OBJECT
   src/morse.cpp
   src/wav_reader.cpp
   src/spectrum.cpp
@@ -42,16 +51,15 @@ add_library(kz4ap_engine
   ${KZ4AP_BANK_SOURCES}
   ${KZ4AP_VITERBI_SOURCES}
 )
-add_library(kz4ap::engine ALIAS kz4ap_engine)
-target_include_directories(kz4ap_engine PUBLIC include PRIVATE src)
-target_include_directories(kz4ap_engine SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party/pocketfft)
-target_compile_definitions(kz4ap_engine PRIVATE POCKETFFT_NO_MULTITHREADING)
-target_compile_features(kz4ap_engine PUBLIC cxx_std_20)
+target_include_directories(kz4ap_engine_core PUBLIC include PRIVATE src)
+target_include_directories(kz4ap_engine_core SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party/pocketfft)
+target_compile_definitions(kz4ap_engine_core PRIVATE POCKETFFT_NO_MULTITHREADING)
+target_compile_features(kz4ap_engine_core PUBLIC cxx_std_20)
 # SLEEF's generated sleef.h and its static library (the duration fit's exp and log, src/bank/vecmath.hpp).
 # Each vecmath_<set>.cpp is compiled for its instruction set and run only where vecmath.cpp finds it at run
 # time; everything else stays plain x86-64.
-target_include_directories(kz4ap_engine SYSTEM PRIVATE ${sleef_BINARY_DIR}/include)
-target_link_libraries(kz4ap_engine PRIVATE sleef)
+target_include_directories(kz4ap_engine_core SYSTEM PRIVATE ${sleef_BINARY_DIR}/include)
+target_link_libraries(kz4ap_engine_core PRIVATE sleef)
 if(MSVC)
   set_source_files_properties(src/bank/vecmath_avx.cpp PROPERTIES COMPILE_OPTIONS /arch:AVX)
   set_source_files_properties(src/bank/vecmath_avx2.cpp PROPERTIES COMPILE_OPTIONS /arch:AVX2)
@@ -63,6 +71,15 @@ else()
   set_source_files_properties(src/bank/vecmath_avx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma")
   set_source_files_properties(src/bank/vecmath_avx512.cpp PROPERTIES COMPILE_OPTIONS -mavx512f)
 endif()
+if(MSVC)
+  target_compile_options(kz4ap_engine_core PRIVATE /W4 /permissive- /utf-8)
+else()
+  target_compile_options(kz4ap_engine_core PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_library(kz4ap_engine ${KZ4AP_GENERATED_SOURCES})
+add_library(kz4ap::engine ALIAS kz4ap_engine)
+target_link_libraries(kz4ap_engine PUBLIC kz4ap_engine_core)
 if(MSVC)
   target_compile_options(kz4ap_engine PRIVATE /W4 /permissive- /utf-8)
 else()
@@ -121,6 +138,8 @@ add_executable(kz4ap_viterbi_tests
   tests/viterbi/hiss_test.cpp
   tests/viterbi/front_filter_test.cpp
   tests/viterbi/mark_template_test.cpp
+  tests/viterbi/weight_test.cpp
+  tests/viterbi/systematic_test.cpp
   tests/viterbi_decoder_test.cpp
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)

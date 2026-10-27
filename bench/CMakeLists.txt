@@ -40,6 +40,18 @@ else()
   target_compile_options(kz4ap-noise-mask PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# Generates the new decoder's compiled-in tables (plan 1b, Ruling 65). It links the engine's sources without the
+# generated tables (kz4ap_engine_core), so it builds before any table exists (Ruling 72, N6).
+add_executable(kz4ap-viterbi-tables src/viterbi_tables_main.cpp)
+target_link_libraries(kz4ap-viterbi-tables PRIVATE kz4ap_engine_core)
+if(MSVC)
+  target_compile_options(kz4ap-viterbi-tables PRIVATE /W4 /permissive- /utf-8)
+else()
+  target_compile_options(kz4ap-viterbi-tables PRIVATE -Wall -Wextra -Wpedantic)
+  find_package(Threads REQUIRED)
+  target_link_libraries(kz4ap-viterbi-tables PRIVATE Threads::Threads)
+endif()
+
 add_executable(kz4ap_bench_tests
   tests/bank_json_test.cpp
   tests/bench_run_test.cpp

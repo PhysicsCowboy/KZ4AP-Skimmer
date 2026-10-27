@@ -12,6 +12,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <iostream>
 #include <limits>
 #include <numbers>
 #include <numeric>
@@ -1365,4 +1366,250 @@ TEST(Observation, RefusesWhatItCannotRead) {
     refuses([&prior] { return prior.llr(1, -0.5); });
     refuses([&prior] { return prior.llr(1, kNaN); });
     refuses([&prior] { return prior.posterior(1, kInf); });
+}
+
+// --- The evidence per sample (plan 1b, Task 5) ---
+
+namespace {
+
+// The per-sample score and the amplitude's posterior by direct integration over a >= 0 (FS): Simpson's rule on 20 001
+// points of N(a; mu, p) e^(w Lambda(a)), Lambda = -b^2 + ln I0(2 b z), b = |s| a / sqrt(v'), z = e / sqrt(v'), with
+// reference_ln_i0, in the log so that nothing overflows, less ln Phi(mu / sqrt(p)) for the truncation at a = 0. The
+// interval is where the log integrand lies within 60 nats of its highest value: a first scan over a = 0 and 20 000
+// points spaced evenly in ln a from 1e-12 of the top to the top finds the highest value and the scan's points above
+// that threshold, and the integral runs between the scan's points just outside them. The top: beyond m = max(beta, z)
+// (beta = |s| mu / sqrt(v'), in units of b) the log integrand is at most w z^2 - (b - m)^2 (1/(2 q) + w) (ln I0(y) <= y;
+// q = s^2 p / v'), and at b = beta it is at least -w beta^2, so 100 nats below that lie within
+// sqrt((w (z^2 + beta^2) + 100) / (1/(2 q) + w)) of m.
+Dense dense_tempered(double e, double s, double mu, double p, double v_prime, double w) {
+    const double root_v = std::sqrt(v_prime);
+    const double scale = std::fabs(s) / root_v;  // units of b per FS
+    const double z = e / root_v;
+    const double beta = scale * mu;
+    const double q = scale * scale * p;
+    const auto log_f = [&](double a) {
+        const double b = scale * a;
+        const double d = a - mu;
+        return -0.5 * d * d / p + w * (-b * b + reference_ln_i0(2.0 * b * z));
+    };
+    const double m = std::max(beta, z);
+    const double top = (m + std::sqrt((w * (z * z + beta * beta) + 100.0) / (0.5 / q + w)) + 1.0) / scale;
+    constexpr int kScan = 20000;
+    std::vector<double> xs(kScan + 1);
+    std::vector<double> ls(kScan + 1);
+    double highest = -kInf;
+    for (int i = 0; i <= kScan; ++i) {
+        xs[i] = i == 0 ? 0.0 : top * std::pow(10.0, -12.0 + 12.0 * (i - 1) / (kScan - 1));
+        ls[i] = log_f(xs[i]);
+        highest = std::max(highest, ls[i]);
+    }
+    int first = kScan;
+    int last = 0;
+    for (int i = 0; i <= kScan; ++i) {
+        if (ls[i] > highest - 60.0) {
+            first = std::min(first, i);
+            last = std::max(last, i);
+        }
+    }
+    const double from = first == 0 ? 0.0 : xs[first - 1];
+    const double to = last == kScan ? top : xs[last + 1];
+    constexpr int kIntervals = 20000;
+    const double step = (to - from) / kIntervals;
+    std::vector<double> a(kIntervals + 1);
+    std::vector<double> lf(kIntervals + 1);
+    double peak = -kInf;
+    for (int i = 0; i <= kIntervals; ++i) {
+        a[i] = from + i * step;
+        lf[i] = log_f(a[i]);
+        peak = std::max(peak, lf[i]);
+    }
+    double s0 = 0.0;
+    double s1 = 0.0;
+    std::vector<double> f(kIntervals + 1);
+    for (int i = 0; i <= kIntervals; ++i) {
+        f[i] = simpson_weight(i, kIntervals) * std::exp(lf[i] - peak);
+        s0 += f[i];
+        s1 += f[i] * a[i];
+    }
+    const double mean = s1 / s0;
+    double s2 = 0.0;
+    for (int i = 0; i <= kIntervals; ++i) s2 += f[i] * (a[i] - mean) * (a[i] - mean);
+    return {peak + std::log(s0 * step / 3.0) - 0.5 * std::log(2.0 * kPi * p) - std::log(normal_cdf(mu / std::sqrt(p))),
+            mean, s2 / s0};
+}
+
+constexpr double kSampleVariance = 2.5e-5;  // FS^2: V' in the tests below (any value; b and z are in its units)
+
+}  // namespace
+
+TEST(Evidence, ScoreMatchesADenseIntegral) {
+    // Part 15, item 1 (D4): the per-sample score within 0.01 nats of a dense integral over a >= 0, and the posterior's
+    // mean within 1e-3 and its variance within 1% of the dense integral's, relatively, for z = e / sqrt(V') of 0 to 100,
+    // templates s of -0.0008 (the channel filter's precursor: a negative s scores as |s|), 0.0505, 0.4334 and 1, the
+    // prior's center at b = |s| mu / sqrt(V') of 0.1 to 30, its relative spread sqrt(P) / mu of 0.01 to 3 (the
+    // broad-prior region included), and w of 0.1986, 0.23, 0.2754 and 1 (the untempered form). Order 5.
+    Worst llr;
+    Worst mean;
+    Worst var;
+    int over = 0;  // points whose score misses by more than 0.01 nats
+    const double root_v = std::sqrt(kSampleVariance);
+    for (const double w : {0.1986, 0.23, 0.2754, 1.0}) {
+        for (const double z : {0.0, 0.5, 1.0, 2.0, 5.0, 20.0, 100.0}) {
+            for (const double beta : {0.1, 1.0, 3.0, 10.0, 30.0}) {
+                for (const double spread : {0.01, 0.1, 0.5, 1.0, 3.0}) {
+                    for (const double s : {-0.0008, 0.0505, 0.4334, 1.0}) {
+                        const double mu = beta * root_v / std::fabs(s);
+                        const double p = (spread * mu) * (spread * mu);
+                        const double e = z * root_v;
+                        const auto at = [=] {
+                            return "w = " + number(w) + ", z = " + number(z) + ", b = " + number(beta) +
+                                   ", spread " + number(spread) + ", s = " + number(s);
+                        };
+                        const Dense dense = dense_tempered(e, s, mu, p, kSampleVariance, w);
+                        const SampleEvidence evidence = sample_evidence(e, s, mu, p, kSampleVariance, w, 5);
+                        const double miss = std::fabs(evidence.score_nats - dense.llr);
+                        if (!(miss <= 0.01)) ++over;
+                        llr.add(miss, at);
+                        mean.add(std::fabs(evidence.amplitude.mean / dense.mean - 1.0), at);
+                        var.add(std::fabs(evidence.amplitude.var / dense.var - 1.0), at);
+                    }
+                }
+            }
+        }
+    }
+    std::cout << "worst: score " << llr.error << " nats at " << llr.where << "; mean " << mean.error
+              << " relative at " << mean.where << "; variance " << var.error << " relative at " << var.where
+              << "; points over 0.01 nats: " << over << " of 2800\n";
+    EXPECT_LE(llr.error, 0.01) << "nats, at " << llr.where;
+    EXPECT_LE(mean.error, 1e-3) << "relative, at " << mean.where;
+    EXPECT_LE(var.error, 0.01) << "relative, at " << var.where;
+}
+
+TEST(Evidence, BroadPriorsMatchDenseIntegralsAcrossW) {
+    // The broad-prior regime's tables (O9) between their nodes of w: in the rescaled coordinates y = sqrt(w) z / s_w
+    // and kappa' = (b / q) / s_w, s_w = sqrt(w + 1/(2 q)) (b and q the prior's mean and variance in units of b), at
+    // y of 0 to 3.9 around the degenerate point y = 1, kappa' of 0 to 1.95, q of 0.09 to 1e6, and w at 17 points
+    // over 0.1986 to 0.2755 and at 1: the score within 0.01 nats of the dense integral, and the posterior's mean within
+    // 1e-3 and its variance within 1%, relatively (s = 1).
+    Worst llr;
+    Worst mean;
+    Worst var;
+    const double root_v = std::sqrt(kSampleVariance);
+    std::vector<double> weights;
+    for (int i = 0; i <= 16; ++i) weights.push_back(0.1986 + (0.2755 - 0.1986) * i / 16.0);
+    weights.push_back(1.0);
+    for (const double w : weights) {
+        for (const double q : {0.09, 1.0, 10.0, 100.0, 1e4, 1e6}) {
+            const double s_w = std::sqrt(w + 0.5 / q);
+            for (const double y : {0.0, 0.5, 0.9, 1.0, 1.1, 1.5, 2.0, 3.0, 3.9}) {
+                for (const double kappa : {0.0, 0.3, 0.9, 1.5, 1.95}) {
+                    const double beta = kappa * s_w * q;
+                    const double z = y * s_w / std::sqrt(w);
+                    const double mu = std::max(beta, 1e-9) * root_v;  // b = 0 as a level just above it
+                    const double p = q * kSampleVariance;
+                    const double e = z * root_v;
+                    const auto at = [=] {
+                        return "w = " + number(w) + ", q = " + number(q) + ", y = " + number(y) + ", kappa' = " +
+                               number(kappa);
+                    };
+                    const Dense dense = dense_tempered(e, 1.0, mu, p, kSampleVariance, w);
+                    const SampleEvidence evidence = sample_evidence(e, 1.0, mu, p, kSampleVariance, w, 5);
+                    llr.add(std::fabs(evidence.score_nats - dense.llr), at);
+                    mean.add(std::fabs(evidence.amplitude.mean / dense.mean - 1.0), at);
+                    var.add(std::fabs(evidence.amplitude.var / dense.var - 1.0), at);
+                }
+            }
+        }
+    }
+    std::cout << "worst: score " << llr.error << " nats at " << llr.where << "; mean " << mean.error
+              << " relative at " << mean.where << "; variance " << var.error << " relative at " << var.where << "\n";
+    EXPECT_LE(llr.error, 0.01) << "nats, at " << llr.where;
+    EXPECT_LE(mean.error, 1e-3) << "relative, at " << mean.where;
+    EXPECT_LE(var.error, 0.01) << "relative, at " << var.where;
+}
+
+TEST(Evidence, ZeroTemplateAddsNothing) {
+    // s = 0: Lambda = 0, the score 0 nats, the posterior the prior and the mode the start (mu without one).
+    const SampleEvidence cold = sample_evidence(0.3, 0.0, 0.01, 1e-4, 1e-5, 0.2, 5);
+    EXPECT_EQ(cold.score_nats, 0.0);
+    EXPECT_EQ(cold.amplitude.mean, 0.01);
+    EXPECT_EQ(cold.amplitude.var, 1e-4);
+    EXPECT_EQ(cold.mode_a_fs, 0.01);
+    const SampleEvidence warm = sample_evidence(0.3, 0.0, 0.01, 1e-4, 1e-5, 0.2, 5, 0.02);
+    EXPECT_EQ(warm.score_nats, 0.0);
+    EXPECT_EQ(warm.amplitude.mean, 0.01);
+    EXPECT_EQ(warm.amplitude.var, 1e-4);
+    EXPECT_EQ(warm.mode_a_fs, 0.02);
+}
+
+TEST(Evidence, UnitWeightIsTodaysBlockEvidence) {
+    // w = 1 is the block form's evidence with m_signal = s and V = V': block_evidence's value within 1e-12 nats, and its
+    // posterior and mode within 1e-12 relatively, wherever both use the adaptive quadrature (outside both broad-prior
+    // regimes: the block form's, z' <= 4 and kappa' <= 1, and the per-sample score's, which at w = 1 is z' <= 4 and
+    // kappa' <= 2, with s_r = sqrt(1 + 1/(2 q)), z' = z / s_r, kappa' = beta / q / s_r) and s > 0 (block_evidence
+    // refuses a signal count that is not positive). Cold and warm. Deleted with block_evidence in Task 10.
+    Worst llr;
+    Worst moments;
+    int compared = 0;
+    const double root_v = std::sqrt(kSampleVariance);
+    for (const double z : {0.0, 0.5, 1.0, 2.0, 5.0, 20.0, 100.0}) {
+        for (const double beta : {0.1, 1.0, 3.0, 10.0, 30.0}) {
+            for (const double spread : {0.01, 0.1, 0.5, 1.0, 3.0}) {
+                const double q = (spread * beta) * (spread * beta);
+                const double s_r = std::sqrt(1.0 + 0.5 / q);
+                if (z / s_r <= 4.0 && beta / q / s_r <= 2.0) continue;  // either regime
+                for (const double s : {0.0505, 0.4334, 1.0}) {
+                    const double mu = beta * root_v / s;
+                    const double p = (spread * mu) * (spread * mu);
+                    const double e = z * root_v;
+                    for (const std::optional<double> start :
+                         {std::optional<double>(), std::optional<double>(0.9 * mu)}) {
+                        const auto at = [=] {
+                            return "z = " + number(z) + ", b = " + number(beta) + ", spread " + number(spread) +
+                                   ", s = " + number(s) + (start ? ", warm" : ", cold");
+                        };
+                        const SampleEvidence tempered = sample_evidence(e, s, mu, p, kSampleVariance, 1.0, 5, start);
+                        const BlockEvidence block = block_evidence(e, s, mu, p, kSampleVariance, 5, start);
+                        llr.add(std::fabs(tempered.score_nats - block.llr), at);
+                        moments.add(std::fabs(tempered.amplitude.mean / block.level.mean - 1.0), at);
+                        moments.add(std::fabs(tempered.amplitude.var / block.level.var - 1.0), at);
+                        moments.add(std::fabs(tempered.mode_a_fs - block.mode_a) / mu, at);
+                        ++compared;
+                    }
+                }
+            }
+        }
+    }
+    EXPECT_GT(compared, 500);
+    EXPECT_LE(llr.error, 1e-12) << "nats, at " << llr.where;
+    EXPECT_LE(moments.error, 1e-12) << "relative, at " << moments.where;
+}
+
+TEST(Evidence, StaysFiniteAtTheExtremes) {
+    // Expected SNRs q = mu^2 s^2 / V' up to 2.1e9 (+85 dB S500, the newborn prior's top), the prior's variance from
+    // 1e-12 mu^2 to 1e4 mu^2, samples from nothing to twice the prediction, w of 0.1986 to 1, cold and started at 0:
+    // the score, the posterior and the mode are finite, the mean and variance not negative, and the score is below its
+    // bound w z^2 (+0.01 nats for the quadrature).
+    for (const double q : {1e-6, 1.0, 1e3, 1e6, 2.1e9}) {
+        const double mu = std::sqrt(q);  // V' = 1 FS^2, s = 1
+        for (const double e : {0.0, 1.0, 0.5 * mu, mu, 2.0 * mu}) {
+            for (const double relative_p : {1e-12, 1e-6, 1.0, 1e4}) {
+                for (const double w : {0.1986, 0.2754, 1.0}) {
+                    for (const std::optional<double> start : {std::optional<double>(), std::optional<double>(0.0)}) {
+                        SCOPED_TRACE("q = " + number(q) + ", e = " + number(e) + ", P / mu^2 = " +
+                                     number(relative_p) + ", w = " + number(w) + (start ? ", from 0" : ", cold"));
+                        const SampleEvidence evidence =
+                            sample_evidence(e, 1.0, mu, relative_p * mu * mu, 1.0, w, 5, start);
+                        EXPECT_TRUE(std::isfinite(evidence.score_nats)) << evidence.score_nats;
+                        EXPECT_TRUE(std::isfinite(evidence.amplitude.mean)) << evidence.amplitude.mean;
+                        EXPECT_TRUE(std::isfinite(evidence.amplitude.var)) << evidence.amplitude.var;
+                        EXPECT_TRUE(std::isfinite(evidence.mode_a_fs)) << evidence.mode_a_fs;
+                        EXPECT_GE(evidence.amplitude.mean, 0.0);
+                        EXPECT_GE(evidence.amplitude.var, 0.0);
+                        EXPECT_LE(evidence.score_nats, w * e * e + 0.01);
+                    }
+                }
+            }
+        }
+    }
 }

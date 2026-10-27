@@ -222,8 +222,73 @@ struct BlockEvidence {
 BlockEvidence block_evidence(double s_abs, double m_signal, double mu, double p, double v, int order,
                              std::optional<double> start_a = std::nullopt);
 
+// --- The evidence per sample (design notes, "Detection, amplitude, frequency and the mark's shape", parts 4 and 9;
+// plan 1b, Task 5). Library code: the decoder does not run it yet; the block form above stays until plan 1b's Task 10. ---
+//
+// A story whose template at sample k is s (1; mark_template.hpp) and whose amplitude is a (FS) explains the envelope
+// sample e (FS; front_filter.hpp) against noise alone by the log-likelihood ratio (derived; the Rician envelope of a
+// carrier of unknown phase in complex Gaussian noise; Proakis and Salehi, section 4.5-1)
+//     Lambda(a) = -b^2 + ln I0(2 b z),   b = |s| a / sqrt(V'),   z = e / sqrt(V')      (nats),
+// V' = sigma_y^2 + C^2 (f^2 s^2 + v) (FS^2; systematic.hpp, never divided by w). Lambda is even in b, so a negative s
+// (the channel filter's precursor, s_3 and s_4 = -0.00064 and -0.00080) scores as |s|. The sample's score is
+//     score = ln integral_0^inf e^(w Lambda(a)) N(a; mu, P) da - ln Phi(mu / sqrt(P))      (nats),
+// the prior N(mu, P) (the story's prediction for this sample) truncated to a >= 0 and renormalized, as in the block
+// form, and the likelihood tempered by w (weight.hpp; derived as the composite-likelihood magnitude adjustment). The
+// posterior is proportional to e^(w Lambda(a)) N(a; mu, P) on a >= 0; its mean and variance are the story's amplitude
+// after the sample (moment matching).
+//
+// The quadrature (plan 1b, Ruling 60): the block form's, applied to the tempered integrand g(b) = -(b - beta)^2 / (2 q)
+// + w (-b^2 + ln I0(2 b z)) in b (beta = |s| mu / sqrt(V'), q = s^2 P / V'): Newton's method for the mode (from
+// start_a_fs, the previous sample's mode, when given; else from the precision-weighted mean of the prior and the
+// likelihood's peak, (beta / q + 2 w z) / (1 / q + 2 w)), then adaptive Gauss-Hermite of the given order centered at the
+// mode and scaled by the curvature there, its nodes mapped onto that Gaussian truncated at a = 0 (block_llr_uncertain
+// above). At w = 1 every expression is the block form's bit for bit: the score is block_evidence(e, |s|, mu, P, V',
+// order, start)'s wherever both use the quadrature (Evidence.UnitWeightIsTodaysBlockEvidence: within 1e-12
+// nats).
+//
+// The broad-prior regime (plan 1b, O9; measured). Without it, the quadrature missed the dense integral by more than
+// 0.01 nats at 60 of Evidence.ScoreMatchesADenseIntegral's 2 800 points, all at z = 1 with broad priors (relative
+// spreads 1 and 3, b of 1 to 30), by up to 0.216 nats (w = 1, b = 30, spread 3), 0.103 nats at w = 0.2754 and 0.065 at
+// w = 0.1986, with the posterior's mean off by up to 29% and its variance by 78%: the curvature at the mode degenerates
+// as in the block form, now where y = sqrt(w) z / s_w is near 1. So the exact rescaling serves there as in the block
+// form, with w: s_w = sqrt(w + 1/(2 q)), u = s_w b,
+//     score = ln N(0; beta, q) - ln Phi(beta / sqrt(q)) + ln J_w(z / s_w, kappa / s_w) - ln s_w,
+//     J_w(zeta, kappa') = integral_0^inf e^(kappa' u - u^2) I0(2 u zeta)^w du,   kappa = beta / q,
+// exact at every q and w (derived), read from tables where y <= 4 and kappa' <= 2: steps of 0.01 in y and kappa'
+// (80 601 nodes per w), Simpson's rule over u in [0, 12] in steps of 0.02 (the weight is e^-49 of its peak there at the
+// far corner, y = 4, kappa' = 2, w = 1), bilinear interpolation, each quantity less its closed form on an empty block;
+// 5 nodes of w uniform over [0.1986, 0.2755] (linear interpolation between them) and one at w = 1 (read only at w = 1
+// exactly); 11.6 MB, built once on first use in 0.31 s (a Release build on the development desktop; measured), or by
+// build_evidence_tables. The grid steps are the block form's; the bound kappa' <= 2 (the block form's is 1) and the 5
+// nodes of w are heuristic, set by measurement: with kappa' <= 1 the quadrature's posterior mean missed by 1.1e-3
+// relatively at kappa' = 1.40 (w = 1, z = 5, b = 0.1, spread 1); with 2 nodes of w the mean missed by 2.6e-3, with 3 by
+// 7.2e-4, with 5 by 1.9e-4 (Evidence.BroadPriorsMatchDenseIntegralsAcrossW). Elsewhere in w (between 0.2755 and 1, or
+// below 0.1986) only the quadrature serves, unmeasured there.
+//
+// Accuracy at order 5, measured against dense integrals over a >= 0 (20 001 points): within 6.8e-4 nats, the posterior's
+// mean within 5.7e-4 and its variance within 0.55%, relatively, over z of 0 to 100, s of -0.0008 to 1, b of 0.1 to 30,
+// relative spreads of 0.01 to 3 and w of 0.1986, 0.23, 0.2754 and 1 (Evidence.ScoreMatchesADenseIntegral); within
+// 9.1e-4 nats, 1.9e-4 and 0.037% across the regime's tables at 17 values of w and at 1
+// (Evidence.BroadPriorsMatchDenseIntegralsAcrossW).
+struct SampleEvidence {
+    double score_nats;  // nats
+    Moments amplitude;  // the posterior mean (FS) and variance (FS^2) of a
+    double mode_a_fs;   // FS: the mode of prior x tempered likelihood
+};
+
+// The score of a sample (above): e_fs, the envelope sample (FS); s, the template (1); mu_fs and p_fs2, the prior's mean
+// (FS) and variance (FS^2); v_prime_fs2, V' (FS^2); w, the weight (1); order, the quadrature's (5; 2 to 20);
+// start_a_fs, where Newton's method starts (FS). s = 0 returns {0, {mu, P}, start_a_fs, or mu without one}. A prior known
+// exactly (P = 0, or narrower than 1e-9 of max(beta, 1)) gives w Lambda(mu) and {mu, P}. Throws std::invalid_argument
+// for an e that is negative or not finite, an s that is not finite, a mu or P that is negative or not finite, a V' that
+// is not positive and finite, a w that is not positive and finite, an order outside 2 ... 20 or a start that is not
+// finite.
+SampleEvidence sample_evidence(double e_fs, double s, double mu_fs, double p_fs2, double v_prime_fs2, double w,
+                               int order, std::optional<double> start_a_fs = std::nullopt);
+
 // Builds, once for every caller, the tables block_evidence reads: the broad-prior regime's (31 ms in a Release build,
-// 0.97 MB) and the truncated nodes' of this order (87.1 KB at order 5). Each is otherwise built on its first use, a stall
+// 0.97 MB), the truncated nodes' of this order (87.1 KB at order 5), and the tables sample_evidence reads besides them,
+// its broad-prior regime's with w (0.31 s, 11.6 MB). Each is otherwise built on its first use, a stall
 // in the middle of a stream; the decoder calls this when it is made. Thread-safe, and a no-op once built. Throws
 // std::invalid_argument for an order outside 1 ... 20.
 void build_evidence_tables(int order);
