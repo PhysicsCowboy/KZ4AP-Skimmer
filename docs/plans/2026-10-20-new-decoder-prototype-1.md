@@ -1140,6 +1140,9 @@ goes to the owner.
   the constant w = 0.1986 instead of D21's weight. The caps are removed, so the limit of 0.074–0.078 nepers above
   +40 dB S₅₀₀ no longer holds: the width may fall toward 0.03 nepers, where 128 points err about 0.17 nats (rough).
   The narrowest width at handover is still recorded, and a value below 0.05 still goes to the owner.
+- **Added by D24 (owner, 2026-10-30):** the grid's method gains the point-mass filter's prediction step, every 8
+  samples Part 6's transition at 2 Hz applied to the belief (ε = 0.0684, reflecting ends, mass conserved); the grid,
+  the live range, the revival rule, the per-newborn state and the copy cost are unchanged.
 
 **D23. Every story scored by its full density against one shared reference (owner, 2026-10-29: "Sure").** The build
 (plan 1b, Task 10) found that the per-sample ratio Λ(a; V′) taken against each story's own V′ drops
