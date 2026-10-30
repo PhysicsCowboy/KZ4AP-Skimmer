@@ -1175,6 +1175,24 @@ standard practice:
   against the timing prior (correlated samples; prewhitening would fix it); f independent per sample; the edge offset
   not marginalized jointly; the prediction's target √Ω̄ where E[√Ω] is meant.
 
+**D24. The newborn's grid fades every 8 samples (owner, 2026-10-30: "I don't care"; the coordinator's
+recommendation taken).** The point-mass filter's prediction step (Bucy and Senne 1971): every 8 samples the grid's
+belief in u = ln a is diffused by Part 6's transition at 2 Hz (Kushner's three-point chain, ε = 8·½(1 − ρ(Δ)²)/(2h²)
+= 0.0684 with Ω̄ = a² at each point, reflecting at the prior's ends so the mass is conserved), instead of the amplitude
+held constant until the handover. Measured (newborn-fading study, scratch, 2026-10-27/28, under the ratio form; 1 000
+first marks per case at 0, +10 and +20 dB S₅₀₀, fading 0, 0.5, 2 and 5 Hz): loss against the exact fading reference at
+2 Hz, 95th percentile / worst, 1.42 / 20.5 nats against the as-built's 1.69 / 21.8, the same as every sample (1.40 /
+20.3) and every 4 (1.41 / 20.3); 0.05 nats worst with no fading; +53 ns per newborn-sample on noise (measured), about
++60 on the mix (estimated), +2.3 to about +2.6% of the projected 425.7 ms per channel-second. The stride is heuristic,
+chosen by measurement: accuracy is flat from 1 to 8 and slips at 16. Rejected: every sample (+15 to +17.5%) and every
+4 (+4.2 to +4.5%), the same accuracy at more CPU; the as-built constant amplitude (free, but its own approximation
+0.26 nats at the 95th percentile at 2 Hz, 0.66 at 5 Hz); an earlier handover (worse tails in some cases, 0.13 to
+0.23 nats lost with no fading); exponential forgetting (less accurate, +15 to +19%); a two-dimensional grid over
+level and instantaneous amplitude (exact, about 4 000 times the cost). The tails up to 56 nats are Part 6's
+fast-fading limitation (backlog), not the newborn's. To be remeasured under D23 in the build: the accuracy
+(`Newborn.ApproximationsMeasured`, part (b), with the study's reference and generator) and the CPU on the mix (timed
+with D23's newborn change in Task 10's Step 0).
+
 ### Obvious items, stated for approval
 
 - **O1.** Only Morse and no-signal stories: no steady-carrier or nonsense-keying states (stated 2026-10-19).
