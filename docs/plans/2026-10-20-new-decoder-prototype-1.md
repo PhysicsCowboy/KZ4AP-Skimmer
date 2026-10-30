@@ -793,11 +793,14 @@ long run; the timing convention and rise times wait for the research.**
   correlation, (π/4)(₂F₁(−½, −½; 1; ρ²) − 1)/(1 − π/4) (Rayleigh; 0.902, 0.416 and 0.011 at 48, 144 and 336 ms, against
   ρ = 0.956, 0.664 and 0.108); 0.886·√Ω̄ = (√π/2)·√Ω̄ is the Rayleigh mean amplitude. The owner's rule (the middle
   term) is unchanged. Form (iv) of the derivation, within 0.2 nats of the exact predictive (measured in scratch).
+  - **Changed by D26 (owner, 2026-10-30):** the target is 0.886·E[√Ω], the Rayleigh mean amplitude averaged over the
+    long-run power's posterior; Ω̄ still sets the variance.
 - **Bell's decay toward zero, a measured variant (the owner's question, 2026-10-22: "How will Bell's choice to decay
   towards zero compared to our choice to decay towards the mean play out in all of the different test
   recordings…?").** The prototype scores, side by side on every test group, the amplitude prediction drifting toward
   zero (Bell 1977) against the decided drift toward the Rayleigh mean amplitude 0.886·√Ω̄, with a close neighbor as the
   case to watch; the results go to the owner (recorded 2026-10-24; told to the owner 2026-10-22).
+  - **Changed by D26 (owner, 2026-10-30):** the decided drift's target is 0.886·E[√Ω].
 - **The backup hang AGC: dropped from the design for now (owner, 2026-10-23: "A").** The Ω̄ fix covers the starts it
   was meant to back up, and a channel-level AGC knows a new station's level only from an earlier transmission within
   its hang. Recorded in `docs/backlog.md` as a fallback, its role and settings to be worked out only if the prototype
@@ -1104,6 +1107,8 @@ variant's predicted amplitude decays toward zero by Bell's rate (Φ per 5 ms, at
 drifting toward 0.886·√Ω̄; the variance follows the decided rule, ρ_a²P + ½(1 − ρ²)Ω̄, unchanged, and Bell's Q on
 re-entry is not added. Rejected: the decided rule plus Q (counts the gap's uncertainty twice); Bell's form in full in
 this run (two changes at once), which may follow as a second variant if this one shows a difference worth explaining.
+- **Changed by D26 (owner, 2026-10-30):** the decided drift it is compared with now targets 0.886·E[√Ω]; inside marks
+  the variant equals the default prediction, with that target.
 
 **D21. A newborn's weight follows the curve at each amplitude (owner, 2026-10-26: "a").** The newborn's integral
 weights each sample's evidence by part 4's curve w(q) at each amplitude a of the integral, q = a²s_k²/σ_y², the rule
@@ -1177,6 +1182,8 @@ standard practice:
 - **Left open, each to the owner separately:** the signal's timing contrasts weighted about 2.5 times too lightly
   against the timing prior (correlated samples; prewhitening would fix it); f independent per sample; the edge offset
   not marginalized jointly; the prediction's target √Ω̄ where E[√Ω] is meant.
+- **Decided since:** row 16 (the timing contrasts) by D25, row 20 (the target) by D26, row 11 (f per sample) by D27;
+  the edge offset (row 10) is still open.
 
 **D24. The newborn's grid fades every 8 samples (owner, 2026-10-30: "I don't care"; the coordinator's
 recommendation taken).** The point-mass filter's prediction step (Bucy and Senne 1971): every 8 samples the grid's
