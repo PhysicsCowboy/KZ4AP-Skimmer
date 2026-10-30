@@ -38,25 +38,33 @@ std::string describe(Kind kind, int speed) { return std::string(name_of(kind)) +
 // ln of the standard normal's upper tail, ln(1 - Phi(z)), by std::erfc.
 double ln_upper_tail(double z) { return std::log(0.5 * std::erfc(z / std::sqrt(2.0))); }
 
+// The tests below keep the first prototype's 2 ms step and its numbers: a configuration at the defaults with
+// sample_interval_s = 0.002 s (the default is 4 / 1 500 s; Fist.MediansInSamples checks it).
+ViterbiConfig at_2ms() {
+    ViterbiConfig config;
+    config.sample_interval_s = 0.002;
+    return config;
+}
+
 // The model of the design notes (topic 2, items 1, 2 and 4), restated from the configuration alone: what the Fist is
-// checked against. A kind's length, in pieces, is shift + a log-normal of median M and standard deviation sigma in
-// ln length; the length is rounded to the nearest piece and is never shorter than one piece.
+// checked against. A kind's length, in samples, is shift + a log-normal of median M and standard deviation sigma in
+// ln length; the length is rounded to the nearest sample and is never shorter than one sample.
 struct Model {
     ViterbiConfig config;
 
-    double piece_ms() const { return config.piece_s * 1000.0; }
+    double step_ms() const { return config.sample_interval_s * 1000.0; }
     double dot_ms(int speed) const { return config.dot_min_ms * std::pow(config.speed_ratio, speed); }
-    double median_pieces(Kind kind, int speed) const {
-        return config.fist_medians_dots[static_cast<std::size_t>(kind)] * dot_ms(speed) / piece_ms();
+    double median_samples(Kind kind, int speed) const {
+        return config.fist_medians_dots[static_cast<std::size_t>(kind)] * dot_ms(speed) / step_ms();
     }
-    double shift_pieces(Kind kind, int speed) const {
-        return config.fist_shifts_dots[static_cast<std::size_t>(kind)] * dot_ms(speed) / piece_ms();
+    double shift_samples(Kind kind, int speed) const {
+        return config.fist_shifts_dots[static_cast<std::size_t>(kind)] * dot_ms(speed) / step_ms();
     }
-    // (ln(edge - shift) - ln M) / sigma for a length edge in pieces; -infinity at or below the shift.
+    // (ln(edge - shift) - ln M) / sigma for a length edge in samples; -infinity at or below the shift.
     double z(Kind kind, int speed, double edge) const {
-        const double above_shift = edge - shift_pieces(kind, speed);
+        const double above_shift = edge - shift_samples(kind, speed);
         if (!(above_shift > 0.0)) return -kInf;
-        return (std::log(above_shift) - std::log(median_pieces(kind, speed))) /
+        return (std::log(above_shift) - std::log(median_samples(kind, speed))) /
                config.fist_sigmas[static_cast<std::size_t>(kind)];
     }
     // ln S(tau): S(1) = 1 and S(tau) = 1 - F(tau - 1/2) for tau >= 2. NaN where S is below what std::erfc holds.
@@ -95,7 +103,7 @@ void expect_close(double actual, double expected, double tolerance, const std::s
         EXPECT_NEAR(actual, expected, tolerance) << what;
 }
 
-// The largest tau with S(tau) >= 1/2, which is round(M) for a median of M pieces (S(tau) = 1 - F(tau - 1/2)).
+// The largest tau with S(tau) >= 1/2, which is round(M) for a median of M samples (S(tau) = 1 - F(tau - 1/2)).
 int median_from_survival(const Fist& fist, Kind kind, int speed) {
     const double ln_half = std::log(0.5);
     int lo = 1;         // S(1) = 1
@@ -111,14 +119,14 @@ int median_from_survival(const Fist& fist, Kind kind, int speed) {
 }
 
 // The ends of the grid, where lengths are shortest and longest: every kind at the first and last speeds (100 and 5.2
-// WPM: dots of 12.0 and 230.3 ms). There a dot is 6 pieces (12 ms), a dash 691 ms (345 pieces) and a word gap 1 612 ms
-// (806 pieces). visit(kind, speed, last) gets the longest length to try, 40 times the kind's median, in pieces.
+// WPM: dots of 12.0 and 230.3 ms). There a dot is 6 samples (12 ms), a dash 691 ms (345 samples) and a word gap 1 612 ms
+// (806 samples). visit(kind, speed, last) gets the longest length to try, 40 times the kind's median, in samples.
 template <class Visit>
 void for_each_grid_end(const Model& model, Visit visit) {
     for (const Kind kind : kKinds) {
         for (const int speed : {0, 31}) {
             SCOPED_TRACE(describe(kind, speed));
-            visit(kind, speed, static_cast<int>(std::ceil(40.0 * model.median_pieces(kind, speed))));
+            visit(kind, speed, static_cast<int>(std::ceil(40.0 * model.median_samples(kind, speed))));
         }
     }
 }
@@ -154,38 +162,38 @@ Worst worst_against_model(const Fist& fist, const Model& model, Kind kind, int s
 }  // namespace
 
 TEST(Fist, EndProbabilitiesSumToOne) {
-    const ViterbiConfig config{};
+    const ViterbiConfig config = at_2ms();
     const Fist fist(config);
     const Model model{config};
     for_each_grid_end(model, [&](Kind kind, int speed, int last) {
         double sum = 0.0;
         for (int tau = 1; tau <= last; ++tau) sum += std::exp(fist.log_end(kind, speed, tau));
-        EXPECT_NEAR(sum, 1.0, 1e-9) << "up to " << last << " pieces";
+        EXPECT_NEAR(sum, 1.0, 1e-9) << "up to " << last << " samples";
     });
 }
 
 TEST(Fist, SurvivalIsTheRoundedLogNormal) {
-    // A dot at speed 0 is 12.0 ms = 6 pieces of 2 ms, with sigma 0.3: S(tau) = Phi_c((ln(tau - 1/2) - ln 6) / 0.3).
-    const Fist fist{ViterbiConfig{}};
+    // A dot at speed 0 is 12.0 ms = 6 samples of 2 ms, with sigma 0.3: S(tau) = Phi_c((ln(tau - 1/2) - ln 6) / 0.3).
+    const Fist fist{at_2ms()};
     for (int tau = 1; tau <= 60; ++tau) {
         const double z = (std::log(tau - 0.5) - std::log(6.0)) / 0.3;
         EXPECT_NEAR(fist.log_survival(Kind::Dot, 0, tau), ln_upper_tail(z), 1e-6) << "tau " << tau;
     }
-    // Never shorter than one piece: every element lasts the first.
+    // Never shorter than one sample: every element lasts the first.
     EXPECT_EQ(fist.log_survival(Kind::Dot, 0, 1), 0.0);
 }
 
 TEST(Fist, EndProbabilityIsTheRoundedLogNormal) {
-    // P(1) = F(3/2), P(tau) = F(tau + 1/2) - F(tau - 1/2): every kind, at speeds with medians up to 109 pieces (the
+    // P(1) = F(3/2), P(tau) = F(tau + 1/2) - F(tau - 1/2): every kind, at speeds with medians up to 109 samples (the
     // word gap at speed 10, 7 dots of 31.1 ms), over lengths up to 40 times the median. The Fist's table makes ln P
     // agree to 9.1e-6 here (measured); the test allows 5e-5.
-    const ViterbiConfig config{};
+    const ViterbiConfig config = at_2ms();
     const Fist fist(config);
     const Model model{config};
     for (const Kind kind : kKinds) {
         for (const int speed : {0, 4, 10}) {
             SCOPED_TRACE(describe(kind, speed));
-            const int last = static_cast<int>(std::ceil(40.0 * model.median_pieces(kind, speed)));
+            const int last = static_cast<int>(std::ceil(40.0 * model.median_samples(kind, speed)));
             for (int tau = 1; tau <= last; ++tau)
                 expect_close(fist.log_end(kind, speed, tau), model.log_end(kind, speed, tau), 5e-5,
                              "tau " + std::to_string(tau));
@@ -195,35 +203,35 @@ TEST(Fist, EndProbabilityIsTheRoundedLogNormal) {
 
 TEST(Fist, MediansAreStandardSpacing) {
     // Standard spacing at every speed (the owner's decision D14 of 2026-10-21 removed the Farnsworth factor): the
-    // medians are the notes' 1, 3, 1, 3 and 7 dots, a letter gap 3 dots and a word gap 7, to the nearest piece of
-    // 2 ms. The median found from S is round(M) for a median of M pieces; the table's 1.25e-7 nats in ln S move the
-    // crossing of S = 1/2 by at most 5e-8 M pieces (ln S falls by 2.66 / M nats per piece there, at sigma 0.3).
-    const ViterbiConfig config{};
+    // medians are the notes' 1, 3, 1, 3 and 7 dots, a letter gap 3 dots and a word gap 7, to the nearest sample of
+    // 2 ms. The median found from S is round(M) for a median of M samples; the table's 1.25e-7 nats in ln S move the
+    // crossing of S = 1/2 by at most 5e-8 M samples (ln S falls by 2.66 / M nats per sample there, at sigma 0.3).
+    const ViterbiConfig config = at_2ms();
     const Fist fist(config);
     const Model model{config};
     const std::array<double, 5> dots = {{1.0, 3.0, 1.0, 3.0, 7.0}};
     for (int speed = 0; speed < config.speed_count; ++speed) {
         for (const Kind kind : kKinds) {
             SCOPED_TRACE(describe(kind, speed));
-            const double median = dots[static_cast<std::size_t>(kind)] * model.dot_ms(speed) / 2.0;  // pieces
+            const double median = dots[static_cast<std::size_t>(kind)] * model.dot_ms(speed) / 2.0;  // samples
             EXPECT_LE(std::fabs(median_from_survival(fist, kind, speed) - median), 0.5 + 1e-4);
         }
     }
-    // At the first speed, dots of 6 pieces: 6, 18, 6, 18 and 42 pieces.
+    // At the first speed, dots of 6 samples: 6, 18, 6, 18 and 42 samples.
     EXPECT_EQ(median_from_survival(fist, Kind::Dot, 0), 6);
     EXPECT_EQ(median_from_survival(fist, Kind::Dash, 0), 18);
     EXPECT_EQ(median_from_survival(fist, Kind::ElementGap, 0), 6);
     EXPECT_EQ(median_from_survival(fist, Kind::LetterGap, 0), 18);
     EXPECT_EQ(median_from_survival(fist, Kind::WordGap, 0), 42);
-    // The longest median: a word gap, 7 dots of 230.3 ms (speed 31), is 806 pieces of 2 ms.
+    // The longest median: a word gap, 7 dots of 230.3 ms (speed 31), is 806 samples of 2 ms.
     EXPECT_EQ(median_from_survival(fist, Kind::WordGap, 31), 806);
 }
 
 TEST(Fist, MisfitCostsMatchTheNotes) {
-    // Speed 31: a dot of 12.0 ms x 1.1^31 = 230.3 ms, a median of 115.17 pieces. The notes' misfit cost of a length
+    // Speed 31: a dot of 12.0 ms x 1.1^31 = 230.3 ms, a median of 115.17 samples. The notes' misfit cost of a length
     // k times the median is (ln k)^2 / (2 sigma^2) nats, to which the log-normal density adds its 1/length factor,
     // ln k: ln P(k M) - ln P(M) = -(ln k)^2 / 0.18 - ln k at sigma 0.3.
-    const Fist fist{ViterbiConfig{}};
+    const Fist fist{at_2ms()};
     EXPECT_EQ(median_from_survival(fist, Kind::Dot, 31), 115);
     const auto ln_p = [&fist](int tau) { return fist.log_end(Kind::Dot, 31, tau); };
     const double ln2 = std::log(2.0);
@@ -237,9 +245,9 @@ TEST(Fist, MisfitCostsMatchTheNotes) {
 }
 
 TEST(Fist, EveryKindFollowsItsOwnMedianSigmaAndShift) {
-    // The genie fist: the speed grid collapsed to one speed (an 80 ms dot, 40 pieces) and, for each kind, the
+    // The genie fist: the speed grid collapsed to one speed (an 80 ms dot, 40 samples) and, for each kind, the
     // sender's own median, sigma and shift.
-    ViterbiConfig config{};
+    ViterbiConfig config = at_2ms();
     config.speed_count = 1;
     config.dot_min_ms = 80.0;
     config.fist_medians_dots = {{1.1, 3.4, 0.9, 3.0, 6.0}};
@@ -249,26 +257,26 @@ TEST(Fist, EveryKindFollowsItsOwnMedianSigmaAndShift) {
     const Model model{config};
     for (const Kind kind : kKinds) {
         SCOPED_TRACE(describe(kind, 0));
-        const int last = static_cast<int>(std::ceil(20.0 * model.median_pieces(kind, 0)));
+        const int last = static_cast<int>(std::ceil(20.0 * model.median_samples(kind, 0)));
         for (int tau = 1; tau <= last; ++tau) {
             const std::string at = "tau " + std::to_string(tau);
             expect_close(fist.log_survival(kind, 0, tau), model.log_survival(kind, 0, tau), 1e-6, at);
             expect_close(fist.log_end(kind, 0, tau), model.log_end(kind, 0, tau), 1e-4, at);
         }
     }
-    // A shift of 0.2 dots = 8 pieces: a letter gap is never shorter than 8 pieces, so nothing ends before the 8th
-    // piece and everything survives to it.
+    // A shift of 0.2 dots = 8 samples: a letter gap is never shorter than 8 samples, so nothing ends before the 8th
+    // sample and everything survives to it.
     for (int tau = 1; tau <= 7; ++tau) {
         EXPECT_EQ(fist.log_end(Kind::LetterGap, 0, tau), -kInf) << "tau " << tau;
         EXPECT_EQ(fist.log_survival(Kind::LetterGap, 0, tau), 0.0) << "tau " << tau;
     }
     EXPECT_GT(fist.log_end(Kind::LetterGap, 0, 8), -kInf);
-    // The shift moves the whole length: the letter gap's median is 3.0 x 40 = 120 pieces above the 8-piece shift.
+    // The shift moves the whole length: the letter gap's median is 3.0 x 40 = 120 samples above the 8-sample shift.
     EXPECT_NEAR(median_from_survival(fist, Kind::LetterGap, 0), 8.0 + 120.0, 1.0);
 }
 
 TEST(Fist, SurvivalAndEndStayFiniteInTheFarTail) {
-    // A dot at speed 0 (median 6 pieces, sigma 0.3) held for ever longer: z = (ln(tau - 1/2) - ln 6) / 0.3 reaches 38,
+    // A dot at speed 0 (median 6 samples, sigma 0.3) held for ever longer: z = (ln(tau - 1/2) - ln 6) / 0.3 reaches 38,
     // where Phi_c is about 1e-316, a subnormal double (past z = 38.5 it is 0 and std::erfc is of no use), and then 45
     // and 60, past the table's end at z = 40. The reference values are from an 80-digit evaluation (Python's decimal,
     // the continued fraction of Mills' ratio) of ln Phi_c(z(tau - 1/2)) and of ln(Phi_c(z(tau - 1/2)) -
@@ -287,7 +295,7 @@ TEST(Fist, SurvivalAndEndStayFiniteInTheFarTail) {
         {4400000, 45.0178517201, -1.01802997722313e+3, -1.02831558462550e+3},
         {390000000, 59.9663260886, -1.80299313188451e+3, -1.81747675556396e+3},
     };
-    const Fist fist{ViterbiConfig{}};
+    const Fist fist{at_2ms()};
     for (const Row& row : rows) {
         SCOPED_TRACE("tau " + std::to_string(row.tau) + ", z " + std::to_string(row.z));
         const bool in_table = row.z < 40.0;
@@ -297,9 +305,9 @@ TEST(Fist, SurvivalAndEndStayFiniteInTheFarTail) {
 }
 
 TEST(Fist, SurvivalFallsFromOneOverTheGridsWholeRange) {
-    // At the ends of the grid, from the first piece to 40 times the median: ln S starts at 0 (S(1) = 1), is finite, is
+    // At the ends of the grid, from the first sample to 40 times the median: ln S starts at 0 (S(1) = 1), is finite, is
     // never above 0 and never rises, and has fallen far by the end (S there is about e^-79, z = ln 40 / sigma = 12.3).
-    const ViterbiConfig config{};
+    const ViterbiConfig config = at_2ms();
     const Fist fist(config);
     const Model model{config};
     for_each_grid_end(model, [&](Kind kind, int speed, int last) {
@@ -312,21 +320,21 @@ TEST(Fist, SurvivalFallsFromOneOverTheGridsWholeRange) {
             previous = ln_s;
         }
         EXPECT_EQ(wrong_at, 0) << "ln S is not finite, is above 0 or rises from the length before, at this length";
-        EXPECT_LT(previous, -75.0) << "ln S at " << last << " pieces";
+        EXPECT_LT(previous, -75.0) << "ln S at " << last << " samples";
     });
-    // The extremes in time: a dash at 5.2 WPM lasts 691 ms (345 pieces of 2 ms), a word gap 1 612 ms (806 pieces).
+    // The extremes in time: a dash at 5.2 WPM lasts 691 ms (345 samples of 2 ms), a word gap 1 612 ms (806 samples).
     EXPECT_NEAR(median_from_survival(fist, Kind::Dash, 31) * 2.0, 691.0, 2.0);
     EXPECT_NEAR(median_from_survival(fist, Kind::WordGap, 31) * 2.0, 1612.0, 2.0);
 }
 
 TEST(Fist, EndProbabilityIsTheDropInSurvivalOverTheGridsWholeRange) {
-    // The identity of fist.hpp, P(tau) = S(tau) - S(tau + 1), from the first piece to 40 times the median. Past the
+    // The identity of fist.hpp, P(tau) = S(tau) - S(tau + 1), from the first sample to 40 times the median. Past the
     // median (S <= 1/2) P is taken from the same upper-tail values as S, so the two agree to rounding: 1e-9 of P is
     // allowed, 1.6e-13 measured. Up to the median they read different tail tables (S the table at z, P the lower
     // tail's at -z), and each read is off by the table's error: at most 1.25e-7 x Phi_c x |second derivative of ln
     // Phi_c|, which is 4.4e-8 of probability at the worst z (-0.48; 4.0e-8 from z = 0 on). Two edges, two reads each:
     // 1.7e-7 at most; 2e-7 is allowed, 7.3e-8 measured.
-    const ViterbiConfig config{};
+    const ViterbiConfig config = at_2ms();
     const Fist fist(config);
     const Model model{config};
     const double ln_half = std::log(0.5);
@@ -359,23 +367,23 @@ TEST(Fist, EndProbabilityIsTheDropInSurvivalOverTheGridsWholeRange) {
 TEST(Fist, MatchesTheReferenceAtTheGridsEnds) {
     // ln S within the interpolation's 1.25e-7 nats of the std::erfc reference at every length from 1 to 40 times the
     // median, at every end of the grid (measured at most 1.24e-7); ln P within 1.5e-7 M nats for a median of M
-    // pieces (measured at most 1.05e-7 M, at M = 18; 6.1e-7 at 6 pieces, 1.1e-5 at 115, 4.2e-5 at 806, as fist.hpp
+    // samples (measured at most 1.05e-7 M, at M = 18; 6.1e-7 at 6 samples, 1.1e-5 at 115, 4.2e-5 at 806, as fist.hpp
     // states).
-    const ViterbiConfig config{};
+    const ViterbiConfig config = at_2ms();
     const Fist fist(config);
     const Model model{config};
     for_each_grid_end(model, [&](Kind kind, int speed, int last) {
         const Worst worst = worst_against_model(fist, model, kind, speed, 1, last);
         EXPECT_EQ(worst.skipped, 0) << "lengths the reference cannot give";
         EXPECT_LE(worst.ln_s, 1.25e-7);
-        EXPECT_LE(worst.ln_p, 1.5e-7 * model.median_pieces(kind, speed)) << "at tau " << worst.at_ln_p;
+        EXPECT_LE(worst.ln_p, 1.5e-7 * model.median_samples(kind, speed)) << "at tau " << worst.at_ln_p;
     });
 }
 
 TEST(Fist, LnPIsWithinTheAccuracyTheHeaderStates) {
     // fist.hpp's figures for ln P, the worst over every length up to 40 times the median: 6.2e-7 nats for the dot at
-    // 100 WPM (6 pieces), 1.1e-5 for the dot at 5.2 WPM (115 pieces), 4.2e-5 for the word gap at 5.2 WPM (806
-    // pieces, measured 4.16e-5 at the median), the longest median, where the cell of a length in z (1 / (sigma tau) =
+    // 100 WPM (6 samples), 1.1e-5 for the dot at 5.2 WPM (115 samples), 4.2e-5 for the word gap at 5.2 WPM (806
+    // samples, measured 4.16e-5 at the median), the longest median, where the cell of a length in z (1 / (sigma tau) =
     // 4.1e-3 at the median, about 4 of the table's steps of 0.001) is narrowest and ln P is least exact.
     struct Stated {
         Kind kind;
@@ -383,17 +391,17 @@ TEST(Fist, LnPIsWithinTheAccuracyTheHeaderStates) {
         double ln_p;
     };
     const Stated stated[] = {{Kind::Dot, 0, 6.2e-7}, {Kind::Dot, 31, 1.1e-5}, {Kind::WordGap, 31, 4.2e-5}};
-    const ViterbiConfig config{};
+    const ViterbiConfig config = at_2ms();
     const Fist fist(config);
     const Model model{config};
     for (const Stated& s : stated) {
         SCOPED_TRACE(describe(s.kind, s.speed));
-        const int last = static_cast<int>(std::ceil(40.0 * model.median_pieces(s.kind, s.speed)));
+        const int last = static_cast<int>(std::ceil(40.0 * model.median_samples(s.kind, s.speed)));
         const Worst worst = worst_against_model(fist, model, s.kind, s.speed, 1, last);
         EXPECT_LE(worst.ln_p, s.ln_p) << "at tau " << worst.at_ln_p;
     }
-    // The lengths around the longest median: 400 pieces (0.8 s) either side of 806.
-    const int median = static_cast<int>(std::lround(model.median_pieces(Kind::WordGap, 31)));
+    // The lengths around the longest median: 400 samples (0.8 s) either side of 806.
+    const int median = static_cast<int>(std::lround(model.median_samples(Kind::WordGap, 31)));
     EXPECT_EQ(median, 806);
     const Worst around = worst_against_model(fist, model, Kind::WordGap, 31, median - 400, median + 400);
     EXPECT_EQ(around.skipped, 0);
@@ -404,35 +412,35 @@ TEST(Fist, LnPIsWithinTheAccuracyTheHeaderStates) {
 TEST(Fist, RefusesWhatItCannotRead) {
     const auto refuses = [](const ViterbiConfig& config) { EXPECT_THROW((void)Fist(config), std::invalid_argument); };
     const double nan = std::numeric_limits<double>::quiet_NaN();
-    ViterbiConfig config{};
-    config.piece_s = 0.0;
+    ViterbiConfig config = at_2ms();
+    config.sample_interval_s = 0.0;
     refuses(config);
-    config = ViterbiConfig{};
-    config.piece_s = nan;
+    config = at_2ms();
+    config.sample_interval_s = nan;
     refuses(config);
-    config = ViterbiConfig{};
+    config = at_2ms();
     config.dot_min_ms = -12.0;
     refuses(config);
-    config = ViterbiConfig{};
+    config = at_2ms();
     config.speed_count = 0;
     refuses(config);
-    config = ViterbiConfig{};
+    config = at_2ms();
     config.speed_ratio = 0.0;
     refuses(config);
-    config = ViterbiConfig{};
+    config = at_2ms();
     config.fist_medians_dots[3] = 0.0;
     refuses(config);
-    config = ViterbiConfig{};
+    config = at_2ms();
     config.fist_sigmas[1] = 0.0;
     refuses(config);
-    config = ViterbiConfig{};
+    config = at_2ms();
     config.fist_sigmas[4] = nan;
     refuses(config);
-    config = ViterbiConfig{};
+    config = at_2ms();
     config.fist_shifts_dots[2] = nan;
     refuses(config);
 
-    const Fist fist{ViterbiConfig{}};
+    const Fist fist{at_2ms()};
     EXPECT_THROW(fist.log_survival(Kind::Dot, -1, 1), std::out_of_range);
     EXPECT_THROW(fist.log_survival(Kind::Dot, 32, 1), std::out_of_range);
     EXPECT_THROW(fist.log_end(Kind::Dot, 0, 0), std::out_of_range);
@@ -440,61 +448,29 @@ TEST(Fist, RefusesWhatItCannotRead) {
     EXPECT_THROW(fist.log_end(static_cast<Kind>(5), 0, 1), std::out_of_range);
 }
 
-TEST(Config, BlockLengthFollowsTheSpread) {
-    // The longest block T with (2/T^2) integral_0^T (T - tau) exp(-pi^2 f^2 tau^2 / 2) dtau >= 10^(-0.5/10) (0.5 dB of
-    // signal energy), at a Doppler spread f: computed 2026-10-20; the notes round them to 78 ms, 195 ms, 390 ms and
-    // 1.3 s (topic 4, item 9).
-    EXPECT_NEAR(block_length_s(5.0, 0.5) * 1000.0, 78.07, 78.07 * 0.005);
-    EXPECT_NEAR(block_length_s(2.0, 0.5) * 1000.0, 195.19, 195.19 * 0.005);
-    EXPECT_NEAR(block_length_s(1.0, 0.5) * 1000.0, 390.37, 390.37 * 0.005);
-    EXPECT_NEAR(block_length_s(0.3, 0.5) * 1000.0, 1301.25, 1301.25 * 0.005);
-    // The configuration's own spread (1 Hz) and loss (0.5 dB).
+TEST(Fist, MediansInSamples) {
+    // At the default sample interval, Delta = 4 / 1 500 s = 2.667 ms (design notes, part 11): a 100 WPM dot's median
+    // is 12 ms / 2.667 ms = 4.50 samples, so S(5) = Phi_c((ln 4.5 - ln 4.5) / 0.3) = 1/2 (within the table's 1.25e-7
+    // nats); the longest median, a word gap of 7 dots at 5.2 WPM (230.3 ms), is 604.5 +/- 0.5 samples (derived:
+    // 7 x 230.33 ms / 2.667 ms = 604.6).
     const ViterbiConfig config{};
-    EXPECT_NEAR(block_length_s(config.fading_spread_hz, config.block_loss_db) * 1000.0, 390.37, 390.37 * 0.005);
-}
-
-TEST(Config, BlockLengthScalesAsTheInverseSpread) {
-    // Exactly 1/f: the integral depends on f and T only through f T.
-    const double at_one = block_length_s(1.0, 0.5);
-    EXPECT_NEAR(block_length_s(4.0, 0.5), at_one / 4.0, at_one * 1e-12);
-    EXPECT_NEAR(block_length_s(0.25, 0.5), at_one * 4.0, at_one * 1e-12);
-    // A larger loss allows a longer block; a smaller one a shorter.
-    EXPECT_GT(block_length_s(1.0, 1.0), at_one);
-    EXPECT_LT(block_length_s(1.0, 0.1), at_one);
-    // The block's average is what the loss allows, by the definition: (2/T^2) integral (T - tau) rho(tau) dtau, by
-    // Simpson's rule at the T found, equals 10^(-loss/10).
-    const double pi = std::numbers::pi;
-    for (const double loss_db : {0.1, 0.5, 1.0, 3.0}) {
-        const double spread_hz = 1.7;
-        const double block = block_length_s(spread_hz, loss_db);
-        const int n = 20000;  // an even number of steps
-        const double step = block / n;
-        double sum = 0.0;
-        for (int i = 0; i <= n; ++i) {
-            const double tau = i * step;
-            const double weight = (i == 0 || i == n) ? 1.0 : (i % 2 != 0 ? 4.0 : 2.0);
-            sum += weight * (block - tau) * std::exp(-0.5 * pi * pi * spread_hz * spread_hz * tau * tau);
-        }
-        const double average = 2.0 / (block * block) * sum * step / 3.0;
-        EXPECT_NEAR(average, std::pow(10.0, -loss_db / 10.0), 1e-9) << loss_db << " dB of signal energy";
-    }
-    // No fading: a block is the whole mark.
-    EXPECT_EQ(block_length_s(0.0, 0.5), kInf);
-}
-
-TEST(Config, BlockLengthRefusesNonsense) {
-    const double nan = std::numeric_limits<double>::quiet_NaN();
-    EXPECT_THROW((void)block_length_s(-1.0, 0.5), std::invalid_argument);
-    EXPECT_THROW((void)block_length_s(nan, 0.5), std::invalid_argument);
-    EXPECT_THROW((void)block_length_s(kInf, 0.5), std::invalid_argument);
-    EXPECT_THROW((void)block_length_s(1.0, 0.0), std::invalid_argument);
-    EXPECT_THROW((void)block_length_s(1.0, -0.5), std::invalid_argument);
-    EXPECT_THROW((void)block_length_s(1.0, nan), std::invalid_argument);
+    const Fist fist(config);
+    const Model model{config};
+    EXPECT_NEAR(model.median_samples(Kind::Dot, 0), 4.50, 1e-12);
+    EXPECT_NEAR(fist.log_survival(Kind::Dot, 0, 5), std::log(0.5), 1.25e-7);
+    EXPECT_NEAR(model.median_samples(Kind::WordGap, 31), 604.5, 0.5);
+    const int median = median_from_survival(fist, Kind::WordGap, 31);
+    EXPECT_GE(median, 604);
+    EXPECT_LE(median, 605);
+    // An over starts in a sample of silence with P = 0.05 / s x 2.667 ms = 1.333e-4 (-8.92 nats).
+    EXPECT_NEAR(config.over_rate_per_s * config.sample_interval_s, 1.0 / 7500.0, 1e-18);
+    EXPECT_NEAR(std::log(config.over_rate_per_s * config.sample_interval_s), -8.92, 0.005);
 }
 
 TEST(Config, DefaultsAreTheDesignTable) {
+    // Every field's default (design notes, part 17; plan 1b, Task 10), in the order of the structure.
     const ViterbiConfig c{};
-    EXPECT_EQ(c.piece_s, 0.002);
+    EXPECT_EQ(c.sample_interval_s, 4.0 / 1500.0);
     EXPECT_EQ(c.dot_min_ms, 12.0);
     EXPECT_EQ(c.speed_ratio, 1.1);
     EXPECT_EQ(c.speed_count, 32);
@@ -503,9 +479,11 @@ TEST(Config, DefaultsAreTheDesignTable) {
     EXPECT_EQ(c.fist_shifts_dots, (std::array<double, 5>{{0.0, 0.0, 0.0, 0.0, 0.0}}));
     EXPECT_EQ(c.beam_nats, 40.0);
     EXPECT_EQ(c.ceiling, 1700);
-    EXPECT_EQ(c.fading_spread_hz, 1.0);
-    EXPECT_EQ(c.block_loss_db, 0.5);
-    EXPECT_EQ(c.keying_rise_s, 0.005);
+    EXPECT_EQ(c.front_dot_s, 0.012);
+    EXPECT_EQ(c.edge_rise_s, 0.0025);
+    EXPECT_EQ(c.edge_rise_min_s, 0.0008);
+    EXPECT_EQ(c.edge_rise_max_s, 0.0047);
+    EXPECT_EQ(c.fading_spread_hz, 2.0);
     EXPECT_EQ(c.systematic_floor, 0.02);
     EXPECT_EQ(c.over_rate_per_s, 0.05);
     EXPECT_EQ(c.rescue_epsilon, 1.0e-3);
@@ -514,15 +492,33 @@ TEST(Config, DefaultsAreTheDesignTable) {
     EXPECT_EQ(c.level_min_db, -15.0);
     EXPECT_EQ(c.level_max_db, 85.0);
     EXPECT_EQ(c.quadrature_order, 5);
+    EXPECT_EQ(c.newborn_switch_sigma_u, 0.1);
+    EXPECT_EQ(c.newborn_grid_points, 128);
+    EXPECT_EQ(c.newborn_live_range_nats, 160.0);
     EXPECT_EQ(c.hiss_half_width_hz, 2000.0);
     EXPECT_EQ(c.hiss_percentile, 25.0);
     EXPECT_EQ(c.hiss_average_s, 1.0);
     EXPECT_FALSE(c.genie_fading_spread_hz.has_value());
     EXPECT_FALSE(c.stats);
+    // The durations, converted where they are used: 10, 10, 16 and 160 samples of 2.667 ms, and 10 bins.
+    EXPECT_EQ(whole_count(c.newborn_fade_interval_s, c.sample_interval_s, "newborn_fade_interval_s", "samples"), 8);
+    EXPECT_EQ(whole_count(c.nu_bin_s, c.sample_interval_s, "nu_bin_s", "samples"), 16);
+    EXPECT_EQ(whole_count(c.nu_memory_s, c.sample_interval_s, "nu_memory_s", "samples"), 160);
+    EXPECT_EQ(whole_count(c.nu_memory_s, c.nu_bin_s, "nu_memory_s", "bins"), 10);
+    // A duration that is not a whole number of samples is refused, naming the field.
+    try {
+        (void)whole_count(0.027, c.sample_interval_s, "newborn_fade_interval_s", "samples");
+        ADD_FAILURE() << "27 ms is 10.125 samples: refused";
+    } catch (const std::invalid_argument& e) {
+        EXPECT_NE(std::string(e.what()).find("newborn_fade_interval_s"), std::string::npos) << e.what();
+    }
+    EXPECT_THROW((void)whole_count(0.0, c.sample_interval_s, "nu_bin_s", "samples"), std::invalid_argument);
+    EXPECT_THROW((void)whole_count(-c.nu_bin_s, c.sample_interval_s, "nu_bin_s", "samples"), std::invalid_argument);
+    EXPECT_THROW((void)whole_count(std::numeric_limits<double>::quiet_NaN(), c.sample_interval_s, "nu_bin_s", "samples"),
+                 std::invalid_argument);
     // What the table says of them: 32 speeds of 12.0 to 230.3 ms dots (100 to 5.2 words per minute, a dot being
-    // 1.2 s / WPM), and an over starting in a piece of silence with probability 1.0e-4.
+    // 1.2 s / WPM).
     EXPECT_NEAR(c.dot_min_ms * std::pow(c.speed_ratio, c.speed_count - 1), 230.3, 0.05);
     EXPECT_NEAR(1200.0 / c.dot_min_ms, 100.0, 1e-9);
     EXPECT_NEAR(1200.0 / (c.dot_min_ms * std::pow(c.speed_ratio, c.speed_count - 1)), 5.2, 0.05);
-    EXPECT_NEAR(c.over_rate_per_s * c.piece_s, 1.0e-4, 1e-18);
 }

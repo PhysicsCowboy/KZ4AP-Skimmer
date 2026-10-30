@@ -1,5 +1,5 @@
 // The amplitude per story (design notes, "Detection, amplitude, frequency and the mark's shape", part 6; plan 1b, Task 6).
-// Library code: the decoder does not run it yet.
+// The decoder runs it (search.hpp; viterbi_decoder.hpp).
 //
 // Each story carries one Gaussian amplitude N(mu, P) in FS at the front filter's output and the sample t_m of its last
 // update (Bell 1977, one scalar Kalman filter per path). The prediction to sample k (owner, 2026-10-22 and 2026-10-23;

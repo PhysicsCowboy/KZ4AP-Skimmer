@@ -90,7 +90,7 @@ bool positive_and_finite(double x) { return x > 0.0 && std::isfinite(x); }
 }  // namespace
 
 Fist::Fist(const ViterbiConfig& config) : speed_count_(config.speed_count) {
-    if (!positive_and_finite(config.piece_s)) throw std::invalid_argument("fist: piece_s must be positive (s)");
+    if (!positive_and_finite(config.sample_interval_s)) throw std::invalid_argument("fist: sample_interval_s must be positive (s)");
     if (!positive_and_finite(config.dot_min_ms)) throw std::invalid_argument("fist: dot_min_ms must be positive (ms)");
     if (config.speed_count < 1) throw std::invalid_argument("fist: speed_count must be at least 1");
     if (!positive_and_finite(config.speed_ratio)) throw std::invalid_argument("fist: speed_ratio must be positive");
@@ -102,13 +102,13 @@ Fist::Fist(const ViterbiConfig& config) : speed_count_(config.speed_count) {
         if (!std::isfinite(config.fist_shifts_dots[kind]))
             throw std::invalid_argument("fist: every shift must be finite (dots)");
     }
-    const double piece_ms = config.piece_s * 1000.0;
+    const double step_ms = config.sample_interval_s * 1000.0;
     by_kind_and_speed_.reserve(kKinds * static_cast<std::size_t>(speed_count_));
     for (std::size_t kind = 0; kind < kKinds; ++kind) {
         for (int speed = 0; speed < speed_count_; ++speed) {
-            const double dot_pieces = config.dot_min_ms * std::pow(config.speed_ratio, speed) / piece_ms;
-            by_kind_and_speed_.push_back(Params{std::log(config.fist_medians_dots[kind] * dot_pieces),
-                                                config.fist_shifts_dots[kind] * dot_pieces,
+            const double dot_samples = config.dot_min_ms * std::pow(config.speed_ratio, speed) / step_ms;
+            by_kind_and_speed_.push_back(Params{std::log(config.fist_medians_dots[kind] * dot_samples),
+                                                config.fist_shifts_dots[kind] * dot_samples,
                                                 config.fist_sigmas[kind]});
         }
     }
@@ -118,7 +118,7 @@ Fist::Params Fist::params(Kind kind, int speed, int tau) const {
     const std::size_t k = static_cast<std::size_t>(kind);  // a negative value wraps to a large one
     if (k >= kKinds) throw std::out_of_range("fist: unknown kind");
     if (speed < 0 || speed >= speed_count_) throw std::out_of_range("fist: speed outside the grid");
-    if (tau < 1) throw std::out_of_range("fist: tau must be at least 1 piece");
+    if (tau < 1) throw std::out_of_range("fist: tau must be at least 1 sample");
     return by_kind_and_speed_[k * static_cast<std::size_t>(speed_count_) + static_cast<std::size_t>(speed)];
 }
 
@@ -130,7 +130,7 @@ double Fist::Params::z(double edge) const {
 
 double Fist::log_survival(Kind kind, int speed, int tau) const {
     const Params p = params(kind, speed, tau);
-    if (tau == 1) return 0.0;  // never shorter than one piece
+    if (tau == 1) return 0.0;  // never shorter than one sample
     return ln_phic(p.z(tau - 0.5));
 }
 

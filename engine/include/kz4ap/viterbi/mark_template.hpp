@@ -1,5 +1,5 @@
 // The new decoder's mark template and edge term (design notes, "Detection, amplitude, frequency and the mark's shape",
-// part 5, and part 11's timing reference; plan 1b, Task 4). Library code: the decoder does not run it yet.
+// part 5, and part 11's timing reference; plan 1b, Task 4). The decoder runs it (search.hpp; viterbi_decoder.hpp).
 //
 // A story predicts the front filter's actual output for its claimed keying, as a fraction of its key-down amplitude:
 //
@@ -13,7 +13,7 @@
 //    the filter's output at input sample j D, as MarkTemplate.MatchesTheChainOnKeyedCarriers checks). S(tau) = y at
 //    tau = j / r - t_d. Both filters have unit gain at 0 Hz and finite support, so S(tau) = 0 for tau <= 0 and S(tau) = 1
 //    (to rounding) for tau >= E + (|g| - 1) / f_s + (|h| - 1) / r = 4.235 + 21.333 + 16.000 = 41.57 ms on the default
-//    chain (2.5 ms rise, 4 097 taps at 192 kHz or 1 025 at 48 kHz, 25 taps). Half amplitude 20.79 ms after key-down
+//    chain (2.5 ms rise, 4 097 taps at 192 kHz or 1 025 at 48 kHz, 25 taps). Half amplitude 20.78 ms after key-down
 //    (2.12 ms the edge's half point + 10.67 ms the channel filter's delay + 8.00 ms the front filter's), 10-90% rise
 //    10.03 ms, 1-99% rise 14.73 ms (derived; MarkTemplate.StepResponseFigures).
 //
@@ -85,7 +85,7 @@ struct TemplateTables {
     std::array<double, kSpan> v;           // v_j: over u and the transmitter's rise time (1)
     std::array<double, kSpan> v_position;  // over u alone, the template's rise (1; for reference)
     std::array<std::array<double, kSpan>, kSpan> c;  // c[a][b], the pair term of two edges at ages a and b (1)
-    double half_point_s;                   // s: key-down to the template's half amplitude (20.79 ms on the default)
+    double half_point_s;                   // s: key-down to the template's half amplitude (20.78 ms on the default)
 };
 
 // The rise times the edge term averages over (derived from the stated distribution: 79 points, ends included).

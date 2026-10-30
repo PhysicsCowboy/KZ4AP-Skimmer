@@ -19,7 +19,6 @@ set(KZ4AP_VITERBI_SOURCES
   src/viterbi/morse_tree.cpp
   src/viterbi/fist.cpp
   src/viterbi/observation.cpp
-  src/viterbi/level.cpp
   src/viterbi/search.cpp
   src/viterbi/hiss.cpp
   src/viterbi/front_filter.cpp
@@ -35,7 +34,6 @@ set(KZ4AP_VITERBI_SOURCES
 # only (bench/CMakeLists.txt; Ruling 76), so it builds before any of them exists; no source the tool needs may read a
 # generated table (OmegaBarTable::compiled() is defined in the generated omega_bar_table.cpp itself).
 set(KZ4AP_GENERATED_SOURCES
-  src/viterbi/weight_table.cpp
   src/viterbi/omega_bar_table.cpp
 )
 
@@ -138,12 +136,10 @@ add_executable(kz4ap_viterbi_tests
   tests/viterbi/morse_tree_test.cpp
   tests/viterbi/fist_test.cpp
   tests/viterbi/observation_test.cpp
-  tests/viterbi/level_test.cpp
   tests/viterbi/search_test.cpp
   tests/viterbi/hiss_test.cpp
   tests/viterbi/front_filter_test.cpp
   tests/viterbi/mark_template_test.cpp
-  tests/viterbi/weight_test.cpp
   tests/viterbi/systematic_test.cpp
   tests/viterbi/amplitude_test.cpp
   tests/viterbi/long_run_test.cpp
@@ -161,7 +157,7 @@ set_tests_properties(Search.FullSweep PROPERTIES ENVIRONMENT KZ4AP_SEARCH_FULL_S
 # Labeled full-sweep as above (without KZ4AP_VITERBI_FULL_SWEEP the test runs on one minute of noise).
 add_test(NAME ViterbiDecoder.FullSweep COMMAND kz4ap_viterbi_tests --gtest_filter=ViterbiDecoder.TenMinutesOfNoise)
 set_tests_properties(ViterbiDecoder.FullSweep PROPERTIES ENVIRONMENT KZ4AP_VITERBI_FULL_SWEEP=1 LABELS full-sweep)
-# The strong stations, +30 to +60 dB S500 at 16 positions of the keying edge within a piece (the systematic term);
+# The strong stations, +30 to +60 dB S500 at 16 positions of the keying edge within a sample (the systematic term);
 # about 2.5 min on the Windows PC. Labeled full-sweep as above (without KZ4AP_VITERBI_FULL_SWEEP the test skips).
 add_test(NAME ViterbiDecoder.StrongFullSweep COMMAND kz4ap_viterbi_tests
          --gtest_filter=ViterbiDecoder.StrongStationsAtEveryEdgePosition)

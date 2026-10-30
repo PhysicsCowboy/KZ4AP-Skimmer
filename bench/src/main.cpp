@@ -294,7 +294,7 @@ int run_engine(const Args& args) {
         if (!args.viterbi_options.genie.empty()) {
             for (std::size_t i = 0; i < labels->signals.size(); ++i)
                 config.viterbi_genie.push_back(
-                    genie_from_label(labels->signals[i], i, args.viterbi_options.genie, config.viterbi.piece_s));
+                    genie_from_label(labels->signals[i], i, args.viterbi_options.genie, config.viterbi.sample_interval_s));
         }
         // With oracle channels the engine builds their decoders now and refuses what the library cannot use; on the
         // detector path no decoder exists until a track is born, so the configuration is tried first.

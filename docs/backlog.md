@@ -1609,3 +1609,7 @@ for the line format and client handling.
   way to inject a test decoder).
 - **Input checks:** reject infinite values in decoder settings; generator
   arguments (zero or negative counts and durations).
+
+## Fast code between whole samples (new decoder, found 2026-10-30)
+
+"PARIS PARIS" at 80 and 100 WPM reads wrongly on most seeds, with letters merged or split (`P<AR>IS`, `PAR5`, `LARIS`), and gets worse from +20 to +40 dB S500, while 70 and 90 WPM are mostly exact and 90 WPM (a dot of exactly 5 samples of 2.667 ms) is exact at +40 dB S500 on 6 of 6 seeds. Dots of 5.6 and 4.5 samples cannot be claimed exactly, and the misfit grows with the signal. The joint edge-offset item (design notes, part 5, the audit's row 10) is the first thing to try. Measured on 6 seeds per point, a 25 WPM to 100 WPM slice of synthetic machine keying only.

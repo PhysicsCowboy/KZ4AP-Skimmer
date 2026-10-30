@@ -28,12 +28,13 @@ using nlohmann::ordered_json;
 
 // The compile-time guard in bench/tests/viterbi_json_test.cpp stops that file from compiling when a field is added or
 // removed, until this table is changed with it.
-#define KZ4AP_VITERBI_CONFIG_FIELDS(X)                                                                              \
-    X(piece_s) X(dot_min_ms) X(speed_ratio) X(speed_count) X(fist_medians_dots)                                     \
-    X(fist_sigmas) X(fist_shifts_dots) X(beam_nats) X(ceiling) X(fading_spread_hz) X(block_loss_db)                 \
-    X(keying_rise_s) X(systematic_floor) X(over_rate_per_s) X(rescue_epsilon) X(word_end_p) X(over_end_q)          \
-    X(level_min_db) X(level_max_db) X(quadrature_order) X(hiss_half_width_hz) X(hiss_percentile) X(hiss_average_s)  \
-    X(genie_fading_spread_hz) X(stats)
+#define KZ4AP_VITERBI_CONFIG_FIELDS(X) \
+    X(sample_interval_s) X(dot_min_ms) X(speed_ratio) X(speed_count) X(fist_medians_dots) X(fist_sigmas)  \
+    X(fist_shifts_dots) X(beam_nats) X(ceiling) X(front_dot_s) X(edge_rise_s) X(edge_rise_min_s)  \
+    X(edge_rise_max_s) X(fading_spread_hz) X(systematic_floor) X(nu_bin_s) X(nu_memory_s) X(over_rate_per_s)  \
+    X(rescue_epsilon) X(word_end_p) X(over_end_q) X(level_min_db) X(level_max_db) X(quadrature_order)  \
+    X(newborn_switch_sigma_u) X(newborn_grid_points) X(newborn_live_range_nats) X(newborn_fade_interval_s)  \
+    X(hiss_half_width_hz) X(hiss_percentile) X(hiss_average_s) X(genie_fading_spread_hz) X(stats)
 
 ordered_json field_json(double v) { return ordered_json(v); }
 ordered_json field_json(int v) { return ordered_json(v); }
@@ -178,38 +179,38 @@ ordered_json optional_time(const std::optional<double>& t, const std::string& wh
 
 ordered_json fields_json() {
     ordered_json stats = ordered_json::object();
-    stats["pieces"] = "count: pieces searched, each config.piece_s long";
-    stats["ceiling_pieces"] = "count: pieces at which the ceiling dropped at least one story";
+    stats["samples"] = "count: samples searched, each config.sample_interval_s long";
+    stats["ceiling_samples"] = "count: samples at which the ceiling dropped at least one story";
     stats["live_histogram"] =
-        "counts: pieces, by the number of live stories after pruning, in bins of 10 stories: entry k counts the "
-        "pieces with 10 k to 10 k + 9 live stories";
+        "counts: samples, by the number of live stories after pruning, in bins of 10 stories: entry k counts the "
+        "samples with 10 k to 10 k + 9 live stories";
     stats["live_mean_100ms"] =
-        "stories: the mean number of live stories after pruning in each 0.1 s window of pieces (round(0.1 s / "
-        "config.piece_s) pieces), from the channel's first piece; the last entry covers the pieces of its window "
+        "stories: the mean number of live stories after pruning in each 0.1 s window of samples (round(0.1 s / "
+        "config.sample_interval_s) samples), from the channel's first sample; the last entry covers the samples of its window "
         "searched so far";
     stats["live_max_100ms"] = "stories: the largest number of live stories after pruning in each window, as above";
     stats["lines"] =
         "columns: the newborn lines in the order of their ids (line 0 is the channel's first story), as columns named "
         "by the members of NewbornLine, each an array with one entry per line";
     ordered_json line = ordered_json::object();
-    line["birth_s"] = "s: the stream time of the piece at which the line was created (line 0: the first piece's)";
+    line["birth_s"] = "s: the stream time of the sample at which the line was created (line 0: the first sample's)";
     line["kind"] =
         "code into line_kinds: how the line began (Start: line 0, the channel's first story, in the no-signal state; "
         "Silence: a newborn from silence, an over starts; Rescue: a rescue newborn, the sender begins a new story at "
         "a letter start)";
     line["first_led_s"] =
-        "s or null: the stream time of the first piece after whose pruning one of the line's stories was the best; "
+        "s or null: the stream time of the first sample after whose pruning one of the line's stories was the best; "
         "null if none ever was";
     line["largest_deficit_nats"] =
-        "nats: how far the line's best story was behind the best, at most, after the pruning of each piece from its "
-        "birth until it first led, or over its life if it never led; at its birth piece the newborn's own deficit, "
-        "even where the newborn did not survive that piece";
+        "nats: how far the line's best story was behind the best, at most, after the pruning of each sample from its "
+        "birth until it first led, or over its life if it never led; at its birth sample the newborn's own deficit, "
+        "even where the newborn did not survive that sample";
     line["end"] =
         "code into line_ends: which step removed the line's last story (Alive while it has one; Merge: merged into a "
         "better story of its state; Beam: more than beam_nats behind the best; Ceiling: beyond the ceiling's best "
         "stories)";
     line["end_s"] =
-        "s or null: the stream time of the piece at which the line's last story was removed; null while it is alive";
+        "s or null: the stream time of the sample at which the line's last story was removed; null while it is alive";
     line["ended_in_first_element"] =
         "true or false: the line's last story was removed before any story of the line had left the newborn's first "
         "mark (false for line 0)";
@@ -222,16 +223,16 @@ ordered_json fields_json() {
 // What each member of a version 2 channel is, and of a line that led (the version 1 legend of a line and the line's id).
 ordered_json fields_summary_json() {
     ordered_json summary = ordered_json::object();
-    summary["pieces"] = "count: pieces searched, each config.piece_s long";
-    summary["ceiling_pieces"] = "count: pieces at which the ceiling dropped at least one story";
+    summary["samples"] = "count: samples searched, each config.sample_interval_s long";
+    summary["ceiling_samples"] = "count: samples at which the ceiling dropped at least one story";
     summary["live_histogram"] =
-        "counts: pieces, by the number of live stories after pruning, in bins of 10 stories: entry k counts the "
-        "pieces with 10 k to 10 k + 9 live stories";
+        "counts: samples, by the number of live stories after pruning, in bins of 10 stories: entry k counts the "
+        "samples with 10 k to 10 k + 9 live stories";
     summary["live_mean_stories"] =
-        "stories: the mean number of live stories after pruning over the channel's pieces: the means of the 0.1 s "
-        "windows (round(0.1 s / config.piece_s) pieces each, the last one the rest of the pieces) weighted by their "
-        "pieces";
-    summary["live_max_stories"] = "stories: the largest number of live stories after pruning at any piece";
+        "stories: the mean number of live stories after pruning over the channel's samples: the means of the 0.1 s "
+        "windows (round(0.1 s / config.sample_interval_s) samples each, the last one the rest of the samples) weighted by their "
+        "samples";
+    summary["live_max_stories"] = "stories: the largest number of live stories after pruning at any sample";
     summary["lines"] = "count: the newborn lines (line 0 is the channel's first story)";
     summary["fates"] =
         "counts: the newborn lines by fates[kind][end][ended_in_first_element][led], 3 x 4 x 2 x 2 integers: kind is "
@@ -292,8 +293,8 @@ ordered_json channel_json(std::uint32_t track_id, const std::optional<int>& labe
     ordered_json j = ordered_json::object();
     j["track_id"] = track_id;
     j["label_index"] = label_index ? ordered_json(*label_index) : ordered_json(nullptr);
-    j["pieces"] = s.pieces;
-    j["ceiling_pieces"] = s.ceiling_pieces;
+    j["samples"] = s.samples;
+    j["ceiling_samples"] = s.ceiling_samples;
     ordered_json histogram = ordered_json::array();
     for (const std::int64_t count : s.live_histogram) histogram.push_back(count);
     j["live_histogram"] = std::move(histogram);
@@ -481,7 +482,7 @@ const char* genie_kind_name(GenieKind kind) {
 }
 
 viterbi::ViterbiGenie genie_from_label(const LabeledSignal& label, std::size_t index, std::span<const GenieKind> kinds,
-                                       double piece_s) {
+                                       double sample_interval_s) {
     const auto wants = [&](GenieKind kind) { return std::find(kinds.begin(), kinds.end(), kind) != kinds.end(); };
     const std::string who = "genie, signal " + std::to_string(index);
     const bool several_stations = label.sender_count > 1;
@@ -503,8 +504,8 @@ viterbi::ViterbiGenie genie_from_label(const LabeledSignal& label, std::size_t i
                                         std::to_string(*label.wpm_end) + " WPM; one dot cannot give both speeds");
         if (!(label.wpm > 0.0) || !std::isfinite(label.wpm))
             throw std::invalid_argument(who + ": the speed, " + std::to_string(label.wpm) + " WPM, is not a speed");
-        if (!(piece_s > 0.0) || !std::isfinite(piece_s))
-            throw std::invalid_argument(who + ": piece_s must be positive and finite (s)");
+        if (!(sample_interval_s > 0.0) || !std::isfinite(sample_interval_s))
+            throw std::invalid_argument(who + ": sample_interval_s must be positive and finite (s)");
         const auto& table = styles();
         const auto style = std::find_if(table.begin(), table.end(),
                                         [&](const Style& candidate) { return candidate.name == label.keying; });
@@ -519,10 +520,10 @@ viterbi::ViterbiGenie genie_from_label(const LabeledSignal& label, std::size_t i
         for (std::size_t kind = 0; kind < 5; ++kind) {
             const Duration& duration = style->kinds[kind];
             fist.medians_dots[kind] = duration.median_dots;
-            // At least one piece over the median length, in ln(length): the floor of the header (class: heuristic; the
+            // At least one sample over the median length, in ln(length): the floor of the header (class: heuristic; the
             // fist needs sigma > 0, and "machine" is exact, sigma 0, so the sender's timing is taken as known to one
-            // piece, 2 ms at the default; neither derived nor measured).
-            fist.sigmas[kind] = std::max(duration.sigma, piece_s / (duration.median_dots * dot_s));
+            // sample, 2 ms at the default; neither derived nor measured).
+            fist.sigmas[kind] = std::max(duration.sigma, sample_interval_s / (duration.median_dots * dot_s));
             // the marks are longer, the spaces shorter, by the imbalance; in the generator the Farnsworth factor
             // does not stretch it (0.0 - x, not -x: no imbalance is a shift of 0, not of -0)
             fist.shifts_dots[kind] = kind < 2 ? label.imbalance_dits : 0.0 - label.imbalance_dits;
@@ -635,8 +636,8 @@ ChannelStats channel_stats_from_json(const ordered_json& j) {
     const ordered_json& label = member(j, "label_index", at);
     if (!label.is_null()) channel.label_index = static_cast<int>(integer(label, "label_index", at));
     viterbi::SearchStats& s = channel.stats;
-    s.pieces = integer(member(j, "pieces", at), "pieces", at);
-    s.ceiling_pieces = integer(member(j, "ceiling_pieces", at), "ceiling_pieces", at);
+    s.samples = integer(member(j, "samples", at), "samples", at);
+    s.ceiling_samples = integer(member(j, "ceiling_samples", at), "ceiling_samples", at);
     for (const ordered_json& count : array_member(j, "live_histogram", at))
         s.live_histogram.push_back(integer(count, "live_histogram", at));
     for (const ordered_json& x : array_member(j, "live_mean_100ms", at))
@@ -703,7 +704,7 @@ StatsFile stats_file_from_json(const ordered_json& j) {
 
 void write_stats_file(const std::filesystem::path& path, const StatsFile& file) {
     // The channels are written one at a time, each turned into JSON when its turn comes (a channel keeps up to two
-    // lines per piece, so all of them at once would be large); the file is written under a name of its own and
+    // lines per sample, so all of them at once would be large); the file is written under a name of its own and
     // renamed when complete, so that a statistic that is not finite, or a full disk, leaves no file that looks
     // complete (as the replay tool writes its decoded files).
     write_stats_stream(path, header_json(file), file.channels.size(),
@@ -725,32 +726,32 @@ StatsFile read_stats_file(const std::filesystem::path& path) {
 // ---- The statistics file, version 2: the summary ----
 
 ChannelSummary summarize_channel(std::uint32_t track_id, std::optional<int> label_index,
-                                 const viterbi::SearchStats& stats, double piece_s) {
-    if (!(piece_s > 0.0) || !std::isfinite(piece_s))
-        throw std::invalid_argument("statistics: piece_s must be positive and finite (s)");
+                                 const viterbi::SearchStats& stats, double sample_interval_s) {
+    if (!(sample_interval_s > 0.0) || !std::isfinite(sample_interval_s))
+        throw std::invalid_argument("statistics: sample_interval_s must be positive and finite (s)");
     ChannelSummary summary;
     summary.track_id = track_id;
     summary.label_index = label_index;
-    summary.pieces = stats.pieces;
-    summary.ceiling_pieces = stats.ceiling_pieces;
+    summary.samples = stats.samples;
+    summary.ceiling_samples = stats.ceiling_samples;
     summary.live_histogram = stats.live_histogram;
-    // The live series is kept in windows of round(0.1 s / piece_s) pieces, the last window holding the rest of the
-    // pieces (search.cpp, update_stats): the mean over the pieces weights each window's mean by its pieces.
-    const std::int64_t window = std::max<std::int64_t>(1, std::llround(kStatsWindowS / piece_s));
+    // The live series is kept in windows of round(0.1 s / sample_interval_s) samples, the last window holding the rest of the
+    // samples (search.cpp, update_stats): the mean over the samples weights each window's mean by its samples.
+    const std::int64_t window = std::max<std::int64_t>(1, std::llround(kStatsWindowS / sample_interval_s));
     const auto windows = static_cast<std::int64_t>(stats.live_mean_100ms.size());
     if (stats.live_max_100ms.size() != stats.live_mean_100ms.size())
         throw std::invalid_argument("statistics: " + std::to_string(stats.live_mean_100ms.size()) +
                                     " windows of means but " + std::to_string(stats.live_max_100ms.size()) +
                                     " of maxima");
-    const std::int64_t last = stats.pieces - window * (windows - 1);
-    if ((stats.pieces == 0) != (windows == 0) || (windows > 0 && (last < 1 || last > window)))
+    const std::int64_t last = stats.samples - window * (windows - 1);
+    if ((stats.samples == 0) != (windows == 0) || (windows > 0 && (last < 1 || last > window)))
         throw std::invalid_argument("statistics: " + std::to_string(windows) + " windows of " + std::to_string(window) +
-                                    " pieces do not cover the " + std::to_string(stats.pieces) + " pieces searched");
+                                    " samples do not cover the " + std::to_string(stats.samples) + " samples searched");
     double weighted = 0.0;
     for (std::int64_t w = 0; w < windows; ++w)
         weighted += static_cast<double>(stats.live_mean_100ms[static_cast<std::size_t>(w)]) *
                     static_cast<double>(w + 1 < windows ? window : last);
-    summary.live_mean_stories = stats.pieces > 0 ? weighted / static_cast<double>(stats.pieces) : 0.0;
+    summary.live_mean_stories = stats.samples > 0 ? weighted / static_cast<double>(stats.samples) : 0.0;
     for (const float x : stats.live_max_100ms)
         summary.live_max_stories = std::max(summary.live_max_stories, static_cast<double>(x));
     summary.lines = static_cast<std::int64_t>(stats.lines.size());
@@ -771,15 +772,15 @@ ChannelSummary summarize_channel(std::uint32_t track_id, std::optional<int> labe
     return summary;
 }
 
-ChannelSummary summarize(const ChannelStats& channel, double piece_s) {
-    return summarize_channel(channel.track_id, channel.label_index, channel.stats, piece_s);
+ChannelSummary summarize(const ChannelStats& channel, double sample_interval_s) {
+    return summarize_channel(channel.track_id, channel.label_index, channel.stats, sample_interval_s);
 }
 
 StatsSummaryFile summarize(const StatsFile& file) {
     StatsSummaryFile out;
     out.recording = file.recording;
     out.config = file.config;
-    for (const ChannelStats& channel : file.channels) out.channels.push_back(summarize(channel, file.config.piece_s));
+    for (const ChannelStats& channel : file.channels) out.channels.push_back(summarize(channel, file.config.sample_interval_s));
     return out;
 }
 
@@ -791,7 +792,7 @@ StatsSummaryFile collect_stats_summary(const Engine& engine, const std::string& 
     for (std::size_t i = 0; i < channels; ++i) {
         const auto track = static_cast<std::uint32_t>(i + 1);
         file.channels.push_back(
-            summarize_channel(track, static_cast<int>(i), engine_stats(engine, track), config.piece_s));
+            summarize_channel(track, static_cast<int>(i), engine_stats(engine, track), config.sample_interval_s));
     }
     return file;
 }
@@ -803,8 +804,8 @@ ordered_json to_json(const ChannelSummary& c) {
     ordered_json j = ordered_json::object();
     j["track_id"] = c.track_id;
     j["label_index"] = c.label_index ? ordered_json(*c.label_index) : ordered_json(nullptr);
-    j["pieces"] = c.pieces;
-    j["ceiling_pieces"] = c.ceiling_pieces;
+    j["samples"] = c.samples;
+    j["ceiling_samples"] = c.ceiling_samples;
     ordered_json histogram = ordered_json::array();
     for (const std::int64_t count : c.live_histogram) histogram.push_back(count);
     j["live_histogram"] = std::move(histogram);
@@ -867,8 +868,8 @@ ChannelSummary channel_summary_from_json(const ordered_json& j) {
     const std::string at = "channel " + std::to_string(c.track_id);
     const ordered_json& label = member(j, "label_index", at);
     if (!label.is_null()) c.label_index = static_cast<int>(integer(label, "label_index", at));
-    c.pieces = integer(member(j, "pieces", at), "pieces", at);
-    c.ceiling_pieces = integer(member(j, "ceiling_pieces", at), "ceiling_pieces", at);
+    c.samples = integer(member(j, "samples", at), "samples", at);
+    c.ceiling_samples = integer(member(j, "ceiling_samples", at), "ceiling_samples", at);
     std::int64_t in_histogram = 0;
     for (const ordered_json& count : array_member(j, "live_histogram", at)) {
         const std::int64_t n = integer(count, "live_histogram", at);
@@ -876,9 +877,9 @@ ChannelSummary channel_summary_from_json(const ordered_json& j) {
         c.live_histogram.push_back(n);
         in_histogram += n;
     }
-    // each piece is in one bin
-    if (in_histogram != c.pieces)
-        bad(at, "live_histogram counts " + std::to_string(in_histogram) + " pieces, not the " + std::to_string(c.pieces) +
+    // each sample is in one bin
+    if (in_histogram != c.samples)
+        bad(at, "live_histogram counts " + std::to_string(in_histogram) + " samples, not the " + std::to_string(c.samples) +
                     " searched");
     c.live_mean_stories = number(member(j, "live_mean_stories", at), "live_mean_stories", at);
     c.live_max_stories = number(member(j, "live_max_stories", at), "live_max_stories", at);
@@ -1026,7 +1027,7 @@ void write_run_stats(const std::filesystem::path& path, const Engine& engine, co
     } else {
         write_stats_stream(path, header_json(kStatsSummaryVersion, recording, config), channels, [&](std::size_t i) {
             return to_json(
-                summarize_channel(track_of(i), static_cast<int>(i), engine_stats(engine, track_of(i)), config.piece_s));
+                summarize_channel(track_of(i), static_cast<int>(i), engine_stats(engine, track_of(i)), config.sample_interval_s));
         });
     }
 }

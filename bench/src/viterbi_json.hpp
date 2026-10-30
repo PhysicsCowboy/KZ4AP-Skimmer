@@ -40,9 +40,9 @@
 //              - imbalance_dits for the gaps (the Farnsworth factor does not stretch them, as in the generator), where
 //              length = shift + median x exp(sigma N).
 //              The fist needs sigma > 0, and the style "machine" is exact (sigma 0); the decoder cannot resolve a
-//              length better than a piece anyway. So each sigma is at least one piece over the kind's median length,
-//              piece_s / (median_dots x dot), in ln(length). CLASS: heuristic (an exact sender's timing known to one
-//              piece, 2 ms at the default; neither derived nor measured). It also raises the small sigmas of the
+//              length better than a sample anyway. So each sigma is at least one sample over the kind's median length,
+//              sample_interval_s / (median_dots x dot), in ln(length). CLASS: heuristic (an exact sender's timing known to one
+//              sample, 2 ms at the default; neither derived nor measured). It also raises the small sigmas of the
 //              other styles at fast speeds (the "computer" style at 100 WPM, for one). The decoder has no Farnsworth
 //              factor (standard spacing only, the owner's decision D14 of 2026-10-21) and the labels' farnsworth_wpm
 //              is not read: for a Farnsworth-spaced signal the genie fist gives the style's standard medians, and
@@ -73,7 +73,7 @@
 //     (measured on a real recording of 14 channels, 307.9 channel-seconds, DEV2's group A2, the file's own bytes: 19.8
 //     kB, where version 1 took 14.0 MB); one run over all of DEV2 (14 204 channels in 498 recordings) is about 18 MB.
 //   version 1, --stats-detail: every newborn line of each channel (NewbornLine), as columns. The search creates a
-//     Silence line and a Rescue line at every piece, so the file holds two lines per piece, always: 45 kB per channel-
+//     Silence line and a Rescue line at every sample, so the file holds two lines per sample, always: 45 kB per channel-
 //     second, whatever the signal (measured: 45.5 kB on the real recording above, 45.4 kB on a recording of two
 //     stations), 164 MB per channel-hour. For a small run (R0, diagnosis); one run over all of DEV2 would be 48 GB.
 //
@@ -93,30 +93,30 @@
 //   "line_ends"    the names of LineEnd (Alive, Merge, Beam, Ceiling) in the order of its values: "end" is an index
 //   "channels"     an array with one object per channel, in the order the run gives them (oracle: the labels')
 // A channel's "track_id" is the engine's track id (an oracle channel i has the id i + 1), its "label_index" the label's
-// index (oracle: track_id - 1) or null where there is no label, "pieces" (count) the pieces searched, each config.piece_s
-// long, "ceiling_pieces" (count) those at which the ceiling dropped at least one story, and "live_histogram" (counts)
-// the pieces by the number of live stories after pruning, in bins of 10 (entry k counts the pieces with 10 k to
-// 10 k + 9 live stories). The times are stream times, in s, of the ends of pieces; a line's deficits are relative to the
-// best story at their piece. Version 1 adds:
+// index (oracle: track_id - 1) or null where there is no label, "samples" (count) the samples searched, each config.sample_interval_s
+// long, "ceiling_samples" (count) those at which the ceiling dropped at least one story, and "live_histogram" (counts)
+// the samples by the number of live stories after pruning, in bins of 10 (entry k counts the samples with 10 k to
+// 10 k + 9 live stories). The times are stream times, in s, of the ends of samples; a line's deficits are relative to the
+// best story at their sample. Version 1 adds:
 //     "live_mean_100ms", "live_max_100ms"  stories: the mean and the largest live count after pruning in each window of
-//                      round(0.1 s / piece_s) = 50 pieces, from the channel's first piece; the last entry covers the
-//                      pieces of its window searched so far
+//                      round(0.1 s / sample_interval_s) = 50 samples, from the channel's first sample; the last entry covers the
+//                      samples of its window searched so far
 //     "lines"          the newborn lines in the order of their ids (the position is the id; line 0 is the channel's
 //                      first story), as columns named by NewbornLine's members, each an array with one entry per line:
 //                      "birth_s" s; "kind" an index into "line_kinds"; "first_led_s" s or null; "largest_deficit_nats"
 //                      nats; "end" an index into "line_ends"; "end_s" s or null; "ended_in_first_element" true or false
 // Columns, not one object per line: seven member names per line would triple the file. A column array becomes a data
 // frame column in one step (pandas.DataFrame(channel["lines"])). Version 2 adds, and the header gains "fate_axes":
-//     "live_mean_stories"  stories: the mean number of live stories after pruning over the channel's pieces, the 0.1 s
-//                      windows' means weighted by their pieces (the last window holds the rest of the pieces)
-//     "live_max_stories"   stories: the largest live count after pruning at any piece
+//     "live_mean_stories"  stories: the mean number of live stories after pruning over the channel's samples, the 0.1 s
+//                      windows' means weighted by their samples (the last window holds the rest of the samples)
+//     "live_max_stories"   stories: the largest live count after pruning at any sample
 //     "lines"          count: the newborn lines (version 1's column length)
 //     "fates"          counts of the lines by fates[kind][end][ended_in_first_element][led]: kind and end are indices
 //                      into "line_kinds" and "line_ends", the last two axes 0 (false) or 1 (true), "led" whether
 //                      first_led_s is not null; 3 x 4 x 2 x 2 integers, whose axes the header's "fate_axes" names
 //     "led_lines"      columns: the lines that ever led, as the columns of version 1's "lines" and one more, "line": the
 //                      line's id in version 1's order (ascending); "first_led_s" is never null here
-// WHY these lines and no others: a line that never led never had the best story at any piece, so it never supplied the
+// WHY these lines and no others: a line that never led never had the best story at any sample, so it never supplied the
 // text the decoder would have printed at any moment; R1 needs each deficit of the newborns that led (their maximum and
 // upper quantiles: no counter gives them), and there are few of them (two for a channel of one station, measured); the
 // fates count the rest by kind, end, first element and led, for R0 (the newborns' fates), R2 (the newborns the beam
@@ -182,11 +182,11 @@ GenieKind parse_genie_kind(const std::string& name);
 const char* genie_kind_name(GenieKind kind);
 
 // The genie values of one oracle channel from the label of its station, the parts `kinds` names (see above). `index` is
-// the label's number in the labels file, for the messages; piece_s, in s, is the configuration's piece, for the fist's
+// the label's number in the labels file, for the messages; sample_interval_s, in s, is the configuration's sample, for the fist's
 // smallest sigma. Throws std::invalid_argument, naming the signal, for a label that has no single truth to give, a
-// keying style that the table does not have, and a speed or piece that is not positive and finite.
+// keying style that the table does not have, and a speed or sample that is not positive and finite.
 viterbi::ViterbiGenie genie_from_label(const LabeledSignal& label, std::size_t index, std::span<const GenieKind> kinds,
-                                       double piece_s);
+                                       double sample_interval_s);
 
 // A channel's genie values as the result file records them: fading_spread_hz (or null) and fist (or null; else dot_ms,
 // medians_dots, sigmas, shifts_dots).
@@ -278,11 +278,11 @@ using FateCounts = std::array<std::array<std::array<std::array<std::int64_t, 2>,
 struct ChannelSummary {
     std::uint32_t track_id = 0;
     std::optional<int> label_index;
-    std::int64_t pieces = 0;          // count
-    std::int64_t ceiling_pieces = 0;  // count
+    std::int64_t samples = 0;          // count
+    std::int64_t ceiling_samples = 0;  // count
     std::vector<std::int64_t> live_histogram;  // counts, bins of 10 stories
-    double live_mean_stories = 0.0;   // stories: over the pieces, the 0.1 s windows' means weighted by their pieces
-    double live_max_stories = 0.0;    // stories: at any piece
+    double live_mean_stories = 0.0;   // stories: over the samples, the 0.1 s windows' means weighted by their samples
+    double live_max_stories = 0.0;    // stories: at any sample
     std::int64_t lines = 0;           // count: the newborn lines
     FateCounts fates{};               // counts
     std::vector<std::int64_t> led_line_ids;       // the ids of the lines that ever led, ascending
@@ -297,13 +297,13 @@ struct StatsSummaryFile {
     std::vector<ChannelSummary> channels;
 };
 
-// A channel's summary from its statistics; piece_s, in s, is the configuration's. The windows of the live series must
-// cover the pieces (all of round(0.1 s / piece_s) pieces, the last one the rest: the search's rule), else
+// A channel's summary from its statistics; sample_interval_s, in s, is the configuration's. The windows of the live series must
+// cover the samples (all of round(0.1 s / sample_interval_s) samples, the last one the rest: the search's rule), else
 // std::invalid_argument; so for a line whose kind or end is not in the legends.
 ChannelSummary summarize_channel(std::uint32_t track_id, std::optional<int> label_index,
-                                 const viterbi::SearchStats& stats, double piece_s);
-ChannelSummary summarize(const ChannelStats& channel, double piece_s);
-// The summary of a whole version 1 file, with the file's piece_s.
+                                 const viterbi::SearchStats& stats, double sample_interval_s);
+ChannelSummary summarize(const ChannelStats& channel, double sample_interval_s);
+// The summary of a whole version 1 file, with the file's sample_interval_s.
 StatsSummaryFile summarize(const StatsFile& file);
 
 // The summary file of a finished run on `channels` oracle channels, as collect_stats_file's channels but reduced as they
@@ -318,7 +318,7 @@ nlohmann::ordered_json to_json(const StatsSummaryFile& file);
 
 // The reverse. Throw std::invalid_argument, naming the key, for another format or version (a version 1 file is read by
 // stats_file_from_json), a missing or mistyped key, a code outside its legend, columns of unequal length, line ids that
-// do not ascend, or counts that do not agree (the histogram adds up to the pieces, the fates to the lines, and the
+// do not ascend, or counts that do not agree (the histogram adds up to the samples, the fates to the lines, and the
 // lines that led, by kind, end and first element, are the fates' led counts).
 ChannelSummary channel_summary_from_json(const nlohmann::ordered_json& j);
 StatsSummaryFile stats_summary_file_from_json(const nlohmann::ordered_json& j);

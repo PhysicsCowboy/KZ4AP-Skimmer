@@ -1,5 +1,5 @@
 // The long-run amplitude per story: Omega_hat, nu and the default Omega_bar (design notes, "Detection, amplitude,
-// frequency and the mark's shape", part 7; plan 1b, Task 7). Library code: the decoder does not run it yet.
+// frequency and the mark's shape", part 7; plan 1b, Task 7). The decoder runs it (search.hpp; viterbi_decoder.hpp).
 //
 // 1. Omega_hat, each story's RMS power by ordinary least squares (owner, 2026-10-23 and 2026-10-25; derived):
 //        Omega_hat = sum_k s_k^2 (e_k^2 - sigma_y^2) / sum_k s_k^4      (FS^2),

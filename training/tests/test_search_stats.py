@@ -42,7 +42,7 @@ def naive_fates(channel):
     return counts
 
 
-def line_channel(lines, pieces=100, ceiling_pieces=0, means=None, maxima=None, track_id=1):
+def line_channel(lines, samples=100, ceiling_samples=0, means=None, maxima=None, track_id=1):
     """A version 1 channel from `lines`, a list of (kind, end, first_element, led_at, deficit) tuples: a hand-made
     channel for the cases the real file does not hold."""
     cols = {"birth_s": [], "kind": [], "first_led_s": [], "largest_deficit_nats": [], "end": [], "end_s": [],
@@ -55,9 +55,9 @@ def line_channel(lines, pieces=100, ceiling_pieces=0, means=None, maxima=None, t
         cols["end"].append(end)
         cols["end_s"].append(None if end == 0 else 0.002 * k + 0.01)
         cols["ended_in_first_element"].append(first)
-    windows = math.ceil(pieces / 50)
-    return {"track_id": track_id, "label_index": track_id - 1, "pieces": pieces, "ceiling_pieces": ceiling_pieces,
-            "live_histogram": [pieces], "live_mean_100ms": [3.0] * windows if means is None else means,
+    windows = math.ceil(samples / 50)
+    return {"track_id": track_id, "label_index": track_id - 1, "samples": samples, "ceiling_samples": ceiling_samples,
+            "live_histogram": [samples], "live_mean_100ms": [3.0] * windows if means is None else means,
             "live_max_100ms": [5.0] * windows if maxima is None else maxima, "lines": cols}
 
 
@@ -67,17 +67,17 @@ def test_the_real_file_reads_as_format_version_1():
     stats = search_stats.read_stats(V1)
     assert stats["format"] == "kz4ap-viterbi-search-stats" and stats["version"] == 1
     assert [c["track_id"] for c in stats["channels"]] == [1, 2]
-    assert stats["config"]["piece_s"] == 0.002 and stats["config"]["beam_nats"] == 40.0
+    assert stats["config"]["sample_interval_s"] == 0.002 and stats["config"]["beam_nats"] == 40.0
 
 
 def test_a_channel_reduces_to_counts_the_live_stories_and_the_lines_that_led():
     stats = v1_file()
-    piece_s = stats["config"]["piece_s"]
+    sample_interval_s = stats["config"]["sample_interval_s"]
     for channel in stats["channels"]:
-        s = search_stats.reduce_channel(channel, piece_s)
+        s = search_stats.reduce_channel(channel, sample_interval_s)
         columns = channel["lines"]
         assert (s["track_id"], s["label_index"]) == (channel["track_id"], channel["label_index"])
-        assert (s["pieces"], s["ceiling_pieces"]) == (523, channel["ceiling_pieces"])
+        assert (s["samples"], s["ceiling_samples"]) == (523, channel["ceiling_samples"])
         assert s["live_histogram"] == channel["live_histogram"]
         assert s["lines"] == len(columns["kind"]) == 1045
         # the fates: a count of the lines for each (kind, end, ended in its first element, led), 3 x 4 x 2 x 2
@@ -93,8 +93,8 @@ def test_a_channel_reduces_to_counts_the_live_stories_and_the_lines_that_led():
         assert s["led_lines"]["line"] == led
         for name in search_stats.LINE_COLUMNS:
             assert s["led_lines"][name] == [columns[name][i] for i in led]
-        # live stories: the largest of the windows' maxima, and the mean over the pieces, the windows weighted by their
-        # pieces (10 windows of 50 pieces and a last one of 23)
+        # live stories: the largest of the windows' maxima, and the mean over the samples, the windows weighted by their
+        # samples (10 windows of 50 samples and a last one of 23)
         assert s["live_max_stories"] == max(channel["live_max_100ms"]) == 1700.0
         means = channel["live_mean_100ms"]
         assert len(means) == 11
@@ -109,20 +109,20 @@ def test_the_real_files_two_channels_are_a_station_and_noise():
     assert channels[0]["led_lines"]["line"] == [0, 89] and channels[1]["led_lines"]["line"] == [0]
     assert channels[0]["led_lines"]["kind"] == [0, 1] and channels[0]["led_lines"]["first_led_s"][1] == 0.12
     assert channels[0]["led_lines"]["largest_deficit_nats"][1] == pytest.approx(17.382956934607172)
-    assert (channels[0]["ceiling_pieces"], channels[1]["ceiling_pieces"]) == (362, 501)
+    assert (channels[0]["ceiling_samples"], channels[1]["ceiling_samples"]) == (362, 501)
 
 
 def test_the_group_reductions_of_the_real_file():
     stats = v1_file()
-    piece_s = stats["config"]["piece_s"]
-    channels = [search_stats.reduce_channel(c, piece_s) for c in stats["channels"]]
-    g = search_stats.reduce_group(channels, piece_s, COSTS)
-    assert (g["channels"], g["pieces"]) == (2, 1046) and g["channel_seconds"] == pytest.approx(2.092)
-    # R0: live stories (mean over the pieces, maximum), the share of pieces where the ceiling decided
+    sample_interval_s = stats["config"]["sample_interval_s"]
+    channels = [search_stats.reduce_channel(c, sample_interval_s) for c in stats["channels"]]
+    g = search_stats.reduce_group(channels, sample_interval_s, COSTS)
+    assert (g["channels"], g["samples"]) == (2, 1046) and g["channel_seconds"] == pytest.approx(2.092)
+    # R0: live stories (mean over the samples, maximum), the share of samples where the ceiling decided
     assert g["live_stories"]["max"] == 1700.0
     assert g["live_stories"]["mean"] == pytest.approx(
         (channels[0]["live_mean_stories"] * 523 + channels[1]["live_mean_stories"] * 523) / 1046)
-    assert g["ceiling_pieces"] == 362 + 501 and g["ceiling_share"] == pytest.approx(863 / 1046)
+    assert g["ceiling_samples"] == 362 + 501 and g["ceiling_share"] == pytest.approx(863 / 1046)
     # R0: the newborns' fates by kind and by end
     both = [naive_fates(c) for c in stats["channels"]]
 
@@ -169,7 +169,7 @@ def test_the_group_reductions_of_the_real_file():
 
 def test_a_newborns_starting_cost_is_derived_from_the_runs_configuration_by_its_kind():
     config = search_stats.read_stats(V1)["config"]   # the defaults: P = 0.05 /s x 2 ms, epsilon = 1e-3, 32 speeds
-    assert (config["over_rate_per_s"], config["piece_s"], config["rescue_epsilon"], config["speed_count"]) == (
+    assert (config["over_rate_per_s"], config["sample_interval_s"], config["rescue_epsilon"], config["speed_count"]) == (
         0.05, 0.002, 1e-3, 32)
     costs = search_stats.starting_costs_nats(config)
     assert list(costs) == ["Silence", "Rescue"]
@@ -183,7 +183,7 @@ def test_a_newborns_starting_cost_is_derived_from_the_runs_configuration_by_its_
     # each term follows its configuration value
     assert search_stats.starting_costs_nats({**config, "over_rate_per_s": 0.5})["Silence"] == pytest.approx(
         math.log(1e3) + math.log(32))
-    assert search_stats.starting_costs_nats({**config, "piece_s": 0.004})["Silence"] == pytest.approx(
+    assert search_stats.starting_costs_nats({**config, "sample_interval_s": 0.004})["Silence"] == pytest.approx(
         math.log(1 / 2e-4) + math.log(32))
     assert search_stats.starting_costs_nats({**config, "rescue_epsilon": 1e-2})["Rescue"] == pytest.approx(
         math.log(100) + math.log(32) + 4.5)
@@ -196,10 +196,10 @@ def test_a_newborns_starting_cost_is_derived_from_the_runs_configuration_by_its_
     # a configuration that gives no cost is refused, naming what is wrong
     for bad, why in (({"over_rate_per_s": 0.0}, "over_rate_per_s"), ({"over_rate_per_s": 600.0}, "over_rate_per_s"),
                      ({"rescue_epsilon": 1.0}, "rescue_epsilon"), ({"rescue_epsilon": 0.0}, "rescue_epsilon"),
-                     ({"speed_count": 0}, "speed_count"), ({"piece_s": -0.002}, "piece_s")):
+                     ({"speed_count": 0}, "speed_count"), ({"sample_interval_s": -0.002}, "sample_interval_s")):
         with pytest.raises(ValueError, match=why):
             search_stats.starting_costs_nats({**config, **bad})
-    for key in ("over_rate_per_s", "rescue_epsilon", "speed_count", "piece_s"):
+    for key in ("over_rate_per_s", "rescue_epsilon", "speed_count", "sample_interval_s"):
         without = {k: v for k, v in config.items() if k != key}
         with pytest.raises(ValueError, match=key):
             search_stats.starting_costs_nats(without)
@@ -207,29 +207,29 @@ def test_a_newborns_starting_cost_is_derived_from_the_runs_configuration_by_its_
 
 # --- the definitions, on hand-made channels ---
 
-def test_the_window_of_the_live_series_is_a_tenth_of_a_second_in_pieces():
-    assert search_stats.window_pieces(0.002) == 50
-    assert search_stats.window_pieces(0.004) == 25
-    assert search_stats.window_pieces(0.003) == 33     # 33.3: rounded
-    assert search_stats.window_pieces(0.0035) == 29    # 28.57
-    assert search_stats.window_pieces(0.5) == 1        # never below one piece
+def test_the_window_of_the_live_series_is_a_tenth_of_a_second_in_samples():
+    assert search_stats.window_samples(0.002) == 50
+    assert search_stats.window_samples(0.004) == 25
+    assert search_stats.window_samples(0.003) == 33     # 33.3: rounded
+    assert search_stats.window_samples(0.0035) == 29    # 28.57
+    assert search_stats.window_samples(0.5) == 1        # never below one sample
 
 
-def test_the_mean_live_stories_weights_each_window_by_its_pieces():
-    # 120 pieces: windows of 50, 50 and 20 pieces
-    channel = line_channel([(0, 0, 0, 0.002, 0.0)], pieces=120, means=[10.0, 20.0, 40.0], maxima=[12.0, 25.0, 41.0])
+def test_the_mean_live_stories_weights_each_window_by_its_samples():
+    # 120 samples: windows of 50, 50 and 20 samples
+    channel = line_channel([(0, 0, 0, 0.002, 0.0)], samples=120, means=[10.0, 20.0, 40.0], maxima=[12.0, 25.0, 41.0])
     s = search_stats.reduce_channel(channel, 0.002)
     assert s["live_mean_stories"] == pytest.approx((50 * 10.0 + 50 * 20.0 + 20 * 40.0) / 120)
     assert s["live_max_stories"] == 41.0
     # a channel that searched nothing
-    empty = search_stats.reduce_channel(line_channel([], pieces=0, means=[], maxima=[]), 0.002)
-    assert (empty["pieces"], empty["lines"], empty["live_mean_stories"], empty["live_max_stories"]) == (0, 0, 0.0, 0.0)
+    empty = search_stats.reduce_channel(line_channel([], samples=0, means=[], maxima=[]), 0.002)
+    assert (empty["samples"], empty["lines"], empty["live_mean_stories"], empty["live_max_stories"]) == (0, 0, 0.0, 0.0)
     assert empty["led_lines"]["line"] == [] and empty["fates"][0][0] == [[0, 0], [0, 0]]
-    # windows that do not cover the pieces are refused, not averaged wrongly
+    # windows that do not cover the samples are refused, not averaged wrongly
     with pytest.raises(ValueError, match="windows"):
-        search_stats.reduce_channel(line_channel([], pieces=120, means=[1.0, 1.0], maxima=[1.0, 1.0]), 0.002)
+        search_stats.reduce_channel(line_channel([], samples=120, means=[1.0, 1.0], maxima=[1.0, 1.0]), 0.002)
     with pytest.raises(ValueError, match="windows"):
-        search_stats.reduce_channel(line_channel([], pieces=120, means=[1.0] * 4, maxima=[1.0] * 4), 0.002)
+        search_stats.reduce_channel(line_channel([], samples=120, means=[1.0] * 4, maxima=[1.0] * 4), 0.002)
 
 
 def test_the_lines_that_led_keep_their_kind_end_and_first_element_and_the_fates_count_everything():
@@ -311,9 +311,9 @@ def test_the_deficit_quantiles_are_values_of_the_data_by_the_inverted_cdf():
     assert d["deficit"]["by_kind"]["Rescue"] == {"newborns": 0, "max": None}
 
 
-def test_a_group_pools_channels_by_pieces_and_takes_the_largest_maximum():
-    a = line_channel([(0, 1, 0, 0.002, 0.0)], pieces=100, ceiling_pieces=10, means=[10.0, 10.0], maxima=[11.0, 12.0])
-    b = line_channel([(0, 0, 0, 0.002, 0.0)], pieces=300, ceiling_pieces=90, means=[30.0] * 6, maxima=[31.0] * 6,
+def test_a_group_pools_channels_by_samples_and_takes_the_largest_maximum():
+    a = line_channel([(0, 1, 0, 0.002, 0.0)], samples=100, ceiling_samples=10, means=[10.0, 10.0], maxima=[11.0, 12.0])
+    b = line_channel([(0, 0, 0, 0.002, 0.0)], samples=300, ceiling_samples=90, means=[30.0] * 6, maxima=[31.0] * 6,
                      track_id=2)
     g = search_stats.reduce_group([search_stats.reduce_channel(c, 0.002) for c in (a, b)], 0.002, COSTS)
     assert g["live_stories"] == {"mean": pytest.approx((100 * 10.0 + 300 * 30.0) / 400), "max": 31.0}
@@ -354,7 +354,7 @@ def _suite(tmp_path, stats_text, run="r1", genie=None):
 def test_a_runs_statistics_are_reduced_per_group_and_pooled(tmp_path):
     _suite(tmp_path, V1.read_text(encoding="utf-8"))
     s = search_stats.run_summary(tmp_path, "r1")
-    assert (s["run"], s["versions"], s["piece_s"], s["test_cases"]) == ("r1", [1], 0.002, 2)
+    assert (s["run"], s["versions"], s["sample_interval_s"], s["test_cases"]) == ("r1", [1], 0.002, 2)
     assert s["without_statistics"] == ["A2-awgn-c02-0-s1"]    # decoded, but no statistics file; the detector copy has none
     assert list(s["groups"]) == ["A2 sensitivity", "B2 fading"]
     assert s["groups"]["A2 sensitivity"]["channels"] == s["groups"]["B2 fading"]["channels"] == 2
@@ -362,7 +362,7 @@ def test_a_runs_statistics_are_reduced_per_group_and_pooled(tmp_path):
     # each group is the reduction of the file's two channels, and all is the four channels
     one = search_stats.reduce_group(search_stats.channel_summaries(v1_file()), 0.002, COSTS)
     assert s["groups"]["A2 sensitivity"] == one == s["groups"]["B2 fading"]
-    assert s["all"]["pieces"] == 2 * one["pieces"] and s["all"]["ceiling_pieces"] == 2 * one["ceiling_pieces"]
+    assert s["all"]["samples"] == 2 * one["samples"] and s["all"]["ceiling_samples"] == 2 * one["ceiling_samples"]
     assert s["all"]["led_deficits_nats"]["newborns"] == 2
     # the starting costs come from the files' configuration (the defaults), once for the run
     assert s["starting_cost_nats"] == pytest.approx(COSTS) and s["genie_fist"] is False
@@ -370,7 +370,7 @@ def test_a_runs_statistics_are_reduced_per_group_and_pooled(tmp_path):
     # a row for each channel, to join with the run's per-signal results
     assert len(s["channels"]) == 4
     first = s["channels"][0]
-    assert (first["group"], first["test_case"], first["index"], first["pieces"]) == (
+    assert (first["group"], first["test_case"], first["index"], first["samples"]) == (
         "A2 sensitivity", "A2-awgn-c01-0-s1", 0, 523)
     assert first["dropped_by_beam_in_first_element"] > 0 and first["removed_by_ceiling"] == 100 + 155
     assert first["led_deficit_max_nats"] == pytest.approx(17.382956934607172)
@@ -407,17 +407,17 @@ def test_a_runs_summary_is_written_as_tables_and_data(tmp_path):
     assert "learning its level" in second_table                                       # what the 4.5 nats are
 
 
-def test_a_run_with_nothing_to_reduce_or_mixed_pieces_is_refused(tmp_path):
+def test_a_run_with_nothing_to_reduce_or_mixed_samples_is_refused(tmp_path):
     folder = _suite(tmp_path, V1.read_text(encoding="utf-8"))
     with pytest.raises(ValueError, match="no results folder named 'nope'"):
         search_stats.run_summary(tmp_path, "nope")
     with pytest.raises(ValueError, match="no statistics files"):
         search_stats.run_summary(tmp_path, "r1", only=r"^never$")
-    # a file with another piece (s) cannot be pooled with the first
+    # a file with another sample (s) cannot be pooled with the first
     other = v1_file()
-    other["config"]["piece_s"] = 0.004
-    for ch in other["channels"]:     # the same windows of 0.1 s hold 25 pieces: 523 pieces would need 21 windows
-        ch["pieces"], ch["live_mean_100ms"], ch["live_max_100ms"] = 60, [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]
+    other["config"]["sample_interval_s"] = 0.004
+    for ch in other["channels"]:     # the same windows of 0.1 s hold 25 samples: 523 samples would need 21 windows
+        ch["samples"], ch["live_mean_100ms"], ch["live_max_100ms"] = 60, [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]
     (folder / "B2-fading-c01-0-s1.stats.json").write_text(json.dumps(other), encoding="utf-8")
     with pytest.raises(ValueError, match="0.004 s"):
         search_stats.run_summary(tmp_path, "r1")
@@ -495,14 +495,14 @@ def test_the_committed_summary_is_the_reduction_of_the_committed_full_file():
     assert summary["fate_axes"] == list(search_stats.FATE_AXES)
     # the legend names every member of a summary channel and of a line that led, and a unit first
     fields = summary["fields"]["ChannelSummary"]
-    assert set(fields) == {"pieces", "ceiling_pieces", "live_histogram", "live_mean_stories", "live_max_stories",
+    assert set(fields) == {"samples", "ceiling_samples", "live_histogram", "live_mean_stories", "live_max_stories",
                            "lines", "fates", "led_lines"}
     assert set(fields) | {"track_id", "label_index"} == set(summary["channels"][0])
     assert set(summary["fields"]["NewbornLine"]) == {"line", *search_stats.LINE_COLUMNS}
     # the reduction of each full channel is the summary's channel
-    piece_s = full["config"]["piece_s"]
+    sample_interval_s = full["config"]["sample_interval_s"]
     assert len(full["channels"]) == len(summary["channels"]) == 2
-    for mine, theirs in zip((search_stats.reduce_channel(c, piece_s) for c in full["channels"]),
+    for mine, theirs in zip((search_stats.reduce_channel(c, sample_interval_s) for c in full["channels"]),
                             summary["channels"]):
         assert_same(mine, theirs)
     # what the summary does not keep: the 0.1 s series, and the lines that never led
@@ -513,9 +513,9 @@ def test_the_committed_summary_is_the_reduction_of_the_committed_full_file():
 
 def test_either_version_gives_the_same_group_and_run_reductions(tmp_path):
     full, summary = search_stats.read_stats(V1), search_stats.read_stats(V2)
-    piece_s = full["config"]["piece_s"]
-    assert_same(search_stats.reduce_group(search_stats.channel_summaries(full), piece_s, COSTS),
-                search_stats.reduce_group(search_stats.channel_summaries(summary), piece_s, COSTS))
+    sample_interval_s = full["config"]["sample_interval_s"]
+    assert_same(search_stats.reduce_group(search_stats.channel_summaries(full), sample_interval_s, COSTS),
+                search_stats.reduce_group(search_stats.channel_summaries(summary), sample_interval_s, COSTS))
     runs = []
     for version, path in ((1, V1), (2, V2)):
         suite = tmp_path / f"v{version}"
@@ -544,8 +544,8 @@ def test_a_version_2_channel_that_lacks_a_member_is_refused():
 
 def test_a_version_2_channel_that_contradicts_itself_is_refused():
     # The reader checks what the bench's writer guarantees (a file edited or assembled by hand is the case): the
-    # histogram adds up to the pieces, the fates to the lines, and the lines that led, by kind, end and first element, are
-    # the fates' led counts. The real file's first channel: 523 pieces, 1 045 lines, two of which led (line 0, the first
+    # histogram adds up to the samples, the fates to the lines, and the lines that led, by kind, end and first element, are
+    # the fates' led counts. The real file's first channel: 523 samples, 1 045 lines, two of which led (line 0, the first
     # story, kind Start, merged; line 89, kind Silence, alive).
     base = search_stats.read_stats(V2)
     assert len(search_stats.channel_summaries(base)) == 2
@@ -560,11 +560,11 @@ def test_a_version_2_channel_that_contradicts_itself_is_refused():
     def bump_histogram(c):
         c["live_histogram"][0] += 1
 
-    def bump_pieces(c):
-        c["pieces"] += 1
+    def bump_samples(c):
+        c["samples"] += 1
 
     assert "live_histogram" in refusal(bump_histogram) and "channel 1" in refusal(bump_histogram)
-    assert "live_histogram" in refusal(bump_pieces)
+    assert "live_histogram" in refusal(bump_samples)
     assert "fates" in refusal(lambda c: c.update(lines=c["lines"] + 1))
     assert "fates" in refusal(lambda c: c["fates"][2][3][1].__setitem__(1, c["fates"][2][3][1][1] + 1))
     assert "fates" in refusal(lambda c: c["fates"].pop())                       # 2 kinds, not 3
@@ -592,7 +592,7 @@ def test_what_the_reduction_makes_passes_the_checks_of_a_summary():
     lines = [(0, 1, 0, 0.002, 0.0), (1, 0, 0, 0.040, 25.0), (2, 2, 1, 0.050, 17.0), (1, 2, 1, None, 41.0),
              (2, 3, 0, None, 9.5)]
     search_stats.check_summary_channel(search_stats.reduce_channel(line_channel(lines), 0.002))
-    search_stats.check_summary_channel(search_stats.reduce_channel(line_channel([], pieces=0, means=[], maxima=[]), 0.002))
+    search_stats.check_summary_channel(search_stats.reduce_channel(line_channel([], samples=0, means=[], maxima=[]), 0.002))
 
 
 # --- the reader ---

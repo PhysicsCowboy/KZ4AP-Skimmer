@@ -104,12 +104,13 @@ detector assigns it (see `docs/signal-processing.md`, sections 6 and 8b);
 `--decoder envelope` (also `baseline`) selects the milestone-1 pipeline;
 `--decoder bank` selects the filter-bank decoder (section 8c), whose results
 the suites write to `results/bank`; `--decoder viterbi` selects the new decoder
-(the first prototype, section 8d; selectable, not the default), which prints
+(per envelope sample, every 2.667 ms; section 8d is brought up to date at the
+next checkpoint; selectable, not the default), which prints
 its best story's text when the recording ends. Its settings are `--set
 NAME=VALUE` (repeatable; NAME is a field of `ViterbiConfig` in
 `engine/include/kz4ap/viterbi/config.hpp`, the value in the field's own
 physical unit, and the result file's `config` block records every field), for
-genie runs on oracle channels `--genie fist|frequency|fading` (repeatable; it
+genie runs on oracle channels `--genie fist|fading` (repeatable; it
 needs `--oracle` and takes the true timing, carrier or fading spread from the
 labels), and `--stats FILE` (with `--oracle`), which writes the search's
 statistics for each channel as JSON: a summary (live stories, how often the

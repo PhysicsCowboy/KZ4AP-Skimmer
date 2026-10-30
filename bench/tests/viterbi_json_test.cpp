@@ -75,21 +75,79 @@ std::string setting_refusal(ViterbiConfig& config, const std::string& setting) {
 // removing a ViterbiConfig field stops this file from compiling until this list, the table in viterbi_json.cpp and the
 // expected names below are changed together.
 void every_field_is_named(const ViterbiConfig& c) {
-    [[maybe_unused]] const auto& [piece_s, dot_min_ms, speed_ratio, speed_count, fist_medians_dots, fist_sigmas,
-                                  fist_shifts_dots, beam_nats, ceiling, fading_spread_hz, block_loss_db,
-                                  keying_rise_s, systematic_floor, over_rate_per_s, rescue_epsilon, word_end_p,
-                                  over_end_q, level_min_db, level_max_db, quadrature_order, hiss_half_width_hz,
-                                  hiss_percentile, hiss_average_s, genie_fading_spread_hz, stats] = c;
+    [[maybe_unused]] const auto& [sample_interval_s,
+                                  dot_min_ms,
+                                  speed_ratio,
+                                  speed_count,
+                                  fist_medians_dots,
+                                  fist_sigmas,
+                                  fist_shifts_dots,
+                                  beam_nats,
+                                  ceiling,
+                                  front_dot_s,
+                                  edge_rise_s,
+                                  edge_rise_min_s,
+                                  edge_rise_max_s,
+                                  fading_spread_hz,
+                                  systematic_floor,
+                                  nu_bin_s,
+                                  nu_memory_s,
+                                  over_rate_per_s,
+                                  rescue_epsilon,
+                                  word_end_p,
+                                  over_end_q,
+                                  level_min_db,
+                                  level_max_db,
+                                  quadrature_order,
+                                  newborn_switch_sigma_u,
+                                  newborn_grid_points,
+                                  newborn_live_range_nats,
+                                  newborn_fade_interval_s,
+                                  hiss_half_width_hz,
+                                  hiss_percentile,
+                                  hiss_average_s,
+                                  genie_fading_spread_hz,
+                                  stats] = c;
 }
 
 const std::vector<std::string> kExpectedNames = {
-    "piece_s", "dot_min_ms", "speed_ratio", "speed_count", "fist_medians_dots",
-    "fist_sigmas", "fist_shifts_dots", "beam_nats", "ceiling", "fading_spread_hz", "block_loss_db", "keying_rise_s",
-    "systematic_floor", "over_rate_per_s", "rescue_epsilon", "word_end_p", "over_end_q", "level_min_db", "level_max_db",
-    "quadrature_order", "hiss_half_width_hz", "hiss_percentile", "hiss_average_s", "genie_fading_spread_hz", "stats"};
+    "sample_interval_s",
+    "dot_min_ms",
+    "speed_ratio",
+    "speed_count",
+    "fist_medians_dots",
+    "fist_sigmas",
+    "fist_shifts_dots",
+    "beam_nats",
+    "ceiling",
+    "front_dot_s",
+    "edge_rise_s",
+    "edge_rise_min_s",
+    "edge_rise_max_s",
+    "fading_spread_hz",
+    "systematic_floor",
+    "nu_bin_s",
+    "nu_memory_s",
+    "over_rate_per_s",
+    "rescue_epsilon",
+    "word_end_p",
+    "over_end_q",
+    "level_min_db",
+    "level_max_db",
+    "quadrature_order",
+    "newborn_switch_sigma_u",
+    "newborn_grid_points",
+    "newborn_live_range_nats",
+    "newborn_fade_interval_s",
+    "hiss_half_width_hz",
+    "hiss_percentile",
+    "hiss_average_s",
+    "genie_fading_spread_hz",
+    "stats"};
 
 // The fields that the decoder's frequency tracker and the frequency genie had (removed: design Parts 10 and 12).
 const std::vector<std::string> kRemovedNames = {
+    "piece_s", "block_loss_db", "keying_rise_s", "systematic_memory_s", "systematic_lookahead_s",
     "tracker_window_s",          "tracker_hop_s",   "tracker_search_hz",         "tracker_gate_db",
     "tracker_drift_sd_hz_per_s", "tracker_drift_noise", "genie_frequency_offset_hz", "genie_frequency_drift_hz_per_s"};
 
@@ -103,7 +161,7 @@ TEST(ViterbiJson, TheConfigurationHasEveryFieldInDeclarationOrder) {
     EXPECT_EQ(names, kExpectedNames);
     EXPECT_EQ(kz4ap::bench::viterbi_config_field_names(), kExpectedNames);
     // the defaults, each in its own kind and unit
-    EXPECT_EQ(j.at("piece_s"), 0.002);
+    EXPECT_EQ(j.at("sample_interval_s"), 4.0 / 1500.0);
     EXPECT_EQ(j.at("dot_min_ms"), 12.0);
     EXPECT_TRUE(j.at("speed_count").is_number_integer());
     EXPECT_EQ(j.at("speed_count"), 32);
@@ -114,7 +172,8 @@ TEST(ViterbiJson, TheConfigurationHasEveryFieldInDeclarationOrder) {
     EXPECT_EQ(j.at("fist_shifts_dots"), ordered_json::array({0.0, 0.0, 0.0, 0.0, 0.0}));
     EXPECT_EQ(j.at("beam_nats"), 40.0);
     EXPECT_EQ(j.at("ceiling"), 1700);
-    EXPECT_EQ(j.at("fading_spread_hz"), 1.0);
+    EXPECT_EQ(j.at("fading_spread_hz"), 2.0);
+    EXPECT_EQ(j.at("newborn_live_range_nats"), 160.0);
     EXPECT_EQ(j.at("systematic_floor"), 0.02);
     EXPECT_EQ(j.at("level_max_db"), 85.0);
     EXPECT_EQ(j.at("quadrature_order"), 5);
@@ -205,7 +264,7 @@ TEST(ViterbiJson, AnUnknownNameFails) {
 
 TEST(ViterbiJson, TheConfigurationRoundTripsThroughItsJson) {
     ViterbiConfig c;
-    c.piece_s = 0.004;
+    c.sample_interval_s = 0.004;
     c.dot_min_ms = 10.0;
     c.speed_ratio = 1.05;
     c.speed_count = 61;
@@ -215,8 +274,16 @@ TEST(ViterbiJson, TheConfigurationRoundTripsThroughItsJson) {
     c.beam_nats = 80.0;
     c.ceiling = 17000;
     c.fading_spread_hz = 0.3;
-    c.block_loss_db = 0.25;
-    c.keying_rise_s = 0.0;
+    c.front_dot_s = 0.015;
+    c.edge_rise_s = 0.003;
+    c.edge_rise_min_s = 0.001;
+    c.edge_rise_max_s = 0.005;
+    c.nu_bin_s = 0.08;
+    c.nu_memory_s = 0.8;
+    c.newborn_switch_sigma_u = 0.2;
+    c.newborn_grid_points = 64;
+    c.newborn_live_range_nats = 100.0;
+    c.newborn_fade_interval_s = 0.04;
     c.systematic_floor = 0.05;
     c.over_rate_per_s = 0.5;
     c.rescue_epsilon = 1e-2;
@@ -341,16 +408,16 @@ LabeledSignal signal_with(const std::string& extra = "", double wpm = 25.0) {
     return parse_labels(json).signals.at(0);
 }
 
-// The genie of `kinds` from a label, as the bench gives it: the label the index-th of its file, the piece 2 ms.
+// The genie of `kinds` from a label, as the bench gives it: the label the index-th of its file, the sample 2 ms.
 ViterbiGenie genie_of(const LabeledSignal& label, std::initializer_list<GenieKind> kinds, std::size_t index = 0,
-                      double piece_s = 0.002) {
+                      double sample_interval_s = 0.002) {
     const std::vector<GenieKind> list(kinds);
-    return genie_from_label(label, index, list, piece_s);
+    return genie_from_label(label, index, list, sample_interval_s);
 }
 
 std::string genie_refusal(const LabeledSignal& label, std::initializer_list<GenieKind> kinds, std::size_t index = 0,
-                          double piece_s = 0.002) {
-    return refusal_of([&] { genie_of(label, kinds, index, piece_s); });
+                          double sample_interval_s = 0.002) {
+    return refusal_of([&] { genie_of(label, kinds, index, sample_interval_s); });
 }
 
 // ---- The oracle's frequency from the labels ----
@@ -429,9 +496,9 @@ TEST(ViterbiJsonGenie, TheFadingSpreadIsTheLabelsAndZeroForASignalThatDoesNotFad
     }
 }
 
-TEST(ViterbiJsonGenie, TheFistOfAMachineIsExactToAPiece) {
+TEST(ViterbiJsonGenie, TheFistOfAMachineIsExactToASample) {
     // machine keying at 25 WPM: a dot of 48 ms, medians 1, 3, 1, 3, 7 dots, no shifts; sigma 0 does not exist for the
-    // fist, so each sigma is one piece over the kind's median length (heuristic): 0.002 s / (median x 0.048 s)
+    // fist, so each sigma is one sample over the kind's median length (heuristic): 0.002 s / (median x 0.048 s)
     const ViterbiGenie g = genie_of(signal_with(), {GenieKind::Fist});
     ASSERT_TRUE(g.fist.has_value());
     EXPECT_NEAR(g.fist->dot_ms, 48.0, 1e-12);
@@ -442,7 +509,7 @@ TEST(ViterbiJsonGenie, TheFistOfAMachineIsExactToAPiece) {
     for (std::size_t kind = 0; kind < 5; ++kind)
         EXPECT_NEAR(g.fist->sigmas[kind], 0.002 / (medians[kind] * 0.048), 1e-12) << kind;
     EXPECT_FALSE(g.fading_spread_hz.has_value());
-    // a coarser piece, a larger floor
+    // a coarser sample, a larger floor
     const ViterbiGenie coarse = genie_of(signal_with(), {GenieKind::Fist}, 0, 0.004);
     EXPECT_NEAR(coarse.fist->sigmas[0], 0.004 / 0.048, 1e-12);
 }
@@ -463,9 +530,9 @@ TEST(ViterbiJsonGenie, TheFistOfAHandKeyHasItsStylesMediansSigmasAndTheImbalance
     }
 }
 
-TEST(ViterbiJsonGenie, AStylesSmallSigmasAreRaisedToAPieceAtAFastSpeed) {
+TEST(ViterbiJsonGenie, AStylesSmallSigmasAreRaisedToASampleAtAFastSpeed) {
     // "computer": mu (0, 1.10, 0, 1.10, 1.94), sigma (0.05, 0.016, 0.05, 0.016, 0.008). At 100 WPM (a dot of 12 ms) one
-    // piece (2 ms) is 1/6 of a dot, and the floors 0.002 / (median x 0.012) lie above every one of the style's sigmas.
+    // sample (2 ms) is 1/6 of a dot, and the floors 0.002 / (median x 0.012) lie above every one of the style's sigmas.
     const ViterbiGenie g = genie_of(signal_with(R"("keying": "computer")", 100.0), {GenieKind::Fist});
     ASSERT_TRUE(g.fist.has_value());
     EXPECT_NEAR(g.fist->dot_ms, 12.0, 1e-12);
@@ -506,7 +573,7 @@ TEST(ViterbiJsonGenie, ALabelWithNoSingleTruthIsRefusedByNumber) {
     EXPECT_TRUE(contains(why, "signal 2")) << why;
     EXPECT_TRUE(contains(why, "stations")) << why;
     EXPECT_EQ(genie_refusal(qso, {GenieKind::Fading}, 2), "(accepted)");
-    // a style the table does not have, a speed that is not a speed, a piece that is not a length
+    // a style the table does not have, a speed that is not a speed, a sample that is not a length
     const LabeledSignal fiddle = signal_with(R"("keying": "fiddle")");
     const std::string style = genie_refusal(fiddle, {GenieKind::Fist}, 4);
     EXPECT_TRUE(contains(style, "fiddle")) << style;
@@ -561,8 +628,8 @@ TEST(ViterbiJsonGenie, TheResultFileRecordsEachChannelsValues) {
 // short in decimal, a double that is not (0.1 + 0.2), lines of every kind and end, and optional times set and absent.
 SearchStats sample_stats() {
     SearchStats s;
-    s.pieces = 123456789012LL;
-    s.ceiling_pieces = 7;
+    s.samples = 123456789012LL;
+    s.ceiling_samples = 7;
     s.live_histogram = {5, 0, 170, 3, 1};
     s.live_mean_100ms = {1.0f, 0.1f, 1699.5f, 1.0f / 3.0f, 16777216.0f};
     s.live_max_100ms = {1.0f, 3.0f, 1700.0f, 2.0f, 1e-3f};
@@ -600,6 +667,7 @@ SearchStats sample_stats() {
 StatsFile sample_file() {
     StatsFile file;
     file.recording = "C2-fists-c05-s1.wav";
+    file.config.sample_interval_s = 0.002;  // the statistics below hold windows of 50 samples
     file.config.beam_nats = 80.0;
     file.config.ceiling = 17000;
     file.config.stats = true;
@@ -656,7 +724,7 @@ TEST(ViterbiJsonStats, TheFileNamesItsKeysUnitsAndCodes) {
     EXPECT_EQ(j.at("line_ends"), ordered_json::array({"Alive", "Merge", "Beam", "Ceiling"}));
     // every member of SearchStats and of NewbornLine, by its C++ name, with its unit first
     const ordered_json& stats_fields = j.at("fields").at("SearchStats");
-    for (const char* name : {"pieces", "ceiling_pieces", "live_histogram", "live_mean_100ms", "live_max_100ms",
+    for (const char* name : {"samples", "ceiling_samples", "live_histogram", "live_mean_100ms", "live_max_100ms",
                              "lines"})
         EXPECT_TRUE(stats_fields.contains(name)) << name;
     const ordered_json& line_fields = j.at("fields").at("NewbornLine");
@@ -673,8 +741,8 @@ TEST(ViterbiJsonStats, TheFileNamesItsKeysUnitsAndCodes) {
     EXPECT_EQ(channel.at("track_id"), 1);
     EXPECT_EQ(channel.at("label_index"), 0);
     EXPECT_TRUE(j.at("channels").at(2).at("label_index").is_null());
-    EXPECT_EQ(channel.at("pieces"), 123456789012LL);
-    EXPECT_EQ(channel.at("ceiling_pieces"), 7);
+    EXPECT_EQ(channel.at("samples"), 123456789012LL);
+    EXPECT_EQ(channel.at("ceiling_samples"), 7);
     EXPECT_EQ(channel.at("live_histogram"), ordered_json::array({5, 0, 170, 3, 1}));
     const ordered_json& lines = channel.at("lines");
     EXPECT_EQ(lines.at("kind"), ordered_json::array({0, 1, 2, 1}));
@@ -738,7 +806,7 @@ TEST(ViterbiJsonStats, TheFileOfARunHoldsEachOracleChannelsStatistics) {
         EXPECT_EQ(*channel.label_index, static_cast<int>(track - 1));
         ASSERT_NE(engine.viterbi_stats(track), nullptr);
         EXPECT_EQ(channel.stats, *engine.viterbi_stats(track));
-        EXPECT_GT(channel.stats.pieces, 0);
+        EXPECT_GT(channel.stats.samples, 0);
         EXPECT_FALSE(channel.stats.lines.empty());
     }
     const std::string path = temp_file_name("collected");
@@ -770,8 +838,8 @@ TEST(ViterbiJsonStats, AReaderRefusesWhatItCannotRead) {
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["format"] = "something-else"; }), "format"));
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["version"] = 2; }), "version"));
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j.erase("channels"); }), "channels"));
-    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0].erase("pieces"); }), "pieces"));
-    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["pieces"] = "many"; }), "pieces"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0].erase("samples"); }), "samples"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["samples"] = "many"; }), "samples"));
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["live_histogram"][1] = 0.5; }),
                          "live_histogram"));
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["lines"].erase("end_s"); }), "end_s"));
@@ -809,15 +877,15 @@ TEST(ViterbiJsonStats, AStatisticThatIsNotFiniteIsNotWritten) {
 
 // ---- The statistics file, version 2: the summary ----
 
-// Statistics that follow the search's own rules, which the summary checks: 120 pieces are windows of 50, 50 and 20
-// (round(0.1 s / 2 ms) = 50 pieces), the histogram adds up to the pieces. Five lines: the first story (led, merged), a
+// Statistics that follow the search's own rules, which the summary checks: 120 samples are windows of 50, 50 and 20
+// (round(0.1 s / 2 ms) = 50 samples), the histogram adds up to the samples. Five lines: the first story (led, merged), a
 // newborn from silence the beam dropped in its first element (never led), a rescue newborn that led and is alive, a
 // newborn from silence that led and was dropped by the beam after its first element, and a rescue newborn the ceiling
 // removed in its first element (never led).
 SearchStats counted_stats() {
     SearchStats s;
-    s.pieces = 120;
-    s.ceiling_pieces = 7;
+    s.samples = 120;
+    s.ceiling_samples = 7;
     s.live_histogram = {60, 40, 20};
     s.live_mean_100ms = {10.0f, 20.0f, 40.0f};
     s.live_max_100ms = {12.0f, 25.0f, 41.0f};
@@ -860,11 +928,12 @@ SearchStats counted_stats() {
 StatsSummaryFile counted_summary_file() {
     StatsSummaryFile file;
     file.recording = "A2-awgn-c05-0-s1.wav";
+    file.config.sample_interval_s = 0.002;  // the statistics below hold windows of 50 samples
     file.config.beam_nats = 35.0;
     file.config.stats = true;
-    file.channels.push_back(kz4ap::bench::summarize_channel(1, 0, counted_stats(), file.config.piece_s));
-    file.channels.push_back(kz4ap::bench::summarize_channel(2, 1, SearchStats{}, file.config.piece_s));
-    file.channels.push_back(kz4ap::bench::summarize_channel(9, std::nullopt, counted_stats(), file.config.piece_s));
+    file.channels.push_back(kz4ap::bench::summarize_channel(1, 0, counted_stats(), file.config.sample_interval_s));
+    file.channels.push_back(kz4ap::bench::summarize_channel(2, 1, SearchStats{}, file.config.sample_interval_s));
+    file.channels.push_back(kz4ap::bench::summarize_channel(9, std::nullopt, counted_stats(), file.config.sample_interval_s));
     return file;
 }
 
@@ -874,8 +943,8 @@ TEST(ViterbiJsonSummary, TheSummaryCountsTheLinesByFateAndKeepsTheLinesThatLed) 
     EXPECT_EQ(c.track_id, 4u);
     ASSERT_TRUE(c.label_index.has_value());
     EXPECT_EQ(*c.label_index, 3);
-    EXPECT_EQ(c.pieces, 120);
-    EXPECT_EQ(c.ceiling_pieces, 7);
+    EXPECT_EQ(c.samples, 120);
+    EXPECT_EQ(c.ceiling_samples, 7);
     EXPECT_EQ(c.live_histogram, stats.live_histogram);
     EXPECT_DOUBLE_EQ(c.live_mean_stories, (50 * 10.0 + 50 * 20.0 + 20 * 40.0) / 120.0);
     EXPECT_EQ(c.live_max_stories, 41.0);
@@ -903,7 +972,7 @@ TEST(ViterbiJsonSummary, TheSummaryCountsTheLinesByFateAndKeepsTheLinesThatLed) 
 
 TEST(ViterbiJsonSummary, AChannelThatSearchedNothingHasAnEmptySummary) {
     const kz4ap::bench::ChannelSummary c = kz4ap::bench::summarize_channel(2, 1, SearchStats{}, 0.002);
-    EXPECT_EQ(c.pieces, 0);
+    EXPECT_EQ(c.samples, 0);
     EXPECT_EQ(c.lines, 0);
     EXPECT_EQ(c.live_mean_stories, 0.0);
     EXPECT_EQ(c.live_max_stories, 0.0);
@@ -914,20 +983,20 @@ TEST(ViterbiJsonSummary, AChannelThatSearchedNothingHasAnEmptySummary) {
     EXPECT_EQ(c, expected);
 }
 
-TEST(ViterbiJsonSummary, TheWindowsOfTheLiveSeriesMustCoverThePieces) {
-    // 120 pieces at 2 ms are windows of 50, 50 and 20 pieces
+TEST(ViterbiJsonSummary, TheWindowsOfTheLiveSeriesMustCoverTheSamples) {
+    // 120 samples at 2 ms are windows of 50, 50 and 20 samples
     const auto refusal = [](auto edit) {
         SearchStats s = counted_stats();
         edit(s);
         return refusal_of([&] { kz4ap::bench::summarize_channel(1, 0, s, 0.002); });
     };
     EXPECT_TRUE(contains(refusal([](SearchStats& s) { s.live_mean_100ms.pop_back(); s.live_max_100ms.pop_back(); }),
-                         "windows"));  // two windows hold at most 100 pieces
+                         "windows"));  // two windows hold at most 100 samples
     EXPECT_TRUE(contains(refusal([](SearchStats& s) { s.live_mean_100ms.push_back(1.0f); s.live_max_100ms.push_back(1.0f); }),
                          "windows"));  // a fourth window would be empty
     EXPECT_TRUE(contains(refusal([](SearchStats& s) { s.live_max_100ms.pop_back(); }), "windows"));
-    EXPECT_TRUE(contains(refusal([](SearchStats& s) { s.pieces = 0; }), "windows"));  // windows without pieces
-    // a piece of 4 ms makes windows of 25 pieces: the same 120 pieces would be 5 windows
+    EXPECT_TRUE(contains(refusal([](SearchStats& s) { s.samples = 0; }), "windows"));  // windows without samples
+    // a sample of 4 ms makes windows of 25 samples: the same 120 samples would be 5 windows
     EXPECT_NE(refusal_of([&] { kz4ap::bench::summarize_channel(1, 0, counted_stats(), 0.004); }), "(accepted)");
     // a line whose kind or end is not in the legends
     SearchStats odd = counted_stats();
@@ -938,15 +1007,15 @@ TEST(ViterbiJsonSummary, TheWindowsOfTheLiveSeriesMustCoverThePieces) {
     EXPECT_NE(refusal_of([&] { kz4ap::bench::summarize_channel(1, 0, odd, 0.002); }), "(accepted)");
 }
 
-TEST(ViterbiJsonSummary, TheSummaryOfAFileSummarizesEachChannelAtTheFilesPiece) {
+TEST(ViterbiJsonSummary, TheSummaryOfAFileSummarizesEachChannelAtTheFilesSample) {
     StatsFile file;
     file.recording = "x.wav";
-    file.config.piece_s = 0.004;  // windows of 25 pieces: 60 pieces are 25, 25 and 10
+    file.config.sample_interval_s = 0.004;  // windows of 25 samples: 60 samples are 25, 25 and 10
     ChannelStats channel;
     channel.track_id = 3;
     channel.label_index = 2;
     channel.stats = counted_stats();
-    channel.stats.pieces = 60;
+    channel.stats.samples = 60;
     channel.stats.live_histogram = {60};
     file.channels = {channel};
     const StatsSummaryFile summary = kz4ap::bench::summarize(file);
@@ -993,10 +1062,10 @@ TEST(ViterbiJsonSummary, TheSummaryFileNamesItsKeysUnitsAndCodes) {
     EXPECT_EQ(j.at("fate_axes"), ordered_json::array({"kind", "end", "ended_in_first_element", "led"}));
     // what each key of a channel is, by its name, the unit or the kind of value first
     const ordered_json& fields = j.at("fields").at("ChannelSummary");
-    for (const char* name : {"pieces", "ceiling_pieces", "live_histogram", "live_mean_stories", "live_max_stories",
+    for (const char* name : {"samples", "ceiling_samples", "live_histogram", "live_mean_stories", "live_max_stories",
                              "lines", "fates", "led_lines"})
         EXPECT_TRUE(fields.contains(name)) << name;
-    EXPECT_EQ(fields.at("pieces").get<std::string>().substr(0, 6), "count:");
+    EXPECT_EQ(fields.at("samples").get<std::string>().substr(0, 6), "count:");
     EXPECT_EQ(fields.at("live_histogram").get<std::string>().substr(0, 7), "counts:");
     EXPECT_EQ(fields.at("live_mean_stories").get<std::string>().substr(0, 8), "stories:");
     EXPECT_EQ(fields.at("live_max_stories").get<std::string>().substr(0, 8), "stories:");
@@ -1013,8 +1082,8 @@ TEST(ViterbiJsonSummary, TheSummaryFileNamesItsKeysUnitsAndCodes) {
     EXPECT_EQ(channel.at("track_id"), 1);
     EXPECT_EQ(channel.at("label_index"), 0);
     EXPECT_TRUE(j.at("channels").at(2).at("label_index").is_null());
-    EXPECT_EQ(channel.at("pieces"), 120);
-    EXPECT_EQ(channel.at("ceiling_pieces"), 7);
+    EXPECT_EQ(channel.at("samples"), 120);
+    EXPECT_EQ(channel.at("ceiling_samples"), 7);
     EXPECT_EQ(channel.at("live_histogram"), ordered_json::array({60, 40, 20}));
     EXPECT_EQ(channel.at("live_max_stories"), 41.0);
     EXPECT_EQ(channel.at("lines"), 5);
@@ -1032,7 +1101,7 @@ TEST(ViterbiJsonSummary, TheSummaryFileNamesItsKeysUnitsAndCodes) {
     EXPECT_EQ(led.at("ended_in_first_element"), ordered_json::array({false, false, false}));
     // a channel that searched nothing has empty columns, not missing ones
     const ordered_json& empty = j.at("channels").at(1);
-    EXPECT_EQ(empty.at("pieces"), 0);
+    EXPECT_EQ(empty.at("samples"), 0);
     EXPECT_TRUE(empty.at("led_lines").at("line").empty());
     EXPECT_TRUE(empty.at("live_histogram").empty());
 }
@@ -1050,7 +1119,7 @@ TEST(ViterbiJsonSummary, AReaderRefusesWhatItCannotRead) {
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["version"] = 3; }), "version"));
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j.erase("channels"); }), "channels"));
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0].erase("fates"); }), "fates"));
-    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["pieces"] = "many"; }), "pieces"));
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["samples"] = "many"; }), "samples"));
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["live_mean_stories"] = "ten"; }),
                          "live_mean_stories"));
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["live_histogram"][1] = 0.5; }),
@@ -1080,7 +1149,7 @@ TEST(ViterbiJsonSummary, AReaderRefusesWhatItCannotRead) {
 }
 
 TEST(ViterbiJsonSummary, AReaderChecksWhatTheWriterGuarantees) {
-    // The channel in counted_summary_file(): 120 pieces; 5 lines, 3 of which led: line 0 (Start, merged, not in its first
+    // The channel in counted_summary_file(): 120 samples; 5 lines, 3 of which led: line 0 (Start, merged, not in its first
     // element), line 2 (Rescue, alive) and line 3 (Silence, dropped by the beam after its first element). A file edited
     // or assembled by hand must not pass with columns that contradict the counts.
     const ordered_json good = to_json(counted_summary_file());
@@ -1101,15 +1170,15 @@ TEST(ViterbiJsonSummary, AReaderChecksWhatTheWriterGuarantees) {
                              std::swap(j["channels"][0]["led_lines"]["end"][1], j["channels"][0]["led_lines"]["end"][2]);
                          }),
                          "fates"));
-    // the histogram counts the pieces, each in one bin
+    // the histogram counts the samples, each in one bin
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["live_histogram"][0] = 59; }),
                          "live_histogram"));
     EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["live_histogram"][2] = 21; }),
                          "live_histogram"));
     EXPECT_TRUE(contains(
         refused_after([](ordered_json& j) { j["channels"][0]["live_histogram"] = ordered_json::array({-60, 160, 20}); }),
-        "live_histogram"));  // adds up to the 120 pieces, and a count cannot be negative
-    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["pieces"] = 121; }), "live_histogram"));
+        "live_histogram"));  // adds up to the 120 samples, and a count cannot be negative
+    EXPECT_TRUE(contains(refused_after([](ordered_json& j) { j["channels"][0]["samples"] = 121; }), "live_histogram"));
     // and what is consistent is accepted: the channel that searched nothing, and the others as they are
     EXPECT_EQ(refused_after([](ordered_json&) {}), "(accepted)");
 }
@@ -1209,7 +1278,7 @@ TEST(ViterbiJsonSummary, TheSummaryOfARunIsTheSummaryOfItsFullStatistics) {
         EXPECT_EQ(direct.channels[i], reduced.channels[i]) << i;
         const auto& c = direct.channels[i];
         EXPECT_EQ(c.track_id, i + 1);
-        EXPECT_GT(c.pieces, 900);
+        EXPECT_GT(c.samples, 700);
         EXPECT_EQ(c.lines, static_cast<std::int64_t>(full.channels[i].stats.lines.size()));
         EXPECT_GE(c.led_lines.size(), 1u);  // the first story led
         EXPECT_GT(c.live_mean_stories, 0.0);
@@ -1274,7 +1343,7 @@ TEST(ViterbiJsonSummary, TheCommittedSummaryIsTheSummaryOfTheCommittedFullFile) 
         EXPECT_DOUBLE_EQ(mine.live_mean_stories, theirs.live_mean_stories) << i;  // a sum of products: to the last digit
         mine.live_mean_stories = theirs.live_mean_stories;
         EXPECT_EQ(mine, theirs) << i;
-        EXPECT_EQ(mine.pieces, 523);
+        EXPECT_EQ(mine.samples, 523);
     }
     EXPECT_EQ(reduced.channels[0].led_line_ids, (std::vector<std::int64_t>{0, 89}));
 }

@@ -1,5 +1,5 @@
 // The new decoder's front filter and envelope samples (design notes, "Detection, amplitude, frequency and the mark's
-// shape", parts 2 to 4; plan 1b, Task 3). Library code: the decoder does not run it yet.
+// shape", parts 2 to 4; plan 1b, Task 3). The decoder runs it (search.hpp; viterbi_decoder.hpp).
 //
 // A channel's stream x[n] (the channelizer's complex output, FS, at the channel rate r = 1 500 samples/s) goes through
 // one 25-tap filter and is read every 4th channel sample:
@@ -49,15 +49,15 @@ namespace kz4ap::viterbi {
 // The front filter's taps h[j], j = -M ... M, listed from j = -M, for a channel stream of channel_rate_hz (samples/s), a
 // dot of dot_s (s) and edges of rise_10_90_s (s, 10-90% time): p(t_c + j / r) / sum p with the pulse p of the header's
 // stage 1 (derived). 2 floor((T + E) r / 2) + 1 taps. Throws std::invalid_argument for a non-positive or non-finite
-// argument, and, at channel_rate_hz = 1 500 samples/s, unless that is 25 taps (the decoder's fixed size: other dots and
-// rises need the decoder's other constants changed with them).
+// argument, and, at channel_rate_hz = 1 500 samples/s (within 1e-9, relatively), unless that is 25 taps (the decoder's
+// fixed size: other dots and rises need the decoder's other constants changed with them).
 std::vector<double> front_filter_taps(double channel_rate_hz, double dot_s, double rise_10_90_s);
 
 // The output noise of the channel filter and the front filter on white input noise of density N0 (stage 3 above).
 struct OutputNoise {
-    double sigma2_per_n0_hz;       // sigma_y^2 / N0, Hz (74.48 Hz on the default chain)
+    double sigma2_per_n0_hz;       // sigma_y^2 / N0, Hz (74.50 Hz on the default chain)
     std::array<double, 7> rho;     // rho_0 = 1 ... rho_6, at lags of Delta (4 channel samples)
-    double w_strong;               // 1 / (1 + 2 sum rho_m), 0.1986 on the default chain
+    double w_strong;               // 1 / (1 + 2 sum rho_m), 0.1987 on the default chain
     double w_weak;                 // 1 / (1 + 2 sum rho_m^2), 0.2754 on the default chain
 };
 

@@ -170,18 +170,17 @@ double inverse_normal_cdf(double p) {
     return x - u / (1.0 + 0.5 * x * u);
 }
 
-// --- The level's posterior, in b = m a / sqrt(v) ---
+// --- The amplitude's posterior, in b = |s| a / sqrt(V') ---
 
-// A block and its level's prior N(beta, q) truncated to b >= 0: the integrand on b >= 0 is e^g(b), prior x
-// likelihood without the prior's normalization, g(b) = -(b - beta)^2 / (2 q) + w (-b^2 + ln I0(2 b z)), the likelihood
-// tempered by w (a sample's weight, plan 1b, Task 5; 1 for a block, where every expression below reduces bit for bit to
-// the untempered one).
-struct Block {
+// A sample and the amplitude's prior N(beta, q) truncated to b >= 0: the integrand on b >= 0 is e^g(b), prior x
+// tempered likelihood without the prior's normalization, g(b) = -(b - beta)^2 / (2 q) + w (-b^2 + ln I0(2 b z)), the
+// likelihood tempered by the sample's weight w (plan 1b, Task 5).
+struct Integrand {
     double beta;  // the prior's mean, b
     double q;     // its variance, b^2
-    double z;     // |S| / sqrt(v)
-    bool exact;   // a level known exactly: p = 0, or sqrt(q) <= 1e-9 max(beta, 1)
-    double w = 1.0;  // the likelihood's weight (1)
+    double z;     // e / sqrt(V')
+    bool exact;   // an amplitude known exactly: P = 0, or sqrt(q) <= 1e-9 max(beta, 1)
+    double w;     // the likelihood's weight (1)
     double g(double b) const {
         const double d = b - beta;
         return -0.5 * d * d / q - w * b * b + w * ln_i0(2.0 * b * z);
@@ -191,10 +190,10 @@ struct Block {
 constexpr int kNewtonSteps = 60;  // a bound for the safeguarded iteration, never reached on the tests
 // A Newton step below this many spacings of doubles at b, relatively, ends the iteration: one can be no smaller.
 constexpr double kSpacings = 4.0 * std::numeric_limits<double>::epsilon();
-// sqrt(q): a prior narrower than this share of its center, max(beta, 1), is a level known exactly. A heuristic margin:
+// sqrt(q): a prior narrower than this share of its center, max(beta, 1), is an amplitude known exactly. A heuristic margin:
 // the quadrature's error from rounding its nodes' offsets grows as epsilon b / sigma^, and is still 7e-9 nats at this
 // width at b = 10 (5.7e-5 at 1e-12, 3.2e-3 at 1e-14, 1.09 nats from about 1e-16, where the nodes coincide).
-constexpr double kExactLevel = 1e-9;
+constexpr double kExactPrior = 1e-9;
 // sigma^: from here on the Gaussian at the mode has under Phi(-8.5) = 9.5e-18 of its mass below 0, under half the
 // spacing of doubles at 1, so the truncated nodes are the standard ones; every rule's nodes (at most 7.62 for order
 // 20) then lie above 0.
@@ -234,22 +233,22 @@ const std::vector<double>& truncated_node_table(int order) {
     return tables[n];
 }
 
-// The quadrature of a block's posterior: the nodes b_k and their shares of the integral, w_k e^(g(b_k) - g(b^) +
-// s_k^2 / 2) over the largest of them, s_k the node's distance from the mode in sigma^, and Lambda_P.
+// The quadrature of the posterior: the nodes b_k and their shares of the integral, w_k e^(g(b_k) - g(b^) +
+// s_k^2 / 2) over the largest of them, s_k the node's distance from the mode in sigma^, and the score.
 struct Fit {
     std::array<double, kMaxOrder> b{};
     std::array<double, kMaxOrder> share{};  // the largest is 1
     double total = 0.0;                     // the sum of the shares
-    double llr = 0.0;                       // Lambda_P, nats
+    double llr = 0.0;                       // the score, nats
 };
 
 // The mode b^ of the integrand e^g. start: where Newton's method starts, in units of b (clamped into its bracket); the
 // bracket's top when empty.
-double find_mode(const Block& block, std::optional<double> start) {
-    const double beta = block.beta;
-    const double q = block.q;
-    const double z = block.z;
-    const double w = block.w;
+double find_mode(const Integrand& integrand, std::optional<double> start) {
+    const double beta = integrand.beta;
+    const double q = integrand.q;
+    const double z = integrand.z;
+    const double w = integrand.w;
     // The mode b^ of g: Newton's method on g', by default from the precision-weighted mean of the prior (beta,
     // precision 1 / q) and the likelihood's peak (z, precision 2 w). There g' <= 0 since d ln I0 / dx < 1, while g'(0) =
     // beta / q >= 0, so b^ lies in the bracket [0, that mean]. It stops at a step below 1e-10 sigma^ or below a few
@@ -294,17 +293,17 @@ double find_mode(const Block& block, std::optional<double> start) {
 }
 
 // The adaptive quadrature at the mode b, its truncated nodes read from the table or (tabulated = false) computed.
-Fit fit_posterior(const Block& block, int order, double b, bool tabulated) {
-    const double beta = block.beta;
-    const double q = block.q;
-    const double z = block.z;
-    const double w = block.w;
+Fit fit_posterior(const Integrand& integrand, int order, double b, bool tabulated) {
+    const double beta = integrand.beta;
+    const double q = integrand.q;
+    const double z = integrand.z;
+    const double w = integrand.w;
     // -g''(b^) = 1 / q + excess. It is positive at a maximum; the fallback, the curvature of prior x e^(-w b^2) (so that
     // sigma^ < 1 / sqrt(2 w)), guards a degenerate one and a scale beyond the doubles' range.
     double excess = 2.0 * w - 4.0 * w * z * z * ln_i0_slopes(2.0 * b * z).second;
     if (!(q * excess > -1.0) || !std::isfinite(std::sqrt(q / (1.0 + q * excess)))) excess = 2.0 * w;
     const Rule& rule = rule_of_order(order);
-    const double g_mode = block.g(b);
+    const double g_mode = integrand.g(b);
     Fit fit;
     // The nodes' terms in the log, ln w_k + g(b_k) - g(b^) + s_k^2 / 2, summed by log-sum-exp, so that no share
     // underflows into an empty sum. A term that is not a number (a node beyond the doubles' range) counts for nothing;
@@ -334,7 +333,7 @@ Fit fit_posterior(const Block& block, int order, double b, bool tabulated) {
                 s = row ? row[k] + fraction * (row[k + static_cast<std::size_t>(order)] - row[k])
                         : truncated_node(rule, k, below);
             fit.b[k] = std::max(0.0, b + sigma * s);
-            const double term = rule.log_weight[k] + block.g(fit.b[k]) - g_mode + 0.5 * s * s;
+            const double term = rule.log_weight[k] + integrand.g(fit.b[k]) - g_mode + 0.5 * s * s;
             log_term[k] = std::isnan(term) ? -kInf : term;
             largest = std::max(largest, log_term[k]);
         }
@@ -365,25 +364,34 @@ Moments fit_moments(const Fit& fit, int order) {
     return {mean, var};
 }
 
-// --- The broad-prior regime: an exact rescaling and tables ---
-//
-// In b, N(b; beta, q) = N(0; beta, q) e^(kappa b - b^2 / (2 q)), kappa = beta / q, exactly. With the likelihood's
-// e^-b^2 the prior's e^(-b^2 / (2 q)) makes e^(-s^2 b^2), s = sqrt(1 + 1 / (2 q)), and u = s b maps the integral onto
-// the weight w(u) = e^(kappa' u - u^2) I0(2 u z') at kappa' = kappa / s and z' = z / s:
-//     integral_0^inf N(b; beta, q) e^(-b^2) I0(2 b z) db = N(0; beta, q) J(z', kappa') / s,
-//     J(z', kappa') = integral_0^inf w(u) du,
-// and the posterior of b is the weight's distribution in u scaled by 1 / s: its mean and variance are the weight's
-// over s and s^2. This is exact at every q (derived). Tables of ln J and the weight's mean and variance over
-// z' in [0, 4] and kappa' in [0, 1] serve every prior that maps into them. The curvature-scaled nodes fail around
-// z' = 1 at kappa' = 0, where -g''(0) = 2 s^2 (1 - z'^2) vanishes (derived); the bounds are a heuristic margin around
-// that point, and outside them the nodes hold within 0.0022 nats where measured (observation.hpp).
 
-constexpr double kRegimeTopZ = 4.0;      // z', at most
-constexpr double kRegimeTopKappa = 1.0;  // kappa', at most
-constexpr int kRegimeZSteps = 400;       // the tables' nodes: z' = 0, 0.01, ..., 4
-constexpr int kRegimeKappaSteps = 100;   // and kappa' = 0, 0.01, ..., 1
-constexpr double kRegimeTopU = 12.0;     // the weight's integral runs to u = 12, e^-56 of its peak at the far corner
-constexpr int kRegimeUSteps = 600;       // by Simpson's rule in steps of 0.02 of u
+// --- The broad-prior regime: an exact rescaling and tables (plan 1b, Task 5; O9) ---
+//
+// In b, N(b; beta, q) = N(0; beta, q) e^(kappa b - b^2 / (2 q)), kappa = beta / q, exactly. With the tempered
+// likelihood, N(b; beta, q) e^(w (-b^2 + ln I0(2 b z))) = N(0; beta, q) e^(kappa b - s_w^2 b^2) I0(2 b z)^w,
+// s_w = sqrt(w + 1 / (2 q)), and u = s_w b gives
+//     integral_0^inf N(b; beta, q) e^(w Lambda(b)) db = N(0; beta, q) J_w(zeta, kappa') / s_w,
+//     J_w(zeta, kappa') = integral_0^inf e^(kappa' u - u^2) I0(2 u zeta)^w du,   zeta = z / s_w, kappa' = kappa / s_w,
+// and the posterior of b is the weight's distribution in u over s_w (derived, exact at every q and w). The curvature at
+// b = 0 with beta = 0, -g''(0) = 2 s_w^2 (1 - w zeta^2), vanishes at y = sqrt(w) zeta = 1 (derived), so the tables
+// are laid out in y: y in [0, 4] and kappa' in [0, 2] (heuristic bounds, set by measurement; observation.hpp), steps of
+// 0.01 in each, Simpson's rule over u in [0, 12] in steps of 0.02 (the weight is e^-49 of its peak there at the far
+// corner, y = 4, kappa' = 2, w = 1), each quantity less its value on an empty sample (z = 0, which does not depend on
+// w). One table per node of w: kTemperedWNodes nodes uniform over [0.1986, 0.2755] (the fixed weight's 0.1986 to the
+// 192 kHz chain's weak limit 0.27544, rounded up), read by linear interpolation in w between them, built once for every
+// caller (1.93 MB per node, 9.7 MB; build_evidence_tables builds it ahead); and one at w = 1 (the untempered form, read
+// only at w = 1 exactly, which no story uses: the tests' reference to the untempered quadrature), built on its first
+// use only. Elsewhere in w the adaptive quadrature alone serves (unmeasured there).
+
+constexpr double kTemperedLowestW = kBroadPriorLowestW;    // 1 (observation.hpp)
+constexpr double kTemperedHighestW = kBroadPriorHighestW;  // 1 (observation.hpp)
+constexpr int kTemperedWNodes = 5;         // nodes of w over [kTemperedLowestW, kTemperedHighestW]
+constexpr double kTemperedTopY = 4.0;      // y = sqrt(w) zeta, at most
+constexpr int kTemperedYSteps = 400;       // y = 0, 0.01, ..., 4
+constexpr double kTemperedTopKappa = 2.0;  // kappa', at most
+constexpr int kTemperedKappaSteps = 200;   // kappa' = 0, 0.01, ..., 2
+constexpr double kTemperedTopU = 12.0;     // the weight's integral runs to u = 12
+constexpr int kTemperedUSteps = 600;       // by Simpson's rule in steps of 0.02 of u
 
 // The weight's ln J (nats), mean and variance in u.
 struct WeightMoments {
@@ -392,10 +400,10 @@ struct WeightMoments {
     double var;
 };
 
-// At z' = 0 the weight, e^(kappa' u - u^2), is N(kappa' / 2, 1/2) truncated at u = 0, with closed forms: J =
+// At z = 0 the weight, e^(kappa' u - u^2), is N(kappa' / 2, 1/2) truncated at u = 0, with closed forms: J =
 // e^(kappa'^2 / 4) sqrt(pi) Phi(alpha), mean kappa' / 2 + lambda / sqrt(2) and variance (1 - alpha lambda -
 // lambda^2) / 2, alpha = kappa' / sqrt(2), lambda = phi(alpha) / Phi(alpha).
-WeightMoments empty_block_weight(double kappa) {
+WeightMoments empty_sample_weight(double kappa) {
     const double alpha = kappa / std::numbers::sqrt2;
     const double cdf = 0.5 * std::erfc(-alpha / std::numbers::sqrt2);
     const double ratio = std::exp(-0.5 * alpha * alpha) / (std::sqrt(2.0 * std::numbers::pi) * cdf);
@@ -403,194 +411,95 @@ WeightMoments empty_block_weight(double kappa) {
             0.5 * kappa + ratio / std::numbers::sqrt2, 0.5 * (1.0 - alpha * ratio - ratio * ratio)};
 }
 
-// The tables hold each quantity less its value on an empty block, so that they are 0 at z' = 0 and a block of nothing
-// reads the closed forms exactly. Built once, on first use, for every decoder: 40 501 nodes of 3 doubles, 0.97 MB.
-struct RegimeTable {
-    std::vector<WeightMoments> nodes;  // z'-major: i (z' = 0.01 i) x 101 + k (kappa' = 0.01 k)
-};
+constexpr std::size_t kTemperedKappa = kTemperedKappaSteps + 1;
+constexpr std::size_t kTemperedSlice = (kTemperedYSteps + 1) * kTemperedKappa;
 
-const RegimeTable& regime_table() {
-    static const RegimeTable table = [] {
-        constexpr std::size_t kZ = kRegimeZSteps + 1;
-        constexpr std::size_t kKappa = kRegimeKappaSteps + 1;
-        constexpr std::size_t kU = kRegimeUSteps + 1;
-        constexpr double kStepZ = kRegimeTopZ / kRegimeZSteps;
-        constexpr double kStepKappa = kRegimeTopKappa / kRegimeKappaSteps;
-        constexpr double kStepU = kRegimeTopU / kRegimeUSteps;
-        RegimeTable built;
-        built.nodes.assign(kZ * kKappa, {0.0, 0.0, 0.0});
-        std::vector<double> u(kU);
-        std::vector<double> simpson(kU);
-        for (std::size_t j = 0; j < kU; ++j) {
-            u[j] = static_cast<double>(j) * kStepU;
-            simpson[j] = (j == 0 || j + 1 == kU) ? 1.0 : (j % 2 != 0 ? 4.0 : 2.0);
-        }
-        // e^(kappa' u) at every node of kappa': each row of z' becomes all its entries by one matrix-vector product.
-        std::vector<double> tilt(kKappa * kU);
-        for (std::size_t k = 0; k < kKappa; ++k)
-            for (std::size_t j = 0; j < kU; ++j)
-                tilt[k * kU + j] = std::exp(static_cast<double>(k) * kStepKappa * u[j]);
-        std::vector<double> base(kU);
-        for (std::size_t i = 1; i < kZ; ++i) {  // the row z' = 0 is the closed forms: 0 in the tables
-            const double z = static_cast<double>(i) * kStepZ;
-            for (std::size_t j = 0; j < kU; ++j)
-                base[j] = simpson[j] * std::exp(-u[j] * u[j] + ln_i0(2.0 * u[j] * z) - z * z);  // scaled by e^-z^2
-            for (std::size_t k = 0; k < kKappa; ++k) {
-                double s0 = 0.0;
-                double s1 = 0.0;
-                double s2 = 0.0;
-                for (std::size_t j = 0; j < kU; ++j) {
-                    const double w = base[j] * tilt[k * kU + j];
-                    const double d = u[j] - z;  // moments about z, near the weight's center, for precision
-                    s0 += w;
-                    s1 += w * d;
-                    s2 += w * d * d;
-                }
-                const double offset = s1 / s0;
-                const WeightMoments empty = empty_block_weight(static_cast<double>(k) * kStepKappa);
-                built.nodes[i * kKappa + k] = {z * z + std::log(s0 * kStepU / 3.0) - empty.ln_j,
-                                               z + offset - empty.mean, s2 / s0 - offset * offset - empty.var};
+// One slice of nodes (one node of w): i (y = 0.01 i) x 201 + k (kappa' = 0.01 k), each quantity less its empty-sample
+// value.
+void build_slice(double w, WeightMoments* nodes) {
+    constexpr std::size_t kY = kTemperedYSteps + 1;
+    constexpr std::size_t kU = kTemperedUSteps + 1;
+    constexpr double kStepY = kTemperedTopY / kTemperedYSteps;
+    constexpr double kStepKappa = kTemperedTopKappa / kTemperedKappaSteps;
+    constexpr double kStepU = kTemperedTopU / kTemperedUSteps;
+    std::vector<double> u(kU);
+    std::vector<double> simpson(kU);
+    for (std::size_t j = 0; j < kU; ++j) {
+        u[j] = static_cast<double>(j) * kStepU;
+        simpson[j] = (j == 0 || j + 1 == kU) ? 1.0 : (j % 2 != 0 ? 4.0 : 2.0);
+    }
+    // e^(kappa' u) at every node of kappa': each row of y becomes all its entries by one matrix-vector product.
+    std::vector<double> tilt(kTemperedKappa * kU);
+    for (std::size_t k = 0; k < kTemperedKappa; ++k)
+        for (std::size_t j = 0; j < kU; ++j) tilt[k * kU + j] = std::exp(static_cast<double>(k) * kStepKappa * u[j]);
+    std::vector<WeightMoments> empty(kTemperedKappa);
+    for (std::size_t k = 0; k < kTemperedKappa; ++k)
+        empty[k] = empty_sample_weight(static_cast<double>(k) * kStepKappa);
+    std::vector<double> base(kU);
+    const double root_w = std::sqrt(w);
+    for (std::size_t k = 0; k < kTemperedKappa; ++k) nodes[k] = {0.0, 0.0, 0.0};  // y = 0: the closed forms
+    for (std::size_t i = 1; i < kY; ++i) {
+        const double y = static_cast<double>(i) * kStepY;
+        const double zeta = y / root_w;
+        const double center = root_w * y;  // w zeta, near the weight's peak for large zeta
+        const double shift = w * y * y;    // about the log weight's highest value, for scale
+        for (std::size_t j = 0; j < kU; ++j)
+            base[j] = simpson[j] * std::exp(-u[j] * u[j] + w * ln_i0(2.0 * u[j] * zeta) - shift);
+        for (std::size_t k = 0; k < kTemperedKappa; ++k) {
+            double s0 = 0.0;
+            double s1 = 0.0;
+            double s2 = 0.0;
+            for (std::size_t j = 0; j < kU; ++j) {
+                const double weight = base[j] * tilt[k * kU + j];
+                const double d = u[j] - center;  // moments about the center, for precision
+                s0 += weight;
+                s1 += weight * d;
+                s2 += weight * d * d;
             }
-        }
-        return built;
-    }();
-    return table;
-}
-
-// The weight's ln J, mean and variance at (z', kappa') in [0, 4] x [0, 1], by bilinear interpolation of the tables
-// added to the closed forms of an empty block.
-WeightMoments weight_moments(double z, double kappa) {
-    constexpr std::size_t kKappa = kRegimeKappaSteps + 1;
-    const RegimeTable& table = regime_table();
-    const double pz = z * (kRegimeZSteps / kRegimeTopZ);
-    const double pk = kappa * (kRegimeKappaSteps / kRegimeTopKappa);
-    const auto iz = static_cast<std::size_t>(std::min(static_cast<int>(pz), kRegimeZSteps - 1));
-    const auto ik = static_cast<std::size_t>(std::min(static_cast<int>(pk), kRegimeKappaSteps - 1));
-    const double fz = pz - static_cast<double>(iz);
-    const double fk = pk - static_cast<double>(ik);
-    const WeightMoments& a = table.nodes[iz * kKappa + ik];
-    const WeightMoments& b = table.nodes[iz * kKappa + ik + 1];
-    const WeightMoments& c = table.nodes[(iz + 1) * kKappa + ik];
-    const WeightMoments& d = table.nodes[(iz + 1) * kKappa + ik + 1];
-    const auto blend = [fz, fk](double va, double vb, double vc, double vd) {
-        return (1.0 - fz) * ((1.0 - fk) * va + fk * vb) + fz * ((1.0 - fk) * vc + fk * vd);
-    };
-    const WeightMoments empty = empty_block_weight(kappa);
-    return {empty.ln_j + blend(a.ln_j, b.ln_j, c.ln_j, d.ln_j), empty.mean + blend(a.mean, b.mean, c.mean, d.mean),
-            empty.var + blend(a.var, b.var, c.var, d.var)};
-}
-
-// --- The broad-prior regime of a sample's tempered score (plan 1b, Task 5; O9) ---
-//
-// The same exact rescaling with the likelihood tempered by w: N(b; beta, q) e^(w (-b^2 + ln I0(2 b z))) =
-// N(0; beta, q) e^(kappa b - s_w^2 b^2) I0(2 b z)^w, s_w = sqrt(w + 1 / (2 q)), and u = s_w b gives
-//     integral_0^inf N(b; beta, q) e^(w Lambda(b)) db = N(0; beta, q) J_w(zeta, kappa') / s_w,
-//     J_w(zeta, kappa') = integral_0^inf e^(kappa' u - u^2) I0(2 u zeta)^w du,   zeta = z / s_w, kappa' = kappa / s_w,
-// and the posterior of b is the weight's distribution in u over s_w (derived, exact at every q and w). The curvature at
-// b = 0 with beta = 0, -g''(0) = 2 s_w^2 (1 - w zeta^2), vanishes at y = sqrt(w) zeta = 1 (derived), so the tables
-// are laid out in y: y in [0, 4] (the block form's z' bound, to which y reduces at w = 1) and kappa' in [0, 2] (twice the
-// block form's bound: heuristic, set by measurement, observation.hpp), steps of 0.01 in each, Simpson's rule over u in
-// [0, 12] in steps of 0.02, each quantity less its value on an empty block (which does not depend on w). One table per
-// node of w: kTemperedWNodes nodes uniform over [0.1986, 0.2755] (the fixed weight's 0.1986 to the 192 kHz chain's weak
-// limit 0.27544, rounded up), read by linear interpolation in w between them, and one at w = 1 (the untempered form,
-// read only at w = 1 exactly). Elsewhere in w the adaptive quadrature alone serves (unmeasured there). Built once, on
-// first use, for every caller: 1.93 MB per node of w, 11.6 MB in all, 0.31 s (measured, a Release build).
-
-constexpr double kTemperedLowestW = kBroadPriorLowestW;    // 1 (observation.hpp)
-constexpr double kTemperedHighestW = kBroadPriorHighestW;  // 1 (observation.hpp)
-constexpr int kTemperedWNodes = 5;            // nodes of w over [kTemperedLowestW, kTemperedHighestW]
-constexpr double kTemperedTopY = 4.0;         // y = sqrt(w) zeta, at most (the same steps as the block form's tables)
-constexpr int kTemperedYSteps = 400;          // y = 0, 0.01, ..., 4
-constexpr double kTemperedTopKappa = 2.0;     // kappa', at most (twice the block form's bound)
-constexpr int kTemperedKappaSteps = 200;      // kappa' = 0, 0.01, ..., 2
-
-struct TemperedTable {
-    // slice-major: slice (the w node; slice kTemperedWNodes is w = 1) x 401 x 201 + i (y = 0.01 i) x 201 + k
-    // (kappa' = 0.01 k)
-    std::vector<WeightMoments> nodes;
-};
-
-double tempered_node_w(int slice) {
-    return slice == kTemperedWNodes
-               ? 1.0
-               : kTemperedLowestW + (kTemperedHighestW - kTemperedLowestW) * slice / (kTemperedWNodes - 1);
-}
-
-const TemperedTable& tempered_table() {
-    static const TemperedTable table = [] {
-        constexpr std::size_t kY = kTemperedYSteps + 1;
-        constexpr std::size_t kKappa = kTemperedKappaSteps + 1;
-        constexpr std::size_t kU = kRegimeUSteps + 1;
-        constexpr std::size_t kSlice = kY * kKappa;
-        constexpr double kStepY = kTemperedTopY / kTemperedYSteps;
-        constexpr double kStepKappa = kTemperedTopKappa / kTemperedKappaSteps;
-        constexpr double kStepU = kRegimeTopU / kRegimeUSteps;
-        TemperedTable built;
-        built.nodes.assign((kTemperedWNodes + 1) * kSlice, {0.0, 0.0, 0.0});
-        std::vector<double> u(kU);
-        std::vector<double> simpson(kU);
-        for (std::size_t j = 0; j < kU; ++j) {
-            u[j] = static_cast<double>(j) * kStepU;
-            simpson[j] = (j == 0 || j + 1 == kU) ? 1.0 : (j % 2 != 0 ? 4.0 : 2.0);
-        }
-        std::vector<double> tilt(kKappa * kU);
-        for (std::size_t k = 0; k < kKappa; ++k)
-            for (std::size_t j = 0; j < kU; ++j)
-                tilt[k * kU + j] = std::exp(static_cast<double>(k) * kStepKappa * u[j]);
-        std::vector<WeightMoments> empty(kKappa);
-        for (std::size_t k = 0; k < kKappa; ++k) empty[k] = empty_block_weight(static_cast<double>(k) * kStepKappa);
-        std::vector<double> base(kU);
-        for (int slice = 0; slice <= kTemperedWNodes; ++slice) {
-            const double w = tempered_node_w(slice);
-            const double root_w = std::sqrt(w);
-            WeightMoments* nodes = built.nodes.data() + static_cast<std::size_t>(slice) * kSlice;
-            for (std::size_t i = 1; i < kY; ++i) {  // the row y = 0 is the closed forms: 0 in the tables
-                const double y = static_cast<double>(i) * kStepY;
-                const double zeta = y / root_w;
-                const double center = root_w * y;  // w zeta, near the weight's peak for large zeta
-                const double shift = w * y * y;    // about the log weight's highest value, for scale
-                for (std::size_t j = 0; j < kU; ++j)
-                    base[j] = simpson[j] * std::exp(-u[j] * u[j] + w * ln_i0(2.0 * u[j] * zeta) - shift);
-                for (std::size_t k = 0; k < kKappa; ++k) {
-                    double s0 = 0.0;
-                    double s1 = 0.0;
-                    double s2 = 0.0;
-                    for (std::size_t j = 0; j < kU; ++j) {
-                        const double weight = base[j] * tilt[k * kU + j];
-                        const double d = u[j] - center;
-                        s0 += weight;
-                        s1 += weight * d;
-                        s2 += weight * d * d;
-                    }
-                    const double offset = s1 / s0;
-                    nodes[i * kKappa + k] = {shift + std::log(s0 * kStepU / 3.0) - empty[k].ln_j,
+            const double offset = s1 / s0;
+            nodes[i * kTemperedKappa + k] = {shift + std::log(s0 * kStepU / 3.0) - empty[k].ln_j,
                                              center + offset - empty[k].mean, s2 / s0 - offset * offset - empty[k].var};
-                }
-            }
         }
-        return built;
+    }
+}
+
+// The slices of w's nodes over [0.1986, 0.2755], slice-major (slice x 80 601 + node). Built once, for every caller.
+const std::vector<WeightMoments>& tempered_table() {
+    static const std::vector<WeightMoments> table = [] {
+        std::vector<WeightMoments> nodes(kTemperedWNodes * kTemperedSlice);
+        for (int slice = 0; slice < kTemperedWNodes; ++slice) {
+            const double w = kTemperedLowestW + (kTemperedHighestW - kTemperedLowestW) * slice / (kTemperedWNodes - 1);
+            build_slice(w, nodes.data() + static_cast<std::size_t>(slice) * kTemperedSlice);
+        }
+        return nodes;
     }();
     return table;
 }
 
-// The weight's ln J_w, mean and variance at (y, kappa') in [0, 4] x [0, 1] for w in [0.1986, 0.2755] or w = 1:
+// The slice at w = 1 (the untempered form), built on its first use only.
+const std::vector<WeightMoments>& unit_weight_table() {
+    static const std::vector<WeightMoments> table = [] {
+        std::vector<WeightMoments> nodes(kTemperedSlice);
+        build_slice(1.0, nodes.data());
+        return nodes;
+    }();
+    return table;
+}
+
+// The weight's ln J_w, mean and variance at (y, kappa') in [0, 4] x [0, 2] for w in [0.1986, 0.2755] or w = 1:
 // bilinear in (y, kappa') within each slice, linear in w between the two slices around it.
 WeightMoments tempered_weight_moments(double y, double kappa, double w) {
-    constexpr std::size_t kKappa = kTemperedKappaSteps + 1;
-    constexpr std::size_t kSlice = (kTemperedYSteps + 1) * kKappa;
-    const TemperedTable& table = tempered_table();
     const double py = y * (kTemperedYSteps / kTemperedTopY);
     const double pk = kappa * (kTemperedKappaSteps / kTemperedTopKappa);
     const auto iy = static_cast<std::size_t>(std::min(static_cast<int>(py), kTemperedYSteps - 1));
     const auto ik = static_cast<std::size_t>(std::min(static_cast<int>(pk), kTemperedKappaSteps - 1));
     const double fy = py - static_cast<double>(iy);
     const double fk = pk - static_cast<double>(ik);
-    const auto read = [&](int slice) {
-        const WeightMoments* nodes = table.nodes.data() + static_cast<std::size_t>(slice) * kSlice;
-        const WeightMoments& a = nodes[iy * kKappa + ik];
-        const WeightMoments& b = nodes[iy * kKappa + ik + 1];
-        const WeightMoments& c = nodes[(iy + 1) * kKappa + ik];
-        const WeightMoments& d = nodes[(iy + 1) * kKappa + ik + 1];
+    const auto read = [&](const WeightMoments* nodes) {
+        const WeightMoments& a = nodes[iy * kTemperedKappa + ik];
+        const WeightMoments& b = nodes[iy * kTemperedKappa + ik + 1];
+        const WeightMoments& c = nodes[(iy + 1) * kTemperedKappa + ik];
+        const WeightMoments& d = nodes[(iy + 1) * kTemperedKappa + ik + 1];
         const auto blend = [fy, fk](double va, double vb, double vc, double vd) {
             return (1.0 - fy) * ((1.0 - fk) * va + fk * vb) + fy * ((1.0 - fk) * vc + fk * vd);
         };
@@ -599,127 +508,92 @@ WeightMoments tempered_weight_moments(double y, double kappa, double w) {
     };
     WeightMoments rest;
     if (w == 1.0) {
-        rest = read(kTemperedWNodes);
+        rest = read(unit_weight_table().data());
     } else {
+        const WeightMoments* nodes = tempered_table().data();
         const double pw = (w - kTemperedLowestW) / (kTemperedHighestW - kTemperedLowestW) * (kTemperedWNodes - 1);
         const int iw = std::clamp(static_cast<int>(pw), 0, kTemperedWNodes - 2);
         const double fw = pw - iw;
-        const WeightMoments low = read(iw);
-        const WeightMoments high = read(iw + 1);
+        const WeightMoments low = read(nodes + static_cast<std::size_t>(iw) * kTemperedSlice);
+        const WeightMoments high = read(nodes + static_cast<std::size_t>(iw + 1) * kTemperedSlice);
         rest = {low.ln_j + fw * (high.ln_j - low.ln_j), low.mean + fw * (high.mean - low.mean),
                 low.var + fw * (high.var - low.var)};
     }
-    const WeightMoments empty = empty_block_weight(kappa);
+    const WeightMoments empty = empty_sample_weight(kappa);
     return {empty.ln_j + rest.ln_j, empty.mean + rest.mean, empty.var + rest.var};
 }
 
 bool tempered_table_holds(double w) { return w == 1.0 || (w >= kTemperedLowestW && w <= kTemperedHighestW); }
 
-void check_block(double s_abs, double m_signal, double v) {
-    if (!(m_signal > 0.0) || !std::isfinite(m_signal))
-        throw std::invalid_argument("block evidence: m_signal must be positive and finite (channel samples)");
-    if (!(v > 0.0) || !std::isfinite(v))
-        throw std::invalid_argument("block evidence: v must be positive and finite (FS^2)");
-    if (!finite_and_not_negative(s_abs))
-        throw std::invalid_argument("block evidence: s_abs must be finite and not negative (FS)");
+// The sample's integrand in b, m = |s| > 0, after checking the arguments. The prior counts as exact where P = 0, or
+// where it is narrower than 1e-9 of max(beta, 1) (kExactPrior): the score is then w Lambda(mu), off by about q
+// (Lambda'^2 + Lambda'') / 2 nats (Lambda's derivatives in b at beta), and the posterior the prior, {mu, P}.
+Integrand sample_integrand(double e_fs, double m, double mu_fs, double p_fs2, double v_prime_fs2, double w, int order) {
+    if (!finite_and_not_negative(e_fs))
+        throw std::invalid_argument("sample_evidence: e must be finite and not negative (FS)");
+    if (!(v_prime_fs2 > 0.0) || !std::isfinite(v_prime_fs2))
+        throw std::invalid_argument("sample_evidence: V' must be positive and finite (FS^2)");
+    if (!finite_and_not_negative(mu_fs))
+        throw std::invalid_argument("sample_evidence: mu must be finite and not negative (FS)");
+    if (!finite_and_not_negative(p_fs2))
+        throw std::invalid_argument("sample_evidence: P must be finite and not negative (FS^2)");
+    if (order < 2 || order > kMaxOrder)
+        throw std::invalid_argument("sample_evidence: the quadrature's order must be 2 to 20");
+    const double root_v = std::sqrt(v_prime_fs2);
+    const double beta = m * mu_fs / root_v;
+    const double q = m * m * p_fs2 / v_prime_fs2;
+    const double narrowest = kExactPrior * std::max(beta, 1.0);
+    return {beta, q, e_fs / root_v, !(q > narrowest * narrowest), w};
 }
 
-// The block in b after checking the arguments. Its level counts as exact where p = 0, or where the prior is narrower
-// than 1e-9 of max(beta, 1) (kExactLevel): Lambda_P is then block_llr at mu, off by about q (Lambda'^2 + Lambda'') / 2
-// nats (Lambda's derivatives in b at beta), and the posterior the prior, {mu, p}. For beta well above sqrt(q) the true
-// posterior differs from that by about q relatively; for mu = 0 it is a half-normal (mean 0.80 sqrt(p), variance
-// 0.36 p), and for 0 < beta below about sqrt(q) (only at the absolute threshold: beta < 1, sqrt(q) <= 1e-9) nearly one,
-// off by order 1 relatively but by under 1e-9 in units of b.
-Block uncertain_block(double s_abs, double m_signal, double mu, double p, double v, int order, int lowest_order) {
-    check_block(s_abs, m_signal, v);
-    if (!finite_and_not_negative(mu))
-        throw std::invalid_argument("uncertain level: mu must be finite and not negative (FS)");
-    if (!finite_and_not_negative(p))
-        throw std::invalid_argument("uncertain level: p must be finite and not negative (FS^2)");
-    if (order < lowest_order || order > kMaxOrder)
-        throw std::invalid_argument("uncertain level: the quadrature's order must be 1 (2 for the posterior) to 20");
-    const double root_v = std::sqrt(v);
-    const double beta = m_signal * mu / root_v;
-    const double q = m_signal * m_signal * p / v;
-    const double narrowest = kExactLevel * std::max(beta, 1.0);
-    return {beta, q, s_abs / root_v, !(q > narrowest * narrowest)};
-}
-
-// The one evaluation behind block_llr_uncertain, level_posterior and block_evidence, after checking the arguments
-// (orders from lowest_order to 20): the evidence, the level's moments and the mode, in FS. The mode comes from
-// Newton's method; the evidence and the moments from the broad-prior regime's tables where (z', kappa') lies in them,
-// and from the adaptive quadrature elsewhere, its truncated nodes from their table (or, tabulated = false, computed).
-BlockEvidence evaluate(double s_abs, double m_signal, double mu, double p, double v, int order, int lowest_order,
-                       std::optional<double> start_a, bool tabulated = true) {
-    const Block block = uncertain_block(s_abs, m_signal, mu, p, v, order, lowest_order);
-    if (start_a && !std::isfinite(*start_a))
-        throw std::invalid_argument("block evidence: start_a must be finite (FS)");
-    if (block.exact) return {block_llr(s_abs, m_signal, mu, v), {mu, p}, mu};
-    const double unit = std::sqrt(v) / m_signal;  // FS per unit of b
-    const double mode = find_mode(block, start_a ? std::optional<double>(*start_a / unit) : std::nullopt);
-    const double s = std::sqrt(1.0 + 0.5 / block.q);
-    const double kappa = block.beta / block.q;
-    if (block.z / s <= kRegimeTopZ && kappa / s <= kRegimeTopKappa) {
-        const WeightMoments w = weight_moments(block.z / s, kappa / s);
-        // ln N(0; beta, q) - ln Phi(beta / sqrt(q)) + ln J(z', kappa') - ln s
-        const double llr = -0.5 * kappa * block.beta - 0.5 * std::log(2.0 * std::numbers::pi * block.q) -
-                           std::log1p(-0.5 * std::erfc(block.beta / std::sqrt(2.0 * block.q))) + w.ln_j -
-                           0.5 * std::log1p(0.5 / block.q);
-        return {llr, {w.mean / s * unit, w.var / (s * s) * unit * unit}, mode * unit};
+// The score, the posterior and the mode of a sample with m = |s| > 0 (sample_evidence after its checks); tabulated =
+// false computes every truncated node by Phi^-1 instead of reading the table.
+SampleEvidence evaluate(double e_fs, double m, double mu_fs, double p_fs2, double v_prime_fs2, double w, int order,
+                        std::optional<double> start_a_fs, bool tabulated) {
+    const Integrand integrand = sample_integrand(e_fs, m, mu_fs, p_fs2, v_prime_fs2, w, order);
+    if (integrand.exact) {
+        const double b = integrand.beta;  // w Lambda(mu): the tempered likelihood at the prior's center
+        return {w * (-b * b + ln_i0(2.0 * b * integrand.z)), {mu_fs, p_fs2}, mu_fs};
     }
-    const Fit fit = fit_posterior(block, order, mode, tabulated);
+    const double unit = std::sqrt(v_prime_fs2) / m;  // FS per unit of b
+    const double mode = find_mode(integrand, start_a_fs ? std::optional<double>(*start_a_fs / unit) : std::nullopt);
+    if (tempered_table_holds(w)) {
+        const double s_w2 = w + 0.5 / integrand.q;
+        const double s_w = std::sqrt(s_w2);
+        const double kappa = integrand.beta / integrand.q;
+        const double y = std::sqrt(w) * integrand.z / s_w;
+        if (y <= kTemperedTopY && kappa / s_w <= kTemperedTopKappa) {
+            const WeightMoments weight = tempered_weight_moments(y, kappa / s_w, w);
+            // ln N(0; beta, q) - ln Phi(beta / sqrt(q)) + ln J_w(zeta, kappa') - ln s_w
+            const double score = -0.5 * kappa * integrand.beta -
+                                 0.5 * std::log(2.0 * std::numbers::pi * integrand.q) -
+                                 std::log1p(-0.5 * std::erfc(integrand.beta / std::sqrt(2.0 * integrand.q))) +
+                                 weight.ln_j - 0.5 * std::log(s_w2);
+            return {score, {weight.mean / s_w * unit, weight.var / s_w2 * unit * unit}, mode * unit};
+        }
+    }
+    const Fit fit = fit_posterior(integrand, order, mode, tabulated);
     const Moments b = fit_moments(fit, order);
     return {fit.llr, {b.mean * unit, b.var * unit * unit}, mode * unit};
 }
 
-// --- The flat prior ---
-
-constexpr double kS500Hz = 500.0;          // S500: the carrier's power over the noise power in 500 Hz
-constexpr double kTableTopZ = 40.0;
-constexpr int kTableSteps = 4000;          // the table's nodes: z = 0, 0.01, ..., 40
-constexpr double kTableNodesPerZ = 100.0;  // 1 / the table's step of 0.01
-constexpr double kLevelStepDb = 0.01;      // dB of x (x in dB S500): the step of the integral over the level x
-constexpr double kHighestLowerB = 6.0;     // b at level_min_db, at most, for every block
-constexpr double kAboveZ = 10.0;           // the integral starts at b = z + 10: e^Lambda is e^-100 of its peak there
-constexpr double kNegligible = 1e-17;      // a rest of the integral below this share of it is left out
-
-// s: the longest keying edge rise_fractions takes (heuristic: a transmitter's edge lasts a few ms; the bound keeps the
-// work finite, about 5e7 multiply-adds at 48 kHz and 8e8 at 192 kHz at the bound, and every count of input samples an
-// int).
-constexpr double kLongestRiseS = 1.0;
-
-// The flat prior's c must reach past the channel filter's correlation length, where its increments no longer change
-// (c(m) - c(m - 1) = R_0 + 2 (R_1 + ... + R_(m-1)), constant once R_k = 0): its last two increments, which differ by
-// 2 R_(M-1), must agree within this share of the last (heuristic). On the channelizer's filter (the same R_k at 48 and
-// 192 kHz) 2 R_k / 1 500 Hz falls from 0.32 at k = 1 to 2.1e-9 at k = 29 and 6.5e-10 at k = 30 (scratch computation from
-// the taps), so a c reaching 31 samples or more passes, its last increment then within 2.8e-11 of the long-run rate,
-// and no shorter one does; the rounding of c is about 1e-13 of the increment at 600 samples.
-constexpr double kSettledIncrement = 1e-9;
+SampleEvidence checked_sample_evidence(double e_fs, double s, double mu_fs, double p_fs2, double v_prime_fs2, double w,
+                                       int order, std::optional<double> start_a_fs, bool tabulated) {
+    if (!std::isfinite(s)) throw std::invalid_argument("sample_evidence: s must be finite (1)");
+    if (!(w > 0.0) || !std::isfinite(w))
+        throw std::invalid_argument("sample_evidence: w must be positive and finite (1)");
+    if (start_a_fs && !std::isfinite(*start_a_fs))
+        throw std::invalid_argument("sample_evidence: start_a_fs must be finite (FS)");
+    if (s == 0.0) {
+        // Checked as for a scored sample (with a template of 1), then nothing to add.
+        (void)sample_integrand(e_fs, 1.0, mu_fs, p_fs2, v_prime_fs2, w, order);
+        return {0.0, {mu_fs, p_fs2}, start_a_fs ? *start_a_fs : mu_fs};
+    }
+    // Lambda is even in b, so a negative s scores as |s|.
+    return evaluate(e_fs, std::fabs(s), mu_fs, p_fs2, v_prime_fs2, w, order, start_a_fs, tabulated);
+}
 
 }  // namespace
-
-std::vector<double> sum_noise_hz(std::span<const double> taps, double input_rate_hz, int decimation, int max_samples) {
-    if (taps.empty()) throw std::invalid_argument("sum_noise_hz: no taps");
-    if (!(input_rate_hz > 0.0) || !std::isfinite(input_rate_hz))
-        throw std::invalid_argument("sum_noise_hz: input_rate_hz must be positive and finite (Hz)");
-    if (decimation < 1) throw std::invalid_argument("sum_noise_hz: decimation must be at least 1");
-    if (max_samples < 0) throw std::invalid_argument("sum_noise_hz: max_samples must not be negative");
-    // R_k = input_rate_hz x sum_j h[j] h[j + D k], Hz, at every lag at which the taps overlap.
-    const auto lag_step = static_cast<std::size_t>(decimation);
-    std::vector<double> r((taps.size() - 1) / lag_step + 1);
-    for (std::size_t k = 0; k < r.size(); ++k) {
-        double sum = 0.0;
-        for (std::size_t j = 0; j + k * lag_step < taps.size(); ++j) sum += taps[j] * taps[j + k * lag_step];
-        r[k] = input_rate_hz * sum;
-    }
-    std::vector<double> c(static_cast<std::size_t>(max_samples) + 1, 0.0);
-    for (std::size_t m = 1; m < c.size(); ++m) {
-        double sum = static_cast<double>(m) * r[0];
-        for (std::size_t k = 1; k < m && k < r.size(); ++k) sum += 2.0 * static_cast<double>(m - k) * r[k];
-        c[m] = sum;
-    }
-    return c;
-}
 
 double ln_i0(double x) {
     x = std::fabs(x);
@@ -731,398 +605,37 @@ double ln_i0(double x) {
     return x + std::log(polynomial(kLarge, kBesselSplit / x) / std::sqrt(x));
 }
 
-double block_llr(double s_abs, double m_signal, double a, double v) {
-    check_block(s_abs, m_signal, v);
-    if (!finite_and_not_negative(a)) throw std::invalid_argument("block_llr: a must be finite and not negative (FS)");
-    const double root_v = std::sqrt(v);
-    const double b = m_signal * a / root_v;
-    return -b * b + ln_i0(2.0 * b * (s_abs / root_v));
-}
-
-double block_llr_uncertain(double s_abs, double m_signal, double mu, double p, double v, int order) {
-    return evaluate(s_abs, m_signal, mu, p, v, order, 1, std::nullopt).llr;
-}
-
-Moments level_posterior(double s_abs, double m_signal, double mu, double p, double v, int order) {
-    return evaluate(s_abs, m_signal, mu, p, v, order, 2, std::nullopt).level;
-}
-
-BlockEvidence block_evidence(double s_abs, double m_signal, double mu, double p, double v, int order,
-                             std::optional<double> start_a) {
-    return evaluate(s_abs, m_signal, mu, p, v, order, 2, start_a);
-}
-
 SampleEvidence sample_evidence(double e_fs, double s, double mu_fs, double p_fs2, double v_prime_fs2, double w,
                                int order, std::optional<double> start_a_fs) {
-    if (!std::isfinite(s)) throw std::invalid_argument("sample_evidence: s must be finite (1)");
-    if (!(w > 0.0) || !std::isfinite(w))
-        throw std::invalid_argument("sample_evidence: w must be positive and finite (1)");
-    if (start_a_fs && !std::isfinite(*start_a_fs))
-        throw std::invalid_argument("sample_evidence: start_a_fs must be finite (FS)");
-    if (s == 0.0) {
-        // Checked as for a scored sample (with a template of 1), then nothing to add.
-        (void)uncertain_block(e_fs, 1.0, mu_fs, p_fs2, v_prime_fs2, order, 2);
-        return {0.0, {mu_fs, p_fs2}, start_a_fs ? *start_a_fs : mu_fs};
-    }
-    const double m = std::fabs(s);  // Lambda is even in b
-    Block block = uncertain_block(e_fs, m, mu_fs, p_fs2, v_prime_fs2, order, 2);
-    block.w = w;
-    if (block.exact) return {w * block_llr(e_fs, m, mu_fs, v_prime_fs2), {mu_fs, p_fs2}, mu_fs};
-    const double unit = std::sqrt(v_prime_fs2) / m;  // FS per unit of b
-    const double mode = find_mode(block, start_a_fs ? std::optional<double>(*start_a_fs / unit) : std::nullopt);
-    if (tempered_table_holds(w)) {
-        const double s_w2 = w + 0.5 / block.q;
-        const double s_w = std::sqrt(s_w2);
-        const double kappa = block.beta / block.q;
-        const double y = std::sqrt(w) * block.z / s_w;
-        if (y <= kTemperedTopY && kappa / s_w <= kTemperedTopKappa) {
-            const WeightMoments weight = tempered_weight_moments(y, kappa / s_w, w);
-            // ln N(0; beta, q) - ln Phi(beta / sqrt(q)) + ln J_w(zeta, kappa') - ln s_w
-            const double score = -0.5 * kappa * block.beta - 0.5 * std::log(2.0 * std::numbers::pi * block.q) -
-                                 std::log1p(-0.5 * std::erfc(block.beta / std::sqrt(2.0 * block.q))) + weight.ln_j -
-                                 0.5 * std::log(s_w2);
-            return {score, {weight.mean / s_w * unit, weight.var / s_w2 * unit * unit}, mode * unit};
-        }
-    }
-    const Fit fit = fit_posterior(block, order, mode, true);
-    const Moments b = fit_moments(fit, order);
-    return {fit.llr, {b.mean * unit, b.var * unit * unit}, mode * unit};
+    return checked_sample_evidence(e_fs, s, mu_fs, p_fs2, v_prime_fs2, w, order, start_a_fs, true);
+}
+
+SampleEvidence story_evidence(double e_fs, double s, double mu_fs, double p_fs2, double v_fs2, double sigma2_fs2, double w,
+                              int order, std::optional<double> start_a_fs) {
+    if (!(sigma2_fs2 > 0.0) || !std::isfinite(sigma2_fs2))
+        throw std::invalid_argument("story_evidence: sigma_y^2 must be positive and finite (FS^2)");
+    SampleEvidence evidence = sample_evidence(e_fs, s, mu_fs, p_fs2, v_fs2, w, order, start_a_fs);
+    if (s == 0.0) return evidence;
+    // e^2 / sigma_y^2 - e^2 / V = e^2 (V - sigma_y^2) / (sigma_y^2 V), written so that V = sigma_y^2 adds exactly 0.
+    const double excess = v_fs2 - sigma2_fs2;
+    evidence.score_nats += w * (e_fs * e_fs * excess / (sigma2_fs2 * v_fs2) - std::log1p(excess / sigma2_fs2));
+    return evidence;
 }
 
 void build_evidence_tables(int order) {
-    if (order < 1 || order > kMaxOrder)
-        throw std::invalid_argument("build_evidence_tables: the quadrature's order must be 1 to 20");
-    (void)regime_table();
+    if (order < 2 || order > kMaxOrder)
+        throw std::invalid_argument("build_evidence_tables: the quadrature's order must be 2 to 20");
     (void)tempered_table();
     (void)truncated_node_table(order);
 }
 
 namespace detail {
 
-BlockEvidence block_evidence_direct_nodes(double s_abs, double m_signal, double mu, double p, double v, int order,
-                                          std::optional<double> start_a) {
-    return evaluate(s_abs, m_signal, mu, p, v, order, 2, start_a, false);
-}
-
-namespace {
-
-// rise_fractions' arguments, checked before any is converted to a count (an absurd but finite rise_s would otherwise
-// overflow an int): taps whose sum is positive and finite, a positive and finite input rate, a decimation and samples
-// per piece of at least 1, a rise_s of 0 to kLongestRiseS, and an edge, a filter and a few pieces that an int counts in
-// input samples. Returns the sum of the taps, a steady carrier's gain.
-double checked_rise_arguments(std::span<const double> taps, double input_rate_hz, int decimation,
-                              int samples_per_piece, double rise_s) {
-    if (taps.empty()) throw std::invalid_argument("rise_fractions: no taps");
-    if (!(input_rate_hz > 0.0) || !std::isfinite(input_rate_hz))
-        throw std::invalid_argument("rise_fractions: input_rate_hz must be positive and finite (Hz)");
-    if (decimation < 1) throw std::invalid_argument("rise_fractions: decimation must be at least 1");
-    if (samples_per_piece < 1) throw std::invalid_argument("rise_fractions: samples_per_piece must be at least 1");
-    if (!(rise_s >= 0.0 && rise_s <= kLongestRiseS))
-        throw std::invalid_argument("rise_fractions: rise_s must lie in [0, 1] s");
-    const double span = static_cast<double>(taps.size()) + std::ceil(rise_s * input_rate_hz) +
-                        4.0 * static_cast<double>(decimation) * static_cast<double>(samples_per_piece);
-    if (!(span < static_cast<double>(std::numeric_limits<int>::max())))
-        throw std::invalid_argument("rise_fractions: the edge and the filter must span fewer than 2^31 input samples");
-    double total = 0.0;
-    for (const double h : taps) total += h;
-    if (!(total > 0.0) || !std::isfinite(total))
-        throw std::invalid_argument("rise_fractions: the taps must add up to a positive, finite sum");
-    return total;
-}
-
-}  // namespace
-
-std::vector<std::vector<double>> rise_fractions_by_position(std::span<const double> taps, double input_rate_hz,
-                                                            int decimation, int samples_per_piece, double rise_s,
-                                                            int pieces) {
-    const double total = checked_rise_arguments(taps, input_rate_hz, decimation, samples_per_piece, rise_s);
-    if (pieces < 0) throw std::invalid_argument("rise_fractions: pieces must not be negative");
-    // The keyed envelope at input sample t after the edge's start: 0.5 - 0.5 cos(pi t / R) for 0 <= t < R input samples
-    // (R = rise_s x input_rate_hz), 1 after; 0 before the edge.
-    const double rise_samples = rise_s * input_rate_hz;
-    const auto rising = static_cast<long long>(std::ceil(rise_samples));  // samples within the edge: t < R
-    std::vector<double> edge(static_cast<std::size_t>(rising));
-    for (long long t = 0; t < rising; ++t) {
-        const double x = static_cast<double>(t);
-        edge[static_cast<std::size_t>(t)] = 0.5 - 0.5 * std::cos(std::numbers::pi * x / rise_samples);
-    }
-    const auto envelope = [&](long long t) {
-        return t < 0 ? 0.0 : t < rising ? edge[static_cast<std::size_t>(t)] : 1.0;
-    };
-    // The edge's response: the filter's output t input samples after the edge's start, sum_j h[j] e(t - j); 0 before
-    // the edge, the taps' sum once the whole filter lies past the rise.
-    const auto length = static_cast<long long>(taps.size());
-    const long long settled = length - 1 + rising;
-    std::vector<double> response(static_cast<std::size_t>(settled) + 1);
-    for (long long t = 0; t <= settled; ++t) {
-        double sum = 0.0;
-        for (long long j = 0; j < length && j <= t; ++j) sum += taps[static_cast<std::size_t>(j)] * envelope(t - j);
-        response[static_cast<std::size_t>(t)] = sum;
-    }
-    const auto at = [&](long long t) {
-        if (t < 0) return 0.0;
-        if (t > settled) return total;
-        return response[static_cast<std::size_t>(t)];
-    };
-    const long long stride = static_cast<long long>(decimation);
-    const long long per_piece = stride * samples_per_piece;  // input samples in a piece
-    std::vector<std::vector<double>> fractions(static_cast<std::size_t>(per_piece));
-    for (long long position = 0; position < per_piece; ++position) {
-        std::vector<double>& row = fractions[static_cast<std::size_t>(position)];
-        row.resize(static_cast<std::size_t>(pieces));
-        for (int p = 0; p < pieces; ++p) {
-            double sum = 0.0;
-            for (int i = 0; i < samples_per_piece; ++i)
-                sum += at((static_cast<long long>(p) * samples_per_piece + i) * stride - position);
-            row[static_cast<std::size_t>(p)] = sum / (samples_per_piece * total);
-        }
-    }
-    return fractions;
+SampleEvidence sample_evidence_direct_nodes(double e_fs, double s, double mu_fs, double p_fs2, double v_prime_fs2,
+                                            double w, int order, std::optional<double> start_a_fs) {
+    return checked_sample_evidence(e_fs, s, mu_fs, p_fs2, v_prime_fs2, w, order, start_a_fs, false);
 }
 
 }  // namespace detail
-
-namespace {
-
-// The rise's fractions by position over enough pieces to cover the whole rise from every position, their average, and
-// the rise's pieces among them: the template starts at `first`, the first piece whose average reaches kFirstFraction
-// (pieces where none does), and the rise ends at `last`, the last piece whose average differs from 1 by more than
-// kFullPiece (below first where none does: no rise).
-struct RiseAnalysis {
-    std::vector<std::vector<double>> by_position;  // [position][piece]
-    std::vector<double> average;                    // [piece]
-    int first = 0;
-    int last = -1;
-};
-
-RiseAnalysis analyze_rise(std::span<const double> taps, double input_rate_hz, int decimation, int samples_per_piece,
-                          double rise_s) {
-    detail::checked_rise_arguments(taps, input_rate_hz, decimation, samples_per_piece, rise_s);
-    // Enough pieces to cover the whole rise from every position: the filter's length and the edge, plus one piece.
-    const double span = static_cast<double>(taps.size()) + std::ceil(rise_s * input_rate_hz);
-    const int pieces = static_cast<int>(std::ceil(span / (static_cast<double>(decimation) * samples_per_piece))) + 2;
-    RiseAnalysis rise;
-    rise.by_position =
-        detail::rise_fractions_by_position(taps, input_rate_hz, decimation, samples_per_piece, rise_s, pieces);
-    rise.average.assign(static_cast<std::size_t>(pieces), 0.0);
-    for (const std::vector<double>& row : rise.by_position)
-        for (int p = 0; p < pieces; ++p) rise.average[static_cast<std::size_t>(p)] += row[static_cast<std::size_t>(p)];
-    for (double& fraction : rise.average) fraction /= static_cast<double>(rise.by_position.size());
-    constexpr double kFirstFraction = 0.01;  // below it a piece counts as gap (about -40 dB relative to a full piece)
-    constexpr double kFullPiece = 0.005;     // within it of 1, a piece counts as full
-    const auto average = [&rise](int piece) { return rise.average[static_cast<std::size_t>(piece)]; };
-    rise.first = 0;
-    while (rise.first < pieces && !(average(rise.first) >= kFirstFraction)) ++rise.first;
-    rise.last = pieces - 1;
-    while (rise.last >= rise.first && !(std::fabs(average(rise.last) - 1.0) > kFullPiece)) --rise.last;
-    return rise;
-}
-
-}  // namespace
-
-std::vector<double> rise_fractions(std::span<const double> taps, double input_rate_hz, int decimation,
-                                   int samples_per_piece, double rise_s) {
-    const RiseAnalysis rise = analyze_rise(taps, input_rate_hz, decimation, samples_per_piece, rise_s);
-    const auto pieces = static_cast<int>(rise.average.size());
-    if (rise.first >= pieces || rise.last < rise.first) return {};
-    return std::vector<double>(rise.average.begin() + rise.first, rise.average.begin() + rise.last + 1);
-}
-
-std::vector<double> rise_template_errors(std::span<const double> taps, double input_rate_hz, int decimation,
-                                         int samples_per_piece, double rise_s) {
-    const RiseAnalysis rise = analyze_rise(taps, input_rate_hz, decimation, samples_per_piece, rise_s);
-    const auto pieces = static_cast<int>(rise.average.size());
-    if (rise.first >= pieces) return {};
-    // e_n(p) = sum_{j <= n} t_j (f_j(p) - t_j) for every position p, the template t_j being the rise's average and 1
-    // past it (1 throughout where there is no rise, as the flat prior's weights are), and E_n its mean square. The
-    // table's last pieces are 1 at every position (the filter and the edge lie behind them), so E_n has settled.
-    std::vector<double> sums(rise.by_position.size(), 0.0);
-    std::vector<double> errors;
-    errors.reserve(static_cast<std::size_t>(pieces - rise.first));
-    for (int j = rise.first; j < pieces; ++j) {
-        const double t = j <= rise.last ? rise.average[static_cast<std::size_t>(j)] : 1.0;
-        double mean_square = 0.0;
-        for (std::size_t p = 0; p < sums.size(); ++p) {
-            sums[p] += t * (rise.by_position[p][static_cast<std::size_t>(j)] - t);
-            mean_square += sums[p] * sums[p];
-        }
-        errors.push_back(mean_square / static_cast<double>(sums.size()));
-    }
-    return errors;
-}
-
-FlatPrior::FlatPrior(const ViterbiConfig& config, std::span<const double> c, int max_pieces, int samples_per_piece,
-                     std::span<const double> rise, std::span<const double> template_errors)
-    : max_pieces_(max_pieces), samples_per_piece_(samples_per_piece), large_z_constant_(0.0),
-      rise_(rise.begin(), rise.end()), template_errors_(template_errors.begin(), template_errors.end()) {
-    if (max_pieces < 1) throw std::invalid_argument("flat prior: max_pieces must be at least 1");
-    if (samples_per_piece < 1) throw std::invalid_argument("flat prior: samples_per_piece must be at least 1");
-    for (const double e : template_errors_)
-        if (!finite_and_not_negative(e))
-            throw std::invalid_argument("flat prior: every template error must be finite and not negative");
-    rise_squares_.assign(1, 0.0);
-    for (const double g : rise_) {
-        if (!(g > 0.0) || !std::isfinite(g))
-            throw std::invalid_argument("flat prior: every rise fraction must be positive and finite");
-        rise_squares_.push_back(rise_squares_.back() + g * g);
-    }
-    const auto pieces_count = static_cast<std::size_t>(max_pieces);
-    const auto piece_samples = static_cast<std::size_t>(samples_per_piece);
-    if (c.size() <= piece_samples * pieces_count || c.size() < 2)
-        throw std::invalid_argument("flat prior: c must reach m = samples_per_piece x max_pieces channel samples");
-    noise_rate_hz_ = c[c.size() - 1] - c[c.size() - 2];
-    if (!(noise_rate_hz_ > 0.0) || !std::isfinite(noise_rate_hz_))
-        throw std::invalid_argument("flat prior: c's last increment, the noise's long-run rate, must be positive (Hz)");
-    // The last increment is the long-run rate only past the filter's correlation length, where the increments settle
-    // (kSettledIncrement): 12 samples, for instance, would give 1 482.27 Hz, 1.2% low.
-    if (c.size() < 3 || !(std::fabs(noise_rate_hz_ - (c[c.size() - 2] - c[c.size() - 3])) <=
-                          kSettledIncrement * noise_rate_hz_))
-        throw std::invalid_argument(
-            "flat prior: c must reach past the channel filter's correlation length (its last two increments equal)");
-    if (!std::isfinite(config.level_min_db) || !std::isfinite(config.level_max_db) ||
-        !(config.level_min_db < config.level_max_db))
-        throw std::invalid_argument("flat prior: the level range must be finite and not empty (dB S500)");
-    large_z_constant_ = std::log(20.0 / (std::numbers::ln10 * (config.level_max_db - config.level_min_db)));
-
-    // u = ln b at the ends of the range, for each block length: with the pieces independent at the long-run rate and
-    // the block the matched filter to the rise, b^2 = 10^(x / 10) x 500 Hz x m_signal(n) / rate, so ln b =
-    // x ln 10 / 20 + ln(500 Hz m_signal(n) / rate) / 2.
-    const double u_per_db = std::numbers::ln10 / 20.0;
-    std::vector<double> lower(pieces_count);
-    for (std::size_t n = 1; n <= pieces_count; ++n) {
-        const double m_signal = signal_samples(static_cast<int>(n));
-        const double half_ln_gain = 0.5 * std::log(kS500Hz * m_signal / noise_rate_hz_);
-        lower[n - 1] = config.level_min_db * u_per_db + half_ln_gain;
-        const double upper = config.level_max_db * u_per_db + half_ln_gain;
-        if (lower[n - 1] > std::log(kHighestLowerB) || upper < std::log(kTableTopZ + kAboveZ))
-            throw std::invalid_argument(
-                "flat prior: for every block, b must be at most 6 at level_min_db and at least 50 at level_max_db");
-    }
-
-    // The grid in u, in steps of 0.01 dB of x: the nodes are whole multiples of the step (b = 1 is one), so that an
-    // entry depends only on its block's m_signal, and j counts them from the one at or below the lowest lower limit up
-    // to b = 40 + 10. Each block length's lower limit lies in a cell [u_j, u_j+1), at a fraction of the step; they are
-    // read from the top down (ties by length).
-    const double step = u_per_db * kLevelStepDb;
-    const auto first = static_cast<long long>(std::floor(*std::min_element(lower.begin(), lower.end()) / step));
-    const auto top = static_cast<std::size_t>(
-        static_cast<long long>(std::ceil(std::log(kTableTopZ + kAboveZ) / step)) - first);
-    std::vector<double> grid_b(top + 1);
-    for (std::size_t j = 0; j <= top; ++j)
-        grid_b[j] = std::exp(static_cast<double>(first + static_cast<long long>(j)) * step);
-    struct Limit {
-        std::size_t cell;
-        double fraction;
-        std::size_t pieces;
-    };
-    std::vector<Limit> limits;
-    limits.reserve(pieces_count);
-    for (std::size_t n = 1; n <= pieces_count; ++n) {
-        const double position = lower[n - 1] / step;
-        const double cell = std::floor(position);
-        limits.push_back({static_cast<std::size_t>(static_cast<long long>(cell) - first), position - cell, n});
-    }
-    std::sort(limits.begin(), limits.end(), [](const Limit& a, const Limit& b) {
-        return a.cell != b.cell ? a.cell > b.cell : a.pieces > b.pieces;
-    });
-
-    // For each z, the integrals of e^(Lambda - z^2), (b - z) e^(Lambda - z^2) and (b - z)^2 e^(Lambda - z^2) over u
-    // from b = z + 10 down, by the trapezoid rule; at each lower limit they give Lambda_flat - z^2 and the posterior.
-    const std::size_t row = static_cast<std::size_t>(kTableSteps) + 1;
-    nodes_.resize(pieces_count * row);
-    for (std::size_t i = 0; i < row; ++i) {
-        const double z = static_cast<double>(i) / kTableNodesPerZ;
-        const auto store = [&](std::size_t pieces, double f0, double f1, double f2) {
-            const double mean_offset = f1 / f0;
-            nodes_[(pieces - 1) * row + i] = {large_z_constant_ + std::log(f0), z + mean_offset,
-                                              f2 / f0 - mean_offset * mean_offset};
-        };
-        const auto start = std::min(
-            top, static_cast<std::size_t>(static_cast<long long>(std::ceil(std::log(z + kAboveZ) / step)) - first));
-        double f0 = 0.0;  // the integrals from the start down to u_j
-        double f1 = 0.0;
-        double f2 = 0.0;
-        double e0 = 0.0;  // the integrands at u_j+1
-        double e1 = 0.0;
-        double e2 = 0.0;
-        std::size_t next = 0;
-        for (std::size_t j = start + 1; j-- > 0;) {
-            const double b = grid_b[j];
-            const double d = b - z;
-            const double e = std::exp(-b * b + ln_i0(2.0 * b * z) - z * z);
-            const double above0 = f0;
-            const double above1 = f1;
-            const double above2 = f2;
-            if (j < start) {
-                f0 += 0.5 * step * (e + e0);
-                f1 += 0.5 * step * (d * e + e1);
-                f2 += 0.5 * step * (d * d * e + e2);
-            }
-            for (; next < limits.size() && limits[next].cell == j; ++next) {
-                const double f = limits[next].fraction;  // u_lo lies f steps above u_j
-                store(limits[next].pieces, f0 - f * (f0 - above0), f1 - f * (f1 - above1), f2 - f * (f2 - above2));
-            }
-            // Below the peak e^Lambda falls with u: once what lies below u_j, at most e (u_j - u_0), cannot reach
-            // 1e-17 of the integral, the remaining lower limits read the integral as it stands.
-            if (j < start && e <= e0 && e * static_cast<double>(j) * step < kNegligible * f0) {
-                for (; next < limits.size(); ++next) store(limits[next].pieces, f0, f1, f2);
-                break;
-            }
-            e0 = e;
-            e1 = d * e;
-            e2 = d * d * e;
-        }
-    }
-}
-
-double FlatPrior::signal_samples(int pieces) const {
-    if (pieces < 1) throw std::out_of_range("flat prior: a mark's first block has at least 1 piece");
-    const auto n = static_cast<std::size_t>(pieces);
-    const std::size_t rise = rise_.size();
-    // g_1^2 + ... + g_n^2, g_j = 1 past the rise: n itself without one.
-    const double sum = n <= rise ? rise_squares_[n] : rise_squares_[rise] + static_cast<double>(n - rise);
-    return static_cast<double>(samples_per_piece_) * sum;
-}
-
-double FlatPrior::weight(int piece) const {
-    if (piece < 1) throw std::out_of_range("flat prior: a mark's pieces count from 1");
-    const auto j = static_cast<std::size_t>(piece);
-    return j <= rise_.size() ? rise_[j - 1] : 1.0;
-}
-
-double FlatPrior::template_error(int pieces) const {
-    if (pieces < 1) throw std::out_of_range("flat prior: a mark's first block has at least 1 piece");
-    if (template_errors_.empty()) return 0.0;
-    return template_errors_[std::min(static_cast<std::size_t>(pieces), template_errors_.size()) - 1];
-}
-
-const FlatPrior::Node* FlatPrior::row(int pieces, double z) const {
-    if (pieces < 1 || pieces > max_pieces_) throw std::out_of_range("flat prior: pieces must be 1 ... max_pieces");
-    if (!finite_and_not_negative(z)) throw std::invalid_argument("flat prior: z must be finite and not negative");
-    return nodes_.data() + static_cast<std::size_t>(pieces - 1) * (static_cast<std::size_t>(kTableSteps) + 1);
-}
-
-double FlatPrior::llr(int pieces, double z) const {
-    const Node* nodes = row(pieces, z);
-    if (z > kTableTopZ) return z * z - std::numbers::ln2 - 2.0 * std::log(z) + large_z_constant_;
-    const double position = z * kTableNodesPerZ;
-    const int cell = std::min(static_cast<int>(position), kTableSteps - 1);
-    const double fraction = position - cell;
-    const Node& a = nodes[cell];
-    const Node& b = nodes[cell + 1];
-    return z * z + a.llr_less_z2 + fraction * (b.llr_less_z2 - a.llr_less_z2);
-}
-
-Moments FlatPrior::posterior(int pieces, double z) const {
-    const Node* nodes = row(pieces, z);
-    // The posterior of b, proportional to e^-(b - z)^2 b^(-3/2) for large z, by Laplace's method one order further.
-    if (z > kTableTopZ) return {z - 0.75 / z, 0.5 + 0.375 / (z * z)};
-    const double position = z * kTableNodesPerZ;
-    const int cell = std::min(static_cast<int>(position), kTableSteps - 1);
-    const double fraction = position - cell;
-    const Node& a = nodes[cell];
-    const Node& b = nodes[cell + 1];
-    return {a.mean + fraction * (b.mean - a.mean), a.var + fraction * (b.var - a.var)};
-}
 
 }  // namespace kz4ap::viterbi

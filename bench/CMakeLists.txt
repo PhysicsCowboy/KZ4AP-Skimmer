@@ -43,7 +43,7 @@ endif()
 # Generates the new decoder's compiled-in tables (plan 1b, Ruling 65). It links the engine's sources without the
 # generated tables, so it builds before any table exists (Ruling 72, N6), through its own static archive of
 # kz4ap_engine_core's objects (Ruling 76): the linker takes from an archive only the objects the tool needs, so engine
-# code that reads a generated table (the decoder's, through OmegaBarTable::compiled() or sample_weight) stays out of the
+# code that reads a generated table (the decoder's, through OmegaBarTable::compiled()) stays out of the
 # tool, where linking the object library itself would take every object and leave those references unresolved.
 # kz4ap_engine stays one archive of the core objects and the generated tables (engine/CMakeLists.txt).
 add_library(kz4ap_viterbi_tables_core STATIC $<TARGET_OBJECTS:kz4ap_engine_core>)

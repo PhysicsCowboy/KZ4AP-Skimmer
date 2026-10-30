@@ -1,7 +1,13 @@
 #include "kz4ap/viterbi/search.hpp"
 
 #include "kz4ap/viterbi/fist.hpp"
+#include "kz4ap/viterbi/long_run.hpp"
+#include "kz4ap/viterbi/mark_template.hpp"
 #include "kz4ap/viterbi/morse_tree.hpp"
+#include "kz4ap/viterbi/newborn.hpp"
+#include "kz4ap/viterbi/observation.hpp"
+#include "kz4ap/viterbi/systematic.hpp"
+#include "kz4ap/viterbi_decoder.hpp"
 #include "viterbi/text.hpp"
 
 #include <algorithm>
@@ -9,11 +15,12 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <limits>
+#include <numbers>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -25,18 +32,18 @@ constexpr int kOpen = -1;                    // a speed not yet taken
 constexpr std::int32_t kNone = -1;           // no candidate
 constexpr std::string_view kWordSpace = " ";
 constexpr double kStatsWindowS = 0.1;        // s: the window of the live count's series
-// s: how far the systematic term's carrier power looks ahead, past the channel filter's ringing before a mark's first
-// template piece (search.hpp, "The systematic term"; measured)
-constexpr double kLookaheadS = 0.004;
+// The newborn's first mark: it must switch at the latest at this many samples after its first claimed key-up (j = 15,
+// the last sample of the first mark's template with s != 0; owner, 2026-10-25; part 8).
+constexpr int kLastScoredSampleAfterKeyUp = TemplateTables::kSpan - 1;
 
 // What a story is doing. Its order is the first part of the state's order.
 enum class Phase : std::uint8_t { NoSignal = 0, Mark = 1, Gap = 2 };
 
 // The state (plan §2.7, item 4) packed into 64 bits, the phase (activity and key) in the top 2, tau in the next 32,
 // then speed + 1 in 8 bits (open = 0) and node + 1 in 14. The packed order is one fixed order of the states. The
-// no-signal state, which has no clock, speed or node, is 0.
+// no-signal state has no speed or node; its tau counts the samples since an over's end while the over's tail still
+// scores (1 ... 17), and is 0 once the tail is over, the quiet state, 0 as a whole.
 std::uint64_t pack_state(Phase phase, int tau, int speed, int node) {
-    if (phase == Phase::NoSignal) return 0;
     return (static_cast<std::uint64_t>(phase) << 62) |
            (static_cast<std::uint64_t>(static_cast<std::uint32_t>(tau)) << 30) |
            (static_cast<std::uint64_t>(speed + 1) << 22) | static_cast<std::uint64_t>(node + 1);
@@ -44,7 +51,7 @@ std::uint64_t pack_state(Phase phase, int tau, int speed, int node) {
 
 // What became of a story's parent to make it.
 enum class Move : std::uint8_t {
-    Continue,          // the parent, one piece on
+    Continue,          // the parent, one sample on
     EndMark,           // the parent's mark ended as a dot or a dash: a gap at the child node
     EndOver,           // the parent's mark ended and with it the over: no signal
     EndElementGap,     // the parent's gap ended between elements: a mark at the same node
@@ -54,23 +61,30 @@ enum class Move : std::uint8_t {
     BirthRescue,       // a rescue newborn, after its parent's gap ended between letters or words
 };
 
+// One story (search.hpp). Copied from a prototype, never default-made, so that its long-run sums carry the search's
+// spread, bin and memory.
 struct Story {
+    explicit Story(const LongRun& sums) : long_run(sums) {}
+
     Phase phase = Phase::NoSignal;
-    std::int32_t tau = 0;        // pieces in the current element
+    std::int32_t tau = 0;        // samples in the current element; no signal: since an over's end, 0 once quiet
     std::int16_t speed = kOpen;  // 0 ... speed_count - 1, or open
     std::int16_t node = -1;      // a mark: the node it started from; a gap: the node of the mark before it
     std::uint64_t state = 0;     // the packed state
     double score = 0.0;          // nats, relative to the best
-    // nats: the score without the current element's timing and the current block's evidence (the score at the
-    // element's start plus the evidence of the element's finished blocks)
-    double base = 0.0;
-    Level level;                          // as learned, never predicted
-    std::complex<double> block_sum = 0.0; // FS: the current block's coherent sum
-    std::int32_t block_pieces = 0;        // pieces in it
-    double mode_a = 0.0;                  // FS: the previous piece's mode in the block, read when block_pieces > 0
+    double base = 0.0;           // nats: the score at the element's start plus the scores of its samples since
+    EdgeHistory edges;           // its claimed edges of the last 16 samples
+    bool edge_next = false;      // it claims an edge, its element's start, at the next sample
+    // A story in the newborn integral: samples since its first mark's claimed key-up (0 at that sample), -1 before it.
+    std::int16_t key_up_age = -1;
+    Amplitude amp{0.0, 0.0, 0};  // mu (FS), P (FS^2) and t_m, as updated (zeros before the newborn switches)
+    double mode_a = 0.0;         // FS: the last scored sample's mode, Newton's start at the next
+    double omega_bar = 0.0;      // FS^2: Omega_bar, looked up after each scored sample once out of the integral
+    LongRun long_run;            // Omega_hat's and nu's sums since the over's start or the rescue
+    std::shared_ptr<NewbornIntegral> newborn;  // the newborn integral while it lasts (shared until written)
     std::int32_t text = SharedText::kEmpty;
-    double letter_start_s = 0.0;   // s: the start of the current letter's first mark
-    double last_mark_end_s = 0.0;  // s: the end of the last finished mark
+    double letter_start_s = 0.0;   // s: the current letter's first claimed key-down
+    double last_mark_end_s = 0.0;  // s: the last finished mark's claimed key-up
     std::int64_t line = 0;
     std::uint64_t creation = 0;
 };
@@ -85,16 +99,16 @@ struct Origin {
     std::int64_t line = 0;
 };
 
-// One successor kind's best offer at a piece (a merge of everything offered into one state).
+// One successor kind's best offer at a sample (a merge of everything offered into one state).
 struct Slot {
     double score = -kInf;
     std::uint64_t creation = 0;
     Origin origin;
-    std::int64_t piece = -1;  // the piece at which it was last filled; empty at any other
+    std::int64_t sample = -1;  // the sample at which it was last filled; empty at any other
 };
 
-// A table from a state to the index of the candidate kept in it at the current piece: open addressing with linear
-// probing, kept at most half full, emptied for each piece by a generation count. It is only searched, never walked.
+// A table from a state to the index of the candidate kept in it at the current sample: open addressing with linear
+// probing, kept at most half full, emptied for each sample by a generation count. It is only searched, never walked.
 class StateTable {
 public:
     void reset(std::size_t insertions) {
@@ -260,7 +274,7 @@ private:
 
     const Fist& fist_;
     int speeds_;
-    int cap_;  // pieces: the taus kept
+    int cap_;  // samples: the taus kept
     bool root_has_[2] = {false, false};
     std::vector<double> first_survival_;             // by tau - 1
     std::vector<double> first_ends_;                 // by tau - 1, rows of 2 x speeds
@@ -271,15 +285,35 @@ private:
 // bytes: the open timing's budget per Search, which sets its tables' cap (search.hpp, "Work saved").
 constexpr std::size_t kOpenTimingBudgetBytes = 4'000'000;
 
-// The open timing's cap, pieces: the options' where set (positive), else the most taus the budget holds.
+// The open timing's cap, samples: the options' where set (positive), else the most taus the budget holds.
 int open_timing_cap(const ViterbiConfig& config, const detail::SearchOptions& options) {
-    if (options.open_timing_cap_pieces > 0) return options.open_timing_cap_pieces;
+    if (options.open_timing_cap_samples > 0) return options.open_timing_cap_samples;
     const std::size_t taus = kOpenTimingBudgetBytes / OpenTiming::bytes_per_tau(std::max(config.speed_count, 1));
     const std::size_t most = static_cast<std::size_t>(std::numeric_limits<int>::max());
     return static_cast<int>(std::clamp<std::size_t>(taus, 1, most));
 }
 
 bool positive_and_finite(double x) { return x > 0.0 && std::isfinite(x); }
+
+// The shared parts after checking them.
+std::shared_ptr<const ViterbiShared> checked_shared(std::shared_ptr<const ViterbiShared> shared) {
+    if (!shared) throw std::invalid_argument("search: no shared parts");
+    return shared;
+}
+
+// The spread f_D (Hz): the genie's where set (search.hpp, point 4).
+double spread_of(const ViterbiConfig& config) {
+    return config.genie_fading_spread_hz.value_or(config.fading_spread_hz);
+}
+
+// The long-run sums' prototype, after converting nu's bin and memory to samples and bins (whole numbers, else the
+// field is named).
+LongRun long_run_of(const ViterbiConfig& config) {
+    const int bin = whole_count(config.nu_bin_s, config.sample_interval_s, "nu_bin_s", "samples");
+    (void)whole_count(config.nu_memory_s, config.sample_interval_s, "nu_memory_s", "samples");
+    const int bins = whole_count(config.nu_memory_s, config.nu_bin_s, "nu_memory_s", "bins (nu_bin_s)");
+    return LongRun(spread_of(config), bin, bins, config.sample_interval_s);
+}
 
 }  // namespace
 
@@ -334,35 +368,45 @@ Pruning prune(std::span<const Ranked> candidates, double beam_nats, int ceiling)
 }  // namespace detail
 
 struct Search::Impl {
-    Impl(const ViterbiConfig& config, std::span<const double> c, std::shared_ptr<const FlatPrior> prior,
-         detail::SearchOptions options);
+    Impl(const ViterbiConfig& config, std::shared_ptr<const ViterbiShared> shared, detail::SearchOptions options);
 
-    void step(std::complex<double> piece, double t, double n0);
+    void step(double e, double t, double n0);
     void finish();
     std::vector<DecodedSymbol> best_text() const;
     std::vector<StoryView> live_stories() const;
     const SearchStats& stats() const { return stats_; }
-    std::size_t live() const { return population_.size(); }
+    std::size_t live() const { return live_; }
     double normalization() const { return normalization_; }
     std::size_t text_entries() const { return text_.size(); }
     std::size_t open_timing_bytes() const { return open_.bytes(); }
-    int lookahead_pieces() const { return lookahead_pieces_; }
+    std::size_t newborn_integrals() const;
+    std::size_t newborn_integral_bytes() const;
 
 private:
-    // The oldest piece held, searched with the largest |piece|^2 of those still held after it as its look-ahead.
-    void search_oldest();
-    // One piece (search.hpp, "One piece searched, in this order"); ahead, FS^2, is the look-ahead's largest |piece|^2.
-    void search_piece(std::complex<double> piece, double t, double n0, double ahead);
+    // A sample given.
+    struct Pending {
+        double e;   // FS
+        double t;   // s
+        double n0;  // FS^2/Hz
+        std::int64_t k;
+    };
+    // One sample (search.hpp, "One sample searched, in this order").
+    void search_sample(const Pending& sample);
+    // The sample's evidence for one story (search.hpp, "One sample k searched", steps 1 and 2): claims its edge,
+    // reads its template, scores the sample and updates its amplitude, sums and Omega_bar. Returns the score, nats.
+    double score_sample(Story& c, const Pending& sample, double sigma2);
+    double omega_bar_of(const Story& s, double sigma2) const {
+        return shared_->omega_bar().omega_bar_fs2(s.long_run.nu(), s.long_run.omega_hat_fs2(), sigma2);
+    }
     // max over the labels the node allows of ln S_label(speed, tau): a mark at a known speed.
     double mark_survival(int speed, int node, int tau) const;
     // max over the kinds the node allows of the kind's cost and ln S: a gap.
     double gap_survival(int speed, int node, int tau) const;
 
-    void continue_mark(const Story& s, Story& c, BlockScore& scored, std::complex<double> piece, double t, double n0);
     void end_mark(std::size_t i);
     void end_gap(std::size_t i);
 
-    // Offers, made in creation order. A successor more than the beam behind a score known at this piece is skipped
+    // Offers, made in creation order. A successor more than the beam behind a score known at this sample is skipped
     // where the options allow, except in the no-signal state. An offer replaces the candidate kept in its state as
     // detail::replaces decides: only with a better score, since the one kept was created earlier, so an offer that
     // loses costs a compare; its Origin is built only if it wins.
@@ -379,7 +423,11 @@ private:
     void emit_slot(const Slot& slot, std::uint64_t state);
     void consider_rescue(double score, std::size_t parent, Move gap);
 
-    Story build(std::uint32_t j, double t);
+    // Makes candidate j into `out` (storage reused); t: the sample's time (s), n0: its N0 (FS^2/Hz).
+    void build(std::uint32_t j, double t, double n0, Story& out);
+    // A newborn's new level: a new newborn integral (its prior's bounds from N0 at its birth, O10) and empty long-run
+    // sums and amplitude.
+    void restart_level(Story& s, double n0) const;
     std::int32_t letter_text(const Story& parent, bool word_space, double t);
 
     std::int64_t new_line(LineKind kind, double t);
@@ -387,24 +435,30 @@ private:
     void update_stats(double t, std::size_t ceiling_drops);
 
     // --- The configuration, read once ---
+    std::shared_ptr<const ViterbiShared> shared_;
     MorseTree tree_;
     Fist fist_;
-    std::shared_ptr<const FlatPrior> prior_;
-    double noise_rate_hz_ = 0.0;  // Hz per channel sample: the noise's long-run rate, c's last increment
+    FadingTables fading_;
+    Story prototype_;  // a story as made: its long-run sums carry the spread, bin and memory
     OpenTiming open_;
     bool skip_;
-    std::int64_t* skipped_successors_;  // detail::SearchOptions' counter, or null
+    std::int64_t* skipped_successors_;  // detail::SearchOptions' counters, or null
+    std::int64_t* newborn_copies_;
     bool stats_on_;
     double beam_nats_;
     std::size_t ceiling_;
     int speeds_;
-    int samples_per_piece_;
-    int block_pieces_;        // B; INT_MAX for none (f_D = 0)
-    int first_block_pieces_;  // min(B, the flat prior's max_pieces)
-    double spread_hz_;        // f_D
+    double interval_s_;        // Delta
     int order_;
-    double floor_squared_;    // systematic_floor^2: the floor's share of the systematic term, per unit squared weight
-    int lookahead_pieces_;    // ceil(kLookaheadS / piece_s): the pieces held back for the look-ahead
+    double floor_;             // systematic_floor
+    double sigma2_per_n0_hz_;  // sigma_y^2 / N0 (Hz)
+    double switch_sigma_u_;    // nepers
+    int grid_points_;
+    double live_range_nats_;
+    double level_min_db_;
+    double level_max_db_;
+    double w_;                // the one constant weight, the output noise's w_strong (D23)
+    NewbornFade fade_;        // the newborn's prediction step (D24)
     double log_stay_silent_;  // ln(1 - P)
     double log_over_start_;   // ln P
     double log_letter_;       // ln(1 / the tree's symbols)
@@ -414,34 +468,25 @@ private:
     double word_gap_cost_;    // ln(1 / (p (1 - q)))
     double over_end_cost_;    // ln(1 / (p q))
     double log_speed_prior_;  // ln(1 / speed_count)
-    int stats_window_pieces_;
+    int stats_window_samples_;
 
-    // --- The stories ---
+    // --- The stories: population_[0 ... live_) (the vectors' later elements are storage kept for reuse) ---
     std::vector<Story> population_;
+    std::size_t live_ = 0;
     std::uint32_t best_ = 0;  // the best story's index in population_
     SharedText text_;
     double normalization_ = 0.0;
-    std::int64_t piece_ = 0;  // pieces searched
+    std::int64_t searched_ = 0;  // samples searched
     std::uint64_t next_creation_ = 1;
     std::int64_t next_line_ = 1;
 
-    // --- The pieces given and not yet searched, and the channel's carrier power (the systematic term) ---
-    struct Pending {
-        std::complex<double> piece;  // FS
-        double t;                    // s
-        double n0;                   // FS^2/Hz
-    };
-    std::deque<Pending> pending_;  // oldest first, at most lookahead_pieces_ after a step
-    std::int64_t given_ = 0;       // pieces given to step
-    double last_given_t_ = 0.0;    // s: the last piece given
-    // The last first_block_pieces_ pieces searched, this one included, as (piece index, |piece|^2 in FS^2), the powers
-    // falling from the front (a monotonic queue: its front is their largest).
-    std::deque<std::pair<std::int64_t, double>> window_;
-    double carrier_power_ = 0.0;  // FS^2: the window's largest |piece|^2 and the look-ahead's, at this piece
+    // --- The samples given ---
+    std::int64_t given_ = 0;       // samples given to step
+    std::int64_t last_given_k_ = 0;
+    bool finished_ = false;
 
-    // --- One piece's work, kept between pieces for its storage ---
-    std::vector<Story> continuation_;  // [i]: population_[i] one piece on
-    std::vector<BlockScore> scored_;   // [i]: the scoring call of population_[i] at this piece, if in a mark
+    // --- One sample's work, kept between samples for its storage ---
+    std::vector<Story> continuation_;  // [i]: population_[i] one sample on
     std::vector<char> transferred_;    // [i]: population_[i]'s hold on its text passed to its continuation
     std::vector<detail::Ranked> ranked_;
     std::vector<Origin> origins_;
@@ -450,9 +495,10 @@ private:
     StateTable general_;
     std::vector<Slot> root_ends_;      // [label x speeds + speed]: gaps at E and T after a mark at the root
     std::vector<Slot> letter_starts_;  // [speed]: marks at the root at a known speed
-    Slot no_signal_;
+    Slot no_signal_;   // the quiet no-signal state
+    Slot over_ends_;   // this sample's over's ends: a no-signal story at tau = 1, whose key-up comes at the next sample
     Slot newborn_;
-    double known_best_ = -kInf;  // nats: the best score offered so far at this piece
+    double known_best_ = -kInf;  // nats: the best score offered so far at this sample
     struct Rescue {
         double score = -kInf;
         std::int32_t parent = kNone;
@@ -465,82 +511,72 @@ private:
     // --- The statistics ---
     SearchStats stats_;
     struct LineTrack {
-        std::int64_t alive_piece = -1;    // the last piece after whose pruning it had a live story
-        double best_score = -kInf;        // nats: its best live story's relative score at that piece
+        std::int64_t alive_sample = -1;   // the last sample after whose pruning it had a live story
+        double best_score = -kInf;        // nats: its best live story's relative score at that sample
         LineEnd last_removal = LineEnd::Alive;
         bool left_first_element = false;  // one of its live stories was not in the newborn's first mark
     };
     std::vector<LineTrack> tracks_;
-    std::vector<std::int64_t> active_lines_;  // alive after the last piece
-    std::vector<std::pair<std::int64_t, double>> born_;  // this piece's newborns: line and score
+    std::vector<std::int64_t> active_lines_;  // alive after the last sample
+    std::vector<std::pair<std::int64_t, double>> born_;  // this sample's newborns: line and score
     double window_sum_ = 0.0;
     int window_count_ = 0;
 };
 
-Search::Impl::Impl(const ViterbiConfig& config, std::span<const double> c, std::shared_ptr<const FlatPrior> prior,
+Search::Impl::Impl(const ViterbiConfig& config, std::shared_ptr<const ViterbiShared> shared,
                    detail::SearchOptions options)
-    : tree_(),
+    : shared_(checked_shared(std::move(shared))),
+      tree_(),
       fist_(config),
-      prior_(std::move(prior)),
+      fading_(spread_of(config), config.sample_interval_s),
+      prototype_(long_run_of(config)),
       open_(fist_, tree_, config.speed_count, open_timing_cap(config, options)),
       skip_(options.skip_successors_beyond_beam),
       skipped_successors_(options.skipped_successors),
+      newborn_copies_(options.newborn_copies),
       stats_on_(config.stats),
       beam_nats_(config.beam_nats),
       ceiling_(0),
       speeds_(config.speed_count),
-      samples_per_piece_(0),
-      block_pieces_(0),
-      first_block_pieces_(0),
-      spread_hz_(config.genie_fading_spread_hz.value_or(config.fading_spread_hz)),
+      interval_s_(config.sample_interval_s),
       order_(config.quadrature_order),
-      floor_squared_(config.systematic_floor * config.systematic_floor),
-      lookahead_pieces_(0) {
-    if (!prior_) throw std::invalid_argument("search: no flat prior");
+      floor_(config.systematic_floor),
+      sigma2_per_n0_hz_(shared_->output_noise().sigma2_per_n0_hz),
+      switch_sigma_u_(config.newborn_switch_sigma_u),
+      grid_points_(config.newborn_grid_points),
+      live_range_nats_(config.newborn_live_range_nats),
+      level_min_db_(config.level_min_db),
+      level_max_db_(config.level_max_db),
+      w_(shared_->output_noise().w_strong),
+      fade_{whole_count(config.newborn_fade_interval_s, config.sample_interval_s, "newborn_fade_interval_s", "samples"),
+            0.5 * (1.0 - fading_.rho(1) * fading_.rho(1))} {
+    // The shared parts must be this configuration's: its sample interval, edges, level range and newborn grid.
+    if (!(std::fabs(shared_->sample_interval_s() - config.sample_interval_s) <= 1e-9 * config.sample_interval_s))
+        throw std::invalid_argument("search: the shared parts were built for another sample_interval_s");
+    if (shared_->level_min_db() != config.level_min_db || shared_->level_max_db() != config.level_max_db)
+        throw std::invalid_argument("search: the shared parts were built for another level range");
+    if (shared_->newborn_tables().points() != config.newborn_grid_points)
+        throw std::invalid_argument("search: the shared parts were built for another newborn_grid_points");
     if (!(config.systematic_floor >= 0.0 && config.systematic_floor <= 1.0))
         throw std::invalid_argument("search: systematic_floor must lie in [0, 1] (relative amplitude)");
     if (!(config.beam_nats > 0.0)) throw std::invalid_argument("search: beam_nats must be positive (nats)");
     if (config.ceiling < 1) throw std::invalid_argument("search: the ceiling must be at least 1 story");
     if (config.speed_count > 255) throw std::invalid_argument("search: at most 255 speeds");
     if (tree_.size() > 16383) throw std::invalid_argument("search: the Morse tree has too many nodes");
-    const double over_start = config.over_rate_per_s * config.piece_s;  // P, per piece
+    if (!positive_and_finite(config.newborn_switch_sigma_u))
+        throw std::invalid_argument("search: newborn_switch_sigma_u must be positive and finite (nepers)");
+    if (!(config.newborn_live_range_nats > 0.0))
+        throw std::invalid_argument("search: newborn_live_range_nats must be positive (nats)");
+    const double over_start = config.over_rate_per_s * config.sample_interval_s;  // P, per sample
     const auto probability = [](double x) { return x > 0.0 && x < 1.0; };
     if (!probability(over_start))
-        throw std::invalid_argument("search: over_rate_per_s x piece_s must lie in (0, 1) (a probability per piece)");
+        throw std::invalid_argument(
+            "search: over_rate_per_s x sample_interval_s must lie in (0, 1) (a probability per sample)");
     if (!probability(config.rescue_epsilon)) throw std::invalid_argument("search: rescue_epsilon must lie in (0, 1)");
     if (!probability(config.word_end_p)) throw std::invalid_argument("search: word_end_p must lie in (0, 1)");
     if (!probability(config.over_end_q)) throw std::invalid_argument("search: over_end_q must lie in (0, 1)");
     if (config.quadrature_order < 2 || config.quadrature_order > 20)
         throw std::invalid_argument("search: the quadrature's order must be 2 to 20");
-    const double block_s = block_length_s(spread_hz_, config.block_loss_db);
-    if (std::isinf(block_s)) {
-        block_pieces_ = std::numeric_limits<int>::max();
-    } else {
-        const double pieces = std::floor(block_s / config.piece_s);
-        if (!(pieces >= 1.0)) throw std::invalid_argument("search: a block must hold at least one piece");
-        block_pieces_ = pieces >= static_cast<double>(std::numeric_limits<int>::max())
-                            ? std::numeric_limits<int>::max()
-                            : static_cast<int>(pieces);
-    }
-    first_block_pieces_ = std::min(block_pieces_, prior_->max_pieces());
-    // The look-ahead in whole pieces, covering kLookaheadS: 2 at 2 ms (the tolerance keeps an exact ratio exact).
-    const double lookahead = std::ceil(kLookaheadS / config.piece_s - 1e-9);
-    if (!(lookahead <= 1e6)) throw std::invalid_argument("search: piece_s is too short for the look-ahead (s)");
-    lookahead_pieces_ = static_cast<int>(lookahead);
-    samples_per_piece_ = prior_->samples_per_piece();
-    const int longest =
-        block_pieces_ == std::numeric_limits<int>::max() ? first_block_pieces_ : block_pieces_;  // pieces
-    if (c.size() < 2 || c.size() <= static_cast<std::size_t>(samples_per_piece_) * static_cast<std::size_t>(longest))
-        throw std::invalid_argument("search: c must reach m = samples_per_piece x the longest block (channel samples)");
-    for (std::size_t m = 1; m < c.size(); ++m)
-        if (!positive_and_finite(c[m])) throw std::invalid_argument("search: c(m) must be positive and finite (Hz)");
-    // c is read only for the noise's long-run rate: its last increment, past the filter's correlation length. The flat
-    // prior reads the same from its own c, and the two must agree.
-    noise_rate_hz_ = c[c.size() - 1] - c[c.size() - 2];
-    if (!positive_and_finite(noise_rate_hz_))
-        throw std::invalid_argument("search: c's last increment, the noise's long-run rate, must be positive (Hz)");
-    if (!(std::fabs(noise_rate_hz_ - prior_->noise_rate_hz()) <= 1e-9 * noise_rate_hz_))
-        throw std::invalid_argument("search: c and the flat prior's c give different long-run noise rates");
     ceiling_ = static_cast<std::size_t>(config.ceiling);
 
     int symbols = 0;
@@ -555,15 +591,16 @@ Search::Impl::Impl(const ViterbiConfig& config, std::span<const double> c, std::
     word_gap_cost_ = -(std::log(config.word_end_p) + std::log1p(-config.over_end_q));
     over_end_cost_ = -(std::log(config.word_end_p) + std::log(config.over_end_q));
     log_speed_prior_ = -std::log(static_cast<double>(speeds_));
-    stats_window_pieces_ = std::max(1, static_cast<int>(std::lround(kStatsWindowS / config.piece_s)));
+    stats_window_samples_ = std::max(1, static_cast<int>(std::lround(kStatsWindowS / config.sample_interval_s)));
 
     root_ends_.assign(2 * static_cast<std::size_t>(speeds_), Slot{});
     letter_starts_.assign(static_cast<std::size_t>(speeds_), Slot{});
 
-    // At the channel's first piece there is one story: no signal, score 0, empty text, line 0.
-    Story first;
+    // At the channel's first sample there is one story: no signal, score 0, empty text, no edges, line 0.
+    Story first = prototype_;
     first.state = pack_state(Phase::NoSignal, 0, kOpen, -1);
     population_.push_back(first);
+    live_ = 1;
     if (stats_on_) {
         stats_.lines.push_back(NewbornLine{});
         tracks_.push_back(LineTrack{});
@@ -589,49 +626,53 @@ double Search::Impl::gap_survival(int speed, int node, int tau) const {
     return best;
 }
 
-void Search::Impl::continue_mark(const Story& s, Story& c, BlockScore& scored, std::complex<double> piece, double t,
-                                 double n0) {
-    c.tau = s.tau + 1;
-    c.block_pieces = s.block_pieces + 1;
-    // A mark's first block is the matched filter to the rise: each piece weighted by its expected fraction, g = 1 past
-    // the rise; a later block is the plain sum. The pieces count as independent at the noise's long-run rate, so the
-    // sum's noise variance is N0 x rate x m_signal, m_signal = samples_per_piece x the sum of the squared weights.
-    const bool first_block = c.block_pieces == c.tau;
-    c.block_sum = s.block_sum + (first_block ? prior_->weight(c.tau) : 1.0) * piece;
-    const double m_signal = first_block ? prior_->signal_samples(c.block_pieces)
-                                        : static_cast<double>(samples_per_piece_ * c.block_pieces);
-    const double s_abs = std::abs(c.block_sum);  // FS
-    // The error budget (search.hpp, "The systematic term"): the systematic term C^2 (E_n + floor^2 W_n) added in
-    // quadrature to the noise, C^2 the larger of the channel's carrier power and the block's own estimate of a full
-    // piece's squared carrier sum, (samples_per_piece |S| / m_signal)^2; E_n the edge's term in a mark's first block
-    // (0 in a later one); W_n = m_signal / samples_per_piece, the sum of the squared weights.
-    const double per_piece = static_cast<double>(samples_per_piece_);
-    const double own = per_piece * s_abs / m_signal;                    // FS
-    const double carrier_squared = std::max(carrier_power_, own * own);  // FS^2
-    const double edge = first_block ? prior_->template_error(c.block_pieces) : 0.0;
-    const double v = n0 * noise_rate_hz_ * m_signal +
-                     carrier_squared * (edge + floor_squared_ * (m_signal / per_piece));  // FS^2
-    int limit = 0;
-    if (s.level.learned) {
-        scored = score_block(predict(s.level, t, spread_hz_), s_abs, m_signal, v, order_, t,
-                             s.block_pieces > 0 ? std::optional<double>(s.mode_a) : std::nullopt);
-        limit = block_pieces_;
-    } else {
-        scored = score_first_block(*prior_, s_abs, c.block_pieces, v, t);
-        limit = first_block_pieces_;
+double Search::Impl::score_sample(Story& c, const Pending& sample, double sigma2) {
+    // 1. The edge this story claims at this sample (its element's first), then its template and edge term.
+    const bool claim = c.edge_next;
+    advance(c.edges, claim);
+    c.edge_next = false;
+    if (c.newborn) {
+        if (claim && c.phase != Phase::Mark && c.key_up_age < 0)
+            c.key_up_age = 0;  // the newborn's first mark's key-up
+        else if (c.key_up_age >= 0)
+            ++c.key_up_age;
     }
-    const double timing = s.speed == kOpen ? log_speed_prior_ + open_.first_mark_survival(c.tau)
-                                           : mark_survival(s.speed, s.node, c.tau);
-    c.score = s.base + scored.llr + timing;
-    if (c.block_pieces == limit) {  // the block is full: finished, its evidence for good, its posterior the level
-        c.base = s.base + scored.llr;
-        c.level = scored.level;
-        c.block_sum = 0.0;
-        c.block_pieces = 0;
-        c.mode_a = 0.0;
-    } else {
-        c.mode_a = scored.mode_a;
+    const TemplateValue tv = template_value(c.edges, shared_->template_tables());
+    double score = 0.0;
+    if (tv.s != 0.0) {
+        // 2. The score by the newborn integral (V(a_i) at each point, the prediction step) or by the story's prediction,
+        // with V_k from that prediction, against the reference every story shares.
+        if (c.newborn) {
+            if (c.newborn.use_count() > 1) {  // shared with a story descended from the same newborn: copy on write
+                c.newborn = std::make_shared<NewbornIntegral>(*c.newborn);
+                if (newborn_copies_) ++*newborn_copies_;
+            }
+            c.newborn->add(sample.e, tv.s, tv.v, sigma2, floor_);
+            score = c.newborn->last_score_nats();
+        } else {
+            const Prediction predicted = predict_amplitude(c.amp, sample.k, c.omega_bar, fading_);
+            const double variance =
+                systematic_variance_fs2(sigma2, predicted.mu_fs * predicted.mu_fs + predicted.p_fs2, tv.s, tv.v, floor_);
+            const SampleEvidence evidence = story_evidence(sample.e, tv.s, predicted.mu_fs, predicted.p_fs2, variance,
+                                                           sigma2, w_, order_, c.mode_a);
+            score = evidence.score_nats;
+            c.amp = Amplitude{evidence.amplitude.mean, evidence.amplitude.var, sample.k};
+            c.mode_a = evidence.mode_a_fs;
+        }
+        c.long_run.at_sample(sample.k);
+        c.long_run.add(tv.s, sample.e, sigma2);
+        if (!c.newborn) c.omega_bar = omega_bar_of(c, sigma2);
     }
+    // The newborn's switch to N(mu, P), after each of its samples (and at the latest at j = 15 after its first key-up).
+    if (c.newborn &&
+        c.newborn->should_switch(switch_sigma_u_, c.key_up_age == kLastScoredSampleAfterKeyUp)) {
+        c.amp = c.newborn->to_gaussian(sample.k);
+        c.mode_a = c.amp.mu_fs;
+        c.newborn.reset();
+        c.key_up_age = -1;
+        c.omega_bar = omega_bar_of(c, sigma2);
+    }
+    return score;
 }
 
 std::uint32_t Search::Impl::push_candidate(std::uint64_t state, double score, std::uint64_t creation,
@@ -661,7 +702,7 @@ void Search::Impl::offer_general(std::uint64_t state, double score, std::int64_t
 
 template <class MakeOrigin>
 void Search::Impl::offer_slot(Slot& slot, double score, std::int64_t line, MakeOrigin make_origin) {
-    if (slot.piece == piece_) {
+    if (slot.sample == searched_) {
         if (!detail::replaces(score, next_creation_, slot.score, slot.creation)) {
             if (stats_on_) removed(line, LineEnd::Merge);
             return;
@@ -672,11 +713,11 @@ void Search::Impl::offer_slot(Slot& slot, double score, std::int64_t line, MakeO
     slot.score = score;
     slot.creation = next_creation_++;
     slot.origin = make_origin();
-    slot.piece = piece_;
+    slot.sample = searched_;
 }
 
 void Search::Impl::emit_slot(const Slot& slot, std::uint64_t state) {
-    if (slot.piece == piece_) push_candidate(state, slot.score, slot.creation, slot.origin);
+    if (slot.sample == searched_) push_candidate(state, slot.score, slot.creation, slot.origin);
 }
 
 void Search::Impl::consider_rescue(double score, std::size_t parent, Move gap) {
@@ -684,9 +725,9 @@ void Search::Impl::consider_rescue(double score, std::size_t parent, Move gap) {
 }
 
 void Search::Impl::end_mark(std::size_t i) {
-    const Story& s = population_[i];
-    const int tau = continuation_[i].tau;
-    const double with_block = s.base + scored_[i].llr;  // the block finished: its evidence for good
+    const Story& s = continuation_[i];  // the parent after this sample: its base holds the sample's score
+    const int tau = s.tau;
+    const double base = s.base;
     // A mark at the root ends into a gap at E or T at its speed: a state that only marks at the root reach, a
     // newborn's first mark (at every speed) or a letter's first mark (at its own), so they merge in root_ends_.
     const auto offer_root_end = [&](int label, int speed, double score) {
@@ -700,7 +741,7 @@ void Search::Impl::end_mark(std::size_t i) {
         // ln(1/speed_count). The over may end after E or T: all speeds land in the no-signal state, so only each
         // label's best speed is offered, and always (search.hpp, step 5).
         const OpenTiming::FirstMarkEnds ends = open_.first_mark_ends(tau);
-        const double head = with_block + log_speed_prior_;
+        const double head = base + log_speed_prior_;
         const bool gaps_beyond = beyond_beam(head + ends.best);  // then every gap successor is beyond the beam
         for (int label = 0; label < 2; ++label) {
             const int child = tree_.child(tree_.root(), label == 1);
@@ -712,7 +753,7 @@ void Search::Impl::end_mark(std::size_t i) {
                 if (!beyond_beam(score)) offer_root_end(label, speed, score);
             }
             if (!tree_.symbol(child).empty() && ends.label_best[label] > -kInf)
-                offer_slot(no_signal_, head + ends.label_best[label] - over_end_cost_, s.line, [&] {
+                offer_slot(over_ends_, head + ends.label_best[label] - over_end_cost_, s.line, [&] {
                     return Origin{static_cast<std::int32_t>(i), Move::EndOver, static_cast<std::uint8_t>(label),
                                   Move::Continue, kOpen, s.line};
                 });
@@ -724,7 +765,7 @@ void Search::Impl::end_mark(std::size_t i) {
         if (child < 0) continue;
         const double log_end = fist_.log_end(OpenTiming::mark_kind(label), s.speed, tau);
         if (log_end == -kInf) continue;
-        const double score = with_block + log_end;
+        const double score = base + log_end;
         if (s.node != tree_.root()) {
             offer_general(pack_state(Phase::Gap, 0, s.speed, child), score, s.line, [&] {
                 return Origin{static_cast<std::int32_t>(i), Move::EndMark, static_cast<std::uint8_t>(label),
@@ -734,7 +775,7 @@ void Search::Impl::end_mark(std::size_t i) {
             offer_root_end(label, s.speed, score);
         }
         if (!tree_.symbol(child).empty())  // the over's end: always offered (search.hpp, step 5)
-            offer_slot(no_signal_, score - over_end_cost_, s.line, [&] {
+            offer_slot(over_ends_, score - over_end_cost_, s.line, [&] {
                 return Origin{static_cast<std::int32_t>(i), Move::EndOver, static_cast<std::uint8_t>(label),
                               Move::Continue, kOpen, s.line};
             });
@@ -742,8 +783,8 @@ void Search::Impl::end_mark(std::size_t i) {
 }
 
 void Search::Impl::end_gap(std::size_t i) {
-    const Story& s = population_[i];
-    const int tau = continuation_[i].tau;
+    const Story& s = continuation_[i];  // the parent after this sample: its base holds the sample's score
+    const int tau = s.tau;
     const int node = s.node;
     if (tree_.has_children(node)) {
         const double log_end = fist_.log_end(Kind::ElementGap, s.speed, tau);
@@ -788,7 +829,8 @@ void Search::Impl::removed(std::int64_t line, LineEnd step) {
 }
 
 std::int32_t Search::Impl::letter_text(const Story& parent, bool word_space, double t) {
-    // The letter: from the start of its first mark to the end of its last; a word space: across the gap.
+    // The letter: from its first mark's claimed key-down to its last mark's claimed key-up; a word space: across the
+    // gap, to t, the next mark's claimed key-down.
     const std::int32_t letter =
         text_.append(parent.text, tree_.symbol(parent.node), parent.letter_start_s, parent.last_mark_end_s);
     if (!word_space) return letter;
@@ -797,121 +839,127 @@ std::int32_t Search::Impl::letter_text(const Story& parent, bool word_space, dou
     return space;
 }
 
-Story Search::Impl::build(std::uint32_t j, double t) {
+void Search::Impl::restart_level(Story& s, double n0) const {
+    // The prior's bounds in u = ln(a / 1 FS): a = sqrt(10^(L/10) N0 x 500 Hz) at L = level_min_db and level_max_db.
+    const double ln_noise = std::log(n0 * kS500BandwidthHz);
+    const double ln10 = std::numbers::ln10;
+    const double u_lo = 0.5 * (level_min_db_ / 10.0 * ln10 + ln_noise);
+    const double u_hi = 0.5 * (level_max_db_ / 10.0 * ln10 + ln_noise);
+    s.newborn = std::make_shared<NewbornIntegral>(shared_->newborn_tables(), u_lo, u_hi, grid_points_,
+                                                  live_range_nats_, fade_);
+    s.key_up_age = -1;
+    s.amp = Amplitude{0.0, 0.0, 0};
+    s.mode_a = 0.0;
+    s.omega_bar = 0.0;
+    s.long_run.restart();
+}
+
+void Search::Impl::build(std::uint32_t j, double t, double n0, Story& out) {
     const Origin& o = origins_[j];
     const detail::Ranked& r = ranked_[j];
     const std::size_t parent_index = static_cast<std::size_t>(o.parent);
+    const Story& parent = continuation_[parent_index];  // the parent after this sample
+    out = parent;  // its edges, amplitude, long-run sums and newborn integral (shared until written)
     if (o.move == Move::Continue) {
         transferred_[parent_index] = 1;  // the continuation takes over its parent's hold on the text
-        return continuation_[parent_index];
+        return;
     }
-    const Story& parent = population_[parent_index];
-    Story s;
-    s.state = r.state;
-    s.score = r.score_nats;
-    s.base = r.score_nats;
-    s.creation = r.creation;
-    s.line = o.line;
-    s.tau = 0;
+    // The successor's element starts at the next sample, where it claims its edge, at time t + Delta.
+    const double edge_t = t + interval_s_;
+    out.state = r.state;
+    out.score = r.score_nats;
+    out.base = r.score_nats;
+    out.creation = r.creation;
+    out.line = o.line;
+    out.tau = 0;
+    out.edge_next = true;
     switch (o.move) {
         case Move::EndMark:
-            s.phase = Phase::Gap;
-            s.speed = o.speed;
-            s.node = static_cast<std::int16_t>(tree_.child(parent.node, o.label == 1));
-            s.level = scored_[parent_index].level;
+            out.phase = Phase::Gap;
+            out.speed = o.speed;
+            out.node = static_cast<std::int16_t>(tree_.child(parent.node, o.label == 1));
             text_.hold(parent.text);
-            s.text = parent.text;
-            s.letter_start_s = parent.letter_start_s;
-            s.last_mark_end_s = t;
+            out.last_mark_end_s = edge_t;
             break;
         case Move::EndOver: {
-            s.phase = Phase::NoSignal;
+            out.phase = Phase::NoSignal;
+            out.tau = 1;
+            out.speed = kOpen;
+            out.node = -1;
             const int child = tree_.child(parent.node, o.label == 1);
-            s.text = text_.append(parent.text, tree_.symbol(child), parent.letter_start_s, t);
-            s.letter_start_s = t;
-            s.last_mark_end_s = t;
+            out.text = text_.append(parent.text, tree_.symbol(child), parent.letter_start_s, edge_t);
+            out.letter_start_s = edge_t;
+            out.last_mark_end_s = edge_t;
             break;
         }
         case Move::EndElementGap:
-            s.phase = Phase::Mark;
-            s.speed = parent.speed;
-            s.node = parent.node;
-            s.level = parent.level;
+            out.phase = Phase::Mark;
+            out.speed = parent.speed;
+            out.node = parent.node;
             text_.hold(parent.text);
-            s.text = parent.text;
-            s.letter_start_s = parent.letter_start_s;
-            s.last_mark_end_s = parent.last_mark_end_s;
             break;
         case Move::EndLetterGap:
         case Move::EndWordGap:
-            s.phase = Phase::Mark;
-            s.speed = parent.speed;
-            s.node = static_cast<std::int16_t>(tree_.root());
-            s.level = parent.level;
-            s.text = letter_text(parent, o.move == Move::EndWordGap, t);
-            s.letter_start_s = t;
-            s.last_mark_end_s = parent.last_mark_end_s;
+            out.phase = Phase::Mark;
+            out.speed = parent.speed;
+            out.node = static_cast<std::int16_t>(tree_.root());
+            out.text = letter_text(parent, o.move == Move::EndWordGap, edge_t);
+            out.letter_start_s = edge_t;
             break;
         case Move::BirthFromSilence:
-            s.phase = Phase::Mark;
-            s.node = static_cast<std::int16_t>(tree_.root());
+            out.phase = Phase::Mark;
+            out.speed = kOpen;
+            out.node = static_cast<std::int16_t>(tree_.root());
             // A new over after silence begins with a word space if the text is not empty.
-            s.text = parent.text == SharedText::kEmpty ? SharedText::kEmpty
-                                                       : text_.append(parent.text, kWordSpace, t, t);
-            s.letter_start_s = t;
-            s.last_mark_end_s = t;
+            out.text = parent.text == SharedText::kEmpty ? SharedText::kEmpty
+                                                         : text_.append(parent.text, kWordSpace, edge_t, edge_t);
+            out.letter_start_s = edge_t;
+            out.last_mark_end_s = edge_t;
+            restart_level(out, n0);
             break;
         case Move::BirthRescue:
-            s.phase = Phase::Mark;
-            s.node = static_cast<std::int16_t>(tree_.root());
-            s.text = letter_text(parent, o.rescued_gap == Move::EndWordGap, t);
-            s.letter_start_s = t;
-            s.last_mark_end_s = t;
+            out.phase = Phase::Mark;
+            out.speed = kOpen;
+            out.node = static_cast<std::int16_t>(tree_.root());
+            out.text = letter_text(parent, o.rescued_gap == Move::EndWordGap, edge_t);
+            out.letter_start_s = edge_t;
+            out.last_mark_end_s = edge_t;
+            // Its edge history, amplitude and long-run sums kept: a sender who changes speed keeps his level (decision log).
             break;
         case Move::Continue:
             break;
     }
-    return s;
 }
 
-void Search::Impl::step(std::complex<double> piece, double t, double n0) {
+void Search::Impl::step(double e, double t, double n0) {
+    if (finished_) throw std::logic_error("search: a sample given after finish()");
     if (!positive_and_finite(n0))
         throw std::invalid_argument("search: n0_fs2_per_hz must be positive and finite (FS^2/Hz)");
-    if (!std::isfinite(t) || (given_ > 0 && !(t > last_given_t_)))
-        throw std::invalid_argument("search: t_s must be finite and later than the previous piece's (s)");
-    if (!std::isfinite(piece.real()) || !std::isfinite(piece.imag()))
-        throw std::invalid_argument("search: piece_fs must be finite (FS)");
-    pending_.push_back(Pending{piece, t, n0});
+    if (!(e >= 0.0) || !std::isfinite(e))
+        throw std::invalid_argument("search: e_fs must be finite and not negative (FS)");
+    if (!std::isfinite(t)) throw std::invalid_argument("search: t_s must be finite (s)");
+    const double position = t / interval_s_;
+    if (!(std::fabs(position) < 9e15)) throw std::invalid_argument("search: t_s is too far from 0 (s)");
+    const auto k = static_cast<std::int64_t>(std::llround(position));
+    if (given_ > 0 && !(k > last_given_k_))
+        throw std::invalid_argument("search: t_s must lie at a later sample than the previous sample's (s)");
     ++given_;
-    last_given_t_ = t;
-    while (pending_.size() > static_cast<std::size_t>(lookahead_pieces_)) search_oldest();
+    last_given_k_ = k;
+    search_sample(Pending{e, t, n0, k});
 }
 
 void Search::Impl::finish() {
-    while (!pending_.empty()) search_oldest();
+    if (finished_) return;
+    finished_ = true;
 }
 
-void Search::Impl::search_oldest() {
-    const Pending oldest = pending_.front();
-    pending_.pop_front();
-    double ahead = 0.0;  // FS^2
-    for (const Pending& later : pending_) ahead = std::max(ahead, std::norm(later.piece));
-    search_piece(oldest.piece, oldest.t, oldest.n0, ahead);
-}
+void Search::Impl::search_sample(const Pending& sample) {
+    const double t = sample.t;
+    if (stats_on_ && searched_ == 0) stats_.lines[0].birth_s = t;
+    const double sigma2 = sample.n0 * sigma2_per_n0_hz_;  // FS^2: sigma_y^2 at this sample
 
-void Search::Impl::search_piece(std::complex<double> piece, double t, double n0, double ahead) {
-    if (stats_on_ && piece_ == 0) stats_.lines[0].birth_s = t;
-    // The channel's carrier power for the systematic term, the same for every story at this piece: the largest
-    // |piece|^2 of the last first_block_pieces_ pieces, this one included, and of the look-ahead's.
-    const double power = std::norm(piece);  // FS^2
-    while (!window_.empty() && window_.back().second <= power) window_.pop_back();
-    window_.emplace_back(piece_, power);
-    while (window_.front().first <= piece_ - first_block_pieces_) window_.pop_front();
-    carrier_power_ = std::max(window_.front().second, ahead);
-
-    const std::size_t n_old = population_.size();
-    continuation_.resize(n_old);
-    scored_.resize(n_old);
+    const std::size_t n_old = live_;
+    while (continuation_.size() < n_old) continuation_.push_back(prototype_);
     transferred_.assign(n_old, 0);
     ranked_.clear();
     origins_.clear();
@@ -922,46 +970,65 @@ void Search::Impl::search_piece(std::complex<double> piece, double t, double n0,
     born_.clear();
     std::int32_t no_signal = kNone;
 
-    // 2. Every story continues: a mark makes its one scoring call of the piece; a gap's piece adds 0 and its survival
-    // changes; no signal pays ln(1 - P). The continuations are candidates in the previous population's order, the
-    // no-signal story through its slot, where the over's ends of this piece merge with it.
+    // 2. Every story continues: it scores the sample (search.hpp, "One sample k searched"), books it in its base and
+    // adds its element's timing. The continuations are candidates in the previous population's order, the no-signal
+    // story through its slot, where the over's ends of this sample merge with it.
     for (std::size_t i = 0; i < n_old; ++i) {
-        const Story& s = population_[i];
+        Story& s = population_[i];
         Story& c = continuation_[i];
         c = s;
-        switch (s.phase) {
+        c.newborn = std::move(s.newborn);  // the old story is done with it: no copy on write for a lone story
+        const double score = score_sample(c, sample, sigma2);
+        switch (c.phase) {
             case Phase::NoSignal:
-                c.score = s.score + log_stay_silent_;
-                no_signal = static_cast<std::int32_t>(i);
+                c.base = s.base + score + log_stay_silent_;
+                c.score = c.base;
+                // An over's end restarts the level once its tail has been scored (part 7): every over starts afresh,
+                // and the story joins the quiet state. Until then its clock keeps it apart: stories whose key-ups differ
+                // predict different samples, so merging them would keep whichever had scored best before the fall.
+                if (c.edges.recent == 0 && !c.edges.key_down_before && !c.newborn) {
+                    c.tau = 0;
+                    c.long_run.restart();
+                    c.amp = Amplitude{0.0, 0.0, 0};
+                    c.mode_a = 0.0;
+                    c.omega_bar = 0.0;
+                } else {
+                    c.tau = s.tau + 1;
+                }
+                if (no_signal == kNone || c.score > continuation_[static_cast<std::size_t>(no_signal)].score)
+                    no_signal = static_cast<std::int32_t>(i);
                 break;
             case Phase::Mark:
-                continue_mark(s, c, scored_[i], piece, t, n0);
+                c.tau = s.tau + 1;
+                c.base = s.base + score;
+                c.score = c.base + (s.speed == kOpen ? log_speed_prior_ + open_.first_mark_survival(c.tau)
+                                                     : mark_survival(s.speed, s.node, c.tau));
                 break;
             case Phase::Gap:
                 c.tau = s.tau + 1;
-                c.score = s.base + gap_survival(s.speed, s.node, c.tau);
+                c.base = s.base + score;
+                c.score = c.base + gap_survival(s.speed, s.node, c.tau);
                 break;
         }
         c.state = pack_state(c.phase, c.tau, c.speed, c.node);
         known_best_ = std::max(known_best_, c.score);
-        if (s.phase != Phase::NoSignal)
-            push_candidate(c.state, c.score, c.creation,
-                           Origin{static_cast<std::int32_t>(i), Move::Continue, 0, Move::Continue, c.speed, c.line});
+        const Origin continued{static_cast<std::int32_t>(i), Move::Continue, 0, Move::Continue, c.speed, c.line};
+        if (c.state != 0) {
+            push_candidate(c.state, c.score, c.creation, continued);
+        } else if (no_signal_.sample != searched_ ||  // the quiet state, in its slot: one story, and one coming to it
+                   detail::replaces(c.score, c.creation, no_signal_.score, no_signal_.creation)) {
+            no_signal_ = Slot{c.score, c.creation, continued, searched_};
+        }
     }
-    if (no_signal != kNone) {  // the first in its slot, with its own creation order
-        const Story& c = continuation_[static_cast<std::size_t>(no_signal)];
-        no_signal_ =
-            Slot{c.score, c.creation, Origin{no_signal, Move::Continue, 0, Move::Continue, kOpen, c.line}, piece_};
-    }
-    // ... and ends, into successors that start their next element at the next piece.
+    // ... and ends, into successors that start their next element at the next sample.
     for (std::size_t i = 0; i < n_old; ++i) {
-        if (population_[i].phase == Phase::Mark)
+        if (continuation_[i].phase == Phase::Mark)
             end_mark(i);
-        else if (population_[i].phase == Phase::Gap)
+        else if (continuation_[i].phase == Phase::Gap)
             end_gap(i);
     }
 
-    // 3. Births: from silence, off the continuing no-signal story (silent at this piece); and one rescue newborn from
+    // 3. Births: from silence, off the best continuing no-signal story (silent at this sample); and one rescue newborn from
     // the best letter-starting successor. Both are marks at the root with their speed open: they merge.
     if (no_signal != kNone) {
         const Story& c = continuation_[static_cast<std::size_t>(no_signal)];
@@ -988,6 +1055,7 @@ void Search::Impl::search_piece(std::complex<double> piece, double t, double n0,
     for (int speed = 0; speed < speeds_; ++speed)
         emit_slot(letter_starts_[static_cast<std::size_t>(speed)], pack_state(Phase::Mark, 0, speed, root));
     emit_slot(no_signal_, pack_state(Phase::NoSignal, 0, kOpen, -1));
+    emit_slot(over_ends_, pack_state(Phase::NoSignal, 1, kOpen, -1));
     emit_slot(newborn_, pack_state(Phase::Mark, 0, kOpen, root));
     alive_.clear();
     for (std::size_t j = 0; j < ranked_.size(); ++j)
@@ -1008,32 +1076,40 @@ void Search::Impl::search_piece(std::complex<double> piece, double t, double n0,
             stats_.lines[static_cast<std::size_t>(line)].largest_deficit_nats = best_score - score;
     }
 
-    // 6. The new population, scores relative to the best. Its texts are held before the old population's holds go.
-    next_population_.clear();
+    // 6. The new population, scores relative to the best, built into storage kept from earlier samples. Its texts are
+    // held before the old population's holds go; then the old population and the continuations let go of their newborn
+    // integrals, so that only live stories share one (copy on write counts the holders).
+    std::size_t next = 0;
     for (const std::uint32_t j : alive_) {
-        if (j == best) best_ = static_cast<std::uint32_t>(next_population_.size());
-        next_population_.push_back(build(j, t));
-        Story& s = next_population_.back();
+        if (j == best) best_ = static_cast<std::uint32_t>(next);
+        if (next_population_.size() <= next) next_population_.push_back(prototype_);
+        Story& s = next_population_[next];
+        build(j, t, sample.n0, s);
         s.score -= best_score;
         s.base -= best_score;
+        ++next;
     }
-    for (std::size_t i = 0; i < n_old; ++i)
+    for (std::size_t i = 0; i < n_old; ++i) {
         if (!transferred_[i]) text_.release(population_[i].text);
+        population_[i].newborn.reset();
+        continuation_[i].newborn.reset();
+    }
     population_.swap(next_population_);
+    live_ = next;
     normalization_ += best_score;
 
     if (stats_on_) update_stats(t, ceiling_dropped_.size());
-    ++piece_;
+    ++searched_;
 }
 
 void Search::Impl::update_stats(double t, std::size_t ceiling_drops) {
-    ++stats_.pieces;
-    if (ceiling_drops > 0) ++stats_.ceiling_pieces;
-    const std::size_t live = population_.size();
+    ++stats_.samples;
+    if (ceiling_drops > 0) ++stats_.ceiling_samples;
+    const std::size_t live = live_;
     const std::size_t bin = live / 10;
     if (stats_.live_histogram.size() <= bin) stats_.live_histogram.resize(bin + 1, 0);
     ++stats_.live_histogram[bin];
-    if (window_count_ == stats_window_pieces_ || stats_.live_mean_100ms.empty()) {
+    if (window_count_ == stats_window_samples_ || stats_.live_mean_100ms.empty()) {
         stats_.live_mean_100ms.push_back(0.0f);
         stats_.live_max_100ms.push_back(0.0f);
         window_sum_ = 0.0;
@@ -1045,10 +1121,11 @@ void Search::Impl::update_stats(double t, std::size_t ceiling_drops) {
     stats_.live_max_100ms.back() = std::max(stats_.live_max_100ms.back(), static_cast<float>(live));
 
     // The lines: which have live stories, their best, and whether one has left the newborn's first mark.
-    for (const Story& s : population_) {
+    for (std::size_t i = 0; i < live_; ++i) {
+        const Story& s = population_[i];
         LineTrack& track = tracks_[static_cast<std::size_t>(s.line)];
-        if (track.alive_piece != piece_) {
-            track.alive_piece = piece_;
+        if (track.alive_sample != searched_) {
+            track.alive_sample = searched_;
             track.best_score = s.score;
         } else {
             track.best_score = std::max(track.best_score, s.score);
@@ -1060,7 +1137,7 @@ void Search::Impl::update_stats(double t, std::size_t ceiling_drops) {
     for (const std::int64_t line : active_lines_) {
         LineTrack& track = tracks_[static_cast<std::size_t>(line)];
         NewbornLine& record = stats_.lines[static_cast<std::size_t>(line)];
-        if (track.alive_piece == piece_) {
+        if (track.alive_sample == searched_) {
             if (!record.first_led_s)
                 record.largest_deficit_nats = std::max(record.largest_deficit_nats, -track.best_score);
             active_lines_[still++] = line;
@@ -1078,8 +1155,8 @@ void Search::Impl::update_stats(double t, std::size_t ceiling_drops) {
 std::vector<DecodedSymbol> Search::Impl::best_text() const {
     const Story& best = population_[best_];
     std::vector<DecodedSymbol> text = text_.read(best.text);
-    // A story at a node holding a symbol: that symbol is its last letter, from its first mark's start to its last
-    // finished mark's end.
+    // A story at a node holding a symbol: that symbol is its last letter, from its first mark's claimed key-down to its
+    // last finished mark's claimed key-up.
     if (best.phase != Phase::NoSignal) {
         const std::string_view symbol = tree_.symbol(best.node);
         if (!symbol.empty())
@@ -1090,31 +1167,47 @@ std::vector<DecodedSymbol> Search::Impl::best_text() const {
 
 std::vector<StoryView> Search::Impl::live_stories() const {
     std::vector<const Story*> order;
-    order.reserve(population_.size());
-    for (const Story& s : population_) order.push_back(&s);
+    order.reserve(live_);
+    for (std::size_t i = 0; i < live_; ++i) order.push_back(&population_[i]);
     std::sort(order.begin(), order.end(), [](const Story* a, const Story* b) { return a->state < b->state; });
     std::vector<StoryView> views;
     views.reserve(order.size());
     for (const Story* s : order) {
         const bool morse = s->phase != Phase::NoSignal;
         views.push_back(StoryView{morse ? Activity::Morse : Activity::NoSignal, s->phase == Phase::Mark, s->tau,
-                                  s->speed, morse ? s->node : -1, s->score, s->line, s->level});
+                                  s->speed, morse ? s->node : -1, s->score, s->line, s->amp, s->omega_bar,
+                                  s->long_run.nu(), s->long_run.omega_hat_fs2(), s->newborn != nullptr, s->edges,
+                                  s->mode_a, reinterpret_cast<std::uintptr_t>(s->newborn.get())});
     }
     return views;
 }
 
-Search::Search(const ViterbiConfig& config, std::span<const double> c, std::shared_ptr<const FlatPrior> prior,
+std::size_t Search::Impl::newborn_integrals() const {
+    std::unordered_set<const NewbornIntegral*> held;
+    for (std::size_t i = 0; i < live_; ++i)
+        if (population_[i].newborn) held.insert(population_[i].newborn.get());
+    return held.size();
+}
+
+std::size_t Search::Impl::newborn_integral_bytes() const {
+    std::unordered_set<const NewbornIntegral*> held;
+    std::size_t bytes = 0;
+    for (std::size_t i = 0; i < live_; ++i) {
+        const NewbornIntegral* n = population_[i].newborn.get();
+        if (n && held.insert(n).second) bytes += n->bytes();
+    }
+    return bytes;
+}
+
+Search::Search(const ViterbiConfig& config, std::shared_ptr<const ViterbiShared> shared,
                detail::SearchOptions options)
-    : impl_(std::make_unique<Impl>(config, c, std::move(prior), options)) {}
+    : impl_(std::make_unique<Impl>(config, std::move(shared), options)) {}
 Search::~Search() = default;
 Search::Search(Search&&) noexcept = default;
 Search& Search::operator=(Search&&) noexcept = default;
 
-void Search::step(std::complex<double> piece_fs, double t_s, double n0_fs2_per_hz) {
-    impl_->step(piece_fs, t_s, n0_fs2_per_hz);
-}
+void Search::step(double e_fs, double t_s, double n0_fs2_per_hz) { impl_->step(e_fs, t_s, n0_fs2_per_hz); }
 void Search::finish() { impl_->finish(); }
-int Search::lookahead_pieces() const { return impl_->lookahead_pieces(); }
 std::vector<DecodedSymbol> Search::best_text() const { return impl_->best_text(); }
 const SearchStats& Search::stats() const { return impl_->stats(); }
 std::size_t Search::live() const { return impl_->live(); }
@@ -1122,5 +1215,7 @@ std::vector<StoryView> Search::live_stories() const { return impl_->live_stories
 double Search::normalization_nats() const { return impl_->normalization(); }
 std::size_t Search::text_entries() const { return impl_->text_entries(); }
 std::size_t Search::open_timing_bytes() const { return impl_->open_timing_bytes(); }
+std::size_t Search::newborn_integrals() const { return impl_->newborn_integrals(); }
+std::size_t Search::newborn_integral_bytes() const { return impl_->newborn_integral_bytes(); }
 
 }  // namespace kz4ap::viterbi

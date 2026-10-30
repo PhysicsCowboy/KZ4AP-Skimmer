@@ -13,7 +13,7 @@
 // channels reported at their labels' frequencies, which they follow; and a per-station label of a drifting QSO refused.
 #include "viterbi_json.hpp"
 
-#include "test_signals.hpp"
+#include "viterbi/keyed_signals.hpp"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -24,9 +24,11 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <iterator>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #ifndef _WIN32
@@ -207,15 +209,15 @@ TEST_F(BenchRun, TheStatisticsFileIsASummaryByDefault) {
         const json& c = s.at("channels").at(i);
         EXPECT_EQ(c.at("track_id"), i + 1);
         EXPECT_EQ(c.at("label_index"), i);
-        const std::int64_t pieces = c.at("pieces").get<std::int64_t>();
-        EXPECT_GT(pieces, 1000);
+        const std::int64_t samples = c.at("samples").get<std::int64_t>();
+        EXPECT_GT(samples, 900);
         std::int64_t in_histogram = 0, in_fates = 0;
         for (const json& n : c.at("live_histogram")) in_histogram += n.get<std::int64_t>();
         for (const json& a : c.at("fates"))
             for (const json& b : a)
                 for (const json& d : b)
                     for (const json& n : d) in_fates += n.get<std::int64_t>();
-        EXPECT_EQ(in_histogram, pieces);
+        EXPECT_EQ(in_histogram, samples);
         EXPECT_EQ(in_fates, c.at("lines").get<std::int64_t>());
         // the lines that led: equal columns, the first story among them
         const json& led = c.at("led_lines");
@@ -412,3 +414,67 @@ TEST_F(BenchRun, APerStationLabelOfADriftingQsoIsRefused) {
 }
 
 }  // namespace
+
+// ---- The first end-to-end proof: the bench's own path, a recording and its labels to a track's text ----
+
+namespace {
+
+// A recording of one station at 300 Hz above the span's center over DEV2's noise (0.02 FS), D17's 2.5 ms edges, and its
+// labels. An empty text is noise alone, with the label a station would have.
+void write_station(const fs::path& wav, const fs::path& labels, const std::string& text, double wpm, double s500_db,
+                   double duration_s, unsigned seed) {
+    const double amplitude = std::sqrt(std::pow(10.0, s500_db / 10.0) * 0.02 * 0.02 * 500.0 / kRate);
+    std::vector<std::pair<double, double>> keying;
+    if (!text.empty()) keying = kz4ap::test::keying(text, wpm, 0.7);
+    const double seconds = keying.empty() ? duration_s : keying.back().second + 1.0;
+    write_wav(wav, kz4ap::test::keyed_signal_d17(keying, kRate, seconds, 300.0, amplitude, 0.02, seed),
+              static_cast<int>(kRate));
+    json signals = json::array();
+    signals.push_back({{"text", text}, {"freq_offset_hz", 300.0}, {"wpm", wpm}, {"snr_db", s500_db},
+                       {"start_s", 0.7}, {"end_s", keying.empty() ? seconds : keying.back().second},
+                       {"keying", "machine"}});
+    std::ofstream(labels) << json{{"sample_rate", 48000}, {"duration_s", seconds}, {"signals", signals}}.dump(2) << '\n';
+}
+
+}  // namespace
+
+TEST_F(BenchRun, DecodesExactlyThroughTheBench) {
+    // "PARIS PARIS" and a mixed CQ text at 25 and 40 WPM, +10 and +20 dB S500: exact, through `kz4ap-bench --oracle
+    // --decoder viterbi` from the recording to the result file.
+    unsigned seed = 100;
+    for (const std::string text : {"PARIS PARIS", "CQ CQ DE W1AW W1AW K", "TEST 5NN 73 DE K1ABC"}) {
+        for (const double wpm : {25.0, 40.0}) {
+            for (const double level : {10.0, 20.0}) {
+                write_station(wav_, labels_, text, wpm, level, 0.0, ++seed);
+                const Outcome o = run({"--oracle", "--decoder", "viterbi", "--no-timing", "--json", path("result.json")});
+                ASSERT_EQ(o.status, 0) << o.err;
+                const json r = read_json(path("result.json"));
+                ASSERT_EQ(r.at("tracks").size(), 1u);
+                EXPECT_EQ(r.at("tracks").at(0).at("text").get<std::string>(), text)
+                    << wpm << " WPM, +" << level << " dB S500, seed " << seed;
+            }
+        }
+    }
+}
+
+TEST_F(BenchRun, CpuPerChannelSecond) {
+    // Label measurement (skipped otherwise): the bench's CPU per channel-second on one channel at the default ceiling, on
+    // 60 s of noise and on a station sending for about 60 s, +20 dB S500, 25 WPM.
+    const char* flag = std::getenv("KZ4AP_MEASUREMENT");
+    if (flag == nullptr || std::string(flag) != "1") GTEST_SKIP() << "runs under the measurement label";
+    std::string text;
+    for (int i = 0; i < 6; ++i) text += "CQ CQ DE W1AW W1AW K ";
+    text.pop_back();
+    const auto cpu = [&](const std::string& what, const std::string& sent) {
+        write_station(wav_, labels_, sent, 25.0, 20.0, 60.0, 7);
+        const Outcome o = run({"--oracle", "--decoder", "viterbi", "--json", path("result.json")});
+        ASSERT_EQ(o.status, 0) << o.err;
+        const json r = read_json(path("result.json"));
+        std::cout << "measured: " << what << ": " << r.at("channel_seconds").get<double>() << " channel-seconds, "
+                  << r.at("timing").at("cpu_ms_per_channel_s").get<double>() << " ms per channel-second of CPU, decoder "
+                  << r.at("timing").at("decoder_ms_per_channel_s").get<double>() << " ms; text \""
+                  << r.at("tracks").at(0).at("text").get<std::string>().substr(0, 60) << "\"" << std::endl;
+    };
+    cpu("noise", "");
+    cpu("signal", text);
+}
