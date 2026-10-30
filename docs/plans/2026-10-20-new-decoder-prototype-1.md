@@ -530,6 +530,9 @@ S₅₀₀ seed-12 point stays a known failure until R3 sets the ceiling. The op
   moot.
 
 **D15. Very strong stations, after the fall. Decided (owner, 2026-10-21): a systematic term in the error budget.**
+- **Reversed in part by D23 (owner, 2026-10-29):** the term stays, but its carrier power now comes from each story's
+  own prediction (μ² + P), not from the data; the rule "never from a story's level" and the look-ahead go, and the
+  neighbor trade below is to be remeasured.
 - Modeling the mark's fall (D13, Task 4c) did not fix stations above about +38 dB S₅₀₀ (measured), and it broke the
   speed step at +21 to +28 dB S₅₀₀. It is set aside, not committed.
 - The cause: the decoder's error budget had a statistical term, the receiver's noise, and no systematic term. At
@@ -684,6 +687,9 @@ owner before any code.**
 
 **D17. The test set's keying edges. Decided (owner, 2026-10-23): fix the generator and remake the test set, before any
 long run; the timing convention and rise times wait for the research.**
+- **Withdrawn in part by D23 (owner, 2026-10-29):** w per sample from each story's expected SNR (the fixed 0.1986 is
+  now the rule, not a variant), the systematic term's 10-sample memory and look-ahead (26.67 ms), C²'s own part, and
+  the caps with their 497-nat plateau.
 - **The finding (the owner's, 2026-10-22):** "the development set can't be making good code at 100 WPM if it uses 5 ms
   rise and fall times." The generator (`training/kz4ap_synth/generate.py`) uses 5 ms raised-cosine edges at every
   speed (`RISE_S`), placed by default inside each element, so every mark is 5 ms short at half amplitude and every space
@@ -1108,6 +1114,7 @@ scores near 10⁷ nats); the fixed weights' jump costs a grid up to 0.50 nats pe
 to 1.5 nats per first mark (0.8 at −5 dB S₅₀₀) and switches to N(μ, P) early on 83% of first marks at 0 dB S₅₀₀.
 Rejected: the two fixed weights; the fixed 0.1986 (the ordinary stories' fallback variant, undercounting weak evidence
 by about 9%). Same CPU as the fixed weights.
+- **Withdrawn by D23 (owner, 2026-10-29):** the newborn uses the one constant w = 0.1986, as every story does.
 
 **D22. The newborn's integral on a fixed grid in u = ln a (owner, 2026-10-26: "Okay with A").** The point-mass method
 (Bucy and Senne 1971): 128 points even over the prior's 11.51 nepers (h = 0.0906 nepers), each carrying
