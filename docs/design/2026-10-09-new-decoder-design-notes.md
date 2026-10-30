@@ -1365,6 +1365,11 @@ and 17 and topics 4 and 5 are amended in place; what D23 withdrew is kept only a
 The evidence: the study of eight score forms (C++, scratch, 2026-10-28) and the audit of the design against standard
 practice (2026-10-28), summarized in plan D23.
 
+**Amended 2026-10-30 by the plan's D24** (owner: "I don't care", the coordinator's recommendation taken): the
+newborn's grid is faded every 8 samples by Part 6's transition (the point-mass filter's prediction step) instead of
+holding the amplitude constant until the handover. Parts 8, 13, 15 and 17 are amended. The evidence: the
+newborn-fading study (C++, scratch, 2026-10-27/28), summarized in plan D24.
+
 Parts 1 to 11 give the decided design in the order the signal passes; part 12, what is removed from today's decoder;
 part 13, the known limitations and backlog items; part 14, the test generator; part 15, what the prototype must
 measure; part 16, standard practice for each stage; part 17, the values.
@@ -2092,15 +2097,38 @@ measure; part 16, standard practice for each stage; part 17, the values.
   flat in dB over −15 to +85 dB S₅₀₀ (placeholder), and it seeds the RMS. Topic 5, item 3's standard (Ristic et al.
   2012; Berger, Daun and Koch 2008; Adams and MacKay 2007) and cost figures stand.
 - **Kept as designed** (owner, 2026-10-24: "Agree"; plan D17): until its belief in log-amplitude narrows to a spread
-  of σ_u = 0.1, a newborn scores against the exact belief p_flat(a)·exp(Σ_j w·ℓ_j(a)) under the flat prior p_flat, with
-  the amplitude held constant, then switches to N(μ, P). Since D23, ℓ_j(a) = ln p(e_j | a, V_j(a)) − ln p₀(e_j | σ_y²),
+  of σ_u = 0.1, a newborn scores against its belief under the flat prior p_flat, built from p_flat(a)·exp(Σ_j w·ℓ_j(a))
+  and, since D24, faded every 8 samples by Part 6's transition (the prediction step, below), then switches to N(μ, P).
+  History, one line: the amplitude held constant until the switch (owner, 2026-10-24), replaced by D24 (owner,
+  2026-10-30). Since D23, ℓ_j(a) = ln p(e_j | a, V_j(a)) − ln p₀(e_j | σ_y²),
   part 4's full density against the shared reference, with the systematic variance at the amplitude itself,
   V_j(a) = σ_y² + a²(f²s_j² + v_j), and the one constant w = 0.1986 (owner, 2026-10-29: "Sure"; plan D23).
 - **How it is integrated (amended 2026-10-26, owner: "Okay with A"; plan D22):** on a fixed grid in log-amplitude
   u = ln a, the point-mass (grid) method of Bayesian filtering (Bucy and Senne 1971), its support thresholded as in the
   advanced point-mass method (Šimandl, Královec and Söderström 2006). The integral and the switch compute the owner's
-  flat prior's score; they add no assumption to the model beyond the amplitude held constant (approximation (b)
+  flat prior's score; the only approximation of the model they add is the prediction step's (approximation (b)
   below).
+  - **The prediction step (owner, 2026-10-30: "I don't care", the coordinator's recommendation taken; plan D24):** the
+    point-mass filter's prediction (Bucy and Senne 1971; Kushner and Dupuis 2001, the Markov-chain approximation).
+    Every 8 samples the grid's belief in u is diffused by Part 6's transition at 2 Hz with Kushner's three-point chain:
+    p_i ← p_i + ε(p_(i−1) − 2p_i + p_(i+1)) on p_i = e^(F_i − m) (m the largest F), then F_i = m + ln p_i, with
+    ε = 8·½(1 − ρ(Δ)²)/(2h²) = 8 × 1.404 × 10⁻⁴ / (2 × 0.0906²) = 0.0684 (derived; ρ(Δ) from Part 6's table at lag 1,
+    Ω̄ = a² at each point, so the variance in u is ½(1 − ρ²) per sample), reflecting at the prior's ends, so the
+    trapezoid mass and Z are conserved exactly (derived). It is applied after the sample's moments and before the
+    live-range trim. Part 6's drift toward 0.886·√Ω̄ and the Itô term are dropped: about −1.1 × 10⁻⁴ nepers per sample,
+    −0.008 nepers over a 70-sample first mark, against σ_u ≥ 0.05 at handover (derived).
+  - **The stride of 8 is heuristic, chosen by measurement** (the newborn-fading study, scratch, 2026-10-27/28, under
+    the ratio form): accuracy is flat from every sample to every 8 and slips at 16. At 2 Hz against the exact fading
+    reference, 95th percentile / worst: every 8, 1.42 / 20.5 nats; every 4, 1.41 / 20.3; every sample, 1.40 / 20.3;
+    every 16, 1.42 / 20.7; the as-built constant amplitude 1.69 / 21.8. A 512-point grid agrees with 128 points
+    within 0.01 nats in median (measured). Rejected (plan D24): every sample (+15 to +17.5% of the projected 425.7 ms
+    per channel-second) and every 4 (+4.2 to +4.5%), the same accuracy at more CPU; the amplitude held constant;
+    an earlier handover (worse tails in some cases, 0.13 to 0.23 nats lost with no fading); exponential forgetting
+    (less accurate, +15 to +19%); a two-dimensional grid over level and instantaneous amplitude (exact, about 4 000
+    times the cost).
+  - **Its cost with no fading** (measured): 0.02 nats median and 0.05 nats worst per first mark.
+  - **The state per newborn is unchanged:** p_i is a scratch buffer recomputed in every sample's update; the copy
+    cost of a branching newborn is unchanged.
   - **The grid:** N = 128 points u_i evenly spaced over the prior's 11.51 nepers (−15 to +85 dB S₅₀₀), spacing
     h = 11.51/127 = 0.0906 nepers (0.79 dB of amplitude); each point carries ln of the unnormalized belief, Σ_j w·ℓ_j(a_i), with
     the exact ln I₀, V_j(a_i) = σ_y² + a_i²(f²s_j² + v_j) at that point and the constant w (D23; until D23 the ratio
@@ -2159,11 +2187,30 @@ measure; part 16, standard practice for each stage; part 17, the values.
       of the projected 425.7 ms per channel-second (the study of 2026-10-28; written directly per point in scratch it
       took 2 923 ns at +20 dB S₅₀₀ and 4 117 ns on noise, measured). **Timed first in the build (plan 1b, Task 10);
       if large, the newborn's form returns to the owner** (owner, 2026-10-29; plan D23).
+    - **With the prediction step every 8 samples (D24):** +53 ns per newborn-sample on noise (measured, quiet desktop,
+      against the as-built's 554–564 ns in the same binary), about +60 ns on the mix (estimated from a loaded run):
+      +9.9 and about +11 ms per channel-second at 500 newborns, +2.3% and about +2.6% of the projected 425.7 ms. Timed
+      with D23's V(a_i) together in the build (plan 1b, Task 10, Step 0): the threshold for both together is +124 ms
+      per channel-second at 500 newborns on the mix (D23's +113 ms plus D24's about +11 ms; 29.1% of 425.7 ms, 27.8%
+      of 445.4 ms), each change's increment reported separately.
 - **Its approximations** (plan D17), each measured in the prototype (part 15); anything over a fraction of a nat goes
   to the owner:
   - **(a) the grid:** at most 0.003 nats per sample on the measured range (above); above +40 dB S₅₀₀ as stated above.
-  - **(b) fading ignored before the switch** (the amplitude held constant): 0.4 to 0.9 nats at 0 dB S₅₀₀ and 2 Hz, and
-    about 3 nats at 5 Hz (derived, rough). Measured under fading.
+  - **(b) fading inside the newborn, by the prediction step every 8 samples (D24)** (measured, the newborn-fading
+    study, 1 000 first marks per case at 0, +10 and +20 dB S₅₀₀, a 25 WPM dot and dash, fading 0, 0.5, 2 and 5 Hz
+    applied before the channel and front filters, under the ratio form; loss through the as-built's switch sample
+    against the exact fading reference, Part 6's chain with the level free on a second axis):
+    - at 2 Hz against the reference at 2 Hz: 95th percentile 1.42 nats, worst 20.5 (the as-built constant amplitude:
+      1.69 and 21.8);
+    - over all fading cases against the true spread: largest median 0.14, largest 95th percentile 8.57, worst 52.5
+      nats (as built: 0.16, 9.34, 56.3);
+    - with no fading: median 0.02, worst 0.05 nats;
+    - the newborn's approximation proper, the step against none on the decoder's own model: 95th percentile at most
+      0.26 nats at 2 Hz and 0.66 at 5 Hz, worst 5.3 nats (what the step removes);
+    - **the remaining tail, up to 56 nats, is Part 6's fast-fading limitation** (a level rising out of a deep fade,
+      which Part 6's one-number model cannot follow, in the newborn or after it; backlog), not the newborn's.
+    History, one line: the derived "0.4 to 0.9 nats at 0 dB S₅₀₀ and 2 Hz, about 3 at 5 Hz" for the amplitude held
+    constant, superseded by these measurements (D24). To be remeasured under D23 in the build (part 15, item 2).
   - **(c) the switch,** about 0.008 nats (derived, below).
 - **The switch to N(μ, P)** (derived):
   - **When:** when the posterior's standard deviation in u falls below σ_u = 0.1, or at the latest at the last sample
@@ -2403,6 +2450,10 @@ Each is recorded in `docs/backlog.md` under the heading given.
 - **The amplitude model's over-confidence inside marks under fast fading** (owner, 2026-10-22): "The amplitude model
   inside marks under fast fading".
   - It matters with fading of about 2 Hz and faster at 25 WPM, earlier at slow speeds, mainly on strong signals.
+  - **It also sets the newborn's tail** (the newborn-fading study; plan D24): with the prediction step every 8 samples
+    the newborn follows Part 6's own model, and the first marks it still loses against the exact fading reference (up
+    to 56 nats worst at 5 Hz, 20.5 at 2 Hz) are a level rising out of a deep fade, which this one-number model cannot
+    follow in the newborn or after it (part 8, approximation (b)).
   - A second number per story (the amplitude's rate of change) is the possible remedy, pending a standard-practice
     check.
 - **Several fading rates per story** (owner, 2026-10-22: "B in backlog"): "Several fading rates per story in the new
@@ -2520,10 +2571,14 @@ projected budget by part.
      +40 dB S₅₀₀; the narrowest σ_u at handover (below 0.05 nepers goes to the owner; since D23 removed the caps, a
      width toward 0.03 nepers above +40 dB S₅₀₀ is a live risk, part 8) and the deepest revival of a point below the
      largest (deeper than 40 nats goes to the owner);
-   - the grid's CPU with V(a_i) at each point (D23), timed first in the build against the as-built grid in the same
-     run; above the estimate's top, +113 ms per channel-second at 500 newborns (26.5% of the projected 425.7 ms), the
-     newborn's form returns to the owner;
-   - (b) the amplitude held constant before the switch, under fading (0 dB S₅₀₀ at 2 Hz and 5 Hz);
+   - the grid's CPU with V(a_i) at each point (D23) and the prediction step every 8 samples (D24), timed first in the
+     build against the as-built grid in the same run, each change's increment reported separately; above +124 ms per
+     channel-second at 500 newborns for both together (D23's estimate top, +113 ms, plus D24's about +11 ms on the mix;
+     29.1% of the projected 425.7 ms, 27.8% of 445.4 ms), the newborn's form returns to the owner;
+   - (b) fading inside the newborn with the prediction step (D24), against the newborn-fading study's exact fading
+     reference (at the true spread and at 2 Hz), with its generator applying the fading before the channel and front
+     filters, 1 000 first marks per case at 0, +10 and +20 dB S₅₀₀ (until D24: the amplitude held constant, at 0 dB
+     S₅₀₀, 2 and 5 Hz);
    - its CPU, its own line in the breakdown.
 3. **The fading diagnosis's grid:** f_D = 0.1, 0.3, 1, 2 and 5 Hz × +10, +20 and +30 dB S₅₀₀, "PARIS PARIS" at
    25 WPM, 4 edge positions, 5 seeds; exact texts and character error rate, against today's table.
@@ -2671,7 +2726,7 @@ In the table, "survey" is the standard-practice survey of 2026-10-22, `docs/rese
 | Ω̄ table (variant) | inputs 1/ν, asinh(Ω̂/SE₀), ln(SE₀/σ_y²) to ζ = 400, ln λ (λ = κζ, κ from 0 to 2.8); 31 × 85 × 42 × 29 nodes, 12.8 MB; error 99th percentile 0.87%, largest 2.5% (as built (2026-10-27, the build's Task 8): ζ at 63 nodes and λ at 57, 37.8 MB, 99th percentile 0.55%, largest 2.08%, because on the decided chain the 12.8 MB grid erred up to 5.7% against the 3% bound) | — | inputs derived; the fourth input and its λ axis owner, 2026-10-25 (D17); grid heuristic, error measured; the Gaussian artifact's remedy decided only if the variant earns its place |
 | Level prior | flat, −15 to +85 | dB S₅₀₀ | placeholder (topic 5, item 3) |
 | Newborn switch | σ_u < 0.1 in ln a | 1 | derived (0.0075 nats skew cost); owner, 2026-10-24 (D17) |
-| Newborn grid | 128 points even in u = ln a over the prior (h = 0.0906 nepers), trapezoid; live range 80 nats; V(a_i) = σ_y² + a_i²(f²s_k² + v_k) at each point and the constant w (D23) | 1, nats | owner, 2026-10-26 (D22) and 2026-10-29 (D23); 128 from the trapezoid bound and measured (0.003 nats per sample at worst, ratio form; above +40 dB S₅₀₀ without the caps a live risk, part 8); 80 heuristic, twice the deepest revival measured (41.5 nats) |
+| Newborn grid | 128 points even in u = ln a over the prior (h = 0.0906 nepers), trapezoid; live range 80 nats; V(a_i) = σ_y² + a_i²(f²s_k² + v_k) at each point and the constant w (D23); the prediction step every 8 samples, ε = 0.0684 at 2 Hz, reflecting ends (D24) | 1, nats | owner, 2026-10-26 (D22), 2026-10-29 (D23) and 2026-10-30 (D24); the stride heuristic, chosen by measurement, ε derived; 128 from the trapezoid bound and measured (0.003 nats per sample at worst, ratio form; above +40 dB S₅₀₀ without the caps a live risk, part 8); 80 heuristic, twice the deepest revival measured (41.5 nats) |
 | Systematic floor f | 0.02 | relative amplitude | placeholder until measured (owner, 2026-10-23, D17) |
 | Systematic carrier power C_k² | μ²_k\|k−1 + P_k\|k−1, the story's prediction (the newborn: a_i² at each grid point) | FS² | owner, 2026-10-29 (D23); until D23 the data's 21-sample window peak (memory and look-ahead 10 samples, 26.67 ms each) and the own part e_k²/s_k² (D17) |
 | Misfit bound | w·[δ_k²/(f²s_k² + v_k) + ½·max(0, −ln(1 + δ_k/s_k))] per sample, noise-free, within 0.02 nats (j = 5; at most 0.0003 from j = 6); plateau about w·(δ/f)², 0.73 at δ = 3.83% | nats | derived (D23), its excess at j = 5 measured (re-review of 2026-10-29); replaces the caps (0.50 to 493 on the rise, 497 on the plateau) |
