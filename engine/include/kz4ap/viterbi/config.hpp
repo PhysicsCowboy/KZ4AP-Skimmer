@@ -52,6 +52,11 @@ struct ViterbiConfig {
     double beam_nats = 40.0;
     // stories: the most stories kept at a sample (placeholder, set by the plan's R3)
     int ceiling = 1700;
+    // samples, 0 to 16: a successor's merge key holds its claimed edges of the last this many samples, so that stories are
+    // not merged before the evidence for their last edge exists: a one-sample shift of an edge has 0.0% of its evidence
+    // at an age of 4 samples, 69% at 8 and 99.8% at 10 (derived; independent review of faa283f, 2026-10-30). The value
+    // is a heuristic chosen by measurement (docs/decision-log.md, 2026-10-30). 0 merges on the state alone.
+    int merge_edge_history_samples = 12;
 
     // --- The front filter and the mark's template (parts 2 and 5) ---
 
@@ -70,6 +75,19 @@ struct ViterbiConfig {
     // Hz: the Doppler spread f_D of the fading, twice the standard deviation of a Gaussian Doppler spectrum: sets the
     // amplitude's prediction and nu's correlation (owner, 2026-10-22; D16)
     double fading_spread_hz = 2.0;
+    // The variance added at lag 1 is multiplied by m = 1 + (M - 1) x / (1 + x), x = Omega_bar / (X0 sigma_y^2), because
+    // inside a mark n predictions add n Q where the true variance grows as n^2 Q (derived), while a fixed m costs at low
+    // level on steady signals (measured). The form and both values are heuristics, chosen on the review's slices (independent
+    // review of faa283f, 2026-10-30) and possibly fitted to them; above +30 dB S500 no constant is right.
+    // 1: M, the multiplier at strong levels; 1 leaves the variance as predict_amplitude has it
+    double added_variance_multiplier_max = 16.0;
+    // 1: X0, the Omega_bar / sigma_y^2 at which m is halfway; 42 is +8.0 dB S500 (Omega_bar / sigma_y^2 = S500 x 500 Hz /
+    // 74.5 Hz, and 10 log10(42 x 74.5 / 500) = 8.0)
+    double added_variance_level_knee = 42.0;
+    // relative amplitude: the amplitude and its lag are updated only where the template's |s| is at least this; a sample
+    // below it is scored all the same. A heuristic: |s| below it carries no information on the amplitude (s_0 ... s_4
+    // are at most 8.3e-4 and the fall's tail is as small from j = 11), and each such update reset the lag
+    double amplitude_update_min_template = 0.01;
 
     // --- The model's systematic uncertainty (part 9; D15) ---
 
@@ -95,6 +113,14 @@ struct ViterbiConfig {
     double word_end_p = 1.0 / 3.06;
     // probability: that a word ends its over; 1/24, the development set's own count, until recounted on real traffic
     double over_end_q = 1.0 / 24.0;
+    // on or off: a symbol's prior is its share of VE3NEA's on-air table (symbol_prior.hpp), paid when the letter ends, in
+    // place of the flat 1 / 62. The gain measured on filler text is an upper estimate: that text is drawn from this table
+    bool symbol_prior_on_air = true;
+    // probability: no symbol's prior falls below this, before normalizing to 1: ln(1/p) = 6.26 nats, 2.13 nats above flat,
+    // for the 21 symbols the table lacks (<AR>, <KN>, <SK> among them); the table's rarest, J and 6 at count 8, stand
+    // above it, 1.73 nats above flat. A heuristic: 0.001 and 0.004 read callsign and prosign text alike, 0.00037 (one
+    // count) a little worse (docs/decision-log.md, 2026-10-30)
+    double symbol_prior_floor = 0.002;
 
     // --- The level prior and the newborn (topic 5, item 3; parts 7 and 8) ---
 

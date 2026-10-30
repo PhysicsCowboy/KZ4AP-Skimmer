@@ -6,6 +6,7 @@
 #include "kz4ap/viterbi/morse_tree.hpp"
 #include "kz4ap/viterbi/newborn.hpp"
 #include "kz4ap/viterbi/observation.hpp"
+#include "kz4ap/viterbi/symbol_prior.hpp"
 #include "kz4ap/viterbi/systematic.hpp"
 #include "kz4ap/viterbi_decoder.hpp"
 #include "viterbi/text.hpp"
@@ -49,6 +50,12 @@ std::uint64_t pack_state(Phase phase, int tau, int speed, int node) {
            (static_cast<std::uint64_t>(speed + 1) << 22) | static_cast<std::uint64_t>(node + 1);
 }
 
+// A successor's merge key adds to its state (search.hpp, step 4), in bits its state leaves free: a successor's tau is 0 or
+// 1, so tau's bits from bit 40 up hold its recent edges (bit 40 + j: an edge j samples back); bits 14 ... 21 lie between
+// the node and the speed, and one of them marks a rescue.
+constexpr int kEdgeKeyShift = 40;
+constexpr std::uint64_t kRescueKeyBit = std::uint64_t{1} << 16;
+
 // What became of a story's parent to make it.
 enum class Move : std::uint8_t {
     Continue,          // the parent, one sample on
@@ -70,7 +77,7 @@ struct Story {
     std::int32_t tau = 0;        // samples in the current element; no signal: since an over's end, 0 once quiet
     std::int16_t speed = kOpen;  // 0 ... speed_count - 1, or open
     std::int16_t node = -1;      // a mark: the node it started from; a gap: the node of the mark before it
-    std::uint64_t state = 0;     // the packed state
+    std::uint64_t state = 0;     // the packed state; at its creation sample, a successor's merge key
     double score = 0.0;          // nats, relative to the best
     double base = 0.0;           // nats: the score at the element's start plus the scores of its samples since
     EdgeHistory edges;           // its claimed edges of the last 16 samples
@@ -402,6 +409,10 @@ private:
     double mark_survival(int speed, int node, int tau) const;
     // max over the kinds the node allows of the kind's cost and ln S: a gap.
     double gap_survival(int speed, int node, int tau) const;
+    // The edges a successor's merge key holds: those of the last merge_edge_history_samples samples.
+    std::uint64_t edge_key(const EdgeHistory& edges) const {
+        return static_cast<std::uint64_t>(edges.recent & merge_edge_mask_) << kEdgeKeyShift;
+    }
 
     void end_mark(std::size_t i);
     void end_gap(std::size_t i);
@@ -418,8 +429,9 @@ private:
     std::uint32_t push_candidate(std::uint64_t state, double score, std::uint64_t creation, const Origin& origin);
     template <class MakeOrigin>
     void offer_general(std::uint64_t state, double score, std::int64_t line, MakeOrigin make_origin);
+    // The same, never skipped: a birth, whose line has no other story to record how it ended.
     template <class MakeOrigin>
-    void offer_slot(Slot& slot, double score, std::int64_t line, MakeOrigin make_origin);
+    void offer_birth(std::uint64_t state, double score, std::int64_t line, MakeOrigin make_origin);
     void emit_slot(const Slot& slot, std::uint64_t state);
     void consider_rescue(double score, std::size_t parent, Move gap);
 
@@ -458,10 +470,15 @@ private:
     double level_min_db_;
     double level_max_db_;
     double w_;                // the one constant weight, the output noise's w_strong (D23)
+    double multiplier_max_;   // M: added_variance_multiplier_max
+    double level_knee_;       // X0: added_variance_level_knee
+    double update_min_s_;     // amplitude_update_min_template
+    std::uint32_t merge_edge_mask_;  // the bits of EdgeHistory::recent in a successor's merge key
     NewbornFade fade_;        // the newborn's prediction step (D24)
     double log_stay_silent_;  // ln(1 - P)
     double log_over_start_;   // ln P
-    double log_letter_;       // ln(1 / the tree's symbols)
+    double log_letter_;       // ln(1 / the tree's symbols), paid when a letter starts
+    std::vector<double> letter_end_;  // by node: ln p(symbol) + ln(the tree's symbols), paid when its letter ends
     double log_keep_story_;   // ln(1 - epsilon)
     double log_restart_;      // ln epsilon
     double letter_gap_cost_;  // ln(1 / (1 - p))
@@ -493,11 +510,7 @@ private:
     std::vector<char> dead_;
     std::vector<std::uint32_t> alive_;
     StateTable general_;
-    std::vector<Slot> root_ends_;      // [label x speeds + speed]: gaps at E and T after a mark at the root
-    std::vector<Slot> letter_starts_;  // [speed]: marks at the root at a known speed
     Slot no_signal_;   // the quiet no-signal state
-    Slot over_ends_;   // this sample's over's ends: a no-signal story at tau = 1, whose key-up comes at the next sample
-    Slot newborn_;
     double known_best_ = -kInf;  // nats: the best score offered so far at this sample
     struct Rescue {
         double score = -kInf;
@@ -548,6 +561,10 @@ Search::Impl::Impl(const ViterbiConfig& config, std::shared_ptr<const ViterbiSha
       level_min_db_(config.level_min_db),
       level_max_db_(config.level_max_db),
       w_(shared_->output_noise().w_strong),
+      multiplier_max_(config.added_variance_multiplier_max),
+      level_knee_(config.added_variance_level_knee),
+      update_min_s_(config.amplitude_update_min_template),
+      merge_edge_mask_(0),
       fade_{whole_count(config.newborn_fade_interval_s, config.sample_interval_s, "newborn_fade_interval_s", "samples"),
             0.5 * (1.0 - fading_.rho(1) * fading_.rho(1))} {
     // The shared parts must be this configuration's: its sample interval, edges, level range and newborn grid.
@@ -577,11 +594,30 @@ Search::Impl::Impl(const ViterbiConfig& config, std::shared_ptr<const ViterbiSha
     if (!probability(config.over_end_q)) throw std::invalid_argument("search: over_end_q must lie in (0, 1)");
     if (config.quadrature_order < 2 || config.quadrature_order > 20)
         throw std::invalid_argument("search: the quadrature's order must be 2 to 20");
+    if (!(config.added_variance_multiplier_max >= 1.0) || !std::isfinite(config.added_variance_multiplier_max))
+        throw std::invalid_argument("search: added_variance_multiplier_max must be finite and at least 1");
+    if (!positive_and_finite(config.added_variance_level_knee))
+        throw std::invalid_argument(
+            "search: added_variance_level_knee must be positive and finite (Omega_bar / sigma_y^2)");
+    if (!(config.amplitude_update_min_template >= 0.0 && config.amplitude_update_min_template <= 1.0))
+        throw std::invalid_argument("search: amplitude_update_min_template must lie in [0, 1] (the template's |s|)");
+    if (config.merge_edge_history_samples < 0 || config.merge_edge_history_samples > TemplateTables::kSpan)
+        throw std::invalid_argument("search: merge_edge_history_samples must be 0 to 16 (samples)");
+    merge_edge_mask_ = (std::uint32_t{1} << config.merge_edge_history_samples) - 1u;
     ceiling_ = static_cast<std::size_t>(config.ceiling);
 
     int symbols = 0;
     for (std::size_t node = 0; node < tree_.size(); ++node)
         if (!tree_.symbol(static_cast<int>(node)).empty()) ++symbols;
+    if (config.symbol_prior_on_air && !(config.symbol_prior_floor > 0.0 && config.symbol_prior_floor < 1.0 / symbols))
+        throw std::invalid_argument("search: symbol_prior_floor must lie in (0, 1 / the tree's symbols) (a probability)");
+    letter_end_.assign(tree_.size(), 0.0);
+    if (config.symbol_prior_on_air) {
+        const std::vector<double> log_prior = on_air_log_prior(tree_, config.symbol_prior_floor);
+        for (std::size_t node = 0; node < tree_.size(); ++node)
+            if (!tree_.symbol(static_cast<int>(node)).empty())
+                letter_end_[node] = log_prior[node] + std::log(static_cast<double>(symbols));
+    }
     log_stay_silent_ = std::log1p(-over_start);
     log_over_start_ = std::log(over_start);
     log_letter_ = -std::log(static_cast<double>(symbols));
@@ -592,9 +628,6 @@ Search::Impl::Impl(const ViterbiConfig& config, std::shared_ptr<const ViterbiSha
     over_end_cost_ = -(std::log(config.word_end_p) + std::log(config.over_end_q));
     log_speed_prior_ = -std::log(static_cast<double>(speeds_));
     stats_window_samples_ = std::max(1, static_cast<int>(std::lround(kStatsWindowS / config.sample_interval_s)));
-
-    root_ends_.assign(2 * static_cast<std::size_t>(speeds_), Slot{});
-    letter_starts_.assign(static_cast<std::size_t>(speeds_), Slot{});
 
     // At the channel's first sample there is one story: no signal, score 0, empty text, no edges, line 0.
     Story first = prototype_;
@@ -620,8 +653,9 @@ double Search::Impl::gap_survival(int speed, int node, int tau) const {
     double best = -kInf;
     if (tree_.has_children(node)) best = fist_.log_survival(Kind::ElementGap, speed, tau);
     if (!tree_.symbol(node).empty()) {
-        best = std::max(best, fist_.log_survival(Kind::LetterGap, speed, tau) - letter_gap_cost_);
-        best = std::max(best, fist_.log_survival(Kind::WordGap, speed, tau) - word_gap_cost_);
+        const double letter_end = letter_end_[static_cast<std::size_t>(node)];
+        best = std::max(best, fist_.log_survival(Kind::LetterGap, speed, tau) - letter_gap_cost_ + letter_end);
+        best = std::max(best, fist_.log_survival(Kind::WordGap, speed, tau) - word_gap_cost_ + letter_end);
     }
     return best;
 }
@@ -650,14 +684,18 @@ double Search::Impl::score_sample(Story& c, const Pending& sample, double sigma2
             c.newborn->add(sample.e, tv.s, tv.v, sigma2, floor_);
             score = c.newborn->last_score_nats();
         } else {
-            const Prediction predicted = predict_amplitude(c.amp, sample.k, c.omega_bar, fading_);
+            const Prediction predicted = predict_amplitude_at_level(c.amp, sample.k, c.omega_bar, sigma2, multiplier_max_,
+                                                                    level_knee_, fading_);
             const double variance =
                 systematic_variance_fs2(sigma2, predicted.mu_fs * predicted.mu_fs + predicted.p_fs2, tv.s, tv.v, floor_);
             const SampleEvidence evidence = story_evidence(sample.e, tv.s, predicted.mu_fs, predicted.p_fs2, variance,
                                                            sigma2, w_, order_, c.mode_a);
             score = evidence.score_nats;
-            c.amp = Amplitude{evidence.amplitude.mean, evidence.amplitude.var, sample.k};
-            c.mode_a = evidence.mode_a_fs;
+            // Where the template is tiny the sample says nothing of the amplitude: it is scored, but the lag runs on.
+            if (std::fabs(tv.s) >= update_min_s_) {
+                c.amp = Amplitude{evidence.amplitude.mean, evidence.amplitude.var, sample.k};
+                c.mode_a = evidence.mode_a_fs;
+            }
         }
         c.long_run.at_sample(sample.k);
         c.long_run.add(tv.s, sample.e, sigma2);
@@ -686,6 +724,11 @@ std::uint32_t Search::Impl::push_candidate(std::uint64_t state, double score, st
 template <class MakeOrigin>
 void Search::Impl::offer_general(std::uint64_t state, double score, std::int64_t line, MakeOrigin make_origin) {
     if (beyond_beam(score)) return;
+    offer_birth(state, score, line, make_origin);
+}
+
+template <class MakeOrigin>
+void Search::Impl::offer_birth(std::uint64_t state, double score, std::int64_t line, MakeOrigin make_origin) {
     std::int32_t& kept = general_[state];
     if (kept != kNone) {
         const detail::Ranked& incumbent = ranked_[static_cast<std::size_t>(kept)];
@@ -700,22 +743,6 @@ void Search::Impl::offer_general(std::uint64_t state, double score, std::int64_t
     kept = static_cast<std::int32_t>(push_candidate(state, score, next_creation_++, make_origin()));
 }
 
-template <class MakeOrigin>
-void Search::Impl::offer_slot(Slot& slot, double score, std::int64_t line, MakeOrigin make_origin) {
-    if (slot.sample == searched_) {
-        if (!detail::replaces(score, next_creation_, slot.score, slot.creation)) {
-            if (stats_on_) removed(line, LineEnd::Merge);
-            return;
-        }
-        if (stats_on_) removed(slot.origin.line, LineEnd::Merge);
-    }
-    known_best_ = std::max(known_best_, score);
-    slot.score = score;
-    slot.creation = next_creation_++;
-    slot.origin = make_origin();
-    slot.sample = searched_;
-}
-
 void Search::Impl::emit_slot(const Slot& slot, std::uint64_t state) {
     if (slot.sample == searched_) push_candidate(state, slot.score, slot.creation, slot.origin);
 }
@@ -728,18 +755,18 @@ void Search::Impl::end_mark(std::size_t i) {
     const Story& s = continuation_[i];  // the parent after this sample: its base holds the sample's score
     const int tau = s.tau;
     const double base = s.base;
-    // A mark at the root ends into a gap at E or T at its speed: a state that only marks at the root reach, a
-    // newborn's first mark (at every speed) or a letter's first mark (at its own), so they merge in root_ends_.
-    const auto offer_root_end = [&](int label, int speed, double score) {
-        offer_slot(root_ends_[static_cast<std::size_t>(label * speeds_ + speed)], score, s.line, [&] {
-            return Origin{static_cast<std::int32_t>(i), Move::EndMark, static_cast<std::uint8_t>(label), Move::Continue,
-                          static_cast<std::int16_t>(speed), s.line};
-        });
+    const std::uint64_t edges = edge_key(s.edges);
+    const auto offer_over_end = [&](int label, int child, double score) {
+        offer_general(pack_state(Phase::NoSignal, 1, kOpen, -1) | edges,
+                      score - over_end_cost_ + letter_end_[static_cast<std::size_t>(child)], s.line, [&] {
+                          return Origin{static_cast<std::int32_t>(i), Move::EndOver, static_cast<std::uint8_t>(label),
+                                        Move::Continue, kOpen, s.line};
+                      });
     };
     if (s.speed == kOpen) {
         // A newborn's first mark, at the root: it branches into every speed and label with a finite ln P, each paying
         // ln(1/speed_count). The over may end after E or T: all speeds land in the no-signal state, so only each
-        // label's best speed is offered, and always (search.hpp, step 5).
+        // label's best speed is offered.
         const OpenTiming::FirstMarkEnds ends = open_.first_mark_ends(tau);
         const double head = base + log_speed_prior_;
         const bool gaps_beyond = beyond_beam(head + ends.best);  // then every gap successor is beyond the beam
@@ -749,14 +776,13 @@ void Search::Impl::end_mark(std::size_t i) {
             for (int speed = 0; speed < speeds_ && !gaps_beyond; ++speed) {
                 const double log_end = ends.log_end[static_cast<std::size_t>(label * speeds_ + speed)];
                 if (log_end == -kInf) continue;
-                const double score = head + log_end;
-                if (!beyond_beam(score)) offer_root_end(label, speed, score);
+                offer_general(pack_state(Phase::Gap, 0, speed, child) | edges, head + log_end, s.line, [&] {
+                    return Origin{static_cast<std::int32_t>(i), Move::EndMark, static_cast<std::uint8_t>(label),
+                                  Move::Continue, static_cast<std::int16_t>(speed), s.line};
+                });
             }
             if (!tree_.symbol(child).empty() && ends.label_best[label] > -kInf)
-                offer_slot(over_ends_, head + ends.label_best[label] - over_end_cost_, s.line, [&] {
-                    return Origin{static_cast<std::int32_t>(i), Move::EndOver, static_cast<std::uint8_t>(label),
-                                  Move::Continue, kOpen, s.line};
-                });
+                offer_over_end(label, child, head + ends.label_best[label]);
         }
         return;
     }
@@ -766,19 +792,11 @@ void Search::Impl::end_mark(std::size_t i) {
         const double log_end = fist_.log_end(OpenTiming::mark_kind(label), s.speed, tau);
         if (log_end == -kInf) continue;
         const double score = base + log_end;
-        if (s.node != tree_.root()) {
-            offer_general(pack_state(Phase::Gap, 0, s.speed, child), score, s.line, [&] {
-                return Origin{static_cast<std::int32_t>(i), Move::EndMark, static_cast<std::uint8_t>(label),
-                              Move::Continue, s.speed, s.line};
-            });
-        } else if (!beyond_beam(score)) {
-            offer_root_end(label, s.speed, score);
-        }
-        if (!tree_.symbol(child).empty())  // the over's end: always offered (search.hpp, step 5)
-            offer_slot(over_ends_, score - over_end_cost_, s.line, [&] {
-                return Origin{static_cast<std::int32_t>(i), Move::EndOver, static_cast<std::uint8_t>(label),
-                              Move::Continue, kOpen, s.line};
-            });
+        offer_general(pack_state(Phase::Gap, 0, s.speed, child) | edges, score, s.line, [&] {
+            return Origin{static_cast<std::int32_t>(i), Move::EndMark, static_cast<std::uint8_t>(label), Move::Continue,
+                          s.speed, s.line};
+        });
+        if (!tree_.symbol(child).empty()) offer_over_end(label, child, score);
     }
 }
 
@@ -786,19 +804,20 @@ void Search::Impl::end_gap(std::size_t i) {
     const Story& s = continuation_[i];  // the parent after this sample: its base holds the sample's score
     const int tau = s.tau;
     const int node = s.node;
+    const std::uint64_t edges = edge_key(s.edges);
     if (tree_.has_children(node)) {
         const double log_end = fist_.log_end(Kind::ElementGap, s.speed, tau);
         if (log_end > -kInf)
-            offer_general(pack_state(Phase::Mark, 0, s.speed, node), s.base + log_end, s.line, [&] {
+            offer_general(pack_state(Phase::Mark, 0, s.speed, node) | edges, s.base + log_end, s.line, [&] {
                 return Origin{static_cast<std::int32_t>(i), Move::EndElementGap, 0, Move::Continue, s.speed, s.line};
             });
     }
     if (tree_.symbol(node).empty()) return;
-    // A letter starts at the root: it pays the letter, ln(1/62), and ln(1/(1 - epsilon)) for not restarting. Every such
-    // successor lands in a state (a mark at the root at a known speed) that only letter starts reach, so they merge in
-    // letter_starts_.
-    const double head = s.base + log_letter_ + log_keep_story_;
-    Slot& start = letter_starts_[static_cast<std::size_t>(s.speed)];
+    // A letter ends and the next starts at the root: it pays the letter that ended, ln p(symbol) + ln 62 (the flat
+    // ln(1/62) having been paid when that letter started), the new letter, ln(1/62), and ln(1/(1 - epsilon)) for not
+    // restarting.
+    const double head = s.base + letter_end_[static_cast<std::size_t>(node)] + log_letter_ + log_keep_story_;
+    const std::uint64_t start = pack_state(Phase::Mark, 0, s.speed, tree_.root()) | edges;
     for (const Kind kind : {Kind::LetterGap, Kind::WordGap}) {
         const bool word = kind == Kind::WordGap;
         const Move move = word ? Move::EndWordGap : Move::EndLetterGap;
@@ -806,9 +825,8 @@ void Search::Impl::end_gap(std::size_t i) {
         if (log_end == -kInf) continue;
         const double score = head - (word ? word_gap_cost_ : letter_gap_cost_) + log_end;
         consider_rescue(score, i, move);
-        if (beyond_beam(score)) continue;
-        offer_slot(start, score, s.line,
-                   [&] { return Origin{static_cast<std::int32_t>(i), move, 0, Move::Continue, s.speed, s.line}; });
+        offer_general(start, score, s.line,
+                      [&] { return Origin{static_cast<std::int32_t>(i), move, 0, Move::Continue, s.speed, s.line}; });
     }
 }
 
@@ -964,11 +982,11 @@ void Search::Impl::search_sample(const Pending& sample) {
     ranked_.clear();
     origins_.clear();
     dead_.clear();
-    general_.reset(2 * n_old);
     known_best_ = -kInf;
     rescue_ = Rescue{};
     born_.clear();
     std::int32_t no_signal = kNone;
+    std::size_t open_marks = 0;  // stories in a newborn's first mark, each offering a gap at every speed and label
 
     // 2. Every story continues: it scores the sample (search.hpp, "One sample k searched"), books it in its base and
     // adds its element's timing. The continuations are candidates in the previous population's order, the no-signal
@@ -1003,6 +1021,7 @@ void Search::Impl::search_sample(const Pending& sample) {
                 c.base = s.base + score;
                 c.score = c.base + (s.speed == kOpen ? log_speed_prior_ + open_.first_mark_survival(c.tau)
                                                      : mark_survival(s.speed, s.node, c.tau));
+                if (s.speed == kOpen) ++open_marks;
                 break;
             case Phase::Gap:
                 c.tau = s.tau + 1;
@@ -1020,7 +1039,9 @@ void Search::Impl::search_sample(const Pending& sample) {
             no_signal_ = Slot{c.score, c.creation, continued, searched_};
         }
     }
-    // ... and ends, into successors that start their next element at the next sample.
+    // ... and ends, into successors that start their next element at the next sample. The most it can offer into the
+    // table: 4 keys per story (2 gaps, 2 over's ends; a gap's 3 are fewer), 2 x speeds + 2 per first mark, and 2 births.
+    general_.reset(4 * n_old + (2 * static_cast<std::size_t>(speeds_) + 2) * open_marks + 2);
     for (std::size_t i = 0; i < n_old; ++i) {
         if (continuation_[i].phase == Phase::Mark)
             end_mark(i);
@@ -1029,34 +1050,26 @@ void Search::Impl::search_sample(const Pending& sample) {
     }
 
     // 3. Births: from silence, off the best continuing no-signal story (silent at this sample); and one rescue newborn from
-    // the best letter-starting successor. Both are marks at the root with their speed open: they merge.
+    // the best letter-starting successor. Both are marks at the root with their speed open, in keys of their own: one has a
+    // level and the other a flat prior over it, so their scores at birth cannot choose between them before any evidence.
     if (no_signal != kNone) {
         const Story& c = continuation_[static_cast<std::size_t>(no_signal)];
         const double score = c.score + log_over_start_ + log_letter_;
         const std::int64_t line = new_line(LineKind::Silence, t);
         born_.emplace_back(line, score);
-        offer_slot(newborn_, score, line,
-                   [&] { return Origin{no_signal, Move::BirthFromSilence, 0, Move::Continue, kOpen, line}; });
+        offer_birth(pack_state(Phase::Mark, 0, kOpen, tree_.root()), score, line,
+                    [&] { return Origin{no_signal, Move::BirthFromSilence, 0, Move::Continue, kOpen, line}; });
     }
     if (rescue_.parent != kNone) {
         const double score = rescue_.score - log_keep_story_ + log_restart_;
         const std::int64_t line = new_line(LineKind::Rescue, t);
         born_.emplace_back(line, score);
-        offer_slot(newborn_, score, line,
-                   [&] { return Origin{rescue_.parent, Move::BirthRescue, 0, rescue_.gap, kOpen, line}; });
+        offer_birth(pack_state(Phase::Mark, 0, kOpen, tree_.root()) | kRescueKeyBit, score, line,
+                    [&] { return Origin{rescue_.parent, Move::BirthRescue, 0, rescue_.gap, kOpen, line}; });
     }
 
-    // 4. Merging is done as successors are offered; the slots' winners join the candidates in the slots' order.
-    const int root = tree_.root();
-    for (int label = 0; label < 2; ++label)
-        for (int speed = 0; speed < speeds_; ++speed)
-            emit_slot(root_ends_[static_cast<std::size_t>(label * speeds_ + speed)],
-                      pack_state(Phase::Gap, 0, speed, tree_.child(root, label == 1)));
-    for (int speed = 0; speed < speeds_; ++speed)
-        emit_slot(letter_starts_[static_cast<std::size_t>(speed)], pack_state(Phase::Mark, 0, speed, root));
+    // 4. Merging is done as successors are offered; the quiet state's winner joins the candidates.
     emit_slot(no_signal_, pack_state(Phase::NoSignal, 0, kOpen, -1));
-    emit_slot(over_ends_, pack_state(Phase::NoSignal, 1, kOpen, -1));
-    emit_slot(newborn_, pack_state(Phase::Mark, 0, kOpen, root));
     alive_.clear();
     for (std::size_t j = 0; j < ranked_.size(); ++j)
         if (!dead_[j]) alive_.push_back(static_cast<std::uint32_t>(j));
@@ -1169,7 +1182,9 @@ std::vector<StoryView> Search::Impl::live_stories() const {
     std::vector<const Story*> order;
     order.reserve(live_);
     for (std::size_t i = 0; i < live_; ++i) order.push_back(&population_[i]);
-    std::sort(order.begin(), order.end(), [](const Story* a, const Story* b) { return a->state < b->state; });
+    std::sort(order.begin(), order.end(), [](const Story* a, const Story* b) {
+        return a->state != b->state ? a->state < b->state : a->creation < b->creation;
+    });
     std::vector<StoryView> views;
     views.reserve(order.size());
     for (const Story* s : order) {
@@ -1177,7 +1192,7 @@ std::vector<StoryView> Search::Impl::live_stories() const {
         views.push_back(StoryView{morse ? Activity::Morse : Activity::NoSignal, s->phase == Phase::Mark, s->tau,
                                   s->speed, morse ? s->node : -1, s->score, s->line, s->amp, s->omega_bar,
                                   s->long_run.nu(), s->long_run.omega_hat_fs2(), s->newborn != nullptr, s->edges,
-                                  s->mode_a, reinterpret_cast<std::uintptr_t>(s->newborn.get())});
+                                  s->mode_a, reinterpret_cast<std::uintptr_t>(s->newborn.get()), s->creation});
     }
     return views;
 }

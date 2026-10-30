@@ -17,6 +17,7 @@ set(KZ4AP_BANK_SOURCES
 # The new decoder's sources (first prototype); later tasks add to this list.
 set(KZ4AP_VITERBI_SOURCES
   src/viterbi/morse_tree.cpp
+  src/viterbi/symbol_prior.cpp
   src/viterbi/fist.cpp
   src/viterbi/observation.cpp
   src/viterbi/search.cpp
@@ -134,6 +135,7 @@ set_tests_properties(BankFitB2a.FullSweep PROPERTIES ENVIRONMENT KZ4AP_FIT_FULL_
 # The new decoder's tests (first prototype); later tasks add to this list.
 add_executable(kz4ap_viterbi_tests
   tests/viterbi/morse_tree_test.cpp
+  tests/viterbi/symbol_prior_test.cpp
   tests/viterbi/fist_test.cpp
   tests/viterbi/observation_test.cpp
   tests/viterbi/search_test.cpp

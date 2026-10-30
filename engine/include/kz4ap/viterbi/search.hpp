@@ -36,10 +36,12 @@
 //        newborn_switch_sigma_u (0.1 nepers) or at the latest at the 15th sample after its first mark's claimed key-up
 //        (should_switch);
 //      - any other story predicts its amplitude to sample k from (mu, P, t_m) and its cached Omega_bar
-//        (predict_amplitude, at the configuration's f_D; genie_fading_spread_hz in its place when set), takes V_k =
-//        sigma_y^2 + (mu^2 + P)(f^2 s_k^2 + v_k) from that prediction (systematic.hpp), scores the sample against the
+//        (predict_amplitude_at_level, at the configuration's f_D; genie_fading_spread_hz in its place when set), takes V_k
+//        = sigma_y^2 + (mu^2 + P)(f^2 s_k^2 + v_k) from that prediction (systematic.hpp), scores the sample against the
 //        reference every story shares by story_evidence (observation.hpp; order quadrature_order, Newton started from the
-//        previous sample's mode) and sets its amplitude to the posterior, t_m = k;
+//        previous sample's mode) and, where |s_k| >= amplitude_update_min_template (0.01), sets its amplitude to the
+//        posterior, t_m = k, and keeps the mode; below it the amplitude and its lag run on (the sample is scored all the
+//        same);
 //      - every one adds the sample to its long-run sums (LongRun: at_sample(k), add(s_k, e_k, sigma_y^2)) and, once out
 //        of the integral (from the sample at which it switches), looks Omega_bar up again from them (the default
 //        table, ViterbiShared::omega_bar(): only after samples with s_k != 0, part 7).
@@ -64,11 +66,12 @@
 //     cost and survival, and ends as each kind. A newborn's first mark keeps the best over the speeds and both labels
 //     of ln(1/speed_count) + ln S_label(s, tau) and ends into every speed and label with a finite ln P, each paying
 //     ln(1/speed_count) and its own ln P.
-//   - Text, by look-ahead, with every symbol equally likely (plan §2.6): a letter costs ln 62 = 4.127 nats when it
-//     starts. After a mark at a node, the gap is between elements if the node has children (cost 0); if it holds a
-//     symbol, between letters (ln(1/(1 - p)) = 0.396 nats) or between words (ln(1/(p (1 - q))) = 1.161 nats), and the
-//     over may end, ln(1/(p q)) = 4.296 nats, taken at the mark's end as a step to the no-signal state; p = word_end_p
-//     = 1/3.06 and q = over_end_q = 1/24.
+//   - Text, by look-ahead: a letter costs a flat ln 62 = 4.127 nats when it starts, and the rest of its prior when it
+//     ends, ln p(symbol) + ln 62 nats, so that the whole letter costs ln(1/p(symbol)) (symbol_prior.hpp; 0 with
+//     symbol_prior_on_air off). A mark's end looks ahead at a node, the gap is between elements if the node has children
+//     (cost 0); if it holds a symbol, between letters (ln(1/(1 - p)) = 0.396 nats) or between words (ln(1/(p (1 - q))) =
+//     1.161 nats), each with the letter's end, and the over may end, ln(1/(p q)) = 4.296 nats and the letter's end, taken
+//     at the mark's end as a step to the no-signal state; p = word_end_p = 1/3.06 and q = over_end_q = 1/24.
 //   - No signal: the story pays ln(1 - P) per sample, P = over_rate_per_s x sample_interval_s = 1.333e-4 (8.92 nats
 //     for a birth, ln P).
 //
@@ -79,8 +82,8 @@
 //      dash, each a successor in a gap at the child node, and, where the child holds a symbol, a successor in the
 //      no-signal state that ends the over after that letter. In a gap: it also ends here as each kind allowed, each a
 //      successor that starts a mark at the next sample: an element gap keeps the node; a letter or word gap pays the
-//      letter at the root and, for a word gap, adds a word space; each story that starts a letter also pays
-//      ln(1/(1 - epsilon)) for not restarting. Every successor carries its parent's state after this sample (its
+//      letter that ended and the next one's start at the root and, for a word gap, adds a word space; each story that
+//      starts a letter also pays ln(1/(1 - epsilon)) for not restarting. Every successor carries its parent's state after this sample (its
 //      edges, amplitude, sums and newborn integral) and claims its edge at the next sample.
 //   3. Births. From silence: while the no-signal story lives, a newborn starts a mark at the next sample, with the
 //      continuing no-signal story's score plus ln P plus ln(1/62), its text with a word space after it if it is not
@@ -88,18 +91,23 @@
 //      from the best such letter-starting successor (whether or not that successor is created): its score less
 //      ln(1 - epsilon) plus ln epsilon (6.908 nats behind it, epsilon = rescue_epsilon = 1e-3), its text and level, its
 //      speed open.
-//   4. Merging on the packed state (Ruling 64; the owner's per-survivor decision): successors created at the same
-//      sample in the same state are merged, keeping the better score (of equal scores, the earlier created) with its
-//      own history (edges, amplitude, sums, newborn integral, text). The state is: activity; key up or down; samples in
-//      the current element; speed or open; tree node. The no-signal state's clock counts the samples since the over's
-//      end while the over's tail still scores, so that stories with different key-ups stay apart until their templates
-//      agree (the build's Task 10: merging them lost about 10 nats on every over's end); there is at most one quiet
-//      no-signal story. Continuing stories collide only there.
+//   4. Merging on the packed state and the recent edges (Ruling 64; the owner's per-survivor decision): successors created
+//      at the same sample with the same merge key are merged, keeping the better score (of equal scores, the earlier
+//      created) with its own history (edges, amplitude, sums, newborn integral, text). The state is: activity; key up
+//      or down; samples in the current element; speed or open; tree node. The key adds the claimed edges of the last
+//      merge_edge_history_samples samples (12; config.hpp), because a claimed edge shows in the envelope only 5 to 10
+//      samples later: without them, stories that differ by one sample in an edge are merged before the evidence
+//      between them exists, and the fist's prior decides, which dropped the right story at 75 to 100 WPM (review of
+//      faa283f, 2026-10-30). A rescue and a newborn from silence each have their own key. So two live stories may
+//      share a state, but not at their creation with the same key. The no-signal state's clock counts the samples since
+//      the over's end while the over's tail still scores, so that stories with different key-ups stay apart until their
+//      templates agree (the build's Task 10: merging them lost about 10 nats on every over's end); there is at most
+//      one quiet no-signal story, and continuing stories merge only there.
 //   5. Pruning: every story more than beam_nats behind the best is dropped; if more than `ceiling` remain, the
-//      `ceiling` best are kept, ties broken by the state, then by creation order (a counter), so that a run depends on
+//      `ceiling` best are kept, ties broken by the key, then by creation order (a counter), so that a run depends on
 //      no container's order and no address. A successor already more than beam_nats behind a score known at the
-//      sample is not created, except an over's end (always offered into the no-signal state, where it merges); this
-//      changes no output (detail::SearchOptions turns it off for the tests that show it).
+//      sample is not created, except a birth (so that its line records how it ended); this changes no output
+//      (detail::SearchOptions turns it off for the tests that show it).
 //   6. Scores are held relative to the best.
 //   7. best_text() gives the best story's text, each symbol with its start and end times and the probability 1; if the
 //      best story stands at a node holding a symbol, that symbol is its last letter.
@@ -209,6 +217,7 @@ struct StoryView {
     EdgeHistory edges;         // its claimed edges (the next sample's claim not yet made)
     double mode_a_fs;          // FS: the last scored sample's mode, Newton's start at its next
     std::uintptr_t newborn_grid;  // the identity of its newborn integral (0 for none): stories sharing one have the same
+    std::uint64_t creation;       // its creation count: the same from one sample to the next while it continues its element
 };
 
 namespace detail {
@@ -229,7 +238,7 @@ struct SearchOptions {
 
 // A candidate story at a sample, as merging and pruning see it.
 struct Ranked {
-    std::uint64_t state;     // the story's state, packed so that its order is one fixed order of the states
+    std::uint64_t state;     // the story's state or merge key, packed so that its order is one fixed order of them
     double score_nats;
     std::uint64_t creation;  // its creation order
 };
@@ -262,8 +271,10 @@ public:
     // output noise, the Omega_bar table and the newborn's tables. Throws std::invalid_argument for no shared parts,
     // shared parts built for another sample interval or newborn grid, and a configuration the search cannot use: a beam
     // that is not positive, a ceiling below 1, more than 255 speeds, a P (over_rate_per_s x sample_interval_s),
-    // epsilon, p or q outside (0, 1), a quadrature order outside 2 ... 20, a systematic_floor outside [0, 1], a
-    // newborn_fade_interval_s, nu_bin_s or nu_memory_s that is not a whole number of samples (nu's
+    // epsilon, p or q outside (0, 1), a quadrature order outside 2 ... 20, a systematic_floor outside [0, 1], an
+    // added_variance_multiplier_max below 1, an added_variance_level_knee that is not positive, an
+    // amplitude_update_min_template outside [0, 1], a merge_edge_history_samples outside 0 ... 16, a symbol_prior_floor
+    // outside (0, 1/62) when symbol_prior_on_air, a newborn_fade_interval_s, nu_bin_s or nu_memory_s that is not a whole number of samples (nu's
     // memory of bins; naming the field), a newborn_switch_sigma_u or newborn_live_range_nats that is not positive;
     // and what Fist, FadingTables and LongRun refuse.
     Search(const ViterbiConfig& config, std::shared_ptr<const ViterbiShared> shared,
@@ -290,7 +301,7 @@ public:
     const SearchStats& stats() const;
 
     // For tests: the live stories after the last searched sample's pruning, and each one's state and score, in the
-    // order of their states (the order of detail::Ranked::state).
+    // order of their states and merge keys (the order of detail::Ranked::state), then of their creation.
     std::size_t live() const;
     std::vector<StoryView> live_stories() const;
     // nats: the sum of the best scores subtracted so far; a story's score against "noise only, throughout" is its
