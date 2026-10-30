@@ -1,4 +1,4 @@
-#include "cpu_time.hpp"
+#include "kz4ap/cpu_time.hpp"
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -8,7 +8,7 @@
 #include <ctime>
 #endif
 
-namespace kz4ap::bench {
+namespace kz4ap {
 
 double process_cpu_seconds() {
 #if defined(_WIN32)
@@ -40,4 +40,4 @@ double thread_cpu_seconds() {
 #endif
 }
 
-}  // namespace kz4ap::bench
+}  // namespace kz4ap

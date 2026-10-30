@@ -374,4 +374,24 @@ TEST(BankDecoder, TheEngineRunsTheBankOnOracleChannels) {
         << " corrections";
 }
 
+TEST(BankDecoder, UpdatesCarryTheSelectedFitsSpeed) {
+    constexpr double kRate = 48000, kWpm = 28;
+    const std::string text = "CQ TEST DE W1AW W1AW K CQ TEST DE W1AW W1AW K";
+    const auto x = test::keyed_signal(text, kWpm, kRate, test::duration_for(text, kWpm), 3000.0, 0.0102, 0.02, 3);
+    EventBus bus;
+    std::vector<float> wpm;
+    bus.subscribe([&](const Event& e) {
+        if (const auto* d = std::get_if<DecodedTextEvent>(&e); d && !d->chars.empty()) wpm.push_back(d->wpm);
+    });
+    EngineConfig config;
+    config.sample_rate = static_cast<int>(kRate);
+    config.decoder.front_end = FrontEnd::Bank;
+    config.oracle_frequencies_hz = {3000.0};
+    Engine engine(config, bus);
+    engine.process(x);
+    engine.finish();
+    ASSERT_GT(wpm.size(), 20u);
+    EXPECT_NEAR(wpm.back(), kWpm, 0.1 * kWpm);
+}
+
 }  // namespace

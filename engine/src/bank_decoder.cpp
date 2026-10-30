@@ -66,6 +66,7 @@ DecodeUpdate BankDecoder::take_update() {
     up.chars = std::move(pending_);
     pending_.clear();
     up.freq_offset_hz = anchor_hz_;  // the bank decodes at the anchor (it does not track frequency itself)
+    if (const auto dit_s = channel_->selected_dit_s()) up.wpm = static_cast<float>(1.2 / *dit_s);  // PARIS
     for (const auto& c : up.chars) published_.push_back(c.text);
     const auto& out = channel_->output();
     const auto& corrections = out.corrections();

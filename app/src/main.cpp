@@ -1,0 +1,107 @@
+// kz4ap-skimmer: the desktop app. Opens an I/Q recording, shows the band as a waterfall and each signal's decoded text.
+#include "main_window.hpp"
+
+#include "kz4ap/decoder_name.hpp"
+#include "kz4ap/file_iq_source.hpp"
+
+#include <QApplication>
+#include <QCommandLineParser>
+#include <QMessageBox>
+#include <QPalette>
+#include <QStyleFactory>
+
+#include <cstdio>
+#include <optional>
+#include <string>
+
+namespace {
+
+QPalette dark_palette() {
+    QPalette p;
+    p.setColor(QPalette::Window, QColor(38, 38, 42));
+    p.setColor(QPalette::WindowText, QColor(225, 225, 225));
+    p.setColor(QPalette::Base, QColor(24, 24, 28));
+    p.setColor(QPalette::AlternateBase, QColor(38, 38, 42));
+    p.setColor(QPalette::Text, QColor(235, 235, 235));
+    p.setColor(QPalette::Button, QColor(52, 52, 58));
+    p.setColor(QPalette::ButtonText, QColor(225, 225, 225));
+    p.setColor(QPalette::Highlight, QColor(60, 100, 170));
+    p.setColor(QPalette::HighlightedText, Qt::white);
+    p.setColor(QPalette::ToolTipBase, QColor(52, 52, 58));
+    p.setColor(QPalette::ToolTipText, QColor(235, 235, 235));
+    p.setColor(QPalette::Disabled, QPalette::WindowText, QColor(130, 130, 130));
+    p.setColor(QPalette::Disabled, QPalette::Text, QColor(130, 130, 130));
+    p.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(130, 130, 130));
+    return p;
+}
+
+// The transport's value for a --speed option: a positive number, or "max"; none for anything else.
+std::optional<double> parse_speed(const QString& text) {
+    if (text == QStringLiteral("max")) return kz4ap::kAsFastAsPossible;
+    bool ok = false;
+    const double speed = text.toDouble(&ok);
+    if (ok && speed > 0) return speed;
+    return std::nullopt;
+}
+
+int usage_error(const QString& message, bool quiet) {
+    std::fprintf(stderr, "kz4ap-skimmer: %s\n", message.toLocal8Bit().constData());
+    if (!quiet) QMessageBox::critical(nullptr, QStringLiteral("KZ4AP Skimmer"), message);
+    return 2;
+}
+
+}  // namespace
+
+int main(int argc, char* argv[]) {
+    QApplication app(argc, argv);
+    QApplication::setApplicationName(QStringLiteral("kz4ap-skimmer"));
+    QApplication::setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
+    QApplication::setPalette(dark_palette());
+
+    QCommandLineParser parser;
+    parser.setApplicationDescription(QStringLiteral("KZ4AP Skimmer: a waterfall and decoded text from I/Q recordings."));
+    parser.addHelpOption();
+    parser.addPositionalArgument(QStringLiteral("recording"), QStringLiteral("An I/Q recording to open (16-bit stereo WAV)."),
+                                 QStringLiteral("[recording]"));
+    const QCommandLineOption decoder_option(
+        QStringLiteral("decoder"), QStringLiteral("The decoder: envelope, matched, bank or viterbi."), QStringLiteral("name"),
+        QString::fromUtf8(kz4ap::kDefaultDecoderName.data(), static_cast<qsizetype>(kz4ap::kDefaultDecoderName.size())));
+    const QCommandLineOption speed_option(QStringLiteral("speed"),
+                                          QStringLiteral("Stream seconds per second of wall clock, or max."),
+                                          QStringLiteral("x"), QStringLiteral("1"));
+    const QCommandLineOption screenshot_option(QStringLiteral("screenshot"),
+                                               QStringLiteral("Save a picture of the window to this file."),
+                                               QStringLiteral("path"));
+    const QCommandLineOption screenshot_at_option(QStringLiteral("screenshot-at"),
+                                                  QStringLiteral("Stream time of the picture, s (default: the end)."),
+                                                  QStringLiteral("s"));
+    const QCommandLineOption report_option(QStringLiteral("report"),
+                                           QStringLiteral("Write the run's numbers and every track's text to this file."),
+                                           QStringLiteral("path"));
+    const QCommandLineOption quit_at_end_option(QStringLiteral("quit-at-end"), QStringLiteral("Quit when the stream ends."));
+    const QCommandLineOption quit_at_option(QStringLiteral("quit-at"), QStringLiteral("Quit at this stream time, s."),
+                                            QStringLiteral("s"));
+    parser.addOptions({decoder_option, speed_option, screenshot_option, screenshot_at_option, report_option,
+                       quit_at_end_option, quit_at_option});
+    parser.process(app);
+
+    kz4ap::app::Automation automation;
+    automation.screenshot_path = parser.value(screenshot_option);
+    automation.screenshot_at_s =
+        parser.isSet(screenshot_at_option) ? parser.value(screenshot_at_option).toDouble() : 1e300;
+    automation.report_path = parser.value(report_option);
+    automation.quit_at_end = parser.isSet(quit_at_end_option);
+    if (parser.isSet(quit_at_option)) automation.quit_at_s = parser.value(quit_at_option).toDouble();
+    const bool quiet = automation.active();
+
+    const std::string decoder = parser.value(decoder_option).toStdString();
+    if (!kz4ap::front_end_from_name(decoder))
+        return usage_error(QStringLiteral("unknown decoder: %1").arg(parser.value(decoder_option)), quiet);
+    const std::optional<double> speed = parse_speed(parser.value(speed_option));
+    if (!speed) return usage_error(QStringLiteral("bad speed: %1").arg(parser.value(speed_option)), quiet);
+
+    kz4ap::app::MainWindow window(decoder, *speed, automation);
+    window.show();
+    if (!parser.positionalArguments().isEmpty()) window.open_recording(parser.positionalArguments().front());
+    return QApplication::exec();
+}

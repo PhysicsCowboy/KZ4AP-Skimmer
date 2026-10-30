@@ -47,6 +47,10 @@ add_library(kz4ap_engine_core OBJECT
   src/signal_detector.cpp
   src/classical_decoder.cpp
   src/engine.cpp
+  src/cpu_time.cpp
+  src/decoder_name.cpp
+  src/file_iq_source.cpp
+  src/stream_runner.cpp
   src/matched_front_end.cpp
   src/frequency_tracker.cpp
   src/bank_decoder.cpp
@@ -63,6 +67,9 @@ target_compile_features(kz4ap_engine_core PUBLIC cxx_std_20)
 # time; everything else stays plain x86-64.
 target_include_directories(kz4ap_engine_core SYSTEM PRIVATE ${sleef_BINARY_DIR}/include)
 target_link_libraries(kz4ap_engine_core PRIVATE sleef)
+# The stream runner's thread.
+find_package(Threads REQUIRED)
+target_link_libraries(kz4ap_engine_core PUBLIC Threads::Threads)
 if(MSVC)
   set_source_files_properties(src/bank/vecmath_avx.cpp PROPERTIES COMPILE_OPTIONS /arch:AVX)
   set_source_files_properties(src/bank/vecmath_avx2.cpp PROPERTIES COMPILE_OPTIONS /arch:AVX2)
@@ -98,6 +105,7 @@ add_executable(kz4ap_engine_tests
   tests/signal_detector_test.cpp
   tests/classical_decoder_test.cpp
   tests/engine_test.cpp
+  tests/stream_runner_test.cpp
   tests/matched_front_end_test.cpp
   tests/frequency_tracker_test.cpp
 )
