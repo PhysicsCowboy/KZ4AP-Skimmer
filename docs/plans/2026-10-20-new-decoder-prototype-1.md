@@ -1129,6 +1129,37 @@ and come back (41.5 nats; every other case under 17.3); keeping every point woul
 projected total instead of +3.6% (estimated); the prototype records the deepest revival, and one deeper than 40 nats
 goes to the owner.
 
+**D23. Every story scored by its full density against one shared reference (owner, 2026-10-29: "Sure").** The build
+(plan 1b, Task 10) found that the per-sample ratio Λ(a; V′) taken against each story's own V′ drops
+−ln(V′/σ_y²) − e_k²/V′ + e_k²/σ_y², which differs between stories, so a story claiming its edges about 2 samples off
+won by 105 nats on a clean 25 WPM dash at +20 dB S₅₀₀; and the own part of C² (e_k²/s_k²) made the score fall as 1/e,
+not a density. Decided, after a study of eight forms (C++, scratch, 2026-10-28) and an audit of the design against
+standard practice:
+- **The score:** score_k = ln ∫ exp(w·[ln p(e_k | a, V_k) − ln p₀(e_k | σ_y²)]) N(a; μ_k|k−1, P_k|k−1) da, p the
+  Rician density with variance V_k, p₀ noise alone at σ_y², the same for every story (the no-signal story scores 0).
+- **The systematic variance from the story's prediction:** V_k = σ_y² + (μ²_k|k−1 + P_k|k−1)(f²s_k² + v_k); the
+  newborn's grid uses V(a_i) = σ_y² + a_i²(f²s_k² + v_k) at each point. The 21-sample window, its look-ahead (26.67 ms
+  of delay), the own part and the caps are removed; in their place the derived bound w·δ²/(f²s_k² + v_k) per sample on
+  a template error δ. This reverses D15's rule that the carrier power comes from the data, never from a story's level:
+  its measured reason held only inside the ratio form. D15's trade with a stronger neighbor is to be remeasured.
+- **One constant w = 0.1986** for every story and sample, the newborn included: in the full form w multiplies a term
+  of about e_k²/σ_y² common to every carrier story, so a per-story w hands the story with the larger w
+  (w₁ − w₂)·e_k²/σ_y² (920 nats on one +60 dB S₅₀₀ sample, measured). This withdraws D17's per-story w and D21; the
+  constant undercounts weak evidence by about 9% at −8 dB S₅₀₀ (D17's rough estimate).
+- **Measured** (27 decodes of "PARIS PARIS" per level at 12, 25 and 40 WPM, rises 2.5, 0.8 and 4.7 ms, 3 seeds; 28
+  strong-station decodes at +40 and +60 dB S₅₀₀): exact 27, 27 and 15 of 27 at +20, +10 and 0 dB S₅₀₀ against the
+  ratio form's 7, 27 and 14; strong stations 28 of 28 against 0; mark-length error −0.5 ms against +10.4 ms. CPU:
+  +3.1% of the projected 425.7 ms per channel-second for ordinary scoring (measured); the newborn's V(a_i) +13 to +27%
+  (estimated, to be timed first in Task 10; if large, the newborn's form returns to the owner).
+- **Rejected:** the variance at each amplitude inside the integral with w per story (1 of 28 strong decodes), or with
+  one w (the same decoding at +80% CPU); that form plus the edge offset marginalized jointly over 8 positions (sharper
+  timing at high SNR, +920% CPU; backlog); the ratio form with one data-derived V′ for every story (decodes as well,
+  0 to +3.8%, but reads the sample scored and 10 later ones: not standard); the edge term inside the integral with C²
+  from the data (0 of 28); the ratio form kept with the timing reference moved (still fails at 40 WPM).
+- **Left open, each to the owner separately:** the signal's timing contrasts weighted about 2.5 times too lightly
+  against the timing prior (correlated samples; prewhitening would fix it); f independent per sample; the edge offset
+  not marginalized jointly; the prediction's target √Ω̄ where E[√Ω] is meant.
+
 ### Obvious items, stated for approval
 
 - **O1.** Only Morse and no-signal stories: no steady-carrier or nonsense-keying states (stated 2026-10-19).
