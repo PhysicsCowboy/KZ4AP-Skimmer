@@ -1370,6 +1370,9 @@ newborn's grid is faded every 8 samples by Part 6's transition (the point-mass f
 holding the amplitude constant until the handover. Parts 8, 13, 15 and 17 are amended. The evidence: the
 newborn-fading study (C++, scratch, 2026-10-27/28), summarized in plan D24.
 
+**Amended 2026-10-30 by the plan's D25** (owner: "1"): the one w for every contrast is kept, labeled a departure from
+standard practice (parts 4, 13 and 16), and measured (part 15, item 19).
+
 Parts 1 to 11 give the decided design in the order the signal passes; part 12, what is removed from today's decoder;
 part 13, the known limitations and backlog items; part 14, the test generator; part 15, what the prototype must
 measure; part 16, standard practice for each stage; part 17, the values.
@@ -1555,12 +1558,18 @@ measure; part 16, standard practice for each stage; part 17, the values.
     evidence by about 9% at −8 dB S₅₀₀ (equivalent to roughly 0.2 to 0.4 dB S₅₀₀ less signal).
   - History, one line: w per sample from each story's expected SNR (owner, 2026-10-25, option D; plan D17), read
     from a table of the curve below, with the fixed 0.1986 its measured variant; withdrawn by D23.
-  - **Left open by D23, to the owner separately** (the audit's row 16; computed in the audit and checked in the study
-    of 2026-10-28): one scalar w weights the signal's timing contrasts about 2.4 to 2.75 times too lightly for a
-    key-down or key-up one sample off (about 2.1 two samples off) against the fist's untempered timing costs,
-    because it was set for the information about a, not about where edges fall. A scalar cannot fix it (the fist scaled by 0.4 broke letter segmentation, 0 of 81
-    decodes exact); the standard remedies are prewhitening the envelope's noise or a matrix adjustment. Not resolved by
-    the study's grid at 0 dB S₅₀₀ and above.
+  - **[departure from standard practice, owner's decision] One w for every contrast** (owner, 2026-10-30: "1"; plan
+    D25; the audit's row 16, computed in the audit and checked in the study of 2026-10-28): w is right within 7% for
+    mark presence and dot against dash on marks of 18 samples or more, but weights the signal's timing contrasts about
+    2.4 to 2.75 times too lightly for a key-down or key-up one sample off (about 2.1 two samples off) against the
+    fist's untempered timing costs (derived at high SNR), because it was set for the information about a, not about
+    where edges fall. Standard practice treats correlated samples by prewhitening or a matrix adjustment (Chandler
+    and Bate 2007), not one scalar. Kept and labeled, and measured (part 15, item 19): if it shows edge errors that
+    matter, prewhitening returns to the owner with a study. Rejected for now (plan D25): prewhitening (a 5-tap
+    autoregressive model of the filter's noise, each story scoring the innovation of its residual; valid only above
+    about +8.75 dB SNR in the filter's 74.48 Hz; CPU not measured); one independent sample per 13.2 ms (loses fast
+    code's timing); the timing costs scaled by 0.4 (measured: 0 of 81 noisy decodes exact, letters merge); the full
+    correlated likelihood (a redesign, rejected in D17).
   - **The correlation it counts:** the output noise's correlation on the channel's colored noise at 2.667, 5.333,
     8.000, 10.67, 13.33 and 16.00 ms is 0.878, 0.626, 0.367, 0.138, 0.014 and −0.005, then 0 (derived;
     the same to 0.001 with the decided 25 taps). These ρ_m (ρ_0 = 1)
@@ -2488,9 +2497,11 @@ Each is recorded in `docs/backlog.md` under the heading given.
   - The signal-with-noise variance follows the story's realized power ΩG, not the local power at each sample: within
     3% on single marks at 2 Hz, 0.84 to 1.07 (5–95%) on "PARIS" at 100 WPM (part 7).
   - (Until D23: w_k evaluated at the sample's own expected SNR, approximate on edges; withdrawn with w per sample.)
-- **Left open by D23** (owner, 2026-10-29; plan D23), each to the owner separately, none decided:
+- **Left open by D23** (owner, 2026-10-29; plan D23), each to the owner separately:
   - **The signal's timing contrasts weighted about 2.5 times too lightly** against the fist's timing costs, by one
-    scalar w (the audit's row 16; part 4).
+    scalar w (the audit's row 16; part 4). **Decided since (owner, 2026-10-30; plan D25): kept, labeled a departure
+    from standard practice, and measured** (part 15, item 19); edge errors that matter return prewhitening to the
+    owner with a study.
   - **The floor f independent per sample** (the audit's row 11; part 9).
   - **The edge offset not marginalized jointly** (the audit's row 10; part 5): the joint form, the study's
     candidate E, is a measured variant for the backlog at about +920% of the projected 425.7 ms per channel-second
@@ -2672,6 +2683,13 @@ projected budget by part.
 18. **No longer a variant: the fixed w = 0.1986 is the rule** (owner, 2026-10-29; plan D23; part 4), so nothing is
     measured here; the curve w(q) is not used. History, one line: the fixed w measured against w per sample on the
     weak-signal groups (owner, 2026-10-25; plan D17), withdrawn by D23.
+19. **One w for every contrast, measured** (owner, 2026-10-30: "1"; plan D25; part 4): weak signals and fast keying
+    whose keyed lengths deviate from the fist's medians (sender timing variation), on a jittered grid. Reported: the
+    edge errors (each claimed key-down and key-up against the keyed edge, beyond the timing convention's 0 to 2.667 ms
+    and the mid-sample tie), the mark- and gap-length errors against the keyed lengths, whether the claimed lengths are
+    pulled toward the fist's medians (the regression of claimed on keyed length, its slope below 1 being the pull), and
+    the character error rate. If it shows edge errors that matter, prewhitening returns to the owner with a study (the
+    rule and the cells are in plan 1b, M19).
 
 Every reported run's rounded per-signal score table is committed with its results record (CLAUDE.md).
 
@@ -2685,7 +2703,7 @@ In the table, "survey" is the standard-practice survey of 2026-10-22, `docs/rese
 | Predetection filter | Skimmer 50 Hz; fldigi 5/T_dit; Bell 64–100 Hz (survey); matched filter (Proakis and Salehi §4.5-1; Turin 1960) | 76 Hz, matched to a 12 ms dot with 2.5 ms edges | width above Skimmer's 50 Hz, to reach 100 WPM (owner's decision); slow signals pay up to 1.8 dB of noise power |
 | Detection | envelope \|z\| in every decoder found (survey) | e = \|y\| | none |
 | Sampling | fldigi 2 ms, Bell 5 ms | 2.667 ms, every 4th channel sample, at most a quarter of the 100 WPM dot | none (owner's standard frame step, on the channel's sample grid) |
-| Correlated samples | decimate or weight (Kay; Gales and Young); the composite-likelihood magnitude adjustment, one for the whole log-likelihood (Chandler and Bate 2007; Varin, Reid and Firth 2011); Bell treated them as independent | one constant w = 0.1986 for every story and sample, from the actual correlation (D23) | corrects Bell's over-count; undercounts weak evidence by about 9% at −8 dB S₅₀₀; one scalar weights timing contrasts about 2.5 times too lightly (the audit's row 16, open) |
+| Correlated samples | decimate or weight (Kay; Gales and Young); the composite-likelihood magnitude adjustment, one for the whole log-likelihood (Chandler and Bate 2007; Varin, Reid and Firth 2011); Bell treated them as independent | one constant w = 0.1986 for every story and sample, from the actual correlation (D23) | corrects Bell's over-count; undercounts weak evidence by about 9% at −8 dB S₅₀₀; **[departure, owner's decision, D25]** one scalar for every contrast weights timing contrasts 2.4 to 2.75 times too lightly (the audit's row 16) where standard practice prewhitens or uses a matrix adjustment; kept and measured (part 15, item 19) |
 | Statistic | noncoherent Rician likelihood (Proakis and Salehi); stories compared against one common reference (Forney 1973) | the full density p(e_k \| a, V_k) against noise alone at σ_y², the same for every story, integrated over the amplitude (D23) | none |
 | Mark shape | Bell: 0/1; MLSE with ISI (Forney 1972) | the smeared prediction | [departure] from Bell, for timing (several ms per mark otherwise) |
 | Amplitude | Bell's scalar Kalman per path; per-survivor processing (Raheli et al. 1995) | N(μ, P) per story, every 2.667 ms, drifting toward the Rayleigh mean amplitude | spread scaled by the long-run amplitude (owner); 2 Hz against Bell's 1 Hz (owner) |
