@@ -514,7 +514,8 @@ its best one-sample neighbor by 131.7 nats at +40 dB S₅₀₀ and 25 WPM again
 40 WPM; 8.2 against 7.6 at +20 dB S₅₀₀); decoding of "PARIS PARIS" unchanged on that grid; ordinary scoring 17.8 times
 the cost as built (+920% of the projected 425.7 ms per channel-second). A cheaper build (the shared-reference scoring
 per position, marginalizing only the samples 4 to 11 after the edge, where the position matters) is estimated at
-about 4 times today's scoring (rough). Worth doing only if timing at high SNR turns out to matter.
+about 4 times today's scoring (rough). D23 rejected it for now at +920% CPU and put it in the backlog as a measured
+variant; whether to take it up is left open, to the owner.
 
 ### A narrower filter for slower signals in the new decoder (owner, 2026-10-22; later)
 
