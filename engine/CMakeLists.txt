@@ -52,6 +52,9 @@ add_library(kz4ap_engine_core OBJECT
   src/frequency_tracker.cpp
   src/bank_decoder.cpp
   src/viterbi_decoder.cpp
+  src/segmental_decoder.cpp
+  src/segmental/evidence.cpp
+  src/segmental/search.cpp
   ${KZ4AP_BANK_SOURCES}
   ${KZ4AP_VITERBI_SOURCES}
 )

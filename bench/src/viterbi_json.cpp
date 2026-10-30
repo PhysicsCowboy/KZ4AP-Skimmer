@@ -447,6 +447,38 @@ void apply_setting(viterbi::ViterbiConfig& config, const std::string& setting) {
     set_config_value(config, name, value);
 }
 
+void apply_segmental_setting(segmental::SegmentalConfig& config, const std::string& setting) {
+    const std::size_t equals = setting.find('=');
+    if (equals == std::string::npos || equals == 0)
+        throw std::invalid_argument("--set needs NAME=VALUE, not '" + setting + "'");
+    const std::string name = setting.substr(0, equals);
+    const std::string text = setting.substr(equals + 1);
+    const std::pair<const char*, double*> fields[] = {
+        {"level_min_db_s500", &config.level_min_db_s500},
+        {"level_max_db_s500", &config.level_max_db_s500},
+        {"level_step_db", &config.level_step_db},
+        {"level_frame_s", &config.level_frame_s},
+        {"level_lookahead_s", &config.level_lookahead_s},
+        {"level_commit_s", &config.level_commit_s},
+        {"key_down_prior", &config.key_down_prior},
+        {"level_walk_nepers_per_sqrt_s", &config.level_walk_nepers_per_sqrt_s},
+        {"level_jump_per_s", &config.level_jump_per_s},
+        {"beam_nats", &config.beam_nats},
+        {"duration_z_max", &config.duration_z_max},
+    };
+    for (const auto& [field, target] : fields) {
+        if (name == field) {
+            *target = std::stod(text);
+            return;
+        }
+    }
+    if (name == "ceiling") {
+        config.ceiling = std::stoi(text);
+        return;
+    }
+    apply_setting(config.model, setting);
+}
+
 viterbi::ViterbiConfig viterbi_config_from_json(const ordered_json& j) {
     if (!j.is_object()) throw std::invalid_argument("a configuration must be a JSON object");
     viterbi::ViterbiConfig config;

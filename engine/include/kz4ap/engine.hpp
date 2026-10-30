@@ -5,6 +5,7 @@
 #include "kz4ap/channelizer.hpp"
 #include "kz4ap/classical_decoder.hpp"
 #include "kz4ap/event_bus.hpp"
+#include "kz4ap/segmental/config.hpp"
 #include "kz4ap/signal_detector.hpp"
 #include "kz4ap/spectrum.hpp"
 #include "kz4ap/viterbi/config.hpp"
@@ -26,6 +27,7 @@ class HissEstimator;
 struct SearchStats;
 }  // namespace viterbi
 class ViterbiShared;
+struct SegmentalShared;
 
 // The FFT size the engine uses when EngineConfig::fft_size is 0: the largest power
 // of two with sample_rate / fft_size >= 20 Hz, so bins stay about 23 Hz wide at
@@ -75,6 +77,9 @@ struct EngineConfig {
     // The new decoder's configuration (decoder.front_end == FrontEnd::Viterbi); its hiss_* fields also configure the
     // engine's hiss estimator, which then reads every spectrum frame (in oracle mode too).
     viterbi::ViterbiConfig viterbi;
+    // The segmental decoder's configuration (decoder.front_end == FrontEnd::Segmental); `viterbi`'s hiss_* fields configure
+    // the hiss estimator for it too.
+    segmental::SegmentalConfig segmental;
     // Genie runs only (FrontEnd::Viterbi, oracle mode): empty, or one entry per oracle channel, in the order of
     // oracle_frequencies_hz, whose genie values replace those of `viterbi` for that channel (viterbi::with_genie),
     // since each channel's station has its own true spread and fist.
@@ -189,6 +194,7 @@ private:
     // channel's decoder gets before every block; and the parts its decoders share.
     std::unique_ptr<viterbi::HissEstimator> hiss_;
     std::shared_ptr<const ViterbiShared> viterbi_shared_;
+    std::shared_ptr<const SegmentalShared> segmental_shared_;  // FrontEnd::Segmental only
     std::vector<Sample> shifted_;  // a followed channel's block after its shift (reused)
 };
 

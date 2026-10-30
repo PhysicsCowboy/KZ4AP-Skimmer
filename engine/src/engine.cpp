@@ -1,6 +1,7 @@
 #include "kz4ap/engine.hpp"
 
 #include "kz4ap/bank_decoder.hpp"
+#include "kz4ap/segmental_decoder.hpp"
 #include "kz4ap/viterbi/hiss.hpp"
 #include "kz4ap/viterbi_decoder.hpp"
 
@@ -42,7 +43,7 @@ DetectorConfig detector_config(const EngineConfig& c) {
 // The oracle tracks' rules (EngineConfig::oracle_frequency_tracks).
 void check_oracle_tracks(const EngineConfig& c) {
     if (c.oracle_frequency_tracks.empty()) return;
-    if (c.decoder.front_end != FrontEnd::Viterbi)
+    if (c.decoder.front_end != FrontEnd::Viterbi && c.decoder.front_end != FrontEnd::Segmental)
         throw std::invalid_argument("oracle_frequency_tracks needs the new decoder (FrontEnd::Viterbi)");
     if (c.oracle_frequency_tracks.size() != c.oracle_frequencies_hz.size())
         throw std::invalid_argument("oracle_frequency_tracks needs oracle mode and one track per oracle frequency");
@@ -96,10 +97,18 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
                                                                           config_.channel_bins,
                                                                           config_.channel_cutoff_hz},
                                               config_.viterbi_omega_bar_default_table);
+    } else if (config_.decoder.front_end == FrontEnd::Segmental) {
+        // The hiss estimator and a channel that follows the detector, as the new decoder; its own shared parts.
+        if (!config_.viterbi_genie.empty()) throw std::invalid_argument("viterbi_genie needs FrontEnd::Viterbi");
+        hiss_ = std::make_unique<viterbi::HissEstimator>(config_.sample_rate, config_.fft_size, config_.viterbi);
+        segmental_shared_ = std::make_shared<const SegmentalShared>(
+            config_.segmental, ChannelizerConfig{config_.sample_rate, config_.fft_size, config_.channel_bins,
+                                                 config_.channel_cutoff_hz});
     } else if (!config_.viterbi_genie.empty()) {
         throw std::invalid_argument("viterbi_genie needs the new decoder (FrontEnd::Viterbi)");
     }
-    const bool following = config_.decoder.front_end == FrontEnd::Viterbi;
+    const bool following =
+        config_.decoder.front_end == FrontEnd::Viterbi || config_.decoder.front_end == FrontEnd::Segmental;
     for (std::size_t i = 0; i < config_.oracle_frequencies_hz.size(); ++i) {
         // The detector's frequency at the stream's start: the label's (its track's at 0 s, if it has one).
         const bool tracked = !config_.oracle_frequency_tracks.empty() && !config_.oracle_frequency_tracks[i].empty();
@@ -225,6 +234,8 @@ void Engine::open_channel(const Track& track, int bin) {
     std::unique_ptr<Decoder> decoder;
     if (config_.decoder.front_end == FrontEnd::Bank) {
         decoder = std::make_unique<BankDecoder>(channelizer_.output_rate(), config_.bank, residual_hz);
+    } else if (config_.decoder.front_end == FrontEnd::Segmental) {
+        decoder = std::make_unique<SegmentalDecoder>(channelizer_.output_rate(), segmental_shared_);
     } else if (config_.decoder.front_end == FrontEnd::Viterbi) {
         // Oracle channels are tracks 1, 2, ... in the order of oracle_frequencies_hz, and so of viterbi_genie.
         viterbi::ViterbiConfig channel_config = config_.viterbi;
@@ -236,7 +247,7 @@ void Engine::open_channel(const Track& track, int bin) {
     }
     Channel channel{track, bin, std::move(decoder), track.freq_hz, std::nullopt};
     // The new decoder's channel follows the detector (plan O2: its channels only).
-    if (config_.decoder.front_end == FrontEnd::Viterbi)
+    if (config_.decoder.front_end == FrontEnd::Viterbi || config_.decoder.front_end == FrontEnd::Segmental)
         channel.follower.emplace(channelizer_.output_rate(), channelizer_.bin_to_hz(1) - channelizer_.bin_to_hz(0));
     channels_.emplace(track.id, std::move(channel));
     bus_.publish(Event{TrackEvent{TrackEvent::Kind::Born, track}});
