@@ -51,7 +51,13 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
     levels_ = 1 + static_cast<int>(std::round((config.level_max_db_s500 - config.level_min_db_s500) / config.level_step_db));
     w_ = noise.w_strong;
     sigma2_per_n0_hz_ = noise.sigma2_per_n0_hz;
-    const double f2 = config.model.systematic_floor * config.model.systematic_floor;
+    // The relative variance of the key-down amplitude about a level of the grid: the systematic floor's, and the grid's own,
+    // a level being off by up to half a step, uniformly (variance step^2 / 12 in nepers^2; derived). Without it, above about
+    // +30 dB S500 a plain sample pays for the grid's step while a sample in an edge's window, whose V is wider, pays less,
+    // so that cutting a mark into pieces gains (measured: +40 dB S500 reads all dots at a beam of 60 nats).
+    const double step_nepers_for_v = config.level_step_db / 20.0 * std::log(10.0);
+    const double f2 = config.model.systematic_floor * config.model.systematic_floor +
+                      config.level_grid_in_v * step_nepers_for_v * step_nepers_for_v / 12.0;
     plain_.resize(static_cast<std::size_t>(levels_));
     rise_.resize(static_cast<std::size_t>(kEdgeCount * levels_));
     fall_.resize(static_cast<std::size_t>(kEdgeCount * levels_));

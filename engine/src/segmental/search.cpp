@@ -473,7 +473,17 @@ void Search::Impl::boundary(std::int64_t j) {
         tail.text = entry;
     }
 
-    // 5. Prune: the beam, then elements past their longest length.
+    // 5. Prune: the beam, then elements past their longest length. The best one's text is held until the end of this
+    // boundary, for the no-signal story to go on with should nothing else stand (a long carrier outlasts every element).
+    std::int32_t best_dropped_text = viterbi::SharedText::kEmpty;
+    double best_dropped = -kInf;
+    for (std::int32_t index = 0; index < count; ++index) {
+        if (partial[static_cast<std::size_t>(index)] > best_dropped) {
+            best_dropped = partial[static_cast<std::size_t>(index)];
+            best_dropped_text = live[static_cast<std::size_t>(index)].text;
+        }
+    }
+    text.hold(best_dropped_text);
     std::size_t kept = 0;
     for (std::int32_t index = 0; index < count; ++index) {
         Element& e = live[static_cast<std::size_t>(index)];
@@ -523,10 +533,18 @@ void Search::Impl::boundary(std::int64_t j) {
 
     // The no-signal story leaves when behind the beam, except when nothing else stands.
     if (silent_alive && silent + gap_reach < floor) silent_alive = false;
-    if (!silent_alive && live.empty()) {
+    bool tail_waits = false;
+    for (const Tail& tail : tails) tail_waits = tail_waits || tail.score > -kInf;
+    if (!silent_alive && live.empty() && !tail_waits) {
         silent_alive = true;
         silent = best;
+        if (best_dropped > -kInf) {
+            text.release(silent_text);
+            silent_text = best_dropped_text;
+            text.hold(silent_text);
+        }
     }
+    text.release(best_dropped_text);
     stats.largest_live = std::max(stats.largest_live, static_cast<std::int64_t>(live.size()));
     ++stats.boundaries;
 }

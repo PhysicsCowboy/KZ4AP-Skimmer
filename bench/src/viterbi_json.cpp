@@ -457,6 +457,7 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"level_min_db_s500", &config.level_min_db_s500},
         {"level_max_db_s500", &config.level_max_db_s500},
         {"level_step_db", &config.level_step_db},
+        {"level_grid_in_v", &config.level_grid_in_v},
         {"level_frame_s", &config.level_frame_s},
         {"level_lookahead_s", &config.level_lookahead_s},
         {"level_commit_s", &config.level_commit_s},
