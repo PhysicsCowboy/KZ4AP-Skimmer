@@ -35,6 +35,11 @@
     itself (owner, 2026-10-30): `high` for building and experiments, `low` or
     `medium` for mechanical work, `max` for stubborn bugs and checkpoint
     reviews.
+  - **Memory notes:** the coordinating session may record memories about this
+    project without asking and lists them at the next checkpoint (an exception
+    to the owner's user-level rule). They go only in this project's memory
+    folder, never at user level, and each states the situation it came from and
+    what it applies to, so that it is not read more generally than meant.
 - **Branches:** work on feature branches. The coordinating session may merge
   into `main` itself, after the review above. Pushing needs the owner's
   approval, each time. Never rewrite commits (no `--amend`, rebase, or
@@ -80,12 +85,11 @@
     computed **from the committed, rounded table**, so the table reproduces
     them exactly. Exact drawn values, if ever needed, come back from the seed
     by rerunning the generator's label step (seconds, no audio).
-  - Commit the **few figures a results record shows**: PNGs embedded in the
-    record, at most about three per results section, the ones a conclusion
-    rests on. No approval is needed when the record's embedded PNGs, added
-    up, are no larger on disk than the rounded score tables committed for
-    that record; **otherwise, and for any other figure, the owner approves
-    each figure commit.**
+  - Commit only the **few figures a results record shows**: PNGs embedded in
+    the record, at most about three per results section, the ones a conclusion
+    rests on, and small enough that the repository does not balloon: about
+    1 MB in all per checkpoint at most (owner's concern, 2026-10-30; the limit
+    is a heuristic). No approval is needed.
   - Do not commit recordings, decoded files, analysis files (fits,
     bootstraps) or any other figure: they stay in `build/` (git-ignored) and
     are rebuilt from the committed scores (fits and figures, minutes) or from
