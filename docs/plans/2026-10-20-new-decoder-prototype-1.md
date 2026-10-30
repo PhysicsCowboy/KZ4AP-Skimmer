@@ -1224,7 +1224,7 @@ E[√Ω] as a measured variant only (keeps a known error to measure it); the exa
 independently at each sample, so a long mark's flat part keeps adding evidence where a slow error would add about one
 mark's worth (the audit's row 11; its effect on decoding neither derived nor measured). Decided: keep it, labeled as a
 departure, and extend D19's measurement of f on strong stations to report the mismatch's correlation from sample to
-sample (its autocorrelation over lags of 1 to at least 40 samples) as well as its size. If the mismatch is correlated
+sample (its autocorrelation at every lag up to the length of the longest flat part measured) as well as its size. If the mismatch is correlated
 over more than the filter's 5 correlated samples, the alternatives return to the owner with the numbers; if f is
 negligible, f goes to 0 as D19 already says. Rejected for now: the slow part moved into the amplitude's process model
 (a rate of change per story; not designed, needs its own standard-practice check, backlog); a correlated systematic
