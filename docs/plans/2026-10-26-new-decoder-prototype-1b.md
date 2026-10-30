@@ -165,13 +165,13 @@ From the code map §1 to §3 against Parts 1 to 12. "Task n" is the task of §10
   P_k|k−1)(f²s_k² + v_k), the systematic variance from the story's own prediction, and V(a_i) = σ_y² + a_i²(f²s_k² +
   v_k) at each point of the newborn's grid; the 21-sample window, its memory and look-ahead (the search's 10-sample
   hold, 26.67 ms of delay), C²'s own part and the caps removed, the misfit bound w·[δ²/(f²s_k² + v_k) +
-  ½·max(0, −ln(1 + δ/s_k))] per sample on the noise-free cost in their place (design notes, Part 9); one constant w = 0.1986 for every story and sample, the newborn included, which withdraws D17's w per
-  sample and D21 (the fixed-w variant, item 18, becomes the rule; the curve w(q) is no longer used); D15's rule
+  ½·max(0, −ln(1 + δ/s_k))] per sample on the noise-free cost, holding within 0.02 nats, in their place (design
+  notes, Part 9); one constant w = 0.1986 for every story and sample, the newborn included, which withdraws D17's w
+  per sample and D21 (the fixed-w variant, item 18, becomes the rule; the curve w(q) is no longer used); D15's rule
   "carrier power from the data, never from a story's level" reversed, its neighbor trade to be remeasured (M10, M15).
   CPU: +3.1% of the projected 425.7 ms per channel-second for ordinary scoring (measured); the newborn's V(a_i) +13 to
   +27% (estimated), **timed first in Task 10; an increment above the estimate's top, +113 ms per channel-second at 500
-  newborns (26.5%), stops for the owner.** Left open, each to the owner
-  later: timing contrasts weighted about 2.5 times too lightly (the audit's row 16), f independent per sample (row
+  newborns (26.5% of 425.7 ms), stops for the owner.** Left open, each to the owner later: timing contrasts weighted about 2.5 times too lightly (the audit's row 16), f independent per sample (row
   11), the edge offset not marginalized jointly (row 10; a measured variant for the backlog at about +920% CPU), √Ω̄
   where E[√Ω] is meant (row 20). The design notes are amended (Parts 4, 5, 6, 8, 9, 12, 13, 15, 16, 17). Evidence:
   `.superpowers/sdd/2026-10-26-new-decoder-prototype-1b/score-form-candidates.md` and `audit-standard-practice.md`.
@@ -391,7 +391,11 @@ stories, which stays the base until R0 replaces it:
   4 117 ns on noise (measured), which would be far above that. **Timed first in Task 10, the as-built and the new grid
   in the same run, interleaved, on the mix (noise reported beside it); an increment above the estimate's top, +113 ms
   per channel-second at 500 newborns (26.5% of 425.7 ms; about 603 ns per newborn-sample at 500 × 375 samples/s;
-  derived), returns the newborn's form to the owner before anything else is built.**
+  derived), returns the newborn's form to the owner before anything else is built.** **The base and the timed case
+  differ, on purpose:** this section's base, 425.7 ms, is measured with newborns on noise, while Step 0's stop rule
+  times the mix of levels, the decoding case. The threshold stays the absolute +113 ms per channel-second (the
+  coordinator's Ruling 92), and Step 0 reports the increment as a share of both totals: 26.5% of 425.7 ms (noise) and
+  25.4% of 445.4 ms (the mix) at the threshold (derived).
 - So the projected default total at 1 700 stories becomes roughly 494 to 551 ms per channel-second (425.7 + 13 −
   0.7 + 56 to 113; derived from the estimates above, newborns on noise), to be replaced by R0's measurement.
 
@@ -520,7 +524,7 @@ cells below are stated as ranges and counts.
 | **M3** the fading grid | f_D = 0.1, 0.3, 1, 2, 5 Hz × +10, +20, +30 dB S₅₀₀ × "PARIS PARIS" at 25, 8 and 5.2 WPM × 4 edge positions × 5 seeds (900 signals); exact texts and CER; the in-mark E[z²] (O19) | `nd1b-fading` | Paired against today's decoder on the same signals; measurement, to the owner. |
 | **M4** the strong grid | +30 to +60 dB S₅₀₀ in six 5 dB cells × 16 edge positions × steady and 0.3, 1, 2, 5 Hz; mark splits and invented overs | `nd1b-strong` | Steady: every text exact (D15's standard, as 36084bc reached); faded: measurement, to the owner. |
 | **M5** the speed step | 20 to 30 WPM, +10 to +28 dB S₅₀₀ in nine 2 dB cells, 3 signals per cell | `nd1b-speed` | CER at most 0.05 on every signal at the default beam (the prototype plan's §5, item 2). |
-| **M6** the misfit bound and crashes (the caps until D23) | the fall's tail and the filter's ringing at every edge position: along the true story (the trace's `delta` and `cost_vs_perfect` columns, Task 12), each sample's cost against the perfect template scored with the same V_k, beside the misfit bound w·[δ_k²/(f²s_k² + v_k) + ½·max(0, −ln(1 + δ_k/s_k))] (Part 9, D23), δ_k the generator's noise-free keyed envelope through the chain, divided by a, minus s_k; false characters per crash (filtered clicks included) at +20 to +60 dB S₅₀₀ in four 10 dB cells (dB S₅₀₀ of the crash's peak power) | noise-free twins of `nd1b-crash`'s tail and ringing signals (pass/fail); `nd1b-crash` (reported); the trace | **Pass/fail on the noise-free twins only:** a cost above the bound where the prediction is at or above the true level (μ² + P ≥ a²), beyond 0.01 nats, is a bug. On the noisy recordings the costs and δ_k are reported as distributions (median, 95th percentile), not enforced: noise adds a term 2w·δ_k a·n/V_k of either sign. Clicks are not a template error of the station: reported only as false characters, a known limitation (Part 13), to the owner. |
+| **M6** the misfit bound and crashes (the caps until D23) | the fall's tail and the filter's ringing at every edge position: along the true story (the trace's `delta` and `cost_vs_perfect` columns, Task 12), each sample's cost against the perfect template scored with the same V_k, beside the misfit bound w·[δ_k²/(f²s_k² + v_k) + ½·max(0, −ln(1 + δ_k/s_k))] (Part 9, D23), δ_k the generator's noise-free keyed envelope through the chain, divided by a, minus s_k; false characters per crash (filtered clicks included) at +20 to +60 dB S₅₀₀ in four 10 dB cells (dB S₅₀₀ of the crash's peak power) | noise-free twins of `nd1b-crash`'s tail and ringing signals (pass/fail); `nd1b-crash` (reported); the trace | **Pass/fail on the noise-free twins only:** a cost above the bound where the prediction is at or above the true level (μ² + P ≥ a²), beyond 0.02 nats (the bound holds within 0.02 nats, design notes Part 9), is a bug. On the noisy recordings the costs and δ_k are reported as distributions (median, 95th percentile), not enforced: noise adds a term 2w·δ_k a·n/V_k of either sign. Clicks are not a template error of the station: reported only as false characters, a known limitation (Part 13), to the owner. |
 | **M7** the long-run amplitude in the loop | starts in a fade (10 and 20 dB down, dB relative to the long-run power) and normal starts at 1, 2, 5 Hz: splits in an over's first 3 s; rescues and over boundaries; a weak station beside a neighbor inside the filter; crashes of 20 and 40 dB and static bursts of 10 to 100 ms inside marks (dB relative to the key-down power); noise alone; Ω̄ with the prior's top at +60 instead of +85 dB S₅₀₀ (ν ≈ 1) and its bottom at −5 instead of −15 dB S₅₀₀, each run with an Ω̄ table generated for its bounds (Task 7's `--lo-db/--hi-db`, loaded by `--omega-bar-default-table`); how often Ω̂ ≤ 0 at a lookup, on N2e and on M9's signals | `nd1b-longrun`, N2e, M9's suite | Measurement, to the owner. |
 | **M8** the fixed 2 Hz against the genie spread | M3's grids with `--genie fading`; the in-mark E[z²] | `nd1b-fading` | Measurement: it sizes the backlogged several-rate model and the in-mark limitation. |
 | **M9** steady weak signals | 5, 12, 25, 40, 100 WPM, −15 to +5 dB S₅₀₀ in twenty 1 dB cells, 10 signals per cell | `nd1b-weak` | S₅₀₀ at 50% CER per speed, with its interval, against today's decoder and the bank (`--decoder bank` on the same recordings); the slow speeds' cost against the expected up to 1.8 dB of noise power (Part 2). Measurement. |
@@ -1296,9 +1300,11 @@ method, Gauss–Hermite and the newborn's two regime weights (0.275 and 0.1986) 
 `engine/include/kz4ap/viterbi/level.hpp`, `engine/src/viterbi/level.cpp`, `engine/tests/viterbi/level_test.cpp`, and
 (D23) `engine/include/kz4ap/viterbi/weight.hpp`, `engine/src/viterbi/weight_table.cpp`,
 `engine/tests/viterbi/weight_test.cpp`, and Task 10's own temporary diagnostics,
-`engine/tests/viterbi/scratch_diag_test.cpp` with its `#TEMP` lines in `engine/CMakeLists.txt`, after `Diag.ClaimOffsets`
-is ported into `Search.ClaimsTheTrueEdgesOfACleanDash` (the file uses `v_prime_fs2` and `sample_weight`, which this task
-removes; its other `Diag.*` tests are never committed).
+`engine/tests/viterbi/scratch_diag_test.cpp`, after `Diag.ClaimOffsets` is ported into
+`Search.ClaimsTheTrueEdgesOfACleanDash` (the file uses `v_prime_fs2` and `sample_weight`, which this task removes; its
+other `Diag.*` tests are never committed). In `engine/CMakeLists.txt`, restore the two test lines the first attempt
+commented out with `#TEMP` (`tests/viterbi/observation_test.cpp`, `tests/viterbi_decoder_test.cpp`) and remove the
+unmarked `tests/viterbi/scratch_diag_test.cpp` line (and `weight_test.cpp`'s).
 
 **The score (D23; Part 4 as amended).** For every story and every sample with s_k ≠ 0:
 - V_k = σ_y² + (μ²_k|k−1 + P_k|k−1)·(f²s_k² + v_k) (FS²), from the story's prediction (Part 6) before the sample is
@@ -1362,7 +1368,8 @@ removes; its other `Diag.*` tests are never committed).
   newborn handle (null once switched) and the variant's state slot (Task 12); loses `block_sum`, `block_pieces`,
   `level`. Sums restart at a newborn from silence, a rescue newborn (its edge history kept, O6) and an over's end
   (Part 7). Merging stays on `pack_state` (Ruling 64): of two stories in one state, the better keeps its own history.
-- `DecodedSymbol::start_s` and `end_s` are the claimed edges' sample times (keyed times within 0 to 2.667 ms; Part 11).
+- `DecodedSymbol::start_s` and `end_s` are the claimed edges' sample times (keyed times within 0 to 2.667 ms,
+  or one sample later at a mid-sample edge position's tie; Part 11).
 - `ViterbiDecoder::process`: the envelope sampler on each block, then `search_.step(e_k, t_k, n0_)` for each sample
   while N₀ > 0 (as today: samples with N₀ ≤ 0 are not searched).
 
@@ -1378,7 +1385,8 @@ removes; its other `Diag.*` tests are never committed).
   **The rule:** the increment on the mix, scaled to 500 newborns at 375 samples/s, above the estimate's top, **+113 ms
   per channel-second (26.5% of 425.7 ms; about 603 ns per newborn-sample; derived), stops the task: report to the
   coordinator, and the newborn's form returns to the owner** (D23) before anything else here is built. At or below it,
-  continue; record the figures in the commit message and the report.
+  continue; record the figures in the commit message and the report, the increment as a share of both 425.7 ms (the
+  base, newborns on noise) and 445.4 ms (the mix) (Ruling 92; §6.1).
 - [ ] **Step 1: Failing tests.**
   - Fist: the existing tests set `sample_interval_s = 0.002` explicitly and keep their numbers; new
     `Fist.MediansInSamples`: at the default, a 100 WPM dot's median is 4.50 samples and a 5.2 WPM word gap's
@@ -1388,7 +1396,8 @@ removes; its other `Diag.*` tests are never committed).
   - **The score (D23):** `Evidence.FullFormMatchesADenseIntegral`: the score against the shared reference within
     0.01 nats of a 20 001-point dense reference over a ≥ 0, computed as a log-sum-exp of the pointwise full density
     w·[ln p(e | a, V) − ln p₀(e | σ_y²)] + ln N(a; μ, P) (so it checks the decomposition into the ratio plus three
-    terms independently), on a grid given in units of σ_y: e/σ_y ∈ {0, 0.5, 1, 2, 5, 20, 100}, s ∈ {−0.0008, 0.0505,
+    terms independently), on a grid given in units of σ_y starting above e = 0 (where ln p and ln p₀ each diverge
+    as ln e; their difference is finite but is not computed pointwise there): e/σ_y ∈ {0.01, 0.5, 1, 2, 5, 20, 100}, s ∈ {−0.0008, 0.0505,
     0.4334, 1}, μ/σ_y ∈ {0.1, 1, 3, 10, 30}, √P/μ ∈ {0.01, 0.1, 0.5, 1, 3}, w = 0.1986, V from the prediction at
     f = 0.02 and the template's v_j; `Evidence.SharedReferenceScoresNoSignalZero`: s = 0 (v = 0) gives exactly 0,
     and so does the no-signal story in silence (beyond 16 samples after an over's end; within them the tail scores).
@@ -1400,13 +1409,15 @@ removes; its other `Diag.*` tests are never committed).
     a at +20 to +85 dB S₅₀₀; noise-free e = (s + δ)·a; the prediction at μ = a, P = 10⁻⁶·a²; the right story (template
     s) and the perfect-template story (template s + δ) both scored with **the same predicted V_k**, the right story's,
     so only the mean differs: the right story falls short by at most w·[δ²/(f²s² + v) + ½·max(0, −ln(1 + δ/s))] +
-    0.01 nats; the plateau's value at δ = +0.0383, f = 0.02 is 0.73 ± 0.01 nats.
+    0.02 nats (the bound holds within 0.02 nats: at j = 5 the Bessel argument saturates near 1 to 2.5 at any SNR and
+    the exact cost exceeds it by up to 0.015 nats, measured in the re-review of 2026-10-29; design notes, Part 9); the
+    plateau's value at δ = +0.0383, f = 0.02 is 0.73 ± 0.01 nats.
   - **The known case, as a regression test (D23; ported from Task 10's temporary `Diag.ClaimOffsets`, the study's
     `ClaimOffsets`):** `Search.ClaimsTheTrueEdgesOfACleanDash`: one dash, noise-free, amplitude known (P = 0), D17's
     2.5 ms edges, 25 and 40 WPM at +20 and +40 dB S₅₀₀, over claimed key-downs −3 … +2 and key-ups −2 … +3 samples.
     **At a sample boundary (shift 0):** the true claim (0, 0) scores best and leads its best one-sample neighbor by at
     least 1 nat (heuristic: under a third of the smallest contrast the study measured for a comparable form, 3.1 nats;
-    the ratio form put a (−2, +2) claim 105 to 1 092 nats ahead); the four leads are written to the log as D23's
+    the ratio form put claims (−2, +1) to (−2, +2) 89 to 1 092 nats ahead, the study's §3.1); the four leads are written to the log as D23's
     form's own record. **At mid-sample (shift 4/8):** the best claim is (0, 0) or (+1, 0), and (0, 0) is within
     1 nat of it (the study's tie, +0.35 to +0.81 nats; the open row 10).
   - `Search.DecodesACleanStationAtThreeSpeeds` (§5, item 2), `Search.FollowsASpeedStep`, `Search.AnOverStartsAfterSilence`
@@ -1595,7 +1606,7 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
     `--trace`, naming it; `symbols.csv` holds the best story's symbols with start and end times.
   - `Trace.MisfitColumns` (D23): on a noise-free station keyed with the template's own 2.5 ms edges, `delta` is 0
     within 10⁻⁶ and `cost_vs_perfect` 0 within 10⁻⁹ nats; with 4.7 ms rises, every sample's `cost_vs_perfect` is
-    within Part 9's misfit bound + 0.01 nats where μ² + P ≥ a².
+    within Part 9's misfit bound + 0.02 nats (the bound holds within 0.02 nats) where μ² + P ≥ a².
 - [ ] **Step 2: Run them; they fail.** **Step 3: Implement.** **Step 4: They pass.**
 - [ ] **Step 5: Document:** §8d gains one sentence per variant (count the body's words); A.8d the variants' exact
   forms (Bell's mean decay, D20; the noise-in-Ω̄ model, its sums, table, error and artifact from Task 8;
@@ -1711,13 +1722,18 @@ A.11 for the alignment) (Ruling 72, N20).
   smoke check only; the MP3 is decoded and resampled to 48 kHz outside the repository by a standard audio tool.
 
 - [ ] **Step 1: Failing tests.**
-  - `Search.ForcedTextAlignsEdgesWithinOneSample` (default suite; Ruling 72, N23): one seed, +20 dB S₅₀₀, a 10-word
-    text at 25 WPM with a fist (σ = 0.1 in ln length), the default beam: every aligned edge estimate within one
-    sample (2.667 ms) of its keyed time.
+  - **The timing tolerance of these tests (D23 fix round 2; the same measured tolerance as
+    `Search.MarkTimesAreKeyedTimes`, score-form-candidates.md §3):** each claimed edge sample time within −0.1 to
+    +5.43 ms of its keyed edge, the convention's 0 to 2.667 ms plus one sample for the tie at mid-sample edge
+    positions; for the aligned keyed-time estimate t_k − Δ/2 that is −1.43 to +4.10 ms (derived). "Within the timing
+    tolerance" below means this.
+  - `Search.ForcedTextAlignsEdgesWithinTheTimingTolerance` (default suite; Ruling 72, N23; renamed from
+    `…WithinOneSample`): one seed, +20 dB S₅₀₀, a 10-word text at 25 WPM with a fist (σ = 0.1 in ln length), the
+    default beam: every aligned edge within the timing tolerance.
   - `Search.ForcedTextAlignsEdgesFullSweep` (label `full-sweep`): `keyed_signals.hpp`'s D17 keying of a 60-word text
     at 13, 25 and 35 WPM, each element's length drawn log-normal with σ = 0.1 about its median, 5 seeds, the true
-    keyed times known, at R1's wide beam: at +20, +30 and +40 dB S₅₀₀ every aligned edge estimate lies within one
-    sample of its keyed time; at +10 dB S₅₀₀ the share within one sample is reported.
+    keyed times known, at R1's wide beam: at +20, +30 and +40 dB S₅₀₀ every aligned edge lies within the timing
+    tolerance; at +10 dB S₅₀₀ the share within it is reported.
   - `Align.WordThresholdMeasured` (label `full-sweep`, in `bench/tests/align_test.cpp`, where the per-word logic
     lives): the correct words' `forced_minus_free_nats` at +10, +20, +30 and +40 dB S₅₀₀ steady and under 2 Hz
     Rayleigh fading (the helper's `rayleigh_gain`; the free decoding may invent gaps there); asserted above −10 nats
@@ -1732,12 +1748,12 @@ A.11 for the alignment) (Ruling 72, N20).
     is above −10 nats.
   - `Align.AnInsertedWordDoesNotDerailTheRest`: an unpublished word ("DE W1AW") keyed mid-text at +20 dB S₅₀₀: the
     filler takes it (its span `excluded`, its filler text "DE W1AW"), and every edge of the published words after it
-    lies within one sample of its keyed time.
+    lies within the timing tolerance.
   - `Align.FindsTheSessionsSegments`: a synthetic session of three parts at 35, 25 and 15 WPM, the last with
     Farnsworth spacing (15 WPM overall at 18 WPM characters), separated by 5 s of silence, each preceded by an
     unpublished announcement, at +20 dB S₅₀₀, the published text giving no speeds: three segments found with their
     speeds within 5% and the Farnsworth factor within 10% (heuristic bounds); every published edge of the first two
-    segments within one sample; the third's within one sample except next to stretched gaps, reported.
+    segments within the timing tolerance; the third's within it except next to stretched gaps, reported.
   - `Align.FrequencyAndDrift`: a station 300 Hz from the named frequency drifting 15 Hz over 3 minutes: the peak
     found within 1 Hz, the drift reported, the segment split where it passes ±10 Hz.
   - `Align.LabelsRoundTrip`: the written labels file reads back through `bench/src/labels.*`, and `--trace` on it
@@ -1753,8 +1769,9 @@ A.11 for the alignment) (Ruling 72, N20).
   first second, a check the run reports (the audio is not committed, so this is not a ctest); aligned with
   `--mono-as-real` to its published text: no published word excluded, and per speed
   segment an ideal timing grid (one dot length and one start time, fitted by least squares to the aligned edges in
-  dots of the segment's standard or Farnsworth timing) leaves every edge's residual within one sample (2.667 ms), as
-  a machine-rendered file should. The audio, the labels and the output stay in `build/` (not committed); the
+  dots of the segment's standard or Farnsworth timing) leaves every edge's residual within the timing tolerance of
+  Step 1 (−1.43 to +4.10 ms on the aligned estimate: one sample, plus one for the mid-sample tie), as a
+  machine-rendered file should. The audio, the labels and the output stay in `build/` (not committed); the
   command, the added noise level and the summary go in the commit message.
 - [ ] **Step 6: Document** (same commit): §1 and a new A.1 (Input), the mono-as-real input (a bench option; the engine's input
   otherwise unchanged); A.11, the forced alignment: the frequency search and drift check, the free decoding that finds
