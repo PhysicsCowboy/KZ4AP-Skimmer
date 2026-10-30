@@ -182,8 +182,9 @@ From the code map §1 to §3 against Parts 1 to 12. "Task n" is the task of §10
   newborns (26.5% of 425.7 ms), stops for the owner** (since D24, +124 ms for D23's and D24's newborn changes
   together; next bullet). Left open, each to the owner later: timing contrasts weighted about 2.5 times too lightly
   (the audit's row 16), f independent per sample (row 11), the edge offset not marginalized jointly (row 10; a
-  measured variant for the backlog at about +920% CPU), √Ω̄ where E[√Ω] is meant (row 20). The design notes are
-  amended (Parts 4, 5, 6, 8, 9, 12, 13, 15, 16, 17). Evidence:
+  measured variant for the backlog at about +920% CPU), √Ω̄ where E[√Ω] is meant (row 20) (since decided: row 16 by
+  D25, row 20 by D26, row 11 by D27; row 10 still open). The design notes are amended (Parts 4, 5, 6, 8, 9, 12, 13,
+  15, 16, 17). Evidence:
   `.superpowers/sdd/2026-10-26-new-decoder-prototype-1b/score-form-candidates.md` and `audit-standard-practice.md`.
 - **D24** (owner, 2026-10-30: "I don't care"; the coordinator's recommendation taken): the newborn's grid is faded
   every 8 samples by the point-mass filter's prediction step (Bucy and Senne 1971): Part 6's transition at 2 Hz as
@@ -195,14 +196,17 @@ From the code map §1 to §3 against Parts 1 to 12. "Task n" is the task of §10
   The tails up to 56 nats are Part 6's fast-fading limitation (backlog). Remeasured under D23 in the build: the
   accuracy (`Newborn.ApproximationsMeasured` part (b)) and the CPU on the mix, timed with D23's change in Task 10's
   Step 0 against **+124 ms per channel-second at 500 newborns for both together** (D23's +113 ms plus D24's about
-  +11 ms; 29.1% of 425.7 ms, 27.8% of 445.4 ms), each increment reported separately. Evidence:
+  +11 ms; 29.1% of 425.7 ms, 27.8% of 445.4 ms), each increment reported separately, and D23's alone stopping
+  above +113 ms. Evidence:
   `.superpowers/sdd/2026-10-26-new-decoder-prototype-1b/newborn-fading-candidates.md`; design notes Parts 8, 13, 15,
   17.
 - **D25** (owner, 2026-10-30: "1"): the one w for every contrast is kept, labeled a departure from standard practice
   (it weights an edge's position 2.4 to 2.75 times too lightly against the untempered timing costs; derived at high
-  SNR), and measured by M19 (§7.2; Task 16): weak signals, fast keying, keyed lengths off the fist's medians; edge
-  errors that matter, by M19's stated rule, return prewhitening to the owner with a study. Design notes Parts 4, 13,
-  15 (item 19), 16.
+  SNR), and measured by M19 (§7.2; Task 16): weak signals, fast keying, keyed lengths off the fist's medians; its
+  numbers (signed edge offsets, length errors, measured pull slopes beside the slopes predicted under the decided and
+  the exact weighting, CER) always go to the owner, who judges whether the edge errors matter and so whether
+  prewhitening returns with a study (no pass/fail thresholds; fix round 1). Design notes Parts 4, 13, 15 (item 19),
+  16.
 - **D26** (owner, 2026-10-30: "2"): Part 6's drift target is (√π/2)·E[√Ω], the Rayleigh mean amplitude averaged over
   the long-run power's posterior, not (√π/2)·√Ω̄ (Jensen's inequality: √Ω̄/E[√Ω] = 1.97 to 2.46 at ν = 1, 1.13 at
   ν = 2, 1.03 at ν = 5; about 0.4 nats per return early in an over at +20 dB S₅₀₀, estimated). The Ω̄ tables gain
@@ -445,14 +449,15 @@ stories, which stays the base until R0 replaces it:
   Task 10's Step 0 together with D23's V(a_i), on the mix: **the stop threshold for both together is +124 ms per
   channel-second at 500 newborns** (D23's estimate top, +113 ms, plus D24's about +11 ms; 29.1% of 425.7 ms and
   27.8% of 445.4 ms; about 661 ns per newborn-sample at 500 × 375 samples/s; derived), and each change's increment is
-  reported separately as well (the coordinator's correction of 2026-10-30).
+  reported separately as well (the coordinator's correction of 2026-10-30); D23's increment alone above +113 ms
+  also stops (fix round 1).
 - **E[√Ω] beside Ω̄ (D26, 2026-10-30; Task 10b):** a second interpolation in the same lookup, estimated +1 to 2% of
   425.7 ms (4.3 to 8.5 ms per channel-second at 1 700 stories), from the default lookup's measured 18 ms; memory: the
   default table about 0.84 MB (from 0.42), the variant's about 76 MB (from 37.8), both estimated, stored the same way.
   Task 10b measures both; a variant table above 100 MB or added CPU above +3% (12.8 ms per channel-second) goes to
   the owner. The variant's table at 76 MB is about six times the desktop's 12 MB third-level cache (37.8 MB was
   about three), so its random-cell figures (§6.1's table) are the better guide.
-- So the projected default total at 1 700 stories becomes roughly 508 to 570 ms per channel-second (425.7 + 13 −
+- So the projected default total at 1 700 stories becomes roughly 508 to 569 ms per channel-second (425.7 + 13 −
   0.7 + 56 to 113 + 9.9 + 4.3 to 8.5; derived from the estimates above, newborns on noise), to be replaced by R0's
   measurement.
 
@@ -517,7 +522,7 @@ without it, 10.24, 25.47 and 85.19 CPU-hours).
 
 **Before D23's, D24's and D26's CPU changes:** the hours per FRE above use the projected totals of §6.1's table;
 D23's, D24's and D26's estimates (§6.1, after the table) would raise c by roughly 19 to 34% at 1 700 stories (508 to
-570 ms against 425.7 ms; derived), most of it the newborn's V(a_i), not yet timed. Task 10's and Task 10b's timings
+569 ms against 425.7 ms; derived), most of it the newborn's V(a_i), not yet timed. Task 10's and Task 10b's timings
 and R0 replace these figures.
 
 Not in the table: today's decoder once on DEV2e and N2e (O17), about 59.5 CPU-hours on DEV2e and 61.5 with N2e,
@@ -578,7 +583,7 @@ cells below are stated as ranges and counts.
 | Item | What | Set | Rule |
 |---|---|---|---|
 | **M1** correctness | the unit tests' checks (Tasks 2–10) and, on recordings, through the true-story trace (Task 12), each tolerance written here before the run: the template's misfit per sample, its variance over v_j within [0.8, 1.25] at every j where v_j > 10⁻⁵ on 2.5 ms edges (heuristic bounds); the decoded symbols' start times (the bench's `symbols.csv`, Task 12) each within −0.1 to +5.43 ms of the label's keyed times, and their mean within 0.8 to 2.0 ms for 2.5 ms rises (measured tolerance, score-form-candidates.md §3: the convention's 0 to 2.667 ms plus one sample for the tie at mid-sample edge positions; the convention expects a mean of 1.33 ms, the study measured 1.54; a failure of the mean goes to the owner with the audit's row 10 named); ν against the empirical count of independent looks of the label's fading within 3% (Part 7's measured agreement); Ω̂ and Ω̄ against the generator's fading (reported); the output noise's power and correlation against σ_y² (±1.5%) and ρ_m (±0.01); the variant's E[N²]/(A + B·Ω) on the decoder's own samples of steady stations (N = Ω̂ − a², a from the label's S₅₀₀; at least 1 000 marks) within [0.95, 1.05]; determinism across block splits on one recording of each group (identical output) | `nd1b-fading`, `nd1b-strong` steady, A2's and B2's recordings with key intervals | Each check passes its tolerance; a failure stops the long runs and goes to the owner. |
-| **M2** the newborn's approximations | (a) the grid (D22) against a dense integral of the same integrand (exact ln I₀, V(a_i) at each point and the constant w, D23, with the prediction step, D24), on the study's levels and, new, above +40 dB S₅₀₀ (+50, +60, +70 and +85 dB S₅₀₀), where the narrowest σ_u at handover may fall toward 0.03 nepers by the floor-limited derivation now that D23 removed the caps (the cap-limited 0.074–0.078 nepers no longer applies; both rough; a live risk to D22's 128 points, which err about 0.17 nats at 0.03; this measurement settles it), and where the trapezoid's end-point error at the prior's top, about h²·|F′(u_hi)|/12 (derived), is reported per sample and per first mark; the narrowest σ_u at handover and the deepest revival of a grid point below the largest (Task 11's counters); (b) fading inside the newborn with the prediction step every 8 samples (D24), against the newborn-fading study's exact fading reference (Part 6's chain with the level free, at the true spread and at 2 Hz), the fading applied by its generator before the channel and front filters, 1 000 first marks per case (a 25 WPM dot and dash) at 0, +10 and +20 dB S₅₀₀ and fading 0, 0.5, 2 and 5 Hz, compared with the study's figures under the ratio form (2 Hz: 95th percentile 1.42, worst 20.5 nats; no fading: worst 0.05 nats); the tail is Part 6's fast-fading limitation (Part 13) and is reported as such (until D24: the amplitude held constant, at 0 dB S₅₀₀, 2 and 5 Hz); (c) the switch; the newborn's CPU line | the committed measurement test `Newborn.ApproximationsMeasured` (Task 9, label `measurement`), run in Task 16 | Measurement; every result, with its distribution per sample and per first mark (median, 95th percentile), to the owner (Part 8: anything over a fraction of a nat goes to him). A narrowest σ_u at handover below 0.05 nepers, or a revival deeper than 40 nats, goes to the owner (D22), here and in every run that records them (R0, M14, R4). |
+| **M2** the newborn's approximations | (a) the grid (D22) against a dense integral of the same integrand (exact ln I₀, V(a_i) at each point and the constant w, D23), with the prediction step's variance 0 for that comparison (a dense grid cannot run the step: its ε grows as 1/h²), the step's own grid error measured by Task 10's fine-grid test (`Newborn.PredictionStepConvergesInTheGrid`); the narrowest σ_u at handover and the deepest revival with the step on, as the decoder runs (D24), on the study's levels and, new, above +40 dB S₅₀₀ (+50, +60, +70 and +85 dB S₅₀₀), where the narrowest σ_u at handover may fall toward 0.03 nepers by the floor-limited derivation now that D23 removed the caps (the cap-limited 0.074–0.078 nepers no longer applies; both rough; a live risk to D22's 128 points, which err about 0.17 nats at 0.03; this measurement settles it), and where the trapezoid's end-point error at the prior's top, about h²·|F′(u_hi)|/12 (derived), is reported per sample and per first mark; the narrowest σ_u at handover and the deepest revival of a grid point below the largest (Task 11's counters); (b) fading inside the newborn with the prediction step every 8 samples (D24), against the newborn-fading study's exact fading reference (Part 6's chain with the level free, at the true spread and at 2 Hz), the fading applied by its generator before the channel and front filters, 1 000 first marks per case (a 25 WPM dot and dash) at 0, +10 and +20 dB S₅₀₀ and fading 0, 0.5, 2 and 5 Hz, compared with the study's figures under the ratio form (2 Hz: 95th percentile 1.42, worst 20.5 nats; no fading: worst 0.05 nats); the tail is Part 6's fast-fading limitation (Part 13) and is reported as such (until D24: the amplitude held constant, at 0 dB S₅₀₀, 2 and 5 Hz); (c) the switch; the newborn's CPU line | the committed measurement test `Newborn.ApproximationsMeasured` (Task 9, label `measurement`), run in Task 16 | Measurement; every result, with its distribution per sample and per first mark (median, 95th percentile), to the owner (Part 8: anything over a fraction of a nat goes to him). A narrowest σ_u at handover below 0.05 nepers, or a revival deeper than 40 nats, goes to the owner (D22), here and in every run that records them (R0, M14, R4). |
 | **M3** the fading grid | f_D = 0.1, 0.3, 1, 2, 5 Hz × +10, +20, +30 dB S₅₀₀ × "PARIS PARIS" at 25, 8 and 5.2 WPM × 4 edge positions × 5 seeds (900 signals); exact texts and CER; the in-mark E[z²] (O19) | `nd1b-fading` | Paired against today's decoder on the same signals; measurement, to the owner. |
 | **M4** the strong grid | +30 to +60 dB S₅₀₀ in six 5 dB cells × 16 edge positions × steady and 0.3, 1, 2, 5 Hz; mark splits and invented overs | `nd1b-strong` | Steady: every text exact (D15's standard, as 36084bc reached); faded: measurement, to the owner. |
 | **M5** the speed step | 20 to 30 WPM, +10 to +28 dB S₅₀₀ in nine 2 dB cells, 3 signals per cell | `nd1b-speed` | CER at most 0.05 on every signal at the default beam (the prototype plan's §5, item 2). |
@@ -587,7 +592,7 @@ cells below are stated as ranges and counts.
 | **M8** the fixed 2 Hz against the genie spread | M3's grids with `--genie fading`; the in-mark E[z²] | `nd1b-fading` | Measurement: it sizes the backlogged several-rate model and the in-mark limitation. |
 | **M9** steady weak signals | 5, 12, 25, 40, 100 WPM, −15 to +5 dB S₅₀₀ in twenty 1 dB cells, 10 signals per cell | `nd1b-weak` | S₅₀₀ at 50% CER per speed, with its interval, against today's decoder and the bank (`--decoder bank` on the same recordings); the slow speeds' cost against the expected up to 1.8 dB of noise power (Part 2). Measurement. |
 | **M10** the systematic term from the story's prediction (D23; until D23 the memory and look-ahead of 10 samples each), with **D15's neighbor trade remeasured** | M4's grid, the stopped-neighbor grid (cells over a neighbor 30–40 dB stronger, dB relative to the station's key-down power, 50–200 Hz away, stopping 0.05–0.60 s before the station starts), M5, "TEST" and "TU" | `nd1b-strong`, `nd1b-stopped`, `nd1b-speed` | Measurement, paired against today's decoder on the same signals (it carries D15's 390 ms term); D15's own cells (a neighbor stopping 0.10–0.30 s before the station; 194 of 288 runs lost then) reported separately, since this jittered grid is wider (50–200 Hz, 0.05–0.60 s); D23 reversed D15's rule, so the stopped-neighbor result goes to the owner; no other variant. |
-| **M11** the floor f, its size and its correlation (D19; D27) | the scatter of strong stations' flat-part samples about the model's prediction beyond the noise, relative to the carrier, along the true story (f̂, O19); and, since D27 (owner, 2026-10-30: "1"), the mismatch's autocorrelation from sample to sample at every lag up to the longest flat part measured, with its 95% bootstrap interval over signals (ĉ(m), Task 12), on both sets. **D27's rule, stated before the run:** if the mismatch is correlated over more than the front filter's 5 correlated samples (ρ_1 … ρ_5; Part 4), that is, ĉ(m) at some lag m ≥ 6 above 0.1 with its interval wholly above zero (the 0.1 heuristic), the alternatives (the slow part in the amplitude's process model; a correlated systematic term in the score) return to the owner with the numbers; if f is negligible (O15), f goes to 0 (D19) | `nd1b-strong` steady and faded; W1AW code-practice sessions recorded off the air (D19), with their published text force-aligned; the owner's other recordings where the new decoder and the bank agree, as a cross-check (biased low) | The proposed f is f̂ (zero if its 95% interval includes zero on both sets; where the two sets differ, the real recordings' f̂, the synthetic one beside it; O15); on the W1AW sessions the excluded share of words and f̂ with and without the excluded words are reported, and the flat samples next to aligned edges are left out (Task 12); M4 and M6 are rerun at the proposal before it goes to the owner, who decides. |
+| **M11** the floor f, its size and its correlation (D19; D27) | the scatter of strong stations' flat-part samples about the model's prediction beyond the noise, relative to the carrier, along the true story (f̂, O19); and, since D27 (owner, 2026-10-30: "1"), the mismatch's autocorrelation from sample to sample at every lag up to the longest flat part measured, with its 95% bootstrap interval over signals (ĉ(m), Task 12), on both sets. **D27, with no threshold on ĉ (Ruling 96):** ĉ(m) at every lag with its intervals, and the effective-count factor 1 + 2Σ_m ĉ(m) over the flat part (the variance of the mismatch's sum over a flat part relative to independent samples, so the factor by which f per sample understates it; derived), always go to the owner with f's value; the owner judges whether the mismatch is correlated over more than the front filter's 5 correlated samples (ρ_1 … ρ_5; Part 4), in which case the alternatives (the slow part in the amplitude's process model; a correlated systematic term in the score) return to him with the numbers; if f is negligible (O15), f goes to 0 (D19) | `nd1b-strong` steady and faded; W1AW code-practice sessions recorded off the air (D19), with their published text force-aligned; the owner's other recordings where the new decoder and the bank agree, as a cross-check (biased low) | The proposed f is f̂ (zero if its 95% interval includes zero on both sets; where the two sets differ, the real recordings' f̂, the synthetic one beside it; O15); on the W1AW sessions the excluded share of words and f̂ with and without the excluded words are reported, and the flat samples next to aligned edges are left out (Task 12); M4 and M6 are rerun at the proposal before it goes to the owner, who decides. |
 | **M12** other transmitters' edges | 10–90% rises of 0.8 and 4.7 ms; mark bias −7, −3.5, 0, +2.5, +4.7 ms; 25 and 100 WPM; +10 to +40 dB S₅₀₀ in three 10 dB cells; the misfit's variance per sample against v_k; decoding | `nd1b-edges`; B2 (VE3NEA's 1.18 ms edges) | The misfit's variance per template sample over v_k reported (a ratio near 1 or below supports the edge term); decoding paired against the 2.5 ms signals. Measurement, to the owner. |
 | **M13** the merge variant | the previous element's length in the state when shorter than 10 samples (`merge_previous_element`), against the default | DEV2e's signals above 45 WPM; `nd1b-speed` at 45–100 WPM | Paired decoding and the CPU breakdown with story counts, to the owner before anything changes (D17). |
 | **M14** noise alone | false characters per hour, newborns in the integral, CPU by part against §6 | N2e | False characters per hour no more than today's decoder's on N2e (Part 15: "no more than today's decoder"); else to the owner. |
@@ -595,7 +600,7 @@ cells below are stated as ranges and counts.
 | **M16** Bell's decay variant | `bell_decay` against the default on every group and N2e: exact texts, CER, splits, false characters; a close neighbor (E2) the case to watch | DEV2e, N2e | Measurement, to the owner (D17). |
 | **M17** the noise-in-Ω̄ variant | `omega_bar_noise` against the default on every group and N2e: exact texts, CER, splits, false characters; the Ω̄ and sums lines of the breakdown; how often Ω̂ falls below its Ω̄'s minimum position (the Gaussian artifact) on N2e and M9 | DEV2e, N2e, M9's suite | Measurement, to the owner, who decides whether it earns its place and then the artifact's remedy (Part 7). |
 | **M18** void (D23, 2026-10-29) | the fixed w = 0.1986 is the rule, so there is no variant to measure; the curve w(q) is not used. (It was: `fixed_weight` against w per sample on the weak-signal groups.) | — | — |
-| **M19** one w for every contrast (D25; owner, 2026-10-30: "1"; Part 15, item 19) | weak signals, fast keying, keyed lengths off the fist's medians: a jittered grid of speeds 35–100 WPM in three cells (35–50, 50–70, 70–100), levels −5 to +10 dB S₅₀₀ in five 3 dB cells, keying styles `paddle`, `bug` and `hand` (VE3NEA's sender timing variation, `keying.STYLES`; `hand` with its heavy dashes and wide spacing, medians off the fist's 1, 3, 1, 3, 7 dots) and an imbalance in three cells over −0.2 to +0.2 dits, 10 signals per cell (1 350), ten-word texts, D17's edges, no fading. Reported per cell: the edge errors (each claimed key-down and key-up against its keyed edge, from the bench's `edges.csv`, Task 13b), the mark- and gap-length errors against the keyed lengths (ms and dots), the pull toward the fist's medians (per element kind, the slope of the claimed on the keyed length, below 1 a pull), and CER, paired against today's decoder | `nd1b-timing` | **Rule, stated before the run (heuristic thresholds):** the edge errors matter if, in any cell at or above 0 dB S₅₀₀, (i) more than 5% of claimed edges lie outside the timing tolerance (−0.1 to +5.43 ms of the keyed edge; Task 13b), with the lower end of its 95% bootstrap interval above 2%; or (ii) the slope of claimed on keyed mark or gap length is below 0.9 with its 95% interval excluding 1; or (iii) the median absolute mark- or gap-length error exceeds one sample (2.667 ms). If any holds, prewhitening returns to the owner with a study (D25). The results go to the owner in any case. |
+| **M19** one w for every contrast (D25; owner, 2026-10-30: "1"; Part 15, item 19) | weak signals, fast keying, keyed lengths off the fist's medians: a jittered grid of speeds 35–100 WPM in three cells (35–50, 50–70, 70–100), levels −6 to +9 dB S₅₀₀ in five cells 3 dB wide in S₅₀₀ (−6 to −3, −3 to 0, 0 to +3, +3 to +6, +6 to +9; every cell wholly on one side of 0 dB S₅₀₀, and the cells below 0 dB S₅₀₀, where the score-form study expects the pull to show, reported like the others), keying styles `paddle`, `bug` and `hand` (VE3NEA's sender timing variation, `keying.STYLES`; `hand` with its heavy dashes and wide spacing, medians off the fist's 1, 3, 1, 3, 7 dots) and an imbalance in three cells over −0.2 to +0.2 dits, 10 signals per cell (1 350), ten-word texts, D17's edges, no fading. **Reported per cell, always, to the owner:** (1) the signed edge offsets, each claimed key-down and key-up in samples from the convention's expected sample (the first sample at or after the keyed edge; the bench's `edges.csv`, Task 13b), as distributions (not against a tolerance), with edges whose keyed position falls in the middle third of a sample reported separately (the tie); (2) the mark- and gap-length errors against the keyed lengths (samples and ms); (3) the measured pull: per element kind, the slope of the claimed length's deviation from the fist's median on the keyed length's deviation, with its 95% bootstrap interval; (4) beside it, **the slopes predicted** in the linear-Gaussian approximation, I/(I + 1/σ_p²), under the decided weighting (I_t = w·dᵀd) and under the exact correlated weighting (I_e = dᵀR⁻¹d, the audit's row-16 computation, about 2.5·I_t), d the template's change for a one-sample edge shift at the cell's S₅₀₀ and speed, R the front filter's noise correlation (ρ_m, Part 4), σ_p the fist's spread in samples (σ = 0.3 in ln length times the median length; Task 13's analysis computes both, derived); (5) CER, paired against today's decoder | `nd1b-timing` | **No pass/fail thresholds** (the coordinator's ruling on the review of 2026-10-30): every cell's numbers above go to the owner. Whether the edge errors matter, and so whether prewhitening returns with a study (D25), is the owner's call on these numbers; the comparison of the measured slope with the two predicted slopes is the evidence for it. |
 
 ### 7.3 Order
 
@@ -1345,8 +1350,8 @@ method, Gauss–Hermite and the newborn's two regime weights (0.275 and 0.1986) 
 > story scored against noise at its own V′, handed a story claiming its edges about 2 samples off 105 nats on a clean
 > 25 WPM dash at +20 dB S₅₀₀. D23 replaces the score, the systematic term and the weight; this task makes the change.
 > **Amended 2026-10-30 for D24:** the newborn's grid gains the prediction step every 8 samples (below).
-> **The newborn's new grid, with both changes, is timed first (Step 0); a cost above +124 ms per channel-second at 500
-> newborns stops for the owner.**
+> **The newborn's new grid, with both changes, is timed first (Step 0); D23's increment alone above +113 ms, or both
+> together above +124 ms per channel-second at 500 newborns, stops for the owner.**
 
 **Files:** modify `engine/include/kz4ap/viterbi/config.hpp`, `engine/src/viterbi/fist.cpp`,
 `engine/include/kz4ap/viterbi/observation.hpp`, `engine/src/viterbi/observation.cpp`,
@@ -1393,16 +1398,23 @@ unmarked `tests/viterbi/scratch_diag_test.cpp` line (and `weight_test.cpp`'s).
 Part 6's transition at 2 Hz, the point-mass filter's prediction (Bucy and Senne 1971), in place of the amplitude held
 constant until the handover:
 - in `NewbornIntegral::add`, the moments loop writes p_i = e^(F_i − m) (m the largest F_i) into a scratch buffer; on
-  every 8th sample of the newborn, after the moments and before the live-range trim, Kushner's three-point chain is
-  applied in place, p_i ← p_i + ε(p_(i−1) − 2p_i + p_(i+1)), with pads for the reflecting ghost at the prior's ends and
-  zeros outside the live range; then F_i = m + ln p_i;
-- ε = stride · ½(1 − ρ(Δ)²)/(2h²) = 8 × 1.404 × 10⁻⁴ / (2 × 0.0906²) = 0.0684 (derived), the per-sample variance
-  ½(1 − ρ(Δ)²) read from the decoder's own `FadingTables` at lag 1 (2 Hz by default; each oracle channel's own under
-  `--genie fading`, Ruling 72, N12), the stride 8 heuristic (chosen by measurement, D24); ε ≤ ½ keeps the explicit
-  chain stable and every p_i non-negative (derived), which holds at 2 Hz (0.0684) and, ε growing as the spread squared, up to a genie
-  spread of about 5.4 Hz (derived); Task 10 asserts it at construction;
-- reflecting ends conserve the trapezoid mass and Z exactly (derived); Part 6's drift and the Itô term are dropped
-  (about −1.1 × 10⁻⁴ nepers per sample, derived);
+  every 8th sample of the newborn, counted on its own samples from its birth, after the moments and before the
+  live-range trim, Kushner's three-point chain is applied in place, p_i ← p_i + ε(p_(i−1) − 2p_i + p_(i+1)), with the
+  reflecting ghost mirrored about the end node, p₋₁ = p₁ and p_N = p_(N−2) (the form under which the trapezoid mass,
+  ends halved, is conserved exactly; derived), and zeros outside the live range; then F_i = m + ln p_i;
+- a handover between two steps simply ends the step: the variance accumulated since the last step (at most 7 samples'
+  worth, about 9.8 × 10⁻⁴ nepers² at 2 Hz) is not applied, as in the newborn-fading study's code (to be confirmed
+  against that code before the build, and stated in the commit);
+- ε = (interval/Δ) · ½(1 − ρ(Δ)²)/(2h²) = 8 × 1.404 × 10⁻⁴ / (2 × 0.0906²) = 0.0684 (derived), with the interval
+  `newborn_fade_interval_s` = 8 × 4/1 500 s = 21.33 ms (heuristic, chosen by measurement, D24) and the per-sample
+  variance ½(1 − ρ(Δ)²) read from the decoder's own `FadingTables` at lag 1 (2 Hz by default; each oracle channel's
+  own under `--genie fading`, Ruling 72, N12);
+- **substeps:** the step is applied as n = ⌈ε/¼⌉ explicit substeps of ε/n each, so every substep has ε ≤ ¼, strictly
+  below ½ (at ε ≤ ¼ no mode of the chain changes sign and every p_i stays positive; at exactly ½ an isolated point
+  goes to 0 and ln 0 = −∞; derived). At 2 Hz one substep (0.0684); under `--genie fading` at 5 Hz, ε = 0.427 in two
+  substeps; no assertion aborts a run;
+- reflecting ends conserve the trapezoid mass and Z exactly (derived); Part 6's drift (toward 0.886·a_i, Ω = a_i² at
+  each point) and the Itô term are dropped (about −1.1 × 10⁻⁴ nepers per sample, derived);
 - the per-newborn state and the copy cost are unchanged: p_i is scratch, recomputed in every `add`.
 
 **Interfaces:**
@@ -1414,12 +1426,13 @@ constant until the handover:
   `nu_bin_s` 16 × 4/1 500, `nu_memory_s` 160 × 4/1 500 (owner, D17); `over_rate_per_s`, `rescue_epsilon`,
   `word_end_p`, `over_end_q`; `level_min_db` −15, `level_max_db` 85 (dB S₅₀₀, placeholders); `quadrature_order` 5;
   `newborn_switch_sigma_u` 0.1 (derived), `newborn_grid_points` 128 (heuristic, measured; D22),
-  `newborn_live_range_nats` 80 (heuristic; D22), `newborn_fade_stride` 8 samples (heuristic, measured; D24);
+  `newborn_live_range_nats` 80 (heuristic; D22),
+  `newborn_fade_interval_s` 8 × 4/1 500 (21.33 ms; heuristic, measured; D24);
   `hiss_half_width_hz`, `hiss_percentile`, `hiss_average_s`;
   `genie_fading_spread_hz`; `stats`. Removed: `piece_s`, `block_loss_db`, `keying_rise_s`, `block_length_s()`, and
   (D23) `systematic_memory_s` and `systematic_lookahead_s`. `sample_interval_s` must be a whole number of channel
-  samples, and `nu_bin_s` and `nu_memory_s` whole numbers of decoder samples, each within 10⁻⁹ relative, else
-  construction throws naming the field; the other durations (`front_dot_s`, the edge rise times) are physical times
+  samples, and `nu_bin_s`, `nu_memory_s` and `newborn_fade_interval_s` whole numbers of decoder samples, each within
+  10⁻⁹ relative, else construction throws naming the field; the other durations (`front_dot_s`, the edge rise times) are physical times
   used as such (Ruling 72, N7).
 - `systematic.hpp`: `double systematic_variance_fs2(double sigma2_fs2, double carrier_power_fs2, double s, double v,
   double floor)` = σ_y² + C²(f²s² + v), C² the story's μ²_k|k−1 + P_k|k−1 (or a_i² on the newborn's grid);
@@ -1431,7 +1444,7 @@ constant until the handover:
   own (Ruling 72, N12). `ViterbiShared` is forward-declared in `search.hpp` (it is defined in `viterbi_decoder.hpp`,
   which includes `search.hpp`).
 - `NewbornIntegral::add(double e_fs, double s, double v, double sigma2_fs2, double floor)`: V(a_i) per point (D23),
-  and the prediction step on every `newborn_fade_stride`-th call (D24); the step's ε, from the decoder's
+  and the prediction step on every (interval/Δ)-th call of the newborn (D24); the step's ε and substeps, from the decoder's
   `FadingTables` and the stride, is given to `NewbornIntegral` at its birth;
   `NewbornTables(const OutputNoise&, double sigma2_per_n0_hz)` (no `fixed_weight` argument: w is constant).
 - `class Search`: `Search(const ViterbiConfig&, std::shared_ptr<const ViterbiShared>, detail::SearchOptions = {})`;
@@ -1467,10 +1480,11 @@ constant until the handover:
   increment and their sum, each reported separately** (the coordinator's correction of 2026-10-30). Figures stored
   from other runs (Task 9's 490 and 595 ns, the studies') are not compared with the new timing. **The estimates:**
   D23 +0.3 to +0.6 µs per newborn-sample, +56 to +113 ms per channel-second at 500 newborns; D24 +53 ns on noise
-  (measured), about +60 ns on the mix (estimated), about +11 ms on the mix. **The rule:** the sum of both increments
-  on the mix, scaled to 500 newborns at 375 samples/s, above **+124 ms per channel-second** (D23's estimate top,
-  +113 ms, plus D24's about +11 ms; 29.1% of 425.7 ms and 27.8% of 445.4 ms; about 661 ns per newborn-sample;
-  derived) **stops the task: report to the coordinator, and the newborn's form returns to the owner** (D23, D24)
+  (measured), about +60 ns on the mix (estimated), about +11 ms on the mix. **The rule:** on the mix, scaled to 500
+  newborns at 375 samples/s, **D23's increment alone above +113 ms per channel-second** (its estimate's top; 26.5% of
+  425.7 ms; about 603 ns per newborn-sample), **or both increments together above +124 ms per channel-second**
+  (D23's estimate top plus D24's about +11 ms; 29.1% of 425.7 ms and 27.8% of 445.4 ms; about 661 ns per
+  newborn-sample; derived), **stops the task: report to the coordinator, and the newborn's form returns to the owner** (D23, D24)
   before anything else here is built. At or below it, continue; record the figures in the commit message and the
   report, each increment as a share of both 425.7 ms (the base, newborns on noise) and 445.4 ms (the mix) (Ruling 92;
   §6.1).
@@ -1478,7 +1492,7 @@ constant until the handover:
   - Fist: the existing tests set `sample_interval_s = 0.002` explicitly and keep their numbers; new
     `Fist.MediansInSamples`: at the default, a 100 WPM dot's median is 4.50 samples and a 5.2 WPM word gap's
     604.5 ± 0.5 samples; P = 0.05 s⁻¹ × Δ = 1.333 × 10⁻⁴ per sample (8.92 nats).
-  - `Config.DefaultsAreTheDesignTable`: every field's default as listed above; the durations are 16 and 160 samples;
+  - `Config.DefaultsAreTheDesignTable`: every field's default as listed above; the durations are 16, 160 and 8 samples;
     `systematic_memory_s` and `systematic_lookahead_s` are refused as removed names (D23).
   - **The score (D23):** `Evidence.FullFormMatchesADenseIntegral`: the score against the shared reference within
     0.01 nats of a 20 001-point dense reference over a ≥ 0, computed as a log-sum-exp of the pointwise full density
@@ -1545,18 +1559,28 @@ constant until the handover:
     reported, not silently re-pinned;
     `Newborn.StrongEdgeOfThePrior`: the cap-limited expectation (0.074–0.078 nepers) is void; `narrowest_sigma_u`
     reported at +60 and +85 dB S₅₀₀, and a value below 0.05 nepers flagged to the owner (Part 8: a live risk to the
-    128 points since D23). These dense-integral and table tests run with the prediction step's variance set to 0
-    (they test the grid and its tables; the step has its own tests, next).
+    128 points since D23). **Which of these run with the prediction step (fix round 1):** the comparisons with a dense
+    integral, `MatchesADenseIntegral`, `LiveRangeLosesNothing` and `TablesMatchDirectEvaluation`, run with the step's
+    variance 0 (with the step on they would mix approximation (a) with (b)); `StrongEdgeOfThePrior`'s narrowest σ_u at
+    handover (D22's 0.05-nepers rule), `SwitchTimings` and `StaysBoundedOnNoise` run with the step on, as the decoder
+    runs (the step adds 2εh² = 1.12 × 10⁻³ nepers² per interval, as large as the belief's own variance at σ_u = 0.03 to
+    0.05; derived), their values pinned with the step and their variance-0 values reported beside them.
   - **The prediction step (D24; the newborn-fading study's §6):** `Newborn.ZeroVarianceIsTheGridWithoutTheStep`: with
-    the per-sample variance 0 the scores equal the grid without the step (D23's integrand) bit for bit;
-    `Newborn.PredictionStepConservesMass`: the trapezoid mass Σ_i h·p_i (ends halved) before and after each step agrees
-    to 10⁻¹² relative, the reflecting ends included, over first marks on noise and at 0 to +40 dB S₅₀₀;
-    `Newborn.PredictionStepConvergesInTheGrid`: a 512-point grid (step h/4) agrees with the 128-point grid within
-    0.01 nats in median per first mark (measured in the study: within 0.01 in medians, 0.15 in 95th percentiles), the
-    95th percentile reported; the 512-point grid applies the step every sample, ε = ½(1 − ρ²)/(2(h/4)²) = 0.137,
-    because every 8 samples there ε would be 1.09, beyond the explicit chain's stability bound ε ≤ ½ (derived), as
-    the study's own 512-point check did; `Newborn.PredictionStepEveryStride`: the step is
-    applied on the 8th, 16th, … sample of the newborn and on no other.
+    the per-sample variance 0 the scores equal the grid without the step (D23's integrand) within 10⁻¹² nats per
+    sample (the round trip F_i = m + ln e^(F_i − m) is not exact in floating point); `Newborn.TinyVarianceExercisesTheStep`:
+    with ε = 10⁻⁶ the stencil and the round trip run, and the scores differ from variance 0 by under 10⁻⁴ nats per
+    sample (heuristic bound); `Newborn.PredictionStepConservesMass`: the trapezoid mass Σ_i h·p_i (ends halved) before
+    and after each step agrees to 10⁻¹² relative, the reflecting ends (p₋₁ = p₁) included, over first marks on noise and
+    at 0 to +40 dB S₅₀₀; `Newborn.PredictionStepConvergesInTheGrid` (Ruling 95): a fine grid of 509 points (step
+    exactly h/4; 512 points would give 0.2485·h) runs the same model as production, the interval's total variance
+    every 8 samples, in 5 explicit substeps of ε = 1.094/5 = 0.219 ≤ ¼ each (derived), and agrees with the 128-point
+    grid within 0.01 nats in median per first mark, the 95th percentile reported; the 0.01 nats is heuristic, carried
+    over from the study's every-sample check (within 0.01 nats in medians, 0.15 in 95th percentiles); the every-8 form
+    is not measured; its input: a 25 WPM dash at 0, +10 and +20 dB S₅₀₀, fading 0, 2 and 5 Hz, 200 first marks per case
+    (heuristic count); `Newborn.PredictionStepEveryInterval`: the step is applied on the 8th, 16th, … sample of the
+    newborn, counted from its birth, and on no other, and a handover between two steps applies none;
+    `Newborn.SubstepsAboveAQuarter`: at ε = 0.427 (`--genie fading` at 5 Hz) two substeps of 0.2135, every p_i stays
+    positive and the mass is conserved to 10⁻¹².
   - **`Newborn.ApproximationsMeasured`, part (b), rebuilt for D24** (label `measurement`, run in Task 16, M2): on the
     newborn-fading study's reference (Part 6's chain with the level ln √Ω free on the newborn's 128 points and the
     instantaneous amplitude x = a/√Ω on [0, 5], a Rayleigh start, direct ln I₀, levels more than 80 nats below the best
@@ -1591,8 +1615,10 @@ constant until the handover:
   and the constant w; the systematic term from the story's prediction; the amplitude and Ω̄; the newborn (V(a_i), the
   constant w, the prediction step every 8 samples, D24); timing and text; the search; what each non-default variant is, one sentence each, once Task 12 adds
   them. A.8d rewritten: the exact form of each part in the design's order with every formula, value and class, the
-  derivations or their pointers (the design notes' Parts, as amended by D23), the provenance of each measured or
-  heuristic value with its validity, the limitations (Part 13, including D23's open items), Rulings 60–64 and O4–O10;
+  derivations or their pointers (the design notes' Parts, as amended by D23, D24, D25 and D27), the provenance of each
+  measured or heuristic value with its validity, the limitations (Part 13: D23's remaining open item, the edge offset
+  not marginalized jointly; D25's labeled departure, one w for every contrast, Parts 4 and 16; D27's labeled
+  departure, f per sample, Part 9; D26's target is Task 10b's), the prediction step (D24), Rulings 60–64 and O4–O10;
   the sections on pieces, blocks, the flat prior's table and c(m) removed; nothing of the window, the own part, the
   caps or w per sample, which the engine never ran. A.10: Part 17's rows in place of the removed ones (w, C², the
   misfit bound; no memory, look-ahead or w table). A.11: sample, story-sample, scored sample, claimed edge, the timing
@@ -1604,7 +1630,9 @@ constant until the handover:
 > **Added 2026-10-30 for D26** (owner: "2"; the prototype plan's §3). The prediction's drift target becomes
 > (√π/2)·E[√Ω], the Rayleigh mean amplitude averaged over the long-run power's posterior, a second output of the Ω̄
 > tables; Ω̄ still sets the variance's second term. **Why a task of its own (Ruling 94):** Task 10's working tree is
-> uncommitted, so the tables are not regenerated under it; this task starts from Task 10's commit.
+> uncommitted, so the tables are not regenerated under it; this task starts from Task 10's commit. **Its brief is
+> written after Task 10's commit** (its working-tree section depends on that commit), carrying CLAUDE.md's
+> `docs/signal-processing.md` rule, the one-git-command rule and the no-private-infrastructure rule.
 
 **Files:** modify `engine/include/kz4ap/viterbi/long_run.hpp`, `engine/src/viterbi/long_run.cpp`,
 `engine/src/viterbi/omega_bar_table.cpp` (regenerated), `bench/src/viterbi_tables_main.cpp` (`omega-bar` and
@@ -1619,29 +1647,47 @@ constant until the handover:
   inverse-gamma posterior; at β = 0, √Ω_lo·[ν/(ν − ½)]·[1 − (Ω_lo/Ω_hi)^(ν−½)]/[1 − (Ω_lo/Ω_hi)^ν] (derived, exact for
   the truncated posterior; about 2√Ω_lo at ν = 1).
 - **`OmegaBarTable`** gains E[√Ω] as a second output on the same nodes, tabulated as ln(E[√Ω]/σ_y) beside ln(Ω̄/σ_y²);
-  its lookup returns both from one index computation (two interpolations). The generator (`kz4ap-viterbi-tables
-  omega-bar`) writes both; the compiled `omega_bar_table.cpp` is regenerated (Ruling 65) and its header records the
-  error of both outputs.
+  its lookup returns both from one index computation (two interpolations): `struct OmegaBarPair { double
+  omega_bar_fs2; double sqrt_omega_mean_fs; };` `OmegaBarPair OmegaBarTable::lookup(double nu, double omega_hat_fs2,
+  double sigma2_fs2) const` in place of `omega_bar_fs2(...)`. The generator (`kz4ap-viterbi-tables omega-bar`) writes
+  both; the compiled `omega_bar_table.cpp` is regenerated (Ruling 65) and its header records the error of both
+  outputs.
 - **`OmegaBarVariantTable`** and `omega_bar_variant_direct` gain E[√Ω], the posterior mean of √Ω under the variant's
-  likelihood and the flat prior, by the same integral with √Ω in place of Ω; the binary table (`build/`, Ruling 65)
-  stores it as a second channel, its header version raised so an old file is refused naming the version; above
-  χ = 10⁴ it falls back to `sqrt_omega_mean_closed_form`.
-- **The prediction** (`predict_amplitude`, Part 6): μ_k|k−1 = ρ_a·μ + (1 − ρ_a)·(√π/2)·E[√Ω]; P_k|k−1 = ρ_a²P +
-  ½(1 − ρ²)·Ω̄ unchanged. Bell's decay variant (D20) is unaffected: it decays toward zero.
+  likelihood and the flat prior, by the same integral with √Ω in place of Ω: `OmegaBarPair
+  OmegaBarVariantTable::lookup(double nu, double omega_hat_fs2, double a2, double b2, double sum_s4, double
+  sigma2_fs2, const OmegaBarTable& fallback) const` in place of `omega_bar_fs2(...)`; the binary table (`build/`,
+  Ruling 65) stores it as a second channel, written by `kz4ap-viterbi-tables omega-bar-variant --out
+  build/viterbi-tables/omega-bar-variant-v2.bin` (Task 8's `-v1.bin` holds the old version), its header version raised
+  so an old file is refused naming the version; above χ = 10⁴ both outputs fall back to the default table (`fallback`,
+  as Ω̄ already does).
+- **The prediction** (Part 6): `Prediction predict_amplitude(const Amplitude&, std::int64_t k, double omega_bar_fs2,
+  double sqrt_omega_mean_fs, const FadingTables&)`: μ_k|k−1 = ρ_a·μ + (1 − ρ_a)·(√π/2)·E[√Ω]; P_k|k−1 = ρ_a²P +
+  ½(1 − ρ²)·Ω̄ unchanged. `Prediction predict_amplitude_bell(const Amplitude&, std::int64_t k, double omega_bar_fs2,
+  double sqrt_omega_mean_fs, double dot_s, const FadingTables&, double sample_interval_s)`: **across spaces
+  unchanged** (it decays toward zero, which is what D26's "unaffected" refers to); **inside marks equal to
+  `predict_amplitude` with the new target** (Task 12's `Variants.BellDecayAcrossSpacesOnly`).
 - **The story** caches E[√Ω] beside Ω̄ (`Story::sqrt_omega_mean`), looked up and held exactly as Ω̄ is (only after
   samples with s ≠ 0); `StoryView` gains it.
 
 - [ ] **Step 1: Failing tests.**
   - `OmegaBar.SqrtMeanMatchesTheClosedForm`: O8's 10 000 points: relative error ≤ 0.1% (Ω̄'s threshold, O8).
-  - `OmegaBar.SqrtMeanKnownValues`: √Ω̄/E[√Ω] = 2.46, 2.31, 2.14 and 1.97 at ν = 1 and 0, +10, +20, +30 dB S₅₀₀; 1.25
-    at ν = 1.5, 1.13 at ν = 2, 1.03 at ν = 5 (computed in the audit of 2026-10-28 with the design's truncated
-    posterior and the −15 to +85 dB S₅₀₀ prior), each within ±0.01; the β = 0 limit to 10⁻¹² relative; E[√Ω] ≤ √Ω̄ at
-    every node (Jensen's inequality).
+  - `OmegaBar.SqrtMeanKnownValues`: √Ω̄/E[√Ω], 4-digit values from an independent quadrature of the posterior (the
+    review of 2026-10-30, numerical integrals on 2 × 10⁶ points in ln Ω, the −15 to +85 dB S₅₀₀ prior): ν = 1 at 0,
+    +10, +20 and +30 dB S₅₀₀: 2.4591, 2.3055, 2.1415, 1.9654; ν = 1.5, 2 and 5 at +20 dB S₅₀₀: 1.2528, 1.1284, 1.0317.
+    The closed-form functions within ±0.0001 of these (their 4-digit rounding); the table within its measured error
+    on the two outputs combined (at O8's 0.1% on each, at most 0.15% on the ratio; derived). Cross-checks: the audit's
+    2-digit values (2.46, 2.31, 2.14, 1.97; 1.25, 1.13, 1.03) within ±0.006, rounding included; for ν ≥ 1.5 the
+    untruncated Γ(ν)/(Γ(ν − ½)√(ν − 1)) within 10⁻³ from 0 to +30 dB S₅₀₀. The β = 0 limit to 10⁻¹² relative; E[√Ω]
+    ≤ √Ω̄ at every node (Jensen's inequality).
   - `OmegaBarVariant.SqrtMeanMatchesTheDirectIntegral` (label `needs-table`): Task 8's 400 points, 99th percentile of
-    |relative error| ≤ 1%, largest ≤ 3% (Ω̄'s thresholds); the closed-form fallback above χ = 10⁴ within 0.01%.
+    |relative error| ≤ 1%, largest ≤ 3% (Ω̄'s thresholds); above χ = 10⁴, the fallback to the default table's E[√Ω]
+    measured against the direct integral and its error reported (for Ω̄ it was within 0.01%; for E[√Ω] that is to be
+    measured, not assumed).
   - `OmegaBarVariant.OldTableIsRefused`: a table file of the previous version is refused, naming its version.
   - `Amplitude.TargetIsTheMeanOfTheSqrt`: the predicted mean drifts toward (√π/2)·E[√Ω] at ρ_a; the variance uses Ω̄;
-    `bell_decay`'s prediction is unchanged.
+    `bell_decay`'s prediction is unchanged across spaces and, inside marks, equals `predict_amplitude` with the new
+    target. **Rewritten:** Task 6's `Amplitude.PredictionIsTheOwnersRule`, whose lag-10⁴ case becomes μ =
+    0.886·E[√Ω] (P = Ω̄/2 unchanged), within 10⁻⁹ relative.
   - `Search.StoriesCarryTheSqrtMean`: after each sample with s ≠ 0 a story's E[√Ω] equals the table's for its
     (ν, Ω̂), and it is held between such samples.
 - [ ] **Step 2: Run them; they fail.**
@@ -1809,14 +1855,16 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
 - Analysis: the S₅₀₀ crossing at CER 0.5 beside 0.05 and 0.10; the CPU lines per group from statistics v3, in ms per
   channel-second and as fractions of §6's projected total (extending Task 11's function in `search_stats.py`, not a
   second one); the trace reductions in `trace.py` (E[z²]; f̂ with its interval and ĉ(m) at every lag with its
-  interval and D27's rule (M11), leaving out the two flat samples next
+  interval and the effective-count factor 1 + 2Σ_m ĉ(m) (M11), leaving out the two flat samples next
   to each claimed edge on aligned recordings; the misfit's variance per template sample over v_j; ν against the
   empirical count of independent looks of the label's fading; the decoded symbols' start times from `symbols.csv`
   against the label's keyed times, M1's timing check, N22, each start within −0.1 to +5.43 ms and the mean within
   0.8 to 2.0 ms; M6's `cost_vs_perfect` against the misfit bound, pass/fail on the noise-free twins and as
-  distributions (median, 95th percentile) with δ_k on the noisy recordings, D23; M19's edge errors from
-  `edges.csv`, mark- and gap-length errors, the slope of claimed on keyed length per element kind with its bootstrap
-  interval, and M19's rule, D25); the newborn counts; the I2 cut
+  distributions (median, 95th percentile) with δ_k on the noisy recordings, D23; M19's signed edge offsets
+  from `edges.csv` in samples from the convention's expected sample (the tie positions apart), mark- and gap-length
+  errors, the slope of the claimed on the keyed deviation from the fist's median per element kind with its bootstrap
+  interval, and the slopes predicted under the decided and the exact weighting, I/(I + 1/σ_p²) with I_t = w·dᵀd and
+  I_e = dᵀR⁻¹d at each cell's S₅₀₀ and speed, D25); the newborn counts; the I2 cut
   removed.
 
 - [ ] **Step 1: Failing tests:** `test_key_intervals_in_labels` (the label's intervals are the generator's to 10⁻⁹ s);
@@ -2023,8 +2071,9 @@ A.11 for the alignment) (Ruling 72, N20).
   and `--trace` on the resulting labels gives M11's samples; the ARRL's downloadable MP3s served only Task 13b's smoke
   check; the owner's other recordings, scored where the new
   decoder and the bank agree, as a cross-check with its bias named (biased low). With f̂, the mismatch's
-  autocorrelation ĉ(m) at every lag up to the longest flat part measured, on both sets, and D27's rule (M11): a
-  mismatch correlated beyond 5 samples sends the alternatives to the owner with the numbers. M4 and M6 rerun at the
-  proposed f; to the owner.
+  autocorrelation ĉ(m) at every lag up to the longest flat part measured, on both sets, with its intervals and the
+  effective-count factor 1 + 2Σ_m ĉ(m), always to the owner (M11, Ruling 96): if he judges the mismatch correlated
+  beyond 5 samples, the alternatives return to him with the numbers. M4 and M6 rerun at the proposed f; to the
+  owner.
 - [ ] **Step 3:** adopted values into the code, documents and tables (R4 rerun where a default changed); commit.
 - [ ] **Step 4:** the record's conclusions and the decisions they raise for the owner.
