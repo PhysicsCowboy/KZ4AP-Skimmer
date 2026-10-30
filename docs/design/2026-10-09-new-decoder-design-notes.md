@@ -1543,16 +1543,17 @@ measure; part 16, standard practice for each stage; part 17, the values.
     integral and a per-story w (its A2), not in D23's form: at +60 dB S₅₀₀ on one sample, a story explaining the
     sample through the filter's precursor (s = −0.00083, its weight 0.205) out-scored the correctly aligned story
     (weight 0.1986) by 920 nats; that form decoded 1 of 28 strong stations exactly, and with one w (A2c) 28 of 28, as
-    D23's form does. A per-story w in D23's own form was not measured. Standard: the composite-likelihood magnitude adjustment is one adjustment
-    for the whole log-likelihood of a model (Chandler and Bate 2007; Varin, Reid and Firth 2011).
+    D23's form does. A per-story w in D23's own form was not measured. Standard: the composite-likelihood
+    magnitude adjustment is one adjustment for the whole log-likelihood of a model (Chandler and Bate 2007; Varin,
+    Reid and Firth 2011).
   - **Its cost in evidence** (measured, below; plan D17's rough estimate): at weak samples w = 0.1986 undercounts the
     evidence by about 9% at −8 dB S₅₀₀ (equivalent to roughly 0.2 to 0.4 dB S₅₀₀ less signal).
   - History, one line: w per sample from each story's expected SNR (owner, 2026-10-25, option D; plan D17), read
     from a table of the curve below, with the fixed 0.1986 its measured variant; withdrawn by D23.
   - **Left open by D23, to the owner separately** (the audit's row 16; computed in the audit and checked in the study
-    of 2026-10-28): one scalar w weights the signal's timing contrasts about 2.4 to 2.75 times
-    too lightly for a key-down or key-up one sample off (about 2.1 two samples off) against the fist's untempered timing costs, because it was set for the information about
-    a, not about where edges fall. A scalar cannot fix it (the fist scaled by 0.4 broke letter segmentation, 0 of 81
+    of 2026-10-28): one scalar w weights the signal's timing contrasts about 2.4 to 2.75 times too lightly for a
+    key-down or key-up one sample off (about 2.1 two samples off) against the fist's untempered timing costs,
+    because it was set for the information about a, not about where edges fall. A scalar cannot fix it (the fist scaled by 0.4 broke letter segmentation, 0 of 81
     decodes exact); the standard remedies are prewhitening the envelope's noise or a matrix adjustment. Not resolved by
     the study's grid at 0 dB S₅₀₀ and above.
   - **The correlation it counts:** the output noise's correlation on the channel's colored noise at 2.667, 5.333,
@@ -2254,20 +2255,26 @@ measure; part 16, standard practice for each stage; part 17, the values.
     form kept with the timing reference moved (still fails at 40 WPM).
 - **The misfit bound, in place of the caps** (derived; the study of 2026-10-28, §1.5, and this design's fix round of
   2026-10-29): for the right story at the right amplitude a and a template error δ_k (a fraction of full), the cost
-  against a perfect template scored with the same V_k is at most
+  against a perfect template scored with the same V_k is, within 0.02 nats,
 
     w·[δ_k²/(f²s_k² + v_k) + ½·max(0, −ln(1 + δ_k/s_k))]   (nats per sample).
 
   - **The first term** is the Gaussian exponent's bound: (δ_k a)²/(σ_y² + C_k²(f²s_k² + v_k)) ≤ δ_k²/(f²s_k² + v_k)
     when C_k² ≥ a², a prediction at or above the true level; a prediction below it loosens the bound (derived).
-  - **The second term** is the Rician density's prefactor (derived at high SNR, ln I₀(x) ≈ x − ½ln(2πx), where the
-    exact difference is w·[δ_k²a²/V_k − ½ln(1 + δ_k/s_k)]): for δ_k < 0 it adds, for δ_k > 0 it only lowers the
-    cost. It is at most 0.141 nats for |δ| ≤ 3.83% where s ≥ 0.05 (j = 5) and 0.004 nats on the plateau; the
-    exact-ln I₀ excess over the first term alone measured in the review of 2026-10-29 (+0.116 to +0.121 nats at j = 5,
-    δ = −0.0383, +40 and +60 dB S₅₀₀) lies within it. Below high SNR the evidence of the sample is itself small.
+  - **The second term** is the Rician density's prefactor, derived for a large Bessel argument x = 2e_k s_k a/V_k ≫ 1
+    (ln I₀(x) ≈ x − ½ln(2πx), where the exact difference is w·[δ_k²a²/V_k − ½ln(1 + δ_k/s_k)]): for δ_k < 0 it
+    adds, for δ_k > 0 it only lowers the cost. It is at most 0.144 nats for |δ| ≤ 3.83% where s ≥ 0.05, and 0.004
+    nats on the plateau; the exact-ln I₀ excess over the first term alone measured in the review of 2026-10-29
+    (+0.116 to +0.121 nats at j = 5, δ = −0.0383, +40 and +60 dB S₅₀₀) lies within it.
+  - **Within 0.02 nats, not exactly** (measured, the re-review of 2026-10-29, exact ln I₀): on the edge's first
+    samples (j = 5, small s) x does not grow with the SNR, because V_k grows as a² too; it saturates near 1 to 2.5,
+    where the large-x expansion behind the second term fails, at any SNR. The exact cost exceeds the bound by up to
+    0.015 nats there (δ ≈ −0.025 to −0.030; +0.012 at +40 dB S₅₀₀, +0.015 at +60 and +85 dB S₅₀₀); for j ≥ 6 the
+    excess is at most 0.0003 nats. The checks of it (part 15, item 6; plan 1b) use a tolerance of 0.02 nats. No
+    correction term is added.
   - On the plateau the bound is w·(δ/f)² plus at most 0.004 nats: 0.73 nats for the 3.83% misfit of a 4.7 ms rise
     (f = 0.02, w = 0.1986). This is what D15 needs: a percent of mismatch never reads as overwhelming evidence.
-  - It is a bound on the noise-free (expected) cost: on a noisy sample the cost also carries a term 2w·δ_k a·n/V_k of
+  - It is a bound on the noise-free cost: on a noisy sample the cost also carries a term 2w·δ_k a·n/V_k of
     either sign, so it is checked pass/fail only on noise-free test signals (part 15, item 6).
   - Between two stories that both explain a carrier, the variance (Occam) term adds at most
     w·ln(1 + q(f²s_k² + v_k)) per sample, 1.1 nats at +40 dB S₅₀₀ and 3.2 nats at +85 dB S₅₀₀ (derived; logarithmic
@@ -2323,7 +2330,9 @@ measure; part 16, standard practice for each stage; part 17, the values.
     quarter-dot resolution (derived).
 - **Timing reference:** a story's claimed key-down and key-up times are the keyed times. The template carries the
   20.8 ms from key-down to the response's half point (part 5), so printed letter times are keyed times, to within
-  the sample convention of part 5 (a claimed edge sample lies 0 to 2.667 ms after the true edge).
+  the sample convention of part 5 (a claimed edge sample lies 0 to 2.667 ms after the true edge; at mid-sample edge
+  positions the decoded edge can tie one sample later, up to about 5.3 ms, measured in the study of 2026-10-28 under
+  D23's form, the open row 10 of part 5).
 - **Unchanged:** speeds (32, 12.0 to 230.3 ms per dot), standard spacing only (D14), text costs (ln 62 per letter;
   p = 1/3.06, q = 1/24), births, rescue rate ε = 10⁻³ per letter start, beam 40 nats and ceiling 1 700 stories
   (placeholders), merging (topic 5, item 2) and pruning, each counted per sample.
@@ -2524,8 +2533,9 @@ projected budget by part.
 4. **The strong grid** to +60 dB S₅₀₀ at 16 edge positions, steady and at 0.3, 1, 2 and 5 Hz; mark splits and invented
    overs.
 5. **The speed step** (20 to 30 WPM, +10 to +28 dB S₅₀₀).
-6. **The misfit bound and crashes** (until D23 this item checked the caps): part 9's misfit bound is checked pass/fail
-   on noise-free twins of the fall's tail and the filter's ringing at every edge position, where δ_k is known (the
+6. **The misfit bound and crashes** (until D23 this item checked the caps): part 9's misfit bound is checked pass/fail,
+   with a tolerance of 0.02 nats (part 9: the bound holds within 0.02 nats at j = 5), on noise-free twins of the fall's
+   tail and the filter's ringing at every edge position, where δ_k is known (the
    generator's noise-free keyed envelope through the chain, divided by a, minus s_k); on noisy recordings each
    sample's cost against the perfect template and δ_k are reported as distributions, not enforced; filtered clicks
    are not a template error of the station and are reported only as false characters per crash at +20 to +60 dB S₅₀₀
@@ -2664,7 +2674,7 @@ In the table, "survey" is the standard-practice survey of 2026-10-22, `docs/rese
 | Newborn grid | 128 points even in u = ln a over the prior (h = 0.0906 nepers), trapezoid; live range 80 nats; V(a_i) = σ_y² + a_i²(f²s_k² + v_k) at each point and the constant w (D23) | 1, nats | owner, 2026-10-26 (D22) and 2026-10-29 (D23); 128 from the trapezoid bound and measured (0.003 nats per sample at worst, ratio form; above +40 dB S₅₀₀ without the caps a live risk, part 8); 80 heuristic, twice the deepest revival measured (41.5 nats) |
 | Systematic floor f | 0.02 | relative amplitude | placeholder until measured (owner, 2026-10-23, D17) |
 | Systematic carrier power C_k² | μ²_k\|k−1 + P_k\|k−1, the story's prediction (the newborn: a_i² at each grid point) | FS² | owner, 2026-10-29 (D23); until D23 the data's 21-sample window peak (memory and look-ahead 10 samples, 26.67 ms each) and the own part e_k²/s_k² (D17) |
-| Misfit bound | w·[δ_k²/(f²s_k² + v_k) + ½·max(0, −ln(1 + δ_k/s_k))] per sample, noise-free; plateau about w·(δ/f)², 0.73 at δ = 3.83% | nats | derived (D23); replaces the caps (0.50 to 493 on the rise, 497 on the plateau) |
+| Misfit bound | w·[δ_k²/(f²s_k² + v_k) + ½·max(0, −ln(1 + δ_k/s_k))] per sample, noise-free, within 0.02 nats (j = 5; at most 0.0003 from j = 6); plateau about w·(δ/f)², 0.73 at δ = 3.83% | nats | derived (D23), its excess at j = 5 measured (re-review of 2026-10-29); replaces the caps (0.50 to 493 on the rise, 497 on the plateau) |
 | Fist medians, σ | 1, 3, 1, 3, 7 dots; 0.3 | dots; ln(length) | placeholders, heuristic |
 | Over start per sample | 1.333 × 10⁻⁴ (rate 0.05/s; 8.92 nats) | per sample | placeholder rate, set by the plan's R5; per sample derived |
 | Rescue ε | 10⁻³ | per letter start | placeholder, set by the plan's R5 |
