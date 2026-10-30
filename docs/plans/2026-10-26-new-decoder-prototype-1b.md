@@ -8,7 +8,8 @@
 > amended to match. **Amended 2026-10-30 for D24** (owner: "I don't care", the coordinator's recommendation taken):
 > the newborn's grid is faded every 8 samples by Part 6's transition (the point-mass filter's prediction step); Task
 > 10 adds it to `NewbornIntegral::add` and times it with D23's newborn change in Step 0; §3.1, §6, §7.2 and Tasks 9,
-> 10 and 16 are amended.
+> 10 and 16 are amended. **Amended 2026-10-30 for D25** (owner: "1"): the one w for every contrast kept as a labeled
+> departure and measured by a new M19 (§7.2, Task 16; its suite in Task 13, its edges file in Task 13b).
 > The owner does not read this plan: it is the executors' document, and every decision reaches him in chat, in words.
 > His answers are recorded here by the coordinator.
 >
@@ -19,7 +20,7 @@
 > **Design:** `docs/design/2026-10-09-new-decoder-design-notes.md`, the section "Detection, amplitude, frequency and
 > the mark's shape", Parts 1 to 17 (cited here as "Part n"), and topics 1 to 5 as amended there. **Decisions:** the
 > first prototype's plan, `docs/plans/2026-10-20-new-decoder-prototype-1.md` ("the prototype plan"), §3: **D15 to
-> D24 are the authority** where this plan and the design notes differ; its conventions (§4 to §9) are reused where
+> D25 are the authority** where this plan and the design notes differ; its conventions (§4 to §9) are reused where
 > they still apply. **Rulings** 60 to 66 of the coordinator (the prototype plan's git-ignored ledger,
 > `.superpowers/sdd/2026-10-20-new-decoder-prototype-1/progress.md`) are applied as stated in §3.1.
 > **Evidence for this plan** (git-ignored workspace, same folder): `code-map-2026-10-25.md` (the built code against
@@ -96,7 +97,7 @@ It delivers:
 6. **The measured variants behind switches,** off by default: Bell's decay (item 16), the noise in Ω̄'s likelihood
    (item 17), the previous element's length in the merge state (item 13). (The fixed w, item 18, is the rule since
    D23, not a variant.)
-7. **The measurements:** the prototype plan's runs revised (§7.1), Part 15's 18 items (§7.2), with the regenerated
+7. **The measurements:** the prototype plan's runs revised (§7.1), Part 15's 19 items (§7.2; item 19 from D25), with the regenerated
    DEV2e and N2e, the bank's reference rerun, and the results record
    `docs/plans/2026-10-26-new-decoder-prototype-1b-results.md` with its committed score tables in
    `docs/plans/data/2026-10-26-new-decoder-prototype-1b/`.
@@ -193,6 +194,11 @@ From the code map §1 to §3 against Parts 1 to 12. "Task n" is the task of §10
   +11 ms; 29.1% of 425.7 ms, 27.8% of 445.4 ms), each increment reported separately. Evidence:
   `.superpowers/sdd/2026-10-26-new-decoder-prototype-1b/newborn-fading-candidates.md`; design notes Parts 8, 13, 15,
   17.
+- **D25** (owner, 2026-10-30: "1"): the one w for every contrast is kept, labeled a departure from standard practice
+  (it weights an edge's position 2.4 to 2.75 times too lightly against the untempered timing costs; derived at high
+  SNR), and measured by M19 (§7.2; Task 16): weak signals, fast keying, keyed lengths off the fist's medians; edge
+  errors that matter, by M19's stated rule, return prewhitening to the owner with a study. Design notes Parts 4, 13,
+  15 (item 19), 16.
 - **Ruling 60:** the per-sample score uses the quadrature as built: adaptive Gauss–Hermite of order 5, centered at
   the integrand's mode by Newton's method, scaled by its curvature, mapped onto the Gaussian truncated at a = 0.
   The budget's scoring line is therefore the timing slice's row 1′ (412 ns per scored sample), not row 1.
@@ -475,7 +481,7 @@ without it, 10.24, 25.47 and 85.19 CPU-hours).
 | M16: Bell's decay on every group and N2e | 1.03 |
 | M17: the noise-in-Ω̄ variant on every group and N2e (cost 1.05–1.14 times) | 1.09–1.18 |
 | M18: void since D23 (the fixed w is the rule) | 0 |
-| The synthetic grids of §7.2 (M2–M12, M14, M15) | under 0.2 |
+| The synthetic grids of §7.2 (M2–M12, M14, M15, M19) | under 0.2 |
 | **Total** | **about 20.2–34.9** |
 
 | Average live stories | Hours of the Linux machine's 10 cores |
@@ -563,6 +569,7 @@ cells below are stated as ranges and counts.
 | **M16** Bell's decay variant | `bell_decay` against the default on every group and N2e: exact texts, CER, splits, false characters; a close neighbor (E2) the case to watch | DEV2e, N2e | Measurement, to the owner (D17). |
 | **M17** the noise-in-Ω̄ variant | `omega_bar_noise` against the default on every group and N2e: exact texts, CER, splits, false characters; the Ω̄ and sums lines of the breakdown; how often Ω̂ falls below its Ω̄'s minimum position (the Gaussian artifact) on N2e and M9 | DEV2e, N2e, M9's suite | Measurement, to the owner, who decides whether it earns its place and then the artifact's remedy (Part 7). |
 | **M18** void (D23, 2026-10-29) | the fixed w = 0.1986 is the rule, so there is no variant to measure; the curve w(q) is not used. (It was: `fixed_weight` against w per sample on the weak-signal groups.) | — | — |
+| **M19** one w for every contrast (D25; owner, 2026-10-30: "1"; Part 15, item 19) | weak signals, fast keying, keyed lengths off the fist's medians: a jittered grid of speeds 35–100 WPM in three cells (35–50, 50–70, 70–100), levels −5 to +10 dB S₅₀₀ in five 3 dB cells, keying styles `paddle`, `bug` and `hand` (VE3NEA's sender timing variation, `keying.STYLES`; `hand` with its heavy dashes and wide spacing, medians off the fist's 1, 3, 1, 3, 7 dots) and an imbalance in three cells over −0.2 to +0.2 dits, 10 signals per cell (1 350), ten-word texts, D17's edges, no fading. Reported per cell: the edge errors (each claimed key-down and key-up against its keyed edge, from the bench's `edges.csv`, Task 13b), the mark- and gap-length errors against the keyed lengths (ms and dots), the pull toward the fist's medians (per element kind, the slope of the claimed on the keyed length, below 1 a pull), and CER, paired against today's decoder | `nd1b-timing` | **Rule, stated before the run (heuristic thresholds):** the edge errors matter if, in any cell at or above 0 dB S₅₀₀, (i) more than 5% of claimed edges lie outside the timing tolerance (−0.1 to +5.43 ms of the keyed edge; Task 13b), with the lower end of its 95% bootstrap interval above 2%; or (ii) the slope of claimed on keyed mark or gap length is below 0.9 with its 95% interval excluding 1; or (iii) the median absolute mark- or gap-length error exceeds one sample (2.667 ms). If any holds, prewhitening returns to the owner with a study (D25). The results go to the owner in any case. |
 
 ### 7.3 Order
 
@@ -658,7 +665,7 @@ in the task named.
 | 13b | Forced alignment of a published text to a recording (D19; M11's true story) | 10, 12 |
 | 14 | DEV2e and N2e; `d17-bank`; today's decoder built (Linux machine) | 1, 13 |
 | 15 | R0 and M1; **stop for the owner** | 11–14 |
-| 16 | The synthetic grids (M2–M12, M14, M15's synthetic part) | 15 |
+| 16 | The synthetic grids (M2–M12, M14, M15's synthetic part, M19) | 15 |
 | 17 | R1–R3 | 16 |
 | 18 | R4 with M13, M15, M16, M17 (M18 void since D23) | 17 |
 | 19 | R5, R7, R8, R10, R11; M11's proposal; the conclusions | 13b, 18 |
@@ -1700,7 +1707,7 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
   impulse.
 - Suites (O14), each a function of the seed with the sizes of §7.2: `nd1b-fading` (M3, M8), `nd1b-strong` (M4, M10,
   M11), `nd1b-speed` (M5, M13), `nd1b-crash` (M6, with a noise-free twin of each tail and ringing signal, D23), `nd1b-longrun` (M7), `nd1b-weak` (M9), `nd1b-stopped`
-  (M10: D15's neighbor trade, remeasured under D23), `nd1b-edges` (M12), `nd1b-neighbors` (M15);
+  (M10: D15's neighbor trade, remeasured under D23), `nd1b-edges` (M12), `nd1b-neighbors` (M15), `nd1b-timing` (M19, D25);
   `record_intervals` on in every `nd1b-*` suite and for DEV2e's A2 and B2 groups (`--key-intervals` option of `generate`). Every sweep is a jittered grid (CLAUDE.md; owner,
   2026-10-06): cells over the range, each signal's value drawn within its cell by `kz4ap_synth.jitter` and recorded
   in the label's `design` field; only the points the design names (§7.2) are fixed.
@@ -1712,7 +1719,9 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
   empirical count of independent looks of the label's fading; the decoded symbols' start times from `symbols.csv`
   against the label's keyed times, M1's timing check, N22, each start within −0.1 to +5.43 ms and the mean within
   0.8 to 2.0 ms; M6's `cost_vs_perfect` against the misfit bound, pass/fail on the noise-free twins and as
-  distributions (median, 95th percentile) with δ_k on the noisy recordings, D23); the newborn counts; the I2 cut
+  distributions (median, 95th percentile) with δ_k on the noisy recordings, D23; M19's edge errors from
+  `edges.csv`, mark- and gap-length errors, the slope of claimed on keyed length per element kind with its bootstrap
+  interval, and M19's rule, D25); the newborn counts; the I2 cut
   removed.
 
 - [ ] **Step 1: Failing tests:** `test_key_intervals_in_labels` (the label's intervals are the generator's to 10⁻⁹ s);
@@ -1774,6 +1783,9 @@ A.11 for the alignment) (Ruling 72, N20).
   decoder, at the beam and ceiling given. `struct AlignedEdge { std::int64_t down, up; bool filler; };`
   `Search::best_edges()`: `std::vector<AlignedEdge>`, the best story's claimed key-down and key-up samples;
   `Search::best_speeds()`: the best story's speed (index into the speed grid, and WPM) per symbol.
+  For M19 (D25), the bench's `--trace` also writes `edges.csv` beside `symbols.csv`: the best story's claimed element
+  edges from `best_edges()`, as sample times (s), from an unforced search; tested by `Trace.EdgesFileHoldsTheBestEdges`
+  (a noise-free station: the file's edges equal `best_edges()`).
 - **Plumbing, not a second chain:** `EngineConfig::viterbi_search_options` (a vector indexed like the oracle channels
   of `detail::SearchOptions`, handed by `open_channel` to that channel's `ViterbiDecoder`, which passes it to its
   `Search`) and `Engine::viterbi_search(std::uint32_t track_id) const` (read-only, like `viterbi_stats`), so
@@ -1885,7 +1897,7 @@ A.11 for the alignment) (Ruling 72, N20).
 
 - [ ] **Step 1:** M2 (Task 9's committed test `Newborn.ApproximationsMeasured`, label `measurement`, writing its
   tables to `build/`),
-  M3–M10, M12, M14 and M15's synthetic part, each with its rule (§7.2), paired against today's decoder where stated.
+  M3–M10, M12, M14, M15's synthetic part and M19 (D25), each with its rule (§7.2), paired against today's decoder where stated.
   M10's stopped-neighbor grid and M15's neighbors keying throughout remeasure D15's neighbor trade, which D23's
   reversal of D15's rule reopened; their results go to the owner. M2 checks the narrowest σ_u at handover above
   +40 dB S₅₀₀, a live risk since D23 removed the caps (below 0.05 nepers goes to the owner), and part (b) the
