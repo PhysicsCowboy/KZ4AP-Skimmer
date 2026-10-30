@@ -1208,6 +1208,17 @@ filter's noise, each story scoring the innovation of its residual; valid only ab
 74.48 Hz; CPU not measured); one independent sample per 13.2 ms (loses fast code's timing); the timing costs scaled by
 0.4 (measured: 0 of 81 noisy decodes exact, letters merge); the full correlated likelihood (a redesign, rejected in D17).
 
+**D26. The prediction's target is 0.886·E[√Ω] (owner, 2026-10-30: "2").** Part 6's drift target is the Rayleigh mean
+amplitude averaged over the posterior of the long-run power Ω, (√π/2)·E[√Ω], not (√π/2)·√Ω̄: by Jensen's inequality
+√Ω̄ ≥ E[√Ω], by 1.97 to 2.46 times at ν = 1 (+30 to 0 dB S₅₀₀), 1.13 at ν = 2, 1.03 at ν = 5 (computed; the audit's row
+20), costing about 0.4 nats per return early in an over at +20 dB S₅₀₀ (estimated). The Ω̄ tables gain E[√Ω] as a
+second output from the same posterior; Ω̄ itself still sets the prediction's variance term ½(1 − ρ²)·Ω̄. Memory: the
+default table from 0.42 to about 0.84 MB, the noise-in-Ω̄ variant's from 37.8 to about 76 MB (estimated, if stored
+the same way); CPU about +1 to 2% of the projected 425.7 ms per channel-second (estimated from the lookup's measured
+18 ms). Bell's decay variant (D20) is unaffected (it decays toward zero). Rejected: √Ω̄ kept as a labeled departure;
+E[√Ω] as a measured variant only (keeps a known error to measure it); the exact predictive averaged over Ω's posterior
+(the amplitude belief no longer one Gaussian, a redesign).
+
 ### Obvious items, stated for approval
 
 - **O1.** Only Morse and no-signal stories: no steady-carrier or nonsense-keying states (stated 2026-10-19).
