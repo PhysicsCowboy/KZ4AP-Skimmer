@@ -1196,6 +1196,18 @@ fast-fading limitation (backlog), not the newborn's. To be remeasured under D23 
 (`Newborn.ApproximationsMeasured`, part (b), with the study's reference and generator) and the CPU on the mix (timed
 with D23's newborn change in Task 10's Step 0).
 
+**D25. One w for every contrast, labeled and measured (owner, 2026-10-30: "1").** The constant w = 0.1986 (D23) is
+right within 7% for mark presence and dot against dash on marks of 18 samples or more, but weights the signal's
+evidence on an edge's position (one sample off) 2.4 to 2.75 times too lightly against the untempered timing costs
+(derived at high SNR; the audit's row 16 and the score-form study, 2026-10-28). Decided: keep it, labeled as a
+departure from standard practice, and measure it: a weak-signal, fast-keying test whose keyed lengths deviate from the
+fist's medians (sender timing variation), reporting edge errors, mark- and gap-length errors against the keyed
+lengths, whether claimed lengths are pulled toward the fist's medians, and CER. If it shows edge errors that matter,
+prewhitening returns to the owner with a study. Rejected for now: prewhitening (a 5-tap autoregressive model of the
+filter's noise, each story scoring the innovation of its residual; valid only above about +8.75 dB SNR in the filter's
+74.48 Hz; CPU not measured); one independent sample per 13.2 ms (loses fast code's timing); the timing costs scaled by
+0.4 (measured: 0 of 81 noisy decodes exact, letters merge); the full correlated likelihood (a redesign, rejected in D17).
+
 ### Obvious items, stated for approval
 
 - **O1.** Only Morse and no-signal stories: no steady-carrier or nonsense-keying states (stated 2026-10-19).
