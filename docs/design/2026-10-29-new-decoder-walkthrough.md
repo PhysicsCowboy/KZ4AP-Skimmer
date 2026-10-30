@@ -1,8 +1,7 @@
 # The new decoder in one page (as decided through D23, 2026-10-29)
 
 **The idea.** For one station's channel, keep many competing guesses (*stories*) of what was keyed and when, score
-each against the signal sample by sample, and keep the best (Bell 1977). Scores are log-probabilities, in nats. The
-details are in the design notes (`2026-10-09-new-decoder-design-notes.md`, last section, Parts 1–17) and the decisions
+each against the signal sample by sample, and keep the best (Bell 1977). The details are in the design notes (`2026-10-09-new-decoder-design-notes.md`, last section, Parts 1–17) and the decisions
 D1–D23 (`docs/plans/2026-10-20-new-decoder-prototype-1.md`, §3).
 
 **The signal, in order.**
@@ -13,8 +12,18 @@ D1–D23 (`docs/plans/2026-10-20-new-decoder-prototype-1.md`, §3).
 4. **Noise level.** The hiss estimate gives the noise density N₀ (FS²/Hz); σ_y² = 74.50 Hz × N₀ (FS²) is the noise
    variance of each complex sample behind e_k.
 
-**A story** holds: the text so far; the time of every key-down and key-up; a speed (one of 32, 5.2 to 100 WPM); and a
-belief about the carrier's amplitude a (FS), Gaussian with mean μ and variance P.
+**A story** holds: the text so far; the time of every key-down and key-up; a speed (one of 32, 5.2 to 100 WPM); a
+belief about the carrier's amplitude a (FS), Gaussian with mean μ and variance P; and its **score**, in nats.
+
+**What a score is.** A story's score is the log of its probability given the signal so far, up to a constant shared
+by every story (Bayes: posterior ∝ likelihood × prior). It is a running sum of two kinds of terms:
+- **evidence** (step 4 below): at every sample, how much better the story explains e_k than noise alone does; it
+  adds to the score when the story explains the sample well and subtracts when badly;
+- **prior costs** (step 6): how probable the story's own choices are before looking at the signal, such as a dash
+  that long at that speed, or that letter. Each choice adds the log of its probability, a negative number; its size,
+  −ln(probability), is the cost the choice "pays" below.
+
+The best story is the one with the largest sum: it explains the signal well and does so with probable timing and text.
 
 **At each sample, for each story:**
 1. **Branch.** Its mark or gap either continues or ends: a mark as a dot or a dash where Morse allows; a gap as an
@@ -25,16 +34,16 @@ belief about the carrier's amplitude a (FS), Gaussian with mean μ and variance 
 3. **Predict the amplitude.** Since the last update the belief widens as a 2 Hz fading spread allows, and its mean
    relaxes toward 0.886·√Ω̄, where Ω̄ is the story's long-run carrier power (FS²) estimated from its own marks and
    0.886 = √π/2 is the mean amplitude of Rayleigh fading per √power.
-4. **Score (D23).** score_k = ln ∫ exp(w·[ln p(e_k | a, V_k) − ln p₀(e_k | σ_y²)]) N(a; μ, P) da, where
+4. **Evidence (D23),** added to the score: evidence_k = ln ∫ exp(w·[ln p(e_k | a, V_k) − ln p₀(e_k | σ_y²)]) N(a; μ, P) da, where
    - p is the Rician density of an envelope with carrier a·s_k in complex Gaussian noise of variance V_k, and p₀ that
-     of noise alone; so the no-signal story scores 0;
+     of noise alone; so the no-signal story's evidence is 0;
    - V_k = σ_y² + (μ² + P)(f²s_k² + v_k): the noise plus the model's own mismatch (*systematic*), f = 0.02
      (placeholder) and v_k scaled by the story's predicted carrier power;
    - w = 0.1986 (derived) counts each sample as about a fifth of an independent observation, because the front
      filter's noise stays correlated for about 13 ms (5 samples).
 5. **Update the amplitude** to its posterior given e_k.
-6. **Timing and text costs.** A mark or gap that ends pays the log-probability of its length: log-normal about 1, 3,
-   1, 3 and 7 dots (dot, dash, element, letter and word gap), σ = 0.3 in ln(length) (placeholders). A letter pays
+6. **Prior costs,** subtracted from the score. A mark or gap that ends pays −ln of the probability of its length,
+   its lengths log-normal about 1, 3, 1, 3 and 7 dots (dot, dash, element, letter and word gap), σ = 0.3 in ln(length) (placeholders). A letter pays
    ln 62 = 4.127 nats (62 symbols, equally likely); the gap's kind 0.396, 1.161 or 4.296 nats (letter gap, word gap,
    over's end).
 
