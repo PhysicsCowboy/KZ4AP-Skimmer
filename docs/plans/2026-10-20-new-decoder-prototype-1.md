@@ -1219,6 +1219,18 @@ the same way); CPU about +1 to 2% of the projected 425.7 ms per channel-second (
 E[√Ω] as a measured variant only (keeps a known error to measure it); the exact predictive averaged over Ω's posterior
 (the amplitude belief no longer one Gaussian, a redesign).
 
+**D27. The floor f stays per sample, labeled, and its correlation is measured with its size (owner, 2026-10-30:
+"1").** f (placeholder 0.02, D17) stands for slow mismatch (gain wobble, ripple, template shape) but is added
+independently at each sample, so a long mark's flat part keeps adding evidence where a slow error would add about one
+mark's worth (the audit's row 11; its effect on decoding neither derived nor measured). Decided: keep it, labeled as a
+departure, and extend D19's measurement of f on strong stations to report the mismatch's correlation from sample to
+sample (its autocorrelation over lags of 1 to at least 40 samples) as well as its size. If the mismatch is correlated
+over more than the filter's 5 correlated samples, the alternatives return to the owner with the numbers; if f is
+negligible, f goes to 0 as D19 already says. Rejected for now: the slow part moved into the amplitude's process model
+(a rate of change per story; not designed, needs its own standard-practice check, backlog); a correlated systematic
+term inside the score (the prewhitening machinery, deferred in D25); f = 0 now (a strong station's flat part would
+count in full, the failure the term exists to prevent).
+
 ### Obvious items, stated for approval
 
 - **O1.** Only Morse and no-signal stories: no steady-carrier or nonsense-keying states (stated 2026-10-19).
