@@ -335,7 +335,8 @@ inside the hypothesis that made them; whatever is kept at channel level uses no 
    - **Prediction** (owner, 2026-10-22, the rule; owner, 2026-10-23: "agreed", the prediction in full; plan D16, D17):
      a story's amplitude a at the front filter's output is predicted at each envelope sample (amendment of 2026-10-25,
      part 6).
-     - The mean drifts from the last estimate toward the Rayleigh mean amplitude 0.886·√Ω̄ = (√π/2)·√Ω̄, at the
+     - The mean drifts from the last estimate toward the Rayleigh mean amplitude averaged over the long-run power's
+       posterior, 0.886·E[√Ω] = (√π/2)·E[√Ω] (owner, 2026-10-30; plan D26; until then 0.886·√Ω̄), at the
        amplitude's own correlation ρ_a over the time Δt since the story's last estimate.
      - The variance is ρ_a²·P + ½(1 − ρ²)·Ω̄. Its second term is the owner's rule: the spread √(½(1 − ρ²)Ω̄), the
        long-run amplitude times √((1 − ρ²)/2).
@@ -1373,6 +1374,9 @@ newborn-fading study (C++, scratch, 2026-10-27/28), summarized in plan D24.
 **Amended 2026-10-30 by the plan's D25** (owner: "1"): the one w for every contrast is kept, labeled a departure from
 standard practice (parts 4, 13 and 16), and measured (part 15, item 19).
 
+**Amended 2026-10-30 by the plan's D26** (owner: "2"): the prediction's drift target is (√π/2)·E[√Ω], the Rayleigh mean
+amplitude averaged over the long-run power's posterior, a second output of the Ω̄ tables (parts 6, 7, 13, 16 and 17).
+
 Parts 1 to 11 give the decided design in the order the signal passes; part 12, what is removed from today's decoder;
 part 13, the known limitations and backlog items; part 14, the test generator; part 15, what the prototype must
 measure; part 16, standard practice for each stage; part 17, the values.
@@ -1716,19 +1720,24 @@ measure; part 16, standard practice for each stage; part 17, the values.
 
     ρ = exp(−π² f_D² Δt²/2),   f_D = 2 Hz (owner, 2026-10-22),
     ρ_a = (π/4)·(₂F₁(−½, −½; 1; ρ²) − 1)/(1 − π/4),
-    ā = (√π/2)·√Ω̄ = 0.886·√Ω̄,
+    ā = (√π/2)·E[√Ω] = 0.886·E[√Ω]   (D26),
     μ_k|k−1 = ρ_a·μ + (1 − ρ_a)·ā,
     P_k|k−1 = ρ_a²·P + ½(1 − ρ²)·Ω̄.
 
   - **ρ** is the correlation of the complex gain of Rayleigh fading with a Gaussian Doppler spectrum of spread f_D
     (derived).
   - **ρ_a** is the amplitude's own correlation for the same ρ (derived; a table over Δt, since f_D is fixed).
-  - **ā** is the Rayleigh mean amplitude for the long-run power Ω̄ (part 7).
-    - **Left open by D23, to the owner separately** (the audit's row 20): the Rayleigh mean amplitude averaged over
-      Ω's posterior is 0.886·E[√Ω], not 0.886·√Ω̄; the law-of-total-variance argument for Ω̄ covers only the variance
-      term. √Ω̄/E[√Ω] = 2.46 to 1.97 at ν = 1 (0 to +30 dB S₅₀₀), 1.13 at ν = 2, 1.03 at ν = 5 (computed in the
-      audit), so after a long gap early in an over the prediction's target is high; about 0.4 nats per re-entry at
-      ν = 1, +20 dB S₅₀₀ (estimated, not measured). Since D23 the prediction also sets the systematic variance (part 9).
+  - **ā is the Rayleigh mean amplitude averaged over the long-run power's posterior** (owner, 2026-10-30: "2"; plan
+    D26): (√π/2)·E[√Ω], E[√Ω] the posterior mean of √Ω from the same posterior as Ω̄, a second output of the Ω̄
+    tables (part 7). Ω̄ itself still sets the variance's second term, where the law of total variance makes it exact
+    (the term is linear in Ω); the mean needs E[√Ω], since √ is not linear (Jensen's inequality: √Ω̄ ≥ E[√Ω]). The
+    difference (computed in the audit of 2026-10-28, its row 20): √Ω̄/E[√Ω] = 2.46 to 1.97 at ν = 1 (0 to +30 dB
+    S₅₀₀), 1.13 at ν = 2, 1.03 at ν = 5, so with √Ω̄ the target was high after a long gap early in an over, about
+    0.4 nats per re-entry at ν = 1, +20 dB S₅₀₀ (estimated, not measured). Since D23 the prediction also sets the
+    systematic variance (part 9). Rejected (plan D26): √Ω̄ kept as a labeled departure; E[√Ω] as a measured variant
+    only (it keeps a known error in order to measure it); the exact predictive averaged over Ω's posterior (the
+    amplitude belief no longer one Gaussian, a redesign). History, one line: ā = 0.886·√Ω̄ (owner, 2026-10-23; plan
+    D17), replaced by D26.
   - **The owner's rule** is the variance's second term, unchanged. The whole is form (iv) of the derivation of
     2026-10-22 (plan D16, D17), within 0.2 nats of the exact predictive (measured in scratch; plan D17).
   - **The values at 2 Hz** (derived):
@@ -1759,7 +1768,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
     amplitude or a receiver AGC's units. Today's decoder scaled it by the current amplitude, the cause of the fading
     failure (plan D16).
   - **[departure in value, owner's decision]:** 2 Hz against Bell's 1 Hz.
-  - **A measured variant:** Bell's decay toward zero across spaces, against the decided drift toward 0.886·√Ω̄ (the
+  - **A measured variant:** Bell's decay toward zero across spaces, against the decided drift toward 0.886·E[√Ω] (D26) (the
     owner's question of 2026-10-22; recorded in the plan 2026-10-24, D17, 6a13f77; part 15, item 16).
 - **Known limitation** (owner, 2026-10-22: "I think we record that as a known limitation and backlog it"; plan D16):
   inside marks under fast fading the one-number model is over-confident, even with the true level and rate. A
@@ -1928,7 +1937,18 @@ measure; part 16, standard practice for each stage; part 17, the values.
     rerun) (medians, measured; the table in the variant
     below).
   - **Its table:** D16's, over ν and ln(β/Ω_hi), with the β = 0 limit above; its grid and error are for the
-    implementation plan.
+    implementation plan (as built, 0.42 MB, Task 7).
+  - **Its second output, E[√Ω] (owner, 2026-10-30: "2"; plan D26), for the prediction's mean (part 6):** from the same
+    truncated inverse-gamma posterior (derived, substituting t = β/Ω):
+
+    E[√Ω] = √β·[Γ(ν − ½, β/Ω_hi) − Γ(ν − ½, β/Ω_lo)] / [Γ(ν, β/Ω_hi) − Γ(ν, β/Ω_lo)],
+
+    and at Ω̂ ≤ 0 (β = 0) E[√Ω] = √Ω_lo·ν/(ν − ½), the prior's top negligible (derived; 2√Ω_lo at ν = 1). It is
+    tabulated beside Ω̄ on the same nodes and read by the same lookup (one index computation, two interpolations),
+    held between samples with s_k = 0 as Ω̄ is. **Memory:** the table from 0.42 to about 0.84 MB (estimated, stored the
+    same way). **CPU:** about +1 to 2% of the projected 425.7 ms per channel-second (estimated from the lookup's
+    measured 18 ms). Both are measured in the build (plan 1b, Task 10b); its accuracy is held to the same threshold
+    as Ω̄'s against the direct integral.
   - **Looked up only after a sample with s_k ≠ 0** (plan D17: "looked up only after a sample where the story expects
     carrier, Ω̂ standing still otherwise"): elsewhere Ω̂ does not change, and neither does ν (a closed bin of zero
     weight adds nothing), so holding Ω̄ is exact.
@@ -2055,6 +2075,11 @@ measure; part 16, standard practice for each stage; part 17, the values.
       scratch program (24 minutes on 7 cores), so "built at startup" needs a much faster integrator or the table
       computed ahead of time and shipped (for the implementation plan). Most of the λ axis above κ = 2.8 at small ζ
       is never read; a table ragged in (ζ, λ) would be smaller.
+    - **Its second output, E[√Ω] (plan D26):** the posterior mean of √Ω under the same likelihood and flat prior, by
+      the same integral over Ω with √Ω in place of Ω, tabulated on the same nodes as a second channel
+      (ln(E[√Ω]/σ_y)), read by the same lookup. **Memory:** from 37.8 MB to about 76 MB (estimated, stored the same
+      way); a table above 100 MB goes to the owner (plan 1b, Task 10b). Its error against the direct integral is held to
+      Ω̄'s thresholds. Above χ = 10⁴ it falls back to the default's closed form for E[√Ω] (part 7, above).
     - **Beyond the ranges:** above χ = 10⁴ the fading-only closed form (D16's table), within 0.01% there (above).
       Below χ = −8, the value at −8, which only ζ below about 0.26 can reach: Ω̂'s floor is −1.0 to −2.1 σ_y² on long
       runs and about −1.0 to −1.3 SE₀ after a single short first mark or a partial rise; there Ω̄ is flat in χ (−1.35
@@ -2124,7 +2149,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
     ε = 8·½(1 − ρ(Δ)²)/(2h²) = 8 × 1.404 × 10⁻⁴ / (2 × 0.0906²) = 0.0684 (derived; ρ(Δ) from Part 6's table at lag 1,
     Ω̄ = a² at each point, so the variance in u is ½(1 − ρ²) per sample), reflecting at the prior's ends, so the
     trapezoid mass and Z are conserved exactly (derived). It is applied after the sample's moments and before the
-    live-range trim. Part 6's drift toward 0.886·√Ω̄ and the Itô term are dropped: about −1.1 × 10⁻⁴ nepers per sample,
+    live-range trim. Part 6's drift toward 0.886·E[√Ω] and the Itô term are dropped: about −1.1 × 10⁻⁴ nepers per sample,
     −0.008 nepers over a 70-sample first mark, against σ_u ≥ 0.05 at handover (derived).
   - **The stride of 8 is heuristic, chosen by measurement** (the newborn-fading study, scratch, 2026-10-27/28, under
     the ratio form): accuracy is flat from every sample to every 8 and slips at 16. At 2 Hz against the exact fading
@@ -2507,7 +2532,8 @@ Each is recorded in `docs/backlog.md` under the heading given.
     candidate E, is a measured variant for the backlog at about +920% of the projected 425.7 ms per channel-second
     (entered in `docs/backlog.md`, 9ba6ae5: "The edge's position handled jointly across its samples in the new
     decoder").
-  - **The prediction's target √Ω̄ where E[√Ω] is meant** (the audit's row 20; part 6).
+  - **The prediction's target √Ω̄ where E[√Ω] is meant** (the audit's row 20; part 6). **Decided since (owner,
+    2026-10-30; plan D26): the target is 0.886·E[√Ω],** a second output of the Ω̄ tables (parts 6 and 7).
 - **Made live by D23 (a consequence, not something D23 states; D22's rule applies):** the newborn's narrowest width
   at handover above +40 dB S₅₀₀ may fall toward 0.03 nepers without the caps, where 128 points err about 0.17 nats
   (part 8); counted by part 15, item 2, and a width below 0.05 nepers goes to the owner (D22).
@@ -2656,7 +2682,7 @@ projected budget by part.
       separately; and a stronger neighbor keying throughout; the results go to the owner;
     - drifting stations and QSO turnovers on oracle channels given the label's drifting frequency.
 16. **A measured variant: Bell's decay toward zero across spaces,** against the decided drift toward the Rayleigh mean
-    amplitude 0.886·√Ω̄ (the owner's question, 2026-10-22: "How will Bell's choice to decay towards zero compared to
+    amplitude 0.886·E[√Ω] (D26; 0.886·√Ω̄ until then) (the owner's question, 2026-10-22: "How will Bell's choice to decay towards zero compared to
     our choice to decay towards the mean play out in all of the different test recordings…?"; recorded in the plan
     2026-10-24, D17, 6a13f77). A close neighbor is the case to watch; the results go to the owner.
     - **Bell's form:** across a space the amplitude decays by Φ = 10^(−2/(22.4·T_dot,ms)) per 5 ms (about 0.36 dB of
@@ -2706,7 +2732,7 @@ In the table, "survey" is the standard-practice survey of 2026-10-22, `docs/rese
 | Correlated samples | decimate or weight (Kay; Gales and Young); the composite-likelihood magnitude adjustment, one for the whole log-likelihood (Chandler and Bate 2007; Varin, Reid and Firth 2011); Bell treated them as independent | one constant w = 0.1986 for every story and sample, from the actual correlation (D23) | corrects Bell's over-count; undercounts weak evidence by about 9% at −8 dB S₅₀₀; **[departure, owner's decision, D25]** one scalar for every contrast weights timing contrasts 2.4 to 2.75 times too lightly (the audit's row 16) where standard practice prewhitens or uses a matrix adjustment; kept and measured (part 15, item 19) |
 | Statistic | noncoherent Rician likelihood (Proakis and Salehi); stories compared against one common reference (Forney 1973) | the full density p(e_k \| a, V_k) against noise alone at σ_y², the same for every story, integrated over the amplitude (D23) | none |
 | Mark shape | Bell: 0/1; MLSE with ISI (Forney 1972) | the smeared prediction | [departure] from Bell, for timing (several ms per mark otherwise) |
-| Amplitude | Bell's scalar Kalman per path; per-survivor processing (Raheli et al. 1995) | N(μ, P) per story, every 2.667 ms, drifting toward the Rayleigh mean amplitude | spread scaled by the long-run amplitude (owner); 2 Hz against Bell's 1 Hz (owner) |
+| Amplitude | Bell's scalar Kalman per path; per-survivor processing (Raheli et al. 1995) | N(μ, P) per story, every 2.667 ms, drifting toward the Rayleigh mean amplitude averaged over the long-run power's posterior, 0.886·E[√Ω] (D26; Jensen's inequality makes 0.886·√Ω̄ too high) | spread scaled by the long-run amplitude (owner); 2 Hz against Bell's 1 Hz (owner) |
 | Long-run level | Skimmer: RMS of key-on samples, transitions discarded; Bell, fldigi: AGC; a variance component estimated below zero is clipped at zero (Searle, Casella and McCulloch 1992) | story's RMS by ordinary least squares over every sample (e_k² counted in proportion to s_k²), clipped at zero, with Ω̄ (posterior mean of the fading-only inverse gamma under the flat prior; Satterthwaite's ν on 42.67 ms bins, weights s_k⁴) | edges counted less instead of discarded: a dot at 100 WPM has no flat part (owner, derived reason); Ω̄ is the derived correction for few fades; the noise in Ω̄'s likelihood a measured variant |
 | Newborn level | Morse practice (Bell 1977): no mid-stream newborns; paths start at 0.5 ± 0.32 of the AGC level, and a new station enters through larger process noise after a space. Tracking practice: flat over a physical range, or from the first measurement (topic 5, item 3) | flat in dB, −15 to +85 dB S₅₀₀ | [departure] from Bell's Morse practice, standard in tracking (owner, 2026-10-19): a rescue or a new over must learn a new level from its own marks |
 | Model error | model discrepancy added to the predictive variance from the prediction, normalizer kept (Kennedy and O'Hagan 2001; process noise in Kalman filtering; D15's quadrature) | per sample, C² = μ²_k\|k−1 + P_k\|k−1 from the story's prediction (D23); edge term v_k over 0.8–4.7 ms rises; floor a placeholder | the edge offset not marginalized jointly (the audit's row 10) and f independent per sample (row 11), both open (D23) |
@@ -2732,7 +2758,7 @@ In the table, "survey" is the standard-practice survey of 2026-10-22, `docs/rese
 | Edge term v_k | over u uniform in a sample and t_r uniform over 0.8–4.7 ms, aligned at half amplitude | 1 | owner, 2026-10-23 (D17); values derived |
 | Sample convention | j = 0 the first sample at or after the edge, u uniform on [0, Δ) | — | owner, 2026-10-25 |
 | f_D | 2 | Hz | owner, 2026-10-22 (D16) |
-| Amplitude drift target | 0.886·√Ω̄ at correlation ρ_a | FS | owner, 2026-10-23 (D17) |
+| Amplitude drift target | 0.886·E[√Ω] at correlation ρ_a, E[√Ω] the second output of the Ω̄ tables | FS | owner, 2026-10-30 (D26); until D26 0.886·√Ω̄ (owner, 2026-10-23, D17) |
 | ν bins | 42.67 (16 samples), last 10 kept | ms | owner, 2026-10-23 (D17); binning −0.57 to +0.62% from exact (measured; corrected 2026-10-27, Task 7) |
 | Ω̂ | Σ s_k²(e_k² − σ_y²)/Σ s_k⁴ over every sample of the over | FS² | owner, 2026-10-25 (D17), ordinary least squares |
 | ν bin weights | W_i = Σ s_k⁴ over the bin's samples | 1 | owner, 2026-10-25 (D17); Satterthwaite match derived |
@@ -2740,8 +2766,8 @@ In the table, "survey" is the standard-practice survey of 2026-10-22, `docs/rese
 | Ω̄ (default) | posterior mean of the inverse gamma of shape ν and scale ν·max(Ω̂, 0) under the flat prior | FS² | owner, 2026-10-25 (D17, f507812); closed form derived |
 | Ω̄ (variant) | posterior mean under Ω̂ = ΩG + N, G ~ Gamma(ν), N ~ Normal(0, A + B·ΩG), flat prior | FS² | owner, 2026-10-25 (D17, f507812): a measured variant against the default |
 | Ω̄ lookups | after each sample with s_k ≠ 0 only | — | owner, 2026-10-25 (D17); exact |
-| Ω̄ table (default) | D16's, over ν and ln(β/Ω_hi), β = ν·max(Ω̂, 0), with the β = 0 limit | — | grid and error for the implementation plan |
-| Ω̄ table (variant) | inputs 1/ν, asinh(Ω̂/SE₀), ln(SE₀/σ_y²) to ζ = 400, ln λ (λ = κζ, κ from 0 to 2.8); 31 × 85 × 42 × 29 nodes, 12.8 MB; error 99th percentile 0.87%, largest 2.5% (as built (2026-10-27, the build's Task 8): ζ at 63 nodes and λ at 57, 37.8 MB, 99th percentile 0.55%, largest 2.08%, because on the decided chain the 12.8 MB grid erred up to 5.7% against the 3% bound) | — | inputs derived; the fourth input and its λ axis owner, 2026-10-25 (D17); grid heuristic, error measured; the Gaussian artifact's remedy decided only if the variant earns its place |
+| Ω̄ table (default) | D16's, over ν and ln(β/Ω_hi), β = ν·max(Ω̂, 0), with the β = 0 limit | — | grid and error for the implementation plan; a second output E[√Ω] on the same nodes (D26), about 0.84 MB with it (estimated) |
+| Ω̄ table (variant) | inputs 1/ν, asinh(Ω̂/SE₀), ln(SE₀/σ_y²) to ζ = 400, ln λ (λ = κζ, κ from 0 to 2.8); 31 × 85 × 42 × 29 nodes, 12.8 MB; error 99th percentile 0.87%, largest 2.5% (as built (2026-10-27, the build's Task 8): ζ at 63 nodes and λ at 57, 37.8 MB, 99th percentile 0.55%, largest 2.08%, because on the decided chain the 12.8 MB grid erred up to 5.7% against the 3% bound); a second output E[√Ω] on the same nodes (D26), about 76 MB with it (estimated; above 100 MB to the owner) | — | inputs derived; the fourth input and its λ axis owner, 2026-10-25 (D17); grid heuristic, error measured; the Gaussian artifact's remedy decided only if the variant earns its place |
 | Level prior | flat, −15 to +85 | dB S₅₀₀ | placeholder (topic 5, item 3) |
 | Newborn switch | σ_u < 0.1 in ln a | 1 | derived (0.0075 nats skew cost); owner, 2026-10-24 (D17) |
 | Newborn grid | 128 points even in u = ln a over the prior (h = 0.0906 nepers), trapezoid; live range 80 nats; V(a_i) = σ_y² + a_i²(f²s_k² + v_k) at each point and the constant w (D23); the prediction step every 8 samples, ε = 0.0684 at 2 Hz, reflecting ends (D24) | 1, nats | owner, 2026-10-26 (D22), 2026-10-29 (D23) and 2026-10-30 (D24); the stride heuristic, chosen by measurement, ε derived; 128 from the trapezoid bound and measured (0.003 nats per sample at worst, ratio form; above +40 dB S₅₀₀ without the caps a live risk, part 8); 80 heuristic, twice the deepest revival measured (41.5 nats) |
