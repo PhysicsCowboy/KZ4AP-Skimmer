@@ -9,7 +9,9 @@
 > the newborn's grid is faded every 8 samples by Part 6's transition (the point-mass filter's prediction step); Task
 > 10 adds it to `NewbornIntegral::add` and times it with D23's newborn change in Step 0; §3.1, §6, §7.2 and Tasks 9,
 > 10 and 16 are amended. **Amended 2026-10-30 for D25** (owner: "1"): the one w for every contrast kept as a labeled
-> departure and measured by a new M19 (§7.2, Task 16; its suite in Task 13, its edges file in Task 13b).
+> departure and measured by a new M19 (§7.2, Task 16; its suite in Task 13, its edges file in Task 13b). **Amended
+> 2026-10-30 for D26** (owner: "2"; the coordinator's Ruling 94): the prediction's drift target becomes (√π/2)·E[√Ω],
+> a second output of the Ω̄ tables, made by a new Task 10b after Task 10; §1, §3.1, §6 and Task 12's trace amended.
 > The owner does not read this plan: it is the executors' document, and every decision reaches him in chat, in words.
 > His answers are recorded here by the coordinator.
 >
@@ -20,7 +22,7 @@
 > **Design:** `docs/design/2026-10-09-new-decoder-design-notes.md`, the section "Detection, amplitude, frequency and
 > the mark's shape", Parts 1 to 17 (cited here as "Part n"), and topics 1 to 5 as amended there. **Decisions:** the
 > first prototype's plan, `docs/plans/2026-10-20-new-decoder-prototype-1.md` ("the prototype plan"), §3: **D15 to
-> D25 are the authority** where this plan and the design notes differ; its conventions (§4 to §9) are reused where
+> D26 are the authority** where this plan and the design notes differ; its conventions (§4 to §9) are reused where
 > they still apply. **Rulings** 60 to 66 of the coordinator (the prototype plan's git-ignored ledger,
 > `.superpowers/sdd/2026-10-20-new-decoder-prototype-1/progress.md`) are applied as stated in §3.1.
 > **Evidence for this plan** (git-ignored workspace, same folder): `code-map-2026-10-25.md` (the built code against
@@ -91,7 +93,7 @@ It delivers:
 3. **The test generator's D17 edges** in Python, and a new-decoder-only C++ test-signal helper with the same edges
    (Part 14; Ruling 63).
 4. **Table generators** as a C++ tool in the repository (Ruling 65): the default Ω̄ table compiled in (the weight
-   table, built in Task 5, is removed by Task 10 with D23's constant w); the variant's table (37.8 MB as built in Task 8) generated into `build/` and loaded only when the variant runs.
+   table, built in Task 5, is removed by Task 10 with D23's constant w); the variant's table (37.8 MB as built in Task 8; about 76 MB with D26's second output, Task 10b, estimated) generated into `build/` and loaded only when the variant runs.
 5. **Instrumentation:** the CPU breakdown by part in every measurement (Part 15's preamble; D18), Part 15's counters,
    and a true-story trace (the model run along the label's keying) for the measurements that need it.
 6. **The measured variants behind switches,** off by default: Bell's decay (item 16), the noise in Ω̄'s likelihood
@@ -199,6 +201,14 @@ From the code map §1 to §3 against Parts 1 to 12. "Task n" is the task of §10
   SNR), and measured by M19 (§7.2; Task 16): weak signals, fast keying, keyed lengths off the fist's medians; edge
   errors that matter, by M19's stated rule, return prewhitening to the owner with a study. Design notes Parts 4, 13,
   15 (item 19), 16.
+- **D26** (owner, 2026-10-30: "2"): Part 6's drift target is (√π/2)·E[√Ω], the Rayleigh mean amplitude averaged over
+  the long-run power's posterior, not (√π/2)·√Ω̄ (Jensen's inequality: √Ω̄/E[√Ω] = 1.97 to 2.46 at ν = 1, 1.13 at
+  ν = 2, 1.03 at ν = 5; about 0.4 nats per return early in an over at +20 dB S₅₀₀, estimated). The Ω̄ tables gain
+  E[√Ω] as a second output from the same posterior; Ω̄ still sets the variance. Memory: the default table about
+  0.84 MB (from 0.42), the variant's about 76 MB (from 37.8); CPU about +1 to 2% of 425.7 ms (estimated). **Ruling 94
+  (the coordinator's):** a new Task 10b right after Task 10, since Task 10's working tree is uncommitted and the
+  tables are not regenerated under it; a variant table above 100 MB or added CPU above +3% goes to the owner. Design
+  notes Parts 6, 7, 13, 16, 17.
 - **Ruling 60:** the per-sample score uses the quadrature as built: adaptive Gauss–Hermite of order 5, centered at
   the integrand's mode by Newton's method, scaled by its curvature, mapped onto the Gaussian truncated at a = 0.
   The budget's scoring line is therefore the timing slice's row 1′ (412 ns per scored sample), not row 1.
@@ -321,7 +331,7 @@ decisions are recorded in the prototype plan's §3.
   Rejected: hand-labeled excerpts; synthetic only; not chosen: the owner's own transmitter with the key line
   recorded.
 - **Q3, the variance of Bell's decay variant across a space: decided as D20 (owner, 2026-10-26: "Sure iii").** The
-  variant changes only the mean's target (decay toward zero at Bell's rate instead of the drift toward 0.886·√Ω̄); the
+  variant changes only the mean's target (decay toward zero at Bell's rate instead of the drift toward 0.886·√Ω̄, since D26 0.886·E[√Ω]); the
   variance follows the decided rule ρ_a²P + ½(1 − ρ²)Ω̄, and Bell's Q is not added. Bell's form in full may follow as
   a second variant if this one shows a difference worth explaining.
 
@@ -428,8 +438,15 @@ stories, which stays the base until R0 replaces it:
   channel-second at 500 newborns** (D23's estimate top, +113 ms, plus D24's about +11 ms; 29.1% of 425.7 ms and
   27.8% of 445.4 ms; about 661 ns per newborn-sample at 500 × 375 samples/s; derived), and each change's increment is
   reported separately as well (the coordinator's correction of 2026-10-30).
-- So the projected default total at 1 700 stories becomes roughly 504 to 561 ms per channel-second (425.7 + 13 −
-  0.7 + 56 to 113 + 9.9; derived from the estimates above, newborns on noise), to be replaced by R0's measurement.
+- **E[√Ω] beside Ω̄ (D26, 2026-10-30; Task 10b):** a second interpolation in the same lookup, estimated +1 to 2% of
+  425.7 ms (4.3 to 8.5 ms per channel-second at 1 700 stories), from the default lookup's measured 18 ms; memory: the
+  default table about 0.84 MB (from 0.42), the variant's about 76 MB (from 37.8), both estimated, stored the same way.
+  Task 10b measures both; a variant table above 100 MB or added CPU above +3% (12.8 ms per channel-second) goes to
+  the owner. The variant's table at 76 MB is about six times the desktop's 12 MB third-level cache (37.8 MB was
+  about three), so its random-cell figures (§6.1's table) are the better guide.
+- So the projected default total at 1 700 stories becomes roughly 508 to 570 ms per channel-second (425.7 + 13 −
+  0.7 + 56 to 113 + 9.9 + 4.3 to 8.5; derived from the estimates above, newborns on noise), to be replaced by R0's
+  measurement.
 
 Shares at 200 and 500 stories (of 51.1 and 127.2 ms): scoring 45.2% and 45.8%, search 45.6% and 44.7%, Ω̄ 3.6% and
 4.4%, the template 1.7% and 1.8%, the variant +5.4% to +13.4% and +5.3% to +13.8%, the newborn's grid 3.4% (noise)
@@ -490,9 +507,10 @@ without it, 10.24, 25.47 and 85.19 CPU-hours).
 | 500 | 53–96 |
 | 1 700 | 178–322 |
 
-**Before D23's and D24's CPU changes:** the hours per FRE above use the projected totals of §6.1's table; D23's and
-D24's estimates (§6.1, after the table) would raise c by roughly 18 to 32% at 1 700 stories (504 to 561 ms against
-425.7 ms; derived), most of it the newborn's V(a_i), not yet timed. Task 10's timing and R0 replace these figures.
+**Before D23's, D24's and D26's CPU changes:** the hours per FRE above use the projected totals of §6.1's table;
+D23's, D24's and D26's estimates (§6.1, after the table) would raise c by roughly 19 to 34% at 1 700 stories (508 to
+570 ms against 425.7 ms; derived), most of it the newborn's V(a_i), not yet timed. Task 10's and Task 10b's timings
+and R0 replace these figures.
 
 Not in the table: today's decoder once on DEV2e and N2e (O17), about 59.5 CPU-hours on DEV2e and 61.5 with N2e,
 6.2 hours of the 10 cores, at its recorded 287 ms per channel-second on noise (desktop, Task 4d) × 0.7 (rough), plus
@@ -659,7 +677,8 @@ in the task named.
 | 8 | The noise-in-Ω̄ variant's sums and table | 7 |
 | 9 | The newborn integral on a grid (D21, D22) | 4, 5, 6 |
 | 10 | The search per sample; the decoder; configuration; the bench's JSON; fixtures; documents; D23's score (the newborn's cost timed first) | 2–9 |
-| 11 | Instrumentation: the CPU breakdown by part and Part 15's counters; statistics version 3 | 10 |
+| 10b | E[√Ω] beside Ω̄ in both tables; the prediction's target (D26; Ruling 94) | 10 |
+| 11 | Instrumentation: the CPU breakdown by part and Part 15's counters; statistics version 3 | 10, 10b |
 | 12 | The variants' switches; the true-story trace | 10, 11 |
 | 13 | The measurement suites, label fields and the analysis (Python) | 1, 12 (formats) |
 | 13b | Forced alignment of a published text to a recording (D19; M11's true story) | 10, 12 |
@@ -1572,6 +1591,68 @@ constant until the handover:
   reference. README: the decoder's line.
 - [ ] **Step 6: Commit.**
 
+### Task 10b. E[√Ω] beside Ω̄ in both tables; the prediction's target (Parts 6, 7; D26; the coordinator's Ruling 94)
+
+> **Added 2026-10-30 for D26** (owner: "2"; the prototype plan's §3). The prediction's drift target becomes
+> (√π/2)·E[√Ω], the Rayleigh mean amplitude averaged over the long-run power's posterior, a second output of the Ω̄
+> tables; Ω̄ still sets the variance's second term. **Why a task of its own (Ruling 94):** Task 10's working tree is
+> uncommitted, so the tables are not regenerated under it; this task starts from Task 10's commit.
+
+**Files:** modify `engine/include/kz4ap/viterbi/long_run.hpp`, `engine/src/viterbi/long_run.cpp`,
+`engine/src/viterbi/omega_bar_table.cpp` (regenerated), `bench/src/viterbi_tables_main.cpp` (`omega-bar` and
+`omega-bar-variant` write the second output), `engine/include/kz4ap/viterbi/amplitude.hpp`,
+`engine/src/viterbi/amplitude.cpp`, `engine/include/kz4ap/viterbi/search.hpp`, `engine/src/viterbi/search.cpp`, the tests
+`engine/tests/viterbi/{long_run,amplitude,search}_test.cpp`, `engine/tests/viterbi_decoder_test.cpp`,
+`docs/signal-processing.md`.
+
+**Interfaces:**
+- **The default's closed form** (Part 7, derived): beside `omega_bar_closed_form`, `sqrt_omega_mean_closed_form(ν, β,
+  Ω_lo, Ω_hi)` = √β·[Γ(ν − ½, β/Ω_hi) − Γ(ν − ½, β/Ω_lo)] / [Γ(ν, β/Ω_hi) − Γ(ν, β/Ω_lo)] (FS), from the same truncated
+  inverse-gamma posterior; at β = 0, √Ω_lo·[ν/(ν − ½)]·[1 − (Ω_lo/Ω_hi)^(ν−½)]/[1 − (Ω_lo/Ω_hi)^ν] (derived, exact for
+  the truncated posterior; about 2√Ω_lo at ν = 1).
+- **`OmegaBarTable`** gains E[√Ω] as a second output on the same nodes, tabulated as ln(E[√Ω]/σ_y) beside ln(Ω̄/σ_y²);
+  its lookup returns both from one index computation (two interpolations). The generator (`kz4ap-viterbi-tables
+  omega-bar`) writes both; the compiled `omega_bar_table.cpp` is regenerated (Ruling 65) and its header records the
+  error of both outputs.
+- **`OmegaBarVariantTable`** and `omega_bar_variant_direct` gain E[√Ω], the posterior mean of √Ω under the variant's
+  likelihood and the flat prior, by the same integral with √Ω in place of Ω; the binary table (`build/`, Ruling 65)
+  stores it as a second channel, its header version raised so an old file is refused naming the version; above
+  χ = 10⁴ it falls back to `sqrt_omega_mean_closed_form`.
+- **The prediction** (`predict_amplitude`, Part 6): μ_k|k−1 = ρ_a·μ + (1 − ρ_a)·(√π/2)·E[√Ω]; P_k|k−1 = ρ_a²P +
+  ½(1 − ρ²)·Ω̄ unchanged. Bell's decay variant (D20) is unaffected: it decays toward zero.
+- **The story** caches E[√Ω] beside Ω̄ (`Story::sqrt_omega_mean`), looked up and held exactly as Ω̄ is (only after
+  samples with s ≠ 0); `StoryView` gains it.
+
+- [ ] **Step 1: Failing tests.**
+  - `OmegaBar.SqrtMeanMatchesTheClosedForm`: O8's 10 000 points: relative error ≤ 0.1% (Ω̄'s threshold, O8).
+  - `OmegaBar.SqrtMeanKnownValues`: √Ω̄/E[√Ω] = 2.46, 2.31, 2.14 and 1.97 at ν = 1 and 0, +10, +20, +30 dB S₅₀₀; 1.25
+    at ν = 1.5, 1.13 at ν = 2, 1.03 at ν = 5 (computed in the audit of 2026-10-28 with the design's truncated
+    posterior and the −15 to +85 dB S₅₀₀ prior), each within ±0.01; the β = 0 limit to 10⁻¹² relative; E[√Ω] ≤ √Ω̄ at
+    every node (Jensen's inequality).
+  - `OmegaBarVariant.SqrtMeanMatchesTheDirectIntegral` (label `needs-table`): Task 8's 400 points, 99th percentile of
+    |relative error| ≤ 1%, largest ≤ 3% (Ω̄'s thresholds); the closed-form fallback above χ = 10⁴ within 0.01%.
+  - `OmegaBarVariant.OldTableIsRefused`: a table file of the previous version is refused, naming its version.
+  - `Amplitude.TargetIsTheMeanOfTheSqrt`: the predicted mean drifts toward (√π/2)·E[√Ω] at ρ_a; the variance uses Ω̄;
+    `bell_decay`'s prediction is unchanged.
+  - `Search.StoriesCarryTheSqrtMean`: after each sample with s ≠ 0 a story's E[√Ω] equals the table's for its
+    (ν, Ω̂), and it is held between such samples.
+- [ ] **Step 2: Run them; they fail.**
+- [ ] **Step 3: Implement;** regenerate both tables (record each command, its time and its error report in the commit
+  message; the variant's table stays in `build/`, not committed).
+- [ ] **Step 4: Run them; they pass,** with every earlier test; **rerun Task 10's affected tests** (the search's and the
+  decoder's, its three full-sweep tests once): every text that was exact stays exact; a value pinned on the old target,
+  if any, is recomputed and the change reported, not silently re-pinned.
+- [ ] **Step 5: Measure and report against the estimates (D26):** the default table's size (estimated about
+  0.84 MB, from 0.42), the variant's binary table's size (estimated about 76 MB, from 37.8 MB), and the lookup's added
+  CPU, timed as Task 7 timed it, in ns per lookup and ms per channel-second at the 1 700-story ceiling (estimated +1
+  to 2% of 425.7 ms, from the lookup's measured 18 ms). **Rule: a variant table above 100 MB, or added CPU above +3%
+  of 425.7 ms (12.8 ms per channel-second; derived), goes to the owner** before Task 11 starts; within them, the
+  figures go in the commit message and the report.
+- [ ] **Step 6: Document** (same commit): §8d's amplitude sentence (the target (√π/2)·E[√Ω]); A.8d the two outputs'
+  formulas, the β = 0 limits, the tables' sizes and errors, the variant's second channel and its version; A.10 the
+  rows of the tables and the drift target; Part 7's provenance labels (derived formula, measured errors).
+- [ ] **Step 7: Commit.**
+
 ### Task 11. Instrumentation: the CPU breakdown by part and Part 15's counters; statistics version 3 (Part 15; D18)
 
 **Files:** modify `engine/include/kz4ap/viterbi/config.hpp` (`profile`), `engine/include/kz4ap/viterbi/search.hpp`,
@@ -1654,7 +1735,7 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
   whose label carries `key_intervals_s` (`[[on_s, off_s], …]`, stream times, written by Task 13's generator option),
   the model run along that keying with its claimed edges at `claimed_edge_sample` of each keyed edge, no search;
   one CSV per channel, one row per sample: k, t_s, e_fs, s, v, mu_pred_fs, p_pred_fs2, sigma2_fs2, c2_fs2,
-  v_fs2 (V_k, D23), score_nats, omega_hat_fs2, nu, omega_bar_fs2, newborn (0/1), the
+  v_fs2 (V_k, D23), score_nats, omega_hat_fs2, nu, omega_bar_fs2, sqrt_omega_mean_fs (E[√Ω], D26), newborn (0/1), the
   variant's a2, b2 and sum_s4 (for M1's check of E[N²] against A + B·Ω on the decoder's own samples), and, for
   synthetic signals, `delta` and `cost_vs_perfect` for M6 (D23): δ_k is the noise-free keyed envelope, computed by the
   trace from the label's `key_intervals_s`, edge shape and amplitude a through the same channelizer and front filter,
