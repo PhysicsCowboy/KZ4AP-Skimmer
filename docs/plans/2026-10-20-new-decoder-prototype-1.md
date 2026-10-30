@@ -597,7 +597,8 @@ owner before any code.**
     chosen by the evidence.
   - **Clicks: left a known limitation** for later, with the interference work (backlog); no click model now.
   - **The systematic term** carries on as decided in D15, per piece, with both parts of C²; not a new decision. The
-    length of the channel peak's memory (390 ms today, 16 ms proposed) is measured in the prototype.
+    length of the channel peak's memory (390 ms today, 16 ms proposed) is measured in the prototype. (C²'s own part
+    and the memory withdrawn by D23, 2026-10-29: C² now comes from each story's prediction.)
   - **Still open, one at a time:** the unknown fading rate (the owner asks why a per-story estimate is not tried
     first), the station's unknown long-run power (the owner: the 6.25 dB grid is "too arbitrary"), and the leftover
     frequency error (the owner: how can a fading model absorb a detuning under coherent detection?).
@@ -1151,11 +1152,14 @@ standard practice:
 - **The systematic variance from the story's prediction:** V_k = σ_y² + (μ²_k|k−1 + P_k|k−1)(f²s_k² + v_k); the
   newborn's grid uses V(a_i) = σ_y² + a_i²(f²s_k² + v_k) at each point. The 21-sample window, its look-ahead (26.67 ms
   of delay), the own part and the caps are removed; in their place the derived bound w·δ²/(f²s_k² + v_k) per sample on
-  a template error δ. This reverses D15's rule that the carrier power comes from the data, never from a story's level:
+  a template error δ, plus at most w·½|ln(1 + δ/s_k)| for δ < 0 from the Rician density's prefactor (corrected in the
+  amendment's fix round, 2026-10-29: the first term alone is the Gaussian exponent's; the bound is on the noise-free
+  cost). This reverses D15's rule that the carrier power comes from the data, never from a story's level:
   its measured reason held only inside the ratio form. D15's trade with a stronger neighbor is to be remeasured.
 - **One constant w = 0.1986** for every story and sample, the newborn included: in the full form w multiplies a term
   of about e_k²/σ_y² common to every carrier story, so a per-story w hands the story with the larger w
-  (w₁ − w₂)·e_k²/σ_y² (920 nats on one +60 dB S₅₀₀ sample, measured). This withdraws D17's per-story w and D21; the
+  (w₁ − w₂)·e_k²/σ_y² (920 nats on one +60 dB S₅₀₀ sample, measured in the study's form with the variance at each
+  amplitude inside the integral and a per-story w, not in this form). This withdraws D17's per-story w and D21; the
   constant undercounts weak evidence by about 9% at −8 dB S₅₀₀ (D17's rough estimate).
 - **Measured** (27 decodes of "PARIS PARIS" per level at 12, 25 and 40 WPM, rises 2.5, 0.8 and 4.7 ms, 3 seeds; 28
   strong-station decodes at +40 and +60 dB S₅₀₀): exact 27, 27 and 15 of 27 at +20, +10 and 0 dB S₅₀₀ against the
