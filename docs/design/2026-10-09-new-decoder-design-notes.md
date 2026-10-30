@@ -2250,8 +2250,8 @@ measure; part 16, standard practice for each stage; part 17, the values.
     - with no fading: median 0.02, worst 0.05 nats;
     - the newborn's approximation proper, the step against none on the decoder's own model: 95th percentile at most
       0.26 nats at 2 Hz and 0.66 at 5 Hz, worst 5.3 nats (what the step removes; measured for the step every 4
-      samples, the study's recommendation; every 8 has the same accuracy within 0.01 to 0.02 nats at the 95th
-      percentile, its §4.1);
+      samples, the study's recommendation; every 8 has the same accuracy within 0.04 nats in the largest 95th
+      percentile over cases, its §4.1: 8.57 against 8.61 over all fading cases, 1.42 against 1.41 at 2 Hz);
     - **the remaining tail, up to 52.5 nats with the step (20.5 at 2 Hz), is Part 6's fast-fading limitation** (a
       level rising out of a deep fade,
       which Part 6's one-number model cannot follow, in the newborn or after it; backlog), not the newborn's.
@@ -2742,10 +2742,11 @@ projected budget by part.
     cells lie wholly on one side of 0 dB S₅₀₀, those below it included. Reported to the owner, always, with no
     pass/fail thresholds: the signed edge offsets (each claimed key-down and key-up in samples from the convention's
     expected sample, as distributions, the mid-sample ties apart), the mark- and gap-length errors against the keyed
-    lengths, the measured pull toward the fist's medians (the slope of the claimed on the keyed deviation, with its
-    interval), beside it the slopes predicted in the linear-Gaussian approximation, I/(I + 1/σ_p²), under the decided
-    weighting (I = w·dᵀd) and under the exact correlated weighting (I = dᵀR⁻¹d, the audit's row 16), and the character
-    error rate. Whether the edge errors matter, and so whether prewhitening returns with a study (D25), is the owner's
+    lengths, the measured pull toward the fist's medians (the slope of ln(claimed/median) on ln(keyed/median), with
+    its interval), beside it the slopes predicted toward the median, I_lnL/(I_lnL + 1/σ²) with σ = 0.3 and
+    I_lnL = L²·I_e/2 for a length L (ms) bounded by two edges of timing information I_e each (per ms², d in units of
+    σ_y): I_e = w·dᵀd under the decided weighting and dᵀR⁻¹d under the exact correlated weighting (the audit's row
+    16); derived, assuming the two edges' errors independent (an approximation); and the character error rate. Whether the edge errors matter, and so whether prewhitening returns with a study (D25), is the owner's
     call on these numbers (the cells and the computation are in plan 1b, M19).
 
 Every reported run's rounded per-signal score table is committed with its results record (CLAUDE.md).
