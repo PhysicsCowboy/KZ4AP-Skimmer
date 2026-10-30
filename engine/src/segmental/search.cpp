@@ -44,7 +44,7 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
             const double dot_samples = model.dot_min_ms * std::pow(model.speed_ratio, speed) / (1000.0 * model.sample_interval_s);
             const double median = model.fist_medians_dots[static_cast<std::size_t>(kind)] * dot_samples;
             const double shift = model.fist_shifts_dots[static_cast<std::size_t>(kind)] * dot_samples;
-            const int lo = std::max(kEdgeCount, static_cast<int>(std::floor(shift + median * std::exp(-config.duration_z_max * sigma))));
+            const int lo = std::max(1, static_cast<int>(std::floor(shift + median * std::exp(-config.duration_z_max * sigma))));
             const int hi = std::max(lo, static_cast<int>(std::ceil(shift + median * std::exp(config.duration_z_max * sigma))));
             ranges_[static_cast<std::size_t>(kind * speeds_ + speed)] = Range{lo, hi, static_cast<int>(log_end_.size())};
             for (int length = lo; length <= hi; ++length)
@@ -87,7 +87,8 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
             if (std::isfinite(prior[static_cast<std::size_t>(node)]))
                 letter_end_[static_cast<std::size_t>(node)] = prior[static_cast<std::size_t>(node)] + flat;
     }
-    letter_start_ = -flat + std::log1p(-model.rescue_epsilon);
+    log_keep_ = std::log1p(-model.rescue_epsilon);
+    letter_start_ = -flat + log_keep_;
     const double over_start = model.over_rate_per_s * model.sample_interval_s;
     log_birth_ = std::log(over_start);
     log_silence_ = std::log1p(-over_start);
@@ -147,7 +148,25 @@ struct Search::Impl {
     // The times of samples: t = origin + m Delta after the last break
     std::vector<std::pair<std::int64_t, double>> breaks;
 
-    Impl(const SegmentalConfig& c, const ModelTables& m, const RunningSums& s) : config(c), model(m), sums(s) {
+    const LevelTables* levels;
+    // Per boundary: the correction to an element shorter than 6 samples that ends here, by [gap][length - 1], nats; a NaN
+    // until asked for.
+    std::array<std::array<double, kEdgeCount - 1>, 2> short_correction{};
+
+    double correction(bool gap, int length, std::int64_t j) {
+        if (levels == nullptr) return 0.0;
+        double& cached = short_correction[gap ? 1 : 0][static_cast<std::size_t>(length - 1)];
+        if (std::isnan(cached)) {
+            const std::int64_t i = j - length;
+            const double whole = levels->short_score(gap, length, i, sums);
+            cached = gap ? whole - sums.fall(i) - sums.rise(j)
+                         : whole - (sums.rise(i) + sums.sum(j + kEdgeFirst) - sums.sum(i + kEdgeDone) + sums.fall(j));
+        }
+        return cached;
+    }
+
+    Impl(const SegmentalConfig& c, const ModelTables& m, const RunningSums& s, const LevelTables* l)
+        : config(c), model(m), sums(s), levels(l) {
         const std::size_t slots = static_cast<std::size_t>(m.speeds()) * static_cast<std::size_t>(m.nodes());
         gap_slots.resize(slots);
         mark_slots.resize(slots);
@@ -216,6 +235,7 @@ void Search::Impl::boundary(std::int64_t j) {
     const int speeds = model.speeds();
     const std::int32_t count = static_cast<std::int32_t>(live.size());
     partial.resize(live.size());
+    for (auto& by_kind : short_correction) by_kind.fill(std::numeric_limits<double>::quiet_NaN());
     gap_touched.clear();
     mark_touched.clear();
     double best = -kInf;
@@ -230,14 +250,15 @@ void Search::Impl::boundary(std::int64_t j) {
             const int node = e.node;
             const int survive = std::min(length, model.survival_length(speed) - 1);
             score = e.base + model.gap_survival(speed, survive) + gap_reach_from[first_d(length)];
+            const double ended_gap = length < kEdgeCount ? e.base + correction(true, length, j) : e.base;
             if (model.has_children(node)) {
                 const ModelTables::Range& r = model.range(kElementGap, speed);
                 if (length >= r.lo && length <= r.hi)
-                    offer(mark_slots, mark_touched, slot_index(speed, node), e.base + model.log_end(kElementGap, speed, length),
+                    offer(mark_slots, mark_touched, slot_index(speed, node), ended_gap + model.log_end(kElementGap, speed, length),
                           index, kEndElement, stamp);
             }
             if (model.has_symbol(node)) {
-                const double letter = e.base + model.letter_end(node) + model.letter_start();
+                const double letter = ended_gap + model.letter_end(node) + model.letter_start();
                 const ModelTables::Range& lg = model.range(kLetterGap, speed);
                 if (length >= lg.lo && length <= lg.hi)
                     offer(mark_slots, mark_touched, slot_index(speed, 0),
@@ -252,7 +273,9 @@ void Search::Impl::boundary(std::int64_t j) {
             const int node = e.node;
             const int survive = std::min(length, model.survival_length(speed) - 1);
             score = e.base + mark_reach_from[first_d(length)] + model.mark_survival(speed, survive);
-            const double ended = e.base + mark_end;
+            const ModelTables::Range& shortest = model.range(kDot, speed);
+            const double ended = length < kEdgeCount && length >= shortest.lo ? e.base + mark_end + correction(false, length, j)
+                                                                              : e.base + mark_end;
             for (int label = 0; label < 2; ++label) {
                 const int child = model.child(node, label);
                 if (child < 0) continue;
@@ -263,7 +286,7 @@ void Search::Impl::boundary(std::int64_t j) {
             }
         } else {  // a birth's first mark: the best speed's survival, and its end offers every speed
             double survive = -kInf;
-            const double ended = e.base + mark_end + model.log_first_speed();
+            const double ended = e.base + mark_end + model.log_first_speed() + (length < kEdgeCount ? correction(false, length, j) : 0.0);
             for (int speed = 0; speed < speeds; ++speed) {
                 const int clipped = std::min(length, model.survival_length(speed) - 1);
                 survive = std::max(survive, model.mark_survival(speed, clipped));
@@ -380,6 +403,41 @@ void Search::Impl::boundary(std::int64_t j) {
         }
         opened.push_back(e);
     }
+    // A rescue: the sender takes a new speed at a letter's start, from the best story that starts a letter here.
+    {
+        double best_start = -kInf;
+        std::int32_t best_index = -1;
+        for (const std::int32_t index : mark_touched) {
+            if (index % model.nodes() != 0) continue;
+            const double score = mark_slots[static_cast<std::size_t>(index)].score;
+            if (score > best_start) {
+                best_start = score;
+                best_index = index;
+            }
+        }
+        if (best_index >= 0) {
+            const double score = best_start - model.log_keep() + model.log_rescue();
+            if (score + rise - c11 + mark_reach_new + model.log_first_speed() >= floor) {
+                const Slot& slot = mark_slots[static_cast<std::size_t>(best_index)];
+                const Element& parent = live[static_cast<std::size_t>(slot.parent)];
+                Element e{};
+                e.base = score + rise - c11;
+                e.start = j;
+                e.kind = kOpenMark;
+                e.speed = 255;
+                e.node = 0;
+                e.space = 0;
+                e.letter = -1;
+                e.text = text.append(parent.text, model.tree().symbol(parent.node), time_of(parent.letter), time_of(parent.start));
+                if (slot.how == kEndWord) {
+                    const std::int32_t letter_entry = e.text;
+                    e.text = text.append(letter_entry, " ", time_of(parent.start), time_of(j));
+                    text.release(letter_entry);
+                }
+                opened.push_back(e);
+            }
+        }
+    }
     // A birth's first mark, with the no-signal story's text.
     if (before_alive) {
         const double score = before + model.log_birth() + model.letter_start();
@@ -473,8 +531,8 @@ void Search::Impl::boundary(std::int64_t j) {
     ++stats.boundaries;
 }
 
-Search::Search(const SegmentalConfig& config, const ModelTables& tables, const RunningSums& sums)
-    : impl_(std::make_unique<Impl>(config, tables, sums)) {}
+Search::Search(const SegmentalConfig& config, const ModelTables& tables, const RunningSums& sums, const LevelTables* levels)
+    : impl_(std::make_unique<Impl>(config, tables, sums, levels)) {}
 Search::~Search() = default;
 Search::Search(Search&&) noexcept = default;
 Search& Search::operator=(Search&&) noexcept = default;

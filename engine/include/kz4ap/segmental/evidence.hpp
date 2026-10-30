@@ -46,12 +46,24 @@ inline constexpr int kEdgeDone = kEdgeFirst + kEdgeCount;  // 11
 // samples: boundary j is searched when the evidence through j + kHorizon exists (search.hpp).
 inline constexpr int kHorizon = 16;
 
+// A sample as the short elements' templates read it: e / sigma_y and the belief's few levels with their probabilities.
+inline constexpr int kEdgeLevels = 8;
+struct SampleContext {
+    float z = 0.0f;
+    std::uint8_t count = 0;
+    std::array<std::uint8_t, kEdgeLevels> level{};
+    std::array<float, kEdgeLevels> probability{};
+};
+
 // What the search reads, sample by sample, as a running sum (1 above). Samples are numbered from 0 as they are pushed.
 class RunningSums {
 public:
     // Appends sample k = committed(): its key-down score l1 (nats) and its scores under each position of the rise's and
-    // the fall's window (nats; index m - 5).
-    void push(double l1, const std::array<float, kEdgeCount>& rise, const std::array<float, kEdgeCount>& fall);
+    // the fall's window (nats; index m - 5). The context, for elements shorter than 6 samples, is empty if not given.
+    void push(double l1, const std::array<float, kEdgeCount>& rise, const std::array<float, kEdgeCount>& fall,
+              const SampleContext& context = {});
+    // The context of a sample within the last 1 024.
+    const SampleContext& context(std::int64_t k) const { return context_[static_cast<std::size_t>(k) & kContextMask]; }
 
     // Samples pushed.
     std::int64_t committed() const { return count_; }
@@ -71,6 +83,8 @@ private:
     std::vector<double> sum_ = std::vector<double>(kRing, 0.0);
     std::vector<double> rise_ = std::vector<double>(kRing, 0.0);
     std::vector<double> fall_ = std::vector<double>(kRing, 0.0);
+    static constexpr std::size_t kContextMask = 1023;
+    std::vector<SampleContext> context_ = std::vector<SampleContext>(kContextMask + 1);
     std::int64_t count_ = 0;
 };
 
@@ -95,6 +109,15 @@ public:
     const Term& fall(int position, int level) const {
         return fall_[static_cast<std::size_t>(position * levels_ + level)];
     }
+    // The template of an element of length (1 ... 5 samples) shorter than the edge's window, whose two edges overlap: at
+    // position (0 ... length + 5, the sample i + 5 + position after its first edge), for a mark
+    // s = s_(p) - s_(p - length), for a gap 1 - s_(p) + s_(p - length), and the variance adds the pair's terms
+    // (viterbi/mark_template.hpp, stage 4).
+    const Term& short_term(bool gap, int length, int position, int level) const {
+        return short_[static_cast<std::size_t>((((gap ? 1 : 0) * 5 + length - 1) * kShortPositions + position) * levels_ + level)];
+    }
+    // The score of such an element's samples, whose first edge is at sample i of `sums`, nats.
+    double short_score(bool gap, int length, std::int64_t i, const class RunningSums& sums) const;
     double w() const { return w_; }
     double sigma2_per_n0_hz() const { return sigma2_per_n0_hz_; }
     // The kernel of the frame-to-frame step: three taps (p, 1 - 2 p, p) applied `passes` times, and the jump's probability.
@@ -112,6 +135,8 @@ private:
     std::vector<Term> plain_;
     std::vector<Term> rise_;
     std::vector<Term> fall_;
+    static constexpr int kShortPositions = 11;
+    std::vector<Term> short_;
 };
 
 // The shared level (2 above): takes envelope samples, and commits each sample's scores to its RunningSums once its

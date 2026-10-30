@@ -31,7 +31,7 @@ struct SegmentalConfig {
     // level's filter only (the search has the real timing). Heuristic.
     double key_switch_per_s = 15.0;
     // nepers per square root of a second: the random walk of ln a from frame to frame. Heuristic, set by measurement.
-    double level_walk_nepers_per_sqrt_s = 0.82;
+    double level_walk_nepers_per_sqrt_s = 3.4;
     // 1/s: the rate at which the level jumps to anywhere on the grid (a new station, a new over). Heuristic, of the size
     // of the model's over rate.
     double level_jump_per_s = 0.05;
@@ -39,7 +39,7 @@ struct SegmentalConfig {
     // --- The search (search.hpp) ---
 
     // nats: how far behind the best a story may fall and stay. Heuristic, set by measurement.
-    double beam_nats = 25.0;
+    double beam_nats = 15.0;
     // stories: the most open elements kept. Heuristic, set by measurement.
     int ceiling = 3000;
     // 1: an element may end only within this many standard deviations of ln(length) of its median. Heuristic.

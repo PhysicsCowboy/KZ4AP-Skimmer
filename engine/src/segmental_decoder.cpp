@@ -65,7 +65,7 @@ SegmentalDecoder::SegmentalDecoder(double rate_hz, std::shared_ptr<const Segment
 void SegmentalDecoder::start() {
     sums_ = std::make_unique<segmental::RunningSums>();
     evidence_ = std::make_unique<segmental::LevelEvidence>(shared_->config, shared_->level_tables, *sums_);
-    search_ = std::make_unique<segmental::Search>(shared_->config, shared_->model_tables, *sums_);
+    search_ = std::make_unique<segmental::Search>(shared_->config, shared_->model_tables, *sums_, &shared_->level_tables);
     pushed_ = 0;
     expected_k_ = -1;
 }
@@ -96,9 +96,9 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
         if (sample.k != expected_k_) search_->note_sample_time(pushed_, spacing * static_cast<double>(sample.k) / rate_);
         expected_k_ = sample.k + 1;
         evidence_->push(sample.e_fs, sigma2);
+        search_->advance();  // at once: the short elements' context reaches back only so far
         ++pushed_;
     }
-    search_->advance();
     return {};
 }
 

@@ -4,15 +4,15 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <numeric>
 #include <stdexcept>
 
 namespace kz4ap::segmental {
 
-void RunningSums::push(double l1, const std::array<float, kEdgeCount>& rise, const std::array<float, kEdgeCount>& fall) {
+void RunningSums::push(double l1, const std::array<float, kEdgeCount>& rise, const std::array<float, kEdgeCount>& fall,
+                       const SampleContext& context) {
     const std::int64_t k = count_;
+    context_[static_cast<std::size_t>(k) & kContextMask] = context;
     // A claim's window starts empty when its first sample arrives, and C[k + 1] is written with sample k.
     rise_[static_cast<std::size_t>(k) & kMask] = 0.0;
     fall_[static_cast<std::size_t>(k) & kMask] = 0.0;
@@ -67,6 +67,30 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
             fall_[static_cast<std::size_t>(position * levels_ + level)] = make_term(r2, 1.0 - s, f2, v_m);
         }
     }
+    // The short elements' templates.
+    short_.resize(static_cast<std::size_t>(2 * 5 * kShortPositions * levels_));
+    const auto s_at = [&](int j) { return j < 0 ? 0.0 : j >= 16 ? 1.0 : tables.s[static_cast<std::size_t>(j)]; };
+    const auto v_at = [&](int j) { return j < 0 || j >= 16 ? 0.0 : tables.v[static_cast<std::size_t>(j)]; };
+    for (int gap = 0; gap < 2; ++gap) {
+        for (int length = 1; length <= 5; ++length) {
+            for (int position = 0; position < kShortPositions; ++position) {
+                const int p = kEdgeFirst + position;
+                const int q = p - length;
+                const double shape = s_at(p) - s_at(q);
+                const double s = std::fabs(gap ? 1.0 - shape : shape);
+                double v = v_at(p) + v_at(q);
+                if (p < 16 && q >= 0 && q < 16)
+                    v -= 2.0 * tables.c[static_cast<std::size_t>(p)][static_cast<std::size_t>(q)];
+                v = std::max(v, 0.0);
+                for (int level = 0; level < levels_; ++level) {
+                    const double s500_db = config.level_min_db_s500 + level * config.level_step_db;
+                    const double r2 = std::pow(10.0, s500_db / 10.0) * 500.0 / sigma2_per_n0_hz_;
+                    short_[static_cast<std::size_t>(((gap * 5 + length - 1) * kShortPositions + position) * levels_ + level)] =
+                        make_term(r2, s, f2, v);
+                }
+            }
+        }
+    }
     // The walk's variance per frame is sigma^2 T nepers^2; one pass of (p, 1 - 2 p, p) adds 2 p step^2, step in nepers.
     const double step_nepers = config.level_step_db / 20.0 * std::log(10.0);
     const double sigma2 = config.level_walk_nepers_per_sqrt_s * config.level_walk_nepers_per_sqrt_s * config.level_frame_s;
@@ -75,6 +99,26 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
     walk_p_ = total_p / walk_passes_;
     jump_ = config.level_jump_per_s * config.level_frame_s;
     if (!(jump_ >= 0.0 && jump_ < 1.0)) throw std::invalid_argument("segmental: level_jump_per_s x level_frame_s must lie in [0, 1)");
+}
+
+double LevelTables::short_score(bool gap, int length, std::int64_t i, const RunningSums& sums) const {
+    double score = 0.0;
+    for (int position = 0; position <= length + kEdgeCount - 1; ++position) {
+        const SampleContext& context = sums.context(i + kEdgeFirst + position);
+        if (context.count == 0) continue;
+        const double z = context.z;
+        const double z2 = z * z;
+        double top = -1e300;
+        double values[kEdgeLevels];
+        for (int g = 0; g < context.count; ++g) {
+            values[g] = term_value(short_term(gap, length, position, context.level[static_cast<std::size_t>(g)]), z, z2, w_);
+            top = std::max(top, values[g]);
+        }
+        double sum = 0.0;
+        for (int g = 0; g < context.count; ++g) sum += context.probability[static_cast<std::size_t>(g)] * std::exp(values[g] - top);
+        score += top + std::log(sum);
+    }
+    return score;
 }
 
 LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& tables, RunningSums& sums)
@@ -249,7 +293,6 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
             ++count;
         }
     }
-    constexpr int kEdgeLevels = 8;
     int edge_level[kEdgeLevels];
     double edge_p[kEdgeLevels];
     int edge_count = 0;
@@ -297,16 +340,14 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
             rise[static_cast<std::size_t>(position)] = edge_count > 0 ? static_cast<float>(up_top + std::log(up_sum)) : 0.0f;
             fall[static_cast<std::size_t>(position)] = edge_count > 0 ? static_cast<float>(down_top + std::log(down_sum)) : 0.0f;
         }
-        sums_.push(l1, rise, fall);
-        if (const char* dump = std::getenv("KZ4AP_SEG_DUMP"); dump != nullptr) {
-            static std::FILE* out = std::fopen(dump, "w");
-            int top_level = 0;
-            for (int i = 0; i < count; ++i) if (active_p[i] > belief[top_level]) top_level = active[i];
-            std::fprintf(out, "%lld %.2f %.2f %d %d", static_cast<long long>(k), z, l1, top_level, count);
-            for (float v : rise) std::fprintf(out, " %.1f", v);
-            for (float v : fall) std::fprintf(out, " %.1f", v);
-            std::fprintf(out, "\n");
+        SampleContext context;
+        context.z = static_cast<float>(z);
+        context.count = static_cast<std::uint8_t>(edge_count);
+        for (int i = 0; i < edge_count; ++i) {
+            context.level[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(edge_level[i]);
+            context.probability[static_cast<std::size_t>(i)] = static_cast<float>(edge_p[i]);
         }
+        sums_.push(l1, rise, fall, context);
     }
 }
 

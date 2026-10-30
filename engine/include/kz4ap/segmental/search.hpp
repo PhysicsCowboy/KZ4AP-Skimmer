@@ -77,6 +77,7 @@ public:
     double log_silence() const { return log_silence_; }        // nats: ln(1 - P) per sample of silence
     double log_first_speed() const { return log_first_speed_; }  // nats: ln(1 / speed_count)
     double log_rescue() const { return log_rescue_; }          // nats: ln epsilon
+    double log_keep() const { return log_keep_; }              // nats: ln(1 - epsilon)
     double sample_interval_s() const { return sample_interval_s_; }
     int longest() const { return longest_; }
 
@@ -103,6 +104,7 @@ private:
     double log_silence_ = 0.0;
     double log_first_speed_ = 0.0;
     double log_rescue_ = 0.0;
+    double log_keep_ = 0.0;
     double sample_interval_s_ = 0.0;
 };
 
@@ -116,8 +118,10 @@ struct SearchStats {
 
 class Search {
 public:
-    // tables outlives the Search; sums is read as it grows.
-    Search(const SegmentalConfig& config, const ModelTables& tables, const RunningSums& sums);
+    // tables and levels outlive the Search; sums is read as it grows. levels: the short elements' templates; without them
+    // an element shorter than 6 samples scores by the plain formula (for tests of the bookkeeping).
+    Search(const SegmentalConfig& config, const ModelTables& tables, const RunningSums& sums,
+           const LevelTables* levels = nullptr);
     ~Search();
     Search(Search&&) noexcept;
     Search& operator=(Search&&) noexcept;
