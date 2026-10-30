@@ -13,7 +13,7 @@
 > 2026-10-30 for D26** (owner: "2"; the coordinator's Ruling 94): the prediction's drift target becomes (√π/2)·E[√Ω],
 > a second output of the Ω̄ tables, made by a new Task 10b after Task 10; §1, §3.1, §6 and Task 12's trace amended.
 > **Amended 2026-10-30 for D27** (owner: "1"): the floor f stays per sample, labeled a departure; M11 (Tasks 12, 13
-> and 19) measures the mismatch's correlation with its size, with D27's rule.
+> and 19) measures the mismatch's correlation with its size, reported to the owner with no threshold (Ruling 96).
 > The owner does not read this plan: it is the executors' document, and every decision reaches him in chat, in words.
 > His answers are recorded here by the coordinator.
 >
@@ -600,7 +600,7 @@ cells below are stated as ranges and counts.
 | **M16** Bell's decay variant | `bell_decay` against the default on every group and N2e: exact texts, CER, splits, false characters; a close neighbor (E2) the case to watch | DEV2e, N2e | Measurement, to the owner (D17). |
 | **M17** the noise-in-Ω̄ variant | `omega_bar_noise` against the default on every group and N2e: exact texts, CER, splits, false characters; the Ω̄ and sums lines of the breakdown; how often Ω̂ falls below its Ω̄'s minimum position (the Gaussian artifact) on N2e and M9 | DEV2e, N2e, M9's suite | Measurement, to the owner, who decides whether it earns its place and then the artifact's remedy (Part 7). |
 | **M18** void (D23, 2026-10-29) | the fixed w = 0.1986 is the rule, so there is no variant to measure; the curve w(q) is not used. (It was: `fixed_weight` against w per sample on the weak-signal groups.) | — | — |
-| **M19** one w for every contrast (D25; owner, 2026-10-30: "1"; Part 15, item 19) | weak signals, fast keying, keyed lengths off the fist's medians: a jittered grid of speeds 35–100 WPM in three cells (35–50, 50–70, 70–100), levels −6 to +9 dB S₅₀₀ in five cells 3 dB wide in S₅₀₀ (−6 to −3, −3 to 0, 0 to +3, +3 to +6, +6 to +9; every cell wholly on one side of 0 dB S₅₀₀, and the cells below 0 dB S₅₀₀, where the score-form study expects the pull to show, reported like the others), keying styles `paddle`, `bug` and `hand` (VE3NEA's sender timing variation, `keying.STYLES`; `hand` with its heavy dashes and wide spacing, medians off the fist's 1, 3, 1, 3, 7 dots) and an imbalance in three cells over −0.2 to +0.2 dits, 10 signals per cell (1 350), ten-word texts, D17's edges, no fading. **Reported per cell, always, to the owner:** (1) the signed edge offsets, each claimed key-down and key-up in samples from the convention's expected sample (the first sample at or after the keyed edge; the bench's `edges.csv`, Task 13b), as distributions (not against a tolerance), with edges whose keyed position falls in the middle third of a sample reported separately (the tie); (2) the mark- and gap-length errors against the keyed lengths (samples and ms); (3) the measured pull: per element kind, the slope of the claimed length's deviation from the fist's median on the keyed length's deviation, with its 95% bootstrap interval; (4) beside it, **the slopes predicted** in the linear-Gaussian approximation, I/(I + 1/σ_p²), under the decided weighting (I_t = w·dᵀd) and under the exact correlated weighting (I_e = dᵀR⁻¹d, the audit's row-16 computation, about 2.5·I_t), d the template's change for a one-sample edge shift at the cell's S₅₀₀ and speed, R the front filter's noise correlation (ρ_m, Part 4), σ_p the fist's spread in samples (σ = 0.3 in ln length times the median length; Task 13's analysis computes both, derived); (5) CER, paired against today's decoder | `nd1b-timing` | **No pass/fail thresholds** (the coordinator's ruling on the review of 2026-10-30): every cell's numbers above go to the owner. Whether the edge errors matter, and so whether prewhitening returns with a study (D25), is the owner's call on these numbers; the comparison of the measured slope with the two predicted slopes is the evidence for it. |
+| **M19** one w for every contrast (D25; owner, 2026-10-30: "1"; Part 15, item 19) | weak signals, fast keying, keyed lengths off the fist's medians: a jittered grid of speeds 35–100 WPM in three cells (35–50, 50–70, 70–100), levels −6 to +9 dB S₅₀₀ in five cells 3 dB wide in S₅₀₀ (−6 to −3, −3 to 0, 0 to +3, +3 to +6, +6 to +9; every cell wholly on one side of 0 dB S₅₀₀, and the cells below 0 dB S₅₀₀, where the score-form study expects the pull to show, reported like the others), keying styles `paddle`, `bug` and `hand` (VE3NEA's sender timing variation, `keying.STYLES`; `hand` with its heavy dashes and wide spacing, medians off the fist's 1, 3, 1, 3, 7 dots) and an imbalance in three cells over −0.2 to +0.2 dits, 10 signals per cell (1 350), ten-word texts, D17's edges, no fading. **Reported per cell, always, to the owner:** (1) the signed edge offsets, each claimed key-down and key-up in samples from the convention's expected sample (the first sample at or after the keyed edge; the bench's `edges.csv`, Task 13b), as distributions (not against a tolerance), with edges whose keyed position falls in the middle third of a sample reported separately (the tie, measured at shift 4/8; the third's width a heuristic reporting split); (2) the mark- and gap-length errors against the keyed lengths (samples and ms); (3) the measured pull, in the fist's own variable: per element kind, the slope of ln(claimed length / the fist's median) on ln(keyed length / the fist's median), with its 95% bootstrap interval (a slope below 1 is a pull toward the median); (4) beside it, **the slopes predicted** toward the fist's median, I_lnL/(I_lnL + 1/σ²) with σ = 0.3 (the fist's placeholder spread in ln length), where I_lnL = L²·I_e/2 is the information on ln L of a length L (ms) bounded by two edges, each with timing information I_e (per ms²): I_e = w·dᵀd under the decided weighting and dᵀR⁻¹d under the exact correlated weighting (the audit's row-16 computation, about 2.5 times larger), d the template's change per ms of edge shift at the cell's S₅₀₀ and speed, in units of σ_y (the change times the amplitude, divided by σ_y; so dᵀd is per ms²), R the front filter's noise correlation (ρ_m, Part 4); **derived, assuming the two edges' errors independent** (an approximation: adjacent elements share an edge, and the fist's costs on both neighbors enter; Task 13's analysis computes both slopes); (5) CER, paired against today's decoder | `nd1b-timing` | **No pass/fail thresholds** (the coordinator's ruling on the review of 2026-10-30): every cell's numbers above go to the owner. Whether the edge errors matter, and so whether prewhitening returns with a study (D25), is the owner's call on these numbers; the comparison of the measured slope with the two predicted slopes is the evidence for it. |
 
 ### 7.3 Order
 
@@ -1398,13 +1398,15 @@ unmarked `tests/viterbi/scratch_diag_test.cpp` line (and `weight_test.cpp`'s).
 Part 6's transition at 2 Hz, the point-mass filter's prediction (Bucy and Senne 1971), in place of the amplitude held
 constant until the handover:
 - in `NewbornIntegral::add`, the moments loop writes p_i = e^(F_i − m) (m the largest F_i) into a scratch buffer; on
-  every 8th sample of the newborn, counted on its own samples from its birth, after the moments and before the
+  every 8th scored sample of the newborn (a sample with s ≠ 0, the only ones that call the grid), counted from its
+  birth, after the moments and before the
   live-range trim, Kushner's three-point chain is applied in place, p_i ← p_i + ε(p_(i−1) − 2p_i + p_(i+1)), with the
   reflecting ghost mirrored about the end node, p₋₁ = p₁ and p_N = p_(N−2) (the form under which the trapezoid mass,
   ends halved, is conserved exactly; derived), and zeros outside the live range; then F_i = m + ln p_i;
 - a handover between two steps simply ends the step: the variance accumulated since the last step (at most 7 samples'
-  worth, about 9.8 × 10⁻⁴ nepers² at 2 Hz) is not applied, as in the newborn-fading study's code (to be confirmed
-  against that code before the build, and stated in the commit);
+  worth, about 9.8 × 10⁻⁴ nepers² at 2 Hz) is not applied, and the moments handed to N(μ, P) are those computed
+  before a step due on the handover sample, as in the newborn-fading study's code (`newborn_pm.cpp`,
+  `PmIntegral::add`, whose counter also counts only calls with s ≠ 0; confirmed in the re-review of 2026-10-30);
 - ε = (interval/Δ) · ½(1 − ρ(Δ)²)/(2h²) = 8 × 1.404 × 10⁻⁴ / (2 × 0.0906²) = 0.0684 (derived), with the interval
   `newborn_fade_interval_s` = 8 × 4/1 500 s = 21.33 ms (heuristic, chosen by measurement, D24) and the per-sample
   variance ½(1 − ρ(Δ)²) read from the decoder's own `FadingTables` at lag 1 (2 Hz by default; each oracle channel's
@@ -1444,8 +1446,8 @@ constant until the handover:
   own (Ruling 72, N12). `ViterbiShared` is forward-declared in `search.hpp` (it is defined in `viterbi_decoder.hpp`,
   which includes `search.hpp`).
 - `NewbornIntegral::add(double e_fs, double s, double v, double sigma2_fs2, double floor)`: V(a_i) per point (D23),
-  and the prediction step on every (interval/Δ)-th call of the newborn (D24); the step's ε and substeps, from the decoder's
-  `FadingTables` and the stride, is given to `NewbornIntegral` at its birth;
+  and the prediction step on every (interval/Δ)-th call of the newborn (D24); the step's ε and substeps, from the
+  decoder's `FadingTables` and the interval, are given to `NewbornIntegral` at its birth;
   `NewbornTables(const OutputNoise&, double sigma2_per_n0_hz)` (no `fixed_weight` argument: w is constant).
 - `class Search`: `Search(const ViterbiConfig&, std::shared_ptr<const ViterbiShared>, detail::SearchOptions = {})`;
   `void step(double e_fs, double t_s, double n0_fs2_per_hz)` **searches sample k at once** (D23: no hold, no
@@ -1563,8 +1565,8 @@ constant until the handover:
     integral, `MatchesADenseIntegral`, `LiveRangeLosesNothing` and `TablesMatchDirectEvaluation`, run with the step's
     variance 0 (with the step on they would mix approximation (a) with (b)); `StrongEdgeOfThePrior`'s narrowest σ_u at
     handover (D22's 0.05-nepers rule), `SwitchTimings` and `StaysBoundedOnNoise` run with the step on, as the decoder
-    runs (the step adds 2εh² = 1.12 × 10⁻³ nepers² per interval, as large as the belief's own variance at σ_u = 0.03 to
-    0.05; derived), their values pinned with the step and their variance-0 values reported beside them.
+    runs (the step adds 2εh² = 1.12 × 10⁻³ nepers² per interval, as large as the belief's own variance at σ_u = 0.03 and
+    45% of it at 0.05; derived), their values pinned with the step and their variance-0 values reported beside them.
   - **The prediction step (D24; the newborn-fading study's §6):** `Newborn.ZeroVarianceIsTheGridWithoutTheStep`: with
     the per-sample variance 0 the scores equal the grid without the step (D23's integrand) within 10⁻¹² nats per
     sample (the round trip F_i = m + ln e^(F_i − m) is not exact in floating point); `Newborn.TinyVarianceExercisesTheStep`:
@@ -1577,7 +1579,7 @@ constant until the handover:
     grid within 0.01 nats in median per first mark, the 95th percentile reported; the 0.01 nats is heuristic, carried
     over from the study's every-sample check (within 0.01 nats in medians, 0.15 in 95th percentiles); the every-8 form
     is not measured; its input: a 25 WPM dash at 0, +10 and +20 dB S₅₀₀, fading 0, 2 and 5 Hz, 200 first marks per case
-    (heuristic count); `Newborn.PredictionStepEveryInterval`: the step is applied on the 8th, 16th, … sample of the
+    (heuristic count); `Newborn.PredictionStepEveryInterval`: the step is applied on the 8th, 16th, … scored sample of the
     newborn, counted from its birth, and on no other, and a handover between two steps applies none;
     `Newborn.SubstepsAboveAQuarter`: at ε = 0.427 (`--genie fading` at 5 Hz) two substeps of 0.2135, every p_i stays
     positive and the mass is conserved to 10⁻¹².
@@ -1674,10 +1676,11 @@ constant until the handover:
   - `OmegaBar.SqrtMeanKnownValues`: √Ω̄/E[√Ω], 4-digit values from an independent quadrature of the posterior (the
     review of 2026-10-30, numerical integrals on 2 × 10⁶ points in ln Ω, the −15 to +85 dB S₅₀₀ prior): ν = 1 at 0,
     +10, +20 and +30 dB S₅₀₀: 2.4591, 2.3055, 2.1415, 1.9654; ν = 1.5, 2 and 5 at +20 dB S₅₀₀: 1.2528, 1.1284, 1.0317.
-    The closed-form functions within ±0.0001 of these (their 4-digit rounding); the table within its measured error
-    on the two outputs combined (at O8's 0.1% on each, at most 0.15% on the ratio; derived). Cross-checks: the audit's
-    2-digit values (2.46, 2.31, 2.14, 1.97; 1.25, 1.13, 1.03) within ±0.006, rounding included; for ν ≥ 1.5 the
-    untruncated Γ(ν)/(Γ(ν − ½)√(ν − 1)) within 10⁻³ from 0 to +30 dB S₅₀₀. The β = 0 limit to 10⁻¹² relative; E[√Ω]
+    The closed-form functions within ±0.0001 of these (their 4-digit rounding); the table within the O8 threshold on
+    the two outputs combined (0.1% on each, so at most 0.15% on the ratio; derived; a threshold, to be replaced by the
+    measured error once this task measures it). Cross-checks, of the closed-form functions only: the audit's 2-digit
+    values (2.46, 2.31, 2.14, 1.97; 1.25, 1.13, 1.03) within ±0.006, rounding included; for ν ≥ 1.5 the untruncated
+    Γ(ν)/(Γ(ν − ½)√(ν − 1)) within 2 × 10⁻³ from 0 to +30 dB S₅₀₀ (at ν = 1.5, +30 dB S₅₀₀ it differs by 0.0015). The β = 0 limit to 10⁻¹² relative; E[√Ω]
     ≤ √Ω̄ at every node (Jensen's inequality).
   - `OmegaBarVariant.SqrtMeanMatchesTheDirectIntegral` (label `needs-table`): Task 8's 400 points, 99th percentile of
     |relative error| ≤ 1%, largest ≤ 3% (Ω̄'s thresholds); above χ = 10⁴, the fallback to the default table's E[√Ω]
@@ -1862,9 +1865,10 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
   0.8 to 2.0 ms; M6's `cost_vs_perfect` against the misfit bound, pass/fail on the noise-free twins and as
   distributions (median, 95th percentile) with δ_k on the noisy recordings, D23; M19's signed edge offsets
   from `edges.csv` in samples from the convention's expected sample (the tie positions apart), mark- and gap-length
-  errors, the slope of the claimed on the keyed deviation from the fist's median per element kind with its bootstrap
-  interval, and the slopes predicted under the decided and the exact weighting, I/(I + 1/σ_p²) with I_t = w·dᵀd and
-  I_e = dᵀR⁻¹d at each cell's S₅₀₀ and speed, D25); the newborn counts; the I2 cut
+  errors, the slope of ln(claimed/median) on ln(keyed/median) per element kind with its bootstrap interval, and the
+  slopes predicted toward the median, I_lnL/(I_lnL + 1/σ²), σ = 0.3, I_lnL = L²·I_e/2 with I_e (per ms², d in units
+  of σ_y) = w·dᵀd (decided) or dᵀR⁻¹d (exact) at each cell's S₅₀₀ and speed (derived, assuming the two edges' errors
+  independent), D25); the newborn counts; the I2 cut
   removed.
 
 - [ ] **Step 1: Failing tests:** `test_key_intervals_in_labels` (the label's intervals are the generator's to 10⁻⁹ s);
