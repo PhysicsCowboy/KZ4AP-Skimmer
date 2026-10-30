@@ -12,6 +12,8 @@
 > departure and measured by a new M19 (§7.2, Task 16; its suite in Task 13, its edges file in Task 13b). **Amended
 > 2026-10-30 for D26** (owner: "2"; the coordinator's Ruling 94): the prediction's drift target becomes (√π/2)·E[√Ω],
 > a second output of the Ω̄ tables, made by a new Task 10b after Task 10; §1, §3.1, §6 and Task 12's trace amended.
+> **Amended 2026-10-30 for D27** (owner: "1"): the floor f stays per sample, labeled a departure; M11 (Tasks 12, 13
+> and 19) measures the mismatch's correlation with its size, with D27's rule.
 > The owner does not read this plan: it is the executors' document, and every decision reaches him in chat, in words.
 > His answers are recorded here by the coordinator.
 >
@@ -22,7 +24,7 @@
 > **Design:** `docs/design/2026-10-09-new-decoder-design-notes.md`, the section "Detection, amplitude, frequency and
 > the mark's shape", Parts 1 to 17 (cited here as "Part n"), and topics 1 to 5 as amended there. **Decisions:** the
 > first prototype's plan, `docs/plans/2026-10-20-new-decoder-prototype-1.md` ("the prototype plan"), §3: **D15 to
-> D26 are the authority** where this plan and the design notes differ; its conventions (§4 to §9) are reused where
+> D27 are the authority** where this plan and the design notes differ; its conventions (§4 to §9) are reused where
 > they still apply. **Rulings** 60 to 66 of the coordinator (the prototype plan's git-ignored ledger,
 > `.superpowers/sdd/2026-10-20-new-decoder-prototype-1/progress.md`) are applied as stated in §3.1.
 > **Evidence for this plan** (git-ignored workspace, same folder): `code-map-2026-10-25.md` (the built code against
@@ -209,6 +211,11 @@ From the code map §1 to §3 against Parts 1 to 12. "Task n" is the task of §10
   (the coordinator's):** a new Task 10b right after Task 10, since Task 10's working tree is uncommitted and the
   tables are not regenerated under it; a variant table above 100 MB or added CPU above +3% goes to the owner. Design
   notes Parts 6, 7, 13, 16, 17.
+- **D27** (owner, 2026-10-30: "1"): the floor f stays added independently per sample, labeled a departure (it stands
+  for slow mismatch; the audit's row 11), and D19's measurement of f (M11) reports the mismatch's autocorrelation at
+  every lag up to the longest flat part measured as well as its size; if it is correlated over more than the filter's
+  5 correlated samples, the alternatives return to the owner with the numbers; if f is negligible, f goes to 0.
+  Design notes Parts 9, 13, 15 (item 11), 16.
 - **Ruling 60:** the per-sample score uses the quadrature as built: adaptive Gauss–Hermite of order 5, centered at
   the integrand's mode by Newton's method, scaled by its curvature, mapped onto the Gaussian truncated at a = 0.
   The budget's scoring line is therefore the timing slice's row 1′ (412 ns per scored sample), not row 1.
@@ -299,7 +306,8 @@ that references stay valid.
   (version 2's analog) and a detail form (version 1's line columns, `--stats-detail`); versions 1 and 2 still read
   for their own fields.
 - **O19. The measures for items 8 and 11** (defined in Task 12): the in-mark E[z²] of the amplitude's standardized
-  innovation, and f̂² from the flat part's residual beyond the model's spread and the noise.
+  innovation, and f̂² from the flat part's residual beyond the model's spread and the noise; since D27, also the
+  residual mismatch's autocorrelation at every lag up to the longest flat part measured.
 - **O20. Profiling** by the x86 time-stamp counter, with each counter's own cost calibrated and subtracted (Task 11).
   Around the parts of 1 to 7 ns per call (w, Ω̂'s and ν's sums, the variant's sums) the reads cost more than the
   parts and do not serialize, so those lines carry a stated accuracy of ± the calibrated per-call overhead; where R0's
@@ -579,7 +587,7 @@ cells below are stated as ranges and counts.
 | **M8** the fixed 2 Hz against the genie spread | M3's grids with `--genie fading`; the in-mark E[z²] | `nd1b-fading` | Measurement: it sizes the backlogged several-rate model and the in-mark limitation. |
 | **M9** steady weak signals | 5, 12, 25, 40, 100 WPM, −15 to +5 dB S₅₀₀ in twenty 1 dB cells, 10 signals per cell | `nd1b-weak` | S₅₀₀ at 50% CER per speed, with its interval, against today's decoder and the bank (`--decoder bank` on the same recordings); the slow speeds' cost against the expected up to 1.8 dB of noise power (Part 2). Measurement. |
 | **M10** the systematic term from the story's prediction (D23; until D23 the memory and look-ahead of 10 samples each), with **D15's neighbor trade remeasured** | M4's grid, the stopped-neighbor grid (cells over a neighbor 30–40 dB stronger, dB relative to the station's key-down power, 50–200 Hz away, stopping 0.05–0.60 s before the station starts), M5, "TEST" and "TU" | `nd1b-strong`, `nd1b-stopped`, `nd1b-speed` | Measurement, paired against today's decoder on the same signals (it carries D15's 390 ms term); D15's own cells (a neighbor stopping 0.10–0.30 s before the station; 194 of 288 runs lost then) reported separately, since this jittered grid is wider (50–200 Hz, 0.05–0.60 s); D23 reversed D15's rule, so the stopped-neighbor result goes to the owner; no other variant. |
-| **M11** the floor f | the scatter of strong stations' flat-part samples about the model's prediction beyond the noise, relative to the carrier, along the true story (f̂, O19) | `nd1b-strong` steady and faded; W1AW code-practice sessions recorded off the air (D19), with their published text force-aligned; the owner's other recordings where the new decoder and the bank agree, as a cross-check (biased low) | The proposed f is f̂ (zero if its 95% interval includes zero on both sets; where the two sets differ, the real recordings' f̂, the synthetic one beside it; O15); on the W1AW sessions the excluded share of words and f̂ with and without the excluded words are reported, and the flat samples next to aligned edges are left out (Task 12); M4 and M6 are rerun at the proposal before it goes to the owner, who decides. |
+| **M11** the floor f, its size and its correlation (D19; D27) | the scatter of strong stations' flat-part samples about the model's prediction beyond the noise, relative to the carrier, along the true story (f̂, O19); and, since D27 (owner, 2026-10-30: "1"), the mismatch's autocorrelation from sample to sample at every lag up to the longest flat part measured, with its 95% bootstrap interval over signals (ĉ(m), Task 12), on both sets. **D27's rule, stated before the run:** if the mismatch is correlated over more than the front filter's 5 correlated samples (ρ_1 … ρ_5; Part 4), that is, ĉ(m) at some lag m ≥ 6 above 0.1 with its interval wholly above zero (the 0.1 heuristic), the alternatives (the slow part in the amplitude's process model; a correlated systematic term in the score) return to the owner with the numbers; if f is negligible (O15), f goes to 0 (D19) | `nd1b-strong` steady and faded; W1AW code-practice sessions recorded off the air (D19), with their published text force-aligned; the owner's other recordings where the new decoder and the bank agree, as a cross-check (biased low) | The proposed f is f̂ (zero if its 95% interval includes zero on both sets; where the two sets differ, the real recordings' f̂, the synthetic one beside it; O15); on the W1AW sessions the excluded share of words and f̂ with and without the excluded words are reported, and the flat samples next to aligned edges are left out (Task 12); M4 and M6 are rerun at the proposal before it goes to the owner, who decides. |
 | **M12** other transmitters' edges | 10–90% rises of 0.8 and 4.7 ms; mark bias −7, −3.5, 0, +2.5, +4.7 ms; 25 and 100 WPM; +10 to +40 dB S₅₀₀ in three 10 dB cells; the misfit's variance per sample against v_k; decoding | `nd1b-edges`; B2 (VE3NEA's 1.18 ms edges) | The misfit's variance per template sample over v_k reported (a ratio near 1 or below supports the edge term); decoding paired against the 2.5 ms signals. Measurement, to the owner. |
 | **M13** the merge variant | the previous element's length in the state when shorter than 10 samples (`merge_previous_element`), against the default | DEV2e's signals above 45 WPM; `nd1b-speed` at 45–100 WPM | Paired decoding and the CPU breakdown with story counts, to the owner before anything changes (D17). |
 | **M14** noise alone | false characters per hour, newborns in the integral, CPU by part against §6 | N2e | False characters per hour no more than today's decoder's on N2e (Part 15: "no more than today's decoder"); else to the owner. |
@@ -1747,7 +1755,12 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
   f̂² = mean over those samples of [(e_k − s_kμ_k|k−1)² − s_k²P_k|k−1 − σ_y²/2]/(s_k μ_k|k−1)², with its bootstrap
   interval over signals. On force-aligned recordings (Task 13b), whose edges may be one sample off, the first two
   flat samples after each claimed rise and the last two before each claimed fall are left out of f̂ (one sample
-  early puts the true j = 10, s = 0.9825, where the claim says 1: a 1.75% residual, the size of f itself).
+  early puts the true j = 10, s = 0.9825, where the claim says 1: a 1.75% residual, the size of f itself). **Since
+  D27:** the mismatch's autocorrelation at lag m, within one flat part, ĉ(m) = mean over pairs of [(e_k −
+  s_kμ_k|k−1)(e_(k+m) − s_(k+m)μ_(k+m)|k+m−1) − ρ_m·σ_y²/2] / (f̂²·s_kμ_k|k−1·s_(k+m)μ_(k+m)|k+m−1), the noise's
+  in-phase autocovariance ρ_m·σ_y²/2 (ρ_m of Part 4; 0 beyond lag 6) removed (approximate: the amplitude prediction's
+  own error correlation is not removed, which biases ĉ upward at short lags), for m = 1 up to the longest flat part
+  measured, with its bootstrap interval over signals; the same flat samples as f̂.
 
 - [ ] **Step 1: Failing tests.**
   - `Variants.OffChangesNothing` (within one build; Ruling 72, N21): a configuration with every switch written out
@@ -1795,7 +1808,8 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
 - Runner: `--bench PATH` names the bench binary per run (today's decoder's build); the decoder `bank` on `nd1b-weak`.
 - Analysis: the S₅₀₀ crossing at CER 0.5 beside 0.05 and 0.10; the CPU lines per group from statistics v3, in ms per
   channel-second and as fractions of §6's projected total (extending Task 11's function in `search_stats.py`, not a
-  second one); the trace reductions in `trace.py` (E[z²]; f̂ with its interval, leaving out the two flat samples next
+  second one); the trace reductions in `trace.py` (E[z²]; f̂ with its interval and ĉ(m) at every lag with its
+  interval and D27's rule (M11), leaving out the two flat samples next
   to each claimed edge on aligned recordings; the misfit's variance per template sample over v_j; ν against the
   empirical count of independent looks of the label's fading; the decoded symbols' start times from `symbols.csv`
   against the label's keyed times, M1's timing check, N22, each start within −0.1 to +5.43 ms and the mean within
@@ -1809,7 +1823,7 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
   `test_mark_bias` (a +4.7 ms bias, given as `imbalance_dits` = 4.7 ms/dot, lengthens every mark by 4.7 ms at half
   amplitude, and the label's `design` records 4.7 ms); `test_impulses`; one test per
   suite for its sizes, reproducibility by seed and the fields of §7.2, and that every swept value lies within its cell and the named points are exact; `test_crossing_at_half`;
-  `test_cpu_lines_against_the_projection`; `test_trace_reductions` on a synthetic trace with known z and f.
+  `test_cpu_lines_against_the_projection`; `test_trace_reductions` on a synthetic trace with known z, f and mismatch autocorrelation (D27).
 - [ ] **Step 2–4: fail, implement, pass** (`pytest training -q`).
 - [ ] **Step 5: Document:** none in `docs/signal-processing.md` (Python generator and analysis), unless A.11 defines
   a quantity the analysis now computes differently: then A.11 in the same commit.
@@ -2008,7 +2022,9 @@ A.11 for the alignment) (Ruling 72, N20).
   (segments, anchors and filler as there; words and filler spans marked `excluded` left out),
   and `--trace` on the resulting labels gives M11's samples; the ARRL's downloadable MP3s served only Task 13b's smoke
   check; the owner's other recordings, scored where the new
-  decoder and the bank agree, as a cross-check with its bias named (biased low). M4 and M6 rerun at the proposed f;
-  to the owner.
+  decoder and the bank agree, as a cross-check with its bias named (biased low). With f̂, the mismatch's
+  autocorrelation ĉ(m) at every lag up to the longest flat part measured, on both sets, and D27's rule (M11): a
+  mismatch correlated beyond 5 samples sends the alternatives to the owner with the numbers. M4 and M6 rerun at the
+  proposed f; to the owner.
 - [ ] **Step 3:** adopted values into the code, documents and tables (R4 rerun where a default changed); commit.
 - [ ] **Step 4:** the record's conclusions and the decisions they raise for the owner.
