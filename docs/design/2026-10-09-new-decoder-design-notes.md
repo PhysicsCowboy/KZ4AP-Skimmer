@@ -1571,8 +1571,8 @@ measure; part 16, standard practice for each stage; part 17, the values.
     2.4 to 2.75 times too lightly for a key-down or key-up one sample off (about 2.1 two samples off) against the
     fist's untempered timing costs (derived at high SNR), because it was set for the information about a, not about
     where edges fall. Standard practice treats correlated samples by prewhitening or a matrix adjustment (Chandler
-    and Bate 2007), not one scalar. Kept and labeled, and measured (part 15, item 19): if it shows edge errors that
-    matter, prewhitening returns to the owner with a study. Rejected for now (plan D25): prewhitening (a 5-tap
+    and Bate 2007), not one scalar. Kept and labeled, and measured (part 15, item 19): if, on its numbers, the owner
+    judges the edge errors to matter, prewhitening returns to him with a study. Rejected for now (plan D25): prewhitening (a 5-tap
     autoregressive model of the filter's noise, each story scoring the innovation of its residual; valid only above
     about +8.75 dB SNR in the filter's 74.48 Hz; CPU not measured); one independent sample per 13.2 ms (loses fast
     code's timing); the timing costs scaled by 0.4 (measured: 0 of 81 noisy decodes exact, letters merge); the full
@@ -1951,7 +1951,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
     held between samples with s_k = 0 as Ω̄ is. **Memory:** the table from 0.42 to about 0.84 MB (estimated, stored the
     same way). **CPU:** about +1 to 2% of the projected 425.7 ms per channel-second (estimated from the lookup's
     measured 18 ms). Both are measured in the build (plan 1b, Task 10b); its accuracy is held to the same threshold
-    as Ω̄'s against the direct integral.
+    as Ω̄'s (0.1%, plan 1b, O8) against the closed form evaluated by quadrature.
   - **Looked up only after a sample with s_k ≠ 0** (plan D17: "looked up only after a sample where the story expects
     carrier, Ω̂ standing still otherwise"): elsewhere Ω̂ does not change, and neither does ν (a closed bin of zero
     weight adds nothing), so holding Ω̄ is exact.
@@ -2082,7 +2082,8 @@ measure; part 16, standard practice for each stage; part 17, the values.
       the same integral over Ω with √Ω in place of Ω, tabulated on the same nodes as a second channel
       (ln(E[√Ω]/σ_y)), read by the same lookup. **Memory:** from 37.8 MB to about 76 MB (estimated, stored the same
       way); a table above 100 MB goes to the owner (plan 1b, Task 10b). Its error against the direct integral is held to
-      Ω̄'s thresholds. Above χ = 10⁴ it falls back to the default's closed form for E[√Ω] (part 7, above).
+      Ω̄'s thresholds. Above χ = 10⁴ it falls back to the default table's E[√Ω], as Ω̄ falls back
+      to the default table; that fallback's error for E[√Ω] is to be measured in the build (for Ω̄ it was within 0.01%).
     - **Beyond the ranges:** above χ = 10⁴ the fading-only closed form (D16's table), within 0.01% there (above).
       Below χ = −8, the value at −8, which only ζ below about 0.26 can reach: Ω̂'s floor is −1.0 to −2.1 σ_y² on long
       runs and about −1.0 to −1.3 SE₀ after a single short first mark or a partial rise; there Ω̄ is flat in χ (−1.35
@@ -2150,15 +2151,20 @@ measure; part 16, standard practice for each stage; part 17, the values.
     Every 8 samples the grid's belief in u is diffused by Part 6's transition at 2 Hz with Kushner's three-point chain:
     p_i ← p_i + ε(p_(i−1) − 2p_i + p_(i+1)) on p_i = e^(F_i − m) (m the largest F), then F_i = m + ln p_i, with
     ε = 8·½(1 − ρ(Δ)²)/(2h²) = 8 × 1.404 × 10⁻⁴ / (2 × 0.0906²) = 0.0684 (derived; ρ(Δ) from Part 6's table at lag 1,
-    Ω̄ = a² at each point, so the variance in u is ½(1 − ρ²) per sample), reflecting at the prior's ends, so the
-    trapezoid mass and Z are conserved exactly (derived). It is applied after the sample's moments and before the
-    live-range trim. Part 6's drift toward 0.886·E[√Ω] and the Itô term are dropped: about −1.1 × 10⁻⁴ nepers per sample,
-    −0.008 nepers over a 70-sample first mark, against σ_u ≥ 0.05 at handover (derived).
+    Ω̄ = a² at each point, so the variance in u is ½(1 − ρ²) per sample), reflecting at the prior's ends with the ghost
+    mirrored about the end node (p₋₁ = p₁), so the trapezoid mass, ends halved, and Z are conserved exactly (derived).
+    The interval is 8 samples, 21.33 ms. It is applied after the sample's moments and before the live-range trim, on
+    the newborn's own samples counted from its birth; a handover between two steps ends it, leaving the variance
+    accumulated since the last step (at most 7 samples' worth) unapplied. Where ε would exceed ¼ (a genie spread above
+    about 3.8 Hz), it is applied in ⌈ε/¼⌉ equal substeps, so no mode of the chain changes sign (derived). Part 6's
+    drift (toward 0.886·a_i, Ω = a_i² at each point) and the Itô term are dropped: about −1.1 × 10⁻⁴ nepers per
+    sample, −0.008 nepers over a 70-sample first mark, against σ_u ≥ 0.05 at handover (derived).
   - **The stride of 8 is heuristic, chosen by measurement** (the newborn-fading study, scratch, 2026-10-27/28, under
     the ratio form): accuracy is flat from every sample to every 8 and slips at 16. At 2 Hz against the exact fading
     reference, 95th percentile / worst: every 8, 1.42 / 20.5 nats; every 4, 1.41 / 20.3; every sample, 1.40 / 20.3;
     every 16, 1.42 / 20.7; the as-built constant amplitude 1.69 / 21.8. A 512-point grid agrees with 128 points
-    within 0.01 nats in median (measured). Rejected (plan D24): every sample (+15 to +17.5% of the projected 425.7 ms
+    within 0.01 nats in median (measured, for the step every sample; the every-8 form's grid error is measured in the
+    build, plan 1b, Task 10). Rejected (plan D24): every sample (+15 to +17.5% of the projected 425.7 ms
     per channel-second) and every 4 (+4.2 to +4.5%), the same accuracy at more CPU; the amplitude held constant;
     an earlier handover (worse tails in some cases, 0.13 to 0.23 nats lost with no fading); exponential forgetting
     (less accurate, +15 to +19%); a two-dimensional grid over level and instantaneous amplitude (exact, about 4 000
@@ -2229,7 +2235,7 @@ measure; part 16, standard practice for each stage; part 17, the values.
       +9.9 and about +11 ms per channel-second at 500 newborns, +2.3% and about +2.6% of the projected 425.7 ms. Timed
       with D23's V(a_i) together in the build (plan 1b, Task 10, Step 0): the threshold for both together is +124 ms
       per channel-second at 500 newborns on the mix (D23's +113 ms plus D24's about +11 ms; 29.1% of 425.7 ms, 27.8%
-      of 445.4 ms), each change's increment reported separately.
+      of 445.4 ms), each change's increment reported separately, and D23's alone stopping above +113 ms.
 - **Its approximations** (plan D17), each measured in the prototype (part 15); anything over a fraction of a nat goes
   to the owner:
   - **(a) the grid:** at most 0.003 nats per sample on the measured range (above); above +40 dB S₅₀₀ as stated above.
@@ -2243,8 +2249,11 @@ measure; part 16, standard practice for each stage; part 17, the values.
       nats (as built: 0.16, 9.34, 56.3);
     - with no fading: median 0.02, worst 0.05 nats;
     - the newborn's approximation proper, the step against none on the decoder's own model: 95th percentile at most
-      0.26 nats at 2 Hz and 0.66 at 5 Hz, worst 5.3 nats (what the step removes);
-    - **the remaining tail, up to 56 nats, is Part 6's fast-fading limitation** (a level rising out of a deep fade,
+      0.26 nats at 2 Hz and 0.66 at 5 Hz, worst 5.3 nats (what the step removes; measured for the step every 4
+      samples, the study's recommendation; every 8 has the same accuracy within 0.01 to 0.02 nats at the 95th
+      percentile, its §4.1);
+    - **the remaining tail, up to 52.5 nats with the step (20.5 at 2 Hz), is Part 6's fast-fading limitation** (a
+      level rising out of a deep fade,
       which Part 6's one-number model cannot follow, in the newborn or after it; backlog), not the newborn's.
     History, one line: the derived "0.4 to 0.9 nats at 0 dB S₅₀₀ and 2 Hz, about 3 at 5 Hz" for the amplitude held
     constant, superseded by these measurements (D24). To be remeasured under D23 in the build (part 15, item 2).
@@ -2383,9 +2392,9 @@ measure; part 16, standard practice for each stage; part 17, the values.
     audit's row 11): f stands for slow mismatch (gain wobble, ripple, template shape), correlated over many samples,
     but it is added independently at each sample and tempered by the noise's w, so a long mark's flat part keeps
     adding evidence where a slow error would add about one mark's worth (its effect on decoding neither derived nor
-    measured). Kept and labeled, and **its correlation is measured with its size** (part 15, item 11): if the mismatch
-    is correlated over more than the filter's 5 correlated samples, the alternatives return to the owner with the
-    numbers; if f is negligible, f goes to 0 (D19). Rejected for now (plan D27): the slow part moved into the
+    measured). Kept and labeled, and **its correlation is measured with its size** (part 15, item 11), the numbers
+    always to the owner: if he judges the mismatch correlated over more than the filter's 5 correlated samples, the
+    alternatives return to him with the numbers; if f is negligible, f goes to 0 (D19). Rejected for now (plan D27): the slow part moved into the
     amplitude's process model (a rate of change per story; not designed, needs its own standard-practice check;
     backlog); a correlated systematic term inside the score (the prewhitening machinery, deferred in D25); f = 0 now
     (a strong station's flat part would count in full, the failure the term exists to prevent).
@@ -2495,7 +2504,7 @@ Each is recorded in `docs/backlog.md` under the heading given.
   - It matters with fading of about 2 Hz and faster at 25 WPM, earlier at slow speeds, mainly on strong signals.
   - **It also sets the newborn's tail** (the newborn-fading study; plan D24): with the prediction step every 8 samples
     the newborn follows Part 6's own model, and the first marks it still loses against the exact fading reference (up
-    to 56 nats worst at 5 Hz, 20.5 at 2 Hz) are a level rising out of a deep fade, which this one-number model cannot
+    to 52.5 nats worst at 5 Hz, 20.5 at 2 Hz against the reference at 2 Hz) are a level rising out of a deep fade, which this one-number model cannot
     follow in the newborn or after it (part 8, approximation (b)).
   - A second number per story (the amplitude's rate of change) is the possible remedy, pending a standard-practice
     check.
@@ -2534,8 +2543,8 @@ Each is recorded in `docs/backlog.md` under the heading given.
 - **Left open by D23** (owner, 2026-10-29; plan D23), each to the owner separately:
   - **The signal's timing contrasts weighted about 2.5 times too lightly** against the fist's timing costs, by one
     scalar w (the audit's row 16; part 4). **Decided since (owner, 2026-10-30; plan D25): kept, labeled a departure
-    from standard practice, and measured** (part 15, item 19); edge errors that matter return prewhitening to the
-    owner with a study.
+    from standard practice, and measured** (part 15, item 19); the owner judges on its numbers whether the edge errors
+    matter and so whether prewhitening returns with a study.
   - **The floor f independent per sample** (the audit's row 11; part 9). **Decided since (owner, 2026-10-30; plan
     D27): kept, labeled a departure, and its correlation measured with its size** (part 15, item 11).
   - **The edge offset not marginalized jointly** (the audit's row 10; part 5): the joint form, the study's
@@ -2621,7 +2630,8 @@ projected budget by part.
    - the grid's CPU with V(a_i) at each point (D23) and the prediction step every 8 samples (D24), timed first in the
      build against the as-built grid in the same run, each change's increment reported separately; above +124 ms per
      channel-second at 500 newborns for both together (D23's estimate top, +113 ms, plus D24's about +11 ms on the mix;
-     29.1% of the projected 425.7 ms, 27.8% of 445.4 ms), the newborn's form returns to the owner;
+     29.1% of the projected 425.7 ms, 27.8% of 445.4 ms), or above +113 ms for D23's alone, the newborn's form
+     returns to the owner;
    - (b) fading inside the newborn with the prediction step (D24), against the newborn-fading study's exact fading
      reference (at the true spread and at 2 Hz), with its generator applying the fading before the channel and front
      filters, 1 000 first marks per case at 0, +10 and +20 dB S₅₀₀ (until D24: the amplitude held constant, at 0 dB
@@ -2673,10 +2683,12 @@ projected budget by part.
     plan D17; restated for D23, part 9).
     - **Its correlation, with its size (owner, 2026-10-30: "1"; plan D27):** the same residual's autocorrelation from
       sample to sample, at every lag up to the length of the longest flat part measured, with its interval, on both
-      sets. **Rule:** if the mismatch is correlated over more than the filter's 5 correlated samples (the front filter's
-      output noise has ρ_1 … ρ_5 = 0.878 to 0.014 and about 0 beyond, part 4), the alternatives (the slow part in
-      the amplitude's process model; a correlated systematic term in the score) return to the owner with the numbers;
-      if f is negligible, f goes to 0 (D19).
+      sets, and the effective-count factor 1 + 2Σ_m ĉ(m) over the flat part (the variance of the mismatch's sum over a
+      flat part relative to independent samples; derived), always to the owner with f's value, with no threshold
+      (the coordinator's Ruling 96). He judges whether the mismatch is correlated over more than the filter's 5
+      correlated samples (the front filter's output noise has ρ_1 … ρ_5 = 0.878 to 0.014 and about 0 beyond, part 4);
+      if so, the alternatives (the slow part in the amplitude's process model; a correlated systematic term in the
+      score) return to him with the numbers; if f is negligible, f goes to 0 (D19).
 12. **Other transmitters' edges** (owner, 2026-10-23; plan D17):
     - stations keyed with 0.8 ms and 4.7 ms rises (10–90%), the ends of the edge term's range;
     - stations keyed with a transmit-path mark bias over −7 to +4.7 ms, both signs (the measured range;
@@ -2726,12 +2738,15 @@ projected budget by part.
     measured here; the curve w(q) is not used. History, one line: the fixed w measured against w per sample on the
     weak-signal groups (owner, 2026-10-25; plan D17), withdrawn by D23.
 19. **One w for every contrast, measured** (owner, 2026-10-30: "1"; plan D25; part 4): weak signals and fast keying
-    whose keyed lengths deviate from the fist's medians (sender timing variation), on a jittered grid. Reported: the
-    edge errors (each claimed key-down and key-up against the keyed edge, beyond the timing convention's 0 to 2.667 ms
-    and the mid-sample tie), the mark- and gap-length errors against the keyed lengths, whether the claimed lengths are
-    pulled toward the fist's medians (the regression of claimed on keyed length, its slope below 1 being the pull), and
-    the character error rate. If it shows edge errors that matter, prewhitening returns to the owner with a study (the
-    rule and the cells are in plan 1b, M19).
+    whose keyed lengths deviate from the fist's medians (sender timing variation), on a jittered grid whose level
+    cells lie wholly on one side of 0 dB S₅₀₀, those below it included. Reported to the owner, always, with no
+    pass/fail thresholds: the signed edge offsets (each claimed key-down and key-up in samples from the convention's
+    expected sample, as distributions, the mid-sample ties apart), the mark- and gap-length errors against the keyed
+    lengths, the measured pull toward the fist's medians (the slope of the claimed on the keyed deviation, with its
+    interval), beside it the slopes predicted in the linear-Gaussian approximation, I/(I + 1/σ_p²), under the decided
+    weighting (I = w·dᵀd) and under the exact correlated weighting (I = dᵀR⁻¹d, the audit's row 16), and the character
+    error rate. Whether the edge errors matter, and so whether prewhitening returns with a study (D25), is the owner's
+    call on these numbers (the cells and the computation are in plan 1b, M19).
 
 Every reported run's rounded per-signal score table is committed with its results record (CLAUDE.md).
 
