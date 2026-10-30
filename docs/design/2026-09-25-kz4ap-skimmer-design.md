@@ -288,6 +288,14 @@ The current hard-decision decoder (threshold keying, then element timing;
 
 ### 5.2 Development order (decided)
 
+**Amendment (2026-10-30, owner).** The Classical (Bayesian) decoder comes first,
+and the neural decoder may follow it. The live app is built alongside the
+decoder rather than after it. The bar: at most 40 ms of CPU per channel-second
+(100 signals at half of an 8-core desktop's capacity), about 8 ms the goal, and
+about as many callsigns copied as CW Skimmer on a real recording. How the decoder
+works is no longer specified here: `docs/signal-processing.md` describes it,
+and the steps below are history.
+
 Inside the decoder-robustness milestone (§3.1, item 1), in this order,
 following the survey's ranking:
 

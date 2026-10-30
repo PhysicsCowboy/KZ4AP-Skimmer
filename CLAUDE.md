@@ -1,18 +1,43 @@
 # KZ4AP Skimmer — project instructions
 
 - **Project documents and their roles:**
-  - `docs/design/2026-09-25-kz4ap-skimmer-design.md`: *what* and *why*. The
-    authority for decisions; changing it needs the owner's approval.
-  - `docs/plans/`: one implementation plan per milestone (*how*), written
-    from the approved spec before the milestone starts, approved by the owner
-    before any code.
-  - `docs/backlog.md`: deferred work in milestone order; items move into plans.
+  - `docs/design/2026-09-25-kz4ap-skimmer-design.md`: the project's goals and
+    its bar. Changing those needs the owner's approval. How the decoder works
+    belongs in `docs/signal-processing.md`, not here (owner, 2026-10-30).
+  - `docs/plans/`: results records for checkpoints, and a working plan of one
+    page at most where one helps. Plans need no approval (owner, 2026-10-30).
+    The new decoder's older plans and design notes stay as history and are
+    not maintained.
+  - `docs/backlog.md`: deferred work in milestone order.
   - `docs/signal-processing.md`: what the code actually does now (rule below).
   - `docs/research/`: evidence. `decoder-survey.md` is the synthesis (glossary,
     ranking, benchmark scenarios); per-source verification notes sit beside
     it; `research_notes/` is the original record, annotated, never rewritten.
-- **Branches:** work on feature branches. Merging into `main` and pushing need
-  the owner's approval. Never rewrite commits (no `--amend`, rebase, or
+- **How we work (owner, 2026-10-30):**
+  - **Decisions:** the coordinating session decides all engineering and keeps a
+    one-line log in `docs/decision-log.md`: what, why, and what it costs if
+    wrong. The owner never has to read it. Only these go to the owner: pushes,
+    any change to the goals or the bar, checkpoints, and what only he can do
+    (recordings, for example).
+  - **Checkpoints:** one page each: the scores, what changed, how the decoder
+    works now, what comes next. Between checkpoints, report only when stuck.
+    The owner can ask about anything at any time, and the answer defines its
+    terms and gives the formulas.
+  - **Choosing:** standard practice is the starting point, and the test set
+    decides. A heuristic that wins stays, labeled as a heuristic.
+  - **CPU:** stated in ms per channel-second against the bar: at most 40 ms
+    required, about 8 ms (500 tracks on half the desktop's cores) the goal.
+  - **Measuring:** slices of the test set while iterating, the whole set at
+    checkpoints.
+  - **Review:** tests always; one independent review before a checkpoint reaches
+    the owner or anything merges into `main`.
+  - **Subagent effort:** the coordinating session sets each subagent's effort
+    itself (owner, 2026-10-30): `high` for building and experiments, `low` or
+    `medium` for mechanical work, `max` for stubborn bugs and checkpoint
+    reviews.
+- **Branches:** work on feature branches. The coordinating session may merge
+  into `main` itself, after the review above. Pushing needs the owner's
+  approval, each time. Never rewrite commits (no `--amend`, rebase, or
   resetting commits); fix mistakes with a new commit.
 - **Languages** (owner, 2026-10-07 and 2026-10-20): new code is C++. Anything
   that processes signals (decoders, detectors, prototypes, experiments over
@@ -35,17 +60,16 @@
   conditions, the known limitations and defects, the full parameter table and
   the definitions used in tests and the benchmark. Results and evidence
   (measurements, port checks, test evidence, history) live in the results
-  records under `docs/plans/`, not in this document. Any change to signal
-  processing — a parameter value, an algorithm, the order of stages, a new
-  stage — updates the body and, where a derivation, provenance or limitation
-  changes, the appendix (including the parameter table), in the same commit.
-  Treat a stale description as a bug.
-- Any agent doing implementation work on this project must be told the rule
-  above.
+  records under `docs/plans/`, not in this document. It is brought up to date
+  at each checkpoint and before any merge into `main`, and may lag in between
+  (owner, 2026-10-30): the body and, where a derivation, provenance or
+  limitation changed, the appendix (including the parameter table). A stale
+  description at a checkpoint or on `main` is a bug.
 - **Test sets and parameter sweeps use a jittered grid** (owner,
   2026-10-06): cells over each condition's range, each value drawn at random
   within its cell; see `docs/plans/2026-10-06-development-set-redesign.md`.
-- **Results data and figures** (owner, 2026-10-07):
+- **Results data and figures** (owner, 2026-10-07; results records only for
+  checkpoints, 2026-10-30, so exploratory runs stay in `build/`):
   - Commit the **per-signal score table** (CSV: one row per signal with its
     conditions, cell, CER and character count) of every run a results record
     reports, so every number in the record can be checked and every fit and
@@ -78,10 +102,8 @@
 Work often runs unattended, overnight. A command that waits for the owner's
 approval stalls everything behind it for hours, so stay inside these forms.
 
-- **Git:** one git command per call, never chained with other commands (no
-  `&&`, `;` or `|` around git, no `cd … &&`, no `git -C`). Commit freely on
-  feature branches. Pushing and merging into `main` need the owner's
-  approval, each time.
+- **Git:** commit freely on feature branches. Pushing needs the owner's
+  approval, each time. Merging into `main` is the coordinating session's job.
 - **Never discard work:** no `git checkout -- <path>`, `git restore <path>`,
   `git reset --hard` or `git clean`. To set changes aside, use `git stash`;
   to experiment without touching the working tree, use a separate worktree
