@@ -28,6 +28,9 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
     const viterbi::Fist fist(model);
     speeds_ = model.speed_count;
     nodes_ = static_cast<int>(tree_.size());
+    if (speeds_ > 254 || nodes_ > 255) throw std::invalid_argument("segmental: at most 254 speeds and 255 tree nodes");
+    if (!(config.beam_nats > 0.0) || config.ceiling < 1 || !(config.duration_z_max > 0.0))
+        throw std::invalid_argument("segmental: beam_nats and duration_z_max must be positive, and ceiling at least 1");
     sample_interval_s_ = model.sample_interval_s;
     children_.resize(static_cast<std::size_t>(nodes_) * 2);
     for (int node = 0; node < nodes_; ++node) {
@@ -306,9 +309,7 @@ void Search::Impl::boundary(std::int64_t j) {
     }
     stats.touches += count;
 
-    // 2. The no-signal story: continuing, and a birth from it (before the over's ends here).
-    const double before = silent;
-    const bool before_alive = silent_alive;
+    // 2. The no-signal story continues.
     if (silent_alive) {
         silent += model.log_silence();
         best = std::max(best, silent + gap_reach);
@@ -336,6 +337,8 @@ void Search::Impl::boundary(std::int64_t j) {
         }
         tail_now = Tail{};
     }
+    const double before = silent;  // a birth here comes from the no-signal story as it now stands
+    const bool before_alive = silent_alive;
     std::int32_t silent_parent = -1;
     int silent_node = 0;
     double silent_end = -kInf;
@@ -603,23 +606,6 @@ std::vector<DecodedSymbol> Search::best_text() const {
                                     s.time_of(winner->start)});
     }
     return out;
-}
-
-double Search::best_score() const {
-    const Impl& s = *impl_;
-    double best = s.silent_alive ? s.silent : -kInf;
-    const std::int64_t j = s.next - 1;
-    if (j >= 0) {
-        const double c11 = s.sums.sum(j + kEdgeDone);
-        for (const Element& e : s.live) {
-            const int length = static_cast<int>(j - e.start);
-            if (e.kind == kGap)
-                best = std::max(best, e.base + s.model.gap_survival(e.speed, std::min(length, s.model.survival_length(e.speed) - 1)));
-            else if (e.kind == kMark)
-                best = std::max(best, e.base + c11 + s.model.mark_survival(e.speed, std::min(length, s.model.survival_length(e.speed) - 1)));
-        }
-    }
-    return best;
 }
 
 const SearchStats& Search::stats() const { return impl_->stats; }

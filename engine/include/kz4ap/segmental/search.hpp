@@ -1,10 +1,11 @@
 // The segmental decoder's search: the viterbi decoder's explicit-duration model (viterbi/search.hpp: the fist, the Morse
 // tree, the symbol prior, the over's ends) over edges rather than over samples.
 //
-// The search runs behind the evidence. Boundary j is searched once the evidence through sample j + 10 exists, so a claimed
+// The search runs behind the evidence. Boundary j is searched once the evidence through sample j + 16 exists, so a claimed
 // edge at j is scored in full (its window, evidence.hpp) when it is merged: the review's merge before the edge's evidence
-// (F3) cannot happen, and no edge history is needed in the state. For elements of at least 6 samples the future depends
-// on the past only through (j, speed, node, element kind), so merging on them at j is exact.
+// (F3) cannot happen, and no edge history is needed in the state. For a next element of at least 6 samples the future
+// depends on the past only through (j, speed, node, element kind), so merging on them at j is exact given the shared
+// evidence; a next element shorter than that overlaps this edge's window, and its score reads only the pair of edges.
 //
 // An open element is a mark or gap that started at a claimed edge. It is touched at each boundary to offer its ends:
 //   - a mark from node n at speed s, started at i, ends at j as a dot and as a dash, into a gap at the child node, scoring
@@ -13,7 +14,9 @@
 //     root, paying the letter's prior).
 // The scores are the viterbi decoder's: the letter's ln 62 at its start and ln p + ln 62 at its end, the gap kinds', the
 // over's end, the no-signal story's ln(1 - P) per sample and a birth's ln P. A birth starts a mark of open speed: its end
-// offers every speed with ln(1 / speed_count).
+// offers every speed with ln(1 / speed_count). A rescue is the same mark from the best story that starts a letter at this
+// boundary, paying ln epsilon for ln(1 - epsilon). An over's end reaches the no-signal story 6 samples later, so that a
+// birth's rise window cannot overlap the fall's window that ended the over.
 //
 // Pruning compares, at boundary j, every story on what it can reach through the horizon H = j + 16: an element already
 // open cannot be charged for an edge it has not claimed yet, whose evidence already stands inside the horizon (this is
@@ -114,6 +117,7 @@ struct SearchStats {
     std::int64_t touches = 0;         // open elements touched, summed over the boundaries
     std::int64_t opened = 0;          // elements opened
     std::int64_t largest_live = 0;    // the most open elements after a boundary's pruning
+    friend bool operator==(const SearchStats&, const SearchStats&) = default;
 };
 
 class Search {
@@ -133,8 +137,6 @@ public:
 
     // The best story's text.
     std::vector<DecodedSymbol> best_text() const;
-    // Its score, nats, against "key up, throughout".
-    double best_score() const;
     const SearchStats& stats() const;
     // The open elements after the last boundary's pruning.
     std::size_t live() const;

@@ -8,8 +8,9 @@
 //    rise(i) = sum over m = 5 ... 10 of R_(i+m)[m - 5], fall(j) = sum over m = 5 ... 10 of F_(j+m)[m - 5]:
 //    the key-down score of sample k with the template s_m (R) or 1 - s_m (F) in place of 1. One subtraction and two
 //    reads, whatever the mark's length. It holds for a mark and a gap of at least 6 samples (a dot of 16 ms, 75 WPM), for
-//    which no two edges' windows overlap; below that the same formula counts the overlap by inclusion and exclusion (an
-//    approximation).
+//    which no two edges' windows overlap. A shorter element (LevelTables::short_score) has its two edges' superposition
+//    scored sample by sample with the belief's few levels: computed only when a story could end one, at most once per
+//    (kind, length) per boundary, and it adds nothing to a slow signal's cost once the fast speeds have left the beam.
 //
 // 2. The shared level (LevelEvidence). The per-story Kalman amplitude is replaced by one belief per channel over
 //    (key state x level): a two-state key with a switch probability tau per sample (no timing: the key's timing is left
@@ -23,10 +24,14 @@
 //    own samples are not counted twice. Then
 //        L1_k = ln sum over l of P_t(l) exp(x_k(l)),
 //    and R and F likewise with V = sigma^2 + a^2 (f^2 s^2 + v_m). Lambda is the Rician log-likelihood ratio against noise
-//    alone, tempered by w = w_strong as in the viterbi decoder (viterbi/observation.hpp).
+//    alone, tempered by w = w_strong as in the viterbi decoder (viterbi/observation.hpp). V carries the systematic floor f
+//    and the grid's own relative variance, step^2 / 12 in nepers^2 (derived; config.hpp, level_grid_in_v).
 //
-// The evidence reaches the search only after the look-ahead (level_lookahead_s + level_commit_s at most), so the text
-// lags by about 1 s. A new over needs no newborn: the backward message gives its first mark the level of the marks after it.
+// The evidence reaches the search only after the look-ahead (level_lookahead_s + level_commit_s at most): the text lags by
+// 0.34 s and the search's 17 samples, 0.387 s at most. A new over needs no newborn: the backward message gives its first
+// mark the level of the marks after it. The approximation in all of this: the belief is one per channel, conditioned on
+// no story's text, and it multiplies each sample's marginal rather than integrating one amplitude over a mark; what that
+// costs is measured against the viterbi decoder (docs/decision-log.md, 2026-10-30).
 #pragma once
 
 #include "kz4ap/segmental/config.hpp"
@@ -176,7 +181,6 @@ private:
     std::vector<float> z_;           // by sample in the ring: e / sigma_y
     std::vector<double> beta_;       // backward message: key up by level, then key down by level
     std::vector<double> belief_;     // by frame in the ring, then level: what its samples read
-    std::vector<double> work_;       // work
 };
 
 }  // namespace kz4ap::segmental

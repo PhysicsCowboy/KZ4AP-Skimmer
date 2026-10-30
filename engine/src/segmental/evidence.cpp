@@ -49,6 +49,7 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
     if (!(config.level_step_db > 0.0) || !(config.level_max_db_s500 > config.level_min_db_s500))
         throw std::invalid_argument("segmental: the level grid needs a step above 0 dB and a top above its bottom");
     levels_ = 1 + static_cast<int>(std::round((config.level_max_db_s500 - config.level_min_db_s500) / config.level_step_db));
+    if (levels_ > 256) throw std::invalid_argument("segmental: the level grid holds at most 256 levels");
     w_ = noise.w_strong;
     sigma2_per_n0_hz_ = noise.sigma2_per_n0_hz;
     // The relative variance of the key-down amplitude about a level of the grid: the systematic floor's, and the grid's own,
@@ -147,7 +148,6 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
     z_.assign(ring_samples, 0.0f);
     beta_.assign(2 * levels, 1.0 / (2 * levels_));
     belief_.assign(ring * levels, 0.0);
-    work_.assign(levels, 0.0);
     // The forward message's prediction into frame 0.
     std::copy_n(alpha_.begin(), levels, entering_.begin());
     for (std::size_t level = 0; level < levels; ++level) entering_[level] += alpha_[levels + level];

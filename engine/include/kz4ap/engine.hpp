@@ -72,7 +72,8 @@ struct EngineConfig {
     double channel_cutoff_hz = 150.0;
     DetectorConfig detector;  // sample_rate, fft_size, hop and attribution_distance_hz (from
                               // channel_distance_hz) are overwritten by the engine
-    ClassicalDecoderConfig decoder;  // decoder.front_end selects the decoder: Envelope, Matched, Bank or Viterbi
+    // decoder.front_end selects the decoder: Envelope, Matched, Bank, Viterbi or Segmental
+    ClassicalDecoderConfig decoder;
     bank::BankConfig bank;           // the bank decoder's configuration (decoder.front_end == FrontEnd::Bank)
     // The new decoder's configuration (decoder.front_end == FrontEnd::Viterbi); its hiss_* fields also configure the
     // engine's hiss estimator, which then reads every spectrum frame (in oracle mode too).
