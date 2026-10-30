@@ -490,6 +490,11 @@ about 1 Hz at 25 WPM are unaffected (the fixed 2 Hz rule is calibrated or cautio
 affected; at slow speeds, with longer marks, it starts at slower fading (an 8 WPM dash of 450 ms, likely from about
 1 Hz; derived, the 8 WPM check unfinished).
 
+It also sets the newborn's first-mark tail (plan D24; the newborn-fading study, 2026-10-27/28, under the ratio form):
+with the prediction step every 8 samples the newborn follows this same one-number model, and the first marks it still
+loses against the exact fading reference, up to 52.5 nats worst at 5 Hz and 20.5 at 2 Hz (against the reference at
+2 Hz), are a level rising out of a deep fade, which the model cannot follow in the newborn or after it.
+
 A possible remedy is a second number per story, the amplitude's rate of change. That is standard in target tracking
 (the nearly-constant-velocity model, Bar-Shalom) and in fading-channel estimation of the complex gain (Baddour and
 Beaulieu 2005), but not established for amplitude-only tracking in a Morse decoder, and a Rayleigh amplitude turns
