@@ -1,7 +1,11 @@
 # New decoder: the amended build (prototype 1b) Implementation Plan
 
 > **Status: approved by the owner, 2026-10-26 ("Approved"), after two reviews and four fix rounds; its questions
-> decided by him (D19–D22, §3.3).**
+> decided by him (D19–D22, §3.3).** **Amended 2026-10-29 for D23** (owner: "Sure"; the prototype plan's §3): every
+> story scored by its full density against one shared reference, the systematic variance from the story's prediction,
+> one constant w = 0.1986; the window, its look-ahead, C²'s own part, the caps, w per sample and D21 removed. Task 10
+> makes the change (the newborn's cost timed first); §1, §2, §3, §4, §6, §7, §8, §9 and Tasks 5, 9 and 11 to 19 are
+> amended to match.
 > The owner does not read this plan: it is the executors' document, and every decision reaches him in chat, in words.
 > His answers are recorded here by the coordinator.
 >
@@ -30,7 +34,8 @@ bin, then a fine phase-continuous shift), so the decoder receives its station ne
 The decoder passes the channel through one fixed 25-tap front filter (76.0 Hz noise bandwidth, matched to a 12 ms dot
 with 2.5 ms edges) and takes its envelope every 4th channel sample (2.667 ms). The explicit-duration Viterbi beam
 search of the first prototype is kept as a skeleton; each story now predicts the envelope from its claimed edges (the
-smeared template), scores every sample by the tempered Rician likelihood integrated over its Gaussian amplitude, and
+smeared template), scores every sample by its tempered full Rician density against one reference shared by all
+stories (noise alone; D23), integrated over its Gaussian amplitude, and
 tracks that amplitude toward its own long-run power Ω̄; a newborn's first mark is scored against the owner's flat
 prior until its belief narrows.
 
@@ -81,12 +86,13 @@ It delivers:
    follow the label's true (drifting, per-over) frequency (Part 1; Part 14).
 3. **The test generator's D17 edges** in Python, and a new-decoder-only C++ test-signal helper with the same edges
    (Part 14; Ruling 63).
-4. **Table generators** as a C++ tool in the repository (Ruling 65): the weight table and the default Ω̄ table
-   compiled in; the variant's table (37.8 MB as built in Task 8) generated into `build/` and loaded only when the variant runs.
+4. **Table generators** as a C++ tool in the repository (Ruling 65): the default Ω̄ table compiled in (the weight
+   table, built in Task 5, is removed by Task 10 with D23's constant w); the variant's table (37.8 MB as built in Task 8) generated into `build/` and loaded only when the variant runs.
 5. **Instrumentation:** the CPU breakdown by part in every measurement (Part 15's preamble; D18), Part 15's counters,
    and a true-story trace (the model run along the label's keying) for the measurements that need it.
-6. **The measured variants behind switches,** off by default: the fixed w (Part 15, item 18), Bell's decay (item 16),
-   the noise in Ω̄'s likelihood (item 17), the previous element's length in the merge state (item 13).
+6. **The measured variants behind switches,** off by default: Bell's decay (item 16), the noise in Ω̄'s likelihood
+   (item 17), the previous element's length in the merge state (item 13). (The fixed w, item 18, is the rule since
+   D23, not a variant.)
 7. **The measurements:** the prototype plan's runs revised (§7.1), Part 15's 18 items (§7.2), with the regenerated
    DEV2e and N2e, the bank's reference rerun, and the results record
    `docs/plans/2026-10-26-new-decoder-prototype-1b-results.md` with its committed score tables in
@@ -109,24 +115,24 @@ From the code map §1 to §3 against Parts 1 to 12. "Task n" is the task of §10
 | `engine/include/kz4ap/channelizer.hpp`, `engine/src/channelizer.cpp` | everything | — | — | `Channelizer::set_center_bin(id, bin)`, a mid-stream move effective from the next block (Task 2) |
 | `engine/include/kz4ap/channel_follower.hpp`, `engine/src/channel_follower.cpp` | — | — | — | `ChannelFollower`: the coarse bin rule and the fine phase-continuous shift (Task 2) |
 | `engine/include/kz4ap/engine.hpp`, `engine/src/engine.cpp` | the hiss wiring, the other decoders' paths | new-decoder channels re-binned and shifted before their decoder (Task 2); oracle channels read `oracle_frequency_tracks` (Task 2); the variant's table path passed to the shared parts (Task 12) | — | `EngineConfig::oracle_frequency_tracks`, `OracleSegment` (Task 2); `EngineConfig::viterbi_omega_bar_table` (Task 12) |
-| `viterbi/config.hpp` | the speed grid, fist, beam, ceiling, rates, level range, quadrature order, hiss fields, `genie_fading_spread_hz`, `stats`, `ViterbiGenie::fading_spread_hz` and `::fist` | `piece_s` → `sample_interval_s` = 4/1 500 s; `fading_spread_hz` 1.0 → 2.0 Hz (Task 10); `with_genie` keeps fading and fist only (Task 2) | `tracker_window_s`, `tracker_hop_s`, `tracker_search_hz`, `tracker_gate_db`, `tracker_drift_sd_hz_per_s`, `tracker_drift_noise`, `genie_frequency_offset_hz`, `genie_frequency_drift_hz_per_s`, `ViterbiGenie::frequency_hz`, `frequency_time_s`, `drift_hz_per_s` (Task 2); `block_loss_db`, `keying_rise_s`, `block_length_s()` (Task 10) | the fields of §10, Task 10 (front filter, edges, systematic memory and look-ahead, ν's bins, newborn), Task 11 (`profile`), Task 12 (variant switches) |
+| `viterbi/config.hpp` | the speed grid, fist, beam, ceiling, rates, level range, quadrature order, hiss fields, `genie_fading_spread_hz`, `stats`, `ViterbiGenie::fading_spread_hz` and `::fist` | `piece_s` → `sample_interval_s` = 4/1 500 s; `fading_spread_hz` 1.0 → 2.0 Hz (Task 10); `with_genie` keeps fading and fist only (Task 2) | `tracker_window_s`, `tracker_hop_s`, `tracker_search_hz`, `tracker_gate_db`, `tracker_drift_sd_hz_per_s`, `tracker_drift_noise`, `genie_frequency_offset_hz`, `genie_frequency_drift_hz_per_s`, `ViterbiGenie::frequency_hz`, `frequency_time_s`, `drift_hz_per_s` (Task 2); `block_loss_db`, `keying_rise_s`, `block_length_s()` (Task 10) | the fields of §10, Task 10 (front filter, edges, ν's bins, newborn; the systematic memory and look-ahead fields, planned here, are dropped by D23), Task 11 (`profile`), Task 12 (variant switches) |
 | `viterbi/morse_tree.*` | all | — | — | — |
 | `viterbi/fist.*` | all (it counts in `config.sample_interval_s`) | reads `sample_interval_s` (Task 10) | — | — |
 | `viterbi/observation.*` | `ln_i0`, `find_mode`, `fit_posterior`, the truncated-node table (Rulings 11, 15, 60), `Moments`, `evaluate` | the integrand gains the tempering weight w; the broad-prior regime gains w or is dropped by Task 5's measurement | `sum_noise_hz`, `rise_fractions`, `rise_template_errors`, `detail::rise_fractions_by_position`, `analyze_rise`, `FlatPrior`, `block_llr`, `block_llr_uncertain`, `level_posterior`, `block_evidence`, `BlockEvidence` (Task 10) | `sample_evidence`, `SampleEvidence` (Task 5) |
 | `viterbi/level.*` | — | — | the whole file: `Level`, `predict`, `BlockScore`, `score_block`, `score_first_block` (Task 10) | — |
 | `viterbi/tracker.*`, `engine/tests/viterbi/tracker_test.cpp` | — | — | all (Task 2) | — |
-| `viterbi/search.hpp`, `search.cpp` | states, `pack_state`, `MorseTree` walk, `Fist` use, successors, births, rescue, `OpenTiming`, `StateTable`, merging, `prune_alive`, `SharedText`, `SearchStats`'s lines and live counts, `detail::merge`/`prune` | `Search` takes `ViterbiShared` parts instead of `c` and `FlatPrior`; `step(double e_fs, double t_s, double n0)`; `Story`: `tau` counts samples, `base` is the running sum of booked sample scores; every phase (mark, gap, no signal) scores its samples with s_k ≠ 0; the look-ahead 2 pieces → 10 samples; `carrier_power_` → the 21-sample window; `best_text` times are claimed edge times (Task 10) | `Story::block_sum`, `block_pieces`, `level`; `block_pieces_`, `first_block_pieces_`, `noise_rate_hz_`, `window_` (390 ms), `kLookaheadS`, `scored_` of `BlockScore` (Task 10) | `Story::edges` (`EdgeHistory`), `amp` (`Amplitude`), `mode_a`, `long_run` (`LongRun`), `omega_bar`, the newborn's state handle, the variant's sums (Tasks 10, 12); `CpuBreakdown` and counters in `SearchStats` (Task 11) |
+| `viterbi/search.hpp`, `search.cpp` | states, `pack_state`, `MorseTree` walk, `Fist` use, successors, births, rescue, `OpenTiming`, `StateTable`, merging, `prune_alive`, `SharedText`, `SearchStats`'s lines and live counts, `detail::merge`/`prune` | `Search` takes `ViterbiShared` parts instead of `c` and `FlatPrior`; `step(double e_fs, double t_s, double n0)`; `Story`: `tau` counts samples, `base` is the running sum of booked sample scores; every phase (mark, gap, no signal) scores its samples with s_k ≠ 0; the look-ahead (2 pieces) removed, each sample searched as it arrives, and `carrier_power_` removed, C² coming from each story's prediction (D23; the 10-sample look-ahead and 21-sample window first planned here are dropped); `best_text` times are claimed edge times (Task 10) | `Story::block_sum`, `block_pieces`, `level`; `block_pieces_`, `first_block_pieces_`, `noise_rate_hz_`, `window_` (390 ms), `kLookaheadS`, `scored_` of `BlockScore` (Task 10) | `Story::edges` (`EdgeHistory`), `amp` (`Amplitude`), `mode_a`, `long_run` (`LongRun`), `omega_bar`, the newborn's state handle, the variant's sums (Tasks 10, 12); `CpuBreakdown` and counters in `SearchStats` (Task 11) |
 | `viterbi/hiss.*` | all | — | — | — |
 | `viterbi/front_filter.*` | — | — | — | `front_filter_taps`, `OutputNoise`, `output_noise`, `EnvelopeSampler` (Task 3) |
 | `viterbi/mark_template.*` | — | — | — | `TemplateTables`, `make_template_tables`, `EdgeHistory`, `template_value`, `claimed_edge_sample` (Task 4) |
-| `viterbi/weight.hpp`, `engine/src/viterbi/weight_table.cpp` (generated) | — | — | — | `sample_weight(q)` and its 129-node table (Task 5) |
-| `viterbi/systematic.*` | — | — | — | `CarrierWindow`, `v_prime_fs2`, `score_cap_nats` (Task 5) |
+| `viterbi/weight.hpp`, `engine/src/viterbi/weight_table.cpp` (generated) | — | — | — | `sample_weight(q)` and its 129-node table (Task 5), removed again by Task 10 (D23: one constant w) |
+| `viterbi/systematic.*` | — | — | — | `CarrierWindow`, `v_prime_fs2`, `score_cap_nats` (Task 5); Task 10 removes `CarrierWindow` and `score_cap_nats` and makes the variance the prediction's (D23) |
 | `viterbi/amplitude.*` | — | — | — | `Amplitude`, `FadingTables`, `predict_amplitude`, `predict_amplitude_bell` (Task 6) |
 | `viterbi/long_run.*`, `engine/src/viterbi/omega_bar_table.cpp` (generated) | — | — | — | `LongRun`, `OmegaBarTable`, `omega_bar_closed_form` (Task 7); `NoiseVarianceSums`, `OmegaBarVariantTable`, `omega_bar_variant_direct` (Task 8) |
 | `viterbi/newborn.*` | — | — | — | `NewbornIntegral` (Task 9) |
 | `engine/include/kz4ap/viterbi_decoder.hpp`, `engine/src/viterbi_decoder.cpp` | `ViterbiDecoder`'s `Decoder` overrides, `flush`, `reset`, `stats()`, `search()`, `set_noise_density_fs2_per_hz` | `process` feeds the front filter and the envelope sampler, then the search, sample by sample (Task 10); `ViterbiShared` holds the front taps, `OutputNoise`, `TemplateTables`, `FadingTables`, `OmegaBarTable` and, for the variant, `OmegaBarVariantTable` (Tasks 10, 12) | `tracker_`, `anchor_hz_`, `phase_cycles_`, `offset_hz_`, the `tracker()` accessor, the re-centering (Task 2); `piece_sum_`, `viterbi_block_pieces`, `viterbi_first_block_pieces`, `ViterbiShared::c_`, `rise_`, `template_errors_`, `flat_prior_`, `keying_rise_s_` (Task 10) | — |
 | `bench/src/viterbi_json.*`, `bench/src/main.cpp` | `--decoder viterbi`, `--set`, `--stats`, `--stats-detail`, `--genie fist|fading`, the result file's config | the field macro follows every config change (Tasks 2, 10, 11, 12); the genie fist's σ floor uses `sample_interval_s` (Task 10); statistics format version 3 (Task 11) | `--genie frequency` and `GenieKind::Frequency` (Task 2) | oracle frequency tracks from the labels (Task 2); `--omega-bar-table FILE` (Task 12); `--trace DIR` (Task 12) |
-| `bench/src/viterbi_tables_main.cpp` | — | — | — | `kz4ap-viterbi-tables` with subcommands `weight` (Task 5), `omega-bar` (Task 7), `omega-bar-variant` (Task 8) |
+| `bench/src/viterbi_tables_main.cpp` | — | — | — | `kz4ap-viterbi-tables` with subcommands `weight` (Task 5; removed by Task 10, D23), `omega-bar` (Task 7), `omega-bar-variant` (Task 8) |
 | `engine/tests/test_signals.hpp` | unchanged (Ruling 63) | — | — | — |
 | `engine/tests/viterbi/keyed_signals.hpp` | — | — | — | the new decoder's keyed-signal helper with D17 edges (Task 3) |
 | `training/tests/data/search-stats/tiny.v1.stats.json`, `tiny.v2.stats.json` | kept as the examples of formats 1 and 2 | their `config` rewritten in Tasks 2 and 10 (Ruling 66; O13) | — | `tiny.v3.stats.json` and `tiny.v3-detail.stats.json` from one run (Task 11; Ruling 71) |
@@ -151,6 +157,22 @@ From the code map §1 to §3 against Parts 1 to 12. "Task n" is the task of §10
   set f), **D20** (Bell's variant changes only the mean's target), **D21** (the newborn's weight from the curve at
   each amplitude), **D22** (the newborn's integral on a fixed 128-point grid in u). The design notes' Part 8, Part 15
   items 2 and 16 and Part 17 are amended to match (commits fa58d31, 54c2f60, 81566bb).
+- **D23** (owner, 2026-10-29: "Sure"), decided during Task 10 after the build found the ratio form's bias (a story
+  claiming its edges about 2 samples off won by 105 nats on a clean dash at +20 dB S₅₀₀): every story scores
+  e_k by its full tempered Rician density against one reference shared by all stories, noise alone at σ_y²,
+  score_k = ln ∫ exp(w·[ln p(e_k | a, V_k) − ln p₀(e_k | σ_y²)]) N(a; μ, P) da; V_k = σ_y² + (μ²_k|k−1 +
+  P_k|k−1)(f²s_k² + v_k), the systematic variance from the story's own prediction, and V(a_i) = σ_y² + a_i²(f²s_k² +
+  v_k) at each point of the newborn's grid; the 21-sample window, its memory and look-ahead (the search's 10-sample
+  hold, 26.67 ms of delay), C²'s own part and the caps removed, the misfit bound w·δ²/(f²s_k² + v_k) per sample in
+  their place; one constant w = 0.1986 for every story and sample, the newborn included, which withdraws D17's w per
+  sample and D21 (the fixed-w variant, item 18, becomes the rule; the curve w(q) is no longer used); D15's rule
+  "carrier power from the data, never from a story's level" reversed, its neighbor trade to be remeasured (M10, M15).
+  CPU: +3.1% of the projected 425.7 ms per channel-second for ordinary scoring (measured); the newborn's V(a_i) +13 to
+  +27% (estimated), **timed first in Task 10; a cost above +27% stops for the owner.** Left open, each to the owner
+  later: timing contrasts weighted about 2.5 times too lightly (the audit's row 16), f independent per sample (row
+  11), the edge offset not marginalized jointly (row 10; a measured variant for the backlog at about +920% CPU), √Ω̄
+  where E[√Ω] is meant (row 20). The design notes are amended (Parts 4, 5, 6, 8, 9, 12, 13, 15, 16, 17). Evidence:
+  `.superpowers/sdd/2026-10-26-new-decoder-prototype-1b/score-form-candidates.md` and `audit-standard-practice.md`.
 - **Ruling 60:** the per-sample score uses the quadrature as built: adaptive Gauss–Hermite of order 5, centered at
   the integrand's mode by Newton's method, scaled by its curvature, mapped onto the Gaussian truncated at a = 0.
   The budget's scoring line is therefore the timing slice's row 1′ (412 ns per scored sample), not row 1.
@@ -163,8 +185,8 @@ From the code map §1 to §3 against Parts 1 to 12. "Task n" is the task of §10
   other decoders' tests and goldens unchanged.
 - **Ruling 64:** merging on the packed state as it is (the owner's per-survivor decision); the previous element's
   length in the state is the measured variant (item 13).
-- **Ruling 65:** table generators are C++ tools in the repository; the weight table and the default Ω̄ table compiled
-  in; the variant's 12.8 MB table generated into `build/` and loaded when the variant runs (not committed).
+- **Ruling 65:** table generators are C++ tools in the repository; the weight table (removed by D23 in Task 10) and
+  the default Ω̄ table compiled in; the variant's 12.8 MB table generated into `build/` and loaded when the variant runs (not committed).
 - **Ruling 66** (worded as O13, fix round 5): committed fixtures naming removed configuration fields are updated in
   the task that removes the fields, their `config` rewritten; their statistics stay the old formats' examples.
 - **Rulings 69–72** (the coordinator's, on the pre-flight scan of 2026-10-26, `.superpowers/sdd/2026-10-26-new-
@@ -212,14 +234,17 @@ that references stay valid.
 - **O9. The broad-prior regime with w:** the requirement is D4's, the per-sample score within 0.01 nats of a dense
   integral everywhere, the broad-prior region included. If adaptive Gauss–Hermite of order 5 meets it there with w,
   the regime and its tables are removed; otherwise its J table gains w as an input over 0.1986 to 0.2754 (Part 12),
-  its grid set by the same 0.01 nats.
+  its grid set by the same 0.01 nats. (Task 5 measured the second case and built a w axis of 5 nodes over 0.1986 to
+  0.2755 plus a w = 1 slice. With D23's one constant w, Task 10 keeps only the w = 0.1986 slice at startup, the
+  w = 1 slice built lazily for the test that uses it.)
 - **O10. The newborn's prior bounds** in FS are fixed at its birth from N₀ then (a_lo,hi = √(10^(L/10)·N₀·500 Hz),
   L = −15 and +85 dB S₅₀₀).
 - **O11. Replaced by D20 (fix round 2):** the variant changes only the mean's target across a space (decay by
   Φ^0.5333 per sample, by at most 5 dB of amplitude); the variance follows the decided rule everywhere, no Q; inside a
   mark (one sample since the last estimate) the decided rule applies to both.
-- **O12. The fixed-w variant** (item 18) sets w = 0.1986 on every sample, the newborn's included: it is the state
-  the decoder "goes back to" if the curve shows no gain.
+- **O12. Superseded by D23 (2026-10-29):** w = 0.1986 on every sample, the newborn's included, is the rule, not a
+  variant; there is no `fixed_weight` switch. (It was: the fixed-w variant, the state the decoder "goes back to" if
+  the curve shows no gain.)
 - **O13. Fixtures** (Ruling 66; Ruling 71): Tasks 2 and 10, which remove fields, rewrite the fixtures' `config`
   objects (their statistics are format examples, kept so that the readers of formats 1 and 2 stay tested); Task 11,
   which adds format 3, adds `tiny.v3.stats.json` (summary) and `tiny.v3-detail.stats.json` (detail) from one run.
@@ -260,7 +285,8 @@ decisions are recorded in the prototype plan's §3.
   bottom edge (measured). Decided: each sample's evidence with the exact ln I₀ and Part 4's weight curve w(q) at each
   amplitude, q = a²s_k²/σ_y² (D21), integrated on a fixed grid of 128 points even in u = ln a over the prior's
   11.51 nepers, trapezoid rule, points more than 80 nats below the largest dropped for good, ln I₀ and w from two
-  shifted tables (D22). Task 9 implements it.
+  shifted tables (D22). Task 9 implements it. **D23 (2026-10-29) replaces D21's weight by the constant w and each
+  point's evidence by part 4's full density with V(a_i) at that point; Task 10 changes Task 9's code.**
 - **Q2, recordings for the floor f: decided as D19 (owner, 2026-10-26: "Yes c", the coordinator's lettering, (b)
   here).** Live W1AW code-practice sessions recorded off the air by the owner as I/Q, aligned to the ARRL's published
   text for the same session (forced alignment). The ARRL's downloadable MP3 files are probably rendered from the text
@@ -280,9 +306,8 @@ decisions are recorded in the prototype plan's §3.
 | `engine/include/kz4ap/channel_follower.hpp`, `engine/src/channel_follower.cpp` | Part 1: the coarse bin rule (move at more than half a bin, 11.72 Hz) and the fine shift |
 | `viterbi/front_filter.hpp`, `.cpp` | Parts 2–3: the 25 taps, the output noise figures, the envelope sampler |
 | `viterbi/mark_template.hpp`, `.cpp` | Part 5: S(τ), s_j and v_j, the edge history, the claimed-edge rule |
-| `viterbi/observation.hpp`, `.cpp` | Part 4: ln I₀, the tempered per-sample score and posterior (adaptive Gauss–Hermite) |
-| `viterbi/weight.hpp`, `engine/src/viterbi/weight_table.cpp` (generated) | Part 4: w_k from q_k |
-| `viterbi/systematic.hpp`, `.cpp` | Part 9: the 21-sample window, V′_k, the caps |
+| `viterbi/observation.hpp`, `.cpp` | Part 4: ln I₀, the tempered per-sample score against the shared reference and posterior (adaptive Gauss–Hermite) |
+| `viterbi/systematic.hpp`, `.cpp` | Part 9: V_k from the story's prediction (D23; the weight table, the 21-sample window and the caps of Task 5 removed by Task 10) |
 | `viterbi/amplitude.hpp`, `.cpp` | Part 6: the prediction, ρ and ρ_a tables, Bell's decay (variant) |
 | `viterbi/long_run.hpp`, `.cpp`, `engine/src/viterbi/omega_bar_table.cpp` (generated) | Part 7: Ω̂, ν, Ω̄ (default), the variant's sums and table |
 | `viterbi/newborn.hpp`, `.cpp` | Part 8: the newborn integral and its switch |
@@ -328,7 +353,7 @@ the scoring, w, sums and Ω̄ lines rise by 1/0.739 = 1.35 (derived).
 |---|---|---|---|---|
 | Template and the per-story loop | 0.87 | 2.33 | 9.06 | 2.1% |
 | Ordinary scoring and the amplitude update, adaptive quadrature (row 1′, Ruling 60; 412 ns per scored sample) | 23.10 | 58.24 | 194.11 | 45.6% |
-| w's lookup | 0.11 | 0.12 | 0.69 | 0.2% |
+| w's lookup (gone since D23: one constant w) | 0.11 | 0.12 | 0.69 | 0.2% |
 | Ω̂'s two sums and ν's bins | 0.25 | 0.60 | 1.78 | 0.4% |
 | Ω̄'s default lookup (after samples with s_k ≠ 0; 38 ns per lookup) | 1.86 | 5.54 | 18.02 | 4.2% |
 | Interaction (fused total less the parts' sum) | −0.12 | −0.87 | −3.28 | −0.8% |
@@ -349,6 +374,23 @@ think we're going to achieve"): the projected default total with the newborn's g
 newborns sit on stations, and R0 replaces both with the measured mix. **The owner's decisions of 2026-10-25 and
 2026-10-26 (D17 to D22) quoted fractions of the earlier 411.1 ms**, the total without the newborn line (D22's +3.6%
 and +8.3% are 3.4% and 8.1% of 425.7 ms).
+
+**D23's changes to the budget (2026-10-29),** stated against the same base, 425.7 ms per channel-second at 1 700
+stories, which stays the base until R0 replaces it:
+- **Ordinary scoring, the full form against the shared reference** (measured; the score-form study of 2026-10-28,
+  desktop, one thread, 400 000 captured story-samples, other cores busy): 522–527 ns per scored sample against
+  493–499 ns for the ratio form, +28 ns, +6%: **+13 ms per channel-second, +3.1%**. It adds one logarithm and one
+  division per scored sample; the window's running maximum (per channel) goes.
+- **w's lookup** goes: −0.69 ms, −0.2% (the slice's row above).
+- **The newborn's grid with V(a_i) at each point** (estimated, not timed): tabulated as the study proposes (one more
+  table, ln(V_i/σ_y²) = softplus(2u_i + ln(c_k/σ_y²)) with c_k = f²s_k² + v_k, and G interpolated per point), about
+  1.5 to 2 times today's 490–595 ns per newborn-sample, +0.3 to +0.6 µs: **+56 to +113 ms per channel-second at 500
+  newborns, +13 to +27%**. Written directly per point in the study's scratch it took 2 923 ns at +20 dB S₅₀₀ and
+  4 117 ns on noise (measured), which would be far above that. **Timed first in Task 10; above the estimate's top,
+  +27% of 425.7 ms (114.9 ms per channel-second at 500 newborns, about 613 ns per newborn-sample above today's grid;
+  derived), the newborn's form returns to the owner before anything else is built.**
+- So the projected default total at 1 700 stories becomes roughly 494 to 551 ms per channel-second (425.7 + 13 −
+  0.7 + 56 to 113; derived from the estimates above, newborns on noise), to be replaced by R0's measurement.
 
 Shares at 200 and 500 stories (of 51.1 and 127.2 ms): scoring 45.2% and 45.8%, search 45.6% and 44.7%, Ω̄ 3.6% and
 4.4%, the template 1.7% and 1.8%, the variant +5.4% to +13.4% and +5.3% to +13.8%, the newborn's grid 3.4% (noise)
@@ -399,22 +441,26 @@ without it, 10.24, 25.47 and 85.19 CPU-hours).
 | M13: the merge variant on the signals above about 45 WPM | 0.3–0.6 |
 | M16: Bell's decay on every group and N2e | 1.03 |
 | M17: the noise-in-Ω̄ variant on every group and N2e (cost 1.05–1.14 times) | 1.09–1.18 |
-| M18: the fixed w on the weak-signal groups | 0.5 |
+| M18: void since D23 (the fixed w is the rule) | 0 |
 | The synthetic grids of §7.2 (M2–M12, M14, M15) | under 0.2 |
-| **Total** | **about 20.7–35.4** |
+| **Total** | **about 20.2–34.9** |
 
 | Average live stories | Hours of the Linux machine's 10 cores |
 |---|---|
-| 200 | 22–39 |
-| 500 | 54–98 |
-| 1 700 | 182–327 |
+| 200 | 21–39 |
+| 500 | 53–96 |
+| 1 700 | 178–322 |
+
+**Before D23's CPU changes:** the hours per FRE above use the projected totals of §6.1's table; D23's estimates
+(§6.1, after the table) would raise c by roughly 16 to 29% at 1 700 stories, most of it the newborn's V(a_i), not yet
+timed. Task 10's timing and R0 replace these figures.
 
 Not in the table: today's decoder once on DEV2e and N2e (O17), about 59.5 CPU-hours on DEV2e and 61.5 with N2e,
 6.2 hours of the 10 cores, at its recorded 287 ms per channel-second on noise (desktop, Task 4d) × 0.7 (rough), plus
 its second run on F2 with the frequency genie; and each rerun of R4 that a
-changed default requires (R7 adopted, M18 reverting w, M11's floor), 1.03 FRE each. As fractions of the new
+changed default requires (R7 adopted, M11's floor), 1.03 FRE each. As fractions of the new
 decoder's projected total (the base, §6.1), the variants of §7.2 cost: M17's variant 5.2% to 13.8% more per
-channel-second (own inputs to random cells, over 200 to 1 700 stories); M18's fixed w saves w's line, 0.2%; M16's Bell decay changes the prediction's arithmetic
+channel-second (own inputs to random cells, over 200 to 1 700 stories); M16's Bell decay changes the prediction's arithmetic
 only (within the scoring line's run-to-run scatter, conjectured); M13's merge variant adds stories, its cost measured.
 
 ### 6.4 The sizes of the sets
@@ -467,29 +513,29 @@ cells below are stated as ranges and counts.
 | Item | What | Set | Rule |
 |---|---|---|---|
 | **M1** correctness | the unit tests' checks (Tasks 2–10) and, on recordings, through the true-story trace (Task 12), each tolerance written here before the run: the template's misfit per sample, its variance over v_j within [0.8, 1.25] at every j where v_j > 10⁻⁵ on 2.5 ms edges (heuristic bounds); the decoded symbols' start times (the bench's `symbols.csv`, Task 12) 0 to 2.667 ms (±0.1 ms) after the label's keyed times; ν against the empirical count of independent looks of the label's fading within 3% (Part 7's measured agreement); Ω̂ and Ω̄ against the generator's fading (reported); the output noise's power and correlation against σ_y² (±1.5%) and ρ_m (±0.01); the variant's E[N²]/(A + B·Ω) on the decoder's own samples of steady stations (N = Ω̂ − a², a from the label's S₅₀₀; at least 1 000 marks) within [0.95, 1.05]; determinism across block splits on one recording of each group (identical output) | `nd1b-fading`, `nd1b-strong` steady, A2's and B2's recordings with key intervals | Each check passes its tolerance; a failure stops the long runs and goes to the owner. |
-| **M2** the newborn's approximations | (a) the grid (D22) against a dense integral of the same integrand (exact ln I₀, D21's weight), on the study's levels and, new, above +40 dB S₅₀₀ (+50, +60, +70 and +85 dB S₅₀₀), where the narrowest σ_u at handover is roughly 0.03 nepers by the floor-limited derivation that ignores the caps and about 0.074–0.078 nepers by the cap-limited one (both rough; this measurement settles it), and where the trapezoid's end-point error at the prior's top, about h²·|F′(u_hi)|/12 (derived), is reported per sample and per first mark; the narrowest σ_u at handover and the deepest revival of a grid point below the largest (Task 11's counters); (b) the amplitude held constant before the switch, under fading at 0 dB S₅₀₀, 2 Hz and 5 Hz, against the integral over the fading path; (c) the switch; the newborn's CPU line | the committed measurement test `Newborn.ApproximationsMeasured` (Task 9, label `measurement`), run in Task 16 | Measurement; every result, with its distribution per sample and per first mark (median, 95th percentile), to the owner (Part 8: anything over a fraction of a nat goes to him). A narrowest σ_u at handover below 0.05 nepers, or a revival deeper than 40 nats, goes to the owner (D22), here and in every run that records them (R0, M14, R4). |
+| **M2** the newborn's approximations | (a) the grid (D22) against a dense integral of the same integrand (exact ln I₀, V(a_i) at each point and the constant w, D23), on the study's levels and, new, above +40 dB S₅₀₀ (+50, +60, +70 and +85 dB S₅₀₀), where the narrowest σ_u at handover may fall toward 0.03 nepers by the floor-limited derivation now that D23 removed the caps (the cap-limited 0.074–0.078 nepers no longer applies; both rough; a live risk to D22's 128 points, which err about 0.17 nats at 0.03; this measurement settles it), and where the trapezoid's end-point error at the prior's top, about h²·|F′(u_hi)|/12 (derived), is reported per sample and per first mark; the narrowest σ_u at handover and the deepest revival of a grid point below the largest (Task 11's counters); (b) the amplitude held constant before the switch, under fading at 0 dB S₅₀₀, 2 Hz and 5 Hz, against the integral over the fading path; (c) the switch; the newborn's CPU line | the committed measurement test `Newborn.ApproximationsMeasured` (Task 9, label `measurement`), run in Task 16 | Measurement; every result, with its distribution per sample and per first mark (median, 95th percentile), to the owner (Part 8: anything over a fraction of a nat goes to him). A narrowest σ_u at handover below 0.05 nepers, or a revival deeper than 40 nats, goes to the owner (D22), here and in every run that records them (R0, M14, R4). |
 | **M3** the fading grid | f_D = 0.1, 0.3, 1, 2, 5 Hz × +10, +20, +30 dB S₅₀₀ × "PARIS PARIS" at 25, 8 and 5.2 WPM × 4 edge positions × 5 seeds (900 signals); exact texts and CER; the in-mark E[z²] (O19) | `nd1b-fading` | Paired against today's decoder on the same signals; measurement, to the owner. |
 | **M4** the strong grid | +30 to +60 dB S₅₀₀ in six 5 dB cells × 16 edge positions × steady and 0.3, 1, 2, 5 Hz; mark splits and invented overs | `nd1b-strong` | Steady: every text exact (D15's standard, as 36084bc reached); faded: measurement, to the owner. |
 | **M5** the speed step | 20 to 30 WPM, +10 to +28 dB S₅₀₀ in nine 2 dB cells, 3 signals per cell | `nd1b-speed` | CER at most 0.05 on every signal at the default beam (the prototype plan's §5, item 2). |
-| **M6** caps and crashes | the fall's tail, the filter's ringing and a filtered click at every edge position: each sample's score against its cap w_k s_k²/(f²s_k² + v_k); false characters per crash at +20 to +60 dB S₅₀₀ in four 10 dB cells (dB S₅₀₀ of the crash's peak power) | `nd1b-crash`; the trace | A score above its cap (beyond the quadrature's 0.01 nats) is a bug; false characters: measurement, a known limitation (Part 13), to the owner. |
+| **M6** the misfit bound and crashes (the caps until D23) | the fall's tail, the filter's ringing and a filtered click at every edge position: along the true story, each sample's cost against a perfect template beside the misfit bound w·δ_k²/(f²s_k² + v_k) (Part 9, D23); false characters per crash at +20 to +60 dB S₅₀₀ in four 10 dB cells (dB S₅₀₀ of the crash's peak power) | `nd1b-crash`; the trace | A cost above the bound where the prediction is at or above the true level (μ² + P ≥ a²; beyond the quadrature's 0.01 nats) is a bug; false characters: measurement, a known limitation (Part 13), to the owner. |
 | **M7** the long-run amplitude in the loop | starts in a fade (10 and 20 dB down, dB relative to the long-run power) and normal starts at 1, 2, 5 Hz: splits in an over's first 3 s; rescues and over boundaries; a weak station beside a neighbor inside the filter; crashes of 20 and 40 dB and static bursts of 10 to 100 ms inside marks (dB relative to the key-down power); noise alone; Ω̄ with the prior's top at +60 instead of +85 dB S₅₀₀ (ν ≈ 1) and its bottom at −5 instead of −15 dB S₅₀₀, each run with an Ω̄ table generated for its bounds (Task 7's `--lo-db/--hi-db`, loaded by `--omega-bar-default-table`); how often Ω̂ ≤ 0 at a lookup, on N2e and on M9's signals | `nd1b-longrun`, N2e, M9's suite | Measurement, to the owner. |
 | **M8** the fixed 2 Hz against the genie spread | M3's grids with `--genie fading`; the in-mark E[z²] | `nd1b-fading` | Measurement: it sizes the backlogged several-rate model and the in-mark limitation. |
 | **M9** steady weak signals | 5, 12, 25, 40, 100 WPM, −15 to +5 dB S₅₀₀ in twenty 1 dB cells, 10 signals per cell | `nd1b-weak` | S₅₀₀ at 50% CER per speed, with its interval, against today's decoder and the bank (`--decoder bank` on the same recordings); the slow speeds' cost against the expected up to 1.8 dB of noise power (Part 2). Measurement. |
-| **M10** the systematic term's memory and look-ahead (10 samples each) | M4's grid, the stopped-neighbor grid (cells over a neighbor 30–40 dB stronger, dB relative to the station's key-down power, 50–200 Hz away, stopping 0.05–0.60 s before the station starts), M5, "TEST" and "TU"; how often a sample's own e_k²/s_k² sets C², with its template value and SNR | `nd1b-strong`, `nd1b-stopped`, `nd1b-speed` | Measurement, compared with D15's recorded figures (194 of 288 stopped-neighbor runs lost with 390 ms); no other variant (D17). |
+| **M10** the systematic term from the story's prediction (D23; until D23 the memory and look-ahead of 10 samples each), with **D15's neighbor trade remeasured** | M4's grid, the stopped-neighbor grid (cells over a neighbor 30–40 dB stronger, dB relative to the station's key-down power, 50–200 Hz away, stopping 0.05–0.60 s before the station starts), M5, "TEST" and "TU" | `nd1b-strong`, `nd1b-stopped`, `nd1b-speed` | Measurement, compared with D15's recorded figures (194 of 288 stopped-neighbor runs lost with 390 ms); D23 reversed D15's rule, so the stopped-neighbor result goes to the owner; no other variant. |
 | **M11** the floor f | the scatter of strong stations' flat-part samples about the model's prediction beyond the noise, relative to the carrier, along the true story (f̂, O19) | `nd1b-strong` steady and faded; W1AW code-practice sessions recorded off the air (D19), with their published text force-aligned; the owner's other recordings where the new decoder and the bank agree, as a cross-check (biased low) | The proposed f is f̂ (zero if its 95% interval includes zero on both sets; where the two sets differ, the real recordings' f̂, the synthetic one beside it; O15); on the W1AW sessions the excluded share of words and f̂ with and without the excluded words are reported, and the flat samples next to aligned edges are left out (Task 12); M4 and M6 are rerun at the proposal before it goes to the owner, who decides. |
 | **M12** other transmitters' edges | 10–90% rises of 0.8 and 4.7 ms; mark bias −7, −3.5, 0, +2.5, +4.7 ms; 25 and 100 WPM; +10 to +40 dB S₅₀₀ in three 10 dB cells; the misfit's variance per sample against v_k; decoding | `nd1b-edges`; B2 (VE3NEA's 1.18 ms edges) | The misfit's variance per template sample over v_k reported (a ratio near 1 or below supports the edge term); decoding paired against the 2.5 ms signals. Measurement, to the owner. |
 | **M13** the merge variant | the previous element's length in the state when shorter than 10 samples (`merge_previous_element`), against the default | DEV2e's signals above 45 WPM; `nd1b-speed` at 45–100 WPM | Paired decoding and the CPU breakdown with story counts, to the owner before anything changes (D17). |
 | **M14** noise alone | false characters per hour, newborns in the integral, CPU by part against §6 | N2e | False characters per hour no more than today's decoder's on N2e (Part 15: "no more than today's decoder"); else to the owner. |
-| **M15** neighbors and frequency | neighbors in three 10 Hz cells from 40 to 70 Hz away, of equal strength and 10 dB stronger (dB relative to the station's key-down power); drifting stations (F2) and QSO turnovers (G2) with the oracle following the label | `nd1b-neighbors`; F2, G2, E2 of R4 | Paired against today's decoder; on F2 against its run with `--genie frequency` (both given the label's frequency); on G2 the comparison is asymmetric (today's decoder tracks the turnovers itself; its genie refuses QSO labels) and is reported as such (O17). Measurement, to the owner. |
+| **M15** neighbors and frequency | neighbors in three 10 Hz cells from 40 to 70 Hz away, of equal strength and 10 dB stronger (dB relative to the station's key-down power), keying throughout (D15's neighbor check, remeasured under D23 with M10's stopped neighbors); drifting stations (F2) and QSO turnovers (G2) with the oracle following the label | `nd1b-neighbors`; F2, G2, E2 of R4 | Paired against today's decoder; on F2 against its run with `--genie frequency` (both given the label's frequency); on G2 the comparison is asymmetric (today's decoder tracks the turnovers itself; its genie refuses QSO labels) and is reported as such (O17). Measurement, to the owner. |
 | **M16** Bell's decay variant | `bell_decay` against the default on every group and N2e: exact texts, CER, splits, false characters; a close neighbor (E2) the case to watch | DEV2e, N2e | Measurement, to the owner (D17). |
 | **M17** the noise-in-Ω̄ variant | `omega_bar_noise` against the default on every group and N2e: exact texts, CER, splits, false characters; the Ω̄ and sums lines of the breakdown; how often Ω̂ falls below its Ω̄'s minimum position (the Gaussian artifact) on N2e and M9 | DEV2e, N2e, M9's suite | Measurement, to the owner, who decides whether it earns its place and then the artifact's remedy (Part 7). |
-| **M18** the fixed w | `fixed_weight` against w per sample on M9's suite and DEV2e's weak groups (A2's cells at or below +2 dB S₅₀₀): S₅₀₀ at 50% CER, exact texts, CER, w's CPU line | `nd1b-weak`, A2 | Seven comparisons, named before the run: the pooled paired comparison on `nd1b-weak` and on A2's weak cells, and the 50%-CER crossing at each of M9's five speeds. If none is better with the curve (the paired interval wholly in its favor, or the crossing lower by an interval excluding zero), the decoder goes back to the fixed 0.1986 (owner, 2026-10-25; R4 reruns). Under no effect each 95% interval lies wholly on the curve's side with probability 0.025, so one chance "better" among seven has a probability of about 0.16 (derived, independent comparisons assumed); a result resting on a single comparison is reported as such to the owner. |
+| **M18** void (D23, 2026-10-29) | the fixed w = 0.1986 is the rule, so there is no variant to measure; the curve w(q) is not used. (It was: `fixed_weight` against w per sample on the weak-signal groups.) | — | — |
 
 ### 7.3 Order
 
 R0 and M1 (Task 15) → **stop for the owner** → the synthetic grids M2–M12, M14, M15's synthetic part (Task 16) → R1,
-R1b, R2, R3 (Task 17) → R4 with M13, M15, M16, M17, M18 (Task 18) → R5, R7, R8, R10, R11 and M11's proposal (Task 19).
-A changed default (R7, M18, M11) reruns R4 at the new default.
+R1b, R2, R3 (Task 17) → R4 with M13, M15, M16, M17 (Task 18) → R5, R7, R8, R10, R11 and M11's proposal (Task 19).
+A changed default (R7, M11) reruns R4 at the new default. (M18 is void since D23.)
 
 ## 8. Global constraints
 
@@ -507,7 +553,7 @@ A changed default (R7, M18, M11) reruns R4 at the new default.
 - **Units:** every quantity carries its unit; every dB names its reference (dB S₅₀₀, dB SNR in the filter's 74.48 Hz,
   dB relative to 0 Hz, dB relative to the long-run power, dB relative to the key-down power). Parameters are in
   physical units (Hz, s, FS, FS², nats, dots), converted to samples or bins only where used. Timing medians are in
-  dots; the fading rate, the systematic memory and look-ahead and ν's bins are in seconds (fading and the filters'
+  dots; the fading rate and ν's bins are in seconds (fading and the filters'
   responses do not scale with the sending speed). The model's own mismatch is "systematic", never "noise".
 - **Values:** every value in code comments and documents is labeled derived, measured, heuristic, placeholder or
   owner with its date, as the design marks it.
@@ -535,23 +581,26 @@ The inputs most likely to break the amended decoder that §5 does not already pi
 in the task named.
 
 1. **A newborn on noise and at the prior's edges:** on noise the belief peaks at the prior's bottom edge, and at
-   +85 dB S₅₀₀ at its top; the grid's end points carry both (D22). Expected: every score finite and under 1.387 times
-   its cap, the posterior mean below 0 dB S₅₀₀ on noise. Tests: `Newborn.StaysBoundedOnNoise`,
+   +85 dB S₅₀₀ at its top; the grid's end points carry both (D22). Expected: every score finite and the posterior
+   mean below 0 dB S₅₀₀ on noise (the bound of 1.387 times the cap went with the caps, D23; Task 10 rewrites the
+   test). Tests: `Newborn.StaysBoundedOnNoise`,
    `Newborn.StrongEdgeOfThePrior` (Task 9).
 2. **The noise density at zero or jumping:** N₀ = 0 before the first frame and after exact zeros makes σ_y² = 0, so
-   V′ = 0 on spaces and b, z undefined. Expected: samples are not searched while N₀ ≤ 0, as today, and the window and
-   sums carry over. Tests: `ViterbiDecoder.ExactZerosThenAStation`, `ANoiseDensityOfZeroMidStreamSplicesTheStream`
+   V = 0 on spaces and b, z undefined. Expected: samples are not searched while N₀ ≤ 0, as today, and the sums carry
+   over. Tests: `ViterbiDecoder.ExactZerosThenAStation`, `ANoiseDensityOfZeroMidStreamSplicesTheStream`
    (Task 10).
 3. **Input split anywhere and a bin move in mid-block:** an envelope sample at a block's edge, the front filter's
-   24-sample history across blocks, a coarse move between two blocks, the look-ahead's 10 samples at the stream's end
-   (`finish`). Tests: `EnvelopeSampler.SplitsDoNotMatter` (Task 3), `ChannelFollower.PhaseIsContinuousAcrossABinMove`
-   (Task 2), `ViterbiDecoder.InputSplitDoesNotMatter` and `Search.FinishSearchesTheLastSamples` (Task 10).
+   24-sample history across blocks, a coarse move between two blocks, the stream's last sample (no look-ahead since
+   D23: each sample is searched as it arrives). Tests: `EnvelopeSampler.SplitsDoNotMatter` (Task 3),
+   `ChannelFollower.PhaseIsContinuousAcrossABinMove` (Task 2), `ViterbiDecoder.InputSplitDoesNotMatter` and
+   `Search.SearchesEachSampleAsItArrives` (Task 10).
 4. **The grid's ends:** 1-sample marks and gaps fill the edge history with up to 16 edges; a 5.2 WPM word gap is
    605 samples; a story that lives for an hour carries ν's running sums and Ω̂'s sums without overflow or loss of
    precision. Tests: `MarkTemplate.SixteenEdgesInTheHistory` (Task 4), `LongRun.AnHourOfKeyDownStaysExact` (Task 7),
    `ViterbiDecoder.TheGridsEnds` (Task 10).
 5. **Extreme levels:** at +85 dB S₅₀₀ the carrier is q = 2.1 × 10⁹ times the noise, the edge term's values near 10⁻¹⁰
-   matter (Part 5), the caps bind, Ω̄ sits at the prior's top, and a newborn's mode at a_hi. Expected: finite scores,
+   matter (Part 5), the variance (Occam) term reaches about 3.2 nats per sample between carrier stories (Part 9,
+   D23), Ω̄ sits at the prior's top, and a newborn's mode at a_hi. Expected: finite scores,
    no NaN, the text exact at +60 dB S₅₀₀. Test: `ViterbiDecoder.ExtremeLevels` at +60, +85 and −10 dB S₅₀₀ (Task 10).
 
 ---
@@ -569,7 +618,7 @@ in the task named.
 | 7 | The long-run amplitude: Ω̂, ν and the default Ω̄ with its generator | 3, 4 |
 | 8 | The noise-in-Ω̄ variant's sums and table | 7 |
 | 9 | The newborn integral on a grid (D21, D22) | 4, 5, 6 |
-| 10 | The search per sample; the decoder; configuration; the bench's JSON; fixtures; documents | 2–9 |
+| 10 | The search per sample; the decoder; configuration; the bench's JSON; fixtures; documents; D23's score (the newborn's cost timed first) | 2–9 |
 | 11 | Instrumentation: the CPU breakdown by part and Part 15's counters; statistics version 3 | 10 |
 | 12 | The variants' switches; the true-story trace | 10, 11 |
 | 13 | The measurement suites, label fields and the analysis (Python) | 1, 12 (formats) |
@@ -578,7 +627,7 @@ in the task named.
 | 15 | R0 and M1; **stop for the owner** | 11–14 |
 | 16 | The synthetic grids (M2–M12, M14, M15's synthetic part) | 15 |
 | 17 | R1–R3 | 16 |
-| 18 | R4 with M13, M15, M16, M17, M18 | 17 |
+| 18 | R4 with M13, M15, M16, M17 (M18 void since D23) | 17 |
 | 19 | R5, R7, R8, R10, R11; M11's proposal; the conclusions | 13b, 18 |
 
 Every building task ends with `ctest --preset windows` passing (and `pytest training -q` where Python changed), its
@@ -880,6 +929,12 @@ documents updated per §8, and one commit. Task numbers are this plan's own.
 
 ### Task 5. The evidence per sample, the weight w and its generator, the systematic term (Parts 4, 9; Rulings 60, 65)
 
+> **Amended by D23 (2026-10-29), done in Task 10:** `sample_weight`, its table and its generator subcommand,
+> `CarrierWindow`, C²'s own part in `v_prime_fs2` and `score_cap_nats` are removed with their tests (`Weight.*`,
+> `Systematic.WindowIsTheLargestPowerOver21Samples`, `…OwnPartOnEverySampleWithATemplate`, `…CapsMatchTheDesign`,
+> `…EvidenceNeverExceedsTheCap`); the tempered regime keeps only the constant w's slice (O9). The task below is the
+> record of what was built.
+
 **Files:** modify `engine/include/kz4ap/viterbi/observation.hpp`, `engine/src/viterbi/observation.cpp`,
 `engine/tests/viterbi/observation_test.cpp`; create `engine/include/kz4ap/viterbi/weight.hpp`,
 `engine/src/viterbi/weight_table.cpp` (generated), `engine/include/kz4ap/viterbi/systematic.hpp`,
@@ -1100,6 +1155,11 @@ documents updated per §8, and one commit. Task numbers are this plan's own.
 
 ### Task 9. The newborn integral on a grid (Part 8 as amended; D21, D22)
 
+> **Amended by D23 (2026-10-29), done in Task 10:** each point's evidence becomes part 4's full density against the
+> shared reference with V(a_i) = σ_y² + a_i²(f²s_j² + v_j) at that point, and the weight the constant w = 0.1986
+> (D21's w(q) and the w table of Ruling 81 removed); the tests named in Task 10 are rewritten. The task below is the
+> record of what was built.
+
 **Files:** create `engine/include/kz4ap/viterbi/newborn.hpp`, `engine/src/viterbi/newborn.cpp`,
 `engine/tests/viterbi/newborn_test.cpp`; modify `engine/CMakeLists.txt`, `CMakePresets.json` (the `measurement`
 label: excluded from the `windows` and `linux` test presets, run by new `windows-measurement` and
@@ -1210,52 +1270,85 @@ method, Gauss–Hermite and the newborn's two regime weights (0.275 and 0.1986) 
   `newborn_live_range_nats`; the removed running sums and Ruling 61's crossover leave no trace in the document.
 - [ ] **Step 6: Commit.**
 
-### Task 10. The search per sample; the decoder; configuration; the bench's JSON; fixtures; documents (Parts 3–12; Rulings 64, 66)
+### Task 10. The search per sample; the decoder; configuration; the bench's JSON; fixtures; documents (Parts 3–12; Rulings 64, 66; D23)
+
+> **Amended 2026-10-29 for D23** (owner: "Sure"; the prototype plan's §3). The build found that the ratio form, each
+> story scored against noise at its own V′, handed a story claiming its edges about 2 samples off 105 nats on a clean
+> 25 WPM dash at +20 dB S₅₀₀. D23 replaces the score, the systematic term and the weight; this task makes the change.
+> **The newborn's new grid is timed first (Step 0); a cost above the estimate's top stops for the owner.**
 
 **Files:** modify `engine/include/kz4ap/viterbi/config.hpp`, `engine/src/viterbi/fist.cpp`,
 `engine/include/kz4ap/viterbi/observation.hpp`, `engine/src/viterbi/observation.cpp`,
+`engine/include/kz4ap/viterbi/systematic.hpp`, `engine/src/viterbi/systematic.cpp`,
+`engine/include/kz4ap/viterbi/newborn.hpp`, `engine/src/viterbi/newborn.cpp`,
 `engine/include/kz4ap/viterbi/search.hpp`, `engine/src/viterbi/search.cpp`, `engine/src/viterbi/text.hpp`,
 `engine/include/kz4ap/viterbi_decoder.hpp`, `engine/src/viterbi_decoder.cpp`, `engine/src/engine.cpp`,
-`engine/CMakeLists.txt`, `bench/src/viterbi_json.hpp`, `bench/src/viterbi_json.cpp`, `bench/src/main.cpp`, the tests
-`engine/tests/viterbi/{fist,observation,search}_test.cpp`, `engine/tests/viterbi_decoder_test.cpp`,
+`engine/CMakeLists.txt`, `bench/src/viterbi_tables_main.cpp` (the `weight` subcommand removed, D23),
+`bench/src/viterbi_json.hpp`, `bench/src/viterbi_json.cpp`, `bench/src/main.cpp`, the tests
+`engine/tests/viterbi/{fist,observation,systematic,newborn,search}_test.cpp`, `engine/tests/viterbi_decoder_test.cpp`,
 `bench/tests/viterbi_json_test.cpp`, `bench/tests/bench_run_test.cpp`, the fixtures
 `training/tests/data/search-stats/tiny.v{1,2}.stats.json`, `training/kz4ap_proto/search_stats.py` (the step read from
 `sample_interval_s`, or `piece_s` in old files), `training/tests/test_search_stats.py` (Ruling 72, N8),
 `docs/signal-processing.md`, `README.md` (the decoder's line); delete
-`engine/include/kz4ap/viterbi/level.hpp`, `engine/src/viterbi/level.cpp`, `engine/tests/viterbi/level_test.cpp`.
+`engine/include/kz4ap/viterbi/level.hpp`, `engine/src/viterbi/level.cpp`, `engine/tests/viterbi/level_test.cpp`, and
+(D23) `engine/include/kz4ap/viterbi/weight.hpp`, `engine/src/viterbi/weight_table.cpp`,
+`engine/tests/viterbi/weight_test.cpp`.
+
+**The score (D23; Part 4 as amended).** For every story and every sample with s_k ≠ 0:
+- V_k = σ_y² + (μ²_k|k−1 + P_k|k−1)·(f²s_k² + v_k) (FS²), from the story's prediction (Part 6) before the sample is
+  scored; f = `systematic_floor`. Where s_k = 0 (and v_k = 0), V_k = σ_y² and the score is exactly 0.
+- score_k = ln ∫ exp(w·[ln p(e_k | a, V_k) − ln p₀(e_k | σ_y²)]) N(a; μ_k|k−1, P_k|k−1) da (nats), p the Rician
+  density with variance V_k, p₀ noise alone at σ_y², the same reference for every story. V_k does not depend on a, so
+  score_k = `sample_evidence`(e_k, s_k, μ, P, V_k, w, …).score + w·[e_k²/σ_y² − e_k²/V_k − ln(V_k/σ_y²)] (derived):
+  Task 5's quadrature on the ratio at V_k, plus one logarithm and one division. The posterior (the amplitude update)
+  is the quadrature's, unchanged by the added terms.
+- w = 0.1986, one constant for every story and sample, the newborn included: `output_noise(...).w_strong` (derived;
+  D23). No per-sample lookup, no configuration field.
+- **The newborn** (Part 8 as amended): each grid point's evidence is the same full form with
+  V_j(a_i) = σ_y² + a_i²(f²s_j² + v_j) at that point and the constant w; F_i = Σ_j w·[ln p(e_j | a_i, V_j(a_i)) −
+  ln p₀(e_j | σ_y²)]. Since V_j(a_i) differs per point, ln x_i = ln(2e_j|s_j|) + u_i − ln V_j(a_i) is no longer one
+  shift for all points: the study's proposal is one more table, ln(V_i/σ_y²) = softplus(2u_i + ln(c_j/σ_y²)) with
+  c_j = f²s_j² + v_j and softplus(x) = ln(1 + eˣ), and G interpolated per point. The w table (Ruling 81) goes.
+- **Removed** (D23): the 21-sample window, its memory and look-ahead, the search's 10-sample hold (26.67 ms of
+  delay), C²'s own part e_k²/s_k², the caps, `sample_weight` and its table and generator, the per-sample weight lookup
+  of Task 5, and `NewbornTables`' w table.
 
 **Interfaces:**
-- Consumes everything of Tasks 2 to 9.
+- Consumes everything of Tasks 2 to 9, as changed here.
 - `ViterbiConfig` (in this order; physical units; each with its class): `sample_interval_s` 4/1 500 (owner, D17);
   `dot_min_ms`, `speed_ratio`, `speed_count`; `fist_medians_dots`, `fist_sigmas`, `fist_shifts_dots`; `beam_nats`
   40, `ceiling` 1 700 (placeholders); `front_dot_s` 0.012, `edge_rise_s` 0.0025 (10–90%), `edge_rise_min_s` 0.0008,
-  `edge_rise_max_s` 0.0047 (owner, D17); `fading_spread_hz` 2.0 (owner, D16); `systematic_floor` 0.02 (placeholder),
-  `systematic_memory_s` and `systematic_lookahead_s` 10 × 4/1 500 (owner, D17); `nu_bin_s` 16 × 4/1 500,
-  `nu_memory_s` 160 × 4/1 500 (owner, D17); `over_rate_per_s`, `rescue_epsilon`, `word_end_p`, `over_end_q`;
-  `level_min_db` −15, `level_max_db` 85 (dB S₅₀₀, placeholders); `quadrature_order` 5; `newborn_switch_sigma_u` 0.1
-  (derived), `newborn_grid_points` 128 (heuristic, measured; D22), `newborn_live_range_nats` 80 (heuristic; D22); `hiss_half_width_hz`, `hiss_percentile`, `hiss_average_s`;
-  `genie_fading_spread_hz`; `stats`. Removed: `piece_s`, `block_loss_db`, `keying_rise_s`, `block_length_s()`.
-  `sample_interval_s` must be a whole number of channel samples, and `systematic_memory_s`,
-  `systematic_lookahead_s`, `nu_bin_s` and `nu_memory_s` whole numbers of decoder samples, each within 10⁻⁹
-  relative, else construction throws naming the field; the other durations (`front_dot_s`, the edge rise times)
-  are physical times used as such (Ruling 72, N7).
+  `edge_rise_max_s` 0.0047 (owner, D17); `fading_spread_hz` 2.0 (owner, D16); `systematic_floor` 0.02 (placeholder);
+  `nu_bin_s` 16 × 4/1 500, `nu_memory_s` 160 × 4/1 500 (owner, D17); `over_rate_per_s`, `rescue_epsilon`,
+  `word_end_p`, `over_end_q`; `level_min_db` −15, `level_max_db` 85 (dB S₅₀₀, placeholders); `quadrature_order` 5;
+  `newborn_switch_sigma_u` 0.1 (derived), `newborn_grid_points` 128 (heuristic, measured; D22),
+  `newborn_live_range_nats` 80 (heuristic; D22); `hiss_half_width_hz`, `hiss_percentile`, `hiss_average_s`;
+  `genie_fading_spread_hz`; `stats`. Removed: `piece_s`, `block_loss_db`, `keying_rise_s`, `block_length_s()`, and
+  (D23) `systematic_memory_s` and `systematic_lookahead_s`. `sample_interval_s` must be a whole number of channel
+  samples, and `nu_bin_s` and `nu_memory_s` whole numbers of decoder samples, each within 10⁻⁹ relative, else
+  construction throws naming the field; the other durations (`front_dot_s`, the edge rise times) are physical times
+  used as such (Ruling 72, N7).
+- `systematic.hpp`: `double systematic_variance_fs2(double sigma2_fs2, double carrier_power_fs2, double s, double v,
+  double floor)` = σ_y² + C²(f²s² + v), C² the story's μ²_k|k−1 + P_k|k−1 (or a_i² on the newborn's grid);
+  `CarrierWindow` and `score_cap_nats` removed (D23).
 - `class ViterbiShared` holds: `channel_rate_hz`, `channel_samples_per_sample` (4), `front_taps`, `OutputNoise`,
-  `TemplateTables`, `OmegaBarTable`, `NewbornTables` (Task 9); built once per configuration and channel filter by
-  `make_viterbi_shared`, shared by every decoder. `FadingTables` belongs to each decoder, built from its own
-  configuration's spread, so that `--genie fading` gives each oracle channel its own (Ruling 72, N12). `ViterbiShared`
-  is forward-declared in `search.hpp` (it is defined in `viterbi_decoder.hpp`, which includes `search.hpp`).
+  `TemplateTables`, `OmegaBarTable`, `NewbornTables` (Task 9, its w table replaced by the V(a_i) table, D23); built
+  once per configuration and channel filter by `make_viterbi_shared`, shared by every decoder. `FadingTables` belongs
+  to each decoder, built from its own configuration's spread, so that `--genie fading` gives each oracle channel its
+  own (Ruling 72, N12). `ViterbiShared` is forward-declared in `search.hpp` (it is defined in `viterbi_decoder.hpp`,
+  which includes `search.hpp`).
+- `NewbornIntegral::add(double e_fs, double s, double v, double sigma2_fs2, double floor)`: V(a_i) per point (D23);
+  `NewbornTables(const OutputNoise&, double sigma2_per_n0_hz)` (no `fixed_weight` argument: w is constant).
 - `class Search`: `Search(const ViterbiConfig&, std::shared_ptr<const ViterbiShared>, detail::SearchOptions = {})`;
-  `void step(double e_fs, double t_s, double n0_fs2_per_hz)` (queues the sample; searches the oldest once 10 later
-  samples are queued); `finish()` searches the rest with the window's ahead part shortened; `lookahead_samples()`;
-  `best_text()`; `stats()`; test views as today (`StoryView` gains `amplitude`, `omega_bar_fs2`, `nu`,
-  `in_newborn_integral`).
-- The order at each searched sample k, for every story (Part 6's order; Part 9; Part 7):
+  `void step(double e_fs, double t_s, double n0_fs2_per_hz)` **searches sample k at once** (D23: no hold, no
+  look-ahead); `finish()` ends the stream (nothing is queued); `lookahead_samples()` removed; `best_text()`;
+  `stats()`; test views as today (`StoryView` gains `amplitude`, `omega_bar_fs2`, `nu`, `in_newborn_integral`).
+- The order at each sample k, for every story (Part 6's order; Part 9; Part 7):
   1. its template (s_k, v_k) from its edge history after this sample's claim;
-  2. if s_k ≠ 0: the prediction from (μ, P, t_m) and the cached Ω̄; V′_k from the window's peak and the own part;
-     w_k = `sample_weight(q_k)` at the predicted μ (a newborn: its grid, w at each point, D21 and D22, then
-     `should_switch`); the score by
-     `sample_evidence` (or the newborn integral); the amplitude set to the posterior, t_m = k; Ω̂'s and ν's sums
-     updated; Ω̄ looked up again (Part 7: only after samples with s ≠ 0);
+  2. if s_k ≠ 0: the prediction from (μ, P, t_m) and the cached Ω̄; V_k from the prediction (above); the score by
+     `sample_evidence` at V_k and w plus the shared reference's terms (or, for a newborn, its grid with V(a_i) and the
+     constant w, then `should_switch`); the amplitude set to the posterior, t_m = k; Ω̂'s and ν's sums updated; Ω̄
+     looked up again (Part 7: only after samples with s ≠ 0);
   3. the score booked at this sample into `base` (topic 5, item 9), with the timing and text costs as today.
   Every phase scores: a mark, a gap within 16 samples of its key-up, and the no-signal story after an over's end
   within 16 samples; beyond them s = 0 adds exactly 0.
@@ -1267,12 +1360,39 @@ method, Gauss–Hermite and the newborn's two regime weights (0.275 and 0.1986) 
 - `ViterbiDecoder::process`: the envelope sampler on each block, then `search_.step(e_k, t_k, n0_)` for each sample
   while N₀ > 0 (as today: samples with N₀ ≤ 0 are not searched).
 
+- [ ] **Step 0: Time the newborn's grid first (D23; owner, 2026-10-29), before the rest of this task.** Change
+  `NewbornIntegral` and `NewbornTables` to V(a_i) and the constant w (the study's tabulated form first); run
+  `Newborn.MatchesADenseIntegral` against the new integrand; then time it as Task 9 did (desktop, one thread, 500
+  newborns, noise and a mix of levels): ns per newborn-sample, live points, and the net cost per channel-second at 500
+  newborns against today's grid (490 ns on noise, 595 on a mix). **The estimate:** +0.3 to +0.6 µs per
+  newborn-sample, +56 to +113 ms per channel-second at 500 newborns, +13 to +27% of the projected 425.7 ms (§6.1).
+  **The rule:** a net added cost above the estimate's top, +27% of 425.7 ms (114.9 ms per channel-second at 500
+  newborns, about 613 ns per newborn-sample above today's grid; derived), **stops the task: report to the
+  coordinator, and the newborn's form returns to the owner** (D23) before anything else here is built. At or below it,
+  continue; record the figures in the commit message and the report.
 - [ ] **Step 1: Failing tests.**
   - Fist: the existing tests set `sample_interval_s = 0.002` explicitly and keep their numbers; new
     `Fist.MediansInSamples`: at the default, a 100 WPM dot's median is 4.50 samples and a 5.2 WPM word gap's
     604.5 ± 0.5 samples; P = 0.05 s⁻¹ × Δ = 1.333 × 10⁻⁴ per sample (8.92 nats).
-  - `Config.DefaultsAreTheDesignTable`: every field's default as listed above; the durations are 10, 10, 16 and 160
-    samples.
+  - `Config.DefaultsAreTheDesignTable`: every field's default as listed above; the durations are 16 and 160 samples;
+    `systematic_memory_s` and `systematic_lookahead_s` are refused as removed names (D23).
+  - **The score (D23):** `Evidence.FullFormMatchesADenseIntegral`: the score against the shared reference within
+    0.01 nats of a 20 001-point integral of exp(w·[ln p(e | a, V) − ln p₀(e | σ_y²)]) N(a; μ, P) over a ≥ 0, on
+    Task 5's grid of z, s, μ and √P/μ, at w = 0.1986, with V from the prediction at f = 0.02 and the template's v_j;
+    `Evidence.SharedReferenceScoresNoSignalZero`: s = 0 (v = 0) gives exactly 0, and so does the no-signal story.
+    Task 5's `Evidence.ScoreMatchesADenseIntegral` keeps w ∈ {0.1986, 1} only (the tempered regime's constant-w and
+    w = 1 slices, O9), and `Evidence.UnitWeightIsTodaysBlockEvidence` is deleted with `block_evidence` (its role kept
+    by the w = 1 point).
+  - **The systematic variance (D23):** `Systematic.VarianceFromThePrediction`: σ_y² + (μ² + P)(f²s² + v) at given
+    μ, P, s, v, f, and σ_y² where s = 0; `Systematic.MisfitBound` (Part 9, derived): 10⁵ random draws of a, s, v,
+    δ and noise-free e = (s + δ)·a, the prediction at μ = a, P = 10⁻⁶·a²: the score of the right story falls short
+    of a perfect template's by at most w·δ²/(f²s² + v) + 0.01 nats; the plateau's value at δ = 0.0383, f = 0.02 is
+    0.73 ± 0.01 nats.
+  - **The known case, as a regression test (D23; the study's `ClaimOffsets`):** `Search.ClaimsTheTrueEdgesOfACleanDash`:
+    one dash, noise-free, amplitude known (P = 0), D17's 2.5 ms edges at a sample boundary, 25 and 40 WPM at +20 and
+    +40 dB S₅₀₀: over claimed key-downs −3 … +2 and key-ups −2 … +3 samples, the true claim (0, 0) scores best (a positive
+    lead), its lead over the best one-sample neighbor written to the log (the study measured 3.3 to 13.9 nats for the
+    comparable forms it tabulated; the ratio form put a (−2, +2) claim 105 to 1 092 nats ahead).
   - `Search.DecodesACleanStationAtThreeSpeeds` (§5, item 2), `Search.FollowsASpeedStep`, `Search.AnOverStartsAfterSilence`
     with `keyed_signals.hpp`'s D17 edges, through `Channelizer` and `EnvelopeSampler`.
   - `Search.FollowsASpeedStepAtEverySnr` (label `full-sweep`): +10 to +28 dB S₅₀₀, 3 seeds: CER ≤ 0.05 at each.
@@ -1282,41 +1402,63 @@ method, Gauss–Hermite and the newborn's two regime weights (0.275 and 0.1986) 
     its amplitude; at j = 16 a sample adds exactly 0; a no-signal story after an over's end does the same.
   - `Search.SumsRestartAtAnOversEndAndARescue`; `Search.MergesIdenticalStates`; `Search.PrunesByBeamThenCeiling`;
     `Search.NoiseKeepsScoresFinite` (60 s); `Search.IsDeterministic`.
-  - `Search.HoldsTheLookAheadsSamplesUntilTheyAreSearched`: 10 samples; `Search.FinishSearchesTheLastSamples`: after
-    `finish`, every queued sample is searched once, its window shortened at the end.
+  - `Search.SearchesEachSampleAsItArrives` (D23; replaces `Search.HoldsTheLookAheadsSamplesUntilTheyAreSearched` and
+    `Search.FinishSearchesTheLastSamples`): after each `step` that sample has been searched (the stories' sample
+    index equals the step's), and `finish` searches nothing more.
   - `Search.MarkTimesAreKeyedTimes` (Part 15, item 1): "PARIS PARIS" at 25 WPM, +30 dB S₅₀₀, at 8 edge positions:
     each letter's start_s lies 0 to 2.667 ms (±0.1 ms) after its keyed start.
   - `ViterbiDecoder.DecodesThroughTheEngine`, `InputSplitDoesNotMatter` (1, 7, 32, 1 000), `ExactZerosThenAStation`,
     `ANoiseDensityOfZeroMidStreamSplicesTheStream`, `ExtremeLevels` (+60 exact; +85 and −10 dB S₅₀₀ finite),
-    `StrongStationsAtEveryEdgePosition` (full sweep: +30 to +60 dB S₅₀₀ at 16 positions, exact), `TheGridsEnds` (5.2
-    and 100 WPM, +20 dB S₅₀₀: CER ≤ 0.05), `OneWordOversDecodeExactly`, `TenMinutesOfNoise` (1 min by default, 10 min
-    under the existing `KZ4AP_*_FULL_SWEEP` environment variable; memory bounded,
-    including the newborns' grids, about 1 KB each), `FlushesOnceAndResetStartsAfresh`, `RefusesWhatItCannotUse`, the genie
-    fading and statistics plumbing.
+    `StrongStationsAtEveryEdgePosition` (full sweep: +30 to +60 dB S₅₀₀ at 16 positions, exact; D15's standard, which
+    D23 must keep), `TheGridsEnds` (5.2 and 100 WPM, +20 dB S₅₀₀: CER ≤ 0.05), `OneWordOversDecodeExactly`,
+    `TenMinutesOfNoise` (1 min by default, 10 min under the existing `KZ4AP_*_FULL_SWEEP` environment variable; memory
+    bounded, including the newborns' grids, about 1 KB each), `FlushesOnceAndResetStartsAfresh`,
+    `RefusesWhatItCannotUse`, the genie fading and statistics plumbing.
   - `ViterbiDecoder.IsTheSearchOfTheEnvelopeSamples`: the decoder's search sees exactly `EnvelopeSampler`'s output.
+  - **Task 9's newborn tests, rewritten for D23** (the integrand: the full form, V(a_i), the constant w):
+    `Newborn.MatchesADenseIntegral` and `Newborn.LiveRangeLosesNothing` with the same bounds (0.005 nats per sample,
+    0.015 per first mark; 10⁻⁹ nats) against the new integrand; `Newborn.TablesMatchDirectEvaluation` for the G and
+    V(a_i) tables (the w table gone) within the same 5 × 10⁻⁴ nats per sample and 0.005 per first mark;
+    `Newborn.StaysBoundedOnNoise` keeps "every score finite" and "the posterior mean at the last sample below 0 dB
+    S₅₀₀" and loses the cap clause (no caps since D23); `Newborn.SwitchTimings`: j = 9 (+20), 12 (+10) and 56 (0 dB S₅₀₀)
+    ±1 as before, and the +30 dB S₅₀₀ switch sample recomputed with the new integrand by the exact integral and pinned
+    (Part 8: the timings at +30 dB S₅₀₀ and above are to be recomputed); a changed value at +20 dB S₅₀₀ or below is
+    reported, not silently re-pinned;
+    `Newborn.StrongEdgeOfThePrior`: the cap-limited expectation (0.074–0.078 nepers) is void; `narrowest_sigma_u`
+    reported at +60 and +85 dB S₅₀₀, and a value below 0.05 nepers flagged to the owner (Part 8: a live risk to the
+    128 points since D23).
+  - **Deleted with their code (D23):** `Weight.MatchesTheCurve`, `Weight.EndNodesAreTheChainsLimits` (the chain's two
+    limits stay checked by Task 3's output-noise tests), `Systematic.WindowIsTheLargestPowerOver21Samples`,
+    `Systematic.OwnPartOnEverySampleWithATemplate`, `Systematic.CapsMatchTheDesign`,
+    `Systematic.EvidenceNeverExceedsTheCap`.
   - Bench: the field macro and guard follow the new list; `--set sample_interval_s=…` round-trips; a removed name
-    is refused naming it; the fixtures read back.
+    (including `systematic_memory_s` and `systematic_lookahead_s`) is refused naming it; the fixtures read back.
   - The void tests are deleted with their code (Ruling 72, N9): level 15, observation 10, search 2, fist 3
     (`Config.BlockLengthFollowsTheSpread`, `…ScalesAsTheInverseSpread`, `…RefusesNonsense`, testing `block_length_s()`)
     and Task 5's `Evidence.UnitWeightIsTodaysBlockEvidence` (its role kept by `Evidence.ScoreMatchesADenseIntegral`
-    at w = 1 added to its grid); the decoder's void test went in Task 2.
+    at w = 1); the decoder's void test went in Task 2.
   - `Search.NewbornGridsCopyOnBranch`: two successors of one newborn scored on different samples hold different
     grids; the parent's grid is unchanged; a successor pruned before it scores never copied (moved from Task 9).
   - `ViterbiDecoder.EachChannelHasItsOwnFadingTables`: with `--genie fading` two oracle channels at 0.5 and 3 Hz
     predict with their own ρ and ρ_a.
 - [ ] **Step 2: Run them; they fail.**
-- [ ] **Step 3: Implement.** Remove Part 12's names (§2's table). Rewrite the fixtures' `config` (O13).
+- [ ] **Step 3: Implement.** Remove Part 12's names (§2's table) and D23's (above). Rewrite the fixtures' `config`
+  (O13), without the two removed systematic fields.
 - [ ] **Step 4: Run them; they pass,** with every earlier test; the three full-sweep tests once; record their times.
-  Build and `ctest --preset linux` on the Linux machine.
+  Time ordinary scoring per scored sample against the study's 522–527 ns (+28 ns over the ratio form, +3.1% of
+  425.7 ms) and write it to the commit message. Build and `ctest --preset linux` on the Linux machine.
 - [ ] **Step 5: Document** (same commit). §8d rewritten in full for the amended decoder, within the body's 6 000 words
-  (count it): the idea (stories over envelope samples); the order (front filter, envelope every 2.667 ms, the search
-  10 samples behind); the template and edge term; the evidence and w; the systematic term; the amplitude and Ω̄; the
-  newborn; timing and text; the search; what each non-default variant is, one sentence each, once Task 12 adds them.
-  A.8d rewritten: the exact form of each part in the design's order with every formula, value and class, the
-  derivations or their pointers (the design notes' Parts), the provenance of each measured or heuristic value with
-  its validity, the limitations (Part 13), Rulings 60–64 and O4–O10; the sections on pieces, blocks, the flat prior's
-  table and c(m) removed. A.10: Part 17's rows in place of the removed ones. A.11: sample, story-sample, scored
-  sample, claimed edge, the timing reference. README: the decoder's line.
+  (count it): the idea (stories over envelope samples); the order (front filter, envelope every 2.667 ms, each sample
+  searched as it arrives); the template and edge term; the evidence (the full density against the shared reference)
+  and the constant w; the systematic term from the story's prediction; the amplitude and Ω̄; the newborn (V(a_i), the
+  constant w); timing and text; the search; what each non-default variant is, one sentence each, once Task 12 adds
+  them. A.8d rewritten: the exact form of each part in the design's order with every formula, value and class, the
+  derivations or their pointers (the design notes' Parts, as amended by D23), the provenance of each measured or
+  heuristic value with its validity, the limitations (Part 13, including D23's open items), Rulings 60–64 and O4–O10;
+  the sections on pieces, blocks, the flat prior's table and c(m) removed; nothing of the window, the own part, the
+  caps or w per sample, which the engine never ran. A.10: Part 17's rows in place of the removed ones (w, C², the
+  misfit bound; no memory, look-ahead or w table). A.11: sample, story-sample, scored sample, claimed edge, the timing
+  reference. README: the decoder's line.
 - [ ] **Step 6: Commit.**
 
 ### Task 11. Instrumentation: the CPU breakdown by part and Part 15's counters; statistics version 3 (Part 15; D18)
@@ -1329,25 +1471,26 @@ recording `test_search_stats.py` names; Ruling 71), `training/kz4ap_proto/search
 `docs/signal-processing.md`.
 
 **Interfaces (produced):**
-- `struct CpuBreakdown { double front_s, successors_s, scoring_s, newborn_s, weight_s, long_run_s, omega_bar_s,
+- `struct CpuBreakdown { double front_s, successors_s, scoring_s, newborn_s, long_run_s, omega_bar_s,
   variant_sums_s, merge_prune_s, build_s, rest_s; std::int64_t story_samples, scored_samples, newborn_samples,
-  weight_lookups, omega_bar_lookups; };` in `SearchStats` (`front_s` from the decoder), kept when `profile` is true.
-  The lines are the timing slice's parts: successors (ends, births, slots); scoring (prediction, V′, quadrature,
-  update) without w, the sums and Ω̄; the newborn integral; w's lookups; Ω̂'s and ν's sums; Ω̄'s lookups (the
-  variant's lookup included); the variant's sums; merging and pruning; building the population; the rest.
+  omega_bar_lookups; };` in `SearchStats` (`front_s` from the decoder), kept when `profile` is true.
+  The lines are the timing slice's parts: successors (ends, births, slots); scoring (prediction, V_k from it,
+  quadrature, the shared reference's terms, update; D23) without the sums and Ω̄; the newborn integral; Ω̂'s and ν's
+  sums; Ω̄'s lookups (the variant's lookup included); the variant's sums; merging and pruning; building the
+  population; the rest. (w's line and its lookup count went with D23's constant w.)
 - Timing (O20): `__rdtsc` (`<intrin.h>` on MSVC, `<x86intrin.h>` on g++) around each section, and around each call
-  of the small parts (w, sums, Ω̄), with the counter's own cost (median of 10⁴ back-to-back reads at startup)
+  of the small parts (sums, Ω̄), with the counter's own cost (median of 10⁴ back-to-back reads at startup)
   subtracted; cycles converted by a rate calibrated against `steady_clock` over the run. The lines of the parts of
-  1 to 7 ns per call (w, Ω̂'s and ν's sums, the variant's sums) carry their stated accuracy, ± the calibrated per-call
+  1 to 7 ns per call (Ω̂'s and ν's sums, the variant's sums) carry their stated accuracy, ± the calibrated per-call
   overhead (the reads cost more than these parts and do not serialize; O20).
 - Newborn counters (always with `stats`; D22): the narrowest σ_u at handover (per channel: the smallest, and a
   histogram in steps of 0.01 nepers), and the deepest revival, the largest depth in nats below the largest point from
   which a grid point later came back within 10 nats of it (per channel: the largest, and a histogram in steps of 5
   nats); a σ_u below 0.05 nepers or a revival deeper than 40 nats is flagged in the statistics' summary and goes to
-  the owner. `NewbornIntegral` exposes `narrowest_sigma_u()` and `deepest_revival_nats()` for them.
-- Counters (always with `stats`): own part sets C² (count; histogram by template value and by the sample's SNR in
-  dB SNR in 74.48 Hz); Ω̂ ≤ 0 at a lookup (count); newborns in the integral per sample (mean, largest). The
-  variant's fields (Ω̂ below `minimum_chi`, ζ outside its axis, and the `variant_sums_s` line) are defined here and
+  the owner (since D23 removed the caps, a σ_u toward 0.03 nepers above +40 dB S₅₀₀ is a live risk; Part 8).
+  `NewbornIntegral` exposes `narrowest_sigma_u()` and `deepest_revival_nats()` for them.
+- Counters (always with `stats`): Ω̂ ≤ 0 at a lookup (count); newborns in the integral per sample (mean, largest)
+  (the own part's counter went with the own part, D23). The variant's fields (Ω̂ below `minimum_chi`, ζ outside its axis, and the `variant_sums_s` line) are defined here and
   stay zero; Task 12, which wires the variant, fills and tests them (Ruling 72, N15).
 - Statistics format version 3 (Ruling 71), two forms: the **summary** (`--stats`), version 2's keys with "pieces" →
   "samples" (each `config.sample_interval_s` long), `ceiling_samples`, the 0.1 s windows of round(0.1 s/Δ) = 38
@@ -1361,8 +1504,6 @@ recording `test_search_stats.py` names; Ruling 71), `training/kz4ap_proto/search
   - `Profile.LinesAddUpToTheDecodersTime`: on 60 s of noise, Σ lines within 5% of `Engine::stats().decoder_seconds`.
   - `Profile.OverheadIsSmall` (label `measurement`; Ruling 72, N24): the decoder's time with `profile` on at most
     1.15 times off (heuristic; desktop; the ratio written to the log).
-  - `Counters.OwnPartIsCounted`: a +60 dB S₅₀₀ station's rise: the own part sets C² on the samples where e²/s² exceeds
-    the window's peak, counted exactly.
   - Statistics (Ruling 71): version 3 round-trips in both forms; each version's reductions agree with that
     version's own committed numbers (`tiny.v1`, `tiny.v2` and the new `tiny.v3` fixtures); version 3's summary equals
     the reduction of version 3's detail file (`TheCommittedSummaryIsTheSummaryOfTheCommittedFullFile` gains a
@@ -1372,7 +1513,7 @@ recording `test_search_stats.py` names; Ruling 71), `training/kz4ap_proto/search
   changes no processing; the body is unchanged).
 - [ ] **Step 6: Commit.**
 
-### Task 12. The variants' switches; the true-story trace (Part 15, items 1, 3, 8, 11–13, 16–18)
+### Task 12. The variants' switches; the true-story trace (Part 15, items 1, 3, 8, 11–13, 16, 17; item 18 void since D23)
 
 **Files:** modify `engine/include/kz4ap/viterbi/config.hpp`, `engine/include/kz4ap/engine.hpp`,
 `engine/src/engine.cpp`, `engine/src/viterbi/search.cpp`, `engine/src/viterbi_decoder.cpp`,
@@ -1383,15 +1524,17 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
 `bench/tests/viterbi_json_test.cpp`, `bench/tests/labels_test.cpp`; `docs/signal-processing.md`.
 
 **Interfaces (produced):**
-- `ViterbiConfig`: `fixed_weight` (false; O12), `bell_decay` (false; D20), `omega_bar_noise` (false; its table from
-  `EngineConfig::viterbi_omega_bar_table`, a path, refused when empty or mismatched), `merge_previous_element`
-  (false: `pack_state` gains the previous element's length in samples when under 10, else 0, 4 bits).
+- `ViterbiConfig` (no `fixed_weight`: the constant w is the rule since D23, O12): `bell_decay` (false; D20),
+  `omega_bar_noise` (false; its table from `EngineConfig::viterbi_omega_bar_table`, a path, refused when empty or
+  mismatched), `merge_previous_element` (false: `pack_state` gains the previous element's length in samples when
+  under 10, else 0, 4 bits).
 - **The trace's plumbing** (Ruling 72, N13): `struct TraceRow` (the columns below); `class TrueStoryTrace` in
-  `viterbi/trace.hpp`, which runs the per-sample model (template, V′, w, prediction, scoring or the newborn's grid,
-  update, Ω̂, ν, Ω̄) along given keyed intervals with no search; `EngineConfig::viterbi_trace`, a vector indexed like
-  the oracle channels of `struct TraceRequest { std::vector<std::pair<double, double>> key_intervals_s;
-  std::function<void(const TraceRow&)> sink; }`, which `open_channel` hands to that channel's `ViterbiDecoder`. On a
-  newborn's samples the `w` column is w at the grid's mean û.
+  `viterbi/trace.hpp`, which runs the per-sample model (template, prediction, V_k from it, scoring against the shared
+  reference with the constant w or the newborn's grid, update, Ω̂, ν, Ω̄) along given keyed intervals with no search;
+  `EngineConfig::viterbi_trace`, a vector indexed like the oracle channels of `struct TraceRequest
+  { std::vector<std::pair<double, double>> key_intervals_s; std::function<void(const TraceRow&)> sink; }`, which
+  `open_channel` hands to that channel's `ViterbiDecoder`. On a newborn's samples the `c2_fs2` and `v_fs2` columns
+  are taken at the grid's mean û (a = e^û; D23, in place of the withdrawn w column).
 - The variant's counters and CPU line defined in Task 11 are filled here (N15).
 - The bench writes, with `--trace`, each channel's best-story symbols with their start and end times
   (`DecodedSymbol::start_s`, `end_s`, the claimed edges' sample times) to `symbols.csv` beside the trace; M1's timing
@@ -1400,7 +1543,7 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
   whose label carries `key_intervals_s` (`[[on_s, off_s], …]`, stream times, written by Task 13's generator option),
   the model run along that keying with its claimed edges at `claimed_edge_sample` of each keyed edge, no search;
   one CSV per channel, one row per sample: k, t_s, e_fs, s, v, mu_pred_fs, p_pred_fs2, sigma2_fs2, c2_fs2,
-  v_prime_fs2, w, score_nats, omega_hat_fs2, nu, omega_bar_fs2, newborn (0/1), own_part_sets_c2 (0/1), and the
+  v_fs2 (V_k, D23), score_nats, omega_hat_fs2, nu, omega_bar_fs2, newborn (0/1), and the
   variant's a2, b2 and sum_s4 (for M1's check of E[N²] against A + B·Ω on the decoder's own samples).
 - The trace's measures (O19), defined in A.11 and computed by Task 13's analysis: the standardized innovation
   z_k = (e_k/s_k − μ_k|k−1)/√(P_k|k−1 + σ_y²/(2s_k²)) on flat-part samples (s_k ≥ 0.999) above +10 dB SNR in 74.48 Hz
@@ -1413,8 +1556,7 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
 - [ ] **Step 1: Failing tests.**
   - `Variants.OffChangesNothing` (within one build; Ruling 72, N21): a configuration with every switch written out
     off, field by field, gives output identical to the default-constructed configuration's.
-  - `Variants.FixedWeightIsConstant`: every scored sample's w = `output_noise().w_strong`, and the newborn's grid uses
-    the same constant at every point (`NewbornTables` built with `fixed_weight`; N18).
+  - (`Variants.FixedWeightIsConstant` is void since D23: w is constant by construction, Task 10.)
   - `Variants.BellDecayAcrossSpacesOnly`: inside marks the prediction equals the default's; across a space the
     mean decays as Task 6's function, and the variance equals the default's (D20).
   - `Variants.OmegaBarNoiseNeedsItsTable`: refused without `--omega-bar-table`, or with a mismatched header; with a
@@ -1428,8 +1570,8 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
     `--trace`, naming it; `symbols.csv` holds the best story's symbols with start and end times.
 - [ ] **Step 2: Run them; they fail.** **Step 3: Implement.** **Step 4: They pass.**
 - [ ] **Step 5: Document:** §8d gains one sentence per variant (count the body's words); A.8d the variants' exact
-  forms (Bell's mean decay, D20; the noise-in-Ω̄ model, its sums, table, error and artifact from Task 8; the fixed w, O12;
-  the merge state); A.10 the four switches; A.11 the trace, z and f̂.
+  forms (Bell's mean decay, D20; the noise-in-Ω̄ model, its sums, table, error and artifact from Task 8;
+  the merge state); A.10 the three switches; A.11 the trace, z and f̂.
 - [ ] **Step 6: Commit.**
 
 ### Task 13. The measurement suites, label fields and the analysis (Python)
@@ -1446,9 +1588,9 @@ tests in `engine/tests/viterbi/search_test.cpp`, `engine/tests/viterbi_decoder_t
   reference)` (peak in dB S₅₀₀, or dB relative to a named signal's key-down power), a filtered click being a 0.1 ms
   impulse.
 - Suites (O14), each a function of the seed with the sizes of §7.2: `nd1b-fading` (M3, M8), `nd1b-strong` (M4, M10,
-  M11), `nd1b-speed` (M5, M13), `nd1b-crash` (M6), `nd1b-longrun` (M7), `nd1b-weak` (M9, M18), `nd1b-stopped`
-  (M10), `nd1b-edges` (M12), `nd1b-neighbors` (M15); `record_intervals` on in every `nd1b-*` suite and for DEV2e's A2
-  and B2 groups (`--key-intervals` option of `generate`). Every sweep is a jittered grid (CLAUDE.md; owner,
+  M11), `nd1b-speed` (M5, M13), `nd1b-crash` (M6), `nd1b-longrun` (M7), `nd1b-weak` (M9), `nd1b-stopped`
+  (M10: D15's neighbor trade, remeasured under D23), `nd1b-edges` (M12), `nd1b-neighbors` (M15);
+  `record_intervals` on in every `nd1b-*` suite and for DEV2e's A2 and B2 groups (`--key-intervals` option of `generate`). Every sweep is a jittered grid (CLAUDE.md; owner,
   2026-10-06): cells over the range, each signal's value drawn within its cell by `kz4ap_synth.jitter` and recorded
   in the label's `design` field; only the points the design names (§7.2) are fixed.
 - Runner: `--bench PATH` names the bench binary per run (today's decoder's build); the decoder `bank` on `nd1b-weak`.
@@ -1624,6 +1766,9 @@ A.11 for the alignment) (Ruling 72, N20).
 - [ ] **Step 1:** M2 (Task 9's committed test `Newborn.ApproximationsMeasured`, label `measurement`, writing its
   tables to `build/`),
   M3–M10, M12, M14 and M15's synthetic part, each with its rule (§7.2), paired against today's decoder where stated.
+  M10's stopped-neighbor grid and M15's neighbors keying throughout remeasure D15's neighbor trade, which D23's
+  reversal of D15's rule reopened; their results go to the owner. M2 checks the narrowest σ_u at handover above
+  +40 dB S₅₀₀, a live risk since D23 removed the caps (below 0.05 nepers goes to the owner).
 - [ ] **Step 2:** one record section per item with its score tables; the items whose rule says "to the owner" go to
   him one at a time; commit.
 
@@ -1633,12 +1778,11 @@ A.11 for the alignment) (Ruling 72, N20).
 - [ ] **Step 4:** the adopted defaults into `ViterbiConfig`, `docs/signal-processing.md` (§8d, A.10) and the record,
   with the score tables; commit.
 
-### Task 18. R4 with M13, M15, M16, M17, M18
+### Task 18. R4 with M13, M15, M16, M17 (M18 void since D23)
 
 - [ ] **Step 1:** R4 on DEV2e and N2e; today's decoder on the same, and again on F2 with `--genie frequency` (O17). **Step 2:** the analysis against
-  `d17-bank` and today's decoder; I2 apart. **Step 3:** M13, M16, M17, M18 with their rules; M15's E2, F2 and G2
-  reading. **Step 4:** the record's sections with at most three figures each, score tables committed; a default
-  changed by M18 goes into the code and documents and R4 reruns; commit.
+  `d17-bank` and today's decoder; I2 apart. **Step 3:** M13, M16, M17 with their rules; M15's E2, F2 and G2
+  reading. **Step 4:** the record's sections with at most three figures each, score tables committed; commit.
 
 ### Task 19. R5, R7, R8, R10, R11; M11's proposal; the conclusions
 
