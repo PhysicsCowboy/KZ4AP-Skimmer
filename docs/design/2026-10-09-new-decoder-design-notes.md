@@ -2154,8 +2154,9 @@ measure; part 16, standard practice for each stage; part 17, the values.
     Ω̄ = a² at each point, so the variance in u is ½(1 − ρ²) per sample), reflecting at the prior's ends with the ghost
     mirrored about the end node (p₋₁ = p₁), so the trapezoid mass, ends halved, and Z are conserved exactly (derived).
     The interval is 8 samples, 21.33 ms. It is applied after the sample's moments and before the live-range trim, on
-    the newborn's own samples counted from its birth; a handover between two steps ends it, leaving the variance
-    accumulated since the last step (at most 7 samples' worth) unapplied. Where ε would exceed ¼ (a genie spread above
+    the newborn's scored samples (s ≠ 0) counted from its birth; a handover between two steps ends it, leaving the
+    variance accumulated since the last step (at most 7 samples' worth) unapplied, as the newborn-fading study's code
+    does (confirmed, the re-review of 2026-10-30). Where ε would exceed ¼ (a genie spread above
     about 3.8 Hz), it is applied in ⌈ε/¼⌉ equal substeps, so no mode of the chain changes sign (derived). Part 6's
     drift (toward 0.886·a_i, Ω = a_i² at each point) and the Itô term are dropped: about −1.1 × 10⁻⁴ nepers per
     sample, −0.008 nepers over a 70-sample first mark, against σ_u ≥ 0.05 at handover (derived).
