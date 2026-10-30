@@ -1377,6 +1377,9 @@ standard practice (parts 4, 13 and 16), and measured (part 15, item 19).
 **Amended 2026-10-30 by the plan's D26** (owner: "2"): the prediction's drift target is (√π/2)·E[√Ω], the Rayleigh mean
 amplitude averaged over the long-run power's posterior, a second output of the Ω̄ tables (parts 6, 7, 13, 16 and 17).
 
+**Amended 2026-10-30 by the plan's D27** (owner: "1"): the floor f stays per sample, labeled a departure, and its
+correlation is measured with its size (parts 9, 13, 15 and 16).
+
 Parts 1 to 11 give the decided design in the order the signal passes; part 12, what is removed from today's decoder;
 part 13, the known limitations and backlog items; part 14, the test generator; part 15, what the prototype must
 measure; part 16, standard practice for each stage; part 17, the values.
@@ -2376,10 +2379,16 @@ measure; part 16, standard practice for each stage; part 17, the values.
   - **A consequence to weigh then** (noted 2026-10-24; plan D17; restated for D23): with f = 0 the plateau's misfit
     bound w·(δ/f)² disappears (v_k = 0 there, so V_k = σ_y²) and a strong station's flat part counts in full. Part 15,
     item 11 reruns the strong grid and the crashes at the proposed f before the value goes to the owner.
-  - **Left open by D23, to the owner separately** (the audit's row 11): f stands for effects correlated over many
-    samples (gain and ripple mismatch), but it is added independently at each sample and tempered by the noise's w,
-    so a mark's plateau evidence keeps growing per sample instead of leveling off per mark. The study's suggested
-    direction: slow gain mismatch in the amplitude's process model, leaving in f only a per-sample residual.
+  - **[departure from standard practice, owner's decision] f per sample** (owner, 2026-10-30: "1"; plan D27; the
+    audit's row 11): f stands for slow mismatch (gain wobble, ripple, template shape), correlated over many samples,
+    but it is added independently at each sample and tempered by the noise's w, so a long mark's flat part keeps
+    adding evidence where a slow error would add about one mark's worth (its effect on decoding neither derived nor
+    measured). Kept and labeled, and **its correlation is measured with its size** (part 15, item 11): if the mismatch
+    is correlated over more than the filter's 5 correlated samples, the alternatives return to the owner with the
+    numbers; if f is negligible, f goes to 0 (D19). Rejected for now (plan D27): the slow part moved into the
+    amplitude's process model (a rate of change per story; not designed, needs its own standard-practice check;
+    backlog); a correlated systematic term inside the score (the prewhitening machinery, deferred in D25); f = 0 now
+    (a strong station's flat part would count in full, the failure the term exists to prevent).
 - **v_k** is the edge term of part 5: zero on the flat part and in gaps; still a per-sample variance (part 5 records
   the joint treatment left open).
 - **A static crash or click is the dot's shape** after a matched filter. The systematic term does not stop it: a known
@@ -2527,7 +2536,8 @@ Each is recorded in `docs/backlog.md` under the heading given.
     scalar w (the audit's row 16; part 4). **Decided since (owner, 2026-10-30; plan D25): kept, labeled a departure
     from standard practice, and measured** (part 15, item 19); edge errors that matter return prewhitening to the
     owner with a study.
-  - **The floor f independent per sample** (the audit's row 11; part 9).
+  - **The floor f independent per sample** (the audit's row 11; part 9). **Decided since (owner, 2026-10-30; plan
+    D27): kept, labeled a departure, and its correlation measured with its size** (part 15, item 11).
   - **The edge offset not marginalized jointly** (the audit's row 10; part 5): the joint form, the study's
     candidate E, is a measured variant for the backlog at about +920% of the projected 425.7 ms per channel-second
     (entered in `docs/backlog.md`, 9ba6ae5: "The edge's position handled jointly across its samples in the new
@@ -2661,6 +2671,12 @@ projected budget by part.
     zero if the scatter is negligible on both. Before it goes to the owner, the strong grid (item 4) and the crashes
     (item 6) are rerun at the proposed f, since with f = 0 the plateau's misfit bound disappears (noted 2026-10-24;
     plan D17; restated for D23, part 9).
+    - **Its correlation, with its size (owner, 2026-10-30: "1"; plan D27):** the same residual's autocorrelation from
+      sample to sample, at every lag up to the length of the longest flat part measured, with its interval, on both
+      sets. **Rule:** if the mismatch is correlated over more than the filter's 5 correlated samples (the front filter's
+      output noise has ρ_1 … ρ_5 = 0.878 to 0.014 and about 0 beyond, part 4), the alternatives (the slow part in
+      the amplitude's process model; a correlated systematic term in the score) return to the owner with the numbers;
+      if f is negligible, f goes to 0 (D19).
 12. **Other transmitters' edges** (owner, 2026-10-23; plan D17):
     - stations keyed with 0.8 ms and 4.7 ms rises (10–90%), the ends of the edge term's range;
     - stations keyed with a transmit-path mark bias over −7 to +4.7 ms, both signs (the measured range;
@@ -2735,7 +2751,7 @@ In the table, "survey" is the standard-practice survey of 2026-10-22, `docs/rese
 | Amplitude | Bell's scalar Kalman per path; per-survivor processing (Raheli et al. 1995) | N(μ, P) per story, every 2.667 ms, drifting toward the Rayleigh mean amplitude averaged over the long-run power's posterior, 0.886·E[√Ω] (D26; Jensen's inequality makes 0.886·√Ω̄ too high) | spread scaled by the long-run amplitude (owner); 2 Hz against Bell's 1 Hz (owner) |
 | Long-run level | Skimmer: RMS of key-on samples, transitions discarded; Bell, fldigi: AGC; a variance component estimated below zero is clipped at zero (Searle, Casella and McCulloch 1992) | story's RMS by ordinary least squares over every sample (e_k² counted in proportion to s_k²), clipped at zero, with Ω̄ (posterior mean of the fading-only inverse gamma under the flat prior; Satterthwaite's ν on 42.67 ms bins, weights s_k⁴) | edges counted less instead of discarded: a dot at 100 WPM has no flat part (owner, derived reason); Ω̄ is the derived correction for few fades; the noise in Ω̄'s likelihood a measured variant |
 | Newborn level | Morse practice (Bell 1977): no mid-stream newborns; paths start at 0.5 ± 0.32 of the AGC level, and a new station enters through larger process noise after a space. Tracking practice: flat over a physical range, or from the first measurement (topic 5, item 3) | flat in dB, −15 to +85 dB S₅₀₀ | [departure] from Bell's Morse practice, standard in tracking (owner, 2026-10-19): a rescue or a new over must learn a new level from its own marks |
-| Model error | model discrepancy added to the predictive variance from the prediction, normalizer kept (Kennedy and O'Hagan 2001; process noise in Kalman filtering; D15's quadrature) | per sample, C² = μ²_k\|k−1 + P_k\|k−1 from the story's prediction (D23); edge term v_k over 0.8–4.7 ms rises; floor a placeholder | the edge offset not marginalized jointly (the audit's row 10) and f independent per sample (row 11), both open (D23) |
+| Model error | model discrepancy added to the predictive variance from the prediction, normalizer kept (Kennedy and O'Hagan 2001; process noise in Kalman filtering; D15's quadrature) | per sample, C² = μ²_k\|k−1 + P_k\|k−1 from the story's prediction (D23); edge term v_k over 0.8–4.7 ms rises; floor a placeholder | the edge offset not marginalized jointly (the audit's row 10), open (D23); **[departure, owner's decision, D27]** f added independently per sample where its mismatch is slow (row 11), kept, its correlation measured with its size (part 15, item 11) |
 | Merging | reduced-state, per-survivor processing (Duel-Hallen and Heegard 1989; Eyuboglu and Qureshi 1988) | the state as it is; each story's own history | none; full MLSE (Forney 1972) a measured variant |
 | Chirp, clicks, static | accepted as limitations; optional noise blanker (survey) | limitations; blanker in backlog | none |
 | Timing | hazard form (Murphy 2002; Bell 1977) | in 2.667 ms samples | none |
