@@ -460,7 +460,7 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"level_frame_s", &config.level_frame_s},
         {"level_lookahead_s", &config.level_lookahead_s},
         {"level_commit_s", &config.level_commit_s},
-        {"key_down_prior", &config.key_down_prior},
+        {"key_switch_per_s", &config.key_switch_per_s},
         {"level_walk_nepers_per_sqrt_s", &config.level_walk_nepers_per_sqrt_s},
         {"level_jump_per_s", &config.level_jump_per_s},
         {"beam_nats", &config.beam_nats},

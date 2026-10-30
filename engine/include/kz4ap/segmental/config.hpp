@@ -27,8 +27,9 @@ struct SegmentalConfig {
     // committed in; the text lags by their sum plus the edge's 11 samples at most, about 1.05 s. Heuristic.
     double level_lookahead_s = 36.0 * 8.0 * 4.0 / 1500.0;
     double level_commit_s = 12.0 * 8.0 * 4.0 / 1500.0;
-    // probability: a sample is key-down, inside the level's factor only. Heuristic (the duty cycle of Morse is 0.4 to 0.5).
-    double key_down_prior = 0.45;
+    // 1/s: the rate at which the level filter's key changes state: about 2 / (mean element length) at 25 WPM, inside the
+    // level's filter only (the search has the real timing). Heuristic.
+    double key_switch_per_s = 15.0;
     // nepers per square root of a second: the random walk of ln a from frame to frame. Heuristic, set by measurement.
     double level_walk_nepers_per_sqrt_s = 0.82;
     // 1/s: the rate at which the level jumps to anywhere on the grid (a new station, a new over). Heuristic, of the size

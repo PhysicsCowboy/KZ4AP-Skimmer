@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <numeric>
 #include <stdexcept>
 
@@ -46,8 +48,6 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
                          const viterbi::TemplateTables& tables) {
     if (!(config.level_step_db > 0.0) || !(config.level_max_db_s500 > config.level_min_db_s500))
         throw std::invalid_argument("segmental: the level grid needs a step above 0 dB and a top above its bottom");
-    if (!(config.key_down_prior > 0.0 && config.key_down_prior < 1.0))
-        throw std::invalid_argument("segmental: key_down_prior must lie in (0, 1)");
     levels_ = 1 + static_cast<int>(std::round((config.level_max_db_s500 - config.level_min_db_s500) / config.level_step_db));
     w_ = noise.w_strong;
     sigma2_per_n0_hz_ = noise.sigma2_per_n0_hz;
@@ -85,20 +85,22 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
       lookahead_frames_(viterbi::whole_count(config.level_lookahead_s, config.level_frame_s, "level_lookahead_s", "frames")),
       commit_frames_(viterbi::whole_count(config.level_commit_s, config.level_frame_s, "level_commit_s", "frames")),
       ring_frames_(lookahead_frames_ + commit_frames_ + 2),
-      log_key_up_(std::log1p(-config.key_down_prior)),
-      log_key_down_(std::log(config.key_down_prior)) {
+      key_switch_(config.key_switch_per_s * config.model.sample_interval_s) {
+    if (!(key_switch_ > 0.0 && key_switch_ < 0.5))
+        throw std::invalid_argument("segmental: key_switch_per_s x sample_interval_s must lie in (0, 0.5)");
     const std::size_t levels = static_cast<std::size_t>(levels_);
     const std::size_t ring = static_cast<std::size_t>(ring_frames_);
     const std::size_t ring_samples = ring * static_cast<std::size_t>(frame_samples_);
-    factor_.assign(levels, 0.0);
-    alpha_.assign(levels, 1.0 / levels_);
-    predicted_.assign(ring * levels, 0.0);
-    factors_.assign(ring * levels, 0.0);
+    alpha_.assign(2 * levels, 0.5 / levels_);
+    entering_.assign(ring * levels, 0.0);
     x_.assign(ring_samples * levels, 0.0f);
     z_.assign(ring_samples, 0.0f);
-    beta_.assign(levels, 1.0 / levels_);
+    beta_.assign(2 * levels, 1.0 / (2 * levels_));
     belief_.assign(ring * levels, 0.0);
     work_.assign(levels, 0.0);
+    // The forward message's prediction into frame 0.
+    std::copy_n(alpha_.begin(), levels, entering_.begin());
+    for (std::size_t level = 0; level < levels; ++level) entering_[level] += alpha_[levels + level];
 }
 
 void LevelEvidence::push(double e_fs, double sigma2_fs2) {
@@ -109,16 +111,29 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2) {
     z_[slot] = static_cast<float>(z);
     float* x = x_.data() + slot * static_cast<std::size_t>(levels_);
     const double w = tables_.w();
+    double top = 0.0;
     for (int level = 0; level < levels_; ++level) {
         const double value = term_value(tables_.plain(level), z, z2, w);
         x[level] = static_cast<float>(value);
-        // ln((1 - pi) + pi e^x), by its two limits outside |x| < 30 nats
-        const double u = value + log_key_down_;
-        const double mixed = u > log_key_up_ + 30.0   ? u
-                             : u < log_key_up_ - 30.0 ? log_key_up_
-                                                      : log_key_up_ + std::log1p(std::exp(u - log_key_up_));
-        factor_[static_cast<std::size_t>(level)] += mixed;
+        top = std::max(top, value);
     }
+    // One step of the key, then the sample: key-up scores 0, key-down x; relative to the largest, to stay in range.
+    const double stay = 1.0 - key_switch_;
+    const double up_scale = std::exp(-top);
+    double total = 0.0;
+    double* up = alpha_.data();
+    double* down = alpha_.data() + levels_;
+    for (int level = 0; level < levels_; ++level) {
+        const double from_up = up[level];
+        const double from_down = down[level];
+        const double new_up = (stay * from_up + key_switch_ * from_down) * up_scale;
+        const double new_down = (stay * from_down + key_switch_ * from_up) * std::exp(x[level] - top);
+        up[level] = new_up;
+        down[level] = new_down;
+        total += new_up + new_down;
+    }
+    const double scale = 1.0 / total;
+    for (double& value : alpha_) value *= scale;
     ++samples_;
     if (++frame_fill_ == frame_samples_) {
         end_frame();
@@ -130,71 +145,84 @@ void LevelEvidence::finish() {
     if (frame_fill_ > 0) end_frame();
     commit(true);
     const std::array<float, kEdgeCount> none{};
-    for (int i = 0; i < kEdgeDone; ++i) sums_.push(0.0, none, none);
+    for (int i = 0; i <= kHorizon; ++i) sums_.push(0.0, none, none);
 }
 
-void LevelEvidence::step_level(std::vector<double>& x) const {
+void LevelEvidence::step_level(double* x) const {
     const double p = tables_.walk_p();
-    const std::size_t n = x.size();
+    const int n = levels_;
+    double sum = 0.0;
     for (int pass = 0; pass < tables_.walk_passes(); ++pass) {
         double before = x[0];  // reflecting ends
-        for (std::size_t i = 0; i < n; ++i) {
+        for (int i = 0; i < n; ++i) {
             const double here = x[i];
             const double after = i + 1 < n ? x[i + 1] : here;
             x[i] = (1.0 - 2.0 * p) * here + p * (before + after);
             before = here;
         }
     }
+    for (int i = 0; i < n; ++i) sum += x[i];
     const double jump = tables_.jump();
-    const double mean = std::accumulate(x.begin(), x.end(), 0.0) / static_cast<double>(n);
-    for (double& value : x) value = (1.0 - jump) * value + jump * mean;
+    const double mean = sum / n;
+    for (int i = 0; i < n; ++i) x[i] = (1.0 - jump) * x[i] + jump * mean;
 }
 
 void LevelEvidence::end_frame() {
     const std::size_t levels = static_cast<std::size_t>(levels_);
-    const std::size_t slot = static_cast<std::size_t>(frames_ % ring_frames_);
-    // The prediction into this frame.
-    step_level(alpha_);
-    std::copy(alpha_.begin(), alpha_.end(), predicted_.begin() + static_cast<std::ptrdiff_t>(slot * levels));
-    const double largest = *std::max_element(factor_.begin(), factor_.end());
-    double total = 0.0;
-    for (std::size_t level = 0; level < levels; ++level) {
-        const double relative = factor_[level] - largest;
-        factors_[slot * levels + level] = relative;
-        alpha_[level] *= std::exp(relative);
-        total += alpha_[level];
-    }
-    for (double& value : alpha_) value /= total;
-    std::fill(factor_.begin(), factor_.end(), 0.0);
     frame_fill_ = 0;
     ++frames_;
+    // The prediction into the next frame: the level steps; the belief over levels it gives that frame sums the key out.
+    step_level(alpha_.data());
+    step_level(alpha_.data() + levels);
+    const std::size_t slot = static_cast<std::size_t>(frames_ % ring_frames_);
+    for (std::size_t level = 0; level < levels; ++level) entering_[slot * levels + level] = alpha_[level] + alpha_[levels + level];
 }
 
 void LevelEvidence::commit(bool all) {
     if (frames_ == next_commit_) return;
     const std::size_t levels = static_cast<std::size_t>(levels_);
+    const std::size_t ring_samples = static_cast<std::size_t>(ring_frames_) * static_cast<std::size_t>(frame_samples_);
     const std::int64_t last = frames_ - 1;
     const std::int64_t last_committed = all ? last : next_commit_ + commit_frames_ - 1;
-    std::fill(beta_.begin(), beta_.end(), 1.0 / levels_);
+    std::fill(beta_.begin(), beta_.end(), 1.0 / static_cast<double>(2 * levels));
+    double* up = beta_.data();
+    double* down = beta_.data() + levels;
+    const double stay = 1.0 - key_switch_;
     for (std::int64_t t = last; t >= next_commit_; --t) {
         const std::size_t slot = static_cast<std::size_t>(t % ring_frames_);
+        // The belief this frame's samples read: what enters it from each side, its own samples left out.
         if (t <= last_committed) {
             double total = 0.0;
             for (std::size_t level = 0; level < levels; ++level) {
-                const double value = predicted_[slot * levels + level] * beta_[level];
+                const double value = entering_[slot * levels + level] * (up[level] + down[level]);
                 belief_[slot * levels + level] = value;
                 total += value;
             }
             for (std::size_t level = 0; level < levels; ++level) belief_[slot * levels + level] /= total;
         }
-        // The message into frame t - 1.
-        double total = 0.0;
-        for (std::size_t level = 0; level < levels; ++level) {
-            beta_[level] *= std::exp(factors_[slot * levels + level]);
-            total += beta_[level];
+        // Back through its samples, the last first, then the level's step.
+        const std::int64_t first_sample = t * frame_samples_;
+        const std::int64_t end_sample = std::min(first_sample + frame_samples_, samples_);
+        for (std::int64_t k = end_sample - 1; k >= first_sample; --k) {
+            const float* x = x_.data() + (static_cast<std::size_t>(k) % ring_samples) * levels;
+            double top = 0.0;
+            for (std::size_t level = 0; level < levels; ++level) top = std::max(top, static_cast<double>(x[level]));
+            const double up_scale = std::exp(-top);
+            double total = 0.0;
+            for (std::size_t level = 0; level < levels; ++level) {
+                const double seen_up = up[level] * up_scale;
+                const double seen_down = down[level] * std::exp(x[level] - top);
+                const double new_up = stay * seen_up + key_switch_ * seen_down;
+                const double new_down = stay * seen_down + key_switch_ * seen_up;
+                up[level] = new_up;
+                down[level] = new_down;
+                total += new_up + new_down;
+            }
+            const double scale = 1.0 / total;
+            for (double& value : beta_) value *= scale;
         }
-        for (double& value : beta_) value /= total;
-        step_level(beta_);
+        step_level(up);
+        step_level(down);
     }
     for (std::int64_t t = next_commit_; t <= last_committed; ++t) {
         const std::size_t slot = static_cast<std::size_t>(t % ring_frames_);
@@ -270,6 +298,15 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
             fall[static_cast<std::size_t>(position)] = edge_count > 0 ? static_cast<float>(down_top + std::log(down_sum)) : 0.0f;
         }
         sums_.push(l1, rise, fall);
+        if (const char* dump = std::getenv("KZ4AP_SEG_DUMP"); dump != nullptr) {
+            static std::FILE* out = std::fopen(dump, "w");
+            int top_level = 0;
+            for (int i = 0; i < count; ++i) if (active_p[i] > belief[top_level]) top_level = active[i];
+            std::fprintf(out, "%lld %.2f %.2f %d %d", static_cast<long long>(k), z, l1, top_level, count);
+            for (float v : rise) std::fprintf(out, " %.1f", v);
+            for (float v : fall) std::fprintf(out, " %.1f", v);
+            std::fprintf(out, "\n");
+        }
     }
 }
 

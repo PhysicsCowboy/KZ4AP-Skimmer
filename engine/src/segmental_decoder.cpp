@@ -115,6 +115,8 @@ DecodeUpdate SegmentalDecoder::flush() {
     }
     DecodeUpdate update;
     update.chars = search_->best_text();
+    if (std::getenv("KZ4AP_SEGMENTAL_DEBUG") != nullptr)
+        for (const auto& c : update.chars) std::fprintf(stderr, "[%s %.0f %.0f] ", c.text.c_str(), c.start_s * 375, c.end_s * 375);
     return update;
 }
 

@@ -15,8 +15,14 @@
 // over's end, the no-signal story's ln(1 - P) per sample and a birth's ln P. A birth starts a mark of open speed: its end
 // offers every speed with ln(1 / speed_count).
 //
-// Pruning compares, at boundary j, every story through sample j + 10: an open mark's base + C[j + 11] plus its better
-// survival, an open gap's base plus its best survival, a new element's score, and the no-signal story's.
+// Pruning compares, at boundary j, every story on what it can reach through the horizon H = j + 16: an element already
+// open cannot be charged for an edge it has not claimed yet, whose evidence already stands inside the horizon (this is
+// the review's F3 in another form: pruning on the evidence through j + 10 alone dropped every gap one sample before its
+// true rise once the level was high, CER above 3 at +20 dB S500 in stage 1). So a story in a gap reaches, beyond its base,
+//     max(0, max over d = 1 ... 6 of rise(j + d) + C[H + 1] - C[j + d + 11]),
+// and one in a mark
+//     max(C[H + 1], max over d = 1 ... 6 of C[j + d + 5] + fall(j + d)),
+// the same for every story, so computed once per boundary. Both add the element's survival so far.
 #pragma once
 
 #include "kz4ap/decoder.hpp"

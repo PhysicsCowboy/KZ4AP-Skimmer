@@ -12,14 +12,15 @@
 //    approximation).
 //
 // 2. The shared level (LevelEvidence). The per-story Kalman amplitude is replaced by one belief per channel over
-//    (key state x level): frames of 8 samples with ln a held constant, a grid of levels every 1.5 dB relative to the
-//    noise, a factor per frame
-//        F_t(l) = sum over samples k in t of ln((1 - pi) + pi exp(x_k(l))),   x_k(l) = w Lambda(a_l; e_k),
-//    (each sample key-down with probability pi, independently: the key's own timing is left to the search), a random
-//    walk of ln a from frame to frame and a small jump to anywhere. The forward message runs on every frame; the backward
+//    (key state x level): a two-state key with a switch probability tau per sample (no timing: the key's timing is left
+//    to the search), a grid of levels every 1.5 dB relative to the noise with ln a held constant over frames of 8 samples, a
+//    random walk of ln a from frame to frame and a small jump to anywhere. Key-up scores 1 and key-down exp(x_k(l)),
+//    x_k(l) = w Lambda(a_l; e_k). The key's memory matters: with a key independent from sample to sample, a low level
+//    gains ln(1 / (1 - pi)) nats per sample of a gap over the true level, and the belief leaves the true level in every long
+//    gap (measured in stage 1: CER above 1 at +20 dB S500). The forward message runs on every sample; the backward
 //    message runs every commit block over the look-ahead. The belief a sample's evidence uses is extrinsic: the forward
-//    message into its frame times the backward message into its frame, so that the frame's own samples are not counted
-//    twice. Then
+//    message into its frame times the backward message into its frame, key summed out on each side, so that the frame's
+//    own samples are not counted twice. Then
 //        L1_k = ln sum over l of P_t(l) exp(x_k(l)),
 //    and R and F likewise with V = sigma^2 + a^2 (f^2 s^2 + v_m). Lambda is the Rician log-likelihood ratio against noise
 //    alone, tempered by w = w_strong as in the viterbi decoder (viterbi/observation.hpp).
@@ -42,6 +43,8 @@ namespace kz4ap::segmental {
 inline constexpr int kEdgeFirst = 5;
 inline constexpr int kEdgeCount = 6;
 inline constexpr int kEdgeDone = kEdgeFirst + kEdgeCount;  // 11
+// samples: boundary j is searched when the evidence through j + kHorizon exists (search.hpp).
+inline constexpr int kHorizon = 16;
 
 // What the search reads, sample by sample, as a running sum (1 above). Samples are numbered from 0 as they are pushed.
 class RunningSums {
@@ -126,7 +129,7 @@ public:
 private:
     void end_frame();
     void commit(bool all);
-    void step_level(std::vector<double>& x) const;
+    void step_level(double* x) const;
     void commit_frame(std::int64_t frame, const double* belief);
 
     const LevelTables& tables_;
@@ -136,24 +139,19 @@ private:
     int lookahead_frames_;
     int commit_frames_;
     int ring_frames_;
-    double log_key_up_;
-    double log_key_down_;
+    double key_switch_;  // probability per sample that the key changes state
 
     std::int64_t samples_ = 0;
     std::int64_t frames_ = 0;       // frames ended
     std::int64_t next_commit_ = 0;  // the first frame not committed
     int frame_fill_ = 0;
-    std::vector<double> factor_;     // F of the frame being filled
-    std::vector<double> alpha_;      // forward message after the last frame ended
-    std::vector<double> predicted_;  // by frame in the ring, then level: the forward message into the frame
-    std::vector<double> factors_;    // by frame in the ring, then level: F, relative to its largest
+    std::vector<double> alpha_;      // forward message: key up by level, then key down by level
+    std::vector<double> entering_;   // by frame in the ring, then level: the forward message into the frame, key summed out
     std::vector<float> x_;           // by sample in the ring, then level: x_k(l)
     std::vector<float> z_;           // by sample in the ring: e / sigma_y
-    std::vector<double> beta_;       // work
-    std::vector<double> belief_;     // work
+    std::vector<double> beta_;       // backward message: key up by level, then key down by level
+    std::vector<double> belief_;     // by frame in the ring, then level: what its samples read
     std::vector<double> work_;       // work
-    std::vector<std::array<float, kEdgeCount>> pending_rise_;
-    std::vector<std::array<float, kEdgeCount>> pending_fall_;
 };
 
 }  // namespace kz4ap::segmental

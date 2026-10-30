@@ -5,6 +5,7 @@
 #include "kz4ap/viterbi/symbol_prior.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -43,7 +44,7 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
             const double dot_samples = model.dot_min_ms * std::pow(model.speed_ratio, speed) / (1000.0 * model.sample_interval_s);
             const double median = model.fist_medians_dots[static_cast<std::size_t>(kind)] * dot_samples;
             const double shift = model.fist_shifts_dots[static_cast<std::size_t>(kind)] * dot_samples;
-            const int lo = std::max(1, static_cast<int>(std::floor(shift + median * std::exp(-config.duration_z_max * sigma))));
+            const int lo = std::max(kEdgeCount, static_cast<int>(std::floor(shift + median * std::exp(-config.duration_z_max * sigma))));
             const int hi = std::max(lo, static_cast<int>(std::ceil(shift + median * std::exp(config.duration_z_max * sigma))));
             ranges_[static_cast<std::size_t>(kind * speeds_ + speed)] = Range{lo, hi, static_cast<int>(log_end_.size())};
             for (int length = lo; length <= hi; ++length)
@@ -136,6 +137,13 @@ struct Search::Impl {
     bool silent_alive = true;
     double silent = 0.0;              // nats: the no-signal story's score
     std::int32_t silent_text = viterbi::SharedText::kEmpty;  // held
+    // An over's end at j reaches the no-signal story at j + 6, so that a birth's rise window cannot overlap its fall
+    // window (each would count the same samples): by (j + 6) mod 7, the over's end's score and text (held), or none.
+    struct Tail {
+        double score = -kInf;
+        std::int32_t text = viterbi::SharedText::kEmpty;
+    };
+    std::array<Tail, kEdgeCount + 1> tails;
     // The times of samples: t = origin + m Delta after the last break
     std::vector<std::pair<std::int64_t, double>> breaks;
 
@@ -185,6 +193,26 @@ void Search::Impl::boundary(std::int64_t j) {
     const double fall = sums.fall(j);
     const double rise = sums.rise(j);
     const double mark_end = c5 + fall;
+    // The value of the evidence through the horizon H = j + 16 that a story in a gap, or in a mark, can still reach, whatever
+    // the story: it stays there, or changes once at j + d, d = 1 ... 6 (search.hpp).
+    const double horizon = sums.sum(j + kHorizon + 1);
+    // By the first d the element's age allows (an element is at least 6 samples long): [d - 1] holds the reach over d ... 6.
+    std::array<double, kEdgeCount> gap_reach_from;
+    std::array<double, kEdgeCount> mark_reach_from;
+    {
+        double gap_value = 0.0;
+        double mark_value = horizon;
+        for (int d = kEdgeCount; d >= 1; --d) {
+            gap_value = std::max(gap_value, sums.rise(j + d) + horizon - sums.sum(j + d + kEdgeDone));
+            mark_value = std::max(mark_value, sums.sum(j + d + kEdgeFirst) + sums.fall(j + d));
+            gap_reach_from[static_cast<std::size_t>(d - 1)] = gap_value;
+            mark_reach_from[static_cast<std::size_t>(d - 1)] = mark_value;
+        }
+    }
+    const auto first_d = [](int length) { return static_cast<std::size_t>(std::max(1, kEdgeCount - length) - 1); };
+    const double gap_reach = gap_reach_from[0];      // an element at least 5 samples old, and the no-signal story
+    const double gap_reach_new = gap_reach_from[kEdgeCount - 1];    // a gap that starts here
+    const double mark_reach_new = mark_reach_from[kEdgeCount - 1];  // a mark that starts here
     const int speeds = model.speeds();
     const std::int32_t count = static_cast<std::int32_t>(live.size());
     partial.resize(live.size());
@@ -201,7 +229,7 @@ void Search::Impl::boundary(std::int64_t j) {
             const int speed = e.speed;
             const int node = e.node;
             const int survive = std::min(length, model.survival_length(speed) - 1);
-            score = e.base + model.gap_survival(speed, survive);
+            score = e.base + model.gap_survival(speed, survive) + gap_reach_from[first_d(length)];
             if (model.has_children(node)) {
                 const ModelTables::Range& r = model.range(kElementGap, speed);
                 if (length >= r.lo && length <= r.hi)
@@ -223,7 +251,7 @@ void Search::Impl::boundary(std::int64_t j) {
             const int speed = e.speed;
             const int node = e.node;
             const int survive = std::min(length, model.survival_length(speed) - 1);
-            score = e.base + c11 + model.mark_survival(speed, survive);
+            score = e.base + mark_reach_from[first_d(length)] + model.mark_survival(speed, survive);
             const double ended = e.base + mark_end;
             for (int label = 0; label < 2; ++label) {
                 const int child = model.child(node, label);
@@ -248,7 +276,7 @@ void Search::Impl::boundary(std::int64_t j) {
                               index, 0, stamp);
                 }
             }
-            score = e.base + c11 + survive + model.log_first_speed();
+            score = e.base + mark_reach_from[first_d(length)] + survive + model.log_first_speed();
         }
         partial[static_cast<std::size_t>(index)] = score;
         best = std::max(best, score);
@@ -260,32 +288,46 @@ void Search::Impl::boundary(std::int64_t j) {
     const bool before_alive = silent_alive;
     if (silent_alive) {
         silent += model.log_silence();
-        best = std::max(best, silent);
+        best = std::max(best, silent + gap_reach);
     }
 
     // 3. The slots' scores as partial scores: a gap's as it stands, a mark's with its rise.
     for (const std::int32_t index : gap_touched) {
-        best = std::max(best, gap_slots[static_cast<std::size_t>(index)].score);
+        best = std::max(best, gap_slots[static_cast<std::size_t>(index)].score + gap_reach_new);
     }
     for (const std::int32_t index : mark_touched) {
-        best = std::max(best, mark_slots[static_cast<std::size_t>(index)].score + rise);
+        best = std::max(best, mark_slots[static_cast<std::size_t>(index)].score + rise - c11 + mark_reach_new);
     }
 
-    // The over's ends: from each mark's end at a node with a symbol, to the no-signal story.
+    // The over's ends: from each mark's end at a node with a symbol, into the tail that reaches the no-signal story at
+    // j + 6; and the tail that reaches it now.
+    Tail& tail_now = tails[static_cast<std::size_t>(j % static_cast<std::int64_t>(tails.size()))];
+    if (tail_now.score > -kInf) {
+        if (!silent_alive || tail_now.score > silent) {
+            text.release(silent_text);
+            silent_text = tail_now.text;
+            silent = tail_now.score;
+            silent_alive = true;
+        } else {
+            text.release(tail_now.text);
+        }
+        tail_now = Tail{};
+    }
     std::int32_t silent_parent = -1;
     int silent_node = 0;
+    double silent_end = -kInf;
     for (const std::int32_t index : gap_touched) {
         const int node = index % model.nodes();
         if (!model.has_symbol(node)) continue;
         const double score = gap_slots[static_cast<std::size_t>(index)].score + model.letter_end(node) - model.over_end_cost();
-        if (!silent_alive || score > silent) {
-            silent = score;
-            silent_alive = true;
+        if (score > silent_end) {
+            silent_end = score;
             silent_parent = gap_slots[static_cast<std::size_t>(index)].parent;
             silent_node = node;
         }
     }
-    if (silent_alive) best = std::max(best, silent);
+    if (silent_alive) best = std::max(best, silent + gap_reach);
+    if (silent_end > -kInf) best = std::max(best, silent_end + gap_reach_new);
     if (best == -kInf) best = 0.0;
     const double floor = best - config.beam_nats;
 
@@ -293,7 +335,7 @@ void Search::Impl::boundary(std::int64_t j) {
     opened.clear();
     for (const std::int32_t index : gap_touched) {
         const Slot& slot = gap_slots[static_cast<std::size_t>(index)];
-        if (slot.score < floor) continue;
+        if (slot.score + gap_reach_new < floor) continue;
         const Element& parent = live[static_cast<std::size_t>(slot.parent)];
         Element e{};
         e.base = slot.score;
@@ -314,7 +356,7 @@ void Search::Impl::boundary(std::int64_t j) {
     }
     for (const std::int32_t index : mark_touched) {
         const Slot& slot = mark_slots[static_cast<std::size_t>(index)];
-        if (slot.score + rise < floor) continue;
+        if (slot.score + rise - c11 + mark_reach_new < floor) continue;
         const Element& parent = live[static_cast<std::size_t>(slot.parent)];
         Element e{};
         e.base = slot.score + rise - c11;
@@ -341,7 +383,7 @@ void Search::Impl::boundary(std::int64_t j) {
     // A birth's first mark, with the no-signal story's text.
     if (before_alive) {
         const double score = before + model.log_birth() + model.letter_start();
-        if (score + rise >= floor) {
+        if (score + rise - c11 + mark_reach_new >= floor) {
             Element e{};
             e.base = score + rise - c11;
             e.start = j;
@@ -368,8 +410,9 @@ void Search::Impl::boundary(std::int64_t j) {
         const std::int64_t letter = parent.letter < 0 ? parent.start : parent.letter;
         const std::int32_t entry = text.append(base_text, model.tree().symbol(silent_node), time_of(letter), time_of(j));
         if (held != viterbi::SharedText::kEmpty) text.release(held);
-        text.release(silent_text);
-        silent_text = entry;
+        Tail& tail = tails[static_cast<std::size_t>((j + kEdgeCount) % static_cast<std::int64_t>(tails.size()))];
+        tail.score = silent_end + kEdgeCount * model.log_silence();
+        tail.text = entry;
     }
 
     // 5. Prune: the beam, then elements past their longest length.
@@ -401,7 +444,7 @@ void Search::Impl::boundary(std::int64_t j) {
         partial.resize(live.size());
         for (std::size_t i = kept; i < live.size(); ++i) {
             const Element& e = live[i];
-            partial[i] = e.kind == kGap ? e.base : e.base + c11;
+            partial[i] = e.kind == kGap ? e.base + gap_reach_new : e.base + mark_reach_new;
         }
         std::vector<std::uint32_t> order(live.size());
         for (std::size_t i = 0; i < order.size(); ++i) order[i] = static_cast<std::uint32_t>(i);
@@ -421,7 +464,7 @@ void Search::Impl::boundary(std::int64_t j) {
     }
 
     // The no-signal story leaves when behind the beam, except when nothing else stands.
-    if (silent_alive && silent < floor) silent_alive = false;
+    if (silent_alive && silent + gap_reach < floor) silent_alive = false;
     if (!silent_alive && live.empty()) {
         silent_alive = true;
         silent = best;
@@ -438,7 +481,7 @@ Search& Search::operator=(Search&&) noexcept = default;
 
 void Search::advance() {
     Impl& s = *impl_;
-    const std::int64_t last = s.sums.committed() - kEdgeDone;
+    const std::int64_t last = s.sums.committed() - kHorizon - 1;
     while (s.next <= last) s.boundary(s.next++);
 }
 
@@ -452,6 +495,13 @@ std::vector<DecodedSymbol> Search::best_text() const {
     const std::int64_t j = s.next - 1;
     double best = s.silent_alive ? s.silent : -kInf;
     const Element* winner = nullptr;
+    std::int32_t silent_text = s.silent_text;
+    for (const Impl::Tail& tail : s.tails) {
+        if (tail.score > best) {
+            best = tail.score;
+            silent_text = tail.text;
+        }
+    }
     if (j >= 0) {
         const double c11 = s.sums.sum(j + kEdgeDone);
         for (const Element& e : s.live) {
@@ -470,7 +520,7 @@ std::vector<DecodedSymbol> Search::best_text() const {
             }
         }
     }
-    if (winner == nullptr) return s.text.read(s.silent_text);
+    if (winner == nullptr) return s.text.read(silent_text);
     std::vector<DecodedSymbol> out = s.text.read(winner->text);
     if (winner->kind == kGap && s.model.has_symbol(winner->node)) {
         out.push_back(DecodedSymbol{std::string(s.model.tree().symbol(winner->node)), 1.0f, s.time_of(winner->letter),
