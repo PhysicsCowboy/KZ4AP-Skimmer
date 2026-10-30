@@ -10,13 +10,17 @@
 #include "kz4ap/iq_source.hpp"
 #include "kz4ap/stream_runner.hpp"
 
+#include <QElapsedTimer>
 #include <QMainWindow>
 #include <QString>
+#include <QStringList>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 class QAction;
 class QCheckBox;
@@ -28,14 +32,23 @@ class QTimer;
 
 namespace kz4ap::app {
 
-// For runs without an operator (--screenshot, --report, --quit-at-end): what to do at which point of the stream.
+// For runs without an operator (--screenshot, --report, --quit-at-end, --transport): what to do at which point of the
+// stream. The transport steps press the same controls an operator does, and the report logs where the stream stood.
+struct TransportStep {
+    double at_wall_s = 0;  // s of wall clock since the first stream started
+    QString action;        // pause, play, restart, quit or speed=X (X as the speed box offers it: 1, 2, 5, 10 or max)
+};
+
 struct Automation {
+    std::vector<TransportStep> transport;  // in order of at_wall_s
     QString screenshot_path;
     double screenshot_at_s = 0;  // stream time, s
     QString report_path;
     bool quit_at_end = false;
     std::optional<double> quit_at_s;  // stream time, s
-    bool active() const { return !screenshot_path.isEmpty() || !report_path.isEmpty() || quit_at_end || quit_at_s; }
+    bool active() const {
+        return !screenshot_path.isEmpty() || !report_path.isEmpty() || quit_at_end || quit_at_s || !transport.empty();
+    }
 };
 
 class MainWindow : public QMainWindow {
@@ -64,6 +77,7 @@ private:
     void stop_stream();
     void write_report(const StreamStatus& status);
     void run_automation(const StreamStatus& status);
+    void run_transport_steps(const StreamStatus& status);
     void selection_changed();
     void restore_selection();
 
@@ -72,6 +86,9 @@ private:
     Automation automation_;
     bool screenshot_done_ = false;
     bool report_done_ = false;
+    QElapsedTimer automation_clock_;
+    std::size_t next_transport_step_ = 0;
+    QStringList transport_log_;
 
     // Destroyed in reverse: the runner, whose thread feeds the feed, goes first.
     std::unique_ptr<DisplayFeed> feed_;

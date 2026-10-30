@@ -81,8 +81,13 @@ int main(int argc, char* argv[]) {
     const QCommandLineOption quit_at_end_option(QStringLiteral("quit-at-end"), QStringLiteral("Quit when the stream ends."));
     const QCommandLineOption quit_at_option(QStringLiteral("quit-at"), QStringLiteral("Quit at this stream time, s."),
                                             QStringLiteral("s"));
+    const QCommandLineOption transport_option(
+        QStringLiteral("transport"),
+        QStringLiteral("Press the transport's controls at given times: seconds of wall clock and an action, for example "
+                       "8:pause;14:play;20:speed=5;30:restart."),
+        QStringLiteral("steps"));
     parser.addOptions({decoder_option, speed_option, screenshot_option, screenshot_at_option, report_option,
-                       quit_at_end_option, quit_at_option});
+                       quit_at_end_option, quit_at_option, transport_option});
     parser.process(app);
 
     kz4ap::app::Automation automation;
@@ -92,6 +97,10 @@ int main(int argc, char* argv[]) {
     automation.report_path = parser.value(report_option);
     automation.quit_at_end = parser.isSet(quit_at_end_option);
     if (parser.isSet(quit_at_option)) automation.quit_at_s = parser.value(quit_at_option).toDouble();
+    for (const QString& step : parser.value(transport_option).split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
+        const qsizetype colon = step.indexOf(QLatin1Char(':'));
+        automation.transport.push_back({step.left(colon).toDouble(), step.mid(colon + 1)});
+    }
     const bool quiet = automation.active();
 
     const std::string decoder = parser.value(decoder_option).toStdString();

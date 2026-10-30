@@ -1496,6 +1496,22 @@ its own plan. Related item above: "Spectrum frames in linear power".
   candidates are the fit's class posteriors per element, the text model's
   score, and whether a later correction is still possible (a character
   inside the 20 s correction reach is provisional).
+- **Found building the app's first stage (2026-10-30):**
+  - **Worker pool:** the pipeline is one thread (`StreamRunner`), so at the bank's
+    105 ms CPU per channel-second measured on the desktop under load, about 9 tracks
+    fill it. The spec's pool (section 4.1, step 4) comes before a busy band.
+  - **A silent bank track:** on a generated recording (`--seed 11 --signals 8` at
+    192 kHz, 30 s, S₅₀₀ from 12 to 32 dB) the station at -57 051.6 Hz, 26 WPM,
+    +24.0 dB S₅₀₀, starting at 0.057 s, gets a track but no text on the detector
+    path, in `kz4ap-bench` too; with `--oracle` it decodes without an error. Not
+    yet understood.
+  - **The new decoder in the app:** it runs by name at 48 kHz, but gave no text in
+    the first 15 s, gives no speed, costs about 1.2 s CPU per channel-second and
+    refuses an 8 kHz recording (the sample interval is not a whole number of
+    channel samples).
+  - **Not there yet:** seeking in a recording, and the replay that lets a channel
+    hear a transmission from its start (the design's amendment of 2026-10-19), so a
+    track's text starts about 1 s after the station does.
 
 ## 3. Receiver-audio input (directly after the live display)
 

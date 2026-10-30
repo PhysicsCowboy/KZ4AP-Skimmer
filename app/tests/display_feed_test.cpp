@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <utility>
 #include <variant>
 
 using namespace kz4ap;

@@ -74,7 +74,8 @@ MainWindow::MainWindow(std::string decoder_name, double speed, Automation automa
     splitter->addWidget(waterfall_);
     splitter->addWidget(table_view_);
     splitter->setStretchFactor(0, 3);
-    splitter->setStretchFactor(1, 2);
+    splitter->setStretchFactor(1, 1);
+    splitter->setSizes({600, 260});  // pixels; the list starts with room for about nine tracks
     setCentralWidget(splitter);
 
     build_transport();
@@ -85,6 +86,7 @@ MainWindow::MainWindow(std::string decoder_name, double speed, Automation automa
     timer_ = new QTimer(this);
     connect(timer_, &QTimer::timeout, this, &MainWindow::on_tick);
     timer_->start(kTickMs);
+    automation_clock_.start();
 }
 
 MainWindow::~MainWindow() { stop_stream(); }
@@ -269,6 +271,10 @@ void MainWindow::update_transport() {
 void MainWindow::on_tick() {
     ++ticks_;
     if (!runner_) return;
+    if (stream_ended_) {  // nothing more will come
+        run_automation(runner_->status());
+        return;
+    }
     // The status first: if it says Finished, everything the stream published is in the batch that follows.
     const StreamStatus status = runner_->status();
     DisplayBatch batch = feed_->drain();
@@ -288,7 +294,6 @@ void MainWindow::on_tick() {
             QMessageBox::critical(this, tr("KZ4AP Skimmer"), QString::fromStdString(status.error));
     }
 
-    // Every tick while something changed structurally, so a marker appears with its row; otherwise at the slower rate.
     if (ticks_ % kTextEveryTicks == 0 || ended) {
         model_->refresh();
         update_markers();
@@ -350,8 +355,34 @@ void MainWindow::restore_selection() {
     }
 }
 
+void MainWindow::run_transport_steps(const StreamStatus& status) {
+    const double wall_s = automation_clock_.elapsed() / 1000.0;
+    while (next_transport_step_ < automation_.transport.size() &&
+           wall_s >= automation_.transport[next_transport_step_].at_wall_s) {
+        const QString action = automation_.transport[next_transport_step_++].action;
+        transport_log_ << QStringLiteral("transport: wall %1 s, stream %2 s: %3")
+                              .arg(wall_s, 0, 'f', 2)
+                              .arg(status.stream_s, 0, 'f', 2)
+                              .arg(action);
+        PlaybackControl* playback = runner_ ? runner_->source().playback() : nullptr;
+        if (action == QStringLiteral("restart")) {
+            restart_->trigger();
+        } else if (action == QStringLiteral("pause") || action == QStringLiteral("play")) {
+            if (playback && playback->paused() == (action == QStringLiteral("play"))) play_pause_->trigger();
+        } else if (action.startsWith(QStringLiteral("speed="))) {
+            const QString value = action.mid(6);
+            const double speed = value == QStringLiteral("max") ? kAsFastAsPossible : value.toDouble();
+            speed_box_->setCurrentIndex(speed_box_->findData(speed));
+        } else if (action == QStringLiteral("quit")) {
+            if (!automation_.report_path.isEmpty()) write_report(status);
+            QApplication::quit();
+        }
+    }
+}
+
 void MainWindow::run_automation(const StreamStatus& status) {
     if (!automation_.active()) return;
+    run_transport_steps(status);
     const bool ended = stream_ended_ || status.state == StreamStatus::State::Stopped;
     if (!automation_.screenshot_path.isEmpty() && !screenshot_done_ && (status.stream_s >= automation_.screenshot_at_s || ended)) {
         model_->refresh();
@@ -361,9 +392,11 @@ void MainWindow::run_automation(const StreamStatus& status) {
         grab().save(automation_.screenshot_path);
         screenshot_done_ = true;
     }
-    const bool quit_now = (automation_.quit_at_end && ended) || (automation_.quit_at_s && status.stream_s >= *automation_.quit_at_s);
+    const bool quitting = automation_.quit_at_end || automation_.quit_at_s;
+    const bool failed = status.state == StreamStatus::State::Failed;
+    const bool quit_now = (quitting && ended) || (automation_.quit_at_s && status.stream_s >= *automation_.quit_at_s);
     if ((quit_now || ended) && !automation_.report_path.isEmpty() && !report_done_) write_report(status);
-    if (quit_now) QApplication::quit();
+    if (quit_now) QApplication::exit(failed ? 1 : 0);
 }
 
 void MainWindow::write_report(const StreamStatus& status) {
@@ -389,6 +422,7 @@ void MainWindow::write_report(const StreamStatus& status) {
     out << "pipeline_thread_cpu_s: " << status.thread_cpu_s << "\n";
     out << "rows_skipped: " << rows_dropped_ << "\n";
     out << "error: " << QString::fromStdString(status.error) << "\n";
+    for (const QString& line : transport_log_) out << line << "\n";
     const auto write_rows = [&](const std::vector<TrackRow>& rows) {
         for (const TrackRow& row : rows) {
             out << "track " << row.id << " freq_hz " << QString::number(row.freq_hz, 'f', 1) << " wpm "

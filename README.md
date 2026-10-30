@@ -40,6 +40,22 @@ a single-configuration generator and no `CMAKE_BUILD_TYPE`, SLEEF's own CMake
 code sets it to Release in the cache, which then applies to the whole project
 from the next configure on.
 
+## Desktop app
+
+`kz4ap-skimmer` (in `app/`) plays an I/Q recording with a waterfall and each
+signal's decoded text. It needs Qt 6 Widgets and is built only where CMake
+finds them; everything else builds and tests the same without Qt. Point CMake
+at Qt with a variable, for example with Qt from
+[aqtinstall](https://github.com/miurahr/aqtinstall):
+
+    cmake --preset windows -DCMAKE_PREFIX_PATH=<Qt folder>/6.8.3/msvc2022_64
+    cmake --build --preset windows --target kz4ap-skimmer
+    build/windows/app/Release/kz4ap-skimmer recording.wav
+
+On Windows the build copies Qt's DLLs next to the program. `--decoder` picks the
+decoder (default `bank`) and `--speed` the pace (a factor, or `max`); `--help`
+lists the rest.
+
 ## Benchmark
 
 `kz4ap-bench` runs the engine over an I/Q recording and, given the labels file
