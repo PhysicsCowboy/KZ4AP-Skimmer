@@ -504,6 +504,18 @@ the work per story. The owner (2026-10-22): "something like B, and all the other
 potential stories needs to be considered very carefully given how much CPU we're currently requiring per channel."
 Measure the CPU first.
 
+### The edge's position handled jointly across its samples in the new decoder (found 2026-10-28; later)
+
+The template's edge variance v_k (design notes, Part 5) covers where within its 2.667 ms sample an edge fell, but is
+added independently at each of the 5 to 7 samples the edge touches, though one position is shared by all of them. The
+standard treatment averages the likelihood over that one position, jointly across the edge's samples. Measured in the
+score-form study of 2026-10-28 (C++, scratch; plan D23), with 8 positions of the latest edge: the true timing leads
+its best one-sample neighbor by 131.7 nats at +40 dB S₅₀₀ and 25 WPM against 13.9 without it (47.1 against 6.6 at
+40 WPM; 8.2 against 7.6 at +20 dB S₅₀₀); decoding of "PARIS PARIS" unchanged on that grid; ordinary scoring 17.8 times
+the cost as built (+920% of the projected 425.7 ms per channel-second). A cheaper build (the shared-reference scoring
+per position, marginalizing only the samples 4 to 11 after the edge, where the position matters) is estimated at
+about 4 times today's scoring (rough). Worth doing only if timing at high SNR turns out to matter.
+
 ### A narrower filter for slower signals in the new decoder (owner, 2026-10-22; later)
 
 The owner chose one fixed filter for every speed: about 80 Hz wide, matched to a 12 ms dot at 100 WPM, sampled every

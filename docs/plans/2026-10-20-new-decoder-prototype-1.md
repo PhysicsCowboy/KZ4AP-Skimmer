@@ -1135,6 +1135,10 @@ and a value below 0.05 goes to the owner. 80 nats is heuristic: about twice the 
 and come back (41.5 nats; every other case under 17.3); keeping every point would remove it at about +40% of the
 projected total instead of +3.6% (estimated); the prototype records the deepest revival, and one deeper than 40 nats
 goes to the owner.
+- **Changed by D23 (owner, 2026-10-29):** each point carries the full form with V(a_i) = σ_y² + a_i²(f²s_k² + v_k) and
+  the constant w = 0.1986 instead of D21's weight. The caps are removed, so the limit of 0.074–0.078 nepers above
+  +40 dB S₅₀₀ no longer holds: the width may fall toward 0.03 nepers, where 128 points err about 0.17 nats (rough).
+  The narrowest width at handover is still recorded, and a value below 0.05 still goes to the owner.
 
 **D23. Every story scored by its full density against one shared reference (owner, 2026-10-29: "Sure").** The build
 (plan 1b, Task 10) found that the per-sample ratio Λ(a; V′) taken against each story's own V′ drops
