@@ -3,8 +3,6 @@
 #include "kz4ap/viterbi/observation.hpp"
 
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <stdexcept>
 #include <utility>
 
@@ -107,16 +105,8 @@ DecodeUpdate SegmentalDecoder::flush() {
     flushed_ = true;
     evidence_->finish();
     search_->advance();
-    if (const char* debug = std::getenv("KZ4AP_SEGMENTAL_DEBUG"); debug != nullptr) {
-        const segmental::SearchStats& s = search_->stats();
-        std::fprintf(stderr, "segmental: %lld boundaries, %.1f touches per boundary, %.3f opened, largest live %lld\n",
-                     static_cast<long long>(s.boundaries), static_cast<double>(s.touches) / static_cast<double>(s.boundaries + 1),
-                     static_cast<double>(s.opened) / static_cast<double>(s.boundaries + 1), static_cast<long long>(s.largest_live));
-    }
     DecodeUpdate update;
     update.chars = search_->best_text();
-    if (std::getenv("KZ4AP_SEGMENTAL_DEBUG") != nullptr)
-        for (const auto& c : update.chars) std::fprintf(stderr, "[%s %.0f %.0f] ", c.text.c_str(), c.start_s * 375, c.end_s * 375);
     return update;
 }
 

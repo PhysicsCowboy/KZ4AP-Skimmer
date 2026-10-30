@@ -150,6 +150,7 @@ add_executable(kz4ap_viterbi_tests
   tests/viterbi/long_run_test.cpp
   tests/viterbi/newborn_test.cpp
   tests/viterbi_decoder_test.cpp
+  tests/segmental/segmental_test.cpp
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)
 gtest_discover_tests(kz4ap_viterbi_tests)
