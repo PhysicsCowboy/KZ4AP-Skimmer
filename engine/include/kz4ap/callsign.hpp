@@ -1,6 +1,6 @@
 // The callsign stage: from each track's decoded text to a list of calls, each reported once. It reads the engine's track and text
 // events and nothing else, so it does not touch the decoders' search or the detector, and it costs a stream's pipeline no time when
-// nothing subscribes it. docs/signal-processing.md, section 11, describes it; A.11b has the provenance of every value below.
+// nothing subscribes it. docs/signal-processing.md, section 11, describes it; A.12 has the provenance of every value below.
 //
 // In order: (1) words of the settled text, (2) readings of a call in them (read_calls: the callsign grammar, words glued together
 // or split apart, a stray E, T or I), each with the role its neighbors give it, (3) evidence per call and place, one occurrence per
@@ -47,6 +47,10 @@ std::optional<ParsedCall> parse_form(std::string_view word);
 // matches only, since real calls contain them: DJ5NN stays a call. A heuristic list (manta's practice of exact matches).
 bool is_cw_word(std::string_view base);
 
+// A call made only of E, T, I, S, H, A, N, M, U and 5: what noise and a wide signal's fragments read as (track_evidence.hpp), so it says
+// nothing without a list. A heuristic; it costs the few real calls of this form (I5SAN) unless a known-call list has them.
+bool only_tiny_pieces(std::string_view base);
+
 // Levenshtein distance, stopping once it exceeds `limit` (it then returns limit + 1).
 int edit_distance(std::string_view a, std::string_view b, int limit);
 
@@ -84,6 +88,7 @@ struct CallReading {
     bool special = false;
     Reading reading = Reading::Whole;
     Role role = Role::Unknown;
+    bool doubled = false;  // the same word is right before or after it
     std::size_t first_word = 0;  // the words it came from: first, and the one after its last
     std::size_t last_word = 0;
     double start_s = 0;
@@ -116,16 +121,18 @@ private:
 
 struct CallSearchConfig {
     // s: the text is read this far behind the stream, so that the decoder's corrections have mostly settled. Heuristic, chosen by
-    // measurement (section A.11b); corrections reach at most 20 s.
-    double settle_s = 6.0;
-    // Hz: the readings of a call count together within this of each other. Heuristic: manta's 93.75 Hz within a bucket of 300 Hz.
-    double same_place_hz = 100.0;
-    // s: the readings of a call count together within this of each other. Heuristic: CW Skimmer's 10 minutes between spots at a place.
-    double window_s = 600.0;
+    // measurement (appendix A.12); corrections reach at most 20 s.
+    double settle_s = 10.0;
+    // Hz: the readings of a call count together within this of each other. Heuristic, chosen by measurement: manta's bucket of 300 Hz; 100 Hz
+    // loses a QSO's partner, named at one station's place and signing at his own 200 Hz away.
+    double same_place_hz = 300.0;
+    // s: the readings of a call count together within this of each other. Heuristic, chosen by measurement: CW Skimmer's 10 minutes between
+    // spots at a place lost an ID sent every 255 s on real 40 m; 30 min added no misreading there.
+    double window_s = 1800.0;
     // Hz: a near variant of a better-supported call within this is taken as its misreading. Heuristic, chosen by measurement.
-    double variant_hz = 500.0;
+    double variant_hz = 150.0;
     // s: and within this of it. Heuristic, as window_s.
-    double variant_s = 600.0;
+    double variant_s = 1800.0;
     // Points needed to report, an unlisted call that is framed (DE, CQ, ...), an unlisted bare one, a listed one. A whole word scores 1,
     // a stripped or joined reading stripped_points. Heuristics; CW Skimmer's Normal level is 2, 3 or 5 repeats by pattern, 1 for its
     // watch list.
@@ -133,8 +140,10 @@ struct CallSearchConfig {
     double points_bare = 3.0;
     double points_known = 1.0;
     double stripped_points = 0.5;
-    // A variant's points that also count for the better call. Heuristic.
-    double variant_share = 0.5;
+    // Two letters' difference holds a call back only against a rival with more than this many times its points. Heuristic, chosen by measurement.
+    double far_variant_ratio = 2.0;
+    // A call sent twice in a row counts as framed, when not 0. Heuristic, chosen by measurement.
+    double doubled_is_framed = 1.0;
     // A rival must have this many times the points of a listed call to hold it back; a listed rival holds back an unlisted call at equal points.
     double known_rival_factor = 3.0;
 };
@@ -195,6 +204,7 @@ private:
         double last_s = 0;
         double reported_s = 0;
         double freq_hz = 0;
+        int freq_rank = -1;  // how good the place's reading is: named 0, unknown 1, sender 2
         double best_points = 0;
         bool heard = false;
         bool framed = false;
@@ -215,7 +225,7 @@ private:
     void add(const CallReading& reading, double freq_hz);
     void evaluate(Candidate& candidate, double freq_hz, double now_s);
     Support support(const Candidate& candidate, double freq_hz, double now_s, double within_hz) const;
-    bool passes(const Candidate& candidate, const Support& s, double variant_points) const;
+    bool passes(const Candidate& candidate, const Support& s) const;
     void report(Candidate& candidate, double now_s);
     void withdraw(Candidate& candidate);
     void update_row(const Candidate& candidate);

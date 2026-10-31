@@ -26,6 +26,7 @@
 #include <QMessageBox>
 #include <QSignalBlocker>
 #include <QSlider>
+#include <QSortFilterProxyModel>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QStandardPaths>
@@ -57,8 +58,9 @@ constexpr int kPositionSteps = 1000;
 
 }  // namespace
 
-MainWindow::MainWindow(std::string decoder_name, double speed, int threads, RadioDefaults radio, Automation automation)
-    : decoder_name_(std::move(decoder_name)), speed_(speed), threads_(threads), automation_(std::move(automation)) {
+MainWindow::MainWindow(std::string decoder_name, double speed, int threads, RadioDefaults radio, Automation automation,
+                       std::shared_ptr<const callsign::KnownCalls> known_calls)
+    : decoder_name_(std::move(decoder_name)), speed_(speed), threads_(threads), automation_(std::move(automation)), known_calls_(std::move(known_calls)) {
     setWindowTitle(tr("KZ4AP Skimmer"));
     resize(1360, 900);
 
@@ -84,9 +86,36 @@ MainWindow::MainWindow(std::string decoder_name, double speed, int threads, Radi
             &MainWindow::selection_changed);
     connect(model_, &TrackListModel::layoutRedone, this, &MainWindow::restore_selection);
 
+    // The call list, beside the track list: a click on a heading sorts it; the latest heard first to begin with.
+    calls_ = new CallListModel(this);
+    auto* sorted_calls = new QSortFilterProxyModel(this);
+    sorted_calls->setSourceModel(calls_);
+    sorted_calls->setSortRole(Qt::UserRole);
+    sorted_calls->setDynamicSortFilter(true);
+    auto* calls_view = new QTableView;
+    calls_view->setModel(sorted_calls);
+    calls_view->setSortingEnabled(true);
+    calls_view->sortByColumn(CallListModel::kLastHeard, Qt::AscendingOrder);
+    calls_view->setSelectionBehavior(QAbstractItemView::SelectRows);
+    calls_view->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    calls_view->setWordWrap(false);
+    calls_view->verticalHeader()->hide();
+    calls_view->verticalHeader()->setDefaultSectionSize(22);
+    calls_view->setColumnWidth(CallListModel::kCall, 100);
+    calls_view->setColumnWidth(CallListModel::kFrequency, 115);
+    calls_view->setColumnWidth(CallListModel::kLastHeard, 75);
+    calls_view->setColumnWidth(CallListModel::kCount, 65);
+    calls_view->setColumnWidth(CallListModel::kHow, 60);
+    auto* lists = new QSplitter(Qt::Horizontal);
+    lists->addWidget(table_view_);
+    lists->addWidget(calls_view);
+    lists->setStretchFactor(0, 3);
+    lists->setStretchFactor(1, 1);
+    lists->setSizes({920, 440});  // pixels
+
     auto* splitter = new QSplitter(Qt::Vertical);
     splitter->addWidget(waterfall_);
-    splitter->addWidget(table_view_);
+    splitter->addWidget(lists);
     splitter->setStretchFactor(0, 3);
     splitter->setStretchFactor(1, 1);
     splitter->setSizes({600, 260});  // pixels; the list starts with room for about nine tracks
@@ -440,10 +469,12 @@ void MainWindow::build_status_bar() {
     stream_label_ = new QLabel;
     speed_label_ = new QLabel;
     tracks_label_ = new QLabel;
+    calls_label_ = new QLabel;
     cpu_label_ = new QLabel;
     statusBar()->addWidget(stream_label_);
     statusBar()->addWidget(speed_label_);
     statusBar()->addWidget(tracks_label_);
+    statusBar()->addWidget(calls_label_);
     statusBar()->addPermanentWidget(cpu_label_);
     cpu_label_->setToolTip(tr("Over the last 10 s of wall clock. Pipeline: CPU of the pipeline's thread (spectrum, "
                               "detector, channelizer, decoders, waterfall rows) per second of channel output, summed "
@@ -503,6 +534,7 @@ void MainWindow::start_stream(std::unique_ptr<IqSource> source) {
     model_->table().set_plausible_only(front_end_from_name(decoder_name_) == FrontEnd::Segmental);
     model_->set_bin_width_hz(static_cast<double>(rate) / fft_size);
     model_->set_center_hz(source->center_frequency_hz());
+    calls_->start(known_calls_, source->center_frequency_hz());
     selected_track_.reset();
     waterfall_->start(rate, fft_size, source->center_frequency_hz(), origin_s_);
     meter_ = CpuMeter{};
@@ -563,7 +595,14 @@ void MainWindow::on_tick() {
     waterfall_->add_rows(std::move(batch.rows));
     TrackTable& table = model_->table();
     table.advance(status.stream_s);
-    for (const TrackUpdate& update : batch.updates) std::visit([&](const auto& event) { table.apply(event); }, update);
+    callsign::CallSearch& calls = calls_->search();
+    for (const TrackUpdate& update : batch.updates) {
+        std::visit([&](const auto& event) {
+            table.apply(event);
+            calls.apply(event);
+        }, update);
+    }
+    calls.advance(status.stream_s);
     meter_.push(status);
     most_live_ = std::max(most_live_, table.live_count());
 
@@ -571,6 +610,7 @@ void MainWindow::on_tick() {
     if (ended && !stream_ended_) {
         stream_ended_ = true;
         table.end_of_stream();
+        calls.finish();
         update_transport();
         if (status.state == StreamStatus::State::Failed) {
             if (RecordControl* recorder = runner_->source().recorder()) recorder->stop_recording();
@@ -582,6 +622,7 @@ void MainWindow::on_tick() {
 
     if (ticks_ % kTextEveryTicks == 0 || ended) {
         model_->refresh();
+        calls_->refresh(status.stream_s);
         update_radio_status(status);  // first: the markers and the status show a radio that has stopped delivering
         update_markers();
         update_status(status);
@@ -617,6 +658,7 @@ void MainWindow::update_status(const StreamStatus& status) {
     if (rows_dropped_ > 0) speed += tr(", waterfall skipped %1 rows").arg(rows_dropped_);
     speed_label_->setText(speed);
 
+    calls_label_->setText(tr("Calls %1").arg(calls_->search().calls().size()));
     tracks_label_->setText(status.track_budget > 0 ? tr("Live tracks %1 (falling behind: at most %2)").arg(model_->table().live_count()).arg(status.track_budget)
                                                    : tr("Live tracks %1").arg(model_->table().live_count()));
 
@@ -706,6 +748,7 @@ void MainWindow::run_transport_steps(const StreamStatus& status) {
         } else if (action == QStringLiteral("quit")) {
             if (!automation_.report_path.isEmpty()) write_report(status);
             if (!automation_.decoded_path.isEmpty()) write_decoded();
+            if (!automation_.calls_path.isEmpty()) write_calls();
             QApplication::quit();
         }
     }
@@ -730,9 +773,16 @@ void MainWindow::run_automation(const StreamStatus& status) {
     if ((quit_now || ended) && !report_done_) {
         if (!automation_.report_path.isEmpty()) write_report(status);
         if (!automation_.decoded_path.isEmpty()) write_decoded();
+        if (!automation_.calls_path.isEmpty()) write_calls();
         report_done_ = true;
     }
     if (quit_now) QApplication::exit(failed ? 1 : 0);
+}
+
+void MainWindow::write_calls() {
+    QFile file(automation_.calls_path);
+    if (!file.open(QIODevice::WriteOnly)) return;
+    file.write(callsign::calls_csv(calls_->search().calls(), std::nullopt).c_str());
 }
 
 void MainWindow::write_decoded() {

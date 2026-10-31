@@ -45,7 +45,8 @@ void set_value(CallSearchConfig& c, const std::string& assignment) {
         {"window_s", &c.window_s},           {"variant_hz", &c.variant_hz},
         {"variant_s", &c.variant_s},         {"points_framed", &c.points_framed},
         {"points_bare", &c.points_bare},     {"points_known", &c.points_known},
-        {"stripped_points", &c.stripped_points}, {"variant_share", &c.variant_share},
+        {"stripped_points", &c.stripped_points}, {"far_variant_ratio", &c.far_variant_ratio},
+        {"doubled_is_framed", &c.doubled_is_framed},
         {"known_rival_factor", &c.known_rival_factor},
     };
     const auto it = fields.find(name);

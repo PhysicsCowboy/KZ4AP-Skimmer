@@ -108,13 +108,20 @@ std::vector<std::string> split_glued(const std::string& w) {
     for (std::size_t p = 3; p + 2 < w.size(); ++p) {
         if (w.compare(p, 2, "DE") == 0) {
             const std::string left = w.substr(0, p), right = w.substr(p + 2);
-            if (good(left) && good(right)) {
+            if (!good(left)) continue;
+            if (good(right)) {
                 out = {left, "DE", right};
+                return out;
+            }
+            auto inner = split_glued(right);
+            if (!inner.empty()) {
+                out = {left, "DE"};
+                out.insert(out.end(), inner.begin(), inner.end());
                 return out;
             }
         }
     }
-    // A keyword behind.
+    // A keyword behind. DE is here for a word no reader can take whole (a suffix of more than four letters).
     for (const std::string_view trail : {"DE", "5NN", "ENN", "TEST", "TU", "CQ", "QRZ", "KN", "BK"}) {
         if (w.size() > trail.size() + 2 && w.compare(w.size() - trail.size(), trail.size(), trail) == 0) {
             const std::string left = w.substr(0, w.size() - trail.size());
@@ -182,6 +189,11 @@ bool allocated_pair(char a, char b) {
         case 'W': return true;
         default: return false;
     }
+}
+
+bool only_tiny_pieces(std::string_view base) {
+    // The elements noise and a wide signal read as, the tiny pieces of track_evidence.cpp and their neighbors.
+    return std::all_of(base.begin(), base.end(), [](char c) { return std::string_view("ETISHANMU5").find(c) != std::string_view::npos; });
 }
 
 bool is_cw_word(std::string_view base) {
@@ -308,15 +320,16 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
             if (!tiny_word(words[i].text)) return words[i].text;
         return {};
     };
-    const auto emit = [&](const std::string& text, Reading how, std::size_t first, std::size_t last, Role role) {
+    const auto emit = [&](const std::string& text, Reading how, std::size_t first, std::size_t last, Role role, bool doubled = false) {
         const auto p = parse_call(text);
-        if (!p) return;
+        if (!p || only_tiny_pieces(p->base)) return;
         CallReading r;
         r.base = p->base;
         r.full = p->full;
         r.special = p->special;
         r.reading = how;
         r.role = role;
+        r.doubled = doubled;
         r.first_word = first;
         r.last_word = last;
         r.start_s = words[first].start_s;
@@ -335,11 +348,18 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
 
     for (std::size_t i = from; i < to; ++i) {
         const std::string& w = words[i].text;
-        if (is_prosign(w) || is_keyword(w)) continue;
-        bool direct = false;
-        const bool ends_in_word = w.size() >= 5 && (w.ends_with("CQ") || w.ends_with("DE")) && parse_call(w.substr(0, w.size() - 2));
+        if (is_prosign(w)) continue;
+        // K and R begin calls as well as end overs: K X 9 F. Only the joining below may start from them.
+        if (is_keyword(w) && w != "K" && w != "R") continue;
+        const bool lone_keyword = is_keyword(w);
+        bool direct = lone_keyword;
+        // A call's form that ends in CQ, or in DE before another call, is that word glued on: N3XUCQ, K7I DE only with a call behind it.
+        const bool ends_in_cq = w.size() >= 5 && w.ends_with("CQ") && parse_call(w.substr(0, w.size() - 2));
+        const bool ends_in_de = w.size() >= 5 && w.ends_with("DE") && parse_call(w.substr(0, w.size() - 2)) && i + 1 < words.size() && words[i + 1].text != w && parse_call(words[i + 1].text);
+        const bool ends_in_word = ends_in_cq || ends_in_de;
         if (!ends_in_word && parse_call(w)) {
-            emit(w, Reading::Whole, i, i + 1, role_of(w, i, i + 1));
+            const bool twice = (i > 0 && words[i - 1].text == w) || (i + 1 < words.size() && words[i + 1].text == w);
+            emit(w, Reading::Whole, i, i + 1, role_of(w, i, i + 1), twice);
             direct = true;
         }
         if (!direct) {
@@ -351,11 +371,12 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 std::string_view next = k + 1 < pieces.size() ? std::string_view(pieces[k + 1]) : after(i + 1);
                 if (prev == pieces[k]) prev = before(i);
                 if (next == pieces[k]) next = after(i + 1);
-                emit(pieces[k], Reading::Glued, i, i + 1, role_from(prev, next, prev, next));
+                const bool twice = pieces.size() >= 2 && ((k > 0 && pieces[k - 1] == pieces[k]) || (k + 1 < pieces.size() && pieces[k + 1] == pieces[k]));
+                emit(pieces[k], Reading::Glued, i, i + 1, role_from(prev, next, prev, next), twice);
             }
         }
         // A stray character on either end; both sides of the question stay, for the evidence to decide.
-        if (w.size() >= 4) {
+        if (!lone_keyword && w.size() >= 4) {
             for (std::size_t n = 1; n <= 2 && n + 3 <= w.size(); ++n) {
                 if (!stray_start(w[n - 1])) break;
                 const std::string rest = w.substr(n);
@@ -367,12 +388,12 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
             }
         }
         // Short words that make a call together.
-        if (w.size() <= 4) {
+        if (w.size() <= 4 && !is_cw_word(w)) {
             std::string joined = w;
             for (std::size_t j = i + 1; j < words.size() && j <= i + 5; ++j) {
                 const std::string& next = words[j].text;
                 if (is_prosign(next) || next.size() > 4) break;
-                if (is_keyword(next) && next != "K" && next != "R") break;
+                if ((is_keyword(next) && next != "K" && next != "R") || is_cw_word(next)) break;
                 joined += next;
                 if (joined.size() > 9) break;
                 if (parse_call(joined)) emit(joined, Reading::Joined, i, j + 1, role_of(joined, i, j + 1));
@@ -496,7 +517,8 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
         c.first_s = r.start_s;
     }
     const double points = r.reading == Reading::Whole || r.reading == Reading::Glued ? 1.0 : config_.stripped_points;
-    const bool framed = r.role == Role::Sender;
+    // A keyword beside it, or the call sent twice: either way the word is used as a call.
+    const bool framed = r.role != Role::Unknown || (r.doubled && config_.doubled_is_framed != 0.0);
     // One transmission, one occurrence: another track's or another reading's copy of the same moment at this place only betters it.
     for (Occurrence& o : c.recent) {
         if (r.start_s < o.end_s && o.start_s < r.end_s && std::abs(o.freq_hz - freq_hz) <= config_.same_place_hz) {
@@ -519,13 +541,14 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
     ++c.count;
     ++c.forms[r.full];
     c.last_s = std::max(c.last_s, r.end_s);
-    if (r.role != Role::Named) {
-        c.heard = true;
-        c.freq_hz = freq_hz;
-    } else if (!c.heard) {
+    // Its place: where it last signed, else where it was last read bare, else where another named it.
+    const int rank = r.role == Role::Sender ? 2 : (r.role == Role::Unknown ? 1 : 0);
+    if (rank >= c.freq_rank) {
+        c.freq_rank = rank;
         c.freq_hz = freq_hz;
     }
-    c.framed = c.framed || framed;
+    c.heard = c.heard || r.role != Role::Named;
+    c.framed = c.framed || r.role == Role::Sender;
     evaluate(c, freq_hz, r.end_s);
 }
 
@@ -539,8 +562,8 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
     return s;
 }
 
-bool CallSearch::passes(const Candidate& c, const Support& s, double variant_points) const {
-    const double points = s.points + variant_points;
+bool CallSearch::passes(const Candidate& c, const Support& s) const {
+    const double points = s.points;
     if (c.known) return points >= config_.points_known;
     return points >= (s.framed ? config_.points_framed : config_.points_bare);
 }
@@ -549,8 +572,7 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
     const Support s = support(c, freq_hz, now_s, config_.same_place_hz);
     c.best_points = std::max(c.best_points, s.points);
     // Its near variants at this place: which are better supported, and what the weaker add.
-    const auto limit_for = [](std::size_t n) { return n >= 5 ? 2 : 1; };
-    double weaker_points = 0;
+    const auto limit_for = [](std::size_t n) { return n >= 4 ? 2 : 1; };
     bool held = false;
     std::vector<Candidate*> beaten;
     const double mine = support(c, freq_hz, now_s, config_.variant_hz).points;
@@ -563,7 +585,7 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
         const int d = edit_distance(c.base, other.base, limit);
         if (d > limit) continue;
         // Two letters' difference only against a much better call.
-        const double need = d >= 2 ? 3.0 : 1.0;
+        const double need = d >= 2 ? config_.far_variant_ratio : 1.0;
         const auto beats = [&](const Candidate& a, double pa, const Candidate& b, double pb) {
             if (a.known && !b.known) return pa * config_.known_rival_factor >= pb;
             if (b.known && !a.known) return pa >= config_.known_rival_factor * pb;
@@ -573,7 +595,6 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
         if (beats(other, theirs, c, mine)) {
             held = true;
         } else if (beats(c, mine, other, theirs)) {
-            weaker_points += theirs;
             if (other.reported) beaten.push_back(&other);
         }
     }
@@ -583,7 +604,7 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
     }
     if (c.reported) {
         update_row(c);
-    } else if (passes(c, s, config_.variant_share * weaker_points)) {
+    } else if (passes(c, s)) {
         report(c, now_s);
     }
     if (c.reported) {
