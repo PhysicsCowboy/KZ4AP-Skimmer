@@ -11,23 +11,62 @@ Created by Kenton Randolph Brown, KZ4AP.
 recorded I/Q files, and a desktop app runs them on a recording or an SDRplay
 radio, receive only. See `docs/design/` for the design.
 
+## Try the app (Windows)
+
+In PowerShell, from the repository's folder. It needs Visual Studio's C++ build
+tools (2022 or later) and Qt 6 in `C:\Qt` (below if you have none). Network the
+first time.
+
+    $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+    $env:PATH += ";$vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
+    cmake --preset windows -DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64
+    cmake --build --preset windows --target kz4ap-skimmer
+    build\windows\app\Release\kz4ap-skimmer.exe build\recordings\real30.wav
+
+Configuring takes about CONFIGURE_MIN min and building about BUILD_MIN min on an 8-core desktop.
+With no argument the program opens idle: press Start radio or Open...
+
+**Recordings are not committed.** `build\recordings\` is git-ignored; on the
+development desktop it holds `real30.wav` (30 min of real 40 m at 192 kHz, 1.4 GB,
+no truth) and `live2.wav` (62 s). Anywhere else, generate 60 s of 30 stations at
+192 kHz with Python 3.12 (46 MB; PYVENV_MIN for the virtual environment, GEN_TIME to generate):
+
+    python -m venv .venv                                   # skip if .venv exists
+    .venv\Scripts\python -m pip install -r training\requirements.txt
+    $env:PYTHONPATH = "training"
+    .venv\Scripts\python -m kz4ap_synth.generate --scenario band --signals 30 --duration 60 --sample-rate 192000 --seed 1 --out build\recordings\band30.wav
+    build\windows\app\Release\kz4ap-skimmer.exe build\recordings\band30.wav
+
+`python --version` must say 3.12 (numpy 2.5.3 needs it); where it does not, `conda
+create -n kz4ap-py312 -c conda-forge python=3.12` makes one, and its `python.exe`
+goes in the first line.
+
+**No Qt in `C:\Qt`?** With any Python: `python -m pip install aqtinstall`, then
+`python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O C:\Qt` (under a
+minute, about 1 GB). Without Qt the configure step says so in one line and the build's
+target does not exist.
+
+**A few things you will see.** Rows are a track each; 35% to 65% of the rows on real
+40 m are not callsigns yet (the callsign stage comes next). Hidden rows are tracks that
+have read nothing plausible so far. The radio needs the SDRplay API (below).
+
 ## Project documents
 
 | Document | Role |
 |---|---|
 | `docs/design/2026-09-25-kz4ap-skimmer-design.md` | What we are building and why: the decisions, including the development order (§3.1) and the decoder plan (§5). The authority; changes need the owner's approval. |
-| `docs/plans/` | One implementation plan per milestone: how to build it, task by task. Written from the approved design before the milestone starts, and approved before any code is written. Beside the plans are the results records: what each experiment measured and what was decided. Together they are the project's working record, kept in the repository because the design decisions and their evidence are what later work builds on. |
+| `docs/plans/` | The results records for checkpoints, and working plans of a page at most. Older plans stay as history. |
+| `docs/decision-log.md` | One line for each engineering decision: what, why, and what it costs if wrong. |
 | `docs/backlog.md` | Deferred work and to-dos, in milestone order. Items move into plans as milestones start. |
-| `docs/signal-processing.md` | What the engine's signal processing actually does now: a body readable in about 30 minutes, which covers in full the chains under development or discussion (each stage, its formulas, every value with its unit and whether it was derived, measured or chosen heuristically) and gives every other chain a short summary pointing to the appendix; and an appendix (derivations, provenance with validity conditions, known limitations, the full parameter table, the benchmark's definitions). Updated in the same commit as any signal-processing change. Results and evidence are in the results records under `docs/plans/`. |
+| `docs/signal-processing.md` | What the engine's signal processing actually does now: a body readable in about 30 minutes, which covers in full the chains under development or discussion (each stage, its formulas, every value with its unit and whether it was derived, measured or chosen heuristically) and gives every other chain a short summary pointing to the appendix; and an appendix (derivations, provenance with validity conditions, known limitations, the full parameter table, the benchmark's definitions). Brought up to date at each checkpoint and before any merge into `main`. Results and evidence are in the results records under `docs/plans/`. |
 | `docs/research/` | The evidence behind decisions. `decoder-survey.md` is the synthesis (glossary, decoder ranking, benchmark scenarios); verification notes for each source sit beside it; `research_notes/` holds the original research record, annotated rather than rewritten. |
 
-Work happens on feature branches; merging into `main` and pushing require the
-owner's approval.
+Work happens on feature branches. Pushing requires the owner's approval, each time.
 
 ## Building
 
-Windows: Visual Studio Build Tools 2026 (C++ workload). Linux: GCC 11.4 or
-later, or Clang 17+, CMake 3.25+, Ninja.
+Windows: Visual Studio Build Tools 2026 or 2022 (C++ workload), whose CMake is not on PATH until
+you add it ("Try the app" above). Linux: GCC 11.4 or later, or Clang 17+, CMake 3.25+, Ninja.
 
     cmake --preset windows      # or: linux
     cmake --build --preset windows
@@ -45,12 +84,8 @@ from the next configure on.
 `kz4ap-skimmer` (in `app/`) shows a band as a waterfall with each signal's
 decoded text and speed, from an I/Q recording or a live SDRplay radio. It needs
 Qt 6 Widgets and is built only where CMake finds them; everything else builds
-and tests the same without Qt. Point CMake at Qt with a variable, for example
-with Qt from [aqtinstall](https://github.com/miurahr/aqtinstall):
-
-    cmake --preset windows -DCMAKE_PREFIX_PATH=<Qt folder>/6.8.3/msvc2022_64
-    cmake --build --preset windows --target kz4ap-skimmer
-    build/windows/app/Release/kz4ap-skimmer recording.wav
+and tests the same without Qt. "Try the app" above has the steps; elsewhere,
+point `CMAKE_PREFIX_PATH` at your Qt's folder.
 
 On Windows the build copies Qt's DLLs next to the program. `--decoder` picks the
 decoder (default `segmental`), `--speed` the pace (a factor, or `max`) and
