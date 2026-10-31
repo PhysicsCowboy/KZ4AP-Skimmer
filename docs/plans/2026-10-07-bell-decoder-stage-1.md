@@ -1,6 +1,17 @@
 # Bell 1977 decoder, stage 1: Bell as published
 
-> **Status: draft for the owner's approval, 2026-10-07. No code before approval.**
+> **Stopped after Task 3 (owner, 2026-10-09).** Bell's printed program, compiled, did not reproduce his tables (V2
+> FAIL, cause unresolved), and by its measured curves it decodes worse than the project's existing decoders (not
+> compared head to head), so it is of no use as a benchmark. Tasks 4-9 are cancelled; see the results record
+> `docs/plans/2026-10-07-bell-stage-1-results.md`. Bell's structure is taken up in the design of a new decoder instead.
+
+> **Status: owner's go-ahead, 2026-10-08** ("stick with the plan and make the best decision you can"); the
+> technical choices of the reproduction are delegated to the controller. The owner's decisions of 2026-10-08 are
+> recorded at the top of §3, D6 included.
+>
+> **Corrected 2026-10-08 from Task 1's reference sheet** (`docs/research/bell-1977-reference.md`, "Read first"):
+> §2, §4, §5.1, §6, §9 and Tasks 2, 3, 5 and 7 now state what the listing does. Two new decisions, D9 (the
+> simulated fists' duration law) and D10 (the error count of the reproduction rule), were decided in §3 (owner delegated).
 >
 > **Spec:** `docs/design/2026-09-25-kz4ap-skimmer-design.md` §5.2 step 3, amendment "Bell 1977 instead of
 > manta" (owner, 2026-10-07). **Evidence:** `docs/research/bell-1977-notes.md` (the thesis as read for the
@@ -28,7 +39,8 @@
   S₅₀₀ = S₁₀₀ − 6.99 dB (derived: 10·log₁₀ 5).
 - **Letter error:** Bell's measure, the percentage of wrong letters among about 200 sent. Its counterpart here
   is the **character CER** of `docs/signal-processing.md` A.11 (character edits over reference symbols that
-  are not spaces). Task 1 records how Bell counted.
+  are not spaces). Task 1 records how Bell counted (reference sheet (i)); the count the reproduction rule uses
+  is decision D10.
 - **Keyboard Morse:** exact timing, our "machine" style. **Hand-keyed:** his simulated fists, "good", "fair"
   and "poor".
 - **V1–V5:** the five verification steps of §5.
@@ -65,37 +77,39 @@ confirms or corrects each.
     - STATS, AUTOCR and DISPLA: displays.
   - The main loop calls SIMSG, RCVR and BPFDET for every 8 kHz sample, and NOISE and PROCES for every 40th
     sample, i.e. at 200 samples/s (p. 159).
-- **Two data files are not printed: `MORSE` and `TEXT`.**
-  - INITL reads `MORSE`: 400 rows of 8 integers. For each letter-tree state, a row gives the letter
-    (LTRMAP), the element state (IELMST) and the successor state for each of the 6 element types (MEMFCN)
-    (pp. 160–161). Only the first 16 rows are in DATA statements.
-  - The simulator reads its text from `TEXT` (p. 162).
+- **Two data files are not printed: `MORSEM` and `TEXT`** (corrected by Task 1).
+  - INITL reads 300 rows of `MORSEM` into arrays of 400 (p. 161 10300–10400). For each letter-tree state, a
+    row gives the letter (LTRMAP), the element state (IELMST) and the successor state for each of the 6
+    element types (MEMFCN). The 16 rows in DATA are Table XII's second-order element model, not the start of
+    the tree: no letter tree holds more than 13 of them (reference sheet (f)).
+  - INITL also reads `TEXT`, but KEY's text branch is unreachable: the printed simulator sends random letters
+    only, A with probability 0.001 instead of 1/36, and C keyed with B's code (reference sheet (d)).
   - So the letter tree must be **reconstructed**, from two sources: the Morse code of Bell's alphabet, and
     how PTRANS, PATH and TRELIS use the table. The alphabet is IALPH in INITL: letters, digits, some
     punctuation and prosigns such as AR, SK and BT (read from the text layer; to be confirmed).
   - The reconstruction is an inference. It is labeled so and tested (V1).
-  - The text is replaced by random letters as the thesis describes them. KEY also seems to have a
-    random-letter branch (p. 164, text layer).
 - **The simulator** (pp. 163–165):
-  - Element durations are Gaussian, with mean ESEP·T and standard deviation EDEV·T, where T is the dot length
-    and ESEP is 1, 3, 1, 3, 7 or 14. Durations are floored, at 20 ms according to the text layer; the notes
-    say 16 ms, and the transcription will tell.
+  - Element durations are **uniform** in the printed KEY (corrected by Task 1): ESEP·T ± U·EDEV·T, with U
+    uniform on (−1, 1), T the dot length and ESEP 1, 3, 1, 3, 7 or 14; floored at 20 ms, no ceiling
+    (p. 164). The text states a truncated Gaussian for the published results (p. 125), and the simulator
+    that made the printed samples was not the printed KEY: decision D9.
   - The amplitude takes a random step at key transitions. It adds a Gauss–Markov fading term, with a factor
     GAMMA per 8 kHz sample, and is floored at 0.001.
   - The phase takes random steps, and a chirp decays after each key-down.
   - White Gaussian noise of variance RNOISE is added at each 8 kHz sample.
   - The settings are typed in at run time with TYPE and ACCEPT statements (p. 160). So the values behind
     each published table must come from the thesis text, and any value it does not give is a gap.
-- **The receiver chain may differ from the thesis text.**
-  - RCVR low-passes its quadrature components with y ← y + 0.070·(x − y) per 8 kHz sample. That puts the 3 dB
-    point 92 Hz from the carrier (derived: cos ω = 0.99737 at half power).
-  - BPFDET holds two resonator coefficient sets, (1.37158, 0.9409, gain 0.0150) and (1.2726, 0.8100, gain
-    0.1900), and a 3-pole low-pass (p. 189).
-    - Their poles have radius 0.97 and 0.90, both at 1000 Hz (derived: r = √0.9409, √0.81; cos θ = 0.7071, so
-      θ = π/4 at 8 kHz).
-    - Their 3 dB widths are about 76 Hz and 250 Hz (derived: (1 − r)·f_s/π).
+- **The receiver chain differs from the thesis text** (derived in the reference sheet, (c); corrected by
+  Task 1).
+  - RCVR low-passes its quadrature components with y ← y + 0.070·(x − y) per 8 kHz sample: −3 dB at
+    ±92.4 Hz from the carrier. Its oscillator runs at 1000.0016 Hz, because every phase wraps at 6.28319
+    rather than 2π, so the output carries a slow image beat with a period of 314 s.
+  - BPFDET's two resonators, (1.2726, 0.8100, gain 0.1900) and (1.37158, 0.9409, gain 0.0150), are both in
+    the path: poles of radius 0.90 and 0.97, both at 1000.2 Hz. With RCVR they give a pre-detection band
+    64.4 Hz wide at −3 dB relative to the gain at the carrier, with a noise bandwidth of 78.5 Hz.
+  - After the rectifier |x|, the 3-pole envelope low-pass is monotone, not a Chebyshev: −3 dB relative to its
+    DC gain at 31.1 Hz, DC gain 7.99.
   - The thesis text instead describes a 500 Hz single-pole filter, then a 100 Hz filter of two resonators.
-  - Task 1 settles which coefficients are in the signal path, and so the chain's actual bandwidths.
 - **Known differences between the text and the code** (notes §2.2, §3.1, §3.2):
 
   | Item | Text | Code |
@@ -104,8 +118,26 @@ confirms or corrects each.
   | Φ on marks | 0.97 | 1 |
   | Amplitude process variance Q when a mark begins | rules | a smooth formula in the length of the space before it |
   | Noise window | 240 samples | buffers of 200 and 50 |
+  | Noise statistics (p. 124) | R = 2μ̂ₙ² | R = 0.30 AU·YMAVG, floored at 0.005 AU²; z = 1.1·(Z − 2.4·YMAVG − 0.05 AU) |
+  | Simulated durations (p. 125) | truncated Gaussian | uniform (D9) |
 
 ## 3. Decisions for the owner
+
+### The owner's decisions (2026-10-08)
+
+| Decision | The owner's answer | What it changes in this plan |
+|---|---|---|
+| D1 | The listing (his Fortran) is the authority. | As written. |
+| D2 | (a) Compile his program as a running reference. | As written (Task 3). |
+| D3 | Both: (A) the oracle gain and (B) the AGC. | As written (§6). |
+| D4 | Yes, the reproduction at his fixed speeds and S₁₀₀ values. In addition, his tables are made from our jittered development set as well, or our jittered-set results are overlaid with his values at his fixed points. | §6 and Task 9 gain the Bell-format tables and the overlay from the jittered set. |
+| D5 | Yes, his conditions in our Python generator. Our own fist, fading and text models stay as they are; his are added as further options. | Task 7: added, nothing replaced. |
+| D6 | Decided after discussion (2026-10-08). The body of `docs/signal-processing.md` covers in full the processing chains under development or discussion; every other chain gets a short summary that points to its appendix section (the `CLAUDE.md` rule, reworded). For this plan: Bell's receiver chain and decoder in full; the signal detector and channelizer at medium detail; the bank's filter bank, likelihood and noise estimate at medium detail; the bank's back end, Matched, Envelope and the shared back end one short paragraph each. The restructuring is done now, as a separate docs-only change, reviewed like a task (option a: the owner keeps the document up to date). Nothing leaves the document: what leaves the body is in the appendix. | The docs-only change runs between Task 1 and Task 6; Task 6 then only adds Bell's body section. |
+| D7 | No sentence on the thesis's status. The owner: "if it's in the public domain, it's in the public domain"; it is not a legal question. | Task 1's README cites the thesis and says nothing more. |
+| D8 | `bell-stage-1`, from `main`. | The branch was started at 00210b3, the head of PR #1 (`milestone-2c-stage2` into `main`), whose content `main` will hold after that merge. |
+| §7, the stage-2 order | Not yet decided. | Revisited with stage 1's results. |
+| D9 | Decided by the controller, owner delegated (2026-10-08): (a), reading C primary; A and B reported. | Task 3's list (a marked change to KEY under C), V2's settings for Table XVI, Task 7. |
+| D10 | Decided by the controller, owner delegated (2026-10-08): (a), the Bell-style count; CER reported. | §5.2's count; the scorer in Tasks 3, 8 and 9. |
 
 **D1. The listing is the authority.**
 - The listing is the program that produced the published results.
@@ -115,8 +147,8 @@ confirms or corrects each.
 
 **D2. A running reference: Bell's own program, compiled.** The port needs the transcription anyway.
 Compiling it with gfortran, a free Fortran compiler, gives what Plan A had in the Python prototype: a running
-reference. The changes are limited to input and output, the random-number source and the missing `MORSE` file,
-and each is marked in the code.
+reference. The changes are limited to input and output, the random-number source, the missing `MORSEM` file and
+the guards Task 1 found necessary (Task 3's list), and each is marked in the code.
 - It makes possible three checks the C++ alone cannot give:
   - **V2:** his program, with his simulator, against his tables. That separates "the transcription is wrong"
     from "our conditions differ from his".
@@ -176,6 +208,42 @@ public-domain U.S. Government work would be a legal statement, which the owner's
 **D8. Branch.** `bell-stage-1` from `milestone-2c-stage2`, after the cleanup commit. If the owner merges
 `milestone-2c-stage2` into `main` first, the branch starts from `main`.
 
+**D9. The duration law of his simulated fists (Table XVI).** Reference sheet (e).
+- The printed KEY is uniform (§2). The text says the published results used a truncated Gaussian whose
+  variances give the crossover probabilities P_es = .00143, .0149 and .0403 (p. 125). Table XVI labels its
+  rows "Sending Error Rate = 1 %, 10 %, 25 %" (p. 134), which equal 1 − (1 − P_es)^7.22 (7.22 dot/dash and
+  e-sp/c-sp decisions per letter). The printed samples (pp. 147–148) show the fists losing character spaces,
+  and they could not have come from the printed KEY: fixed sentences, a keyed '.', C keyed correctly.
+- Readings (he typed "STD DEVIATIONS"):
+  - **A:** the printed uniform law, half-widths giving his P_es (1.003, 1.031, 1.088 dots). Sending errors
+    1, 10, 26 %; but good-fist dots spread over 0–2 dots, whereas Table XVI's good fist matches the keyboard
+    results (31 % against 31 % at 3 dB S₁₀₀, 20 WPM).
+  - **B:** the printed uniform law, σ as the half-width (0.335, 0.460, 0.572 dots). No crossover is possible:
+    0 % sending errors, against p. 125, the row labels and the samples.
+  - **C:** the text's truncated Gaussian, σ = 0.335, 0.460, 0.572 dots. Sending errors 1, 10, 26 %. Against D1
+    for KEY; the stated 16–360 ms truncation cannot hold for word spaces and pauses at 20–30 WPM, so that
+    part is our choice (reference sheet (e)).
+- Options:
+  - **(a)** C is primary: §5.2's rule applies to C; A and B are run and reported beside it. D1 stays the
+    authority for the decoder and the receiver chain. *Recommended:* three independent pieces of evidence
+    agree on crossovers; the extra runs cost minutes of CPU. It adds a marked change to KEY (Task 3, item 9).
+  - **(b)** B is primary (D1 strictly); A and C reported.
+  - **(c)** B first; C only as a §5.3 correction if V2 fails (the reading would be chosen after the results).
+- The printed decoder may likewise differ from the one behind the tables; nothing contradicts it so far, and
+  V2 is the test.
+
+**D10. The error count of the reproduction rule.** Reference sheet (i), (j) item 7.
+- Bell's samples underline a merged pair of letters (TE printed as N) once; the character CER counts it as
+  two edits (sample B: 4 marks, 6 edits). Merges are common, so the CER sits systematically above his
+  counts, and the sign test of §5.2 reacts to exactly that. His marking was by eye and missed some errors,
+  so his counts may be low by an unknown amount.
+- Options:
+  - **(a)** §5.2's rule uses the **Bell-style count**: word spaces removed, a prosign one symbol; the minimum
+    total cost of match (0), substitution, deletion, insertion, and merge of two sent symbols into one
+    decoded symbol (1 each); divided by the symbols sent. The character CER is reported beside it.
+    *Recommended:* the comparison is with his numbers.
+  - **(b)** The character CER for the rule; the Bell-style count reported beside it.
+
 ## 4. Design
 
 ### 4.1 Data flow in the engine
@@ -200,7 +268,8 @@ Per channel, in order:
 3. **RCVR and BPFDET**, exactly as the listing, with his coefficients at 8 kHz.
 4. **Keep every 40th sample** of BPFDET's output: 200 samples/s, τ = 5 ms exactly. That is his rate, so no
    constant needs rescaling.
-5. **NOISE:** the noise-floor mean μ_n and R = 2μ_n², per the listing; then z_k = envelope − μ_n.
+5. **NOISE,** per the listing: YMAVG, a smoothed 1.0 s running minimum of the envelope Z;
+   z_k = 1.1·(Z − 2.4·YMAVG − 0.05 AU) and R = 0.30 AU·YMAVG, floored at 0.005 AU² (reference sheet (b)).
 6. **PROCES**, once per sample, in this order:
    - transition probabilities (TRPROB, XTRANS, PTRANS, SPDTR);
    - path labels (PATH);
@@ -211,8 +280,8 @@ Per channel, in order:
    - the decision (TRELIS);
    - letters (TRANSL).
 7. **Output.**
-   - Each letter is published when TRELIS decides it, about 1 s (200 samples) after the letter ends. It is
-     final: there are no corrections.
+   - Each letter is published when TRELIS decides it, at most 995 ms (199 samples) after the letter ends. It
+     is final: there are no corrections.
    - `DecodedSymbol.probability` is the posterior mass, at the decision, of the saved paths that descend from
      the decided node. This one is ours, derived from his posteriors; his program prints no confidence.
    - `DecodeUpdate.wpm` is SPROB's conditional-mean speed, as in his program.
@@ -226,7 +295,8 @@ Per channel, in order:
 
 ### 4.2 The decoder as known before the transcription
 
-These values are from the code, per the notes. Task 1 confirms each one against the transcription.
+These values are from the code, per the notes; Task 1 confirmed them against the transcription and corrected
+the last three rows (reference sheet (b)).
 
 | Component | Value (code) | Notes |
 |---|---|---|
@@ -238,9 +308,9 @@ These values are from the code, per the notes. Task 1 confirms each one against 
 | Kalman filter | scalar amplitude; ŷ₀ = 0.5, P₀ = 0.1; ŷ floored at 0.01 | §3.1 |
 | Amplitude model | marks Φ = 1, Q = 10⁻⁴; a mark after a space: Q = 0.15·e^{0.6(B−14)} + 0.01·B·e^{0.2(1−B)}, B the space in bauds, capped at 14; key-up Φ = 10^(−2/(22.4·Δ_ms)), Q = 0 | §3.1 |
 | Likelihood | P_z^(−1/2)·exp(−z̃²/(2P_z)); 0 when the exponent exceeds 1000 | §3.2 |
-| Pruning | the best path per element if its probability is ≥ 10⁻⁶; then by decreasing probability until 0.90 is reached, at most 25 paths in all; at least 7 | §4 |
-| Decision | a node all saved paths share; otherwise the best path's node 200 samples (1 s) back, and the paths not descending from it are deleted | §4 |
-| Text | independent letters, equally likely | §2.2 |
+| Pruning | the best path per element if its probability is ≥ 10⁻⁶; then by decreasing probability until 0.90 is reached, at most 25 paths in all; at least 2 before duplicate paths are deleted (not 7); the renormalization leaves out the first path's probability, and divides by 0 when every other path has probability 0 (§9 item 6) | sheet (b) |
+| Decision | a node all saved paths share, at most 199 samples (995 ms) back; otherwise forced at 199 samples, and the paths not descending from it are deleted | sheet (b) |
+| Text | independent letters, not equally likely: the letter probabilities come from the element model ELEMTR (Table XII); the tree only gates successors | sheet (b) |
 
 ### 4.3 C++ structure
 
@@ -255,7 +325,7 @@ These values are from the code, per the notes. Task 1 confirms each one against 
 - **Double precision throughout.** The PDP-10's single precision had a 27-bit mantissa. The Fortran reference
   is compiled in double precision as well (`-fdefault-real-8`), so V3 compares like with like.
 - **Configuration.** One `BellConfig` holds every constant of the listing, with its unit and source line.
-  Where a constant has a physical meaning, it carries it, e.g. `decision_delay_s = 1.0` (200 samples at
+  Where a constant has a physical meaning, it carries it, e.g. `decision_delay_s = 0.995` (199 samples at
   5 ms). Per-step variances are stated per 5 ms step.
 - **Engine.** The `BellDecoder` in `engine/src/bell_decoder.cpp` wraps it for the engine, as `BankDecoder`
   wraps the bank.
@@ -273,7 +343,8 @@ These values are from the code, per the notes. Task 1 confirms each one against 
 ### 5.1 The reproduction targets
 
 The independent-letter results of Table XV (keyboard Morse, p. 132) and Table XVI (hand-keyed, p. 134).
-Bell's settings for both: P_opt 0.9, a 1 s delay, his fading channel and white Gaussian noise. Each value is
+Bell's settings for both: P_opt 0.9, a decision delay of at most 995 ms (199 samples), his fading channel and
+white Gaussian noise. Each value is
 the letter error, in %, of one experiment of about 200 letters.
 
 | Table | Speed | Sender | S₁₀₀ 12 dB | 9 dB | 8 dB | 7 dB | 6 dB | 4 dB | 3 dB |
@@ -290,6 +361,9 @@ the letter error, in %, of one experiment of about 200 letters.
 That is 30 cells; the three "–" cells were not reported by Bell.
 
 ### 5.2 The reproduction rule (V2 and V5)
+
+**The count is decision D10.** The text below uses the character CER; under D10 (a) every "CER" in this
+section means the Bell-style count, and the character CER is reported beside it.
 
 **Our estimate per cell.** For each cell c, we have 20 runs of 200 letters, each with a new seed.
 - p̂_c is the pooled character CER: character edits summed over the runs, divided by reference characters
@@ -360,6 +434,22 @@ proposal.
     (50.5–80 WPM) lie partly or wholly above it.
 - **Noise only:** false characters per minute in pure noise (the suite's group N, §Task 7), for Bell and for
   the bank. This is the audit's test 4, and the failure that ruled out manta (about 195 per minute).
+- **Bell's tables from the jittered set** (owner, D4). His tables are made a second time from our jittered
+  development set, for Bell's decoder and for the bank.
+  - **The table.** The devset2 fit is a logistic in S₅₀₀ whose crossing and slope vary smoothly with ln WPM. It
+    is evaluated at his speeds (20, 30 and 50 WPM) and at his S₁₀₀ values, using S₁₀₀ = S₅₀₀ + 6.99 dB. The
+    result is set beside his published letter errors, in the layout of his Tables XV and XVI.
+  - **The groups:** A2 for Table XV's columns: white noise and machine keying, i.e. his keyboard Morse, without his
+    fading. C2 (our fists) for Table XVI's.
+  - **Interval:** each value carries its bootstrap interval from the fit.
+  - **The overlay:** a figure of character CER against S₁₀₀ per speed. It shows the jittered set's signals and
+    the fitted curve, with his published points marked at his fixed values.
+  - **The conditions differ, and the record states each difference:**
+    - our fists against his fists (their law per D9);
+    - our fading (none in A2) against his fading channel;
+    - our text against his random letters.
+
+    So this comparison is descriptive; the reproduction rule of §5.2 applies only to V2 and V5.
 - **Expectations, stated now** (judgment, to be compared with the results):
   - Bell's observation is an envelope of fixed bandwidth, not matched to the speed. At slow speeds it lets
     in more noise per element than the bank's matched branch; summing likelihoods over an element's samples
@@ -437,10 +527,9 @@ Seeds 2 and 3 are used only at the end of stage 2.
 
 These are not covered by the reproduction, and each is pinned by a test in the task named.
 
-1. **Exact zeros or a gap in the input,** as at a channel's start. NOISE's floor estimate becomes 0, so R = 0,
-   and the likelihood divides by the innovation variance.
-   - Expected: no division by zero and no NaN; the decoder keeps running.
-   - If the listing has no guard, the guard acts only on exact zeros and is a documented deviation.
+1. **Exact zeros or a gap in the input,** as at a channel's start. The listing floors R at 0.005 AU²
+   (corrected by Task 1), so the likelihood cannot divide by zero through R.
+   - Expected: every value stays finite; the decoder keeps running.
    - Tested in Tasks 4 and 5.
 2. **A channel that opens mid-character:** no failure, and the following letters decode (Task 5).
 3. **Ten minutes of pure noise:**
@@ -450,13 +539,20 @@ These are not covered by the reproduction, and each is pinned by a test in the t
 4. **Very strong (S₅₀₀ +30 dB) and very weak signals under the AGC (B):** the level reaching the chain stays
    in the range his constants assume (Task 6).
 5. **8 and 80 WPM signals,** outside his range: the decoder runs and its output stays bounded (Tasks 6 and 9).
+6. **SAVEP's zero sum** (found by Task 1; reference sheet (b)). When every saved path but the first has
+   probability 0, SAVEP divides by 0: +∞ and NaN in IEEE arithmetic, from which the listing does not recover.
+   - Tasks 3 and 5 test for it with an input that reaches the case (the trace, or gfortran's
+     `-ffpe-trap=invalid,zero`).
+   - If V2's runs reach it, it is reported. *Ruling:* a guard acting only when the sum is 0 is then a
+     documented deviation, marked and applied identically in the Fortran and the C++, as for the guards of
+     Task 3's list.
 
 ## 10. Tasks
 
 | Task | What | Depends on |
 |---|---|---|
 | 1 | Transcription, reference sheet, specification of the letter tree | — |
-| 2 | The model's tables and functions in C++; the letter tree; the `MORSE` exporter | 1 |
+| 2 | The model's tables and functions in C++; the letter tree; the `MORSEM` exporter | 1 |
 | 3 | Bell's program compiled and run: V2; golden data | 1, 2 |
 | 4 | The receiver chain in C++, with the conversion from our channel | 1, 3 |
 | 5 | The decoder loop (PROCES) in C++: V3 | 2, 3, 4 |
@@ -481,8 +577,9 @@ Research only; no engine code.
 **Files:**
 - Create `reference/bell1977/listing.txt`: the transcription, verbatim, page by page, with Bell's sequence
   numbers and a header per page, `=== p. N (PDF page 2N + 3) ===`.
-- Create `reference/bell1977/README.md`: what the folder is, the page map, the reading conventions, and the
-  marks for uncertain characters.
+- Create `reference/bell1977/README.md`: what the folder is, the thesis cited in full, the page map, the reading
+  conventions, and the marks for uncertain characters. It says nothing about the thesis's legal status (owner,
+  D7).
 - Create `docs/research/bell-1977-reference.md`: the reference sheet.
 - Modify `docs/research/bell-1977-notes.md`: a pointer to the two new documents, and a dated correction
   wherever the transcription contradicts a statement.
@@ -586,7 +683,8 @@ Research only; no engine code.
   - The tree:
     - each symbol of IALPH, fed its elements from the root, reaches the node whose LTRMAP is that symbol;
     - every state is reachable;
-    - the 16 DATA rows are equal.
+    - the 13 DATA rows the reconstruction keeps (rule N1, reference sheet (f) test 3) are equal, and rows 5, 9
+      and 10 differ only in their links, as (f) states.
   - `write_morse_file` reproduces INITL's format, checked by reading it back.
 - [ ] **Step 2: Implement** from the reference sheet.
 - [ ] **Step 3:** `ctest` on Windows.
@@ -598,16 +696,28 @@ Research only; no engine code.
 - Create `reference/bell1977/bell1977.f`: the listing made to compile. Each change is marked `C KZ4AP:` with its
   reason. Only these changes are allowed:
   1. TYPE/ACCEPT replaced by reading a settings file and writing to standard output;
-  2. RAN and any missing library generator replaced by gfortran's RANDOM_NUMBER with a fixed seed. Gaussian
-     numbers are made by the listing's own method, or, for a missing library routine, by Box–Muller;
+  2. RAN and any missing library generator replaced by gfortran's RANDOM_NUMBER with a fixed seed: every
+     RAN call and `DATA IK` (gfortran's own RAN intrinsic would compile silently and return one number at
+     every call). Gaussian numbers are made by the listing's own method, or, for a missing library routine,
+     by Box–Muller;
   3. TRANSL's display output written to a text file;
   4. a trace option: per sample, z_k and R, and for each saved path its state, probability, ŷ and P;
-  5. `MORSE` produced by `kz4ap-bell-tables`.
+  5. `MORSEM` produced by `kz4ap-bell-tables`;
+  6. in LIKHD, a guard before 47800: for a dead path (λ = 0), LKHD set to 0 for its 30 nodes, no Kalman state
+     written (the listing reads `IELMST(0)` there; the guard changes no result);
+  7. the five jumps to a DO loop's terminal statement from outside the loop (PROCES 09750; TRANSL 22900,
+     24100, 25300, 27600) redirected each to a new label just after its loop (FORTRAN 77 forbids them and
+     gfortran's result is undefined; the evident intent is to skip the loop);
+  8. stubs that do nothing for the display library routines ERASE, PLOTR and VIEW;
+  9. under D9 (a) or (c) only, KEY's duration law (reading C).
+
+  Items 6–9 were added from Task 1's reference sheet ((j) item 10).
 
   Nothing else changes.
 - Create `reference/bell1977/run/*.settings`: one settings file per target cell.
-- Create `reference/bell1977/build.sh`: `gfortran -std=legacy -fdec -fdefault-real-8 -fdefault-double-8 -O2`,
-  the flags adjusted as needed and recorded.
+- Create `reference/bell1977/build.sh`: `gfortran -std=legacy -fdec -fno-automatic -finit-local-zero
+  -fdefault-real-8 -fdefault-double-8 -O2` (static, zero-initialized locals as on the PDP-10; reference sheet
+  (h)), the flags adjusted as needed and recorded.
 - Create `engine/tests/data/bell/`: the golden data, under 1 MB in all.
 - Create `docs/plans/2026-10-07-bell-stage-1-results.md`: the results record, with sections 1 (conditions),
   2 (V1) and 3 (V2).
@@ -697,8 +807,10 @@ Research only; no engine code.
 - [ ] **Step 1: Failing tests.**
   - Per subroutine, hand-computed: one Kalman step; the likelihood with its 1000 cut-off and its 10⁻⁴ skip;
     PROBP's normalization.
-  - SAVEP on constructed path sets: the best per element if ≥ 10⁻⁶; then up to 0.90 or 25 paths; at least 7.
-  - TRELIS on constructed trees: the common ancestor, and the forced decision at 200 samples.
+  - SAVEP on constructed path sets: the best per element if ≥ 10⁻⁶; then up to 0.90 or 25 paths; at least 2
+    before duplicate deletion; the JSAV/IPSAV carry-over (a zero-probability fill node); duplicate deletion;
+    the renormalization without the first path; the zero sum (§9 item 6). Reference sheet (b).
+  - TRELIS on constructed trees: the common ancestor, and the forced decision at 199 samples.
   - TRANSL's letters and spaces.
   - V3 on the three golden inputs (rule in §5).
   - A channel that opens mid-character, and 10 minutes of pure noise: all values finite; letters counted
@@ -723,8 +835,8 @@ Research only; no engine code.
     noise level, and the channelizer's gain for a tone (derived, `docs/signal-processing.md` §7). A test on a
     generated tone checks it;
   - the bench tests;
-  - `docs/signal-processing.md`: the body's §8d "Bell decoder", about 900 words; appendix A.8d with the exact
-    form; A.10 rows; the bank's body section condensed per D6;
+  - `docs/signal-processing.md`: the body's section on the Bell decoder, in full (about 900 words); appendix A.8d
+    with the exact form; A.10 rows. The rest of the body was already restructured per D6;
   - the results record, section 5 (CPU).
 
 **Interfaces:**
@@ -754,8 +866,9 @@ Research only; no engine code.
 - Create `training/kz4ap_synth/bell.py`: his amplitude, fading, phase and chirp processes, per SIMSG; his
   random text.
 - Create `training/tests/test_bell_conditions.py`.
-- Modify `training/kz4ap_synth/keying.py`: a style "bell", with Gaussian durations per KEY, its floor, and
-  EDEV per fist.
+- Modify `training/kz4ap_synth/keying.py`: a style "bell", with KEY's durations, its 20 ms floor and EDEV
+  per fist, under each reading of D9 (A, B and C; reference sheet (e)). Our own fist, fading and text models stay exactly as they are (owner, D5); Bell's are added as
+  further options, and no existing recording changes. Every existing generator test passes unchanged.
 - Modify `training/kz4ap_synth/generate.py`: hooks for the above.
 - Modify `training/kz4ap_synth/suites.py`: the suite `BELL`, with three groups:
   - XV: keyboard Morse;
@@ -768,11 +881,12 @@ Research only; no engine code.
 
 **Steps:**
 - [ ] **Step 1: Failing tests.**
-  - The generated durations per fist: the mean and standard deviation, and P_es computed from them, against
-    his stated .00143, .0149 and .0403.
+  - The generated durations per fist against the law of each reading: the mean and the half-width (A, B) or
+    σ and truncation (C); under A and C, the crossover rates against his stated .00143, .0149 and .0403.
   - S₁₀₀ to S₅₀₀ consistent with his RNOISE definition (reference sheet (d)).
   - The amplitude process's statistics against his.
-  - The text's letter frequencies uniform over his alphabet.
+  - The letter draw as KEY's: A with probability 0.001, B–9 1/35 each, 0 with 1/35 − 0.001; C keyed with B's
+    code and labeled by the code keyed (reference sheet (d)).
 - [ ] **Step 2: Implement.**
 - [ ] **Step 3:** `pytest`.
 - [ ] **Step 4: Commit.**
@@ -799,6 +913,8 @@ Research only; no engine code.
 - [ ] **Step 2: Analyze** per §6.
   - Score tables in `docs/plans/data/2026-10-07-bell-stage-1/`.
   - Figures by the rule, in `docs/plans/figures/2026-10-07-bell-stage-1/`.
+  - Bell's tables from the jittered set, and the overlay figure: Bell's decoder and the bank on A2 and C2, the
+    fit evaluated at his speeds and S₁₀₀ values, beside his published values (owner, D4; §6).
 - [ ] **Step 3: The results record's section 7.** It lays out the stage-2 order, revised by the results, as
   options for the owner. It gives no verdict.
 - [ ] **Step 4: Commit.**

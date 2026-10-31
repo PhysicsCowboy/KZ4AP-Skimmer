@@ -460,9 +460,9 @@ TEST(ClassicalDecoder, MatchedChannelOpeningInsideADahCountsNoFragment) {
     // warm-up ends lead_s before U's dah ends, lead_s = -10 ... +40 ms in 1 ms steps. A fragment of
     // 14.4 ms (the glitch limit, 0.3 x the 48 ms initial dit) to 21.6 ms (a third of the 64.9 ms dit,
     // below which 65 ms / fragment exceeds the dit-dah ratio of 3 and the fragment is a cluster of its
-    // own; derived from section 8, step 10) derails the estimate before Task 16. After it the fragment
-    // is decoded (as E) but not counted for speed, so every word after the first, which the cut
-    // shortens, decodes exactly. Deterministic; not simulated.
+    // own; derived from docs/signal-processing.md appendix A.8, step 10) derails the estimate before
+    // Task 16. After it the fragment is decoded (as E) but not counted for speed, so every word after the
+    // first, which the cut shortens, decodes exactly. Deterministic; not simulated.
     const double wpm = 18.5;
     const std::string msg = "UA7L TU UA7L TU UA7L K";
     const auto marks = keying(msg, wpm, 0.5);

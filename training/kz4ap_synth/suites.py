@@ -3,13 +3,19 @@ scores each with kz4ap-bench, and a summary.
 
     python -m kz4ap_synth.suites generate --suite full --out build/suite/full [--seeds 3]
     python -m kz4ap_synth.suites generate --suite dev2 --out build/suite/dev2 [--seeds 3] [--per-cell A2=4] [--groups A2,S2]
+    python -m kz4ap_synth.suites generate --suite n2 --out build/suite/n2 [--seeds 3]
     python -m kz4ap_synth.suites run --out build/suite/full --bench PATH/kz4ap-bench \
-        --decoder baseline --decoder matched [--decoder bank]
+        --decoder baseline --decoder matched [--decoder bank] [--decoder viterbi]
+    python -m kz4ap_synth.suites run --out build/suite/dev2 --bench PATH/kz4ap-bench --decoder viterbi \
+        --jobs 10 --name NAME [--set NAME=VALUE ...] [--genie KIND ...] [--stats [--stats-detail]] [--only REGEX] \
+        [--overwrite | --skip-existing]
     python -m kz4ap_synth.suites summarize --out build/suite/full
 
 "smoke" is the recording bench/smoke.sh makes (the CI check); "full" is for
-local runs, sized for --seeds 3. S500 everywhere: key-down carrier power over
-noise power in 500 Hz, dB.
+local runs, sized for --seeds 3; "dev2" is the jittered development set; "n2" is
+its noise-only group (10 channel-hours of white noise, each channel opened by a
+station far below any decodable level; not part of DEV2). S500 everywhere:
+key-down carrier power over noise power in 500 Hz, dB.
 
 Group B is anchored to VE3NEA's DeepCW benchmark: his Butterworth fading
 spectrum and f_D grid, his SNR points converted to S500 (his key-on SNR in
@@ -31,12 +37,14 @@ import math
 import re
 import subprocess
 import zlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 
-from .generate import (MESSAGES, Sender, SignalSpec, draw_answer_offset_hz, fill_text, generate, labels,
+from .generate import (D17_EDGES, MESSAGES, Sender, SignalSpec, draw_answer_offset_hz, fill_text, generate, labels,
                        plan_intervals, qso_spec, random_callsign, scenario_band, signal_end_s, station_labels,
                        with_interferer, write_wav)
 from .jitter import SNR_CELLS, SPEED_CELLS, Cells, pick, record
@@ -69,9 +77,16 @@ VE3NEA_SPREADS_HZ = (0.1, 0.3, 1.0, 3.0)  # his f_D grid, Hz
 VE3NEA_EDGE_S = 0.002  # his raised-cosine keying edges, s, centered on each element's ends
 CER_THRESHOLDS = (0.05, 0.10)
 # The engine's decoders by results folder (results/<name>); the identifiers keep their old "front end" names.
-FRONT_ENDS = ("baseline", "matched", "bank")
+FRONT_ENDS = ("baseline", "matched", "bank", "viterbi", "segmental")
 # kz4ap-bench --decoder (--front-end is its old alias); the bench's default is Matched
-BENCH_FRONT_END = {"baseline": "envelope", "matched": "matched", "bank": "bank"}
+BENCH_FRONT_END = {"baseline": "envelope", "matched": "matched", "bank": "bank", "viterbi": "viterbi", "segmental": "segmental"}
+# kz4ap-bench --genie (the new decoder's, oracle channels only): the truth about each station that its label gives
+GENIE_KINDS = ("fist", "frequency", "fading")
+# A name for a run's results folder (results/<name>, run_suite's `name`): it must stay one folder under results/.
+RUN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# A decoder setting handed to the bench: NAME=VALUE, NAME an identifier (a ViterbiConfig field), VALUE for the bench to
+# parse.
+SETTING = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*=")
 COUNT_KEYS = ("symbols", "edits", "chars", "char_edits", "spaces", "space_edits",
               "first_word_symbols", "first_word_edits", "nospace_symbols", "nospace_edits")
 BOOTSTRAP_RESAMPLES = 1000
@@ -139,9 +154,9 @@ def qso_regime(offset_hz: float, front_end: str = "baseline") -> str:
     compares interpolated frequencies that can each be up to one bin from their carriers
     (derived bound; see MATCHED_AMBIGUOUS_BELOW_HZ); from there on, two tracks.
 
-    "bank": the bank decoder runs on the Matched path's detector, so its regimes are Matched's."""
+    "bank", "viterbi" and "segmental": these decoders run on the Matched path's detector, so their regimes are Matched's."""
     df = abs(offset_hz)
-    if front_end in ("matched", "bank"):
+    if front_end in ("matched", "bank", "viterbi", "segmental"):
         if df < CHANNEL_DISTANCE_HZ:
             return "same-track"
         if df < MATCHED_AMBIGUOUS_BELOW_HZ:
@@ -259,7 +274,7 @@ def stretch(seed: int) -> list[Recording]:
             continue
         part = int(rec.name[len(prefix):].split("-")[0])
         specs = [SignalSpec(s.text, s.freq_offset_hz, STRETCH_TO_WPM, s.snr_db - STRETCH_SNR_DB, s.start_s,
-                            edge_s=s.edge_s * STRETCH_FACTOR,
+                            edge_s=s.edge_s * STRETCH_FACTOR, edge_placement=s.edge_placement,
                             tag=f"{STRETCH_TO_WPM:g} wpm, stretched from {STRETCH_FROM_WPM:g} wpm")
                  for s in rec.specs]
         recs.append(Recording(rec.name.replace("A-awgn-", "S-stretch-"), "S stretch", rec.sample_rate,
@@ -283,7 +298,7 @@ def fading(seed: int) -> list[Recording]:
             specs.append(SignalSpec(_filler(rng, wpm, duration - 2.0 - start, keying), f, wpm, snr, start,
                                     keying=keying,
                                     imbalance_dits=round(draw_imbalance_dits(rng), 3), fading_hz=f_d,
-                                    fading_shape="butterworth", edge_s=VE3NEA_EDGE_S, edges_centered=True,
+                                    fading_shape="butterworth", edge_s=VE3NEA_EDGE_S, edge_placement="centered",
                                     tag=f"{keying} {wpm:g} wpm fD {f_d:g} Hz"))
         recs.append(Recording(f"B-fading-{keying}-{wpm:g}wpm-{f_d:g}Hz-s{seed}", "B fading", 48000, duration,
                               1000 * seed + 20 + code, True, specs))
@@ -296,7 +311,7 @@ def fading(seed: int) -> list[Recording]:
         keying = draw_style(rng)
         specs.append(SignalSpec(_filler(rng, wpm, 178.0 - start, keying), f, wpm, snr, start, keying=keying,
                                 imbalance_dits=round(draw_imbalance_dits(rng), 3), fading_hz=f_d,
-                                fading_shape="butterworth", edge_s=VE3NEA_EDGE_S, edges_centered=True,
+                                fading_shape="butterworth", edge_s=VE3NEA_EDGE_S, edge_placement="centered",
                                 tag="VE3NEA mix"))
     recs.append(Recording(f"B-fading-mix-s{seed}", "B fading", 48000, 180.0, 1000 * seed + 20 + len(FADING_ROWS),
                           True, specs))
@@ -655,6 +670,7 @@ def sensitivity2(seed: int, per_cell: int | None = None) -> list[Recording]:
                 snr, d_snr = pick(SNR_CELLS, k, rng)
                 text = text_100(rng)
                 units.append([SignalSpec(text, 0.0, wpm, snr, _start(rng), tag=f"speed cell {v} ({lo:.2f}-{hi:.2f} WPM)",
+                                         **D17_EDGES,
                                          design={"group": "A2", "speed_wpm": d_wpm, "s500_db": d_snr})])
         batches.append((f"c{v:02d}", units))
     return _pack(batches, prefix="A2-awgn", group="A2 sensitivity", seed=seed, code=1)
@@ -696,7 +712,8 @@ def stretch2(seed: int, per_cell: int | None = None) -> list[Recording]:
                       "s500_db": {**d_snr, "value": s.snr_db - STRETCH2_SNR_DB,
                                   "range": [x - STRETCH2_SNR_DB for x in d_snr["range"]], "source_value": s.snr_db}}
             specs.append(SignalSpec(s.text, s.freq_offset_hz, s.wpm / STRETCH2_FACTOR, s.snr_db - STRETCH2_SNR_DB,
-                                    s.start_s, edge_s=s.edge_s * STRETCH2_FACTOR,
+                                    s.start_s, edge_s=s.edge_s * STRETCH2_FACTOR,  # D17's edges x 2 (Ruling 62)
+                                    edge_placement=s.edge_placement,
                                     tag=f"speed cell {STRETCH2_FROM_CELL} stretched by {STRETCH2_FACTOR:g}",
                                     design=design))
         recs.append(Recording(rec.name.replace("A2-awgn-", "S2-stretch-"), "S2 stretch", rec.sample_rate,
@@ -728,7 +745,7 @@ def fading2(seed: int, per_cell: int | None = None) -> list[Recording]:
                               "imbalance_dits": _distribution(imbalance, IMBALANCE_TEXT)}
                     units.append([SignalSpec(text_100(rng), 0.0, wpm, snr, _start(rng), keying=keying,
                                              imbalance_dits=imbalance, fading_hz=f_d, fading_shape="butterworth",
-                                             edge_s=VE3NEA_EDGE_S, edges_centered=True,
+                                             edge_s=VE3NEA_EDGE_S, edge_placement="centered",
                                              tag=f"fD cell {fc} ({FADING2_CELLS.bounds(fc)[0]:g}-"
                                                  f"{FADING2_CELLS.bounds(fc)[1]:g} Hz)", design=design)])
         batches.append((f"c{v:02d}", units))
@@ -753,7 +770,7 @@ def fists2(seed: int, per_cell: int | None = None) -> list[Recording]:
                     design = {"group": "C2", "speed_wpm": d_wpm, "s500_db": d_snr, "imbalance_dits": d_imb,
                               "keying": {"value": keying, "cell": sc, "cells": list(FIST_STYLES)}}
                     units.append([SignalSpec(text_100(rng), 0.0, wpm, snr, _start(rng), keying=keying,
-                                             imbalance_dits=imbalance, tag=keying, design=design)])
+                                             imbalance_dits=imbalance, tag=keying, **D17_EDGES, design=design)])
         batches.append((f"c{v:02d}", units))
     return _pack(batches, prefix="C2-fists", group="C2 fists", seed=seed, code=3)
 
@@ -790,7 +807,8 @@ def speed2(seed: int, per_cell: int | None = None) -> list[Recording]:
                               "direction": {"value": direction, "cell": dc, "cells": list(SPEED2_DIRECTIONS)},
                               "profile": {"value": profile, "cell": pc, "cells": list(SPEED2_PROFILES)}}
                     units.append([SignalSpec(text_100(rng), 0.0, wpm, snr, _start(rng), wpm_end=end,
-                                             speed_profile=profile, tag=f"{profile} {direction}", design=design)])
+                                             speed_profile=profile, tag=f"{profile} {direction}", **D17_EDGES,
+                                             design=design)])
         batches.append((f"c{v:02d}", units))
     return _pack(batches, prefix="D2-speed", group="D2 speed changes", seed=seed, code=4)
 
@@ -823,7 +841,7 @@ def interference2(seed: int, per_cell: int | None = None) -> list[Recording]:
                           "neighbor_speed_wpm": {**d_nwpm, "cell_drawn": "uniformly from the 10 speed cells"}}
                 wanted = SignalSpec(text, 0.0, wpm, snr, start,
                                     tag=f"offset cell {oc} ({QRM2_OFFSET_CELLS.bounds(oc)[0]:g}-"
-                                        f"{QRM2_OFFSET_CELLS.bounds(oc)[1]:g} Hz)", design=design)
+                                        f"{QRM2_OFFSET_CELLS.bounds(oc)[1]:g} Hz)", **D17_EDGES, design=design)
                 wanted_s = keying_intervals(text, wpm)[-1][1]
                 neighbor_text = _filler(rng, n_wpm, wanted_s, "machine")
                 design["neighbor_coverage"] = {
@@ -852,8 +870,8 @@ def tuning2(seed: int, per_cell: int | None = None) -> list[Recording]:
             offset, d_off = pick(TUNING2_OFFSET, 1, rng)
             snr, d_snr = pick(TUNING2_SNR, 1, rng)
             units.append([SignalSpec(text_100(rng), offset, wpm, snr, _start(rng), tag="offset from the bin center",
-                                     design={"group": "F2", "speed_wpm": d_wpm, "offset_hz": d_off,
-                                             "s500_db": d_snr})])
+                                     **D17_EDGES,
+                                     design={"group": "F2", "speed_wpm": d_wpm, "offset_hz": d_off, "s500_db": d_snr})])
         offsets.append((f"c{v:02d}", units))
         units = []
         for ec in TUNING2_EXCURSION.numbers:
@@ -872,7 +890,8 @@ def tuning2(seed: int, per_cell: int | None = None) -> list[Recording]:
                                                         "to last key-up, Hz/s"}}
                 lo, hi = TUNING2_EXCURSION.bounds(ec)
                 units.append([SignalSpec(text, 0.0, wpm, snr, _start(rng), drift_hz_per_s=drift,
-                                         tag=f"drift cell {ec} ({lo:g}-{hi:g} Hz over the signal)", design=design)])
+                                         tag=f"drift cell {ec} ({lo:g}-{hi:g} Hz over the signal)", **D17_EDGES,
+                                         design=design)])
         drifts.append((f"c{v:02d}", units))
     return (_pack(offsets, prefix="F2-offset", group="F2 tuning", seed=seed, code=6, bin_slots=True)
             + _pack(drifts, prefix="F2-drift", group="F2 tuning", seed=seed, code=7, bin_slots=True))
@@ -901,7 +920,7 @@ def _qso2(rng, caller_cell: int, offsets: Cells, group: str, tag: str) -> Signal
               "imbalance_dits": _distribution(imbalances[0], IMBALANCE_TEXT),
               "answer_imbalance_dits": _distribution(imbalances[1], IMBALANCE_TEXT),
               "answer_offset_hz": d_off, "answer_relative_db": d_rel, "s500_db": d_snr}
-    return qso_spec(ragchew_overs(rng, a, b), senders, 0.0, snr, _start(rng), tag=tag, design=design)
+    return qso_spec(ragchew_overs(rng, a, b), senders, 0.0, snr, _start(rng), tag=tag, **D17_EDGES, design=design)
 
 
 def _qsos2(seed: int, per_cell: int | None, group: str, code: int, offsets: Cells, prefix: str, name: str,
@@ -952,9 +971,53 @@ def farnsworth2(seed: int, per_cell: int | None = None) -> list[Recording]:
                         design = {"group": "I2", "speed_wpm": d_c, "farnsworth_wpm": d_o, "s500_db": d_snr,
                                   "keying": {"value": keying, "cell": kc, "cells": list(FARNSWORTH_KEYING)}}
                         units.append([SignalSpec(text_100(rng), 0.0, char_wpm, snr, _start(rng), keying=keying,
-                                                 farnsworth_wpm=overall, tag=f"farnsworth {keying}", design=design)])
+                                                 farnsworth_wpm=overall, tag=f"farnsworth {keying}", **D17_EDGES,
+                                                 design=design)])
         batches.append((f"o{oc}", units))
     return _pack(batches, prefix="I2-farnsworth", group="I2 Farnsworth", seed=seed, code=10)
+
+
+# N2, the noise-only group (docs/plans/2026-10-20-new-decoder-prototype-1.md, D8; owner, 2026-10-20): 100 channels x
+# 360 s (10 channel-hours) of white noise, to count the false characters a decoder prints per hour of channel time
+# (the standard-practice check's false-alarm measure). DEV2 has no such group, and N2 is not part of it: it is a
+# suite of its own ("n2"), so DEV2's totals and analyses stay what they were.
+N2_GROUP_CODE = 12                 # the next group code after DEV2's: A2 ... I2 use 1 ... 10 and S2's noise seeds 11
+N2_STATIONS_PER_SPEED_CELL = 10    # x the 10 speed cells = 100 channels, _pack's 4 recordings of 25
+N2_DURATION_S = 360.0              # s, every recording
+N2_S500_DB = -60.0                 # dB SNR in 500 Hz: 52 dB below A2's lowest S500 (-8 dB)
+
+
+def noise2(seed: int) -> list[Recording]:
+    """N2, noise only (plan D8): 100 channels of white noise, 360 s each, as 4 recordings of 25 channels at DEV2's
+    48 kHz and DEV2's noise (sigma 0.02 FS per complex sample, generate.DEFAULT_NOISE_SIGMA). Oracle channels open
+    at the labels' frequencies, so each channel carries a labeled station, at S500 -60 dB (dB SNR in 500 Hz; its
+    key-down power is 10^-6 of the noise power in 500 Hz): far below any decodable level, so every character a
+    decoder prints on these channels is false, and the characters per hour of channel time are what N2 measures.
+
+    A station is a DEV2 signal: 100 +/- 5 characters of VE3NEA-statistics text, machine keying, starting 0.5-2 s in,
+    at a speed drawn in one of DEV2's ten speed cells, ten stations per cell (recorded in its labels like A2's, with
+    the one fixed value, S500). _pack places them as in DEV2 (slots 1200 Hz apart around 0 Hz, each moved by up to
+    half a bin, in a shuffled order within a recording) and names the recordings N2-noise-<part>-s<seed>; the units
+    are ordered so that every recording holds every speed cell, two or three times. A recording lasts N2_DURATION_S
+    instead of _pack's fitted length. Reproducible by seed, like DEV2's groups."""
+    units = []
+    for rep in range(N2_STATIONS_PER_SPEED_CELL):
+        for v in SPEED_CELLS.numbers:
+            rng = _signal_rng(seed, N2_GROUP_CODE, v, rep)
+            wpm, d_wpm = pick(SPEED_CELLS, v, rng)
+            text = text_100(rng)
+            design = {"group": "N2", "speed_wpm": d_wpm,
+                      "s500_db": {"value": N2_S500_DB, "cell": NOT_A_CELL, "unit": S500_UNIT,
+                                  "fixed": "far below any decodable level: the station only opens the oracle channel"}}
+            units.append([SignalSpec(text, 0.0, wpm, N2_S500_DB, _start(rng), tag="noise only", **D17_EDGES,
+                                     design=design)])
+    recs = _pack([("noise", units)], prefix="N2", group="N2 noise only", seed=seed, code=N2_GROUP_CODE)
+    return [replace(r, duration_s=N2_DURATION_S) for r in recs]
+
+
+def n2_suite(seeds: int = 1) -> list[Recording]:
+    """The noise-only group for seeds 1 ... seeds (as dev2_suite's)."""
+    return [r for seed in range(1, seeds + 1) for r in noise2(seed)]
 
 
 # The groups in order, each with its builders (A2 also through the detector path; S2 takes A2's per_cell).
@@ -996,7 +1059,7 @@ def full_suite(seeds: int = 1) -> list[Recording]:
     return recs
 
 
-SUITES = {"smoke": smoke_suite, "full": full_suite, "dev2": dev2_suite}
+SUITES = {"smoke": smoke_suite, "full": full_suite, "dev2": dev2_suite, "n2": n2_suite}
 
 
 def check_recording(rec: Recording) -> None:
@@ -1065,33 +1128,188 @@ def oracle_copies(rec: dict) -> list[tuple[str, str, str]]:
     return [(rec["labels"], f"{rec['name']}.oracle", f"{rec['group']}, oracle")]
 
 
-def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None) -> None:
+def _stats_version(path: Path) -> int | None:
+    """The format version that a statistics file declares, read from its first bytes (kz4ap-bench writes "format" and
+    "version" first); None if it does not say."""
+    try:
+        with path.open(encoding="utf-8") as f:
+            head = f.read(512)
+    except OSError:
+        return None
+    found = re.search(r'"version":\s*(\d+)', head)
+    return int(found.group(1)) if found else None
+
+
+class _Job(NamedTuple):
+    """One bench call of run_suite: a test case of one decoder's run."""
+    folder: str          # the results folder, results/<folder>
+    result: str          # the test case's result name
+    cmd: list            # the bench's command
+    result_file: Path    # the bench's --json
+    stats_file: Path     # where its --stats goes (written only if the run asks for statistics)
+    decoder: str         # the bench's --decoder
+
+
+def _same_run(job: _Job, settings: list, genie: list, stats_version: int | None) -> None:
+    """Raises ValueError unless the finished test case `job` was made by the run described by the rest: the bench's
+    --set settings and --genie kinds (each once, in the order first given), and the form of its statistics file (the
+    format version; None: the run asks for none, so the test case must have none: a run that drops --stats on a resume
+    would leave a folder in which only some test cases have statistics)."""
+    made = json.loads(job.result_file.read_text(encoding="utf-8"))
+    where = f"results/{job.folder}/{job.result_file.name}"
+    resume = "a run that is resumed must be the run it resumes"
+    if made.get("decoder") != job.decoder:
+        raise ValueError(f"{where} was made by the {made.get('decoder')!r} decoder, this run's is {job.decoder!r}: "
+                         + resume)
+    if made.get("settings", []) != settings:
+        raise ValueError(f"{where} was made with the settings {made.get('settings', [])}, this run's are {settings}: "
+                         + resume)
+    if made.get("genie", {}).get("kinds", []) != genie:
+        raise ValueError(f"{where} was made with the genie {made.get('genie', {}).get('kinds', [])}, this run's is "
+                         f"{genie}: " + resume)
+    if stats_version is not None and _stats_version(job.stats_file) != stats_version:
+        raise ValueError(f"the statistics file {job.stats_file.name} in results/{job.folder} is of format version "
+                         f"{_stats_version(job.stats_file)}, this run's are version {stats_version} "
+                         f"({'every line' if stats_version == 1 else 'the summary'}): " + resume)
+    if stats_version is None and job.stats_file.exists():
+        raise ValueError(f"the statistics file {job.stats_file.name} in results/{job.folder} was written by the run "
+                         "being resumed, but this run asks for no statistics (--stats): " + resume)
+
+
+def run_suite(out_dir: Path, bench: Path, front_ends, only: str | None = None, jobs: int = 1,
+              name: str | None = None, settings=(), stats: bool = False, stats_detail: bool = False, genie=(),
+              overwrite: bool = False, skip_existing: bool = False) -> None:
     """Scores every recording of the manifest (or those whose names match `only`, a regular
     expression) with kz4ap-bench, once per front end (and once more per front end against
-    per-station labels where the manifest has them)."""
-    manifest = json.loads((out_dir / "manifest.json").read_text())
+    per-station labels where the manifest has them).
+
+    A run to be compared with others gets a name of its own, and its settings:
+    - jobs: bench processes running at once, one test case each (1: one after another, in the manifest's order);
+    - name: the results folder, results/<name>, in place of the decoder's own (a run needs one decoder to be named);
+    - settings: "NAME=VALUE" strings, each handed to every bench call as --set NAME=VALUE (a decoder setting: the bench
+      refuses a name it does not know);
+    - genie: kinds of GENIE_KINDS, each handed to every bench call as --genie KIND (the true speed and fist, carrier or
+      fading spread of each station, read from its label; oracle test cases only);
+    - stats: the bench also writes its statistics file, results/<folder>/<test case>.stats.json (oracle test cases
+      only): a summary for each channel, or with stats_detail every newborn line (45 kB per channel-second).
+    stats and genie are of oracle channels, so a selection with a recording that is not an oracle one is refused before
+    anything runs (select the oracle test cases with `only`; the plan's runs pass kz4ap_proto.experiments.DEV2).
+
+    Results cost hours and cannot be recovered, so a run does not write into a folder that already holds result files
+    (any *.json) unless it is told to: overwrite replaces the files of the test cases it runs; skip_existing resumes the
+    run, skipping the test cases that are done (a result file that reads, and the statistics file if asked for), which
+    must have been made by this run (decoder, settings, genie and the statistics' form: none, the summary or every
+    line; or it is refused before anything runs). Before a test case is run its stale statistics file and any partial file of an earlier try are
+    removed, so that they cannot pass for this run's. The bench writes its files under a name of their own and renames
+    them when they are complete (the statistics after the result), so a file that exists is a complete one.
+    The first failure stops the run (the bench processes already running finish) and names its test case."""
+    front_ends, settings, genie = list(front_ends), list(settings), list(genie)
     for fe in front_ends:
         if fe not in FRONT_ENDS:
             raise ValueError(f"unknown decoder {fe!r}")
-        results = out_dir / "results" / fe
-        results.mkdir(parents=True, exist_ok=True)
-        for rec in manifest["recordings"]:
-            if only is not None and not re.search(only, rec["name"]):
-                continue
+    if name is not None:
+        if len(front_ends) != 1:
+            raise ValueError(f"a run's name needs exactly one decoder, not {len(front_ends)}")
+        if not RUN_NAME.fullmatch(name):
+            raise ValueError(f"name {name!r}: a folder under results/ of letters, digits, '.', '_' and '-', "
+                             "starting with a letter or digit")
+    for setting in settings:
+        if not SETTING.match(setting):
+            raise ValueError(f"setting {setting!r}: expected NAME=VALUE, NAME a setting's name")
+    for kind in genie:
+        if kind not in GENIE_KINDS:
+            raise ValueError(f"genie {kind!r}: one of {', '.join(GENIE_KINDS)}")
+    if jobs < 1:
+        raise ValueError(f"jobs must be at least 1, not {jobs}")
+    if stats_detail and not stats:
+        raise ValueError("stats_detail needs stats: it is the full form of the statistics file")
+    if overwrite and skip_existing:
+        raise ValueError("overwrite and skip_existing exclude each other: one replaces the test cases that are "
+                         "done, the other skips them")
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    selected = [rec for rec in manifest["recordings"] if only is None or re.search(only, rec["name"])]
+    detector_path = [rec["name"] for rec in selected if not rec["oracle"]]
+    if (stats or genie) and detector_path:
+        raise ValueError(f"stats and genie are of oracle channels, but {len(detector_path)} of the {len(selected)} "
+                         f"selected recordings are not oracle ones, the first {detector_path[0]!r}: select the oracle "
+                         "test cases with only (the plan's runs pass kz4ap_proto.experiments.DEV2)")
+    work = []
+    for fe in front_ends:
+        folder = name or fe
+        results = out_dir / "results" / folder
+        for rec in selected:
             for label_file, result, _group in _scorings(rec):
+                result_file, stats_file = results / f"{result}.json", results / f"{result}.stats.json"
                 cmd = [str(bench), str(out_dir / rec["wav"]), "--labels", str(out_dir / label_file),
-                       "--json", str(results / f"{result}.json")]
+                       "--json", str(result_file)]
                 if rec["oracle"]:
                     cmd.append("--oracle")
                 cmd += ["--decoder", BENCH_FRONT_END[fe]]
-                done = subprocess.run(cmd, capture_output=True, text=True)
-                if done.returncode != 0:
-                    raise RuntimeError(f"kz4ap-bench failed on {result} ({fe}):\n{done.stderr}")
-                out_lines = done.stdout.strip().splitlines()
-                if not out_lines:
-                    raise RuntimeError(f"kz4ap-bench printed nothing on {result} ({fe}) although it exited 0; "
-                                       f"stderr:\n{done.stderr}")
-                print(f"{fe:9s} {result}: {out_lines[-1]}")
+                for setting in settings:
+                    cmd += ["--set", setting]
+                for kind in genie:
+                    cmd += ["--genie", kind]
+                if stats:
+                    cmd += ["--stats", str(stats_file)] + (["--stats-detail"] if stats_detail else [])
+                work.append(_Job(folder, result, cmd, result_file, stats_file, BENCH_FRONT_END[fe]))
+    # Results that are there: refused, unless the run is told to replace them or to resume.
+    for folder in dict.fromkeys(name or fe for fe in front_ends):
+        held = sorted((out_dir / "results" / folder).glob("*.json")) if (out_dir / "results" / folder).is_dir() else []
+        if held and not (overwrite or skip_existing):
+            shown = ", ".join(p.name for p in held[:3]) + (", ..." if len(held) > 3 else "")
+            raise ValueError(f"results/{folder} already holds {len(held)} result file{'s' if len(held) > 1 else ''} "
+                             f"({shown}): give the run a new name, or pass overwrite (--overwrite) to replace the "
+                             "test cases it runs, or skip_existing (--skip-existing) to resume it")
+    # With skip_existing: which test cases are done (a result file that reads, and the statistics file if asked for),
+    # and were they made by this run?
+    todo, done_already = [], []
+    for job in work:
+        finished = False
+        if skip_existing and job.result_file.exists() and (not stats or job.stats_file.exists()):
+            try:
+                made = json.loads(job.result_file.read_text(encoding="utf-8"))
+                finished = isinstance(made, dict) and "score" in made   # a result file that was cut short is not one
+            except (OSError, ValueError):
+                finished = False
+        if finished:
+            _same_run(job, settings, list(dict.fromkeys(genie)), (1 if stats_detail else 2) if stats else None)
+        (done_already if finished else todo).append(job)
+    for folder in dict.fromkeys(job.folder for job in work):
+        (out_dir / "results" / folder).mkdir(parents=True, exist_ok=True)
+    # What an earlier try may have left of a test case that is run now must not pass for this run's.
+    for job in todo:
+        for stale in (job.result_file.with_name(job.result_file.name + ".partial"), job.stats_file,
+                      job.stats_file.with_name(job.stats_file.name + ".partial")):
+            stale.unlink(missing_ok=True)
+
+    def run_one(job: _Job) -> str:
+        done = subprocess.run(job.cmd, capture_output=True, text=True)
+        if done.returncode != 0:
+            raise RuntimeError(f"kz4ap-bench failed on {job.result} ({job.folder}):\n{done.stderr}")
+        out_lines = done.stdout.strip().splitlines()
+        if not out_lines:
+            raise RuntimeError(f"kz4ap-bench printed nothing on {job.result} ({job.folder}) although it exited 0; "
+                               f"stderr:\n{done.stderr}")
+        if stats and not job.stats_file.exists():
+            raise RuntimeError(f"kz4ap-bench wrote no statistics file for {job.result} ({job.folder}) although asked "
+                               f"for it; stderr:\n{done.stderr}")
+        return f"{job.folder:9s} {job.result}: {out_lines[-1]}"
+
+    for job in done_already:
+        print(f"{job.folder:9s} {job.result}: skipped (already done)")
+    if jobs == 1:
+        for job in todo:
+            print(run_one(job))
+        return
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = [pool.submit(run_one, job) for job in todo]
+        try:
+            for future in as_completed(futures):
+                print(future.result())
+        except BaseException:
+            for future in futures:
+                future.cancel()  # those not started; the ones running finish before the error is raised
+            raise
 
 
 def crossing_snr(points, threshold: float) -> float | None:
@@ -1687,7 +1905,31 @@ def main(argv=None) -> None:
     r.add_argument("--bench", type=Path, required=True)
     r.add_argument("--decoder", "--front-end", dest="front_ends", action="append", choices=FRONT_ENDS,
                    help="the decoder (repeatable; --front-end is its old name)")
-    r.add_argument("--only", default=None, help="regular expression: score only matching recordings")
+    r.add_argument("--only", default=None, help="regular expression on recording names: score only matching "
+                                                "recordings (--stats and --genie need oracle ones: the plan's runs "
+                                                "pass kz4ap_proto.experiments.DEV2, the oracle test cases)")
+    r.add_argument("--jobs", type=int, default=1, help="bench processes at once, one test case each (default 1)")
+    r.add_argument("--name", default=None, help="the run's results folder, results/NAME, in place of the decoder's "
+                                                "own (needs one --decoder); give every run a new name")
+    r.add_argument("--set", dest="settings", action="append", default=[], metavar="NAME=VALUE",
+                   help="a decoder setting, handed to the bench as --set NAME=VALUE (repeatable)")
+    r.add_argument("--genie", dest="genie", action="append", default=[], choices=GENIE_KINDS, metavar="KIND",
+                   help="the truth about each station, from its label, handed to the bench as --genie KIND: "
+                        f"{', '.join(GENIE_KINDS)} (repeatable; oracle test cases only)")
+    r.add_argument("--stats", action="store_true",
+                   help="the bench also writes its statistics file, results/NAME/<test case>.stats.json: a summary "
+                        "for each channel (oracle test cases only)")
+    r.add_argument("--stats-detail", action="store_true",
+                   help="the statistics file in its full form, every newborn line (45 kB per channel-second, so for "
+                        "a small run); asks for --stats")
+    existing = r.add_mutually_exclusive_group()
+    existing.add_argument("--overwrite", action="store_true",
+                          help="write into a results folder that already holds result files, replacing the test "
+                               "cases this run does (without it, or --skip-existing, such a folder is refused)")
+    existing.add_argument("--skip-existing", action="store_true",
+                          help="resume a run: skip the test cases already done (result file, and statistics file if "
+                               "asked for), which must have been made with the same decoder, settings, genie and "
+                               "statistics form")
     s = sub.add_parser("summarize", help="write summary.json and summary.md")
     s.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
@@ -1705,7 +1947,13 @@ def main(argv=None) -> None:
             recordings = SUITES[args.suite](args.seeds)
         write_suite(recordings, args.out, args.suite, only=args.only)
     elif args.command == "run":
-        run_suite(args.out, args.bench, args.front_ends or ["baseline"], only=args.only)
+        try:
+            run_suite(args.out, args.bench, args.front_ends or ["baseline"], only=args.only, jobs=args.jobs,
+                      name=args.name, settings=args.settings, stats=args.stats or args.stats_detail,
+                      stats_detail=args.stats_detail, genie=args.genie, overwrite=args.overwrite,
+                      skip_existing=args.skip_existing)
+        except ValueError as refusal:  # a refusal before anything ran, reported as a usage error, not a traceback
+            r.error(str(refusal))
     else:
         write_summary(args.out)
 

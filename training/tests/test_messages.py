@@ -18,6 +18,19 @@ from kz4ap_synth.morse import CODES, symbols
 CALL_PATTERN = re.compile(r"^[A-Z]{1,2}\d[A-Z]{1,3}(/P)?$")
 
 
+def test_the_engines_symbol_prior_is_these_weights():
+    # engine/src/viterbi/symbol_prior.cpp keeps a copy of VE3NEA_CHAR_WEIGHTS, the new decoder's symbol prior: a weight
+    # changed here only would leave the decoder with the old one, without an error.
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[2] / "engine" / "src" / "viterbi" / "symbol_prior.cpp").read_text(encoding="utf-8")
+    block = re.search(r"// VE3NEA_CHAR_WEIGHTS begin(.*?)// VE3NEA_CHAR_WEIGHTS end", source, re.S)
+    assert block is not None
+    rows = re.findall(r'\{"([^"]+)", (\d+)\}', block.group(1))
+    assert {symbol: int(count) for symbol, count in rows} == VE3NEA_CHAR_WEIGHTS
+    assert len(rows) == len(VE3NEA_CHAR_WEIGHTS)
+
+
 def _qso(seed, chat_rounds=0):
     rng = np.random.default_rng(seed)
     return ragchew(rng, random_operator(rng), random_operator(rng), chat_rounds)

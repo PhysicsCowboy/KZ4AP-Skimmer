@@ -1,4 +1,4 @@
-// The duration fit's exp and log (Plan B task B2(b); docs/signal-processing.md section 8c, "Duration fit"):
+// The duration fit's exp and log (Plan B task B2(b); docs/signal-processing.md appendix A.8c, "Duration fit"):
 // SLEEF 3.9.0's vectorized _u10 functions applied elementwise to arrays, the instruction set chosen once at run
 // time from what the processor and the operating system support (vecmath.cpp).
 //

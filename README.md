@@ -18,7 +18,7 @@ See `docs/design/` for the design.
 | `docs/design/2026-09-25-kz4ap-skimmer-design.md` | What we are building and why: the decisions, including the development order (§3.1) and the decoder plan (§5). The authority; changes need the owner's approval. |
 | `docs/plans/` | One implementation plan per milestone: how to build it, task by task. Written from the approved design before the milestone starts, and approved before any code is written. Beside the plans are the results records: what each experiment measured and what was decided. Together they are the project's working record, kept in the repository because the design decisions and their evidence are what later work builds on. |
 | `docs/backlog.md` | Deferred work and to-dos, in milestone order. Items move into plans as milestones start. |
-| `docs/signal-processing.md` | What the engine's signal processing actually does now: a body readable in about 30 minutes (each stage, its formulas, every value with its unit and whether it was derived, measured or chosen heuristically) and an appendix (derivations, provenance with validity conditions, known limitations, the full parameter table, the benchmark's definitions). Updated in the same commit as any signal-processing change. Results and evidence are in the results records under `docs/plans/`. |
+| `docs/signal-processing.md` | What the engine's signal processing actually does now: a body readable in about 30 minutes, which covers in full the chains under development or discussion (each stage, its formulas, every value with its unit and whether it was derived, measured or chosen heuristically) and gives every other chain a short summary pointing to the appendix; and an appendix (derivations, provenance with validity conditions, known limitations, the full parameter table, the benchmark's definitions). Updated in the same commit as any signal-processing change. Results and evidence are in the results records under `docs/plans/`. |
 | `docs/research/` | The evidence behind decisions. `decoder-survey.md` is the synthesis (glossary, decoder ranking, benchmark scenarios); verification notes for each source sit beside it; `research_notes/` holds the original research record, annotated rather than rewritten. |
 
 Work happens on feature branches; merging into `main` and pushing require the
@@ -26,8 +26,8 @@ owner's approval.
 
 ## Building
 
-Windows: Visual Studio Build Tools 2026 (C++ workload). Linux: GCC 13+ or
-Clang 17+, CMake 3.25+, Ninja.
+Windows: Visual Studio Build Tools 2026 (C++ workload). Linux: GCC 11.4 or
+later, or Clang 17+, CMake 3.25+, Ninja.
 
     cmake --preset windows      # or: linux
     cmake --build --preset windows
@@ -89,15 +89,45 @@ section 3.1):
     .venv\Scripts\python -m kz4ap_synth.suites run --out build/suite/full --bench build\windows\bench\Release\kz4ap-bench.exe --decoder baseline --decoder matched
     .venv\Scripts\python -m kz4ap_synth.suites summarize --out build/suite/full
 
+The second `run` into the same `--out` is refused: results cost hours, so a run
+does not write into a results folder (`results/baseline`, `results/matched`, or
+`results/NAME` for a run given `--name NAME`) that already holds result files.
+Give a run a new `--name`, or pass `--overwrite` to replace the test cases it
+runs, or `--skip-existing` to resume a run where it stopped (the test cases that
+are done must have been made with the same decoder, settings, genie and
+statistics form, or the resume is refused before anything runs).
+
 `kz4ap-bench --decoder` selects the decoder (`--front-end` is its old name and
 still works). `--decoder matched` (the default) selects the dit-matched decoder
 with frequency re-centering, each channel following the station the signal
 detector assigns it (see `docs/signal-processing.md`, sections 6 and 8b);
 `--decoder envelope` (also `baseline`) selects the milestone-1 pipeline;
 `--decoder bank` selects the filter-bank decoder (section 8c), whose results
-the suites write to `results/bank`. The bench writes each track's final text
-(`text`, corrections applied) and its immediate text (`text_immediate`, the
-characters as first published) and scores both (`cer`, `cer_immediate`).
+the suites write to `results/bank`; `--decoder viterbi` selects the new decoder
+(per envelope sample, every 2.667 ms; section 8d is brought up to date at the
+next checkpoint; selectable, not the default), which prints
+its best story's text when the recording ends. Its settings are `--set
+NAME=VALUE` (repeatable; NAME is a field of `ViterbiConfig` in
+`engine/include/kz4ap/viterbi/config.hpp`, the value in the field's own
+physical unit, and the result file's `config` block records every field), for
+genie runs on oracle channels `--genie fist|fading` (repeatable; it
+needs `--oracle` and takes the true timing, carrier or fading spread from the
+labels), and `--stats FILE` (with `--oracle`), which writes the search's
+statistics for each channel as JSON: a summary (live stories, how often the
+ceiling decided, what became of each newborn by kind and end, and the newborns
+that ever led), about 1.15 kB for a channel, or with `--stats-detail` every
+newborn line, 45 kB per channel-second (the format, versions 2 and 1, is
+documented in `bench/src/viterbi_json.hpp`, the reductions in
+`training/kz4ap_proto/search_stats.py`). The result file is written first,
+under a name of its own that is renamed when it is complete, then the
+statistics file (`--json` and `--stats` may not name one file; a finished file
+whose rename fails stays under its own name, `FILE.partial`, and the message
+says where). For example, the wide-beam reference of the
+first prototype's plan: `kz4ap-bench band.wav --labels band.json --oracle
+--decoder viterbi --set beam_nats=80 --set ceiling=17000`. The bench writes
+each track's final text (`text`, corrections applied) and its immediate text
+(`text_immediate`, the characters as first published) and scores both (`cer`,
+`cer_immediate`).
 
 ## Known limitations
 

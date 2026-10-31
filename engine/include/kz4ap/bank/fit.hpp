@@ -1,5 +1,5 @@
-// The bank decoder's duration fit: a port of the removed prototype's fit.py (docs/signal-processing.md section
-// 8c, "Duration fit"). Per branch, a mixture over the element classes (dit, dah; element space, character
+// The bank decoder's duration fit: a port of the removed prototype's fit.py (docs/signal-processing.md appendix
+// A.8c, "Duration fit"). Per branch, a mixture over the element classes (dit, dah; element space, character
 // gap, word gap) with log-normal scatter in ln(duration) plus the branch's timing-resolution variance, and a
 // log-uniform outlier class; exponential memory held exactly by recursive log-likelihood tables over a grid
 // of (T, q, w, T_g); the grid maximum (with the optional T_P prior), then a Gauss-Newton refinement in

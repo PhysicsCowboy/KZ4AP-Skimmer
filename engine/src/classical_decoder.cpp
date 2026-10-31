@@ -43,6 +43,10 @@ double validated_rate(double sample_rate, const ClassicalDecoderConfig& c) {
         !(c.reacquire_window_s >= 0))
         throw std::invalid_argument("invalid classical decoder config");
     if (c.front_end == FrontEnd::Bank) throw std::invalid_argument("the bank decoder is BankDecoder, not ClassicalDecoder");
+    if (c.front_end == FrontEnd::Segmental)
+        throw std::invalid_argument("the segmental decoder is SegmentalDecoder, not ClassicalDecoder");
+    if (c.front_end == FrontEnd::Viterbi)
+        throw std::invalid_argument("the new decoder is ViterbiDecoder, not ClassicalDecoder");
     return sample_rate;
 }
 

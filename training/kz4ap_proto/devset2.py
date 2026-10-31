@@ -1,13 +1,20 @@
 """The jittered development set's analysis (docs/plans/2026-10-06-development-set-redesign.md, principle 6; task D2):
 a smooth fit of CER over S500 and speed, crossings with bootstrap intervals, the E/N0-per-dit view and its test of
 time-base invariance, paired comparisons of a variant with a reference, and detection recall through the detector
-path. Figures: kz4ap_proto.figures. Command line: kz4ap_proto.experiments devset2 / figures.
+path. Signals above a Farnsworth factor can be left out of all of these for every decoder alike (farnsworth_cut, the
+I2 cut of docs/plans/2026-10-20-new-decoder-prototype-1.md, O7), and so can whole groups (leave_out: the new decoder has
+no Farnsworth spacing, D14, so all of I2 is reported apart from the comparison with the bank), each listed apart.
+Figures: kz4ap_proto.figures (they draw the rows the analysis used: analysis_rows). Command line:
+kz4ap_proto.experiments devset2 / figures.
 
 Quantities and units:
 - S500: key-down carrier power over the noise power in 500 Hz, dB SNR in 500 Hz (the labels' snr_db).
 - E/N0 per dit: key-down energy in one dit, E = P * T with T = 1.2 s / WPM, over the one-sided noise power spectral
   density N0; E/N0 = S500 + 10 log10(500 Hz * T), in dB relative to 1 (derived; stage-1 results record section 5.1.1).
 - CER: edits over the reference's symbols (characters, spaces counted), per signal; a ratio.
+- Overall speed (WPM) and Farnsworth factor: with Farnsworth spacing the elements keep the character speed (the
+  label's wpm, WPM) and the gaps between characters and words are stretched to the overall speed; the factor is the
+  gap timebase T_g (s) over the dit T = 1.2 s / WPM (s), a ratio (farnsworth_of). Standard spacing: the speed, 1.
 
 The model (the plan's, principle 6; this module's choices are marked derived, measured or heuristic):
 
@@ -50,6 +57,7 @@ from pathlib import Path
 import numpy as np
 
 from kz4ap_synth.jitter import SNR_CELLS, SPEED_CELLS
+from kz4ap_synth.keying import farnsworth_gap_s
 from kz4ap_synth.suites import BOOTSTRAP_RESAMPLES, _interval, _rng_for, _scorings, load_results, oracle_copies
 
 V_REF_WPM = math.sqrt(SPEED_CELLS.edges[0] * SPEED_CELLS.edges[-1])  # 25.30 WPM
@@ -104,6 +112,22 @@ CHI2_2DOF_95 = -2.0 * math.log(0.05)  # 5.991: chi-square with 2 degrees of free
 def en0_db(s500_db, wpm):
     """E/N0 per dit, dB re 1: S500 + 10 log10(500 Hz * 1.2 s / WPM) (derived)."""
     return np.asarray(s500_db, float) + 10.0 * np.log10(SNR_BANDWIDTH_HZ * DIT_S_WPM / np.asarray(wpm, float))
+
+
+def farnsworth_of(label: dict) -> tuple[float, float]:
+    """A label's overall speed (WPM) and Farnsworth factor (dimensionless).
+
+    The factor is the gap timebase over the dit, T_g / T: the generator spaces characters and words on
+    T_g = keying.farnsworth_gap_s(c, s) = (60 / s - 37.2 / c) / 19 s (ARRL), for the character speed c = the label's
+    wpm and the overall speed s = its farnsworth_wpm, while the elements stay at the dit T = 1.2 s / c (derived; the
+    generator's own function, so that the two cannot differ). A label without farnsworth_wpm (the generator writes it
+    only for Farnsworth signals) is sent with standard spacing: its overall speed is its speed and its factor 1.
+    Defined for a label of constant speed, as every Farnsworth signal of DEV2 is."""
+    wpm = float(label["wpm"])
+    overall = label.get("farnsworth_wpm")
+    if overall is None:
+        return wpm, 1.0
+    return float(overall), farnsworth_gap_s(wpm, float(overall)) / (DIT_S_WPM / wpm)
 
 
 def s500_from_en0_db(en0, wpm):
@@ -529,8 +553,9 @@ def load_rows(out_dir, decoders, results_dirs=None, only: str | None = DEV2_ANAL
     speed (the label's wpm, WPM; I2's is the character speed), speed cell (SPEED_CELLS.cell_of), S500 (the label's
     snr_db, dB SNR in 500 Hz), S500 cell, E/N0 per dit (dB re 1), edits and reference symbols, whether the detector
     path found it, and whether its sound leaves the oracle anchor's +/-12 Hz; the first words' edits and symbols
-    (the first word of each transmission, the bench's first_word counts); and the corrections the bank made on the
-    signal's channel (None where there is no bank decoded file, _corrections_count)."""
+    (the first word of each transmission, the bench's first_word counts); the corrections the bank made on the
+    signal's channel (None where there is no bank decoded file, _corrections_count); and the signal's overall speed
+    (WPM) and Farnsworth factor, from its label (farnsworth_of)."""
     out_dir = Path(out_dir)
     rows, _ = load_results(out_dir, results_dirs or default_results_dirs(out_dir), list(decoders))
     files = _label_files(out_dir)
@@ -545,6 +570,7 @@ def load_rows(out_dir, decoders, results_dirs=None, only: str | None = DEV2_ANAL
             cache[label_file] = json.loads((out_dir / label_file).read_text())["signals"]
         label = cache[label_file][r["index"]]
         wpm, s500 = float(label["wpm"]), float(label["snr_db"])
+        overall_wpm, factor = farnsworth_of(label)
         out.append({"decoder": r["front_end"], "group": r["group"], "test_case": r["recording"], "index": r["index"],
                     "path": "detector" if detector else "oracle", "speed_wpm": wpm,
                     "speed_cell": SPEED_CELLS.cell_of(wpm), "s500_db": s500, "s500_cell": SNR_CELLS.cell_of(s500),
@@ -552,7 +578,8 @@ def load_rows(out_dir, decoders, results_dirs=None, only: str | None = DEV2_ANAL
                     "detected": bool(r["detected"]), "beyond_oracle_anchor": bool(r["beyond_oracle_anchor"]),
                     "first_word_edits": int(r["first_word_edits"]), "first_word_symbols": int(r["first_word_symbols"]),
                     "corrections": (_corrections_count(out_dir, r["front_end"], r["recording"], r["index"], decoded)
-                                    if not detector else None)})
+                                    if not detector else None),
+                    "farnsworth_wpm": overall_wpm, "farnsworth_factor": factor})
     return out
 
 
@@ -570,13 +597,18 @@ def load_rows(out_dir, decoders, results_dirs=None, only: str | None = DEV2_ANAL
 
 SCORE_COLUMNS = ("decoder", "group", "test_case", "index", "path", "speed_wpm", "speed_cell", "s500_db", "s500_cell",
                  "en0_db", "edits", "symbols", "detected", "beyond_oracle_anchor")
-# Optional columns (task D5, 2026-10-07), written after SCORE_COLUMNS when the rows have them: the first words' edits
-# and symbols (the first word of each transmission) and the bank's corrections on the signal's channel (empty for
-# another decoder). Tables written before them (task "scores", 2160428) have none, and read as rows without them.
-OPTIONAL_SCORE_COLUMNS = ("first_word_edits", "first_word_symbols", "corrections")
+# Optional columns, written after SCORE_COLUMNS in this order when the rows have them. Task D5 (2026-10-07): the first
+# words' edits and symbols (the first word of each transmission) and the bank's corrections on the signal's channel
+# (empty for another decoder). Task 8 of the new decoder's plan (2026-10-20, O7): the signal's overall speed (WPM) and
+# Farnsworth factor (T_g / T, a ratio; 1 for standard spacing; farnsworth_of), both from its label and rounded to 0.01,
+# for the I2 cut (farnsworth_cut). Tables written before a column (task "scores", 2160428; task D5) have none of it,
+# and read as rows without it.
+FARNSWORTH_SCORE_COLUMNS = ("farnsworth_wpm", "farnsworth_factor")
+OPTIONAL_SCORE_COLUMNS = ("first_word_edits", "first_word_symbols", "corrections") + FARNSWORTH_SCORE_COLUMNS
 _SCORE_INTS = ("index", "edits", "symbols")
 _SCORE_CELLS = ("speed_cell", "s500_cell")
 _SCORE_BOOLS = ("detected", "beyond_oracle_anchor")
+_SCORE_HUNDREDTHS = ("speed_wpm", "s500_db", "en0_db") + FARNSWORTH_SCORE_COLUMNS   # written with two decimals
 EN0_COLUMN_TOLERANCE_DB = 0.005 + 1e-9   # the en0_db column is the recomputed value at 0.01 dB re 1
 
 
@@ -587,7 +619,8 @@ def _hundredths(x) -> float:
 
 def round_row(r: dict) -> dict:
     """The row as the score table holds it: speed (WPM) and S500 (dB SNR in 500 Hz) rounded to 0.01, E/N0 per dit
-    recomputed from them (dB re 1, not rounded), integers and booleans as they are."""
+    recomputed from them (dB re 1, not rounded), integers and booleans as they are, and the optional columns the row
+    has: counts as integers, the overall speed (WPM) and Farnsworth factor rounded to 0.01, an empty one as None."""
     wpm, s500 = _hundredths(r["speed_wpm"]), _hundredths(r["s500_db"])
     out = {"decoder": r["decoder"], "group": r["group"], "test_case": r["test_case"], "index": int(r["index"]),
            "path": r["path"], "speed_wpm": wpm, "speed_cell": r["speed_cell"], "s500_db": s500,
@@ -596,7 +629,8 @@ def round_row(r: dict) -> dict:
            "beyond_oracle_anchor": bool(r["beyond_oracle_anchor"])}
     for c in OPTIONAL_SCORE_COLUMNS:
         if c in r:
-            out[c] = None if r[c] is None or r[c] == "" else int(r[c])
+            blank = r[c] is None or r[c] == ""
+            out[c] = None if blank else _hundredths(r[c]) if c in FARNSWORTH_SCORE_COLUMNS else int(r[c])
     return out
 
 
@@ -612,9 +646,17 @@ def write_scores(rows, path) -> Path:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(columns)
         for r in rows:
-            w.writerow([f"{r[c]:.2f}" if c in ("speed_wpm", "s500_db", "en0_db")
-                        else "" if r[c] is None else int(r[c]) if c in _SCORE_BOOLS else r[c] for c in columns])
+            w.writerow([_score_field(c, r[c]) for c in columns])
     return path
+
+
+def _score_field(column: str, value):
+    """One field of a score table: two decimals for the rounded quantities, 0/1 for a boolean, empty for None."""
+    if value is None:
+        return ""
+    if column in _SCORE_HUNDREDTHS:
+        return f"{value:.2f}"
+    return int(value) if column in _SCORE_BOOLS else value
 
 
 def read_scores(paths, decoders=None, only: str | None = None) -> list[dict]:
@@ -917,6 +959,83 @@ def _set_order(name: str) -> int:
     return -1 if name == "all" else 99 if name == "None" else int(name)
 
 
+# --- the I2 cut (plan O7; design spec section 5.2, step 3) ---
+
+def farnsworth_cut(rows, max_factor: float) -> tuple[list, list]:
+    """(kept, left_out): the rows whose signal has a Farnsworth factor (a ratio) at most max_factor, and those whose
+    factor is above it. The factor is taken as the score tables hold it, rounded to 0.01, so rows from the labels and
+    rows read from a table are cut alike; 8.00 is not above 8.
+
+    The cut is a property of the signal (its test case and index), not of a decoder's row: it leaves out the same
+    signals for every decoder, whichever decoders are compared. A signal whose rows give different factors in two runs
+    (tables made from different labels) is an error, because the two sides would then not be cut alike, and so is a
+    row without a factor (a score table written before the columns): neither is cut silently on some of the rows."""
+    factor_of: dict = {}
+    for r in rows:
+        key = (r["test_case"], r["index"])
+        if r.get("farnsworth_factor") is None:
+            raise ValueError(f"{key[0]} signal {key[1]} has no Farnsworth factor: its rows come from a score table "
+                             "written before the columns farnsworth_wpm and farnsworth_factor; re-export the table "
+                             "with them")
+        factor = _hundredths(r["farnsworth_factor"])
+        if factor_of.setdefault(key, factor) != factor:
+            raise ValueError(f"the Farnsworth factor of {key[0]} signal {key[1]} differs between rows "
+                             f"({factor_of[key]:.2f} and {factor:.2f}): the runs' rows come from different labels")
+    kept = [r for r in rows if factor_of[(r["test_case"], r["index"])] <= max_factor]
+    left_out = [r for r in rows if factor_of[(r["test_case"], r["index"])] > max_factor]
+    return kept, left_out
+
+
+def leave_out(rows, max_factor: float | None = None, groups=()) -> tuple[list, list]:
+    """(kept, left_out): the rows without the whole `groups` named (their rows are all left out) and, if max_factor is
+    given, without the signals above that Farnsworth factor (farnsworth_cut) of the other groups. The decoder has no
+    Farnsworth spacing (the plan's D14), so the groups of Farnsworth-spaced signals are reported apart from the
+    comparison with the bank, as a whole group, not by the factor. A group that no row belongs to is a mistake, not
+    nothing: ValueError."""
+    groups = list(dict.fromkeys(groups))
+    missing = [g for g in groups if not any(r["group"] == g for r in rows)]
+    if missing:
+        raise ValueError(f"group(s) {missing} have no signals among the rows (groups: "
+                         f"{sorted({r['group'] for r in rows})})")
+    whole = [r for r in rows if r["group"] in groups]
+    rest = [r for r in rows if r["group"] not in groups]
+    if max_factor is None:
+        return rest, whole
+    kept, cut = farnsworth_cut(rest, max_factor)
+    return kept, whole + cut
+
+
+def analysis_rows(a: dict) -> list[dict]:
+    """The rows that the analysis `a` (analyze's result, or its file) used: its signals without the groups and the
+    Farnsworth cut that it left out. The figures draw these, so that they show the signals the fits used."""
+    meta = a["meta"]
+    kept, _left = leave_out(a["signals"], meta.get("max_farnsworth"), meta.get("leave_out_groups") or ())
+    return kept
+
+
+def left_out_summary(left_out, decoders, max_factor: float | None, groups=()) -> dict:
+    """The signals left out (by the cut, and/or whole `groups`), listed apart (the design spec: left out "on both
+    sides and listed separately"): per decoder their number, reference symbols, edits and pooled CER; and one entry per
+    signal, by test case and index, with its speed (WPM), overall speed (WPM), Farnsworth factor (None for a score table
+    written before those columns) and each decoder's CER on it."""
+    signals: dict = {}
+    for r in left_out:
+        s = signals.setdefault((r["test_case"], r["index"]), {
+            "group": r["group"], "test_case": r["test_case"], "index": r["index"], "speed_wpm": r["speed_wpm"],
+            "farnsworth_wpm": r.get("farnsworth_wpm"), "farnsworth_factor": r.get("farnsworth_factor"), "cer": {}})
+        if r["decoder"] in decoders and r["symbols"] > 0:
+            s["cer"][r["decoder"]] = r["edits"] / r["symbols"]
+    per_decoder = {}
+    for d in decoders:
+        mine = [r for r in left_out if r["decoder"] == d]
+        symbols, edits = sum(r["symbols"] for r in mine), sum(r["edits"] for r in mine)
+        per_decoder[d] = {"signals": len(mine), "symbols": symbols, "edits": edits,
+                          "cer": edits / symbols if symbols else None}
+    return {"max_farnsworth": max_factor, "left_out_groups": list(dict.fromkeys(groups)), "signals": len(signals),
+            "groups": sorted({s["group"] for s in signals.values()}), "decoders": per_decoder,
+            "list": [signals[k] for k in sorted(signals)]}
+
+
 # --- the whole analysis ---
 
 def git_commit(repo: Path | None = None) -> dict:
@@ -932,18 +1051,30 @@ def git_commit(repo: Path | None = None) -> dict:
 
 
 def analyze(rows, decoders, reference: str | None = None, fit_groups=FIT_GROUPS, method: str = FIT_METHOD,
-            resamples: int = BOOTSTRAP_RESAMPLES, detector_groups=DETECTOR_GROUPS, meta: dict | None = None) -> dict:
+            resamples: int = BOOTSTRAP_RESAMPLES, detector_groups=DETECTOR_GROUPS, meta: dict | None = None,
+            max_farnsworth: float | None = None, leave_out_groups=()) -> dict:
     """The analysis as one JSON-ready dict: per decoder its fits (oracle rows of fit_groups), binned CER and detection
-    recall (rows of detector_groups); paired comparisons of every other decoder with `reference`; the signals."""
+    recall (rows of detector_groups); paired comparisons of every other decoder with `reference`; the signals.
+
+    max_farnsworth: leave out the signals whose Farnsworth factor is above it (farnsworth_cut) from every fit,
+    recall and comparison, for every decoder alike, and list them apart ("left_out"). leave_out_groups: the same for
+    whole groups (leave_out): the decoder has no Farnsworth spacing (the plan's D14), so all of I2 is reported apart
+    from the comparison with the bank. The "signals" keep every row: the score tables export all of a run's signals,
+    left out or not."""
     result = {"meta": {**(meta or {}), "decoders": list(decoders), "reference": reference, "fit_groups": list(fit_groups),
                        "method": method, "resamples": resamples, "cer_levels": list(CER_LEVELS),
+                       "max_farnsworth": max_farnsworth, "leave_out_groups": list(dict.fromkeys(leave_out_groups)),
                        "speed_cells": [{"cell": k, "range_wpm": list(SPEED_CELLS.bounds(k)),
                                         "center_wpm": SPEED_CELLS.center(k)} for k in SPEED_CELLS.numbers],
                        "s500_cells": [{"cell": k, "range_db": list(SNR_CELLS.bounds(k))} for k in SNR_CELLS.numbers],
                        **git_commit()},
               "decoders": {}, "paired": [], "signals": rows}
+    used = rows   # the rows every fit and comparison below uses
+    if max_farnsworth is not None or leave_out_groups:
+        used, left_out = leave_out(rows, max_farnsworth, leave_out_groups)
+        result["left_out"] = left_out_summary(left_out, list(decoders), max_farnsworth, leave_out_groups)
     for name in decoders:
-        mine = [r for r in rows if r["decoder"] == name]
+        mine = [r for r in used if r["decoder"] == name]
         fit_rows = [r for r in mine if r["path"] == "oracle" and r["group"] in fit_groups and r["symbols"] > 0]
         entry = {"fit_signals": len(fit_rows), "binned_cer": binned_cer(fit_rows),
                  "recall": detection_recall([r for r in mine if r["path"] == "detector" and r["group"] in detector_groups])}
@@ -953,8 +1084,8 @@ def analyze(rows, decoders, reference: str | None = None, fit_groups=FIT_GROUPS,
             entry["fit"] = None
         result["decoders"][name] = entry
     if reference is not None:
-        result["paired"] = [paired(rows, reference, v) for v in decoders if v != reference]
-    fw = first_words(rows, decoders, reference)
+        result["paired"] = [paired(used, reference, v) for v in decoders if v != reference]
+    fw = first_words(used, decoders, reference)
     if fw is not None:
         result["first_words"] = fw
     return result
@@ -1016,6 +1147,14 @@ def report_markdown(a: dict) -> str:
              "No crossing: the cell's floor is at or above the threshold, or the crossing lies above the cell's "
              "highest level (not within the data).",
              ""]
+    if m.get("max_farnsworth") is not None:
+        lines += [f"Signals with a Farnsworth factor above {m['max_farnsworth']:g} are left out of every fit and "
+                  "comparison below, for every decoder alike, and listed in the last section.", ""]
+    if m.get("leave_out_groups"):
+        names = ", ".join(m["leave_out_groups"])
+        lines += [f"The group{'s' if len(m['leave_out_groups']) > 1 else ''} {names} "
+                  f"{'are' if len(m['leave_out_groups']) > 1 else 'is'} left out of every fit and comparison below, "
+                  "for every decoder alike, and listed in the last section.", ""]
     for name, entry in a["decoders"].items():
         lines += [f"## {name}", ""]
         fit = entry["fit"]
@@ -1120,7 +1259,38 @@ def report_markdown(a: dict) -> str:
                              f"{_fmt(s['mean'], s['interval'], '+.4f')} | "
                              f"{_fmt(s['mean'], s['interval_test_cases'], '+.4f')} |")
             lines.append("")
+    lines += _left_out_markdown(a.get("left_out"))
     return "\n".join(lines) + "\n"
+
+
+def _left_out_markdown(left_out: dict | None) -> list[str]:
+    """The section listing the signals that were left out: the Farnsworth cut's, and the whole groups' (empty when
+    nothing was left out)."""
+    if not left_out:
+        return []
+    limit = None if left_out["max_farnsworth"] is None else f"{left_out['max_farnsworth']:g}"
+    whole = left_out.get("left_out_groups", [])
+    decoders = list(left_out["decoders"])
+    groups = ", ".join(left_out["groups"]) or "none"
+    reasons = ([f"Farnsworth factor above {limit}"] if limit else []) + (
+        [f"group{'s' if len(whole) > 1 else ''} {', '.join(whole)}"] if whole else [])
+    why = ([f"signals with a Farnsworth factor above {limit} (the gap timebase over the dit, T_g / T, a ratio, 1 for "
+            "standard spacing; design spec section 5.2, step 3)"] if limit else []) + (
+        [f"all the signals of the group{'s' if len(whole) > 1 else ''} {', '.join(whole)}"] if whole else [])
+    lines = [f"## Left out: {'; '.join(reasons)}", "",
+             f"{left_out['signals']} signals ({groups}) are left out, {' and '.join(why)}. They are left out of every "
+             "fit and comparison above, for every decoder alike, and listed here. CER: edits over reference symbols "
+             "(characters, spaces counted).", "",
+             "| decoder | signals | reference symbols | edits | CER |", "|---|---|---|---|---|"]
+    for d, x in left_out["decoders"].items():
+        lines.append(f"| {d} | {x['signals']} | {x['symbols']} | {x['edits']} | {_fmt(x['cer'], None, '.4f')} |")
+    lines += ["", "| test case | index | character speed (WPM) | overall speed (WPM) | Farnsworth factor | "
+              + " | ".join(f"CER {d}" for d in decoders) + " |", "|---|---|---|---|---|" + "---|" * len(decoders)]
+    for s in left_out["list"]:
+        lines.append(f"| {s['test_case']} | {s['index']} | {_fmt(s['speed_wpm'], None, '.2f')} | "
+                     f"{_fmt(s['farnsworth_wpm'], None, '.2f')} | {_fmt(s['farnsworth_factor'], None, '.2f')} | "
+                     + " | ".join(_fmt(s["cer"].get(d), None, ".4f") for d in decoders) + " |")
+    return lines + [""]
 
 
 def _relative(path: Path, root: Path) -> str:
@@ -1133,9 +1303,11 @@ def _relative(path: Path, root: Path) -> str:
 
 def write_analysis(out_dir, decoders, name: str, reference: str | None = None, results_dirs=None,
                    only: str | None = DEV2_ANALYSIS, fit_groups=FIT_GROUPS, method: str = FIT_METHOD,
-                   resamples: int = BOOTSTRAP_RESAMPLES, scores=None) -> Path:
+                   resamples: int = BOOTSTRAP_RESAMPLES, scores=None, max_farnsworth: float | None = None,
+                   leave_out_groups=()) -> Path:
     """Loads the rows, analyzes them and writes experiments/devset2-<name>.json (everything, the figures' input) and
-    .md (the summary). Returns the JSON's path.
+    .md (the summary). Returns the JSON's path. max_farnsworth: the I2 cut; leave_out_groups: whole groups left out
+    (analyze).
 
     The rows come from the suite folder out_dir (its manifest, labels and scored files), or, when `scores` names
     score tables (write_scores), from those tables alone: out_dir is then only where experiments/ is written, and
@@ -1152,7 +1324,8 @@ def write_analysis(out_dir, decoders, name: str, reference: str | None = None, r
         # paths relative to the suite folder: the summary and the captions are committed beside the results record
         # and must not name a machine's folders
         meta = {"name": name, "results_dirs": [_relative(d, out_dir) for d in dirs], "only": only}
-    a = analyze(rows, decoders, reference, fit_groups, method, resamples, meta=meta)
+    a = analyze(rows, decoders, reference, fit_groups, method, resamples, meta=meta, max_farnsworth=max_farnsworth,
+                leave_out_groups=leave_out_groups)
     path = out_dir / "experiments" / f"devset2-{name}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(a) + "\n", encoding="utf-8")

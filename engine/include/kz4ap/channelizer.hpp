@@ -14,11 +14,17 @@ struct ChannelizerConfig {
     int sample_rate = 192000;
     int fft_size = 8192;       // input FFT size; the hop is fft_size / 2
     int channel_bins = 64;     // bins kept per channel; output rate = sample_rate * channel_bins / fft_size
-    // Channel low-pass cutoff (-6 dB point). Must be > 0, and cutoff_hz plus half the
+    // Channel low-pass cutoff (-6 dB relative to the passband), Hz. Must be > 0, and cutoff_hz plus half the
     // filter's transition width (about 5.5 * sample_rate / (fft_size / 2 + 1) Hz) must
     // not exceed output rate / 2: at most about 621 Hz with the other defaults.
     double cutoff_hz = 150.0;
 };
+
+// The taps of the channel low-pass filter, those the Channelizer builds its filter from, before their rounding to
+// float: a Blackman-windowed sinc of fft_size / 2 + 1 taps with its point 6 dB below the passband at cutoff_hz,
+// normalized to a sum of 1 (unit gain at 0 Hz). Throws std::invalid_argument for the configurations the Channelizer
+// refuses.
+std::vector<double> channel_filter_taps(const ChannelizerConfig& config);
 
 // Splits a wideband I/Q stream into narrow, decimated baseband streams, one per
 // channel, by fast convolution: one shared FFT per block, then a small inverse
@@ -37,6 +43,18 @@ public:
 
     void add_channel(std::uint32_t id, int center_bin);
     void remove_channel(std::uint32_t id);
+    // Moves a channel: its output from its next block on is cut at center_bin (a signed bin, as add_channel's); the
+    // blocks already delivered are unchanged. Called from inside the sink it also takes effect from the channel's next
+    // block: moves are applied when a block starts, before any channel is cut. Throws std::invalid_argument for an id
+    // that is not a channel.
+    // The phase: channel sample j (absolute index, input sample n = j x decimation) is
+    //     y_c[j] = sum_l h[l] x[n - l] exp(-j 2 pi c (n - l) / fft_size),
+    // the input demodulated at center c from the stream's start, then filtered (derived from process_block: the inverse
+    // FFT mixes relative to the block's start, re-referenced to the stream's start). For a station narrow against the
+    // filter's passband this is the input as of n - D demodulated by exp(-j 2 pi c (n - D) / fft_size), D = (taps - 1) / 2
+    // = fft_size / 4 input samples, the filter's group delay (1 / (4 x bin width) s: 10.667 ms). So at a move from c1 to
+    // c2 the station's phase in the channel steps by 2 pi (c1 - c2) (n - D) / fft_size; ChannelFollower compensates it.
+    void set_center_bin(std::uint32_t id, int center_bin);
     std::size_t channel_count() const { return channels_.size(); }
 
     // Consumes samples; calls sink once per channel for every block they complete.
@@ -56,6 +74,7 @@ private:
     std::vector<Sample> channel_out_;
     std::uint64_t block_index_ = 0;
     std::map<std::uint32_t, int> channels_;  // id -> center bin; ordered for deterministic sink order
+    std::map<std::uint32_t, int> moves_;     // id -> center bin from the next block on (set_center_bin)
 };
 
 }  // namespace kz4ap

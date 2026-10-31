@@ -6,25 +6,26 @@
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
+#include <string>
 
 namespace kz4ap {
 
-Channelizer::Channelizer(const ChannelizerConfig& config) : config_(config) {
+std::vector<double> channel_filter_taps(const ChannelizerConfig& config) {
     const int n = config.fft_size;
     const int m = config.channel_bins;
     if (n <= 0 || n % 2 != 0 || m <= 0 || m % 2 != 0 || n % m != 0 || config.sample_rate <= 0)
         throw std::invalid_argument("invalid channelizer parameters");
-    hop_ = n / 2;
-    decimation_ = n / m;
+    const int hop = n / 2;
+    const int decimation = n / m;
     // Windowed-sinc low-pass, as long as overlap-save allows (fft_size - hop + 1 taps).
-    const int taps = n - hop_ + 1;
+    const int taps = n - hop + 1;
 
     // The channel keeps only the channel_bins bins around its center, i.e. frequencies
     // within half the output rate. The filter's whole transition band must fit inside
-    // that, or part of the response is cut off (the cutoff is the -6 dB point, not the
-    // stopband edge). A Blackman window's transition width is about 5.5 / (filter length
-    // in seconds): 258 Hz for 4097 taps at 192 kHz.
-    const double half_output_rate = static_cast<double>(config.sample_rate) / decimation_ / 2;
+    // that, or part of the response is cut off (the cutoff is -6 dB relative to the
+    // passband, not the stopband edge). A Blackman window's transition width is about
+    // 5.5 / (filter length in seconds): 258 Hz for 4097 taps at 192 kHz.
+    const double half_output_rate = static_cast<double>(config.sample_rate) / decimation / 2;
     const double transition_hz = 5.5 * config.sample_rate / taps;
     if (!std::isfinite(config.cutoff_hz) || config.cutoff_hz <= 0 ||
         config.cutoff_hz + transition_hz / 2 > half_output_rate)
@@ -43,8 +44,18 @@ Channelizer::Channelizer(const ChannelizerConfig& config) : config_(config) {
         h[i] = sinc * w;
         sum += h[i];
     }
+    for (double& tap : h) tap /= sum;
+    return h;
+}
+
+Channelizer::Channelizer(const ChannelizerConfig& config) : config_(config) {
+    const std::vector<double> h = channel_filter_taps(config);  // checks the configuration
+    const int n = config.fft_size;
+    const int m = config.channel_bins;
+    hop_ = n / 2;
+    decimation_ = n / m;
     std::vector<Sample> padded(static_cast<std::size_t>(n));
-    for (int i = 0; i < taps; ++i) padded[i] = Sample(static_cast<float>(h[i] / sum), 0.0f);
+    for (std::size_t i = 0; i < h.size(); ++i) padded[i] = Sample(static_cast<float>(h[i]), 0.0f);
     std::vector<Sample> response(static_cast<std::size_t>(n));
     detail::fft_forward(padded.data(), response.data(), static_cast<std::size_t>(n));
     filter_.resize(static_cast<std::size_t>(m));
@@ -70,9 +81,21 @@ double Channelizer::bin_to_hz(int bin) const {
     return static_cast<double>(bin) * config_.sample_rate / config_.fft_size;
 }
 
-void Channelizer::add_channel(std::uint32_t id, int center_bin) { channels_[id] = center_bin; }
+void Channelizer::add_channel(std::uint32_t id, int center_bin) {
+    channels_[id] = center_bin;
+    moves_.erase(id);
+}
 
-void Channelizer::remove_channel(std::uint32_t id) { channels_.erase(id); }
+void Channelizer::remove_channel(std::uint32_t id) {
+    channels_.erase(id);
+    moves_.erase(id);
+}
+
+void Channelizer::set_center_bin(std::uint32_t id, int center_bin) {
+    if (channels_.find(id) == channels_.end())
+        throw std::invalid_argument("Channelizer::set_center_bin: no channel " + std::to_string(id));
+    moves_[id] = center_bin;  // applied when the next block starts, so that a sink's call never changes the current one
+}
 
 void Channelizer::push(std::span<const Sample> in, const Sink& sink) {
     for (const Sample& s : in) {
@@ -94,6 +117,10 @@ void Channelizer::process_block(const Sink& sink) {
     const std::int64_t block_start = static_cast<std::int64_t>(block_index_) * hop_ - (n - hop_);
     const int keep = hop_ / decimation_;
     const std::uint64_t first_index = block_index_ * static_cast<std::uint64_t>(keep);
+
+    // The moves asked for since the last block (set_center_bin) take effect now, before any channel is cut.
+    for (const auto& [id, center] : moves_) channels_.at(id) = center;
+    moves_.clear();
 
     for (const auto& [id, center] : channels_) {
         for (int k = -m / 2; k < m / 2; ++k) {

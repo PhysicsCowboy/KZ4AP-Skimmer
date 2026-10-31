@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import wave
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -21,7 +22,20 @@ from .morse import keying_intervals
 
 SNR_BANDWIDTH_HZ = 500.0
 DEFAULT_NOISE_SIGMA = 0.02
+# Keying edges: raised cosines of full length edge_s, placed by edge_placement (docs/signal-processing.md, A.11).
+# RISE_S is milestone 1's edge (5 ms, placed "inside" each mark); the defaults of SignalSpec and keying_envelope stay
+# milestone 1's because its scenarios and suites are frozen evidence (plan 1b, Ruling 70). D17's edges (D17_EDGES)
+# are for DEV2 (DEV2e) and every new suite, set explicitly by their builders.
 RISE_S = 0.005
+# The 10-90% rise of a raised cosine of full length E: 0.5 - 0.5 cos(pi x) = 0.1 and 0.9 at x = acos(0.8)/pi and
+# 1 - acos(0.8)/pi, so the 10-90% rise is E (pi - 2 acos(0.8)) / pi = 0.590334 E (derived).
+RAISED_COSINE_10_90 = (math.pi - 2 * math.acos(0.8)) / math.pi
+EDGE_RISE_10_90_S = 0.0025  # D17's edges: 10-90% rise (owner, 2026-10-23), s
+EDGE_S = EDGE_RISE_10_90_S / RAISED_COSINE_10_90  # their full length, 4.2349 ms (derived)
+# D17's edges (owner, 2026-10-23): the rise starts at key-down and the fall at key-up, so a mark keeps its keyed length
+# at half amplitude. For SignalSpec(..., **D17_EDGES).
+D17_EDGES = {"edge_s": EDGE_S, "edge_placement": "start"}
+EDGE_PLACEMENTS = ("start", "centered", "inside")
 TUNE_GAP_S = 0.5  # silence between a tune-up carrier and the first element, s
 
 CALL_PREFIXES = ["K", "W", "N", "AA", "KB", "DL", "G", "F", "JA", "VE",
@@ -55,8 +69,10 @@ class SignalSpec:
     wpm_end: float | None = None     # speed at the end of each sending; None = constant
     speed_profile: str = "step"      # "step" (at the middle word) or "ramp" (linear per word)
     imbalance_dits: float = 0.0      # marks longer and spaces shorter by this, dits
-    edge_s: float = RISE_S           # raised-cosine rise and fall time, s
-    edges_centered: bool = False     # False: edges inside each mark (milestone 1); True: centered on its ends
+    edge_s: float = RISE_S           # raised-cosine edge, full length (not the 10-90% time), s
+    # where each edge lies: "start" (D17: the rise starts at key-down, the fall at key-up), "centered" (VE3NEA's: each
+    # edge centered on the element's end) or "inside" (milestone 1: inside the mark, edge_s short at half amplitude)
+    edge_placement: str = "inside"
     fading_hz: float = 0.0           # Rayleigh fading frequency spread f_D (2 sigma), Hz; 0 = none
     fading_shape: str = "gaussian"   # Doppler spectrum: "gaussian" or "butterworth" (VE3NEA's)
     score: bool = True               # False: an interferer, left out of the score
@@ -83,17 +99,71 @@ def amplitude_for_snr(snr_db: float, sample_rate: int) -> float:
     return float(np.sqrt(10 ** (snr_db / 10) * noise_in_band))
 
 
+def edge_reach_s(placement: str, edge_s: float) -> tuple[float, float]:
+    """How far a signal's edges reach before its first key-down and after its last key-up, s: none for "inside"
+    (milestone 1), edge_s / 2 each way for "centered", and edge_s after only for "start" (the fall begins at key-up)."""
+    if placement == "inside":
+        return 0.0, 0.0
+    if placement == "centered":
+        return edge_s / 2, edge_s / 2
+    if placement == "start":
+        return 0.0, edge_s
+    raise ValueError(f"unknown edge placement {placement!r}: expected one of {EDGE_PLACEMENTS}")
+
+
+def _raised_cosine(x: np.ndarray) -> np.ndarray:
+    """c(x) = 1/2 - 1/2 cos(pi clip(x, 0, 1)): 0 for x <= 0, 1 for x >= 1, non-decreasing."""
+    return 0.5 - 0.5 * np.cos(np.pi * np.clip(x, 0.0, 1.0))
+
+
+def _start_edge_envelope(intervals, offset_s: float, n: int, sample_rate: int, edge_s: float) -> np.ndarray:
+    """D17's "start" edges: env(t) = sum over marks of c(t - on) (1 - c(t - off)), with c(x) = _raised_cosine(x / E),
+    E = edge_s, evaluated at the sample times t = i / sample_rate (marks shifted by offset_s). A mark covers
+    [on, off + E]. A mark at least E long is its rise, a flat 1 and its fall; a shorter mark follows the product; a gap
+    shorter than E sums a fall and the next rise, which stays at or below 1 because c is non-decreasing."""
+    env = np.zeros(n)
+
+    def add(i0: int, i1: int, on: float, off: float) -> None:
+        i0, i1 = max(0, i0), min(n, i1)
+        if i1 > i0:
+            t = np.arange(i0, i1) / sample_rate
+            env[i0:i1] += _raised_cosine((t - on) / edge_s) * (1.0 - _raised_cosine((t - off) / edge_s))
+
+    for on, off in intervals:
+        on, off = offset_s + on, offset_s + off
+        first = int(math.floor(on * sample_rate))
+        last = int(math.ceil((off + edge_s) * sample_rate)) + 1
+        if off - on < edge_s:
+            add(first, last, on, off)
+            continue
+        rise_end = int(math.ceil((on + edge_s) * sample_rate))  # from here to the key-up the envelope is exactly 1
+        fall = int(math.floor(off * sample_rate))
+        add(first, rise_end, on, off)
+        if fall > rise_end:
+            env[max(0, rise_end):max(0, min(n, fall))] += 1.0
+        add(max(fall, rise_end), last, on, off)
+    return env
+
+
 def keying_envelope(intervals, offset_s: float, n: int, sample_rate: int, rise_s: float = RISE_S,
-                    centered: bool = False) -> np.ndarray:
-    """0..1 envelope with raised-cosine edges rise_s long; intervals are shifted by offset_s.
-    By default (milestone 1) each edge lies inside its interval, so a mark is rise_s shorter,
-    and a space rise_s longer, at 50% amplitude than the interval says. centered: each edge
-    is centered on the interval's end, so the 50%-amplitude duration is the interval's
-    (VE3NEA's convention)."""
+                    centered: bool = False, placement: str | None = None) -> np.ndarray:
+    """0..1 envelope with raised-cosine edges rise_s long (the full length of the cosine, not its 10-90% time);
+    intervals are shifted by offset_s. The defaults are milestone 1's. placement, when given, overrides centered:
+    "inside" (milestone 1): each edge lies inside its interval, so a mark is rise_s shorter, and a space rise_s longer,
+    at 50% amplitude than the interval says; "centered" (VE3NEA's convention): each edge is centered on the
+    interval's end, so the 50%-amplitude duration is the interval's; "start" (D17): the rise starts at key-down and
+    the fall at key-up, so the 50%-amplitude duration is the interval's too and the mark reaches rise_s past its
+    key-up."""
+    if placement is None:
+        placement = "centered" if centered else "inside"
+    if placement == "start":
+        return _start_edge_envelope(intervals, offset_s, n, sample_rate, rise_s)
+    if placement not in EDGE_PLACEMENTS:
+        raise ValueError(f"unknown edge placement {placement!r}: expected one of {EDGE_PLACEMENTS}")
     env = np.zeros(n)
     ramp_len = max(1, int(round(rise_s * sample_rate)))
     ramp = 0.5 - 0.5 * np.cos(np.pi * (np.arange(ramp_len) + 0.5) / ramp_len)
-    shift = rise_s / 2 if centered else 0.0
+    shift = rise_s / 2 if placement == "centered" else 0.0
     for on, off in intervals:
         i0 = max(0, int(round((offset_s + on - shift) * sample_rate)))
         i1 = min(n, int(round((offset_s + off + shift) * sample_rate)))
@@ -173,13 +243,13 @@ def generate(signals, sample_rate: int, duration_s: float, seed: int, add_noise:
         intervals = plan.intervals
         if not intervals:
             continue
-        tail = s.edge_s / 2 if s.edges_centered else 0.0  # a centered edge reaches this far past an interval
-        i0 = max(0, int((s.start_s - tail) * sample_rate))
-        i1 = min(n, int(np.ceil((s.start_s + intervals[-1][1] + tail) * sample_rate)) + 1)
+        before, after = edge_reach_s(s.edge_placement, s.edge_s)  # how far the edges reach past the keying
+        i0 = max(0, int((s.start_s - before) * sample_rate))
+        i1 = min(n, int(np.ceil((s.start_s + intervals[-1][1] + after) * sample_rate)) + 1)
         if i1 <= i0:
             continue
         env = keying_envelope(intervals, s.start_s - i0 / sample_rate, i1 - i0, sample_rate, s.edge_s,
-                              s.edges_centered)
+                              placement=s.edge_placement)
         t = np.arange(i0, i1) / sample_rate
         angle = 2 * np.pi * s.freq_offset_hz * t + phase
         if s.drift_hz_per_s:
@@ -207,14 +277,14 @@ def add_overs(iq: np.ndarray, spec: SignalSpec, plan: SignalPlan, sample_rate: i
                                  np.random.default_rng([seed, index, 1, k]), spec.fading_shape)
     for (on, off), k in zip(plan.transmissions, plan.senders):
         who = spec.senders[k]
-        tail = spec.edge_s / 2 if spec.edges_centered else 0.0
-        i0 = max(0, int((spec.start_s + on - tail) * sample_rate))
-        i1 = min(n, int(np.ceil((spec.start_s + off + tail) * sample_rate)) + 1)
+        before, after = edge_reach_s(spec.edge_placement, spec.edge_s)
+        i0 = max(0, int((spec.start_s + on - before) * sample_rate))
+        i1 = min(n, int(np.ceil((spec.start_s + off + after) * sample_rate)) + 1)
         if i1 <= i0:
             continue
         part = [iv for iv in plan.intervals if on <= iv[0] and iv[1] <= off]
         env = keying_envelope(part, spec.start_s - i0 / sample_rate, i1 - i0, sample_rate, spec.edge_s,
-                              spec.edges_centered)
+                              placement=spec.edge_placement)
         t = np.arange(i0, i1) / sample_rate
         angle = 2 * np.pi * (spec.freq_offset_hz + who.offset_hz) * t + phases[k]
         if spec.drift_hz_per_s:
@@ -290,7 +360,11 @@ def station_labels(signals, sample_rate: int, duration_s: float, seed: int) -> d
     """labels(), but with each QSO split into one entry per station: that station's overs
     only, at its own carrier (freq_offset_hz + offset_hz) and level (snr_db + relative_db),
     so a station the receiver hears as its own track is scored against its own frequency.
-    Other signals are as in labels(). Each station entry names its QSO (qso_index)."""
+    Other signals are as in labels(). Each station entry names its QSO (qso_index) and carries the QSO's fading
+    spread (fading_hz, Hz: each station fades through its own path of that spread). LIMIT: a station's start_s is
+    its first over, while the QSO's drift (drift_hz_per_s, copied) is measured from the QSO's start, so the carrier
+    of a drifting QSO's station at its start_s is not freq_offset_hz (the bench's frequency genie refuses such a
+    label; no QSO of the development set drifts)."""
     base = labels(signals, sample_rate, duration_s, seed)
     entries = []
     for i, (s, entry) in enumerate(zip(signals, base["signals"])):
@@ -308,6 +382,9 @@ def station_labels(signals, sample_rate: int, duration_s: float, seed: int) -> d
                 "wpm": who.wpm, "snr_db": round(s.snr_db + who.relative_db, 3),
                 "start_s": mine[0]["start_s"], "end_s": mine[-1]["end_s"],
                 "keying": who.keying, "imbalance_dits": who.imbalance_dits, "drift_hz_per_s": s.drift_hz_per_s,
+                # each station fades through its own path of the QSO's spread (add_overs); the bench's fading genie
+                # reads it (a label without fading_hz does not say whether its station fades)
+                "fading_hz": s.fading_hz,
                 "score": s.score, "tag": s.tag, "qso_index": i, "sender": who.call, "transmissions": mine,
                 **({"design": s.design} if s.design else {}),
             })
@@ -388,9 +465,10 @@ def scenario_band(rng, count: int, duration_s: float, sample_rate: int, min_spac
 def with_interferer(wanted: SignalSpec, offset_hz: float, relative_db: float, wpm: float,
                     text: str) -> list[SignalSpec]:
     """The wanted signal plus an unscored interferer offset_hz from it, relative_db dB
-    stronger in key-down power, at its own speed, starting at the same time."""
+    stronger in key-down power, at its own speed, starting at the same time, with the wanted signal's keying edges."""
     interferer = SignalSpec(text, wanted.freq_offset_hz + offset_hz, wpm, wanted.snr_db + relative_db,
-                            wanted.start_s, score=False, tag=wanted.tag)
+                            wanted.start_s, edge_s=wanted.edge_s, edge_placement=wanted.edge_placement,
+                            score=False, tag=wanted.tag)
     return [wanted, interferer]
 
 

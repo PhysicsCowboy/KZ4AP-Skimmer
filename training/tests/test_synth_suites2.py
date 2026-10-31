@@ -4,13 +4,15 @@ import json
 import math
 import re
 from collections import Counter
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from kz4ap_proto import experiments
 from kz4ap_synth import suites
-from kz4ap_synth.generate import labels, plan_intervals, station_labels
+from kz4ap_synth.generate import (DEFAULT_NOISE_SIGMA, EDGE_S, generate, labels, plan_intervals,
+                                  station_labels)
 from kz4ap_synth.jitter import SNR_CELLS, SPEED_CELLS
 from kz4ap_synth.morse import keying_intervals
 from kz4ap_synth.suites import SUITES, check_recording, dev2_suite, text_100, text_chars
@@ -200,6 +202,74 @@ def test_qso_groups_have_their_views(dev2):
                for fe in ("baseline", "matched"))
 
 
+def test_s2_scales_its_edges(dev2):
+    # Ruling 62: S2's edges are D17's scaled by its factor 2: 8.4698 ms, placement "start"
+    recs = {r.name: r for r in dev2}
+    for r in (r for r in dev2 if r.group == "S2 stretch"):
+        a = recs[suites.stretch2_source(r.name)]
+        for s, sa in zip(r.specs, a.specs):
+            assert s.edge_s == 2.0 * EDGE_S == 2.0 * sa.edge_s
+            assert s.edge_s == pytest.approx(8.4698e-3, abs=0.0001e-3)
+            assert s.edge_placement == "start"
+
+
+def test_dev2_and_n2_take_d17s_edges_set_by_their_builders(dev2):
+    # D17 (owner, 2026-10-23) and Ruling 70: DEV2 (DEV2e) and N2 (N2e) take D17's edges, except B2, which keeps
+    # VE3NEA's centered 2 ms (Ruling 62); S2 scales D17's by 2. Every signal, including E2's neighbors and G2/H2's QSOs.
+    groups = set()
+    for r in list(dev2) + suites.n2_suite(1):
+        groups.add(r.group)
+        for s in r.specs:
+            if r.group == "B2 fading":
+                assert (s.edge_placement, s.edge_s) == ("centered", 0.002)
+            elif r.group == "S2 stretch":
+                assert (s.edge_placement, s.edge_s) == ("start", 2.0 * EDGE_S)
+            else:
+                assert (s.edge_placement, s.edge_s) == ("start", EDGE_S)
+    assert {"A2 sensitivity", "B2 fading", "S2 stretch", "E2 interference", "N2 noise only"} <= groups
+    assert any(not s.score for r in dev2 if r.group == "E2 interference" for s in r.specs)  # the neighbors too
+
+
+_BEFORE_D17 = Path(__file__).with_name("data") / "dev2_labels_before_d17.json"
+
+
+def test_regeneration_changes_only_the_envelope(dev2):
+    # The fixture holds the labels of one recording of each DEV2 group (seed 1; the first signal, the first two for
+    # E2) as the generator wrote them before D17's edges (commit cbc4ecd). Regenerated, the texts, the transmissions'
+    # start and end times, the speeds and the noise seeds are identical: only the keying edges differ, and the
+    # label schema (edges_centered becomes edge_placement, B2's included).
+    before = json.loads(_BEFORE_D17.read_text(encoding="utf-8"))
+    recs = {r.name: r for r in dev2}
+    assert sorted(before) == sorted(n for n in before if n in recs) and len(before) == 10
+    assert {n.split("-")[0] for n in before} == set(suites.DEV2_BUILDERS)
+    for name, old in before.items():
+        rec = recs[name]
+        assert rec.noise_seed == old["noise_seed"] and rec.per_station_only == old["per_station"]
+        make = station_labels if rec.per_station_only else labels
+        new = json.loads(json.dumps(make(rec.specs, rec.sample_rate, rec.duration_s, rec.noise_seed)))  # as written
+        assert {k: v for k, v in new.items() if k != "signals"} == {k: v for k, v in old["labels"].items()
+                                                                     if k != "signals"}
+        assert len(old["labels"]["signals"]) >= 1
+        for was, now in zip(old["labels"]["signals"], new["signals"]):
+            if rec.per_station_only:  # a station's entry (H2's only labels) never named its edges, before or after
+                assert not {"edge_s", "edges_centered", "edge_placement"} & (set(was) | set(now))
+                assert now == was
+                continue
+            assert "edges_centered" in was and "edge_placement" not in was
+            assert "edge_placement" in now and "edges_centered" not in now
+            rest_was = {k: v for k, v in was.items() if k not in ("edge_s", "edges_centered")}
+            rest_now = {k: v for k, v in now.items() if k not in ("edge_s", "edge_placement")}
+            assert rest_now == rest_was  # texts, transmissions, speeds and everything else identical
+            if name.startswith("B2-"):
+                assert was["edges_centered"] is True and (was["edge_s"], now["edge_s"]) == (0.002, 0.002)
+                assert now["edge_placement"] == "centered"
+            else:
+                assert was["edges_centered"] is False
+                assert now["edge_placement"] == "start"
+                assert was["edge_s"] == (0.01 if name.startswith("S2-") else 0.005)
+                assert now["edge_s"] == (2.0 * EDGE_S if name.startswith("S2-") else EDGE_S)
+
+
 def test_s2_is_a2s_cell_5_stretched_by_exactly_2(dev2):
     recs = {r.name: r for r in dev2}
     stretched = [r for r in dev2 if r.group == "S2 stretch"]
@@ -213,7 +283,8 @@ def test_s2_is_a2s_cell_5_stretched_by_exactly_2(dev2):
             assert (s.text, s.freq_offset_hz, s.start_s) == (sa.text, sa.freq_offset_hz, sa.start_s)
             assert s.wpm == sa.wpm / 2.0 and sa.design["speed_wpm"]["cell"] == 5
             assert sa.snr_db - s.snr_db == pytest.approx(10 * math.log10(2.0), abs=1e-12)
-            assert s.edge_s == 2.0 * sa.edge_s
+            assert s.edge_s == 2.0 * sa.edge_s  # Ruling 62: S2 scales D17's edges with its time base
+            assert s.edge_s == pytest.approx(8.4698e-3, abs=0.0001e-3) and s.edge_placement == "start"
             got, want = np.array(plan.intervals), 2.0 * np.array(plan_a.intervals)
             assert got.shape == want.shape and np.max(np.abs(got - want)) < 1e-9
             d = s.design
@@ -292,3 +363,66 @@ def test_h2_writes_and_scores_only_per_station_labels(tmp_path):
 def test_per_cell_and_groups_are_dev2_only(tmp_path):
     with pytest.raises(SystemExit):
         suites.main(["generate", "--suite", "smoke", "--out", str(tmp_path), "--groups", "A2"])
+    with pytest.raises(SystemExit):
+        suites.main(["generate", "--suite", "n2", "--out", str(tmp_path), "--per-cell", "A2=1"])
+
+
+# --- N2, the noise-only group (docs/plans/2026-10-20-new-decoder-prototype-1.md, D8) ---
+
+def test_n2_noise_group(dev2):
+    """100 channels x 360 s (10 channel-hours) of white noise as 4 recordings of 25 channels at DEV2's 48 kHz, each
+    channel opened by a labeled station at S500 -60 dB (far below any decodable level), reproducible by seed, and a
+    suite of its own: it is not part of DEV2."""
+    recs = suites.noise2(1)
+    assert [r.name for r in recs] == [f"N2-noise-{k}-s1" for k in range(4)]
+    assert SUITES["n2"](1) == recs and suites.noise2(1) == recs  # reproducible
+    for r in recs:
+        check_recording(r)
+        assert (r.sample_rate, r.duration_s, r.oracle, r.group) == (48000, 360.0, True, "N2 noise only")
+        assert len(r.specs) == 25 and not r.station_labels and not r.per_station_only
+        freqs = sorted(s.freq_offset_hz for s in r.specs)
+        # slots 1200 Hz apart, each moved by at most half a bin (11.7 Hz) and rounded to 0.1 Hz
+        assert min(np.diff(freqs)) > suites.DEV2_SLOT_HZ - suites.BIN_HZ - 0.1
+        assert abs(freqs[0]) < 0.45 * r.sample_rate and abs(freqs[-1]) < 0.45 * r.sample_rate
+    specs = [s for r in recs for s in r.specs]
+    assert sum(r.duration_s * len(r.specs) for r in recs) == 36000.0  # channel-seconds: 10 channel-hours
+    assert {s.snr_db for s in specs} == {-60.0} and all(s.score and s.keying == "machine" for s in specs)
+    assert all(95 <= text_chars(s.text) <= 105 for s in specs)
+    # ten stations in each of DEV2's speed cells, spread over the recordings (no cell is tied to a recording)
+    assert Counter(s.design["speed_wpm"]["cell"] for s in specs) == Counter({c: 10 for c in SPEED_CELLS.numbers})
+    for r in recs:
+        assert set(Counter(s.design["speed_wpm"]["cell"] for s in r.specs).values()) == {2, 3}
+    for s in specs:
+        lo, hi = SPEED_CELLS.bounds(s.design["speed_wpm"]["cell"])
+        assert lo <= s.wpm <= hi and s.wpm == s.design["speed_wpm"]["value"]
+        assert s.design["group"] == "N2" and s.design["s500_db"]["value"] == -60.0
+    # the noise is DEV2's: sigma 0.02 FS per complex sample, and a station at -60 dB adds nothing to it
+    assert DEFAULT_NOISE_SIGMA == 0.02
+    iq = generate(recs[0].specs, recs[0].sample_rate, 2.0, seed=recs[0].noise_seed)
+    assert np.sqrt(np.mean(np.abs(iq) ** 2)) == pytest.approx(0.02, rel=0.01)
+    # the next group code after DEV2's (S2's noise uses 11): noise seeds 10^6 x seed + 10^4 x 12 + the recording's
+    # number
+    assert [r.noise_seed for r in recs] == [suites.DEV2_SEED_BASE + 12 * suites.DEV2_GROUP_SEED + k for k in range(4)]
+    assert not {r.noise_seed for r in recs} & ({r.noise_seed for r in dev2} | {r.noise_seed for r in SUITES["full"](3)})
+    other = suites.noise2(2)
+    assert [r.name for r in other] == [f"N2-noise-{k}-s2" for k in range(4)]
+    assert {s.text for r in other for s in r.specs}.isdisjoint({s.text for s in specs})
+    # not in DEV2: its default groups, its analysis's test cases
+    assert not any(r.group == "N2 noise only" for r in dev2)
+    assert not any(re.search(experiments.DEV2, r.name) or re.search(experiments.DEV, r.name) for r in recs)
+    assert "N2" not in suites.DEV2_BUILDERS and "N2" not in suites.DEV2_PER_CELL
+    # its labels carry the drawn values like DEV2's, and the one fixed value
+    entry = labels(recs[0].specs, recs[0].sample_rate, recs[0].duration_s, recs[0].noise_seed)["signals"][0]
+    assert entry["design"]["speed_wpm"]["unit"] == "WPM" and entry["design"]["s500_db"]["value"] == -60.0
+    assert entry["end_s"] < 360.0
+
+
+def test_the_n2_suite_is_generated_by_name(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(suites, "write_suite", lambda recs, out, name, only=None: seen.append((name, recs, out)))
+    suites.main(["generate", "--suite", "n2", "--out", str(tmp_path)])
+    ((name, recs, out),) = seen
+    assert name == "n2" and out == tmp_path and [r.name for r in recs] == [f"N2-noise-{k}-s1" for k in range(4)]
+    seen.clear()
+    suites.main(["generate", "--suite", "n2", "--seeds", "2", "--out", str(tmp_path)])
+    assert len(seen[0][1]) == 8

@@ -217,6 +217,16 @@ The app ships only the exported model file, not the training code.
    list of **tracks** (frequency, SNR, start time). A track is born when a
    signal persists and dies when it goes quiet, with hysteresis. The number
    of tracks is capped (configurable).
+
+   **Amendment (2026-10-19, owner).** When the new Classical decoder
+   (§5.2, step 3, amendment of 2026-10-19) runs behind the live detector,
+   channels open and close as decided on 2026-10-16 (design notes,
+   "Opening and closing channels"): a channel opens on a threshold set from
+   a chosen false-channel rate against a local noise floor; the decoder
+   confirms it, and closes it once no Morse hypothesis has led for a hold
+   time; and every opening replays the last few seconds of the spectrum, so
+   that the decoder hears the transmission from its start. Until then the
+   detector works as described above.
 4. **Decoders** (worker thread pool). Each track's stream goes to the decoder
    for the selected mode. Every decoder returns the same **decode result**:
    text with a probability for each character, element timing, speed, and an
@@ -264,7 +274,7 @@ Symbols and conventions used below:
 
 | Mode | How it works | CPU cost |
 |---|---|---|
-| **Classical** | Statistical decoding: soft likelihoods from the front end (§5.2, step 1) feed an explicit-duration hidden Markov model (HMM) that finds the most probable character sequence given timing statistics and a prior over likely text. Same family as CW Skimmer's Bayesian decoder and Bell 1977. | Lowest (estimated 2–3 million floating-point operations per channel-second; not yet measured) |
+| **Classical** | Statistical decoding: an explicit-duration (semi-Markov) hidden Markov model (HMM), searched by Viterbi beam search, finds the most probable story of what was sent (text, timing, speed, signal level) given timing statistics and a prior over likely text. One fixed filter per channel (76 Hz noise bandwidth, matched to a 100 WPM dot) feeds an envelope sampled every 2.667 ms; each hypothesis predicts that envelope from the marks it claims and tracks its own signal level (§5.2, step 3, amendments of 2026-10-19 and 2026-10-25). Same family as CW Skimmer's Bayesian decoder and Bell 1977. | Target 2–3 million floating-point operations per channel-second for typical signals. Estimated 10–25 million at the ceiling on the number of hypotheses, which quiet channels at S₅₀₀ 0 dB and below also reach until they close (design notes, topic 5, items 5 and 6). Not yet measured. (Amended 2026-10-19.) |
 | **Neural** | A small streaming neural network reads a narrow spectrogram strip for each track and outputs characters directly. It is trained with CTC (connectionist temporal classification), the standard speech-recognition technique for learning to output text from audio without hand-aligned labels. | Highest (estimated 15–20 million multiply-accumulates (MAC) per channel-second; not yet measured) |
 | **Hybrid** | A cascade: Classical decodes every track; only results whose confidence falls below a threshold are re-decoded by the neural network. | Between the two, depending on how many tracks are handed over |
 
@@ -277,6 +287,14 @@ The current hard-decision decoder (threshold keying, then element timing;
 **baseline** that every new decoder is measured against.
 
 ### 5.2 Development order (decided)
+
+**Amendment (2026-10-30, owner).** The Classical (Bayesian) decoder comes first,
+and the neural decoder may follow it. The live app is built alongside the
+decoder rather than after it. The bar: at most 40 ms of CPU per channel-second
+(100 signals at half of an 8-core desktop's capacity), about 8 ms the goal, and
+about as many callsigns copied as CW Skimmer on a real recording. How the decoder
+works is no longer specified here: `docs/signal-processing.md` describes it,
+and the steps below are history.
 
 Inside the decoder-robustness milestone (§3.1, item 1), in this order,
 following the survey's ranking:
@@ -312,6 +330,26 @@ following the survey's ranking:
    log-probability as a tie-breaker; the engine's text output gains
    corrections reaching back up to 20 s. Design:
    `docs/design/2026-09-30-filter-bank-speed-estimator-design.md`.
+
+   **Amendment (2026-10-19, owner).** The new Classical decoder (step 3,
+   amendment of 2026-10-19) does not use this front end (the dit-matched
+   filter and its likelihoods). It sums the channel's signal coherently over
+   blocks of each mark, so its re-centering target is set by the block
+   length T, not ±2 Hz: a residual offset Δf costs under 1 dB of signal
+   power while Δf·T ≤ 0.26 (over a 100 ms block, 1 Hz costs 0.14 dB and
+   2 Hz 0.6 dB; derived). One frequency tracker per channel, using none of
+   the decoder's decisions, provides it. It is built and measured with the
+   first prototype (review 1, K13; design notes, topic 4, item 8).
+
+   **Amendment (2026-10-25, owner).** The amendment of 2026-10-19 above is
+   superseded. The new decoder sums nothing coherently and has no frequency
+   tracker of its own: the channelizer follows the detector's frequency for
+   the track (the shared FFT's nearest bin, then a fine shift), and the
+   decoder reads a fixed 76 Hz filter, which loses 0.5 dB at 15 Hz off and
+   1.42 dB at 25 Hz (dB relative to 0 Hz). Chirp beyond about ±25 Hz is a
+   known limitation. Design: `docs/design/2026-10-09-new-decoder-design-notes.md`,
+   "Detection, amplitude, frequency and the mark's shape", parts 1, 2 and
+   10 (plan D16–D17).
 2. **Neural: a small streaming CNN+LSTM+CTC network** (a convolutional
    front end, then a long short-term memory recurrent layer, trained with
    CTC) following VE3NEA's DeepCW recipe. DeepCW is MIT-licensed, so the
@@ -371,6 +409,73 @@ following the survey's ranking:
      reference; Plan B paused except B8 and B10; judged on the jittered
      development set by the owner's priorities. The manta port is dropped,
      and with it the license question it raised.
+
+   **Amendment (2026-10-19, owner): a new decoder in Bell's structure.**
+   Stage 1 compiled Bell's printed program and ran it under his published
+   conditions. It did not reproduce his tables and decoded worse than the
+   project's existing decoders, so it was dropped as a benchmark (owner,
+   2026-10-09; `docs/plans/2026-10-07-bell-stage-1-results.md`). Stage 2 is
+   replaced by a new decoder that keeps Bell's structure (many competing
+   hypotheses about what was sent, scored as the signal arrives) and
+   redesigns every part against standard practice. The design, with each
+   decision and its evidence, is
+   `docs/design/2026-10-09-new-decoder-design-notes.md`; it was checked by
+   `docs/research/2026-10-14-new-decoder-review-1.md` and
+   `docs/research/2026-10-14-standard-practice-check/`. In brief:
+   - **Search:** an explicit-duration (semi-Markov) model searched by
+     Viterbi beam search, with a minimum beam width that keeps newborn
+     hypotheses alive, and a ceiling on the number of hypotheses set by CPU.
+   - **Observation:** no filter bank and no speed-matched filter. Each
+     hypothesis sums the channel's 2 ms pieces over the marks it claims, in
+     blocks shorter than the fading's coherence time, and scores them as a
+     carrier of unknown phase in noise. The noise level comes from the
+     signal detector's spectrum around the station.
+   - **Level:** a Kalman filter per hypothesis. Each newborn starts from a
+     prior flat in dB of S₅₀₀.
+   - **Timing:** speed on 32 values 10% apart (5.2–100 WPM) and a
+     Farnsworth factor on 23 values (1–8.14), each fixed within a
+     hypothesis. Changes of speed, factor or station are followed by fresh
+     starts, and new overs by births from silence, at rates counted from
+     traffic. The fist model is fixed, with its numbers measured on real
+     keying.
+   - **Text:** the first prototype has no text model. Kinds of words
+     (callsigns, fixed tokens, numbers, plain language, a catch-all) are
+     then added one at a time, each measured.
+
+   This replaces the Bell-style description above. The Kalman amplitude per
+   hypothesis stays. Each candidate reading the filter-bank branch matched
+   to its speed goes, and so do speed changes at element boundaries of up
+   to ±20 WPM after a pause (review 1, K12). The comparison stands as
+   amended on 2026-10-07: the bank decoder frozen as the reference, the
+   jittered development set, and the owner's priorities. The one exception
+   is the Farnsworth group's signals above a factor of 8, about a fifth of
+   I2, which are outside the new decoder's range. Every comparison on I2
+   leaves them out on both sides and lists them separately (design notes,
+   topic 2, item 3). Building starts once this amendment and the first
+   prototype's plan are approved.
+
+   **Amendment (2026-10-25, owner).** Three bullets of the amendment of
+   2026-10-19 change:
+   - **Observation:** each hypothesis no longer sums the channel's 2 ms
+     pieces in blocks as a carrier of unknown phase. The channel passes one
+     fixed 76 Hz filter matched to a 100 WPM dot; its envelope, sampled
+     every 2.667 ms, is scored against each hypothesis's predicted envelope
+     (its claimed marks, smeared by the filter) by the Rician density of a
+     carrier in noise, with a systematic term for the model's own mismatch.
+     The noise level still comes from the signal detector's spectrum around
+     the station.
+   - **Level:** the Kalman filter per hypothesis stays; its prediction
+     drifts toward the station's long-run amplitude, learned from the
+     hypothesis's own samples since its over began, at a fading rate fixed
+     at 2 Hz. Each newborn still starts from a prior flat in dB of S₅₀₀.
+   - **Timing:** the Farnsworth factor was removed from the first prototype
+     on 2026-10-21; the speed grid stands.
+
+   Standard practice for this chain: every working Morse decoder found
+   detects noncoherently behind a 30–100 Hz filter and tracks the amplitude
+   (`docs/research/2026-10-22-cw-detection-standard-practice.md`). Design
+   and evidence: the design notes' section named in step 1's amendment of
+   2026-10-25 (plan D15–D17).
 4. **Hybrids,** once both 2 and 3 exist.
 
 **Training data** for the neural decoder is generated synthetically in
@@ -406,7 +511,8 @@ ships at all, is left to the benchmark.
   call appears (backlog, "Real-recording scoring: manta's oracle").
 - **Metrics:** CER, with each prosign counted as one symbol and word spaces
   scored separately from characters; S₅₀₀ as generated; and CPU time per
-  channel-second on a desktop and on a Raspberry Pi 5.
+  channel-second on a desktop and on the Linux machine (amended
+  2026-10-26, owner: a Raspberry Pi is not a target).
 
 **Benchmark candidates, not shipped.** Each would need a change to this
 spec to enter the app:
@@ -437,7 +543,9 @@ in a later session. The candidates on the table:
 - `cty.dat` from country-files.com: prefix → DXCC entity, zones, continent.
 - `MASTER.SCP` from supercheckpartial.com: tens of thousands of calls active
   in contests.
-- Calls recently spotted by this skimmer or by the Reverse Beacon Network.
+- Calls recently spotted by this skimmer. **Never the Reverse Beacon
+  Network** (owner, 2026-10-14): once this skimmer feeds RBN, matching
+  against RBN would let our own misread calls confirm themselves.
 - National licensing databases (e.g. the FCC's US list); probably later, if
   ever.
 

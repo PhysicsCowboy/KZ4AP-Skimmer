@@ -101,6 +101,30 @@ def test_every_style_is_defined():
     assert set(STYLES) == {"machine", "computer", "paddle", "bug", "hand"}
 
 
+def test_the_benchs_genie_fists_are_these_styles():
+    # bench/src/viterbi_json.cpp keeps a copy of STYLES (each kind's median in dots and sigma in ln(length)), which
+    # kz4ap-bench --genie fist gives the new decoder as the sender's true fist: a style changed here only would leave
+    # the genie with the old one, without an error.
+    import re
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[2] / "bench" / "src" / "viterbi_json.cpp").read_text(encoding="utf-8")
+    block = re.search(r"// KEYING_STYLES begin(.*?)// KEYING_STYLES end", source, re.S)
+    assert block is not None
+
+    def number(token):
+        exp = re.fullmatch(r"std::exp\(([^)]*)\)", token.strip())
+        return math.exp(float(exp.group(1))) if exp else float(token)
+
+    rows = re.findall(r'\{"(\w+)", \{([^}]*)\}, \{([^}]*)\}\}', block.group(1))
+    assert {name for name, _, _ in rows} == set(STYLES)
+    for name, medians, sigmas in rows:
+        style = STYLES[name]
+        kinds = (style.dit, style.dah, style.element_gap, style.char_gap, style.word_gap)
+        assert [number(t) for t in medians.split(",")] == pytest.approx([k.median_dits for k in kinds], rel=1e-12)
+        assert [number(t) for t in sigmas.split(",")] == pytest.approx([k.sigma for k in kinds], rel=1e-12)
+
+
 def test_farnsworth_gap_timebase_follows_the_arrl_formula():
     # T_g = (60/s - 37.2/c) / 19: the added time per PARIS spread over its 19 gap units.
     assert farnsworth_gap_s(18.0, 5.0) == pytest.approx((60.0 / 5.0 - 37.2 / 18.0) / 19.0)

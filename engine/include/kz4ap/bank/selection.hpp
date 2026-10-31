@@ -1,5 +1,5 @@
 // The bank decoder's characters, text model and branch selection: a port of the removed prototype's text.py and
-// select.py (docs/signal-processing.md section 8c, "Text model and branch selection").
+// select.py (docs/signal-processing.md appendix A.8c, "Text model and branch selection").
 #pragma once
 
 #include "kz4ap/bank/bank_config.hpp"

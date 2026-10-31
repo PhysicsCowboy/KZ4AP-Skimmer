@@ -14,53 +14,79 @@
 
 namespace kz4ap::test {
 
-// Key-down intervals (start_s, end_s) for text at wpm, PARIS timing, beginning at start_s.
-inline std::vector<std::pair<double, double>> keying(const std::string& text, double wpm, double start_s) {
-    const double dit = 1.2 / wpm;
-    std::vector<std::string> words;
-    std::string word;
-    for (char c : text) {
-        if (c == ' ') {
-            if (!word.empty()) words.push_back(word);
-            word.clear();
-        } else {
-            word += c;
-        }
-    }
-    if (!word.empty()) words.push_back(word);
+// One stretch of text sent at its own timing: elements and element gaps at wpm (a dot of 1.2 s / wpm), the gaps between
+// letters and between words stretched by `factor`, 3 and 7 dots x factor. Farnsworth spacing for characters at c WPM in
+// an overall speed of s WPM has the factor farnsworth_factor(c, s); factor 1 is standard spacing.
+struct Segment {
+    std::string text;
+    double wpm;
+    double factor = 1.0;
+};
 
+// The Farnsworth factor of characters at c WPM sent at s WPM overall: (50 c / s - 31) / 19 (ARRL, Bloom 1990: one
+// PARIS, 31 dots of elements and element gaps and 19 of gaps between letters and words, takes 60 / s s; the bench's
+// T_g / T). 18 / 5 WPM gives 7.84.
+inline double farnsworth_factor(double character_wpm, double overall_wpm) {
+    return (50.0 * character_wpm / overall_wpm - 31.0) / 19.0;
+}
+
+// Key-down intervals (start_s, end_s) for segments sent one after another from start_s, each with its own timing. The
+// word gap between two segments is timed by the earlier one: the sender's change comes with the next mark.
+inline std::vector<std::pair<double, double>> keying_segments(const std::vector<Segment>& segments, double start_s) {
     std::vector<std::pair<double, double>> out;
     double t = start_s;
-    for (std::size_t wi = 0; wi < words.size(); ++wi) {
-        std::vector<std::string_view> codes;
-        for (const auto symbol : morse::symbols(words[wi])) {
-            const auto p = morse::encode(symbol);
-            if (!p.empty()) codes.push_back(p);
-        }
-        for (std::size_t ci = 0; ci < codes.size(); ++ci) {
-            for (std::size_t ei = 0; ei < codes[ci].size(); ++ei) {
-                const double len = codes[ci][ei] == '.' ? dit : 3 * dit;
-                out.emplace_back(t, t + len);
-                t += len;
-                if (ei + 1 < codes[ci].size()) t += dit;
+    for (std::size_t si = 0; si < segments.size(); ++si) {
+        const Segment& segment = segments[si];
+        const double dit = 1.2 / segment.wpm;
+        std::vector<std::string> words;
+        std::string word;
+        for (char c : segment.text) {
+            if (c == ' ') {
+                if (!word.empty()) words.push_back(word);
+                word.clear();
+            } else {
+                word += c;
             }
-            if (ci + 1 < codes.size()) t += 3 * dit;
         }
-        if (wi + 1 < words.size()) t += 7 * dit;
+        if (!word.empty()) words.push_back(word);
+        for (std::size_t wi = 0; wi < words.size(); ++wi) {
+            std::vector<std::string_view> codes;
+            for (const auto symbol : morse::symbols(words[wi])) {
+                const auto p = morse::encode(symbol);
+                if (!p.empty()) codes.push_back(p);
+            }
+            for (std::size_t ci = 0; ci < codes.size(); ++ci) {
+                for (std::size_t ei = 0; ei < codes[ci].size(); ++ei) {
+                    const double len = codes[ci][ei] == '.' ? dit : 3 * dit;
+                    out.emplace_back(t, t + len);
+                    t += len;
+                    if (ei + 1 < codes[ci].size()) t += dit;
+                }
+                if (ci + 1 < codes.size()) t += 3 * dit * segment.factor;
+            }
+            if (wi + 1 < words.size()) t += 7 * dit * segment.factor;
+        }
+        if (si + 1 < segments.size()) t += 7 * dit * segment.factor;
     }
     return out;
 }
 
-// A keyed carrier at freq_hz (0 = baseband) with 5 ms raised-cosine edges, plus
-// complex white noise of total power noise_sigma^2. drift_hz_per_s: the carrier's frequency
-// is freq_hz + drift_hz_per_s * t, Hz (t in s from the first sample).
-inline std::vector<Sample> keyed_signal(const std::string& text, double wpm, double rate, double duration_s,
-                                        double freq_hz = 0, double amplitude = 1.0, double noise_sigma = 0.0,
-                                        unsigned seed = 1, double start_s = 0.5, double drift_hz_per_s = 0.0) {
+// Key-down intervals (start_s, end_s) for text at wpm, PARIS timing, beginning at start_s: one segment at standard
+// spacing (factor 1, so 3 and 7 dots exactly).
+inline std::vector<std::pair<double, double>> keying(const std::string& text, double wpm, double start_s) {
+    return keying_segments({{text, wpm}}, start_s);
+}
+
+// A carrier keyed by the given key-down intervals (s), at freq_hz (0 = baseband) with 5 ms raised-cosine edges, plus
+// complex white noise of total power noise_sigma^2. drift_hz_per_s: the carrier's frequency is freq_hz +
+// drift_hz_per_s * t, Hz (t in s from the first sample).
+inline std::vector<Sample> keyed_signal_of(const std::vector<std::pair<double, double>>& intervals, double rate,
+                                           double duration_s, double freq_hz = 0, double amplitude = 1.0,
+                                           double noise_sigma = 0.0, unsigned seed = 1, double drift_hz_per_s = 0.0) {
     const auto n = static_cast<std::size_t>(duration_s * rate);
     std::vector<double> env(n, 0.0);
     constexpr double kRise = 0.005;
-    for (auto [on, off] : keying(text, wpm, start_s)) {
+    for (auto [on, off] : intervals) {
         const auto i0 = static_cast<std::size_t>(on * rate);
         const auto i1 = std::min(n, static_cast<std::size_t>(off * rate));
         for (std::size_t i = i0; i < i1; ++i) {
@@ -84,6 +110,16 @@ inline std::vector<Sample> keyed_signal(const std::string& text, double wpm, dou
         x[i] = s;
     }
     return x;
+}
+
+// A keyed carrier at freq_hz (0 = baseband) with 5 ms raised-cosine edges, plus
+// complex white noise of total power noise_sigma^2. drift_hz_per_s: the carrier's frequency
+// is freq_hz + drift_hz_per_s * t, Hz (t in s from the first sample).
+inline std::vector<Sample> keyed_signal(const std::string& text, double wpm, double rate, double duration_s,
+                                        double freq_hz = 0, double amplitude = 1.0, double noise_sigma = 0.0,
+                                        unsigned seed = 1, double start_s = 0.5, double drift_hz_per_s = 0.0) {
+    return keyed_signal_of(keying(text, wpm, start_s), rate, duration_s, freq_hz, amplitude, noise_sigma, seed,
+                           drift_hz_per_s);
 }
 
 // Duration that fits text at wpm starting at 0.5 s, plus trailing silence.

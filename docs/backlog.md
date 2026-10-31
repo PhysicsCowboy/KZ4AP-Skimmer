@@ -63,14 +63,27 @@ development set's distribution (above).
 
 Once the decoder is decided, check whether the live detector misses tracks
 at low SNR that the decoder could still copy. The detector's birth
-threshold (6 dB above the floor, dB SNR per bin, on a 1 s average)
-corresponds to about S₅₀₀ = −1.0 dB at 25 WPM, −1.9 dB for slow keying and
-+1.6 dB for very fast keying (dB SNR in 500 Hz; derived, white noise, tone
-on a bin center; up to 1.4 dB more between bins). The bank's and Matched's
-CER-0.10 crossings lie at about 0 to +2 dB (measured, group A, oracle), so
-the threshold is not the limit today; an ideal decoder would reach CER 0.10
-at about −1.9 dB at 25 WPM and −5.1 dB at 12 WPM (derived bound, stage-1
-results record §5.1), below the threshold.
+threshold (6 dB above the floor, on a 1 s average) compares signal plus
+noise with the floor, so the station's averaged power must be 4.7 dB above
+the noise per bin: about S₅₀₀ = −3.0 dB at 12 WPM, −2.7 dB at 25 WPM,
+−2.3 dB at 40 WPM and −1.5 dB at 80 WPM (dB SNR in 500 Hz; derived, white
+noise, PARIS text with 5 ms edges, tone on a bin center, without the
+noise's fluctuations; 1.0–1.3 dB more between bins). Corrected 2026-10-16:
+these figures had read the 6 dB as signal over noise (−1.0 dB at 25 WPM,
+−1.9 dB for slow keying, +1.6 dB for very fast keying). A simulation with
+the fluctuations, and the false-track rate on white noise, are in the
+design notes' "Opening and closing channels"
+(`docs/design/2026-10-09-new-decoder-design-notes.md`). The bank's and
+Matched's CER-0.10 crossings lie at about 0 to +3 dB (measured, group A,
+oracle), so the threshold is not the limit today; an ideal decoder would
+reach CER 0.10 at about −1.9 dB at 25 WPM and −5.0 dB at 12 WPM (derived
+bound, stage-1 results record §5.1.1; corrected 2026-10-16 from −5.1 dB
+and §5.1), below the threshold at slow speeds.
+
+**Taken up by the new decoder's design (owner, 2026-10-16):** the
+threshold is to be set from a false-channel rate against a local floor,
+with the decoder confirming (design notes, "Opening and closing
+channels"). The measurement below is that topic's test.
 
 Measure: detection recall against S₅₀₀ at 12, 25, 40 and 80 WPM (owner;
 group A has only 12, 25 and 40 WPM, so 80 WPM needs new recordings),
@@ -80,7 +93,8 @@ If it matters, candidates (heuristic until measured): a longer average, or
 a lower birth threshold with longer persistence (the threshold sits about
 10 standard deviations of the averaged noise above the floor, derived, so
 there is room), each traded against latency and the false-track rate (also
-to be measured on pure noise, which has not been done).
+to be measured on pure noise, which has not been done; simulated on white
+noise 2026-10-16, design notes, "Opening and closing channels").
 
 ### Top priority: research, then implement a probabilistic decoder
 
@@ -271,6 +285,261 @@ rule's limit of 0.05; the variants tried did not fix it (the nearest, 16·T_g, g
 threshold was kept (measured, E7; results section 3.10). A false over start discards the station's
 fit and amplitude mid-transmission. Stage 2: make the over-start test aware of the station's own
 spacing, for example from its fitted word gaps, rather than a fixed multiple of T_g.
+
+### Farnsworth spacing in the new decoder (owner, 2026-10-21: removed from the first prototype)
+**Status (2026-10-21): open.** The new decoder's first prototype (viterbi) assumes standard spacing only.
+- The Farnsworth factor is removed from its code: the factor in each reading's state, the 23-factor grid, and the
+  open-factor tables and scan.
+- The removed code is in the branch's history, in the commits before the prototype's Task 4d.
+- Farnsworth-spaced signals (DEV2's groups I and I2) are expected to decode poorly until a fix. Owner's decision: "we eliminate the Farnsworth factor entirely for now and allow any Farnsworth decoding to fail
+until a future fix ... That will help with CPU and will restore proper decoding of properly sent Morse."
+
+**What was found** (the first prototype; measured unless marked):
+- **How it worked.** Each reading carried a factor F. There were 23 values, 10% apart from 1 to 8.14, all equally
+  likely (the flat prior, owner 2026-10-19). A reading chose its F at its first gap between letters or words, paying
+  ln 23 = 3.1 nats.
+- **The cost to standard code.** Every reading of well-sent standard code pays those 3.1 nats at its first letter gap,
+  as if F = 8 were as likely as F = 1. A reading that never takes a letter gap avoids the payment.
+- **The misreading.** Add the uniform letter cost (ln 62 = 4.13 nats) and the timing model's spread (0.3 in ln length;
+  a 3-dot gap read as a 1-dot gap costs about 6.7 nats, derived), and merging letters into one longer symbol can win.
+  - "TEST" sent alone decoded as "-" (-....-) in 12 of 12 runs at +10 to +30 dB S500. The one-symbol reading misfits
+    by 14.6 nats at a speed 1.33 times slower, but saves 16.7 nats of priors.
+  - With a single factor, "TEST" decoded correctly, by 1.1 nats.
+  - "TU" sent alone would read as "X" by about 1 nat even at the right speed (derived).
+  - Evidence: `docs/plans/data/2026-10-20-new-decoder-prototype-1/one-word-over.csv` and the prototype's results
+    record.
+- **The CPU.** The factor's branching, 23 factors × 2 gap kinds at every possible gap end, was the search's largest
+  cost: 82% of its time on noise before the exact speed-ups.
+- **Thin margins even at F = 1.** At a later letter gap the correct reading wins by only about 2 nats at exact timing
+  (derived), so real fists may still merge letters.
+
+**Thoughts for the fix** (the discussion of 2026-10-21; none tried):
+- (a) **A starting probability concentrated on standard spacing,** counted from on-air traffic: the design notes'
+  "measured from the population" form, the alternative to flat. For example, F = 1 with most of the mass, and
+  Farnsworth readings paying a few nats once.
+- (b) **Standard spacing by default, Farnsworth on demand.** Farnsworth readings would be started as rescues when a
+  letter gap is much longer than standard spacing allows. This removes most of the branching.
+- (c) **Spacing learned per sender,** like the level: each reading estimates its own letter-gap and word-gap stretch
+  from its gaps. This covers Farnsworth and irregular hand senders alike.
+- **Independently of Farnsworth:**
+  - a character-frequency prior instead of the uniform 1/62, since merged symbols are usually rare ones;
+  - over the factors, an exact average instead of the best one (about ln(23/k), with k the factors that fit).
+
+**How to measure a fix:**
+- DEV2's Farnsworth groups (I, I2);
+- the one-word overs (TEST, TU);
+- the speed step and the constant-speed stations, against the standard-spacing default;
+- CPU per channel-second on noise.
+
+### Short overs of dots read as one longer symbol in the new decoder (found 2026-10-21; open)
+
+The new decoder's first prototype has no text model (every symbol costs ln 62 = 4.127 nats) and a broad timing model
+(0.3 in ln(length), a placeholder). With the Farnsworth factor removed, "TEST" and "TU" sent alone decode correctly, but
+only by about 1 nat at exact timing. Overs of repeated dots lose (derived with the fist's own ln P at 25 WPM; not run
+through the decoder):
+- "EE" alone reads as "I" by 0.06 nats; "TT", "ET" and "TE" behave alike.
+- "EEE" alone reads as "S" by 1.05 nats, and "EEEE" as "H" by 2.07.
+
+With no other elements to pin the speed, the merged reading takes a speed about 1.44 times slower. There a 3-dot gap
+read as a 1-dot gap costs about 4.5 nats of misfit, against the 4.52 nats an extra letter and its gap's kind cost.
+"EE" is the "dit dit" that often closes a contact.
+
+**Thoughts for a fix** (none tried):
+- A timing spread measured on real keying, which is likely tighter for well-sent code.
+- A model of whole words or of a contact's closing words ("EE", "TU", "73").
+- A speed prior that keeps a one-word over near the speed of the transmission before it.
+
+A character-frequency prior would not help "EE" against "I", which are both common letters.
+
+**How to measure:** DEV2's QSO group (H2) and the one-word overs above, sent alone, at several levels and seeds.
+
+### A neighbor inside the channel takes over a weak station in the new decoder (found 2026-10-21; open)
+
+The new decoder's first prototype has no interference model (the plan's O2): its stories model one station per channel,
+and everything else counts as noise or as that station.
+
+Measured with the genie frequency (the tracker plays no part):
+- The setup: a station sending "PARIS PARIS" at 25 WPM, a keyed neighbor at 22 WPM above it, three seeds.
+- **Lost to its neighbor:** a station at +6 or +10 dB S500 beside an equally strong neighbor 40 or 70 Hz away, or beside
+  one 10 dB stronger within 100 Hz.
+- **Lost in every cell tried:** neighbors 20 to 40 dB stronger within 100 Hz, 54 of 54 runs.
+- **E2-like cells** (station +8 to +14 dB S500, neighbor -6 to +12 dB relative, 12 to 90 Hz away): 6 of 108 runs exact.
+- **The systematic term** (the plan's D15) changed none of this while the neighbor is keyed. Evidence:
+  `docs/plans/data/2026-10-20-new-decoder-prototype-1/systematic-neighbors.csv` and the prototype's results record.
+- **A neighbor that has stopped** (the search alone, a neighbor 30 to 40 dB stronger (dB relative to the station's
+  key-down power), one key-down, 15 to 200 Hz away, stopping 0.10 to 0.30 s before the station starts): the systematic
+  term remembers its power for 390 ms and costs the station its first element in 194 of 288 runs, all exact without the
+  term (owner, 2026-10-21: kept as a measured trade). Evidence: `systematic-stopped-neighbor.csv` beside the table
+  above, and the results record, section 1.7. A fix that tells the station's own power from a neighbor's would remove
+  the trade. Updated 2026-10-25 to the design of plan D16–D17: the systematic term's memory is now 10 samples, 26.67 ms
+  (owner, 2026-10-23; plan D17), replacing 390 ms; the prototype measures it on this stopped-neighbor grid.
+
+The channel passes about ±150 Hz around the station, so a neighbor's carrier and its keying sidebands within that range
+reached every story's sums. Updated 2026-10-25 to the design of plan D16–D17: the decoder now reads one front filter per
+channel, matched to a 100 WPM dot (noise bandwidth 76 Hz), which rejects neighbors 70 Hz or more away by 15.3 dB (dB
+relative to 0 Hz) or more; a likely gain, to be measured. A neighbor inside the filter still reaches the station's
+envelope samples and its long-run power estimate (design notes, amendment of 2026-10-25, part 13).
+
+**Thoughts for a fix** (none tried):
+- a narrower or adaptive channel filter for the decoder;
+- stories that carry a second station, an interference state;
+- cancelling the stronger neighbor first (successive interference cancellation);
+- a level model that refuses a level jump to the neighbor's.
+
+**How to measure:** DEV2's QRM group (E2) in the measurement runs (R4; R9, the tracker's run, is void, since the new
+decoder has no tracker; updated 2026-10-25 to the design of plan D16–D17), the grid above, and neighbors 40 to 70 Hz
+away (design notes, amendment of 2026-10-25, part 15, item 15).
+
+### Fading splits marks in the new decoder (found 2026-10-21; fix designed 2026-10-25, plan D16–D17)
+
+**Status 2026-10-30:** the design of plan D16–D17 did not cure this; the level-dependent added variance did, up to +30 dB S500 (see "The amplitude model inside marks"; decision log).
+
+The owner made this the next piece of work (2026-10-21): diagnose first, then a principled fix proposed to him.
+
+Measured: "PARIS PARIS" at 25 WPM under flat Rayleigh fading with the generator's Gaussian Doppler spectrum, through
+the decoder.
+- **At f_D = 2 Hz** no run decoded exactly at any level from +10 to +60 dB S500, with or without the systematic term.
+- **At f_D = 1 Hz** 7 of 20 runs at +20 dB S500 decoded exactly with the term, none without it.
+- **The texts split marks:** "PA" reads "W I" or "A A".
+- **The systematic term** was better in 242 of 360 runs, by character error rate, and worse in 29. Those 29 come from
+  a mechanism of their own: the key-up overshoot of a station fading up raises C² inside its mark.
+
+Evidence: `docs/plans/data/2026-10-20-new-decoder-prototype-1/systematic-fading.csv` and the prototype's results
+record, section 1.7.
+
+**How to measure:** that grid, DEV2's fading group (B2), and the genie fading spread.
+
+**The fix chosen (owner, 2026-10-22; plan D16):** standard practice, noncoherent detection behind a fixed filter, with
+each story's strength tracked as an amplitude. Chirp, key clicks and static are declared limitations.
+
+**Status updated 2026-10-25 to the design of plan D16–D17:** the diagnosis is done and the fix is designed: one 76 Hz
+front filter per channel, envelope samples every 2.667 ms, each story's predicted output (the smeared prediction), its
+amplitude predicted from the long-run power Ω̄ at a fixed 2 Hz fading spread, and no blocks (design notes, amendment of
+2026-10-25). The grid above is the prototype's first measurement of it (part 15, item 3), with the same grid at 8 and
+5.2 WPM.
+
+### Chirp, key clicks and static crashes: known limitations of the new decoder (owner, 2026-10-22)
+
+Standard practice accepts these rather than modeling them (survey,
+`docs/research/2026-10-22-cw-detection-standard-practice.md`); the owner agreed (plan D16).
+- **Chirp,** a transmitter's frequency jump at key-down: the front filter passes up to about ±25 Hz; beyond
+  that a mark's first samples are lost. Updated 2026-10-25 to the design of plan D16–D17: the filter is the 76 Hz one
+  decided on 2026-10-23 (plan D17), −1.42 dB at 25 Hz and −3.8 dB at 40 Hz (dB relative to 0 Hz); "80 Hz" was D16's
+  first figure. A model that learns each sender's chirp from its recent marks is possible later.
+- **Key clicks,** splatter from hard keying: mainly a neighbor's problem; on the station itself, edges sharper than the
+  template.
+- **Static crashes** (impulsive noise): a filtered crash has the shape of a short dot, so a strong one will likely print
+  a false E or T. A crash inside a story's key-down samples also enters its long-run power estimate, raising it, the
+  safe direction (updated 2026-10-25 to the design of plan D16–D17). A wideband noise blanker ahead of the channelizer,
+  as CW Skimmer offers, is the standard remedy, for later.
+
+The test generator has none of these; measuring them needs generator changes, which need the owner's approval.
+
+### A hang AGC as a fallback for the new decoder's long-run amplitude (owner, 2026-10-23; only if needed)
+
+The new decoder takes each story's long-run amplitude from the RMS of its own key-down samples, with Ω̄, the expected
+long-run power given the fades seen and the owner's flat prior (plan D16). Updated 2026-10-25 to the design of plan
+D16–D17: the RMS is the ordinary-least-squares fit Σ s_k²(e_k² − σ_y²)/Σ s_k⁴ over every sample where the story's
+template is nonzero, and Ω̄ takes it clipped at zero (owner, 2026-10-25; plan D17). A decision-free hang AGC on the
+channel was adopted as its backup, then dropped from the design (owner, 2026-10-23): the Ω̄ fix covers the starts, and a
+channel-level AGC knows a new station's level only from an earlier transmission within its hang. Its role and its
+settings (rise, hang, release) are undecided; work them out only if the prototype shows the per-story RMS failing.
+
+### The detector's frequency following and the fixed channel (owner, 2026-10-23; later)
+
+Found while discussing the new decoder's tracker (plan D17). The owner: "There seem to be a web of issues here which I
+don't think we need to tackle right now, but which should be recorded in the backlog", then: "My decision was only
+about the detector, but I would say all the decisions that have to do with the decoder are still open." From
+`docs/signal-processing.md` §6 and §7:
+- **The detector follows a station's frequency after its first determination:** every hop (21.33 ms) each track moves
+  to the strongest qualifying peak within D_ch = 47 Hz of where it is. What that serves today: keeping a drifting
+  station from being born again as a second track, the Matched decoder (which follows it at every block) and the bank
+  (which mixes by it). The new decoder reads it only at its channel's first block (a decoder matter, still open in the
+  plan). Updated 2026-10-25 to the design of plan D16–D17: since decided, the new decoder has no frequency tracker and
+  does not read the detector's frequency (owner, 2026-10-23: "A"; plan D17); the channelizer's following brings it the
+  station near 0 Hz.
+- **The channel never moves (decided away the same day):** the owner then chose that the channelizer follow the
+  detector's frequency at every block (plan D17), so this item is no longer deferred.
+- **Unmeasured on the detector path:** QSO turnovers (an answering station within 47 Hz moves the track) and drift;
+  the new decoder's first prototype is measured on oracle channels only.
+
+### Matched and the channelizer's frequency following (coordinator's ruling, 2026-10-26; later)
+
+The spec's amendment of 2026-10-25 (§5.2, step 1) says the channelizer follows the signal detector's frequency for
+each track (the shared FFT's nearest bin, moved at more than half a bin, 11.72 Hz, then a fine phase-continuous
+shift), and D17 left to the implementation plan how the bank and Matched adapt, since their own shifts by the
+detector's frequency become redundant. The amended build (`docs/plans/2026-10-26-new-decoder-prototype-1b.md`, O2)
+applies the following to the new decoder's channels only. The bank stays frozen as the reference: its replay decodes
+fixed-bin channel streams and mixes by the label's offset and drift itself. **Matched, the product's default, still
+receives fixed-bin channels and re-centers with its own frequency tracker, which diverges from the spec's
+amendment.** To settle later: whether Matched takes the followed channel (its tracker then sees the station near
+0 Hz, and its re-centering becomes a residual correction or is removed), what that changes in its scores on the
+development set, and whether the frozen bank reference must then be re-recorded. Until then the spec's sentence holds
+for the new decoder only.
+
+### The amplitude model inside marks under fast fading (owner, 2026-10-22: a known limitation)
+
+**Status 2026-10-30:** eased, not cured: the variance added at lag 1 now grows with the level (`added_variance_multiplier_max`, `added_variance_level_knee`, heuristics; decision log). Still open above +30 dB S500, where no constant is right ("PARIS PARIS", f_D = 1 Hz: CER 0.48 at +60 dB S500 against 0.00 with the plain rule); a rate-adaptive variance is the likely next step.
+
+The new decoder's amplitude per story is one number (Bell 1977's form), updated at every envelope sample, every
+2.667 ms (updated 2026-10-25 to the design of plan D16–D17; 3 ms when this was measured), with the owner's rule for its
+change. Fading is smooth, so a fade keeps its direction for a while; a one-number model treats each sample's change as
+an independent step, so over n steps it expects √n times one step's movement instead of about n. Inside long marks
+during fading it is therefore over-confident, even when it knows the station's true level and rate: about three times
+too many 1% surprises at 2 Hz and 25 WPM (measured in scratch with 3 ms samples, not remeasured at 2.667 ms;
+`.superpowers/sdd/2026-10-20-new-decoder-prototype-1/amp-predictive.md` and its review).
+
+Where it matters: the fading rate times the mark length, and mainly strong signals. Steady signals and fading up to
+about 1 Hz at 25 WPM are unaffected (the fixed 2 Hz rule is calibrated or cautious there); 2 Hz and faster at 25 WPM is
+affected; at slow speeds, with longer marks, it starts at slower fading (an 8 WPM dash of 450 ms, likely from about
+1 Hz; derived, the 8 WPM check unfinished).
+
+It also sets the newborn's first-mark tail (plan D24; the newborn-fading study, 2026-10-27/28, under the ratio form):
+with the prediction step every 8 samples the newborn follows this same one-number model, and the first marks it still
+loses against the exact fading reference, up to 52.5 nats worst at 5 Hz and 20.5 at 2 Hz (against the reference at
+2 Hz), are a level rising out of a deep fade, which the model cannot follow in the newborn or after it.
+
+A possible remedy is a second number per story, the amplitude's rate of change. That is standard in target tracking
+(the nearly-constant-velocity model, Bar-Shalom) and in fading-channel estimation of the complex gain (Baddour and
+Beaulieu 2005), but not established for amplitude-only tracking in a Morse decoder, and a Rayleigh amplitude turns
+sharply at deep nulls, where a trend model misjudges. It needs a standard-practice check before being offered.
+
+### Several fading rates per story in the new decoder (owner, 2026-10-22; later)
+
+The owner chose one fixed fading rate, 2 Hz, on the fast side as Bell did (plan D16). Real fading runs from about
+0.05 to 5 Hz. Running a few rates side by side in each story (for example 0.3, 1 and 3 Hz), weighted by the evidence
+(multiple models: Magill 1965; Blom and Bar-Shalom 1988), would follow each station's own time scale, at about 3 times
+the work per story. The owner (2026-10-22): "something like B, and all the other choices which add to the number of
+potential stories needs to be considered very carefully given how much CPU we're currently requiring per channel."
+Measure the CPU first.
+
+### The edge's position handled jointly across its samples in the new decoder (found 2026-10-28; later)
+
+The template's edge variance v_k (design notes, Part 5) covers where within its 2.667 ms sample an edge fell, but is
+added independently at each of the 5 to 7 samples the edge touches, though one position is shared by all of them. The
+standard treatment averages the likelihood over that one position, jointly across the edge's samples. Measured in the
+score-form study of 2026-10-28 (C++, scratch; plan D23), with 8 positions of the latest edge: the true timing leads
+its best one-sample neighbor by 131.7 nats at +40 dB S₅₀₀ and 25 WPM against 13.9 without it (47.1 against 6.6 at
+40 WPM; 8.2 against 7.6 at +20 dB S₅₀₀); decoding of "PARIS PARIS" unchanged on that grid; ordinary scoring 17.8 times
+the cost as built (+920% of the projected 425.7 ms per channel-second). A cheaper build (the shared-reference scoring
+per position, marginalizing only the samples 4 to 11 after the edge, where the position matters) is estimated at
+about 4 times today's scoring (rough). D23 rejected it for now at +920% CPU and put it in the backlog as a measured
+variant; whether to take it up is left open, to the owner.
+
+### A narrower filter for slower signals in the new decoder (owner, 2026-10-22; later)
+
+The owner chose one fixed filter for every speed: about 80 Hz wide, matched to a 12 ms dot at 100 WPM, sampled every
+3 ms (plan D16). Updated 2026-10-25 to the design of plan D16–D17: the filter is matched to a real 100 WPM dot (12 ms at
+half amplitude, 2.5 ms raised-cosine edges), noise bandwidth 76 Hz, sampled every 2.667 ms (owner, 2026-10-23; plan
+D17). A slower signal pays for the extra width:
+- the extra noise against a 50 Hz filter is 10·log₁₀(76/50) = 1.8 dB of noise power (derived; 2.0 dB with D16's
+  80 Hz);
+- summing the envelope over longer marks recovers part of it, not all.
+
+The owner (2026-10-22): "record in the backlog that we can look later at how we might want to make the filter narrower
+for slower signals." Possible forms: a few filters of different widths, each story reading the one matched to its
+speed (as the bank decoder's speed ladder does), or a narrower filter once a station's speed is known. To be measured
+against the single filter on DEV2's slow signals.
 
 ### Time-base invariance of the decoder (stage 2; known issue)
 **Status (2026-10-07): applies to the Bell decoder** (design spec §5.2, amendments of 2026-10-07); written for the filter-bank decoder, the measure carries over.
@@ -511,7 +780,7 @@ Two stages:
 2. **Later, only if the benchmark shows it beats option 2 on the stations
    where it would run:** an opt-in, channel-capped "second-opinion"
    decoder for low-confidence stations (survey option 4, arbitration),
-   for example at most about 10 stations on a desktop and none on a Pi.
+   for example at most about 10 stations on a desktop.
 
 Work items:
 - **Runtime:** export the encoder plus CTC head once to ONNX (15.9 MB,
@@ -558,7 +827,7 @@ Work items:
 Risks, most serious first:
 1. **CPU:** about 2.1 GMAC per channel-second, roughly 100–140× option 2;
    measured 7–20 channels per performance core (ONNX Runtime, fp32, one
-   thread, i7-12700H), and an estimated 8–20 channels per Raspberry Pi 5.
+   thread, i7-12700H).
 2. **Speed range:** trained on 16–28 WPM only; contest speeds above about
    30 WPM are out of distribution.
 3. **Latency:** up to 4 s, fixed 6 s window; the model is not robust to
@@ -599,6 +868,12 @@ Fix, in two parts:
 
 Must land before callsign matching.
 
+**For the new decoder (owner, 2026-10-16):** replay at every opening is
+part of its design for live use (design notes,
+`docs/design/2026-10-09-new-decoder-design-notes.md`, "Opening and closing
+channels", decision 3); its length is set there from the measured opening
+delays, and the 2 s above is a placeholder.
+
 **Matched, a channel that opens mid-mark (milestone 2, part 1, Task 16):**
 the partial mark is no longer counted for speed (`docs/signal-processing.md`
 appendix A.8, "Marks whose start was not observed"); measured before/after (Task 17;
@@ -608,7 +883,9 @@ Matched CER 0.0622 → 0.0436 (60 → 42 edits in 964 symbols), its
 per speed (machine keying, S₅₀₀ 25 and 10 dB), openings worse than
 Envelope by at least 5 edits went 6 → 0 and 3 → 0 at 18.5 WPM, 0 → 0
 and 2 → 1 at 25 WPM, and 5 → 6 and 12 → 15 at 12 WPM, where a milder
-loss is new (the first characters read as T's; §8, cause inferred), and
+loss is new (the first characters read as T's; cause inferred in
+`docs/signal-processing.md` appendix A.8, "Slow stations at start-up
+(12 WPM)"), and
 every opening that had lost the rest of its text now decodes after its
 first word (one channel at 25 WPM, S₅₀₀ 10 dB, still decodes nothing;
 not diagnosed). This item stays open: replay is still the fix for the
@@ -664,6 +941,12 @@ last character): it does not cover the engine, where the track lingers
 about 8 s, nor the ~1% stray character after a silence ("Stray noise after
 a silence" below).
 
+**For the new decoder (owner, 2026-10-16):** its no-signal hypothesis
+decides when a station has stopped, and it closes the channel (design
+notes, "Opening and closing channels", decision 2); what it prints on
+noise is measured as characters per hour on noise-only channels (the
+standard-practice check, step 1, P5(h)).
+
 ### Tracks outlive their stations; separate station identity from decoding
 
 A track is dropped about 8 s after its station stops even with a 1 s timeout,
@@ -686,12 +969,26 @@ its first word (every run at 200 Hz, and at 100 Hz with the answering
 station 6–10 dB weaker than the caller's key-down power). Real overs are
 often longer.
 
+**For the new decoder (owner, 2026-10-16):** the decoder closes the
+channel when it finds no station (design notes, "Opening and closing
+channels", decision 2); whether a station's identity, speed and level
+survive a pause is topic 7's question. Derived there: a channel now closes
+11–21 s after its station stops (the average's decay, ln R seconds for an
+averaged SNR per bin R as a power ratio, plus the 10 s timeout).
+
 ### Ghost tracks beside very strong signals
 
 Around 60 dB SNR (500 Hz), extra tracks appear a few hundred Hz either side of a
 station and decode runs of `E` and `I`. Fix idea: reject a peak that sits
 inside a much stronger track's skirt (more than X dB below that track's level within
 ±N Hz).
+
+Measured (stage-1 results record §5.4): on the strong group, Matched and
+Envelope printed text on 12 extra tracks, the bank prototype on 1
+(presumably these ghosts; not checked track by track). A lower
+opening threshold, as the new decoder's design intends, opens more of
+them; they are counted on real recordings and handled with the channel's
+other contents (design notes, "Opening and closing channels", 2026-10-16).
 
 ### Express the remaining bin- and sample-counted settings in physical units
 
@@ -757,7 +1054,12 @@ unchanged.
 ### Detector: averaging, noise floor and detection theory
 
 All of the detector's parameters are heuristics (see
-`docs/signal-processing.md`, section 6).
+`docs/signal-processing.md`, section 6). The new decoder's design takes
+this item up (owner, 2026-10-16; design notes, "Opening and closing
+channels"): the threshold is set from a false-channel rate against a local
+floor, topic 3's hiss estimator, and the average and persistence are
+derived with it. A simulation on white noise found no false track in an
+hour at 2.25 dB above the floor or higher, 5 at 2.0 dB.
 - **Averaging:** compare a boxcar mean over T = 1–2 s with the current
   exponential average (τ = 1 s): false tracks, detection delay, time to drop
   a track. Derive T from the false-alarm rate across N bins, an averaging time
@@ -815,8 +1117,11 @@ The decoder estimates speed from the last 24 marks (a heuristic; about 4 s at
 ### max_tracks
 
 `DetectorConfig::max_tracks` = 200 is a guess at a CPU guard, not exposed to
-users. Measure throughput against the number of tracks (on this PC and on a
-Raspberry Pi), set the default with margin, and expose it in the app.
+users. Measure throughput against the number of tracks (on the desktop and the
+Linux machine), set the default with margin, and expose it in the app. A
+Raspberry Pi is not a target (owner, 2026-10-26). A contest band holds a
+few hundred signals (CW Skimmer copied 326 on 40 m in CQ WW CW); the
+new decoder's eventual target is about 500 tracks on one band (plan D18).
 
 ### Spectrum frames in linear power
 
@@ -873,7 +1178,8 @@ decides the result: the ambiguous band (47–70 Hz on the Envelope path,
 where Matched does worst on the QSO label (2 of 6 grid QSOs at 50 Hz above
 CER 0.4 in Task 14, 0.533 and 0.415, and still the two worst after Tasks
 15 and 16, 0.557 and 0.374: exactly the two that split into two tracks on
-the Matched path; §8b), and separate-track QSOs are dominated by track
+the Matched path; `docs/plans/2026-09-27-milestone-2a-results.md` §8.3,
+"Groups G and H"), and separate-track QSOs are dominated by track
 turnover on both paths. How many real answers fall in each band
 therefore matters.
 
@@ -885,8 +1191,8 @@ Tuning waits for evidence from the benchmark (owner, 2026-09-27 and
 2026-09-29: only with strong evidence; the benchmark exists to find better
 values). The Matched front end is the default from milestone 2, part 1
 (owner decision 2026-09-29). Its parameters are heuristic
-(`docs/signal-processing.md` §7, §8, §8b): the filter length β = 0.8 dit
-(sweep 0.6, 0.8, 1.0), the amplitude and noise time constants (0.5 s, 2 s;
+(`docs/signal-processing.md` appendix A.6, A.7, A.8, A.8b): the filter length
+β = 0.8 dit (sweep 0.6, 0.8, 1.0), the amplitude and noise time constants (0.5 s, 2 s;
 the fading group is the test), the squelch a_min = 3·(T_v/16 ms)^(1/4)
 (T_v the filter's duration), the keying hysteresis ±1 nat, the noise guards
 κ = 1.75 and κ_n = 4, the noise floor's margin (2.5), clean fraction (0.25)
@@ -932,7 +1238,8 @@ Three mechanisms were diagnosed in Task 14; one is fixed, one partly:
   widened again, so the filter reached its target within one mark (20 →
   95 ms in 35 ms, measured). With a wrong estimate it jumped to the wrong
   width at once. Measured after the fix: the two start-up runaways of
-  §8b read Matched CER 0.000 and 0.015 (were 0.464 and 0.981), and group
+  `docs/plans/2026-09-27-milestone-2a-results.md` §8.3 ("Limits
+  measured") read Matched CER 0.000 and 0.015 (were 0.464 and 0.981), and group
   A's CER-0.10 crossing at 25 WPM is 1.1 dB (0.4 to 1.4 dB; was 2.7 dB,
   −0.0 to 10.4 dB).
 - **A misleading first mark** (the front end's 0.32 s warm-up ending inside
@@ -952,8 +1259,8 @@ Three mechanisms were diagnosed in Task 14; one is fixed, one partly:
   at 12 WPM 6 and 15 of 80 are (was 5 and 12), now by a milder loss: the
   first characters of a station slower than 12.5 WPM read as a string of
   T's (group A, 12 WPM, first-word CER 0.591 → 0.985 at S₅₀₀ 6–20 dB;
-  cause inferred in §8, "Marks whose start was not observed", not
-  instrumented).
+  cause inferred in `docs/signal-processing.md` appendix A.8, "Slow
+  stations at start-up (12 WPM)", not instrumented).
 - **Tune-up carriers of 1 s or more** leave the Matched channel silent when
   the channel opens during the carrier (measured by cutting the recording;
   a 2 s carrier also when the channel is open before it; unchanged by
@@ -1114,17 +1421,20 @@ the after figures include Task 16; Task 15 alone was also scored, and
 its figures are given where they differ): group A, Matched S₅₀₀ at CER 0.10
 (dB): 0.2 (−0.5 to 2.2) → −0.2 (−0.5 to 0.7) at 12 WPM, 2.7 (−0.0 to
 10.4) → 1.1 (0.4 to 1.4) at 25 WPM, 3.1 (2.0 to 3.6) → 2.9 (2.2 to 3.3)
-at 40 WPM; the two start-up runaways of §8b, Matched CER 0.464 → 0.000
+at 40 WPM; the two start-up runaways of
+`docs/plans/2026-09-27-milestone-2a-results.md` §8.3 ("Limits measured"),
+Matched CER 0.464 → 0.000
 (`A-awgn-25wpm-1-s1`, +6606.5 Hz, S₅₀₀ 10 dB) and 0.981 → 0.015
 (`A-awgn-25wpm-0-s2`, −2991.9 Hz, S₅₀₀ 2 dB; 0.074 with Task 15 alone);
 a regression from Task 15 alone, group D's speed step from 20 to 35 WPM,
 0.113 → 0.394, the text stopping after the step in 5 of 6 signals (not
-diagnosed; §8b, "Where Matched is worse"); group H through the
+diagnosed; the same record's §8.3, "Where Matched is worse than
+Envelope"); group H through the
 detector at 50 Hz (grid, 6 QSOs), QSO-label CER 0.533, 0.154, 0.046,
 0.415, 0.032, 0.040 → 0.557, 0.234, 0.046, 0.374, 0.025, 0.043: the two
 QSOs that split into two tracks (the same two; tracks per QSO 1.33 before
 and after) still read worst, consistent with the split, not a runaway,
-failing them (inferred; §8b, "Groups G and H").
+failing them (inferred; the same record's §8.3, "Groups G and H").
 
 ### A mark whose key-up the squelch forces (possible limit; derived from the code, not observed)
 
@@ -1185,7 +1495,8 @@ its own plan. Related item above: "Spectrum frames in linear power".
   something to consider for the UI): shade decoded characters darker or
   lighter by the decoder's confidence in them. Needs a per-character
   confidence that means something first: the bank decoder now publishes a
-  placeholder probability of 1 per character (signal-processing.md §8c);
+  placeholder probability of 1 per character (signal-processing.md appendix
+  A.8c, "The bank decoder behind the engine");
   candidates are the fit's class posteriors per element, the text model's
   score, and whether a later correction is still possible (a character
   inside the 20 s correction reach is provisional).
@@ -1302,3 +1613,9 @@ for the line format and client handling.
   way to inject a test decoder).
 - **Input checks:** reject infinite values in decoder settings; generator
   arguments (zero or negative counts and durations).
+
+## Fast code between whole samples (new decoder, found 2026-10-30)
+
+**Fixed 2026-10-30:** the merge key now holds the edges of the last 12 samples: 45 to 100 WPM, 84 of 84 runs exact (decision log). The diagnosis below, "cannot be claimed exactly", was wrong: claims were dropped at the merge before their evidence existed, and the joint edge-offset item is not needed for this.
+
+"PARIS PARIS" at 80 and 100 WPM reads wrongly on most seeds, with letters merged or split (`P<AR>IS`, `PAR5`, `LARIS`), and gets worse from +20 to +40 dB S500, while 70 and 90 WPM are mostly exact and 90 WPM (a dot of exactly 5 samples of 2.667 ms) is exact at +40 dB S500 on 6 of 6 seeds. Dots of 5.6 and 4.5 samples cannot be claimed exactly, and the misfit grows with the signal. The joint edge-offset item (design notes, part 5, the audit's row 10) is the first thing to try. Measured on 6 seeds per point, a 25 WPM to 100 WPM slice of synthetic machine keying only.

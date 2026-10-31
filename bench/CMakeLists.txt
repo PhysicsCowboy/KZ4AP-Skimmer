@@ -6,6 +6,7 @@ add_library(kz4ap_bench_lib
   src/noise_mask.cpp
   src/report.cpp
   src/scoring.cpp
+  src/viterbi_json.cpp
 )
 target_include_directories(kz4ap_bench_lib PUBLIC src)
 target_link_libraries(kz4ap_bench_lib PUBLIC kz4ap::engine nlohmann_json::nlohmann_json)
@@ -39,21 +40,60 @@ else()
   target_compile_options(kz4ap-noise-mask PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# Generates the new decoder's compiled-in tables (plan 1b, Ruling 65). It links the engine's sources without the
+# generated tables, so it builds before any table exists (Ruling 72, N6), through its own static archive of
+# kz4ap_engine_core's objects (Ruling 76): the linker takes from an archive only the objects the tool needs, so engine
+# code that reads a generated table (the decoder's, through OmegaBarTable::compiled()) stays out of the
+# tool, where linking the object library itself would take every object and leave those references unresolved.
+# kz4ap_engine stays one archive of the core objects and the generated tables (engine/CMakeLists.txt).
+add_library(kz4ap_viterbi_tables_core STATIC $<TARGET_OBJECTS:kz4ap_engine_core>)
+target_include_directories(kz4ap_viterbi_tables_core PUBLIC ${PROJECT_SOURCE_DIR}/engine/include)
+target_compile_features(kz4ap_viterbi_tables_core PUBLIC cxx_std_20)
+target_link_libraries(kz4ap_viterbi_tables_core PRIVATE sleef)
+add_executable(kz4ap-viterbi-tables src/viterbi_tables_main.cpp)
+target_link_libraries(kz4ap-viterbi-tables PRIVATE kz4ap_viterbi_tables_core)
+if(MSVC)
+  target_compile_options(kz4ap-viterbi-tables PRIVATE /W4 /permissive- /utf-8)
+else()
+  target_compile_options(kz4ap-viterbi-tables PRIVATE -Wall -Wextra -Wpedantic)
+  find_package(Threads REQUIRED)
+  target_link_libraries(kz4ap-viterbi-tables PRIVATE Threads::Threads)
+endif()
+
 add_executable(kz4ap_bench_tests
   tests/bank_json_test.cpp
+  tests/bench_run_test.cpp
   tests/channel_recorder_test.cpp
   tests/cpu_time_test.cpp
   tests/labels_test.cpp
   tests/noise_mask_test.cpp
   tests/report_test.cpp
   tests/scoring_test.cpp
+  tests/viterbi_json_test.cpp
 )
 target_link_libraries(kz4ap_bench_tests PRIVATE kz4ap_bench_lib GTest::gtest_main)
-# bank_json_test reads the bank decoder's golden values with the engine tests' helper.
-target_include_directories(kz4ap_bench_tests PRIVATE ${PROJECT_SOURCE_DIR}/engine/tests/bank)
+# bank_json_test reads the bank decoder's golden values with the engine tests' helper; bench_run_test makes its
+# recording with the engine tests' signals (test_signals.hpp).
+target_include_directories(kz4ap_bench_tests PRIVATE ${PROJECT_SOURCE_DIR}/engine/tests/bank
+                                                    ${PROJECT_SOURCE_DIR}/engine/tests)
+# bench_run_test shapes its noise in frequency with the engine's FFT (by a path of its own: a file named "version" in
+# that folder would stand in for the standard header if the folder were on the include path).
+target_compile_definitions(kz4ap_bench_tests PRIVATE POCKETFFT_NO_MULTITHREADING)
+# bench_run_test runs kz4ap-bench itself, so it is built first; viterbi_json_test reads the statistics files that the
+# Python reductions' tests read too (training/tests/data/search-stats).
+add_dependencies(kz4ap_bench_tests kz4ap-bench)
 target_compile_definitions(kz4ap_bench_tests PRIVATE
-  KZ4AP_BANK_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/engine/tests/data/bank")
+  KZ4AP_BANK_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/engine/tests/data/bank"
+  KZ4AP_BENCH_EXE="$<TARGET_FILE:kz4ap-bench>"
+  KZ4AP_SEARCH_STATS_FIXTURES="${PROJECT_SOURCE_DIR}/training/tests/data/search-stats")
 gtest_discover_tests(kz4ap_bench_tests)
+
+# kz4ap-bench refuses the new decoder's --set, --genie and --stats options that it cannot run before it reads the
+# recording: exit status 2 and one message (tests/bench_refusal.cmake; it needs no recording and writes nothing).
+add_test(NAME Bench.RefusesTheNewDecodersOptionsItCannotRunBeforeReadingTheRecording
+         COMMAND ${CMAKE_COMMAND} -DBENCH=$<TARGET_FILE:kz4ap-bench>
+                 -DRECORDING=${CMAKE_CURRENT_BINARY_DIR}/no-such-recording.wav
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/bench_refusal.cmake)
 
 # kz4ap-bank-replay refuses a --set rekey_after_s or rekey_timeout_s that is not positive once, before it reads the
 # suite: exit status 1 and one message (tests/replay_refusal.cmake; it needs no suite and writes nothing).
