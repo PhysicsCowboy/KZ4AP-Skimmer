@@ -13,6 +13,8 @@
 // channels reported at their labels' frequencies, which they follow; and a per-station label of a drifting QSO refused.
 #include "viterbi_json.hpp"
 
+#include "../../third_party/pocketfft/pocketfft_hdronly.h"
+
 #include "viterbi/keyed_signals.hpp"
 
 #include <gtest/gtest.h>
@@ -28,6 +30,7 @@
 #include <iostream>
 #include <iterator>
 #include <numbers>
+#include <random>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -438,6 +441,26 @@ void write_station(const fs::path& wav, const fs::path& labels, const std::strin
     std::ofstream(labels) << json{{"sample_rate", 48000}, {"duration_s", seconds}, {"signals", signals}}.dump(2) << '\n';
 }
 
+// Complex noise of 0.02 FS (DEV2's) shaped across the whole recording by an amplitude gain in frequency (Hz, -24 to +24 kHz).
+template <class Gain>
+std::vector<kz4ap::Sample> shaped_noise(std::size_t n, unsigned seed, Gain gain) {
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> draw(0.0, 0.02 / std::sqrt(2.0));
+    std::vector<std::complex<double>> x(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const double k = static_cast<double>(i) - (i < (n + 1) / 2 ? 0.0 : static_cast<double>(n));
+        const double re = draw(rng);
+        const double im = draw(rng);
+        x[i] = std::complex<double>(re, im) * gain(k * kRate / static_cast<double>(n));
+    }
+    const pocketfft::stride_t stride{static_cast<std::ptrdiff_t>(sizeof(std::complex<double>))};
+    pocketfft::c2c(pocketfft::shape_t{n}, stride, stride, pocketfft::shape_t{0}, pocketfft::BACKWARD, x.data(), x.data(),
+                   1.0 / std::sqrt(static_cast<double>(n)));
+    std::vector<kz4ap::Sample> out(n);
+    for (std::size_t i = 0; i < n; ++i) out[i] = kz4ap::Sample(static_cast<float>(x[i].real()), static_cast<float>(x[i].imag()));
+    return out;
+}
+
 // The label of one machine-keyed station.
 void write_label(const fs::path& labels, const std::string& text, double wpm, double freq_hz, double s500_db, double start_s,
                  double end_s, double duration_s) {
@@ -523,6 +546,70 @@ TEST_F(BenchRun, SegmentalSurvivesABurstAtAndAboveOneHundredAndTwoDecibels) {
         const double cer = read_json(path("result.json")).at("score").at("signals").at(0).at("cer").get<double>();
         std::cout << "measured: burst at +" << burst_db << " dB S500: CER " << cer << '\n';
         EXPECT_LE(cer, 0.2) << "burst at +" << burst_db << " dB S500";
+    }
+}
+
+// A floor the hiss cannot read (review F1), read with and without the channel's own floor. Pooled over two stations per cell.
+class BenchRunFloor : public BenchRun {
+protected:
+    struct Read {
+        double with_floor;
+        double without;
+    };
+    // gain(f_hz) of the noise; level re the floor of 0.02 FS, 25 WPM, machine keying.
+    template <class Gain>
+    Read read_on(double s500_db, double freq_hz, Gain gain) {
+        const std::string text = "CQ CQ DE W1AW W1AW K TEST 5NN 73 DE K1ABC";
+        const double wpm = 25.0, start_s = 1.5;
+        const std::vector<std::pair<double, double>> keying = kz4ap::test::keying(text, wpm, start_s);
+        const double seconds = keying.back().second + 1.0;
+        const double amplitude = std::sqrt(std::pow(10.0, s500_db / 10.0) * 0.02 * 0.02 * 500.0 / kRate);
+        double with_edits = 0.0, without_edits = 0.0, symbols = 0.0;
+        for (const unsigned seed : {51u, 52u}) {
+            std::vector<kz4ap::Sample> x = kz4ap::test::keyed_signal_d17(keying, kRate, seconds, freq_hz, amplitude, 0.0, seed);
+            const std::vector<kz4ap::Sample> noise = shaped_noise(x.size(), seed, gain);
+            for (std::size_t i = 0; i < x.size(); ++i) x[i] += noise[i];
+            write_wav(wav_, x, static_cast<int>(kRate));
+            write_label(labels_, text, wpm, freq_hz, s500_db, start_s, keying.back().second, seconds);
+            const auto score = [&](std::vector<std::string> options) {
+                options.insert(options.end(), {"--oracle", "--decoder", "segmental", "--no-timing", "--json", path("result.json")});
+                const Outcome o = run(options);
+                EXPECT_EQ(o.status, 0) << o.err;
+                return read_json(path("result.json")).at("score").at("signals").at(0);
+            };
+            const json with = score({});
+            const json without = score({"--set", "channel_floor_window_s=0"});
+            with_edits += with.at("edits").get<double>();
+            without_edits += without.at("edits").get<double>();
+            symbols += with.at("symbols").get<double>();
+        }
+        return {with_edits / symbols, without_edits / symbols};
+    }
+};
+
+TEST_F(BenchRunFloor, ReadsBehindAReceiversPassband) {
+    // Noise only within 500 or 2 400 Hz around 0 Hz, 50 dB lower outside, one station at +20 dB S500 inside: the hiss falls
+    // in the stopband and reads about 50 dB low. The review: 2.32 and 2.01 without the floor, 0.127 and 0.146 with it.
+    for (const double width_hz : {500.0, 2400.0}) {
+        const double outside = std::pow(10.0, -50.0 / 20.0);
+        const Read r = read_on(20.0, 0.2 * width_hz, [=](double f_hz) { return std::fabs(f_hz) < width_hz / 2.0 ? 1.0 : outside; });
+        std::cout << "measured: passband " << width_hz << " Hz: CER " << r.with_floor << " with the floor, " << r.without
+                  << " without\n";
+        EXPECT_LE(r.with_floor, 0.25) << width_hz << " Hz";
+        EXPECT_GE(r.without, 1.0) << width_hz << " Hz";
+    }
+}
+
+TEST_F(BenchRunFloor, ReadsUnderANoiseRaisedAroundTheChannel) {
+    // Noise raised +6 dB re the white floor over 600 Hz around the channel: the hiss reads the white floor, 6 dB low. The
+    // review: 0.689 and 0.647 without the floor, 0.057 and 0.050 with it, at +20 and +40 dB S500.
+    for (const double level_db : {20.0, 40.0}) {
+        const double raised = std::pow(10.0, 6.0 / 20.0), freq_hz = 300.0;
+        const Read r = read_on(level_db, freq_hz, [=](double f_hz) { return std::fabs(f_hz - freq_hz) < 300.0 ? raised : 1.0; });
+        std::cout << "measured: raised +6 dB, +" << level_db << " dB S500: CER " << r.with_floor << " with the floor, " << r.without
+                  << " without\n";
+        EXPECT_LE(r.with_floor, 0.15) << level_db << " dB S500";
+        EXPECT_GE(r.without, 0.3) << level_db << " dB S500";
     }
 }
 

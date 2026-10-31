@@ -464,6 +464,12 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"key_switch_per_s", &config.key_switch_per_s},
         {"level_walk_nepers_per_sqrt_s", &config.level_walk_nepers_per_sqrt_s},
         {"level_jump_per_s", &config.level_jump_per_s},
+        {"channel_floor_window_s", &config.channel_floor_window_s},
+        {"channel_floor_quantile", &config.channel_floor_quantile},
+        {"channel_floor_margin_db", &config.channel_floor_margin_db},
+        {"channel_floor_stride_s", &config.channel_floor_stride_s},
+        {"channel_floor_refresh_s", &config.channel_floor_refresh_s},
+        {"channel_floor_start_s", &config.channel_floor_start_s},
         {"beam_nats", &config.beam_nats},
         {"duration_z_max", &config.duration_z_max},
     };

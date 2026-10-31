@@ -76,6 +76,9 @@ target_link_libraries(kz4ap_bench_tests PRIVATE kz4ap_bench_lib GTest::gtest_mai
 # recording with the engine tests' signals (test_signals.hpp).
 target_include_directories(kz4ap_bench_tests PRIVATE ${PROJECT_SOURCE_DIR}/engine/tests/bank
                                                     ${PROJECT_SOURCE_DIR}/engine/tests)
+# bench_run_test shapes its noise in frequency with the engine's FFT (by a path of its own: a file named "version" in
+# that folder would stand in for the standard header if the folder were on the include path).
+target_compile_definitions(kz4ap_bench_tests PRIVATE POCKETFFT_NO_MULTITHREADING)
 # bench_run_test runs kz4ap-bench itself, so it is built first; viterbi_json_test reads the statistics files that the
 # Python reductions' tests read too (training/tests/data/search-stats).
 add_dependencies(kz4ap_bench_tests kz4ap-bench)

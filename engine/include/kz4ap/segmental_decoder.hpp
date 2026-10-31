@@ -51,6 +51,7 @@ private:
 
     double rate_;
     std::shared_ptr<const SegmentalShared> shared_;
+    std::unique_ptr<segmental::ChannelFloor> floor_;
     std::unique_ptr<segmental::RunningSums> sums_;
     std::unique_ptr<segmental::LevelEvidence> evidence_;
     std::unique_ptr<segmental::Search> search_;
