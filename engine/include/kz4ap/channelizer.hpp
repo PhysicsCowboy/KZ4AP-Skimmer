@@ -60,6 +60,18 @@ public:
     // Consumes samples; calls sink once per channel for every block they complete.
     void push(std::span<const Sample> in, const Sink& sink);
 
+    // The same work in two steps, for a caller that keeps its own channels and cuts them on several threads:
+    // begin_block takes exactly one hop (fft_size / 2 samples) and does the block's shared FFT; cut then gives one
+    // channel's block, and may be called concurrently, with each caller's own in and out, until the next begin_block.
+    // in and out: channel_bins() samples of work space each; the block returned lies inside out.
+    struct Block {
+        std::uint64_t first_index;  // the block's first output sample, counted from the start of the stream
+        std::int64_t first_input;   // the input sample at the start of the block's FFT (negative at the stream's start)
+    };
+    Block begin_block(std::span<const Sample> hop);
+    std::span<Sample> cut(const Block& block, int center_bin, std::span<Sample> in, std::span<Sample> out) const;
+    int channel_bins() const { return config_.channel_bins; }
+
 private:
     void process_block(const Sink& sink);
 

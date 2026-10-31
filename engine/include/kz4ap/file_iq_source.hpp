@@ -61,11 +61,15 @@ private:
 class FileIqSource final : public IqSource, public PlaybackControl {
 public:
     // Throws std::runtime_error if the file cannot be opened or is not 16-bit stereo PCM (WavIqReader).
-    explicit FileIqSource(const std::filesystem::path& path);
+    // start_s: where the stream begins in the recording, s, clipped to its end: a seek is a new stream from there.
+    explicit FileIqSource(const std::filesystem::path& path, double start_s = 0.0);
 
     int sample_rate() const override { return reader_.sample_rate(); }
     std::string description() const override { return description_; }
-    std::optional<std::uint64_t> total_samples() const override { return reader_.total_samples(); }
+    // The samples this stream delivers: from start_s to the recording's end.
+    std::optional<std::uint64_t> total_samples() const override { return remaining_; }
+    // The recording's whole length, s, wherever this stream began.
+    double recording_length_s() const { return static_cast<double>(reader_.total_samples()) / reader_.sample_rate(); }
     IqRead read(std::span<Sample> out, std::chrono::milliseconds timeout) override;
     void interrupt() override;
     PlaybackControl* playback() override { return this; }
@@ -77,6 +81,7 @@ public:
 
 private:
     WavIqReader reader_;  // read() only: the pipeline's thread
+    std::uint64_t remaining_ = 0;  // samples from the stream's start to the recording's end
     std::string description_;
     mutable std::mutex mutex_;
     std::condition_variable changed_;

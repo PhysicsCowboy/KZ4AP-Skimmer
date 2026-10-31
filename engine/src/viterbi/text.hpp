@@ -24,6 +24,7 @@ public:
     // and end times, s. The caller holds the new entry once; the new entry holds `previous` once.
     std::int32_t append(std::int32_t previous, std::string_view symbol, double start_s, double end_s) {
         hold(previous);
+        const std::int32_t length = previous == kEmpty ? 1 : entries_[static_cast<std::size_t>(previous)].length + 1;
         std::int32_t entry;
         if (!free_.empty()) {
             entry = free_.back();
@@ -32,7 +33,7 @@ public:
             entry = static_cast<std::int32_t>(entries_.size());
             entries_.emplace_back();
         }
-        entries_[static_cast<std::size_t>(entry)] = Entry{symbol, start_s, end_s, previous, 1};
+        entries_[static_cast<std::size_t>(entry)] = Entry{symbol, start_s, end_s, previous, 1, length};
         ++used_;
         return entry;
     }
@@ -67,6 +68,22 @@ public:
         return text;
     }
 
+    // The last max_symbols symbols of that text, first symbol first, without walking the rest of it.
+    std::vector<DecodedSymbol> read_tail(std::int32_t entry, std::size_t max_symbols) const {
+        std::vector<DecodedSymbol> text;
+        for (; entry != kEmpty && text.size() < max_symbols; entry = entries_[static_cast<std::size_t>(entry)].previous) {
+            const Entry& e = entries_[static_cast<std::size_t>(entry)];
+            text.push_back(DecodedSymbol{std::string(e.symbol), 1.0f, e.start_s, e.end_s});
+        }
+        std::reverse(text.begin(), text.end());
+        return text;
+    }
+
+    // The length of the text that ends at `entry`, symbols.
+    std::size_t length(std::int32_t entry) const {
+        return entry == kEmpty ? 0 : static_cast<std::size_t>(entries_[static_cast<std::size_t>(entry)].length);
+    }
+
     // The entries in use.
     std::size_t size() const { return used_; }
 
@@ -77,6 +94,7 @@ private:
         double end_s = 0.0;    // s
         std::int32_t previous = kEmpty;
         std::int32_t holders = 0;  // stories and later entries that hold it
+        std::int32_t length = 0;   // symbols in the text that ends here
     };
     std::vector<Entry> entries_;
     std::vector<std::int32_t> free_;  // freed slots, reused last freed first

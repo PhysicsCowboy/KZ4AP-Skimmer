@@ -126,7 +126,11 @@ std::optional<WaterfallRow> RowBuilder::push(const SpectrumFrame& frame) {
         power_.assign(bins, 0.0f);
         frames_ = 0;
     }
-    for (std::size_t i = 0; i < bins; ++i) power_[i] += std::pow(10.0f, 0.1f * frame.power_db[i]);
+    if (frame.power_fs2.size() == bins) {
+        for (std::size_t i = 0; i < bins; ++i) power_[i] += frame.power_fs2[i];
+    } else {
+        for (std::size_t i = 0; i < bins; ++i) power_[i] += std::pow(10.0f, 0.1f * frame.power_db[i]);
+    }
     if (++frames_ < frames_per_row_) return std::nullopt;
 
     // The whole number of bins per column that brings the row within max_columns.

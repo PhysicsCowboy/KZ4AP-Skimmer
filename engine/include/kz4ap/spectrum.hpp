@@ -11,7 +11,11 @@ namespace kz4ap {
 struct SpectrumFrame {
     double time_s = 0;            // time just after the frame's last input sample
     std::vector<float> power_db;  // fft_size bins, lowest frequency first:
-                                  // bin i is at (i - fft_size/2) * sample_rate / fft_size Hz
+                                  // bin i is at (i - fft_size/2) * sample_rate / fft_size Hz; dB re 1 FS^2
+    // The same power in FS^2, 10^(power_db / 10) but for the rounding of the dB value; SpectrumAnalyzer fills it so that
+    // whoever needs linear power need not undo the logarithm per bin. May be empty in a frame made elsewhere (a reader
+    // then converts).
+    std::vector<float> power_fs2;
 };
 
 // Hann-windowed power spectrum over a sliding window. A tone of amplitude A

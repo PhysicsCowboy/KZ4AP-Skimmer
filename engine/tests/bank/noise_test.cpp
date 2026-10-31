@@ -480,6 +480,42 @@ TEST(BankNoise, ANoiseRiseOf60dBRecoversByTheDerivedTime) {
     }
 }
 
+// A channel opened during a long key-down: the warm-up reads the station's own power, and with the level there every mark
+// passes the guard, so branch 1 keeps accepting taps and the level would stay at about the station's mean power with
+// nothing ever keyed (the silent track of app-1's 192 kHz recording). The last noise_warmup_s's 20% quantile, 10 dB under
+// the level, gives it away within a few on-off cycles.
+TEST(BankNoise, ALevelLockedOntoAStationRecovers) {
+    const auto n = ladder(kRate);
+    const std::size_t total = static_cast<std::size_t>(20 * kRate);
+    auto u = white(total, 1.0, 41);
+    const double amplitude = std::sqrt(1000.0 / n[0]);  // key-down 30 dB above branch 1's complex noise power
+    const int on_off = static_cast<int>(0.12 * kRate);
+    const int first_gap = static_cast<int>(0.5 * kRate);
+    for (std::size_t i = 0; i < total; ++i) {
+        const bool key_down =
+            static_cast<int>(i) < first_gap || ((static_cast<int>(i) - first_gap) / on_off) % 2 == 1;
+        if (key_down) u[i] += amplitude;
+    }
+    const Matrix P = powers(u, n);
+    for (const char* method : {"spectrum", "branch"}) {
+        const NoiseRun r = run_noise(method, u, P);
+        EXPECT_GE(r.recoveries, 1) << method;
+        for (const auto& b : r.blocks) {
+            if (b.n1 < static_cast<int>(6 * kRate)) continue;
+            ASSERT_LT(b.s[0], 3.0 * white_sigma2(1.0, n[0])) << method << " at n1 = " << b.n1;
+            ASSERT_GT(b.s[0], 0.3 * white_sigma2(1.0, n[0])) << method << " at n1 = " << b.n1;
+        }
+    }
+}
+
+// That recovery never fires on noise alone: over 120 s, the quantile stays near the level.
+TEST(BankNoise, NoiseAloneNeverLooksLocked) {
+    const auto n = ladder(kRate);
+    const auto u = white(static_cast<std::size_t>(120 * kRate), 1.0, 42);
+    const Matrix P = powers(u, n);
+    for (const char* method : {"spectrum", "branch"}) EXPECT_EQ(run_noise(method, u, P).recoveries, 0) << method;
+}
+
 // (iv) A 10 s continuous carrier 40 dB above the noise (A^2 = 1e4 x branch 1's complex noise power 1 / N_1 FS^2;
 // the carrier passes every boxcar with gain 1, so in branch k it is 40 dB + 10 log10(N_k / N_1) above the noise),
 // then noise. The carrier blocks branch 1 for noise_stuck_s, the recovery sets every branch to the carrier's

@@ -608,6 +608,55 @@ std::vector<DecodedSymbol> Search::best_text() const {
     return out;
 }
 
+BestStory Search::best_story(std::size_t max_symbols) const {
+    const Impl& s = *impl_;
+    // The same choice as best_text's.
+    const std::int64_t j = s.next - 1;
+    double best = s.silent_alive ? s.silent : -kInf;
+    const Element* winner = nullptr;
+    std::int32_t silent_text = s.silent_text;
+    for (const Impl::Tail& tail : s.tails) {
+        if (tail.score > best) {
+            best = tail.score;
+            silent_text = tail.text;
+        }
+    }
+    if (j >= 0) {
+        const double c11 = s.sums.sum(j + kEdgeDone);
+        for (const Element& e : s.live) {
+            const int length = static_cast<int>(j - e.start);
+            double score;
+            if (e.kind == kGap) {
+                score = e.base + s.model.gap_survival(e.speed, std::min(length, s.model.survival_length(e.speed) - 1));
+            } else if (e.kind == kMark) {
+                score = e.base + c11 + s.model.mark_survival(e.speed, std::min(length, s.model.survival_length(e.speed) - 1));
+            } else {
+                score = e.base + c11 + s.model.log_first_speed();
+            }
+            if (score > best) {
+                best = score;
+                winner = &e;
+            }
+        }
+    }
+    BestStory story;
+    if (winner == nullptr) {
+        story.tail = s.text.read_tail(silent_text, max_symbols);
+        story.length = s.text.length(silent_text);
+        return story;
+    }
+    if (winner->kind != kOpenMark) story.speed = winner->speed;
+    story.length = s.text.length(winner->text);
+    const bool open_letter = winner->kind == kGap && s.model.has_symbol(winner->node);
+    story.tail = s.text.read_tail(winner->text, open_letter && max_symbols > 0 ? max_symbols - 1 : max_symbols);
+    if (open_letter) {
+        ++story.length;
+        story.tail.push_back(DecodedSymbol{std::string(s.model.tree().symbol(winner->node)), 1.0f, s.time_of(winner->letter),
+                                           s.time_of(winner->start)});
+    }
+    return story;
+}
+
 const SearchStats& Search::stats() const { return impl_->stats; }
 std::size_t Search::live() const { return impl_->live.size(); }
 

@@ -54,11 +54,12 @@ void StreamRunner::run(EngineConfig config, EventBus::Handler subscriber) {
         s.error = std::move(error);
         s.stream_s = static_cast<double>(delivered) / rate;
         s.wall_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-        s.thread_cpu_s = thread_cpu_seconds() - cpu_started;
+        s.thread_cpu_s = thread_cpu_seconds() - cpu_started + (engine ? engine->worker_cpu_seconds() : 0.0);
         if (engine) {
             const EngineStats stats = engine->stats();
             s.channel_seconds = stats.channel_seconds;
             s.decoder_seconds = stats.decoder_seconds;
+            s.stages = stats.stages;
         }
         std::lock_guard lock(mutex_);
         status_ = std::move(s);

@@ -10,4 +10,9 @@ double process_cpu_seconds();
 // is about 16 ms on Windows.
 double thread_cpu_seconds();
 
+// The same, for timing short stretches: exact to the microsecond or better where the system counts cycles per thread
+// (Windows; on Linux the clock above is already this good), about 0.3 us per call. Windows: it counts in time stamp counter ticks, so
+// a core running above its base clock reads a little long.
+double thread_cpu_precise_seconds();
+
 }  // namespace kz4ap

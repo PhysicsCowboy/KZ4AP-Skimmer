@@ -28,6 +28,7 @@ struct SearchStats;
 }  // namespace viterbi
 class ViterbiShared;
 struct SegmentalShared;
+class WorkerPool;
 
 // The FFT size the engine uses when EngineConfig::fft_size is 0: the largest power
 // of two with sample_rate / fft_size >= 20 Hz, so bins stay about 23 Hz wide at
@@ -108,6 +109,11 @@ struct EngineConfig {
     // D_ch of a track belongs to it; a channel's
     // frequency tracker fine-tunes around the detector's frequency (FrequencyTrackerConfig::fine_tune_hz).
     double channel_distance_hz = 47.0;
+
+    // Threads that run the channels (the channel filter, the decoder), the caller's included, at least 1 (design section
+    // 4.1, step 4). The output does not depend on it: a channel's work reads nothing another channel's writes, and the
+    // results are published in the order of the track ids once a block's channels are done.
+    int worker_threads = 1;
 };
 
 // The milestone-1 pipeline (kept selectable; owner, 2026-09-29): the Envelope decoder and the
@@ -122,10 +128,26 @@ inline EngineConfig with_envelope_path(EngineConfig config) {
     return config;
 }
 
+// Where the pipeline's CPU goes: per stage, s, summed over threads, on each thread's own CPU clock.
+// The first six recur whatever the number of tracks (they also grow a little with the
+// tracks, as publish_s and lifecycle_s do); filter_s and decoder_s are per channel.
+struct EngineStageTimes {
+    double spectrum_s = 0;     // wideband spectrum frames: window, FFT, dB
+    double detector_s = 0;     // the signal detector, and handing its frequencies to the channels
+    double hiss_s = 0;         // the noise estimator's per-frame update
+    double publish_s = 0;      // the bus: the subscribers' work on the frames and the text
+    double lifecycle_s = 0;    // opening and closing channels (a decoder's construction and its last flush)
+    double channelizer_s = 0;  // the channelizer's shared FFT of each block
+    double channels_wall_s = 0;  // the caller's own CPU around all the channels of a block: its share of filter_s + decoder_s
+    double filter_s = 0;       // one channel's fast-convolution cut, follower shift and noise read, summed over channels
+    double decoder_s = 0;      // inside the decoders, summed over channels
+};
+
 struct EngineStats {
     std::uint64_t channel_samples = 0;  // channel samples delivered to decoders, summed over channels
     double channel_seconds = 0;         // the same, in s of channel output
-    double decoder_seconds = 0;         // steady-clock time spent inside decoders, s
+    double decoder_seconds = 0;         // CPU inside decoders, s (stages.decoder_s)
+    EngineStageTimes stages;
 };
 
 // Runs the decoding pipeline synchronously on the caller's thread. Output is
@@ -153,6 +175,8 @@ public:
     void finish();
 
     EngineStats stats() const;
+    // CPU of the pool's threads so far, s, not counting the caller's (0 with worker_threads 1).
+    double worker_cpu_seconds() const;
 
     // Benchmark tooling: called with every channel block before the channel's decoder sees it. It
     // observes only; decoding is the same with or without it. Set it before process().
@@ -172,9 +196,18 @@ private:
         std::unique_ptr<Decoder> decoder;
         double detector_freq_hz = 0;  // the detector's current frequency for this track, Hz from the span's center
         std::optional<ChannelFollower> follower;  // the new decoder's channels only (FrontEnd::Viterbi)
+        // One block's work, the channel's own so that channels can run on different threads.
+        std::vector<Sample> cut_in;
+        std::vector<Sample> cut_out;
+        std::vector<Sample> shifted;  // a followed channel's block after its shift
+        DecodeUpdate update;          // the block's result, published after all channels' blocks
+        double filter_s = 0;
+        double decoder_s = 0;
+        std::size_t block_samples = 0;
     };
 
     void process_hop(std::span<const Sample> hop);
+    void process_channel(std::uint32_t id, Channel& channel, const Channelizer::Block& block);
     void open_channel(const Track& track, int bin);
     void close_channel(std::uint32_t id);
     void publish_update(std::uint32_t id, DecodeUpdate&& update);
@@ -189,14 +222,15 @@ private:
     std::map<std::uint32_t, Channel> channels_;
     bool oracle_ = false;
     std::uint64_t channel_samples_ = 0;
-    double decoder_seconds_ = 0;
+    EngineStageTimes stages_;
+    std::unique_ptr<WorkerPool> pool_;  // worker_threads > 1 only
+    std::vector<std::pair<const std::uint32_t, Channel>*> active_;  // this block's channels, by track id (reused)
     ChannelTap tap_;
     // FrontEnd::Viterbi only: the hiss estimator, fed every spectrum frame, whose N0 at each channel's center bin the
     // channel's decoder gets before every block; and the parts its decoders share.
     std::unique_ptr<viterbi::HissEstimator> hiss_;
     std::shared_ptr<const ViterbiShared> viterbi_shared_;
     std::shared_ptr<const SegmentalShared> segmental_shared_;  // FrontEnd::Segmental only
-    std::vector<Sample> shifted_;  // a followed channel's block after its shift (reused)
 };
 
 }  // namespace kz4ap

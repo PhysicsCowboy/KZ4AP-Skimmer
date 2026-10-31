@@ -76,13 +76,18 @@ double PlaybackPacer::seconds_until(std::uint64_t samples, double now_s) const {
     return due <= 0.0 ? 0.0 : due / (speed_ * rate_);
 }
 
-FileIqSource::FileIqSource(const std::filesystem::path& path)
-    : reader_(path), description_(path.filename().string()), pacer_(static_cast<double>(reader_.sample_rate())) {}
+FileIqSource::FileIqSource(const std::filesystem::path& path, double start_s)
+    : reader_(path), description_(path.filename().string()), pacer_(static_cast<double>(reader_.sample_rate())) {
+    if (!(start_s >= 0.0)) throw std::invalid_argument("the start of a recording's stream must not be negative (s)");
+    const auto start = std::min(reader_.total_samples(), static_cast<std::uint64_t>(start_s * reader_.sample_rate()));
+    reader_.seek(start);
+    remaining_ = reader_.total_samples() - start;
+}
 
 IqRead FileIqSource::read(std::span<Sample> out, std::chrono::milliseconds timeout) {
     using Clock = std::chrono::steady_clock;
     const Clock::time_point deadline = Clock::now() + timeout;
-    const std::uint64_t total = reader_.total_samples();
+    const std::uint64_t total = remaining_;
     std::size_t take = 0;
     {
         std::unique_lock lock(mutex_);

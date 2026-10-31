@@ -3,11 +3,13 @@
 // driver's thread keeps its own ring buffer behind read().
 #pragma once
 
+#include "kz4ap/iq_recorder.hpp"
 #include "kz4ap/types.hpp"
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
@@ -24,6 +26,35 @@ public:
     virtual void set_paused(bool paused) = 0;
     virtual bool paused() const = 0;
     virtual double speed() const = 0;
+};
+
+// Saving the raw I/Q of a live source (the project's WAV form). May be called from any thread but the source's driver's.
+class RecordControl {
+public:
+    virtual ~RecordControl() = default;
+    // Throws std::runtime_error if the file cannot be created or a recording is running.
+    virtual void start_recording(const std::filesystem::path& path) = 0;
+    virtual void stop_recording() = 0;
+    virtual RecordingStatus recording_status() const = 0;
+};
+
+struct RadioStatus {
+    int if_gain_reduction_db = 0;   // dB, as set
+    int lna_state = 0;              // as set
+    std::optional<double> gain_db;  // the radio's own figure for its total gain, dB, when it has said
+    bool overload = false;          // the radio's ADC is overloaded now
+    std::uint64_t resets = 0;       // times the radio's stream restarted
+    std::uint64_t received = 0;     // samples the radio has delivered
+};
+
+// The controls of a live radio that do not end the stream. A radio can only receive: nothing here or anywhere else in this
+// program transmits. May be called from any thread.
+class RadioControl {
+public:
+    virtual ~RadioControl() = default;
+    // Throws std::invalid_argument out of range, std::runtime_error if the radio refuses.
+    virtual void set_gain(int if_gain_reduction_db, int lna_state) = 0;
+    virtual RadioStatus radio_status() const = 0;
 };
 
 struct IqRead {
@@ -51,6 +82,10 @@ public:
     virtual void interrupt() = 0;
     // The transport of a recording; nullptr for a live source.
     virtual PlaybackControl* playback() { return nullptr; }
+    // A live source's: samples lost because the pipeline fell behind (a gap in the stream), the recorder, the radio's controls.
+    virtual std::uint64_t dropped_samples() const { return 0; }
+    virtual RecordControl* recorder() { return nullptr; }
+    virtual RadioControl* radio() { return nullptr; }
 };
 
 }  // namespace kz4ap

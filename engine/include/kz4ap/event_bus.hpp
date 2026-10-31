@@ -24,7 +24,7 @@ struct DecodedTextEvent {
     std::vector<DecodedSymbol> chars;
     float wpm;
     float confidence;
-    std::vector<TextCorrection> corrections = {};  // applied after chars, in order (DecodeUpdate); bank decoder only
+    std::vector<TextCorrection> corrections = {};  // applied after chars, in order (DecodeUpdate); bank and segmental decoders
 };
 
 using Event = std::variant<SpectrumFrame, TrackEvent, DecodedTextEvent>;

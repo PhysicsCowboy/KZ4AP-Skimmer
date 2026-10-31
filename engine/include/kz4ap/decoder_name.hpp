@@ -10,9 +10,9 @@
 namespace kz4ap {
 
 // The decoder the desktop app runs unless told otherwise.
-inline constexpr std::string_view kDefaultDecoderName = "bank";
+inline constexpr std::string_view kDefaultDecoderName = "segmental";
 
-// envelope, matched, bank or viterbi (the names kz4ap-bench's --decoder takes); none for any other.
+// envelope, matched, bank, viterbi or segmental (the names kz4ap-bench's --decoder takes); none for any other.
 std::optional<FrontEnd> front_end_from_name(std::string_view name);
 const char* front_end_name(FrontEnd front_end);
 

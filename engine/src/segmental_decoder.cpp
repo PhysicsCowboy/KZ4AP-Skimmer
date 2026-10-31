@@ -97,7 +97,44 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
         search_->advance();  // at once: the short elements' context reaches back only so far
         ++pushed_;
     }
-    return {};
+    const double now_s = static_cast<double>(next_index_) / rate_;
+    if (now_s < next_publish_s_) return {};
+    next_publish_s_ = now_s + kPublishEveryS;
+    segmental::BestStory story = search_->best_story(kPublishTailSymbols);
+    // A tail that begins past what has been published: more text than the tail in one period; read it all.
+    if (story.length - story.tail.size() > published_.size()) {
+        story.tail = search_->best_text();
+        story.length = story.tail.size();
+    }
+    return bring_up_to_date(story, now_s);
+}
+
+DecodeUpdate SegmentalDecoder::bring_up_to_date(const segmental::BestStory& story, double now_s) {
+    DecodeUpdate update;
+    if (story.speed) {
+        // PARIS: 1.2 s / the dot, the dot from the speed grid (config.hpp).
+        const viterbi::ViterbiConfig& model = shared_->config.model;
+        wpm_ = static_cast<float>(1200.0 / (model.dot_min_ms * std::pow(model.speed_ratio, *story.speed)));
+    }
+    update.wpm = wpm_;
+    const std::size_t base = story.length - story.tail.size();
+    std::size_t k = base;
+    while (k < published_.size() && k < story.length && published_[k] == story.tail[k - base].text) ++k;
+    if (k < published_.size()) {
+        // The best story changed its mind about text already out: a correction from the first symbol that differs.
+        TextCorrection correction;
+        correction.from_index = k;
+        correction.chars.assign(story.tail.begin() + static_cast<std::ptrdiff_t>(k - base), story.tail.end());
+        correction.t_s = now_s;
+        correction.reason = "story";
+        correction.reach_s = k < story.length ? now_s - story.tail[k - base].start_s : 0.0;
+        update.corrections.push_back(std::move(correction));
+    } else {
+        update.chars.assign(story.tail.begin() + static_cast<std::ptrdiff_t>(k - base), story.tail.end());
+    }
+    published_.resize(k);
+    for (std::size_t i = k; i < story.length; ++i) published_.push_back(story.tail[i - base].text);
+    return update;
 }
 
 DecodeUpdate SegmentalDecoder::flush() {
@@ -105,9 +142,11 @@ DecodeUpdate SegmentalDecoder::flush() {
     flushed_ = true;
     evidence_->finish();
     search_->advance();
-    DecodeUpdate update;
-    update.chars = search_->best_text();
-    return update;
+    // The whole text, not the tail: the channel's last word on everything it has published.
+    segmental::BestStory story = search_->best_story(0);
+    story.tail = search_->best_text();
+    story.length = story.tail.size();
+    return bring_up_to_date(story, static_cast<double>(next_index_) / rate_);
 }
 
 void SegmentalDecoder::reset() {
@@ -116,6 +155,9 @@ void SegmentalDecoder::reset() {
     started_ = false;
     flushed_ = false;
     next_index_ = 0;
+    next_publish_s_ = 0.0;
+    wpm_ = 0.0f;
+    published_.clear();
 }
 
 void SegmentalDecoder::set_noise_density_fs2_per_hz(double n0_fs2_per_hz) {

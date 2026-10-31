@@ -160,8 +160,11 @@ void HissEstimator::push(const SpectrumFrame& frame) {
         return;
     ++frames_;
     const double step = std::max(alpha_, 1.0 / static_cast<double>(frames_));
+    const bool linear = frame.power_fs2.size() == average_.size();
     for (std::size_t i = 0; i < average_.size(); ++i) {
-        const double power = frame.power_db[i] <= kZeroReadingDb ? 0.0 : std::pow(10.0, frame.power_db[i] / 10.0);
+        const double power = frame.power_db[i] <= kZeroReadingDb ? 0.0
+                             : linear                            ? static_cast<double>(frame.power_fs2[i])
+                                                                 : std::pow(10.0, frame.power_db[i] / 10.0);
         average_[i] += step * (power - average_[i]);
     }
     if (frames_ <= settled_frames_) {

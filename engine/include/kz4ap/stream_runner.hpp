@@ -28,9 +28,11 @@ struct StreamStatus {
     double stream_s = 0;         // stream delivered to the engine so far, s
     double wall_s = 0;           // since the pipeline's thread started, s
     double channel_seconds = 0;  // EngineStats: channel output delivered to decoders, summed over channels, s
-    double decoder_seconds = 0;  // EngineStats: steady-clock time inside decoders, s
-    double thread_cpu_s = 0;     // CPU the pipeline's thread has used, user plus kernel, s: spectrum, detector,
-                                 // channelizer, decoders and the subscriber's own work; about 16 ms resolution on Windows
+    double decoder_seconds = 0;  // EngineStats: CPU inside decoders, s
+    EngineStageTimes stages;     // EngineStats: CPU per stage, s
+    double thread_cpu_s = 0;     // CPU the pipeline's threads have used (its own and the worker pool's), user plus kernel, s:
+                                 // spectrum, detector, channelizer, decoders and the subscriber's own work; about 16 ms
+                                 // resolution on Windows
 };
 
 class StreamRunner {

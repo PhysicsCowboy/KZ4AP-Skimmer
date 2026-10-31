@@ -76,9 +76,10 @@ private:
         bool seen;
     };
 
-    double refined_freq(const std::vector<float>& avg_db, int bin) const;
-    bool is_peak(const std::vector<float>& avg_db, int i) const;
-    void follow_peaks(const std::vector<float>& avg_db, float floor_db);
+    float db_at(int bin) const;  // the average's level at a bin, dB re 1 FS^2 (dBFS)
+    double refined_freq(int bin) const;
+    bool is_peak(int i) const;
+    void follow_peaks(float floor_db);
 
     DetectorConfig config_;
     int peak_bins_ = 2;   // peak_radius_hz in bins
@@ -88,6 +89,7 @@ private:
     std::uint64_t frames_seen_ = 0;
     double first_frame_s_ = 0;
     std::vector<double> average_;  // linear power per bin
+    std::vector<double> scratch_;  // the median's work (reused)
     std::vector<Active> active_;
     std::vector<Candidate> candidates_;
     std::uint32_t next_id_ = 1;

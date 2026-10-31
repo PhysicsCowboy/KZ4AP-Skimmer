@@ -42,30 +42,31 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
     if (frames_seen_ == 0) first_frame_s_ = now;
     ++frames_seen_;
 
-    // Running mean at first, then an exponential average.
+    // Running mean at first, then an exponential average. All this works on the linear average: every bin's dB is
+    // needed by nothing but the few peaks that clear the threshold (a logarithm per bin was most of the detector's CPU).
     const double a = std::max(alpha_, 1.0 / static_cast<double>(frames_seen_));
-    std::vector<float> avg_db(n);
-    for (std::size_t i = 0; i < n; ++i) {
-        average_[i] += a * (std::pow(10.0, frame.power_db[i] / 10.0) - average_[i]);
-        avg_db[i] = static_cast<float>(10.0 * std::log10(average_[i] + 1e-30));
+    if (frame.power_fs2.size() == n) {
+        for (std::size_t i = 0; i < n; ++i) average_[i] += a * (static_cast<double>(frame.power_fs2[i]) - average_[i]);
+    } else {
+        for (std::size_t i = 0; i < n; ++i) average_[i] += a * (std::pow(10.0, frame.power_db[i] / 10.0) - average_[i]);
     }
-    std::vector<float> sorted = avg_db;
-    std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(n / 2), sorted.end());
-    const float floor_db = sorted[n / 2];
+    scratch_ = average_;
+    std::nth_element(scratch_.begin(), scratch_.begin() + static_cast<std::ptrdiff_t>(n / 2), scratch_.end());
+    const float floor_db = static_cast<float>(10.0 * std::log10(scratch_[n / 2] + 1e-30));
 
     DetectorUpdate update;
     const int last = static_cast<int>(n) - 1;
 
-    if (config_.attribution == Attribution::Distance) follow_peaks(avg_db, floor_db);
+    if (config_.attribution == Attribution::Distance) follow_peaks(floor_db);
 
     // Refresh existing tracks; expire the ones that have been quiet too long.
     for (auto it = active_.begin(); it != active_.end();) {
-        float level = avg_db[it->bin];
+        double level_power = average_[it->bin];
         for (int d = -level_bins_; d <= level_bins_; ++d) {
             const int b = it->bin + d;
-            if (b >= 0 && b <= last) level = std::max(level, avg_db[b]);
+            if (b >= 0 && b <= last) level_power = std::max(level_power, average_[b]);
         }
-        it->track.snr_db = level - floor_db;
+        it->track.snr_db = static_cast<float>(10.0 * std::log10(level_power + 1e-30)) - floor_db;
         if (it->track.snr_db >= config_.threshold_db - config_.hysteresis_db) it->track.last_active_s = now;
         if (now - it->track.last_active_s >= config_.death_s) {
             update.died.push_back(it->track.id);
@@ -80,10 +81,13 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
 
     // Local peaks above threshold that do not belong to an existing track.
     for (auto& c : candidates_) c.seen = false;
+    // Below this linear power a bin cannot clear the threshold, dB rounded to float or not (the margin: 1e-3 dB).
+    const double threshold_power = std::pow(10.0, (static_cast<double>(floor_db) + config_.threshold_db - 1e-3) / 10.0);
     for (int i = 0; i <= last; ++i) {
-        const float snr = avg_db[i] - floor_db;
+        if (average_[static_cast<std::size_t>(i)] + 1e-30 < threshold_power) continue;
+        const float snr = db_at(i) - floor_db;
         if (snr < config_.threshold_db) continue;
-        if (!is_peak(avg_db, i)) continue;
+        if (!is_peak(i)) continue;
         bool near_track = false;
         if (config_.attribution == Attribution::Bins) {
             near_track = std::any_of(active_.begin(), active_.end(), [&](const Active& t) {
@@ -92,7 +96,7 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
         } else {
             // Within D_ch of a track's current frequency (which follows its own peak), the peak is that
             // track's station or its spread.
-            const double f = refined_freq(avg_db, i);
+            const double f = refined_freq(i);
             near_track = std::any_of(active_.begin(), active_.end(), [&](const Active& t) {
                 return std::abs(t.track.freq_hz - f) < config_.attribution_distance_hz;
             });
@@ -130,7 +134,7 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
         }
         Track t;
         t.id = next_id_++;
-        t.freq_hz = refined_freq(avg_db, c.bin);
+        t.freq_hz = refined_freq(c.bin);
         t.snr_db = c.snr_db;
         t.start_time_s = c.first_seen_s;
         t.last_active_s = now;
@@ -147,17 +151,21 @@ std::vector<Track> SignalDetector::tracks() const {
     return out;
 }
 
-bool SignalDetector::is_peak(const std::vector<float>& avg_db, int i) const {
-    const int last = static_cast<int>(avg_db.size()) - 1;
+float SignalDetector::db_at(int bin) const {
+    return static_cast<float>(10.0 * std::log10(average_[static_cast<std::size_t>(bin)] + 1e-30));
+}
+
+bool SignalDetector::is_peak(int i) const {
+    const int last = static_cast<int>(average_.size()) - 1;
     if (i < peak_bins_ || i > last - peak_bins_) return false;
     for (int d = -peak_bins_; d <= peak_bins_; ++d) {
-        if (d < 0 && avg_db[i + d] >= avg_db[i]) return false;  // ties go to the lower bin
-        if (d > 0 && avg_db[i + d] > avg_db[i]) return false;
+        if (d < 0 && average_[i + d] >= average_[i]) return false;  // ties go to the lower bin
+        if (d > 0 && average_[i + d] > average_[i]) return false;
     }
     return true;
 }
 
-void SignalDetector::follow_peaks(const std::vector<float>& avg_db, float floor_db) {
+void SignalDetector::follow_peaks(float floor_db) {
     // Owner decisions 2026-09-29, option 1: the detector alone decides which station a channel
     // follows. Each track moves to the strongest peak (by the birth rule) that stands at least the
     // keep-alive level above the floor and whose interpolated frequency is within D_ch of the track's
@@ -168,15 +176,15 @@ void SignalDetector::follow_peaks(const std::vector<float>& avg_db, float floor_
     const float keep_alive_db = config_.threshold_db - config_.hysteresis_db;
     const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
     const int reach = static_cast<int>(std::ceil(config_.attribution_distance_hz / bin_hz)) + 1;
-    const int last = static_cast<int>(avg_db.size()) - 1;
+    const int last = static_cast<int>(average_.size()) - 1;
     for (auto& t : active_) {
         int best = -1;
         double best_freq = 0;
         for (int i = std::max(0, t.bin - reach); i <= std::min(last, t.bin + reach); ++i) {
-            if (avg_db[i] - floor_db < keep_alive_db || !is_peak(avg_db, i)) continue;
-            const double f = refined_freq(avg_db, i);
+            if (db_at(i) - floor_db < keep_alive_db || !is_peak(i)) continue;
+            const double f = refined_freq(i);
             if (!(std::abs(f - t.track.freq_hz) < config_.attribution_distance_hz)) continue;
-            if (best < 0 || avg_db[i] > avg_db[best]) {
+            if (best < 0 || average_[i] > average_[best]) {
                 best = i;
                 best_freq = f;
             }
@@ -188,11 +196,11 @@ void SignalDetector::follow_peaks(const std::vector<float>& avg_db, float floor_
     }
 }
 
-double SignalDetector::refined_freq(const std::vector<float>& avg_db, int bin) const {
+double SignalDetector::refined_freq(int bin) const {
     // Parabolic interpolation over the peak and its neighbors.
     double delta = 0;
-    if (bin > 0 && bin + 1 < static_cast<int>(avg_db.size())) {
-        const double a = avg_db[bin - 1], b = avg_db[bin], c = avg_db[bin + 1];
+    if (bin > 0 && bin + 1 < static_cast<int>(average_.size())) {
+        const double a = db_at(bin - 1), b = db_at(bin), c = db_at(bin + 1);
         const double denom = a - 2 * b + c;
         if (denom != 0) delta = std::clamp(0.5 * (a - c) / denom, -0.5, 0.5);
     }

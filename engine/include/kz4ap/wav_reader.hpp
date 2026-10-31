@@ -24,8 +24,12 @@ public:
     // Fills out with the next samples, scaled to [-1, 1). Returns how many were read; 0 at the end.
     std::size_t read(std::span<Sample> out);
 
+    // The next read starts at this sample, clipped to the end. Throws std::runtime_error if the file cannot seek.
+    void seek(std::uint64_t sample);
+
 private:
     std::ifstream file_;
+    std::streamoff data_start_ = 0;  // the data chunk's first byte
     int sample_rate_ = 0;
     std::uint64_t total_samples_ = 0;
     std::uint64_t samples_read_ = 0;

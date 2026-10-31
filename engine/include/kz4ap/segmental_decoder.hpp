@@ -1,6 +1,7 @@
 // The segmental decoder behind the engine's Decoder interface: the fast form of the viterbi decoder (viterbi_decoder.hpp).
 // The same channel, front filter and envelope samples; the evidence is computed once per channel (segmental/evidence.hpp)
-// and the search touches stories only at element ends (segmental/search.hpp). The text is published when the channel ends.
+// and the search touches stories only at element ends (segmental/search.hpp). The best story's text goes out every 0.25 s as
+// new characters or, where the story changed its mind, a correction, with the story's speed; at the channel's end everything is checked once more.
 #pragma once
 
 #include "kz4ap/channelizer.hpp"
@@ -16,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace kz4ap {
@@ -48,7 +50,19 @@ public:
 
 private:
     void start();
+    // Brings the consumer's list (decoder.hpp) from published_ to the story: new characters, or a correction.
+    DecodeUpdate bring_up_to_date(const segmental::BestStory& story, double now_s);
 
+    // How often the text goes out while the channel runs, s of stream. Heuristic: a display's refresh, against a text lag of
+    // 0.387 s at most from the evidence; the cost per channel-second is 4 scans of the open elements and a tail.
+    static constexpr double kPublishEveryS = 0.25;
+    // The symbols compared each time, at most. Heuristic: over 25 s of text at 30 WPM; the story's changing its mind
+    // further back goes out at the channel's end (flush compares everything).
+    static constexpr std::size_t kPublishTailSymbols = 64;
+
+    double next_publish_s_ = 0.0;
+    float wpm_ = 0.0f;
+    std::vector<std::string> published_;  // the consumer's list, as sent
     double rate_;
     std::shared_ptr<const SegmentalShared> shared_;
     std::unique_ptr<segmental::RunningSums> sums_;

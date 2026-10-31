@@ -50,6 +50,7 @@ struct Args {
     segmental::SegmentalConfig segmental;
     std::vector<std::string> settings;
     std::optional<std::filesystem::path> stats;  // --stats: where the new decoder's statistics file goes
+    int threads = 1;  // --threads: EngineConfig::worker_threads
 };
 
 const char* decoder_name(FrontEnd d) {
@@ -110,6 +111,10 @@ Args parse_args(int argc, char** argv) {
         else if (a == "--baseline") args.baseline = value();
         else if (a == "--no-timing") args.timing = false;
         else if (a == "--oracle") args.oracle = true;
+        else if (a == "--threads") {
+            args.threads = std::stoi(text());
+            if (args.threads < 1) throw std::runtime_error("--threads must be at least 1");
+        }
         else if (a == "--record-channels") args.record_channels = value();
         else if (a == "--score-decoded") args.score_decoded = value();
         else if (a == "--decoder" || a == "--front-end") {  // --front-end: the old name, kept for existing scripts
@@ -288,6 +293,7 @@ int run_engine(const Args& args) {
     config.sample_rate = reader.sample_rate();
     if (args.front_end == FrontEnd::Envelope) config = with_envelope_path(config);
     config.decoder.front_end = args.front_end;
+    config.worker_threads = args.threads;
     if (args.oracle) {
         for (const auto& s : labels->signals) config.oracle_frequencies_hz.push_back(s.freq_offset_hz);
     }
@@ -336,7 +342,14 @@ int run_engine(const Args& args) {
     std::vector<Sample> block(65536);
     const double cpu_started = process_cpu_seconds();
     const auto started = std::chrono::steady_clock::now();
-    while (const auto n = reader.read(block)) engine.process(std::span<const Sample>(block).first(n));
+    double source_s = 0.0;  // CPU reading the recording
+    for (;;) {
+        const double read_started = thread_cpu_precise_seconds();
+        const auto n = reader.read(block);
+        source_s += thread_cpu_precise_seconds() - read_started;
+        if (n == 0) break;
+        engine.process(std::span<const Sample>(block).first(n));
+    }
     engine.finish();
     if (recorder) {
         recorder->finish(args.recording->filename().string(),
@@ -395,6 +408,33 @@ int run_engine(const Args& args) {
         std::printf("processed %.1f s of audio in %.2f s (%.1fx real time); CPU %.2f ms per channel-second "
                     "(decoders %.3f ms)\n",
                     duration_s, wall_s, duration_s / wall_s, per_channel_ms(cpu_s), per_channel_ms(stats.decoder_seconds));
+        // The bar's two terms (CLAUDE.md, CPU): what recurs whatever the tracks, per second of stream, and what each
+        // track adds, per channel-second.
+        const EngineStageTimes& st = stats.stages;
+        const auto per_stream_ms = [&](double seconds) { return duration_s > 0 ? 1000.0 * seconds / duration_s : 0.0; };
+        const double fixed_s = source_s + st.spectrum_s + st.detector_s + st.hiss_s + st.channelizer_s + st.publish_s + st.lifecycle_s;
+        const double per_track_s = st.filter_s + st.decoder_s;
+        out["timing"]["threads"] = args.threads;
+        out["timing"]["fixed_ms_per_stream_s"] = {{"source", per_stream_ms(source_s)},
+                                                  {"spectrum", per_stream_ms(st.spectrum_s)},
+                                                  {"detector", per_stream_ms(st.detector_s)},
+                                                  {"hiss", per_stream_ms(st.hiss_s)},
+                                                  {"channelizer_fft", per_stream_ms(st.channelizer_s)},
+                                                  {"publish", per_stream_ms(st.publish_s)},
+                                                  {"lifecycle", per_stream_ms(st.lifecycle_s)},
+                                                  {"total", per_stream_ms(fixed_s)}};
+        out["timing"]["ms_per_channel_s"] = {{"filter", per_channel_ms(st.filter_s)},
+                                             {"decoder", per_channel_ms(st.decoder_s)},
+                                             {"total", per_channel_ms(per_track_s)}};
+        out["timing"]["mean_tracks"] = duration_s > 0 ? stats.channel_seconds / duration_s : 0.0;
+        std::printf("fixed %.2f ms per s of stream: source %.2f, spectrum %.2f, detector %.2f, hiss %.2f, channelizer FFT %.2f, "
+                    "publish %.2f, open/close %.2f\n",
+                    per_stream_ms(fixed_s), per_stream_ms(source_s), per_stream_ms(st.spectrum_s), per_stream_ms(st.detector_s),
+                    per_stream_ms(st.hiss_s), per_stream_ms(st.channelizer_s), per_stream_ms(st.publish_s),
+                    per_stream_ms(st.lifecycle_s));
+        std::printf("per track %.3f ms per channel-second: filter %.3f, decoder %.3f; mean tracks %.1f; %d thread(s)\n",
+                    per_channel_ms(per_track_s), per_channel_ms(st.filter_s), per_channel_ms(st.decoder_s),
+                    duration_s > 0 ? stats.channel_seconds / duration_s : 0.0, args.threads);
     }
     int exit_code = 0;
     if (labels) {

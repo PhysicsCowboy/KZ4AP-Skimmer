@@ -57,6 +57,9 @@ add_library(kz4ap_engine_core OBJECT
   src/bank_decoder.cpp
   src/viterbi_decoder.cpp
   src/segmental_decoder.cpp
+  src/worker_pool.cpp
+  src/iq_recorder.cpp
+  src/sdrplay_source.cpp
   src/segmental/evidence.cpp
   src/segmental/search.cpp
   ${KZ4AP_BANK_SOURCES}
@@ -64,7 +67,26 @@ add_library(kz4ap_engine_core OBJECT
 )
 target_include_directories(kz4ap_engine_core PUBLIC include PRIVATE src)
 target_include_directories(kz4ap_engine_core SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party/pocketfft)
-target_compile_definitions(kz4ap_engine_core PRIVATE POCKETFFT_NO_MULTITHREADING)
+# The SDRplay API (design section 4): its headers, if the machine has them, give src/sdrplay_source.cpp its real form; its
+# library is only ever loaded at run time, never linked, and without the headers everything else builds as usual.
+if(WIN32)
+  set(KZ4AP_SDRPLAY_HINTS "C:/Program Files/SDRplay/API/inc")
+else()
+  set(KZ4AP_SDRPLAY_HINTS /usr/local/include)
+endif()
+find_path(KZ4AP_SDRPLAY_INCLUDE_DIR sdrplay_api.h HINTS ${KZ4AP_SDRPLAY_HINTS}
+          DOC "The folder of the SDRplay API's sdrplay_api.h; empty to build without the radio")
+if(KZ4AP_SDRPLAY_INCLUDE_DIR)
+  message(STATUS "SDRplay API headers: ${KZ4AP_SDRPLAY_INCLUDE_DIR}")
+  set_source_files_properties(src/sdrplay_source.cpp PROPERTIES
+    COMPILE_DEFINITIONS KZ4AP_HAVE_SDRPLAY_HEADERS
+    INCLUDE_DIRECTORIES "${KZ4AP_SDRPLAY_INCLUDE_DIR}")
+  if(NOT WIN32)
+    target_link_libraries(kz4ap_engine_core PUBLIC ${CMAKE_DL_LIBS})
+  endif()
+else()
+  message(STATUS "SDRplay API headers not found: the radio is not available in this build")
+endif()
 target_compile_features(kz4ap_engine_core PUBLIC cxx_std_20)
 # SLEEF's generated sleef.h and its static library (the duration fit's exp and log, src/bank/vecmath.hpp).
 # Each vecmath_<set>.cpp is compiled for its instruction set and run only where vecmath.cpp finds it at run
@@ -110,10 +132,13 @@ add_executable(kz4ap_engine_tests
   tests/classical_decoder_test.cpp
   tests/engine_test.cpp
   tests/stream_runner_test.cpp
+  tests/worker_pool_test.cpp
   tests/matched_front_end_test.cpp
   tests/frequency_tracker_test.cpp
 )
 target_link_libraries(kz4ap_engine_tests PRIVATE kz4ap::engine GTest::gtest_main)
+# worker_pool_test.cpp tests the pool, which is private to the engine.
+target_include_directories(kz4ap_engine_tests PRIVATE src)
 gtest_discover_tests(kz4ap_engine_tests)
 
 # The bank decoder's tests. nlohmann/json is a test-only dependency (golden values); the engine

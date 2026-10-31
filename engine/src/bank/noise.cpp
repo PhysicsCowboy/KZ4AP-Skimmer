@@ -39,6 +39,10 @@ bool all_zero(std::span<const std::complex<double>> u, std::int64_t base, std::i
 
 // The warm-up's scale: in Gaussian noise the 20% quantile of |v|^2 is 2 sigma_v^2 (-ln 0.8) (derived).
 const double kWarmupScale = 2.0 * -std::log(0.8);
+// How far under the level the last noise_warmup_s's 20% quantile must read for the level to be taken as locked onto a
+// station, power ratio (10 dB). Heuristic: wide against the quantile's sampling error over 0.32 s, and small against the
+// S/N of a station whose gaps reach the noise.
+const double kLockedLevelRatio = 10.0;
 
 }  // namespace
 
@@ -196,6 +200,20 @@ void ThreeTapNoise::update_impl(std::span<const std::complex<double>> u, const M
     // update carry on. Gated on branch 1 so that a long branch blind to a station's spaces is not reset to the
     // station's power (Plan B, B3 ruling (A)).
     if (K == 0) return;
+    // Recovery of a level locked onto a station (heuristic; app-1's silent track, -57 051.6 Hz at 192 kHz): a channel
+    // opened during a long key-down (a "0" at 26 WPM holds the key down for 0.73 s of its 0.83 s) warms up on the station's own
+    // power. With sigma^2 at that level every mark passes the guard, so branch 1 keeps accepting taps and the estimate
+    // settles at about the station's mean power, where nothing is ever keyed; the recovery above never fires, and the track
+    // stays silent until the station stops. A level is impossible, though, if a fifth of the last noise_warmup_s of
+    // branch 1 lies well under it: in noise alone that quantile reads the level itself, within sampling error, so a
+    // ratio of 10 (10 dB) never fires on noise, and it can only lower the level.
+    const double recent = quantile_linear(hist_[0], 0.2) / kWarmupScale;
+    if (recent * kLockedLevelRatio < var_[0]) {
+        for (std::size_t k = 0; k < K; ++k) var_[k] = std::max(quantile_linear(hist_[k], 0.2) / kWarmupScale, kMinVar);
+        quiet_ = 0;
+        ++recoveries_;
+        return;
+    }
     if (count[0] > 0) {
         quiet_ = 0;
         return;

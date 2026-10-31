@@ -10,6 +10,7 @@ std::optional<FrontEnd> front_end_from_name(std::string_view name) {
     if (name == "matched") return FrontEnd::Matched;
     if (name == "bank") return FrontEnd::Bank;
     if (name == "viterbi") return FrontEnd::Viterbi;
+    if (name == "segmental") return FrontEnd::Segmental;
     return std::nullopt;
 }
 
@@ -19,6 +20,7 @@ const char* front_end_name(FrontEnd front_end) {
         case FrontEnd::Matched: return "matched";
         case FrontEnd::Bank: return "bank";
         case FrontEnd::Viterbi: return "viterbi";
+        case FrontEnd::Segmental: return "segmental";
     }
     return "unknown";
 }

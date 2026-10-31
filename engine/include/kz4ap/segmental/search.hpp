@@ -33,8 +33,10 @@
 #include "kz4ap/segmental/evidence.hpp"
 #include "kz4ap/viterbi/morse_tree.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace kz4ap::segmental {
@@ -120,6 +122,14 @@ struct SearchStats {
     friend bool operator==(const SearchStats&, const SearchStats&) = default;
 };
 
+// The best story at a moment, as a decoder that publishes while the channel runs needs it (Search::best_story).
+struct BestStory {
+    std::vector<DecodedSymbol> tail;  // the story's last symbols, first symbol first
+    std::size_t length = 0;           // the story's whole text, symbols, so tail[0] is symbol length - tail.size()
+    std::optional<int> speed;         // its speed on the grid, 0 ... speed_count - 1 (dot_min_ms x speed_ratio^s); none for
+                                      // the no-signal story and a birth's first mark, which has no speed yet
+};
+
 class Search {
 public:
     // tables and levels outlive the Search; sums is read as it grows. levels: the short elements' templates; without them
@@ -137,6 +147,8 @@ public:
 
     // The best story's text.
     std::vector<DecodedSymbol> best_text() const;
+    // The same story's last max_symbols symbols and its speed, at a cost that does not grow with the text.
+    BestStory best_story(std::size_t max_symbols) const;
     const SearchStats& stats() const;
     // The open elements after the last boundary's pruning.
     std::size_t live() const;
