@@ -109,12 +109,10 @@ struct SegmentalConfig {
     // this, or may not lead, is dropped for the channel's life. Heuristics; what they buy is CPU. A negative time never drops.
     double filter_scale_drop_after_s = 10.0;
     double filter_scale_drop_margin_nats = 100.0;
-    // count, stories, nats: the gap stretches, the search's ceiling and its beam at the narrower filters. Heuristics, for CPU: on a
-    // real recording's near-threshold channels, 25 ms per channel-second with the widest filter's values, 15 with these. A
-    // Farnsworth sender is read at the widest filter.
-    int filter_scale_gap_stretches = 1;
+    // stories: the search's ceiling at the narrower filters. Heuristic, for CPU: on a real recording's near-threshold channels, 3 000
+    // reads 20 ms per channel-second and this 16; what it costs was not measurable on the review's neighbors or Farnsworth. A
+    // beam of 12 nats there would save 1.6 ms more and costs 60 Hz at 0 dB re wanted 0.083 to 0.442.
     int filter_scale_ceiling = 300;
-    double filter_scale_beam_nats = 12.0;
     // nats: a scale takes the lead when it stands this far above the leader. Heuristic: the text should not jump on a tie.
     double filter_scale_switch_nats = 3.0;
     // s: how much later the template's rise is taken than the chain's own: a narrower filter's response starts sooner after its
@@ -141,9 +139,7 @@ inline SegmentalConfig at_filter_scale(SegmentalConfig c, int m) {
     if (m < 1) throw std::invalid_argument("segmental: a filter scale must be at least 1");
     if (m == 1) return c;
     const double scale = m;
-    c.gap_stretches = c.filter_scale_gap_stretches;
     c.ceiling = c.filter_scale_ceiling;
-    c.beam_nats = c.filter_scale_beam_nats;
     const double interval_s = c.model.sample_interval_s;
     const int frame_samples = static_cast<int>(std::ceil(c.level_frame_s / (interval_s * scale) - 1e-9));
     const double frame_s = frame_samples * interval_s * scale;
