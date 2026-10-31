@@ -9,7 +9,7 @@
 
 namespace kz4ap::segmental {
 
-void RunningSums::push(double l1, const std::array<float, kEdgeCount>& rise, const std::array<float, kEdgeCount>& fall,
+void RunningSums::push(double l1, const std::array<double, kEdgeCount>& rise, const std::array<double, kEdgeCount>& fall,
                        const SampleContext& context) {
     const std::int64_t k = count_;
     context_[static_cast<std::size_t>(k) & kContextMask] = context;
@@ -32,14 +32,15 @@ LevelTables::Term make_term(double r2, double s, double f2, double v_m) {
     const double v = 1.0 + r2 * (f2 * s * s + v_m);
     const double rs2 = s * s * r2;
     LevelTables::Term term{};
-    term.z2_coeff = static_cast<float>(1.0 - 1.0 / v);
+    term.inverse_v = static_cast<float>(1.0 / v);
     term.constant = static_cast<float>(-rs2 / v - std::log(v));
     term.i0_coeff = static_cast<float>(2.0 * std::sqrt(rs2) / v);
     return term;
 }
 
+// x less w z^2, nats.
 inline double term_value(const LevelTables::Term& term, double z, double z2, double w) {
-    return w * (term.z2_coeff * z2 + term.constant + viterbi::ln_i0(term.i0_coeff * z));
+    return w * (-term.inverse_v * z2 + term.constant + viterbi::ln_i0(term.i0_coeff * z));
 }
 
 }  // namespace
@@ -123,7 +124,7 @@ double LevelTables::short_score(bool gap, int length, std::int64_t i, const Runn
         }
         double sum = 0.0;
         for (int g = 0; g < context.count; ++g) sum += context.probability[static_cast<std::size_t>(g)] * std::exp(values[g] - top);
-        score += top + std::log(sum);
+        score += w_ * z2 + top + std::log(sum);
     }
     return score;
 }
@@ -186,7 +187,7 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
     alpha_.assign(2 * levels, 0.5 / levels_);
     entering_.assign(ring * levels, 0.0);
     x_.assign(ring_samples * levels, 0.0f);
-    z_.assign(ring_samples, 0.0f);
+    z_.assign(ring_samples, 0.0);
     beta_.assign(2 * levels, 1.0 / (2 * levels_));
     belief_.assign(ring * levels, 0.0);
     // The forward message's prediction into frame 0.
@@ -199,14 +200,14 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2) {
     const double z2 = z * z;
     const std::size_t ring_samples = static_cast<std::size_t>(ring_frames_) * static_cast<std::size_t>(frame_samples_);
     const std::size_t slot = static_cast<std::size_t>(samples_) % ring_samples;
-    z_[slot] = static_cast<float>(z);
+    z_[slot] = z;
     float* x = x_.data() + slot * static_cast<std::size_t>(levels_);
     const double w = tables_.w();
+    const double common = w * z2;  // what x_k(l) holds apart from x[level]
     double top = 0.0;
     for (int level = 0; level < levels_; ++level) {
-        const double value = term_value(tables_.plain(level), z, z2, w);
-        x[level] = static_cast<float>(value);
-        top = std::max(top, static_cast<double>(x[level]));  // the float the exponents below read, so none is above 0
+        x[level] = static_cast<float>(term_value(tables_.plain(level), z, z2, w));
+        top = std::max(top, common + static_cast<double>(x[level]));
     }
     // One step of the key, then the sample: key-up scores 0, key-down x; relative to the largest, to stay in range.
     const double stay = 1.0 - key_switch_;
@@ -218,7 +219,7 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2) {
         const double from_up = up[level];
         const double from_down = down[level];
         const double new_up = (stay * from_up + key_switch_ * from_down) * up_scale;
-        const double new_down = (stay * from_down + key_switch_ * from_up) * std::exp(x[level] - top);
+        const double new_down = (stay * from_down + key_switch_ * from_up) * std::exp(common + x[level] - top);
         up[level] = new_up;
         down[level] = new_down;
         total += new_up + new_down;
@@ -241,7 +242,7 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2) {
 void LevelEvidence::finish() {
     if (frame_fill_ > 0) end_frame();
     commit(true);
-    const std::array<float, kEdgeCount> none{};
+    const std::array<double, kEdgeCount> none{};
     for (int i = 0; i <= kHorizon; ++i) sums_.push(0.0, none, none);
 }
 
@@ -301,14 +302,16 @@ void LevelEvidence::commit(bool all) {
         const std::int64_t first_sample = t * frame_samples_;
         const std::int64_t end_sample = std::min(first_sample + frame_samples_, samples_);
         for (std::int64_t k = end_sample - 1; k >= first_sample; --k) {
-            const float* x = x_.data() + (static_cast<std::size_t>(k) % ring_samples) * levels;
+            const std::size_t sample_slot = static_cast<std::size_t>(k) % ring_samples;
+            const float* x = x_.data() + sample_slot * levels;
+            const double common = tables_.w() * z_[sample_slot] * z_[sample_slot];
             double top = 0.0;
-            for (std::size_t level = 0; level < levels; ++level) top = std::max(top, static_cast<double>(x[level]));
+            for (std::size_t level = 0; level < levels; ++level) top = std::max(top, common + static_cast<double>(x[level]));
             const double up_scale = std::exp(-top);
             double total = 0.0;
             for (std::size_t level = 0; level < levels; ++level) {
                 const double seen_up = up[level] * up_scale;
-                const double seen_down = down[level] * std::exp(x[level] - top);
+                const double seen_down = down[level] * std::exp(common + x[level] - top);
                 const double new_up = stay * seen_up + key_switch_ * seen_down;
                 const double new_down = stay * seen_down + key_switch_ * seen_up;
                 up[level] = new_up;
@@ -367,15 +370,16 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
         const double z = z_[slot];
         const double z2 = z * z;
         const float* x = x_.data() + slot * static_cast<std::size_t>(levels_);
+        const double common = w * z2;
         // ln sum P e^x, pulling out the largest exponent
         double top = -1e300;
         for (int i = 0; i < count; ++i) top = std::max(top, static_cast<double>(x[active[i]]));
         double sum = 0.0;
         for (int i = 0; i < count; ++i) sum += active_p[i] * std::exp(x[active[i]] - top);
-        const double l1 = count > 0 ? top + std::log(sum) : 0.0;
+        const double l1 = count > 0 ? common + top + std::log(sum) : 0.0;
 
-        std::array<float, kEdgeCount> rise{};
-        std::array<float, kEdgeCount> fall{};
+        std::array<double, kEdgeCount> rise{};
+        std::array<double, kEdgeCount> fall{};
         for (int position = 0; position < kEdgeCount; ++position) {
             double up_top = -1e300, down_top = -1e300;
             double up[kEdgeLevels], down[kEdgeLevels];
@@ -390,11 +394,11 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
                 up_sum += edge_p[i] * std::exp(up[i] - up_top);
                 down_sum += edge_p[i] * std::exp(down[i] - down_top);
             }
-            rise[static_cast<std::size_t>(position)] = edge_count > 0 ? static_cast<float>(up_top + std::log(up_sum)) : 0.0f;
-            fall[static_cast<std::size_t>(position)] = edge_count > 0 ? static_cast<float>(down_top + std::log(down_sum)) : 0.0f;
+            rise[static_cast<std::size_t>(position)] = edge_count > 0 ? common + up_top + std::log(up_sum) : 0.0;
+            fall[static_cast<std::size_t>(position)] = edge_count > 0 ? common + down_top + std::log(down_sum) : 0.0;
         }
         SampleContext context;
-        context.z = static_cast<float>(z);
+        context.z = z;
         context.count = static_cast<std::uint8_t>(edge_count);
         for (int i = 0; i < edge_count; ++i) {
             context.level[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(edge_level[i]);

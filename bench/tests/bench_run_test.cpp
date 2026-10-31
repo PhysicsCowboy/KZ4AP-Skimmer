@@ -549,6 +549,30 @@ TEST_F(BenchRun, SegmentalSurvivesABurstAtAndAboveOneHundredAndTwoDecibels) {
     }
 }
 
+TEST_F(BenchRun, SegmentalReadsAStationAboveItsGridWithoutFalseLetters) {
+    // Review F8: above +80 dB S500 w z^2 passes 1e9 nats, and when x was held whole in a float its rounding, tens of nats per
+    // sample, stood above the beam of 15 nats: +90 dB S500 read 0.34 and +100 dB S500 1.36 (at f = 0.02, 0.07 and 0.27).
+    // The recording is scaled to fit 16 bits.
+    const std::string text = "CQ CQ DE W1AW W1AW K TEST 5NN 73 DE K1ABC";
+    const double wpm = 25.0, freq_hz = 300.0, start_s = 0.7;
+    const std::vector<std::pair<double, double>> keying = kz4ap::test::keying(text, wpm, start_s);
+    const double seconds = keying.back().second + 1.0;
+    for (const double level_db : {84.0, 90.0, 100.0, 110.0}) {
+        const double amplitude = std::sqrt(std::pow(10.0, level_db / 10.0) * 0.02 * 0.02 * 500.0 / kRate);
+        std::vector<kz4ap::Sample> x = kz4ap::test::keyed_signal_d17(keying, kRate, seconds, freq_hz, amplitude, 0.02, 4345);
+        double peak = 0.0;
+        for (const kz4ap::Sample& v : x)
+            peak = std::max({peak, std::fabs(static_cast<double>(v.real())), std::fabs(static_cast<double>(v.imag()))});
+        for (kz4ap::Sample& v : x) v *= static_cast<float>(0.95 / peak);
+        write_wav(wav_, x, static_cast<int>(kRate));
+        write_label(labels_, text, wpm, freq_hz, level_db, start_s, keying.back().second, seconds);
+        const Outcome o = run({"--oracle", "--decoder", "segmental", "--no-timing", "--json", path("result.json")});
+        ASSERT_EQ(o.status, 0) << o.err;
+        EXPECT_EQ(read_json(path("result.json")).at("tracks").at(0).at("text").get<std::string>(), text)
+            << "+" << level_db << " dB S500";
+    }
+}
+
 // A floor the hiss cannot read (review F1), read with and without the channel's own floor. Pooled over two stations per cell.
 class BenchRunFloor : public BenchRun {
 protected:
