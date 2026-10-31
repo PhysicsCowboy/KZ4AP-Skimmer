@@ -137,9 +137,9 @@ struct CallSearchConfig {
     double variant_s = 1800.0;
     // Points needed to report: an unlisted call that is framed (DE, CQ, 5NN beside it, or sent twice), an unlisted bare one, a listed framed
     // one, a listed bare one. A whole word scores 1, a stripped or joined reading stripped_points. Heuristics, chosen by measurement; CW
-    // Skimmer's Normal level is 2, 3 or 5 repeats by pattern, 1 for its watch list.
+    // Skimmer's Normal level is 2, 3 or 5 repeats by pattern, 1 for its watch list. An unlisted bare call and a listed one need the same; the list still weighs against rivals.
     double points_framed = 2.0;
-    double points_bare = 3.0;
+    double points_bare = 2.0;
     double points_known = 1.0;
     double points_known_bare = 2.0;
     double stripped_points = 0.5;
@@ -149,6 +149,11 @@ struct CallSearchConfig {
     double doubled_is_framed = 1.0;
     // A rival must have this many times the points of a listed call to hold it back; a listed rival holds back an unlisted call at equal points.
     double known_rival_factor = 3.0;
+    // A correction that changes text already read has it read again, when not 0: the new reading adds, and what the old text gave stays, since
+    // neither text is always the better (the decoder's streams trade places). Heuristic, chosen by measurement.
+    double reread_corrected = 1.0;
+    // s: a track's text is kept this far back for that. Heuristic: corrections reached 165 s on real 40 m (appendix A.12).
+    double history_s = 200.0;
 };
 
 // One line of the list.
@@ -199,6 +204,7 @@ private:
     };
     struct Candidate {
         std::string base;
+        std::uint64_t made = 0;  // the order of its first reading
         bool known = false;
         bool reported = false;
         std::deque<Occurrence> recent;       // within window_s of the latest
@@ -217,6 +223,7 @@ private:
         std::vector<DecodedSymbol> symbols;  // kept: from the context before what has been read
         std::size_t base = 0;                // the index, in the track's whole list, of symbols[0]
         std::size_t read_to = 0;             // the whole list's index up to which words have been read
+        std::size_t rewind_to = static_cast<std::size_t>(-1);  // the whole list's index of the first symbol changed behind read_to, if any
         double freq_hz = 0;
     };
     struct Support {
@@ -242,6 +249,7 @@ private:
     std::vector<CallRow> rows_;
     std::uint64_t version_ = 0;
     std::uint64_t withdrawn_ = 0;
+    std::uint64_t made_ = 0;
     double now_s_ = 0;
     double last_read_s_ = 0;
     double last_prune_s_ = 0;

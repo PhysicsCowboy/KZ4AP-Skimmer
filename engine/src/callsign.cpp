@@ -456,7 +456,15 @@ void CallSearch::apply(const DecodedTextEvent& event) {
             skip = t.base - from;
             from = t.base;
         }
-        t.symbols.resize(std::min(from - t.base, t.symbols.size()));
+        const std::size_t at = std::min(from - t.base, t.symbols.size());
+        if (config_.reread_corrected != 0.0) {
+            // The first symbol that differs, in the whole list's index: an unchanged tail of a correction is not news.
+            std::size_t same = 0;
+            while (at + same < t.symbols.size() && skip + same < k.chars.size() && t.symbols[at + same].text == k.chars[skip + same].text) ++same;
+            const bool changed = at + same < t.symbols.size() || skip + same < k.chars.size();
+            if (changed) t.rewind_to = std::min(t.rewind_to, t.base + at + same);
+        }
+        t.symbols.resize(at);
         for (std::size_t i = skip; i < k.chars.size(); ++i) t.symbols.push_back(k.chars[i]);
     }
 }
@@ -480,6 +488,13 @@ void CallSearch::read_track(TrackText& t, bool all) {
     if (t.symbols.empty()) return;
     const std::vector<Word> words = words_of(t.symbols);
     if (words.empty()) return;
+    if (t.rewind_to < t.read_to) {
+        // Back to the start of the word the change falls in. What stays the same there is one occurrence with what was read before (CallSearch::add).
+        std::size_t i = 0;
+        while (i < words.size() && t.base + words[i].last <= t.rewind_to) ++i;
+        t.read_to = i < words.size() ? t.base + words[i].first : t.rewind_to;
+    }
+    t.rewind_to = static_cast<std::size_t>(-1);
     const std::size_t read_at = t.read_to > t.base ? t.read_to - t.base : 0;
     // The first word not yet read, and the words that have settled: over before now - settle_s, with a word behind them, or a track
     // that has ended.
@@ -491,8 +506,11 @@ void CallSearch::read_track(TrackText& t, bool all) {
     if (to == from) return;
     for (const CallReading& r : read_calls(words, from, to)) add(r, t.freq_hz);
     t.read_to = t.base + words[to - 1].last;
-    // Keep the context: eight words back. Heuristic: a call's frame is at most a few words.
-    const std::size_t keep_word = to >= 8 ? to - 8 : 0;
+    // Keep the context, eight words back (heuristic: a call's frame is at most a few words), and what a correction may yet change.
+    std::size_t keep_word = to >= 8 ? to - 8 : 0;
+    if (config_.reread_corrected != 0.0) {
+        while (keep_word > 0 && words[keep_word - 1].end_s >= now_s_ - config_.history_s) --keep_word;
+    }
     const std::size_t drop = words[keep_word].first;
     if (drop > 0) {
         t.symbols.erase(t.symbols.begin(), t.symbols.begin() + static_cast<std::ptrdiff_t>(drop));
@@ -507,6 +525,7 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
     Candidate& c = it->second;
     if (fresh) {
         c.base = r.base;
+        c.made = ++made_;
         c.known = known_ && known_->contains(r.base);
         c.first_s = r.start_s;
     }
@@ -585,7 +604,10 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
             if (a.known && !b.known) return pa * config_.known_rival_factor >= pb;
             if (b.known && !a.known) return pa >= config_.known_rival_factor * pb;
             if (pa > need * pb) return true;
-            return pa == pb && d == 1 && a.first_s < b.first_s;
+            if (pa != pb || d != 1) return false;
+            // A tie: the earlier call, unless they begin on one word (within 1 s; heuristic), where the later is what a correction made of it.
+            if (std::abs(a.first_s - b.first_s) <= 1.0) return a.made > b.made;
+            return a.first_s < b.first_s;
         };
         if (beats(other, theirs, c, mine)) {
             held = true;

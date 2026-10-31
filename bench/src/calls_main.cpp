@@ -48,6 +48,7 @@ void set_value(CallSearchConfig& c, const std::string& assignment) {
         {"stripped_points", &c.stripped_points}, {"far_variant_ratio", &c.far_variant_ratio},
         {"doubled_is_framed", &c.doubled_is_framed},
         {"known_rival_factor", &c.known_rival_factor},
+        {"reread_corrected", &c.reread_corrected}, {"history_s", &c.history_s},
     };
     const auto it = fields.find(name);
     if (it == fields.end()) throw std::runtime_error("no such setting: " + name);

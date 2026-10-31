@@ -225,12 +225,11 @@ TEST(CallSearch, OnceIsNotEnoughTwiceFramedIs) {
     EXPECT_EQ(s.row("K1ABC")->count, 3u);
 }
 
-TEST(CallSearch, BareNeedsThreeAndAFarPlaceDoesNotAdd) {
+TEST(CallSearch, BareNeedsTwoAndAFarPlaceDoesNotAdd) {
     Stage s;
     s.born(1, 1000.0);
     s.born(2, 9000.0);
     s.text(1, 1000.0, "E K1ABC T ", 0.0);
-    s.text(1, 1000.0, "E K1ABC T ", 40.0);
     s.text(2, 9000.0, "E K1ABC T ", 80.0);
     s.search.advance(120.0);
     EXPECT_EQ(s.row("K1ABC"), nullptr);
@@ -363,6 +362,97 @@ TEST(CallSearch, ACorrectionIsReadAsItStands) {
     bool any_abd = false;
     for (const CallRow& r : s.search.candidates()) any_abd = any_abd || r.base == "K1ABD";
     EXPECT_FALSE(any_abd);
+}
+
+// A correction reaching back past what has been read, as when the decoder's other stream takes over.
+DecodedTextEvent correction(std::uint32_t id, double freq_hz, std::size_t from_index, const std::string& text, double t_s) {
+    DecodedTextEvent fix{};
+    fix.track_id = id;
+    fix.freq_hz = freq_hz;
+    TextCorrection k;
+    k.from_index = from_index;
+    k.chars = symbols(text, t_s);
+    fix.corrections.push_back(k);
+    return fix;
+}
+
+TEST(CallSearch, ACorrectionOfTextAlreadyReadIsReadAgain) {
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "OL1TM OL1TM TU ", 100.0);
+    s.search.advance(130.0);
+    ASSERT_NE(s.row("OL1TM"), nullptr);
+    // 50 s after it was read: the same word, one letter different, and the same time.
+    s.search.apply(correction(1, 1000.0, 0, "ZL1TM ZL1TM TU ", 100.0));
+    s.search.advance(180.0);
+    EXPECT_NE(s.row("ZL1TM"), nullptr);
+    EXPECT_EQ(s.row("OL1TM"), nullptr);
+    EXPECT_EQ(s.search.withdrawn(), 1u);
+}
+
+TEST(CallSearch, WhatTheOldTextGaveStaysUnlessANearCallTookItsPlace) {
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "DE K1ABC K1ABC TU ", 100.0);
+    s.search.advance(130.0);
+    ASSERT_NE(s.row("K1ABC"), nullptr);
+    s.search.apply(correction(1, 1000.0, 0, "DE KXTO T TU ", 100.0));
+    s.search.advance(180.0);
+    EXPECT_NE(s.row("K1ABC"), nullptr);
+}
+
+TEST(CallSearch, ACorrectionThatChangesNothingCountsNothing) {
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "DE K1ABC ", 100.0);
+    s.search.advance(130.0);
+    s.search.apply(correction(1, 1000.0, 0, "DE K1ABC ", 100.0));
+    s.search.advance(180.0);
+    s.search.finish();
+    EXPECT_EQ(s.row("K1ABC"), nullptr);  // one reading, however often it is read
+    for (const CallRow& r : s.search.candidates()) {
+        if (r.base == "K1ABC") EXPECT_EQ(r.count, 1u);
+    }
+}
+
+TEST(CallSearch, ACorrectionInTheLastWordReadReadsTheWholeWord) {
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "DE K1ABD ", 100.0);
+    s.search.advance(130.0);
+    s.search.apply(correction(1, 1000.0, 7, "C ", 100.7));
+    s.search.advance(140.0);
+    bool found = false;
+    for (const CallRow& r : s.search.candidates()) found = found || r.base == "K1ABC";
+    EXPECT_TRUE(found);
+}
+
+TEST(CallSearch, TextOlderThanTheHistoryIsNotReadAgain) {
+    CallSearchConfig c;
+    c.history_s = 20.0;
+    Stage s(c);
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "K1ABD K1ABD ", 100.0);
+    for (double t = 110.0; t <= 500.0; t += 10.0) {
+        s.text(1, 1000.0, "ABCD ABCD ABCD ", t);
+        s.search.advance(t + 15.0);
+    }
+    s.search.apply(correction(1, 1000.0, 0, "K2XYZ K2XYZ ", 100.0));
+    s.search.advance(520.0);
+    EXPECT_EQ(s.row("K2XYZ"), nullptr);
+}
+
+TEST(CallSearch, TheReReadCanBeTurnedOff) {
+    CallSearchConfig c;
+    c.reread_corrected = 0.0;
+    Stage s(c);
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "OL1TM OL1TM TU ", 100.0);
+    s.search.advance(130.0);
+    s.search.apply(correction(1, 1000.0, 0, "ZL1TM ZL1TM TU ", 100.0));
+    s.search.advance(180.0);
+    EXPECT_NE(s.row("OL1TM"), nullptr);
+    EXPECT_EQ(s.row("ZL1TM"), nullptr);
 }
 
 TEST(CallSearch, TheTextIsReadOnlyOnceItHasSettled) {
