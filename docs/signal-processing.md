@@ -340,9 +340,8 @@ scores 0 nats, whatever it holds.
 The search is a maximum a posteriori search over stories, the best text
 published when the channel ends.
 
-**Viterbi's amplitude and search.** Each story holds its own Gaussian N(μ, P) of the amplitude
-(FS), scored by a quadrature per story per sample, which is its whole cost; segmental
-removes it. Beam 40 nats, ceiling 1 700 stories (placeholders). Appendix: A.8d.
+**Viterbi's amplitude and search.** Each story holds its own Gaussian amplitude, scored by
+quadrature per sample; segmental removes that cost. Appendix: A.8d.
 
 ## 8e. Segmental decoder (selectable)
 

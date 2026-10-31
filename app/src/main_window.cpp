@@ -782,7 +782,7 @@ void MainWindow::run_automation(const StreamStatus& status) {
 void MainWindow::write_calls() {
     QFile file(automation_.calls_path);
     if (!file.open(QIODevice::WriteOnly)) return;
-    file.write(callsign::calls_csv(calls_->search().calls(), std::nullopt).c_str());
+    file.write(callsign::calls_csv(calls_->search().calls(), calls_->center_hz()).c_str());
 }
 
 void MainWindow::write_decoded() {

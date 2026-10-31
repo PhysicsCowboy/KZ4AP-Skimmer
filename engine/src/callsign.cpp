@@ -4,6 +4,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -24,10 +25,7 @@ bool any_of_word(std::string_view w, std::initializer_list<std::string_view> lis
 // A base call, no slash: prefix, one digit (or, a special form, several), one to four letters.
 bool parse_base(std::string_view s, bool& special) {
     if (s.size() < 3 || s.size() > 9) return false;
-    if (!allocated_pair(s[0], s[1])) {
-        // The one-letter prefixes pass allocated_pair with their digit below, so only a true refusal comes here.
-        return false;
-    }
+    if (!allocated_pair(s[0], s[1])) return false;
     if (s.substr(0, 2) == "DE") return false;  // the word DE glued to what follows: no amateur series uses it
     // The prefix's lengths to try: one character only if the series is a whole letter's; two; three for a digit first.
     const bool whole_letter = is_letter(s[0]) && is_digit(s[1]) && std::string_view("BFGIKMNRW").find(s[0]) != std::string_view::npos;
@@ -58,7 +56,7 @@ bool parse_base(std::string_view s, bool& special) {
 
 bool is_prefix_like(std::string_view s) {
     // DL, VP9, W1, 3D2: a prefix with or without its digit.
-    if (s.empty() || s.size() > 4 || s.size() < 1) return false;
+    if (s.empty() || s.size() > 4) return false;
     if (s.size() == 1) return is_letter(s[0]) && std::string_view("BFGIKMNRW").find(s[0]) != std::string_view::npos;
     return allocated_pair(s[0], s[1]);
 }
@@ -134,12 +132,8 @@ std::vector<std::string> split_glued(const std::string& w) {
     return out;
 }
 
-Role role_from(std::string_view before, std::string_view after, std::string_view before_same, std::string_view after_same) {
-    // The word after the call and its repeats says most: W1AW DE, W1AW 5NN.
-    const std::string_view next = after_same;
-    const std::string_view prev = before_same;
-    (void)before;
-    (void)after;
+// The role a call has from the words outside it and its repeats. The word after says most: W1AW DE, W1AW 5NN.
+Role role_from(std::string_view prev, std::string_view next) {
     if (any_of_word(next, {"DE"})) return Role::Named;
     if (any_of_word(prev, {"DE"})) return Role::Sender;
     if (named_before(next)) return Role::Named;
@@ -172,7 +166,7 @@ bool allocated_pair(char a, char b) {
         case 'J': return in("2345678");
         case 'L': return in("23456789");
         case 'P': return in("23456789");
-        case 'S': return in("0235 6789");  // S0: Western Sahara's, in amateur use, outside the table
+        case 'S': return in("02356789");  // S0: Western Sahara's, in amateur use, outside the table
         case 'T': return in("2345678");
         case 'V': return in("2345678");
         case 'Y': return in("23456789");
@@ -343,7 +337,7 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
         std::size_t b = last;
         while (b < words.size() && words[b].text == text) ++b;
         const std::string_view prev = before(a), next = after(b);
-        return role_from(prev, next, prev, next);
+        return role_from(prev, next);
     };
 
     for (std::size_t i = from; i < to; ++i) {
@@ -372,7 +366,7 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 if (prev == pieces[k]) prev = before(i);
                 if (next == pieces[k]) next = after(i + 1);
                 const bool twice = pieces.size() >= 2 && ((k > 0 && pieces[k - 1] == pieces[k]) || (k + 1 < pieces.size() && pieces[k + 1] == pieces[k]));
-                emit(pieces[k], Reading::Glued, i, i + 1, role_from(prev, next, prev, next), twice);
+                emit(pieces[k], Reading::Glued, i, i + 1, role_from(prev, next), twice);
             }
         }
         // A stray character on either end; both sides of the question stay, for the evidence to decide.
@@ -513,7 +507,6 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
     Candidate& c = it->second;
     if (fresh) {
         c.base = r.base;
-        c.special = r.special;
         c.known = known_ && known_->contains(r.base);
         c.first_s = r.start_s;
     }

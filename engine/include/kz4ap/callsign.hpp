@@ -199,7 +199,6 @@ private:
     };
     struct Candidate {
         std::string base;
-        bool special = false;
         bool known = false;
         bool reported = false;
         std::deque<Occurrence> recent;       // within window_s of the latest
@@ -219,7 +218,6 @@ private:
         std::size_t base = 0;                // the index, in the track's whole list, of symbols[0]
         std::size_t read_to = 0;             // the whole list's index up to which words have been read
         double freq_hz = 0;
-        std::size_t correction_base = 0;
     };
     struct Support {
         double points = 0;

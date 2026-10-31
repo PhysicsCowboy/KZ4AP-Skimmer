@@ -24,6 +24,7 @@ public:
     // Starts over, for a new stream. known: the known-call list, if the operator gave one.
     void start(std::shared_ptr<const callsign::KnownCalls> known, std::optional<double> center_hz);
     callsign::CallSearch& search() { return *search_; }
+    std::optional<double> center_hz() const { return center_hz_; }
     // Tells views what changed since the last call; now_s, the stream's clock, s, for the time since a call was last heard.
     void refresh(double now_s);
 
