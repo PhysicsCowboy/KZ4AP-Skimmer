@@ -2,6 +2,7 @@
 
 #include "kz4ap/spectrum.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -50,11 +51,17 @@ struct DetectorConfig {
     // A new track must also stand threshold_db above the median of the bins within +/- this, Hz (the design's amendment of
     // 2026-10-19: a threshold against a local floor), which a wide signal's peaks do not. 0 for no such test.
     double local_floor_radius_hz = 0.0;
+    // One track to a peak: a track does not move to a peak within attribution_distance_hz of an older track, and of two tracks
+    // that end up that close, the younger dies (in DetectorUpdate::merged). Attribution::Distance only.
+    bool one_track_per_peak = false;
+    // No new track within this of 0 Hz, Hz: an I/Q radio's own DC offset stands there, whatever the band holds. 0 for no such rule.
+    double dc_guard_hz = 0.0;
 };
 
 struct DetectorUpdate {
     std::vector<Track> born;
     std::vector<std::uint32_t> died;
+    std::vector<std::uint32_t> merged;  // those of `died` that left because an older track holds their peak
 };
 
 // Finds CW carriers in spectrum frames and keeps a list of tracks.
@@ -66,6 +73,23 @@ public:
     DetectorUpdate process(const SpectrumFrame& frame);
 
     std::vector<Track> tracks() const;
+
+    // The most tracks from now on, at most config.max_tracks; a smaller one closes none, but a new track must then replace a weaker.
+    void set_track_limit(std::size_t limit) { track_limit_ = std::min(limit, config_.max_tracks); }
+
+    // A track that its decoder's evidence has retired (track_evidence.hpp): it leaves now, and no new track opens within
+    // attribution_distance_hz of its frequency until hold_s after now_s, twice that after a second retirement at the same place
+    // and so on, up to kLongestHoldS. hold_s 0: the place stays open. An unknown id is ignored.
+    //
+    // A wide signal opens track after track at new peaks: at kRegionRetirements such retirements within kRegionRadiusHz of each
+    // other in kRegionMemoryS, the whole of that radius closes the same way, from kRegionHoldS. All heuristics, set on real 40 m:
+    // FT8 and speech give dozens a minute there, the CW of the same recordings none or one.
+    void retire(std::uint32_t id, double now_s, double hold_s);
+    static constexpr double kLongestHoldS = 120.0;  // s: an FT8 frequency stays busy; a station there waits at most this.
+    static constexpr double kRegionRadiusHz = 750.0;
+    static constexpr int kRegionRetirements = 4;
+    static constexpr double kRegionMemoryS = 60.0;
+    static constexpr double kRegionHoldS = 30.0;
 
 private:
     struct Active {
@@ -83,6 +107,23 @@ private:
     double refined_freq(int bin) const;
     bool is_peak(int i) const;
     void follow_peaks(float floor_db);
+    bool within_older(std::size_t track, double freq_hz) const;
+
+    // A place closed to new tracks.
+    struct Hold {
+        double freq_hz;
+        double until_s;
+        int count;  // retirements here so far
+        double radius_hz;
+    };
+    std::vector<Hold> holds_;
+    std::size_t track_limit_ = 0;  // set in the constructor
+    struct Retirement {
+        double freq_hz;
+        double at_s;
+    };
+    std::vector<Retirement> retirements_;  // those of the last kRegionMemoryS that closed a place
+    void close_place(double freq_hz, double radius_hz, double now_s, double hold_s);
 
     DetectorConfig config_;
     int peak_bins_ = 2;   // peak_radius_hz in bins

@@ -130,6 +130,7 @@ struct Search::Impl {
     SearchStats stats;
 
     std::int64_t next = 0;  // the next boundary
+    double last_best = 0.0;  // nats: the best partial score at the last boundary (best_score)
     std::vector<Element> live;
     std::vector<Slot> gap_slots;   // by speed x nodes + node: a mark ended, a gap starts
     std::vector<Slot> mark_slots;  // by speed x nodes + node: a gap ended, a mark starts
@@ -355,6 +356,7 @@ void Search::Impl::boundary(std::int64_t j) {
     if (silent_alive) best = std::max(best, silent + gap_reach);
     if (silent_end > -kInf) best = std::max(best, silent_end + gap_reach_new);
     if (best == -kInf) best = 0.0;
+    last_best = best;
     const double floor = best - config.beam_nats;
 
     // 4. Open the new elements inside the beam.
@@ -658,6 +660,7 @@ BestStory Search::best_story(std::size_t max_symbols) const {
     return story;
 }
 
+double Search::best_score() const { return impl_->last_best; }
 const SearchStats& Search::stats() const { return impl_->stats; }
 std::size_t Search::live() const { return impl_->live.size(); }
 

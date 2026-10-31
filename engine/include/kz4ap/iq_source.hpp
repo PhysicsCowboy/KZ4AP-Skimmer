@@ -84,6 +84,8 @@ public:
     virtual PlaybackControl* playback() { return nullptr; }
     // A live source's: samples lost because the pipeline fell behind (a gap in the stream), the recorder, the radio's controls.
     virtual std::uint64_t dropped_samples() const { return 0; }
+    // A live source's: the samples waiting for the pipeline, s of stream. Called from the pipeline's thread.
+    virtual double backlog_s() const { return 0.0; }
     virtual RecordControl* recorder() { return nullptr; }
     virtual RadioControl* radio() { return nullptr; }
 };

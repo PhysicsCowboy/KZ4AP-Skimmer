@@ -7,6 +7,7 @@
 #include "worker_pool.hpp"
 #include "kz4ap/cpu_time.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <functional>
@@ -37,6 +38,10 @@ EngineConfig resolved(EngineConfig c) {
     // few bins, so that ten stations in it leave the median at the noise; on real 40 m I/Q it took out most of the false
     // tracks). The other decoders keep the detector their test-set results were measured with.
     if (c.decoder.front_end == FrontEnd::Segmental && c.detector.local_floor_radius_hz == 0.0) c.detector.local_floor_radius_hz = 1000.0;
+    if (c.decoder.front_end == FrontEnd::Segmental) {
+        c.detector.one_track_per_peak = true;
+        c.detector.dc_guard_hz = c.channel_distance_hz;
+    }
     return c;
 }
 
@@ -206,7 +211,10 @@ void Engine::process_hop(std::span<const Sample> hop) {
         lap(stages_.hiss_s);
         bus_.publish(Event{std::move(frame)});
         lap(stages_.publish_s);
-        for (const auto id : update.died) close_channel(id);
+        for (const auto id : update.died) {
+            const bool merged = std::find(update.merged.begin(), update.merged.end(), id) != update.merged.end();
+            close_channel(id, merged ? TrackEnd::Merged : TrackEnd::Faded);
+        }
         for (const auto& track : update.born) open_channel(track, channelizer_.hz_to_bin(track.freq_hz));
         lap(stages_.lifecycle_s);
         if (!oracle_ && config_.decoder.front_end != FrontEnd::Envelope) {
@@ -239,6 +247,7 @@ void Engine::process_hop(std::span<const Sample> hop) {
         Channel& channel = entry->second;
         stages_.filter_s += channel.filter_s;
         stages_.decoder_s += channel.decoder_s;
+        track_decoder_s_[entry->first] += channel.decoder_s;
         channel.filter_s = 0;
         channel.decoder_s = 0;
         channel_samples_ += channel.block_samples;
@@ -246,6 +255,8 @@ void Engine::process_hop(std::span<const Sample> hop) {
         channel.update = DecodeUpdate{};
     }
     lap(stages_.publish_s);
+    if (config_.judge_tracks && !oracle_) judge_channels(block.first_index);
+    lap(stages_.lifecycle_s);
 }
 
 void Engine::process_channel(std::uint32_t id, Channel& channel, const Channelizer::Block& block) {
@@ -317,11 +328,44 @@ void Engine::open_channel(const Track& track, int bin) {
     bus_.publish(Event{TrackEvent{TrackEvent::Kind::Born, track}});
 }
 
-void Engine::close_channel(std::uint32_t id) {
+void Engine::judge_channels(std::uint64_t first_index) {
+    const double now_s = static_cast<double>(first_index) / channelizer_.output_rate();
+    retiring_.clear();
+    for (auto* entry : active_) {
+        Channel& channel = entry->second;
+        if (now_s < channel.next_judged_s) continue;
+        channel.next_judged_s = now_s + 1.0;  // the judge's clock: a second of stream
+        const std::optional<KeyingEvidence> evidence = channel.decoder->keying_evidence();
+        if (!evidence) continue;
+        const TrackJudge::Verdict verdict = channel.judge.update(*evidence, channel.decoder->published_symbols());
+        if (verdict.retire) retiring_.emplace_back(entry->first, verdict);
+    }
+    for (const auto& [id, verdict] : retiring_) {
+        detector_.retire(id, now_s, verdict.hold_s);
+        close_channel(id, verdict.end);
+    }
+    while (track_budget_ > 0 && channels_.size() > track_budget_) {
+        // The least evidence: what has read nothing plausible first, then what earns the least.
+        auto worst = channels_.begin();
+        const auto rank = [](const Channel& c) { return std::make_pair(c.judge.proven(), c.judge.earning()); };
+        for (auto it = channels_.begin(); it != channels_.end(); ++it)
+            if (rank(it->second) < rank(worst->second)) worst = it;
+        const std::uint32_t id = worst->first;
+        detector_.retire(id, now_s, TrackJudge::kHoldS);
+        close_channel(id, TrackEnd::Shed);
+    }
+}
+
+void Engine::set_track_budget(std::size_t tracks) {
+    track_budget_ = tracks;
+    detector_.set_track_limit(tracks > 0 ? tracks : config_.detector.max_tracks);
+}
+
+void Engine::close_channel(std::uint32_t id, TrackEnd end) {
     const auto it = channels_.find(id);
     if (it == channels_.end()) return;
     publish_update(id, it->second.decoder->flush());
-    bus_.publish(Event{TrackEvent{TrackEvent::Kind::Died, it->second.track}});
+    bus_.publish(Event{TrackEvent{TrackEvent::Kind::Died, it->second.track, end}});
     channels_.erase(it);
 }
 

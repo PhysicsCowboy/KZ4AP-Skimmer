@@ -48,8 +48,17 @@ public:
         return count;
     }
 
-    // The consumer: forgets everything in the ring.
-    void clear() { tail_.store(head_.load(std::memory_order_acquire), std::memory_order_release); }
+    // The consumer: forgets everything in the ring and returns how many items that was.
+    std::size_t clear() {
+        const std::uint64_t head = head_.load(std::memory_order_acquire);
+        const std::uint64_t tail = tail_.exchange(head, std::memory_order_acq_rel);
+        return static_cast<std::size_t>(head - tail);
+    }
+
+    // The consumer: the items waiting.
+    std::size_t size() const {
+        return static_cast<std::size_t>(head_.load(std::memory_order_acquire) - tail_.load(std::memory_order_relaxed));
+    }
 
 private:
     std::vector<T> storage_;

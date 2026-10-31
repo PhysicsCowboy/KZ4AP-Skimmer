@@ -57,6 +57,21 @@ private:
     std::size_t next_ = 0;
 };
 
+// A live source behind by a fixed time: the pipeline can never catch up.
+class BehindSource final : public IqSource {
+public:
+    BehindSource(std::vector<Sample> samples, double backlog_s) : inner_(std::move(samples), 4800), backlog_s_(backlog_s) {}
+    int sample_rate() const override { return inner_.sample_rate(); }
+    std::string description() const override { return "behind"; }
+    IqRead read(std::span<Sample> out, std::chrono::milliseconds timeout) override { return inner_.read(out, timeout); }
+    void interrupt() override {}
+    double backlog_s() const override { return backlog_s_; }
+
+private:
+    MemorySource inner_;
+    double backlog_s_;
+};
+
 // A source that never has samples, as a live one between blocks: read waits until interrupted.
 class SilentSource final : public IqSource {
 public:
@@ -306,4 +321,44 @@ TEST(DecoderName, MapsTheNamesAndRefusesOthers) {
     EXPECT_THROW(engine_config_for_decoder("neural"), std::invalid_argument);
     EXPECT_EQ(engine_config_for_decoder("bank").decoder.front_end, FrontEnd::Bank);
     EXPECT_EQ(engine_config_for_decoder("envelope").detector.attribution, Attribution::Bins);
+}
+
+namespace {
+
+// Stations on separate frequencies, a keyed one every 400 Hz.
+std::vector<Sample> many_stations(int count, double duration_s) {
+    std::vector<Sample> x(static_cast<std::size_t>(duration_s * kRate));
+    for (int i = 0; i < count; ++i) {
+        const std::vector<Sample> one = test::keyed_signal("CQ CQ DE KQ2RP KQ2RP K CQ CQ DE KQ2RP KQ2RP K", 20, kRate, duration_s, -8000.0 + 400.0 * i, 0.01);
+        for (std::size_t k = 0; k < x.size(); ++k) x[k] += one[k];
+    }
+    return x;
+}
+
+StreamStatus run_to_end(std::unique_ptr<IqSource> source) {
+    EngineConfig config;
+    config.decoder.front_end = FrontEnd::Segmental;
+    std::size_t most = 0, live = 0;
+    StreamRunner runner(std::move(source), config, [&](const Event& e) {
+        if (const auto* t = std::get_if<TrackEvent>(&e)) {
+            live += t->kind == TrackEvent::Kind::Born ? 1 : static_cast<std::size_t>(-1);
+            most = std::max(most, live);
+        }
+    });
+    while (runner.status().state != StreamStatus::State::Finished && runner.status().state != StreamStatus::State::Failed)
+        std::this_thread::sleep_for(5ms);
+    return runner.status();
+}
+
+}  // namespace
+
+TEST(StreamRunnerBudget, APipelineBehindALiveSourceGivesUpTracks) {
+    const StreamStatus behind = run_to_end(std::make_unique<BehindSource>(many_stations(24, 8.0), 2.0));
+    ASSERT_EQ(behind.state, StreamStatus::State::Finished) << behind.error;
+    EXPECT_GT(behind.track_budget, 0u);
+    EXPECT_LE(behind.track_budget, 24u);
+    const StreamStatus caught_up = run_to_end(std::make_unique<BehindSource>(many_stations(24, 8.0), 0.0));
+    ASSERT_EQ(caught_up.state, StreamStatus::State::Finished) << caught_up.error;
+    EXPECT_EQ(caught_up.track_budget, 0u);
+    EXPECT_LT(behind.channel_seconds, caught_up.channel_seconds);
 }

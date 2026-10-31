@@ -31,6 +31,7 @@ using namespace kz4ap::bench;
 namespace {
 
 struct Args {
+    bool judge_tracks = true;
     std::optional<std::filesystem::path> recording;
     std::optional<std::filesystem::path> labels;
     std::optional<std::filesystem::path> json;
@@ -67,7 +68,7 @@ const char* decoder_name(FrontEnd d) {
 constexpr const char* kUsage =
     "usage: kz4ap-bench RECORDING.wav [--labels LABELS.json] [--json OUT.json]\n"
     "                   [--no-timing] [--baseline BASELINE.json] [--oracle]\n"
-    "                   [--decoder envelope|matched|bank|viterbi|segmental]\n"
+    "                   [--decoder envelope|matched|bank|viterbi|segmental] [--no-judge]\n"
     "                   [--record-channels DIR (with --oracle: the oracle channels; without: the detector's)]\n"
     "                   [--set NAME=VALUE ...] [--genie fist|fading ...] [--stats STATS.json [--stats-detail]]\n"
     "                   [--omega-bar-default-table FILE]\n"
@@ -138,6 +139,7 @@ Args parse_args(int argc, char** argv) {
             args.stats = value();
             args.viterbi_options.stats = true;
         }
+        else if (a == "--no-judge") args.judge_tracks = false;  // every track stays as the detector has it (track_evidence.hpp)
         else if (a == "--stats-detail") args.viterbi_options.stats_detail = true;  // the full form of that file
         else if (a == "--omega-bar-default-table") {  // the default Omega_bar table for other level bounds
             args.viterbi_options.omega_bar_default_table = text();
@@ -276,16 +278,31 @@ int run_engine(const Args& args) {
     std::map<std::uint32_t, DecodedTrack> tracks;  // text filled in at the end, from texts
     std::map<std::uint32_t, TrackText> texts;
     std::optional<ChannelRecorder> recorder;
+    // When each track was born and died, s of stream, and the tracks alive at each whole second of stream.
+    std::map<std::uint32_t, double> born_s, died_s, wpm;
+    std::vector<std::size_t> live_each_s;
+    std::size_t live_now = 0;
+    double stream_now_s = 0.0;
     bus.subscribe([&](const Event& e) {
+        if (const auto* frame = std::get_if<SpectrumFrame>(&e)) {
+            stream_now_s = frame->time_s;
+            while (static_cast<double>(live_each_s.size()) < stream_now_s) live_each_s.push_back(live_now);
+            return;
+        }
         const auto* t = std::get_if<TrackEvent>(&e);
         if (t && t->kind == TrackEvent::Kind::Born) {
+            born_s[t->track.id] = stream_now_s;
+            ++live_now;
             tracks[t->track.id] = {t->track.id, t->track.freq_hz, "", t->track.freq_hz};
             if (recorder && !args.oracle) recorder->open_track(t->track.id, t->track.freq_hz);
         } else if (t && t->kind == TrackEvent::Kind::Died) {
+            died_s[t->track.id] = stream_now_s;
+            --live_now;
             if (recorder) recorder->close_track(t->track.id);
         } else if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
             texts[d->track_id].apply(d->chars, d->corrections);
             tracks[d->track_id].last_freq_hz = d->freq_hz;
+            if (d->wpm > 0) wpm[d->track_id] = d->wpm;
         }
     });
 
@@ -294,6 +311,7 @@ int run_engine(const Args& args) {
     if (args.front_end == FrontEnd::Envelope) config = with_envelope_path(config);
     config.decoder.front_end = args.front_end;
     config.worker_threads = args.threads;
+    config.judge_tracks = args.judge_tracks;
     if (args.oracle) {
         for (const auto& s : labels->signals) config.oracle_frequencies_hz.push_back(s.freq_offset_hz);
     }
@@ -395,6 +413,23 @@ int run_engine(const Args& args) {
         tracked_freq_hz[id] = t.last_freq_hz;
     }
     add_tracks(out, track_list, &immediate_list, args.front_end == FrontEnd::Bank ? &texts : nullptr);
+    for (nlohmann::json& j : out["tracks"]) {
+        const auto id = j["id"].get<std::uint32_t>();
+        if (const auto it = born_s.find(id); it != born_s.end()) j["born_s"] = it->second;
+        if (const auto it = died_s.find(id); it != died_s.end()) j["died_s"] = it->second;
+        j["last_freq_hz"] = tracked_freq_hz[id];
+        if (const auto it = texts.find(id); it != texts.end()) {
+            std::vector<std::string> symbols;
+            for (const auto& symbol : it->second.final_symbols()) symbols.push_back(symbol);
+            j["plausible"] = text_evidence(symbols).plausible();
+        }
+        if (const auto it = wpm.find(id); it != wpm.end()) j["wpm"] = it->second;
+        if (args.timing) {  // not with --no-timing: two runs' files must be the same
+            if (const auto it = engine.track_decoder_seconds().find(id); it != engine.track_decoder_seconds().end())
+                j["decoder_cpu_s"] = it->second;
+        }
+    }
+    out["live_tracks_each_s"] = live_each_s;
     out["channel_seconds"] = stats.channel_seconds;
     if (args.timing) {
         const auto per_channel_ms = [&](double seconds) {

@@ -440,6 +440,8 @@ void MainWindow::start_stream(std::unique_ptr<IqSource> source) {
 
     model_->clear();
     model_->table().set_keep_retired(!automation_.report_path.isEmpty() || !automation_.decoded_path.isEmpty());
+    // Only the segmental decoder's tracks are judged: the list then keeps to text that reads as plausible.
+    model_->table().set_plausible_only(front_end_from_name(decoder_name_) == FrontEnd::Segmental);
     model_->set_bin_width_hz(static_cast<double>(rate) / fft_size);
     model_->set_center_hz(source->center_frequency_hz());
     selected_track_.reset();
@@ -501,6 +503,7 @@ void MainWindow::on_tick() {
     table.advance(status.stream_s);
     for (const TrackUpdate& update : batch.updates) std::visit([&](const auto& event) { table.apply(event); }, update);
     meter_.push(status);
+    most_live_ = std::max(most_live_, table.live_count());
 
     const bool ended = status.state == StreamStatus::State::Finished || status.state == StreamStatus::State::Failed;
     if (ended && !stream_ended_) {
@@ -551,7 +554,8 @@ void MainWindow::update_status(const StreamStatus& status) {
     if (rows_dropped_ > 0) speed += tr(", waterfall skipped %1 rows").arg(rows_dropped_);
     speed_label_->setText(speed);
 
-    tracks_label_->setText(tr("Live tracks %1").arg(model_->table().live_count()));
+    tracks_label_->setText(status.track_budget > 0 ? tr("Live tracks %1 (falling behind: at most %2)").arg(model_->table().live_count()).arg(status.track_budget)
+                                                   : tr("Live tracks %1").arg(model_->table().live_count()));
 
     if (recent.pipeline_ms_per_channel_s && recent.per_track_ms_per_channel_s && recent.fixed_ms_per_stream_s) {
         cpu_label_->setText(tr("CPU: %1 ms per channel-second in all; fixed %2 ms per s of stream, each track %3 ms per channel-second")
@@ -704,6 +708,9 @@ void MainWindow::write_report(const StreamStatus& status) {
     out << "wall_s: " << status.wall_s << "\n";
     out << "channel_seconds: " << status.channel_seconds << "\n";
     out << "live_tracks_at_end: " << model_->table().live_count() << "\n";
+    out << "tracks_opened: " << model_->table().opened() << "\n";
+    out << "track_budget_at_end: " << status.track_budget << "\n";
+    out << "live_tracks_most: " << most_live_ << "\n";
     out << "pipeline_cpu_ms_per_channel_s: " << number(whole.pipeline_ms_per_channel_s) << "\n";
     out << "decoder_ms_per_channel_s: " << number(whole.decoder_ms_per_channel_s) << "\n";
     out << "pipeline_cpu_ms_per_channel_s_last_10s: " << number(recent.pipeline_ms_per_channel_s) << "\n";
@@ -726,15 +733,18 @@ void MainWindow::write_report(const StreamStatus& status) {
     out << "live_tracks: " << model_->table().live_count() << "\n";
     out << "error: " << QString::fromStdString(status.error) << "\n";
     for (const QString& line : transport_log_) out << line << "\n";
-    const auto write_rows = [&](const std::vector<TrackRow>& rows) {
+    const auto write_rows = [&](const std::vector<TrackRow>& rows, const char* word) {
         for (const TrackRow& row : rows) {
-            out << "track " << row.id << " freq_hz " << QString::number(row.freq_hz, 'f', 1) << " wpm "
-                << QString::number(row.wpm, 'f', 1) << " start_s " << QString::number(row.start_s, 'f', 2) << " text "
-                << QString::fromStdString(row.text()) << "\n";
+            out << word << " " << row.id << " freq_hz " << QString::number(row.freq_hz, 'f', 1) << " wpm "
+                << QString::number(row.wpm, 'f', 1) << " start_s " << QString::number(row.start_s, 'f', 2) << " tracks "
+                << row.tracks << " text " << QString::fromStdString(row.text()) << "\n";
         }
     };
-    write_rows(model_->table().rows());
-    write_rows(model_->table().retired());
+    write_rows(model_->table().rows(), "track");
+    write_rows(model_->table().retired(), "track");
+    // What the list never showed: it read nothing plausible.
+    write_rows(model_->table().hidden(), "hidden");
+    write_rows(model_->table().retired_hidden(), "hidden");
 }
 
 }  // namespace kz4ap::app

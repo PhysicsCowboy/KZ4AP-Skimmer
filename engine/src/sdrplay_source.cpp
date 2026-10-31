@@ -311,7 +311,10 @@ void SdrplaySource::on_samples(const short* xi, const short* xq, unsigned int co
     constexpr float kScale = 1.0f / 32768.0f;  // as WavIqReader, so a recording of this reads the same
     for (unsigned int i = 0; i < count; ++i) convert_[i] = Sample(xi[i] * kScale, xq[i] * kScale);
     const std::size_t taken = ring_.push(std::span<const Sample>(convert_.data(), count));
-    if (taken < count) dropped_.fetch_add(count - taken, std::memory_order_relaxed);
+    if (taken < count) {
+        dropped_.fetch_add(count - taken, std::memory_order_relaxed);
+        overflowed_.store(true, std::memory_order_release);
+    }
 }
 
 void SdrplaySource::on_overload(bool detected) { overload_ = detected; }
@@ -365,6 +368,7 @@ IqRead SdrplaySource::read(std::span<Sample> out, std::chrono::milliseconds time
     using Clock = std::chrono::steady_clock;
     const Clock::time_point deadline = Clock::now() + timeout;
     for (;;) {
+        if (overflowed_.exchange(false, std::memory_order_acq_rel)) dropped_.fetch_add(ring_.clear(), std::memory_order_relaxed);
         const std::size_t got = ring_.pop(out);
         if (got > 0) return IqRead{got, false};
         if (lost_.load()) {

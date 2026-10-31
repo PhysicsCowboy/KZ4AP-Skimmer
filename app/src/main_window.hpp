@@ -129,6 +129,7 @@ private:
     RecordingStatus last_recording_;
     std::uint64_t ticks_ = 0;
     std::uint64_t rows_dropped_ = 0;
+    std::size_t most_live_ = 0;  // the most live tracks so far
     std::optional<std::uint32_t> selected_track_;
 
     WaterfallWidget* waterfall_ = nullptr;

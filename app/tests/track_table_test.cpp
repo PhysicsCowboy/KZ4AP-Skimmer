@@ -159,3 +159,93 @@ TEST(TrackTable, StructureVersionMovesOnlyWhenALayoutMust) {
     EXPECT_EQ(table.rows()[0].id, 2u);
     EXPECT_EQ(table.rows()[1].id, 1u);
 }
+
+TEST(TrackTablePlausibleOnly, ATrackIsListedOnlyOnceItsTextReadsAsPlausible) {
+    TrackTable table;
+    table.set_plausible_only(true);
+    table.apply(born(1, 1000.0));
+    EXPECT_TRUE(table.rows().empty());
+    EXPECT_EQ(table.live_count(), 1u);
+    EXPECT_EQ(table.opened(), 1u);
+    table.apply(text(1, 1000.0, {"E", " ", "T", " ", "E"}));
+    EXPECT_TRUE(table.rows().empty());
+    const std::uint64_t before = table.structure_version();
+    table.apply(text(1, 1000.0, {"K", "Q", "2", "R", "P"}));
+    ASSERT_EQ(table.rows().size(), 1u);
+    EXPECT_NE(table.structure_version(), before);
+    EXPECT_EQ(table.rows()[0].text(), "E T EKQ2RP");
+    EXPECT_EQ(table.live_count(), 1u);
+}
+
+TEST(TrackTablePlausibleOnly, JunkNeverAppears) {
+    TrackTable table;
+    table.set_keep_retired(true);
+    table.set_plausible_only(true);
+    table.apply(born(1, 1000.0));
+    table.apply(text(1, 1000.0, {"E", " ", "T", " ", "T", " ", "E", "I", " ", "E"}));
+    table.apply(died(1));
+    EXPECT_TRUE(table.rows().empty());
+    EXPECT_EQ(table.live_count(), 0u);
+    table.advance(100.0);
+    EXPECT_TRUE(table.rows().empty());
+    EXPECT_TRUE(table.retired().empty());
+    ASSERT_EQ(table.retired_hidden().size(), 1u);
+    EXPECT_EQ(table.retired_hidden()[0].text(), "E T T EI E");
+}
+
+TEST(TrackTablePlausibleOnly, ANewTrackAtAnEndedTracksPlaceGoesOnWithItsText) {
+    TrackTable table;
+    table.set_plausible_only(true);
+    table.apply(born(1, 1000.0));
+    table.apply(text(1, 1000.0, {"K", "Q", "2", "R", "P"}));
+    ASSERT_EQ(table.rows().size(), 1u);
+    table.advance(10.0);
+    table.apply(died(1));
+    EXPECT_FALSE(table.rows()[0].live());
+    table.advance(20.0);
+    // 20 Hz away: the same place; the row goes on, under the new track's id.
+    table.apply(born(2, 1020.0));
+    ASSERT_EQ(table.rows().size(), 1u);
+    EXPECT_TRUE(table.rows()[0].live());
+    EXPECT_EQ(table.rows()[0].id, 2u);
+    EXPECT_EQ(table.rows()[0].tracks, 2u);
+    table.apply(text(2, 1020.0, {"C", "Q"}));
+    EXPECT_EQ(table.rows()[0].text(), "KQ2RP CQ");
+    // The new track's corrections count from its own first symbol.
+    DecodedTextEvent corrected = text(2, 1020.0, {});
+    TextCorrection k;
+    k.from_index = 1;
+    k.chars = symbols({"S"});
+    corrected.corrections.push_back(k);
+    table.apply(corrected);
+    EXPECT_EQ(table.rows()[0].text(), "KQ2RP CS");
+    // Another place keeps its own row.
+    table.apply(born(3, 2000.0));
+    table.apply(text(3, 2000.0, {"W", "1", "A", "W"}));
+    EXPECT_EQ(table.rows().size(), 2u);
+}
+
+TEST(TrackTablePlausibleOnly, HiddenTextAddsUpAcrossATracksRetirement) {
+    TrackTable table;
+    table.set_plausible_only(true);
+    table.apply(born(1, 1000.0));
+    table.apply(text(1, 1000.0, {"E", "K"}));
+    table.advance(10.0);
+    table.apply(died(1));
+    EXPECT_TRUE(table.rows().empty());
+    table.apply(born(2, 1000.0));
+    table.apply(text(2, 1000.0, {"Q", "2", "R", "P"}));
+    ASSERT_EQ(table.rows().size(), 1u);
+    EXPECT_EQ(table.rows()[0].text(), "EK Q2RP");
+}
+
+TEST(TrackTablePlausibleOnly, ADuplicatesHiddenRowGoesAtOnce) {
+    TrackTable table;
+    table.set_plausible_only(true);
+    table.apply(born(1, 1000.0));
+    table.apply(text(1, 1000.0, {"E"}));
+    TrackEvent merged = died(1);
+    merged.end = TrackEnd::Merged;
+    table.apply(merged);
+    EXPECT_TRUE(table.hidden().empty());
+}

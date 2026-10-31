@@ -46,6 +46,15 @@ struct DecodeUpdate {
     std::optional<double> freq_offset_hz;  // the station's offset from its channel's center, Hz, if the decoder tracks it
 };
 
+// A decoder's running evidence, nats, summed from the channel's start, each against key-up throughout at the channel's noise
+// (a sample of key-up scores 0): what the engine reads to decide whether a track holds keyed Morse (track_evidence.hpp).
+struct KeyingEvidence {
+    double morse_nats = 0;     // the best Morse story: its timing and text included
+    double carrier_nats = 0;   // key down throughout, at the level the channel's belief follows
+    double free_key_nats = 0;  // an on-off key with no timing and no text at the same level (a two-state chain)
+    double free_slow_nats = 0;  // the same at a slow switch rate
+};
+
 // Decodes one channel's baseband stream into characters.
 class Decoder {
 public:
@@ -65,6 +74,10 @@ public:
     // block, as it does the frequency anchor, when the decoder is the new decoder (FrontEnd::Viterbi); the other
     // decoders estimate their noise themselves and ignore it.
     virtual void set_noise_density_fs2_per_hz(double /*n0_fs2_per_hz*/) {}
+    // The evidence above, if this decoder has any.
+    virtual std::optional<KeyingEvidence> keying_evidence() const { return std::nullopt; }
+    // The text as published so far (the consumer's list above), if this decoder keeps it.
+    virtual std::span<const std::string> published_symbols() const { return {}; }
 };
 
 }  // namespace kz4ap

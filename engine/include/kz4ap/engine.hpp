@@ -8,6 +8,7 @@
 #include "kz4ap/segmental/config.hpp"
 #include "kz4ap/signal_detector.hpp"
 #include "kz4ap/spectrum.hpp"
+#include "kz4ap/track_evidence.hpp"
 #include "kz4ap/viterbi/config.hpp"
 
 #include <cstdint>
@@ -114,6 +115,10 @@ struct EngineConfig {
     // 4.1, step 4). The output does not depend on it: a channel's work reads nothing another channel's writes, and the
     // results are published in the order of the track ids once a block's channels are done.
     int worker_threads = 1;
+
+    // FrontEnd::Segmental on the detector's path: each track's evidence is judged once a second and a track without keyed
+    // Morse retired (track_evidence.hpp). False for a run that keeps every track as the detector has it.
+    bool judge_tracks = true;
 };
 
 // The milestone-1 pipeline (kept selectable; owner, 2026-09-29): the Envelope decoder and the
@@ -175,6 +180,11 @@ public:
     void finish();
 
     EngineStats stats() const;
+    // The most live tracks from now on, for a pipeline that falls behind (the stream runner): the tracks with the least evidence
+    // close at the next block (TrackEnd::Shed), those that have read nothing plausible first, and a new one must replace a weaker.
+    // The engine's cap (DetectorConfig::max_tracks) is the limit otherwise, and at most. Only with judge_tracks.
+    void set_track_budget(std::size_t tracks);
+    std::size_t live_tracks() const { return channels_.size(); }
     // CPU of the pool's threads so far, s, not counting the caller's (0 with worker_threads 1).
     double worker_cpu_seconds() const;
 
@@ -182,6 +192,9 @@ public:
     // observes only; decoding is the same with or without it. Set it before process().
     void set_channel_tap(ChannelTap tap) { tap_ = std::move(tap); }
     double channel_rate() const;  // the channelizer's output rate, samples/s
+
+    // Benchmark tooling: CPU inside each track's decoder so far, s (the thread's own clock), by track id, closed tracks too.
+    const std::map<std::uint32_t, double>& track_decoder_seconds() const { return track_decoder_s_; }
 
     // Benchmark tooling: the statistics of the new decoder's search on the channel with this track id
     // (viterbi/search.hpp; they are empty unless ViterbiConfig::stats is true), or nullptr if no open channel has that
@@ -204,12 +217,16 @@ private:
         double filter_s = 0;
         double decoder_s = 0;
         std::size_t block_samples = 0;
+        TrackJudge judge;
+        double next_judged_s = 0;  // s of stream
     };
 
     void process_hop(std::span<const Sample> hop);
     void process_channel(std::uint32_t id, Channel& channel, const Channelizer::Block& block);
     void open_channel(const Track& track, int bin);
-    void close_channel(std::uint32_t id);
+    // The verdicts on this block's channels (EngineConfig::judge_tracks), once a second of stream for each.
+    void judge_channels(std::uint64_t first_index);
+    void close_channel(std::uint32_t id, TrackEnd end = TrackEnd::Faded);
     void publish_update(std::uint32_t id, DecodeUpdate&& update);
 
     EngineConfig config_;  // fft_size resolved to the size in use
@@ -223,8 +240,11 @@ private:
     bool oracle_ = false;
     std::uint64_t channel_samples_ = 0;
     EngineStageTimes stages_;
+    std::map<std::uint32_t, double> track_decoder_s_;
     std::unique_ptr<WorkerPool> pool_;  // worker_threads > 1 only
     std::vector<std::pair<const std::uint32_t, Channel>*> active_;  // this block's channels, by track id (reused)
+    std::vector<std::pair<std::uint32_t, TrackJudge::Verdict>> retiring_;  // this block's verdicts (reused)
+    std::size_t track_budget_ = 0;  // 0: none
     ChannelTap tap_;
     // FrontEnd::Viterbi only: the hiss estimator, fed every spectrum frame, whose N0 at each channel's center bin the
     // channel's decoder gets before every block; and the parts its decoders share.

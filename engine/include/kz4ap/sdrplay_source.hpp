@@ -64,6 +64,7 @@ public:
     IqRead read(std::span<Sample> out, std::chrono::milliseconds timeout) override;
     void interrupt() override { interrupted_ = true; }
     std::uint64_t dropped_samples() const override { return dropped_.load(std::memory_order_relaxed); }
+    double backlog_s() const override { return static_cast<double>(ring_.size()) / settings_.sample_rate; }
     RecordControl* recorder() override { return this; }
     RadioControl* radio() override { return this; }
 
@@ -93,6 +94,10 @@ private:
     std::vector<Sample> convert_;  // the API thread's
     std::atomic<std::uint64_t> received_{0};
     std::atomic<std::uint64_t> dropped_{0};
+    // The ring overflowed. Samples lost a few at a time, every block the pipeline reads, cut a strong station's carrier into
+    // a splash of wide clicks that neighboring tracks read as E E E (docs/decision-log.md, 2026-10-31), and read the station itself
+    // as garbage. So the reader then empties the ring: one gap, of about kRingS, then clean samples.
+    std::atomic<bool> overflowed_{false};
     std::atomic<bool> interrupted_{false};
     std::atomic<bool> overload_{false};
     std::atomic<std::uint64_t> resets_{0};

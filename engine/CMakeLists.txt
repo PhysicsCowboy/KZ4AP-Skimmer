@@ -52,6 +52,7 @@ add_library(kz4ap_engine_core OBJECT
   src/decoder_name.cpp
   src/file_iq_source.cpp
   src/stream_runner.cpp
+  src/track_evidence.cpp
   src/matched_front_end.cpp
   src/frequency_tracker.cpp
   src/bank_decoder.cpp
@@ -135,6 +136,7 @@ add_executable(kz4ap_engine_tests
   tests/classical_decoder_test.cpp
   tests/engine_test.cpp
   tests/stream_runner_test.cpp
+  tests/track_evidence_test.cpp
   tests/worker_pool_test.cpp
   tests/iq_recorder_test.cpp
   tests/matched_front_end_test.cpp

@@ -2,6 +2,7 @@
 
 #include "kz4ap/viterbi/observation.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <utility>
@@ -66,6 +67,44 @@ void SegmentalDecoder::start() {
     search_ = std::make_unique<segmental::Search>(shared_->config, shared_->model_tables, *sums_, &shared_->level_tables);
     pushed_ = 0;
     expected_k_ = -1;
+    free_next_ = 0;
+    const double interval_s = shared_->config.model.sample_interval_s;
+    const auto chain = [&](double switch_per_s) {
+        FreeKey key;
+        key.change = switch_per_s * interval_s;
+        key.stay = 1.0 - key.change;
+        return key;
+    };
+    free_key_ = chain(shared_->config.key_switch_per_s);
+    free_slow_ = chain(kFreeSlowSwitchPerS);
+}
+
+void SegmentalDecoder::FreeKey::step(double l1, double top) {
+    const double new_up = (stay * up + change * down) * std::exp(-top);
+    const double new_down = (stay * down + change * up) * std::exp(l1 - top);
+    const double total = new_up + new_down;
+    up = new_up / total;
+    down = new_down / total;
+    nats += top + std::log(total);
+}
+
+void SegmentalDecoder::advance_free_key() {
+    const std::int64_t last = sums_->committed();
+    for (; free_next_ < last; ++free_next_) {
+        const double l1 = sums_->sum(free_next_ + 1) - sums_->sum(free_next_);
+        const double top = std::max(0.0, l1);
+        free_key_.step(l1, top);
+        free_slow_.step(l1, top);
+    }
+}
+
+std::optional<KeyingEvidence> SegmentalDecoder::keying_evidence() const {
+    KeyingEvidence evidence;
+    evidence.morse_nats = search_->best_score();
+    evidence.carrier_nats = sums_->sum(sums_->committed());
+    evidence.free_key_nats = free_key_.nats;
+    evidence.free_slow_nats = free_slow_.nats;
+    return evidence;
 }
 
 DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t0_s) {
@@ -95,6 +134,7 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
         expected_k_ = sample.k + 1;
         evidence_->push(sample.e_fs, sigma2);
         search_->advance();  // at once: the short elements' context reaches back only so far
+        advance_free_key();
         ++pushed_;
     }
     const double now_s = static_cast<double>(next_index_) / rate_;

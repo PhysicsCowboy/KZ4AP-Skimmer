@@ -1,6 +1,7 @@
 // The model behind the track list, free of Qt: what the engine's track and text events add up to. One thread only (the
 // GUI's). Rows are kept in order of frequency; a track that dies stays, marked as ended, for a while so its text can
-// still be read.
+// still be read. A table that keeps to plausible text (set_plausible_only) lists a track only once its text has read as
+// plausible (text_evidence, track_evidence.hpp), and a new track at the place of a recently ended one goes on with its text.
 #pragma once
 
 #include "kz4ap/event_bus.hpp"
@@ -22,6 +23,8 @@ struct TrackRow {
     double start_s = 0;               // stream time the signal was first seen, s
     std::optional<double> ended_at_s; // stream time the track died or the stream ended, s; none while live
     std::vector<std::string> symbols; // the decoder's character list, with its corrections applied
+    std::size_t base = 0;             // symbols from the tracks at this place before this one: its corrections start after them
+    std::uint32_t tracks = 1;         // tracks this row's text has come from
 
     bool live() const { return !ended_at_s; }
     // The last max_symbols symbols, concatenated ("<SK>" is one symbol, " " a word space).
@@ -34,6 +37,9 @@ public:
     // How long an ended track with text stays listed, s of stream. Heuristic. An ended track that never produced text
     // leaves at once: it was a false track or a carrier, and there is nothing to read.
     static constexpr double kRetainEndedS = 60.0;
+    // Within this of an ended row's frequency, Hz, a new track goes on with that row. The detector's own distance between tracks
+    // (EngineConfig::channel_distance_hz): closer than that they could be one station.
+    static constexpr double kSamePlaceHz = 47.0;
 
     void apply(const TrackEvent& event);
     // Appends the event's characters, then applies its corrections in order, clipping from_index to the list's length
@@ -55,13 +61,27 @@ public:
     // without bound.
     void set_keep_retired(bool keep) { keep_retired_ = keep; }
     const std::vector<TrackRow>& retired() const { return retired_; }
+    // Which of retired() were ever listed: the others read nothing plausible, and hidden() holds those still waiting.
+    const std::vector<TrackRow>& retired_hidden() const { return retired_hidden_; }
+    const std::vector<TrackRow>& hidden() const { return hidden_; }
+    // The list as above; off by default (every track listed from its birth).
+    void set_plausible_only(bool on) { plausible_only_ = on; }
+    // Tracks born so far.
+    std::uint64_t opened() const { return opened_; }
 
 private:
     void restore_order();
+    TrackRow* find(std::uint32_t id);
+    // An ended row at this place to go on with, listed or hidden.
+    TrackRow* ended_at(double freq_hz);
 
     std::vector<TrackRow> rows_;
+    std::vector<TrackRow> hidden_;  // tracks whose text has not read as plausible, live or ended (plausible_only_)
     std::vector<TrackRow> retired_;
+    std::vector<TrackRow> retired_hidden_;
     bool keep_retired_ = false;
+    bool plausible_only_ = false;
+    std::uint64_t opened_ = 0;
     double now_s_ = 0;
     std::uint64_t structure_version_ = 0;
 };

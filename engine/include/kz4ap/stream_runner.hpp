@@ -33,6 +33,7 @@ struct StreamStatus {
     double thread_cpu_s = 0;     // CPU the pipeline's threads have used (its own and the worker pool's), user plus kernel, s:
                                  // spectrum, detector, channelizer, decoders and the subscriber's own work; about 16 ms
                                  // resolution on Windows
+    std::size_t track_budget = 0;  // the most live tracks, while a live source's pipeline is behind (Engine::set_track_budget); 0: none
 };
 
 class StreamRunner {

@@ -46,6 +46,9 @@ public:
     void reset() override;
     void set_noise_density_fs2_per_hz(double n0_fs2_per_hz) override;
 
+    std::optional<KeyingEvidence> keying_evidence() const override;
+    std::span<const std::string> published_symbols() const override { return published_; }
+
     const segmental::SearchStats& stats() const { return search_->stats(); }
 
 private:
@@ -53,12 +56,25 @@ private:
     // Brings the consumer's list (decoder.hpp) from published_ to the story: new characters, or a correction.
     DecodeUpdate bring_up_to_date(const segmental::BestStory& story, double now_s);
 
+    // 1/s: the slow chain's switch rate. Heuristic: of the size of a slow sender's element rate.
+    static constexpr double kFreeSlowSwitchPerS = 5.0;
     // How often the text goes out while the channel runs, s of stream. Heuristic: a display's refresh, against a text lag of
     // 0.387 s at most from the evidence; the cost per channel-second is 4 scans of the open elements and a tail.
     static constexpr double kPublishEveryS = 0.25;
     // The symbols compared each time, at most. Heuristic: over 25 s of text at 30 WPM; the story's changing its mind
     // further back goes out at the channel's end (flush compares everything).
     static constexpr std::size_t kPublishTailSymbols = 64;
+
+    // The two-state chain of KeyingEvidence::free_key_nats, one step for every evidence sample the search has.
+    void advance_free_key();
+    struct FreeKey {
+        double stay = 1.0, change = 0.0;  // per sample
+        double up = 0.5, down = 0.5;
+        double nats = 0.0;
+        void step(double l1, double top);
+    };
+    FreeKey free_key_, free_slow_;
+    std::int64_t free_next_ = 0;
 
     double next_publish_s_ = 0.0;
     float wpm_ = 0.0f;

@@ -151,6 +151,9 @@ public:
     std::vector<DecodedSymbol> best_text() const;
     // The same story's last max_symbols symbols and its speed, at a cost that does not grow with the text.
     BestStory best_story(std::size_t max_symbols) const;
+    // The best story's score at the last boundary searched, reach through the horizon included, nats against key-up throughout
+    // (the no-signal story's scale): what the channel's evidence for keyed Morse is read from.
+    double best_score() const;
     const SearchStats& stats() const;
     // The open elements after the last boundary's pruning.
     std::size_t live() const;

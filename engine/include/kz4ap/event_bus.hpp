@@ -3,6 +3,7 @@
 #include "kz4ap/decoder.hpp"
 #include "kz4ap/signal_detector.hpp"
 #include "kz4ap/spectrum.hpp"
+#include "kz4ap/track_evidence.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -16,6 +17,7 @@ struct TrackEvent {
     enum class Kind { Born, Died };
     Kind kind;
     Track track;
+    TrackEnd end = TrackEnd::Faded;  // Died: why
 };
 
 struct DecodedTextEvent {

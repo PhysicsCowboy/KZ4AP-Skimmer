@@ -33,6 +33,7 @@ SignalDetector::SignalDetector(const DetectorConfig& config)
     level_bins_ = static_cast<int>(std::lround(config_.level_radius_hz / bin_hz));
     step_bins_ = static_cast<int>(std::lround(config_.candidate_step_hz / bin_hz));
     local_floor_bins_ = static_cast<int>(std::lround(config_.local_floor_radius_hz / bin_hz));
+    track_limit_ = config_.max_tracks;
 }
 
 DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
@@ -59,6 +60,14 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
     const int last = static_cast<int>(n) - 1;
 
     if (config_.attribution == Attribution::Distance) follow_peaks(floor_db);
+    if (config_.one_track_per_peak) {
+        for (std::size_t i = active_.size(); i-- > 0;) {
+            if (!within_older(i, active_[i].track.freq_hz)) continue;
+            update.died.push_back(active_[i].track.id);
+            update.merged.push_back(active_[i].track.id);
+            active_.erase(active_.begin() + static_cast<std::ptrdiff_t>(i));
+        }
+    }
 
     // Refresh existing tracks; expire the ones that have been quiet too long.
     for (auto it = active_.begin(); it != active_.end();) {
@@ -103,6 +112,14 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
             });
         }
         if (near_track) continue;
+        if (std::abs(refined_freq(i)) < config_.dc_guard_hz) continue;
+        if (!holds_.empty()) {
+            const double f = refined_freq(i);
+            const bool held = std::any_of(holds_.begin(), holds_.end(), [&](const Hold& h) {
+                return now < h.until_s && std::abs(h.freq_hz - f) < h.radius_hz;
+            });
+            if (held) continue;
+        }
         if (local_floor_bins_ > 0) {
             // A carrier stands out from what is around it; a peak of a wide signal's spectrum does not, though it may stand
             // well above the band's median.
@@ -135,7 +152,7 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
     std::stable_sort(ready.begin(), ready.end(),
                      [](const Candidate& x, const Candidate& y) { return x.snr_db > y.snr_db; });
     for (const auto& c : ready) {
-        if (active_.size() >= config_.max_tracks) {
+        if (active_.size() >= track_limit_) {
             auto weakest = std::min_element(active_.begin(), active_.end(), [](const Active& x, const Active& y) {
                 return x.track.snr_db < y.track.snr_db;
             });
@@ -153,6 +170,40 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
         update.born.push_back(t);
     }
     return update;
+}
+
+void SignalDetector::retire(std::uint32_t id, double now_s, double hold_s) {
+    const auto it = std::find_if(active_.begin(), active_.end(), [&](const Active& a) { return a.track.id == id; });
+    if (it == active_.end()) return;
+    const double freq_hz = it->track.freq_hz;
+    active_.erase(it);
+    if (!(hold_s > 0.0)) return;
+    // A hold forgets its repeats once the place has been open as long as the longest hold (heuristic).
+    std::erase_if(holds_, [&](const Hold& h) { return now_s - h.until_s > kLongestHoldS; });
+    close_place(freq_hz, config_.attribution_distance_hz, now_s, hold_s);
+    std::erase_if(retirements_, [&](const Retirement& r) { return now_s - r.at_s > kRegionMemoryS; });
+    retirements_.push_back({freq_hz, now_s});
+    const auto nearby = std::count_if(retirements_.begin(), retirements_.end(),
+                                      [&](const Retirement& r) { return std::abs(r.freq_hz - freq_hz) < kRegionRadiusHz; });
+    if (nearby >= kRegionRetirements) close_place(freq_hz, kRegionRadiusHz, now_s, kRegionHoldS);
+}
+
+void SignalDetector::close_place(double freq_hz, double radius_hz, double now_s, double hold_s) {
+    auto hold = std::find_if(holds_.begin(), holds_.end(),
+                             [&](const Hold& h) { return h.radius_hz == radius_hz && std::abs(h.freq_hz - freq_hz) < radius_hz; });
+    if (hold == holds_.end()) {
+        holds_.push_back({freq_hz, 0.0, 0, radius_hz});
+        hold = holds_.end() - 1;
+    }
+    hold->until_s = std::max(hold->until_s, now_s + std::min(hold_s * std::ldexp(1.0, hold->count), kLongestHoldS));
+    ++hold->count;
+}
+
+bool SignalDetector::within_older(std::size_t track, double freq_hz) const {
+    for (std::size_t older = 0; older < track; ++older) {
+        if (std::abs(active_[older].track.freq_hz - freq_hz) < config_.attribution_distance_hz) return true;
+    }
+    return false;
 }
 
 std::vector<Track> SignalDetector::tracks() const {
@@ -188,13 +239,15 @@ void SignalDetector::follow_peaks(float floor_db) {
     const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
     const int reach = static_cast<int>(std::ceil(config_.attribution_distance_hz / bin_hz)) + 1;
     const int last = static_cast<int>(average_.size()) - 1;
-    for (auto& t : active_) {
+    for (std::size_t index = 0; index < active_.size(); ++index) {
+        Active& t = active_[index];
         int best = -1;
         double best_freq = 0;
         for (int i = std::max(0, t.bin - reach); i <= std::min(last, t.bin + reach); ++i) {
             if (db_at(i) - floor_db < keep_alive_db || !is_peak(i)) continue;
             const double f = refined_freq(i);
             if (!(std::abs(f - t.track.freq_hz) < config_.attribution_distance_hz)) continue;
+            if (config_.one_track_per_peak && within_older(index, f)) continue;
             if (best < 0 || average_[i] > average_[best]) {
                 best = i;
                 best_freq = f;
