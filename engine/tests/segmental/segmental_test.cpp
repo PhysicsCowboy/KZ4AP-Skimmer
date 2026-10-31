@@ -20,7 +20,7 @@ using namespace kz4ap::segmental;
 
 namespace {
 
-using Window = std::array<float, kEdgeCount>;
+using Window = std::array<double, kEdgeCount>;
 
 TEST(RunningSums, ScoreAnIntervalByOneSubtraction) {
     std::mt19937 rng(1);

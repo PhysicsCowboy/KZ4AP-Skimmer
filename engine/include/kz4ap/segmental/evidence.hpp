@@ -56,7 +56,7 @@ inline constexpr int kHorizon = 16;
 // A sample as the short elements' templates read it: e / sigma_y and the belief's few levels with their probabilities.
 inline constexpr int kEdgeLevels = 8;
 struct SampleContext {
-    float z = 0.0f;
+    double z = 0.0;
     std::uint8_t count = 0;
     std::array<std::uint8_t, kEdgeLevels> level{};
     std::array<float, kEdgeLevels> probability{};
@@ -67,7 +67,7 @@ class RunningSums {
 public:
     // Appends sample k = committed(): its key-down score l1 (nats) and its scores under each position of the rise's and
     // the fall's window (nats; index m - 5). The context, for elements shorter than 6 samples, is empty if not given.
-    void push(double l1, const std::array<float, kEdgeCount>& rise, const std::array<float, kEdgeCount>& fall,
+    void push(double l1, const std::array<double, kEdgeCount>& rise, const std::array<double, kEdgeCount>& fall,
               const SampleContext& context = {});
     // The context of a sample within the last 1 024.
     const SampleContext& context(std::int64_t k) const { return context_[static_cast<std::size_t>(k) & kContextMask]; }
@@ -102,8 +102,10 @@ public:
 
     // One Rician term's constants at a level and a template value, with z = e / sigma_y:
     // x = w (z^2 (1 - 1 / v) - r_s^2 / v - ln v + ln I0(2 r_s z / v)), v = 1 + r^2 (f^2 s^2 + v_m), r_s = s r, r = a / sigma_y.
+    // What is held and computed in floats is x less w z^2, which is common to every level and small at the level that fits;
+    // w z^2 itself, in a double, passes 1e9 nats at the top of the grid, where a float's step is tens of nats.
     struct Term {
-        float z2_coeff;  // 1 - 1 / v
+        float inverse_v;  // 1 / v
         float constant;  // -r_s^2 / v - ln v
         float i0_coeff;  // 2 r_s / v
     };
@@ -210,8 +212,8 @@ private:
     int frame_fill_ = 0;
     std::vector<double> alpha_;      // forward message: key up by level, then key down by level
     std::vector<double> entering_;   // by frame in the ring, then level: the forward message into the frame, key summed out
-    std::vector<float> x_;           // by sample in the ring, then level: x_k(l)
-    std::vector<float> z_;           // by sample in the ring: e / sigma_y
+    std::vector<float> x_;           // by sample in the ring, then level: x_k(l) less w z^2
+    std::vector<double> z_;          // by sample in the ring: e / sigma_y
     std::vector<double> beta_;       // backward message: key up by level, then key down by level
     std::vector<double> belief_;     // by frame in the ring, then level: what its samples read
 };
