@@ -328,6 +328,11 @@ TEST(LevelEvidence, OneExtremeSampleLeavesTheChannelAlive) {
     }
 }
 
+TEST(SegmentalConfig, HasItsOwnSystematicFloorAndLeavesTheViterbiDecodersAlone) {
+    EXPECT_EQ(SegmentalConfig{}.model.systematic_floor, 0.1);
+    EXPECT_EQ(viterbi::ViterbiConfig{}.systematic_floor, 0.02);
+}
+
 TEST(SegmentalShared, RefusesAnotherChannelRate) {
     const SegmentalConfig config = small_config();
     auto shared = std::make_shared<const SegmentalShared>(config, ChannelizerConfig{48000, 2048, 64, 150.0});
