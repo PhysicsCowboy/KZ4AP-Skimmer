@@ -38,7 +38,7 @@ std::optional<SdrplayRatePlan> sdrplay_rate_plan(int sample_rate);
 // 59 dB, the LNA state 0 to 9 (a model's table of LNA reduction by state and band has fewer states in some bands, which the
 // API itself refuses).
 struct SdrplaySettings {
-    double center_hz = 7030000.0;
+    double center_hz = 7031500.0;
     int sample_rate = 192000;
     int if_gain_reduction_db = 40;  // dB, the IF's gain reduction; AGC is off, so a level stays a level
     int lna_state = 0;              // the LNA's gain reduction state: 0 is the most gain
@@ -75,7 +75,9 @@ public:
     void set_gain(int if_gain_reduction_db, int lna_state) override;
     RadioStatus radio_status() const override;
 
-    // The ring, s of stream: time for a loaded pipeline to catch up before samples are lost. Heuristic.
+    // The ring, at least this, s of stream: time for a loaded pipeline to catch up before samples are lost. Heuristic. SpscRing
+    // rounds its capacity up to a power of two, so at each rate the radio offers (96, 192, 384, 768 kHz) it holds 2^k samples with
+    // 2^k / rate = 5.46 s.
     static constexpr double kRingS = 4.0;
 
 private:

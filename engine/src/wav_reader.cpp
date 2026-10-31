@@ -32,7 +32,7 @@ std::string read_tag(std::ifstream& f) {
 }  // namespace
 
 WavIqReader::WavIqReader(const std::filesystem::path& path) : file_(path, std::ios::binary) {
-    const std::string name = path.string();
+    const std::string name = path_text(path);
     if (!file_) throw std::runtime_error("cannot open " + name);
     try {
         if (read_tag(file_) != "RIFF") throw std::runtime_error("not a WAV file");

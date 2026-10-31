@@ -1,5 +1,7 @@
 #include "kz4ap/iq_recorder.hpp"
 
+#include "kz4ap/wav_reader.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -59,7 +61,7 @@ void IqRecorder::start(const std::filesystem::path& path) {
         writer_.join();  // it stopped by itself (the limit, a failed write)
     }
     std::FILE* probe = open_for_writing(path);
-    if (probe == nullptr) throw std::runtime_error("cannot create " + path.string());
+    if (probe == nullptr) throw std::runtime_error("cannot create " + path_text(path));
     write_header(probe, sample_rate_, 0);
     std::fclose(probe);
     path_ = path;
@@ -112,7 +114,7 @@ void IqRecorder::write_loop(std::filesystem::path path) {
         if (lock.owns_lock()) error_ = message;
     };
     if (file == nullptr) {
-        give_up("cannot write " + path.string());
+        give_up("cannot write " + path_text(path));
         return;
     }
     write_header(file, sample_rate_, 0);
@@ -140,7 +142,7 @@ void IqRecorder::write_loop(std::filesystem::path path) {
             full_ = true;
         }
         if (std::fwrite(chunk.data(), sizeof(Pair), take, file) != take) {
-            give_up("the write to " + path.string() + " failed (is the disk full?)");
+            give_up("the write to " + path_text(path) + " failed (is the disk full?)");
             break;
         }
         data_bytes += take * sizeof(Pair);

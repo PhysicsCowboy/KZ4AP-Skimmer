@@ -6,9 +6,16 @@
 #include <filesystem>
 #include <fstream>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace kz4ap {
+
+// A path as UTF-8, for a message or a display: path.string() throws on Windows for a name outside the system's code page.
+inline std::string path_text(const std::filesystem::path& path) {
+    const std::u8string utf8 = path.u8string();
+    return std::string(utf8.begin(), utf8.end());
+}
 
 // Reads I/Q recordings stored as 16-bit PCM stereo WAV files (left = I, right = Q).
 class WavIqReader {

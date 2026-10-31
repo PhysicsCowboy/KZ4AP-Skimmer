@@ -21,9 +21,13 @@ constexpr std::chrono::milliseconds kReadTimeout{100};
 constexpr double kBufferS = 0.1;
 
 // A pipeline that falls behind a live source gives up tracks rather than lose samples. All heuristics, against the source's ring
-// of 4 s: behind by this much, s of stream, the budget becomes three quarters of the live tracks, at most once per kShedEveryS;
-// caught up to this, it grows by kRestoreTracks each kRestoreEveryS and in the end goes away. Never below kFewestTracks.
+// (5.46 s at every rate the radio offers: SdrplaySource::kRingS). Behind by more than this much, s of stream, with the backlog grown
+// over kGrowingChecks successive checks kShedEveryS of stream apart and more than kFewestTracks live, the budget becomes three
+// quarters of the live tracks. A backlog that is draining (left by a stall, or by the engine's own construction at a high rate) goes
+// by itself, and shedding would lose stations for nothing. Caught up to kCaughtUpS, the budget grows by kRestoreTracks each
+// kRestoreEveryS and in the end goes away.
 constexpr double kShedAboveS = 1.0;
+constexpr int kGrowingChecks = 2;
 constexpr double kCaughtUpS = 0.25;
 constexpr double kShedEveryS = 1.0;
 constexpr double kRestoreEveryS = 5.0;
@@ -69,6 +73,8 @@ void StreamRunner::run(EngineConfig config, EventBus::Handler subscriber) {
         if (engine) {
             const EngineStats stats = engine->stats();
             s.channel_seconds = stats.channel_seconds;
+            s.replayed_channel_seconds = stats.replayed_channel_seconds;
+            s.longest_replay_wait_s = stats.longest_replay_wait_s;
             s.decoder_seconds = stats.decoder_seconds;
             s.stages = stats.stages;
             s.track_budget = budget;
@@ -83,6 +89,8 @@ void StreamRunner::run(EngineConfig config, EventBus::Handler subscriber) {
         report(&engine, StreamStatus::State::Running);
         std::vector<Sample> buffer(std::max<std::size_t>(1024, static_cast<std::size_t>(kBufferS * rate)));
         double budget_changed_s = 0.0;
+        double backlog_checked_s = 0.0, checked_at_s = 0.0;  // s of stream
+        int growing_checks = 0;
         while (!stop_requested_) {
             const IqRead got = source_->read(buffer, kReadTimeout);
             if (got.count > 0) {
@@ -90,7 +98,14 @@ void StreamRunner::run(EngineConfig config, EventBus::Handler subscriber) {
                 delivered += got.count;
                 const double stream_s = static_cast<double>(delivered) / rate;
                 const double backlog_s = source_->backlog_s();
-                if (backlog_s > kShedAboveS && stream_s - budget_changed_s >= kShedEveryS) {
+                bool shed = false;
+                if (stream_s - checked_at_s >= kShedEveryS) {
+                    growing_checks = backlog_s > backlog_checked_s ? growing_checks + 1 : 0;
+                    shed = backlog_s > kShedAboveS && growing_checks >= kGrowingChecks && engine.live_tracks() > kFewestTracks;
+                    backlog_checked_s = backlog_s;
+                    checked_at_s = stream_s;
+                }
+                if (shed) {
                     budget = std::max(kFewestTracks, engine.live_tracks() * 3 / 4);
                     engine.set_track_budget(budget);
                     budget_changed_s = stream_s;

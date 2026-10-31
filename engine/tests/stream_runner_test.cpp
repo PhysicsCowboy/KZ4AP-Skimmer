@@ -1,7 +1,8 @@
-// The streaming entry point: the file source's pacing (PlaybackPacer, on given times), FileIqSource on a real file, and
+﻿// The streaming entry point: the file source's pacing (PlaybackPacer, on given times), FileIqSource on a real file, and
 // StreamRunner, whose events must be exactly what the engine gives when run directly on the same samples.
 #include "kz4ap/decoder_name.hpp"
 #include "kz4ap/file_iq_source.hpp"
+#include "kz4ap/iq_recorder.hpp"
 #include "kz4ap/stream_runner.hpp"
 
 #include "test_signals.hpp"
@@ -57,19 +58,24 @@ private:
     std::size_t next_ = 0;
 };
 
-// A live source behind by a fixed time: the pipeline can never catch up.
+// A live source behind by a time that changes by a fixed step with each read (0.1 s of stream).
 class BehindSource final : public IqSource {
 public:
-    BehindSource(std::vector<Sample> samples, double backlog_s) : inner_(std::move(samples), 4800), backlog_s_(backlog_s) {}
+    BehindSource(std::vector<Sample> samples, double backlog_s, double step_s = 0.0)
+        : inner_(std::move(samples), 4800), backlog_s_(backlog_s), step_s_(step_s) {}
     int sample_rate() const override { return inner_.sample_rate(); }
     std::string description() const override { return "behind"; }
-    IqRead read(std::span<Sample> out, std::chrono::milliseconds timeout) override { return inner_.read(out, timeout); }
+    IqRead read(std::span<Sample> out, std::chrono::milliseconds timeout) override {
+        backlog_s_ = std::max(0.0, backlog_s_ + step_s_);
+        return inner_.read(out, timeout);
+    }
     void interrupt() override {}
     double backlog_s() const override { return backlog_s_; }
 
 private:
     MemorySource inner_;
     double backlog_s_;
+    double step_s_;
 };
 
 // A source that never has samples, as a live one between blocks: read waits until interrupted.
@@ -352,8 +358,24 @@ StreamStatus run_to_end(std::unique_ptr<IqSource> source) {
 
 }  // namespace
 
+TEST(StreamRunnerBudget, ABacklogThatDoesNotGrowCostsNoTracks) {
+    // Left by a stall or by the engine's own construction: it stands, or drains, and goes by itself.
+    const StreamStatus standing = run_to_end(std::make_unique<BehindSource>(many_stations(24, 8.0), 2.0));
+    ASSERT_EQ(standing.state, StreamStatus::State::Finished) << standing.error;
+    EXPECT_EQ(standing.track_budget, 0u);
+    const StreamStatus draining = run_to_end(std::make_unique<BehindSource>(many_stations(24, 8.0), 4.0, -0.05));
+    ASSERT_EQ(draining.state, StreamStatus::State::Finished) << draining.error;
+    EXPECT_EQ(draining.track_budget, 0u);
+}
+
+TEST(StreamRunnerBudget, WithNoTracksLiveTheBudgetStaysOff) {
+    const StreamStatus few = run_to_end(std::make_unique<BehindSource>(many_stations(0, 8.0), 0.0, 0.1));
+    ASSERT_EQ(few.state, StreamStatus::State::Finished) << few.error;
+    EXPECT_EQ(few.track_budget, 0u);
+}
+
 TEST(StreamRunnerBudget, APipelineBehindALiveSourceGivesUpTracks) {
-    const StreamStatus behind = run_to_end(std::make_unique<BehindSource>(many_stations(24, 8.0), 2.0));
+    const StreamStatus behind = run_to_end(std::make_unique<BehindSource>(many_stations(24, 8.0), 0.0, 0.1));
     ASSERT_EQ(behind.state, StreamStatus::State::Finished) << behind.error;
     EXPECT_GT(behind.track_budget, 0u);
     EXPECT_LE(behind.track_budget, 24u);
@@ -361,4 +383,22 @@ TEST(StreamRunnerBudget, APipelineBehindALiveSourceGivesUpTracks) {
     ASSERT_EQ(caught_up.state, StreamStatus::State::Finished) << caught_up.error;
     EXPECT_EQ(caught_up.track_budget, 0u);
     EXPECT_LT(behind.channel_seconds, caught_up.channel_seconds);
+}
+
+TEST(FileIqSource, OpensAFileNamedOutsideTheSystemsCodePage) {
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / std::filesystem::path(u8"kz4ap_\u03a9\u4e2d_test.wav");
+    {
+        IqRecorder recorder(48000);
+        recorder.start(path);
+        const std::vector<short> i(4800, 8000), q(4800, -8000);
+        recorder.push(i.data(), q.data(), i.size());
+        recorder.stop();
+    }
+    {
+        FileIqSource source(path);
+        EXPECT_EQ(source.sample_rate(), 48000);
+        EXPECT_NE(source.description().find("kz4ap_"), std::string::npos);
+        EXPECT_NE(source.description().find(reinterpret_cast<const char*>(u8"\u03a9")), std::string::npos);
+    }
+    std::filesystem::remove(path);
 }

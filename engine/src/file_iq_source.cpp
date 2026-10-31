@@ -77,7 +77,7 @@ double PlaybackPacer::seconds_until(std::uint64_t samples, double now_s) const {
 }
 
 FileIqSource::FileIqSource(const std::filesystem::path& path, double start_s)
-    : reader_(path), description_(path.filename().string()), pacer_(static_cast<double>(reader_.sample_rate())) {
+    : reader_(path), description_(path_text(path.filename())), pacer_(static_cast<double>(reader_.sample_rate())) {
     if (!(start_s >= 0.0)) throw std::invalid_argument("the start of a recording's stream must not be negative (s)");
     const auto start = std::min(reader_.total_samples(), static_cast<std::uint64_t>(start_s * reader_.sample_rate()));
     reader_.seek(start);
