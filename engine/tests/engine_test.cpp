@@ -1,4 +1,4 @@
-#include "kz4ap/engine.hpp"
+﻿#include "kz4ap/engine.hpp"
 
 #include "test_signals.hpp"
 
@@ -759,4 +759,135 @@ TEST(Engine, RefusesOracleTracksItCannotUse) {
     refused({{OracleSegment{0.0, 750.0, std::numeric_limits<double>::infinity(), 0.0}}, {}});
     for (const FrontEnd other : {FrontEnd::Envelope, FrontEnd::Matched, FrontEnd::Bank})
         refused({{OracleSegment{0.0, 750.0, 0.0, 0.0}}, {}}, other);
+}
+
+namespace {
+
+struct ReplayRun {
+    std::map<std::uint32_t, std::string> text;  // by track, with corrections applied
+    std::map<std::uint32_t, double> first_symbol_s;
+    std::size_t tracks = 0;
+    EngineStats stats;
+};
+
+ReplayRun run_segmental(const std::vector<Sample>& x, double replay_s, double replay_tracks_per_s = 100.0, int threads = 1) {
+    EventBus bus;
+    ReplayRun r;
+    std::map<std::uint32_t, std::vector<std::string>> symbols;
+    bus.subscribe([&](const Event& e) {
+        if (const auto* t = std::get_if<TrackEvent>(&e); t && t->kind == TrackEvent::Kind::Born) ++r.tracks;
+        if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
+            std::vector<std::string>& list = symbols[d->track_id];
+            for (const auto& c : d->chars) {
+                if (!r.first_symbol_s.count(d->track_id)) r.first_symbol_s[d->track_id] = c.start_s;
+                list.push_back(c.text);
+            }
+            for (const auto& k : d->corrections) {
+                list.resize(std::min(k.from_index, list.size()));
+                for (const auto& c : k.chars) list.push_back(c.text);
+            }
+        }
+    });
+    EngineConfig config;
+    config.sample_rate = static_cast<int>(kRate);
+    config.decoder.front_end = FrontEnd::Segmental;
+    config.replay_s = replay_s;
+    config.replay_tracks_per_s = replay_tracks_per_s;
+    config.worker_threads = threads;
+    Engine engine(config, bus);
+    for (std::size_t i = 0; i < x.size(); i += 16384) engine.process(std::span<const Sample>(x).subspan(i, std::min<std::size_t>(16384, x.size() - i)));
+    engine.finish();
+    for (const auto& [id, list] : symbols)
+        for (const std::string& s : list) r.text[id] += s;
+    r.stats = engine.stats();
+    return r;
+}
+
+std::string all_text(const ReplayRun& r) {
+    std::string out;
+    for (const auto& [id, text] : r.text) out += text + "|";
+    return out;
+}
+
+// Stations on separate frequencies, all starting at start_s.
+std::vector<Sample> stations_from(int count, double duration_s, double start_s) {
+    std::vector<Sample> x = keyed_signal("VVV", 25, kRate, duration_s, 40000.0, 0.0, kNoiseSigma, 5, duration_s);
+    for (int i = 0; i < count; ++i) {
+        const std::vector<Sample> one = keyed_signal("CQ TEST DE W1AW K", 25, kRate, duration_s, -20000.0 + 400.0 * i, 3.0 * kAmplitude20dB, 0.0, 1, start_s);
+        for (std::size_t k = 0; k < x.size(); ++k) x[k] += one[k];
+    }
+    return x;
+}
+
+}  // namespace
+
+TEST(EngineReplay, ANewChannelReadsTheStartOfTheTransmission) {
+    const std::vector<Sample> x = stations_from(1, 14.0, 5.0);
+    const ReplayRun without = run_segmental(x, 0.0);
+    const ReplayRun with = run_segmental(x, 2.0);
+    ASSERT_EQ(with.tracks, 1u);
+    ASSERT_EQ(without.tracks, 1u);
+    // The first letters are in the time the detector takes to decide.
+    EXPECT_EQ(all_text(without).find("CQ"), std::string::npos) << all_text(without);
+    EXPECT_NE(all_text(with).find("CQ"), std::string::npos) << all_text(with);
+    EXPECT_NE(all_text(with).find("W1AW"), std::string::npos) << all_text(with);
+    // A symbol's time is when it was on the air, before the track's birth.
+    EXPECT_LT(with.first_symbol_s.begin()->second, without.first_symbol_s.begin()->second);
+    // Live time only in the channel-seconds, the replay's apart.
+    EXPECT_NEAR(with.stats.channel_seconds, without.stats.channel_seconds, 0.05);
+    EXPECT_NEAR(with.stats.replayed_channel_seconds, 2.0, 0.05);
+    EXPECT_EQ(without.stats.replayed_channel_seconds, 0.0);
+}
+
+TEST(EngineReplay, AttheStreamsStartItReadsWhatThereIs) {
+    const std::vector<Sample> x = stations_from(1, 10.0, 0.5);
+    const ReplayRun with = run_segmental(x, 2.0);
+    ASSERT_EQ(with.tracks, 1u);
+    EXPECT_NE(all_text(with).find("CQ"), std::string::npos) << all_text(with);
+    EXPECT_LE(with.stats.replayed_channel_seconds, 2.0 + 0.05);
+}
+
+TEST(EngineReplay, ManyTracksOpeningTogetherTakeTurnsAndLoseNothing) {
+    const std::vector<Sample> x = stations_from(12, 14.0, 5.0);
+    // At once, the budget far above the block's tracks.
+    const ReplayRun at_once = run_segmental(x, 2.0, 1e6);
+    EXPECT_EQ(at_once.stats.longest_replay_wait_s, 0.0);
+    // One every 100 ms: the last of 12 waits about 1.1 s, within what the band has kept since the station began.
+    const ReplayRun turns = run_segmental(x, 2.0, 10.0);
+    ASSERT_EQ(turns.tracks, 12u);
+    EXPECT_GT(turns.stats.longest_replay_wait_s, 0.9);
+    EXPECT_LT(turns.stats.longest_replay_wait_s, 1.3);
+    for (const auto& [id, text] : turns.text) EXPECT_NE(text.find("W1AW"), std::string::npos) << "track " << id << ": " << text;
+    // The same, however many threads.
+    const ReplayRun threads = run_segmental(x, 2.0, 10.0, 4);
+    EXPECT_EQ(all_text(threads), all_text(turns));
+}
+
+TEST(EngineReplay, ThreadsAndChunksChangeNothing) {
+    const std::vector<Sample> x = stations_from(3, 12.0, 5.0);
+    EXPECT_EQ(all_text(run_segmental(x, 2.0, 100.0, 4)), all_text(run_segmental(x, 2.0, 100.0, 1)));
+}
+
+TEST(EngineReplay, RefusesValuesThatAreNotAMeasure) {
+    EventBus bus;
+    EngineConfig config;
+    config.decoder.front_end = FrontEnd::Segmental;
+    config.replay_s = -1.0;
+    EXPECT_THROW(Engine(config, bus), std::invalid_argument);
+    config.replay_s = 2.0;
+    config.replay_tracks_per_s = 0.0;
+    EXPECT_THROW(Engine(config, bus), std::invalid_argument);
+}
+
+TEST(EngineRates, ARateTheNewDecodersCannotUseSaysWhichTheyCan) {
+    EventBus bus;
+    EngineConfig config;
+    config.decoder.front_end = FrontEnd::Segmental;
+    config.sample_rate = 44100;
+    try {
+        Engine engine(config, bus);
+        FAIL() << "not refused";
+    } catch (const std::invalid_argument& e) {
+        EXPECT_NE(std::string(e.what()).find("48, 96, 192, 384 or 768 kHz"), std::string::npos) << e.what();
+    }
 }

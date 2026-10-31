@@ -28,6 +28,8 @@ struct StreamStatus {
     double stream_s = 0;         // stream delivered to the engine so far, s
     double wall_s = 0;           // since the pipeline's thread started, s
     double channel_seconds = 0;  // EngineStats: channel output delivered to decoders, summed over channels, s
+    double replayed_channel_seconds = 0;  // EngineStats: channel output replays read besides, s
+    double longest_replay_wait_s = 0;     // EngineStats, s
     double decoder_seconds = 0;  // EngineStats: CPU inside decoders, s
     EngineStageTimes stages;     // EngineStats: CPU per stage, s
     double thread_cpu_s = 0;     // CPU the pipeline's threads have used (its own and the worker pool's), user plus kernel, s:

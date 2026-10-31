@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <deque>
 #include <functional>
 #include <optional>
 #include <span>
@@ -99,6 +100,21 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
     if (config_.worker_threads > 1) pool_ = std::make_unique<WorkerPool>(config_.worker_threads);
     oracle_ = !config_.oracle_frequencies_hz.empty();
     check_oracle_tracks(config_);
+    if (config_.decoder.front_end == FrontEnd::Segmental) {
+        // A channel rate that is no whole multiple of the decoder's samples would fail deep inside it, in terms an operator cannot use.
+        const double channel_samples = channelizer_.output_rate() * config_.segmental.model.sample_interval_s;
+        if (std::abs(channel_samples - std::round(channel_samples)) > 1e-9)
+            throw std::invalid_argument("this decoder needs a sample rate of 48, 96, 192, 384 or 768 kHz, not " +
+                                        std::to_string(config_.sample_rate) + " Hz");
+    }
+    if (!(config_.replay_s >= 0.0) || !std::isfinite(config_.replay_s)) throw std::invalid_argument("replay_s must be finite and not negative (s)");
+    if (!(config_.replay_tracks_per_s > 0.0)) throw std::invalid_argument("replay_tracks_per_s must be positive (tracks/s)");
+    replay_on_ = !oracle_ && config_.decoder.front_end == FrontEnd::Segmental && config_.replay_s > 0.0;
+    if (replay_on_) {
+        const double block_s = static_cast<double>(hop_) / config_.sample_rate;
+        channelizer_.keep_past(static_cast<std::size_t>(std::ceil(config_.replay_s / block_s)) + 1);  // the current block's too
+        replay_per_block_ = config_.replay_tracks_per_s * block_s;
+    }
     if (config_.decoder.front_end == FrontEnd::Viterbi) {
         // The new decoder: the hiss estimator reads every spectrum frame (in oracle mode too), and its decoders share
         // one set of parts built for every channel's configuration (the genie's spreads may lengthen the blocks).
@@ -148,6 +164,8 @@ EngineStats Engine::stats() const {
     EngineStats s;
     s.channel_samples = channel_samples_;
     s.channel_seconds = static_cast<double>(channel_samples_) / channelizer_.output_rate();
+    s.replayed_channel_seconds = static_cast<double>(replayed_samples_) / channelizer_.output_rate();
+    s.longest_replay_wait_s = static_cast<double>(longest_replay_wait_blocks_) * hop_ / config_.sample_rate;
     s.decoder_seconds = stages_.decoder_s;
     s.stages = stages_;
     return s;
@@ -190,7 +208,15 @@ void Engine::finish() {
         process_hop(pending_);
         pending_.clear();
     }
-    for (auto& [id, channel] : channels_) publish_update(id, channel.decoder->flush());
+    for (auto& [id, channel] : channels_) {
+        if (channel.replay_waiting) {
+            // The stream ended while it waited for its turn.
+            channel.replay_waiting = false;
+            replay_channel(id, channel, channelizer_.past().size());
+            publish_channel(id, channel);
+        }
+        publish_update(id, channel.decoder->flush());
+    }
 }
 
 void Engine::process_hop(std::span<const Sample> hop) {
@@ -236,6 +262,7 @@ void Engine::process_hop(std::span<const Sample> hop) {
     // benchmark's and may not expect threads.
     active_.clear();
     for (auto& entry : channels_) active_.push_back(&entry);
+    if (replay_on_) grant_replays();
     const std::function<void(std::size_t)> job = [&](std::size_t i) { process_channel(active_[i]->first, active_[i]->second, block); };
     if (pool_ && !tap_) {
         pool_->run(active_.size(), job);
@@ -243,25 +270,50 @@ void Engine::process_hop(std::span<const Sample> hop) {
         for (std::size_t i = 0; i < active_.size(); ++i) job(i);
     }
     lap(stages_.channels_wall_s);
-    for (auto* entry : active_) {
-        Channel& channel = entry->second;
-        stages_.filter_s += channel.filter_s;
-        stages_.decoder_s += channel.decoder_s;
-        track_decoder_s_[entry->first] += channel.decoder_s;
-        channel.filter_s = 0;
-        channel.decoder_s = 0;
-        channel_samples_ += channel.block_samples;
-        publish_update(entry->first, std::move(channel.update));
-        channel.update = DecodeUpdate{};
-    }
+    for (auto* entry : active_) publish_channel(entry->first, entry->second);
     lap(stages_.publish_s);
     if (config_.judge_tracks && !oracle_) judge_channels(block.first_index);
     lap(stages_.lifecycle_s);
 }
 
+void Engine::grant_replays() {
+    replay_turns_ = std::min(replay_turns_ + replay_per_block_, replay_per_block_ + 1.0);
+    for (auto* entry : active_) {
+        Channel& channel = entry->second;
+        if (!channel.replay_waiting) continue;
+        if (replay_turns_ < 1.0) {
+            ++channel.replay_wait_blocks;  // by track id, and so the strongest of one block first: the detector's order
+            continue;
+        }
+        replay_turns_ -= 1.0;
+        channel.replay_waiting = false;
+        channel.replay_now = true;
+        longest_replay_wait_blocks_ = std::max(longest_replay_wait_blocks_, channel.replay_wait_blocks);
+    }
+}
+
+void Engine::replay_channel(std::uint32_t id, Channel& channel, std::size_t blocks) {
+    const std::deque<Channelizer::Past>& past = channelizer_.past();
+    for (std::size_t i = 0; i < std::min(blocks, past.size()); ++i) {
+        DecodeUpdate update = decode_block(id, channel, past[i].block, &past[i]);
+        if (!update.chars.empty() || !update.corrections.empty()) channel.replayed.push_back(std::move(update));
+    }
+}
+
 void Engine::process_channel(std::uint32_t id, Channel& channel, const Channelizer::Block& block) {
+    if (channel.replay_waiting) return;
+    if (channel.replay_now) {
+        channel.replay_now = false;
+        // All but the newest, which is this block.
+        replay_channel(id, channel, channelizer_.past().size() - 1);
+    }
+    channel.update = decode_block(id, channel, block, nullptr);
+}
+
+DecodeUpdate Engine::decode_block(std::uint32_t id, Channel& channel, const Channelizer::Block& block, const Channelizer::Past* past) {
     const double started = thread_cpu_precise_seconds();
-    const std::span<const Sample> s = channelizer_.cut(block, channel.bin, channel.cut_in, channel.cut_out);
+    const std::span<const Sample> s = past != nullptr ? channelizer_.cut_past(*past, channel.bin, channel.cut_in, channel.cut_out)
+                                                      : channelizer_.cut(block, channel.bin, channel.cut_in, channel.cut_out);
     const std::uint64_t first_index = block.first_index;
     const double t0 = static_cast<double>(first_index) / channelizer_.output_rate();
     const int block_bin = channel.bin;  // the bin this block was cut at
@@ -289,13 +341,31 @@ void Engine::process_channel(std::uint32_t id, Channel& channel, const Channeliz
     // The new decoder: its N0, the hiss estimator's density at the bin this block was cut at, set before every block.
     if (hiss_) channel.decoder->set_noise_density_fs2_per_hz(hiss_->noise_density_fs2_per_hz(block_bin));
     const double filtered = thread_cpu_precise_seconds();
-    channel.update = channel.decoder->process(samples, t0);
+    DecodeUpdate update = channel.decoder->process(samples, t0);
     const double decoded = thread_cpu_precise_seconds();
-    channel.filter_s = filtered - started;
-    channel.decoder_s = decoded - filtered;
-    channel.block_samples = s.size();
+    channel.filter_s += filtered - started;
+    channel.decoder_s += decoded - filtered;
+    (past != nullptr ? channel.replayed_samples : channel.block_samples) += s.size();
+    for (const TextCorrection& correction : update.corrections) channel.judge.text_changed_from(correction.from_index);
     // Matched mode: the decoder re-centers on the carrier; report the station there. Bank: the anchor.
-    if (channel.update.freq_offset_hz) channel.track.freq_hz = center_hz + *channel.update.freq_offset_hz;
+    if (update.freq_offset_hz) channel.track.freq_hz = center_hz + *update.freq_offset_hz;
+    return update;
+}
+
+void Engine::publish_channel(std::uint32_t id, Channel& channel) {
+    stages_.filter_s += channel.filter_s;
+    stages_.decoder_s += channel.decoder_s;
+    track_decoder_s_[id] += channel.decoder_s;
+    channel.filter_s = 0;
+    channel.decoder_s = 0;
+    channel_samples_ += channel.block_samples;
+    replayed_samples_ += channel.replayed_samples;
+    channel.block_samples = 0;
+    channel.replayed_samples = 0;
+    for (DecodeUpdate& update : channel.replayed) publish_update(id, std::move(update));
+    channel.replayed.clear();
+    publish_update(id, std::move(channel.update));
+    channel.update = DecodeUpdate{};
 }
 
 void Engine::open_channel(const Track& track, int bin) {
@@ -319,6 +389,7 @@ void Engine::open_channel(const Track& track, int bin) {
     channel.bin = bin;
     channel.decoder = std::move(decoder);
     channel.detector_freq_hz = track.freq_hz;
+    channel.replay_waiting = replay_on_;
     channel.cut_in.resize(static_cast<std::size_t>(channelizer_.channel_bins()));
     channel.cut_out.resize(static_cast<std::size_t>(channelizer_.channel_bins()));
     // The new decoder's channel follows the detector (plan O2: its channels only).
@@ -333,7 +404,7 @@ void Engine::judge_channels(std::uint64_t first_index) {
     retiring_.clear();
     for (auto* entry : active_) {
         Channel& channel = entry->second;
-        if (now_s < channel.next_judged_s) continue;
+        if (channel.replay_waiting || now_s < channel.next_judged_s) continue;
         channel.next_judged_s = now_s + 1.0;  // the judge's clock: a second of stream
         const std::optional<KeyingEvidence> evidence = channel.decoder->keying_evidence();
         if (!evidence) continue;

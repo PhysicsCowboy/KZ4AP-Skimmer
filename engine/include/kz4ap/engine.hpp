@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "kz4ap/bank/bank_config.hpp"
 #include "kz4ap/channel_follower.hpp"
@@ -119,6 +119,16 @@ struct EngineConfig {
     // FrontEnd::Segmental on the detector's path: each track's evidence is judged once a second and a track without keyed
     // Morse retired (track_evidence.hpp). False for a run that keeps every track as the detector has it.
     bool judge_tracks = true;
+
+    // FrontEnd::Segmental on the detector's path: a new channel's decoder first reads the last replay_s of the band, s, so that it
+    // has the signal's start, which the detector was still making up its mind about. 0 for no replay. Heuristic: a keyed
+    // signal crosses the threshold within about 1 s and is then 0.5 s a candidate; 2 s measured enough, and costs 2 channel-seconds
+    // of decoding a track and replay_s x 8 bytes x sample_rate of memory (6 MB at 192 kHz).
+    double replay_s = 2.0;
+    // The most replays that may start per second of stream, tracks/s: what bounds the burst of CPU when many tracks open in one
+    // block. A track past that waits its turn without decoding and then reads the last replay_s all the same, so what it
+    // loses is only the wait out of the start of its replay. See docs/signal-processing.md, section 10. Heuristic.
+    double replay_tracks_per_s = 100.0;
 };
 
 // The milestone-1 pipeline (kept selectable; owner, 2026-09-29): the Envelope decoder and the
@@ -150,7 +160,9 @@ struct EngineStageTimes {
 
 struct EngineStats {
     std::uint64_t channel_samples = 0;  // channel samples delivered to decoders, summed over channels
-    double channel_seconds = 0;         // the same, in s of channel output
+    double channel_seconds = 0;         // the same, in s of channel output: live time only, a replay's seconds not counted
+    double replayed_channel_seconds = 0;  // what the replays read besides, s of channel output, whose CPU is in the stages below
+    double longest_replay_wait_s = 0;   // the longest any replay has waited for its turn (EngineConfig::replay_tracks_per_s), s
     double decoder_seconds = 0;         // CPU inside decoders, s (stages.decoder_s)
     EngineStageTimes stages;
 };
@@ -219,10 +231,23 @@ private:
         std::size_t block_samples = 0;
         TrackJudge judge;
         double next_judged_s = 0;  // s of stream
+        bool replay_waiting = false;  // opened, its replay not yet started: it decodes nothing
+        bool replay_now = false;      // its turn has come: this block's job starts with the replay
+        std::uint64_t replay_wait_blocks = 0;
+        std::vector<DecodeUpdate> replayed;  // the replay's results, published before the block's
+        std::size_t replayed_samples = 0;
     };
 
     void process_hop(std::span<const Sample> hop);
     void process_channel(std::uint32_t id, Channel& channel, const Channelizer::Block& block);
+    // One block through the channel's cut, follower and decoder: the current block, or a past one (replay).
+    DecodeUpdate decode_block(std::uint32_t id, Channel& channel, const Channelizer::Block& block, const Channelizer::Past* past);
+    // The channel's decoder reads the first `blocks` of the channelizer's past (replay).
+    void replay_channel(std::uint32_t id, Channel& channel, std::size_t blocks);
+    // Starts the replays whose turn has come (EngineConfig::replay_tracks_per_s).
+    void grant_replays();
+    // What a channel's blocks did, into the engine's totals, and their text out.
+    void publish_channel(std::uint32_t id, Channel& channel);
     void open_channel(const Track& track, int bin);
     // The verdicts on this block's channels (EngineConfig::judge_tracks), once a second of stream for each.
     void judge_channels(std::uint64_t first_index);
@@ -245,6 +270,11 @@ private:
     std::vector<std::pair<const std::uint32_t, Channel>*> active_;  // this block's channels, by track id (reused)
     std::vector<std::pair<std::uint32_t, TrackJudge::Verdict>> retiring_;  // this block's verdicts (reused)
     std::size_t track_budget_ = 0;  // 0: none
+    bool replay_on_ = false;
+    double replay_per_block_ = 0.0;  // replays that may start per block (EngineConfig::replay_tracks_per_s)
+    double replay_turns_ = 0.0;      // replays that may start now; at most replay_per_block_ + 1 saved up
+    std::uint64_t replayed_samples_ = 0;
+    std::uint64_t longest_replay_wait_blocks_ = 0;
     ChannelTap tap_;
     // FrontEnd::Viterbi only: the hiss estimator, fed every spectrum frame, whose N0 at each channel's center bin the
     // channel's decoder gets before every block; and the parts its decoders share.
