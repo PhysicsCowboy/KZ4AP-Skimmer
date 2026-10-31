@@ -22,7 +22,7 @@ real30,N4SFL,74703.7,766.5,1102.8,2,2.0,0,0,0,0,0,likely false,"2 whole words 33
 live2,W2KA,-15995.0,12.3,53.7,3,3.0,1,0,,,,likely real,"after CQ and DE, doubled"
 live2,N3VO,2004.2,18.1,24.2,2,2.0,1,0,,,,likely real,"doubled, before K, then CQ"
 live2,KQ2RP,3002.1,1.3,9.9,2,2.0,0,0,,,,likely real,"doubled, 3 kHz above center"
-live2,HF0PAS,4502.7,7.8,15.6,1,1.0,0,1,,,,likely real,2 readings; on MASTER.SCP
+live2,HF0PAS,4502.7,7.8,15.6,1,1.0,0,1,,,,likely real,"1 whole word, named; on MASTER.SCP"
 live2,NX1K,5505.7,35.9,44.1,2,2.0,1,0,,,,likely real,"after DE, doubled"
 live2,W1AW,17504.5,3.4,25.1,3,3.0,0,0,,,,real,the ARRL's station; doubled
 live2,KC9HEK,28005.5,2.3,13.4,2,2.0,1,0,,,,likely real,"doubled, before K"
