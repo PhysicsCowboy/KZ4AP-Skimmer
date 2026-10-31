@@ -35,7 +35,7 @@ The whole set is seed 1 of the development set `DEV2`, on the Linux machine, 8 j
 | Three filters, seed 2 | `segmental`, `fast-3` (3f8a9ff) | 247 | 560 412 | 8.25 | as committed at 949b0f3: `segmental-fast3-seed2.csv` |
 | Before `fast-3`, seed 2 | `segmental`, `fast-3`'s base | 247 | 560 412 | 5.04 | `segmental-fast2-seed2.csv` |
 
-The CPU of the runs that have no CPU table here (checkpoint 1, and `fast-3` and its base on seed 2) comes from their result files, git-ignored. `.../conditions-b2-c2.csv` of checkpoint 1 gives each B2 and C2 signal's Doppler spread and keying. Every CER below is computed from these rounded tables. Tests at TESTS_COMMIT: `ctest`, Windows with Qt QT_COUNTS; Windows without Qt NOQT_COUNTS; Linux LINUX_COUNTS. The skipped are as designed: expected failures and measurements.
+The CPU of the runs that have no CPU table here (checkpoint 1, and `fast-3` and its base on seed 2) comes from their result files, git-ignored. `.../conditions-b2-c2.csv` of checkpoint 1 gives each B2 and C2 signal's Doppler spread and keying. Every CER below is computed from these rounded tables. Tests at 3842b07 (the code as at e913886 and one more test; later commits change this record only): `ctest`, Windows with Qt 758 tests, 739 passed, 19 skipped, 0 failed; Windows without Qt the same 758; Linux 745, 726 passed, 19 skipped, 0 failed. The skipped are as designed: expected failures and measurements.
 
 ## Scores by group
 
