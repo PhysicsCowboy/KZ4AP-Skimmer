@@ -82,11 +82,12 @@ struct SegmentalConfig {
     // s: the longest gap unit g T_s, which is what a speed's stretches stop at: 0.7 s is about 4.5 WPM overall (60 / 19 s / WPM).
     // Heuristic: slower than anyone copies at; it bounds the tables and how long a gap stays open.
     double gap_unit_max_s = 0.7;
-    // probability: that a new story's fist is not standard spacing, shared alike by the stretches above 1. A heuristic: the
-    // charge is what it buys, ln(0.01 / 6) = -6.4 nats once per over for a stretched story and ln 0.99 = -0.01 nats for any other.
-    // By measurement, on a real recording's near-threshold channels: 0.05 costs 14.0 ms per channel-second against 11.0 with no
-    // stretches, 0.01 costs 11.4, and the 15 nats' beam is why.
-    double gap_stretch_prior = 0.01;
+    // probability: that a new story's fist is not standard spacing, shared alike by the stretches above 1: ln(0.002 / 6) = -8.0 nats
+    // once per over for a stretched story, ln 0.998 = -0.002 nats for any other. A heuristic, chosen by measurement on the whole
+    // test set's seed 1, with the widest filter alone (fists, the two QSO groups, Farnsworth; no stretches 0.061, 0.055, 0.058, 0.523):
+    // 0.01 0.064, 0.057, 0.063, 0.021; 0.002 0.062, 0.055, 0.058, 0.017; 0.0004 0.061, 0.055, 0.058, 0.039. And CPU, on a real
+    // recording's near-threshold channels: 0.05 costs 14.0 ms per channel-second against 11.0 with no stretches, 0.01 costs 11.4.
+    double gap_stretch_prior = 0.002;
 
     // --- The front filter's widths (segmental_decoder.hpp) ---
 

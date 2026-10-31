@@ -182,9 +182,9 @@ TEST(ModelTables, AFistsGapsAreThoseOfTheSteppedSpeedAndItsMarksItsOwn) {
     }
     EXPECT_GT(tables.gap_hi(fist), tables.gap_hi(own));
     EXPECT_EQ(tables.mark_hi(fist), tables.mark_hi(own));
-    // The charge: pi = 0.01 over six stretches.
-    EXPECT_NEAR(tables.log_plain(), std::log(0.99), 1e-12);
-    EXPECT_NEAR(tables.log_stretched(), std::log(0.01 / 6.0), 1e-12);
+    // The charge: pi over six stretches.
+    EXPECT_NEAR(tables.log_plain(), std::log(1.0 - config.gap_stretch_prior), 1e-12);
+    EXPECT_NEAR(tables.log_stretched(), std::log(config.gap_stretch_prior / 6.0), 1e-12);
 }
 
 TEST(ModelTables, OneStretchLeavesTheOldTablesAndWhatCannotBeIsRefused) {
@@ -246,7 +246,7 @@ TEST(SegmentalSearch, StandardSpacingPaysTheChargeOnceAndReadsTheSame) {
         EXPECT_EQ(text_of(with.best_text()), text);
         EXPECT_EQ(text_of(without.best_text()), text);
         // One over: the fist's choice, once.
-        EXPECT_NEAR(with.best_score() - without.best_score(), std::log(0.99), 1e-6) << text;
+        EXPECT_NEAR(with.best_score() - without.best_score(), std::log(1.0 - config.gap_stretch_prior), 1e-6) << text;
     }
 }
 
