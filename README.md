@@ -23,23 +23,28 @@ desktop (measured).
     cmake --preset windows -DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64
     cmake --build --preset windows --target kz4ap-skimmer
 
-**A recording to open.** Recordings are not committed. Generate 60 s of 30 stations
-at 192 kHz (46 MB; with Python 3.12, 20 s for the environment and 20 s to generate,
-measured; skip the first two lines if `.venv` exists):
+**A recording to open.** Recordings are not committed. If a recording of the real band
+has been left in the git-ignored `build\recordings\` (`real30.wav` is 30 min of 40 m at
+192 kHz, 1.4 GB, with no truth), open it, and you need no Python:
 
-    python -m venv .venv
+    build\windows\app\Release\kz4ap-skimmer.exe build\recordings\real30.wav
+
+With no argument the program opens idle: press Open... or Start radio.
+
+Otherwise generate 60 s of 30 stations at 192 kHz (46 MB; 20 s for the environment and
+20 s to generate, measured). It takes Python 3.12 (numpy 2.5.3 needs it). If `python
+--version` says anything else, or "Python was not found" (Windows' Store stub), set `$py`
+below to the full path of a Python 3.12 `python.exe`: `conda create -n kz4ap-py312 -c
+conda-forge python=3.12` makes `%USERPROFILE%\anaconda3\envs\kz4ap-py312\python.exe`, where
+Anaconda's own `Scripts\conda.exe` is the `conda` if that is not on PATH either. Skip the
+two lines after `$py` if `.venv` exists:
+
+    $py = "python"
+    & $py -m venv .venv
     .venv\Scripts\python -m pip install -r training\requirements.txt
     $env:PYTHONPATH = "training"
     .venv\Scripts\python -m kz4ap_synth.generate --scenario band --signals 30 --duration 60 --sample-rate 192000 --seed 1 --out build\recordings\band30.wav
     build\windows\app\Release\kz4ap-skimmer.exe build\recordings\band30.wav
-
-With no argument the program opens idle: press Open... or Start radio. If a recording of
-the real band has been left in the git-ignored `build\recordings\` (`real30.wav` is
-30 min of 40 m at 192 kHz, 1.4 GB, with no truth), open that the same way.
-
-`python --version` must say 3.12 (numpy 2.5.3 needs it). Where it does not, `conda create
--n kz4ap-py312 -c conda-forge python=3.12` makes one, and its `python.exe` goes in the
-first line.
 
 **No Qt in `C:\Qt`?** With any Python: `python -m pip install aqtinstall`, then
 `python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O C:\Qt` (33 s,
@@ -57,7 +62,9 @@ there by about 24 s of stream (derived: their second readings end by 13.5 s, mea
 
 To keep the list, add `--calls calls.csv` (it is written when the stream ends; add
 `--quit-at-end` to leave after that). To give it a list of calls in MASTER.SCP's format, add
-`--known-calls MASTER.SCP`: a listed call needs one signed or doubled reading.
+`--known-calls MASTER.SCP`: a listed call needs one signed, named or doubled reading. A list does
+not help a call with no digit after a letter-digit prefix (D4C, E7DX, C6AGU): the stage has no
+form for those, and does not read them (`docs/backlog.md`).
 
     build\windows\app\Release\kz4ap-skimmer.exe build\recordings\band30.wav --speed max --calls calls.csv --quit-at-end
 
@@ -223,6 +230,10 @@ each track's final text (`text`, corrections applied) and its immediate text
   The detector holds at most 400 tracks (`DetectorConfig::max_tracks`); at the cap a
   stronger new peak replaces the weakest track, and a pipeline behind a live radio
   gives up the tracks with the least evidence first.
+- A station beside a neighbor at its own level or below is read from about 80 Hz away at any
+  level, the neighbor's leak being counted as noise; at 60 Hz partly, at 40 Hz largely not. A
+  neighbor +10 dB re the station needs about 100 Hz, and much stronger ones more
+  (`docs/signal-processing.md`, A.8e).
 - A place within 47 Hz of the center frequency is not read, on recordings as well: an
   I/Q radio's DC offset stands there. The default center, 7031.5 kHz, keeps it off the
   7030 kHz calling frequency.
