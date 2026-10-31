@@ -104,30 +104,51 @@ void SegmentalDecoder::start() {
     for (std::size_t i = 0; i < shared_->narrower.size(); ++i)
         streams_.emplace_back(shared_->narrower[i], shared_->config.filter_scales[i + 1]);
     leader_ = 0;
+    next_history_s_ = shared_->config.filter_scale_start_s;
+}
+
+double SegmentalDecoder::Stream::recent_morse_over_free() const {
+    if (history.empty()) return 0.0;
+    return morse_over_free() - history[history_next % history.size()];
+}
+
+void SegmentalDecoder::Stream::note_history(std::size_t capacity) {
+    if (history.size() < capacity) {
+        history.push_back(morse_over_free());
+    } else {
+        history[history_next] = morse_over_free();
+        history_next = (history_next + 1) % capacity;
+    }
 }
 
 int SegmentalDecoder::leading_scale() const { return streams_[leader_].scale; }
 
 std::size_t SegmentalDecoder::streams_running() const { return streams_.size(); }
 
-bool SegmentalDecoder::choose_leader(double now_s) {
+bool SegmentalDecoder::choose_leader(double now_s, bool may_drop) {
     const segmental::SegmentalConfig& config = shared_->config;
+    if (streams_.size() == 1) return false;
+    if (now_s >= next_history_s_) {
+        next_history_s_ = now_s + 1.0;
+        const std::size_t capacity = 1 + static_cast<std::size_t>(std::max(1.0, config.filter_scale_window_s));
+        for (Stream& stream : streams_) stream.note_history(capacity);
+    }
     const std::size_t before = leader_;
-    double top = streams_[leader_].morse_over_free();
+    double top = streams_[leader_].recent_morse_over_free();
     for (std::size_t i = 0; i < streams_.size(); ++i) {
-        const double value = streams_[i].morse_over_free();
+        const double value = streams_[i].recent_morse_over_free();
         if (value > top + config.filter_scale_switch_nats) {
             top = value;
             leader_ = i;
         }
     }
     const bool changed = leader_ != before;
-    if (streams_.size() > 1 && config.filter_scale_drop_after_s >= 0.0 && now_s >= config.filter_scale_drop_after_s) {
+    if (may_drop && streams_.size() > 1 && config.filter_scale_drop_after_s >= 0.0 && now_s >= config.filter_scale_drop_after_s) {
         // The widest filter stays, whatever it reads: it is what a new, fast sender on this channel can be read with.
         const Stream* leading = &streams_[leader_];
         const int scale = leading->scale;
         std::erase_if(streams_, [&](const Stream& s) {
-            return s.scale != 1 && s.scale != scale && s.morse_over_free() < top - config.filter_scale_drop_margin_nats;
+            return s.scale != 1 && s.scale != scale && s.recent_morse_over_free() < top - config.filter_scale_drop_margin_nats;
         });
         for (std::size_t i = 0; i < streams_.size(); ++i)
             if (streams_[i].scale == scale) leader_ = i;
@@ -198,7 +219,7 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
     const double now_s = static_cast<double>(next_index_) / rate_;
     if (now_s < next_publish_s_) return {};
     next_publish_s_ = now_s + kPublishEveryS;
-    const bool changed = choose_leader(now_s);
+    const bool changed = choose_leader(now_s, true);
     const segmental::Search& search = *streams_[leader_].search;
     segmental::BestStory story = search.best_story(kPublishTailSymbols);
     // A letter still open goes out when it closes: until then it may yet grow (E, I, S, H), and a display would show each.
@@ -252,7 +273,7 @@ DecodeUpdate SegmentalDecoder::flush() {
         stream.search->advance();
         stream.advance_free_key();
     }
-    (void)choose_leader(-1.0);
+    (void)choose_leader(static_cast<double>(next_index_) / rate_, false);
     const segmental::Search& search = *streams_[leader_].search;
     // The whole text, not the tail: the channel's last word on everything it has published.
     segmental::BestStory story = search.best_story(0);

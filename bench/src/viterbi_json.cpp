@@ -473,6 +473,8 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"beam_nats", &config.beam_nats},
         {"duration_z_max", &config.duration_z_max},
         {"gap_unit_max_s", &config.gap_unit_max_s},
+        {"filter_scale_window_s", &config.filter_scale_window_s},
+        {"filter_scale_start_s", &config.filter_scale_start_s},
         {"filter_scale_drop_after_s", &config.filter_scale_drop_after_s},
         {"filter_scale_drop_margin_nats", &config.filter_scale_drop_margin_nats},
         {"filter_scale_switch_nats", &config.filter_scale_switch_nats},

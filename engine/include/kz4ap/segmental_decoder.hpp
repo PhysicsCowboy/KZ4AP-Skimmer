@@ -93,8 +93,10 @@ private:
     struct Stream {
         Stream(const SegmentalParts& parts, int scale);
         void advance_free_key();
-        // nats: S - F, what the choice of stream rests on
+        // nats: S - F as it stands, and over the choice's window: what the choice of stream rests on
         double morse_over_free() const { return search->best_score() - free_key.nats; }
+        double recent_morse_over_free() const;
+        void note_history(std::size_t capacity);
 
         const SegmentalParts* parts;
         int scale;
@@ -108,12 +110,16 @@ private:
         std::int64_t free_next = 0;
         std::int64_t pushed = 0;
         std::int64_t expected_k = -1;
+        std::vector<double> history;  // nats: S - F, one a second of stream, the oldest at history_next once it is full
+        std::size_t history_next = 0;
     };
-    // Chooses the leader from what stands, and at or after the drop time drops what has fallen behind it. True if the leader changed.
-    bool choose_leader(double now_s);
+    // Chooses the leader from what stands, and at or after the drop time, if `may_drop`, drops what has fallen behind it. True if
+    // the leader changed.
+    bool choose_leader(double now_s, bool may_drop);
 
     std::vector<Stream> streams_;  // the widest first; never empty
     std::size_t leader_ = 0;
+    double next_history_s_ = 0.0;
 
     double next_publish_s_ = 0.0;
     float wpm_ = 0.0f;

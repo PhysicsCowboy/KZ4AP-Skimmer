@@ -92,6 +92,11 @@ struct SegmentalConfig {
     // a dot of m x 12 ms (noise bandwidth about 74.5 Hz / m) and reads its stories' speeds from a dot of m x 12 ms down. It must
     // start with 1, the widest. Each m is a whole number. Heuristic: chosen by measurement (docs/decision-log.md, 2026-10-31).
     std::vector<int> filter_scales = {1, 2, 3, 6};
+    // s: the choice of filter reads S - F over this much of the past, and not before filter_scale_start_s of stream. A jump in the
+    // noise reading gave one stream 100 000 nats in a second, so the whole past would not do; a window also follows the channel's
+    // present sender. Heuristics. The start is past the channel floor's own (1 s).
+    double filter_scale_window_s = 30.0;
+    double filter_scale_start_s = 1.5;
     // s of stream, nats: from this time on, a scale other than the widest and the leader that trails the leader by more than
     // this is dropped for the channel's life. Heuristics; what they buy is CPU. A negative time never drops.
     double filter_scale_drop_after_s = 10.0;

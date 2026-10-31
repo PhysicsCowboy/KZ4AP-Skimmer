@@ -518,6 +518,89 @@ TEST_F(BenchRun, SegmentalReadsNothingOnNoiseAndRefusesAnUnknownSetting) {
     EXPECT_NE(refused.status, 0);
 }
 
+TEST_F(BenchRun, SegmentalHonorsTheHissSettings) {
+    // Once silently ignored: the hiss read the engine's other configuration.
+    write_station(wav_, labels_, "CQ CQ", 25.0, 20.0, 0.0, 8);
+    const Outcome refused = run({"--oracle", "--decoder", "segmental", "--no-timing", "--set", "hiss_percentile=200"});
+    EXPECT_NE(refused.status, 0);
+    const Outcome wrong = run({"--oracle", "--decoder", "segmental", "--no-timing", "--set", "hiss_average_s=-1"});
+    EXPECT_NE(wrong.status, 0);
+    const Outcome taken = run({"--oracle", "--decoder", "segmental", "--no-timing", "--set", "hiss_percentile=20", "--json", path("result.json")});
+    ASSERT_EQ(taken.status, 0) << taken.err;
+    EXPECT_EQ(read_json(path("result.json")).at("tracks").at(0).at("text").get<std::string>(), "CQ CQ");
+}
+
+TEST_F(BenchRun, SegmentalReadsFarnsworthSpacingThroughTheBench) {
+    // W1AW's code practice at 18 WPM characters and 5 WPM overall, and 25 at 10 (ARRL: gap unit (60 / overall - 37.2 / character) / 19 s).
+    const std::string text = "CQ CQ DE W1AW W1AW K";
+    const double start_s = 0.7;
+    for (const auto& [character, overall] : {std::pair<double, double>{18.0, 5.0}, {25.0, 10.0}}) {
+        const double dot_s = 1.2 / character;
+        const double gap_unit_s = (60.0 / overall - 37.2 / character) / 19.0;
+        std::vector<std::pair<double, double>> keying;
+        double t = start_s;
+        bool first_word = true, new_word = true;
+        for (const char c : text) {
+            if (c == ' ') {
+                new_word = true;
+                continue;
+            }
+            if (!keying.empty()) t += (new_word ? 7.0 : 3.0) * gap_unit_s;
+            (void)first_word;
+            new_word = false;
+            bool first_mark = true;
+            for (const char mark : kz4ap::morse::encode(std::string(1, c))) {
+                if (!first_mark) t += dot_s;
+                first_mark = false;
+                const double length = (mark == '-' ? 3.0 : 1.0) * dot_s;
+                keying.emplace_back(t, t + length);
+                t += length;
+            }
+        }
+        const double seconds = t + 1.0;
+        const double level_db = 12.0;
+        const double amplitude = std::sqrt(std::pow(10.0, level_db / 10.0) * 0.02 * 0.02 * 500.0 / kRate);
+        write_wav(wav_, kz4ap::test::keyed_signal_d17(keying, kRate, seconds, 300.0, amplitude, 0.02, 4346), static_cast<int>(kRate));
+        write_label(labels_, text, character, 300.0, level_db, start_s, t, seconds);
+        const Outcome o = run({"--oracle", "--decoder", "segmental", "--no-timing", "--json", path("result.json")});
+        ASSERT_EQ(o.status, 0) << o.err;
+        EXPECT_EQ(read_json(path("result.json")).at("tracks").at(0).at("text").get<std::string>(), text)
+            << character << " WPM at " << overall << " WPM overall";
+    }
+}
+
+TEST_F(BenchRun, SegmentalReadsASlowStationPastACloseNeighbor) {
+    // The review's F2: wanted +15 dB S500; a keyed neighbor 40 Hz above at -10 dB and 0 dB re wanted, at another speed. The widest
+    // filter alone cannot; the narrower filters can, and the decoder finds which to believe.
+    const std::string text = "CQ CQ DE W1AW W1AW K TEST 5NN 73 DE K1ABC";
+    const std::string other = "QRZ DE N3VO N3VO PSE K UR 599 BK TU 73 EE EE QRZ DE N3VO K";
+    const double wpm = 15.0, start_s = 0.7;
+    const std::vector<std::pair<double, double>> keying = kz4ap::test::keying(text, wpm, start_s);
+    const double seconds = keying.back().second + 1.0;
+    const double level_db = 15.0;
+    for (const double relative_db : {-10.0, 0.0}) {
+        const double amplitude = std::sqrt(std::pow(10.0, level_db / 10.0) * 0.02 * 0.02 * 500.0 / kRate);
+        const double neighbor = amplitude * std::pow(10.0, relative_db / 20.0);
+        std::vector<kz4ap::Sample> x = kz4ap::test::keyed_signal_d17(keying, kRate, seconds, 300.0, amplitude, 0.02, 4347);
+        const std::vector<kz4ap::Sample> y =
+            kz4ap::test::keyed_signal_d17(kz4ap::test::keying(other, 22.0, start_s), kRate, seconds, 340.0, neighbor, 0.0, 4348);
+        for (std::size_t i = 0; i < x.size(); ++i) x[i] += y[i];
+        write_wav(wav_, x, static_cast<int>(kRate));
+        write_label(labels_, text, wpm, 300.0, level_db, start_s, keying.back().second, seconds);
+        const auto cer = [&](std::vector<std::string> options) {
+            options.insert(options.end(), {"--oracle", "--decoder", "segmental", "--no-timing", "--json", path("result.json")});
+            const Outcome o = run(options);
+            EXPECT_EQ(o.status, 0) << o.err;
+            return read_json(path("result.json")).at("score").at("signals").at(0).at("cer").get<double>();
+        };
+        const double scales = cer({});
+        const double widest = cer({"--set", "filter_scales=1"});
+        std::cout << "measured: neighbor 40 Hz, " << relative_db << " dB re wanted: CER " << scales << ", widest filter alone " << widest << "\n";
+        EXPECT_LE(scales, 0.1) << relative_db << " dB re wanted";
+        EXPECT_GE(widest, 0.3) << relative_db << " dB re wanted";
+    }
+}
+
 TEST_F(BenchRun, SegmentalSurvivesABurstAtAndAboveOneHundredAndTwoDecibels) {
     // Review F6: 1 s of carrier on an FFT bin (281.25 Hz, where the hiss stays below the limit), +102 and +108 dB S500,
     // then a +20 dB S500 station on the same frequency. The recording is scaled to fit 16 bits. Before the fix the first

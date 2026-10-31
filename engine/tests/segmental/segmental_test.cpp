@@ -83,18 +83,20 @@ void feed(const Keyed& keyed, double gain, RunningSums& sums, Search* search = n
     }
 }
 
-// The key for a text at dot samples per dot, exact timing, with lead samples before it and tail after.
-Keyed keyed_text(const std::string& text, int dot, int lead, int tail) {
+// The key for a text at dot samples per dot, exact timing, with lead samples before it and tail after; letter and word gaps
+// on a time base of gap_dot samples (0: the dot).
+Keyed keyed_text(const std::string& text, int dot, int lead, int tail, int gap_dot = 0) {
     Keyed keyed;
+    if (gap_dot == 0) gap_dot = dot;
     keyed.add(0, lead);
     bool first_word = true;
     std::string word;
     const auto send_word = [&](const std::string& w) {
-        if (!first_word) keyed.add(0, 7 * dot);
+        if (!first_word) keyed.add(0, 7 * gap_dot);
         first_word = false;
         bool first_letter = true;
         for (const char c : w) {
-            if (!first_letter) keyed.add(0, 3 * dot);
+            if (!first_letter) keyed.add(0, 3 * gap_dot);
             first_letter = false;
             const std::string letter(1, c);
             const std::string_view pattern = kz4ap::morse::encode(letter);
@@ -142,6 +144,109 @@ TEST(SegmentalSearch, ReadsMadeUpEvidenceAtAWeakAndAStrongLevel) {
             feed(keyed_text("PARIS PARIS", dot, 200, 700), gain, sums, &search);
             EXPECT_EQ(text_of(search.best_text()), "PARIS PARIS") << "gain " << gain << ", dot " << dot;
         }
+    }
+}
+
+TEST(ModelTables, AFistsGapsAreThoseOfTheSteppedSpeedAndItsMarksItsOwn) {
+    const SegmentalConfig config;
+    const ModelTables tables(config);
+    const viterbi::ViterbiConfig& model = config.model;
+    const double ratio = std::pow(model.speed_ratio, config.gap_stretch_speed_steps);
+    EXPECT_EQ(tables.speeds(), model.speed_count);
+    // A stretch's gap unit is inside the limit, and the first fist of a speed is standard spacing.
+    for (int speed = 0; speed < tables.speeds(); ++speed) {
+        const int first = tables.first_fist(speed);
+        EXPECT_EQ(tables.speed_of(first), speed);
+        EXPECT_DOUBLE_EQ(tables.stretch_of(first), 1.0);
+        const double dot_s = model.dot_min_ms * std::pow(model.speed_ratio, speed) / 1000.0;
+        for (int f = first + 1; f < tables.first_fist(speed + 1); ++f) {
+            EXPECT_EQ(tables.speed_of(f), speed);
+            EXPECT_NEAR(tables.stretch_of(f), tables.stretch_of(f - 1) * ratio, 1e-9);
+            EXPECT_LE(tables.stretch_of(f) * dot_s, config.gap_unit_max_s);
+        }
+    }
+    // At speed 3, stretch r^2: letter and word gaps as speed 13 reads them; marks and element gaps as speed 3's.
+    const int fist = tables.first_fist(3) + 2;
+    const int plain = tables.first_fist(13);
+    const int own = tables.first_fist(3);
+    for (const int kind : {3, 4}) {
+        EXPECT_EQ(tables.range(kind, fist).lo, tables.range(kind, plain).lo);
+        EXPECT_EQ(tables.range(kind, fist).hi, tables.range(kind, plain).hi);
+        const int length = (tables.range(kind, plain).lo + tables.range(kind, plain).hi) / 2;
+        EXPECT_DOUBLE_EQ(tables.log_end(kind, fist, length), tables.log_end(kind, plain, length));
+    }
+    for (const int kind : {0, 1, 2}) {
+        EXPECT_EQ(tables.range(kind, fist).hi, tables.range(kind, own).hi);
+        const int length = tables.range(kind, own).lo;
+        EXPECT_DOUBLE_EQ(tables.log_end(kind, fist, length), tables.log_end(kind, own, length));
+    }
+    EXPECT_GT(tables.gap_hi(fist), tables.gap_hi(own));
+    EXPECT_EQ(tables.mark_hi(fist), tables.mark_hi(own));
+    // The charge: pi = 0.05 over six stretches.
+    EXPECT_NEAR(tables.log_plain(), std::log(0.95), 1e-12);
+    EXPECT_NEAR(tables.log_stretched(), std::log(0.05 / 6.0), 1e-12);
+}
+
+TEST(ModelTables, OneStretchLeavesTheOldTablesAndWhatCannotBeIsRefused) {
+    SegmentalConfig config;
+    config.gap_stretches = 1;
+    const ModelTables tables(config);
+    EXPECT_EQ(tables.fists(), config.model.speed_count);
+    EXPECT_DOUBLE_EQ(tables.log_plain(), 0.0);
+    SegmentalConfig bad = config;
+    bad.gap_stretches = 0;
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+    bad = config;
+    bad.gap_stretch_prior = 1.0;
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+    bad = SegmentalConfig{};
+    bad.gap_stretch_prior = 0.0;
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+    bad = SegmentalConfig{};
+    bad.gap_unit_max_s = 0.0;
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+}
+
+TEST(SegmentalSearch, ReadsFarnsworthSpacingAsLettersAndWords) {
+    // 25 WPM characters, the gaps on a time base 1.9 to 15 times the dot: text and word spaces exact. With one stretch the same
+    // key reads a word space after letters (the old limitation), or no text like it.
+    const SegmentalConfig config;
+    SegmentalConfig plain;
+    plain.gap_stretches = 1;
+    const ModelTables tables(config);
+    const ModelTables plain_tables(plain);
+    const std::string text = "CQ DE W1AW PSE K TEST";
+    for (const int gap_dot : {34, 57, 96, 150, 270}) {
+        for (const double gain : {4.0, 100.0}) {
+            const Keyed keyed = keyed_text(text, 18, 300, 400, gap_dot);
+            RunningSums sums;
+            Search search(config, tables, sums);
+            feed(keyed, gain, sums, &search);
+            EXPECT_EQ(text_of(search.best_text()), text) << gap_dot << " samples, gain " << gain;
+            RunningSums plain_sums;
+            Search plain_search(plain, plain_tables, plain_sums);
+            feed(keyed, gain, plain_sums, &plain_search);
+            EXPECT_NE(text_of(plain_search.best_text()), text) << gap_dot << " samples, gain " << gain;
+        }
+    }
+}
+
+TEST(SegmentalSearch, StandardSpacingPaysTheChargeOnceAndReadsTheSame) {
+    SegmentalConfig plain;
+    plain.gap_stretches = 1;
+    const SegmentalConfig config;
+    const ModelTables tables(config);
+    const ModelTables plain_tables(plain);
+    for (const std::string text : {"CQ CQ DE W1AW W1AW K", "TEST TEST", "TU", "E", "PARIS PARIS PARIS"}) {
+        const Keyed keyed = keyed_text(text, 18, 300, 400);
+        RunningSums a, b;
+        Search with(config, tables, a), without(plain, plain_tables, b);
+        feed(keyed, 8.0, a, &with);
+        feed(keyed, 8.0, b, &without);
+        EXPECT_EQ(text_of(with.best_text()), text);
+        EXPECT_EQ(text_of(without.best_text()), text);
+        // One over: the fist's choice, once.
+        EXPECT_NEAR(with.best_score() - without.best_score(), std::log(0.95), 1e-6) << text;
     }
 }
 
@@ -379,6 +484,60 @@ TEST(ChannelFloor, IsLeftOutAtAWindowOfZeroAndRefusesWhatCannotBe) {
 TEST(SegmentalConfig, HasItsOwnSystematicFloorAndLeavesTheViterbiDecodersAlone) {
     EXPECT_EQ(SegmentalConfig{}.model.systematic_floor, 0.1);
     EXPECT_EQ(viterbi::ViterbiConfig{}.systematic_floor, 0.02);
+}
+
+TEST(FilterScale, KeepsTheFiltersAndDotsShapeInSamples) {
+    const SegmentalConfig config;
+    for (const int m : {2, 3, 4, 6}) {
+        const SegmentalConfig scaled = at_filter_scale(config, m);
+        EXPECT_DOUBLE_EQ(scaled.model.sample_interval_s, config.model.sample_interval_s * m);
+        EXPECT_DOUBLE_EQ(scaled.model.front_dot_s, config.model.front_dot_s * m);
+        EXPECT_DOUBLE_EQ(scaled.model.dot_min_ms, config.model.dot_min_ms * m);
+        // The slowest speed stays within a step of where it was.
+        const double slowest = scaled.model.dot_min_ms * std::pow(scaled.model.speed_ratio, scaled.model.speed_count - 1);
+        const double before = config.model.dot_min_ms * std::pow(config.model.speed_ratio, config.model.speed_count - 1);
+        EXPECT_NEAR(std::log(slowest / before), 0.0, std::log(config.model.speed_ratio));
+        // In whole samples, and the look-ahead about what it was (a frame, at most).
+        EXPECT_NO_THROW(viterbi::whole_count(scaled.level_frame_s, scaled.model.sample_interval_s, "frame", "samples"));
+        EXPECT_NO_THROW(viterbi::whole_count(scaled.level_lookahead_s, scaled.level_frame_s, "look-ahead", "frames"));
+        EXPECT_NO_THROW(viterbi::whole_count(scaled.channel_floor_stride_s, scaled.model.sample_interval_s, "stride", "samples"));
+        EXPECT_NO_THROW(viterbi::whole_count(scaled.channel_floor_refresh_s, scaled.model.sample_interval_s, "refresh", "samples"));
+        EXPECT_NEAR(scaled.level_lookahead_s, config.level_lookahead_s, scaled.level_frame_s);
+    }
+    EXPECT_THROW(at_filter_scale(config, 0), std::invalid_argument);
+}
+
+TEST(FilterScale, ItsEdgesLieInTheEvidencesWindow) {
+    // The search reads an edge between samples 5 and 10 after its claim (evidence.hpp): before them the template must be about 0,
+    // after them about 1, at every scale. At scale 1: 8e-4 and 1.0023.
+    SegmentalConfig config;
+    config.filter_scales = {1, 2, 3, 4, 6};
+    const SegmentalShared shared(config, ChannelizerConfig{48000, 2048, 64, 150.0});
+    ASSERT_EQ(shared.narrower.size(), 4u);
+    for (const SegmentalParts& parts : shared.narrower) {
+        std::cout << "measured: dot " << parts.config.model.front_dot_s * 1000.0 << " ms: sigma^2 / N0 "
+                  << parts.output_noise.sigma2_per_n0_hz << " Hz, w " << parts.output_noise.w_strong << ", s_4 "
+                  << parts.template_tables.s[4] << ", s_5 " << parts.template_tables.s[5] << ", s_10 " << parts.template_tables.s[10]
+                  << ", s_11 " << parts.template_tables.s[11] << "\n";
+        EXPECT_LT(std::fabs(parts.template_tables.s[4]), 0.03);
+        EXPECT_NEAR(parts.template_tables.s[11], 1.0, 0.03);
+        EXPECT_GT(parts.template_tables.s[5], 0.0);
+        EXPECT_LT(parts.template_tables.s[10], 1.03);
+    }
+    // The filter's noise bandwidth narrows with the scale, to about its share.
+    EXPECT_NEAR(shared.narrower[1].output_noise.sigma2_per_n0_hz, shared.output_noise.sigma2_per_n0_hz / 3.0,
+                0.1 * shared.output_noise.sigma2_per_n0_hz / 3.0);
+}
+
+TEST(FilterScale, ScalesThatCannotBeAreRefused) {
+    const ChannelizerConfig channel{48000, 2048, 64, 150.0};
+    SegmentalConfig config;
+    config.filter_scales = {2, 3};
+    EXPECT_THROW(SegmentalShared(config, channel), std::invalid_argument);
+    config.filter_scales = {};
+    EXPECT_THROW(SegmentalShared(config, channel), std::invalid_argument);
+    config.filter_scales = {1, 3, 2};
+    EXPECT_THROW(SegmentalShared(config, channel), std::invalid_argument);
 }
 
 TEST(SegmentalShared, RefusesAnotherChannelRate) {
