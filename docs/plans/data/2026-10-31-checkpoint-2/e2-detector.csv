@@ -629,3 +629,183 @@ bank,E2-qrm-c10-0-s1,10,71.00,0.48,60,97
 bank,E2-qrm-c10-0-s1,12,29.15,0.57,88,102
 bank,E2-qrm-c10-0-s1,14,39.25,-4.19,34,101
 bank,E2-qrm-c10-0-s1,16,86.40,2.46,13,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,0,6.42,-3.86,86,102
+"app8, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,2,51.57,3.12,243,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,4,87.52,5.68,0,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,6,16.70,-1.39,86,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,8,19.62,5.22,101,101
+"app8, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,10,112.68,-5.57,0,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,12,119.19,6.03,0,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,14,50.85,2.67,129,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,16,29.54,9.40,232,99
+"app8, late",E2-qrm-c01-0-s1,0,6.42,-3.86,86,102
+"app8, late",E2-qrm-c01-0-s1,2,51.57,3.12,230,100
+"app8, late",E2-qrm-c01-0-s1,4,87.52,5.68,0,100
+"app8, late",E2-qrm-c01-0-s1,6,16.70,-1.39,86,100
+"app8, late",E2-qrm-c01-0-s1,8,19.62,5.22,101,101
+"app8, late",E2-qrm-c01-0-s1,10,112.68,-5.57,0,100
+"app8, late",E2-qrm-c01-0-s1,12,119.19,6.03,0,100
+"app8, late",E2-qrm-c01-0-s1,14,50.85,2.67,129,100
+"app8, late",E2-qrm-c01-0-s1,16,29.54,9.40,229,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,0,70.51,0.17,0,102
+"app8, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,2,28.25,10.36,79,102
+"app8, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,4,52.57,6.36,99,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,6,17.02,11.37,80,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,8,60.34,0.21,100,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,10,15.02,-2.95,83,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,12,53.42,10.39,98,98
+"app8, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,14,23.91,5.32,90,102
+"app8, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,16,119.75,11.87,98,102
+"app8, late",E2-qrm-c02-0-s1,0,70.51,0.17,0,102
+"app8, late",E2-qrm-c02-0-s1,2,28.25,10.36,79,102
+"app8, late",E2-qrm-c02-0-s1,4,52.57,6.36,99,99
+"app8, late",E2-qrm-c02-0-s1,6,17.02,11.37,79,99
+"app8, late",E2-qrm-c02-0-s1,8,60.34,0.21,100,100
+"app8, late",E2-qrm-c02-0-s1,10,15.02,-2.95,83,100
+"app8, late",E2-qrm-c02-0-s1,12,53.42,10.39,98,98
+"app8, late",E2-qrm-c02-0-s1,14,23.91,5.32,91,102
+"app8, late",E2-qrm-c02-0-s1,16,119.75,11.87,97,102
+"app8, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,0,35.36,-1.17,80,97
+"app8, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,2,5.69,11.02,94,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,4,38.24,-5.07,3,105
+"app8, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,6,71.14,7.23,4,98
+"app8, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,8,5.50,-1.44,99,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,10,38.53,8.92,79,101
+"app8, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,12,20.14,8.29,106,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,14,90.76,-4.70,0,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,16,72.86,3.19,6,100
+"app8, late",E2-qrm-c03-0-s1,0,35.36,-1.17,80,97
+"app8, late",E2-qrm-c03-0-s1,2,5.69,11.02,92,99
+"app8, late",E2-qrm-c03-0-s1,4,38.24,-5.07,3,105
+"app8, late",E2-qrm-c03-0-s1,6,71.14,7.23,4,98
+"app8, late",E2-qrm-c03-0-s1,8,5.50,-1.44,99,99
+"app8, late",E2-qrm-c03-0-s1,10,38.53,8.92,79,101
+"app8, late",E2-qrm-c03-0-s1,12,20.14,8.29,106,99
+"app8, late",E2-qrm-c03-0-s1,14,90.76,-4.70,0,100
+"app8, late",E2-qrm-c03-0-s1,16,72.86,3.19,6,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,0,49.78,10.83,118,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,2,18.08,-4.37,16,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,4,78.07,-1.26,0,97
+"app8, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,6,18.64,-2.03,75,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,8,83.33,6.93,100,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,10,30.56,-4.19,12,103
+"app8, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,12,57.53,7.45,100,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,14,9.91,10.98,115,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,16,108.77,8.78,1,101
+"app8, late",E2-qrm-c04-0-s1,0,49.78,10.83,118,100
+"app8, late",E2-qrm-c04-0-s1,2,18.08,-4.37,16,100
+"app8, late",E2-qrm-c04-0-s1,4,78.07,-1.26,0,97
+"app8, late",E2-qrm-c04-0-s1,6,18.64,-2.03,71,100
+"app8, late",E2-qrm-c04-0-s1,8,83.33,6.93,100,100
+"app8, late",E2-qrm-c04-0-s1,10,30.56,-4.19,12,103
+"app8, late",E2-qrm-c04-0-s1,12,57.53,7.45,100,100
+"app8, late",E2-qrm-c04-0-s1,14,9.91,10.98,118,99
+"app8, late",E2-qrm-c04-0-s1,16,108.77,8.78,1,101
+"app8, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,0,116.38,6.46,0,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,2,50.00,3.57,191,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,4,9.16,7.60,77,98
+"app8, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,6,84.04,-5.61,0,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,8,15.56,-1.57,100,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,10,53.96,9.85,102,102
+"app8, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,12,4.77,-3.00,72,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,14,105.38,-3.91,0,101
+"app8, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,16,43.14,3.97,84,102
+"app8, late",E2-qrm-c05-0-s1,0,116.38,6.46,0,100
+"app8, late",E2-qrm-c05-0-s1,2,50.00,3.57,100,100
+"app8, late",E2-qrm-c05-0-s1,4,9.16,7.60,77,98
+"app8, late",E2-qrm-c05-0-s1,6,84.04,-5.61,0,99
+"app8, late",E2-qrm-c05-0-s1,8,15.56,-1.57,100,100
+"app8, late",E2-qrm-c05-0-s1,10,53.96,9.85,102,102
+"app8, late",E2-qrm-c05-0-s1,12,4.77,-3.00,72,99
+"app8, late",E2-qrm-c05-0-s1,14,105.38,-3.91,0,101
+"app8, late",E2-qrm-c05-0-s1,16,43.14,3.97,86,102
+"app8, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,0,39.67,-3.28,4,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,2,22.47,1.28,84,101
+"app8, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,4,16.45,11.40,93,102
+"app8, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,6,86.70,3.84,0,103
+"app8, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,8,64.56,-4.50,101,101
+"app8, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,10,52.20,6.92,93,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,12,105.18,2.06,0,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,14,35.48,10.01,162,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,16,20.91,8.45,95,100
+"app8, late",E2-qrm-c06-0-s1,0,39.67,-3.28,7,100
+"app8, late",E2-qrm-c06-0-s1,2,22.47,1.28,85,101
+"app8, late",E2-qrm-c06-0-s1,4,16.45,11.40,90,102
+"app8, late",E2-qrm-c06-0-s1,6,86.70,3.84,0,103
+"app8, late",E2-qrm-c06-0-s1,8,64.56,-4.50,101,101
+"app8, late",E2-qrm-c06-0-s1,10,52.20,6.92,93,100
+"app8, late",E2-qrm-c06-0-s1,12,105.18,2.06,0,100
+"app8, late",E2-qrm-c06-0-s1,14,35.48,10.01,162,100
+"app8, late",E2-qrm-c06-0-s1,16,20.91,8.45,94,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,0,24.59,7.17,75,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,2,3.35,5.43,80,97
+"app8, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,4,37.24,9.77,77,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,6,106.05,-4.50,0,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,8,91.17,4.42,100,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,10,53.26,3.85,100,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,12,49.36,-2.86,42,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,14,11.03,11.36,83,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,16,96.42,5.86,10,101
+"app8, late",E2-qrm-c07-0-s1,0,24.59,7.17,75,100
+"app8, late",E2-qrm-c07-0-s1,2,3.35,5.43,81,97
+"app8, late",E2-qrm-c07-0-s1,4,37.24,9.77,77,99
+"app8, late",E2-qrm-c07-0-s1,6,106.05,-4.50,0,99
+"app8, late",E2-qrm-c07-0-s1,8,91.17,4.42,100,100
+"app8, late",E2-qrm-c07-0-s1,10,53.26,3.85,82,100
+"app8, late",E2-qrm-c07-0-s1,12,49.36,-2.86,34,99
+"app8, late",E2-qrm-c07-0-s1,14,11.03,11.36,82,100
+"app8, late",E2-qrm-c07-0-s1,16,96.42,5.86,8,101
+"app8, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,0,12.75,-0.49,83,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,2,7.61,-5.16,76,98
+"app8, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,4,98.88,-0.21,0,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,6,84.85,2.82,1,98
+"app8, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,8,59.47,-0.84,98,98
+"app8, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,10,45.02,-0.34,87,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,12,17.63,4.81,95,103
+"app8, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,14,114.40,-1.36,0,101
+"app8, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,16,39.66,2.08,91,102
+"app8, late",E2-qrm-c08-0-s1,0,12.75,-0.49,91,99
+"app8, late",E2-qrm-c08-0-s1,2,7.61,-5.16,74,98
+"app8, late",E2-qrm-c08-0-s1,4,98.88,-0.21,0,100
+"app8, late",E2-qrm-c08-0-s1,6,84.85,2.82,0,98
+"app8, late",E2-qrm-c08-0-s1,8,59.47,-0.84,98,98
+"app8, late",E2-qrm-c08-0-s1,10,45.02,-0.34,87,99
+"app8, late",E2-qrm-c08-0-s1,12,17.63,4.81,96,103
+"app8, late",E2-qrm-c08-0-s1,14,114.40,-1.36,0,101
+"app8, late",E2-qrm-c08-0-s1,16,39.66,2.08,90,102
+"app8, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,0,82.05,11.79,98,98
+"app8, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,2,37.62,11.21,81,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,4,21.21,5.47,83,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,6,63.00,-4.40,0,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,8,27.99,7.84,100,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,10,0.99,7.70,85,101
+"app8, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,12,45.72,-5.86,28,96
+"app8, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,14,21.39,1.03,89,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,16,99.85,-2.41,0,101
+"app8, late",E2-qrm-c09-0-s1,0,82.05,11.79,98,98
+"app8, late",E2-qrm-c09-0-s1,2,37.62,11.21,81,99
+"app8, late",E2-qrm-c09-0-s1,4,21.21,5.47,84,99
+"app8, late",E2-qrm-c09-0-s1,6,63.00,-4.40,0,99
+"app8, late",E2-qrm-c09-0-s1,8,27.99,7.84,100,100
+"app8, late",E2-qrm-c09-0-s1,10,0.99,7.70,85,101
+"app8, late",E2-qrm-c09-0-s1,12,45.72,-5.86,30,96
+"app8, late",E2-qrm-c09-0-s1,14,21.39,1.03,87,99
+"app8, late",E2-qrm-c09-0-s1,16,99.85,-2.41,0,101
+"app8, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,0,97.82,-1.83,0,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,2,2.92,6.96,77,100
+"app8, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,4,24.73,-3.98,71,99
+"app8, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,6,58.31,9.03,98,98
+"app8, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,8,7.94,1.63,103,103
+"app8, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,10,71.00,0.48,4,97
+"app8, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,12,29.15,0.57,83,102
+"app8, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,14,39.25,-4.19,90,101
+"app8, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,16,86.40,2.46,12,99
+"app8, late",E2-qrm-c10-0-s1,0,97.82,-1.83,0,100
+"app8, late",E2-qrm-c10-0-s1,2,2.92,6.96,78,100
+"app8, late",E2-qrm-c10-0-s1,4,24.73,-3.98,82,99
+"app8, late",E2-qrm-c10-0-s1,6,58.31,9.03,98,98
+"app8, late",E2-qrm-c10-0-s1,8,7.94,1.63,103,103
+"app8, late",E2-qrm-c10-0-s1,10,71.00,0.48,3,97
+"app8, late",E2-qrm-c10-0-s1,12,29.15,0.57,82,102
+"app8, late",E2-qrm-c10-0-s1,14,39.25,-4.19,61,101
+"app8, late",E2-qrm-c10-0-s1,16,86.40,2.46,12,99

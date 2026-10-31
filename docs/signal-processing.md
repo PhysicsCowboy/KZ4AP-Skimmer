@@ -12,13 +12,10 @@ picked among candidates), **placeholder** (kept until an experiment settles
 it), **owner** (the owner's decision) or **sourced** (from a named
 publication).
 
-The **appendix** (section A) is the reference: the exact form of every rule
-as the code implements it, the derivations, the provenance of each measured
-or heuristic value, the known limitations, the full parameter table (A.10)
-and the definitions used by the tests and the benchmark (A.11). Results and
-evidence are not here: they are in the results records under `docs/plans/`
-(milestone 2a, stage 1, Plan A, Plan B and later), and engineering choices are
-logged in `docs/decision-log.md`.
+The **appendix** (section A) is the reference: each rule's exact form, the
+derivations, provenance, limitations, the parameter table (A.10) and the
+tests' and benchmark's definitions (A.11). Results and evidence are in the
+results records under `docs/plans/`, engineering choices in `docs/decision-log.md`.
 
 **Maintenance rule:** this document is brought up to date at each checkpoint
 and before any merge into `main`, and may lag in between. Numbers are for the
@@ -83,11 +80,9 @@ that reads the spectrum.
 
 A 16-bit stereo WAV, left channel I and right channel Q, divided by 32768,
 so samples lie in [−1, 1) FS. Frequencies are offsets from the radio's
-center frequency, in Hz, spanning ±fs/2. The engine collects incoming
-samples and processes them in fixed blocks of exactly N/2 samples (the
-hop), always at the same sample positions, so the output does not depend on
-how a caller splits the input (one sample at a time or a whole file at
-once).
+center frequency, in Hz, spanning ±fs/2. The engine processes fixed blocks of
+exactly N/2 samples (the hop), so the output does not depend on how a caller
+splits the input.
 
 ## 2. The FFT size N and bin width Δf
 
@@ -96,8 +91,7 @@ N is the largest power of two that keeps the bins at least 20 Hz wide:
 a heuristic. The real intent is "bins about 23 Hz wide": narrow enough to
 separate stations a few tens of Hz apart, wide enough that most of a keyed
 CW signal's energy falls within one to three bins up to about 40 WPM
-(derived). The detector does not need to follow the keying: it averages each
-bin over 1 s (section 6).
+(derived).
 
 Appendix: A.2.
 
@@ -105,7 +99,7 @@ Appendix: A.2.
 
 New input arrives in blocks of N/2 samples (the hop), but each FFT covers
 N samples: the newest block and the one before it. So consecutive FFTs
-overlap by half, and every sample appears in two consecutive FFTs. With
+overlap by half. With
 the Hann window (section 4) the overlapping windows add up to a constant,
 so no part of the signal is weighted less than another (derived). The hop
 also fixes the channel filter's length (section 7).
@@ -126,8 +120,7 @@ per sample reads as the noise in one *equivalent noise bandwidth* (ENBW):
 1.5 bins = 35.2 Hz for the Hann window (derived). The values are stored in
 dBFS. The Hann window is a standard choice: its sidelobes are 31 dB below
 the main lobe (relative to the main lobe's peak), so a strong station does
-not hide a weak one a few bins away; a tone halfway between bins reads
-1.42 dB below its on-bin value (derived).
+not hide a weak one a few bins away.
 
 Appendix: A.4.
 
@@ -140,9 +133,7 @@ a station's S₅₀₀ is set by its carrier amplitude. The detector sees a
 narrower noise bandwidth, one bin's ENBW of 35.2 Hz, so the same signal
 reads 10·log₁₀(500/35.2) = **11.5 dB higher** as an SNR per bin than as an
 SNR in 500 Hz (derived, white noise). A track's reported SNR is about 3.6 to
-7.1 dB below its key-down SNR per bin, by speed (derived; A.5). Example at
-25 WPM: a station at 20 dB SNR in 500 Hz is 31.5 dB SNR per bin key-down and
-reads about 27 dB SNR per bin as a track.
+7.1 dB below its key-down SNR per bin, by speed (derived; A.5).
 
 Appendix: A.5.
 
@@ -235,7 +226,7 @@ Appendix: A.7.
 ### Which decoder runs
 
 Five decoders exist; the bench's `--decoder envelope|matched|bank|viterbi|segmental`
-picks one (`--front-end` is the old name of that option, still accepted).
+picks one.
 **Matched is the bench's default** (owner) and segmental the app's. Envelope and
 Matched share a common back end that turns marks into characters; the bank has
 its own, and viterbi and segmental share a model (sections 8d and 8e).
@@ -380,12 +371,23 @@ a low level beats key-up on bare noise and a story earns by bridging its gaps
 (measured); the hiss reads quiet bins ±2 kHz around, so a receiver's passband is
 enough. So, per sample,
 
-  σ² = max(N₀ × 74.50 Hz, Q₀.₁₀(e²) / 0.10536 × 10^(−0.3)) (FS²),
+  σ² = max(N₀ B, 10^(0.3) L, Q₀.₁₀(e²) / 0.10536 × 10^(−0.3)) (FS²), B = 74.50 Hz,
 
 Q₀.₁₀ the 10th percentile of every 4th sample's e² (10.67 ms, ρ₄ = 0.14) over the
 last 5 s, retaken every 96 ms, first used 1.056 s in. On noise e² is exponential,
 so 0.10536 = −ln 0.9 is derived; the −3 dB margin (re the floor as estimated),
 quantile, window, stride, refresh and start are heuristics. z then uses σ.
+
+*A neighbor's leak.* A neighbor's marks reach the filter's output above N₀B once
+its level is high enough, and in the wanted station's gaps they score as keying.
+So σ² is also at least +3 dB re
+
+  L = Σ_k (P_k / 1.5) |H_ch(kΔf)|² |H_f(kΔf)|² (FS²),
+
+its peak over the last 1 s, per stream; P_k are the spectrum's bins with 60 Hz ≤
+|kΔf| ≤ 320 Hz about the channel's center, updated each live block and not in a
+replay. The responses and 1.5 (a tone's power over its Hann bins) are derived; +3 dB
+re the leak was chosen by measurement; 60 Hz, 320 Hz and 1 s are heuristics.
 
 **Stage 3: the level filter.** A hidden Markov model over key (up, down) × level:
 
@@ -499,15 +501,11 @@ mark. Appendix: A.8e.
 | Processing block (hop) | 21.33 ms |
 | Detection | nothing in the first 1 s; then about 0.5–1.5 s for a new station |
 | Channel filter | 10.7 ms |
-| Envelope | about ¼ dit of smoothing |
-| Matched | 0.32 s warm-up per channel; filter delay 19 ms at 25 WPM |
-| Envelope, Matched | a character appears once a gap of more than 2 dits follows it |
-| Bank | a character appears when the space after it is classified (at the next key-down), at a new over, or at the stream's end; corrections reach up to 20 s back |
 | Viterbi | the whole text when the channel ends; front filter 8.000 ms; a channel opened at the stream's start (oracle mode) searches nothing in its first block (21.33 ms) |
 | Segmental | text every 0.25 s, corrected as it firms up; the evidence lags at most 0.387 s at m = 1, 0.46 s at m = 3, the same first block unsearched; the final text's error rate is reached about 0.75 s behind (measured at m = 1 alone; A.8e); a replay reads the 2 s before a channel opens |
 | Track removal | about 6–7 s for the average to decay (S₅₀₀ = 20 dB), plus the 10 s timeout |
 
-Appendix: A.6, A.8d, A.8e, A.9 and A.10.
+Envelope, Matched and Bank: A.9. Appendix: A.6, A.8d, A.8e, A.9 and A.10.
 
 ## 10. Live operation
 
@@ -561,25 +559,27 @@ grows by 5 each 5 s. A radio silent 5 s is flagged, a recording as well.
 `CallSearch` reads any decoder's track and text events, beside the track list, and
 changes neither. Values are heuristics unless marked. Appendix: A.12.
 
-**Words.** Each whole stream-second it reads text 10 s old. A later correction (reach 165 s on
+**Words.** Each whole stream-second it reads text 10 s old. A later correction (reach 206 s on
 real 40 m, measured) has its change read again, within 200 s; old readings stay. A word space,
-prosign or punctuation ends a word.
+prosign or punctuation ends a word. The app's clock travels among the events, so its list does not depend on the pace.
 
 **Readings.** A call's form (RR 19.68; sourced): an allocated prefix (Appendix 42) of one
 or two characters, one digit, one to four letters; /P, /M or a prefix keep the base call. 1
-point: a whole word, or one glued to a keyword or itself (DEK1ABC). 0.5 point: a stray E, T, I
-before or E, T, K after; short words joined (K X 9 F). Refused: words of CW with this form
-(G5RV, R5NN; exact), and calls of E T I S H A N M U 5 alone.
+point: a whole word, or one glued to a keyword or itself (DEK1ABC). 0.75 point: short words
+joined (K X 9 F). 0.5 point: a stray E, T, I before or E, T, K after. Refused: words of CW with
+this form (G5RV, R5NN; exact); calls of E T I S H A N M U 5 alone unless whole words.
 
 **Role.** Before DE or 5NN: *named*. After DE, CQ or TEST, or before K: *signed*. Else *bare*.
 
 **Evidence.** Readings overlapping in time within 300 Hz are one transmission. Points add
-within 300 Hz and 30 min. Reported at 2 points; on a known-call list, 1 if framed (signed, named
-or sent twice), else 2. Two or more digits (W100AW): from a list only.
+within 300 Hz and 30 min. Reported at 2 points, or at one whole or glued word named; on a
+known-call list, 1 if framed (signed, named or sent twice), else 2. A call of E T I S H A N M U 5
+alone: 2 whole words, listed or not. Two or more digits (W100AW): from a list only.
 
-**Variants.** A call within edit distance 1 of a better-supported call within 150 Hz is held
-back, or withdrawn; distance 2 needs over twice the points. Ties at distance 1: the earlier
-call; beginning within 1 s, the later. A list weighs by 3.
+**Variants.** A call within edit distance 1 of a better-supported call within 150 Hz, or the
+start of one or starting with one, is held back; distance 2 needs over twice the points. Ties
+at distance 1: the earlier call; beginning within 1 s, the later. A list weighs by 3. A listed
+row is withdrawn only if the rival's best exceeds its own, or its readings beyond 150 Hz do not pass alone.
 
 **List.** One row per base call, at its latest signed, else bare, else named place. Decoder
 scores are unused: segmental's symbols all say 1.
@@ -3989,7 +3989,7 @@ windows' length. Everything shared with viterbi: A.8d.
 
 These are the model's and, except where said, the viterbi decoder's too. The white-noise test set shows few of them. Measurements: `docs/decision-log.md` and the results records.
 
-- **Close neighbors.** The model has one station per stream, and the belief follows whichever carrier is up. A neighbor's mark in the wanted station's gap scores as key-down, and the same story bridges the gap. The narrower filters keep out a neighbor outside their band. What stays (levels in dB re the wanted station's key-down power; scores in the results records): an equal neighbor 30 Hz away, where every width fails; neighbors +10 dB and stronger inside 150 Hz, near the whole text lost, as for the bank; a steady carrier +10 dB and stronger inside the channel, where the whole text is lost at every setting tried. A very strong neighbor at 250 Hz writes false dots, believed to be its key clicks (not isolated). Untried: a second carrier in the level filter, the neighbor's beat in the complex samples, subtracting a neighbor's track. Viterbi, one width, is worse here.
+- **Close neighbors.** The model has one station per stream, and the belief follows whichever carrier is up. A neighbor's mark in the wanted station's gap scores as key-down, and the same story bridges the gap. The narrower filters keep out a neighbor outside their band. The leak floor below keeps a neighbor's leak from scoring as keying once it stands above the hiss. What stays (levels in dB re the wanted station's key-down power; scores in the results records): a neighbor at or below the wanted station's level inside about 60 Hz, at every level; neighbors +10 dB re wanted inside about 100 Hz; neighbors far stronger, as +44 dB re wanted 200 to 300 Hz away, and +20 dB re wanted at 150 Hz; a steady carrier +10 dB and stronger inside the channel, where the whole text is lost at every setting tried. A very strong neighbor at 250 Hz writes false dots, believed to be its key clicks (not isolated). Untried: a second carrier in the level filter, the neighbor's beat in the complex samples, subtracting a neighbor's track. Viterbi, one width, is worse here.
 - **A neighbor after the drop.** A neighbor arriving after the narrower streams are dropped (from 10 s of age) is read at the widest filter alone, for the channel's life.
 - **One stream's whole text.** Stories do not cross between streams (one sample of time mismatch is hundreds of nats at +20 dB S₅₀₀, so no joint search can prune across widths), and a QSO whose stations need different widths reads at the better over the whole track. A long track whose conditions change keeps its early leader unless another earns 120 nats more. Around 40 Hz at 0 dB re wanted a short text can fall either side.
 - **A narrower filter off frequency.** The channel follows the detector's frequency, which may be up to half a bin off a station (A.7); no fine estimate corrects it, and a narrower filter pays more for it. Oracle scores do not show this.
@@ -4012,9 +4012,21 @@ These are the model's and, except where said, the viterbi decoder's too. The whi
 
 **Fixed at this commit** (findings of the independent review of commit 5aeb081, numbered F1 to F10; `docs/decision-log.md`, 2026-10-31): F1 (the channel's floor), F5 (f = 0.1), F6 (one extreme sample deafening a channel), F8 (false letters above +80 dB S₅₀₀, the float fix).
 
+### A neighbor's leak (segmental)
+
+**Why.** The failure with a close neighbor depends on the absolute level, not only on the level re wanted. The neighbor reaches the filter's output at L_n + 10 log₁₀(500 Hz / B) + H(f) dB re that filter's noise, L_n its level in dB S₅₀₀, B the filter's noise bandwidth, H(f) the chain's response in dB re 0 Hz (derived): at 100 Hz, −18.8 dB re 0 Hz at m = 1 and −24.2 dB re 0 Hz at m = 3. Before this floor, with a neighbor at 0 dB re wanted, 80 to 120 Hz away, CER was 0.000 at +10 dB S₅₀₀ and 0.86 to 1.54 at +30 dB S₅₀₀, and the older bank, whose decisions are relative to the track's own level, read such pairs better from about +20 dB S₅₀₀ (results record, `level-pairs.csv`). With σ² set by noise alone the leak is scored as key-down in the wanted station's gaps: section 8e's "no charge for the level" means nothing penalizes a low-level mark. The onset, where the wide filter's leak reaches about 0 to +10 dB re its noise, is a measured onset against a derived level.
+
+**The form.** `SegmentalDecoder::set_band_spectrum`, per stream and block: L_m = Σ_k (P[c + k] / 1.5) |H_ch(kΔf)|² |H_f,m(kΔf)|² over both sides of the center bin c with k from ⌈60 Hz / Δf⌉ = 3 to ⌈320 Hz / Δf⌉ = 14, the responses computed once from the taps (`SegmentalParts::leak_response`); σ² = max(N₀B_m, 10^(X/10) × max(L_m over the last 47 blocks, 1 s), channel floor), X = +3 dB re the leak. P is the Hann-windowed spectrum's power: a tone of amplitude A reads A² in its bin and A²(1 + 2 × ¼) = 1.5 A² over its bins, so 1.5 counts it once (derived). H_ch is taken about the channel's center; the block is cut at a bin up to half a bin (11.7 Hz) from the detector's frequency, which the form ignores. c is the bin nearest the detector's frequency.
+
+**On noise.** White noise reads P = 1.5 N₀Δf in a bin, so L_m averages N₀Δf Σ_k |H|², and 10^(0.3) L_m / (N₀B_m) is LEAK_RATIO_1 at m = 1 and LEAK_RATIO_3 at m = 3 (derived, the test `LeakFloor.WhiteNoiseStaysUnderTheHissOnAverage`). A peak over 1 s can stand above that average; on the test set it moved A2's edits by none of 151 629 (measured), so it is close to inert where no neighbor stands.
+
+**Provenance.** X by measurement on a slice of the test set (E2 0.504 at +3 dB, 0.573 at +6 dB, 0.690 at +10 dB, against 0.575 without; B2 rises from +6 dB; review 5, the results record). 60 Hz: heuristic, past a Hann main lobe's 47 Hz. 320 Hz: heuristic; the response at 300 Hz is under −100 dB re 0 Hz (derived). 1 s: heuristic, over a neighbor's gaps. Tried and refused: a floor at −15 dB re the channel's peak over 5 s or 1 s, which reads pairs better still but loses fading (B2 0.231 to 0.543); a Hann taper on the narrow filter, which undoes the gain. The value is set where E2 can see it, and E2 holds its wanted stations at 8 to 14 dB S₅₀₀; that the gain on the level pairs is the larger one is shown only by those pairs, not by any group of the test set (backlog).
+
+**Limits.** A replay's blocks have no spectrum of their past, so the first 2 s of a channel opened by the detector run without this floor. It also reads noise that the hiss does not see, beside the channel: with the channel floor off, a passband's edge and a raised noise read CER 0.05 to 0.41 by the leak floor alone (`BenchRunFloor`); both stay, since the channel floor covers what stands inside the channel. A neighbor +10 dB re wanted or more loses the wanted station inside 100 Hz: raising σ² removes the gaps' false marks, but the belief still follows the stronger carrier. The bins read include a wide or fast station's own far skirts; a key-click can raise its own floor for 1 s (not seen on the test set or on real 40 m).
+
 ### The segmental decoder behind the engine
 
-`SegmentalShared` is built once per engine and held by every channel's decoder. A decoder refuses shared parts built for another channel rate. `filter_scales` must start with 1 and rise; a scale below 1, a stretch count or step below 1, a prior outside [0, 1) (or 0 with stretches), and `gap_unit_max_s` not positive are refused. `ChannelFloor` is built once in `SegmentalShared`'s constructor only to check its settings, before a channel opens.
+`SegmentalShared` is built once per engine and held by every channel's decoder. A decoder refuses shared parts built for another channel rate. `filter_scales` must start with 1 and rise; a scale below 1, a stretch count or step below 1, a prior outside [0, 1) (or 0 with stretches), and `gap_unit_max_s` not positive are refused. `ChannelFloor` is built once in `SegmentalShared`'s constructor only to check its settings, before a channel opens. The leak's settings are refused there too: a hold negative or not finite, offsets that do not rise from 0 Hz or above.
 Settings the code refuses: `level_step_db` not positive, top not above bottom, more than 256 levels, a jump probability outside [0, 1), a key probability outside (0, 0.5), non-whole frames or strides, a floor quantile outside (0, 1), start outside [0, window].
 
 **Cost.** The evidence is once per stream; the search touches each open element per boundary, and that count rises near threshold, where a broad belief and more stories within the beam cost most. A dropped stream costs nothing after. Building `SegmentalShared`: about 0.1 s at any rate (measured; "The tables' channel"). CPU is stated in ms per channel-second in the decision log and the results records.
@@ -4237,6 +4249,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Segmental: floor's window | 5 s (0 s leaves the floor out) | `channel_floor_window_s` | heuristic |
 | Segmental: floor's quantile | 0.10, factor to noise 1/−ln(1 − q) = 1/0.10536 | `channel_floor_quantile` | quantile heuristic; factor derived for noise alone |
 | Segmental: floor's margin | −3 dB re the floor as estimated | `channel_floor_margin_db` | heuristic |
+| Segmental: a neighbor's leak | σ² at least +3 dB re L's peak over 1 s (0 s leaves it out), bins 60 to 320 Hz from the center; the responses and the factor 1.5 | `leak_floor_db`, `leak_hold_s`, `leak_min_offset_hz`, `leak_max_offset_hz`; `SegmentalParts::leak_response` | +3 dB heuristic chosen by measurement; the hold and offsets heuristic; the responses and 1.5 derived |
 | Segmental: floor's stride | every 4th sample, 10.67 ms (ρ₄ = 0.14) | `channel_floor_stride_s` | heuristic |
 | Segmental: floor's refresh | every 36 samples, 96 ms | `channel_floor_refresh_s` | heuristic |
 | Segmental: floor's start | once 1 s of values is held; first in at 1.056 s | `channel_floor_start_s` | heuristic |
@@ -4291,7 +4304,11 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: same place | 300 Hz | `CallSearchConfig::same_place_hz` | heuristic, chosen by measurement (A.12); manta's bucket |
 | Callsign stage: evidence window | 1 800 s | `CallSearchConfig::window_s` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: points to report | framed 2, bare 2; listed framed 1, listed bare 2 | `points_framed`, `points_bare`, `points_known`, `points_known_bare` | heuristic, chosen by measurement (A.12); from CW Skimmer's table |
-| Callsign stage: points of a reading | whole or glued 1, stripped or joined 0.5 | `stripped_points` | heuristic |
+| Callsign stage: points of a reading | whole or glued 1, joined 0.75, stripped 0.5 | `joined_points`, `stripped_points` | joined heuristic, chosen by measurement (A.12); stripped heuristic |
+| Callsign stage: a word named | a whole or glued word named by another passes at 1 point | `points_named` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: tiny calls | whole words only, 2 of them, listed or not; 0 leaves them unread | `tiny_points` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: a call that starts another | held as a variant at distance 1 (0: by edit distance alone) | `prefix_held` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: withdrawal | by a rival better at its best, or a local defeat with no pass elsewhere beyond 150 Hz (0: any local defeat) | `withdraw_own_place` | heuristic, by a hand test and measurement (A.12) |
 | Callsign stage: variants | edit distance 1, or 2 at over 2 times the points; within 150 Hz, 1 800 s; a tie goes to the earlier call, or within 1 s to the later (a heuristic constant in the code) | `far_variant_ratio`, `variant_hz`, `variant_s` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a list against a rival | factor 3 | `known_rival_factor` | heuristic |
 
@@ -4792,8 +4809,10 @@ as a prefix is refused: it is the word DE glued on. Around a slash: `base/P`, /M
 `prefix/base`.
 
 **Refused words.** `is_cw_word`, exact: {R, K, E, T, N, TU, UR, ES, EE, TT, ET, TE}5NN, G5RV, K3S, K4D, N1MM, K1EL, K9AY, TH7DX, TH6DX, TH5DX,
-TH3JR, TH2MK, HF5B, HF6V, HF9V, HF2V, FT8DX, FT5DX, FT3DX, W2DU, W8JK, W3DZZ. `only_tiny_pieces`: every character in E T I S H A N M U 5,
-for every kind of reading.
+TH3JR, TH2MK, HF5B, HF6V, HF9V, HF2V, FT8DX, FT5DX, FT3DX, W2DU, W8JK, W3DZZ. `only_tiny_pieces`: every character in E T I S H A N M U 5:
+read only as a whole word.
+
+**No form.** A call with no digit after a letter-digit prefix (D4C, E7DX, C6AGU, P3F, T6A, J6M) does not parse, and so is never read, with a list or without. About 90 calls of MASTER.SCP have this form, among them busy contest and expedition stations (review 5; on the backlog).
 
 **Readings of the word at i,** which are alternatives; the evidence decides.
 
@@ -4814,14 +4833,17 @@ by that second less `settle_s`; all of a track's words when it ends. A correctio
 the word it falls in, so the new text is read when settled. Nothing already read is taken back: a stream that takes over can be worse there than the one it replaces (at settle_s 1e6 s, reading only final text, real 40 m loses E51MWA). Text is kept back to `history_s`, and eight words at least.
 
 **Evidence.** A reading overlapping an occurrence of the same call in time within `same_place_hz` betters it (points, role) and is not
-counted again, so text read twice adds nothing. Points: the sum over occurrences within `same_place_hz` of the new one and within `window_s` of its end. Framed: any of them had a
+counted again, so text read twice adds nothing. Points: the sum over occurrences within `same_place_hz` of the new one and within `window_s` of its end; a whole or glued reading 1, a joined one `joined_points`, a stripped one `stripped_points`. Framed: any of them had a
 role, or the same word was next to it (`doubled_is_framed`). A candidate's first time is its earliest reading, which a correction can move back.
 
+**Report test,** in order. A tiny call: `tiny_points`. Any occurrence that is a whole or glued word with the role *named*: `points_named`. On a list: `points_known` if framed, else `points_known_bare`. Off it: `points_framed` if framed, else `points_bare`.
+
 **Arbitration.** Against every other candidate with a reading within `variant_hz` of this one and `variant_s` of now, by base-call edit distance d,
-the limit being 2 for a shorter call of 4 characters or more, else 1. A rival beats a call if both are on or off the list and its points
+the limit being 2 for a shorter call of 4 characters or more, else 1; a call that is the start of the other, or starts with it, counts as d = 1 at any distance (`prefix_held`). A rival beats a call if both are on or off the list and its points
 exceed its need (1 at d = 1, `far_variant_ratio` at d = 2) times the call's, or at d = 1 tie: with an earlier first reading, unless the two first readings are within 1 s (one word, heuristic), when the one seen later wins, being what a correction made of the word; a listed rival beats
-an unlisted call at a third of its points; an unlisted rival a listed call at three times. A held call is not reported, and leaves if
-it was; a reported call withdraws the reported calls it beats.
+an unlisted call at a third of its points; an unlisted rival a listed call at three times. A held call is not reported; if it was, it leaves when the rival's best at one place is above its own best, or when its readings more than `variant_hz` from this place, taken at any one place of their own, do not pass the test above, a word named not counting there (`withdraw_own_place`); else it stays. A reported call withdraws the reported calls it beats by the same test, its best at one place against theirs.
+
+**Order and clock.** Tracks are read in the order of their ids, so the result does not depend on a library's hash. The app's stage gets the clock among the events: `DisplayFeed` puts a `StreamClock` in the updates at the first spectrum frame of each whole second, and `MainWindow` applies them in order, so the stage reads at the same place in the events as `kz4ap-calls` whatever the display's pace.
 
 **Row.** The place is that of the reading of the highest rank, latest on a tie: rank = 2 x (signed 2, bare 1, named 0) + (a whole or glued
 reading 1). `call` is the base, or the most common form with a slash seen at least twice and more often than any other. A candidate not reported
@@ -4833,7 +4855,7 @@ whatever follows white space ignored; `--calls PATH` writes the list as `calls_c
 another program's list and reports calls in both, in each only, counts, and pairs one letter apart; `truth` reads a run and a recording's labels and
 reports precision and recall, and how many calls found are within 100 Hz of their station. Its reader takes ADIF, telnet spot lines, CSV with a
 header (`dx` ahead of `callsign`, as in the Reverse Beacon Network's files) and, failing those, the first word of a call's form on each line,
-and prints which it used: CW Skimmer's export format is not known here. Calls compare by base call.
+and prints which it used: CW Skimmer's export format is not known here. Calls compare by base call. A telnet spot's word is kept as it stands where the reader's grammar has no form for it (D4C, LZ1SPACE): a spot is the spotter's test, and dropping it would flatter this decoder.
 
 ### Provenance
 
@@ -4853,7 +4875,7 @@ and prints which it used: CW Skimmer's export format is not known here. Calls co
 and 62 s of real 40 m; the numbers are in the decision log, 2026-10-31.
 
 - `settle_s` 10 s: at 2 s the 30 min of real 40 m gave 7 calls against 10 at 6 s (it read text the decoder had not yet corrected). On the final decoder 10 and 15 s read alike; 20, 25 and 30 s lost WA0QZK and gained one true call of 280 on the contest. Waiting does not reach the longest corrections in any case: see `reread_corrected`.
-- `reread_corrected` on and `history_s` 200 s: on real 40 m 2 393 corrections changed text, reach median 2.6 s, 99% 39.0 s, maximum 164.9 s; on the contest maximum 94.8 s (measured on the final decoder). 62 reach past 20 s on real 40 m. One of them turned OL1TM OL1TM into ZL1TM ZL1TM, 50 s after it had been read. The maximum seen plus a margin sets `history_s`, a heuristic. Costs one false call of 44 rows on H2, seed 2 (N5PX and DE, glued, in corrected text), and gains one true on the contest.
+- `reread_corrected` on and `history_s` 200 s: on real 40 m 2 046 corrections changed text, reach median 2.6 s, 99% 36.2 s, maximum 205.8 s; on the contest maximum 56.2 s (measured on the final decoder). 51 reach past 20 s on real 40 m. One of them turned OL1TM OL1TM into ZL1TM ZL1TM, 50 s after it had been read. The maximum seen before the leak floor, 164.9 s, plus a margin set `history_s`, a heuristic; the longest now reaches just past it. It cost one false call on H2, seed 2 (N5PX and DE, glued, in corrected text; `prefix_held` now takes it away), and gained one true on the contest.
 - The tie at 1 s: chosen for that word, tested on all the generated recordings, where it changes nothing. A heuristic on one case of real 40 m.
 - `same_place_hz` 300 Hz: 100 Hz loses a partner named at another's place 210 Hz away; 300 and 500 Hz gave the same lists.
 - `window_s` 1 800 s: 600 s missed an ID repeating every 255 s on real 40 m; no misreading came with 1 800 s on 30 min. Valid for real bands as busy as those recordings.
@@ -4862,18 +4884,21 @@ and 62 s of real 40 m; the numbers are in the decision log, 2026-10-31.
 - `points_known_bare` 2: 1 tripled false calls with a list.
 - `variant_hz` 150 Hz: 500 Hz held back a true station 237 Hz from a call one letter away; real recordings read alike. 300 Hz on the final decoder: 3 false calls fewer on H2, 1 true call fewer on the contest; not adopted, a trade that favors precision.
 - `far_variant_ratio` 2: at 3, a call read twice next to six readings of the true call stayed; 1.4 changed nothing on any recording.
+- The five rules of review 5, adopted together, each chosen looking at the contest and the 30 min of real 40 m, the same overfitting as the settings above; the crowded band, the 100 stations, G2 and the short real recordings are the checks. Alone and together: `calls-rules.csv`, results record. `points_named` 1 is the largest gain on the contest, 14 more true and 6 more false, and the source of most of the false calls gained. `joined_points` 0.75 brings KF0YUX on real 40 m; 1 lists false calls there. `tiny_points` 2 reads SM5NU on the contest and EA5MEE on the 100 stations. `prefix_held` takes H2's false calls down (K5N beside K5NXY). `withdraw_own_place`: a call doubled and signed at 1 kHz stayed off the list for a misreading at 2 kHz, 60 s later; a simpler form, keeping any call with support elsewhere, kept K0HBN, K0HBT and K6QO on real 40 m's list.
 
 **Heuristics not tuned:** `stripped_points`, the keyword sets, the refused words and characters.
 
+**Not taken:** `near_factor` (a call's near variants adding to its points: 217 true and 3 to 11 false on the contest, but 24 to 76 rows on real 40 m); a call before UP at 1 point (does not bring E51MWA back when the word is lost); CW Skimmer's 1 repetition for a listed call on real MASTER.SCP (1 true for 3 false on real 40 m; review 5).
+
 ### Limitations
 
-- A call read only once is not reported without a list: that is the rule, and on the generated contest the largest loss of callers.
+- A call read only once, and not named, is not reported without a list: that is the rule. On the generated contest it is not the largest loss of callers: of the 78 lost before the rules below (review 5), 45 were never decoded, every one overlapped by a keying station within 150 Hz over at least 30% of its bursts, and 33 were read: 28 once, 1 at 1.5 points, 4 refused before the evidence (SM5NU; N9AZ, EA7UPZ, KB8AKK glued inside a word). The generator's callers key at random over the runner and each other, where a real caller waits his turn, so this overlap is likely overstated (conjecture).
+- A word named once passes, so a misread call before 5NN is listed: most of the false calls the rules gained on the contest (6 of 7). A row reached by naming shows the namer's frequency.
 - Who sent a call is known only from the words around it: a DX naming a caller twice ("K0TF K0TF") with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
   is only as good as the decoder's reading of those words.
-- A misreading read twice, with its true call read less, is reported: on real 40 m IK0S beside IK0HBN (too many edits apart for the arbitration); IK6QOP, read exactly once, shows as K6QOP and IK6QO, the stray-letter reading of a word giving half a point to the shorter call. The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.
-- A call that is the start of a better call (K5N for K5Nxx, on H2) is held back only by edit distance.
-- `only_tiny_pieces` and the refused words lose the few real calls of those forms (I5SAN, K5NN) without a list.
+- A misreading read twice, with its true call read less, is reported: on real 40 m IK0S and K0S beside IK0HBN (too many edits apart for the arbitration, and K0S stands at more than one place); IK6QOP, read exactly once, shows as K6QOP, the stray-letter reading of a word giving half a point to the shorter call. The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.
+- A tiny call needs 2 whole words with a list or without (a list does not lower that), and glued, stripped or joined tiny readings do not count. The refused words lose the few real calls of those forms (K5NN, K9AY), and a call with no form (D4C) is not read: a known-call list rescues none of these.
 - The text reads a station's latest place: a station that moved shows there only.
 - A correction that reaches what has been read adds its readings and does not take back the old ones, so a misreading it replaces can stay beside it, unless the arbitration rules on them. Beyond `history_s` it is not read.
-- The app at `--speed max` hands the stage events in larger batches: on the 30 min of real 40 m it lists 15 calls against 16 at `--speed 5` and in `kz4ap-calls` (K6QOP, read before a correction there and only after it here; conjectured). Real time should read as `kz4ap-calls` does; not run for this.
+- A row can hang on one transient reading: K6QOP's second point on real 40 m is a word the decoder corrects away 10.30 s after its end, and `settle_s` from 10.5 to 14 s loses it. So what is listed near such a word depends on `settle_s` to the second (measured, review 5), though no longer on the app's pace.
 - Points are heuristic weights, not probabilities. Segmental's symbols carry probability 1, so a decoder's score could not be used per symbol; a posterior on the call would need one.

@@ -1,4 +1,4 @@
-﻿// The segmental decoder's running sums, shared level and search bookkeeping. The search is fed made-up evidence here, so
+// The segmental decoder's running sums, shared level and search bookkeeping. The search is fed made-up evidence here, so
 // that what it does with the evidence is checked apart from how the evidence is made; the exact decodes through the
 // engine are BenchRun.SegmentalDecodesExactlyThroughTheBench (bench/tests/bench_run_test.cpp).
 #include "kz4ap/channelizer.hpp"
@@ -12,6 +12,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <iostream>
 #include <random>
 #include <string>
 #include <vector>
@@ -682,6 +683,7 @@ TEST(LeakFloor, WhiteNoiseStaysUnderTheHissOnAverage) {
         for (std::size_t k = parts.leak_first_bin; k < parts.leak_response.size(); ++k) sum += 2.0 * parts.leak_response[k];
         return up * df * sum / parts.output_noise.sigma2_per_n0_hz;
     };
+    std::cout << "derived: on white noise, the leak floor over N0 B: " << ratio(shared) << " at m = 1, " << ratio(shared.narrower[0]) << " at m = 3\n";
     EXPECT_LT(ratio(shared), 1.0);
     EXPECT_LT(ratio(shared.narrower[0]), 1.0);
 }

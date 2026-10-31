@@ -106,7 +106,7 @@ struct SegmentalConfig {
 
     // 1: the filter scales, each a whole channel of evidence and search with its own front filter: scale m has a filter matched to
     // a dot of m x 12 ms (noise bandwidth about 74.5 Hz / m) and reads its stories' speeds from a dot of m x 12 ms down. It must
-    // start with 1, the widest. Each m is a whole number. Heuristic, by measurement: on the whole test set's seed 1 {1, 3} reads E2 0.575
+    // start with 1, the widest. Each m is a whole number. Heuristic, by measurement: before the leak floor, on the whole test set's seed 1 {1, 3} reads E2 0.575
     // against 0.562 with {1, 2, 3} and 0.691 with the widest alone, every other group within 0.001 of {1, 2, 3}, for about a quarter
     // less CPU (docs/decision-log.md, 2026-10-31); adding 6 (12 Hz) reads E2 0.42 on a slice but fading 0.175 against 0.163 and the
     // second QSO group 0.082 against 0.068, for 2 ms per channel-second more and a filter a detector's frequency error matters to.

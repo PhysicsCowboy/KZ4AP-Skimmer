@@ -1646,13 +1646,15 @@ for the line format and client handling.
 
 ## The app on the air (found building app-2, 2026-10-30)
 
+**Top CPU item: junk tracks on real 40 m (review 5, 2026-10-31).** On the 30 min of real 40 m, measured at `app-7`: 63.8% of decoder CPU goes on junk tracks (1 034 of 1 178 tracks, 159.3 s of 249.6 s); at real stations' places 90.3 s, 11.56 ms per channel-second alone, so removing junk does not by itself reach the 8 ms goal. Junk by life: 824 tracks of 5 to 15 s hold 37% of decoder CPU. By place: 7072 to 7081 kHz 25.3%, 7102 to 7110 kHz 12.8%, no call in either. The faster judge (`kUnprovenS` 8 s, `kQuietNewS` 5 s) saves 21.5% of decoder CPU but loses E51MWA, whose only exact word falls in the gap after his first track is retired, and raises I2 by half on the detector's path: not taken, recall comes first. Not yet run: a rule on the text's letters (a track of 30 s or more, at least half T and E: offline, 15 junk tracks, 9.1% of decoder CPU, against 2 tracks and 0.2 s at real places; derived), and a mask on those two segments (38% of decoder CPU, derived; it hides any CW there). Measure: CPU per second of stream or capacity, since fewer junk channel-seconds raise ms per channel-second (12.31 to 14.20 ms in that run); keep E51MWA, and I2 on the detector's path.
+
 Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repository):
 
 - **False tracks on wide signals (app-3: judged and retired, `track_evidence.hpp`).** What is left: tracks still open on
   wide signals and live 4 to 14 s each, about 25 of the 42 live on the 62 s recording, at 15 ms per channel-second; 35% to
   63% of the rows listed are junk (35% on that recording, 63% on a later 30 min one), data at +91 kHz most of all, whose text cannot be told from a contest exchange by its
   letters alone. A test before a channel opens, or a bandwidth test that does not fail on speech's harmonics, would save
-  that CPU. The goal of about 8 ms per channel-second is met on the test set and not on the air (checkpoint 2's record: 6.87 ms on the whole test set on the Linux machine, about 7.3 to 7.8 on the desktop, derived; 13.3 ms on 30 min of real 40 m, about 17 ms in real time): weak and wide channels cost 10 to 25 ms and more,
+  that CPU. The goal of about 8 ms per channel-second is met on the test set and not on the air (checkpoint 2's record: 6.89 ms on the whole test set on the Linux machine; 12.6 ms on 30 min of real 40 m on the desktop; before the leak floor and the rules, 13.3 ms, about 17 ms in real time): weak and wide channels cost 10 to 25 ms and more,
   because more stories stay within the beam.
 - **Short overs and carriers under a hold (`app-4`'s review, F6).** Text during a hold is lost, not late. A station in short
   overs with little proven, a carrier before a CQ, a runner with callers within 47 Hz: each can lose an over. No-hold-on-quiet
@@ -1680,7 +1682,23 @@ Deferred from the first stage (`docs/signal-processing.md`, section 11):
 From `app-7`'s look at what it dropped (checkpoint 2's record):
 
 - Spellings of one station: real 40 m's IK6QOP is read exactly once and shows as K6QOP and IK6QO; a word's stray-letter reading gives half a point to the shorter call and none back. Pooling a family of near calls, or giving a word's own reading its due first.
-- A call that is the start of a better one at its place (K5N, G3T, W5K on H2; E51M on real 40 m), and a word glued to DE that also has a call's form (N5PXDE): 6 false calls in 80 stations of H2.
+- A word glued to DE that also has a call's form: the start of a call is now held as a variant (`prefix_held`), and H2's false calls are 1 of 80 (PA8PG).
 - `variant_hz` 300 Hz: 3 false calls fewer on H2, 1 true fewer on the contest. Decide with CW Skimmer's list on the owner's hour.
-- A real MASTER.SCP against the recordings: the lists used so far are generated, and change nothing on real 40 m.
+- A real MASTER.SCP against the recordings: tried at `app-8` (`calls-rules.csv`): contest + 1 true + 1 false, real 40 m the same list. Its worth against CW Skimmer's repeats table is for the owner's hour.
 - One reading with no list, after DE: `points_framed` 1 adds 20 true and 22 false on the contest, so not as is; on real 20 s it adds K3AV and KB8UGP, which read well. DE alone and not TEST might do.
+
+From review 5, of `app-7` (2026-10-31); the review's full evidence is summarized in checkpoint 2's record:
+
+- **A group of strong neighbors in the test set.** E2's wanted stations stand at 8 to 14 dB S500, so neither it nor any group can judge the leak floor, or a later fix, where it matters most. Add an E2-like group at +25 to +35 dB S500, offsets 60 to 300 Hz, neighbors -10 to +10 dB re wanted. Until then: `level-pairs.csv`.
+- **40 Hz at or below the wanted station's level,** where the bank reads 0.15 to 0.39 at 0 dB re wanted against 0.75 to 0.86 here, from +15 dB S500; and +10 dB re wanted at 80 Hz, 0.91 to 0.98 at every level.
+- **The choice of stream loses about 8 dB against a carrier:** at some offsets the right text exists in the narrow stream and is not chosen (26, 30, 52, 60 Hz, 0 dB re wanted). On the detector's path none of these windows exists: the station is lost inside about 66 Hz of a carrier at its own level, since the track sits on the carrier. Real recordings show little of it, so it waits.
+- **Letter-digit calls** (D4C, E7DX, C6AGU, P3F, T6A, J6M, about 90 of MASTER.SCP): no form, so never read, with a list or without. Review 5's tested fix reads them as a special form, from a list only: with a list D4C, E7DX and C6AGU are listed, and nothing false comes, on its recordings.
+- **Rows that hang on one transient reading:** K6QOP on real 40 m, whose word is corrected away 10.30 s after its end, and `settle_s` 10.5 to 14 s loses it; E51MWA's one exact word in the final text.
+- **Damaged calls a person votes on letter by letter** (IV3TMV, IT9YBL, K5UR, HK3QQ on real 40 m): the one attempt, near variants adding to a call's points, lists far more junk than stations (24 to 76 rows).
+- **A correction past `history_s`:** the final decoder's longest on real 40 m is 205.8 s against 200 s.
+- **The list never ages out;** CW Skimmer's deletes a call after 10 min of inactivity.
+- **"Last heard" is clipped** at some display scales (`app/src/main_window.cpp`, 75 px).
+- **A fresh `.venv` fails 1 test:** `training/tests/test_keying.py:157`, `pytest.approx` on nested tuples, on `pytest>=8.0` resolving to 9.2.0. Pin it, or compare element by element.
+- **A correction that shortens text below `TrackText::base`** would misnumber symbols in `CallSearch`; it never happens on the recordings measured.
+- **The model of the call list** has no unit test in `app/tests`.
+- **A check on the real stations:** the Reverse Beacon Network's public file for 2026-10-31, filtered to 7000 to 7100 kHz and 05:47 to 06:17 UTC, says what CW Skimmers elsewhere spotted during `real30`: other antennas, a rough figure, not the bar. Review 5 found it not yet published.

@@ -125,7 +125,7 @@ private:
 
 struct CallSearchConfig {
     // s: the text is read this far behind the stream, so that the decoder's corrections have mostly settled. Heuristic, chosen by
-    // measurement (appendix A.12); 99% of corrections on real 40 m reach within 39 s, and those past this are read again (reread_corrected).
+    // measurement (appendix A.12); 99% of corrections on real 40 m reach within 36 s, and those past this are read again (reread_corrected).
     double settle_s = 10.0;
     // Hz: the readings of a call count together within this of each other. Heuristic, chosen by measurement: manta's bucket of 300 Hz; 100 Hz
     // loses a QSO's partner, named at one station's place and signing at his own 200 Hz away.
@@ -168,7 +168,7 @@ struct CallSearchConfig {
     // A correction that changes text already read has it read again, when not 0: the new reading adds, and what the old text gave stays, since
     // neither text is always the better (the decoder's streams trade places). Heuristic, chosen by measurement.
     double reread_corrected = 1.0;
-    // s: a track's text is kept this far back for that. Heuristic: corrections reached 165 s on real 40 m (appendix A.12).
+    // s: a track's text is kept this far back for that. Heuristic: corrections reached 165 to 206 s on real 40 m (appendix A.12).
     double history_s = 200.0;
 };
 
