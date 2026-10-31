@@ -34,7 +34,9 @@ viterbi::OutputNoise noise_of(const segmental::SegmentalConfig& config, const Ch
 viterbi::TemplateTables template_of(const segmental::SegmentalConfig& config, const ChannelizerConfig& channel,
                                     const std::vector<double>& front) {
     const double rate = channel_rate(channel);
-    return viterbi::make_template_tables(channel_filter_taps(channel), channel.sample_rate,
+    std::vector<double> taps = channel_filter_taps(channel);
+    taps.insert(taps.begin(), static_cast<std::size_t>(std::lround(config.template_delay_s * channel.sample_rate)), 0.0);
+    return viterbi::make_template_tables(taps, channel.sample_rate,
                                          channel.fft_size / channel.channel_bins, front, spacing_of(config, rate),
                                          config.model.edge_rise_s, config.model.edge_rise_min_s, config.model.edge_rise_max_s);
 }

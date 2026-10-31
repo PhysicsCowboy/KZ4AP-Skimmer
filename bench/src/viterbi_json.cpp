@@ -472,6 +472,9 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"channel_floor_start_s", &config.channel_floor_start_s},
         {"beam_nats", &config.beam_nats},
         {"duration_z_max", &config.duration_z_max},
+        {"gap_unit_max_s", &config.gap_unit_max_s},
+        {"template_delay_s", &config.template_delay_s},
+        {"gap_stretch_prior", &config.gap_stretch_prior},
     };
     for (const auto& [field, target] : fields) {
         if (name == field) {
@@ -481,6 +484,14 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
     }
     if (name == "ceiling") {
         config.ceiling = std::stoi(text);
+        return;
+    }
+    if (name == "gap_stretches") {
+        config.gap_stretches = std::stoi(text);
+        return;
+    }
+    if (name == "gap_stretch_speed_steps") {
+        config.gap_stretch_speed_steps = std::stoi(text);
         return;
     }
     apply_setting(config.model, setting);

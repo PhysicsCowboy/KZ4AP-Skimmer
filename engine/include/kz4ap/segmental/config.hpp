@@ -67,6 +67,23 @@ struct SegmentalConfig {
     // s: how much of the channel it reads before it is used. Heuristic.
     double channel_floor_start_s = 1.0;
 
+    // --- A story's fist: the gap stretch (search.hpp) ---
+
+    // count: the gap stretches a story may take, g = 1, r, r^2, ..., r = speed_ratio^gap_stretch_speed_steps; 1 leaves them out.
+    // The default's 7 at r = 1.61 reach g = 17.4; 33 WPM characters at 5 WPM overall are g = 15.7 (ARRL's rule; derived). The
+    // step is a heuristic: a gap half a step off is 0.24 nepers, 0.8 of the fist's sigma, about 0.3 nats per gap (derived).
+    int gap_stretches = 7;
+    int gap_stretch_speed_steps = 5;
+    // s: the longest gap unit g T_s, which is what a speed's stretches stop at: 0.7 s is about 4.5 WPM overall (60 / 19 s / WPM).
+    // Heuristic: slower than anyone copies at; it bounds the tables and how long a gap stays open.
+    double gap_unit_max_s = 0.7;
+    // probability: that a new story's fist is not standard spacing, shared alike by the stretches above 1. A heuristic: the
+    // charge is what it buys, ln(0.05 / 6) = -4.8 nats once per over for a stretched story and ln 0.95 = -0.05 nats for any other.
+    double gap_stretch_prior = 0.05;
+
+    // s: experiment
+    double template_delay_s = 0.0;
+
     // --- The search (search.hpp) ---
 
     // nats: how far behind the best a story may fall and stay. Heuristic, set by measurement.
