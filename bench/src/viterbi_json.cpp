@@ -475,6 +475,7 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"gap_unit_max_s", &config.gap_unit_max_s},
         {"filter_scale_min_symbols", &config.filter_scale_min_symbols},
         {"filter_scale_enough_nats", &config.filter_scale_enough_nats},
+        {"filter_scale_beam_nats", &config.filter_scale_beam_nats},
         {"filter_scale_start_s", &config.filter_scale_start_s},
         {"filter_scale_drop_after_s", &config.filter_scale_drop_after_s},
         {"filter_scale_drop_margin_nats", &config.filter_scale_drop_margin_nats},
@@ -499,6 +500,14 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         } else {
             config.filter_scales.push_back(value.get<int>());
         }
+        return;
+    }
+    if (name == "filter_scale_gap_stretches") {
+        config.filter_scale_gap_stretches = std::stoi(text);
+        return;
+    }
+    if (name == "filter_scale_ceiling") {
+        config.filter_scale_ceiling = std::stoi(text);
         return;
     }
     if (name == "gap_stretches") {
