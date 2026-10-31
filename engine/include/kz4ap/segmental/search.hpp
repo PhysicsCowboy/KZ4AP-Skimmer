@@ -126,6 +126,8 @@ struct SearchStats {
 struct BestStory {
     std::vector<DecodedSymbol> tail;  // the story's last symbols, first symbol first
     std::size_t length = 0;           // the story's whole text, symbols, so tail[0] is symbol length - tail.size()
+    bool open_letter = false;         // the last symbol is a letter still open: a gap has begun, which may turn out an
+                                      // element gap and the letter a longer one
     std::optional<int> speed;         // its speed on the grid, 0 ... speed_count - 1 (dot_min_ms x speed_ratio^s); none for
                                       // the no-signal story and a birth's first mark, which has no speed yet
 };

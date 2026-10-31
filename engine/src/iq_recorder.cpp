@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#if defined(_WIN32)
+#include <share.h>
+#endif
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -34,9 +37,7 @@ void write_header(std::FILE* file, int sample_rate, std::uint64_t data_bytes) {
 
 std::FILE* open_for_writing(const std::filesystem::path& path) {
 #if defined(_WIN32)
-    std::FILE* file = nullptr;
-    if (_wfopen_s(&file, path.c_str(), L"wb") != 0) return nullptr;
-    return file;
+    return _wfsopen(path.c_str(), L"wb", _SH_DENYWR);  // others may read it as it grows, as on POSIX
 #else
     return std::fopen(path.c_str(), "wb");
 #endif

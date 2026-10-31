@@ -17,6 +17,10 @@ struct CpuRates {
     std::optional<double> decoder_ms_per_channel_s;
     // Stream seconds per wall-clock second over the span; none over an empty span.
     std::optional<double> speed;
+    // The bar's two terms from the engine's stage CPU (EngineStageTimes): what recurs whatever the tracks, ms per s of
+    // stream, which is ms per s of wall clock at real time; and what one track costs, ms per channel-second.
+    std::optional<double> fixed_ms_per_stream_s;
+    std::optional<double> per_track_ms_per_channel_s;
 };
 
 class CpuMeter {

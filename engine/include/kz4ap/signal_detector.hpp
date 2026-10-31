@@ -47,6 +47,9 @@ struct DetectorConfig {
     double peak_radius_hz = 47.0;           // a peak must be the maximum within +/- this
     double level_radius_hz = 23.0;          // a track's level is the maximum within +/- this of its bin
     double candidate_step_hz = 23.0;        // a candidate may move this far between frames
+    // A new track must also stand threshold_db above the median of the bins within +/- this, Hz (the design's amendment of
+    // 2026-10-19: a threshold against a local floor), which a wide signal's peaks do not. 0 for no such test.
+    double local_floor_radius_hz = 0.0;
 };
 
 struct DetectorUpdate {
@@ -85,6 +88,7 @@ private:
     int peak_bins_ = 2;   // peak_radius_hz in bins
     int level_bins_ = 1;  // level_radius_hz in bins
     int step_bins_ = 1;   // candidate_step_hz in bins
+    int local_floor_bins_ = 0;  // local_floor_radius_hz in bins
     double alpha_;
     std::uint64_t frames_seen_ = 0;
     double first_frame_s_ = 0;

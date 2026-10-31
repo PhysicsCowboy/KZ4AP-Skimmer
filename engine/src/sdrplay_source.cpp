@@ -292,12 +292,19 @@ SdrplaySource::SdrplaySource(const SdrplaySettings& settings, const std::filesys
 }
 
 SdrplaySource::~SdrplaySource() {
-    api_.reset();  // the API's threads have stopped when this returns, so the recorder's producer is gone
+    // First the stream: the API's threads call back until Uninit returns, and an event's handler reads api_. So api_ stays
+    // whole until they have stopped; the recorder's producer is gone then too.
+    if (api_->streaming) {
+        api_->uninit(api_->device.dev);
+        api_->streaming = false;
+    }
     recorder_.stop();
+    api_.reset();
 }
 
 void SdrplaySource::on_samples(const short* xi, const short* xq, unsigned int count, bool reset) {
-    if (reset) resets_.fetch_add(1, std::memory_order_relaxed);
+    // The API sets reset on its first block as well: only a later one is a restart of the stream.
+    if (reset && received_.load(std::memory_order_relaxed) > 0) resets_.fetch_add(1, std::memory_order_relaxed);
     received_.fetch_add(count, std::memory_order_relaxed);
     recorder_.push(xi, xq, count);
     if (convert_.size() < count) convert_.resize(count);  // once, at the first block larger than any before

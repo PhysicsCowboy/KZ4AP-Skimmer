@@ -33,7 +33,9 @@ WaterfallWidget::WaterfallWidget(QWidget* parent) : QWidget(parent) {
     setAttribute(Qt::WA_OpaquePaintEvent);
 }
 
-void WaterfallWidget::start(double sample_rate_hz, int fft_bins) {
+void WaterfallWidget::start(double sample_rate_hz, int fft_bins, std::optional<double> center_hz, double time_origin_s) {
+    center_hz_ = center_hz;
+    time_origin_s_ = time_origin_s;
     axis_ = FrequencyAxis{sample_rate_hz, fft_bins};
     started_ = true;
     history_.clear();
@@ -144,7 +146,8 @@ void WaterfallWidget::paintEvent(QPaintEvent*) {
     p.setFont(small);
 
     p.setPen(foreground);
-    p.drawText(QRect(plot.left(), 0, plot.width(), kTopTitle), Qt::AlignCenter, tr("Frequency (kHz from center)"));
+    p.drawText(QRect(plot.left(), 0, plot.width(), kTopTitle), Qt::AlignCenter,
+               center_hz_ ? tr("Frequency (kHz from %1 kHz)").arg(*center_hz_ / 1000.0, 0, 'f', 3) : tr("Frequency (kHz from center)"));
 
     // The frequency axis.
     if (started_) {
@@ -191,8 +194,8 @@ void WaterfallWidget::paintEvent(QPaintEvent*) {
                tr("Stream time (s)"));
     const int rows_shown = std::min(static_cast<int>(history_.size()), plot.height());
     for (int y = 0; y + 1 < rows_shown; ++y) {
-        const double t = history_[history_.size() - 1 - static_cast<std::size_t>(y)].time_s;
-        const double older = history_[history_.size() - 2 - static_cast<std::size_t>(y)].time_s;
+        const double t = time_origin_s_ + history_[history_.size() - 1 - static_cast<std::size_t>(y)].time_s;
+        const double older = time_origin_s_ + history_[history_.size() - 2 - static_cast<std::size_t>(y)].time_s;
         if (std::floor(t / kTimeLabelStepS) != std::floor(older / kTimeLabelStepS)) {
             const int row_y = plot.top() + y;
             p.drawLine(plot.left() - 4, row_y, plot.left(), row_y);

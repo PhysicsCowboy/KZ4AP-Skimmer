@@ -650,6 +650,7 @@ BestStory Search::best_story(std::size_t max_symbols) const {
     const bool open_letter = winner->kind == kGap && s.model.has_symbol(winner->node);
     story.tail = s.text.read_tail(winner->text, open_letter && max_symbols > 0 ? max_symbols - 1 : max_symbols);
     if (open_letter) {
+        story.open_letter = true;
         ++story.length;
         story.tail.push_back(DecodedSymbol{std::string(s.model.tree().symbol(winner->node)), 1.0f, s.time_of(winner->letter),
                                            s.time_of(winner->start)});

@@ -74,9 +74,12 @@ if(WIN32)
 else()
   set(KZ4AP_SDRPLAY_HINTS /usr/local/include)
 endif()
-find_path(KZ4AP_SDRPLAY_INCLUDE_DIR sdrplay_api.h HINTS ${KZ4AP_SDRPLAY_HINTS}
-          DOC "The folder of the SDRplay API's sdrplay_api.h; empty to build without the radio")
-if(KZ4AP_SDRPLAY_INCLUDE_DIR)
+option(KZ4AP_WITH_SDRPLAY "Build the radio's source against the SDRplay API's headers, if they are found" ON)
+if(KZ4AP_WITH_SDRPLAY)
+  find_path(KZ4AP_SDRPLAY_INCLUDE_DIR sdrplay_api.h HINTS ${KZ4AP_SDRPLAY_HINTS}
+            DOC "The folder of the SDRplay API's sdrplay_api.h")
+endif()
+if(KZ4AP_WITH_SDRPLAY AND KZ4AP_SDRPLAY_INCLUDE_DIR)
   message(STATUS "SDRplay API headers: ${KZ4AP_SDRPLAY_INCLUDE_DIR}")
   set_source_files_properties(src/sdrplay_source.cpp PROPERTIES
     COMPILE_DEFINITIONS KZ4AP_HAVE_SDRPLAY_HEADERS
@@ -133,6 +136,7 @@ add_executable(kz4ap_engine_tests
   tests/engine_test.cpp
   tests/stream_runner_test.cpp
   tests/worker_pool_test.cpp
+  tests/iq_recorder_test.cpp
   tests/matched_front_end_test.cpp
   tests/frequency_tracker_test.cpp
 )
@@ -140,6 +144,18 @@ target_link_libraries(kz4ap_engine_tests PRIVATE kz4ap::engine GTest::gtest_main
 # worker_pool_test.cpp tests the pool, which is private to the engine.
 target_include_directories(kz4ap_engine_tests PRIVATE src)
 gtest_discover_tests(kz4ap_engine_tests)
+
+# SdrplaySource against a stand-in for the API's library: where the API's headers are, on Windows, with no service or radio
+# needed.
+if(WIN32 AND KZ4AP_WITH_SDRPLAY AND KZ4AP_SDRPLAY_INCLUDE_DIR)
+  add_library(kz4ap_fake_sdrplay SHARED tests/sdrplay_fake_api.cpp)
+  target_include_directories(kz4ap_fake_sdrplay PRIVATE "${KZ4AP_SDRPLAY_INCLUDE_DIR}")
+  add_executable(kz4ap_sdrplay_tests tests/sdrplay_source_test.cpp)
+  target_link_libraries(kz4ap_sdrplay_tests PRIVATE kz4ap::engine GTest::gtest_main)
+  target_compile_definitions(kz4ap_sdrplay_tests PRIVATE KZ4AP_FAKE_SDRPLAY_DLL="$<TARGET_FILE:kz4ap_fake_sdrplay>")
+  add_dependencies(kz4ap_sdrplay_tests kz4ap_fake_sdrplay)
+  gtest_discover_tests(kz4ap_sdrplay_tests)
+endif()
 
 # The bank decoder's tests. nlohmann/json is a test-only dependency (golden values); the engine
 # library does not link it.

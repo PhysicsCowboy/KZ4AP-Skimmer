@@ -101,6 +101,11 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
     if (now_s < next_publish_s_) return {};
     next_publish_s_ = now_s + kPublishEveryS;
     segmental::BestStory story = search_->best_story(kPublishTailSymbols);
+    // A letter still open goes out when it closes: until then it may yet grow (E, I, S, H), and a display would show each.
+    if (story.open_letter && !story.tail.empty()) {
+        story.tail.pop_back();
+        --story.length;
+    }
     // A tail that begins past what has been published: more text than the tail in one period; read it all.
     if (story.length - story.tail.size() > published_.size()) {
         story.tail = search_->best_text();

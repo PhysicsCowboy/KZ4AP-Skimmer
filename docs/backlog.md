@@ -1501,10 +1501,10 @@ its own plan. Related item above: "Spectrum frames in linear power".
   score, and whether a later correction is still possible (a character
   inside the 20 s correction reach is provisional).
 - **Found building the app's first stage (2026-10-30):**
-  - **Worker pool:** the pipeline is one thread (`StreamRunner`), so at the bank's
+  - **Worker pool** (done on `app-2`): the pipeline was one thread (`StreamRunner`), so at the bank's
     105 ms CPU per channel-second measured on the desktop under load, about 9 tracks
     fill it. The spec's pool (section 4.1, step 4) comes before a busy band.
-  - **A silent bank track:** on a generated recording (`--seed 11 --signals 8` at
+  - **A silent bank track** (understood and fixed on `app-2`; decision log): on a generated recording (`--seed 11 --signals 8` at
     192 kHz, 30 s, S₅₀₀ from 12 to 32 dB) the station at -57 051.6 Hz, 26 WPM,
     +24.0 dB S₅₀₀, starting at 0.057 s, gets a track but no text on the detector
     path, in `kz4ap-bench` too; with `--oracle` it decodes without an error. Not
@@ -1635,3 +1635,21 @@ for the line format and client handling.
 **Fixed 2026-10-30:** the merge key now holds the edges of the last 12 samples: 45 to 100 WPM, 84 of 84 runs exact (decision log). The diagnosis below, "cannot be claimed exactly", was wrong: claims were dropped at the merge before their evidence existed, and the joint edge-offset item is not needed for this.
 
 "PARIS PARIS" at 80 and 100 WPM reads wrongly on most seeds, with letters merged or split (`P<AR>IS`, `PAR5`, `LARIS`), and gets worse from +20 to +40 dB S500, while 70 and 90 WPM are mostly exact and 90 WPM (a dot of exactly 5 samples of 2.667 ms) is exact at +40 dB S500 on 6 of 6 seeds. Dots of 5.6 and 4.5 samples cannot be claimed exactly, and the misfit grows with the signal. The joint edge-offset item (design notes, part 5, the audit's row 10) is the first thing to try. Measured on 6 seeds per point, a 25 WPM to 100 WPM slice of synthetic machine keying only.
+
+## The app on the air (found building app-2, 2026-10-30)
+
+Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repository):
+
+- **False tracks on wide signals.** 322 tracks in 62 s, about 150 live at once, most of them on FT8 at +44 kHz and on
+  SSB and digital signals at +60 and +85 kHz, whose narrow lines stand out even from a local floor. Each costs about 12 ms
+  per channel-second (a generated CW channel: 5 to 6), so the band costs about 1.9 s of CPU per s of stream, and the list is
+  mostly junk. The 2026-10-19 amendment's answer is not built: the decoder confirms a channel and closes it once no Morse
+  hypothesis has led for a hold time. That needs a measure from the segmental search of how far its best story stands
+  above the no-signal story, and a hold in the detector so that the peak is not reborn at once.
+- **The first word.** Text starts about 1 s after a station does, since a channel opens after the detector's 0.5 s of
+  persistence; first-word CER is 0.65 to 0.75 on every recording. The amendment's replay of the last few seconds is not built.
+- **Two tracks on one station,** 40 to 135 Hz apart, on a strong keyed carrier (W1AW at 7047.5 kHz).
+- **The fixed cost's rest:** the channelizer's FFT could share the spectrum's, the Hann window applied in the frequency
+  domain (7 ms per s of stream at 192 kHz); a table lookup for the display's logarithm.
+- **RSPduo:** single tuner A is set in the source, not run on one. The API's other models' LNA tables are the API's to refuse.
+- **A long recording:** the WAV form stops at 4 GiB (93 min at 192 kHz); rolling to a second file is not built.

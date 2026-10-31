@@ -14,7 +14,7 @@ const kz4ap::DetectorConfig& ValidatedConfig(const kz4ap::DetectorConfig& config
     if (config.sample_rate <= 0 || config.fft_size <= 0 || config.hop <= 0 ||
         config.average_s <= 0 || config.birth_s < 0 || config.death_s <= 0 ||
         config.max_tracks == 0 || config.min_separation_bins < 1 || !(config.attribution_distance_hz > 0) ||
-        !(config.peak_radius_hz > 0) || !(config.level_radius_hz >= 0) || !(config.candidate_step_hz >= 0))
+        !(config.peak_radius_hz > 0) || !(config.level_radius_hz >= 0) || !(config.candidate_step_hz >= 0) || !(config.local_floor_radius_hz >= 0))
         throw std::invalid_argument("invalid signal detector config");
     return config;
 }
@@ -32,6 +32,7 @@ SignalDetector::SignalDetector(const DetectorConfig& config)
     peak_bins_ = std::max(1, static_cast<int>(std::lround(config_.peak_radius_hz / bin_hz)));
     level_bins_ = static_cast<int>(std::lround(config_.level_radius_hz / bin_hz));
     step_bins_ = static_cast<int>(std::lround(config_.candidate_step_hz / bin_hz));
+    local_floor_bins_ = static_cast<int>(std::lround(config_.local_floor_radius_hz / bin_hz));
 }
 
 DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
@@ -102,6 +103,16 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
             });
         }
         if (near_track) continue;
+        if (local_floor_bins_ > 0) {
+            // A carrier stands out from what is around it; a peak of a wide signal's spectrum does not, though it may stand
+            // well above the band's median.
+            const auto lo = static_cast<std::ptrdiff_t>(std::max(0, i - local_floor_bins_));
+            const auto hi = static_cast<std::ptrdiff_t>(std::min(last, i + local_floor_bins_)) + 1;
+            scratch_.assign(average_.begin() + lo, average_.begin() + hi);
+            const auto middle = scratch_.begin() + static_cast<std::ptrdiff_t>(scratch_.size() / 4);
+            std::nth_element(scratch_.begin(), middle, scratch_.end());
+            if (db_at(i) - static_cast<float>(10.0 * std::log10(*middle + 1e-30)) < config_.threshold_db) continue;
+        }
         auto c = std::find_if(candidates_.begin(), candidates_.end(),
                               [&](const Candidate& k) { return std::abs(k.bin - i) <= step_bins_; });
         if (c != candidates_.end()) {

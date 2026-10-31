@@ -8,8 +8,8 @@ CW Skimmer Server.
 Created by Kenton Randolph Brown, KZ4AP.
 
 **Status:** early development. The decoding engine and its benchmark run on
-recorded I/Q files; there is no user interface or live radio support yet.
-See `docs/design/` for the design.
+recorded I/Q files, and a desktop app runs them on a recording or an SDRplay
+radio, receive only. See `docs/design/` for the design.
 
 ## Project documents
 
@@ -42,19 +42,39 @@ from the next configure on.
 
 ## Desktop app
 
-`kz4ap-skimmer` (in `app/`) plays an I/Q recording with a waterfall and each
-signal's decoded text. It needs Qt 6 Widgets and is built only where CMake
-finds them; everything else builds and tests the same without Qt. Point CMake
-at Qt with a variable, for example with Qt from
-[aqtinstall](https://github.com/miurahr/aqtinstall):
+`kz4ap-skimmer` (in `app/`) shows a band as a waterfall with each signal's
+decoded text and speed, from an I/Q recording or a live SDRplay radio. It needs
+Qt 6 Widgets and is built only where CMake finds them; everything else builds
+and tests the same without Qt. Point CMake at Qt with a variable, for example
+with Qt from [aqtinstall](https://github.com/miurahr/aqtinstall):
 
     cmake --preset windows -DCMAKE_PREFIX_PATH=<Qt folder>/6.8.3/msvc2022_64
     cmake --build --preset windows --target kz4ap-skimmer
     build/windows/app/Release/kz4ap-skimmer recording.wav
 
 On Windows the build copies Qt's DLLs next to the program. `--decoder` picks the
-decoder (default `bank`) and `--speed` the pace (a factor, or `max`); `--help`
-lists the rest.
+decoder (default `segmental`), `--speed` the pace (a factor, or `max`) and
+`--threads` the threads for the channels (default half the machine's); `--help`
+lists the rest. The Position slider seeks in a recording: the decoders start
+afresh from there.
+
+**The radio.** The SDRplay API (3.x) is used if it is there, and nothing else
+needs it: the program builds and runs without it and says so when asked for the
+radio. Building its support needs the API's headers (found in
+`C:\Program Files\SDRplay\API\inc`, or set `KZ4AP_SDRPLAY_INCLUDE_DIR`; turn it
+off with `-DKZ4AP_WITH_SDRPLAY=OFF`); the library is loaded at run time, never
+linked (`KZ4AP_SDRPLAY_DLL` names another one).
+
+To record a band: set Radio center, Rate (96, 192, 384 or 768 kHz), IF gain
+reduction and LNA state; press Start radio; check the waterfall, with no "ADC
+OVERLOAD" beside the buttons (raise the gain reduction or the LNA state if there
+is); press Record and choose a file; press Stop recording. The recording goes to
+the project's WAV form, 0.77 MB/s at 192 kHz, up to its limit of 4 GiB (93 min at
+192 kHz), where it stops by itself. The file name holds the center frequency,
+since the form does not; center and rate are locked while recording. Its writer
+has its own queue, so a pipeline falling behind ("pipeline lost" beside the
+buttons) leaves no gap in the file. `kz4ap-skimmer --radio --center-khz 7030 --rate
+192000` starts the radio at once.
 
 ## Benchmark
 

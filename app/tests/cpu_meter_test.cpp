@@ -53,3 +53,23 @@ TEST(CpuMeter, HasNoRateWithoutChannelOutput) {
     EXPECT_FALSE(meter.whole_run().pipeline_ms_per_channel_s);
     EXPECT_DOUBLE_EQ(*meter.recent().speed, 1.0);
 }
+
+TEST(CpuMeter, SplitsTheBarIntoWhatIsFixedAndWhatATrackCosts) {
+    StreamStatus s;
+    s.wall_s = 10.0;
+    s.stream_s = 10.0;
+    s.channel_seconds = 100.0;  // 10 tracks
+    s.stages.spectrum_s = 0.1;
+    s.stages.detector_s = 0.05;
+    s.stages.hiss_s = 0.01;
+    s.stages.publish_s = 0.01;
+    s.stages.lifecycle_s = 0.01;
+    s.stages.channelizer_s = 0.02;
+    s.stages.filter_s = 0.1;
+    s.stages.decoder_s = 0.5;
+    CpuMeter meter;
+    meter.push(s);
+    const CpuRates r = meter.whole_run();
+    EXPECT_NEAR(*r.fixed_ms_per_stream_s, 20.0, 1e-9);        // 0.2 s of CPU over 10 s of stream
+    EXPECT_NEAR(*r.per_track_ms_per_channel_s, 6.0, 1e-9);    // 0.6 s of CPU over 100 channel-seconds
+}

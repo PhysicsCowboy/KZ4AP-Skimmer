@@ -502,7 +502,9 @@ TEST(BankNoise, ALevelLockedOntoAStationRecovers) {
         EXPECT_GE(r.recoveries, 1) << method;
         for (const auto& b : r.blocks) {
             if (b.n1 < static_cast<int>(6 * kRate)) continue;
-            ASSERT_LT(b.s[0], 3.0 * white_sigma2(1.0, n[0])) << method << " at n1 = " << b.n1;
+            // Well under the lock's level, about 1000 times the noise; a station this strong and this square-keyed lifts the
+            // level some, through the edges its boxcar smears under the guard (measured: 3.7 times at 6 s).
+            ASSERT_LT(b.s[0], 10.0 * white_sigma2(1.0, n[0])) << method << " at n1 = " << b.n1;
             ASSERT_GT(b.s[0], 0.3 * white_sigma2(1.0, n[0])) << method << " at n1 = " << b.n1;
         }
     }
@@ -569,17 +571,16 @@ TEST(BankNoise, ALongCarrierRecoversByTheDerivedTime) {
     for (const char* method : {"spectrum", "spectrum-level", "branch"}) {
         const std::string me = method;
         const NoiseRun r = run_noise(method, u, P);
-        bool checked_before = false;
         double worst_hi = 0.0, worst_lo = 1e300;  // rho of the branches k > 1 once due: the measured margin
         for (const auto& b : r.blocks) {
             const double t = (b.n1 - c1) / kRate;  // s after the carrier
             for (std::size_t k = 0; k < n.size(); ++k) {
                 ASSERT_TRUE(std::isfinite(b.s[k]) && b.s[k] > 0.0) << me << " at n1 = " << b.n1;
                 const double rho = b.s[k] / white_sigma2(1.0, n[k]);
-                if (k == 0 && me != "spectrum-level" && !checked_before && t >= t_rec[0] - 1.0) {
-                    EXPECT_GT(rho, 2.0) << me << " at " << t << " s";
-                    checked_before = true;
-                }
+                // Since the locked-level recovery (ALevelLockedOntoAStationRecovers) the three-tap level does not wait for
+                // the derived decay above, which stays as the bound on the other branches: the noise after the carrier
+                // reads far under the level, and it is reset within about a warm-up. Measured: within 2 s.
+                if (k == 0 && me != "spectrum-level" && t >= 2.0) ASSERT_LT(rho, 2.0) << me << " at " << t << " s";
                 const bool due = me == "branch" ? t >= t_rec[k] + 0.25
                                                 : (k == 0 && t >= t_rec[0] + 0.25) || t >= t_max + 0.25;
                 if (!due) continue;
@@ -592,7 +593,7 @@ TEST(BankNoise, ALongCarrierRecoversByTheDerivedTime) {
             }
         }
         std::printf("[ info ] %s: branches 2 to 32 once due, rho from %.3f to %.3f\n", method, worst_lo, worst_hi);
-        EXPECT_EQ(r.recoveries, 1) << me;
+        EXPECT_GE(r.recoveries, 2) << me;  // the carrier's stuck level, and at least one after it
     }
 }
 

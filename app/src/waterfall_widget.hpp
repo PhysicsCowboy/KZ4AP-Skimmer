@@ -28,7 +28,9 @@ public:
     explicit WaterfallWidget(QWidget* parent = nullptr);
 
     // A new stream: forgets all rows.
-    void start(double sample_rate_hz, int fft_bins);
+    // center_hz: the radio's tuned frequency, when known, named in the title; time_origin_s: the stream time of the rows' zero, s
+    // (a stream begun part way into a recording).
+    void start(double sample_rate_hz, int fft_bins, std::optional<double> center_hz = std::nullopt, double time_origin_s = 0.0);
     void add_rows(std::vector<WaterfallRow>&& rows);
     void set_markers(std::vector<Marker> markers);
 
@@ -55,6 +57,8 @@ private:
 
     FrequencyAxis axis_;
     bool started_ = false;
+    std::optional<double> center_hz_;
+    double time_origin_s_ = 0.0;
     DbScale scale_;
     bool auto_floor_ = true;
     NoiseFloorTracker floor_tracker_;

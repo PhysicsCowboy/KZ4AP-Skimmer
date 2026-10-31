@@ -24,6 +24,8 @@ public:
     TrackTable& table() { return table_; }
     // bin_hz: the width of one FFT bin, Hz, named in the level column's header.
     void set_bin_width_hz(double bin_hz);
+    // The radio's tuned frequency, Hz, when known: the frequency column then reads absolute.
+    void set_center_hz(std::optional<double> center_hz);
     // Tells views what changed since the last call.
     void refresh();
     void clear();
@@ -42,6 +44,7 @@ private:
     TrackTable table_;
     std::uint64_t seen_version_ = 0;
     double bin_hz_ = 0;
+    std::optional<double> center_hz_;
 };
 
 }  // namespace kz4ap::app

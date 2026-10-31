@@ -11,6 +11,11 @@ void TrackListModel::set_bin_width_hz(double bin_hz) {
     emit headerDataChanged(Qt::Horizontal, kLevel, kLevel);
 }
 
+void TrackListModel::set_center_hz(std::optional<double> center_hz) {
+    center_hz_ = center_hz;
+    emit headerDataChanged(Qt::Horizontal, kFrequency, kFrequency);
+}
+
 void TrackListModel::refresh() {
     if (table_.structure_version() != seen_version_) {
         beginResetModel();
@@ -46,7 +51,9 @@ QVariant TrackListModel::data(const QModelIndex& index, int role) const {
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
             case kTrack: return row.id;
-            case kFrequency: return QString::asprintf("%+.3f", row.freq_hz / 1000.0);
+            case kFrequency:
+                return center_hz_ ? QString::asprintf("%.3f", (*center_hz_ + row.freq_hz) / 1000.0)
+                                  : QString::asprintf("%+.3f", row.freq_hz / 1000.0);
             case kSpeed: return row.wpm > 0 ? QString::number(row.wpm, 'f', 1) : QStringLiteral("-");
             case kLevel: return QString::number(row.level_db, 'f', 1);
             case kText: return QString::fromStdString(row.text_tail(kTextSymbols));

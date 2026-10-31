@@ -4,20 +4,30 @@
 #include "kz4ap/decoder_name.hpp"
 #include "kz4ap/engine.hpp"
 #include "kz4ap/file_iq_source.hpp"
+#include "kz4ap/sdrplay_source.hpp"
+#include "recording_name.hpp"
 
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDateTime>
+#include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QMessageBox>
+#include <QSignalBlocker>
 #include <QSlider>
+#include <QSpinBox>
 #include <QSplitter>
+#include <QStandardPaths>
 #include <QStatusBar>
 #include <QStyle>
 #include <QTableView>
@@ -25,6 +35,7 @@
 #include <QTimer>
 #include <QToolBar>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <exception>
@@ -40,13 +51,15 @@ namespace {
 // The GUI's clock, ms: about 30 pictures/s (heuristic). The list and the status bar change at a third of that.
 constexpr int kTickMs = 33;
 constexpr int kTextEveryTicks = 3;
+// The position slider's steps across a recording.
+constexpr int kPositionSteps = 1000;
 
 }  // namespace
 
-MainWindow::MainWindow(std::string decoder_name, double speed, Automation automation)
-    : decoder_name_(std::move(decoder_name)), speed_(speed), automation_(std::move(automation)) {
+MainWindow::MainWindow(std::string decoder_name, double speed, int threads, RadioDefaults radio, Automation automation)
+    : decoder_name_(std::move(decoder_name)), speed_(speed), threads_(threads), automation_(std::move(automation)) {
     setWindowTitle(tr("KZ4AP Skimmer"));
-    resize(1360, 860);
+    resize(1360, 900);
 
     waterfall_ = new WaterfallWidget;
     model_ = new TrackListModel(this);
@@ -80,8 +93,14 @@ MainWindow::MainWindow(std::string decoder_name, double speed, Automation automa
 
     build_transport();
     build_scale_controls();
+    build_radio_controls();
+    center_box_->setValue(radio.center_khz);
+    rate_box_->setCurrentIndex(std::max(0, rate_box_->findData(radio.sample_rate)));
+    if_gain_box_->setValue(radio.if_gain_reduction_db);
+    lna_box_->setValue(radio.lna_state);
     build_status_bar();
     update_transport();
+    update_radio_controls();
 
     timer_ = new QTimer(this);
     connect(timer_, &QTimer::timeout, this, &MainWindow::on_tick);
@@ -129,6 +148,183 @@ void MainWindow::build_transport() {
     connect(speed_box_, &QComboBox::currentIndexChanged, this, [this] { set_speed_from_combo(); });
     bar->addWidget(speed_box_);
     bar->addSeparator();
+    bar->addWidget(new QLabel(tr(" Position: ")));
+    position_slider_ = new QSlider(Qt::Horizontal);
+    position_slider_->setRange(0, kPositionSteps);
+    position_slider_->setFixedWidth(180);
+    position_slider_->setEnabled(false);
+    position_slider_->setToolTip(tr("Drag to a place in the recording: the decoders start afresh from there"));
+    // A seek is a new stream from there, with new decoders: tracks start again (engine: FileIqSource's start_s).
+    connect(position_slider_, &QSlider::sliderReleased, this, [this] {
+        if (!current_path_.isEmpty() && total_s_)
+            open_recording(current_path_, *total_s_ * position_slider_->value() / kPositionSteps);
+    });
+    bar->addWidget(position_slider_);
+    bar->addSeparator();
+}
+
+void MainWindow::build_radio_controls() {
+    addToolBarBreak();
+    auto* bar = addToolBar(tr("Radio"));
+    bar->setMovable(false);
+    bar->addWidget(new QLabel(tr(" Radio center: ")));
+    center_box_ = new QDoubleSpinBox;
+    center_box_->setDecimals(3);
+    center_box_->setRange(1.0, 2000000.0);
+    center_box_->setSuffix(tr(" kHz"));
+    center_box_->setKeyboardTracking(false);
+    center_box_->setFixedWidth(130);
+    bar->addWidget(center_box_);
+    bar->addWidget(new QLabel(tr("  Rate: ")));
+    rate_box_ = new QComboBox;
+    for (const int rate : sdrplay_sample_rates()) rate_box_->addItem(tr("%1 kHz").arg(rate / 1000), rate);
+    bar->addWidget(rate_box_);
+    bar->addWidget(new QLabel(tr("  IF gain reduction: ")));
+    if_gain_box_ = new QSpinBox;
+    if_gain_box_->setRange(20, 59);
+    if_gain_box_->setSuffix(tr(" dB"));
+    if_gain_box_->setKeyboardTracking(false);
+    if_gain_box_->setToolTip(tr("More reduction, less gain. AGC is off, so a level stays a level."));
+    bar->addWidget(if_gain_box_);
+    bar->addWidget(new QLabel(tr("  LNA state: ")));
+    lna_box_ = new QSpinBox;
+    lna_box_->setRange(0, 9);
+    lna_box_->setKeyboardTracking(false);
+    lna_box_->setToolTip(tr("0 is the most gain; each model has a table of reductions by band"));
+    bar->addWidget(lna_box_);
+    bar->addSeparator();
+    radio_action_ = bar->addAction(tr("Start radio"));
+    connect(radio_action_, &QAction::triggered, this, [this] {
+        if (radio_on_) {
+            stop_stream();
+            radio_on_ = false;
+            update_radio_controls();
+        } else {
+            start_radio();
+        }
+    });
+    record_action_ = bar->addAction(tr("Record"));
+    record_action_->setToolTip(tr("Save the radio's raw I/Q to a WAV recording, which this program can then play"));
+    connect(record_action_, &QAction::triggered, this, [this] { toggle_recording(); });
+    bar->addSeparator();
+    radio_label_ = new QLabel;
+    bar->addWidget(radio_label_);
+
+    // A new center or rate is a new stream (the decoders' stations are gone anyway); the gain changes as it runs.
+    const auto restart_radio = [this] {
+        if (radio_on_) start_radio();
+    };
+    connect(center_box_, &QDoubleSpinBox::valueChanged, this, restart_radio);
+    connect(rate_box_, &QComboBox::currentIndexChanged, this, restart_radio);
+    const auto change_gain = [this] {
+        if (!radio_on_ || !runner_ || runner_->source().radio() == nullptr) return;
+        try {
+            runner_->source().radio()->set_gain(if_gain_box_->value(), lna_box_->value());
+        } catch (const std::exception& e) {
+            radio_label_->setText(QString::fromStdString(e.what()));
+        }
+    };
+    connect(if_gain_box_, &QSpinBox::valueChanged, this, change_gain);
+    connect(lna_box_, &QSpinBox::valueChanged, this, change_gain);
+}
+
+bool MainWindow::start_radio() {
+    stop_stream();
+    radio_on_ = false;
+    try {
+        SdrplaySettings settings;
+        settings.center_hz = center_box_->value() * 1000.0;
+        settings.sample_rate = rate_box_->currentData().toInt();
+        settings.if_gain_reduction_db = if_gain_box_->value();
+        settings.lna_state = lna_box_->value();
+        auto source = std::make_unique<SdrplaySource>(settings);
+        current_path_.clear();
+        origin_s_ = 0.0;
+        radio_on_ = true;
+        start_stream(std::move(source));
+        return true;
+    } catch (const std::exception& e) {
+        update_radio_controls();
+        update_transport();
+        report_failure(QString::fromStdString(e.what()));
+        return false;
+    }
+}
+
+void MainWindow::update_radio_controls() {
+    const bool recording = last_recording_.active;
+    radio_action_->setText(radio_on_ ? tr("Stop radio") : tr("Start radio"));
+    radio_action_->setEnabled(!recording);
+    // A new center or rate would break a recording in two.
+    center_box_->setEnabled(!recording);
+    rate_box_->setEnabled(!recording);
+    record_action_->setEnabled(radio_on_ && runner_ && runner_->source().recorder() != nullptr);
+    record_action_->setText(recording ? tr("Stop recording") : tr("Record"));
+}
+
+void MainWindow::toggle_recording() {
+    if (!radio_on_ || !runner_ || runner_->source().recorder() == nullptr) return;
+    RecordControl* recorder = runner_->source().recorder();
+    if (recorder->recording_status().active) {
+        recorder->stop_recording();
+        last_recording_ = recorder->recording_status();
+        update_radio_controls();
+        return;
+    }
+    const std::string name = recording_file_name(center_box_->value() * 1000.0, rate_box_->currentData().toInt(),
+                                                  QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")).toStdString());
+    const QString suggested = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + QLatin1Char('/') + QString::fromStdString(name);
+    const QString path = QFileDialog::getSaveFileName(this, tr("Save the radio's I/Q"), suggested, tr("I/Q recordings (*.wav)"));
+    if (!path.isEmpty()) begin_recording(path);
+}
+
+void MainWindow::begin_recording(const QString& path) {
+    RecordControl* recorder = runner_ ? runner_->source().recorder() : nullptr;
+    if (recorder == nullptr) return;
+    try {
+        recorder->start_recording(std::filesystem::path(path.toStdWString()));
+        last_recording_ = recorder->recording_status();
+    } catch (const std::exception& e) {
+        radio_label_->setText(QString::fromStdString(e.what()));
+    }
+    update_radio_controls();
+}
+
+void MainWindow::update_radio_status(const StreamStatus& status) {
+    if (!runner_) return;
+    IqSource& source = runner_->source();
+    QStringList parts;
+    if (const RadioControl* radio = source.radio()) {
+        const RadioStatus r = radio->radio_status();
+        if (r.gain_db) parts << tr("Gain %1 dB").arg(*r.gain_db, 0, 'f', 1);
+        if (r.overload) parts << tr("<b>ADC OVERLOAD: more gain reduction</b>");
+        if (r.resets > 0) parts << tr("stream restarted %1 times").arg(r.resets);
+    }
+    if (const std::uint64_t lost = source.dropped_samples(); lost > 0)
+        parts << tr("pipeline lost %1 s").arg(static_cast<double>(lost) / source.sample_rate(), 0, 'f', 2);
+    if (const RecordControl* recorder = source.recorder()) {
+        const RecordingStatus was = last_recording_;
+        last_recording_ = recorder->recording_status();
+        if (was.active != last_recording_.active) update_radio_controls();
+        if (!last_recording_.path.empty()) {
+            const double seconds = static_cast<double>(last_recording_.samples) / source.sample_rate();
+            QString line = (last_recording_.active ? tr("REC %1 s, %2 MB") : tr("Saved %1 s, %2 MB"))
+                               .arg(seconds, 0, 'f', 1)
+                               .arg(static_cast<double>(last_recording_.samples) * 4.0 / 1e6, 0, 'f', 1);
+            if (last_recording_.dropped > 0) line += tr(", <b>disk lost %1 samples</b>").arg(last_recording_.dropped);
+            if (last_recording_.full) line += tr(", stopped at the 4 GiB limit");
+            if (!last_recording_.error.empty()) line += QStringLiteral(", ") + QString::fromStdString(last_recording_.error);
+            parts << line;
+        }
+    }
+    (void)status;
+    radio_label_->setText(parts.join(QStringLiteral("; ")));
+}
+
+void MainWindow::update_position(const StreamStatus& status) {
+    if (!total_s_ || *total_s_ <= 0.0 || position_slider_->isSliderDown()) return;
+    const QSignalBlocker blocker(position_slider_);
+    position_slider_->setValue(static_cast<int>(kPositionSteps * std::min(1.0, (origin_s_ + status.stream_s) / *total_s_)));
 }
 
 void MainWindow::build_scale_controls() {
@@ -196,25 +392,38 @@ void MainWindow::build_status_bar() {
                               "over channels. Decoder: time inside the decoders, the same way."));
 }
 
-bool MainWindow::open_recording(const QString& path) {
+bool MainWindow::open_recording(const QString& path, double start_s) {
     try {
-        std::unique_ptr<FileIqSource> source = std::make_unique<FileIqSource>(std::filesystem::path(path.toStdWString()));
+        stop_stream();
+        radio_on_ = false;
+        std::unique_ptr<FileIqSource> source = std::make_unique<FileIqSource>(std::filesystem::path(path.toStdWString()), start_s);
         source->set_speed(speed_);
         current_path_ = path;
+        origin_s_ = start_s;
+        const double length_s = source->recording_length_s();
         start_stream(std::move(source));
+        total_s_ = length_s;
         return true;
     } catch (const std::exception& e) {
-        const QString message = tr("Cannot open %1: %2").arg(path, QString::fromStdString(e.what()));
-        std::fprintf(stderr, "%s\n", message.toLocal8Bit().constData());
-        if (automation_.active()) {
-            QFile report(automation_.report_path);
-            if (!automation_.report_path.isEmpty() && report.open(QIODevice::WriteOnly | QIODevice::Text))
-                QTextStream(&report) << "error: " << message << "\n";
-            QTimer::singleShot(0, qApp, [] { QApplication::exit(1); });
-        } else {
-            QMessageBox::critical(this, tr("KZ4AP Skimmer"), message);
-        }
+        report_failure(tr("Cannot open %1: %2").arg(path, QString::fromStdString(e.what())));
         return false;
+    }
+}
+
+void MainWindow::report_failure(const QString& message) {
+    std::fprintf(stderr, "%s\n", message.toLocal8Bit().constData());
+    if (automation_.active()) {
+        QFile report(automation_.report_path);
+        if (!automation_.report_path.isEmpty() && report.open(QIODevice::WriteOnly | QIODevice::Text))
+            QTextStream(&report) << "error: " << message << "\n";
+        if (!automation_.screenshot_path.isEmpty()) {
+            radio_label_->setText(message);
+            QApplication::processEvents();
+            grab().save(automation_.screenshot_path);
+        }
+        QTimer::singleShot(0, qApp, [] { QApplication::exit(1); });
+    } else {
+        QMessageBox::critical(this, tr("KZ4AP Skimmer"), message);
     }
 }
 
@@ -223,29 +432,33 @@ void MainWindow::start_stream(std::unique_ptr<IqSource> source) {
     const int rate = source->sample_rate();
     const int fft_size = choose_fft_size(rate);
     source_name_ = source->description();
-    const std::optional<std::uint64_t> total = source->total_samples();
-    total_s_ = total ? std::optional<double>(static_cast<double>(*total) / rate) : std::nullopt;
+    total_s_ = std::nullopt;
     setWindowTitle(tr("KZ4AP Skimmer - %1 (%2 kHz, decoder: %3)")
                        .arg(QString::fromStdString(source_name_))
                        .arg(rate / 1000.0)
                        .arg(QString::fromStdString(decoder_name_)));
 
     model_->clear();
-    model_->table().set_keep_retired(!automation_.report_path.isEmpty());
+    model_->table().set_keep_retired(!automation_.report_path.isEmpty() || !automation_.decoded_path.isEmpty());
     model_->set_bin_width_hz(static_cast<double>(rate) / fft_size);
+    model_->set_center_hz(source->center_frequency_hz());
     selected_track_.reset();
-    waterfall_->start(rate, fft_size);
+    waterfall_->start(rate, fft_size, source->center_frequency_hz(), origin_s_);
     meter_ = CpuMeter{};
     stream_ended_ = false;
     rows_dropped_ = 0;
+    last_recording_ = RecordingStatus{};
 
     // The engine's hop is half its FFT (EngineConfig; Engine::Engine).
     const double hop_s = (fft_size / 2.0) / rate;
     feed_ = std::make_unique<DisplayFeed>(frames_per_row_for(kRowPeriodS, hop_s));
     DisplayFeed* feed = feed_.get();
-    runner_ = std::make_unique<StreamRunner>(std::move(source), engine_config_for_decoder(decoder_name_),
+    EngineConfig config = engine_config_for_decoder(decoder_name_);
+    config.worker_threads = threads_;
+    runner_ = std::make_unique<StreamRunner>(std::move(source), std::move(config),
                                              [feed](const Event& event) { feed->on_event(event); });
     update_transport();
+    update_radio_controls();
 }
 
 void MainWindow::stop_stream() {
@@ -265,12 +478,16 @@ void MainWindow::update_transport() {
     play_pause_->setEnabled(playback != nullptr && !stream_ended_);
     speed_box_->setEnabled(playback != nullptr || !runner_);
     restart_->setEnabled(!current_path_.isEmpty());
+    position_slider_->setEnabled(playback != nullptr);
     play_pause_->setText(playback && playback->paused() ? tr("Play") : tr("Pause"));
 }
 
 void MainWindow::on_tick() {
     ++ticks_;
-    if (!runner_) return;
+    if (!runner_) {
+        if (automation_.active()) run_transport_steps(StreamStatus{});
+        return;
+    }
     if (stream_ended_) {  // nothing more will come
         run_automation(runner_->status());
         return;
@@ -290,14 +507,20 @@ void MainWindow::on_tick() {
         stream_ended_ = true;
         table.end_of_stream();
         update_transport();
-        if (status.state == StreamStatus::State::Failed && !automation_.active())
-            QMessageBox::critical(this, tr("KZ4AP Skimmer"), QString::fromStdString(status.error));
+        if (status.state == StreamStatus::State::Failed) {
+            if (RecordControl* recorder = runner_->source().recorder()) recorder->stop_recording();
+            radio_on_ = false;
+            update_radio_controls();
+            if (!automation_.active()) QMessageBox::critical(this, tr("KZ4AP Skimmer"), QString::fromStdString(status.error));
+        }
     }
 
     if (ticks_ % kTextEveryTicks == 0 || ended) {
         model_->refresh();
         update_markers();
         update_status(status);
+        update_position(status);
+        update_radio_status(status);
     }
     run_automation(status);
 }
@@ -310,7 +533,7 @@ void MainWindow::update_markers() {
 }
 
 void MainWindow::update_status(const StreamStatus& status) {
-    const QString stream = total_s_ ? tr("Stream %1 of %2 s").arg(status.stream_s, 0, 'f', 1).arg(*total_s_, 0, 'f', 1)
+    const QString stream = total_s_ ? tr("Stream %1 of %2 s").arg(origin_s_ + status.stream_s, 0, 'f', 1).arg(*total_s_, 0, 'f', 1)
                                     : tr("Stream %1 s").arg(status.stream_s, 0, 'f', 1);
     QString state;
     switch (status.state) {
@@ -330,10 +553,11 @@ void MainWindow::update_status(const StreamStatus& status) {
 
     tracks_label_->setText(tr("Live tracks %1").arg(model_->table().live_count()));
 
-    if (recent.pipeline_ms_per_channel_s && recent.decoder_ms_per_channel_s) {
-        cpu_label_->setText(tr("CPU: pipeline %1 ms per channel-second, decoder %2 ms per channel-second")
+    if (recent.pipeline_ms_per_channel_s && recent.per_track_ms_per_channel_s && recent.fixed_ms_per_stream_s) {
+        cpu_label_->setText(tr("CPU: %1 ms per channel-second in all; fixed %2 ms per s of stream, each track %3 ms per channel-second")
                                 .arg(*recent.pipeline_ms_per_channel_s, 0, 'f', 2)
-                                .arg(*recent.decoder_ms_per_channel_s, 0, 'f', 2));
+                                .arg(*recent.fixed_ms_per_stream_s, 0, 'f', 1)
+                                .arg(*recent.per_track_ms_per_channel_s, 0, 'f', 2));
     } else {
         cpu_label_->setText(tr("CPU: no channel output"));
     }
@@ -373,8 +597,46 @@ void MainWindow::run_transport_steps(const StreamStatus& status) {
             const QString value = action.mid(6);
             const double speed = value == QStringLiteral("max") ? kAsFastAsPossible : value.toDouble();
             speed_box_->setCurrentIndex(speed_box_->findData(speed));
+        } else if (action.startsWith(QStringLiteral("seek="))) {
+            if (!current_path_.isEmpty()) open_recording(current_path_, action.mid(5).toDouble());
+        } else if (action == QStringLiteral("radio")) {
+            start_radio();
+        } else if (action == QStringLiteral("radiostop")) {
+            if (radio_on_) radio_action_->trigger();
+        } else if (action.startsWith(QStringLiteral("center="))) {
+            center_box_->setValue(action.mid(7).toDouble());
+        } else if (action.startsWith(QStringLiteral("rate="))) {
+            rate_box_->setCurrentIndex(rate_box_->findData(action.mid(5).toInt()));
+        } else if (action.startsWith(QStringLiteral("gain="))) {
+            const QStringList values = action.mid(5).split(QLatin1Char(','));
+            if (values.size() == 2) {
+                if_gain_box_->setValue(values[0].toInt());
+                lna_box_->setValue(values[1].toInt());
+            }
+        } else if (action.startsWith(QStringLiteral("record="))) {
+            begin_recording(action.mid(7));
+        } else if (action == QStringLiteral("stoprecord")) {
+            if (RecordControl* recorder = runner_ ? runner_->source().recorder() : nullptr) {
+                recorder->stop_recording();
+                last_recording_ = recorder->recording_status();
+                transport_log_ << QStringLiteral("recording: %1 samples, %2 lost to the disk, %3")
+                                      .arg(last_recording_.samples)
+                                      .arg(last_recording_.dropped)
+                                      .arg(QString::fromStdWString(last_recording_.path.wstring()));
+                update_radio_controls();
+            }
+        } else if (action.startsWith(QStringLiteral("shot="))) {
+            model_->refresh();
+            update_markers();
+            if (runner_) {
+                update_status(status);
+                update_radio_status(status);
+            }
+            QApplication::processEvents();
+            grab().save(action.mid(5));
         } else if (action == QStringLiteral("quit")) {
             if (!automation_.report_path.isEmpty()) write_report(status);
+            if (!automation_.decoded_path.isEmpty()) write_decoded();
             QApplication::quit();
         }
     }
@@ -383,6 +645,7 @@ void MainWindow::run_transport_steps(const StreamStatus& status) {
 void MainWindow::run_automation(const StreamStatus& status) {
     if (!automation_.active()) return;
     run_transport_steps(status);
+    if (!runner_) return;
     const bool ended = stream_ended_ || status.state == StreamStatus::State::Stopped;
     if (!automation_.screenshot_path.isEmpty() && !screenshot_done_ && (status.stream_s >= automation_.screenshot_at_s || ended)) {
         model_->refresh();
@@ -395,8 +658,34 @@ void MainWindow::run_automation(const StreamStatus& status) {
     const bool quitting = automation_.quit_at_end || automation_.quit_at_s;
     const bool failed = status.state == StreamStatus::State::Failed;
     const bool quit_now = (quitting && ended) || (automation_.quit_at_s && status.stream_s >= *automation_.quit_at_s);
-    if ((quit_now || ended) && !automation_.report_path.isEmpty() && !report_done_) write_report(status);
+    if ((quit_now || ended) && !report_done_) {
+        if (!automation_.report_path.isEmpty()) write_report(status);
+        if (!automation_.decoded_path.isEmpty()) write_decoded();
+        report_done_ = true;
+    }
     if (quit_now) QApplication::exit(failed ? 1 : 0);
+}
+
+void MainWindow::write_decoded() {
+    QJsonArray tracks;
+    const auto add = [&](const std::vector<TrackRow>& rows) {
+        for (const TrackRow& row : rows) {
+            QJsonObject track;
+            track[QStringLiteral("id")] = static_cast<qint64>(row.id);
+            track[QStringLiteral("freq_hz")] = row.freq_hz;
+            track[QStringLiteral("last_freq_hz")] = row.freq_hz;
+            track[QStringLiteral("text")] = QString::fromStdString(row.text());
+            tracks.append(track);
+        }
+    };
+    add(model_->table().rows());
+    add(model_->table().retired());
+    QJsonObject root;
+    root[QStringLiteral("front_end")] = QString::fromStdString(decoder_name_);
+    root[QStringLiteral("recording")] = QString::fromStdString(source_name_);
+    root[QStringLiteral("tracks")] = tracks;
+    QFile file(automation_.decoded_path);
+    if (file.open(QIODevice::WriteOnly)) file.write(QJsonDocument(root).toJson());
 }
 
 void MainWindow::write_report(const StreamStatus& status) {
@@ -418,9 +707,23 @@ void MainWindow::write_report(const StreamStatus& status) {
     out << "pipeline_cpu_ms_per_channel_s: " << number(whole.pipeline_ms_per_channel_s) << "\n";
     out << "decoder_ms_per_channel_s: " << number(whole.decoder_ms_per_channel_s) << "\n";
     out << "pipeline_cpu_ms_per_channel_s_last_10s: " << number(recent.pipeline_ms_per_channel_s) << "\n";
+    out << "fixed_ms_per_stream_s: " << number(whole.fixed_ms_per_stream_s) << "\n";
+    out << "per_track_ms_per_channel_s: " << number(whole.per_track_ms_per_channel_s) << "\n";
+    out << "realtime_factor: " << number(whole.speed) << "\n";
+    out << "threads: " << threads_ << "\n";
     out << "process_cpu_s: " << process_cpu_seconds() << "\n";
     out << "pipeline_thread_cpu_s: " << status.thread_cpu_s << "\n";
     out << "rows_skipped: " << rows_dropped_ << "\n";
+    if (runner_) out << "pipeline_lost_samples: " << runner_->source().dropped_samples() << "\n";
+    if (runner_ && runner_->source().radio() != nullptr) {
+        const RadioStatus radio = runner_->source().radio()->radio_status();
+        out << "radio_received_samples: " << radio.received << "\n";
+        out << "radio_overload_now: " << radio.overload << "\n";
+        out << "radio_resets: " << radio.resets << "\n";
+    }
+    out << "recording_samples: " << last_recording_.samples << "\n";
+    out << "recording_dropped: " << last_recording_.dropped << "\n";
+    out << "live_tracks: " << model_->table().live_count() << "\n";
     out << "error: " << QString::fromStdString(status.error) << "\n";
     for (const QString& line : transport_log_) out << line << "\n";
     const auto write_rows = [&](const std::vector<TrackRow>& rows) {

@@ -10,9 +10,18 @@ CpuRates rates_between(const StreamStatus& a, const StreamStatus& b) {
     if (channel_s > 0) {
         r.pipeline_ms_per_channel_s = 1000.0 * (b.thread_cpu_s - a.thread_cpu_s) / channel_s;
         r.decoder_ms_per_channel_s = 1000.0 * (b.decoder_seconds - a.decoder_seconds) / channel_s;
+        r.per_track_ms_per_channel_s =
+            1000.0 * (b.stages.filter_s + b.stages.decoder_s - a.stages.filter_s - a.stages.decoder_s) / channel_s;
     }
     const double wall_s = b.wall_s - a.wall_s;
     if (wall_s > 0) r.speed = (b.stream_s - a.stream_s) / wall_s;
+    const double stream_s = b.stream_s - a.stream_s;
+    if (stream_s > 0) {
+        const auto fixed = [](const EngineStageTimes& s) {
+            return s.spectrum_s + s.detector_s + s.hiss_s + s.publish_s + s.lifecycle_s + s.channelizer_s;
+        };
+        r.fixed_ms_per_stream_s = 1000.0 * (fixed(b.stages) - fixed(a.stages)) / stream_s;
+    }
     return r;
 }
 

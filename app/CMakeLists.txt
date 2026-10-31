@@ -3,6 +3,7 @@ add_library(kz4ap_app_core
   core/cpu_meter.cpp
   core/display_feed.cpp
   core/track_table.cpp
+  core/recording_name.cpp
   core/waterfall.cpp
 )
 target_include_directories(kz4ap_app_core PUBLIC core)
@@ -18,6 +19,7 @@ add_executable(kz4ap_app_tests
   tests/track_table_test.cpp
   tests/display_feed_test.cpp
   tests/cpu_meter_test.cpp
+  tests/recording_name_test.cpp
 )
 target_link_libraries(kz4ap_app_tests PRIVATE kz4ap_app_core GTest::gtest_main)
 gtest_discover_tests(kz4ap_app_tests)
