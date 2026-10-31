@@ -293,11 +293,15 @@ DecodeUpdate SegmentalDecoder::flush() {
     story.tail = search.best_text();
     story.length = story.tail.size();
     DecodeUpdate last = bring_up_to_date(story, static_cast<double>(next_index_) / rate_);
-    if (const char* path = std::getenv("KZ4AP_TRACE")) {  // experiment
+    if (const char* path = std::getenv("KZ4AP_TRACE")) {  // experiment: one line per channel, a field per stream
         if (std::FILE* out = std::fopen(path, "a")) {
-            std::fprintf(out, "%.3f %.3f %.2f %zu %d", search.best_score(), streams_[leader_].free_key.nats, wpm_, published_.size(), leading_scale());
-            for (const DecodedSymbol& symbol : story.tail)
-                std::fprintf(out, " %s,%.3f,%.3f", symbol.text == " " ? "_" : symbol.text.c_str(), symbol.start_s, symbol.end_s);
+            std::fprintf(out, "%d", leading_scale());
+            for (const Stream& stream : streams_) {
+                std::fprintf(out, "|%d %.3f %.3f %.3f %.3f ", stream.scale, stream.search->best_score(), stream.free_key.nats,
+                             stream.recent_morse_over_free(), stream.recent_symbols());
+                for (const DecodedSymbol& symbol : stream.search->best_text())
+                    std::fprintf(out, "%s", symbol.text == " " ? "_" : symbol.text.c_str());
+            }
             std::fprintf(out, "\n");
             std::fclose(out);
         }
