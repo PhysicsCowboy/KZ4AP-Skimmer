@@ -49,7 +49,9 @@ SegmentalShared::SegmentalShared(const segmental::SegmentalConfig& c, const Chan
       output_noise(noise_of(c, channel, front_taps)),
       template_tables(template_of(c, channel, front_taps)),
       level_tables(c, output_noise, template_tables),
-      model_tables(c) {}
+      model_tables(c) {
+    (void)segmental::ChannelFloor(c);  // refuses its settings here, before any channel opens
+}
 
 SegmentalDecoder::SegmentalDecoder(double rate_hz, std::shared_ptr<const SegmentalShared> shared)
     : rate_(rate_hz),
@@ -62,6 +64,7 @@ SegmentalDecoder::SegmentalDecoder(double rate_hz, std::shared_ptr<const Segment
 }
 
 void SegmentalDecoder::start() {
+    floor_ = std::make_unique<segmental::ChannelFloor>(shared_->config);
     sums_ = std::make_unique<segmental::RunningSums>();
     evidence_ = std::make_unique<segmental::LevelEvidence>(shared_->config, shared_->level_tables, *sums_);
     search_ = std::make_unique<segmental::Search>(shared_->config, shared_->model_tables, *sums_, &shared_->level_tables);
@@ -132,7 +135,7 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
         // Samples not searched (N0 = 0) leave the stream spliced; the time of the samples after them is noted.
         if (sample.k != expected_k_) search_->note_sample_time(pushed_, spacing * static_cast<double>(sample.k) / rate_);
         expected_k_ = sample.k + 1;
-        evidence_->push(sample.e_fs, sigma2);
+        evidence_->push(sample.e_fs, floor_->sigma2(sample.e_fs, sigma2));
         search_->advance();  // at once: the short elements' context reaches back only so far
         advance_free_key();
         ++pushed_;

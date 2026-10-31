@@ -40,6 +40,7 @@
 #include "kz4ap/viterbi/mark_template.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -147,6 +148,37 @@ private:
 
 // The shared level (2 above): takes envelope samples, and commits each sample's scores to its RunningSums once its
 // look-ahead has been read.
+// The channel's own noise floor. Key-up is pinned at the noise it is told, a key-up sample scoring 0 nats whatever it holds,
+// and from about 4.8 dB below the channel's real floor key-down at a low level beats key-up on bare noise, so that a story
+// earns by bridging its own gaps, however strong the station (measured; review F1). The hiss (viterbi/hiss.hpp) reads the
+// quiet bins around the channel, so it reads low behind a receiver's passband or under a floor raised around the channel.
+// Hence, for each sample,
+//     sigma^2 = max(hiss sigma^2, q(e^2) / -ln(1 - q) x 10^(margin / 10)),
+// q(e^2) the quantile q of every stride's e^2 over the last window, taken again every refresh, used once start is in. For
+// noise alone e^2 is exponential of mean sigma^2, so its quantile q is -ln(1 - q) sigma^2 (derived; -ln 0.9 = 0.10536). The
+// margin, window, quantile, stride, refresh and start are heuristics (config.hpp). A key-down carrier held for over
+// 1 - q of the window reads as noise.
+class ChannelFloor {
+public:
+    // Throws std::invalid_argument for a setting outside its range, a stride or a refresh that is not a whole number of samples.
+    explicit ChannelFloor(const SegmentalConfig& config);
+    // One envelope sample, e_fs, FS; hiss_sigma2_fs2, the hiss at the front filter's output, FS^2. What the sample's noise is: FS^2.
+    double sigma2(double e_fs, double hiss_sigma2_fs2);
+
+private:
+    bool on_ = false;
+    int stride_ = 1;   // samples
+    int refresh_ = 1;  // samples
+    std::size_t capacity_ = 1;  // kept values
+    std::size_t minimum_ = 1;   // kept values before it is used
+    double quantile_ = 0.0;
+    double to_noise_ = 0.0;  // 10^(margin / 10) / -ln(1 - q)
+    std::vector<double> ring_, work_;
+    std::size_t written_ = 0;
+    std::int64_t count_ = 0;  // samples
+    double floor_ = 0.0;      // FS^2; 0 until it is used
+};
+
 class LevelEvidence {
 public:
     LevelEvidence(const SegmentalConfig& config, const LevelTables& tables, RunningSums& sums);

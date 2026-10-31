@@ -51,6 +51,22 @@ struct SegmentalConfig {
     // of the model's over rate.
     double level_jump_per_s = 0.05;
 
+    // --- The channel's own noise floor (ChannelFloor, evidence.hpp) ---
+
+    // s: how far back the floor reads, 0 to leave it out and use the hiss alone. Heuristic.
+    double channel_floor_window_s = 5.0;
+    // 1: the quantile of e^2 it reads. Heuristic. (The factor from the quantile to the noise, -ln(1 - q), is derived.)
+    double channel_floor_quantile = 0.10;
+    // dB re the floor as estimated: the margin below the estimate. Heuristic: on the review's seeds -1.5 dB costs about 1 dB
+    // of sensitivity and -3 dB costs nothing measurable.
+    double channel_floor_margin_db = -3.0;
+    // s: the spacing of the e^2 it keeps, every 4th sample, where the noise's correlation has fallen to rho_4 = 0.14. Heuristic.
+    double channel_floor_stride_s = 4.0 * 4.0 / 1500.0;
+    // s: how often the quantile is taken again, every 36 samples. Heuristic.
+    double channel_floor_refresh_s = 36.0 * 4.0 / 1500.0;
+    // s: how much of the channel it reads before it is used. Heuristic.
+    double channel_floor_start_s = 1.0;
+
     // --- The search (search.hpp) ---
 
     // nats: how far behind the best a story may fall and stay. Heuristic, set by measurement.

@@ -128,6 +128,47 @@ double LevelTables::short_score(bool gap, int length, std::int64_t i, const Runn
     return score;
 }
 
+ChannelFloor::ChannelFloor(const SegmentalConfig& config) {
+    const double window_s = config.channel_floor_window_s;
+    if (!(std::isfinite(window_s) && window_s >= 0.0))
+        throw std::invalid_argument("segmental: channel_floor_window_s must be finite and not negative (s; 0 leaves the floor out)");
+    if (window_s == 0.0) return;
+    const double q = config.channel_floor_quantile;
+    if (!(q > 0.0 && q < 1.0)) throw std::invalid_argument("segmental: channel_floor_quantile must lie in (0, 1)");
+    if (!std::isfinite(config.channel_floor_margin_db))
+        throw std::invalid_argument("segmental: channel_floor_margin_db must be finite (dB re the floor as estimated)");
+    const double interval_s = config.model.sample_interval_s;
+    stride_ = viterbi::whole_count(config.channel_floor_stride_s, interval_s, "channel_floor_stride_s", "samples");
+    refresh_ = viterbi::whole_count(config.channel_floor_refresh_s, interval_s, "channel_floor_refresh_s", "samples");
+    const double values_per_s = 1.0 / (stride_ * interval_s);
+    if (!(window_s * values_per_s >= 1.0))
+        throw std::invalid_argument("segmental: channel_floor_window_s must hold at least one channel_floor_stride_s");
+    const double start_s = config.channel_floor_start_s;
+    if (!(start_s >= 0.0 && start_s <= window_s))
+        throw std::invalid_argument("segmental: channel_floor_start_s must lie between 0 s and channel_floor_window_s");
+    capacity_ = static_cast<std::size_t>(window_s * values_per_s);
+    minimum_ = std::max<std::size_t>(1, static_cast<std::size_t>(start_s * values_per_s));
+    quantile_ = q;
+    to_noise_ = std::pow(10.0, config.channel_floor_margin_db / 10.0) / -std::log1p(-q);
+    ring_.assign(capacity_, 0.0);
+    work_.reserve(capacity_);
+    on_ = true;
+}
+
+double ChannelFloor::sigma2(double e_fs, double hiss_sigma2_fs2) {
+    if (!on_) return hiss_sigma2_fs2;
+    ++count_;
+    if (count_ % stride_ == 0) ring_[written_++ % capacity_] = e_fs * e_fs;
+    if (count_ % refresh_ == 0 && written_ >= minimum_) {
+        const std::size_t held = std::min(written_, capacity_);
+        work_.assign(ring_.begin(), ring_.begin() + static_cast<std::ptrdiff_t>(held));
+        const std::size_t rank = static_cast<std::size_t>(quantile_ * static_cast<double>(held));
+        std::nth_element(work_.begin(), work_.begin() + static_cast<std::ptrdiff_t>(rank), work_.end());
+        floor_ = work_[rank] * to_noise_;
+    }
+    return std::max(hiss_sigma2_fs2, floor_);
+}
+
 LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& tables, RunningSums& sums)
     : tables_(tables),
       sums_(sums),

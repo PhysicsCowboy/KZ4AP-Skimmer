@@ -81,6 +81,7 @@ private:
     std::vector<std::string> published_;  // the consumer's list, as sent
     double rate_;
     std::shared_ptr<const SegmentalShared> shared_;
+    std::unique_ptr<segmental::ChannelFloor> floor_;
     std::unique_ptr<segmental::RunningSums> sums_;
     std::unique_ptr<segmental::LevelEvidence> evidence_;
     std::unique_ptr<segmental::Search> search_;

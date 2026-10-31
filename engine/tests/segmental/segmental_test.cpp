@@ -328,6 +328,54 @@ TEST(LevelEvidence, OneExtremeSampleLeavesTheChannelAlive) {
     }
 }
 
+TEST(ChannelFloor, ReadsTheNoiseLessItsMarginOnceItsStartIsIn) {
+    SegmentalConfig config;
+    ChannelFloor floor(config);
+    std::mt19937 rng(11);
+    std::exponential_distribution<double> power(1.0 / 4.0);  // e^2 of noise of 4 FS^2
+    const double hiss = 0.5;                                 // FS^2: reads 9 dB low
+    double last = 0.0;
+    for (int k = 0; k < 3000; ++k) {
+        last = floor.sigma2(std::sqrt(power(rng)), hiss);
+        // 375 samples/s: nothing before 1 s; the first value at the first refresh after it (36 samples apart)
+        if (k < 360) EXPECT_EQ(last, hiss) << k;
+    }
+    EXPECT_NEAR(last, 4.0 * std::pow(10.0, -0.3), 0.5);
+    // Never below the hiss.
+    EXPECT_EQ(floor.sigma2(0.0, 100.0), 100.0);
+}
+
+TEST(ChannelFloor, ForgetsWhatLeavesItsWindow) {
+    SegmentalConfig config;
+    ChannelFloor floor(config);
+    std::mt19937 rng(12);
+    std::exponential_distribution<double> loud(1.0 / 400.0), quiet(1.0 / 4.0);
+    for (int k = 0; k < 1875; ++k) floor.sigma2(std::sqrt(loud(rng)), 1e-6);  // 5 s of 400 FS^2
+    EXPECT_NEAR(floor.sigma2(std::sqrt(loud(rng)), 1e-6), 400.0 * std::pow(10.0, -0.3), 60.0);
+    double last = 0.0;
+    for (int k = 0; k < 1875 + 72; ++k) last = floor.sigma2(std::sqrt(quiet(rng)), 1e-6);  // 5 s and two refreshes of 4 FS^2
+    EXPECT_NEAR(last, 4.0 * std::pow(10.0, -0.3), 0.6);
+}
+
+TEST(ChannelFloor, IsLeftOutAtAWindowOfZeroAndRefusesWhatCannotBe) {
+    SegmentalConfig off;
+    off.channel_floor_window_s = 0.0;
+    ChannelFloor floor(off);
+    for (int k = 0; k < 2000; ++k) EXPECT_EQ(floor.sigma2(100.0, 0.5), 0.5);
+    const auto refuses = [](auto change) {
+        SegmentalConfig config;
+        change(config);
+        EXPECT_THROW(ChannelFloor{config}, std::invalid_argument);
+    };
+    refuses([](SegmentalConfig& c) { c.channel_floor_window_s = -1.0; });
+    refuses([](SegmentalConfig& c) { c.channel_floor_quantile = 0.0; });
+    refuses([](SegmentalConfig& c) { c.channel_floor_quantile = 1.0; });
+    refuses([](SegmentalConfig& c) { c.channel_floor_margin_db = std::nan(""); });
+    refuses([](SegmentalConfig& c) { c.channel_floor_stride_s = 0.001; });  // not a whole number of samples
+    refuses([](SegmentalConfig& c) { c.channel_floor_refresh_s = 0.0; });
+    refuses([](SegmentalConfig& c) { c.channel_floor_start_s = 6.0; });     // longer than the window
+}
+
 TEST(SegmentalConfig, HasItsOwnSystematicFloorAndLeavesTheViterbiDecodersAlone) {
     EXPECT_EQ(SegmentalConfig{}.model.systematic_floor, 0.1);
     EXPECT_EQ(viterbi::ViterbiConfig{}.systematic_floor, 0.02);
