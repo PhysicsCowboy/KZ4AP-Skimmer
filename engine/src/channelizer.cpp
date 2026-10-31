@@ -120,16 +120,36 @@ Channelizer::Block Channelizer::begin_block(std::span<const Sample> hop) {
     // The moves asked for since the last block (set_center_bin) take effect now, before any channel is cut.
     for (const auto& [id, center] : moves_) channels_.at(id) = center;
     moves_.clear();
+    if (keep_past_ > 0) {
+        // The oldest block's vector is reused, so that this costs a copy of the spectrum and no allocation.
+        Past newest;
+        if (past_.size() >= keep_past_) {
+            newest = std::move(past_.front());
+            past_.pop_front();
+        }
+        newest.block = block;
+        newest.spectrum = spectrum_;
+        past_.push_back(std::move(newest));
+    }
     return block;
 }
 
 std::span<Sample> Channelizer::cut(const Block& block, int center, std::span<Sample> in, std::span<Sample> out) const {
+    return cut_from(spectrum_, block, center, in, out);
+}
+
+std::span<Sample> Channelizer::cut_past(const Past& past, int center, std::span<Sample> in, std::span<Sample> out) const {
+    return cut_from(past.spectrum, past.block, center, in, out);
+}
+
+std::span<Sample> Channelizer::cut_from(const std::vector<Sample>& spectrum, const Block& block, int center, std::span<Sample> in,
+                                        std::span<Sample> out) const {
     const int n = config_.fft_size;
     const int m = config_.channel_bins;
     const int keep = hop_ / decimation_;
     for (int k = -m / 2; k < m / 2; ++k) {
         const int src = ((center + k) % n + n) % n;
-        in[(k + m) % m] = spectrum_[src] * filter_[(k + m) % m];
+        in[(k + m) % m] = spectrum[src] * filter_[(k + m) % m];
     }
     detail::fft_inverse(in.data(), out.data(), static_cast<std::size_t>(m));
     // The inverse FFT mixes relative to this block's start; re-reference the mixer

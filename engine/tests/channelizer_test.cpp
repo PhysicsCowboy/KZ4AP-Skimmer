@@ -147,3 +147,32 @@ TEST(Channelizer, TransitionBandMustFitInsideTheOutputBand) {
     EXPECT_NO_THROW(Channelizer({.sample_rate = 48000, .fft_size = 2048}));
     EXPECT_NO_THROW(Channelizer({.sample_rate = 44100, .fft_size = 2048}));
 }
+
+TEST(Channelizer, APastBlockCutsToWhatTheBlockGaveAtTheTime) {
+    Channelizer ch(ChannelizerConfig{kRate, kN, 64, 150.0});
+    ch.keep_past(3);
+    const std::vector<Sample> x = tone(201 * kBinHz + 5.0, 0.3, kN * 4);
+    std::vector<Sample> in(64), out(64), in2(64), out2(64);
+    std::vector<std::vector<Sample>> then;
+    for (int b = 0; b < 8; ++b) {
+        const Channelizer::Block block = ch.begin_block(std::span<const Sample>(x).subspan(static_cast<std::size_t>(b) * (kN / 2), kN / 2));
+        const std::span<Sample> s = ch.cut(block, 201, in, out);
+        then.emplace_back(s.begin(), s.end());
+        ASSERT_LE(ch.past().size(), 3u);
+        ASSERT_EQ(ch.past().back().block.first_index, block.first_index);
+    }
+    ASSERT_EQ(ch.past().size(), 3u);
+    for (std::size_t k = 0; k < 3; ++k) {
+        const std::span<Sample> s = ch.cut_past(ch.past()[k], 201, in2, out2);
+        const std::vector<Sample>& want = then[5 + k];
+        ASSERT_EQ(s.size(), want.size());
+        for (std::size_t i = 0; i < s.size(); ++i) EXPECT_EQ(s[i], want[i]);
+    }
+}
+
+TEST(Channelizer, KeepsNoPastUnlessAsked) {
+    Channelizer ch(ChannelizerConfig{kRate, kN, 64, 150.0});
+    const std::vector<Sample> x(kN / 2);
+    ch.begin_block(x);
+    EXPECT_TRUE(ch.past().empty());
+}
