@@ -471,8 +471,10 @@ void CallSearch::apply(const DecodedTextEvent& event) {
 
 void CallSearch::advance(double now_s) {
     now_s_ = now_s;
-    if (now_s_ - last_read_s_ < 1.0) return;  // s: read once a second of stream
-    last_read_s_ = now_s_;
+    // Read once a second of stream, on whole seconds, so that what is read does not depend on how often the clock is given (a replay, the app).
+    const double second = std::floor(now_s_);
+    if (second <= last_read_s_) return;
+    last_read_s_ = second;
     for (auto& [id, track] : tracks_) read_track(track, false);
     if (now_s_ - last_prune_s_ >= 30.0) {
         last_prune_s_ = now_s_;
@@ -498,7 +500,7 @@ void CallSearch::read_track(TrackText& t, bool all) {
     const std::size_t read_at = t.read_to > t.base ? t.read_to - t.base : 0;
     // The first word not yet read, and the words that have settled: over before now - settle_s, with a word behind them, or a track
     // that has ended.
-    const double settled = now_s_ - config_.settle_s;
+    const double settled = last_read_s_ - config_.settle_s;
     std::size_t from = 0;
     while (from < words.size() && words[from].first < read_at) ++from;
     std::size_t to = from;
@@ -529,6 +531,7 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
         c.known = known_ && known_->contains(r.base);
         c.first_s = r.start_s;
     }
+    c.first_s = std::min(c.first_s, r.start_s);  // a correction can read something earlier than what came first
     const double points = r.reading == Reading::Whole || r.reading == Reading::Glued ? 1.0 : config_.stripped_points;
     // A keyword beside it, or the call sent twice: either way the word is used as a call.
     const bool framed = r.role != Role::Unknown || (r.doubled && config_.doubled_is_framed != 0.0);

@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -453,6 +454,40 @@ TEST(CallSearch, TheReReadCanBeTurnedOff) {
     s.search.advance(180.0);
     EXPECT_NE(s.row("OL1TM"), nullptr);
     EXPECT_EQ(s.row("ZL1TM"), nullptr);
+}
+
+TEST(CallSearch, AFirstReadingFoundLaterMovesTheFirstTimeBack) {
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "DE K1ABD ", 100.0);
+    s.text(1, 1000.0, "DE K1ABC ", 200.0);
+    s.search.advance(230.0);
+    s.search.apply(correction(1, 1000.0, 0, "DE K1ABC ", 100.0));
+    s.search.finish();
+    bool found = false;
+    for (const CallRow& r : s.search.candidates()) {
+        if (r.base == "K1ABC") {
+            found = true;
+            EXPECT_NEAR(r.first_s, 100.3, 1e-6);
+        }
+    }
+    EXPECT_TRUE(found);
+}
+
+TEST(CallSearch, HowOftenTheClockIsGivenDoesNotChangeWhatIsRead) {
+    const auto list = [](double step_s) {
+        Stage s;
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "DE K1ABC K ", 100.0);
+        s.text(1, 1000.0, "DE K1ABC K ", 120.0);
+        std::vector<double> first;
+        for (double t = 100.0; t < 140.0; t += step_s) {
+            s.search.advance(t);
+            if (!s.search.calls().empty() && first.empty()) first.push_back(std::floor(t));
+        }
+        return first;
+    };
+    EXPECT_EQ(list(0.5), list(0.0213));
 }
 
 TEST(CallSearch, TheTextIsReadOnlyOnceItHasSettled) {
