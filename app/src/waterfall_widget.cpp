@@ -227,7 +227,7 @@ void WaterfallWidget::paintEvent(QPaintEvent*) {
 
     if (!started_) {
         p.setPen(foreground);
-        p.drawText(plot, Qt::AlignCenter, tr("Open an I/Q recording to begin."));
+        p.drawText(plot, Qt::AlignCenter, tr("Open an I/Q recording, or press Start radio, to begin."));
     }
 }
 

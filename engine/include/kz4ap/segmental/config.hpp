@@ -93,11 +93,12 @@ struct SegmentalConfig {
 
     // 1: the filter scales, each a whole channel of evidence and search with its own front filter: scale m has a filter matched to
     // a dot of m x 12 ms (noise bandwidth about 74.5 Hz / m) and reads its stories' speeds from a dot of m x 12 ms down. It must
-    // start with 1, the widest. Each m is a whole number. Heuristic, by measurement: on the test set's slices {1, 2, 3} reads E2 0.507
-    // against 0.689 with the widest alone, and fading 0.163 against 0.183; adding 6 (12 Hz) reads E2 0.42 but fading 0.175 and
-    // the second QSO group 0.082 against 0.068, for 2 ms per channel-second more and a filter a detector's frequency error matters to.
-    std::vector<int> filter_scales = {1, 2, 3};
-    // s of stream: the choice of filter reads S - F from here on. A jump in the noise reading gave one stream 100 000 nats in the
+    // start with 1, the widest. Each m is a whole number. Heuristic, by measurement: on the whole test set's seed 1 {1, 3} reads E2 0.575
+    // against 0.562 with {1, 2, 3} and 0.691 with the widest alone, every other group within 0.001 of {1, 2, 3}, for about a quarter
+    // less CPU (docs/decision-log.md, 2026-10-31); adding 6 (12 Hz) reads E2 0.42 on a slice but fading 0.175 against 0.163 and the
+    // second QSO group 0.082 against 0.068, for 2 ms per channel-second more and a filter a detector's frequency error matters to.
+    std::vector<int> filter_scales = {1, 3};
+    // s of the channel's age: the choice of filter reads S - F from here on. A jump in the noise reading gave one stream 100 000 nats in the
     // first second, before the channel floor is in (1 s). Heuristic.
     double filter_scale_start_s = 1.5;
     // 1, nats: a narrower filter may lead only if it has read at least this share of the symbols the widest has, or stands at this
@@ -106,10 +107,11 @@ struct SegmentalConfig {
     // are. Heuristics, by measurement (docs/decision-log.md, 2026-10-31).
     double filter_scale_min_symbols = 0.5;
     double filter_scale_enough_nats = 100.0;
-    // s of stream, nats: from this time on, a scale other than the widest and the leader that trails the leader by more than
-    // this, or may not lead, is dropped for the channel's life. Heuristics; what they buy is CPU. A negative time never drops.
+    // s of the channel's age, nats: from this age on, a scale other than the widest and the leader that trails the leader by more than
+    // this, or may not lead, is dropped for the channel's life. Heuristics; what they buy is CPU. A negative time never drops. The
+    // margin: 30 and 100 nats read alike to 0.001 on the test set's seed 1 and seed 2, and 30 costs 10% less CPU there.
     double filter_scale_drop_after_s = 10.0;
-    double filter_scale_drop_margin_nats = 100.0;
+    double filter_scale_drop_margin_nats = 30.0;
     // stories: the search's ceiling at the narrower filters. Heuristic, for CPU: on a real recording's near-threshold channels, 3 000
     // reads 20 ms per channel-second and this 16; what it costs was not measurable on the review's neighbors or Farnsworth. A
     // beam of 12 nats there would save 1.6 ms more and costs 60 Hz at 0 dB re wanted 0.083 to 0.442.

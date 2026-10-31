@@ -9,6 +9,15 @@
 
 namespace kz4ap {
 
+ChannelizerConfig segmental_tables_channel(ChannelizerConfig channel) {
+    const int k = channel.sample_rate / 48000;
+    if (k > 1 && channel.sample_rate % 48000 == 0 && channel.fft_size % (k * channel.channel_bins) == 0) {
+        channel.sample_rate /= k;
+        channel.fft_size /= k;
+    }
+    return channel;
+}
+
 namespace {
 
 void require(bool ok, const char* message) {
@@ -24,15 +33,17 @@ int spacing_of(const segmental::SegmentalConfig& config, double rate_hz) {
     return viterbi::whole_count(config.model.sample_interval_s, 1.0 / rate_hz, "sample_interval_s", "channel samples");
 }
 
-viterbi::OutputNoise noise_of(const segmental::SegmentalConfig& config, const ChannelizerConfig& channel,
+viterbi::OutputNoise noise_of(const segmental::SegmentalConfig& config, const ChannelizerConfig& channel_in,
                               const std::vector<double>& front) {
+    const ChannelizerConfig channel = segmental_tables_channel(channel_in);
     const double rate = channel_rate(channel);
     return viterbi::output_noise(channel_filter_taps(channel), channel.sample_rate, channel.fft_size / channel.channel_bins,
                                  front, spacing_of(config, rate));
 }
 
-viterbi::TemplateTables template_of(const segmental::SegmentalConfig& config, const ChannelizerConfig& channel,
+viterbi::TemplateTables template_of(const segmental::SegmentalConfig& config, const ChannelizerConfig& channel_in,
                                     const std::vector<double>& front) {
+    const ChannelizerConfig channel = segmental_tables_channel(channel_in);
     const double rate = channel_rate(channel);
     // Zeros before the taps delay the response, what template_delay_s asks.
     std::vector<double> taps = channel_filter_taps(channel);
@@ -109,9 +120,10 @@ int SegmentalDecoder::leading_scale() const { return streams_[leader_].scale; }
 
 std::size_t SegmentalDecoder::streams_running() const { return streams_.size(); }
 
-bool SegmentalDecoder::choose_leader(double now_s, bool may_drop) {
+bool SegmentalDecoder::choose_leader(double stream_now_s, bool may_drop) {
     const segmental::SegmentalConfig& config = shared_->config;
     if (streams_.size() == 1) return false;
+    const double now_s = stream_now_s - first_s_;  // the channel's age, a replay's seconds included
     if (!choice_started_) {
         if (now_s < config.filter_scale_start_s) return false;
         choice_started_ = true;
@@ -190,6 +202,7 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
         require(index >= 0.0 && index < 9e15 && std::fabs(position - index) <= 1e-3,
                 "SegmentalDecoder::process: the first block's t0_s must be a channel sample's stream time");
         next_index_ = static_cast<std::uint64_t>(index);
+        first_s_ = t0_s;
         started_ = true;
     } else {
         const double expected_s = static_cast<double>(next_index_) / rate_;
@@ -285,6 +298,7 @@ void SegmentalDecoder::reset() {
     started_ = false;
     flushed_ = false;
     next_index_ = 0;
+    first_s_ = 0.0;
     next_publish_s_ = 0.0;
     wpm_ = 0.0f;
     published_.clear();

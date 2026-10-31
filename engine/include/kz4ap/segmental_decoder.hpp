@@ -30,6 +30,12 @@
 
 namespace kz4ap {
 
+// The channel the template and noise tables are computed on: the same filter at 48 kHz where the rate is a whole multiple of 48 kHz
+// and fft_size allows. The channel filter's length in s, its cutoff and the channel's rate do not depend on the input rate (the
+// engine's fft_size goes with it), so the tables differ only in the positions averaged over; computing them at the full rate takes
+// time in proportion to the rate squared and the filter scale. Agreement: SegmentalShared.TablesFromTheStandInAgreeWithTheFullRate.
+ChannelizerConfig segmental_tables_channel(ChannelizerConfig channel);
+
 // What every SegmentalDecoder of a configuration on one channel filter shares, built once from the channelizer's taps.
 struct SegmentalParts {
     SegmentalParts(const segmental::SegmentalConfig& config, const ChannelizerConfig& channel);
@@ -114,9 +120,9 @@ private:
         double start_morse_over_free = 0.0;  // nats
         double start_symbols = 0.0;
     };
-    // Chooses the leader from what stands, and at or after the drop time, if `may_drop`, drops what has fallen behind it. True if
-    // the leader changed.
-    bool choose_leader(double now_s, bool may_drop);
+    // Chooses the leader from what stands, and at or after the drop time of the channel's age, if `may_drop`, drops what has fallen
+    // behind it. True if the leader changed. stream_now_s: s of stream; a channel's age is that less the time of its first sample.
+    bool choose_leader(double stream_now_s, bool may_drop);
 
     std::vector<Stream> streams_;  // the widest first; never empty
     std::size_t leader_ = 0;
@@ -131,6 +137,7 @@ private:
     bool started_ = false;
     bool flushed_ = false;
     std::uint64_t next_index_ = 0;
+    double first_s_ = 0.0;  // s of stream: the channel's first sample, a replay's included
 };
 
 }  // namespace kz4ap

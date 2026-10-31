@@ -189,6 +189,25 @@ TEST(SdrplaySourceFake, LetsGoOfTheRadioInOrder) {
     EXPECT_EQ(fake.call("fake_closes"), closes + 1);
 }
 
+TEST(SdrplaySourceFake, AFullRingIsCountedAndTheReaderGoesOnFromNewSamples) {
+    // What a reader that stops for longer than the ring holds meets (at the lowest rate, the smallest ring: 5.46 s of samples): the
+    // samples that did not fit are counted, what the ring held is thrown away with them, and what follows has no gap.
+    pretend("");
+    SdrplaySettings settings;
+    settings.sample_rate = 96000;
+    SdrplaySource source(settings, kFake);
+    const auto limit = std::chrono::steady_clock::now() + 60s;
+    while (source.dropped_samples() == 0 && std::chrono::steady_clock::now() < limit) std::this_thread::sleep_for(50ms);
+    ASSERT_GT(source.dropped_samples(), 0u) << "the stand-in delivers faster than the rate, so an unread ring fills";
+    const std::vector<Sample> samples = read_samples(source, 5000);
+    ASSERT_GE(samples.size(), 5000u);
+    EXPECT_GE(source.dropped_samples(), 96000u * 5u) << "the ring's contents count as lost";
+    for (std::size_t i = 1; i < samples.size(); ++i) {
+        const float step = samples[i].real() * 32768.0f - samples[i - 1].real() * 32768.0f;
+        ASSERT_TRUE(step == 1.0f || step == -65535.0f) << "a gap at " << i;
+    }
+}
+
 TEST(SdrplaySourceFake, RecordsTheRawSamplesEvenIfThePipelineReadsNothing) {
     pretend("");
     const auto path = std::filesystem::temp_directory_path() / "kz4ap_sdrplay_recording.wav";

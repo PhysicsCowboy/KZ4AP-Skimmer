@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <random>
 #include <string>
@@ -530,10 +531,10 @@ TEST(FilterScale, ItsEdgesLieInTheEvidencesWindow) {
                 0.1 * shared.output_noise.sigma2_per_n0_hz / 3.0);
 }
 
-TEST(FilterScale, AFastStationDropsTheNarrowFiltersAndASlowOneKeepsOne) {
+TEST(FilterScale, AFastStationDropsTheNarrowFilterAndAWideMarginKeepsItForASlowOne) {
     // A channel's samples at 1 500 samples/s, carrier keyed, +20 dB S500, noise at 0.02 FS over 48 kHz's density: past the drop
-    // time a narrow filter that reads a 60 WPM station is gone, and at 15 WPM at most the widest and one other run. The text is exact.
-    auto shared = std::make_shared<const SegmentalShared>(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    // time a narrow filter that reads a 60 WPM station is gone. At 15 WPM it can read, so the drop is the margin's alone: with a wide
+    // margin the widest and the narrow one still run (at the default 30 nats a clean station may drop it). The text is exact.
     const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
     const double amplitude = std::sqrt(100.0 * n0_fs2_per_hz * 500.0);
     std::mt19937 rng(11);
@@ -543,6 +544,9 @@ TEST(FilterScale, AFastStationDropsTheNarrowFiltersAndASlowOneKeepsOne) {
         std::string text = message;
         while (static_cast<int>(text.size()) * dot_samples * 8 < 1500 * 16) text += " " + message;
         const Keyed keyed = keyed_text(text, dot_samples, 300, 1500);
+        SegmentalConfig config;
+        if (dot_samples != 30) config.filter_scale_drop_margin_nats = 1e6;
+        auto shared = std::make_shared<const SegmentalShared>(config, ChannelizerConfig{48000, 2048, 64, 150.0});
         SegmentalDecoder decoder(1500.0, shared);
         decoder.set_noise_density_fs2_per_hz(n0_fs2_per_hz);
         std::vector<Sample> block;
@@ -566,12 +570,93 @@ TEST(FilterScale, AFastStationDropsTheNarrowFiltersAndASlowOneKeepsOne) {
             EXPECT_EQ(decoder.streams_running(), 1u);
             EXPECT_EQ(decoder.leading_scale(), 1);
         } else {
-            EXPECT_LE(decoder.streams_running(), 2u);
+            EXPECT_EQ(decoder.streams_running(), 2u);
         }
         take(decoder.flush());
         std::string read;
         for (const std::string& symbol : list) read += symbol;
         EXPECT_EQ(read, text) << dot_samples << " samples per dot";
+    }
+}
+
+TEST(FilterScale, TheChoiceRunsOnTheChannelsAgeNotTheStreams) {
+    // Review 4: a channel that opened after 10 s of stream had its narrower filter dropped within seconds. The same samples, a 60 WPM
+    // station the narrower filter cannot read, from 0 s and from 100 s of stream: at 5 s of age both still run both streams,
+    // at 16 s both have dropped it, and the text is the same.
+    auto shared = std::make_shared<const SegmentalShared>(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
+    const double amplitude = std::sqrt(100.0 * n0_fs2_per_hz * 500.0);
+    std::mt19937 rng(11);
+    std::normal_distribution<double> draw(0.0, std::sqrt(n0_fs2_per_hz * 1500.0 / 2.0));
+    std::string text = "CQ CQ DE W1AW W1AW K TEST 5NN 73 DE K1ABC K1ABC K";
+    while (static_cast<int>(text.size()) * 30 * 8 < 1500 * 18) text += " CQ CQ DE W1AW W1AW K";
+    const Keyed keyed = keyed_text(text, 30, 300, 1500);
+    std::vector<Sample> samples;
+    for (const double key : keyed.key) samples.emplace_back(static_cast<float>(amplitude * key + draw(rng)), static_cast<float>(draw(rng)));
+    struct Result {
+        std::size_t at_5_s = 0, at_16_s = 0;
+        std::vector<std::string> published;
+    };
+    const auto run = [&](double t0_s) {
+        Result result;
+        SegmentalDecoder decoder(1500.0, shared);
+        decoder.set_noise_density_fs2_per_hz(n0_fs2_per_hz);
+        for (std::size_t k = 0; k < samples.size(); k += 32) {
+            const std::size_t n = std::min<std::size_t>(32, samples.size() - k);
+            (void)decoder.process(std::span<const Sample>(samples).subspan(k, n), t0_s + static_cast<double>(k) / 1500.0);
+            const double age_s = static_cast<double>(k + n) / 1500.0;
+            if (result.at_5_s == 0 && age_s >= 5.0) result.at_5_s = decoder.streams_running();
+            if (result.at_16_s == 0 && age_s >= 16.0) result.at_16_s = decoder.streams_running();
+        }
+        (void)decoder.flush();
+        const auto list = decoder.published_symbols();
+        result.published.assign(list.begin(), list.end());
+        return result;
+    };
+    const Result early = run(0.0);
+    const Result late = run(100.0);
+    EXPECT_EQ(early.at_5_s, 2u);
+    EXPECT_EQ(late.at_5_s, 2u);
+    EXPECT_EQ(early.at_16_s, 1u);
+    EXPECT_EQ(late.at_16_s, 1u);
+    EXPECT_EQ(late.published, early.published);
+}
+
+TEST(SegmentalShared, BuildsQuicklyAtTheRadiosHighestRate) {
+    // Review 4: as merged 16.0 s at 768 kHz with three filters, on the pipeline's thread with the radio already running, longer than
+    // the radio's ring of 5.46 s. The limit is what is short against the ring on a loaded machine.
+    const auto start = std::chrono::steady_clock::now();
+    const SegmentalShared shared(SegmentalConfig{}, ChannelizerConfig{768000, 32768, 64, 150.0});
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    std::cout << "measured: built at 768 kHz in " << seconds << " s\n";
+    EXPECT_LT(seconds, 2.0);
+}
+
+TEST(SegmentalShared, TablesFromTheStandInAgreeWithTheFullRate) {
+    // The tables are computed on the 48 kHz stand-in (segmental_tables_channel). Against the same tables computed at the full rate, at
+    // the widest and the narrowest filter; 192 kHz for the narrow one to keep the test short.
+    EXPECT_EQ(segmental_tables_channel(ChannelizerConfig{768000, 32768, 64, 150.0}).sample_rate, 48000);
+    EXPECT_EQ(segmental_tables_channel(ChannelizerConfig{768000, 32768, 64, 150.0}).fft_size, 2048);
+    EXPECT_EQ(segmental_tables_channel(ChannelizerConfig{44100, 2048, 64, 150.0}).sample_rate, 44100);
+    const struct {
+        int rate, fft, scale;
+    } cases[] = {{768000, 32768, 1}, {192000, 8192, 3}};
+    for (const auto& c : cases) {
+        const SegmentalConfig config = at_filter_scale(SegmentalConfig{}, c.scale);
+        const ChannelizerConfig channel{c.rate, c.fft, 64, 150.0};
+        const SegmentalParts parts(config, channel);
+        std::vector<double> taps = channel_filter_taps(channel);
+        taps.insert(taps.begin(), static_cast<std::size_t>(std::lround(config.template_delay_s * c.rate)), 0.0);
+        const viterbi::TemplateTables full =
+            viterbi::make_template_tables(taps, c.rate, c.fft / 64, parts.front_taps, parts.channel_samples_per_sample,
+                                          config.model.edge_rise_s, config.model.edge_rise_min_s, config.model.edge_rise_max_s);
+        const viterbi::OutputNoise noise = viterbi::output_noise(channel_filter_taps(channel), c.rate, c.fft / 64, parts.front_taps,
+                                                                 parts.channel_samples_per_sample);
+        for (int j = 0; j < viterbi::TemplateTables::kSpan; ++j)
+            EXPECT_NEAR(parts.template_tables.s[static_cast<std::size_t>(j)], full.s[static_cast<std::size_t>(j)], 1e-3) << c.rate << " j " << j;
+        EXPECT_NEAR(parts.template_tables.half_point_s, full.half_point_s, 1e-5) << c.rate;
+        EXPECT_NEAR(parts.output_noise.sigma2_per_n0_hz, noise.sigma2_per_n0_hz, 1e-4 * noise.sigma2_per_n0_hz) << c.rate;
+        EXPECT_NEAR(parts.output_noise.w_strong, noise.w_strong, 1e-4 * noise.w_strong) << c.rate;
     }
 }
 

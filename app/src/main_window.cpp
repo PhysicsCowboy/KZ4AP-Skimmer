@@ -598,6 +598,9 @@ void MainWindow::update_markers() {
 }
 
 void MainWindow::update_status(const StreamStatus& status) {
+    // s of stream. The first seconds' replays spend their CPU over few live channel-seconds, and read 1 000 ms per channel-second or
+    // more, which says nothing about the load. Heuristic: past the first stations' replays.
+    constexpr double kCpuShownFromS = 10.0;
     const QString stream = total_s_ ? tr("Stream %1 of %2 s").arg(origin_s_ + status.stream_s, 0, 'f', 1).arg(*total_s_, 0, 'f', 1)
                                     : tr("Stream %1 s").arg(status.stream_s, 0, 'f', 1);
     QString state;
@@ -617,10 +620,20 @@ void MainWindow::update_status(const StreamStatus& status) {
     if (rows_dropped_ > 0) speed += tr(", waterfall skipped %1 rows").arg(rows_dropped_);
     speed_label_->setText(speed);
 
-    tracks_label_->setText(status.track_budget > 0 ? tr("Live tracks %1 (falling behind: at most %2)").arg(model_->table().live_count()).arg(status.track_budget)
-                                                   : tr("Live tracks %1").arg(model_->table().live_count()));
+    // Hidden rows are live tracks too: without the count, 59 live over nine rows in view reads as a fault.
+    const auto live_hidden = static_cast<std::size_t>(std::count_if(model_->table().hidden().begin(), model_->table().hidden().end(),
+                                                                    [](const TrackRow& row) { return row.live(); }));
+    QString tracks = tr("Live tracks %1, %2 of them hidden").arg(model_->table().live_count()).arg(live_hidden);
+    if (status.track_budget > 0) {
+        // A budget in force while the stream keeps up is the budget coming back up, one track per s.
+        const bool keeping_up = recent.speed && *recent.speed >= 0.99;
+        tracks += (keeping_up ? tr(" (recovering: at most %1)") : tr(" (falling behind: at most %1)")).arg(status.track_budget);
+    }
+    tracks_label_->setText(tracks);
 
-    if (recent.pipeline_ms_per_channel_s && recent.per_track_ms_per_channel_s && recent.fixed_ms_per_stream_s) {
+    if (status.stream_s < kCpuShownFromS) {
+        cpu_label_->setText(tr("CPU: shown from %1 s of stream").arg(kCpuShownFromS, 0, 'f', 0));
+    } else if (recent.pipeline_ms_per_channel_s && recent.per_track_ms_per_channel_s && recent.fixed_ms_per_stream_s) {
         cpu_label_->setText(tr("CPU: %1 ms per channel-second in all; fixed %2 ms per s of stream, each track %3 ms per channel-second")
                                 .arg(*recent.pipeline_ms_per_channel_s, 0, 'f', 2)
                                 .arg(*recent.fixed_ms_per_stream_s, 0, 'f', 1)
