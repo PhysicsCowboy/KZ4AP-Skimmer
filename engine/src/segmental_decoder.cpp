@@ -104,28 +104,7 @@ void SegmentalDecoder::start() {
     for (std::size_t i = 0; i < shared_->narrower.size(); ++i)
         streams_.emplace_back(shared_->narrower[i], shared_->config.filter_scales[i + 1]);
     leader_ = 0;
-    next_history_s_ = shared_->config.filter_scale_start_s;
-}
-
-double SegmentalDecoder::Stream::recent_morse_over_free() const {
-    if (history.empty()) return 0.0;
-    return morse_over_free() - history[history_next % history.size()];
-}
-
-double SegmentalDecoder::Stream::recent_symbols() const {
-    if (symbol_history.empty()) return 0.0;
-    return static_cast<double>(symbols()) - static_cast<double>(symbol_history[history_next % symbol_history.size()]);
-}
-
-void SegmentalDecoder::Stream::note_history(std::size_t capacity) {
-    if (history.size() < capacity) {
-        history.push_back(morse_over_free());
-        symbol_history.push_back(symbols());
-    } else {
-        history[history_next] = morse_over_free();
-        symbol_history[history_next] = symbols();
-        history_next = (history_next + 1) % capacity;
-    }
+    choice_started_ = false;
 }
 
 int SegmentalDecoder::leading_scale() const { return streams_[leader_].scale; }
@@ -135,20 +114,25 @@ std::size_t SegmentalDecoder::streams_running() const { return streams_.size(); 
 bool SegmentalDecoder::choose_leader(double now_s, bool may_drop) {
     const segmental::SegmentalConfig& config = shared_->config;
     if (streams_.size() == 1) return false;
-    if (now_s >= next_history_s_) {
-        next_history_s_ = now_s + 1.0;
-        const std::size_t capacity = 1 + static_cast<std::size_t>(std::max(1.0, config.filter_scale_window_s));
-        for (Stream& stream : streams_) stream.note_history(capacity);
+    if (!choice_started_) {
+        if (now_s < config.filter_scale_start_s) return false;
+        choice_started_ = true;
+        for (Stream& stream : streams_) {
+            stream.start_morse_over_free = stream.morse_over_free();
+            stream.start_symbols = stream.symbols();
+        }
     }
     const std::size_t before = leader_;
-    const double wanted_symbols = config.filter_scale_min_symbols * streams_.front().recent_symbols();
-    const auto eligible = [&](std::size_t i) { return i == 0 || streams_[i].recent_symbols() >= wanted_symbols; };
+    const double wanted_symbols = config.filter_scale_min_symbols * streams_.front().symbols();
+    const auto eligible = [&](std::size_t i) {
+        return i == 0 || streams_[i].symbols() >= wanted_symbols || streams_[i].morse_over_free() >= config.filter_scale_enough_nats;
+    };
     // The leader that no longer qualifies gives way to the widest, which always does.
     if (!eligible(leader_)) leader_ = 0;
-    double top = streams_[leader_].recent_morse_over_free();
+    double top = streams_[leader_].morse_over_free();
     for (std::size_t i = 0; i < streams_.size(); ++i) {
         if (!eligible(i)) continue;
-        const double value = streams_[i].recent_morse_over_free();
+        const double value = streams_[i].morse_over_free();
         if (value > top + config.filter_scale_switch_nats) {
             top = value;
             leader_ = i;
@@ -159,9 +143,12 @@ bool SegmentalDecoder::choose_leader(double now_s, bool may_drop) {
         // The widest filter stays, whatever it reads: it is what a new, fast sender on this channel can be read with.
         const Stream* leading = &streams_[leader_];
         const int scale = leading->scale;
+        std::size_t index = 0;
+        std::vector<bool> may_lead(streams_.size());
+        for (std::size_t i = 0; i < streams_.size(); ++i) may_lead[i] = eligible(i);
         std::erase_if(streams_, [&](const Stream& s) {
-            return s.scale != 1 && s.scale != scale &&
-                   (s.recent_morse_over_free() < top - config.filter_scale_drop_margin_nats || s.recent_symbols() < wanted_symbols);
+            const bool keep = may_lead[index++];
+            return s.scale != 1 && s.scale != scale && (!keep || s.morse_over_free() < top - config.filter_scale_drop_margin_nats);
         });
         for (std::size_t i = 0; i < streams_.size(); ++i)
             if (streams_[i].scale == scale) leader_ = i;
@@ -298,7 +285,7 @@ DecodeUpdate SegmentalDecoder::flush() {
             std::fprintf(out, "%d", leading_scale());
             for (const Stream& stream : streams_) {
                 std::fprintf(out, "|%d %.3f %.3f %.3f %.3f ", stream.scale, stream.search->best_score(), stream.free_key.nats,
-                             stream.recent_morse_over_free(), stream.recent_symbols());
+                             stream.morse_over_free(), stream.symbols());
                 for (const DecodedSymbol& symbol : stream.search->best_text())
                     std::fprintf(out, "%s", symbol.text == " " ? "_" : symbol.text.c_str());
             }

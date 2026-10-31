@@ -93,13 +93,10 @@ private:
     struct Stream {
         Stream(const SegmentalParts& parts, int scale);
         void advance_free_key();
-        // nats: S - F as it stands, and over the choice's window: what the choice of stream rests on
-        double morse_over_free() const { return search->best_score() - free_key.nats; }
-        double recent_morse_over_free() const;
-        // Symbols of its best story, and how many of them over the window
-        std::size_t symbols() const { return search->best_story(1).length; }
-        double recent_symbols() const;
-        void note_history(std::size_t capacity);
+        // nats: S - F since the choice's start: what the choice of stream rests on
+        double morse_over_free() const { return search->best_score() - free_key.nats - start_morse_over_free; }
+        // Symbols of its best story since then
+        double symbols() const { return static_cast<double>(search->best_story(1).length) - start_symbols; }
 
         const SegmentalParts* parts;
         int scale;
@@ -113,9 +110,8 @@ private:
         std::int64_t free_next = 0;
         std::int64_t pushed = 0;
         std::int64_t expected_k = -1;
-        std::vector<double> history;  // nats: S - F, one a second of stream, the oldest at history_next once it is full
-        std::vector<std::size_t> symbol_history;  // the same for symbols()
-        std::size_t history_next = 0;
+        double start_morse_over_free = 0.0;  // nats
+        double start_symbols = 0.0;
     };
     // Chooses the leader from what stands, and at or after the drop time, if `may_drop`, drops what has fallen behind it. True if
     // the leader changed.
@@ -123,7 +119,7 @@ private:
 
     std::vector<Stream> streams_;  // the widest first; never empty
     std::size_t leader_ = 0;
-    double next_history_s_ = 0.0;
+    bool choice_started_ = false;
 
     double next_publish_s_ = 0.0;
     float wpm_ = 0.0f;

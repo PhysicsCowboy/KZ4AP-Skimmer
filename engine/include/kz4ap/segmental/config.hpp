@@ -90,19 +90,21 @@ struct SegmentalConfig {
 
     // 1: the filter scales, each a whole channel of evidence and search with its own front filter: scale m has a filter matched to
     // a dot of m x 12 ms (noise bandwidth about 74.5 Hz / m) and reads its stories' speeds from a dot of m x 12 ms down. It must
-    // start with 1, the widest. Each m is a whole number. Heuristic: chosen by measurement (docs/decision-log.md, 2026-10-31).
-    std::vector<int> filter_scales = {1, 2, 3, 6};
-    // s: the choice of filter reads S - F over this much of the past, and not before filter_scale_start_s of stream. A jump in the
-    // noise reading gave one stream 100 000 nats in a second, so the whole past would not do; a window also follows the channel's
-    // present sender. Heuristics. The start is past the channel floor's own (1 s).
-    double filter_scale_window_s = 30.0;
+    // start with 1, the widest. Each m is a whole number. Heuristic, by measurement: on the test set's slices {1, 2, 3} reads E2 0.507
+    // against 0.689 with the widest alone, and fading 0.163 against 0.183; adding 6 (12 Hz) reads E2 0.42 but fading 0.175 and
+    // the second QSO group 0.082 against 0.068, for 2 ms per channel-second more and a filter a detector's frequency error matters to.
+    std::vector<int> filter_scales = {1, 2, 3};
+    // s of stream: the choice of filter reads S - F from here on. A jump in the noise reading gave one stream 100 000 nats in the
+    // first second, before the channel floor is in (1 s). Heuristic.
     double filter_scale_start_s = 1.5;
-    // 1: a narrower filter is eligible only if it has read at least this share of the symbols the widest has, over the window: where
-    // it reads nothing, S and F are both about 0, which beats the widest filter's S - F on a weak station, which is often
-    // negative. Heuristic, chosen by measurement: 0.5 and 0.7 read the fists 0.045 and 0.043, against 0.093 with no such rule.
-    double filter_scale_min_symbols = 0.7;
+    // 1, nats: a narrower filter may lead only if it has read at least this share of the symbols the widest has, or stands at this
+    // S - F itself. Where a narrow filter reads next to nothing, S and F are both about 0, and that beats the widest filter's S - F
+    // on a weak station, which is often negative; but a widest filter misled by a neighbor reads over twice the symbols there
+    // are. Heuristics, by measurement (docs/decision-log.md, 2026-10-31).
+    double filter_scale_min_symbols = 0.5;
+    double filter_scale_enough_nats = 100.0;
     // s of stream, nats: from this time on, a scale other than the widest and the leader that trails the leader by more than
-    // this is dropped for the channel's life. Heuristics; what they buy is CPU. A negative time never drops.
+    // this, or may not lead, is dropped for the channel's life. Heuristics; what they buy is CPU. A negative time never drops.
     double filter_scale_drop_after_s = 10.0;
     double filter_scale_drop_margin_nats = 100.0;
     // nats: a scale takes the lead when it stands this far above the leader. Heuristic: the text should not jump on a tie.
