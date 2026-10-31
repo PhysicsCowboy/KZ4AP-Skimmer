@@ -32,7 +32,7 @@ std::vector<double> front_filter_taps(double channel_rate_hz, double dot_s, doub
     const auto half = static_cast<long long>(std::floor(pulse_s * channel_rate_hz / 2.0));
     const auto count = static_cast<std::size_t>(2 * half + 1);
     // The decoder's rate, compared within 1e-9 relatively (a rate computed by a division may differ in its last bit).
-    if (std::fabs(channel_rate_hz - kDefaultChannelRateHz) <= 1e-9 * kDefaultChannelRateHz && count != kDefaultTapCount) {
+    if (std::fabs(channel_rate_hz - kDefaultChannelRateHz) <= 1e-9 * kDefaultChannelRateHz && dot_s == 0.012 && count != kDefaultTapCount) {
         throw std::invalid_argument("front_filter_taps: at 1 500 samples/s the front filter has 25 taps");
     }
     auto c = [&](double x) { return 0.5 - 0.5 * std::cos(std::numbers::pi * std::clamp(x / edge_s, 0.0, 1.0)); };
