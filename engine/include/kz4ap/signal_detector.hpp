@@ -35,7 +35,7 @@ struct DetectorConfig {
     double average_s = 1.0;          // time constant of the per-bin power average; also the warm-up
     double birth_s = 0.5;            // how long a peak must persist to become a track
     double death_s = 10.0;           // how long a track may stay inactive before it dies
-    std::size_t max_tracks = 200;
+    std::size_t max_tracks = 400;    // heuristic: a band's worth of stations; the CPU is the track budget's to guard (StreamRunner)
     int min_separation_bins = 3;     // Attribution::Bins only: peaks closer than this to a track's bin belong to it
     Attribution attribution = Attribution::Distance;
     double attribution_distance_hz = 47.0;  // D_ch, Hz (the engine sets it from EngineConfig::channel_distance_hz)
@@ -78,8 +78,8 @@ public:
     void set_track_limit(std::size_t limit) { track_limit_ = std::min(limit, config_.max_tracks); }
 
     // A track that its decoder's evidence has retired (track_evidence.hpp): it leaves now, and no new track opens within
-    // attribution_distance_hz of its frequency until hold_s after now_s, twice that after a second retirement at the same place
-    // and so on, up to kLongestHoldS. hold_s 0: the place stays open. An unknown id is ignored.
+    // attribution_distance_hz of its frequency until hold_s after now_s, twice that after a retirement at the same place once the
+    // hold before it has ended, and so on, up to kLongestHoldS. hold_s 0: the place stays open. An unknown id is ignored.
     //
     // A wide signal opens track after track at new peaks: at kRegionRetirements such retirements within kRegionRadiusHz of each
     // other in kRegionMemoryS, the whole of that radius closes the same way, from kRegionHoldS. All heuristics, set on real 40 m:
@@ -113,7 +113,7 @@ private:
     struct Hold {
         double freq_hz;
         double until_s;
-        int count;  // retirements here so far
+        int count;  // holds here so far: retirements, not counting those that fell within a running hold
         double radius_hz;
     };
     std::vector<Hold> holds_;

@@ -240,3 +240,57 @@ TEST(SignalDetector, RejectsInvalidDistances) {
     c.candidate_step_hz = -1.0;
     EXPECT_THROW(SignalDetector d(c), std::invalid_argument);
 }
+
+TEST(SignalDetector, HoldsUpToFourHundredTracksByDefault) { EXPECT_EQ(DetectorConfig{}.max_tracks, 400u); }
+
+namespace {
+
+// Frames of a steady signal on one bin until a track is born: how long it took, s, or a negative number within most_s.
+double seconds_until_born(SignalDetector& d, int& frame_index, int bin, double most_s) {
+    const double started = frame_time(frame_index);
+    while (frame_time(frame_index) - started < most_s) {
+        const DetectorUpdate u = d.process(frame(frame_time(frame_index), {{bin, -70.0f}}));
+        ++frame_index;
+        if (!u.born.empty()) return frame_time(frame_index - 1) - started;
+    }
+    return -1.0;
+}
+
+}  // namespace
+
+TEST(SignalDetectorHolds, ARetiredPlaceDoublesOnlyAfterTheHoldBeforeItHasEnded) {
+    SignalDetector d(config());
+    int i = 0;
+    ASSERT_GE(seconds_until_born(d, i, 200, 5.0), 0.0);
+    d.retire(d.tracks().at(0).id, frame_time(i), 2.0);
+    // Closed 2 s, then its persistence, 0.5 s.
+    const double first = seconds_until_born(d, i, 200, 10.0);
+    EXPECT_GE(first, 2.0);
+    EXPECT_LT(first, 3.0);
+    // A retirement after that hold's end is a repeat: twice as long.
+    d.retire(d.tracks().at(0).id, frame_time(i), 2.0);
+    const double second = seconds_until_born(d, i, 200, 10.0);
+    EXPECT_GE(second, 4.0);
+    EXPECT_LT(second, 5.0);
+}
+
+TEST(SignalDetectorHolds, OneWideSignalClosesItsRegionFromTheFirstHoldNotTheLongest) {
+    // The tracks of one wide signal, retiring together: whatever their number, one closure of the region (the review's F2: three
+    // retirements past the fourth took it from 30 s to 120 s at once, and a station in the clear lost 2 min).
+    DetectorConfig c = config();
+    c.peak_radius_hz = 100.0;
+    c.min_separation_bins = 1;
+    SignalDetector d(c);
+    std::vector<std::pair<int, float>> peaks;
+    for (const int bin : {100, 102, 104, 106, 108, 110}) peaks.push_back({bin, -70.0f});
+    int i = 0;
+    for (; i < 200; ++i) d.process(frame(frame_time(i), peaks));
+    const std::vector<Track> tracks = d.tracks();
+    ASSERT_EQ(tracks.size(), peaks.size());
+    const double at = frame_time(i);
+    for (const Track& t : tracks) d.retire(t.id, at, 1.0);
+    // A new signal in the region opens after the region's first hold and its persistence.
+    const double opened = seconds_until_born(d, i, 105, 130.0);
+    EXPECT_GE(opened, SignalDetector::kRegionHoldS);
+    EXPECT_LT(opened, SignalDetector::kRegionHoldS + 1.0);
+}

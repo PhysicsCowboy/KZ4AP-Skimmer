@@ -195,8 +195,11 @@ void SignalDetector::close_place(double freq_hz, double radius_hz, double now_s,
         holds_.push_back({freq_hz, 0.0, 0, radius_hz});
         hold = holds_.end() - 1;
     }
-    hold->until_s = std::max(hold->until_s, now_s + std::min(hold_s * std::ldexp(1.0, hold->count), kLongestHoldS));
-    ++hold->count;
+    // A repeat is a retirement after the hold before it was over. While the hold runs (the tracks of one wide signal, retiring
+    // within seconds of each other) the place is already closed: the hold reaches as far from now as the same step would, no further.
+    const bool repeat = hold->count == 0 || now_s >= hold->until_s;
+    if (repeat) ++hold->count;
+    hold->until_s = std::max(hold->until_s, now_s + std::min(hold_s * std::ldexp(1.0, hold->count - 1), kLongestHoldS));
 }
 
 bool SignalDetector::within_older(std::size_t track, double freq_hz) const {
