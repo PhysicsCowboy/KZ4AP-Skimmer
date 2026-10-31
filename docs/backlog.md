@@ -287,7 +287,7 @@ fit and amplitude mid-transmission. Stage 2: make the over-start test aware of t
 spacing, for example from its fitted word gaps, rather than a fixed multiple of T_g.
 
 ### Farnsworth spacing in the new decoder (owner, 2026-10-21: removed from the first prototype)
-**Status (2026-10-21): open.** The new decoder's first prototype (viterbi) assumes standard spacing only.
+**Status (2026-10-31): done in the segmental decoder, a story's fist being a speed and a gap stretch (decision log); open in viterbi.** The new decoder's first prototype (viterbi) assumes standard spacing only.
 - The Farnsworth factor is removed from its code: the factor in each reading's state, the 23-factor grid, and the
   open-factor tables and scan.
 - The removed code is in the branch's history, in the commits before the prototype's Task 4d.
@@ -354,6 +354,8 @@ A character-frequency prior would not help "EE" against "I", which are both comm
 **How to measure:** DEV2's QSO group (H2) and the one-word overs above, sent alone, at several levels and seeds.
 
 ### A neighbor inside the channel takes over a weak station in the new decoder (found 2026-10-21; open)
+**Status (2026-10-31): in the segmental decoder, a neighbor outside its narrowest filter is fixed (three widths; decision log). Open: an equal neighbor at 30 Hz (CER 0.976, bank 0.363), where every width fails, and neighbors +10 dB and stronger inside 150 Hz. Untried: a second carrier in the level filter, the neighbor's beat in the complex samples, subtracting a neighbor track.**
+
 
 The new decoder's first prototype has no interference model (the plan's O2): its stories model one station per channel,
 and everything else counts as noise or as that station.
@@ -527,6 +529,8 @@ about 4 times today's scoring (rough). D23 rejected it for now at +920% CPU and 
 variant; whether to take it up is left open, to the owner.
 
 ### A narrower filter for slower signals in the new decoder (owner, 2026-10-22; later)
+
+**Status (2026-10-31): done in the segmental decoder as three filter widths with a choice of stream (decision log). Open: a joint search across widths; the slots' memory, about 3 MB a track (a 16-byte slot or per-fist blocks would cut most of it); a fine frequency estimate, without which a narrower filter on the detector's path pays for a track up to half a bin off.**
 
 The owner chose one fixed filter for every speed: about 80 Hz wide, matched to a 12 ms dot at 100 WPM, sampled every
 3 ms (plan D16). Updated 2026-10-25 to the design of plan D16–D17: the filter is matched to a real 100 WPM dot (12 ms at

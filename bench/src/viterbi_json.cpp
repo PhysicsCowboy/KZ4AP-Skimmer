@@ -472,6 +472,14 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"channel_floor_start_s", &config.channel_floor_start_s},
         {"beam_nats", &config.beam_nats},
         {"duration_z_max", &config.duration_z_max},
+        {"gap_unit_max_s", &config.gap_unit_max_s},
+        {"filter_scale_min_symbols", &config.filter_scale_min_symbols},
+        {"filter_scale_enough_nats", &config.filter_scale_enough_nats},
+        {"filter_scale_start_s", &config.filter_scale_start_s},
+        {"filter_scale_drop_after_s", &config.filter_scale_drop_after_s},
+        {"filter_scale_drop_margin_nats", &config.filter_scale_drop_margin_nats},
+        {"filter_scale_switch_nats", &config.filter_scale_switch_nats},
+        {"gap_stretch_prior", &config.gap_stretch_prior},
     };
     for (const auto& [field, target] : fields) {
         if (name == field) {
@@ -481,6 +489,28 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
     }
     if (name == "ceiling") {
         config.ceiling = std::stoi(text);
+        return;
+    }
+    if (name == "filter_scales") {  // a JSON list, or one number
+        const ordered_json value = ordered_json::parse(text);
+        config.filter_scales.clear();
+        if (value.is_array()) {
+            for (const auto& item : value) config.filter_scales.push_back(item.get<int>());
+        } else {
+            config.filter_scales.push_back(value.get<int>());
+        }
+        return;
+    }
+    if (name == "filter_scale_ceiling") {
+        config.filter_scale_ceiling = std::stoi(text);
+        return;
+    }
+    if (name == "gap_stretches") {
+        config.gap_stretches = std::stoi(text);
+        return;
+    }
+    if (name == "gap_stretch_speed_steps") {
+        config.gap_stretch_speed_steps = std::stoi(text);
         return;
     }
     apply_setting(config.model, setting);

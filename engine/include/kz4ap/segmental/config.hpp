@@ -6,6 +6,11 @@
 
 #include "kz4ap/viterbi/config.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
+#include <vector>
+
 namespace kz4ap::segmental {
 
 // The viterbi decoder's model with what the fast form sets differently: the systematic floor f, 1 (a relative amplitude),
@@ -67,6 +72,57 @@ struct SegmentalConfig {
     // s: how much of the channel it reads before it is used. Heuristic.
     double channel_floor_start_s = 1.0;
 
+    // --- A story's fist: the gap stretch (search.hpp) ---
+
+    // count: the gap stretches a story may take, g = 1, r, r^2, ..., r = speed_ratio^gap_stretch_speed_steps; 1 leaves them out.
+    // The default's 7 at r = 1.61 reach g = 17.4; 33 WPM characters at 5 WPM overall are g = 15.7 (ARRL's rule; derived). The
+    // step is a heuristic: a gap half a step off is 0.24 nepers, 0.8 of the fist's sigma, about 0.3 nats per gap (derived).
+    int gap_stretches = 7;
+    int gap_stretch_speed_steps = 5;
+    // s: the longest gap unit g T_s, which is what a speed's stretches stop at: 0.7 s is about 4.5 WPM overall (60 / 19 s / WPM).
+    // Heuristic: slower than anyone copies at; it bounds the tables and how long a gap stays open.
+    double gap_unit_max_s = 0.7;
+    // probability: that a new story's fist is not standard spacing, shared alike by the stretches above 1: ln(0.002 / 6) = -8.0 nats
+    // once per over for a stretched story, ln 0.998 = -0.002 nats for any other. A heuristic, chosen by measurement on the whole
+    // test set's seed 1, with the widest filter alone (fists, the two QSO groups, Farnsworth; no stretches 0.061, 0.055, 0.058, 0.523):
+    // 0.01 0.064, 0.057, 0.063, 0.021; 0.002 0.062, 0.055, 0.058, 0.017; 0.0004 0.061, 0.055, 0.058, 0.039. And CPU, on a real
+    // recording's near-threshold channels: 0.05 costs 14.0 ms per channel-second against 11.0 with no stretches, 0.01 costs 11.4.
+    double gap_stretch_prior = 0.002;
+
+    // --- The front filter's widths (segmental_decoder.hpp) ---
+
+    // 1: the filter scales, each a whole channel of evidence and search with its own front filter: scale m has a filter matched to
+    // a dot of m x 12 ms (noise bandwidth about 74.5 Hz / m) and reads its stories' speeds from a dot of m x 12 ms down. It must
+    // start with 1, the widest. Each m is a whole number. Heuristic, by measurement: on the test set's slices {1, 2, 3} reads E2 0.507
+    // against 0.689 with the widest alone, and fading 0.163 against 0.183; adding 6 (12 Hz) reads E2 0.42 but fading 0.175 and
+    // the second QSO group 0.082 against 0.068, for 2 ms per channel-second more and a filter a detector's frequency error matters to.
+    std::vector<int> filter_scales = {1, 2, 3};
+    // s of stream: the choice of filter reads S - F from here on. A jump in the noise reading gave one stream 100 000 nats in the
+    // first second, before the channel floor is in (1 s). Heuristic.
+    double filter_scale_start_s = 1.5;
+    // 1, nats: a narrower filter may lead only if it has read at least this share of the symbols the widest has, or stands at this
+    // S - F itself. Where a narrow filter reads next to nothing, S and F are both about 0, and that beats the widest filter's S - F
+    // on a weak station, which is often negative; but a widest filter misled by a neighbor reads over twice the symbols there
+    // are. Heuristics, by measurement (docs/decision-log.md, 2026-10-31).
+    double filter_scale_min_symbols = 0.5;
+    double filter_scale_enough_nats = 100.0;
+    // s of stream, nats: from this time on, a scale other than the widest and the leader that trails the leader by more than
+    // this, or may not lead, is dropped for the channel's life. Heuristics; what they buy is CPU. A negative time never drops.
+    double filter_scale_drop_after_s = 10.0;
+    double filter_scale_drop_margin_nats = 100.0;
+    // stories: the search's ceiling at the narrower filters. Heuristic, for CPU: on a real recording's near-threshold channels, 3 000
+    // reads 20 ms per channel-second and this 16; what it costs was not measurable on the review's neighbors or Farnsworth. A
+    // beam of 12 nats there would save 1.6 ms more and costs 60 Hz at 0 dB re wanted 0.083 to 0.442.
+    int filter_scale_ceiling = 300;
+    // nats: a scale takes the lead when it stands this far above the leader. A heuristic, by measurement: on a clean weak station a
+    // narrower filter can stand a few tens of nats above the widest and read a little worse (a generated band: 3 nats, CER
+    // 0.0190; 60 nats, 0.0176; 120 nats, 0.0166, as with the widest alone), and the review's neighbors stand well above that.
+    double filter_scale_switch_nats = 120.0;
+    // s: how much later the template's rise is taken than the chain's own: a narrower filter's response starts sooner after its
+    // edge in samples, and the evidence's window (kEdgeFirst ... kEdgeDone) stays where it is. A story then claims its edges this
+    // much early, which nothing reads but the symbols' times. Set by at_filter_scale.
+    double template_delay_s = 0.0;
+
     // --- The search (search.hpp) ---
 
     // nats: how far behind the best a story may fall and stay. Heuristic, set by measurement.
@@ -76,5 +132,36 @@ struct SegmentalConfig {
     // 1: an element may end only within this many standard deviations of ln(length) of its median. Heuristic.
     double duration_z_max = 4.0;
 };
+
+// The configuration at filter scale m: the sample interval, the filter's dot and the fastest speed's dot m times as long, so
+// that in samples the front filter and the fastest dot stay what they are (the evidence's window of 6 samples and its short
+// elements stay valid) and the speed grid keeps its slowest dot. The level's frame and look-ahead keep about their lengths in s,
+// in whole samples; the channel floor's stride and refresh are m times as long, where its noise's correlation falls.
+// Throws std::invalid_argument for an m below 1.
+inline SegmentalConfig at_filter_scale(SegmentalConfig c, int m) {
+    if (m < 1) throw std::invalid_argument("segmental: a filter scale must be at least 1");
+    if (m == 1) return c;
+    const double scale = m;
+    c.ceiling = c.filter_scale_ceiling;
+    const double interval_s = c.model.sample_interval_s;
+    const int frame_samples = static_cast<int>(std::ceil(c.level_frame_s / (interval_s * scale) - 1e-9));
+    const double frame_s = frame_samples * interval_s * scale;
+    const auto frames_of = [&](double duration_s) { return std::max(1.0, std::round(duration_s / frame_s)) * frame_s; };
+    c.level_lookahead_s = frames_of(c.level_lookahead_s);
+    c.level_commit_s = frames_of(c.level_commit_s);
+    c.level_frame_s = frame_s;
+    c.channel_floor_stride_s *= scale;
+    c.channel_floor_refresh_s *= scale;
+    // The half of a step's response lies at the channel filter's 10.67 ms and the edge's 2.12 ms plus half the front pulse
+    // (T + E) / 2, E = 4.235 ms (derived; viterbi/mark_template.hpp): 7.84 samples at m = 1. The delay keeps it there, to a sample.
+    const double half_s = 0.01279 + (c.model.front_dot_s * scale + 0.004235) / 2.0;
+    const double base_half_s = 0.01279 + (c.model.front_dot_s + 0.004235) / 2.0;
+    c.template_delay_s = std::max(0.0, std::round(base_half_s / interval_s - half_s / (interval_s * scale))) * interval_s * scale;
+    c.model.speed_count = std::max(1, c.model.speed_count - static_cast<int>(std::lround(std::log(scale) / std::log(c.model.speed_ratio))));
+    c.model.sample_interval_s = interval_s * scale;
+    c.model.front_dot_s *= scale;
+    c.model.dot_min_ms *= scale;
+    return c;
+}
 
 }  // namespace kz4ap::segmental

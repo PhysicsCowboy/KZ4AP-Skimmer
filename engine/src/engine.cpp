@@ -131,7 +131,7 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
     } else if (config_.decoder.front_end == FrontEnd::Segmental) {
         // The hiss estimator and a channel that follows the detector, as the new decoder; its own shared parts.
         if (!config_.viterbi_genie.empty()) throw std::invalid_argument("viterbi_genie needs FrontEnd::Viterbi");
-        hiss_ = std::make_unique<viterbi::HissEstimator>(config_.sample_rate, config_.fft_size, config_.viterbi);
+        hiss_ = std::make_unique<viterbi::HissEstimator>(config_.sample_rate, config_.fft_size, config_.segmental.model);
         segmental_shared_ = std::make_shared<const SegmentalShared>(
             config_.segmental, ChannelizerConfig{config_.sample_rate, config_.fft_size, config_.channel_bins,
                                                  config_.channel_cutoff_hz});
