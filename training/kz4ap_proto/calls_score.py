@@ -178,7 +178,13 @@ def _read_lines(text: str) -> tuple[dict[str, Listed], int, list[str], bool]:
         match = _SPOT.match(line)
         if match:
             spots += 1
-            _note(calls, match.group(2), freq=float(match.group(1)))
+            word = match.group(2)
+            if not _note(calls, word, freq=float(match.group(1))):
+                # A spot's word is a station's call by the spotter's own test, whatever this reader's grammar makes of it (D4C, E7DX, LZ1SPACE).
+                entry = calls.setdefault(word.upper(), Listed())
+                entry.count += 1
+                entry.forms.add(word.upper())
+                entry.freqs_khz.append(float(match.group(1)))
             continue
         freq = None
         call = None

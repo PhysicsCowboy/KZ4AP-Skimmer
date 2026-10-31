@@ -44,6 +44,18 @@ def test_telnet_spots():
     assert listed.calls["DL1XY"].freqs_khz == [7031.5]
 
 
+def test_a_spot_is_kept_whatever_the_readers_grammar_makes_of_its_word():
+    # Review 5: these went missing with nothing skipped, so the comparison would flatter this decoder. A spot is the spotter's test, not ours.
+    words = ["9A3B", "D4C", "E7DX", "C6AGU", "P3F", "T6A", "J6M", "K1ABC/QRP", "LZ1SPACE", "K1ABC"]
+    text = "".join(f"DX de ZZ0ZZZ-#: {7000.5 + i}  {w} 14 dB 24 WPM CQ 1538Z\n" for i, w in enumerate(words))
+    listed = read_calls_text(text)
+    assert listed.adapter == "spots"
+    assert sorted(listed.calls) == sorted(["9A3B", "D4C", "E7DX", "C6AGU", "P3F", "T6A", "J6M", "K1ABC", "LZ1SPACE"])
+    assert listed.calls["K1ABC"].count == 2  # K1ABC/QRP and K1ABC: one station
+    assert listed.calls["D4C"].freqs_khz == [7001.5]
+    assert listed.skipped_lines == 0
+
+
 def test_adif():
     text = "header <EOH>\n<CALL:5>K1ABC <FREQ:5:N>7.025 <EOR>\n<CALL:6>DL1XYZ<EOR>"
     listed = read_calls_text(text)
