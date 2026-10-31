@@ -98,6 +98,12 @@ int main(int argc, char* argv[]) {
     const QCommandLineOption decoded_option(QStringLiteral("decoded"),
                                             QStringLiteral("Write the tracks' text to this file, for kz4ap-bench --score-decoded."),
                                             QStringLiteral("path"));
+    const QCommandLineOption calls_option(QStringLiteral("calls"),
+                                          QStringLiteral("Write the call list to this file (CSV), for training/kz4ap_proto/calls_score.py."),
+                                          QStringLiteral("path"));
+    const QCommandLineOption known_calls_option(QStringLiteral("known-calls"),
+                                                QStringLiteral("A known-call list in MASTER.SCP's format: one call a line. The call list works without one."),
+                                                QStringLiteral("path"));
     const QCommandLineOption radio_option(QStringLiteral("radio"), QStringLiteral("Start the SDRplay radio at once."));
     const QCommandLineOption center_option(QStringLiteral("center-khz"), QStringLiteral("The radio's center frequency, kHz."),
                                            QStringLiteral("kHz"), QStringLiteral("7031.5"));
@@ -108,12 +114,13 @@ int main(int argc, char* argv[]) {
     const QCommandLineOption lna_option(QStringLiteral("lna-state"), QStringLiteral("The radio's LNA state, 0 (the most gain) to 9."),
                                         QStringLiteral("n"), QStringLiteral("0"));
     parser.addOptions({decoder_option, speed_option, screenshot_option, screenshot_at_option, report_option,
-                       quit_at_end_option, quit_at_option, transport_option, threads_option, decoded_option, radio_option,
+                       quit_at_end_option, quit_at_option, transport_option, threads_option, decoded_option, calls_option, known_calls_option, radio_option,
                        center_option, rate_option, gain_option, lna_option});
     parser.process(app);
 
     kz4ap::app::Automation automation;
     automation.decoded_path = parser.value(decoded_option);
+    automation.calls_path = parser.value(calls_option);
     automation.screenshot_path = parser.value(screenshot_option);
     automation.screenshot_at_s =
         parser.isSet(screenshot_at_option) ? parser.value(screenshot_at_option).toDouble() : 1e300;
@@ -144,7 +151,16 @@ int main(int argc, char* argv[]) {
     radio.if_gain_reduction_db = parser.value(gain_option).toInt();
     radio.lna_state = parser.value(lna_option).toInt();
 
-    kz4ap::app::MainWindow window(decoder, *speed, threads, radio, automation);
+    std::shared_ptr<const kz4ap::callsign::KnownCalls> known_calls;
+    if (parser.isSet(known_calls_option)) {
+        try {
+            known_calls = std::make_shared<const kz4ap::callsign::KnownCalls>(kz4ap::callsign::KnownCalls::read_file(parser.value(known_calls_option).toStdString()));
+        } catch (const std::exception& e) {
+            return usage_error(QString::fromUtf8(e.what()), quiet);
+        }
+    }
+
+    kz4ap::app::MainWindow window(decoder, *speed, threads, radio, automation, known_calls);
     window.show();
     if (parser.isSet(radio_option)) {
         window.start_radio();
