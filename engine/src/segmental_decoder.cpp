@@ -4,8 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <stdexcept>
 #include <utility>
 
@@ -279,21 +277,7 @@ DecodeUpdate SegmentalDecoder::flush() {
     segmental::BestStory story = search.best_story(0);
     story.tail = search.best_text();
     story.length = story.tail.size();
-    DecodeUpdate last = bring_up_to_date(story, static_cast<double>(next_index_) / rate_);
-    if (const char* path = std::getenv("KZ4AP_TRACE")) {  // experiment: one line per channel, a field per stream
-        if (std::FILE* out = std::fopen(path, "a")) {
-            std::fprintf(out, "%d", leading_scale());
-            for (const Stream& stream : streams_) {
-                std::fprintf(out, "|%d %.3f %.3f %.3f %.3f ", stream.scale, stream.search->best_score(), stream.free_key.nats,
-                             stream.morse_over_free(), stream.symbols());
-                for (const DecodedSymbol& symbol : stream.search->best_text())
-                    std::fprintf(out, "%s", symbol.text == " " ? "_" : symbol.text.c_str());
-            }
-            std::fprintf(out, "\n");
-            std::fclose(out);
-        }
-    }
-    return last;
+    return bring_up_to_date(story, static_cast<double>(next_index_) / rate_);
 }
 
 void SegmentalDecoder::reset() {

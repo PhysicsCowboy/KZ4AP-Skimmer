@@ -311,6 +311,7 @@ TEST(SegmentalSearch, MergesOnSpeedNodeAndKindAtAnEdge) {
     SegmentalConfig config = small_config();
     config.beam_nats = 100.0;
     config.ceiling = 1000000;
+    config.gap_stretches = 1;  // the bound is the same with them; the wide beam is slow
     const ModelTables model(config);
     RunningSums sums;
     Search search(config, model, sums);
@@ -527,6 +528,51 @@ TEST(FilterScale, ItsEdgesLieInTheEvidencesWindow) {
     // The filter's noise bandwidth narrows with the scale, to about its share.
     EXPECT_NEAR(shared.narrower[1].output_noise.sigma2_per_n0_hz, shared.output_noise.sigma2_per_n0_hz / 3.0,
                 0.1 * shared.output_noise.sigma2_per_n0_hz / 3.0);
+}
+
+TEST(FilterScale, AFastStationDropsTheNarrowFiltersAndASlowOneKeepsOne) {
+    // A channel's samples at 1 500 samples/s, carrier keyed, +20 dB S500, noise at 0.02 FS over 48 kHz's density: past the drop
+    // time a narrow filter that reads a 60 WPM station is gone, and at 15 WPM at most the widest and one other run. The text is exact.
+    auto shared = std::make_shared<const SegmentalShared>(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
+    const double amplitude = std::sqrt(100.0 * n0_fs2_per_hz * 500.0);
+    std::mt19937 rng(11);
+    std::normal_distribution<double> draw(0.0, std::sqrt(n0_fs2_per_hz * 1500.0 / 2.0));
+    const std::string message = "CQ CQ DE W1AW W1AW K TEST 5NN 73 DE K1ABC K1ABC K";
+    for (const int dot_samples : {30, 120}) {  // 20 ms, 80 ms
+        std::string text = message;
+        while (static_cast<int>(text.size()) * dot_samples * 8 < 1500 * 16) text += " " + message;
+        const Keyed keyed = keyed_text(text, dot_samples, 300, 1500);
+        SegmentalDecoder decoder(1500.0, shared);
+        decoder.set_noise_density_fs2_per_hz(n0_fs2_per_hz);
+        std::vector<Sample> block;
+        std::vector<std::string> list;
+        std::size_t k = 0;
+        const auto take = [&](const DecodeUpdate& update) {
+            for (const TextCorrection& correction : update.corrections) {
+                list.resize(correction.from_index);
+                for (const DecodedSymbol& symbol : correction.chars) list.push_back(symbol.text);
+            }
+            for (const DecodedSymbol& symbol : update.chars) list.push_back(symbol.text);
+        };
+        while (k < keyed.key.size()) {
+            block.clear();
+            const std::size_t first = k;
+            for (; k < keyed.key.size() && block.size() < 32; ++k)
+                block.emplace_back(static_cast<float>(amplitude * keyed.key[k] + draw(rng)), static_cast<float>(draw(rng)));
+            take(decoder.process(block, static_cast<double>(first) / 1500.0));
+        }
+        if (dot_samples == 30) {
+            EXPECT_EQ(decoder.streams_running(), 1u);
+            EXPECT_EQ(decoder.leading_scale(), 1);
+        } else {
+            EXPECT_LE(decoder.streams_running(), 2u);
+        }
+        take(decoder.flush());
+        std::string read;
+        for (const std::string& symbol : list) read += symbol;
+        EXPECT_EQ(read, text) << dot_samples << " samples per dot";
+    }
 }
 
 TEST(FilterScale, ScalesThatCannotBeAreRefused) {

@@ -8,7 +8,8 @@
 // the same fact. Which stream's text goes out is decided by the streams' evidence for Morse against an on-off key with no timing,
 // S - F, S the stream's best story's score and F the free key's (KeyingEvidence), both on that stream's own evidence: S alone would
 // favor the widest filter, which earns on the neighbor's marks too, and so does F; the difference asks what the filter's output
-// has of Morse's timing and text. A heuristic chosen by measurement (docs/decision-log.md, 2026-10-31).
+// has of Morse's timing and text. A heuristic chosen by measurement (docs/decision-log.md, 2026-10-31). One stream's whole text is
+// what goes out; a stream is not a state of the stories, and no story crosses from one to another.
 #pragma once
 
 #include "kz4ap/channelizer.hpp"
