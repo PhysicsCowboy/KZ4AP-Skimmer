@@ -52,6 +52,8 @@ namespace kz4ap::viterbi {
 // argument, and, at channel_rate_hz = 1 500 samples/s (within 1e-9, relatively), unless that is 25 taps (the decoder's
 // fixed size: other dots and rises need the decoder's other constants changed with them).
 std::vector<double> front_filter_taps(double channel_rate_hz, double dot_s, double rise_10_90_s);
+// The same at any width at any rate: the segmental decoder's filter scales, whose constants scale with the filter.
+std::vector<double> front_filter_taps_any_width(double channel_rate_hz, double dot_s, double rise_10_90_s);
 
 // The output noise of the channel filter and the front filter on white input noise of density N0 (stage 3 above).
 struct OutputNoise {
