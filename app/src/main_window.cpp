@@ -602,7 +602,6 @@ void MainWindow::on_tick() {
             calls.apply(event);
         }, update);
     }
-    calls.advance(status.stream_s);
     meter_.push(status);
     most_live_ = std::max(most_live_, table.live_count());
 

@@ -1,5 +1,6 @@
 #include "display_feed.hpp"
 
+#include <cmath>
 #include <iterator>
 #include <optional>
 #include <utility>
@@ -11,6 +12,12 @@ DisplayFeed::DisplayFeed(int frames_per_row, int max_columns) : builder_(frames_
 void DisplayFeed::on_event(const Event& event) {
     if (const auto* frame = std::get_if<SpectrumFrame>(&event)) {
         std::optional<WaterfallRow> row = builder_.push(*frame);  // outside the lock: this is the costly part
+        const double second = std::floor(frame->time_s);
+        if (second > clock_second_) {
+            clock_second_ = second;
+            std::lock_guard lock(mutex_);
+            updates_.emplace_back(StreamClock{frame->time_s});
+        }
         if (!row) return;
         std::lock_guard lock(mutex_);
         rows_.push_back(std::move(*row));

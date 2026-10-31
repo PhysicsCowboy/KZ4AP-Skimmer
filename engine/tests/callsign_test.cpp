@@ -188,11 +188,13 @@ TEST(Readings, ShortWordsJoined) {
         if (x.base == "WA0QZK") EXPECT_EQ(x.reading, Reading::Joined);
 }
 
-TEST(Readings, TinyPiecesMakeNoCall) {
+TEST(Readings, TinyPiecesAreReadOnlyAsAWholeWord) {
     EXPECT_TRUE(only_tiny_pieces("I5E"));
     EXPECT_FALSE(only_tiny_pieces("K1ABC"));
-    EXPECT_FALSE(has_base(readings("I 5 E H E"), "I5EHE"));
-    EXPECT_FALSE(has_base(readings("EE5E"), "EE5E"));
+    EXPECT_TRUE(has_base(readings("CQ N5AU K"), "N5AU"));
+    EXPECT_FALSE(has_base(readings("I 5 E H E"), "I5EHE"));  // joined
+    EXPECT_FALSE(has_base(readings("EE5E"), "E5E"));         // stripped
+    EXPECT_FALSE(has_base(readings("DEN5AU"), "N5AU"));      // glued
 }
 
 TEST(KnownCallList, ReadsScpFormat) {
@@ -244,8 +246,8 @@ TEST(CallSearch, ReadingsTooFarApartInTimeDoNotAdd) {
     config.window_s = 100.0;
     Stage s(config);
     s.born(1, 1000.0);
-    s.text(1, 1000.0, "DE K1ABC ", 0.0);
-    s.text(1, 1000.0, "DE K1ABC ", 500.0);
+    s.text(1, 1000.0, "CQ K1ABC K ", 0.0);
+    s.text(1, 1000.0, "CQ K1ABC K ", 500.0);
     s.search.advance(600.0);
     EXPECT_EQ(s.row("K1ABC"), nullptr);
 }
@@ -532,6 +534,142 @@ TEST(CallSearch, AKnownCallNeedsOneFramedReadingOrTwoBareAndSpecialFormsNeedTheL
     EXPECT_TRUE(s.row("K1ABC")->known);
     EXPECT_NE(s.row("TM100TF"), nullptr);
     EXPECT_EQ(s.row("OL50HQ"), nullptr);
+}
+
+TEST(CallSearch, ACallOfTinyPiecesNeedsTwoWholeWordsListedOrNot) {
+    // Review 5: a comment said a known-call list rescues these. It did not, and a call read this way now needs the same with a list or without.
+    auto known = std::make_shared<KnownCalls>();
+    known->add("N5AU");
+    for (const auto& list : {std::shared_ptr<KnownCalls>{}, known}) {
+        Stage s(CallSearchConfig{}, list);
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "DE N5AU ", 0.0);
+        s.search.advance(15.0);
+        EXPECT_EQ(s.row("N5AU"), nullptr);  // framed, once: not enough, on the list or off it
+        s.text(1, 1000.0, "DE N5AU K ", 20.0);
+        s.search.advance(40.0);
+        EXPECT_NE(s.row("N5AU"), nullptr);
+    }
+    CallSearchConfig off;
+    off.tiny_points = 0.0;
+    Stage s(off);
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "DE N5AU DE N5AU ", 0.0);
+    s.search.advance(30.0);
+    EXPECT_EQ(s.row("N5AU"), nullptr);
+}
+
+TEST(CallSearch, ACallWithNoDigitAfterALetterDigitPrefixIsNotReadEvenListed) {
+    // A limit, stated in callsign.hpp and appendix A.12: these have no form in the grammar.
+    auto known = std::make_shared<KnownCalls>();
+    for (const char* call : {"D4C", "E7DX", "C6AGU"}) known->add(call);
+    Stage s(CallSearchConfig{}, known);
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "DE D4C D4C K DE E7DX E7DX K DE C6AGU C6AGU K ", 0.0);
+    s.search.advance(30.0);
+    EXPECT_TRUE(s.search.calls().empty());
+}
+
+TEST(CallSearch, AWholeWordNamedOnceIsEnough) {
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "NQ6B 5NN TU ", 0.0);
+    s.search.advance(15.0);
+    ASSERT_NE(s.row("NQ6B"), nullptr);
+    EXPECT_FALSE(s.row("NQ6B")->heard);  // named only: the row says so, and its frequency is the namer's
+    Stage bare;
+    bare.born(1, 1000.0);
+    bare.text(1, 1000.0, "E K1ABC T ", 0.0);
+    bare.search.advance(15.0);
+    EXPECT_EQ(bare.row("K1ABC"), nullptr);
+    Stage stripped;  // a stripped word's half a point does not pass as named
+    stripped.born(1, 1000.0);
+    stripped.text(1, 1000.0, "EK1ABC 5NN ", 0.0);
+    stripped.search.advance(15.0);
+    EXPECT_EQ(stripped.row("K1ABC"), nullptr);
+    CallSearchConfig off;
+    off.points_named = 1e9;
+    Stage refused(off);
+    refused.born(1, 1000.0);
+    refused.text(1, 1000.0, "NQ6B 5NN TU ", 0.0);
+    refused.search.advance(15.0);
+    EXPECT_EQ(refused.row("NQ6B"), nullptr);
+}
+
+TEST(CallSearch, LettersJoinedAcrossSpacesPassOnTheThirdReading) {
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "K1 ABC ", 0.0);
+    s.text(1, 1000.0, "K1 ABC ", 5.0);
+    s.search.advance(20.0);
+    EXPECT_EQ(s.row("K1ABC"), nullptr);  // 1.5 points
+    s.text(1, 1000.0, "K1 ABC ", 20.0);
+    s.search.advance(40.0);
+    EXPECT_NE(s.row("K1ABC"), nullptr);  // 2.25 points
+}
+
+TEST(CallSearch, ACallThatStartsAnotherIsHeldAsAVariant) {
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "DE KX9F DE KX9F DE KX9F K ", 0.0);
+    s.text(1, 1000.0, "DE KX9FKX DE KX9FKX ", 20.0);  // edit distance 2 from KX9F, at 2 points against 3 and 2 letters from it
+    s.search.advance(40.0);
+    EXPECT_NE(s.row("KX9F"), nullptr);
+    EXPECT_EQ(s.row("KX9FKX"), nullptr);
+    CallSearchConfig off;
+    off.prefix_held = 0.0;
+    Stage free(off);
+    free.born(1, 1000.0);
+    free.text(1, 1000.0, "DE KX9F DE KX9F DE KX9F K ", 0.0);
+    free.text(1, 1000.0, "DE KX9FKX DE KX9FKX ", 20.0);
+    free.search.advance(40.0);
+    EXPECT_NE(free.row("KX9FKX"), nullptr);
+}
+
+TEST(CallSearch, ALocalDefeatDoesNotWithdrawACallThatStandsElsewhere) {
+    // Review 5: a call doubled and signed at 1 kHz left the list for a misreading at 2 kHz, 60 s later.
+    const auto run = [](double own_place) {
+        CallSearchConfig config;
+        config.withdraw_own_place = own_place;
+        auto s = std::make_unique<Stage>(config);
+        s->born(1, 1000.0);
+        s->text(1, 1000.0, "CQ TEST W9XYZ W9XYZ K ", 0.0);
+        s->search.advance(15.0);
+        EXPECT_NE(s->row("W9XYZ"), nullptr);
+        s->born(2, 2000.0);
+        s->text(2, 2000.0, "W9XYZ W9XYY W9XYY K ", 60.0);
+        s->search.advance(90.0);
+        return s;
+    };
+    const auto kept = run(1.0);
+    EXPECT_NE(kept->row("W9XYZ"), nullptr);
+    EXPECT_NE(kept->row("W9XYY"), nullptr);
+    const auto as_merged = run(0.0);
+    EXPECT_EQ(as_merged->row("W9XYZ"), nullptr);
+    EXPECT_NE(as_merged->row("W9XYY"), nullptr);
+}
+
+TEST(CallSearch, ALocalDefeatStillWithdrawsAMisreadingThatStandsNowhereElse) {
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "DE W9XYY DE W9XYY K ", 0.0);
+    s.search.advance(15.0);
+    ASSERT_NE(s.row("W9XYY"), nullptr);
+    s.text(1, 1000.0, "DE W9XYZ DE W9XYZ DE W9XYZ K ", 20.0);
+    s.search.advance(40.0);
+    EXPECT_NE(s.row("W9XYZ"), nullptr);
+    EXPECT_EQ(s.row("W9XYY"), nullptr);
+}
+
+TEST(CallSearch, TracksAreReadInTheOrderOfTheirIds) {
+    // Review 5: the same events gave 1 call on one platform and 2 on another, by the hash table's order. A tie at distance 1 on one word
+    // goes to the later candidate, so here the track read last wins: the highest id, on every platform.
+    Stage s;
+    for (std::uint32_t id = 1; id <= 9; ++id) s.born(id, 1000.0 + 10.0 * id);
+    for (std::uint32_t id = 1; id <= 9; ++id) s.text(id, 1000.0 + 10.0 * id, id == 9 ? "DE W9XYZ W9XYZ K " : "DE W9XYY W9XYY K ", 0.0);
+    s.search.advance(20.0);
+    EXPECT_NE(s.row("W9XYZ"), nullptr);
+    EXPECT_EQ(s.search.calls().size(), 1u);
 }
 
 TEST(CallSearch, ItWorksWithoutAList) {

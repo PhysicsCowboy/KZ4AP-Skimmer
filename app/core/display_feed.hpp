@@ -23,7 +23,8 @@ inline constexpr double kRowPeriodS = 0.04;
 // A row's columns at most: rows from spans wider than a 4K display's pixels are reduced at the source. Heuristic.
 inline constexpr int kMaxRowColumns = 4096;
 
-using TrackUpdate = std::variant<TrackEvent, DecodedTextEvent>;
+// The clock is one per whole second of stream, in the order of the events (StreamClock).
+using TrackUpdate = std::variant<TrackEvent, DecodedTextEvent, StreamClock>;
 
 struct DisplayBatch {
     std::vector<WaterfallRow> rows;      // oldest first
@@ -46,6 +47,7 @@ public:
 
 private:
     RowBuilder builder_;  // the pipeline's thread only
+    double clock_second_ = -1.0;  // s of stream: the whole second of the last clock; the pipeline's thread only
     std::mutex mutex_;
     std::deque<WaterfallRow> rows_;
     std::vector<TrackUpdate> updates_;

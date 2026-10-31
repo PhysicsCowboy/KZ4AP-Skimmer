@@ -49,8 +49,10 @@ std::optional<ParsedCall> parse_form(std::string_view word);
 // matches only, since real calls contain them: DJ5NN stays a call. A heuristic list (manta's practice of exact matches).
 bool is_cw_word(std::string_view base);
 
-// A call made only of E, T, I, S, H, A, N, M, U and 5: what noise and a wide signal's fragments read as (track_evidence.hpp), so it says
-// nothing without a list. A heuristic; it costs the few real calls of this form (I5SAN) unless a known-call list has them.
+// A call made only of E, T, I, S, H, A, N, M, U and 5: what noise and a wide signal's fragments read as (track_evidence.hpp). The stage
+// takes it only as a whole word and reports it at CallSearchConfig::tiny_points whole words, with or without a known-call list. A heuristic.
+// A list helps nothing beyond that: a call with no digit after a letter-digit prefix (D4C, E7DX, C6AGU) has no form here and is
+// never read, listed or not (docs/backlog.md).
 bool only_tiny_pieces(std::string_view base);
 
 // Levenshtein distance, stopping once it exceeds `limit` (it then returns limit + 1).
@@ -136,15 +138,29 @@ struct CallSearchConfig {
     // s: and within this of it. Heuristic, as window_s.
     double variant_s = 1800.0;
     // Points needed to report: an unlisted call that is framed (DE, CQ, 5NN beside it, or sent twice), an unlisted bare one, a listed framed
-    // one, a listed bare one. A whole word scores 1, a stripped or joined reading stripped_points. Heuristics, chosen by measurement; CW
+    // one, a listed bare one. A whole word scores 1, a stripped reading stripped_points, a joined one joined_points. Heuristics, chosen by measurement; CW
     // Skimmer's Normal level is 2, 3 or 5 repeats by pattern, 1 for its watch list. An unlisted bare call and a listed one need the same; the list still weighs against rivals.
     double points_framed = 2.0;
     double points_bare = 2.0;
     double points_known = 1.0;
     double points_known_bare = 2.0;
     double stripped_points = 0.5;
+    // Letters joined across spaces (K F 0 Y U X). Heuristic, chosen by measurement: at 0.5 a call read so three times stayed at 1.5 points on
+    // real 40 m (KF0YUX); at 1 three false calls came there.
+    double joined_points = 0.75;
+    // A whole or glued word another station names (before DE, 5NN, UR and the like) passes at this many points: that one word is often all
+    // a caller's station leaves in the text. Heuristic, chosen by measurement: 14 more true and 3 more false on the contest of 280.
+    double points_named = 1.0;
+    // Whole words a call of tiny pieces (only_tiny_pieces) needs, listed or not; 0 leaves it unread. Heuristic, chosen by measurement.
+    double tiny_points = 2.0;
     // Two letters' difference holds a call back only against a rival with more than this many times its points. Heuristic, chosen by measurement.
     double far_variant_ratio = 2.0;
+    // A call that is the start of another, or starts with it, whatever their distance (K5N and K5NXY, KX9F and KX9FK), is a near variant at
+    // distance 1, when not 0. Heuristic, chosen by measurement.
+    double prefix_held = 1.0;
+    // When not 0, a reported call that loses at one place is withdrawn only if its rival's best is above its own best, or its readings
+    // more than variant_hz from that place do not pass by themselves; at 0, any local defeat withdraws it. Heuristic, chosen by a hand test and measurement.
+    double withdraw_own_place = 1.0;
     // A call sent twice in a row counts as framed, when not 0. Heuristic, chosen by measurement.
     double doubled_is_framed = 1.0;
     // A rival must have this many times the points of a listed call to hold it back; a listed rival holds back an unlisted call at equal points.
@@ -179,6 +195,7 @@ public:
     void apply(const DecodedTextEvent& event);
     // The stream's clock, s: reads what has settled.
     void advance(double now_s);
+    void apply(const StreamClock& clock) { advance(clock.time_s); }
     // The stream ended: reads everything.
     void finish();
 
@@ -229,6 +246,7 @@ private:
     struct Support {
         double points = 0;
         bool framed = false;
+        bool named = false;  // a whole or glued word named by another (CallSearchConfig::points_named)
     };
 
     void read_track(TrackText& track, bool all);
@@ -236,6 +254,8 @@ private:
     void evaluate(Candidate& candidate, double freq_hz, double now_s);
     Support support(const Candidate& candidate, double freq_hz, double now_s, double within_hz) const;
     bool passes(const Candidate& candidate, const Support& s) const;
+    // Whether the call's readings more than variant_hz from this place pass by themselves, at any one place.
+    bool stands_elsewhere(const Candidate& candidate, double freq_hz, double now_s) const;
     void report(Candidate& candidate, double now_s);
     void withdraw(Candidate& candidate);
     void update_row(const Candidate& candidate);
@@ -244,7 +264,7 @@ private:
     CallSearchConfig config_;
     std::shared_ptr<const KnownCalls> known_;
     std::function<void(const CallReading&, double)> reading_log_;
-    std::unordered_map<std::uint32_t, TrackText> tracks_;
+    std::map<std::uint32_t, TrackText> tracks_;  // in the order of their ids, so that the order of reading does not depend on the library
     std::unordered_map<std::string, Candidate> candidates_;
     std::vector<CallRow> rows_;
     std::uint64_t version_ = 0;

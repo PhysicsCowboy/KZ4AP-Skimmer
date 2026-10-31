@@ -31,6 +31,12 @@ struct DecodedTextEvent {
 
 using Event = std::variant<SpectrumFrame, TrackEvent, DecodedTextEvent>;
 
+// The stream's clock for a consumer that takes the events in batches (the app's display, DisplayFeed): where it stands among the
+// events around it, so that what the consumer does with the clock does not depend on how the batches fell.
+struct StreamClock {
+    double time_s = 0.0;  // s of stream
+};
+
 // Delivers engine events to every subscriber, synchronously, in subscription order.
 class EventBus {
 public:

@@ -316,7 +316,8 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
     };
     const auto emit = [&](const std::string& text, Reading how, std::size_t first, std::size_t last, Role role, bool doubled = false) {
         const auto p = parse_call(text);
-        if (!p || only_tiny_pieces(p->base)) return;
+        // A tiny call only as a word by itself: glued, stripped or joined, such letters are what a decoder scatters.
+        if (!p || (only_tiny_pieces(p->base) && how != Reading::Whole)) return;
         CallReading r;
         r.base = p->base;
         r.full = p->full;
@@ -498,8 +499,7 @@ void CallSearch::read_track(TrackText& t, bool all) {
     }
     t.rewind_to = static_cast<std::size_t>(-1);
     const std::size_t read_at = t.read_to > t.base ? t.read_to - t.base : 0;
-    // The first word not yet read, and the words that have settled: over before now - settle_s, with a word behind them, or a track
-    // that has ended.
+    // The first word not yet read, and the words that have settled: over before now - settle_s, or a track that has ended.
     const double settled = last_read_s_ - config_.settle_s;
     std::size_t from = 0;
     while (from < words.size() && words[from].first < read_at) ++from;
@@ -523,6 +523,7 @@ void CallSearch::read_track(TrackText& t, bool all) {
 void CallSearch::add(const CallReading& r, double freq_hz) {
     if (reading_log_) reading_log_(r, freq_hz);
     if (r.special && !(known_ && known_->contains(r.base))) return;
+    if (only_tiny_pieces(r.base) && !(config_.tiny_points > 0.0)) return;
     auto [it, fresh] = candidates_.try_emplace(r.base);
     Candidate& c = it->second;
     if (fresh) {
@@ -532,7 +533,7 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
         c.first_s = r.start_s;
     }
     c.first_s = std::min(c.first_s, r.start_s);  // a correction can read something earlier than what came first
-    const double points = r.reading == Reading::Whole || r.reading == Reading::Glued ? 1.0 : config_.stripped_points;
+    const double points = r.reading == Reading::Whole || r.reading == Reading::Glued ? 1.0 : (r.reading == Reading::Joined ? config_.joined_points : config_.stripped_points);
     // A keyword beside it, or the call sent twice: either way the word is used as a call.
     const bool framed = r.role != Role::Unknown || (r.doubled && config_.doubled_is_framed != 0.0);
     // Its place: where it last signed, else where it was last read bare, else where another named it, and among those a whole word before
@@ -575,14 +576,32 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
         if (std::abs(o.freq_hz - freq_hz) > within_hz || now_s - o.end_s > config_.window_s) continue;
         s.points += o.points;
         s.framed = s.framed || o.framed;
+        s.named = s.named || (o.role == Role::Named && o.points >= 1.0);
     }
     return s;
 }
 
 bool CallSearch::passes(const Candidate& c, const Support& s) const {
     const double points = s.points;
+    if (only_tiny_pieces(c.base)) return points >= config_.tiny_points;
+    if (s.named && points >= config_.points_named) return true;
     if (c.known) return points >= (s.framed ? config_.points_known : config_.points_known_bare);
     return points >= (s.framed ? config_.points_framed : config_.points_bare);
+}
+
+bool CallSearch::stands_elsewhere(const Candidate& c, double freq_hz, double now_s) const {
+    for (const Occurrence& a : c.recent) {
+        if (std::abs(a.freq_hz - freq_hz) <= config_.variant_hz || now_s - a.end_s > config_.window_s) continue;
+        Support alone;
+        for (const Occurrence& o : c.recent) {
+            if (std::abs(o.freq_hz - freq_hz) <= config_.variant_hz) continue;
+            if (std::abs(o.freq_hz - a.freq_hz) > config_.same_place_hz || now_s - o.end_s > config_.window_s) continue;
+            alone.points += o.points;
+            alone.framed = alone.framed || o.framed;
+        }
+        if (passes(c, alone)) return true;
+    }
+    return false;
 }
 
 void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
@@ -591,6 +610,7 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
     // Its near variants at this place: which are better supported, and what the weaker add.
     const auto limit_for = [](std::size_t n) { return n >= 4 ? 2 : 1; };
     bool held = false;
+    double rival_best = 0.0;  // the best any rival that beats it here has had at one place
     std::vector<Candidate*> beaten;
     const double mine = support(c, freq_hz, now_s, config_.variant_hz).points;
     for (auto& [base, other] : candidates_) {
@@ -599,8 +619,10 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
         const double theirs = support(other, freq_hz, now_s, config_.variant_hz).points;
         if (theirs <= 0) continue;
         const int limit = limit_for(std::min(c.base.size(), other.base.size()));
-        const int d = edit_distance(c.base, other.base, limit);
-        if (d > limit) continue;
+        const bool prefix = config_.prefix_held != 0.0 && (c.base.starts_with(other.base) || other.base.starts_with(c.base));
+        const int distance = edit_distance(c.base, other.base, limit);
+        if (distance > limit && !prefix) continue;
+        const int d = prefix ? 1 : distance;
         // Two letters' difference only against a much better call.
         const double need = d >= 2 ? config_.far_variant_ratio : 1.0;
         const auto beats = [&](const Candidate& a, double pa, const Candidate& b, double pb) {
@@ -614,12 +636,19 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
         };
         if (beats(other, theirs, c, mine)) {
             held = true;
+            rival_best = std::max(rival_best, other.best_points);
         } else if (beats(c, mine, other, theirs)) {
             if (other.reported) beaten.push_back(&other);
         }
     }
+    // A defeat here takes a reported call off the list only if the rival is the better at its best, or the call stands nowhere else: a call
+    // doubled and signed at 1 kHz does not leave because of a misreading at 2 kHz.
+    const bool own_place = config_.withdraw_own_place != 0.0;
     if (held) {
-        if (c.reported) withdraw(c);
+        if (c.reported) {
+            if (!own_place || rival_best > c.best_points || !stands_elsewhere(c, freq_hz, now_s)) withdraw(c);
+            else update_row(c);
+        }
         return;
     }
     if (c.reported) {
@@ -628,7 +657,9 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
         report(c, now_s);
     }
     if (c.reported) {
-        for (Candidate* b : beaten) withdraw(*b);
+        for (Candidate* b : beaten) {
+            if (!own_place || c.best_points > b->best_points || !stands_elsewhere(*b, freq_hz, now_s)) withdraw(*b);
+        }
     }
 }
 

@@ -50,6 +50,8 @@ public:
     // Appends the event's characters, then applies its corrections in order, clipping from_index to the list's length
     // (the consumer's rule, decoder.hpp). An event for an unknown track is ignored.
     void apply(const DecodedTextEvent& event);
+    // Its retention runs on advance(); nothing here reads the clock in the events' order.
+    void apply(const StreamClock&) {}
     // The stream's clock, s: removes ended tracks past their retention.
     void advance(double now_s);
     // The stream ended: every track that is still live ends now. Nothing leaves.
