@@ -3,8 +3,8 @@
 How KZ4AP Skimmer turns a radio's I/Q samples into Morse text. This body is
 written to be read. It covers the stages before the decoders (sections 1–7)
 and, in full, the chains under development or discussion: the segmental
-decoder (section 8e) with its live operation (section 10), and the viterbi
-decoder with the model the two share (section 8d). Every other chain gets a short summary that points to its
+decoder (section 8e) with its live operation (section 10) and the callsign stage
+(section 11), and the viterbi decoder with the model the two share (section 8d). Every other chain gets a short summary that points to its
 appendix section. Every value carries its unit and its class: **derived**
 (it follows from the mathematics), **measured** (set by an experiment),
 **heuristic** (a judgment call; "chosen by measurement" where a test set
@@ -60,6 +60,9 @@ I/Q (fs) ─┬─► spectrum analyzer ─┬─► signal detector ─► trac
                                                          ▼
                                                 decoder per channel ─► text
                                  (segmental in the app; Matched; Envelope; bank; viterbi)
+                                                         │
+                                                         ▼
+                                                callsign stage ─► list of calls
 ```
 
 The input is the whole band the radio delivers, 192 kHz wide. Two things
@@ -337,33 +340,9 @@ scores 0 nats, whatever it holds.
 The search is a maximum a posteriori search over stories, the best text
 published when the channel ends.
 
-**Viterbi's amplitude: per story** (f = 0.02, a placeholder). Each story holds
-N(μ, P) in FS. Predicted across a lag of ℓ samples, with ρ = exp(−π²f_D²(ℓΔ)²/2),
-f_D = 2 Hz (owner), ρ_a the Rayleigh envelope's correlation for ρ (derived) and
-Ω̄ the story's long-run power:
-
-  μ′ = ρ_a μ + (1 − ρ_a)·0.886√Ω̄,  P′ = ρ_a²P + ½(1 − ρ²)Ω̄ · m.
-
-m = 1 except at ℓ = 1, where m = 1 + 15x/(1 + x), x = Ω̄/(42σ_y²), halfway at
-+8.0 dB S₅₀₀ (heuristic): inside a mark n predictions add nQ where the true
-variance grows as n²Q (derived). V is fixed before the sample, with a² → μ′² + P′. Then
-
-  score_k = ln ∫ exp(wΛ) N(a; μ′, P′) da
-
-by Gauss–Hermite quadrature of order 5 at the integrand's mode, and the moment-matched
-posterior becomes the amplitude, only where |s| ≥ 0.01 (heuristic: below it a
-sample says nothing of a; it is still scored). This is a sequential filter on the
-story's own past. A newborn's first mark integrates a level flat in ln a over
-−15 to +85 dB S₅₀₀ on 128 points (placeholder range) and hands over to N(μ, P) at
-a spread below 0.1 nepers, or 15 samples after its first key-up.
-
-**Viterbi's search.** Every sample, every story scores it and offers its ends.
-Successors merge on (activity, key, samples in element, speed, node) plus their
-claimed edges of the last 12 samples (chosen by measurement), since an edge
-shows only 5 to 10 samples later; a rescue has its own key bit, its level and a
-newborn's flat prior being incomparable at birth. Beam 40 nats, ceiling 1 700
-stories (placeholders). Its cost is the amplitude integral per story per sample,
-which segmental removes. Appendix: A.8d.
+**Viterbi's amplitude and search.** Each story holds its own Gaussian N(μ, P) of the amplitude
+(FS), scored by a quadrature per story per sample, which is its whole cost; segmental
+removes it. Beam 40 nats, ceiling 1 700 stories (placeholders). Appendix: A.8d.
 
 ## 8e. Segmental decoder (selectable)
 
@@ -578,6 +557,32 @@ row ended under 60 s ago goes on with it. Rows keep about 4 000 symbols.
 check (by 0.05 s from below 0.25 s). Grown twice running, b > 1 s and over 8 tracks
 live: budget = ¾ of live, at least 8, least evidence closing first. At b < 0.25 s it
 grows by 5 each 5 s. A radio silent 5 s is flagged, a recording as well.
+
+## 11. Callsign stage
+
+`CallSearch` reads any decoder's track and text events, beside the track list, and
+changes neither. Values are heuristics unless marked. Appendix: A.12.
+
+**Words.** Once per stream-second it reads text 10 s old: most corrections (reach 20 s)
+have come. A word space, prosign or punctuation ends a word.
+
+**Readings.** A call's form (RR 19.68; sourced): an allocated prefix (Appendix 42) of one
+or two characters, one digit, one to four letters; /P, /M or a prefix keep the base call. 1
+point: a whole word, or one glued to a keyword or itself (DEK1ABC). 0.5 point: a stray E, T, I
+before or E, T, K after; short words joined (K X 9 F). Refused: words of CW with this form
+(G5RV, R5NN; exact), and calls of E T I S H A N M U 5 alone.
+
+**Role.** Before DE or 5NN: *named*. After DE, CQ or TEST, or before K: *signed*. Else *bare*.
+
+**Evidence.** Readings overlapping in time within 300 Hz are one transmission. Points add
+within 300 Hz and 30 min. Reported at 2 points if framed (signed, named or sent twice), else
+3; on a known-call list, 1 or 2. Two or more digits (W100AW): from a list only.
+
+**Variants.** A call within edit distance 1 of a better-supported call within 150 Hz is held
+back, or withdrawn if reported; distance 2 needs over twice the points. A list weighs by 3.
+
+**List.** One row per base call, at its latest signed, else bare, else named place. Decoder
+scores are unused: not calibrated, and segmental's symbols all say 1.
 
 # A. Appendix: derivations, provenance, limitations, parameters, definitions
 
@@ -3762,6 +3767,36 @@ timed stories, 67.9 nats; 21.33 ms: heuristic chosen by measurement (D24). Beam 
 - `<HH>` is exactly eight dots: nine or more leave the tree.
 - **The statistics** (`ViterbiConfig::stats`) grow with the channel's time: for bench recordings.
 
+### Viterbi's amplitude and search, in outline (moved from the body, 2026-10-31)
+
+**Viterbi's amplitude: per story** (f = 0.02, a placeholder). Each story holds
+N(μ, P) in FS. Predicted across a lag of ℓ samples, with ρ = exp(−π²f_D²(ℓΔ)²/2),
+f_D = 2 Hz (owner), ρ_a the Rayleigh envelope's correlation for ρ (derived) and
+Ω̄ the story's long-run power:
+
+  μ′ = ρ_a μ + (1 − ρ_a)·0.886√Ω̄,  P′ = ρ_a²P + ½(1 − ρ²)Ω̄ · m.
+
+m = 1 except at ℓ = 1, where m = 1 + 15x/(1 + x), x = Ω̄/(42σ_y²), halfway at
++8.0 dB S₅₀₀ (heuristic): inside a mark n predictions add nQ where the true
+variance grows as n²Q (derived). V is fixed before the sample, with a² → μ′² + P′. Then
+
+  score_k = ln ∫ exp(wΛ) N(a; μ′, P′) da
+
+by Gauss–Hermite quadrature of order 5 at the integrand's mode, and the moment-matched
+posterior becomes the amplitude, only where |s| ≥ 0.01 (heuristic: below it a
+sample says nothing of a; it is still scored). This is a sequential filter on the
+story's own past. A newborn's first mark integrates a level flat in ln a over
+−15 to +85 dB S₅₀₀ on 128 points (placeholder range) and hands over to N(μ, P) at
+a spread below 0.1 nepers, or 15 samples after its first key-up.
+
+**Viterbi's search.** Every sample, every story scores it and offers its ends.
+Successors merge on (activity, key, samples in element, speed, node) plus their
+claimed edges of the last 12 samples (chosen by measurement), since an edge
+shows only 5 to 10 samples later; a rescue has its own key bit, its level and a
+newborn's flat prior being incomparable at birth. Beam 40 nats, ceiling 1 700
+stories (placeholders). Its cost is the amplitude integral per story per sample,
+which segmental removes.
+
 ### The viterbi decoder behind the engine
 
 `ViterbiShared` holds what every decoder of a configuration on one channel filter shares, through `std::shared_ptr`.
@@ -4248,6 +4283,13 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Budget | shed above 1 s, grown over 2 checks 1 s apart (margin 0.05 s below 0.25 s), over 8 tracks, to ¾; back by 5 per 5 s below 0.25 s | stream_runner.cpp | heuristic |
 | Silence | 5 s | `DeliveryWatch::kStalledAfterS` | heuristic |
 | Bank: locked-level recovery | last 0.32 s's 20% quantile over 10 dB under the level | `kLockedLevelRatio` (bank/noise.cpp) | heuristic |
+| Callsign stage: read text settled for | 10 s, once per second of stream | `CallSearchConfig::settle_s` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: same place | 300 Hz | `CallSearchConfig::same_place_hz` | heuristic, chosen by measurement (A.12); manta's bucket |
+| Callsign stage: evidence window | 1 800 s | `CallSearchConfig::window_s` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: points to report | framed 2, bare 3; listed framed 1, listed bare 2 | `points_framed`, `points_bare`, `points_known`, `points_known_bare` | heuristic, chosen by measurement (A.12); from CW Skimmer's table |
+| Callsign stage: points of a reading | whole or glued 1, stripped or joined 0.5 | `stripped_points` | heuristic |
+| Callsign stage: variants | edit distance 1, or 2 at over 2 times the points; within 150 Hz, 1 800 s | `far_variant_ratio`, `variant_hz`, `variant_s` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: a list against a rival | factor 3 | `known_rival_factor` | heuristic |
 
 ## A.11 Definitions used in tests and the benchmark
 
@@ -4729,3 +4771,97 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
   characters removed and inserted per channel-minute, shown as "—" for
   results written before these counts; each engine run once, a
   detector-path recording's station-label result being the same run).
+
+## A.12 Callsign stage
+
+### Exact form
+
+`engine/include/kz4ap/callsign.hpp` and `engine/src/callsign.cpp`; the tool `kz4ap-calls` (`bench/src/calls_main.cpp`) runs it over a
+recording or over a log of a decoder's events, and the app holds it in `app/src/call_list_model.hpp`, on the GUI's thread.
+
+**Form.** `parse_form`: letters, digits and at most one slash. A base call is a prefix of length p, then d digits, then l letters, with
+l from 1 to 4 and d from 1 to 4, d > 1 being a *special* form. p is 1 only for the series that are a whole letter's (B, F, G, I, K, M, N,
+R, W); else 2; 3 only with a digit first and two letters (3DA0, 3XY1). `allocated_pair` is the ITU's table: no Q; no pair of two digits; no 0
+first, 1 only in 1A; a digit and a letter except 4N; two letters except YZ; a letter and a digit by the table (A2-A9, C2-C9, D2-D9, E2-E7,
+H2-H4, H6-H9, J2-J8, L2-L9, P2-P9, S2, S3, S5-S9, T2-T8, V2-V8, Y2-Y9, Z2, Z3, Z8), with S0 and Z6, which amateurs use outside it. DE
+as a prefix is refused: it is the word DE glued on. Around a slash: `base/P`, /M, /MM, /AM, /QRP, /QRPP, /A, a digit, a prefix; or
+`prefix/base`.
+
+**Refused words.** `is_cw_word`, exact: {R, K, E, T, N, TU, UR, ES, EE, TT, ET, TE}5NN, G5RV, K3S, K4D, N1MM, K1EL, K9AY, TH7DX, TH6DX, TH5DX,
+TH3JR, TH2MK, HF5B, HF6V, HF9V, HF2V, FT8DX, FT5DX, FT3DX, W2DU, W8JK, W3DZZ. `only_tiny_pieces`: every character in E T I S H A N M U 5,
+for every kind of reading.
+
+**Readings of the word at i,** which are alternatives; the evidence decides.
+
+1. *Whole:* the word parses, unless it ends in CQ with a call before that, or in DE with a call before that and another, different call
+   as the next word.
+2. *Glued,* when it does not: the call twice, with at most one character behind; a keyword in front (DE, CQ, TU, TEST, QRZ); DE inside,
+   recursively on the right; a keyword behind (DE, 5NN, ENN, TEST, TU, CQ, QRZ, KN, BK).
+3. *Stripped:* one or two characters of E, T, I off the front, while what is left parses; one of E, T, K off the back.
+4. *Joined:* from a word of at most 4 characters, up to five following words of at most 4 characters, not a prosign, keyword (K and R
+   excepted) or refused word, up to 9 characters: each concatenation that parses. K and R may start a join, not a whole reading.
+
+**Role,** from the nearest words outside the call and its repeats, skipping E, T, I, EE, TT, IE, EI, ET, TE: next word DE, *named*; previous word DE, *signed*; next word
+in {5NN, ENN, 599, UR, NR, RST, GM, GA, GE, GN, FB, TNX, TKS, R, SRI, AGN}, *named*; previous in {CQ, TEST, QRZ, CQCQ, TESTTEST, POTA, SOTA,
+DX, UP} or next in {K, KN, AR, SK, TEST, QRZ, CQ, UP, <KN>, <AR>, <SK>, <KA>}, *signed*; else unknown (*bare*).
+
+**Evidence.** A reading overlapping an occurrence of the same call in time within `same_place_hz` betters it (points, role) and is not
+counted again. Points: the sum over occurrences within `same_place_hz` of the new one and within `window_s` of its end. Framed: any of them had a
+role, or the same word was next to it (`doubled_is_framed`).
+
+**Arbitration.** Against every other candidate with a reading within `variant_hz` of this one and `variant_s` of now, by base-call edit distance d,
+the limit being 2 for a shorter call of 4 characters or more, else 1. A rival beats a call if both are on or off the list and its points
+exceed its need (1 at d = 1, `far_variant_ratio` at d = 2) times the call's, or at d = 1 tie with an earlier first reading; a listed rival beats
+an unlisted call at a third of its points; an unlisted rival a listed call at three times. A held call is not reported, and leaves if
+it was; a reported call withdraws the reported calls it beats.
+
+**Row.** The place is that of the reading of the highest rank, latest on a tie: rank = 2 x (signed 2, bare 1, named 0) + (a whole or glued
+reading 1). `call` is the base, or the most common form with a slash seen at least twice and more often than any other. A candidate not reported
+and older than the longest window is dropped, each 30 s of stream. A track's text is kept only from eight words before what has been read.
+
+**The list and the tools.** `kz4ap-skimmer --known-calls PATH` takes MASTER.SCP's format: one call a line, # and ; lines skipped, case ignored,
+whatever follows white space ignored; `--calls PATH` writes the list as `calls_csv` at the stream's end. `kz4ap-calls --known PATH --out PATH
+[--log PATH | --replay PATH] [--candidates PATH] [--readings PATH] [--set NAME=VALUE]`. `training/kz4ap_proto/calls_score.py compare` reads a run and
+another program's list and reports calls in both, in each only, counts, and pairs one letter apart; `truth` reads a run and a recording's labels and
+reports precision and recall, and how many calls found are within 100 Hz of their station. Its reader takes ADIF, telnet spot lines, CSV with a
+header (`dx` ahead of `callsign`, as in the Reverse Beacon Network's files) and, failing those, the first word of a call's form on each line,
+and prints which it used: CW Skimmer's export format is not known here. Calls compare by base call.
+
+### Provenance
+
+**What came from where** (all *secondhand* through `docs/research/decoder-survey.md`, the RBN's 2021 article and manta's
+`wiki/pages/spot-validation.md`, read 2026-10-31; no source's code was used).
+
+- *CW Skimmer and the RBN.* A call must pass a pattern check and repeat: at its Normal level 1 for a watch list, 2, 3 or 5 by how common the
+  pattern is, and it is not re-spotted near a frequency within 10 min. Taken: the idea, list 1, framed 2, bare 3, the 10 min as a first
+  window. Not taken: `patt3ch.lst`, which is unpublished in form and comes with their program; the requirement of CQ or TEST, RBN's alone.
+- *manta.* Refusal of exact non-call words only (`DJ5NN` stays), unallocated prefixes refused, a list that does not exempt from context, a 300 Hz bucket,
+  arbitration by withholding a better-supported rival's confusable. Taken as these. Not taken: repetition counted only across messages 3 words or 60 s apart
+  (CW Skimmer counts repeats in its buffer; sent twice in a row counts here as context); manta's beacon exemption, a cautionary 29 false spots in a night.
+- *ITU Radio Regulations.* 19.68 and Appendix 42 as read on Wikipedia's ITU prefix table on 2026-10-31, the three additions from amateur use (*sourced*).
+- *The design spec, section 6:* never match against the Reverse Beacon Network (owner, 2026-10-14). Nothing here reads from it.
+
+**Chosen by measurement,** replaying the logged events of the generated contest (`w7_contest`, 280 stations), `w12_cap` (300), `w11_pairs` and `band192k_100`, and of 30 min
+and 62 s of real 40 m; the numbers are in the decision log, 2026-10-31.
+
+- `settle_s` 10 s: at 2 s the 30 min of real 40 m gave 7 calls against 10 at 6 s (it read text the decoder had not yet corrected); 6, 10, 15 and 20 s read about alike.
+- `same_place_hz` 300 Hz: 100 Hz loses a partner named at another's place 210 Hz away; 300 and 500 Hz gave the same lists.
+- `window_s` 1 800 s: 600 s missed an ID repeating every 255 s on real 40 m; no misreading came with 1 800 s on 30 min. Valid for real bands as busy as those recordings.
+- `points_bare` 3: 2 added two misreadings to the real 30 min and one false call to `w12_cap`.
+- `points_framed` 2: 3 lost 28 true calls on the contest to take away one false call.
+- `points_known_bare` 2: 1 tripled false calls with a list.
+- `variant_hz` 150 Hz: 500 Hz held back a true station 237 Hz from a call one letter away; real recordings read alike.
+- `far_variant_ratio` 2: at 3, a call read twice next to six readings of the true call stayed.
+
+**Heuristics not tuned:** `stripped_points`, the keyword sets, the refused words and characters.
+
+### Limitations
+
+- A call read only once is not reported without a list: that is the rule, and on the generated contest the largest loss of callers.
+- Who sent a call is known only from the words around it: a DX naming a caller twice ("K0TF K0TF") with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
+  is only as good as the decoder's reading of those words.
+- A misreading read twice, with its true call read less, is reported (OL1TM for ZL1TM on real 40 m, at a tie). The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.
+- `only_tiny_pieces` and the refused words lose the few real calls of those forms (I5SAN, K5NN) without a list.
+- The text reads a station's latest place: a station that moved shows there only.
+- A track's text before a correction that reaches past `settle_s` is read as it stood. A correction reaching what has been read does not take its readings back.
+- Points are heuristic weights, not probabilities. Segmental's symbols carry probability 1, so a decoder's score could not be used per symbol; a posterior on the call would need one.

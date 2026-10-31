@@ -92,6 +92,8 @@ def test_truth_from_both_label_forms():
     assert truth_calls(stations) == {"W5L": [10.0], "W2XY": [20.0]}
     signals = {"signals": [{"text": "CQ TEST DL9W DL9W", "freq_offset_hz": 30.0}]}
     assert truth_calls(signals) == {"DL9W": [30.0]}
+    qso = {"signals": [{"text": "x", "freq_offset_hz": 100.0, "senders": [{"call": "K1IT"}, {"call": "K8GMI/P", "freq_offset_hz": 5.0}]}]}
+    assert truth_calls(qso) == {"K1IT": [100.0], "K8GMI": [105.0]}
 
 
 def test_command_line(tmp_path, capsys):

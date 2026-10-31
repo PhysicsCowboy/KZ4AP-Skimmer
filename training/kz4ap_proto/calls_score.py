@@ -240,8 +240,9 @@ def compare_lists(a: CallFile, b: CallFile) -> Comparison:
 
 
 def truth_calls(labels: dict) -> dict[str, list[float]]:
-    """Base call -> the frequencies it was sent at, Hz from the center. Handles the two labels the repository's recordings have:
-    `stations` with `call` (or the call read from the first burst's text) and the generator's `signals` with text."""
+    """Base call -> the frequencies it was sent at, Hz from the center. Handles the labels the repository's recordings have: `stations`
+    with `call` (or the call read from the first burst's text) and the generator's `signals`, with `senders` where one signal holds the
+    two stations of a QSO on one frequency, with text otherwise."""
     truth: dict[str, list[float]] = {}
 
     def add(call: str | None, freq: float) -> None:
@@ -257,7 +258,12 @@ def truth_calls(labels: dict) -> dict[str, list[float]]:
         for burst in station.get("bursts", [])[:1]:
             add(_sender_in(burst.get("text", "")), freq)
     for signal in labels.get("signals", []):
-        add(_sender_in(signal.get("text", "")), float(signal.get("freq_offset_hz", 0.0)))
+        freq = float(signal.get("freq_offset_hz", 0.0))
+        senders = signal.get("senders") or []
+        for sender in senders:
+            add(sender.get("call"), freq + float(sender.get("freq_offset_hz", 0.0)))
+        if not senders:
+            add(_sender_in(signal.get("text", "")), freq)
     return truth
 
 
