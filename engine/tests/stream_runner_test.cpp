@@ -78,6 +78,31 @@ private:
     double step_s_;
 };
 
+// A live source whose backlog is one jump, as a stall leaves: a little noise, the jump after jump_after_s of stream, then draining.
+class StalledOnceSource final : public IqSource {
+public:
+    StalledOnceSource(std::vector<Sample> samples, double jump_after_s, double jump_s)
+        : inner_(std::move(samples), 4800), jump_after_reads_(static_cast<int>(jump_after_s / 0.1)), jump_s_(jump_s) {}
+    int sample_rate() const override { return inner_.sample_rate(); }
+    std::string description() const override { return "stalled once"; }
+    IqRead read(std::span<Sample> out, std::chrono::milliseconds timeout) override {
+        ++reads_;
+        if (reads_ < jump_after_reads_) backlog_s_ = 0.001 * reads_;  // grows, by milliseconds, every read
+        else if (reads_ == jump_after_reads_) backlog_s_ = jump_s_;
+        else backlog_s_ = std::max(0.0, backlog_s_ - 0.05);
+        return inner_.read(out, timeout);
+    }
+    void interrupt() override {}
+    double backlog_s() const override { return backlog_s_; }
+
+private:
+    MemorySource inner_;
+    int jump_after_reads_;
+    double jump_s_;
+    int reads_ = 0;
+    double backlog_s_ = 0.0;
+};
+
 // A source that never has samples, as a live one between blocks: read waits until interrupted.
 class SilentSource final : public IqSource {
 public:
@@ -366,6 +391,13 @@ TEST(StreamRunnerBudget, ABacklogThatDoesNotGrowCostsNoTracks) {
     const StreamStatus draining = run_to_end(std::make_unique<BehindSource>(many_stations(24, 8.0), 4.0, -0.05));
     ASSERT_EQ(draining.state, StreamStatus::State::Finished) << draining.error;
     EXPECT_EQ(draining.track_budget, 0u);
+}
+
+TEST(StreamRunnerBudget, OneStallCostsNoTracksAfterABacklogThatWanderedUp) {
+    // Milliseconds of growth just before the jump are not the first of two growths.
+    const StreamStatus stalled = run_to_end(std::make_unique<StalledOnceSource>(many_stations(24, 8.0), 3.0, 3.0));
+    ASSERT_EQ(stalled.state, StreamStatus::State::Finished) << stalled.error;
+    EXPECT_EQ(stalled.track_budget, 0u);
 }
 
 TEST(StreamRunnerBudget, WithNoTracksLiveTheBudgetStaysOff) {

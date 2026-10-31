@@ -28,6 +28,7 @@ constexpr double kBufferS = 0.1;
 // kRestoreEveryS and in the end goes away.
 constexpr double kShedAboveS = 1.0;
 constexpr int kGrowingChecks = 2;
+constexpr double kGrowthFromNothingS = 0.05;  // below kCaughtUpS, growth smaller than this, s of stream per check, is not growth
 constexpr double kCaughtUpS = 0.25;
 constexpr double kShedEveryS = 1.0;
 constexpr double kRestoreEveryS = 5.0;
@@ -100,7 +101,10 @@ void StreamRunner::run(EngineConfig config, EventBus::Handler subscriber) {
                 const double backlog_s = source_->backlog_s();
                 bool shed = false;
                 if (stream_s - checked_at_s >= kShedEveryS) {
-                    growing_checks = backlog_s > backlog_checked_s ? growing_checks + 1 : 0;
+                    // Near no backlog at all it wanders by milliseconds, read to read, and a stall's one jump would then be the
+                    // second "growth" in a row.
+                    const double margin_s = backlog_checked_s > kCaughtUpS ? 0.0 : kGrowthFromNothingS;
+                    growing_checks = backlog_s > backlog_checked_s + margin_s ? growing_checks + 1 : 0;
                     shed = backlog_s > kShedAboveS && growing_checks >= kGrowingChecks && engine.live_tracks() > kFewestTracks;
                     backlog_checked_s = backlog_s;
                     checked_at_s = stream_s;

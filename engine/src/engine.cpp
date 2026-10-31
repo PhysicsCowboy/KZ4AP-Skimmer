@@ -287,7 +287,7 @@ void Engine::grant_replays() {
         }
         replay_turns_ -= 1.0;
         channel.replay_waiting = false;
-        channel.replay_now = true;
+        channel.replay_now = track_budget_ == 0;  // a pipeline already behind has no time for the past
         longest_replay_wait_blocks_ = std::max(longest_replay_wait_blocks_, channel.replay_wait_blocks);
     }
 }
