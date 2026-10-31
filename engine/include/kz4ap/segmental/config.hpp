@@ -113,8 +113,10 @@ struct SegmentalConfig {
     // reads 20 ms per channel-second and this 16; what it costs was not measurable on the review's neighbors or Farnsworth. A
     // beam of 12 nats there would save 1.6 ms more and costs 60 Hz at 0 dB re wanted 0.083 to 0.442.
     int filter_scale_ceiling = 300;
-    // nats: a scale takes the lead when it stands this far above the leader. Heuristic: the text should not jump on a tie.
-    double filter_scale_switch_nats = 3.0;
+    // nats: a scale takes the lead when it stands this far above the leader. A heuristic, by measurement: on a clean weak station a
+    // narrower filter can stand a few tens of nats above the widest and read a little worse (a generated band: 3 nats, CER
+    // 0.0190; 60 nats, 0.0176; 120 nats, 0.0166, as with the widest alone), and the review's neighbors stand well above that.
+    double filter_scale_switch_nats = 120.0;
     // s: how much later the template's rise is taken than the chain's own: a narrower filter's response starts sooner after its
     // edge in samples, and the evidence's window (kEdgeFirst ... kEdgeDone) stays where it is. A story then claims its edges this
     // much early, which nothing reads but the symbols' times. Set by at_filter_scale.
