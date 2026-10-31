@@ -22,8 +22,8 @@ path (the decoder is told the frequency and nothing else) and 210 on the detecto
 | stress | see "Stress" below | 2 | | | `2026-10-31-checkpoint-2/stress.csv` |
 
 `.../conditions-b2-c2.csv` of checkpoint 1 gives each B2 and C2 signal's Doppler spread and keying. Every CER below is computed
-from these rounded tables. Tests at 902121c: `ctest`, Windows with Qt 753 run, all passed, 19 of them skipped as designed (they
-need data or are measurements); Windows without Qt 753, 19; Linux 741, 19.
+from these rounded tables. Tests at 902121c (later commits on `app-5` change documents and data only): `ctest`, Windows with Qt 753 tests, 734 passed, 19 skipped as
+designed, 0 failed; Windows without Qt the same 753; Linux 741, 722 passed, 19 skipped, 0 failed.
 
 ## Scores by group
 

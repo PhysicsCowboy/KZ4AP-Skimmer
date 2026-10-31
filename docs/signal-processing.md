@@ -3966,7 +3966,7 @@ These are the model's and, except where said, the viterbi decoder's too. The whi
 - **Farnsworth spacing** is in the state (segmental only; viterbi: A.8d). A sender whose gaps change within an over pays a rescue, and a stretch costs 8.0 nats once per over, so a short Farnsworth over reads word spaces until that is earned back. Letter and word gaps stretch alike, by ARRL's rule; a sender who stretches only one pays the misfit on the other.
 - **The symbol prior agrees with the generator.** The on-air table is the one the filler text is drawn from; p_w is that text's mean word length and q the development set's count. Any CER on this text is therefore an upper estimate of what the
   prior gives on the air. Real text will sit somewhere between. Both decoders read the same prior.
-- **Text only when the channel ends, and its readout uncosted.** `best_text` walks the whole chain. Text costs 40 bytes per symbol, 0.3 MB per hour of continuous sending, unbounded until the channel closes.
+- **The whole text's readout is uncosted.** `best_text` walks the whole chain, at the channel's end, at a change of stream, and when more than 64 symbols came in one period. Text costs 40 bytes per symbol, 0.3 MB per hour of continuous sending, unbounded until the channel closes.
 - **The level is not bound to a story.** Nothing charges a drop inside a mark, and a new over pays nothing for its level (section 8e). Near threshold this reads better than viterbi; viterbi reads a little better from about +2 to +5 dB S₅₀₀, at +20 dB S₅₀₀
   with f_D = 3.5 Hz, and from about 60 WPM up.
 - **Three overlapping edges** (above 100 WPM) are not modeled; 95 WPM reads with a small error.
