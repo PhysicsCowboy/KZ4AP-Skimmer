@@ -346,6 +346,46 @@ TEST(Engine, OracleOpensChannelsAtTheGivenFrequencies) {
     EXPECT_NEAR(engine.stats().channel_seconds, 2 * 9.0, 0.05);
 }
 
+TEST(Engine, TheSegmentalDecoderReadsAStrongStationBesideAStrongNeighbor) {
+    // Review 5: a station that reads clean beside an equal neighbor 100 Hz away at +10 dB S500 was lost at +30 dB S500, where the neighbor's leak stands above the
+    // hiss in the wide filter (docs/signal-processing.md, A.8e). Oracle path, 48 kHz.
+    const double rate = 48000.0, duration_s = 34.0;
+    const double noise_sigma = 0.01;                                     // FS: complex white noise, N0 = sigma^2 / rate
+    const double amplitude = std::sqrt(1000.0 * 500.0 * noise_sigma * noise_sigma / rate);  // +30 dB S500
+    const auto wanted = test::keyed_signal_of(test::keying("CQ CQ DE W1AW W1AW K CQ CQ DE W1AW W1AW K CQ CQ DE W1AW W1AW K", 25.0, 0.7), rate, duration_s, 1000.0, amplitude, noise_sigma, 5);
+    const auto neighbor = test::keyed_signal_of(test::keying("TEST K1ABC K1ABC TEST K1ABC K1ABC TEST K1ABC K1ABC TEST K1ABC K1ABC", 22.0, 1.3), rate, duration_s, 1100.0, amplitude, 0.0, 6);
+    std::vector<Sample> band(wanted.size());
+    for (std::size_t i = 0; i < band.size(); ++i) band[i] = wanted[i] + neighbor[i];
+    const auto calls_read = [&](double leak_hold_s) {
+        EventBus bus;
+        EngineConfig config;
+        config.sample_rate = 48000;
+        config.decoder.front_end = FrontEnd::Segmental;
+        config.segmental.leak_hold_s = leak_hold_s;
+        config.oracle_frequencies_hz = {1000.0};
+        std::vector<std::string> list;
+        bus.subscribe([&](const Event& e) {
+            if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
+                for (const auto& c : d->chars) list.push_back(c.text);
+                for (const auto& k : d->corrections) {
+                    list.resize(std::min(list.size(), k.from_index));
+                    for (const auto& c : k.chars) list.push_back(c.text);
+                }
+            }
+        });
+        Engine engine(config, bus);
+        engine.process(band);
+        engine.finish();
+        std::string whole;
+        for (const std::string& s : list) whole += s;
+        int count = 0;
+        for (std::size_t at = whole.find("W1AW"); at != std::string::npos; at = whole.find("W1AW", at + 1)) ++count;
+        return count;
+    };
+    EXPECT_EQ(calls_read(1.0), 6);
+    EXPECT_LT(calls_read(0.0), 6);
+}
+
 TEST(Engine, StatsCountChannelTimeOfDetectedTracks) {
     EventBus bus;
     const auto config = with_envelope_path(EngineConfig{});

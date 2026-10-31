@@ -48,6 +48,11 @@ struct SegmentalParts {
     viterbi::TemplateTables template_tables;
     segmental::LevelTables level_tables;
     segmental::ModelTables model_tables;
+    // A neighbor's leak: |H_channel(k df)|^2 |H_front(k df)|^2, 1, at k = 0, 1, ... bins from the channel's center (df the band's bin),
+    // read from leak_first_bin on; and the blocks its peak is held over. Empty with SegmentalConfig::leak_hold_s 0.
+    std::vector<double> leak_response;
+    std::size_t leak_first_bin = 0;
+    std::size_t leak_hold_blocks = 0;
 };
 
 // The parts at the widest filter, and at the narrower ones in the order of config.filter_scales.
@@ -66,6 +71,7 @@ public:
     DecodeUpdate flush() override;
     void reset() override;
     void set_noise_density_fs2_per_hz(double n0_fs2_per_hz) override;
+    void set_band_spectrum(std::span<const float> power_fs2, int center_index) override;
 
     std::optional<KeyingEvidence> keying_evidence() const override;
     std::span<const std::string> published_symbols() const override { return published_; }
@@ -74,6 +80,8 @@ public:
     // The filter scale whose text goes out, and how many streams still run.
     int leading_scale() const;
     std::size_t streams_running() const;
+    // FS^2: the noise the leak asks of the stream at this filter scale, 0 if it has none (or no such stream runs).
+    double leak_floor_fs2(int scale) const;
 
 private:
     void start();
@@ -119,6 +127,9 @@ private:
         std::int64_t expected_k = -1;
         double start_morse_over_free = 0.0;  // nats
         double start_symbols = 0.0;
+        std::vector<double> leak_held;  // FS^2: the leak of the last SegmentalParts::leak_hold_blocks blocks, a ring
+        std::size_t leak_next = 0;
+        double leak_floor = 0.0;        // FS^2: the noise that asks for, as sigma^2 at this stream's output
     };
     // Chooses the leader from what stands, and at or after the drop time of the channel's age, if `may_drop`, drops what has fallen
     // behind it. True if the leader changed. stream_now_s: s of stream; a channel's age is that less the time of its first sample.

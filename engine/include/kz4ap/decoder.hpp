@@ -72,6 +72,9 @@ public:
     // block, as it does the frequency anchor, when the decoder is the new decoder (FrontEnd::Viterbi); the other
     // decoders estimate their noise themselves and ignore it.
     virtual void set_noise_density_fs2_per_hz(double /*n0_fs2_per_hz*/) {}
+    // The band's latest spectrum (SpectrumFrame::power_fs2), and the index in it of the channel's center: what stands beside the channel. The
+    // engine calls it before every block that is not a replay's, when the decoder is the segmental decoder.
+    virtual void set_band_spectrum(std::span<const float> /*power_fs2*/, int /*center_index*/) {}
     // The evidence above, if this decoder has any.
     virtual std::optional<KeyingEvidence> keying_evidence() const { return std::nullopt; }
     // The text as published so far (the consumer's list above), if this decoder keeps it.

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <stdexcept>
 #include <utility>
 
@@ -41,6 +42,17 @@ viterbi::OutputNoise noise_of(const segmental::SegmentalConfig& config, const Ch
                                  front, spacing_of(config, rate));
 }
 
+// |H(f)|^2 of real taps at a sample rate.
+double power_response(const std::vector<double>& taps, double rate_hz, double f_hz) {
+    double re = 0.0, im = 0.0;
+    for (std::size_t i = 0; i < taps.size(); ++i) {
+        const double phase = 2.0 * std::numbers::pi * f_hz * static_cast<double>(i) / rate_hz;
+        re += taps[i] * std::cos(phase);
+        im += taps[i] * std::sin(phase);
+    }
+    return re * re + im * im;
+}
+
 viterbi::TemplateTables template_of(const segmental::SegmentalConfig& config, const ChannelizerConfig& channel_in,
                                     const std::vector<double>& front) {
     const ChannelizerConfig channel = segmental_tables_channel(channel_in);
@@ -65,6 +77,26 @@ SegmentalParts::SegmentalParts(const segmental::SegmentalConfig& c, const Channe
       level_tables(c, output_noise, template_tables),
       model_tables(c) {
     (void)segmental::ChannelFloor(c);  // refuses its settings here, before any channel opens
+    require(std::isfinite(c.leak_hold_s) && c.leak_hold_s >= 0.0, "segmental: leak_hold_s must be finite and not negative (s)");
+    require(std::isfinite(c.leak_floor_db), "segmental: leak_floor_db must be finite (dB re the leak)");
+    require(c.leak_min_offset_hz >= 0.0 && c.leak_max_offset_hz > c.leak_min_offset_hz && std::isfinite(c.leak_max_offset_hz),
+            "segmental: the leak's offsets must rise from 0 Hz or above");
+    if (c.leak_hold_s > 0.0) {
+        // The same responses at any rate: the channel filter's length in s and the bin's width do not depend on it (segmental_tables_channel).
+        const ChannelizerConfig tables = segmental_tables_channel(channel);
+        const std::vector<double> cut = channel_filter_taps(tables);
+        const double bin_hz = static_cast<double>(channel.sample_rate) / channel.fft_size;
+        leak_first_bin = static_cast<std::size_t>(std::ceil(c.leak_min_offset_hz / bin_hz));
+        const auto last = static_cast<std::size_t>(std::ceil(c.leak_max_offset_hz / bin_hz));
+        leak_response.resize(last + 1);
+        for (std::size_t k = 0; k <= last; ++k) {
+            const double f_hz = static_cast<double>(k) * bin_hz;
+            leak_response[k] = power_response(cut, tables.sample_rate, f_hz) * power_response(front_taps, channel_rate_hz, f_hz);
+        }
+        // A block is the engine's hop, half an FFT.
+        const double block_s = 0.5 * channel.fft_size / channel.sample_rate;
+        leak_hold_blocks = std::max<std::size_t>(1, static_cast<std::size_t>(std::lround(c.leak_hold_s / block_s)));
+    }
 }
 
 namespace {
@@ -117,6 +149,12 @@ void SegmentalDecoder::start() {
 }
 
 int SegmentalDecoder::leading_scale() const { return streams_[leader_].scale; }
+
+double SegmentalDecoder::leak_floor_fs2(int scale) const {
+    for (const Stream& stream : streams_)
+        if (stream.scale == scale) return stream.leak_floor;
+    return 0.0;
+}
 
 std::size_t SegmentalDecoder::streams_running() const { return streams_.size(); }
 
@@ -213,7 +251,7 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
         stream.envelope.clear();
         stream.sampler.push(samples, next_index_, stream.envelope);
         const double spacing = static_cast<double>(stream.parts->channel_samples_per_sample);
-        const double sigma2 = n0_ * stream.parts->output_noise.sigma2_per_n0_hz;
+        const double sigma2 = std::max(n0_ * stream.parts->output_noise.sigma2_per_n0_hz, stream.leak_floor);
         for (const viterbi::EnvelopeSample& sample : stream.envelope) {
             if (!(n0_ > 0.0)) continue;
             // Samples not searched (N0 = 0) leave the stream spliced; the time of the samples after them is noted.
@@ -302,6 +340,27 @@ void SegmentalDecoder::reset() {
     next_publish_s_ = 0.0;
     wpm_ = 0.0f;
     published_.clear();
+}
+
+void SegmentalDecoder::set_band_spectrum(std::span<const float> power_fs2, int center_index) {
+    const auto size = static_cast<std::ptrdiff_t>(power_fs2.size());
+    for (Stream& stream : streams_) {
+        const SegmentalParts& parts = *stream.parts;
+        if (parts.leak_response.empty()) continue;
+        // L = sum over the bins beside the channel of (P / 1.5) |H_channel|^2 |H_front|^2. A tone of amplitude A reads A^2 in its bin
+        // under the analyzer's Hann window and 1.5 A^2 over all its bins (derived), so a neighbor's carrier counts once.
+        double leak = 0.0;
+        for (std::size_t k = parts.leak_first_bin; k < parts.leak_response.size(); ++k) {
+            const auto offset = static_cast<std::ptrdiff_t>(k);
+            const std::ptrdiff_t below = center_index - offset, above = center_index + offset;
+            if (below >= 0 && below < size) leak += parts.leak_response[k] * power_fs2[static_cast<std::size_t>(below)];
+            if (above >= 0 && above < size) leak += parts.leak_response[k] * power_fs2[static_cast<std::size_t>(above)];
+        }
+        leak /= 1.5;
+        if (stream.leak_held.empty()) stream.leak_held.assign(parts.leak_hold_blocks, 0.0);
+        stream.leak_held[stream.leak_next++ % stream.leak_held.size()] = leak;
+        stream.leak_floor = std::pow(10.0, parts.config.leak_floor_db / 10.0) * *std::max_element(stream.leak_held.begin(), stream.leak_held.end());
+    }
 }
 
 void SegmentalDecoder::set_noise_density_fs2_per_hz(double n0_fs2_per_hz) {

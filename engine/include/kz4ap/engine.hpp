@@ -279,6 +279,7 @@ private:
     // FrontEnd::Viterbi only: the hiss estimator, fed every spectrum frame, whose N0 at each channel's center bin the
     // channel's decoder gets before every block; and the parts its decoders share.
     std::unique_ptr<viterbi::HissEstimator> hiss_;
+    std::vector<float> band_power_fs2_;  // FrontEnd::Segmental only: the latest spectrum frame's power, FS^2 per bin (Decoder::set_band_spectrum)
     std::shared_ptr<const ViterbiShared> viterbi_shared_;
     std::shared_ptr<const SegmentalShared> segmental_shared_;  // FrontEnd::Segmental only
 };

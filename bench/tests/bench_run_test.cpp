@@ -718,7 +718,8 @@ protected:
                 return read_json(path("result.json")).at("score").at("signals").at(0);
             };
             const json with = score({});
-            const json without = score({"--set", "channel_floor_window_s=0"});
+            // The leak floor too: it reads the noise beside the channel, where the hiss does not, and alone reads these at CER 0.05 to 0.41.
+            const json without = score({"--set", "channel_floor_window_s=0", "--set", "leak_hold_s=0"});
             with_edits += with.at("edits").get<double>();
             without_edits += without.at("edits").get<double>();
             symbols += with.at("symbols").get<double>();

@@ -622,6 +622,87 @@ TEST(FilterScale, TheChoiceRunsOnTheChannelsAgeNotTheStreams) {
     EXPECT_EQ(late.published, early.published);
 }
 
+TEST(LeakFloor, ReadsTheBinsBesideTheChannelWeightedAndHeld) {
+    const auto shared = std::make_shared<const SegmentalShared>(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    const double up = std::pow(10.0, SegmentalConfig{}.leak_floor_db / 10.0);
+    ASSERT_EQ(shared->leak_first_bin, 3u);         // 60 Hz at 23.4375 Hz a bin
+    ASSERT_EQ(shared->leak_response.size(), 15u);  // to 320 Hz
+    ASSERT_EQ(shared->leak_hold_blocks, 47u);      // 1 s at 21.33 ms a block
+    EXPECT_NEAR(shared->leak_response[0], 1.0, 0.02);
+    SegmentalDecoder decoder(1500.0, shared);
+    const int center = 1024;
+    std::vector<float> band(2048, 0.0f);
+    const auto floor_with = [&](std::size_t bin) {
+        std::fill(band.begin(), band.end(), 0.0f);
+        band[bin] = 1.5f;  // a tone of amplitude 1 FS counts as 1 FS^2 over its bins; here all in one
+        SegmentalDecoder fresh(1500.0, shared);
+        fresh.set_band_spectrum(band, center);
+        return fresh.leak_floor_fs2(1);
+    };
+    EXPECT_NEAR(floor_with(center + 5), up * shared->leak_response[5], 1e-12);
+    EXPECT_NEAR(floor_with(center - 5), up * shared->leak_response[5], 1e-12);
+    EXPECT_EQ(floor_with(center + 2), 0.0);   // the station's own
+    EXPECT_EQ(floor_with(center - 15), 0.0);  // past the last bin
+    // The peak holds for the blocks of its hold, and then leaves.
+    std::fill(band.begin(), band.end(), 0.0f);
+    band[static_cast<std::size_t>(center + 5)] = 1.5f;
+    decoder.set_band_spectrum(band, center);
+    const double peak = decoder.leak_floor_fs2(1);
+    std::fill(band.begin(), band.end(), 0.0f);
+    for (std::size_t i = 0; i + 1 < shared->leak_hold_blocks; ++i) decoder.set_band_spectrum(band, center);
+    EXPECT_EQ(decoder.leak_floor_fs2(1), peak);
+    decoder.set_band_spectrum(band, center);
+    EXPECT_EQ(decoder.leak_floor_fs2(1), 0.0);
+    // A channel at the span's edge reads what there is.
+    SegmentalDecoder at_edge(1500.0, shared);
+    at_edge.set_band_spectrum(band, 0);
+    at_edge.set_band_spectrum(band, 2047);
+    EXPECT_EQ(at_edge.leak_floor_fs2(1), 0.0);
+}
+
+TEST(LeakFloor, TheNarrowerFilterLetsLessThroughAtTheSameBinsOnAverage) {
+    const SegmentalShared shared(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    ASSERT_EQ(shared.narrower.size(), 1u);
+    double wide = 0.0, narrow = 0.0;
+    for (std::size_t k = shared.leak_first_bin; k < shared.leak_response.size(); ++k) {
+        wide += shared.leak_response[k];
+        narrow += shared.narrower[0].leak_response[k];
+    }
+    EXPECT_LT(narrow, wide / 3.0);
+}
+
+TEST(LeakFloor, WhiteNoiseStaysUnderTheHissOnAverage) {
+    // Derived: under a Hann window white noise reads P = 1.5 N0 df in a bin, so L = N0 df x the sum of the response over the bins read, against sigma^2 = N0 B.
+    // The floor stands in for what the spectrum holds beside the channel; on noise alone it must not be what sets sigma^2.
+    const SegmentalShared shared(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    const double df = 48000.0 / 2048.0;
+    const double up = std::pow(10.0, SegmentalConfig{}.leak_floor_db / 10.0);
+    const auto ratio = [&](const SegmentalParts& parts) {
+        double sum = 0.0;
+        for (std::size_t k = parts.leak_first_bin; k < parts.leak_response.size(); ++k) sum += 2.0 * parts.leak_response[k];
+        return up * df * sum / parts.output_noise.sigma2_per_n0_hz;
+    };
+    EXPECT_LT(ratio(shared), 1.0);
+    EXPECT_LT(ratio(shared.narrower[0]), 1.0);
+}
+
+TEST(LeakFloor, IsLeftOutAtAHoldOfZeroAndRefusesWhatCannotBe) {
+    SegmentalConfig off;
+    off.leak_hold_s = 0.0;
+    const auto shared = std::make_shared<const SegmentalShared>(off, ChannelizerConfig{48000, 2048, 64, 150.0});
+    EXPECT_TRUE(shared->leak_response.empty());
+    SegmentalDecoder decoder(1500.0, shared);
+    std::vector<float> band(2048, 1.0f);
+    decoder.set_band_spectrum(band, 1024);
+    EXPECT_EQ(decoder.leak_floor_fs2(1), 0.0);
+    SegmentalConfig bad;
+    bad.leak_max_offset_hz = bad.leak_min_offset_hz;
+    EXPECT_THROW(SegmentalShared(bad, ChannelizerConfig{48000, 2048, 64, 150.0}), std::invalid_argument);
+    SegmentalConfig negative;
+    negative.leak_hold_s = -1.0;
+    EXPECT_THROW(SegmentalShared(negative, ChannelizerConfig{48000, 2048, 64, 150.0}), std::invalid_argument);
+}
+
 TEST(SegmentalShared, BuildsQuicklyAtTheRadiosHighestRate) {
     // Review 4: as merged 16.0 s at 768 kHz with three filters, on the pipeline's thread with the radio already running, longer than
     // the radio's ring of 5.46 s. The limit is what is short against the ring on a loaded machine.

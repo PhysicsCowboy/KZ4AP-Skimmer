@@ -72,6 +72,19 @@ struct SegmentalConfig {
     // s: how much of the channel it reads before it is used. Heuristic.
     double channel_floor_start_s = 1.0;
 
+    // --- A neighbor's leak (SegmentalDecoder::set_band_spectrum) ---
+
+    // s: how far back each block's leak estimate is held, its peak; 0 leaves the leak out. Heuristic: a keyed neighbor's gaps must not take
+    // the floor away between its marks; a dash at 12 WPM is 0.3 s.
+    double leak_hold_s = 1.0;
+    // dB re the leak: the noise the floor counts for it: sigma^2 at least the leak, this far up. Heuristic, chosen by measurement: on a slice,
+    // +3 dB reads E2 0.504, +6 dB 0.573 and +10 dB 0.690 against 0.575 without it, and B2 rises from +6 dB (docs/decision-log.md, 2026-10-31).
+    double leak_floor_db = 3.0;
+    // Hz: the bins read for it, from the channel's center; what is nearer is taken as the station's own. Heuristics: a Hann main lobe reaches 47 Hz
+    // at 23.4 Hz a bin, and the chain's response past 320 Hz is under -100 dB re 0 Hz.
+    double leak_min_offset_hz = 60.0;
+    double leak_max_offset_hz = 320.0;
+
     // --- A story's fist: the gap stretch (search.hpp) ---
 
     // count: the gap stretches a story may take, g = 1, r, r^2, ..., r = speed_ratio^gap_stretch_speed_steps; 1 leaves them out.

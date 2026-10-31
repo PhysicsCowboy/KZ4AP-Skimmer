@@ -234,6 +234,7 @@ void Engine::process_hop(std::span<const Sample> hop) {
         if (!oracle_) update = detector_.process(frame);
         lap(stages_.detector_s);
         if (hiss_) hiss_->push(frame);  // the new decoder's hiss, before the frame moves on
+        if (segmental_shared_) band_power_fs2_ = frame.power_fs2;
         lap(stages_.hiss_s);
         bus_.publish(Event{std::move(frame)});
         lap(stages_.publish_s);
@@ -340,6 +341,11 @@ DecodeUpdate Engine::decode_block(std::uint32_t id, Channel& channel, const Chan
     if (tap_) tap_(ChannelBlock{id, first_index, block_center_hz, samples, channel.detector_freq_hz});
     // The new decoder: its N0, the hiss estimator's density at the bin this block was cut at, set before every block.
     if (hiss_) channel.decoder->set_noise_density_fs2_per_hz(hiss_->noise_density_fs2_per_hz(block_bin));
+    // What stands beside the channel now; a replay has no spectrum of its past.
+    if (past == nullptr && !band_power_fs2_.empty()) {
+        const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
+        channel.decoder->set_band_spectrum(band_power_fs2_, static_cast<int>(std::lround(block_center_hz / bin_hz)) + config_.fft_size / 2);
+    }
     const double filtered = thread_cpu_precise_seconds();
     DecodeUpdate update = channel.decoder->process(samples, t0);
     const double decoded = thread_cpu_precise_seconds();
