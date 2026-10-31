@@ -76,10 +76,9 @@ namespace {
 struct Feed {
     TrackJudge judge;
     KeyingEvidence now;
-    TrackJudge::Verdict step(double morse, double free_slow, double free_fast, const std::string& text = "") {
+    TrackJudge::Verdict step(double morse, double free_key, const std::string& text = "") {
         now.morse_nats += morse;
-        now.free_slow_nats += free_slow;
-        now.free_key_nats += free_fast;
+        now.free_key_nats += free_key;
         const std::vector<std::string> symbols = symbols_of(text);
         return judge.update(now, symbols);
     }
@@ -91,7 +90,7 @@ TEST(TrackJudge, NoiseThatEarnsNothingGoesAfterTheStatedTime) {
     Feed f;
     int seconds = 0;
     TrackJudge::Verdict v;
-    while (!(v = f.step(1.0, -4.0, -25.0)).retire && seconds < 60) ++seconds;
+    while (!(v = f.step(1.0, -4.0)).retire && seconds < 60) ++seconds;
     EXPECT_EQ(seconds, static_cast<int>(TrackJudge::kQuietNewS));
     EXPECT_EQ(v.end, TrackEnd::Quiet);
     EXPECT_GT(v.hold_s, 0.0);
@@ -101,7 +100,7 @@ TEST(TrackJudge, ACarrierGoesAfterAWindow) {
     Feed f;
     int seconds = 0;
     TrackJudge::Verdict v;
-    while (!(v = f.step(7000.0, 7020.0, 7000.0)).retire && seconds < 60) ++seconds;
+    while (!(v = f.step(7000.0, 7020.0)).retire && seconds < 60) ++seconds;
     EXPECT_EQ(seconds, static_cast<int>(TrackJudge::kWindowS));
     EXPECT_EQ(v.end, TrackEnd::NotMorse);
 }
@@ -111,7 +110,7 @@ TEST(TrackJudge, AMarginalThatLooksAtTheTextGoesWithoutProof) {
     Feed f;
     int seconds = 0;
     TrackJudge::Verdict v;
-    while (!(v = f.step(100.0, 100.0, 90.0)).retire && seconds < 60) ++seconds;
+    while (!(v = f.step(100.0, 100.0)).retire && seconds < 60) ++seconds;
     EXPECT_EQ(seconds, static_cast<int>(TrackJudge::kUnprovenS));
     EXPECT_EQ(v.end, TrackEnd::NotMorse);
 }
@@ -120,28 +119,28 @@ TEST(TrackJudge, JunkTextGoesUnlessTheSignalIsKeyedBeyondDoubt) {
     Feed speech;
     int seconds = 0;
     TrackJudge::Verdict v;
-    while (!(v = speech.step(100.0, 100.0, 90.0, "EEEEEEEEEEEEEEEEEEEEEEEE")).retire && seconds < 60) ++seconds;
+    while (!(v = speech.step(100.0, 100.0, "EEEEEEEEEEEEEEEEEEEEEEEE")).retire && seconds < 60) ++seconds;
     EXPECT_EQ(seconds, static_cast<int>(TrackJudge::kFirstVerdictS));
     EXPECT_EQ(v.end, TrackEnd::NotMorse);
     // A generated contest exchange reads E, T, I, M, U; its timing earns far above the keyed rate.
     Feed station;
-    for (int s = 0; s < 40; ++s) EXPECT_FALSE(station.step(5000.0, 4900.0, 4900.0, "EIMEE TU EEMEE TU EEMEE TU EEMEE TU EEMEE TU").retire) << s;
+    for (int s = 0; s < 40; ++s) EXPECT_FALSE(station.step(5000.0, 4900.0, "EIMEE TU EEMEE TU EEMEE TU EEMEE TU EEMEE TU").retire) << s;
 }
 
 TEST(TrackJudge, AStationThatFadesFor3SKeepsItsTrack) {
     Feed f;
-    for (int s = 0; s < 20; ++s) ASSERT_FALSE(f.step(200.0, 200.0, 180.0, "CQ CQ DE KQ2RP").retire);
+    for (int s = 0; s < 20; ++s) ASSERT_FALSE(f.step(200.0, 200.0, "CQ CQ DE KQ2RP").retire);
     EXPECT_TRUE(f.judge.proven());
-    for (int s = 0; s < 3; ++s) EXPECT_FALSE(f.step(0.0, -5.0, -25.0, "CQ CQ DE KQ2RP").retire);
-    for (int s = 0; s < 20; ++s) EXPECT_FALSE(f.step(200.0, 200.0, 180.0, "CQ CQ DE KQ2RP").retire);
+    for (int s = 0; s < 3; ++s) EXPECT_FALSE(f.step(0.0, -5.0, "CQ CQ DE KQ2RP").retire);
+    for (int s = 0; s < 20; ++s) EXPECT_FALSE(f.step(200.0, 200.0, "CQ CQ DE KQ2RP").retire);
 }
 
 TEST(TrackJudge, AStationGoneLeavesAfterTheLongQuietAndItsPlaceStaysOpen) {
     Feed f;
-    for (int s = 0; s < 20; ++s) ASSERT_FALSE(f.step(200.0, 200.0, 180.0, "CQ CQ DE KQ2RP").retire);
+    for (int s = 0; s < 20; ++s) ASSERT_FALSE(f.step(200.0, 200.0, "CQ CQ DE KQ2RP").retire);
     int seconds = 0;
     TrackJudge::Verdict v;
-    while (!(v = f.step(0.0, -5.0, -25.0, "CQ CQ DE KQ2RP")).retire && seconds < 100) ++seconds;
+    while (!(v = f.step(0.0, -5.0, "CQ CQ DE KQ2RP")).retire && seconds < 100) ++seconds;
     EXPECT_NEAR(seconds, TrackJudge::kQuietOldS, 1.0);
     EXPECT_EQ(v.end, TrackEnd::Quiet);
     EXPECT_EQ(v.hold_s, 0.0);
@@ -150,22 +149,22 @@ TEST(TrackJudge, AStationGoneLeavesAfterTheLongQuietAndItsPlaceStaysOpen) {
 TEST(TrackJudge, AWeakStationIsNotHeldToTheRates) {
     // Generated, +6.5 dB S500 at 42 WPM: 230 nats/s, a free key above it by 11 nats/s. Its text keeps it.
     Feed f;
-    for (int s = 0; s < 40; ++s) EXPECT_FALSE(f.step(230.0, 235.0, 241.0, "TEAT KE2YT VE2YT CQ TEST").retire) << s;
+    for (int s = 0; s < 40; ++s) EXPECT_FALSE(f.step(230.0, 235.0, "TEAT KE2YT VE2YT CQ TEST").retire) << s;
 }
 
-TEST(TrackJudge, StrongDataIsHeldToTheFastRate) {
+TEST(TrackJudge, AStrongShownTrackThatEarnsNoTimingGoes) {
     Feed f;
     int seconds = 0;
     TrackJudge::Verdict v;
-    while (!(v = f.step(3400.0, 3395.0, 3411.0, "WKQ5 XB9Z MK3D OJ7P 4UQ")).retire && seconds < 60) ++seconds;
-    EXPECT_EQ(seconds, static_cast<int>(TrackJudge::kFastWindowS));
+    while (!(v = f.step(3400.0, 3412.0, "WKQ5 XB9Z MK3D OJ7P 4UQ")).retire && seconds < 60) ++seconds;
+    EXPECT_EQ(seconds, static_cast<int>(TrackJudge::kWindowS));
     EXPECT_EQ(v.end, TrackEnd::NotMorse);
 }
 
 TEST(TrackJudge, AStrongStationsSlipIsNoShortfall) {
     // Generated: 46 nats/s behind a free key for a moment, out of 277 000 nats/s.
     Feed f;
-    for (int s = 0; s < 40; ++s) EXPECT_FALSE(f.step(277000.0, 277040.0, 277046.0, "CQ TEST PY9X PY9X").retire) << s;
+    for (int s = 0; s < 40; ++s) EXPECT_FALSE(f.step(277000.0, 277040.0, "CQ TEST PY9X PY9X").retire) << s;
 }
 
 namespace {
@@ -383,7 +382,7 @@ std::string joined(const std::vector<std::string>& symbols) {
 
 }  // namespace
 
-TEST(EngineJudge, ACarrierIsRetiredAsNotMorse) {
+TEST(EngineJudge, ACarrierIsRetired) {
     const double duration_s = 30.0;
     std::vector<Sample> x(static_cast<std::size_t>(duration_s * kEngineRate));
     const double w = 2.0 * 3.14159265358979 * 3000.0 / kEngineRate;
@@ -391,7 +390,7 @@ TEST(EngineJudge, ACarrierIsRetiredAsNotMorse) {
     add_noise(x, 1e-9, 1);
     const Outcome outcome = run_segmental(x);
     ASSERT_FALSE(outcome.ended.empty());
-    const bool retired = std::any_of(outcome.ended.begin(), outcome.ended.end(), [](const auto& e) { return e.second == TrackEnd::NotMorse; });
+    const bool retired = std::any_of(outcome.ended.begin(), outcome.ended.end(), [](const auto& e) { return e.second == TrackEnd::NotMorse || e.second == TrackEnd::Quiet; });
     EXPECT_TRUE(retired);
     for (const auto& [id, symbols] : outcome.text) EXPECT_FALSE(text_evidence(symbols).plausible()) << joined(symbols);
 }

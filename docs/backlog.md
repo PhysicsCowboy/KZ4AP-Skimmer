@@ -1640,15 +1640,18 @@ for the line format and client handling.
 
 Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repository):
 
-- **False tracks on wide signals.** 322 tracks in 62 s, about 150 live at once, most of them on FT8 at +44 kHz and on
-  SSB and digital signals at +60 and +85 kHz, whose narrow lines stand out even from a local floor. Each costs about 12 ms
-  per channel-second (a generated CW channel: 5 to 6), so the band costs about 1.9 s of CPU per s of stream, and the list is
-  mostly junk. The 2026-10-19 amendment's answer is not built: the decoder confirms a channel and closes it once no Morse
-  hypothesis has led for a hold time. That needs a measure from the segmental search of how far its best story stands
-  above the no-signal story, and a hold in the detector so that the peak is not reborn at once.
+- **False tracks on wide signals (app-3: judged and retired, `track_evidence.hpp`).** What is left: tracks still open on
+  wide signals and live 4 to 14 s each, about 25 of the 42 live on the 62 s recording, at 15 ms per channel-second; about a
+  third of the rows listed are junk, data at +91 kHz most of all, whose text cannot be told from a contest exchange by its
+  letters alone. A test before a channel opens, or a bandwidth test that does not fail on speech's harmonics, would save
+  that CPU. The goal of about 8 ms per channel-second is not met on real signals: weak and wide channels cost 10 to 25 ms,
+  because more stories stay within the beam.
 - **The first word.** Text starts about 1 s after a station does, since a channel opens after the detector's 0.5 s of
   persistence; first-word CER is 0.65 to 0.75 on every recording. The amendment's replay of the last few seconds is not built.
-- **Two tracks on one station,** 40 to 135 Hz apart, on a strong keyed carrier (W1AW at 7047.5 kHz).
+- **Two tracks on one station,** 40 to 135 Hz apart, on a strong keyed carrier (W1AW at 7047.5 kHz): seen only live while the
+  pipeline lost samples; none on playback. No envelope test between neighbors is built, should it come back.
+- **A real station's first seconds under a hold.** A place retired stays closed 8 s and more (at most 120 s; a region 30 s and
+  more): a station that starts there waits. Measured only as no station lost on three recordings of 10, 62 and 20 s.
 - **The fixed cost's rest:** the channelizer's FFT could share the spectrum's, the Hann window applied in the frequency
   domain (7 ms per s of stream at 192 kHz); a table lookup for the display's logarithm.
 - **RSPduo:** single tuner A is set in the source, not run on one. The API's other models' LNA tables are the API's to refuse.

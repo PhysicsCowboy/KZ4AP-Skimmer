@@ -233,8 +233,8 @@ void SignalDetector::follow_peaks(float floor_db) {
     // keep-alive level above the floor and whose interpolated frequency is within D_ch of the track's
     // current frequency; with none (the station is silent, or only a stronger neighbor's skirt is
     // there, which is not a local maximum) it holds. A peak beyond D_ch can become a track of its own.
-    // It does not check whether another track already holds the peak, so two tracks could converge on
-    // one station (derived, not observed; backlog "Tracks converging on one peak").
+    // Without one_track_per_peak it does not check whether another track already holds the peak, and tracks
+    // do converge on one station: on real 40 m up to 19 of them on one frequency.
     const float keep_alive_db = config_.threshold_db - config_.hysteresis_db;
     const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
     const int reach = static_cast<int>(std::ceil(config_.attribution_distance_hz / bin_hz)) + 1;

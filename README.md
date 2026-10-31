@@ -167,10 +167,13 @@ each track's final text (`text`, corrections applied) and its immediate text
 
 ## Known limitations
 
-- On the air, wide and digital signals (FT8, SSB) raise many false tracks with
-  junk text, each costing about twice a CW channel's CPU: the decoder's
-  confirmation of a channel is not built (`docs/backlog.md`, "The app on the air").
-  The detector holds at most 200 tracks (`DetectorConfig::max_tracks`).
+- On the air, wide and digital signals (FT8, SSB) still open tracks: each is judged
+  on its own evidence and retired within 4 to 14 s, and its text is not listed unless
+  it reads as plausible, but about a third of the rows listed on real 40 m are still
+  junk, data signals most of all (`docs/backlog.md`, "The app on the air").
+  The detector holds at most 200 tracks (`DetectorConfig::max_tracks`); at the cap a
+  stronger new peak replaces the weakest track, and a pipeline behind a live radio
+  gives up the tracks with the least evidence first.
 - The first character or two of a transmission may be lost or wrong while the
   station is being detected.
 - Very strong signals (around 60 dB SNR in 500 Hz) can produce extra "ghost"

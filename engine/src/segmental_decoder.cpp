@@ -72,14 +72,9 @@ void SegmentalDecoder::start() {
     expected_k_ = -1;
     free_next_ = 0;
     const double interval_s = shared_->config.model.sample_interval_s;
-    const auto chain = [&](double switch_per_s) {
-        FreeKey key;
-        key.change = switch_per_s * interval_s;
-        key.stay = 1.0 - key.change;
-        return key;
-    };
-    free_key_ = chain(shared_->config.key_switch_per_s);
-    free_slow_ = chain(kFreeSlowSwitchPerS);
+    free_key_ = FreeKey{};
+    free_key_.change = kFreeKeySwitchPerS * interval_s;
+    free_key_.stay = 1.0 - free_key_.change;
 }
 
 void SegmentalDecoder::FreeKey::step(double l1, double top) {
@@ -97,16 +92,13 @@ void SegmentalDecoder::advance_free_key() {
         const double l1 = sums_->sum(free_next_ + 1) - sums_->sum(free_next_);
         const double top = std::max(0.0, l1);
         free_key_.step(l1, top);
-        free_slow_.step(l1, top);
     }
 }
 
 std::optional<KeyingEvidence> SegmentalDecoder::keying_evidence() const {
     KeyingEvidence evidence;
     evidence.morse_nats = search_->best_score();
-    evidence.carrier_nats = sums_->sum(sums_->committed());
     evidence.free_key_nats = free_key_.nats;
-    evidence.free_slow_nats = free_slow_.nats;
     return evidence;
 }
 

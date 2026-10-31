@@ -92,7 +92,7 @@ TrackJudge::Verdict TrackJudge::update(const KeyingEvidence& evidence, std::span
     };
 
     const double morse_window = evidence.morse_nats - ago(kWindowS).morse_nats;
-    const double free_window = evidence.free_slow_nats - ago(kWindowS).free_slow_nats;
+    const double free_window = evidence.free_key_nats - ago(kWindowS).free_key_nats;
     const double window_s = std::min(age_s, kWindowS);
     const double rate = window_s > 0.0 ? (morse_window - std::max(0.0, free_window)) / window_s : 0.0;
     const double earning = window_s > 0.0 ? morse_window / window_s : 0.0;
@@ -106,12 +106,6 @@ TrackJudge::Verdict TrackJudge::update(const KeyingEvidence& evidence, std::span
         return retire(TrackEnd::NotMorse, kHoldS);
     // A tone, FT8, a carrier: timing earns nothing, a whole window long.
     if (age_s >= kWindowS && rate < kNotKeyedRate && held_to_it(rate, earning)) return retire(TrackEnd::NotMorse, kHoldS);
-    // Data: a free key that changes fast does better than Morse.
-    if (age_s >= kFastWindowS) {
-        const double morse = (evidence.morse_nats - ago(kFastWindowS).morse_nats) / kFastWindowS;
-        const double fast = morse - std::max(0.0, (evidence.free_key_nats - ago(kFastWindowS).free_key_nats) / kFastWindowS);
-        if (fast < kNotKeyedFastRate && held_to_it(fast, morse)) return retire(TrackEnd::NotMorse, kHoldS);
-    }
     if (!proven_ && rate < kKeyedRate) {
         if (age_s >= kQuietNewS && evidence.morse_nats - ago(kQuietNewS).morse_nats < kQuietNewNatsPerS * kQuietNewS)
             return retire(TrackEnd::Quiet, kHoldS);

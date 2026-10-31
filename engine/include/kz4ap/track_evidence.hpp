@@ -69,16 +69,12 @@ public:
     static constexpr double kKeyedRate = 3.0;
     // nats/s: R below this is not Morse: FT8 and carriers lie below it, the real stations of the recordings at -6.8 or above.
     static constexpr double kNotKeyedRate = -8.0;
-    // s and nats/s: the same against a fast free key (the level filter's own switch rate). A fast irregular signal, data, lies at
-    // -9.8 or below over this window; the real stations of the recordings at -0.2 or above.
-    static constexpr double kFastWindowS = 20.0;
-    static constexpr double kNotKeyedFastRate = -5.0;
-    // nats/s: a shown track is held to those two rates only if it earns at least this: at a low level a marginal over every key
-    // path beats the one best story whatever the signal (generated, +6.5 dB S500 at 42 WPM: 230 nats/s and -10.9 nats/s), while at
-    // this level the real stations earn their timing (+9.1 nats/s or better).
+    // nats/s: a shown track is held to that rate only if it earns at least this: at a low level a marginal over every key path
+    // beats the one best story whatever the signal (generated, +6.5 dB S500 at 42 WPM: 230 nats/s and -14 nats/s), while at this
+    // level the real stations earn their timing.
     static constexpr double kStrongRate = 1000.0;
     // 1: and its shortfall must be this much of its earnings: a strong station's story slips by tens of nats/s, out of hundreds
-    // of thousands, for a moment (generated: 46 of 277 000), where data earns thousands (11 of 3 400).
+    // of thousands, for a moment (generated: 390 of 728 000).
     static constexpr double kShortfallShare = 1e-3;
     static constexpr double kQuietNewS = 8.0;       // s: a track with nothing plausible yet must earn kQuietNewNatsPerS in this
     static constexpr double kQuietNewNatsPerS = 5.0;  // nats/s: noise's reading of itself lies below it

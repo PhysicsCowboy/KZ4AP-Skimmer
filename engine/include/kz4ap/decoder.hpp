@@ -50,9 +50,7 @@ struct DecodeUpdate {
 // (a sample of key-up scores 0): what the engine reads to decide whether a track holds keyed Morse (track_evidence.hpp).
 struct KeyingEvidence {
     double morse_nats = 0;     // the best Morse story: its timing and text included
-    double carrier_nats = 0;   // key down throughout, at the level the channel's belief follows
-    double free_key_nats = 0;  // an on-off key with no timing and no text at the same level (a two-state chain)
-    double free_slow_nats = 0;  // the same at a slow switch rate
+    double free_key_nats = 0;  // an on-off key with no timing and no text at the same level: a two-state chain, 5 changes a second
 };
 
 // Decodes one channel's baseband stream into characters.

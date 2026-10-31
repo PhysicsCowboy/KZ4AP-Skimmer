@@ -56,8 +56,8 @@ private:
     // Brings the consumer's list (decoder.hpp) from published_ to the story: new characters, or a correction.
     DecodeUpdate bring_up_to_date(const segmental::BestStory& story, double now_s);
 
-    // 1/s: the slow chain's switch rate. Heuristic: of the size of a slow sender's element rate.
-    static constexpr double kFreeSlowSwitchPerS = 5.0;
+    // 1/s: the chain's switch rate. Heuristic: of the size of a slow sender's element rate.
+    static constexpr double kFreeKeySwitchPerS = 5.0;
     // How often the text goes out while the channel runs, s of stream. Heuristic: a display's refresh, against a text lag of
     // 0.387 s at most from the evidence; the cost per channel-second is 4 scans of the open elements and a tail.
     static constexpr double kPublishEveryS = 0.25;
@@ -73,7 +73,7 @@ private:
         double nats = 0.0;
         void step(double l1, double top);
     };
-    FreeKey free_key_, free_slow_;
+    FreeKey free_key_;
     std::int64_t free_next_ = 0;
 
     double next_publish_s_ = 0.0;
