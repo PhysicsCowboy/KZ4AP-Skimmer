@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 #include <utility>
 
@@ -188,7 +190,15 @@ DecodeUpdate SegmentalDecoder::flush() {
     segmental::BestStory story = search_->best_story(0);
     story.tail = search_->best_text();
     story.length = story.tail.size();
-    return bring_up_to_date(story, static_cast<double>(next_index_) / rate_);
+    DecodeUpdate last = bring_up_to_date(story, static_cast<double>(next_index_) / rate_);
+    if (const char* path = std::getenv("KZ4AP_TRACE")) {  // experiment
+        if (std::FILE* out = std::fopen(path, "a")) {
+            std::fprintf(out, "%.3f %.3f %.2f %zu
+", search_->best_score(), free_key_.nats, wpm_, published_.size());
+            std::fclose(out);
+        }
+    }
+    return last;
 }
 
 void SegmentalDecoder::reset() {
