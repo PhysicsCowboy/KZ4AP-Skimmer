@@ -84,11 +84,15 @@ void every_field_is_named(const ViterbiConfig& c) {
                                   fist_shifts_dots,
                                   beam_nats,
                                   ceiling,
+                                  merge_edge_history_samples,
                                   front_dot_s,
                                   edge_rise_s,
                                   edge_rise_min_s,
                                   edge_rise_max_s,
                                   fading_spread_hz,
+                                  added_variance_multiplier_max,
+                                  added_variance_level_knee,
+                                  amplitude_update_min_template,
                                   systematic_floor,
                                   nu_bin_s,
                                   nu_memory_s,
@@ -96,6 +100,8 @@ void every_field_is_named(const ViterbiConfig& c) {
                                   rescue_epsilon,
                                   word_end_p,
                                   over_end_q,
+                                  symbol_prior_on_air,
+                                  symbol_prior_floor,
                                   level_min_db,
                                   level_max_db,
                                   quadrature_order,
@@ -120,11 +126,15 @@ const std::vector<std::string> kExpectedNames = {
     "fist_shifts_dots",
     "beam_nats",
     "ceiling",
+    "merge_edge_history_samples",
     "front_dot_s",
     "edge_rise_s",
     "edge_rise_min_s",
     "edge_rise_max_s",
     "fading_spread_hz",
+    "added_variance_multiplier_max",
+    "added_variance_level_knee",
+    "amplitude_update_min_template",
     "systematic_floor",
     "nu_bin_s",
     "nu_memory_s",
@@ -132,6 +142,8 @@ const std::vector<std::string> kExpectedNames = {
     "rescue_epsilon",
     "word_end_p",
     "over_end_q",
+    "symbol_prior_on_air",
+    "symbol_prior_floor",
     "level_min_db",
     "level_max_db",
     "quadrature_order",
@@ -273,7 +285,13 @@ TEST(ViterbiJson, TheConfigurationRoundTripsThroughItsJson) {
     c.fist_shifts_dots = {{0.05, 0.05, -0.05, -0.05, -0.05}};
     c.beam_nats = 80.0;
     c.ceiling = 17000;
+    c.merge_edge_history_samples = 8;
     c.fading_spread_hz = 0.3;
+    c.added_variance_multiplier_max = 4.0;
+    c.added_variance_level_knee = 100.0;
+    c.amplitude_update_min_template = 0.05;
+    c.symbol_prior_on_air = false;
+    c.symbol_prior_floor = 0.001;
     c.front_dot_s = 0.015;
     c.edge_rise_s = 0.003;
     c.edge_rise_min_s = 0.001;

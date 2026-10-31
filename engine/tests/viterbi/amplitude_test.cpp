@@ -133,6 +133,30 @@ TEST(Amplitude, PredictionIsTheOwnersRule) {
     EXPECT_THROW(predict_amplitude(a, 101, -1.0, t), std::invalid_argument);
 }
 
+TEST(Amplitude, TheVarianceAddedAtLagOneGrowsWithTheLevel) {
+    // m = 1 + (M - 1) x / (1 + x), x = Omega_bar / (X0 sigma_y^2): 1 with no level, (1 + M) / 2 at the knee, M far above it.
+    constexpr double kMax = 16.0, kKnee = 42.0, kSigma2 = 1e-6;
+    EXPECT_EQ(added_variance_multiplier(0.0, kSigma2, kMax, kKnee), 1.0);
+    EXPECT_NEAR(added_variance_multiplier(kKnee * kSigma2, kSigma2, kMax, kKnee), 8.5, 1e-12);
+    EXPECT_NEAR(added_variance_multiplier(1e6 * kKnee * kSigma2, kSigma2, kMax, kKnee), 16.0, 2e-5);
+    EXPECT_EQ(added_variance_multiplier(kKnee * kSigma2, kSigma2, 1.0, kKnee), 1.0);  // M = 1: the plain rule
+    const FadingTables t(kSpreadHz, kSampleS);
+    const double omega = 42.0 * kSigma2;  // FS^2: m = 8.5
+    const Amplitude a{0.0065, 2e-6, 100};
+    const double q = 0.5 * (1.0 - t.rho(1) * t.rho(1)) * omega;
+    const Prediction plain = predict_amplitude(a, 101, omega, t);
+    const Prediction scaled = predict_amplitude_at_level(a, 101, omega, kSigma2, kMax, kKnee, t);
+    EXPECT_EQ(scaled.mu_fs, plain.mu_fs);
+    EXPECT_LT(rel(scaled.p_fs2, plain.p_fs2 + 7.5 * q), 1e-12);
+    // Only at lag 1: a lag above it has the true lag's variance already.
+    for (int lag : {0, 2, 18}) {
+        const Prediction other = predict_amplitude_at_level(a, 100 + lag, omega, kSigma2, kMax, kKnee, t);
+        const Prediction same = predict_amplitude(a, 100 + lag, omega, t);
+        EXPECT_EQ(other.mu_fs, same.mu_fs) << "lag " << lag;
+        EXPECT_EQ(other.p_fs2, same.p_fs2) << "lag " << lag;
+    }
+}
+
 TEST(Amplitude, BellDecaysAbout036DbPerDot) {
     const FadingTables t(kSpreadHz, kSampleS);
     const double omega = 0.04;

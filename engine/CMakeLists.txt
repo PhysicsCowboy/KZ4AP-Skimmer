@@ -17,6 +17,7 @@ set(KZ4AP_BANK_SOURCES
 # The new decoder's sources (first prototype); later tasks add to this list.
 set(KZ4AP_VITERBI_SOURCES
   src/viterbi/morse_tree.cpp
+  src/viterbi/symbol_prior.cpp
   src/viterbi/fist.cpp
   src/viterbi/observation.cpp
   src/viterbi/search.cpp
@@ -55,6 +56,9 @@ add_library(kz4ap_engine_core OBJECT
   src/frequency_tracker.cpp
   src/bank_decoder.cpp
   src/viterbi_decoder.cpp
+  src/segmental_decoder.cpp
+  src/segmental/evidence.cpp
+  src/segmental/search.cpp
   ${KZ4AP_BANK_SOURCES}
   ${KZ4AP_VITERBI_SOURCES}
 )
@@ -142,6 +146,7 @@ set_tests_properties(BankFitB2a.FullSweep PROPERTIES ENVIRONMENT KZ4AP_FIT_FULL_
 # The new decoder's tests (first prototype); later tasks add to this list.
 add_executable(kz4ap_viterbi_tests
   tests/viterbi/morse_tree_test.cpp
+  tests/viterbi/symbol_prior_test.cpp
   tests/viterbi/fist_test.cpp
   tests/viterbi/observation_test.cpp
   tests/viterbi/search_test.cpp
@@ -153,6 +158,7 @@ add_executable(kz4ap_viterbi_tests
   tests/viterbi/long_run_test.cpp
   tests/viterbi/newborn_test.cpp
   tests/viterbi_decoder_test.cpp
+  tests/segmental/segmental_test.cpp
 )
 target_link_libraries(kz4ap_viterbi_tests PRIVATE kz4ap::engine GTest::gtest_main)
 gtest_discover_tests(kz4ap_viterbi_tests)

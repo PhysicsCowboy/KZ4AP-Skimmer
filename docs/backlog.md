@@ -392,6 +392,8 @@ away (design notes, amendment of 2026-10-25, part 15, item 15).
 
 ### Fading splits marks in the new decoder (found 2026-10-21; fix designed 2026-10-25, plan D16–D17)
 
+**Status 2026-10-30:** the design of plan D16–D17 did not cure this; the level-dependent added variance did, up to +30 dB S500 (see "The amplitude model inside marks"; decision log).
+
 The owner made this the next piece of work (2026-10-21): diagnose first, then a principled fix proposed to him.
 
 Measured: "PARIS PARIS" at 25 WPM under flat Rayleigh fading with the generator's Gaussian Doppler spectrum, through
@@ -476,6 +478,8 @@ development set, and whether the frozen bank reference must then be re-recorded.
 for the new decoder only.
 
 ### The amplitude model inside marks under fast fading (owner, 2026-10-22: a known limitation)
+
+**Status 2026-10-30:** eased, not cured: the variance added at lag 1 now grows with the level (`added_variance_multiplier_max`, `added_variance_level_knee`, heuristics; decision log). Still open above +30 dB S500, where no constant is right ("PARIS PARIS", f_D = 1 Hz: CER 0.48 at +60 dB S500 against 0.00 with the plain rule); a rate-adaptive variance is the likely next step.
 
 The new decoder's amplitude per story is one number (Bell 1977's form), updated at every envelope sample, every
 2.667 ms (updated 2026-10-25 to the design of plan D16–D17; 3 ms when this was measured), with the owner's rule for its
@@ -1627,5 +1631,7 @@ for the line format and client handling.
   arguments (zero or negative counts and durations).
 
 ## Fast code between whole samples (new decoder, found 2026-10-30)
+
+**Fixed 2026-10-30:** the merge key now holds the edges of the last 12 samples: 45 to 100 WPM, 84 of 84 runs exact (decision log). The diagnosis below, "cannot be claimed exactly", was wrong: claims were dropped at the merge before their evidence existed, and the joint edge-offset item is not needed for this.
 
 "PARIS PARIS" at 80 and 100 WPM reads wrongly on most seeds, with letters merged or split (`P<AR>IS`, `PAR5`, `LARIS`), and gets worse from +20 to +40 dB S500, while 70 and 90 WPM are mostly exact and 90 WPM (a dot of exactly 5 samples of 2.667 ms) is exact at +40 dB S500 on 6 of 6 seeds. Dots of 5.6 and 4.5 samples cannot be claimed exactly, and the misfit grows with the signal. The joint edge-offset item (design notes, part 5, the audit's row 10) is the first thing to try. Measured on 6 seeds per point, a 25 WPM to 100 WPM slice of synthetic machine keying only.

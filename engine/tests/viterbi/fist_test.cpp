@@ -489,6 +489,12 @@ TEST(Config, DefaultsAreTheDesignTable) {
     EXPECT_EQ(c.rescue_epsilon, 1.0e-3);
     EXPECT_EQ(c.word_end_p, 1.0 / 3.06);
     EXPECT_EQ(c.over_end_q, 1.0 / 24.0);
+    EXPECT_EQ(c.merge_edge_history_samples, 12);
+    EXPECT_EQ(c.added_variance_multiplier_max, 16.0);
+    EXPECT_EQ(c.added_variance_level_knee, 42.0);
+    EXPECT_EQ(c.amplitude_update_min_template, 0.01);
+    EXPECT_TRUE(c.symbol_prior_on_air);
+    EXPECT_EQ(c.symbol_prior_floor, 0.002);
     EXPECT_EQ(c.level_min_db, -15.0);
     EXPECT_EQ(c.level_max_db, 85.0);
     EXPECT_EQ(c.quadrature_order, 5);

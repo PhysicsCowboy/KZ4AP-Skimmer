@@ -45,6 +45,10 @@ struct Args {
     // anything else is done).
     ViterbiOptions viterbi_options;
     viterbi::ViterbiConfig viterbi;
+    // The segmental decoder (--decoder segmental): its configuration with the --set values applied, read after the
+    // options, since which decoder a --set belongs to is known only then.
+    segmental::SegmentalConfig segmental;
+    std::vector<std::string> settings;
     std::optional<std::filesystem::path> stats;  // --stats: where the new decoder's statistics file goes
 };
 
@@ -54,6 +58,7 @@ const char* decoder_name(FrontEnd d) {
         case FrontEnd::Matched: return "matched";
         case FrontEnd::Bank: return "bank";
         case FrontEnd::Viterbi: return "viterbi";
+        case FrontEnd::Segmental: return "segmental";
     }
     return "?";
 }
@@ -61,7 +66,7 @@ const char* decoder_name(FrontEnd d) {
 constexpr const char* kUsage =
     "usage: kz4ap-bench RECORDING.wav [--labels LABELS.json] [--json OUT.json]\n"
     "                   [--no-timing] [--baseline BASELINE.json] [--oracle]\n"
-    "                   [--decoder envelope|matched|bank|viterbi]\n"
+    "                   [--decoder envelope|matched|bank|viterbi|segmental]\n"
     "                   [--record-channels DIR (with --oracle: the oracle channels; without: the detector's)]\n"
     "                   [--set NAME=VALUE ...] [--genie fist|fading ...] [--stats STATS.json [--stats-detail]]\n"
     "                   [--omega-bar-default-table FILE]\n"
@@ -113,12 +118,11 @@ Args parse_args(int argc, char** argv) {
             else if (v == "matched") args.front_end = FrontEnd::Matched;
             else if (v == "bank") args.front_end = FrontEnd::Bank;
             else if (v == "viterbi") args.front_end = FrontEnd::Viterbi;
-            else throw std::runtime_error(a + " must be envelope, matched, bank or viterbi\n" + std::string(kUsage));
+            else if (v == "segmental") args.front_end = FrontEnd::Segmental;
+            else throw std::runtime_error(a + " must be envelope, matched, bank, viterbi or segmental\n" + std::string(kUsage));
         }
         else if (a == "--set") {  // the new decoder's configuration: NAME=VALUE, repeatable
-            const std::string setting = text();
-            apply_setting(args.viterbi, setting);  // std::invalid_argument for an unknown name or a wrong kind of value
-            args.viterbi_options.settings.push_back(setting);
+            args.settings.push_back(text());
         }
         else if (a == "--genie") {  // the new decoder's genie, from the labels: repeatable, each kind once
             const GenieKind kind = parse_genie_kind(text());
@@ -138,6 +142,15 @@ Args parse_args(int argc, char** argv) {
         else if (!a.empty() && a[0] == '-') throw std::runtime_error("unknown option " + a + "\n" + kUsage);
         else if (!args.recording) args.recording = a;
         else throw std::runtime_error(std::string("more than one recording given\n") + kUsage);
+    }
+    // std::invalid_argument for an unknown name or a wrong kind of value
+    for (const std::string& setting : args.settings) {
+        if (args.front_end == FrontEnd::Segmental) {
+            apply_segmental_setting(args.segmental, setting);
+        } else {
+            apply_setting(args.viterbi, setting);
+            args.viterbi_options.settings.push_back(setting);
+        }
     }
     check_viterbi_options(args.front_end == FrontEnd::Viterbi, args.oracle, args.viterbi_options);
     // The statistics are written after the result so that a statistics file that fails loses nothing of the run; one
@@ -278,6 +291,13 @@ int run_engine(const Args& args) {
     if (args.oracle) {
         for (const auto& s : labels->signals) config.oracle_frequencies_hz.push_back(s.freq_offset_hz);
     }
+    if (args.front_end == FrontEnd::Segmental) {
+        config.segmental = args.segmental;
+        if (args.oracle) {
+            for (std::size_t i = 0; i < labels->signals.size(); ++i)
+                config.oracle_frequency_tracks.push_back(oracle_frequency_track(labels->signals[i], i));
+        }
+    }
     if (args.front_end == FrontEnd::Viterbi) {
         config.viterbi = args.viterbi;
         if (args.stats) config.viterbi.stats = true;  // the search keeps its statistics only when asked
@@ -332,6 +352,7 @@ int run_engine(const Args& args) {
     out["duration_s"] = duration_s;
     out["front_end"] = decoder_name(args.front_end);  // the old key, read by stage 1's tooling
     out["decoder"] = decoder_name(args.front_end);
+    if (args.front_end == FrontEnd::Segmental) out["settings"] = args.settings;
     if (args.front_end == FrontEnd::Viterbi) {
         // everything a run needs to be repeated from its result file: the configuration with every field, the --set
         // arguments as given, and the genie's kinds with each channel's values (the labels give them again)

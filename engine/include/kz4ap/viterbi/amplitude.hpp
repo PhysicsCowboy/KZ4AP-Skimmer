@@ -19,6 +19,10 @@
 // until rho < 1e-12, after which both are 0. The hypergeometric function is evaluated to full double precision by two
 // series (see hyp2f1_minus_half_minus_one).
 //
+// The search adds to P' at lag 1, inside a mark, (m - 1) (1/2) (1 - rho(1)^2) Omega_bar, m = 1 + (M - 1) x / (1 + x), x =
+// Omega_bar / (X0 sigma_y^2), M = 16, X0 = 42 (predict_amplitude_at_level; heuristic, config.hpp): n predictions at lag 1
+// add n Q while the true variance grows as n^2 Q (derived; 15.4 times too little at n = 16).
+//
 // Bell's decay variant (Part 15, item 16; D20) changes only the mean's target: across a space mu decays by
 // Phi^(lag Delta / 5 ms), Phi = 10^(-2 / (22.4 T_dot,ms)) per 5 ms (Bell 1977; about 0.357 dB of amplitude per dot),
 // never below 10^(-5/20) (-5 dB of amplitude) of the last estimate; the variance is the decided rule's, with no Q.
@@ -71,6 +75,15 @@ struct Prediction {
 // (FS^2, >= 0). The lag is k - a.t_m_sample; lag 0 returns (mu, P) unchanged. Throws std::invalid_argument for k before
 // t_m or a negative or non-finite omega_bar_fs2.
 Prediction predict_amplitude(const Amplitude& a, std::int64_t k, double omega_bar_fs2, const FadingTables& tables);
+
+// The multiplier m (1) of the variance added at lag 1, above: from 1 at Omega_bar = 0 towards multiplier_max at strong
+// levels, halfway at Omega_bar = level_knee x sigma2_fs2.
+double added_variance_multiplier(double omega_bar_fs2, double sigma2_fs2, double multiplier_max, double level_knee);
+
+// predict_amplitude, with the variance added at lag 1 multiplied by added_variance_multiplier. Other lags are
+// predict_amplitude's. Throws as predict_amplitude does.
+Prediction predict_amplitude_at_level(const Amplitude& a, std::int64_t k, double omega_bar_fs2, double sigma2_fs2,
+                                      double multiplier_max, double level_knee, const FadingTables& tables);
 
 // Bell's decay variant. dot_s: the story's dot length T_dot (s, > 0); sample_interval_s: Delta (s), the interval the
 // tables were built with. Lag 0 is unchanged; lag 1 (the next sample inside a mark, where every sample is an estimate)

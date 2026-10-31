@@ -18,6 +18,8 @@ enum class FrontEnd {
     Bank,      // the bank decoder (BankDecoder, milestone 2c), not a ClassicalDecoder: the engine creates a BankDecoder
     Viterbi,   // the new decoder (ViterbiDecoder, first prototype), not a ClassicalDecoder: the engine creates a
                // ViterbiDecoder, configured by EngineConfig::viterbi
+    Segmental,  // the fast form of the new decoder (SegmentalDecoder), not a ClassicalDecoder, configured by
+                // EngineConfig::segmental
 };
 
 struct ClassicalDecoderConfig {

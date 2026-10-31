@@ -490,11 +490,10 @@ std::string grid_end_text(const std::string& text, double wpm, double factor) {
 
 TEST(ViterbiDecoder, TheGridsEnds) {
     // The ends of the speed grid at +20 dB S500, each on its channel's center with DEV2's noise, N0 the noise's own,
-    // at standard spacing: characters at 5.2 WPM (the slowest speed, dots of 230.3 ms; letter gaps of 691 ms and a word gap
-    // of 1.61 s): a CER of at most 0.05. 100 WPM (the fastest, dots of 4.5 samples): a CER of at most 0.2, a known
-    // limitation (docs/backlog.md, "Fast code between whole samples": dots that are not a whole number of samples read
-    // wrongly at 80 and 100 WPM, more at higher levels, while 90 WPM, 5 samples, is exact at +40 dB S500). Farnsworth
-    // spacing at 5.2 WPM is the next test's.
+    // at standard spacing, each a CER of at most 0.05: characters at 5.2 WPM (the slowest speed, dots of 230.3 ms; letter
+    // gaps of 691 ms and a word gap of 1.61 s), and 100 WPM (the fastest, dots of 4.5 samples: its true claims alternate 5
+    // and 4 samples, which only the recent edges in the merge key keep apart until their evidence exists; review of
+    // faa283f, 2026-10-30). Farnsworth spacing at 5.2 WPM is the next test's.
     struct Case {
         std::string name;
         std::string text;
@@ -507,9 +506,45 @@ TEST(ViterbiDecoder, TheGridsEnds) {
         decoded.push_back(std::async(std::launch::async, [&c] { return grid_end_text(c.text, c.wpm, 1.0); }));
     for (std::size_t i = 0; i < cases.size(); ++i) {
         const std::string text = decoded[i].get();
-        EXPECT_LE(cer(cases[i].text, text), cases[i].wpm > 50.0 ? 0.2 : 0.05)
-            << cases[i].name << ": decoded \"" << text << "\"";
+        EXPECT_LE(cer(cases[i].text, text), 0.05) << cases[i].name << ": decoded \"" << text << "\"";
     }
+}
+
+TEST(ViterbiDecoder, DecodesUnderFading) {
+    // "PARIS PARIS" at 25 WPM, +20 dB S500 on average, through a Rayleigh channel of Gaussian Doppler spectrum, f_D = 2 Hz,
+    // the decoder's own assumption: a CER of at most 0.05 pooled over seeds 1 to 8, and one over on each. Pooled, because a
+    // single fade can take a letter from any decoder: on seed 1 the last S lies in a null of -13 to -25 dB, about
+    // -5 to +7 dB S500, and reads EE. Measured over 24 seeds: a CER of 0.015, against 0.51 with the four settings of the
+    // review of faa283f off (2026-10-30), where a story restarts its over rather than follow the level.
+    default_shared();
+    const auto run = [](unsigned seed) {
+        const auto keying = signals::keying("PARIS PARIS", 25.0, 0.5);
+        std::vector<Sample> x = silence(keying.back().second + 1.0);
+        add_station(x, keying, 750.0, 20.0);
+        const auto gain = signals::rayleigh_gain(x.size(), kInputRate, 2.0, seed + 1000);
+        for (std::size_t i = 0; i < x.size(); ++i) {
+            const std::complex<double> faded = std::complex<double>(x[i]) * gain[i];
+            x[i] = Sample(static_cast<float>(faded.real()), static_cast<float>(faded.imag()));
+        }
+        add_noise(x, seed);
+        return decode(ViterbiConfig{}, default_shared(), channel_stream(x, 750.0).samples, 32).text;
+    };
+    std::vector<std::future<std::vector<DecodedSymbol>>> decoded;
+    for (unsigned seed = 1; seed <= 8; ++seed) decoded.push_back(std::async(std::launch::async, run, seed));
+    const std::string reference = "PARIS PARIS";
+    double edits = 0.0;
+    for (std::size_t i = 0; i < decoded.size(); ++i) {
+        const std::vector<DecodedSymbol> symbols = decoded[i].get();
+        const std::string text = text_of(symbols);
+        edits += cer(reference, text) * static_cast<double>(reference.size());
+        // A new over after an earlier one opens with a word space of no length (search.hpp, "Times").
+        int overs = 1;
+        for (const DecodedSymbol& symbol : symbols)
+            if (symbol.text == " " && symbol.start_s == symbol.end_s) ++overs;
+        EXPECT_EQ(overs, 1) << "seed " << i + 1 << ": decoded \"" << text << "\"";
+        record("cer_seed_" + std::to_string(i + 1), cer(reference, text));
+    }
+    EXPECT_LE(edits / (8.0 * static_cast<double>(reference.size())), 0.05);
 }
 
 TEST(ViterbiDecoder, FarnsworthSpacingAtTheSlowestSpeed) {
@@ -538,7 +573,8 @@ TEST(ViterbiDecoder, OneWordOversDecodeExactly) {
     // slower speed with the letter gaps taken for element gaps. With the Farnsworth factor, whose prior of ln 23 =
     // 3.135 nats was paid at a story's first letter or word gap and never by the one-symbol reading, "TEST" alone read
     // as "-" in 12 of 12 runs (the results record, finding 2). Without it, at exact timing, the right reading wins by
-    // 1.07 nats for "TEST" and 1.27 nats for "TU" (derived: docs/signal-processing.md, A.8d), thin margins.
+    // 1.07 nats for "TEST" and 1.27 nats for "TU" under the flat prior (derived: docs/signal-processing.md, A.8d), thin
+    // margins; the on-air prior widens them, "-" standing at its floor.
     struct Case {
         std::string word;
         unsigned seed;

@@ -159,6 +159,9 @@ void set_config_value(viterbi::ViterbiConfig& config, const std::string& name, c
 // One `--set` argument, "NAME=VALUE": VALUE is JSON if it parses, else text (see above). Throws std::invalid_argument
 // for an argument without a "=" or with an empty name, and as set_config_value.
 void apply_setting(viterbi::ViterbiConfig& config, const std::string& setting);
+// The same for the segmental decoder's configuration: a NAME of its own (segmental/config.hpp), or one of ViterbiConfig
+// for the model it shares.
+void apply_segmental_setting(segmental::SegmentalConfig& config, const std::string& setting);
 
 // A configuration from the defaults with every field of the object j set (a result file's "config"); throws
 // std::invalid_argument as set_config_value, and for a j that is not an object.

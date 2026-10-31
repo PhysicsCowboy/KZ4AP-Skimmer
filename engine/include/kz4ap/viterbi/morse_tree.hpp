@@ -2,9 +2,8 @@
 // 26 letters, 10 digits, 14 punctuation marks and 12 prosigns). A node is a prefix of at least one symbol's pattern;
 // the root is the empty prefix. A node holds a symbol when its prefix is that symbol's whole pattern. A mark that would
 // leave the tree has no node. The tree follows the table's patterns exactly: morse::decode reads eight or more dots as
-// "<HH>", but the tree holds only the node of eight dots, a leaf. In the first prototype all 62 symbols are equally
-// likely, so a letter costs ln(the number of symbol nodes) = ln 62 = 4.127 nats where the search charges it (design
-// notes, topic 6, item 6).
+// "<HH>", but the tree holds only the node of eight dots, a leaf. What each symbol costs is the search's
+// (symbol_prior.hpp).
 #pragma once
 
 #include <cstddef>

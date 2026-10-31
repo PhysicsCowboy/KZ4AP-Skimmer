@@ -30,9 +30,11 @@ using nlohmann::ordered_json;
 // removed, until this table is changed with it.
 #define KZ4AP_VITERBI_CONFIG_FIELDS(X) \
     X(sample_interval_s) X(dot_min_ms) X(speed_ratio) X(speed_count) X(fist_medians_dots) X(fist_sigmas)  \
-    X(fist_shifts_dots) X(beam_nats) X(ceiling) X(front_dot_s) X(edge_rise_s) X(edge_rise_min_s)  \
-    X(edge_rise_max_s) X(fading_spread_hz) X(systematic_floor) X(nu_bin_s) X(nu_memory_s) X(over_rate_per_s)  \
-    X(rescue_epsilon) X(word_end_p) X(over_end_q) X(level_min_db) X(level_max_db) X(quadrature_order)  \
+    X(fist_shifts_dots) X(beam_nats) X(ceiling) X(merge_edge_history_samples) X(front_dot_s) X(edge_rise_s)  \
+    X(edge_rise_min_s) X(edge_rise_max_s) X(fading_spread_hz) X(added_variance_multiplier_max)  \
+    X(added_variance_level_knee) X(amplitude_update_min_template) X(systematic_floor) X(nu_bin_s) X(nu_memory_s)  \
+    X(over_rate_per_s) X(rescue_epsilon) X(word_end_p) X(over_end_q) X(symbol_prior_on_air) X(symbol_prior_floor)  \
+    X(level_min_db) X(level_max_db) X(quadrature_order)  \
     X(newborn_switch_sigma_u) X(newborn_grid_points) X(newborn_live_range_nats) X(newborn_fade_interval_s)  \
     X(hiss_half_width_hz) X(hiss_percentile) X(hiss_average_s) X(genie_fading_spread_hz) X(stats)
 
@@ -443,6 +445,39 @@ void apply_setting(viterbi::ViterbiConfig& config, const std::string& setting) {
         value = ordered_json(text);  // not JSON: text, which no field takes, so the field's message follows
     }
     set_config_value(config, name, value);
+}
+
+void apply_segmental_setting(segmental::SegmentalConfig& config, const std::string& setting) {
+    const std::size_t equals = setting.find('=');
+    if (equals == std::string::npos || equals == 0)
+        throw std::invalid_argument("--set needs NAME=VALUE, not '" + setting + "'");
+    const std::string name = setting.substr(0, equals);
+    const std::string text = setting.substr(equals + 1);
+    const std::pair<const char*, double*> fields[] = {
+        {"level_min_db_s500", &config.level_min_db_s500},
+        {"level_max_db_s500", &config.level_max_db_s500},
+        {"level_step_db", &config.level_step_db},
+        {"level_grid_in_v", &config.level_grid_in_v},
+        {"level_frame_s", &config.level_frame_s},
+        {"level_lookahead_s", &config.level_lookahead_s},
+        {"level_commit_s", &config.level_commit_s},
+        {"key_switch_per_s", &config.key_switch_per_s},
+        {"level_walk_nepers_per_sqrt_s", &config.level_walk_nepers_per_sqrt_s},
+        {"level_jump_per_s", &config.level_jump_per_s},
+        {"beam_nats", &config.beam_nats},
+        {"duration_z_max", &config.duration_z_max},
+    };
+    for (const auto& [field, target] : fields) {
+        if (name == field) {
+            *target = std::stod(text);
+            return;
+        }
+    }
+    if (name == "ceiling") {
+        config.ceiling = std::stoi(text);
+        return;
+    }
+    apply_setting(config.model, setting);
 }
 
 viterbi::ViterbiConfig viterbi_config_from_json(const ordered_json& j) {

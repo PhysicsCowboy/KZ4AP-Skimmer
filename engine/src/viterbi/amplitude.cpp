@@ -107,6 +107,22 @@ Prediction predict_amplitude(const Amplitude& a, std::int64_t k, double omega_ba
     return {rho_a * a.mu_fs + (1.0 - rho_a) * a_bar, rho_a * rho_a * a.p_fs2 + 0.5 * (1.0 - rho * rho) * omega_bar_fs2};
 }
 
+double added_variance_multiplier(double omega_bar_fs2, double sigma2_fs2, double multiplier_max, double level_knee) {
+    const double x = omega_bar_fs2 / (level_knee * sigma2_fs2);
+    return 1.0 + (multiplier_max - 1.0) * x / (1.0 + x);
+}
+
+Prediction predict_amplitude_at_level(const Amplitude& a, std::int64_t k, double omega_bar_fs2, double sigma2_fs2,
+                                      double multiplier_max, double level_knee, const FadingTables& tables) {
+    Prediction predicted = predict_amplitude(a, k, omega_bar_fs2, tables);
+    if (k - a.t_m_sample == 1) {
+        const double rho = tables.rho(1);
+        const double m = added_variance_multiplier(omega_bar_fs2, sigma2_fs2, multiplier_max, level_knee);
+        predicted.p_fs2 += (m - 1.0) * 0.5 * (1.0 - rho * rho) * omega_bar_fs2;
+    }
+    return predicted;
+}
+
 Prediction predict_amplitude_bell(const Amplitude& a, std::int64_t k, double omega_bar_fs2, double dot_s,
                                   const FadingTables& tables, double sample_interval_s) {
     if (!(dot_s > 0.0) || !std::isfinite(dot_s)) throw std::invalid_argument("predict_amplitude_bell: dot_s must be > 0");

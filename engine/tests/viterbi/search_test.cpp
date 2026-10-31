@@ -11,6 +11,7 @@
 #include "kz4ap/viterbi/morse_tree.hpp"
 #include "kz4ap/viterbi/newborn.hpp"
 #include "kz4ap/viterbi/observation.hpp"
+#include "kz4ap/viterbi/symbol_prior.hpp"
 #include "kz4ap/viterbi/systematic.hpp"
 #include "kz4ap/viterbi_decoder.hpp"
 #include "keyed_signals.hpp"
@@ -154,6 +155,9 @@ struct Timing {
     ViterbiConfig config;
     Fist fist{config};
     MorseTree tree;
+    std::vector<double> log_prior = on_air_log_prior(tree, config.symbol_prior_floor);
+    // What a symbol's letter still pays when it ends, the flat ln(1/62) having been paid when it started.
+    double letter_end(int node) const { return log_prior[static_cast<std::size_t>(node)] + std::log(62.0); }
     double of(const StoryView& s) const {
         if (s.activity != Activity::Morse || s.tau == 0) return 0.0;
         double best = -kInf;
@@ -174,8 +178,8 @@ struct Timing {
         const double word_cost = -std::log(config.word_end_p * (1.0 - config.over_end_q));
         if (tree.has_children(s.node)) best = fist.log_survival(Kind::ElementGap, s.speed, s.tau);
         if (!tree.symbol(s.node).empty()) {
-            best = std::max(best, fist.log_survival(Kind::LetterGap, s.speed, s.tau) - letter_cost);
-            best = std::max(best, fist.log_survival(Kind::WordGap, s.speed, s.tau) - word_cost);
+            best = std::max(best, fist.log_survival(Kind::LetterGap, s.speed, s.tau) - letter_cost + letter_end(s.node));
+            best = std::max(best, fist.log_survival(Kind::WordGap, s.speed, s.tau) - word_cost + letter_end(s.node));
         }
         return best;
     }
@@ -183,8 +187,8 @@ struct Timing {
 
 // The score of sample k for a story whose view after sample k - 1 was `before` (not in the newborn integral),
 // recomputed from the library's parts (search.hpp, "One sample k searched"): its edges advanced (an edge claimed at its
-// element's first sample, tau = 1), its template and edge term, the amplitude predicted to k with the story's Omega_bar,
-// V_k from that prediction, the shared reference and the constant w, the quadrature started from the previous sample's
+// element's first sample, tau = 1), its template and edge term, the amplitude predicted to k with the story's Omega_bar
+// and the variance added at lag 1 multiplied by its level's m, V_k from that prediction, the shared reference and the constant w, the quadrature started from the previous sample's
 // mode. 0 where s = 0.
 double reference_sample_score(const StoryView& before, bool claims, std::int64_t k, double e) {
     const ViterbiConfig config{};
@@ -194,7 +198,9 @@ double reference_sample_score(const StoryView& before, bool claims, std::int64_t
     if (tv.s == 0.0) return 0.0;
     const double sigma2 = kN0 * shared()->output_noise().sigma2_per_n0_hz;
     static const FadingTables fading(config.fading_spread_hz, config.sample_interval_s);
-    const Prediction predicted = predict_amplitude(before.amplitude, k, before.omega_bar_fs2, fading);
+    const Prediction predicted =
+        predict_amplitude_at_level(before.amplitude, k, before.omega_bar_fs2, sigma2, config.added_variance_multiplier_max,
+                                   config.added_variance_level_knee, fading);
     const double variance = systematic_variance_fs2(sigma2, predicted.mu_fs * predicted.mu_fs + predicted.p_fs2, tv.s,
                                                     tv.v, config.systematic_floor);
     const double w = shared()->output_noise().w_strong;
@@ -286,12 +292,13 @@ TEST(Search, MergesIdenticalStates) {
     const std::vector<Ranked> reversed = {{5, -1.0, 9}, {5, -1.0, 2}};
     EXPECT_EQ(detail::merge(reversed), (std::vector<std::size_t>{1}));
 
-    // In the search (Ruling 64: merging on the packed state): after every sample searched no two live stories share a
-    // state, and there is at most one no-signal story. At each sample where a newborn is born (a mark at the root,
-    // speed open, tau = 0), the newborn from silence and a rescue newborn share that state and only one is left, the
-    // better: the newborn from silence stands at the continuing no-signal story's score plus ln(1 - P), ln P and
-    // ln(1/62) (to 1e-9 nats) when the no-signal story scored nothing at this sample (its tail over), and a rescue
-    // newborn kept instead stands above that.
+    // In the search (Ruling 64: merging on the packed state and the last 12 samples' edges): after every sample searched,
+    // no two successors created at it share a state and those edges, unless one is a rescue, and there is at most one
+    // quiet no-signal story. Stories of one state with different edges do live side by side. At each sample where a
+    // newborn is born (a mark at the root, speed open, tau = 0), the newborn from silence and a rescue newborn each
+    // have their own key: the newborn from silence stands at the continuing no-signal story's score plus ln(1 - P), ln P
+    // and ln(1/62) (at least: a birth comes from the best no-signal story, which may still be in a tail), and a rescue
+    // lives beside it at samples where both survive.
     ViterbiConfig config;
     config.stats = true;
     const double over_start = config.over_rate_per_s * config.sample_interval_s;
@@ -300,9 +307,10 @@ TEST(Search, MergesIdenticalStates) {
     const auto samples = station(keying, 5.0, keying.back().second + 1.0, 15);
     Search search(config, shared());
     std::optional<double> no_signal_before;  // the quiet no-signal story's own score after the previous sample, nats
-    int newborns = 0;
     int rescues_kept = 0;
     int births_kept = 0;
+    int both_kept = 0;
+    int same_state_other_edges = 0;
     for (std::size_t given = 0; given < samples.size(); ++given) {
         search.step(samples[given], sample_time(given), kN0);
         const std::size_t k = given;  // searched at once (D23)
@@ -310,9 +318,19 @@ TEST(Search, MergesIdenticalStates) {
         const std::vector<StoryView> stories = search.live_stories();
         int no_signal = 0;
         std::optional<double> no_signal_now;
+        std::set<std::tuple<std::tuple<Activity, bool, int, int, int>, int, bool>> created;  // state, edges, rescue
+        std::set<std::tuple<Activity, bool, int, int, int>> created_states;
+        int rescues_now = 0;
+        int births_now = 0;
         for (std::size_t i = 0; i < stories.size(); ++i) {
-            if (i > 0) ASSERT_NE(state_of(stories[i - 1]), state_of(stories[i])) << "sample " << k;
             const StoryView& s = stories[i];
+            const bool just_created = s.activity == Activity::Morse ? s.tau == 0 : s.tau == 1;
+            if (just_created) {
+                const bool rescue = search.stats().lines.at(static_cast<std::size_t>(s.line)).kind == LineKind::Rescue &&
+                                    s.speed < 0 && s.activity == Activity::Morse;
+                ASSERT_TRUE(created.emplace(state_of(s), s.edges.recent & 0x0FFF, rescue).second) << "sample " << k;
+                if (!created_states.insert(state_of(s)).second && !rescue) ++same_state_other_edges;
+            }
             if (s.activity == Activity::NoSignal && s.tau == 0) {
                 ++no_signal;
                 // Only a no-signal story whose over's tail has ended (no edges, so it scores nothing).
@@ -323,25 +341,28 @@ TEST(Search, MergesIdenticalStates) {
                 const double from_silence =
                     *no_signal_before + std::log1p(-over_start) + std::log(over_start) + log_letter;
                 const double kept = s.score_nats + offset;
-                EXPECT_GE(kept, from_silence - 1e-6) << "sample " << k;
                 const LineKind kind = search.stats().lines.at(static_cast<std::size_t>(s.line)).kind;
                 if (kind == LineKind::Rescue) {
-                    EXPECT_GT(kept, from_silence) << "sample " << k;
-                    ++rescues_kept;
+                    ++rescues_now;
                 } else {
                     EXPECT_EQ(kind, LineKind::Silence) << "sample " << k;
-                    // At least that: a birth comes from the best no-signal story, which may still be in a tail.
-                    ++births_kept;
+                    EXPECT_GE(kept, from_silence - 1e-6) << "sample " << k;
+                    ++births_now;
                 }
-                ++newborns;
             }
         }
         ASSERT_LE(no_signal, 1) << "sample " << k;
+        ASSERT_LE(rescues_now, 1) << "sample " << k;
+        ASSERT_LE(births_now, 1) << "sample " << k;
+        rescues_kept += rescues_now;
+        births_kept += births_now;
+        if (rescues_now > 0 && births_now > 0) ++both_kept;
         no_signal_before = no_signal_now;
     }
-    EXPECT_GT(newborns, 100);
     EXPECT_GT(rescues_kept, 0);
     EXPECT_GT(births_kept, 100);
+    EXPECT_GT(both_kept, 0);
+    EXPECT_GT(same_state_other_edges, 100);
 }
 
 TEST(Search, PrunesByBeamThenCeiling) {
@@ -399,18 +420,19 @@ TEST(Search, BooksEveryPointAtEverySample) {
     int tail = 0;     // checks of gaps within 16 samples of their key-up whose sample scored
     int quiet = 0;    // checks of gaps beyond their tail, where a sample adds exactly 0
     Search search(ViterbiConfig{}, shared());
-    std::map<std::tuple<bool, int, int, int>, StoryView> before;  // key down, speed, node, tau -> view
+    std::map<std::uint64_t, StoryView> before;  // a story's creation count, the same while it continues -> view
     for (std::size_t k = 0; k < samples.size(); ++k) {
         search.step(samples[k], sample_time(k), kN0);
-        std::map<std::tuple<bool, int, int, int>, StoryView> now;
+        std::map<std::uint64_t, StoryView> now;
         const double offset = search.normalization_nats();
         for (StoryView s : search.live_stories()) {
             s.score_nats += offset;  // its own score, against "noise only"
-            if (s.activity == Activity::Morse) now.emplace(std::tuple{s.key_down, s.speed, s.node, s.tau}, s);
+            if (s.activity == Activity::Morse) now.emplace(s.creation, s);
             if (s.activity != Activity::Morse || s.tau == 0 || s.speed < 0 || s.in_newborn_integral) continue;
-            const auto at = before.find(std::tuple{s.key_down, s.speed, s.node, s.tau - 1});
+            const auto at = before.find(s.creation);
             if (at == before.end() || at->second.in_newborn_integral) continue;
             const StoryView& b = at->second;
+            ASSERT_EQ(s.tau, b.tau + 1) << "sample " << k;
             const double sample = reference_sample_score(b, b.tau == 0, static_cast<std::int64_t>(k), samples[k]);
             const double expected = sample + timing.of(s) - timing.of(b);
             ASSERT_NEAR(s.score_nats - b.score_nats, expected, 1e-9)
@@ -432,32 +454,42 @@ TEST(Search, BooksEveryPointAtEverySample) {
 
 TEST(Search, TheTailIsScoredByTheStoryThatKeepsTheMark) {
     // After a key-up the gap story scores the fall's tail (part 5): at j = 0 ... 15 samples after its claimed key-up
-    // (tau = 1 ... 16) its amplitude is updated at every sample (t_m = k), and at j = 16 (tau = 17) and beyond a sample
-    // adds exactly 0, the amplitude and the long-run sums unchanged. A no-signal story after an over's end does the
-    // same, and once its tail has ended its level is restarted (no amplitude, no sums). "E" at 25 WPM, +20 dB S500, then
-    // silence.
+    // (tau = 1 ... 16) its amplitude is updated (t_m = k) at the samples whose |s| is at least
+    // amplitude_update_min_template and left alone at the others, whose |s| carries nothing on it, and at j = 16 (tau =
+    // 17) and beyond a sample adds exactly 0, the amplitude and the long-run sums unchanged. A no-signal story after an
+    // over's end does the same, and once its tail has ended its level is restarted (no amplitude, no sums). "E" at 25
+    // WPM, +20 dB S500, then silence.
     const auto keying = signals::keying("E", 25.0, 0.5);
     const auto samples = station(keying, 20.0, keying.back().second + 0.8, 18);
+    const double min_s = ViterbiConfig{}.amplitude_update_min_template;
     Search search(ViterbiConfig{}, shared());
-    std::map<std::tuple<int, int, int, int>, StoryView> before;  // phase, speed, node, tau
+    std::map<std::uint64_t, StoryView> before;  // a story's creation count, the same while it continues -> view
     int tail_updates = 0;
+    int tail_holds = 0;
     int quiet_samples = 0;
     int no_signal_tail = 0;
     int no_signal_restarted = 0;
     for (std::size_t given = 0; given < samples.size(); ++given) {
         search.step(samples[given], sample_time(given), kN0);
         const auto k = static_cast<std::int64_t>(given);
-        std::map<std::tuple<int, int, int, int>, StoryView> now;
+        std::map<std::uint64_t, StoryView> now;
         for (const StoryView& s : search.live_stories()) {
             const int phase = s.activity == Activity::NoSignal ? 0 : (s.key_down ? 1 : 2);
-            now.emplace(std::tuple{phase, s.speed, s.node, s.tau}, s);
+            now.emplace(s.creation, s);
             if (s.in_newborn_integral) continue;
+            const double template_now = template_value(s.edges, shared()->template_tables()).s;
             if (phase == 2 && s.tau >= 1) {
-                const auto at = before.find(std::tuple{2, s.speed, s.node, s.tau - 1});
+                const auto at = before.find(s.creation);
                 if (at == before.end() || at->second.in_newborn_integral) continue;
                 if (s.tau <= 16) {
-                    EXPECT_EQ(s.amplitude.t_m_sample, k) << "tau " << s.tau;
-                    ++tail_updates;
+                    if (std::fabs(template_now) >= min_s) {
+                        EXPECT_EQ(s.amplitude.t_m_sample, k) << "tau " << s.tau;
+                        ++tail_updates;
+                    } else {
+                        EXPECT_EQ(s.amplitude.t_m_sample, at->second.amplitude.t_m_sample) << "tau " << s.tau;
+                        EXPECT_EQ(s.amplitude.mu_fs, at->second.amplitude.mu_fs) << "tau " << s.tau;
+                        ++tail_holds;
+                    }
                 } else {
                     EXPECT_EQ(s.amplitude.t_m_sample, at->second.amplitude.t_m_sample);
                     EXPECT_EQ(s.amplitude.mu_fs, at->second.amplitude.mu_fs);
@@ -470,7 +502,7 @@ TEST(Search, TheTailIsScoredByTheStoryThatKeepsTheMark) {
             if (phase == 0) {
                 const bool in_tail = s.edges.recent != 0 || s.edges.key_down_before;
                 if (in_tail && s.amplitude.mu_fs > 0.0) {
-                    EXPECT_EQ(s.amplitude.t_m_sample, k);
+                    if (std::fabs(template_now) >= min_s) EXPECT_EQ(s.amplitude.t_m_sample, k);
                     ++no_signal_tail;
                 } else if (!in_tail) {
                     EXPECT_EQ(s.amplitude.mu_fs, 0.0);
@@ -483,6 +515,7 @@ TEST(Search, TheTailIsScoredByTheStoryThatKeepsTheMark) {
         before = std::move(now);
     }
     EXPECT_GT(tail_updates, 100);
+    EXPECT_GT(tail_holds, 100);
     EXPECT_GT(quiet_samples, 100);
     EXPECT_GE(no_signal_tail, 16);
     EXPECT_GT(no_signal_restarted, 0);
@@ -548,7 +581,8 @@ TEST(Search, NewbornGridsCopyOnBranch) {
     // birth score and timing is the ln Z of a NewbornIntegral fed the same samples, within 1e-9 nats); and the copies
     // made at a sample are exactly one fewer than the stories in each group that shared a grid after the sample before
     // (a successor pruned before it scored was never copied). "PARIS" at 25 WPM, +20 dB S500.
-    const ViterbiConfig config{};
+    ViterbiConfig config;
+    config.stats = true;  // to tell a newborn from silence from a rescue that keeps its parent's integral
     const Timing timing;
     const auto keying = signals::keying("PARIS", 25.0, 0.5);
     const auto samples = station(keying, 20.0, keying.back().second + 0.5, 20);
@@ -597,6 +631,7 @@ TEST(Search, NewbornGridsCopyOnBranch) {
         std::map<std::int64_t, FirstMark> next;
         for (const StoryView& s : stories) {
             if (!(s.activity == Activity::Morse && s.key_down && s.speed < 0 && s.in_newborn_integral)) continue;
+            if (search.stats().lines.at(static_cast<std::size_t>(s.line)).kind != LineKind::Silence) continue;
             const double own = s.score_nats + offset;
             const std::int64_t birth = k - s.tau;
             if (s.tau == 0) {
@@ -840,6 +875,15 @@ TEST(Search, RefusesWhatItCannotUse) {
     refuses([](ViterbiConfig& config) { config.systematic_floor = kNaN; });
     refuses([](ViterbiConfig& config) { config.newborn_switch_sigma_u = 0.0; });
     refuses([](ViterbiConfig& config) { config.newborn_live_range_nats = 0.0; });
+    refuses([](ViterbiConfig& config) { config.added_variance_multiplier_max = 0.5; });
+    refuses([](ViterbiConfig& config) { config.added_variance_multiplier_max = kInf; });
+    refuses([](ViterbiConfig& config) { config.added_variance_level_knee = 0.0; });
+    refuses([](ViterbiConfig& config) { config.amplitude_update_min_template = -0.1; });
+    refuses([](ViterbiConfig& config) { config.amplitude_update_min_template = 1.5; });
+    refuses([](ViterbiConfig& config) { config.merge_edge_history_samples = -1; });
+    refuses([](ViterbiConfig& config) { config.merge_edge_history_samples = 17; });
+    refuses([](ViterbiConfig& config) { config.symbol_prior_floor = 0.0; });
+    refuses([](ViterbiConfig& config) { config.symbol_prior_floor = 1.0 / 62.0; });
     // The shared parts must be this configuration's.
     refuses([](ViterbiConfig& config) { config.sample_interval_s = 0.002; });
     refuses([](ViterbiConfig& config) { config.level_max_db = 60.0; });
@@ -976,6 +1020,27 @@ TEST(Search, ClaimsTheTrueEdgesOfACleanDash) {
             }
         }
     }
+}
+
+TEST(Search, AShortLetterGapBetweenCommonLettersKeepsThemApart) {
+    // A flat 1/62 makes two letters cost 4.524 nats more than one merged symbol, so a gap reads as a letter gap only above
+    // 2.51 dots (derived; sigma 0.3 in ln(length)). The on-air prior takes "DA" (-.. .-, counts 84 and 127) over <BT> (-...-,
+    // count 15) down to about 2 dots. "CQ DE DA K" at 25 WPM, +20 dB S500, the gap inside "DA" 2.3 dots long: read as
+    // <BT> with the flat prior and as DA with the on-air one.
+    const auto keying = signals::keying("CQ DE DA K", 25.0, 0.5);
+    std::vector<std::pair<double, double>> squeezed = keying;
+    constexpr double kDot = 1.2 / 25.0;
+    constexpr std::size_t kFirstOfA = 4 + 4 + 3 + 1 + 3;  // marks of C, Q, D, E and the D before it
+    ASSERT_NEAR(keying[kFirstOfA].first - keying[kFirstOfA - 1].second, 3.0 * kDot, 1e-9);
+    for (std::size_t i = kFirstOfA; i < squeezed.size(); ++i) {
+        squeezed[i].first -= 0.7 * kDot;
+        squeezed[i].second -= 0.7 * kDot;
+    }
+    const auto samples = station(squeezed, 20.0, squeezed.back().second + 1.0, 44);
+    ViterbiConfig flat;
+    flat.symbol_prior_on_air = false;
+    EXPECT_EQ(decode(flat, samples), "CQ DE <BT> K");
+    EXPECT_EQ(decode(ViterbiConfig{}, samples), "CQ DE DA K");
 }
 
 TEST(Search, MarkTimesAreKeyedTimes) {

@@ -457,6 +457,33 @@ TEST_F(BenchRun, DecodesExactlyThroughTheBench) {
     }
 }
 
+TEST_F(BenchRun, SegmentalDecodesExactlyThroughTheBench) {
+    // As DecodesExactlyThroughTheBench, for the fast form: exact, through `kz4ap-bench --oracle --decoder segmental`.
+    unsigned seed = 100;
+    for (const std::string text : {"PARIS PARIS", "CQ CQ DE W1AW W1AW K", "TEST 5NN 73 DE K1ABC"}) {
+        for (const double wpm : {25.0, 40.0}) {
+            for (const double level : {10.0, 20.0}) {
+                write_station(wav_, labels_, text, wpm, level, 0.0, ++seed);
+                const Outcome o = run({"--oracle", "--decoder", "segmental", "--no-timing", "--json", path("result.json")});
+                ASSERT_EQ(o.status, 0) << o.err;
+                const json r = read_json(path("result.json"));
+                ASSERT_EQ(r.at("tracks").size(), 1u);
+                EXPECT_EQ(r.at("tracks").at(0).at("text").get<std::string>(), text)
+                    << wpm << " WPM, +" << level << " dB S500, seed " << seed;
+            }
+        }
+    }
+}
+
+TEST_F(BenchRun, SegmentalReadsNothingOnNoiseAndRefusesAnUnknownSetting) {
+    write_station(wav_, labels_, "", 25.0, 20.0, 20.0, 7);
+    const Outcome noise = run({"--oracle", "--decoder", "segmental", "--no-timing", "--json", path("result.json")});
+    ASSERT_EQ(noise.status, 0) << noise.err;
+    EXPECT_EQ(read_json(path("result.json")).at("tracks").at(0).at("text").get<std::string>(), "");
+    const Outcome refused = run({"--oracle", "--decoder", "segmental", "--no-timing", "--set", "no_such_field=1"});
+    EXPECT_NE(refused.status, 0);
+}
+
 TEST_F(BenchRun, CpuPerChannelSecond) {
     // Label measurement (skipped otherwise): the bench's CPU per channel-second on one channel at the default ceiling, on
     // 60 s of noise and on a station sending for about 60 s, +20 dB S500, 25 WPM.
