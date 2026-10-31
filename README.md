@@ -46,8 +46,22 @@ first line.
 measured). Without Qt the configure step says so in one line and the build reports that
 `kz4ap-skimmer.vcxproj` does not exist.
 
-**What you will see.** One row per track. On real 40 m 35% to 63% of the rows are not
-callsigns yet; the callsign stage comes next. The radio needs the SDRplay API (below).
+**What you will see.** The left table has one row per track; on real 40 m 35% to 63% of
+those rows are not callsigns. The **call list** is the table to its right: one row per call
+that has been read well enough to report, with its frequency, when it was last heard, how
+many times it has been read and how (*signed*: with DE or CQ, or before K or TEST; *bare*:
+alone; *named*: only by another station, so the frequency is that station's). Click a heading
+to sort; drag the bar between the tables to widen it. The status bar's "Calls" counts it. A
+call shows at least 10 s after it is read a second time: on `band30.wav` all 30 calls are
+there by about 24 s of stream (derived: their second readings end by 13.5 s, measured).
+
+To keep the list, add `--calls calls.csv` (it is written when the stream ends; add
+`--quit-at-end` to leave after that). To give it a list of calls in MASTER.SCP's format, add
+`--known-calls MASTER.SCP`: a listed call needs one signed or doubled reading.
+
+    build\windows\app\Release\kz4ap-skimmer.exe build\recordings\band30.wav --speed max --calls calls.csv --quit-at-end
+
+The radio needs the SDRplay API (below).
 
 ## Project documents
 

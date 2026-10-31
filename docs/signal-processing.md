@@ -561,8 +561,9 @@ grows by 5 each 5 s. A radio silent 5 s is flagged, a recording as well.
 `CallSearch` reads any decoder's track and text events, beside the track list, and
 changes neither. Values are heuristics unless marked. Appendix: A.12.
 
-**Words.** Once per stream-second it reads text 10 s old: most corrections (reach 20 s)
-have come. A word space, prosign or punctuation ends a word.
+**Words.** Each whole stream-second it reads text 10 s old. A later correction (reach 165 s on
+real 40 m, measured) has its change read again, within 200 s; old readings stay. A word space,
+prosign or punctuation ends a word.
 
 **Readings.** A call's form (RR 19.68; sourced): an allocated prefix (Appendix 42) of one
 or two characters, one digit, one to four letters; /P, /M or a prefix keep the base call. 1
@@ -573,14 +574,15 @@ before or E, T, K after; short words joined (K X 9 F). Refused: words of CW with
 **Role.** Before DE or 5NN: *named*. After DE, CQ or TEST, or before K: *signed*. Else *bare*.
 
 **Evidence.** Readings overlapping in time within 300 Hz are one transmission. Points add
-within 300 Hz and 30 min. Reported at 2 points if framed (signed, named or sent twice), else
-3; on a known-call list, 1 or 2. Two or more digits (W100AW): from a list only.
+within 300 Hz and 30 min. Reported at 2 points; on a known-call list, 1 if framed (signed, named
+or sent twice), else 2. Two or more digits (W100AW): from a list only.
 
 **Variants.** A call within edit distance 1 of a better-supported call within 150 Hz is held
-back, or withdrawn if reported; distance 2 needs over twice the points. A list weighs by 3.
+back, or withdrawn; distance 2 needs over twice the points. Ties at distance 1: the earlier
+call; beginning within 1 s, the later. A list weighs by 3.
 
 **List.** One row per base call, at its latest signed, else bare, else named place. Decoder
-scores are unused: not calibrated, and segmental's symbols all say 1.
+scores are unused: segmental's symbols all say 1.
 
 # A. Appendix: derivations, provenance, limitations, parameters, definitions
 
@@ -4101,7 +4103,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 
 - Text sent during a hold is lost, not late. Short overs and a carrier before a CQ can lose some; a runner with callers within 47 Hz can read as not keyed and retire (backlog).
 - A hold can close a place on a real station up to 120 s; ±750 Hz up to 120 s if a wide signal returns.
-- Rows of data and speech read as plausible stay listed: the list is 35% to 63% junk. Its view by plausibility waits for the callsign stage.
+- Rows of data and speech read as plausible stay on the track list: it is 35% to 63% junk. The call list beside it (section 11) has none of them; a view of the rows by plausibility is not built.
 - A station within 47 Hz of the center is not read. Tune off it.
 - A steady carrier takes the channel: a station within 47 Hz of a carrier that came first and at the station's level or above, or within 100 Hz of one 10 dB and more stronger, is not read (results record). A carrier alone costs a few hidden T's and up to 14 s of a channel, then holds.
 - The narrower stream's CPU is spent to at least 10 s of a channel's age, even on a channel the judge then retires.
@@ -4284,12 +4286,13 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Budget | shed above 1 s, grown over 2 checks 1 s apart (margin 0.05 s below 0.25 s), over 8 tracks, to ¾; back by 5 per 5 s below 0.25 s | stream_runner.cpp | heuristic |
 | Silence | 5 s | `DeliveryWatch::kStalledAfterS` | heuristic |
 | Bank: locked-level recovery | last 0.32 s's 20% quantile over 10 dB under the level | `kLockedLevelRatio` (bank/noise.cpp) | heuristic |
-| Callsign stage: read text settled for | 10 s, once per second of stream | `CallSearchConfig::settle_s` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: read text settled for | 10 s, on each whole second of stream | `CallSearchConfig::settle_s` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: text a correction changes | read again; kept 200 s back | `reread_corrected`, `history_s` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: same place | 300 Hz | `CallSearchConfig::same_place_hz` | heuristic, chosen by measurement (A.12); manta's bucket |
 | Callsign stage: evidence window | 1 800 s | `CallSearchConfig::window_s` | heuristic, chosen by measurement (A.12) |
-| Callsign stage: points to report | framed 2, bare 3; listed framed 1, listed bare 2 | `points_framed`, `points_bare`, `points_known`, `points_known_bare` | heuristic, chosen by measurement (A.12); from CW Skimmer's table |
+| Callsign stage: points to report | framed 2, bare 2; listed framed 1, listed bare 2 | `points_framed`, `points_bare`, `points_known`, `points_known_bare` | heuristic, chosen by measurement (A.12); from CW Skimmer's table |
 | Callsign stage: points of a reading | whole or glued 1, stripped or joined 0.5 | `stripped_points` | heuristic |
-| Callsign stage: variants | edit distance 1, or 2 at over 2 times the points; within 150 Hz, 1 800 s | `far_variant_ratio`, `variant_hz`, `variant_s` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: variants | edit distance 1, or 2 at over 2 times the points; within 150 Hz, 1 800 s; a tie goes to the earlier call, or within 1 s to the later (a heuristic constant in the code) | `far_variant_ratio`, `variant_hz`, `variant_s` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a list against a rival | factor 3 | `known_rival_factor` | heuristic |
 
 ## A.11 Definitions used in tests and the benchmark
@@ -4806,19 +4809,23 @@ for every kind of reading.
 in {5NN, ENN, 599, UR, NR, RST, GM, GA, GE, GN, FB, TNX, TKS, R, SRI, AGN}, *named*; previous in {CQ, TEST, QRZ, CQCQ, TESTTEST, POTA, SOTA,
 DX, UP} or next in {K, KN, AR, SK, TEST, QRZ, CQ, UP, <KN>, <AR>, <SK>, <KA>}, *signed*; else unknown (*bare*).
 
+**Reading.** On each whole second of stream (a whole number of seconds, so that how often the clock is given does not change what is read), the words ended
+by that second less `settle_s`; all of a track's words when it ends. A correction that changes a symbol behind what has been read (`reread_corrected`; an unchanged tail of a correction does not count) sends the reader back to the start of
+the word it falls in, so the new text is read when settled. Nothing already read is taken back: a stream that takes over can be worse there than the one it replaces (at settle_s 1e6 s, reading only final text, real 40 m loses E51MWA). Text is kept back to `history_s`, and eight words at least.
+
 **Evidence.** A reading overlapping an occurrence of the same call in time within `same_place_hz` betters it (points, role) and is not
-counted again. Points: the sum over occurrences within `same_place_hz` of the new one and within `window_s` of its end. Framed: any of them had a
-role, or the same word was next to it (`doubled_is_framed`).
+counted again, so text read twice adds nothing. Points: the sum over occurrences within `same_place_hz` of the new one and within `window_s` of its end. Framed: any of them had a
+role, or the same word was next to it (`doubled_is_framed`). A candidate's first time is its earliest reading, which a correction can move back.
 
 **Arbitration.** Against every other candidate with a reading within `variant_hz` of this one and `variant_s` of now, by base-call edit distance d,
 the limit being 2 for a shorter call of 4 characters or more, else 1. A rival beats a call if both are on or off the list and its points
-exceed its need (1 at d = 1, `far_variant_ratio` at d = 2) times the call's, or at d = 1 tie with an earlier first reading; a listed rival beats
+exceed its need (1 at d = 1, `far_variant_ratio` at d = 2) times the call's, or at d = 1 tie: with an earlier first reading, unless the two first readings are within 1 s (one word, heuristic), when the one seen later wins, being what a correction made of the word; a listed rival beats
 an unlisted call at a third of its points; an unlisted rival a listed call at three times. A held call is not reported, and leaves if
 it was; a reported call withdraws the reported calls it beats.
 
 **Row.** The place is that of the reading of the highest rank, latest on a tie: rank = 2 x (signed 2, bare 1, named 0) + (a whole or glued
 reading 1). `call` is the base, or the most common form with a slash seen at least twice and more often than any other. A candidate not reported
-and older than the longest window is dropped, each 30 s of stream. A track's text is kept only from eight words before what has been read.
+and older than the longest window is dropped, each 30 s of stream.
 
 **The list and the tools.** `kz4ap-skimmer --known-calls PATH` takes MASTER.SCP's format: one call a line, # and ; lines skipped, case ignored,
 whatever follows white space ignored; `--calls PATH` writes the list as `calls_csv` at the stream's end. `kz4ap-calls --known PATH --out PATH
@@ -4845,14 +4852,16 @@ and prints which it used: CW Skimmer's export format is not known here. Calls co
 **Chosen by measurement,** replaying the logged events of the generated contest (`w7_contest`, 280 stations), `w12_cap` (300), `w11_pairs` and `band192k_100`, and of 30 min
 and 62 s of real 40 m; the numbers are in the decision log, 2026-10-31.
 
-- `settle_s` 10 s: at 2 s the 30 min of real 40 m gave 7 calls against 10 at 6 s (it read text the decoder had not yet corrected); 6, 10, 15 and 20 s read about alike.
+- `settle_s` 10 s: at 2 s the 30 min of real 40 m gave 7 calls against 10 at 6 s (it read text the decoder had not yet corrected). On the final decoder 10 and 15 s read alike; 20, 25 and 30 s lost WA0QZK and gained one true call of 280 on the contest. Waiting does not reach the longest corrections in any case: see `reread_corrected`.
+- `reread_corrected` on and `history_s` 200 s: on real 40 m 2 393 corrections changed text, reach median 2.6 s, 99% 39.0 s, maximum 164.9 s; on the contest maximum 94.8 s (measured on the final decoder). 62 reach past 20 s on real 40 m. One of them turned OL1TM OL1TM into ZL1TM ZL1TM, 50 s after it had been read. The maximum seen plus a margin sets `history_s`, a heuristic. Costs one false call of 44 rows on H2, seed 2 (N5PX and DE, glued, in corrected text), and gains one true on the contest.
+- The tie at 1 s: chosen for that word, tested on all the generated recordings, where it changes nothing. A heuristic on one case of real 40 m.
 - `same_place_hz` 300 Hz: 100 Hz loses a partner named at another's place 210 Hz away; 300 and 500 Hz gave the same lists.
 - `window_s` 1 800 s: 600 s missed an ID repeating every 255 s on real 40 m; no misreading came with 1 800 s on 30 min. Valid for real bands as busy as those recordings.
-- `points_bare` 3: 2 added two misreadings to the real 30 min and one false call to `w12_cap`.
-- `points_framed` 2: 3 lost 28 true calls on the contest to take away one false call.
+- `points_bare` 2 (3 at first): on the final decoder 3 refused EA1DR, read exactly twice 31 s apart, and the two spellings under which real 40 m has IK6QOP; 2 added no false call on any generated recording and 3 true on the contest with the re-read. On real 40 m it also adds one misreading (IK0S). Before the filter change 2 cost one false call on `w12_cap`; it no longer does. With `points_framed` at the same value, framing matters only with a list. The bar is about as many calls as CW Skimmer on a real recording, whose Normal level asks 2 repeats of a common pattern.
+- `points_framed` 2: 3 lost 28 true calls on the contest to take away one false call; 1 gains 20 true for 22 false on the contest, 1.5 gains 2 true on the contest for 5 false on the two QSO groups. One reading is for a list, as in CW Skimmer.
 - `points_known_bare` 2: 1 tripled false calls with a list.
-- `variant_hz` 150 Hz: 500 Hz held back a true station 237 Hz from a call one letter away; real recordings read alike.
-- `far_variant_ratio` 2: at 3, a call read twice next to six readings of the true call stayed.
+- `variant_hz` 150 Hz: 500 Hz held back a true station 237 Hz from a call one letter away; real recordings read alike. 300 Hz on the final decoder: 3 false calls fewer on H2, 1 true call fewer on the contest; not adopted, a trade that favors precision.
+- `far_variant_ratio` 2: at 3, a call read twice next to six readings of the true call stayed; 1.4 changed nothing on any recording.
 
 **Heuristics not tuned:** `stripped_points`, the keyword sets, the refused words and characters.
 
@@ -4861,8 +4870,10 @@ and 62 s of real 40 m; the numbers are in the decision log, 2026-10-31.
 - A call read only once is not reported without a list: that is the rule, and on the generated contest the largest loss of callers.
 - Who sent a call is known only from the words around it: a DX naming a caller twice ("K0TF K0TF") with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
   is only as good as the decoder's reading of those words.
-- A misreading read twice, with its true call read less, is reported (OL1TM for ZL1TM on real 40 m, at a tie). The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.
+- A misreading read twice, with its true call read less, is reported: on real 40 m IK0S beside IK0HBN (too many edits apart for the arbitration); IK6QOP, read exactly once, shows as K6QOP and IK6QO, the stray-letter reading of a word giving half a point to the shorter call. The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.
+- A call that is the start of a better call (K5N for K5Nxx, on H2) is held back only by edit distance.
 - `only_tiny_pieces` and the refused words lose the few real calls of those forms (I5SAN, K5NN) without a list.
 - The text reads a station's latest place: a station that moved shows there only.
-- A track's text before a correction that reaches past `settle_s` is read as it stood. A correction reaching what has been read does not take its readings back.
+- A correction that reaches what has been read adds its readings and does not take back the old ones, so a misreading it replaces can stay beside it, unless the arbitration rules on them. Beyond `history_s` it is not read.
+- The app at `--speed max` hands the stage events in larger batches: on the 30 min of real 40 m it lists 15 calls against 16 at `--speed 5` and in `kz4ap-calls` (K6QOP, read before a correction there and only after it here; conjectured). Real time should read as `kz4ap-calls` does; not run for this.
 - Points are heuristic weights, not probabilities. Segmental's symbols carry probability 1, so a decoder's score could not be used per symbol; a posterior on the call would need one.

@@ -123,7 +123,7 @@ private:
 
 struct CallSearchConfig {
     // s: the text is read this far behind the stream, so that the decoder's corrections have mostly settled. Heuristic, chosen by
-    // measurement (appendix A.12); corrections reach at most 20 s.
+    // measurement (appendix A.12); 99% of corrections on real 40 m reach within 39 s, and those past this are read again (reread_corrected).
     double settle_s = 10.0;
     // Hz: the readings of a call count together within this of each other. Heuristic, chosen by measurement: manta's bucket of 300 Hz; 100 Hz
     // loses a QSO's partner, named at one station's place and signing at his own 200 Hz away.
@@ -162,7 +162,7 @@ struct CallRow {
     std::string base;
     double freq_hz = 0;       // Hz from the span's center, at the latest reading where it was not named by another
     double first_s = 0;       // s, stream time of its first reading
-    double reported_s = 0;    // s, stream time it was reported
+    double reported_s = 0;    // s, stream time of the end of the reading that reported it; the list shows it at least settle_s later
     double last_s = 0;        // s, stream time of its latest reading
     std::uint32_t count = 0;  // readings, one per transmission
     double points = 0;        // the best support it has had at one place

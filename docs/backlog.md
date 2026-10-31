@@ -1657,7 +1657,7 @@ Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repos
 - **Short overs and carriers under a hold (`app-4`'s review, F6).** Text during a hold is lost, not late. A station in short
   overs with little proven, a carrier before a CQ, a runner with callers within 47 Hz: each can lose an over. No-hold-on-quiet
   gained 1 caller of 170 and cost 28% more channel-seconds; the rule stands. The replay made most of it smaller.
-- **Junk rows.** Data and speech rows on the list wait for the callsign stage, which is where a view by plausibility belongs.
+- **Junk rows.** Data and speech rows stay on the track list; the call list beside it has none. A view of the rows by plausibility is not built.
 - **Fine-tuning off the center.** Tuning the radio a little off and shifting digitally would remove the dead zone at 0 Hz.
 - **Two tracks on one station,** 40 to 135 Hz apart, on a strong keyed carrier (W1AW at 7047.5 kHz): seen only live while the
   pipeline lost samples; none on playback. No envelope test between neighbors is built, should it come back.
@@ -1676,3 +1676,11 @@ Deferred from the first stage (`docs/signal-processing.md`, section 11):
 - A pattern table in place of the flat bare and framed thresholds, as CW Skimmer's `patt3ch.lst` ranks common and rare prefixes; only after the owner's hour shows it would pay.
 - A posterior on a call in place of points, once a decoder gives probabilities per symbol (segmental's are all 1).
 - The spots of design section 3 (the telnet server) read this stage; re-spotting after 10 min is not done, the list has one row per call.
+
+From `app-7`'s look at what it dropped (checkpoint 2's record):
+
+- Spellings of one station: real 40 m's IK6QOP is read exactly once and shows as K6QOP and IK6QO; a word's stray-letter reading gives half a point to the shorter call and none back. Pooling a family of near calls, or giving a word's own reading its due first.
+- A call that is the start of a better one at its place (K5N, G3T, W5K on H2; E51M on real 40 m), and a word glued to DE that also has a call's form (N5PXDE): 6 false calls in 80 stations of H2.
+- `variant_hz` 300 Hz: 3 false calls fewer on H2, 1 true fewer on the contest. Decide with CW Skimmer's list on the owner's hour.
+- A real MASTER.SCP against the recordings: the lists used so far are generated, and change nothing on real 40 m.
+- One reading with no list, after DE: `points_framed` 1 adds 20 true and 22 false on the contest, so not as is; on real 20 s it adds K3AV and KB8UGP, which read well. DE alone and not TEST might do.

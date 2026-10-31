@@ -4,7 +4,7 @@
 included: I2 reads CER 0.021 against checkpoint 1's 0.523 and the bank's 0.261. E2 interference reads 0.575 against 0.691 and 0.776
 when told the frequency, and 0.688 against 0.734 and 0.814 as the app reads it. CPU on the whole test set is 6.87 ms per channel-second on
 the Linux machine, about 7.3 to 7.8 ms on the desktop (derived), at the 8 ms goal. On 30 min of real 40 m it is 13.3 ms, about 17 ms in real time,
-under the 40 ms required and over the goal. No decoder has yet been scored against truth on a real signal; that is checkpoint 3's.
+under the 40 ms required and over the goal. The call list reports 202 of the contest's 280 stations and no false call, all 300 of the crowded band, and on 30 min of real 40 m 16 calls, about 13 stations; "The callsign stage" below. No decoder has yet been scored against truth on a real signal; that is checkpoint 3's.
 
 **Terms.** *CER*: edits over reference symbols, spaces counted, pooled over the scored signals. *Oracle path*: the decoder is told each station's
 frequency. *Detector's path*: what the app runs, the detector opening a channel at each peak. *Late*: a channel that opens more than 10 s after the stream
@@ -179,6 +179,64 @@ Measured with the engine and the app on the desktop, 3 worker threads for files 
 
 The real radio was not used for this record. Measured on `app-4`, before the merge: 62 s at 192 kHz, 17.3 ms per channel-second, at most 21 tracks live; 66 s at 768 kHz, 14.0 ms per channel-second, at most 84 tracks live; no samples lost and no budget in either. Since the merge it has been run only as the stand-in.
 
+## The callsign stage
+
+**What it does.** `CallSearch` reads the settled text and lists one row per call: `docs/signal-processing.md`, section 11. It is scored here by base call: *true* is a reported call that is a station of the recording, *false* one that is not, *precision* true over reported, *recall* true over stations. Measured over whole decodes with `kz4ap-calls`, on the desktop for the band recordings and the Linux machine for G2 and H2. The tables are named below.
+
+*As merged:* the stage at a277ed0, `call-1`'s rule on `app-6`'s filters. *Tuned:* at 4bf5446, below. *Older count:* the rule the record's "calls" used so far: on the listed rows, a word of a call's shape read at least twice, or once after DE or CQ.
+
+| Recording (stations) | Older count, true, false | As merged: true, false, precision, recall | Tuned: true, false, precision, recall |
+|---|---|---|---|
+| Contest band (280) | 203, 22 | 199, 0, 1.000, 0.711 | 202, 0, 1.000, 0.721 |
+| Crowded band, `w12` (300) | 300, 4 | 300, 0, 1.000, 1.000 | 300, 0, 1.000, 1.000 |
+| 100 stations, 192 kHz (100) | 100, 1 | 99, 0, 1.000, 0.990 | 99, 0, 1.000, 0.990 |
+| Pairs, the review's, 40 to 150 Hz apart (48) | 32, 2 | 32, 0, 1.000, 0.667 | 32, 0, 1.000, 0.667 |
+| G2, QSOs on one track, seed 1 (40) | | 40, 0, 1.000, 1.000 | 40, 0, 1.000, 1.000 |
+| G2, seed 2 (40) | | 40, 0, 1.000, 1.000 | 40, 0, 1.000, 1.000 |
+| H2, QSOs on two tracks, seed 1 (40) | | 38, 2, 0.950, 0.950 | 38, 2, 0.950, 0.950 |
+| H2, seed 2 (40) | | 40, 3, 0.930, 1.000 | 40, 4, 0.909, 1.000 |
+
+`calls-generated.csv` (per recording, with the false and the missed calls), `calls-older-count.csv`. The filter change itself cost little: before it, on `call-1` at 4d126e5, the contest read 200 and 1, H2 seed 1 38 and 2, `w12` 300 and 0 (decision log, 2026-10-31). Of the true calls, within 100 Hz of their station on the tuned list: contest 199 of 202, H2 seed 1 38 of 38, seed 2 40 of 40. With a known-call list of 50 000 calls, generated, holding truth's calls at 0%, 70% or 100% coverage: contest true and false 197 and 13, 215 and 9, 222 and 8; `w12` 295 and 5, 299 and 1, 300 and 0; on the real recordings the lists change nothing (`calls-known.csv`). A real MASTER.SCP has not been tried.
+
+**Real recordings, no truth.** By hand, nothing looked up (`calls-real.csv`, each call's judgment and reason).
+
+| Recording | Older count | As merged | Tuned | Tuned, by judgment |
+|---|---|---|---|---|
+| 30 min real | 27 | 12 | 16 | 12 likely real, 1 uncertain (WX2ZAQ), 2 misspellings of one likely real station (K6QOP and IK6QO for IK6QOP), 1 misreading (IK0S) |
+| 62 s real | 6 | 6 | 6 | 1 real, 5 likely real |
+| 20 s real | | 2 | 2 | not judged |
+
+So about 13 stations on the 30 min, within the fourth review's own 12 to 14. The stage finds 4 likely real calls the older count does not (E51MWA, K5UNY, KX9F, WA0QZK). The app's list is `calls-app-lists.csv`: 16 at `--speed 5`, 15 at `--speed max` (no K6QOP; conjectured: events come in larger batches, so less text is read before a correction), both on 4 threads.
+
+**What it dropped.** The stage as merged reports 7 of the older count's 27 calls and drops 20. For each of them, the frequency, times, readings, text around each reading and rule are in the scratch file named under Reproducing, not committed, since it holds decoded text; `calls-real30-dropped.csv` has all of that except text.
+
+| Judgment, as merged | Calls | Rule that refused them |
+|---|---|---|
+| Likely real, 2 | EA1DR | points: 2 bare, 3 needed |
+| | ZL1TM | never read: the word came with a correction at 176 s, 50 s after the stage had read OL1TM there |
+| Misspellings of a likely real station, 2 | IK6QO, K6QOP | points: 2 and 2.5 bare |
+| Uncertain, 1 | B5NHS | never read, likewise; with the re-read, 1 point after DE |
+| Likely misreadings, 15 | Beside IK0HBN: EK0HBN, IK0HBT, IK0HN, IK0HT, IK0S, K0HBN, K0HBT | points, or variants held back by a better-supported call, or both |
+| | Beside E51MWA: E51M, EK1MWA. Beside S58W: S5ME | points 1; S5ME has no digit after the prefix |
+| | K glued on: KA3LOCK, N5JJK | points or variants |
+| | Fragments: E5E, H1MO, T6Q | not a call's form |
+
+So the older count's 27 mostly were misreadings, 17 of its 20 lost, of which 2 do point to a real station; but 3 real stations were lost, and one of them had been replaced by a misreading. By rule: 4 grammar, 2 never read, 6 points alone, 5 points and variants, 3 variants alone.
+
+**What changed.** Three rules. Each is a heuristic, each changes what real 40 m reads, and EA1DR and ZL1TM prompted them, so the gain on that recording is not independent; the generated recordings measure only the cost, and no list changed on 62 s or 20 s of real band.
+
+1. *A correction of text already read has it read again* (`reread_corrected`), on text kept 200 s back. Corrections on real 40 m reach up to 164.9 s, 99% within 39.0 s, on 2 393 that change text; reading only final text, at a setting of 1e6 s, gains ZL1TM and loses E51MWA, so old readings stay: neither stream's text is always the better.
+2. *A tie at edit distance 1 between calls that begin within 1 s goes to the later,* what the correction made of the word. Without it OL1TM stays and holds ZL1TM back.
+3. *A bare call needs 2 points, not 3* (`points_bare`). Two exact readings at one place are enough, as at CW Skimmer's Normal level for a common pattern.
+
+Against as merged. Contest: 3 true more, no false more. H2 seed 2: 1 false more (N5PX and DE, glued, read in corrected text). Every other generated recording: the same. 30 min real: + EA1DR, ZL1TM, K6QOP, IK6QO, IK0S; - OL1TM. The stage also now reads on whole seconds of stream, so that replays and whole decodes agree: 0 of 88 lists differ between them, where one did.
+
+**Settings tried: 15, besides as merged,** all on all these recordings, all in `calls-settings.csv`. Not adopted: `settle_s` 15, 20, 25, 30 s (no gain; from 20 s WA0QZK goes); `settle_s` 1e6 s; `points_bare` 2.5; `points_framed` 1 (contest + 20 true, + 22 false) and 1.5 (contest + 2 true, G2 and H2 + 5 false); `far_variant_ratio` 1.4 (nothing changes); `variant_hz` 300 Hz (H2 3 fewer false and 1 more true, contest 1 fewer true, and it brings K0S for IK0S: a trade toward precision, kept for the comparison with CW Skimmer). The bar is about as many calls as CW Skimmer on a real recording, and only that comparison can say whether 13 stations in 30 min is enough.
+
+**CPU.** The stage, over whole decodes on the desktop: contest 0.0054, `w12` 0.0037, 30 min real 0.0035, 62 s real 0.0023 ms per channel-second, against 8 ms the goal and 40 ms required: nothing to see. In the app with the list, 4 threads, `--speed max`: 30 min real 13.06 ms per channel-second in the pipeline, 13.73 in the whole process; 62 s real 15.47 and 15.94 (`calls-cpu.csv`). The stage reads on the GUI's thread, about 0.08 s over the 30 min.
+
+**Tests at 4bf5446** (later commits change documents and two comments only): `ctest`, Windows with Qt 800 tests, 781 passed, 19 skipped, 0 failed; Windows without Qt the same 800; Linux 787, 768 passed, 19 skipped, 0 failed. `pytest` on `training`, 324 passed. The skipped are as designed.
+
 ## CPU against the bar
 
 At most 40 ms per channel-second required, about 8 ms the goal, stated on the desktop. The whole process, on the desktop unless named.
@@ -216,7 +274,7 @@ Capacity, derived from these: (4 000 ms per s of stream - fixed) / per track on 
 6. **Measured. The carrier "regression" is not one.** `fast-3` reported that a carrier +10 dB re wanted or stronger now reads 0.98 where it read 0.72. The 0.72 is the first review's run on 5aeb081, before the channel floor; `app-4`, just before `fast-3`, already reads 0.975 to 0.984 in those cells, and the 0.72 was a row of false T's, some matching by chance. In the app, with text on real 40 m (steady carriers on for 180 s, 3 alone from +25 to +55 dB S500, 8 beside a station at +25 dB S500), the 26 rows at every carrier and every station are identical before and after `fast-3` (at b4323ab and 902121c): a carrier alone writes 5 T's in hidden rows and lists nothing.
 7. **Measured, on the real recordings, at b4323ab and 902121c.** A carrier here is a bin steady over 1 s, at least 10 dB above the local median for at least 5 s running (a heuristic for this question). The 30 min recording has 374 such runs at 89 places. Within 150 Hz of them, before and after `fast-3`: 102 rows and 1 082 symbols, 859 listed, 99 of the 102 rows identical; no call read twice in either. In the 62 s recording: 11 rows and 34 symbols, 10 identical. So on real recordings it does not matter.
 8. **Measured, and old.** What does matter is on the detector's path: a station within 47 Hz of a carrier that came first is not read with the carrier at its own level or above, nor at 100 Hz from one +10 dB re wanted or stronger: at 40 Hz, one station each, CER 0.95 at `app-5` and 0.19 now at -10 dB re wanted, 1.00 from 0 dB up; at 100 Hz 0.07 at -10 dB, 0.02 at 0 dB, 1.00 at +10 and +30 dB (an app measurement at e913886). Conjectured: the track sits on the carrier, as the row's frequency shows, and the judge retires it.
-9. **Conjectured; no truth.** Calls on the 30 min recording went 22, 31, then 27 with the channel's clock. Of the 12 gained at the merge, about 9 to 10 are not new stations (`IK0HBT`, `K0HBT`, `EK0HBN`, `IK0HT`, `IK6M`, `K6QO`, `N5JJK`, `X9F`, `S5ME`, read beside `IK0HBN`, `IK6QOP`, `N5JJ`, `KX9F`, `S58W`), and 2 to 3 are: `S58W` is real and exact, `KX9FK` is `KX9F` and K glued, `D5NH` is probably a real station with its first letter unread. Three were lost, one real: `IK6QOP`, read exactly once at `app-5`. With the channel's clock six go (`D5NH`, `IK6M`, `K6QO`, `KX9FK`, `TK0HBN`, `X9F`) and two come (`B5NHS`, `T6Q`): mostly misreadings and fragments, with `KX9F` still there with spaces removed. The fourth review counts about 12 to 14 stations behind the names. With spaces removed the real calls were already there at `app-4`, so the callsign stage should match with spaces removed. The comparison with CW Skimmer is what can say.
+9. **Conjectured; no truth.** (The older count; for the callsign stage's list, see its section.) Calls on the 30 min recording went 22, 31, then 27 with the channel's clock. Of the 12 gained at the merge, about 9 to 10 are not new stations (`IK0HBT`, `K0HBT`, `EK0HBN`, `IK0HT`, `IK6M`, `K6QO`, `N5JJK`, `X9F`, `S5ME`, read beside `IK0HBN`, `IK6QOP`, `N5JJ`, `KX9F`, `S58W`), and 2 to 3 are: `S58W` is real and exact, `KX9FK` is `KX9F` and K glued, `D5NH` is probably a real station with its first letter unread. Three were lost, one real: `IK6QOP`, read exactly once at `app-5`. With the channel's clock six go (`D5NH`, `IK6M`, `K6QO`, `KX9FK`, `TK0HBN`, `X9F`) and two come (`B5NHS`, `T6Q`): mostly misreadings and fragments, with `KX9F` still there with spaces removed. The fourth review counts about 12 to 14 stations behind the names. With spaces removed the real calls were already there at `app-4`, so the callsign stage should match with spaces removed. The comparison with CW Skimmer is what can say.
 10. **Measured. These scores flatter the text prior near threshold, callsigns most of all.** The same stations, levels and noise with different text, oracle path, 96 stations a text, 15 to 35 WPM (`text-kinds.csv`):
 
 | Text | S500 -3 to +1 dB | S500 +1 to +5 dB |
@@ -234,12 +292,14 @@ Filters {1, 3} and a drop margin of 30 nats (the narrower stream is dropped when
 
 ## Limits
 
-The test set's noise is white; a narrower filter on the detector's path pays for a track up to half a bin off, which the oracle rows do not show. S - F, the choice of stream, is a heuristic between filters whose data differ, and a long track whose conditions change keeps its early leader. Memory about 3 MB a track. The list is still 35% to 63% junk on real 40 m until the callsign stage. On the air the largest single CPU item is the widest stream's search on weak and wide channels (55% of the decoder's time on real 40 m, the fourth review's counters at 902121c). The app's measurements are single runs on the desktop, the tools and generators for them are scratch, not committed, and the recordings are not committed; the app's numbers are totals in `app-measures.csv`, not per signal, and that part waits for checkpoint 3. See `docs/signal-processing.md`, appendices A.8e and A.9b.
+The test set's noise is white; a narrower filter on the detector's path pays for a track up to half a bin off, which the oracle rows do not show. S - F, the choice of stream, is a heuristic between filters whose data differ, and a long track whose conditions change keeps its early leader. Memory about 3 MB a track. The track list is still 35% to 63% junk on real 40 m; the call list beside it is what to read. On the air the largest single CPU item is the widest stream's search on weak and wide channels (55% of the decoder's time on real 40 m, the fourth review's counters at 902121c). The app's measurements are single runs on the desktop, the tools and generators for them are scratch, not committed, and the recordings are not committed; the app's numbers are totals in `app-measures.csv`, not per signal, and that part waits for checkpoint 3. See `docs/signal-processing.md`, appendices A.8e and A.9b.
 
 ## What comes next
 
-Merge to `main`, this checkpoint to the owner, his first run on the radio. The callsign stage (`call-1`), matching with spaces removed. The busy-band hour and CW Skimmer's output for checkpoint 3, the bar's other half. Then the CPU of the widest stream's search on weak channels, the real 40 m figure.
+Merge to `main`, this checkpoint to the owner, his first run on the radio. The busy-band hour and CW Skimmer's output for checkpoint 3, the bar's other half. Then the CPU of the widest stream's search on weak channels, the real 40 m figure.
 
 ## Reproducing
 
 Recordings: `python -m kz4ap_synth.suites` from the seeds. Run: `--decoder segmental` at e913886, recordings as named in the table's `test_case` column. Tables: `kz4ap_proto.devset2.load_rows(out, [name], only=None)` and `write_scores`. Each group above is the sum of `edits` over the sum of `symbols`.
+
+The callsign stage: `kz4ap-calls RECORDING --out CALLS.csv` at 4bf5446 and at a277ed0, `--replay` with `--set NAME=VALUE` for the settings, `python -m kz4ap_proto.calls_score truth CALLS.csv LABELS.json`. G2 and H2 are `G2-*` and `H2-*` of `DEV2`, seeds 1 and 2; the band recordings are the first review's generators', not committed, and so are the real ones. The full table of what was dropped, with the text around each reading, is the session's scratch `app7\real30_dropped.csv`, regenerated from a run of the review's harness and a `kz4ap-calls --log`.
