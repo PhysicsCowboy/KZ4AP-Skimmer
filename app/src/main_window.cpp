@@ -10,6 +10,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QDateTime>
 #include <QDoubleSpinBox>
@@ -118,7 +119,7 @@ void MainWindow::build_transport() {
     connect(open, &QAction::triggered, this, [this] {
         const QString path =
             QFileDialog::getOpenFileName(this, tr("Open an I/Q recording"), {}, tr("I/Q recordings (*.wav);;All files (*)"));
-        if (!path.isEmpty()) open_recording(path);
+        if (!path.isEmpty() && may_end_recording(tr("Opening a recording"))) open_recording(path);
     });
     play_pause_ = bar->addAction(tr("Pause"));
     play_pause_->setShortcut(Qt::Key_Space);
@@ -196,9 +197,7 @@ void MainWindow::build_radio_controls() {
     radio_action_ = bar->addAction(tr("Start radio"));
     connect(radio_action_, &QAction::triggered, this, [this] {
         if (radio_on_) {
-            stop_stream();
-            radio_on_ = false;
-            update_radio_controls();
+            radio_stopped();
         } else {
             start_radio();
         }
@@ -220,9 +219,17 @@ void MainWindow::build_radio_controls() {
         if (!radio_on_ || !runner_ || runner_->source().radio() == nullptr) return;
         try {
             runner_->source().radio()->set_gain(if_gain_box_->value(), lna_box_->value());
+            gain_problem_.clear();
         } catch (const std::exception& e) {
-            radio_label_->setText(QString::fromStdString(e.what()));
+            // The boxes go back to what the radio has, and the reason stays on the screen until a gain is taken.
+            const RadioStatus radio = runner_->source().radio()->radio_status();
+            const QSignalBlocker gain_blocker(if_gain_box_);
+            const QSignalBlocker lna_blocker(lna_box_);
+            if_gain_box_->setValue(radio.if_gain_reduction_db);
+            lna_box_->setValue(radio.lna_state);
+            gain_problem_ = tr("Gain not changed: %1").arg(QString::fromStdString(e.what()));
         }
+        if (runner_) update_radio_status(runner_->status());
     };
     connect(if_gain_box_, &QSpinBox::valueChanged, this, change_gain);
     connect(lna_box_, &QSpinBox::valueChanged, this, change_gain);
@@ -284,18 +291,68 @@ void MainWindow::begin_recording(const QString& path) {
     try {
         recorder->start_recording(std::filesystem::path(path.toStdWString()));
         last_recording_ = recorder->recording_status();
+        set_recording_problem({});
     } catch (const std::exception& e) {
-        radio_label_->setText(QString::fromStdString(e.what()));
+        set_recording_problem(tr("The recording did not start: %1").arg(QString::fromStdString(e.what())));
     }
     update_radio_controls();
+}
+
+void MainWindow::set_recording_problem(const QString& message) {
+    recording_problem_ = message;
+    if (runner_) update_radio_status(runner_->status());
+    if (message.isEmpty()) return;
+    transport_log_ << message;
+    if (!automation_.active()) QMessageBox::warning(this, tr("KZ4AP Skimmer"), message);
+}
+
+bool MainWindow::may_end_recording(const QString& what) {
+    if (!last_recording_.active) return true;
+    // A script answers yes: it stops the recording by asking to. The file is valid either way.
+    if (automation_.active()) return true;
+    const QString file = QString::fromStdWString(last_recording_.path.wstring());
+    return QMessageBox::question(this, tr("KZ4AP Skimmer"),
+                                 tr("%1 ends the recording to %2, which stays valid. Go on?").arg(what, file)) == QMessageBox::Yes;
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    if (may_end_recording(tr("Closing the window"))) {
+        event->accept();
+    } else {
+        event->ignore();
+    }
+}
+
+void MainWindow::radio_stopped() {
+    stop_stream();
+    radio_on_ = false;
+    // Nothing is live now: the markers and the status say so, and the text stays to be read.
+    delivery_ = DeliveryWatch{};
+    recording_problem_.clear();
+    gain_problem_.clear();
+    last_recording_ = RecordingStatus{};
+    model_->table().end_of_stream();
+    model_->refresh();
+    update_markers();
+    radio_label_->setText(tr("Radio stopped"));
+    stream_label_->setText(tr("Stopped"));
+    speed_label_->clear();
+    tracks_label_->clear();
+    cpu_label_->clear();
+    update_radio_controls();
+    update_transport();
 }
 
 void MainWindow::update_radio_status(const StreamStatus& status) {
     if (!runner_) return;
     IqSource& source = runner_->source();
     QStringList parts;
+    bool silent = false;
     if (const RadioControl* radio = source.radio()) {
         const RadioStatus r = radio->radio_status();
+        delivery_.update(r.received, status.wall_s);
+        silent = delivery_.stalled();
+        if (silent) parts << tr("<b>THE RADIO HAS DELIVERED NOTHING FOR %1 s</b>").arg(delivery_.silent_s(), 0, 'f', 0);
         if (r.gain_db) parts << tr("Gain %1 dB").arg(*r.gain_db, 0, 'f', 1);
         if (r.overload) parts << tr("<b>ADC OVERLOAD: more gain reduction</b>");
         if (r.resets > 0) parts << tr("stream restarted %1 times").arg(r.resets);
@@ -308,7 +365,7 @@ void MainWindow::update_radio_status(const StreamStatus& status) {
         if (was.active != last_recording_.active) update_radio_controls();
         if (!last_recording_.path.empty()) {
             const double seconds = static_cast<double>(last_recording_.samples) / source.sample_rate();
-            QString line = (last_recording_.active ? tr("REC %1 s, %2 MB") : tr("Saved %1 s, %2 MB"))
+            QString line = (last_recording_.active ? (silent ? tr("<b>RECORDING NOTHING</b>, so far %1 s, %2 MB") : tr("REC %1 s, %2 MB")) : tr("Saved %1 s, %2 MB"))
                                .arg(seconds, 0, 'f', 1)
                                .arg(static_cast<double>(last_recording_.samples) * 4.0 / 1e6, 0, 'f', 1);
             if (last_recording_.dropped > 0) line += tr(", <b>disk lost %1 samples</b>").arg(last_recording_.dropped);
@@ -317,7 +374,8 @@ void MainWindow::update_radio_status(const StreamStatus& status) {
             parts << line;
         }
     }
-    (void)status;
+    if (!recording_problem_.isEmpty()) parts << QStringLiteral("<b>%1</b>").arg(recording_problem_.toHtmlEscaped());
+    if (!gain_problem_.isEmpty()) parts << QStringLiteral("<b>%1</b>").arg(gain_problem_.toHtmlEscaped());
     radio_label_->setText(parts.join(QStringLiteral("; ")));
 }
 
@@ -394,9 +452,10 @@ void MainWindow::build_status_bar() {
 
 bool MainWindow::open_recording(const QString& path, double start_s) {
     try {
+        // The file first: one that cannot be opened leaves whatever is running as it is.
+        std::unique_ptr<FileIqSource> source = std::make_unique<FileIqSource>(std::filesystem::path(path.toStdWString()), start_s);
         stop_stream();
         radio_on_ = false;
-        std::unique_ptr<FileIqSource> source = std::make_unique<FileIqSource>(std::filesystem::path(path.toStdWString()), start_s);
         source->set_speed(speed_);
         current_path_ = path;
         origin_s_ = start_s;
@@ -450,6 +509,9 @@ void MainWindow::start_stream(std::unique_ptr<IqSource> source) {
     stream_ended_ = false;
     rows_dropped_ = 0;
     last_recording_ = RecordingStatus{};
+    delivery_ = DeliveryWatch{};
+    recording_problem_.clear();
+    gain_problem_.clear();
 
     // The engine's hop is half its FFT (EngineConfig; Engine::Engine).
     const double hop_s = (fft_size / 2.0) / rate;
@@ -520,10 +582,10 @@ void MainWindow::on_tick() {
 
     if (ticks_ % kTextEveryTicks == 0 || ended) {
         model_->refresh();
+        update_radio_status(status);  // first: the markers and the status show a radio that has stopped delivering
         update_markers();
         update_status(status);
         update_position(status);
-        update_radio_status(status);
     }
     run_automation(status);
 }
@@ -531,7 +593,7 @@ void MainWindow::on_tick() {
 void MainWindow::update_markers() {
     std::vector<WaterfallWidget::Marker> markers;
     for (const TrackRow& row : model_->table().rows())
-        markers.push_back({row.id, row.freq_hz, row.live(), selected_track_ == row.id});
+        markers.push_back({row.id, row.freq_hz, row.live() && !delivery_.stalled(), selected_track_ == row.id});
     waterfall_->set_markers(std::move(markers));
 }
 
@@ -547,6 +609,7 @@ void MainWindow::update_status(const StreamStatus& status) {
     }
     PlaybackControl* playback = runner_->source().playback();
     if (playback && playback->paused() && status.state == StreamStatus::State::Running) state = tr(" (paused)");
+    if (delivery_.stalled()) state = tr(" (the radio is silent)");
     stream_label_->setText(stream + state);
 
     const CpuRates recent = meter_.recent();
@@ -607,6 +670,8 @@ void MainWindow::run_transport_steps(const StreamStatus& status) {
             start_radio();
         } else if (action == QStringLiteral("radiostop")) {
             if (radio_on_) radio_action_->trigger();
+        } else if (action.startsWith(QStringLiteral("open="))) {
+            open_recording(action.mid(5));
         } else if (action.startsWith(QStringLiteral("center="))) {
             center_box_->setValue(action.mid(7).toDouble());
         } else if (action.startsWith(QStringLiteral("rate="))) {
@@ -707,6 +772,8 @@ void MainWindow::write_report(const StreamStatus& status) {
     out << "stream_s: " << status.stream_s << "\n";
     out << "wall_s: " << status.wall_s << "\n";
     out << "channel_seconds: " << status.channel_seconds << "\n";
+    out << "replayed_channel_seconds: " << status.replayed_channel_seconds << "\n";
+    out << "longest_replay_wait_s: " << status.longest_replay_wait_s << "\n";
     out << "live_tracks_at_end: " << model_->table().live_count() << "\n";
     out << "tracks_opened: " << model_->table().opened() << "\n";
     out << "track_budget_at_end: " << status.track_budget << "\n";
@@ -725,6 +792,7 @@ void MainWindow::write_report(const StreamStatus& status) {
     if (runner_ && runner_->source().radio() != nullptr) {
         const RadioStatus radio = runner_->source().radio()->radio_status();
         out << "radio_received_samples: " << radio.received << "\n";
+        out << "radio_silent_s: " << delivery_.silent_s() << "\n";
         out << "radio_overload_now: " << radio.overload << "\n";
         out << "radio_resets: " << radio.resets << "\n";
     }

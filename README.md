@@ -169,13 +169,15 @@ each track's final text (`text`, corrections applied) and its immediate text
 
 - On the air, wide and digital signals (FT8, SSB) still open tracks: each is judged
   on its own evidence and retired within 4 to 14 s, and its text is not listed unless
-  it reads as plausible, but about a third of the rows listed on real 40 m are still
-  junk, data signals most of all (`docs/backlog.md`, "The app on the air").
-  The detector holds at most 200 tracks (`DetectorConfig::max_tracks`); at the cap a
+  it reads as plausible, but about a third to two thirds of the rows listed on real 40 m
+  are still junk, data signals most of all: 35% on a 62 s recording of an evening with a
+  lot of CW, 63% on a 30 min one (`docs/backlog.md`, "The app on the air").
+  The detector holds at most 400 tracks (`DetectorConfig::max_tracks`); at the cap a
   stronger new peak replaces the weakest track, and a pipeline behind a live radio
   gives up the tracks with the least evidence first.
-- The first character or two of a transmission may be lost or wrong while the
-  station is being detected.
+- A place within 47 Hz of the center frequency is not read, on recordings as well: an
+  I/Q radio's DC offset stands there. The default center, 7031.5 kHz, keeps it off the
+  7030 kHz calling frequency.
 - Very strong signals (around 60 dB SNR in 500 Hz) can produce extra "ghost"
   tracks beside them.
 - After a station stops, a few stray E's can be decoded from noise before its

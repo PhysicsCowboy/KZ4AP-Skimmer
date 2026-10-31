@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
                                             QStringLiteral("path"));
     const QCommandLineOption radio_option(QStringLiteral("radio"), QStringLiteral("Start the SDRplay radio at once."));
     const QCommandLineOption center_option(QStringLiteral("center-khz"), QStringLiteral("The radio's center frequency, kHz."),
-                                           QStringLiteral("kHz"), QStringLiteral("7030"));
+                                           QStringLiteral("kHz"), QStringLiteral("7031.5"));
     const QCommandLineOption rate_option(QStringLiteral("rate"), QStringLiteral("The radio's sample rate: 96000, 192000, 384000 or 768000 Hz."),
                                          QStringLiteral("Hz"), QStringLiteral("192000"));
     const QCommandLineOption gain_option(QStringLiteral("gain-reduction"), QStringLiteral("The radio's IF gain reduction, 20 to 59 dB."),
@@ -137,6 +137,8 @@ int main(int argc, char* argv[]) {
     kz4ap::app::RadioDefaults radio;
     radio.center_khz = parser.value(center_option).toDouble();
     radio.sample_rate = parser.value(rate_option).toInt();
+    if (radio.sample_rate != 96000 && radio.sample_rate != 192000 && radio.sample_rate != 384000 && radio.sample_rate != 768000)
+        return usage_error(QStringLiteral("the radio's sample rate must be 96000, 192000, 384000 or 768000 Hz, not %1").arg(parser.value(rate_option)), quiet);
     radio.if_gain_reduction_db = parser.value(gain_option).toInt();
     radio.lna_state = parser.value(lna_option).toInt();
 

@@ -249,3 +249,38 @@ TEST(TrackTablePlausibleOnly, ADuplicatesHiddenRowGoesAtOnce) {
     table.apply(merged);
     EXPECT_TRUE(table.hidden().empty());
 }
+
+TEST(TrackTable, ARowKeepsOnlyItsLatestSymbolsAndCorrectionsStillLand) {
+    TrackTable table;
+    Track t;
+    t.id = 1;
+    table.apply(TrackEvent{TrackEvent::Kind::Born, t});
+    const auto add = [&](const std::string& symbol, std::size_t count, std::vector<TextCorrection> corrections = {}) {
+        DecodedTextEvent event;
+        event.track_id = 1;
+        for (std::size_t i = 0; i < count; ++i) event.chars.push_back(DecodedSymbol{symbol, 1.0f, 0.0, 0.0});
+        event.corrections = std::move(corrections);
+        table.apply(event);
+    };
+    std::size_t total = 0;
+    for (; total < 3 * TrackTable::kMaxRowSymbols; total += 10) {
+        add("E", 10);
+        ASSERT_LE(table.rows().at(0).symbols.size(), TrackTable::kMaxRowSymbols + 256);
+    }
+    const TrackRow& row = table.rows().at(0);
+    EXPECT_GE(row.symbols.size(), TrackTable::kMaxRowSymbols);
+    EXPECT_EQ(row.trimmed + row.symbols.size(), total);
+    // A correction counts from the track's first symbol, however much has been trimmed.
+    TextCorrection correction;
+    correction.from_index = total - 3;
+    correction.chars = {DecodedSymbol{"X", 1.0f, 0.0, 0.0}};
+    add("E", 0, {correction});
+    EXPECT_EQ(table.rows().at(0).trimmed + table.rows().at(0).symbols.size(), total - 2);
+    EXPECT_EQ(table.rows().at(0).symbols.back(), "X");
+    EXPECT_EQ(table.rows().at(0).symbols[table.rows().at(0).symbols.size() - 2], "E");
+    // One that reaches into what has been trimmed keeps nothing before it, and goes on.
+    correction.from_index = 0;
+    correction.chars = {DecodedSymbol{"Q", 1.0f, 0.0, 0.0}};
+    add("E", 0, {correction});
+    EXPECT_EQ(table.rows().at(0).text(), "Q");
+}

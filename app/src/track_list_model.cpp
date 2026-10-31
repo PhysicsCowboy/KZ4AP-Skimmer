@@ -71,7 +71,7 @@ QVariant TrackListModel::headerData(int section, Qt::Orientation orientation, in
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole) return {};
     switch (section) {
         case kTrack: return tr("Track");
-        case kFrequency: return tr("Frequency\n(kHz from center)");
+        case kFrequency: return center_hz_ ? tr("Frequency\n(kHz)") : tr("Frequency\n(kHz from center)");
         case kSpeed: return tr("Speed\n(WPM)");
         case kLevel:
             return bin_hz_ > 0 ? tr("Level at birth (dB above\nthe floor, %1 Hz bin)").arg(bin_hz_, 0, 'f', 1)

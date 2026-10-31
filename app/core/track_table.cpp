@@ -34,7 +34,7 @@ void TrackTable::apply(const TrackEvent& event) {
                 ended->ended_at_s.reset();
                 ++ended->tracks;
                 if (!ended->symbols.empty() && ended->symbols.back() != " ") ended->symbols.push_back(" ");
-                ended->base = ended->symbols.size();
+                ended->base = ended->trimmed + ended->symbols.size();
                 ++structure_version_;
                 return;
             }
@@ -80,8 +80,15 @@ void TrackTable::apply(const DecodedTextEvent& event) {
     if (row == nullptr) return;
     for (const DecodedSymbol& c : event.chars) row->symbols.push_back(c.text);
     for (const TextCorrection& k : event.corrections) {
-        row->symbols.resize(std::min(row->base + k.from_index, row->symbols.size()));
+        // A correction reaching into what has been trimmed keeps what is left.
+        const std::size_t from = row->base + k.from_index;
+        row->symbols.resize(std::min(from > row->trimmed ? from - row->trimmed : 0, row->symbols.size()));
         for (const DecodedSymbol& c : k.chars) row->symbols.push_back(c.text);
+    }
+    // A step at a time, so that a row at its limit does not move all its symbols for each new one.
+    if (row->symbols.size() >= kMaxRowSymbols + kTrimStep) {
+        row->symbols.erase(row->symbols.begin(), row->symbols.begin() + static_cast<std::ptrdiff_t>(kTrimStep));
+        row->trimmed += kTrimStep;
     }
     if (event.wpm > 0) row->wpm = event.wpm;
     const bool moved = row->freq_hz != event.freq_hz;

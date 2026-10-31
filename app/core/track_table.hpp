@@ -23,7 +23,9 @@ struct TrackRow {
     double start_s = 0;               // stream time the signal was first seen, s
     std::optional<double> ended_at_s; // stream time the track died or the stream ended, s; none while live
     std::vector<std::string> symbols; // the decoder's character list, with its corrections applied
-    std::size_t base = 0;             // symbols from the tracks at this place before this one: its corrections start after them
+    std::size_t base = 0;             // symbols from the tracks at this place before this one: its corrections start after them;
+                                      // counted from the row's first symbol, trimmed or not
+    std::size_t trimmed = 0;          // symbols dropped from the front (TrackTable::kMaxRowSymbols)
     std::uint32_t tracks = 1;         // tracks this row's text has come from
 
     bool live() const { return !ended_at_s; }
@@ -40,6 +42,9 @@ public:
     // Within this of an ended row's frequency, Hz, a new track goes on with that row. The detector's own distance between tracks
     // (EngineConfig::channel_distance_hz): closer than that they could be one station.
     static constexpr double kSamePlaceHz = 47.0;
+    // A row keeps at most about this many symbols, its latest; the list shows 400 at most. Heuristic: at 30 WPM, about 2.5 symbols/s,
+    // 27 min of text in about 130 kB; the report and --decoded then hold a long row's end only.
+    static constexpr std::size_t kMaxRowSymbols = 4000;
 
     void apply(const TrackEvent& event);
     // Appends the event's characters, then applies its corrections in order, clipping from_index to the list's length
@@ -70,6 +75,7 @@ public:
     std::uint64_t opened() const { return opened_; }
 
 private:
+    static constexpr std::size_t kTrimStep = 256;  // symbols
     void restore_order();
     TrackRow* find(std::uint32_t id);
     // An ended row at this place to go on with, listed or hidden.

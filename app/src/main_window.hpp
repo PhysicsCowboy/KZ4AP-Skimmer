@@ -3,6 +3,7 @@
 #pragma once
 
 #include "cpu_meter.hpp"
+#include "delivery_watch.hpp"
 #include "display_feed.hpp"
 #include "track_list_model.hpp"
 #include "waterfall_widget.hpp"
@@ -60,7 +61,7 @@ struct Automation {
 
 // The radio's settings at the program's start, the controls' first values.
 struct RadioDefaults {
-    double center_khz = 7030.0;
+    double center_khz = 7031.5;
     int sample_rate = 192000;
     int if_gain_reduction_db = 40;
     int lna_state = 0;
@@ -100,6 +101,13 @@ private:
     void update_transport();
     void set_speed_from_combo();
     void stop_stream();
+    // The operator asked for the radio to stop.
+    void radio_stopped();
+    // A message that stays in the radio's status until the next try at the same thing (message: empty when that went well).
+    void set_recording_problem(const QString& message);
+    // Whether what is about to end a recording may do so; true at once when none is running. Asks the operator.
+    bool may_end_recording(const QString& what);
+    void closeEvent(QCloseEvent* event) override;
     void write_report(const StreamStatus& status);
     void run_automation(const StreamStatus& status);
     void run_transport_steps(const StreamStatus& status);
@@ -127,6 +135,9 @@ private:
     bool stream_ended_ = false;
     bool radio_on_ = false;
     RecordingStatus last_recording_;
+    DeliveryWatch delivery_;
+    QString recording_problem_;  // why the last recording did not start
+    QString gain_problem_;       // why the last gain was refused
     std::uint64_t ticks_ = 0;
     std::uint64_t rows_dropped_ = 0;
     std::size_t most_live_ = 0;  // the most live tracks so far
