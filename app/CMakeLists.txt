@@ -40,6 +40,8 @@ add_executable(kz4ap-skimmer
   src/main.cpp
   src/main_window.cpp
   src/main_window.hpp
+  src/call_list_model.cpp
+  src/call_list_model.hpp
   src/track_list_model.cpp
   src/track_list_model.hpp
   src/waterfall_widget.cpp

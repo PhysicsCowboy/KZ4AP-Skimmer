@@ -5,6 +5,7 @@
 #include "cpu_meter.hpp"
 #include "delivery_watch.hpp"
 #include "display_feed.hpp"
+#include "call_list_model.hpp"
 #include "track_list_model.hpp"
 #include "waterfall_widget.hpp"
 
@@ -51,10 +52,11 @@ struct Automation {
     double screenshot_at_s = 0;  // stream time, s
     QString report_path;
     QString decoded_path;  // the tracks' text, as kz4ap-bench --score-decoded reads it
+    QString calls_path;    // the call list, as training/kz4ap_proto/calls_score.py reads it
     bool quit_at_end = false;
     std::optional<double> quit_at_s;  // stream time, s
     bool active() const {
-        return !screenshot_path.isEmpty() || !report_path.isEmpty() || !decoded_path.isEmpty() || quit_at_end || quit_at_s ||
+        return !screenshot_path.isEmpty() || !report_path.isEmpty() || !decoded_path.isEmpty() || !calls_path.isEmpty() || quit_at_end || quit_at_s ||
                !transport.empty();
     }
 };
@@ -72,8 +74,10 @@ class MainWindow : public QMainWindow {
 
 public:
     // decoder_name: front_end_from_name's names; the caller has checked it. speed: stream seconds per second of wall
-    // clock for the next recording, kAsFastAsPossible for no pacing. threads: EngineConfig::worker_threads.
-    MainWindow(std::string decoder_name, double speed, int threads, RadioDefaults radio, Automation automation);
+    // clock for the next recording, kAsFastAsPossible for no pacing. threads: EngineConfig::worker_threads. known_calls: the
+    // operator's known-call list, or null.
+    MainWindow(std::string decoder_name, double speed, int threads, RadioDefaults radio, Automation automation,
+               std::shared_ptr<const callsign::KnownCalls> known_calls = nullptr);
     ~MainWindow() override;
 
     // Opens the recording and starts it, start_s into it. False (having told the operator) if it cannot be opened.
@@ -95,6 +99,7 @@ private:
     void toggle_recording();
     void begin_recording(const QString& path);
     void write_decoded();
+    void write_calls();
     void on_tick();
     void update_markers();
     void update_status(const StreamStatus& status);
@@ -145,6 +150,8 @@ private:
 
     WaterfallWidget* waterfall_ = nullptr;
     TrackListModel* model_ = nullptr;
+    CallListModel* calls_ = nullptr;
+    std::shared_ptr<const callsign::KnownCalls> known_calls_;
     QTableView* table_view_ = nullptr;
     QTimer* timer_ = nullptr;
     QAction* play_pause_ = nullptr;
@@ -166,6 +173,7 @@ private:
     QLabel* stream_label_ = nullptr;
     QLabel* speed_label_ = nullptr;
     QLabel* tracks_label_ = nullptr;
+    QLabel* calls_label_ = nullptr;
     QLabel* cpu_label_ = nullptr;
 };
 

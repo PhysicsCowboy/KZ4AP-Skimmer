@@ -1667,3 +1667,12 @@ Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repos
   domain (7 ms per s of stream at 192 kHz); a table lookup for the display's logarithm.
 - **RSPduo:** single tuner A is set in the source, not run on one. The API's other models' LNA tables are the API's to refuse.
 - **A long recording:** the WAV form stops at 4 GiB (93 min at 192 kHz); rolling to a second file is not built.
+
+## Callsign stage (call-1, 2026-10-31)
+
+Deferred from the first stage (`docs/signal-processing.md`, section 11):
+
+- `cty.dat` for allocation by DXCC entity (the stage knows only the ITU's series), and a watch list distinct from MASTER.SCP.
+- A pattern table in place of the flat bare and framed thresholds, as CW Skimmer's `patt3ch.lst` ranks common and rare prefixes; only after the owner's hour shows it would pay.
+- A posterior on a call in place of points, once a decoder gives probabilities per symbol (segmental's are all 1).
+- The spots of design section 3 (the telnet server) read this stage; re-spotting after 10 min is not done, the list has one row per call.
