@@ -260,6 +260,20 @@ TEST(CallSearch, TwoTracksOnOneTransmissionAreOneReading) {
     EXPECT_EQ(s.row("K1ABC"), nullptr);
 }
 
+TEST(CallSearch, TheBetterCopyOfOneTransmissionSetsThePlace) {
+    Stage s;
+    s.born(1, 1000.0);
+    s.born(2, 1200.0);
+    s.text(1, 1000.0, "E K1ABC T ", 0.0);  // a neighbor's track hears him bare
+    s.text(2, 1200.0, "DE K1ABC ", -0.2);  // his own, at the same moment, has him signing
+    s.search.finish();
+    const auto all = s.search.candidates();
+    ASSERT_EQ(all.size(), 1u);
+    EXPECT_EQ(all[0].count, 1u);
+    EXPECT_DOUBLE_EQ(all[0].freq_hz, 1200.0);
+    EXPECT_TRUE(all[0].framed);
+}
+
 TEST(CallSearch, TheSameStationOnANearbyFrequencyIsOneRow) {
     Stage s;
     s.born(1, 1000.0);
@@ -376,14 +390,17 @@ TEST(CallSearch, ATrackThatEndsIsReadAtOnceAndFinishReadsTheRest) {
     EXPECT_NE(s.row("W2XY"), nullptr);
 }
 
-TEST(CallSearch, AKnownCallNeedsOneReadingAndSpecialFormsNeedTheList) {
+TEST(CallSearch, AKnownCallNeedsOneFramedReadingOrTwoBareAndSpecialFormsNeedTheList) {
     auto known = std::make_shared<KnownCalls>();
     known->add("K1ABC");
     known->add("TM100TF");
     Stage s(CallSearchConfig{}, known);
     s.born(1, 1000.0);
     s.text(1, 1000.0, "E K1ABC T ", 0.0);
-    s.text(1, 1000.0, "DE TM100TF DE TM100TF ", 20.0);
+    s.search.advance(15.0);
+    EXPECT_EQ(s.row("K1ABC"), nullptr);
+    s.text(1, 1000.0, "E K1ABC T ", 15.0);
+    s.text(1, 1000.0, "DE TM100TF ", 20.0);
     s.text(1, 1000.0, "DE OL50HQ DE OL50HQ ", 40.0);
     s.search.advance(70.0);
     ASSERT_NE(s.row("K1ABC"), nullptr);

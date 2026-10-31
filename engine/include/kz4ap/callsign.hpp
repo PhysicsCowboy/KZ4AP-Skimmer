@@ -133,12 +133,13 @@ struct CallSearchConfig {
     double variant_hz = 150.0;
     // s: and within this of it. Heuristic, as window_s.
     double variant_s = 1800.0;
-    // Points needed to report, an unlisted call that is framed (DE, CQ, ...), an unlisted bare one, a listed one. A whole word scores 1,
-    // a stripped or joined reading stripped_points. Heuristics; CW Skimmer's Normal level is 2, 3 or 5 repeats by pattern, 1 for its
-    // watch list.
+    // Points needed to report: an unlisted call that is framed (DE, CQ, 5NN beside it, or sent twice), an unlisted bare one, a listed framed
+    // one, a listed bare one. A whole word scores 1, a stripped or joined reading stripped_points. Heuristics, chosen by measurement; CW
+    // Skimmer's Normal level is 2, 3 or 5 repeats by pattern, 1 for its watch list.
     double points_framed = 2.0;
     double points_bare = 3.0;
     double points_known = 1.0;
+    double points_known_bare = 2.0;
     double stripped_points = 0.5;
     // Two letters' difference holds a call back only against a rival with more than this many times its points. Heuristic, chosen by measurement.
     double far_variant_ratio = 2.0;

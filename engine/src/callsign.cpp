@@ -519,6 +519,15 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
     const double points = r.reading == Reading::Whole || r.reading == Reading::Glued ? 1.0 : config_.stripped_points;
     // A keyword beside it, or the call sent twice: either way the word is used as a call.
     const bool framed = r.role != Role::Unknown || (r.doubled && config_.doubled_is_framed != 0.0);
+    // Its place: where it last signed, else where it was last read bare, else where another named it. A second track's copy of one
+    // transmission can better what the first track's copy said.
+    const int rank = r.role == Role::Sender ? 2 : (r.role == Role::Unknown ? 1 : 0);
+    if (rank >= c.freq_rank) {
+        c.freq_rank = rank;
+        c.freq_hz = freq_hz;
+    }
+    c.heard = c.heard || r.role != Role::Named;
+    c.framed = c.framed || r.role == Role::Sender;
     // One transmission, one occurrence: another track's or another reading's copy of the same moment at this place only betters it.
     for (Occurrence& o : c.recent) {
         if (r.start_s < o.end_s && o.start_s < r.end_s && std::abs(o.freq_hz - freq_hz) <= config_.same_place_hz) {
@@ -541,14 +550,6 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
     ++c.count;
     ++c.forms[r.full];
     c.last_s = std::max(c.last_s, r.end_s);
-    // Its place: where it last signed, else where it was last read bare, else where another named it.
-    const int rank = r.role == Role::Sender ? 2 : (r.role == Role::Unknown ? 1 : 0);
-    if (rank >= c.freq_rank) {
-        c.freq_rank = rank;
-        c.freq_hz = freq_hz;
-    }
-    c.heard = c.heard || r.role != Role::Named;
-    c.framed = c.framed || r.role == Role::Sender;
     evaluate(c, freq_hz, r.end_s);
 }
 
@@ -564,7 +565,7 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
 
 bool CallSearch::passes(const Candidate& c, const Support& s) const {
     const double points = s.points;
-    if (c.known) return points >= config_.points_known;
+    if (c.known) return points >= (s.framed ? config_.points_known : config_.points_known_bare);
     return points >= (s.framed ? config_.points_framed : config_.points_bare);
 }
 
