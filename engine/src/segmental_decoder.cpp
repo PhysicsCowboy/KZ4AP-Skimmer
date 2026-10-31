@@ -193,7 +193,10 @@ DecodeUpdate SegmentalDecoder::flush() {
     DecodeUpdate last = bring_up_to_date(story, static_cast<double>(next_index_) / rate_);
     if (const char* path = std::getenv("KZ4AP_TRACE")) {  // experiment
         if (std::FILE* out = std::fopen(path, "a")) {
-            std::fprintf(out, "%.3f %.3f %.2f %zu\n", search_->best_score(), free_key_.nats, wpm_, published_.size());
+            std::fprintf(out, "%.3f %.3f %.2f %zu", search_->best_score(), free_key_.nats, wpm_, published_.size());
+            for (const DecodedSymbol& symbol : story.tail)
+                std::fprintf(out, " %s,%.3f,%.3f", symbol.text == " " ? "_" : symbol.text.c_str(), symbol.start_s, symbol.end_s);
+            std::fprintf(out, "\n");
             std::fclose(out);
         }
     }
