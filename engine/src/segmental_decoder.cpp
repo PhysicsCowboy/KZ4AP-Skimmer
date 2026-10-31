@@ -36,6 +36,7 @@ viterbi::OutputNoise noise_of(const segmental::SegmentalConfig& config, const Ch
 viterbi::TemplateTables template_of(const segmental::SegmentalConfig& config, const ChannelizerConfig& channel,
                                     const std::vector<double>& front) {
     const double rate = channel_rate(channel);
+    // Zeros before the taps delay the response, what template_delay_s asks.
     std::vector<double> taps = channel_filter_taps(channel);
     taps.insert(taps.begin(), static_cast<std::size_t>(std::lround(config.template_delay_s * channel.sample_rate)), 0.0);
     return viterbi::make_template_tables(taps, channel.sample_rate,
@@ -45,7 +46,7 @@ viterbi::TemplateTables template_of(const segmental::SegmentalConfig& config, co
 
 }  // namespace
 
-SegmentalShared::SegmentalShared(const segmental::SegmentalConfig& c, const ChannelizerConfig& channel)
+SegmentalParts::SegmentalParts(const segmental::SegmentalConfig& c, const ChannelizerConfig& channel)
     : config(c),
       channel_rate_hz(channel_rate(channel)),
       channel_samples_per_sample(spacing_of(c, channel_rate_hz)),
@@ -57,10 +58,39 @@ SegmentalShared::SegmentalShared(const segmental::SegmentalConfig& c, const Chan
     (void)segmental::ChannelFloor(c);  // refuses its settings here, before any channel opens
 }
 
+namespace {
+
+const segmental::SegmentalConfig& checked_scales(const segmental::SegmentalConfig& config) {
+    require(!config.filter_scales.empty() && config.filter_scales.front() == 1,
+            "segmental: filter_scales must start with 1, the widest filter");
+    for (std::size_t i = 1; i < config.filter_scales.size(); ++i)
+        require(config.filter_scales[i] > config.filter_scales[i - 1], "segmental: filter_scales must rise");
+    return config;
+}
+
+}  // namespace
+
+SegmentalShared::SegmentalShared(const segmental::SegmentalConfig& c, const ChannelizerConfig& channel)
+    : SegmentalParts(checked_scales(c), channel) {
+    narrower.reserve(c.filter_scales.size());
+    for (std::size_t i = 1; i < c.filter_scales.size(); ++i)
+        narrower.emplace_back(segmental::at_filter_scale(c, c.filter_scales[i]), channel);
+}
+
+SegmentalDecoder::Stream::Stream(const SegmentalParts& p, int m)
+    : parts(&p),
+      scale(m),
+      floor(std::make_unique<segmental::ChannelFloor>(p.config)),
+      sums(std::make_unique<segmental::RunningSums>()),
+      evidence(std::make_unique<segmental::LevelEvidence>(p.config, p.level_tables, *sums)),
+      search(std::make_unique<segmental::Search>(p.config, p.model_tables, *sums, &p.level_tables)),
+      sampler(p.front_taps, p.channel_samples_per_sample) {
+    free_key.change = kFreeKeySwitchPerS * p.config.model.sample_interval_s;
+    free_key.stay = 1.0 - free_key.change;
+}
+
 SegmentalDecoder::SegmentalDecoder(double rate_hz, std::shared_ptr<const SegmentalShared> shared)
-    : rate_(rate_hz),
-      shared_(std::move(shared)),
-      sampler_(shared_ ? shared_->front_taps : std::vector<double>{1.0}, shared_ ? shared_->channel_samples_per_sample : 1) {
+    : rate_(rate_hz), shared_(std::move(shared)) {
     require(shared_ != nullptr, "SegmentalDecoder: no shared parts");
     require(std::fabs(shared_->channel_rate_hz - rate_hz) <= 1e-9 * rate_hz,
             "SegmentalDecoder: the shared parts were built for another channel rate");
@@ -68,17 +98,41 @@ SegmentalDecoder::SegmentalDecoder(double rate_hz, std::shared_ptr<const Segment
 }
 
 void SegmentalDecoder::start() {
-    floor_ = std::make_unique<segmental::ChannelFloor>(shared_->config);
-    sums_ = std::make_unique<segmental::RunningSums>();
-    evidence_ = std::make_unique<segmental::LevelEvidence>(shared_->config, shared_->level_tables, *sums_);
-    search_ = std::make_unique<segmental::Search>(shared_->config, shared_->model_tables, *sums_, &shared_->level_tables);
-    pushed_ = 0;
-    expected_k_ = -1;
-    free_next_ = 0;
-    const double interval_s = shared_->config.model.sample_interval_s;
-    free_key_ = FreeKey{};
-    free_key_.change = kFreeKeySwitchPerS * interval_s;
-    free_key_.stay = 1.0 - free_key_.change;
+    streams_.clear();
+    streams_.reserve(1 + shared_->narrower.size());
+    streams_.emplace_back(*shared_, 1);
+    for (std::size_t i = 0; i < shared_->narrower.size(); ++i)
+        streams_.emplace_back(shared_->narrower[i], shared_->config.filter_scales[i + 1]);
+    leader_ = 0;
+}
+
+int SegmentalDecoder::leading_scale() const { return streams_[leader_].scale; }
+
+std::size_t SegmentalDecoder::streams_running() const { return streams_.size(); }
+
+bool SegmentalDecoder::choose_leader(double now_s) {
+    const segmental::SegmentalConfig& config = shared_->config;
+    const std::size_t before = leader_;
+    double top = streams_[leader_].morse_over_free();
+    for (std::size_t i = 0; i < streams_.size(); ++i) {
+        const double value = streams_[i].morse_over_free();
+        if (value > top + config.filter_scale_switch_nats) {
+            top = value;
+            leader_ = i;
+        }
+    }
+    const bool changed = leader_ != before;
+    if (streams_.size() > 1 && config.filter_scale_drop_after_s >= 0.0 && now_s >= config.filter_scale_drop_after_s) {
+        // The widest filter stays, whatever it reads: it is what a new, fast sender on this channel can be read with.
+        const Stream* leading = &streams_[leader_];
+        const int scale = leading->scale;
+        std::erase_if(streams_, [&](const Stream& s) {
+            return s.scale != 1 && s.scale != scale && s.morse_over_free() < top - config.filter_scale_drop_margin_nats;
+        });
+        for (std::size_t i = 0; i < streams_.size(); ++i)
+            if (streams_[i].scale == scale) leader_ = i;
+    }
+    return changed;
 }
 
 void SegmentalDecoder::FreeKey::step(double l1, double top) {
@@ -90,19 +144,21 @@ void SegmentalDecoder::FreeKey::step(double l1, double top) {
     nats += top + std::log(total);
 }
 
-void SegmentalDecoder::advance_free_key() {
-    const std::int64_t last = sums_->committed();
-    for (; free_next_ < last; ++free_next_) {
-        const double l1 = sums_->sum(free_next_ + 1) - sums_->sum(free_next_);
+void SegmentalDecoder::Stream::advance_free_key() {
+    const std::int64_t last = sums->committed();
+    for (; free_next < last; ++free_next) {
+        const double l1 = sums->sum(free_next + 1) - sums->sum(free_next);
         const double top = std::max(0.0, l1);
-        free_key_.step(l1, top);
+        free_key.step(l1, top);
     }
 }
 
 std::optional<KeyingEvidence> SegmentalDecoder::keying_evidence() const {
+    // The widest filter's, whichever stream leads: a track's judge reads one number across the track's life.
+    const Stream& widest = streams_.front();
     KeyingEvidence evidence;
-    evidence.morse_nats = search_->best_score();
-    evidence.free_key_nats = free_key_.nats;
+    evidence.morse_nats = widest.search->best_score();
+    evidence.free_key_nats = widest.free_key.nats;
     return evidence;
 }
 
@@ -121,33 +177,40 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
         require(std::fabs(t0_s - expected_s) <= 0.5 / rate_,
                 "SegmentalDecoder::process: a block must start where the previous one ended (to within half a sample)");
     }
-    envelope_.clear();
-    sampler_.push(samples, next_index_, envelope_);
-    next_index_ += samples.size();
-    const double spacing = static_cast<double>(shared_->channel_samples_per_sample);
-    const double sigma2 = n0_ * shared_->output_noise.sigma2_per_n0_hz;
-    for (const viterbi::EnvelopeSample& sample : envelope_) {
-        if (!(n0_ > 0.0)) continue;
-        // Samples not searched (N0 = 0) leave the stream spliced; the time of the samples after them is noted.
-        if (sample.k != expected_k_) search_->note_sample_time(pushed_, spacing * static_cast<double>(sample.k) / rate_);
-        expected_k_ = sample.k + 1;
-        evidence_->push(sample.e_fs, floor_->sigma2(sample.e_fs, sigma2));
-        search_->advance();  // at once: the short elements' context reaches back only so far
-        advance_free_key();
-        ++pushed_;
+    for (Stream& stream : streams_) {
+        stream.envelope.clear();
+        stream.sampler.push(samples, next_index_, stream.envelope);
+        const double spacing = static_cast<double>(stream.parts->channel_samples_per_sample);
+        const double sigma2 = n0_ * stream.parts->output_noise.sigma2_per_n0_hz;
+        for (const viterbi::EnvelopeSample& sample : stream.envelope) {
+            if (!(n0_ > 0.0)) continue;
+            // Samples not searched (N0 = 0) leave the stream spliced; the time of the samples after them is noted.
+            if (sample.k != stream.expected_k)
+                stream.search->note_sample_time(stream.pushed, spacing * static_cast<double>(sample.k) / rate_);
+            stream.expected_k = sample.k + 1;
+            stream.evidence->push(sample.e_fs, stream.floor->sigma2(sample.e_fs, sigma2));
+            stream.search->advance();  // at once: the short elements' context reaches back only so far
+            stream.advance_free_key();
+            ++stream.pushed;
+        }
     }
+    next_index_ += samples.size();
     const double now_s = static_cast<double>(next_index_) / rate_;
     if (now_s < next_publish_s_) return {};
     next_publish_s_ = now_s + kPublishEveryS;
-    segmental::BestStory story = search_->best_story(kPublishTailSymbols);
+    const bool changed = choose_leader(now_s);
+    const segmental::Search& search = *streams_[leader_].search;
+    segmental::BestStory story = search.best_story(kPublishTailSymbols);
     // A letter still open goes out when it closes: until then it may yet grow (E, I, S, H), and a display would show each.
     if (story.open_letter && !story.tail.empty()) {
         story.tail.pop_back();
         --story.length;
     }
-    // A tail that begins past what has been published: more text than the tail in one period; read it all.
-    if (story.length - story.tail.size() > published_.size()) {
-        story.tail = search_->best_text();
+    // A tail that begins past what has been published (more text than the tail in one period), or another stream's: read it all.
+    if (changed || story.length - story.tail.size() > published_.size()) {
+        const bool open_letter = story.open_letter;
+        story.tail = search.best_text();
+        if (open_letter && !story.tail.empty()) story.tail.pop_back();
         story.length = story.tail.size();
     }
     return bring_up_to_date(story, now_s);
@@ -157,7 +220,7 @@ DecodeUpdate SegmentalDecoder::bring_up_to_date(const segmental::BestStory& stor
     DecodeUpdate update;
     if (story.speed) {
         // PARIS: 1.2 s / the dot, the dot from the speed grid (config.hpp).
-        const viterbi::ViterbiConfig& model = shared_->config.model;
+        const viterbi::ViterbiConfig& model = streams_[leader_].parts->config.model;
         wpm_ = static_cast<float>(1200.0 / (model.dot_min_ms * std::pow(model.speed_ratio, *story.speed)));
     }
     update.wpm = wpm_;
@@ -184,16 +247,21 @@ DecodeUpdate SegmentalDecoder::bring_up_to_date(const segmental::BestStory& stor
 DecodeUpdate SegmentalDecoder::flush() {
     if (flushed_) return {};
     flushed_ = true;
-    evidence_->finish();
-    search_->advance();
+    for (Stream& stream : streams_) {
+        stream.evidence->finish();
+        stream.search->advance();
+        stream.advance_free_key();
+    }
+    (void)choose_leader(-1.0);
+    const segmental::Search& search = *streams_[leader_].search;
     // The whole text, not the tail: the channel's last word on everything it has published.
-    segmental::BestStory story = search_->best_story(0);
-    story.tail = search_->best_text();
+    segmental::BestStory story = search.best_story(0);
+    story.tail = search.best_text();
     story.length = story.tail.size();
     DecodeUpdate last = bring_up_to_date(story, static_cast<double>(next_index_) / rate_);
     if (const char* path = std::getenv("KZ4AP_TRACE")) {  // experiment
         if (std::FILE* out = std::fopen(path, "a")) {
-            std::fprintf(out, "%.3f %.3f %.2f %zu", search_->best_score(), free_key_.nats, wpm_, published_.size());
+            std::fprintf(out, "%.3f %.3f %.2f %zu %d", search.best_score(), streams_[leader_].free_key.nats, wpm_, published_.size(), leading_scale());
             for (const DecodedSymbol& symbol : story.tail)
                 std::fprintf(out, " %s,%.3f,%.3f", symbol.text == " " ? "_" : symbol.text.c_str(), symbol.start_s, symbol.end_s);
             std::fprintf(out, "\n");
@@ -204,7 +272,6 @@ DecodeUpdate SegmentalDecoder::flush() {
 }
 
 void SegmentalDecoder::reset() {
-    sampler_.reset();
     start();
     started_ = false;
     flushed_ = false;

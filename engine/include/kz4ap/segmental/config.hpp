@@ -6,6 +6,11 @@
 
 #include "kz4ap/viterbi/config.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
+#include <vector>
+
 namespace kz4ap::segmental {
 
 // The viterbi decoder's model with what the fast form sets differently: the systematic floor f, 1 (a relative amplitude),
@@ -81,7 +86,21 @@ struct SegmentalConfig {
     // charge is what it buys, ln(0.05 / 6) = -4.8 nats once per over for a stretched story and ln 0.95 = -0.05 nats for any other.
     double gap_stretch_prior = 0.05;
 
-    // s: experiment
+    // --- The front filter's widths (segmental_decoder.hpp) ---
+
+    // 1: the filter scales, each a whole channel of evidence and search with its own front filter: scale m has a filter matched to
+    // a dot of m x 12 ms (noise bandwidth about 74.5 Hz / m) and reads its stories' speeds from a dot of m x 12 ms down. It must
+    // start with 1, the widest. Each m is a whole number. Heuristic: chosen by measurement (docs/decision-log.md, 2026-10-31).
+    std::vector<int> filter_scales = {1, 2, 3, 6};
+    // s of stream, nats: from this time on, a scale other than the widest and the leader that trails the leader by more than
+    // this is dropped for the channel's life. Heuristics; what they buy is CPU. A negative time never drops.
+    double filter_scale_drop_after_s = 10.0;
+    double filter_scale_drop_margin_nats = 100.0;
+    // nats: a scale takes the lead when it stands this far above the leader. Heuristic: the text should not jump on a tie.
+    double filter_scale_switch_nats = 3.0;
+    // s: how much later the template's rise is taken than the chain's own: a narrower filter's response starts sooner after its
+    // edge in samples, and the evidence's window (kEdgeFirst ... kEdgeDone) stays where it is. A story then claims its edges this
+    // much early, which nothing reads but the symbols' times. Set by at_filter_scale.
     double template_delay_s = 0.0;
 
     // --- The search (search.hpp) ---
@@ -93,5 +112,35 @@ struct SegmentalConfig {
     // 1: an element may end only within this many standard deviations of ln(length) of its median. Heuristic.
     double duration_z_max = 4.0;
 };
+
+// The configuration at filter scale m: the sample interval, the filter's dot and the fastest speed's dot m times as long, so
+// that in samples the front filter and the fastest dot stay what they are (the evidence's window of 6 samples and its short
+// elements stay valid) and the speed grid keeps its slowest dot. The level's frame and look-ahead keep about their lengths in s,
+// in whole samples; the channel floor's stride and refresh are m times as long, where its noise's correlation falls.
+// Throws std::invalid_argument for an m below 1.
+inline SegmentalConfig at_filter_scale(SegmentalConfig c, int m) {
+    if (m < 1) throw std::invalid_argument("segmental: a filter scale must be at least 1");
+    if (m == 1) return c;
+    const double scale = m;
+    const double interval_s = c.model.sample_interval_s;
+    const int frame_samples = static_cast<int>(std::ceil(c.level_frame_s / (interval_s * scale) - 1e-9));
+    const double frame_s = frame_samples * interval_s * scale;
+    const auto frames_of = [&](double duration_s) { return std::max(1.0, std::round(duration_s / frame_s)) * frame_s; };
+    c.level_lookahead_s = frames_of(c.level_lookahead_s);
+    c.level_commit_s = frames_of(c.level_commit_s);
+    c.level_frame_s = frame_s;
+    c.channel_floor_stride_s *= scale;
+    c.channel_floor_refresh_s *= scale;
+    // The half of a step's response lies at the channel filter's 10.67 ms and the edge's 2.12 ms plus half the front pulse
+    // (T + E) / 2, E = 4.235 ms (derived; viterbi/mark_template.hpp): 7.84 samples at m = 1. The delay keeps it there, to a sample.
+    const double half_s = 0.01279 + (c.model.front_dot_s * scale + 0.004235) / 2.0;
+    const double base_half_s = 0.01279 + (c.model.front_dot_s + 0.004235) / 2.0;
+    c.template_delay_s = std::max(0.0, std::round(base_half_s / interval_s - half_s / (interval_s * scale))) * interval_s * scale;
+    c.model.speed_count = std::max(1, c.model.speed_count - static_cast<int>(std::lround(std::log(scale) / std::log(c.model.speed_ratio))));
+    c.model.sample_interval_s = interval_s * scale;
+    c.model.front_dot_s *= scale;
+    c.model.dot_min_ms *= scale;
+    return c;
+}
 
 }  // namespace kz4ap::segmental
