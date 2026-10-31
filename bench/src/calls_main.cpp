@@ -1,5 +1,5 @@
 // kz4ap-calls: the callsign stage over a recording, without the app: the list it reports, as CSV, and the stage's own CPU.
-//   kz4ap-calls FILE.wav --out CALLS.csv [--decoder segmental] [--threads N] [--known MASTER.SCP] [--log EVENTS.jsonl] [--candidates ALL.csv] [--set NAME=VALUE]...
+//   kz4ap-calls FILE.wav --out CALLS.csv [--decoder segmental] [--threads N] [--known MASTER.SCP] [--log EVENTS.jsonl] [--candidates ALL.csv] [--readings ALL.csv] [--set NAME=VALUE]...
 //   kz4ap-calls --replay EVENTS.jsonl --out CALLS.csv [--known MASTER.SCP] [--set NAME=VALUE]...
 // --log keeps the decoder's events, so that --replay can try the stage's settings in seconds, on the same text.
 #include "kz4ap/callsign.hpp"
@@ -30,7 +30,7 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 struct Options {
-    std::string wav, replay, out, known, log, candidates, decoder = "segmental";
+    std::string wav, replay, out, known, log, candidates, readings, decoder = "segmental";
     int threads = 4;
     CallSearchConfig config;
 };
@@ -67,6 +67,7 @@ Options parse(int argc, char** argv) {
         else if (a == "--known") o.known = next();
         else if (a == "--log") o.log = next();
         else if (a == "--candidates") o.candidates = next();
+        else if (a == "--readings") o.readings = next();
         else if (a == "--decoder") o.decoder = next();
         else if (a == "--threads") o.threads = std::stoi(next());
         else if (a == "--set") set_value(o.config, next());
@@ -98,6 +99,17 @@ int main(int argc, char** argv) {
         std::shared_ptr<const KnownCalls> known;
         if (!o.known.empty()) known = std::make_shared<const KnownCalls>(KnownCalls::read_file(o.known));
         CallSearch stage(o.config, known);
+        std::ofstream readings;
+        if (!o.readings.empty()) {
+            readings.open(o.readings);
+            readings << "call,how,role,doubled,start_s,end_s,freq_hz\n";
+            stage.set_reading_log([&](const CallReading& r, double freq_hz) {
+                static constexpr const char* kHow[] = {"whole", "glued", "stripped", "joined"};
+                static constexpr const char* kRole[] = {"unknown", "sender", "named"};
+                readings << r.full << ',' << kHow[static_cast<int>(r.reading)] << ',' << kRole[static_cast<int>(r.role)] << ',' << (r.doubled ? 1 : 0) << ','
+                         << r.start_s << ',' << r.end_s << ',' << freq_hz << '\n';
+            });
+        }
         double stage_s = 0.0, channel_seconds = 0.0, stream_s = 0.0;
         const auto timed = [&](auto&& work) {
             const auto t0 = Clock::now();

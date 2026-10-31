@@ -156,7 +156,7 @@ TEST(Readings, GluedWords) {
     EXPECT_TRUE(has(qso, "N5JJ", Role::Named));
     EXPECT_TRUE(has(qso, "WA0QZK", Role::Sender));
     EXPECT_TRUE(has_base(readings("WA0QZKWA0QZK"), "WA0QZK"));
-    EXPECT_TRUE(has_base(readings("N5JJDEWA0QZKWA0QZKK"), "WA0QZK"));
+    EXPECT_TRUE(has(readings("N5JJDEWA0QZKWA0QZKK ER I E"), "WA0QZK", Role::Sender));
     EXPECT_TRUE(has_base(readings("K1ABC5NN"), "K1ABC"));
     const auto cq = readings("N3XUCQ TEST");
     EXPECT_TRUE(has_base(cq, "N3XU"));

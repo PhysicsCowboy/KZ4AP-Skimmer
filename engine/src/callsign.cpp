@@ -507,6 +507,7 @@ void CallSearch::read_track(TrackText& t, bool all) {
 }
 
 void CallSearch::add(const CallReading& r, double freq_hz) {
+    if (reading_log_) reading_log_(r, freq_hz);
     if (r.special && !(known_ && known_->contains(r.base))) return;
     auto [it, fresh] = candidates_.try_emplace(r.base);
     Candidate& c = it->second;
@@ -519,9 +520,9 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
     const double points = r.reading == Reading::Whole || r.reading == Reading::Glued ? 1.0 : config_.stripped_points;
     // A keyword beside it, or the call sent twice: either way the word is used as a call.
     const bool framed = r.role != Role::Unknown || (r.doubled && config_.doubled_is_framed != 0.0);
-    // Its place: where it last signed, else where it was last read bare, else where another named it. A second track's copy of one
-    // transmission can better what the first track's copy said.
-    const int rank = r.role == Role::Sender ? 2 : (r.role == Role::Unknown ? 1 : 0);
+    // Its place: where it last signed, else where it was last read bare, else where another named it, and among those a whole word before
+    // a stripped or joined one. A second track's copy of one transmission can better what the first track's copy said.
+    const int rank = 2 * (r.role == Role::Sender ? 2 : (r.role == Role::Unknown ? 1 : 0)) + (points >= 1.0 ? 1 : 0);
     if (rank >= c.freq_rank) {
         c.freq_rank = rank;
         c.freq_hz = freq_hz;

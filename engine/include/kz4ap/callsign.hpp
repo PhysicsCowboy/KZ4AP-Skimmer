@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <istream>
 #include <map>
 #include <memory>
@@ -21,6 +22,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace kz4ap::callsign {
@@ -181,6 +183,8 @@ public:
     std::uint64_t version() const { return version_; }
     // Reported, then taken back for a better-supported variant.
     std::uint64_t withdrawn() const { return withdrawn_; }
+    // Called for every reading, with its track's frequency, Hz (for looking into a run: kz4ap-calls --readings).
+    void set_reading_log(std::function<void(const CallReading&, double)> log) { reading_log_ = std::move(log); }
     // Every candidate still held, reported or not, as rows (for looking into a run: kz4ap-calls --candidates).
     std::vector<CallRow> candidates() const;
 
@@ -205,7 +209,7 @@ private:
         double last_s = 0;
         double reported_s = 0;
         double freq_hz = 0;
-        int freq_rank = -1;  // how good the place's reading is: named 0, unknown 1, sender 2
+        int freq_rank = -1;  // how good the place's reading is (CallSearch::add)
         double best_points = 0;
         bool heard = false;
         bool framed = false;
@@ -234,6 +238,7 @@ private:
 
     CallSearchConfig config_;
     std::shared_ptr<const KnownCalls> known_;
+    std::function<void(const CallReading&, double)> reading_log_;
     std::unordered_map<std::uint32_t, TrackText> tracks_;
     std::unordered_map<std::string, Candidate> candidates_;
     std::vector<CallRow> rows_;
