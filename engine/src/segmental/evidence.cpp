@@ -165,7 +165,7 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2) {
     for (int level = 0; level < levels_; ++level) {
         const double value = term_value(tables_.plain(level), z, z2, w);
         x[level] = static_cast<float>(value);
-        top = std::max(top, value);
+        top = std::max(top, static_cast<double>(x[level]));  // the float the exponents below read, so none is above 0
     }
     // One step of the key, then the sample: key-up scores 0, key-down x; relative to the largest, to stay in range.
     const double stay = 1.0 - key_switch_;
@@ -181,6 +181,12 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2) {
         up[level] = new_up;
         down[level] = new_down;
         total += new_up + new_down;
+    }
+    // What cannot be scaled (an exponent past a double's range, at about +100 dB S500 and above) starts the message over:
+    // a NaN here would stay in the message for good, and the channel would be deaf.
+    if (!(total > 0.0) || !std::isfinite(total)) {
+        std::fill(alpha_.begin(), alpha_.end(), 1.0);
+        total = 2.0 * levels_;
     }
     const double scale = 1.0 / total;
     for (double& value : alpha_) value *= scale;

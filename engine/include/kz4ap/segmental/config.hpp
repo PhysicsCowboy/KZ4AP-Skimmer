@@ -26,7 +26,7 @@ struct SegmentalConfig {
     // s: the level's frame, over which it is held constant: 8 samples, 21.33 ms, as the viterbi newborn's prediction step
     double level_frame_s = 8.0 * 4.0 / 1500.0;
     // s: the look-ahead the level reads past the sample it is used for, at least, and the block the look-ahead is committed
-    // in: 8 frames each, 170.7 ms; the text lags by their sum plus the search's 17 samples at most, 0.387 s. Measured: at the
+    // in: 8 frames each, 170.7 ms; the evidence lags by their sum plus the search's 17 samples at most, 0.387 s. Measured: at the
     // walk below, CER does not change from 0.085 to 1.5 s of look-ahead, since the walk forgets within about 0.1 s.
     double level_lookahead_s = 8.0 * 8.0 * 4.0 / 1500.0;
     double level_commit_s = 8.0 * 8.0 * 4.0 / 1500.0;

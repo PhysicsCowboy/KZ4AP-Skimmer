@@ -297,6 +297,37 @@ TEST(LevelEvidence, FindsTheEdgeInItsRiseAndFall) {
     EXPECT_NEAR(best_i, 5832 - 8, 3);
 }
 
+TEST(LevelEvidence, OneExtremeSampleLeavesTheChannelAlive) {
+    // One sample of a carrier at +102 to +120 dB S500 in the noise: x_k(l) reaches 1e10 nats and more, where a float's half
+    // step passes the 709.8 nats a double's exp can take (review F6). The forward message must not turn to NaN: a keyed
+    // +10 dB S500 signal after it still scores key-down above key-up.
+    const SegmentalConfig config = small_config();
+    const SegmentalShared shared = make_shared_parts(config);
+    const double sigma2_per_n0_hz = shared.output_noise.sigma2_per_n0_hz;
+    for (const double burst_db : {102.0, 108.0, 120.0}) {
+        const Simulated sim = simulate(10.0, sigma2_per_n0_hz, 5);
+        RunningSums sums;
+        LevelEvidence evidence(config, shared.level_tables, sums);
+        const double burst = std::sqrt(std::pow(10.0, burst_db / 10.0) * 500.0 / sigma2_per_n0_hz);
+        for (std::size_t k = 0; k < sim.e.size(); ++k) evidence.push(k == 500 ? burst : sim.e[k], 1.0);
+        evidence.finish();
+        double down_sum = 0.0, up_sum = 0.0;
+        int down_count = 0, up_count = 0;
+        for (int m = 1100; m < 5500; ++m) {
+            const double l1 = sums.sum(m + 1) - sums.sum(m);
+            if (sim.key[static_cast<std::size_t>(m)] == 1) {
+                down_sum += l1;
+                ++down_count;
+            } else {
+                up_sum += l1;
+                ++up_count;
+            }
+        }
+        EXPECT_GT(down_sum / down_count, 2.0) << burst_db << " dB S500";
+        EXPECT_LT(up_sum / up_count, -1.0) << burst_db << " dB S500";
+    }
+}
+
 TEST(SegmentalShared, RefusesAnotherChannelRate) {
     const SegmentalConfig config = small_config();
     auto shared = std::make_shared<const SegmentalShared>(config, ChannelizerConfig{48000, 2048, 64, 150.0});

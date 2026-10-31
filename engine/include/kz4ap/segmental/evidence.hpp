@@ -27,8 +27,9 @@
 //    alone, tempered by w = w_strong as in the viterbi decoder (viterbi/observation.hpp). V carries the systematic floor f
 //    and the grid's own relative variance, step^2 / 12 in nepers^2 (derived; config.hpp, level_grid_in_v).
 //
-// The evidence reaches the search only after the look-ahead (level_lookahead_s + level_commit_s at most): the text lags by
-// 0.34 s and the search's 17 samples, 0.387 s at most. A new over needs no newborn: the backward message gives its first
+// The evidence reaches the search only after the look-ahead (level_lookahead_s + level_commit_s at most): the evidence lags
+// by 0.34 s and the search's 17 samples, 0.387 s at most. The text's own lag is longer: a publisher must stay 0.75 s behind
+// the present to read the final text's CER (measured; docs/decision-log.md, 2026-10-31). A new over needs no newborn: the backward message gives its first
 // mark the level of the marks after it. The approximation in all of this: the belief is one per channel, conditioned on
 // no story's text, and it multiplies each sample's marginal rather than integrating one amplitude over a mark; what that
 // costs is measured against the viterbi decoder (docs/decision-log.md, 2026-10-30).
@@ -152,8 +153,8 @@ public:
 
     // One envelope sample: e_fs, FS; sigma2_fs2, the noise at the front filter's output, FS^2.
     void push(double e_fs, double sigma2_fs2);
-    // The stream's end: commits every sample left with the look-ahead there is, then 11 samples of no evidence, so that
-    // the search can reach the last sample.
+    // The stream's end: commits every sample left with the look-ahead there is, then 17 samples (kHorizon + 1) of no evidence,
+    // so that the search can reach the last sample.
     void finish();
 
 private:
