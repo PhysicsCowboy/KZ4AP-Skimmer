@@ -123,7 +123,7 @@ struct EngineConfig {
     // FrontEnd::Segmental on the detector's path: a new channel's decoder first reads the last replay_s of the band, s, so that it
     // has the signal's start, which the detector was still making up its mind about. 0 for no replay. Heuristic: a keyed
     // signal crosses the threshold within about 1 s and is then 0.5 s a candidate; 2 s measured enough, and costs 2 channel-seconds
-    // of decoding a track and replay_s x 8 bytes x sample_rate of memory (6 MB at 192 kHz).
+    // of decoding a track and about replay_s x 16 bytes x sample_rate of memory (6 MB at 192 kHz: whole spectra, 2 samples of FFT per sample of hop).
     double replay_s = 2.0;
     // The most replays that may start per second of stream, tracks/s: what bounds the burst of CPU when many tracks open in one
     // block. A track past that waits its turn without decoding and then reads the last replay_s all the same, so what it

@@ -36,7 +36,7 @@ EngineConfig resolved(EngineConfig c) {
     if (!(c.channel_distance_hz > 0)) throw std::invalid_argument("channel distance must be positive");
     c.detector.attribution_distance_hz = c.channel_distance_hz;
     // The segmental decoder runs on the air, where wide signals are: 1 kHz either side (heuristic: wide against a CW station's
-    // few bins, so that ten stations in it leave the median at the noise; on real 40 m I/Q it took out most of the false
+    // few bins, so that ten stations in it leave the lower quartile at the noise; on real 40 m I/Q it took out most of the false
     // tracks). The other decoders keep the detector their test-set results were measured with.
     if (c.decoder.front_end == FrontEnd::Segmental && c.detector.local_floor_radius_hz == 0.0) c.detector.local_floor_radius_hz = 1000.0;
     if (c.decoder.front_end == FrontEnd::Segmental) {

@@ -868,6 +868,20 @@ TEST(EngineReplay, ThreadsAndChunksChangeNothing) {
     EXPECT_EQ(all_text(run_segmental(x, 2.0, 100.0, 4)), all_text(run_segmental(x, 2.0, 100.0, 1)));
 }
 
+TEST(EngineReplay, AnEngineWithATrackBudgetOpensChannelsWithoutOne) {
+    const std::vector<Sample> x = stations_from(1, 14.0, 5.0);
+    EventBus bus;
+    EngineConfig config;
+    config.sample_rate = static_cast<int>(kRate);
+    config.decoder.front_end = FrontEnd::Segmental;
+    Engine engine(config, bus);
+    engine.set_track_budget(50);
+    engine.process(x);
+    engine.finish();
+    EXPECT_GT(engine.stats().channel_seconds, 1.0);
+    EXPECT_EQ(engine.stats().replayed_channel_seconds, 0.0);
+}
+
 TEST(EngineReplay, RefusesValuesThatAreNotAMeasure) {
     EventBus bus;
     EngineConfig config;

@@ -1641,13 +1641,16 @@ for the line format and client handling.
 Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repository):
 
 - **False tracks on wide signals (app-3: judged and retired, `track_evidence.hpp`).** What is left: tracks still open on
-  wide signals and live 4 to 14 s each, about 25 of the 42 live on the 62 s recording, at 15 ms per channel-second; about a
-  third of the rows listed are junk, data at +91 kHz most of all, whose text cannot be told from a contest exchange by its
+  wide signals and live 4 to 14 s each, about 25 of the 42 live on the 62 s recording, at 15 ms per channel-second; 35% to
+  63% of the rows listed are junk (35% on that recording, 63% on a later 30 min one), data at +91 kHz most of all, whose text cannot be told from a contest exchange by its
   letters alone. A test before a channel opens, or a bandwidth test that does not fail on speech's harmonics, would save
   that CPU. The goal of about 8 ms per channel-second is not met on real signals: weak and wide channels cost 10 to 25 ms,
   because more stories stay within the beam.
-- **The first word.** Text starts about 1 s after a station does, since a channel opens after the detector's 0.5 s of
-  persistence; first-word CER is 0.65 to 0.75 on every recording. The amendment's replay of the last few seconds is not built.
+- **Short overs and carriers under a hold (`app-4`'s review, F6).** Text during a hold is lost, not late. A station in short
+  overs with little proven, a carrier before a CQ, a runner with callers within 47 Hz: each can lose an over. No-hold-on-quiet
+  gained 1 caller of 170 and cost 28% more channel-seconds; the rule stands. The replay made most of it smaller.
+- **Junk rows.** Data and speech rows on the list wait for the callsign stage, which is where a view by plausibility belongs.
+- **Fine-tuning off the center.** Tuning the radio a little off and shifting digitally would remove the dead zone at 0 Hz.
 - **Two tracks on one station,** 40 to 135 Hz apart, on a strong keyed carrier (W1AW at 7047.5 kHz): seen only live while the
   pipeline lost samples; none on playback. No envelope test between neighbors is built, should it come back.
 - **A real station's first seconds under a hold.** A place retired stays closed 8 s and more (at most 120 s; a region 30 s and

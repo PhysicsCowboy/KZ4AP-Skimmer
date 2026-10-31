@@ -3,8 +3,8 @@
 How KZ4AP Skimmer turns a radio's I/Q samples into Morse text. This body is
 written to be read. It covers the stages before the decoders (sections 1–7)
 and, in full, the chains under development or discussion: the segmental
-decoder (section 8e), and the viterbi decoder with the model the two share
-(section 8d). Every other chain gets a short summary that points to its
+decoder (section 8e) with its live operation (section 10), and the viterbi
+decoder with the model the two share (section 8d). Every other chain gets a short summary that points to its
 appendix section. Every value carries its unit and its class: **derived**
 (it follows from the mathematics), **measured** (set by an experiment),
 **heuristic** (a judgment call; "chosen by measurement" where a test set
@@ -59,7 +59,7 @@ I/Q (fs) ─┬─► spectrum analyzer ─┬─► signal detector ─► trac
                                                          │
                                                          ▼
                                                 decoder per channel ─► text
-                                 (Matched default; Envelope; bank; viterbi; segmental)
+                                 (segmental in the app; Matched; Envelope; bank; viterbi)
 ```
 
 The input is the whole band the radio delivers, 192 kHz wide. Two things
@@ -68,10 +68,9 @@ the band every 21.33 ms and decide where stations are: each station becomes
 a *track* with a frequency. For every track the **channelizer** cuts a
 narrow stream out of the band, about ±150 Hz around the station, at 1500
 samples/s. A **decoder** per channel turns that stream into characters.
-There are five decoders: **Matched** (the default), **Envelope** (the
-original baseline), the **bank** (selectable, frozen as the reference for
-new decoders; design spec §5.2), **viterbi** and **segmental** (both
-selectable). Before each block the engine tells Matched and the bank where
+There are five decoders: **segmental** (the app's default), **Matched** (the
+bench's), **Envelope** (the original baseline), the **bank** (frozen as the
+reference for new decoders; design spec §5.2) and **viterbi**. Before each block the engine tells Matched and the bank where
 the detector now thinks the station is (the *anchor*); the channels of
 viterbi and segmental instead follow that frequency (section 7), and those
 decoders get the noise density around the station (N₀) from a hiss estimator
@@ -186,9 +185,9 @@ station, or moves to an answering station within 47 Hz. 47 Hz is about the
 half-width of the Hann window's main lobe, 2/(42.7 ms) = 46.9 Hz
 (heuristic; owner). A track stays active while its level is at least
 **3 dB** above the floor (dB SNR per bin; 3 dB of hysteresis below the
-birth threshold), and dies after **10 s** inactive. At most **200** tracks
-exist; a stronger newcomer replaces the weakest (heuristic, to bound the
-CPU).
+birth threshold), and dies after **10 s** inactive. At most **400** tracks
+exist; a stronger newcomer replaces the weakest (heuristic). Segmental adds
+rules (section 10).
 
 With the Envelope decoder the detector uses older rules (frequency fixed at
 birth). **Oracle mode**, for the benchmark only, skips the detector and
@@ -251,7 +250,7 @@ Appendix: A.7.
 
 Five decoders exist; the bench's `--decoder envelope|matched|bank|viterbi|segmental`
 picks one (`--front-end` is the old name of that option, still accepted).
-**Matched is the default** (owner); the others are selectable. Envelope and
+**Matched is the bench's default** (owner) and segmental the app's. Envelope and
 Matched share a common back end that turns marks into characters; the bank has
 its own, and viterbi and segmental share a model (sections 8d and 8e).
 
@@ -275,9 +274,9 @@ lengthening would put the ratio below 3.0, outside the band). The rest is heuris
 conventional midpoints between the nominal 1, 3 and 7 dits). Exact form:
 appendix A.8.
 
-## 8b. Matched decoder (the default)
+## 8b. Matched decoder (the bench's default)
 
-The default decoder (owner). Its key idea: replace Envelope's thresholds
+The bench's default (owner). Its key idea: replace Envelope's thresholds
 with a matched filter and a likelihood ratio. A mark is a rectangular burst
 of carrier, and the filter that maximizes its SNR is a moving average (a
 *boxcar*) as long as the burst (derived). After frequency re-centering
@@ -496,9 +495,11 @@ the best story starting a letter at that boundary, paying ln ε for ln(1 − ε)
 kept. If nothing stands (a carrier outlasting every element), the no-signal story
 restarts at the best score with the best story's text.
 
-**Stage 7: text.** At the channel's end 17 samples of no evidence let the search
-reach the last sample, and the best story's text is published, with probability
-1 per character (a placeholder). Nothing is published before.
+**Stage 7: text.** Every 0.25 s of stream the best story's last 64 symbols are
+compared with what has gone out (heuristics): new symbols, or a correction; a letter
+still open waits. At the channel's end 17 samples of no evidence let the search reach
+the last sample and the whole text is compared. Probability 1 per character (a
+placeholder).
 
 **What a score is.** The prior is a real generative model and the search a MAP
 search under it. The likelihood is a stated approximation, and scores are not
@@ -524,16 +525,57 @@ mark. Appendix: A.8e.
 | Envelope, Matched | a character appears once a gap of more than 2 dits follows it |
 | Bank | a character appears when the space after it is classified (at the next key-down), at a new over, or at the stream's end; corrections reach up to 20 s back |
 | Viterbi | the whole text when the channel ends; front filter 8.000 ms; a channel opened at the stream's start (oracle mode) searches nothing in its first block (21.33 ms) |
-| Segmental | the whole text when the channel ends; the evidence lags at most 0.387 s, the same first block unsearched; a publisher would have to stay about 0.75 s behind to read the final text's error rate (measured; A.8e) |
+| Segmental | text every 0.25 s, corrected as it firms up; the evidence lags at most 0.387 s, the same first block unsearched; the final text's error rate is reached about 0.75 s behind (measured; A.8e); a replay reads the 2 s before a channel opens |
 | Track removal | about 6–7 s for the average to decay (S₅₀₀ = 20 dB), plus the 10 s timeout |
 
 Appendix: A.6, A.8d, A.8e, A.9 and A.10.
 
 ## 10. Live operation
 
-Reserved. The application, the worker pool, track retirement and the detector's
-local floor are on another branch; this section, section 6 and their appendix
-sections are extended when that branch merges.
+The app, `kz4ap-skimmer`, runs segmental by default. All below holds on segmental's
+detector path, not in oracle mode; other decoders keep the detector their results
+were measured with. Values are heuristics unless marked. Appendix: A.9b.
+
+**Pipeline.** A source fills a ring of at least 4 s, 5.46 s at every radio rate
+(power-of-two capacity, derived). On overflow the ring empties at once: one gap.
+One thread runs spectrum, detector and blocks; `worker_threads` (half the machine's)
+run the channels. A job touches only its own channel, and results go out in track
+order, so output does not depend on the threads. The spectrum carries linear power
+(FS²), so the detector and hiss take no logarithm per bin.
+
+**Detector, added to section 6.** A new track must stand 6 dB above the lower
+quartile of the averaged bins within ±1 kHz (*local floor*): a wide signal's peaks
+do not. None opens within ±47 Hz of 0 Hz (*DC guard*: a radio's offset). A track
+does not move to a peak within 47 Hz of an older one, and of two that close the
+younger dies (*one track per peak*). Cap 400 tracks; a stronger peak replaces the
+weakest.
+
+**Replay.** A new channel's decoder first reads the last 2 s of the band's kept block
+spectra (94 blocks, 6.2 MB at 192 kHz), then goes live; its symbols carry their true
+times. At most 100 replays start per second of stream (2.13 per block), by track id;
+the rest wait undecoded. Against 2 s the wait costs pre-roll, not text after birth.
+With a track budget in force, none replays.
+
+**Judge,** once per second of stream, on the decoder's evidence over W = 12 s: best
+story's score S and a free key's F (two-state chain, 5 switches/s, same evidence):
+R = (ΔS − max(0, ΔF)) / W (nats/s), E = ΔS / W. Text sums, each symbol ln(q/p) against
+the on-air prior p, floored at −12 nats: *tiny* (q fitted to real junk) and *garbage*
+(q = 1/62). *Proven*: tiny has reached −6 nats and garbage never +6. Rules in order:
+from 4 s, R < 3 and tiny ≥ +8 or garbage ≥ +6: retire; from 12 s, R < −8 and (unproven,
+or E ≥ 1000 with −R > 0.1% of E): retire; unproven with R < 3: retire if under
+5 nats/s over 8 s, or at 14 s; proven: under 1 nat/s over 30 s retires, place left open.
+
+**Holds.** A retired place (±47 Hz) closes 8 s, doubling to 120 s; 4 such retirements
+within 750 Hz in 60 s close ±750 Hz from 30 s, likewise. A retirement counts as a repeat
+only if the hold before it has ended.
+
+**List.** A row is listed once proven by the same test; a new track within 47 Hz of a
+row ended under 60 s ago goes on with it. Rows keep about 4 000 symbols.
+
+**Overload.** Checked each stream-second: backlog b counts as grown if above the last
+check (by 0.05 s from below 0.25 s). Grown twice running, b > 1 s and over 8 tracks
+live: budget = ¾ of live, at least 8, least evidence closing first. At b < 0.25 s it
+grows by 5 each 5 s. A radio silent 5 s is flagged, a recording as well.
 
 # A. Appendix: derivations, provenance, limitations, parameters, definitions
 
@@ -1001,9 +1043,8 @@ use with lround(Hz/Δf): 47 Hz → 2 bins, 23 Hz → 1 bin at 23.44 Hz.
   one channel; 60–200 Hz away B had its own channel, decoded in 30 of 30
   from −6 dB up; channels were never merged. The suite's view of it: 2a
   record, section 8.3 (group H).
-- The cap of 200 (`DetectorConfig::max_tracks`, a config parameter not yet
-  exposed to users): heuristic, a guard against CPU overload, not a
-  measured limit.
+- The cap of 400 (`DetectorConfig::max_tracks`, a config parameter not yet
+  exposed to users): heuristic, A.9b.
 
 **Limitations.**
 
@@ -1012,7 +1053,7 @@ use with lround(Hz/Δf): 47 Hz → 2 bins, 23 Hz → 1 bin at 23.44 Hz.
   toward the band edges), and there is often a spike at 0 Hz (DC offset).
   Where the local noise is above the median, noise crosses the threshold
   more easily (false tracks); where it is below, weak stations are harder
-  to detect and their SNR reads low. The backlog has a local floor as a
+  to detect and their SNR reads low. A local floor now also guards a new track on the segmental path (A.9b). The backlog has a local floor as a
   candidate.
 - **Pauses and track lifetime, by accident, not design.** A station that
   pauses keeps its track while the pause is shorter than the average's
@@ -1438,7 +1479,7 @@ There are five decoders. `ClassicalDecoderConfig::front_end` (a code
 identifier) selects one, and `kz4ap-bench --decoder envelope|matched|bank|viterbi|segmental`
 sets it from the bench (`--front-end` is the option's old name, kept as an
 alias); `FrontEnd::Viterbi` is called the new decoder in older text. **Matched
-is the default** (the code's and the bench's; owner, 2026-09-29); Envelope
+is the bench's default** (owner, 2026-09-29; the app's is segmental, A.9b); Envelope
 also switches the detector to the Envelope path's rules; the bank is
 selectable, not the default (owner decision D1), and so are viterbi (the first
 prototype's plan) and segmental (`docs/decision-log.md`, 2026-10-30). The bank, viterbi and segmental use the default
@@ -2029,6 +2070,11 @@ branches from one noise spectrum of u.
   for 8 s (= 4τ_n) of non-zero input, every branch's σ² is set again by
   the warm-up rule over its last 0.32 s of non-zero input. Seconds, not
   dits, because noise has no keying speed.
+- **Locked-level recovery** (heuristic; never fired on 120 s of noise): a
+  channel opened during a long mark takes the station for noise, and every
+  mark then passes the guard, so the stuck-level rule never fires. When the
+  last 0.32 s's 20% quantile reads over 10 dB under the level, the level is
+  set again the same way.
 - Variants, not the default: "spectrum-level" takes the level from the
   spectrum as well, σ²_v,k = 0.5·(W_k·S̃)/(M·b_k); "branch" runs the
   three-tap estimate on every branch.
@@ -3858,7 +3904,7 @@ strong levels, 0.2 costs the low group and fast speeds). The belief threshold 10
 - **Why no newborn.** The backward message gives a new over its level, at 170.7 ms or more of look-ahead.
 
 **Is the approximation defensible?** The four reasons of section 8e say what it is. Whether it serves is measured: `docs/decision-log.md` and the results records. The evidence's lag, not the
-text's, is at most 0.387 s: 0.34 s for the level and 17 samples for the search (derived). A publisher reading the best story at 0.75 s behind reads the final text's CER (measured; the log, 2026-10-31); no publisher exists at this commit.
+text's, is at most 0.387 s: 0.34 s for the level and 17 samples for the search (derived). A publisher reading the best story at 0.75 s behind reads the final text's CER (measured; the log, 2026-10-31); the live publisher (A.9b) sends sooner and corrects.
 
 **Provenance.** Beam 15 nats, ceiling 3 000: heuristics set by measurement (a ceiling of 10⁶ gives the same edits on the slice; the log). `duration_z_max` = 4: heuristic. The over's tail: 6 samples, the
 windows' length. Everything shared with viterbi: A.8d.
@@ -3914,11 +3960,80 @@ The rules of this section as the code implements them (moved verbatim from the b
 | Envelope, Matched | a character is emitted once a > 2-dit gap follows it |
 | Bank | block 21.33 ms; branch delay (N_k − 1)/(2r) = 4.3–91.7 ms (removed from character times); a character is published when its following space is classified (at the next key-down), at a new over or at the stream's end; corrections reach up to 20 s back (a resync is not bounded by it) |
 | Viterbi | the whole text at `flush` (the channel's end); each sample searched as it arrives; a channel opened at the stream's start (oracle mode) does not search its first block (21.33 ms), N₀ being 0 before the first spectrum frame (a detector channel opens later, with N₀ already set); its channel is shifted to the detector's frequency of each block's start, held over the block (21.33 ms; A.7) |
-| Segmental | the whole text at `flush`, with 17 samples of zero evidence pushed first; each sample's evidence committed 64 to 127 samples after it arrives (170.7 to 338.7 ms), a boundary searched once evidence 16 samples past it exists, so the evidence lags at most 0.387 s; the same first block and channel as viterbi |
+| Segmental | every 0.25 s of stream the last 64 symbols compared with what is out (A.9b); the whole text at `flush`, with 17 samples of zero evidence pushed first; each sample's evidence committed 64 to 127 samples after it arrives (170.7 to 338.7 ms), a boundary searched once evidence 16 samples past it exists, so the evidence lags at most 0.387 s; the same first block and channel as viterbi |
 | Track removal | the average's decay (~6–7 s at S₅₀₀ = 20 dB) plus the 10 s timeout |
 
 
 Nothing beyond section 9: its delays are derived in the sections it names (A.6 for the average's decay, A.7 for the channel filter's group delay, A.8c for the bank's blocks and branch delays, A.8d for viterbi, A.8e for segmental).
+
+## A.9b Live operation
+
+### Exact form
+
+**Engine (`resolved`, `Engine`).** `FrontEnd::Segmental` on the detector's path sets `local_floor_radius_hz` 1000 Hz, `one_track_per_peak` and `dc_guard_hz` = D_ch, and turns on `judge_tracks` (default true; `--no-judge` in the bench) and the replay. A sample rate whose channel rate is no whole number of the decoder's samples is refused ("this decoder needs a sample rate of 48, 96, 192, 384 or 768 kHz").
+
+**Which decoder.** `kDefaultDecoderName` is `segmental` (the app; `engine_config_for_decoder`). The bench's own default stays Matched.
+
+**Live text.** While a channel runs, `SegmentalDecoder::process` compares, every 0.25 s of stream, the best story's last 64 symbols with what it has published; it sends the new symbols, or a correction from the first that differs. A letter still open stays back until it closes, or E would show on its way to I, S, H. `flush` compares the whole text. A change of mind more than 64 symbols back goes out only at the channel's end.
+
+**Worker pool.** `WorkerPool`: `worker_threads` threads, the caller's included. For one block every channel's job (replay if due, cut, follower, decoder) reads the block's spectrum, the kept spectra, the hiss estimator and the configuration, and writes only its own `Channel`. Results go out afterward on the pipeline's thread, by track id. The verdicts and the budget follow on that thread.
+
+**Linear power.** `SpectrumFrame::power_fs2` is the frame's power in FS², 10^(`power_db`/10) but for rounding. The detector's average and the hiss read it; only peaks that clear the threshold are converted to dB.
+
+**Local floor.** At a new peak in bin i, `average` within ±1000 Hz: `nth_element` at a quarter of the bins (the lower quartile; 43 bins either side at 23.44 Hz). The peak must stand `threshold_db` (6 dB) above it, besides above the band's median. Only a new track is tested; a live one is not.
+
+**One track per peak.** In `follow_peaks` a track skips a peak within `attribution_distance_hz` of an older track. After following, a younger track within that distance of an older one dies, as `TrackEnd::Merged`.
+
+**DC guard.** A candidate peak with |f| < `dc_guard_hz` is skipped, on recordings too.
+
+**Replay.** `Channelizer::keep_past(⌈replay_s / hop time⌉ + 1)` keeps each block's whole spectrum, reusing the oldest's memory: 94 past blocks and the current one at 2 s, 2.005 s of past, 95 × N × 8 bytes (6.2 MB at N = 8192, 24.9 MB at N = 32768). Each block a turn accrues, `replay_tracks_per_s` × hop time = 2.13, saved up to that plus 1. A channel opened and without a turn is not cut or decoded, is not judged and counts no channel-seconds. Given a turn, it decodes all kept past blocks in order (its bin and follower as for a live block, at the detector's current frequency, N₀ read now) and the current block; its updates go out in order before the block's. At the stream's end a waiting channel replays the kept blocks. A channel granted its turn while a budget is in force skips the replay and goes live.
+
+`EngineStats::channel_seconds` counts live time only; `replayed_channel_seconds` the replays'; their CPU stays in the stages, so CPU per channel-second includes it. `longest_replay_wait_s` reports the wait.
+
+**Judge (`TrackJudge`, once per second of stream per channel, from `judge_channels`).** With the history of `KeyingEvidence` a second apart, and age the number of readings less one:
+
+- R = (ΔS − max(0, ΔF)) / min(age, 12 s), E = ΔS / min(age, 12 s), ΔS and ΔF over 12 s; S = `search_->best_score()`, F the two-state chain at 5 switches/s on L1.
+- tiny, garbage: running sums, each floored at −12 nats, with lowest tiny and highest garbage; word spaces skipped; `RunningTextEvidence` adds only new symbols and on a correction goes back to the nearest saved state (every 256 symbols). A symbol the prior lacks counts at the prior's floor, 0.002.
+- proven, once true for good: lowest tiny ≤ −6 nats and highest garbage < +6 nats.
+- Rule 1, age ≥ 4 s, R < 3 and (tiny ≥ +8 or garbage ≥ +6): `NotMorse`, hold 8 s. Rule 2, age ≥ 12 s, R < −8, and (not proven, or E ≥ 1000 and −R > 10⁻³ E): `NotMorse`, hold 8 s. Rule 3, not proven and R < 3: age ≥ 8 s and ΔS over 8 s < 40 nats: `Quiet`, hold 8 s; else age ≥ 14 s: `NotMorse`, hold 8 s. Rule 4, proven, age ≥ 30 s and ΔS over 30 s < 30 nats: `Quiet`, no hold.
+
+**Holds (`SignalDetector::retire`, `close_place`).** A retirement with hold_s > 0 removes the track, closes radius 47 Hz and logs (f, t). If at least 4 logged retirements in the last 60 s lie within 750 Hz of f, it also closes radius 750 Hz from 30 s. Closing: find a hold of that radius within that radius; if none, new, count 0. If count = 0 or now ≥ until, count + 1. Then until = max(until, now + min(hold_s × 2^(count−1), 120 s)). A hold is forgotten once open for 120 s. New peaks inside a running hold of either radius are skipped; a live track there stays.
+
+**List (`TrackTable::set_plausible_only`).** A new row is hidden until `text_evidence(row).plausible()`, then listed for good. A new track within 47 Hz of an ended row, listed or hidden, goes on with it after a word space, and its corrections start after the earlier tracks' symbols. Rows ended over 60 s ago leave. Past 4 256 symbols a row drops its oldest 256; the report and `--decoded` then hold a long row's end only.
+
+**Overflow.** `SdrplaySource::read`: when the driver's callback finds no room it sets a flag, and the next read empties the ring and counts the samples as lost. So one gap, not a click each read.
+
+**Budget (`StreamRunner`, with a live source).** At each check, at least 1 s of stream after the last: grown = b > b_last + m, m = 0.05 s if b_last ≤ 0.25 s, else 0; g = grown ? g + 1 : 0. If b > 1 s, g ≥ 2 and live > 8: budget = max(8, ¾ live), and the engine closes the rest at its next block, ranked (proven, E) lowest first, `TrackEnd::Shed`, hold 8 s; a new track must then replace a weaker. Else if a budget is in force, b < 0.25 s and 5 s have passed since it changed: budget + 5; at `max_tracks` it goes away.
+
+**Silence (`DeliveryWatch`).** No new sample from the radio for 5 s of wall clock: the status says so, a recording shows as recording nothing, the markers stop showing live. A recorder keeps its own ring, 10 s; its file is valid at any stop.
+
+### Provenance
+
+Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10-31. Results: the results records under `docs/plans/`.
+
+- Replay 2 s: heuristic. A keyed signal crosses the threshold within about 1 s of its start (τ = 1 s, A.6) and is then a candidate for 0.5 s. Valid while `average_s` and `birth_s` stand.
+- Replay's rate, 100 tracks/s: heuristic, from CPU: a replay costs 2 s × at most about 25 ms per channel-second (weak or wide real channels, 192 kHz, this desktop), 50 ms, so at most 5 CPU-seconds per second of stream, near 4 threads' capacity, in the worst burst. A clean 400-station burst at 768 kHz cost 3 ms each.
+- Local floor's ±1 kHz: heuristic, wide against a station's few bins. Lower quartile: heuristic, set on 62 s of real 40 m.
+- DC guard: heuristic, the width of a channel. Real radio's offset read as `0 TOO0`.
+- W, 5 switches/s, 4, 8, 14, 30 s, 3, 1, 5 nats/s: heuristics by measurement on one 62 s recording and generated bands.
+- −8 nats/s: heuristic. Not a margin below real stations: on a 30 min recording, 9 of 57 tracks at real stations' places fell below it over a full window; `held_to_it` and the text test keep them.
+- E ≥ 1000 nats/s, 10⁻³: heuristics from generated strong stations.
+- Text's q: fitted to 4 968 symbols of real junk (one recording), raised for T; 0.03 to the rest. −6, +8, +6 nats: Wald's bound gives P(reach +x under p) ≤ e^(−x) and P(reach −x under q) ≤ e^(−x) (derived for independent symbols from the models). As error rates on the air they are not valid: real junk is neither independent nor from q. They are heuristics.
+- Holds 8, 30, 120 s, 60 s, 750 Hz, 4: heuristics on real 40 m.
+- List's 60 s, 47 Hz: heuristics. 4 000 symbols: heuristic, 27 min at 30 WPM.
+- Budget's values: heuristics. 5.46 s is derived: 2^k ≥ 4 s × rate, at each radio rate 2^k / rate = 5.46 s. Cap 400: heuristic; a 300-station generated band needs over 300 and the project's goal names 500 tracks on half the desktop.
+- 7031.5 kHz, the default center: heuristic. It keeps the DC guard off the 7030 kHz calling frequency; no row within 47 Hz of it in the 30 min recording.
+
+### Limitations
+
+- Text sent during a hold is lost, not late. Short overs and a carrier before a CQ can lose some; a runner with callers within 47 Hz can read as not keyed and retire (backlog).
+- A hold can close a place on a real station up to 120 s; ±750 Hz up to 120 s if a wide signal returns.
+- Rows of data and speech read as plausible stay listed: the list is 35% to 63% junk. Its view by plausibility waits for the callsign stage.
+- A station within 47 Hz of the center is not read. Tune off it.
+- Replay near a recent neighbor reads what the channel holds, including its neighbor. A wait over about 0.5 s loses pre-roll, at the stream's start the least.
+- For viterbi and bank the budget's rank is equal for all, so it sheds the oldest first.
+- A replay's first block starts with its filter and level empty, as any channel.
+- The recorder does not flush to the disk; an operating-system crash can lose what the system holds.
 
 ## A.10 Parameters at a glance
 
@@ -3939,7 +4054,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Peak neighborhood | ±47 Hz (±2 bins at 23.4 Hz) | `DetectorConfig::peak_radius_hz` | heuristic |
 | Track level neighborhood | ±23 Hz (±1 bin at 23.4 Hz) | `DetectorConfig::level_radius_hz` | heuristic |
 | Tracker anchor (Matched path) | the detector's current frequency for the track, set before every channel block; the tracker fine-tunes within ±12 Hz of it | `Decoder::set_frequency_anchor_hz`; `FrequencyTrackerConfig::fine_tune_hz` | heuristic (owner decisions 2026-09-29, option 1) |
-| Max tracks | 200 | `DetectorConfig::max_tracks` | heuristic |
+| Max tracks | 400 | `DetectorConfig::max_tracks` | heuristic |
 | Channel bins / decimation | 64 / D = N ÷ 64 (r = 1500 Hz) | `EngineConfig::channel_bins` | heuristic within derived bounds |
 | Channel filter cutoff | ±150 Hz (−6 dB relative to the passband) | `EngineConfig::channel_cutoff_hz` | heuristic |
 | Channel filter | Blackman-windowed sinc, N/2+1 taps (21.3 ms) | channelizer.cpp | standard choice; length derived from the hop |
@@ -3955,7 +4070,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Character / word gap | > 2 / > 5 dits | classical_decoder.cpp | heuristic (the conventional midpoints between the nominal 1, 3 and 7 dits) |
 | Speed window / range | 24 marks, 5–60 WPM | classical_decoder.cpp | heuristic |
 | Edge-shortening ratio band | 3.0–3.85 | classical_decoder.cpp | measured |
-| Decoder | Matched (default), Envelope, the bank, viterbi or segmental | `ClassicalDecoderConfig::front_end` (`FrontEnd::Bank` makes the engine create a `BankDecoder`, `FrontEnd::Viterbi` a `ViterbiDecoder`, `FrontEnd::Segmental` a `SegmentalDecoder`); `kz4ap-bench --decoder` (`--front-end` its old alias) | Matched default and Envelope owner decisions 2026-09-29; the bank selectable (owner decision D1, 2026-10-03); viterbi selectable (the first prototype's plan, D2); segmental selectable (decision log, 2026-10-30) |
+| Decoder | Matched (the bench's default), Envelope, the bank, viterbi or segmental | `ClassicalDecoderConfig::front_end` (`FrontEnd::Bank` makes the engine create a `BankDecoder`, `FrontEnd::Viterbi` a `ViterbiDecoder`, `FrontEnd::Segmental` a `SegmentalDecoder`); `kz4ap-bench --decoder` (`--front-end` its old alias) | Matched default and Envelope owner decisions 2026-09-29; the bank selectable (owner decision D1, 2026-10-03); viterbi selectable (the first prototype's plan, D2); segmental selectable (decision log, 2026-10-30) |
 | LLR keying hysteresis (Matched) | g > +1 nat down, g < −1 nat up; the key-up threshold, −1 nat, is also the evidence that a mark's start was observed (row "Marks not counted for speed", Task 16) | `ClassicalDecoderConfig::llr_hysteresis` | heuristic |
 | Filter follows speed after (Matched) | 8 marks in the speed window (8 new ones after a re-acquisition) | `ClassicalDecoderConfig::follow_after_marks` | heuristic |
 | Dit-estimate growth bound (Matched) | decided: at most ×1.25 per mark while the filter follows the speed, and the filter's own dit at most ×1.25 per mark from its first follow step (from the 20 ms acquisition dit). Applied at each key-up counted for speed; a dropout merge restores the state before the merged mark's update, so each physical mark is bounded once (Task 15) | `ClassicalDecoderConfig::max_dit_growth` | heuristic value (owner decisions 2026-09-29); applied per physical mark (derived from the code, Task 15; re-measured in Task 17: 2a record, sections 3.7, 3.8 and 8.3) |
@@ -4062,6 +4177,26 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Segmental: duration cut | an element ends within 4 σ of its median, a factor of 3.32 | `duration_z_max` | heuristic |
 | Segmental: beam, ceiling | 15 nats, 3 000 elements | `SegmentalConfig::beam_nats`, `ceiling` | heuristics set by measurement |
 | Segmental: rings | C, rise, fall 8 192 samples (21.8 s); context 1 024 samples; level 18 frames | `RunningSums`, `LevelEvidence` | sized from the longest element, 5.35 s |
+| Segmental: publishing | every 0.25 s; last 64 symbols compared | `kPublishEveryS`, `kPublishTailSymbols` | heuristic |
+| App: default decoder | segmental | `kDefaultDecoderName` | coordinator's choice |
+| App: default center | 7031.5 kHz | `RadioDefaults::center_khz`, `SdrplaySettings::center_hz`, `--center-khz` | heuristic |
+| Local floor | ±1 kHz, lower quartile, 6 dB above | `DetectorConfig::local_floor_radius_hz`; signal_detector.cpp | heuristic |
+| One track per peak | 47 Hz | `DetectorConfig::one_track_per_peak` | heuristic |
+| DC guard | ±47 Hz | `DetectorConfig::dc_guard_hz` | heuristic |
+| Replay | 2 s, 94 past blocks | `EngineConfig::replay_s` | heuristic |
+| Replay's rate | 100 tracks/s, 2.13 per block | `EngineConfig::replay_tracks_per_s` | heuristic |
+| Judge: window, first verdict | 12 s, 4 s | `TrackJudge::kWindowS`, `kFirstVerdictS` | heuristic |
+| Judge: rates | keyed 3, not keyed −8 nats/s; strong 1000 nats/s, share 10⁻³ | `kKeyedRate`, `kNotKeyedRate`, `kStrongRate`, `kShortfallShare` | heuristic |
+| Judge: quiet | new 5 nats/s over 8 s; at most 14 s unproven; proven 1 nat/s over 30 s | `kQuietNew*`, `kUnprovenS`, `kQuietOld*` | heuristic |
+| Judge: free key | two states, 5 switches/s | `kFreeKeySwitchPerS` | heuristic |
+| Text test | floor −12, plausible −6, tiny junk +8, garbage junk +6 nats; q fitted | `kTextFloorNats`, `kPlausibleNats`, `kTinyJunkNats`, `kGarbageJunkNats`, `kTinyShares` | heuristic (the bound is derived, for the models only) |
+| Holds | place ±47 Hz, 8 s, doubling to 120 s; a repeat only after the hold's end; forgotten after 120 s open | `TrackJudge::kHoldS`, `SignalDetector::kLongestHoldS` | heuristic |
+| Region | 4 retirements within 750 Hz in 60 s close ±750 Hz, 30 s up | `kRegionRetirements`, `kRegionRadiusHz`, `kRegionMemoryS`, `kRegionHoldS` | heuristic |
+| List | ended rows 60 s; same place 47 Hz; about 4 000 symbols a row | `TrackTable::kRetainEndedS`, `kSamePlaceHz`, `kMaxRowSymbols` | heuristic |
+| Ring | at least 4 s; 5.46 s at each radio rate | `SdrplaySource::kRingS`, `SpscRing` | 4 s heuristic; 5.46 s derived |
+| Budget | shed above 1 s, grown over 2 checks 1 s apart (margin 0.05 s below 0.25 s), over 8 tracks, to ¾; back by 5 per 5 s below 0.25 s | stream_runner.cpp | heuristic |
+| Silence | 5 s | `DeliveryWatch::kStalledAfterS` | heuristic |
+| Bank: locked-level recovery | last 0.32 s's 20% quantile over 10 dB under the level | `kLockedLevelRatio` (bank/noise.cpp) | heuristic |
 
 ## A.11 Definitions used in tests and the benchmark
 
