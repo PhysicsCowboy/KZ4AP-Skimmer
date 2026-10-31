@@ -167,6 +167,10 @@ each track's final text (`text`, corrections applied) and its immediate text
 
 ## Known limitations
 
+- On the air, wide and digital signals (FT8, SSB) raise many false tracks with
+  junk text, each costing about twice a CW channel's CPU: the decoder's
+  confirmation of a channel is not built (`docs/backlog.md`, "The app on the air").
+  The detector holds at most 200 tracks (`DetectorConfig::max_tracks`).
 - The first character or two of a transmission may be lost or wrong while the
   station is being detected.
 - Very strong signals (around 60 dB SNR in 500 Hz) can produce extra "ghost"
