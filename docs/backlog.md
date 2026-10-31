@@ -17,6 +17,10 @@ against the numbers. Several of these were found by review but are invisible
 to the current benchmark, which only has clean, well-separated signals of
 10–30 dB SNR (500 Hz, key-down).
 
+### A test group that opens late on the detector's path (fourth review, 2026-10-31)
+
+Every station of the test set starts 0.5 to 2 s into its stream, so no group opens a channel late, and the stream's-clock bug in the choice of filter went unseen. Add E2 and A2 through the detector with 15 s before the stations. Measure: E2 late on the detector's path, 0.669 at checkpoint 2 (`docs/plans/data/2026-10-31-checkpoint-2/e2-detector.csv`). Also there: 5 of E2's 30 stations at 60 to 120 Hz get no track (conjectured: a neighbor's main lobe within the peak radius; a radius of 23.5 Hz did not help).
+
 ### The development set's distribution of speeds and noise levels (owner, 2026-10-04; open for discussion)
 
 The owner's judgment: the development set (`kz4ap_proto.experiments.DEV`, seed 1; 509 scored
@@ -1648,7 +1652,7 @@ Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repos
   wide signals and live 4 to 14 s each, about 25 of the 42 live on the 62 s recording, at 15 ms per channel-second; 35% to
   63% of the rows listed are junk (35% on that recording, 63% on a later 30 min one), data at +91 kHz most of all, whose text cannot be told from a contest exchange by its
   letters alone. A test before a channel opens, or a bandwidth test that does not fail on speech's harmonics, would save
-  that CPU. The goal of about 8 ms per channel-second is not met (checkpoint 2's record: 13.4 ms on 30 min of real 40 m, 9.5 ms on the whole test set, with three filter widths; before them 10.9 and 5.6 ms): weak and wide channels cost 10 to 25 ms and more,
+  that CPU. The goal of about 8 ms per channel-second is met on the test set and not on the air (checkpoint 2's record: 6.87 ms on the whole test set on the Linux machine, about 7.3 to 7.8 on the desktop, derived; 13.3 ms on 30 min of real 40 m, about 17 ms in real time): weak and wide channels cost 10 to 25 ms and more,
   because more stories stay within the beam.
 - **Short overs and carriers under a hold (`app-4`'s review, F6).** Text during a hold is lost, not late. A station in short
   overs with little proven, a carrier before a CQ, a runner with callers within 47 Hz: each can lose an over. No-hold-on-quiet

@@ -604,6 +604,36 @@ TEST_F(BenchRun, SegmentalReadsASlowStationPastACloseNeighbor) {
     }
 }
 
+TEST_F(BenchRun, SegmentalReadsALateStationPastACloseNeighborThroughTheDetector) {
+    // Review 4, finding 2, as the app meets it: on the detector's path, a pair that starts 20 s into the stream, wanted +15 dB S500 at
+    // 15 WPM and a keyed neighbor 40 Hz above, -10 dB re wanted. A channel that opens after 10 s of stream must keep its narrower filter
+    // to 10 s of its own age, as one that opens at the stream's start does. (This pair reads either way; the test that fails without the fix is
+    // FilterScale.TheChoiceRunsOnTheChannelsAgeNotTheStreams. This one is the whole path, which no test read before.)
+    const std::string text = "CQ CQ DE W1AW W1AW K TEST 5NN 73 DE K1ABC";
+    const std::string other = "QRZ DE N3VO N3VO PSE K UR 599 BK TU 73 EE EE QRZ DE N3VO K";
+    const double wpm = 15.0, start_s = 20.0, level_db = 15.0;
+    const std::vector<std::pair<double, double>> keying = kz4ap::test::keying(text, wpm, start_s);
+    const double seconds = keying.back().second + 1.0;
+    const double amplitude = std::sqrt(std::pow(10.0, level_db / 10.0) * 0.02 * 0.02 * 500.0 / kRate);
+    std::vector<kz4ap::Sample> x = kz4ap::test::keyed_signal_d17(keying, kRate, seconds, 300.0, amplitude, 0.02, 4347);
+    const std::vector<kz4ap::Sample> y = kz4ap::test::keyed_signal_d17(kz4ap::test::keying(other, 22.0, start_s), kRate, seconds, 340.0,
+                                                                       amplitude * std::pow(10.0, -10.0 / 20.0), 0.0, 4348);
+    for (std::size_t i = 0; i < x.size(); ++i) x[i] += y[i];
+    write_wav(wav_, x, static_cast<int>(kRate));
+    write_label(labels_, text, wpm, 300.0, level_db, start_s, keying.back().second, seconds);
+    const auto cer = [&](std::vector<std::string> options) {
+        options.insert(options.end(), {"--decoder", "segmental", "--no-timing", "--json", path("result.json")});
+        const Outcome o = run(options);
+        EXPECT_EQ(o.status, 0) << o.err;
+        return read_json(path("result.json")).at("score").at("signals").at(0).at("cer").get<double>();
+    };
+    const double scales = cer({});
+    const double widest = cer({"--set", "filter_scales=1"});
+    std::cout << "measured: late, neighbor 40 Hz, -10 dB re wanted, detector's path: CER " << scales << ", widest filter alone " << widest << "\n";
+    EXPECT_LE(scales, 0.1);
+    EXPECT_GE(widest, 0.3);
+}
+
 TEST_F(BenchRun, SegmentalSurvivesABurstAtAndAboveOneHundredAndTwoDecibels) {
     // Review F6: 1 s of carrier on an FFT bin (281.25 Hz, where the hiss stays below the limit), +102 and +108 dB S500,
     // then a +20 dB S500 station on the same frequency. The recording is scaled to fit 16 bits. Before the fix the first

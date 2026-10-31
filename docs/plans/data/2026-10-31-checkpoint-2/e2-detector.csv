@@ -1,0 +1,631 @@
+variant,test_case,index,offset_hz,neighbor_relative_db,edits,symbols
+"app6, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,0,6.42,-3.86,86,102
+"app6, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,2,51.57,3.12,235,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,4,87.52,5.68,0,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,6,16.70,-1.39,86,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,8,19.62,5.22,101,101
+"app6, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,10,112.68,-5.57,0,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,12,119.19,6.03,0,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,14,50.85,2.67,129,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,16,29.54,9.40,232,99
+"app6, late",E2-qrm-c01-0-s1,0,6.42,-3.86,86,102
+"app6, late",E2-qrm-c01-0-s1,2,51.57,3.12,229,100
+"app6, late",E2-qrm-c01-0-s1,4,87.52,5.68,0,100
+"app6, late",E2-qrm-c01-0-s1,6,16.70,-1.39,86,100
+"app6, late",E2-qrm-c01-0-s1,8,19.62,5.22,101,101
+"app6, late",E2-qrm-c01-0-s1,10,112.68,-5.57,0,100
+"app6, late",E2-qrm-c01-0-s1,12,119.19,6.03,0,100
+"app6, late",E2-qrm-c01-0-s1,14,50.85,2.67,129,100
+"app6, late",E2-qrm-c01-0-s1,16,29.54,9.40,229,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,0,6.42,-3.86,88,102
+"app5, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,2,51.57,3.12,388,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,4,87.52,5.68,0,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,6,16.70,-1.39,86,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,8,19.62,5.22,101,101
+"app5, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,10,112.68,-5.57,0,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,12,119.19,6.03,0,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,14,50.85,2.67,129,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c01-0-s1,16,29.54,9.40,232,99
+"app5, late",E2-qrm-c01-0-s1,0,6.42,-3.86,86,102
+"app5, late",E2-qrm-c01-0-s1,2,51.57,3.12,390,100
+"app5, late",E2-qrm-c01-0-s1,4,87.52,5.68,0,100
+"app5, late",E2-qrm-c01-0-s1,6,16.70,-1.39,86,100
+"app5, late",E2-qrm-c01-0-s1,8,19.62,5.22,101,101
+"app5, late",E2-qrm-c01-0-s1,10,112.68,-5.57,0,100
+"app5, late",E2-qrm-c01-0-s1,12,119.19,6.03,0,100
+"app5, late",E2-qrm-c01-0-s1,14,50.85,2.67,130,100
+"app5, late",E2-qrm-c01-0-s1,16,29.54,9.40,229,99
+"app5, late, widest filter alone",E2-qrm-c01-0-s1,0,6.42,-3.86,86,102
+"app5, late, widest filter alone",E2-qrm-c01-0-s1,2,51.57,3.12,229,100
+"app5, late, widest filter alone",E2-qrm-c01-0-s1,4,87.52,5.68,0,100
+"app5, late, widest filter alone",E2-qrm-c01-0-s1,6,16.70,-1.39,86,100
+"app5, late, widest filter alone",E2-qrm-c01-0-s1,8,19.62,5.22,101,101
+"app5, late, widest filter alone",E2-qrm-c01-0-s1,10,112.68,-5.57,0,100
+"app5, late, widest filter alone",E2-qrm-c01-0-s1,12,119.19,6.03,56,100
+"app5, late, widest filter alone",E2-qrm-c01-0-s1,14,50.85,2.67,84,100
+"app5, late, widest filter alone",E2-qrm-c01-0-s1,16,29.54,9.40,229,99
+checkpoint 1,E2-qrm-c01-0-s1,0,6.42,-3.86,87,102
+checkpoint 1,E2-qrm-c01-0-s1,2,51.57,3.12,245,100
+checkpoint 1,E2-qrm-c01-0-s1,4,87.52,5.68,1,100
+checkpoint 1,E2-qrm-c01-0-s1,6,16.70,-1.39,140,100
+checkpoint 1,E2-qrm-c01-0-s1,8,19.62,5.22,281,101
+checkpoint 1,E2-qrm-c01-0-s1,10,112.68,-5.57,1,100
+checkpoint 1,E2-qrm-c01-0-s1,12,119.19,6.03,50,100
+checkpoint 1,E2-qrm-c01-0-s1,14,50.85,2.67,85,100
+checkpoint 1,E2-qrm-c01-0-s1,16,29.54,9.40,231,99
+bank,E2-qrm-c01-0-s1,0,6.42,-3.86,63,102
+bank,E2-qrm-c01-0-s1,2,51.57,3.12,406,100
+bank,E2-qrm-c01-0-s1,4,87.52,5.68,34,100
+bank,E2-qrm-c01-0-s1,6,16.70,-1.39,222,100
+bank,E2-qrm-c01-0-s1,8,19.62,5.22,481,101
+bank,E2-qrm-c01-0-s1,10,112.68,-5.57,1,100
+bank,E2-qrm-c01-0-s1,12,119.19,6.03,20,100
+bank,E2-qrm-c01-0-s1,14,50.85,2.67,133,100
+bank,E2-qrm-c01-0-s1,16,29.54,9.40,325,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,0,70.51,0.17,0,102
+"app6, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,2,28.25,10.36,79,102
+"app6, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,4,52.57,6.36,99,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,6,17.02,11.37,80,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,8,60.34,0.21,100,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,10,15.02,-2.95,83,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,12,53.42,10.39,98,98
+"app6, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,14,23.91,5.32,90,102
+"app6, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,16,119.75,11.87,75,102
+"app6, late",E2-qrm-c02-0-s1,0,70.51,0.17,0,102
+"app6, late",E2-qrm-c02-0-s1,2,28.25,10.36,79,102
+"app6, late",E2-qrm-c02-0-s1,4,52.57,6.36,99,99
+"app6, late",E2-qrm-c02-0-s1,6,17.02,11.37,79,99
+"app6, late",E2-qrm-c02-0-s1,8,60.34,0.21,100,100
+"app6, late",E2-qrm-c02-0-s1,10,15.02,-2.95,83,100
+"app6, late",E2-qrm-c02-0-s1,12,53.42,10.39,98,98
+"app6, late",E2-qrm-c02-0-s1,14,23.91,5.32,91,102
+"app6, late",E2-qrm-c02-0-s1,16,119.75,11.87,67,102
+"app5, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,0,70.51,0.17,0,102
+"app5, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,2,28.25,10.36,79,102
+"app5, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,4,52.57,6.36,99,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,6,17.02,11.37,80,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,8,60.34,0.21,100,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,10,15.02,-2.95,83,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,12,53.42,10.39,98,98
+"app5, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,14,23.91,5.32,90,102
+"app5, stations at 0.5 to 2 s",E2-qrm-c02-0-s1,16,119.75,11.87,75,102
+"app5, late",E2-qrm-c02-0-s1,0,70.51,0.17,0,102
+"app5, late",E2-qrm-c02-0-s1,2,28.25,10.36,79,102
+"app5, late",E2-qrm-c02-0-s1,4,52.57,6.36,99,99
+"app5, late",E2-qrm-c02-0-s1,6,17.02,11.37,79,99
+"app5, late",E2-qrm-c02-0-s1,8,60.34,0.21,100,100
+"app5, late",E2-qrm-c02-0-s1,10,15.02,-2.95,83,100
+"app5, late",E2-qrm-c02-0-s1,12,53.42,10.39,98,98
+"app5, late",E2-qrm-c02-0-s1,14,23.91,5.32,91,102
+"app5, late",E2-qrm-c02-0-s1,16,119.75,11.87,66,102
+"app5, late, widest filter alone",E2-qrm-c02-0-s1,0,70.51,0.17,8,102
+"app5, late, widest filter alone",E2-qrm-c02-0-s1,2,28.25,10.36,84,102
+"app5, late, widest filter alone",E2-qrm-c02-0-s1,4,52.57,6.36,99,99
+"app5, late, widest filter alone",E2-qrm-c02-0-s1,6,17.02,11.37,79,99
+"app5, late, widest filter alone",E2-qrm-c02-0-s1,8,60.34,0.21,100,100
+"app5, late, widest filter alone",E2-qrm-c02-0-s1,10,15.02,-2.95,83,100
+"app5, late, widest filter alone",E2-qrm-c02-0-s1,12,53.42,10.39,98,98
+"app5, late, widest filter alone",E2-qrm-c02-0-s1,14,23.91,5.32,91,102
+"app5, late, widest filter alone",E2-qrm-c02-0-s1,16,119.75,11.87,93,102
+checkpoint 1,E2-qrm-c02-0-s1,0,70.51,0.17,4,102
+checkpoint 1,E2-qrm-c02-0-s1,2,28.25,10.36,83,102
+checkpoint 1,E2-qrm-c02-0-s1,4,52.57,6.36,99,99
+checkpoint 1,E2-qrm-c02-0-s1,6,17.02,11.37,79,99
+checkpoint 1,E2-qrm-c02-0-s1,8,60.34,0.21,72,100
+checkpoint 1,E2-qrm-c02-0-s1,10,15.02,-2.95,150,100
+checkpoint 1,E2-qrm-c02-0-s1,12,53.42,10.39,98,98
+checkpoint 1,E2-qrm-c02-0-s1,14,23.91,5.32,90,102
+checkpoint 1,E2-qrm-c02-0-s1,16,119.75,11.87,90,102
+bank,E2-qrm-c02-0-s1,0,70.51,0.17,4,102
+bank,E2-qrm-c02-0-s1,2,28.25,10.36,79,102
+bank,E2-qrm-c02-0-s1,4,52.57,6.36,99,99
+bank,E2-qrm-c02-0-s1,6,17.02,11.37,82,99
+bank,E2-qrm-c02-0-s1,8,60.34,0.21,14,100
+bank,E2-qrm-c02-0-s1,10,15.02,-2.95,46,100
+bank,E2-qrm-c02-0-s1,12,53.42,10.39,98,98
+bank,E2-qrm-c02-0-s1,14,23.91,5.32,181,102
+bank,E2-qrm-c02-0-s1,16,119.75,11.87,68,102
+"app6, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,0,35.36,-1.17,80,97
+"app6, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,2,5.69,11.02,94,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,4,38.24,-5.07,3,105
+"app6, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,6,71.14,7.23,69,98
+"app6, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,8,5.50,-1.44,99,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,10,38.53,8.92,79,101
+"app6, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,12,20.14,8.29,106,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,14,90.76,-4.70,0,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,16,72.86,3.19,8,100
+"app6, late",E2-qrm-c03-0-s1,0,35.36,-1.17,80,97
+"app6, late",E2-qrm-c03-0-s1,2,5.69,11.02,92,99
+"app6, late",E2-qrm-c03-0-s1,4,38.24,-5.07,3,105
+"app6, late",E2-qrm-c03-0-s1,6,71.14,7.23,69,98
+"app6, late",E2-qrm-c03-0-s1,8,5.50,-1.44,99,99
+"app6, late",E2-qrm-c03-0-s1,10,38.53,8.92,79,101
+"app6, late",E2-qrm-c03-0-s1,12,20.14,8.29,106,99
+"app6, late",E2-qrm-c03-0-s1,14,90.76,-4.70,0,100
+"app6, late",E2-qrm-c03-0-s1,16,72.86,3.19,8,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,0,35.36,-1.17,80,97
+"app5, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,2,5.69,11.02,94,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,4,38.24,-5.07,5,105
+"app5, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,6,71.14,7.23,69,98
+"app5, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,8,5.50,-1.44,99,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,10,38.53,8.92,76,101
+"app5, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,12,20.14,8.29,106,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,14,90.76,-4.70,0,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c03-0-s1,16,72.86,3.19,8,100
+"app5, late",E2-qrm-c03-0-s1,0,35.36,-1.17,85,97
+"app5, late",E2-qrm-c03-0-s1,2,5.69,11.02,92,99
+"app5, late",E2-qrm-c03-0-s1,4,38.24,-5.07,5,105
+"app5, late",E2-qrm-c03-0-s1,6,71.14,7.23,81,98
+"app5, late",E2-qrm-c03-0-s1,8,5.50,-1.44,99,99
+"app5, late",E2-qrm-c03-0-s1,10,38.53,8.92,76,101
+"app5, late",E2-qrm-c03-0-s1,12,20.14,8.29,106,99
+"app5, late",E2-qrm-c03-0-s1,14,90.76,-4.70,0,100
+"app5, late",E2-qrm-c03-0-s1,16,72.86,3.19,59,100
+"app5, late, widest filter alone",E2-qrm-c03-0-s1,0,35.36,-1.17,85,97
+"app5, late, widest filter alone",E2-qrm-c03-0-s1,2,5.69,11.02,92,99
+"app5, late, widest filter alone",E2-qrm-c03-0-s1,4,38.24,-5.07,83,105
+"app5, late, widest filter alone",E2-qrm-c03-0-s1,6,71.14,7.23,81,98
+"app5, late, widest filter alone",E2-qrm-c03-0-s1,8,5.50,-1.44,99,99
+"app5, late, widest filter alone",E2-qrm-c03-0-s1,10,38.53,8.92,85,101
+"app5, late, widest filter alone",E2-qrm-c03-0-s1,12,20.14,8.29,106,99
+"app5, late, widest filter alone",E2-qrm-c03-0-s1,14,90.76,-4.70,0,100
+"app5, late, widest filter alone",E2-qrm-c03-0-s1,16,72.86,3.19,59,100
+checkpoint 1,E2-qrm-c03-0-s1,0,35.36,-1.17,81,97
+checkpoint 1,E2-qrm-c03-0-s1,2,5.69,11.02,93,99
+checkpoint 1,E2-qrm-c03-0-s1,4,38.24,-5.07,83,105
+checkpoint 1,E2-qrm-c03-0-s1,6,71.14,7.23,81,98
+checkpoint 1,E2-qrm-c03-0-s1,8,5.50,-1.44,77,99
+checkpoint 1,E2-qrm-c03-0-s1,10,38.53,8.92,85,101
+checkpoint 1,E2-qrm-c03-0-s1,12,20.14,8.29,106,99
+checkpoint 1,E2-qrm-c03-0-s1,14,90.76,-4.70,1,100
+checkpoint 1,E2-qrm-c03-0-s1,16,72.86,3.19,60,100
+bank,E2-qrm-c03-0-s1,0,35.36,-1.17,74,97
+bank,E2-qrm-c03-0-s1,2,5.69,11.02,138,99
+bank,E2-qrm-c03-0-s1,4,38.24,-5.07,7,105
+bank,E2-qrm-c03-0-s1,6,71.14,7.23,41,98
+bank,E2-qrm-c03-0-s1,8,5.50,-1.44,88,99
+bank,E2-qrm-c03-0-s1,10,38.53,8.92,78,101
+bank,E2-qrm-c03-0-s1,12,20.14,8.29,167,99
+bank,E2-qrm-c03-0-s1,14,90.76,-4.70,1,100
+bank,E2-qrm-c03-0-s1,16,72.86,3.19,62,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,0,49.78,10.83,118,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,2,18.08,-4.37,16,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,4,78.07,-1.26,0,97
+"app6, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,6,18.64,-2.03,75,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,8,83.33,6.93,100,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,10,30.56,-4.19,12,103
+"app6, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,12,57.53,7.45,100,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,14,9.91,10.98,115,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,16,108.77,8.78,80,101
+"app6, late",E2-qrm-c04-0-s1,0,49.78,10.83,118,100
+"app6, late",E2-qrm-c04-0-s1,2,18.08,-4.37,16,100
+"app6, late",E2-qrm-c04-0-s1,4,78.07,-1.26,0,97
+"app6, late",E2-qrm-c04-0-s1,6,18.64,-2.03,71,100
+"app6, late",E2-qrm-c04-0-s1,8,83.33,6.93,100,100
+"app6, late",E2-qrm-c04-0-s1,10,30.56,-4.19,12,103
+"app6, late",E2-qrm-c04-0-s1,12,57.53,7.45,100,100
+"app6, late",E2-qrm-c04-0-s1,14,9.91,10.98,116,99
+"app6, late",E2-qrm-c04-0-s1,16,108.77,8.78,76,101
+"app5, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,0,49.78,10.83,153,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,2,18.08,-4.37,16,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,4,78.07,-1.26,0,97
+"app5, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,6,18.64,-2.03,75,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,8,83.33,6.93,100,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,10,30.56,-4.19,12,103
+"app5, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,12,57.53,7.45,100,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,14,9.91,10.98,115,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c04-0-s1,16,108.77,8.78,83,101
+"app5, late",E2-qrm-c04-0-s1,0,49.78,10.83,153,100
+"app5, late",E2-qrm-c04-0-s1,2,18.08,-4.37,73,100
+"app5, late",E2-qrm-c04-0-s1,4,78.07,-1.26,0,97
+"app5, late",E2-qrm-c04-0-s1,6,18.64,-2.03,71,100
+"app5, late",E2-qrm-c04-0-s1,8,83.33,6.93,100,100
+"app5, late",E2-qrm-c04-0-s1,10,30.56,-4.19,94,103
+"app5, late",E2-qrm-c04-0-s1,12,57.53,7.45,100,100
+"app5, late",E2-qrm-c04-0-s1,14,9.91,10.98,116,99
+"app5, late",E2-qrm-c04-0-s1,16,108.77,8.78,98,101
+"app5, late, widest filter alone",E2-qrm-c04-0-s1,0,49.78,10.83,118,100
+"app5, late, widest filter alone",E2-qrm-c04-0-s1,2,18.08,-4.37,73,100
+"app5, late, widest filter alone",E2-qrm-c04-0-s1,4,78.07,-1.26,0,97
+"app5, late, widest filter alone",E2-qrm-c04-0-s1,6,18.64,-2.03,71,100
+"app5, late, widest filter alone",E2-qrm-c04-0-s1,8,83.33,6.93,100,100
+"app5, late, widest filter alone",E2-qrm-c04-0-s1,10,30.56,-4.19,94,103
+"app5, late, widest filter alone",E2-qrm-c04-0-s1,12,57.53,7.45,100,100
+"app5, late, widest filter alone",E2-qrm-c04-0-s1,14,9.91,10.98,116,99
+"app5, late, widest filter alone",E2-qrm-c04-0-s1,16,108.77,8.78,98,101
+checkpoint 1,E2-qrm-c04-0-s1,0,49.78,10.83,117,100
+checkpoint 1,E2-qrm-c04-0-s1,2,18.08,-4.37,75,100
+checkpoint 1,E2-qrm-c04-0-s1,4,78.07,-1.26,1,97
+checkpoint 1,E2-qrm-c04-0-s1,6,18.64,-2.03,76,100
+checkpoint 1,E2-qrm-c04-0-s1,8,83.33,6.93,87,100
+checkpoint 1,E2-qrm-c04-0-s1,10,30.56,-4.19,87,103
+checkpoint 1,E2-qrm-c04-0-s1,12,57.53,7.45,100,100
+checkpoint 1,E2-qrm-c04-0-s1,14,9.91,10.98,113,99
+checkpoint 1,E2-qrm-c04-0-s1,16,108.77,8.78,91,101
+bank,E2-qrm-c04-0-s1,0,49.78,10.83,148,100
+bank,E2-qrm-c04-0-s1,2,18.08,-4.37,18,100
+bank,E2-qrm-c04-0-s1,4,78.07,-1.26,3,97
+bank,E2-qrm-c04-0-s1,6,18.64,-2.03,120,100
+bank,E2-qrm-c04-0-s1,8,83.33,6.93,159,100
+bank,E2-qrm-c04-0-s1,10,30.56,-4.19,33,103
+bank,E2-qrm-c04-0-s1,12,57.53,7.45,100,100
+bank,E2-qrm-c04-0-s1,14,9.91,10.98,145,99
+bank,E2-qrm-c04-0-s1,16,108.77,8.78,91,101
+"app6, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,0,116.38,6.46,1,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,2,50.00,3.57,200,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,4,9.16,7.60,77,98
+"app6, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,6,84.04,-5.61,0,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,8,15.56,-1.57,100,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,10,53.96,9.85,102,102
+"app6, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,12,4.77,-3.00,72,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,14,105.38,-3.91,0,101
+"app6, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,16,43.14,3.97,84,102
+"app6, late",E2-qrm-c05-0-s1,0,116.38,6.46,2,100
+"app6, late",E2-qrm-c05-0-s1,2,50.00,3.57,100,100
+"app6, late",E2-qrm-c05-0-s1,4,9.16,7.60,77,98
+"app6, late",E2-qrm-c05-0-s1,6,84.04,-5.61,0,99
+"app6, late",E2-qrm-c05-0-s1,8,15.56,-1.57,100,100
+"app6, late",E2-qrm-c05-0-s1,10,53.96,9.85,102,102
+"app6, late",E2-qrm-c05-0-s1,12,4.77,-3.00,72,99
+"app6, late",E2-qrm-c05-0-s1,14,105.38,-3.91,0,101
+"app6, late",E2-qrm-c05-0-s1,16,43.14,3.97,86,102
+"app5, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,0,116.38,6.46,0,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,2,50.00,3.57,200,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,4,9.16,7.60,77,98
+"app5, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,6,84.04,-5.61,0,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,8,15.56,-1.57,100,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,10,53.96,9.85,102,102
+"app5, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,12,4.77,-3.00,72,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,14,105.38,-3.91,0,101
+"app5, stations at 0.5 to 2 s",E2-qrm-c05-0-s1,16,43.14,3.97,84,102
+"app5, late",E2-qrm-c05-0-s1,0,116.38,6.46,0,100
+"app5, late",E2-qrm-c05-0-s1,2,50.00,3.57,100,100
+"app5, late",E2-qrm-c05-0-s1,4,9.16,7.60,77,98
+"app5, late",E2-qrm-c05-0-s1,6,84.04,-5.61,0,99
+"app5, late",E2-qrm-c05-0-s1,8,15.56,-1.57,100,100
+"app5, late",E2-qrm-c05-0-s1,10,53.96,9.85,102,102
+"app5, late",E2-qrm-c05-0-s1,12,4.77,-3.00,72,99
+"app5, late",E2-qrm-c05-0-s1,14,105.38,-3.91,0,101
+"app5, late",E2-qrm-c05-0-s1,16,43.14,3.97,86,102
+"app5, late, widest filter alone",E2-qrm-c05-0-s1,0,116.38,6.46,32,100
+"app5, late, widest filter alone",E2-qrm-c05-0-s1,2,50.00,3.57,100,100
+"app5, late, widest filter alone",E2-qrm-c05-0-s1,4,9.16,7.60,77,98
+"app5, late, widest filter alone",E2-qrm-c05-0-s1,6,84.04,-5.61,0,99
+"app5, late, widest filter alone",E2-qrm-c05-0-s1,8,15.56,-1.57,100,100
+"app5, late, widest filter alone",E2-qrm-c05-0-s1,10,53.96,9.85,102,102
+"app5, late, widest filter alone",E2-qrm-c05-0-s1,12,4.77,-3.00,72,99
+"app5, late, widest filter alone",E2-qrm-c05-0-s1,14,105.38,-3.91,0,101
+"app5, late, widest filter alone",E2-qrm-c05-0-s1,16,43.14,3.97,86,102
+checkpoint 1,E2-qrm-c05-0-s1,0,116.38,6.46,35,100
+checkpoint 1,E2-qrm-c05-0-s1,2,50.00,3.57,182,100
+checkpoint 1,E2-qrm-c05-0-s1,4,9.16,7.60,77,98
+checkpoint 1,E2-qrm-c05-0-s1,6,84.04,-5.61,3,99
+checkpoint 1,E2-qrm-c05-0-s1,8,15.56,-1.57,107,100
+checkpoint 1,E2-qrm-c05-0-s1,10,53.96,9.85,102,102
+checkpoint 1,E2-qrm-c05-0-s1,12,4.77,-3.00,74,99
+checkpoint 1,E2-qrm-c05-0-s1,14,105.38,-3.91,3,101
+checkpoint 1,E2-qrm-c05-0-s1,16,43.14,3.97,76,102
+bank,E2-qrm-c05-0-s1,0,116.38,6.46,22,100
+bank,E2-qrm-c05-0-s1,2,50.00,3.57,291,100
+bank,E2-qrm-c05-0-s1,4,9.16,7.60,85,98
+bank,E2-qrm-c05-0-s1,6,84.04,-5.61,4,99
+bank,E2-qrm-c05-0-s1,8,15.56,-1.57,90,100
+bank,E2-qrm-c05-0-s1,10,53.96,9.85,102,102
+bank,E2-qrm-c05-0-s1,12,4.77,-3.00,77,99
+bank,E2-qrm-c05-0-s1,14,105.38,-3.91,8,101
+bank,E2-qrm-c05-0-s1,16,43.14,3.97,75,102
+"app6, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,0,39.67,-3.28,4,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,2,22.47,1.28,84,101
+"app6, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,4,16.45,11.40,93,102
+"app6, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,6,86.70,3.84,4,103
+"app6, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,8,64.56,-4.50,101,101
+"app6, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,10,52.20,6.92,93,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,12,105.18,2.06,0,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,14,35.48,10.01,163,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,16,20.91,8.45,95,100
+"app6, late",E2-qrm-c06-0-s1,0,39.67,-3.28,7,100
+"app6, late",E2-qrm-c06-0-s1,2,22.47,1.28,85,101
+"app6, late",E2-qrm-c06-0-s1,4,16.45,11.40,90,102
+"app6, late",E2-qrm-c06-0-s1,6,86.70,3.84,2,103
+"app6, late",E2-qrm-c06-0-s1,8,64.56,-4.50,101,101
+"app6, late",E2-qrm-c06-0-s1,10,52.20,6.92,93,100
+"app6, late",E2-qrm-c06-0-s1,12,105.18,2.06,0,100
+"app6, late",E2-qrm-c06-0-s1,14,35.48,10.01,168,100
+"app6, late",E2-qrm-c06-0-s1,16,20.91,8.45,84,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,0,39.67,-3.28,1,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,2,22.47,1.28,84,101
+"app5, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,4,16.45,11.40,93,102
+"app5, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,6,86.70,3.84,4,103
+"app5, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,8,64.56,-4.50,101,101
+"app5, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,10,52.20,6.92,93,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,12,105.18,2.06,0,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,14,35.48,10.01,163,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c06-0-s1,16,20.91,8.45,95,100
+"app5, late",E2-qrm-c06-0-s1,0,39.67,-3.28,51,100
+"app5, late",E2-qrm-c06-0-s1,2,22.47,1.28,85,101
+"app5, late",E2-qrm-c06-0-s1,4,16.45,11.40,90,102
+"app5, late",E2-qrm-c06-0-s1,6,86.70,3.84,2,103
+"app5, late",E2-qrm-c06-0-s1,8,64.56,-4.50,101,101
+"app5, late",E2-qrm-c06-0-s1,10,52.20,6.92,93,100
+"app5, late",E2-qrm-c06-0-s1,12,105.18,2.06,0,100
+"app5, late",E2-qrm-c06-0-s1,14,35.48,10.01,168,100
+"app5, late",E2-qrm-c06-0-s1,16,20.91,8.45,101,100
+"app5, late, widest filter alone",E2-qrm-c06-0-s1,0,39.67,-3.28,51,100
+"app5, late, widest filter alone",E2-qrm-c06-0-s1,2,22.47,1.28,85,101
+"app5, late, widest filter alone",E2-qrm-c06-0-s1,4,16.45,11.40,90,102
+"app5, late, widest filter alone",E2-qrm-c06-0-s1,6,86.70,3.84,2,103
+"app5, late, widest filter alone",E2-qrm-c06-0-s1,8,64.56,-4.50,101,101
+"app5, late, widest filter alone",E2-qrm-c06-0-s1,10,52.20,6.92,93,100
+"app5, late, widest filter alone",E2-qrm-c06-0-s1,12,105.18,2.06,0,100
+"app5, late, widest filter alone",E2-qrm-c06-0-s1,14,35.48,10.01,168,100
+"app5, late, widest filter alone",E2-qrm-c06-0-s1,16,20.91,8.45,101,100
+checkpoint 1,E2-qrm-c06-0-s1,0,39.67,-3.28,54,100
+checkpoint 1,E2-qrm-c06-0-s1,2,22.47,1.28,86,101
+checkpoint 1,E2-qrm-c06-0-s1,4,16.45,11.40,93,102
+checkpoint 1,E2-qrm-c06-0-s1,6,86.70,3.84,6,103
+checkpoint 1,E2-qrm-c06-0-s1,8,64.56,-4.50,4,101
+checkpoint 1,E2-qrm-c06-0-s1,10,52.20,6.92,98,100
+checkpoint 1,E2-qrm-c06-0-s1,12,105.18,2.06,5,100
+checkpoint 1,E2-qrm-c06-0-s1,14,35.48,10.01,160,100
+checkpoint 1,E2-qrm-c06-0-s1,16,20.91,8.45,95,100
+bank,E2-qrm-c06-0-s1,0,39.67,-3.28,5,100
+bank,E2-qrm-c06-0-s1,2,22.47,1.28,82,101
+bank,E2-qrm-c06-0-s1,4,16.45,11.40,108,102
+bank,E2-qrm-c06-0-s1,6,86.70,3.84,10,103
+bank,E2-qrm-c06-0-s1,8,64.56,-4.50,6,101
+bank,E2-qrm-c06-0-s1,10,52.20,6.92,100,100
+bank,E2-qrm-c06-0-s1,12,105.18,2.06,9,100
+bank,E2-qrm-c06-0-s1,14,35.48,10.01,221,100
+bank,E2-qrm-c06-0-s1,16,20.91,8.45,127,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,0,24.59,7.17,75,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,2,3.35,5.43,80,97
+"app6, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,4,37.24,9.77,76,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,6,106.05,-4.50,0,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,8,91.17,4.42,100,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,10,53.26,3.85,100,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,12,49.36,-2.86,42,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,14,11.03,11.36,83,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,16,96.42,5.86,7,101
+"app6, late",E2-qrm-c07-0-s1,0,24.59,7.17,75,100
+"app6, late",E2-qrm-c07-0-s1,2,3.35,5.43,81,97
+"app6, late",E2-qrm-c07-0-s1,4,37.24,9.77,77,99
+"app6, late",E2-qrm-c07-0-s1,6,106.05,-4.50,0,99
+"app6, late",E2-qrm-c07-0-s1,8,91.17,4.42,100,100
+"app6, late",E2-qrm-c07-0-s1,10,53.26,3.85,82,100
+"app6, late",E2-qrm-c07-0-s1,12,49.36,-2.86,34,99
+"app6, late",E2-qrm-c07-0-s1,14,11.03,11.36,82,100
+"app6, late",E2-qrm-c07-0-s1,16,96.42,5.86,7,101
+"app5, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,0,24.59,7.17,75,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,2,3.35,5.43,80,97
+"app5, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,4,37.24,9.77,76,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,6,106.05,-4.50,0,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,8,91.17,4.42,100,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,10,53.26,3.85,100,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,12,49.36,-2.86,7,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,14,11.03,11.36,83,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c07-0-s1,16,96.42,5.86,7,101
+"app5, late",E2-qrm-c07-0-s1,0,24.59,7.17,75,100
+"app5, late",E2-qrm-c07-0-s1,2,3.35,5.43,81,97
+"app5, late",E2-qrm-c07-0-s1,4,37.24,9.77,77,99
+"app5, late",E2-qrm-c07-0-s1,6,106.05,-4.50,0,99
+"app5, late",E2-qrm-c07-0-s1,8,91.17,4.42,100,100
+"app5, late",E2-qrm-c07-0-s1,10,53.26,3.85,82,100
+"app5, late",E2-qrm-c07-0-s1,12,49.36,-2.86,7,99
+"app5, late",E2-qrm-c07-0-s1,14,11.03,11.36,82,100
+"app5, late",E2-qrm-c07-0-s1,16,96.42,5.86,7,101
+"app5, late, widest filter alone",E2-qrm-c07-0-s1,0,24.59,7.17,75,100
+"app5, late, widest filter alone",E2-qrm-c07-0-s1,2,3.35,5.43,81,97
+"app5, late, widest filter alone",E2-qrm-c07-0-s1,4,37.24,9.77,77,99
+"app5, late, widest filter alone",E2-qrm-c07-0-s1,6,106.05,-4.50,0,99
+"app5, late, widest filter alone",E2-qrm-c07-0-s1,8,91.17,4.42,100,100
+"app5, late, widest filter alone",E2-qrm-c07-0-s1,10,53.26,3.85,82,100
+"app5, late, widest filter alone",E2-qrm-c07-0-s1,12,49.36,-2.86,34,99
+"app5, late, widest filter alone",E2-qrm-c07-0-s1,14,11.03,11.36,82,100
+"app5, late, widest filter alone",E2-qrm-c07-0-s1,16,96.42,5.86,7,101
+checkpoint 1,E2-qrm-c07-0-s1,0,24.59,7.17,75,100
+checkpoint 1,E2-qrm-c07-0-s1,2,3.35,5.43,81,97
+checkpoint 1,E2-qrm-c07-0-s1,4,37.24,9.77,75,99
+checkpoint 1,E2-qrm-c07-0-s1,6,106.05,-4.50,2,99
+checkpoint 1,E2-qrm-c07-0-s1,8,91.17,4.42,4,100
+checkpoint 1,E2-qrm-c07-0-s1,10,53.26,3.85,100,100
+checkpoint 1,E2-qrm-c07-0-s1,12,49.36,-2.86,39,99
+checkpoint 1,E2-qrm-c07-0-s1,14,11.03,11.36,81,100
+checkpoint 1,E2-qrm-c07-0-s1,16,96.42,5.86,6,101
+bank,E2-qrm-c07-0-s1,0,24.59,7.17,77,100
+bank,E2-qrm-c07-0-s1,2,3.35,5.43,79,97
+bank,E2-qrm-c07-0-s1,4,37.24,9.77,83,99
+bank,E2-qrm-c07-0-s1,6,106.05,-4.50,8,99
+bank,E2-qrm-c07-0-s1,8,91.17,4.42,39,100
+bank,E2-qrm-c07-0-s1,10,53.26,3.85,100,100
+bank,E2-qrm-c07-0-s1,12,49.36,-2.86,16,99
+bank,E2-qrm-c07-0-s1,14,11.03,11.36,75,100
+bank,E2-qrm-c07-0-s1,16,96.42,5.86,21,101
+"app6, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,0,12.75,-0.49,83,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,2,7.61,-5.16,76,98
+"app6, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,4,98.88,-0.21,0,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,6,84.85,2.82,0,98
+"app6, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,8,59.47,-0.84,98,98
+"app6, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,10,45.02,-0.34,87,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,12,17.63,4.81,95,103
+"app6, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,14,114.40,-1.36,0,101
+"app6, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,16,39.66,2.08,91,102
+"app6, late",E2-qrm-c08-0-s1,0,12.75,-0.49,91,99
+"app6, late",E2-qrm-c08-0-s1,2,7.61,-5.16,74,98
+"app6, late",E2-qrm-c08-0-s1,4,98.88,-0.21,0,100
+"app6, late",E2-qrm-c08-0-s1,6,84.85,2.82,0,98
+"app6, late",E2-qrm-c08-0-s1,8,59.47,-0.84,98,98
+"app6, late",E2-qrm-c08-0-s1,10,45.02,-0.34,87,99
+"app6, late",E2-qrm-c08-0-s1,12,17.63,4.81,96,103
+"app6, late",E2-qrm-c08-0-s1,14,114.40,-1.36,0,101
+"app6, late",E2-qrm-c08-0-s1,16,39.66,2.08,90,102
+"app5, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,0,12.75,-0.49,83,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,2,7.61,-5.16,76,98
+"app5, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,4,98.88,-0.21,0,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,6,84.85,2.82,0,98
+"app5, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,8,59.47,-0.84,98,98
+"app5, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,10,45.02,-0.34,87,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,12,17.63,4.81,95,103
+"app5, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,14,114.40,-1.36,0,101
+"app5, stations at 0.5 to 2 s",E2-qrm-c08-0-s1,16,39.66,2.08,91,102
+"app5, late",E2-qrm-c08-0-s1,0,12.75,-0.49,91,99
+"app5, late",E2-qrm-c08-0-s1,2,7.61,-5.16,74,98
+"app5, late",E2-qrm-c08-0-s1,4,98.88,-0.21,0,100
+"app5, late",E2-qrm-c08-0-s1,6,84.85,2.82,0,98
+"app5, late",E2-qrm-c08-0-s1,8,59.47,-0.84,98,98
+"app5, late",E2-qrm-c08-0-s1,10,45.02,-0.34,87,99
+"app5, late",E2-qrm-c08-0-s1,12,17.63,4.81,96,103
+"app5, late",E2-qrm-c08-0-s1,14,114.40,-1.36,0,101
+"app5, late",E2-qrm-c08-0-s1,16,39.66,2.08,90,102
+"app5, late, widest filter alone",E2-qrm-c08-0-s1,0,12.75,-0.49,91,99
+"app5, late, widest filter alone",E2-qrm-c08-0-s1,2,7.61,-5.16,74,98
+"app5, late, widest filter alone",E2-qrm-c08-0-s1,4,98.88,-0.21,0,100
+"app5, late, widest filter alone",E2-qrm-c08-0-s1,6,84.85,2.82,0,98
+"app5, late, widest filter alone",E2-qrm-c08-0-s1,8,59.47,-0.84,98,98
+"app5, late, widest filter alone",E2-qrm-c08-0-s1,10,45.02,-0.34,87,99
+"app5, late, widest filter alone",E2-qrm-c08-0-s1,12,17.63,4.81,96,103
+"app5, late, widest filter alone",E2-qrm-c08-0-s1,14,114.40,-1.36,0,101
+"app5, late, widest filter alone",E2-qrm-c08-0-s1,16,39.66,2.08,90,102
+checkpoint 1,E2-qrm-c08-0-s1,0,12.75,-0.49,85,99
+checkpoint 1,E2-qrm-c08-0-s1,2,7.61,-5.16,78,98
+checkpoint 1,E2-qrm-c08-0-s1,4,98.88,-0.21,3,100
+checkpoint 1,E2-qrm-c08-0-s1,6,84.85,2.82,3,98
+checkpoint 1,E2-qrm-c08-0-s1,8,59.47,-0.84,74,98
+checkpoint 1,E2-qrm-c08-0-s1,10,45.02,-0.34,88,99
+checkpoint 1,E2-qrm-c08-0-s1,12,17.63,4.81,92,103
+checkpoint 1,E2-qrm-c08-0-s1,14,114.40,-1.36,4,101
+checkpoint 1,E2-qrm-c08-0-s1,16,39.66,2.08,90,102
+bank,E2-qrm-c08-0-s1,0,12.75,-0.49,77,99
+bank,E2-qrm-c08-0-s1,2,7.61,-5.16,75,98
+bank,E2-qrm-c08-0-s1,4,98.88,-0.21,6,100
+bank,E2-qrm-c08-0-s1,6,84.85,2.82,8,98
+bank,E2-qrm-c08-0-s1,8,59.47,-0.84,15,98
+bank,E2-qrm-c08-0-s1,10,45.02,-0.34,88,99
+bank,E2-qrm-c08-0-s1,12,17.63,4.81,89,103
+bank,E2-qrm-c08-0-s1,14,114.40,-1.36,5,101
+bank,E2-qrm-c08-0-s1,16,39.66,2.08,104,102
+"app6, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,0,82.05,11.79,98,98
+"app6, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,2,37.62,11.21,81,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,4,21.21,5.47,83,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,6,63.00,-4.40,0,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,8,27.99,7.84,100,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,10,0.99,7.70,85,101
+"app6, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,12,45.72,-5.86,28,96
+"app6, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,14,21.39,1.03,89,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,16,99.85,-2.41,0,101
+"app6, late",E2-qrm-c09-0-s1,0,82.05,11.79,98,98
+"app6, late",E2-qrm-c09-0-s1,2,37.62,11.21,81,99
+"app6, late",E2-qrm-c09-0-s1,4,21.21,5.47,84,99
+"app6, late",E2-qrm-c09-0-s1,6,63.00,-4.40,0,99
+"app6, late",E2-qrm-c09-0-s1,8,27.99,7.84,100,100
+"app6, late",E2-qrm-c09-0-s1,10,0.99,7.70,85,101
+"app6, late",E2-qrm-c09-0-s1,12,45.72,-5.86,30,96
+"app6, late",E2-qrm-c09-0-s1,14,21.39,1.03,87,99
+"app6, late",E2-qrm-c09-0-s1,16,99.85,-2.41,0,101
+"app5, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,0,82.05,11.79,98,98
+"app5, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,2,37.62,11.21,81,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,4,21.21,5.47,83,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,6,63.00,-4.40,0,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,8,27.99,7.84,100,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,10,0.99,7.70,85,101
+"app5, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,12,45.72,-5.86,28,96
+"app5, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,14,21.39,1.03,89,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c09-0-s1,16,99.85,-2.41,0,101
+"app5, late",E2-qrm-c09-0-s1,0,82.05,11.79,98,98
+"app5, late",E2-qrm-c09-0-s1,2,37.62,11.21,81,99
+"app5, late",E2-qrm-c09-0-s1,4,21.21,5.47,84,99
+"app5, late",E2-qrm-c09-0-s1,6,63.00,-4.40,0,99
+"app5, late",E2-qrm-c09-0-s1,8,27.99,7.84,100,100
+"app5, late",E2-qrm-c09-0-s1,10,0.99,7.70,85,101
+"app5, late",E2-qrm-c09-0-s1,12,45.72,-5.86,30,96
+"app5, late",E2-qrm-c09-0-s1,14,21.39,1.03,87,99
+"app5, late",E2-qrm-c09-0-s1,16,99.85,-2.41,0,101
+"app5, late, widest filter alone",E2-qrm-c09-0-s1,0,82.05,11.79,98,98
+"app5, late, widest filter alone",E2-qrm-c09-0-s1,2,37.62,11.21,81,99
+"app5, late, widest filter alone",E2-qrm-c09-0-s1,4,21.21,5.47,84,99
+"app5, late, widest filter alone",E2-qrm-c09-0-s1,6,63.00,-4.40,0,99
+"app5, late, widest filter alone",E2-qrm-c09-0-s1,8,27.99,7.84,100,100
+"app5, late, widest filter alone",E2-qrm-c09-0-s1,10,0.99,7.70,85,101
+"app5, late, widest filter alone",E2-qrm-c09-0-s1,12,45.72,-5.86,30,96
+"app5, late, widest filter alone",E2-qrm-c09-0-s1,14,21.39,1.03,87,99
+"app5, late, widest filter alone",E2-qrm-c09-0-s1,16,99.85,-2.41,0,101
+checkpoint 1,E2-qrm-c09-0-s1,0,82.05,11.79,98,98
+checkpoint 1,E2-qrm-c09-0-s1,2,37.62,11.21,80,99
+checkpoint 1,E2-qrm-c09-0-s1,4,21.21,5.47,83,99
+checkpoint 1,E2-qrm-c09-0-s1,6,63.00,-4.40,5,99
+checkpoint 1,E2-qrm-c09-0-s1,8,27.99,7.84,85,100
+checkpoint 1,E2-qrm-c09-0-s1,10,0.99,7.70,89,101
+checkpoint 1,E2-qrm-c09-0-s1,12,45.72,-5.86,20,96
+checkpoint 1,E2-qrm-c09-0-s1,14,21.39,1.03,85,99
+checkpoint 1,E2-qrm-c09-0-s1,16,99.85,-2.41,4,101
+bank,E2-qrm-c09-0-s1,0,82.05,11.79,98,98
+bank,E2-qrm-c09-0-s1,2,37.62,11.21,79,99
+bank,E2-qrm-c09-0-s1,4,21.21,5.47,93,99
+bank,E2-qrm-c09-0-s1,6,63.00,-4.40,18,99
+bank,E2-qrm-c09-0-s1,8,27.99,7.84,81,100
+bank,E2-qrm-c09-0-s1,10,0.99,7.70,73,101
+bank,E2-qrm-c09-0-s1,12,45.72,-5.86,20,96
+bank,E2-qrm-c09-0-s1,14,21.39,1.03,87,99
+bank,E2-qrm-c09-0-s1,16,99.85,-2.41,16,101
+"app6, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,0,97.82,-1.83,0,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,2,2.92,6.96,77,100
+"app6, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,4,24.73,-3.98,71,99
+"app6, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,6,58.31,9.03,98,98
+"app6, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,8,7.94,1.63,103,103
+"app6, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,10,71.00,0.48,5,97
+"app6, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,12,29.15,0.57,83,102
+"app6, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,14,39.25,-4.19,90,101
+"app6, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,16,86.40,2.46,1,99
+"app6, late",E2-qrm-c10-0-s1,0,97.82,-1.83,0,100
+"app6, late",E2-qrm-c10-0-s1,2,2.92,6.96,78,100
+"app6, late",E2-qrm-c10-0-s1,4,24.73,-3.98,82,99
+"app6, late",E2-qrm-c10-0-s1,6,58.31,9.03,98,98
+"app6, late",E2-qrm-c10-0-s1,8,7.94,1.63,103,103
+"app6, late",E2-qrm-c10-0-s1,10,71.00,0.48,1,97
+"app6, late",E2-qrm-c10-0-s1,12,29.15,0.57,82,102
+"app6, late",E2-qrm-c10-0-s1,14,39.25,-4.19,61,101
+"app6, late",E2-qrm-c10-0-s1,16,86.40,2.46,1,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,0,97.82,-1.83,0,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,2,2.92,6.96,77,100
+"app5, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,4,24.73,-3.98,71,99
+"app5, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,6,58.31,9.03,98,98
+"app5, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,8,7.94,1.63,103,103
+"app5, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,10,71.00,0.48,5,97
+"app5, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,12,29.15,0.57,83,102
+"app5, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,14,39.25,-4.19,90,101
+"app5, stations at 0.5 to 2 s",E2-qrm-c10-0-s1,16,86.40,2.46,1,99
+"app5, late",E2-qrm-c10-0-s1,0,97.82,-1.83,0,100
+"app5, late",E2-qrm-c10-0-s1,2,2.92,6.96,78,100
+"app5, late",E2-qrm-c10-0-s1,4,24.73,-3.98,82,99
+"app5, late",E2-qrm-c10-0-s1,6,58.31,9.03,98,98
+"app5, late",E2-qrm-c10-0-s1,8,7.94,1.63,103,103
+"app5, late",E2-qrm-c10-0-s1,10,71.00,0.48,1,97
+"app5, late",E2-qrm-c10-0-s1,12,29.15,0.57,82,102
+"app5, late",E2-qrm-c10-0-s1,14,39.25,-4.19,61,101
+"app5, late",E2-qrm-c10-0-s1,16,86.40,2.46,1,99
+"app5, late, widest filter alone",E2-qrm-c10-0-s1,0,97.82,-1.83,0,100
+"app5, late, widest filter alone",E2-qrm-c10-0-s1,2,2.92,6.96,78,100
+"app5, late, widest filter alone",E2-qrm-c10-0-s1,4,24.73,-3.98,82,99
+"app5, late, widest filter alone",E2-qrm-c10-0-s1,6,58.31,9.03,98,98
+"app5, late, widest filter alone",E2-qrm-c10-0-s1,8,7.94,1.63,103,103
+"app5, late, widest filter alone",E2-qrm-c10-0-s1,10,71.00,0.48,1,97
+"app5, late, widest filter alone",E2-qrm-c10-0-s1,12,29.15,0.57,82,102
+"app5, late, widest filter alone",E2-qrm-c10-0-s1,14,39.25,-4.19,61,101
+"app5, late, widest filter alone",E2-qrm-c10-0-s1,16,86.40,2.46,1,99
+checkpoint 1,E2-qrm-c10-0-s1,0,97.82,-1.83,6,100
+checkpoint 1,E2-qrm-c10-0-s1,2,2.92,6.96,83,100
+checkpoint 1,E2-qrm-c10-0-s1,4,24.73,-3.98,90,99
+checkpoint 1,E2-qrm-c10-0-s1,6,58.31,9.03,98,98
+checkpoint 1,E2-qrm-c10-0-s1,8,7.94,1.63,77,103
+checkpoint 1,E2-qrm-c10-0-s1,10,71.00,0.48,11,97
+checkpoint 1,E2-qrm-c10-0-s1,12,29.15,0.57,85,102
+checkpoint 1,E2-qrm-c10-0-s1,14,39.25,-4.19,63,101
+checkpoint 1,E2-qrm-c10-0-s1,16,86.40,2.46,5,99
+bank,E2-qrm-c10-0-s1,0,97.82,-1.83,12,100
+bank,E2-qrm-c10-0-s1,2,2.92,6.96,75,100
+bank,E2-qrm-c10-0-s1,4,24.73,-3.98,77,99
+bank,E2-qrm-c10-0-s1,6,58.31,9.03,98,98
+bank,E2-qrm-c10-0-s1,8,7.94,1.63,82,103
+bank,E2-qrm-c10-0-s1,10,71.00,0.48,60,97
+bank,E2-qrm-c10-0-s1,12,29.15,0.57,88,102
+bank,E2-qrm-c10-0-s1,14,39.25,-4.19,34,101
+bank,E2-qrm-c10-0-s1,16,86.40,2.46,13,99

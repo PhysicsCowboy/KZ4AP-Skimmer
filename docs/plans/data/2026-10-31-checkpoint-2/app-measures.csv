@@ -1,28 +1,41 @@
-measure,unit,app3,app4,merged
-contest_callers_calls_of_170,count,96,126,127
-contest_all_calls_of_280,count,206,236,237
-contest_cpu,ms per channel-second,7.31,6.05,6.94
-crowded_calls_of_300,count,215,300,300
-crowded_cer,edits per symbol,0.351,0.015,0.015
-crowded_cpu,ms per channel-second,5.13,4.44,6.57
-w1aaa_cer,edits per symbol,0.99,0.27,0.30
-clean_cer,edits per symbol,0.0166,0.0011,0.0013
-clean_first_word_cer,edits per symbol,0.6456,0.0000,0.0000
-real30_rows_listed,count,166,202,204
-real30_rows_hidden,count,743,715,712
-real30_channel_seconds,s,19458,23062,23115
-real30_cpu,ms per channel-second,12.26,10.88,13.44
-real30_calls,count,17,22,31
-live2_rows_listed,count,34,41,43
-live2_rows_hidden,count,153,163,164
-live2_channel_seconds,s,2632,2959,3060
-live2_cpu,ms per channel-second,10.90,12.50,17.45
-live2_calls,count,4,6,6
-stall_tracks_opened,count,143,100,100
-stall_budget_left,count,100,0,0
-real30_per_track,ms per channel-second,,9.77,12.98
-real30_fixed,ms per s of stream,,21.0,21.8
-band100_per_track,ms per channel-second,,4.78,7.03
-band100_fixed,ms per s of stream,,25.3,26.3
-burst400_wall_4_threads,s for 25 s of stream,,14.4,30.4
-burst400_longest_read_4_threads,s,,0.10,0.31
+measure,unit,app3,app4,app5,final
+contest_callers_calls_of_170,count,96,126,127,125
+contest_all_calls_of_280,count,206,236,237,235
+contest_cpu,ms per channel-second,7.31,6.05,6.94,6.61
+crowded_calls_of_300,count,215,300,300,300
+crowded_cer,edits per symbol,0.351,0.015,0.015,0.015
+crowded_cpu,ms per channel-second,5.13,4.44,6.57,5.10
+w1aaa_cer,edits per symbol,0.99,0.27,0.30,0.30
+clean_cer,edits per symbol,0.0166,0.0011,0.0013,0.0018
+clean_first_word_cer,edits per symbol,0.6456,0.0000,0.0000,0.0000
+real30_rows_listed,count,166,202,204,204
+real30_rows_hidden,count,743,715,712,712
+real30_channel_seconds,s,19458,23062,23115,23115
+real30_cpu,ms per channel-second,12.26,10.88,13.44,13.26
+real30_calls,count,17,22,31,27
+live2_rows_listed,count,34,41,43,43
+live2_rows_hidden,count,153,163,164,164
+live2_channel_seconds,s,2632,2959,3060,3060
+live2_cpu,ms per channel-second,10.90,12.50,17.45,14.97
+live2_calls,count,4,6,6,6
+stall_tracks_opened,count,143,100,100,100
+stall_budget_left,count,100,0,0,0
+real30_per_track,ms per channel-second,,9.77,12.98,12.16
+real30_fixed,ms per s of stream,,21.0,21.8,21.5
+band100_per_track,ms per channel-second,,4.78,7.03,5.42
+band100_fixed,ms per s of stream,,25.3,26.3,25.9
+burst400_wall_4_threads,s for 25 s of stream,,14.4,30.4,14.9
+burst400_longest_read_4_threads,s,,0.10,0.31,0.21
+engine_build_768k,s,,2.68,16.0,0.08 to 0.10
+radio_768k_400_samples_lost,count,,,12372864,0
+radio_768k_400_budget_at_end,tracks,,,350,0
+radio_768k_400_rows_listed,count,,,,400
+real300_batch_process_cpu,ms per channel-second,,,14.73,13.82
+real300_realtime_process_cpu,ms per channel-second,,,21.34,16.91
+real300_realtime_per_track,ms per channel-second,,,14.47,12.41
+real300_realtime_fixed,ms per s of stream,,,27.13,25.07
+desktop_over_linux_one_thread_a2_c05_3,ratio,,,,1.10
+desktop_over_linux_one_thread_b2_c05_1,ratio,,,,1.07
+desktop_over_linux_one_thread_c2_c05_0,ratio,,,,1.02
+pairs_30_early_cer,edits per symbol,,,0.326,0.353
+pairs_30_late_cer,edits per symbol,,,0.376,0.353

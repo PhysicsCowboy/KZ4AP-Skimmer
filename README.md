@@ -14,41 +14,40 @@ radio, receive only. See `docs/design/` for the design.
 ## Try the app (Windows)
 
 In PowerShell, from the repository's folder. It needs Visual Studio's C++ build
-tools (2022 or later) and Qt 6 in `C:\Qt` (below if you have none). Network the
-first time.
+tools (2022 or later, with their CMake) and Qt 6 in `C:\Qt` (below if you have none).
+Network the first time. About 1.5 min to configure and 2.5 min to build on an 8-core
+desktop (measured).
 
     $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
     $env:PATH += ";$vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
     cmake --preset windows -DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64
     cmake --build --preset windows --target kz4ap-skimmer
-    build\windows\app\Release\kz4ap-skimmer.exe build\recordings\real30.wav
 
-Configuring takes about CONFIGURE_MIN min and building about BUILD_MIN min on an 8-core desktop.
-With no argument the program opens idle: press Start radio or Open...
+**A recording to open.** Recordings are not committed. Generate 60 s of 30 stations
+at 192 kHz (46 MB; with Python 3.12, 20 s for the environment and 20 s to generate,
+measured; skip the first two lines if `.venv` exists):
 
-**Recordings are not committed.** `build\recordings\` is git-ignored; on the
-development desktop it holds `real30.wav` (30 min of real 40 m at 192 kHz, 1.4 GB,
-no truth) and `live2.wav` (62 s). Anywhere else, generate 60 s of 30 stations at
-192 kHz with Python 3.12 (46 MB; PYVENV_MIN for the virtual environment, GEN_TIME to generate):
-
-    python -m venv .venv                                   # skip if .venv exists
+    python -m venv .venv
     .venv\Scripts\python -m pip install -r training\requirements.txt
     $env:PYTHONPATH = "training"
     .venv\Scripts\python -m kz4ap_synth.generate --scenario band --signals 30 --duration 60 --sample-rate 192000 --seed 1 --out build\recordings\band30.wav
     build\windows\app\Release\kz4ap-skimmer.exe build\recordings\band30.wav
 
-`python --version` must say 3.12 (numpy 2.5.3 needs it); where it does not, `conda
-create -n kz4ap-py312 -c conda-forge python=3.12` makes one, and its `python.exe`
-goes in the first line.
+With no argument the program opens idle: press Open... or Start radio. If a recording of
+the real band has been left in the git-ignored `build\recordings\` (`real30.wav` is
+30 min of 40 m at 192 kHz, 1.4 GB, with no truth), open that the same way.
+
+`python --version` must say 3.12 (numpy 2.5.3 needs it). Where it does not, `conda create
+-n kz4ap-py312 -c conda-forge python=3.12` makes one, and its `python.exe` goes in the
+first line.
 
 **No Qt in `C:\Qt`?** With any Python: `python -m pip install aqtinstall`, then
-`python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O C:\Qt` (under a
-minute, about 1 GB). Without Qt the configure step says so in one line and the build's
-target does not exist.
+`python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O C:\Qt` (33 s,
+measured). Without Qt the configure step says so in one line and the build reports that
+`kz4ap-skimmer.vcxproj` does not exist.
 
-**A few things you will see.** Rows are a track each; 35% to 65% of the rows on real
-40 m are not callsigns yet (the callsign stage comes next). Hidden rows are tracks that
-have read nothing plausible so far. The radio needs the SDRplay API (below).
+**What you will see.** One row per track. On real 40 m 35% to 63% of the rows are not
+callsigns yet; the callsign stage comes next. The radio needs the SDRplay API (below).
 
 ## Project documents
 
