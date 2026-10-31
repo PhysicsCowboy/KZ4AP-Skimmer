@@ -20,12 +20,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <numbers>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -436,6 +438,15 @@ void write_station(const fs::path& wav, const fs::path& labels, const std::strin
     std::ofstream(labels) << json{{"sample_rate", 48000}, {"duration_s", seconds}, {"signals", signals}}.dump(2) << '\n';
 }
 
+// The label of one machine-keyed station.
+void write_label(const fs::path& labels, const std::string& text, double wpm, double freq_hz, double s500_db, double start_s,
+                 double end_s, double duration_s) {
+    json signals = json::array();
+    signals.push_back({{"text", text}, {"freq_offset_hz", freq_hz}, {"wpm", wpm}, {"snr_db", s500_db},
+                       {"start_s", start_s}, {"end_s", end_s}, {"keying", "machine"}});
+    std::ofstream(labels) << json{{"sample_rate", 48000}, {"duration_s", duration_s}, {"signals", signals}}.dump(2) << '\n';
+}
+
 }  // namespace
 
 TEST_F(BenchRun, DecodesExactlyThroughTheBench) {
@@ -482,6 +493,37 @@ TEST_F(BenchRun, SegmentalReadsNothingOnNoiseAndRefusesAnUnknownSetting) {
     EXPECT_EQ(read_json(path("result.json")).at("tracks").at(0).at("text").get<std::string>(), "");
     const Outcome refused = run({"--oracle", "--decoder", "segmental", "--no-timing", "--set", "no_such_field=1"});
     EXPECT_NE(refused.status, 0);
+}
+
+TEST_F(BenchRun, SegmentalSurvivesABurstAtAndAboveOneHundredAndTwoDecibels) {
+    // Review F6: 1 s of carrier on an FFT bin (281.25 Hz, where the hiss stays below the limit), +102 and +108 dB S500,
+    // then a +20 dB S500 station on the same frequency. The recording is scaled to fit 16 bits. Before the fix the first
+    // read CER 1.000; the review reads 0.049 and 0.098 with it.
+    const std::string text = "CQ CQ DE W1AW W1AW K CQ CQ DE W1AW W1AW K";
+    const double wpm = 25.0, freq_hz = 281.25, start_s = 5.0, level_db = 20.0;
+    const std::vector<std::pair<double, double>> keying = kz4ap::test::keying(text, wpm, start_s);
+    const double seconds = keying.back().second + 1.0;
+    const auto amplitude_at = [](double s500_db) { return std::sqrt(std::pow(10.0, s500_db / 10.0) * 0.02 * 0.02 * 500.0 / kRate); };
+    for (const double burst_db : {102.0, 108.0}) {
+        std::vector<kz4ap::Sample> x = kz4ap::test::keyed_signal_d17(keying, kRate, seconds, freq_hz, amplitude_at(level_db), 0.02, 4344);
+        double peak = 0.0;
+        for (std::size_t i = 0; i < x.size(); ++i) {
+            const double t = static_cast<double>(i) / kRate;
+            const double edge = std::clamp(std::min(t - 2.0, 3.0 - t) / 0.02, 0.0, 1.0);  // raised-cosine edges of 20 ms
+            const double a = amplitude_at(burst_db) * (0.5 - 0.5 * std::cos(std::numbers::pi * edge));
+            const std::complex<double> burst = std::polar(a, 2.0 * std::numbers::pi * freq_hz * t);
+            x[i] += kz4ap::Sample(static_cast<float>(burst.real()), static_cast<float>(burst.imag()));
+            peak = std::max({peak, std::fabs(static_cast<double>(x[i].real())), std::fabs(static_cast<double>(x[i].imag()))});
+        }
+        for (kz4ap::Sample& v : x) v *= static_cast<float>(0.95 / peak);
+        write_wav(wav_, x, static_cast<int>(kRate));
+        write_label(labels_, text, wpm, freq_hz, level_db, start_s, keying.back().second, seconds);
+        const Outcome o = run({"--oracle", "--decoder", "segmental", "--no-timing", "--json", path("result.json")});
+        ASSERT_EQ(o.status, 0) << o.err;
+        const double cer = read_json(path("result.json")).at("score").at("signals").at(0).at("cer").get<double>();
+        std::cout << "measured: burst at +" << burst_db << " dB S500: CER " << cer << '\n';
+        EXPECT_LE(cer, 0.2) << "burst at +" << burst_db << " dB S500";
+    }
 }
 
 TEST_F(BenchRun, CpuPerChannelSecond) {

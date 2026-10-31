@@ -8,10 +8,20 @@
 
 namespace kz4ap::segmental {
 
+// The viterbi decoder's model with what the fast form sets differently: the systematic floor f, 1 (a relative amplitude),
+// 0.1 against the viterbi decoder's 0.02. A heuristic chosen by measurement (docs/decision-log.md, 2026-10-31): at strong
+// levels a relative amplitude error delta costs about w delta^2 / f'^2 nats per sample, so at 0.02 a dip under flutter or
+// ripple is cheaper to read as a gap, and CER rises with the level. `--set systematic_floor=` still sets it.
+inline viterbi::ViterbiConfig fast_form_model() {
+    viterbi::ViterbiConfig model;
+    model.systematic_floor = 0.1;
+    return model;
+}
+
 struct SegmentalConfig {
     // The model the fast form shares with the viterbi decoder: the sample interval, the speed grid, the fist, the text's
-    // and the over's probabilities, the symbol prior, the systematic floor, the edge rises.
-    viterbi::ViterbiConfig model;
+    // and the over's probabilities, the symbol prior, the edge rises; the systematic floor is its own (above).
+    viterbi::ViterbiConfig model = fast_form_model();
 
     // --- The shared level (channel-level forward-backward over key state x level, evidence.hpp) ---
 
@@ -26,7 +36,7 @@ struct SegmentalConfig {
     // s: the level's frame, over which it is held constant: 8 samples, 21.33 ms, as the viterbi newborn's prediction step
     double level_frame_s = 8.0 * 4.0 / 1500.0;
     // s: the look-ahead the level reads past the sample it is used for, at least, and the block the look-ahead is committed
-    // in: 8 frames each, 170.7 ms; the text lags by their sum plus the search's 17 samples at most, 0.387 s. Measured: at the
+    // in: 8 frames each, 170.7 ms; the evidence lags by their sum plus the search's 17 samples at most, 0.387 s. Measured: at the
     // walk below, CER does not change from 0.085 to 1.5 s of look-ahead, since the walk forgets within about 0.1 s.
     double level_lookahead_s = 8.0 * 8.0 * 4.0 / 1500.0;
     double level_commit_s = 8.0 * 8.0 * 4.0 / 1500.0;
