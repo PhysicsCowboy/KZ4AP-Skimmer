@@ -354,7 +354,7 @@ A character-frequency prior would not help "EE" against "I", which are both comm
 **How to measure:** DEV2's QSO group (H2) and the one-word overs above, sent alone, at several levels and seeds.
 
 ### A neighbor inside the channel takes over a weak station in the new decoder (found 2026-10-21; open)
-**Status (2026-10-31): in the segmental decoder, a neighbor outside its narrowest filter is fixed (three widths; decision log). Open: an equal neighbor at 30 Hz (CER 0.976, bank 0.363), where every width fails, and neighbors +10 dB and stronger inside 150 Hz. Untried: a second carrier in the level filter, the neighbor's beat in the complex samples, subtracting a neighbor track.**
+**Status (2026-10-31): in the segmental decoder, a neighbor outside its narrowest filter is fixed (three widths; decision log). Open: an equal neighbor at 30 Hz (CER 0.976, bank 0.363), where every width fails; neighbors +10 dB and stronger inside 150 Hz; on the detector's path a steady carrier that takes the channel (checkpoint 2's record). Untried: a second carrier in the level filter, the neighbor's beat in the complex samples, subtracting a neighbor track.**
 
 
 The new decoder's first prototype has no interference model (the plan's O2): its stories model one station per channel,
@@ -1648,7 +1648,7 @@ Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repos
   wide signals and live 4 to 14 s each, about 25 of the 42 live on the 62 s recording, at 15 ms per channel-second; 35% to
   63% of the rows listed are junk (35% on that recording, 63% on a later 30 min one), data at +91 kHz most of all, whose text cannot be told from a contest exchange by its
   letters alone. A test before a channel opens, or a bandwidth test that does not fail on speech's harmonics, would save
-  that CPU. The goal of about 8 ms per channel-second is not met on real signals: weak and wide channels cost 10 to 25 ms,
+  that CPU. The goal of about 8 ms per channel-second is not met (checkpoint 2's record: 13.4 ms on 30 min of real 40 m, 9.5 ms on the whole test set, with three filter widths; before them 10.9 and 5.6 ms): weak and wide channels cost 10 to 25 ms and more,
   because more stories stay within the beam.
 - **Short overs and carriers under a hold (`app-4`'s review, F6).** Text during a hold is lost, not late. A station in short
   overs with little proven, a carrier before a CQ, a runner with callers within 47 Hz: each can lose an over. No-hold-on-quiet
