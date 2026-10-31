@@ -1,4 +1,4 @@
-// The segmental decoder's running sums, shared level and search bookkeeping. The search is fed made-up evidence here, so
+﻿// The segmental decoder's running sums, shared level and search bookkeeping. The search is fed made-up evidence here, so
 // that what it does with the evidence is checked apart from how the evidence is made; the exact decodes through the
 // engine are BenchRun.SegmentalDecodesExactlyThroughTheBench (bench/tests/bench_run_test.cpp).
 #include "kz4ap/channelizer.hpp"
@@ -316,7 +316,7 @@ TEST(SegmentalSearch, MergesOnSpeedNodeAndKindAtAnEdge) {
     Search search(config, model, sums);
     feed(keyed_text("CQ", 18, 100, 100), 1.0, sums, &search);
     const double per_boundary = static_cast<double>(search.stats().opened) / static_cast<double>(search.stats().boundaries);
-    EXPECT_LE(per_boundary, 2.0 * model.speeds() * model.nodes() + 2.0);
+    EXPECT_LE(per_boundary, 2.0 * model.fists() * model.nodes() + 2.0);
 }
 
 SegmentalShared make_shared_parts(const SegmentalConfig& config) {

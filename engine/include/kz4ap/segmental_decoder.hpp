@@ -96,6 +96,9 @@ private:
         // nats: S - F as it stands, and over the choice's window: what the choice of stream rests on
         double morse_over_free() const { return search->best_score() - free_key.nats; }
         double recent_morse_over_free() const;
+        // Symbols of its best story, and how many of them over the window
+        std::size_t symbols() const { return search->best_story(1).length; }
+        double recent_symbols() const;
         void note_history(std::size_t capacity);
 
         const SegmentalParts* parts;
@@ -111,6 +114,7 @@ private:
         std::int64_t pushed = 0;
         std::int64_t expected_k = -1;
         std::vector<double> history;  // nats: S - F, one a second of stream, the oldest at history_next once it is full
+        std::vector<std::size_t> symbol_history;  // the same for symbols()
         std::size_t history_next = 0;
     };
     // Chooses the leader from what stands, and at or after the drop time, if `may_drop`, drops what has fallen behind it. True if

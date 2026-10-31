@@ -97,6 +97,10 @@ struct SegmentalConfig {
     // present sender. Heuristics. The start is past the channel floor's own (1 s).
     double filter_scale_window_s = 30.0;
     double filter_scale_start_s = 1.5;
+    // 1: a narrower filter is eligible only if it has read at least this share of the symbols the widest has, over the window: where
+    // it reads nothing, S and F are both about 0, which beats the widest filter's S - F on a weak station, which is often
+    // negative. Heuristic, chosen by measurement: 0.5 and 0.7 read the fists 0.045 and 0.043, against 0.093 with no such rule.
+    double filter_scale_min_symbols = 0.7;
     // s of stream, nats: from this time on, a scale other than the widest and the leader that trails the leader by more than
     // this is dropped for the channel's life. Heuristics; what they buy is CPU. A negative time never drops.
     double filter_scale_drop_after_s = 10.0;

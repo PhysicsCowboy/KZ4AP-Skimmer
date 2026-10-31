@@ -112,11 +112,18 @@ double SegmentalDecoder::Stream::recent_morse_over_free() const {
     return morse_over_free() - history[history_next % history.size()];
 }
 
+double SegmentalDecoder::Stream::recent_symbols() const {
+    if (symbol_history.empty()) return 0.0;
+    return static_cast<double>(symbols()) - static_cast<double>(symbol_history[history_next % symbol_history.size()]);
+}
+
 void SegmentalDecoder::Stream::note_history(std::size_t capacity) {
     if (history.size() < capacity) {
         history.push_back(morse_over_free());
+        symbol_history.push_back(symbols());
     } else {
         history[history_next] = morse_over_free();
+        symbol_history[history_next] = symbols();
         history_next = (history_next + 1) % capacity;
     }
 }
@@ -134,8 +141,13 @@ bool SegmentalDecoder::choose_leader(double now_s, bool may_drop) {
         for (Stream& stream : streams_) stream.note_history(capacity);
     }
     const std::size_t before = leader_;
+    const double wanted_symbols = config.filter_scale_min_symbols * streams_.front().recent_symbols();
+    const auto eligible = [&](std::size_t i) { return i == 0 || streams_[i].recent_symbols() >= wanted_symbols; };
+    // The leader that no longer qualifies gives way to the widest, which always does.
+    if (!eligible(leader_)) leader_ = 0;
     double top = streams_[leader_].recent_morse_over_free();
     for (std::size_t i = 0; i < streams_.size(); ++i) {
+        if (!eligible(i)) continue;
         const double value = streams_[i].recent_morse_over_free();
         if (value > top + config.filter_scale_switch_nats) {
             top = value;
@@ -148,7 +160,8 @@ bool SegmentalDecoder::choose_leader(double now_s, bool may_drop) {
         const Stream* leading = &streams_[leader_];
         const int scale = leading->scale;
         std::erase_if(streams_, [&](const Stream& s) {
-            return s.scale != 1 && s.scale != scale && s.recent_morse_over_free() < top - config.filter_scale_drop_margin_nats;
+            return s.scale != 1 && s.scale != scale &&
+                   (s.recent_morse_over_free() < top - config.filter_scale_drop_margin_nats || s.recent_symbols() < wanted_symbols);
         });
         for (std::size_t i = 0; i < streams_.size(); ++i)
             if (streams_[i].scale == scale) leader_ = i;
