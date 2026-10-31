@@ -480,3 +480,60 @@ TEST(EngineBudget, TheTracksWithLeastEvidenceGoFirst) {
     EXPECT_FALSE(station_shed);
     EXPECT_TRUE(carrier_shed);
 }
+
+namespace {
+
+void expect_same(const TextEvidence& a, const TextEvidence& b) {
+    EXPECT_DOUBLE_EQ(a.tiny_nats, b.tiny_nats);
+    EXPECT_DOUBLE_EQ(a.garbage_nats, b.garbage_nats);
+    EXPECT_DOUBLE_EQ(a.lowest_tiny_nats, b.lowest_tiny_nats);
+    EXPECT_DOUBLE_EQ(a.highest_garbage_nats, b.highest_garbage_nats);
+    EXPECT_EQ(a.symbols, b.symbols);
+}
+
+}  // namespace
+
+TEST(RunningTextEvidence, AddsUpAsTheWholeTextDoes) {
+    std::mt19937 random(7);
+    const std::vector<std::string> alphabet = {"E", "T", "I", "A", "N", "Q", "Z", "0", "5", "<BT>", " ", "?", "/"};
+    std::vector<std::string> text;
+    RunningTextEvidence running;
+    for (int step = 0; step < 3000; ++step) {
+        // New symbols, some steps; and a correction, some steps, reaching back up to 600 symbols (past a saved state).
+        const int added = static_cast<int>(random() % 4);
+        for (int i = 0; i < added; ++i) text.push_back(alphabet[random() % alphabet.size()]);
+        if (random() % 5 == 0 && !text.empty()) {
+            const std::size_t from = text.size() - std::min<std::size_t>(text.size(), random() % 600);
+            text.resize(from);
+            const int anew = static_cast<int>(random() % 8);
+            for (int i = 0; i < anew; ++i) text.push_back(alphabet[random() % alphabet.size()]);
+            running.changed_from(from);
+        }
+        expect_same(running.update(text), text_evidence(text));
+    }
+}
+
+TEST(RunningTextEvidence, ATextThatGotShorterIsReadAgainFromThere) {
+    RunningTextEvidence running;
+    std::vector<std::string> text(1000, "E");
+    running.update(text);
+    text.resize(300);
+    expect_same(running.update(text), text_evidence(text));
+    text.clear();
+    expect_same(running.update(text), TextEvidence{});
+}
+
+TEST(TrackJudge, ACorrectionReachesTheSums) {
+    // Junk read so far, corrected to good text: the text test sees the corrected text. A judge told of the correction reads what
+    // text_evidence reads of the whole.
+    TrackJudge judge;
+    KeyingEvidence now;
+    std::vector<std::string> text(40, "E");
+    judge.update(now, text);
+    EXPECT_FALSE(judge.proven());
+    text = symbols_of("CQ CQ DE W1AW W1AW K CQ CQ DE W1AW W1AW K");
+    ASSERT_TRUE(text_evidence(text).plausible());
+    judge.text_changed_from(0);
+    judge.update(now, text);
+    EXPECT_TRUE(judge.proven());
+}

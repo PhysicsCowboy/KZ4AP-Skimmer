@@ -13,7 +13,9 @@
 //        junk of a real recording (a heuristic fit);
 //      - garbage: every symbol alike, 1/62 (the tree's symbols): what a fast irregular signal reads as.
 //    Under the prior, a sum reaches +x with probability at most e^-x; under the alternative, it reaches -x with probability
-//    at most e^-x (derived: a likelihood ratio is a martingale). The thresholds below therefore are error rates, given the models.
+//    at most e^-x (derived: a likelihood ratio is a martingale). The thresholds below are chosen from those bounds, and are
+//    heuristics: the bounds hold for symbols drawn independently from the models, and real text and real junk are neither. On the
+//    air, far more than e^-6 of the junk is shown (measured, on real 40 m: 17% and 9% of the rows above +40 kHz of the center).
 #pragma once
 
 #include "kz4ap/decoder.hpp"
@@ -22,6 +24,7 @@
 #include <cstddef>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace kz4ap {
 
@@ -36,12 +39,31 @@ struct TextEvidence {
 };
 
 inline constexpr double kTextFloorNats = 12.0;  // Heuristic: 10 to 20 tiny pieces from the floor to a verdict
-inline constexpr double kPlausibleNats = 6.0;   // Derived from the error wanted: e^-6 = 0.25% of junk tracks shown
-inline constexpr double kTinyJunkNats = 8.0;    // Derived likewise: e^-8 = 0.03% of real text
-inline constexpr double kGarbageJunkNats = 6.0;  // Derived likewise: e^-6 = 0.25% of real text
+// Heuristics, by the bound above, which holds only for the models: e^-6 = 0.25% of model junk shown, not of real junk (see above).
+inline constexpr double kPlausibleNats = 6.0;
+inline constexpr double kTinyJunkNats = 8.0;     // Heuristic likewise: e^-8 = 0.03% of text drawn from the prior; real text never reached +5.5 nats
+inline constexpr double kGarbageJunkNats = 6.0;  // Heuristic likewise: e^-6 = 0.25% of text drawn from the prior
 
 // The evidence of a text, word spaces skipped. A symbol the prior lacks counts at the prior's floor.
 TextEvidence text_evidence(std::span<const std::string> symbols);
+
+// The same evidence as text_evidence, kept up as a text grows: only new symbols are added, so that reading a long track's text each
+// second does not grow with its length. A correction goes back to the nearest saved state before it, kCheckpointEvery symbols
+// apart at most: a correction reaches a few symbols back, and the sum depends on the order only through its floor.
+class RunningTextEvidence {
+public:
+    // The symbols from this index on have changed (a decoder's correction).
+    void changed_from(std::size_t index);
+    // The evidence of the text as it now stands; what lies before the changed index must be as it was.
+    const TextEvidence& update(std::span<const std::string> symbols);
+
+private:
+    static constexpr std::size_t kCheckpointEvery = 256;  // symbols; each saved state is about 50 bytes
+    void back_to(std::size_t index);
+    TextEvidence sum_;
+    std::size_t read_ = 0;                  // symbols read so far, word spaces included
+    std::vector<TextEvidence> checkpoints_;  // the state after 0, kCheckpointEvery, 2 kCheckpointEvery ... symbols read
+};
 
 // How a track ended, for whoever keeps its text.
 enum class TrackEnd {
@@ -67,7 +89,10 @@ public:
     static constexpr double kFirstVerdictS = 4.0;
     // nats/s: R above this is keyed Morse whatever the text reads (a generated contest exchange can be all E, T, I, M, U).
     static constexpr double kKeyedRate = 3.0;
-    // nats/s: R below this is not Morse: FT8 and carriers lie below it, the real stations of the recordings at -6.8 or above.
+    // nats/s: R below this, with held_to_it, is not Morse: FT8 and carriers lie below it. It is not a margin below the real
+    // stations, some of which fall below it over a full window (measured on a fresh 30 min of real 40 m: 9 of 57 tracks at real
+    // stations' places, as low as -430 nats/s). They stay because they have read as plausible and earn too much for the shortfall
+    // to count (kStrongRate, kShortfallShare); the text test does the work for most of them.
     static constexpr double kNotKeyedRate = -8.0;
     // nats/s: a shown track is held to that rate only if it earns at least this: at a low level a marginal over every key path
     // beats the one best story whatever the signal (generated, +6.5 dB S500 at 42 WPM: 230 nats/s and -14 nats/s), while at this
@@ -85,6 +110,8 @@ public:
 
     // Once a second of stream, with the evidence as it stands and the text as published.
     Verdict update(const KeyingEvidence& evidence, std::span<const std::string> symbols);
+    // The published text has changed from this index on (a correction), before the next update.
+    void text_changed_from(std::size_t index) { text_.changed_from(index); }
     bool proven() const { return proven_; }
     // nats/s: what the best story has earned over the last window: which tracks a pipeline that falls behind gives up first.
     double earning() const { return earning_; }
@@ -93,6 +120,7 @@ private:
     static constexpr std::size_t kHistory = 32;  // s: at least the longest window, at one entry a second
     std::array<KeyingEvidence, kHistory> history_{};
     std::size_t count_ = 0;
+    RunningTextEvidence text_;
     bool proven_ = false;
     double earning_ = 0.0;
 };

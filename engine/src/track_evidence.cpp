@@ -57,26 +57,53 @@ bool TextEvidence::plausible() const {
     return lowest_tiny_nats <= -kPlausibleNats && highest_garbage_nats < kGarbageJunkNats;
 }
 
+namespace {
+
+void add_symbol(TextEvidence& out, const std::string& symbol, const Tables& t) {
+    if (symbol == " ") return;
+    const auto it = t.by_symbol.find(symbol);
+    const Ratios& r = it != t.by_symbol.end() ? it->second : t.unknown;
+    out.tiny_nats = std::max(-kTextFloorNats, out.tiny_nats + r.tiny);
+    out.garbage_nats = std::max(-kTextFloorNats, out.garbage_nats + r.garbage);
+    out.lowest_tiny_nats = std::min(out.lowest_tiny_nats, out.tiny_nats);
+    out.highest_garbage_nats = std::max(out.highest_garbage_nats, out.garbage_nats);
+    ++out.symbols;
+}
+
+}  // namespace
+
 TextEvidence text_evidence(std::span<const std::string> symbols) {
     const Tables& t = tables();
     TextEvidence out;
-    for (const std::string& symbol : symbols) {
-        if (symbol == " ") continue;
-        const auto it = t.by_symbol.find(symbol);
-        const Ratios& r = it != t.by_symbol.end() ? it->second : t.unknown;
-        out.tiny_nats = std::max(-kTextFloorNats, out.tiny_nats + r.tiny);
-        out.garbage_nats = std::max(-kTextFloorNats, out.garbage_nats + r.garbage);
-        out.lowest_tiny_nats = std::min(out.lowest_tiny_nats, out.tiny_nats);
-        out.highest_garbage_nats = std::max(out.highest_garbage_nats, out.garbage_nats);
-        ++out.symbols;
-    }
+    for (const std::string& symbol : symbols) add_symbol(out, symbol, t);
     return out;
+}
+
+void RunningTextEvidence::back_to(std::size_t index) {
+    if (index >= read_) return;
+    // A state saved after k x kCheckpointEvery symbols holds only symbols before index if k x kCheckpointEvery <= index.
+    const std::size_t k = index / kCheckpointEvery;
+    sum_ = k == 0 ? TextEvidence{} : checkpoints_[k - 1];
+    read_ = k * kCheckpointEvery;
+    checkpoints_.resize(k);
+}
+
+void RunningTextEvidence::changed_from(std::size_t index) { back_to(index); }
+
+const TextEvidence& RunningTextEvidence::update(std::span<const std::string> symbols) {
+    back_to(symbols.size());
+    const Tables& t = tables();
+    for (; read_ < symbols.size(); ++read_) {
+        add_symbol(sum_, symbols[read_], t);
+        if ((read_ + 1) % kCheckpointEvery == 0) checkpoints_.push_back(sum_);
+    }
+    return sum_;
 }
 
 TrackJudge::Verdict TrackJudge::update(const KeyingEvidence& evidence, std::span<const std::string> symbols) {
     history_[count_ % kHistory] = evidence;
     ++count_;
-    const TextEvidence text = text_evidence(symbols);
+    const TextEvidence& text = text_.update(symbols);
     proven_ = proven_ || text.plausible();
     const double age_s = static_cast<double>(count_ - 1);  // a second between entries
     const auto ago = [&](double seconds) -> const KeyingEvidence& {
