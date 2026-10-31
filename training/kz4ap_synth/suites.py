@@ -77,9 +77,9 @@ VE3NEA_SPREADS_HZ = (0.1, 0.3, 1.0, 3.0)  # his f_D grid, Hz
 VE3NEA_EDGE_S = 0.002  # his raised-cosine keying edges, s, centered on each element's ends
 CER_THRESHOLDS = (0.05, 0.10)
 # The engine's decoders by results folder (results/<name>); the identifiers keep their old "front end" names.
-FRONT_ENDS = ("baseline", "matched", "bank", "viterbi")
+FRONT_ENDS = ("baseline", "matched", "bank", "viterbi", "segmental")
 # kz4ap-bench --decoder (--front-end is its old alias); the bench's default is Matched
-BENCH_FRONT_END = {"baseline": "envelope", "matched": "matched", "bank": "bank", "viterbi": "viterbi"}
+BENCH_FRONT_END = {"baseline": "envelope", "matched": "matched", "bank": "bank", "viterbi": "viterbi", "segmental": "segmental"}
 # kz4ap-bench --genie (the new decoder's, oracle channels only): the truth about each station that its label gives
 GENIE_KINDS = ("fist", "frequency", "fading")
 # A name for a run's results folder (results/<name>, run_suite's `name`): it must stay one folder under results/.
@@ -154,9 +154,9 @@ def qso_regime(offset_hz: float, front_end: str = "baseline") -> str:
     compares interpolated frequencies that can each be up to one bin from their carriers
     (derived bound; see MATCHED_AMBIGUOUS_BELOW_HZ); from there on, two tracks.
 
-    "bank" and "viterbi": these decoders run on the Matched path's detector, so their regimes are Matched's."""
+    "bank", "viterbi" and "segmental": these decoders run on the Matched path's detector, so their regimes are Matched's."""
     df = abs(offset_hz)
-    if front_end in ("matched", "bank", "viterbi"):
+    if front_end in ("matched", "bank", "viterbi", "segmental"):
         if df < CHANNEL_DISTANCE_HZ:
             return "same-track"
         if df < MATCHED_AMBIGUOUS_BELOW_HZ:
