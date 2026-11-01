@@ -56,6 +56,22 @@ def test_a_spot_is_kept_whatever_the_readers_grammar_makes_of_its_word():
     assert listed.skipped_lines == 0
 
 
+def test_cw_skimmer_spots_as_it_really_sends_them_playing_a_wav_with_no_tags():
+    # CW Skimmer 2.1: no operator's call on the Settings page, the frequency an offset from the center, kHz, either sign, the clock 0000Z.
+    text = (
+        "Welcome to the CW Skimmer Telnet cluster port!\n"
+        "DX de -#:           -3.8  K6UU           34 dB  31 WPM                0000Z\n"
+        "00:09:26.5 DX de -#:           65.9  KB1K           14 dB  25 WPM  CQ            0000Z\n"
+        "DX de -#:           -3.8  K6UU           34 dB  31 WPM  CQ            0000Z\n"
+    )
+    listed = read_calls_text(text)
+    assert listed.adapter == "spots"
+    assert sorted(listed.calls) == ["K6UU", "KB1K"]
+    assert listed.calls["K6UU"].freqs_khz == [-3.8, -3.8]
+    assert listed.calls["K6UU"].count == 2
+    assert listed.calls["KB1K"].freqs_khz == [65.9]
+
+
 def test_adif():
     text = "header <EOH>\n<CALL:5>K1ABC <FREQ:5:N>7.025 <EOR>\n<CALL:6>DL1XYZ<EOR>"
     listed = read_calls_text(text)

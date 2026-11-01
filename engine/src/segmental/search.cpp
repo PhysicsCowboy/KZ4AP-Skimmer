@@ -222,7 +222,7 @@ struct Element {
     std::uint8_t space;    // a birth's: a word space goes before its letter once the text goes on
 };
 
-// All zeros is a slot never offered at, so a table of them is lazily zeroed memory: a channel pays for the slots it touches.
+// All zeros is a slot never offered at, so a table of them is lazily zeroed memory: a channel pays for the slots it touches, which for a long-lived track is nearly all of them.
 struct Slot {
     double score;
     std::int32_t parent;       // the element whose end it is

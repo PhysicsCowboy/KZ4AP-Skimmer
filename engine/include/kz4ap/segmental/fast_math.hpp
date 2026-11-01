@@ -1,5 +1,5 @@
 // The level filter's and the evidence's exp, log and ln I0: about 180 exp and 150 ln I0 per envelope sample (segmental/evidence.cpp), each result a term of a sum
-// normalized at once or held in a float. Plain code and tables, the same bits on every compiler and machine. The errors are derived (bounds below) and checked by
+// normalized at once or held in a float. Plain code and tables: the same formulas on every compiler; the tables `log_center` and `i0_rest` are filled at start from the C library and differ in low bits between MSVC and glibc (real30 and live2 read the same text on both). The errors are derived (bounds below) and checked by
 // a test (SegmentalFastMath):
 //   exp_neg: relative 6e-10 from the cubic's truncation, r^4 / 24 at |r| <= ln 2 / 64; below -40 nats it reads 0, which is under the rounding of a sum holding a term of
 //            1 (e^-40 = 4e-18 against 2^-53 = 1.1e-16).
