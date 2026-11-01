@@ -50,9 +50,11 @@ namespace kz4ap::app {
 
 namespace {
 
-// The GUI's clock, ms: about 30 pictures/s (heuristic). The list and the status bar change at a third of that.
-constexpr int kTickMs = 33;
+// The GUI's clock, ms: 12.5 pictures/s, each about 2 new rows at 23.4 rows/s (heuristic: a waterfall scrolls 1 pixel per 43 ms, no faster to the eye). The list changes
+// at a third of that, 4.2 times/s: the decoder publishes every 0.25 s. The status bar about once a second. Each is what the GUI thread's CPU goes with.
+constexpr int kTickMs = 80;
 constexpr int kTextEveryTicks = 3;
+constexpr int kStatusEveryTicks = 12;
 // The position slider's steps across a recording.
 constexpr int kPositionSteps = 1000;
 
@@ -624,6 +626,8 @@ void MainWindow::on_tick() {
         calls_->refresh(status.stream_s);
         update_radio_status(status);  // first: the markers and the status show a radio that has stopped delivering
         update_markers();
+    }
+    if (ticks_ % kStatusEveryTicks == 0 || ended) {
         update_status(status);
         update_position(status);
     }

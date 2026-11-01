@@ -3,11 +3,13 @@
 #include <QFontDatabase>
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace kz4ap::app {
 
-CallListModel::CallListModel(QObject* parent) : QAbstractTableModel(parent), search_(std::make_unique<callsign::CallSearch>()) {}
+CallListModel::CallListModel(QObject* parent)
+    : QAbstractTableModel(parent), search_(std::make_unique<callsign::CallSearch>()), fixed_font_(QFontDatabase::systemFont(QFontDatabase::FixedFont)) {}
 
 void CallListModel::start(std::shared_ptr<const callsign::KnownCalls> known, std::optional<double> center_hz) {
     beginResetModel();
@@ -25,7 +27,10 @@ void CallListModel::refresh(double now_s) {
         beginResetModel();
         seen_version_ = search_->version();
         endResetModel();
-    } else if (rowCount() > 0) {
+        shown_second_ = std::floor(now_s);
+    } else if (rowCount() > 0 && std::floor(now_s) != shown_second_) {
+        // The times since a call was heard read in whole seconds, and the counts go with them.
+        shown_second_ = std::floor(now_s);
         emit dataChanged(index(0, 0), index(rowCount() - 1, kColumnCount - 1));
     }
 }
@@ -67,7 +72,7 @@ QVariant CallListModel::data(const QModelIndex& index, int role) const {
                   "the frequency is that station's.");
     if (role == Qt::TextAlignmentRole && index.column() != kCall && index.column() != kHow)
         return QVariant::fromValue(Qt::AlignRight | Qt::AlignVCenter);
-    if (role == Qt::FontRole && index.column() == kCall) return QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    if (role == Qt::FontRole && index.column() == kCall) return fixed_font_;
     return {};
 }
 

@@ -72,12 +72,14 @@ void TrackTable::apply(const TrackEvent& event) {
         ++structure_version_;
         return;
     }
+    ++it->revision;
     it->ended_at_s = now_s_;
 }
 
 void TrackTable::apply(const DecodedTextEvent& event) {
     TrackRow* row = find(event.track_id);
     if (row == nullptr) return;
+    ++row->revision;
     for (const DecodedSymbol& c : event.chars) row->symbols.push_back(c.text);
     for (const TextCorrection& k : event.corrections) {
         // A correction reaching into what has been trimmed keeps what is left.
@@ -148,7 +150,10 @@ TrackRow* TrackTable::ended_at(double freq_hz) {
 
 void TrackTable::end_of_stream() {
     for (TrackRow& r : rows_) {
-        if (r.live()) r.ended_at_s = now_s_;
+        if (r.live()) {
+            r.ended_at_s = now_s_;
+            ++r.revision;
+        }
     }
     for (TrackRow& r : hidden_) {
         if (r.live()) r.ended_at_s = now_s_;

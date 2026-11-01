@@ -27,6 +27,7 @@ struct TrackRow {
                                       // counted from the row's first symbol, trimmed or not
     std::size_t trimmed = 0;          // symbols dropped from the front (TrackTable::kMaxRowSymbols)
     std::uint32_t tracks = 1;         // tracks this row's text has come from
+    std::uint64_t revision = 0;       // moves whenever what the row shows may have changed: what a list repaints by
 
     bool live() const { return !ended_at_s; }
     // The last max_symbols symbols, concatenated ("<SK>" is one symbol, " " a word space).

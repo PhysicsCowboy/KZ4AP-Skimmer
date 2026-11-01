@@ -284,3 +284,29 @@ TEST(TrackTable, ARowKeepsOnlyItsLatestSymbolsAndCorrectionsStillLand) {
     add("E", 0, {correction});
     EXPECT_EQ(table.rows().at(0).text(), "Q");
 }
+
+TEST(TrackTable, ARowsRevisionMovesWithWhatItShows) {
+    using namespace kz4ap;
+    using namespace kz4ap::app;
+    TrackTable table;
+    TrackEvent born;
+    born.kind = TrackEvent::Kind::Born;
+    born.track.id = 7;
+    born.track.freq_hz = 1000.0;
+    table.apply(born);
+    ASSERT_EQ(table.rows().size(), 1u);
+    const std::uint64_t at_birth = table.rows()[0].revision;
+    DecodedTextEvent text;
+    text.track_id = 7;
+    text.freq_hz = 1000.0;
+    text.chars.push_back(DecodedSymbol{"E", 1.0f, 0.0, 0.1});
+    table.apply(text);
+    const std::uint64_t with_text = table.rows()[0].revision;
+    EXPECT_NE(with_text, at_birth);
+    table.advance(1.0);
+    EXPECT_EQ(table.rows()[0].revision, with_text);  // the clock alone changes nothing a row shows
+    TrackEvent died = born;
+    died.kind = TrackEvent::Kind::Died;
+    table.apply(died);
+    EXPECT_NE(table.rows()[0].revision, with_text);  // an ended row reads gray
+}

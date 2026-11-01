@@ -6,6 +6,8 @@
 
 namespace kz4ap::app {
 
+TrackListModel::TrackListModel(QObject* parent) : QAbstractTableModel(parent), fixed_font_(QFontDatabase::systemFont(QFontDatabase::FixedFont)) {}
+
 void TrackListModel::set_bin_width_hz(double bin_hz) {
     bin_hz_ = bin_hz;
     emit headerDataChanged(Qt::Horizontal, kLevel, kLevel);
@@ -17,13 +19,25 @@ void TrackListModel::set_center_hz(std::optional<double> center_hz) {
 }
 
 void TrackListModel::refresh() {
-    if (table_.structure_version() != seen_version_) {
+    const std::vector<TrackRow>& rows = table_.rows();
+    if (table_.structure_version() != seen_version_ || seen_revisions_.size() != rows.size()) {
         beginResetModel();
         seen_version_ = table_.structure_version();
+        seen_revisions_.resize(rows.size());
+        for (std::size_t i = 0; i < rows.size(); ++i) seen_revisions_[i] = rows[i].revision;
         endResetModel();
         emit layoutRedone();
-    } else if (rowCount() > 0) {
-        emit dataChanged(index(0, 0), index(rowCount() - 1, kColumnCount - 1));
+        return;
+    }
+    // Only what has changed, a cell at a time: a view repaints what it shows of those, and on a quiet band that is little.
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        if (seen_revisions_[i] == rows[i].revision) continue;
+        seen_revisions_[i] = rows[i].revision;
+        const int row = static_cast<int>(i);
+        for (int column = 0; column < kColumnCount; ++column) {
+            const QModelIndex cell = index(row, column);
+            emit dataChanged(cell, cell);
+        }
     }
 }
 
@@ -31,6 +45,7 @@ void TrackListModel::clear() {
     beginResetModel();
     table_ = TrackTable{};
     seen_version_ = table_.structure_version();
+    seen_revisions_.clear();
     endResetModel();
 }
 
@@ -63,7 +78,7 @@ QVariant TrackListModel::data(const QModelIndex& index, int role) const {
     if (role == Qt::TextAlignmentRole && index.column() != kText)
         return QVariant::fromValue(Qt::AlignRight | Qt::AlignVCenter);
     if (role == Qt::ForegroundRole && !row.live()) return QBrush(QColor(140, 140, 140));
-    if (role == Qt::FontRole && index.column() == kText) return QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    if (role == Qt::FontRole && index.column() == kText) return fixed_font_;
     return {};
 }
 
