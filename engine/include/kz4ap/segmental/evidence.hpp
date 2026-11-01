@@ -214,6 +214,7 @@ private:
     std::vector<double> entering_;   // by frame in the ring, then level: the forward message into the frame, key summed out
     std::vector<float> x_;           // by sample in the ring, then level: x_k(l) less w z^2
     std::vector<double> z_;          // by sample in the ring: e / sigma_y
+    std::vector<double> top_;        // by sample in the ring: the largest of 0 and w z^2 + x_k(l), nats
     std::vector<double> beta_;       // backward message: key up by level, then key down by level
     std::vector<double> belief_;     // by frame in the ring, then level: what its samples read
 };

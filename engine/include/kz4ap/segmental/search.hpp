@@ -43,10 +43,12 @@
 #include "kz4ap/viterbi/morse_tree.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace kz4ap::segmental {
@@ -80,6 +82,36 @@ public:
     }
     int mark_hi(int fist) const { return mark_hi_[static_cast<std::size_t>(speed_of(fist))]; }
     int gap_hi(int fist) const { return gap_hi_[static_cast<std::size_t>(fist)]; }
+
+    // The same values for the search's loop, which reads them for every open element at every boundary: one fist's lengths in one row.
+    struct FistRow {
+        std::array<Range, 5> ends;    // by kind: dot, dash, element gap, letter gap, word gap
+        int mark_survival_first = 0;  // into mark_survivals()
+        int mark_survival_last = 0;   // the last length it holds
+        int gap_survival_first = 0;   // into gap_survivals()
+        int gap_survival_last = 0;
+        int mark_hi = 0;
+        int gap_hi = 0;
+    };
+    const FistRow& row(int fist) const { return rows_[static_cast<std::size_t>(fist)]; }
+    const double* log_ends() const { return log_end_.data(); }
+    const double* mark_survivals() const { return mark_survival_.data(); }
+    const double* gap_survivals() const { return gap_survival_.data(); }
+    const std::uint8_t* symbol_at_nodes() const { return has_symbol_.data(); }
+    const std::uint8_t* children_at_nodes() const { return has_children_.data(); }
+    // A birth's first mark at a length: what it can end as, in the order of the speeds and labels, and the best speed's survival.
+    struct OpenEnd {
+        double log_end;  // nats: ln P_label(speed, length)
+        int fist;        // the speed's first fist, g = 1
+        int speed;
+        int child;       // the node of its label
+        bool stretched;  // the speed has other stretches
+    };
+    std::span<const OpenEnd> open_ends(int length) const {
+        const auto first = static_cast<std::size_t>(open_end_first_[static_cast<std::size_t>(length)]);
+        return std::span<const OpenEnd>(open_ends_).subspan(first, static_cast<std::size_t>(open_end_first_[static_cast<std::size_t>(length) + 1]) - first);
+    }
+    double open_survival(int length) const { return open_survival_[static_cast<std::size_t>(length)]; }
     // The fists, in the order of their speeds: speed s's are first_fist(s) ... first_fist(s + 1) - 1, g = 1 first.
     int fists() const { return fists_; }
     int first_fist(int speed) const { return first_fist_[static_cast<std::size_t>(speed)]; }
@@ -93,8 +125,8 @@ public:
     int nodes() const { return nodes_; }
     const viterbi::MorseTree& tree() const { return tree_; }
     int child(int node, int label) const { return children_[static_cast<std::size_t>(node * 2 + label)]; }
-    bool has_children(int node) const { return child(node, 0) >= 0 || child(node, 1) >= 0; }
-    bool has_symbol(int node) const { return !tree_.symbol(node).empty(); }
+    bool has_children(int node) const { return has_children_[static_cast<std::size_t>(node)] != 0; }
+    bool has_symbol(int node) const { return has_symbol_[static_cast<std::size_t>(node)] != 0; }
     // nats: ln p(symbol) + ln 62, paid when a letter at this node ends
     double letter_end(int node) const { return letter_end_[static_cast<std::size_t>(node)]; }
     double letter_start() const { return letter_start_; }      // nats: -ln 62 - ln(1 / (1 - epsilon)) at a letter's start
@@ -116,6 +148,12 @@ private:
     int longest_ = 0;
     viterbi::MorseTree tree_;
     std::vector<int> children_;
+    std::vector<std::uint8_t> has_symbol_;    // by node
+    std::vector<std::uint8_t> has_children_;  // by node
+    std::vector<FistRow> rows_;               // by fist
+    std::vector<OpenEnd> open_ends_;
+    std::vector<int> open_end_first_;         // by length, and the count at the end
+    std::vector<double> open_survival_;       // by length
     std::vector<Range> ranges_;
     std::vector<double> log_end_;
     std::vector<double> mark_survival_;

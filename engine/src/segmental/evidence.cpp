@@ -6,6 +6,7 @@
 #include <cmath>
 #include <numeric>
 #include <stdexcept>
+#include <utility>
 
 namespace kz4ap::segmental {
 
@@ -188,6 +189,7 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
     entering_.assign(ring * levels, 0.0);
     x_.assign(ring_samples * levels, 0.0f);
     z_.assign(ring_samples, 0.0);
+    top_.assign(ring_samples, 0.0);
     beta_.assign(2 * levels, 1.0 / (2 * levels_));
     belief_.assign(ring * levels, 0.0);
     // The forward message's prediction into frame 0.
@@ -209,6 +211,7 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2) {
         x[level] = static_cast<float>(term_value(tables_.plain(level), z, z2, w));
         top = std::max(top, common + static_cast<double>(x[level]));
     }
+    top_[slot] = top;
     // One step of the key, then the sample: key-up scores 0, key-down x; relative to the largest, to stay in range.
     const double stay = 1.0 - key_switch_;
     const double up_scale = std::exp(-top);
@@ -248,17 +251,20 @@ void LevelEvidence::finish() {
 
 void LevelEvidence::step_level(double* x) const {
     const double p = tables_.walk_p();
+    const double keep = 1.0 - 2.0 * p;
     const int n = levels_;
-    double sum = 0.0;
-    for (int pass = 0; pass < tables_.walk_passes(); ++pass) {
-        double before = x[0];  // reflecting ends
-        for (int i = 0; i < n; ++i) {
-            const double here = x[i];
-            const double after = i + 1 < n ? x[i + 1] : here;
-            x[i] = (1.0 - 2.0 * p) * here + p * (before + after);
-            before = here;
-        }
+    // Three taps, ends reflecting, from one buffer into the other: a loop a compiler can make into vectors, as an update in place is not.
+    double buffer[256];
+    double* from = x;
+    double* to = buffer;
+    for (int pass = 0; n > 1 && pass < tables_.walk_passes(); ++pass) {
+        to[0] = keep * from[0] + p * (from[0] + from[1]);
+        for (int i = 1; i < n - 1; ++i) to[i] = keep * from[i] + p * (from[i - 1] + from[i + 1]);
+        to[n - 1] = keep * from[n - 1] + p * (from[n - 2] + from[n - 1]);
+        std::swap(from, to);
     }
+    if (from != x) std::copy_n(from, n, x);
+    double sum = 0.0;
     for (int i = 0; i < n; ++i) sum += x[i];
     const double jump = tables_.jump();
     const double mean = sum / n;
@@ -305,8 +311,7 @@ void LevelEvidence::commit(bool all) {
             const std::size_t sample_slot = static_cast<std::size_t>(k) % ring_samples;
             const float* x = x_.data() + sample_slot * levels;
             const double common = tables_.w() * z_[sample_slot] * z_[sample_slot];
-            double top = 0.0;
-            for (std::size_t level = 0; level < levels; ++level) top = std::max(top, common + static_cast<double>(x[level]));
+            const double top = top_[sample_slot];
             const double up_scale = std::exp(-top);
             double total = 0.0;
             for (std::size_t level = 0; level < levels; ++level) {
