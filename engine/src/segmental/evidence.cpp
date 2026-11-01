@@ -1,11 +1,13 @@
 #include "kz4ap/segmental/evidence.hpp"
 
+#include "kz4ap/segmental/fast_math.hpp"
 #include "kz4ap/viterbi/observation.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <numeric>
 #include <stdexcept>
+#include <utility>
 
 namespace kz4ap::segmental {
 
@@ -40,7 +42,7 @@ LevelTables::Term make_term(double r2, double s, double f2, double v_m) {
 
 // x less w z^2, nats.
 inline double term_value(const LevelTables::Term& term, double z, double z2, double w) {
-    return w * (-term.inverse_v * z2 + term.constant + viterbi::ln_i0(term.i0_coeff * z));
+    return w * (-term.inverse_v * z2 + term.constant + fast::ln_i0(term.i0_coeff * z));
 }
 
 }  // namespace
@@ -123,8 +125,8 @@ double LevelTables::short_score(bool gap, int length, std::int64_t i, const Runn
             top = std::max(top, values[g]);
         }
         double sum = 0.0;
-        for (int g = 0; g < context.count; ++g) sum += context.probability[static_cast<std::size_t>(g)] * std::exp(values[g] - top);
-        score += w_ * z2 + top + std::log(sum);
+        for (int g = 0; g < context.count; ++g) sum += context.probability[static_cast<std::size_t>(g)] * fast::exp_neg(values[g] - top);
+        score += w_ * z2 + top + fast::log(sum);
     }
     return score;
 }
@@ -188,6 +190,7 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
     entering_.assign(ring * levels, 0.0);
     x_.assign(ring_samples * levels, 0.0f);
     z_.assign(ring_samples, 0.0);
+    top_.assign(ring_samples, 0.0);
     beta_.assign(2 * levels, 1.0 / (2 * levels_));
     belief_.assign(ring * levels, 0.0);
     // The forward message's prediction into frame 0.
@@ -209,9 +212,10 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2) {
         x[level] = static_cast<float>(term_value(tables_.plain(level), z, z2, w));
         top = std::max(top, common + static_cast<double>(x[level]));
     }
+    top_[slot] = top;
     // One step of the key, then the sample: key-up scores 0, key-down x; relative to the largest, to stay in range.
     const double stay = 1.0 - key_switch_;
-    const double up_scale = std::exp(-top);
+    const double up_scale = fast::exp_neg(-top);
     double total = 0.0;
     double* up = alpha_.data();
     double* down = alpha_.data() + levels_;
@@ -219,7 +223,7 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2) {
         const double from_up = up[level];
         const double from_down = down[level];
         const double new_up = (stay * from_up + key_switch_ * from_down) * up_scale;
-        const double new_down = (stay * from_down + key_switch_ * from_up) * std::exp(common + x[level] - top);
+        const double new_down = (stay * from_down + key_switch_ * from_up) * fast::exp_neg(common + x[level] - top);
         up[level] = new_up;
         down[level] = new_down;
         total += new_up + new_down;
@@ -248,17 +252,20 @@ void LevelEvidence::finish() {
 
 void LevelEvidence::step_level(double* x) const {
     const double p = tables_.walk_p();
+    const double keep = 1.0 - 2.0 * p;
     const int n = levels_;
-    double sum = 0.0;
-    for (int pass = 0; pass < tables_.walk_passes(); ++pass) {
-        double before = x[0];  // reflecting ends
-        for (int i = 0; i < n; ++i) {
-            const double here = x[i];
-            const double after = i + 1 < n ? x[i + 1] : here;
-            x[i] = (1.0 - 2.0 * p) * here + p * (before + after);
-            before = here;
-        }
+    // Three taps, ends reflecting, from one buffer into the other: a loop a compiler can make into vectors, as an update in place is not.
+    double buffer[256];
+    double* from = x;
+    double* to = buffer;
+    for (int pass = 0; n > 1 && pass < tables_.walk_passes(); ++pass) {
+        to[0] = keep * from[0] + p * (from[0] + from[1]);
+        for (int i = 1; i < n - 1; ++i) to[i] = keep * from[i] + p * (from[i - 1] + from[i + 1]);
+        to[n - 1] = keep * from[n - 1] + p * (from[n - 2] + from[n - 1]);
+        std::swap(from, to);
     }
+    if (from != x) std::copy_n(from, n, x);
+    double sum = 0.0;
     for (int i = 0; i < n; ++i) sum += x[i];
     const double jump = tables_.jump();
     const double mean = sum / n;
@@ -305,13 +312,12 @@ void LevelEvidence::commit(bool all) {
             const std::size_t sample_slot = static_cast<std::size_t>(k) % ring_samples;
             const float* x = x_.data() + sample_slot * levels;
             const double common = tables_.w() * z_[sample_slot] * z_[sample_slot];
-            double top = 0.0;
-            for (std::size_t level = 0; level < levels; ++level) top = std::max(top, common + static_cast<double>(x[level]));
-            const double up_scale = std::exp(-top);
+            const double top = top_[sample_slot];
+            const double up_scale = fast::exp_neg(-top);
             double total = 0.0;
             for (std::size_t level = 0; level < levels; ++level) {
                 const double seen_up = up[level] * up_scale;
-                const double seen_down = down[level] * std::exp(common + x[level] - top);
+                const double seen_down = down[level] * fast::exp_neg(common + x[level] - top);
                 const double new_up = stay * seen_up + key_switch_ * seen_down;
                 const double new_down = stay * seen_down + key_switch_ * seen_up;
                 up[level] = new_up;
@@ -375,8 +381,8 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
         double top = -1e300;
         for (int i = 0; i < count; ++i) top = std::max(top, static_cast<double>(x[active[i]]));
         double sum = 0.0;
-        for (int i = 0; i < count; ++i) sum += active_p[i] * std::exp(x[active[i]] - top);
-        const double l1 = count > 0 ? common + top + std::log(sum) : 0.0;
+        for (int i = 0; i < count; ++i) sum += active_p[i] * fast::exp_neg(x[active[i]] - top);
+        const double l1 = count > 0 ? common + top + fast::log(sum) : 0.0;
 
         std::array<double, kEdgeCount> rise{};
         std::array<double, kEdgeCount> fall{};
@@ -391,11 +397,11 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
             }
             double up_sum = 0.0, down_sum = 0.0;
             for (int i = 0; i < edge_count; ++i) {
-                up_sum += edge_p[i] * std::exp(up[i] - up_top);
-                down_sum += edge_p[i] * std::exp(down[i] - down_top);
+                up_sum += edge_p[i] * fast::exp_neg(up[i] - up_top);
+                down_sum += edge_p[i] * fast::exp_neg(down[i] - down_top);
             }
-            rise[static_cast<std::size_t>(position)] = edge_count > 0 ? common + up_top + std::log(up_sum) : 0.0;
-            fall[static_cast<std::size_t>(position)] = edge_count > 0 ? common + down_top + std::log(down_sum) : 0.0;
+            rise[static_cast<std::size_t>(position)] = edge_count > 0 ? common + up_top + fast::log(up_sum) : 0.0;
+            fall[static_cast<std::size_t>(position)] = edge_count > 0 ? common + down_top + fast::log(down_sum) : 0.0;
         }
         SampleContext context;
         context.z = z;

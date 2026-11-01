@@ -4,9 +4,11 @@
 #include "track_table.hpp"
 
 #include <QAbstractTableModel>
+#include <QFont>
 
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 namespace kz4ap::app {
 
@@ -19,7 +21,7 @@ public:
     // The newest characters shown per track; the column elides further on its left when it is too narrow. Heuristic.
     static constexpr std::size_t kTextSymbols = 400;
 
-    explicit TrackListModel(QObject* parent = nullptr) : QAbstractTableModel(parent) {}
+    explicit TrackListModel(QObject* parent = nullptr);
 
     TrackTable& table() { return table_; }
     // bin_hz: the width of one FFT bin, Hz, named in the level column's header.
@@ -43,6 +45,8 @@ signals:
 private:
     TrackTable table_;
     std::uint64_t seen_version_ = 0;
+    std::vector<std::uint64_t> seen_revisions_;  // by row: what the views last showed
+    QFont fixed_font_;
     double bin_hz_ = 0;
     std::optional<double> center_hz_;
 };

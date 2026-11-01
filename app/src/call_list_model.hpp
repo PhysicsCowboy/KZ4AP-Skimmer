@@ -6,6 +6,7 @@
 #include "kz4ap/stream_runner.hpp"  // ahead of Qt, in every file AUTOMOC puts this one in first: Qt's macro emit breaks classical_decoder.hpp
 
 #include <QAbstractTableModel>
+#include <QFont>
 
 #include <cstdint>
 #include <memory>
@@ -38,6 +39,8 @@ private:
     std::uint64_t seen_version_ = 0;
     std::optional<double> center_hz_;
     double now_s_ = 0;
+    double shown_second_ = -1;  // s of stream: the whole second the list last showed
+    QFont fixed_font_;
 };
 
 }  // namespace kz4ap::app

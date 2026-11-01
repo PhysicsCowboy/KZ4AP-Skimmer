@@ -5,8 +5,12 @@
 #include "waterfall.hpp"
 
 #include <QImage>
+#include <QLine>
+#include <QPixmap>
+#include <QRegion>
 #include <QWidget>
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <optional>
@@ -46,11 +50,19 @@ signals:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
     QRect plot_rect() const;
     void rebuild_image();
     void draw_row_into_image(const WaterfallRow& row);
+    // What does not change with each row, drawn once and blitted: the background, the title, the axes, the color scale.
+    void draw_chrome();
+    // The markers' band above the plot, and their lines into it, which change only when a marker moves by a pixel.
+    void draw_marker_band();
+    QRect marker_band_rect() const;
+    // What a new row moves: the picture and the time ruler beside it.
+    QRegion scrolling_region() const;
 
     // Rows kept to redraw after a resize or a change of scale, newest last; a 4K display's height (heuristic).
     static constexpr std::size_t kHistoryRows = 2160;
@@ -64,6 +76,13 @@ private:
     NoiseFloorTracker floor_tracker_;
     std::deque<WaterfallRow> history_;
     std::vector<Marker> markers_;
+    std::vector<int> marker_x_;   // pixels in the plot, one per marker, -1 outside it: what the band was drawn from
+    QPixmap chrome_;
+    QPixmap marker_band_;
+    bool chrome_stale_ = true;
+    bool markers_stale_ = true;
+    std::array<std::vector<QLine>, 2> marker_lines_;  // into the plot: live, ended
+    std::optional<QLine> selected_line_;
     QImage image_;       // the plot, used as a ring: head_ is the scan line of the newest row
     int head_ = 0;
     std::vector<float> scratch_;

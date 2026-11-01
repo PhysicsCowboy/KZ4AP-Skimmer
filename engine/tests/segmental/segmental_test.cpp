@@ -4,15 +4,20 @@
 #include "kz4ap/channelizer.hpp"
 #include "kz4ap/morse.hpp"
 #include "kz4ap/segmental/evidence.hpp"
+#include "kz4ap/segmental/fast_math.hpp"
 #include "kz4ap/segmental/search.hpp"
 #include "kz4ap/segmental_decoder.hpp"
+#include "kz4ap/viterbi/observation.hpp"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <limits>
+#include <numbers>
 #include <random>
 #include <string>
 #include <vector>
@@ -23,6 +28,20 @@ using namespace kz4ap::segmental;
 namespace {
 
 using Window = std::array<double, kEdgeCount>;
+
+TEST(SegmentalFastMath, HoldsItsStatedErrors) {
+    for (double y = 0.0; y > -40.0; y -= 0.0037) {
+        const double exact = std::exp(y);
+        EXPECT_LE(std::fabs(fast::exp_neg(y) - exact), 7e-10 * exact) << y;
+    }
+    EXPECT_EQ(fast::exp_neg(0.0), 1.0);
+    EXPECT_EQ(fast::exp_neg(-41.0), 0.0);
+    EXPECT_EQ(fast::exp_neg(-1e9), 0.0);
+    for (double x = 1e-300; x < 1e300; x *= 1.37) EXPECT_NEAR(fast::log(x), std::log(x), 2e-11) << x;
+    for (double x = 1e-6; x < 2.0; x *= 1.0003) EXPECT_NEAR(fast::log(x), std::log(x), 2e-11) << x;
+    for (double x = 0.0; x < 4000.0; x += x < 40.0 ? 0.0013 : 0.37) EXPECT_NEAR(fast::ln_i0(x), viterbi::ln_i0(x), 2e-5) << x;
+    EXPECT_NEAR(fast::ln_i0(1e7), viterbi::ln_i0(1e7), 1e-5);
+}
 
 TEST(RunningSums, ScoreAnIntervalByOneSubtraction) {
     std::mt19937 rng(1);
@@ -147,6 +166,58 @@ TEST(SegmentalSearch, ReadsMadeUpEvidenceAtAWeakAndAStrongLevel) {
             EXPECT_EQ(text_of(search.best_text()), "PARIS PARIS") << "gain " << gain << ", dot " << dot;
         }
     }
+}
+
+TEST(ModelTables, OpenSpacingIsAShareOfTheStorysDot) {
+    SegmentalConfig config;
+    config.open_spacing_dots = 0.5;
+    const ModelTables half(config);
+    config.open_spacing_dots = 0.0;
+    const ModelTables none(config);
+    const viterbi::ViterbiConfig& model = config.model;
+    for (int f = 0; f < half.fists(); ++f) {
+        const double dot_s = model.dot_min_ms * std::pow(model.speed_ratio, half.speed_of(f)) / 1000.0;
+        EXPECT_EQ(half.open_spacing(f), static_cast<int>(0.5 * dot_s / model.sample_interval_s));
+        EXPECT_EQ(none.open_spacing(f), 0);
+    }
+}
+
+TEST(ModelTables, ALongGapsSurvivalStaysOptimistic) {
+    const SegmentalConfig config;
+    const ModelTables tables(config);
+    // Past the fine lengths a bin reads its first length's value, and the bound never rises with the length.
+    const int fist = tables.fists() - 1;
+    const int last = tables.gap_hi(fist);
+    ASSERT_GT(last, ModelTables::kSurvivalFineLengths + 32);
+    const int bin = ModelTables::kSurvivalFineLengths + 16;
+    for (int k = 1; k < 16; ++k) EXPECT_EQ(tables.gap_survival(fist, bin + k), tables.gap_survival(fist, bin));
+    for (int length = 1; length <= last; ++length) EXPECT_LE(tables.gap_survival(fist, length), tables.gap_survival(fist, length - 1) + 1e-12);
+    // A row holds what the accessors read.
+    const ModelTables::FistRow& row = tables.row(fist);
+    EXPECT_EQ(row.gap_hi, tables.gap_hi(fist));
+    EXPECT_EQ(row.mark_hi, tables.mark_hi(fist));
+    EXPECT_EQ(row.ends[3].hi, tables.range(3, fist).hi);
+    EXPECT_TRUE(row.stretched == (tables.stretch_of(fist) > 1.0));
+}
+
+TEST(ModelTables, ABirthsEndsAreEverySpeedsAtItsLength) {
+    const SegmentalConfig config;
+    const ModelTables tables(config);
+    const int length = tables.range(0, tables.first_fist(tables.speeds() / 2)).hi;
+    std::size_t count = 0;
+    double survive = -std::numeric_limits<double>::infinity();
+    for (int speed = 0; speed < tables.speeds(); ++speed) {
+        const int plain = tables.first_fist(speed);
+        survive = std::max(survive, tables.mark_survival(plain, length));
+        for (int label = 0; label < 2; ++label) {
+            const ModelTables::Range& r = tables.range(label, plain);
+            if (tables.child(0, label) >= 0 && length >= r.lo && length <= r.hi) ++count;
+        }
+    }
+    const auto ends = tables.open_ends(length);
+    EXPECT_EQ(ends.size(), count);
+    EXPECT_DOUBLE_EQ(tables.open_survival(length), survive);
+    for (const ModelTables::OpenEnd& end : ends) EXPECT_EQ(tables.speed_of(end.fist), end.speed);
 }
 
 TEST(ModelTables, AFistsGapsAreThoseOfTheSteppedSpeedAndItsMarksItsOwn) {
@@ -741,6 +812,76 @@ TEST(SegmentalShared, TablesFromTheStandInAgreeWithTheFullRate) {
         EXPECT_NEAR(parts.output_noise.sigma2_per_n0_hz, noise.sigma2_per_n0_hz, 1e-4 * noise.sigma2_per_n0_hz) << c.rate;
         EXPECT_NEAR(parts.output_noise.w_strong, noise.w_strong, 1e-4 * noise.w_strong) << c.rate;
     }
+}
+
+namespace {
+// dB re 0 Hz: the response of real taps at the channel's 1 500 samples/s, at a tone f_hz from the center.
+double front_response_db(const std::vector<double>& taps, double f_hz) {
+    double re = 0.0, im = 0.0;
+    for (std::size_t i = 0; i < taps.size(); ++i) {
+        const double phase = 2.0 * std::numbers::pi * f_hz * static_cast<double>(i) / 1500.0;
+        re += taps[i] * std::cos(phase);
+        im += taps[i] * std::sin(phase);
+    }
+    return 10.0 * std::log10(re * re + im * im);
+}
+}  // namespace
+
+TEST(FilterScale, ANarrowerFiltersEdgesAreAQuarterOfItsDot) {
+    const ChannelizerConfig channel{48000, 2048, 64, 150.0};
+    const SegmentalConfig widest = at_filter_scale(SegmentalConfig{}, 1);
+    EXPECT_EQ(widest.front_filter_rise_s, 0.0);
+    const SegmentalParts wide(widest, channel);
+    EXPECT_EQ(wide.front_taps.size(), 25u);  // the widest filter keeps the chain's own edges
+
+    // E = T / 4 = 9 ms at T = 36 ms: 2 floor(45 ms x 1 500 /s / 2) + 1 taps (derived).
+    const SegmentalConfig tapered = at_filter_scale(SegmentalConfig{}, 3);
+    EXPECT_NEAR(tapered.front_filter_rise_s, 0.009 * 0.590334, 1e-8);
+    const SegmentalParts parts(tapered, channel);
+    ASSERT_EQ(parts.front_taps.size(), 67u);
+    double sum = 0.0, squares = 0.0;
+    for (const double t : parts.front_taps) {
+        sum += t;
+        squares += t * t;
+    }
+    EXPECT_NEAR(sum, 1.0, 1e-12);
+    EXPECT_NEAR(squares * 1500.0, 26.04, 0.01);  // Hz: noise bandwidth, 26.96 Hz as it was
+    // Half a step's response at 35.29 ms: 4.41 samples of 8 ms, and 3 samples of delay put it at 7.41, against the target's 7.84 (derived).
+    EXPECT_NEAR(tapered.template_delay_s, 0.024, 1e-12);
+
+    // With 0, the 4.235 ms of the widest filter, 61 taps, 26.96 Hz and 32 ms: what the change is measured against.
+    SegmentalConfig plain;
+    plain.front_taper_ratio = 0.0;
+    const SegmentalConfig untapered = at_filter_scale(plain, 3);
+    EXPECT_EQ(untapered.front_filter_rise_s, 0.0);
+    EXPECT_NEAR(untapered.template_delay_s, 0.032, 1e-12);
+    const SegmentalParts old_parts(untapered, channel);
+    ASSERT_EQ(old_parts.front_taps.size(), 61u);
+
+    // Where a strong neighbor comes in: dB re 0 Hz, derived from the taps. The band's middle gains, the main lobe hardly moves.
+    const struct {
+        double f_hz, tapered_db, untapered_db;
+    } points[] = {{40.0, -14.3, -13.5}, {100.0, -28.9, -23.0}, {120.0, -35.7, -26.3}, {150.0, -47.8, -28.5}};
+    for (const auto& p : points) {
+        EXPECT_NEAR(front_response_db(parts.front_taps, p.f_hz), p.tapered_db, 0.1) << p.f_hz << " Hz";
+        EXPECT_NEAR(front_response_db(old_parts.front_taps, p.f_hz), p.untapered_db, 0.1) << p.f_hz << " Hz";
+    }
+    // The longer pulse's edges must still lie in the evidence's window, samples 5 to 10 after a claim (evidence.hpp).
+    const auto& s = parts.template_tables.s;
+    std::cout << "measured: m = 3, E = 9 ms: s_4 " << s[4] << ", s_5 " << s[5] << ", s_10 " << s[10] << ", s_11 " << s[11] << "\n";
+    EXPECT_LT(s[4], 0.05);
+    EXPECT_GT(s[10], 0.9);
+}
+
+TEST(FilterScale, RefusesATaperOutsideZeroToOne) {
+    SegmentalConfig config;
+    config.front_taper_ratio = -0.1;
+    EXPECT_THROW(at_filter_scale(config, 1), std::invalid_argument);
+    EXPECT_THROW(at_filter_scale(config, 3), std::invalid_argument);
+    config.front_taper_ratio = 1.5;
+    EXPECT_THROW(at_filter_scale(config, 3), std::invalid_argument);
+    config.front_taper_ratio = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(at_filter_scale(config, 3), std::invalid_argument);
 }
 
 TEST(FilterScale, ScalesThatCannotBeAreRefused) {

@@ -1,5 +1,6 @@
 #include "kz4ap/segmental_decoder.hpp"
 
+#include "kz4ap/segmental/fast_math.hpp"
 #include "kz4ap/viterbi/observation.hpp"
 
 #include <algorithm>
@@ -71,7 +72,7 @@ SegmentalParts::SegmentalParts(const segmental::SegmentalConfig& c, const Channe
     : config(c),
       channel_rate_hz(channel_rate(channel)),
       channel_samples_per_sample(spacing_of(c, channel_rate_hz)),
-      front_taps(viterbi::front_filter_taps_any_width(channel_rate_hz, c.model.front_dot_s, c.model.edge_rise_s)),
+      front_taps(viterbi::front_filter_taps_any_width(channel_rate_hz, c.model.front_dot_s, c.front_filter_rise_s > 0.0 ? c.front_filter_rise_s : c.model.edge_rise_s)),
       output_noise(noise_of(c, channel, front_taps)),
       template_tables(template_of(c, channel, front_taps)),
       level_tables(c, output_noise, template_tables),
@@ -205,12 +206,12 @@ bool SegmentalDecoder::choose_leader(double stream_now_s, bool may_drop) {
 }
 
 void SegmentalDecoder::FreeKey::step(double l1, double top) {
-    const double new_up = (stay * up + change * down) * std::exp(-top);
-    const double new_down = (stay * down + change * up) * std::exp(l1 - top);
+    const double new_up = (stay * up + change * down) * segmental::fast::exp_neg(-top);
+    const double new_down = (stay * down + change * up) * segmental::fast::exp_neg(l1 - top);
     const double total = new_up + new_down;
     up = new_up / total;
     down = new_down / total;
-    nats += top + std::log(total);
+    nats += top + segmental::fast::log(total);
 }
 
 void SegmentalDecoder::Stream::advance_free_key() {

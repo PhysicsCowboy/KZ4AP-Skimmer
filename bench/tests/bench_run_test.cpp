@@ -604,6 +604,35 @@ TEST_F(BenchRun, SegmentalReadsASlowStationPastACloseNeighbor) {
     }
 }
 
+TEST_F(BenchRun, SegmentalReadsPastAStrongNeighborBehindTheNarrowerFiltersSidelobes) {
+    // Wanted +15 dB S500; a keyed neighbor 100 Hz above at +12 dB re wanted. Outside the main lobe, so what gets in is the m = 3 pulse's sidelobes:
+    // -23.0 dB re 0 Hz with edges of 4.235 ms, -28.9 with E = T/4 = 9 ms (derived).
+    const std::string text = "CQ CQ DE W1AW W1AW K TEST 5NN 73 DE K1ABC CQ CQ DE W1AW W1AW K TEST 5NN 73 DE K1ABC";
+    const std::string other = "QRZ DE N3VO N3VO PSE K UR 599 BK TU 73 EE EE QRZ DE N3VO K QRZ DE N3VO N3VO PSE K UR 599 BK TU 73 EE EE QRZ DE N3VO K";
+    const double wpm = 20.0, start_s = 0.7, level_db = 15.0, relative_db = 12.0;
+    const std::vector<std::pair<double, double>> keying = kz4ap::test::keying(text, wpm, start_s);
+    const double seconds = keying.back().second + 1.0;
+    const double amplitude = std::sqrt(std::pow(10.0, level_db / 10.0) * 0.02 * 0.02 * 500.0 / kRate);
+    const double neighbor = amplitude * std::pow(10.0, relative_db / 20.0);
+    std::vector<kz4ap::Sample> x = kz4ap::test::keyed_signal_d17(keying, kRate, seconds, 300.0, amplitude, 0.02, 4351);
+    const std::vector<kz4ap::Sample> y =
+        kz4ap::test::keyed_signal_d17(kz4ap::test::keying(other, 25.0, start_s), kRate, seconds, 400.0, neighbor, 0.0, 4352);
+    for (std::size_t i = 0; i < x.size(); ++i) x[i] += y[i];
+    write_wav(wav_, x, static_cast<int>(kRate));
+    write_label(labels_, text, wpm, 300.0, level_db, start_s, keying.back().second, seconds);
+    const auto cer = [&](std::vector<std::string> options) {
+        options.insert(options.end(), {"--oracle", "--decoder", "segmental", "--no-timing", "--json", path("result.json")});
+        const Outcome o = run(options);
+        EXPECT_EQ(o.status, 0) << o.err;
+        return read_json(path("result.json")).at("score").at("signals").at(0).at("cer").get<double>();
+    };
+    const double tapered = cer({});
+    const double untapered = cer({"--set", "front_taper_ratio=0"});
+    std::cout << "measured: neighbor 100 Hz, +12 dB re wanted: CER " << tapered << " with E = T/4, " << untapered << " with E = 4.235 ms\n";
+    EXPECT_LE(tapered, 0.1);
+    EXPECT_GE(untapered, 0.5);  // the control: at 4.235 ms the narrower stream does not earn the lead (measured 0.807)
+}
+
 TEST_F(BenchRun, SegmentalReadsALateStationPastACloseNeighborThroughTheDetector) {
     // Review 4, finding 2, as the app meets it: on the detector's path, a pair that starts 20 s into the stream, wanted +15 dB S500 at
     // 15 WPM and a keyed neighbor 40 Hz above, -10 dB re wanted. A channel that opens after 10 s of stream must keep its narrower filter
@@ -730,14 +759,15 @@ protected:
 
 TEST_F(BenchRunFloor, ReadsBehindAReceiversPassband) {
     // Noise only within 500 or 2 400 Hz around 0 Hz, 50 dB lower outside, one station at +20 dB S500 inside: the hiss falls
-    // in the stopband and reads about 50 dB low. The review: 2.32 and 2.01 without the floor, 0.127 and 0.146 with it.
+    // in the stopband and reads about 50 dB low. The review: 2.32 and 2.01 without the floor, 0.127 and 0.146 with it; review 7, E = T/4 at
+    // m = 3: 0.829 without at 2 400 Hz, 0.049 and 0.061 with, so the control asks for a clear fault and not for a CER over 1.
     for (const double width_hz : {500.0, 2400.0}) {
         const double outside = std::pow(10.0, -50.0 / 20.0);
         const Read r = read_on(20.0, 0.2 * width_hz, [=](double f_hz) { return std::fabs(f_hz) < width_hz / 2.0 ? 1.0 : outside; });
         std::cout << "measured: passband " << width_hz << " Hz: CER " << r.with_floor << " with the floor, " << r.without
                   << " without\n";
         EXPECT_LE(r.with_floor, 0.25) << width_hz << " Hz";
-        EXPECT_GE(r.without, 1.0) << width_hz << " Hz";
+        EXPECT_GE(r.without, 0.5) << width_hz << " Hz";
     }
 }
 

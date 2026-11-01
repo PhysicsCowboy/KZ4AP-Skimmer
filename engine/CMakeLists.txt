@@ -63,6 +63,7 @@ add_library(kz4ap_engine_core OBJECT
   src/iq_recorder.cpp
   src/sdrplay_source.cpp
   src/segmental/evidence.cpp
+  src/segmental/fast_math.cpp
   src/segmental/search.cpp
   ${KZ4AP_BANK_SOURCES}
   ${KZ4AP_VITERBI_SOURCES}

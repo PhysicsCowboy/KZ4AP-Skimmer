@@ -13,7 +13,7 @@ namespace {
 const kz4ap::DetectorConfig& ValidatedConfig(const kz4ap::DetectorConfig& config) {
     if (config.sample_rate <= 0 || config.fft_size <= 0 || config.hop <= 0 ||
         config.average_s <= 0 || config.birth_s < 0 || config.death_s <= 0 ||
-        config.max_tracks == 0 || config.min_separation_bins < 1 || !(config.attribution_distance_hz > 0) ||
+        config.max_tracks == 0 || config.floor_every_frames < 1 || config.min_separation_bins < 1 || !(config.attribution_distance_hz > 0) ||
         !(config.peak_radius_hz > 0) || !(config.level_radius_hz >= 0) || !(config.candidate_step_hz >= 0) || !(config.local_floor_radius_hz >= 0))
         throw std::invalid_argument("invalid signal detector config");
     return config;
@@ -52,9 +52,12 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
     } else {
         for (std::size_t i = 0; i < n; ++i) average_[i] += a * (std::pow(10.0, frame.power_db[i] / 10.0) - average_[i]);
     }
-    scratch_ = average_;
-    std::nth_element(scratch_.begin(), scratch_.begin() + static_cast<std::ptrdiff_t>(n / 2), scratch_.end());
-    const float floor_db = static_cast<float>(10.0 * std::log10(scratch_[n / 2] + 1e-30));
+    if ((frames_seen_ - 1) % static_cast<std::uint64_t>(config_.floor_every_frames) == 0) {
+        scratch_ = average_;
+        std::nth_element(scratch_.begin(), scratch_.begin() + static_cast<std::ptrdiff_t>(n / 2), scratch_.end());
+        floor_db_ = static_cast<float>(10.0 * std::log10(scratch_[n / 2] + 1e-30));
+    }
+    const float floor_db = floor_db_;
 
     DetectorUpdate update;
     const int last = static_cast<int>(n) - 1;

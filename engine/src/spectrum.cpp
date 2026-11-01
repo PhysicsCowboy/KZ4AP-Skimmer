@@ -1,8 +1,10 @@
 #include "kz4ap/spectrum.hpp"
 
 #include "fft.hpp"
+#include "kz4ap/segmental/fast_math.hpp"
 
 #include <cmath>
+#include <complex>
 #include <numbers>
 #include <stdexcept>
 
@@ -49,11 +51,17 @@ std::vector<SpectrumFrame> SpectrumAnalyzer::push(std::span<const Sample> in) {
         frame.time_s = static_cast<double>(dropped_ + start + n) / sample_rate_;
         frame.power_db.resize(n);
         frame.power_fs2.resize(n);
-        for (std::size_t i = 0; i < n; ++i) {
-            const float power = std::norm(fft_out_[(i + half) % n]) * power_scale_ + 1e-20f;
-            frame.power_fs2[i] = power;
-            frame.power_db[i] = 10.0f * std::log10(power);
-        }
+        // The upper half of the FFT first: lowest frequency first. Power is at least 1e-20 FS^2, a normal float; the logarithm per bin is the analyzer's largest cost.
+        const auto fill = [&](std::size_t first, std::size_t count, const std::complex<float>* bins) {
+            constexpr double kDbPerNeper = 4.3429448190325182;
+            for (std::size_t i = 0; i < count; ++i) {
+                const float power = std::norm(bins[i]) * power_scale_ + 1e-20f;
+                frame.power_fs2[first + i] = power;
+                frame.power_db[first + i] = static_cast<float>(kDbPerNeper * segmental::fast::log(power));
+            }
+        };
+        fill(0, n - half, fft_out_.data() + half);
+        fill(n - half, half, fft_out_.data());
         frames.push_back(std::move(frame));
         start += static_cast<std::size_t>(hop_);
     }

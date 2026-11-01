@@ -152,6 +152,7 @@ TEST(SignalDetector, RejectsInvalidConfig) {
         mutate(c);
         EXPECT_THROW(SignalDetector d(c), std::invalid_argument);
     };
+    bad([](DetectorConfig& c) { c.floor_every_frames = 0; });
     bad([](DetectorConfig& c) { c.sample_rate = 0; });
     bad([](DetectorConfig& c) { c.sample_rate = -1; });
     bad([](DetectorConfig& c) { c.fft_size = 0; });

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <stdexcept>
 #include <vector>
 
@@ -139,24 +140,43 @@ struct SegmentalConfig {
     // edge in samples, and the evidence's window (kEdgeFirst ... kEdgeDone) stays where it is. A story then claims its edges this
     // much early, which nothing reads but the symbols' times. Set by at_filter_scale.
     double template_delay_s = 0.0;
+    // E / T, the raised-cosine edges' full length E as a share of the dot T, of a narrower filter's pulse: 0.25 is 9 ms at T = 36 ms. A longer edge
+    // lowers the pulse's sidelobes, where a strong neighbor at 60 to 200 Hz gets in (derived); the noise bandwidth falls 27.0 to 26.0 Hz (derived), at no
+    // cost measured. The value is a heuristic that the test set chose, inside a plateau of 3/16 to 5/16; 3/8 starts to cost at +30 dB S500. 0 keeps the
+    // widest filter's 4.235 ms. The widest filter (m = 1) keeps its own edges, which are the chain's.
+    double front_taper_ratio = 0.25;
+    // s: the 10-90% rise of those edges, E x 0.590334; 0 means the model's edge_rise_s. Set by at_filter_scale.
+    double front_filter_rise_s = 0.0;
 
     // --- The search (search.hpp) ---
 
     // nats: how far behind the best a story may fall and stay. Heuristic, set by measurement.
     double beam_nats = 15.0;
-    // stories: the most open elements kept. Heuristic, set by measurement.
-    int ceiling = 3000;
-    // 1: an element may end only within this many standard deviations of ln(length) of its median. Heuristic.
+    // stories: the most open elements kept. A heuristic by measurement, with ceiling_stretch_bonus_nats: on a slice of seed 1, 1 500 at +4 nats reads A2 0.2765, C2 0.0627, E2
+    // 0.4867, I2 0.0168 against 0.2763, 0.0625, 0.4870, 0.0210 at 3 000 with no bonus, for 11% less decoder CPU on real 40 m, 30 min of it listing the same 20 calls.
+    int ceiling = 1500;
+    // dots of the story's speed: a new element is not opened if one opened within this time in the same state (kind, fist, node) has a base at least as high. Its future
+    // differs by a length within this share of a dot, against a lower score. 0 leaves it out. A heuristic by measurement, on a slice of seed 1: 0.125 reads A2 0.2763, C2 0.0625, E2
+    // 0.4870, I2 0.0210 against 0.2767, 0.0628, 0.4904, 0.0211 with none, by signal 155 better, 147 worse, for 11% less decoder CPU on real 40 m; 0.25 and 0.5 save 16% and 19% and read C2 0.0635, 0.0637.
+    double open_spacing_dots = 0.125;
+    // A heuristic by measurement: a weak Farnsworth sender's true story stands 8 nats behind its plain rivals (gap_stretch_prior) until it has earned that, and the ceiling used
+    // to take it first. At +8 nats A2 reads 0.2785 and C2 0.0637, the plain stories displaced; at +4 nats as above.
+    // nats: what a story of a stretched fist counts for above its score when the ceiling ranks the stories: what its fist's prior took from it once.
+    double ceiling_stretch_bonus_nats = 4.0;
+
+    // 1: an element may end only within this many standard deviations of ln(length) of its median. Heuristic. 3.5 saves 5% more CPU per second of stream on real 40 m, with the same
+    // list, and costs H2 0.0568 and 0.0492 against 0.0562 and 0.0473 on seeds 1 and 2, and one station of three beside a neighbor at 60 Hz on the detector's path: not taken.
     double duration_z_max = 4.0;
 };
 
 // The configuration at filter scale m: the sample interval, the filter's dot and the fastest speed's dot m times as long, so
-// that in samples the front filter and the fastest dot stay what they are (the evidence's window of 6 samples and its short
+// that in samples the front filter's dot and the fastest dot stay what they are (the evidence's window of 6 samples and its short
 // elements stay valid) and the speed grid keeps its slowest dot. The level's frame and look-ahead keep about their lengths in s,
 // in whole samples; the channel floor's stride and refresh are m times as long, where its noise's correlation falls.
 // Throws std::invalid_argument for an m below 1.
 inline SegmentalConfig at_filter_scale(SegmentalConfig c, int m) {
     if (m < 1) throw std::invalid_argument("segmental: a filter scale must be at least 1");
+    if (!(c.front_taper_ratio >= 0.0 && c.front_taper_ratio <= 1.0)) throw std::invalid_argument("segmental: front_taper_ratio must lie in 0 to 1");
     if (m == 1) return c;
     const double scale = m;
     c.ceiling = c.filter_scale_ceiling;
@@ -170,8 +190,10 @@ inline SegmentalConfig at_filter_scale(SegmentalConfig c, int m) {
     c.channel_floor_stride_s *= scale;
     c.channel_floor_refresh_s *= scale;
     // The half of a step's response lies at the channel filter's 10.67 ms and the edge's 2.12 ms plus half the front pulse
-    // (T + E) / 2, E = 4.235 ms (derived; viterbi/mark_template.hpp): 7.84 samples at m = 1. The delay keeps it there, to a sample.
-    const double half_s = 0.01279 + (c.model.front_dot_s * scale + 0.004235) / 2.0;
+    // (T + E) / 2, E = 4.235 ms at m = 1 (derived; viterbi/mark_template.hpp): 7.84 samples. The delay keeps it there, to a sample.
+    const double edge_s = c.front_taper_ratio > 0.0 ? c.front_taper_ratio * c.model.front_dot_s * scale : 0.004235;
+    if (c.front_taper_ratio > 0.0) c.front_filter_rise_s = edge_s * ((std::numbers::pi - 2.0 * std::acos(0.8)) / std::numbers::pi);
+    const double half_s = 0.01279 + (c.model.front_dot_s * scale + edge_s) / 2.0;
     const double base_half_s = 0.01279 + (c.model.front_dot_s + 0.004235) / 2.0;
     c.template_delay_s = std::max(0.0, std::round(base_half_s / interval_s - half_s / (interval_s * scale))) * interval_s * scale;
     c.model.speed_count = std::max(1, c.model.speed_count - static_cast<int>(std::lround(std::log(scale) / std::log(c.model.speed_ratio))));

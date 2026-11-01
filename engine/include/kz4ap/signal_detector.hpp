@@ -27,6 +27,9 @@ enum class Attribution {
 };
 
 struct DetectorConfig {
+    // frames: how often the band's median, the floor, is taken from the average, one every so many frames. It costs a selection over every bin, and the average moves slowly
+    // (average_s). 1 takes it each frame.
+    int floor_every_frames = 1;
     int sample_rate = 192000;
     int fft_size = 8192;
     int hop = 4096;                  // samples between frames
@@ -131,6 +134,7 @@ private:
     int step_bins_ = 1;   // candidate_step_hz in bins
     int local_floor_bins_ = 0;  // local_floor_radius_hz in bins
     double alpha_;
+    float floor_db_ = 0.0f;  // the last floor taken (floor_every_frames), dB re 1 FS^2 per bin
     std::uint64_t frames_seen_ = 0;
     double first_frame_s_ = 0;
     std::vector<double> average_;  // linear power per bin

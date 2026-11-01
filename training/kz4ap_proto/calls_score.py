@@ -9,7 +9,9 @@ RUN.csv is what kz4ap-calls --out or kz4ap-skimmer --calls writes (one row per c
 adapter used is printed so that a wrong guess shows:
 
 - `adif`: `<CALL:5>K1ABC` tags. The frequency from `<FREQ:n>`, MHz.
-- `spots`: DX-cluster and CW Skimmer telnet lines, `DX de W3LPL-#: 7025.1 K1ABC 12 dB 25 WPM CQ 1234Z`. Each line is one spot.
+- `spots`: DX-cluster and CW Skimmer telnet lines, `DX de W3LPL-#: 7025.1 K1ABC 12 dB 25 WPM CQ 1234Z`. Each line is one spot. As CW Skimmer 2.1
+  really sends them: the spotter is `-#:` when its Operator page is empty; playing a WAV with no QRG tag, the frequency is the offset from the
+  center, kHz, 0.1 kHz steps, and may be negative; the clock is 0000Z with no QTR tag. A leading local time stamp, HH:MM:SS[.f], is allowed.
 - `csv`: a comma-separated file with a header naming the call's column: `dx`, `dx_call`, `call`, `callsign`, or `station`, in that order of
   preference, since in the Reverse Beacon Network's files `callsign` is the skimmer and `dx` the station spotted. A frequency from a
   column `freq_khz`, `freq`, `frequency` or `qrg` (kHz; values under 100 are taken as MHz) or `freq_hz` (Hz, relative frequencies kept).
@@ -37,7 +39,7 @@ _DIGIT_SECOND = {
 }
 _WHOLE_LETTER = "BFGIKMNRW"
 _BASE = re.compile(r"^([A-Z0-9]{1,3}?)([0-9]{1,4})([A-Z]{1,4})$")
-_SPOT = re.compile(r"^\s*DX\s+DE\s+\S+\s+(\d+(?:\.\d+)?)\s+([A-Z0-9/]+)", re.IGNORECASE)
+_SPOT = re.compile(r"^\s*(?:\d\d:\d\d:\d\d(?:\.\d+)?\s+)?DX\s+DE\s+\S*\s+(-?\d+(?:\.\d+)?)\s+([A-Z0-9/]+)", re.IGNORECASE)
 _ADIF_CALL = re.compile(r"<CALL:(\d+)(?::[A-Z])?>", re.IGNORECASE)
 _ADIF_FREQ = re.compile(r"<FREQ:(\d+)(?::[A-Z])?>", re.IGNORECASE)
 _MODIFIERS = {"P", "M", "MM", "AM", "QRP", "QRPP", "A"}

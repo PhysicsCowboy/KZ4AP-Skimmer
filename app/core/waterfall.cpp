@@ -1,5 +1,7 @@
 #include "waterfall.hpp"
 
+#include "kz4ap/segmental/fast_math.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -145,7 +147,7 @@ std::optional<WaterfallRow> RowBuilder::push(const SpectrumFrame& frame) {
         const std::size_t end = std::min(bins, (c + 1) * factor);
         for (std::size_t i = c * factor; i < end; ++i) most = std::max(most, power_[i]);
         // -300 dBFS for a column of exact zeros, far below any display floor.
-        row.dbfs[c] = most > 0.0f ? 10.0f * std::log10(most * scale) : -300.0f;
+        row.dbfs[c] = most > 0.0f ? static_cast<float>(4.3429448190325182 * segmental::fast::log(static_cast<double>(most * scale))) : -300.0f;
     }
     std::fill(power_.begin(), power_.end(), 0.0f);
     frames_ = 0;
