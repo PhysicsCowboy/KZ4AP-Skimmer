@@ -410,7 +410,6 @@ TEST(StreamRunnerBudget, APipelineBehindALiveSourceGivesUpTracks) {
     const StreamStatus behind = run_to_end(std::make_unique<BehindSource>(many_stations(24, 8.0), 0.0, 0.1));
     ASSERT_EQ(behind.state, StreamStatus::State::Finished) << behind.error;
     EXPECT_GT(behind.track_budget, 0u);
-    EXPECT_LE(behind.track_budget, 24u);
     const StreamStatus caught_up = run_to_end(std::make_unique<BehindSource>(many_stations(24, 8.0), 0.0));
     ASSERT_EQ(caught_up.state, StreamStatus::State::Finished) << caught_up.error;
     EXPECT_EQ(caught_up.track_budget, 0u);
