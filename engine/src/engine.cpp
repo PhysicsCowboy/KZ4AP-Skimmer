@@ -41,6 +41,8 @@ EngineConfig resolved(EngineConfig c) {
     if (c.decoder.front_end == FrontEnd::Segmental && c.detector.local_floor_radius_hz == 0.0) c.detector.local_floor_radius_hz = 1000.0;
     if (c.decoder.front_end == FrontEnd::Segmental) {
         c.detector.one_track_per_peak = true;
+        // Every 4th block, 85 ms at the usual block of 21.33 ms, against an average over average_s: heuristic. 8 192 bins selected 47 times/s is most of the detector's CPU.
+        c.detector.floor_every_frames = 4;
         c.detector.dc_guard_hz = c.channel_distance_hz;
     }
     return c;
