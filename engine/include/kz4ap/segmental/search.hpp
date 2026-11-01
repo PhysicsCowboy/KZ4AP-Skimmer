@@ -78,7 +78,13 @@ public:
     }
     double gap_survival(int fist, int length) const {
         return gap_survival_[static_cast<std::size_t>(gap_survival_offset_[static_cast<std::size_t>(fist)] +
-                                                      std::min(length, gap_survival_length_[static_cast<std::size_t>(fist)] - 1))];
+                                                      std::min(survival_index(length), gap_survival_length_[static_cast<std::size_t>(fist)] - 1))];
+    }
+    // The gaps' survival table reads every length to kSurvivalFineLengths samples, then one length in 16: a long gap's survival barely moves, and at 8 bytes a length the
+    // table of about 100 fists over thousands of lengths is what the search's loop mostly waits for. Each entry is the first length's, so that the bound stays optimistic.
+    static constexpr int kSurvivalFineLengths = 256;
+    static int survival_index(int length) {
+        return length < kSurvivalFineLengths ? length : kSurvivalFineLengths + ((length - kSurvivalFineLengths) >> 4);
     }
     int mark_hi(int fist) const { return mark_hi_[static_cast<std::size_t>(speed_of(fist))]; }
     int gap_hi(int fist) const { return gap_hi_[static_cast<std::size_t>(fist)]; }

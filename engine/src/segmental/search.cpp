@@ -135,10 +135,11 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
     for (int f = 0; f < fists_; ++f) {
         const int speed = speed_of_[static_cast<std::size_t>(f)];
         const int stepped = gap_speed[static_cast<std::size_t>(f)];
-        const int length_count = gap_hi_[static_cast<std::size_t>(f)] + 2;
+        const int longest_length = gap_hi_[static_cast<std::size_t>(f)] + 1;
         gap_survival_offset_[static_cast<std::size_t>(f)] = static_cast<int>(gap_survival_.size());
-        gap_survival_length_[static_cast<std::size_t>(f)] = length_count;
-        for (int length = 0; length < length_count; ++length) {
+        gap_survival_length_[static_cast<std::size_t>(f)] = survival_index(longest_length) + 1;
+        for (int length = 0; length <= longest_length; ++length) {
+            if (length >= kSurvivalFineLengths && ((length - kSurvivalFineLengths) & 15) != 0) continue;
             const int tau = std::max(length, 1);
             gap_survival_.push_back(std::max({fist.log_survival(viterbi::Kind::ElementGap, speed, tau),
                                               fist.log_survival(viterbi::Kind::LetterGap, stepped, tau) - letter_gap_cost_,
@@ -445,7 +446,7 @@ void Search::Impl::boundary(std::int64_t j) {
         const int length = static_cast<int>(j - e.start);
         const ModelTables::FistRow& row = model.row(e.speed);
         const int node = e.node;
-        const double score = e.base + gap_survivals[row.gap_survival_first + std::min(length, row.gap_survival_last)] + gap_reach_from[first_d(length)];
+        const double score = e.base + gap_survivals[row.gap_survival_first + std::min(ModelTables::survival_index(length), row.gap_survival_last)] + gap_reach_from[first_d(length)];
         const ModelTables::Range& r = row.ends[kElementGap];
         const ModelTables::Range& lg = row.ends[kLetterGap];
         const ModelTables::Range& wg = row.ends[kWordGap];
