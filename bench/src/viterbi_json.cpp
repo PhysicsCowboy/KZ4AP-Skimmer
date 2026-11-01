@@ -475,6 +475,7 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"channel_floor_refresh_s", &config.channel_floor_refresh_s},
         {"channel_floor_start_s", &config.channel_floor_start_s},
         {"beam_nats", &config.beam_nats},
+        {"front_taper_ratio", &config.front_taper_ratio},
         {"open_spacing_dots", &config.open_spacing_dots},
         {"ceiling_stretch_bonus_nats", &config.ceiling_stretch_bonus_nats},
         {"duration_z_max", &config.duration_z_max},
