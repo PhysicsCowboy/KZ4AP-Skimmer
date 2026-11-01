@@ -478,7 +478,7 @@ void MainWindow::build_status_bar() {
     statusBar()->addPermanentWidget(cpu_label_);
     cpu_label_->setToolTip(tr("Over the last 10 s of wall clock. Pipeline: CPU of the pipeline's thread (spectrum, "
                               "detector, channelizer, decoders, waterfall rows) per second of channel output, summed "
-                              "over channels. Decoder: time inside the decoders, the same way."));
+                              "over channels. Decoder: time inside the decoders, the same way. The GUI's thread, painting, is not in this figure."));
 }
 
 bool MainWindow::open_recording(const QString& path, double start_s) {
@@ -675,7 +675,7 @@ void MainWindow::update_status(const StreamStatus& status) {
     if (status.stream_s < kCpuShownFromS) {
         cpu_label_->setText(tr("CPU: shown from %1 s of stream").arg(kCpuShownFromS, 0, 'f', 0));
     } else if (recent.pipeline_ms_per_channel_s && recent.per_track_ms_per_channel_s && recent.fixed_ms_per_stream_s) {
-        cpu_label_->setText(tr("CPU: %1 ms per channel-second in all; fixed %2 ms per s of stream, each track %3 ms per channel-second")
+        cpu_label_->setText(tr("CPU: %1 ms per channel-second in the pipeline; fixed %2 ms per s of stream, each track %3 ms per channel-second")
                                 .arg(*recent.pipeline_ms_per_channel_s, 0, 'f', 2)
                                 .arg(*recent.fixed_ms_per_stream_s, 0, 'f', 1)
                                 .arg(*recent.per_track_ms_per_channel_s, 0, 'f', 2));

@@ -628,7 +628,7 @@ TEST(LeakFloor, ReadsTheBinsBesideTheChannelWeightedAndHeld) {
     const double up = std::pow(10.0, SegmentalConfig{}.leak_floor_db / 10.0);
     ASSERT_EQ(shared->leak_first_bin, 3u);         // 60 Hz at 23.4375 Hz a bin
     ASSERT_EQ(shared->leak_response.size(), 15u);  // to 320 Hz
-    ASSERT_EQ(shared->leak_hold_blocks, 47u);      // 1 s at 21.33 ms a block
+    ASSERT_EQ(shared->leak_hold_blocks, 9u);       // 0.2 s at 21.33 ms a block: 9.375, rounded
     EXPECT_NEAR(shared->leak_response[0], 1.0, 0.02);
     SegmentalDecoder decoder(1500.0, shared);
     const int center = 1024;

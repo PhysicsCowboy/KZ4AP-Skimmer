@@ -74,9 +74,11 @@ struct SegmentalConfig {
 
     // --- A neighbor's leak (SegmentalDecoder::set_band_spectrum) ---
 
-    // s: how far back each block's leak estimate is held, its peak; 0 leaves the leak out. Heuristic: a keyed neighbor's gaps must not take
-    // the floor away between its marks; a dash at 12 WPM is 0.3 s.
-    double leak_hold_s = 1.0;
+    // s: how far back each block's leak estimate is held, its peak; 0 leaves the leak out. 9 blocks of 21.33 ms at 48 kHz, 0.192 s. A heuristic, chosen by
+    // measurement looking at E2 and the strong pairs, so not independent of them; seed 2 agrees: E2 0.490 against 0.504 at 1 s, seed 2 0.651 against 0.673,
+    // and a neighbor at least 6 dB re wanted at 60 to 120 Hz 0.129 against 0.283, where no floor reads 0.179 (docs/decision-log.md, 2026-10-31). The 1 s of
+    // the floor's first try was never swept. Why (conjecture): in a neighbor's gaps there is no leak to excuse, so holding the floor over them only blinds the stream.
+    double leak_hold_s = 0.2;
     // dB re the leak: the noise the floor counts for it: sigma^2 at least the leak, this far up. Heuristic, chosen by measurement: on a slice,
     // +3 dB reads E2 0.504, +6 dB 0.573 and +10 dB 0.690 against 0.575 without it, and B2 rises from +6 dB (docs/decision-log.md, 2026-10-31).
     double leak_floor_db = 3.0;

@@ -382,7 +382,7 @@ TEST(Engine, TheSegmentalDecoderReadsAStrongStationBesideAStrongNeighbor) {
         for (std::size_t at = whole.find("W1AW"); at != std::string::npos; at = whole.find("W1AW", at + 1)) ++count;
         return count;
     };
-    EXPECT_EQ(calls_read(1.0), 6);
+    EXPECT_EQ(calls_read(SegmentalConfig{}.leak_hold_s), 6);
     EXPECT_LT(calls_read(0.0), 6);
 }
 
