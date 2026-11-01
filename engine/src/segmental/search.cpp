@@ -323,7 +323,6 @@ struct Search::Impl {
         return true;
     }
 
-    int ceiling_now = 0;  // stories
     // nats: the beam in force. Standard practice (an adaptive beam, as in speech recognition's decoders): a boundary at the ceiling leaves its cut-off score as next
     // boundary's beam, plus adaptive_margin_nats, so that what the ceiling would drop is not opened to be dropped; a boundary under the ceiling lets it out again by
     // adaptive_relax_nats, up to beam_nats.
@@ -343,7 +342,6 @@ struct Search::Impl {
 
     Impl(const SegmentalConfig& c, const ModelTables& m, const RunningSums& s, const LevelTables* l)
         : config(c), model(m), sums(s), levels(l) {
-        ceiling_now = c.ceiling;
         beam_now = c.beam_nats;
         const std::size_t slots = static_cast<std::size_t>(m.fists()) * static_cast<std::size_t>(m.nodes());
         gap_slots = new_slot_table(slots);
@@ -739,7 +737,7 @@ void Search::Impl::boundary(std::int64_t j) {
     marks.insert(marks.end(), opened_marks.begin(), opened_marks.end());
 
     // The ceiling, on what stands: the new ones count at their own partial scores.
-    const std::size_t ceiling = static_cast<std::size_t>(ceiling_now);
+    const std::size_t ceiling = static_cast<std::size_t>(config.ceiling);
     if (gaps.size() + marks.size() > ceiling) {
         gap_partial.resize(gaps.size());
         for (std::size_t i = kept_gaps; i < gaps.size(); ++i) gap_partial[i] = gaps[i].base + gap_reach_new;
@@ -915,6 +913,5 @@ BestStory Search::best_story(std::size_t max_symbols) const {
 double Search::best_score() const { return impl_->last_best; }
 const SearchStats& Search::stats() const { return impl_->stats; }
 std::size_t Search::live() const { return impl_->gaps.size() + impl_->marks.size(); }
-void Search::set_ceiling(int ceiling) { impl_->ceiling_now = std::max(1, ceiling); }
 
 }  // namespace kz4ap::segmental

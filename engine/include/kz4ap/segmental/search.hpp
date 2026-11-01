@@ -236,8 +236,6 @@ public:
     const SearchStats& stats() const;
     // The open elements after the last boundary's pruning.
     std::size_t live() const;
-    // stories: the ceiling from the next boundary on (SegmentalConfig::ceiling until told otherwise).
-    void set_ceiling(int ceiling);
 
 private:
     struct Impl;

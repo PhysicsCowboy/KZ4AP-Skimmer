@@ -180,9 +180,7 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
       lookahead_frames_(viterbi::whole_count(config.level_lookahead_s, config.level_frame_s, "level_lookahead_s", "frames")),
       commit_frames_(viterbi::whole_count(config.level_commit_s, config.level_frame_s, "level_commit_s", "frames")),
       ring_frames_(lookahead_frames_ + commit_frames_ + 2),
-      key_switch_(config.key_switch_per_s * config.model.sample_interval_s),
-      edge_levels_(std::clamp(config.edge_levels, 1, kEdgeLevels)),
-      level_active_min_(config.level_active_min) {
+      key_switch_(config.key_switch_per_s * config.model.sample_interval_s) {
     if (!(key_switch_ > 0.0 && key_switch_ < 0.5))
         throw std::invalid_argument("segmental: key_switch_per_s x sample_interval_s must lie in (0, 0.5)");
     const std::size_t levels = static_cast<std::size_t>(levels_);
@@ -351,7 +349,7 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
     double active_p[256];
     int count = 0;
     for (int level = 0; level < levels_ && count < 256; ++level) {
-        if (belief[level] >= level_active_min_) {
+        if (belief[level] >= 1e-4) {
             active[count] = level;
             active_p[count] = belief[level];
             ++count;
@@ -360,7 +358,7 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
     int edge_level[kEdgeLevels];
     double edge_p[kEdgeLevels];
     int edge_count = 0;
-    const int group = std::max(1, (count + edge_levels_ - 1) / edge_levels_);
+    const int group = std::max(1, (count + kEdgeLevels - 1) / kEdgeLevels);
     for (int i = 0; i < count; i += group) {
         double total = 0.0;
         double center = 0.0;

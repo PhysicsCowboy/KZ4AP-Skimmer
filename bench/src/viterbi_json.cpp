@@ -476,14 +476,9 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"channel_floor_start_s", &config.channel_floor_start_s},
         {"beam_nats", &config.beam_nats},
         {"open_spacing_dots", &config.open_spacing_dots},
-        {"level_active_min", &config.level_active_min},
         {"adaptive_margin_nats", &config.adaptive_margin_nats},
         {"adaptive_relax_nats", &config.adaptive_relax_nats},
-        {"doubt_window_s", &config.doubt_window_s},
-        {"doubt_clear_rate", &config.doubt_clear_rate},
-        {"doubt_clear_earning", &config.doubt_clear_earning},
         {"ceiling_stretch_bonus_nats", &config.ceiling_stretch_bonus_nats},
-        {"doubt_hold_s", &config.doubt_hold_s},
         {"duration_z_max", &config.duration_z_max},
         {"gap_unit_max_s", &config.gap_unit_max_s},
         {"filter_scale_min_symbols", &config.filter_scale_min_symbols},
@@ -499,14 +494,6 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
             *target = std::stod(text);
             return;
         }
-    }
-    if (name == "doubt_ceiling") {
-        config.doubt_ceiling = std::stoi(text);
-        return;
-    }
-    if (name == "edge_levels") {
-        config.edge_levels = std::stoi(text);
-        return;
     }
     if (name == "ceiling") {
         config.ceiling = std::stoi(text);

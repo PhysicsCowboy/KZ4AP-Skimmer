@@ -11,10 +11,12 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <string>
 #include <vector>
@@ -163,6 +165,58 @@ TEST(SegmentalSearch, ReadsMadeUpEvidenceAtAWeakAndAStrongLevel) {
             EXPECT_EQ(text_of(search.best_text()), "PARIS PARIS") << "gain " << gain << ", dot " << dot;
         }
     }
+}
+
+TEST(ModelTables, OpenSpacingIsAShareOfTheStorysDot) {
+    SegmentalConfig config;
+    config.open_spacing_dots = 0.5;
+    const ModelTables half(config);
+    config.open_spacing_dots = 0.0;
+    const ModelTables none(config);
+    const viterbi::ViterbiConfig& model = config.model;
+    for (int f = 0; f < half.fists(); ++f) {
+        const double dot_s = model.dot_min_ms * std::pow(model.speed_ratio, half.speed_of(f)) / 1000.0;
+        EXPECT_EQ(half.open_spacing(f), static_cast<int>(0.5 * dot_s / model.sample_interval_s));
+        EXPECT_EQ(none.open_spacing(f), 0);
+    }
+}
+
+TEST(ModelTables, ALongGapsSurvivalStaysOptimistic) {
+    const SegmentalConfig config;
+    const ModelTables tables(config);
+    // Past the fine lengths a bin reads its first length's value, and the bound never rises with the length.
+    const int fist = tables.fists() - 1;
+    const int last = tables.gap_hi(fist);
+    ASSERT_GT(last, ModelTables::kSurvivalFineLengths + 32);
+    const int bin = ModelTables::kSurvivalFineLengths + 16;
+    for (int k = 1; k < 16; ++k) EXPECT_EQ(tables.gap_survival(fist, bin + k), tables.gap_survival(fist, bin));
+    for (int length = 1; length <= last; ++length) EXPECT_LE(tables.gap_survival(fist, length), tables.gap_survival(fist, length - 1) + 1e-12);
+    // A row holds what the accessors read.
+    const ModelTables::FistRow& row = tables.row(fist);
+    EXPECT_EQ(row.gap_hi, tables.gap_hi(fist));
+    EXPECT_EQ(row.mark_hi, tables.mark_hi(fist));
+    EXPECT_EQ(row.ends[3].hi, tables.range(3, fist).hi);
+    EXPECT_TRUE(row.stretched == (tables.stretch_of(fist) > 1.0));
+}
+
+TEST(ModelTables, ABirthsEndsAreEverySpeedsAtItsLength) {
+    const SegmentalConfig config;
+    const ModelTables tables(config);
+    const int length = tables.range(0, tables.first_fist(tables.speeds() / 2)).hi;
+    std::size_t count = 0;
+    double survive = -std::numeric_limits<double>::infinity();
+    for (int speed = 0; speed < tables.speeds(); ++speed) {
+        const int plain = tables.first_fist(speed);
+        survive = std::max(survive, tables.mark_survival(plain, length));
+        for (int label = 0; label < 2; ++label) {
+            const ModelTables::Range& r = tables.range(label, plain);
+            if (tables.child(0, label) >= 0 && length >= r.lo && length <= r.hi) ++count;
+        }
+    }
+    const auto ends = tables.open_ends(length);
+    EXPECT_EQ(ends.size(), count);
+    EXPECT_DOUBLE_EQ(tables.open_survival(length), survive);
+    for (const ModelTables::OpenEnd& end : ends) EXPECT_EQ(tables.speed_of(end.fist), end.speed);
 }
 
 TEST(ModelTables, AFistsGapsAreThoseOfTheSteppedSpeedAndItsMarksItsOwn) {

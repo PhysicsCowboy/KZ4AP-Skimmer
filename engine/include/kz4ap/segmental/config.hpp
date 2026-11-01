@@ -56,11 +56,6 @@ struct SegmentalConfig {
     // of the model's over rate.
     double level_jump_per_s = 0.05;
 
-    // count: the groups of levels an edge's scores read, at most kEdgeLevels (evidence.hpp), 8. Heuristic; it bounds the edges' cost where the belief is broad.
-    int edge_levels = 8;
-    // 1: the belief a level must hold to count in a sample's evidence. Heuristic.
-    double level_active_min = 1e-4;
-
     // --- The channel's own noise floor (ChannelFloor, evidence.hpp) ---
 
     // s: how far back the floor reads, 0 to leave it out and use the hiss alone. Heuristic.
@@ -164,16 +159,6 @@ struct SegmentalConfig {
     // nats: what a story of a stretched fist counts for above its score when the ceiling ranks the stories: what its fist's prior took from it once.
     double ceiling_stretch_bonus_nats = 4.0;
 
-    // --- A channel in doubt (SegmentalDecoder::update_effort) ---
-
-    // stories: the widest stream's ceiling while the channel has shown no keying: over the last doubt_window_s, R = (dS - max(0, dF)) / window, the judge's rate
-    // (track_evidence.hpp), has not reached doubt_clear_rate within the last doubt_hold_s. 0 leaves it out. What it buys is CPU: most channels on the air hold no
-    // Morse, and they fill the ceiling; a channel that shows keying gets the whole ceiling back from then on.
-    int doubt_ceiling = 0;
-    double doubt_window_s = 4.0;           // s
-    double doubt_clear_rate = 3.0;         // nats/s
-    double doubt_clear_earning = 1e300;    // nats/s: dS / window at or above this clears it too
-    double doubt_hold_s = 30.0;            // s
     // 1: an element may end only within this many standard deviations of ln(length) of its median. A heuristic by measurement: on a slice of seed 1, 3.5 reads A2, I2 the same,
     // C2 0.0625 against 0.0627, E2 0.4858 against 0.4867 at 4, and real 40 m the same 20 calls for 5% less CPU per second of stream, 12% fewer channel-seconds off its stations.
     double duration_z_max = 3.5;

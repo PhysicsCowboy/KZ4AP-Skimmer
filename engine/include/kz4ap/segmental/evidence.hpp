@@ -205,8 +205,6 @@ private:
     int commit_frames_;
     int ring_frames_;
     double key_switch_;  // probability per sample that the key changes state
-    int edge_levels_;
-    double level_active_min_;
 
     std::int64_t samples_ = 0;
     std::int64_t frames_ = 0;       // frames ended
