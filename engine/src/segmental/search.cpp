@@ -317,6 +317,8 @@ struct Search::Impl {
         return true;
     }
 
+    int ceiling_now = 0;  // stories
+
     double correction(bool gap, int length, std::int64_t j) {
         if (levels == nullptr) return 0.0;
         double& cached = short_correction[gap ? 1 : 0][static_cast<std::size_t>(length - 1)];
@@ -331,6 +333,7 @@ struct Search::Impl {
 
     Impl(const SegmentalConfig& c, const ModelTables& m, const RunningSums& s, const LevelTables* l)
         : config(c), model(m), sums(s), levels(l) {
+        ceiling_now = c.ceiling;
         const std::size_t slots = static_cast<std::size_t>(m.fists()) * static_cast<std::size_t>(m.nodes());
         gap_slots = new_slot_table(slots);
         mark_slots = new_slot_table(slots);
@@ -417,7 +420,7 @@ void Search::Impl::boundary(std::int64_t j) {
     const double letter_start = model.letter_start();
     const double letter_gap_cost = model.letter_gap_cost();
     const double word_gap_cost = model.word_gap_cost();
-    const auto ends_at = [](const ModelTables::Range& r, int length) { return length >= r.lo && length <= r.hi; };
+    const auto ends_at = [](const ModelTables::Range& r, int length) { return static_cast<unsigned>(length - r.lo) <= static_cast<unsigned>(r.hi - r.lo); };
     const auto end_cost = [log_ends](const ModelTables::Range& r, int length) { return log_ends[r.offset + length - r.lo]; };
     // The best partial score and whose, kept for the no-signal story should nothing stand (5. below).
     double best_dropped = -kInf;
@@ -435,10 +438,10 @@ void Search::Impl::boundary(std::int64_t j) {
             const ModelTables::Range& r = row.ends[kElementGap];
             const ModelTables::Range& lg = row.ends[kLetterGap];
             const ModelTables::Range& wg = row.ends[kWordGap];
-            const bool element_ends = children_at[node] != 0 && ends_at(r, length);
+            const bool element_ends = (children_at[node] != 0) & ends_at(r, length);
             const bool has_letter = symbol_at[node] != 0;
-            const bool letter_ends = has_letter && ends_at(lg, length), word_ends = has_letter && ends_at(wg, length);
-            if (element_ends || letter_ends || word_ends) {
+            const bool letter_ends = has_letter & ends_at(lg, length), word_ends = has_letter & ends_at(wg, length);
+            if (element_ends | letter_ends | word_ends) {
                 const double ended_gap = length < kEdgeCount ? e.base + correction(true, length, j) : e.base;
                 const std::size_t first_slot = static_cast<std::size_t>(e.speed) * nodes;
                 if (element_ends)
@@ -705,7 +708,7 @@ void Search::Impl::boundary(std::int64_t j) {
     live.insert(live.end(), opened.begin(), opened.end());
 
     // The ceiling, on what stands: the new ones count at their own partial scores.
-    const std::size_t ceiling = static_cast<std::size_t>(config.ceiling);
+    const std::size_t ceiling = static_cast<std::size_t>(ceiling_now);
     if (live.size() > ceiling) {
         partial.resize(live.size());
         for (std::size_t i = kept; i < live.size(); ++i) {
@@ -863,5 +866,6 @@ BestStory Search::best_story(std::size_t max_symbols) const {
 double Search::best_score() const { return impl_->last_best; }
 const SearchStats& Search::stats() const { return impl_->stats; }
 std::size_t Search::live() const { return impl_->live.size(); }
+void Search::set_ceiling(int ceiling) { impl_->ceiling_now = std::max(1, ceiling); }
 
 }  // namespace kz4ap::segmental

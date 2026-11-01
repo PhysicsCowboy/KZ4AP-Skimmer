@@ -149,6 +149,16 @@ struct SegmentalConfig {
     // dots of the story's speed: a new element is not opened if one opened within this time in the same state (kind, fist, node) has a base at least as high. Its future
     // differs by a length within this share of a dot, against a lower score. 0 leaves it out.
     double open_spacing_dots = 0.0;
+
+    // --- A channel in doubt (SegmentalDecoder::update_effort) ---
+
+    // stories: the widest stream's ceiling while the channel has shown no keying: over the last doubt_window_s, R = (dS - max(0, dF)) / window, the judge's rate
+    // (track_evidence.hpp), has not reached doubt_clear_rate within the last doubt_hold_s. 0 leaves it out. What it buys is CPU: most channels on the air hold no
+    // Morse, and they fill the ceiling; a channel that shows keying gets the whole ceiling back from then on.
+    int doubt_ceiling = 0;
+    double doubt_window_s = 4.0;           // s
+    double doubt_clear_rate = 3.0;         // nats/s
+    double doubt_hold_s = 30.0;            // s
     // 1: an element may end only within this many standard deviations of ln(length) of its median. Heuristic.
     double duration_z_max = 4.0;
 };

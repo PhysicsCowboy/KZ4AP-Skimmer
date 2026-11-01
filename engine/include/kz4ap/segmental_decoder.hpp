@@ -82,6 +82,8 @@ public:
     std::size_t streams_running() const;
     // FS^2: the noise the leak asks of the stream at this filter scale, 0 if it has none (or no such stream runs).
     double leak_floor_fs2(int scale) const;
+    // Whether the widest stream reads with SegmentalConfig::doubt_ceiling now.
+    bool in_doubt() const { return in_doubt_; }
 
 private:
     void start();
@@ -134,6 +136,17 @@ private:
     // Chooses the leader from what stands, and at or after the drop time of the channel's age, if `may_drop`, drops what has fallen
     // behind it. True if the leader changed. stream_now_s: s of stream; a channel's age is that less the time of its first sample.
     bool choose_leader(double stream_now_s, bool may_drop);
+    // A channel in doubt (SegmentalConfig::doubt_ceiling): the widest stream's ceiling from what it has shown of keying; each publish.
+    void update_effort(double now_s);
+    struct EvidenceAt {
+        double t_s;
+        double morse_nats;
+        double free_nats;
+    };
+    std::vector<EvidenceAt> effort_history_;  // the widest stream's, each publish, the last doubt_window_s
+    std::size_t effort_next_ = 0;
+    double clear_until_s_ = -1.0;             // s of stream: the whole ceiling until then
+    bool in_doubt_ = false;
 
     std::vector<Stream> streams_;  // the widest first; never empty
     std::size_t leader_ = 0;

@@ -147,6 +147,11 @@ void SegmentalDecoder::start() {
         streams_.emplace_back(shared_->narrower[i], shared_->config.filter_scales[i + 1]);
     leader_ = 0;
     choice_started_ = false;
+    effort_history_.clear();
+    effort_next_ = 0;
+    clear_until_s_ = -1.0;
+    in_doubt_ = shared_->config.doubt_ceiling > 0;
+    if (in_doubt_) streams_.front().search->set_ceiling(shared_->config.doubt_ceiling);
 }
 
 int SegmentalDecoder::leading_scale() const { return streams_[leader_].scale; }
@@ -203,6 +208,32 @@ bool SegmentalDecoder::choose_leader(double stream_now_s, bool may_drop) {
             if (streams_[i].scale == scale) leader_ = i;
     }
     return changed;
+}
+
+void SegmentalDecoder::update_effort(double now_s) {
+    const segmental::SegmentalConfig& config = shared_->config;
+    if (config.doubt_ceiling <= 0) return;
+    const Stream& widest = streams_.front();
+    const EvidenceAt here{now_s, widest.search->best_score(), widest.free_key.nats};
+    // A ring of publishes over the window; the oldest is what the rate reads from.
+    const auto slots = static_cast<std::size_t>(std::ceil(config.doubt_window_s / kPublishEveryS)) + 1;
+    if (effort_history_.size() < slots) {
+        effort_history_.push_back(here);
+    } else {
+        effort_history_[effort_next_] = here;
+        effort_next_ = (effort_next_ + 1) % slots;
+    }
+    const EvidenceAt& oldest = effort_history_[effort_history_.size() < slots ? 0 : effort_next_];
+    const double span_s = now_s - oldest.t_s;
+    if (span_s > 0.0) {
+        const double rate = (here.morse_nats - oldest.morse_nats - std::max(0.0, here.free_nats - oldest.free_nats)) / span_s;
+        if (rate >= config.doubt_clear_rate) clear_until_s_ = now_s + config.doubt_hold_s;
+    }
+    const bool doubt = now_s >= clear_until_s_;
+    if (doubt != in_doubt_) {
+        in_doubt_ = doubt;
+        streams_.front().search->set_ceiling(doubt ? config.doubt_ceiling : config.ceiling);
+    }
 }
 
 void SegmentalDecoder::FreeKey::step(double l1, double top) {
@@ -269,6 +300,7 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
     const double now_s = static_cast<double>(next_index_) / rate_;
     if (now_s < next_publish_s_) return {};
     next_publish_s_ = now_s + kPublishEveryS;
+    update_effort(now_s);
     const bool changed = choose_leader(now_s, true);
     const segmental::Search& search = *streams_[leader_].search;
     segmental::BestStory story = search.best_story(kPublishTailSymbols);
