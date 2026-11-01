@@ -6,9 +6,16 @@
 #include <filesystem>
 #include <fstream>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace kz4ap {
+
+// A path as UTF-8, for a message or a display: path.string() throws on Windows for a name outside the system's code page.
+inline std::string path_text(const std::filesystem::path& path) {
+    const std::u8string utf8 = path.u8string();
+    return std::string(utf8.begin(), utf8.end());
+}
 
 // Reads I/Q recordings stored as 16-bit PCM stereo WAV files (left = I, right = Q).
 class WavIqReader {
@@ -24,8 +31,12 @@ public:
     // Fills out with the next samples, scaled to [-1, 1). Returns how many were read; 0 at the end.
     std::size_t read(std::span<Sample> out);
 
+    // The next read starts at this sample, clipped to the end. Throws std::runtime_error if the file cannot seek.
+    void seek(std::uint64_t sample);
+
 private:
     std::ifstream file_;
+    std::streamoff data_start_ = 0;  // the data chunk's first byte
     int sample_rate_ = 0;
     std::uint64_t total_samples_ = 0;
     std::uint64_t samples_read_ = 0;

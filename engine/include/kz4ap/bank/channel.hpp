@@ -230,6 +230,8 @@ public:
     void finish();
     // The result so far (after finish(): the prototype's run result).
     ChannelResult result() const;
+    // The dit of the selected branch's fit, s (the station's speed: 1.2 s / dit WPM); none before it has a fit.
+    std::optional<double> selected_dit_s() const;
     // The published text and its corrections so far.
     const Output& output() const { return out_; }
 

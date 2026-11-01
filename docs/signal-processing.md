@@ -3,8 +3,8 @@
 How KZ4AP Skimmer turns a radio's I/Q samples into Morse text. This body is
 written to be read. It covers the stages before the decoders (sections 1–7)
 and, in full, the chains under development or discussion: the segmental
-decoder (section 8e), and the viterbi decoder with the model the two share
-(section 8d). Every other chain gets a short summary that points to its
+decoder (section 8e) with its live operation (section 10) and the callsign stage
+(section 11), and the viterbi decoder with the model the two share (section 8d). Every other chain gets a short summary that points to its
 appendix section. Every value carries its unit and its class: **derived**
 (it follows from the mathematics), **measured** (set by an experiment),
 **heuristic** (a judgment call; "chosen by measurement" where a test set
@@ -12,13 +12,10 @@ picked among candidates), **placeholder** (kept until an experiment settles
 it), **owner** (the owner's decision) or **sourced** (from a named
 publication).
 
-The **appendix** (section A) is the reference: the exact form of every rule
-as the code implements it, the derivations, the provenance of each measured
-or heuristic value, the known limitations, the full parameter table (A.10)
-and the definitions used by the tests and the benchmark (A.11). Results and
-evidence are not here: they are in the results records under `docs/plans/`
-(milestone 2a, stage 1, Plan A, Plan B and later), and engineering choices are
-logged in `docs/decision-log.md`.
+The **appendix** (section A) is the reference: each rule's exact form, the
+derivations, provenance, limitations, the parameter table (A.10) and the
+tests' and benchmark's definitions (A.11). Results and evidence are in the
+results records under `docs/plans/`, engineering choices in `docs/decision-log.md`.
 
 **Maintenance rule:** this document is brought up to date at each checkpoint
 and before any merge into `main`, and may lag in between. Numbers are for the
@@ -59,7 +56,10 @@ I/Q (fs) ─┬─► spectrum analyzer ─┬─► signal detector ─► trac
                                                          │
                                                          ▼
                                                 decoder per channel ─► text
-                                 (Matched default; Envelope; bank; viterbi; segmental)
+                                 (segmental in the app; Matched; Envelope; bank; viterbi)
+                                                         │
+                                                         ▼
+                                                callsign stage ─► list of calls
 ```
 
 The input is the whole band the radio delivers, 192 kHz wide. Two things
@@ -68,10 +68,9 @@ the band every 21.33 ms and decide where stations are: each station becomes
 a *track* with a frequency. For every track the **channelizer** cuts a
 narrow stream out of the band, about ±150 Hz around the station, at 1500
 samples/s. A **decoder** per channel turns that stream into characters.
-There are five decoders: **Matched** (the default), **Envelope** (the
-original baseline), the **bank** (selectable, frozen as the reference for
-new decoders; design spec §5.2), **viterbi** and **segmental** (both
-selectable). Before each block the engine tells Matched and the bank where
+There are five decoders: **segmental** (the app's default), **Matched** (the
+bench's), **Envelope** (the original baseline), the **bank** (frozen as the
+reference for new decoders; design spec §5.2) and **viterbi**. Before each block the engine tells Matched and the bank where
 the detector now thinks the station is (the *anchor*); the channels of
 viterbi and segmental instead follow that frequency (section 7), and those
 decoders get the noise density around the station (N₀) from a hiss estimator
@@ -81,11 +80,9 @@ that reads the spectrum.
 
 A 16-bit stereo WAV, left channel I and right channel Q, divided by 32768,
 so samples lie in [−1, 1) FS. Frequencies are offsets from the radio's
-center frequency, in Hz, spanning ±fs/2. The engine collects incoming
-samples and processes them in fixed blocks of exactly N/2 samples (the
-hop), always at the same sample positions, so the output does not depend on
-how a caller splits the input (one sample at a time or a whole file at
-once).
+center frequency, in Hz, spanning ±fs/2. The engine processes fixed blocks of
+exactly N/2 samples (the hop), so the output does not depend on how a caller
+splits the input.
 
 ## 2. The FFT size N and bin width Δf
 
@@ -93,13 +90,8 @@ N is the largest power of two that keeps the bins at least 20 Hz wide:
 8192 at 192 kHz, so Δf = 23.44 Hz and each transform spans 42.7 ms. This is
 a heuristic. The real intent is "bins about 23 Hz wide": narrow enough to
 separate stations a few tens of Hz apart, wide enough that most of a keyed
-CW signal's energy falls within one to three bins up to about 40 WPM. In
-random keying about 44% of the key-down power (the key-down fraction) is a
-pure carrier line, always in one bin; the rest is keying sidebands whose
-main lobe spreads over about ±1/dit: ±21 Hz at 25 WPM, ±33 Hz at 40 WPM,
-±50 Hz at 60 WPM (derived). The occupied bandwidth by the ham rule of thumb
-(about 4 × WPM in Hz) is wider. The detector does not need to follow the
-keying: it averages each bin over 1 s (section 6).
+CW signal's energy falls within one to three bins up to about 40 WPM
+(derived).
 
 Appendix: A.2.
 
@@ -107,7 +99,7 @@ Appendix: A.2.
 
 New input arrives in blocks of N/2 samples (the hop), but each FFT covers
 N samples: the newest block and the one before it. So consecutive FFTs
-overlap by half, and every sample appears in two consecutive FFTs. With
+overlap by half. With
 the Hann window (section 4) the overlapping windows add up to a constant,
 so no part of the signal is weighted less than another (derived). The hop
 also fixes the channel filter's length (section 7).
@@ -128,8 +120,7 @@ per sample reads as the noise in one *equivalent noise bandwidth* (ENBW):
 1.5 bins = 35.2 Hz for the Hann window (derived). The values are stored in
 dBFS. The Hann window is a standard choice: its sidelobes are 31 dB below
 the main lobe (relative to the main lobe's peak), so a strong station does
-not hide a weak one a few bins away; a tone halfway between bins reads
-1.42 dB below its on-bin value (derived).
+not hide a weak one a few bins away.
 
 Appendix: A.4.
 
@@ -141,16 +132,8 @@ recordings always add the same noise, complex white noise of σ = 0.02 FS;
 a station's S₅₀₀ is set by its carrier amplitude. The detector sees a
 narrower noise bandwidth, one bin's ENBW of 35.2 Hz, so the same signal
 reads 10·log₁₀(500/35.2) = **11.5 dB higher** as an SNR per bin than as an
-SNR in 500 Hz (derived, white noise). A track's reported SNR is lower than
-its key-down SNR per bin, and by how much depends on the speed. With a
-key-down fraction D, the averaged power is a carrier line of D² of the
-key-down power, always in the peak bin, plus keying sidebands of D − D²,
-spread over about ±1/dit, so less of them fall in the bin the faster the
-keying. At D = 0.44 the track reads between about 3.6 dB (slow keying: all
-sidebands in the bin) and 7.1 dB (very fast: the carrier line only) below
-the key-down SNR per bin (derived), plus up to 1.42 dB if the tone sits
-between bins. Example at 25 WPM: a station at 20 dB SNR in 500 Hz is
-31.5 dB SNR per bin key-down and reads about 27 dB SNR per bin as a track.
+SNR in 500 Hz (derived, white noise). A track's reported SNR is about 3.6 to
+7.1 dB below its key-down SNR per bin, by speed (derived; A.5).
 
 Appendix: A.5.
 
@@ -186,9 +169,9 @@ station, or moves to an answering station within 47 Hz. 47 Hz is about the
 half-width of the Hann window's main lobe, 2/(42.7 ms) = 46.9 Hz
 (heuristic; owner). A track stays active while its level is at least
 **3 dB** above the floor (dB SNR per bin; 3 dB of hysteresis below the
-birth threshold), and dies after **10 s** inactive. At most **200** tracks
-exist; a stronger newcomer replaces the weakest (heuristic, to bound the
-CPU).
+birth threshold), and dies after **10 s** inactive. At most **400** tracks
+exist; a stronger newcomer replaces the weakest (heuristic). Segmental adds
+rules (section 10).
 
 With the Envelope decoder the detector uses older rules (frequency fixed at
 birth). **Oracle mode**, for the benchmark only, skips the detector and
@@ -219,12 +202,9 @@ one sample in 128.
   and inverts them (overlap-save). The result equals shifting, filtering
   and decimating directly, up to rounding (derived).
 
-**Frequency re-centering (Matched only).** The station may sit up to
-11.7 Hz off 0 Hz and may drift. The Matched decoder's tracker reads that
-offset from the phase change of its filter's output over 5.33 ms (no
-feedback loop; derived) and shifts it out. The detector decides which
-station; the tracker only fine-tunes, within **±12 Hz** of the detector's
-frequency (heuristic; owner). The bank decoder has no tracker (A.8c).
+**Frequency re-centering (Matched only).** Matched's tracker reads the offset
+from its filter's phase and shifts it out, within **±12 Hz** of the detector's
+frequency (heuristic; owner; A.8b).
 
 **Following the detector (viterbi and segmental only).** For these decoders'
 channels the channelizer follows the detector's frequency for the track,
@@ -236,12 +216,8 @@ phase-continuous oscillator at −(f_det − f_bin), f_det held over the
 block (21.33 ms, the detector's update interval); then, if f_det lies more
 than half a bin (11.72 Hz) from f_bin, the channel moves to the bin
 nearest f_det from the next block on, the oscillator's phase adjusted so
-that the station's phase does not step (derived). The usual coarse-plus-fine
-layout of FFT channelizers. Response (derived: the detector's power
-average, τ = 1 s, lags a ramp of ḟ by ḟ·τ; A.7): a 1 Hz/s drift is
-followed about 1.0 Hz behind (0.94 to 1.23 Hz measured on the detector's
-track in stage 1), and an equally strong answering station moves the
-detector's peak after about 0.7 s.
+that the station's phase does not step (derived). A 1 Hz/s drift is followed
+about 1.0 Hz behind (A.7).
 
 Appendix: A.7.
 
@@ -250,45 +226,30 @@ Appendix: A.7.
 ### Which decoder runs
 
 Five decoders exist; the bench's `--decoder envelope|matched|bank|viterbi|segmental`
-picks one (`--front-end` is the old name of that option, still accepted).
-**Matched is the default** (owner); the others are selectable. Envelope and
+picks one.
+**Matched is the bench's default** (owner) and segmental the app's. Envelope and
 Matched share a common back end that turns marks into characters; the bank has
 its own, and viterbi and segmental share a model (sections 8d and 8e).
 
 ### Envelope (not the default)
 
-The milestone-1 baseline, heuristic throughout. It smooths the magnitude
-of the channel stream over about a quarter dit and follows a *mark level*
-and a *space level*. The key goes down when the smoothed magnitude rises
-above 60% of the way from the space level to the mark level, and up when
-it falls below 40% (hysteresis); nothing is keyed unless the mark level is
-at least 3 times the space level (a squelch). Exact form: appendix A.8.
+The milestone-1 baseline, heuristic throughout: the smoothed magnitude of the
+channel stream against 60% and 40% of the way from a followed space level to a
+mark level. Exact form: appendix A.8.
 
 ### The shared back end (Envelope and Matched)
 
-It turns key-down and key-up times into characters: a mark longer than
-2 dits is a dah; a space longer than 2 dits ends the character, one longer
-than 5 dits the word. After every mark the dit is re-estimated from the
-last 24 marks; while their dah/dit ratio lies in a measured band (3.0 to
-3.85), the estimate cancels a constant shortening of every mark (a constant
-lengthening would put the ratio below 3.0, outside the band). The rest is heuristic, the 2- and 5-dit gap thresholds included (the
-conventional midpoints between the nominal 1, 3 and 7 dits). Exact form:
-appendix A.8.
+It turns key-down and key-up times into characters: a mark over 2 dits is a dah;
+a space over 2 dits ends the character, over 5 dits the word (heuristics), the
+dit re-estimated from the last 24 marks. Exact form: appendix A.8.
 
-## 8b. Matched decoder (the default)
+## 8b. Matched decoder (the bench's default)
 
-The default decoder (owner). Its key idea: replace Envelope's thresholds
-with a matched filter and a likelihood ratio. A mark is a rectangular burst
-of carrier, and the filter that maximizes its SNR is a moving average (a
-*boxcar*) as long as the burst (derived). After frequency re-centering
-(section 7), a boxcar 0.8 dit long (heuristic; 0.97 dB of output SNR below
-the full dit, derived) gives every sample a Rician log-likelihood ratio and a
-probability of key-down (A.8b); the key goes down above +1 nat of
-log-odds and up below −1 nat (heuristic), then the shared back end makes
-the characters. The filter's length follows the decoder's own speed
-estimate, from a 60 WPM start: a feedback loop, which the bank removes. The
-station's amplitude and the noise are estimated on the air, and after a
-long silence the decoder re-acquires. Exact form: appendix A.8b.
+The bench's default (owner): a moving average (a *boxcar*) 0.8 dit long
+(heuristic) gives every sample a Rician log-likelihood ratio; the key goes down
+above +1 nat of log-odds and up below −1 nat (heuristic), then the shared back
+end makes the characters. The filter's length follows the decoder's own speed
+estimate: a feedback loop, which the bank removes. Exact form: appendix A.8b.
 
 ## 8c. Bank decoder (selectable; frozen as the reference)
 
@@ -351,8 +312,8 @@ scores 0 nats, whatever it holds.
 - *Silence:* ln(1 − P) per sample and ln P = −8.92 at a birth, P = 0.05 s⁻¹ ×
   Δ = 1.333 × 10⁻⁴ (placeholder).
 - *Speed:* dots T_s = 12 ms × 1.1^s, s = 0 … 31, 100 to 5.2 WPM (owner), each
-  taken at ln(1/32) = −3.466 at an over's first mark's end. Spacing is standard:
-  no Farnsworth factor (owner).
+  taken at ln(1/32) = −3.466 at an over's first mark's end. Viterbi's spacing is
+  standard: no Farnsworth factor (owner); segmental adds a gap stretch (section 8e).
 - *Lengths:* log-normal about 1, 3, 1, 3 and 7 dots (dot, dash, element gap,
   letter gap, word gap), σ = 0.3 in ln(length), rounded to whole samples
   (placeholders, ITU ratios). An element that continues pays ln S(τ), the log of
@@ -370,33 +331,8 @@ scores 0 nats, whatever it holds.
 The search is a maximum a posteriori search over stories, the best text
 published when the channel ends.
 
-**Viterbi's amplitude: per story** (f = 0.02, a placeholder). Each story holds
-N(μ, P) in FS. Predicted across a lag of ℓ samples, with ρ = exp(−π²f_D²(ℓΔ)²/2),
-f_D = 2 Hz (owner), ρ_a the Rayleigh envelope's correlation for ρ (derived) and
-Ω̄ the story's long-run power:
-
-  μ′ = ρ_a μ + (1 − ρ_a)·0.886√Ω̄,  P′ = ρ_a²P + ½(1 − ρ²)Ω̄ · m.
-
-m = 1 except at ℓ = 1, where m = 1 + 15x/(1 + x), x = Ω̄/(42σ_y²), halfway at
-+8.0 dB S₅₀₀ (heuristic): inside a mark n predictions add nQ where the true
-variance grows as n²Q (derived). V is fixed before the sample, with a² → μ′² + P′. Then
-
-  score_k = ln ∫ exp(wΛ) N(a; μ′, P′) da
-
-by Gauss–Hermite quadrature of order 5 at the integrand's mode, and the moment-matched
-posterior becomes the amplitude, only where |s| ≥ 0.01 (heuristic: below it a
-sample says nothing of a; it is still scored). This is a sequential filter on the
-story's own past. A newborn's first mark integrates a level flat in ln a over
-−15 to +85 dB S₅₀₀ on 128 points (placeholder range) and hands over to N(μ, P) at
-a spread below 0.1 nepers, or 15 samples after its first key-up.
-
-**Viterbi's search.** Every sample, every story scores it and offers its ends.
-Successors merge on (activity, key, samples in element, speed, node) plus their
-claimed edges of the last 12 samples (chosen by measurement), since an edge
-shows only 5 to 10 samples later; a rescue has its own key bit, its level and a
-newborn's flat prior being incomparable at birth. Beam 40 nats, ceiling 1 700
-stories (placeholders). Its cost is the amplitude integral per story per sample,
-which segmental removes. Appendix: A.8d.
+**Viterbi's amplitude and search.** Each story holds its own Gaussian amplitude, scored by
+quadrature per sample; segmental removes that cost. Appendix: A.8d.
 
 ## 8e. Segmental decoder (selectable)
 
@@ -410,6 +346,21 @@ to offer its ends. For a sample of a claimed mark or edge,
 8d's, with f = 0.1 (chosen by measurement). `--decoder segmental`,
 `FrontEnd::Segmental`; code in `engine/src/segmental/`.
 
+**Two streams.** A channel runs stages 1 to 6 at *filter scales* m = 1, 3
+(heuristic by measurement), one *stream* each; no story crosses between streams,
+and stage 7 chooses whose text goes out. A front filter matched to 12 ms leaves a
+neighbor within about 60 Hz in the wanted station's gaps. Scale m multiplies by m
+the filter's dot, Δ and the fastest dot; the slowest stays within a step:
+
+| m | Filter dot | Taps | σ_y²/N₀ | Δ | Speeds |
+|---|---|---|---|---|---|
+| 1 | 12 ms | 25 | 74.50 Hz | 2.667 ms | 32, to 100 WPM |
+| 3 | 36 ms | 61 | 26.8 Hz | 8 ms | 20, to 33 WPM |
+
+Taps and bandwidths are derived; m = 2 is selectable. In samples the filter and fastest dot stay as at
+m = 1, so stages 4 to 6 hold unchanged. Below, values are m = 1's; the others:
+A.8e.
+
 **Stage 1: channel, filter, samples.** As section 8d: the followed channel, the
 25-tap front filter, e_k = |y| every Δ = 2.667 ms, N₀ from the hiss. No sample is
 pushed while N₀ = 0.
@@ -420,12 +371,23 @@ a low level beats key-up on bare noise and a story earns by bridging its gaps
 (measured); the hiss reads quiet bins ±2 kHz around, so a receiver's passband is
 enough. So, per sample,
 
-  σ² = max(N₀ × 74.50 Hz, Q₀.₁₀(e²) / 0.10536 × 10^(−0.3)) (FS²),
+  σ² = max(N₀ B, 10^(0.3) L, Q₀.₁₀(e²) / 0.10536 × 10^(−0.3)) (FS²), B = 74.50 Hz,
 
 Q₀.₁₀ the 10th percentile of every 4th sample's e² (10.67 ms, ρ₄ = 0.14) over the
 last 5 s, retaken every 96 ms, first used 1.056 s in. On noise e² is exponential,
 so 0.10536 = −ln 0.9 is derived; the −3 dB margin (re the floor as estimated),
 quantile, window, stride, refresh and start are heuristics. z then uses σ.
+
+*A neighbor's leak.* A neighbor's marks reach the filter's output above N₀B once
+its level is high enough, and in the wanted station's gaps they score as keying.
+So σ² is also at least +3 dB re
+
+  L = Σ_k (P_k / 1.5) |H_ch(kΔf)|² |H_f(kΔf)|² (FS²),
+
+its peak over the last 0.2 s (9 blocks), per stream; P_k are the spectrum's bins
+|k| = 3 to 14, 70.3 to 328.1 Hz about the channel's center, updated each live block and
+not in a replay. The responses and 1.5 (a tone's power over its Hann bins) are derived;
++3 dB re the leak and 0.2 s are heuristics chosen by measurement; 60 Hz, 320 Hz are heuristics.
 
 **Stage 3: the level filter.** A hidden Markov model over key (up, down) × level:
 
@@ -474,6 +436,13 @@ exists. An open element holds a *base*:
   evidence, and it happens after the edge's window (to j + 10) exists.
 - Lengths end within e^(±4σ) of the median, a factor of 3.32 (heuristic); an
   element past its longest is dropped.
+- *Fist:* the `s` above is a pair (speed, gap stretch g): letter and word gaps have
+  medians 3gT_s and 7gT_s; marks and element gaps stay at T_s (Farnsworth; ARRL's
+  rule stretches both gaps alike). g = 1.61ⁿ, n = 0 … 6, to 17.4, while gT_s ≤
+  0.7 s: 33 WPM characters at 5 WPM overall are g = 15.7 (derived; step and limit
+  heuristic). A story takes its fist where it takes its speed and keeps it to the
+  over's end, paying ln 0.998 = −0.002 nats for g = 1 or ln(0.002/6) = −8.0 nats
+  for another (chosen by measurement). A rescue chooses again.
 
 *Short elements.* Below 6 samples two edges overlap and the plain formula counts
 samples twice. The whole element is then scored with its pair's template, s_m −
@@ -496,9 +465,22 @@ the best story starting a letter at that boundary, paying ln ε for ln(1 − ε)
 kept. If nothing stands (a carrier outlasting every element), the no-signal story
 restarts at the best score with the best story's text.
 
-**Stage 7: text.** At the channel's end 17 samples of no evidence let the search
-reach the last sample, and the best story's text is published, with probability
-1 per character (a placeholder). Nothing is published before.
+**Stage 7: text.** Every 0.25 s of stream the best story's last 64 symbols are
+compared with what has gone out (heuristics): new symbols, or a correction; a letter
+still open waits. At the channel's end 17 samples of no evidence let the search reach
+the last sample and the whole text is compared. Probability 1 per character (a
+placeholder).
+
+*Which stream.* At each such comparison, from 1.5 s of the channel's age, the leader is the
+stream with the largest S − F since then: S its best story's score, F a free
+on-off key (5 switches/s) on the same samples. S − F is the evidence for Morse's
+timing and text over no timing on what that filter passes; S alone favors the widest
+filter, which earns on the neighbor too. A narrower stream may lead only with 0.5 of
+the widest's symbols or S − F ≥ 100 nats, and takes the lead only 120 nats above the
+leader; a leader no longer eligible gives way to the widest. A switch goes out as a
+correction. From 10 s of age, a narrower stream not leading, ineligible or over 30 nats
+behind, is dropped for the channel's life. The widest always stays, and the judge
+(section 10) reads it. Narrower ceiling 300 elements. All heuristics by measurement.
 
 **What a score is.** The prior is a real generative model and the search a MAP
 search under it. The likelihood is a stated approximation, and scores are not
@@ -519,21 +501,88 @@ mark. Appendix: A.8e.
 | Processing block (hop) | 21.33 ms |
 | Detection | nothing in the first 1 s; then about 0.5–1.5 s for a new station |
 | Channel filter | 10.7 ms |
-| Envelope | about ¼ dit of smoothing |
-| Matched | 0.32 s warm-up per channel; filter delay 19 ms at 25 WPM |
-| Envelope, Matched | a character appears once a gap of more than 2 dits follows it |
-| Bank | a character appears when the space after it is classified (at the next key-down), at a new over, or at the stream's end; corrections reach up to 20 s back |
 | Viterbi | the whole text when the channel ends; front filter 8.000 ms; a channel opened at the stream's start (oracle mode) searches nothing in its first block (21.33 ms) |
-| Segmental | the whole text when the channel ends; the evidence lags at most 0.387 s, the same first block unsearched; a publisher would have to stay about 0.75 s behind to read the final text's error rate (measured; A.8e) |
+| Segmental | text every 0.25 s, corrected as it firms up; the evidence lags at most 0.387 s at m = 1, 0.46 s at m = 3, the same first block unsearched; the final text's error rate is reached about 0.75 s behind (measured at m = 1 alone; A.8e); a replay reads the 2 s before a channel opens |
 | Track removal | about 6–7 s for the average to decay (S₅₀₀ = 20 dB), plus the 10 s timeout |
 
-Appendix: A.6, A.8d, A.8e, A.9 and A.10.
+Envelope, Matched and Bank: A.9. Appendix: A.6, A.8d, A.8e, A.9 and A.10.
 
 ## 10. Live operation
 
-Reserved. The application, the worker pool, track retirement and the detector's
-local floor are on another branch; this section, section 6 and their appendix
-sections are extended when that branch merges.
+The app, `kz4ap-skimmer`, runs segmental by default. All below holds on segmental's
+detector path, not in oracle mode; other decoders keep the detector their results
+were measured with. Values are heuristics unless marked. Appendix: A.9b.
+
+**Pipeline.** A source fills a ring of at least 4 s, 5.46 s at every radio rate
+(power-of-two capacity, derived). On overflow the ring empties at once: one gap.
+One thread runs spectrum, detector and blocks; `worker_threads` (half the machine's)
+run the channels. A job touches only its own channel, and results go out in track
+order, so output does not depend on the threads. The spectrum carries linear power
+(FS²), so the detector and hiss take no logarithm per bin.
+
+**Detector, added to section 6.** A new track must stand 6 dB above the lower
+quartile of the averaged bins within ±1 kHz (*local floor*): a wide signal's peaks
+do not. None opens within ±47 Hz of 0 Hz (*DC guard*: a radio's offset). A track
+does not move to a peak within 47 Hz of an older one, and of two that close the
+younger dies (*one track per peak*). Cap 400 tracks; a stronger peak replaces the
+weakest.
+
+**Replay.** A new channel's decoder first reads the last 2 s of the band's kept block
+spectra (94 blocks, 6.2 MB at 192 kHz), then goes live; its symbols carry their true
+times. At most 100 replays start per second of stream (2.13 per block), by track id;
+the rest wait undecoded. Against 2 s the wait costs pre-roll, not text after birth.
+With a track budget in force, none replays.
+
+**Judge,** once per second of stream, on the decoder's evidence over W = 12 s: best
+story's score S and a free key's F (two-state chain, 5 switches/s, same evidence):
+R = (ΔS − max(0, ΔF)) / W (nats/s), E = ΔS / W. Text sums, each symbol ln(q/p) against
+the on-air prior p, floored at −12 nats: *tiny* (q fitted to real junk) and *garbage*
+(q = 1/62). *Proven*: tiny has reached −6 nats and garbage never +6. Rules in order:
+from 4 s, R < 3 and tiny ≥ +8 or garbage ≥ +6: retire; from 12 s, R < −8 and (unproven,
+or E ≥ 1000 with −R > 0.1% of E): retire; unproven with R < 3: retire if under
+5 nats/s over 8 s, or at 14 s; proven: under 1 nat/s over 30 s retires, place left open.
+
+**Holds.** A retired place (±47 Hz) closes 8 s, doubling to 120 s; 4 such retirements
+within 750 Hz in 60 s close ±750 Hz from 30 s, likewise. A retirement counts as a repeat
+only if the hold before it has ended.
+
+**List.** A row is listed once proven by the same test; a new track within 47 Hz of a
+row ended under 60 s ago goes on with it. Rows keep about 4 000 symbols.
+
+**Overload.** Checked each stream-second: backlog b counts as grown if above the last
+check (by 0.05 s from below 0.25 s). Grown twice running, b > 1 s and over 8 tracks
+live: budget = ¾ of live, at least 8, least evidence closing first. At b < 0.25 s it
+grows by 5 each 5 s. A radio silent 5 s is flagged, a recording as well.
+
+## 11. Callsign stage
+
+`CallSearch` reads any decoder's track and text events, beside the track list, and
+changes neither. Values are heuristics unless marked. Appendix: A.12.
+
+**Words.** Each whole stream-second it reads text 10 s old. A later correction (reach 206 s on
+real 40 m, measured) has its change read again, within 200 s; old readings stay. A word space,
+prosign or punctuation ends a word. The app's clock travels among the events, so its list does not depend on the pace.
+
+**Readings.** A call's form (RR 19.68; sourced): an allocated prefix (Appendix 42) of one
+or two characters, one digit, one to four letters; /P, /M or a prefix keep the base call. 1
+point: a whole word, or one glued to a keyword or itself (DEK1ABC). 0.75 point: short words
+joined (K X 9 F). 0.5 point: a stray E, T, I before or E, T, K after. Refused: words of CW with
+this form (G5RV, R5NN; exact); calls of E T I S H A N M U 5 alone unless whole words.
+
+**Role.** Before DE or 5NN: *named*. After DE, CQ or TEST, or before K: *signed*. Else *bare*.
+
+**Evidence.** Readings overlapping in time within 300 Hz are one transmission. Points add
+within 300 Hz and 30 min. Reported at 2 points, or at one whole or glued word named; on a
+known-call list, 1 if framed (signed, named or sent twice), else 2. A call of E T I S H A N M U 5
+alone: 2 whole words, listed or not. Two or more digits (W100AW): from a list only.
+
+**Variants.** A call within edit distance 1 of a better-supported call within 150 Hz, or the
+start of one or starting with one, is held back; distance 2 needs over twice the points. Ties
+at distance 1: the earlier call; beginning within 1 s, the later. A list weighs by 3. A listed
+row is withdrawn only if the rival's best exceeds its own, or its readings beyond 150 Hz do not pass alone.
+
+**List.** One row per base call, at its latest signed, else bare, else named place. Decoder
+scores are unused: segmental's symbols all say 1.
 
 # A. Appendix: derivations, provenance, limitations, parameters, definitions
 
@@ -662,6 +711,12 @@ N is the largest power of two with fs/N ≥ 20 Hz: 8192 at 192 kHz,
 is "bins about 23 Hz wide" (the 20 Hz threshold only reproduces it at
 48 kHz × 2^j rates).
 
+In random keying about 44% of the key-down power (the key-down fraction) is a
+pure carrier line, always in one bin; the rest is keying sidebands whose
+main lobe spreads over about ±1/dit: ±21 Hz at 25 WPM, ±33 Hz at 40 WPM,
+±50 Hz at 60 WPM (derived). The occupied bandwidth by the ham rule of thumb
+(about 4 × WPM in Hz) is wider.
+
 
 **N at each rate** (`choose_fft_size`, engine.cpp):
 
@@ -789,6 +844,14 @@ works per bin, in the 35.2 Hz ENBW: SNR per bin = SNR in 500 Hz
 below the key-down SNR per bin by about the duty cycle (−3 dB relative to
 the key-down power at 50% key-down), lower still by the keying sidebands
 outside the peak bin and by up to 1.42 dB of scalloping.
+
+With a key-down fraction D, the averaged power is a carrier line of D² of the
+key-down power, always in the peak bin, plus keying sidebands of D − D²,
+spread over about ±1/dit, so less of them fall in the bin the faster the
+keying. At D = 0.44 the track reads between about 3.6 dB (slow keying: all
+sidebands in the bin) and 7.1 dB (very fast: the carrier line only) below
+the key-down SNR per bin (derived), plus up to 1.42 dB if the tone sits
+between bins.
 
 
 **Derivations.** White noise power grows in proportion to bandwidth, so
@@ -1001,9 +1064,8 @@ use with lround(Hz/Δf): 47 Hz → 2 bins, 23 Hz → 1 bin at 23.44 Hz.
   one channel; 60–200 Hz away B had its own channel, decoded in 30 of 30
   from −6 dB up; channels were never merged. The suite's view of it: 2a
   record, section 8.3 (group H).
-- The cap of 200 (`DetectorConfig::max_tracks`, a config parameter not yet
-  exposed to users): heuristic, a guard against CPU overload, not a
-  measured limit.
+- The cap of 400 (`DetectorConfig::max_tracks`, a config parameter not yet
+  exposed to users): heuristic, A.9b.
 
 **Limitations.**
 
@@ -1012,7 +1074,7 @@ use with lround(Hz/Δf): 47 Hz → 2 bins, 23 Hz → 1 bin at 23.44 Hz.
   toward the band edges), and there is often a spike at 0 Hz (DC offset).
   Where the local noise is above the median, noise crosses the threshold
   more easily (false tracks); where it is below, weak stations are harder
-  to detect and their SNR reads low. The backlog has a local floor as a
+  to detect and their SNR reads low. A local floor now also guards a new track on the segmental path (A.9b). The backlog has a local floor as a
   candidate.
 - **Pauses and track lifetime, by accident, not design.** A station that
   pauses keeps its track while the pause is shorter than the average's
@@ -1438,7 +1500,7 @@ There are five decoders. `ClassicalDecoderConfig::front_end` (a code
 identifier) selects one, and `kz4ap-bench --decoder envelope|matched|bank|viterbi|segmental`
 sets it from the bench (`--front-end` is the option's old name, kept as an
 alias); `FrontEnd::Viterbi` is called the new decoder in older text. **Matched
-is the default** (the code's and the bench's; owner, 2026-09-29); Envelope
+is the bench's default** (owner, 2026-09-29; the app's is segmental, A.9b); Envelope
 also switches the detector to the Envelope path's rules; the bank is
 selectable, not the default (owner decision D1), and so are viterbi (the first
 prototype's plan) and segmental (`docs/decision-log.md`, 2026-10-30). The bank, viterbi and segmental use the default
@@ -2029,6 +2091,11 @@ branches from one noise spectrum of u.
   for 8 s (= 4τ_n) of non-zero input, every branch's σ² is set again by
   the warm-up rule over its last 0.32 s of non-zero input. Seconds, not
   dits, because noise has no keying speed.
+- **Locked-level recovery** (heuristic; never fired on 120 s of noise): a
+  channel opened during a long mark takes the station for noise, and every
+  mark then passes the guard, so the stuck-level rule never fires. When the
+  last 0.32 s's 20% quantile reads over 10 dB under the level, the level is
+  set again the same way.
 - Variants, not the default: "spectrum-level" takes the level from the
   spectrum as well, σ²_v,k = 0.5·(W_k·S̃)/(M·b_k); "branch" runs the
   three-tap estimate on every branch.
@@ -3493,7 +3560,7 @@ samples: 4 at r = 1 500 samples/s; the shared parts refuse it otherwise, as at 4
    k = 1/v_n, β = Q(k, 0.25)/k, Q the Gamma distribution's quantile (shape k, scale 1);
 5. N₀ = (the selected average / β) / (1.5 Δf); 0 before a frame is counted and where the selected average is 0.
 
-**The front filter** (`front_filter_taps`). p(t) = c(t)(1 − c(t − T)), c(x) = ½ − ½cos(π clip(x/E, 0, 1)), T = 12 ms,
+**The front filter** (`front_filter_taps`; `front_filter_taps_any_width` is the same taps at any T, for segmental's scales, without the check that viterbi's fixed constants need: at 1 500 samples/s, 25 taps). p(t) = c(t)(1 − c(t − T)), c(x) = ½ − ½cos(π clip(x/E, 0, 1)), T = 12 ms,
 E = 2.5 ms / 0.590334 = 4.2349 ms (0.590334 = (π − 2 acos 0.8)/π, a raised cosine's 10–90% time over its length);
 h[j] = p(t_c + j/r) / Σp, j = −12 … 12, t_c = (T + E)/2 = 8.12 ms. y[n] = Σ_(i=0…24) h[i−12] x[n−i], read at every channel
 sample whose absolute index is a multiple of 4; e_k = |y|. Zero history before the first sample.
@@ -3666,8 +3733,8 @@ with a derived bound and a measured check (D22); 160 nats: heuristic, about twic
 timed stories, 67.9 nats; 21.33 ms: heuristic chosen by measurement (D24). Beam 40 nats and ceiling 1 700: placeholders.
 
 **Limitations.**
-- **Shared with segmental** (A.8e, "Limitations"): close neighbors, impulses in the hiss, Farnsworth spacing, the symbol
-  prior's agreement with the generator, no text until the channel ends. Worse here than there: N₀ is the hiss alone, with no
+- **Shared with segmental** (A.8e, "Limitations"): close neighbors, impulses in the hiss, the symbol
+  prior's agreement with the generator. Worse here than there: Farnsworth spacing, which viterbi does not model (letter gaps at 3 dots of the story's speed; a letter gap stretched F times costs (ln F)²/0.18 nats of misfit, 24.0 nats at F = 8, derived, and reads as a word gap where that costs less; every letter is right, with a word space after each; `Search.FarnsworthTextIsRight` and `ViterbiDecoder.FarnsworthSpacingAtTheSlowestSpeed` are strict expected failures; `docs/backlog.md`, "Farnsworth spacing in the new decoder"); no neighbor rejection, one filter width only; no text until the channel ends; N₀ is the hiss alone, with no
   channel floor, so it fails at a floor raised around the channel or behind a receiver's passband, as section 8e's stage 2 explains (finding F1 of the
   independent review of commit 5aeb081, not fixed in viterbi); f = 0.02 is too small for flutter and ripple at strong levels, so CER rises with the level
   (review F5, not fixed in viterbi).
@@ -3700,6 +3767,36 @@ timed stories, 67.9 nats; 21.33 ms: heuristic chosen by measurement (D24). Beam 
 - `<HH>` is exactly eight dots: nine or more leave the tree.
 - **The statistics** (`ViterbiConfig::stats`) grow with the channel's time: for bench recordings.
 
+### Viterbi's amplitude and search, in outline (moved from the body, 2026-10-31)
+
+**Viterbi's amplitude: per story** (f = 0.02, a placeholder). Each story holds
+N(μ, P) in FS. Predicted across a lag of ℓ samples, with ρ = exp(−π²f_D²(ℓΔ)²/2),
+f_D = 2 Hz (owner), ρ_a the Rayleigh envelope's correlation for ρ (derived) and
+Ω̄ the story's long-run power:
+
+  μ′ = ρ_a μ + (1 − ρ_a)·0.886√Ω̄,  P′ = ρ_a²P + ½(1 − ρ²)Ω̄ · m.
+
+m = 1 except at ℓ = 1, where m = 1 + 15x/(1 + x), x = Ω̄/(42σ_y²), halfway at
++8.0 dB S₅₀₀ (heuristic): inside a mark n predictions add nQ where the true
+variance grows as n²Q (derived). V is fixed before the sample, with a² → μ′² + P′. Then
+
+  score_k = ln ∫ exp(wΛ) N(a; μ′, P′) da
+
+by Gauss–Hermite quadrature of order 5 at the integrand's mode, and the moment-matched
+posterior becomes the amplitude, only where |s| ≥ 0.01 (heuristic: below it a
+sample says nothing of a; it is still scored). This is a sequential filter on the
+story's own past. A newborn's first mark integrates a level flat in ln a over
+−15 to +85 dB S₅₀₀ on 128 points (placeholder range) and hands over to N(μ, P) at
+a spread below 0.1 nepers, or 15 samples after its first key-up.
+
+**Viterbi's search.** Every sample, every story scores it and offers its ends.
+Successors merge on (activity, key, samples in element, speed, node) plus their
+claimed edges of the last 12 samples (chosen by measurement), since an edge
+shows only 5 to 10 samples later; a rescue has its own key bit, its level and a
+newborn's flat prior being incomparable at birth. Beam 40 nats, ceiling 1 700
+stories (placeholders). Its cost is the amplitude integral per story per sample,
+which segmental removes.
+
 ### The viterbi decoder behind the engine
 
 `ViterbiShared` holds what every decoder of a configuration on one channel filter shares, through `std::shared_ptr`.
@@ -3725,9 +3822,11 @@ symbol prior and over model from `SegmentalConfig::model`, a `ViterbiConfig` mad
 `systematic_floor` 0.1 in place of 0.02.
 
 **In the engine** (`FrontEnd::Segmental`). The channel is as for viterbi: a `ChannelFollower`, N₀ from one `HissEstimator`
-built from `EngineConfig::viterbi`'s `hiss_*` fields, set before each block. `SegmentalShared` holds, per channel filter, the
-front filter's taps, output noise, template tables, `LevelTables` and `ModelTables`. `viterbi_genie` is refused; `--genie` and
-`--stats` belong to `--decoder viterbi`.
+built from `SegmentalConfig::model`'s `hiss_*` fields, set before each block. `SegmentalShared` holds, per channel filter, a
+`SegmentalParts` for the widest filter and one per narrower scale (`narrower`): the front filter's taps, output noise, template tables, `LevelTables` and `ModelTables`. `viterbi_genie` is refused; `--genie` and
+`--stats` belong to `--decoder viterbi`; `stats()` reads the widest stream.
+
+**Everything below runs once per stream** (`SegmentalDecoder::Stream`), at that stream's `at_filter_scale` configuration (section "Filter scales" below); the formulas are written at m = 1.
 
 **Per envelope sample** (`SegmentalDecoder::process`). With N₀ = 0 the sample is skipped: nothing is pushed, the stream is
 spliced, and `Search::note_sample_time` records the time of the next. Otherwise, in order:
@@ -3770,9 +3869,9 @@ z, group levels and probabilities are kept in a ring of 1 024 for short elements
 **The running sums** (`RunningSums`). C[k + 1] = C[k] + L1_k, double, never reduced. rise(i) and fall(j) accumulate from their
 windows, whole once sample i + 10 is pushed. Rings of 8 192 samples, 21.8 s against the longest element's 5.35 s.
 
-**Duration tables** (`ModelTables`). lo = max(1, ⌊M·e^(−4σ)⌋), hi = max(lo, ⌈M·e^(4σ)⌉) per kind and speed, ln P(τ) the fist's, not
-renormalized over the cut. Longest: a dash at the slowest speed 2.296 s, a word gap 5.352 s. mark_survival(s, τ) = max(ln S_dot,
-ln S_dash); gap_survival(s, τ) = max(ln S_element, ln S_letter − 0.396, ln S_word − 1.161).
+**Duration tables** (`ModelTables`). lo = max(1, ⌊M·e^(−4σ)⌋), hi = max(lo, ⌈M·e^(4σ)⌉) per kind and fist, ln P(τ) the fist's, not
+renormalized over the cut. Longest: a dash at the slowest speed 2.296 s, a word gap 15.27 s (gT_s = 657 ms, the largest 12 ms × 1.1^k ≤ 0.7 s; derived), against the rings' 21.8 s. mark_survival(s, τ) = max(ln S_dot,
+ln S_dash), by speed; gap_survival(fist, τ) = max(ln S_element at T_s, ln S_letter at gT_s − 0.396, ln S_word at gT_s − 1.161), by fist; a length past a table reads its last entry. Below, "s" in a gap's or mark's state is the fist.
 
 **One boundary** (`Search::Impl::boundary`), j from 0 as soon as committed ≥ j + 17:
 1. **Reach**, once: for d = 6 down to 1, gap_reach_from[d] = max(0, rise(j+d) + C[j+17] − C[j+d+11], gap_reach_from[d+1]) and
@@ -3811,6 +3910,29 @@ ln(1/32)); a winning gap at a node holding a symbol appends that symbol. Probabi
 `DecodeUpdate` from `process` is empty.
 
 **Bench.** `--decoder segmental`; `--set` as A.11 ("Bench settings"). Oracle channels follow the label's frequency, as viterbi's.
+
+### Filter scales and fists (segmental)
+
+**The scale** (`at_filter_scale(config, m)`, m ≥ 1 and whole; m = 1 returns the configuration as is). Sample interval, the filter's dot `front_dot_s` and the fastest dot `dot_min_ms` × m; `speed_count` − round(ln m / ln 1.1): 25 and 20 speeds at m = 2 and 3, so the slowest dot is 236 and 220 ms against 230 ms (derived). Frame = ⌈21.33 ms / (Δm)⌉ samples: 4 samples (21.33 ms) at m = 2, 3 samples (24 ms) at m = 3. Look-ahead and commit: the nearest whole frames to 170.67 ms: 8 frames (170.67 ms), 7 frames (168 ms). The floor's stride and refresh × m (21.33 ms and 192 ms; 32 ms and 288 ms). Ceiling `filter_scale_ceiling`, 300. Everything else as configured: beam 15 nats, f, the walk in nepers per √s, the key's 30 s⁻¹ (0.16 and 0.24 per sample). A sample is committed 32 to 63 samples after it arrives at m = 2 (170.7 to 336 ms), 21 to 41 at m = 3 (168 to 328 ms); with the search's 17 samples the evidence lags at most 0.43 s and 0.46 s (derived).
+
+**The tables' channel** (`segmental_tables_channel`). `output_noise` and `make_template_tables` are computed on the channel filter at 48 kHz, whatever the input rate, when the rate is a whole multiple k of 48 kHz and `fft_size` is a multiple of 64 k: rate / k, `fft_size` / k. The filter's length in s, its cutoff and the channel's rate do not depend on the input rate (derived: N goes with the rate), so only the positions averaged over differ. At the full rate the template's work goes as m × rate², 80 rises × 16 × 4m × decimation positions × a length proportional to the rate (derived): 16.0 s to 18.0 s for {1, 2, 3} at 768 kHz on the desktop, on the pipeline's thread, with the radio running, against a ring of 5.46 s (measured). On the stand-in 0.08 to 0.10 s at every rate (measured). Agreement with the full rate, by test: s_j within 1e-3 (at most 7.6e-4 measured), half point within 10 µs, σ_y²/N₀ and w within 1e-4 of themselves. A 48 kHz input is unchanged.
+
+**Filter and template.** Taps by `front_filter_taps_any_width`: 2⌊(T + E) × 1 500 /s / 2⌋ + 1 = 43 and 61 at T = 24 and 36 ms, delay 14 and 20 ms (derived). The output noise and w come from `output_noise` on the same chain, with neighbors every 4m channel samples: σ_y²/N₀ = 39.46 and 26.80 Hz, w = 0.2104 and 0.2137 at m = 2 and 3 (derived). The template is that of the chain with `template_delay_s` of zeros before the channel taps: half of a step's response lies at 12.79 ms + (T + E)/2 after the edge, 7.84 samples at m = 1; a narrower filter's lies earlier in samples, so the delay, rounded to whole samples, keeps it there: 3 samples (16 ms) at m = 2, 4 samples (32 ms) at m = 3 (derived). So a story claims its edges that much early, which only the symbols' times read, and the evidence's window m = 5 … 10 stays valid (`FilterScale.ItsEdgesLieInTheEvidencesWindow`).
+
+**Fists** (`ModelTables`). For speed s and n = 0 … `gap_stretches` − 1: the fist (s, g = 1.1^(5n)), while n = 0 or 12 ms × 1.1^(s + 5n) ≤ `gap_unit_max_s`, 0.7 s. So 178, 129 and 98 fists at m = 1, 2, 3 (derived; at most 254). A letter or word gap at fist (s, g) reads the tables of speed s + 5n, marks and element gaps those of s. At most 255 tree nodes. A birth's or rescue's mark, on ending, offers every speed with g = 1 at ln(1/speeds) + ln(1 − π) + ln P_label; the same ends at g > 1, at ln(π/6) in place of ln(1 − π), are offered only if inside the beam of the best so far, which leaves what opens unchanged and saves the bookkeeping on noise. π = `gap_stretch_prior`. Merging is on (j, fist, node, kind). The over's end ends the fist.
+
+**The choice** (`SegmentalDecoder::choose_leader`, at each 0.25 s comparison and at `flush`, where no stream is dropped). `now` is the channel's age: the stream time less that of its first sample, a replay's included, so that a channel that opens late gets the same 1.5 s and 10 s as one at the stream's start (`FilterScale.TheChoiceRunsOnTheChannelsAgeNotTheStreams`). At the first call with now ≥ `filter_scale_start_s` each stream's S − F and symbol count are taken as zero points. Then, with `symbols` and S − F since then: eligible(i) = i is the widest, or symbols(i) ≥ `filter_scale_min_symbols` × symbols(widest), or S − F(i) ≥ `filter_scale_enough_nats`. A leader not eligible gives way to the widest. top = the leader's S − F; in scale order, an eligible stream above top + `filter_scale_switch_nats` becomes leader and sets top. If the leader changed, its whole text is compared. Then, from `filter_scale_drop_after_s` (a negative time never drops), a stream that is neither the widest nor the leader leaves if not eligible or below top − `filter_scale_drop_margin_nats`. `keying_evidence` reads the widest stream, so the judge reads one number across the track's life; its text sums read what was published, the leader's. A speed reported is the leader's.
+
+**Derivations.** g's range: ARRL's standard spreads the added time over the 19 gap units of PARIS, so g = T_g / T_s, and letter and word gaps stretch alike (QEX, April 1990; the generator's). 33 WPM characters at 5 WPM overall give T_g = (60/5 − 31 × 36.4 ms)/19 = 572 ms, g = 15.7. A gap half a step off (1.61^½) is 0.24 nepers, 0.8 of the fist's σ, about 0.3 nats per gap. Taking the fist at the first mark's end, in the state, rather than a value learned per track, lets the traceback correct the first letters' spaces. The Bayes-factor reading of S − F: both are scores on the same evidence stream, one under Morse's timing and text, one under a key with no timing; between filters, whose data differ, it is a heuristic, and so said.
+
+**Provenance.** All in `docs/decision-log.md`, 2026-10-31; results in the results records.
+- Scales {1, 3}: heuristic by measurement on the whole test set, seeds 1 and 2: against {1, 2, 3} E2 reads 0.575 against 0.562 and 0.694 against 0.677, the other groups within 0.001, on the detector's path E2 better, for 28% less CPU. Before the leak floor (all of this bullet's values). Scale 2 alone has a null at 1/(24 ms) = 41.7 Hz (derived): a steady carrier 40 Hz off at 0 dB re wanted reads 0.000 with it and 0.975 to 0.983 without, on the oracle path only (with the leak floor on the final code, 0.321 with it); at 35, 45 and 50 Hz neither reads, and on the detector's path neither reads at any of 25 to 60 Hz (measured; the results record). Width 6 (13.6 Hz) reads E2 better and fading and the second QSO group worse, for about 1.9 ms per channel-second more, narrow enough for a detector's frequency error to matter; 4 did not earn its place.
+- π = 0.002: heuristic by measurement on seed 1 with the widest filter alone; 0.01 and 0.0004 read fists or Farnsworth worse, and it pays for CPU on near-threshold channels (values in the log).
+- 1.5 s: heuristic: N₀ reading low in the first second gave one stream 100 000 nats, before the channel floor is in (1.056 s).
+- The whole track rather than a window: a 30 s window read the QSO groups worse, the whole text being published and the last 30 s one station.
+- 0.5 of the symbols, 100 nats (eligibility; the drop's margin is another number): heuristics. Where a narrow filter reads next to nothing S and F are both about 0, which beats a weak station's often negative S − F at the widest; the second route is for a widest filter misled into over twice the symbols by a neighbor.
+- 120 nats: heuristic by measurement: on a clean weak station a narrower filter can stand a few tens of nats above the widest and read a little worse; the neighbors' cells stand above it.
+- 10 s of age, 30 nats, the ceiling of 300: heuristics that buy CPU. 30 and 100 nats read alike to 0.001 on the test set's seeds 1 and 2, and 30 costs about 10% less there (measured by the fourth review). 5 s reads E2 worse (0.575 against 0.562, three filters). The age and not the stream's time: on the stream's clock a late channel dropped its narrower filters at a median age of 2.07 s, E2 late on the detector's path reading no better than the widest alone (0.719 both). a beam of 12 nats at the narrower filters would save more and costs a close neighbor's text, so the beam stays 15 nats.
 
 ### Channel floor (segmental)
 
@@ -3858,7 +3980,7 @@ strong levels, 0.2 costs the low group and fast speeds). The belief threshold 10
 - **Why no newborn.** The backward message gives a new over its level, at 170.7 ms or more of look-ahead.
 
 **Is the approximation defensible?** The four reasons of section 8e say what it is. Whether it serves is measured: `docs/decision-log.md` and the results records. The evidence's lag, not the
-text's, is at most 0.387 s: 0.34 s for the level and 17 samples for the search (derived). A publisher reading the best story at 0.75 s behind reads the final text's CER (measured; the log, 2026-10-31); no publisher exists at this commit.
+text's, is at most 0.387 s at m = 1: 0.34 s for the level and 17 samples for the search (derived). A publisher reading the best story at 0.75 s behind reads the final text's CER (measured; the log, 2026-10-31); the live publisher (A.9b) sends sooner and corrects.
 
 **Provenance.** Beam 15 nats, ceiling 3 000: heuristics set by measurement (a ceiling of 10⁶ gives the same edits on the slice; the log). `duration_z_max` = 4: heuristic. The over's tail: 6 samples, the
 windows' length. Everything shared with viterbi: A.8d.
@@ -3867,36 +3989,47 @@ windows' length. Everything shared with viterbi: A.8d.
 
 These are the model's and, except where said, the viterbi decoder's too. The white-noise test set shows few of them. Measurements: `docs/decision-log.md` and the results records.
 
-- **Close neighbors.** The model has one station, and the belief follows whichever carrier is up. A neighbor's mark in the wanted station's gap scores as key-down, and the same story bridges the gap. A
-  station 10 dB weaker (dB re the wanted station's key-down power) about 30 Hz away can cost the whole text, and one as strong about 60 Hz away; a steady carrier 10 dB weaker 40 Hz away the same. The channel's floor helps from about 100 Hz out and not inside it.
-  It is not false overs, and flooring the belief near its peak does not save it. A very strong neighbor at 250 Hz writes false dots, believed to be its key clicks (not isolated). No small fix is known; the bank's behavior
-  inside 60 Hz is the place to start. Viterbi is mostly worse here, for reasons not examined.
+- **Close neighbors.** The model has one station per stream, and the belief follows whichever carrier is up. A neighbor's mark in the wanted station's gap scores as key-down, and the same story bridges the gap. The narrower filters keep out a neighbor outside their band. The leak floor below keeps a neighbor's leak from scoring as keying once it stands above the hiss. What stays (levels in dB re the wanted station's key-down power; scores in the results records): a neighbor at or below the wanted station's level inside about 60 Hz, at every level; neighbors +10 dB re wanted inside about 100 Hz; neighbors far stronger, as +44 dB re wanted 200 to 300 Hz away, and +20 dB re wanted at 150 Hz; a steady carrier +10 dB and stronger inside the channel, where the whole text is lost at every setting tried. A very strong neighbor at 250 Hz writes false dots, believed to be its key clicks (not isolated). Untried: a second carrier in the level filter, the neighbor's beat in the complex samples, subtracting a neighbor's track. Viterbi, one width, is worse here.
+- **A neighbor after the drop.** A neighbor arriving after the narrower streams are dropped (from 10 s of age) is read at the widest filter alone, for the channel's life.
+- **One stream's whole text.** Stories do not cross between streams (one sample of time mismatch is hundreds of nats at +20 dB S₅₀₀, so no joint search can prune across widths), and a QSO whose stations need different widths reads at the better over the whole track. A long track whose conditions change keeps its early leader unless another earns 120 nats more. Around 40 Hz at 0 dB re wanted a short text can fall either side.
+- **A narrower filter off frequency.** The channel follows the detector's frequency, which may be up to half a bin off a station (A.7); no fine estimate corrects it, and a narrower filter pays more for it. Oracle scores do not show this.
+- **Memory.** About 3 MB a track (measured: 58 to about 240 MB at 56 tracks), mostly the search's slots: 24 bytes × (fists × nodes) × 2 per stream, derived. A smaller slot or per-fist blocks would cut most of it.
 - **Impulses inflate the hiss.** The hiss averages each bin's power over time, so a burst counts by its mean, and N₀ reads high after it. Using the channel's floor alone would not save it: the hiss would stop reading high and every
   burst would become a mark, so the inflated hiss is hiding insertions. A blanker before the channelizer, then a median over time in the hiss, is the unverified fix.
 - **A tune-up writes T's** (segmental only). Each element ends at its longest length, so a carrier held past 2.3 s (a dash at the slowest speed) ends every story's mark and writes a T about every 2.3 s (`search.cpp`, the prune by
   length). The channel's floor reduces this by reading a long carrier as noise.
 - **A long carrier reads as noise** (segmental only). A key-down held over 90% of the 5 s window raises the floor to the carrier, and it fades from the text.
 - **The first second has no floor.** Behind a receiver's filter a few false symbols appear before the floor is first in, at 1.056 s.
-- **Farnsworth spacing** is not modeled (owner, D14). Letter gaps are taken at 3 dots of the story's speed; a letter gap stretched F times costs (ln F)²/0.18 nats of misfit (24.0 nats at F = 8; derived) and reads as a word gap
-  where that costs less. Every letter is right, with a word space after each. The 4 σ cut-off adds nothing to it. `Search.FarnsworthTextIsRight` and `ViterbiDecoder.FarnsworthSpacingAtTheSlowestSpeed` are strict expected failures for viterbi; DEV2's
-  Farnsworth groups (I, I2) read poorly on both. What was found with the factor and thoughts for a fix: `docs/backlog.md`, "Farnsworth spacing in the new decoder".
+- **Farnsworth spacing** is in the state (segmental only; viterbi: A.8d). A sender whose gaps change within an over pays a rescue, and a stretch costs 8.0 nats once per over, so a short Farnsworth over reads word spaces until that is earned back. Letter and word gaps stretch alike, by ARRL's rule; a sender who stretches only one pays the misfit on the other.
 - **The symbol prior agrees with the generator.** The on-air table is the one the filler text is drawn from; p_w is that text's mean word length and q the development set's count. Any CER on this text is therefore an upper estimate of what the
   prior gives on the air. Real text will sit somewhere between. Both decoders read the same prior.
-- **Text only when the channel ends, and its readout uncosted.** `best_text` walks the whole chain. Text costs 40 bytes per symbol, 0.3 MB per hour of continuous sending, unbounded until the channel closes.
+- **The whole text's readout is uncosted.** `best_text` walks the whole chain, at the channel's end, at a change of stream, and when more than 64 symbols came in one period. Text costs 40 bytes per symbol, 0.3 MB per hour of continuous sending, unbounded until the channel closes.
 - **The level is not bound to a story.** Nothing charges a drop inside a mark, and a new over pays nothing for its level (section 8e). Near threshold this reads better than viterbi; viterbi reads a little better from about +2 to +5 dB S₅₀₀, at +20 dB S₅₀₀
   with f_D = 3.5 Hz, and from about 60 WPM up.
 - **Three overlapping edges** (above 100 WPM) are not modeled; 95 WPM reads with a small error.
 - **Long life.** Scores are absolute, in doubles, and C falls or rises without bound: at +60 dB S₅₀₀ a double's step reaches 0.1 nats after about 21 days of continuous sending (derived). Boundary stamps wrap at 2³¹ samples, 66 days (derived).
-- **`--set hiss_*` does nothing with segmental.** It changes the copy in `SegmentalConfig::model`; the engine builds the hiss from `EngineConfig::viterbi` (`engine.cpp`), which the bench does not set for this decoder. Likewise the model's fields that segmental does not read (`level_min_db`, `level_max_db`, `quadrature_order`, the newborn's and the amplitude's) are accepted and ignored.
+- **Settings accepted and ignored.** The model's fields that segmental does not read (`level_min_db`, `level_max_db`, `quadrature_order`, the newborn's and the amplitude's).
 
 **Fixed at this commit** (findings of the independent review of commit 5aeb081, numbered F1 to F10; `docs/decision-log.md`, 2026-10-31): F1 (the channel's floor), F5 (f = 0.1), F6 (one extreme sample deafening a channel), F8 (false letters above +80 dB S₅₀₀, the float fix).
 
+### A neighbor's leak (segmental)
+
+**Why.** The failure with a close neighbor depends on the absolute level, not only on the level re wanted. The neighbor reaches the filter's output at L_n + 10 log₁₀(500 Hz / B) + H(f) dB re that filter's noise, L_n its level in dB S₅₀₀, B the filter's noise bandwidth, H(f) the chain's response in dB re 0 Hz (derived): at 100 Hz, −18.8 dB re 0 Hz at m = 1 and −24.2 dB re 0 Hz at m = 3. Before this floor, with a neighbor at 0 dB re wanted, 80 to 120 Hz away, CER was 0.000 at +10 dB S₅₀₀ and 0.86 to 1.54 at +30 dB S₅₀₀, and the older bank, whose decisions are relative to the track's own level, read such pairs better from about +20 dB S₅₀₀ (results record, `level-pairs.csv`). With σ² set by noise alone the leak is scored as key-down in the wanted station's gaps: section 8e's "no charge for the level" means nothing penalizes a low-level mark. The onset, where the wide filter's leak reaches about 0 to +10 dB re its noise, is a measured onset against a derived level.
+
+**The form.** `SegmentalDecoder::set_band_spectrum`, per stream and block: L_m = Σ_k (P[c + k] / 1.5) |H_ch(kΔf)|² |H_f,m(kΔf)|² over both sides of the center bin c with k from ⌈60 Hz / Δf⌉ = 3 to ⌈320 Hz / Δf⌉ = 14 (70.3 to 328.1 Hz), the responses computed once from the taps (`SegmentalParts::leak_response`); σ² = max(N₀B_m, 10^(X/10) × max(L_m over the last 9 blocks, 0.192 s, the nearest to `leak_hold_s` 0.2 s at 21.33 ms a block), channel floor), X = +3 dB re the leak. P is the Hann-windowed spectrum's power: a tone of amplitude A reads A² in its bin and A²(1 + 2 × ¼) = 1.5 A² over its bins, so 1.5 counts it once (derived). H_ch is taken about the channel's center; the block is cut at a bin up to half a bin (11.7 Hz) from the detector's frequency, which the form ignores. c is the bin nearest the detector's frequency.
+
+**On noise.** White noise reads P = 1.5 N₀Δf in a bin, so L_m averages N₀Δf Σ_k |H|², and 10^(0.3) L_m / (N₀B_m) is 0.068 at m = 1 and 0.063 at m = 3 (derived, the test `LeakFloor.WhiteNoiseStaysUnderTheHissOnAverage`). A peak over 0.2 s can stand above that average; on the test set it moved A2's edits by none of 151 629 (measured), so it is close to inert where no neighbor stands.
+
+**Provenance.** X by measurement on a slice of the test set, at a hold of 1 s (E2 0.504 at +3 dB, 0.573 at +6 dB, 0.690 at +10 dB, against 0.575 without; B2 rises from +6 dB; review 5, the results record). The hold, 0.2 s: a heuristic chosen by measurement, looking at E2 and the strong pairs, so not independent of them; seed 2 agrees. Against 1 s, the first try's value, never swept: E2 0.490 against 0.504, seed 2 0.651 against 0.673, a neighbor at least 6 dB re wanted at 60 to 120 Hz 0.129 against 0.283 (no floor reads 0.179); at 25 to 60 Hz 0.512 against 0.506; the contest's true calls 219 against 221. 0.1 s and 0.3 s read about the same as 0.2 s; X was not swept again at this hold, though X 0 dB gave the best pairs at 1 s (review 6). Why it helps (conjecture): in a neighbor's gaps there is no leak to excuse, so holding the floor over them only blinds the stream. 60 Hz: heuristic, past a Hann main lobe's 47 Hz. 320 Hz: heuristic; the response at 300 Hz is under −100 dB re 0 Hz (derived). Tried and refused: a floor at −15 dB re the channel's peak over 5 s or 1 s, which reads pairs better still but loses fading (B2 0.231 to 0.543); a Hann taper on the narrow filter, which undoes the gain. The value is set where E2 can see it, and E2 holds its wanted stations at 8 to 14 dB S₅₀₀; that the gain on the level pairs is the larger one is shown only by those pairs, not by any group of the test set (backlog).
+
+**Limits.** Two systematic mismatches, derived for a steady tone (review 6; the floor over the tone's true leak at the output). Inside about 60 Hz the floor stands far under the leak, −21.6 dB re the true leak at 40 Hz and m = 1, since the bins read start at 70.3 Hz: that is why 40 Hz is not cured. Near a filter's null it stands far over the leak, +34.4 dB re the true leak at 83 Hz and m = 1 and +20.2 dB re the true leak at 55 Hz and m = 3, since the sum takes the response at each bin, not at the tone's frequency, and a Hann main lobe spreads a tone over 94 Hz: that is why a 55 Hz carrier reads worse with the floor. A replay's blocks have no spectrum of their past, so the first 2 s of a channel opened by the detector run without this floor. It also reads noise that the hiss does not see, beside the channel: with the channel floor off, a passband's edge and a raised noise read CER 0.05 to 0.41 by the leak floor alone (`BenchRunFloor`); both stay, since the channel floor covers what stands inside the channel. A neighbor +10 dB re wanted or more loses the wanted station inside 100 Hz: raising σ² removes the gaps' false marks, but the belief still follows the stronger carrier. The bins read include a wide or fast station's own far skirts; a key-click can raise its own floor for 0.2 s (not seen on the test set or on real 40 m).
+
 ### The segmental decoder behind the engine
 
-`SegmentalShared` is built once per engine and held by every channel's decoder. A decoder refuses shared parts built for another channel rate. `ChannelFloor` is built once in `SegmentalShared`'s constructor only to check its settings, before a channel opens.
+`SegmentalShared` is built once per engine and held by every channel's decoder. A decoder refuses shared parts built for another channel rate. `filter_scales` must start with 1 and rise; a scale below 1, a stretch count or step below 1, a prior outside [0, 1) (or 0 with stretches), and `gap_unit_max_s` not positive are refused. `ChannelFloor` is built once in `SegmentalShared`'s constructor only to check its settings, before a channel opens. The leak's settings are refused there too: a hold negative or not finite, offsets that do not rise from 0 Hz or above.
 Settings the code refuses: `level_step_db` not positive, top not above bottom, more than 256 levels, a jump probability outside [0, 1), a key probability outside (0, 0.5), non-whole frames or strides, a floor quantile outside (0, 1), start outside [0, window].
 
-**Cost.** The evidence is once per channel; the search touches each open element per boundary, and that count rises near threshold, where a broad belief and more stories within the beam cost most. CPU is stated in ms per channel-second in the decision log and the results records.
+**Cost.** The evidence is once per stream; the search touches each open element per boundary, and that count rises near threshold, where a broad belief and more stories within the beam cost most. A dropped stream costs nothing after. Building `SegmentalShared`: about 0.1 s at any rate (measured; "The tables' channel"). CPU is stated in ms per channel-second in the decision log and the results records.
 
 ## A.9 Timing and latency
 
@@ -3914,11 +4047,82 @@ The rules of this section as the code implements them (moved verbatim from the b
 | Envelope, Matched | a character is emitted once a > 2-dit gap follows it |
 | Bank | block 21.33 ms; branch delay (N_k − 1)/(2r) = 4.3–91.7 ms (removed from character times); a character is published when its following space is classified (at the next key-down), at a new over or at the stream's end; corrections reach up to 20 s back (a resync is not bounded by it) |
 | Viterbi | the whole text at `flush` (the channel's end); each sample searched as it arrives; a channel opened at the stream's start (oracle mode) does not search its first block (21.33 ms), N₀ being 0 before the first spectrum frame (a detector channel opens later, with N₀ already set); its channel is shifted to the detector's frequency of each block's start, held over the block (21.33 ms; A.7) |
-| Segmental | the whole text at `flush`, with 17 samples of zero evidence pushed first; each sample's evidence committed 64 to 127 samples after it arrives (170.7 to 338.7 ms), a boundary searched once evidence 16 samples past it exists, so the evidence lags at most 0.387 s; the same first block and channel as viterbi |
+| Segmental | every 0.25 s of stream the last 64 symbols compared with what is out (A.9b); the whole text at `flush`, with 17 samples of zero evidence pushed first; each sample's evidence committed 64 to 127 samples after it arrives (170.7 to 338.7 ms), a boundary searched once evidence 16 samples past it exists, so the evidence lags at most 0.387 s; the same first block and channel as viterbi; at m = 2 and 3 the lag is at most 0.43 s and 0.46 s (A.8e) |
 | Track removal | the average's decay (~6–7 s at S₅₀₀ = 20 dB) plus the 10 s timeout |
 
 
 Nothing beyond section 9: its delays are derived in the sections it names (A.6 for the average's decay, A.7 for the channel filter's group delay, A.8c for the bank's blocks and branch delays, A.8d for viterbi, A.8e for segmental).
+
+## A.9b Live operation
+
+### Exact form
+
+**Engine (`resolved`, `Engine`).** `FrontEnd::Segmental` on the detector's path sets `local_floor_radius_hz` 1000 Hz, `one_track_per_peak` and `dc_guard_hz` = D_ch, and turns on `judge_tracks` (default true; `--no-judge` in the bench) and the replay. A sample rate whose channel rate is no whole number of the decoder's samples is refused ("this decoder needs a sample rate of 48, 96, 192, 384 or 768 kHz").
+
+**Which decoder.** `kDefaultDecoderName` is `segmental` (the app; `engine_config_for_decoder`). The bench's own default stays Matched.
+
+**Live text.** While a channel runs, `SegmentalDecoder::process` compares, every 0.25 s of stream, the best story's last 64 symbols with what it has published; it sends the new symbols, or a correction from the first that differs. A letter still open stays back until it closes, or E would show on its way to I, S, H. `flush` compares the whole text. A change of mind more than 64 symbols back goes out only at the channel's end.
+
+**Worker pool.** `WorkerPool`: `worker_threads` threads, the caller's included. For one block every channel's job (replay if due, cut, follower, decoder) reads the block's spectrum, the kept spectra, the hiss estimator and the configuration, and writes only its own `Channel`. Results go out afterward on the pipeline's thread, by track id. The verdicts and the budget follow on that thread.
+
+**Linear power.** `SpectrumFrame::power_fs2` is the frame's power in FS², 10^(`power_db`/10) but for rounding. The detector's average and the hiss read it; only peaks that clear the threshold are converted to dB.
+
+**Local floor.** At a new peak in bin i, `average` within ±1000 Hz: `nth_element` at a quarter of the bins (the lower quartile; 43 bins either side at 23.44 Hz). The peak must stand `threshold_db` (6 dB) above it, besides above the band's median. Only a new track is tested; a live one is not.
+
+**One track per peak.** In `follow_peaks` a track skips a peak within `attribution_distance_hz` of an older track. After following, a younger track within that distance of an older one dies, as `TrackEnd::Merged`.
+
+**DC guard.** A candidate peak with |f| < `dc_guard_hz` is skipped, on recordings too.
+
+**Replay.** `Channelizer::keep_past(⌈replay_s / hop time⌉ + 1)` keeps each block's whole spectrum, reusing the oldest's memory: 94 past blocks and the current one at 2 s, 2.005 s of past, 95 × N × 8 bytes (6.2 MB at N = 8192, 24.9 MB at N = 32768). Each block a turn accrues, `replay_tracks_per_s` × hop time = 2.13, saved up to that plus 1. A channel opened and without a turn is not cut or decoded, is not judged and counts no channel-seconds. Given a turn, it decodes all kept past blocks in order (its bin and follower as for a live block, at the detector's current frequency, N₀ read now) and the current block; its updates go out in order before the block's. At the stream's end a waiting channel replays the kept blocks. A channel granted its turn while a budget is in force skips the replay and goes live.
+
+`EngineStats::channel_seconds` counts live time only; `replayed_channel_seconds` the replays'; their CPU stays in the stages, so CPU per channel-second includes it. `longest_replay_wait_s` reports the wait.
+
+**Judge (`TrackJudge`, once per second of stream per channel, from `judge_channels`).** With the history of `KeyingEvidence` a second apart, and age the number of readings less one:
+
+- R = (ΔS − max(0, ΔF)) / min(age, 12 s), E = ΔS / min(age, 12 s), ΔS and ΔF over 12 s; S the widest stream's best score, F that stream's two-state chain at 5 switches/s on L1, whichever stream leads (`keying_evidence`). The text sums read the published text, the leader's.
+- tiny, garbage: running sums, each floored at −12 nats, with lowest tiny and highest garbage; word spaces skipped; `RunningTextEvidence` adds only new symbols and on a correction goes back to the nearest saved state (every 256 symbols). A symbol the prior lacks counts at the prior's floor, 0.002.
+- proven, once true for good: lowest tiny ≤ −6 nats and highest garbage < +6 nats.
+- Rule 1, age ≥ 4 s, R < 3 and (tiny ≥ +8 or garbage ≥ +6): `NotMorse`, hold 8 s. Rule 2, age ≥ 12 s, R < −8, and (not proven, or E ≥ 1000 and −R > 10⁻³ E): `NotMorse`, hold 8 s. Rule 3, not proven and R < 3: age ≥ 8 s and ΔS over 8 s < 40 nats: `Quiet`, hold 8 s; else age ≥ 14 s: `NotMorse`, hold 8 s. Rule 4, proven, age ≥ 30 s and ΔS over 30 s < 30 nats: `Quiet`, no hold.
+
+**Holds (`SignalDetector::retire`, `close_place`).** A retirement with hold_s > 0 removes the track, closes radius 47 Hz and logs (f, t). If at least 4 logged retirements in the last 60 s lie within 750 Hz of f, it also closes radius 750 Hz from 30 s. Closing: find a hold of that radius within that radius; if none, new, count 0. If count = 0 or now ≥ until, count + 1. Then until = max(until, now + min(hold_s × 2^(count−1), 120 s)). A hold is forgotten once open for 120 s. New peaks inside a running hold of either radius are skipped; a live track there stays.
+
+**List (`TrackTable::set_plausible_only`).** A new row is hidden until `text_evidence(row).plausible()`, then listed for good. A new track within 47 Hz of an ended row, listed or hidden, goes on with it after a word space, and its corrections start after the earlier tracks' symbols. Rows ended over 60 s ago leave. Past 4 256 symbols a row drops its oldest 256; the report and `--decoded` then hold a long row's end only.
+
+**Overflow.** `SdrplaySource::read`: when the driver's callback finds no room it sets a flag, and the next read empties the ring and counts the samples as lost. So one gap, not a click each read.
+
+**Budget (`StreamRunner`, with a live source).** At each check, at least 1 s of stream after the last: grown = b > b_last + m, m = 0.05 s if b_last ≤ 0.25 s, else 0; g = grown ? g + 1 : 0. If b > 1 s, g ≥ 2 and live > 8: budget = max(8, ¾ live), and the engine closes the rest at its next block, ranked (proven, E) lowest first, `TrackEnd::Shed`, hold 8 s; a new track must then replace a weaker. Else if a budget is in force, b < 0.25 s and 5 s have passed since it changed: budget + 5; at `max_tracks` it goes away.
+
+**Silence (`DeliveryWatch`).** No new sample from the radio for 5 s of wall clock: the status says so, a recording shows as recording nothing, the markers stop showing live. A recorder keeps its own ring, 10 s; its file is valid at any stop.
+
+### Provenance
+
+Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10-31. Results: the results records under `docs/plans/`.
+
+- Replay 2 s: heuristic. A keyed signal crosses the threshold within about 1 s of its start (τ = 1 s, A.6) and is then a candidate for 0.5 s. Valid while `average_s` and `birth_s` stand.
+- Replay's rate, 100 tracks/s: heuristic, from CPU, set with one filter width: a replay cost 2 s × at most about 25 ms per channel-second (weak or wide real channels, 192 kHz, this desktop), 50 ms, so at most 5 CPU-seconds per second of stream, near 4 threads' capacity, in the worst burst. Two streams and the channel's age raise it about the same. Measured at `app-6`'s code: 400 stations at 768 kHz on 4 threads, as a file, 14.9 s of wall for 25 s of stream, longest read 0.21 s, which the ring's 5.46 s absorbs; on the stand-in radio no samples lost, no budget. The burst is short: 100 tracks/s has a maximum of 4 s at the cap of 400.
+- Local floor's ±1 kHz: heuristic, wide against a station's few bins. Lower quartile: heuristic, set on 62 s of real 40 m.
+- DC guard: heuristic, the width of a channel. Real radio's offset read as `0 TOO0`.
+- W, 5 switches/s, 4, 8, 14, 30 s, 3, 1, 5 nats/s: heuristics by measurement on one 62 s recording and generated bands.
+- −8 nats/s: heuristic. Not a margin below real stations: on a 30 min recording, 9 of 57 tracks at real stations' places fell below it over a full window; `held_to_it` and the text test keep them.
+- E ≥ 1000 nats/s, 10⁻³: heuristics from generated strong stations.
+- Text's q: fitted to 4 968 symbols of real junk (one recording), raised for T; 0.03 to the rest. −6, +8, +6 nats: Wald's bound gives P(reach +x under p) ≤ e^(−x) and P(reach −x under q) ≤ e^(−x) (derived for independent symbols from the models). As error rates on the air they are not valid: real junk is neither independent nor from q. They are heuristics.
+- Holds 8, 30, 120 s, 60 s, 750 Hz, 4: heuristics on real 40 m.
+- List's 60 s, 47 Hz: heuristics. 4 000 symbols: heuristic, 27 min at 30 WPM.
+- Budget's values: heuristics. 5.46 s is derived: 2^k ≥ 4 s × rate, at each radio rate 2^k / rate = 5.46 s. Cap 400: heuristic; a 300-station generated band needs over 300 and the project's goal names 500 tracks on half the desktop.
+- 7031.5 kHz, the default center: heuristic. It keeps the DC guard off the 7030 kHz calling frequency; no row within 47 Hz of it in the 30 min recording.
+
+### Limitations
+
+- Text sent during a hold is lost, not late. Short overs and a carrier before a CQ can lose some; a runner with callers within 47 Hz can read as not keyed and retire (backlog).
+- A hold can close a place on a real station up to 120 s; ±750 Hz up to 120 s if a wide signal returns.
+- Rows of data and speech read as plausible stay on the track list: it is 35% to 63% junk. The call list beside it (section 11) has none of them; a view of the rows by plausibility is not built.
+- A station within 47 Hz of the center is not read. Tune off it.
+- A steady carrier takes the channel: a station within 47 Hz of a carrier that came first and at the station's level or above, or within 100 Hz of one 10 dB and more stronger, is not read (results record). A carrier alone costs a few hidden T's and up to 14 s of a channel, then holds.
+- The narrower stream's CPU is spent to at least 10 s of a channel's age, even on a channel the judge then retires.
+- Replay near a recent neighbor reads what the channel holds, including its neighbor. A wait over about 0.5 s loses pre-roll, at the stream's start the least.
+- For viterbi and bank the budget's rank is equal for all, so it sheds the oldest first.
+- A replay's first block starts with its filter and level empty, as any channel.
+- The recorder does not flush to the disk; an operating-system crash can lose what the system holds.
 
 ## A.10 Parameters at a glance
 
@@ -3939,7 +4143,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Peak neighborhood | ±47 Hz (±2 bins at 23.4 Hz) | `DetectorConfig::peak_radius_hz` | heuristic |
 | Track level neighborhood | ±23 Hz (±1 bin at 23.4 Hz) | `DetectorConfig::level_radius_hz` | heuristic |
 | Tracker anchor (Matched path) | the detector's current frequency for the track, set before every channel block; the tracker fine-tunes within ±12 Hz of it | `Decoder::set_frequency_anchor_hz`; `FrequencyTrackerConfig::fine_tune_hz` | heuristic (owner decisions 2026-09-29, option 1) |
-| Max tracks | 200 | `DetectorConfig::max_tracks` | heuristic |
+| Max tracks | 400 | `DetectorConfig::max_tracks` | heuristic |
 | Channel bins / decimation | 64 / D = N ÷ 64 (r = 1500 Hz) | `EngineConfig::channel_bins` | heuristic within derived bounds |
 | Channel filter cutoff | ±150 Hz (−6 dB relative to the passband) | `EngineConfig::channel_cutoff_hz` | heuristic |
 | Channel filter | Blackman-windowed sinc, N/2+1 taps (21.3 ms) | channelizer.cpp | standard choice; length derived from the hop |
@@ -3955,7 +4159,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Character / word gap | > 2 / > 5 dits | classical_decoder.cpp | heuristic (the conventional midpoints between the nominal 1, 3 and 7 dits) |
 | Speed window / range | 24 marks, 5–60 WPM | classical_decoder.cpp | heuristic |
 | Edge-shortening ratio band | 3.0–3.85 | classical_decoder.cpp | measured |
-| Decoder | Matched (default), Envelope, the bank, viterbi or segmental | `ClassicalDecoderConfig::front_end` (`FrontEnd::Bank` makes the engine create a `BankDecoder`, `FrontEnd::Viterbi` a `ViterbiDecoder`, `FrontEnd::Segmental` a `SegmentalDecoder`); `kz4ap-bench --decoder` (`--front-end` its old alias) | Matched default and Envelope owner decisions 2026-09-29; the bank selectable (owner decision D1, 2026-10-03); viterbi selectable (the first prototype's plan, D2); segmental selectable (decision log, 2026-10-30) |
+| Decoder | Matched (the bench's default), Envelope, the bank, viterbi or segmental | `ClassicalDecoderConfig::front_end` (`FrontEnd::Bank` makes the engine create a `BankDecoder`, `FrontEnd::Viterbi` a `ViterbiDecoder`, `FrontEnd::Segmental` a `SegmentalDecoder`); `kz4ap-bench --decoder` (`--front-end` its old alias) | Matched default and Envelope owner decisions 2026-09-29; the bank selectable (owner decision D1, 2026-10-03); viterbi selectable (the first prototype's plan, D2); segmental selectable (decision log, 2026-10-30) |
 | LLR keying hysteresis (Matched) | g > +1 nat down, g < −1 nat up; the key-up threshold, −1 nat, is also the evidence that a mark's start was observed (row "Marks not counted for speed", Task 16) | `ClassicalDecoderConfig::llr_hysteresis` | heuristic |
 | Filter follows speed after (Matched) | 8 marks in the speed window (8 new ones after a re-acquisition) | `ClassicalDecoderConfig::follow_after_marks` | heuristic |
 | Dit-estimate growth bound (Matched) | decided: at most ×1.25 per mark while the filter follows the speed, and the filter's own dit at most ×1.25 per mark from its first follow step (from the 20 ms acquisition dit). Applied at each key-up counted for speed; a dropout merge restores the state before the merged mark's update, so each physical mark is bounded once (Task 15) | `ClassicalDecoderConfig::max_dit_growth` | heuristic value (owner decisions 2026-09-29); applied per physical mark (derived from the code, Task 15; re-measured in Task 17: 2a record, sections 3.7, 3.8 and 8.3) |
@@ -4019,17 +4223,17 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Bank anchor mixing (engine) | u[n] = y[n] exp(−jφ[n]), φ[n] = 2π (Σ_{m≤n} Δ[m] − Δ[n]) / r, Δ = detector frequency (oracle: the label's, without its drift) − channel center, Hz, per channel block; no tracker | `BankDecoder::process` | derived: the prototype's `anchored_baseband`, mixing at the frequency where option 1 (the detector decides where the station is) puts the station; the oracle anchor without drift is the plan's choice, not tuned |
 | Bank events (engine) | new characters, then corrections (index: the smaller of the number kept and the first position whose text changed; the bank's characters from it on; time, reason, reach), applied in order, plus a "resync" correction if the consumer's list ever differs from the bank's (its reach not bounded by the 20 s correction reach; never on the suite, measured; tested by forcing one); final text = all corrections applied, immediate text = characters as first appended | `TextCorrection`, `DecodeUpdate::corrections`, `DecodedTextEvent::corrections`; bench `TrackText` | derived: the consumer's rule rebuilds the bank's final text exactly (proof in A.8c); not signal processing, an interface choice of the port (owner decision D1 for `--decoder`); the event's probability 1, speed 0 and confidence 0 are placeholders |
 | Viterbi, segmental: sample interval Δ | 4/r = 2.667 ms, a whole number of channel samples | `sample_interval_s`; `whole_count` | owner (2026-10-23, D17); r refused at 44.1 and 88.2 kHz |
-| Viterbi, segmental: front filter | 25 taps, a 12 ms dot with raised-cosine edges of 2.5 ms 10–90% rise; delay 8.000 ms; σ_y²/N₀ = 74.50 Hz; w = 0.1987 | `front_dot_s`, `edge_rise_s`; `front_filter_taps`, `output_noise` | owner (D17); taps, 74.50 Hz and w derived |
+| Viterbi, segmental at m = 1: front filter | 25 taps, a 12 ms dot with raised-cosine edges of 2.5 ms 10–90% rise; delay 8.000 ms; σ_y²/N₀ = 74.50 Hz; w = 0.1987 | `front_dot_s`, `edge_rise_s`; `front_filter_taps`, `output_noise` | owner (D17); taps, 74.50 Hz and w derived |
 | Viterbi, segmental: template | s_j, v_j, c[a][b] from the chain; rise range 0.8–4.7 ms uniform, 79 points | `edge_rise_min_s`, `edge_rise_max_s`; `make_template_tables` | owner (range: ARRL Lab, D17); values derived |
 | Viterbi, segmental: speeds | dots of 12.0 ms × 1.1^s, s = 0 … 31 (100 to 5.2 WPM) | `dot_min_ms`, `speed_ratio`, `speed_count` | owner |
-| Viterbi, segmental: spacing | standard only: no Farnsworth factor | — | owner (2026-10-21, D14) |
+| Viterbi: spacing | standard only: no Farnsworth factor (segmental: gap stretch, below) | — | owner (2026-10-21, D14) |
 | Viterbi, segmental: fist | log-normal about 1, 3, 1, 3 and 7 dots, σ = 0.3 in ln(length), shifts 0 dots; rounded to whole samples, at least one | `fist_medians_dots`, `fist_sigmas`, `fist_shifts_dots`; `Fist` | placeholders, heuristic (the ITU ratios); no heavy tail: owner (D5) |
 | Viterbi, segmental: speed prior | 1/32 (3.466 nats) where a newborn's or rescue's speed is taken | `Search` | owner (flat) |
 | Viterbi, segmental: symbol prior | ln(1/p): ln 62 = 4.127 nats at the start, ln p + ln 62 at the end; p = max(count/2 688, 0.002) / 1.042 | `symbol_prior_on_air` (true), `symbol_prior_floor` (0.002); `on_air_log_prior` | counts sourced (VE3NEA); floor heuristic; the flat prior a selectable option |
 | Viterbi, segmental: ends of words and overs | p_w = 1/3.06, q = 1/24: a letter gap 0.396 nats, a word gap 1.161, an over's end 4.296 | `word_end_p`, `over_end_q` | p_w VE3NEA's mean word length, q counted (the development set); placeholders |
 | Viterbi, segmental: overs from silence | 0.05 s⁻¹: P = 1.333 × 10⁻⁴ per sample (8.92 nats at a birth) | `over_rate_per_s` | placeholder |
 | Viterbi, segmental: rescue | ε = 10⁻³ per letter start (6.908 nats) | `rescue_epsilon` | placeholder |
-| Viterbi, segmental: hiss | each bin's one-pole 1 s average; ±2 000 Hz (±85 bins), the 25th percentile (the 43rd of 171); ÷ β; ÷ 1.5 bins; a frame of exact zeros not counted | `hiss_average_s`, `hiss_half_width_hz`, `hiss_percentile`; `HissEstimator` (for segmental, from `EngineConfig::viterbi`) | 1 s heuristic (the detector's); width and rank placeholders; β, the 1.5 bins and the zero rule derived; the 0.01 dB margin above −200 dBFS heuristic |
+| Viterbi, segmental: hiss | each bin's one-pole 1 s average; ±2 000 Hz (±85 bins), the 25th percentile (the 43rd of 171); ÷ β; ÷ 1.5 bins; a frame of exact zeros not counted | `hiss_average_s`, `hiss_half_width_hz`, `hiss_percentile`; `HissEstimator` (for segmental, from `SegmentalConfig::model`) | 1 s heuristic (the detector's); width and rank placeholders; β, the 1.5 bins and the zero rule derived; the 0.01 dB margin above −200 dBFS heuristic |
 | Viterbi, segmental: events | the whole text at `flush`; probability 1, speed 0, confidence 0; no `freq_offset_hz` | `ViterbiDecoder`, `SegmentalDecoder`, engine.cpp | placeholders |
 | Viterbi: systematic floor | f = 0.02 of the carrier's amplitude, 0 to 1 | `ViterbiConfig::systematic_floor` | placeholder (D17; too small for flutter, A.8d) |
 | Viterbi: fading spread | f_D = 2 Hz (a Gaussian Doppler spectrum, twice its standard deviation) | `fading_spread_hz` | owner (2026-10-22, D16) |
@@ -4045,6 +4249,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Segmental: floor's window | 5 s (0 s leaves the floor out) | `channel_floor_window_s` | heuristic |
 | Segmental: floor's quantile | 0.10, factor to noise 1/−ln(1 − q) = 1/0.10536 | `channel_floor_quantile` | quantile heuristic; factor derived for noise alone |
 | Segmental: floor's margin | −3 dB re the floor as estimated | `channel_floor_margin_db` | heuristic |
+| Segmental: a neighbor's leak | σ² at least +3 dB re L's peak over 0.2 s, 9 blocks (0 s leaves it out), bins 3 to 14, 70.3 to 328.1 Hz from the center; the responses and the factor 1.5 | `leak_floor_db`, `leak_hold_s`, `leak_min_offset_hz`, `leak_max_offset_hz`; `SegmentalParts::leak_response` | +3 dB and 0.2 s heuristics chosen by measurement; the offsets heuristic; the responses and 1.5 derived |
 | Segmental: floor's stride | every 4th sample, 10.67 ms (ρ₄ = 0.14) | `channel_floor_stride_s` | heuristic |
 | Segmental: floor's refresh | every 36 samples, 96 ms | `channel_floor_refresh_s` | heuristic |
 | Segmental: floor's start | once 1 s of values is held; first in at 1.056 s | `channel_floor_start_s` | heuristic |
@@ -4061,7 +4266,51 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 | Segmental: over's tail | 6 samples | `kEdgeCount` in search.cpp | derived (the windows' length) |
 | Segmental: duration cut | an element ends within 4 σ of its median, a factor of 3.32 | `duration_z_max` | heuristic |
 | Segmental: beam, ceiling | 15 nats, 3 000 elements | `SegmentalConfig::beam_nats`, `ceiling` | heuristics set by measurement |
-| Segmental: rings | C, rise, fall 8 192 samples (21.8 s); context 1 024 samples; level 18 frames | `RunningSums`, `LevelEvidence` | sized from the longest element, 5.35 s |
+| Segmental: rings | C, rise, fall 8 192 samples (21.8 s at m = 1); context 1 024 samples; level 18 frames | `RunningSums`, `LevelEvidence` | sized before the gap stretch; holds the longest element, a word gap of 15.27 s at m = 1 (derived) |
+| Segmental: filter scales | m = 1, 3 | `filter_scales`; `--set filter_scales=[1,2,3]` or one number | heuristic chosen by measurement |
+| Segmental: tables' channel | the channel filter at 48 kHz for any whole multiple of 48 kHz | `segmental_tables_channel` | derived |
+| Segmental: scale m, m = 2 selectable | dot 12 ms × m, Δ 2.667 ms × m, fastest dot 12 ms × m; 25, 43, 61 taps (`front_filter_taps_any_width`); σ_y²/N₀ 74.50, 39.46, 26.80 Hz; w 0.1987, 0.2104, 0.2137; 32, 25, 20 speeds | `at_filter_scale` | derived from m |
+| Segmental: template delay | 0, 16, 32 ms at m = 1, 2, 3 (half a step's response at 7.84 samples, to a sample) | `template_delay_s`, set by `at_filter_scale` | derived |
+| Segmental: narrower ceiling | 300 elements at m > 1 | `filter_scale_ceiling` | heuristic for CPU |
+| Segmental: choice's start | 1.5 s of the channel's age | `filter_scale_start_s` | heuristic |
+| Segmental: eligibility | at least 0.5 of the widest's symbols, or S − F ≥ 100 nats | `filter_scale_min_symbols`, `filter_scale_enough_nats` | heuristics by measurement |
+| Segmental: taking the lead | 120 nats above the leader | `filter_scale_switch_nats` | heuristic by measurement |
+| Segmental: drop | from 10 s of the channel's age, a narrower stream not leading, ineligible or over 30 nats behind | `filter_scale_drop_after_s` (negative: never), `filter_scale_drop_margin_nats` | heuristics for CPU |
+| Segmental: gap stretches | g = 1.1^(5n) = 1.61ⁿ, n = 0 … 6, 1 to 17.4 | `gap_stretches` (7), `gap_stretch_speed_steps` (5) | reach derived (g = 15.7 at 33/5 WPM); step heuristic |
+| Segmental: longest gap unit | gT_s ≤ 0.7 s, about 4.5 WPM overall; 178, 129, 98 fists at m = 1, 2, 3 | `gap_unit_max_s` | heuristic; fist counts derived |
+| Segmental: stretch's prior | π = 0.002: ln(1 − π) = −0.002 nats for g = 1, ln(π/6) = −8.0 nats for another, once per over | `gap_stretch_prior` | heuristic chosen by measurement |
+| Segmental: publishing | every 0.25 s; last 64 symbols compared | `kPublishEveryS`, `kPublishTailSymbols` | heuristic |
+| App: default decoder | segmental | `kDefaultDecoderName` | coordinator's choice |
+| App: default center | 7031.5 kHz | `RadioDefaults::center_khz`, `SdrplaySettings::center_hz`, `--center-khz` | heuristic |
+| Local floor | ±1 kHz, lower quartile, 6 dB above | `DetectorConfig::local_floor_radius_hz`; signal_detector.cpp | heuristic |
+| One track per peak | 47 Hz | `DetectorConfig::one_track_per_peak` | heuristic |
+| DC guard | ±47 Hz | `DetectorConfig::dc_guard_hz` | heuristic |
+| Replay | 2 s, 94 past blocks | `EngineConfig::replay_s` | heuristic |
+| Replay's rate | 100 tracks/s, 2.13 per block | `EngineConfig::replay_tracks_per_s` | heuristic |
+| Judge: window, first verdict | 12 s, 4 s | `TrackJudge::kWindowS`, `kFirstVerdictS` | heuristic |
+| Judge: rates | keyed 3, not keyed −8 nats/s; strong 1000 nats/s, share 10⁻³ | `kKeyedRate`, `kNotKeyedRate`, `kStrongRate`, `kShortfallShare` | heuristic |
+| Judge: quiet | new 5 nats/s over 8 s; at most 14 s unproven; proven 1 nat/s over 30 s | `kQuietNew*`, `kUnprovenS`, `kQuietOld*` | heuristic |
+| Judge: free key | two states, 5 switches/s | `kFreeKeySwitchPerS` | heuristic |
+| Text test | floor −12, plausible −6, tiny junk +8, garbage junk +6 nats; q fitted | `kTextFloorNats`, `kPlausibleNats`, `kTinyJunkNats`, `kGarbageJunkNats`, `kTinyShares` | heuristic (the bound is derived, for the models only) |
+| Holds | place ±47 Hz, 8 s, doubling to 120 s; a repeat only after the hold's end; forgotten after 120 s open | `TrackJudge::kHoldS`, `SignalDetector::kLongestHoldS` | heuristic |
+| Region | 4 retirements within 750 Hz in 60 s close ±750 Hz, 30 s up | `kRegionRetirements`, `kRegionRadiusHz`, `kRegionMemoryS`, `kRegionHoldS` | heuristic |
+| List | ended rows 60 s; same place 47 Hz; about 4 000 symbols a row | `TrackTable::kRetainEndedS`, `kSamePlaceHz`, `kMaxRowSymbols` | heuristic |
+| Ring | at least 4 s; 5.46 s at each radio rate | `SdrplaySource::kRingS`, `SpscRing` | 4 s heuristic; 5.46 s derived |
+| Budget | shed above 1 s, grown over 2 checks 1 s apart (margin 0.05 s below 0.25 s), over 8 tracks, to ¾; back by 5 per 5 s below 0.25 s | stream_runner.cpp | heuristic |
+| Silence | 5 s | `DeliveryWatch::kStalledAfterS` | heuristic |
+| Bank: locked-level recovery | last 0.32 s's 20% quantile over 10 dB under the level | `kLockedLevelRatio` (bank/noise.cpp) | heuristic |
+| Callsign stage: read text settled for | 10 s, on each whole second of stream | `CallSearchConfig::settle_s` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: text a correction changes | read again; kept 200 s back | `reread_corrected`, `history_s` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: same place | 300 Hz | `CallSearchConfig::same_place_hz` | heuristic, chosen by measurement (A.12); manta's bucket |
+| Callsign stage: evidence window | 1 800 s | `CallSearchConfig::window_s` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: points to report | framed 2, bare 2; listed framed 1, listed bare 2 | `points_framed`, `points_bare`, `points_known`, `points_known_bare` | heuristic, chosen by measurement (A.12); from CW Skimmer's table |
+| Callsign stage: points of a reading | whole or glued 1, joined 0.75, stripped 0.5 | `joined_points`, `stripped_points` | joined heuristic, chosen by measurement (A.12); stripped heuristic |
+| Callsign stage: a word named | a whole or glued word named by another passes at 1 point | `points_named` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: tiny calls | whole words only, 2 of them, listed or not; 0 leaves them unread | `tiny_points` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: a call that starts another | held as a variant at distance 1 (0: by edit distance alone) | `prefix_held` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: withdrawal | by a rival better at its best, or a local defeat with no pass elsewhere beyond 150 Hz (0: any local defeat) | `withdraw_own_place` | heuristic, by a hand test and measurement (A.12) |
+| Callsign stage: variants | edit distance 1, or 2 at over 2 times the points; within 150 Hz, 1 800 s; a tie goes to the earlier call, or within 1 s to the later (a heuristic constant in the code) | `far_variant_ratio`, `variant_hz`, `variant_s` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: a list against a rival | factor 3 | `known_rival_factor` | heuristic |
 
 ## A.11 Definitions used in tests and the benchmark
 
@@ -4263,7 +4512,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   and what became of each newborn line (born from silence or as a rescue;
   when it first led; its largest deficit behind the best until then; the
   step, merge, beam or ceiling, that removed its last story).
-- **Bench settings** (`kz4ap-bench --set NAME=VALUE`, repeatable): read as given and applied after all options (`bench/src/main.cpp`), since which decoder a setting belongs to is known only then, and before the recording is read, so a refused setting costs nothing and the order of `--set` and `--decoder` does not matter. With `--decoder viterbi` it sets a `ViterbiConfig` field by its name. With `--decoder segmental` it sets a `SegmentalConfig` field where the name is one (`beam_nats` and `ceiling` included), else the field of `SegmentalConfig::model`. An unknown name is refused; so is `--set` with the other decoders.
+- **Bench settings** (`kz4ap-bench --set NAME=VALUE`, repeatable): read as given and applied after all options (`bench/src/main.cpp`), since which decoder a setting belongs to is known only then, and before the recording is read, so a refused setting costs nothing and the order of `--set` and `--decoder` does not matter. With `--decoder viterbi` it sets a `ViterbiConfig` field by its name. With `--decoder segmental` it sets a `SegmentalConfig` field where the name is one (`beam_nats`, `ceiling`, the gap stretch's and the filter scales' included, `filter_scales` as a JSON list or one number), else the field of `SegmentalConfig::model`. An unknown name is refused; so is `--set` with the other decoders.
 - **Message text** (synthetic recordings, `training/kz4ap_synth/messages.py`):
   CQ calls, contest exchanges, and whole ragchew QSOs as a list of overs,
   each with its sending station: CQ, answer, RST and name and QTH, rig and
@@ -4543,3 +4792,113 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
   characters removed and inserted per channel-minute, shown as "—" for
   results written before these counts; each engine run once, a
   detector-path recording's station-label result being the same run).
+
+## A.12 Callsign stage
+
+### Exact form
+
+`engine/include/kz4ap/callsign.hpp` and `engine/src/callsign.cpp`; the tool `kz4ap-calls` (`bench/src/calls_main.cpp`) runs it over a
+recording or over a log of a decoder's events, and the app holds it in `app/src/call_list_model.hpp`, on the GUI's thread.
+
+**Form.** `parse_form`: letters, digits and at most one slash. A base call is a prefix of length p, then d digits, then l letters, with
+l from 1 to 4 and d from 1 to 4, d > 1 being a *special* form. p is 1 only for the series that are a whole letter's (B, F, G, I, K, M, N,
+R, W); else 2; 3 only with a digit first and two letters (3DA0, 3XY1). `allocated_pair` is the ITU's table: no Q; no pair of two digits; no 0
+first, 1 only in 1A; a digit and a letter except 4N; two letters except YZ; a letter and a digit by the table (A2-A9, C2-C9, D2-D9, E2-E7,
+H2-H4, H6-H9, J2-J8, L2-L9, P2-P9, S2, S3, S5-S9, T2-T8, V2-V8, Y2-Y9, Z2, Z3, Z8), with S0 and Z6, which amateurs use outside it. DE
+as a prefix is refused: it is the word DE glued on. Around a slash: `base/P`, /M, /MM, /AM, /QRP, /QRPP, /A, a digit, a prefix; or
+`prefix/base`.
+
+**Refused words.** `is_cw_word`, exact: {R, K, E, T, N, TU, UR, ES, EE, TT, ET, TE}5NN, G5RV, K3S, K4D, N1MM, K1EL, K9AY, TH7DX, TH6DX, TH5DX,
+TH3JR, TH2MK, HF5B, HF6V, HF9V, HF2V, FT8DX, FT5DX, FT3DX, W2DU, W8JK, W3DZZ. `only_tiny_pieces`: every character in E T I S H A N M U 5:
+read only as a whole word.
+
+**No form.** A call with no digit after a letter-digit prefix (D4C, E7DX, C6AGU, P3F, T6A, J6M) does not parse, and so is never read, with a list or without. About 90 calls of MASTER.SCP have this form, among them busy contest and expedition stations (review 5; on the backlog).
+
+**Readings of the word at i,** which are alternatives; the evidence decides.
+
+1. *Whole:* the word parses, unless it ends in CQ with a call before that, or in DE with a call before that and another, different call
+   as the next word.
+2. *Glued,* when it does not: the call twice, with at most one character behind; a keyword in front (DE, CQ, TU, TEST, QRZ); DE inside,
+   recursively on the right; a keyword behind (DE, 5NN, ENN, TEST, TU, CQ, QRZ, KN, BK).
+3. *Stripped:* one or two characters of E, T, I off the front, while what is left parses; one of E, T, K off the back.
+4. *Joined:* from a word of at most 4 characters, up to five following words of at most 4 characters, not a prosign, keyword (K and R
+   excepted) or refused word, up to 9 characters: each concatenation that parses. K and R may start a join, not a whole reading.
+
+**Role,** from the nearest words outside the call and its repeats, skipping E, T, I, EE, TT, IE, EI, ET, TE: next word DE, *named*; previous word DE, *signed*; next word
+in {5NN, ENN, 599, UR, NR, RST, GM, GA, GE, GN, FB, TNX, TKS, R, SRI, AGN}, *named*; previous in {CQ, TEST, QRZ, CQCQ, TESTTEST, POTA, SOTA,
+DX, UP} or next in {K, KN, AR, SK, TEST, QRZ, CQ, UP, <KN>, <AR>, <SK>, <KA>}, *signed*; else unknown (*bare*).
+
+**Reading.** On each whole second of stream (a whole number of seconds, so that how often the clock is given does not change what is read), the words ended
+by that second less `settle_s`; all of a track's words when it ends. A correction that changes a symbol behind what has been read (`reread_corrected`; an unchanged tail of a correction does not count) sends the reader back to the start of
+the word it falls in, so the new text is read when settled. Nothing already read is taken back: a stream that takes over can be worse there than the one it replaces (at settle_s 1e6 s, reading only final text, real 40 m loses E51MWA). Text is kept back to `history_s`, and eight words at least.
+
+**Evidence.** A reading overlapping an occurrence of the same call in time within `same_place_hz` betters it (points, role) and is not
+counted again, so text read twice adds nothing. Points: the sum over occurrences within `same_place_hz` of the new one and within `window_s` of its end; a whole or glued reading 1, a joined one `joined_points`, a stripped one `stripped_points`. Framed: any of them had a
+role, or the same word was next to it (`doubled_is_framed`). A candidate's first time is its earliest reading, which a correction can move back.
+
+**Report test,** in order. A tiny call: `tiny_points`. Any occurrence that is a whole or glued word with the role *named*: `points_named`. On a list: `points_known` if framed, else `points_known_bare`. Off it: `points_framed` if framed, else `points_bare`.
+
+**Arbitration.** Against every other candidate with a reading within `variant_hz` of this one and `variant_s` of now, by base-call edit distance d,
+the limit being 2 for a shorter call of 4 characters or more, else 1; a call that is the start of the other, or starts with it, counts as d = 1 at any distance (`prefix_held`). A rival beats a call if both are on or off the list and its points
+exceed its need (1 at d = 1, `far_variant_ratio` at d = 2) times the call's, or at d = 1 tie: with an earlier first reading, unless the two first readings are within 1 s (one word, heuristic), when the one seen later wins, being what a correction made of the word; a listed rival beats
+an unlisted call at a third of its points; an unlisted rival a listed call at three times. A held call is not reported; if it was, it leaves when the rival's best at one place is above its own best, or when its readings more than `variant_hz` from this place, taken at any one place of their own, do not pass the test above, a word named not counting there (`withdraw_own_place`); else it stays. A reported call withdraws the reported calls it beats by the same test, its best at one place against theirs.
+
+**Order and clock.** Tracks are read in the order of their ids, so the result does not depend on a library's hash. The app's stage gets the clock among the events: `DisplayFeed` puts a `StreamClock` in the updates at the first spectrum frame of each whole second, and `MainWindow` applies them in order, so the stage reads at the same place in the events as `kz4ap-calls` whatever the display's pace.
+
+**Row.** The place is that of the reading of the highest rank, latest on a tie: rank = 2 x (signed 2, bare 1, named 0) + (a whole or glued
+reading 1). `call` is the base, or the most common form with a slash seen at least twice and more often than any other. A candidate not reported
+and older than the longest window is dropped, each 30 s of stream.
+
+**The list and the tools.** `kz4ap-skimmer --known-calls PATH` takes MASTER.SCP's format: one call a line, # and ; lines skipped, case ignored,
+whatever follows white space ignored; `--calls PATH` writes the list as `calls_csv` at the stream's end. `kz4ap-calls --known PATH --out PATH
+[--log PATH | --replay PATH] [--candidates PATH] [--readings PATH] [--set NAME=VALUE]`. `training/kz4ap_proto/calls_score.py compare` reads a run and
+another program's list and reports calls in both, in each only, counts, and pairs one letter apart; `truth` reads a run and a recording's labels and
+reports precision and recall, and how many calls found are within 100 Hz of their station. Its reader takes ADIF, telnet spot lines, CSV with a
+header (`dx` ahead of `callsign`, as in the Reverse Beacon Network's files) and, failing those, the first word of a call's form on each line,
+and prints which it used: CW Skimmer's export format is not known here. Calls compare by base call. A telnet spot's word is kept as it stands where the reader's grammar has no form for it (D4C, LZ1SPACE): a spot is the spotter's test, and dropping it would flatter this decoder.
+
+### Provenance
+
+**What came from where** (all *secondhand* through `docs/research/decoder-survey.md`, the RBN's 2021 article and manta's
+`wiki/pages/spot-validation.md`, read 2026-10-31; no source's code was used).
+
+- *CW Skimmer and the RBN.* A call must pass a pattern check and repeat: at its Normal level 1 for a watch list, 2, 3 or 5 by how common the
+  pattern is, and it is not re-spotted near a frequency within 10 min. Taken: the idea, list 1, framed 2, bare 3, the 10 min as a first
+  window. Not taken: `patt3ch.lst`, which is unpublished in form and comes with their program; the requirement of CQ or TEST, RBN's alone.
+- *manta.* Refusal of exact non-call words only (`DJ5NN` stays), unallocated prefixes refused, a list that does not exempt from context, a 300 Hz bucket,
+  arbitration by withholding a better-supported rival's confusable. Taken as these. Not taken: repetition counted only across messages 3 words or 60 s apart
+  (CW Skimmer counts repeats in its buffer; sent twice in a row counts here as context); manta's beacon exemption, a cautionary 29 false spots in a night.
+- *ITU Radio Regulations.* 19.68 and Appendix 42 as read on Wikipedia's ITU prefix table on 2026-10-31, the three additions from amateur use (*sourced*).
+- *The design spec, section 6:* never match against the Reverse Beacon Network (owner, 2026-10-14). Nothing here reads from it.
+
+**Chosen by measurement,** replaying the logged events of the generated contest (`w7_contest`, 280 stations), `w12_cap` (300), `w11_pairs` and `band192k_100`, and of 30 min
+and 62 s of real 40 m; the numbers are in the decision log, 2026-10-31.
+
+- `settle_s` 10 s: at 2 s the 30 min of real 40 m gave 7 calls against 10 at 6 s (it read text the decoder had not yet corrected). On the final decoder 10 and 15 s read alike; 20, 25 and 30 s lost WA0QZK and gained one true call of 280 on the contest. Waiting does not reach the longest corrections in any case: see `reread_corrected`.
+- `reread_corrected` on and `history_s` 200 s: on real 40 m 2 025 corrections changed text, reach median 2.6 s, 99% 36.4 s, maximum 199.2 s; on the contest maximum 106.7 s (measured on the final decoder). 53 reach past 20 s on real 40 m. One of them turned OL1TM OL1TM into ZL1TM ZL1TM, 50 s after it had been read. The maximum seen before the leak floor, 164.9 s, plus a margin set `history_s`, a heuristic; the longest now reaches just under 200 s. It cost one false call on H2, seed 2 (N5PX and DE, glued, in corrected text; `prefix_held` now takes it away), and gained one true on the contest.
+- The tie at 1 s: chosen for that word, tested on all the generated recordings, where it changes nothing. A heuristic on one case of real 40 m.
+- `same_place_hz` 300 Hz: 100 Hz loses a partner named at another's place 210 Hz away; 300 and 500 Hz gave the same lists.
+- `window_s` 1 800 s: 600 s missed an ID repeating every 255 s on real 40 m; no misreading came with 1 800 s on 30 min. Valid for real bands as busy as those recordings.
+- `points_bare` 2 (3 at first): on the final decoder 3 refused EA1DR, read exactly twice 31 s apart, and the two spellings under which real 40 m has IK6QOP; 2 added no false call on any generated recording and 3 true on the contest with the re-read. On real 40 m it also adds one misreading (IK0S). Before the filter change 2 cost one false call on `w12_cap`; it no longer does. With `points_framed` at the same value, framing matters only with a list. The bar is about as many calls as CW Skimmer on a real recording, whose Normal level asks 2 repeats of a common pattern.
+- `points_framed` 2: 3 lost 28 true calls on the contest to take away one false call; 1 gains 20 true for 22 false on the contest, 1.5 gains 2 true on the contest for 5 false on the two QSO groups. One reading is for a list, as in CW Skimmer.
+- `points_known_bare` 2: 1 tripled false calls with a list.
+- `variant_hz` 150 Hz: 500 Hz held back a true station 237 Hz from a call one letter away; real recordings read alike. 300 Hz on the final decoder: 3 false calls fewer on H2, 1 true call fewer on the contest; not adopted, a trade that favors precision.
+- `far_variant_ratio` 2: at 3, a call read twice next to six readings of the true call stayed; 1.4 changed nothing on any recording.
+- The five rules of review 5, adopted together, each chosen looking at the contest and the 30 min of real 40 m, the same overfitting as the settings above; the crowded band, the 100 stations, G2 and the short real recordings are the checks. Alone and together: `calls-rules.csv`, results record. `points_named` 1 is the largest gain on the contest, 12 more true and 6 more false, and the source of most of the false calls gained. `joined_points` 0.75 brings KF0YUX on real 40 m; 1 lists false calls there. `tiny_points` 2 reads SM5NU on the contest and EA5MEE on the 100 stations. `prefix_held` takes H2's false calls down (K5N beside K5NXY). `withdraw_own_place`: a call doubled and signed at 1 kHz stayed off the list for a misreading at 2 kHz, 60 s later; a simpler form, keeping any call with support elsewhere, kept K0HBN, K0HBT and K6QO on real 40 m's list.
+
+**Heuristics not tuned:** `stripped_points`, the keyword sets, the refused words and characters.
+
+**Not taken:** `near_factor` (a call's near variants adding to its points: 217 true and 3 to 11 false on the contest, but 24 to 76 rows on real 40 m); a call before UP at 1 point (does not bring E51MWA back when the word is lost); CW Skimmer's 1 repetition for a listed call on real MASTER.SCP (1 true for 3 false on real 40 m; review 5).
+
+### Limitations
+
+- A call read only once, and not named, is not reported without a list: that is the rule. On the generated contest it is not the largest loss of callers: of the 78 lost before the rules below (review 5), 45 were never decoded, every one overlapped by a keying station within 150 Hz over at least 30% of its bursts, and 33 were read: 28 once, 1 at 1.5 points, 4 refused before the evidence (SM5NU; N9AZ, EA7UPZ, KB8AKK glued inside a word). The generator's callers key at random over the runner and each other, where a real caller waits his turn, so this overlap is likely overstated (conjecture).
+- A word named once passes, so a misread call before 5NN is listed: most of the false calls the rules gained on the contest (6 of 7). A row reached by naming shows the namer's frequency.
+- Who sent a call is known only from the words around it: a DX naming a caller twice with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
+  is only as good as the decoder's reading of those words.
+- A misreading read twice, with its true call read less, is reported: on real 40 m IK0S beside IK0HBN (too many edits apart for the arbitration); IK6QOP, read exactly once, shows as K6QOP and IK6QO, the stray-letter reading of a word giving half a point to the shorter call. The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.
+- A tiny call needs 2 whole words with a list or without (a list does not lower that), and glued, stripped or joined tiny readings do not count. The refused words lose the few real calls of those forms (K5NN, K9AY), and a call with no form (D4C) is not read: a known-call list rescues none of these.
+- The text reads a station's latest place: a station that moved shows there only.
+- A correction that reaches what has been read adds its readings and does not take back the old ones, so a misreading it replaces can stay beside it, unless the arbitration rules on them. Beyond `history_s` it is not read.
+- A row can hang on one transient reading: K6QOP's second point on real 40 m is a word the decoder corrects away 10.30 s after its end, and `settle_s` from 10.5 to 14 s loses it. So what is listed near such a word depends on `settle_s` to the second (measured, review 5), though no longer on the app's pace.
+- Points are heuristic weights, not probabilities. Segmental's symbols carry probability 1, so a decoder's score could not be used per symbol; a posterior on the call would need one.

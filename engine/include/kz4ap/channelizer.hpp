@@ -2,7 +2,9 @@
 
 #include "kz4ap/types.hpp"
 
+#include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <span>
@@ -60,7 +62,33 @@ public:
     // Consumes samples; calls sink once per channel for every block they complete.
     void push(std::span<const Sample> in, const Sink& sink);
 
+    // The same work in two steps, for a caller that keeps its own channels and cuts them on several threads:
+    // begin_block takes exactly one hop (fft_size / 2 samples) and does the block's shared FFT; cut then gives one
+    // channel's block, and may be called concurrently, with each caller's own in and out, until the next begin_block.
+    // in and out: channel_bins() samples of work space each; the block returned lies inside out.
+    struct Block {
+        std::uint64_t first_index;  // the block's first output sample, counted from the start of the stream
+        std::int64_t first_input;   // the input sample at the start of the block's FFT (negative at the stream's start)
+    };
+    Block begin_block(std::span<const Sample> hop);
+    std::span<Sample> cut(const Block& block, int center_bin, std::span<Sample> in, std::span<Sample> out) const;
+    int channel_bins() const { return config_.channel_bins; }
+
+    // The last blocks' spectra, oldest first, for a channel that opens late and wants the time before its birth (the engine's
+    // replay): begin_block keeps the newest `blocks` of them, its own included. 0, the default, keeps none. A past block is cut
+    // like the current one: the same filter and the same mixer reference, so that a channel's samples go on in phase from a past
+    // block to the next. May be called concurrently, as cut may.
+    struct Past {
+        Block block;
+        std::vector<Sample> spectrum;
+    };
+    void keep_past(std::size_t blocks) { keep_past_ = blocks; }
+    const std::deque<Past>& past() const { return past_; }
+    std::span<Sample> cut_past(const Past& past, int center_bin, std::span<Sample> in, std::span<Sample> out) const;
+
 private:
+    std::span<Sample> cut_from(const std::vector<Sample>& spectrum, const Block& block, int center_bin, std::span<Sample> in,
+                               std::span<Sample> out) const;
     void process_block(const Sink& sink);
 
     ChannelizerConfig config_;
@@ -72,6 +100,8 @@ private:
     std::vector<Sample> spectrum_;
     std::vector<Sample> channel_in_;
     std::vector<Sample> channel_out_;
+    std::size_t keep_past_ = 0;
+    std::deque<Past> past_;
     std::uint64_t block_index_ = 0;
     std::map<std::uint32_t, int> channels_;  // id -> center bin; ordered for deterministic sink order
     std::map<std::uint32_t, int> moves_;     // id -> center bin from the next block on (set_center_bin)

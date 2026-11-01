@@ -17,6 +17,10 @@ against the numbers. Several of these were found by review but are invisible
 to the current benchmark, which only has clean, well-separated signals of
 10–30 dB SNR (500 Hz, key-down).
 
+### A test group that opens late on the detector's path (fourth review, 2026-10-31)
+
+Every station of the test set starts 0.5 to 2 s into its stream, so no group opens a channel late, and the stream's-clock bug in the choice of filter went unseen. Add E2 and A2 through the detector with 15 s before the stations. Measure: E2 late on the detector's path, 0.657 at checkpoint 2 (`docs/plans/data/2026-10-31-checkpoint-2/e2-detector.csv`). Also there: 5 of E2's 30 stations at 60 to 120 Hz get no track (conjectured: a neighbor's main lobe within the peak radius; a radius of 23.5 Hz did not help).
+
 ### The development set's distribution of speeds and noise levels (owner, 2026-10-04; open for discussion)
 
 The owner's judgment: the development set (`kz4ap_proto.experiments.DEV`, seed 1; 509 scored
@@ -287,7 +291,7 @@ fit and amplitude mid-transmission. Stage 2: make the over-start test aware of t
 spacing, for example from its fitted word gaps, rather than a fixed multiple of T_g.
 
 ### Farnsworth spacing in the new decoder (owner, 2026-10-21: removed from the first prototype)
-**Status (2026-10-21): open.** The new decoder's first prototype (viterbi) assumes standard spacing only.
+**Status (2026-10-31): done in the segmental decoder, a story's fist being a speed and a gap stretch (decision log); open in viterbi.** The new decoder's first prototype (viterbi) assumes standard spacing only.
 - The Farnsworth factor is removed from its code: the factor in each reading's state, the 23-factor grid, and the
   open-factor tables and scan.
 - The removed code is in the branch's history, in the commits before the prototype's Task 4d.
@@ -354,6 +358,8 @@ A character-frequency prior would not help "EE" against "I", which are both comm
 **How to measure:** DEV2's QSO group (H2) and the one-word overs above, sent alone, at several levels and seeds.
 
 ### A neighbor inside the channel takes over a weak station in the new decoder (found 2026-10-21; open)
+**Status (2026-10-31): in the segmental decoder, a neighbor outside its narrowest filter is fixed (two widths and the leak floor; decision log). Open: an equal neighbor at 30 Hz (CER 0.976, bank 0.363), where every width fails; neighbors +10 dB re wanted inside about 100 Hz (0.398 at 100 Hz, about 0.7 at 80 Hz) and +20 dB re wanted at 100 and 150 Hz (0.772, 0.723); on the detector's path a steady carrier that takes the channel (checkpoint 2's record). Untried: a second carrier in the level filter, the neighbor's beat in the complex samples, subtracting a neighbor track.**
+
 
 The new decoder's first prototype has no interference model (the plan's O2): its stories model one station per channel,
 and everything else counts as noise or as that station.
@@ -527,6 +533,8 @@ about 4 times today's scoring (rough). D23 rejected it for now at +920% CPU and 
 variant; whether to take it up is left open, to the owner.
 
 ### A narrower filter for slower signals in the new decoder (owner, 2026-10-22; later)
+
+**Status (2026-10-31): done in the segmental decoder as three filter widths with a choice of stream (decision log). Open: a joint search across widths; the slots' memory, about 3 MB a track (a 16-byte slot or per-fist blocks would cut most of it); a fine frequency estimate, without which a narrower filter on the detector's path pays for a track up to half a bin off.**
 
 The owner chose one fixed filter for every speed: about 80 Hz wide, matched to a 12 ms dot at 100 WPM, sampled every
 3 ms (plan D16). Updated 2026-10-25 to the design of plan D16–D17: the filter is matched to a real 100 WPM dot (12 ms at
@@ -1500,6 +1508,22 @@ its own plan. Related item above: "Spectrum frames in linear power".
   candidates are the fit's class posteriors per element, the text model's
   score, and whether a later correction is still possible (a character
   inside the 20 s correction reach is provisional).
+- **Found building the app's first stage (2026-10-30):**
+  - **Worker pool** (done on `app-2`): the pipeline was one thread (`StreamRunner`), so at the bank's
+    105 ms CPU per channel-second measured on the desktop under load, about 9 tracks
+    fill it. The spec's pool (section 4.1, step 4) comes before a busy band.
+  - **A silent bank track** (understood and fixed on `app-2`; decision log): on a generated recording (`--seed 11 --signals 8` at
+    192 kHz, 30 s, S₅₀₀ from 12 to 32 dB) the station at -57 051.6 Hz, 26 WPM,
+    +24.0 dB S₅₀₀, starting at 0.057 s, gets a track but no text on the detector
+    path, in `kz4ap-bench` too; with `--oracle` it decodes without an error. Not
+    yet understood.
+  - **The new decoder in the app:** it runs by name at 48 kHz, but gave no text in
+    the first 15 s, gives no speed, costs about 1.2 s CPU per channel-second and
+    refuses an 8 kHz recording (the sample interval is not a whole number of
+    channel samples).
+  - **Not there yet:** seeking in a recording, and the replay that lets a channel
+    hear a transmission from its start (the design's amendment of 2026-10-19), so a
+    track's text starts about 1 s after the station does.
 
 ## 3. Receiver-audio input (directly after the live display)
 
@@ -1619,3 +1643,71 @@ for the line format and client handling.
 **Fixed 2026-10-30:** the merge key now holds the edges of the last 12 samples: 45 to 100 WPM, 84 of 84 runs exact (decision log). The diagnosis below, "cannot be claimed exactly", was wrong: claims were dropped at the merge before their evidence existed, and the joint edge-offset item is not needed for this.
 
 "PARIS PARIS" at 80 and 100 WPM reads wrongly on most seeds, with letters merged or split (`P<AR>IS`, `PAR5`, `LARIS`), and gets worse from +20 to +40 dB S500, while 70 and 90 WPM are mostly exact and 90 WPM (a dot of exactly 5 samples of 2.667 ms) is exact at +40 dB S500 on 6 of 6 seeds. Dots of 5.6 and 4.5 samples cannot be claimed exactly, and the misfit grows with the signal. The joint edge-offset item (design notes, part 5, the audit's row 10) is the first thing to try. Measured on 6 seeds per point, a 25 WPM to 100 WPM slice of synthetic machine keying only.
+
+## The app on the air (found building app-2, 2026-10-30)
+
+**Top CPU item: junk tracks on real 40 m (review 5, 2026-10-31).** On the 30 min of real 40 m, measured at `app-7`: 63.8% of decoder CPU goes on junk tracks (1 034 of 1 178 tracks, 159.3 s of 249.6 s); at real stations' places 90.3 s, 11.56 ms per channel-second alone, so removing junk does not by itself reach the 8 ms goal. Junk by life: 824 tracks of 5 to 15 s hold 37% of decoder CPU. By place: 7072 to 7081 kHz 25.3%, 7102 to 7110 kHz 12.8%, no call in either. The faster judge (`kUnprovenS` 8 s, `kQuietNewS` 5 s) saves 21.5% of decoder CPU but loses E51MWA, whose only exact word falls in the gap after his first track is retired, and raises I2 by half on the detector's path: not taken, recall comes first. Not yet run: a rule on the text's letters (a track of 30 s or more, at least half T and E: offline, 15 junk tracks, 9.1% of decoder CPU, against 2 tracks and 0.2 s at real places; derived), and a mask on those two segments (38% of decoder CPU, derived; it hides any CW there). Measure: CPU per second of stream or capacity, since fewer junk channel-seconds raise ms per channel-second (12.31 to 14.20 ms in that run); keep E51MWA, and I2 on the detector's path.
+
+Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repository):
+
+- **False tracks on wide signals (app-3: judged and retired, `track_evidence.hpp`).** What is left: tracks still open on
+  wide signals and live 4 to 14 s each, about 25 of the 42 live on the 62 s recording, at 15 ms per channel-second; 35% to
+  63% of the rows listed are junk (35% on that recording, 63% on a later 30 min one), data at +91 kHz most of all, whose text cannot be told from a contest exchange by its
+  letters alone. A test before a channel opens, or a bandwidth test that does not fail on speech's harmonics, would save
+  that CPU. The goal of about 8 ms per channel-second is met on the test set and not on the air (checkpoint 2's record: 6.88 ms on the whole test set on the Linux machine; 12.6 ms on 30 min of real 40 m on the desktop as fast as it goes, 22.1 ms by cycles in real time on the real display, of which 8.4 ms is the GUI thread painting): weak and wide channels cost 10 to 25 ms and more,
+  because more stories stay within the beam.
+- **Short overs and carriers under a hold (`app-4`'s review, F6).** Text during a hold is lost, not late. A station in short
+  overs with little proven, a carrier before a CQ, a runner with callers within 47 Hz: each can lose an over. No-hold-on-quiet
+  gained 1 caller of 170 and cost 28% more channel-seconds; the rule stands. The replay made most of it smaller.
+- **Junk rows.** Data and speech rows stay on the track list; the call list beside it has none. A view of the rows by plausibility is not built.
+- **Fine-tuning off the center.** Tuning the radio a little off and shifting digitally would remove the dead zone at 0 Hz.
+- **Two tracks on one station,** 40 to 135 Hz apart, on a strong keyed carrier (W1AW at 7047.5 kHz): seen only live while the
+  pipeline lost samples; none on playback. No envelope test between neighbors is built, should it come back.
+- **A real station's first seconds under a hold.** A place retired stays closed 8 s and more (at most 120 s; a region 30 s and
+  more): a station that starts there waits. Measured only as no station lost on three recordings of 10, 62 and 20 s.
+- **The fixed cost's rest:** the channelizer's FFT could share the spectrum's, the Hann window applied in the frequency
+  domain (7 ms per s of stream at 192 kHz); a table lookup for the display's logarithm.
+- **RSPduo:** single tuner A is set in the source, not run on one. The API's other models' LNA tables are the API's to refuse.
+- **A long recording:** the WAV form stops at 4 GiB (93 min at 192 kHz); rolling to a second file is not built.
+
+## Callsign stage (call-1, 2026-10-31)
+
+Deferred from the first stage (`docs/signal-processing.md`, section 11):
+
+- `cty.dat` for allocation by DXCC entity (the stage knows only the ITU's series), and a watch list distinct from MASTER.SCP.
+- A pattern table in place of the flat bare and framed thresholds, as CW Skimmer's `patt3ch.lst` ranks common and rare prefixes; only after the owner's hour shows it would pay.
+- A posterior on a call in place of points, once a decoder gives probabilities per symbol (segmental's are all 1).
+- The spots of design section 3 (the telnet server) read this stage; re-spotting after 10 min is not done, the list has one row per call.
+
+From `app-7`'s look at what it dropped (checkpoint 2's record):
+
+- Spellings of one station: real 40 m's IK6QOP is read exactly once and shows as K6QOP and IK6QO; a word's stray-letter reading gives half a point to the shorter call and none back. Pooling a family of near calls, or giving a word's own reading its due first.
+- A word glued to DE that also has a call's form: the start of a call is now held as a variant (`prefix_held`), and H2's false calls are 1 of 80 (PA8PG).
+- `variant_hz` 300 Hz: 3 false calls fewer on H2, 1 true fewer on the contest. Decide with CW Skimmer's list on the owner's hour.
+- A real MASTER.SCP against the recordings: tried at `app-8` (`calls-rules.csv`): contest + 1 true + 1 false, real 40 m the same list. Its worth against CW Skimmer's repeats table is for the owner's hour.
+- One reading with no list, after DE: `points_framed` 1 adds 20 true and 22 false on the contest, so not as is; on real 20 s it adds K3AV and KB8UGP, which read well. DE alone and not TEST might do.
+
+From review 5, of `app-7` (2026-10-31); the review's full evidence is summarized in checkpoint 2's record:
+
+- **A group of strong neighbors in the test set.** E2's wanted stations stand at 8 to 14 dB S500, so neither it nor any group can judge the leak floor, or a later fix, where it matters most. Add an E2-like group at +25 to +35 dB S500, offsets 60 to 300 Hz, neighbors -10 to +10 dB re wanted. Until then: `level-pairs.csv`.
+- **40 Hz at or below the wanted station's level,** where the bank reads 0.15 to 0.39 at 0 dB re wanted against 0.72 to 0.86 here, from +15 dB S500; and +10 dB re wanted at 80 Hz, 0.70 to 0.76 at every level.
+- **The choice of stream loses about 8 dB against a carrier:** at some offsets the right text exists in the narrow stream and is not chosen (26, 30, 52, 60 Hz, 0 dB re wanted). On the detector's path none of these windows exists: the station is lost inside about 66 Hz of a carrier at its own level, since the track sits on the carrier. Real recordings show little of it, so it waits.
+- **Letter-digit calls** (D4C, E7DX, C6AGU, P3F, T6A, J6M, about 90 of MASTER.SCP): no form, so never read, with a list or without. Review 5's tested fix reads them as a special form, from a list only: with a list D4C, E7DX and C6AGU are listed, and nothing false comes, on its recordings.
+- **Rows that hang on one transient reading:** K6QOP on real 40 m, whose word is corrected away 10.30 s after its end, and `settle_s` 10.5 to 14 s loses it; E51MWA's one exact word in the final text.
+- **Damaged calls a person votes on letter by letter** (IV3TMV, IT9YBL, K5UR, HK3QQ on real 40 m): the one attempt, near variants adding to a call's points, lists far more junk than stations (24 to 76 rows).
+- **A correction near `history_s`:** the final decoder's longest on real 40 m is 199.2 s against 200 s (205.8 s at the 1 s hold).
+- **The list never ages out;** CW Skimmer's deletes a call after 10 min of inactivity.
+- **"Last heard" is clipped** at some display scales (`app/src/main_window.cpp`, 75 px).
+- **A fresh `.venv` fails 1 test:** `training/tests/test_keying.py:157`, `pytest.approx` on nested tuples, on `pytest>=8.0` resolving to 9.2.0. Pin it, or compare element by element.
+- **A correction that shortens text below `TrackText::base`** would misnumber symbols in `CallSearch`; it never happens on the recordings measured.
+- **The model of the call list** has no unit test in `app/tests`.
+- **The same check on the owner's hour:** the Reverse Beacon Network's day file against what we list, as checkpoint 2's record does for `real30` (`rbn-check.csv`): other antennas, CQ spots only, a rough figure, not the bar. Done for `real30`; the product never matches calls against it.
+
+From review 6, of `app-8` (2026-10-31):
+
+- **KF7WX, a known real miss:** 10 North American skimmers spot it at 7034.9 kHz during `real30`; our text reads KFQWX, a 7 taken for Q on a weak station (95th percentile 7.4 dB, 99th 10.5 dB re a floor 170 to 330 Hz away, per 23.4 Hz bin). The decoder's to fix: digits against letters, weak stations.
+- **X with the short hold:** at a hold of 1 s, X 0 dB gave the best pairs (0.063 to 0.128 at +10 to +40 dB S500); X 0 dB at 0.2 s is not swept and might beat both. Look at seed 2 as well: the hold was chosen looking at E2 and the pairs.
+- **The floor's two systematic mismatches** (A.8e): inside about 60 Hz it stands under the true leak; near a filter's null, over it, since it reads the response at each bin and not at the tone's frequency. A fix would read the bins' peak and take the response there.
+- **The GUI thread's cost:** about 100 ms per s of wall on the real display, 38% of the process on a quiet band, 50 ms offscreen. Not profiled; it does not limit capacity. Not tested: 4K or a larger window.
+- **Stations spotted elsewhere and not listed:** 23 of the 33 calls North American skimmers spotted in `real30`; by level most were near the noise here (conjecture from level alone). The busy-band hour should say whether any are the decoder's.
+- **A build in a folder with a root of about 200 characters fails** (paths over 260 characters, MSB6003). Not a concern in a short folder.

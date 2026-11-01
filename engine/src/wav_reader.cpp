@@ -32,7 +32,7 @@ std::string read_tag(std::ifstream& f) {
 }  // namespace
 
 WavIqReader::WavIqReader(const std::filesystem::path& path) : file_(path, std::ios::binary) {
-    const std::string name = path.string();
+    const std::string name = path_text(path);
     if (!file_) throw std::runtime_error("cannot open " + name);
     try {
         if (read_tag(file_) != "RIFF") throw std::runtime_error("not a WAV file");
@@ -73,6 +73,7 @@ WavIqReader::WavIqReader(const std::filesystem::path& path) : file_(path, std::i
                 file_.seekg(0, std::ios::end);
                 const auto available = static_cast<std::uint64_t>(file_.tellg() - data_start);
                 file_.seekg(data_start);
+                data_start_ = static_cast<std::streamoff>(data_start);
                 total_samples_ = std::min<std::uint64_t>(size, available) / 4;
                 return;
             } else {
@@ -96,6 +97,13 @@ std::size_t WavIqReader::read(std::span<Sample> out) {
     }
     samples_read_ += got;
     return got;
+}
+
+void WavIqReader::seek(std::uint64_t sample) {
+    samples_read_ = std::min(sample, total_samples_);
+    file_.clear();
+    file_.seekg(data_start_ + static_cast<std::streamoff>(samples_read_ * 4));
+    if (!file_) throw std::runtime_error("cannot seek in the recording");
 }
 
 }  // namespace kz4ap

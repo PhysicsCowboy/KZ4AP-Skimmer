@@ -1,7 +1,6 @@
 add_library(kz4ap_bench_lib
   src/bank_json.cpp
   src/channel_recorder.cpp
-  src/cpu_time.cpp
   src/labels.cpp
   src/noise_mask.cpp
   src/report.cpp
@@ -18,6 +17,15 @@ endif()
 
 add_executable(kz4ap-bench src/main.cpp)
 target_link_libraries(kz4ap-bench PRIVATE kz4ap_bench_lib)
+
+# The callsign stage over a recording, or over a log of a decoder's events (docs/signal-processing.md, section 11).
+add_executable(kz4ap-calls src/calls_main.cpp)
+target_link_libraries(kz4ap-calls PRIVATE kz4ap_bench_lib)
+if(MSVC)
+  target_compile_options(kz4ap-calls PRIVATE /W4 /permissive- /utf-8)
+else()
+  target_compile_options(kz4ap-calls PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 # Decodes recorded oracle channels with the C++ bank decoder into the prototype's decoded-file format.
 add_executable(kz4ap-bank-replay src/replay.cpp)

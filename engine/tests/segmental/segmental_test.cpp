@@ -10,7 +10,9 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <chrono>
 #include <cmath>
+#include <iostream>
 #include <random>
 #include <string>
 #include <vector>
@@ -83,18 +85,20 @@ void feed(const Keyed& keyed, double gain, RunningSums& sums, Search* search = n
     }
 }
 
-// The key for a text at dot samples per dot, exact timing, with lead samples before it and tail after.
-Keyed keyed_text(const std::string& text, int dot, int lead, int tail) {
+// The key for a text at dot samples per dot, exact timing, with lead samples before it and tail after; letter and word gaps
+// on a time base of gap_dot samples (0: the dot).
+Keyed keyed_text(const std::string& text, int dot, int lead, int tail, int gap_dot = 0) {
     Keyed keyed;
+    if (gap_dot == 0) gap_dot = dot;
     keyed.add(0, lead);
     bool first_word = true;
     std::string word;
     const auto send_word = [&](const std::string& w) {
-        if (!first_word) keyed.add(0, 7 * dot);
+        if (!first_word) keyed.add(0, 7 * gap_dot);
         first_word = false;
         bool first_letter = true;
         for (const char c : w) {
-            if (!first_letter) keyed.add(0, 3 * dot);
+            if (!first_letter) keyed.add(0, 3 * gap_dot);
             first_letter = false;
             const std::string letter(1, c);
             const std::string_view pattern = kz4ap::morse::encode(letter);
@@ -142,6 +146,109 @@ TEST(SegmentalSearch, ReadsMadeUpEvidenceAtAWeakAndAStrongLevel) {
             feed(keyed_text("PARIS PARIS", dot, 200, 700), gain, sums, &search);
             EXPECT_EQ(text_of(search.best_text()), "PARIS PARIS") << "gain " << gain << ", dot " << dot;
         }
+    }
+}
+
+TEST(ModelTables, AFistsGapsAreThoseOfTheSteppedSpeedAndItsMarksItsOwn) {
+    const SegmentalConfig config;
+    const ModelTables tables(config);
+    const viterbi::ViterbiConfig& model = config.model;
+    const double ratio = std::pow(model.speed_ratio, config.gap_stretch_speed_steps);
+    EXPECT_EQ(tables.speeds(), model.speed_count);
+    // A stretch's gap unit is inside the limit, and the first fist of a speed is standard spacing.
+    for (int speed = 0; speed < tables.speeds(); ++speed) {
+        const int first = tables.first_fist(speed);
+        EXPECT_EQ(tables.speed_of(first), speed);
+        EXPECT_DOUBLE_EQ(tables.stretch_of(first), 1.0);
+        const double dot_s = model.dot_min_ms * std::pow(model.speed_ratio, speed) / 1000.0;
+        for (int f = first + 1; f < tables.first_fist(speed + 1); ++f) {
+            EXPECT_EQ(tables.speed_of(f), speed);
+            EXPECT_NEAR(tables.stretch_of(f), tables.stretch_of(f - 1) * ratio, 1e-9);
+            EXPECT_LE(tables.stretch_of(f) * dot_s, config.gap_unit_max_s);
+        }
+    }
+    // At speed 3, stretch r^2: letter and word gaps as speed 13 reads them; marks and element gaps as speed 3's.
+    const int fist = tables.first_fist(3) + 2;
+    const int plain = tables.first_fist(13);
+    const int own = tables.first_fist(3);
+    for (const int kind : {3, 4}) {
+        EXPECT_EQ(tables.range(kind, fist).lo, tables.range(kind, plain).lo);
+        EXPECT_EQ(tables.range(kind, fist).hi, tables.range(kind, plain).hi);
+        const int length = (tables.range(kind, plain).lo + tables.range(kind, plain).hi) / 2;
+        EXPECT_DOUBLE_EQ(tables.log_end(kind, fist, length), tables.log_end(kind, plain, length));
+    }
+    for (const int kind : {0, 1, 2}) {
+        EXPECT_EQ(tables.range(kind, fist).hi, tables.range(kind, own).hi);
+        const int length = tables.range(kind, own).lo;
+        EXPECT_DOUBLE_EQ(tables.log_end(kind, fist, length), tables.log_end(kind, own, length));
+    }
+    EXPECT_GT(tables.gap_hi(fist), tables.gap_hi(own));
+    EXPECT_EQ(tables.mark_hi(fist), tables.mark_hi(own));
+    // The charge: pi over six stretches.
+    EXPECT_NEAR(tables.log_plain(), std::log(1.0 - config.gap_stretch_prior), 1e-12);
+    EXPECT_NEAR(tables.log_stretched(), std::log(config.gap_stretch_prior / 6.0), 1e-12);
+}
+
+TEST(ModelTables, OneStretchLeavesTheOldTablesAndWhatCannotBeIsRefused) {
+    SegmentalConfig config;
+    config.gap_stretches = 1;
+    const ModelTables tables(config);
+    EXPECT_EQ(tables.fists(), config.model.speed_count);
+    EXPECT_DOUBLE_EQ(tables.log_plain(), 0.0);
+    SegmentalConfig bad = config;
+    bad.gap_stretches = 0;
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+    bad = config;
+    bad.gap_stretch_prior = 1.0;
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+    bad = SegmentalConfig{};
+    bad.gap_stretch_prior = 0.0;
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+    bad = SegmentalConfig{};
+    bad.gap_unit_max_s = 0.0;
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+}
+
+TEST(SegmentalSearch, ReadsFarnsworthSpacingAsLettersAndWords) {
+    // 25 WPM characters, the gaps on a time base 1.9 to 15 times the dot: text and word spaces exact. With one stretch the same
+    // key reads a word space after letters (the old limitation), or no text like it.
+    const SegmentalConfig config;
+    SegmentalConfig plain;
+    plain.gap_stretches = 1;
+    const ModelTables tables(config);
+    const ModelTables plain_tables(plain);
+    const std::string text = "CQ DE W1AW PSE K TEST";
+    for (const int gap_dot : {34, 57, 96, 150, 270}) {
+        for (const double gain : {4.0, 100.0}) {
+            const Keyed keyed = keyed_text(text, 18, 300, 400, gap_dot);
+            RunningSums sums;
+            Search search(config, tables, sums);
+            feed(keyed, gain, sums, &search);
+            EXPECT_EQ(text_of(search.best_text()), text) << gap_dot << " samples, gain " << gain;
+            RunningSums plain_sums;
+            Search plain_search(plain, plain_tables, plain_sums);
+            feed(keyed, gain, plain_sums, &plain_search);
+            EXPECT_NE(text_of(plain_search.best_text()), text) << gap_dot << " samples, gain " << gain;
+        }
+    }
+}
+
+TEST(SegmentalSearch, StandardSpacingPaysTheChargeOnceAndReadsTheSame) {
+    SegmentalConfig plain;
+    plain.gap_stretches = 1;
+    const SegmentalConfig config;
+    const ModelTables tables(config);
+    const ModelTables plain_tables(plain);
+    for (const std::string text : {"CQ CQ DE W1AW W1AW K", "TEST TEST", "TU", "E", "PARIS PARIS PARIS"}) {
+        const Keyed keyed = keyed_text(text, 18, 300, 400);
+        RunningSums a, b;
+        Search with(config, tables, a), without(plain, plain_tables, b);
+        feed(keyed, 8.0, a, &with);
+        feed(keyed, 8.0, b, &without);
+        EXPECT_EQ(text_of(with.best_text()), text);
+        EXPECT_EQ(text_of(without.best_text()), text);
+        // One over: the fist's choice, once.
+        EXPECT_NEAR(with.best_score() - without.best_score(), std::log(1.0 - config.gap_stretch_prior), 1e-6) << text;
     }
 }
 
@@ -206,12 +313,13 @@ TEST(SegmentalSearch, MergesOnSpeedNodeAndKindAtAnEdge) {
     SegmentalConfig config = small_config();
     config.beam_nats = 100.0;
     config.ceiling = 1000000;
+    config.gap_stretches = 1;  // the bound is the same with them; the wide beam is slow
     const ModelTables model(config);
     RunningSums sums;
     Search search(config, model, sums);
     feed(keyed_text("CQ", 18, 100, 100), 1.0, sums, &search);
     const double per_boundary = static_cast<double>(search.stats().opened) / static_cast<double>(search.stats().boundaries);
-    EXPECT_LE(per_boundary, 2.0 * model.speeds() * model.nodes() + 2.0);
+    EXPECT_LE(per_boundary, 2.0 * model.fists() * model.nodes() + 2.0);
 }
 
 SegmentalShared make_shared_parts(const SegmentalConfig& config) {
@@ -379,6 +487,271 @@ TEST(ChannelFloor, IsLeftOutAtAWindowOfZeroAndRefusesWhatCannotBe) {
 TEST(SegmentalConfig, HasItsOwnSystematicFloorAndLeavesTheViterbiDecodersAlone) {
     EXPECT_EQ(SegmentalConfig{}.model.systematic_floor, 0.1);
     EXPECT_EQ(viterbi::ViterbiConfig{}.systematic_floor, 0.02);
+}
+
+TEST(FilterScale, KeepsTheFiltersAndDotsShapeInSamples) {
+    const SegmentalConfig config;
+    for (const int m : {2, 3, 4, 6}) {
+        const SegmentalConfig scaled = at_filter_scale(config, m);
+        EXPECT_DOUBLE_EQ(scaled.model.sample_interval_s, config.model.sample_interval_s * m);
+        EXPECT_DOUBLE_EQ(scaled.model.front_dot_s, config.model.front_dot_s * m);
+        EXPECT_DOUBLE_EQ(scaled.model.dot_min_ms, config.model.dot_min_ms * m);
+        // The slowest speed stays within a step of where it was.
+        const double slowest = scaled.model.dot_min_ms * std::pow(scaled.model.speed_ratio, scaled.model.speed_count - 1);
+        const double before = config.model.dot_min_ms * std::pow(config.model.speed_ratio, config.model.speed_count - 1);
+        EXPECT_NEAR(std::log(slowest / before), 0.0, std::log(config.model.speed_ratio));
+        // In whole samples, and the look-ahead about what it was (a frame, at most).
+        EXPECT_NO_THROW(viterbi::whole_count(scaled.level_frame_s, scaled.model.sample_interval_s, "frame", "samples"));
+        EXPECT_NO_THROW(viterbi::whole_count(scaled.level_lookahead_s, scaled.level_frame_s, "look-ahead", "frames"));
+        EXPECT_NO_THROW(viterbi::whole_count(scaled.channel_floor_stride_s, scaled.model.sample_interval_s, "stride", "samples"));
+        EXPECT_NO_THROW(viterbi::whole_count(scaled.channel_floor_refresh_s, scaled.model.sample_interval_s, "refresh", "samples"));
+        EXPECT_NEAR(scaled.level_lookahead_s, config.level_lookahead_s, scaled.level_frame_s);
+    }
+    EXPECT_THROW(at_filter_scale(config, 0), std::invalid_argument);
+}
+
+TEST(FilterScale, ItsEdgesLieInTheEvidencesWindow) {
+    // The search reads an edge between samples 5 and 10 after its claim (evidence.hpp): before them the template must be about 0,
+    // after them about 1, at every scale. At scale 1: 8e-4 and 1.0023.
+    SegmentalConfig config;
+    config.filter_scales = {1, 2, 3, 4, 6};
+    const SegmentalShared shared(config, ChannelizerConfig{48000, 2048, 64, 150.0});
+    ASSERT_EQ(shared.narrower.size(), 4u);
+    for (const SegmentalParts& parts : shared.narrower) {
+        std::cout << "measured: dot " << parts.config.model.front_dot_s * 1000.0 << " ms: sigma^2 / N0 "
+                  << parts.output_noise.sigma2_per_n0_hz << " Hz, w " << parts.output_noise.w_strong << ", s_4 "
+                  << parts.template_tables.s[4] << ", s_5 " << parts.template_tables.s[5] << ", s_10 " << parts.template_tables.s[10]
+                  << ", s_11 " << parts.template_tables.s[11] << "\n";
+        EXPECT_LT(std::fabs(parts.template_tables.s[4]), 0.03);
+        EXPECT_NEAR(parts.template_tables.s[11], 1.0, 0.03);
+        EXPECT_GT(parts.template_tables.s[5], 0.0);
+        EXPECT_LT(parts.template_tables.s[10], 1.03);
+    }
+    // The filter's noise bandwidth narrows with the scale, to about its share.
+    EXPECT_NEAR(shared.narrower[1].output_noise.sigma2_per_n0_hz, shared.output_noise.sigma2_per_n0_hz / 3.0,
+                0.1 * shared.output_noise.sigma2_per_n0_hz / 3.0);
+}
+
+TEST(FilterScale, AFastStationDropsTheNarrowFilterAndAWideMarginKeepsItForASlowOne) {
+    // A channel's samples at 1 500 samples/s, carrier keyed, +20 dB S500, noise at 0.02 FS over 48 kHz's density: past the drop
+    // time a narrow filter that reads a 60 WPM station is gone. At 15 WPM it can read, so the drop is the margin's alone: with a wide
+    // margin the widest and the narrow one still run (at the default 30 nats a clean station may drop it). The text is exact.
+    const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
+    const double amplitude = std::sqrt(100.0 * n0_fs2_per_hz * 500.0);
+    std::mt19937 rng(11);
+    std::normal_distribution<double> draw(0.0, std::sqrt(n0_fs2_per_hz * 1500.0 / 2.0));
+    const std::string message = "CQ CQ DE W1AW W1AW K TEST 5NN 73 DE K1ABC K1ABC K";
+    for (const int dot_samples : {30, 120}) {  // 20 ms, 80 ms
+        std::string text = message;
+        while (static_cast<int>(text.size()) * dot_samples * 8 < 1500 * 16) text += " " + message;
+        const Keyed keyed = keyed_text(text, dot_samples, 300, 1500);
+        SegmentalConfig config;
+        if (dot_samples != 30) config.filter_scale_drop_margin_nats = 1e6;
+        auto shared = std::make_shared<const SegmentalShared>(config, ChannelizerConfig{48000, 2048, 64, 150.0});
+        SegmentalDecoder decoder(1500.0, shared);
+        decoder.set_noise_density_fs2_per_hz(n0_fs2_per_hz);
+        std::vector<Sample> block;
+        std::vector<std::string> list;
+        std::size_t k = 0;
+        const auto take = [&](const DecodeUpdate& update) {
+            for (const TextCorrection& correction : update.corrections) {
+                list.resize(correction.from_index);
+                for (const DecodedSymbol& symbol : correction.chars) list.push_back(symbol.text);
+            }
+            for (const DecodedSymbol& symbol : update.chars) list.push_back(symbol.text);
+        };
+        while (k < keyed.key.size()) {
+            block.clear();
+            const std::size_t first = k;
+            for (; k < keyed.key.size() && block.size() < 32; ++k)
+                block.emplace_back(static_cast<float>(amplitude * keyed.key[k] + draw(rng)), static_cast<float>(draw(rng)));
+            take(decoder.process(block, static_cast<double>(first) / 1500.0));
+        }
+        if (dot_samples == 30) {
+            EXPECT_EQ(decoder.streams_running(), 1u);
+            EXPECT_EQ(decoder.leading_scale(), 1);
+        } else {
+            EXPECT_EQ(decoder.streams_running(), 2u);
+        }
+        take(decoder.flush());
+        std::string read;
+        for (const std::string& symbol : list) read += symbol;
+        EXPECT_EQ(read, text) << dot_samples << " samples per dot";
+    }
+}
+
+TEST(FilterScale, TheChoiceRunsOnTheChannelsAgeNotTheStreams) {
+    // Review 4: a channel that opened after 10 s of stream had its narrower filter dropped within seconds. The same samples, a 60 WPM
+    // station the narrower filter cannot read, from 0 s and from 100 s of stream: at 5 s of age both still run both streams,
+    // at 16 s both have dropped it, and the text is the same.
+    auto shared = std::make_shared<const SegmentalShared>(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
+    const double amplitude = std::sqrt(100.0 * n0_fs2_per_hz * 500.0);
+    std::mt19937 rng(11);
+    std::normal_distribution<double> draw(0.0, std::sqrt(n0_fs2_per_hz * 1500.0 / 2.0));
+    std::string text = "CQ CQ DE W1AW W1AW K TEST 5NN 73 DE K1ABC K1ABC K";
+    while (static_cast<int>(text.size()) * 30 * 8 < 1500 * 18) text += " CQ CQ DE W1AW W1AW K";
+    const Keyed keyed = keyed_text(text, 30, 300, 1500);
+    std::vector<Sample> samples;
+    for (const double key : keyed.key) samples.emplace_back(static_cast<float>(amplitude * key + draw(rng)), static_cast<float>(draw(rng)));
+    struct Result {
+        std::size_t at_5_s = 0, at_16_s = 0;
+        std::vector<std::string> published;
+    };
+    const auto run = [&](double t0_s) {
+        Result result;
+        SegmentalDecoder decoder(1500.0, shared);
+        decoder.set_noise_density_fs2_per_hz(n0_fs2_per_hz);
+        for (std::size_t k = 0; k < samples.size(); k += 32) {
+            const std::size_t n = std::min<std::size_t>(32, samples.size() - k);
+            (void)decoder.process(std::span<const Sample>(samples).subspan(k, n), t0_s + static_cast<double>(k) / 1500.0);
+            const double age_s = static_cast<double>(k + n) / 1500.0;
+            if (result.at_5_s == 0 && age_s >= 5.0) result.at_5_s = decoder.streams_running();
+            if (result.at_16_s == 0 && age_s >= 16.0) result.at_16_s = decoder.streams_running();
+        }
+        (void)decoder.flush();
+        const auto list = decoder.published_symbols();
+        result.published.assign(list.begin(), list.end());
+        return result;
+    };
+    const Result early = run(0.0);
+    const Result late = run(100.0);
+    EXPECT_EQ(early.at_5_s, 2u);
+    EXPECT_EQ(late.at_5_s, 2u);
+    EXPECT_EQ(early.at_16_s, 1u);
+    EXPECT_EQ(late.at_16_s, 1u);
+    EXPECT_EQ(late.published, early.published);
+}
+
+TEST(LeakFloor, ReadsTheBinsBesideTheChannelWeightedAndHeld) {
+    const auto shared = std::make_shared<const SegmentalShared>(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    const double up = std::pow(10.0, SegmentalConfig{}.leak_floor_db / 10.0);
+    ASSERT_EQ(shared->leak_first_bin, 3u);         // 60 Hz at 23.4375 Hz a bin
+    ASSERT_EQ(shared->leak_response.size(), 15u);  // to 320 Hz
+    ASSERT_EQ(shared->leak_hold_blocks, 9u);       // 0.2 s at 21.33 ms a block: 9.375, rounded
+    EXPECT_NEAR(shared->leak_response[0], 1.0, 0.02);
+    SegmentalDecoder decoder(1500.0, shared);
+    const int center = 1024;
+    std::vector<float> band(2048, 0.0f);
+    const auto floor_with = [&](std::size_t bin) {
+        std::fill(band.begin(), band.end(), 0.0f);
+        band[bin] = 1.5f;  // a tone of amplitude 1 FS counts as 1 FS^2 over its bins; here all in one
+        SegmentalDecoder fresh(1500.0, shared);
+        fresh.set_band_spectrum(band, center);
+        return fresh.leak_floor_fs2(1);
+    };
+    EXPECT_NEAR(floor_with(center + 5), up * shared->leak_response[5], 1e-12);
+    EXPECT_NEAR(floor_with(center - 5), up * shared->leak_response[5], 1e-12);
+    EXPECT_EQ(floor_with(center + 2), 0.0);   // the station's own
+    EXPECT_EQ(floor_with(center - 15), 0.0);  // past the last bin
+    // The peak holds for the blocks of its hold, and then leaves.
+    std::fill(band.begin(), band.end(), 0.0f);
+    band[static_cast<std::size_t>(center + 5)] = 1.5f;
+    decoder.set_band_spectrum(band, center);
+    const double peak = decoder.leak_floor_fs2(1);
+    std::fill(band.begin(), band.end(), 0.0f);
+    for (std::size_t i = 0; i + 1 < shared->leak_hold_blocks; ++i) decoder.set_band_spectrum(band, center);
+    EXPECT_EQ(decoder.leak_floor_fs2(1), peak);
+    decoder.set_band_spectrum(band, center);
+    EXPECT_EQ(decoder.leak_floor_fs2(1), 0.0);
+    // A channel at the span's edge reads what there is.
+    SegmentalDecoder at_edge(1500.0, shared);
+    at_edge.set_band_spectrum(band, 0);
+    at_edge.set_band_spectrum(band, 2047);
+    EXPECT_EQ(at_edge.leak_floor_fs2(1), 0.0);
+}
+
+TEST(LeakFloor, TheNarrowerFilterLetsLessThroughAtTheSameBinsOnAverage) {
+    const SegmentalShared shared(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    ASSERT_EQ(shared.narrower.size(), 1u);
+    double wide = 0.0, narrow = 0.0;
+    for (std::size_t k = shared.leak_first_bin; k < shared.leak_response.size(); ++k) {
+        wide += shared.leak_response[k];
+        narrow += shared.narrower[0].leak_response[k];
+    }
+    EXPECT_LT(narrow, wide / 3.0);
+}
+
+TEST(LeakFloor, WhiteNoiseStaysUnderTheHissOnAverage) {
+    // Derived: under a Hann window white noise reads P = 1.5 N0 df in a bin, so L = N0 df x the sum of the response over the bins read, against sigma^2 = N0 B.
+    // The floor stands in for what the spectrum holds beside the channel; on noise alone it must not be what sets sigma^2.
+    const SegmentalShared shared(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    const double df = 48000.0 / 2048.0;
+    const double up = std::pow(10.0, SegmentalConfig{}.leak_floor_db / 10.0);
+    const auto ratio = [&](const SegmentalParts& parts) {
+        double sum = 0.0;
+        for (std::size_t k = parts.leak_first_bin; k < parts.leak_response.size(); ++k) sum += 2.0 * parts.leak_response[k];
+        return up * df * sum / parts.output_noise.sigma2_per_n0_hz;
+    };
+    std::cout << "derived: on white noise, the leak floor over N0 B: " << ratio(shared) << " at m = 1, " << ratio(shared.narrower[0]) << " at m = 3\n";
+    EXPECT_LT(ratio(shared), 1.0);
+    EXPECT_LT(ratio(shared.narrower[0]), 1.0);
+}
+
+TEST(LeakFloor, IsLeftOutAtAHoldOfZeroAndRefusesWhatCannotBe) {
+    SegmentalConfig off;
+    off.leak_hold_s = 0.0;
+    const auto shared = std::make_shared<const SegmentalShared>(off, ChannelizerConfig{48000, 2048, 64, 150.0});
+    EXPECT_TRUE(shared->leak_response.empty());
+    SegmentalDecoder decoder(1500.0, shared);
+    std::vector<float> band(2048, 1.0f);
+    decoder.set_band_spectrum(band, 1024);
+    EXPECT_EQ(decoder.leak_floor_fs2(1), 0.0);
+    SegmentalConfig bad;
+    bad.leak_max_offset_hz = bad.leak_min_offset_hz;
+    EXPECT_THROW(SegmentalShared(bad, ChannelizerConfig{48000, 2048, 64, 150.0}), std::invalid_argument);
+    SegmentalConfig negative;
+    negative.leak_hold_s = -1.0;
+    EXPECT_THROW(SegmentalShared(negative, ChannelizerConfig{48000, 2048, 64, 150.0}), std::invalid_argument);
+}
+
+TEST(SegmentalShared, BuildsQuicklyAtTheRadiosHighestRate) {
+    // Review 4: as merged 16.0 s at 768 kHz with three filters, on the pipeline's thread with the radio already running, longer than
+    // the radio's ring of 5.46 s. The limit is what is short against the ring on a loaded machine.
+    const auto start = std::chrono::steady_clock::now();
+    const SegmentalShared shared(SegmentalConfig{}, ChannelizerConfig{768000, 32768, 64, 150.0});
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    std::cout << "measured: built at 768 kHz in " << seconds << " s\n";
+    EXPECT_LT(seconds, 2.0);
+}
+
+TEST(SegmentalShared, TablesFromTheStandInAgreeWithTheFullRate) {
+    // The tables are computed on the 48 kHz stand-in (segmental_tables_channel). Against the same tables computed at the full rate, at
+    // the widest and the narrowest filter; 192 kHz for the narrow one to keep the test short.
+    EXPECT_EQ(segmental_tables_channel(ChannelizerConfig{768000, 32768, 64, 150.0}).sample_rate, 48000);
+    EXPECT_EQ(segmental_tables_channel(ChannelizerConfig{768000, 32768, 64, 150.0}).fft_size, 2048);
+    EXPECT_EQ(segmental_tables_channel(ChannelizerConfig{44100, 2048, 64, 150.0}).sample_rate, 44100);
+    const struct {
+        int rate, fft, scale;
+    } cases[] = {{768000, 32768, 1}, {192000, 8192, 3}};
+    for (const auto& c : cases) {
+        const SegmentalConfig config = at_filter_scale(SegmentalConfig{}, c.scale);
+        const ChannelizerConfig channel{c.rate, c.fft, 64, 150.0};
+        const SegmentalParts parts(config, channel);
+        std::vector<double> taps = channel_filter_taps(channel);
+        taps.insert(taps.begin(), static_cast<std::size_t>(std::lround(config.template_delay_s * c.rate)), 0.0);
+        const viterbi::TemplateTables full =
+            viterbi::make_template_tables(taps, c.rate, c.fft / 64, parts.front_taps, parts.channel_samples_per_sample,
+                                          config.model.edge_rise_s, config.model.edge_rise_min_s, config.model.edge_rise_max_s);
+        const viterbi::OutputNoise noise = viterbi::output_noise(channel_filter_taps(channel), c.rate, c.fft / 64, parts.front_taps,
+                                                                 parts.channel_samples_per_sample);
+        for (int j = 0; j < viterbi::TemplateTables::kSpan; ++j)
+            EXPECT_NEAR(parts.template_tables.s[static_cast<std::size_t>(j)], full.s[static_cast<std::size_t>(j)], 1e-3) << c.rate << " j " << j;
+        EXPECT_NEAR(parts.template_tables.half_point_s, full.half_point_s, 1e-5) << c.rate;
+        EXPECT_NEAR(parts.output_noise.sigma2_per_n0_hz, noise.sigma2_per_n0_hz, 1e-4 * noise.sigma2_per_n0_hz) << c.rate;
+        EXPECT_NEAR(parts.output_noise.w_strong, noise.w_strong, 1e-4 * noise.w_strong) << c.rate;
+    }
+}
+
+TEST(FilterScale, ScalesThatCannotBeAreRefused) {
+    const ChannelizerConfig channel{48000, 2048, 64, 150.0};
+    SegmentalConfig config;
+    config.filter_scales = {2, 3};
+    EXPECT_THROW(SegmentalShared(config, channel), std::invalid_argument);
+    config.filter_scales = {};
+    EXPECT_THROW(SegmentalShared(config, channel), std::invalid_argument);
+    config.filter_scales = {1, 3, 2};
+    EXPECT_THROW(SegmentalShared(config, channel), std::invalid_argument);
 }
 
 TEST(SegmentalShared, RefusesAnotherChannelRate) {

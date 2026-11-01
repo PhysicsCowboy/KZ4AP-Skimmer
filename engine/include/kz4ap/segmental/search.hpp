@@ -26,6 +26,15 @@
 // and one in a mark
 //     max(C[H + 1], max over d = 1 ... 6 of C[j + d + 5] + fall(j + d)),
 // the same for every story, so computed once per boundary. Both add the element's survival so far.
+//
+// A story's fist. Farnsworth spacing and any sender with a separate time base for his gaps: letter and word gaps have
+// medians 3 g T_s and 7 g T_s where marks and element gaps have T_s, 3 T_s and T_s, g the fist's gap stretch. (ARRL's
+// standard spreads the added time over the 19 gap units of PARIS, so g = T_g / T_s, and letter and word gaps stretch alike;
+// QEX, April 1990.) The search's state is (j, fist, node, kind), a fist being a pair (speed, stretch), and an element's `speed`
+// below is that fist. A story takes its fist at the end of its first mark, a birth's or a rescue's, paying
+// ln(1 / speed_count) as before, and ln(1 - pi) for g = 1 or ln(pi / (stretches - 1)) for any other (pi: gap_stretch_prior).
+// It keeps it to the over's end. So standard text pays ln(1 - pi) once per over, and a stretch a story has no use for falls
+// out of the beam within a few letters.
 #pragma once
 
 #include "kz4ap/decoder.hpp"
@@ -33,13 +42,17 @@
 #include "kz4ap/segmental/evidence.hpp"
 #include "kz4ap/viterbi/morse_tree.hpp"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace kz4ap::segmental {
 
-// The fist's duration tables for every speed and kind, and the text's costs by node: built once, shared by every channel.
+// The fist's duration tables for every fist (speed x gap stretch) and kind, and the text's costs by node: built once, shared
+// by every channel.
 class ModelTables {
 public:
     explicit ModelTables(const SegmentalConfig& config);
@@ -49,21 +62,33 @@ public:
         int hi;       // samples: the longest
         int offset;   // into the table of ln P: ln P(L) = log_end[offset + L - lo]
     };
-    const Range& range(int kind, int speed) const { return ranges_[static_cast<std::size_t>(kind * speeds_ + speed)]; }
-    double log_end(int kind, int speed, int length) const {
-        const Range& r = range(kind, speed);
+    const Range& range(int kind, int fist) const { return ranges_[static_cast<std::size_t>(kind * fists_ + fist)]; }
+    double log_end(int kind, int fist, int length) const {
+        const Range& r = range(kind, fist);
         return log_end_[static_cast<std::size_t>(r.offset + length - r.lo)];
     }
-    // The optimistic survival of a mark (either label) and of a gap (any kind, with the kind's cost), nats, by length.
-    double mark_survival(int speed, int length) const {
-        return mark_survival_[static_cast<std::size_t>(survival_offset_[static_cast<std::size_t>(speed)] + length)];
+    // The optimistic survival of a mark (either label) and of a gap (any kind, with the kind's cost), nats, by length; a
+    // length past the table reads its last entry.
+    double mark_survival(int fist, int length) const {
+        const int speed = speed_of(fist);
+        return mark_survival_[static_cast<std::size_t>(mark_survival_offset_[static_cast<std::size_t>(speed)] +
+                                                       std::min(length, mark_survival_length_[static_cast<std::size_t>(speed)] - 1))];
     }
-    double gap_survival(int speed, int length) const {
-        return gap_survival_[static_cast<std::size_t>(survival_offset_[static_cast<std::size_t>(speed)] + length)];
+    double gap_survival(int fist, int length) const {
+        return gap_survival_[static_cast<std::size_t>(gap_survival_offset_[static_cast<std::size_t>(fist)] +
+                                                      std::min(length, gap_survival_length_[static_cast<std::size_t>(fist)] - 1))];
     }
-    int mark_hi(int speed) const { return mark_hi_[static_cast<std::size_t>(speed)]; }
-    int gap_hi(int speed) const { return gap_hi_[static_cast<std::size_t>(speed)]; }
-    int survival_length(int speed) const { return survival_length_[static_cast<std::size_t>(speed)]; }
+    int mark_hi(int fist) const { return mark_hi_[static_cast<std::size_t>(speed_of(fist))]; }
+    int gap_hi(int fist) const { return gap_hi_[static_cast<std::size_t>(fist)]; }
+    // The fists, in the order of their speeds: speed s's are first_fist(s) ... first_fist(s + 1) - 1, g = 1 first.
+    int fists() const { return fists_; }
+    int first_fist(int speed) const { return first_fist_[static_cast<std::size_t>(speed)]; }
+    int speed_of(int fist) const { return speed_of_[static_cast<std::size_t>(fist)]; }
+    // 1: the fist's gap stretch g
+    double stretch_of(int fist) const { return stretch_of_[static_cast<std::size_t>(fist)]; }
+    // nats: what taking g = 1 costs, and any other (see above)
+    double log_plain() const { return log_plain_; }
+    double log_stretched() const { return log_stretched_; }
     int speeds() const { return speeds_; }
     int nodes() const { return nodes_; }
     const viterbi::MorseTree& tree() const { return tree_; }
@@ -86,6 +111,7 @@ public:
 
 private:
     int speeds_ = 0;
+    int fists_ = 0;
     int nodes_ = 0;
     int longest_ = 0;
     viterbi::MorseTree tree_;
@@ -94,10 +120,17 @@ private:
     std::vector<double> log_end_;
     std::vector<double> mark_survival_;
     std::vector<double> gap_survival_;
-    std::vector<int> survival_offset_;
-    std::vector<int> survival_length_;
-    std::vector<int> mark_hi_;
-    std::vector<int> gap_hi_;
+    std::vector<int> mark_survival_offset_;  // by speed
+    std::vector<int> mark_survival_length_;
+    std::vector<int> gap_survival_offset_;   // by fist
+    std::vector<int> gap_survival_length_;
+    std::vector<int> mark_hi_;               // by speed
+    std::vector<int> gap_hi_;                // by fist
+    std::vector<int> first_fist_;            // by speed, and the fists' count at the end
+    std::vector<int> speed_of_;              // by fist
+    std::vector<double> stretch_of_;         // by fist
+    double log_plain_ = 0.0;
+    double log_stretched_ = 0.0;
     std::vector<double> letter_end_;
     double letter_start_ = 0.0;
     double letter_gap_cost_ = 0.0;
@@ -120,6 +153,16 @@ struct SearchStats {
     friend bool operator==(const SearchStats&, const SearchStats&) = default;
 };
 
+// The best story at a moment, as a decoder that publishes while the channel runs needs it (Search::best_story).
+struct BestStory {
+    std::vector<DecodedSymbol> tail;  // the story's last symbols, first symbol first
+    std::size_t length = 0;           // the story's whole text, symbols, so tail[0] is symbol length - tail.size()
+    bool open_letter = false;         // the last symbol is a letter still open: a gap has begun, which may turn out an
+                                      // element gap and the letter a longer one
+    std::optional<int> speed;         // its speed on the grid, 0 ... speed_count - 1 (dot_min_ms x speed_ratio^s); none for
+                                      // the no-signal story and a birth's first mark, which has no speed yet
+};
+
 class Search {
 public:
     // tables and levels outlive the Search; sums is read as it grows. levels: the short elements' templates; without them
@@ -137,6 +180,11 @@ public:
 
     // The best story's text.
     std::vector<DecodedSymbol> best_text() const;
+    // The same story's last max_symbols symbols and its speed, at a cost that does not grow with the text.
+    BestStory best_story(std::size_t max_symbols) const;
+    // The best story's score at the last boundary searched, reach through the horizon included, nats against key-up throughout
+    // (the no-signal story's scale): what the channel's evidence for keyed Morse is read from.
+    double best_score() const;
     const SearchStats& stats() const;
     // The open elements after the last boundary's pruning.
     std::size_t live() const;

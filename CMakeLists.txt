@@ -44,3 +44,4 @@ include(GoogleTest)
 
 add_subdirectory(engine)
 add_subdirectory(bench)
+add_subdirectory(app)

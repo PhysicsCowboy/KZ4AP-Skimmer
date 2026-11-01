@@ -17,7 +17,7 @@ struct DecodedSymbol {
     double end_s;
 };
 
-// A correction of a channel's published text (the bank decoder; Envelope and Matched never correct). The channel's
+// A correction of a channel's published text (the bank and segmental decoders; Envelope and Matched never correct). The channel's
 // characters form one list, indexed from 0 in the order they were published; a correction keeps the first
 // from_index characters and replaces everything after them by chars. A consumer applies an update's chars first
 // (appended to the list) and then its corrections, in order, clipping from_index to the list's length; chars are
@@ -28,7 +28,7 @@ struct TextCorrection {
     std::size_t from_index = 0;
     std::vector<DecodedSymbol> chars;
     double t_s = 0;      // when the decoder made the correction, s (stream time)
-    // the bank's reason: "switch", "rekey" or "timeout"; "resync" for one the BankDecoder adds when the list's text
+    // the segmental decoder's reason: "story" (its best story changed its mind). The bank's: "switch", "rekey" or "timeout"; "resync" for one the BankDecoder adds when the list's text
     // changed without a correction (measured: never on the suite, 0 of 31 205; see docs/signal-processing.md
     // appendix A.8c)
     std::string reason;
@@ -44,6 +44,13 @@ struct DecodeUpdate {
     float wpm = 0;
     float confidence = 0;  // running average of recent character probabilities
     std::optional<double> freq_offset_hz;  // the station's offset from its channel's center, Hz, if the decoder tracks it
+};
+
+// A decoder's running evidence, nats, summed from the channel's start, each against key-up throughout at the channel's noise
+// (a sample of key-up scores 0): what the engine reads to decide whether a track holds keyed Morse (track_evidence.hpp).
+struct KeyingEvidence {
+    double morse_nats = 0;     // the best Morse story: its timing and text included
+    double free_key_nats = 0;  // an on-off key with no timing and no text at the same level: a two-state chain, 5 changes a second
 };
 
 // Decodes one channel's baseband stream into characters.
@@ -65,6 +72,13 @@ public:
     // block, as it does the frequency anchor, when the decoder is the new decoder (FrontEnd::Viterbi); the other
     // decoders estimate their noise themselves and ignore it.
     virtual void set_noise_density_fs2_per_hz(double /*n0_fs2_per_hz*/) {}
+    // The band's latest spectrum (SpectrumFrame::power_fs2), and the index in it of the channel's center: what stands beside the channel. The
+    // engine calls it before every block that is not a replay's, when the decoder is the segmental decoder.
+    virtual void set_band_spectrum(std::span<const float> /*power_fs2*/, int /*center_index*/) {}
+    // The evidence above, if this decoder has any.
+    virtual std::optional<KeyingEvidence> keying_evidence() const { return std::nullopt; }
+    // The text as published so far (the consumer's list above), if this decoder keeps it.
+    virtual std::span<const std::string> published_symbols() const { return {}; }
 };
 
 }  // namespace kz4ap

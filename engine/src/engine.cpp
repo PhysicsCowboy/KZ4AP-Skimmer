@@ -4,10 +4,14 @@
 #include "kz4ap/segmental_decoder.hpp"
 #include "kz4ap/viterbi/hiss.hpp"
 #include "kz4ap/viterbi_decoder.hpp"
+#include "worker_pool.hpp"
+#include "kz4ap/cpu_time.hpp"
 
-#include <chrono>
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <deque>
+#include <functional>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -24,11 +28,21 @@ int choose_fft_size(int sample_rate) {
 
 namespace {
 
+// The stages are timed on the thread's CPU clock, so a loaded machine does not inflate them.
+
 EngineConfig resolved(EngineConfig c) {
     const int automatic = choose_fft_size(c.sample_rate);  // also validates the sample rate
     if (c.fft_size == 0) c.fft_size = automatic;
     if (!(c.channel_distance_hz > 0)) throw std::invalid_argument("channel distance must be positive");
     c.detector.attribution_distance_hz = c.channel_distance_hz;
+    // The segmental decoder runs on the air, where wide signals are: 1 kHz either side (heuristic: wide against a CW station's
+    // few bins, so that ten stations in it leave the lower quartile at the noise; on real 40 m I/Q it took out most of the false
+    // tracks). The other decoders keep the detector their test-set results were measured with.
+    if (c.decoder.front_end == FrontEnd::Segmental && c.detector.local_floor_radius_hz == 0.0) c.detector.local_floor_radius_hz = 1000.0;
+    if (c.decoder.front_end == FrontEnd::Segmental) {
+        c.detector.one_track_per_peak = true;
+        c.detector.dc_guard_hz = c.channel_distance_hz;
+    }
     return c;
 }
 
@@ -82,8 +96,25 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
       channelizer_(ChannelizerConfig{config_.sample_rate, config_.fft_size, config_.channel_bins,
                                      config_.channel_cutoff_hz}) {
     pending_.reserve(static_cast<std::size_t>(hop_));
+    if (config_.worker_threads < 1) throw std::invalid_argument("worker_threads must be at least 1");
+    if (config_.worker_threads > 1) pool_ = std::make_unique<WorkerPool>(config_.worker_threads);
     oracle_ = !config_.oracle_frequencies_hz.empty();
     check_oracle_tracks(config_);
+    if (config_.decoder.front_end == FrontEnd::Segmental) {
+        // A channel rate that is no whole multiple of the decoder's samples would fail deep inside it, in terms an operator cannot use.
+        const double channel_samples = channelizer_.output_rate() * config_.segmental.model.sample_interval_s;
+        if (std::abs(channel_samples - std::round(channel_samples)) > 1e-9)
+            throw std::invalid_argument("this decoder needs a sample rate of 48, 96, 192, 384 or 768 kHz, not " +
+                                        std::to_string(config_.sample_rate) + " Hz");
+    }
+    if (!(config_.replay_s >= 0.0) || !std::isfinite(config_.replay_s)) throw std::invalid_argument("replay_s must be finite and not negative (s)");
+    if (!(config_.replay_tracks_per_s > 0.0)) throw std::invalid_argument("replay_tracks_per_s must be positive (tracks/s)");
+    replay_on_ = !oracle_ && config_.decoder.front_end == FrontEnd::Segmental && config_.replay_s > 0.0;
+    if (replay_on_) {
+        const double block_s = static_cast<double>(hop_) / config_.sample_rate;
+        channelizer_.keep_past(static_cast<std::size_t>(std::ceil(config_.replay_s / block_s)) + 1);  // the current block's too
+        replay_per_block_ = config_.replay_tracks_per_s * block_s;
+    }
     if (config_.decoder.front_end == FrontEnd::Viterbi) {
         // The new decoder: the hiss estimator reads every spectrum frame (in oracle mode too), and its decoders share
         // one set of parts built for every channel's configuration (the genie's spreads may lengthen the blocks).
@@ -100,7 +131,7 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
     } else if (config_.decoder.front_end == FrontEnd::Segmental) {
         // The hiss estimator and a channel that follows the detector, as the new decoder; its own shared parts.
         if (!config_.viterbi_genie.empty()) throw std::invalid_argument("viterbi_genie needs FrontEnd::Viterbi");
-        hiss_ = std::make_unique<viterbi::HissEstimator>(config_.sample_rate, config_.fft_size, config_.viterbi);
+        hiss_ = std::make_unique<viterbi::HissEstimator>(config_.sample_rate, config_.fft_size, config_.segmental.model);
         segmental_shared_ = std::make_shared<const SegmentalShared>(
             config_.segmental, ChannelizerConfig{config_.sample_rate, config_.fft_size, config_.channel_bins,
                                                  config_.channel_cutoff_hz});
@@ -133,9 +164,14 @@ EngineStats Engine::stats() const {
     EngineStats s;
     s.channel_samples = channel_samples_;
     s.channel_seconds = static_cast<double>(channel_samples_) / channelizer_.output_rate();
-    s.decoder_seconds = decoder_seconds_;
+    s.replayed_channel_seconds = static_cast<double>(replayed_samples_) / channelizer_.output_rate();
+    s.longest_replay_wait_s = static_cast<double>(longest_replay_wait_blocks_) * hop_ / config_.sample_rate;
+    s.decoder_seconds = stages_.decoder_s;
+    s.stages = stages_;
     return s;
 }
+
+double Engine::worker_cpu_seconds() const { return pool_ ? pool_->worker_cpu_seconds() : 0.0; }
 
 double Engine::channel_rate() const { return channelizer_.output_rate(); }
 
@@ -149,9 +185,17 @@ const viterbi::SearchStats* Engine::viterbi_stats(std::uint32_t track_id) const 
 void Engine::process(std::span<const Sample> samples) {
     // Work in whole hops so the spectrum analyzer and channelizer stay in lockstep,
     // whatever size the caller's chunks are.
-    for (const Sample& s : samples) {
-        pending_.push_back(s);
-        if (static_cast<int>(pending_.size()) == hop_) {
+    const auto hop = static_cast<std::size_t>(hop_);
+    while (!samples.empty()) {
+        if (pending_.empty() && samples.size() >= hop) {
+            process_hop(samples.first(hop));
+            samples = samples.subspan(hop);
+            continue;
+        }
+        const std::size_t take = std::min(hop - pending_.size(), samples.size());
+        pending_.insert(pending_.end(), samples.begin(), samples.begin() + static_cast<std::ptrdiff_t>(take));
+        samples = samples.subspan(take);
+        if (pending_.size() == hop) {
             process_hop(pending_);
             pending_.clear();
         }
@@ -164,17 +208,42 @@ void Engine::finish() {
         process_hop(pending_);
         pending_.clear();
     }
-    for (auto& [id, channel] : channels_) publish_update(id, channel.decoder->flush());
+    for (auto& [id, channel] : channels_) {
+        if (channel.replay_waiting) {
+            // The stream ended while it waited for its turn.
+            channel.replay_waiting = false;
+            replay_channel(id, channel, channelizer_.past().size());
+            publish_channel(id, channel);
+        }
+        publish_update(id, channel.decoder->flush());
+    }
 }
 
 void Engine::process_hop(std::span<const Sample> hop) {
-    for (auto& frame : spectrum_.push(hop)) {
+    double mark = thread_cpu_precise_seconds();
+    // Seconds since the last call, added to one stage's total.
+    const auto lap = [&mark](double& stage_s) {
+        const double now = thread_cpu_precise_seconds();
+        stage_s += now - mark;
+        mark = now;
+    };
+    std::vector<SpectrumFrame> frames = spectrum_.push(hop);
+    lap(stages_.spectrum_s);
+    for (auto& frame : frames) {
         DetectorUpdate update;
         if (!oracle_) update = detector_.process(frame);
+        lap(stages_.detector_s);
         if (hiss_) hiss_->push(frame);  // the new decoder's hiss, before the frame moves on
+        if (segmental_shared_) band_power_fs2_ = frame.power_fs2;
+        lap(stages_.hiss_s);
         bus_.publish(Event{std::move(frame)});
-        for (const auto id : update.died) close_channel(id);
+        lap(stages_.publish_s);
+        for (const auto id : update.died) {
+            const bool merged = std::find(update.merged.begin(), update.merged.end(), id) != update.merged.end();
+            close_channel(id, merged ? TrackEnd::Merged : TrackEnd::Faded);
+        }
         for (const auto& track : update.born) open_channel(track, channelizer_.hz_to_bin(track.freq_hz));
+        lap(stages_.lifecycle_s);
         if (!oracle_ && config_.decoder.front_end != FrontEnd::Envelope) {
             // Option 1: the detector decides where each channel's station is (its track follows its own
             // peak); the channel's tracker (Matched) is anchored there, or the bank's mixing set there, before
@@ -183,53 +252,129 @@ void Engine::process_hop(std::span<const Sample> hop) {
                 if (const auto c = channels_.find(t.id); c != channels_.end()) c->second.detector_freq_hz = t.freq_hz;
             }
         }
+        lap(stages_.detector_s);
     }
-    channelizer_.push(hop, [this](std::uint32_t id, std::uint64_t first_index, std::span<const Sample> s) {
-        const auto it = channels_.find(id);
-        if (it == channels_.end()) return;
-        auto& channel = it->second;
-        const double t0 = static_cast<double>(first_index) / channelizer_.output_rate();
-        const int block_bin = channel.bin;  // the bin this block was cut at
-        const double center_hz = channelizer_.bin_to_hz(block_bin);
-        std::span<const Sample> samples = s;
-        double block_center_hz = center_hz;
-        if (channel.follower) {
-            // The new decoder: the channel follows the detector (design Part 1; plan O2, O3). An oracle channel's
-            // detector frequency is its track's at the block's start, held over the block.
-            if (oracle_ && !config_.oracle_frequency_tracks.empty() &&
-                !config_.oracle_frequency_tracks.at(id - 1).empty())
-                channel.detector_freq_hz = oracle_frequency_hz(config_.oracle_frequency_tracks[id - 1], t0);
-            const double f_det = channel.detector_freq_hz;
-            shifted_.assign(s.begin(), s.end());
-            channel.follower->shift(shifted_, first_index, f_det, center_hz);
-            samples = shifted_;
-            block_center_hz = f_det;
-            // The coarse step, from the next block on.
-            const int next = channel.follower->bin_for(f_det, block_bin, channelizer_);
-            if (next != block_bin) {
-                channelizer_.set_center_bin(id, next);
-                channel.bin = next;
-            }
-            channel.track.freq_hz = f_det;  // the station is reported where its channel is centered
-        } else {
-            channel.decoder->set_frequency_anchor_hz(channel.detector_freq_hz - center_hz);  // Envelope: ignored
-            // Bank: the block is mixed down by this anchor.
+    const Channelizer::Block block = channelizer_.begin_block(hop);
+    lap(stages_.channelizer_s);
+
+    // The channels' work, in any order and on any thread: each job touches only its own Channel and reads what no job
+    // writes (the block's spectrum, the hiss estimator, the configuration). The results go out afterward, one thread and
+    // in the order of the track ids, whatever the pool did, so the events are what one thread would give. A tap is the
+    // benchmark's and may not expect threads.
+    active_.clear();
+    for (auto& entry : channels_) active_.push_back(&entry);
+    if (replay_on_) grant_replays();
+    const std::function<void(std::size_t)> job = [&](std::size_t i) { process_channel(active_[i]->first, active_[i]->second, block); };
+    if (pool_ && !tap_) {
+        pool_->run(active_.size(), job);
+    } else {
+        for (std::size_t i = 0; i < active_.size(); ++i) job(i);
+    }
+    lap(stages_.channels_wall_s);
+    for (auto* entry : active_) publish_channel(entry->first, entry->second);
+    lap(stages_.publish_s);
+    if (config_.judge_tracks && !oracle_) judge_channels(block.first_index);
+    lap(stages_.lifecycle_s);
+}
+
+void Engine::grant_replays() {
+    replay_turns_ = std::min(replay_turns_ + replay_per_block_, replay_per_block_ + 1.0);
+    for (auto* entry : active_) {
+        Channel& channel = entry->second;
+        if (!channel.replay_waiting) continue;
+        if (replay_turns_ < 1.0) {
+            ++channel.replay_wait_blocks;  // by track id, and so the strongest of one block first: the detector's order
+            continue;
         }
-        if (tap_) tap_(ChannelBlock{id, first_index, block_center_hz, samples, channel.detector_freq_hz});
-        // The new decoder: its N0, the hiss estimator's density at the bin this block was cut at, set before every block.
-        if (hiss_) channel.decoder->set_noise_density_fs2_per_hz(hiss_->noise_density_fs2_per_hz(block_bin));
-        const auto started = std::chrono::steady_clock::now();
-        auto update = channel.decoder->process(samples, t0);
-        decoder_seconds_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-        channel_samples_ += s.size();
-        // Matched mode: the decoder re-centers on the carrier; report the station there. Bank: the anchor.
-        if (update.freq_offset_hz) channel.track.freq_hz = center_hz + *update.freq_offset_hz;
-        publish_update(id, std::move(update));
-    });
+        replay_turns_ -= 1.0;
+        channel.replay_waiting = false;
+        channel.replay_now = track_budget_ == 0;  // a pipeline already behind has no time for the past
+        longest_replay_wait_blocks_ = std::max(longest_replay_wait_blocks_, channel.replay_wait_blocks);
+    }
+}
+
+void Engine::replay_channel(std::uint32_t id, Channel& channel, std::size_t blocks) {
+    const std::deque<Channelizer::Past>& past = channelizer_.past();
+    for (std::size_t i = 0; i < std::min(blocks, past.size()); ++i) {
+        DecodeUpdate update = decode_block(id, channel, past[i].block, &past[i]);
+        if (!update.chars.empty() || !update.corrections.empty()) channel.replayed.push_back(std::move(update));
+    }
+}
+
+void Engine::process_channel(std::uint32_t id, Channel& channel, const Channelizer::Block& block) {
+    if (channel.replay_waiting) return;
+    if (channel.replay_now) {
+        channel.replay_now = false;
+        // All but the newest, which is this block.
+        replay_channel(id, channel, channelizer_.past().size() - 1);
+    }
+    channel.update = decode_block(id, channel, block, nullptr);
+}
+
+DecodeUpdate Engine::decode_block(std::uint32_t id, Channel& channel, const Channelizer::Block& block, const Channelizer::Past* past) {
+    const double started = thread_cpu_precise_seconds();
+    const std::span<const Sample> s = past != nullptr ? channelizer_.cut_past(*past, channel.bin, channel.cut_in, channel.cut_out)
+                                                      : channelizer_.cut(block, channel.bin, channel.cut_in, channel.cut_out);
+    const std::uint64_t first_index = block.first_index;
+    const double t0 = static_cast<double>(first_index) / channelizer_.output_rate();
+    const int block_bin = channel.bin;  // the bin this block was cut at
+    const double center_hz = channelizer_.bin_to_hz(block_bin);
+    std::span<const Sample> samples = s;
+    double block_center_hz = center_hz;
+    if (channel.follower) {
+        // The new decoder: the channel follows the detector (design Part 1; plan O2, O3). An oracle channel's
+        // detector frequency is its track's at the block's start, held over the block.
+        if (oracle_ && !config_.oracle_frequency_tracks.empty() && !config_.oracle_frequency_tracks.at(id - 1).empty())
+            channel.detector_freq_hz = oracle_frequency_hz(config_.oracle_frequency_tracks[id - 1], t0);
+        const double f_det = channel.detector_freq_hz;
+        channel.shifted.assign(s.begin(), s.end());
+        channel.follower->shift(channel.shifted, first_index, f_det, center_hz);
+        samples = channel.shifted;
+        block_center_hz = f_det;
+        // The coarse step, from the next block on.
+        channel.bin = channel.follower->bin_for(f_det, block_bin, channelizer_);
+        channel.track.freq_hz = f_det;  // the station is reported where its channel is centered
+    } else {
+        channel.decoder->set_frequency_anchor_hz(channel.detector_freq_hz - center_hz);  // Envelope: ignored
+        // Bank: the block is mixed down by this anchor.
+    }
+    if (tap_) tap_(ChannelBlock{id, first_index, block_center_hz, samples, channel.detector_freq_hz});
+    // The new decoder: its N0, the hiss estimator's density at the bin this block was cut at, set before every block.
+    if (hiss_) channel.decoder->set_noise_density_fs2_per_hz(hiss_->noise_density_fs2_per_hz(block_bin));
+    // What stands beside the channel now; a replay has no spectrum of its past.
+    if (past == nullptr && !band_power_fs2_.empty()) {
+        const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
+        channel.decoder->set_band_spectrum(band_power_fs2_, static_cast<int>(std::lround(block_center_hz / bin_hz)) + config_.fft_size / 2);
+    }
+    const double filtered = thread_cpu_precise_seconds();
+    DecodeUpdate update = channel.decoder->process(samples, t0);
+    const double decoded = thread_cpu_precise_seconds();
+    channel.filter_s += filtered - started;
+    channel.decoder_s += decoded - filtered;
+    (past != nullptr ? channel.replayed_samples : channel.block_samples) += s.size();
+    for (const TextCorrection& correction : update.corrections) channel.judge.text_changed_from(correction.from_index);
+    // Matched mode: the decoder re-centers on the carrier; report the station there. Bank: the anchor.
+    if (update.freq_offset_hz) channel.track.freq_hz = center_hz + *update.freq_offset_hz;
+    return update;
+}
+
+void Engine::publish_channel(std::uint32_t id, Channel& channel) {
+    stages_.filter_s += channel.filter_s;
+    stages_.decoder_s += channel.decoder_s;
+    track_decoder_s_[id] += channel.decoder_s;
+    channel.filter_s = 0;
+    channel.decoder_s = 0;
+    channel_samples_ += channel.block_samples;
+    replayed_samples_ += channel.replayed_samples;
+    channel.block_samples = 0;
+    channel.replayed_samples = 0;
+    for (DecodeUpdate& update : channel.replayed) publish_update(id, std::move(update));
+    channel.replayed.clear();
+    publish_update(id, std::move(channel.update));
+    channel.update = DecodeUpdate{};
 }
 
 void Engine::open_channel(const Track& track, int bin) {
-    channelizer_.add_channel(track.id, bin);
     const double residual_hz = track.freq_hz - channelizer_.bin_to_hz(bin);
     std::unique_ptr<Decoder> decoder;
     if (config_.decoder.front_end == FrontEnd::Bank) {
@@ -245,7 +390,14 @@ void Engine::open_channel(const Track& track, int bin) {
     } else {
         decoder = std::make_unique<ClassicalDecoder>(channelizer_.output_rate(), config_.decoder, residual_hz);
     }
-    Channel channel{track, bin, std::move(decoder), track.freq_hz, std::nullopt};
+    Channel channel;
+    channel.track = track;
+    channel.bin = bin;
+    channel.decoder = std::move(decoder);
+    channel.detector_freq_hz = track.freq_hz;
+    channel.replay_waiting = replay_on_;
+    channel.cut_in.resize(static_cast<std::size_t>(channelizer_.channel_bins()));
+    channel.cut_out.resize(static_cast<std::size_t>(channelizer_.channel_bins()));
     // The new decoder's channel follows the detector (plan O2: its channels only).
     if (config_.decoder.front_end == FrontEnd::Viterbi || config_.decoder.front_end == FrontEnd::Segmental)
         channel.follower.emplace(channelizer_.output_rate(), channelizer_.bin_to_hz(1) - channelizer_.bin_to_hz(0));
@@ -253,12 +405,44 @@ void Engine::open_channel(const Track& track, int bin) {
     bus_.publish(Event{TrackEvent{TrackEvent::Kind::Born, track}});
 }
 
-void Engine::close_channel(std::uint32_t id) {
+void Engine::judge_channels(std::uint64_t first_index) {
+    const double now_s = static_cast<double>(first_index) / channelizer_.output_rate();
+    retiring_.clear();
+    for (auto* entry : active_) {
+        Channel& channel = entry->second;
+        if (channel.replay_waiting || now_s < channel.next_judged_s) continue;
+        channel.next_judged_s = now_s + 1.0;  // the judge's clock: a second of stream
+        const std::optional<KeyingEvidence> evidence = channel.decoder->keying_evidence();
+        if (!evidence) continue;
+        const TrackJudge::Verdict verdict = channel.judge.update(*evidence, channel.decoder->published_symbols());
+        if (verdict.retire) retiring_.emplace_back(entry->first, verdict);
+    }
+    for (const auto& [id, verdict] : retiring_) {
+        detector_.retire(id, now_s, verdict.hold_s);
+        close_channel(id, verdict.end);
+    }
+    while (track_budget_ > 0 && channels_.size() > track_budget_) {
+        // The least evidence: what has read nothing plausible first, then what earns the least.
+        auto worst = channels_.begin();
+        const auto rank = [](const Channel& c) { return std::make_pair(c.judge.proven(), c.judge.earning()); };
+        for (auto it = channels_.begin(); it != channels_.end(); ++it)
+            if (rank(it->second) < rank(worst->second)) worst = it;
+        const std::uint32_t id = worst->first;
+        detector_.retire(id, now_s, TrackJudge::kHoldS);
+        close_channel(id, TrackEnd::Shed);
+    }
+}
+
+void Engine::set_track_budget(std::size_t tracks) {
+    track_budget_ = tracks;
+    detector_.set_track_limit(tracks > 0 ? tracks : config_.detector.max_tracks);
+}
+
+void Engine::close_channel(std::uint32_t id, TrackEnd end) {
     const auto it = channels_.find(id);
     if (it == channels_.end()) return;
     publish_update(id, it->second.decoder->flush());
-    bus_.publish(Event{TrackEvent{TrackEvent::Kind::Died, it->second.track}});
-    channelizer_.remove_channel(id);
+    bus_.publish(Event{TrackEvent{TrackEvent::Kind::Died, it->second.track, end}});
     channels_.erase(it);
 }
 

@@ -48,9 +48,11 @@ std::vector<SpectrumFrame> SpectrumAnalyzer::push(std::span<const Sample> in) {
         SpectrumFrame frame;
         frame.time_s = static_cast<double>(dropped_ + start + n) / sample_rate_;
         frame.power_db.resize(n);
+        frame.power_fs2.resize(n);
         for (std::size_t i = 0; i < n; ++i) {
-            const float power = std::norm(fft_out_[(i + half) % n]) * power_scale_;
-            frame.power_db[i] = 10.0f * std::log10(power + 1e-20f);
+            const float power = std::norm(fft_out_[(i + half) % n]) * power_scale_ + 1e-20f;
+            frame.power_fs2[i] = power;
+            frame.power_db[i] = 10.0f * std::log10(power);
         }
         frames.push_back(std::move(frame));
         start += static_cast<std::size_t>(hop_);

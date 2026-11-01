@@ -379,6 +379,12 @@ void BankChannel::finish() {
     if (!branches_.empty()) out_.append_new(branches_[static_cast<std::size_t>(selector_.current())].chars);
 }
 
+std::optional<double> BankChannel::selected_dit_s() const {
+    const Branch& selected = branches_[static_cast<std::size_t>(selector_.current())];
+    if (!selected.current) return std::nullopt;
+    return selected.current->t_s;
+}
+
 ChannelResult BankChannel::result() const {
     ChannelResult r = result_;
     r.text = out_.text();

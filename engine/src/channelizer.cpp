@@ -104,40 +104,71 @@ void Channelizer::push(std::span<const Sample> in, const Sink& sink) {
     }
 }
 
-void Channelizer::process_block(const Sink& sink) {
+Channelizer::Block Channelizer::begin_block(std::span<const Sample> hop) {
+    if (hop.size() != static_cast<std::size_t>(hop_)) throw std::invalid_argument("Channelizer::begin_block: not one hop");
     const int n = config_.fft_size;
-    const int m = config_.channel_bins;
     std::move(history_.begin() + hop_, history_.end(), history_.begin());
-    std::copy(pending_.begin(), pending_.end(), history_.end() - hop_);
-    pending_.clear();
+    std::copy(hop.begin(), hop.end(), history_.end() - hop_);
     detail::fft_forward(history_.data(), spectrum_.data(), static_cast<std::size_t>(n));
 
     // Block b holds input samples [b*hop - (n - hop), b*hop + hop). Only the last
     // hop/decimation outputs are free of circular wrap-around; they start at input b*hop.
-    const std::int64_t block_start = static_cast<std::int64_t>(block_index_) * hop_ - (n - hop_);
-    const int keep = hop_ / decimation_;
-    const std::uint64_t first_index = block_index_ * static_cast<std::uint64_t>(keep);
+    const Block block{block_index_ * static_cast<std::uint64_t>(hop_ / decimation_),
+                      static_cast<std::int64_t>(block_index_) * hop_ - (n - hop_)};
+    ++block_index_;
 
     // The moves asked for since the last block (set_center_bin) take effect now, before any channel is cut.
     for (const auto& [id, center] : moves_) channels_.at(id) = center;
     moves_.clear();
-
-    for (const auto& [id, center] : channels_) {
-        for (int k = -m / 2; k < m / 2; ++k) {
-            const int src = ((center + k) % n + n) % n;
-            channel_in_[(k + m) % m] = spectrum_[src] * filter_[(k + m) % m];
+    if (keep_past_ > 0) {
+        // The oldest block's vector is reused, so that this costs a copy of the spectrum and no allocation.
+        Past newest;
+        if (past_.size() >= keep_past_) {
+            newest = std::move(past_.front());
+            past_.pop_front();
         }
-        detail::fft_inverse(channel_in_.data(), channel_out_.data(), static_cast<std::size_t>(m));
-        // The inverse FFT mixes relative to this block's start; re-reference the mixer
-        // to the start of the stream so phase is continuous from block to block.
-        const std::int64_t turns = ((static_cast<std::int64_t>(center) * block_start) % n + n) % n;
-        const double angle = -2 * std::numbers::pi * static_cast<double>(turns) / n;
-        const Sample rotate = Sample(static_cast<float>(std::cos(angle)), static_cast<float>(std::sin(angle))) /
-                              static_cast<float>(n);
-        for (int i = m - keep; i < m; ++i) channel_out_[i] *= rotate;
-        sink(id, first_index, std::span<const Sample>(channel_out_.data() + (m - keep), static_cast<std::size_t>(keep)));
+        newest.block = block;
+        newest.spectrum = spectrum_;
+        past_.push_back(std::move(newest));
     }
-    ++block_index_;
+    return block;
+}
+
+std::span<Sample> Channelizer::cut(const Block& block, int center, std::span<Sample> in, std::span<Sample> out) const {
+    return cut_from(spectrum_, block, center, in, out);
+}
+
+std::span<Sample> Channelizer::cut_past(const Past& past, int center, std::span<Sample> in, std::span<Sample> out) const {
+    return cut_from(past.spectrum, past.block, center, in, out);
+}
+
+std::span<Sample> Channelizer::cut_from(const std::vector<Sample>& spectrum, const Block& block, int center, std::span<Sample> in,
+                                        std::span<Sample> out) const {
+    const int n = config_.fft_size;
+    const int m = config_.channel_bins;
+    const int keep = hop_ / decimation_;
+    for (int k = -m / 2; k < m / 2; ++k) {
+        const int src = ((center + k) % n + n) % n;
+        in[(k + m) % m] = spectrum[src] * filter_[(k + m) % m];
+    }
+    detail::fft_inverse(in.data(), out.data(), static_cast<std::size_t>(m));
+    // The inverse FFT mixes relative to this block's start; re-reference the mixer
+    // to the start of the stream so phase is continuous from block to block.
+    const std::int64_t turns = ((static_cast<std::int64_t>(center) * block.first_input) % n + n) % n;
+    const double angle = -2 * std::numbers::pi * static_cast<double>(turns) / n;
+    const Sample rotate = Sample(static_cast<float>(std::cos(angle)), static_cast<float>(std::sin(angle))) /
+                          static_cast<float>(n);
+    for (int i = m - keep; i < m; ++i) out[i] *= rotate;
+    return out.subspan(static_cast<std::size_t>(m - keep));
+}
+
+void Channelizer::process_block(const Sink& sink) {
+    const Block block = begin_block(pending_);
+    pending_.clear();
+    for (const auto& [id, center] : channels_) {
+        const std::span<const Sample> samples = cut(block, center, channel_in_, channel_out_);
+        sink(id, block.first_index, samples);
+    }
 }
 
 }  // namespace kz4ap
