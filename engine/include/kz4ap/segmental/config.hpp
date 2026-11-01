@@ -56,6 +56,11 @@ struct SegmentalConfig {
     // of the model's over rate.
     double level_jump_per_s = 0.05;
 
+    // count: the groups of levels an edge's scores read, at most kEdgeLevels (evidence.hpp), 8. Heuristic; it bounds the edges' cost where the belief is broad.
+    int edge_levels = 8;
+    // 1: the belief a level must hold to count in a sample's evidence. Heuristic.
+    double level_active_min = 1e-4;
+
     // --- The channel's own noise floor (ChannelFloor, evidence.hpp) ---
 
     // s: how far back the floor reads, 0 to leave it out and use the hiss alone. Heuristic.
