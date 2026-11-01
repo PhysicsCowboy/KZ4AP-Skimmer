@@ -174,8 +174,9 @@ struct SegmentalConfig {
     double doubt_clear_rate = 3.0;         // nats/s
     double doubt_clear_earning = 1e300;    // nats/s: dS / window at or above this clears it too
     double doubt_hold_s = 30.0;            // s
-    // 1: an element may end only within this many standard deviations of ln(length) of its median. Heuristic.
-    double duration_z_max = 4.0;
+    // 1: an element may end only within this many standard deviations of ln(length) of its median. A heuristic by measurement: on a slice of seed 1, 3.5 reads A2, I2 the same,
+    // C2 0.0625 against 0.0627, E2 0.4858 against 0.4867 at 4, and real 40 m the same 20 calls for 5% less CPU per second of stream, 12% fewer channel-seconds off its stations.
+    double duration_z_max = 3.5;
 };
 
 // The configuration at filter scale m: the sample interval, the filter's dot and the fastest speed's dot m times as long, so
