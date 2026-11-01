@@ -427,7 +427,7 @@ exists. An open element holds a *base*:
 - Offers merge by (j, speed, node, kind), the best kept. The next element's
   evidence then depends on nothing else, so merging is exact given the shared
   evidence, and it happens after the edge's window (to j + 10) exists.
-- Lengths end within e^(±3.5σ) of the median, a factor of 2.86 (heuristic by measurement); an
+- Lengths end within e^(±4σ) of the median, a factor of 3.32 (heuristic); an
   element past its longest is dropped.
 - *Fist:* the `s` above is a pair (speed, gap stretch g): letter and word gaps have
   medians 3gT_s and 7gT_s; marks and element gaps stay at T_s (Farnsworth; ARRL's
@@ -3863,7 +3863,7 @@ no active level. For m = 5 … 10, R_k[m − 5] and F_k[m − 5] likewise over t
 z, group levels and probabilities are kept in a ring of 1 024 for short elements.
 
 **The running sums** (`RunningSums`). C[k + 1] = C[k] + L1_k, double, never reduced. rise(i) and fall(j) accumulate from their
-windows, whole once sample i + 10 is pushed. Rings of 8 192 samples, 21.8 s against the longest element's about 4.6 s.
+windows, whole once sample i + 10 is pushed. Rings of 8 192 samples, 21.8 s against the longest element's 5.35 s.
 
 **Duration tables** (`ModelTables`). lo = max(1, ⌊M·e^(−4σ)⌋), hi = max(lo, ⌈M·e^(4σ)⌉) per kind and fist, ln P(τ) the fist's, not
 renormalized over the cut. Longest: a dash at the slowest speed 2.296 s, a word gap 15.27 s (gT_s = 657 ms, the largest 12 ms × 1.1^k ≤ 0.7 s; derived), against the rings' 21.8 s. mark_survival(s, τ) = max(ln S_dot,
@@ -3982,7 +3982,7 @@ text's, is at most 0.387 s at m = 1: 0.34 s for the level and 17 samples for the
 
 **The search's bookkeeping.** A fist's lengths stand in one row (`ModelTables::FistRow`); gaps and marks stand in two lists, since a mark's slot's parent is always a gap and a gap's a mark; a birth's ends are tabled by length; a slot is 16 bytes. These change nothing read: 6 154 of 6 154 signals the same.
 
-**Provenance.** Beam 15 nats: a heuristic set by measurement (the log). Ceiling 1 500, the stretched story's +4 nats, `open_spacing_dots` 0.125, `duration_z_max` 3.5: heuristics chosen by measurement on a slice of the test set's seed 1 (a fifth of A2, all of C2, E2, I2) and on real 40 m, whose list held at 20 calls; settings tried and what they cost: `docs/decision-log.md`, 2026-11-01. The over's tail: 6 samples, the
+**Provenance.** Beam 15 nats: a heuristic set by measurement (the log). `duration_z_max` = 4: heuristic. Ceiling 1 500, the stretched story's +4 nats, `open_spacing_dots` 0.125: heuristics chosen by measurement on a slice of the test set's seed 1 (a fifth of A2, all of C2, E2, I2) and on real 40 m, whose list held at 20 calls; settings tried and what they cost: `docs/decision-log.md`, 2026-11-01. The over's tail: 6 samples, the
 windows' length. Everything shared with viterbi: A.8d.
 
 ### Limitations (segmental)
@@ -3996,7 +3996,7 @@ These are the model's and, except where said, the viterbi decoder's too. The whi
 - **Memory.** About 3 MB a track (measured: 58 to about 240 MB at 56 tracks), before the slots went to 16 bytes in lazily zeroed memory, so that a channel pays only for the slots it touches (not measured since).
 - **Impulses inflate the hiss.** The hiss averages each bin's power over time, so a burst counts by its mean, and N₀ reads high after it. Using the channel's floor alone would not save it: the hiss would stop reading high and every
   burst would become a mark, so the inflated hiss is hiding insertions. A blanker before the channelizer, then a median over time in the hiss, is the unverified fix.
-- **A tune-up writes T's** (segmental only). Each element ends at its longest length, so a carrier held past about 2.0 s (a dash at the slowest speed) ends every story's mark and writes a T about every 2.0 s (`search.cpp`, the prune by
+- **A tune-up writes T's** (segmental only). Each element ends at its longest length, so a carrier held past 2.3 s (a dash at the slowest speed) ends every story's mark and writes a T about every 2.3 s (`search.cpp`, the prune by
   length). The channel's floor reduces this by reading a long carrier as noise.
 - **A long carrier reads as noise** (segmental only). A key-down held over 90% of the 5 s window raises the floor to the carrier, and it fades from the text.
 - **The first second has no floor.** Behind a receiver's filter a few false symbols appear before the floor is first in, at 1.056 s.
@@ -4264,7 +4264,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Segmental: template's window | m = 5 … 10 (0 below, 1 from 11); elements below 6 samples by the pair's template | `kEdgeFirst`, `kEdgeCount`; `short_score` | derived approximation |
 | Segmental: horizon | boundary j searched with evidence through j + 16 | `kHorizon` | derived (a claim's window ends at j + 10, plus up to 6 for a next edge) |
 | Segmental: over's tail | 6 samples | `kEdgeCount` in search.cpp | derived (the windows' length) |
-| Segmental: duration cut | an element ends within 3.5 σ of its median, a factor of 2.86 | `duration_z_max` | heuristic chosen by measurement |
+| Segmental: duration cut | an element ends within 4 σ of its median, a factor of 3.32 | `duration_z_max` | heuristic |
 | Segmental: beam, ceiling | 15 nats, 1 500 elements | `SegmentalConfig::beam_nats`, `ceiling` | heuristics set by measurement |
 | Segmental: a stretched story at the ceiling | ranked 4 nats above its partial score | `ceiling_stretch_bonus_nats` | heuristic chosen by measurement |
 | Segmental: spacing of opened elements | none within T_s / 8 of one opened in the same state with a base as high | `open_spacing_dots` 0.125, `ModelTables::open_spacing` | heuristic chosen by measurement |

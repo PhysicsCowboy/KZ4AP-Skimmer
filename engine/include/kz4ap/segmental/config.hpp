@@ -156,9 +156,9 @@ struct SegmentalConfig {
     // nats: what a story of a stretched fist counts for above its score when the ceiling ranks the stories: what its fist's prior took from it once.
     double ceiling_stretch_bonus_nats = 4.0;
 
-    // 1: an element may end only within this many standard deviations of ln(length) of its median. A heuristic by measurement: on a slice of seed 1, 3.5 reads A2, I2 the same,
-    // C2 0.0625 against 0.0627, E2 0.4858 against 0.4867 at 4, and real 40 m the same 20 calls for 5% less CPU per second of stream, 12% fewer channel-seconds off its stations.
-    double duration_z_max = 3.5;
+    // 1: an element may end only within this many standard deviations of ln(length) of its median. Heuristic. 3.5 saves 5% more CPU per second of stream on real 40 m, with the same
+    // list, and costs H2 0.0568 and 0.0492 against 0.0562 and 0.0473 on seeds 1 and 2, and one station of three beside a neighbor at 60 Hz on the detector's path: not taken.
+    double duration_z_max = 4.0;
 };
 
 // The configuration at filter scale m: the sample interval, the filter's dot and the fastest speed's dot m times as long, so
