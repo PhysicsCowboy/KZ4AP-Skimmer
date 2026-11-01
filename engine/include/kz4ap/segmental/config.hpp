@@ -149,8 +149,9 @@ struct SegmentalConfig {
 
     // nats: how far behind the best a story may fall and stay. Heuristic, set by measurement.
     double beam_nats = 15.0;
-    // stories: the most open elements kept. Heuristic, set by measurement.
-    int ceiling = 3000;
+    // stories: the most open elements kept. A heuristic by measurement, with ceiling_stretch_bonus_nats: on a slice of seed 1, 1 500 at +4 nats reads A2 0.2765, C2 0.0627, E2
+    // 0.4867, I2 0.0168 against 0.2763, 0.0625, 0.4870, 0.0210 at 3 000 with no bonus, for 11% less decoder CPU on real 40 m, 30 min of it listing the same 20 calls.
+    int ceiling = 1500;
     // dots of the story's speed: a new element is not opened if one opened within this time in the same state (kind, fist, node) has a base at least as high. Its future
     // differs by a length within this share of a dot, against a lower score. 0 leaves it out. A heuristic by measurement, on a slice of seed 1: 0.125 reads A2 0.2763, C2 0.0625, E2
     // 0.4870, I2 0.0210 against 0.2767, 0.0628, 0.4904, 0.0211 with none, by signal 155 better, 147 worse, for 11% less decoder CPU on real 40 m; 0.25 and 0.5 save 16% and 19% and read C2 0.0635, 0.0637.
@@ -158,8 +159,10 @@ struct SegmentalConfig {
     // nats: the adaptive beam (search.cpp): the margin above the ceiling's cut-off score, negative to leave it out; and what a boundary under the ceiling lets it out by.
     double adaptive_margin_nats = -1.0;
     double adaptive_relax_nats = 0.05;
+    // A heuristic by measurement: a weak Farnsworth sender's true story stands 8 nats behind its plain rivals (gap_stretch_prior) until it has earned that, and the ceiling used
+    // to take it first. At +8 nats A2 reads 0.2785 and C2 0.0637, the plain stories displaced; at +4 nats as above.
     // nats: what a story of a stretched fist counts for above its score when the ceiling ranks the stories: what its fist's prior took from it once.
-    double ceiling_stretch_bonus_nats = 0.0;
+    double ceiling_stretch_bonus_nats = 4.0;
 
     // --- A channel in doubt (SegmentalDecoder::update_effort) ---
 
