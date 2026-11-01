@@ -170,7 +170,7 @@ struct SegmentalConfig {
 };
 
 // The configuration at filter scale m: the sample interval, the filter's dot and the fastest speed's dot m times as long, so
-// that in samples the front filter and the fastest dot stay what they are (the evidence's window of 6 samples and its short
+// that in samples the front filter's dot and the fastest dot stay what they are (the evidence's window of 6 samples and its short
 // elements stay valid) and the speed grid keeps its slowest dot. The level's frame and look-ahead keep about their lengths in s,
 // in whole samples; the channel floor's stride and refresh are m times as long, where its noise's correlation falls.
 // Throws std::invalid_argument for an m below 1.
