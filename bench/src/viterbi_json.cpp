@@ -476,6 +476,8 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"channel_floor_start_s", &config.channel_floor_start_s},
         {"beam_nats", &config.beam_nats},
         {"open_spacing_dots", &config.open_spacing_dots},
+        {"adaptive_margin_nats", &config.adaptive_margin_nats},
+        {"adaptive_relax_nats", &config.adaptive_relax_nats},
         {"doubt_window_s", &config.doubt_window_s},
         {"doubt_clear_rate", &config.doubt_clear_rate},
         {"doubt_hold_s", &config.doubt_hold_s},

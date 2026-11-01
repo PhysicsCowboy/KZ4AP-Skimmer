@@ -149,6 +149,9 @@ struct SegmentalConfig {
     // dots of the story's speed: a new element is not opened if one opened within this time in the same state (kind, fist, node) has a base at least as high. Its future
     // differs by a length within this share of a dot, against a lower score. 0 leaves it out.
     double open_spacing_dots = 0.0;
+    // nats: the adaptive beam (search.cpp): the margin above the ceiling's cut-off score, negative to leave it out; and what a boundary under the ceiling lets it out by.
+    double adaptive_margin_nats = -1.0;
+    double adaptive_relax_nats = 0.05;
 
     // --- A channel in doubt (SegmentalDecoder::update_effort) ---
 
