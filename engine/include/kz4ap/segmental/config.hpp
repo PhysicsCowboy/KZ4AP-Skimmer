@@ -147,8 +147,9 @@ struct SegmentalConfig {
     // stories: the most open elements kept. Heuristic, set by measurement.
     int ceiling = 3000;
     // dots of the story's speed: a new element is not opened if one opened within this time in the same state (kind, fist, node) has a base at least as high. Its future
-    // differs by a length within this share of a dot, against a lower score. 0 leaves it out.
-    double open_spacing_dots = 0.0;
+    // differs by a length within this share of a dot, against a lower score. 0 leaves it out. A heuristic by measurement, on a slice of seed 1: 0.125 reads A2 0.2763, C2 0.0625, E2
+    // 0.4870, I2 0.0210 against 0.2767, 0.0628, 0.4904, 0.0211 with none, by signal 155 better, 147 worse, for 11% less decoder CPU on real 40 m; 0.25 and 0.5 save 16% and 19% and read C2 0.0635, 0.0637.
+    double open_spacing_dots = 0.125;
     // nats: the adaptive beam (search.cpp): the margin above the ceiling's cut-off score, negative to leave it out; and what a boundary under the ceiling lets it out by.
     double adaptive_margin_nats = -1.0;
     double adaptive_relax_nats = 0.05;
