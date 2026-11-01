@@ -79,7 +79,7 @@ struct SegmentalConfig {
     // and a neighbor at least 6 dB re wanted at 60 to 120 Hz 0.129 against 0.283, where no floor reads 0.179 (docs/decision-log.md, 2026-10-31). The 1 s of
     // the floor's first try was never swept. Why (conjecture): in a neighbor's gaps there is no leak to excuse, so holding the floor over them only blinds the stream.
     double leak_hold_s = 0.2;
-    // dB re the leak: the noise the floor counts for it: sigma^2 at least the leak, this far up. Heuristic, chosen by measurement: on a slice,
+    // dB re the leak: the noise the floor counts for it: sigma^2 at least the leak, this far up. Heuristic, chosen by measurement: on a slice, at a hold of 1 s,
     // +3 dB reads E2 0.504, +6 dB 0.573 and +10 dB 0.690 against 0.575 without it, and B2 rises from +6 dB (docs/decision-log.md, 2026-10-31).
     double leak_floor_db = 3.0;
     // Hz: the bins read for it, from the channel's center; what is nearer is taken as the station's own. Heuristics: a Hann main lobe reaches 47 Hz
