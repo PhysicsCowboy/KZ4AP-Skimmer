@@ -92,6 +92,7 @@ public:
         int gap_survival_last = 0;
         int mark_hi = 0;
         int gap_hi = 0;
+        bool stretched = false;  // g above 1
     };
     const FistRow& row(int fist) const { return rows_[static_cast<std::size_t>(fist)]; }
     const double* log_ends() const { return log_end_.data(); }

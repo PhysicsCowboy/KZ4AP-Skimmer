@@ -180,6 +180,7 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
         r.gap_survival_last = gap_survival_length_[static_cast<std::size_t>(f)] - 1;
         r.mark_hi = mark_hi(f);
         r.gap_hi = gap_hi(f);
+        r.stretched = stretch_of(f) > 1.0;
     }
     const int longest_open = mark_hi(first_fist(speeds_ - 1));
     open_end_first_.reserve(static_cast<std::size_t>(longest_open) + 2);
@@ -743,6 +744,12 @@ void Search::Impl::boundary(std::int64_t j) {
         for (std::size_t i = kept_gaps; i < gaps.size(); ++i) gap_partial[i] = gaps[i].base + gap_reach_new;
         mark_partial.resize(marks.size());
         for (std::size_t i = kept_marks; i < marks.size(); ++i) mark_partial[i] = marks[i].base + mark_reach_new;
+        if (config.ceiling_stretch_bonus_nats > 0.0) {
+            for (std::size_t i = 0; i < gaps.size(); ++i)
+                if (model.row(gaps[i].speed).stretched) gap_partial[i] += config.ceiling_stretch_bonus_nats;
+            for (std::size_t i = 0; i < marks.size(); ++i)
+                if (marks[i].kind == kMark && model.row(marks[i].speed).stretched) mark_partial[i] += config.ceiling_stretch_bonus_nats;
+        }
         // The ceiling's best stand, the earlier of a tie first, gaps before marks: the ceiling-th score over plain doubles, then one pass.
         above_ceiling.assign(gap_partial.begin(), gap_partial.end());
         above_ceiling.insert(above_ceiling.end(), mark_partial.begin(), mark_partial.end());

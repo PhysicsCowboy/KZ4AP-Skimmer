@@ -480,6 +480,8 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"adaptive_relax_nats", &config.adaptive_relax_nats},
         {"doubt_window_s", &config.doubt_window_s},
         {"doubt_clear_rate", &config.doubt_clear_rate},
+        {"doubt_clear_earning", &config.doubt_clear_earning},
+        {"ceiling_stretch_bonus_nats", &config.ceiling_stretch_bonus_nats},
         {"doubt_hold_s", &config.doubt_hold_s},
         {"duration_z_max", &config.duration_z_max},
         {"gap_unit_max_s", &config.gap_unit_max_s},

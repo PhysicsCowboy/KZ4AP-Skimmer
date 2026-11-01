@@ -227,7 +227,8 @@ void SegmentalDecoder::update_effort(double now_s) {
     const double span_s = now_s - oldest.t_s;
     if (span_s > 0.0) {
         const double rate = (here.morse_nats - oldest.morse_nats - std::max(0.0, here.free_nats - oldest.free_nats)) / span_s;
-        if (rate >= config.doubt_clear_rate) clear_until_s_ = now_s + config.doubt_hold_s;
+        const double earning = (here.morse_nats - oldest.morse_nats) / span_s;
+        if (rate >= config.doubt_clear_rate || earning >= config.doubt_clear_earning) clear_until_s_ = now_s + config.doubt_hold_s;
     }
     const bool doubt = now_s >= clear_until_s_;
     if (doubt != in_doubt_) {

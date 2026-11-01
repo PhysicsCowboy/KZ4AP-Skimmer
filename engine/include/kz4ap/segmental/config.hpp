@@ -152,6 +152,8 @@ struct SegmentalConfig {
     // nats: the adaptive beam (search.cpp): the margin above the ceiling's cut-off score, negative to leave it out; and what a boundary under the ceiling lets it out by.
     double adaptive_margin_nats = -1.0;
     double adaptive_relax_nats = 0.05;
+    // nats: what a story of a stretched fist counts for above its score when the ceiling ranks the stories: what its fist's prior took from it once.
+    double ceiling_stretch_bonus_nats = 0.0;
 
     // --- A channel in doubt (SegmentalDecoder::update_effort) ---
 
@@ -161,6 +163,7 @@ struct SegmentalConfig {
     int doubt_ceiling = 0;
     double doubt_window_s = 4.0;           // s
     double doubt_clear_rate = 3.0;         // nats/s
+    double doubt_clear_earning = 1e300;    // nats/s: dS / window at or above this clears it too
     double doubt_hold_s = 30.0;            // s
     // 1: an element may end only within this many standard deviations of ln(length) of its median. Heuristic.
     double duration_z_max = 4.0;
