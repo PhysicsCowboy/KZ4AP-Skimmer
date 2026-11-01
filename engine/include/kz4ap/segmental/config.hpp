@@ -151,9 +151,6 @@ struct SegmentalConfig {
     // differs by a length within this share of a dot, against a lower score. 0 leaves it out. A heuristic by measurement, on a slice of seed 1: 0.125 reads A2 0.2763, C2 0.0625, E2
     // 0.4870, I2 0.0210 against 0.2767, 0.0628, 0.4904, 0.0211 with none, by signal 155 better, 147 worse, for 11% less decoder CPU on real 40 m; 0.25 and 0.5 save 16% and 19% and read C2 0.0635, 0.0637.
     double open_spacing_dots = 0.125;
-    // nats: the adaptive beam (search.cpp): the margin above the ceiling's cut-off score, negative to leave it out; and what a boundary under the ceiling lets it out by.
-    double adaptive_margin_nats = -1.0;
-    double adaptive_relax_nats = 0.05;
     // A heuristic by measurement: a weak Farnsworth sender's true story stands 8 nats behind its plain rivals (gap_stretch_prior) until it has earned that, and the ceiling used
     // to take it first. At +8 nats A2 reads 0.2785 and C2 0.0637, the plain stories displaced; at +4 nats as above.
     // nats: what a story of a stretched fist counts for above its score when the ceiling ranks the stories: what its fist's prior took from it once.

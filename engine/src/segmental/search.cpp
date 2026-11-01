@@ -323,10 +323,6 @@ struct Search::Impl {
         return true;
     }
 
-    // nats: the beam in force. Standard practice (an adaptive beam, as in speech recognition's decoders): a boundary at the ceiling leaves its cut-off score as next
-    // boundary's beam, plus adaptive_margin_nats, so that what the ceiling would drop is not opened to be dropped; a boundary under the ceiling lets it out again by
-    // adaptive_relax_nats, up to beam_nats.
-    double beam_now = 0.0;
 
     double correction(bool gap, int length, std::int64_t j) {
         if (levels == nullptr) return 0.0;
@@ -342,7 +338,6 @@ struct Search::Impl {
 
     Impl(const SegmentalConfig& c, const ModelTables& m, const RunningSums& s, const LevelTables* l)
         : config(c), model(m), sums(s), levels(l) {
-        beam_now = c.beam_nats;
         const std::size_t slots = static_cast<std::size_t>(m.fists()) * static_cast<std::size_t>(m.nodes());
         gap_slots = new_slot_table(slots);
         mark_slots = new_slot_table(slots);
@@ -578,7 +573,7 @@ void Search::Impl::boundary(std::int64_t j) {
     if (silent_end > -kInf) best = std::max(best, silent_end + gap_reach_new);
     if (best == -kInf) best = 0.0;
     last_best = best;
-    const double floor = best - beam_now;
+    const double floor = best - config.beam_nats;
 
     // 4. Open the new elements inside the beam.
     opened_gaps.clear();
@@ -777,9 +772,6 @@ void Search::Impl::boundary(std::int64_t j) {
         };
         keep_best(gaps, gap_partial);
         keep_best(marks, mark_partial);
-        if (config.adaptive_margin_nats >= 0.0) beam_now = std::min(config.beam_nats, best - lowest + config.adaptive_margin_nats);
-    } else if (beam_now < config.beam_nats) {
-        beam_now = std::min(config.beam_nats, beam_now + config.adaptive_relax_nats);
     }
 
     // The no-signal story leaves when behind the beam, except when nothing else stands.
