@@ -4,8 +4,10 @@
 #include "kz4ap/channelizer.hpp"
 #include "kz4ap/morse.hpp"
 #include "kz4ap/segmental/evidence.hpp"
+#include "kz4ap/segmental/fast_math.hpp"
 #include "kz4ap/segmental/search.hpp"
 #include "kz4ap/segmental_decoder.hpp"
+#include "kz4ap/viterbi/observation.hpp"
 
 #include <gtest/gtest.h>
 
@@ -23,6 +25,20 @@ using namespace kz4ap::segmental;
 namespace {
 
 using Window = std::array<double, kEdgeCount>;
+
+TEST(SegmentalFastMath, HoldsItsStatedErrors) {
+    for (double y = 0.0; y > -40.0; y -= 0.0037) {
+        const double exact = std::exp(y);
+        EXPECT_LE(std::fabs(fast::exp_neg(y) - exact), 7e-10 * exact) << y;
+    }
+    EXPECT_EQ(fast::exp_neg(0.0), 1.0);
+    EXPECT_EQ(fast::exp_neg(-41.0), 0.0);
+    EXPECT_EQ(fast::exp_neg(-1e9), 0.0);
+    for (double x = 1e-300; x < 1e300; x *= 1.37) EXPECT_NEAR(fast::log(x), std::log(x), 2e-11) << x;
+    for (double x = 1e-6; x < 2.0; x *= 1.0003) EXPECT_NEAR(fast::log(x), std::log(x), 2e-11) << x;
+    for (double x = 0.0; x < 4000.0; x += x < 40.0 ? 0.0013 : 0.37) EXPECT_NEAR(fast::ln_i0(x), viterbi::ln_i0(x), 2e-5) << x;
+    EXPECT_NEAR(fast::ln_i0(1e7), viterbi::ln_i0(1e7), 1e-5);
+}
 
 TEST(RunningSums, ScoreAnIntervalByOneSubtraction) {
     std::mt19937 rng(1);

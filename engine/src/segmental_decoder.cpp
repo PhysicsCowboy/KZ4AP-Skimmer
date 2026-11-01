@@ -1,5 +1,6 @@
 #include "kz4ap/segmental_decoder.hpp"
 
+#include "kz4ap/segmental/fast_math.hpp"
 #include "kz4ap/viterbi/observation.hpp"
 
 #include <algorithm>
@@ -205,12 +206,12 @@ bool SegmentalDecoder::choose_leader(double stream_now_s, bool may_drop) {
 }
 
 void SegmentalDecoder::FreeKey::step(double l1, double top) {
-    const double new_up = (stay * up + change * down) * std::exp(-top);
-    const double new_down = (stay * down + change * up) * std::exp(l1 - top);
+    const double new_up = (stay * up + change * down) * segmental::fast::exp_neg(-top);
+    const double new_down = (stay * down + change * up) * segmental::fast::exp_neg(l1 - top);
     const double total = new_up + new_down;
     up = new_up / total;
     down = new_down / total;
-    nats += top + std::log(total);
+    nats += top + segmental::fast::log(total);
 }
 
 void SegmentalDecoder::Stream::advance_free_key() {

@@ -1,5 +1,6 @@
 #include "kz4ap/segmental/evidence.hpp"
 
+#include "kz4ap/segmental/fast_math.hpp"
 #include "kz4ap/viterbi/observation.hpp"
 
 #include <algorithm>
@@ -41,7 +42,7 @@ LevelTables::Term make_term(double r2, double s, double f2, double v_m) {
 
 // x less w z^2, nats.
 inline double term_value(const LevelTables::Term& term, double z, double z2, double w) {
-    return w * (-term.inverse_v * z2 + term.constant + viterbi::ln_i0(term.i0_coeff * z));
+    return w * (-term.inverse_v * z2 + term.constant + fast::ln_i0(term.i0_coeff * z));
 }
 
 }  // namespace
@@ -124,8 +125,8 @@ double LevelTables::short_score(bool gap, int length, std::int64_t i, const Runn
             top = std::max(top, values[g]);
         }
         double sum = 0.0;
-        for (int g = 0; g < context.count; ++g) sum += context.probability[static_cast<std::size_t>(g)] * std::exp(values[g] - top);
-        score += w_ * z2 + top + std::log(sum);
+        for (int g = 0; g < context.count; ++g) sum += context.probability[static_cast<std::size_t>(g)] * fast::exp_neg(values[g] - top);
+        score += w_ * z2 + top + fast::log(sum);
     }
     return score;
 }
@@ -214,7 +215,7 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2) {
     top_[slot] = top;
     // One step of the key, then the sample: key-up scores 0, key-down x; relative to the largest, to stay in range.
     const double stay = 1.0 - key_switch_;
-    const double up_scale = std::exp(-top);
+    const double up_scale = fast::exp_neg(-top);
     double total = 0.0;
     double* up = alpha_.data();
     double* down = alpha_.data() + levels_;
@@ -222,7 +223,7 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2) {
         const double from_up = up[level];
         const double from_down = down[level];
         const double new_up = (stay * from_up + key_switch_ * from_down) * up_scale;
-        const double new_down = (stay * from_down + key_switch_ * from_up) * std::exp(common + x[level] - top);
+        const double new_down = (stay * from_down + key_switch_ * from_up) * fast::exp_neg(common + x[level] - top);
         up[level] = new_up;
         down[level] = new_down;
         total += new_up + new_down;
@@ -312,11 +313,11 @@ void LevelEvidence::commit(bool all) {
             const float* x = x_.data() + sample_slot * levels;
             const double common = tables_.w() * z_[sample_slot] * z_[sample_slot];
             const double top = top_[sample_slot];
-            const double up_scale = std::exp(-top);
+            const double up_scale = fast::exp_neg(-top);
             double total = 0.0;
             for (std::size_t level = 0; level < levels; ++level) {
                 const double seen_up = up[level] * up_scale;
-                const double seen_down = down[level] * std::exp(common + x[level] - top);
+                const double seen_down = down[level] * fast::exp_neg(common + x[level] - top);
                 const double new_up = stay * seen_up + key_switch_ * seen_down;
                 const double new_down = stay * seen_down + key_switch_ * seen_up;
                 up[level] = new_up;
@@ -380,8 +381,8 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
         double top = -1e300;
         for (int i = 0; i < count; ++i) top = std::max(top, static_cast<double>(x[active[i]]));
         double sum = 0.0;
-        for (int i = 0; i < count; ++i) sum += active_p[i] * std::exp(x[active[i]] - top);
-        const double l1 = count > 0 ? common + top + std::log(sum) : 0.0;
+        for (int i = 0; i < count; ++i) sum += active_p[i] * fast::exp_neg(x[active[i]] - top);
+        const double l1 = count > 0 ? common + top + fast::log(sum) : 0.0;
 
         std::array<double, kEdgeCount> rise{};
         std::array<double, kEdgeCount> fall{};
@@ -396,11 +397,11 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
             }
             double up_sum = 0.0, down_sum = 0.0;
             for (int i = 0; i < edge_count; ++i) {
-                up_sum += edge_p[i] * std::exp(up[i] - up_top);
-                down_sum += edge_p[i] * std::exp(down[i] - down_top);
+                up_sum += edge_p[i] * fast::exp_neg(up[i] - up_top);
+                down_sum += edge_p[i] * fast::exp_neg(down[i] - down_top);
             }
-            rise[static_cast<std::size_t>(position)] = edge_count > 0 ? common + up_top + std::log(up_sum) : 0.0;
-            fall[static_cast<std::size_t>(position)] = edge_count > 0 ? common + down_top + std::log(down_sum) : 0.0;
+            rise[static_cast<std::size_t>(position)] = edge_count > 0 ? common + up_top + fast::log(up_sum) : 0.0;
+            fall[static_cast<std::size_t>(position)] = edge_count > 0 ? common + down_top + fast::log(down_sum) : 0.0;
         }
         SampleContext context;
         context.z = z;
