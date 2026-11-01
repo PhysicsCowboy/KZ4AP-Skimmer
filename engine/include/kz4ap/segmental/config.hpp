@@ -146,6 +146,9 @@ struct SegmentalConfig {
     double beam_nats = 15.0;
     // stories: the most open elements kept. Heuristic, set by measurement.
     int ceiling = 3000;
+    // dots of the story's speed: a new element is not opened if one opened within this time in the same state (kind, fist, node) has a base at least as high. Its future
+    // differs by a length within this share of a dot, against a lower score. 0 leaves it out.
+    double open_spacing_dots = 0.0;
     // 1: an element may end only within this many standard deviations of ln(length) of its median. Heuristic.
     double duration_z_max = 4.0;
 };

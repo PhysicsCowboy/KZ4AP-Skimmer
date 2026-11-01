@@ -1,12 +1,14 @@
 // kz4ap-calls: the callsign stage over a recording, without the app: the list it reports, as CSV, and the stage's own CPU.
-//   kz4ap-calls FILE.wav --out CALLS.csv [--decoder segmental] [--threads N] [--known MASTER.SCP] [--log EVENTS.jsonl] [--candidates ALL.csv] [--readings ALL.csv] [--set NAME=VALUE]...
+//   kz4ap-calls FILE.wav --out CALLS.csv [--decoder segmental] [--threads N] [--known MASTER.SCP] [--log EVENTS.jsonl] [--candidates ALL.csv] [--readings ALL.csv] [--set NAME=VALUE]... [--dset NAME=VALUE]...
 //   kz4ap-calls --replay EVENTS.jsonl --out CALLS.csv [--known MASTER.SCP] [--set NAME=VALUE]...
 // --log keeps the decoder's events, so that --replay can try the stage's settings in seconds, on the same text.
+// --dset sets the segmental decoder's settings, as kz4ap-bench's --set does; --set is the stage's.
 #include "kz4ap/callsign.hpp"
 #include "kz4ap/decoder_name.hpp"
 #include "kz4ap/engine.hpp"
 #include "kz4ap/event_bus.hpp"
 #include "kz4ap/wav_reader.hpp"
+#include "viterbi_json.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -33,6 +35,7 @@ struct Options {
     std::string wav, replay, out, known, log, candidates, readings, decoder = "segmental";
     int threads = 4;
     CallSearchConfig config;
+    std::vector<std::string> decoder_settings;  // --dset
 };
 
 void set_value(CallSearchConfig& c, const std::string& assignment) {
@@ -74,6 +77,7 @@ Options parse(int argc, char** argv) {
         else if (a == "--decoder") o.decoder = next();
         else if (a == "--threads") o.threads = std::stoi(next());
         else if (a == "--set") set_value(o.config, next());
+        else if (a == "--dset") o.decoder_settings.push_back(next());
         else if (!a.empty() && a[0] != '-' && o.wav.empty()) o.wav = a;
         else throw std::runtime_error("unknown argument: " + a);
     }
@@ -158,6 +162,7 @@ int main(int argc, char** argv) {
             EngineConfig config = engine_config_for_decoder(o.decoder);
             config.sample_rate = reader.sample_rate();
             config.worker_threads = o.threads;
+            for (const std::string& setting : o.decoder_settings) kz4ap::bench::apply_segmental_setting(config.segmental, setting);
             std::unique_ptr<std::ofstream> log;
             if (!o.log.empty()) log = std::make_unique<std::ofstream>(o.log);
             double next_mark = 0.0;

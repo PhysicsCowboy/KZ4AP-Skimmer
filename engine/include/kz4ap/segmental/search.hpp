@@ -112,6 +112,8 @@ public:
         return std::span<const OpenEnd>(open_ends_).subspan(first, static_cast<std::size_t>(open_end_first_[static_cast<std::size_t>(length) + 1]) - first);
     }
     double open_survival(int length) const { return open_survival_[static_cast<std::size_t>(length)]; }
+    // samples: SegmentalConfig::open_spacing_dots at a fist's speed
+    int open_spacing(int fist) const { return open_spacing_[static_cast<std::size_t>(fist)]; }
     // The fists, in the order of their speeds: speed s's are first_fist(s) ... first_fist(s + 1) - 1, g = 1 first.
     int fists() const { return fists_; }
     int first_fist(int speed) const { return first_fist_[static_cast<std::size_t>(speed)]; }
@@ -154,6 +156,7 @@ private:
     std::vector<OpenEnd> open_ends_;
     std::vector<int> open_end_first_;         // by length, and the count at the end
     std::vector<double> open_survival_;       // by length
+    std::vector<int> open_spacing_;           // by fist
     std::vector<Range> ranges_;
     std::vector<double> log_end_;
     std::vector<double> mark_survival_;

@@ -200,6 +200,9 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
         }
         open_survival_.push_back(survive);
     }
+    open_spacing_.resize(static_cast<std::size_t>(fists_));
+    for (int f = 0; f < fists_; ++f)
+        open_spacing_[static_cast<std::size_t>(f)] = static_cast<int>(config.open_spacing_dots * dot_s(speed_of(f)) / model.sample_interval_s);
     open_end_first_.push_back(static_cast<int>(open_ends_.size()));
 }
 
@@ -233,6 +236,24 @@ struct FreeSlots {
 };
 using SlotTable = std::unique_ptr<Slot[], FreeSlots>;
 
+// The last element opened in a state; all zeros for none.
+struct LastOpened {
+    double base;
+    std::int64_t boundary_plus_1;
+};
+static_assert(sizeof(LastOpened) == 16);
+
+struct FreeLastOpened {
+    void operator()(LastOpened* last) const { std::free(last); }
+};
+using LastOpenedTable = std::unique_ptr<LastOpened[], FreeLastOpened>;
+
+LastOpenedTable new_last_opened_table(std::size_t count) {
+    auto* last = static_cast<LastOpened*>(std::calloc(count, sizeof(LastOpened)));
+    if (last == nullptr) throw std::bad_alloc();
+    return LastOpenedTable(last);
+}
+
 SlotTable new_slot_table(std::size_t count) {
     auto* slots = static_cast<Slot*>(std::calloc(count, sizeof(Slot)));
     if (slots == nullptr) throw std::bad_alloc();
@@ -253,6 +274,8 @@ struct Search::Impl {
     std::vector<Element> live;
     SlotTable gap_slots;   // by fist x nodes + node: a mark ended, a gap starts
     SlotTable mark_slots;  // by fist x nodes + node: a gap ended, a mark starts
+    LastOpenedTable gap_opened;   // by fist x nodes + node, read only with SegmentalConfig::open_spacing_dots
+    LastOpenedTable mark_opened;
     std::vector<double> above_ceiling;  // the ceiling's scratch
     std::vector<std::int32_t> gap_touched;
     std::vector<std::int32_t> mark_touched;
@@ -285,6 +308,15 @@ struct Search::Impl {
     // until asked for.
     std::array<std::array<double, kEdgeCount - 1>, 2> short_correction{};
 
+    bool spacing_on = false;
+    // Whether an element of this base may open in this state at j (SegmentalConfig::open_spacing_dots); if so, it is noted.
+    static bool may_open(LastOpened& last, int spacing, double base, std::int64_t j) {
+        if (last.boundary_plus_1 != 0 && j + 1 - last.boundary_plus_1 <= spacing && base <= last.base) return false;
+        last.base = base;
+        last.boundary_plus_1 = j + 1;
+        return true;
+    }
+
     double correction(bool gap, int length, std::int64_t j) {
         if (levels == nullptr) return 0.0;
         double& cached = short_correction[gap ? 1 : 0][static_cast<std::size_t>(length - 1)];
@@ -302,6 +334,11 @@ struct Search::Impl {
         const std::size_t slots = static_cast<std::size_t>(m.fists()) * static_cast<std::size_t>(m.nodes());
         gap_slots = new_slot_table(slots);
         mark_slots = new_slot_table(slots);
+        spacing_on = c.open_spacing_dots > 0.0;
+        if (spacing_on) {
+            gap_opened = new_last_opened_table(slots);
+            mark_opened = new_last_opened_table(slots);
+        }
         partial.reserve(4096);
     }
 
@@ -524,6 +561,7 @@ void Search::Impl::boundary(std::int64_t j) {
     for (const std::int32_t index : gap_touched) {
         const Slot& slot = gap_slots[static_cast<std::size_t>(index)];
         if (slot.score + gap_reach_new < floor) continue;
+        if (spacing_on && !may_open(gap_opened[static_cast<std::size_t>(index)], model.open_spacing(index / model.nodes()), slot.score, j)) continue;
         const Element& parent = live[static_cast<std::size_t>(slot.parent)];
         Element e{};
         e.base = slot.score;
@@ -545,6 +583,7 @@ void Search::Impl::boundary(std::int64_t j) {
     for (const std::int32_t index : mark_touched) {
         const Slot& slot = mark_slots[static_cast<std::size_t>(index)];
         if (slot.score + rise - c11 + mark_reach_new < floor) continue;
+        if (spacing_on && !may_open(mark_opened[static_cast<std::size_t>(index)], model.open_spacing(index / model.nodes()), slot.score + rise - c11, j)) continue;
         const Element& parent = live[static_cast<std::size_t>(slot.parent)];
         Element e{};
         e.base = slot.score + rise - c11;
