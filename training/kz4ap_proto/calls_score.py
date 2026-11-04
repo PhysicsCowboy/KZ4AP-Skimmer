@@ -1,9 +1,16 @@
 """Scores a run's call list: against another program's list, or against a generated recording's truth.
 
     python -m kz4ap_proto.calls_score compare RUN.csv OTHER [--name-a NAME] [--name-b NAME] [--out OUT.csv]
+        [--spotter CALL]... [--continent NA] [--from UTC] [--to UTC] [--khz LOW HIGH] [--tx-mode CW]
     python -m kz4ap_proto.calls_score truth RUN.csv LABELS.json [--attribution-hz HZ] [--out OUT.csv]
 
 RUN.csv is what kz4ap-calls --out or kz4ap-skimmer --calls writes (one row per call), or any file the reader below accepts.
+
+**The Reverse Beacon Network's day files** (`compare`'s filters; SpotFilter in read_calls_file): when OTHER is one, `--spotter` keeps the spots of
+those skimmers (its `callsign` column; repeatable), `--continent` those of skimmers on one continent (`de_cont`), `--from` and `--to` a
+UTC window (`date`, `YYYY-MM-DD HH:MM:SS`; ISO 8601 with `T`, `Z` or fractions is accepted and cut to the second; from inclusive, to
+exclusive), `--khz` a frequency span (`freq`, kHz, inclusive), `--tx-mode` one mode (`tx_mode`). A row that lacks a filtered column is
+dropped; the dropped rows are counted.
 
 **What the reader accepts** (read_calls_file). CW Skimmer's exact export format is not known here, so the input is forgiving, and the
 adapter used is printed so that a wrong guess shows:
@@ -102,6 +109,50 @@ class CallFile:
     calls: dict[str, Listed]
     skipped_lines: int = 0
     skipped_examples: list[str] = field(default_factory=list)
+    filtered: int = 0  # rows a SpotFilter dropped
+
+
+def _utc_second(text: str) -> str:
+    """A UTC time cut to `YYYY-MM-DD HH:MM:SS`, the RBN's form, so that times compare as text."""
+    return text.strip().replace("T", " ").rstrip("Z")[:19]
+
+
+@dataclass
+class SpotFilter:
+    """Which rows of a Reverse Beacon Network day file to keep; see the module's description. None keeps every row."""
+    spotters: set[str] | None = None
+    continent: str | None = None
+    start_utc: str | None = None  # inclusive
+    end_utc: str | None = None  # exclusive
+    low_khz: float | None = None
+    high_khz: float | None = None
+    tx_mode: str | None = None
+
+    def keeps(self, row: dict[str, str]) -> bool:
+        if self.spotters is not None and (row.get("callsign") or "").strip().upper() not in self.spotters:
+            return False
+        if self.continent is not None and (row.get("de_cont") or "").strip().upper() != self.continent.upper():
+            return False
+        if self.tx_mode is not None and (row.get("tx_mode") or "").strip().upper() != self.tx_mode.upper():
+            return False
+        if self.start_utc is not None or self.end_utc is not None:
+            when = row.get("date")
+            if not when:
+                return False
+            when = _utc_second(when)
+            if self.start_utc is not None and when < _utc_second(self.start_utc):
+                return False
+            if self.end_utc is not None and when >= _utc_second(self.end_utc):
+                return False
+        if self.low_khz is not None or self.high_khz is not None:
+            khz = _to_float(row.get("freq"))
+            if khz is None:
+                return False
+            if self.low_khz is not None and khz < self.low_khz:
+                return False
+            if self.high_khz is not None and khz > self.high_khz:
+                return False
+        return True
 
 
 def _note(calls: dict[str, Listed], word: str, count: int = 1, freq: float | None = None, row: dict[str, str] | None = None) -> bool:
@@ -156,18 +207,21 @@ def _row_khz(row: dict[str, str]) -> float | None:
     return value / 1000.0 if value is not None else None
 
 
-def _read_csv(text: str, call_column: str) -> tuple[dict[str, Listed], int, list[str]]:
+def _read_csv(text: str, call_column: str, spot_filter: SpotFilter | None = None) -> tuple[dict[str, Listed], int, list[str], int]:
     calls: dict[str, Listed] = {}
-    skipped, examples = 0, []
+    skipped, examples, filtered = 0, [], 0
     reader = csv.DictReader(io.StringIO(text), skipinitialspace=True)
     reader.fieldnames = [name.strip().lower() for name in (reader.fieldnames or [])]
     for row in reader:
+        if spot_filter is not None and not spot_filter.keeps(row):
+            filtered += 1
+            continue
         count = _to_float(row.get("count"))
         if not _note(calls, row.get(call_column) or "", count=int(count) if count else 1, freq=_row_khz(row), row=row):
             skipped += 1
             if len(examples) < 5:
                 examples.append(str(row.get(call_column)))
-    return calls, skipped, examples
+    return calls, skipped, examples, filtered
 
 
 def _read_lines(text: str) -> tuple[dict[str, Listed], int, list[str], bool]:
@@ -203,23 +257,28 @@ def _read_lines(text: str) -> tuple[dict[str, Listed], int, list[str], bool]:
     return calls, skipped, examples, lines > 0 and spots * 2 > lines
 
 
-def read_calls_text(text: str) -> CallFile:
-    """Reads a call list of any accepted form; see the module's description."""
+def read_calls_text(text: str, spot_filter: SpotFilter | None = None) -> CallFile:
+    """Reads a call list of any accepted form; see the module's description. spot_filter applies to a CSV only (an RBN day file):
+    ValueError for any other form."""
     text = text.lstrip("﻿")
     if _ADIF_CALL.search(text):
+        if spot_filter is not None:
+            raise ValueError("spot filters apply to a Reverse Beacon Network CSV, not to ADIF")
         return CallFile("adif", _read_adif(text))
     first = next((line for line in text.splitlines() if line.strip()), "")
     if "," in first:
         column = _call_column(next(csv.reader([first], skipinitialspace=True)))
         if column:
-            calls, skipped, examples = _read_csv(text, column)
-            return CallFile("csv", calls, skipped, examples)
+            calls, skipped, examples, filtered = _read_csv(text, column, spot_filter)
+            return CallFile("csv", calls, skipped, examples, filtered)
+    if spot_filter is not None:
+        raise ValueError("spot filters apply to a Reverse Beacon Network CSV, not to spots or a plain list")
     calls, skipped, examples, spots = _read_lines(text)
     return CallFile("spots" if spots else "list", calls, skipped, examples)
 
 
-def read_calls_file(path: str | Path) -> CallFile:
-    return read_calls_text(Path(path).read_text(encoding="utf-8", errors="replace"))
+def read_calls_file(path: str | Path, spot_filter: SpotFilter | None = None) -> CallFile:
+    return read_calls_text(Path(path).read_text(encoding="utf-8", errors="replace"), spot_filter)
 
 
 def edit_distance_one(a: str, b: str) -> bool:
@@ -340,6 +399,8 @@ def _describe(name: str, listed: CallFile) -> str:
     text = f"{name}: adapter {listed.adapter}, {len(listed.calls)} calls, {sum(e.count for e in listed.calls.values())} readings or spots"
     if listed.skipped_lines:
         text += f", {listed.skipped_lines} lines skipped, for example {listed.skipped_examples[:3]}"
+    if listed.filtered:
+        text += f", {listed.filtered} rows outside the filters"
     return text
 
 
@@ -352,6 +413,12 @@ def main(argv: list[str] | None = None) -> int:
     compare.add_argument("--name-a", default="run")
     compare.add_argument("--name-b", default="other")
     compare.add_argument("--out", help="one row per call: call, in which list, counts")
+    compare.add_argument("--spotter", action="append", help="OTHER, an RBN day file: keep this skimmer's spots (repeatable)")
+    compare.add_argument("--continent", help="OTHER, an RBN day file: keep the spots of skimmers on this continent (de_cont), e.g. NA")
+    compare.add_argument("--from", dest="start_utc", help="OTHER, an RBN day file: spots at or after this UTC time")
+    compare.add_argument("--to", dest="end_utc", help="OTHER, an RBN day file: spots before this UTC time")
+    compare.add_argument("--khz", nargs=2, type=float, metavar=("LOW", "HIGH"), help="OTHER, an RBN day file: spots in this span, kHz")
+    compare.add_argument("--tx-mode", help="OTHER, an RBN day file: spots of this mode (tx_mode), e.g. CW")
     truth = commands.add_parser("truth", help="precision and recall on a generated recording")
     truth.add_argument("run")
     truth.add_argument("labels")
@@ -360,7 +427,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "compare":
-        a, b = read_calls_file(args.run), read_calls_file(args.other)
+        spot_filter = None
+        if args.spotter or args.continent or args.start_utc or args.end_utc or args.khz or args.tx_mode:
+            spot_filter = SpotFilter(
+                spotters={s.strip().upper() for s in args.spotter} if args.spotter else None, continent=args.continent,
+                start_utc=args.start_utc, end_utc=args.end_utc, low_khz=args.khz[0] if args.khz else None,
+                high_khz=args.khz[1] if args.khz else None, tx_mode=args.tx_mode)
+        a, b = read_calls_file(args.run), read_calls_file(args.other, spot_filter)
         c = compare_lists(a, b)
         print(_describe(args.name_a, a))
         print(_describe(args.name_b, b))

@@ -523,6 +523,47 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
     apply_setting(config.model, setting);
 }
 
+void apply_detector_setting(EngineConfig& config, const std::string& setting) {
+    const std::size_t equals = setting.find('=');
+    if (equals == std::string::npos || equals == 0)
+        throw std::invalid_argument("--detector needs NAME=VALUE, not '" + setting + "'");
+    const std::string name = setting.substr(0, equals);
+    const double value = std::stod(setting.substr(equals + 1));
+    DetectorConfig& d = config.detector;
+    const std::pair<const char*, double*> doubles[] = {
+        {"average_s", &d.average_s},
+        {"birth_s", &d.birth_s},
+        {"death_s", &d.death_s},
+        {"attribution_distance_hz", &d.attribution_distance_hz},
+        {"peak_radius_hz", &d.peak_radius_hz},
+        {"level_radius_hz", &d.level_radius_hz},
+        {"candidate_step_hz", &d.candidate_step_hz},
+        {"local_floor_radius_hz", &d.local_floor_radius_hz},
+        {"dc_guard_hz", &d.dc_guard_hz},
+        {"prominence_radius_hz", &d.prominence_radius_hz},
+        {"follow_radius_hz", &d.follow_radius_hz},
+        {"sideband_radius_hz", &d.sideband_radius_hz},
+        {"dc_block_s", &config.dc_block_s},
+    };
+    for (const auto& [field, target] : doubles) {
+        if (name == field) {
+            *target = value;
+            return;
+        }
+    }
+    if (name == "threshold_db") d.threshold_db = static_cast<float>(value);
+    else if (name == "hysteresis_db") d.hysteresis_db = static_cast<float>(value);
+    else if (name == "prominence_db") d.prominence_db = static_cast<float>(value);
+    else if (name == "sideband_db") d.sideband_db = static_cast<float>(value);
+    else if (name == "sideband_mirror_db") d.sideband_mirror_db = static_cast<float>(value);
+    else if (name == "fft_factor") d.fft_factor = static_cast<int>(value);
+    else if (name == "floor_every_frames") d.floor_every_frames = static_cast<int>(value);
+    else if (name == "max_tracks") d.max_tracks = static_cast<std::size_t>(value);
+    else if (name == "one_track_per_peak") d.one_track_per_peak = value != 0.0;
+    else if (name == "first_retirement_open") config.first_retirement_open = static_cast<int>(value);
+    else throw std::invalid_argument("--detector: unknown parameter '" + name + "'");
+}
+
 viterbi::ViterbiConfig viterbi_config_from_json(const ordered_json& j) {
     if (!j.is_object()) throw std::invalid_argument("a configuration must be a JSON object");
     viterbi::ViterbiConfig config;

@@ -137,3 +137,46 @@ def test_command_line(tmp_path, capsys):
     other.write_text("DX de A1-#: 7025.1 K1ABC 12 dB 25 WPM CQ 1234Z\n")
     assert calls_score.main(["compare", str(run), str(other)]) == 0
     assert "in both 1; in run only 1; in other only 0" in capsys.readouterr().out
+
+
+_RBN = ("callsign,de_pfx,de_cont,freq,band,dx,dx_pfx,dx_cont,mode,db,date,speed,tx_mode\n"
+        "N2GZ,K,NA,7026.9,40m,AJ1G,K,NA,CQ,20,2017-08-21 18:00:04,24,CW\n"
+        "N2GZ,K,NA,14028.3,20m,N4BP,K,NA,CQ,19,2017-08-21 18:00:34,29,CW\n"
+        "W3LPL,K,NA,7031.5,40m,W3UL,K,NA,CQ,11,2017-08-21 18:15:00,23,CW\n"
+        "DK8NE,DL,EU,7042.1,40m,K9BGL,K,NA,CQ,11,2017-08-21 18:05:19,28,CW\n"
+        "N2GZ,K,NA,7080.0,40m,K1RY,K,NA,CQ,9,2017-08-21 18:05:00,45,RTTY\n"
+        "N2GZ,K,NA,7037.1,40m,W3IUU,K,NA,CQ,5,2017-08-21 17:59:59,22,CW\n")
+
+
+def test_rbn_filters_by_spotter_continent_window_span_and_mode():
+    every = read_calls_text(_RBN)
+    assert set(every.calls) == {"AJ1G", "N4BP", "W3UL", "K9BGL", "K1RY", "W3IUU"}
+    own = read_calls_text(_RBN, calls_score.SpotFilter(spotters={"N2GZ"}, start_utc="2017-08-21T18:00:00.093Z",
+                                                        end_utc="2017-08-21 18:15:00", low_khz=7000.0, high_khz=7192.0, tx_mode="CW"))
+    assert set(own.calls) == {"AJ1G"}  # not 20 m, not RTTY, not before the window
+    assert own.filtered == 5
+    na = read_calls_text(_RBN, calls_score.SpotFilter(continent="NA", start_utc="2017-08-21 18:00:00", end_utc="2017-08-21 18:15:01",
+                                                       low_khz=7000.0, high_khz=7192.0, tx_mode="cw"))
+    assert set(na.calls) == {"AJ1G", "W3UL"}  # the window's end is exclusive; the European skimmer's spot dropped
+    with pytest.raises(ValueError):
+        read_calls_text("DX de A1-#: 7025.1 K1ABC 12 dB 25 WPM CQ 1234Z\n", calls_score.SpotFilter(continent="NA"))
+
+
+def test_kz4ap_skimmer_csv_with_absolute_frequency_and_utc():
+    text = ("call,base,freq_hz,freq_khz,first_s,reported_s,last_s,count,points,known,heard,framed,first_utc,last_utc\n"
+            "AJ1G,AJ1G,-68953.6,7027.046421,8.6,37.5,141.6,11,8.2,0,1,1,2017-08-21T18:01:08.600Z,2017-08-21T18:03:21.600Z\n")
+    listed = read_calls_text(text)
+    assert listed.calls["AJ1G"].freqs_khz == [7027.046421]
+    assert listed.calls["AJ1G"].row["first_utc"] == "2017-08-21T18:01:08.600Z"
+
+
+def test_command_line_rbn_filters(tmp_path, capsys):
+    run = tmp_path / "run.csv"
+    run.write_text("call,freq_khz\nAJ1G,7027.0\nK2DSW,7031.3\n")
+    rbn = tmp_path / "20170821.csv"
+    rbn.write_text(_RBN)
+    assert calls_score.main(["compare", str(run), str(rbn), "--spotter", "n2gz", "--from", "2017-08-21 18:00:00",
+                             "--to", "2017-08-21 18:31:00", "--khz", "7000", "7192", "--tx-mode", "CW"]) == 0
+    out = capsys.readouterr().out
+    assert "in both 1; in run only 1; in other only 0" in out
+    assert "5 rows outside the filters" in out

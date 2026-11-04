@@ -59,6 +59,26 @@ struct DetectorConfig {
     bool one_track_per_peak = false;
     // No new track within this of 0 Hz, Hz: an I/Q radio's own DC offset stands there, whatever the band holds. 0 for no such rule.
     double dc_guard_hz = 0.0;
+    // A peak (new or followed) must also stand prominence_db above the lowest bin between it and any higher bin within
+    // +/- prominence_radius_hz on either side: its topographic prominence within that window, dB re that lowest bin. A
+    // weaker station on a stronger one's skirt passes; a ripple of the stronger one's keying sidebands or of the noise on
+    // that skirt does not. 0 for no such test.
+    float prominence_db = 0.0f;
+    double prominence_radius_hz = 47.0;
+    // Keying sidebands: a keyed carrier's power spectrum is symmetric about the carrier (its envelope is real), so a peak with
+    // a bin at least sideband_db above it within +/- sideband_radius_hz on one side (the highest there, the carrier) whose
+    // mirror about that bin (the highest of the mirror bin and its two neighbors) stands no more than sideband_mirror_db below
+    // it, is that carrier's sideband and not a station. 0 for no such test.
+    float sideband_db = 0.0f;
+    float sideband_mirror_db = 3.0f;
+    double sideband_radius_hz = 150.0;
+    // Attribution::Distance: each frame a track moves to the strongest qualifying peak within this of its frequency, Hz; 0 for
+    // attribution_distance_hz (an answering station within the channel distance takes the track).
+    double follow_radius_hz = 0.0;
+    // The engine's (Engine): the detector reads its own spectrum, of fft_factor times the band's FFT (bins fft_factor
+    // times narrower) and a hop of half that FFT; 1 reads the band's frames. A power of two. The detector itself takes
+    // fft_size and hop as given.
+    int fft_factor = 1;
 };
 
 struct DetectorUpdate {
@@ -87,7 +107,10 @@ public:
     // A wide signal opens track after track at new peaks: at kRegionRetirements such retirements within kRegionRadiusHz of each
     // other in kRegionMemoryS, the whole of that radius closes the same way, from kRegionHoldS. All heuristics, set on real 40 m:
     // FT8 and speech give dozens a minute there, the CW of the same recordings none or one.
-    void retire(std::uint32_t id, double now_s, double hold_s);
+    //
+    // first_open: the first such retirement at a place within kLongestHoldS leaves the place open and counts toward no region;
+    // the next one there closes it for hold_s, as a first hold.
+    void retire(std::uint32_t id, double now_s, double hold_s, bool first_open = false);
     static constexpr double kLongestHoldS = 120.0;  // s: an FT8 frequency stays busy; a station there waits at most this.
     static constexpr double kRegionRadiusHz = 750.0;
     static constexpr int kRegionRetirements = 4;
@@ -133,6 +156,8 @@ private:
     int level_bins_ = 1;  // level_radius_hz in bins
     int step_bins_ = 1;   // candidate_step_hz in bins
     int local_floor_bins_ = 0;  // local_floor_radius_hz in bins
+    int prominence_bins_ = 0;   // prominence_radius_hz in bins
+    int sideband_bins_ = 0;     // sideband_radius_hz in bins
     double alpha_;
     float floor_db_ = 0.0f;  // the last floor taken (floor_every_frames), dB re 1 FS^2 per bin
     std::uint64_t frames_seen_ = 0;

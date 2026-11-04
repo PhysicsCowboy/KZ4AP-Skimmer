@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdint>
 #include <random>
 #include <stdexcept>
@@ -275,6 +276,47 @@ TEST(SignalDetectorHolds, ARetiredPlaceDoublesOnlyAfterTheHoldBeforeItHasEnded) 
     EXPECT_LT(second, 5.0);
 }
 
+TEST(SignalDetectorHolds, TheFirstRetirementAtAPlaceLeavesItOpenAndTheNextOnesHoldTwoFourAndEightSeconds) {
+    // retire's first_open (EngineConfig::first_retirement_open 2 on the segmental path: every retirement): reborn after the
+    // 0.5 s persistence alone, then after holds of 2, 4 and 8 s, each plus the persistence (the review's measurement, 2026-11-04).
+    SignalDetector d(config());
+    int i = 0;
+    ASSERT_GE(seconds_until_born(d, i, 200, 5.0), 0.0);
+    for (const double hold_s : {0.0, 2.0, 4.0, 8.0}) {
+        d.retire(d.tracks().at(0).id, frame_time(i), 2.0, true);
+        const double reborn = seconds_until_born(d, i, 200, 20.0);
+        EXPECT_GE(reborn, hold_s + 0.5 - 1e-6) << hold_s << " s";
+        EXPECT_LT(reborn, hold_s + 0.6) << hold_s << " s";
+    }
+}
+
+TEST(SignalDetectorHolds, AFirstOpenPlaceIsForgottenAfterTheLongestHold) {
+    SignalDetector d(config());
+    int i = 0;
+    ASSERT_GE(seconds_until_born(d, i, 200, 5.0), 0.0);
+    d.retire(d.tracks().at(0).id, frame_time(i), 2.0, true);
+    EXPECT_LT(seconds_until_born(d, i, 200, 20.0), 0.6);
+    // 125 s later (more than kLongestHoldS, 120 s): the place is forgotten, and a retirement there leaves it open again.
+    for (const double until = frame_time(i) + 125.0; frame_time(i) < until; ++i) d.process(frame(frame_time(i), {{200, -70.0f}}));
+    ASSERT_EQ(d.tracks().size(), 1u);
+    d.retire(d.tracks().at(0).id, frame_time(i), 2.0, true);
+    EXPECT_LT(seconds_until_born(d, i, 200, 20.0), 0.6);
+}
+
+TEST(SignalDetectorHolds, AFirstOpenRetirementWhereAPlainOneWasIsARepeat) {
+    SignalDetector d(config());
+    int i = 0;
+    ASSERT_GE(seconds_until_born(d, i, 200, 5.0), 0.0);
+    d.retire(d.tracks().at(0).id, frame_time(i), 2.0);
+    const double first = seconds_until_born(d, i, 200, 20.0);
+    EXPECT_GE(first, 2.5 - 1e-6);
+    EXPECT_LT(first, 2.6);
+    d.retire(d.tracks().at(0).id, frame_time(i), 2.0, true);
+    const double second = seconds_until_born(d, i, 200, 20.0);
+    EXPECT_GE(second, 4.5 - 1e-6);
+    EXPECT_LT(second, 4.6);
+}
+
 TEST(SignalDetectorHolds, OneWideSignalClosesItsRegionFromTheFirstHoldNotTheLongest) {
     // The tracks of one wide signal, retiring together: whatever their number, one closure of the region (the review's F2: three
     // retirements past the fourth took it from 30 s to 120 s at once, and a station in the clear lost 2 min).
@@ -294,4 +336,103 @@ TEST(SignalDetectorHolds, OneWideSignalClosesItsRegionFromTheFirstHoldNotTheLong
     const double opened = seconds_until_born(d, i, 105, 130.0);
     EXPECT_GE(opened, SignalDetector::kRegionHoldS);
     EXPECT_LT(opened, SignalDetector::kRegionHoldS + 1.0);
+}
+
+namespace {
+
+// The distance rule, a peak the highest within +/-1 bin, and the prominence test over +/-5 bins (100 Hz bins).
+DetectorConfig prominence_config(float prominence_db) {
+    DetectorConfig c = config();
+    c.attribution = Attribution::Distance;
+    c.attribution_distance_hz = 150.0;
+    c.peak_radius_hz = 100.0;
+    c.prominence_db = prominence_db;
+    c.prominence_radius_hz = 500.0;
+    return c;
+}
+
+// The tracks born over 1 s of a strong station at bin 100 with its skirt falling to the right, and at bin 103 `bump` dB re 1 FS^2.
+std::vector<Track> born_beside_a_skirt(const DetectorConfig& c, float bump) {
+    SignalDetector d(c);
+    std::vector<Track> born;
+    for (int i = 0; i < 200; ++i) {
+        const auto u = d.process(frame(frame_time(i), {{100, -50.0f}, {101, -60.0f}, {102, -70.0f}, {103, bump}, {104, -75.0f}}));
+        born.insert(born.end(), u.born.begin(), u.born.end());
+    }
+    return born;
+}
+
+}  // namespace
+
+TEST(SignalDetectorProminence, AWeakerStationOnAStrongOnesSkirtGetsItsOwnTrack) {
+    // 8 dB above the valley between it and the strong station: prominent at 6 dB.
+    const std::vector<Track> born = born_beside_a_skirt(prominence_config(6.0f), -62.0f);
+    ASSERT_EQ(born.size(), 2u);
+    EXPECT_NEAR(std::abs(born[1].freq_hz - born[0].freq_hz), 300.0, 50.0);
+}
+
+TEST(SignalDetectorProminence, ARippleOnTheSkirtIsNotAStation) {
+    // 2 dB above the valley: a ripple, no second track; without the test it is one.
+    EXPECT_EQ(born_beside_a_skirt(prominence_config(6.0f), -68.0f).size(), 1u);
+    EXPECT_EQ(born_beside_a_skirt(prominence_config(0.0f), -68.0f).size(), 2u);
+}
+
+TEST(SignalDetectorProminence, RefusesValuesThatAreNotAMeasure) {
+    DetectorConfig c = config();
+    c.prominence_db = -1.0f;
+    EXPECT_THROW(SignalDetector{c}, std::invalid_argument);
+    c = config();
+    c.prominence_radius_hz = -1.0;
+    EXPECT_THROW(SignalDetector{c}, std::invalid_argument);
+    c = config();
+    c.fft_factor = 3;
+    EXPECT_THROW(SignalDetector{c}, std::invalid_argument);
+    c = config();
+    c.fft_factor = 0;
+    EXPECT_THROW(SignalDetector{c}, std::invalid_argument);
+}
+
+namespace {
+
+// The tracks born over 1 s of a carrier at bin 100 with a symmetric skirt, and peaks at bins 97 and 103 of the given dB re 1 FS^2;
+// the sideband test over +/-5 bins, 10 dB, mirror within 3 dB (100 Hz bins).
+std::vector<Track> born_with_sidebands(float sideband_db, float low_db, float high_db) {
+    DetectorConfig c = prominence_config(0.0f);
+    c.sideband_db = sideband_db;
+    c.sideband_radius_hz = 500.0;
+    SignalDetector d(c);
+    std::vector<Track> born;
+    for (int i = 0; i < 200; ++i) {
+        const auto u = d.process(frame(frame_time(i), {{96, -75.0f}, {97, low_db}, {98, -70.0f}, {99, -60.0f}, {100, -50.0f},
+                                                       {101, -60.0f}, {102, -70.0f}, {103, high_db}, {104, -75.0f}}));
+        born.insert(born.end(), u.born.begin(), u.born.end());
+    }
+    return born;
+}
+
+}  // namespace
+
+TEST(SignalDetectorSidebands, AKeyedCarriersMirroredSidebandsAreNotStations) {
+    EXPECT_EQ(born_with_sidebands(10.0f, -65.0f, -65.0f).size(), 1u);
+    EXPECT_EQ(born_with_sidebands(0.0f, -65.0f, -65.0f).size(), 3u);  // without the test, two more tracks
+}
+
+TEST(SignalDetectorSidebands, AStationWithoutAMirrorIsOne) {
+    // At bin 103, 8 dB above what stands at its mirror: a station of its own.
+    const std::vector<Track> born = born_with_sidebands(10.0f, -70.0f, -62.0f);
+    ASSERT_EQ(born.size(), 2u);
+    EXPECT_NEAR(born[1].freq_hz - born[0].freq_hz, 300.0, 50.0);
+}
+
+TEST(SignalDetector, ReadsAFrameThatCarriesLinearPowerOnly) {
+    SignalDetector d(config());
+    std::size_t born = 0;
+    for (int i = 0; i < 200; ++i) {
+        SpectrumFrame f = frame(frame_time(i), {{200, -70.0f}});
+        f.power_fs2.resize(f.power_db.size());
+        for (std::size_t b = 0; b < f.power_db.size(); ++b) f.power_fs2[b] = std::pow(10.0f, f.power_db[b] / 10.0f);
+        f.power_db.clear();
+        born += d.process(f).born.size();
+    }
+    EXPECT_EQ(born, 1u);
 }

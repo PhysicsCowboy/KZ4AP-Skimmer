@@ -34,25 +34,17 @@ EngineConfig resolved(EngineConfig c) {
     const int automatic = choose_fft_size(c.sample_rate);  // also validates the sample rate
     if (c.fft_size == 0) c.fft_size = automatic;
     if (!(c.channel_distance_hz > 0)) throw std::invalid_argument("channel distance must be positive");
-    c.detector.attribution_distance_hz = c.channel_distance_hz;
-    // The segmental decoder runs on the air, where wide signals are: 1 kHz either side (heuristic: wide against a CW station's
-    // few bins, so that ten stations in it leave the lower quartile at the noise; on real 40 m I/Q it took out most of the false
-    // tracks). The other decoders keep the detector their test-set results were measured with.
-    if (c.decoder.front_end == FrontEnd::Segmental && c.detector.local_floor_radius_hz == 0.0) c.detector.local_floor_radius_hz = 1000.0;
-    if (c.decoder.front_end == FrontEnd::Segmental) {
-        c.detector.one_track_per_peak = true;
-        // Every 4th block, 85 ms at the usual block of 21.33 ms, against an average over average_s: heuristic. 8 192 bins selected 47 times/s is most of the detector's CPU.
-        c.detector.floor_every_frames = 4;
-        c.detector.dc_guard_hz = c.channel_distance_hz;
-    }
+    if (!c.as_given) apply_path_defaults(c);
+    if (!(c.dc_block_s >= 0.0) || !std::isfinite(c.dc_block_s)) throw std::invalid_argument("dc_block_s must be finite and not negative (s)");
     return c;
 }
 
 DetectorConfig detector_config(const EngineConfig& c) {
     DetectorConfig d = c.detector;
     d.sample_rate = c.sample_rate;
-    d.fft_size = c.fft_size;
-    d.hop = c.fft_size / 2;
+    if (d.fft_factor < 1 || (d.fft_factor & (d.fft_factor - 1)) != 0) throw std::invalid_argument("invalid signal detector config");
+    d.fft_size = c.fft_size * d.fft_factor;
+    d.hop = d.fft_size / 2;
     return d;
 }
 
@@ -79,6 +71,49 @@ void check_oracle_tracks(const EngineConfig& c) {
 
 }  // namespace
 
+void apply_path_defaults(EngineConfig& c) {
+    c.detector.attribution_distance_hz = c.channel_distance_hz;
+    if (c.decoder.front_end != FrontEnd::Segmental) return;
+    // The segmental decoder runs on the air, where wide signals are: 1 kHz either side (heuristic: wide against a CW station's
+    // few bins, so that ten stations in it leave the lower quartile at the noise; on real 40 m I/Q it took out most of the false
+    // tracks). The other decoders keep the detector their test-set results were measured with.
+    if (c.detector.local_floor_radius_hz == 0.0) c.detector.local_floor_radius_hz = 1000.0;
+    c.detector.one_track_per_peak = true;
+    // The detector's own spectrum, 4 times finer than the band's: 5.86 Hz bins and a window of 170.7 ms at every usual rate, a frame
+    // every 85.3 ms (docs/signal-processing.md, section 6). On the band's 23.4 Hz bins a neighbor's main lobe reaches 47 Hz, so a
+    // station within about 60 Hz of a stronger one was never a peak.
+    c.detector.fft_factor = 4;
+    // A peak the highest within +/-12 Hz (2 bins), its level read within +/-6 Hz, a candidate moving at most 6 Hz a frame (70 Hz/s):
+    // the Hann main lobe's half width is 2 bins, 11.7 Hz. Heuristics.
+    c.detector.peak_radius_hz = 12.0;
+    c.detector.level_radius_hz = 6.0;
+    c.detector.candidate_step_hz = 6.0;
+    // A peak beside a stronger one must stand 6 dB above the valley between them, within 150 Hz (the channel's half width), and is not
+    // a keyed carrier's sideband: no mirror as high about a bin 10 dB above it, within 3 dB. Heuristics, chosen by measurement.
+    c.detector.prominence_db = 6.0f;
+    c.detector.prominence_radius_hz = 150.0;
+    c.detector.sideband_db = 10.0f;
+    c.detector.sideband_mirror_db = 3.0f;
+    c.detector.sideband_radius_hz = 150.0;
+    // 30 Hz between tracks, a track following its own peak within 12 Hz a frame: a station 30 Hz or more from another opens its own
+    // channel. Heuristics, chosen by measurement.
+    c.detector.attribution_distance_hz = 30.0;
+    c.detector.follow_radius_hz = 12.0;
+    // 7 dB above the floor on the finer bins, where a keyed carrier stands 5 to 6 dB higher per bin than on the band's (measured, one
+    // station at 22 WPM): heuristic, chosen by measurement.
+    c.detector.threshold_db = 7.0f;
+    // Every 2nd frame, 171 ms, against an average over average_s: heuristic. 32 768 bins selected each frame is most of the detector's CPU.
+    c.detector.floor_every_frames = 2;
+    // A radio's DC offset is removed (its notch at 0 Hz, -3 dB re the passband at +/-0.016 Hz), so no guard keeps a station at the
+    // center from its track. 10 s, not 1 s: the average follows a keyed station within about 1 / (2 pi tau) of 0 Hz and takes its
+    // carrier out of its marks (at 1 s a station drifting from 0 Hz read 57 edits of 99, at 10 s none). Heuristic, chosen by measurement.
+    c.dc_block_s = 10.0;
+    c.detector.dc_guard_hz = 0.0;
+    // The first retirement at a place leaves it open: a station read badly at first (beside a neighbor) or listening gets a second
+    // track; the next retirement there closes it as before. Heuristic, chosen by measurement.
+    c.first_retirement_open = 2;
+}
+
 double oracle_frequency_hz(std::span<const OracleSegment> track, double t_s) {
     if (track.empty()) throw std::invalid_argument("oracle_frequency_hz: no segment");
     const OracleSegment* in_force = &track.front();
@@ -102,6 +137,11 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
     if (config_.worker_threads > 1) pool_ = std::make_unique<WorkerPool>(config_.worker_threads);
     oracle_ = !config_.oracle_frequencies_hz.empty();
     check_oracle_tracks(config_);
+    if (config_.detector.fft_factor > 1 && !oracle_) {
+        const int n = config_.fft_size * config_.detector.fft_factor;
+        detector_spectrum_.emplace(config_.sample_rate, n, n / 2, false);
+    }
+    if (config_.dc_block_s > 0.0) dc_alpha_ = 1.0 - std::exp(-1.0 / (config_.dc_block_s * config_.sample_rate));
     if (config_.decoder.front_end == FrontEnd::Segmental) {
         // A channel rate that is no whole multiple of the decoder's samples would fail deep inside it, in terms an operator cannot use.
         const double channel_samples = channelizer_.output_rate() * config_.segmental.model.sample_interval_s;
@@ -229,17 +269,23 @@ void Engine::process_hop(std::span<const Sample> hop) {
         stage_s += now - mark;
         mark = now;
     };
+    if (dc_alpha_ > 0.0) {
+        // The DC blocker; its average starts at 0 FS. (Started at the first hop's mean, the noise in that mean stayed in the input
+        // as a carrier at 0 Hz for about dc_block_s, about 21 dB below a station of +10 dB S500 at 48 kHz.)
+        dc_hop_.resize(hop.size());
+        for (std::size_t i = 0; i < hop.size(); ++i) {
+            const std::complex<double> x(hop[i]);
+            dc_ += dc_alpha_ * (x - dc_);
+            dc_hop_[i] = Sample(static_cast<float>(x.real() - dc_.real()), static_cast<float>(x.imag() - dc_.imag()));
+        }
+        hop = dc_hop_;
+    }
     std::vector<SpectrumFrame> frames = spectrum_.push(hop);
+    std::vector<SpectrumFrame> detector_frames;
+    if (detector_spectrum_) detector_frames = detector_spectrum_->push(hop);
     lap(stages_.spectrum_s);
-    for (auto& frame : frames) {
-        DetectorUpdate update;
-        if (!oracle_) update = detector_.process(frame);
-        lap(stages_.detector_s);
-        if (hiss_) hiss_->push(frame);  // the new decoder's hiss, before the frame moves on
-        if (segmental_shared_) band_power_fs2_ = frame.power_fs2;
-        lap(stages_.hiss_s);
-        bus_.publish(Event{std::move(frame)});
-        lap(stages_.publish_s);
+    // What the detector decided on one of its frames: channels closed and opened, and each channel's detector frequency.
+    const auto apply = [&](const DetectorUpdate& update) {
         for (const auto id : update.died) {
             const bool merged = std::find(update.merged.begin(), update.merged.end(), id) != update.merged.end();
             close_channel(id, merged ? TrackEnd::Merged : TrackEnd::Faded);
@@ -255,6 +301,22 @@ void Engine::process_hop(std::span<const Sample> hop) {
             }
         }
         lap(stages_.detector_s);
+    };
+    for (auto& frame : frames) {
+        DetectorUpdate update;
+        if (!oracle_ && !detector_spectrum_) update = detector_.process(frame);
+        lap(stages_.detector_s);
+        if (hiss_) hiss_->push(frame);  // the new decoder's hiss, before the frame moves on
+        if (segmental_shared_) band_power_fs2_ = frame.power_fs2;
+        lap(stages_.hiss_s);
+        bus_.publish(Event{std::move(frame)});
+        lap(stages_.publish_s);
+        apply(update);
+    }
+    for (const SpectrumFrame& frame : detector_frames) {
+        const DetectorUpdate update = detector_.process(frame);
+        lap(stages_.detector_s);
+        apply(update);
     }
     const Channelizer::Block block = channelizer_.begin_block(hop);
     lap(stages_.channelizer_s);
@@ -420,7 +482,8 @@ void Engine::judge_channels(std::uint64_t first_index) {
         if (verdict.retire) retiring_.emplace_back(entry->first, verdict);
     }
     for (const auto& [id, verdict] : retiring_) {
-        detector_.retire(id, now_s, verdict.hold_s);
+        detector_.retire(id, now_s, verdict.hold_s,
+                         config_.first_retirement_open == 2 || (config_.first_retirement_open == 1 && verdict.end == TrackEnd::Quiet));
         close_channel(id, verdict.end);
     }
     while (track_budget_ > 0 && channels_.size() > track_budget_) {

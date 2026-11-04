@@ -5,6 +5,7 @@
 #include "kz4ap/engine.hpp"
 #include "kz4ap/file_iq_source.hpp"
 #include "kz4ap/sdrplay_source.hpp"
+#include "kz4ap/utc_time.hpp"
 #include "recording_name.hpp"
 
 #include <QAction>
@@ -486,9 +487,20 @@ void MainWindow::build_status_bar() {
 bool MainWindow::open_recording(const QString& path, double start_s) {
     try {
         // The file first: one that cannot be opened leaves whatever is running as it is.
-        std::unique_ptr<FileIqSource> source = std::make_unique<FileIqSource>(std::filesystem::path(path.toStdWString()), start_s);
+        std::unique_ptr<FileIqSource> source = std::make_unique<FileIqSource>(
+            std::filesystem::path(path.toStdWString()), start_s, automation_.recording_center_hz, RecordingOptions{.mirror = automation_.mirror});
+        input_note_ = QStringLiteral("file_rate_hz: %1\nresampled_to_hz: %2\nmirrored: %3\n")
+                          .arg(source->recording().file_rate())
+                          .arg(source->recording().resampled() ? QString::number(source->recording().sample_rate()) : QStringLiteral("none"))
+                          .arg(source->recording().mirrored() ? 1 : 0);
         stop_stream();
         radio_on_ = false;
+        switch (source->center_origin()) {
+            case FileIqSource::CenterOrigin::Given: center_origin_ = QStringLiteral("given"); break;
+            case FileIqSource::CenterOrigin::Header: center_origin_ = QStringLiteral("header"); break;
+            case FileIqSource::CenterOrigin::FileName: center_origin_ = QStringLiteral("file name"); break;
+            case FileIqSource::CenterOrigin::Unknown: center_origin_ = QStringLiteral("unknown"); break;
+        }
         source->set_speed(speed_);
         current_path_ = path;
         origin_s_ = start_s;
@@ -537,6 +549,8 @@ void MainWindow::start_stream(std::unique_ptr<IqSource> source) {
     model_->set_bin_width_hz(static_cast<double>(rate) / fft_size);
     model_->set_center_hz(source->center_frequency_hz());
     calls_->start(known_calls_, source->center_frequency_hz());
+    stream_center_hz_ = source->center_frequency_hz();
+    stream_start_unix_ms_ = source->start_unix_ms();
     selected_track_.reset();
     waterfall_->start(rate, fft_size, source->center_frequency_hz(), origin_s_);
     meter_ = CpuMeter{};
@@ -798,7 +812,7 @@ void MainWindow::run_automation(const StreamStatus& status) {
 void MainWindow::write_calls() {
     QFile file(automation_.calls_path);
     if (!file.open(QIODevice::WriteOnly)) return;
-    file.write(callsign::calls_csv(calls_->search().calls(), calls_->center_hz()).c_str());
+    file.write(callsign::calls_csv(calls_->search().calls(), calls_->center_hz(), stream_start_unix_ms_).c_str());
 }
 
 void MainWindow::write_decoded() {
@@ -835,6 +849,10 @@ void MainWindow::write_report(const StreamStatus& status) {
     };
     out << "recording: " << QString::fromStdString(source_name_) << "\n";
     out << "decoder: " << QString::fromStdString(decoder_name_) << "\n";
+    out << "center_hz: " << (stream_center_hz_ ? QString::number(*stream_center_hz_, 'f', 1) : QStringLiteral("none")) << "\n";
+    if (!radio_on_) out << "center_from: " << center_origin_ << "\n" << input_note_;
+    out << "stream_start_utc: "
+        << (stream_start_unix_ms_ ? QString::fromStdString(utc_text(*stream_start_unix_ms_)) : QStringLiteral("none")) << "\n";
     out << "stream_s: " << status.stream_s << "\n";
     out << "wall_s: " << status.wall_s << "\n";
     out << "channel_seconds: " << status.channel_seconds << "\n";

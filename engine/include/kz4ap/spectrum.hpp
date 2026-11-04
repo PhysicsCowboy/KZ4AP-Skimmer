@@ -12,6 +12,7 @@ struct SpectrumFrame {
     double time_s = 0;            // time just after the frame's last input sample
     std::vector<float> power_db;  // fft_size bins, lowest frequency first:
                                   // bin i is at (i - fft_size/2) * sample_rate / fft_size Hz; dB re 1 FS^2
+                                  // (empty from an analyzer made without decibels)
     // The same power in FS^2, 10^(power_db / 10) but for the rounding of the dB value; SpectrumAnalyzer fills it so that
     // whoever needs linear power need not undo the logarithm per bin. May be empty in a frame made elsewhere (a reader
     // then converts).
@@ -22,7 +23,9 @@ struct SpectrumFrame {
 // reads 20*log10(A) dB in its bin.
 class SpectrumAnalyzer {
 public:
-    SpectrumAnalyzer(int sample_rate, int fft_size, int hop);
+    // decibels false: the frames carry power_fs2 only, for a reader that needs no dB per bin (the logarithm is most of the
+    // per-bin cost).
+    SpectrumAnalyzer(int sample_rate, int fft_size, int hop, bool decibels = true);
 
     // Consumes samples and returns every frame they complete.
     std::vector<SpectrumFrame> push(std::span<const Sample> in);
@@ -33,6 +36,7 @@ private:
     int sample_rate_;
     int fft_size_;
     int hop_;
+    bool decibels_;
     std::vector<float> window_;
     float power_scale_ = 1;
     std::vector<Sample> buffer_;

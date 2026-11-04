@@ -71,9 +71,11 @@ public:
     virtual std::string description() const = 0;
     // The stream's length in samples, if it has one (a live source does not).
     virtual std::optional<std::uint64_t> total_samples() const { return std::nullopt; }
-    // The radio's tuned frequency at 0 Hz in the samples, Hz, if known (a recording in the project's WAV form does not
-    // say; the display then shows kHz relative to center only).
+    // The radio's tuned frequency at 0 Hz in the samples, Hz, if known (FileIqSource: from the recording's header or its
+    // file name; otherwise the display shows kHz relative to center only).
     virtual std::optional<double> center_frequency_hz() const { return std::nullopt; }
+    // The time of the stream's first sample, ms since 1970-01-01 00:00 UTC, if known (a recording whose header says).
+    virtual std::optional<std::int64_t> start_unix_ms() const { return std::nullopt; }
     // Fills the front of out with the next samples, at most out.size(). Waits at most timeout for samples; with none
     // by then returns count 0, end_of_stream false, and the caller calls again. Called from one thread at a time, the
     // pipeline's. Throws std::runtime_error if the source fails; the stream ends there.

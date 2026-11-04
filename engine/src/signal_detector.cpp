@@ -14,7 +14,10 @@ const kz4ap::DetectorConfig& ValidatedConfig(const kz4ap::DetectorConfig& config
     if (config.sample_rate <= 0 || config.fft_size <= 0 || config.hop <= 0 ||
         config.average_s <= 0 || config.birth_s < 0 || config.death_s <= 0 ||
         config.max_tracks == 0 || config.floor_every_frames < 1 || config.min_separation_bins < 1 || !(config.attribution_distance_hz > 0) ||
-        !(config.peak_radius_hz > 0) || !(config.level_radius_hz >= 0) || !(config.candidate_step_hz >= 0) || !(config.local_floor_radius_hz >= 0))
+        !(config.peak_radius_hz > 0) || !(config.level_radius_hz >= 0) || !(config.candidate_step_hz >= 0) || !(config.local_floor_radius_hz >= 0) ||
+        !(config.prominence_db >= 0) || !(config.prominence_radius_hz >= 0) || !(config.dc_guard_hz >= 0) || !(config.follow_radius_hz >= 0) ||
+        !(config.sideband_db >= 0) || !(config.sideband_mirror_db >= 0) || !(config.sideband_radius_hz >= 0) || config.fft_factor < 1 ||
+        (config.fft_factor & (config.fft_factor - 1)) != 0)
         throw std::invalid_argument("invalid signal detector config");
     return config;
 }
@@ -33,11 +36,14 @@ SignalDetector::SignalDetector(const DetectorConfig& config)
     level_bins_ = static_cast<int>(std::lround(config_.level_radius_hz / bin_hz));
     step_bins_ = static_cast<int>(std::lround(config_.candidate_step_hz / bin_hz));
     local_floor_bins_ = static_cast<int>(std::lround(config_.local_floor_radius_hz / bin_hz));
+    prominence_bins_ = static_cast<int>(std::lround(config_.prominence_radius_hz / bin_hz));
+    sideband_bins_ = static_cast<int>(std::lround(config_.sideband_radius_hz / bin_hz));
     track_limit_ = config_.max_tracks;
 }
 
 DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
-    const auto n = frame.power_db.size();
+    // A frame from an analyzer without decibels carries linear power only.
+    const auto n = frame.power_db.empty() ? frame.power_fs2.size() : frame.power_db.size();
     if (n != static_cast<std::size_t>(config_.fft_size))
         throw std::invalid_argument("spectrum frame size does not match detector fft_size");
     const double now = frame.time_s;
@@ -175,7 +181,7 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
     return update;
 }
 
-void SignalDetector::retire(std::uint32_t id, double now_s, double hold_s) {
+void SignalDetector::retire(std::uint32_t id, double now_s, double hold_s, bool first_open) {
     const auto it = std::find_if(active_.begin(), active_.end(), [&](const Active& a) { return a.track.id == id; });
     if (it == active_.end()) return;
     const double freq_hz = it->track.freq_hz;
@@ -183,6 +189,17 @@ void SignalDetector::retire(std::uint32_t id, double now_s, double hold_s) {
     if (!(hold_s > 0.0)) return;
     // A hold forgets its repeats once the place has been open as long as the longest hold (heuristic).
     std::erase_if(holds_, [&](const Hold& h) { return now_s - h.until_s > kLongestHoldS; });
+    if (first_open) {
+        // The first such retirement at a place leaves it open (a station that listens comes back); it is remembered, so that
+        // the next one there closes it as a first hold would.
+        const auto known = std::find_if(holds_.begin(), holds_.end(), [&](const Hold& h) {
+            return h.radius_hz == config_.attribution_distance_hz && std::abs(h.freq_hz - freq_hz) < h.radius_hz;
+        });
+        if (known == holds_.end()) {
+            holds_.push_back({freq_hz, now_s, 0, config_.attribution_distance_hz});
+            return;
+        }
+    }
     close_place(freq_hz, config_.attribution_distance_hz, now_s, hold_s);
     std::erase_if(retirements_, [&](const Retirement& r) { return now_s - r.at_s > kRegionMemoryS; });
     retirements_.push_back({freq_hz, now_s});
@@ -230,6 +247,42 @@ bool SignalDetector::is_peak(int i) const {
         if (d < 0 && average_[i + d] >= average_[i]) return false;  // ties go to the lower bin
         if (d > 0 && average_[i + d] > average_[i]) return false;
     }
+    if (config_.prominence_db > 0.0f) {
+        // Each side: walking out, the lowest bin so far; at the first bin above this one, that low must lie prominence_db below.
+        const double ratio = std::pow(10.0, static_cast<double>(config_.prominence_db) / 10.0);
+        for (const int step : {-1, 1}) {
+            double low = average_[i];
+            for (int d = 1; d <= prominence_bins_; ++d) {
+                const int b = i + step * d;
+                if (b < 0 || b > last) break;
+                if (average_[b] > average_[i]) {
+                    if (average_[i] < ratio * low) return false;
+                    break;
+                }
+                low = std::min(low, average_[b]);
+            }
+        }
+    }
+    if (config_.sideband_db > 0.0f) {
+        // A keyed carrier's power spectrum is symmetric about it (a real envelope), so its keying sidebands come in pairs: a peak
+        // whose mirror about a much stronger bin on one side stands as high, within sideband_mirror_db, is that bin's sideband.
+        const double above = std::pow(10.0, static_cast<double>(config_.sideband_db) / 10.0);
+        const double mirror_low = std::pow(10.0, -static_cast<double>(config_.sideband_mirror_db) / 10.0);
+        for (const int step : {-1, 1}) {
+            int carrier = -1;
+            for (int d = 1; d <= sideband_bins_; ++d) {
+                const int b = i + step * d;
+                if (b < 0 || b > last) break;
+                if (carrier < 0 || average_[b] > average_[carrier]) carrier = b;
+            }
+            if (carrier < 0 || average_[carrier] < above * average_[i]) continue;
+            const int m = 2 * carrier - i;
+            double mirror = 0.0;
+            for (int b = m - 1; b <= m + 1; ++b)
+                if (b >= 0 && b <= last) mirror = std::max(mirror, average_[b]);
+            if (mirror >= mirror_low * average_[i]) return false;
+        }
+    }
     return true;
 }
 
@@ -243,7 +296,8 @@ void SignalDetector::follow_peaks(float floor_db) {
     // do converge on one station: on real 40 m up to 19 of them on one frequency.
     const float keep_alive_db = config_.threshold_db - config_.hysteresis_db;
     const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
-    const int reach = static_cast<int>(std::ceil(config_.attribution_distance_hz / bin_hz)) + 1;
+    const double radius_hz = config_.follow_radius_hz > 0.0 ? config_.follow_radius_hz : config_.attribution_distance_hz;
+    const int reach = static_cast<int>(std::ceil(radius_hz / bin_hz)) + 1;
     const int last = static_cast<int>(average_.size()) - 1;
     for (std::size_t index = 0; index < active_.size(); ++index) {
         Active& t = active_[index];
@@ -252,7 +306,7 @@ void SignalDetector::follow_peaks(float floor_db) {
         for (int i = std::max(0, t.bin - reach); i <= std::min(last, t.bin + reach); ++i) {
             if (db_at(i) - floor_db < keep_alive_db || !is_peak(i)) continue;
             const double f = refined_freq(i);
-            if (!(std::abs(f - t.track.freq_hz) < config_.attribution_distance_hz)) continue;
+            if (!(std::abs(f - t.track.freq_hz) < radius_hz)) continue;
             if (config_.one_track_per_peak && within_older(index, f)) continue;
             if (best < 0 || average_[i] > average_[best]) {
                 best = i;
