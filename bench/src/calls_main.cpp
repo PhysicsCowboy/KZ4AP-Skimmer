@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
                 static constexpr const char* kHow[] = {"whole", "glued", "stripped", "joined"};
                 static constexpr const char* kRole[] = {"unknown", "sender", "named"};
                 readings << r.full << ',' << kHow[static_cast<int>(r.reading)] << ',' << kRole[static_cast<int>(r.role)] << ',' << (r.doubled ? 1 : 0) << ','
-                         << r.start_s << ',' << r.end_s << ',' << freq_hz << ',' << std::min(r.margin_nats, 99.0) << '\n';  // 99: no rival near
+                         << r.start_s << ',' << r.end_s << ',' << freq_hz << ',' << r.margin_nats << '\n';  // nats; -1: unknown
             });
         }
         double stage_s = 0.0, channel_seconds = 0.0, stream_s = 0.0;
