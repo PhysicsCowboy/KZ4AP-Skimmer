@@ -42,6 +42,7 @@ set(KZ4AP_GENERATED_SOURCES
 add_library(kz4ap_engine_core OBJECT
   src/morse.cpp
   src/wav_reader.cpp
+  src/utc_time.cpp
   src/spectrum.cpp
   src/channelizer.cpp
   src/channel_follower.cpp

@@ -276,7 +276,9 @@ private:
 };
 
 // The list as the scoring tool (training/kz4ap_proto/calls_score.py) reads it: CSV, a header line, one row per call. center_hz, when
-// the radio's frequency is known, adds the absolute frequency.
-std::string calls_csv(const std::vector<CallRow>& rows, std::optional<double> center_hz = std::nullopt);
+// the radio's frequency is known, adds the absolute frequency; start_unix_ms, the stream's first sample in ms since 1970 UTC when
+// known, adds first_utc and last_utc (ISO 8601); the columns stay, empty, when they are not.
+std::string calls_csv(const std::vector<CallRow>& rows, std::optional<double> center_hz = std::nullopt,
+                      std::optional<std::int64_t> start_unix_ms = std::nullopt);
 
 }  // namespace kz4ap::callsign

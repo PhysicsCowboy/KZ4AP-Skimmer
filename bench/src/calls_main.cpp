@@ -1,5 +1,5 @@
 // kz4ap-calls: the callsign stage over a recording, without the app: the list it reports, as CSV, and the stage's own CPU.
-//   kz4ap-calls FILE.wav --out CALLS.csv [--decoder segmental] [--threads N] [--known MASTER.SCP] [--log EVENTS.jsonl] [--candidates ALL.csv] [--readings ALL.csv] [--set NAME=VALUE]... [--dset NAME=VALUE]...
+//   kz4ap-calls FILE.wav --out CALLS.csv [--decoder segmental] [--threads N] [--center-khz KHZ] [--known MASTER.SCP] [--log EVENTS.jsonl] [--candidates ALL.csv] [--readings ALL.csv] [--set NAME=VALUE]... [--dset NAME=VALUE]...
 //   kz4ap-calls --replay EVENTS.jsonl --out CALLS.csv [--known MASTER.SCP] [--set NAME=VALUE]...
 // --log keeps the decoder's events, so that --replay can try the stage's settings in seconds, on the same text.
 // --dset sets the segmental decoder's settings, as kz4ap-bench's --set does; --set is the stage's.
@@ -33,6 +33,7 @@ using Clock = std::chrono::steady_clock;
 
 struct Options {
     std::string wav, replay, out, known, log, candidates, readings, decoder = "segmental";
+    std::optional<double> center_hz;  // --center-khz, Hz: overrides the recording's header and file name
     int threads = 4;
     CallSearchConfig config;
     std::vector<std::string> decoder_settings;  // --dset
@@ -76,6 +77,7 @@ Options parse(int argc, char** argv) {
         else if (a == "--readings") o.readings = next();
         else if (a == "--decoder") o.decoder = next();
         else if (a == "--threads") o.threads = std::stoi(next());
+        else if (a == "--center-khz") o.center_hz = 1000.0 * std::stod(next());
         else if (a == "--set") set_value(o.config, next());
         else if (a == "--dset") o.decoder_settings.push_back(next());
         else if (!a.empty() && a[0] != '-' && o.wav.empty()) o.wav = a;
@@ -118,6 +120,8 @@ int main(int argc, char** argv) {
             });
         }
         double stage_s = 0.0, channel_seconds = 0.0, stream_s = 0.0;
+        std::optional<double> center_hz = o.center_hz;
+        std::optional<std::int64_t> start_unix_ms;
         const auto timed = [&](auto&& work) {
             const auto t0 = Clock::now();
             work();
@@ -159,6 +163,10 @@ int main(int argc, char** argv) {
             }
         } else {
             WavIqReader reader(o.wav);
+            // As FileIqSource: the caller's center, else the header's, else the file name's.
+            center_hz = o.center_hz ? o.center_hz : reader.info().center_hz;
+            if (!center_hz) center_hz = center_hz_from_file_name(path_text(std::filesystem::path(o.wav).filename()), reader.sample_rate());
+            start_unix_ms = reader.info().start_unix_ms;
             EngineConfig config = engine_config_for_decoder(o.decoder);
             config.sample_rate = reader.sample_rate();
             config.worker_threads = o.threads;
@@ -205,8 +213,8 @@ int main(int argc, char** argv) {
             if (log) *log << nlohmann::json{{"k", "end"}, {"channel_seconds", channel_seconds}}.dump() << '\n';
         }
         timed([&] { stage.finish(); });
-        const std::string csv = calls_csv(stage.calls());
-        if (!o.candidates.empty()) std::ofstream(o.candidates) << calls_csv(stage.candidates());
+        const std::string csv = calls_csv(stage.calls(), center_hz, start_unix_ms);
+        if (!o.candidates.empty()) std::ofstream(o.candidates) << calls_csv(stage.candidates(), center_hz, start_unix_ms);
         if (o.out.empty()) {
             std::cout << csv;
         } else {
