@@ -120,5 +120,10 @@ approval stalls everything behind it for hours, so stay inside these forms.
   `build/` (locally or on a remote build machine) and `.superpowers/`: they
   hold data that took hours of computation and records that exist nowhere
   else.
+- **External hardware** (owner, 2026-11-04): "Nothing in this project should be touching
+  external hardware without asking me." That means radios (the SDRplay, the K3), any
+  program that controls them (CW Skimmer, OmniRig and the like), COM and USB devices,
+  sound devices, and any other program already running that the agent did not start.
+  Ask the owner first, each time, through the coordinating session.
 - **If a command is refused or would need approval,** stop and report it
   with the exact command; do not retry variants of it.
