@@ -1231,10 +1231,12 @@ jittered grid), the contest and band recordings, and real30 and live2.
 
 **Limitations.**
 
-- **CPU:** the second analyzer and the detector on 4 times the bins: fixed cost on real30 13.4 to 20.7 ms per s of stream
-  (Linux, measured beside other runs), and more tracks (below).
-- **More tracks on real recordings.** real30's tracks 1 159 to 2 227 and channel-seconds 21 671 to 34 082, live2's 241 to 473
-  and 2 758 to 5 365: the finer bins see weak signals and spurs the decoder cannot read, a retired place's second chance opens
+- **CPU:** the second analyzer and the detector on 4 times the bins, and more tracks (below). Measured on the Linux machine,
+  one thread each, `main` beside `det-1`: per channel-second real30 6.04 to 6.37 ms, live2 6.60 to 6.97 ms, the contest 3.05
+  to 3.12 ms; fixed cost on real30 13.3 to 20.7 ms per s of stream (spectrum 6.1 to 11.7, detector 1.9 to 2.9); all CPU per
+  s of stream real30 73 to 121 ms, live2 294 to 603 ms, the contest 252 to 282 ms.
+- **More tracks on real recordings.** real30's tracks 1 159 to 2 225 and channel-seconds 21 671 to 34 249, live2's 241 to 473
+  and 2 758 to 5 363: the finer bins see weak signals and spurs the decoder cannot read, a retired place's second chance opens
   another, and each costs a track until the judge retires it.
 - Stations closer than D = 30 Hz share a channel, as before at 47 Hz. At 20 to 45 Hz the decoder reads a station badly beside an
   equal or stronger neighbor even when told its frequency.
