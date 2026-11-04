@@ -73,8 +73,8 @@ struct EngineConfig {
     int fft_size = 0;  // 0 = choose automatically: the largest power of two with sample_rate / fft_size >= 20 Hz
     int channel_bins = 64;
     double channel_cutoff_hz = 150.0;
-    DetectorConfig detector;  // sample_rate, fft_size, hop and attribution_distance_hz (from
-                              // channel_distance_hz) are overwritten by the engine
+    DetectorConfig detector;  // sample_rate, fft_size (fft_size x fft_factor) and hop (half that) are overwritten by the
+                              // engine; the path's own values are set by apply_path_defaults unless as_given
     // decoder.front_end selects the decoder: Envelope, Matched, Bank, Viterbi or Segmental
     ClassicalDecoderConfig decoder;
     bank::BankConfig bank;           // the bank decoder's configuration (decoder.front_end == FrontEnd::Bank)
