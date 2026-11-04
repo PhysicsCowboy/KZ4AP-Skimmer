@@ -762,13 +762,14 @@ delay (N − 1) / (2 fs_up) = 257.979 µs (49.53 output samples) at 96/125, not 
 +0.0006 dB re input for |f| ≤ 86 kHz, within 0.01 dB re input to 86.4 kHz; −0.34 dB re input at 88 kHz, −6.02 dB at 91 kHz,
 −44.3 dB at 95 kHz. An input component at f, 96 ≤ |f| ≤ 125 kHz, appears at f ∓ 192 kHz, at the band's opposite edge, at most
 −82.0 dB re input (25 Hz steps; a design value of 80 dB gave −79.8 dB, which Kaiser's estimate falls short by, hence 82). So
-86–96 kHz each side is attenuated, by the transition, but holds no station folded from beyond Nyquist. Until 2026-11-04 the
-transition (20 kHz) was centered on 96 kHz: an input tone at 96–106 kHz came out at the opposite edge 6 to 83 dB re input down
-(at +100 kHz −17.8 dB, at −92 kHz), so a strong station there became a call 192 kHz from its frequency (review 8). Tests:
+86–96 kHz each side is attenuated, by the transition, and holds nothing folded from beyond Nyquist above −82 dB re input.
+That is not nothing: a station beyond ±96 kHz at about +80 dB S500 or more still makes a ghost call at the opposite edge
+(measured, review 9: listed at +80 dB S500 at +96.35 kHz, not at +75 dB; the strongest key-down peaks measured on three real
+files were +40 to +53 dB S500, a margin of about 27 dB). Tests:
 21 tones from −86 to +86 kHz within 0.005 dB peak to peak, each with the stated delay (rms error under 10⁻³ FS at 0.5 FS);
 88, −91 and 95 kHz at the levels above within 0.1 dB; every tone at 96 ≤ |f| ≤ 125 kHz in 0.5 kHz steps, +100 kHz among them,
 below −80 dB re input; 129 taps per phase and the delay; output identical however the input is split; a seek gives the same
-samples as reading through. 80 dB (below 16-bit noise) and Δf: heuristics. Δf was chosen against CPU, measured on the desktop
+samples as reading through. 80 dB and Δf: heuristics (80 dB is 18 to 45 dB above 16-bit quantization noise, which is 98.1 dB below a full-scale tone over 250 kHz and 125.1 dB in 500 Hz; derived). Δf was chosen against CPU, measured on the desktop
 (one core, 20 s of noise at 250 kHz in blocks of 4 096, best of 5, three runs): Δf = 10 kHz, 129 taps per phase, 20.1 to
 23.0 ms per s of stream; 20 kHz, 65 taps, pass band to 76 kHz, 11.9 to 13.7 ms; 5 kHz, 258 taps, to 91 kHz, 38.7 to 41.9 ms;
 the filter before, 63 taps, 12.0 to 14.0 ms. 10 kHz keeps the pass band where it was for about 8 ms more per s of stream, a

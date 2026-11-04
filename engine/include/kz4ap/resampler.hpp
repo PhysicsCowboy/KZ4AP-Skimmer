@@ -23,7 +23,7 @@ public:
     // Of the lower rate: 10 kHz at 192 kHz, so the pass band runs to 86 kHz; heuristic, chosen against its CPU (A.1).
     static constexpr double kTransitionRatio = 10.0 / 192.0;
     // Kaiser's design value for the stopband, dB re the passband: 82 so that at least 80 dB is met (at 96/125, measured: 82.0 dB
-    // from 96 kHz on; a design value of 80 gave 79.8). The 80 dB is a heuristic, below 16-bit noise.
+    // from 96 kHz on; a design value of 80 gave 79.8). The 80 dB is a heuristic (18 to 45 dB above 16-bit noise, A.1).
     static constexpr double kAttenuationDb = 82.0;
 
     int up() const { return up_; }
