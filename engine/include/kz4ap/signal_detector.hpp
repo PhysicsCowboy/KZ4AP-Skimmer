@@ -59,6 +59,16 @@ struct DetectorConfig {
     bool one_track_per_peak = false;
     // No new track within this of 0 Hz, Hz: an I/Q radio's own DC offset stands there, whatever the band holds. 0 for no such rule.
     double dc_guard_hz = 0.0;
+    // A peak (new or followed) must also stand prominence_db above the lowest bin between it and any higher bin within
+    // +/- prominence_radius_hz on either side: its topographic prominence within that window, dB re that lowest bin. A
+    // weaker station on a stronger one's skirt passes; a ripple of the stronger one's keying sidebands or of the noise on
+    // that skirt does not. 0 for no such test.
+    float prominence_db = 0.0f;
+    double prominence_radius_hz = 47.0;
+    // The engine's (Engine): the detector reads its own spectrum, of fft_factor times the band's FFT (bins fft_factor
+    // times narrower) and a hop of half that FFT; 1 reads the band's frames. A power of two. The detector itself takes
+    // fft_size and hop as given.
+    int fft_factor = 1;
 };
 
 struct DetectorUpdate {
@@ -133,6 +143,7 @@ private:
     int level_bins_ = 1;  // level_radius_hz in bins
     int step_bins_ = 1;   // candidate_step_hz in bins
     int local_floor_bins_ = 0;  // local_floor_radius_hz in bins
+    int prominence_bins_ = 0;   // prominence_radius_hz in bins
     double alpha_;
     float floor_db_ = 0.0f;  // the last floor taken (floor_every_frames), dB re 1 FS^2 per bin
     std::uint64_t frames_seen_ = 0;

@@ -36,6 +36,7 @@ struct Options {
     int threads = 4;
     CallSearchConfig config;
     std::vector<std::string> decoder_settings;  // --dset
+    std::vector<std::string> detector_settings;  // --detector NAME=VALUE (kz4ap::bench::apply_detector_setting)
 };
 
 void set_value(CallSearchConfig& c, const std::string& assignment) {
@@ -78,6 +79,7 @@ Options parse(int argc, char** argv) {
         else if (a == "--threads") o.threads = std::stoi(next());
         else if (a == "--set") set_value(o.config, next());
         else if (a == "--dset") o.decoder_settings.push_back(next());
+        else if (a == "--detector") o.detector_settings.push_back(next());
         else if (!a.empty() && a[0] != '-' && o.wav.empty()) o.wav = a;
         else throw std::runtime_error("unknown argument: " + a);
     }
@@ -163,6 +165,11 @@ int main(int argc, char** argv) {
             config.sample_rate = reader.sample_rate();
             config.worker_threads = o.threads;
             for (const std::string& setting : o.decoder_settings) kz4ap::bench::apply_segmental_setting(config.segmental, setting);
+            if (!o.detector_settings.empty()) {
+                apply_path_defaults(config);
+                for (const std::string& setting : o.detector_settings) kz4ap::bench::apply_detector_setting(config, setting);
+                config.as_given = true;
+            }
             std::unique_ptr<std::ofstream> log;
             if (!o.log.empty()) log = std::make_unique<std::ofstream>(o.log);
             double next_mark = 0.0;

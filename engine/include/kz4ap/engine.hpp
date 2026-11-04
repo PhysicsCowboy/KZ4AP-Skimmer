@@ -11,6 +11,7 @@
 #include "kz4ap/track_evidence.hpp"
 #include "kz4ap/viterbi/config.hpp"
 
+#include <complex>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -111,6 +112,14 @@ struct EngineConfig {
     // frequency tracker fine-tunes around the detector's frequency (FrequencyTrackerConfig::fine_tune_hz).
     double channel_distance_hz = 47.0;
 
+    // The input's DC offset removed before the spectrum and the channels (a DC blocker): each sample less a one-pole average
+    // of the samples, of time constant dc_block_s, s, whose notch at 0 Hz is 1 / (2 pi dc_block_s) Hz wide at -3 dB re the
+    // passband. 0 for none.
+    double dc_block_s = 0.0;
+    // false: the engine first applies the decoder's path defaults (apply_path_defaults) to `detector` and dc_block_s; true:
+    // it takes them as they stand (a benchmark's variant: apply_path_defaults, then its own changes).
+    bool as_given = false;
+
     // Threads that run the channels (the channel filter, the decoder), the caller's included, at least 1 (design section
     // 4.1, step 4). The output does not depend on it: a channel's work reads nothing another channel's writes, and the
     // results are published in the order of the track ids once a block's channels are done.
@@ -130,6 +139,12 @@ struct EngineConfig {
     // loses is only the wait out of the start of its replay. See docs/signal-processing.md, section 10. Heuristic.
     double replay_tracks_per_s = 100.0;
 };
+
+// The detector's settings and the DC blocker for the decoder's path (decoder.front_end), in place: on every path the
+// detector's distance between tracks is channel_distance_hz; the segmental decoder's path adds its own rules
+// (docs/signal-processing.md, section 10). The engine applies it unless config.as_given; a benchmark's variant applies it,
+// changes what it tries and sets as_given.
+void apply_path_defaults(EngineConfig& config);
 
 // The milestone-1 pipeline (kept selectable; owner, 2026-09-29): the Envelope decoder and the
 // milestone-1 detector rules (frequency fixed at birth, bin attribution). CI (bench/smoke.sh) bounds its
@@ -259,7 +274,14 @@ private:
     int hop_;
     SpectrumAnalyzer spectrum_;
     SignalDetector detector_;
+    // The detector's own, finer spectrum (DetectorConfig::fft_factor above 1, not in oracle mode); else it reads spectrum_'s frames.
+    std::optional<SpectrumAnalyzer> detector_spectrum_;
     Channelizer channelizer_;
+    // The DC blocker (EngineConfig::dc_block_s): its average, FS, its weight per sample, and the hop it writes.
+    std::complex<double> dc_ = 0.0;
+    double dc_alpha_ = 0.0;
+    bool dc_started_ = false;
+    std::vector<Sample> dc_hop_;
     std::vector<Sample> pending_;
     std::map<std::uint32_t, Channel> channels_;
     bool oracle_ = false;

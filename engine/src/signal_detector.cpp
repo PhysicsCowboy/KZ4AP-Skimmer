@@ -14,7 +14,9 @@ const kz4ap::DetectorConfig& ValidatedConfig(const kz4ap::DetectorConfig& config
     if (config.sample_rate <= 0 || config.fft_size <= 0 || config.hop <= 0 ||
         config.average_s <= 0 || config.birth_s < 0 || config.death_s <= 0 ||
         config.max_tracks == 0 || config.floor_every_frames < 1 || config.min_separation_bins < 1 || !(config.attribution_distance_hz > 0) ||
-        !(config.peak_radius_hz > 0) || !(config.level_radius_hz >= 0) || !(config.candidate_step_hz >= 0) || !(config.local_floor_radius_hz >= 0))
+        !(config.peak_radius_hz > 0) || !(config.level_radius_hz >= 0) || !(config.candidate_step_hz >= 0) || !(config.local_floor_radius_hz >= 0) ||
+        !(config.prominence_db >= 0) || !(config.prominence_radius_hz >= 0) || !(config.dc_guard_hz >= 0) || config.fft_factor < 1 ||
+        (config.fft_factor & (config.fft_factor - 1)) != 0)
         throw std::invalid_argument("invalid signal detector config");
     return config;
 }
@@ -33,11 +35,13 @@ SignalDetector::SignalDetector(const DetectorConfig& config)
     level_bins_ = static_cast<int>(std::lround(config_.level_radius_hz / bin_hz));
     step_bins_ = static_cast<int>(std::lround(config_.candidate_step_hz / bin_hz));
     local_floor_bins_ = static_cast<int>(std::lround(config_.local_floor_radius_hz / bin_hz));
+    prominence_bins_ = static_cast<int>(std::lround(config_.prominence_radius_hz / bin_hz));
     track_limit_ = config_.max_tracks;
 }
 
 DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
-    const auto n = frame.power_db.size();
+    // A frame from an analyzer without decibels carries linear power only.
+    const auto n = frame.power_db.empty() ? frame.power_fs2.size() : frame.power_db.size();
     if (n != static_cast<std::size_t>(config_.fft_size))
         throw std::invalid_argument("spectrum frame size does not match detector fft_size");
     const double now = frame.time_s;
@@ -229,6 +233,22 @@ bool SignalDetector::is_peak(int i) const {
     for (int d = -peak_bins_; d <= peak_bins_; ++d) {
         if (d < 0 && average_[i + d] >= average_[i]) return false;  // ties go to the lower bin
         if (d > 0 && average_[i + d] > average_[i]) return false;
+    }
+    if (config_.prominence_db > 0.0f) {
+        // Each side: walking out, the lowest bin so far; at the first bin above this one, that low must lie prominence_db below.
+        const double ratio = std::pow(10.0, static_cast<double>(config_.prominence_db) / 10.0);
+        for (const int step : {-1, 1}) {
+            double low = average_[i];
+            for (int d = 1; d <= prominence_bins_; ++d) {
+                const int b = i + step * d;
+                if (b < 0 || b > last) break;
+                if (average_[b] > average_[i]) {
+                    if (average_[i] < ratio * low) return false;
+                    break;
+                }
+                low = std::min(low, average_[b]);
+            }
+        }
     }
     return true;
 }
