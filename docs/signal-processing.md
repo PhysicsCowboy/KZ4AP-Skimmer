@@ -4257,8 +4257,7 @@ the half-nat step of publication.
 **Measured.** The text is the same with margins and without (every track's final text identical on the owner's file and the 2017
 recordings; every list on the generated recordings the same; `SegmentalMargins.ChangeNoTextAndSayLessForAWeakStation`). CPU, one thread,
 8 runs side by side on the Linux machine: real30 6.69 to 7.02 ms per channel-second, live2 7.25 to 7.67, the contest 3.23 to 3.40, W3OA
-6.07 to 6.52 (+5% to +7%). Events: about 3 corrections of reason `confidence` for each 1 of reason `story` (the owner's file, 4 228 of
-11 330 corrections on the first form), the log 1.7 times as large. On the 2017 recordings a word space's margin is often under 0.5 nats
+6.07 to 6.52 (+5% to +7%). Events: corrections about three times as many (W3OA 5 780 to 18 939), its event log 1.9 times as large. On the 2017 recordings a word space's margin is often under 0.5 nats
 even on a strong signal (+20 dB S500 in the test: 0.04 to 0.5 nats): a 7-unit gap scores nearly as a long letter gap under the fist's
 spread, so the space after a word is the least sure symbol (derived from the timing model's spread; measured).
 
