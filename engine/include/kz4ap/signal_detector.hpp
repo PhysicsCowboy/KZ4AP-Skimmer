@@ -65,6 +65,13 @@ struct DetectorConfig {
     // that skirt does not. 0 for no such test.
     float prominence_db = 0.0f;
     double prominence_radius_hz = 47.0;
+    // Keying sidebands: a keyed carrier's power spectrum is symmetric about the carrier (its envelope is real), so a peak with
+    // a bin at least sideband_db above it within +/- sideband_radius_hz on one side (the highest there, the carrier) whose
+    // mirror about that bin (the highest of the mirror bin and its two neighbors) stands no more than sideband_mirror_db below
+    // it, is that carrier's sideband and not a station. 0 for no such test.
+    float sideband_db = 0.0f;
+    float sideband_mirror_db = 3.0f;
+    double sideband_radius_hz = 150.0;
     // Attribution::Distance: each frame a track moves to the strongest qualifying peak within this of its frequency, Hz; 0 for
     // attribution_distance_hz (an answering station within the channel distance takes the track).
     double follow_radius_hz = 0.0;
@@ -147,6 +154,7 @@ private:
     int step_bins_ = 1;   // candidate_step_hz in bins
     int local_floor_bins_ = 0;  // local_floor_radius_hz in bins
     int prominence_bins_ = 0;   // prominence_radius_hz in bins
+    int sideband_bins_ = 0;     // sideband_radius_hz in bins
     double alpha_;
     float floor_db_ = 0.0f;  // the last floor taken (floor_every_frames), dB re 1 FS^2 per bin
     std::uint64_t frames_seen_ = 0;

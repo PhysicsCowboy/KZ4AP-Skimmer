@@ -15,7 +15,8 @@ const kz4ap::DetectorConfig& ValidatedConfig(const kz4ap::DetectorConfig& config
         config.average_s <= 0 || config.birth_s < 0 || config.death_s <= 0 ||
         config.max_tracks == 0 || config.floor_every_frames < 1 || config.min_separation_bins < 1 || !(config.attribution_distance_hz > 0) ||
         !(config.peak_radius_hz > 0) || !(config.level_radius_hz >= 0) || !(config.candidate_step_hz >= 0) || !(config.local_floor_radius_hz >= 0) ||
-        !(config.prominence_db >= 0) || !(config.prominence_radius_hz >= 0) || !(config.dc_guard_hz >= 0) || !(config.follow_radius_hz >= 0) || config.fft_factor < 1 ||
+        !(config.prominence_db >= 0) || !(config.prominence_radius_hz >= 0) || !(config.dc_guard_hz >= 0) || !(config.follow_radius_hz >= 0) ||
+        !(config.sideband_db >= 0) || !(config.sideband_mirror_db >= 0) || !(config.sideband_radius_hz >= 0) || config.fft_factor < 1 ||
         (config.fft_factor & (config.fft_factor - 1)) != 0)
         throw std::invalid_argument("invalid signal detector config");
     return config;
@@ -36,6 +37,7 @@ SignalDetector::SignalDetector(const DetectorConfig& config)
     step_bins_ = static_cast<int>(std::lround(config_.candidate_step_hz / bin_hz));
     local_floor_bins_ = static_cast<int>(std::lround(config_.local_floor_radius_hz / bin_hz));
     prominence_bins_ = static_cast<int>(std::lround(config_.prominence_radius_hz / bin_hz));
+    sideband_bins_ = static_cast<int>(std::lround(config_.sideband_radius_hz / bin_hz));
     track_limit_ = config_.max_tracks;
 }
 
@@ -248,6 +250,26 @@ bool SignalDetector::is_peak(int i) const {
                 }
                 low = std::min(low, average_[b]);
             }
+        }
+    }
+    if (config_.sideband_db > 0.0f) {
+        // A keyed carrier's power spectrum is symmetric about it (a real envelope), so its keying sidebands come in pairs: a peak
+        // whose mirror about a much stronger bin on one side stands as high, within sideband_mirror_db, is that bin's sideband.
+        const double above = std::pow(10.0, static_cast<double>(config_.sideband_db) / 10.0);
+        const double mirror_low = std::pow(10.0, -static_cast<double>(config_.sideband_mirror_db) / 10.0);
+        for (const int step : {-1, 1}) {
+            int carrier = -1;
+            for (int d = 1; d <= sideband_bins_; ++d) {
+                const int b = i + step * d;
+                if (b < 0 || b > last) break;
+                if (carrier < 0 || average_[b] > average_[carrier]) carrier = b;
+            }
+            if (carrier < 0 || average_[carrier] < above * average_[i]) continue;
+            const int m = 2 * carrier - i;
+            double mirror = 0.0;
+            for (int b = m - 1; b <= m + 1; ++b)
+                if (b >= 0 && b <= last) mirror = std::max(mirror, average_[b]);
+            if (mirror >= mirror_low * average_[i]) return false;
         }
     }
     return true;

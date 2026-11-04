@@ -542,6 +542,7 @@ void apply_detector_setting(EngineConfig& config, const std::string& setting) {
         {"dc_guard_hz", &d.dc_guard_hz},
         {"prominence_radius_hz", &d.prominence_radius_hz},
         {"follow_radius_hz", &d.follow_radius_hz},
+        {"sideband_radius_hz", &d.sideband_radius_hz},
         {"dc_block_s", &config.dc_block_s},
     };
     for (const auto& [field, target] : doubles) {
@@ -553,6 +554,8 @@ void apply_detector_setting(EngineConfig& config, const std::string& setting) {
     if (name == "threshold_db") d.threshold_db = static_cast<float>(value);
     else if (name == "hysteresis_db") d.hysteresis_db = static_cast<float>(value);
     else if (name == "prominence_db") d.prominence_db = static_cast<float>(value);
+    else if (name == "sideband_db") d.sideband_db = static_cast<float>(value);
+    else if (name == "sideband_mirror_db") d.sideband_mirror_db = static_cast<float>(value);
     else if (name == "fft_factor") d.fft_factor = static_cast<int>(value);
     else if (name == "floor_every_frames") d.floor_every_frames = static_cast<int>(value);
     else if (name == "max_tracks") d.max_tracks = static_cast<std::size_t>(value);
