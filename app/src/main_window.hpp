@@ -57,6 +57,8 @@ struct Automation {
     std::optional<double> quit_at_s;  // stream time, s
     // A recording's center frequency, Hz, overriding its header's and its file name's (--center-khz with a recording).
     std::optional<double> recording_center_hz;
+    // A recording's spectrum is mirrored (--mirror; RecordingOptions::mirror).
+    bool mirror = false;
     bool active() const {
         return !screenshot_path.isEmpty() || !report_path.isEmpty() || !decoded_path.isEmpty() || !calls_path.isEmpty() || quit_at_end || quit_at_s ||
                !transport.empty();
@@ -142,6 +144,7 @@ private:
     std::optional<std::int64_t> stream_start_unix_ms_;  // the stream's first sample, ms since 1970 UTC, when known
     std::optional<double> stream_center_hz_;            // the stream's center frequency, Hz, when known
     QString center_origin_;  // where a recording's center frequency came from, for the report
+    QString input_note_;     // a recording's file rate, resampling and mirroring, for the report
     bool stream_ended_ = false;
     bool radio_on_ = false;
     RecordingStatus last_recording_;

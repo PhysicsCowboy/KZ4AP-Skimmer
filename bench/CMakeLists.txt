@@ -27,6 +27,15 @@ else()
   target_compile_options(kz4ap-calls PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# A recording's copy at a decoder's rate, as the engine reads it: resampled, mirrored if asked (docs/signal-processing.md, A.1).
+add_executable(kz4ap-resample src/resample_main.cpp)
+target_link_libraries(kz4ap-resample PRIVATE kz4ap::engine)
+if(MSVC)
+  target_compile_options(kz4ap-resample PRIVATE /W4 /permissive- /utf-8)
+else()
+  target_compile_options(kz4ap-resample PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 # Decodes recorded oracle channels with the C++ bank decoder into the prototype's decoded-file format.
 add_executable(kz4ap-bank-replay src/replay.cpp)
 target_link_libraries(kz4ap-bank-replay PRIVATE kz4ap_bench_lib)

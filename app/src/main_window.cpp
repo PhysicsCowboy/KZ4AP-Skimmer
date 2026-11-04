@@ -487,8 +487,12 @@ void MainWindow::build_status_bar() {
 bool MainWindow::open_recording(const QString& path, double start_s) {
     try {
         // The file first: one that cannot be opened leaves whatever is running as it is.
-        std::unique_ptr<FileIqSource> source = std::make_unique<FileIqSource>(std::filesystem::path(path.toStdWString()), start_s,
-                                                                              automation_.recording_center_hz);
+        std::unique_ptr<FileIqSource> source = std::make_unique<FileIqSource>(
+            std::filesystem::path(path.toStdWString()), start_s, automation_.recording_center_hz, RecordingOptions{.mirror = automation_.mirror});
+        input_note_ = QStringLiteral("file_rate_hz: %1\nresampled_to_hz: %2\nmirrored: %3\n")
+                          .arg(source->recording().file_rate())
+                          .arg(source->recording().resampled() ? QString::number(source->recording().sample_rate()) : QStringLiteral("none"))
+                          .arg(source->recording().mirrored() ? 1 : 0);
         stop_stream();
         radio_on_ = false;
         switch (source->center_origin()) {
@@ -846,7 +850,7 @@ void MainWindow::write_report(const StreamStatus& status) {
     out << "recording: " << QString::fromStdString(source_name_) << "\n";
     out << "decoder: " << QString::fromStdString(decoder_name_) << "\n";
     out << "center_hz: " << (stream_center_hz_ ? QString::number(*stream_center_hz_, 'f', 1) : QStringLiteral("none")) << "\n";
-    if (!radio_on_) out << "center_from: " << center_origin_ << "\n";
+    if (!radio_on_) out << "center_from: " << center_origin_ << "\n" << input_note_;
     out << "stream_start_utc: "
         << (stream_start_unix_ms_ ? QString::fromStdString(utc_text(*stream_start_unix_ms_)) : QStringLiteral("none")) << "\n";
     out << "stream_s: " << status.stream_s << "\n";

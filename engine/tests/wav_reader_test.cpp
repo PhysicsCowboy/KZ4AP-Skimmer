@@ -1,10 +1,16 @@
 #include "kz4ap/wav_reader.hpp"
 
 #include "kz4ap/file_iq_source.hpp"
+#include "kz4ap/recording_reader.hpp"
+#include "kz4ap/resampler.hpp"
 #include "kz4ap/utc_time.hpp"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <complex>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -391,4 +397,157 @@ TEST_F(WavIqReaderTest, ExtensibleFormatWithPcmSubFormatReadsSamples) {
 TEST_F(WavIqReaderTest, ExtensibleFormatWithNonPcmSubFormatThrows) {
     write({.samples = {1, 2}, .extensible = true, .sub_format = 0x0003});
     EXPECT_THROW(WavIqReader{path_}, std::runtime_error);
+}
+
+namespace {
+
+constexpr double kTwoPi = 6.283185307179586;
+
+// A complex tone of amplitude a at f Hz, n samples at rate, as interleaved 16-bit I/Q.
+std::vector<std::int16_t> tone16(double f, double a, int rate, int n) {
+    std::vector<std::int16_t> s;
+    for (int i = 0; i < n; ++i) {
+        const double p = kTwoPi * f * i / rate;
+        s.push_back(static_cast<std::int16_t>(std::lround(32768.0 * a * std::cos(p))));
+        s.push_back(static_cast<std::int16_t>(std::lround(32768.0 * a * std::sin(p))));
+    }
+    return s;
+}
+
+// Amplitude and rms error of y against a * exp(j 2 pi f (n / rate - delay)), over n from `from`.
+std::pair<double, double> fit_tone(const std::vector<Sample>& y, double f, double a, int rate, double delay_s, std::size_t from) {
+    std::complex<double> dot(0.0, 0.0);
+    double err = 0.0, count = 0.0;
+    for (std::size_t n = from; n < y.size(); ++n) {
+        const std::complex<double> ref = std::polar(a, kTwoPi * f * (static_cast<double>(n) / rate - delay_s));
+        const std::complex<double> v(y[n].real(), y[n].imag());
+        dot += v * std::conj(ref) / (a * a);
+        err += std::norm(v - ref);
+        count += 1.0;
+    }
+    return {std::abs(dot / count) * a, std::sqrt(err / count)};
+}
+
+std::vector<Sample> resample_all(RationalResampler& r, const std::vector<Sample>& x, std::size_t chunk) {
+    std::vector<Sample> y;
+    for (std::size_t i = 0; i < x.size(); i += chunk) {
+        const std::size_t n = std::min(chunk, x.size() - i);
+        r.push(std::span<const Sample>(x).subspan(i, n), y);
+    }
+    return y;
+}
+
+std::vector<Sample> tone(double f, double a, int rate, int n) {
+    std::vector<Sample> x;
+    for (int i = 0; i < n; ++i) {
+        const std::complex<double> v = std::polar(a, kTwoPi * f * i / rate);  // the phase in double: float's would add noise
+        x.emplace_back(static_cast<float>(v.real()), static_cast<float>(v.imag()));
+    }
+    return x;
+}
+
+}  // namespace
+
+TEST(RationalResampler, HdsdrsRateTo192kHzExactly) {
+    RationalResampler r(250000, 192000);
+    EXPECT_EQ(r.up(), 96);
+    EXPECT_EQ(r.down(), 125);
+    EXPECT_GE(r.taps_per_phase(), 50);
+    EXPECT_LE(r.taps_per_phase(), 80);
+    EXPECT_EQ(RationalResampler::outputs_for(250000, 96, 125), 192000u);
+    EXPECT_EQ(RationalResampler::outputs_for(1, 96, 125), 1u);
+    EXPECT_EQ(RationalResampler::outputs_for(0, 96, 125), 0u);
+    EXPECT_THROW(RationalResampler(1000003, 192000), std::invalid_argument);
+}
+
+TEST(RationalResampler, PassesAToneInThePassbandAndDelaysItAsStated) {
+    for (const double f : {0.0, 20000.0, -55000.0, 85000.0}) {
+        RationalResampler r(250000, 192000);
+        const auto y = resample_all(r, tone(f, 0.5, 250000, 50000), 4096);
+        ASSERT_EQ(y.size(), RationalResampler::outputs_for(50000, 96, 125));
+        const auto [amplitude, rms_error] = fit_tone(y, f, 0.5, 192000, r.delay_s(), 200);
+        EXPECT_NEAR(amplitude, 0.5, 0.5e-3) << f << " Hz";  // within 0.01 dB
+        EXPECT_LT(rms_error, 1e-3) << f << " Hz";
+    }
+}
+
+TEST(RationalResampler, StopsWhatWouldAliasIntoThePassband) {
+    // 120 kHz would fold to -72 kHz at 192 kHz; the stopband from 106 kHz holds it 80 dB down.
+    for (const double f : {120000.0, -110000.0}) {
+        RationalResampler r(250000, 192000);
+        const auto y = resample_all(r, tone(f, 0.5, 250000, 50000), 4096);
+        double power = 0.0;
+        for (std::size_t n = 200; n < y.size(); ++n) power += std::norm(y[n]);
+        const double db_re_input = 10.0 * std::log10(power / static_cast<double>(y.size() - 200) / 0.25);
+        EXPECT_LT(db_re_input, -75.0) << f << " Hz";
+    }
+}
+
+TEST(RationalResampler, TheOutputDoesNotDependOnHowTheInputIsSplit) {
+    const auto x = tone(31000.0, 0.3, 250000, 20000);
+    RationalResampler a(250000, 192000), b(250000, 192000);
+    const auto ya = resample_all(a, x, 7), yb = resample_all(b, x, 20000);
+    ASSERT_EQ(ya.size(), yb.size());
+    for (std::size_t i = 0; i < ya.size(); ++i) ASSERT_EQ(ya[i], yb[i]) << i;
+}
+
+TEST(DecoderRate, TheLargestDecoderRateAtOrBelowTheFiles) {
+    EXPECT_EQ(decoder_rate_for(250000), 192000);
+    EXPECT_EQ(decoder_rate_for(192000), 192000);
+    EXPECT_EQ(decoder_rate_for(48000), 48000);
+    EXPECT_EQ(decoder_rate_for(100000), 96000);
+    EXPECT_EQ(decoder_rate_for(2000000), 768000);
+    EXPECT_EQ(decoder_rate_for(44100), 44100);  // below every decoder rate: left as it is
+    EXPECT_EQ(decoder_rate_for(1000), 1000);
+}
+
+TEST_F(WavIqReaderTest, ARecordingAt250kHzIsReadAt192kHzAndSeeksToTheSameSamples) {
+    write({.rate = 250000, .samples = tone16(12000.0, 0.25, 250000, 25000)});
+    RecordingReader whole(path_);
+    EXPECT_EQ(whole.file_rate(), 250000);
+    EXPECT_EQ(whole.sample_rate(), 192000);
+    EXPECT_TRUE(whole.resampled());
+    ASSERT_EQ(whole.total_samples(), RationalResampler::outputs_for(25000, 96, 125));
+    std::vector<Sample> all(whole.total_samples() + 10);
+    ASSERT_EQ(whole.read(all), whole.total_samples());
+    all.resize(whole.total_samples());
+    const auto [amplitude, rms_error] = fit_tone({all.begin(), all.end() - 100}, 12000.0, 0.25, 192000, whole.resampler()->delay_s(), 200);
+    EXPECT_NEAR(amplitude, 0.25, 0.5e-3);
+    EXPECT_LT(rms_error, 1e-3);
+    RecordingReader later(path_);
+    later.seek(5000);
+    std::vector<Sample> part(300);
+    ASSERT_EQ(later.read(part), 300u);
+    for (std::size_t i = 0; i < part.size(); ++i) ASSERT_EQ(part[i], all[5000 + i]) << i;
+    RecordingReader native(path_, RecordingOptions{.resample = false});
+    EXPECT_EQ(native.sample_rate(), 250000);
+    EXPECT_EQ(native.total_samples(), 25000u);
+}
+
+TEST_F(WavIqReaderTest, MirroringConjugatesTheSamples) {
+    write({.samples = {100, 200, -300, 400}});
+    RecordingReader mirrored(path_, RecordingOptions{.mirror = true});
+    std::vector<Sample> out(2);
+    ASSERT_EQ(mirrored.read(out), 2u);
+    EXPECT_FLOAT_EQ(out[0].real(), 100.0f / 32768.0f);
+    EXPECT_FLOAT_EQ(out[0].imag(), -200.0f / 32768.0f);
+    EXPECT_FLOAT_EQ(out[1].real(), -300.0f / 32768.0f);
+    EXPECT_FLOAT_EQ(out[1].imag(), -400.0f / 32768.0f);
+    // Resampled too: a tone the file has at +12 kHz comes out at -12 kHz.
+    write({.rate = 250000, .samples = tone16(12000.0, 0.25, 250000, 25000), .auxi = auxi_body(7020013)});
+    FileIqSource source(path_, 0.0, std::nullopt, RecordingOptions{.mirror = true});
+    EXPECT_EQ(source.sample_rate(), 192000);
+    EXPECT_EQ(source.center_frequency_hz(), 7020013.0);
+    std::vector<Sample> y(source.total_samples().value());
+    source.set_speed(kAsFastAsPossible);
+    std::size_t got = 0;
+    while (got < y.size()) {
+        const IqRead r = source.read(std::span<Sample>(y).subspan(got), std::chrono::milliseconds(100));
+        got += r.count;
+        if (r.end_of_stream) break;
+    }
+    ASSERT_EQ(got, y.size());
+    const auto [amplitude, rms_error] = fit_tone({y.begin(), y.end() - 100}, -12000.0, 0.25, 192000, source.recording().resampler()->delay_s(), 200);
+    EXPECT_NEAR(amplitude, 0.25, 0.5e-3);
+    EXPECT_LT(rms_error, 1e-3);
 }

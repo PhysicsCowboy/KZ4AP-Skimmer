@@ -116,6 +116,11 @@ int main(int argc, char* argv[]) {
                                          QStringLiteral("dB"), QStringLiteral("40"));
     const QCommandLineOption lna_option(QStringLiteral("lna-state"), QStringLiteral("The radio's LNA state, 0 (the most gain) to 9."),
                                         QStringLiteral("n"), QStringLiteral("0"));
+    const QCommandLineOption mirror_option(
+        QStringLiteral("mirror"),
+        QStringLiteral("The recording's spectrum is mirrored (an SDR on a transceiver's IF output): conjugate its samples, so a "
+                       "signal's true frequency is the center minus the file's offset."));
+    parser.addOption(mirror_option);
     parser.addOptions({decoder_option, speed_option, screenshot_option, screenshot_at_option, report_option,
                        quit_at_end_option, quit_at_option, transport_option, threads_option, decoded_option, calls_option, known_calls_option, radio_option,
                        center_option, rate_option, gain_option, lna_option});
@@ -129,6 +134,7 @@ int main(int argc, char* argv[]) {
         parser.isSet(screenshot_at_option) ? parser.value(screenshot_at_option).toDouble() : 1e300;
     automation.report_path = parser.value(report_option);
     automation.quit_at_end = parser.isSet(quit_at_end_option);
+    automation.mirror = parser.isSet(mirror_option);
     if (parser.isSet(quit_at_option)) automation.quit_at_s = parser.value(quit_at_option).toDouble();
     for (const QString& step : parser.value(transport_option).split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
         const qsizetype colon = step.indexOf(QLatin1Char(':'));

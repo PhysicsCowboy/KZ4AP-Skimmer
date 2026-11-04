@@ -61,25 +61,26 @@ I/Q (fs) ─┬─► spectrum analyzer ─┬─► signal detector ─► trac
                                                 callsign stage ─► list of calls
 ```
 
-The input is the whole band the radio delivers, 192 kHz wide. Two things
-happen to it in parallel. The **spectrum analyzer and detector** look at
+The input is the radio's whole band, 192 kHz wide; two things happen to
+it in parallel. The **spectrum analyzer and detector** look at
 the band every 21.33 ms and decide where stations are: each station becomes
 a *track* with a frequency. For every track the **channelizer** cuts a
 narrow stream out of the band, about ±150 Hz around the station, at 1500
 samples/s. A **decoder** per channel turns that stream into characters.
 Five decoders: **segmental** (the app's default), **Matched** (the bench's), **Envelope** (the
-baseline), the **bank** (the frozen reference; design spec §5.2) and **viterbi**. Matched and the
+baseline), the **bank** (the frozen reference) and **viterbi**. Matched and the
 bank are told the detector's frequency before each block (the *anchor*); viterbi's and segmental's
 channels follow it (section 7), and those two get N₀ from a hiss estimator reading the spectrum.
 
 ## 1. Input
 
 A stereo WAV, I left, Q right: b-bit integers (b = 16, 24, 32) over
-2^(b−1), in [−1, 1) FS, or 32-bit floats. Frequencies are
-offsets from the radio's center, in Hz, spanning ±fs/2; the center
-(`--center-khz`, the header or the file name; A.1) only labels them. The engine processes fixed blocks of
-exactly N/2 samples (the hop), so the output does not depend on how a caller
-splits the input.
+2^(b−1), in [−1, 1) FS, or 32-bit floats. Other rates go exactly to
+the largest decoder rate below (250 to 192 kHz: × 96/125); `--mirror`
+conjugates a mirrored receiver's samples. Frequencies are offsets from the
+center (Hz); the center (`--center-khz`, header or file
+name) only labels them (A.1). Blocks of N/2 samples (section 3) keep the
+output independent of a caller's splitting.
 
 ## 2. The FFT size N and bin width Δf
 
@@ -733,6 +734,28 @@ the file cannot show that. The stream's start is the header's start plus
 the stream's first sample / fs, at the nominal fs: no clock drift is
 modeled (W3OA's 2017 file: stop − start = 899.912 s of clock against
 900.608 s of samples, 0.08% apart).
+
+**Mirroring** (`RecordingOptions::mirror`; the app's and `kz4ap-calls`' `--mirror`, `kz4ap-resample`'s too): every sample
+is conjugated, x → x*, so a signal the file holds at offset +f is read at −f and its true frequency is the center − f. For an
+SDR on a transceiver's IF output, whose spectrum is inverted: the owner's 2026-11-04 recording (an RSP1A on the K3's 8.215 MHz
+IF) holds the FT8 tones of 7 074–7 077 kHz at 6 963–6 965.4 kHz as labeled (measured by the coordinating session).
+
+**Resampling** (`RationalResampler`, `RecordingReader`). A file whose rate is not 48 000 × 2^k samples/s (k = 0–4: the rates at
+which a channel's 1/128 of fs holds a whole number of segmental's samples) and is above 48 kHz is resampled to the largest of
+those below it (`decoder_rate_for`); below 48 kHz it is left for the decoder to refuse. The ratio is the rates' reduced
+fraction L/M (96/125 for 250 to 192 kHz; L, M ≤ 4 096, else refused), so the rate is exact. The filter is a windowed sinc at
+fs_up = L·fs_in, cut at half the lower rate (−6 dB there: 96 kHz), with a Kaiser window of β = 0.1102 (A − 8.7) = 7.857 for
+A = 80 dB of stopband attenuation and length N − 1 = (A − 7.95) / (2.285 · 2π Δf / fs_up) for a transition Δf = 0.104 × the
+lower rate (20 kHz at 192 kHz), both Kaiser's estimates (sourced: Oppenheim and Schafer); padded to K·L taps, K = 63 per phase
+at 96/125. Output n takes input base ⌊nM/L⌋ and phase p = nM mod L: y[n] = Σ_k h[p + kL] x[base − k], k = 0 … K − 1. Each
+phase is scaled to sum 1, so a constant goes through unchanged. Group delay (N − 1) / (2 fs_up) = 126 µs at 96/125, not
+removed (derived). The pass band thus runs to 86 kHz, flat within the window's ripple of 10⁻⁴ (80 dB); 86–96 kHz is the transition, and
+what the input held at 96–106 kHz folds into 86–96 kHz, the band's edge, where the input's own content beyond 106 kHz is 80 dB
+down (tests: a tone at 0, 20, −55 and 85 kHz within 0.01 dB, rms error under 10⁻³ FS at 0.5 FS; 120 and −110 kHz at least
+75 dB down; output identical however the input is split; a seek gives the same samples as reading through). A = 80 dB and the
+0.104: heuristics, below 16-bit noise. CPU on the owner's 367.5 s recording: the copy took 5.6 s of wall on the desktop, that
+is about 15 ms of one core per s of stream (measured, `kz4ap-resample`), inside the fixed cost of a stream. Input before the
+file's start and after its end counts as zero.
 
 **The center from the file name** (`center_hz_from_file_name`), used when
 neither `--center-khz` nor the header gives one: the name's extension of 1–4
@@ -4186,6 +4209,10 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 
 | Parameter | Value | Where | Status |
 |---|---|---|---|
+| Input scale | b-bit integers × 2^−(b−1); 32-bit floats as stored | wav_reader.cpp | standard choice |
+| Input rate | file's if 48 000 × 2^k samples/s (k = 0–4) or below 48 kHz; else the largest of those below, by L/M ≤ 4 096 | `decoder_rate_for`, `RationalResampler::kMaxFactor` | derived (the decoder's rates); the 4 096 heuristic |
+| Resampler filter | Kaiser sinc, −6 dB at half the lower rate, transition 0.104 × the lower rate (20 kHz at 192 kHz), 80 dB stopband; 63 taps per phase at 96/125 | `RationalResampler::kTransitionRatio`, `kAttenuationDb` | heuristic (Kaiser's formulas sourced) |
+| Center from a file name | span edges when 0.8–1.001 fs apart, else the first `<f>Hz/kHz/MHz` word that is not fs | `center_hz_from_file_name` | heuristic |
 | Bin width Δf | ~23 Hz (rule: largest power-of-two N with Δf ≥ 20 Hz) | `choose_fft_size` (engine.cpp) | heuristic |
 | Hop / overlap | N/2, 50% (largest hop keeping Hann constant-sum) | engine.cpp | standard choice |
 | Spectrum window | periodic Hann (ENBW 1.5 bins = 35.2 Hz) | spectrum.cpp | standard choice |
@@ -4917,7 +4944,7 @@ and older than the longest window is dropped, each 30 s of stream.
 **The list and the tools.** `kz4ap-skimmer --known-calls PATH` takes MASTER.SCP's format: one call a line, # and ; lines skipped, case ignored,
 whatever follows white space ignored; `--calls PATH` writes the list as `calls_csv` at the stream's end, with the absolute kHz when the
 center is known and `first_utc`, `last_utc` when the recording's header dates it (A.1). `kz4ap-calls --known PATH --out PATH
-[--center-khz KHZ] [--log PATH | --replay PATH] [--candidates PATH] [--readings PATH] [--set NAME=VALUE]`. `training/kz4ap_proto/calls_score.py compare` reads a run and
+[--center-khz KHZ] [--mirror] [--log PATH | --replay PATH] [--candidates PATH] [--readings PATH] [--set NAME=VALUE]`. `training/kz4ap_proto/calls_score.py compare` reads a run and
 another program's list and reports calls in both, in each only, counts, and pairs one letter apart, and keeps of a Reverse Beacon Network
 day file only the spots of given skimmers, a continent, a UTC window, a span and a mode (`--spotter`, `--continent`, `--from`, `--to`,
 `--khz`, `--tx-mode`); `truth` reads a run and a recording's labels and

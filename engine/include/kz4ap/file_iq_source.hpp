@@ -1,8 +1,10 @@
-// A recording as an IqSource: a stereo I/Q WAV file (wav_reader.hpp), delivered at a chosen pace (design section 4.1,
-// step 1: real time, faster, or as fast as possible), or paused.
+// A recording as an IqSource: a stereo I/Q WAV file (wav_reader.hpp), mirrored and resampled as RecordingReader does
+// (recording_reader.hpp), delivered at a chosen pace (design section 4.1, step 1: real time, faster, or as fast as possible),
+// or paused.
 #pragma once
 
 #include "kz4ap/iq_source.hpp"
+#include "kz4ap/recording_reader.hpp"
 #include "kz4ap/wav_reader.hpp"
 
 #include <condition_variable>
@@ -66,8 +68,10 @@ public:
     // Throws std::runtime_error if the file cannot be opened or is not a form WavIqReader reads.
     // start_s: where the stream begins in the recording, s, clipped to its end: a seek is a new stream from there.
     // center_hz: the radio's frequency at 0 Hz in the samples, Hz, overriding what the header or the name says.
+    // options: mirroring and resampling (RecordingReader).
     explicit FileIqSource(const std::filesystem::path& path, double start_s = 0.0,
-                          std::optional<double> center_hz = std::nullopt);
+                          std::optional<double> center_hz = std::nullopt, RecordingOptions options = {});
+    const RecordingReader& recording() const { return reader_; }
 
     int sample_rate() const override { return reader_.sample_rate(); }
     std::string description() const override { return description_; }
@@ -91,7 +95,7 @@ public:
     double speed() const override;
 
 private:
-    WavIqReader reader_;  // read() only: the pipeline's thread
+    RecordingReader reader_;  // read() only: the pipeline's thread
     std::uint64_t remaining_ = 0;  // samples from the stream's start to the recording's end
     std::string description_;
     std::optional<double> center_hz_;
