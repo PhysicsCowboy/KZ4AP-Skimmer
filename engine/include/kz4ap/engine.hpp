@@ -114,8 +114,8 @@ struct EngineConfig {
     double channel_distance_hz = 47.0;
 
     // The input's DC offset removed before the spectrum and the channels (a DC blocker): each sample less a one-pole average
-    // of the samples, of time constant dc_block_s, s, whose notch at 0 Hz is 1 / (2 pi dc_block_s) Hz wide at -3 dB re the
-    // passband. 0 for none.
+    // of the samples, of time constant dc_block_s, s, whose notch at 0 Hz has its -3 dB points re the passband at
+    // +/-1 / (2 pi dc_block_s) Hz: 0.032 Hz wide at 10 s. 0 for none.
     double dc_block_s = 0.0;
     // Which retirements by the judge leave their place open the first time there (SignalDetector::retire's first_open): 0 none,
     // 1 a quiet one (TrackEnd::Quiet: it heard nothing, as when its station listens), 2 any.

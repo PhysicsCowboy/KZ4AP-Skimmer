@@ -104,7 +104,7 @@ void apply_path_defaults(EngineConfig& c) {
     c.detector.threshold_db = 7.0f;
     // Every 2nd frame, 171 ms, against an average over average_s: heuristic. 32 768 bins selected each frame is most of the detector's CPU.
     c.detector.floor_every_frames = 2;
-    // A radio's DC offset is removed (the blocker's notch 0.016 Hz wide at -3 dB re the passband), so no guard keeps a station at the
+    // A radio's DC offset is removed (its notch at 0 Hz, -3 dB re the passband at +/-0.016 Hz), so no guard keeps a station at the
     // center from its track. 10 s, not 1 s: the average follows a keyed station within about 1 / (2 pi tau) of 0 Hz and takes its
     // carrier out of its marks (at 1 s a station drifting from 0 Hz read 57 edits of 99, at 10 s none). Heuristic, chosen by measurement.
     c.dc_block_s = 10.0;

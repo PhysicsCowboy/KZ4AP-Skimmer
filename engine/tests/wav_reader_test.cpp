@@ -452,8 +452,9 @@ TEST(RationalResampler, HdsdrsRateTo192kHzExactly) {
     RationalResampler r(250000, 192000);
     EXPECT_EQ(r.up(), 96);
     EXPECT_EQ(r.down(), 125);
-    EXPECT_GE(r.taps_per_phase(), 50);
-    EXPECT_LE(r.taps_per_phase(), 80);
+    EXPECT_EQ(r.taps_per_phase(), 129);  // Kaiser's length for 82 dB over a 10 kHz transition at fs_up = 24 MHz, padded
+    // The group delay, derived: (K L - 1) / (2 fs_up) = 12 383 / 48 MHz = 257.979 us.
+    EXPECT_NEAR(r.delay_s(), (129.0 * 96.0 - 1.0) / (2.0 * 96.0 * 250000.0), 1e-12);
     EXPECT_EQ(RationalResampler::outputs_for(250000, 96, 125), 192000u);
     EXPECT_EQ(RationalResampler::outputs_for(1, 96, 125), 1u);
     EXPECT_EQ(RationalResampler::outputs_for(0, 96, 125), 0u);
@@ -471,15 +472,48 @@ TEST(RationalResampler, PassesAToneInThePassbandAndDelaysItAsStated) {
     }
 }
 
-TEST(RationalResampler, StopsWhatWouldAliasIntoThePassband) {
-    // 120 kHz would fold to -72 kHz at 192 kHz; the stopband from 106 kHz holds it 80 dB down.
-    for (const double f : {120000.0, -110000.0}) {
+TEST(RationalResampler, TheBandIsFlatTo86kHzAndRollsOffAboveIt) {
+    // Measured: -0.0007 to +0.0006 dB re input for |f| <= 86 kHz; -0.34 dB at 88 kHz, -6.02 dB at 91 kHz (the transition's
+    // middle), -44.3 dB at 95 kHz. Each tone's phase is the input's at n / fs_out - delay_s() (the fit's rms error).
+    double lowest = 1.0, highest = 1.0;
+    for (int i = -10; i <= 10; ++i) {
+        const double f = 8600.0 * i;
         RationalResampler r(250000, 192000);
-        const auto y = resample_all(r, tone(f, 0.5, 250000, 50000), 4096);
-        double power = 0.0;
-        for (std::size_t n = 200; n < y.size(); ++n) power += std::norm(y[n]);
-        const double db_re_input = 10.0 * std::log10(power / static_cast<double>(y.size() - 200) / 0.25);
-        EXPECT_LT(db_re_input, -75.0) << f << " Hz";
+        const auto y = resample_all(r, tone(f, 0.5, 250000, 25000), 4096);
+        const auto [amplitude, rms_error] = fit_tone(y, f, 0.5, 192000, r.delay_s(), 200);
+        lowest = std::min(lowest, amplitude / 0.5);
+        highest = std::max(highest, amplitude / 0.5);
+        EXPECT_LT(rms_error, 1e-3) << f << " Hz";
+    }
+    EXPECT_LT(20.0 * std::log10(highest / lowest), 0.005);  // ripple, dB peak to peak
+    for (const auto& [f, db] : std::vector<std::pair<double, double>>{{88000.0, -0.34}, {-91000.0, -6.02}, {95000.0, -44.3}}) {
+        RationalResampler r(250000, 192000);
+        const auto y = resample_all(r, tone(f, 0.5, 250000, 25000), 4096);
+        const auto [amplitude, rms_error] = fit_tone(y, f, 0.5, 192000, r.delay_s(), 200);
+        EXPECT_NEAR(20.0 * std::log10(amplitude / 0.5), db, 0.1) << f << " Hz";
+    }
+}
+
+namespace {
+
+// The output's power after the filter's start, dB re the input tone's (amplitude a): wherever in the band the tone lands.
+double output_db_re_input(double f, double a) {
+    RationalResampler r(250000, 192000);
+    const auto y = resample_all(r, tone(f, a, 250000, 40000), 4096);
+    double power = 0.0;
+    for (std::size_t n = 200; n < y.size(); ++n) power += std::norm(y[n]);
+    return 10.0 * std::log10(power / static_cast<double>(y.size() - 200) / (a * a));
+}
+
+}  // namespace
+
+TEST(RationalResampler, NothingBeyondTheOutputsNyquistFoldsIntoTheBandAbove80dBReInput) {
+    // A station at +100 kHz in a 250 kHz recording would fold to -92 kHz at 192 kHz (a call 192 kHz from its frequency): it
+    // appears nowhere in the output above -80 dB re input. Measured: at most -82.0 dB re input from 96 kHz on (25 Hz steps).
+    EXPECT_LT(output_db_re_input(100000.0, 0.5), -80.0);
+    for (double f = 96000.0; f <= 125000.0; f += 500.0) {
+        EXPECT_LT(output_db_re_input(f, 0.5), -80.0) << f << " Hz";
+        EXPECT_LT(output_db_re_input(-f, 0.5), -80.0) << -f << " Hz";
     }
 }
 

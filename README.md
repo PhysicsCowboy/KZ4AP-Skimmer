@@ -113,6 +113,16 @@ decoder (default `segmental`), `--speed` the pace (a factor, or `max`) and
 lists the rest. The Position slider seeks in a recording: the decoders start
 afresh from there.
 
+**Other programs' recordings.** It reads I/Q WAV files of 16-, 24- or 32-bit
+integers or 32-bit floats. The center frequency comes from `--center-khz`, else
+the file's `auxi` chunk (SpectraVue, HDSDR, CWSL_File), else the file name
+(`7000_7192kHz`, `14091kHz`). A rate the decoders do not take (HDSDR's 250 kHz)
+is resampled exactly to the largest one below it (192 kHz: flat to ±86 kHz, and
+nothing beyond 96 kHz folded into the band above −80 dB re input). `--mirror`
+reads a receiver whose spectrum is inverted, as an SDR on a transceiver's IF
+output. `kz4ap-resample IN.wav OUT.wav [--mirror] [--gain-db DB]` writes the
+same samples as a 16-bit copy at that rate, for CW Skimmer.
+
 **The radio.** The SDRplay API (3.x) is used if it is there, and nothing else
 needs it: the program builds and runs without it and says so when asked for the
 radio. Building its support needs the API's headers (found in
@@ -235,7 +245,7 @@ each track's final text (`text`, corrections applied) and its immediate text
   neighbor +10 dB re the station needs about 100 Hz, and much stronger ones more
   (`docs/signal-processing.md`, A.8e).
 - An I/Q radio's DC offset at the center frequency is filtered out (a notch about
-  0.2 Hz wide), and a station beside it is read; the radio's raised noise near its center
+  0.03 Hz wide), and a station beside it is read; the radio's raised noise near its center
   can open short tracks there that are judged and dropped. The default center stays
   7031.5 kHz, off the 7030 kHz calling frequency.
 - Two stations closer than 30 Hz share one channel, and a station within about 45 Hz of a

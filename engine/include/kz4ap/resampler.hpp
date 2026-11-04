@@ -13,13 +13,18 @@ namespace kz4ap {
 class RationalResampler {
 public:
     // in_rate, out_rate: samples/s, > 0; their ratio reduced to L/M must have L and M at most kMaxFactor. Throws
-    // std::invalid_argument otherwise. The filter: Kaiser-windowed sinc at fs_up = L x in_rate, cut at half the lower rate
-    // (-6 dB there), transition kTransitionRatio x the lower rate wide centered on it, kAttenuationDb in the stopband.
-    RationalResampler(int in_rate, int out_rate);
+    // std::invalid_argument otherwise. The filter: Kaiser-windowed sinc at fs_up = L x in_rate whose stopband starts at half
+    // the lower rate (the lower rate's Nyquist, so that nothing folds into the output band less than attenuation_db down),
+    // with a transition transition_ratio x the lower rate wide below it (-6 dB at its middle). The last two are for
+    // experiments; the engine takes the defaults.
+    RationalResampler(int in_rate, int out_rate, double transition_ratio = kTransitionRatio, double attenuation_db = kAttenuationDb);
 
     static constexpr int kMaxFactor = 4096;
-    static constexpr double kTransitionRatio = 0.104;  // of the lower rate: 20 kHz at 192 kHz; heuristic
-    static constexpr double kAttenuationDb = 80.0;     // stopband, dB re the passband; heuristic
+    // Of the lower rate: 10 kHz at 192 kHz, so the pass band runs to 86 kHz; heuristic, chosen against its CPU (A.1).
+    static constexpr double kTransitionRatio = 10.0 / 192.0;
+    // Kaiser's design value for the stopband, dB re the passband: 82 so that at least 80 dB is met (at 96/125, measured: 82.0 dB
+    // from 96 kHz on; a design value of 80 gave 79.8). The 80 dB is a heuristic, below 16-bit noise.
+    static constexpr double kAttenuationDb = 82.0;
 
     int up() const { return up_; }
     int down() const { return down_; }
@@ -39,7 +44,7 @@ public:
 private:
     int up_ = 1, down_ = 1, taps_ = 1;
     double delay_s_ = 0.0;
-    std::vector<float> phases_;  // taps_ coefficients per phase p, phase-major: h[p + k*up_] at p * taps_ + k
+    std::vector<float> phases_;  // taps_ coefficients per phase p, phase-major, oldest input first: h[p + k*up_] at p * taps_ + taps_ - 1 - k
     std::vector<Sample> history_;
     std::int64_t history_start_ = 0;  // input index of history_[0]; negative while zeros stand before the input
     std::uint64_t next_out_ = 0;

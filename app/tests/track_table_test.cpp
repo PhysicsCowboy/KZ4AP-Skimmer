@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace kz4ap;
@@ -223,6 +224,24 @@ TEST(TrackTablePlausibleOnly, ANewTrackAtAnEndedTracksPlaceGoesOnWithItsText) {
     table.apply(born(3, 2000.0));
     table.apply(text(3, 2000.0, {"W", "1", "A", "W"}));
     EXPECT_EQ(table.rows().size(), 2u);
+}
+
+TEST(TrackTablePlausibleOnly, TheSamePlaceIsWithin30Hz) {
+    // TrackTable::kSamePlaceHz, the segmental path's distance between tracks: a new track 25 Hz from an ended row goes on with it,
+    // one 35 Hz away (a station that may be another) gets a row of its own.
+    EXPECT_EQ(TrackTable::kSamePlaceHz, 30.0);
+    for (const auto& [offset_hz, rows] : std::vector<std::pair<double, std::size_t>>{{25.0, 1u}, {-25.0, 1u}, {35.0, 2u}, {-35.0, 2u}}) {
+        TrackTable table;
+        table.set_plausible_only(true);
+        table.apply(born(1, 1000.0));
+        table.apply(text(1, 1000.0, {"K", "Q", "2", "R", "P"}));
+        table.advance(10.0);
+        table.apply(died(1));
+        table.advance(20.0);
+        table.apply(born(2, 1000.0 + offset_hz));
+        table.apply(text(2, 1000.0 + offset_hz, {"W", "1", "A", "W"}));
+        EXPECT_EQ(table.rows().size(), rows) << offset_hz << " Hz";
+    }
 }
 
 TEST(TrackTablePlausibleOnly, HiddenTextAddsUpAcrossATracksRetirement) {
