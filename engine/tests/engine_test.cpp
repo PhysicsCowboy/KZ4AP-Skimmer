@@ -993,16 +993,33 @@ TEST(EngineDetector, AStationBesideAStrongerNeighborGetsItsOwnTrack) {
     EXPECT_EQ(births_near(segmental_births(x, coarse_detector), 1000.0, 15.0), 0u);
 }
 
-TEST(EngineDetector, AStationAtTheStreamsCenterIsFoundPastTheRadiosOffset) {
-    // A radio's DC offset, 10 times the station's amplitude, and a station 5 Hz from the center: the DC blocker takes the offset out,
-    // and no guard keeps the station from its track.
+TEST(EngineDetector, AStationAtTheStreamsCenterIsFound) {
+    // A station 5 Hz from the center beside a radio's DC offset 6 dB below it (re its key-down power): no guard keeps it from its track.
     const double duration_s = 10.0;
     std::vector<Sample> x = test::keyed_signal("CQ CQ DE W1AW W1AW K CQ CQ DE W1AW", 25.0, 48000.0, duration_s, 5.0, amplitude_48k(15.0), kNoiseSigma, 9);
-    const Sample offset(10.0f * static_cast<float>(amplitude_48k(15.0)), -5.0f * static_cast<float>(amplitude_48k(15.0)));
+    const Sample offset(0.4f * static_cast<float>(amplitude_48k(15.0)), -0.3f * static_cast<float>(amplitude_48k(15.0)));
     for (Sample& s : x) s += offset;
     const std::vector<Track> born = segmental_births(x);
     EXPECT_GE(births_near(born, 5.0, 4.0), 1u);
     EXPECT_EQ(births_near(segmental_births(x, coarse_detector), 5.0, 40.0), 0u);
+}
+
+TEST(EngineDetector, TheDcBlockerTakesARadiosOffsetOut) {
+    // 0.05 FS of DC in noise: the band's spectrum at 0 Hz falls as exp(-2 t / tau) in power, about 35 dB over 4 tau (derived).
+    EventBus bus;
+    std::vector<float> dc_db;
+    bus.subscribe([&](const Event& e) {
+        if (const auto* f = std::get_if<SpectrumFrame>(&e)) dc_db.push_back(f->power_db[f->power_db.size() / 2]);
+    });
+    EngineConfig config = matched_config(48000);
+    config.dc_block_s = 2.0;
+    Engine engine(config, bus);
+    std::vector<Sample> x = test::keyed_signal("E", 25.0, 48000.0, 8.0, 3000.0, 0.0, kNoiseSigma, 11);
+    for (Sample& s : x) s += Sample(0.04f, -0.03f);
+    engine.process(x);
+    engine.finish();
+    ASSERT_GT(dc_db.size(), 100u);
+    EXPECT_LT(dc_db.back(), dc_db.front() - 25.0f);
 }
 
 TEST(EngineDetector, AStrongFastStationMakesOneTrackNotOneForEachSideband) {

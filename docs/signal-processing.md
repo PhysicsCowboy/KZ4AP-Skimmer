@@ -137,8 +137,8 @@ their results were measured with, on the band's spectrum (A.6). Values are
 heuristics unless marked.
 
 **DC blocker.** First a radio's DC offset leaves the input: each sample less
-a one-pole average of the samples, time constant 1 s, a notch at 0 Hz
-0.16 Hz wide at −3 dB re the passband (derived). The channels read the
+a one-pole average of the samples, time constant 10 s, a notch at 0 Hz
+0.016 Hz wide at −3 dB re the passband (derived). The channels read the
 blocked input too.
 
 **Its own spectrum.** The detector reads a spectrum four times finer than
@@ -1155,9 +1155,9 @@ tooling only; it changes no signal processing. File formats: A.11,
 unless `EngineConfig::as_given` (a benchmark variant: `kz4ap-bench` and `kz4ap-calls` take `--detector NAME=VALUE`, applied over
 it). On every path it sets `attribution_distance_hz` = `channel_distance_hz` first.
 
-- **DC blocker** (`EngineConfig::dc_block_s` = 1 s; `Engine::process_hop`, before the spectrum and the channelizer): d starts at
-  the mean of the first hop; then per sample d ← d + α(x − d), y = x − d, α = 1 − exp(−1/(τ fs)), in double precision. It runs
-  in oracle mode too: oracle channels read the blocked input.
+- **DC blocker** (`EngineConfig::dc_block_s` = 10 s; `Engine::process_hop`, before the spectrum and the channelizer): d starts at
+  0 FS; per sample d ← d + α(x − d), y = x − d, α = 1 − exp(−1/(τ fs)), in double precision. It runs in oracle mode too: oracle
+  channels read the blocked input.
 - **The detector's spectrum** (`DetectorConfig::fft_factor` = 4): a second `SpectrumAnalyzer(fs, 4N, 2N, decibels = false)`,
   fed every hop, not made in oracle mode; the detector reads its frames only (`power_fs2`), the band's frames going to the hiss,
   the leak floor and the display as before. Its frames come every 4th hop.
@@ -1179,8 +1179,13 @@ it). On every path it sets `attribution_distance_hz` = `channel_distance_hz` fir
 **Derivations.**
 
 - **The blocker's response.** H(z) = (1 − α)(1 − z⁻¹) / (1 − (1 − α) z⁻¹). For f ≪ fs, |H|² = f² / (f² + f_c²), f_c =
-  α fs / 2π = 1 / (2π τ) = 0.159 Hz at τ = 1 s (α = 5.2 × 10⁻⁶ at 192 kHz); at fs/2, |H| = 2(1 − α)/(2 − α) = 1 − α/2. A carrier
-  0.5 Hz from 0 Hz loses 0.4 dB, one at 2 Hz 0.03 dB.
+  α fs / 2π = 1 / (2π τ) = 0.0159 Hz at τ = 10 s (α = 5.2 × 10⁻⁷ at 192 kHz); at fs/2, |H| = 2(1 − α)/(2 − α) = 1 − α/2.
+- **What it does to a keyed station near 0 Hz.** A station of key-down amplitude A, keyed a fraction m of the time, at f: the
+  average d holds its carrier line m A attenuated by 1/√(1 + (2π f τ)²), and y = x − d leaves that much in its key-ups and takes
+  it from its marks. At τ = 1 s that is −16 dB re m A at 1 Hz and −1.4 dB at 0.1 Hz; at τ = 10 s, −36 dB at 1 Hz and −16 dB at
+  0.1 Hz. So the band a blocker spoils shrinks as 1/τ, and a radio's offset takes about τ to leave (a change in it likewise).
+  Started at the first hop's mean, the noise of that mean (σ/√(N/2), 6 × 10⁻⁴ FS at 48 kHz) stays at 0 Hz for about τ, 20 dB
+  below a station of +10 dB S500: hence the start at 0.
 - **The fine spectrum.** Bins fs/4N = 5.86 Hz at every usual rate (N scales with fs, A.2); window 4N/fs = 170.7 ms; hop 85.3 ms;
   ENBW 1.5 bins = 8.79 Hz; the main lobe's half width 2 bins = 11.7 Hz, hence the peak radius. α_d = 1 − exp(−85.3 ms / 1 s) =
   0.0818, a boxcar of (2 − α_d)/α_d = 23.4 frames, a plain running mean for the first 1/α_d = 12 frames (1 s). White noise's averaged power then has a relative standard deviation of about
@@ -1216,8 +1221,12 @@ jittered grid), the contest and band recordings, and real30 and live2.
 - First retirement open: tried none, quiet only and any. Quiet only read the slice as none did; any, against quiet only on the
   whole detector's path of seeds 1 and 2: A2 −0.0010, B2 −0.0013 (95% intervals clear of 0), no group worse, for 27% more
   channel-seconds on real30 and 48% on live2 than none.
-- DC blocker 1 s: one setting. With no DC guard, the stations the test set places near 0 Hz read as on the oracle path
-  (E2's index 8: 0 to 285 edits, the oracle's 0 to 293).
+- DC blocker 10 s, starting at 0: tried 1, 10 and 30 s, and the first hop's mean as the start. At 1 s F2 on the oracle path read
+  0.1027 against `main`'s 0.0895 (its station starting at 0 Hz and drifting: 57 edits of 99 against 0), with the first hop's start
+  0.1018 at 10 s and 0.1081 at 30 s; started at 0, 0.0898 at 10 s and 0.0894 at 30 s, the detector's path 0.0888 and 0.0885.
+  On real30, tracks within 100 Hz of the center held 783, 950 and 1 400 channel-seconds at 1, 10 and 30 s. Heuristic, chosen by
+  measurement. With no DC guard the stations the test set places near 0 Hz read as on the oracle path (E2's index 8: 0 to 285
+  edits, the oracle's 0 to 293).
 - `floor_every_frames` 2: heuristic, for CPU.
 
 **Limitations.**
@@ -1232,8 +1241,10 @@ jittered grid), the contest and band recordings, and real30 and live2.
 - Beside a keyed neighbor 20 dB or more stronger at 60 Hz the neighbor's skirt fills the valley and the station fails the
   prominence test.
 - A chirping strong station's sidebands are not symmetric and may open tracks; the generator has no chirp.
-- The blocker removes a carrier within about 0.2 Hz of 0 Hz. Without the guard, real30's raised noise within about ±100 Hz of
-  its center (about +3 dB, measured) opens short tracks there that the judge retires.
+- The blocker spoils a keyed station within about 0.1 Hz of 0 Hz, and a radio's offset, or a change in it, takes about 10 s to
+  leave: a strong one opens a short track at the center at the start. Without the guard, real30's raised noise within about
+  ±100 Hz of its center (about +3 dB, measured) opens short tracks there that the judge retires (64 tracks, 950 channel-seconds
+  in 30 min).
 
 ## A.7 Channelizer
 
@@ -4388,7 +4399,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Local floor | ±1 kHz, lower quartile, 7 dB above | `DetectorConfig::local_floor_radius_hz`; signal_detector.cpp | heuristic |
 | One track per peak | D = 30 Hz | `DetectorConfig::one_track_per_peak` | heuristic |
 | DC guard | none (0 Hz) | `DetectorConfig::dc_guard_hz` | heuristic |
-| DC blocker, segmental's path | one-pole average of the input, τ = 1 s; notch 0.159 Hz at −3 dB re the passband | `EngineConfig::dc_block_s`; `Engine::process_hop` | heuristic (τ); derived (notch) |
+| DC blocker, segmental's path | one-pole average of the input from 0 FS, τ = 10 s; notch 0.0159 Hz at −3 dB re the passband | `EngineConfig::dc_block_s`; `Engine::process_hop` | heuristic, chosen by measurement (τ); derived (notch) |
 | Detector's spectrum, segmental's path | 4N-point Hann FFT, hop 2N: 5.86 Hz bins, 170.7 ms window, 85.3 ms frames, ENBW 8.79 Hz | `DetectorConfig::fft_factor` | heuristic, chosen by measurement (factor); derived (the rest) |
 | Detector's neighborhoods, segmental's path | peak ±12 Hz; level ±6 Hz; candidate step 6 Hz a frame; follow 12 Hz a frame; D = 30 Hz | `peak_radius_hz`, `level_radius_hz`, `candidate_step_hz`, `follow_radius_hz`, `attribution_distance_hz` | heuristic (D chosen by measurement) |
 | Detector's threshold, segmental's path | 7 dB SNR per fine bin (8.79 Hz); hysteresis 3 dB | `DetectorConfig::threshold_db` | heuristic, chosen by measurement |
