@@ -560,7 +560,7 @@ void apply_detector_setting(EngineConfig& config, const std::string& setting) {
     else if (name == "floor_every_frames") d.floor_every_frames = static_cast<int>(value);
     else if (name == "max_tracks") d.max_tracks = static_cast<std::size_t>(value);
     else if (name == "one_track_per_peak") d.one_track_per_peak = value != 0.0;
-    else if (name == "quiet_place_open") config.quiet_place_open = value != 0.0;
+    else if (name == "first_retirement_open") config.first_retirement_open = static_cast<int>(value);
     else throw std::invalid_argument("--detector: unknown parameter '" + name + "'");
 }
 
