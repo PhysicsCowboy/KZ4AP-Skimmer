@@ -48,6 +48,10 @@ std::optional<ParsedCall> parse_form(std::string_view word);
 // A word with a call's form that in CW text is something else: rigs, antennas, software, and a word glued to 5NN (R5NN, UR5NN). Exact
 // matches only, since real calls contain them: DJ5NN stays a call. A heuristic list (manta's practice of exact matches).
 bool is_cw_word(std::string_view base);
+// A Maidenhead locator of six characters (FN31PR): two letters A to R, two digits, two letters A to X. Contest exchanges send them;
+// such a word gives no reading of a call, whole, stripped or glued, though some parse as a special form (FN31PR) or, stripped, as
+// a call (EL96UD, L96UD). A heuristic: a special-event call of that shape is lost.
+bool is_locator(std::string_view word);
 
 // A call made only of E, T, I, S, H, A, N, M, U and 5: what noise and a wide signal's fragments read as (track_evidence.hpp). The stage
 // takes it only as a whole word and reports it at CallSearchConfig::tiny_points whole words, with or without a known-call list. A heuristic.
@@ -179,6 +183,19 @@ struct CallSearchConfig {
     double reread_corrected = 1.0;
     // s: a track's text is kept this far back for that. Heuristic: corrections reached 165 to 206 s on real 40 m (appendix A.12).
     double history_s = 200.0;
+    // nats: a word named by another passes alone (points_named) only if the decoder's margin for its symbols is at least this
+    // (CallReading::margin_nats; 0 asks nothing). Heuristic, chosen by measurement.
+    double named_margin_nats = 0.0;
+    // With a known-call list, a word named by another passes alone only for a listed call, when not 0: CW Skimmer's single
+    // repetition is its watch list's. Heuristic, chosen by measurement.
+    double named_listed_only = 0.0;
+    // A call of one letter after its digit (K1T) is held back by a call two edits away with the same prefix and digit (K1BX)
+    // and more than this many times its points within variant_hz; 0 leaves such pairs to the rule of edit distance 1. Heuristic.
+    double short_variant_ratio = 0.0;
+    // nats: a whole or glued reading whose margin is below this scores low_margin_points, not 1 (0 leaves every such reading at 1).
+    // A reading scored by the decoder's confidence in it. Heuristics, chosen by measurement.
+    double low_margin_nats = 0.0;
+    double low_margin_points = 0.5;
 };
 
 // One line of the list.
@@ -227,6 +244,7 @@ private:
         double points = 0;
         Role role = Role::Unknown;
         bool framed = false;
+        double margin = 0;  // nats: the best of the margins of the readings it holds that are whole or glued words (CallReading::margin_nats)
     };
     struct Candidate {
         std::string base;
