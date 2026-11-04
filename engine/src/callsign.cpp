@@ -239,6 +239,12 @@ std::optional<ParsedCall> parse_call(std::string_view word) {
     return p;
 }
 
+double margin_of(float probability) {
+    if (!(probability < 1.0f)) return CallReading::kNoMargin;
+    if (!(probability > 0.0f)) return 0.0;
+    return std::max(0.0, std::log(static_cast<double>(probability) / (1.0 - static_cast<double>(probability))));
+}
+
 int edit_distance(std::string_view a, std::string_view b, int limit) {
     const int n = static_cast<int>(a.size()), m = static_cast<int>(b.size());
     if (std::abs(n - m) > limit) return limit + 1;
@@ -508,7 +514,13 @@ void CallSearch::read_track(TrackText& t, bool all) {
     std::size_t to = from;
     while (to < words.size() && (all || words[to].end_s <= settled)) ++to;
     if (to == from) return;
-    for (const CallReading& r : read_calls(words, from, to)) add(r, t.freq_hz);
+    for (CallReading& r : read_calls(words, from, to)) {
+        const std::size_t a = words[r.first_word].first, b = words[r.last_word - 1].last;
+        for (std::size_t i = a; i < b; ++i) r.margin_nats = std::min(r.margin_nats, margin_of(t.symbols[i].probability));
+        if (a > 0) r.edge_margin_nats = std::min(r.edge_margin_nats, margin_of(t.symbols[a - 1].probability));
+        if (b < t.symbols.size()) r.edge_margin_nats = std::min(r.edge_margin_nats, margin_of(t.symbols[b].probability));
+        add(r, t.freq_hz);
+    }
     t.read_to = t.base + words[to - 1].last;
     // Keep the context, eight words back (heuristic: a call's frame is at most a few words), and what a correction may yet change.
     std::size_t keep_word = to >= 8 ? to - 8 : 0;

@@ -167,6 +167,11 @@ struct SegmentalConfig {
     // 1: an element may end only within this many standard deviations of ln(length) of its median. Heuristic. 3.5 saves 5% more CPU per second of stream on real 40 m, with the same
     // list, and costs H2 0.0568 and 0.0492 against 0.0562 and 0.0473 on seeds 1 and 2, and one station of three beside a neighbor at 60 Hz on the detector's path: not taken.
     double duration_z_max = 4.0;
+
+    // nats: a merge's runner-up within this of its winner, reading other text, leaves its deficit on the winner's symbols where they differ, the least
+    // such deficit per symbol (a soft-output Viterbi's reliability, kept on the shared text): what a symbol's probability is made of, 1 / (1 + e^-margin).
+    // A rival further behind, or none, leaves probability 1; 0 keeps no margins at all. Changes no text. Heuristic: past the beam, 15 nats.
+    double rival_margin_nats = 16.0;
 };
 
 // The configuration at filter scale m: the sample interval, the filter's dot and the fastest speed's dot m times as long, so

@@ -97,7 +97,16 @@ struct CallReading {
     std::size_t last_word = 0;
     double start_s = 0;
     double end_s = 0;
+    // nats: the least margin the decoder gave the symbols it came from, word spaces between joined words included, and the least of the
+    // symbols just outside them (the word spaces that bound it); kNoMargin where the decoder gave probability 1 (no rival near).
+    // margin = ln(p / (1 - p)) of a symbol's probability p (the segmental decoder: SegmentalConfig::rival_margin_nats). CallSearch fills them.
+    double margin_nats = kNoMargin;
+    double edge_margin_nats = kNoMargin;
+    static constexpr double kNoMargin = 1e9;
 };
+
+// nats: a symbol's margin from its probability, ln(p / (1 - p)); CallReading::kNoMargin for p = 1.
+double margin_of(float probability);
 
 // Every reading of a call that begins in the words [from, to). A word can give several: they are alternatives, and the evidence
 // decides among them. `words` may reach past `to` and before `from`, for context.
