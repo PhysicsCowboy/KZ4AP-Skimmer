@@ -35,8 +35,10 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
         throw std::invalid_argument("segmental: beam_nats and duration_z_max must be positive, and ceiling at least 1");
     if (config.gap_stretches < 1 || config.gap_stretch_speed_steps < 1)
         throw std::invalid_argument("segmental: gap_stretches and gap_stretch_speed_steps must be at least 1");
-    if (!(config.rival_margin_nats >= 0.0 && config.rival_margin_nats < 1e6))
-        throw std::invalid_argument("segmental: rival_margin_nats must be finite and not negative (nats)");
+    // A float probability below 1 holds a margin of at most ln(2^24 - 1) = 16.64 nats; past 17.33 nats 1 / (1 + e^-m) rounds to 1, which
+    // the callsign stage reads as "unknown" (derived).
+    if (!(config.rival_margin_nats >= 0.0 && config.rival_margin_nats <= 16.6))
+        throw std::invalid_argument("segmental: rival_margin_nats must lie in [0, 16.6] nats (a float probability holds no more)");
     if (!(config.gap_stretch_prior >= 0.0 && config.gap_stretch_prior < 1.0))
         throw std::invalid_argument("segmental: gap_stretch_prior must lie in [0, 1)");
     if (config.gap_stretches > 1 && !(config.gap_stretch_prior > 0.0))

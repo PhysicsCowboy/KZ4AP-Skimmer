@@ -433,20 +433,31 @@ void KnownCalls::add(std::string_view call) {
 KnownCalls KnownCalls::read(std::istream& in) {
     KnownCalls out;
     std::string line;
+    std::size_t calls = 0;  // lines whose first word has a call's form
     while (std::getline(in, line)) {
+        if (line.find('\0') != std::string::npos)
+            throw std::runtime_error("the known-call list is not text (it holds NUL bytes); CW Skimmer's MASTER.DTA is binary: give a list of one call a line, such as MASTER.SCP");
         std::istringstream words(line);
         std::string first;
         if (!(words >> first)) continue;
         if (first[0] == '#' || first[0] == ';') continue;
+        std::string upper = first;
+        for (char& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        if (parse_form(upper)) ++calls;
         out.add(first);
     }
+    if (calls == 0) throw std::runtime_error("the known-call list holds no call (no line starts with a call's form): give a list of one call a line, such as MASTER.SCP");
     return out;
 }
 
 KnownCalls KnownCalls::read_file(const std::string& path) {
-    std::ifstream in(path);
+    std::ifstream in(path, std::ios::binary);  // binary: a Ctrl-Z in a binary file must not end it early under Windows' text mode
     if (!in) throw std::runtime_error("cannot read the known-call list: " + path);
-    return read(in);
+    try {
+        return read(in);
+    } catch (const std::runtime_error& e) {
+        throw std::runtime_error(std::string(e.what()) + ": " + path);
+    }
 }
 
 // ---- The stage

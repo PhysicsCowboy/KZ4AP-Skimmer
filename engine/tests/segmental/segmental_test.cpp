@@ -962,7 +962,7 @@ TEST(SegmentalMargins, ChangeNoTextAndSayLessForAWeakStation) {
         EXPECT_EQ(with.text(), without.text()) << snr << " dB S500";
         for (const DecodedSymbol& s : with.symbols) {
             EXPECT_GE(s.probability, 0.5f);
-            EXPECT_LE(s.probability, 1.0f);
+            EXPECT_LT(s.probability, 1.0f);  // no rival: the ceiling, 16 nats, read through a float as 15.94 nats; 1 says "none kept"
         }
         for (const DecodedSymbol& s : without.symbols) EXPECT_EQ(s.probability, 1.0f);
         EXPECT_EQ(without.confidence_corrections, 0);
@@ -972,14 +972,24 @@ TEST(SegmentalMargins, ChangeNoTextAndSayLessForAWeakStation) {
     EXPECT_EQ(strong.text(), text);
     EXPECT_GT(mean(strong), mean(weak));
     EXPECT_GT(weak.confidence_corrections, 0);
+    // Deficits are recorded as they are: some of the weak station's symbols lie strictly between a tie (0.5) and the ceiling, and most of
+    // the strong one's letters are at the ceiling.
+    const auto between = std::count_if(weak.symbols.begin(), weak.symbols.end(), [](const DecodedSymbol& s) { return s.probability > 0.55f && s.probability < 0.9999f; });
+    EXPECT_GT(between, 0);
+    const auto letters = std::count_if(strong.symbols.begin(), strong.symbols.end(), [](const DecodedSymbol& s) { return s.text != " "; });
+    const auto ceiling = std::count_if(strong.symbols.begin(), strong.symbols.end(), [](const DecodedSymbol& s) { return s.text != " " && s.probability > 0.99999f; });
+    EXPECT_GT(2 * ceiling, letters);
 }
 
-TEST(SegmentalMargins, ANegativeOrEndlessCapIsRefused) {
+TEST(SegmentalMargins, ACapAFloatCannotHoldIsRefusedAndTheDefaultIsOff) {
+    EXPECT_EQ(SegmentalConfig{}.rival_margin_nats, 0.0);
     SegmentalConfig config;
-    config.rival_margin_nats = -1.0;
-    EXPECT_THROW(SegmentalShared(config, ChannelizerConfig{48000, 2048, 64, 150.0}), std::invalid_argument);
-    config.rival_margin_nats = std::numeric_limits<double>::infinity();
-    EXPECT_THROW(SegmentalShared(config, ChannelizerConfig{48000, 2048, 64, 150.0}), std::invalid_argument);
+    for (const double bad : {-1.0, 16.7, 17.4, std::numeric_limits<double>::infinity()}) {
+        config.rival_margin_nats = bad;
+        EXPECT_THROW(SegmentalShared(config, ChannelizerConfig{48000, 2048, 64, 150.0}), std::invalid_argument) << bad;
+    }
+    config.rival_margin_nats = 16.6;
+    EXPECT_NO_THROW(SegmentalShared(config, ChannelizerConfig{48000, 2048, 64, 150.0}));
 }
 
 }  // namespace

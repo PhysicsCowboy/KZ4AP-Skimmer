@@ -117,7 +117,10 @@ int main(int argc, char** argv) {
     try {
         const Options o = parse(argc, argv);
         std::shared_ptr<const KnownCalls> known;
-        if (!o.known.empty()) known = std::make_shared<const KnownCalls>(KnownCalls::read_file(o.known));
+        if (!o.known.empty()) {
+            known = std::make_shared<const KnownCalls>(KnownCalls::read_file(o.known));
+            std::fprintf(stderr, "known-call list: %zu calls from %s\n", known->size(), o.known.c_str());
+        }
         CallSearch stage(o.config, known);
         std::ofstream readings;
         if (!o.readings.empty()) {

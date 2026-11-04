@@ -122,8 +122,10 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
 class KnownCalls {
 public:
     KnownCalls() = default;
+    // Throws std::runtime_error for a text with a NUL byte (a binary file, such as CW Skimmer's MASTER.DTA) or with no line whose first
+    // word has a call's form: such a list matches nothing, and with named_listed_only it would refuse every call named once, silently.
     static KnownCalls read(std::istream& in);
-    // Throws std::runtime_error when the file cannot be read.
+    // Throws std::runtime_error when the file cannot be read, or as read does, naming the file.
     static KnownCalls read_file(const std::string& path);
     void add(std::string_view call);
     bool contains(std::string_view base) const { return calls_.count(std::string(base)) != 0; }
@@ -191,9 +193,11 @@ struct CallSearchConfig {
     // pair). Heuristic, chosen by measurement: the four fragments of the two 2017 recordings tuned on go, nothing else changes.
     double short_variant_ratio = 2.0;
     // nats: a listed call read bare passes at points_known, as if framed, when some whole or glued reading of it has at least this margin
-    // (CallReading::margin_nats): a single reading scored by the decoder's confidence in it; 0 asks points_known_bare of every bare listed
-    // call. Heuristic, chosen by measurement: 4, 8 and 16 nats read the 2017 recordings alike, 1 nat lists 2 misreadings more.
-    double known_margin_nats = 8.0;
+    // (CallReading::margin_nats): a single reading scored by the decoder's confidence in it; 0, the default, asks points_known_bare of every
+    // bare listed call. Off since review 10: with the segmental decoder's margins at 16 nats and the 2018 list, 8 nats added 6 confirmed calls
+    // and 5 misreadings on the two 2017 recordings tuned on, but 6 and 9 on the two held out (decision log). A margin reaches at most 15.94
+    // nats there (the ceiling read through a float), so 16 nats is the rule off.
+    double known_margin_nats = 0.0;
 };
 
 // One line of the list.
