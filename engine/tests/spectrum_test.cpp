@@ -78,3 +78,17 @@ TEST(SpectrumAnalyzer, ChunkingDoesNotChangeFrames) {
         EXPECT_EQ(got[i].power_db, expected[i].power_db);
     }
 }
+
+TEST(SpectrumAnalyzer, WithoutDecibelsTheFramesCarryTheSameLinearPower) {
+    const auto x = tone(4000.0, 0.5, kRate, 4 * kN);
+    SpectrumAnalyzer with(kRate, kN, kN / 2);
+    SpectrumAnalyzer without(kRate, kN, kN / 2, false);
+    const auto a = with.push(x);
+    const auto b = without.push(x);
+    ASSERT_EQ(a.size(), b.size());
+    for (std::size_t f = 0; f < a.size(); ++f) {
+        EXPECT_TRUE(b[f].power_db.empty());
+        EXPECT_EQ(a[f].power_fs2, b[f].power_fs2);
+        EXPECT_EQ(a[f].time_s, b[f].time_s);
+    }
+}

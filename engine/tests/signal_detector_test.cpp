@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdint>
 #include <random>
 #include <stdexcept>
@@ -294,4 +295,71 @@ TEST(SignalDetectorHolds, OneWideSignalClosesItsRegionFromTheFirstHoldNotTheLong
     const double opened = seconds_until_born(d, i, 105, 130.0);
     EXPECT_GE(opened, SignalDetector::kRegionHoldS);
     EXPECT_LT(opened, SignalDetector::kRegionHoldS + 1.0);
+}
+
+namespace {
+
+// The distance rule, a peak the highest within +/-1 bin, and the prominence test over +/-5 bins (100 Hz bins).
+DetectorConfig prominence_config(float prominence_db) {
+    DetectorConfig c = config();
+    c.attribution = Attribution::Distance;
+    c.attribution_distance_hz = 150.0;
+    c.peak_radius_hz = 100.0;
+    c.prominence_db = prominence_db;
+    c.prominence_radius_hz = 500.0;
+    return c;
+}
+
+// The tracks born over 1 s of a strong station at bin 100 with its skirt falling to the right, and at bin 103 `bump` dB re 1 FS^2.
+std::vector<Track> born_beside_a_skirt(const DetectorConfig& c, float bump) {
+    SignalDetector d(c);
+    std::vector<Track> born;
+    for (int i = 0; i < 200; ++i) {
+        const auto u = d.process(frame(frame_time(i), {{100, -50.0f}, {101, -60.0f}, {102, -70.0f}, {103, bump}, {104, -75.0f}}));
+        born.insert(born.end(), u.born.begin(), u.born.end());
+    }
+    return born;
+}
+
+}  // namespace
+
+TEST(SignalDetectorProminence, AWeakerStationOnAStrongOnesSkirtGetsItsOwnTrack) {
+    // 8 dB above the valley between it and the strong station: prominent at 6 dB.
+    const std::vector<Track> born = born_beside_a_skirt(prominence_config(6.0f), -62.0f);
+    ASSERT_EQ(born.size(), 2u);
+    EXPECT_NEAR(std::abs(born[1].freq_hz - born[0].freq_hz), 300.0, 50.0);
+}
+
+TEST(SignalDetectorProminence, ARippleOnTheSkirtIsNotAStation) {
+    // 2 dB above the valley: a ripple, no second track; without the test it is one.
+    EXPECT_EQ(born_beside_a_skirt(prominence_config(6.0f), -68.0f).size(), 1u);
+    EXPECT_EQ(born_beside_a_skirt(prominence_config(0.0f), -68.0f).size(), 2u);
+}
+
+TEST(SignalDetectorProminence, RefusesValuesThatAreNotAMeasure) {
+    DetectorConfig c = config();
+    c.prominence_db = -1.0f;
+    EXPECT_THROW(SignalDetector{c}, std::invalid_argument);
+    c = config();
+    c.prominence_radius_hz = -1.0;
+    EXPECT_THROW(SignalDetector{c}, std::invalid_argument);
+    c = config();
+    c.fft_factor = 3;
+    EXPECT_THROW(SignalDetector{c}, std::invalid_argument);
+    c = config();
+    c.fft_factor = 0;
+    EXPECT_THROW(SignalDetector{c}, std::invalid_argument);
+}
+
+TEST(SignalDetector, ReadsAFrameThatCarriesLinearPowerOnly) {
+    SignalDetector d(config());
+    std::size_t born = 0;
+    for (int i = 0; i < 200; ++i) {
+        SpectrumFrame f = frame(frame_time(i), {{200, -70.0f}});
+        f.power_fs2.resize(f.power_db.size());
+        for (std::size_t b = 0; b < f.power_db.size(); ++b) f.power_fs2[b] = std::pow(10.0f, f.power_db[b] / 10.0f);
+        f.power_db.clear();
+        born += d.process(f).born.size();
+    }
+    EXPECT_EQ(born, 1u);
 }

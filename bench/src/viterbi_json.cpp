@@ -541,6 +541,7 @@ void apply_detector_setting(EngineConfig& config, const std::string& setting) {
         {"local_floor_radius_hz", &d.local_floor_radius_hz},
         {"dc_guard_hz", &d.dc_guard_hz},
         {"prominence_radius_hz", &d.prominence_radius_hz},
+        {"follow_radius_hz", &d.follow_radius_hz},
         {"dc_block_s", &config.dc_block_s},
     };
     for (const auto& [field, target] : doubles) {

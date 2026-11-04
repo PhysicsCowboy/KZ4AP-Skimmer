@@ -15,7 +15,7 @@ const kz4ap::DetectorConfig& ValidatedConfig(const kz4ap::DetectorConfig& config
         config.average_s <= 0 || config.birth_s < 0 || config.death_s <= 0 ||
         config.max_tracks == 0 || config.floor_every_frames < 1 || config.min_separation_bins < 1 || !(config.attribution_distance_hz > 0) ||
         !(config.peak_radius_hz > 0) || !(config.level_radius_hz >= 0) || !(config.candidate_step_hz >= 0) || !(config.local_floor_radius_hz >= 0) ||
-        !(config.prominence_db >= 0) || !(config.prominence_radius_hz >= 0) || !(config.dc_guard_hz >= 0) || config.fft_factor < 1 ||
+        !(config.prominence_db >= 0) || !(config.prominence_radius_hz >= 0) || !(config.dc_guard_hz >= 0) || !(config.follow_radius_hz >= 0) || config.fft_factor < 1 ||
         (config.fft_factor & (config.fft_factor - 1)) != 0)
         throw std::invalid_argument("invalid signal detector config");
     return config;
@@ -263,7 +263,8 @@ void SignalDetector::follow_peaks(float floor_db) {
     // do converge on one station: on real 40 m up to 19 of them on one frequency.
     const float keep_alive_db = config_.threshold_db - config_.hysteresis_db;
     const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
-    const int reach = static_cast<int>(std::ceil(config_.attribution_distance_hz / bin_hz)) + 1;
+    const double radius_hz = config_.follow_radius_hz > 0.0 ? config_.follow_radius_hz : config_.attribution_distance_hz;
+    const int reach = static_cast<int>(std::ceil(radius_hz / bin_hz)) + 1;
     const int last = static_cast<int>(average_.size()) - 1;
     for (std::size_t index = 0; index < active_.size(); ++index) {
         Active& t = active_[index];
@@ -272,7 +273,7 @@ void SignalDetector::follow_peaks(float floor_db) {
         for (int i = std::max(0, t.bin - reach); i <= std::min(last, t.bin + reach); ++i) {
             if (db_at(i) - floor_db < keep_alive_db || !is_peak(i)) continue;
             const double f = refined_freq(i);
-            if (!(std::abs(f - t.track.freq_hz) < config_.attribution_distance_hz)) continue;
+            if (!(std::abs(f - t.track.freq_hz) < radius_hz)) continue;
             if (config_.one_track_per_peak && within_older(index, f)) continue;
             if (best < 0 || average_[i] > average_[best]) {
                 best = i;

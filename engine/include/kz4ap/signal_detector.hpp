@@ -65,6 +65,9 @@ struct DetectorConfig {
     // that skirt does not. 0 for no such test.
     float prominence_db = 0.0f;
     double prominence_radius_hz = 47.0;
+    // Attribution::Distance: each frame a track moves to the strongest qualifying peak within this of its frequency, Hz; 0 for
+    // attribution_distance_hz (an answering station within the channel distance takes the track).
+    double follow_radius_hz = 0.0;
     // The engine's (Engine): the detector reads its own spectrum, of fft_factor times the band's FFT (bins fft_factor
     // times narrower) and a hop of half that FFT; 1 reads the band's frames. A power of two. The detector itself takes
     // fft_size and hop as given.
