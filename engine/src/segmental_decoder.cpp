@@ -327,7 +327,8 @@ DecodeUpdate SegmentalDecoder::bring_up_to_date(const segmental::BestStory& stor
 }
 
 std::uint8_t SegmentalDecoder::confidence_level(float probability) {
-    // Half-nat steps of the margin, ln(p / (1 - p)), from 0 to 63.5 nats; 255 for 1 (no rival). Heuristic: finer than any use of it.
+    // Half-nat steps of the margin, ln(p / (1 - p)), from 0 to 63.5 nats; 255 for 1 (no margins kept, or a letter open at the end).
+    // Heuristic: finer than any use of it.
     if (!(probability < 1.0f)) return 255;
     const double margin = std::log(static_cast<double>(probability) / (1.0 - static_cast<double>(probability)));
     return static_cast<std::uint8_t>(std::clamp(std::floor(2.0 * margin), 0.0, 127.0));
