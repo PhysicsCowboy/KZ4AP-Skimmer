@@ -50,6 +50,8 @@ public:
     }
     const std::string_view& symbol(std::int32_t entry) const { return entries_[static_cast<std::size_t>(entry)].symbol; }
     std::int32_t previous(std::int32_t entry) const { return entries_[static_cast<std::size_t>(entry)].previous; }
+    double start_s(std::int32_t entry) const { return entries_[static_cast<std::size_t>(entry)].start_s; }
+    double end_s(std::int32_t entry) const { return entries_[static_cast<std::size_t>(entry)].end_s; }
 
     // The probability a symbol is published with: 1 / (1 + e^-margin), the posterior of the story against its closest rival
     // there, two hypotheses only; 1 for an entry no rival came near (and for every symbol of the viterbi decoder, which keeps

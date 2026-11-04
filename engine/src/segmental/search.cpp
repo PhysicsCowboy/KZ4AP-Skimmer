@@ -406,65 +406,82 @@ struct Search::Impl {
         return &second;
     }
 
+    // A symbol a rival's text ends with that is not yet in the shared text (a word space, a letter just ended), with its times, s.
+    struct Pending {
+        std::string_view symbol;
+        double start_s = 0.0;
+        double end_s = 0.0;
+    };
+
     // A rival, `deficit` nats behind the story whose text ends at `winner`, read the text that ends at rival_base followed by
-    // extra[0 .. extras) (symbols not yet in the shared text: a word space, a letter just ended). Every one of the winner's last
-    // kMarginSymbols symbols where the two differ takes the deficit as its margin if lower (SharedText::lower_margin): first
-    // their common end is passed, then the winner's symbols back to an entry both share or three symbols in a row that agree,
-    // a symbol the rival has and the winner not marking the winner's symbol beside it. A soft-output Viterbi's update (Hagenauer
-    // and Hoeher 1989), at the symbols rather than the bits; the alignment past an insertion is a heuristic.
-    void note_rival(std::int32_t winner, std::int32_t rival_base, const std::array<std::string_view, 2>& extra, int extras, double deficit) {
-        constexpr int kMarginSymbols = 16;  // heuristic: longer than a call with a word on either side
+    // extra[0 .. extras). Both stories stand at one boundary, so their symbols are compared by time, from there back: a symbol of
+    // each with the same text, starting and ending within half the shorter's length (at least 30 ms) of the other's, agree. Of
+    // two that do not, the one that ends later is unmatched: the winner's takes the deficit as its margin if lower
+    // (SharedText::lower_margin), and the rival's lowers the winner's symbol beside it if that one overlaps it or ends where it
+    // begins (a word space the winner has not: the letter before it). This goes on past their common end until three agree in a
+    // row, an entry both share, or kMarginSymbols steps. A soft-output Viterbi's update (Hagenauer and Hoeher 1989) at the
+    // symbols rather than the bits; the match by time, its tolerances and the three are heuristics.
+    void note_rival(std::int32_t winner, std::int32_t rival_base, const std::array<Pending, 2>& extra, int extras, double deficit) {
+        constexpr int kMarginSymbols = 24;  // heuristic: a call with a word or two on either side
+        constexpr double kTouch = 2e-3;      // s: less than a sample, 2.667 ms
         const float nats = static_cast<float>(std::max(0.0, deficit));
         std::int32_t w = winner;
-        auto lw = static_cast<std::int64_t>(text.length(w));
         std::int32_t r = rival_base;
-        int v = extras;  // the rival's virtual symbols left; extra[v - 1] is its tip
-        auto lr = static_cast<std::int64_t>(text.length(r)) + extras;
-        const auto r_symbol = [&]() -> std::string_view { return v > 0 ? extra[static_cast<std::size_t>(v - 1)] : text.symbol(r); };
+        int v = extras;  // the rival's pending symbols left; extra[v - 1] is its tip
+        const auto r_valid = [&] { return v > 0 || r != viterbi::SharedText::kEmpty; };
         const auto r_step = [&] {
             if (v > 0) --v;
             else r = text.previous(r);
-            --lr;
         };
-        const auto shared = [&] { return v == 0 && r == w; };
-        int steps = 0;
-        for (; steps < kMarginSymbols && lw > 0 && lr > 0; ++steps) {
-            if (shared()) return;
-            if (text.symbol(w) != r_symbol()) break;
-            w = text.previous(w);
-            --lw;
-            r_step();
-        }
-        if (shared() || (lw == 0 && lr == 0)) return;
-        int agree = 0;
-        for (; steps < kMarginSymbols && lw > 0; ++steps) {
-            if (shared()) return;
-            if (lr > lw) {
+        const auto r_pending = [&] {
+            return v > 0 ? extra[static_cast<std::size_t>(v - 1)] : Pending{text.symbol(r), text.start_s(r), text.end_s(r)};
+        };
+        const auto agree = [](const Pending& a, const Pending& b) {
+            if (a.symbol != b.symbol) return false;
+            const double tolerance = std::max(0.03, 0.5 * std::min(a.end_s - a.start_s, b.end_s - b.start_s));
+            return std::abs(a.start_s - b.start_s) <= tolerance && std::abs(a.end_s - b.end_s) <= tolerance;
+        };
+        bool differed = false;
+        int agreed = 0;
+        for (int steps = 0; steps < kMarginSymbols && w != viterbi::SharedText::kEmpty; ++steps) {
+            if (v == 0 && r == w) return;
+            const Pending a{text.symbol(w), text.start_s(w), text.end_s(w)};
+            if (!r_valid()) {
                 text.lower_margin(w, nats);
+                w = text.previous(w);
+                continue;
+            }
+            const Pending b = r_pending();
+            if (agree(a, b)) {
+                if (differed && ++agreed >= 3) return;
+                w = text.previous(w);
                 r_step();
                 continue;
             }
-            if (lw > lr || r_symbol() != text.symbol(w)) {
+            differed = true;
+            agreed = 0;
+            if (b.end_s > a.end_s + kTouch) {
+                // The rival's symbol is unmatched: the winner's before it, if it reaches it.
+                if (a.end_s >= b.start_s - kTouch) text.lower_margin(w, nats);
+                r_step();
+            } else {
                 text.lower_margin(w, nats);
-                agree = 0;
-            } else if (++agree >= 3) {
-                return;
+                w = text.previous(w);
             }
-            if (lr == lw) r_step();
-            w = text.previous(w);
-            --lw;
         }
     }
 
-    // A mark slot's runner-up (a gap that ended into it) against the text its winner opened with.
-    void note_mark_rival(std::int32_t winner, const Slot& rival, double deficit) {
+    // A mark slot's runner-up (a gap that ended into it) against the text its winner opened with, at boundary j.
+    void note_mark_rival(std::int32_t winner, const Slot& rival, double deficit, std::int64_t j) {
         const Element& other = gaps[static_cast<std::size_t>(rival.parent)];
         const std::uint32_t how = rival.stamp_how & 3u;
         if (how == kEndElement) {
             note_rival(winner, other.text, {}, 0, deficit);
             return;
         }
-        note_rival(winner, other.text, {model.tree().symbol(other.node), " "}, how == kEndWord ? 2 : 1, deficit);
+        const Pending letter{model.tree().symbol(other.node), time_of(other.letter), time_of(other.start)};
+        const Pending space{" ", time_of(other.start), time_of(j)};
+        note_rival(winner, other.text, {letter, space}, how == kEndWord ? 2 : 1, deficit);
     }
 
     void boundary(std::int64_t j);
@@ -702,7 +719,8 @@ void Search::Impl::boundary(std::int64_t j) {
         }
         if (const Slot* rival = rival_of(gap_second, static_cast<std::size_t>(index), slot, stamp)) {
             const Element& other = marks[static_cast<std::size_t>(rival->parent)];
-            note_rival(e.text, other.text, {" ", {}}, other.space ? 1 : 0, slot.score - rival->score);
+            const double t = time_of(other.start);
+            note_rival(e.text, other.text, {Pending{" ", t, t}, Pending{}}, other.space ? 1 : 0, slot.score - rival->score);
         }
         opened_gaps.push_back(e);
     }
@@ -731,7 +749,7 @@ void Search::Impl::boundary(std::int64_t j) {
                 text.release(letter_entry);
             }
         }
-        if (const Slot* rival = rival_of(mark_second, static_cast<std::size_t>(index), slot, stamp)) note_mark_rival(e.text, *rival, slot.score - rival->score);
+        if (const Slot* rival = rival_of(mark_second, static_cast<std::size_t>(index), slot, stamp)) note_mark_rival(e.text, *rival, slot.score - rival->score, j);
         opened_marks.push_back(e);
     }
     // A rescue: the sender takes a new speed at a letter's start, from the best story that starts a letter here.
@@ -766,7 +784,7 @@ void Search::Impl::boundary(std::int64_t j) {
                     text.release(letter_entry);
                 }
                 if (const Slot* rival = rival_of(mark_second, static_cast<std::size_t>(best_index), slot, stamp))
-                    note_mark_rival(e.text, *rival, slot.score - rival->score);
+                    note_mark_rival(e.text, *rival, slot.score - rival->score, j);
                 opened_marks.push_back(e);
             }
         }
@@ -803,8 +821,10 @@ void Search::Impl::boundary(std::int64_t j) {
         if (held != viterbi::SharedText::kEmpty) text.release(held);
         if (gap_second != nullptr && second_parent >= 0 && silent_end - second_end < rival_margin) {
             const Element& other = marks[static_cast<std::size_t>(second_parent)];
-            if (other.space) note_rival(entry, other.text, {" ", model.tree().symbol(second_node)}, 2, silent_end - second_end);
-            else note_rival(entry, other.text, {model.tree().symbol(second_node), {}}, 1, silent_end - second_end);
+            const double t = time_of(other.start);
+            const Pending letter_end{model.tree().symbol(second_node), time_of(other.letter < 0 ? other.start : other.letter), time_of(j)};
+            if (other.space) note_rival(entry, other.text, {Pending{" ", t, t}, letter_end}, 2, silent_end - second_end);
+            else note_rival(entry, other.text, {letter_end, Pending{}}, 1, silent_end - second_end);
         }
         Tail& tail = tails[static_cast<std::size_t>((j + kEdgeCount) % static_cast<std::int64_t>(tails.size()))];
         tail.score = silent_end + kEdgeCount * model.log_silence();
