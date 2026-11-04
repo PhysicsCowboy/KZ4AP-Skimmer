@@ -101,15 +101,14 @@ struct CallReading {
     std::size_t last_word = 0;
     double start_s = 0;
     double end_s = 0;
-    // nats: the least margin the decoder gave the symbols it came from, word spaces between joined words included, and the least of the
-    // symbols just outside them (the word spaces that bound it); kNoMargin where the decoder gave probability 1 (no rival near).
-    // margin = ln(p / (1 - p)) of a symbol's probability p (the segmental decoder: SegmentalConfig::rival_margin_nats). CallSearch fills them.
-    double margin_nats = kNoMargin;
-    double edge_margin_nats = kNoMargin;
-    static constexpr double kNoMargin = 1e9;
+    // nats: the least margin the decoder gave the symbols it came from, word spaces between joined words included, margin = ln(p / (1 - p))
+    // of a symbol's probability p (the segmental decoder: SegmentalConfig::rival_margin_nats, at most that); kUnknownMargin when any of
+    // them has probability 1, which a decoder that keeps no margins gives every symbol. CallSearch fills it.
+    double margin_nats = kUnknownMargin;
+    static constexpr double kUnknownMargin = -1.0;
 };
 
-// nats: a symbol's margin from its probability, ln(p / (1 - p)); CallReading::kNoMargin for p = 1.
+// nats: a symbol's margin from its probability, ln(p / (1 - p)), at least 0; CallReading::kUnknownMargin for p = 1.
 double margin_of(float probability);
 
 // Every reading of a call that begins in the words [from, to). A word can give several: they are alternatives, and the evidence
@@ -183,22 +182,18 @@ struct CallSearchConfig {
     double reread_corrected = 1.0;
     // s: a track's text is kept this far back for that. Heuristic: corrections reached 165 to 206 s on real 40 m (appendix A.12).
     double history_s = 200.0;
-    // nats: a word named by another passes alone (points_named) only if the decoder's margin for its symbols is at least this
-    // (CallReading::margin_nats; 0 asks nothing). Heuristic, chosen by measurement.
-    double named_margin_nats = 0.0;
-    // With a known-call list, a word named by another passes alone only for a listed call, when not 0: CW Skimmer's single
-    // repetition is its watch list's. Heuristic, chosen by measurement.
-    double named_listed_only = 0.0;
-    // A call of one letter after its digit (K1T) is held back by a call two edits away with the same prefix and digit (K1BX)
-    // and more than this many times its points within variant_hz; 0 leaves such pairs to the rule of edit distance 1. Heuristic.
-    double short_variant_ratio = 0.0;
-    // nats: a whole or glued reading whose margin is below this scores low_margin_points, not 1 (0 leaves every such reading at 1).
-    // A reading scored by the decoder's confidence in it. Heuristics, chosen by measurement.
-    double low_margin_nats = 0.0;
-    double low_margin_points = 0.5;
-    // nats: a listed call read bare passes at points_known, as if framed, when some whole or glued reading of it has at least this
-    // margin; 0 asks points_known_bare of every bare listed call. Heuristic, chosen by measurement.
-    double known_margin_nats = 0.0;
+    // With a known-call list, a word named by another passes alone (points_named) only for a listed call, when not 0: CW Skimmer's single
+    // repetition is for its lists. Heuristic, chosen by measurement (appendix A.12): on the two 2017 recordings tuned on, with CW
+    // Skimmer's MASTER.DTA, 13 misreadings fewer for 3 confirmed calls.
+    double named_listed_only = 1.0;
+    // A call of one letter after its digit (K1T) is held back by a call two edits away with the same prefix and digit (K1BX) and more
+    // than this many times its points within variant_hz; 0 leaves such pairs to the rule of edit distance 1 (where K1T and K1BX are no
+    // pair). Heuristic, chosen by measurement: the four fragments of the two 2017 recordings tuned on go, nothing else changes.
+    double short_variant_ratio = 2.0;
+    // nats: a listed call read bare passes at points_known, as if framed, when some whole or glued reading of it has at least this margin
+    // (CallReading::margin_nats): a single reading scored by the decoder's confidence in it; 0 asks points_known_bare of every bare listed
+    // call. Heuristic, chosen by measurement: 4, 8 and 16 nats read the 2017 recordings alike, 1 nat lists 2 misreadings more.
+    double known_margin_nats = 8.0;
 };
 
 // One line of the list.

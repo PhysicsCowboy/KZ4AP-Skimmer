@@ -351,6 +351,7 @@ struct Search::Impl {
             gap_seconds = new_slot_table(slots);
             mark_seconds = new_slot_table(slots);
             rival_margin = static_cast<float>(c.rival_margin_nats);
+            text.set_no_rival_margin(rival_margin);
         }
         spacing_on = c.open_spacing_dots > 0.0;
         if (spacing_on) {

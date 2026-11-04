@@ -53,11 +53,15 @@ public:
     double start_s(std::int32_t entry) const { return entries_[static_cast<std::size_t>(entry)].start_s; }
     double end_s(std::int32_t entry) const { return entries_[static_cast<std::size_t>(entry)].end_s; }
 
+    // nats: what an entry no rival came near reads as, the keeper's ceiling on the deficits it records (the segmental search's
+    // rival_margin_nats); none set, such an entry reads probability 1, which says nothing (the viterbi decoder keeps no margins).
+    void set_no_rival_margin(float nats) { no_rival_ = nats; }
+
     // The probability a symbol is published with: 1 / (1 + e^-margin), the posterior of the story against its closest rival
-    // there, two hypotheses only; 1 for an entry no rival came near (and for every symbol of the viterbi decoder, which keeps
-    // no margins).
-    static float probability_of(float margin_nats) {
-        return margin_nats >= kNoRival ? 1.0f : static_cast<float>(1.0 / (1.0 + std::exp(-static_cast<double>(margin_nats))));
+    // there, two hypotheses only.
+    float probability_of(float margin_nats) const {
+        const float m = margin_nats >= kNoRival ? no_rival_ : margin_nats;
+        return m >= kNoRival ? 1.0f : static_cast<float>(1.0 / (1.0 + std::exp(-static_cast<double>(m))));
     }
 
     // One more holder of an entry; nothing for kEmpty.
@@ -122,6 +126,7 @@ private:
     std::vector<Entry> entries_;
     std::vector<std::int32_t> free_;  // freed slots, reused last freed first
     std::size_t used_ = 0;
+    float no_rival_ = kNoRival;  // nats: set_no_rival_margin
 };
 
 }  // namespace kz4ap::viterbi

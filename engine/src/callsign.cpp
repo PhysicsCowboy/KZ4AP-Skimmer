@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -254,7 +255,7 @@ std::optional<ParsedCall> parse_call(std::string_view word) {
 }
 
 double margin_of(float probability) {
-    if (!(probability < 1.0f)) return CallReading::kNoMargin;
+    if (!(probability < 1.0f)) return CallReading::kUnknownMargin;
     if (!(probability > 0.0f)) return 0.0;
     return std::max(0.0, std::log(static_cast<double>(probability) / (1.0 - static_cast<double>(probability))));
 }
@@ -530,9 +531,10 @@ void CallSearch::read_track(TrackText& t, bool all) {
     if (to == from) return;
     for (CallReading& r : read_calls(words, from, to)) {
         const std::size_t a = words[r.first_word].first, b = words[r.last_word - 1].last;
-        for (std::size_t i = a; i < b; ++i) r.margin_nats = std::min(r.margin_nats, margin_of(t.symbols[i].probability));
-        if (a > 0) r.edge_margin_nats = std::min(r.edge_margin_nats, margin_of(t.symbols[a - 1].probability));
-        if (b < t.symbols.size()) r.edge_margin_nats = std::min(r.edge_margin_nats, margin_of(t.symbols[b].probability));
+        // The least margin; an unknown one (-1) wins the minimum, so that a reading is sure only if every symbol says so.
+        double least = std::numeric_limits<double>::infinity();
+        for (std::size_t i = a; i < b; ++i) least = std::min(least, margin_of(t.symbols[i].probability));
+        r.margin_nats = std::isfinite(least) ? least : CallReading::kUnknownMargin;
         add(r, t.freq_hz);
     }
     t.read_to = t.base + words[to - 1].last;
@@ -562,8 +564,7 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
     }
     c.first_s = std::min(c.first_s, r.start_s);  // a correction can read something earlier than what came first
     const bool word = r.reading == Reading::Whole || r.reading == Reading::Glued;
-    const double points = word ? (r.margin_nats < config_.low_margin_nats ? config_.low_margin_points : 1.0)
-                               : (r.reading == Reading::Joined ? config_.joined_points : config_.stripped_points);
+    const double points = word ? 1.0 : (r.reading == Reading::Joined ? config_.joined_points : config_.stripped_points);
     // A keyword beside it, or the call sent twice: either way the word is used as a call.
     const bool framed = r.role != Role::Unknown || (r.doubled && config_.doubled_is_framed != 0.0);
     // Its place: where it last signed, else where it was last read bare, else where another named it, and among those a whole word before
@@ -609,7 +610,7 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
         if (std::abs(o.freq_hz - freq_hz) > within_hz || now_s - o.end_s > config_.window_s) continue;
         s.points += o.points;
         s.framed = s.framed || o.framed;
-        s.named = s.named || (o.role == Role::Named && o.points >= 1.0 && o.margin >= config_.named_margin_nats);
+        s.named = s.named || (o.role == Role::Named && o.points >= 1.0);
         s.sure = s.sure || (config_.known_margin_nats > 0.0 && o.points >= 1.0 && o.margin >= config_.known_margin_nats);
     }
     return s;

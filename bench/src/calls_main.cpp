@@ -58,8 +58,7 @@ void set_value(CallSearchConfig& c, const std::string& assignment) {
         {"doubled_is_framed", &c.doubled_is_framed},
         {"known_rival_factor", &c.known_rival_factor},
         {"reread_corrected", &c.reread_corrected}, {"history_s", &c.history_s},
-        {"named_margin_nats", &c.named_margin_nats}, {"named_listed_only", &c.named_listed_only},
-        {"short_variant_ratio", &c.short_variant_ratio}, {"low_margin_nats", &c.low_margin_nats}, {"low_margin_points", &c.low_margin_points},
+        {"named_listed_only", &c.named_listed_only}, {"short_variant_ratio", &c.short_variant_ratio},
         {"known_margin_nats", &c.known_margin_nats},
     };
     const auto it = fields.find(name);
@@ -123,13 +122,12 @@ int main(int argc, char** argv) {
         std::ofstream readings;
         if (!o.readings.empty()) {
             readings.open(o.readings);
-            readings << "call,how,role,doubled,start_s,end_s,freq_hz,margin_nats,edge_margin_nats\n";
+            readings << "call,how,role,doubled,start_s,end_s,freq_hz,margin_nats\n";
             stage.set_reading_log([&](const CallReading& r, double freq_hz) {
                 static constexpr const char* kHow[] = {"whole", "glued", "stripped", "joined"};
                 static constexpr const char* kRole[] = {"unknown", "sender", "named"};
                 readings << r.full << ',' << kHow[static_cast<int>(r.reading)] << ',' << kRole[static_cast<int>(r.role)] << ',' << (r.doubled ? 1 : 0) << ','
-                         << r.start_s << ',' << r.end_s << ',' << freq_hz << ',' << std::min(r.margin_nats, 99.0) << ','
-                         << std::min(r.edge_margin_nats, 99.0) << '\n';
+                         << r.start_s << ',' << r.end_s << ',' << freq_hz << ',' << std::min(r.margin_nats, 99.0) << '\n';  // 99: no rival near
             });
         }
         double stage_s = 0.0, channel_seconds = 0.0, stream_s = 0.0;

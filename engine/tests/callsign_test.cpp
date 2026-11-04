@@ -15,8 +15,9 @@ namespace {
 
 bool is_call(const std::string& word) { return parse_call(word).has_value(); }
 
-// A list of symbols for a text at 0.1 s a character, from t_s on; a space is a word space; <XX> is one symbol.
-std::vector<DecodedSymbol> symbols(const std::string& text, double t_s = 0.0) {
+// A list of symbols for a text at 0.1 s a character, from t_s on; a space is a word space; <XX> is one symbol. probability: every
+// symbol's (1 is what a decoder that keeps no margins says).
+std::vector<DecodedSymbol> symbols(const std::string& text, double t_s = 0.0, float probability = 1.0f) {
     std::vector<DecodedSymbol> out;
     for (std::size_t i = 0; i < text.size(); ++i) {
         std::string s(1, text[i]);
@@ -25,7 +26,7 @@ std::vector<DecodedSymbol> symbols(const std::string& text, double t_s = 0.0) {
             s = text.substr(i, close - i + 1);
             i = close;
         }
-        out.push_back({s, 1.0f, t_s, t_s + 0.1});
+        out.push_back({s, probability, t_s, t_s + 0.1});
         t_s += 0.1;
     }
     return out;
@@ -55,11 +56,11 @@ public:
         e.track.freq_hz = freq_hz;
         search.apply(e);
     }
-    void text(std::uint32_t id, double freq_hz, const std::string& t, double t_s) {
+    void text(std::uint32_t id, double freq_hz, const std::string& t, double t_s, float probability = 1.0f) {
         DecodedTextEvent e{};
         e.track_id = id;
         e.freq_hz = freq_hz;
-        e.chars = symbols(t, t_s);
+        e.chars = symbols(t, t_s, probability);
         search.apply(e);
     }
     void died(std::uint32_t id) {
@@ -534,6 +535,85 @@ TEST(CallSearch, AKnownCallNeedsOneFramedReadingOrTwoBareAndSpecialFormsNeedTheL
     EXPECT_TRUE(s.row("K1ABC")->known);
     EXPECT_NE(s.row("TM100TF"), nullptr);
     EXPECT_EQ(s.row("OL50HQ"), nullptr);
+}
+
+TEST(CallSearch, AListedCallReadOnceBarePassesOnlyIfTheDecoderWasSureOfIt) {
+    // known_margin_nats, 8 nats: a probability of 0.9999 is a margin of ln(0.9999 / 0.0001) = 9.2 nats, 0.99 one of 4.6 nats; a
+    // probability of 1 says nothing (a decoder that keeps no margins), and an unlisted call is not helped.
+    auto known = std::make_shared<KnownCalls>();
+    known->add("K1ABC");
+    const auto once = [&](float probability, const std::string& call, std::shared_ptr<KnownCalls> list) {
+        Stage s(CallSearchConfig{}, list);
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "E " + call + " T ", 0.0, probability);
+        s.search.advance(15.0);
+        return s.row(call) != nullptr;
+    };
+    EXPECT_TRUE(once(0.9999f, "K1ABC", known));
+    EXPECT_FALSE(once(0.99f, "K1ABC", known));
+    EXPECT_FALSE(once(1.0f, "K1ABC", known));
+    EXPECT_FALSE(once(0.9999f, "W1XYZ", known));
+    EXPECT_FALSE(once(0.9999f, "K1ABC", nullptr));
+    CallSearchConfig off;
+    off.known_margin_nats = 0.0;
+    Stage s(off, known);
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "E K1ABC T ", 0.0, 0.9999f);
+    s.search.advance(15.0);
+    EXPECT_EQ(s.row("K1ABC"), nullptr);
+}
+
+TEST(CallSearch, WithAListAWordNamedOncePassesOnlyListed) {
+    // named_listed_only: CW Skimmer repeats once for its lists only. Without a list the named word still passes alone.
+    auto known = std::make_shared<KnownCalls>();
+    known->add("K1ABC");
+    const auto named = [&](const std::string& call, std::shared_ptr<KnownCalls> list, CallSearchConfig config = {}) {
+        Stage s(config, list);
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, call + " 5NN TU ", 0.0);
+        s.search.advance(15.0);
+        return s.row(call) != nullptr;
+    };
+    EXPECT_TRUE(named("K1ABC", known));
+    EXPECT_FALSE(named("W1XYZ", known));
+    EXPECT_TRUE(named("W1XYZ", nullptr));
+    CallSearchConfig off;
+    off.named_listed_only = 0.0;
+    EXPECT_TRUE(named("W1XYZ", known, off));
+}
+
+TEST(CallSearch, AOneLetterSuffixIsHeldByAMuchBetterCallTwoEditsAwayWithItsPrefixAndDigit) {
+    // short_variant_ratio, 2: K1T beside K1BX at one place, read three times against seven. Off, K1T stands (two edits, a call of
+    // three characters: no pair under the rule of edit distance 1). Another prefix and digit, or a weaker rival, holds nothing back.
+    const auto run = [](CallSearchConfig config, const std::string& rival, int rival_times) {
+        Stage s(config);
+        s.born(1, 1000.0);
+        double t = 0.0;
+        for (int i = 0; i < 3; ++i, t += 5.0) s.text(1, 1000.0, "DE K1T K ", t);
+        for (int i = 0; i < rival_times; ++i, t += 5.0) s.text(1, 1000.0, "DE " + rival + " K ", t);
+        s.search.advance(t + 20.0);
+        return s.row("K1T") != nullptr;
+    };
+    EXPECT_FALSE(run(CallSearchConfig{}, "K1BX", 7));
+    CallSearchConfig off;
+    off.short_variant_ratio = 0.0;
+    EXPECT_TRUE(run(off, "K1BX", 7));
+    EXPECT_TRUE(run(CallSearchConfig{}, "K2BX", 7));
+    EXPECT_TRUE(run(CallSearchConfig{}, "K1BX", 5));
+}
+
+TEST(Readings, AMaidenheadLocatorGivesNoCall) {
+    // EL96UD would read as the special form EL96UD and, its E stripped, as L96UD; FN31PR as a special form. Neither is read.
+    EXPECT_TRUE(is_locator("EL96UD"));
+    EXPECT_TRUE(is_locator("FN31PR"));
+    EXPECT_FALSE(is_locator("K1ABCD"));
+    EXPECT_FALSE(is_locator("ZZ12AB"));  // Z is past R
+    EXPECT_FALSE(is_locator("FN31"));
+    const std::vector<CallReading> r = readings("K8BAT 5NN EL96UD TU ");
+    EXPECT_TRUE(has_base(r, "K8BAT"));
+    EXPECT_FALSE(has_base(r, "L96UD"));
+    EXPECT_FALSE(has_base(r, "EL96UD"));
+    EXPECT_FALSE(has_base(readings("CQ FN31PR K "), "FN31PR"));
 }
 
 TEST(CallSearch, ACallOfTinyPiecesNeedsTwoWholeWordsListedOrNot) {
