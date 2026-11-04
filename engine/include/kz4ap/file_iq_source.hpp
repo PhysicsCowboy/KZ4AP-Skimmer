@@ -1,8 +1,10 @@
-// A recording as an IqSource: the project's WAV form (wav_reader.hpp), delivered at a chosen pace (design section 4.1,
-// step 1: real time, faster, or as fast as possible), or paused.
+// A recording as an IqSource: a stereo I/Q WAV file (wav_reader.hpp), mirrored and resampled as RecordingReader does
+// (recording_reader.hpp), delivered at a chosen pace (design section 4.1, step 1: real time, faster, or as fast as possible),
+// or paused.
 #pragma once
 
 #include "kz4ap/iq_source.hpp"
+#include "kz4ap/recording_reader.hpp"
 #include "kz4ap/wav_reader.hpp"
 
 #include <condition_variable>
@@ -60,12 +62,25 @@ private:
 
 class FileIqSource final : public IqSource, public PlaybackControl {
 public:
-    // Throws std::runtime_error if the file cannot be opened or is not 16-bit stereo PCM (WavIqReader).
+    // Where the center frequency came from: the caller, the recording's header (auxi), its file name, or nowhere.
+    enum class CenterOrigin { Given, Header, FileName, Unknown };
+
+    // Throws std::runtime_error if the file cannot be opened or is not a form WavIqReader reads.
     // start_s: where the stream begins in the recording, s, clipped to its end: a seek is a new stream from there.
-    explicit FileIqSource(const std::filesystem::path& path, double start_s = 0.0);
+    // center_hz: the radio's frequency at 0 Hz in the samples, Hz, overriding what the header or the name says.
+    // options: mirroring and resampling (RecordingReader).
+    explicit FileIqSource(const std::filesystem::path& path, double start_s = 0.0,
+                          std::optional<double> center_hz = std::nullopt, RecordingOptions options = {});
+    const RecordingReader& recording() const { return reader_; }
 
     int sample_rate() const override { return reader_.sample_rate(); }
     std::string description() const override { return description_; }
+    // The caller's, else the header's (auxi), else the file name's (center_hz_from_file_name), else none.
+    std::optional<double> center_frequency_hz() const override { return center_hz_; }
+    CenterOrigin center_origin() const { return center_origin_; }
+    // The header's start time moved on by start_s; none without one.
+    std::optional<std::int64_t> start_unix_ms() const override { return start_unix_ms_; }
+    WavSampleFormat sample_format() const { return reader_.sample_format(); }
     // The samples this stream delivers: from start_s to the recording's end.
     std::optional<std::uint64_t> total_samples() const override { return remaining_; }
     // The recording's whole length, s, wherever this stream began.
@@ -80,9 +95,12 @@ public:
     double speed() const override;
 
 private:
-    WavIqReader reader_;  // read() only: the pipeline's thread
+    RecordingReader reader_;  // read() only: the pipeline's thread
     std::uint64_t remaining_ = 0;  // samples from the stream's start to the recording's end
     std::string description_;
+    std::optional<double> center_hz_;
+    CenterOrigin center_origin_ = CenterOrigin::Unknown;
+    std::optional<std::int64_t> start_unix_ms_;
     mutable std::mutex mutex_;
     std::condition_variable changed_;
     PlaybackPacer pacer_;

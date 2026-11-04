@@ -1,5 +1,7 @@
 #include "kz4ap/callsign.hpp"
 
+#include "kz4ap/utc_time.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -735,16 +737,19 @@ std::vector<CallRow> CallSearch::candidates() const {
     return out;
 }
 
-std::string calls_csv(const std::vector<CallRow>& rows, std::optional<double> center_hz) {
+std::string calls_csv(const std::vector<CallRow>& rows, std::optional<double> center_hz, std::optional<std::int64_t> start_unix_ms) {
     std::ostringstream out;
-    out << "call,base,freq_hz,freq_khz,first_s,reported_s,last_s,count,points,known,heard,framed\n";
+    out << "call,base,freq_hz,freq_khz,first_s,reported_s,last_s,count,points,known,heard,framed,first_utc,last_utc\n";
     char line[256];
+    const auto utc = [&](double stream_s) {
+        return start_unix_ms ? utc_text(*start_unix_ms + static_cast<std::int64_t>(std::llround(1000.0 * stream_s))) : std::string();
+    };
     for (const CallRow& r : rows) {
         const double khz = center_hz ? (*center_hz + r.freq_hz) / 1000.0 : 0.0;
-        std::snprintf(line, sizeof line, ",%.1f,%s,%.1f,%.1f,%.1f,%u,%.1f,%d,%d,%d\n", r.freq_hz,
+        std::snprintf(line, sizeof line, ",%.1f,%s,%.1f,%.1f,%.1f,%u,%.1f,%d,%d,%d,", r.freq_hz,
                       center_hz ? std::to_string(khz).c_str() : "", r.first_s, r.reported_s, r.last_s, r.count, r.points,
                       r.known ? 1 : 0, r.heard ? 1 : 0, r.framed ? 1 : 0);
-        out << r.call << ',' << r.base << line;
+        out << r.call << ',' << r.base << line << utc(r.first_s) << ',' << utc(r.last_s) << '\n';
     }
     return out.str();
 }

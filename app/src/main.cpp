@@ -66,7 +66,8 @@ int main(int argc, char* argv[]) {
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("KZ4AP Skimmer: a waterfall and decoded text from I/Q recordings or an SDRplay radio."));
     parser.addHelpOption();
-    parser.addPositionalArgument(QStringLiteral("recording"), QStringLiteral("An I/Q recording to open (16-bit stereo WAV)."),
+    parser.addPositionalArgument(QStringLiteral("recording"),
+                                 QStringLiteral("An I/Q recording to open (stereo WAV: 16-, 24- or 32-bit integer, or 32-bit float)."),
                                  QStringLiteral("[recording]"));
     const QCommandLineOption decoder_option(
         QStringLiteral("decoder"), QStringLiteral("The decoder: envelope, matched, bank, viterbi or segmental."), QStringLiteral("name"),
@@ -105,14 +106,21 @@ int main(int argc, char* argv[]) {
                                                 QStringLiteral("A known-call list in MASTER.SCP's format: one call a line. The call list works without one."),
                                                 QStringLiteral("path"));
     const QCommandLineOption radio_option(QStringLiteral("radio"), QStringLiteral("Start the SDRplay radio at once."));
-    const QCommandLineOption center_option(QStringLiteral("center-khz"), QStringLiteral("The radio's center frequency, kHz."),
-                                           QStringLiteral("kHz"), QStringLiteral("7031.5"));
+    const QCommandLineOption center_option(
+        QStringLiteral("center-khz"),
+        QStringLiteral("The radio's center frequency, kHz. With a recording, it overrides what the recording's header or file name says."),
+        QStringLiteral("kHz"), QStringLiteral("7031.5"));
     const QCommandLineOption rate_option(QStringLiteral("rate"), QStringLiteral("The radio's sample rate: 96000, 192000, 384000 or 768000 Hz."),
                                          QStringLiteral("Hz"), QStringLiteral("192000"));
     const QCommandLineOption gain_option(QStringLiteral("gain-reduction"), QStringLiteral("The radio's IF gain reduction, 20 to 59 dB."),
                                          QStringLiteral("dB"), QStringLiteral("40"));
     const QCommandLineOption lna_option(QStringLiteral("lna-state"), QStringLiteral("The radio's LNA state, 0 (the most gain) to 9."),
                                         QStringLiteral("n"), QStringLiteral("0"));
+    const QCommandLineOption mirror_option(
+        QStringLiteral("mirror"),
+        QStringLiteral("The recording's spectrum is mirrored (an SDR on a transceiver's IF output): conjugate its samples, so a "
+                       "signal's true frequency is the center minus the file's offset."));
+    parser.addOption(mirror_option);
     parser.addOptions({decoder_option, speed_option, screenshot_option, screenshot_at_option, report_option,
                        quit_at_end_option, quit_at_option, transport_option, threads_option, decoded_option, calls_option, known_calls_option, radio_option,
                        center_option, rate_option, gain_option, lna_option});
@@ -126,6 +134,7 @@ int main(int argc, char* argv[]) {
         parser.isSet(screenshot_at_option) ? parser.value(screenshot_at_option).toDouble() : 1e300;
     automation.report_path = parser.value(report_option);
     automation.quit_at_end = parser.isSet(quit_at_end_option);
+    automation.mirror = parser.isSet(mirror_option);
     if (parser.isSet(quit_at_option)) automation.quit_at_s = parser.value(quit_at_option).toDouble();
     for (const QString& step : parser.value(transport_option).split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
         const qsizetype colon = step.indexOf(QLatin1Char(':'));
@@ -145,6 +154,11 @@ int main(int argc, char* argv[]) {
 
     kz4ap::app::RadioDefaults radio;
     radio.center_khz = parser.value(center_option).toDouble();
+    if (parser.isSet(center_option)) {
+        if (!(radio.center_khz > 0))
+            return usage_error(QStringLiteral("bad center frequency: %1 kHz").arg(parser.value(center_option)), quiet);
+        automation.recording_center_hz = radio.center_khz * 1000.0;
+    }
     radio.sample_rate = parser.value(rate_option).toInt();
     if (radio.sample_rate != 96000 && radio.sample_rate != 192000 && radio.sample_rate != 384000 && radio.sample_rate != 768000)
         return usage_error(QStringLiteral("the radio's sample rate must be 96000, 192000, 384000 or 768000 Hz, not %1").arg(parser.value(rate_option)), quiet);

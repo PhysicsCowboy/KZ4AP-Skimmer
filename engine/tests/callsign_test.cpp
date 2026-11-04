@@ -735,4 +735,15 @@ TEST(CallsCsv, ColumnsAndValues) {
     EXPECT_NE(csv.find("K1ABC/P,K1ABC,-1500.2"), std::string::npos);
     const std::string absolute = calls_csv({r}, 7031500.0);
     EXPECT_NE(absolute.find("7029.9"), std::string::npos);
+    EXPECT_NE(csv.find(",framed,first_utc,last_utc\n"), std::string::npos);
+    EXPECT_NE(csv.find(",0,1,0,,\n"), std::string::npos);  // known, heard, framed; no times without a start
+}
+
+TEST(CallsCsv, TimesInUtcWhenTheStreamsStartIsKnown) {
+    CallRow r;
+    r.call = r.base = "K1ABC";
+    r.first_s = 12.25;
+    r.last_s = 3600.0;
+    const std::string csv = calls_csv({r}, std::nullopt, 1503338400093);  // 2017-08-21 18:00:00.093 UTC
+    EXPECT_NE(csv.find(",2017-08-21T18:00:12.343Z,2017-08-21T19:00:00.093Z\n"), std::string::npos);
 }

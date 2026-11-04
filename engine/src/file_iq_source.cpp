@@ -76,12 +76,27 @@ double PlaybackPacer::seconds_until(std::uint64_t samples, double now_s) const {
     return due <= 0.0 ? 0.0 : due / (speed_ * rate_);
 }
 
-FileIqSource::FileIqSource(const std::filesystem::path& path, double start_s)
-    : reader_(path), description_(path_text(path.filename())), pacer_(static_cast<double>(reader_.sample_rate())) {
+FileIqSource::FileIqSource(const std::filesystem::path& path, double start_s, std::optional<double> center_hz,
+                           RecordingOptions options)
+    : reader_(path, options), description_(path_text(path.filename())), pacer_(static_cast<double>(reader_.sample_rate())) {
     if (!(start_s >= 0.0)) throw std::invalid_argument("the start of a recording's stream must not be negative (s)");
     const auto start = std::min(reader_.total_samples(), static_cast<std::uint64_t>(start_s * reader_.sample_rate()));
     reader_.seek(start);
     remaining_ = reader_.total_samples() - start;
+    if (center_hz) {
+        center_hz_ = center_hz;
+        center_origin_ = CenterOrigin::Given;
+    } else if (reader_.info().center_hz) {
+        center_hz_ = reader_.info().center_hz;
+        center_origin_ = CenterOrigin::Header;
+    } else if ((center_hz_ = center_hz_from_file_name(description_, reader_.file_rate()))) {
+        center_origin_ = CenterOrigin::FileName;
+    }
+    if (reader_.info().start_unix_ms) {
+        // The stream's first sample, at the recording's nominal rate.
+        start_unix_ms_ = *reader_.info().start_unix_ms +
+                         static_cast<std::int64_t>(std::llround(1000.0 * static_cast<double>(start) / reader_.sample_rate()));
+    }
 }
 
 IqRead FileIqSource::read(std::span<Sample> out, std::chrono::milliseconds timeout) {

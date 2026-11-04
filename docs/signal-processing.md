@@ -23,7 +23,7 @@ default 192 kHz input unless stated.
 ## 0. Units and symbols
 
 Nothing is calibrated to volts or dBm. Amplitudes are in **FS** (full
-scale: the WAV's 16-bit integers divided by 32768), powers in **FS²**, and
+scale: the WAV's integers scaled to [−1, 1)), powers in **FS²**, and
 absolute levels in **dBFS** (dB relative to 1 FS²; a complex tone of
 amplitude 1 FS reads 0 dBFS). A signal-to-noise ratio always names the
 bandwidth its noise is measured in, e.g. "dB SNR in 500 Hz". Log-likelihoods
@@ -61,24 +61,26 @@ I/Q (fs) ─┬─► spectrum analyzer ─┬─► signal detector ─► trac
                                                 callsign stage ─► list of calls
 ```
 
-The input is the whole band the radio delivers, 192 kHz wide. Two things
-happen to it in parallel. The **spectrum analyzer and detector** look at
+The input is the radio's whole band, 192 kHz wide; two things happen to
+it in parallel. The **spectrum analyzer and detector** look at
 the band every 21.33 ms and decide where stations are: each station becomes
 a *track* with a frequency. For every track the **channelizer** cuts a
 narrow stream out of the band, about ±150 Hz around the station, at 1500
 samples/s. A **decoder** per channel turns that stream into characters.
 Five decoders: **segmental** (the app's default), **Matched** (the bench's), **Envelope** (the
-baseline), the **bank** (the frozen reference; design spec §5.2) and **viterbi**. Matched and the
+baseline), the **bank** (the frozen reference) and **viterbi**. Matched and the
 bank are told the detector's frequency before each block (the *anchor*); viterbi's and segmental's
 channels follow it (section 7), and those two get N₀ from a hiss estimator reading the spectrum.
 
 ## 1. Input
 
-A 16-bit stereo WAV, left channel I and right channel Q, divided by 32768,
-so samples lie in [−1, 1) FS. Frequencies are offsets from the radio's
-center frequency, in Hz, spanning ±fs/2. The engine processes fixed blocks of
-exactly N/2 samples (the hop), so the output does not depend on how a caller
-splits the input.
+A stereo WAV, I left, Q right: b-bit integers (b = 16, 24, 32) over
+2^(b−1), in [−1, 1) FS, or 32-bit floats. Other rates go exactly to
+the largest decoder rate below (250 to 192 kHz: × 96/125); `--mirror`
+conjugates a mirrored receiver's samples. Frequencies are offsets from the
+center (Hz); the center (`--center-khz`, header or file
+name) only labels them (A.1). Blocks of N/2 samples (section 3) keep the
+output independent of a caller's splitting.
 
 ## 2. The FFT size N and bin width Δf
 
@@ -513,8 +515,8 @@ were measured with. Values are heuristics unless marked. Appendix: A.9b.
 One thread runs spectrum, detector and blocks; `worker_threads` (half the machine's)
 run the channels. A job touches only its own channel, and results go out in track
 order, so output does not depend on the threads. The spectrum carries linear power
-(FS²), so the detector and hiss take no logarithm per bin. The display paints 12.5 pictures/s, the
-track list only changed cells, 4.2 times/s, the status bar once a second (heuristics).
+(FS²), so the detector and hiss take no logarithm per bin. The display paints 12.5 pictures/s
+(A.10).
 
 **Detector, added to section 6.** A new track must stand 6 dB above the lower
 quartile of the averaged bins within ±1 kHz (*local floor*): a wide signal's peaks
@@ -601,7 +603,7 @@ section titled "Moved from signal-processing.md, 2026-10-05".
 The rules of this section as the code implements them (moved verbatim from the body on 2026-10-05, when the body was rewritten for reading).
 
 Nothing is calibrated to volts or dBm. Linear amplitude is in **FS** (full
-scale: the WAV's 16-bit integers divided by 32768), power in **FS²**,
+scale: the WAV's b-bit integers divided by 2^(b−1)), power in **FS²**,
 absolute levels in **dBFS** (dB relative to 1 FS²; a complex tone of
 amplitude 1 FS reads 0 dBFS). An SNR always names its noise bandwidth (dB
 SNR in 500 Hz; dB SNR per bin = in 35.2 Hz). A dB value that is neither
@@ -622,10 +624,11 @@ nats. Time constants are in s, or in dits where the text says so.
 **Units, in full.** The engine has no physical calibration: nothing
 relates its numbers to volts or dBm at the antenna.
 
-- **FS (full scale):** linear amplitude unit. The input WAV holds 16-bit
-  integers; the engine divides them by 32768, so I and Q each lie in
-  [−1, 32767/32768] FS: 1 FS itself is just beyond the largest positive value
-  the file can hold. The WAV is the SDR software's output, not raw
+- **FS (full scale):** linear amplitude unit. The input WAV holds b-bit
+  integers (b = 16, 24 or 32); the engine divides them by 2^(b−1), so I and Q
+  each lie in [−1, 1 − 2^(1−b)] FS: 1 FS itself is just beyond the largest
+  positive value the file can hold. A 32-bit float WAV is taken as stored,
+  in FS, and may exceed 1. The WAV is the SDR software's output, not raw
   ADC counts, and the gain from the antenna to it is unknown.
 - **FS²:** power unit (squared amplitude, e.g. |x|² of one complex sample).
 - **dBFS:** power in dB relative to 1 FS². 0 dBFS is the power of a complex
@@ -695,6 +698,81 @@ different things:
 | T | the dit a branch has fitted to its own marks and spaces (the duration fit) |
 | τ_c | a candidate dit tried by the periodicity estimator (303 values, 12 to 242 ms) |
 | T_P | the periodicity estimator's result: the best confident candidate |
+
+## A.1 Input
+
+### Exact form
+
+`WavIqReader` (`engine/src/wav_reader.cpp`) reads RIFF/WAVE with 2 channels:
+format tag 1 (integer PCM) of 16, 24 or 32 bits, tag 3 (IEEE float) of 32
+bits, or tag 0xFFFE (WAVE_FORMAT_EXTENSIBLE) whose sub-format GUID begins
+with 1 or 3. The block align must be 2·b/8 bytes. Integers are little-endian
+two's complement; a 24-bit value is placed in the top three bytes of a
+32-bit word and shifted back arithmetically, then every integer is scaled by
+2^−(b−1). The extensible header's valid-bits field is not used, since valid
+bits are left-justified in the container. The data chunk's length is cut to
+what the file holds.
+
+**The center and the time.** The center is `--center-khz` if given (the app
+and `kz4ap-calls`), else the header's `auxi` chunk, else the file name; the
+`auxi` start time, when present, dates the call list (`first_utc`,
+`last_utc`) and the app's report (`stream_start_utc`, with `center_from`).
+Nothing else in a header is used (the converter's rate, an IF, a DC
+offset).
+
+**The `auxi` chunk** (SpectraVue's and HDSDR's form, which CWSL_File
+writes; at most 4 096 bytes, a longer one is skipped):
+bytes 0–15 the start and 16–31 the stop, each a SYSTEMTIME (eight
+little-endian 16-bit words: year, month, day of week, day, hour, minute,
+second, ms), and bytes 32–35 the center frequency, an unsigned 32-bit Hz. A
+time is taken only if its fields form a date (year 1980–2200, month 1–12,
+day 1–31, hour ≤ 23, minute ≤ 59, second ≤ 60, ms ≤ 999), and a center
+only if it is not 0. The times are taken as UTC, which is what SpectraVue,
+HDSDR and CWSL_File write (they fill it from the system's UTC clock); a
+writer that wrote local time would shift every UTC time by its offset, and
+the file cannot show that. The stream's start is the header's start plus
+the stream's first sample / fs, at the nominal fs: no clock drift is
+modeled (W3OA's 2017 file: stop − start = 899.912 s of clock against
+900.608 s of samples, 0.08% apart).
+
+**Mirroring** (`RecordingOptions::mirror`; the app's and `kz4ap-calls`' `--mirror`, `kz4ap-resample`'s too): every sample
+is conjugated, x → x*, so a signal the file holds at offset +f is read at −f and its true frequency is the center − f. For an
+SDR on a transceiver's IF output, whose spectrum is inverted: the owner's 2026-11-04 recording (an RSP1A on the K3's 8.215 MHz
+IF) holds the FT8 tones of 7 074–7 077 kHz at 6 963–6 965.4 kHz as labeled (measured by the coordinating session).
+
+**Resampling** (`RationalResampler`, `RecordingReader`). A file whose rate is not 48 000 × 2^k samples/s (k = 0–4: the rates at
+which a channel's 1/128 of fs holds a whole number of segmental's samples) and is above 48 kHz is resampled to the largest of
+those below it (`decoder_rate_for`); below 48 kHz it is left for the decoder to refuse. The ratio is the rates' reduced
+fraction L/M (96/125 for 250 to 192 kHz; L, M ≤ 4 096, else refused), so the rate is exact. The filter is a windowed sinc at
+fs_up = L·fs_in, cut at half the lower rate (−6 dB there: 96 kHz), with a Kaiser window of β = 0.1102 (A − 8.7) = 7.857 for
+A = 80 dB of stopband attenuation and length N − 1 = (A − 7.95) / (2.285 · 2π Δf / fs_up) for a transition Δf = 0.104 × the
+lower rate (20 kHz at 192 kHz), both Kaiser's estimates (sourced: Oppenheim and Schafer); padded to K·L taps, K = 63 per phase
+at 96/125. Output n takes input base ⌊nM/L⌋ and phase p = nM mod L: y[n] = Σ_k h[p + kL] x[base − k], k = 0 … K − 1. Each
+phase is scaled to sum 1, so a constant goes through unchanged. Group delay (N − 1) / (2 fs_up) = 126 µs at 96/125, not
+removed (derived). The pass band thus runs to 86 kHz, flat within the window's ripple of 10⁻⁴ (80 dB); 86–96 kHz is the transition, and
+what the input held at 96–106 kHz folds into 86–96 kHz, the band's edge, where the input's own content beyond 106 kHz is 80 dB
+down (tests: a tone at 0, 20, −55 and 85 kHz within 0.01 dB, rms error under 10⁻³ FS at 0.5 FS; 120 and −110 kHz at least
+75 dB down; output identical however the input is split; a seek gives the same samples as reading through). A = 80 dB and the
+0.104: heuristics, below 16-bit noise. CPU on the owner's 367.5 s recording: the copy took 5.6 s of wall on the desktop, that
+is about 15 ms of one core per s of stream (measured, `kz4ap-resample`), inside the fixed cost of a stream. Input before the
+file's start and after its end counts as zero.
+
+**The center from the file name** (`center_hz_from_file_name`), used when
+neither `--center-khz` nor the header gives one: the name's extension of 1–4
+letters is dropped and the rest split into words at `_`, `-` and spaces.
+First, two adjacent words `<low>` and `<high><unit>` (unit Hz, kHz or MHz,
+any case) are the span's edges when high − low is between 0.8·fs and
+1.001·fs; the center is their mean (`N2GZ_wideband_7000_7192kHz_…`:
+7 096 kHz). Otherwise the first word `<f><unit>` whose value is not fs
+itself (`KC2LRC_…_14091kHz`, `kz4ap_7030.000kHz_192kHz_…`). The 0.8 is a
+heuristic: W3OA's name gives 6 995–7 177 kHz, 182 kHz, at fs = 192 kHz.
+The center from a name is only as good as the name: on N2GZ's file the
+call list stands +0.136 kHz above N2GZ's own RBN spots (median of 28
+calls), on W3OA's (header center 7 086.101 kHz) +0.206 kHz above the North
+American skimmers' median (47 calls), on KC2LRC's −0.02 kHz (49 calls);
+measured on the 2017 recordings, cause of the first two not traced (a
+nominal center, a receiver's clock about 29 ppm off; conjecture). No
+decision depends on it: the center only labels.
 
 ## A.2 The FFT size N and bin width Δf
 
@@ -4131,6 +4209,10 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 
 | Parameter | Value | Where | Status |
 |---|---|---|---|
+| Input scale | b-bit integers × 2^−(b−1); 32-bit floats as stored | wav_reader.cpp | standard choice |
+| Input rate | file's if 48 000 × 2^k samples/s (k = 0–4) or below 48 kHz; else the largest of those below, by L/M ≤ 4 096 | `decoder_rate_for`, `RationalResampler::kMaxFactor` | derived (the decoder's rates); the 4 096 heuristic |
+| Resampler filter | Kaiser sinc, −6 dB at half the lower rate, transition 0.104 × the lower rate (20 kHz at 192 kHz), 80 dB stopband; 63 taps per phase at 96/125 | `RationalResampler::kTransitionRatio`, `kAttenuationDb` | heuristic (Kaiser's formulas sourced) |
+| Center from a file name | span edges when 0.8–1.001 fs apart, else the first `<f>Hz/kHz/MHz` word that is not fs | `center_hz_from_file_name` | heuristic |
 | Bin width Δf | ~23 Hz (rule: largest power-of-two N with Δf ≥ 20 Hz) | `choose_fft_size` (engine.cpp) | heuristic |
 | Hop / overlap | N/2, 50% (largest hop keeping Hann constant-sum) | engine.cpp | standard choice |
 | Spectrum window | periodic Hann (ENBW 1.5 bins = 35.2 Hz) | spectrum.cpp | standard choice |
@@ -4860,9 +4942,12 @@ reading 1). `call` is the base, or the most common form with a slash seen at lea
 and older than the longest window is dropped, each 30 s of stream.
 
 **The list and the tools.** `kz4ap-skimmer --known-calls PATH` takes MASTER.SCP's format: one call a line, # and ; lines skipped, case ignored,
-whatever follows white space ignored; `--calls PATH` writes the list as `calls_csv` at the stream's end. `kz4ap-calls --known PATH --out PATH
-[--log PATH | --replay PATH] [--candidates PATH] [--readings PATH] [--set NAME=VALUE]`. `training/kz4ap_proto/calls_score.py compare` reads a run and
-another program's list and reports calls in both, in each only, counts, and pairs one letter apart; `truth` reads a run and a recording's labels and
+whatever follows white space ignored; `--calls PATH` writes the list as `calls_csv` at the stream's end, with the absolute kHz when the
+center is known and `first_utc`, `last_utc` when the recording's header dates it (A.1). `kz4ap-calls --known PATH --out PATH
+[--center-khz KHZ] [--mirror] [--log PATH | --replay PATH] [--candidates PATH] [--readings PATH] [--set NAME=VALUE]`. `training/kz4ap_proto/calls_score.py compare` reads a run and
+another program's list and reports calls in both, in each only, counts, and pairs one letter apart, and keeps of a Reverse Beacon Network
+day file only the spots of given skimmers, a continent, a UTC window, a span and a mode (`--spotter`, `--continent`, `--from`, `--to`,
+`--khz`, `--tx-mode`); `truth` reads a run and a recording's labels and
 reports precision and recall, and how many calls found are within 100 Hz of their station. Its reader takes ADIF, telnet spot lines, CSV with a
 header (`dx` ahead of `callsign`, as in the Reverse Beacon Network's files) and, failing those, the first word of a call's form on each line,
 and prints which it used: CW Skimmer's export format is not known here. Calls compare by base call. A telnet spot's word is kept as it stands where the reader's grammar has no form for it (D4C, LZ1SPACE): a spot is the spotter's test, and dropping it would flatter this decoder.
