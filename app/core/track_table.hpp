@@ -40,9 +40,9 @@ public:
     // How long an ended track with text stays listed, s of stream. Heuristic. An ended track that never produced text
     // leaves at once: it was a false track or a carrier, and there is nothing to read.
     static constexpr double kRetainEndedS = 60.0;
-    // Within this of an ended row's frequency, Hz, a new track goes on with that row. The detector's own distance between tracks
-    // (EngineConfig::channel_distance_hz): closer than that they could be one station.
-    static constexpr double kSamePlaceHz = 47.0;
+    // Within this of an ended row's frequency, Hz, a new track goes on with that row. The segmental path's distance between tracks
+    // (DetectorConfig::attribution_distance_hz, apply_path_defaults): closer than that they could be one station.
+    static constexpr double kSamePlaceHz = 30.0;
     // A row keeps at most about this many symbols, its latest; the list shows 400 at most. Heuristic: at 30 WPM, about 2.5 symbols/s,
     // 27 min of text in about 130 kB; the report and --decoded then hold a long row's end only.
     static constexpr std::size_t kMaxRowSymbols = 4000;

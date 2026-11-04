@@ -162,6 +162,10 @@ void apply_setting(viterbi::ViterbiConfig& config, const std::string& setting);
 // The same for the segmental decoder's configuration: a NAME of its own (segmental/config.hpp), or one of ViterbiConfig
 // for the model it shares.
 void apply_segmental_setting(segmental::SegmentalConfig& config, const std::string& setting);
+// One `--detector` argument, "NAME=VALUE": a field of DetectorConfig (one_track_per_peak as 0 or 1), or dc_block_s of
+// EngineConfig. The caller applies the path's defaults first and sets as_given (apply_path_defaults). Throws
+// std::invalid_argument for an argument without a "=" or an unknown name.
+void apply_detector_setting(EngineConfig& config, const std::string& setting);
 
 // A configuration from the defaults with every field of the object j set (a result file's "config"); throws
 // std::invalid_argument as set_config_value, and for a j that is not an object.

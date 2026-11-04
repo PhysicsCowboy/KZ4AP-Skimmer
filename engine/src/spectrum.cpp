@@ -24,8 +24,8 @@ std::size_t ValidatedFftSize(int sample_rate, int fft_size, int hop) {
 
 namespace kz4ap {
 
-SpectrumAnalyzer::SpectrumAnalyzer(int sample_rate, int fft_size, int hop)
-    : sample_rate_(sample_rate), fft_size_(fft_size), hop_(hop),
+SpectrumAnalyzer::SpectrumAnalyzer(int sample_rate, int fft_size, int hop, bool decibels)
+    : sample_rate_(sample_rate), fft_size_(fft_size), hop_(hop), decibels_(decibels),
       window_(ValidatedFftSize(sample_rate, fft_size, hop)),
       fft_in_(static_cast<std::size_t>(fft_size)),
       fft_out_(static_cast<std::size_t>(fft_size)) {
@@ -49,7 +49,7 @@ std::vector<SpectrumFrame> SpectrumAnalyzer::push(std::span<const Sample> in) {
         detail::fft_forward(fft_in_.data(), fft_out_.data(), n);
         SpectrumFrame frame;
         frame.time_s = static_cast<double>(dropped_ + start + n) / sample_rate_;
-        frame.power_db.resize(n);
+        if (decibels_) frame.power_db.resize(n);
         frame.power_fs2.resize(n);
         // The upper half of the FFT first: lowest frequency first. Power is at least 1e-20 FS^2, a normal float; the logarithm per bin is the analyzer's largest cost.
         const auto fill = [&](std::size_t first, std::size_t count, const std::complex<float>* bins) {
@@ -57,7 +57,7 @@ std::vector<SpectrumFrame> SpectrumAnalyzer::push(std::span<const Sample> in) {
             for (std::size_t i = 0; i < count; ++i) {
                 const float power = std::norm(bins[i]) * power_scale_ + 1e-20f;
                 frame.power_fs2[first + i] = power;
-                frame.power_db[first + i] = static_cast<float>(kDbPerNeper * segmental::fast::log(power));
+                if (decibels_) frame.power_db[first + i] = static_cast<float>(kDbPerNeper * segmental::fast::log(power));
             }
         };
         fill(0, n - half, fft_out_.data() + half);

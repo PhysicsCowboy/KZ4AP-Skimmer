@@ -50,6 +50,7 @@ struct Args {
     // options, since which decoder a --set belongs to is known only then.
     segmental::SegmentalConfig segmental;
     std::vector<std::string> settings;
+    std::vector<std::string> detector_settings;  // --detector NAME=VALUE: a variant of the detector (apply_detector_setting)
     std::optional<std::filesystem::path> stats;  // --stats: where the new decoder's statistics file goes
     int threads = 1;  // --threads: EngineConfig::worker_threads
 };
@@ -71,6 +72,7 @@ constexpr const char* kUsage =
     "                   [--decoder envelope|matched|bank|viterbi|segmental] [--no-judge]\n"
     "                   [--record-channels DIR (with --oracle: the oracle channels; without: the detector's)]\n"
     "                   [--set NAME=VALUE ...] [--genie fist|fading ...] [--stats STATS.json [--stats-detail]]\n"
+    "                   [--detector NAME=VALUE ...] (a field of DetectorConfig or dc_block_s, over the path's defaults)\n"
     "                   [--omega-bar-default-table FILE]\n"
     "                   (--decoder viterbi, whose oracle channels follow the labels' frequencies;\n"
     "                   NAME is a field of ViterbiConfig; --genie reads the labels;\n"
@@ -127,6 +129,7 @@ Args parse_args(int argc, char** argv) {
             else if (v == "segmental") args.front_end = FrontEnd::Segmental;
             else throw std::runtime_error(a + " must be envelope, matched, bank, viterbi or segmental\n" + std::string(kUsage));
         }
+        else if (a == "--detector") args.detector_settings.push_back(text());  // NAME=VALUE, repeatable
         else if (a == "--set") {  // the new decoder's configuration: NAME=VALUE, repeatable
             args.settings.push_back(text());
         }
@@ -315,6 +318,11 @@ int run_engine(const Args& args) {
     if (args.oracle) {
         for (const auto& s : labels->signals) config.oracle_frequencies_hz.push_back(s.freq_offset_hz);
     }
+    if (!args.detector_settings.empty()) {
+        apply_path_defaults(config);
+        for (const std::string& setting : args.detector_settings) apply_detector_setting(config, setting);
+        config.as_given = true;
+    }
     if (args.front_end == FrontEnd::Segmental) {
         config.segmental = args.segmental;
         if (args.oracle) {
@@ -384,6 +392,7 @@ int run_engine(const Args& args) {
     out["front_end"] = decoder_name(args.front_end);  // the old key, read by stage 1's tooling
     out["decoder"] = decoder_name(args.front_end);
     if (args.front_end == FrontEnd::Segmental) out["settings"] = args.settings;
+    if (!args.detector_settings.empty()) out["detector_settings"] = args.detector_settings;
     if (args.front_end == FrontEnd::Viterbi) {
         // everything a run needs to be repeated from its result file: the configuration with every field, the --set
         // arguments as given, and the genie's kinds with each channel's values (the labels give them again)

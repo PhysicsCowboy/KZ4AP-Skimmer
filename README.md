@@ -234,9 +234,12 @@ each track's final text (`text`, corrections applied) and its immediate text
   level, the neighbor's leak being counted as noise; at 60 Hz partly, at 40 Hz largely not. A
   neighbor +10 dB re the station needs about 100 Hz, and much stronger ones more
   (`docs/signal-processing.md`, A.8e).
-- A place within 47 Hz of the center frequency is not read, on recordings as well: an
-  I/Q radio's DC offset stands there. The default center, 7031.5 kHz, keeps it off the
-  7030 kHz calling frequency.
+- An I/Q radio's DC offset at the center frequency is filtered out (a notch about
+  0.2 Hz wide), and a station beside it is read; the radio's raised noise near its center
+  can open short tracks there that are judged and dropped. The default center stays
+  7031.5 kHz, off the 7030 kHz calling frequency.
+- Two stations closer than 30 Hz share one channel, and a station within about 45 Hz of a
+  stronger one is read badly (`docs/signal-processing.md`, section 6 and A.6).
 - Very strong signals (around 60 dB SNR in 500 Hz) can produce extra "ghost"
   tracks beside them.
 - After a station stops, a few stray E's can be decoded from noise before its

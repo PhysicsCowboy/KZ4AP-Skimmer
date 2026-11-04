@@ -61,9 +61,9 @@ I/Q (fs) ─┬─► spectrum analyzer ─┬─► signal detector ─► trac
                                                 callsign stage ─► list of calls
 ```
 
-The input is the radio's whole band, 192 kHz wide; two things happen to
-it in parallel. The **spectrum analyzer and detector** look at
-the band every 21.33 ms and decide where stations are: each station becomes
+The input is the radio's whole band, 192 kHz wide; two things happen in
+parallel. The **spectrum analyzer and detector** look at the band every
+21.33 ms (segmental's detector: 85.3 ms) and decide where stations are: each station becomes
 a *track* with a frequency. For every track the **channelizer** cuts a
 narrow stream out of the band, about ±150 Hz around the station, at 1500
 samples/s. A **decoder** per channel turns that stream into characters.
@@ -85,11 +85,10 @@ output independent of a caller's splitting.
 ## 2. The FFT size N and bin width Δf
 
 N is the largest power of two that keeps the bins at least 20 Hz wide:
-8192 at 192 kHz, so Δf = 23.44 Hz and each transform spans 42.7 ms. This is
-a heuristic. The real intent is "bins about 23 Hz wide": narrow enough to
-separate stations a few tens of Hz apart, wide enough that most of a keyed
-CW signal's energy falls within one to three bins up to about 40 WPM
-(derived).
+8192 at 192 kHz, so Δf = 23.44 Hz and each transform spans 42.7 ms. A
+heuristic: narrow enough to separate stations a few tens of Hz apart, wide
+enough that most of a keyed signal's energy falls within one to three bins
+up to about 40 WPM (derived).
 
 Appendix: A.2.
 
@@ -104,76 +103,88 @@ also fixes the channel filter's length (section 7).
 
 Appendix: A.3.
 
-## 4. Spectrum analyzer (for detection)
+## 4. Spectrum analyzer
 
-Every hop, the analyzer takes the last N samples, multiplies them by a Hann
-window and computes an FFT. The power in bin k, normalized so that a tone
-exactly on a bin reads its true power, A² FS², is
+Every hop the analyzer takes the last N samples, multiplies them by a Hann
+window and computes an FFT. The power in bin k, normalized so that a
+complex tone of amplitude A on a bin reads A² FS², is
 
   P[k] = |X[k]|² / (Σw)²  (FS²),
 
-with X the FFT of the windowed samples and Σw = N/2 the window's sum. A
-complex tone of amplitude A on a bin reads A² FS². White noise of σ² FS²
-per sample reads as the noise in one *equivalent noise bandwidth* (ENBW):
-1.5 bins = 35.2 Hz for the Hann window (derived). The values are stored in
-dBFS. The Hann window is a standard choice: its sidelobes are 31 dB below
-the main lobe (relative to the main lobe's peak), so a strong station does
-not hide a weak one a few bins away.
+with Σw = N/2 the window's sum. White noise of σ² FS² per sample reads as
+the noise in one *equivalent noise bandwidth* (ENBW), 1.5 bins = 35.2 Hz
+(derived). The Hann window's sidelobes stand 31 dB below its main lobe's
+peak, a standard choice. The segmental path's detector has its own
+analyzer, four times finer (section 6).
 
 Appendix: A.4.
 
 ## 5. What "SNR" means here
 
 **S₅₀₀** is the key-down carrier power over the noise power in 500 Hz, the
-convention of CW Skimmer and the Reverse Beacon Network. The synthetic test
-recordings always add the same noise, complex white noise of σ = 0.02 FS;
-a station's S₅₀₀ is set by its carrier amplitude. The detector sees a
-narrower noise bandwidth, one bin's ENBW of 35.2 Hz, so the same signal
-reads 10·log₁₀(500/35.2) = **11.5 dB higher** as an SNR per bin than as an
-SNR in 500 Hz (derived, white noise). A track's reported SNR is about 3.6 to
-7.1 dB below its key-down SNR per bin, by speed (derived; A.5).
+convention of CW Skimmer and the Reverse Beacon Network. The synthetic
+recordings add complex white noise of σ = 0.02 FS; a station's S₅₀₀ is set
+by its carrier amplitude. Per bin the noise bandwidth is one ENBW, 35.2 Hz
+(8.79 Hz on the detector's fine bins), so a carrier reads
+**11.5 dB** (17.6 dB) higher as an SNR per bin than as S₅₀₀ (derived, white
+noise; a keyed signal less, A.5).
 
 Appendix: A.5.
 
 ## 6. Signal detector
 
-The detector's job is to find stations and follow them. It works on the
-spectrum, once per hop.
+The detector finds stations and follows them. This is its form on the
+segmental decoder's path, the app's; the other decoders keep the detector
+their results were measured with, on the band's spectrum (A.6). Values are
+heuristics unless marked.
 
-**Averaging.** Each bin's power is averaged over time with a one-pole
-average of time constant **τ = 1 s** (heuristic), in linear power; during
-the first second it is a plain running mean. Keying comes and goes, so
-the average shows a station as a steady peak above the noise.
+**DC blocker.** First a radio's DC offset leaves the input: each sample less
+a one-pole average of the samples, time constant 10 s, a notch at 0 Hz
+0.016 Hz wide at −3 dB re the passband (derived). The channels read the
+blocked input too.
 
-**Noise floor.** The median of all 8192 averaged bins, every hop (segmental's path: every 4th, heuristic): one
-number for the whole span (heuristic). Stations occupy few bins, so the
-median is very close to the noise.
+**Its own spectrum.** The detector reads a spectrum four times finer than
+the band's (section 4): Hann-windowed FFTs of 4N points, bins of
+**Δf_d = 5.86 Hz**, a window of 170.7 ms, a frame every 85.3 ms. On 23.4 Hz
+bins a station's main lobe reaches ±47 Hz, so a station 60 Hz from one
+10 dB stronger was never a peak. A keyed carrier stands 5 to 6 dB higher
+per fine bin (measured).
 
-**Finding a station.** A bin becomes a candidate when its average is at
-least **6 dB** above the floor (dB SNR per bin, since the floor is the
-noise per bin) and is the highest within **±47 Hz**. A peak within the
-channel distance D_ch = 47 Hz of an existing track belongs to that track,
-so no second track is born there: two stations closer than 47 Hz share one
-channel, and a station farther away gets its own.
-It must stay a candidate in every hop for **0.5 s** before a
-track is born; nothing is detected in the first second (all heuristic).
-The track's frequency is refined between bins by fitting a parabola to the
-peak bin and its two neighbors (in dB).
+**Averaging and floor.** Each bin's power is averaged with a one-pole
+average of **τ = 1 s**, in linear power: keying comes and goes, and the
+average shows a steady peak. The
+floor is the median of all averaged bins, every second frame.
 
-**Following a station.** Every hop, each track moves to the strongest
-qualifying peak within the **channel distance D_ch = 47 Hz** of where it
-is, or stays put if there is none. So one track follows a drifting
-station, or moves to an answering station within 47 Hz. 47 Hz is about the
-half-width of the Hann window's main lobe, 2/(42.7 ms) = 46.9 Hz
-(heuristic; owner). A track stays active while its level is at least
-**3 dB** above the floor (dB SNR per bin; 3 dB of hysteresis below the
-birth threshold), and dies after **10 s** inactive. At most **400** tracks
-exist; a stronger newcomer replaces the weakest (heuristic). Segmental adds
-rules (section 10).
+**Finding a station.** A bin is a candidate when its average stands
+**7 dB** above the floor (dB SNR per fine bin), is the highest within
+±12 Hz (the main lobe's half width), and passes three tests (chosen by
+measurement):
+- *prominence:* where a higher bin lies within ±150 Hz, the lowest bin
+  between them is 6 dB below the candidate: a weaker station on a stronger
+  one's skirt passes, a ripple on the skirt does not;
+- *keying sidebands:* keying puts lines at odd multiples of half a dot
+  rate, symmetric about the carrier (its envelope is real; derived): a peak
+  whose mirror about a bin 10 dB above it, within ±150 Hz, stands within
+  3 dB as high is a sideband;
+- *local floor:* 7 dB above the lower quartile of the bins within ±1 kHz,
+  which a wide signal's peaks are not.
 
-With the Envelope decoder the detector uses older rules (frequency fixed at
-birth). **Oracle mode**, for the benchmark only, skips the detector and
-opens a channel at each labeled station's frequency.
+It must be a candidate in every frame, moving at most 6 Hz a frame, for
+**0.5 s** before a track is born; nothing is detected in the first second.
+A peak within **D = 30 Hz** of a track belongs to it. Its frequency is
+refined by a parabola through the peak bin and its neighbors (dB).
+
+**Following a station.** Each frame a track moves to the strongest
+qualifying peak within 12 Hz of where it is (a drift of up to 140 Hz/s), or
+stays. It does not move to a peak within D of an older track; of two that
+close the younger dies. So a station 30 Hz or more from another has its
+own channel, and an answering station closer shares one. A track stays
+active while its level, the highest bin within ±6 Hz, is at most 3 dB
+below the threshold, and dies after **10 s** inactive. At most **400**
+tracks; a stronger newcomer replaces the weakest.
+
+**Oracle mode**, for the benchmark only, skips the detector and opens a
+channel at each labeled station's frequency.
 
 Appendix: A.6.
 
@@ -208,10 +219,10 @@ frequency (heuristic; owner; A.8b).
 channels the channelizer follows the detector's frequency for the track,
 f_det (oracle channels: the label's, drifting or switching at a QSO's
 overs), so the decoder receives its station near 0 Hz (owner, plan D17;
-the other decoders keep their fixed bin: plan 1b, O2). Two steps, before each
+the other decoders keep their fixed bin). Two steps, before each
 32-sample block: the block, cut at bin f_bin, is multiplied by a
 phase-continuous oscillator at −(f_det − f_bin), f_det held over the
-block (21.33 ms, the detector's update interval); then, if f_det lies more
+block (21.33 ms); then, if f_det lies more
 than half a bin (11.72 Hz) from f_bin, the channel moves to the bin
 nearest f_det from the next block on, the oscillator's phase adjusted so
 that the station's phase does not step (derived). A 1 Hz/s drift is followed
@@ -258,8 +269,8 @@ fit explains its intervals best, correcting published text up to 20 s back
 
 ## 8d. The story model and the viterbi decoder (selectable)
 
-**One model, two decoders.** `viterbi` (`FrontEnd::Viterbi`; "the new
-decoder" in older text) and `segmental` (section 8e) share a channel, a
+**One model, two decoders.** `viterbi` (`FrontEnd::Viterbi`) and
+`segmental` (section 8e) share a channel, a
 filter, a generative model of Morse and a score per sample. They differ at
 the carrier's amplitude, which sets their cost. A *mark* is key-down, a *gap*
 key-up, an *element* either; an *over* is one continuous transmission; a
@@ -518,12 +529,7 @@ order, so output does not depend on the threads. The spectrum carries linear pow
 (FS²), so the detector and hiss take no logarithm per bin. The display paints 12.5 pictures/s
 (A.10).
 
-**Detector, added to section 6.** A new track must stand 6 dB above the lower
-quartile of the averaged bins within ±1 kHz (*local floor*): a wide signal's peaks
-do not. None opens within ±47 Hz of 0 Hz (*DC guard*: a radio's offset). A track
-does not move to a peak within 47 Hz of an older one, and of two that close the
-younger dies (*one track per peak*). Cap 400 tracks; a stronger peak replaces the
-weakest.
+**Detector:** section 6.
 
 **Replay.** A new channel's decoder first reads the last 2 s of the band's kept block
 spectra (94 blocks, 6.2 MB at 192 kHz), then goes live; its symbols carry their true
@@ -540,11 +546,12 @@ from 4 s, R < 3 and tiny ≥ +8 or garbage ≥ +6: retire; from 12 s, R < −8 a
 or E ≥ 1000 with −R > 0.1% of E): retire; unproven with R < 3: retire if under
 5 nats/s over 8 s, or at 14 s; proven: under 1 nat/s over 30 s retires, place left open.
 
-**Holds.** A retired place (±47 Hz) closes 8 s, doubling to 120 s; 4 such retirements
-within 750 Hz in 60 s close ±750 Hz from 30 s, likewise. A retirement counts as a repeat
-only if the hold before it has ended.
+**Holds.** A retired place (±D) closes 8 s, doubling to 120 s; 4 such retirements
+within 750 Hz in 60 s close ±750 Hz from 30 s, likewise. A repeat is a retirement after
+the hold before it ended. The first retirement at a place leaves it open: a station
+read badly at first, or listening, gets a second track.
 
-**List.** A row is listed once proven by the same test; a new track within 47 Hz of a
+**List.** A row is listed once proven by the same test; a new track within 30 Hz of a
 row ended under 60 s ago goes on with it. Rows keep about 4 000 symbols.
 
 **Overload.** Checked each stream-second: backlog b counts as grown if above the last
@@ -557,8 +564,8 @@ grows by 5 each 5 s. A radio silent 5 s is flagged, a recording as well.
 `CallSearch` reads any decoder's track and text events, beside the track list, and
 changes neither. Values are heuristics unless marked. Appendix: A.12.
 
-**Words.** Each whole stream-second it reads text 10 s old. A later correction (reach 206 s on
-real 40 m, measured) has its change read again, within 200 s; old readings stay. A word space,
+**Words.** Each whole stream-second it reads text 10 s old. A later correction has its change
+read again, within 200 s (A.12); old readings stay. A word space,
 prosign or punctuation ends a word. The app's clock travels among the events, so its list does not depend on the pace.
 
 **Readings.** A call's form (RR 19.68; sourced): an allocated prefix (Appendix 42) of one
@@ -1219,6 +1226,105 @@ detector's current frequency for the track; with the Envelope decoder and
 no oracle, which never updates it, the track's birth frequency). Benchmark
 tooling only; it changes no signal processing. File formats: A.11,
 "Recorded channel streams".
+
+### The segmental path's detector (`apply_path_defaults`)
+
+**Exact form.** `apply_path_defaults(EngineConfig&)` sets, for `FrontEnd::Segmental`, the values below; the engine applies it
+unless `EngineConfig::as_given` (a benchmark variant: `kz4ap-bench` and `kz4ap-calls` take `--detector NAME=VALUE`, applied over
+it). On every path it sets `attribution_distance_hz` = `channel_distance_hz` first.
+
+- **DC blocker** (`EngineConfig::dc_block_s` = 10 s; `Engine::process_hop`, before the spectrum and the channelizer): d starts at
+  0 FS; per sample d ← d + α(x − d), y = x − d, α = 1 − exp(−1/(τ fs)), in double precision. It runs in oracle mode too: oracle
+  channels read the blocked input.
+- **The detector's spectrum** (`DetectorConfig::fft_factor` = 4): a second `SpectrumAnalyzer(fs, 4N, 2N, decibels = false)`,
+  fed every hop, not made in oracle mode; the detector reads its frames only (`power_fs2`), the band's frames going to the hiss,
+  the leak floor and the display as before. Its frames come every 4th hop.
+- **Neighborhoods:** `peak_radius_hz` 12 (2 bins), `level_radius_hz` 6 (1 bin), `candidate_step_hz` 6 (1 bin),
+  `follow_radius_hz` 12 (a track's peak within 12 Hz of its frequency; 0 elsewhere, meaning D), `attribution_distance_hz`
+  D = 30 Hz (a new peak within D of a track belongs to it; one track per peak within D; holds of radius D).
+- **Threshold** 7 dB over the band's median, the local floor's test the same 7 dB; hysteresis 3 dB. `floor_every_frames` 2.
+- **Prominence** (`prominence_db` 6, `prominence_radius_hz` 150; `SignalDetector::is_peak`): for each side, walking out from
+  bin i up to 150 Hz, the lowest average so far, L; at the first bin above P_i, the peak fails if P_i < 10^0.6 L. No higher bin
+  within the radius: no condition from that side.
+- **Sidebands** (`sideband_db` 10, `sideband_mirror_db` 3, `sideband_radius_hz` 150): for each side, c = the highest bin within
+  150 Hz; if P_c ≥ 10 P_i (10 dB), m = 2c − i and M = max(P_{m−1}, P_m, P_{m+1}); the peak fails if M ≥ 10^−0.3 P_i. Both
+  tests apply to new peaks and to the peaks a track follows.
+- **DC guard** `dc_guard_hz` 0 (none).
+- **First retirement open** (`EngineConfig::first_retirement_open` 2; `SignalDetector::retire`'s `first_open`): the first
+  retirement within D of a place, among holds not forgotten (120 s open), records the place with no hold and counts toward no
+  region; the next one there closes it as a first hold (8 s, doubling).
+
+**Derivations.**
+
+- **The blocker's response.** H(z) = (1 − α)(1 − z⁻¹) / (1 − (1 − α) z⁻¹). For f ≪ fs, |H|² = f² / (f² + f_c²), f_c =
+  α fs / 2π = 1 / (2π τ) = 0.0159 Hz at τ = 10 s (α = 5.2 × 10⁻⁷ at 192 kHz); at fs/2, |H| = 2(1 − α)/(2 − α) = 1 − α/2.
+- **What it does to a keyed station near 0 Hz.** A station of key-down amplitude A, keyed a fraction m of the time, at f: the
+  average d holds its carrier line m A attenuated by 1/√(1 + (2π f τ)²), and y = x − d leaves that much in its key-ups and takes
+  it from its marks. At τ = 1 s that is −16 dB re m A at 1 Hz and −1.4 dB at 0.1 Hz; at τ = 10 s, −36 dB at 1 Hz and −16 dB at
+  0.1 Hz. So the band a blocker spoils shrinks as 1/τ, and a radio's offset takes about τ to leave (a change in it likewise).
+  Started at the first hop's mean, the noise of that mean (σ/√(N/2), 6 × 10⁻⁴ FS at 48 kHz) stays at 0 Hz for about τ, 20 dB
+  below a station of +10 dB S500: hence the start at 0.
+- **The fine spectrum.** Bins fs/4N = 5.86 Hz at every usual rate (N scales with fs, A.2); window 4N/fs = 170.7 ms; hop 85.3 ms;
+  ENBW 1.5 bins = 8.79 Hz; the main lobe's half width 2 bins = 11.7 Hz, hence the peak radius. α_d = 1 − exp(−85.3 ms / 1 s) =
+  0.0818, a boxcar of (2 − α_d)/α_d = 23.4 frames, a plain running mean for the first 1/α_d = 12 frames (1 s). White noise's averaged power then has a relative standard deviation of about
+  1/√23.4 = 0.21 (Hann frames overlapping by half are nearly uncorrelated in power), against 0.10 on the band's bins: the 7 dB
+  threshold, 5.0 times the mean, stands about 19 standard deviations above it, so flat white noise alone does not cross it.
+- **Why the band's bins hid a neighbor.** Hann's response at x bins, (sin πx / πx)² / (1 − x²)², at 60 Hz (2.56 bins) from a
+  neighbor 10 dB stronger: the bin between them, 13 Hz from it, reads it about −3 dB re its peak, 7 dB above the station's own
+  peak; with the peak radius of ±47 Hz the station is never a local maximum.
+- **Sideband symmetry.** A keyed carrier is A(t) cos(2π f_c t + φ) with A real; its power spectrum is |Â(f − f_c)|² +
+  |Â(−f − f_c)|², and |Â(−ν)|² = |Â(ν)|² for a real A: symmetric about f_c. A train of dots, period 2T, is a square wave whose
+  Fourier series holds the odd harmonics k/(2T), amplitude ∝ 1/k: lines at ±(2j + 1)/(2T) (41 and 69 Hz at 33 WPM), which on the
+  fine bins stand clear of the carrier's lobe. Chirp (a frequency step at key-down) breaks the symmetry.
+
+**Provenance.** Decision log, 2026-11-04. Measured on the Linux machine, the detector's path, against `main`'s detector:
+review 5's pairs (wanted +10 to +40 dB S500, neighbor 40 to 300 Hz, −10 to +10 dB re wanted), review 7's stress cells, E2 of
+DEV2 seeds 1 and 2, det-1's own cells (a carrier or a keyed neighbor there first, 20 to 150 Hz, −10 to +20 dB re wanted;
+jittered grid), the contest and band recordings, and real30 and live2.
+
+- Factor 4: tried 1, 4 and 8. 8 (2.93 Hz bins, 341 ms) opened 4 times the tracks on real30 and lost true calls on the contest
+  (213 against 219). Heuristic, chosen by measurement.
+- 12, 6, 6 Hz: from the main lobe's 11.7 Hz (derived); not varied.
+- D = 30 Hz: tried 47, 30 and 20 Hz. 20 Hz read the same within 0.005 on the pairs and E2 and opened 10% more tracks on real30.
+  Heuristic.
+- Follow radius 12 Hz: the peak radius; one setting, not varied apart from D. Heuristic.
+- Threshold 7 dB: tried 6, 7, 8 dB; the test sets read the same at all three; real30 opened 2 325, 1 711 and 1 492 tracks (no
+  first-open rule). Heuristic. A keyed carrier at 22 WPM, +10 dB S500, read 15.7 to 17.3 dB per band bin and 20.9 to 23.2 dB per
+  fine bin over 8 to 16 s (measured; dB re the band's median), so 7 dB on fine bins is the more sensitive threshold.
+- Prominence 6 dB over 150 Hz: tried 6 and 8 dB, radii 47 and 150 Hz. Heuristic. A neighbor's sideband pair measured 3.6 to
+  4.5 dB of prominence, a station 60 Hz beside a neighbor 10 dB stronger 9.8 dB.
+- Sideband 10 dB, mirror 3 dB, 150 Hz: one setting. Without it, strong stations at 26 to 36 WPM opened tracks in pairs at
+  ±50 to ±75 Hz: on the contest of 280 stations about 70 such tracks, 354 in all; on the band of 100, 207 tracks. The variant
+  with it (and with D = 30 Hz and the follow radius) opened 312 and 100.
+- First retirement open: tried none, quiet only and any. Quiet only read the slice as none did; any, against quiet only on the
+  whole detector's path of seeds 1 and 2: A2 −0.0010, B2 −0.0013 (95% intervals clear of 0), no group worse, for 27% more
+  channel-seconds on real30 and 48% on live2 than none.
+- DC blocker 10 s, starting at 0: tried 1, 10 and 30 s, and the first hop's mean as the start. At 1 s F2 on the oracle path read
+  0.1027 against `main`'s 0.0895 (its station starting at 0 Hz and drifting: 57 edits of 99 against 0), with the first hop's start
+  0.1018 at 10 s and 0.1081 at 30 s; started at 0, 0.0898 at 10 s and 0.0894 at 30 s, the detector's path 0.0888 and 0.0885.
+  On real30, tracks within 100 Hz of the center held 783, 950 and 1 400 channel-seconds at 1, 10 and 30 s. Heuristic, chosen by
+  measurement. With no DC guard the stations the test set places near 0 Hz read as on the oracle path (E2's index 8: 0 to 285
+  edits, the oracle's 0 to 293).
+- `floor_every_frames` 2: heuristic, for CPU.
+
+**Limitations.**
+
+- **CPU:** the second analyzer and the detector on 4 times the bins, and more tracks (below). Measured on the Linux machine,
+  one thread each, `main` beside `det-1`: per channel-second real30 6.04 to 6.37 ms, live2 6.60 to 6.97 ms, the contest 3.05
+  to 3.12 ms; fixed cost on real30 13.3 to 20.7 ms per s of stream (spectrum 6.1 to 11.7, detector 1.9 to 2.9); all CPU per
+  s of stream real30 73 to 121 ms, live2 294 to 603 ms, the contest 252 to 282 ms.
+- **More tracks on real recordings.** real30's tracks 1 159 to 2 225 and channel-seconds 21 671 to 34 249, live2's 241 to 473
+  and 2 758 to 5 363: the finer bins see weak signals and spurs the decoder cannot read, a retired place's second chance opens
+  another, and each costs a track until the judge retires it.
+- Stations closer than D = 30 Hz share a channel, as before at 47 Hz. At 20 to 45 Hz the decoder reads a station badly beside an
+  equal or stronger neighbor even when told its frequency.
+- Beside a keyed neighbor 20 dB or more stronger at 60 Hz the neighbor's skirt fills the valley and the station fails the
+  prominence test.
+- A chirping strong station's sidebands are not symmetric and may open tracks; the generator has no chirp.
+- The blocker spoils a keyed station within about 0.1 Hz of 0 Hz, and a radio's offset, or a change in it, takes about 10 s to
+  leave: a strong one opens a short track at the center at the start. Without the guard, real30's raised noise within about
+  ±100 Hz of its center (about +3 dB, measured) opens short tracks there that the judge retires (64 tracks, 950 channel-seconds
+  in 30 min).
 
 ## A.7 Channelizer
 
@@ -4138,7 +4244,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 
 ### Exact form
 
-**Engine (`resolved`, `Engine`).** `FrontEnd::Segmental` on the detector's path sets `local_floor_radius_hz` 1000 Hz, `one_track_per_peak` and `dc_guard_hz` = D_ch, and turns on `judge_tracks` (default true; `--no-judge` in the bench) and the replay. A sample rate whose channel rate is no whole number of the decoder's samples is refused ("this decoder needs a sample rate of 48, 96, 192, 384 or 768 kHz").
+**Engine (`resolved`, `Engine`).** `FrontEnd::Segmental` on the detector's path applies `apply_path_defaults` (A.6, "The segmental path's detector": `local_floor_radius_hz` 1000 Hz, `one_track_per_peak`, the finer spectrum and its rules, the DC blocker), and turns on `judge_tracks` (default true; `--no-judge` in the bench) and the replay. A sample rate whose channel rate is no whole number of the decoder's samples is refused ("this decoder needs a sample rate of 48, 96, 192, 384 or 768 kHz").
 
 **Which decoder.** `kDefaultDecoderName` is `segmental` (the app; `engine_config_for_decoder`). The bench's own default stays Matched.
 
@@ -4146,13 +4252,13 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 
 **Worker pool.** `WorkerPool`: `worker_threads` threads, the caller's included. For one block every channel's job (replay if due, cut, follower, decoder) reads the block's spectrum, the kept spectra, the hiss estimator and the configuration, and writes only its own `Channel`. Results go out afterward on the pipeline's thread, by track id. The verdicts and the budget follow on that thread.
 
-**Linear power.** `SpectrumFrame::power_fs2` is the frame's power in FS², 10^(`power_db`/10) but for rounding. The detector's average and the hiss read it; only peaks that clear the threshold are converted to dB. `power_db` itself comes from the table logarithm (A.8e), the analyzer's largest cost by the C library's. On segmental's path `floor_every_frames` is 4: the band's median, a selection over every bin, 47 times/s, was most of the detector's CPU, and the average it reads has a time constant of 1 s.
+**Linear power.** `SpectrumFrame::power_fs2` is the frame's power in FS², 10^(`power_db`/10) but for rounding. The detector's average and the hiss read it; only peaks that clear the threshold are converted to dB. `power_db` itself comes from the table logarithm (A.8e), the analyzer's largest cost by the C library's. On segmental's path the detector reads its own analyzer's frames, which carry `power_fs2` only (`SpectrumAnalyzer`'s `decibels` false), and `floor_every_frames` is 2: the median, a selection over 4N bins, every 171 ms, against an average of time constant 1 s.
 
-**Local floor.** At a new peak in bin i, `average` within ±1000 Hz: `nth_element` at a quarter of the bins (the lower quartile; 43 bins either side at 23.44 Hz). The peak must stand `threshold_db` (6 dB) above it, besides above the band's median. Only a new track is tested; a live one is not.
+**Local floor.** At a new peak in bin i, `average` within ±1000 Hz: `nth_element` at a quarter of the bins (the lower quartile; 171 bins either side at 5.86 Hz). The peak must stand `threshold_db` (7 dB) above it, besides above the band's median. Only a new track is tested; a live one is not.
 
 **One track per peak.** In `follow_peaks` a track skips a peak within `attribution_distance_hz` of an older track. After following, a younger track within that distance of an older one dies, as `TrackEnd::Merged`.
 
-**DC guard.** A candidate peak with |f| < `dc_guard_hz` is skipped, on recordings too.
+**DC.** The DC blocker (A.6) takes a radio's offset out; `dc_guard_hz` is 0 on segmental's path (a candidate peak with |f| < `dc_guard_hz` would be skipped).
 
 **Replay.** `Channelizer::keep_past(⌈replay_s / hop time⌉ + 1)` keeps each block's whole spectrum, reusing the oldest's memory: 94 past blocks and the current one at 2 s, 2.005 s of past, 95 × N × 8 bytes (6.2 MB at N = 8192, 24.9 MB at N = 32768). Each block a turn accrues, `replay_tracks_per_s` × hop time = 2.13, saved up to that plus 1. A channel opened and without a turn is not cut or decoded, is not judged and counts no channel-seconds. Given a turn, it decodes all kept past blocks in order (its bin and follower as for a live block, at the detector's current frequency, N₀ read now) and the current block; its updates go out in order before the block's. At the stream's end a waiting channel replays the kept blocks. A channel granted its turn while a budget is in force skips the replay and goes live.
 
@@ -4165,9 +4271,9 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 - proven, once true for good: lowest tiny ≤ −6 nats and highest garbage < +6 nats.
 - Rule 1, age ≥ 4 s, R < 3 and (tiny ≥ +8 or garbage ≥ +6): `NotMorse`, hold 8 s. Rule 2, age ≥ 12 s, R < −8, and (not proven, or E ≥ 1000 and −R > 10⁻³ E): `NotMorse`, hold 8 s. Rule 3, not proven and R < 3: age ≥ 8 s and ΔS over 8 s < 40 nats: `Quiet`, hold 8 s; else age ≥ 14 s: `NotMorse`, hold 8 s. Rule 4, proven, age ≥ 30 s and ΔS over 30 s < 30 nats: `Quiet`, no hold.
 
-**Holds (`SignalDetector::retire`, `close_place`).** A retirement with hold_s > 0 removes the track, closes radius 47 Hz and logs (f, t). If at least 4 logged retirements in the last 60 s lie within 750 Hz of f, it also closes radius 750 Hz from 30 s. Closing: find a hold of that radius within that radius; if none, new, count 0. If count = 0 or now ≥ until, count + 1. Then until = max(until, now + min(hold_s × 2^(count−1), 120 s)). A hold is forgotten once open for 120 s. New peaks inside a running hold of either radius are skipped; a live track there stays.
+**Holds (`SignalDetector::retire`, `close_place`).** A retirement with hold_s > 0 removes the track. The first one within D (30 Hz) of a place among the holds kept (`first_retirement_open` 2) records the place with count 0 and no hold, and logs nothing; otherwise it closes radius D and logs (f, t). If at least 4 logged retirements in the last 60 s lie within 750 Hz of f, it also closes radius 750 Hz from 30 s. Closing: find a hold of that radius within that radius; if none, new, count 0. If count = 0 or now ≥ until, count + 1. Then until = max(until, now + min(hold_s × 2^(count−1), 120 s)). A hold is forgotten once open for 120 s. New peaks inside a running hold of either radius are skipped; a live track there stays.
 
-**List (`TrackTable::set_plausible_only`).** A new row is hidden until `text_evidence(row).plausible()`, then listed for good. A new track within 47 Hz of an ended row, listed or hidden, goes on with it after a word space, and its corrections start after the earlier tracks' symbols. Rows ended over 60 s ago leave. Past 4 256 symbols a row drops its oldest 256; the report and `--decoded` then hold a long row's end only.
+**List (`TrackTable::set_plausible_only`).** A new row is hidden until `text_evidence(row).plausible()`, then listed for good. A new track within 30 Hz (`kSamePlaceHz`, the detector's D) of an ended row, listed or hidden, goes on with it after a word space, and its corrections start after the earlier tracks' symbols. Rows ended over 60 s ago leave. Past 4 256 symbols a row drops its oldest 256; the report and `--decoded` then hold a long row's end only.
 
 **Overflow.** `SdrplaySource::read`: when the driver's callback finds no room it sets a flag, and the next read empties the ring and counts the samples as lost. So one gap, not a click each read.
 
@@ -4182,23 +4288,23 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 - Replay 2 s: heuristic. A keyed signal crosses the threshold within about 1 s of its start (τ = 1 s, A.6) and is then a candidate for 0.5 s. Valid while `average_s` and `birth_s` stand.
 - Replay's rate, 100 tracks/s: heuristic, from CPU, set with one filter width: a replay cost 2 s × at most about 25 ms per channel-second (weak or wide real channels, 192 kHz, this desktop), 50 ms, so at most 5 CPU-seconds per second of stream, near 4 threads' capacity, in the worst burst. Two streams and the channel's age raise it about the same. Measured at `app-6`'s code: 400 stations at 768 kHz on 4 threads, as a file, 14.9 s of wall for 25 s of stream, longest read 0.21 s, which the ring's 5.46 s absorbs; on the stand-in radio no samples lost, no budget. The burst is short: 100 tracks/s has a maximum of 4 s at the cap of 400.
 - Local floor's ±1 kHz: heuristic, wide against a station's few bins. Lower quartile: heuristic, set on 62 s of real 40 m.
-- DC guard: heuristic, the width of a channel. Real radio's offset read as `0 TOO0`.
+- DC guard, removed (det-1): ±47 Hz had kept the radio's offset, read as `0 TOO0`, from opening tracks, and every station within 47 Hz of the center with it; the DC blocker takes the offset out instead (A.6).
 - W, 5 switches/s, 4, 8, 14, 30 s, 3, 1, 5 nats/s: heuristics by measurement on one 62 s recording and generated bands.
 - −8 nats/s: heuristic. Not a margin below real stations: on a 30 min recording, 9 of 57 tracks at real stations' places fell below it over a full window; `held_to_it` and the text test keep them.
 - E ≥ 1000 nats/s, 10⁻³: heuristics from generated strong stations.
 - Text's q: fitted to 4 968 symbols of real junk (one recording), raised for T; 0.03 to the rest. −6, +8, +6 nats: Wald's bound gives P(reach +x under p) ≤ e^(−x) and P(reach −x under q) ≤ e^(−x) (derived for independent symbols from the models). As error rates on the air they are not valid: real junk is neither independent nor from q. They are heuristics.
 - Holds 8, 30, 120 s, 60 s, 750 Hz, 4: heuristics on real 40 m.
-- List's 60 s, 47 Hz: heuristics. 4 000 symbols: heuristic, 27 min at 30 WPM.
+- List's 60 s, 30 Hz: heuristics, the second the detector's D. 4 000 symbols: heuristic, 27 min at 30 WPM.
+- First retirement open: heuristic, chosen by measurement (A.6).
 - Budget's values: heuristics. 5.46 s is derived: 2^k ≥ 4 s × rate, at each radio rate 2^k / rate = 5.46 s. Cap 400: heuristic; a 300-station generated band needs over 300 and the project's goal names 500 tracks on half the desktop.
-- 7031.5 kHz, the default center: heuristic. It keeps the DC guard off the 7030 kHz calling frequency; no row within 47 Hz of it in the 30 min recording.
+- 7031.5 kHz, the default center: heuristic. Chosen to keep the DC guard off the 7030 kHz calling frequency; kept with the guard gone, since a radio's raised noise near its center opens short tracks there (A.6). No row within 47 Hz of it in the 30 min recording.
 
 ### Limitations
 
-- Text sent during a hold is lost, not late. Short overs and a carrier before a CQ can lose some; a runner with callers within 47 Hz can read as not keyed and retire (backlog).
+- Text sent during a hold is lost, not late. Short overs and a carrier before a CQ can lose some; a runner with callers within 30 Hz can read as not keyed and retire (backlog).
 - A hold can close a place on a real station up to 120 s; ±750 Hz up to 120 s if a wide signal returns.
 - Rows of data and speech read as plausible stay on the track list: it is 35% to 63% junk. The call list beside it (section 11) has none of them; a view of the rows by plausibility is not built.
-- A station within 47 Hz of the center is not read. Tune off it.
-- A steady carrier takes the channel: a station within 47 Hz of a carrier that came first and at the station's level or above, or within 100 Hz of one 10 dB and more stronger, is not read (results record). A carrier alone costs a few hidden T's and up to 14 s of a channel, then holds.
+- A steady carrier that came first takes a station within 30 Hz of it. Beside one 0 to 10 dB re wanted stronger, at 45 to 90 Hz, a station reads CER 0.33 to 0.64 on the detector's path (0.98 to 0.99 before det-1); 10 to 20 dB stronger, 0.94 to 0.97 (det-1's cells, A.6). A carrier alone costs a few hidden T's and up to 14 s of a channel, then holds.
 - The narrower stream's CPU is spent to at least 10 s of a channel's age, even on a channel the judge then retires.
 - Replay near a recent neighbor reads what the channel holds, including its neighbor. A wait over about 0.5 s loses pre-roll, at the stream's start the least.
 - For viterbi and bank the budget's rank is equal for all, so it sheds the oldest first.
@@ -4355,7 +4461,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Segmental: spacing of opened elements | none within T_s / 8 of one opened in the same state with a base as high | `open_spacing_dots` 0.125, `ModelTables::open_spacing` | heuristic chosen by measurement |
 | Segmental: gap survival's table | every length to 256 samples, then 1 in 16, each entry the bin's first length's | `ModelTables::survival_index` | heuristic; the bound stays optimistic (derived) |
 | Segmental: exp, ln, ln I₀ | 32 + 256 + 2 049 table entries, errors below | `segmental/fast_math.hpp` | derived |
-| Detector: band's median, segmental's path | every 4th block, 85 ms | `DetectorConfig::floor_every_frames` | heuristic |
+| Detector: band's median, segmental's path | every 2nd frame of its own spectrum, 171 ms | `DetectorConfig::floor_every_frames` | heuristic |
 | App: display | 12.5 pictures/s; track list 4.2 times/s, changed cells only; call list and status bar about once a second | `kTickMs`, `kTextEveryTicks`, `kStatusEveryTicks` | heuristics |
 | Segmental: rings | C, rise, fall 8 192 samples (21.8 s at m = 1); context 1 024 samples; level 18 frames | `RunningSums`, `LevelEvidence` | sized before the gap stretch; holds the longest element, a word gap of 15.27 s at m = 1 (derived) |
 | Segmental: filter scales | m = 1, 3 | `filter_scales`; `--set filter_scales=[1,2,3]` or one number | heuristic chosen by measurement |
@@ -4374,9 +4480,16 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Segmental: publishing | every 0.25 s; last 64 symbols compared | `kPublishEveryS`, `kPublishTailSymbols` | heuristic |
 | App: default decoder | segmental | `kDefaultDecoderName` | coordinator's choice |
 | App: default center | 7031.5 kHz | `RadioDefaults::center_khz`, `SdrplaySettings::center_hz`, `--center-khz` | heuristic |
-| Local floor | ±1 kHz, lower quartile, 6 dB above | `DetectorConfig::local_floor_radius_hz`; signal_detector.cpp | heuristic |
-| One track per peak | 47 Hz | `DetectorConfig::one_track_per_peak` | heuristic |
-| DC guard | ±47 Hz | `DetectorConfig::dc_guard_hz` | heuristic |
+| Local floor | ±1 kHz, lower quartile, 7 dB above | `DetectorConfig::local_floor_radius_hz`; signal_detector.cpp | heuristic |
+| One track per peak | D = 30 Hz | `DetectorConfig::one_track_per_peak` | heuristic |
+| DC guard | none (0 Hz) | `DetectorConfig::dc_guard_hz` | heuristic |
+| DC blocker, segmental's path | one-pole average of the input from 0 FS, τ = 10 s; notch 0.0159 Hz at −3 dB re the passband | `EngineConfig::dc_block_s`; `Engine::process_hop` | heuristic, chosen by measurement (τ); derived (notch) |
+| Detector's spectrum, segmental's path | 4N-point Hann FFT, hop 2N: 5.86 Hz bins, 170.7 ms window, 85.3 ms frames, ENBW 8.79 Hz | `DetectorConfig::fft_factor` | heuristic, chosen by measurement (factor); derived (the rest) |
+| Detector's neighborhoods, segmental's path | peak ±12 Hz; level ±6 Hz; candidate step 6 Hz a frame; follow 12 Hz a frame; D = 30 Hz | `peak_radius_hz`, `level_radius_hz`, `candidate_step_hz`, `follow_radius_hz`, `attribution_distance_hz` | heuristic (D chosen by measurement) |
+| Detector's threshold, segmental's path | 7 dB SNR per fine bin (8.79 Hz); hysteresis 3 dB | `DetectorConfig::threshold_db` | heuristic, chosen by measurement |
+| Prominence | 6 dB re the lowest bin toward a higher one, within ±150 Hz | `prominence_db`, `prominence_radius_hz` | heuristic, chosen by measurement |
+| Keying sidebands | a bin 10 dB above within ±150 Hz whose mirror stands within 3 dB of the peak | `sideband_db`, `sideband_mirror_db`, `sideband_radius_hz` | heuristic (values); derived (the symmetry) |
+| First retirement at a place | leaves it open; the next closes it as a first hold | `EngineConfig::first_retirement_open` = 2 | heuristic, chosen by measurement |
 | Replay | 2 s, 94 past blocks | `EngineConfig::replay_s` | heuristic |
 | Replay's rate | 100 tracks/s, 2.13 per block | `EngineConfig::replay_tracks_per_s` | heuristic |
 | Judge: window, first verdict | 12 s, 4 s | `TrackJudge::kWindowS`, `kFirstVerdictS` | heuristic |
@@ -4384,7 +4497,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Judge: quiet | new 5 nats/s over 8 s; at most 14 s unproven; proven 1 nat/s over 30 s | `kQuietNew*`, `kUnprovenS`, `kQuietOld*` | heuristic |
 | Judge: free key | two states, 5 switches/s | `kFreeKeySwitchPerS` | heuristic |
 | Text test | floor −12, plausible −6, tiny junk +8, garbage junk +6 nats; q fitted | `kTextFloorNats`, `kPlausibleNats`, `kTinyJunkNats`, `kGarbageJunkNats`, `kTinyShares` | heuristic (the bound is derived, for the models only) |
-| Holds | place ±47 Hz, 8 s, doubling to 120 s; a repeat only after the hold's end; forgotten after 120 s open | `TrackJudge::kHoldS`, `SignalDetector::kLongestHoldS` | heuristic |
+| Holds | place ±D (30 Hz on segmental's path), 8 s, doubling to 120 s; a repeat only after the hold's end; forgotten after 120 s open | `TrackJudge::kHoldS`, `SignalDetector::kLongestHoldS` | heuristic |
 | Region | 4 retirements within 750 Hz in 60 s close ±750 Hz, 30 s up | `kRegionRetirements`, `kRegionRadiusHz`, `kRegionMemoryS`, `kRegionHoldS` | heuristic |
 | List | ended rows 60 s; same place 47 Hz; about 4 000 symbols a row | `TrackTable::kRetainEndedS`, `kSamePlaceHz`, `kMaxRowSymbols` | heuristic |
 | Ring | at least 4 s; 5.46 s at each radio rate | `SdrplaySource::kRingS`, `SpscRing` | 4 s heuristic; 5.46 s derived |
