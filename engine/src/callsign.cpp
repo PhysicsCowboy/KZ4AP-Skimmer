@@ -610,6 +610,7 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
         s.points += o.points;
         s.framed = s.framed || o.framed;
         s.named = s.named || (o.role == Role::Named && o.points >= 1.0 && o.margin >= config_.named_margin_nats);
+        s.sure = s.sure || (config_.known_margin_nats > 0.0 && o.points >= 1.0 && o.margin >= config_.known_margin_nats);
     }
     return s;
 }
@@ -618,7 +619,7 @@ bool CallSearch::passes(const Candidate& c, const Support& s) const {
     const double points = s.points;
     if (only_tiny_pieces(c.base)) return points >= config_.tiny_points;
     if (s.named && points >= config_.points_named && (c.known || !known_ || config_.named_listed_only == 0.0)) return true;
-    if (c.known) return points >= (s.framed ? config_.points_known : config_.points_known_bare);
+    if (c.known) return points >= (s.framed || s.sure ? config_.points_known : config_.points_known_bare);
     return points >= (s.framed ? config_.points_framed : config_.points_bare);
 }
 
@@ -631,6 +632,7 @@ bool CallSearch::stands_elsewhere(const Candidate& c, double freq_hz, double now
             if (std::abs(o.freq_hz - a.freq_hz) > config_.same_place_hz || now_s - o.end_s > config_.window_s) continue;
             alone.points += o.points;
             alone.framed = alone.framed || o.framed;
+            alone.sure = alone.sure || (config_.known_margin_nats > 0.0 && o.points >= 1.0 && o.margin >= config_.known_margin_nats);
         }
         if (passes(c, alone)) return true;
     }

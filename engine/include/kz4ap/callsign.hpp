@@ -196,6 +196,9 @@ struct CallSearchConfig {
     // A reading scored by the decoder's confidence in it. Heuristics, chosen by measurement.
     double low_margin_nats = 0.0;
     double low_margin_points = 0.5;
+    // nats: a listed call read bare passes at points_known, as if framed, when some whole or glued reading of it has at least this
+    // margin; 0 asks points_known_bare of every bare listed call. Heuristic, chosen by measurement.
+    double known_margin_nats = 0.0;
 };
 
 // One line of the list.
@@ -274,6 +277,7 @@ private:
         double points = 0;
         bool framed = false;
         bool named = false;  // a whole or glued word named by another (CallSearchConfig::points_named)
+        bool sure = false;   // a whole or glued word the decoder had no near rival for (CallSearchConfig::known_margin_nats)
     };
 
     void read_track(TrackText& track, bool all);

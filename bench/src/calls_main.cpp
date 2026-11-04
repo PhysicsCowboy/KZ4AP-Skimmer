@@ -60,6 +60,7 @@ void set_value(CallSearchConfig& c, const std::string& assignment) {
         {"reread_corrected", &c.reread_corrected}, {"history_s", &c.history_s},
         {"named_margin_nats", &c.named_margin_nats}, {"named_listed_only", &c.named_listed_only},
         {"short_variant_ratio", &c.short_variant_ratio}, {"low_margin_nats", &c.low_margin_nats}, {"low_margin_points", &c.low_margin_points},
+        {"known_margin_nats", &c.known_margin_nats},
     };
     const auto it = fields.find(name);
     if (it == fields.end()) throw std::runtime_error("no such setting: " + name);
