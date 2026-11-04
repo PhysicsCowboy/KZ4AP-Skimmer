@@ -1677,7 +1677,9 @@ Deferred from the first stage (`docs/signal-processing.md`, section 11):
 
 - `cty.dat` for allocation by DXCC entity (the stage knows only the ITU's series), and a watch list distinct from MASTER.SCP.
 - A pattern table in place of the flat bare and framed thresholds, as CW Skimmer's `patt3ch.lst` ranks common and rare prefixes; only after the owner's hour shows it would pay.
-- A posterior on a call in place of points, once a decoder gives probabilities per symbol (segmental's are all 1).
+- A posterior on a call in place of points. Since `call-2` the segmental decoder gives each symbol a margin (A.8e, "Margins"), used once: a listed call read once bare passes when sure (`known_margin_nats`). As a threshold for a word named once, or as fewer points for an unsure word, it took misreadings off the 2017 recordings and confirmed calls with them (decision log, 2026-11-04): the margins are not calibrated, a word space's is near 0 even on a strong signal, and a rival at another speed is not compared until the over's end. A calibrated per-symbol posterior, and margins across speeds, come first.
+- **A known-call list by default** (call-2, 2026-11-04): with CW Skimmer's own MASTER.DTA of 2018 our misreadings on the 2017 recordings fall about by half and the confirmed calls rise (decision log). No list ships: MASTER.SCP is published by supercheckpartial.com and the terms of redistributing it, or of fetching it at first start, are the owner's to decide. Until then `--known-calls PATH`.
+- **Sure misreadings of a word named once:** K8VC for K8VJ and W6UM for W1UM on W3OA read with no rival within 16 nats, so a margin cannot hold them back; whether the running station sent them so (its own bust) or the decoder misread them surely is not known (conjecture: some are busts, which CW Skimmer avoids by not spotting a call on one word). Only a list, or not taking named words alone, keeps them off.
 - The spots of design section 3 (the telnet server) read this stage; re-spotting after 10 min is not done, the list has one row per call.
 
 From `app-7`'s look at what it dropped (checkpoint 2's record):
@@ -1685,7 +1687,7 @@ From `app-7`'s look at what it dropped (checkpoint 2's record):
 - Spellings of one station: real 40 m's IK6QOP is read exactly once and shows as K6QOP and IK6QO; a word's stray-letter reading gives half a point to the shorter call and none back. Pooling a family of near calls, or giving a word's own reading its due first.
 - A word glued to DE that also has a call's form: the start of a call is now held as a variant (`prefix_held`), and H2's false calls are 1 of 80 (PA8PG).
 - `variant_hz` 300 Hz: 3 false calls fewer on H2, 1 true fewer on the contest. Decide with CW Skimmer's list on the owner's hour.
-- A real MASTER.SCP against the recordings: tried at `app-8` (`calls-rules.csv`): contest + 1 true + 1 false, real 40 m the same list. Its worth against CW Skimmer's repeats table is for the owner's hour.
+- A real MASTER.SCP against the recordings: tried at `app-8` (`calls-rules.csv`): contest + 1 true + 1 false, real 40 m the same list. Its worth against CW Skimmer's repeats table is for the owner's hour. Measured in `call-2` on the 2017 recordings against CW Skimmer (decision log, 2026-11-04).
 - One reading with no list, after DE: `points_framed` 1 adds 20 true and 22 false on the contest, so not as is; on real 20 s it adds K3AV and KB8UGP, which read well. DE alone and not TEST might do.
 
 From review 5, of `app-7` (2026-10-31); the review's full evidence is summarized in checkpoint 2's record:
