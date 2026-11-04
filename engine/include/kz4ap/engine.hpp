@@ -284,7 +284,6 @@ private:
     // The DC blocker (EngineConfig::dc_block_s): its average, FS, its weight per sample, and the hop it writes.
     std::complex<double> dc_ = 0.0;
     double dc_alpha_ = 0.0;
-    bool dc_started_ = false;
     std::vector<Sample> dc_hop_;
     std::vector<Sample> pending_;
     std::map<std::uint32_t, Channel> channels_;

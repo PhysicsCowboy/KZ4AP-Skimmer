@@ -269,13 +269,8 @@ void Engine::process_hop(std::span<const Sample> hop) {
         mark = now;
     };
     if (dc_alpha_ > 0.0) {
-        // The DC blocker: the average starts at the first hop's mean, so that a radio's offset is out from the first sample.
-        if (!dc_started_) {
-            std::complex<double> sum = 0.0;
-            for (const Sample& x : hop) sum += std::complex<double>(x);
-            dc_ = sum / static_cast<double>(hop.size());
-            dc_started_ = true;
-        }
+        // The DC blocker; its average starts at 0 FS. (Started at the first hop's mean, the noise in that mean stayed in the input
+        // as a carrier at 0 Hz for about dc_block_s, about 21 dB below a station of +10 dB S500 at 48 kHz.)
         dc_hop_.resize(hop.size());
         for (std::size_t i = 0; i < hop.size(); ++i) {
             const std::complex<double> x(hop[i]);
