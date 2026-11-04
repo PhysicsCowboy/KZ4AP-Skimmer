@@ -79,9 +79,38 @@ void apply_path_defaults(EngineConfig& c) {
     // tracks). The other decoders keep the detector their test-set results were measured with.
     if (c.detector.local_floor_radius_hz == 0.0) c.detector.local_floor_radius_hz = 1000.0;
     c.detector.one_track_per_peak = true;
-    // Every 4th block, 85 ms at the usual block of 21.33 ms, against an average over average_s: heuristic. 8 192 bins selected 47 times/s is most of the detector's CPU.
-    c.detector.floor_every_frames = 4;
-    c.detector.dc_guard_hz = c.channel_distance_hz;
+    // The detector's own spectrum, 4 times finer than the band's: 5.86 Hz bins and a window of 170.7 ms at every usual rate, a frame
+    // every 85.3 ms (docs/signal-processing.md, section 6). On the band's 23.4 Hz bins a neighbor's main lobe reaches 47 Hz, so a
+    // station within about 60 Hz of a stronger one was never a peak.
+    c.detector.fft_factor = 4;
+    // A peak the highest within +/-12 Hz (2 bins), its level read within +/-6 Hz, a candidate moving at most 6 Hz a frame (70 Hz/s):
+    // the Hann main lobe's half width is 2 bins, 11.7 Hz. Heuristics.
+    c.detector.peak_radius_hz = 12.0;
+    c.detector.level_radius_hz = 6.0;
+    c.detector.candidate_step_hz = 6.0;
+    // A peak beside a stronger one must stand 6 dB above the valley between them, within 150 Hz (the channel's half width), and is not
+    // a keyed carrier's sideband: no mirror as high about a bin 10 dB above it, within 3 dB. Heuristics, chosen by measurement.
+    c.detector.prominence_db = 6.0f;
+    c.detector.prominence_radius_hz = 150.0;
+    c.detector.sideband_db = 10.0f;
+    c.detector.sideband_mirror_db = 3.0f;
+    c.detector.sideband_radius_hz = 150.0;
+    // 30 Hz between tracks, a track following its own peak within 12 Hz a frame: a station 30 Hz or more from another opens its own
+    // channel. Heuristics, chosen by measurement.
+    c.detector.attribution_distance_hz = 30.0;
+    c.detector.follow_radius_hz = 12.0;
+    // 7 dB above the floor on the finer bins, where a keyed carrier stands 5 to 6 dB higher per bin than on the band's (measured, one
+    // station at 22 WPM): heuristic, chosen by measurement.
+    c.detector.threshold_db = 7.0f;
+    // Every 2nd frame, 171 ms, against an average over average_s: heuristic. 32 768 bins selected each frame is most of the detector's CPU.
+    c.detector.floor_every_frames = 2;
+    // A radio's DC offset is removed (the blocker's notch 0.16 Hz wide at -3 dB re the passband), so no guard keeps a station at the
+    // center from its track.
+    c.dc_block_s = 1.0;
+    c.detector.dc_guard_hz = 0.0;
+    // The first retirement at a place leaves it open: a station read badly at first (beside a neighbor) or listening gets a second
+    // track; the next retirement there closes it as before. Heuristic, chosen by measurement.
+    c.first_retirement_open = 2;
 }
 
 double oracle_frequency_hz(std::span<const OracleSegment> track, double t_s) {

@@ -109,7 +109,8 @@ struct EngineConfig {
     // D_ch, Hz (owner decisions 2026-09-29, option 1; Matched path, Attribution::Distance): each detector
     // track follows its own spectral peak within D_ch of its current frequency, and a new peak within
     // D_ch of a track belongs to it; a channel's
-    // frequency tracker fine-tunes around the detector's frequency (FrequencyTrackerConfig::fine_tune_hz).
+    // frequency tracker fine-tunes around the detector's frequency (FrequencyTrackerConfig::fine_tune_hz). The segmental path's
+    // detector has its own (apply_path_defaults).
     double channel_distance_hz = 47.0;
 
     // The input's DC offset removed before the spectrum and the channels (a DC blocker): each sample less a one-pole average

@@ -8,6 +8,7 @@
 #include <cmath>
 #include <complex>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <map>
 #include <numbers>
@@ -930,6 +931,100 @@ TEST(EngineReplay, RefusesValuesThatAreNotAMeasure) {
     EXPECT_THROW(Engine(config, bus), std::invalid_argument);
     config.replay_s = 2.0;
     config.replay_tracks_per_s = 0.0;
+    EXPECT_THROW(Engine(config, bus), std::invalid_argument);
+}
+
+namespace {
+
+// The tracks the segmental decoder's detector opens on x (48 kHz), its path's defaults changed by `vary` (as a benchmark's variant).
+std::vector<Track> segmental_births(const std::vector<Sample>& x, const std::function<void(EngineConfig&)>& vary = {}) {
+    EventBus bus;
+    std::vector<Track> born;
+    bus.subscribe([&](const Event& e) {
+        if (const auto* t = std::get_if<TrackEvent>(&e); t && t->kind == TrackEvent::Kind::Born) born.push_back(t->track);
+    });
+    EngineConfig config;
+    config.sample_rate = 48000;
+    config.decoder.front_end = FrontEnd::Segmental;
+    if (vary) {
+        apply_path_defaults(config);
+        vary(config);
+        config.as_given = true;
+    }
+    Engine engine(config, bus);
+    for (std::size_t i = 0; i < x.size(); i += 8192) engine.process(std::span<const Sample>(x).subspan(i, std::min<std::size_t>(8192, x.size() - i)));
+    engine.finish();
+    return born;
+}
+
+std::size_t births_near(const std::vector<Track>& born, double freq_hz, double within_hz) {
+    return static_cast<std::size_t>(std::count_if(born.begin(), born.end(), [&](const Track& t) { return std::abs(t.freq_hz - freq_hz) < within_hz; }));
+}
+
+// The detector of the segmental path before det-1: the band's 23.4 Hz bins, a peak the highest within 47 Hz, 47 Hz between
+// tracks, no DC blocker and no track within 47 Hz of 0 Hz.
+void coarse_detector(EngineConfig& c) {
+    c.detector.fft_factor = 1;
+    c.detector.peak_radius_hz = 47.0;
+    c.detector.level_radius_hz = 23.0;
+    c.detector.candidate_step_hz = 23.0;
+    c.detector.prominence_db = 0.0f;
+    c.detector.sideband_db = 0.0f;
+    c.detector.follow_radius_hz = 0.0;
+    c.detector.attribution_distance_hz = 47.0;
+    c.detector.floor_every_frames = 4;
+    c.detector.threshold_db = 6.0f;
+    c.detector.dc_guard_hz = 47.0;
+    c.dc_block_s = 0.0;
+    c.first_retirement_open = 0;
+}
+
+}  // namespace
+
+TEST(EngineDetector, AStationBesideAStrongerNeighborGetsItsOwnTrack) {
+    // A station at +15 dB S500 and a neighbor 60 Hz above it, 10 dB stronger (re its key-down power): on the band's 23.4 Hz bins the
+    // neighbor's main lobe takes the station's peak; on the detector's 5.9 Hz bins the station stands out of the neighbor's skirt.
+    const double duration_s = 12.0;
+    std::vector<Sample> x = test::keyed_signal("CQ CQ DE W1AW W1AW K CQ CQ DE W1AW", 25.0, 48000.0, duration_s, 1000.0, amplitude_48k(15.0), kNoiseSigma, 7);
+    add_to(x, test::keyed_signal("TEST K1ABC K1ABC TEST K1ABC K1ABC TEST", 22.0, 48000.0, duration_s, 1060.0, amplitude_48k(25.0), 0.0, 8, 0.7));
+    const std::vector<Track> born = segmental_births(x);
+    EXPECT_GE(births_near(born, 1000.0, 6.0), 1u);
+    EXPECT_GE(births_near(born, 1060.0, 6.0), 1u);
+    EXPECT_EQ(births_near(segmental_births(x, coarse_detector), 1000.0, 15.0), 0u);
+}
+
+TEST(EngineDetector, AStationAtTheStreamsCenterIsFoundPastTheRadiosOffset) {
+    // A radio's DC offset, 10 times the station's amplitude, and a station 5 Hz from the center: the DC blocker takes the offset out,
+    // and no guard keeps the station from its track.
+    const double duration_s = 10.0;
+    std::vector<Sample> x = test::keyed_signal("CQ CQ DE W1AW W1AW K CQ CQ DE W1AW", 25.0, 48000.0, duration_s, 5.0, amplitude_48k(15.0), kNoiseSigma, 9);
+    const Sample offset(10.0f * static_cast<float>(amplitude_48k(15.0)), -5.0f * static_cast<float>(amplitude_48k(15.0)));
+    for (Sample& s : x) s += offset;
+    const std::vector<Track> born = segmental_births(x);
+    EXPECT_GE(births_near(born, 5.0, 4.0), 1u);
+    EXPECT_EQ(births_near(segmental_births(x, coarse_detector), 5.0, 40.0), 0u);
+}
+
+TEST(EngineDetector, AStrongFastStationMakesOneTrackNotOneForEachSideband) {
+    // +35 dB S500 at 35 WPM, many dots: its keying puts lines at odd multiples of half the dot rate (14.6 Hz at 35 WPM), well clear of
+    // its peak on 5.9 Hz bins; they come in mirrored pairs and open no track.
+    const std::vector<Sample> x = test::keyed_signal("5NN 5NN TU TEST HH 5NN 5NN TEST 5NN 55 TEST 5NN", 35.0, 48000.0, 12.0, 2000.0,
+                                                     amplitude_48k(35.0), kNoiseSigma, 10);
+    const std::vector<Track> born = segmental_births(x);
+    EXPECT_EQ(born.size(), 1u);
+    EXPECT_EQ(births_near(born, 2000.0, 3.0), 1u);
+}
+
+TEST(EngineDetector, RefusesADcBlockerThatIsNotATime) {
+    EventBus bus;
+    EngineConfig config;
+    config.decoder.front_end = FrontEnd::Segmental;
+    apply_path_defaults(config);
+    config.dc_block_s = -1.0;
+    config.as_given = true;
+    EXPECT_THROW(Engine(config, bus), std::invalid_argument);
+    config.detector.fft_factor = 3;
+    config.dc_block_s = 1.0;
     EXPECT_THROW(Engine(config, bus), std::invalid_argument);
 }
 
