@@ -774,11 +774,11 @@ any case) are the span's edges when high − low is between 0.8·fs and
 itself (`KC2LRC_…_14091kHz`, `kz4ap_7030.000kHz_192kHz_…`). The 0.8 is a
 heuristic: W3OA's name gives 6 995–7 177 kHz, 182 kHz, at fs = 192 kHz.
 The center from a name is only as good as the name: on N2GZ's file the
-call list stands +0.136 kHz above N2GZ's own RBN spots (median of 28
-calls), on W3OA's (header center 7 086.101 kHz) +0.206 kHz above the North
-American skimmers' median (47 calls), on KC2LRC's −0.02 kHz (49 calls);
+call list stands +0.131 kHz above N2GZ's own RBN spots (median of 28
+calls), on W3OA's (header center 7 086.101 kHz) +0.215 kHz above the North
+American skimmers' median (47 calls), on KC2LRC's −0.02 kHz (50 and 49 calls);
 measured on the 2017 recordings, cause of the first two not traced (a
-nominal center, a receiver's clock about 29 ppm off; conjecture). No
+nominal center, a receiver's clock about 30 ppm off; conjecture). No
 decision depends on it: the center only labels.
 
 ## A.2 The FFT size N and bin width Δf
