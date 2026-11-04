@@ -76,7 +76,7 @@ channels follow it (section 7), and those two get N₀ from a hiss estimator rea
 
 A stereo WAV, I left, Q right: b-bit integers (b = 16, 24, 32) over
 2^(b−1), in [−1, 1) FS, or 32-bit floats. Other rates go exactly to
-the largest decoder rate below (250 to 192 kHz: × 96/125); `--mirror`
+the largest decoder rate below (250 to 192 kHz: × 96/125, flat to ±86 kHz); `--mirror`
 conjugates a mirrored receiver's samples. Frequencies are offsets from the
 center (Hz); the center (`--center-khz`, header or file
 name) only labels them (A.1). Blocks of N/2 samples (section 3) keep the
@@ -139,8 +139,8 @@ their results were measured with, on the band's spectrum (A.6). Values are
 heuristics unless marked.
 
 **DC blocker.** First a radio's DC offset leaves the input: each sample less
-a one-pole average of the samples, time constant 10 s, a notch at 0 Hz
-0.016 Hz wide at −3 dB re the passband (derived). The channels read the
+a one-pole average of the samples, time constant 10 s, a notch at 0 Hz,
+−3 dB re the passband at ±0.016 Hz (derived). The channels read the
 blocked input too.
 
 **Its own spectrum.** The detector reads a spectrum four times finer than
@@ -151,7 +151,7 @@ bins a station's main lobe reaches ±47 Hz, so a station 60 Hz from one
 per fine bin (measured).
 
 **Averaging and floor.** Each bin's power is averaged with a one-pole
-average of **τ = 1 s**, in linear power: keying comes and goes, and the
+average of **τ = 1 s**, in linear power: keying comes and goes; the
 average shows a steady peak. The
 floor is the median of all averaged bins, every second frame.
 
@@ -183,8 +183,8 @@ active while its level, the highest bin within ±6 Hz, is at most 3 dB
 below the threshold, and dies after **10 s** inactive. At most **400**
 tracks; a stronger newcomer replaces the weakest.
 
-**Oracle mode**, for the benchmark only, skips the detector and opens a
-channel at each labeled station's frequency.
+**Oracle mode**, for the benchmark, skips the detector and opens a
+channel at each labeled frequency.
 
 Appendix: A.6.
 
@@ -752,18 +752,30 @@ IF) holds the FT8 tones of 7 074–7 077 kHz at 6 963–6 965.4 kHz as labeled (
 which a channel's 1/128 of fs holds a whole number of segmental's samples) and is above 48 kHz is resampled to the largest of
 those below it (`decoder_rate_for`); below 48 kHz it is left for the decoder to refuse. The ratio is the rates' reduced
 fraction L/M (96/125 for 250 to 192 kHz; L, M ≤ 4 096, else refused), so the rate is exact. The filter is a windowed sinc at
-fs_up = L·fs_in, cut at half the lower rate (−6 dB there: 96 kHz), with a Kaiser window of β = 0.1102 (A − 8.7) = 7.857 for
-A = 80 dB of stopband attenuation and length N − 1 = (A − 7.95) / (2.285 · 2π Δf / fs_up) for a transition Δf = 0.104 × the
-lower rate (20 kHz at 192 kHz), both Kaiser's estimates (sourced: Oppenheim and Schafer); padded to K·L taps, K = 63 per phase
-at 96/125. Output n takes input base ⌊nM/L⌋ and phase p = nM mod L: y[n] = Σ_k h[p + kL] x[base − k], k = 0 … K − 1. Each
-phase is scaled to sum 1, so a constant goes through unchanged. Group delay (N − 1) / (2 fs_up) = 126 µs at 96/125, not
-removed (derived). The pass band thus runs to 86 kHz, flat within the window's ripple of 10⁻⁴ (80 dB); 86–96 kHz is the transition, and
-what the input held at 96–106 kHz folds into 86–96 kHz, the band's edge, where the input's own content beyond 106 kHz is 80 dB
-down (tests: a tone at 0, 20, −55 and 85 kHz within 0.01 dB, rms error under 10⁻³ FS at 0.5 FS; 120 and −110 kHz at least
-75 dB down; output identical however the input is split; a seek gives the same samples as reading through). A = 80 dB and the
-0.104: heuristics, below 16-bit noise. CPU on the owner's 367.5 s recording: the copy took 5.6 s of wall on the desktop, that
-is about 15 ms of one core per s of stream (measured, `kz4ap-resample`), inside the fixed cost of a stream. Input before the
-file's start and after its end counts as zero.
+fs_up = L·fs_in whose stopband starts at half the lower rate (96 kHz at 192 kHz: the output's Nyquist, standard anti-alias
+practice, so that nothing beyond it folds into the band), over a transition Δf = (10/192) × the lower rate (10 kHz at
+192 kHz) below it: cut at −6 dB at 0.5 × the lower rate − Δf/2 (91 kHz). Kaiser window of β = 0.1102 (A − 8.7) = 8.078 for a
+design value A = 82 dB, and length N − 1 = (A − 7.95) / (2.285 · 2π Δf / fs_up), both Kaiser's estimates (sourced: Oppenheim
+and Schafer); padded to K·L taps, K = 129 per phase at 96/125. Output n takes input base ⌊nM/L⌋ and phase p = nM mod L:
+y[n] = Σ_k h[p + kL] x[base − k], k = 0 … K − 1. Each phase is scaled to sum 1, so a constant goes through unchanged. Group
+delay (N − 1) / (2 fs_up) = 257.979 µs (49.53 output samples) at 96/125, not removed (derived). The pass band runs to
+96 − 10 = **86 kHz** (derived from the design); measured at 96/125 with 0.5 FS tones (2026-11-04, the desktop): −0.0007 to
++0.0006 dB re input for |f| ≤ 86 kHz, within 0.01 dB re input to 86.4 kHz; −0.34 dB re input at 88 kHz, −6.02 dB at 91 kHz,
+−44.3 dB at 95 kHz. An input component at f, 96 ≤ |f| ≤ 125 kHz, appears at f ∓ 192 kHz, at the band's opposite edge, at most
+−82.0 dB re input (25 Hz steps; a design value of 80 dB gave −79.8 dB, which Kaiser's estimate falls short by, hence 82). So
+86–96 kHz each side is attenuated, by the transition, and holds nothing folded from beyond Nyquist above −82 dB re input.
+That is not nothing: a station beyond ±96 kHz at about +80 dB S500 or more still makes a ghost call at the opposite edge
+(measured, review 9: listed at +80 dB S500 at +96.35 kHz, not at +75 dB; the strongest key-down peaks measured on three real
+files were +40 to +53 dB S500, a margin of about 27 dB). Tests:
+21 tones from −86 to +86 kHz within 0.005 dB peak to peak, each with the stated delay (rms error under 10⁻³ FS at 0.5 FS);
+88, −91 and 95 kHz at the levels above within 0.1 dB; every tone at 96 ≤ |f| ≤ 125 kHz in 0.5 kHz steps, +100 kHz among them,
+below −80 dB re input; 129 taps per phase and the delay; output identical however the input is split; a seek gives the same
+samples as reading through. 80 dB and Δf: heuristics (80 dB is 18 to 45 dB above 16-bit quantization noise, which is 98.1 dB below a full-scale tone over 250 kHz and 125.1 dB in 500 Hz; derived). Δf was chosen against CPU, measured on the desktop
+(one core, 20 s of noise at 250 kHz in blocks of 4 096, best of 5, three runs): Δf = 10 kHz, 129 taps per phase, 20.1 to
+23.0 ms per s of stream; 20 kHz, 65 taps, pass band to 76 kHz, 11.9 to 13.7 ms; 5 kHz, 258 taps, to 91 kHz, 38.7 to 41.9 ms;
+the filter before, 63 taps, 12.0 to 14.0 ms. 10 kHz keeps the pass band where it was for about 8 ms more per s of stream, a
+per-stream cost, not per channel. Input before the file's start counts as zero; the output ends with the last sample its
+input completes (`outputs_for`).
 
 **The center from the file name** (`center_hz_from_file_name`), used when
 neither `--center-khz` nor the header gives one: the name's extension of 1–4
@@ -1003,7 +1015,7 @@ use with lround(Hz/Δf): 47 Hz → 2 bins, 23 Hz → 1 bin at 23.44 Hz.
 - **Existing tracks.** Level = maximum over ±23 Hz of the track's current
   peak bin; active while ≥ **3 dB** above the floor (dB SNR per bin,
   6 dB minus 3 dB of hysteresis); dies after **10 s** inactive. Heuristic.
-- **Cap.** At most **200** tracks; a stronger new candidate replaces the
+- **Cap.** At most **400** tracks (`DetectorConfig::max_tracks`); a stronger new candidate replaces the
   weakest (heuristic, a CPU guard).
 - **Envelope path** (with the Envelope decoder): frequency fixed at
   birth; a peak less than 3 bins (70 Hz) from a track's bin belongs to it.
@@ -1271,8 +1283,8 @@ it). On every path it sets `attribution_distance_hz` = `channel_distance_hz` fir
   1/√23.4 = 0.21 (Hann frames overlapping by half are nearly uncorrelated in power), against 0.10 on the band's bins: the 7 dB
   threshold, 5.0 times the mean, stands about 19 standard deviations above it, so flat white noise alone does not cross it.
 - **Why the band's bins hid a neighbor.** Hann's response at x bins, (sin πx / πx)² / (1 − x²)², at 60 Hz (2.56 bins) from a
-  neighbor 10 dB stronger: the bin between them, 13 Hz from it, reads it about −3 dB re its peak, 7 dB above the station's own
-  peak; with the peak radius of ±47 Hz the station is never a local maximum.
+  neighbor 10 dB stronger: the bin between them, 13 Hz (0.55 bins) from it, reads it −1.8 dB re its peak, 8 dB above the station's own
+  peak (derived); with the peak radius of ±47 Hz the station is never a local maximum.
 - **Sideband symmetry.** A keyed carrier is A(t) cos(2π f_c t + φ) with A real; its power spectrum is |Â(f − f_c)|² +
   |Â(−f − f_c)|², and |Â(−ν)|² = |Â(ν)|² for a real A: symmetric about f_c. A train of dots, period 2T, is a square wave whose
   Fourier series holds the odd harmonics k/(2T), amplitude ∝ 1/k: lines at ±(2j + 1)/(2T) (41 and 69 Hz at 33 WPM), which on the
@@ -1319,10 +1331,16 @@ jittered grid), the contest and band recordings, and real30 and live2.
   another, and each costs a track until the judge retires it.
 - Stations closer than D = 30 Hz share a channel, as before at 47 Hz. At 20 to 45 Hz the decoder reads a station badly beside an
   equal or stronger neighbor even when told its frequency.
-- Beside a keyed neighbor 20 dB or more stronger at 60 Hz the neighbor's skirt fills the valley and the station fails the
-  prominence test.
+- Beside a keyed neighbor 20 dB or more stronger at 60 Hz (on the test set's cells; about 30 dB in review 8's single case, A.8e)
+  the neighbor's skirt fills the valley and the station fails the prominence test.
+- The sideband test can delay or block a real station whose mirror image about a much stronger station holds another station
+  at about its level. Measured (review 8, 48 kHz): W1AW at 1 000 Hz and VE3XYZ at 1 300 Hz, both +15 dB S500, either side of
+  K9ZZ at 1 150 Hz, +12 dB re them: VE3XYZ's track was born at 8.3 s, against 1.7 s with the test off or with VE3XYZ at
+  1 330 Hz, and its first "CQ DE VE3XYZ" was lost; 100 Hz either side of a neighbor +15 dB re them, neither got a track in 24 s
+  (both read junk there without the test). How often a band holds that geometry is not measured.
 - A chirping strong station's sidebands are not symmetric and may open tracks; the generator has no chirp.
-- The blocker spoils a keyed station within about 0.1 Hz of 0 Hz, and a radio's offset, or a change in it, takes about 10 s to
+- The blocker spoils a keyed station within about 0.02 to 0.1 Hz of 0 Hz (review 8: text lost after about 10 s at 0 Hz, partly at
+  0.02 Hz, whole from 0.1 Hz), and a radio's offset, or a change in it, takes about 10 s to
   leave: a strong one opens a short track at the center at the start. Without the guard, real30's raised noise within about
   ±100 Hz of its center (about +3 dB, measured) opens short tracks there that the judge retires (64 tracks, 950 channel-seconds
   in 30 min).
@@ -4177,7 +4195,7 @@ windows' length. Everything shared with viterbi: A.8d.
 
 These are the model's and, except where said, the viterbi decoder's too. The white-noise test set shows few of them. Measurements: `docs/decision-log.md` and the results records.
 
-- **Close neighbors.** The model has one station per stream, and the belief follows whichever carrier is up. A neighbor's mark in the wanted station's gap scores as key-down, and the same story bridges the gap. The narrower filters keep out a neighbor outside their band. The leak floor below keeps a neighbor's leak from scoring as keying once it stands above the hiss. What stays (levels in dB re the wanted station's key-down power; scores in the results records): a neighbor at or below the wanted station's level inside about 60 Hz, at every level; neighbors +10 dB re wanted at about 80 Hz (0.54, from 0.74), and +12 dB re wanted at 60 to 100 Hz in part, by cell; neighbors far stronger, as +44 dB re wanted 200 to 300 Hz away, and +20 dB re wanted at 150 Hz; a steady carrier +10 dB and stronger inside the channel, where the whole text is lost at every setting tried. A very strong neighbor at 250 Hz writes false dots, believed to be its key clicks (not isolated). On the detector's path the limit is the detector and not the filter: a station 60 Hz from a neighbor at +10 dB re wanted or more, or 100 and 150 Hz from +40 dB re wanted, gets no track at all (CER 1.000 with any filter), since a peak must be the maximum within ±47 Hz. Untried: a second carrier in the level filter, the neighbor's beat in the complex samples, subtracting a neighbor's track. Viterbi, one width, is worse here.
+- **Close neighbors.** The model has one station per stream, and the belief follows whichever carrier is up. A neighbor's mark in the wanted station's gap scores as key-down, and the same story bridges the gap. The narrower filters keep out a neighbor outside their band. The leak floor below keeps a neighbor's leak from scoring as keying once it stands above the hiss. What stays (levels in dB re the wanted station's key-down power; scores in the results records): a neighbor at or below the wanted station's level inside about 60 Hz, at every level; neighbors +10 dB re wanted at about 80 Hz (0.54, from 0.74), and +12 dB re wanted at 60 to 100 Hz in part, by cell; neighbors far stronger, as +44 dB re wanted 200 to 300 Hz away, and +20 dB re wanted at 150 Hz; a steady carrier +10 dB and stronger inside the channel, where the whole text is lost at every setting tried. A very strong neighbor at 250 Hz writes false dots, believed to be its key clicks (not isolated). On the detector's path the detector sets part of the limit. Since `det-1` a station 60 Hz from a keyed neighbor at +10 or +20 dB re wanted gets a track (at +20 dB its channel then reads the neighbor's text), where on 23.4 Hz bins, a peak the maximum within ±47 Hz, it got none (CER 1.000 with any filter). It still gets none 60 Hz from a neighbor at +30 dB re wanted, 100 Hz from +30 or +40 dB, and 150 Hz from +40 dB (at +30 dB, 150 Hz, it does): the neighbor's skirt and keying sidebands make it fail the prominence or sideband test (A.6, whose own limitation, on the test set's cells, puts the 60 Hz edge at +20 dB). Measured by review 8 on 48 kHz signals, wanted +15 dB S500, one case each. A neighbor 30 dB below the wanted station, 60 Hz away, can still fill its word gaps (K9ZZ at +45 dB S500 read "K9ZZQ9ZZ" for "K9ZZ K9ZZ", the same review). Untried: a second carrier in the level filter, the neighbor's beat in the complex samples, subtracting a neighbor's track. Viterbi, one width, is worse here.
 - **A neighbor after the drop.** A neighbor arriving after the narrower streams are dropped (from 10 s of age) is read at the widest filter alone, for the channel's life.
 - **One stream's whole text.** Stories do not cross between streams (one sample of time mismatch is hundreds of nats at +20 dB S₅₀₀, so no joint search can prune across widths), and a QSO whose stations need different widths reads at the better over the whole track. A long track whose conditions change keeps its early leader unless another earns 120 nats more. Around 40 Hz at 0 dB re wanted a short text can fall either side.
 - **A narrower filter off frequency.** The channel follows the detector's frequency, which may be up to half a bin off a station (A.7); no fine estimate corrects it, and a narrower filter pays more for it. Oracle scores do not show this.
@@ -4355,7 +4373,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 |---|---|---|---|
 | Input scale | b-bit integers × 2^−(b−1); 32-bit floats as stored | wav_reader.cpp | standard choice |
 | Input rate | file's if 48 000 × 2^k samples/s (k = 0–4) or below 48 kHz; else the largest of those below, by L/M ≤ 4 096 | `decoder_rate_for`, `RationalResampler::kMaxFactor` | derived (the decoder's rates); the 4 096 heuristic |
-| Resampler filter | Kaiser sinc, −6 dB at half the lower rate, transition 0.104 × the lower rate (20 kHz at 192 kHz), 80 dB stopband; 63 taps per phase at 96/125 | `RationalResampler::kTransitionRatio`, `kAttenuationDb` | heuristic (Kaiser's formulas sourced) |
+| Resampler filter | Kaiser sinc, stopband from half the lower rate, transition (10/192) × the lower rate below it (10 kHz at 192 kHz: pass band to 86 kHz, −6 dB at 91 kHz), design value 82 dB for at least 80 dB re input (82.0 dB measured); 129 taps per phase at 96/125, delay 257.979 µs | `RationalResampler::kTransitionRatio`, `kAttenuationDb` | heuristic (Kaiser's formulas sourced; the transition chosen against CPU; 82 measured to meet 80) |
 | Center from a file name | span edges when 0.8–1.001 fs apart, else the first `<f>Hz/kHz/MHz` word that is not fs | `center_hz_from_file_name` | heuristic |
 | Bin width Δf | ~23 Hz (rule: largest power-of-two N with Δf ≥ 20 Hz) | `choose_fft_size` (engine.cpp) | heuristic |
 | Hop / overlap | N/2, 50% (largest hop keeping Hann constant-sum) | engine.cpp | standard choice |
@@ -4521,7 +4539,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Local floor | ±1 kHz, lower quartile, 7 dB above | `DetectorConfig::local_floor_radius_hz`; signal_detector.cpp | heuristic |
 | One track per peak | D = 30 Hz | `DetectorConfig::one_track_per_peak` | heuristic |
 | DC guard | none (0 Hz) | `DetectorConfig::dc_guard_hz` | heuristic |
-| DC blocker, segmental's path | one-pole average of the input from 0 FS, τ = 10 s; notch 0.0159 Hz at −3 dB re the passband | `EngineConfig::dc_block_s`; `Engine::process_hop` | heuristic, chosen by measurement (τ); derived (notch) |
+| DC blocker, segmental's path | one-pole average of the input from 0 FS, τ = 10 s; notch at 0 Hz, −3 dB re the passband at ±0.0159 Hz (0.032 Hz wide) | `EngineConfig::dc_block_s`; `Engine::process_hop` | heuristic, chosen by measurement (τ); derived (notch) |
 | Detector's spectrum, segmental's path | 4N-point Hann FFT, hop 2N: 5.86 Hz bins, 170.7 ms window, 85.3 ms frames, ENBW 8.79 Hz | `DetectorConfig::fft_factor` | heuristic, chosen by measurement (factor); derived (the rest) |
 | Detector's neighborhoods, segmental's path | peak ±12 Hz; level ±6 Hz; candidate step 6 Hz a frame; follow 12 Hz a frame; D = 30 Hz | `peak_radius_hz`, `level_radius_hz`, `candidate_step_hz`, `follow_radius_hz`, `attribution_distance_hz` | heuristic (D chosen by measurement) |
 | Detector's threshold, segmental's path | 7 dB SNR per fine bin (8.79 Hz); hysteresis 3 dB | `DetectorConfig::threshold_db` | heuristic, chosen by measurement |
@@ -4537,7 +4555,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Text test | floor −12, plausible −6, tiny junk +8, garbage junk +6 nats; q fitted | `kTextFloorNats`, `kPlausibleNats`, `kTinyJunkNats`, `kGarbageJunkNats`, `kTinyShares` | heuristic (the bound is derived, for the models only) |
 | Holds | place ±D (30 Hz on segmental's path), 8 s, doubling to 120 s; a repeat only after the hold's end; forgotten after 120 s open | `TrackJudge::kHoldS`, `SignalDetector::kLongestHoldS` | heuristic |
 | Region | 4 retirements within 750 Hz in 60 s close ±750 Hz, 30 s up | `kRegionRetirements`, `kRegionRadiusHz`, `kRegionMemoryS`, `kRegionHoldS` | heuristic |
-| List | ended rows 60 s; same place 47 Hz; about 4 000 symbols a row | `TrackTable::kRetainEndedS`, `kSamePlaceHz`, `kMaxRowSymbols` | heuristic |
+| List | ended rows 60 s; same place 30 Hz (the segmental path's D); about 4 000 symbols a row | `TrackTable::kRetainEndedS`, `kSamePlaceHz`, `kMaxRowSymbols` | heuristic |
 | Ring | at least 4 s; 5.46 s at each radio rate | `SdrplaySource::kRingS`, `SpscRing` | 4 s heuristic; 5.46 s derived |
 | Budget | shed above 1 s, grown over 2 checks 1 s apart (margin 0.05 s below 0.25 s), over 8 tracks, to ¾; back by 5 per 5 s below 0.25 s | stream_runner.cpp | heuristic |
 | Silence | 5 s | `DeliveryWatch::kStalledAfterS` | heuristic |

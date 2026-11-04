@@ -276,6 +276,47 @@ TEST(SignalDetectorHolds, ARetiredPlaceDoublesOnlyAfterTheHoldBeforeItHasEnded) 
     EXPECT_LT(second, 5.0);
 }
 
+TEST(SignalDetectorHolds, TheFirstRetirementAtAPlaceLeavesItOpenAndTheNextOnesHoldTwoFourAndEightSeconds) {
+    // retire's first_open (EngineConfig::first_retirement_open 2 on the segmental path: every retirement): reborn after the
+    // 0.5 s persistence alone, then after holds of 2, 4 and 8 s, each plus the persistence (the review's measurement, 2026-11-04).
+    SignalDetector d(config());
+    int i = 0;
+    ASSERT_GE(seconds_until_born(d, i, 200, 5.0), 0.0);
+    for (const double hold_s : {0.0, 2.0, 4.0, 8.0}) {
+        d.retire(d.tracks().at(0).id, frame_time(i), 2.0, true);
+        const double reborn = seconds_until_born(d, i, 200, 20.0);
+        EXPECT_GE(reborn, hold_s + 0.5 - 1e-6) << hold_s << " s";
+        EXPECT_LT(reborn, hold_s + 0.6) << hold_s << " s";
+    }
+}
+
+TEST(SignalDetectorHolds, AFirstOpenPlaceIsForgottenAfterTheLongestHold) {
+    SignalDetector d(config());
+    int i = 0;
+    ASSERT_GE(seconds_until_born(d, i, 200, 5.0), 0.0);
+    d.retire(d.tracks().at(0).id, frame_time(i), 2.0, true);
+    EXPECT_LT(seconds_until_born(d, i, 200, 20.0), 0.6);
+    // 125 s later (more than kLongestHoldS, 120 s): the place is forgotten, and a retirement there leaves it open again.
+    for (const double until = frame_time(i) + 125.0; frame_time(i) < until; ++i) d.process(frame(frame_time(i), {{200, -70.0f}}));
+    ASSERT_EQ(d.tracks().size(), 1u);
+    d.retire(d.tracks().at(0).id, frame_time(i), 2.0, true);
+    EXPECT_LT(seconds_until_born(d, i, 200, 20.0), 0.6);
+}
+
+TEST(SignalDetectorHolds, AFirstOpenRetirementWhereAPlainOneWasIsARepeat) {
+    SignalDetector d(config());
+    int i = 0;
+    ASSERT_GE(seconds_until_born(d, i, 200, 5.0), 0.0);
+    d.retire(d.tracks().at(0).id, frame_time(i), 2.0);
+    const double first = seconds_until_born(d, i, 200, 20.0);
+    EXPECT_GE(first, 2.5 - 1e-6);
+    EXPECT_LT(first, 2.6);
+    d.retire(d.tracks().at(0).id, frame_time(i), 2.0, true);
+    const double second = seconds_until_born(d, i, 200, 20.0);
+    EXPECT_GE(second, 4.5 - 1e-6);
+    EXPECT_LT(second, 4.6);
+}
+
 TEST(SignalDetectorHolds, OneWideSignalClosesItsRegionFromTheFirstHoldNotTheLongest) {
     // The tracks of one wide signal, retiring together: whatever their number, one closure of the region (the review's F2: three
     // retirements past the fourth took it from 30 s to 120 s at once, and a station in the clear lost 2 min).

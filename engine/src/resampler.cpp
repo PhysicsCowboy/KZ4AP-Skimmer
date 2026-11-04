@@ -24,8 +24,10 @@ double bessel_i0(double x) {
 
 }  // namespace
 
-RationalResampler::RationalResampler(int in_rate, int out_rate) {
+RationalResampler::RationalResampler(int in_rate, int out_rate, double transition_ratio, double attenuation_db) {
     if (in_rate <= 0 || out_rate <= 0) throw std::invalid_argument("resampler rates must be positive (samples/s)");
+    if (!(transition_ratio > 0.0 && transition_ratio < 0.5) || !(attenuation_db >= 50.0))
+        throw std::invalid_argument("resampler: the transition must be within (0, 0.5) of the lower rate, the attenuation at least 50 dB");
     const int g = std::gcd(in_rate, out_rate);
     up_ = out_rate / g;
     down_ = in_rate / g;
@@ -34,11 +36,13 @@ RationalResampler::RationalResampler(int in_rate, int out_rate) {
                                     " samples/s: the ratio " + std::to_string(up_) + "/" + std::to_string(down_) + " is too fine");
     const double fs_up = static_cast<double>(up_) * in_rate;
     const double lower = std::min(in_rate, out_rate);
-    const double cutoff = 0.5 * lower;  // Hz, -6 dB
-    const double transition = kTransitionRatio * lower;  // Hz
+    const double transition = transition_ratio * lower;  // Hz
+    // -6 dB in the transition's middle, so that the stopband starts at half the lower rate: what lies beyond the output's
+    // Nyquist (or, rising, the input's images) is attenuated before it can fold into the output band.
+    const double cutoff = 0.5 * lower - 0.5 * transition;  // Hz
     // Kaiser's estimates: beta for the attenuation, length for the transition (Oppenheim and Schafer, eqs. 7.62-7.63).
-    const double beta = 0.1102 * (kAttenuationDb - 8.7);
-    const int length = static_cast<int>(std::ceil((kAttenuationDb - 7.95) / (2.285 * 2.0 * std::numbers::pi * transition / fs_up))) + 1;
+    const double beta = 0.1102 * (attenuation_db - 8.7);
+    const int length = static_cast<int>(std::ceil((attenuation_db - 7.95) / (2.285 * 2.0 * std::numbers::pi * transition / fs_up))) + 1;
     taps_ = std::max(1, (length + up_ - 1) / up_);
     const int n = taps_ * up_;
     const double center = (n - 1) / 2.0;
@@ -53,13 +57,14 @@ RationalResampler::RationalResampler(int in_rate, int out_rate) {
         const double window = bessel_i0(beta * std::sqrt(std::max(0.0, 1.0 - r * r))) / i0_beta;
         h[static_cast<std::size_t>(i)] = sinc * window;
     }
-    // Phase-major, each phase scaled to a sum of 1: a constant input gives the same constant out, exactly to rounding.
+    // Phase-major, oldest input first (so that push reads its input forward), each phase scaled to a sum of 1: a constant
+    // input gives the same constant out, exactly to rounding.
     phases_.assign(static_cast<std::size_t>(n), 0.0f);
     for (int p = 0; p < up_; ++p) {
         double sum = 0.0;
         for (int k = 0; k < taps_; ++k) sum += h[static_cast<std::size_t>(p + k * up_)];
         for (int k = 0; k < taps_; ++k)
-            phases_[static_cast<std::size_t>(p * taps_ + k)] = static_cast<float>(h[static_cast<std::size_t>(p + k * up_)] / sum);
+            phases_[static_cast<std::size_t>(p * taps_ + taps_ - 1 - k)] = static_cast<float>(h[static_cast<std::size_t>(p + k * up_)] / sum);
     }
     reset(0);
 }
@@ -83,13 +88,20 @@ void RationalResampler::push(std::span<const Sample> in, std::vector<Sample>& ou
         if (base >= end) break;
         const auto phase = static_cast<std::size_t>(position % up);
         const float* h = phases_.data() + phase * static_cast<std::size_t>(taps_);
-        const Sample* x = history_.data() + (base - history_start_);
-        float re = 0.0f, im = 0.0f;
-        for (int k = 0; k < taps_; ++k) {
-            re += h[k] * x[-k].real();
-            im += h[k] * x[-k].imag();
+        // y = sum over k of h[p + kL] x[base - k], read oldest first; four partial sums, for the processor's pipelines.
+        const float* x = reinterpret_cast<const float*>(history_.data() + (base - history_start_ - (taps_ - 1)));
+        float re[4] = {0.0f, 0.0f, 0.0f, 0.0f}, im[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        int k = 0;
+        for (; k + 4 <= taps_; k += 4)
+            for (int j = 0; j < 4; ++j) {
+                re[j] += h[k + j] * x[2 * (k + j)];
+                im[j] += h[k + j] * x[2 * (k + j) + 1];
+            }
+        for (; k < taps_; ++k) {
+            re[0] += h[k] * x[2 * k];
+            im[0] += h[k] * x[2 * k + 1];
         }
-        out.emplace_back(re, im);
+        out.emplace_back((re[0] + re[1]) + (re[2] + re[3]), (im[0] + im[1]) + (im[2] + im[3]));
         ++next_out_;
     }
     // Keep what the next output needs: taps_ - 1 samples before its base.

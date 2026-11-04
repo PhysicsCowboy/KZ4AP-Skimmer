@@ -1032,6 +1032,16 @@ TEST(EngineDetector, AStrongFastStationMakesOneTrackNotOneForEachSideband) {
     EXPECT_EQ(births_near(born, 2000.0, 3.0), 1u);
 }
 
+TEST(EngineDetector, TheSegmentalPathLeavesEveryFirstRetirementOpen) {
+    // first_retirement_open 2: any retirement, not only a quiet one (SignalDetectorHolds' tests give the holds that follow).
+    EngineConfig config;
+    config.decoder.front_end = FrontEnd::Segmental;
+    apply_path_defaults(config);
+    EXPECT_EQ(config.first_retirement_open, 2);
+    EXPECT_EQ(config.detector.attribution_distance_hz, 30.0);
+    EXPECT_EQ(config.dc_block_s, 10.0);
+}
+
 TEST(EngineDetector, RefusesADcBlockerThatIsNotATime) {
     EventBus bus;
     EngineConfig config;
