@@ -1,8 +1,9 @@
 // kz4ap-resample: a copy of an I/Q recording at a rate the decoders and CW Skimmer take (48, 96 or 192 kHz and up), as the engine
 // itself reads it (RecordingReader: resampled exactly by a rational ratio, mirrored if asked), written as 16-bit stereo PCM with an
 // auxi chunk that keeps the center frequency and the times.
-//   kz4ap-resample IN.wav OUT.wav [--mirror] [--center-khz KHZ]
-// The copy's spectrum is the true one when --mirror is given for a mirrored recording.
+//   kz4ap-resample IN.wav OUT.wav [--mirror] [--center-khz KHZ] [--gain-db DB]
+// The copy's spectrum is the true one when --mirror is given for a mirrored recording. --gain-db scales the amplitude (dB re
+// unity) before the 16-bit rounding, for a recording too quiet for 16 bits (a 24-bit file's noise a few counts of 32767).
 #include "kz4ap/recording_reader.hpp"
 #include "kz4ap/utc_time.hpp"
 #include "kz4ap/wav_reader.hpp"
@@ -75,15 +76,17 @@ int main(int argc, char** argv) {
         std::string in, out;
         bool mirror = false;
         std::optional<double> center_hz;
+        double gain = 1.0;
         for (int i = 1; i < argc; ++i) {
             const std::string a = argv[i];
             if (a == "--mirror") mirror = true;
             else if (a == "--center-khz" && i + 1 < argc) center_hz = 1000.0 * std::stod(argv[++i]);
+            else if (a == "--gain-db" && i + 1 < argc) gain = std::pow(10.0, std::stod(argv[++i]) / 20.0);
             else if (!a.empty() && a[0] != '-' && in.empty()) in = a;
             else if (!a.empty() && a[0] != '-' && out.empty()) out = a;
             else throw std::runtime_error("unknown argument: " + a);
         }
-        if (in.empty() || out.empty()) throw std::runtime_error("usage: kz4ap-resample IN.wav OUT.wav [--mirror] [--center-khz KHZ]");
+        if (in.empty() || out.empty()) throw std::runtime_error("usage: kz4ap-resample IN.wav OUT.wav [--mirror] [--center-khz KHZ] [--gain-db DB]");
         if (std::filesystem::exists(out) && std::filesystem::equivalent(in, out)) throw std::runtime_error("the copy would overwrite the recording");
         RecordingReader reader(in, RecordingOptions{.mirror = mirror});
         if (!center_hz) center_hz = reader.info().center_hz;
@@ -105,7 +108,7 @@ int main(int argc, char** argv) {
             for (std::size_t i = 0; i < n; ++i) {
                 const float parts[2] = {block[i].real(), block[i].imag()};
                 for (int k = 0; k < 2; ++k) {
-                    const double v = std::round(static_cast<double>(parts[k]) * 32768.0);
+                    const double v = std::round(static_cast<double>(parts[k]) * gain * 32768.0);
                     peak = std::max(peak, std::abs(v));
                     power += v * v;
                     if (v > 32767.0 || v < -32768.0) ++clipped;
@@ -120,8 +123,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "%s: %d samples/s to %d", in.c_str(), reader.file_rate(), reader.sample_rate());
         if (const RationalResampler* r = reader.resampler())
             std::fprintf(stderr, " (x %d/%d, %d taps per phase, delay %.1f us)", r->up(), r->down(), r->taps_per_phase(), 1e6 * r->delay_s());
-        std::fprintf(stderr, "; %llu samples, %s; center %s Hz; peak %.0f counts of 32767, rms %.1f counts, %llu clipped\n",
-                     static_cast<unsigned long long>(written), mirror ? "mirrored back" : "not mirrored",
+        std::fprintf(stderr, "; %llu samples, %s; gain %+.1f dB re unity; center %s Hz; peak %.0f counts of 32767, rms %.1f counts, %llu clipped\n",
+                     static_cast<unsigned long long>(written), mirror ? "mirrored back" : "not mirrored", 20.0 * std::log10(gain),
                      center_hz ? std::to_string(*center_hz).c_str() : "unknown", peak,
                      written ? std::sqrt(power / (2.0 * static_cast<double>(written))) : 0.0, static_cast<unsigned long long>(clipped));
         return 0;
