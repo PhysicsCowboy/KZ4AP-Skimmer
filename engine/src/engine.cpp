@@ -457,7 +457,7 @@ void Engine::judge_channels(std::uint64_t first_index) {
         if (verdict.retire) retiring_.emplace_back(entry->first, verdict);
     }
     for (const auto& [id, verdict] : retiring_) {
-        detector_.retire(id, now_s, verdict.hold_s);
+        detector_.retire(id, now_s, verdict.hold_s, config_.quiet_place_open && verdict.end == TrackEnd::Quiet);
         close_channel(id, verdict.end);
     }
     while (track_budget_ > 0 && channels_.size() > track_budget_) {

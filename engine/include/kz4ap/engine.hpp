@@ -116,6 +116,9 @@ struct EngineConfig {
     // of the samples, of time constant dc_block_s, s, whose notch at 0 Hz is 1 / (2 pi dc_block_s) Hz wide at -3 dB re the
     // passband. 0 for none.
     double dc_block_s = 0.0;
+    // A track the judge retires as quiet (TrackEnd::Quiet: it heard nothing, as when its station listens) leaves its place open
+    // the first time there (SignalDetector::retire's first_open); false: it closes the place as any retirement.
+    bool quiet_place_open = false;
     // false: the engine first applies the decoder's path defaults (apply_path_defaults) to `detector` and dc_block_s; true:
     // it takes them as they stand (a benchmark's variant: apply_path_defaults, then its own changes).
     bool as_given = false;

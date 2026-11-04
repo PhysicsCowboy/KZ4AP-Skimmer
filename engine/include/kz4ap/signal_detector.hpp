@@ -107,7 +107,10 @@ public:
     // A wide signal opens track after track at new peaks: at kRegionRetirements such retirements within kRegionRadiusHz of each
     // other in kRegionMemoryS, the whole of that radius closes the same way, from kRegionHoldS. All heuristics, set on real 40 m:
     // FT8 and speech give dozens a minute there, the CW of the same recordings none or one.
-    void retire(std::uint32_t id, double now_s, double hold_s);
+    //
+    // first_open: the first such retirement at a place within kLongestHoldS leaves the place open and counts toward no region;
+    // the next one there closes it for hold_s, as a first hold.
+    void retire(std::uint32_t id, double now_s, double hold_s, bool first_open = false);
     static constexpr double kLongestHoldS = 120.0;  // s: an FT8 frequency stays busy; a station there waits at most this.
     static constexpr double kRegionRadiusHz = 750.0;
     static constexpr int kRegionRetirements = 4;

@@ -181,7 +181,7 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
     return update;
 }
 
-void SignalDetector::retire(std::uint32_t id, double now_s, double hold_s) {
+void SignalDetector::retire(std::uint32_t id, double now_s, double hold_s, bool first_open) {
     const auto it = std::find_if(active_.begin(), active_.end(), [&](const Active& a) { return a.track.id == id; });
     if (it == active_.end()) return;
     const double freq_hz = it->track.freq_hz;
@@ -189,6 +189,17 @@ void SignalDetector::retire(std::uint32_t id, double now_s, double hold_s) {
     if (!(hold_s > 0.0)) return;
     // A hold forgets its repeats once the place has been open as long as the longest hold (heuristic).
     std::erase_if(holds_, [&](const Hold& h) { return now_s - h.until_s > kLongestHoldS; });
+    if (first_open) {
+        // The first such retirement at a place leaves it open (a station that listens comes back); it is remembered, so that
+        // the next one there closes it as a first hold would.
+        const auto known = std::find_if(holds_.begin(), holds_.end(), [&](const Hold& h) {
+            return h.radius_hz == config_.attribution_distance_hz && std::abs(h.freq_hz - freq_hz) < h.radius_hz;
+        });
+        if (known == holds_.end()) {
+            holds_.push_back({freq_hz, now_s, 0, config_.attribution_distance_hz});
+            return;
+        }
+    }
     close_place(freq_hz, config_.attribution_distance_hz, now_s, hold_s);
     std::erase_if(retirements_, [&](const Retirement& r) { return now_s - r.at_s > kRegionMemoryS; });
     retirements_.push_back({freq_hz, now_s});

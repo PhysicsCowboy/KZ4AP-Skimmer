@@ -351,6 +351,38 @@ TEST(SignalDetectorProminence, RefusesValuesThatAreNotAMeasure) {
     EXPECT_THROW(SignalDetector{c}, std::invalid_argument);
 }
 
+namespace {
+
+// The tracks born over 1 s of a carrier at bin 100 with a symmetric skirt, and peaks at bins 97 and 103 of the given dB re 1 FS^2;
+// the sideband test over +/-5 bins, 10 dB, mirror within 3 dB (100 Hz bins).
+std::vector<Track> born_with_sidebands(float sideband_db, float low_db, float high_db) {
+    DetectorConfig c = prominence_config(0.0f);
+    c.sideband_db = sideband_db;
+    c.sideband_radius_hz = 500.0;
+    SignalDetector d(c);
+    std::vector<Track> born;
+    for (int i = 0; i < 200; ++i) {
+        const auto u = d.process(frame(frame_time(i), {{96, -75.0f}, {97, low_db}, {98, -70.0f}, {99, -60.0f}, {100, -50.0f},
+                                                       {101, -60.0f}, {102, -70.0f}, {103, high_db}, {104, -75.0f}}));
+        born.insert(born.end(), u.born.begin(), u.born.end());
+    }
+    return born;
+}
+
+}  // namespace
+
+TEST(SignalDetectorSidebands, AKeyedCarriersMirroredSidebandsAreNotStations) {
+    EXPECT_EQ(born_with_sidebands(10.0f, -65.0f, -65.0f).size(), 1u);
+    EXPECT_EQ(born_with_sidebands(0.0f, -65.0f, -65.0f).size(), 3u);  // without the test, two more tracks
+}
+
+TEST(SignalDetectorSidebands, AStationWithoutAMirrorIsOne) {
+    // At bin 103, 8 dB above what stands at its mirror: a station of its own.
+    const std::vector<Track> born = born_with_sidebands(10.0f, -70.0f, -62.0f);
+    ASSERT_EQ(born.size(), 2u);
+    EXPECT_NEAR(born[1].freq_hz - born[0].freq_hz, 300.0, 50.0);
+}
+
 TEST(SignalDetector, ReadsAFrameThatCarriesLinearPowerOnly) {
     SignalDetector d(config());
     std::size_t born = 0;
