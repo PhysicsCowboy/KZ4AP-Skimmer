@@ -1688,6 +1688,7 @@ From `app-7`'s look at what it dropped (checkpoint 2's record):
 - A word glued to DE that also has a call's form: the start of a call is now held as a variant (`prefix_held`), and H2's false calls are 1 of 80 (PA8PG).
 - `variant_hz` 300 Hz: 3 false calls fewer on H2, 1 true fewer on the contest. Decide with CW Skimmer's list on the owner's hour.
 - A real MASTER.SCP against the recordings: tried at `app-8` (`calls-rules.csv`): contest + 1 true + 1 false, real 40 m the same list. Its worth against CW Skimmer's repeats table is for the owner's hour. Measured in `call-2` on the 2017 recordings against CW Skimmer (decision log, 2026-11-04).
+- The list reader (review 10's re-review): its NUL-byte check has no test of its own (the test's binary sample is also refused for having no call); a UTF-8 byte-order mark costs the first call; a UTF-16 file is refused with MASTER.DTA's message. The app reads a list's count to stderr only; show it in the status bar.
 - One reading with no list, after DE: `points_framed` 1 adds 20 true and 22 false on the contest, so not as is; on real 20 s it adds K3AV and KB8UGP, which read well. DE alone and not TEST might do.
 
 From review 5, of `app-7` (2026-10-31); the review's full evidence is summarized in checkpoint 2's record:
