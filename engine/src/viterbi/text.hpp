@@ -7,6 +7,7 @@
 #include "kz4ap/decoder.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -19,6 +20,8 @@ class SharedText {
 public:
     // The text with no entry.
     static constexpr std::int32_t kEmpty = -1;
+    // nats: an entry's margin when no rival has been seen (lower_margin).
+    static constexpr float kNoRival = 1e30f;
 
     // A new entry after `previous` (kEmpty for none): a symbol ("A", "<SK>", or " " for a word space) with its start
     // and end times, s. The caller holds the new entry once; the new entry holds `previous` once.
@@ -33,9 +36,32 @@ public:
             entry = static_cast<std::int32_t>(entries_.size());
             entries_.emplace_back();
         }
-        entries_[static_cast<std::size_t>(entry)] = Entry{symbol, start_s, end_s, previous, 1, length};
+        entries_[static_cast<std::size_t>(entry)] = Entry{symbol, start_s, end_s, previous, 1, length, kNoRival};
         ++used_;
         return entry;
+    }
+
+    // A rival story, this many nats below one that holds `entry`, read another symbol there (the segmental search's
+    // merges, search.cpp): the entry's margin is the least such deficit seen. nats >= 0.
+    void lower_margin(std::int32_t entry, float nats) {
+        if (entry == kEmpty) return;
+        float& m = entries_[static_cast<std::size_t>(entry)].margin;
+        if (nats < m) m = nats;
+    }
+    const std::string_view& symbol(std::int32_t entry) const { return entries_[static_cast<std::size_t>(entry)].symbol; }
+    std::int32_t previous(std::int32_t entry) const { return entries_[static_cast<std::size_t>(entry)].previous; }
+    double start_s(std::int32_t entry) const { return entries_[static_cast<std::size_t>(entry)].start_s; }
+    double end_s(std::int32_t entry) const { return entries_[static_cast<std::size_t>(entry)].end_s; }
+
+    // nats: what an entry no rival came near reads as, the keeper's ceiling on the deficits it records (the segmental search's
+    // rival_margin_nats); none set, such an entry reads probability 1, which says nothing (the viterbi decoder keeps no margins).
+    void set_no_rival_margin(float nats) { no_rival_ = nats; }
+
+    // The probability a symbol is published with: 1 / (1 + e^-margin), the posterior of the story against its closest rival
+    // there, two hypotheses only.
+    float probability_of(float margin_nats) const {
+        const float m = margin_nats >= kNoRival ? no_rival_ : margin_nats;
+        return m >= kNoRival ? 1.0f : static_cast<float>(1.0 / (1.0 + std::exp(-static_cast<double>(m))));
     }
 
     // One more holder of an entry; nothing for kEmpty.
@@ -57,12 +83,12 @@ public:
         }
     }
 
-    // The text that ends at `entry`, first symbol first, each with probability 1 (plan §2.7, item 7).
+    // The text that ends at `entry`, first symbol first, each with probability_of its margin (plan §2.7, item 7: 1 without one).
     std::vector<DecodedSymbol> read(std::int32_t entry) const {
         std::vector<DecodedSymbol> text;
         for (; entry != kEmpty; entry = entries_[static_cast<std::size_t>(entry)].previous) {
             const Entry& e = entries_[static_cast<std::size_t>(entry)];
-            text.push_back(DecodedSymbol{std::string(e.symbol), 1.0f, e.start_s, e.end_s});
+            text.push_back(DecodedSymbol{std::string(e.symbol), probability_of(e.margin), e.start_s, e.end_s});
         }
         std::reverse(text.begin(), text.end());
         return text;
@@ -73,7 +99,7 @@ public:
         std::vector<DecodedSymbol> text;
         for (; entry != kEmpty && text.size() < max_symbols; entry = entries_[static_cast<std::size_t>(entry)].previous) {
             const Entry& e = entries_[static_cast<std::size_t>(entry)];
-            text.push_back(DecodedSymbol{std::string(e.symbol), 1.0f, e.start_s, e.end_s});
+            text.push_back(DecodedSymbol{std::string(e.symbol), probability_of(e.margin), e.start_s, e.end_s});
         }
         std::reverse(text.begin(), text.end());
         return text;
@@ -95,10 +121,12 @@ private:
         std::int32_t previous = kEmpty;
         std::int32_t holders = 0;  // stories and later entries that hold it
         std::int32_t length = 0;   // symbols in the text that ends here
+        float margin = kNoRival;   // nats: lower_margin
     };
     std::vector<Entry> entries_;
     std::vector<std::int32_t> free_;  // freed slots, reused last freed first
     std::size_t used_ = 0;
+    float no_rival_ = kNoRival;  // nats: set_no_rival_margin
 };
 
 }  // namespace kz4ap::viterbi

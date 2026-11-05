@@ -479,6 +479,7 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"open_spacing_dots", &config.open_spacing_dots},
         {"ceiling_stretch_bonus_nats", &config.ceiling_stretch_bonus_nats},
         {"duration_z_max", &config.duration_z_max},
+        {"rival_margin_nats", &config.rival_margin_nats},
         {"gap_unit_max_s", &config.gap_unit_max_s},
         {"filter_scale_min_symbols", &config.filter_scale_min_symbols},
         {"filter_scale_enough_nats", &config.filter_scale_enough_nats},

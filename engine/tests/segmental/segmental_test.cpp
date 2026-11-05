@@ -902,4 +902,94 @@ TEST(SegmentalShared, RefusesAnotherChannelRate) {
     EXPECT_NO_THROW(SegmentalDecoder(shared->channel_rate_hz, shared));
 }
 
+// A keyed text through the decoder, as a consumer's list keeps it (decoder.hpp): its symbols with their probabilities, and how many
+// corrections changed no text (reason "confidence").
+struct Published {
+    std::vector<DecodedSymbol> symbols;
+    int confidence_corrections = 0;
+    std::string text() const {
+        std::string t;
+        for (const DecodedSymbol& s : symbols) t += s.text;
+        return t;
+    }
+};
+
+Published publish(const std::string& text, double snr_s500, double rival_margin_nats, unsigned seed) {
+    const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
+    const double amplitude = std::sqrt(std::pow(10.0, snr_s500 / 10.0) * n0_fs2_per_hz * 500.0);  // S500: dB SNR in 500 Hz
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> draw(0.0, std::sqrt(n0_fs2_per_hz * 1500.0 / 2.0));
+    const Keyed keyed = keyed_text(text, 45, 300, 1500);  // 30 ms dots: 40 WPM at 1 500 samples/s
+    SegmentalConfig config;
+    config.rival_margin_nats = rival_margin_nats;
+    auto shared = std::make_shared<const SegmentalShared>(config, ChannelizerConfig{48000, 2048, 64, 150.0});
+    SegmentalDecoder decoder(1500.0, shared);
+    decoder.set_noise_density_fs2_per_hz(n0_fs2_per_hz);
+    Published out;
+    const auto take = [&](const DecodeUpdate& update) {
+        for (const DecodedSymbol& s : update.chars) out.symbols.push_back(s);
+        for (const TextCorrection& c : update.corrections) {
+            out.confidence_corrections += c.reason == "confidence" ? 1 : 0;
+            out.symbols.resize(std::min(out.symbols.size(), c.from_index));
+            for (const DecodedSymbol& s : c.chars) out.symbols.push_back(s);
+        }
+    };
+    std::vector<Sample> block;
+    for (std::size_t k = 0; k < keyed.key.size();) {
+        block.clear();
+        const std::size_t first = k;
+        for (; k < keyed.key.size() && block.size() < 32; ++k)
+            block.emplace_back(static_cast<float>(amplitude * keyed.key[k] + draw(rng)), static_cast<float>(draw(rng)));
+        take(decoder.process(block, static_cast<double>(first) / 1500.0));
+    }
+    take(decoder.flush());
+    return out;
+}
+
+TEST(SegmentalMargins, ChangeNoTextAndSayLessForAWeakStation) {
+    // The margins are kept beside the text and published as probabilities 1 / (1 + e^-margin): the text is the same with them and
+    // without, every probability lies in [0.5, 1], without them all are 1, and a weak station's symbols are on average less sure
+    // than a strong one's. A change of probability alone goes out as a correction of reason "confidence".
+    const std::string text = "CQ CQ DE W1AW W1AW K TEST 5NN 73 DE K1ABC K1ABC K";
+    const auto mean = [](const Published& p) {
+        double sum = 0.0;
+        for (const DecodedSymbol& s : p.symbols) sum += s.probability;
+        return sum / static_cast<double>(std::max<std::size_t>(1, p.symbols.size()));
+    };
+    for (const double snr : {20.0, 3.0}) {
+        const Published with = publish(text, snr, 16.0, 7);
+        const Published without = publish(text, snr, 0.0, 7);
+        EXPECT_EQ(with.text(), without.text()) << snr << " dB S500";
+        for (const DecodedSymbol& s : with.symbols) {
+            EXPECT_GE(s.probability, 0.5f);
+            EXPECT_LT(s.probability, 1.0f);  // no rival: the ceiling, 16 nats, read through a float as 15.94 nats; 1 says "none kept"
+        }
+        for (const DecodedSymbol& s : without.symbols) EXPECT_EQ(s.probability, 1.0f);
+        EXPECT_EQ(without.confidence_corrections, 0);
+    }
+    const Published strong = publish(text, 20.0, 16.0, 7);
+    const Published weak = publish(text, 3.0, 16.0, 7);
+    EXPECT_EQ(strong.text(), text);
+    EXPECT_GT(mean(strong), mean(weak));
+    EXPECT_GT(weak.confidence_corrections, 0);
+    // Deficits are recorded as they are: some of the weak station's symbols lie strictly between a tie (0.5) and the ceiling, and most of
+    // the strong one's letters are at the ceiling.
+    const auto between = std::count_if(weak.symbols.begin(), weak.symbols.end(), [](const DecodedSymbol& s) { return s.probability > 0.55f && s.probability < 0.9999f; });
+    EXPECT_GT(between, 0);
+    const auto letters = std::count_if(strong.symbols.begin(), strong.symbols.end(), [](const DecodedSymbol& s) { return s.text != " "; });
+    const auto ceiling = std::count_if(strong.symbols.begin(), strong.symbols.end(), [](const DecodedSymbol& s) { return s.text != " " && s.probability > 0.99999f; });
+    EXPECT_GT(2 * ceiling, letters);
+}
+
+TEST(SegmentalMargins, ACapAFloatCannotHoldIsRefusedAndTheDefaultIsOff) {
+    EXPECT_EQ(SegmentalConfig{}.rival_margin_nats, 0.0);
+    SegmentalConfig config;
+    for (const double bad : {-1.0, 16.7, 17.4, std::numeric_limits<double>::infinity()}) {
+        config.rival_margin_nats = bad;
+        EXPECT_THROW(SegmentalShared(config, ChannelizerConfig{48000, 2048, 64, 150.0}), std::invalid_argument) << bad;
+    }
+    config.rival_margin_nats = 16.6;
+    EXPECT_NO_THROW(SegmentalShared(config, ChannelizerConfig{48000, 2048, 64, 150.0}));
+}
+
 }  // namespace

@@ -35,6 +35,10 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
         throw std::invalid_argument("segmental: beam_nats and duration_z_max must be positive, and ceiling at least 1");
     if (config.gap_stretches < 1 || config.gap_stretch_speed_steps < 1)
         throw std::invalid_argument("segmental: gap_stretches and gap_stretch_speed_steps must be at least 1");
+    // A float probability below 1 holds a margin of at most ln(2^24 - 1) = 16.64 nats; past 17.33 nats 1 / (1 + e^-m) rounds to 1, which
+    // the callsign stage reads as "unknown" (derived).
+    if (!(config.rival_margin_nats >= 0.0 && config.rival_margin_nats <= 16.6))
+        throw std::invalid_argument("segmental: rival_margin_nats must lie in [0, 16.6] nats (a float probability holds no more)");
     if (!(config.gap_stretch_prior >= 0.0 && config.gap_stretch_prior < 1.0))
         throw std::invalid_argument("segmental: gap_stretch_prior must lie in [0, 1)");
     if (config.gap_stretches > 1 && !(config.gap_stretch_prior > 0.0))
@@ -278,6 +282,10 @@ struct Search::Impl {
     std::vector<Element> marks;  // marks and a birth's or a rescue's first marks
     SlotTable gap_slots;   // by fist x nodes + node: a mark ended, a gap starts
     SlotTable mark_slots;  // by fist x nodes + node: a gap ended, a mark starts
+    // Each slot's runner-up at the boundary of its stamp, for the margins (SegmentalConfig::rival_margin_nats); none when that is 0.
+    SlotTable gap_seconds;
+    SlotTable mark_seconds;
+    float rival_margin = 0.0f;  // nats
     LastOpenedTable gap_opened;   // by fist x nodes + node, read only with SegmentalConfig::open_spacing_dots
     LastOpenedTable mark_opened;
     std::vector<double> above_ceiling;  // the ceiling's scratch
@@ -341,6 +349,12 @@ struct Search::Impl {
         const std::size_t slots = static_cast<std::size_t>(m.fists()) * static_cast<std::size_t>(m.nodes());
         gap_slots = new_slot_table(slots);
         mark_slots = new_slot_table(slots);
+        if (c.rival_margin_nats > 0.0) {
+            gap_seconds = new_slot_table(slots);
+            mark_seconds = new_slot_table(slots);
+            rival_margin = static_cast<float>(c.rival_margin_nats);
+            text.set_no_rival_margin(rival_margin);
+        }
         spacing_on = c.open_spacing_dots > 0.0;
         if (spacing_on) {
             gap_opened = new_last_opened_table(slots);
@@ -363,7 +377,8 @@ struct Search::Impl {
         return static_cast<std::size_t>(fist) * static_cast<std::size_t>(model.nodes()) + static_cast<std::size_t>(node);
     }
 
-    static void offer(Slot* slots, std::vector<std::int32_t>& touched, std::size_t index, double score,
+    // seconds: the runner-up's table, or none. A runner-up is valid only at its own stamp, so a new boundary needs no clearing.
+    static void offer(Slot* slots, Slot* seconds, std::vector<std::int32_t>& touched, std::size_t index, double score,
                       std::int32_t parent, std::uint32_t how, std::uint32_t stamp) {
         Slot& slot = slots[index];
         if ((slot.stamp_how >> 2) != stamp) {
@@ -372,10 +387,104 @@ struct Search::Impl {
             slot.parent = parent;
             touched.push_back(static_cast<std::int32_t>(index));
         } else if (score > slot.score) {
+            if (seconds != nullptr) seconds[index] = slot;
             slot.stamp_how = stamp << 2 | how;
             slot.score = score;
             slot.parent = parent;
+        } else if (seconds != nullptr) {
+            Slot& second = seconds[index];
+            if ((second.stamp_how >> 2) != stamp || score > second.score) {
+                second.stamp_how = stamp << 2 | how;
+                second.score = score;
+                second.parent = parent;
+            }
         }
+    }
+
+    // The runner-up of a slot this boundary, within rival_margin of its winner, or none.
+    const Slot* rival_of(const Slot* seconds, std::size_t index, const Slot& winner, std::uint32_t stamp) const {
+        if (seconds == nullptr) return nullptr;
+        const Slot& second = seconds[index];
+        if ((second.stamp_how >> 2) != stamp || !(winner.score - second.score < rival_margin)) return nullptr;
+        return &second;
+    }
+
+    // A symbol a rival's text ends with that is not yet in the shared text (a word space, a letter just ended), with its times, s.
+    struct Pending {
+        std::string_view symbol;
+        double start_s = 0.0;
+        double end_s = 0.0;
+    };
+
+    // A rival, `deficit` nats behind the story whose text ends at `winner`, read the text that ends at rival_base followed by
+    // extra[0 .. extras). Both stories stand at one boundary, so their symbols are compared by time, from there back: a symbol of
+    // each with the same text, starting and ending within half the shorter's length (at least 30 ms) of the other's, agree. Of
+    // two that do not, the one that ends later is unmatched: the winner's takes the deficit as its margin if lower
+    // (SharedText::lower_margin), and the rival's lowers the winner's symbol beside it if that one overlaps it or ends where it
+    // begins (a word space the winner has not: the letter before it). This goes on past their common end until three agree in a
+    // row, an entry both share, or kMarginSymbols steps. A soft-output Viterbi's update (Hagenauer and Hoeher 1989) at the
+    // symbols rather than the bits; the match by time, its tolerances and the three are heuristics.
+    void note_rival(std::int32_t winner, std::int32_t rival_base, const std::array<Pending, 2>& extra, int extras, double deficit) {
+        constexpr int kMarginSymbols = 24;  // heuristic: a call with a word or two on either side
+        constexpr double kTouch = 2e-3;      // s: less than a sample, 2.667 ms
+        const float nats = static_cast<float>(std::max(0.0, deficit));
+        std::int32_t w = winner;
+        std::int32_t r = rival_base;
+        int v = extras;  // the rival's pending symbols left; extra[v - 1] is its tip
+        const auto r_valid = [&] { return v > 0 || r != viterbi::SharedText::kEmpty; };
+        const auto r_step = [&] {
+            if (v > 0) --v;
+            else r = text.previous(r);
+        };
+        const auto r_pending = [&] {
+            return v > 0 ? extra[static_cast<std::size_t>(v - 1)] : Pending{text.symbol(r), text.start_s(r), text.end_s(r)};
+        };
+        const auto agree = [](const Pending& a, const Pending& b) {
+            if (a.symbol != b.symbol) return false;
+            const double tolerance = std::max(0.03, 0.5 * std::min(a.end_s - a.start_s, b.end_s - b.start_s));
+            return std::abs(a.start_s - b.start_s) <= tolerance && std::abs(a.end_s - b.end_s) <= tolerance;
+        };
+        bool differed = false;
+        int agreed = 0;
+        for (int steps = 0; steps < kMarginSymbols && w != viterbi::SharedText::kEmpty; ++steps) {
+            if (v == 0 && r == w) return;
+            const Pending a{text.symbol(w), text.start_s(w), text.end_s(w)};
+            if (!r_valid()) {
+                text.lower_margin(w, nats);
+                w = text.previous(w);
+                continue;
+            }
+            const Pending b = r_pending();
+            if (agree(a, b)) {
+                if (differed && ++agreed >= 3) return;
+                w = text.previous(w);
+                r_step();
+                continue;
+            }
+            differed = true;
+            agreed = 0;
+            if (b.end_s > a.end_s + kTouch) {
+                // The rival's symbol is unmatched: the winner's before it, if it reaches it.
+                if (a.end_s >= b.start_s - kTouch) text.lower_margin(w, nats);
+                r_step();
+            } else {
+                text.lower_margin(w, nats);
+                w = text.previous(w);
+            }
+        }
+    }
+
+    // A mark slot's runner-up (a gap that ended into it) against the text its winner opened with, at boundary j.
+    void note_mark_rival(std::int32_t winner, const Slot& rival, double deficit, std::int64_t j) {
+        const Element& other = gaps[static_cast<std::size_t>(rival.parent)];
+        const std::uint32_t how = rival.stamp_how & 3u;
+        if (how == kEndElement) {
+            note_rival(winner, other.text, {}, 0, deficit);
+            return;
+        }
+        const Pending letter{model.tree().symbol(other.node), time_of(other.letter), time_of(other.start)};
+        const Pending space{" ", time_of(other.start), time_of(j)};
+        note_rival(winner, other.text, {letter, space}, how == kEndWord ? 2 : 1, deficit);
     }
 
     void boundary(std::int64_t j);
@@ -385,6 +494,8 @@ void Search::Impl::boundary(std::int64_t j) {
     const std::uint32_t stamp = stamp_of(j);
     Slot* const gap_table = gap_slots.get();
     Slot* const mark_table = mark_slots.get();
+    Slot* const gap_second = gap_seconds.get();
+    Slot* const mark_second = mark_seconds.get();
     const double c5 = sums.sum(j + kEdgeFirst);
     const double c11 = sums.sum(j + kEdgeDone);
     const double fall = sums.fall(j);
@@ -450,14 +561,14 @@ void Search::Impl::boundary(std::int64_t j) {
             const double ended_gap = length < kEdgeCount ? e.base + correction(true, length, j) : e.base;
             const std::size_t first_slot = static_cast<std::size_t>(e.speed) * nodes;
             if (element_ends)
-                offer(mark_table, mark_touched, first_slot + static_cast<std::size_t>(node), ended_gap + end_cost(r, length),
+                offer(mark_table, mark_second, mark_touched, first_slot + static_cast<std::size_t>(node), ended_gap + end_cost(r, length),
                       index, kEndElement, stamp);
             if (letter_ends || word_ends) {
                 const double letter = ended_gap + model.letter_end(node) + letter_start;
                 if (letter_ends)
-                    offer(mark_table, mark_touched, first_slot, letter - letter_gap_cost + end_cost(lg, length), index, kEndLetter, stamp);
+                    offer(mark_table, mark_second, mark_touched, first_slot, letter - letter_gap_cost + end_cost(lg, length), index, kEndLetter, stamp);
                 if (word_ends)
-                    offer(mark_table, mark_touched, first_slot, letter - word_gap_cost + end_cost(wg, length), index, kEndWord, stamp);
+                    offer(mark_table, mark_second, mark_touched, first_slot, letter - word_gap_cost + end_cost(wg, length), index, kEndWord, stamp);
             }
         }
         gap_partial[static_cast<std::size_t>(index)] = score;
@@ -484,11 +595,11 @@ void Search::Impl::boundary(std::int64_t j) {
                 const std::size_t first_slot = static_cast<std::size_t>(e.speed) * nodes;
                 if (dot_ends) {
                     const int child = model.child(node, 0);
-                    if (child >= 0) offer(gap_table, gap_touched, first_slot + static_cast<std::size_t>(child), ended + end_cost(dot, length), index, 0, stamp);
+                    if (child >= 0) offer(gap_table, gap_second, gap_touched, first_slot + static_cast<std::size_t>(child), ended + end_cost(dot, length), index, 0, stamp);
                 }
                 if (dash_ends) {
                     const int child = model.child(node, 1);
-                    if (child >= 0) offer(gap_table, gap_touched, first_slot + static_cast<std::size_t>(child), ended + end_cost(dash, length), index, 0, stamp);
+                    if (child >= 0) offer(gap_table, gap_second, gap_touched, first_slot + static_cast<std::size_t>(child), ended + end_cost(dash, length), index, 0, stamp);
                 }
             }
         } else {  // a birth's first mark: the best speed's survival, and its end offers every speed, each at g = 1 here
@@ -498,7 +609,7 @@ void Search::Impl::boundary(std::int64_t j) {
                                      (length < kEdgeCount ? correction(false, length, j) : 0.0);
                 for (const ModelTables::OpenEnd& open : ends) {
                     const double end = ended + open.log_end;
-                    offer(gap_table, gap_touched, static_cast<std::size_t>(open.fist) * nodes + static_cast<std::size_t>(open.child), end, index, 0, stamp);
+                    offer(gap_table, gap_second, gap_touched, static_cast<std::size_t>(open.fist) * nodes + static_cast<std::size_t>(open.child), end, index, 0, stamp);
                     if (open.stretched) stretched.push_back(Stretched{end, index, open.speed, open.child});
                 }
             }
@@ -521,7 +632,7 @@ void Search::Impl::boundary(std::int64_t j) {
             if (s.end < stretched_floor) continue;
             const double score = s.end - model.log_plain() + model.log_stretched();
             for (int f = model.first_fist(s.speed) + 1; f < model.first_fist(s.speed + 1); ++f)
-                offer(gap_table, gap_touched, slot_index(f, s.child), score, s.parent, 0, stamp);
+                offer(gap_table, gap_second, gap_touched, slot_index(f, s.child), score, s.parent, 0, stamp);
         }
         stretched.clear();
     }
@@ -559,14 +670,25 @@ void Search::Impl::boundary(std::int64_t j) {
     std::int32_t silent_parent = -1;
     int silent_node = 0;
     double silent_end = -kInf;
+    // The runner-up among the over's ends, for the margins.
+    std::int32_t second_parent = -1;
+    int second_node = 0;
+    double second_end = -kInf;
     for (const std::int32_t index : gap_touched) {
         const int node = index % model.nodes();
         if (!model.has_symbol(node)) continue;
         const double score = gap_slots[static_cast<std::size_t>(index)].score + model.letter_end(node) - model.over_end_cost();
         if (score > silent_end) {
+            second_end = silent_end;
+            second_parent = silent_parent;
+            second_node = silent_node;
             silent_end = score;
             silent_parent = gap_slots[static_cast<std::size_t>(index)].parent;
             silent_node = node;
+        } else if (score > second_end) {
+            second_end = score;
+            second_parent = gap_slots[static_cast<std::size_t>(index)].parent;
+            second_node = node;
         }
     }
     if (silent_alive) best = std::max(best, silent + gap_reach);
@@ -598,6 +720,11 @@ void Search::Impl::boundary(std::int64_t j) {
             e.text = parent.text;
             text.hold(e.text);
         }
+        if (const Slot* rival = rival_of(gap_second, static_cast<std::size_t>(index), slot, stamp)) {
+            const Element& other = marks[static_cast<std::size_t>(rival->parent)];
+            const double t = time_of(other.start);
+            note_rival(e.text, other.text, {Pending{" ", t, t}, Pending{}}, other.space ? 1 : 0, slot.score - rival->score);
+        }
         opened_gaps.push_back(e);
     }
     for (const std::int32_t index : mark_touched) {
@@ -625,6 +752,7 @@ void Search::Impl::boundary(std::int64_t j) {
                 text.release(letter_entry);
             }
         }
+        if (const Slot* rival = rival_of(mark_second, static_cast<std::size_t>(index), slot, stamp)) note_mark_rival(e.text, *rival, slot.score - rival->score, j);
         opened_marks.push_back(e);
     }
     // A rescue: the sender takes a new speed at a letter's start, from the best story that starts a letter here.
@@ -658,6 +786,8 @@ void Search::Impl::boundary(std::int64_t j) {
                     e.text = text.append(letter_entry, " ", time_of(parent.start), time_of(j));
                     text.release(letter_entry);
                 }
+                if (const Slot* rival = rival_of(mark_second, static_cast<std::size_t>(best_index), slot, stamp))
+                    note_mark_rival(e.text, *rival, slot.score - rival->score, j);
                 opened_marks.push_back(e);
             }
         }
@@ -692,6 +822,13 @@ void Search::Impl::boundary(std::int64_t j) {
         const std::int64_t letter = parent.letter < 0 ? parent.start : parent.letter;
         const std::int32_t entry = text.append(base_text, model.tree().symbol(silent_node), time_of(letter), time_of(j));
         if (held != viterbi::SharedText::kEmpty) text.release(held);
+        if (gap_second != nullptr && second_parent >= 0 && silent_end - second_end < rival_margin) {
+            const Element& other = marks[static_cast<std::size_t>(second_parent)];
+            const double t = time_of(other.start);
+            const Pending letter_end{model.tree().symbol(second_node), time_of(other.letter < 0 ? other.start : other.letter), time_of(j)};
+            if (other.space) note_rival(entry, other.text, {Pending{" ", t, t}, letter_end}, 2, silent_end - second_end);
+            else note_rival(entry, other.text, {letter_end, Pending{}}, 1, silent_end - second_end);
+        }
         Tail& tail = tails[static_cast<std::size_t>((j + kEdgeCount) % static_cast<std::int64_t>(tails.size()))];
         tail.score = silent_end + kEdgeCount * model.log_silence();
         tail.text = entry;

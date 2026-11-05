@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -68,6 +69,15 @@ bool is_keyword(std::string_view w) {
 }
 
 bool is_prosign(std::string_view w) { return !w.empty() && w[0] == '<'; }
+
+// A base call up to and with its last digit: K1 of K1ABC, VE3 of VE3XYZ, 3DA0 of 3DA0RU.
+std::string_view call_area(std::string_view base) {
+    std::size_t d = base.size();
+    while (d > 0 && !is_digit(base[d - 1])) --d;
+    return base.substr(0, d);
+}
+// One letter after the last digit: K1T, VE3F.
+bool one_letter_suffix(std::string_view base) { return base.size() >= 2 && is_letter(base.back()) && is_digit(base[base.size() - 2]); }
 
 bool sender_after(std::string_view w) { return any_of_word(w, {"DE", "CQ", "TEST", "QRZ", "CQCQ", "TESTTEST", "POTA", "SOTA", "DX", "UP"}); }
 bool sender_before(std::string_view w) { return any_of_word(w, {"K", "KN", "<KN>", "<AR>", "<SK>", "AR", "SK", "TEST", "QRZ", "CQ", "UP", "<KA>"}); }
@@ -199,6 +209,11 @@ bool is_cw_word(std::string_view base) {
     return any_of_word(base, {"G5RV", "K3S", "K4D", "N1MM", "K1EL", "K9AY", "TH7DX", "TH6DX", "TH5DX", "TH3JR", "TH2MK", "HF5B", "HF6V", "HF9V", "HF2V", "FT8DX", "FT5DX", "FT3DX", "W2DU", "W8JK", "W3DZZ"});
 }
 
+bool is_locator(std::string_view w) {
+    const auto in = [](char c, char lo, char hi) { return c >= lo && c <= hi; };
+    return w.size() == 6 && in(w[0], 'A', 'R') && in(w[1], 'A', 'R') && is_digit(w[2]) && is_digit(w[3]) && in(w[4], 'A', 'X') && in(w[5], 'A', 'X');
+}
+
 std::optional<ParsedCall> parse_form(std::string_view word) {
     if (word.empty()) return std::nullopt;
     for (char c : word)
@@ -237,6 +252,12 @@ std::optional<ParsedCall> parse_call(std::string_view word) {
     auto p = parse_form(word);
     if (!p || is_cw_word(p->base)) return std::nullopt;
     return p;
+}
+
+double margin_of(float probability) {
+    if (!(probability < 1.0f)) return CallReading::kUnknownMargin;
+    if (!(probability > 0.0f)) return 0.0;
+    return std::max(0.0, std::log(static_cast<double>(probability) / (1.0 - static_cast<double>(probability))));
 }
 
 int edit_distance(std::string_view a, std::string_view b, int limit) {
@@ -345,7 +366,7 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
 
     for (std::size_t i = from; i < to; ++i) {
         const std::string& w = words[i].text;
-        if (is_prosign(w)) continue;
+        if (is_prosign(w) || is_locator(w)) continue;
         // K and R begin calls as well as end overs: K X 9 F. Only the joining below may start from them.
         if (is_keyword(w) && w != "K" && w != "R") continue;
         const bool lone_keyword = is_keyword(w);
@@ -412,20 +433,31 @@ void KnownCalls::add(std::string_view call) {
 KnownCalls KnownCalls::read(std::istream& in) {
     KnownCalls out;
     std::string line;
+    std::size_t calls = 0;  // lines whose first word has a call's form
     while (std::getline(in, line)) {
+        if (line.find('\0') != std::string::npos)
+            throw std::runtime_error("the known-call list is not text (it holds NUL bytes); CW Skimmer's MASTER.DTA is binary: give a list of one call a line, such as MASTER.SCP");
         std::istringstream words(line);
         std::string first;
         if (!(words >> first)) continue;
         if (first[0] == '#' || first[0] == ';') continue;
+        std::string upper = first;
+        for (char& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        if (parse_form(upper)) ++calls;
         out.add(first);
     }
+    if (calls == 0) throw std::runtime_error("the known-call list holds no call (no line starts with a call's form): give a list of one call a line, such as MASTER.SCP");
     return out;
 }
 
 KnownCalls KnownCalls::read_file(const std::string& path) {
-    std::ifstream in(path);
+    std::ifstream in(path, std::ios::binary);  // binary: a Ctrl-Z in a binary file must not end it early under Windows' text mode
     if (!in) throw std::runtime_error("cannot read the known-call list: " + path);
-    return read(in);
+    try {
+        return read(in);
+    } catch (const std::runtime_error& e) {
+        throw std::runtime_error(std::string(e.what()) + ": " + path);
+    }
 }
 
 // ---- The stage
@@ -508,7 +540,14 @@ void CallSearch::read_track(TrackText& t, bool all) {
     std::size_t to = from;
     while (to < words.size() && (all || words[to].end_s <= settled)) ++to;
     if (to == from) return;
-    for (const CallReading& r : read_calls(words, from, to)) add(r, t.freq_hz);
+    for (CallReading& r : read_calls(words, from, to)) {
+        const std::size_t a = words[r.first_word].first, b = words[r.last_word - 1].last;
+        // The least margin; an unknown one (-1) wins the minimum, so that a reading is sure only if every symbol says so.
+        double least = std::numeric_limits<double>::infinity();
+        for (std::size_t i = a; i < b; ++i) least = std::min(least, margin_of(t.symbols[i].probability));
+        r.margin_nats = std::isfinite(least) ? least : CallReading::kUnknownMargin;
+        add(r, t.freq_hz);
+    }
     t.read_to = t.base + words[to - 1].last;
     // Keep the context, eight words back (heuristic: a call's frame is at most a few words), and what a correction may yet change.
     std::size_t keep_word = to >= 8 ? to - 8 : 0;
@@ -535,7 +574,8 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
         c.first_s = r.start_s;
     }
     c.first_s = std::min(c.first_s, r.start_s);  // a correction can read something earlier than what came first
-    const double points = r.reading == Reading::Whole || r.reading == Reading::Glued ? 1.0 : (r.reading == Reading::Joined ? config_.joined_points : config_.stripped_points);
+    const bool word = r.reading == Reading::Whole || r.reading == Reading::Glued;
+    const double points = word ? 1.0 : (r.reading == Reading::Joined ? config_.joined_points : config_.stripped_points);
     // A keyword beside it, or the call sent twice: either way the word is used as a call.
     const bool framed = r.role != Role::Unknown || (r.doubled && config_.doubled_is_framed != 0.0);
     // Its place: where it last signed, else where it was last read bare, else where another named it, and among those a whole word before
@@ -547,12 +587,14 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
     }
     c.heard = c.heard || r.role != Role::Named;
     c.framed = c.framed || r.role == Role::Sender;
+    const double margin = word ? r.margin_nats : 0.0;
     // One transmission, one occurrence: another track's or another reading's copy of the same moment at this place only betters it.
     for (Occurrence& o : c.recent) {
         if (r.start_s < o.end_s && o.start_s < r.end_s && std::abs(o.freq_hz - freq_hz) <= config_.same_place_hz) {
             if (points > o.points) o.points = points;
             if (framed) o.framed = true;
             if (r.role != Role::Unknown && o.role == Role::Unknown) o.role = r.role;
+            o.margin = std::max(o.margin, margin);
             evaluate(c, freq_hz, r.end_s);
             return;
         }
@@ -564,6 +606,7 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
     o.points = points;
     o.role = r.role;
     o.framed = framed;
+    o.margin = margin;
     c.recent.push_back(o);
     while (!c.recent.empty() && r.end_s - c.recent.front().end_s > config_.window_s) c.recent.pop_front();
     ++c.count;
@@ -579,6 +622,7 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
         s.points += o.points;
         s.framed = s.framed || o.framed;
         s.named = s.named || (o.role == Role::Named && o.points >= 1.0);
+        s.sure = s.sure || (config_.known_margin_nats > 0.0 && o.points >= 1.0 && o.margin >= config_.known_margin_nats);
     }
     return s;
 }
@@ -586,8 +630,8 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
 bool CallSearch::passes(const Candidate& c, const Support& s) const {
     const double points = s.points;
     if (only_tiny_pieces(c.base)) return points >= config_.tiny_points;
-    if (s.named && points >= config_.points_named) return true;
-    if (c.known) return points >= (s.framed ? config_.points_known : config_.points_known_bare);
+    if (s.named && points >= config_.points_named && (c.known || !known_ || config_.named_listed_only == 0.0)) return true;
+    if (c.known) return points >= (s.framed || s.sure ? config_.points_known : config_.points_known_bare);
     return points >= (s.framed ? config_.points_framed : config_.points_bare);
 }
 
@@ -600,6 +644,7 @@ bool CallSearch::stands_elsewhere(const Candidate& c, double freq_hz, double now
             if (std::abs(o.freq_hz - a.freq_hz) > config_.same_place_hz || now_s - o.end_s > config_.window_s) continue;
             alone.points += o.points;
             alone.framed = alone.framed || o.framed;
+            alone.sure = alone.sure || (config_.known_margin_nats > 0.0 && o.points >= 1.0 && o.margin >= config_.known_margin_nats);
         }
         if (passes(c, alone)) return true;
     }
@@ -620,13 +665,16 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
         if (now_s - other.recent.back().end_s > config_.variant_s) continue;
         const double theirs = support(other, freq_hz, now_s, config_.variant_hz).points;
         if (theirs <= 0) continue;
-        const int limit = limit_for(std::min(c.base.size(), other.base.size()));
+        // A call of one letter after its digit and another with the same prefix and digit: two edits apart count (K1T, K1BX).
+        const bool short_pair = config_.short_variant_ratio > 0.0 && (one_letter_suffix(c.base) || one_letter_suffix(other.base)) &&
+                                call_area(c.base) == call_area(other.base);
+        const int limit = short_pair ? 2 : limit_for(std::min(c.base.size(), other.base.size()));
         const bool prefix = config_.prefix_held != 0.0 && (c.base.starts_with(other.base) || other.base.starts_with(c.base));
         const int distance = edit_distance(c.base, other.base, limit);
         if (distance > limit && !prefix) continue;
         const int d = prefix ? 1 : distance;
         // Two letters' difference only against a much better call.
-        const double need = d >= 2 ? config_.far_variant_ratio : 1.0;
+        const double need = d >= 2 ? (short_pair ? config_.short_variant_ratio : config_.far_variant_ratio) : 1.0;
         const auto beats = [&](const Candidate& a, double pa, const Candidate& b, double pb) {
             if (a.known && !b.known) return pa * config_.known_rival_factor >= pb;
             if (b.known && !a.known) return pa >= config_.known_rival_factor * pb;

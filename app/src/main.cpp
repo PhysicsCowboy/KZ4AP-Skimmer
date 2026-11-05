@@ -169,6 +169,8 @@ int main(int argc, char* argv[]) {
     if (parser.isSet(known_calls_option)) {
         try {
             known_calls = std::make_shared<const kz4ap::callsign::KnownCalls>(kz4ap::callsign::KnownCalls::read_file(parser.value(known_calls_option).toStdString()));
+            std::fprintf(stderr, "kz4ap-skimmer: known-call list: %zu calls from %s\n", known_calls->size(),
+                         parser.value(known_calls_option).toLocal8Bit().constData());
         } catch (const std::exception& e) {
             return usage_error(QString::fromUtf8(e.what()), quiet);
         }

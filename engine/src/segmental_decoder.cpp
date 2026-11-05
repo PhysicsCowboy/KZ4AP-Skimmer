@@ -298,21 +298,40 @@ DecodeUpdate SegmentalDecoder::bring_up_to_date(const segmental::BestStory& stor
     const std::size_t base = story.length - story.tail.size();
     std::size_t k = base;
     while (k < published_.size() && k < story.length && published_[k] == story.tail[k - base].text) ++k;
-    if (k < published_.size()) {
-        // The best story changed its mind about text already out: a correction from the first symbol that differs.
+    // The first symbol out whose margin has fallen a level since (the search's rivals reach a symbol after it went out).
+    std::size_t c = base;
+    while (c < k && published_levels_[c] == confidence_level(story.tail[c - base].probability)) ++c;
+    const bool text_changed = k < published_.size();
+    if (text_changed || c < k) {
+        // The best story changed its mind about text already out, or about how sure it is of it: a correction from the first
+        // symbol that differs.
+        const std::size_t from = std::min(k, c);
         TextCorrection correction;
-        correction.from_index = k;
-        correction.chars.assign(story.tail.begin() + static_cast<std::ptrdiff_t>(k - base), story.tail.end());
+        correction.from_index = from;
+        correction.chars.assign(story.tail.begin() + static_cast<std::ptrdiff_t>(from - base), story.tail.end());
         correction.t_s = now_s;
-        correction.reason = "story";
-        correction.reach_s = k < story.length ? now_s - story.tail[k - base].start_s : 0.0;
+        correction.reason = text_changed ? "story" : "confidence";
+        correction.reach_s = from < story.length ? now_s - story.tail[from - base].start_s : 0.0;
         update.corrections.push_back(std::move(correction));
+        k = from;
     } else {
         update.chars.assign(story.tail.begin() + static_cast<std::ptrdiff_t>(k - base), story.tail.end());
     }
     published_.resize(k);
-    for (std::size_t i = k; i < story.length; ++i) published_.push_back(story.tail[i - base].text);
+    published_levels_.resize(k);
+    for (std::size_t i = k; i < story.length; ++i) {
+        published_.push_back(story.tail[i - base].text);
+        published_levels_.push_back(confidence_level(story.tail[i - base].probability));
+    }
     return update;
+}
+
+std::uint8_t SegmentalDecoder::confidence_level(float probability) {
+    // Half-nat steps of the margin, ln(p / (1 - p)), from 0 to 63.5 nats; 255 for 1 (no margins kept, or a letter open at the end).
+    // Heuristic: finer than any use of it.
+    if (!(probability < 1.0f)) return 255;
+    const double margin = std::log(static_cast<double>(probability) / (1.0 - static_cast<double>(probability)));
+    return static_cast<std::uint8_t>(std::clamp(std::floor(2.0 * margin), 0.0, 127.0));
 }
 
 DecodeUpdate SegmentalDecoder::flush() {
@@ -341,6 +360,7 @@ void SegmentalDecoder::reset() {
     next_publish_s_ = 0.0;
     wpm_ = 0.0f;
     published_.clear();
+    published_levels_.clear();
 }
 
 void SegmentalDecoder::set_band_spectrum(std::span<const float> power_fs2, int center_index) {

@@ -58,6 +58,8 @@ void set_value(CallSearchConfig& c, const std::string& assignment) {
         {"doubled_is_framed", &c.doubled_is_framed},
         {"known_rival_factor", &c.known_rival_factor},
         {"reread_corrected", &c.reread_corrected}, {"history_s", &c.history_s},
+        {"named_listed_only", &c.named_listed_only}, {"short_variant_ratio", &c.short_variant_ratio},
+        {"known_margin_nats", &c.known_margin_nats},
     };
     const auto it = fields.find(name);
     if (it == fields.end()) throw std::runtime_error("no such setting: " + name);
@@ -94,14 +96,18 @@ Options parse(int argc, char** argv) {
 
 nlohmann::json symbols_json(const std::vector<DecodedSymbol>& symbols) {
     nlohmann::json a = nlohmann::json::array();
-    for (const DecodedSymbol& s : symbols) a.push_back({s.text, s.start_s, s.end_s});
+    // The probability only when below 1, so that a log of a decoder without margins reads as before.
+    for (const DecodedSymbol& s : symbols) {
+        if (s.probability < 1.0f) a.push_back({s.text, s.start_s, s.end_s, s.probability});
+        else a.push_back({s.text, s.start_s, s.end_s});
+    }
     return a;
 }
 
 std::vector<DecodedSymbol> symbols_from(const nlohmann::json& a) {
     std::vector<DecodedSymbol> out;
     out.reserve(a.size());
-    for (const auto& s : a) out.push_back({s[0].get<std::string>(), 0.0f, s[1].get<double>(), s[2].get<double>()});
+    for (const auto& s : a) out.push_back({s[0].get<std::string>(), s.size() > 3 ? s[3].get<float>() : 1.0f, s[1].get<double>(), s[2].get<double>()});
     return out;
 }
 
@@ -111,17 +117,20 @@ int main(int argc, char** argv) {
     try {
         const Options o = parse(argc, argv);
         std::shared_ptr<const KnownCalls> known;
-        if (!o.known.empty()) known = std::make_shared<const KnownCalls>(KnownCalls::read_file(o.known));
+        if (!o.known.empty()) {
+            known = std::make_shared<const KnownCalls>(KnownCalls::read_file(o.known));
+            std::fprintf(stderr, "known-call list: %zu calls from %s\n", known->size(), o.known.c_str());
+        }
         CallSearch stage(o.config, known);
         std::ofstream readings;
         if (!o.readings.empty()) {
             readings.open(o.readings);
-            readings << "call,how,role,doubled,start_s,end_s,freq_hz\n";
+            readings << "call,how,role,doubled,start_s,end_s,freq_hz,margin_nats\n";
             stage.set_reading_log([&](const CallReading& r, double freq_hz) {
                 static constexpr const char* kHow[] = {"whole", "glued", "stripped", "joined"};
                 static constexpr const char* kRole[] = {"unknown", "sender", "named"};
                 readings << r.full << ',' << kHow[static_cast<int>(r.reading)] << ',' << kRole[static_cast<int>(r.role)] << ',' << (r.doubled ? 1 : 0) << ','
-                         << r.start_s << ',' << r.end_s << ',' << freq_hz << '\n';
+                         << r.start_s << ',' << r.end_s << ',' << freq_hz << ',' << r.margin_nats << '\n';  // nats; -1: unknown
             });
         }
         double stage_s = 0.0, channel_seconds = 0.0, stream_s = 0.0;

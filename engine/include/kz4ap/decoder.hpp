@@ -28,7 +28,7 @@ struct TextCorrection {
     std::size_t from_index = 0;
     std::vector<DecodedSymbol> chars;
     double t_s = 0;      // when the decoder made the correction, s (stream time)
-    // the segmental decoder's reason: "story" (its best story changed its mind). The bank's: "switch", "rekey" or "timeout"; "resync" for one the BankDecoder adds when the list's text
+    // the segmental decoder's reason: "story" (its best story changed its mind), or with its margins' variant "confidence" (a margin changed, the text not). The bank's: "switch", "rekey" or "timeout"; "resync" for one the BankDecoder adds when the list's text
     // changed without a correction (measured: never on the suite, 0 of 31 205; see docs/signal-processing.md
     // appendix A.8c)
     std::string reason;

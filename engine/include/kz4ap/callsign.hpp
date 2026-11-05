@@ -48,6 +48,10 @@ std::optional<ParsedCall> parse_form(std::string_view word);
 // A word with a call's form that in CW text is something else: rigs, antennas, software, and a word glued to 5NN (R5NN, UR5NN). Exact
 // matches only, since real calls contain them: DJ5NN stays a call. A heuristic list (manta's practice of exact matches).
 bool is_cw_word(std::string_view base);
+// A Maidenhead locator of six characters (FN31PR): two letters A to R, two digits, two letters A to X. Contest exchanges send them;
+// such a word gives no reading of a call, whole, stripped or glued, though some parse as a special form (FN31PR) or, stripped, as
+// a call (EL96UD, L96UD). A heuristic: a special-event call of that shape is lost.
+bool is_locator(std::string_view word);
 
 // A call made only of E, T, I, S, H, A, N, M, U and 5: what noise and a wide signal's fragments read as (track_evidence.hpp). The stage
 // takes it only as a whole word and reports it at CallSearchConfig::tiny_points whole words, with or without a known-call list. A heuristic.
@@ -97,7 +101,15 @@ struct CallReading {
     std::size_t last_word = 0;
     double start_s = 0;
     double end_s = 0;
+    // nats: the least margin the decoder gave the symbols it came from, word spaces between joined words included, margin = ln(p / (1 - p))
+    // of a symbol's probability p (the segmental decoder: SegmentalConfig::rival_margin_nats, at most that); kUnknownMargin when any of
+    // them has probability 1, which a decoder that keeps no margins gives every symbol. CallSearch fills it.
+    double margin_nats = kUnknownMargin;
+    static constexpr double kUnknownMargin = -1.0;
 };
+
+// nats: a symbol's margin from its probability, ln(p / (1 - p)), at least 0; CallReading::kUnknownMargin for p = 1.
+double margin_of(float probability);
 
 // Every reading of a call that begins in the words [from, to). A word can give several: they are alternatives, and the evidence
 // decides among them. `words` may reach past `to` and before `from`, for context.
@@ -110,8 +122,10 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
 class KnownCalls {
 public:
     KnownCalls() = default;
+    // Throws std::runtime_error for a text with a NUL byte (a binary file, such as CW Skimmer's MASTER.DTA) or with no line whose first
+    // word has a call's form: such a list matches nothing, and with named_listed_only it would refuse every call named once, silently.
     static KnownCalls read(std::istream& in);
-    // Throws std::runtime_error when the file cannot be read.
+    // Throws std::runtime_error when the file cannot be read, or as read does, naming the file.
     static KnownCalls read_file(const std::string& path);
     void add(std::string_view call);
     bool contains(std::string_view base) const { return calls_.count(std::string(base)) != 0; }
@@ -170,6 +184,20 @@ struct CallSearchConfig {
     double reread_corrected = 1.0;
     // s: a track's text is kept this far back for that. Heuristic: corrections reached 165 to 206 s on real 40 m (appendix A.12).
     double history_s = 200.0;
+    // With a known-call list, a word named by another passes alone (points_named) only for a listed call, when not 0: CW Skimmer's single
+    // repetition is for its lists. Heuristic, chosen by measurement (appendix A.12): on the two 2017 recordings tuned on, with CW
+    // Skimmer's MASTER.DTA, 13 misreadings fewer for 3 confirmed calls.
+    double named_listed_only = 1.0;
+    // A call of one letter after its digit (K1T) is held back by a call two edits away with the same prefix and digit (K1BX) and more
+    // than this many times its points within variant_hz; 0 leaves such pairs to the rule of edit distance 1 (where K1T and K1BX are no
+    // pair). Heuristic, chosen by measurement: the four fragments of the two 2017 recordings tuned on go, nothing else changes.
+    double short_variant_ratio = 2.0;
+    // nats: a listed call read bare passes at points_known, as if framed, when some whole or glued reading of it has at least this margin
+    // (CallReading::margin_nats): a single reading scored by the decoder's confidence in it; 0, the default, asks points_known_bare of every
+    // bare listed call. Off since review 10: with the segmental decoder's margins at 16 nats and the 2018 list, 8 nats added 6 confirmed calls
+    // and 5 misreadings on the two 2017 recordings tuned on, but 6 and 9 on the two held out (decision log). A margin reaches at most 15.94
+    // nats there (the ceiling read through a float), so 16 nats is the rule off.
+    double known_margin_nats = 0.0;
 };
 
 // One line of the list.
@@ -218,6 +246,7 @@ private:
         double points = 0;
         Role role = Role::Unknown;
         bool framed = false;
+        double margin = 0;  // nats: the best of the margins of the readings it holds that are whole or glued words (CallReading::margin_nats)
     };
     struct Candidate {
         std::string base;
@@ -247,6 +276,7 @@ private:
         double points = 0;
         bool framed = false;
         bool named = false;  // a whole or glued word named by another (CallSearchConfig::points_named)
+        bool sure = false;   // a whole or glued word the decoder had no near rival for (CallSearchConfig::known_margin_nats)
     };
 
     void read_track(TrackText& track, bool all);

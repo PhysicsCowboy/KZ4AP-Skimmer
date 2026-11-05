@@ -87,6 +87,8 @@ private:
     void start();
     // Brings the consumer's list (decoder.hpp) from published_ to the story: new characters, or a correction.
     DecodeUpdate bring_up_to_date(const segmental::BestStory& story, double now_s);
+    // A symbol's margin in steps, for telling a fallen margin from rounding (bring_up_to_date).
+    static std::uint8_t confidence_level(float probability);
 
     // 1/s: the chain's switch rate. Heuristic: of the size of a slow sender's element rate.
     static constexpr double kFreeKeySwitchPerS = 5.0;
@@ -142,6 +144,7 @@ private:
     double next_publish_s_ = 0.0;
     float wpm_ = 0.0f;
     std::vector<std::string> published_;  // the consumer's list, as sent
+    std::vector<std::uint8_t> published_levels_;  // and its symbols' margins, as sent (confidence_level)
     double rate_;
     std::shared_ptr<const SegmentalShared> shared_;
     double n0_ = 0.0;
