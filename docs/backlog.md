@@ -1124,7 +1124,7 @@ The decoder estimates speed from the last 24 marks (a heuristic; about 4 s at
 
 ### max_tracks
 
-`DetectorConfig::max_tracks` = 200 is a guess at a CPU guard, not exposed to
+`DetectorConfig::max_tracks` = 400 is a guess at a CPU guard, not exposed to
 users. Measure throughput against the number of tracks (on the desktop and the
 Linux machine), set the default with margin, and expose it in the app. A
 Raspberry Pi is not a target (owner, 2026-10-26). A contest band holds a
@@ -1133,9 +1133,9 @@ new decoder's eventual target is about 500 tracks on one band (plan D18).
 
 ### Spectrum frames in linear power
 
-Spectrum frames are stored in dBFS and the detector converts every bin back
-to linear power to average it. Store linear power (FS²) and convert to dB
-only where it is needed: locally for peak interpolation, and in the display.
+Done: frames carry `power_fs2` beside `power_db` since 3f99f4f, the detector
+averages linear power, and the segmental path's detector's analyzer computes
+no decibels (e766e64; signal-processing.md, A.4).
 
 ### SNR calibration against CW Skimmer / the RBN
 
@@ -1680,6 +1680,8 @@ Deferred from the first stage (`docs/signal-processing.md`, section 11):
 - A posterior on a call in place of points. `call-2` built per-symbol margins in the segmental decoder (A.8e, "Margins"), off by default since review 10, and the stage's `known_margin_nats`, off too: on the held-out 2017 recordings it added more misreadings than confirmed calls. **Margins, next:** compare several runners-up per slot (with the best four, 6 sure readings of W3OA's 1 347 instead of 651; skip a runner-up whose parent holds the winner's text entry, to keep the CPU near +5%); fix the two word-space defects of the walk (a birth's zero-length space not matched to the same space; a substitution of the next letter stepping only the winner); send new characters as characters, not inside confidence corrections (the bench's immediate text misses them); have the stage read a word's margin at its least, after later falls; then re-measure on the 2017 recordings with a held-out check, and on the generated ones.
 - **A known-call list by default** (call-2, 2026-11-04): with the calls of CW Skimmer's own MASTER.DTA of 2018 (taken out of the binary file as text) our misreadings on the 2017 recordings fall by about half against no list, 45 to 26 tuned and 51 to 25 held out, and the confirmed calls rise, 97 to 102 and 108 to 117 (decision log). No list ships: MASTER.SCP is published by supercheckpartial.com and the terms of redistributing it, or of fetching it at first start, are the owner's to decide. Until then `--known-calls PATH`.
 - **Sure misreadings of a word named once:** K8VC for K8VJ and W6UM for W1UM on W3OA read with no rival within 16 nats, so a margin cannot hold them back; whether the running station sent them so (its own bust) or the decoder misread them surely is not known (conjecture: some are busts, which CW Skimmer avoids by not spotting a call on one word). Only a list, or not taking named words alone, keeps them off.
+- **A judge that does not count real stations as misreadings** (review 11, checkpoint 3): the RBN judge of checkpoint 3's record calls a call a misreading when it is one edit from a call the RBN spotted that day, and 221 of the 323 calls the RBN spotted in the 2017 recordings' windows have such a neighbor, so a real station the RBN missed lands there about two times in three (20 of CW Skimmer's 53 "misreadings" are among our 96). A misreading only when its one-edit partner was heard on about the same frequency in the same recording (by either program or the RBN), or a person's reading of a sample, would make the precision ratio measurable.
+- **Commit the judge** (`cws_score2.py`, scratch since `call-2`) into `training/kz4ap_proto` as results analysis, with a test, so that checkpoint 3's classes can be recomputed from the repository, the public RBN day files and the two programs' outputs.
 - The spots of design section 3 (the telnet server) read this stage; re-spotting after 10 min is not done, the list has one row per call.
 
 From `app-7`'s look at what it dropped (checkpoint 2's record):
@@ -1688,6 +1690,7 @@ From `app-7`'s look at what it dropped (checkpoint 2's record):
 - A word glued to DE that also has a call's form: the start of a call is now held as a variant (`prefix_held`), and H2's false calls are 1 of 80 (PA8PG).
 - `variant_hz` 300 Hz: 3 false calls fewer on H2, 1 true fewer on the contest. Decide with CW Skimmer's list on the owner's hour.
 - A real MASTER.SCP against the recordings: tried at `app-8` (`calls-rules.csv`): contest + 1 true + 1 false, real 40 m the same list. Its worth against CW Skimmer's repeats table is for the owner's hour. Measured in `call-2` on the 2017 recordings against CW Skimmer (decision log, 2026-11-04).
+- `channel_follower.hpp:13` still gives the hold's 21.33 ms frame; on the segmental path it is 85.3 ms (review 11; the document is right).
 - The list reader (review 10's re-review): its NUL-byte check has no test of its own (the test's binary sample is also refused for having no call); a UTF-8 byte-order mark costs the first call; a UTF-16 file is refused with MASTER.DTA's message. The app reads a list's count to stderr only; show it in the status bar.
 - One reading with no list, after DE: `points_framed` 1 adds 20 true and 22 false on the contest, so not as is; on real 20 s it adds K3AV and KB8UGP, which read well. DE alone and not TEST might do.
 
