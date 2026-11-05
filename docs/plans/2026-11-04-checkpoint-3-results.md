@@ -19,8 +19,9 @@ two the callsign stage's new rules were chosen on; *held out*: the two kept as t
 
 ## Scores on real recordings
 
-CW Skimmer 2.1 replayed each recording on the desktop on 2026-11-04: validation "Normal", 500 decoders, adaptive
-decoders off, its own MASTER.DTA. Ours is `main` at 6f89eb5, each recording's logged decoder events replayed through
+The owner started a scripted replay through CW Skimmer 2.1 on the desktop on 2026-11-04 (each recording played once
+in real time, in a fresh CW Skimmer with its own settings: validation "Normal", 500 decoders, adaptive decoders off,
+its own MASTER.DTA). Ours is `main` at 6f89eb5, each recording's logged decoder events replayed through
 the callsign stage (`kz4ap-calls --replay`), so the decoder's text is the same in every column but the owner's int-1.
 *int-1* is the state before the stage's list rules (`call-2`). Each cell: calls, confirmed, misreadings, unknown (the
 rest are RBN that day).
@@ -37,8 +38,8 @@ rest are RBN that day).
 The owner's int-1 column was decoded before the resampler's stopband moved to 96 kHz (below): one confirmed call more
 (N8BB, since read once, not twice) and one unknown fewer (RN5NN, a misreading of "R 5NN").
 
-**Generated recordings, no list** (`kz4ap-calls` at `call-2`'s defaults, the Linux machine; decision log, 2026-11-04),
-true and false calls (stations): the contest 220 and 6 (280), a fresh seed of it 236 and 3 (280); strong pairs 40 to
+**Generated recordings, no list** (`kz4ap-calls` at `call-2`'s defaults, the Linux machine; decision log, 2026-11-04;
+`generated-calls.csv`), true and false calls (stations), by base call, wherever in the band it was reported: the contest 220 and 6 (280), a fresh seed of it 236 and 3 (280); strong pairs 40 to
 150 Hz apart 40 and 2 (48), a fresh seed 42 and 0 (48); the crowded band 300 and 0 (300); 100 stations at 192 kHz 100
 and 0 (100); G2, QSOs on one track, 40 and 0 (40); H2, QSOs on two tracks, 40 and 1 (40). All as at int-1.
 
@@ -114,7 +115,9 @@ asking; `kz4apskimmer-project-state.md`, the standing state, updated; `MEMORY.md
 `docs/plans/data/2026-11-04-checkpoint-3/calls.csv`: one row per base call per recording, with the judge's class, the
 number of RBN skimmers spotting it in the window, the RBN calls a misreading is one edit from, and whether CW Skimmer
 and each of our four runs reported it (rows no one reported are North American skimmers' calls in the window). Every
-real-recording count above comes from it. `cpu.csv` beside it holds the CPU table. The generated recordings' counts
-are the decision log's; their per-call tables were not rerun. Not committed: recordings, lists, CW Skimmer's spots,
+real-recording count above comes from it. `cpu.csv` beside it holds the CPU table. `generated-calls.csv` beside it: one
+row per station or reported call of each generated recording (G2 and H2 by recording, seed 1), whether it is a
+station and whether it was reported, from `call-2`'s final runs; every generated count above comes from it. Not
+committed: recordings, lists, CW Skimmer's spots,
 RBN day files. Our calls rerun in minutes with `kz4ap-calls` at 6f89eb5 (`--known` for a list, `--mirror` for the
 owner's file).
