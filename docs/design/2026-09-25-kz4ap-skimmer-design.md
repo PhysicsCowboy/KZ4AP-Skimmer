@@ -625,8 +625,8 @@ New failure cases found during the build follow the same pattern.
 ## 9. Open questions
 
 1. Callsign-matching rules (§6).
-2. GPL-3.0-only or GPL-3.0-or-later, and the exact wording of the SDR-driver
-   linking exception.
+2. GPL-3.0-only or GPL-3.0-or-later. (The SDR-driver linking exception's
+   wording was settled by the owner on 2026-11-05: `LICENSE-EXCEPTION.md`.)
 3. The SDRplay API's license terms: whether it may be redistributed with the
    app or installed on the automated build machines (§8.5 assumes not).
 4. Where the full recording corpus is stored, since it is too large for git.
