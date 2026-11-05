@@ -1,0 +1,6 @@
+recording,stream_s,channel_seconds_main,int1_app_channel_seconds,int1_app_pipeline_ms_per_channel_s,int1_app_fixed_ms_per_stream_s,int1_app_process_cpu_s,main_calls_process_cpu_s,cw_skimmer_cpu_s_per_stream_s
+owner,367.53,22785,24303,6.17,29.52,153.33,139.75,0.375
+W3OA,900.61,50194,50194,6.01,27.81,308.02,302.72,0.363
+KC2LRC-1,899.42,46186,46186,5.51,25.23,259.83,,0.358
+KC2LRC-2,899.01,46717,46717,5.39,25.35,257.48,,0.352
+N2GZ,1863.23,79600,79600,6.33,25.53,514.36,,0.358
