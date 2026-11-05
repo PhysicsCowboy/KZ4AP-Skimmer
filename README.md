@@ -281,6 +281,6 @@ each track's final text (`text`, corrections applied) and its immediate text
 
 ## License
 
-GPL-3.0; see `LICENSE`. An additional permission for linking closed-source
-SDR driver libraries (such as the SDRplay API) will be added before SDRplay
-support lands.
+GPL-3.0; see `LICENSE`, with an additional permission under its section 7 for
+linking closed-source SDR driver libraries such as the SDRplay API; see
+`LICENSE-EXCEPTION.md`.
