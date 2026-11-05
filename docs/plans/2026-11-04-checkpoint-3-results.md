@@ -19,9 +19,8 @@ letter changed, added or dropped) from a call spotted in the window or that day;
 is a proxy with systematic error in both directions, not a count of errors. A real station the RBN did not spot that
 day lands in it about two times in three: of the 323 distinct confirmed-class calls of the four 2017 recordings in
 `calls.csv`, 221 have a call one edit away among the 5 915 spotted that day. 20 of CW Skimmer's 53 are among our 96,
-and KJ9X, N0YL and W3RL are read by both programs on two recordings each; KJ9X appears in at least six QSOs with
-different stations in our W3OA text. 50 of CW Skimmer's 53 are in
-its own list, 33 of our 96 (review 11). A garble equal to a spotted call escapes the class. *Known-call list*: a file
+and KJ9X, N0YL and W3RL are read by both programs on two recordings each; KJ9X works five different stations in our W3OA
+text (K4BAI, AA3B, K2DSW, K0AD, N8PW). 50 of CW Skimmer's 53 are in its own list, 33 of our 96 (review 11). A garble equal to a spotted call escapes the class. *Known-call list*: a file
 of calls a skimmer trusts more; *MASTER.DTA*, CW Skimmer's own (2018); *MASTER.SCP*, the contest community's Super
 Check Partial file (2026-10-30). *Channel-second*: one channel open for one second of stream. *Tuning* recordings: the
 two the callsign stage's new rules were chosen on; *held out*: the two not tuned on.
@@ -82,8 +81,7 @@ their int-1 figures stand for `main`. On the Linux machine, one thread, `main` r
 2. Without a list we report 510 calls against 406, and 305 the RBN does not confirm against 200: precision is worse in
    direction. The judge's misreadings, 96 against 53 (by recording 1.5 to 2.8 times), do not measure the error ratio
    (Terms); that ours are mostly unlisted strings and CW Skimmer's mostly listed calls suggests the true ratio is no
-better (conjecture). With a list the classes
-   come out equal (51 against 53 with MASTER.DTA, 52 with MASTER.SCP), which is not shown to be equal errors. On the
+   better (conjecture). With a list the classes come out equal (51 against 53 with MASTER.DTA, 52 with MASTER.SCP), which is not shown to be equal errors. On the
    owner's file the judge's count runs the other way, 2 against 3.
 3. `call-2`'s list rules were chosen on this class (decision log, 2026-11-04), so their gain in misreadings is evidence
    of the same weak kind. On the held-out two alone, confirmed / misreadings, with MASTER.DTA 117 / 25 against CW
@@ -114,7 +112,7 @@ more CPU per channel-second.
 **How the decoder works now** (settings are heuristics unless marked derived; `docs/signal-processing.md` gives each
 one's provenance). The WAV is read, resampled to 192 kHz if need be, and its DC removed (10 s blocker). The detector
 reads its own fine spectrum every 85.3 ms (derived from 5.86 Hz bins) and opens a track at a peak 7 dB re the floor
-(per 5.86 Hz bin) held 0.5 s. Each track's channel, ±150 Hz at 1 500 samples/s (derived), feeds the segmental decoder:
+(per 5.86 Hz bin) held 0.5 s. Each track's channel, ±150 Hz (heuristic, sized for keying up to about 60 WPM) at 1 500 samples/s, feeds the segmental decoder:
 two matched filters (12 and 36 ms), a level belief, a search over stories of speed, gap stretch and text. The callsign
 stage scores call-shaped words by role and repetition and holds back variants of better-supported calls.
 `docs/signal-processing.md` matches the code at 6f89eb5 after this checkpoint's fixes (review 11: every dB named, stale
@@ -139,7 +137,8 @@ asking; `kz4apskimmer-project-state.md`, the standing state, updated; `MEMORY.md
 `docs/plans/data/2026-11-04-checkpoint-3/calls.csv`: one row per base call per recording, with the judge's class, the
 number of RBN skimmers spotting it in the window, the RBN calls a misreading is one edit from, and whether CW Skimmer
 and each of our four runs reported it (rows no one reported are North American skimmers' calls in the window). Every
-real-recording count above comes from it. The judge is a scratch script, not in the repository (backlog: commit it
+real-recording count above comes from it, except four figures in Terms (221 of 323, the 5 915 calls spotted that day,
+50 of 53 and 33 of 96), which need the RBN day files and CW Skimmer's list, neither committed. The judge is a scratch script, not in the repository (backlog: commit it
 with a test); `calls.csv` carries its output. `cpu.csv`: process CPU, channel-seconds and pipeline ms per
 channel-second of `real-1`'s app (a build of 2026-11-04 before `det-1`'s merge, no commit recorded), int-1's app and
 `main`, and CW Skimmer's slope. `generated-calls.csv`: one row per station or reported call of each generated recording

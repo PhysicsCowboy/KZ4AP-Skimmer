@@ -538,9 +538,9 @@ the rest wait undecoded. With a track budget in force, none replays.
 story's score S and a free key's F (two-state chain, 5 switches/s, same evidence):
 R = (ΔS − max(0, ΔF)) / W (nats/s), E = ΔS / W. Text sums, each symbol ln(q/p) against
 the on-air prior p, floored at −12 nats: *tiny* (q fitted to real junk) and *garbage*
-(q = 1/62). *Proven*: tiny has reached −6 nats and garbage never +6. Rules in order:
+(q = 1/62). *Proven*: tiny has reached −6 nats and garbage never +6 nats. Rules in order:
 from 4 s, R < 3 nats/s and tiny ≥ +8 nats or garbage ≥ +6 nats: retire; from 12 s, R < −8 nats/s
-and (unproven, or E ≥ 1000 nats/s with −R > 0.1% of E): retire; unproven with R < 3: retire if under
+and (unproven, or E ≥ 1000 nats/s with −R > 0.1% of E): retire; unproven with R < 3 nats/s: retire if under
 5 nats/s over 8 s, or at 14 s; proven: under 1 nat/s over 30 s retires, place left open.
 
 **Holds.** A retired place (±D) closes 8 s, doubling to 120 s; 4 such retirements
