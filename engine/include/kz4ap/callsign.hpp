@@ -70,6 +70,10 @@ struct Word {
     double end_s = 0;      // s, stream time
     std::size_t first = 0;  // the index of its first symbol among those given to words_of
     std::size_t last = 0;   // and of the one after its last
+    // s, stream time: each character's start and end, one per character of text (empty for a prosign), so that the pieces of a glued
+    // word have times of their own.
+    std::vector<double> char_start;
+    std::vector<double> char_end;
 };
 
 // The words of a list of symbols. A word space, a prosign and any punctuation but the slash end a word.
@@ -114,6 +118,8 @@ double margin_of(float probability);
 // Every reading of a call that begins in the words [from, to). A word can give several: they are alternatives, and the evidence
 // decides among them. `words` may reach past `to` and before `from`, for context.
 std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to);
+// As read_calls; with pieces_timed, each piece of a glued word has its own characters' times (CallSearchConfig::glued_pieces_timed).
+std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, bool pieces_timed);
 
 // ---- A known-call list
 
@@ -198,6 +204,17 @@ struct CallSearchConfig {
     // and 5 misreadings on the two 2017 recordings tuned on, but 6 and 9 on the two held out (decision log). A margin reaches at most 15.94
     // nats there (the ceiling read through a float), so 16 nats is the rule off.
     double known_margin_nats = 0.0;
+    // Readings of a call at different places add, when not 0: one call is one station, and a station that calls several runners, or
+    // that is named at one place and signs at another, is read independently at each (CW Skimmer counts a call's repeats per decoder, so
+    // this goes past it). Occurrences that overlap in time count once wherever they are (one transmission), and an occurrence at a place
+    // where a better-supported variant holds the call back counts for that variant, not for it. The same pooled support decides whether a
+    // reported call that loses at one place leaves the list (in place of withdraw_own_place's test). Heuristic, chosen by measurement
+    // (rob-1; appendix A.12).
+    double pool_places = 0.0;
+    // The pieces of a glued word take their own characters' times, when not 0, so that a call sent twice with no space between
+    // (K1ABCK1ABC) is two readings, as it is with the space; at 0 every piece has the word's times and the two are one occurrence.
+    // Derived from the evidence rule (one occurrence per transmission); rob-1.
+    double glued_pieces_timed = 0.0;
 };
 
 // One line of the list.
@@ -284,6 +301,12 @@ private:
     void evaluate(Candidate& candidate, double freq_hz, double now_s);
     Support support(const Candidate& candidate, double freq_hz, double now_s, double within_hz) const;
     bool passes(const Candidate& candidate, const Support& s) const;
+    // Whether a better-supported near variant holds the call back at this place (CallSearchConfig::variant_hz); the best such rival's best
+    // is added to rival_best, and the reported calls it beats here to beaten, when given.
+    bool held_at(const Candidate& candidate, double freq_hz, double now_s, double* rival_best, std::vector<Candidate*>* beaten);
+    // The call's support over the whole band (CallSearchConfig::pool_places): its occurrences within window_s, one per transmission,
+    // leaving out those at places where it is held.
+    Support pooled_support(const Candidate& candidate, double now_s);
     // Whether the call's readings more than variant_hz from this place pass by themselves, at any one place.
     bool stands_elsewhere(const Candidate& candidate, double freq_hz, double now_s) const;
     void report(Candidate& candidate, double now_s);
