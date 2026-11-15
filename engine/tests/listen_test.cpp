@@ -4,6 +4,8 @@
 
 #include "kz4ap/recording_reader.hpp"
 
+#include "temp_dir.hpp"
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -101,7 +103,7 @@ protected:
     std::filesystem::path path_;
     void SetUp() override {
         const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
-        path_ = std::filesystem::temp_directory_path() / (std::string("kz4ap_listen_") + info->name() + ".wav");
+        path_ = kz4ap::test::temp_path(std::string("kz4ap_listen_") + info->name() + ".wav");
     }
     void TearDown() override {
         std::error_code ec;
