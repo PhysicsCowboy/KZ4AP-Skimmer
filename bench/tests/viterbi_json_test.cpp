@@ -7,6 +7,8 @@
 #include "kz4ap/viterbi/config.hpp"
 #include "kz4ap/viterbi/search.hpp"
 
+#include "temp_dir.hpp"
+
 #include <gtest/gtest.h>
 
 #include <array>
@@ -706,7 +708,7 @@ StatsFile sample_file() {
 
 std::string temp_file_name(const char* test) {
     const auto name = std::string("kz4ap_viterbi_json_") + test + ".stats.json";
-    return (std::filesystem::temp_directory_path() / name).string();
+    return kz4ap::test::temp_path(name).string();
 }
 
 TEST(ViterbiJsonStats, TheStatisticsRoundTripExactly) {

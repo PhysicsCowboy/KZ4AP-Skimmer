@@ -5,6 +5,7 @@
 #include "kz4ap/iq_recorder.hpp"
 #include "kz4ap/stream_runner.hpp"
 
+#include "temp_dir.hpp"
 #include "test_signals.hpp"
 
 #include <gtest/gtest.h>
@@ -150,7 +151,7 @@ StreamStatus wait_until_over(const StreamRunner& runner) {
 }
 
 std::filesystem::path write_wav(const std::string& name, std::size_t samples, int rate = 48000) {
-    const auto path = std::filesystem::temp_directory_path() / name;
+    const auto path = kz4ap::test::temp_path(name);
     std::ofstream f(path, std::ios::binary);
     const auto u32 = [&](std::uint32_t v) { f.write(reinterpret_cast<const char*>(&v), 4); };
     const auto u16 = [&](std::uint16_t v) { f.write(reinterpret_cast<const char*>(&v), 2); };
@@ -417,7 +418,7 @@ TEST(StreamRunnerBudget, APipelineBehindALiveSourceGivesUpTracks) {
 }
 
 TEST(FileIqSource, OpensAFileNamedOutsideTheSystemsCodePage) {
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / std::filesystem::path(u8"kz4ap_\u03a9\u4e2d_test.wav");
+    const std::filesystem::path path = kz4ap::test::temp_path(std::filesystem::path(u8"kz4ap_\u03a9\u4e2d_test.wav"));
     {
         IqRecorder recorder(48000);
         recorder.start(path);

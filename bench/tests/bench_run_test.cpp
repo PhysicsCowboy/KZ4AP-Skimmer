@@ -17,6 +17,8 @@
 
 #include "viterbi/keyed_signals.hpp"
 
+#include "temp_dir.hpp"
+
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
@@ -110,7 +112,7 @@ protected:
 
     void SetUp() override {
         const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
-        dir_ = fs::temp_directory_path() / (std::string("kz4ap_bench_run_") + info->name());
+        dir_ = kz4ap::test::temp_path(std::string("kz4ap_bench_run_") + info->name());
         fs::remove_all(dir_);
         fs::create_directories(dir_);
         wav_ = dir_ / "recording.wav";

@@ -8,6 +8,8 @@
 #include "kz4ap/signal_detector.hpp"
 #include "kz4ap/wav_reader.hpp"
 
+#include "temp_dir.hpp"
+
 #include <gtest/gtest.h>
 
 #include <array>
@@ -30,7 +32,7 @@ using namespace std::chrono_literals;
 
 namespace {
 
-std::filesystem::path temp_file(const char* name) { return std::filesystem::temp_directory_path() / name; }
+std::filesystem::path temp_file(const char* name) { return kz4ap::test::temp_path(name); }
 
 TEST(SpscRing, KeepsOrderAcrossTheWrapAndRefusesWhatDoesNotFit) {
     SpscRing<int> ring(8);

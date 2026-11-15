@@ -10,6 +10,8 @@
 #define NOMINMAX
 #include <windows.h>
 
+#include "temp_dir.hpp"
+
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -356,7 +358,7 @@ TEST(SdrplaySourceFake, AFullRingIsCountedAndTheReaderGoesOnFromNewSamples) {
 
 TEST(SdrplaySourceFake, RecordsTheRawSamplesEvenIfThePipelineReadsNothing) {
     pretend("");
-    const auto path = std::filesystem::temp_directory_path() / "kz4ap_sdrplay_recording.wav";
+    const auto path = kz4ap::test::temp_path("kz4ap_sdrplay_recording.wav");
     {
         SdrplaySource source(first_radio(), kFake);
         source.start_recording(path);
