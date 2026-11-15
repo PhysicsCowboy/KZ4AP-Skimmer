@@ -5,6 +5,8 @@
 #include "kz4ap/resampler.hpp"
 #include "kz4ap/utc_time.hpp"
 
+#include "temp_dir.hpp"
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -133,8 +135,7 @@ protected:
 
     void SetUp() override {
         const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
-        path_ = std::filesystem::temp_directory_path() /
-                (std::string("kz4ap_") + info->name() + ".wav");
+        path_ = kz4ap::test::temp_path(std::string("kz4ap_") + info->name() + ".wav");
     }
     void TearDown() override {
         std::error_code ec;
@@ -325,7 +326,7 @@ TEST(CenterFromFileName, NoneWithoutAFrequency) {
 
 TEST_F(WavIqReaderTest, AFileSourcesCenterComesFromTheCallerTheHeaderOrTheName) {
     // The header's center, though the name gives another.
-    const std::filesystem::path named = std::filesystem::temp_directory_path() / "kz4ap_test_14091kHz.wav";
+    const std::filesystem::path named = kz4ap::test::temp_path("kz4ap_test_14091kHz.wav");
     const auto bytes = wav_bytes({.rate = 1000, .samples = std::vector<std::int16_t>(4000, 0), .auxi = auxi_body(7086101)});
     std::ofstream(named, std::ios::binary).write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
     {
