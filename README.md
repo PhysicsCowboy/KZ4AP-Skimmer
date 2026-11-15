@@ -64,8 +64,9 @@ there by about 24 s of stream (derived: their second readings end by 13.5 s, mea
 To keep the list, add `--calls calls.csv` (it is written when the stream ends; add
 `--quit-at-end` to leave after that). To give it a list of calls in MASTER.SCP's format, add
 `--known-calls MASTER.SCP`: a text file of one call a line, such as supercheckpartial.com's MASTER.SCP
-(none ships with this program). A listed call needs one signed, named or doubled reading, and with a
-list a call named by another station only once is listed only if it is on the list. CW Skimmer's
+(none ships with this program). A listed call needs one signed, named or doubled reading; any other
+call two readings, anywhere in the band, so a call heard only once, named by another station or not,
+is listed only if it is on the list, as with CW Skimmer. CW Skimmer's
 MASTER.DTA is a binary file and cannot be read: the program refuses it, and any file with no call in
 it, and `kz4ap-calls` prints how many calls it read. A list does
 not help a call with no digit after a letter-digit prefix (D4C, E7DX, C6AGU): the stage has no
