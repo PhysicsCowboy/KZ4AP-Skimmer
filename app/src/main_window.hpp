@@ -29,6 +29,7 @@ class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
+class QLineEdit;
 class QSlider;
 class QSpinBox;
 class QTableView;
@@ -41,8 +42,8 @@ namespace kz4ap::app {
 struct TransportStep {
     double at_wall_s = 0;  // s of wall clock since the first stream started
     // pause, play, restart, quit, speed=X (X as the speed box offers it: 1, 2, 5, 10 or max), seek=S (s into the recording),
-    // radio (starts it at the controls' settings), radiostop, center=KHZ, rate=HZ, gain=DB,STATE, record=PATH, stoprecord,
-    // shot=PATH (a picture of the window now)
+    // radio (starts it at the controls' settings), radiostop, serial=SERIAL (the radio's serial number), center=KHZ, rate=HZ,
+    // gain=DB,STATE, record=PATH, stoprecord, shot=PATH (a picture of the window now)
     QString action;
 };
 
@@ -67,6 +68,8 @@ struct Automation {
 
 // The radio's settings at the program's start, the controls' first values.
 struct RadioDefaults {
+    // The serial number of the SDRplay radio to open (SdrplaySettings::serial): none opens none.
+    QString serial;
     double center_khz = 7031.5;
     int sample_rate = 192000;
     int if_gain_reduction_db = 40;
@@ -166,6 +169,7 @@ private:
     QAction* restart_ = nullptr;
     QComboBox* speed_box_ = nullptr;
     QSlider* position_slider_ = nullptr;
+    QLineEdit* serial_box_ = nullptr;
     QDoubleSpinBox* center_box_ = nullptr;
     QComboBox* rate_box_ = nullptr;
     QSpinBox* if_gain_box_ = nullptr;
