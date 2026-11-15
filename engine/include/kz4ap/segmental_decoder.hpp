@@ -76,6 +76,7 @@ public:
     std::optional<KeyingEvidence> keying_evidence() const override;
     std::span<const std::string> published_symbols() const override { return published_; }
     double block_envelope_fs2() const override { return block_envelope_fs2_; }
+    double block_noise_fs2() const override { return block_noise_fs2_; }
 
     const segmental::SearchStats& stats() const { return streams_.front().search->stats(); }
     // The filter scale whose text goes out, and how many streams still run.
@@ -154,6 +155,7 @@ private:
     std::uint64_t next_index_ = 0;
     double first_s_ = 0.0;  // s of stream: the channel's first sample, a replay's included
     double block_envelope_fs2_ = -1.0;  // FS^2: the last block's mean e^2 at the leader's filter (block_envelope_fs2)
+    double block_noise_fs2_ = -1.0;     // FS^2: the hiss at the leader's filter output (block_noise_fs2)
 };
 
 }  // namespace kz4ap

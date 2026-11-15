@@ -155,6 +155,10 @@ struct EngineConfig {
     double copy_radius_hz = 150.0;
     double copy_detrend_s = 0.5;
     bool copy_older_only = true;  // S must be older than W (a lower track id)
+    double copy_gain_max = 1.0;   // and W must hear S's keying at a gain of at most this (KeyingCoherence::gain)
+    // and W must hold no more power of its own than this, linear, re what the leak and its hiss explain: (mean e_W^2 - E) / E, E = gain
+    // mean e_S^2 + sigma_W^2. Negative for no such condition.
+    double copy_own_snr_max = 0.5;
 };
 
 // The detector's settings and the DC blocker for the decoder's path (decoder.front_end), in place: on every path the
@@ -270,6 +274,7 @@ private:
         std::size_t replayed_samples = 0;
         float detector_snr_db = 0.0f;  // the detector's level for the track (Track::snr_db), dB re its floor per bin
         EnvelopeHistory envelope;      // the keying its decoder hears, a value a live block (EngineConfig::copy_window_s)
+        double envelope_noise_fs2 = -1.0;  // that envelope's hiss, the latest block's (Decoder::block_noise_fs2)
     };
 
     void process_hop(std::span<const Sample> hop);

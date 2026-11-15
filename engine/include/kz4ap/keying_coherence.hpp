@@ -21,9 +21,21 @@
 
 namespace kz4ap {
 
-// rho as above over the two series, which must have the same length; detrend_blocks m (at least 1; 1 subtracts the plain mean).
-// NaN if either series is constant after the high-pass, or shorter than 2.
-double keying_correlation(std::span<const float> weak, std::span<const float> strong, std::size_t detrend_blocks);
+// rho as above, and the gain of the strong channel's keying in the weak one's, beta = sum(x_w x_s) / sum(x_s^2): a copy heard through
+// the weak channel's skirt is the source's envelope times |H(df)|^2 <= 1, the filters being alike (derived), while a strong channel
+// that hears a weak neighbor while its own station is silent reads that neighbor's keying, so that beta stands above 1.
+struct KeyingCoherence {
+    double rho;   // NaN if either series is constant after the high-pass, or shorter than 2
+    double gain;  // beta; NaN likewise
+    double weak_mean = 0.0;    // the plain means of the two series, FS^2
+    double strong_mean = 0.0;
+};
+
+// Over two series of the same length; detrend_blocks m (at least 1; 1 subtracts the plain mean).
+KeyingCoherence keying_coherence(std::span<const float> weak, std::span<const float> strong, std::size_t detrend_blocks);
+inline double keying_correlation(std::span<const float> weak, std::span<const float> strong, std::size_t detrend_blocks) {
+    return keying_coherence(weak, strong, detrend_blocks).rho;
+}
 
 // A channel's last values, a ring of `capacity` blocks: push one per block, in order; a block missed (a gap in the block numbers)
 // starts the history again.

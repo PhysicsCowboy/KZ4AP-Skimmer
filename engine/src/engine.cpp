@@ -415,6 +415,7 @@ void Engine::process_channel(std::uint32_t id, Channel& channel, const Channeliz
         // One value a live block, numbered by the block's place in the stream, so that neighbors' values line up.
         const double heard = channel.decoder->block_envelope_fs2();
         if (heard >= 0.0) channel.envelope.push(block.first_index / block_samples_, static_cast<float>(heard));
+        channel.envelope_noise_fs2 = channel.decoder->block_noise_fs2();
     }
 }
 
@@ -566,11 +567,18 @@ bool Engine::is_copy(std::uint32_t id, const Channel& channel, std::uint64_t blo
             loaded = true;
         }
         other.envelope.last(copy_blocks_, strong);
-        const double rho = keying_correlation(weak, strong, detrend_blocks_);
+        const KeyingCoherence k = keying_coherence(weak, strong, detrend_blocks_);
+        const double rho = k.rho;
+        // W's own power, what neither S's leak nor its hiss explains, re what they do: about 0 for a copy at any SNR, a real station's
+        // SNR against leak and hiss for one. Unknown hiss: no copy.
+        const double explained = k.gain * k.strong_mean + channel.envelope_noise_fs2;
+        const double own_snr = config_.copy_own_snr_max < 0.0           ? -1e300
+                               : !(channel.envelope_noise_fs2 > 0.0) ? 1e300
+                                                                      : (k.weak_mean - explained) / explained;
         if (std::getenv("KZ4AP_TRACE_COPY"))  // TRACE-DET2
-            std::fprintf(stderr, "TC t %.2f w %u f %.1f s %u df %+.1f dl %.1f rho %.3f\n", static_cast<double>(block * block_samples_) / channelizer_.output_rate(), id,
-                         channel.detector_freq_hz, other_id, other.detector_freq_hz - channel.detector_freq_hz, other.detector_snr_db - channel.detector_snr_db, rho);
-        if (rho >= config_.copy_rho) return true;
+            std::fprintf(stderr, "TC t %.2f w %u f %.1f s %u df %+.1f dl %.1f rho %.3f gain %.3f own %.2f csnr %.2f\n", static_cast<double>(block * block_samples_) / channelizer_.output_rate(), id,
+                         channel.detector_freq_hz, other_id, other.detector_freq_hz - channel.detector_freq_hz, other.detector_snr_db - channel.detector_snr_db, rho, k.gain, own_snr, channel.envelope_noise_fs2 > 0.0 ? k.gain * k.strong_mean / channel.envelope_noise_fs2 : -1.0);
+        if (rho >= config_.copy_rho && k.gain <= config_.copy_gain_max && own_snr <= config_.copy_own_snr_max) return true;
     }
     return false;
 }

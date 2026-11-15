@@ -552,6 +552,8 @@ void apply_detector_setting(EngineConfig& config, const std::string& setting) {
         {"copy_level_db", &config.copy_level_db},
         {"copy_radius_hz", &config.copy_radius_hz},
         {"copy_detrend_s", &config.copy_detrend_s},
+        {"copy_gain_max", &config.copy_gain_max},
+        {"copy_own_snr_max", &config.copy_own_snr_max},
     };
     for (const auto& [field, target] : doubles) {
         if (name == field) {

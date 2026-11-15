@@ -26,11 +26,11 @@ void high_pass(std::span<const float> x, std::size_t m, std::vector<double>& pre
 
 }  // namespace
 
-double keying_correlation(std::span<const float> weak, std::span<const float> strong, std::size_t detrend_blocks) {
-    if (weak.size() != strong.size()) throw std::invalid_argument("keying_correlation: the series differ in length");
-    if (detrend_blocks < 1) throw std::invalid_argument("keying_correlation: detrend_blocks must be at least 1");
+KeyingCoherence keying_coherence(std::span<const float> weak, std::span<const float> strong, std::size_t detrend_blocks) {
+    if (weak.size() != strong.size()) throw std::invalid_argument("keying_coherence: the series differ in length");
+    if (detrend_blocks < 1) throw std::invalid_argument("keying_coherence: detrend_blocks must be at least 1");
     const double nan = std::numeric_limits<double>::quiet_NaN();
-    if (weak.size() < 2) return nan;
+    if (weak.size() < 2) return {nan, nan};
     thread_local std::vector<double> prefix, a, b;
     const std::size_t m = std::min(detrend_blocks, weak.size());
     if (m == 1) {
@@ -47,8 +47,14 @@ double keying_correlation(std::span<const float> weak, std::span<const float> st
         aa += a[i] * a[i];
         bb += b[i] * b[i];
     }
-    if (!(aa > 0.0) || !(bb > 0.0)) return nan;
-    return ab / std::sqrt(aa * bb);
+    if (!(aa > 0.0) || !(bb > 0.0)) return {nan, nan};
+    double sw = 0.0, ss = 0.0;
+    for (std::size_t i = 0; i < weak.size(); ++i) {
+        sw += static_cast<double>(weak[i]);
+        ss += static_cast<double>(strong[i]);
+    }
+    const double n = static_cast<double>(weak.size());
+    return {ab / std::sqrt(aa * bb), ab / bb, sw / n, ss / n};
 }
 
 EnvelopeHistory::EnvelopeHistory(std::size_t capacity) : ring_(capacity, 0.0f) {}
