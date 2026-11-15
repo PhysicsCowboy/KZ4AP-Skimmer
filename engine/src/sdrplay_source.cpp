@@ -11,6 +11,7 @@
 #include <sdrplay_api.h>
 #endif
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <stdexcept>
@@ -66,14 +67,20 @@ std::vector<std::filesystem::path> sdrplay_library_candidates() {
 
 #if !defined(KZ4AP_HAVE_SDRPLAY_HEADERS)
 
+namespace {
+const char* const kNoHeaders =
+    "This program was built without the SDRplay API's headers, so it cannot drive a radio: install the SDRplay API and "
+    "build it again.";
+}  // namespace
+
 struct SdrplaySource::Api {};
+
+std::vector<SdrplayDevice> list_sdrplay_devices(const std::filesystem::path&) { throw std::runtime_error(kNoHeaders); }
 
 SdrplaySource::SdrplaySource(const SdrplaySettings& settings, const std::filesystem::path&)
     : settings_(settings), ring_(2), recorder_(settings.sample_rate > 0 ? settings.sample_rate : 1) {
     check_sdrplay_settings(settings);
-    throw std::runtime_error(
-        "This program was built without the SDRplay API's headers, so it cannot drive a radio: install the SDRplay API and "
-        "build it again.");
+    throw std::runtime_error(kNoHeaders);
 }
 
 SdrplaySource::~SdrplaySource() = default;
@@ -112,10 +119,13 @@ const char* model_name(unsigned char hardware) {
     }
 }
 
-}  // namespace
+const char* const kNoService =
+    "The SDRplay API service is not answering. Start it: Windows Services, \"SDRplay API Service\" (or RestartService.bat "
+    "in the API's folder).";
 
-// The API's entry points, found by name in the library loaded at run time.
-struct SdrplaySource::Api {
+// The API's entry points, found by name in the library loaded at run time, and the API opened: what listing the radios
+// needs, and what taking one starts from.
+struct ApiLibrary {
     LibraryHandle library = nullptr;
     sdrplay_api_Open_t open = nullptr;
     sdrplay_api_Close_t close = nullptr;
@@ -130,13 +140,11 @@ struct SdrplaySource::Api {
     sdrplay_api_Init_t init = nullptr;
     sdrplay_api_Uninit_t uninit = nullptr;
     sdrplay_api_Update_t update = nullptr;
-
     bool opened = false;
-    bool selected = false;
-    bool streaming = false;
-    sdrplay_api_DeviceT device{};
-    sdrplay_api_RxChannelParamsT* channel = nullptr;
-    sdrplay_api_DeviceParamsT* params = nullptr;
+
+    ApiLibrary() = default;
+    ApiLibrary(const ApiLibrary&) = delete;
+    ApiLibrary& operator=(const ApiLibrary&) = delete;
 
     template <class F>
     void bind(F& entry, const char* name) {
@@ -150,11 +158,139 @@ struct SdrplaySource::Api {
         return s ? s : std::to_string(static_cast<int>(error));
     }
 
+    // Loads the library (path, or else sdrplay_library_candidates()), finds its entry points, opens the API and checks its
+    // version against the headers'. Touches no radio.
+    void start(const std::filesystem::path& path) {
+        std::vector<std::filesystem::path> candidates;
+        if (path.empty()) candidates = sdrplay_library_candidates();
+        else candidates.push_back(path);
+        std::string tried;
+        for (const std::filesystem::path& candidate : candidates) {
+            library = load_library(candidate);
+            if (library != nullptr) break;
+            tried += (tried.empty() ? "" : ", ") + candidate.string();
+        }
+        if (library == nullptr)
+            throw std::runtime_error("The SDRplay API is not installed: no library at " + tried +
+                                     ". Install it from sdrplay.com, or set KZ4AP_SDRPLAY_DLL to its library.");
+
+        bind(open, "sdrplay_api_Open");
+        bind(close, "sdrplay_api_Close");
+        bind(version, "sdrplay_api_ApiVersion");
+        bind(lock, "sdrplay_api_LockDeviceApi");
+        bind(unlock, "sdrplay_api_UnlockDeviceApi");
+        bind(get_devices, "sdrplay_api_GetDevices");
+        bind(select, "sdrplay_api_SelectDevice");
+        bind(release, "sdrplay_api_ReleaseDevice");
+        bind(error_string, "sdrplay_api_GetErrorString");
+        bind(get_params, "sdrplay_api_GetDeviceParams");
+        bind(init, "sdrplay_api_Init");
+        bind(uninit, "sdrplay_api_Uninit");
+        bind(update, "sdrplay_api_Update");
+
+        sdrplay_api_ErrT error = open();
+        if (error != sdrplay_api_Success)
+            throw std::runtime_error(error == sdrplay_api_ServiceNotResponding || error == sdrplay_api_Fail
+                                         ? std::string(kNoService)
+                                         : "The SDRplay API did not open: " + text(error));
+        opened = true;
+
+        float api_version = 0.0f;
+        error = version(&api_version);
+        if (error == sdrplay_api_ServiceNotResponding) throw std::runtime_error(kNoService);
+        if (error != sdrplay_api_Success) throw std::runtime_error("The SDRplay API gave no version: " + text(error));
+        if (std::fabs(api_version - SDRPLAY_API_VERSION) > 0.001f)
+            throw std::runtime_error("The SDRplay API is version " + std::to_string(api_version) + " and this program was built for " +
+                                     std::to_string(SDRPLAY_API_VERSION) +
+                                     ": the device structures may differ, so install that version or build again.");
+    }
+
+    ~ApiLibrary() {
+        if (opened) close();
+        if (library != nullptr) free_library(library);
+    }
+};
+
+// The API's device lock (specification: LockDeviceApi), from listing the devices to taking one, let go on every way out.
+class ApiLock {
+public:
+    explicit ApiLock(ApiLibrary& api) : api_(api) {
+        const sdrplay_api_ErrT error = api_.lock();
+        if (error != sdrplay_api_Success)
+            throw std::runtime_error(error == sdrplay_api_ServiceNotResponding ? std::string(kNoService)
+                                                                               : "The SDRplay API could not be locked: " + api_.text(error));
+        held_ = true;
+    }
+    ApiLock(const ApiLock&) = delete;
+    ApiLock& operator=(const ApiLock&) = delete;
+    ~ApiLock() { unlock(); }
+    void unlock() {
+        if (!held_) return;
+        held_ = false;
+        api_.unlock();
+    }
+
+private:
+    ApiLibrary& api_;
+    bool held_ = false;
+};
+
+// The devices the API lists; the caller holds the lock.
+std::vector<sdrplay_api_DeviceT> listed_devices(ApiLibrary& api) {
+    sdrplay_api_DeviceT devices[SDRPLAY_MAX_DEVICES];
+    unsigned int count = 0;
+    const sdrplay_api_ErrT error = api.get_devices(devices, &count, SDRPLAY_MAX_DEVICES);
+    if (error != sdrplay_api_Success)
+        throw std::runtime_error(error == sdrplay_api_ServiceNotResponding ? std::string(kNoService)
+                                                                           : "The SDRplay API could not list its devices: " + api.text(error));
+    count = std::min(count, static_cast<unsigned int>(SDRPLAY_MAX_DEVICES));
+    return {devices, devices + count};
+}
+
+std::string serial_of(const sdrplay_api_DeviceT& device) {
+    std::size_t length = 0;
+    while (length < sizeof device.SerNo && device.SerNo[length] != '\0') ++length;
+    return std::string(device.SerNo, length);
+}
+
+// "1234567890 (RSP1A), 2345678901 (RSPdx)", for the messages.
+std::string found_text(const std::vector<sdrplay_api_DeviceT>& devices) {
+    std::string text;
+    for (const sdrplay_api_DeviceT& device : devices)
+        text += (text.empty() ? "" : ", ") + serial_of(device) + " (" + model_name(device.hwVer) + ")";
+    return text;
+}
+
+const char* const kHowToChoose =
+    "Name the one to open by its serial number: in kz4ap-skimmer, the Radio serial box or --sdrplay-serial SERIAL "
+    "(--list-sdrplay lists them).";
+
+}  // namespace
+
+std::vector<SdrplayDevice> list_sdrplay_devices(const std::filesystem::path& library) {
+    ApiLibrary api;
+    api.start(library);
+    std::vector<sdrplay_api_DeviceT> devices;
+    {
+        ApiLock lock(api);
+        devices = listed_devices(api);
+    }
+    std::vector<SdrplayDevice> listed;
+    for (const sdrplay_api_DeviceT& device : devices) listed.push_back({serial_of(device), model_name(device.hwVer)});
+    return listed;
+}
+
+// The API, and the one device taken and started; let go of in that order's reverse (the base class's destructor last).
+struct SdrplaySource::Api : ApiLibrary {
+    bool selected = false;
+    bool streaming = false;
+    sdrplay_api_DeviceT device{};
+    sdrplay_api_RxChannelParamsT* channel = nullptr;
+    sdrplay_api_DeviceParamsT* params = nullptr;
+
     ~Api() {
         if (streaming) uninit(device.dev);
         if (selected) release(&device);
-        if (opened) close();
-        if (library != nullptr) free_library(library);
     }
 };
 
@@ -189,75 +325,35 @@ SdrplaySource::SdrplaySource(const SdrplaySettings& settings, const std::filesys
       api_(std::make_unique<Api>()) {
     check_sdrplay_settings(settings);
     const SdrplayRatePlan plan = *sdrplay_rate_plan(settings.sample_rate);
+    api_->start(library);
 
-    std::vector<std::filesystem::path> candidates;
-    if (library.empty()) candidates = sdrplay_library_candidates();
-    else candidates.push_back(library);
-    std::string tried;
-    for (const std::filesystem::path& path : candidates) {
-        api_->library = load_library(path);
-        if (api_->library != nullptr) break;
-        tried += (tried.empty() ? "" : ", ") + path.string();
+    // The device with exactly the serial asked for, and no other: with two radios on the machine, the first listed may be
+    // the operator's other one. The lock is let go as the scope ends, by any way out.
+    sdrplay_api_ErrT error = sdrplay_api_Success;
+    {
+        ApiLock lock(*api_);
+        const std::vector<sdrplay_api_DeviceT> devices = listed_devices(*api_);
+        if (devices.empty())
+            throw std::runtime_error(
+                "No SDRplay radio found. Is it plugged in? If another program is using it, close that program.");
+        if (settings.serial.empty())
+            throw std::runtime_error("No SDRplay radio was named, so none was opened. Found: " + found_text(devices) + ". " +
+                                     kHowToChoose);
+        const auto match = std::find_if(devices.begin(), devices.end(),
+                                        [&](const sdrplay_api_DeviceT& device) { return serial_of(device) == settings.serial; });
+        if (match == devices.end())
+            throw std::runtime_error("No SDRplay radio has the serial number \"" + settings.serial +
+                                     "\", so none was opened. Found: " + found_text(devices) + ". " + kHowToChoose);
+        api_->device = *match;
+        if (api_->device.hwVer == SDRPLAY_RSPduo_ID) {
+            api_->device.tuner = sdrplay_api_Tuner_A;
+            api_->device.rspDuoMode = sdrplay_api_RspDuoMode_Single_Tuner;
+        }
+        error = api_->select(&api_->device);
     }
-    if (api_->library == nullptr)
-        throw std::runtime_error("The SDRplay API is not installed: no library at " + tried +
-                                 ". Install it from sdrplay.com, or set KZ4AP_SDRPLAY_DLL to its library.");
-
-    api_->bind(api_->open, "sdrplay_api_Open");
-    api_->bind(api_->close, "sdrplay_api_Close");
-    api_->bind(api_->version, "sdrplay_api_ApiVersion");
-    api_->bind(api_->lock, "sdrplay_api_LockDeviceApi");
-    api_->bind(api_->unlock, "sdrplay_api_UnlockDeviceApi");
-    api_->bind(api_->get_devices, "sdrplay_api_GetDevices");
-    api_->bind(api_->select, "sdrplay_api_SelectDevice");
-    api_->bind(api_->release, "sdrplay_api_ReleaseDevice");
-    api_->bind(api_->error_string, "sdrplay_api_GetErrorString");
-    api_->bind(api_->get_params, "sdrplay_api_GetDeviceParams");
-    api_->bind(api_->init, "sdrplay_api_Init");
-    api_->bind(api_->uninit, "sdrplay_api_Uninit");
-    api_->bind(api_->update, "sdrplay_api_Update");
-
-    const char* const kNoService =
-        "The SDRplay API service is not answering. Start it: Windows Services, \"SDRplay API Service\" (or RestartService.bat "
-        "in the API's folder).";
-    sdrplay_api_ErrT error = api_->open();
     if (error != sdrplay_api_Success)
-        throw std::runtime_error(error == sdrplay_api_ServiceNotResponding || error == sdrplay_api_Fail
-                                     ? std::string(kNoService)
-                                     : "The SDRplay API did not open: " + api_->text(error));
-    api_->opened = true;
-
-    float version = 0.0f;
-    error = api_->version(&version);
-    if (error == sdrplay_api_ServiceNotResponding) throw std::runtime_error(kNoService);
-    if (error != sdrplay_api_Success) throw std::runtime_error("The SDRplay API gave no version: " + api_->text(error));
-    if (std::fabs(version - SDRPLAY_API_VERSION) > 0.001f)
-        throw std::runtime_error("The SDRplay API is version " + std::to_string(version) + " and this program was built for " +
-                                 std::to_string(SDRPLAY_API_VERSION) + ": the device structures may differ, so install that version or build again.");
-
-    error = api_->lock();
-    if (error == sdrplay_api_ServiceNotResponding) throw std::runtime_error(kNoService);
-    sdrplay_api_DeviceT devices[SDRPLAY_MAX_DEVICES];
-    unsigned int count = 0;
-    error = api_->get_devices(devices, &count, SDRPLAY_MAX_DEVICES);
-    if (error != sdrplay_api_Success) {
-        api_->unlock();
-        throw std::runtime_error(error == sdrplay_api_ServiceNotResponding ? std::string(kNoService)
-                                                                           : "The SDRplay API could not list its devices: " + api_->text(error));
-    }
-    if (count == 0) {
-        api_->unlock();
-        throw std::runtime_error(
-            "No SDRplay radio found. Is it plugged in? If another program is using it, close that program.");
-    }
-    api_->device = devices[0];
-    if (api_->device.hwVer == SDRPLAY_RSPduo_ID) {
-        api_->device.tuner = sdrplay_api_Tuner_A;
-        api_->device.rspDuoMode = sdrplay_api_RspDuoMode_Single_Tuner;
-    }
-    error = api_->select(&api_->device);
-    api_->unlock();
-    if (error != sdrplay_api_Success) throw std::runtime_error("The SDRplay radio could not be taken: " + api_->text(error) + ". Is another program using it?");
+        throw std::runtime_error("The SDRplay radio " + settings.serial + " could not be taken: " + api_->text(error) +
+                                 ". Is another program using it?");
     api_->selected = true;
 
     error = api_->get_params(api_->device.dev, &api_->params);

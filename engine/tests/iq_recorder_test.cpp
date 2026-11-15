@@ -8,6 +8,8 @@
 #include "kz4ap/signal_detector.hpp"
 #include "kz4ap/wav_reader.hpp"
 
+#include "temp_dir.hpp"
+
 #include <gtest/gtest.h>
 
 #include <array>
@@ -30,7 +32,7 @@ using namespace std::chrono_literals;
 
 namespace {
 
-std::filesystem::path temp_file(const char* name) { return std::filesystem::temp_directory_path() / name; }
+std::filesystem::path temp_file(const char* name) { return kz4ap::test::temp_path(name); }
 
 TEST(SpscRing, KeepsOrderAcrossTheWrapAndRefusesWhatDoesNotFit) {
     SpscRing<int> ring(8);
@@ -195,6 +197,14 @@ TEST(SdrplaySource, WithoutTheLibrarySaysSoAndNothingElseBreaks) {
     try {
         SdrplaySource source(settings, temp_file("no_such_library_kz4ap.dll"));
         FAIL() << "a source with no library";
+    } catch (const std::runtime_error& e) {
+        const std::string message = e.what();
+        EXPECT_TRUE(message.find("not installed") != std::string::npos || message.find("built without") != std::string::npos)
+            << message;
+    }
+    try {
+        list_sdrplay_devices(temp_file("no_such_library_kz4ap.dll"));
+        FAIL() << "a listing with no library";
     } catch (const std::runtime_error& e) {
         const std::string message = e.what();
         EXPECT_TRUE(message.find("not installed") != std::string::npos || message.find("built without") != std::string::npos)

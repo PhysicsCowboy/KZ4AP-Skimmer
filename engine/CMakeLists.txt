@@ -45,6 +45,7 @@ add_library(kz4ap_engine_core OBJECT
   src/utc_time.cpp
   src/resampler.cpp
   src/recording_reader.cpp
+  src/listen.cpp
   src/spectrum.cpp
   src/channelizer.cpp
   src/channel_follower.cpp
@@ -149,6 +150,7 @@ add_executable(kz4ap_engine_tests
   tests/iq_recorder_test.cpp
   tests/matched_front_end_test.cpp
   tests/frequency_tracker_test.cpp
+  tests/listen_test.cpp
 )
 target_link_libraries(kz4ap_engine_tests PRIVATE kz4ap::engine GTest::gtest_main)
 # worker_pool_test.cpp tests the pool, which is private to the engine.

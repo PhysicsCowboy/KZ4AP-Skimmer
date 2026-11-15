@@ -38,6 +38,10 @@ std::optional<SdrplayRatePlan> sdrplay_rate_plan(int sample_rate);
 // 59 dB, the LNA state 0 to 9 (a model's table of LNA reduction by state and band has fewer states in some bands, which the
 // API itself refuses).
 struct SdrplaySettings {
+    // The serial number of the radio to open, exactly as the API lists it (SdrplayDevice::serial). Required: with none, or
+    // with one no radio listed has, no radio is taken, even when only one is plugged in, so that a machine with two radios
+    // can never open the wrong one. check_sdrplay_settings does not check it: only the API's list can.
+    std::string serial;
     double center_hz = 7031500.0;
     int sample_rate = 192000;
     int if_gain_reduction_db = 40;  // dB, the IF's gain reduction; AGC is off, so a level stays a level
@@ -50,11 +54,24 @@ void check_sdrplay_settings(const SdrplaySettings& settings);
 // API installer's location.
 std::vector<std::filesystem::path> sdrplay_library_candidates();
 
+// A radio as the API lists it.
+struct SdrplayDevice {
+    std::string serial;  // SdrplaySettings::serial's value for it
+    std::string model;   // RSP1A, RSPdx, RSPduo, ...
+};
+
+// The radios the API lists, in its order, without taking or starting any: the API's GetDevices under its lock, and never
+// SelectDevice or Init. Throws std::runtime_error with an operator's sentence, as SdrplaySource does: no library, no
+// service, another version of the API. library: as for SdrplaySource.
+std::vector<SdrplayDevice> list_sdrplay_devices(const std::filesystem::path& library = {});
+
 class SdrplaySource final : public IqSource, public RecordControl, public RadioControl {
 public:
-    // Opens the API, takes the first device and starts it receiving. Throws std::runtime_error with an operator's
-    // sentence: no library, no service, no device, another program holding it. std::invalid_argument for settings out of
-    // range. library: the API's library to load; empty for sdrplay_library_candidates().
+    // Opens the API, takes the device whose serial number is exactly settings.serial and starts it receiving; no other
+    // device is ever taken (an RSPduo as a single tuner, tuner A). Throws std::runtime_error with an operator's sentence: no
+    // library, no service, no device, no serial given or none with that serial (each naming the serials found), another
+    // program holding it. The API's lock is let go on every path. std::invalid_argument for settings out of range.
+    // library: the API's library to load; empty for sdrplay_library_candidates().
     explicit SdrplaySource(const SdrplaySettings& settings, const std::filesystem::path& library = {});
     ~SdrplaySource() override;
 

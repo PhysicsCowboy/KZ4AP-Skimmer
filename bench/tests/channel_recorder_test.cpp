@@ -1,5 +1,7 @@
 #include "channel_recorder.hpp"
 
+#include "temp_dir.hpp"
+
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
@@ -14,7 +16,7 @@ using namespace kz4ap::bench;
 namespace {
 
 std::filesystem::path fresh_dir(const char* name) {
-    const auto dir = std::filesystem::temp_directory_path() / name;
+    const auto dir = kz4ap::test::temp_path(name);
     std::filesystem::remove_all(dir);
     return dir;
 }

@@ -29,7 +29,8 @@ has been left in the git-ignored `build\recordings\` (`real30.wav` is 30 min of 
 
     build\windows\app\Release\kz4ap-skimmer.exe build\recordings\real30.wav
 
-With no argument the program opens idle: press Open... or Start radio.
+With no argument the program opens idle: press Open..., or type a radio's serial number
+in Radio serial and press Start radio ("Which radio", below).
 
 Otherwise generate 60 s of 30 stations at 192 kHz (46 MB; 20 s for the environment and
 20 s to generate, measured). It takes Python 3.12 (numpy 2.5.3 needs it). If `python
@@ -127,6 +128,21 @@ reads a receiver whose spectrum is inverted, as an SDR on a transceiver's IF
 output. `kz4ap-resample IN.wav OUT.wav [--mirror] [--gain-db DB]` writes the
 same samples as a 16-bit copy at that rate, for CW Skimmer.
 
+**Listening to one station.** The app makes no sound yet. `kz4ap-listen` writes
+what one frequency of a recording holds as a mono 16-bit WAV, for checking a
+decoding by ear: the station shifted to a 600 Hz tone, through a 500 Hz filter
+(at −6 dB re the passband; flat to ±150 Hz around the carrier, at least 80 dB
+below the passband beyond ±350 Hz), at 12 kHz, the clip's peak set to −1 dBFS by one gain for
+the whole clip. For example, 60 s from 155 s into a recording, at 7029.855 kHz:
+
+    kz4ap-listen IN.wav OUT.wav --mirror --khz 7029.855 --start 155 --seconds 60
+
+`--offset-hz` gives the frequency from the center instead, `--tone-hz` and
+`--bandwidth-hz` change the tone and the width, `--rate 8000` the rate,
+`--gain-db` sets the gain by hand, and `--track-filter` uses the engine's own
+channel filter (±150 Hz at −6 dB re the passband), so that one hears what a track's decoder
+reads. `--help` lists them. It writes a file and plays nothing.
+
 **The radio.** The SDRplay API (3.x) is used if it is there, and nothing else
 needs it: the program builds and runs without it and says so when asked for the
 radio. Building its support needs the API's headers (found in
@@ -134,7 +150,16 @@ radio. Building its support needs the API's headers (found in
 off with `-DKZ4AP_WITH_SDRPLAY=OFF`); the library is loaded at run time, never
 linked (`KZ4AP_SDRPLAY_DLL` names another one).
 
-To record a band: set Radio center, Rate (96, 192, 384 or 768 kHz), IF gain
+**Which radio.** The program opens only the radio whose serial number you give
+it, in the Radio serial box or with `--sdrplay-serial SERIAL`, so that on a
+machine with two SDRplay radios it can never take the wrong one. With no serial
+it opens none, even when only one radio is plugged in: Start radio then lists
+the serial numbers it found. `kz4ap-skimmer --list-sdrplay` prints each radio's
+serial number and model, a line each, without opening any, and quits (started
+with no console, it shows them in a window). The serial is not remembered
+between runs.
+
+To record a band: set Radio serial, Center, Rate (96, 192, 384 or 768 kHz), IF gain
 reduction and LNA state; press Start radio; check the waterfall, with no "ADC
 OVERLOAD" beside the buttons (raise the gain reduction or the LNA state if there
 is); press Record and choose a file; press Stop recording. The recording goes to
@@ -142,8 +167,8 @@ the project's WAV form, 0.77 MB/s at 192 kHz, up to its limit of 4 GiB (93 min a
 192 kHz), where it stops by itself. The file name holds the center frequency,
 since the form does not; center and rate are locked while recording. Its writer
 has its own queue, so a pipeline falling behind ("pipeline lost" beside the
-buttons) leaves no gap in the file. `kz4ap-skimmer --radio --center-khz 7030 --rate
-192000` starts the radio at once.
+buttons) leaves no gap in the file. `kz4ap-skimmer --radio --sdrplay-serial SERIAL
+--center-khz 7030 --rate 192000` starts that radio at once.
 
 ## Benchmark
 

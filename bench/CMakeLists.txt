@@ -36,6 +36,16 @@ else()
   target_compile_options(kz4ap-resample PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# One station of a recording as audio, to check a decoding by ear (docs/signal-processing.md, A.13). It writes
+# a file only.
+add_executable(kz4ap-listen src/listen_main.cpp)
+target_link_libraries(kz4ap-listen PRIVATE kz4ap::engine)
+if(MSVC)
+  target_compile_options(kz4ap-listen PRIVATE /W4 /permissive- /utf-8)
+else()
+  target_compile_options(kz4ap-listen PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 # Decodes recorded oracle channels with the C++ bank decoder into the prototype's decoded-file format.
 add_executable(kz4ap-bank-replay src/replay.cpp)
 target_link_libraries(kz4ap-bank-replay PRIVATE kz4ap_bench_lib)

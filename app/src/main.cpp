@@ -4,6 +4,7 @@
 
 #include "kz4ap/decoder_name.hpp"
 #include "kz4ap/file_iq_source.hpp"
+#include "kz4ap/sdrplay_source.hpp"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -18,6 +19,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -53,6 +55,42 @@ int usage_error(const QString& message, bool quiet) {
     std::fprintf(stderr, "kz4ap-skimmer: %s\n", message.toLocal8Bit().constData());
     if (!quiet) QMessageBox::critical(nullptr, QStringLiteral("KZ4AP Skimmer"), message);
     return 2;
+}
+
+// Whether what is written to the stream goes anywhere: a Windows program started with no console and no redirection (from
+// Explorer, or from cmd.exe, which does not wait for it) has none.
+bool stream_connected(std::FILE* stream) {
+#if defined(_WIN32)
+    return _fileno(stream) >= 0;
+#else
+    (void)stream;
+    return true;
+#endif
+}
+
+// --list-sdrplay: each radio's serial number and model, a line each, from the API's list alone: no radio is taken or
+// started. To standard output (an error to standard error), and in a window too when that goes nowhere.
+int list_radios() {
+    QString text;
+    int code = 0;
+    try {
+        const std::vector<kz4ap::SdrplayDevice> devices = kz4ap::list_sdrplay_devices();
+        if (devices.empty()) text = QStringLiteral("No SDRplay radio found.\n");
+        for (const kz4ap::SdrplayDevice& device : devices)
+            text += QStringLiteral("%1\t%2\n").arg(QString::fromStdString(device.serial), QString::fromStdString(device.model));
+    } catch (const std::exception& e) {
+        text = QString::fromUtf8(e.what()) + QLatin1Char('\n');
+        code = 1;
+    }
+    std::FILE* out = code == 0 ? stdout : stderr;
+    std::fputs(text.toLocal8Bit().constData(), out);
+    std::fflush(out);
+    if (!stream_connected(out)) {
+        const QString title = QStringLiteral("KZ4AP Skimmer");
+        if (code == 0) QMessageBox::information(nullptr, title, QStringLiteral("SDRplay radios (serial number, model):\n\n") + text);
+        else QMessageBox::critical(nullptr, title, text);
+    }
+    return code;
 }
 
 }  // namespace
@@ -106,6 +144,13 @@ int main(int argc, char* argv[]) {
                                                 QStringLiteral("A known-call list in MASTER.SCP's format: one call a line. The call list works without one."),
                                                 QStringLiteral("path"));
     const QCommandLineOption radio_option(QStringLiteral("radio"), QStringLiteral("Start the SDRplay radio at once."));
+    const QCommandLineOption serial_option(
+        QStringLiteral("sdrplay-serial"),
+        QStringLiteral("The serial number of the SDRplay radio to open: only the radio with exactly this one is opened, and with "
+                       "none given, none is (--list-sdrplay lists them)."),
+        QStringLiteral("SERIAL"));
+    const QCommandLineOption list_option(QStringLiteral("list-sdrplay"),
+                                         QStringLiteral("List the SDRplay radios' serial numbers and models, opening none, and quit."));
     const QCommandLineOption center_option(
         QStringLiteral("center-khz"),
         QStringLiteral("The radio's center frequency, kHz. With a recording, it overrides what the recording's header or file name says."),
@@ -123,8 +168,10 @@ int main(int argc, char* argv[]) {
     parser.addOption(mirror_option);
     parser.addOptions({decoder_option, speed_option, screenshot_option, screenshot_at_option, report_option,
                        quit_at_end_option, quit_at_option, transport_option, threads_option, decoded_option, calls_option, known_calls_option, radio_option,
-                       center_option, rate_option, gain_option, lna_option});
+                       serial_option, list_option, center_option, rate_option, gain_option, lna_option});
     parser.process(app);
+
+    if (parser.isSet(list_option)) return list_radios();
 
     kz4ap::app::Automation automation;
     automation.decoded_path = parser.value(decoded_option);
@@ -153,6 +200,7 @@ int main(int argc, char* argv[]) {
     if (!threads_ok || threads < 1) return usage_error(QStringLiteral("bad thread count: %1").arg(parser.value(threads_option)), quiet);
 
     kz4ap::app::RadioDefaults radio;
+    radio.serial = parser.value(serial_option).trimmed();
     radio.center_khz = parser.value(center_option).toDouble();
     if (parser.isSet(center_option)) {
         if (!(radio.center_khz > 0))

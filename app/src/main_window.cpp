@@ -24,6 +24,7 @@
 #include <QJsonObject>
 #include <QItemSelectionModel>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QSignalBlocker>
 #include <QSlider>
@@ -127,6 +128,7 @@ MainWindow::MainWindow(std::string decoder_name, double speed, int threads, Radi
     build_transport();
     build_scale_controls();
     build_radio_controls();
+    serial_box_->setText(radio.serial);
     center_box_->setValue(radio.center_khz);
     rate_box_->setCurrentIndex(std::max(0, rate_box_->findData(radio.sample_rate)));
     if_gain_box_->setValue(radio.if_gain_reduction_db);
@@ -200,7 +202,14 @@ void MainWindow::build_radio_controls() {
     addToolBarBreak();
     auto* bar = addToolBar(tr("Radio"));
     bar->setMovable(false);
-    bar->addWidget(new QLabel(tr(" Radio center: ")));
+    bar->addWidget(new QLabel(tr(" Radio serial: ")));
+    serial_box_ = new QLineEdit;
+    serial_box_->setPlaceholderText(tr("required"));
+    serial_box_->setFixedWidth(110);
+    serial_box_->setToolTip(tr("The SDRplay radio's serial number: only the radio with exactly this one is opened. "
+                               "Start radio with none lists the radios found and opens none; so does kz4ap-skimmer --list-sdrplay."));
+    bar->addWidget(serial_box_);
+    bar->addWidget(new QLabel(tr("  Center: ")));
     center_box_ = new QDoubleSpinBox;
     center_box_->setDecimals(3);
     center_box_->setRange(1.0, 2000000.0);
@@ -272,6 +281,7 @@ bool MainWindow::start_radio() {
     radio_on_ = false;
     try {
         SdrplaySettings settings;
+        settings.serial = serial_box_->text().trimmed().toStdString();
         settings.center_hz = center_box_->value() * 1000.0;
         settings.sample_rate = rate_box_->currentData().toInt();
         settings.if_gain_reduction_db = if_gain_box_->value();
@@ -294,6 +304,8 @@ void MainWindow::update_radio_controls() {
     const bool recording = last_recording_.active;
     radio_action_->setText(radio_on_ ? tr("Stop radio") : tr("Start radio"));
     radio_action_->setEnabled(!recording);
+    // Another radio is chosen with this one stopped.
+    serial_box_->setEnabled(!radio_on_);
     // A new center or rate would break a recording in two.
     center_box_->setEnabled(!recording);
     rate_box_->setEnabled(!recording);
@@ -744,6 +756,8 @@ void MainWindow::run_transport_steps(const StreamStatus& status) {
             if (radio_on_) radio_action_->trigger();
         } else if (action.startsWith(QStringLiteral("open="))) {
             open_recording(action.mid(5));
+        } else if (action.startsWith(QStringLiteral("serial="))) {
+            if (!radio_on_) serial_box_->setText(action.mid(7));
         } else if (action.startsWith(QStringLiteral("center="))) {
             center_box_->setValue(action.mid(7).toDouble());
         } else if (action.startsWith(QStringLiteral("rate="))) {
