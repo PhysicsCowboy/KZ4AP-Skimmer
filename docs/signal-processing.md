@@ -1451,6 +1451,9 @@ not committed.
 - A station 15 dB or more below an older, proven neighbor within 150 Hz, keying under its leak with little power of its own, is
   retired as its copy (on the slice, det-1's cells only, 45 to 60 Hz, 15 to 25 dB below, where it reads CER 0.7 to 1.0
   anyway); its place stays open.
+- CPU (the Linux machine, one thread, `main` and `det-2` side by side): per channel-second +0.01 to +0.16 ms (real30 6.60 to
+  6.62 ms, the owner's file 6.29 to 6.45 ms, process CPU), per second of stream −4% to +3% (real30 0.126 to 0.129 CPU-s, the
+  owner's file 0.390 to 0.380): the test is about 281 products per pair a second; the copies' channel-seconds it saves pay for it.
 - A copy is a second reading of its source's text, through another filter: on KC2LRC-2 a copy 48 Hz from N4BP was the only track
   to read N4BP's "KI4MZC 5NN", and KI4MZC (spotted by the RBN that day, outside the recording's window) is not listed with the test.
 
