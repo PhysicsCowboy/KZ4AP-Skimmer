@@ -436,3 +436,22 @@ TEST(SignalDetector, ReadsAFrameThatCarriesLinearPowerOnly) {
     }
     EXPECT_EQ(born, 1u);
 }
+
+TEST(SignalDetectorSkirt, AWeakerPeakInsideAStrongerTracksSkirtKeepsNoTrackWithTheVariant) {
+    // The level-scaled exclusion (off by default): a peak 300 Hz from one 20 dB stronger lies inside d = 100 Hz x 10^((20 - 6) / 20)
+    // = 501 Hz at 100 Hz and 6 dB; without the variant it keeps a track. The noise stands at -100 dB re 1 FS^2.
+    DetectorConfig c = prominence_config(0.0f);
+    for (const bool on : {false, true}) {
+        if (on) {
+            c.skirt_exclusion_db = 6.0f;
+            c.skirt_exclusion_hz = 100.0;
+            c.skirt_exclusion_radius_hz = 1000.0;
+        }
+        SignalDetector d(c);
+        std::size_t copies = 0;
+        for (int i = 0; i < 200; ++i) copies += d.process(frame(frame_time(i), {{100, -50.0f}, {103, -70.0f}})).copies.size();
+        EXPECT_EQ(d.tracks().size(), on ? 1u : 2u) << on;
+        EXPECT_EQ(copies, on ? 1u : 0u) << on;
+        if (on) EXPECT_NEAR(d.tracks().front().freq_hz, (100 - kN / 2) * 100.0, 50.0);
+    }
+}

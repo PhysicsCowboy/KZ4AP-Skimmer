@@ -136,9 +136,6 @@ private:
         bool seen;
     };
 
-    bool trace_on(double f) const;                                              // TRACE-DET2
-    void trace_birth(const Track& t, int bin, float floor_db, double now) const;  // TRACE-DET2
-    void trace_frame(const SpectrumFrame& frame, float floor_db, double now) const;  // TRACE-DET2
     float db_at(int bin) const;  // the average's level at a bin, dB re 1 FS^2 (dBFS)
     double refined_freq(int bin) const;
     bool is_peak(int i) const;

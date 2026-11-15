@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <complex>
+#include <functional>
 #include <map>
 #include <random>
 #include <string>
@@ -126,7 +127,8 @@ struct Scene {
     std::map<std::uint32_t, double> freq_hz, born_s, ended_s;
 };
 
-Scene run(const std::vector<Sample>& x, double copy_window_s, double own_snr_max = 0.5) {
+// The segmental path as the engine sets it (apply_path_defaults), then `change`.
+Scene run(const std::vector<Sample>& x, const std::function<void(EngineConfig&)>& change = {}) {
     EventBus bus;
     Scene r;
     double now_s = 0.0;
@@ -155,8 +157,7 @@ Scene run(const std::vector<Sample>& x, double copy_window_s, double own_snr_max
     config.decoder.front_end = FrontEnd::Segmental;
     config.worker_threads = 2;
     apply_path_defaults(config);
-    config.copy_window_s = copy_window_s;
-    config.copy_own_snr_max = own_snr_max;
+    if (change) change(config);
     config.as_given = true;
     Engine engine(config, bus);
     engine.process(x);
@@ -191,7 +192,7 @@ bool near(double f, double target) { return std::abs(f - target) < 15.0; }
 
 TEST(EngineCopies, WithoutTheTestTheAnsweringStationsTrackPrintsTheCallersOver) {
     // The mutation check: with the rule off the scene does hold a copy, so the next test's pass is the rule's.
-    const Scene r = run(qso_pair(), 0.0);
+    const Scene r = run(qso_pair(), [](EngineConfig& c) { c.copy_window_s = 0.0; });
     std::size_t copies = 0;
     for (const auto& [id, text] : r.text)
         if (near(r.freq_hz.at(id), 2050.0) && count(text, "JOHN") > 0) ++copies;
@@ -200,7 +201,7 @@ TEST(EngineCopies, WithoutTheTestTheAnsweringStationsTrackPrintsTheCallersOver) 
 }
 
 TEST(EngineCopies, TheAnsweringStationsTrackIsRetiredAsACopyAndTheCallersIsNot) {
-    const Scene r = run(qso_pair(), 6.0);
+    const Scene r = run(qso_pair());
     bool b_read = false, b_retired = false;
     for (const auto& [id, text] : r.text) {
         if (near(r.freq_hz.at(id), 2050.0)) {
@@ -242,7 +243,7 @@ std::vector<Sample> two_callers() {
 }  // namespace
 
 TEST(EngineCopies, TwoCallersKeyingAtOnceKeepTheirTracks) {
-    const Scene r = run(two_callers(), 6.0);
+    const Scene r = run(two_callers());
     bool b_read = false;
     for (const auto& [id, end] : r.ended) EXPECT_NE(end, TrackEnd::Copy) << "track " << id << " at " << r.freq_hz.at(id) << " Hz";
     for (const auto& [id, text] : r.text)
@@ -251,10 +252,32 @@ TEST(EngineCopies, TwoCallersKeyingAtOnceKeepTheirTracks) {
 }
 
 TEST(EngineCopies, WithoutItsOwnPowerTheWeakerCallerWouldBeTakenForACopy) {
-    // The mutation check of the own-power condition: without it the weaker caller's track is retired as a copy.
-    const Scene r = run(two_callers(), 6.0, -1.0);
+    // The mutation check of the own-power condition: without it, and with the level difference at 6 dB (the callers stand 7 to 9 dB
+    // apart at the detector), the weaker caller's track is retired as a copy.
+    const Scene r = run(two_callers(), [](EngineConfig& c) {
+        c.copy_own_snr_max = -1.0;
+        c.copy_level_db = 6.0;
+    });
     std::size_t copies = 0;
     for (const auto& [id, end] : r.ended)
         if (end == TrackEnd::Copy && near(r.freq_hz.at(id), 2060.0)) ++copies;
     EXPECT_GE(copies, 1u);
+}
+
+
+TEST(EngineCopies, TwoCallersAtOnceKeepTheirTracksOnTheLevelAloneToo) {
+    // The level difference's own share: with the own-power condition off, 15 dB keeps the callers 7 to 9 dB apart.
+    const Scene r = run(two_callers(), [](EngineConfig& c) { c.copy_own_snr_max = -1.0; });
+    for (const auto& [id, end] : r.ended) EXPECT_NE(end, TrackEnd::Copy) << "track " << id << " at " << r.freq_hz.at(id) << " Hz";
+}
+
+TEST(EngineCopies, TheTestIsTheSegmentalPathsDefault) {
+    EngineConfig c;
+    c.decoder.front_end = FrontEnd::Segmental;
+    apply_path_defaults(c);
+    EXPECT_DOUBLE_EQ(c.copy_window_s, 6.0);
+    EngineConfig m;
+    m.decoder.front_end = FrontEnd::Matched;
+    apply_path_defaults(m);
+    EXPECT_DOUBLE_EQ(m.copy_window_s, 0.0);
 }

@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>   // TRACE-DET2
-#include <cstdlib>  // TRACE-DET2
 #include <stdexcept>
 
 namespace {
@@ -28,49 +26,6 @@ const kz4ap::DetectorConfig& ValidatedConfig(const kz4ap::DetectorConfig& config
 }  // namespace
 
 namespace kz4ap {
-
-// TRACE-DET2 begin: a scratch trace, KZ4AP_TRACE="F0 R T0 T1" (Hz, Hz, s, s).
-namespace {
-struct TraceSpec {
-    bool on = false;
-    double f0 = 0, r = 0, t0 = 0, t1 = 0;
-};
-const TraceSpec& trace_spec() {
-    static const TraceSpec s = [] {
-        TraceSpec t;
-        if (const char* e = std::getenv("KZ4AP_TRACE")) t.on = std::sscanf(e, "%lf %lf %lf %lf", &t.f0, &t.r, &t.t0, &t.t1) == 4;
-        return t;
-    }();
-    return s;
-}
-}  // namespace
-bool SignalDetector::trace_on(double f) const { return trace_spec().on && std::abs(f - trace_spec().f0) < trace_spec().r; }
-void SignalDetector::trace_birth(const Track& t, int bin, float floor_db, double now) const {
-    if (!trace_on(t.freq_hz)) return;
-    std::fprintf(stderr, "TR born t %.2f id %u f %.1f snr %.1f first_seen %.2f floor %.1f\n", now, t.id, t.freq_hz, t.snr_db, t.start_time_s, floor_db);
-    for (const auto& a : active_)
-        if (std::abs(a.track.freq_hz - t.freq_hz) < 200)
-            std::fprintf(stderr, "TR   near id %u f %.1f (%+.1f) snr %.1f bin_db %.1f\n", a.track.id, a.track.freq_hz, a.track.freq_hz - t.freq_hz, a.track.snr_db, db_at(a.bin) - floor_db);
-    for (const auto& h : holds_)
-        if (std::abs(h.freq_hz - t.freq_hz) < 200)
-            std::fprintf(stderr, "TR   hold f %.1f until %.1f count %d radius %.0f\n", h.freq_hz, h.until_s, h.count, h.radius_hz);
-    // The averaged spectrum around, dB re floor, every bin within 160 Hz.
-    const int w = static_cast<int>(160.0 / (static_cast<double>(config_.sample_rate) / config_.fft_size));
-    std::fprintf(stderr, "TR   spec");
-    for (int d = -w; d <= w; ++d) std::fprintf(stderr, " %.1f", db_at(bin + d) - floor_db);
-    std::fprintf(stderr, "\n");
-}
-void SignalDetector::trace_frame(const SpectrumFrame& frame, float floor_db, double now) const {
-    const TraceSpec& s = trace_spec();
-    if (!s.on || now < s.t0 || now > s.t1) return;
-    const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
-    const int c = static_cast<int>(std::lround(s.f0 / bin_hz)) + config_.fft_size / 2;
-    const int w = static_cast<int>(s.r / bin_hz);
-    std::fprintf(stderr, "TF %.3f %.2f", now, floor_db);
-    for (int d = -w; d <= w; ++d) std::fprintf(stderr, " %.2f", 10.0 * std::log10(frame.power_fs2[c + d] + 1e-30) - floor_db);
-    std::fprintf(stderr, "\n");
-}
-// TRACE-DET2 end
 
 SignalDetector::SignalDetector(const DetectorConfig& config)
     : config_(ValidatedConfig(config)),
@@ -110,7 +65,6 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
         floor_db_ = static_cast<float>(10.0 * std::log10(scratch_[n / 2] + 1e-30));
     }
     const float floor_db = floor_db_;
-    trace_frame(frame, floor_db, now);  // TRACE-DET2
 
     DetectorUpdate update;
     const int last = static_cast<int>(n) - 1;
@@ -231,7 +185,6 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
         Track t;
         t.id = next_id_++;
         t.freq_hz = refined_freq(c.bin);
-        trace_birth(t, c.bin, floor_db, now);  // TRACE-DET2
         t.snr_db = c.snr_db;
         t.start_time_s = c.first_seen_s;
         t.last_active_s = now;
@@ -245,7 +198,6 @@ void SignalDetector::retire(std::uint32_t id, double now_s, double hold_s, bool 
     const auto it = std::find_if(active_.begin(), active_.end(), [&](const Active& a) { return a.track.id == id; });
     if (it == active_.end()) return;
     const double freq_hz = it->track.freq_hz;
-    if (trace_on(freq_hz)) std::fprintf(stderr, "TR retire t %.2f id %u f %.1f hold %.1f first_open %d\n", now_s, id, freq_hz, hold_s, first_open ? 1 : 0);  // TRACE-DET2
     active_.erase(it);
     if (!(hold_s > 0.0)) return;
     // A hold forgets its repeats once the place has been open as long as the longest hold (heuristic).

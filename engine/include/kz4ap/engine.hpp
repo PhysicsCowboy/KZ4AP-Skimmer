@@ -144,22 +144,21 @@ struct EngineConfig {
     // loses is only the wait out of the start of its replay. See docs/signal-processing.md, section 10. Heuristic.
     double replay_tracks_per_s = 100.0;
 
-    // FrontEnd::Segmental on the detector's path, with judge_tracks: a track whose keying is a stronger neighbor's is retired
-    // (TrackEnd::Copy; keying_coherence.hpp, docs/signal-processing.md, section 6). Once a second, for each track W and each other
-    // track S within copy_radius_hz whose detector level stands copy_level_db or more above W's: rho of their channels' envelope power
-    // over the last copy_window_s, each less its moving mean over copy_detrend_s; rho >= copy_rho retires W, its place left open.
-    // copy_window_s 0 for no such test.
-    double copy_window_s = 0.0;
+    // Copies (FrontEnd::Segmental on the detector's path, with judge_tracks; apply_path_defaults turns it on): a track W whose keying is a
+    // stronger neighbor's is retired (TrackEnd::Copy, no hold; keying_coherence.hpp; docs/signal-processing.md, section 6). Once a second,
+    // for each other track S that is older than W (copy_older_only), proven (copy_source_proven), within copy_radius_hz and copy_level_db
+    // or more above W at the detector: over the last copy_window_s of their envelopes, each less its moving mean over copy_detrend_s,
+    // W is S's copy when rho >= copy_rho, gain <= copy_gain_max and W's own power (mean e_W^2 - E) / E <= copy_own_snr_max, E = gain
+    // mean e_S^2 + sigma_W^2 (what S's leak and W's hiss explain; negative for no such condition). copy_window_s 0: no test.
+    double copy_window_s = 0.0;   // s
     double copy_rho = 0.5;
-    double copy_level_db = 6.0;
+    double copy_level_db = 15.0;  // dB, the detector's levels (dB re its floor per bin)
     double copy_radius_hz = 150.0;
-    double copy_detrend_s = 0.5;
-    bool copy_older_only = true;  // S must be older than W (a lower track id)
-    bool copy_source_proven = true;  // and its text proven Morse (TrackJudge::proven)
-    double copy_gain_max = 1.0;   // and W must hear S's keying at a gain of at most this (KeyingCoherence::gain)
-    // and W must hold no more power of its own than this, linear, re what the leak and its hiss explain: (mean e_W^2 - E) / E, E = gain
-    // mean e_S^2 + sigma_W^2. Negative for no such condition.
-    double copy_own_snr_max = 0.5;
+    double copy_detrend_s = 0.5;  // s
+    bool copy_older_only = true;
+    bool copy_source_proven = true;
+    double copy_gain_max = 1.0;   // linear, power
+    double copy_own_snr_max = 0.25;  // linear, power
 };
 
 // The detector's settings and the DC blocker for the decoder's path (decoder.front_end), in place: on every path the

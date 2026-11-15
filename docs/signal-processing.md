@@ -112,9 +112,8 @@ complex tone of amplitude A on a bin reads A² FS², is
 
 with Σw = N/2 the window's sum. White noise of σ² FS² per sample reads as
 the noise in one *equivalent noise bandwidth* (ENBW), 1.5 bins = 35.2 Hz
-(derived). The Hann window's sidelobes stand 31 dB below its main lobe's
-peak, a standard choice. The segmental path's detector has its own
-analyzer, four times finer (section 6).
+(derived). The segmental path's detector has its own analyzer, four times
+finer (section 6).
 
 Appendix: A.4.
 
@@ -132,9 +131,8 @@ Appendix: A.5.
 
 ## 6. Signal detector
 
-The detector finds stations and follows them. This is its form on the
-segmental decoder's path, the app's; the other decoders keep the detector
-their results were measured with, on the band's spectrum (A.6). Values are
+The detector finds and follows stations. Its form on the segmental path,
+the app's, follows; the other decoders keep their own (A.6). Values are
 heuristics unless marked.
 
 **DC blocker.** First a radio's DC offset leaves the input: each sample less
@@ -144,43 +142,50 @@ blocked input too.
 
 **Its own spectrum.** The detector reads a spectrum four times finer than
 the band's (section 4): Hann-windowed FFTs of 4N points, bins of
-**Δf_d = 5.86 Hz**, a window of 170.7 ms, a frame every 85.3 ms. On 23.4 Hz
-bins a station's main lobe reaches ±47 Hz, so a station 60 Hz from one
-at +10 dB re it was never a peak. A keyed carrier stands 5 to 6 dB higher
-per fine bin than per band bin (measured).
+**Δf_d = 5.86 Hz**, a window of 170.7 ms, a frame every 85.3 ms (on 23.4 Hz
+bins a station's main lobe reaches ±47 Hz).
 
 **Averaging and floor.** Each bin's power is averaged with a one-pole
-average of **τ = 1 s**, in linear power: keying comes and goes; the
-average shows a steady peak. The
-floor is the median of all averaged bins, every second frame.
+average of **τ = 1 s**, in linear power. The floor is the median of all
+averaged bins, every second frame.
 
 **Finding a station.** A bin is a candidate when its average stands
 **7 dB** above the floor (dB SNR per fine bin), is the highest within
 ±12 Hz (the main lobe's half width), and passes three tests (prominence
 chosen by measurement):
 - *prominence:* where a higher bin lies within ±150 Hz, the lowest bin
-  between them is 6 dB below the candidate: a weaker station on a stronger
-  one's skirt passes, a ripple on the skirt does not;
-- *keying sidebands:* keying puts lines at odd multiples of half a dot
-  rate, symmetric about the carrier (its envelope is real; derived): a peak
-  whose mirror about a bin 10 dB above it, within ±150 Hz, stands within
-  3 dB as high is a sideband;
+  between them is 6 dB below the candidate;
+- *keying sidebands:* a keyed carrier's spectrum is symmetric about it
+  (derived): a peak whose mirror about a bin 10 dB above it, within
+  ±150 Hz, stands within 3 dB as high is a sideband;
 - *local floor:* 7 dB above the lower quartile of the bins within ±1 kHz,
   which a wide signal's peaks are not.
 
 It must be a candidate in every frame, moving at most 6 Hz a frame, for
 **0.5 s** before a track is born; nothing is detected in the first second.
-A peak within **D = 30 Hz** of a track belongs to it. Its frequency is
-refined by a parabola through the peak bin and its neighbors (dB).
+A peak within **D = 30 Hz** of a track belongs to it. Its frequency: a
+parabola through the peak bin and its neighbors (dB).
 
 **Following a station.** Each frame a track moves to the strongest
-qualifying peak within 12 Hz of where it is (a drift of up to 140 Hz/s), or
-stays. It does not move to a peak within D of an older track; of two that
+qualifying peak within 12 Hz of where it is, or stays. It does not move to a peak within D of an older track; of two that
 close the younger dies. So a station 30 Hz or more from another has its
 own channel, and an answering station closer shares one. A track stays
 active while its level, the highest bin within ±6 Hz, is at most 3 dB
 below the threshold, and dies after **10 s** inactive. At most **400**
 tracks; a stronger newcomer replaces the weakest.
+
+**Copies of a neighbor.** A channel ±150 Hz wide hears a strong station
+tens of Hz away; with its own station silent, or none, its decoder prints
+the neighbor's text: a second row of one station. Once a second each track
+W is compared with each older, proven track S within 150 Hz and **15 dB**
+or more above it at the detector. e is a decoder's mean envelope power at
+its leading filter per 21.33 ms block (FS²), x the last **6 s** of it less
+its 0.5 s moving mean: ρ = Σx_W x_S / √(Σx_W² Σx_S²), β = Σx_W x_S / Σx_S².
+W is S's copy, and retires with its place left open, when ρ ≥ **0.5**,
+β ≤ 1 and W's own power (ē_W − E)/E, E = β ē_S + σ_W² (leak and hiss), is
+at most **0.25**. Derived: an independent station's ρ tends to 0 within
+about 1/√N; a copy's ρ is S/(S + 2) at key-down SNR S, its β |H(Δf)|² ≤ 1,
+its own power 0.
 
 **Oracle mode**, for the benchmark, skips the detector and opens a
 channel at each labeled frequency.
@@ -197,22 +202,20 @@ one sample in 128.
   rounded to the nearest bin, so the station starts within ±11.7 Hz of
   0 Hz. For Envelope, Matched and the bank the channel never moves; the
   decoder sees no signal from before the track's birth.
-- **Rate.** Decimating by 128 gives **r = 1500 samples/s** (0.67 ms per
-  sample, far shorter than a 20 ms dit at 60 WPM).
+- **Rate.** Decimating by 128 gives **r = 1500 samples/s**.
 - **Filter.** A linear-phase low-pass of 4097 taps (21.3 ms; the longest
   the shared FFT allows, derived), cut off at **±150 Hz** (−6 dB relative to
   the passband; heuristic, sized for keying up to about 60 WPM). It is flat
   to within 0.015 dB of the passband out to about 39 Hz and at least 74 dB
   below the passband beyond about 279 Hz. Its noise bandwidth is 252 Hz;
   its delay 10.7 ms.
-- **Computation.** One FFT of the whole band per hop is shared by all
-  channels; each channel takes its 64 bins, applies the filter's response
-  and inverts them (overlap-save). The result equals shifting, filtering
-  and decimating directly, up to rounding (derived).
+- **Computation.** One FFT of the band per hop serves all channels; each
+  takes its 64 bins, applies the filter's response and inverts them
+  (overlap-save), equal to shifting, filtering and decimating up to
+  rounding (derived).
 
-**Frequency re-centering (Matched only).** Matched's tracker reads the offset
-from its filter's phase and shifts it out, within **±12 Hz** of the detector's
-frequency (heuristic; owner; A.8b).
+**Re-centering (Matched only):** within ±12 Hz of the detector's frequency
+(A.8b).
 
 **Following the detector (viterbi and segmental only).** For these decoders'
 channels the channelizer follows the detector's frequency for the track,
@@ -542,6 +545,7 @@ the on-air prior p, floored at −12 nats: *tiny* (q fitted to real junk) and *g
 from 4 s, R < 3 nats/s and tiny ≥ +8 nats or garbage ≥ +6 nats: retire; from 12 s, R < −8 nats/s
 and (unproven, or E ≥ 1000 nats/s with −R > 0.1% of E): retire; unproven with R < 3 nats/s: retire if under
 5 nats/s over 8 s, or at 14 s; proven: under 1 nat/s over 30 s retires, place left open.
+A copy (section 6) retires first, its place left open.
 
 **Holds.** A retired place (±D) closes 8 s, doubling to 120 s; 4 such retirements
 within 750 Hz in 60 s close ±750 Hz from 30 s, likewise. A repeat is a retirement after
@@ -551,10 +555,8 @@ read badly at first, or listening, gets a second track.
 **List.** A row is listed once proven by the same test; a new track within 30 Hz of a
 row ended under 60 s ago goes on with it. Rows keep about 4 000 symbols.
 
-**Overload.** Checked each stream-second: backlog b counts as grown if above the last
-check (by 0.05 s from below 0.25 s). Grown twice running, b > 1 s and over 8 tracks
-live: budget = ¾ of live, at least 8, least evidence closing first. At b < 0.25 s it
-grows by 5 each 5 s. A radio silent 5 s is flagged, a recording as well.
+**Overload.** A pipeline more than 1 s behind keeps ¾ of its tracks, at least 8, those
+with the least evidence closing first (A.9b). A radio silent 5 s is flagged.
 
 ## 11. Callsign stage
 

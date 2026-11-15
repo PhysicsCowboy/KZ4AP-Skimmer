@@ -10,9 +10,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdio>   // TRACE-DET2
-#include <cstdlib>  // TRACE-DET2
-#include <sstream>  // TRACE-DET2
 #include <deque>
 #include <functional>
 #include <optional>
@@ -115,6 +112,11 @@ void apply_path_defaults(EngineConfig& c) {
     // The first retirement at a place leaves it open: a station read badly at first (beside a neighbor) or listening gets a second
     // track; the next retirement there closes it as before. Heuristic, chosen by measurement.
     c.first_retirement_open = 2;
+    // A track whose keying is an older, proven neighbor's is retired as its copy (keying_coherence.hpp): the neighbor within 150 Hz
+    // and 15 dB or more above it at the detector, their envelopes over the last 6 s correlated (rho >= 0.5) at a gain of at most 1, and
+    // the track holding power of its own of at most a quarter of what the leak and its hiss explain. Heuristics, chosen by
+    // measurement; the forms of rho, the gain and the own power derived (docs/signal-processing.md, section 6 and A.6).
+    c.copy_window_s = 6.0;
 }
 
 double oracle_frequency_hz(std::span<const OracleSegment> track, double t_s) {
@@ -322,25 +324,6 @@ void Engine::process_hop(std::span<const Sample> hop) {
         lap(stages_.detector_s);
     };
     for (auto& frame : frames) {
-        {  // TRACE-DET2 begin: KZ4AP_TRACE_BAND="T0 T1 F1 F2 ..." prints each band frame's power at the bins nearest F, dBFS
-            static const std::vector<double> spec = [] {
-                std::vector<double> v;
-                if (const char* e = std::getenv("KZ4AP_TRACE_BAND")) {
-                    std::istringstream in(e);
-                    for (double x; in >> x;) v.push_back(x);
-                }
-                return v;
-            }();
-            if (spec.size() >= 3 && frame.time_s >= spec[0] && frame.time_s <= spec[1]) {
-                const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
-                std::fprintf(stderr, "TB %.4f", frame.time_s);
-                for (std::size_t k = 2; k < spec.size(); ++k) {
-                    const int b = static_cast<int>(std::lround(spec[k] / bin_hz)) + config_.fft_size / 2;
-                    std::fprintf(stderr, " %.2f", 10.0 * std::log10(frame.power_fs2[static_cast<std::size_t>(b)] + 1e-30));
-                }
-                std::fprintf(stderr, "\n");
-            }
-        }  // TRACE-DET2 end
         DetectorUpdate update;
         if (!oracle_ && !detector_spectrum_) update = detector_.process(frame);
         lap(stages_.detector_s);
@@ -577,9 +560,6 @@ bool Engine::is_copy(std::uint32_t id, const Channel& channel, std::uint64_t blo
         const double own_snr = config_.copy_own_snr_max < 0.0           ? -1e300
                                : !(channel.envelope_noise_fs2 > 0.0) ? 1e300
                                                                       : (k.weak_mean - explained) / explained;
-        if (std::getenv("KZ4AP_TRACE_COPY"))  // TRACE-DET2
-            std::fprintf(stderr, "TC t %.2f w %u f %.1f s %u df %+.1f dl %.1f rho %.3f gain %.3f own %.2f csnr %.2f\n", static_cast<double>(block * block_samples_) / channelizer_.output_rate(), id,
-                         channel.detector_freq_hz, other_id, other.detector_freq_hz - channel.detector_freq_hz, other.detector_snr_db - channel.detector_snr_db, rho, k.gain, own_snr, channel.envelope_noise_fs2 > 0.0 ? k.gain * k.strong_mean / channel.envelope_noise_fs2 : -1.0);
         if (rho >= config_.copy_rho && k.gain <= config_.copy_gain_max && own_snr <= config_.copy_own_snr_max) return true;
     }
     return false;
