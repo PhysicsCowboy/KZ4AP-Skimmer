@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>   // TRACE-DET2
+#include <cstdlib>  // TRACE-DET2
 #include <stdexcept>
 
 namespace {
@@ -17,7 +19,8 @@ const kz4ap::DetectorConfig& ValidatedConfig(const kz4ap::DetectorConfig& config
         !(config.peak_radius_hz > 0) || !(config.level_radius_hz >= 0) || !(config.candidate_step_hz >= 0) || !(config.local_floor_radius_hz >= 0) ||
         !(config.prominence_db >= 0) || !(config.prominence_radius_hz >= 0) || !(config.dc_guard_hz >= 0) || !(config.follow_radius_hz >= 0) ||
         !(config.sideband_db >= 0) || !(config.sideband_mirror_db >= 0) || !(config.sideband_radius_hz >= 0) || config.fft_factor < 1 ||
-        (config.fft_factor & (config.fft_factor - 1)) != 0)
+        (config.fft_factor & (config.fft_factor - 1)) != 0 || !(config.skirt_exclusion_db >= 0) || !(config.skirt_exclusion_hz > 0) ||
+        !(config.skirt_exclusion_radius_hz >= 0))
         throw std::invalid_argument("invalid signal detector config");
     return config;
 }
@@ -25,6 +28,49 @@ const kz4ap::DetectorConfig& ValidatedConfig(const kz4ap::DetectorConfig& config
 }  // namespace
 
 namespace kz4ap {
+
+// TRACE-DET2 begin: a scratch trace, KZ4AP_TRACE="F0 R T0 T1" (Hz, Hz, s, s).
+namespace {
+struct TraceSpec {
+    bool on = false;
+    double f0 = 0, r = 0, t0 = 0, t1 = 0;
+};
+const TraceSpec& trace_spec() {
+    static const TraceSpec s = [] {
+        TraceSpec t;
+        if (const char* e = std::getenv("KZ4AP_TRACE")) t.on = std::sscanf(e, "%lf %lf %lf %lf", &t.f0, &t.r, &t.t0, &t.t1) == 4;
+        return t;
+    }();
+    return s;
+}
+}  // namespace
+bool SignalDetector::trace_on(double f) const { return trace_spec().on && std::abs(f - trace_spec().f0) < trace_spec().r; }
+void SignalDetector::trace_birth(const Track& t, int bin, float floor_db, double now) const {
+    if (!trace_on(t.freq_hz)) return;
+    std::fprintf(stderr, "TR born t %.2f id %u f %.1f snr %.1f first_seen %.2f floor %.1f\n", now, t.id, t.freq_hz, t.snr_db, t.start_time_s, floor_db);
+    for (const auto& a : active_)
+        if (std::abs(a.track.freq_hz - t.freq_hz) < 200)
+            std::fprintf(stderr, "TR   near id %u f %.1f (%+.1f) snr %.1f bin_db %.1f\n", a.track.id, a.track.freq_hz, a.track.freq_hz - t.freq_hz, a.track.snr_db, db_at(a.bin) - floor_db);
+    for (const auto& h : holds_)
+        if (std::abs(h.freq_hz - t.freq_hz) < 200)
+            std::fprintf(stderr, "TR   hold f %.1f until %.1f count %d radius %.0f\n", h.freq_hz, h.until_s, h.count, h.radius_hz);
+    // The averaged spectrum around, dB re floor, every bin within 160 Hz.
+    const int w = static_cast<int>(160.0 / (static_cast<double>(config_.sample_rate) / config_.fft_size));
+    std::fprintf(stderr, "TR   spec");
+    for (int d = -w; d <= w; ++d) std::fprintf(stderr, " %.1f", db_at(bin + d) - floor_db);
+    std::fprintf(stderr, "\n");
+}
+void SignalDetector::trace_frame(const SpectrumFrame& frame, float floor_db, double now) const {
+    const TraceSpec& s = trace_spec();
+    if (!s.on || now < s.t0 || now > s.t1) return;
+    const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
+    const int c = static_cast<int>(std::lround(s.f0 / bin_hz)) + config_.fft_size / 2;
+    const int w = static_cast<int>(s.r / bin_hz);
+    std::fprintf(stderr, "TF %.3f %.2f", now, floor_db);
+    for (int d = -w; d <= w; ++d) std::fprintf(stderr, " %.2f", 10.0 * std::log10(frame.power_fs2[c + d] + 1e-30) - floor_db);
+    std::fprintf(stderr, "\n");
+}
+// TRACE-DET2 end
 
 SignalDetector::SignalDetector(const DetectorConfig& config)
     : config_(ValidatedConfig(config)),
@@ -64,6 +110,7 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
         floor_db_ = static_cast<float>(10.0 * std::log10(scratch_[n / 2] + 1e-30));
     }
     const float floor_db = floor_db_;
+    trace_frame(frame, floor_db, now);  // TRACE-DET2
 
     DetectorUpdate update;
     const int last = static_cast<int>(n) - 1;
@@ -94,6 +141,17 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
             ++it;
         }
     }
+    if (config_.skirt_exclusion_db > 0.0f) {
+        // A standing track that has fallen inside a stronger one's skirt (its own station silent): the stronger one's copy.
+        std::vector<char> inside(active_.size(), 0);
+        for (std::size_t i = 0; i < active_.size(); ++i) inside[i] = inside_skirt(i, active_[i].track.freq_hz, active_[i].track.snr_db);
+        for (std::size_t i = active_.size(); i-- > 0;) {
+            if (!inside[i]) continue;
+            update.died.push_back(active_[i].track.id);
+            update.copies.push_back(active_[i].track.id);
+            active_.erase(active_.begin() + static_cast<std::ptrdiff_t>(i));
+        }
+    }
 
     // Until the averages settle, a single noisy frame can look like a signal.
     if (now - first_frame_s_ < config_.average_s) return update;
@@ -121,6 +179,7 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
             });
         }
         if (near_track) continue;
+        if (config_.skirt_exclusion_db > 0.0f && inside_skirt(active_.size(), refined_freq(i), snr)) continue;
         if (std::abs(refined_freq(i)) < config_.dc_guard_hz) continue;
         if (!holds_.empty()) {
             const double f = refined_freq(i);
@@ -172,6 +231,7 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
         Track t;
         t.id = next_id_++;
         t.freq_hz = refined_freq(c.bin);
+        trace_birth(t, c.bin, floor_db, now);  // TRACE-DET2
         t.snr_db = c.snr_db;
         t.start_time_s = c.first_seen_s;
         t.last_active_s = now;
@@ -185,6 +245,7 @@ void SignalDetector::retire(std::uint32_t id, double now_s, double hold_s, bool 
     const auto it = std::find_if(active_.begin(), active_.end(), [&](const Active& a) { return a.track.id == id; });
     if (it == active_.end()) return;
     const double freq_hz = it->track.freq_hz;
+    if (trace_on(freq_hz)) std::fprintf(stderr, "TR retire t %.2f id %u f %.1f hold %.1f first_open %d\n", now_s, id, freq_hz, hold_s, first_open ? 1 : 0);  // TRACE-DET2
     active_.erase(it);
     if (!(hold_s > 0.0)) return;
     // A hold forgets its repeats once the place has been open as long as the longest hold (heuristic).
@@ -225,6 +286,18 @@ void SignalDetector::close_place(double freq_hz, double radius_hz, double now_s,
 bool SignalDetector::within_older(std::size_t track, double freq_hz) const {
     for (std::size_t older = 0; older < track; ++older) {
         if (std::abs(active_[older].track.freq_hz - freq_hz) < config_.attribution_distance_hz) return true;
+    }
+    return false;
+}
+
+bool SignalDetector::inside_skirt(std::size_t self, double freq_hz, float snr_db) const {
+    for (std::size_t j = 0; j < active_.size(); ++j) {
+        if (j == self) continue;
+        const double stronger_db = static_cast<double>(active_[j].track.snr_db) - static_cast<double>(snr_db);
+        if (!(stronger_db > 0.0)) continue;
+        const double reach_hz = std::min(config_.skirt_exclusion_radius_hz,
+                                         config_.skirt_exclusion_hz * std::pow(10.0, (stronger_db - config_.skirt_exclusion_db) / 20.0));
+        if (std::abs(active_[j].track.freq_hz - freq_hz) < reach_hz) return true;
     }
     return false;
 }

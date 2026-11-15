@@ -10,6 +10,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>   // TRACE-DET2
+#include <cstdlib>  // TRACE-DET2
+#include <sstream>  // TRACE-DET2
 #include <deque>
 #include <functional>
 #include <optional>
@@ -151,6 +154,17 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
     }
     if (!(config_.replay_s >= 0.0) || !std::isfinite(config_.replay_s)) throw std::invalid_argument("replay_s must be finite and not negative (s)");
     if (!(config_.replay_tracks_per_s > 0.0)) throw std::invalid_argument("replay_tracks_per_s must be positive (tracks/s)");
+    if (!(config_.copy_window_s >= 0.0) || !std::isfinite(config_.copy_window_s) || !(config_.copy_detrend_s >= 0.0) ||
+        !std::isfinite(config_.copy_detrend_s) || !(config_.copy_radius_hz >= 0.0) || !std::isfinite(config_.copy_level_db) ||
+        !(config_.copy_rho > -1.0 && config_.copy_rho <= 1.0))
+        throw std::invalid_argument("copy_window_s, copy_detrend_s and copy_radius_hz must be finite and not negative (s, s, Hz), "
+                                    "copy_level_db finite (dB) and copy_rho in (-1, 1]");
+    if (!oracle_ && config_.decoder.front_end == FrontEnd::Segmental && config_.judge_tracks && config_.copy_window_s > 0.0) {
+        const double block_s = static_cast<double>(hop_) / config_.sample_rate;
+        copy_blocks_ = std::max<std::size_t>(2, static_cast<std::size_t>(std::lround(config_.copy_window_s / block_s)));
+        detrend_blocks_ = std::max<std::size_t>(1, static_cast<std::size_t>(std::lround(config_.copy_detrend_s / block_s)));
+        block_samples_ = std::max<std::uint64_t>(1, static_cast<std::uint64_t>(std::lround(channelizer_.output_rate() * block_s)));
+    }
     replay_on_ = !oracle_ && config_.decoder.front_end == FrontEnd::Segmental && config_.replay_s > 0.0;
     if (replay_on_) {
         const double block_s = static_cast<double>(hop_) / config_.sample_rate;
@@ -288,7 +302,8 @@ void Engine::process_hop(std::span<const Sample> hop) {
     const auto apply = [&](const DetectorUpdate& update) {
         for (const auto id : update.died) {
             const bool merged = std::find(update.merged.begin(), update.merged.end(), id) != update.merged.end();
-            close_channel(id, merged ? TrackEnd::Merged : TrackEnd::Faded);
+            const bool copy = std::find(update.copies.begin(), update.copies.end(), id) != update.copies.end();
+            close_channel(id, merged ? TrackEnd::Merged : copy ? TrackEnd::Copy : TrackEnd::Faded);
         }
         for (const auto& track : update.born) open_channel(track, channelizer_.hz_to_bin(track.freq_hz));
         lap(stages_.lifecycle_s);
@@ -297,12 +312,35 @@ void Engine::process_hop(std::span<const Sample> hop) {
             // peak); the channel's tracker (Matched) is anchored there, or the bank's mixing set there, before
             // its next block.
             for (const auto& t : detector_.tracks()) {
-                if (const auto c = channels_.find(t.id); c != channels_.end()) c->second.detector_freq_hz = t.freq_hz;
+                if (const auto c = channels_.find(t.id); c != channels_.end()) {
+                    c->second.detector_freq_hz = t.freq_hz;
+                    c->second.detector_snr_db = t.snr_db;
+                    c->second.track.snr_db = t.snr_db;  // a track's end reports its last level
+                }
             }
         }
         lap(stages_.detector_s);
     };
     for (auto& frame : frames) {
+        {  // TRACE-DET2 begin: KZ4AP_TRACE_BAND="T0 T1 F1 F2 ..." prints each band frame's power at the bins nearest F, dBFS
+            static const std::vector<double> spec = [] {
+                std::vector<double> v;
+                if (const char* e = std::getenv("KZ4AP_TRACE_BAND")) {
+                    std::istringstream in(e);
+                    for (double x; in >> x;) v.push_back(x);
+                }
+                return v;
+            }();
+            if (spec.size() >= 3 && frame.time_s >= spec[0] && frame.time_s <= spec[1]) {
+                const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
+                std::fprintf(stderr, "TB %.4f", frame.time_s);
+                for (std::size_t k = 2; k < spec.size(); ++k) {
+                    const int b = static_cast<int>(std::lround(spec[k] / bin_hz)) + config_.fft_size / 2;
+                    std::fprintf(stderr, " %.2f", 10.0 * std::log10(frame.power_fs2[static_cast<std::size_t>(b)] + 1e-30));
+                }
+                std::fprintf(stderr, "\n");
+            }
+        }  // TRACE-DET2 end
         DetectorUpdate update;
         if (!oracle_ && !detector_spectrum_) update = detector_.process(frame);
         lap(stages_.detector_s);
@@ -373,6 +411,11 @@ void Engine::process_channel(std::uint32_t id, Channel& channel, const Channeliz
         replay_channel(id, channel, channelizer_.past().size() - 1);
     }
     channel.update = decode_block(id, channel, block, nullptr);
+    if (copy_blocks_ > 0) {
+        // One value a live block, numbered by the block's place in the stream, so that neighbors' values line up.
+        const double heard = channel.decoder->block_envelope_fs2();
+        if (heard >= 0.0) channel.envelope.push(block.first_index / block_samples_, static_cast<float>(heard));
+    }
 }
 
 DecodeUpdate Engine::decode_block(std::uint32_t id, Channel& channel, const Channelizer::Block& block, const Channelizer::Past* past) {
@@ -460,6 +503,8 @@ void Engine::open_channel(const Track& track, int bin) {
     channel.decoder = std::move(decoder);
     channel.detector_freq_hz = track.freq_hz;
     channel.replay_waiting = replay_on_;
+    channel.detector_snr_db = track.snr_db;
+    channel.envelope = EnvelopeHistory(copy_blocks_);
     channel.cut_in.resize(static_cast<std::size_t>(channelizer_.channel_bins()));
     channel.cut_out.resize(static_cast<std::size_t>(channelizer_.channel_bins()));
     // The new decoder's channel follows the detector (plan O2: its channels only).
@@ -476,6 +521,15 @@ void Engine::judge_channels(std::uint64_t first_index) {
         Channel& channel = entry->second;
         if (channel.replay_waiting || now_s < channel.next_judged_s) continue;
         channel.next_judged_s = now_s + 1.0;  // the judge's clock: a second of stream
+        if (copy_blocks_ > 0 && is_copy(entry->first, channel, first_index / block_samples_)) {
+            // The neighbor's own track reads it; the place stays open for this station's next over.
+            TrackJudge::Verdict copy;
+            copy.retire = true;
+            copy.end = TrackEnd::Copy;
+            copy.hold_s = 0.0;
+            retiring_.emplace_back(entry->first, copy);
+            continue;
+        }
         const std::optional<KeyingEvidence> evidence = channel.decoder->keying_evidence();
         if (!evidence) continue;
         const TrackJudge::Verdict verdict = channel.judge.update(*evidence, channel.decoder->published_symbols());
@@ -496,6 +550,29 @@ void Engine::judge_channels(std::uint64_t first_index) {
         detector_.retire(id, now_s, TrackJudge::kHoldS);
         close_channel(id, TrackEnd::Shed);
     }
+}
+
+bool Engine::is_copy(std::uint32_t id, const Channel& channel, std::uint64_t block) const {
+    if (channel.envelope.size() < copy_blocks_ || channel.envelope.newest_block() != block) return false;
+    thread_local std::vector<float> weak, strong;
+    bool loaded = false;
+    for (const auto& [other_id, other] : channels_) {
+        // Only an older track's: a runner's track is never the copy of a caller's who, louder for one over, it heard then.
+        if ((config_.copy_older_only && other_id >= id) || other_id == id || other.envelope.size() < copy_blocks_ || other.envelope.newest_block() != block) continue;
+        if (!(std::abs(other.detector_freq_hz - channel.detector_freq_hz) <= config_.copy_radius_hz)) continue;
+        if (!(other.detector_snr_db - channel.detector_snr_db >= config_.copy_level_db)) continue;
+        if (!loaded) {
+            channel.envelope.last(copy_blocks_, weak);
+            loaded = true;
+        }
+        other.envelope.last(copy_blocks_, strong);
+        const double rho = keying_correlation(weak, strong, detrend_blocks_);
+        if (std::getenv("KZ4AP_TRACE_COPY"))  // TRACE-DET2
+            std::fprintf(stderr, "TC t %.2f w %u f %.1f s %u df %+.1f dl %.1f rho %.3f\n", static_cast<double>(block * block_samples_) / channelizer_.output_rate(), id,
+                         channel.detector_freq_hz, other_id, other.detector_freq_hz - channel.detector_freq_hz, other.detector_snr_db - channel.detector_snr_db, rho);
+        if (rho >= config_.copy_rho) return true;
+    }
+    return false;
 }
 
 void Engine::set_track_budget(std::size_t tracks) {

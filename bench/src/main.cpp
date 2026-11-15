@@ -283,6 +283,7 @@ int run_engine(const Args& args) {
     std::optional<ChannelRecorder> recorder;
     // When each track was born and died, s of stream, and the tracks alive at each whole second of stream.
     std::map<std::uint32_t, double> born_s, died_s, wpm;
+    std::map<std::uint32_t, TrackEnd> died_end;
     std::vector<std::size_t> live_each_s;
     std::size_t live_now = 0;
     double stream_now_s = 0.0;
@@ -300,6 +301,7 @@ int run_engine(const Args& args) {
             if (recorder && !args.oracle) recorder->open_track(t->track.id, t->track.freq_hz);
         } else if (t && t->kind == TrackEvent::Kind::Died) {
             died_s[t->track.id] = stream_now_s;
+            died_end[t->track.id] = t->end;
             --live_now;
             if (recorder) recorder->close_track(t->track.id);
         } else if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
@@ -426,6 +428,7 @@ int run_engine(const Args& args) {
         const auto id = j["id"].get<std::uint32_t>();
         if (const auto it = born_s.find(id); it != born_s.end()) j["born_s"] = it->second;
         if (const auto it = died_s.find(id); it != died_s.end()) j["died_s"] = it->second;
+        if (const auto it = died_end.find(id); it != died_end.end()) j["end"] = track_end_name(it->second);
         j["last_freq_hz"] = tracked_freq_hz[id];
         if (const auto it = texts.find(id); it != texts.end()) {
             std::vector<std::string> symbols;

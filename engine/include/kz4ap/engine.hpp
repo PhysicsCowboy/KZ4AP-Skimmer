@@ -5,6 +5,7 @@
 #include "kz4ap/channelizer.hpp"
 #include "kz4ap/classical_decoder.hpp"
 #include "kz4ap/event_bus.hpp"
+#include "kz4ap/keying_coherence.hpp"
 #include "kz4ap/segmental/config.hpp"
 #include "kz4ap/signal_detector.hpp"
 #include "kz4ap/spectrum.hpp"
@@ -142,6 +143,18 @@ struct EngineConfig {
     // block. A track past that waits its turn without decoding and then reads the last replay_s all the same, so what it
     // loses is only the wait out of the start of its replay. See docs/signal-processing.md, section 10. Heuristic.
     double replay_tracks_per_s = 100.0;
+
+    // FrontEnd::Segmental on the detector's path, with judge_tracks: a track whose keying is a stronger neighbor's is retired
+    // (TrackEnd::Copy; keying_coherence.hpp, docs/signal-processing.md, section 6). Once a second, for each track W and each other
+    // track S within copy_radius_hz whose detector level stands copy_level_db or more above W's: rho of their channels' envelope power
+    // over the last copy_window_s, each less its moving mean over copy_detrend_s; rho >= copy_rho retires W, its place left open.
+    // copy_window_s 0 for no such test.
+    double copy_window_s = 0.0;
+    double copy_rho = 0.5;
+    double copy_level_db = 6.0;
+    double copy_radius_hz = 150.0;
+    double copy_detrend_s = 0.5;
+    bool copy_older_only = true;  // S must be older than W (a lower track id)
 };
 
 // The detector's settings and the DC blocker for the decoder's path (decoder.front_end), in place: on every path the
@@ -255,6 +268,8 @@ private:
         std::uint64_t replay_wait_blocks = 0;
         std::vector<DecodeUpdate> replayed;  // the replay's results, published before the block's
         std::size_t replayed_samples = 0;
+        float detector_snr_db = 0.0f;  // the detector's level for the track (Track::snr_db), dB re its floor per bin
+        EnvelopeHistory envelope;      // the keying its decoder hears, a value a live block (EngineConfig::copy_window_s)
     };
 
     void process_hop(std::span<const Sample> hop);
@@ -270,6 +285,11 @@ private:
     void open_channel(const Track& track, int bin);
     // The verdicts on this block's channels (EngineConfig::judge_tracks), once a second of stream for each.
     void judge_channels(std::uint64_t first_index);
+    // Whether this channel's keying is a stronger neighbor's (EngineConfig::copy_window_s), at the block of first_index.
+    bool is_copy(std::uint32_t id, const Channel& channel, std::uint64_t block) const;
+    std::size_t copy_blocks_ = 0;    // copy_window_s in blocks (0: no test)
+    std::size_t detrend_blocks_ = 1;  // copy_detrend_s in blocks
+    std::uint64_t block_samples_ = 1;  // channel samples a block
     void close_channel(std::uint32_t id, TrackEnd end = TrackEnd::Faded);
     void publish_update(std::uint32_t id, DecodeUpdate&& update);
 

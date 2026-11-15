@@ -56,7 +56,7 @@ void TrackTable::apply(const TrackEvent& event) {
     if (const auto h = std::find_if(hidden_.begin(), hidden_.end(), [&](const TrackRow& r) { return r.id == event.track.id; });
         h != hidden_.end()) {
         // Nothing plausible yet. A duplicate's or an empty one's text is of no use; another's waits a while for a track here.
-        if (h->symbols.empty() || event.end == TrackEnd::Merged) {
+        if (h->symbols.empty() || event.end == TrackEnd::Merged || event.end == TrackEnd::Copy) {
             if (keep_retired_) retired_hidden_.push_back(std::move(*h));
             hidden_.erase(h);
         } else {

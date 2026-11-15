@@ -206,7 +206,9 @@ int main(int argc, char** argv) {
                     timed([&] { stage.advance(stream_s); });
                 } else if (const auto* t = std::get_if<TrackEvent>(&e)) {
                     if (log) {
-                        *log << nlohmann::json{{"k", t->kind == TrackEvent::Kind::Born ? "b" : "d"}, {"id", t->track.id}, {"f", t->track.freq_hz}}.dump() << '\n';
+                        nlohmann::json j{{"k", t->kind == TrackEvent::Kind::Born ? "b" : "d"}, {"id", t->track.id}, {"f", t->track.freq_hz}, {"s", t->track.snr_db}};
+                        if (t->kind == TrackEvent::Kind::Died) j["e"] = track_end_name(t->end);  // why it ended; --replay ignores it
+                        *log << j.dump() << '\n';
                     }
                     timed([&] { stage.apply(*t); });
                 } else if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
@@ -231,7 +233,13 @@ int main(int argc, char** argv) {
             }
             engine.finish();
             channel_seconds = engine.stats().channel_seconds;
-            if (log) *log << nlohmann::json{{"k", "end"}, {"channel_seconds", channel_seconds}}.dump() << '\n';
+            if (log) {
+                // Each track's decoder CPU, s (the thread's clock): --replay ignores it.
+                nlohmann::json cpu = nlohmann::json::object();
+                for (const auto& [id, s] : engine.track_decoder_seconds()) cpu[std::to_string(id)] = s;
+                *log << nlohmann::json{{"k", "cpu"}, {"decoder_s", cpu}}.dump() << '\n';
+                *log << nlohmann::json{{"k", "end"}, {"channel_seconds", channel_seconds}}.dump() << '\n';
+            }
         }
         timed([&] { stage.finish(); });
         const std::string csv = calls_csv(stage.calls(), center_hz, start_unix_ms);
