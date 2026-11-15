@@ -1252,7 +1252,7 @@ it). On every path it sets `attribution_distance_hz` = `channel_distance_hz` fir
   fed every hop, not made in oracle mode; the detector reads its frames only (`power_fs2`), the band's frames going to the hiss,
   the leak floor and the display as before. Its frames come every 4th hop.
 - **Neighborhoods:** `peak_radius_hz` 12 (2 bins), `level_radius_hz` 6 (1 bin), `candidate_step_hz` 6 (1 bin),
-  `follow_radius_hz` 12 (a track's peak within 12 Hz of its frequency; 0 elsewhere, meaning D), `attribution_distance_hz`
+  `follow_radius_hz` 12 (a track's peak within 12 Hz of its frequency, a drift of up to 140 Hz/s; 0 elsewhere, meaning D), `attribution_distance_hz`
   D = 30 Hz (a new peak within D of a track belongs to it; one track per peak within D; holds of radius D).
 - **Threshold** 7 dB over the band's median, the local floor's test the same 7 dB; hysteresis 3 dB. `floor_every_frames` 2.
 - **Prominence** (`prominence_db` 6, `prominence_radius_hz` 150; `SignalDetector::is_peak`): for each side, walking out from
@@ -1344,6 +1344,115 @@ jittered grid), the contest and band recordings, and real30 and live2.
   leave: a strong one opens a short track at the center at the start. Without the guard, real30's raised noise within about
   ±100 Hz of its center (about +3 dB, measured) opens short tracks there that the judge retires (64 tracks, 950 channel-seconds
   in 30 min).
+
+### Copies of a neighbor (segmental path; `Engine::is_copy`, `keying_coherence.hpp`)
+
+**Exact form.** `apply_path_defaults` sets `EngineConfig::copy_window_s` = 6 s for `FrontEnd::Segmental`; the test runs only on the
+detector's path with `judge_tracks`, never in oracle mode.
+
+- **What each channel keeps.** After each live block (21.33 ms: 32 channel samples at 1 500 samples/s; not a replay's),
+  `SegmentalDecoder::block_envelope_fs2` is the mean of e_k² over that block's envelope samples at the leading stream (8 at m = 1,
+  Δ = 2.667 ms), FS², and `block_noise_fs2` that stream's hiss, N₀ × σ_y²/N₀ (74.50 Hz at m = 1, 26.0 Hz at m = 3), FS², without
+  the leak floor. The engine keeps the last n = round(6 s / 21.33 ms) = 281 values (`EnvelopeHistory`, numbered by the block's
+  place in the stream; a block missed starts it again) and the latest hiss σ_W².
+- **When.** At each channel's once-a-second verdict, before the judge's (`judge_channels`).
+- **Against what.** Each other channel S with: a lower track id (older; `copy_older_only`), `TrackJudge::proven`
+  (`copy_source_proven`), |f_S − f_W| ≤ 150 Hz (`copy_radius_hz`, the detector's frequencies), L_S − L_W ≥ 15 dB
+  (`copy_level_db`, the detector's levels, dB re its floor per fine bin), and both histories full and ending at this block.
+- **The test.** x = e less its centered moving mean over m = round(0.5 s / 21.33 ms) = 23 blocks (fewer at the window's ends;
+  `copy_detrend_s`); ē the plain means over the window.
+
+  ρ = Σx_W x_S / √(Σx_W² Σx_S²),  β = Σx_W x_S / Σx_S²,  own = (ē_W − E) / E,  E = β ē_S + σ_W².
+
+  W is S's copy when ρ ≥ 0.5 (`copy_rho`), β ≤ 1 (`copy_gain_max`) and own ≤ 0.25 (`copy_own_snr_max`; negative turns the
+  condition off). An unknown hiss (σ_W² not yet positive) is never a copy.
+- **Then.** W retires as `TrackEnd::Copy`, hold 0 s: `SignalDetector::retire` keeps no record, and a peak there may open a track at
+  once. Its text stays in its row; a row not yet shown is dropped, as a merged one's (`TrackTable`).
+
+**Derivations.**
+
+- **A copy's ρ.** W's channel hears S through g = |H_ch(Δf)|² |H_f(Δf)|², the channel and front filters at the offset Δf. Its
+  envelope power per sample is |√(g P) k + n|², k ∈ {0, 1} S's key (key-down a fraction d of the time), n complex Gaussian of power
+  σ²: E[e² | k] = g P k + σ², Var[e² | k] = σ⁴ + 2 g P k σ². With S = g P / σ² (the copy's key-down SNR at W's filter), S's
+  envelope taken as its key and q independent noise values averaged in a block:
+
+  ρ = S √(d (1 − d)) / √(S² d (1 − d) + (1 + 2 S d) / q),  = S / (S + 2) at d = ½, q = 1:
+
+  0.33 at S = 0 dB, 0.5 at +3 dB, 0.83 at +10 dB (derived; the unit test checks −6 to +10 dB within 0.02). A block averages 8
+  samples of a filter about 4.5 samples long at m = 1, so q is about 2 (an estimate), which raises ρ at a given S.
+- **An independent station's ρ.** Mean 0, standard deviation 1/√N for N independent values (derived; the unit test, 300 and 3 000
+  values, within 15%). For keyed signals N is about the number of elements in the window (an estimate): about 120 in 6 s at 25 WPM,
+  1/√N = 0.09, so ρ = 0.5 stands about 5.5 standard deviations above it.
+- **The high-pass.** Callers who start together after a CQ share a step. With the plain mean, two independent keys silent for
+  5 s of 8 and then keyed at d = ½ give ρ = (3/8 × ¼ − (3/16)²) / (3/8 × ½ − (3/16)²) = 0.385 (derived); less the 0.5 s moving
+  mean only the blocks within about ±0.25 s of the step keep it (unit test: under 0.15).
+- **β ≤ 1.** For a copy β = g, and g ≤ 1 since the two channels' filters are alike and S sits at its own channel's center, where
+  they are flat (derived). A strong channel whose station is silent hears the weaker W at g′; read the other way, W on S, that is a
+  gain of 1/g′ > 1.
+- **own.** For a copy ē_W = g ē_S + σ_W² in the linear model, so own = 0 at any SNR (derived); a station of W's own adds its mean
+  power, and own is its SNR against the leak and hiss together.
+
+**Provenance.** Decision log, 2026-11-15. Measured on the Linux machine against `main` (a34069e), scratch tables in `build/det2`,
+not committed.
+
+- **The cause** (the owner's recording of 2026-11-04, `--mirror`, its tracks 7, 533 and 645, at 9 847, 9 897 and 9 790 Hz from the
+  center): track 7 is K4TZ, a CWT runner, 39.2 dB re the floor per fine bin. Over 12 to 87 s, K4TZ alone, its averaged spectrum
+  stands −19.2, −21.7, −23.1 dB re its peak at −41, −47, −53 Hz and −21.4, −22.7, −23.8 dB at +41, +47, +53 Hz (symmetric within
+  1.3 dB), −24.2 and −23.2 dB at ±70 Hz: a skirt with no peak, which neither the prominence nor the sideband test lets through.
+  Track 533 opened at 90.1 s on a caller, its place then 39.6 dB re the floor, 0.8 dB above K4TZ's (K4TZ silent): a real
+  station, by the prominence and sideband tests rightly. Track 645 opened at 136.1 s 22.3 dB re the floor, 10.3 dB below K4TZ's
+  place and 22.2 dB below the caller's 95 Hz away: the sideband test takes the highest bin within 150 Hz, the caller's, as the
+  carrier, whose mirror is empty, so a sideband of K4TZ's or a weak caller passes. Neither was a second chance (no retirement
+  within 200 Hz before them). Both then lived to 242 s on the judge's Morse, since their 150 Hz channels and the 12 ms filter
+  (its first null at about 83 Hz) hear K4TZ and every caller 40 to 110 Hz away: the same text three times. CW Skimmer spots K5SJC at
+  7035.0 kHz calling CQ; at 7029.8 kHz it was, by conjecture, one of K4TZ's callers.
+- **Rules tried in order.** ρ alone (≥ 0.5, older only): it retired a real caller keying under a neighbor 8 dB stronger (the unit
+  test's pile-up: ρ 0.5 to 0.6, β 0.1) and, on the slice, the pairs went 0.150 to 0.166, E2 0.533 to 0.582, the contest 220 to
+  219 true calls. β ≤ 1 alone did not help (β 0.1 there: the leak is real, at about −9 dB re the caller's own channel). The own
+  power: on a never-retiring traced run (ρ ≥ 1), 1 666 decisions on copies (the ghost cells below: B silent during A's over) and
+  4 302 on stations keying (pairs, stress cells, E2 seeds 1–2, det-1's cells), own's quantiles at ρ ≥ 0.5 were for copies 5%
+  −0.02, 50% 0.09, 95% 0.65, and for keying stations 5% 0.15, 50% 0.49: the copies' upper tail is the model's own mismatch (the two
+  channels' leading filters differ, so W is not quite a scaled copy of S block by block), largest at high SNR. Of the keying
+  stations' would-be retirements, nearly all stood 5 to 25 dB below a neighbor 20 to 60 Hz away; 15 dB removes them all but in
+  det-1's cells (0.35% of decisions, against 10.8% at 6 dB, own 0.25) and keeps 74% of the copies' decisions. The source
+  proven: det-1's carrier cells (a steady carrier 20 to 30 Hz from a station, there first) read 0.601 to 0.623 without it: a track
+  on the carrier, 26 Hz from the station, hears the station's keying, and the only track reading the station, 42 Hz the other side,
+  was retired as its copy. Older only: without it (an earlier form, ρ alone) a runner's track (W8CAR, the owner's file) was
+  retired as the copy of a louder caller's during the caller's over, and W8CAR got no new track for 70 s, its peak failing the
+  prominence test beside the caller's lingering average, while the caller's track read W8CAR's CQs.
+- **Values.** own 0.5, 0.25, 0.15 and 0.1: the ghost cells' copied share of A's over 2.0%, 2.6%, 6.0% and 10.8% (the last without
+  the source and level conditions); the contest's true calls 219 and 233 (two seeds) at 0.5, 221 and 236 at 0.25, 221 and 237 at
+  0.15, against 220 and 236 on `main`. 0.25: heuristic, chosen by measurement. Level 6, 12, 15 dB at own 0.5: det-1's cell of a
+  keyed neighbor there first (45 to 60 Hz, 10 to 20 dB re wanted) 0.681 on `main`, 0.945, 0.945, 0.687; 15 dB: heuristic, chosen
+  by measurement. ρ 0.3 to 0.7 retire nearly the same decisions once own and the level apply (heuristic). 6 s, 0.5 s, 150 Hz and
+  the hold of 0 s: heuristics, not varied; 150 Hz the channel's half width at −6 dB re the passband; no hold since a QSO partner
+  answers within a second or two of the end of the over its track was retired in.
+- **Simpler rules, measured as baselines** (the owner's question, 2026-11-15): a spacing of 47 or 60 Hz between tracks in place of
+  30 Hz (`attribution_distance_hz`), and a level-scaled exclusion (`skirt_exclusion_db` 12 dB, `skirt_exclusion_hz` 30 Hz,
+  below). Against the copy test: the spacing loses answering stations (ghost cells: B's call read in 46 and 36 of 60 QSOs at 47
+  and 60 Hz, 60 with the test) and real calls (47 Hz: the contest's true calls 220 to 219, f11's 42 to 41, W5XX on N2GZ, all
+  confirmed or true; 60 Hz: the contest's 220 to 218 and 236 to 234, w11's 40 to 38, IK6QOP on real30 and N4ZZ on the owner's
+  file, confirmed); the exclusion retires the runner's own track while its caller sends (A's track in 59 of 60 QSOs) and loses
+  true calls on the contest (220 to 218, 236 to 230) and K4RUM (confirmed) on KC2LRC-2. Neither is kept; both are variants, off.
+- **The level-scaled exclusion's form** (`DetectorConfig::skirt_exclusion_db`, off): no track, new or standing, within
+  d(ΔL) = 30 Hz × 10^((ΔL − 12 dB)/20) of a track ΔL dB stronger, at most 150 Hz. The 6 dB per doubling of the distance is a keyed
+  carrier's 1/f² skirt in power (derived for hard keying), measured on K4TZ's: −18 dB re its peak at 30 Hz, −24 dB at 60, −29 dB at
+  100; 12 dB is that skirt at 30 Hz less a 6 dB margin, as the prominence test's (heuristic).
+
+**Limitations.**
+
+- A copy prints for the window, 6 s, after it starts (and its track's replay of 2 s) before it retires: its first words stay in
+  its row. A copy whose place is still a peak opens again and retires again 6.5 s later.
+- Copies with own above 0.25 stay longer: in the ghost cells 2 of 60 QSOs kept over 10% of A's over, both weak: A at 5.6 and
+  10.0 dB S500, the copy at +8.3 and +2.5 dB SNR at B's filter (β −2.8 and −11.5 dB re A's own channel); the first was retired
+  after 14% of the over, the second never. At low SNR the noise's share of a copy's mean power makes own uncertain.
+- A copy is retired only as an older track's; a runner's track still prints a louder caller's over (the owner's file: K4TZ's
+  track reads its callers).
+- A station 15 dB or more below an older, proven neighbor within 150 Hz, keying under its leak with little power of its own, is
+  retired as its copy (on the slice, det-1's cells only, 45 to 60 Hz, 15 to 25 dB below, where it reads CER 0.7 to 1.0
+  anyway); its place stays open.
+- A copy is a second reading of its source's text, through another filter: on KC2LRC-2 a copy 48 Hz from N4BP was the only track
+  to read N4BP's "KI4MZC 5NN", and KI4MZC (spotted by the RBN that day, outside the recording's window) is not listed with the test.
 
 ## A.7 Channelizer
 
@@ -4340,6 +4449,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 - R = (ΔS − max(0, ΔF)) / min(age, 12 s), E = ΔS / min(age, 12 s), ΔS and ΔF over 12 s; S the widest stream's best score, F that stream's two-state chain at 5 switches/s on L1, whichever stream leads (`keying_evidence`). The text sums read the published text, the leader's.
 - tiny, garbage: running sums, each floored at −12 nats, with lowest tiny and highest garbage; word spaces skipped; `RunningTextEvidence` adds only new symbols and on a correction goes back to the nearest saved state (every 256 symbols). A symbol the prior lacks counts at the prior's floor, 0.002.
 - proven, once true for good: lowest tiny ≤ −6 nats and highest garbage < +6 nats.
+- Before the rules, on the segmental path: a copy of a neighbor (A.6, "Copies of a neighbor"): `Copy`, no hold.
 - Rule 1, age ≥ 4 s, R < 3 and (tiny ≥ +8 or garbage ≥ +6): `NotMorse`, hold 8 s. Rule 2, age ≥ 12 s, R < −8, and (not proven, or E ≥ 1000 and −R > 10⁻³ E): `NotMorse`, hold 8 s. Rule 3, not proven and R < 3: age ≥ 8 s and ΔS over 8 s < 40 nats: `Quiet`, hold 8 s; else age ≥ 14 s: `NotMorse`, hold 8 s. Rule 4, proven, age ≥ 30 s and ΔS over 30 s < 30 nats: `Quiet`, no hold.
 
 **Holds (`SignalDetector::retire`, `close_place`).** A retirement with hold_s > 0 removes the track. The first one within D (30 Hz) of a place among the holds kept (`first_retirement_open` 2) records the place with count 0 and no hold, and logs nothing; otherwise it closes radius D and logs (f, t). If at least 4 logged retirements in the last 60 s lie within 750 Hz of f, it also closes radius 750 Hz from 30 s. Closing: find a hold of that radius within that radius; if none, new, count 0. If count = 0 or now ≥ until, count + 1. Then until = max(until, now + min(hold_s × 2^(count−1), 120 s)). A hold is forgotten once open for 120 s. New peaks inside a running hold of either radius are skipped; a live track there stays.
@@ -4561,6 +4671,8 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Prominence, segmental's path (off elsewhere) | 6 dB re the lowest bin toward a higher one, within ±150 Hz | `prominence_db`, `prominence_radius_hz` | heuristic, chosen by measurement |
 | Keying sidebands, segmental's path (off elsewhere) | a bin at +10 dB re the peak within ±150 Hz whose mirror stands within 3 dB of the peak | `sideband_db`, `sideband_mirror_db`, `sideband_radius_hz` | heuristic (values); derived (the symmetry) |
 | First retirement at a place, segmental's path (off elsewhere: 0) | leaves it open; the next closes it as a first hold | `EngineConfig::first_retirement_open` = 2 | heuristic, chosen by measurement |
+| Copies of a neighbor, segmental's path (off elsewhere: 0 s) | window 6 s (281 blocks of 21.33 ms), high-pass 0.5 s; ρ ≥ 0.5, β ≤ 1, own ≤ 0.25 (linear, power); source older, proven, within 150 Hz, 15 dB or more above at the detector; no hold | `EngineConfig::copy_window_s`, `copy_detrend_s`, `copy_rho`, `copy_gain_max`, `copy_own_snr_max`, `copy_older_only`, `copy_source_proven`, `copy_radius_hz`, `copy_level_db` | forms derived (ρ, β ≤ 1, own); values heuristic, chosen by measurement (ρ, own, level, older, proven) or not varied (6 s, 0.5 s, 150 Hz, no hold) |
+| Level-scaled exclusion (a variant, off) | no track within 30 Hz × 10^((ΔL − 12 dB)/20) of one ΔL dB stronger, at most 150 Hz | `DetectorConfig::skirt_exclusion_db` (0 = off), `skirt_exclusion_hz`, `skirt_exclusion_radius_hz` | 6 dB per doubling derived (1/f²); 12 dB, 30 Hz heuristic; dropped by measurement (A.6) |
 | Replay | 2 s, 94 past blocks | `EngineConfig::replay_s` | heuristic |
 | Replay's rate | 100 tracks/s, 2.13 per block | `EngineConfig::replay_tracks_per_s` | heuristic |
 | Judge: window, first verdict | 12 s, 4 s | `TrackJudge::kWindowS`, `kFirstVerdictS` | heuristic |
@@ -4595,6 +4707,17 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Segmental: margins | off (0); a variant: a merge's runner-up within R (measured at 16 nats; at most 16.6); symbols matched by time (30 ms or half the shorter's length; 2 ms; 3 agreeing; 24 steps); published at half-nat steps | `rival_margin_nats`; `note_rival`, `confidence_level` | the update derived (soft-output Viterbi); the constants heuristic (A.8e) |
 
 ## A.11 Definitions used in tests and the benchmark
+
+- **Duplicate tracks** (det-2's count on real recordings, results analysis, not the engine's test): a symbol (not a word space) of
+  track W is a copy when a track within 150 Hz of W (at its birth or its end), stronger by the detector's level (the larger of its
+  levels at birth and end), alive at the same time, has a symbol of the same text whose start and end lie within 25 ms of W's; W is
+  a duplicate when at least half its symbols, and at least 8, are copies. Two decoders behind like filters read one station's
+  characters at the same times; an independent station's do not line up. Heuristics: 25 ms is about half a dot at 25 WPM. Short
+  junk tracks on wide signals, retired as not Morse, count as duplicates of one another too.
+- **Ghost cells** (det-2's scratch generator over `kz4ap_synth`, 48 kHz, one seed): QSOs of three signals, A's CQ at the slot, B's
+  answer 30 to 130 Hz away (12 to 18 dB S500), then A's long over (110 characters); A at 5 to 36 dB S500; jittered cells of offset
+  (30, 45, 60, 80, 100, 130 Hz) and A's level (5, 12, 20, 28, 36 dB S500), three QSOs a cell; machine keying, 18 to 32 WPM. A
+  copy: a symbol of a track within 15 Hz of B during A's over matching A's track's by text and by start and end within 25 ms.
 
 - **SNR** (synthetic recordings): key-down carrier power A² (for a fading
   signal, its mean) over the noise power in a **500 Hz** bandwidth,
