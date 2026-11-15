@@ -200,6 +200,14 @@ TEST(SdrplaySource, WithoutTheLibrarySaysSoAndNothingElseBreaks) {
         EXPECT_TRUE(message.find("not installed") != std::string::npos || message.find("built without") != std::string::npos)
             << message;
     }
+    try {
+        list_sdrplay_devices(temp_file("no_such_library_kz4ap.dll"));
+        FAIL() << "a listing with no library";
+    } catch (const std::runtime_error& e) {
+        const std::string message = e.what();
+        EXPECT_TRUE(message.find("not installed") != std::string::npos || message.find("built without") != std::string::npos)
+            << message;
+    }
 }
 
 std::filesystem::path counting_wav(const char* name, int rate, int samples) {

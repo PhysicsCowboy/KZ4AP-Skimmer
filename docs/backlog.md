@@ -1669,6 +1669,11 @@ Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repos
 - **The fixed cost's rest:** the channelizer's FFT could share the spectrum's, the Hann window applied in the frequency
   domain (7 ms per s of stream at 192 kHz); a table lookup for the display's logarithm.
 - **RSPduo:** single tuner A is set in the source, not run on one. The API's other models' LNA tables are the API's to refuse.
+- **Two radios on one machine (`sdr-1`, 2026-11-15).** The source takes only the radio with exactly the serial number asked
+  for (`--sdrplay-serial`, or the Radio serial box), and none when none is given; `--list-sdrplay` lists them without taking any.
+  Tested against the stand-in API only, not on two real radios. Not built: a setting kept between runs (the app has no
+  settings store, so an unattended start names the serial on its command line), and a list of the radios found to pick from
+  in the window (the message of Start radio with no serial names them).
 - **A long recording:** the WAV form stops at 4 GiB (93 min at 192 kHz); rolling to a second file is not built.
 
 ## Callsign stage (call-1, 2026-10-31)

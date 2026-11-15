@@ -1,7 +1,9 @@
 // A stand-in for the SDRplay API's library, built only where its headers are, so that SdrplaySource's sequence and its error
 // messages can be tested with no service and no radio: the same entry points by the same names. KZ4AP_FAKE_SDRPLAY in the
 // environment picks the machine it pretends to be, when sdrplay_api_Open is called: "no-service", "no-device",
-// "old-version", "busy", or anything else for a radio that delivers samples. fake_* are for the tests.
+// "old-version", "busy", "list-error" (GetDevices fails), "one-device" (FAKE0001 alone), "duo" (FAKE0002 is an RSPduo), or
+// anything else for two radios, FAKE0001 (an RSP1A) listed first and FAKE0002 (an RSPdx) second, that deliver samples.
+// fake_* are for the tests.
 #define _SDRPLAY_DLL_QUALIFIER __declspec(dllexport)
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -11,6 +13,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -38,6 +41,23 @@ std::atomic<int> uninits{0};
 std::atomic<int> releases{0};
 std::atomic<int> closes{0};
 std::atomic<int> locked{0};
+std::atomic<int> listings{0};
+std::atomic<int> selects{0};
+std::atomic<int> inits{0};
+// What the last SelectDevice was given, and the last Init's device handle (1 for FAKE0001, 2 for FAKE0002).
+char selected_serial[SDRPLAY_MAX_SER_NO_LEN] = {};
+int selected_tuner = 0;
+int selected_duo_mode = 0;
+std::intptr_t init_device = 0;
+
+void fill(sdrplay_api_DeviceT& device, const char* serial, unsigned char hardware, std::intptr_t handle) {
+    std::memset(&device, 0, sizeof device);
+    std::strcpy(device.SerNo, serial);
+    device.hwVer = hardware;
+    device.tuner = sdrplay_api_Tuner_A;
+    device.valid = 1;
+    device.dev = reinterpret_cast<HANDLE>(handle);
+}
 
 void stream_loop() {
     constexpr unsigned int kBlock = 1000;
@@ -86,21 +106,34 @@ sdrplay_api_ErrT sdrplay_api_UnlockDeviceApi(void) {
 }
 
 sdrplay_api_ErrT sdrplay_api_GetDevices(sdrplay_api_DeviceT* devices, unsigned int* count, unsigned int) {
-    if (scenario() == "no-device") {
-        *count = 0;
+    ++listings;
+    const std::string which = scenario();
+    *count = 0;
+    if (which == "no-device") return sdrplay_api_Success;
+    if (which == "list-error") return sdrplay_api_Fail;
+    fill(devices[0], "FAKE0001", SDRPLAY_RSP1A_ID, 1);
+    if (which == "one-device") {
+        *count = 1;
         return sdrplay_api_Success;
     }
-    *count = 1;
-    std::memset(&devices[0], 0, sizeof devices[0]);
-    std::strcpy(devices[0].SerNo, "FAKE0001");
-    devices[0].hwVer = SDRPLAY_RSP1A_ID;
-    devices[0].tuner = sdrplay_api_Tuner_A;
-    devices[0].valid = 1;
-    devices[0].dev = reinterpret_cast<HANDLE>(1);
+    if (which == "duo") {
+        // As the API lists a free RSPduo: both tuners, and the modes it may be taken in.
+        fill(devices[1], "FAKE0002", SDRPLAY_RSPduo_ID, 2);
+        devices[1].tuner = sdrplay_api_Tuner_Both;
+        devices[1].rspDuoMode = static_cast<sdrplay_api_RspDuoModeT>(sdrplay_api_RspDuoMode_Single_Tuner | sdrplay_api_RspDuoMode_Dual_Tuner |
+                                                                     sdrplay_api_RspDuoMode_Master);
+    } else {
+        fill(devices[1], "FAKE0002", SDRPLAY_RSPdx_ID, 2);
+    }
+    *count = 2;
     return sdrplay_api_Success;
 }
 
-sdrplay_api_ErrT sdrplay_api_SelectDevice(sdrplay_api_DeviceT*) {
+sdrplay_api_ErrT sdrplay_api_SelectDevice(sdrplay_api_DeviceT* device) {
+    ++selects;
+    std::memcpy(selected_serial, device->SerNo, sizeof selected_serial);
+    selected_tuner = static_cast<int>(device->tuner);
+    selected_duo_mode = static_cast<int>(device->rspDuoMode);
     return scenario() == "busy" ? sdrplay_api_Fail : sdrplay_api_Success;
 }
 
@@ -116,7 +149,9 @@ sdrplay_api_ErrT sdrplay_api_GetDeviceParams(HANDLE, sdrplay_api_DeviceParamsT**
     return sdrplay_api_Success;
 }
 
-sdrplay_api_ErrT sdrplay_api_Init(HANDLE, sdrplay_api_CallbackFnsT* functions, void* cb_context) {
+sdrplay_api_ErrT sdrplay_api_Init(HANDLE device, sdrplay_api_CallbackFnsT* functions, void* cb_context) {
+    ++inits;
+    init_device = reinterpret_cast<std::intptr_t>(device);
     callbacks = *functions;
     context = cb_context;
     streaming = true;
@@ -152,6 +187,13 @@ __declspec(dllexport) int fake_uninits() { return uninits; }
 __declspec(dllexport) int fake_releases() { return releases; }
 __declspec(dllexport) int fake_closes() { return closes; }
 __declspec(dllexport) int fake_locked() { return locked; }
+__declspec(dllexport) int fake_listings() { return listings; }
+__declspec(dllexport) int fake_selects() { return selects; }
+__declspec(dllexport) int fake_inits() { return inits; }
+__declspec(dllexport) const char* fake_selected_serial() { return selected_serial; }
+__declspec(dllexport) int fake_selected_tuner() { return selected_tuner; }
+__declspec(dllexport) int fake_selected_duo_mode() { return selected_duo_mode; }
+__declspec(dllexport) int fake_init_device() { return static_cast<int>(init_device); }
 __declspec(dllexport) double fake_center_hz() { return channel.tunerParams.rfFreq.rfHz; }
 __declspec(dllexport) double fake_adc_hz() { return dev_params.fsFreq.fsHz; }
 __declspec(dllexport) int fake_decimation() { return channel.ctrlParams.decimation.enable ? channel.ctrlParams.decimation.decimationFactor : 1; }
