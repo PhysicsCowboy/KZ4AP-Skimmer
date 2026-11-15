@@ -60,7 +60,7 @@ void set_value(CallSearchConfig& c, const std::string& assignment) {
         {"reread_corrected", &c.reread_corrected}, {"history_s", &c.history_s},
         {"named_listed_only", &c.named_listed_only}, {"short_variant_ratio", &c.short_variant_ratio},
         {"known_margin_nats", &c.known_margin_nats},
-        {"pool_places", &c.pool_places}, {"glued_pieces_timed", &c.glued_pieces_timed},
+        {"pool_places", &c.pool_places}, {"glued_pieces_timed", &c.glued_pieces_timed}, {"partial_points", &c.partial_points},
     };
     const auto it = fields.find(name);
     if (it == fields.end()) throw std::runtime_error("no such setting: " + name);
@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
             readings.open(o.readings);
             readings << "call,how,role,doubled,start_s,end_s,freq_hz,margin_nats\n";
             stage.set_reading_log([&](const CallReading& r, double freq_hz) {
-                static constexpr const char* kHow[] = {"whole", "glued", "stripped", "joined"};
+                static constexpr const char* kHow[] = {"whole", "glued", "stripped", "joined", "partial"};
                 static constexpr const char* kRole[] = {"unknown", "sender", "named"};
                 readings << r.full << ',' << kHow[static_cast<int>(r.reading)] << ',' << kRole[static_cast<int>(r.role)] << ',' << (r.doubled ? 1 : 0) << ','
                          << r.start_s << ',' << r.end_s << ',' << freq_hz << ',' << r.margin_nats << '\n';  // nats; -1: unknown

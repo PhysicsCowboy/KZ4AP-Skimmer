@@ -85,6 +85,7 @@ enum class Reading {
     Glued,     // a word with a keyword or the call again glued to it: DEK1ABC, N5JJDEWA0QZK, K1ABCK1ABC
     Stripped,  // a word with a stray E, T or I in front or an E, T or K behind: EIK0HBN
     Joined,    // several short words: N 5 JJ, K X 9 F
+    Partial,   // a word beside a whole call that is its start or its end, with the digit: 5LN K5LN, a repeat that lost a part
 };
 
 // What the words around it say of who sent it.
@@ -118,8 +119,9 @@ double margin_of(float probability);
 // Every reading of a call that begins in the words [from, to). A word can give several: they are alternatives, and the evidence
 // decides among them. `words` may reach past `to` and before `from`, for context.
 std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to);
-// As read_calls; with pieces_timed, each piece of a glued word has its own characters' times (CallSearchConfig::glued_pieces_timed).
-std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, bool pieces_timed);
+// As read_calls; with pieces_timed, each piece of a glued word has its own characters' times (CallSearchConfig::glued_pieces_timed);
+// with partials, partial repeats beside a whole reading are read too (Reading::Partial).
+std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, bool pieces_timed, bool partials = false);
 
 // ---- A known-call list
 
@@ -215,6 +217,9 @@ struct CallSearchConfig {
     // (K1ABCK1ABC) is two readings, as it is with the space; at 0 every piece has the word's times and the two are one occurrence.
     // Derived from the evidence rule (one occurrence per transmission); rob-1.
     double glued_pieces_timed = 0.0;
+    // Points of a partial repeat (Reading::Partial): the word next to a whole reading of a call is its start or its end, of at least three
+    // characters with the digit, and no call itself (5LN K5LN, K5LN K5L). 0 reads none. Heuristic (rob-1).
+    double partial_points = 0.0;
 };
 
 // One line of the list.
