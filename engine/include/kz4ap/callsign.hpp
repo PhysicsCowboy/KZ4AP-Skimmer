@@ -168,9 +168,11 @@ struct CallSearchConfig {
     // Letters joined across spaces (K F 0 Y U X). Heuristic, chosen by measurement: at 0.5 a call read so three times stayed at 1.5 points on
     // real 40 m (KF0YUX); at 1 three false calls came there.
     double joined_points = 0.75;
-    // A whole or glued word another station names (before DE, 5NN, UR and the like) passes at this many points: that one word is often all
-    // a caller's station leaves in the text. Heuristic, chosen by measurement: 14 more true and 3 more false on the contest of 280.
-    double points_named = 1.0;
+    // A whole or glued word another station names (before DE, 5NN, UR and the like) passes at this many points. 2, the default since rob-1,
+    // is no exception: a named word counts as any other, so a call heard on one word is not reported without a list, CW Skimmer's practice
+    // (RBN 2021). At 1 (call-1 to rob-1) one named word passed alone: 11 more true and 4 more false calls on the contest of 280, but on the
+    // four 2017 recordings 18 confirmed calls for 110 the RBN did not confirm (appendix A.12). Heuristic, chosen by measurement.
+    double points_named = 2.0;
     // Whole words a call of tiny pieces (only_tiny_pieces) needs, listed or not; 0 leaves it unread. Heuristic, chosen by measurement.
     double tiny_points = 2.0;
     // Two letters' difference holds a call back only against a rival with more than this many times its points. Heuristic, chosen by measurement.
@@ -180,6 +182,7 @@ struct CallSearchConfig {
     double prefix_held = 1.0;
     // When not 0, a reported call that loses at one place is withdrawn only if its rival's best is above its own best, or its readings
     // more than variant_hz from that place do not pass by themselves; at 0, any local defeat withdraws it. Heuristic, chosen by a hand test and measurement.
+    // Read only with pool_places 0.
     double withdraw_own_place = 1.0;
     // A call sent twice in a row counts as framed, when not 0. Heuristic, chosen by measurement.
     double doubled_is_framed = 1.0;
@@ -208,13 +211,13 @@ struct CallSearchConfig {
     // that is named at one place and signs at another, is read independently at each (CW Skimmer counts a call's repeats per decoder, so
     // this goes past it). Occurrences that overlap in time count once wherever they are (one transmission), and an occurrence at a place
     // where a better-supported variant holds the call back counts for that variant, not for it. The same pooled support decides whether a
-    // reported call that loses at one place leaves the list (in place of withdraw_own_place's test). Heuristic, chosen by measurement
-    // (rob-1; appendix A.12).
-    double pool_places = 0.0;
+    // reported call that loses at one place leaves the list (in place of withdraw_own_place's test). The form is derived from the evidence
+    // rule (independent readings add, one transmission counts once); on by default, chosen by measurement (rob-1; appendix A.12).
+    double pool_places = 1.0;
     // The pieces of a glued word take their own characters' times, when not 0, so that a call sent twice with no space between
     // (K1ABCK1ABC) is two readings, as it is with the space; at 0 every piece has the word's times and the two are one occurrence.
     // Derived from the evidence rule (one occurrence per transmission); rob-1.
-    double glued_pieces_timed = 0.0;
+    double glued_pieces_timed = 1.0;
 };
 
 // One line of the list.
