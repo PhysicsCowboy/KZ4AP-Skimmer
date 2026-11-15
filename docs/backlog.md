@@ -1662,8 +1662,10 @@ Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repos
   gained 1 caller of 170 and cost 28% more channel-seconds; the rule stands. The replay made most of it smaller.
 - **Junk rows.** Data and speech rows stay on the track list; the call list beside it has none. A view of the rows by plausibility is not built.
 - **Fine-tuning off the center.** Tuning the radio a little off and shifting digitally would remove the dead zone at 0 Hz.
-- **Two tracks on one station,** 40 to 135 Hz apart, on a strong keyed carrier (W1AW at 7047.5 kHz): seen only live while the
-  pipeline lost samples; none on playback. No envelope test between neighbors is built, should it come back.
+- **Done in `det-2` (2026-11-15): two or three tracks on one station** (the owner's recording, 2026-11-04: K4TZ's CWT run read on
+  three tracks 43 to 57 Hz apart). A track whose decoder's envelope follows an older, proven neighbor's keying is retired as its copy
+  (signal-processing.md, section 6 and A.6; what is left: "Copies after det-2" below). As it stood: two tracks on one station,
+  40 to 135 Hz apart, on a strong keyed carrier (W1AW at 7047.5 kHz), seen live while the pipeline lost samples.
 - **A real station's first seconds under a hold.** A place retired stays closed 8 s and more (at most 120 s; a region 30 s and
   more): a station that starts there waits. Measured only as no station lost on three recordings of 10, 62 and 20 s.
 - **The fixed cost's rest:** the channelizer's FFT could share the spectrum's, the Hann window applied in the frequency
@@ -1740,3 +1742,30 @@ From review 6, of `app-8` (2026-10-31):
 - **Chirp** breaks the sideband test's symmetry; the generator has none. Look on the owner's hour beside strong stations.
 - **A row's support across a track's split:** real30's E51MWA, read whole twice on `main`, is read twice by `det-1` too but the second reading lost a dot; its first track retired quiet while it listened and the next began about 2 s later. Listing a call read once in a framed position in a pile-up would need the callsign stage's rule, not the detector.
 - **E2's remaining losses** are on channels: 11 of 180 signals read badly (the oracle path as bad on most), 5 retired early as not Morse, 4 born late.
+
+## Copies after det-2 (2026-11-15)
+
+`det-2` retires a track whose keying is an older, proven neighbor's within 150 Hz (signal-processing.md, section 6 and A.6;
+decision log). Left open:
+
+- **The runner's track still prints its callers.** Only an older track's copy is retired, since a runner's track retired during a
+  louder caller's over found no new track beside the caller's lingering peak (W8CAR on the owner's file). A runner's track that
+  prints a caller's over is a duplicate the other way. A test of which station a channel's text belongs to over the over, not the
+  window, would cover it.
+- **A copy prints its first 6 s** (the window) and its replay's 2 s before it retires. A shorter window raises the spread of rho for
+  independent stations as 1/sqrt(N); not tried (4 and 8 s were queued and dropped for time).
+- **A copy is a second reading.** On KC2LRC-2 a copy 48 Hz from N4BP was the only track to read N4BP's "KI4MZC 5NN"; KI4MZC
+  (spotted by the RBN that day) is no longer listed. Keeping a copy's text for the callsign stage while hiding its row would keep
+  such readings, at the risk of the false support duplicates gave (K3QP and WW5TOM on the owner's file came from duplicates' readings).
+- **Weak copies near the noise** (a few dB SNR at the copy's filter) can keep their tracks: own power is uncertain there. In the
+  ghost cells 2 of 60 QSOs kept more than 10% of the caller's over.
+- **A copy whose place is still a peak** opens again 0.5 s after it retires and is judged again 6 s later; a hold tied to the source's
+  keying would end that, at the risk of blocking a QSO partner.
+- **The test set has no group of copies.** The ghost cells (A.11) are scratch; a group like them in DEV2 would let later changes see
+  the duplicates.
+- **A hidden row's own text is dropped on a copy's end** (review 14): `TrackTable` drops a row not yet shown when its track ends as
+  `Copy`, as a merged one's. Many copy retirements are real callers' tracks that read their own call first and then their runner
+  (the owner's file: 577 "N4ZZ DON", 644 "NU4J", 600 "W4CMG", 570 "W4SSF", 536 "KK4E"). Display only: the call list reads every
+  track's text. Keeping the row, as for a faded track, would show them.
+- **No test holds the source-proven condition alone** (review 14): det-1's carrier cell is its evidence (A.6), but a unit scene of a
+  station between a carrier's track and a side track did not reproduce the side track (tried, 2026-11-15).

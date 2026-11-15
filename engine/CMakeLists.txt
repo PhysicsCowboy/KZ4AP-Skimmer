@@ -57,6 +57,7 @@ add_library(kz4ap_engine_core OBJECT
   src/file_iq_source.cpp
   src/stream_runner.cpp
   src/track_evidence.cpp
+  src/keying_coherence.cpp
   src/callsign.cpp
   src/matched_front_end.cpp
   src/frequency_tracker.cpp
@@ -143,6 +144,7 @@ add_executable(kz4ap_engine_tests
   tests/engine_test.cpp
   tests/stream_runner_test.cpp
   tests/track_evidence_test.cpp
+  tests/keying_coherence_test.cpp
   tests/callsign_test.cpp
   tests/worker_pool_test.cpp
   tests/iq_recorder_test.cpp

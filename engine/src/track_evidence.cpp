@@ -143,4 +143,16 @@ TrackJudge::Verdict TrackJudge::update(const KeyingEvidence& evidence, std::span
     return {};
 }
 
+const char* track_end_name(TrackEnd end) {
+    switch (end) {
+        case TrackEnd::Faded: return "faded";
+        case TrackEnd::Merged: return "merged";
+        case TrackEnd::NotMorse: return "not_morse";
+        case TrackEnd::Quiet: return "quiet";
+        case TrackEnd::Shed: return "shed";
+        case TrackEnd::Copy: return "copy";
+    }
+    return "?";
+}
+
 }  // namespace kz4ap

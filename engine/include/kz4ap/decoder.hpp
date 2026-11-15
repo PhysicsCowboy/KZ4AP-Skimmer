@@ -79,6 +79,13 @@ public:
     virtual std::optional<KeyingEvidence> keying_evidence() const { return std::nullopt; }
     // The text as published so far (the consumer's list above), if this decoder keeps it.
     virtual std::span<const std::string> published_symbols() const { return {}; }
+    // What the last block of process() gave at the filter whose text goes out: the mean of its envelope samples' power, e^2, FS^2 (the
+    // keying the decoder hears, which the engine compares between neighbors: keying_coherence.hpp). Negative if this decoder has
+    // none, or the block gave no sample.
+    virtual double block_envelope_fs2() const { return -1.0; }
+    // The noise of that envelope's samples, sigma^2 at that filter's output from the band's hiss alone (no neighbor's leak), FS^2;
+    // negative if none.
+    virtual double block_noise_fs2() const { return -1.0; }
 };
 
 }  // namespace kz4ap

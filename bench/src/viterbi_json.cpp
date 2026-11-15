@@ -545,6 +545,15 @@ void apply_detector_setting(EngineConfig& config, const std::string& setting) {
         {"follow_radius_hz", &d.follow_radius_hz},
         {"sideband_radius_hz", &d.sideband_radius_hz},
         {"dc_block_s", &config.dc_block_s},
+        {"skirt_exclusion_hz", &d.skirt_exclusion_hz},
+        {"skirt_exclusion_radius_hz", &d.skirt_exclusion_radius_hz},
+        {"copy_window_s", &config.copy_window_s},
+        {"copy_rho", &config.copy_rho},
+        {"copy_level_db", &config.copy_level_db},
+        {"copy_radius_hz", &config.copy_radius_hz},
+        {"copy_detrend_s", &config.copy_detrend_s},
+        {"copy_gain_max", &config.copy_gain_max},
+        {"copy_own_snr_max", &config.copy_own_snr_max},
     };
     for (const auto& [field, target] : doubles) {
         if (name == field) {
@@ -557,11 +566,14 @@ void apply_detector_setting(EngineConfig& config, const std::string& setting) {
     else if (name == "prominence_db") d.prominence_db = static_cast<float>(value);
     else if (name == "sideband_db") d.sideband_db = static_cast<float>(value);
     else if (name == "sideband_mirror_db") d.sideband_mirror_db = static_cast<float>(value);
+    else if (name == "skirt_exclusion_db") d.skirt_exclusion_db = static_cast<float>(value);
     else if (name == "fft_factor") d.fft_factor = static_cast<int>(value);
     else if (name == "floor_every_frames") d.floor_every_frames = static_cast<int>(value);
     else if (name == "max_tracks") d.max_tracks = static_cast<std::size_t>(value);
     else if (name == "one_track_per_peak") d.one_track_per_peak = value != 0.0;
     else if (name == "first_retirement_open") config.first_retirement_open = static_cast<int>(value);
+    else if (name == "copy_older_only") config.copy_older_only = value != 0.0;
+    else if (name == "copy_source_proven") config.copy_source_proven = value != 0.0;
     else throw std::invalid_argument("--detector: unknown parameter '" + name + "'");
 }
 

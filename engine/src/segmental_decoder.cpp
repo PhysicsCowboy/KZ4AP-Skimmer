@@ -266,6 +266,14 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
         }
     }
     next_index_ += samples.size();
+    {
+        // The keying this channel hears, at the filter whose text goes out (Decoder::block_envelope_fs2).
+        const std::vector<viterbi::EnvelopeSample>& heard = streams_[leader_].envelope;
+        double sum = 0.0;
+        for (const viterbi::EnvelopeSample& sample : heard) sum += sample.e_fs * sample.e_fs;
+        block_envelope_fs2_ = heard.empty() ? -1.0 : sum / static_cast<double>(heard.size());
+        block_noise_fs2_ = n0_ > 0.0 ? n0_ * streams_[leader_].parts->output_noise.sigma2_per_n0_hz : -1.0;
+    }
     const double now_s = static_cast<double>(next_index_) / rate_;
     if (now_s < next_publish_s_) return {};
     next_publish_s_ = now_s + kPublishEveryS;

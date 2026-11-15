@@ -17,7 +17,8 @@ const kz4ap::DetectorConfig& ValidatedConfig(const kz4ap::DetectorConfig& config
         !(config.peak_radius_hz > 0) || !(config.level_radius_hz >= 0) || !(config.candidate_step_hz >= 0) || !(config.local_floor_radius_hz >= 0) ||
         !(config.prominence_db >= 0) || !(config.prominence_radius_hz >= 0) || !(config.dc_guard_hz >= 0) || !(config.follow_radius_hz >= 0) ||
         !(config.sideband_db >= 0) || !(config.sideband_mirror_db >= 0) || !(config.sideband_radius_hz >= 0) || config.fft_factor < 1 ||
-        (config.fft_factor & (config.fft_factor - 1)) != 0)
+        (config.fft_factor & (config.fft_factor - 1)) != 0 || !(config.skirt_exclusion_db >= 0) || !(config.skirt_exclusion_hz > 0) ||
+        !(config.skirt_exclusion_radius_hz >= 0))
         throw std::invalid_argument("invalid signal detector config");
     return config;
 }
@@ -94,6 +95,17 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
             ++it;
         }
     }
+    if (config_.skirt_exclusion_db > 0.0f) {
+        // A standing track that has fallen inside a stronger one's skirt (its own station silent): the stronger one's copy.
+        std::vector<char> inside(active_.size(), 0);
+        for (std::size_t i = 0; i < active_.size(); ++i) inside[i] = inside_skirt(i, active_[i].track.freq_hz, active_[i].track.snr_db);
+        for (std::size_t i = active_.size(); i-- > 0;) {
+            if (!inside[i]) continue;
+            update.died.push_back(active_[i].track.id);
+            update.copies.push_back(active_[i].track.id);
+            active_.erase(active_.begin() + static_cast<std::ptrdiff_t>(i));
+        }
+    }
 
     // Until the averages settle, a single noisy frame can look like a signal.
     if (now - first_frame_s_ < config_.average_s) return update;
@@ -121,6 +133,7 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
             });
         }
         if (near_track) continue;
+        if (config_.skirt_exclusion_db > 0.0f && inside_skirt(active_.size(), refined_freq(i), snr)) continue;
         if (std::abs(refined_freq(i)) < config_.dc_guard_hz) continue;
         if (!holds_.empty()) {
             const double f = refined_freq(i);
@@ -225,6 +238,18 @@ void SignalDetector::close_place(double freq_hz, double radius_hz, double now_s,
 bool SignalDetector::within_older(std::size_t track, double freq_hz) const {
     for (std::size_t older = 0; older < track; ++older) {
         if (std::abs(active_[older].track.freq_hz - freq_hz) < config_.attribution_distance_hz) return true;
+    }
+    return false;
+}
+
+bool SignalDetector::inside_skirt(std::size_t self, double freq_hz, float snr_db) const {
+    for (std::size_t j = 0; j < active_.size(); ++j) {
+        if (j == self) continue;
+        const double stronger_db = static_cast<double>(active_[j].track.snr_db) - static_cast<double>(snr_db);
+        if (!(stronger_db > 0.0)) continue;
+        const double reach_hz = std::min(config_.skirt_exclusion_radius_hz,
+                                         config_.skirt_exclusion_hz * std::pow(10.0, (stronger_db - config_.skirt_exclusion_db) / 20.0));
+        if (std::abs(active_[j].track.freq_hz - freq_hz) < reach_hz) return true;
     }
     return false;
 }

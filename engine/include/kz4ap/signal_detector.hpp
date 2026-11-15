@@ -79,12 +79,19 @@ struct DetectorConfig {
     // times narrower) and a hop of half that FFT; 1 reads the band's frames. A power of two. The detector itself takes
     // fft_size and hop as given.
     int fft_factor = 1;
+    // A level-scaled exclusion (a variant, off by default): no track, new or standing, within d(dL) = skirt_exclusion_hz x
+    // 10^((dL - skirt_exclusion_db) / 20) Hz of a track dL dB stronger, at most skirt_exclusion_radius_hz: inside a stronger
+    // station's skirt, taken to fall 6 dB per doubling of the distance (a keyed carrier's 1/f^2 in power). 0 dB for no such rule.
+    float skirt_exclusion_db = 0.0f;
+    double skirt_exclusion_hz = 30.0;
+    double skirt_exclusion_radius_hz = 150.0;
 };
 
 struct DetectorUpdate {
     std::vector<Track> born;
     std::vector<std::uint32_t> died;
     std::vector<std::uint32_t> merged;  // those of `died` that left because an older track holds their peak
+    std::vector<std::uint32_t> copies;  // those of `died` that left inside a stronger track's skirt (skirt_exclusion_db)
 };
 
 // Finds CW carriers in spectrum frames and keeps a list of tracks.
@@ -134,6 +141,9 @@ private:
     bool is_peak(int i) const;
     void follow_peaks(float floor_db);
     bool within_older(std::size_t track, double freq_hz) const;
+    // skirt_exclusion_db: whether a peak at freq_hz of level snr_db lies inside the skirt of a stronger track than `self` (an index
+    // into active_, or active_.size() for a new peak).
+    bool inside_skirt(std::size_t self, double freq_hz, float snr_db) const;
 
     // A place closed to new tracks.
     struct Hold {

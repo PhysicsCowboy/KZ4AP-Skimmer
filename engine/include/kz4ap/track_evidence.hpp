@@ -72,7 +72,11 @@ enum class TrackEnd {
     NotMorse,   // retired: its evidence says no keyed Morse
     Quiet,      // retired: it has earned nothing for a long time
     Shed,       // the pipeline fell behind and this track had the least evidence
+    Copy,       // retired: its keying is a stronger neighbor's, heard through its channel (keying_coherence.hpp)
 };
+
+// The end's name in a file: "faded", "merged", "not_morse", "quiet", "shed", "copy".
+const char* track_end_name(TrackEnd end);
 
 // One track's judge. The engine gives it the decoder's evidence once a second; it answers keep or retire.
 class TrackJudge {
