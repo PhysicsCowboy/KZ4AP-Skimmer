@@ -120,6 +120,30 @@ private:
     double delay_s_ = 0.0;
 };
 
+// The fractional delay that takes out the start's rounding to a whole input sample: a Kaiser-windowed sinc of 2M + 1 taps at the
+// audio rate, M = kFractionHalf, centered at M + mu audio samples (|mu| <= fa / (2 fs): 0.031 at 192 kHz and 12 kHz), the
+// window's beta as the listening filter's (8.078), the taps normalized to a sum of 1. For mu = 0 it is the identity. In the
+// station's band (|f| <= 350 Hz, 3% of the audio rate at 12 kHz) it is a delay of mu samples to far better than the edge-finding
+// can see (tested through TimeWindowIsExact); 16 is heuristic.
+constexpr std::uint64_t kFractionHalf = 16;
+
+std::vector<double> fractional_delay_taps(double mu) {
+    const int m = static_cast<int>(kFractionHalf);
+    const double beta = 0.1102 * (kListenAttenuationDb - 8.7);
+    const double i0_beta = detail::bessel_i0(beta);
+    std::vector<double> g(static_cast<std::size_t>(2 * m + 1));
+    double sum = 0.0;
+    for (int i = 0; i <= 2 * m; ++i) {
+        const double t = i - m - mu;
+        const double sinc = t == 0.0 ? 1.0 : std::sin(std::numbers::pi * t) / (std::numbers::pi * t);
+        const double r = t / (m + 1);
+        g[static_cast<std::size_t>(i)] = sinc * detail::bessel_i0(beta * std::sqrt(std::max(0.0, 1.0 - r * r))) / i0_beta;
+        sum += g[static_cast<std::size_t>(i)];
+    }
+    for (double& v : g) v /= sum;
+    return g;
+}
+
 void put_u16(std::string& b, std::uint32_t v) {
     b.push_back(static_cast<char>(v & 0xFF));
     b.push_back(static_cast<char>((v >> 8) & 0xFF));
@@ -138,7 +162,9 @@ std::vector<double> listen_filter_taps(double bandwidth_hz, int audio_rate) {
     const double cutoff = 0.5 * bandwidth_hz;                       // Hz, -6 dB re the passband
     const double transition = kListenTransitionRatio * bandwidth_hz;  // Hz
     const double a = kListenAttenuationDb;
-    // Kaiser's estimates: beta for the attenuation, length for the transition (Oppenheim and Schafer, eqs. 7.62-7.63), made odd
+    // Kaiser's estimates (J. F. Kaiser, "Nonrecursive digital filter design using the I0-sinh window function", Proc. IEEE
+    // Int. Symp. Circuits and Systems, 1974): beta for the attenuation, length (A - 7.95) / (2.285 x 2 pi x transition / rate)
+    // for the transition (Oppenheim and Schafer's textbook form rounds 7.95 to 8); the length made odd
     // so that the delay is a whole number of samples.
     const double beta = 0.1102 * (a - 8.7);
     int length = static_cast<int>(std::ceil((a - 7.95) / (2.285 * 2.0 * std::numbers::pi * transition / audio_rate))) + 1;
@@ -173,14 +199,23 @@ ListenClip listen_clip(RecordingReader& reader, const ListenConfig& config, doub
     if (!(start_s >= 0.0) || !std::isfinite(start_s)) throw std::invalid_argument("the start must be at least 0 s");
     if (!(duration_s > 0.0) || !std::isfinite(duration_s)) throw std::invalid_argument("the duration must be positive (s)");
     const double half = listen_half_band_hz(config, fs);
-    // The highest audio frequency the resampler to fa passes flat: its stopband starts at fa / 2 (RationalResampler).
+    // The tone's limits. Derived: the band must stay above 0 Hz and below fa / 2, so that nothing folds when the real part is
+    // taken. Heuristic, on top: a margin of RationalResampler::kTransitionRatio x fa below fa / 2, the resampler's transition
+    // to fa (its flat passband ends there; 625 Hz at 12 kHz), so that the station's band is not on the resampler's slope.
     const double audio_edge = 0.5 * fa - RationalResampler::kTransitionRatio * fa;
     if (!(config.tone_hz >= half) || !(config.tone_hz + half <= audio_edge))
         throw std::invalid_argument("the tone must lie between " + std::to_string(half) + " and " + std::to_string(audio_edge - half) +
                                     " Hz for this bandwidth and audio rate");
-    if (!(std::abs(config.offset_hz) + half <= 0.5 * fs))
-        throw std::invalid_argument("the frequency lies outside the recording's band: " + std::to_string(config.offset_hz) +
-                                    " Hz from its center");
+    // The band the input holds flat: fs / 2, or, for a recording the reader resampled, the resampler's passband, which ends
+    // kTransitionRatio x fs below fs / 2 (86 kHz from the center at 192 kHz, A.1); beyond it the station is attenuated.
+    const double input_edge = reader.resampled() ? 0.5 * fs - RationalResampler::kTransitionRatio * fs : 0.5 * fs;
+    if (!(std::abs(config.offset_hz) + half <= input_edge))
+        throw std::invalid_argument("the frequency lies outside the band the recording holds flat (" + std::to_string(input_edge) +
+                                    " Hz either side of its center, less the listening band's half-width): " +
+                                    std::to_string(config.offset_hz) + " Hz from its center");
+    const auto count = static_cast<std::uint64_t>(std::llround(duration_s * fa));
+    if (count == 0)
+        throw std::invalid_argument("the clip is shorter than one audio sample (" + std::to_string(1.0 / fa) + " s)");
 
     std::unique_ptr<Path> path;
     if (config.track_filter) path = std::make_unique<TrackPath>(fs, config);
@@ -192,12 +227,16 @@ ListenClip listen_clip(RecordingReader& reader, const ListenConfig& config, doub
     // with K / fa >= 2 d_p so that output K rests only on input from s on (no zeros of the path's own start).
     const double d_r = reader.resampler() ? reader.resampler()->delay_s() : 0.0;
     const double d_p = path->delay_s();
-    const auto lead = static_cast<std::uint64_t>(std::ceil(2.0 * d_p * fa)) + 1;
-    const auto first = static_cast<std::int64_t>(std::llround((start_s + d_r + d_p - static_cast<double>(lead) / fa) * fs));
-    const auto count = static_cast<std::uint64_t>(std::llround(duration_s * fa));
+    const auto lead = std::max<std::uint64_t>(static_cast<std::uint64_t>(std::ceil(2.0 * d_p * fa)) + 1, kFractionHalf);
+    const double first_exact = (start_s + d_r + d_p - static_cast<double>(lead) / fa) * fs;
+    const auto first = static_cast<std::int64_t>(std::llround(first_exact));
+    // Reading from the rounded sample makes output k stand for e = first - first_exact input samples later than its label
+    // (|e| <= 1/2): taken out by the fractional delay below, mu = e x fa / fs audio samples.
+    const std::vector<double> fraction = fractional_delay_taps((static_cast<double>(first) - first_exact) * fa / fs);
+    const std::uint64_t needed = lead + count + kFractionHalf;
 
     std::vector<Sample> block(16384), baseband;
-    baseband.reserve(static_cast<std::size_t>(lead + count) + 1024);
+    baseband.reserve(static_cast<std::size_t>(needed) + 1024);
     if (first < 0) {
         // Before the recording's start: zeros.
         std::vector<Sample> zeros(static_cast<std::size_t>(-first), Sample(0.0f, 0.0f));
@@ -206,7 +245,7 @@ ListenClip listen_clip(RecordingReader& reader, const ListenConfig& config, doub
     } else {
         reader.seek(static_cast<std::uint64_t>(first));
     }
-    while (baseband.size() < lead + count) {
+    while (baseband.size() < needed) {
         std::size_t n = reader.read(block);
         if (n == 0) {
             // Past the recording's end: zeros.
@@ -217,8 +256,17 @@ ListenClip listen_clip(RecordingReader& reader, const ListenConfig& config, doub
     }
 
     ListenClip clip;
-    clip.baseband.assign(baseband.begin() + static_cast<std::ptrdiff_t>(lead),
-                         baseband.begin() + static_cast<std::ptrdiff_t>(lead + count));
+    // z'[k] = sum_i g[i] z[k + M - i] = z(k - mu), M = kFractionHalf.
+    clip.baseband.resize(static_cast<std::size_t>(count));
+    for (std::uint64_t k = 0; k < count; ++k) {
+        const Sample* z = baseband.data() + (lead + k + kFractionHalf);
+        double re = 0.0, im = 0.0;
+        for (std::size_t i = 0; i < fraction.size(); ++i) {
+            re += fraction[i] * z[-static_cast<std::ptrdiff_t>(i)].real();
+            im += fraction[i] * z[-static_cast<std::ptrdiff_t>(i)].imag();
+        }
+        clip.baseband[static_cast<std::size_t>(k)] = Sample(static_cast<float>(re), static_cast<float>(im));
+    }
     clip.audio.resize(static_cast<std::size_t>(count));
     Oscillator tone(config.tone_hz, fa);
     double power = 0.0;

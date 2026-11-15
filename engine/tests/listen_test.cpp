@@ -120,7 +120,7 @@ constexpr int kRate = 48000;
 }  // namespace
 
 // The listening filter as listen.hpp states it, at both audio rates and two widths: within 0.01 dB of the passband for
-// |f| <= 0.3 B, 6.02 dB down (within 0.1 dB) at B / 2, at least 80 dB down for |f| >= 0.7 B up to half the audio rate.
+// |f| <= 0.3 B, 6.02 dB below it (within 0.1 dB) at B / 2, at least 80 dB below it for |f| >= 0.7 B up to half the audio rate.
 TEST(ListenFilter, MeetsItsStatedPassbandAndStopband) {
     for (const int rate : {8000, 12000})
         for (const double b : {500.0, 200.0}) {
@@ -139,7 +139,7 @@ TEST(ListenFilter, MeetsItsStatedPassbandAndStopband) {
     EXPECT_THROW(listen_filter_taps(10.0, 12000), std::invalid_argument);
 }
 
-// A station of 0.25 FS at a known offset comes out as a real tone at the chosen tone, at 0.25 FS within 0.05 dB, through
+// A station of 0.25 FS at a known offset comes out as a real tone at the chosen tone, within 0.05 dB re 0.25 FS, through
 // the listening filter and through the track's channel filter; 40 Hz off the frequency, at the tone plus 40 Hz.
 TEST_F(ListenTest, StationComesOutAtTheToneAndItsLevel) {
     std::vector<Sample> x(3 * kRate);
@@ -160,7 +160,7 @@ TEST_F(ListenTest, StationComesOutAtTheToneAndItsLevel) {
 }
 
 // Neighbors 1 kHz either side of the station, 0.5 FS each, with no station: at least 80 dB below their level through the
-// listening filter (its stopband from 350 Hz) and 74 dB through the track's (its stopband from about 279 Hz). The side below
+// listening filter (its stopband from 350 Hz) and 74 dB below it through the track's (its stopband from about 279 Hz). The side below
 // is the image a real mixer would fold onto the tone's other side.
 TEST_F(ListenTest, NeighborOneKilohertzAwayIsAttenuatedByTheStopband) {
     for (const double side : {+1000.0, -1000.0})
@@ -176,7 +176,7 @@ TEST_F(ListenTest, NeighborOneKilohertzAwayIsAttenuatedByTheStopband) {
 }
 
 // --mirror flips the sign of the offset: a station at +3 kHz in the true spectrum, written mirrored (at -3 kHz in the file),
-// is heard at +3 kHz with the mirror and at -3 kHz without it, and not at all (80 dB down) at the other sign.
+// is heard at +3 kHz with the mirror and at -3 kHz without it, and not at all (80 dB below 0.25 FS) at the other sign.
 TEST_F(ListenTest, MirrorFlipsTheSign) {
     std::vector<Sample> x(3 * kRate);
     add_tone(x, kRate, 3000.0, 0.25);
@@ -195,12 +195,18 @@ TEST_F(ListenTest, MirrorFlipsTheSign) {
 // The time window is exact: a 250 kHz recording (resampled to 192 kHz by the reader, as HDSDR's), a burst keyed down from
 // sample 308 625 to 425 000 (its edges at 1.234 498 and 1.699 998 s, half a sample before those samples); clips from 1.0 s
 // for 1.5 s and from 0 s for 2.5 s hold exactly 1.5 and 2.5 s of samples at 8 and 12 kHz, and |z| crosses half the burst's
-// amplitude within 20 us of each edge (both filters linear-phase, so the half point is the edge), with either filter.
+// amplitude within 1 us of each edge (both filters linear-phase, so the half point is the edge), with either filter. The
+// start's rounding to a whole input sample is taken out by the fractional delay (listen.cpp), so the errors are the
+// edge-finding's (0.04 us at most, measured at 48, 96, 192 and 250 kHz), and a bookkeeping error of one input sample (5.2 us)
+// fails (mutation-checked, review 13b). The burst sits at a bin's center, 213 x 23.4375 Hz: the track path's channel filter
+// is symmetric about the bin, not about a station off it, so off the center the edges' half points spread apart (by 1.2 us
+// each, rise earlier and fall later, measured at 7.8 Hz off): the burst's shape, not a shift of the clip.
 TEST_F(ListenTest, TimeWindowIsExact) {
     constexpr int rate = 250000;
     constexpr std::size_t on = 308625, off = 425000;
+    constexpr double station_hz = 213 * 23.4375;  // 4992.1875 Hz, a bin's center at 192 kHz and 8192 bins
     std::vector<Sample> x(3 * rate);
-    add_tone(x, rate, 5000.0, 0.25, on, off);
+    add_tone(x, rate, station_hz, 0.25, on, off);
     const double rise = (on - 0.5) / rate, fall = (off - 0.5) / rate;
     write_iq_wav(path_, rate, x);
     for (const int audio_rate : {8000, 12000})
@@ -210,19 +216,20 @@ TEST_F(ListenTest, TimeWindowIsExact) {
                 ASSERT_TRUE(reader.resampled());
                 ListenConfig c;
                 c.audio_rate = audio_rate;
-                c.offset_hz = 5000.0;
+                c.offset_hz = station_hz;
                 c.track_filter = track;
                 const ListenClip out = listen_clip(reader, c, start, duration);
                 ASSERT_EQ(out.audio.size(), static_cast<std::size_t>(std::llround(duration * audio_rate)));
                 ASSERT_EQ(out.baseband.size(), out.audio.size());
                 const auto [r, f] = edges_of(out.baseband, audio_rate, 0.25);
-                EXPECT_NEAR(start + r, rise, 20e-6) << audio_rate << " " << track << " " << start;
-                EXPECT_NEAR(start + f, fall, 20e-6) << audio_rate << " " << track << " " << start;
+                EXPECT_NEAR(start + r, rise, 1e-6) << audio_rate << " " << track << " " << start;
+                EXPECT_NEAR(start + f, fall, 1e-6) << audio_rate << " " << track << " " << start;
             }
 }
 
 // What the tool refuses: a tone too low for the band (its lower side would fold through 0 Hz), a rate other than 8 or 12 kHz,
-// a frequency outside the recording's band, a negative start.
+// a frequency outside the recording's band, a negative start, a clip shorter than one audio sample (0.04 ms rounds to none at
+// 12 kHz; 0.05 ms rounds to one and is written).
 TEST_F(ListenTest, RefusesWhatDoesNotFit) {
     std::vector<Sample> x(kRate);
     write_iq_wav(path_, kRate, x);
@@ -238,6 +245,24 @@ TEST_F(ListenTest, RefusesWhatDoesNotFit) {
     EXPECT_THROW(listen_clip(reader, c, 0.0, 0.5), std::invalid_argument);
     c = ListenConfig{};
     EXPECT_THROW(listen_clip(reader, c, -1.0, 0.5), std::invalid_argument);
+    EXPECT_THROW(listen_clip(reader, c, 0.5, 0.04e-3), std::invalid_argument);
+    EXPECT_EQ(listen_clip(reader, c, 0.5, 0.05e-3).audio.size(), 1u);
+}
+
+// A recording the reader resamples holds its band flat only to the resampler's passband: 86 kHz either side of the center at
+// 192 kHz (A.1). A station whose listening band (0.7 x 500 Hz = 350 Hz either side) would pass it is refused; one inside is not.
+TEST_F(ListenTest, RefusesAFrequencyBeyondTheResamplersFlatBand) {
+    std::vector<Sample> x(250000 / 4);
+    write_iq_wav(path_, 250000, x);
+    RecordingReader reader(path_);
+    ASSERT_TRUE(reader.resampled());
+    ListenConfig c;
+    c.offset_hz = 86000.0 - 352.0;
+    EXPECT_NO_THROW(listen_clip(reader, c, 0.0, 0.1));
+    c.offset_hz = 86000.0 - 348.0;
+    EXPECT_THROW(listen_clip(reader, c, 0.0, 0.1), std::invalid_argument);
+    c.offset_hz = -(86000.0 - 348.0);
+    EXPECT_THROW(listen_clip(reader, c, 0.0, 0.1), std::invalid_argument);
 }
 
 // The WAV: a 44-byte header (PCM, mono, 16 bits, the rate), then the samples x gain x 32768, rounded, clipped and counted.

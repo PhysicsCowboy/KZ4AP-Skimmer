@@ -29,19 +29,26 @@ constexpr const char* kUsage =
     "                    [--tone-hz HZ] [--bandwidth-hz HZ] [--rate 8000|12000] [--track-filter] [--gain-db DB]\n"
     "  --khz          the station's frequency, kHz (needs the recording's center: header, file name or --center-khz)\n"
     "  --offset-hz    the station's frequency as an offset from the recording's center, Hz\n"
+    "                 (either way within the band the recording holds flat: +/-86 kHz of a 250 kHz recording, resampled)\n"
     "  --start        the clip's start, s from the recording's first sample\n"
     "  --seconds      the clip's length, s (shortened to the recording's end)\n"
     "  --mirror       the receiver's spectrum is inverted (an SDR on a transceiver's IF output)\n"
     "  --tone-hz      the audio tone the station is heard at, Hz (default 600)\n"
-    "  --bandwidth-hz the listening filter's width at -6 dB, Hz (default 500)\n"
+    "  --bandwidth-hz the listening filter's width at -6 dB re the passband, Hz (default 500)\n"
     "  --rate         the audio's rate, samples/s (default 12000)\n"
-    "  --track-filter the engine's own channel filter instead (+/-150 Hz at -6 dB): what a track's decoder reads\n"
+    "  --track-filter the engine's own channel filter instead (+/-150 Hz at -6 dB re the passband): what a track's decoder reads\n"
     "  --gain-db      a fixed gain, dB re unity (1 FS in, 1 FS out), instead of setting the clip's peak to -1 dBFS\n";
 
 double number(const std::string& name, const char* text) {
     std::size_t used = 0;
-    const double v = std::stod(text, &used);
-    if (used != std::string(text).size() || !std::isfinite(v)) throw std::runtime_error(name + " wants a number: " + text);
+    double v = 0.0;
+    try {
+        v = std::stod(text, &used);
+    } catch (const std::exception&) {  // std::stod's own message names no argument
+        used = 0;
+    }
+    if (used == 0 || used != std::string(text).size() || !std::isfinite(v))
+        throw std::runtime_error(name + " wants a number: " + text);
     return v;
 }
 
