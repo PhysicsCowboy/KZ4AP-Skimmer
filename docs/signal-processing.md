@@ -80,7 +80,7 @@ the largest decoder rate below (250 to 192 kHz: × 96/125, flat to ±86 kHz); `-
 conjugates a mirrored receiver's samples. Frequencies are offsets from the
 center (Hz); the center (`--center-khz`, header or file
 name) only labels them (A.1). Blocks of N/2 samples (section 3) keep the
-output independent of a caller's splitting.
+output independent of a caller's splitting. `kz4ap-listen` makes one frequency audible (A.13).
 
 ## 2. The FFT size N and bin width Δf
 
@@ -198,11 +198,11 @@ one sample in 128.
   0 Hz. For Envelope, Matched and the bank the channel never moves; the
   decoder sees no signal from before the track's birth.
 - **Rate.** Decimating by 128 gives **r = 1500 samples/s** (0.67 ms per
-  sample, far shorter than a 20 ms dit at 60 WPM).
+  sample, ≪ a 20 ms dit at 60 WPM).
 - **Filter.** A linear-phase low-pass of 4097 taps (21.3 ms; the longest
   the shared FFT allows, derived), cut off at **±150 Hz** (−6 dB relative to
-  the passband; heuristic, sized for keying up to about 60 WPM). It is flat
-  to within 0.015 dB of the passband out to about 39 Hz and at least 74 dB
+  the passband; heuristic, sized for keying up to about 60 WPM). It is
+  within 0.015 dB of the passband to about 39 Hz and at least 74 dB
   below the passband beyond about 279 Hz. Its noise bandwidth is 252 Hz;
   its delay 10.7 ms.
 - **Computation.** One FFT of the whole band per hop is shared by all
@@ -4388,6 +4388,8 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Input rate | file's if 48 000 × 2^k samples/s (k = 0–4) or below 48 kHz; else the largest of those below, by L/M ≤ 4 096 | `decoder_rate_for`, `RationalResampler::kMaxFactor` | derived (the decoder's rates); the 4 096 heuristic |
 | Resampler filter | Kaiser sinc, stopband from half the lower rate, transition (10/192) × the lower rate below it (10 kHz at 192 kHz: pass band to 86 kHz, −6 dB re the passband at 91 kHz), design value 82 dB re input for at least 80 dB re input (82.0 dB re input measured); 129 taps per phase at 96/125, delay 257.979 µs | `RationalResampler::kTransitionRatio`, `kAttenuationDb` | heuristic (Kaiser's formulas sourced; the transition chosen against CPU; 82 measured to meet 80) |
 | Center from a file name | span edges when 0.8–1.001 fs apart, else the first `<f>Hz/kHz/MHz` word that is not fs | `center_hz_from_file_name` | heuristic |
+| Listening filter (`kz4ap-listen`) | Kaiser sinc on the complex baseband, width B = 500 Hz at −6 dB re the passband, transition 0.4 B: passband ±0.3 B (150 Hz), stopband from ±0.7 B (350 Hz), at least 80 dB re the passband (design value 82 dB); 311 taps at 12 kHz, 209 at 8 kHz | `listen_filter_taps`, `kListenTransitionRatio`, `kListenAttenuationDb` | heuristic (B, the transition; Kaiser's formulas sourced; 80 dB tested) |
+| Listening tone, rate, level (`kz4ap-listen`) | 600 Hz; 12 000 samples/s (or 8000); one gain per clip, its peak to −1 dBFS | `ListenConfig`; `kPeakDbfs` (listen_main.cpp) | heuristic |
 | Bin width Δf | ~23 Hz (rule: largest power-of-two N with Δf ≥ 20 Hz) | `choose_fft_size` (engine.cpp) | heuristic |
 | Hop / overlap | N/2, 50% (largest hop keeping Hann constant-sum) | engine.cpp | standard choice |
 | Spectrum window | periodic Hann (ENBW 1.5 bins = 35.2 Hz) | spectrum.cpp | standard choice |
@@ -5223,3 +5225,59 @@ scored and printed all four (review 10). The numbers below are confirmed / misre
 - A correction that reaches what has been read adds its readings and does not take back the old ones, so a misreading it replaces can stay beside it, unless the arbitration rules on them. Beyond `history_s` it is not read.
 - A row can hang on one transient reading: K6QOP's second point on real 40 m is a word the decoder corrects away 10.30 s after its end, and `settle_s` from 10.5 to 14 s loses it. So what is listed near such a word depends on `settle_s` to the second (measured, review 5), though no longer on the app's pace.
 - Points are heuristic weights, not probabilities. Segmental's margins (A.8e, a variant) are a ranking, not a calibrated posterior, and no default rule reads them; a posterior on the call would need calibrated ones. The bank's and viterbi's symbols say 1, so their readings' margins are unknown; Envelope's and Matched's carry the product of their elements' confidences, which the stage reads as a margin too, untested as one.
+
+## A.13 Listening clips (`kz4ap-listen`)
+
+A tool beside the decoders, in no decoder's chain: one frequency of a recording as mono audio, so that a decoding can be checked
+by ear (the owner, 2026-11-15). `engine/include/kz4ap/listen.hpp`, `bench/src/listen_main.cpp`. It writes a file and plays
+nothing.
+
+### Exact form
+
+- **Input.** `RecordingReader` as section 1: resampled to the decoder rate fs, mirrored with `--mirror`. The station's offset
+  f_o = f − center, Hz, in the true spectrum (`--khz` less the center from `--center-khz`, the header or the file name, as the
+  app's; or `--offset-hz`).
+- **Listening path (the default), in order.**
+  1. Mix: z₁[n] = x[n] e^(−j2π f_o n / fs), the oscillator's phase kept in cycles in [0, 1) as a double.
+  2. Resample fs → f_a (`--rate`, 8000 or 12000 samples/s, default 12000) with `RationalResampler` (A.1): stopband from f_a/2,
+     transition (10/192) f_a below it (625 Hz at 12 kHz, flat to 5375 Hz), at least 80 dB re the passband. Only input at
+     |f| ≥ f_a − 0.7B (11.65 kHz at 12 kHz and B = 500 Hz) can fold into the listening band, at least 80 dB down (derived).
+  3. Listening filter (`listen_filter_taps`): a Kaiser-windowed sinc, linear phase, real taps applied to the complex baseband,
+     so it passes the station's own band and rejects the other side of the tone (the image a real mixer would fold onto it) as
+     much as any other frequency. Width B (`--bandwidth-hz`, default **500 Hz**, at −6 dB re the passband, both sides of the
+     carrier together; heuristic, a common width for a CW filter). Cutoff ±B/2 at −6 dB re the passband; transition 0.4 B
+     centered there (heuristic): **passband |f| ≤ 0.3 B (±150 Hz), stopband |f| ≥ 0.7 B (±350 Hz), at least 80 dB below the
+     passband**. Kaiser's estimates for a design value A = 82 dB (as the resampler's, to meet 80): β = 0.1102 (A − 8.7) = 8.078,
+     L = ⌈(A − 7.95) / (2.285 · 2π · 0.4B / f_a)⌉ + 1, made odd: **311 taps at 12 kHz** (25.9 ms, delay 12.92 ms), 209 at 8 kHz.
+     Taps normalized to a sum of 1 (unity gain at 0 Hz). B from 50 Hz (3097 taps at 12 kHz; heuristic) to f_a/2.
+- **Track path (`--track-filter`).** The channelizer (section 7, A.7) with one channel at bin c = round(f_o / Δf), its stream at
+  r mixed by e^(−j2π (f_o − c Δf) j / r) (`ChannelFollower`'s shift for a detector frequency held at f_o), then
+  `RationalResampler` r → f_a (1500 → 12000 samples/s: transition 78 Hz, flat to 672 Hz). Its filter is the channel's: −6 dB re
+  the passband at ±150 Hz, within 0.015 dB to about 39 Hz, at least 74 dB down from about 279 Hz. This is the stream
+  segmental's and viterbi's channels hand their decoders for a station held at f_o; the decoders' own front filters (A.8d,
+  A.8e) are not applied, nor the DC blocker (A.6), which acts within 0.03 Hz of the center only. Refused where r is not a whole
+  number of samples/s (44.1 kHz input).
+- **Tone.** a[k] = Re(z[k] e^(j2π f_t k / f_a)), z the path's output with the station at 0 Hz, f_t = `--tone-hz` (default
+  600 Hz; heuristic, settable). A complex tone of amplitude A FS at f_o gives a real tone of amplitude A FS at f_t, power A²/2
+  FS² (derived). Refused unless f_t ≥ W and f_t + W ≤ f_a/2 − (10/192) f_a, with W = 0.7 B (about 279 Hz with the track's
+  filter), so that nothing folds through 0 Hz or f_a/2 when the real part is taken (derived).
+- **Time.** a[k] stands for the recording's time t₀ + k / f_a (`--start` t₀, s from its first sample), the delays taken out:
+  the path's output k from reader sample s stands for reader sample s + (k / f_a − d_p) fs, and reader sample m for the file's
+  time m / fs − d_r, so reading starts at s = round((t₀ + d_r + d_p − K / f_a) fs) and the first K = ⌈2 d_p f_a⌉ + 1 outputs
+  are dropped (d_r the reader's resampler delay, d_p the sum of the path's linear-phase delays; K / f_a ≥ 2 d_p, so the first
+  output kept rests on input from s on only). Exact to half an input sample, 2.6 µs at 192 kHz (derived). Input before the
+  recording's start or past its end counts as zero; a clip past the end is shortened to it.
+- **Level.** One fixed gain for the whole clip: the clip's peak to **−1 dBFS** (20 log₁₀(|a|max / 1 FS); 1 dB of room for a
+  player's own resampling, heuristic), or `--gain-db`, dB re unity (1 FS in, 1 FS out). Not an AGC: a fixed gain keeps the
+  station's level against the noise, and its fades, as the decoder had them, where an AGC would raise the noise between overs
+  and flatten fades over its time constant. The clip is held in memory (60 s at 12 kHz: 0.72 M samples), so its peak is known
+  before the file is written. The tool reports the power in the band, mean |z|², dBFS re 1 FS² on the recording's scale, and
+  the clip's peak and rms, dBFS re 1 FS (a full-scale sine's rms reads −3.01 dBFS by section 0's convention).
+- **Output.** Mono 16-bit PCM WAV, 1 FS = 32 768 counts, rounded and clipped (none clip at the default gain).
+
+### Limitations
+
+- A click or static crash in the band sets the peak and leaves the station quieter; `--gain-db` sets the gain by hand.
+- The band holds whatever else lies within it: stations 45 Hz apart are heard together at 500 Hz (their tones 45 Hz apart);
+  `--bandwidth-hz 100` narrows it (passband ±30 Hz, stopband ±70 Hz).
+- The track path follows no drift: the channel stays at f_o, where the decoders' channels follow the detector (section 7).

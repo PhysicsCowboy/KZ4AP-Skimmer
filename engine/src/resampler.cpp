@@ -1,5 +1,7 @@
 #include "kz4ap/resampler.hpp"
 
+#include "kaiser.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -8,21 +10,8 @@
 #include <string>
 
 namespace kz4ap {
-namespace {
 
-// The modified Bessel function of the first kind, order 0, by its power series (terms below 1e-12 of the sum dropped).
-double bessel_i0(double x) {
-    double sum = 1.0, term = 1.0;
-    const double q = x * x / 4.0;
-    for (int k = 1; k < 200; ++k) {
-        term *= q / (static_cast<double>(k) * k);
-        sum += term;
-        if (term < 1e-12 * sum) break;
-    }
-    return sum;
-}
-
-}  // namespace
+using detail::bessel_i0;
 
 RationalResampler::RationalResampler(int in_rate, int out_rate, double transition_ratio, double attenuation_db) {
     if (in_rate <= 0 || out_rate <= 0) throw std::invalid_argument("resampler rates must be positive (samples/s)");
