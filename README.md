@@ -128,6 +128,21 @@ reads a receiver whose spectrum is inverted, as an SDR on a transceiver's IF
 output. `kz4ap-resample IN.wav OUT.wav [--mirror] [--gain-db DB]` writes the
 same samples as a 16-bit copy at that rate, for CW Skimmer.
 
+**Listening to one station.** The app makes no sound yet. `kz4ap-listen` writes
+what one frequency of a recording holds as a mono 16-bit WAV, for checking a
+decoding by ear: the station shifted to a 600 Hz tone, through a 500 Hz filter
+(at −6 dB re the passband; flat to ±150 Hz around the carrier, at least 80 dB
+below the passband beyond ±350 Hz), at 12 kHz, the clip's peak set to −1 dBFS by one gain for
+the whole clip. For example, 60 s from 155 s into a recording, at 7029.855 kHz:
+
+    kz4ap-listen IN.wav OUT.wav --mirror --khz 7029.855 --start 155 --seconds 60
+
+`--offset-hz` gives the frequency from the center instead, `--tone-hz` and
+`--bandwidth-hz` change the tone and the width, `--rate 8000` the rate,
+`--gain-db` sets the gain by hand, and `--track-filter` uses the engine's own
+channel filter (±150 Hz at −6 dB re the passband), so that one hears what a track's decoder
+reads. `--help` lists them. It writes a file and plays nothing.
+
 **The radio.** The SDRplay API (3.x) is used if it is there, and nothing else
 needs it: the program builds and runs without it and says so when asked for the
 radio. Building its support needs the API's headers (found in
