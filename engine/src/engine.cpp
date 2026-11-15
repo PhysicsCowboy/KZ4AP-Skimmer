@@ -562,6 +562,8 @@ bool Engine::is_copy(std::uint32_t id, const Channel& channel, std::uint64_t blo
         if ((config_.copy_older_only && other_id >= id) || other_id == id || other.envelope.size() < copy_blocks_ || other.envelope.newest_block() != block) continue;
         if (!(std::abs(other.detector_freq_hz - channel.detector_freq_hz) <= config_.copy_radius_hz)) continue;
         if (!(other.detector_snr_db - channel.detector_snr_db >= config_.copy_level_db)) continue;
+        // S must read Morse itself (TrackJudge::proven): a track on a carrier beside the station hears the station too.
+        if (config_.copy_source_proven && !other.judge.proven()) continue;
         if (!loaded) {
             channel.envelope.last(copy_blocks_, weak);
             loaded = true;

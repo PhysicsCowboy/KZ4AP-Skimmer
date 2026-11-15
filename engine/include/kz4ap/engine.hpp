@@ -155,6 +155,7 @@ struct EngineConfig {
     double copy_radius_hz = 150.0;
     double copy_detrend_s = 0.5;
     bool copy_older_only = true;  // S must be older than W (a lower track id)
+    bool copy_source_proven = true;  // and its text proven Morse (TrackJudge::proven)
     double copy_gain_max = 1.0;   // and W must hear S's keying at a gain of at most this (KeyingCoherence::gain)
     // and W must hold no more power of its own than this, linear, re what the leak and its hiss explain: (mean e_W^2 - E) / E, E = gain
     // mean e_S^2 + sigma_W^2. Negative for no such condition.

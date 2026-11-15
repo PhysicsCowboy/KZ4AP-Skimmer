@@ -573,6 +573,7 @@ void apply_detector_setting(EngineConfig& config, const std::string& setting) {
     else if (name == "one_track_per_peak") d.one_track_per_peak = value != 0.0;
     else if (name == "first_retirement_open") config.first_retirement_open = static_cast<int>(value);
     else if (name == "copy_older_only") config.copy_older_only = value != 0.0;
+    else if (name == "copy_source_proven") config.copy_source_proven = value != 0.0;
     else throw std::invalid_argument("--detector: unknown parameter '" + name + "'");
 }
 
