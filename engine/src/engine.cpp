@@ -158,9 +158,9 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
     if (!(config_.replay_tracks_per_s > 0.0)) throw std::invalid_argument("replay_tracks_per_s must be positive (tracks/s)");
     if (!(config_.copy_window_s >= 0.0) || !std::isfinite(config_.copy_window_s) || !(config_.copy_detrend_s >= 0.0) ||
         !std::isfinite(config_.copy_detrend_s) || !(config_.copy_radius_hz >= 0.0) || !std::isfinite(config_.copy_level_db) ||
-        !(config_.copy_rho > -1.0 && config_.copy_rho <= 1.0))
+        !(config_.copy_rho > -1.0 && config_.copy_rho <= 1.0) || !(config_.copy_gain_max > 0.0) || std::isnan(config_.copy_own_snr_max))
         throw std::invalid_argument("copy_window_s, copy_detrend_s and copy_radius_hz must be finite and not negative (s, s, Hz), "
-                                    "copy_level_db finite (dB) and copy_rho in (-1, 1]");
+                                    "copy_level_db finite (dB), copy_rho in (-1, 1], copy_gain_max positive and copy_own_snr_max a number");
     if (!oracle_ && config_.decoder.front_end == FrontEnd::Segmental && config_.judge_tracks && config_.copy_window_s > 0.0) {
         const double block_s = static_cast<double>(hop_) / config_.sample_rate;
         copy_blocks_ = std::max<std::size_t>(2, static_cast<std::size_t>(std::lround(config_.copy_window_s / block_s)));

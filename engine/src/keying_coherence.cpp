@@ -9,7 +9,8 @@ namespace kz4ap {
 
 namespace {
 
-// x less its centered moving mean over m values (fewer at the ends), into out.
+// x less the mean of m consecutive values around it, into out: centered on it where it can be, slid inward at the series'
+// ends so that it always holds m values (all of them when m >= the series' length).
 void high_pass(std::span<const float> x, std::size_t m, std::vector<double>& prefix, std::vector<double>& out) {
     const std::size_t n = x.size();
     prefix.assign(n + 1, 0.0);

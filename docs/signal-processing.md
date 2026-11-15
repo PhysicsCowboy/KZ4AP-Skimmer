@@ -1359,7 +1359,7 @@ detector's path with `judge_tracks`, never in oracle mode.
 - **Against what.** Each other channel S with: a lower track id (older; `copy_older_only`), `TrackJudge::proven`
   (`copy_source_proven`), |f_S − f_W| ≤ 150 Hz (`copy_radius_hz`, the detector's frequencies), L_S − L_W ≥ 15 dB
   (`copy_level_db`, the detector's levels, dB re its floor per fine bin), and both histories full and ending at this block.
-- **The test.** x = e less its centered moving mean over m = round(0.5 s / 21.33 ms) = 23 blocks (fewer at the window's ends;
+- **The test.** x = e less the mean of m = round(0.5 s / 21.33 ms) = 23 blocks around it (centered, slid inward at the window's ends;
   `copy_detrend_s`); ē the plain means over the window.
 
   ρ = Σx_W x_S / √(Σx_W² Σx_S²),  β = Σx_W x_S / Σx_S²,  own = (ē_W − E) / E,  E = β ē_S + σ_W².
@@ -1381,15 +1381,16 @@ detector's path with `judge_tracks`, never in oracle mode.
   0.33 at S = 0 dB, 0.5 at +3 dB, 0.83 at +10 dB (derived; the unit test checks −6 to +10 dB within 0.02). A block averages 8
   samples of a filter about 4.5 samples long at m = 1, so q is about 2 (an estimate), which raises ρ at a given S.
 - **An independent station's ρ.** Mean 0, standard deviation 1/√N for N independent values (derived; the unit test, 300 and 3 000
-  values, within 15%). For keyed signals N is about the number of elements in the window (an estimate): about 120 in 6 s at 25 WPM,
-  1/√N = 0.09, so ρ = 0.5 stands about 5.5 standard deviations above it.
+  values, within 15%). For keyed signals N is about the number of elements in the window (an estimate): PARIS is 50 dots long and holds 28
+  elements, so about 70 in 6 s at 25 WPM, 1/√N = 0.12, and ρ = 0.5 stands about 4.2 standard deviations above it.
 - **The high-pass.** Callers who start together after a CQ share a step. With the plain mean, two independent keys silent for
   5 s of 8 and then keyed at d = ½ give ρ = (3/8 × ¼ − (3/16)²) / (3/8 × ½ − (3/16)²) = 0.385 (derived); less the 0.5 s moving
   mean only the blocks within about ±0.25 s of the step keep it (unit test: under 0.15).
 - **β ≤ 1.** For a copy β = g, and g ≤ 1 since the two channels' filters are alike and S sits at its own channel's center, where
   they are flat (derived). A strong channel whose station is silent hears the weaker W at g′; read the other way, W on S, that is a
   gain of 1/g′ > 1.
-- **own.** For a copy ē_W = g ē_S + σ_W² in the linear model, so own = 0 at any SNR (derived); a station of W's own adds its mean
+- **own.** For a copy ē_W = g ē_S + σ_W² in the linear model, so own = 0 at any SNR (derived; exactly −β σ_S² / E, since ē_S holds S's own hiss σ_S², slightly negative and negligible for a
+  strong S); a station of W's own adds its mean
   power, and own is its SNR against the leak and hiss together.
 
 **Provenance.** Decision log, 2026-11-15. Measured on the Linux machine against `main` (a34069e), scratch tables in `build/det2`,

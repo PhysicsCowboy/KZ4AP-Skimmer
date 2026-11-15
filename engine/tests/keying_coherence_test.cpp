@@ -11,6 +11,7 @@
 #include <functional>
 #include <map>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -270,6 +271,13 @@ TEST(EngineCopies, WithoutItsOwnPowerTheWeakerCallerWouldBeTakenForACopy) {
 }
 
 
+TEST(EngineCopies, TwoCallersAtOnceKeepTheirTracksOnTheirOwnPowerAlone) {
+    // The own-power condition's own share: with the level difference at 6 dB (the callers stand 7 to 9 dB apart at the detector, so
+    // the level does not protect them), the weaker caller's own power keeps its track.
+    const Scene r = run(two_callers(), [](EngineConfig& c) { c.copy_level_db = 6.0; });
+    for (const auto& [id, end] : r.ended) EXPECT_NE(end, TrackEnd::Copy) << "track " << id << " at " << r.freq_hz.at(id) << " Hz";
+}
+
 TEST(EngineCopies, TwoCallersAtOnceKeepTheirTracksOnTheLevelAloneToo) {
     // The level difference's own share: with the own-power condition off, 15 dB keeps the callers 7 to 9 dB apart.
     const Scene r = run(two_callers(), [](EngineConfig& c) { c.copy_own_snr_max = -1.0; });
@@ -285,4 +293,18 @@ TEST(EngineCopies, TheTestIsTheSegmentalPathsDefault) {
     m.decoder.front_end = FrontEnd::Matched;
     apply_path_defaults(m);
     EXPECT_DOUBLE_EQ(m.copy_window_s, 0.0);
+}
+
+TEST(EngineCopies, RefusesBoundsThatAreNotNumbers) {
+    // A NaN would turn the test off without a word.
+    for (const int which : {0, 1, 2}) {
+        EngineConfig c;
+        c.sample_rate = static_cast<int>(kRate);
+        c.decoder.front_end = FrontEnd::Segmental;
+        if (which == 0) c.copy_gain_max = std::nan("");
+        if (which == 1) c.copy_own_snr_max = std::nan("");
+        if (which == 2) c.copy_gain_max = 0.0;
+        EventBus bus;
+        EXPECT_THROW({ Engine engine(c, bus); }, std::invalid_argument) << which;
+    }
 }

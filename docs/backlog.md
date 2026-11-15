@@ -1758,4 +1758,9 @@ decision log). Left open:
   keying would end that, at the risk of blocking a QSO partner.
 - **The test set has no group of copies.** The ghost cells (A.11) are scratch; a group like them in DEV2 would let later changes see
   the duplicates.
-
+- **A hidden row's own text is dropped on a copy's end** (review 14): `TrackTable` drops a row not yet shown when its track ends as
+  `Copy`, as a merged one's. Many copy retirements are real callers' tracks that read their own call first and then their runner
+  (the owner's file: 577 "N4ZZ DON", 644 "NU4J", 600 "W4CMG", 570 "W4SSF", 536 "KK4E"). Display only: the call list reads every
+  track's text. Keeping the row, as for a faded track, would show them.
+- **No test holds the source-proven condition alone** (review 14): det-1's carrier cell is its evidence (A.6), but a unit scene of a
+  station between a carrier's track and a side track did not reproduce the side track (tried, 2026-11-15).
