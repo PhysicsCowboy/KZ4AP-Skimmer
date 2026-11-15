@@ -5272,8 +5272,8 @@ nothing.
   up to 2.6 µs at 192 kHz; ½ exactly whenever d_p holds a half sample, as from 192 kHz to 12 or 8 kHz, whose decimators have even lengths, 1586 and
   2378 taps). A fractional
   delay at f_a takes it out: a Kaiser-windowed sinc of 33 taps (heuristic) centered at 16 + μ samples, μ = e f_a / fs
-  (|μ| ≤ 0.031 at 192 kHz and 12 kHz), β = 8.078, taps summing to 1; the identity at μ = 0. A burst's edges then land within
-  0.04 µs of their times at 48, 96, 192 and 250 kHz with either path (measured; the test allows 1 µs, and fails a bookkeeping
+  (|μ| ≤ f_a/(2 fs): 0.031 at 192 kHz in and 12 kHz out, 0.125 at 48 kHz in and 12 kHz out), β = 8.078, taps summing to 1; the identity at μ = 0. A burst's edges then land within
+  about 0.05 µs of their times at 48, 96, 192 and 250 kHz with either path (measured; the test allows 1 µs, and fails a bookkeeping
   error of one input sample, 5.2 µs). A station off its channel's bin center sees an asymmetric channel response, so its
   edges' half points spread apart (1.2 µs each at 7.8 Hz off, measured): the burst's shape, not a shift. Input before the
   recording's start or past its end counts as zero; a clip past the end is shortened to it; one shorter than an audio sample

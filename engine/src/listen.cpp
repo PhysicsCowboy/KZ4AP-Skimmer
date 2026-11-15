@@ -121,7 +121,7 @@ private:
 };
 
 // The fractional delay that takes out the start's rounding to a whole input sample: a Kaiser-windowed sinc of 2M + 1 taps at the
-// audio rate, M = kFractionHalf, centered at M + mu audio samples (|mu| <= fa / (2 fs): 0.031 at 192 kHz and 12 kHz), the
+// audio rate, M = kFractionHalf, centered at M + mu audio samples (|mu| <= fa / (2 fs): 0.031 at 192 kHz and 12 kHz, 0.125 at 48 kHz and 12 kHz), the
 // window's beta as the listening filter's (8.078), the taps normalized to a sum of 1. For mu = 0 it is the identity. In the
 // station's band (|f| <= 350 Hz, 3% of the audio rate at 12 kHz) it is a delay of mu samples to far better than the edge-finding
 // can see (tested through TimeWindowIsExact); 16 is heuristic.

@@ -48,7 +48,7 @@ double listen_half_band_hz(const ListenConfig& config, int input_rate);
 
 // A clip of a recording, in FS, before any gain: audio[k] stands for the recording's time start_s + k / audio_rate (the file's
 // first sample at 0 s), the filters' delays taken out, the start's rounding to a whole input sample too (by a fractional delay
-// at audio_rate): edges land within 0.04 us of their times (measured; TimeWindowIsExact allows 1 us).
+// at audio_rate): edges land within about 0.05 us of their times (measured; TimeWindowIsExact allows 1 us).
 //   audio[k] = Re( z[k] exp(j 2 pi tone_hz k / audio_rate) ),
 // z the complex baseband at audio_rate with the station at 0 Hz: without track_filter the input mixed by
 // exp(-j 2 pi offset_hz t), resampled to audio_rate (RationalResampler), then the listening filter; with it the channelizer's
