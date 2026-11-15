@@ -1,4 +1,4 @@
-// Whether a track's keying is a stronger neighbor's (docs/signal-processing.md, section 6, "Copies of a neighbor"). A channel 150 Hz
+// Whether a track's keying is a stronger neighbor's (docs/signal-processing.md, section 6, "Copies of a neighbor"). A channel +/-150 Hz
 // wide hears a strong station tens of Hz away through its filter's skirt, and when the channel's own station is silent, or there never
 // was one, its decoder prints the neighbor's text: a second row of one station. Its envelope then follows the neighbor's keying,
 // element by element; an independent station's does not.
