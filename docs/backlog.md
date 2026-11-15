@@ -1709,7 +1709,7 @@ From review 5, of `app-7` (2026-10-31); the review's full evidence is summarized
 - **A correction near `history_s`:** the final decoder's longest on real 40 m is 199.2 s against 200 s (205.8 s at the 1 s hold).
 - **The list never ages out;** CW Skimmer's deletes a call after 10 min of inactivity.
 - **"Last heard" is clipped** at some display scales (`app/src/main_window.cpp`, 75 px).
-- **A fresh `.venv` fails 1 test:** `training/tests/test_keying.py:157`, `pytest.approx` on nested tuples, on `pytest>=8.0` resolving to 9.2.0. Pin it, or compare element by element.
+- **Fixed 2026-11-15 (`ci-1`): a fresh `.venv` failed 1 test,** `training/tests/test_keying.py:157`, `pytest.approx` on nested tuples under pytest 9.2.0; the pairs are now compared flattened. It had stopped the automated builds on GitHub before the C++ steps.
 - **A correction that shortens text below `TrackText::base`** would misnumber symbols in `CallSearch`; it never happens on the recordings measured.
 - **The model of the call list** has no unit test in `app/tests`.
 - **The same check on the owner's hour:** the Reverse Beacon Network's day file against what we list, as checkpoint 2's record does for `real30` (`rbn-check.csv`): other antennas, CQ spots only, a rough figure, not the bar. Done for `real30`; the product never matches calls against it.

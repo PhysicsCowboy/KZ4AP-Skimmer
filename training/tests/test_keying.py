@@ -154,7 +154,10 @@ def test_one_paris_takes_sixty_seconds_over_the_overall_speed():
 
 
 def test_farnsworth_at_the_character_speed_is_standard_spacing():
-    assert timed_intervals("CQ TEST", 20.0, farnsworth_wpm=20.0) == pytest.approx(keying_intervals("CQ TEST", 20.0))
+    # pytest.approx refuses nested tuples from pytest 9, so the (start, end) pairs are compared flattened.
+    got = [t for iv in timed_intervals("CQ TEST", 20.0, farnsworth_wpm=20.0) for t in iv]
+    want = [t for iv in keying_intervals("CQ TEST", 20.0) for t in iv]
+    assert got == pytest.approx(want)
 
 
 def test_farnsworth_with_random_keying_scales_the_gap_medians():
