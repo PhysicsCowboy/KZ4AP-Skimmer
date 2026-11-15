@@ -699,23 +699,24 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
     for (auto& [base, other] : candidates_) {
         if (&other == &c || other.recent.empty()) continue;
         if (now_s - other.recent.back().end_s > config_.variant_s) continue;
+        // A call of one letter after its digit and another with the same prefix and digit: two edits apart count (K1T, K1BX).
         const bool short_pair = config_.short_variant_ratio > 0.0 && (one_letter_suffix(c.base) || one_letter_suffix(other.base)) &&
                                 call_area(c.base) == call_area(other.base);
         const int limit = short_pair ? 2 : limit_for(std::min(c.base.size(), other.base.size()));
         const bool prefix = config_.prefix_held != 0.0 && (c.base.starts_with(other.base) || other.base.starts_with(c.base));
-        if (!prefix && static_cast<int>(c.base.size()) - static_cast<int>(other.base.size()) > limit) continue;
-        if (!prefix && static_cast<int>(other.base.size()) - static_cast<int>(c.base.size()) > limit) continue;
-        const int distance = edit_distance(c.base, other.base, limit);
+        const int distance = edit_distance(c.base, other.base, limit);  // cheap when the lengths differ by more than limit
         if (distance > limit && !prefix) continue;
         const double theirs = support(other, freq_hz, now_s, config_.variant_hz).points;
         if (theirs <= 0) continue;
         const int d = prefix ? 1 : distance;
+        // Two letters' difference only against a much better call.
         const double need = d >= 2 ? (short_pair ? config_.short_variant_ratio : config_.far_variant_ratio) : 1.0;
         const auto beats = [&](const Candidate& a, double pa, const Candidate& b, double pb) {
             if (a.known && !b.known) return pa * config_.known_rival_factor >= pb;
             if (b.known && !a.known) return pa >= config_.known_rival_factor * pb;
             if (pa > need * pb) return true;
             if (pa != pb || d != 1) return false;
+            // A tie: the earlier call, unless they begin on one word (within 1 s; heuristic), where the later is what a correction made of it.
             if (std::abs(a.first_s - b.first_s) <= 1.0) return a.made > b.made;
             return a.first_s < b.first_s;
         };
@@ -733,86 +734,34 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
 void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
     const Support s = support(c, freq_hz, now_s, config_.same_place_hz);
     c.best_points = std::max(c.best_points, s.points);
-    const bool pool = config_.pool_places != 0.0;
-    if (pool) {
-        double rival_best = 0.0;
-        std::vector<Candidate*> beaten;
-        const bool held = held_at(c, freq_hz, now_s, &rival_best, &beaten);
-        if (held) {
-            // Held here: it stays on the list only if it passes on its readings where nothing holds it.
-            if (c.reported) {
-                if (!passes(c, pooled_support(c, now_s))) withdraw(c);
-                else update_row(c);
-            }
-            return;
-        }
-        if (c.reported) {
-            update_row(c);
-        } else if (passes(c, s) || passes(c, pooled_support(c, now_s))) {
-            report(c, now_s);
-        }
-        if (c.reported) {
-            for (Candidate* b : beaten) {
-                if (!passes(*b, pooled_support(*b, now_s))) withdraw(*b);
-            }
-        }
-        return;
-    }
     // Its near variants at this place: which are better supported, and what the weaker add.
-    const auto limit_for = [](std::size_t n) { return n >= 4 ? 2 : 1; };
-    bool held = false;
     double rival_best = 0.0;  // the best any rival that beats it here has had at one place
     std::vector<Candidate*> beaten;
-    const double mine = support(c, freq_hz, now_s, config_.variant_hz).points;
-    for (auto& [base, other] : candidates_) {
-        if (&other == &c || other.recent.empty()) continue;
-        if (now_s - other.recent.back().end_s > config_.variant_s) continue;
-        const double theirs = support(other, freq_hz, now_s, config_.variant_hz).points;
-        if (theirs <= 0) continue;
-        // A call of one letter after its digit and another with the same prefix and digit: two edits apart count (K1T, K1BX).
-        const bool short_pair = config_.short_variant_ratio > 0.0 && (one_letter_suffix(c.base) || one_letter_suffix(other.base)) &&
-                                call_area(c.base) == call_area(other.base);
-        const int limit = short_pair ? 2 : limit_for(std::min(c.base.size(), other.base.size()));
-        const bool prefix = config_.prefix_held != 0.0 && (c.base.starts_with(other.base) || other.base.starts_with(c.base));
-        const int distance = edit_distance(c.base, other.base, limit);
-        if (distance > limit && !prefix) continue;
-        const int d = prefix ? 1 : distance;
-        // Two letters' difference only against a much better call.
-        const double need = d >= 2 ? (short_pair ? config_.short_variant_ratio : config_.far_variant_ratio) : 1.0;
-        const auto beats = [&](const Candidate& a, double pa, const Candidate& b, double pb) {
-            if (a.known && !b.known) return pa * config_.known_rival_factor >= pb;
-            if (b.known && !a.known) return pa >= config_.known_rival_factor * pb;
-            if (pa > need * pb) return true;
-            if (pa != pb || d != 1) return false;
-            // A tie: the earlier call, unless they begin on one word (within 1 s; heuristic), where the later is what a correction made of it.
-            if (std::abs(a.first_s - b.first_s) <= 1.0) return a.made > b.made;
-            return a.first_s < b.first_s;
-        };
-        if (beats(other, theirs, c, mine)) {
-            held = true;
-            rival_best = std::max(rival_best, other.best_points);
-        } else if (beats(c, mine, other, theirs)) {
-            if (other.reported) beaten.push_back(&other);
-        }
-    }
-    // A defeat here takes a reported call off the list only if the rival is the better at its best, or the call stands nowhere else: a call
-    // doubled and signed at 1 kHz does not leave because of a misreading at 2 kHz.
+    const bool held = held_at(c, freq_hz, now_s, &rival_best, &beaten);
+    const bool pool = config_.pool_places != 0.0;
+    // Whether a call that loses here leaves the list. Pooled: when its points where nothing holds it no longer pass. Else a defeat here
+    // takes it off only if the rival is the better at its best, or the call stands nowhere else: a call doubled and signed at 1 kHz does
+    // not leave because of a misreading at 2 kHz.
     const bool own_place = config_.withdraw_own_place != 0.0;
+    const auto leaves = [&](Candidate& loser, double winner_best) {
+        if (pool) return !passes(loser, pooled_support(loser, now_s));
+        return !own_place || winner_best > loser.best_points || !stands_elsewhere(loser, freq_hz, now_s);
+    };
     if (held) {
         if (c.reported) {
-            if (!own_place || rival_best > c.best_points || !stands_elsewhere(c, freq_hz, now_s)) withdraw(c);
+            if (leaves(c, rival_best)) withdraw(c);
             else update_row(c);
         }
         return;
     }
     if (c.reported) {
         update_row(c);
-    } else if (passes(c, s)) {
+    } else if (passes(c, s) || (pool && passes(c, pooled_support(c, now_s)))) {
         report(c, now_s);
     }
     if (c.reported) {
         for (Candidate* b : beaten) {
-            if (!own_place || c.best_points > b->best_points || !stands_elsewhere(*b, freq_hz, now_s)) withdraw(*b);
+            if (leaves(*b, c.best_points)) withdraw(*b);
         }
     }
 }
