@@ -85,7 +85,6 @@ enum class Reading {
     Glued,     // a word with a keyword or the call again glued to it: DEK1ABC, N5JJDEWA0QZK, K1ABCK1ABC
     Stripped,  // a word with a stray E, T or I in front or an E, T or K behind: EIK0HBN
     Joined,    // several short words: N 5 JJ, K X 9 F
-    Partial,   // a word beside a whole call that is its start or its end, with the digit: 5LN K5LN, a repeat that lost a part
 };
 
 // What the words around it say of who sent it.
@@ -119,9 +118,8 @@ double margin_of(float probability);
 // Every reading of a call that begins in the words [from, to). A word can give several: they are alternatives, and the evidence
 // decides among them. `words` may reach past `to` and before `from`, for context.
 std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to);
-// As read_calls; with pieces_timed, each piece of a glued word has its own characters' times (CallSearchConfig::glued_pieces_timed);
-// with partials, partial repeats beside a whole reading are read too (Reading::Partial).
-std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, bool pieces_timed, bool partials = false);
+// As read_calls; with pieces_timed, each piece of a glued word has its own characters' times (CallSearchConfig::glued_pieces_timed).
+std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, bool pieces_timed);
 
 // ---- A known-call list
 
@@ -217,9 +215,11 @@ struct CallSearchConfig {
     // (K1ABCK1ABC) is two readings, as it is with the space; at 0 every piece has the word's times and the two are one occurrence.
     // Derived from the evidence rule (one occurrence per transmission); rob-1.
     double glued_pieces_timed = 0.0;
-    // Points of a partial repeat (Reading::Partial): the word next to a whole reading of a call is its start or its end, of at least three
-    // characters with the digit, and no call itself (5LN K5LN, K5LN K5L). 0 reads none. Heuristic (rob-1).
-    double partial_points = 0.0;
+    // An occurrence that overlaps in time, within same_place_hz, an occurrence of a near variant (as the arbitration counts them) that has
+    // more points is that variant's transmission read another way, and counts for it only, when not 0: IK0HBN read whole gives its stripped
+    // reading K0HBN half a point on the same characters, which then adds to K0HBN's own misreadings. Derived from the evidence rule (one
+    // transmission, one reading of it); rob-1.
+    double shadow_alternatives = 0.0;
 };
 
 // One line of the list.
@@ -269,6 +269,7 @@ private:
         Role role = Role::Unknown;
         bool framed = false;
         double margin = 0;  // nats: the best of the margins of the readings it holds that are whole or glued words (CallReading::margin_nats)
+        bool shadowed = false;  // a near variant read the same transmission better (CallSearchConfig::shadow_alternatives)
     };
     struct Candidate {
         std::string base;
@@ -312,6 +313,11 @@ private:
     // The call's support over the whole band (CallSearchConfig::pool_places): its occurrences within window_s, one per transmission,
     // leaving out those at places where it is held.
     Support pooled_support(const Candidate& candidate, double now_s);
+    // Whether two calls are near variants as the arbitration counts them: within its edit distance, or one the start of the other.
+    bool near_variants(const Candidate& a, const Candidate& b) const;
+    // Marks o shadowed, or near variants' occurrences of the same transmission shadowed by it (CallSearchConfig::shadow_alternatives).
+    void shadow(Candidate& candidate, Occurrence& o);
+    bool counts(const Occurrence& o) const { return !(o.shadowed && config_.shadow_alternatives != 0.0); }
     // Whether the call's readings more than variant_hz from this place pass by themselves, at any one place.
     bool stands_elsewhere(const Candidate& candidate, double freq_hz, double now_s) const;
     void report(Candidate& candidate, double now_s);

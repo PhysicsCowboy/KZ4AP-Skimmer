@@ -325,7 +325,7 @@ std::vector<Word> words_of(std::span<const DecodedSymbol> symbols) {
 
 std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to) { return read_calls(words, from, to, false); }
 
-std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, bool pieces_timed, bool partials) {
+std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, bool pieces_timed) {
     std::vector<CallReading> out;
     to = std::min(to, words.size());
     // The word before index i, skipping the stray E and T a decoder scatters.
@@ -381,28 +381,8 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
         const bool ends_in_word = ends_in_cq || ends_in_de;
         if (!ends_in_word && parse_call(w)) {
             const bool twice = (i > 0 && words[i - 1].text == w) || (i + 1 < words.size() && words[i + 1].text == w);
-            const Role role = role_of(w, i, i + 1);
-            emit(w, Reading::Whole, i, i + 1, role, twice);
+            emit(w, Reading::Whole, i, i + 1, role_of(w, i, i + 1), twice);
             direct = true;
-            // A repeat beside it that lost its start or its end: the next or previous word, three characters or more with the digit.
-            if (partials) {
-                for (const std::size_t j : {i - 1, i + 1}) {
-                    if (j >= words.size()) continue;  // i - 1 wraps for i = 0
-                    const std::string& n = words[j].text;
-                    if (n.size() < 3 || n.size() >= w.size() || is_prosign(n) || is_keyword(n) || is_locator(n) || parse_call(n)) continue;
-                    if (std::none_of(n.begin(), n.end(), is_digit)) continue;
-                    if (!(w.starts_with(n) || w.ends_with(n))) continue;
-                    if (only_tiny_pieces(parse_call(w)->base)) continue;
-                    const std::size_t before_emit = out.size();
-                    emit(w, Reading::Partial, i, i + 1, role, false);
-                    if (out.size() > before_emit) {
-                        out.back().first_word = j;
-                        out.back().last_word = j + 1;
-                        out.back().start_s = words[j].start_s;
-                        out.back().end_s = words[j].end_s;
-                    }
-                }
-            }
         }
         if (!direct) {
             // A word glued: its pieces, each with the role its neighbors in the word give.
@@ -573,7 +553,7 @@ void CallSearch::read_track(TrackText& t, bool all) {
     std::size_t to = from;
     while (to < words.size() && (all || words[to].end_s <= settled)) ++to;
     if (to == from) return;
-    for (CallReading& r : read_calls(words, from, to, config_.glued_pieces_timed != 0.0, config_.partial_points > 0.0)) {
+    for (CallReading& r : read_calls(words, from, to, config_.glued_pieces_timed != 0.0)) {
         const std::size_t a = words[r.first_word].first, b = words[r.last_word - 1].last;
         // The least margin; an unknown one (-1) wins the minimum, so that a reading is sure only if every symbol says so.
         double least = std::numeric_limits<double>::infinity();
@@ -608,10 +588,7 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
     }
     c.first_s = std::min(c.first_s, r.start_s);  // a correction can read something earlier than what came first
     const bool word = r.reading == Reading::Whole || r.reading == Reading::Glued;
-    const double points = word ? 1.0
-                          : r.reading == Reading::Joined ? config_.joined_points
-                          : r.reading == Reading::Partial ? config_.partial_points
-                                                          : config_.stripped_points;
+    const double points = word ? 1.0 : (r.reading == Reading::Joined ? config_.joined_points : config_.stripped_points);
     // A keyword beside it, or the call sent twice: either way the word is used as a call.
     const bool framed = r.role != Role::Unknown || (r.doubled && config_.doubled_is_framed != 0.0);
     // Its place: where it last signed, else where it was last read bare, else where another named it, and among those a whole word before
@@ -631,6 +608,7 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
             if (framed) o.framed = true;
             if (r.role != Role::Unknown && o.role == Role::Unknown) o.role = r.role;
             o.margin = std::max(o.margin, margin);
+            if (config_.shadow_alternatives != 0.0) shadow(c, o);
             evaluate(c, freq_hz, r.end_s);
             return;
         }
@@ -648,12 +626,40 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
     ++c.count;
     ++c.forms[r.full];
     c.last_s = std::max(c.last_s, r.end_s);
+    if (config_.shadow_alternatives != 0.0) shadow(c, c.recent.back());
     evaluate(c, freq_hz, r.end_s);
+}
+
+bool CallSearch::near_variants(const Candidate& a, const Candidate& b) const {
+    if (config_.prefix_held != 0.0 && (a.base.starts_with(b.base) || b.base.starts_with(a.base))) return true;
+    const bool short_pair = config_.short_variant_ratio > 0.0 && (one_letter_suffix(a.base) || one_letter_suffix(b.base)) &&
+                            call_area(a.base) == call_area(b.base);
+    const int limit = short_pair ? 2 : (std::min(a.base.size(), b.base.size()) >= 4 ? 2 : 1);
+    return edit_distance(a.base, b.base, limit) <= limit;
+}
+
+void CallSearch::shadow(Candidate& c, Occurrence& o) {
+    for (auto& [base, other] : candidates_) {
+        if (&other == &c || other.recent.empty() || other.last_s <= o.start_s) continue;
+        bool near = false, tested = false;
+        for (Occurrence& q : other.recent) {
+            if (!(q.start_s < o.end_s && o.start_s < q.end_s) || std::abs(q.freq_hz - o.freq_hz) > config_.same_place_hz) continue;
+            if (q.points == o.points) continue;
+            if (!tested) {
+                near = near_variants(c, other);
+                tested = true;
+            }
+            if (!near) break;
+            if (q.points > o.points) o.shadowed = true;
+            else q.shadowed = true;
+        }
+    }
 }
 
 CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, double now_s, double within_hz) const {
     Support s;
     for (const Occurrence& o : c.recent) {
+        if (!counts(o)) continue;
         if (std::abs(o.freq_hz - freq_hz) > within_hz || now_s - o.end_s > config_.window_s) continue;
         s.points += o.points;
         s.framed = s.framed || o.framed;
@@ -673,10 +679,10 @@ bool CallSearch::passes(const Candidate& c, const Support& s) const {
 
 bool CallSearch::stands_elsewhere(const Candidate& c, double freq_hz, double now_s) const {
     for (const Occurrence& a : c.recent) {
-        if (std::abs(a.freq_hz - freq_hz) <= config_.variant_hz || now_s - a.end_s > config_.window_s) continue;
+        if (!counts(a) || std::abs(a.freq_hz - freq_hz) <= config_.variant_hz || now_s - a.end_s > config_.window_s) continue;
         Support alone;
         for (const Occurrence& o : c.recent) {
-            if (std::abs(o.freq_hz - freq_hz) <= config_.variant_hz) continue;
+            if (!counts(o) || std::abs(o.freq_hz - freq_hz) <= config_.variant_hz) continue;
             if (std::abs(o.freq_hz - a.freq_hz) > config_.same_place_hz || now_s - o.end_s > config_.window_s) continue;
             alone.points += o.points;
             alone.framed = alone.framed || o.framed;
@@ -693,7 +699,7 @@ CallSearch::Support CallSearch::pooled_support(const Candidate& c, double now_s)
     std::vector<const Occurrence*> counted;
     std::vector<double> points;
     for (const Occurrence& o : c.recent) {
-        if (now_s - o.end_s > config_.window_s) continue;
+        if (!counts(o) || now_s - o.end_s > config_.window_s) continue;
         if (held_at(c, o.freq_hz, now_s, nullptr, nullptr)) continue;
         bool merged = false;
         for (std::size_t k = 0; k < counted.size(); ++k) {
