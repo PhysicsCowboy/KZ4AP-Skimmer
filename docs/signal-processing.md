@@ -569,23 +569,25 @@ prosign or punctuation ends a word.
 
 **Readings.** A call's form (RR 19.68; sourced): an allocated prefix (Appendix 42) of one
 or two characters, one digit, one to four letters; /P, /M or a prefix keep the base call. 1
-point: a whole word, or one glued to a keyword or itself (DEK1ABC). 0.75 point: short words
+point: a whole word, or one glued to a keyword or itself (DEK1ABC; K1ABCK1ABC: two readings). 0.75 point: short words
 joined (K X 9 F). 0.5 point: a stray E, T, I before or E, T, K after. Refused: words of CW with
 this form (G5RV, R5NN; exact), locators (EL96UD); calls of E T I S H A N M U 5 alone unless whole words.
 
 **Role.** Before DE or 5NN: *named*. After DE, CQ or TEST, or before K: *signed*. Else *bare*.
 
 **Evidence.** Readings overlapping in time within 300 Hz are one transmission. Points add
-within 300 Hz and 30 min. Reported at 2 points, or at one whole or glued word named (with a
-list, if listed); listed, 1 if framed (signed, named or sent twice), else 2 (a variant: 1
-also for a word of high margin, A.12). A list that is binary or holds no call is refused. A call of E T I S H A N M U 5
-alone: 2 whole words, listed or not. Two or more digits (W100AW): from a list only.
+over the band within 30 min, each transmission once, none where a better variant holds
+the call. Reported at 2 points, a named word no
+exception (CW Skimmer's practice); listed, 1 if framed (signed, named or sent twice), else 2
+(a variant: 1 also for a word of high margin, A.12). A list that is binary or holds no call
+is refused. A call of E T I S H A N M U 5 alone: 2 whole words, listed or not. Two or more
+digits (W100AW): from a list only.
 
 **Variants.** A call within edit distance 1 of a better-supported call within 150 Hz, or the
-start of one or starting with one, is held back; distance 2 needs over twice the points, and
+start of one or starting with one, is held back there; distance 2 needs over twice the points, and
 counts between one letter after a digit and its prefix and digit (K1T, K1BX). Ties
 at distance 1: the earlier call; beginning within 1 s, the later. A listed call weighs by 3. A reported
-row is withdrawn only if the rival's best exceeds its own, or its readings beyond 150 Hz do not pass alone.
+row leaves when its points without those places no longer pass.
 
 **List.** One row per base call, at its latest signed, else bare, else named place.
 
@@ -4696,16 +4698,18 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: read text settled for | 10 s, on each whole second of stream | `CallSearchConfig::settle_s` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: text a correction changes | read again; kept 200 s back | `reread_corrected`, `history_s` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: same place | 300 Hz | `CallSearchConfig::same_place_hz` | heuristic, chosen by measurement (A.12); manta's bucket |
-| Callsign stage: evidence window | 1 800 s | `CallSearchConfig::window_s` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: evidence window | 1 800 s, at one place and, since `rob-1`, over the band (pooled points) | `CallSearchConfig::window_s` | heuristic, chosen by measurement at one place; not re-chosen for the band-wide use (A.12) |
 | Callsign stage: points to report | framed 2, bare 2; listed framed 1, listed bare 2 | `points_framed`, `points_bare`, `points_known`, `points_known_bare` | heuristic, chosen by measurement (A.12); from CW Skimmer's table |
 | Callsign stage: points of a reading | whole or glued 1, joined 0.75, stripped 0.5 | `joined_points`, `stripped_points` | joined heuristic, chosen by measurement (A.12); stripped heuristic |
-| Callsign stage: a word named | a whole or glued word named by another passes at 1 point | `points_named` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: a word named | no exception: 2 points, as any word (1, `call-1` to `rob-1`: a whole or glued word named by another passed alone) | `points_named` | standard practice (CW Skimmer's Normal level, secondhand through the RBN's 2021 post), checked by measurement (A.12) |
+| Callsign stage: places pooled | a call's readings add over the band, one per transmission (overlap in time), leaving out places where a variant holds it; the same support decides report and withdrawal | `pool_places` 1 | heuristic motivated by the evidence rule (readings at several places are not independent when a misreading is systematic); scope (the band, `window_s`) a choice; on by measurement (A.12) |
+| Callsign stage: glued pieces | each piece of a glued word has its own characters' times (K1ABCK1ABC: two readings) | `glued_pieces_timed` 1 | derived from the evidence rule (A.12) |
 | Callsign stage: tiny calls | whole words only, 2 of them, listed or not; 0 leaves them unread | `tiny_points` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a call that starts another | held as a variant at distance 1 (0: by edit distance alone) | `prefix_held` | heuristic, chosen by measurement (A.12) |
-| Callsign stage: withdrawal | by a rival better at its best, or a local defeat with no pass elsewhere beyond 150 Hz (0: any local defeat) | `withdraw_own_place` | heuristic, by a hand test and measurement (A.12) |
+| Callsign stage: withdrawal | pooled (the default): when its pooled support no longer passes; with `pool_places` 0: by a rival better at its best, or a local defeat with no pass elsewhere beyond 150 Hz (0: any local defeat) | `withdraw_own_place` | heuristic, by a hand test and measurement (A.12) |
 | Callsign stage: variants | edit distance 1, or 2 at over 2 times the points; within 150 Hz, 1 800 s; a tie goes to the earlier call, or within 1 s to the later (a heuristic constant in the code) | `far_variant_ratio`, `variant_hz`, `variant_s` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a list against a rival | factor 3 | `known_rival_factor` | heuristic |
-| Callsign stage: a word named, with a list | passes alone only listed | `named_listed_only` 1 | heuristic, chosen by measurement (A.12) |
+| Callsign stage: a word named, with a list | passes alone only listed (read only with `points_named` below the other thresholds; a listed named word passes as framed in any case) | `named_listed_only` 1 | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a sure listed word | off (0); a variant: a listed call passes on one bare whole or glued word of margin at least this | `known_margin_nats` | heuristic; off by measurement on the held-out recordings (A.12) |
 | Callsign stage: known-call list | text, one call a line; NUL bytes or no line with a call's form refused | `KnownCalls::read` | interface choice |
 | Callsign stage: short pairs | one letter after the digit, same prefix and digit, distance 2: held at over 2 times the points | `short_variant_ratio` | heuristic, chosen by measurement (A.12) |
@@ -5238,7 +5242,9 @@ review 10). Only the variant `known_margin_nats` reads it.
 1. *Whole:* the word parses, unless it ends in CQ with a call before that, or in DE with a call before that and another, different call
    as the next word.
 2. *Glued,* when it does not: the call twice, with at most one character behind; a keyword in front (DE, CQ, TU, TEST, QRZ); DE inside,
-   recursively on the right; a keyword behind (DE, 5NN, ENN, TEST, TU, CQ, QRZ, KN, BK).
+   recursively on the right; a keyword behind (DE, 5NN, ENN, TEST, TU, CQ, QRZ, KN, BK). The pieces are the word's characters in order
+   (at most one left behind), and each piece's reading takes the start of its first character and the end of its last
+   (`glued_pieces_timed` 1; at 0 every piece has the word's times), so the call glued to itself is two occurrences, as with a space.
 3. *Stripped:* one or two characters of E, T, I off the front, while what is left parses; one of E, T, K off the back.
 4. *Joined:* from a word of at most 4 characters, up to five following words of at most 4 characters, not a prosign, keyword (K and R
    excepted) or refused word, up to 9 characters: each concatenation that parses. K and R may start a join, not a whole reading.
@@ -5252,15 +5258,18 @@ by that second less `settle_s`; all of a track's words when it ends. A correctio
 the word it falls in, so the new text is read when settled. Nothing already read is taken back: a stream that takes over can be worse there than the one it replaces (at settle_s 1e6 s, reading only final text, real 40 m loses E51MWA). Text is kept back to `history_s`, and eight words at least.
 
 **Evidence.** A reading overlapping an occurrence of the same call in time within `same_place_hz` betters it (points, role) and is not
-counted again, so text read twice adds nothing. Points: the sum over occurrences within `same_place_hz` of the new one and within `window_s` of its end; a whole or glued reading 1, a joined one `joined_points`, a stripped one `stripped_points`. Framed: any of them had a
-role, or the same word was next to it (`doubled_is_framed`). A candidate's first time is its earliest reading, which a correction can move back.
+counted again, so text read twice adds nothing. *Local* points at f: the sum over occurrences within `same_place_hz` of f and within `window_s` of now; a whole or glued reading 1, a joined one `joined_points`, a stripped one `stripped_points`. Framed: any of them had a
+role, or the same word was next to it (`doubled_is_framed`). *Pooled* points (`pool_places` 1, the default): over every occurrence o within
+`window_s`, leaving out o when the call is held at o's frequency (the arbitration below, with supports taken within `variant_hz` of o), and
+counting each chain of occurrences connected by overlaps in time once, at the largest of their points, wherever they lie (a sweep in order of start, so the result does not depend on the order of the tracks); framed, named and sure as
+any counted o. A candidate's first time is its earliest reading, which a correction can move back.
 
-**Report test,** in order. A tiny call: `tiny_points`. Any occurrence that is a whole or glued word with the role *named*: `points_named`, with a list for a listed call only (`named_listed_only`). On a list: `points_known` if framed, or, with `known_margin_nats` above 0 (a variant; 0 by default), if an occurrence of 1 point has a margin of at least that (*sure*); else `points_known_bare`. Off it: `points_framed` if framed, else `points_bare`.
+**Report test,** on the pooled points when `pool_places` is 1 (the default: the same test then reports and withdraws, so a row does not come and go; review 15), else on the local points; in order. A tiny call: `tiny_points`. Any occurrence that is a whole or glued word with the role *named*: `points_named` (2 by default, so no exception; 1 a variant), with a list for a listed call only (`named_listed_only`). On a list: `points_known` if framed, or, with `known_margin_nats` above 0 (a variant; 0 by default), if an occurrence of 1 point has a margin of at least that (*sure*); else `points_known_bare`. Off it: `points_framed` if framed, else `points_bare`.
 
 **Arbitration.** Against every other candidate with a reading within `variant_hz` of this one and `variant_s` of now, by base-call edit distance d,
 the limit being 2 for a shorter call of 4 characters or more, else 1, and 2 also for a *short pair* (`short_variant_ratio` not 0): one of the two has one letter after its last digit and both have the same characters up to their last digit (K1T and K1BX); a call that is the start of the other, or starts with it, counts as d = 1 at any distance (`prefix_held`). A rival beats a call if both are on or off the list and its points
 exceed its need (1 at d = 1; at d = 2 `short_variant_ratio` for a short pair, else `far_variant_ratio`) times the call's, or at d = 1 tie: with an earlier first reading, unless the two first readings are within 1 s (one word, heuristic), when the one seen later wins, being what a correction made of the word; a listed rival beats
-an unlisted call at a third of its points; an unlisted rival a listed call at three times. A held call is not reported; if it was, it leaves when the rival's best at one place is above its own best, or when its readings more than `variant_hz` from this place, taken at any one place of their own, do not pass the test above, a word named not counting there (`withdraw_own_place`); else it stays. A reported call withdraws the reported calls it beats by the same test, its best at one place against theirs.
+an unlisted call at a third of its points; an unlisted rival a listed call at three times. A held call is not reported. Pooled (the default): a reported call held here, or beaten here by a call being reported, leaves when its pooled points no longer pass. With `pool_places` 0: if it was reported, it leaves when the rival's best at one place is above its own best, or when its readings more than `variant_hz` from this place, taken at any one place of their own, do not pass the test above, a word named not counting there (`withdraw_own_place`); else it stays. A reported call withdraws the reported calls it beats by the same test, its best at one place against theirs.
 
 **Order and clock.** Tracks are read in the order of their ids, so the result does not depend on a library's hash. The app's stage gets the clock among the events: `DisplayFeed` puts a `StreamClock` in the updates at the first spectrum frame of each whole second, and `MainWindow` applies them in order, so the stage reads at the same place in the events as `kz4ap-calls` whatever the display's pace.
 
@@ -5304,7 +5313,7 @@ and 62 s of real 40 m; the numbers are in the decision log, 2026-10-31.
 - `reread_corrected` on and `history_s` 200 s: on real 40 m 2 025 corrections changed text, reach median 2.6 s, 99% 36.4 s, maximum 199.2 s; on the contest maximum 106.7 s (measured on the final decoder). 53 reach past 20 s on real 40 m. One of them turned OL1TM OL1TM into ZL1TM ZL1TM, 50 s after it had been read. The maximum seen before the leak floor, 164.9 s, plus a margin set `history_s`, a heuristic; the longest now reaches just under 200 s. It cost one false call on H2, seed 2 (N5PX and DE, glued, in corrected text; `prefix_held` now takes it away), and gained one true on the contest.
 - The tie at 1 s: chosen for that word, tested on all the generated recordings, where it changes nothing. A heuristic on one case of real 40 m.
 - `same_place_hz` 300 Hz: 100 Hz loses a partner named at another's place 210 Hz away; 300 and 500 Hz gave the same lists.
-- `window_s` 1 800 s: 600 s missed an ID repeating every 255 s on real 40 m; no misreading came with 1 800 s on 30 min. Valid for real bands as busy as those recordings.
+- `window_s` 1 800 s: 600 s missed an ID repeating every 255 s on real 40 m; no misreading came with 1 800 s on 30 min, with points added at one place (300 Hz). Valid at one place for real bands as busy as those recordings. Since `rob-1` the same window bounds the band-wide pooled points, a use it was not chosen for: there real30 (the same 30 min) gains the misreadings K0HBN, K6QO, K6T and IK0I, read the same way at several places within it. A shorter band-wide window was not tried; the window's validity for pooling is not established.
 - `points_bare` 2 (3 at first): on the final decoder 3 refused EA1DR, read exactly twice 31 s apart, and the two spellings under which real 40 m has IK6QOP; 2 added no false call on any generated recording and 3 true on the contest with the re-read. On real 40 m it also adds one misreading (IK0S). Before the filter change 2 cost one false call on `w12_cap`; it no longer does. With `points_framed` at the same value, framing matters only with a list. The bar is about as many calls as CW Skimmer on a real recording, whose Normal level asks 2 repeats of a common pattern.
 - `points_framed` 2: 3 lost 28 true calls on the contest to take away one false call; 1 gains 20 true for 22 false on the contest, 1.5 gains 2 true on the contest for 5 false on the two QSO groups. One reading is for a list, as in CW Skimmer.
 - `points_known_bare` 2: 1 tripled false calls with a list.
@@ -5337,14 +5346,43 @@ scored and printed all four (review 10). The numbers below are confirmed / misre
   not tuned on (review 10). Its sweep (1 nat 108 / 33, 4 nats 108 / 32, "16 nats as 8") was measured before a symbol with no rival read the
   ceiling through a float; since then no margin exceeds 15.94 nats, so 16 nats is the rule off, and 8 and 15.9 nats read W3OA alike.
 
+**Chosen in `rob-1`** against CW Skimmer 2.1 on the four 2017 recordings, with the judge above, after a diagnosis of every call CW
+Skimmer lists that the RBN confirms and we did not, and of every call we list that it does not confirm (decision log, 2026-11-15). The
+diagnosis read all four recordings; W3OA and KC2LRC-1 stay the tuned two, KC2LRC-2 and N2GZ the held-out two by name only, since their
+cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: calls / confirmed / unconfirmed, the four together, `main`
+(d44c7d6) then `rob-1`, CW Skimmer 406 / 206 / 200; logged events replayed, so the text is the same in all.
+
+- *Standard practice.* CW Skimmer at its Normal level asks 2 to 5 repeats by pattern and 1 for a listed call, and spots no call from one
+  word otherwise (RBN 2021); the evidence rule here (one transmission, one occurrence; independent readings add) is the same idea, a count
+  of independent decodes.
+- `points_named` 2 (no exception for a named word): 506 / 205 / 301 to 322 / 176 / 146 alone. Of the 128 calls that rested on one named
+  word, 18 were confirmed, 34 spotted by the RBN elsewhere that day, 44 judged misreadings, 32 unknown. The contest 221 / 5 to 210 / 1,
+  its fresh seed 236 / 3 to 228 / 0, the strong pairs 40 / 2 to 39 / 1 and 42 / 0 to 40 / 0, H2 seed 2 40 / 1 to 40 / 0. 1.5 points (a
+  named word and half a point more), with pooling: 421 / 200 / 221 against 2's 417 / 200 / 217, no better. Chosen as CW Skimmer's documented practice, not tuned.
+- `pool_places` 1, a heuristic motivated by the evidence rule (independent readings add), not derived from it: a misreading the decoder makes the same way at several places is not independent (real30's K0HBN), and the scope, the whole band over `window_s`, is a choice. With the above, 322 / 176 / 146 to 417 / 200 / 217; the calls it adds are 24 confirmed, 41 spotted by the RBN that day
+  (callers such as N4NO, N4QM and VE3OU, read in 10, 9 and 6 bins of 300 Hz), 14 misreadings, 17 unknown. Alone, without the named rule's change,
+  506 / 205 / 301 to 550 / 217 / 333. The generated recordings read alike with and without it (their callers do not move). The
+  held-place exclusion and the withdrawal by pooled points came from KC2LRC-2's N5ZC (confirmed by 21 skimmers): named once on N5ZO's
+  track one edit away and read three times 5 kHz away, it was withdrawn when N5ZO's best passed its own.
+- `glued_pieces_timed` 1: K9BGL (W3OA, confirmed, CQCQTESTDEK9BGLK9BGLK) and KC9AWL (KC2LRC, spotted that day); 506 / 205 / 301 to
+  509 / 206 / 303 alone; the generated recordings unchanged.
+- Together, by pair: tuned 250 / 97 / 153 to 215 / 92 / 123 (CW Skimmer 196 / 102 / 94), held out 256 / 108 / 148 to 202 / 108 / 94
+  (210 / 104 / 106). With CW Skimmer's MASTER.DTA of 2018: 444 / 219 / 225 to 479 / 226 / 253 (pooling adds unlisted calls read at two
+  places; of the 15 misreadings and unknowns it adds in the replay, CW Skimmer lists 6). The owner's file 42 / 21 / 21 to 41 / 21 / 20.
+- *Tried and dropped:* a fragment beside a whole call (5LN K5LN, three characters or more with the digit) read as a repeat at 1 point
+  (+2 confirmed, +7 misreadings, +11 unconfirmed; at 0.5 point nothing changes); `joined_points` 1 (+4 confirmed, +16 unconfirmed; the
+  contest +1 true); a transmission read as two near calls counted for the better reading only (`shadow_alternatives`: 200 to 199
+  confirmed, misreadings 54 to 57, OH2J false on H2; it did take K0HBN off real30).
+
 **Heuristics not tuned:** `stripped_points`, the keyword sets, the refused words and characters.
 
-**Not taken:** `near_factor` (a call's near variants adding to its points: 217 true and 3 to 11 false on the contest, but 24 to 76 rows on real 40 m); a call before UP at 1 point (does not bring E51MWA back when the word is lost); CW Skimmer's 1 repetition for a listed call on real MASTER.SCP (1 true for 3 false on real 40 m; review 5). In `call-2`, on the two tuned 2017 recordings without a list (int-1's rules 97 / 49, `call-2`'s 97 / 45): a word named once to pass only at a margin of 0.05, 0.1, 0.2, 0.5 or 1 nat (0.5 nat: 95 / 36, and on the contest 216 / 4 against 220 / 6; 0.05 nat: the contest 219 / 5, but W4BOH, confirmed, lost on W3OA); a whole word of margin under 0.2, 0.5, 1 or 2 nats scoring 0.5 or 0.75 point (0.5 nat at 0.5 point, without the short pairs: 92 / 29, the contest 206 / 3); no word named alone at all (85 / 22, the contest 210 / 2); a call named once held while a reported call one edit from it stands anywhere in the band (96 / 42: one confirmed call fewer, three misreadings fewer). Each takes confirmed calls with the misreadings: the margin of a correct named word is often under 0.5 nat too (W4BOH 0.00, N1XI 0.22), and wrong ones can be sure (K8VC, W6UM).
+**Not taken:** `near_factor` (a call's near variants adding to its points: 217 true and 3 to 11 false on the contest, but 24 to 76 rows on real 40 m); a call before UP at 1 point (does not bring E51MWA back when the word is lost); CW Skimmer's 1 repetition for a listed call on real MASTER.SCP (1 true for 3 false on real 40 m; review 5). In `call-2`, on the two tuned 2017 recordings without a list (int-1's rules 97 / 49, `call-2`'s 97 / 45): a word named once to pass only at a margin of 0.05, 0.1, 0.2, 0.5 or 1 nat (0.5 nat: 95 / 36, and on the contest 216 / 4 against 220 / 6; 0.05 nat: the contest 219 / 5, but W4BOH, confirmed, lost on W3OA); a whole word of margin under 0.2, 0.5, 1 or 2 nats scoring 0.5 or 0.75 point (0.5 nat at 0.5 point, without the short pairs: 92 / 29, the contest 206 / 3); no word named alone at all (85 / 22, the contest 210 / 2; taken in `rob-1` with pooled points, above); a call named once held while a reported call one edit from it stands anywhere in the band (96 / 42: one confirmed call fewer, three misreadings fewer). Each takes confirmed calls with the misreadings: the margin of a correct named word is often under 0.5 nat too (W4BOH 0.00, N1XI 0.22), and wrong ones can be sure (K8VC, W6UM).
 
 ### Limitations
 
-- A call read only once, and not named, is not reported without a list: that is the rule. On the generated contest it is not the largest loss of callers: of the 78 lost before the rules below (review 5), 45 were never decoded, every one overlapped by a keying station within 150 Hz over at least 30% of its bursts, and 33 were read: 28 once, 1 at 1.5 points, 4 refused before the evidence (SM5NU; N9AZ, EA7UPZ, KB8AKK glued inside a word). The generator's callers key at random over the runner and each other, where a real caller waits his turn, so this overlap is likely overstated (conjecture).
-- A word named once passes without a list, so a misread call before 5NN is listed: most of the false calls the rules gained on the contest (6 of 7), and about half the misreadings on the 2017 recordings without a list. A row reached by naming shows the namer's frequency. With a list an unlisted caller named once is lost, as is one not on the list at all (the contest with a list of none of its callers: 206 true calls against 216).
+- A call read only once, anywhere in the band, is not reported without a list: that is the rule (since `rob-1` named or not; before it, named words passed alone). On W3OA, of the 13 calls CW Skimmer lists that the RBN confirms and `main` (d44c7d6) did not, 5 were read as one transmission (K5LN after a fragment 5LN, N4KGL and NZ9Z signing, VE3KP bare, KQ2M on two tracks at once), W0OPW twice as joined letters (1.5 points), K9BGL glued to itself (two readings since `rob-1`), and 5 were never read whole (weak or garbled text: N0AIS as N0AI and 0AIS); CW Skimmer read both repeats where our decoder read one. Reading a fragment beside a whole call (5LN K5LN) as a repeat was tried and dropped (A.12, `rob-1`). On the generated contest it is not the largest loss of callers: of the 78 lost before the rules below (review 5), 45 were never decoded, every one overlapped by a keying station within 150 Hz over at least 30% of its bursts, and 33 were read: 28 once, 1 at 1.5 points, 4 refused before the evidence (SM5NU; N9AZ, EA7UPZ, KB8AKK glued inside a word). The generator's callers key at random over the runner and each other, where a real caller waits his turn, so this overlap is likely overstated (conjecture).
+- Since `rob-1` a word named once does not pass without a list: a caller whose own signal is never read loses his row (the contest 221 to 210 true calls; on the four 2017 recordings 18 confirmed calls and 36 the RBN spotted elsewhere that day, nearly all real callers). With `points_named` 1, as before, a misread call before 5NN was listed: most of the false calls the rules gained on the contest (6 of 7), and about half the misreadings on the 2017 recordings without a list. A row reached by naming shows the namer's frequency. With a list an unlisted caller named once is lost, as is one not on the list at all (the contest with a list of none of its callers: 206 true calls against 216).
+- Pooled points let a misreading the decoder makes the same way at several places through, where only one place's points would not: on real30 (30 min of real 40 m) K0HBN and K6QO, misreadings of IK0HBN and IK6QOP that drop the I, come back to the list (`withdraw_own_place` had taken them off), as do IK0I and K6T. Without a list the arbitration cannot tell which of two near calls is the station when both are read often (backlog: spellings of one station).
 - With the variant `known_margin_nats`, a listed misreading the decoder was sure of passes on one bare word (on the generated contest EA5V, JA3E, ZL9XMP, the list's decoys).
 - Who sent a call is known only from the words around it: a DX naming a caller twice with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
   is only as good as the decoder's reading of those words.

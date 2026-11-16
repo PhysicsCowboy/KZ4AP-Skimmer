@@ -321,7 +321,9 @@ std::vector<Word> words_of(std::span<const DecodedSymbol> symbols) {
     return out;
 }
 
-std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to) {
+std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to) { return read_calls(words, from, to, {}); }
+
+std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, std::span<const DecodedSymbol> symbols) {
     std::vector<CallReading> out;
     to = std::min(to, words.size());
     // The word before index i, skipping the stray E and T a decoder scatters.
@@ -383,14 +385,24 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
         if (!direct) {
             // A word glued: its pieces, each with the role its neighbors in the word give.
             const std::vector<std::string> pieces = split_glued(w);
-            for (std::size_t k = 0; k < pieces.size(); ++k) {
+            const Word& word = words[i];
+            // The word's characters are symbols [first, last), one each (words_of).
+            const bool timed = !symbols.empty() && word.last <= symbols.size() && word.last - word.first == w.size();
+            std::size_t offset = 0;  // the piece's first character in w: the pieces are w's characters in order, at most one left behind
+            for (std::size_t k = 0; k < pieces.size(); offset += pieces[k].size(), ++k) {
                 if (!parse_call(pieces[k])) continue;
                 std::string_view prev = k > 0 ? std::string_view(pieces[k - 1]) : before(i);
                 std::string_view next = k + 1 < pieces.size() ? std::string_view(pieces[k + 1]) : after(i + 1);
                 if (prev == pieces[k]) prev = before(i);
                 if (next == pieces[k]) next = after(i + 1);
                 const bool twice = pieces.size() >= 2 && ((k > 0 && pieces[k - 1] == pieces[k]) || (k + 1 < pieces.size() && pieces[k + 1] == pieces[k]));
+                const std::size_t before_emit = out.size();
                 emit(pieces[k], Reading::Glued, i, i + 1, role_from(prev, next), twice);
+                if (timed && out.size() > before_emit && offset + pieces[k].size() <= w.size() &&
+                    w.compare(offset, pieces[k].size(), pieces[k]) == 0) {
+                    out.back().start_s = symbols[word.first + offset].start_s;
+                    out.back().end_s = symbols[word.first + offset + pieces[k].size() - 1].end_s;
+                }
             }
         }
         // A stray character on either end; both sides of the question stay, for the evidence to decide.
@@ -540,7 +552,9 @@ void CallSearch::read_track(TrackText& t, bool all) {
     std::size_t to = from;
     while (to < words.size() && (all || words[to].end_s <= settled)) ++to;
     if (to == from) return;
-    for (CallReading& r : read_calls(words, from, to)) {
+    const std::span<const DecodedSymbol> timed_by =
+        config_.glued_pieces_timed != 0.0 ? std::span<const DecodedSymbol>(t.symbols) : std::span<const DecodedSymbol>();
+    for (CallReading& r : read_calls(words, from, to, timed_by)) {
         const std::size_t a = words[r.first_word].first, b = words[r.last_word - 1].last;
         // The least margin; an unknown one (-1) wins the minimum, so that a reading is sure only if every symbol says so.
         double least = std::numeric_limits<double>::infinity();
@@ -651,27 +665,53 @@ bool CallSearch::stands_elsewhere(const Candidate& c, double freq_hz, double now
     return false;
 }
 
-void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
-    const Support s = support(c, freq_hz, now_s, config_.same_place_hz);
-    c.best_points = std::max(c.best_points, s.points);
-    // Its near variants at this place: which are better supported, and what the weaker add.
+CallSearch::Support CallSearch::pooled_support(const Candidate& c, double now_s) {
+    Support s;
+    std::vector<const Occurrence*> counted;
+    for (const Occurrence& o : c.recent) {
+        if (now_s - o.end_s > config_.window_s) continue;
+        if (held_at(c, o.freq_hz, now_s, nullptr, nullptr)) continue;
+        counted.push_back(&o);
+        s.framed = s.framed || o.framed;
+        s.named = s.named || (o.role == Role::Named && o.points >= 1.0);
+        s.sure = s.sure || (config_.known_margin_nats > 0.0 && o.points >= 1.0 && o.margin >= config_.known_margin_nats);
+    }
+    // One per transmission: occurrences connected by overlaps in time are one, wherever they lie, at the best of their points. A sweep in
+    // order of start, so that the groups do not depend on the order of the tracks.
+    std::sort(counted.begin(), counted.end(), [](const Occurrence* a, const Occurrence* b) {
+        return a->start_s < b->start_s || (a->start_s == b->start_s && a->end_s < b->end_s);
+    });
+    double group_end = -std::numeric_limits<double>::infinity(), group_points = 0.0;
+    for (const Occurrence* o : counted) {
+        if (o->start_s < group_end) {
+            group_points = std::max(group_points, o->points);
+            group_end = std::max(group_end, o->end_s);
+        } else {
+            s.points += group_points;
+            group_points = o->points;
+            group_end = o->end_s;
+        }
+    }
+    s.points += group_points;
+    return s;
+}
+
+bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, double* rival_best, std::vector<Candidate*>* beaten) {
     const auto limit_for = [](std::size_t n) { return n >= 4 ? 2 : 1; };
     bool held = false;
-    double rival_best = 0.0;  // the best any rival that beats it here has had at one place
-    std::vector<Candidate*> beaten;
     const double mine = support(c, freq_hz, now_s, config_.variant_hz).points;
     for (auto& [base, other] : candidates_) {
         if (&other == &c || other.recent.empty()) continue;
         if (now_s - other.recent.back().end_s > config_.variant_s) continue;
-        const double theirs = support(other, freq_hz, now_s, config_.variant_hz).points;
-        if (theirs <= 0) continue;
         // A call of one letter after its digit and another with the same prefix and digit: two edits apart count (K1T, K1BX).
         const bool short_pair = config_.short_variant_ratio > 0.0 && (one_letter_suffix(c.base) || one_letter_suffix(other.base)) &&
                                 call_area(c.base) == call_area(other.base);
         const int limit = short_pair ? 2 : limit_for(std::min(c.base.size(), other.base.size()));
         const bool prefix = config_.prefix_held != 0.0 && (c.base.starts_with(other.base) || other.base.starts_with(c.base));
-        const int distance = edit_distance(c.base, other.base, limit);
+        const int distance = edit_distance(c.base, other.base, limit);  // cheap when the lengths differ by more than limit
         if (distance > limit && !prefix) continue;
+        const double theirs = support(other, freq_hz, now_s, config_.variant_hz).points;
+        if (theirs <= 0) continue;
         const int d = prefix ? 1 : distance;
         // Two letters' difference only against a much better call.
         const double need = d >= 2 ? (short_pair ? config_.short_variant_ratio : config_.far_variant_ratio) : 1.0;
@@ -686,29 +726,48 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
         };
         if (beats(other, theirs, c, mine)) {
             held = true;
-            rival_best = std::max(rival_best, other.best_points);
-        } else if (beats(c, mine, other, theirs)) {
-            if (other.reported) beaten.push_back(&other);
+            if (rival_best) *rival_best = std::max(*rival_best, other.best_points);
+            if (!rival_best) return true;  // only the answer is wanted
+        } else if (beaten && beats(c, mine, other, theirs)) {
+            if (other.reported) beaten->push_back(&other);
         }
     }
-    // A defeat here takes a reported call off the list only if the rival is the better at its best, or the call stands nowhere else: a call
-    // doubled and signed at 1 kHz does not leave because of a misreading at 2 kHz.
+    return held;
+}
+
+void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
+    const Support s = support(c, freq_hz, now_s, config_.same_place_hz);
+    c.best_points = std::max(c.best_points, s.points);
+    // Its near variants at this place: which are better supported, and what the weaker add.
+    double rival_best = 0.0;  // the best any rival that beats it here has had at one place
+    std::vector<Candidate*> beaten;
+    const bool held = held_at(c, freq_hz, now_s, &rival_best, &beaten);
+    const bool pool = config_.pool_places != 0.0;
+    // Whether a call that loses here leaves the list. Pooled: when its points where nothing holds it no longer pass. Else a defeat here
+    // takes it off only if the rival is the better at its best, or the call stands nowhere else: a call doubled and signed at 1 kHz does
+    // not leave because of a misreading at 2 kHz.
     const bool own_place = config_.withdraw_own_place != 0.0;
+    const auto leaves = [&](Candidate& loser, double winner_best) {
+        if (pool) return !passes(loser, pooled_support(loser, now_s));
+        return !own_place || winner_best > loser.best_points || !stands_elsewhere(loser, freq_hz, now_s);
+    };
     if (held) {
         if (c.reported) {
-            if (!own_place || rival_best > c.best_points || !stands_elsewhere(c, freq_hz, now_s)) withdraw(c);
+            if (leaves(c, rival_best)) withdraw(c);
             else update_row(c);
         }
         return;
     }
     if (c.reported) {
         update_row(c);
-    } else if (passes(c, s)) {
+    } else if (pool ? passes(c, pooled_support(c, now_s)) : passes(c, s)) {
+        // Pooled, the test that reports is the test that withdraws (local points can exceed pooled ones: they keep held occurrences
+        // within same_place_hz), so a row does not come and go.
         report(c, now_s);
     }
     if (c.reported) {
         for (Candidate* b : beaten) {
-            if (!own_place || c.best_points > b->best_points || !stands_elsewhere(*b, freq_hz, now_s)) withdraw(*b);
+            if (leaves(*b, c.best_points)) withdraw(*b);
         }
     }
 }

@@ -241,17 +241,141 @@ TEST(CallSearch, OnceIsNotEnoughTwiceFramedIs) {
     EXPECT_EQ(s.row("K1ABC")->count, 3u);
 }
 
-TEST(CallSearch, BareNeedsTwoAndAFarPlaceDoesNotAdd) {
+TEST(CallSearch, BareNeedsTwoAndAFarPlaceAddsOnlyWhenPooled) {
+    // pool_places: one call is one station; read once at 1 kHz and once at 9 kHz, it has two independent readings. Off (call-1 to rob-1),
+    // points add only within same_place_hz.
+    const auto run = [](double pool) {
+        CallSearchConfig config;
+        config.pool_places = pool;
+        auto s = std::make_unique<Stage>(config);
+        s->born(1, 1000.0);
+        s->born(2, 9000.0);
+        s->text(1, 1000.0, "E K1ABC T ", 0.0);
+        s->search.advance(40.0);
+        EXPECT_EQ(s->row("K1ABC"), nullptr);
+        s->text(2, 9000.0, "E K1ABC T ", 80.0);
+        s->search.advance(120.0);
+        return s;
+    };
+    EXPECT_NE(run(1.0)->row("K1ABC"), nullptr);
+    const auto local = run(0.0);
+    EXPECT_EQ(local->row("K1ABC"), nullptr);
+    local->text(1, 1000.0, "E K1ABC T ", 130.0);
+    local->search.advance(170.0);
+    EXPECT_NE(local->row("K1ABC"), nullptr);
+}
+
+TEST(CallSearch, PooledReadingsOfOneTransmissionCountOnce) {
+    // Two tracks 2 kHz apart reading the same moment (a strong station's copy) are one transmission, wherever they lie.
     Stage s;
     s.born(1, 1000.0);
-    s.born(2, 9000.0);
+    s.born(2, 3000.0);
     s.text(1, 1000.0, "E K1ABC T ", 0.0);
-    s.text(2, 9000.0, "E K1ABC T ", 80.0);
-    s.search.advance(120.0);
+    s.text(2, 3000.0, "E K1ABC T ", 0.05);
+    s.search.advance(40.0);
     EXPECT_EQ(s.row("K1ABC"), nullptr);
-    s.text(1, 1000.0, "E K1ABC T ", 130.0);
-    s.search.advance(170.0);
-    EXPECT_NE(s.row("K1ABC"), nullptr);
+}
+
+TEST(CallSearch, OneTransmissionIsOneGroupOfOverlapsWhateverTheTrackOrder) {
+    // Review 15: readings at three far places at [0.2, 0.7], [0.6, 1.1] and [1.0, 1.5] s are one chain of overlaps, so one transmission;
+    // compared only with each group's first member, the first and last fell into different groups for one order of the tracks.
+    const double times[3] = {0.2, 0.6, 1.0};
+    const int orders[2][3] = {{0, 1, 2}, {1, 0, 2}};
+    for (const auto& order : orders) {
+        Stage s;
+        for (int k = 0; k < 3; ++k) s.born(static_cast<std::uint32_t>(k + 1), 1000.0 + 4000.0 * k);
+        for (int k = 0; k < 3; ++k) s.text(static_cast<std::uint32_t>(k + 1), 1000.0 + 4000.0 * k, "K1ABC ", times[order[k]]);
+        s.search.advance(40.0);
+        EXPECT_EQ(s.row("K1ABC"), nullptr) << "order " << order[0] << order[1] << order[2];
+        s.text(1, 1000.0, "K1ABC ", 50.0);  // a second transmission
+        s.search.advance(80.0);
+        EXPECT_NE(s.row("K1ABC"), nullptr) << "order " << order[0] << order[1] << order[2];
+    }
+}
+
+TEST(CallSearch, APooledRowDoesNotComeAndGo) {
+    // Review 15: W9XYZ read three times at 1350 Hz; W9XYY once at 1250 Hz, where W9XYZ holds it, and once at 1000 Hz. Its local points at
+    // 1000 Hz (2, the held reading within 300 Hz among them) reported it, its pooled points (1) withdrew it at W9XYZ's next reading, and
+    // its next reading at 1000 Hz listed it again. Reported on the pooled points, it waits for a second free reading and then stays.
+    Stage s;
+    s.born(1, 1350.0);
+    s.born(2, 1250.0);
+    s.born(3, 1000.0);
+    s.text(1, 1350.0, "E W9XYZ T E W9XYZ T E W9XYZ T ", 0.0);
+    s.text(2, 1250.0, "E W9XYY T ", 40.0);
+    s.text(3, 1000.0, "E W9XYY T ", 55.0);
+    s.search.advance(70.0);
+    EXPECT_NE(s.row("W9XYZ"), nullptr);
+    EXPECT_EQ(s.row("W9XYY"), nullptr);
+    s.text(1, 1350.0, "E W9XYZ T ", 90.0);
+    s.search.advance(110.0);
+    EXPECT_EQ(s.row("W9XYY"), nullptr);
+    s.text(3, 1000.0, "E W9XYY T ", 130.0);
+    s.search.advance(150.0);
+    ASSERT_NE(s.row("W9XYY"), nullptr);
+    s.text(1, 1350.0, "E W9XYZ T ", 160.0);
+    s.search.advance(180.0);
+    EXPECT_NE(s.row("W9XYY"), nullptr);
+    EXPECT_EQ(s.search.withdrawn(), 0u);
+}
+
+TEST(CallSearch, APooledReadingWhereABetterVariantHoldsItDoesNotCount) {
+    // W9XYY read once at 1 kHz beside W9XYZ read three times there: that reading is W9XYZ's misreading, and with one bare reading of its
+    // own at 5 kHz it does not pass. A second reading at 5 kHz passes it.
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "E W9XYZ T E W9XYZ T E W9XYZ T E W9XYY T ", 0.0);
+    s.born(2, 5000.0);
+    s.text(2, 5000.0, "E W9XYY T ", 30.0);
+    s.search.advance(60.0);
+    EXPECT_NE(s.row("W9XYZ"), nullptr);
+    EXPECT_EQ(s.row("W9XYY"), nullptr);
+    s.text(2, 5000.0, "E W9XYY T ", 70.0);
+    s.search.advance(100.0);
+    EXPECT_NE(s.row("W9XYY"), nullptr);
+}
+
+TEST(CallSearch, APooledCallBeatenAtOnePlaceStaysIfItPassesElsewhere) {
+    // KC2LRC-2's N5ZC: named once on N5ZO's track (one edit away, read 25 times there), signing three times 5 kHz away. Before rob-1
+    // the local defeat withdrew it, N5ZO's best being above its own; pooled, its readings away from N5ZO keep it.
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "CQ N5ZO N5ZO K CQ N5ZO N5ZO K ", 0.0);
+    s.born(2, 6000.0);
+    s.text(2, 6000.0, "CQ N5ZC K CQ N5ZC K ", 20.0);
+    s.search.advance(50.0);
+    ASSERT_NE(s.row("N5ZC"), nullptr);
+    s.text(1, 1000.0, "N5ZC 5NN CQ N5ZO N5ZO K CQ N5ZO N5ZO K ", 60.0);
+    s.search.advance(100.0);
+    EXPECT_NE(s.row("N5ZO"), nullptr);
+    EXPECT_NE(s.row("N5ZC"), nullptr);
+    CallSearchConfig local;
+    local.pool_places = 0.0;
+    Stage old(local);
+    old.born(1, 1000.0);
+    old.text(1, 1000.0, "CQ N5ZO N5ZO K CQ N5ZO N5ZO K ", 0.0);
+    old.born(2, 6000.0);
+    old.text(2, 6000.0, "CQ N5ZC K CQ N5ZC K ", 20.0);
+    old.search.advance(50.0);
+    ASSERT_NE(old.row("N5ZC"), nullptr);
+    old.text(1, 1000.0, "N5ZC 5NN CQ N5ZO N5ZO K CQ N5ZO N5ZO K ", 60.0);
+    old.search.advance(100.0);
+    EXPECT_EQ(old.row("N5ZC"), nullptr);
+}
+
+TEST(CallSearch, ACallSentTwiceWithNoSpaceIsTwoReadings) {
+    // glued_pieces_timed: K9BGLK9BGL is the call twice, as K9BGL K9BGL is; at 0 the two pieces share the word's times and are one.
+    const auto run = [](double timed) {
+        CallSearchConfig config;
+        config.glued_pieces_timed = timed;
+        Stage s(config);
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "CQCQTESTDEK9BGLK9BGLK ", 0.0);
+        s.search.advance(40.0);
+        return s.row("K9BGL") != nullptr;
+    };
+    EXPECT_TRUE(run(1.0));
+    EXPECT_FALSE(run(0.0));
 }
 
 TEST(CallSearch, ReadingsTooFarApartInTimeDoNotAdd) {
@@ -575,22 +699,28 @@ TEST(CallSearch, AListedCallReadOnceBarePassesOnlyIfTheDecoderWasSureOfIt) {
 }
 
 TEST(CallSearch, WithAListAWordNamedOncePassesOnlyListed) {
-    // named_listed_only: CW Skimmer repeats once for its lists only. Without a list the named word still passes alone.
+    // named_listed_only: CW Skimmer repeats once for its lists only. With points_named at 1 (not the default since rob-1), without a list
+    // the named word passes alone; with the default, a listed call named once passes as framed (points_known), an unlisted one does not.
     auto known = std::make_shared<KnownCalls>();
     known->add("K1ABC");
-    const auto named = [&](const std::string& call, std::shared_ptr<KnownCalls> list, CallSearchConfig config = {}) {
+    CallSearchConfig one;
+    one.points_named = 1.0;
+    const auto named = [&](const std::string& call, std::shared_ptr<KnownCalls> list, CallSearchConfig config) {
         Stage s(config, list);
         s.born(1, 1000.0);
         s.text(1, 1000.0, call + " 5NN TU ", 0.0);
         s.search.advance(15.0);
         return s.row(call) != nullptr;
     };
-    EXPECT_TRUE(named("K1ABC", known));
-    EXPECT_FALSE(named("W1XYZ", known));
-    EXPECT_TRUE(named("W1XYZ", nullptr));
-    CallSearchConfig off;
+    EXPECT_TRUE(named("K1ABC", known, one));
+    EXPECT_FALSE(named("W1XYZ", known, one));
+    EXPECT_TRUE(named("W1XYZ", nullptr, one));
+    CallSearchConfig off = one;
     off.named_listed_only = 0.0;
     EXPECT_TRUE(named("W1XYZ", known, off));
+    EXPECT_TRUE(named("K1ABC", known, CallSearchConfig{}));
+    EXPECT_FALSE(named("W1XYZ", known, CallSearchConfig{}));
+    EXPECT_FALSE(named("W1XYZ", nullptr, CallSearchConfig{}));
 }
 
 TEST(CallSearch, AOneLetterSuffixIsHeldByAMuchBetterCallTwoEditsAwayWithItsPrefixAndDigit) {
@@ -677,19 +807,34 @@ TEST(CallSearch, ACallWithNoDigitAfterALetterDigitPrefixIsNotReadEvenListed) {
     EXPECT_TRUE(s.search.calls().empty());
 }
 
-TEST(CallSearch, AWholeWordNamedOnceIsEnough) {
-    Stage s;
+TEST(CallSearch, AWordNamedOnceIsNotEnoughByDefault) {
+    // rob-1: points_named 2, no exception for a named word without a list (CW Skimmer's practice); a second reading anywhere passes it.
+    Stage once;
+    once.born(1, 1000.0);
+    once.text(1, 1000.0, "NQ6B 5NN TU ", 0.0);
+    once.search.advance(15.0);
+    EXPECT_EQ(once.row("NQ6B"), nullptr);
+    once.born(2, 5000.0);  // the caller's own signal, elsewhere
+    once.text(2, 5000.0, "DE NQ6B K ", 30.0);
+    once.search.advance(50.0);
+    EXPECT_NE(once.row("NQ6B"), nullptr);
+}
+
+TEST(CallSearch, AWholeWordNamedOnceIsEnoughAtOnePoint) {
+    CallSearchConfig one;
+    one.points_named = 1.0;
+    Stage s(one);
     s.born(1, 1000.0);
     s.text(1, 1000.0, "NQ6B 5NN TU ", 0.0);
     s.search.advance(15.0);
     ASSERT_NE(s.row("NQ6B"), nullptr);
     EXPECT_FALSE(s.row("NQ6B")->heard);  // named only: the row says so, and its frequency is the namer's
-    Stage bare;
+    Stage bare(one);
     bare.born(1, 1000.0);
     bare.text(1, 1000.0, "E K1ABC T ", 0.0);
     bare.search.advance(15.0);
     EXPECT_EQ(bare.row("K1ABC"), nullptr);
-    Stage stripped;  // a stripped word's half a point does not pass as named
+    Stage stripped(one);  // a stripped word's half a point does not pass as named
     stripped.born(1, 1000.0);
     stripped.text(1, 1000.0, "EK1ABC 5NN ", 0.0);
     stripped.search.advance(15.0);
@@ -735,9 +880,11 @@ TEST(CallSearch, ACallThatStartsAnotherIsHeldAsAVariant) {
 
 TEST(CallSearch, ALocalDefeatDoesNotWithdrawACallThatStandsElsewhere) {
     // Review 5: a call doubled and signed at 1 kHz left the list for a misreading at 2 kHz, 60 s later.
-    const auto run = [](double own_place) {
+    // withdraw_own_place is read with pool_places 0 only; pooled, the call stays as well (APooledCallBeatenAtOnePlaceStaysIfItPassesElsewhere).
+    const auto run = [](double own_place, double pool = 0.0) {
         CallSearchConfig config;
         config.withdraw_own_place = own_place;
+        config.pool_places = pool;
         auto s = std::make_unique<Stage>(config);
         s->born(1, 1000.0);
         s->text(1, 1000.0, "CQ TEST W9XYZ W9XYZ K ", 0.0);
@@ -754,6 +901,9 @@ TEST(CallSearch, ALocalDefeatDoesNotWithdrawACallThatStandsElsewhere) {
     const auto as_merged = run(0.0);
     EXPECT_EQ(as_merged->row("W9XYZ"), nullptr);
     EXPECT_NE(as_merged->row("W9XYY"), nullptr);
+    const auto pooled = run(0.0, 1.0);
+    EXPECT_NE(pooled->row("W9XYZ"), nullptr);
+    EXPECT_NE(pooled->row("W9XYY"), nullptr);
 }
 
 TEST(CallSearch, ALocalDefeatStillWithdrawsAMisreadingThatStandsNowhereElse) {

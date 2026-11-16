@@ -69,7 +69,7 @@ struct Word {
     double start_s = 0;    // s, stream time
     double end_s = 0;      // s, stream time
     std::size_t first = 0;  // the index of its first symbol among those given to words_of
-    std::size_t last = 0;   // and of the one after its last
+    std::size_t last = 0;   // and of the one after its last; a word's characters are these symbols, one each, in order
 };
 
 // The words of a list of symbols. A word space, a prosign and any punctuation but the slash end a word.
@@ -114,6 +114,9 @@ double margin_of(float probability);
 // Every reading of a call that begins in the words [from, to). A word can give several: they are alternatives, and the evidence
 // decides among them. `words` may reach past `to` and before `from`, for context.
 std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to);
+// As read_calls; given the symbols the words were made of (words_of), each piece of a glued word has its own characters' times
+// (CallSearchConfig::glued_pieces_timed); with an empty span, the word's.
+std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, std::span<const DecodedSymbol> symbols);
 
 // ---- A known-call list
 
@@ -162,9 +165,12 @@ struct CallSearchConfig {
     // Letters joined across spaces (K F 0 Y U X). Heuristic, chosen by measurement: at 0.5 a call read so three times stayed at 1.5 points on
     // real 40 m (KF0YUX); at 1 three false calls came there.
     double joined_points = 0.75;
-    // A whole or glued word another station names (before DE, 5NN, UR and the like) passes at this many points: that one word is often all
-    // a caller's station leaves in the text. Heuristic, chosen by measurement: 14 more true and 3 more false on the contest of 280.
-    double points_named = 1.0;
+    // A whole or glued word another station names (before DE, 5NN, UR and the like) passes at this many points. 2, the default since rob-1,
+    // is no exception: a named word counts as any other, so a call heard on one word is not reported without a list, CW Skimmer's practice
+    // (RBN 2021). At 1 (call-1 to rob-1) one named word passed alone: 11 more true and 4 more false calls on the contest of 280, but on the
+    // four 2017 recordings 18 confirmed calls for 110 the RBN did not confirm (appendix A.12). Standard practice (CW Skimmer's Normal level,
+    // secondhand through the RBN's 2021 post), checked by measurement.
+    double points_named = 2.0;
     // Whole words a call of tiny pieces (only_tiny_pieces) needs, listed or not; 0 leaves it unread. Heuristic, chosen by measurement.
     double tiny_points = 2.0;
     // Two letters' difference holds a call back only against a rival with more than this many times its points. Heuristic, chosen by measurement.
@@ -174,6 +180,7 @@ struct CallSearchConfig {
     double prefix_held = 1.0;
     // When not 0, a reported call that loses at one place is withdrawn only if its rival's best is above its own best, or its readings
     // more than variant_hz from that place do not pass by themselves; at 0, any local defeat withdraws it. Heuristic, chosen by a hand test and measurement.
+    // Read only with pool_places 0.
     double withdraw_own_place = 1.0;
     // A call sent twice in a row counts as framed, when not 0. Heuristic, chosen by measurement.
     double doubled_is_framed = 1.0;
@@ -198,6 +205,19 @@ struct CallSearchConfig {
     // and 5 misreadings on the two 2017 recordings tuned on, but 6 and 9 on the two held out (decision log). A margin reaches at most 15.94
     // nats there (the ceiling read through a float), so 16 nats is the rule off.
     double known_margin_nats = 0.0;
+    // Readings of a call at different places add, when not 0: one call is one station, and a station that calls several runners, or
+    // that is named at one place and signs at another, is read independently at each (CW Skimmer counts a call's repeats per decoder, so
+    // this goes past it). Occurrences that overlap in time count once wherever they are (one transmission), and an occurrence at a place
+    // where a better-supported variant holds the call back counts for that variant, not for it. The same pooled support decides whether a
+    // reported call that loses at one place leaves the list, and is reported, on these pooled points alone (in place of withdraw_own_place's
+    // test). Heuristic, motivated by the evidence rule (independent readings add, one transmission counts once): readings at different places
+    // are not independent when the decoder misreads a call the same way at each (real30's K0HBN for IK0HBN), and the whole band and window_s
+    // as its scope are choices. On by default, chosen by measurement (rob-1; appendix A.12).
+    double pool_places = 1.0;
+    // The pieces of a glued word take their own characters' times, when not 0, so that a call sent twice with no space between
+    // (K1ABCK1ABC) is two readings, as it is with the space; at 0 every piece has the word's times and the two are one occurrence.
+    // Derived from the evidence rule (one occurrence per transmission); rob-1.
+    double glued_pieces_timed = 1.0;
 };
 
 // One line of the list.
@@ -284,6 +304,12 @@ private:
     void evaluate(Candidate& candidate, double freq_hz, double now_s);
     Support support(const Candidate& candidate, double freq_hz, double now_s, double within_hz) const;
     bool passes(const Candidate& candidate, const Support& s) const;
+    // Whether a better-supported near variant holds the call back at this place (CallSearchConfig::variant_hz); the best such rival's best
+    // is added to rival_best, and the reported calls it beats here to beaten, when given.
+    bool held_at(const Candidate& candidate, double freq_hz, double now_s, double* rival_best, std::vector<Candidate*>* beaten);
+    // The call's support over the whole band (CallSearchConfig::pool_places): its occurrences within window_s, one per transmission,
+    // leaving out those at places where it is held.
+    Support pooled_support(const Candidate& candidate, double now_s);
     // Whether the call's readings more than variant_hz from this place pass by themselves, at any one place.
     bool stands_elsewhere(const Candidate& candidate, double freq_hz, double now_s) const;
     void report(Candidate& candidate, double now_s);
