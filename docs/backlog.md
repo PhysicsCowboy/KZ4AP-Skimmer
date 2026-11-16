@@ -1612,6 +1612,12 @@ for the line format and client handling.
 
 ## Smaller items worth keeping
 
+- **Code comments and labels that review 16's subagent flagged** (checkpoint 4, not one-line document fixes; the flags came
+  without detail, so the defect named for each is my reading, to check first): `engine.cpp:91-92`
+  (the prominence and sideband settings, labeled together "heuristics, chosen by measurement"; A.6 says prominence chosen by
+  measurement, the sideband values heuristics) and `:98-99` (30 Hz and 12 Hz together "chosen by measurement"); `callsign.hpp:157-158`
+  (the report thresholds labeled "chosen by measurement" though `points_named` 2 is standard practice) and `:192` (`history_s`'s
+  provenance). Each to check against A.10 and relabel in the code.
 - **Engine events:** the "station gone" event carries the track as it was when
   found, so its SNR and last-active time are stale; carry the final values.
   Tracks still alive at the end of a recording get no "gone" event.
@@ -1663,7 +1669,7 @@ Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repos
 - **Junk rows.** Data and speech rows stay on the track list; the call list beside it has none. A view of the rows by plausibility is not built.
 - **Fine-tuning off the center.** Tuning the radio a little off and shifting digitally would remove the dead zone at 0 Hz.
 - **Done in `det-2` (2026-11-15): two or three tracks on one station** (the owner's recording, 2026-11-04: K4TZ's CWT run read on
-  three tracks 43 to 57 Hz apart). A track whose decoder's envelope follows an older, proven neighbor's keying is retired as its copy
+  three tracks at 9 790, 9 847 and 9 897 Hz from the center, 7029.803, 7029.860 and 7029.910 kHz, 57 and 50 Hz apart; A.6). A track whose decoder's envelope follows an older, proven neighbor's keying is retired as its copy
   (signal-processing.md, section 6 and A.6; what is left: "Copies after det-2" below). As it stood: two tracks on one station,
   40 to 135 Hz apart, on a strong keyed carrier (W1AW at 7047.5 kHz), seen live while the pipeline lost samples.
 - **A real station's first seconds under a hold.** A place retired stays closed 8 s and more (at most 120 s; a region 30 s and
@@ -1776,3 +1782,9 @@ decision log). Left open:
   track's text. Keeping the row, as for a faded track, would show them.
 - **No test holds the source-proven condition alone** (review 14): det-1's carrier cell is its evidence (A.6), but a unit scene of a
   station between a carrier's track and a side track did not reproduce the side track (tried, 2026-11-15).
+- **A caller's row beside the runner prints the runner's exchange too** (checkpoint 4): on the owner's file the app's track at
+  +9 885 Hz reads KK4E, K8WWS, VE3NE and "TU K4TZ CQ", since its ±150 Hz channel hears K4TZ 42 Hz away: one QSO's text on two rows,
+  not a copy by the test. The owner may read it as a copy.
+- **A long row's speed reads low at its end** (review 16, checkpoint 4): in the app's track table at the end of the owner's file
+  K4TZ's row shows 5.7 WPM, and two other long rows 6.9 and 7.6 WPM. Not traced (the speed shown is the decoder's latest, perhaps
+  a silence's or a slow junk story's). GUIDE.txt tells the owner it is being looked at.
