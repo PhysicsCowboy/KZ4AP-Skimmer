@@ -1,0 +1,1220 @@
+recording,call,station,reported
+contest,AA1XD,true,1
+contest,AA3A,true,1
+contest,AA3IQY,true,1
+contest,AA3P,true,1
+contest,AA4SS,true,0
+contest,AA4T,true,1
+contest,AA7PAC,true,1
+contest,AA8NWN,true,1
+contest,AA8TR,true,1
+contest,AA9KM,true,0
+contest,AA9Y,true,0
+contest,AA9ZT,true,0
+contest,DL0A,true,1
+contest,DL0AGQ,true,1
+contest,DL0FNA,true,1
+contest,DL0IAQ,true,1
+contest,DL0MH,true,1
+contest,DL0SNV,true,0
+contest,DL0XRN,true,1
+contest,DL0YD,true,1
+contest,DL1HF,true,1
+contest,DL1J,true,1
+contest,DL1KB,true,1
+contest,DL1LI,true,1
+contest,DL2KD,true,1
+contest,DL2P,true,1
+contest,DL3GV,true,1
+contest,DL4QHM,true,0
+contest,DL5DPK,true,1
+contest,DL5V,true,1
+contest,DL6QH,true,0
+contest,DL6V,true,1
+contest,DL7GY,true,0
+contest,DL7OU,true,0
+contest,DL7RX,true,0
+contest,DL8W,true,0
+contest,DL9I,true,1
+contest,DL9VIJ,true,1
+contest,DL9ZR,true,0
+contest,EA0SN,true,1
+contest,EA1XNS,true,0
+contest,EA3LVI,true,0
+contest,EA3W,true,0
+contest,EA4YY,true,1
+contest,EA5AE,true,0
+contest,EA5DHJ,true,1
+contest,EA5VFM,true,0
+contest,EA7JIG,true,1
+contest,EA7UJL,true,0
+contest,EA7UPZ,true,0
+contest,EA8KG,true,1
+contest,EA9T,true,1
+contest,EA9ZMD,true,1
+contest,F0D,true,1
+contest,F0JQ,true,1
+contest,F0O,true,1
+contest,F0P,true,1
+contest,F1F,true,0
+contest,F3SP,true,1
+contest,F4E,true,1
+contest,F4T,true,1
+contest,F6Q,true,1
+contest,F6Z,true,1
+contest,F7PI,true,1
+contest,F8CIZ,true,1
+contest,F9I,true,1
+contest,F9VH,true,1
+contest,G0ITK,true,0
+contest,G0JVP,true,1
+contest,G1Z,true,0
+contest,G2KG,true,1
+contest,G2L,true,1
+contest,G3MEN,true,1
+contest,G4LCN,true,0
+contest,G4Y,true,0
+contest,G6D,true,1
+contest,G6I,true,1
+contest,G6VD,true,1
+contest,G6YE,true,1
+contest,G7TM,true,1
+contest,G7V,true,1
+contest,G7Z,true,1
+contest,G8GRR,true,0
+contest,G8GTC,true,1
+contest,G8J,true,0
+contest,G8KO,true,1
+contest,G8KZ,true,1
+contest,G8UT,true,0
+contest,G9R,true,1
+contest,G9XJO,true,0
+contest,I0ZVA,true,1
+contest,I1J,true,1
+contest,I1TQ,true,1
+contest,I2H,true,1
+contest,I3KD,true,1
+contest,I5GGZ,true,1
+contest,I6I,true,0
+contest,I7C,true,1
+contest,I8LX,true,1
+contest,I8OV,true,1
+contest,I8TQJ,true,1
+contest,I8Z,true,1
+contest,I9AH,true,0
+contest,I9DEL,true,1
+contest,JA0N,true,0
+contest,JA2BBQ,true,1
+contest,JA2R,true,1
+contest,JA3JOZ,true,1
+contest,JA3M,true,1
+contest,JA3MO,true,1
+contest,JA3PIQ,true,0
+contest,JA3S,true,0
+contest,JA3XFE,true,0
+contest,JA3XI,false,1
+contest,JA4UY,true,1
+contest,JA4ZK,true,1
+contest,JA7HT,true,0
+contest,JA7T,true,1
+contest,JA7X,true,0
+contest,JA8HSW,true,1
+contest,JA8K,true,0
+contest,JA8TL,true,0
+contest,JA9NKF,true,1
+contest,JA9V,true,1
+contest,K0DB,true,1
+contest,K0IDX,true,1
+contest,K0IQQ,true,0
+contest,K0QH,true,0
+contest,K0SZT,true,0
+contest,K2QU,true,1
+contest,K2U,true,1
+contest,K3A,true,1
+contest,K4BUP,true,0
+contest,K5Q,true,1
+contest,K5WF,true,1
+contest,K7IDE,true,1
+contest,K9Y,true,1
+contest,KB0CJB,true,1
+contest,KB0F,true,1
+contest,KB0NF,true,1
+contest,KB2X,true,1
+contest,KB3W,true,1
+contest,KB5BSA,true,1
+contest,KB5JD,true,1
+contest,KB6QHB,true,1
+contest,KB7O,true,1
+contest,KB7QV,true,1
+contest,KB8AKK,true,0
+contest,KB9BC,true,1
+contest,KB9I,true,1
+contest,KB9K,true,1
+contest,KB9MY,true,0
+contest,KB9Z,true,1
+contest,N1DT,true,0
+contest,N2BWM,true,1
+contest,N3XU,true,1
+contest,N4M,true,0
+contest,N5CML,true,1
+contest,N7S,true,1
+contest,N8SDV,true,1
+contest,N9AZ,true,0
+contest,N9OFG,true,1
+contest,OH0HH,true,1
+contest,OH0XYG,true,1
+contest,OH2D,true,0
+contest,OH2M,true,0
+contest,OH2TDE,true,1
+contest,OH2VL,true,1
+contest,OH3LHN,true,1
+contest,OH3Q,true,1
+contest,OH3SZK,true,1
+contest,OH5FDV,true,1
+contest,OH5IM,true,1
+contest,OH5RDX,true,1
+contest,OH5UON,true,1
+contest,OH6I,true,1
+contest,OH6JI,true,1
+contest,OH7LXH,true,0
+contest,OH8RPF,true,1
+contest,OH9LL,true,1
+contest,OH9XG,true,1
+contest,OH9Z,true,1
+contest,PY1H,true,1
+contest,PY1K,true,1
+contest,PY2A,true,1
+contest,PY2CM,true,1
+contest,PY2PY,true,1
+contest,PY3G,true,1
+contest,PY3J,true,0
+contest,PY4CHW,true,1
+contest,PY4DYK,true,0
+contest,PY4E,true,1
+contest,PY4VZ,true,1
+contest,PY6OD,true,1
+contest,PY7DII,true,0
+contest,PY8ENO,true,1
+contest,PY8WQG,true,1
+contest,PY9OQ,true,1
+contest,SM1HI,true,1
+contest,SM2K,true,1
+contest,SM3E,true,1
+contest,SM5NU,true,1
+contest,SM5R,true,1
+contest,SM6E,true,0
+contest,SM7DZ,true,1
+contest,SM7FQ,true,0
+contest,SM7ND,true,0
+contest,SM8IB,true,1
+contest,SM8KAK,true,1
+contest,SM8TPB,true,1
+contest,SM9DN,true,1
+contest,SM9MC,true,0
+contest,SM9NT,true,1
+contest,SM9XTW,true,1
+contest,UA0K,true,1
+contest,UA0ZI,true,1
+contest,UA2MA,true,1
+contest,UA3U,true,1
+contest,UA5GE,true,1
+contest,UA6JI,true,1
+contest,UA6W,true,1
+contest,UA7C,true,1
+contest,UA7R,true,1
+contest,UA9K,true,1
+contest,VE0DR,true,1
+contest,VE0E,true,0
+contest,VE0F,true,1
+contest,VE0NZ,true,0
+contest,VE0VV,true,1
+contest,VE1GSB,true,1
+contest,VE1XS,true,1
+contest,VE2NJU,true,1
+contest,VE4FAU,true,1
+contest,VE5QC,true,1
+contest,VE5V,true,1
+contest,VE6HM,true,1
+contest,VE7Q,true,1
+contest,VE7ZKK,true,1
+contest,VE8L,true,1
+contest,VE9QJR,true,1
+contest,VK1H,true,1
+contest,VK1VH,true,1
+contest,VK1VZB,true,1
+contest,VK2JHV,true,1
+contest,VK3BO,true,1
+contest,VK4LFO,true,0
+contest,VK4OV,true,1
+contest,VK5GZ,true,1
+contest,VK5Z,true,1
+contest,VK6XWF,true,1
+contest,VK7T,true,0
+contest,VK8C,true,1
+contest,W2QYV,true,1
+contest,W3YU,true,1
+contest,W4Z,true,1
+contest,W5K,true,1
+contest,W5L,true,1
+contest,W5MTL,true,0
+contest,W5V,true,1
+contest,W7XW,true,1
+contest,W8W,true,1
+contest,W9GPO,true,1
+contest,W9NK,true,1
+contest,W9Q,true,1
+contest,ZL0DEY,true,0
+contest,ZL1SV,true,1
+contest,ZL2ASB,true,0
+contest,ZL2YG,true,1
+contest,ZL3V,true,1
+contest,ZL3YV,true,1
+contest,ZL4HEG,true,1
+contest,ZL4NMW,true,1
+contest,ZL4UDT,true,0
+contest,ZL5O,true,1
+contest,ZL6LMF,true,0
+contest,ZL7OJ,true,0
+contest,ZL8BN,true,0
+contest,ZL8HE,true,0
+contest,ZL8LAL,true,1
+contest,ZL9S,true,1
+contest,ZL9XMJ,true,0
+"contest, fresh seed",AA0X,true,1
+"contest, fresh seed",AA1BI,true,1
+"contest, fresh seed",AA1REN,true,1
+"contest, fresh seed",AA2LJ,true,0
+"contest, fresh seed",AA2N,true,1
+"contest, fresh seed",AA2REO,true,1
+"contest, fresh seed",AA2ZJ,true,1
+"contest, fresh seed",AA3FWH,true,1
+"contest, fresh seed",AA3TV,true,1
+"contest, fresh seed",AA5YG,true,1
+"contest, fresh seed",AA6I,true,0
+"contest, fresh seed",AA6IV,true,0
+"contest, fresh seed",AA6QLG,true,0
+"contest, fresh seed",AA7U,true,1
+"contest, fresh seed",AA9EZF,true,0
+"contest, fresh seed",DL0IY,true,1
+"contest, fresh seed",DL1JT,true,0
+"contest, fresh seed",DL1TGG,true,0
+"contest, fresh seed",DL2QO,true,1
+"contest, fresh seed",DL2ZPM,true,0
+"contest, fresh seed",DL3I,true,0
+"contest, fresh seed",DL3PVR,true,1
+"contest, fresh seed",DL3RY,true,1
+"contest, fresh seed",DL3VE,true,1
+"contest, fresh seed",DL5E,true,1
+"contest, fresh seed",DL6O,true,1
+"contest, fresh seed",DL6T,true,1
+"contest, fresh seed",DL8MO,true,1
+"contest, fresh seed",DL9F,true,1
+"contest, fresh seed",DL9VDA,true,1
+"contest, fresh seed",DL9XN,true,1
+"contest, fresh seed",EA0T,true,1
+"contest, fresh seed",EA1ML,true,1
+"contest, fresh seed",EA3LDL,true,1
+"contest, fresh seed",EA3O,true,0
+"contest, fresh seed",EA3SN,true,0
+"contest, fresh seed",EA3ZG,true,1
+"contest, fresh seed",EA3ZPR,true,1
+"contest, fresh seed",EA4A,true,1
+"contest, fresh seed",EA4FZ,true,1
+"contest, fresh seed",EA4YZ,true,1
+"contest, fresh seed",EA5GQ,true,1
+"contest, fresh seed",EA5JVN,true,1
+"contest, fresh seed",EA6NN,true,1
+"contest, fresh seed",EA7KAP,true,1
+"contest, fresh seed",EA7UJ,true,1
+"contest, fresh seed",EA8FXI,true,1
+"contest, fresh seed",EA8TY,true,0
+"contest, fresh seed",EA9Q,true,1
+"contest, fresh seed",F0EB,true,0
+"contest, fresh seed",F0QSI,true,1
+"contest, fresh seed",F3DY,true,1
+"contest, fresh seed",F4CPA,true,1
+"contest, fresh seed",F4S,true,1
+"contest, fresh seed",F5MLA,true,1
+"contest, fresh seed",F5TZC,true,1
+"contest, fresh seed",F6X,true,1
+"contest, fresh seed",F6YN,true,1
+"contest, fresh seed",F7HT,true,1
+"contest, fresh seed",F8L,true,1
+"contest, fresh seed",G0ILU,true,1
+"contest, fresh seed",G0K,true,1
+"contest, fresh seed",G0T,true,0
+"contest, fresh seed",G2KP,true,1
+"contest, fresh seed",G2X,true,1
+"contest, fresh seed",G3HM,true,1
+"contest, fresh seed",G3PTG,true,1
+"contest, fresh seed",G4R,true,1
+"contest, fresh seed",G5AY,true,0
+"contest, fresh seed",G6MAW,true,1
+"contest, fresh seed",G8DP,true,1
+"contest, fresh seed",G9FLE,true,1
+"contest, fresh seed",G9M,true,1
+"contest, fresh seed",G9U,true,1
+"contest, fresh seed",I0M,true,1
+"contest, fresh seed",I1JLV,true,1
+"contest, fresh seed",I2H,true,1
+"contest, fresh seed",I2UWA,true,1
+"contest, fresh seed",I2W,true,1
+"contest, fresh seed",I3HX,true,1
+"contest, fresh seed",I4JRO,true,0
+"contest, fresh seed",I4OBI,true,1
+"contest, fresh seed",I5O,true,0
+"contest, fresh seed",I5Q,true,0
+"contest, fresh seed",I6RPC,true,1
+"contest, fresh seed",I6YV,true,1
+"contest, fresh seed",I7CPG,true,1
+"contest, fresh seed",I7GJA,true,1
+"contest, fresh seed",I8QEK,true,1
+"contest, fresh seed",JA0IFE,true,1
+"contest, fresh seed",JA1CC,true,1
+"contest, fresh seed",JA1FN,true,1
+"contest, fresh seed",JA1VLF,true,1
+"contest, fresh seed",JA1W,true,1
+"contest, fresh seed",JA2VL,true,0
+"contest, fresh seed",JA3M,true,1
+"contest, fresh seed",JA4FD,true,0
+"contest, fresh seed",JA4JNL,true,1
+"contest, fresh seed",JA5H,true,1
+"contest, fresh seed",JA5HJ,true,1
+"contest, fresh seed",JA5QP,true,1
+"contest, fresh seed",JA8EP,true,1
+"contest, fresh seed",JA8KCN,true,1
+"contest, fresh seed",JA8MTY,true,1
+"contest, fresh seed",JA8OPW,true,1
+"contest, fresh seed",JA8P,true,0
+"contest, fresh seed",JA8TDL,true,1
+"contest, fresh seed",JA8YTZ,true,0
+"contest, fresh seed",JA8YU,true,1
+"contest, fresh seed",JA9HC,true,1
+"contest, fresh seed",K1G,true,1
+"contest, fresh seed",K1HGB,true,1
+"contest, fresh seed",K1PF,true,0
+"contest, fresh seed",K2DWB,true,1
+"contest, fresh seed",K2Z,true,1
+"contest, fresh seed",K4NUY,true,1
+"contest, fresh seed",K4PNS,true,0
+"contest, fresh seed",K4V,true,1
+"contest, fresh seed",K5BGC,true,1
+"contest, fresh seed",K5CUW,true,1
+"contest, fresh seed",K5EE,true,1
+"contest, fresh seed",K5IV,true,1
+"contest, fresh seed",K5KR,true,1
+"contest, fresh seed",K6IH,true,1
+"contest, fresh seed",K7R,true,1
+"contest, fresh seed",K7U,true,1
+"contest, fresh seed",K7WK,true,1
+"contest, fresh seed",K8LQR,true,0
+"contest, fresh seed",KB0ACR,true,0
+"contest, fresh seed",KB1D,true,0
+"contest, fresh seed",KB2FR,true,1
+"contest, fresh seed",KB2Z,true,1
+"contest, fresh seed",KB3H,true,1
+"contest, fresh seed",KB6BB,true,1
+"contest, fresh seed",KB6I,true,1
+"contest, fresh seed",KB6LRI,true,0
+"contest, fresh seed",KB6N,true,1
+"contest, fresh seed",KB6Z,true,1
+"contest, fresh seed",KB7I,true,1
+"contest, fresh seed",KB7L,true,1
+"contest, fresh seed",KB7SJK,true,1
+"contest, fresh seed",KB9I,true,1
+"contest, fresh seed",KB9JFE,true,1
+"contest, fresh seed",KB9TB,true,1
+"contest, fresh seed",KB9XF,true,0
+"contest, fresh seed",N1E,true,0
+"contest, fresh seed",N1I,true,1
+"contest, fresh seed",N1JRC,true,1
+"contest, fresh seed",N2Y,true,1
+"contest, fresh seed",N4DFP,true,1
+"contest, fresh seed",N4NJ,true,1
+"contest, fresh seed",N4VQ,true,1
+"contest, fresh seed",N6GT,true,1
+"contest, fresh seed",N7AX,true,1
+"contest, fresh seed",N8FNW,true,1
+"contest, fresh seed",N8KL,true,1
+"contest, fresh seed",N8VN,true,1
+"contest, fresh seed",N9RZ,true,1
+"contest, fresh seed",OH3A,true,1
+"contest, fresh seed",OH3EJJ,true,1
+"contest, fresh seed",OH3HJ,true,1
+"contest, fresh seed",OH3NY,true,0
+"contest, fresh seed",OH3OTI,true,1
+"contest, fresh seed",OH4B,true,1
+"contest, fresh seed",OH4FZE,true,1
+"contest, fresh seed",OH4SD,true,1
+"contest, fresh seed",OH4Y,true,1
+"contest, fresh seed",OH5AO,true,1
+"contest, fresh seed",OH5F,true,1
+"contest, fresh seed",OH7DHZ,true,0
+"contest, fresh seed",OH7Q,true,1
+"contest, fresh seed",OH8N,true,1
+"contest, fresh seed",OH9EMZ,true,1
+"contest, fresh seed",PY0KX,true,1
+"contest, fresh seed",PY2DN,true,1
+"contest, fresh seed",PY2WOS,true,1
+"contest, fresh seed",PY2WUV,true,1
+"contest, fresh seed",PY2ZR,true,0
+"contest, fresh seed",PY4IZO,true,1
+"contest, fresh seed",PY4QCB,true,0
+"contest, fresh seed",PY5KGK,true,1
+"contest, fresh seed",PY5MX,true,1
+"contest, fresh seed",PY5QQ,true,0
+"contest, fresh seed",PY5TZO,true,1
+"contest, fresh seed",PY6NJJ,true,1
+"contest, fresh seed",PY7AE,true,1
+"contest, fresh seed",PY7C,true,1
+"contest, fresh seed",PY8BZJ,true,1
+"contest, fresh seed",PY8FBD,true,1
+"contest, fresh seed",PY8OXR,true,1
+"contest, fresh seed",PY8TA,true,0
+"contest, fresh seed",PY9Z,true,1
+"contest, fresh seed",SM0E,true,1
+"contest, fresh seed",SM0LP,true,1
+"contest, fresh seed",SM0MWI,true,1
+"contest, fresh seed",SM0WR,true,1
+"contest, fresh seed",SM3R,true,1
+"contest, fresh seed",SM3TKL,true,1
+"contest, fresh seed",SM4LY,true,0
+"contest, fresh seed",SM4W,true,1
+"contest, fresh seed",SM5INM,true,1
+"contest, fresh seed",SM5UZY,true,0
+"contest, fresh seed",SM6A,true,1
+"contest, fresh seed",SM6REP,true,0
+"contest, fresh seed",SM6WIS,true,1
+"contest, fresh seed",SM7IF,true,1
+"contest, fresh seed",SM7RBR,true,1
+"contest, fresh seed",SM8KIE,true,0
+"contest, fresh seed",SM9CQA,true,1
+"contest, fresh seed",UA0AZQ,true,0
+"contest, fresh seed",UA0S,true,1
+"contest, fresh seed",UA2BB,true,1
+"contest, fresh seed",UA4AMG,true,1
+"contest, fresh seed",UA4H,true,0
+"contest, fresh seed",UA4QE,true,1
+"contest, fresh seed",UA5P,true,1
+"contest, fresh seed",UA6HZ,true,1
+"contest, fresh seed",UA6IY,true,1
+"contest, fresh seed",UA7FXU,true,1
+"contest, fresh seed",UA7GPL,true,1
+"contest, fresh seed",UA7PP,true,1
+"contest, fresh seed",UA7RYQ,true,1
+"contest, fresh seed",UA8CA,true,1
+"contest, fresh seed",UA8CK,true,1
+"contest, fresh seed",UA8W,true,1
+"contest, fresh seed",UA9SEE,true,1
+"contest, fresh seed",VE0H,true,1
+"contest, fresh seed",VE0P,true,1
+"contest, fresh seed",VE3GU,true,0
+"contest, fresh seed",VE3JR,true,0
+"contest, fresh seed",VE3S,true,1
+"contest, fresh seed",VE4RU,true,1
+"contest, fresh seed",VE4ZD,true,1
+"contest, fresh seed",VE6H,true,1
+"contest, fresh seed",VE6L,true,1
+"contest, fresh seed",VE7K,true,1
+"contest, fresh seed",VE8HC,true,1
+"contest, fresh seed",VE8MSC,true,0
+"contest, fresh seed",VE8NMW,true,1
+"contest, fresh seed",VE8RE,true,0
+"contest, fresh seed",VE9UG,true,1
+"contest, fresh seed",VE9YW,true,1
+"contest, fresh seed",VK1AZR,true,1
+"contest, fresh seed",VK2VR,true,1
+"contest, fresh seed",VK2XV,true,1
+"contest, fresh seed",VK3EDU,true,0
+"contest, fresh seed",VK4PZG,true,1
+"contest, fresh seed",VK4UIX,true,0
+"contest, fresh seed",VK5B,true,1
+"contest, fresh seed",VK5G,true,1
+"contest, fresh seed",VK5ZUV,true,1
+"contest, fresh seed",VK6B,true,1
+"contest, fresh seed",VK6FG,true,1
+"contest, fresh seed",VK9UXE,true,1
+"contest, fresh seed",W0RKK,true,0
+"contest, fresh seed",W2LXZ,true,1
+"contest, fresh seed",W2WS,true,0
+"contest, fresh seed",W3QP,true,1
+"contest, fresh seed",W4QH,true,1
+"contest, fresh seed",W4T,true,1
+"contest, fresh seed",W6OIL,true,1
+"contest, fresh seed",W7BXZ,true,1
+"contest, fresh seed",W7O,true,1
+"contest, fresh seed",W9KQ,true,1
+"contest, fresh seed",W9QPO,true,1
+"contest, fresh seed",ZL1CRG,true,0
+"contest, fresh seed",ZL2DXJ,true,1
+"contest, fresh seed",ZL2KVO,true,1
+"contest, fresh seed",ZL2Z,true,1
+"contest, fresh seed",ZL3IT,true,1
+"contest, fresh seed",ZL3JVJ,true,1
+"contest, fresh seed",ZL3KWW,true,1
+"contest, fresh seed",ZL3SCT,true,1
+"contest, fresh seed",ZL4RE,true,0
+"contest, fresh seed",ZL4W,true,1
+"contest, fresh seed",ZL5P,true,1
+"contest, fresh seed",ZL6BP,true,1
+"contest, fresh seed",ZL7XU,true,1
+"contest, fresh seed",ZL8DOI,true,1
+"contest, fresh seed",ZL9VN,true,1
+strong pairs,AA3YK,true,1
+strong pairs,DL2E,true,1
+strong pairs,DL5RMU,true,1
+strong pairs,DL6SW,true,1
+strong pairs,DL7KPM,true,0
+strong pairs,EA3JNH,true,1
+strong pairs,EA7R,true,1
+strong pairs,EA8KDV,true,1
+strong pairs,F2D,true,0
+strong pairs,G0C,true,1
+strong pairs,G1RI,true,1
+strong pairs,G6H,true,0
+strong pairs,G6TML,true,1
+strong pairs,G8T,true,1
+strong pairs,I0PSM,true,1
+strong pairs,I4K,true,0
+strong pairs,I4XPQ,true,1
+strong pairs,I5FX,true,1
+strong pairs,JA2QRK,true,1
+strong pairs,K1EOK,true,0
+strong pairs,K1OK,false,1
+strong pairs,K3DXS,true,1
+strong pairs,K3SP,true,1
+strong pairs,K4WQ,true,1
+strong pairs,K5B,true,0
+strong pairs,K7D,true,1
+strong pairs,KB9UQP,true,1
+strong pairs,N3K,true,1
+strong pairs,OH2Y,true,1
+strong pairs,OH2ZV,true,1
+strong pairs,OH4R,true,1
+strong pairs,OH6I,true,1
+strong pairs,OH7MF,true,0
+strong pairs,SM9CBT,true,1
+strong pairs,UA1K,true,1
+strong pairs,UA6DVU,true,1
+strong pairs,UA6M,true,1
+strong pairs,UA6O,true,1
+strong pairs,UA9AY,true,1
+strong pairs,VE2JY,true,1
+strong pairs,VE6YEF,true,1
+strong pairs,VE8RAY,true,1
+strong pairs,VK2IOH,true,0
+strong pairs,VK4S,true,1
+strong pairs,VK7BR,true,1
+strong pairs,VK7UE,true,1
+strong pairs,ZL4U,true,1
+strong pairs,ZL7RXF,true,1
+strong pairs,ZL8P,true,0
+"strong pairs, fresh seed",AA3EXM,true,1
+"strong pairs, fresh seed",AA5MC,true,0
+"strong pairs, fresh seed",DL5LFP,true,1
+"strong pairs, fresh seed",DL9ZXF,true,1
+"strong pairs, fresh seed",EA4RE,true,0
+"strong pairs, fresh seed",EA5KD,true,1
+"strong pairs, fresh seed",EA7W,true,1
+"strong pairs, fresh seed",EA9VO,true,1
+"strong pairs, fresh seed",EA9XI,true,1
+"strong pairs, fresh seed",F3LUP,true,0
+"strong pairs, fresh seed",F6Z,true,1
+"strong pairs, fresh seed",G0US,true,1
+"strong pairs, fresh seed",G3ZC,true,1
+"strong pairs, fresh seed",G7NJ,true,1
+"strong pairs, fresh seed",I0GT,true,1
+"strong pairs, fresh seed",I6E,true,1
+"strong pairs, fresh seed",I6M,true,0
+"strong pairs, fresh seed",I6XTI,true,1
+"strong pairs, fresh seed",I9QCH,true,0
+"strong pairs, fresh seed",JA0HJT,true,1
+"strong pairs, fresh seed",JA4D,true,1
+"strong pairs, fresh seed",K4J,true,1
+"strong pairs, fresh seed",K4TT,true,1
+"strong pairs, fresh seed",K6B,true,1
+"strong pairs, fresh seed",K8THC,true,1
+"strong pairs, fresh seed",K9NIO,true,1
+"strong pairs, fresh seed",KB5PWY,true,1
+"strong pairs, fresh seed",KB7XI,true,1
+"strong pairs, fresh seed",KB8FIV,true,1
+"strong pairs, fresh seed",N7FMV,true,1
+"strong pairs, fresh seed",OH0EJ,true,1
+"strong pairs, fresh seed",PY7L,true,0
+"strong pairs, fresh seed",PY9HA,true,0
+"strong pairs, fresh seed",PY9ZF,true,1
+"strong pairs, fresh seed",SM2Z,true,1
+"strong pairs, fresh seed",SM3TG,true,1
+"strong pairs, fresh seed",UA3KJ,true,1
+"strong pairs, fresh seed",UA5O,true,1
+"strong pairs, fresh seed",UA6XSG,true,1
+"strong pairs, fresh seed",UA8B,true,1
+"strong pairs, fresh seed",VE3CO,true,1
+"strong pairs, fresh seed",VE6VJ,true,1
+"strong pairs, fresh seed",VK3MP,true,1
+"strong pairs, fresh seed",VK4LHE,true,1
+"strong pairs, fresh seed",VK8FS,true,1
+"strong pairs, fresh seed",VK8RT,true,1
+"strong pairs, fresh seed",ZL2Y,true,1
+"strong pairs, fresh seed",ZL6C,true,0
+crowded band,AA0PC,true,1
+crowded band,AA0S,true,1
+crowded band,AA1C,true,1
+crowded band,AA2SVR,true,1
+crowded band,AA3P,true,1
+crowded band,AA6WPV,true,1
+crowded band,AA7BA,true,1
+crowded band,AA8IUD,true,1
+crowded band,AA8Y,true,1
+crowded band,AA9V,true,1
+crowded band,DL0H,true,1
+crowded band,DL1KEQ,true,1
+crowded band,DL2SV,true,1
+crowded band,DL4VYK,true,1
+crowded band,DL5X,true,1
+crowded band,DL6M,true,1
+crowded band,DL8QSU,true,1
+crowded band,DL9B,true,1
+crowded band,DL9LX,true,1
+crowded band,DL9P,true,1
+crowded band,EA0ITO,true,1
+crowded band,EA0XZ,true,1
+crowded band,EA1TY,true,1
+crowded band,EA1UO,true,1
+crowded band,EA4E,true,1
+crowded band,EA5JBN,true,1
+crowded band,EA5PU,true,1
+crowded band,EA5XUR,true,1
+crowded band,EA7PS,true,1
+crowded band,EA9SA,true,1
+crowded band,F1M,true,1
+crowded band,F1WT,true,1
+crowded band,F2OZ,true,1
+crowded band,F2PCB,true,1
+crowded band,F2WS,true,1
+crowded band,F3KG,true,1
+crowded band,F3Q,true,1
+crowded band,F3WG,true,1
+crowded band,F4EPR,true,1
+crowded band,F4KA,true,1
+crowded band,F4OAE,true,1
+crowded band,F4WEV,true,1
+crowded band,F5DWJ,true,1
+crowded band,F5IGO,true,1
+crowded band,F5MX,true,1
+crowded band,F5ONO,true,1
+crowded band,F5RW,true,1
+crowded band,F7OMF,true,1
+crowded band,F7ON,true,1
+crowded band,F9F,true,1
+crowded band,F9NLA,true,1
+crowded band,F9Z,true,1
+crowded band,G0CJB,true,1
+crowded band,G0LF,true,1
+crowded band,G0VQ,true,1
+crowded band,G0Z,true,1
+crowded band,G1EFT,true,1
+crowded band,G1KD,true,1
+crowded band,G1MTD,true,1
+crowded band,G1YJT,true,1
+crowded band,G2EWW,true,1
+crowded band,G2TX,true,1
+crowded band,G4GOP,true,1
+crowded band,G4PIT,true,1
+crowded band,G4UTD,true,1
+crowded band,G6G,true,1
+crowded band,G6GS,true,1
+crowded band,G6N,true,1
+crowded band,G6QB,true,1
+crowded band,G7PVO,true,1
+crowded band,G8N,true,1
+crowded band,G8Y,true,1
+crowded band,G9AM,true,1
+crowded band,G9MPJ,true,1
+crowded band,G9XYY,true,1
+crowded band,I1J,true,1
+crowded band,I1X,true,1
+crowded band,I2BIV,true,1
+crowded band,I2JT,true,1
+crowded band,I3W,true,1
+crowded band,I5CD,true,1
+crowded band,I5D,true,1
+crowded band,I5DA,true,1
+crowded band,I5L,true,1
+crowded band,I5LSN,true,1
+crowded band,I5QQJ,true,1
+crowded band,I6NWB,true,1
+crowded band,I6YBR,true,1
+crowded band,I7K,true,1
+crowded band,I7PUJ,true,1
+crowded band,I8AWR,true,1
+crowded band,I8DZ,true,1
+crowded band,I8O,true,1
+crowded band,I8ZO,true,1
+crowded band,I9AY,true,1
+crowded band,I9F,true,1
+crowded band,I9OU,true,1
+crowded band,JA0B,true,1
+crowded band,JA1OE,true,1
+crowded band,JA1YOQ,true,1
+crowded band,JA3HQ,true,1
+crowded band,JA3RZ,true,1
+crowded band,JA4HG,true,1
+crowded band,JA6F,true,1
+crowded band,JA6WE,true,1
+crowded band,JA8JEM,true,1
+crowded band,JA8U,true,1
+crowded band,JA8WI,true,1
+crowded band,JA9VK,true,1
+crowded band,JA9W,true,1
+crowded band,K0E,true,1
+crowded band,K0LPU,true,1
+crowded band,K1BGN,true,1
+crowded band,K1LNM,true,1
+crowded band,K3DI,true,1
+crowded band,K3J,true,1
+crowded band,K3OA,true,1
+crowded band,K4DRJ,true,1
+crowded band,K4FPC,true,1
+crowded band,K4JN,true,1
+crowded band,K4O,true,1
+crowded band,K5HFB,true,1
+crowded band,K5HFJ,true,1
+crowded band,K5IIX,true,1
+crowded band,K5VJH,true,1
+crowded band,K6IU,true,1
+crowded band,K6IV,true,1
+crowded band,K6N,true,1
+crowded band,K6UU,true,1
+crowded band,K7DNP,true,1
+crowded band,K7H,true,1
+crowded band,K8ALO,true,1
+crowded band,K8I,true,1
+crowded band,K9R,true,1
+crowded band,K9RXA,true,1
+crowded band,K9WRK,true,1
+crowded band,KB0G,true,1
+crowded band,KB0K,true,1
+crowded band,KB0U,true,1
+crowded band,KB0WM,true,1
+crowded band,KB1K,true,1
+crowded band,KB2Q,true,1
+crowded band,KB2SDW,true,1
+crowded band,KB4EGG,true,1
+crowded band,KB5AMO,true,1
+crowded band,KB5G,true,1
+crowded band,KB5K,true,1
+crowded band,KB5LW,true,1
+crowded band,KB5Y,true,1
+crowded band,KB7FLB,true,1
+crowded band,KB7V,true,1
+crowded band,KB8EXV,true,1
+crowded band,KB8QB,true,1
+crowded band,KB9K,true,1
+crowded band,N0A,true,1
+crowded band,N0PV,true,1
+crowded band,N1E,true,1
+crowded band,N1FPC,true,1
+crowded band,N2BVP,true,1
+crowded band,N2FH,true,1
+crowded band,N2ZMU,true,1
+crowded band,N2ZQ,true,1
+crowded band,N4AK,true,1
+crowded band,N4E,true,1
+crowded band,N4FVJ,true,1
+crowded band,N6HMJ,true,1
+crowded band,N6PAK,true,1
+crowded band,N7TCG,true,1
+crowded band,N8ITQ,true,1
+crowded band,N9FR,true,1
+crowded band,OH0LXZ,true,1
+crowded band,OH0VC,true,1
+crowded band,OH1RC,true,1
+crowded band,OH1TNP,true,1
+crowded band,OH2I,true,1
+crowded band,OH2T,true,1
+crowded band,OH4PA,true,1
+crowded band,OH4TJU,true,1
+crowded band,OH5D,true,1
+crowded band,OH6QCE,true,1
+crowded band,OH6SG,true,1
+crowded band,OH7A,true,1
+crowded band,OH7PLM,true,1
+crowded band,OH7WP,true,1
+crowded band,OH8FL,true,1
+crowded band,PY0FXB,true,1
+crowded band,PY0WMG,true,1
+crowded band,PY2FNO,true,1
+crowded band,PY2GH,true,1
+crowded band,PY2I,true,1
+crowded band,PY2JB,true,1
+crowded band,PY4MS,true,1
+crowded band,PY5CC,true,1
+crowded band,PY5R,true,1
+crowded band,PY6O,true,1
+crowded band,PY6XV,true,1
+crowded band,PY7K,true,1
+crowded band,PY7TEJ,true,1
+crowded band,PY7UM,true,1
+crowded band,PY9F,true,1
+crowded band,PY9R,true,1
+crowded band,PY9W,true,1
+crowded band,SM0J,true,1
+crowded band,SM0L,true,1
+crowded band,SM0UBS,true,1
+crowded band,SM1ATD,true,1
+crowded band,SM1E,true,1
+crowded band,SM1ZF,true,1
+crowded band,SM1ZN,true,1
+crowded band,SM3D,true,1
+crowded band,SM3GEL,true,1
+crowded band,SM5AVF,true,1
+crowded band,SM5C,true,1
+crowded band,SM5W,true,1
+crowded band,SM6QKP,true,1
+crowded band,SM6SWI,true,1
+crowded band,SM6X,true,1
+crowded band,SM7AJ,true,1
+crowded band,SM7D,true,1
+crowded band,SM7GV,true,1
+crowded band,SM8KF,true,1
+crowded band,SM8O,true,1
+crowded band,SM9PM,true,1
+crowded band,UA0F,true,1
+crowded band,UA0PO,true,1
+crowded band,UA0VQW,true,1
+crowded band,UA0Z,true,1
+crowded band,UA1SH,true,1
+crowded band,UA1T,true,1
+crowded band,UA2DY,true,1
+crowded band,UA3R,true,1
+crowded band,UA4E,true,1
+crowded band,UA5F,true,1
+crowded band,UA5K,true,1
+crowded band,UA6U,true,1
+crowded band,UA7CH,true,1
+crowded band,UA8G,true,1
+crowded band,UA8I,true,1
+crowded band,UA9SNE,true,1
+crowded band,UA9YY,true,1
+crowded band,VE0D,true,1
+crowded band,VE2WQD,true,1
+crowded band,VE3M,true,1
+crowded band,VE5RH,true,1
+crowded band,VE5T,true,1
+crowded band,VE6JY,true,1
+crowded band,VE7JO,true,1
+crowded band,VE7P,true,1
+crowded band,VE8GO,true,1
+crowded band,VE8JKL,true,1
+crowded band,VE8MKP,true,1
+crowded band,VE8V,true,1
+crowded band,VE9QP,true,1
+crowded band,VK0ZF,true,1
+crowded band,VK3H,true,1
+crowded band,VK4H,true,1
+crowded band,VK4VYT,true,1
+crowded band,VK6N,true,1
+crowded band,VK7I,true,1
+crowded band,VK7IG,true,1
+crowded band,VK7USE,true,1
+crowded band,VK8NP,true,1
+crowded band,VK8W,true,1
+crowded band,VK9N,true,1
+crowded band,VK9TC,true,1
+crowded band,W0JC,true,1
+crowded band,W0K,true,1
+crowded band,W0UDC,true,1
+crowded band,W1BIC,true,1
+crowded band,W1I,true,1
+crowded band,W1IL,true,1
+crowded band,W2M,true,1
+crowded band,W3YJ,true,1
+crowded band,W4K,true,1
+crowded band,W4NGS,true,1
+crowded band,W5G,true,1
+crowded band,W5KWL,true,1
+crowded band,W6BQ,true,1
+crowded band,W6G,true,1
+crowded band,W6TDS,true,1
+crowded band,W7CEN,true,1
+crowded band,W7FZ,true,1
+crowded band,W7IHN,true,1
+crowded band,W7ND,true,1
+crowded band,W8EUB,true,1
+crowded band,W8N,true,1
+crowded band,W8XW,true,1
+crowded band,W9GOR,true,1
+crowded band,ZL0D,true,1
+crowded band,ZL0QOH,true,1
+crowded band,ZL1JKQ,true,1
+crowded band,ZL2MG,true,1
+crowded band,ZL2RI,true,1
+crowded band,ZL3KNE,true,1
+crowded band,ZL4J,true,1
+crowded band,ZL4MGM,true,1
+crowded band,ZL6KK,true,1
+crowded band,ZL7VZ,true,1
+crowded band,ZL8VZA,true,1
+crowded band,ZL9Y,true,1
+100 stations,AA0YGO,true,1
+100 stations,AA1QXO,true,1
+100 stations,AA2M,true,1
+100 stations,AA4EY,true,1
+100 stations,AA4QD,true,1
+100 stations,AA8O,true,1
+100 stations,AA9MM,true,1
+100 stations,DL1HC,true,1
+100 stations,DL1YR,true,1
+100 stations,DL3WOZ,true,1
+100 stations,DL4NFT,true,1
+100 stations,DL4SG,true,1
+100 stations,DL7TJM,true,1
+100 stations,DL8W,true,1
+100 stations,DL9BWF,true,1
+100 stations,DL9W,true,1
+100 stations,EA0MLG,true,1
+100 stations,EA2J,true,1
+100 stations,EA5MEE,true,1
+100 stations,EA6OV,true,1
+100 stations,EA6PL,true,1
+100 stations,EA8AHL,true,1
+100 stations,EA8Y,true,1
+100 stations,EA9SW,true,1
+100 stations,F4N,true,1
+100 stations,F6JH,true,1
+100 stations,F7CE,true,1
+100 stations,F9CKZ,true,1
+100 stations,G1G,true,1
+100 stations,G2S,true,1
+100 stations,G2SB,true,1
+100 stations,G2UPW,true,1
+100 stations,G3G,true,1
+100 stations,G4CUZ,true,1
+100 stations,G6M,true,1
+100 stations,G7OAS,true,1
+100 stations,G7ZT,true,1
+100 stations,G9L,true,1
+100 stations,I1GHM,true,1
+100 stations,I3U,true,1
+100 stations,I3VRU,true,1
+100 stations,I4W,true,1
+100 stations,I5HF,true,1
+100 stations,I9PJU,true,1
+100 stations,JA1V,true,1
+100 stations,JA3BAS,true,1
+100 stations,JA3QAV,true,1
+100 stations,JA4P,true,1
+100 stations,JA7TFV,true,1
+100 stations,JA7WXH,true,1
+100 stations,K0LDQ,true,1
+100 stations,K1KAD,true,1
+100 stations,K4A,true,1
+100 stations,K7NNY,true,1
+100 stations,K9FG,true,1
+100 stations,KB0D,true,1
+100 stations,KB0K,true,1
+100 stations,KB5H,true,1
+100 stations,KB5LZR,true,1
+100 stations,KB7K,true,1
+100 stations,KB8MYX,true,1
+100 stations,N3DA,true,1
+100 stations,N8ZM,true,1
+100 stations,N9CT,true,1
+100 stations,OH1S,true,1
+100 stations,OH4CBG,true,1
+100 stations,PY2CF,true,1
+100 stations,PY3RZT,true,1
+100 stations,PY4EM,true,1
+100 stations,PY4JIS,true,1
+100 stations,PY9X,true,1
+100 stations,SM2J,true,1
+100 stations,SM4SO,true,1
+100 stations,SM5CG,true,1
+100 stations,SM5MFP,true,1
+100 stations,SM7B,true,1
+100 stations,SM7S,true,1
+100 stations,SM7TI,true,1
+100 stations,UA2EN,true,1
+100 stations,UA3LF,true,1
+100 stations,UA4FLF,true,1
+100 stations,UA4QIZ,true,1
+100 stations,UA5P,true,1
+100 stations,VE2S,true,1
+100 stations,VE4X,true,1
+100 stations,VE6HJ,true,1
+100 stations,VE7HVN,true,1
+100 stations,VE7NXX,true,1
+100 stations,VE8V,true,1
+100 stations,VK0LM,true,1
+100 stations,VK4NQV,true,1
+100 stations,VK7DDI,true,1
+100 stations,VK7NT,true,1
+100 stations,W3KP,true,1
+100 stations,ZL1C,true,1
+100 stations,ZL1D,true,1
+100 stations,ZL4FTN,true,1
+100 stations,ZL4HV,true,1
+100 stations,ZL7FG,true,1
+100 stations,ZL8YU,true,1
+G2-01-s1,K1IT,true,1
+G2-01-s1,K8GMI,true,1
+G2-01-s1,OH4PYS,true,1
+G2-01-s1,UA8A,true,1
+G2-02-s1,AD7O,true,1
+G2-02-s1,AF1NO,true,1
+G2-02-s1,KI0TK,true,1
+G2-02-s1,ZL4VLG,true,1
+G2-03-s1,DL3QFA,true,1
+G2-03-s1,JA1U,true,1
+G2-03-s1,K2KRZ,true,1
+G2-03-s1,W5XQZ,true,1
+G2-04-s1,KI5TU,true,1
+G2-04-s1,LU0PJN,true,1
+G2-04-s1,LU7GC,true,1
+G2-04-s1,PA9LL,true,1
+G2-05-s1,K6IHS,true,1
+G2-05-s1,N1YM,true,1
+G2-05-s1,NA1W,true,1
+G2-05-s1,SP5HV,true,1
+G2-06-s1,KB8OZE,true,1
+G2-06-s1,N0RDG,true,1
+G2-06-s1,SP9W,true,1
+G2-06-s1,W1BL,true,1
+G2-07-s1,N7NL,true,1
+G2-07-s1,PA2YDE,true,1
+G2-07-s1,PA3TP,true,1
+G2-07-s1,W8CD,true,1
+G2-08-s1,K9PI,true,1
+G2-08-s1,PA7E,true,1
+G2-08-s1,PY6WU,true,1
+G2-08-s1,SM2F,true,1
+G2-09-s1,HA8KXE,true,1
+G2-09-s1,I0BYL,true,1
+G2-09-s1,N0QO,true,1
+G2-09-s1,NC3S,true,1
+G2-10-s1,JA1ZP,true,1
+G2-10-s1,K7JL,true,1
+G2-10-s1,W1TJT,true,1
+G2-10-s1,W8TA,true,1
+H2-01-s1,AJ8VG,true,1
+H2-01-s1,OH4R,true,1
+H2-01-s1,PA8PG,false,1
+H2-01-s1,PA8PGW,true,1
+H2-01-s1,VE8NM,true,1
+H2-02-s1,AE7TEX,true,1
+H2-02-s1,I0HHC,true,1
+H2-02-s1,LU8OZ,true,1
+H2-02-s1,N1SYW,true,1
+H2-03-s1,DL0OH,true,1
+H2-03-s1,LU8VW,true,1
+H2-03-s1,ON0YJ,true,1
+H2-03-s1,ON6U,true,1
+H2-04-s1,DL9S,true,1
+H2-04-s1,JA0C,true,1
+H2-04-s1,LU4A,true,1
+H2-04-s1,ZL8U,true,1
+H2-05-s1,EA8V,true,1
+H2-05-s1,G1R,true,1
+H2-05-s1,SP2Y,true,1
+H2-05-s1,WD8IEP,true,1
+H2-06-s1,EA1OP,true,1
+H2-06-s1,HA5IU,true,1
+H2-06-s1,K3OKM,true,1
+H2-06-s1,ON1UGR,true,1
+H2-07-s1,KN9HF,true,1
+H2-07-s1,N6RF,true,1
+H2-07-s1,OH2JZO,true,1
+H2-07-s1,OH7E,true,1
+H2-08-s1,PA6W,true,1
+H2-08-s1,VE3K,true,1
+H2-08-s1,W2SME,true,1
+H2-08-s1,W5II,true,1
+H2-09-s1,N0LWW,true,1
+H2-09-s1,OK5CO,true,1
+H2-09-s1,ON4Z,true,1
+H2-09-s1,VK1CE,true,1
+H2-10-s1,KN7F,true,1
+H2-10-s1,LU2J,true,1
+H2-10-s1,NC4M,true,1
+H2-10-s1,W9QL,true,1
+G2-01-s2,AC8BFY,true,1
+G2-01-s2,EA4J,true,1
+G2-01-s2,K6EF,true,1
+G2-01-s2,N3FYX,true,1
+G2-02-s2,AA7Q,true,1
+G2-02-s2,I6E,true,1
+G2-02-s2,ON9ME,true,1
+G2-02-s2,W2GR,true,1
+G2-03-s2,K7BW,true,1
+G2-03-s2,K7OUH,true,1
+G2-03-s2,VK4X,true,1
+G2-03-s2,W3LS,true,1
+G2-04-s2,EA9OP,true,1
+G2-04-s2,HA8X,true,1
+G2-04-s2,K6YPH,true,1
+G2-04-s2,PY8OJ,true,1
+G2-05-s2,K8AXP,true,1
+G2-05-s2,KI1SJ,true,1
+G2-05-s2,N4AH,true,1
+G2-05-s2,PY7F,true,1
+G2-06-s2,LU6YZ,true,1
+G2-06-s2,N7TQZ,true,1
+G2-06-s2,VE6E,true,1
+G2-06-s2,W4SU,true,1
+G2-07-s2,I2USI,true,1
+G2-07-s2,VK0YOO,true,1
+G2-07-s2,W6CK,true,1
+G2-07-s2,W6VQL,true,1
+G2-08-s2,AB7YDF,true,1
+G2-08-s2,NC2ZC,true,1
+G2-08-s2,PY8YN,true,1
+G2-08-s2,VE3OGP,true,1
+G2-09-s2,EA1YS,true,1
+G2-09-s2,I6KTR,true,1
+G2-09-s2,N2UZP,true,1
+G2-09-s2,W5ML,true,1
+G2-10-s2,AD8XY,true,1
+G2-10-s2,AJ0RE,true,1
+G2-10-s2,EA2FW,true,1
+G2-10-s2,LU9S,true,1
+H2-01-s2,AJ6TB,true,1
+H2-01-s2,G3N,true,1
+H2-01-s2,K5IHG,true,1
+H2-01-s2,N0EN,true,1
+H2-02-s2,KF7EKE,true,1
+H2-02-s2,N8ZX,true,1
+H2-02-s2,SM9AU,true,1
+H2-02-s2,YO1Y,true,1
+H2-03-s2,K5NSX,true,1
+H2-03-s2,PA7KSL,true,1
+H2-03-s2,W2SH,true,1
+H2-03-s2,W4HY,true,1
+H2-04-s2,AB6FTV,true,1
+H2-04-s2,KG8BI,true,1
+H2-04-s2,W0RQU,true,1
+H2-04-s2,WA3HG,true,1
+H2-05-s2,I9UE,true,1
+H2-05-s2,K0HVU,true,1
+H2-05-s2,PA4DAX,true,1
+H2-05-s2,PY0ALL,true,1
+H2-06-s2,DL3OE,true,1
+H2-06-s2,HA1PHR,true,1
+H2-06-s2,KB1WNS,true,1
+H2-06-s2,VK8HU,true,1
+H2-07-s2,K8AH,true,1
+H2-07-s2,N5VTX,true,1
+H2-07-s2,PY1V,true,1
+H2-07-s2,SP1QTD,true,1
+H2-08-s2,G3TWW,true,1
+H2-08-s2,W0MPI,true,1
+H2-08-s2,W1LO,true,1
+H2-08-s2,W5KYA,true,1
+H2-09-s2,KE9GTT,true,1
+H2-09-s2,N3SD,true,1
+H2-09-s2,N5PX,true,1
+H2-09-s2,UA0HMR,true,1
+H2-10-s2,KO6ML,true,1
+H2-10-s2,N3YP,true,1
+H2-10-s2,SP0NX,true,1
+H2-10-s2,VE9PX,true,1

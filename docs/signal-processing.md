@@ -61,8 +61,8 @@ I/Q (fs) ─┬─► spectrum analyzer ─┬─► signal detector ─► trac
                                                 callsign stage ─► list of calls
 ```
 
-The input is the radio's whole band, 192 kHz wide; two things happen in
-parallel. The **spectrum analyzer and detector** look at the band every
+The input is the radio's whole band, 192 kHz wide, its DC removed on segmental's path;
+two things happen in parallel. The **spectrum analyzer and detector** look at the band every
 21.33 ms (segmental's detector: 85.3 ms) and decide where stations are: each station becomes
 a *track* with a frequency. For every track the **channelizer** cuts a
 narrow stream out of the band, about ±150 Hz around the station, at 1500
@@ -75,9 +75,10 @@ channels follow it (section 7), and those two get N₀ from a hiss estimator rea
 ## 1. Input
 
 A stereo WAV, I left, Q right: b-bit integers (b = 16, 24, 32) over
-2^(b−1), in [−1, 1) FS, or 32-bit floats. Other rates go exactly to
-the largest decoder rate below (250 to 192 kHz: × 96/125, flat to ±86 kHz); `--mirror`
-conjugates a mirrored receiver's samples. Frequencies are offsets from the
+2^(b−1), in [−1, 1) FS, or 32-bit floats. Outside the bench
+other rates go exactly to the largest decoder rate below (250 to
+192 kHz: × 96/125, flat to ±86 kHz); `--mirror` conjugates a mirrored receiver's samples. On
+segmental's path a 10 s DC blocker comes first (section 6). Frequencies are offsets from the
 center (Hz); the center (`--center-khz`, header or file
 name) only labels them (A.1). Blocks of N/2 samples (section 3) keep the
 output independent of a caller's splitting. `kz4ap-listen` makes one frequency audible (A.13).
@@ -172,7 +173,8 @@ close the younger dies. So a station 30 Hz or more from another has its
 own channel, and an answering station closer shares one. A track stays
 active while its level, the highest bin within ±6 Hz, is at most 3 dB
 below the threshold, and dies after **10 s** inactive. At most **400**
-tracks; a stronger newcomer replaces the weakest.
+tracks; a stronger newcomer replaces the weakest. A variant, off: no track within
+30 Hz × 10^((ΔL − 12 dB)/20) of one ΔL dB stronger (A.6).
 
 **Copies of a neighbor.** A channel ±150 Hz wide hears a strong station
 tens of Hz away; its own station silent, or none, its decoder prints
@@ -241,33 +243,28 @@ The bench's `--decoder envelope|matched|bank|viterbi|segmental` picks one; **Mat
 
 ### Envelope (not the default)
 
-The milestone-1 baseline, heuristic throughout: the smoothed magnitude of the
-channel stream against 60% and 40% of the way from a followed space level to a
-mark level. Exact form: appendix A.8.
+The milestone-1 baseline, heuristic: the smoothed magnitude against 60% and 40%
+of the way from a followed space level to a mark level. Appendix A.8.
 
 ### The shared back end (Envelope and Matched)
 
 It turns key-down and key-up times into characters: a mark over 2 dits is a dah;
 a space over 2 dits ends the character, over 5 dits the word (heuristics), the
-dit re-estimated from the last 24 marks. Exact form: appendix A.8.
+dit re-estimated from the last 24 marks. Appendix A.8.
 
 ## 8b. Matched decoder (the bench's default)
 
-A moving average (a *boxcar*) 0.8 dit long
-(heuristic) gives every sample a Rician log-likelihood ratio; the key goes down
-above +1 nat of log-odds and up below −1 nat (heuristic), then the shared back
-end makes the characters. The filter's length follows the decoder's own speed
-estimate: a feedback loop, which the bank removes. Exact form: appendix A.8b.
+A moving average 0.8 dit long, its length following the decoder's own speed
+estimate (a feedback loop), gives each sample a Rician log-likelihood ratio; the
+key goes down above +1 nat of log-odds and up below −1 nat (heuristics), then the
+shared back end makes characters. Appendix A.8b.
 
 ## 8c. Bank decoder (selectable; frozen as the reference)
 
-The bank removes Matched's speed loop: 32 moving averages run at once,
-of 9.6 ms × 1.1^(k−1) (k = 1 … 32; 100 down to 5 WPM; owner), each *branch*
-keying, timing and spelling its own text with a Rician likelihood, and a
-selector publishes the branch whose fitted dit matches its filter and whose
-fit explains its intervals best, correcting published text up to 20 s back
-(owner). It is frozen at its defaults as the reference for new decoders
-(design spec §5.2). Exact form, noise estimate and costs: appendix A.8c.
+No speed loop: 32 moving averages of 9.6 ms × 1.1^(k−1) (k = 1 … 32; 100 to
+5 WPM; owner), each *branch* keying its own text with a Rician likelihood; a
+selector publishes the best-fitting branch, correcting text up to 20 s back
+(owner). Frozen at its defaults as the reference (design spec §5.2). Appendix A.8c.
 
 ## 8d. The story model and the viterbi decoder (selectable)
 
@@ -516,7 +513,7 @@ mark. Appendix: A.8e.
 | Segmental | text every 0.25 s, corrected as it firms up; the evidence lags at most 0.387 s at m = 1, 0.46 s at m = 3, the same first block unsearched; the final text's error rate is reached about 0.75 s behind (measured at m = 1 alone; A.8e); a replay reads the 2 s before a channel opens |
 | Track removal | about 6–7 s for the average to decay (S₅₀₀ = 20 dB), plus the 10 s timeout |
 
-Envelope, Matched and Bank: A.9. Appendix: A.6, A.8d, A.8e, A.9 and A.10.
+Envelope, Matched and bank: A.9; see also A.6, A.8d, A.8e, A.10.
 
 ## 10. Live operation
 
@@ -575,16 +572,16 @@ this form (G5RV, R5NN; exact), locators (EL96UD); calls of E T I S H A N M U 5 a
 
 **Role.** Before DE or 5NN: *named*. After DE, CQ or TEST, or before K: *signed*. Else *bare*.
 
-**Evidence.** Readings overlapping in time within 300 Hz are one transmission. Points add
-over the band within 30 min, each transmission once, none where a better variant holds
-the call. Reported at 2 points, a named word no
+**Evidence.** A reading overlapping one in time within 300 Hz only betters it. Points add
+over the band within 30 min, readings chained by overlaps in time once wherever they lie,
+none where a better variant holds the call. Reported at 2 points, a named word no
 exception (CW Skimmer's practice); listed, 1 if framed (signed, named or sent twice), else 2
 (a variant: 1 also for a word of high margin, A.12). A list that is binary or holds no call
 is refused. A call of E T I S H A N M U 5 alone: 2 whole words, listed or not. Two or more
 digits (W100AW): from a list only.
 
 **Variants.** A call within edit distance 1 of a better-supported call within 150 Hz, or the
-start of one or starting with one, is held back there; distance 2 needs over twice the points, and
+start of one or starting with one, is held back there; distance 2 (calls of 4 characters or more) needs over twice the points, and
 counts between one letter after a digit and its prefix and digit (K1T, K1BX). Ties
 at distance 1: the earlier call; beginning within 1 s, the later. A listed call weighs by 3. A reported
 row leaves when its points without those places no longer pass.
@@ -750,7 +747,7 @@ SDR on a transceiver's IF output, whose spectrum is inverted: the owner's 2026-1
 IF) holds the FT8 tones of 7 074–7 077 kHz at 6 963–6 965.4 kHz as labeled (measured by the coordinating session).
 
 **Resampling** (`RationalResampler`, `RecordingReader`). A file whose rate is not 48 000 × 2^k samples/s (k = 0–4: the rates at
-which a channel's 1/128 of fs holds a whole number of segmental's samples) and is above 48 kHz is resampled to the largest of
+which a channel's rate, fs × 64/N (1/128 of fs at 192 kHz), holds a whole number of segmental's samples) and is above 48 kHz is resampled to the largest of
 those below it (`decoder_rate_for`); below 48 kHz it is left for the decoder to refuse. The ratio is the rates' reduced
 fraction L/M (96/125 for 250 to 192 kHz; L, M ≤ 4 096, else refused), so the rate is exact. The filter is a windowed sinc at
 fs_up = L·fs_in whose stopband starts at half the lower rate (96 kHz at 192 kHz: the output's Nyquist, standard anti-alias
@@ -4458,7 +4455,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 - Before the rules, on the segmental path: a copy of a neighbor (A.6, "Copies of a neighbor"): `Copy`, no hold.
 - Rule 1, age ≥ 4 s, R < 3 and (tiny ≥ +8 or garbage ≥ +6): `NotMorse`, hold 8 s. Rule 2, age ≥ 12 s, R < −8, and (not proven, or E ≥ 1000 and −R > 10⁻³ E): `NotMorse`, hold 8 s. Rule 3, not proven and R < 3: age ≥ 8 s and ΔS over 8 s < 40 nats: `Quiet`, hold 8 s; else age ≥ 14 s: `NotMorse`, hold 8 s. Rule 4, proven, age ≥ 30 s and ΔS over 30 s < 30 nats: `Quiet`, no hold.
 
-**Holds (`SignalDetector::retire`, `close_place`).** A retirement with hold_s > 0 removes the track. The first one within D (30 Hz) of a place among the holds kept (`first_retirement_open` 2) records the place with count 0 and no hold, and logs nothing; otherwise it closes radius D and logs (f, t). If at least 4 logged retirements in the last 60 s lie within 750 Hz of f, it also closes radius 750 Hz from 30 s. Closing: find a hold of that radius within that radius; if none, new, count 0. If count = 0 or now ≥ until, count + 1. Then until = max(until, now + min(hold_s × 2^(count−1), 120 s)). A hold is forgotten once open for 120 s. New peaks inside a running hold of either radius are skipped; a live track there stays.
+**Holds (`SignalDetector::retire`, `close_place`).** Every retirement removes the track; one with hold_s > 0 also holds its place. The first one within D (30 Hz) of a place among the holds kept (`first_retirement_open` 2) records the place with count 0 and no hold, and logs nothing; otherwise it closes radius D and logs (f, t). If at least 4 logged retirements in the last 60 s lie within 750 Hz of f, it also closes radius 750 Hz from 30 s. Closing: find a hold of that radius within that radius; if none, new, count 0. If count = 0 or now ≥ until, count + 1. Then until = max(until, now + min(hold_s × 2^(count−1), 120 s)). A hold is forgotten once open for 120 s. New peaks inside a running hold of either radius are skipped; a live track there stays.
 
 **List (`TrackTable::set_plausible_only`).** A new row is hidden until `text_evidence(row).plausible()`, then listed for good. A new track within 30 Hz (`kSamePlaceHz`, the detector's D) of an ended row, listed or hidden, goes on with it after a word space, and its corrections start after the earlier tracks' symbols. Rows ended over 60 s ago leave. Past 4 256 symbols a row drops its oldest 256; the report and `--decoded` then hold a long row's end only.
 
@@ -4707,8 +4704,9 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: tiny calls | whole words only, 2 of them, listed or not; 0 leaves them unread | `tiny_points` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a call that starts another | held as a variant at distance 1 (0: by edit distance alone) | `prefix_held` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: withdrawal | pooled (the default): when its pooled support no longer passes; with `pool_places` 0: by a rival better at its best, or a local defeat with no pass elsewhere beyond 150 Hz (0: any local defeat) | `withdraw_own_place` | heuristic, by a hand test and measurement (A.12) |
-| Callsign stage: variants | edit distance 1, or 2 at over 2 times the points; within 150 Hz, 1 800 s; a tie goes to the earlier call, or within 1 s to the later (a heuristic constant in the code) | `far_variant_ratio`, `variant_hz`, `variant_s` | heuristic, chosen by measurement (A.12) |
+| Callsign stage: variants | edit distance 1, or 2 at over 2 times the points (2 only between calls of 4 characters or more, or a short pair); within 150 Hz, 1 800 s; a tie goes to the earlier call, or within 1 s to the later (a heuristic constant in the code) | `far_variant_ratio`, `variant_hz`, `variant_s` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a list against a rival | factor 3 | `known_rival_factor` | heuristic |
+| Callsign stage: a call sent twice in a row | framed | `doubled_is_framed` 1 | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a word named, with a list | passes alone only listed (read only with `points_named` below the other thresholds; a listed named word passes as framed in any case) | `named_listed_only` 1 | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a sure listed word | off (0); a variant: a listed call passes on one bare whole or glued word of margin at least this | `known_margin_nats` | heuristic; off by measurement on the held-out recordings (A.12) |
 | Callsign stage: known-call list | text, one call a line; NUL bytes or no line with a call's form refused | `KnownCalls::read` | interface choice |
@@ -4721,7 +4719,8 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 - **Duplicate tracks** (det-2's count on real recordings, results analysis, not the engine's test): a symbol (not a word space) of
   track W is a copy when a track within 150 Hz of W (at its birth or its end), stronger by the detector's level (the larger of its
   levels at birth and end), alive at the same time, has a symbol of the same text whose start and end lie within 25 ms of W's; W is
-  a duplicate when at least half its symbols, and at least 8, are copies. Two decoders behind like filters read one station's
+  a duplicate when it has at least 8 symbols and at least half of them are copies (a track of fewer than 8 is not tested: its
+  copied symbols are counted as 0). Two decoders behind like filters read one station's
   characters at the same times; an independent station's do not line up. Heuristics: 25 ms is about half a dot at 25 WPM. Short
   junk tracks on wide signals, retired as not Morse, count as duplicates of one another too.
 - **Ghost cells** (det-2's scratch generator over `kz4ap_synth`, 48 kHz, one seed): QSOs of three signals, A's CQ at the slot, B's
