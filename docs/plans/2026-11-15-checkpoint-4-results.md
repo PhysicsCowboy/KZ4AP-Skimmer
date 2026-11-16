@@ -6,7 +6,7 @@ the four public 2017 recordings, one judge for both programs: 417 calls, 200 con
 217 not, against CW Skimmer's 406, 206 and 200 (checkpoint 3: 510, 205, 305). The cost: confirmed calls 205 to 200 (by at
 least two skimmers 190 to 188) against its 206, and on W3OA 47 to 45 against its 57. With CW Skimmer's 2018 list: 479,
 226, 253. The rules that did most of it were made from these four; on three other real recordings (two older 40 m ones
-from the first receiver, and the owner's, which the diagnosis read but no rule came from) `rob-1`'s review measured no
+from the first receiver, and the owner's, which `rob-1`'s diagnosis read but no rule came from) `rob-1`'s review measured no
 gain. On the owner's recording of 2026-11-04: 41 calls, 21 confirmed, 20 not (21 at checkpoint 3; CW Skimmer 33, 20, 13);
 copies of a stronger neighbor hold 321 channel-seconds against 1 142 with the new copy test off, 24 against 347 at the
 station he saw copied; the test changes no reported call on the five recordings (`calls.csv`). The test set reads as at checkpoint 2,
@@ -56,7 +56,7 @@ whose own log lacks the levels the count needs. Channel-seconds here sum the tra
 
 **Generated recordings, no list** (`generated-calls.csv`), true / false calls (checkpoint 3's): contest 210 / 1 (220 / 6)
 of 280 stations, fresh seed 228 / 0 (236 / 3); strong pairs 39 / 1 (40 / 2) of 48, fresh 40 / 0 (42 / 0); crowded band
-300 / 0 of 300; 100 stations 100 / 0; G2 40 / 0 each seed; H2 40 / 1 seed 1, 40 / 0 seed 2 (40 / 1 before `rob-1`).
+300 / 0 of 300; 100 stations 100 / 0; G2 40 / 0 each seed; H2 40 / 1 seed 1, 40 / 0 seed 2 (40 / 1 before `rob-1`, decision log 2026-11-15).
 
 ## The test set
 
@@ -111,7 +111,7 @@ CPU's slope in real-time playback, display included (checkpoint 3's rows). The w
    recordings' figures are `det-2`'s (decision log), reproduced exactly.
 5. **Measured.** The test set is where checkpoint 2 left it but three gains: A2 on the detector's path (seed 1 0.2496 to
    0.2385, [−0.0125, −0.0098]), from `det-1`'s detector; I2 (0.0211 to 0.0171, [−0.0071, −0.0011]), concentrated (39
-   signals better, 69 worse), as `fast-5` measured for its ceiling bonus (I2 0.0211 to 0.0168, decision log 2026-11-01);
+   signals better, 69 worse), as `fast-5` measured for its bonus of +4 nats to a stretched fist's story at the search's 1 500-story ceiling (I2 0.0211 to 0.0168, decision log 2026-11-01);
    A2 told the frequency (0.2261 to 0.2254, [−0.0012, −0.0001]), not traced. Every other interval holds 0, E2's widest
    (0.490 to 0.503 on seed 1, 0.651 to 0.642 on seed 2). `det-2` and `rob-1` change no scored signal. H2's 0.62 on the
    detector's path is the bench scoring a station against one track while its overs open several (seen on one
