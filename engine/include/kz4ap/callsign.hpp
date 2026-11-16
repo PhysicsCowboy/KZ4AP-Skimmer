@@ -69,11 +69,7 @@ struct Word {
     double start_s = 0;    // s, stream time
     double end_s = 0;      // s, stream time
     std::size_t first = 0;  // the index of its first symbol among those given to words_of
-    std::size_t last = 0;   // and of the one after its last
-    // s, stream time: each character's start and end, one per character of text (empty for a prosign), so that the pieces of a glued
-    // word have times of their own.
-    std::vector<double> char_start;
-    std::vector<double> char_end;
+    std::size_t last = 0;   // and of the one after its last; a word's characters are these symbols, one each, in order
 };
 
 // The words of a list of symbols. A word space, a prosign and any punctuation but the slash end a word.
@@ -118,8 +114,9 @@ double margin_of(float probability);
 // Every reading of a call that begins in the words [from, to). A word can give several: they are alternatives, and the evidence
 // decides among them. `words` may reach past `to` and before `from`, for context.
 std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to);
-// As read_calls; with pieces_timed, each piece of a glued word has its own characters' times (CallSearchConfig::glued_pieces_timed).
-std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, bool pieces_timed);
+// As read_calls; given the symbols the words were made of (words_of), each piece of a glued word has its own characters' times
+// (CallSearchConfig::glued_pieces_timed); with an empty span, the word's.
+std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, std::span<const DecodedSymbol> symbols);
 
 // ---- A known-call list
 
@@ -171,7 +168,8 @@ struct CallSearchConfig {
     // A whole or glued word another station names (before DE, 5NN, UR and the like) passes at this many points. 2, the default since rob-1,
     // is no exception: a named word counts as any other, so a call heard on one word is not reported without a list, CW Skimmer's practice
     // (RBN 2021). At 1 (call-1 to rob-1) one named word passed alone: 11 more true and 4 more false calls on the contest of 280, but on the
-    // four 2017 recordings 18 confirmed calls for 110 the RBN did not confirm (appendix A.12). Heuristic, chosen by measurement.
+    // four 2017 recordings 18 confirmed calls for 110 the RBN did not confirm (appendix A.12). Standard practice (CW Skimmer's Normal level,
+    // secondhand through the RBN's 2021 post), checked by measurement.
     double points_named = 2.0;
     // Whole words a call of tiny pieces (only_tiny_pieces) needs, listed or not; 0 leaves it unread. Heuristic, chosen by measurement.
     double tiny_points = 2.0;
@@ -211,8 +209,10 @@ struct CallSearchConfig {
     // that is named at one place and signs at another, is read independently at each (CW Skimmer counts a call's repeats per decoder, so
     // this goes past it). Occurrences that overlap in time count once wherever they are (one transmission), and an occurrence at a place
     // where a better-supported variant holds the call back counts for that variant, not for it. The same pooled support decides whether a
-    // reported call that loses at one place leaves the list (in place of withdraw_own_place's test). The form is derived from the evidence
-    // rule (independent readings add, one transmission counts once); on by default, chosen by measurement (rob-1; appendix A.12).
+    // reported call that loses at one place leaves the list, and is reported, on these pooled points alone (in place of withdraw_own_place's
+    // test). Heuristic, motivated by the evidence rule (independent readings add, one transmission counts once): readings at different places
+    // are not independent when the decoder misreads a call the same way at each (real30's K0HBN for IK0HBN), and the whole band and window_s
+    // as its scope are choices. On by default, chosen by measurement (rob-1; appendix A.12).
     double pool_places = 1.0;
     // The pieces of a glued word take their own characters' times, when not 0, so that a call sent twice with no space between
     // (K1ABCK1ABC) is two readings, as it is with the space; at 0 every piece has the word's times and the two are one occurrence.

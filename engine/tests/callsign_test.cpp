@@ -276,6 +276,49 @@ TEST(CallSearch, PooledReadingsOfOneTransmissionCountOnce) {
     EXPECT_EQ(s.row("K1ABC"), nullptr);
 }
 
+TEST(CallSearch, OneTransmissionIsOneGroupOfOverlapsWhateverTheTrackOrder) {
+    // Review 15: readings at three far places at [0.2, 0.7], [0.6, 1.1] and [1.0, 1.5] s are one chain of overlaps, so one transmission;
+    // compared only with each group's first member, the first and last fell into different groups for one order of the tracks.
+    const double times[3] = {0.2, 0.6, 1.0};
+    const int orders[2][3] = {{0, 1, 2}, {1, 0, 2}};
+    for (const auto& order : orders) {
+        Stage s;
+        for (int k = 0; k < 3; ++k) s.born(static_cast<std::uint32_t>(k + 1), 1000.0 + 4000.0 * k);
+        for (int k = 0; k < 3; ++k) s.text(static_cast<std::uint32_t>(k + 1), 1000.0 + 4000.0 * k, "K1ABC ", times[order[k]]);
+        s.search.advance(40.0);
+        EXPECT_EQ(s.row("K1ABC"), nullptr) << "order " << order[0] << order[1] << order[2];
+        s.text(1, 1000.0, "K1ABC ", 50.0);  // a second transmission
+        s.search.advance(80.0);
+        EXPECT_NE(s.row("K1ABC"), nullptr) << "order " << order[0] << order[1] << order[2];
+    }
+}
+
+TEST(CallSearch, APooledRowDoesNotComeAndGo) {
+    // Review 15: W9XYZ read three times at 1350 Hz; W9XYY once at 1250 Hz, where W9XYZ holds it, and once at 1000 Hz. Its local points at
+    // 1000 Hz (2, the held reading within 300 Hz among them) reported it, its pooled points (1) withdrew it at W9XYZ's next reading, and
+    // its next reading at 1000 Hz listed it again. Reported on the pooled points, it waits for a second free reading and then stays.
+    Stage s;
+    s.born(1, 1350.0);
+    s.born(2, 1250.0);
+    s.born(3, 1000.0);
+    s.text(1, 1350.0, "E W9XYZ T E W9XYZ T E W9XYZ T ", 0.0);
+    s.text(2, 1250.0, "E W9XYY T ", 40.0);
+    s.text(3, 1000.0, "E W9XYY T ", 55.0);
+    s.search.advance(70.0);
+    EXPECT_NE(s.row("W9XYZ"), nullptr);
+    EXPECT_EQ(s.row("W9XYY"), nullptr);
+    s.text(1, 1350.0, "E W9XYZ T ", 90.0);
+    s.search.advance(110.0);
+    EXPECT_EQ(s.row("W9XYY"), nullptr);
+    s.text(3, 1000.0, "E W9XYY T ", 130.0);
+    s.search.advance(150.0);
+    ASSERT_NE(s.row("W9XYY"), nullptr);
+    s.text(1, 1350.0, "E W9XYZ T ", 160.0);
+    s.search.advance(180.0);
+    EXPECT_NE(s.row("W9XYY"), nullptr);
+    EXPECT_EQ(s.search.withdrawn(), 0u);
+}
+
 TEST(CallSearch, APooledReadingWhereABetterVariantHoldsItDoesNotCount) {
     // W9XYY read once at 1 kHz beside W9XYZ read three times there: that reading is W9XYZ's misreading, and with one bare reading of its
     // own at 5 kHz it does not pass. A second reading at 5 kHz passes it.

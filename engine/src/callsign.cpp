@@ -316,16 +316,14 @@ std::vector<Word> words_of(std::span<const DecodedSymbol> symbols) {
         current.text += t;
         current.end_s = s.end_s;
         current.last = i + 1;
-        current.char_start.push_back(s.start_s);
-        current.char_end.push_back(s.end_s);
     }
     flush();
     return out;
 }
 
-std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to) { return read_calls(words, from, to, false); }
+std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to) { return read_calls(words, from, to, {}); }
 
-std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, bool pieces_timed) {
+std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, std::span<const DecodedSymbol> symbols) {
     std::vector<CallReading> out;
     to = std::min(to, words.size());
     // The word before index i, skipping the stray E and T a decoder scatters.
@@ -388,7 +386,8 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
             // A word glued: its pieces, each with the role its neighbors in the word give.
             const std::vector<std::string> pieces = split_glued(w);
             const Word& word = words[i];
-            const bool timed = pieces_timed && word.char_start.size() == w.size() && word.char_end.size() == w.size();
+            // The word's characters are symbols [first, last), one each (words_of).
+            const bool timed = !symbols.empty() && word.last <= symbols.size() && word.last - word.first == w.size();
             std::size_t offset = 0;  // the piece's first character in w: the pieces are w's characters in order, at most one left behind
             for (std::size_t k = 0; k < pieces.size(); offset += pieces[k].size(), ++k) {
                 if (!parse_call(pieces[k])) continue;
@@ -401,8 +400,8 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 emit(pieces[k], Reading::Glued, i, i + 1, role_from(prev, next), twice);
                 if (timed && out.size() > before_emit && offset + pieces[k].size() <= w.size() &&
                     w.compare(offset, pieces[k].size(), pieces[k]) == 0) {
-                    out.back().start_s = word.char_start[offset];
-                    out.back().end_s = word.char_end[offset + pieces[k].size() - 1];
+                    out.back().start_s = symbols[word.first + offset].start_s;
+                    out.back().end_s = symbols[word.first + offset + pieces[k].size() - 1].end_s;
                 }
             }
         }
@@ -553,7 +552,9 @@ void CallSearch::read_track(TrackText& t, bool all) {
     std::size_t to = from;
     while (to < words.size() && (all || words[to].end_s <= settled)) ++to;
     if (to == from) return;
-    for (CallReading& r : read_calls(words, from, to, config_.glued_pieces_timed != 0.0)) {
+    const std::span<const DecodedSymbol> timed_by =
+        config_.glued_pieces_timed != 0.0 ? std::span<const DecodedSymbol>(t.symbols) : std::span<const DecodedSymbol>();
+    for (CallReading& r : read_calls(words, from, to, timed_by)) {
         const std::size_t a = words[r.first_word].first, b = words[r.last_word - 1].last;
         // The least margin; an unknown one (-1) wins the minimum, so that a reading is sure only if every symbol says so.
         double least = std::numeric_limits<double>::infinity();
@@ -666,29 +667,32 @@ bool CallSearch::stands_elsewhere(const Candidate& c, double freq_hz, double now
 
 CallSearch::Support CallSearch::pooled_support(const Candidate& c, double now_s) {
     Support s;
-    // One per transmission: occurrences that overlap in time are one, wherever they lie; the best of them counts.
     std::vector<const Occurrence*> counted;
-    std::vector<double> points;
     for (const Occurrence& o : c.recent) {
         if (now_s - o.end_s > config_.window_s) continue;
         if (held_at(c, o.freq_hz, now_s, nullptr, nullptr)) continue;
-        bool merged = false;
-        for (std::size_t k = 0; k < counted.size(); ++k) {
-            if (o.start_s < counted[k]->end_s && counted[k]->start_s < o.end_s) {
-                points[k] = std::max(points[k], o.points);
-                merged = true;
-                break;
-            }
-        }
-        if (!merged) {
-            counted.push_back(&o);
-            points.push_back(o.points);
-        }
+        counted.push_back(&o);
         s.framed = s.framed || o.framed;
         s.named = s.named || (o.role == Role::Named && o.points >= 1.0);
         s.sure = s.sure || (config_.known_margin_nats > 0.0 && o.points >= 1.0 && o.margin >= config_.known_margin_nats);
     }
-    for (double p : points) s.points += p;
+    // One per transmission: occurrences connected by overlaps in time are one, wherever they lie, at the best of their points. A sweep in
+    // order of start, so that the groups do not depend on the order of the tracks.
+    std::sort(counted.begin(), counted.end(), [](const Occurrence* a, const Occurrence* b) {
+        return a->start_s < b->start_s || (a->start_s == b->start_s && a->end_s < b->end_s);
+    });
+    double group_end = -std::numeric_limits<double>::infinity(), group_points = 0.0;
+    for (const Occurrence* o : counted) {
+        if (o->start_s < group_end) {
+            group_points = std::max(group_points, o->points);
+            group_end = std::max(group_end, o->end_s);
+        } else {
+            s.points += group_points;
+            group_points = o->points;
+            group_end = o->end_s;
+        }
+    }
+    s.points += group_points;
     return s;
 }
 
@@ -756,7 +760,9 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
     }
     if (c.reported) {
         update_row(c);
-    } else if (passes(c, s) || (pool && passes(c, pooled_support(c, now_s)))) {
+    } else if (pool ? passes(c, pooled_support(c, now_s)) : passes(c, s)) {
+        // Pooled, the test that reports is the test that withdraws (local points can exceed pooled ones: they keep held occurrences
+        // within same_place_hz), so a row does not come and go.
         report(c, now_s);
     }
     if (c.reported) {
