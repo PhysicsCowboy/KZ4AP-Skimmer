@@ -132,7 +132,7 @@ Appendix: A.5.
 
 ## 6. Signal detector
 
-The detector finds and follows stations. Its form on the segmental path,
+The detector's form on the segmental path,
 the app's, follows; the other decoders keep their own (A.6). Values are
 heuristics unless marked.
 
@@ -198,13 +198,12 @@ Appendix: A.6.
 
 For each track, the channelizer produces the narrow stream its decoder
 reads: in effect it shifts the station to 0 Hz, low-pass filters, and keeps
-one sample in 128.
+one sample in 128: **r = 1500 samples/s**.
 
 - **Center.** The channel is centered on the track's birth frequency
   rounded to the nearest bin, so the station starts within ±11.7 Hz of
   0 Hz. For Envelope, Matched and the bank the channel never moves; the
   decoder sees no signal from before the track's birth.
-- **Rate.** Decimating by 128 gives **r = 1500 samples/s**.
 - **Filter.** A linear-phase low-pass of 4097 taps (21.3 ms; the longest
   the shared FFT allows, derived), cut off at **±150 Hz** (−6 dB relative to
   the passband; heuristic, sized for keying up to about 60 WPM). It is
@@ -219,8 +218,8 @@ one sample in 128.
 **Re-centering (Matched only):** within ±12 Hz of the detector's frequency
 (A.8b).
 
-**Following the detector (viterbi and segmental only).** For these decoders'
-channels the channelizer follows the detector's frequency for the track,
+**Following the detector (viterbi and segmental only).** The channelizer
+follows the detector's frequency for the track,
 f_det (oracle channels: the label's, drifting or switching at a QSO's
 overs), so the decoder receives its station near 0 Hz (owner, plan D17).
 Two steps, before each
@@ -479,6 +478,10 @@ the last sample and the whole text is compared. Probability 1 per character (a
 placeholder), and corrections only where text changes. A variant, not the default,
 keeps a margin per symbol from the merges' runners-up (A.8e, "Margins").
 
+*Speed* (the list's): the median of 1.2 s × u/d over the last 16 letters, u a letter's
+units (dot 1, dash 3, 1 between elements), d its first mark's start to its last mark's
+end: a character speed, derived but 16 (heuristic). It moves only with the text.
+
 *Which stream.* At each such comparison, from 1.5 s of the channel's age, the leader is the
 stream with the largest S − F since then: S its best story's score, F a free
 on-off key (5 switches/s) on the same samples. S − F is the evidence for Morse's
@@ -510,7 +513,7 @@ mark. Appendix: A.8e.
 | Detection | nothing in the first 1 s; then about 0.5–1.5 s for a new station |
 | Channel filter | 10.7 ms |
 | Viterbi | the whole text when the channel ends; front filter 8.000 ms |
-| Segmental | text every 0.25 s, corrected as it firms up; the evidence lags at most 0.387 s at m = 1, 0.46 s at m = 3, the same first block unsearched; the final text's error rate is reached about 0.75 s behind (measured at m = 1 alone; A.8e); a replay reads the 2 s before a channel opens |
+| Segmental | text every 0.25 s, corrected as it firms up; the evidence lags at most 0.387 s at m = 1, 0.46 s at m = 3; the final text's error rate is reached about 0.75 s behind (measured at m = 1 alone; A.8e) |
 | Track removal | about 6–7 s for the average to decay (S₅₀₀ = 20 dB), plus the 10 s timeout |
 
 Envelope, Matched and bank: A.9; see also A.6, A.8d, A.8e, A.10.
@@ -524,13 +527,12 @@ were measured with. Values are heuristics unless marked. Appendix: A.9b.
 **Pipeline.** A source fills a ring of at least 4 s, 5.46 s at every radio rate
 (power-of-two capacity, derived). On overflow the ring empties at once: one gap.
 One thread runs spectrum, detector and blocks; `worker_threads` (half the machine's)
-run the channels. A job touches only its own channel, and results go out in track
-order, so output does not depend on the threads.
+run the channels; output does not depend on their number (A.9b).
 
 **Detector:** section 6.
 
 **Replay.** A new channel's decoder first reads the last 2 s of the band's kept block
-spectra (94 blocks, 6.2 MB at 192 kHz), then goes live; its symbols carry their true
+spectra (94 blocks), then goes live; its symbols carry their true
 times. At most 100 replays start per second of stream (2.13 per block), by track id;
 the rest wait undecoded. With a track budget in force, none replays.
 
@@ -4433,6 +4435,8 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 
 **Live text.** While a channel runs, `SegmentalDecoder::process` compares, every 0.25 s of stream, the best story's last 64 symbols with what it has published; it sends the new symbols, or a correction from the first that differs (reason `story`); only with the margins' variant also where a margin's half-nat step changed (reason `confidence`, A.8e). A letter still open stays back until it closes, or E would show on its way to I, S, H. `flush` compares the whole text. A change of mind more than 64 symbols back goes out only at the channel's end.
 
+**Speed sent (`DecodeUpdate::wpm`; the track list's speed).** Each published symbol keeps, as sent, its own speed: for a letter with a code, w = 1.2 s × u / d (WPM), u = (dots) + 3 (dashes) + (elements − 1), d = `end_s` − `start_s`, the search's claimed rise of its first mark to the claimed fall of its last (`SegmentalDecoder::letter_wpm`); 0 for a word space, a symbol with no code ("*") and d ≤ 0. Every update carries the median of the last 16 nonzero values of the list as it then stands (the mean of the middle two for an even count; fewer while fewer exist; 0 before the first letter), corrections included (`text_wpm`). So a speed changes only with the text, and between transmissions it holds. u counts marks and element gaps only, so w is a character speed, as the story's fist's T_s: a Farnsworth sender reads at his character speed. `TrackTable` keeps the latest nonzero speed of a row's events. The best story's own speed at the instant (its last element's T_s) is not sent: in a silence it is whatever slow junk story leads.
+
 **Worker pool.** `WorkerPool`: `worker_threads` threads, the caller's included. For one block every channel's job (replay if due, cut, follower, decoder) reads the block's spectrum, the kept spectra, the hiss estimator and the configuration, and writes only its own `Channel`. Results go out afterward on the pipeline's thread, by track id. The verdicts and the budget follow on that thread.
 
 **Linear power.** `SpectrumFrame::power_fs2` is the frame's power in FS², 10^(`power_db`/10) but for rounding. The detector's average and the hiss read it; only peaks that clear the threshold are converted to dB. `power_db` itself comes from the table logarithm (A.8e), the analyzer's largest cost by the C library's. On segmental's path the detector reads its own analyzer's frames, which carry `power_fs2` only (`SpectrumAnalyzer`'s `decibels` false), and `floor_every_frames` is 2: the median, a selection over 4N bins, every 171 ms, against an average of time constant 1 s.
@@ -4479,12 +4483,14 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 - Text's q: fitted to 4 968 symbols of real junk (one recording), raised for T; 0.03 to the rest. −6, +8, +6 nats: Wald's bound gives P(reach +x under p) ≤ e^(−x) and P(reach −x under q) ≤ e^(−x) (derived for independent symbols from the models). As error rates on the air they are not valid: real junk is neither independent nor from q. They are heuristics.
 - Holds 8, 30, 120 s, 60 s, 750 Hz, 4: heuristics on real 40 m.
 - List's 60 s, 30 Hz: heuristics, the second the detector's D. 4 000 symbols: heuristic, 27 min at 30 WPM.
+- Speed's formula: derived from PARIS (a dot 1.2 s / WPM) and the code's element lengths; valid while the claimed edges are unbiased: a clean 40 WPM station at +20 dB S₅₀₀ reads 39.92 to 40.10 WPM (measured, `SegmentalSpeed` test). 16 letters: heuristic, about 4 s at 40 WPM; a median, so up to 7 junk letters among the 16 leave it.
 - First retirement open: heuristic, chosen by measurement (A.6).
 - Budget's values: heuristics. 5.46 s is derived: 2^k ≥ 4 s × rate, at each radio rate 2^k / rate = 5.46 s. Cap 400: heuristic; a 300-station generated band needs over 300 and the project's goal names 500 tracks on half the desktop.
 - 7031.5 kHz, the default center: heuristic. Chosen to keep the DC guard off the 7030 kHz calling frequency; kept with the guard gone, since a radio's raised noise near its center opens short tracks there (A.6). No row within 47 Hz of it in the 30 min recording.
 
 ### Limitations
 
+- A row's speed is its last 16 letters': where those are a caller's on the runner's frequency, or a junk row's, it is theirs.
 - Text sent during a hold is lost, not late. Short overs and a carrier before a CQ can lose some; a runner with callers within 30 Hz can read as not keyed and retire (backlog).
 - A hold can close a place on a real station up to 120 s; ±750 Hz up to 120 s if a wide signal returns.
 - Rows of data and speech read as plausible stay on the track list: it is 35% to 63% junk. The call list beside it (section 11) has none of them; a view of the rows by plausibility is not built.
@@ -4664,6 +4670,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Segmental: longest gap unit | gT_s ≤ 0.7 s, about 4.5 WPM overall; 178, 129, 98 fists at m = 1, 2, 3 | `gap_unit_max_s` | heuristic; fist counts derived |
 | Segmental: stretch's prior | π = 0.002: ln(1 − π) = −0.002 nats for g = 1, ln(π/6) = −8.0 nats for another, once per over | `gap_stretch_prior` | heuristic chosen by measurement |
 | Segmental: publishing | every 0.25 s; last 64 symbols compared | `kPublishEveryS`, `kPublishTailSymbols` | heuristic |
+| Segmental: speed sent | median of 1.2 s × u / d over the last 16 published letters (A.9b, "Live text") | `kSpeedLetters`, `letter_wpm`, `text_wpm` | formula derived (PARIS); 16 heuristic |
 | App: default decoder | segmental | `kDefaultDecoderName` | coordinator's choice |
 | App: default center | 7031.5 kHz | `RadioDefaults::center_khz`, `SdrplaySettings::center_hz`, `--center-khz` | heuristic |
 | Local floor, segmental's path (off elsewhere) | ±1 kHz, lower quartile, 7 dB above it | `DetectorConfig::local_floor_radius_hz`; signal_detector.cpp | heuristic |
