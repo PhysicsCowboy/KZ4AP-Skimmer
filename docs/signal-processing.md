@@ -1497,7 +1497,7 @@ detector's path with `judge_tracks`, never in oracle mode.
 
 - **Louder at its own channel.** A keyed station of key-down power P heard by a channel at power gain g = |H_ch(Δf)|² |H_f(Δf)|²
   (Δf its offset from the channel's center), keyed a fraction d of the time, with complex Gaussian hiss of power σ² at the filter's
-  output: the envelope power e² has, per value, variance g²P² d(1 − d) + σ⁴ + 2gPσ² d (derived, as the keying-power unit test's
+  output: the envelope power e (FS², section 6) has, per value, variance g²P² d(1 − d) + σ⁴ + 2gPσ² d (derived, as the keying-power unit test's
   comment has it). The key term and the cross term 2gPσ²d both grow with g, and σ⁴ does not depend on it, so at equal hiss and the
   same leading filter K is monotone in g and K_S > K_W ⇔ g_S > g_W (derived; the moving mean takes about the same share from both). A
   channel's g falls with the offset while it lies in the front filter's main lobe (the 12 ms filter's first null is about 83 Hz out;
@@ -1556,7 +1556,8 @@ committed), and on the desktop (the owner's file, and the app on it).
   field of it is the same with attribution on and off: the owner's file 41 / 21 / 20 (calls / confirmed / unconfirmed), the four 2017
   recordings 417 / 200 / 217, the generated sets 1 077 true and 3 false calls. The stage's skip, a variant, changed fields (A.12); its
   first form also changed five calls, none confirmed (W3OA N4I gone; KC2LRC-2 W6YX, spotted that day, gone and K5X come; N2GZ K4T for
-  K4N).- **0.5 s, ρ 0.5, 23 blocks, 30 s:** heuristics, not varied; ρ the copy test's; 30 s past the decoder's corrections' reach, 20 s.
+  K4N).
+- **0.5 s, ρ 0.5, 23 blocks, 30 s:** heuristics, not varied; ρ the copy test's; 30 s past the decoder's corrections' reach, 20 s.
 
 **Limitations.**
 
