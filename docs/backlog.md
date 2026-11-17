@@ -1791,7 +1791,10 @@ decision log). Left open:
   +9 885 Hz reads KK4E, K8WWS, VE3NE and "TU K4TZ CQ", since its ±150 Hz channel hears K4TZ 42 Hz away: one QSO's text on two rows,
   not a copy by the test. The owner may read it as a copy. **Status (2026-11-17): fixed on `copy-2`:** the row reads "D KK4E KK4E DON
   3654 K VE3NE 3 LALI 128" (the callers' own), K4TZ's "TOM 1993" and "TU K4TZ CQ" left out; over the five real recordings the text
-  shown twice on pairs of proven tracks falls 68% to 76%, every reported call the same (decision log, 2026-11-17).
+  shown twice on pairs of proven tracks falls 68% to 76%, every reported call the same (decision log, 2026-11-17). That counts exact
+  twins only: symbols given to a proven neighbor and still shown, the neighbor's keying read otherwise on the weaker row, remain (301
+  of 827 on the owner's file; 1 044 of 1 459, 333 of 736, 288 of 517, 819 of 1 457 on the four 2017 recordings), and the owner may
+  still see them as a neighbor's text.
 - **A long row's speed reads low at its end** (review 16, checkpoint 4): in the app's track table at the end of the owner's file
   K4TZ's row shows 5.7 WPM, and two other long rows 6.9 and 7.6 WPM. GUIDE.txt tells the owner it is being looked at.
   **Status (2026-11-17): fixed on `main` (merge 2b0efde, review 17).** The speed sent was the best story's at the last publish, here a
@@ -1802,8 +1805,9 @@ decision log). Left open:
 ## A neighbor's text after copy-2 (2026-11-17)
 
 `copy-2` gives a symbol that is a neighbor's keying, heard through the channel's skirt, to the neighbor's track
-(`DecodedSymbol::heard_from`; signal-processing.md, section 6 and A.6, "A neighbor's text"); a stretch of them leaves the row, and the
-callsign stage skips it, where the neighbor's own row or track holds every symbol of it. Left open:
+(`DecodedSymbol::heard_from`; signal-processing.md, section 6 and A.6, "A neighbor's text"); a stretch of them leaves the row where the
+neighbor's own listed row holds every symbol of it. The callsign stage reads every symbol (its skip is a variant, off: review 18).
+Left open:
 
 - **Words split.** The test is per symbol, so a word can be half given (K4TZ's row on the owner's file: "4" and "VE" of the callers'
   KK4E and VE3NE stay). A word-level vote would hide or show whole words, but a word glued across an over's end (KK4ETUK4TZ) needs the
@@ -1815,3 +1819,9 @@ callsign stage skips it, where the neighbor's own row or track holds every symbo
   would measure what the rows show.
 - **No unit scene of a weak track reading better than its loud neighbor** (UA8B's case): the stage's and the list's unit tests hold the
   rule, the strong pairs' fresh seed the evidence.
+- **A neighbor's keying read otherwise** stays on the weaker row (the residual above, about a third to two thirds of what is given to
+  a proven neighbor): a rule by keying alone, not text, would hide it, at the risk of hiding the better reading (UA8B).
+- **The stage's skip** (`skip_neighbors_text` 1) moved calls' places and frames without gaining one; a version that moves a skipped
+  reading to the neighbor's place with its own track's frame would be needed before it could be on.
+- **The loudest owner** went to a nearer copy, not the runner's own track, in a unit scene of a runner and callers 30 and 60 Hz
+  above (review 18; not traced).
