@@ -17,8 +17,8 @@ namespace kz4ap::app {
 struct TrackRow {
     std::uint32_t id = 0;
     double freq_hz = 0;               // Hz from the span's center, as last reported
-    float wpm = 0;                    // the decoder's latest estimate, WPM; 0 until it has one, and for a decoder
-                                      // that gives none
+    float wpm = 0;                    // the latest nonzero speed sent with the text, WPM (segmental: its last 16 letters',
+                                      // SegmentalDecoder::text_wpm); 0 until there is one, and for a decoder that gives none
     float level_db = 0;               // Track::snr_db at birth: dB above the noise floor, per FFT bin
     double start_s = 0;               // stream time the signal was first seen, s
     std::optional<double> ended_at_s; // stream time the track died or the stream ended, s; none while live
