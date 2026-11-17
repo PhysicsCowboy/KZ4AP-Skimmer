@@ -1049,3 +1049,49 @@ TEST(CallSearch, ANeighborsTextOnATrackIsReadOnlyOnTheNeighborsTrack) {
         EXPECT_EQ(there, mode != 0) << mode;
     }
 }
+TEST(CallSearch, AFrameWordPartlyHeardFromANeighborIsReadWholeAndKeepsTheRole) {
+    // Review 18's case (KC2LRC-2): W7QDM's own track reads "TEST W7QDM", but its "TES" is given to a track 27 Hz away that heard the
+    // keying more strongly and holds the same three letters. The stage never acts on part of a word: TEST stays whole, so the call is
+    // still the sender's.
+    Stage stage;
+    std::vector<std::pair<CallReading, double>> read;
+    stage.search.set_reading_log([&](const CallReading& r, double f) { read.emplace_back(r, f); });
+    stage.born(1, 1973.0);
+    stage.born(2, 2000.0);
+    stage.text(1, 1973.0, "TES", 1.0);
+    DecodedTextEvent e{};
+    e.track_id = 2;
+    e.freq_hz = 2000.0;
+    e.chars = symbols("TEST W7QDM", 1.0);
+    for (std::size_t i = 0; i < 3; ++i) e.chars[i].heard_from = 1;
+    stage.search.apply(e);
+    stage.died(2);
+    stage.died(1);
+    stage.search.finish();
+    const auto it = std::find_if(read.begin(), read.end(), [](const auto& r) { return r.first.base == "W7QDM"; });
+    ASSERT_NE(it, read.end());
+    EXPECT_EQ(it->first.role, Role::Sender);
+}
+
+TEST(CallSearch, AWholeWordHeardFromANeighborIsSkippedEvenBesideTheTracksOwn) {
+    // The same, its whole word "TEST" given to the neighbor, which holds it: skipped, so W7QDM is bare on this track (the neighbor's
+    // track reads the frame).
+    Stage stage;
+    std::vector<std::pair<CallReading, double>> read;
+    stage.search.set_reading_log([&](const CallReading& r, double f) { read.emplace_back(r, f); });
+    stage.born(1, 1973.0);
+    stage.born(2, 2000.0);
+    stage.text(1, 1973.0, "TEST", 1.0);
+    DecodedTextEvent e{};
+    e.track_id = 2;
+    e.freq_hz = 2000.0;
+    e.chars = symbols("TEST W7QDM", 1.0);
+    for (std::size_t i = 0; i < 4; ++i) e.chars[i].heard_from = 1;
+    stage.search.apply(e);
+    stage.died(2);
+    stage.died(1);
+    stage.search.finish();
+    const auto it = std::find_if(read.begin(), read.end(), [](const auto& r) { return r.first.base == "W7QDM" && r.second == 2000.0; });
+    ASSERT_NE(it, read.end());
+    EXPECT_EQ(it->first.role, Role::Unknown);
+}

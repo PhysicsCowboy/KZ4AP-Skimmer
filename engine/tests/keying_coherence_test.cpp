@@ -593,3 +593,12 @@ TEST(KeyingCorrelation, TheKeyingPowerSaysWhichChannelHearsItLouder) {
     EXPECT_LT(k.weak_keying, k.strong_keying);
     EXPECT_NEAR(k.weak_keying / k.strong_keying, 36.0 / 2601.0, 0.003);
 }
+TEST(KeyingCorrelation, OfTwoNeighborsTheOneThatHearsTheKeyingLouderOwnsIt) {
+    // c18c087's rule (Engine::attribute): of several neighbors that pass, the one of largest keying power owns a symbol, not the one of
+    // highest rho. Here the nearer copy correlates better with the weak channel (both hear the key through skirts) but the station's own
+    // channel holds it 10 dB louder.
+    KeyingCoherence own_channel{0.6, 0.05, 1.0, 10.0, 0.01, 100.0};
+    KeyingCoherence nearer_copy{0.9, 0.2, 1.0, 3.0, 0.01, 10.0};
+    EXPECT_TRUE(louder_owner(own_channel, nearer_copy));
+    EXPECT_FALSE(louder_owner(nearer_copy, own_channel));
+}

@@ -574,10 +574,19 @@ void CallSearch::read_track(TrackText& t, bool all) {
             std::size_t j = i;
             bool whole = true;
             for (; j < t.symbols.size() && heard(j); ++j) whole = whole && held(t.symbols[j]);
-            for (std::size_t k = i; k < j; ++k) skip[k] = whole ? 1 : 0;
+            // Never part of a word: a stretch is skipped only when it is whole words, a word's end (word space, prosign, punctuation or
+            // the text's end) on either side; a word only partly heard from a neighbor is read whole, as the track's own (review 18: on
+            // KC2LRC-2 W7QDM's "TEST W7QDM" lost its TES to a track 27 Hz away, and the call its role of sender).
+            const auto word_char = [&](std::size_t k) {
+                const std::string& x = t.symbols[k].text;
+                return x.size() == 1 && (is_letter(x[0]) || is_digit(x[0]) || x[0] == '/');
+            };
+            const bool whole_words = (i == 0 || !word_char(i - 1)) && (j == t.symbols.size() || !word_char(j));
+            for (std::size_t k = i; k < j; ++k) skip[k] = whole && whole_words ? 1 : 0;
             i = j;
         }
-    }    const std::vector<Word> words = words_of(t.symbols, std::span<const char>(skip));
+    }
+    const std::vector<Word> words = words_of(t.symbols, std::span<const char>(skip));
     if (words.empty()) return;
     if (t.rewind_to < t.read_to) {
         // Back to the start of the word the change falls in. What stays the same there is one occurrence with what was read before (CallSearch::add).

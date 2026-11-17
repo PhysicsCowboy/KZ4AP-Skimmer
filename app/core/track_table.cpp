@@ -244,7 +244,15 @@ void TrackTable::refresh(TrackRow& r, std::size_t from) {
         // reading of it the neighbor's row does not hold whole stays readable here.
         std::size_t j = i;
         bool all = true;
-        for (; j < n && heard(j); ++j) all = all && shown_by(r.heard_from[j], r.symbols[j], r.starts[j], r.ends[j]);
+        bool gone = false;  // a source whose row has left the list: what was decided stays
+        for (; j < n && heard(j); ++j) {
+            all = all && shown_by(r.heard_from[j], r.symbols[j], r.starts[j], r.ends[j]);
+            gone = gone || listed_.count(r.heard_from[j]) == 0;
+        }
+        if (gone && r.left_out[i]) {
+            i = j;
+            continue;
+        }
         for (std::size_t k = i; k < j; ++k) set(k, all ? 1 : 0);
         i = j;
     }
@@ -281,6 +289,11 @@ void TrackTable::advance(double now_s) {
             if (expired(r)) retired_.push_back(r);
         }
     }
+    // A row that leaves takes its tracks out of listed_, which then holds no more than the list does; what other rows left out as
+    // theirs stays left out (refresh).
+    for (const TrackRow& r : rows_)
+        if (expired(r))
+            for (const std::uint32_t id : r.track_ids) listed_.erase(id);
     std::erase_if(rows_, expired);
     ++structure_version_;
 }

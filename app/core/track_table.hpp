@@ -111,7 +111,11 @@ private:
     void refresh(TrackRow& r, std::size_t from);
     // Whether the listed row of track `source` holds this symbol (kTwinS).
     bool shown_by(std::uint32_t source, const std::string& text, double start_s, double end_s) const;
-    std::unordered_set<std::uint32_t> listed_;  // the tracks of rows listed now or before
+    std::unordered_set<std::uint32_t> listed_;  // the tracks of the rows listed now (a row leaving takes its own out)
+public:
+    // How many tracks listed_ holds (tests: it does not grow with the run).
+    std::size_t listed_tracks() const { return listed_.size(); }
+private:
 
     std::vector<TrackRow> rows_;
     std::vector<TrackRow> hidden_;  // tracks whose text has not read as plausible, live or ended (plausible_only_)

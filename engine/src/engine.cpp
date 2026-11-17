@@ -629,7 +629,7 @@ void Engine::attribute(std::uint32_t id, DecodeUpdate& update) const {
         if (last < first || static_cast<std::size_t>(last - first + 1) < heard_min_blocks_) return 0;
         if (!w.heard.range(static_cast<std::uint64_t>(first), static_cast<std::uint64_t>(last), weak)) return 0;
         std::uint32_t best = 0;
-        double loudest = -1.0;
+        KeyingCoherence loudest{0.0, 0.0, 0.0, 0.0, 0.0, -1.0};
         for (const auto& [other_id, other] : near) {
             if (!other->heard.range(static_cast<std::uint64_t>(first), static_cast<std::uint64_t>(last), strong)) continue;
             const KeyingCoherence k = keying_coherence(weak, strong, detrend_blocks_);
@@ -639,8 +639,8 @@ void Engine::attribute(std::uint32_t id, DecodeUpdate& update) const {
             const double explained = k.gain * k.strong_mean + w.envelope_noise_fs2;
             if (config_.attribute_own_max >= 0.0 && !((k.weak_mean - explained) / explained <= config_.attribute_own_max)) continue;
             // Of several, the one that hears the keying most strongly: the channel centered nearest its station, its own.
-            if (k.strong_keying > loudest) {
-                loudest = k.strong_keying;
+            if (louder_owner(k, loudest)) {
+                loudest = k;
                 best = other_id;
             }
         }

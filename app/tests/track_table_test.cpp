@@ -458,3 +458,21 @@ TEST(TrackTableNeighborText, ACopysHiddenRowWithTextOfItsOwnWaitsAsAFadedOnes) {
     table.apply(copy_end(4));
     EXPECT_TRUE(table.hidden().empty());
 }
+TEST(TrackTableNeighborText, ARowLeavingTakesItsTracksAndWhatOthersLeftOutStaysLeftOut) {
+    TrackTable table;
+    table.set_plausible_only(true);
+    table.apply(born(1, 2000.0));
+    table.apply(text_of(1, 2000.0, timed({"W", "1", "A", "W", " ", "T", "E", "S", "T"}, 1.0)));
+    table.apply(born(2, 2045.0));
+    table.apply(text_of(2, 2045.0, joined(timed({"K", "Q", "2", "R", "P", " "}, 0.3), timed({"T", "E", "S", "T"}, 1.5, 1))));
+    EXPECT_EQ(table.rows()[*table.row_of(2)].text(), "KQ2RP ");
+    EXPECT_EQ(table.listed_tracks(), 2u);
+    table.advance(10.0);
+    table.apply(died(1));
+    table.advance(80.0);  // the runner's row leaves (60 s after its end)
+    EXPECT_FALSE(table.row_of(1));
+    EXPECT_EQ(table.listed_tracks(), 1u);
+    // The caller's row goes on; the runner's TEST stays left out of it.
+    table.apply(text_of(2, 2045.0, timed({" ", "M", "A"}, 79.0)));
+    EXPECT_EQ(table.rows()[*table.row_of(2)].text(), "KQ2RP MA");
+}

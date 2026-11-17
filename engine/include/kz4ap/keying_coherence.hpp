@@ -33,6 +33,11 @@ struct KeyingCoherence {
     double strong_keying = 0.0;
 };
 
+// Of two neighbors that both pass the attribution's test against one weak channel (Engine::attribute), whether `a` owns the keying
+// rather than `b`: the one that holds it more strongly (larger strong_keying), the channel centered nearest the station (derived:
+// docs/signal-processing.md A.6, "A neighbor's text"), not the one of higher rho.
+inline bool louder_owner(const KeyingCoherence& a, const KeyingCoherence& b) { return a.strong_keying > b.strong_keying; }
+
 // Over two series of the same length; detrend_blocks m (at least 1; 1 subtracts the plain mean).
 KeyingCoherence keying_coherence(std::span<const float> weak, std::span<const float> strong, std::size_t detrend_blocks);
 inline double keying_correlation(std::span<const float> weak, std::span<const float> strong, std::size_t detrend_blocks) {
