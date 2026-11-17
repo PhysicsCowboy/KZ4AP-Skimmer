@@ -1764,12 +1764,16 @@ decision log). Left open:
 - **The runner's track still prints its callers.** Only an older track's copy is retired, since a runner's track retired during a
   louder caller's over found no new track beside the caller's lingering peak (W8CAR on the owner's file). A runner's track that
   prints a caller's over is a duplicate the other way. A test of which station a channel's text belongs to over the over, not the
-  window, would cover it.
+  window, would cover it. **Status (2026-11-17, `copy-2`):** symbol by symbol, a caller's over on the runner's row is now given to
+  the caller's track, and left out of the runner's row where the caller's row holds it (signal-processing.md A.6, "A neighbor's text").
 - **A copy prints its first 6 s** (the window) and its replay's 2 s before it retires. A shorter window raises the spread of rho for
-  independent stations as 1/sqrt(N); not tried (4 and 8 s were queued and dropped for time).
+  independent stations as 1/sqrt(N); not tried (4 and 8 s were queued and dropped for time). **Status (2026-11-17, `copy-2`):** what
+  it prints of its source is now mostly given to the source and left out of its row; its track still lives the 6 s.
 - **A copy is a second reading.** On KC2LRC-2 a copy 48 Hz from N4BP was the only track to read N4BP's "KI4MZC 5NN"; KI4MZC
   (spotted by the RBN that day) is no longer listed. Keeping a copy's text for the callsign stage while hiding its row would keep
   such readings, at the risk of the false support duplicates gave (K3QP and WW5TOM on the owner's file came from duplicates' readings).
+  **Status (2026-11-17, `copy-2`):** for tracks that are not retired, a neighbor's stretch that the neighbor's own track reads
+  otherwise is kept, on the row and for the callsign stage (UA8B on the strong pairs' fresh seed); a retired copy's text is as before.
 - **Weak copies near the noise** (a few dB SNR at the copy's filter) can keep their tracks: own power is uncertain there. In the
   ghost cells 2 of 60 QSOs kept more than 10% of the caller's over.
 - **A copy whose place is still a peak** opens again 0.5 s after it retires and is judged again 6 s later; a hold tied to the source's
@@ -1779,15 +1783,45 @@ decision log). Left open:
 - **A hidden row's own text is dropped on a copy's end** (review 14): `TrackTable` drops a row not yet shown when its track ends as
   `Copy`, as a merged one's. Many copy retirements are real callers' tracks that read their own call first and then their runner
   (the owner's file: 577 "N4ZZ DON", 644 "NU4J", 600 "W4CMG", 570 "W4SSF", 536 "KK4E"). Display only: the call list reads every
-  track's text. Keeping the row, as for a faded track, would show them.
+  track's text. Keeping the row, as for a faded track, would show them. **Status (2026-11-17): fixed on `copy-2`:** a hidden row that
+  ends as a copy waits as a faded one when it holds text not heard from a neighbor, and its neighbor's text is left out of it.
 - **No test holds the source-proven condition alone** (review 14): det-1's carrier cell is its evidence (A.6), but a unit scene of a
   station between a carrier's track and a side track did not reproduce the side track (tried, 2026-11-15).
 - **A caller's row beside the runner prints the runner's exchange too** (checkpoint 4): on the owner's file the app's track at
   +9 885 Hz reads KK4E, K8WWS, VE3NE and "TU K4TZ CQ", since its ±150 Hz channel hears K4TZ 42 Hz away: one QSO's text on two rows,
-  not a copy by the test. The owner may read it as a copy.
+  not a copy by the test. The owner may read it as a copy. **Status (2026-11-17): fixed on `copy-2`:** the row reads "D KK4E KK4E DON
+  3654 K VE3NE 3 LALI 128" (the callers' own), K4TZ's "TOM 1993" and "TU K4TZ CQ" left out; over the five real recordings the text
+  shown twice on pairs of proven tracks falls 68% to 76%, every reported call the same (decision log, 2026-11-17). That counts exact
+  twins only: symbols given to a proven neighbor and still shown, the neighbor's keying read otherwise on the weaker row, remain (301
+  of 827 on the owner's file; 1 044 of 1 459, 333 of 736, 288 of 517, 819 of 1 457 on the four 2017 recordings), and the owner may
+  still see them as a neighbor's text.
 - **A long row's speed reads low at its end** (review 16, checkpoint 4): in the app's track table at the end of the owner's file
   K4TZ's row shows 5.7 WPM, and two other long rows 6.9 and 7.6 WPM. GUIDE.txt tells the owner it is being looked at.
-  **Status (2026-11-17): fixed on `wpm-1`, not yet on `main`.** The speed sent was the best story's at the last publish, here a
+  **Status (2026-11-17): fixed on `main` (merge 2b0efde, review 17).** The speed sent was the best story's at the last publish, here a
   slow story's reading a burst at 222.5 s as E; the decoder now sends its text's speed, the median over its last 16 letters
   (decision log, 2026-11-17; `signal-processing.md` A.9b, "Speed sent"). The three rows read 30.8, 33.5 and 31.7 WPM, the call
-  list unchanged. Open: the owner's trial folder's GUIDE.txt still says it is being looked at, and its program is the older build.
+  list unchanged. The owner's trial folder was updated with it.
+
+## A neighbor's text after copy-2 (2026-11-17)
+
+`copy-2` gives a symbol that is a neighbor's keying, heard through the channel's skirt, to the neighbor's track
+(`DecodedSymbol::heard_from`; signal-processing.md, section 6 and A.6, "A neighbor's text"); a stretch of them leaves the row where the
+neighbor's own listed row holds every symbol of it. The callsign stage reads every symbol (its skip is a variant, off: review 18).
+Left open:
+
+- **Words split.** The test is per symbol, so a word can be half given (K4TZ's row on the owner's file: "4" and "VE" of the callers'
+  KK4E and VE3NE stay). A word-level vote would hide or show whole words, but a word glued across an over's end (KK4ETUK4TZ) needs the
+  split.
+- **Read two ways.** A stretch the neighbor's row reads otherwise stays on both rows, by design (a second reading can be the better);
+  a junk row on a wide signal and its neighbors read one keying two ways often.
+- **A correction after the source closed** is not attributed again, so what it re-sends shows on the row.
+- **The benchmark does not use it.** The test set's scores read every symbol; a scorer of shown text on H2 (QSO, two tracks) and E2
+  would measure what the rows show.
+- **No unit scene of a weak track reading better than its loud neighbor** (UA8B's case): the stage's and the list's unit tests hold the
+  rule, the strong pairs' fresh seed the evidence.
+- **A neighbor's keying read otherwise** stays on the weaker row (the residual above, about a third to two thirds of what is given to
+  a proven neighbor): a rule by keying alone, not text, would hide it, at the risk of hiding the better reading (UA8B).
+- **The stage's skip** (`skip_neighbors_text` 1) moved calls' places and frames without gaining one; a version that moves a skipped
+  reading to the neighbor's place with its own track's frame would be needed before it could be on.
+- **The loudest owner** went to a nearer copy, not the runner's own track, in a unit scene of a runner and callers 30 and 60 Hz
+  above (review 18; not traced).

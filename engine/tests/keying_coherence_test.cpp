@@ -1,5 +1,6 @@
 #include "kz4ap/keying_coherence.hpp"
 
+#include "kz4ap/callsign.hpp"
 #include "kz4ap/engine.hpp"
 #include "kz4ap/event_bus.hpp"
 #include "test_signals.hpp"
@@ -9,6 +10,7 @@
 #include <cmath>
 #include <complex>
 #include <functional>
+#include <algorithm>
 #include <map>
 #include <random>
 #include <stdexcept>
@@ -307,4 +309,298 @@ TEST(EngineCopies, RefusesBoundsThatAreNotNumbers) {
         EventBus bus;
         EXPECT_THROW({ Engine engine(c, bus); }, std::invalid_argument) << which;
     }
+}
+
+
+// ---- A neighbor's text (EngineConfig::attribute_pad_s): a runner and his caller 45 Hz apart, and a QSO pair 50 Hz apart ----
+
+namespace {
+
+// What each track printed: all of it, what it shows (its own, heard_from 0) and what it gave a neighbor; and the callsign stage's
+// readings with the frequency of the track they came from.
+struct Attributed {
+    std::map<std::uint32_t, std::string> all, own, heard;
+    std::map<std::uint32_t, double> freq_hz, born_s, ended_s;
+    std::map<std::uint32_t, TrackEnd> ended;
+    std::vector<std::pair<callsign::CallReading, double>> readings;
+    std::vector<std::string> calls;
+};
+
+Attributed run_attributed(const std::vector<Sample>& x, const std::function<void(EngineConfig&)>& change = {},
+                          callsign::CallSearchConfig stage_config = {}) {
+    EventBus bus;
+    Attributed r;
+    callsign::CallSearch stage(stage_config);
+    stage.set_reading_log([&](const callsign::CallReading& reading, double f) { r.readings.emplace_back(reading, f); });
+    std::map<std::uint32_t, std::vector<DecodedSymbol>> lists;
+    double now_s = 0.0;
+    bus.subscribe([&](const Event& e) {
+        if (const auto* f = std::get_if<SpectrumFrame>(&e)) {
+            now_s = f->time_s;
+            stage.advance(f->time_s);
+        }
+        if (const auto* t = std::get_if<TrackEvent>(&e)) {
+            if (t->kind == TrackEvent::Kind::Born) {
+                r.freq_hz[t->track.id] = t->track.freq_hz;
+                r.born_s[t->track.id] = now_s;
+            } else {
+                r.ended[t->track.id] = t->end;
+                r.ended_s[t->track.id] = now_s;
+            }
+            stage.apply(*t);
+        } else if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
+            std::vector<DecodedSymbol>& list = lists[d->track_id];
+            for (const DecodedSymbol& c : d->chars) list.push_back(c);
+            for (const TextCorrection& k : d->corrections) {
+                list.resize(std::min(k.from_index, list.size()));
+                for (const DecodedSymbol& c : k.chars) list.push_back(c);
+            }
+            stage.apply(*d);
+        }
+    });
+    EngineConfig config;
+    config.sample_rate = static_cast<int>(kRate);
+    config.decoder.front_end = FrontEnd::Segmental;
+    config.worker_threads = 2;
+    apply_path_defaults(config);
+    if (change) change(config);
+    config.as_given = true;
+    Engine engine(config, bus);
+    engine.process(x);
+    engine.finish();
+    stage.finish();
+    for (const auto& [id, list] : lists) {
+        for (const DecodedSymbol& s : list) {
+            r.all[id] += s.text;
+            // A neighbor's symbol leaves a word space in the track's own text, so that no word of its own is glued to the next.
+            if (s.heard_from == 0) {
+                r.own[id] += s.text;
+                r.heard[id] += " ";
+            } else {
+                r.own[id] += " ";
+                r.heard[id] += s.text;
+            }
+        }
+    }
+    for (const callsign::CallRow& c : stage.calls()) r.calls.push_back(c.base);
+    return r;
+}
+
+// The text of every track near a frequency (+/-15 Hz), one string.
+std::string near_text(const std::map<std::uint32_t, std::string>& texts, const std::map<std::uint32_t, double>& freq_hz, double f) {
+    std::string out;
+    for (const auto& [id, text] : texts)
+        if (near(freq_hz.at(id), f)) out += " [" + text + "]";
+    return out;
+}
+
+// Every track: where, when, how it ended, and all it printed (for a failure's message).
+std::string tracks_of(const Attributed& r) {
+    std::string out;
+    for (const auto& [id, f] : r.freq_hz) {
+        out += "\n  " + std::to_string(id) + " at " + std::to_string(static_cast<int>(f)) + " Hz from " + std::to_string(r.born_s.at(id)) + " s";
+        if (const auto e = r.ended.find(id); e != r.ended.end())
+            out += " to " + std::to_string(r.ended_s.at(id)) + " s (end " + std::to_string(static_cast<int>(e->second)) + ")";
+        if (const auto t = r.all.find(id); t != r.all.end()) out += ": " + t->second;
+    }
+    return out;
+}
+
+bool has_text(const std::string& s) { return s.find_first_not_of(' ') != std::string::npos; }
+
+// The runner's own words in a text (the contest scene's).
+std::size_t runner_words(const std::string& s) { return count(s, "TEST") + count(s, "W1AW") + count(s, " CT") + count(s, "TNX"); }
+
+double over_end(const std::vector<std::pair<double, double>>& k) { return k.back().second; }
+
+// A contest QSO: W1AW runs at 2 000 Hz, +32.6 dB S500; KQ2RP calls 45 Hz above, 8 dB weaker, and they trade short overs, 1 s apart.
+// KQ2RP's channel hears W1AW through its skirt about 4 dB above KQ2RP's own keying, so that W1AW's overs print on KQ2RP's tracks until
+// the copy test retires them, 6 s into an over of W1AW's, and on the next. N0 1e-9 FS^2/Hz. The runner's words: CQ, TEST, W1AW, CT,
+// TNX; the caller's own: KQ2RP, MA, TU.
+struct Contest {
+    std::vector<Sample> x;
+    double caller_hz = 2045.0, runner_hz = 2000.0;
+    std::vector<std::pair<double, double>> caller_overs, runner_overs;  // (start, end), s
+};
+
+Contest contest() {
+    Contest c;
+    const double wpm = 26.0;
+    std::vector<std::pair<std::string, bool>> overs = {
+        {"CQ TEST W1AW W1AW TEST", true}, {"KQ2RP KQ2RP", false}, {"KQ2RP 5NN CT", true}, {"TU 5NN MA", false},
+        {"TNX W1AW TEST", true},          {"CQ TEST W1AW", true}, {"KQ2RP", false},      {"KQ2RP 5NN CT CT", true},
+        {"R 5NN MA MA", false},           {"TNX W1AW TEST", true}};
+    const double duration_s = 66.0;
+    c.x.assign(static_cast<std::size_t>(duration_s * kRate), Sample{});
+    double t = 0.5;
+    for (const auto& [text, runner] : overs) {
+        const auto k = test::keying(text, wpm, t);
+        (runner ? c.runner_overs : c.caller_overs).emplace_back(t, over_end(k));
+        add_to(c.x, test::keyed_signal_of(k, kRate, duration_s, runner ? c.runner_hz : c.caller_hz, runner ? 0.03 : 0.012));
+        t = over_end(k) + 1.0;
+    }
+    add_noise(c.x, 1e-9, 21);
+    return c;
+}
+
+bool inside(const std::vector<std::pair<double, double>>& overs, double a, double b) {
+    return std::any_of(overs.begin(), overs.end(), [&](const auto& o) { return a >= o.first - 0.1 && b <= o.second + 0.1; });
+}
+
+}  // namespace
+
+TEST(EngineNeighborText, WithoutItTheCallersTracksPrintTheRunnersWords) {
+    // The mutation check: with the attribution off the caller's tracks print some of the runner's words before each is retired as a
+    // copy, so that the next tests' passes are the attribution's.
+    const Contest c = contest();
+    const Attributed r = run_attributed(c.x, [](EngineConfig& e) { e.attribute_pad_s = 0.0; });
+    const std::string caller = near_text(r.own, r.freq_hz, c.caller_hz);
+    EXPECT_GE(runner_words(caller), 2u) << caller << tracks_of(r);
+    EXPECT_GE(count(caller, "KQ2RP"), 3u) << caller;
+    for (const auto& [id, text] : r.heard) EXPECT_FALSE(has_text(text)) << id;
+}
+
+TEST(EngineNeighborText, TheRunnersWordsOnTheCallersTracksAreTheRunnersAndTheCallersOwnTextStays) {
+    const Contest c = contest();
+    const Attributed r = run_attributed(c.x);
+    const std::string caller = near_text(r.own, r.freq_hz, c.caller_hz), heard = near_text(r.heard, r.freq_hz, c.caller_hz);
+    // The runner's words are given to the runner's track, which prints them itself.
+    EXPECT_EQ(runner_words(caller), 0u) << caller << " | heard:" << heard << tracks_of(r);
+    EXPECT_GE(runner_words(heard), 2u) << heard;
+    // The caller's own words stay on his tracks: his call, sent three times, and his exchange.
+    EXPECT_GE(count(caller, "KQ2RP"), 3u) << caller;
+    EXPECT_GE(count(caller, "MA"), 1u) << caller;
+    // And the runner's track shows his own overs.
+    const std::string runner = near_text(r.own, r.freq_hz, c.runner_hz);
+    EXPECT_GE(count(runner, "W1AW"), 5u) << runner;
+    EXPECT_GE(count(runner, "TEST"), 5u) << runner;
+}
+
+namespace {
+
+// The callsign stage's readings on the caller's tracks: of his call in his own overs, and of any call in the runner's overs.
+std::pair<std::size_t, std::size_t> caller_readings(const Contest& c, const Attributed& r) {
+    std::size_t own = 0, runners = 0;
+    for (const auto& [reading, f] : r.readings) {
+        if (!near(f, c.caller_hz)) continue;
+        if (reading.base == "KQ2RP" && inside(c.caller_overs, reading.start_s, reading.end_s)) ++own;
+        if (inside(c.runner_overs, reading.start_s, reading.end_s)) ++runners;
+    }
+    return {own, runners};
+}
+
+}  // namespace
+
+TEST(EngineNeighborText, TheCallsignStageReadsTheCallersCallOnHisTrackAndLessOfTheRunnersOverThere) {
+    // The variant skip_neighbors_text 1 (off by default): a stretch is skipped where it is whole words and the runner's own track holds
+    // it (the same symbols at the same times); what it reads otherwise (W1AA for W1AW) is read on the caller's track still.
+    const Contest c = contest();
+    callsign::CallSearchConfig on;
+    on.skip_neighbors_text = 1.0;
+    const Attributed r = run_attributed(c.x, {}, on);
+    callsign::CallSearchConfig all;
+    all.skip_neighbors_text = 0.0;
+    const Attributed before = run_attributed(c.x, {}, all);
+    const auto [own, runners] = caller_readings(c, r);
+    const auto [own_before, runners_before] = caller_readings(c, before);
+    EXPECT_GE(own, 2u) << "the caller's call, read in his own overs on his own tracks";
+    EXPECT_EQ(own, own_before);
+    EXPECT_LT(runners, runners_before) << "calls read on the caller's tracks during the runner's overs";
+    EXPECT_NE(std::find(r.calls.begin(), r.calls.end(), "KQ2RP"), r.calls.end());
+    EXPECT_NE(std::find(r.calls.begin(), r.calls.end(), "W1AW"), r.calls.end());
+}
+namespace {
+
+// A QSO pair 50 Hz apart: A at 2 000 Hz, +32.6 dB S500, and B at 2 050 Hz, 12 dB weaker, each with long overs in turn, 1.5 s
+// apart. B's own words: OHIO, BOB; A's: TEXAS, JIM.
+std::vector<Sample> ragchew(double b_hz) {
+    const double wpm = 24.0, duration_s = 70.0;
+    std::vector<Sample> x(static_cast<std::size_t>(duration_s * kRate));
+    const std::vector<std::pair<std::string, bool>> overs = {
+        {"KQ2RP DE W1AW NAME JIM JIM QTH TEXAS TEXAS HW BK", true},
+        {"BK W1AW DE KQ2RP NAME BOB BOB QTH OHIO OHIO HW BK", false},
+        {"BK FB BOB QTH TEXAS RIG 100 WATTS HW BK", true},
+        {"BK FB JIM OHIO RIG 5 WATTS HW BK", false}};
+    double t = 0.5;
+    for (const auto& [text, a] : overs) {
+        const auto k = test::keying(text, wpm, t);
+        add_to(x, test::keyed_signal_of(k, kRate, duration_s, a ? 2000.0 : b_hz, a ? 0.03 : 0.0075));
+        t = over_end(k) + 1.5;
+    }
+    add_noise(x, 1e-9, 31);
+    return x;
+}
+
+}  // namespace
+
+TEST(EngineNeighborText, AQsoPartnerFortyToSixtyHzAwayKeepsItsOwnText) {
+    for (const double b_hz : {2040.0, 2050.0, 2060.0}) {
+        const Attributed r = run_attributed(ragchew(b_hz));
+        const std::string b = near_text(r.own, r.freq_hz, b_hz), a = near_text(r.own, r.freq_hz, 2000.0);
+        EXPECT_GE(count(b, "OHIO"), 2u) << b_hz << " Hz: " << b;
+        EXPECT_GE(count(b, "BOB"), 1u) << b_hz << " Hz: " << b;
+        EXPECT_GE(count(a, "TEXAS"), 2u) << b_hz << " Hz: " << a;
+        // What either shows of the other's over is at most a word.
+        EXPECT_LE(count(b, "TEXAS") + count(b, "JIM"), 1u) << b_hz << " Hz: " << b;
+        EXPECT_LE(count(a, "OHIO"), 1u) << b_hz << " Hz: " << a;
+    }
+}
+
+TEST(EngineNeighborText, IsTheSegmentalPathsDefaultAndRefusesBadBounds) {
+    EngineConfig c;
+    c.decoder.front_end = FrontEnd::Segmental;
+    apply_path_defaults(c);
+    EXPECT_DOUBLE_EQ(c.attribute_pad_s, 0.5);
+    EngineConfig m;
+    m.decoder.front_end = FrontEnd::Matched;
+    apply_path_defaults(m);
+    EXPECT_DOUBLE_EQ(m.attribute_pad_s, 0.0);
+    for (const int which : {0, 1, 2}) {
+        EngineConfig e;
+        e.sample_rate = static_cast<int>(kRate);
+        e.decoder.front_end = FrontEnd::Segmental;
+        apply_path_defaults(e);
+        e.as_given = true;
+        if (which == 0) e.attribute_own_max = std::nan("");
+        if (which == 1) e.attribute_pad_s = -1.0;
+        if (which == 2) e.attribute_history_s = 0.0;
+        EventBus bus;
+        EXPECT_THROW({ Engine engine(e, bus); }, std::invalid_argument) << which;
+    }
+}
+
+TEST(EnvelopeHistory, GivesARangeOfBlocksOnlyWhenItHoldsThemAll) {
+    EnvelopeHistory h(4);
+    for (std::uint64_t b = 10; b < 16; ++b) h.push(b, static_cast<float>(b));  // holds 12 to 15
+    EXPECT_EQ(h.oldest_block(), 12u);
+    std::vector<float> out;
+    ASSERT_TRUE(h.range(13, 14, out));
+    EXPECT_EQ(out, (std::vector<float>{13.0f, 14.0f}));
+    ASSERT_TRUE(h.range(12, 15, out));
+    EXPECT_EQ(out, (std::vector<float>{12.0f, 13.0f, 14.0f, 15.0f}));
+    out = {1.0f};
+    EXPECT_FALSE(h.range(11, 13, out));
+    EXPECT_FALSE(h.range(14, 16, out));
+    EXPECT_FALSE(h.range(14, 13, out));
+    EXPECT_EQ(out, (std::vector<float>{1.0f}));
+}
+
+TEST(KeyingCorrelation, TheKeyingPowerSaysWhichChannelHearsItLouder) {
+    // A key heard at 20 and at 10 dB SNR: the mean square of the envelope power about its mean is g^2 d (1 - d) + sigma^4 + 2 g sigma^2 d
+    // (derived; g the key-down power, sigma^2 the noise's), 2 601 and 36 FS^4 at d = 1/2 and sigma^2 = 1 FS^2; the high-pass takes about
+    // the same share of both.
+    const std::vector<float> key = random_key(4000, 0.5, 41);
+    const std::vector<float> source = heard(key, 100.0, 1.0, 42), copy = heard(key, 10.0, 1.0, 43);
+    const KeyingCoherence k = keying_coherence(copy, source, 23);
+    EXPECT_LT(k.weak_keying, k.strong_keying);
+    EXPECT_NEAR(k.weak_keying / k.strong_keying, 36.0 / 2601.0, 0.003);
+}
+TEST(KeyingCorrelation, OfTwoNeighborsTheOneThatHearsTheKeyingLouderOwnsIt) {
+    // c18c087's rule (Engine::attribute): of several neighbors that pass, the one of largest keying power owns a symbol, not the one of
+    // highest rho. Here the nearer copy correlates better with the weak channel (both hear the key through skirts) but the station's own
+    // channel holds it 10 dB louder.
+    KeyingCoherence own_channel{0.6, 0.05, 1.0, 10.0, 0.01, 100.0};
+    KeyingCoherence nearer_copy{0.9, 0.2, 1.0, 3.0, 0.01, 10.0};
+    EXPECT_TRUE(louder_owner(own_channel, nearer_copy));
+    EXPECT_FALSE(louder_owner(nearer_copy, own_channel));
 }

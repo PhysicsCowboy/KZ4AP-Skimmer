@@ -55,7 +55,7 @@ KeyingCoherence keying_coherence(std::span<const float> weak, std::span<const fl
         ss += static_cast<double>(strong[i]);
     }
     const double n = static_cast<double>(weak.size());
-    return {ab / std::sqrt(aa * bb), ab / bb, sw / n, ss / n};
+    return {ab / std::sqrt(aa * bb), ab / bb, sw / n, ss / n, aa / n, bb / n};
 }
 
 EnvelopeHistory::EnvelopeHistory(std::size_t capacity) : ring_(capacity, 0.0f) {}
@@ -74,6 +74,16 @@ void EnvelopeHistory::last(std::size_t n, std::vector<float>& out) const {
     out.resize(n);
     const std::size_t cap = ring_.size();
     for (std::size_t i = 0; i < n; ++i) out[i] = ring_[(next_ + cap - n + i) % cap];
+}
+
+bool EnvelopeHistory::range(std::uint64_t first, std::uint64_t last, std::vector<float>& out) const {
+    if (size_ == 0 || first > last || first < oldest_block() || last > newest_) return false;
+    const std::size_t n = static_cast<std::size_t>(last - first + 1);
+    const std::size_t back = static_cast<std::size_t>(newest_ - last);  // values after `last`
+    const std::size_t cap = ring_.size();
+    out.resize(n);
+    for (std::size_t i = 0; i < n; ++i) out[i] = ring_[(next_ + 2 * cap - back - n + i) % cap];
+    return true;
 }
 
 }  // namespace kz4ap

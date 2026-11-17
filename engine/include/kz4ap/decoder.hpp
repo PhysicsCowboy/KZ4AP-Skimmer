@@ -3,6 +3,7 @@
 #include "kz4ap/types.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -15,6 +16,10 @@ struct DecodedSymbol {
     float probability;  // the decoder's belief that text is right, 0..1
     double start_s;
     double end_s;
+    // The engine's attribution (EngineConfig::attribute_pad_s; docs/signal-processing.md, section 6, "A neighbor's text"): 0 when the
+    // keying this symbol was read from is the channel's own; else the id of the neighbor's track whose keying it is, heard through the
+    // channel's skirt, which that track reads itself. Decoders leave it 0; the engine sets it before the text goes out.
+    std::uint32_t heard_from = 0;
 };
 
 // A correction of a channel's published text (the bank and segmental decoders; Envelope and Matched never correct). The channel's

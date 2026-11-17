@@ -61,6 +61,7 @@ void set_value(CallSearchConfig& c, const std::string& assignment) {
         {"named_listed_only", &c.named_listed_only}, {"short_variant_ratio", &c.short_variant_ratio},
         {"known_margin_nats", &c.known_margin_nats},
         {"pool_places", &c.pool_places}, {"glued_pieces_timed", &c.glued_pieces_timed},
+        {"skip_neighbors_text", &c.skip_neighbors_text}, {"neighbor_twin_s", &c.neighbor_twin_s},
     };
     const auto it = fields.find(name);
     if (it == fields.end()) throw std::runtime_error("no such setting: " + name);
@@ -97,9 +98,11 @@ Options parse(int argc, char** argv) {
 
 nlohmann::json symbols_json(const std::vector<DecodedSymbol>& symbols) {
     nlohmann::json a = nlohmann::json::array();
-    // The probability only when below 1, so that a log of a decoder without margins reads as before.
+    // The probability only when below 1, so that a log of a decoder without margins reads as before; the neighbor whose keying a
+    // symbol is (DecodedSymbol::heard_from) fifth, only when there is one.
     for (const DecodedSymbol& s : symbols) {
-        if (s.probability < 1.0f) a.push_back({s.text, s.start_s, s.end_s, s.probability});
+        if (s.heard_from != 0) a.push_back({s.text, s.start_s, s.end_s, s.probability, s.heard_from});
+        else if (s.probability < 1.0f) a.push_back({s.text, s.start_s, s.end_s, s.probability});
         else a.push_back({s.text, s.start_s, s.end_s});
     }
     return a;
@@ -108,7 +111,9 @@ nlohmann::json symbols_json(const std::vector<DecodedSymbol>& symbols) {
 std::vector<DecodedSymbol> symbols_from(const nlohmann::json& a) {
     std::vector<DecodedSymbol> out;
     out.reserve(a.size());
-    for (const auto& s : a) out.push_back({s[0].get<std::string>(), s.size() > 3 ? s[3].get<float>() : 1.0f, s[1].get<double>(), s[2].get<double>()});
+    for (const auto& s : a)
+        out.push_back({s[0].get<std::string>(), s.size() > 3 ? s[3].get<float>() : 1.0f, s[1].get<double>(), s[2].get<double>(),
+                       s.size() > 4 ? s[4].get<std::uint32_t>() : 0u});
     return out;
 }
 
@@ -208,7 +213,10 @@ int main(int argc, char** argv) {
                 } else if (const auto* t = std::get_if<TrackEvent>(&e)) {
                     if (log) {
                         nlohmann::json j{{"k", t->kind == TrackEvent::Kind::Born ? "b" : "d"}, {"id", t->track.id}, {"f", t->track.freq_hz}, {"s", t->track.snr_db}};
-                        if (t->kind == TrackEvent::Kind::Died) j["e"] = track_end_name(t->end);  // why it ended; --replay ignores it
+                        if (t->kind == TrackEvent::Kind::Died) {
+                            j["e"] = track_end_name(t->end);  // why it ended; --replay ignores it
+                            j["p"] = t->proven ? 1 : 0;       // whether the track judge had proven it (TrackEvent::proven); likewise
+                        }
                         *log << j.dump() << '\n';
                     }
                     timed([&] { stage.apply(*t); });

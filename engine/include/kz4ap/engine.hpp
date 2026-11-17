@@ -159,6 +159,25 @@ struct EngineConfig {
     bool copy_source_proven = true;
     double copy_gain_max = 1.0;   // linear, power
     double copy_own_snr_max = 0.25;  // linear, power
+
+    // A neighbor's text (FrontEnd::Segmental on the detector's path, with judge_tracks; apply_path_defaults turns it on;
+    // docs/signal-processing.md, section 6): before a channel W's text goes out, each of its symbols but word spaces is compared, over
+    // the symbol's own span widened by attribute_pad_s on each side (clipped to the blocks held), with each other channel S within
+    // attribute_radius_hz (proven, with attribute_source_proven). Over those blocks, both envelopes less their moving mean over
+    // copy_detrend_s, the symbol is S's (DecodedSymbol::heard_from) when rho >= attribute_rho, S hears the keying more strongly
+    // than W (mean square after the high-pass) and W's own power (mean e_W^2 - E) / E is at most attribute_own_max, E = gain mean e_S^2 + sigma_W^2: the copy test's
+    // three conditions on a symbol's stretch instead of 6 s, with "which channel hears it louder" in place of the level and the age.
+    // attribute_pad_s 0: no attribution. A window shorter than attribute_min_s attributes nothing; attribute_history_s is how far
+    // back the envelopes are kept, s, so that a correction's symbols can be attributed again.
+    double attribute_pad_s = 0.0;       // s
+    double attribute_rho = 0.5;
+    double attribute_radius_hz = 150.0;
+    double attribute_own_max = 0.5;     // linear, power
+    double attribute_min_s = 0.5;       // s
+    double attribute_history_s = 30.0;  // s
+    // true: only a neighbor whose track is proven (TrackJudge::proven) owns a symbol. false (the default): any, since the list leaves a
+    // symbol out only where the neighbor's listed row holds it, and the callsign stage only where the neighbor's track holds it.
+    bool attribute_source_proven = false;
 };
 
 // The detector's settings and the DC blocker for the decoder's path (decoder.front_end), in place: on every path the
@@ -274,6 +293,7 @@ private:
         std::size_t replayed_samples = 0;
         float detector_snr_db = 0.0f;  // the detector's level for the track (Track::snr_db), dB re its floor per bin
         EnvelopeHistory envelope;      // the keying its decoder hears, a value a live block (EngineConfig::copy_window_s)
+        EnvelopeHistory heard;         // the same, a value a block, its replay's included (EngineConfig::attribute_pad_s)
         double envelope_noise_fs2 = -1.0;  // that envelope's hiss, the latest block's (Decoder::block_noise_fs2)
     };
 
@@ -295,6 +315,11 @@ private:
     std::size_t copy_blocks_ = 0;    // copy_window_s in blocks (0: no test)
     std::size_t detrend_blocks_ = 1;  // copy_detrend_s in blocks
     std::uint64_t block_samples_ = 1;  // channel samples a block
+    double block_s_ = 0.0;             // s a block
+    // A neighbor's text (EngineConfig::attribute_pad_s): the symbols of this channel's update that are a neighbor's keying get its id.
+    void attribute(std::uint32_t id, DecodeUpdate& update) const;
+    std::size_t heard_blocks_ = 0;     // attribute_history_s in blocks (0: no attribution)
+    std::size_t heard_min_blocks_ = 2;  // attribute_min_s in blocks
     void close_channel(std::uint32_t id, TrackEnd end = TrackEnd::Faded);
     void publish_update(std::uint32_t id, DecodeUpdate&& update);
 

@@ -283,7 +283,15 @@ int edit_distance(std::string_view a, std::string_view b, int limit) {
 
 // ---- Reading a text
 
-std::vector<Word> words_of(std::span<const DecodedSymbol> symbols) {
+std::vector<Word> words_of(std::span<const DecodedSymbol> symbols) { return words_of(symbols, std::span<const char>()); }
+
+std::vector<Word> words_of(std::span<const DecodedSymbol> symbols, bool skip_heard) {
+    std::vector<char> skip(symbols.size(), 0);
+    for (std::size_t i = 0; i < symbols.size(); ++i) skip[i] = skip_heard && symbols[i].heard_from != 0 ? 1 : 0;
+    return words_of(symbols, std::span<const char>(skip));
+}
+
+std::vector<Word> words_of(std::span<const DecodedSymbol> symbols, std::span<const char> skip) {
     std::vector<Word> out;
     Word current;
     const auto flush = [&] {
@@ -292,6 +300,10 @@ std::vector<Word> words_of(std::span<const DecodedSymbol> symbols) {
     };
     for (std::size_t i = 0; i < symbols.size(); ++i) {
         const DecodedSymbol& s = symbols[i];
+        if (i < skip.size() && skip[i]) {
+            flush();
+            continue;
+        }
         const std::string& t = s.text;
         if (t.size() > 1 && t[0] == '<') {
             flush();
@@ -535,7 +547,46 @@ void CallSearch::finish() {
 
 void CallSearch::read_track(TrackText& t, bool all) {
     if (t.symbols.empty()) return;
-    const std::vector<Word> words = words_of(t.symbols);
+    // A stretch of a neighbor's symbols (heard_from) is skipped where the neighbor's own track holds every symbol of it, the same text at
+    // the same times: it is read there. A stretch the neighbor's track holds otherwise is read here, whole.
+    std::vector<char> skip(t.symbols.size(), 0);
+    if (config_.skip_neighbors_text != 0.0) {
+        const auto heard = [&](std::size_t i) { return t.symbols[i].heard_from != 0 && t.symbols[i].text != " "; };
+        const auto held = [&](const DecodedSymbol& s) {
+            const auto source = tracks_.find(s.heard_from);
+            if (source == tracks_.end()) return false;
+            const std::vector<DecodedSymbol>& theirs = source->second.symbols;
+            for (std::size_t j = theirs.size(); j-- > 0;) {
+                const DecodedSymbol& o = theirs[j];
+                if (o.text == " ") continue;
+                if (o.end_s < s.start_s - config_.neighbor_twin_s) break;  // a track's symbols come in the order of their times
+                if (o.text == s.text && std::abs(o.start_s - s.start_s) <= config_.neighbor_twin_s &&
+                    std::abs(o.end_s - s.end_s) <= config_.neighbor_twin_s)
+                    return true;
+            }
+            return false;
+        };
+        for (std::size_t i = 0; i < t.symbols.size();) {
+            if (!heard(i)) {
+                ++i;
+                continue;
+            }
+            std::size_t j = i;
+            bool whole = true;
+            for (; j < t.symbols.size() && heard(j); ++j) whole = whole && held(t.symbols[j]);
+            // Never part of a word: a stretch is skipped only when it is whole words, a word's end (word space, prosign, punctuation or
+            // the text's end) on either side; a word only partly heard from a neighbor is read whole, as the track's own (review 18: on
+            // KC2LRC-2 W7QDM's "TEST W7QDM" lost its TES to a track 27 Hz away, and the call its role of sender).
+            const auto word_char = [&](std::size_t k) {
+                const std::string& x = t.symbols[k].text;
+                return x.size() == 1 && (is_letter(x[0]) || is_digit(x[0]) || x[0] == '/');
+            };
+            const bool whole_words = (i == 0 || !word_char(i - 1)) && (j == t.symbols.size() || !word_char(j));
+            for (std::size_t k = i; k < j; ++k) skip[k] = whole && whole_words ? 1 : 0;
+            i = j;
+        }
+    }
+    const std::vector<Word> words = words_of(t.symbols, std::span<const char>(skip));
     if (words.empty()) return;
     if (t.rewind_to < t.read_to) {
         // Back to the start of the word the change falls in. What stays the same there is one occurrence with what was read before (CallSearch::add).

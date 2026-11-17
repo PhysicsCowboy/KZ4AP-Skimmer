@@ -554,6 +554,12 @@ void apply_detector_setting(EngineConfig& config, const std::string& setting) {
         {"copy_detrend_s", &config.copy_detrend_s},
         {"copy_gain_max", &config.copy_gain_max},
         {"copy_own_snr_max", &config.copy_own_snr_max},
+        {"attribute_pad_s", &config.attribute_pad_s},
+        {"attribute_rho", &config.attribute_rho},
+        {"attribute_radius_hz", &config.attribute_radius_hz},
+        {"attribute_own_max", &config.attribute_own_max},
+        {"attribute_min_s", &config.attribute_min_s},
+        {"attribute_history_s", &config.attribute_history_s},
     };
     for (const auto& [field, target] : doubles) {
         if (name == field) {
@@ -574,6 +580,7 @@ void apply_detector_setting(EngineConfig& config, const std::string& setting) {
     else if (name == "first_retirement_open") config.first_retirement_open = static_cast<int>(value);
     else if (name == "copy_older_only") config.copy_older_only = value != 0.0;
     else if (name == "copy_source_proven") config.copy_source_proven = value != 0.0;
+    else if (name == "attribute_source_proven") config.attribute_source_proven = value != 0.0;
     else throw std::invalid_argument("--detector: unknown parameter '" + name + "'");
 }
 

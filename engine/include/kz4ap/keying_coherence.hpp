@@ -29,7 +29,14 @@ struct KeyingCoherence {
     double gain;  // beta; NaN likewise
     double weak_mean = 0.0;    // the plain means of the two series, FS^2
     double strong_mean = 0.0;
+    double weak_keying = 0.0;  // the mean square of each series after the high-pass, FS^4: how strongly each channel hears the keying
+    double strong_keying = 0.0;
 };
+
+// Of two neighbors that both pass the attribution's test against one weak channel (Engine::attribute), whether `a` owns the keying
+// rather than `b`: the one that holds it more strongly (larger strong_keying), the channel centered nearest the station (derived:
+// docs/signal-processing.md A.6, "A neighbor's text"), not the one of higher rho.
+inline bool louder_owner(const KeyingCoherence& a, const KeyingCoherence& b) { return a.strong_keying > b.strong_keying; }
 
 // Over two series of the same length; detrend_blocks m (at least 1; 1 subtracts the plain mean).
 KeyingCoherence keying_coherence(std::span<const float> weak, std::span<const float> strong, std::size_t detrend_blocks);
@@ -45,6 +52,11 @@ public:
     void push(std::uint64_t block, float value);
     // The last `n` values, oldest first, into out (resized); n at most size().
     void last(std::size_t n, std::vector<float>& out) const;
+    // The values of blocks first to last, both included, oldest first, into out (resized); false, and out untouched, unless all of them
+    // are held.
+    bool range(std::uint64_t first, std::uint64_t last, std::vector<float>& out) const;
+    // The oldest block held; meaningful only when size() > 0.
+    std::uint64_t oldest_block() const { return newest_ + 1 - size_; }
     std::size_t size() const { return size_; }
     // The block of the newest value; meaningful only when size() > 0.
     std::uint64_t newest_block() const { return newest_; }

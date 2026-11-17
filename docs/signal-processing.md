@@ -97,8 +97,8 @@ Appendix: A.2.
 
 Input arrives in blocks of N/2 samples (the hop); each FFT covers the
 newest block and the one before it, so consecutive FFTs overlap by half. With
-the Hann window (section 4) the overlapping windows add up to a constant,
-so no part of the signal is weighted less than another (derived). The hop
+the Hann window (section 4) the overlapping windows add up to a constant
+(derived). The hop
 also fixes the channel filter's length (section 7).
 
 Appendix: A.3.
@@ -188,6 +188,14 @@ W is S's copy, retired with its place open, when ρ ≥ **0.5**,
 at most **0.25**. Derived: an independent station's ρ tends to 0 within
 about 1/√N; a copy's ρ is S/(S + 2) at key-down SNR S, its β |H(Δf)|² ≤ 1,
 own power ≈ 0.
+
+**A neighbor's text.** A track not a copy still prints a neighbor's over
+between its own (a caller's, its runner's exchange). Each symbol of W's but a word
+space is compared with each track S within 150 Hz, over its span and **0.5 s**
+either side, x, ρ, β, own as above: it is S's (`heard_from`) when ρ ≥ 0.5,
+Σx_S² > Σx_W² (S hears it louder; of several, the loudest) and own ≤ **0.5** (chosen
+by measurement; 0.5 s, ρ heuristics). A stretch of such symbols leaves W's row
+only where S's row holds it whole within 25 ms (section 10).
 
 **Oracle mode**, for the benchmark, skips the detector and opens a
 channel at each labeled frequency.
@@ -493,17 +501,8 @@ correction. From 10 s of age, a narrower stream not leading, ineligible or over 
 behind, is dropped for the channel's life. The widest always stays, and the judge
 (section 10) reads it. Narrower ceiling 300 elements. All heuristics by measurement.
 
-**What a score is.** The prior is a real generative model and the search a MAP
-search under it. The likelihood is a stated approximation, and scores are not
-probabilities: (1) *Empirical Bayes:* P̂ is a posterior under an auxiliary model
-(a key with no timing), not under the search's fist and text. (2) *Data used
-twice:* a sample's neighbors shape P̂ and each is scored again, so Σ L1 is a
-composite likelihood, a product of conditionals, not a chain rule; the frame
-leaves out 8 samples, and noise correlated over 5 leaks at its edges. (3)
-*Marginals per sample:* ln Σ_l per sample, where one amplitude over a mark would
-be ln Σ_l Π_k; a broad belief understates a consistent mark. (4) *No charge for
-the level:* a new over pays nothing for it, and nothing charges a drop inside a
-mark. Appendix: A.8e.
+Scores are not probabilities: a MAP search under a real prior, the likelihood approximated
+(A.8e, "What a score is").
 
 ## 9. Timing and latency
 
@@ -552,7 +551,8 @@ the hold before it ended. The first retirement at a place leaves it open: a stat
 read badly at first, or listening, gets a second track.
 
 **List.** A row is listed once proven by the same test; a new track within 30 Hz of a
-row ended under 60 s ago goes on with it. Rows keep about 4 000 symbols.
+row ended under 60 s ago goes on with it. Rows keep about 4 000 symbols. A row leaves out
+what it heard from a listed neighbor's row (section 6), a word space in its place (A.9b).
 
 **Overload.** A pipeline more than 1 s behind keeps ¾ of its tracks, at least 8, those
 with the least evidence closing first (A.9b). A radio silent 5 s is flagged.
@@ -564,7 +564,7 @@ changes neither. Values are heuristics unless marked. Appendix: A.12.
 
 **Words.** Each whole stream-second it reads text 10 s old. A later correction has its change
 read again, within 200 s (A.12); old readings stay. A word space,
-prosign or punctuation ends a word.
+prosign or punctuation ends a word. Every symbol is read, a neighbor's too (A.12).
 
 **Readings.** A call's form (RR 19.68; sourced): an allocated prefix (Appendix 42) of one
 or two characters, one digit, one to four letters; /P, /M or a prefix keep the base call. 1
@@ -1368,7 +1368,8 @@ detector's path with `judge_tracks`, never in oracle mode.
   W is S's copy when ρ ≥ 0.5 (`copy_rho`), β ≤ 1 (`copy_gain_max`) and own ≤ 0.25 (`copy_own_snr_max`; negative turns the
   condition off). An unknown hiss (σ_W² not yet positive) is never a copy.
 - **Then.** W retires as `TrackEnd::Copy`, hold 0 s: `SignalDetector::retire` keeps no record, and a peak there may open a track at
-  once. Its text stays in its row; a row not yet shown is dropped, as a merged one's (`TrackTable`).
+  once. Its text stays in its row; a row not yet shown is dropped, as a merged one's, unless it holds text not heard from a
+  neighbor (`TrackTable`; "A neighbor's text", below).
 
 **Derivations.**
 
@@ -1449,7 +1450,7 @@ not committed.
   10.0 dB S500, the copy at +8.3 and +2.5 dB SNR at B's filter (β −2.8 and −11.5 dB re A's own channel); the first was retired
   after 14% of the over, the second never. At low SNR the noise's share of a copy's mean power makes own uncertain.
 - A copy is retired only as an older track's; a runner's track still prints a louder caller's over (the owner's file: K4TZ's
-  track reads its callers).
+  track reads its callers), though symbol by symbol it is now given to the caller's track once that is proven ("A neighbor's text").
 - A station 15 dB or more below an older, proven neighbor within 150 Hz, keying under its leak with little power of its own, is
   retired as its copy (on the slice, det-1's cells only, 45 to 60 Hz, 15 to 25 dB below, where it reads CER 0.7 to 1.0
   anyway); its place stays open.
@@ -1458,7 +1459,122 @@ not committed.
   owner's file 0.390 to 0.380): the test is about 281 products per pair a second; the copies' channel-seconds it saves pay for it.
 - A copy is a second reading of its source's text, through another filter: on KC2LRC-2 a copy 48 Hz from N4BP was the only track
   to read N4BP's "KI4MZC 5NN", and KI4MZC (spotted by the RBN that day, outside the recording's window) is not listed with the test.
+- Until it retires, a copy's text is now mostly given to its source (below, "A neighbor's text"), so its row shows little of it.
 
+### A neighbor's text (segmental path; `Engine::attribute`, `DecodedSymbol::heard_from`)
+
+**Exact form.** `apply_path_defaults` sets `EngineConfig::attribute_pad_s` = 0.5 s for `FrontEnd::Segmental`; it runs only on the
+detector's path with `judge_tracks`, never in oracle mode.
+
+- **What each channel keeps.** `Channel::heard`, an `EnvelopeHistory` of round(30 s / 21.33 ms) + 1 = 1 407 values
+  (`attribute_history_s` 30 s), the copy test's e (FS², one a block at the leading stream), pushed after every live block and after
+  each block of the channel's replay, numbered by the block's place in the stream, so that a replay's symbols have their blocks.
+- **When.** In `Engine::publish_update`, on the engine's thread after every channel's block, before the text event goes out: every
+  symbol of the update's `chars` and of each correction's `chars`, a correction's re-sent symbols again.
+- **Against what.** Each other open channel S with |f_S − f_W| ≤ 150 Hz (`attribute_radius_hz`, the detector's frequencies) whose
+  history holds the window; proven or not (`attribute_source_proven` false; true, a variant, asks `TrackJudge::proven`).
+- **The window.** The blocks b, 21.33 ms each, with ⌊(start_s − 0.5 s)/21.33 ms⌋ ≤ b ≤ ⌊(end_s + 0.5 s)/21.33 ms⌋, clipped to
+  those W holds (the newest is the current block); nothing is attributed with fewer than round(0.5 s / 21.33 ms) = 23 blocks
+  (`attribute_min_s`), and a word space never is.
+- **The test.** `keying_coherence` over the window, as the copy test's (the high-pass's 23 blocks included): ρ, β, ē_W, ē_S, and the
+  keying powers K_W and K_S, the mean of x² (FS⁴). S owns the symbol when ρ ≥ 0.5 (`attribute_rho`), K_W < K_S and own = (ē_W −
+  E) / E ≤ 0.5 (`attribute_own_max`; negative turns the condition off), E = β ē_S + σ_W², σ_W² W's latest hiss; of several, the one of
+  largest K_S. An unknown hiss attributes nothing.
+- **Then.** `DecodedSymbol::heard_from` = S's track id; else 0. Neither the decoder nor the judge reads it.
+- **The list** (`TrackTable`) keeps every symbol with its times, its `heard_from`, and whether it is left out. A *stretch* is a run of
+  consecutive symbols with a `heard_from`, no word space among them; it is left out whole when every symbol of it has a twin in the
+  listed row that holds the named track (`shown_by`: the same text, start and end each within `kTwinS` 0.025 s, the twin not left out
+  itself), else not at all (`refresh`). It is decided again when the row's text changes, when a row is listed (`now_listed`, every row),
+  and when a listed track's text comes, for the rows within 300 Hz and 30 s of it (`kRecheckHz`, `kRecheckS`). A row shows the rest, one
+  word space for each stretch left out (none at the start, none beside a space), and a hidden row is listed on `text_evidence` of what
+  it would show. A hidden row that ends as `Copy` waits, as a `Faded` one does, when a symbol other than a word
+  space has `heard_from` 0; with none it goes at once, as before.
+- **The callsign stage** reads every symbol (`CallSearchConfig::skip_neighbors_text` 0, the default; review 18). A variant, 1, skips a
+  stretch by the same twin rule against the named track's text in the stage (`neighbor_twin_s` 0.025 s), and only when it is whole
+  words, never part of one (A.12). The list does not ask whole words (below, provenance).
+
+**Derivations.**
+
+- **Louder at its own channel.** A keyed station of key-down power P heard by a channel at power gain g = |H_ch(Δf)|² |H_f(Δf)|²
+  (Δf its offset from the channel's center), keyed a fraction d of the time, with complex Gaussian hiss of power σ² at the filter's
+  output: the envelope power e (FS², section 6) has, per value, variance g²P² d(1 − d) + σ⁴ + 2gPσ² d (derived, as the keying-power unit test's
+  comment has it). The key term and the cross term 2gPσ²d both grow with g, and σ⁴ does not depend on it, so at equal hiss and the
+  same leading filter K is monotone in g and K_S > K_W ⇔ g_S > g_W (derived; the moving mean takes about the same share from both). A
+  channel's g falls with the offset while it lies in the front filter's main lobe (the 12 ms filter's first null is about 83 Hz out;
+  beyond it, and between channels whose hiss or leading filter differ, the equivalence can fail): K_S > K_W says the station is nearer
+  S's center. Then β = ρ √(K_W / K_S) < ρ ≤ 1: the copy test's β ≤ 1 follows. Of several channels that pass, the one of largest K_S is
+  the one centered nearest the station, its own (derived, as above), when that one passes the test at all (below, Limitations).
+- **Antisymmetric.** Read from S's side the condition is K_S < K_W: over one window, of two channels at most one gives the stretch to
+  the other (derived). Two decoders' symbols of one keying lie within a few ms of each other, so their windows nearly coincide.
+- **own** as the copy test's: about 0 while W's own station is silent, at any SNR (derived); a station of W's own adds its SNR against
+  leak and hiss. Over a symbol's window, not 6 s, the filters' mismatch spreads it more (A.6, copies' provenance), hence a looser bound, 0.5 set by measurement.
+
+**Provenance.** Decision log, 2026-11-17. The measure is *text shown twice* (A.11): over pairs of proven tracks, symbols printed by
+both at the same times, counted shown when the list's rule above leaves neither out. Runs of `kz4ap-calls`, one thread each, ten at
+once, on the Linux machine (c18c087, the five real recordings and the generated call sets; scratch tables in its `build/copy2`, not
+committed), and on the desktop (the owner's file, and the app on it).
+
+- **The cause** (the owner's file, the copy test on): the app's row at +9 885 Hz from the center, four tracks of K4TZ's callers
+  (536, 601, 643, 652, each retired as a copy within 5.6 to 12.3 s), read "E4TID KK4E KK4RE TOM 1 N3 KK4E DON 3654 KK4ETUK4TZ K8WWS
+  K: TZ VE3NE VE3NE TOM 1993 N93 LALI 128 TU K4TZ CQ C": the callers' own calls and exchanges, and K4TZ's "TOM 1993" and "TU K4TZ CQ"
+  38 to 50 Hz away. K4TZ's own row (track 7) read the callers' "KK4E DON 3654", "VE3NE", "LALI 128" in turn.
+- **Standard practice.** Crosstalk detection in multichannel meeting recordings: a stretch on one channel is another talker's when
+  the two channels' signals correlate there and the other channel holds it louder (Pfau, Ellis and Stolcke 2001, ICSI meeting
+  recorder; Wrigley, Brown, Wan and Renals 2005, IEEE Trans. Speech and Audio Processing). Here the copy test's ρ and own power on a
+  symbol's stretch, and K_S > K_W as "louder". CW Skimmer's own rule for this is not documented (not verified).
+- **own 0.25, 0.5, 1.0** (the owner's file, sources proven, every attributed symbol counted hidden, the first form): shown twice 747
+  (off) to 228, 179, 142; tracks showing it 8 times or more 49 to 15, 7, 3. At 1.0 W4RN's own call ("W 4") was hidden, no other row
+  showing it. 0.5: heuristic, chosen by measurement.
+- **The twin, and stretches whole.** In the first form every attributed symbol was left out and skipped. On the strong pairs' fresh
+  seed that lost UA8B (a true call): its own track, 11 dB re the floor per fine bin, read "CQ CQ DE UA8B UA8B NR 339 339 K" cleanly,
+  and its symbols were given to a track 38 Hz away that heard its keying more strongly (K_S > K_W) and read it as junk beside a
+  stronger neighbor ("CQ CQLQA8<BK>A8/NA,63 353 K"): a second reading better than the source's. A stretch is now left out (and skipped, in the stage's
+  variant) only where the source holds every symbol of it; UA8B came back. Twins' offsets (the owner's file, symbols attributed with a same-text symbol on
+  the source within 1 s): 83% within 10 ms, 86% within 25 ms, 88% within 50 ms (measured); 25 ms is the duplicate rule's (heuristic).
+- **Sources any, not only proven.** With the twin rule a source's text must be the same to leave a stretch out, and the list asks the
+  source's row to be listed: the owner's file's shown twice 233 with proven sources only, 178 with any (both with the choice by
+  highest ρ below; 179 by largest K_S). Any: heuristic, chosen by measurement.
+- **The loudest owns it.** Of the first form's choice by highest ρ, a caller 57 Hz below K4TZ on the owner's file (track 655) had
+  K4TZ's "TU K4TZ CQ" given to another caller's track, 95 Hz from it, which heard K4TZ too; by largest K_S it goes to K4TZ's, which
+  holds it, and the row reads "3 LALI P K".
+- **The default, the five real recordings, off to on** (6dd5c49; the engine's text and attributions as at c18c087): shown twice 747 to
+  181 (owner), 611 to 193 (W3OA), 556 to 153 (KC2LRC-1), 331 to 102 (KC2LRC-2), 924 to 285 (N2GZ), 68% to 76% fewer; tracks showing it
+  8 times or more 49 to 10, 40 to 16, 42 to 7, 28 to 5, 56 to 27. Symbols left out on proven tracks 526, 415, 403, 229, 638, none with
+  no shown twin. **What the measure does not see** (A.11): symbols given to a proven neighbor and still shown, on proven tracks,
+  301 of 827 (owner), 1 044 of 1 459, 333 of 736, 288 of 517, 819 of 1 457; of them 172, 754, 193, 148, 479 have no symbol of the same
+  text on the neighbor within 1 s: the neighbor's keying read otherwise on the weaker row, still shown there. The headline is exact
+  twins, not every trace of a neighbor the owner may see. The owner's +9 885 Hz row in the app (desktop): "E4TID KK4E N3 KK4E DON
+  3654 K K: VE3NE N93 LALI 128".
+- **Stretches, not whole words, in the list:** asking a left-out stretch to be whole words (as the stage's variant does) leaves more
+  shown twice: 181 to 265 (owner), 193 to 218, 153 to 163, 102 to 121, 285 to 320. The list keeps stretches (chosen by measurement);
+  fragments such as "K K:" stay where part of a word is the neighbor's.
+- **Counts reconciled** (review 18's independent count: 181, 526 left out, 0 with no shown twin): c18c087's figures (179, 529, 2)
+  came from a measure that did not ask the twin on the source's row not to be left out itself, as `shown_by` does; with that
+  condition they are the review's. The review's 171 against 172 (owner) symbols with no same-text symbol within 1 s, and 748 / 191 /
+  475 against 754 / 193 / 479 elsewhere, differ at that window's edges (not traced further).
+- **Calls** (the RBN judge, A.12): with the stage reading every symbol (the default since review 18) every reported call and every
+  field of it is the same with attribution on and off: the owner's file 41 / 21 / 20 (calls / confirmed / unconfirmed), the four 2017
+  recordings 417 / 200 / 217, the generated sets 1 077 true and 3 false calls. The stage's skip, a variant, changed fields (A.12); its
+  first form also changed five calls, none confirmed (W3OA N4I gone; KC2LRC-2 W6YX, spotted that day, gone and K5X come; N2GZ K4T for
+  K4N).
+- **0.5 s, ρ 0.5, 23 blocks, 30 s:** heuristics, not varied; ρ the copy test's; 30 s past the decoder's corrections' reach, 20 s.
+
+**Limitations.**
+
+- Per symbol: a word can be split, part shown and part left out (K4TZ's row on the owner's file: "4" and "VE" of the callers'
+  KK4E and VE3NE).
+- A stretch the source reads otherwise stays on both rows, read two ways; a stretch whose source's row is never listed stays too.
+- The loudest passing neighbor is not always the station's own: in a unit scene (a runner, callers 30 and 60 Hz above, tried for
+  review 18) the 60 Hz track's copy of the runner went mostly to the 30 Hz track: the runner's track did not pass the test there, or
+  did not hold the window (not traced). The list then leaves it out where
+  that track's row holds it, so the text shows on the runner's row and on the nearer copy's.
+- A correction re-sent after the source's channel closed is not attributed again: what it re-sends shows on W's row.
+- The judge (section 10), the callsign stage by default and the benchmark's scores read every symbol: the test set's scores and the
+  call list do not change by construction.
+- CPU (the Linux machine, one thread, ten runs at once, off and on side by side, process CPU, user and system): 1 475.84 to
+  1 469.31 CPU-s over the five recordings' 240 768 channel-seconds, 6.130 to 6.103 ms per channel-second, each recording within
+  ±1.3% (owner 6.45 to 6.48 ms, N2GZ 6.47 to 6.39 ms): a symbol's test is about 60 products per neighbor, 2 to 3 symbols a second.
+  The app on the owner's file (desktop, 3 threads, full speed): 6.40 to 6.38 ms per channel-second.
 ## A.7 Channelizer
 
 ### Exact form
@@ -4225,6 +4341,20 @@ ln(1/32)); a winning gap at a node holding a symbol appends that symbol. Probabi
 
 **Bench.** `--decoder segmental`; `--set` as A.11 ("Bench settings"). Oracle channels follow the label's frequency, as viterbi's.
 
+### What a score is (moved from the body, 2026-11-17)
+
+The prior is a real generative model and the search a MAP
+search under it. The likelihood is a stated approximation, and scores are not
+probabilities: (1) *Empirical Bayes:* P̂ is a posterior under an auxiliary model
+(a key with no timing), not under the search's fist and text. (2) *Data used
+twice:* a sample's neighbors shape P̂ and each is scored again, so Σ L1 is a
+composite likelihood, a product of conditionals, not a chain rule; the frame
+leaves out 8 samples, and noise correlated over 5 leaks at its edges. (3)
+*Marginals per sample:* ln Σ_l per sample, where one amplitude over a mark would
+be ln Σ_l Π_k; a broad belief understates a consistent mark. (4) *No charge for
+the level:* a new over pays nothing for it, and nothing charges a drop inside a
+mark.
+
 ### Filter scales and fists (segmental)
 
 **The scale** (`at_filter_scale(config, m)`, m ≥ 1 and whole; m = 1 returns the configuration as is). Sample interval, the filter's dot `front_dot_s` and the fastest dot `dot_min_ms` × m; `speed_count` − round(ln m / ln 1.1): 25 and 20 speeds at m = 2 and 3, so the slowest dot is 236 and 220 ms against 230 ms (derived). Frame = ⌈21.33 ms / (Δm)⌉ samples: 4 samples (21.33 ms) at m = 2, 3 samples (24 ms) at m = 3. Look-ahead and commit: the nearest whole frames to 170.67 ms: 8 frames (170.67 ms), 7 frames (168 ms). The floor's stride and refresh × m (21.33 ms and 192 ms; 32 ms and 288 ms). Ceiling `filter_scale_ceiling`, 300. Everything else as configured: beam 15 nats, f, the walk in nepers per √s, the key's 30 s⁻¹ (0.16 and 0.24 per sample). A sample is committed 32 to 63 samples after it arrives at m = 2 (170.7 to 336 ms), 21 to 41 at m = 3 (168 to 328 ms); with the search's 17 samples the evidence lags at most 0.43 s and 0.46 s (derived).
@@ -4393,7 +4523,7 @@ values suggest: at the sender's dot with no stretch a 7-dot gap scores about 3.2
 σ 0.3, medians 3 and 7 dots: (ln 7/3)² / (2 × 0.09) = 3.99 nats, less the costs, 1.161 − 0.396 nats; derived in review 10). An entry shared
 by several stories takes the least deficit any of them saw, an underestimate for the best story. Births and rescues offer their first
 mark's end at every fist, so stories at other speeds meet there; otherwise a rival at another speed meets the winner only at the over's
-end. Scores are not probabilities (8e, "What a score is"), so p is a ranking, not calibrated. A margin is how close the decoder came to
+end. Scores are not probabilities (A.8e, "What a score is"), so p is a ranking, not calibrated. A margin is how close the decoder came to
 another reading, not whether the station sent what it read: a call an operator sent wrong reads sure.
 
 ### The segmental decoder behind the engine
@@ -4461,7 +4591,7 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 
 **Holds (`SignalDetector::retire`, `close_place`).** Every retirement removes the track; one with hold_s > 0 also holds its place. The first one within D (30 Hz) of a place among the holds kept (`first_retirement_open` 2) records the place with count 0 and no hold, and logs nothing; otherwise it closes radius D and logs (f, t). If at least 4 logged retirements in the last 60 s lie within 750 Hz of f, it also closes radius 750 Hz from 30 s. Closing: find a hold of that radius within that radius; if none, new, count 0. If count = 0 or now ≥ until, count + 1. Then until = max(until, now + min(hold_s × 2^(count−1), 120 s)). A hold is forgotten once open for 120 s. New peaks inside a running hold of either radius are skipped; a live track there stays.
 
-**List (`TrackTable::set_plausible_only`).** A new row is hidden until `text_evidence(row).plausible()`, then listed for good. A new track within 30 Hz (`kSamePlaceHz`, the detector's D) of an ended row, listed or hidden, goes on with it after a word space, and its corrections start after the earlier tracks' symbols. Rows ended over 60 s ago leave. Past 4 256 symbols a row drops its oldest 256; the report and `--decoded` then hold a long row's end only.
+**List (`TrackTable::set_plausible_only`).** A new row is hidden until `text_evidence(row).plausible()`, then listed for good. A new track within 30 Hz (`kSamePlaceHz`, the detector's D) of an ended row, listed or hidden, goes on with it after a word space, and its corrections start after the earlier tracks' symbols. Rows ended over 60 s ago leave. Past 4 256 symbols a row drops its oldest 256; the report and `--decoded` then hold a long row's end only. A row leaves out a stretch its tracks heard from a neighbor where the neighbor's listed row holds it, and a hidden row that ends as a copy with text of its own waits as a faded one (A.6, "A neighbor's text"); the report and `--decoded` hold what the rows show.
 
 **Overflow.** `SdrplaySource::read`: when the driver's callback finds no room it sets a flag, and the next read empties the ring and counts the samples as lost. So one gap, not a click each read.
 
@@ -4684,6 +4814,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Keying sidebands, segmental's path (off elsewhere) | a bin at +10 dB re the peak within ±150 Hz whose mirror stands within 3 dB of the peak | `sideband_db`, `sideband_mirror_db`, `sideband_radius_hz` | heuristic (values); derived (the symmetry) |
 | First retirement at a place, segmental's path (off elsewhere: 0) | leaves it open; the next closes it as a first hold | `EngineConfig::first_retirement_open` = 2 | heuristic, chosen by measurement |
 | Copies of a neighbor, segmental's path (off elsewhere: 0 s) | window 6 s (281 blocks of 21.33 ms), high-pass 0.5 s; ρ ≥ 0.5, β ≤ 1, own ≤ 0.25 (linear, power); source older, proven, within 150 Hz, 15 dB or more above at the detector; no hold | `EngineConfig::copy_window_s`, `copy_detrend_s`, `copy_rho`, `copy_gain_max`, `copy_own_snr_max`, `copy_older_only`, `copy_source_proven`, `copy_radius_hz`, `copy_level_db` | forms derived (ρ, β ≤ 1, own); values heuristic, chosen by measurement (ρ, own, level, older, proven) or not varied (6 s, 0.5 s, 150 Hz, no hold) |
+| A neighbor's text, segmental's path (off elsewhere: 0 s) | a symbol's span ± 0.5 s, at least 0.5 s (23 blocks of 21.33 ms), high-pass 0.5 s; ρ ≥ 0.5, K_W < K_S, own ≤ 0.5 (linear, power); any source within 150 Hz, the loudest (largest K_S) of several; envelopes kept 30 s | `EngineConfig::attribute_pad_s`, `attribute_min_s`, `attribute_rho`, `attribute_own_max`, `attribute_source_proven`, `attribute_radius_hz`, `attribute_history_s` | forms derived (ρ, own, K_W < K_S, the loudest); own and any source chosen by measurement; the rest heuristic, not varied |
 | Level-scaled exclusion (a variant, off) | no track within 30 Hz × 10^((ΔL − 12 dB)/20) of one ΔL dB stronger, at most 150 Hz | `DetectorConfig::skirt_exclusion_db` (0 = off), `skirt_exclusion_hz`, `skirt_exclusion_radius_hz` | 6 dB per doubling derived (1/f²); 12 dB, 30 Hz heuristic; dropped by measurement (A.6) |
 | Replay | 2 s, 94 past blocks | `EngineConfig::replay_s` | heuristic |
 | Replay's rate | 100 tracks/s, 2.13 per block | `EngineConfig::replay_tracks_per_s` | heuristic |
@@ -4694,7 +4825,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Text test | floor −12, plausible −6, tiny junk +8, garbage junk +6 nats; q fitted | `kTextFloorNats`, `kPlausibleNats`, `kTinyJunkNats`, `kGarbageJunkNats`, `kTinyShares` | heuristic (the bound is derived, for the models only) |
 | Holds | place ±D (30 Hz on segmental's path), 8 s, doubling to 120 s; a repeat only after the hold's end; forgotten after 120 s open | `TrackJudge::kHoldS`, `SignalDetector::kLongestHoldS` | heuristic |
 | Region | 4 retirements within 750 Hz in 60 s close ±750 Hz, 30 s up | `kRegionRetirements`, `kRegionRadiusHz`, `kRegionMemoryS`, `kRegionHoldS` | heuristic |
-| List | ended rows 60 s; same place 30 Hz (the segmental path's D); about 4 000 symbols a row | `TrackTable::kRetainEndedS`, `kSamePlaceHz`, `kMaxRowSymbols` | heuristic |
+| List | ended rows 60 s; same place 30 Hz (the segmental path's D); about 4 000 symbols a row; a stretch heard from a neighbor left out whole where the neighbor's listed row holds every symbol of it within 25 ms; rechecked within 300 Hz and 30 s | `TrackTable::kRetainEndedS`, `kSamePlaceHz`, `kMaxRowSymbols`, `kTwinS`, `kRecheckHz`, `kRecheckS` | heuristic; 25 ms the duplicate rule's, twins' offsets measured (A.6) |
 | Ring | at least 4 s; 5.46 s at each radio rate | `SdrplaySource::kRingS`, `SpscRing` | 4 s heuristic; 5.46 s derived |
 | Budget | shed above 1 s, grown over 2 checks 1 s apart (margin 0.05 s below 0.25 s), over 8 tracks, to ¾; back by 5 per 5 s below 0.25 s | stream_runner.cpp | heuristic |
 | Silence | 5 s | `DeliveryWatch::kStalledAfterS` | heuristic |
@@ -4708,6 +4839,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: a word named | no exception: 2 points, as any word (1, `call-1` to `rob-1`: a whole or glued word named by another passed alone) | `points_named` | standard practice (CW Skimmer's Normal level, secondhand through the RBN's 2021 post), checked by measurement (A.12) |
 | Callsign stage: places pooled | a call's readings add over the band, one per transmission (overlap in time), leaving out places where a variant holds it; the same support decides report and withdrawal | `pool_places` 1 | heuristic motivated by the evidence rule (readings at several places are not independent when a misreading is systematic); scope (the band, `window_s`) a choice; on by measurement (A.12) |
 | Callsign stage: glued pieces | each piece of a glued word has its own characters' times (K1ABCK1ABC: two readings) | `glued_pieces_timed` 1 | derived from the evidence rule (A.12) |
+| Callsign stage: a neighbor's text | every symbol read (default); a variant skips a stretch with `heard_from` that is whole words and whose neighbor's track holds every symbol of it within 25 ms | `skip_neighbors_text` 0, `neighbor_twin_s` 0.025 s | chosen by measurement: the variant changed 12 calls' fields, no call (A.12) |
 | Callsign stage: tiny calls | whole words only, 2 of them, listed or not; 0 leaves them unread | `tiny_points` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a call that starts another | held as a variant at distance 1 (0: by edit distance alone) | `prefix_held` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: withdrawal | pooled (the default): when its pooled support no longer passes; with `pool_places` 0: by a rival better at its best, or a local defeat with no pass elsewhere beyond 150 Hz (0: any local defeat) | `withdraw_own_place` | heuristic, by a hand test and measurement (A.12) |
@@ -4730,6 +4862,13 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
   copied symbols are counted as 0). Two decoders behind like filters read one station's
   characters at the same times; an independent station's do not line up. Heuristics: 25 ms is about half a dot at 25 WPM. Short
   junk tracks on wide signals, retired as not Morse, count as duplicates of one another too.
+- **Text shown twice** (copy-2's measure on real recordings, results analysis, not the engine's test): two tracks within 150 Hz
+  of each other (at birth or at the end), alive at the same time, both proven when they end (`TrackEvent::proven`, the judge's: the
+  tracks a list shows); a symbol (not a word space) of one and a symbol of the other are *printed twice* when their texts are equal
+  and their starts and their ends each lie within 25 ms (the duplicate rule's match, without its level); *shown twice* when the
+  list's rule (A.6, "A neighbor's text") leaves neither out, the source's listing read as its being proven. It sees exact twins only:
+  a neighbor's keying read otherwise on the weaker row is not counted; A.6 gives that residual beside it. Counted once per pair of symbols. Heuristic, as the duplicate rule. It counts junk rows' junk too,
+  where they are proven.
 - **Ghost cells** (det-2's scratch generator over `kz4ap_synth`, 48 kHz, one seed): QSOs of three signals, A's CQ at the slot, B's
   answer 30 to 130 Hz away (12 to 18 dB S500), then A's long over (110 characters); A at 5 to 36 dB S500; jittered cells of offset
   (30, 45, 60, 80, 100, 130 Hz) and A's level (5, 12, 20, 28, 36 dB S500), three QSOs a cell; machine keying, 18 to 32 WPM. A
@@ -5243,6 +5382,15 @@ review 10). Only the variant `known_margin_nats` reads it.
 
 **No form.** A call with no digit after a letter-digit prefix (D4C, E7DX, C6AGU, P3F, T6A, J6M) does not parse, and so is never read, with a list or without. About 90 calls of MASTER.SCP have this form, among them busy contest and expedition stations (review 5; on the backlog).
 
+**A neighbor's text.** By default (`skip_neighbors_text` 0) every symbol is read, `heard_from` or not. With the variant 1, in `read_track`, a *stretch* (consecutive symbols with a
+`heard_from`, no word space among them; A.6, "A neighbor's text") is skipped when every symbol of it has a twin in the named
+neighbor's `TrackText`: the same text, start and end each within `neighbor_twin_s` 0.025 s, and when it is whole words: a word's end
+(word space, prosign, punctuation, the text's end) on either side. A word only partly heard from a neighbor is read whole (review 18:
+on KC2LRC-2 W7QDM's own "TEST W7QDM" had its "TES" given to a track 27 Hz away, and the reading lost its role of sender). `words_of(symbols,
+skip)` then ends a word at a skipped symbol and puts it in no word. A stretch with a symbol untwinned, or whose neighbor's track has ended (its text
+gone from the stage), is read as the track's own. The track's own words stay whole; the neighbor's text is read on the neighbor's
+track. A rereading after a correction is triggered by a change of text only, not of `heard_from`.
+
 **Readings of the word at i,** which are alternatives; the evidence decides.
 
 1. *Whole:* the word parses, unless it ends in CQ with a call before that, or in DE with a call before that and another, different call
@@ -5384,7 +5532,13 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
 
 **Not taken:** `near_factor` (a call's near variants adding to its points: 217 true and 3 to 11 false on the contest, but 24 to 76 rows on real 40 m); a call before UP at 1 point (does not bring E51MWA back when the word is lost); CW Skimmer's 1 repetition for a listed call on real MASTER.SCP (1 true for 3 false on real 40 m; review 5). In `call-2`, on the two tuned 2017 recordings without a list (int-1's rules 97 / 49, `call-2`'s 97 / 45): a word named once to pass only at a margin of 0.05, 0.1, 0.2, 0.5 or 1 nat (0.5 nat: 95 / 36, and on the contest 216 / 4 against 220 / 6; 0.05 nat: the contest 219 / 5, but W4BOH, confirmed, lost on W3OA); a whole word of margin under 0.2, 0.5, 1 or 2 nats scoring 0.5 or 0.75 point (0.5 nat at 0.5 point, without the short pairs: 92 / 29, the contest 206 / 3); no word named alone at all (85 / 22, the contest 210 / 2; taken in `rob-1` with pooled points, above); a call named once held while a reported call one edit from it stands anywhere in the band (96 / 42: one confirmed call fewer, three misreadings fewer). Each takes confirmed calls with the misreadings: the margin of a correct named word is often under 0.5 nat too (W4BOH 0.00, N1XI 0.22), and wrong ones can be sure (K8VC, W6UM).
 
-### Limitations
+- `skip_neighbors_text` 0 (copy-2, review 18): with attribution on, every call and every field of it (frequency, points, count, heard,
+  framed, times) as with it off, on the five real recordings (by construction: the stage reads no `heard_from`). The variant 1 with the
+  twin and whole-word rules gained and lost no call there but changed 12 calls' fields (9 frequencies, among them K7D 11.6 kHz and W1UJ
+  15.6 kHz; 5 framings, K1LT confirmed on N2GZ among them; 2 point totals): a skipped word's reading counts on the neighbor's track
+  only where that track's words around it match, and otherwise the call's best place and frame move. Before the whole-word rule it
+  also took W7QDM's role of sender (KC2LRC-2, "TEST W7QDM" with "TES" given to a track 27 Hz away). Off: chosen by measurement; the
+  stage already counts readings that overlap in time within 300 Hz once.
 
 - A call read only once, anywhere in the band, is not reported without a list: that is the rule (since `rob-1` named or not; before it, named words passed alone). On W3OA, of the 13 calls CW Skimmer lists that the RBN confirms and `main` (d44c7d6) did not, 5 were read as one transmission (K5LN after a fragment 5LN, N4KGL and NZ9Z signing, VE3KP bare, KQ2M on two tracks at once), W0OPW twice as joined letters (1.5 points), K9BGL glued to itself (two readings since `rob-1`), and 5 were never read whole (weak or garbled text: N0AIS as N0AI and 0AIS); CW Skimmer read both repeats where our decoder read one. Reading a fragment beside a whole call (5LN K5LN) as a repeat was tried and dropped (A.12, `rob-1`). On the generated contest it is not the largest loss of callers: of the 78 lost before the rules below (review 5), 45 were never decoded, every one overlapped by a keying station within 150 Hz over at least 30% of its bursts, and 33 were read: 28 once, 1 at 1.5 points, 4 refused before the evidence (SM5NU; N9AZ, EA7UPZ, KB8AKK glued inside a word). The generator's callers key at random over the runner and each other, where a real caller waits his turn, so this overlap is likely overstated (conjecture).
 - Since `rob-1` a word named once does not pass without a list: a caller whose own signal is never read loses his row (the contest 221 to 210 true calls; on the four 2017 recordings 18 confirmed calls and 36 the RBN spotted elsewhere that day, nearly all real callers). With `points_named` 1, as before, a misread call before 5NN was listed: most of the false calls the rules gained on the contest (6 of 7), and about half the misreadings on the 2017 recordings without a list. A row reached by naming shows the namer's frequency. With a list an unlisted caller named once is lost, as is one not on the list at all (the contest with a list of none of its callers: 206 true calls against 216).
