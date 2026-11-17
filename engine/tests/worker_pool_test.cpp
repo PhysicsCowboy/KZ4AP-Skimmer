@@ -1,5 +1,5 @@
 // The channels' worker pool, and what the engine promises with it: the same events in the same order, whatever the threads.
-// Also the segmental decoder as the app uses it: text while the channel runs, with the story's speed.
+// Also the segmental decoder as the app uses it: text while the channel runs, with its text's speed.
 #include "worker_pool.hpp"
 
 #include "kz4ap/decoder_name.hpp"
@@ -174,7 +174,7 @@ TEST(SegmentalInTheEngine, PublishesTextAndSpeedWhileTheChannelRuns) {
     // The channel opens about a second in, so the first word or so is gone; the rest reads exactly.
     EXPECT_NE(read.find("W1AW W1AW K CQ TEST DE W1AW W1AW K"), std::string::npos) << read;
     ASSERT_FALSE(speeds.empty());
-    // 10% is one grid step (speed_ratio 1.1) of slack on either side.
+    // 10% of slack on either side: the text's speed, the median of its letters' own speeds (segmental_decoder.hpp).
     EXPECT_NEAR(speeds.back(), wpm, 0.1 * wpm);
 }
 

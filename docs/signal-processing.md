@@ -478,9 +478,9 @@ the last sample and the whole text is compared. Probability 1 per character (a
 placeholder), and corrections only where text changes. A variant, not the default,
 keeps a margin per symbol from the merges' runners-up (A.8e, "Margins").
 
-*Speed* (the list's): the median of 1.2 s × u/d over the last 16 letters, u a letter's
-units (dot 1, dash 3, 1 between elements), d its first mark's start to its last mark's
-end: a character speed, derived but 16 (heuristic). It moves only with the text.
+*Speed* (the list's): the median of 1.2 u/d WPM over the last 16 letters, u a letter's
+units (dot 1, dash 3, 1 between elements), d in s from its first mark's start to its last
+mark's end: a character speed, derived but 16 (heuristic). It moves only with text.
 
 *Which stream.* At each such comparison, from 1.5 s of the channel's age, the leader is the
 stream with the largest S − F since then: S its best story's score, F a free
@@ -5290,7 +5290,7 @@ named once (W3OA: 107 calls with no list, 74 with MASTER.DTA given as it is, bef
 mode. The app and `kz4ap-calls` print to standard error how many calls they read. `--calls PATH` writes the list as `calls_csv` at the stream's end, with the absolute kHz when the
 center is known and `first_utc`, `last_utc` when the recording's header dates it (A.1). `kz4ap-calls --known PATH --out PATH
 [--center-khz KHZ] [--mirror] [--log PATH | --replay PATH] [--candidates PATH] [--readings PATH] [--set NAME=VALUE]`; the log keeps each
-symbol's probability when below 1 (a fourth element), the readings their margin (nats; −1: unknown). `training/kz4ap_proto/calls_score.py compare` reads a run and
+symbol's probability when below 1 (a fourth element) and each update's speed (`"w"`, WPM; A.9b), the readings their margin (nats; −1: unknown). `training/kz4ap_proto/calls_score.py compare` reads a run and
 another program's list and reports calls in both, in each only, counts, and pairs one letter apart, and keeps of a Reverse Beacon Network
 day file only the spots of given skimmers, a continent, a UTC window, a span and a mode (`--spotter`, `--continent`, `--from`, `--to`,
 `--khz`, `--tx-mode`); `truth` reads a run and a recording's labels and

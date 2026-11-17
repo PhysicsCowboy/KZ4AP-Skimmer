@@ -102,7 +102,9 @@ private:
     // further back goes out at the channel's end (flush compares everything).
     static constexpr std::size_t kPublishTailSymbols = 64;
     // The speed that goes out with the text, WPM, is the median of the last this many published letters' own speeds (letter_wpm).
-    // Heuristic: about 4 s of text at 40 WPM and 10 s at 15; a few junk letters (a burst in the silence read as E) leave it.
+    // Heuristic: 16 letters of PARIS-like text are about 160 units, 4.8 s at 40 WPM and 12.8 s at 15 (derived); being a median,
+    // it follows a change of speed after about 8 new letters (2.4 s at 40 WPM); a few junk letters (a burst in the silence read
+    // as E) leave it. A junk row's speed can fall below the speed grid's slowest (5.2 WPM): its letters' own durations set it.
     static constexpr std::size_t kSpeedLetters = 16;
     // A letter's own speed, WPM: 1.2 s x its units / its duration (PARIS), its units a dot's 1, a dash's 3 and 1 between its elements,
     // its duration from its first mark's start to its last mark's end (DecodedSymbol::start_s, end_s): its marks and element gaps, so
