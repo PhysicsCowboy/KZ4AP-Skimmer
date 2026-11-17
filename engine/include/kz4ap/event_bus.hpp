@@ -18,6 +18,7 @@ struct TrackEvent {
     Kind kind;
     Track track;
     TrackEnd end = TrackEnd::Faded;  // Died: why
+    bool proven = false;  // Died: whether the track judge had found its text plausible (TrackJudge::proven), as a list would show it
 };
 
 struct DecodedTextEvent {

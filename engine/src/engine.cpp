@@ -117,6 +117,10 @@ void apply_path_defaults(EngineConfig& c) {
     // the track holding power of its own of at most a quarter of what the leak and its hiss explain. Heuristics, chosen by
     // measurement; the forms of rho, the gain and the own power derived (docs/signal-processing.md, section 6 and A.6).
     c.copy_window_s = 6.0;
+    // A symbol whose keying, over its own span and 0.5 s either side, is a proven neighbor's, heard more strongly there, is that
+    // neighbor's (DecodedSymbol::heard_from): the copy test's conditions on a stretch of text, where a track that is not a copy still
+    // prints its neighbor's over between its own. Heuristic, chosen by measurement; the forms derived as the copy test's (section 6).
+    c.attribute_pad_s = 0.5;
 }
 
 double oracle_frequency_hz(std::span<const OracleSegment> track, double t_s) {
@@ -161,11 +165,23 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
         !(config_.copy_rho > -1.0 && config_.copy_rho <= 1.0) || !(config_.copy_gain_max > 0.0) || std::isnan(config_.copy_own_snr_max))
         throw std::invalid_argument("copy_window_s, copy_detrend_s and copy_radius_hz must be finite and not negative (s, s, Hz), "
                                     "copy_level_db finite (dB), copy_rho in (-1, 1], copy_gain_max positive and copy_own_snr_max a number");
-    if (!oracle_ && config_.decoder.front_end == FrontEnd::Segmental && config_.judge_tracks && config_.copy_window_s > 0.0) {
-        const double block_s = static_cast<double>(hop_) / config_.sample_rate;
-        copy_blocks_ = std::max<std::size_t>(2, static_cast<std::size_t>(std::lround(config_.copy_window_s / block_s)));
-        detrend_blocks_ = std::max<std::size_t>(1, static_cast<std::size_t>(std::lround(config_.copy_detrend_s / block_s)));
-        block_samples_ = std::max<std::uint64_t>(1, static_cast<std::uint64_t>(std::lround(channelizer_.output_rate() * block_s)));
+    if (!(config_.attribute_pad_s >= 0.0) || !std::isfinite(config_.attribute_pad_s) || !(config_.attribute_radius_hz >= 0.0) ||
+        !(config_.attribute_rho > -1.0 && config_.attribute_rho <= 1.0) || std::isnan(config_.attribute_own_max) ||
+        !(config_.attribute_min_s >= 0.0) || !std::isfinite(config_.attribute_min_s) || !(config_.attribute_history_s > 0.0) ||
+        !std::isfinite(config_.attribute_history_s))
+        throw std::invalid_argument("attribute_pad_s, attribute_min_s and attribute_radius_hz must be finite and not negative (s, s, Hz), "
+                                    "attribute_rho in (-1, 1], attribute_own_max a number and attribute_history_s finite and positive (s)");
+    const bool judged = !oracle_ && config_.decoder.front_end == FrontEnd::Segmental && config_.judge_tracks;
+    if (judged && (config_.copy_window_s > 0.0 || config_.attribute_pad_s > 0.0)) {
+        block_s_ = static_cast<double>(hop_) / config_.sample_rate;
+        detrend_blocks_ = std::max<std::size_t>(1, static_cast<std::size_t>(std::lround(config_.copy_detrend_s / block_s_)));
+        block_samples_ = std::max<std::uint64_t>(1, static_cast<std::uint64_t>(std::lround(channelizer_.output_rate() * block_s_)));
+        if (config_.copy_window_s > 0.0)
+            copy_blocks_ = std::max<std::size_t>(2, static_cast<std::size_t>(std::lround(config_.copy_window_s / block_s_)));
+        if (config_.attribute_pad_s > 0.0) {
+            heard_blocks_ = static_cast<std::size_t>(std::lround(config_.attribute_history_s / block_s_)) + 1;
+            heard_min_blocks_ = std::max<std::size_t>(2, static_cast<std::size_t>(std::lround(config_.attribute_min_s / block_s_)));
+        }
     }
     replay_on_ = !oracle_ && config_.decoder.front_end == FrontEnd::Segmental && config_.replay_s > 0.0;
     if (replay_on_) {
@@ -382,6 +398,11 @@ void Engine::replay_channel(std::uint32_t id, Channel& channel, std::size_t bloc
     const std::deque<Channelizer::Past>& past = channelizer_.past();
     for (std::size_t i = 0; i < std::min(blocks, past.size()); ++i) {
         DecodeUpdate update = decode_block(id, channel, past[i].block, &past[i]);
+        if (heard_blocks_ > 0) {
+            // The replay's keying too: its text is attributed as the live text is (the copy test reads live blocks only).
+            const double heard = channel.decoder->block_envelope_fs2();
+            if (heard >= 0.0) channel.heard.push(past[i].block.first_index / block_samples_, static_cast<float>(heard));
+        }
         if (!update.chars.empty() || !update.corrections.empty()) channel.replayed.push_back(std::move(update));
     }
 }
@@ -394,10 +415,13 @@ void Engine::process_channel(std::uint32_t id, Channel& channel, const Channeliz
         replay_channel(id, channel, channelizer_.past().size() - 1);
     }
     channel.update = decode_block(id, channel, block, nullptr);
-    if (copy_blocks_ > 0) {
+    if (copy_blocks_ > 0 || heard_blocks_ > 0) {
         // One value a live block, numbered by the block's place in the stream, so that neighbors' values line up.
         const double heard = channel.decoder->block_envelope_fs2();
-        if (heard >= 0.0) channel.envelope.push(block.first_index / block_samples_, static_cast<float>(heard));
+        if (heard >= 0.0) {
+            if (copy_blocks_ > 0) channel.envelope.push(block.first_index / block_samples_, static_cast<float>(heard));
+            if (heard_blocks_ > 0) channel.heard.push(block.first_index / block_samples_, static_cast<float>(heard));
+        }
         channel.envelope_noise_fs2 = channel.decoder->block_noise_fs2();
     }
 }
@@ -489,6 +513,7 @@ void Engine::open_channel(const Track& track, int bin) {
     channel.replay_waiting = replay_on_;
     channel.detector_snr_db = track.snr_db;
     channel.envelope = EnvelopeHistory(copy_blocks_);
+    channel.heard = EnvelopeHistory(heard_blocks_);
     channel.cut_in.resize(static_cast<std::size_t>(channelizer_.channel_bins()));
     channel.cut_out.resize(static_cast<std::size_t>(channelizer_.channel_bins()));
     // The new decoder's channel follows the detector (plan O2: its channels only).
@@ -575,12 +600,59 @@ void Engine::close_channel(std::uint32_t id, TrackEnd end) {
     const auto it = channels_.find(id);
     if (it == channels_.end()) return;
     publish_update(id, it->second.decoder->flush());
-    bus_.publish(Event{TrackEvent{TrackEvent::Kind::Died, it->second.track, end}});
+    bus_.publish(Event{TrackEvent{TrackEvent::Kind::Died, it->second.track, end, it->second.judge.proven()}});
     channels_.erase(it);
+}
+
+void Engine::attribute(std::uint32_t id, DecodeUpdate& update) const {
+    if (heard_blocks_ == 0 || (update.chars.empty() && update.corrections.empty())) return;
+    const Channel& w = channels_.at(id);
+    if (w.heard.size() == 0 || !(w.envelope_noise_fs2 > 0.0)) return;  // an unknown hiss: no own power, nothing attributed
+    // The neighbors that may own a symbol: within the radius, and reading Morse themselves, so that their own rows show the text.
+    thread_local std::vector<std::pair<std::uint32_t, const Channel*>> near;
+    near.clear();
+    for (const auto& [other_id, other] : channels_) {
+        if (other_id == id || other.heard.size() == 0 || (config_.attribute_source_proven && !other.judge.proven())) continue;
+        if (!(std::abs(other.detector_freq_hz - w.detector_freq_hz) <= config_.attribute_radius_hz)) continue;
+        near.emplace_back(other_id, &other);
+    }
+    if (near.empty()) return;
+    thread_local std::vector<float> weak, strong;
+    const auto block_of = [&](double t_s) { return static_cast<std::int64_t>(std::floor(t_s / block_s_)); };
+    const auto heard_from = [&](const DecodedSymbol& symbol) -> std::uint32_t {
+        if (symbol.text == " ") return 0;  // a word space: the gap between words, whoever's they are
+        // The symbol's span and attribute_pad_s either side, within the blocks W holds.
+        const std::int64_t oldest = static_cast<std::int64_t>(w.heard.oldest_block());
+        const std::int64_t newest = static_cast<std::int64_t>(w.heard.newest_block());
+        const std::int64_t first = std::max(oldest, block_of(symbol.start_s - config_.attribute_pad_s));
+        const std::int64_t last = std::min(newest, block_of(symbol.end_s + config_.attribute_pad_s));
+        if (last < first || static_cast<std::size_t>(last - first + 1) < heard_min_blocks_) return 0;
+        if (!w.heard.range(static_cast<std::uint64_t>(first), static_cast<std::uint64_t>(last), weak)) return 0;
+        std::uint32_t best = 0;
+        double best_rho = -2.0;
+        for (const auto& [other_id, other] : near) {
+            if (!other->heard.range(static_cast<std::uint64_t>(first), static_cast<std::uint64_t>(last), strong)) continue;
+            const KeyingCoherence k = keying_coherence(weak, strong, detrend_blocks_);
+            // Coherent keying, heard more strongly on S's channel than on W's: S's station, in W's channel through its skirt.
+            if (!(k.rho >= config_.attribute_rho) || !(k.weak_keying < k.strong_keying)) continue;
+            // W's own power, what neither S's leak nor its hiss explains, re what they do: about 0 when W's own station is silent.
+            const double explained = k.gain * k.strong_mean + w.envelope_noise_fs2;
+            if (config_.attribute_own_max >= 0.0 && !((k.weak_mean - explained) / explained <= config_.attribute_own_max)) continue;
+            if (k.rho > best_rho) {
+                best_rho = k.rho;
+                best = other_id;
+            }
+        }
+        return best;
+    };
+    for (DecodedSymbol& symbol : update.chars) symbol.heard_from = heard_from(symbol);
+    for (TextCorrection& correction : update.corrections)
+        for (DecodedSymbol& symbol : correction.chars) symbol.heard_from = heard_from(symbol);
 }
 
 void Engine::publish_update(std::uint32_t id, DecodeUpdate&& update) {
     if (update.chars.empty() && update.corrections.empty()) return;  // Envelope and Matched: corrections always empty
+    attribute(id, update);
     const auto& channel = channels_.at(id);
     bus_.publish(Event{DecodedTextEvent{id, channel.track.freq_hz, std::move(update.chars), update.wpm,
                                         update.confidence, std::move(update.corrections)}});

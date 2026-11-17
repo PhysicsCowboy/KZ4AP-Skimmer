@@ -329,3 +329,99 @@ TEST(TrackTable, ARowsRevisionMovesWithWhatItShows) {
     table.apply(died);
     EXPECT_NE(table.rows()[0].revision, with_text);  // an ended row reads gray
 }
+
+// ---- A neighbor's text (DecodedSymbol::heard_from) ----
+
+namespace {
+
+// Symbols each heard from `from` (0: the track's own).
+std::vector<DecodedSymbol> heard(const std::vector<std::string>& texts, std::uint32_t from) {
+    std::vector<DecodedSymbol> out = symbols(texts);
+    for (DecodedSymbol& s : out) s.heard_from = s.text == " " ? 0 : from;
+    return out;
+}
+
+DecodedTextEvent text_of(std::uint32_t id, double freq_hz, std::vector<DecodedSymbol> chars) {
+    return DecodedTextEvent{id, freq_hz, std::move(chars), 0.0f, 1.0f};
+}
+
+std::vector<DecodedSymbol> joined(std::vector<DecodedSymbol> a, const std::vector<DecodedSymbol>& b) {
+    a.insert(a.end(), b.begin(), b.end());
+    return a;
+}
+
+}  // namespace
+
+TEST(TrackTableNeighborText, ARowLeavesOutWhatItHeardFromAListedNeighborAndShowsItsOwn) {
+    TrackTable table;
+    table.set_plausible_only(true);
+    table.apply(born(1, 2000.0));  // the runner
+    table.apply(text(1, 2000.0, {"C", "Q", " ", "T", "E", "S", "T", " ", "W", "1", "A", "W"}));
+    table.apply(born(2, 2045.0));  // his caller, whose channel hears him too
+    table.apply(text_of(2, 2045.0, joined(symbols({"K", "Q", "2", "R", "P", " "}), heard({"5", "N", "N", " ", "C", "T"}, 1))));
+    table.apply(text_of(2, 2045.0, joined(symbols({" ", "T", "U", " ", "M", "A"}), {})));
+    ASSERT_EQ(table.rows().size(), 2u);
+    EXPECT_EQ(table.rows()[1].id, 2u);
+    EXPECT_EQ(table.rows()[1].text(), "KQ2RP TU MA");
+    EXPECT_EQ(table.rows()[1].text_tail(6), " TU MA");
+    // The symbols stay, so that corrections land where the decoder means them.
+    EXPECT_EQ(table.rows()[1].symbols.size(), 18u);
+}
+
+TEST(TrackTableNeighborText, AStretchBetweenOwnWordsBecomesOneWordSpace) {
+    TrackRow row;
+    row.symbols = {"K", "1", "A", "B", "C", "T", "U", "K", "4", "T", "Z", " ", "C", "Q"};
+    row.heard_from = {0, 0, 0, 0, 0, 7, 7, 7, 7, 7, 7, 0, 0, 0};
+    row.left_out = {0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0};
+    EXPECT_EQ(row.text(), "K1ABC CQ");
+    row.left_out.assign(row.symbols.size(), 0);
+    EXPECT_EQ(row.text(), "K1ABCTUK4TZ CQ");
+    // Left out at the start: no space in front.
+    row.left_out = {1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    EXPECT_EQ(row.text(), "TUK4TZ CQ");
+}
+
+TEST(TrackTableNeighborText, WhatItHeardIsShownUntilTheNeighborsRowIsListedAndLeftOutFromThen) {
+    TrackTable table;
+    table.set_plausible_only(true);
+    table.apply(born(1, 2045.0));  // the caller's track, listed first
+    table.apply(text(1, 2045.0, {"K", "Q", "2", "R", "P", " "}));
+    ASSERT_EQ(table.rows().size(), 1u);
+    table.apply(born(2, 2000.0));  // the runner's, not listed yet: what the caller's channel heard of him shows there
+    table.apply(text_of(1, 2045.0, heard({"W", "1", "A", "W"}, 2)));
+    EXPECT_EQ(table.rows()[0].text(), "KQ2RP W1AW");
+    const std::uint64_t revision = table.rows()[0].revision;
+    table.apply(text(2, 2000.0, {"W", "1", "A", "W", " ", "T", "E", "S", "T"}));
+    ASSERT_EQ(table.rows().size(), 2u);
+    const TrackRow& caller = table.rows()[*table.row_of(1)];
+    EXPECT_EQ(caller.text(), "KQ2RP ");
+    EXPECT_NE(caller.revision, revision);
+}
+
+TEST(TrackTableNeighborText, ACopysHiddenRowWithTextOfItsOwnWaitsAsAFadedOnes) {
+    // A caller's track that read its own call and then its runner, retired as the runner's copy before its text was listed.
+    TrackTable table;
+    table.set_plausible_only(true);
+    table.apply(born(1, 2000.0));
+    table.apply(text(1, 2000.0, {"T", "E", "S", "T", " ", "W", "1", "A", "W"}));
+    table.apply(born(2, 2045.0));
+    table.apply(text_of(2, 2045.0, joined(symbols({"N", "4", " "}), heard({"T", "U", " ", "W", "1", "A", "W"}, 1))));
+    ASSERT_EQ(table.hidden().size(), 1u);
+    TrackEvent copy = died(2);
+    copy.end = TrackEnd::Copy;
+    table.apply(copy);
+    ASSERT_EQ(table.hidden().size(), 1u);
+    EXPECT_FALSE(table.hidden()[0].live());
+    // Its next track at the place goes on with it.
+    table.apply(born(3, 2050.0));
+    table.apply(text(3, 2050.0, {"N", "4", "Z", "Z"}));
+    ASSERT_EQ(table.rows().size(), 2u);
+    EXPECT_EQ(table.rows()[*table.row_of(3)].text(), "N4 N4ZZ");
+    // A copy with nothing of its own goes at once, as before.
+    table.apply(born(4, 1955.0));
+    table.apply(text_of(4, 1955.0, heard({"T", "E", "S", "T"}, 1)));
+    TrackEvent copy4 = died(4);
+    copy4.end = TrackEnd::Copy;
+    table.apply(copy4);
+    EXPECT_TRUE(table.hidden().empty());
+}

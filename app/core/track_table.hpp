@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace kz4ap::app {
@@ -23,6 +24,11 @@ struct TrackRow {
     double start_s = 0;               // stream time the signal was first seen, s
     std::optional<double> ended_at_s; // stream time the track died or the stream ended, s; none while live
     std::vector<std::string> symbols; // the decoder's character list, with its corrections applied
+    // For each symbol, the neighbor's track whose keying it is (DecodedSymbol::heard_from), or 0 for the track's own; and whether the
+    // row leaves it out (1): it does once that neighbor's row is listed, where the text is then shown.
+    std::vector<std::uint32_t> heard_from;
+    std::vector<char> left_out;
+    std::vector<std::uint32_t> track_ids;  // the tracks whose text this row holds, in order (id is the last)
     std::size_t base = 0;             // symbols from the tracks at this place before this one: its corrections start after them;
                                       // counted from the row's first symbol, trimmed or not
     std::size_t trimmed = 0;          // symbols dropped from the front (TrackTable::kMaxRowSymbols)
@@ -30,9 +36,12 @@ struct TrackRow {
     std::uint64_t revision = 0;       // moves whenever what the row shows may have changed: what a list repaints by
 
     bool live() const { return !ended_at_s; }
-    // The last max_symbols symbols, concatenated ("<SK>" is one symbol, " " a word space).
+    // The text among its last max_symbols symbols, concatenated ("<SK>" is one symbol, " " a word space), but what it leaves out
+    // (left_out), one word space in place of each such stretch.
     std::string text_tail(std::size_t max_symbols) const;
     std::string text() const { return text_tail(symbols.size()); }
+    // The symbols it shows, as text_tail does.
+    std::vector<std::string> shown_symbols() const;
 };
 
 class TrackTable {
@@ -83,6 +92,9 @@ private:
     TrackRow* find(std::uint32_t id);
     // An ended row at this place to go on with, listed or hidden.
     TrackRow* ended_at(double freq_hz);
+    // These tracks' rows are listed now: what other rows heard from them is left out there.
+    void now_listed(const std::vector<std::uint32_t>& ids);
+    std::unordered_set<std::uint32_t> listed_;  // the tracks of rows listed now or before
 
     std::vector<TrackRow> rows_;
     std::vector<TrackRow> hidden_;  // tracks whose text has not read as plausible, live or ended (plausible_only_)

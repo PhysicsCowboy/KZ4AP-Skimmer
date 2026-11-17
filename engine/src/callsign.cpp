@@ -283,7 +283,9 @@ int edit_distance(std::string_view a, std::string_view b, int limit) {
 
 // ---- Reading a text
 
-std::vector<Word> words_of(std::span<const DecodedSymbol> symbols) {
+std::vector<Word> words_of(std::span<const DecodedSymbol> symbols) { return words_of(symbols, false); }
+
+std::vector<Word> words_of(std::span<const DecodedSymbol> symbols, bool skip_heard) {
     std::vector<Word> out;
     Word current;
     const auto flush = [&] {
@@ -292,6 +294,10 @@ std::vector<Word> words_of(std::span<const DecodedSymbol> symbols) {
     };
     for (std::size_t i = 0; i < symbols.size(); ++i) {
         const DecodedSymbol& s = symbols[i];
+        if (skip_heard && s.heard_from != 0) {
+            flush();
+            continue;
+        }
         const std::string& t = s.text;
         if (t.size() > 1 && t[0] == '<') {
             flush();
@@ -535,7 +541,7 @@ void CallSearch::finish() {
 
 void CallSearch::read_track(TrackText& t, bool all) {
     if (t.symbols.empty()) return;
-    const std::vector<Word> words = words_of(t.symbols);
+    const std::vector<Word> words = words_of(t.symbols, config_.skip_neighbors_text != 0.0);
     if (words.empty()) return;
     if (t.rewind_to < t.read_to) {
         // Back to the start of the word the change falls in. What stays the same there is one occurrence with what was read before (CallSearch::add).

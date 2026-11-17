@@ -1004,3 +1004,43 @@ TEST(CallsCsv, TimesInUtcWhenTheStreamsStartIsKnown) {
     const std::string csv = calls_csv({r}, std::nullopt, 1503338400093);  // 2017-08-21 18:00:00.093 UTC
     EXPECT_NE(csv.find(",2017-08-21T18:00:12.343Z,2017-08-21T19:00:00.093Z\n"), std::string::npos);
 }
+
+TEST(Words, ANeighborsSymbolsEndAWordAndBelongToNone) {
+    // KQ2RP's track: his call, then his runner's TU W1AW heard through the skirt, glued on (DecodedSymbol::heard_from).
+    std::vector<DecodedSymbol> s = symbols("KQ2RPTUW1AW CQ");
+    for (std::size_t i = 5; i < 11; ++i) s[i].heard_from = 9;
+    const auto all = words_of(s);
+    ASSERT_EQ(all.size(), 2u);
+    EXPECT_EQ(all[0].text, "KQ2RPTUW1AW");
+    const auto own = words_of(s, true);
+    ASSERT_EQ(own.size(), 2u);
+    EXPECT_EQ(own[0].text, "KQ2RP");
+    EXPECT_EQ(own[0].last, 5u);
+    EXPECT_EQ(own[1].text, "CQ");
+    EXPECT_EQ(own[1].first, 12u);
+}
+
+TEST(CallSearch, ANeighborsTextOnATrackIsNotReadThereUnlessAsked) {
+    // The runner's call heard on his caller's track, 45 Hz away, twice: read there only with skip_neighbors_text 0.
+    for (const double skip : {1.0, 0.0}) {
+        CallSearchConfig c;
+        c.skip_neighbors_text = skip;
+        Stage stage(c);
+        std::vector<std::pair<std::string, double>> read;
+        stage.search.set_reading_log([&](const CallReading& r, double f) { read.emplace_back(r.base, f); });
+        stage.born(2, 2045.0);
+        DecodedTextEvent e{};
+        e.track_id = 2;
+        e.freq_hz = 2045.0;
+        e.chars = symbols("KQ2RP TU W1AW W1AW", 1.0);
+        for (std::size_t i = 6; i < e.chars.size(); ++i)
+            if (e.chars[i].text != " ") e.chars[i].heard_from = 1;
+        stage.search.apply(e);
+        stage.died(2);
+        stage.search.finish();
+        const bool own = std::any_of(read.begin(), read.end(), [](const auto& r) { return r.first == "KQ2RP"; });
+        const bool runner = std::any_of(read.begin(), read.end(), [](const auto& r) { return r.first == "W1AW"; });
+        EXPECT_TRUE(own) << skip;
+        EXPECT_EQ(runner, skip == 0.0) << skip;
+    }
+}
