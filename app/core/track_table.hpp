@@ -25,8 +25,8 @@ struct TrackRow {
     std::optional<double> ended_at_s; // stream time the track died or the stream ended, s; none while live
     std::vector<std::string> symbols; // the decoder's character list, with its corrections applied
     // For each symbol, the neighbor's track whose keying it is (DecodedSymbol::heard_from), or 0 for the track's own; whether the row
-    // leaves it out (1): it does once that neighbor's row is listed and shows the same symbol at the same times (TrackTable::kTwinS), so
-    // that the text is shown there and only there; and the symbol's start and end, s of stream.
+    // leaves it out (1): a stretch of such symbols goes whole once the neighbors' listed rows hold every symbol of it at the same times
+    // (TrackTable::kTwinS, refresh), so that the text is shown there and only there; and the symbol's start and end, s of stream.
     std::vector<std::uint32_t> heard_from;
     std::vector<char> left_out;
     std::vector<double> starts, ends;

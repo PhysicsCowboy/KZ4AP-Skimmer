@@ -125,5 +125,9 @@ approval stalls everything behind it for hours, so stay inside these forms.
   program that controls them (CW Skimmer, OmniRig and the like), COM and USB devices,
   sound devices, and any other program already running that the agent did not start.
   Ask the owner first, each time, through the coordinating session.
+- **Nothing directly under `C:\`** (owner, 2026-11-17: "I wish you would not use my C:\\ root
+  directory as your dumping ground."): short build or worktree paths go under
+  `C:\KZ4APSkimmer\build\` (git-ignored). Give Windows tools Windows paths (`C:\...`), never
+  Git Bash paths (`/c/...`), which once created `C:\c`.
 - **If a command is refused or would need approval,** stop and report it
   with the exact command; do not retry variants of it.
