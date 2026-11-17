@@ -1786,5 +1786,8 @@ decision log). Left open:
   +9 885 Hz reads KK4E, K8WWS, VE3NE and "TU K4TZ CQ", since its ±150 Hz channel hears K4TZ 42 Hz away: one QSO's text on two rows,
   not a copy by the test. The owner may read it as a copy.
 - **A long row's speed reads low at its end** (review 16, checkpoint 4): in the app's track table at the end of the owner's file
-  K4TZ's row shows 5.7 WPM, and two other long rows 6.9 and 7.6 WPM. Not traced (the speed shown is the decoder's latest, perhaps
-  a silence's or a slow junk story's). GUIDE.txt tells the owner it is being looked at.
+  K4TZ's row shows 5.7 WPM, and two other long rows 6.9 and 7.6 WPM. GUIDE.txt tells the owner it is being looked at.
+  **Status (2026-11-17): fixed on `wpm-1`, not yet on `main`.** The speed sent was the best story's at the last publish, here a
+  slow story's reading a burst at 222.5 s as E; the decoder now sends its text's speed, the median over its last 16 letters
+  (decision log, 2026-11-17; `signal-processing.md` A.9b, "Speed sent"). The three rows read 30.8, 33.5 and 31.7 WPM, the call
+  list unchanged. Open: the owner's trial folder's GUIDE.txt still says it is being looked at, and its program is the older build.

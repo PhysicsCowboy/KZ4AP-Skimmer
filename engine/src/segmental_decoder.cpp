@@ -1,9 +1,11 @@
 #include "kz4ap/segmental_decoder.hpp"
 
+#include "kz4ap/morse.hpp"
 #include "kz4ap/segmental/fast_math.hpp"
 #include "kz4ap/viterbi/observation.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
@@ -297,12 +299,6 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
 
 DecodeUpdate SegmentalDecoder::bring_up_to_date(const segmental::BestStory& story, double now_s) {
     DecodeUpdate update;
-    if (story.speed) {
-        // PARIS: 1.2 s / the dot, the dot from the speed grid (config.hpp).
-        const viterbi::ViterbiConfig& model = streams_[leader_].parts->config.model;
-        wpm_ = static_cast<float>(1200.0 / (model.dot_min_ms * std::pow(model.speed_ratio, *story.speed)));
-    }
-    update.wpm = wpm_;
     const std::size_t base = story.length - story.tail.size();
     std::size_t k = base;
     while (k < published_.size() && k < story.length && published_[k] == story.tail[k - base].text) ++k;
@@ -327,11 +323,37 @@ DecodeUpdate SegmentalDecoder::bring_up_to_date(const segmental::BestStory& stor
     }
     published_.resize(k);
     published_levels_.resize(k);
+    published_wpm_.resize(k);
     for (std::size_t i = k; i < story.length; ++i) {
         published_.push_back(story.tail[i - base].text);
         published_levels_.push_back(confidence_level(story.tail[i - base].probability));
+        published_wpm_.push_back(letter_wpm(story.tail[i - base]));
     }
+    // The text's speed, not the best story's at this instant: that one is the speed of whatever the story holds now, in a silence
+    // a slow junk story's (backlog, "A long row's speed reads low at its end"). It changes only with the text, so between
+    // transmissions it holds.
+    update.wpm = text_wpm();
     return update;
+}
+
+float SegmentalDecoder::letter_wpm(const DecodedSymbol& symbol) {
+    const std::string_view code = morse::encode(symbol.text);
+    const double duration_s = symbol.end_s - symbol.start_s;
+    if (code.empty() || !(duration_s > 0.0)) return 0.0f;
+    double units = static_cast<double>(code.size()) - 1.0;  // the element gaps
+    for (const char element : code) units += element == '-' ? 3.0 : 1.0;
+    return static_cast<float>(1.2 * units / duration_s);  // PARIS: a dot lasts 1.2 s / WPM
+}
+
+float SegmentalDecoder::text_wpm() const {
+    std::array<float, kSpeedLetters> recent{};
+    std::size_t n = 0;
+    for (std::size_t i = published_wpm_.size(); i-- > 0 && n < kSpeedLetters;) {
+        if (published_wpm_[i] > 0.0f) recent[n++] = published_wpm_[i];
+    }
+    if (n == 0) return 0.0f;
+    std::sort(recent.begin(), recent.begin() + static_cast<std::ptrdiff_t>(n));
+    return n % 2 == 1 ? recent[n / 2] : 0.5f * (recent[n / 2 - 1] + recent[n / 2]);
 }
 
 std::uint8_t SegmentalDecoder::confidence_level(float probability) {
@@ -366,9 +388,9 @@ void SegmentalDecoder::reset() {
     next_index_ = 0;
     first_s_ = 0.0;
     next_publish_s_ = 0.0;
-    wpm_ = 0.0f;
     published_.clear();
     published_levels_.clear();
+    published_wpm_.clear();
 }
 
 void SegmentalDecoder::set_band_spectrum(std::span<const float> power_fs2, int center_index) {

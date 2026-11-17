@@ -214,7 +214,8 @@ int main(int argc, char** argv) {
                     timed([&] { stage.apply(*t); });
                 } else if (const auto* d = std::get_if<DecodedTextEvent>(&e)) {
                     if (log) {
-                        nlohmann::json j{{"k", "t"}, {"id", d->track_id}, {"f", d->freq_hz}, {"c", symbols_json(d->chars)}};
+                        // "w": the event's speed, WPM (--replay ignores it).
+                        nlohmann::json j{{"k", "t"}, {"id", d->track_id}, {"f", d->freq_hz}, {"w", d->wpm}, {"c", symbols_json(d->chars)}};
                         if (!d->corrections.empty()) {
                             nlohmann::json x = nlohmann::json::array();
                             for (const TextCorrection& k : d->corrections) x.push_back({k.from_index, symbols_json(k.chars)});

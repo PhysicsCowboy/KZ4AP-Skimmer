@@ -981,6 +981,50 @@ TEST(SegmentalMargins, ChangeNoTextAndSayLessForAWeakStation) {
     EXPECT_GT(2 * ceiling, letters);
 }
 
+TEST(SegmentalSpeed, IsTheTextsAndAJunkLetterInTheSilenceAfterLeavesIt) {
+    // Backlog, "A long row's speed reads low at its end": on the owner's recording K4TZ's row ended at 5.7 WPM, the speed of a slow
+    // story that read one long burst in the silence after the station as E, the last text the track published. A station at 40 WPM
+    // (30 ms dots at 1 500 samples/s), +20 dB S500, then 3 s of key-up, one 180 ms burst at the same level, 3 s of key-up: the burst
+    // goes out as a letter, and the speed every update carries from the first letter on, the last included, is the text's, within
+    // 10% of 40 WPM.
+    const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
+    const double amplitude = std::sqrt(100.0 * n0_fs2_per_hz * 500.0);
+    std::mt19937 rng(5);
+    std::normal_distribution<double> draw(0.0, std::sqrt(n0_fs2_per_hz * 1500.0 / 2.0));
+    const std::string text = "CQ CQ DE W1AW W1AW K";
+    Keyed keyed = keyed_text(text, 45, 300, 4500);
+    keyed.add(1, 270);
+    keyed.add(0, 4500);
+    auto shared = std::make_shared<const SegmentalShared>(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    SegmentalDecoder decoder(1500.0, shared);
+    decoder.set_noise_density_fs2_per_hz(n0_fs2_per_hz);
+    std::vector<std::string> list;
+    std::vector<float> speeds;  // WPM: each update's that carries text
+    const auto take = [&](const DecodeUpdate& update) {
+        for (const DecodedSymbol& s : update.chars) list.push_back(s.text);
+        for (const TextCorrection& c : update.corrections) {
+            list.resize(std::min(list.size(), c.from_index));
+            for (const DecodedSymbol& s : c.chars) list.push_back(s.text);
+        }
+        if (!update.chars.empty() || !update.corrections.empty()) speeds.push_back(update.wpm);
+    };
+    std::vector<Sample> block;
+    for (std::size_t k = 0; k < keyed.key.size();) {
+        block.clear();
+        const std::size_t first = k;
+        for (; k < keyed.key.size() && block.size() < 32; ++k)
+            block.emplace_back(static_cast<float>(amplitude * keyed.key[k] + draw(rng)), static_cast<float>(draw(rng)));
+        take(decoder.process(block, static_cast<double>(first) / 1500.0));
+    }
+    take(decoder.flush());
+    std::string read;
+    for (const std::string& s : list) read += s;
+    ASSERT_GT(read.size(), text.size()) << read;  // the burst read as text after the message
+    EXPECT_EQ(read.substr(0, text.size()), text);
+    ASSERT_FALSE(speeds.empty());
+    for (const float wpm : speeds) EXPECT_NEAR(wpm, 40.0f, 4.0f) << read;
+}
+
 TEST(SegmentalMargins, ACapAFloatCannotHoldIsRefusedAndTheDefaultIsOff) {
     EXPECT_EQ(SegmentalConfig{}.rival_margin_nats, 0.0);
     SegmentalConfig config;

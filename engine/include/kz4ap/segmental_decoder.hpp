@@ -1,7 +1,8 @@
 // The segmental decoder behind the engine's Decoder interface: the fast form of the viterbi decoder (viterbi_decoder.hpp).
 // The same channel, front filter and envelope samples; the evidence is computed once per channel (segmental/evidence.hpp)
 // and the search touches stories only at element ends (segmental/search.hpp). The best story's text goes out every 0.25 s as
-// new characters or, where the story changed its mind, a correction, with the story's speed; at the channel's end everything is checked once more.
+// new characters or, where the story changed its mind, a correction, with the speed of the text sent (text_wpm); at the channel's end
+// everything is checked once more.
 //
 // A channel runs this at several filter scales (config.hpp, at_filter_scale), a stream each: a wide filter reads a fast sender
 // and lets a neighbor in, a narrower one keeps the neighbor out and smears a fast sender's dots. The bank decoder's ladder rests on
@@ -100,6 +101,18 @@ private:
     // The symbols compared each time, at most. Heuristic: over 25 s of text at 30 WPM; the story's changing its mind
     // further back goes out at the channel's end (flush compares everything).
     static constexpr std::size_t kPublishTailSymbols = 64;
+    // The speed that goes out with the text, WPM, is the median of the last this many published letters' own speeds (letter_wpm).
+    // Heuristic: 16 letters of PARIS-like text are about 160 units, 4.8 s at 40 WPM and 12.8 s at 15 (derived); being a median,
+    // it follows a change of speed after about 8 new letters (2.4 s at 40 WPM); a few junk letters (a burst in the silence read
+    // as E) leave it. A junk row's speed can fall below the speed grid's slowest (5.2 WPM): its letters' own durations set it.
+    static constexpr std::size_t kSpeedLetters = 16;
+    // A letter's own speed, WPM: 1.2 s x its units / its duration (PARIS), its units a dot's 1, a dash's 3 and 1 between its elements,
+    // its duration from its first mark's start to its last mark's end (DecodedSymbol::start_s, end_s): its marks and element gaps, so
+    // a character speed, as the story's fist (a Farnsworth sender's spacing is left out). 0 for a word space, a symbol with no code
+    // and a duration not positive.
+    static float letter_wpm(const DecodedSymbol& symbol);
+    // The median of the last kSpeedLetters nonzero speeds of published_wpm_ (the mean of the middle two for an even count); 0 if none.
+    float text_wpm() const;
 
     // The two-state chain of KeyingEvidence::free_key_nats, one step for every evidence sample the search has.
     struct FreeKey {
@@ -144,9 +157,9 @@ private:
     bool choice_started_ = false;
 
     double next_publish_s_ = 0.0;
-    float wpm_ = 0.0f;
     std::vector<std::string> published_;  // the consumer's list, as sent
     std::vector<std::uint8_t> published_levels_;  // and its symbols' margins, as sent (confidence_level)
+    std::vector<float> published_wpm_;  // and its symbols' own speeds, WPM, as sent (letter_wpm)
     double rate_;
     std::shared_ptr<const SegmentalShared> shared_;
     double n0_ = 0.0;
