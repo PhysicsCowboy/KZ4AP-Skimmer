@@ -1020,14 +1020,16 @@ TEST(Words, ANeighborsSymbolsEndAWordAndBelongToNone) {
     EXPECT_EQ(own[1].first, 12u);
 }
 
-TEST(CallSearch, ANeighborsTextOnATrackIsNotReadThereUnlessAsked) {
-    // The runner's call heard on his caller's track, 45 Hz away, twice: read there only with skip_neighbors_text 0.
-    for (const double skip : {1.0, 0.0}) {
+TEST(CallSearch, ANeighborsTextOnATrackIsReadOnlyOnTheNeighborsTrack) {
+    // The runner's call heard on his caller's track, 45 Hz away: not read there where the runner's own track holds the same symbols at
+    // the same times; read with skip_neighbors_text 0, and read where the runner's track holds something else then (a second reading).
+    for (const int mode : {0, 1, 2}) {  // 0: skip, the runner holds it; 1: skip, the runner holds other text; 2: no skip
         CallSearchConfig c;
-        c.skip_neighbors_text = skip;
+        c.skip_neighbors_text = mode == 2 ? 0.0 : 1.0;
         Stage stage(c);
         std::vector<std::pair<std::string, double>> read;
         stage.search.set_reading_log([&](const CallReading& r, double f) { read.emplace_back(r.base, f); });
+        stage.born(1, 2000.0);
         stage.born(2, 2045.0);
         DecodedTextEvent e{};
         e.track_id = 2;
@@ -1035,12 +1037,15 @@ TEST(CallSearch, ANeighborsTextOnATrackIsNotReadThereUnlessAsked) {
         e.chars = symbols("KQ2RP TU W1AW W1AW", 1.0);
         for (std::size_t i = 6; i < e.chars.size(); ++i)
             if (e.chars[i].text != " ") e.chars[i].heard_from = 1;
+        // The runner's own track: the same symbols at the same times, or another reading of them.
+        stage.text(1, 2000.0, mode == 1 ? "       TU W1AX W1AX" : "       TU W1AW W1AW", 0.9);
         stage.search.apply(e);
         stage.died(2);
+        stage.died(1);
         stage.search.finish();
         const bool own = std::any_of(read.begin(), read.end(), [](const auto& r) { return r.first == "KQ2RP"; });
-        const bool runner = std::any_of(read.begin(), read.end(), [](const auto& r) { return r.first == "W1AW"; });
-        EXPECT_TRUE(own) << skip;
-        EXPECT_EQ(runner, skip == 0.0) << skip;
+        const bool there = std::any_of(read.begin(), read.end(), [](const auto& r) { return r.first == "W1AW" && r.second == 2045.0; });
+        EXPECT_TRUE(own) << mode;
+        EXPECT_EQ(there, mode != 0) << mode;
     }
 }

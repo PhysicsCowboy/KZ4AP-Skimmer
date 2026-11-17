@@ -334,10 +334,13 @@ TEST(TrackTable, ARowsRevisionMovesWithWhatItShows) {
 
 namespace {
 
-// Symbols each heard from `from` (0: the track's own).
-std::vector<DecodedSymbol> heard(const std::vector<std::string>& texts, std::uint32_t from) {
-    std::vector<DecodedSymbol> out = symbols(texts);
-    for (DecodedSymbol& s : out) s.heard_from = s.text == " " ? 0 : from;
+// Symbols at 0.1 s each from t0_s, each heard from `from` (0: the track's own); a word space is always the track's own.
+std::vector<DecodedSymbol> timed(const std::vector<std::string>& texts, double t0_s, std::uint32_t from = 0) {
+    std::vector<DecodedSymbol> out;
+    for (std::size_t i = 0; i < texts.size(); ++i) {
+        const double t = t0_s + 0.1 * static_cast<double>(i);
+        out.push_back(DecodedSymbol{texts[i], 1.0f, t, t + 0.08, texts[i] == " " ? 0u : from});
+    }
     return out;
 }
 
@@ -350,22 +353,43 @@ std::vector<DecodedSymbol> joined(std::vector<DecodedSymbol> a, const std::vecto
     return a;
 }
 
+TrackEvent copy_end(std::uint32_t id) {
+    TrackEvent e = died(id);
+    e.end = TrackEnd::Copy;
+    return e;
+}
+
 }  // namespace
 
-TEST(TrackTableNeighborText, ARowLeavesOutWhatItHeardFromAListedNeighborAndShowsItsOwn) {
+TEST(TrackTableNeighborText, ARowLeavesOutWhatItHeardFromAListedNeighborThatShowsItAndKeepsItsOwn) {
     TrackTable table;
     table.set_plausible_only(true);
     table.apply(born(1, 2000.0));  // the runner
-    table.apply(text(1, 2000.0, {"C", "Q", " ", "T", "E", "S", "T", " ", "W", "1", "A", "W"}));
+    table.apply(text_of(1, 2000.0, timed({"C", "Q", " ", "T", "E", "S", "T", " ", "W", "1", "A", "W"}, 1.0)));
+    table.apply(text_of(1, 2000.0, timed({" ", "5", "N", "N", " ", "C", "T"}, 10.0)));
     table.apply(born(2, 2045.0));  // his caller, whose channel hears him too
-    table.apply(text_of(2, 2045.0, joined(symbols({"K", "Q", "2", "R", "P", " "}), heard({"5", "N", "N", " ", "C", "T"}, 1))));
-    table.apply(text_of(2, 2045.0, joined(symbols({" ", "T", "U", " ", "M", "A"}), {})));
+    table.apply(text_of(2, 2045.0, joined(timed({"K", "Q", "2", "R", "P", " "}, 8.0), timed({"5", "N", "N", " ", "C", "T"}, 10.1, 1))));
+    table.apply(text_of(2, 2045.0, timed({" ", "T", "U", " ", "M", "A"}, 12.0)));
     ASSERT_EQ(table.rows().size(), 2u);
     EXPECT_EQ(table.rows()[1].id, 2u);
     EXPECT_EQ(table.rows()[1].text(), "KQ2RP TU MA");
     EXPECT_EQ(table.rows()[1].text_tail(6), " TU MA");
     // The symbols stay, so that corrections land where the decoder means them.
     EXPECT_EQ(table.rows()[1].symbols.size(), 18u);
+    EXPECT_EQ(table.rows()[0].text(), "CQ TEST W1AW 5NN CT");
+}
+
+TEST(TrackTableNeighborText, WhatTheNeighborsRowReadsOtherwiseStays) {
+    // The weaker channel's reading of the neighbor's keying is kept where the neighbor's own row has no symbol like it at those times:
+    // a second reading, perhaps the better one.
+    TrackTable table;
+    table.set_plausible_only(true);
+    table.apply(born(1, 2000.0));
+    table.apply(text_of(1, 2000.0, timed({"U", "A", "8", "B", " ", "N", "R", " ", "3", "3", "9"}, 1.0)));
+    table.apply(born(2, 2040.0));
+    table.apply(text_of(2, 2040.0, joined(timed({"K", "Q", "2", "R", "P", " "}, 0.2), timed({"U", "A", "8", "B", " ", "N", "R", " ", "3", "5", "9"}, 1.0, 1))));
+    // The stretches the neighbor's row holds whole go; "359", whose 5 is the neighbor's 3, stays whole.
+    EXPECT_EQ(table.rows()[*table.row_of(2)].text(), "KQ2RP 359");
 }
 
 TEST(TrackTableNeighborText, AStretchBetweenOwnWordsBecomesOneWordSpace) {
@@ -381,21 +405,34 @@ TEST(TrackTableNeighborText, AStretchBetweenOwnWordsBecomesOneWordSpace) {
     EXPECT_EQ(row.text(), "TUK4TZ CQ");
 }
 
-TEST(TrackTableNeighborText, WhatItHeardIsShownUntilTheNeighborsRowIsListedAndLeftOutFromThen) {
+TEST(TrackTableNeighborText, WhatItHeardIsShownUntilTheNeighborsRowIsListedAndShowsIt) {
     TrackTable table;
     table.set_plausible_only(true);
     table.apply(born(1, 2045.0));  // the caller's track, listed first
-    table.apply(text(1, 2045.0, {"K", "Q", "2", "R", "P", " "}));
+    table.apply(text_of(1, 2045.0, timed({"K", "Q", "2", "R", "P", " "}, 1.0)));
     ASSERT_EQ(table.rows().size(), 1u);
     table.apply(born(2, 2000.0));  // the runner's, not listed yet: what the caller's channel heard of him shows there
-    table.apply(text_of(1, 2045.0, heard({"W", "1", "A", "W"}, 2)));
+    table.apply(text_of(1, 2045.0, timed({"W", "1", "A", "W"}, 3.0, 2)));
     EXPECT_EQ(table.rows()[0].text(), "KQ2RP W1AW");
     const std::uint64_t revision = table.rows()[0].revision;
-    table.apply(text(2, 2000.0, {"W", "1", "A", "W", " ", "T", "E", "S", "T"}));
+    table.apply(text_of(2, 2000.0, timed({"W", "1", "A", "W", " ", "T", "E", "S", "T"}, 3.0)));
     ASSERT_EQ(table.rows().size(), 2u);
     const TrackRow& caller = table.rows()[*table.row_of(1)];
     EXPECT_EQ(caller.text(), "KQ2RP ");
     EXPECT_NE(caller.revision, revision);
+}
+
+TEST(TrackTableNeighborText, WhatItHeardIsLeftOutWhenTheListedNeighborsSymbolsComeAfter) {
+    TrackTable table;
+    table.set_plausible_only(true);
+    table.apply(born(1, 2000.0));
+    table.apply(text_of(1, 2000.0, timed({"W", "1", "A", "W", " "}, 1.0)));
+    table.apply(born(2, 2045.0));
+    table.apply(text_of(2, 2045.0, timed({"K", "Q", "2", "R", "P", " "}, 2.0)));
+    table.apply(text_of(2, 2045.0, timed({"T", "E", "S", "T"}, 4.0, 1)));  // before the runner's own TEST
+    EXPECT_EQ(table.rows()[*table.row_of(2)].text(), "KQ2RP TEST");
+    table.apply(text_of(1, 2000.0, timed({"T", "E", "S", "T"}, 4.0)));
+    EXPECT_EQ(table.rows()[*table.row_of(2)].text(), "KQ2RP ");
 }
 
 TEST(TrackTableNeighborText, ACopysHiddenRowWithTextOfItsOwnWaitsAsAFadedOnes) {
@@ -403,25 +440,21 @@ TEST(TrackTableNeighborText, ACopysHiddenRowWithTextOfItsOwnWaitsAsAFadedOnes) {
     TrackTable table;
     table.set_plausible_only(true);
     table.apply(born(1, 2000.0));
-    table.apply(text(1, 2000.0, {"T", "E", "S", "T", " ", "W", "1", "A", "W"}));
+    table.apply(text_of(1, 2000.0, timed({"T", "E", "S", "T", " ", "T", "U", " ", "W", "1", "A", "W"}, 1.0)));
     table.apply(born(2, 2045.0));
-    table.apply(text_of(2, 2045.0, joined(symbols({"N", "4", " "}), heard({"T", "U", " ", "W", "1", "A", "W"}, 1))));
+    table.apply(text_of(2, 2045.0, joined(timed({"N", "4", " "}, 1.2), timed({"T", "U", " ", "W", "1", "A", "W"}, 1.5, 1))));
     ASSERT_EQ(table.hidden().size(), 1u);
-    TrackEvent copy = died(2);
-    copy.end = TrackEnd::Copy;
-    table.apply(copy);
+    table.apply(copy_end(2));
     ASSERT_EQ(table.hidden().size(), 1u);
     EXPECT_FALSE(table.hidden()[0].live());
     // Its next track at the place goes on with it.
     table.apply(born(3, 2050.0));
-    table.apply(text(3, 2050.0, {"N", "4", "Z", "Z"}));
+    table.apply(text_of(3, 2050.0, timed({"N", "4", "Z", "Z"}, 20.0)));
     ASSERT_EQ(table.rows().size(), 2u);
     EXPECT_EQ(table.rows()[*table.row_of(3)].text(), "N4 N4ZZ");
     // A copy with nothing of its own goes at once, as before.
     table.apply(born(4, 1955.0));
-    table.apply(text_of(4, 1955.0, heard({"T", "E", "S", "T"}, 1)));
-    TrackEvent copy4 = died(4);
-    copy4.end = TrackEnd::Copy;
-    table.apply(copy4);
+    table.apply(text_of(4, 1955.0, timed({"T", "E", "S", "T"}, 1.0, 1)));
+    table.apply(copy_end(4));
     EXPECT_TRUE(table.hidden().empty());
 }

@@ -163,9 +163,9 @@ struct EngineConfig {
     // A neighbor's text (FrontEnd::Segmental on the detector's path, with judge_tracks; apply_path_defaults turns it on;
     // docs/signal-processing.md, section 6): before a channel W's text goes out, each of its symbols but word spaces is compared, over
     // the symbol's own span widened by attribute_pad_s on each side (clipped to the blocks held), with each other channel S within
-    // attribute_radius_hz whose track is proven. Over those blocks, both envelopes less their moving mean over copy_detrend_s, the symbol
-    // is S's (DecodedSymbol::heard_from) when rho >= attribute_rho, S hears the keying more strongly than W (mean square after the
-    // high-pass) and W's own power (mean e_W^2 - E) / E is at most attribute_own_max, E = gain mean e_S^2 + sigma_W^2: the copy test's
+    // attribute_radius_hz (proven, with attribute_source_proven). Over those blocks, both envelopes less their moving mean over
+    // copy_detrend_s, the symbol is S's (DecodedSymbol::heard_from) when rho >= attribute_rho, S hears the keying more strongly
+    // than W (mean square after the high-pass) and W's own power (mean e_W^2 - E) / E is at most attribute_own_max, E = gain mean e_S^2 + sigma_W^2: the copy test's
     // three conditions on a symbol's stretch instead of 6 s, with "which channel hears it louder" in place of the level and the age.
     // attribute_pad_s 0: no attribution. A window shorter than attribute_min_s attributes nothing; attribute_history_s is how far
     // back the envelopes are kept, s, so that a correction's symbols can be attributed again.
@@ -175,7 +175,9 @@ struct EngineConfig {
     double attribute_own_max = 0.5;     // linear, power
     double attribute_min_s = 0.5;       // s
     double attribute_history_s = 30.0;  // s
-    bool attribute_source_proven = true;  // only a neighbor whose track is proven (TrackJudge::proven) owns a symbol
+    // true: only a neighbor whose track is proven (TrackJudge::proven) owns a symbol. false (the default): any, since the list leaves a
+    // symbol out only where the neighbor's listed row holds it, and the callsign stage only where the neighbor's track holds it.
+    bool attribute_source_proven = false;
 };
 
 // The detector's settings and the DC blocker for the decoder's path (decoder.front_end), in place: on every path the

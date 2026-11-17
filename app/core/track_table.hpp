@@ -24,10 +24,12 @@ struct TrackRow {
     double start_s = 0;               // stream time the signal was first seen, s
     std::optional<double> ended_at_s; // stream time the track died or the stream ended, s; none while live
     std::vector<std::string> symbols; // the decoder's character list, with its corrections applied
-    // For each symbol, the neighbor's track whose keying it is (DecodedSymbol::heard_from), or 0 for the track's own; and whether the
-    // row leaves it out (1): it does once that neighbor's row is listed, where the text is then shown.
+    // For each symbol, the neighbor's track whose keying it is (DecodedSymbol::heard_from), or 0 for the track's own; whether the row
+    // leaves it out (1): it does once that neighbor's row is listed and shows the same symbol at the same times (TrackTable::kTwinS), so
+    // that the text is shown there and only there; and the symbol's start and end, s of stream.
     std::vector<std::uint32_t> heard_from;
     std::vector<char> left_out;
+    std::vector<double> starts, ends;
     std::vector<std::uint32_t> track_ids;  // the tracks whose text this row holds, in order (id is the last)
     std::size_t base = 0;             // symbols from the tracks at this place before this one: its corrections start after them;
                                       // counted from the row's first symbol, trimmed or not
@@ -55,6 +57,14 @@ public:
     // A row keeps at most about this many symbols, its latest; the list shows 400 at most. Heuristic: at 30 WPM, about 2.5 symbols/s,
     // 27 min of text in about 130 kB; the report and --decoded then hold a long row's end only.
     static constexpr std::size_t kMaxRowSymbols = 4000;
+    // A neighbor's row shows a symbol a row heard from it when it holds one of the same text whose start and end each lie within this,
+    // s: two decoders behind like filters read one keying's character at the same times (the duplicate rule's 25 ms, about half a dot
+    // at 25 WPM; heuristic, docs/signal-processing.md A.11).
+    static constexpr double kTwinS = 0.025;
+    // When a track's text comes, the symbols its neighbors heard from it within this of its newest one, s, and within this many Hz of
+    // it, are looked at again (heuristic: past the decoders' corrections' reach of 20 s; the stage's 300 Hz).
+    static constexpr double kRecheckS = 30.0;
+    static constexpr double kRecheckHz = 300.0;
 
     void apply(const TrackEvent& event);
     // Appends the event's characters, then applies its corrections in order, clipping from_index to the list's length
@@ -94,6 +104,13 @@ private:
     TrackRow* ended_at(double freq_hz);
     // These tracks' rows are listed now: what other rows heard from them is left out there.
     void now_listed(const std::vector<std::uint32_t>& ids);
+    // Leaves out what rows (within kRecheckHz of near_hz, if given) heard from these tracks after since_s, where shown_by.
+    void leave_out_heard(const std::vector<std::uint32_t>& ids, std::optional<double> near_hz, double since_s);
+    // Decides left_out from symbol `from` on (back to the start of a stretch heard from neighbors): a stretch is left out whole when
+    // every symbol of it is shown_by its neighbor, else not at all.
+    void refresh(TrackRow& r, std::size_t from);
+    // Whether the listed row of track `source` holds this symbol (kTwinS).
+    bool shown_by(std::uint32_t source, const std::string& text, double start_s, double end_s) const;
     std::unordered_set<std::uint32_t> listed_;  // the tracks of rows listed now or before
 
     std::vector<TrackRow> rows_;

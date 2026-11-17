@@ -76,6 +76,8 @@ struct Word {
 std::vector<Word> words_of(std::span<const DecodedSymbol> symbols);
 // As words_of; with skip_heard, a symbol heard from a neighbor (DecodedSymbol::heard_from) ends a word and belongs to none.
 std::vector<Word> words_of(std::span<const DecodedSymbol> symbols, bool skip_heard);
+// As words_of; a symbol whose skip is not 0 ends a word and belongs to none (skip may be shorter than symbols: the rest are read).
+std::vector<Word> words_of(std::span<const DecodedSymbol> symbols, std::span<const char> skip);
 
 // How a call came out of the words.
 enum class Reading {
@@ -220,10 +222,13 @@ struct CallSearchConfig {
     // (K1ABCK1ABC) is two readings, as it is with the space; at 0 every piece has the word's times and the two are one occurrence.
     // Derived from the evidence rule (one occurrence per transmission); rob-1.
     double glued_pieces_timed = 1.0;
-    // A symbol the engine attributed to a neighbor (DecodedSymbol::heard_from: that neighbor's keying, which its own track reads) is
-    // skipped when not 0, as a word break: the track's own words stay whole and the neighbor's text counts on the neighbor's track only.
-    // At 0 every symbol is read, as before copy-2. Heuristic, chosen by measurement (copy-2; appendix A.12).
+    // A symbol the engine attributed to a neighbor (DecodedSymbol::heard_from: that neighbor's keying) is skipped when not 0, as a word
+    // break, where the neighbor's own track holds a symbol of the same text whose start and end each lie within neighbor_twin_s, s: the
+    // track's own words stay whole and the neighbor's text counts on the neighbor's track, while a reading of it that the neighbor's
+    // track does not hold stays. At 0 every symbol is read, as before copy-2. Heuristic, chosen by measurement (copy-2; appendix A.12);
+    // 25 ms is the duplicate rule's (A.11).
     double skip_neighbors_text = 1.0;
+    double neighbor_twin_s = 0.025;
 };
 
 // One line of the list.

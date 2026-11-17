@@ -476,32 +476,36 @@ TEST(EngineNeighborText, TheRunnersWordsOnTheCallersTracksAreTheRunnersAndTheCal
     EXPECT_GE(count(runner, "TEST"), 5u) << runner;
 }
 
-TEST(EngineNeighborText, TheCallsignStageReadsTheCallersCallOnHisTrackAndNotTheRunnersOverThere) {
-    const Contest c = contest();
-    const Attributed r = run_attributed(c.x);
+namespace {
+
+// The callsign stage's readings on the caller's tracks: of his call in his own overs, and of any call in the runner's overs.
+std::pair<std::size_t, std::size_t> caller_readings(const Contest& c, const Attributed& r) {
     std::size_t own = 0, runners = 0;
     for (const auto& [reading, f] : r.readings) {
         if (!near(f, c.caller_hz)) continue;
         if (reading.base == "KQ2RP" && inside(c.caller_overs, reading.start_s, reading.end_s)) ++own;
         if (inside(c.runner_overs, reading.start_s, reading.end_s)) ++runners;
     }
-    EXPECT_GE(own, 2u) << "the caller's call, read in his own overs on his own tracks";
-    EXPECT_EQ(runners, 0u) << "a call read on the caller's tracks during the runner's overs";
-    EXPECT_NE(std::find(r.calls.begin(), r.calls.end(), "KQ2RP"), r.calls.end());
-    EXPECT_NE(std::find(r.calls.begin(), r.calls.end(), "W1AW"), r.calls.end());
+    return {own, runners};
 }
 
-TEST(EngineNeighborText, WithoutSkippingTheCallsignStageReadsTheRunnersOverOnTheCallersTrack) {
-    // The mutation check of the stage's rule: reading every symbol, as before copy-2, the runner's "KQ2RP 5NN" is read on the caller's
-    // track too.
+}  // namespace
+
+TEST(EngineNeighborText, TheCallsignStageReadsTheCallersCallOnHisTrackAndLessOfTheRunnersOverThere) {
+    // A stretch is skipped where the runner's own track holds it whole (the same symbols at the same times); what it reads otherwise
+    // (W1AA for W1AW) is read on the caller's track still.
     const Contest c = contest();
+    const Attributed r = run_attributed(c.x);
     callsign::CallSearchConfig all;
     all.skip_neighbors_text = 0.0;
-    const Attributed r = run_attributed(c.x, {}, all);
-    std::size_t runners = 0;
-    for (const auto& [reading, f] : r.readings)
-        if (near(f, c.caller_hz) && inside(c.runner_overs, reading.start_s, reading.end_s)) ++runners;
-    EXPECT_GE(runners, 1u);
+    const Attributed before = run_attributed(c.x, {}, all);
+    const auto [own, runners] = caller_readings(c, r);
+    const auto [own_before, runners_before] = caller_readings(c, before);
+    EXPECT_GE(own, 2u) << "the caller's call, read in his own overs on his own tracks";
+    EXPECT_EQ(own, own_before);
+    EXPECT_LT(runners, runners_before) << "calls read on the caller's tracks during the runner's overs";
+    EXPECT_NE(std::find(r.calls.begin(), r.calls.end(), "KQ2RP"), r.calls.end());
+    EXPECT_NE(std::find(r.calls.begin(), r.calls.end(), "W1AW"), r.calls.end());
 }
 namespace {
 
