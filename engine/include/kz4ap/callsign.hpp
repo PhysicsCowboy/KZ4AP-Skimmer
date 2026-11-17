@@ -223,11 +223,11 @@ struct CallSearchConfig {
     // Derived from the evidence rule (one occurrence per transmission); rob-1.
     double glued_pieces_timed = 1.0;
     // A stretch of symbols the engine attributed to neighbors (DecodedSymbol::heard_from: their keying; consecutive, no word space) is
-    // skipped when not 0, as a word break, where each neighbor's own track holds every symbol of it: the same text, start and end each
-    // within neighbor_twin_s, s. The track's own words stay whole and the neighbor's text counts on the neighbor's track, while a reading of it that the neighbor's
-    // track does not hold stays. At 0 every symbol is read, as before copy-2. Heuristic: no reported call changes with it on the five
-    // real recordings and the generated sets (appendix A.12); 25 ms is the duplicate rule's (A.11).
-    double skip_neighbors_text = 1.0;
+    // skipped when not 0, as a word break, where it is whole words and each neighbor's own track holds every symbol of it: the same
+    // text, start and end each within neighbor_twin_s, s. A variant, off: on the five real recordings it gained and lost no call, but
+    // changed 12 calls' fields (9 frequencies, 5 framings, 2 point totals: the readings left lie elsewhere, among other neighbors), while the stage already
+    // counts readings that overlap in time within same_place_hz once (copy-2, review 18; appendix A.12). 25 ms is the duplicate rule's.
+    double skip_neighbors_text = 0.0;
     double neighbor_twin_s = 0.025;
 };
 

@@ -492,10 +492,12 @@ std::pair<std::size_t, std::size_t> caller_readings(const Contest& c, const Attr
 }  // namespace
 
 TEST(EngineNeighborText, TheCallsignStageReadsTheCallersCallOnHisTrackAndLessOfTheRunnersOverThere) {
-    // A stretch is skipped where the runner's own track holds it whole (the same symbols at the same times); what it reads otherwise
-    // (W1AA for W1AW) is read on the caller's track still.
+    // The variant skip_neighbors_text 1 (off by default): a stretch is skipped where it is whole words and the runner's own track holds
+    // it (the same symbols at the same times); what it reads otherwise (W1AA for W1AW) is read on the caller's track still.
     const Contest c = contest();
-    const Attributed r = run_attributed(c.x);
+    callsign::CallSearchConfig on;
+    on.skip_neighbors_text = 1.0;
+    const Attributed r = run_attributed(c.x, {}, on);
     callsign::CallSearchConfig all;
     all.skip_neighbors_text = 0.0;
     const Attributed before = run_attributed(c.x, {}, all);

@@ -1052,8 +1052,10 @@ TEST(CallSearch, ANeighborsTextOnATrackIsReadOnlyOnTheNeighborsTrack) {
 TEST(CallSearch, AFrameWordPartlyHeardFromANeighborIsReadWholeAndKeepsTheRole) {
     // Review 18's case (KC2LRC-2): W7QDM's own track reads "TEST W7QDM", but its "TES" is given to a track 27 Hz away that heard the
     // keying more strongly and holds the same three letters. The stage never acts on part of a word: TEST stays whole, so the call is
-    // still the sender's.
-    Stage stage;
+    // still the sender's. (The variant skip_neighbors_text 1; off by default.)
+    CallSearchConfig on;
+    on.skip_neighbors_text = 1.0;
+    Stage stage(on);
     std::vector<std::pair<CallReading, double>> read;
     stage.search.set_reading_log([&](const CallReading& r, double f) { read.emplace_back(r, f); });
     stage.born(1, 1973.0);
@@ -1075,8 +1077,10 @@ TEST(CallSearch, AFrameWordPartlyHeardFromANeighborIsReadWholeAndKeepsTheRole) {
 
 TEST(CallSearch, AWholeWordHeardFromANeighborIsSkippedEvenBesideTheTracksOwn) {
     // The same, its whole word "TEST" given to the neighbor, which holds it: skipped, so W7QDM is bare on this track (the neighbor's
-    // track reads the frame).
-    Stage stage;
+    // track reads the frame). The variant skip_neighbors_text 1.
+    CallSearchConfig on;
+    on.skip_neighbors_text = 1.0;
+    Stage stage(on);
     std::vector<std::pair<CallReading, double>> read;
     stage.search.set_reading_log([&](const CallReading& r, double f) { read.emplace_back(r, f); });
     stage.born(1, 1973.0);
@@ -1094,4 +1098,25 @@ TEST(CallSearch, AWholeWordHeardFromANeighborIsSkippedEvenBesideTheTracksOwn) {
     const auto it = std::find_if(read.begin(), read.end(), [](const auto& r) { return r.first.base == "W7QDM" && r.second == 2000.0; });
     ASSERT_NE(it, read.end());
     EXPECT_EQ(it->first.role, Role::Unknown);
+}
+TEST(CallSearch, ANeighborsTextIsReadByDefault) {
+    // skip_neighbors_text is off by default (review 18): every symbol is read, as before copy-2, whatever heard_from says.
+    EXPECT_EQ(CallSearchConfig{}.skip_neighbors_text, 0.0);
+    Stage stage;
+    std::vector<std::pair<std::string, double>> read;
+    stage.search.set_reading_log([&](const CallReading& r, double f) { read.emplace_back(r.base, f); });
+    stage.born(1, 2000.0);
+    stage.born(2, 2045.0);
+    stage.text(1, 2000.0, "       TU W1AW W1AW", 0.9);
+    DecodedTextEvent e{};
+    e.track_id = 2;
+    e.freq_hz = 2045.0;
+    e.chars = symbols("KQ2RP TU W1AW W1AW", 1.0);
+    for (std::size_t i = 6; i < e.chars.size(); ++i)
+        if (e.chars[i].text != " ") e.chars[i].heard_from = 1;
+    stage.search.apply(e);
+    stage.died(2);
+    stage.died(1);
+    stage.search.finish();
+    EXPECT_TRUE(std::any_of(read.begin(), read.end(), [](const auto& r) { return r.first == "W1AW" && r.second == 2045.0; }));
 }
