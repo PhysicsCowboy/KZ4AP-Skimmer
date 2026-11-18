@@ -41,7 +41,7 @@ The project serves four goals, all of which matter:
 | Platforms | Windows and Linux (macOS likely follows cheaply) | Cross-platform from day one is far cheaper than porting later. |
 | Language and GUI | C++20 with Qt 6 | The most proven cross-platform path for radio desktop apps (e.g. gqrx). |
 | Engine / GUI split | The engine is a C++ library with **no Qt dependency** | Makes the later headless server a small step instead of a rewrite. |
-| License | GPL-3.0, plus an additional permission (linking exception) for closed-source SDR driver libraries | Keeps the project and its forks open, matches ham-SDR norms, and explicitly permits use of the proprietary SDRplay API. |
+| License | GPL-3.0-or-later (owner, 2026-11-18), plus an additional permission (linking exception) for closed-source radio driver libraries of any radio | Keeps the project and its forks open, matches ham-SDR norms, and explicitly permits use of proprietary driver libraries such as the SDRplay API. |
 | Radio input, first release | SDRplay via SDRplay API 3.x, and playback of I/Q recording files | The author's hardware; recording playback makes decoding testable and lets people try the app without an SDRplay. |
 | Receiver-audio input | Directly after the live display (owner's decision, 2026-09-27): a receiver's audio output into a sound card, decoded through the same detector, channelizer and decoders (§3.3) | Lets the decoder copy whatever the operator is listening to on his own receiver; it needs the live-input plumbing the live display brings. |
 | Relationship to manta | Evaluate manta (HagaleTechnologies/manta) and consider integrating parts of it into the decoder and any later RBN server; later decide between building KZ4AP's own RBN server and contributing to manta (§3.2) | manta may serve the same purpose in a more collaborative spirit, and its MIT-or-Apache-2.0 license lets KZ4AP reuse its code (§3.2). |
@@ -625,10 +625,14 @@ New failure cases found during the build follow the same pattern.
 ## 9. Open questions
 
 1. Callsign-matching rules (§6).
-2. GPL-3.0-only or GPL-3.0-or-later. (The SDR-driver linking exception's
-   wording was settled by the owner on 2026-11-05: `LICENSE-EXCEPTION.md`.)
-3. The SDRplay API's license terms: whether it may be redistributed with the
-   app or installed on the automated build machines (§8.5 assumes not).
+2. *Resolved 2026-11-18:* GPL-3.0-or-later (owner). The linking exception was
+   widened the same day from SDR driver libraries to any radio's driver
+   library, with no maker named (owner's approved wording:
+   `LICENSE-EXCEPTION.md`).
+3. The SDRplay API's license terms. *Partly resolved 2026-11-18:* it is not
+   distributed with the app; users get it from SDRplay (owner). Still open:
+   whether it may be installed on the automated build machines (§8.5 assumes
+   not).
 4. Where the full recording corpus is stored, since it is too large for git.
 5. How real recordings get their known answers (hand labeling, RBN spots, or
    both).
