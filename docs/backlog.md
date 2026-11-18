@@ -1495,10 +1495,12 @@ its own plan. Related item above: "Spectrum frames in linear power".
 
 - **From the CW Skimmer survey and the owner (2026-11-18):** the owner's GUI changes, which he will list. A
   decoder-only mode (section 4, the owner's rulings): done in `app-modes-1`, with the signed-only list and the known-call
-  list's file and download button (`docs/signal-processing.md`, A.12, "The app's modes and list"); its settings last for the
-  session only, until settings are kept between runs. Listening to the selected station live through the sound card,
-  picked by a click; the owner: a clip saved to a WAV file the user then opens is not useful in a release. The
-  survey's other display gaps: calls drawn on the waterfall, a one-signal text pane, settings kept between runs.
+  list's file and download button (`docs/signal-processing.md`, A.12, "The app's modes and list"). Listening to the
+  selected station live through the sound card, picked by a click; the owner: a clip saved to a WAV file the user then
+  opens is not useful in a release. The survey's other display gaps: calls drawn on the waterfall; a one-signal text
+  pane; settings kept between runs, done in `app-settings-1` (README, "Settings kept between runs"). Not kept: the
+  decoder and the threads, which the window does not offer (only `--decoder` and `--threads`); a choice of decoder in the
+  window would be kept too.
 
 - **A channel that follows a QSO turnover** (owner, 2026-09-29): with the
   channel distance (milestone 2, part 1), one channel follows both stations
@@ -1702,9 +1704,9 @@ Real 40 m at 192 kHz from an RSP1A (7030 kHz center, 62 s, kept out of the repos
 - **RSPduo:** single tuner A is set in the source, not run on one. The API's other models' LNA tables are the API's to refuse.
 - **Two radios on one machine (`sdr-1`, 2026-11-15).** The source takes only the radio with exactly the serial number asked
   for (`--sdrplay-serial`, or the Radio serial box), and none when none is given; `--list-sdrplay` lists them without taking any.
-  Tested against the stand-in API only, not on two real radios. Not built: a setting kept between runs (the app has no
-  settings store, so an unattended start names the serial on its command line), and a list of the radios found to pick from
-  in the window (the message of Start radio with no serial names them).
+  Tested against the stand-in API only, not on two real radios. The serial is kept between runs since `app-settings-1`
+  (an unattended start, which reads no settings, still names it on its command line). Not built: a list of the radios found
+  to pick from in the window (the message of Start radio with no serial names them).
 - **A long recording:** the WAV form stops at 4 GiB (93 min at 192 kHz); rolling to a second file is not built.
 
 ## Callsign stage (call-1, 2026-10-31)

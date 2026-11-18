@@ -87,8 +87,9 @@ again (an unchanged file is not sent twice); *No list* goes without. The program
 only on that button. Its requests carry only the program's name and version (`User-Agent:
 KZ4AP-Skimmer/0.1.0`), `Accept-Language: *` and `Accept-Encoding: identity` besides the host and
 connection headers every request has, and the kept copy's ETag when there is one: no language, cookie
-or name of yours. The choices last until the program closes; `--decoder-only` cannot be combined
-with `--known-calls` or `--signed-only`.
+or name of yours. The choices are kept for the next run ("Settings kept between runs", below);
+`--decoder-only` cannot be combined with `--known-calls` or `--signed-only`, and either of those
+starts in skimmer mode.
 
 The radio needs the SDRplay API (below).
 
@@ -135,6 +136,24 @@ decoder (default `segmental`), `--speed` the pace (a factor, or `max`) and
 lists the rest. The Position slider seeks in a recording: the decoders start
 afresh from there.
 
+**Settings kept between runs.** When the program quits it saves, per user, in
+`%LOCALAPPDATA%\kz4ap-skimmer\settings.ini` on Windows (`~/.config/kz4ap-skimmer/settings.ini`
+on Linux; `--help` prints the path): the Mode, the List filter, the known-call list (the path of
+your file, or "downloaded", which reads the copy of MASTER.SCP the Download button kept beside
+it, from disk only: starting the program never reaches the network), the Speed, the radio's
+serial, center, rate, IF gain reduction and LNA state, the waterfall's automatic floor, floor
+and range, the window's size and place, the splitters, the lists' columns and the call list's
+sort, and the folder the last recording was opened from or saved to. A saved list that is gone
+or refused leaves no list, and the Known calls line says why. The decoder and the threads are
+chosen only on the command line and are not kept. **An option on the command line sets its
+choice for that run only and is not saved:** the saved value stays, unless you change that
+control during the run, and then the new value is saved. `--no-settings` reads and writes none.
+Runs without an operator (`--screenshot`, `--report`, `--decoded`, `--calls`, `--quit-at-end`,
+`--quit-at`, `--transport`) and offscreen runs (`-platform offscreen`, `QT_QPA_PLATFORM=offscreen`)
+behave as with `--no-settings`, so that scripted measurements start from the program's defaults
+as they always have; `--settings FILE` keeps the settings in that file instead, in any run.
+Deleting the file restores the defaults.
+
 **Other programs' recordings.** It reads I/Q WAV files of 16-, 24- or 32-bit
 integers or 32-bit floats. The center frequency comes from `--center-khz`, else
 the file's `auxi` chunk (SpectraVue, HDSDR, CWSL_File), else the file name
@@ -173,8 +192,9 @@ machine with two SDRplay radios it can never take the wrong one. With no serial
 it opens none, even when only one radio is plugged in: Start radio then lists
 the serial numbers it found. `kz4ap-skimmer --list-sdrplay` prints each radio's
 serial number and model, a line each, without opening any, and quits (started
-with no console, it shows them in a window). The serial is not remembered
-between runs.
+with no console, it shows them in a window). The serial typed in the box is kept
+for the next run with the other settings; the radio still starts only when you
+press Start radio (or give `--radio`).
 
 To record a band: set Radio serial, Center, Rate (96, 192, 384 or 768 kHz), IF gain
 reduction and LNA state; press Start radio; check the waterfall, with no "ADC

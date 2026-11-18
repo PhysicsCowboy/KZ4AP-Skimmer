@@ -5461,8 +5461,8 @@ row never leaves the signed list again. The cost (a conjecture, not measured): a
 variant holds the call still marks the call signed, so when that reading is a misreading of the variant's own signing (DE K1ABD read for
 DE K1ABC), the misread call shows as signed wherever it is reported.
 
-**The app's modes and list.** `CallSettings` (`app/src/main_window.hpp`), the controls of the toolbar's third row; they last for the
-session, as the app keeps no settings between runs.
+**The app's modes and list.** `Startup::start` (`app/src/main_window.hpp`), the controls of the toolbar's third row; they are kept
+between runs with the app's other settings (README, "Settings kept between runs"; a saved list is read from disk only).
 - *Mode:* Skimmer, the default, runs the stage. Decoder only (`--decoder-only`) builds none (`CallListModel::stop`): no `CallSearch`
   exists, no event reaches one, and the call list, its controls and its status are hidden; the waterfall, the track list and its text are
   as in skimmer mode, since the stage changes nothing they read. Back in skimmer mode a new stage starts, reading the tracks born from then

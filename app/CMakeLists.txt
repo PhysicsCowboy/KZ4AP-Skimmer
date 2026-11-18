@@ -1,5 +1,6 @@
 # The app's logic without Qt, and its tests: always built, so CI covers them on a machine without Qt.
 add_library(kz4ap_app_core
+  core/app_settings.cpp
   core/cpu_meter.cpp
   core/delivery_watch.cpp
   core/display_feed.cpp
@@ -26,6 +27,7 @@ add_executable(kz4ap_app_tests
   tests/delivery_watch_test.cpp
   tests/recording_name_test.cpp
   tests/known_call_download_test.cpp
+  tests/app_settings_test.cpp
 )
 target_link_libraries(kz4ap_app_tests PRIVATE kz4ap_app_core GTest::gtest_main)
 gtest_discover_tests(kz4ap_app_tests)
@@ -40,10 +42,13 @@ if(NOT Qt6Widgets_FOUND OR NOT Qt6Network_FOUND)
 endif()
 message(STATUS "Qt ${Qt6Widgets_VERSION} found: building kz4ap-skimmer")
 
-# The parts with Qt but no window: the known-call list's download (tested below against a local server, no internet).
+# The parts with Qt but no window: the known-call list's download (tested below against a local server, no internet) and the
+# settings kept between runs (tested on files in a temporary folder).
 add_library(kz4ap_app_qt STATIC
   src/known_call_downloader.cpp
   src/known_call_downloader.hpp
+  src/settings_store.cpp
+  src/settings_store.hpp
 )
 set_target_properties(kz4ap_app_qt PROPERTIES AUTOMOC ON)
 target_include_directories(kz4ap_app_qt PUBLIC src)
@@ -63,7 +68,7 @@ add_executable(kz4ap-skimmer
 set_target_properties(kz4ap-skimmer PROPERTIES AUTOMOC ON WIN32_EXECUTABLE ON)
 target_link_libraries(kz4ap-skimmer PRIVATE kz4ap_app_qt Qt6::Widgets)
 
-add_executable(kz4ap_app_qt_tests tests/known_call_downloader_test.cpp)
+add_executable(kz4ap_app_qt_tests tests/known_call_downloader_test.cpp tests/settings_store_test.cpp)
 set_target_properties(kz4ap_app_qt_tests PROPERTIES AUTOMOC ON)
 target_link_libraries(kz4ap_app_qt_tests PRIVATE kz4ap_app_qt GTest::gtest)
 # It runs beside kz4ap-skimmer, whose build puts Qt's DLLs there; its tests are listed when ctest runs, after that.

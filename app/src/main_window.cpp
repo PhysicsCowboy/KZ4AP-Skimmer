@@ -63,14 +63,15 @@ constexpr int kPositionSteps = 1000;
 
 }  // namespace
 
-MainWindow::MainWindow(std::string decoder_name, double speed, int threads, RadioDefaults radio, Automation automation, CallSettings calls)
+MainWindow::MainWindow(std::string decoder_name, int threads, Automation automation, Startup startup)
     : decoder_name_(std::move(decoder_name)),
-      speed_(speed),
+      speed_(startup.start.speed),
       threads_(threads),
       automation_(std::move(automation)),
-      decoder_only_(calls.decoder_only),
-      known_calls_(std::move(calls.known)),
-      known_path_(calls.known_path) {
+      startup_(std::move(startup)),
+      recording_folder_(QString::fromStdString(startup_.start.recording_folder)),
+      decoder_only_(startup_.start.decoder_only) {
+    const UserChoices& start = startup_.start;
     setWindowTitle(tr("KZ4AP Skimmer"));
     resize(1360, 900);
 
@@ -116,40 +117,61 @@ MainWindow::MainWindow(std::string decoder_name, double speed, int threads, Radi
     calls_view_->setColumnWidth(CallListModel::kLastHeard, 75);
     calls_view_->setColumnWidth(CallListModel::kCount, 65);
     calls_view_->setColumnWidth(CallListModel::kHow, 60);
-    auto* lists = new QSplitter(Qt::Horizontal);
-    lists->addWidget(table_view_);
-    lists->addWidget(calls_view_);
-    lists->setStretchFactor(0, 3);
-    lists->setStretchFactor(1, 1);
-    lists->setSizes({920, 440});  // pixels
+    lists_splitter_ = new QSplitter(Qt::Horizontal);
+    lists_splitter_->addWidget(table_view_);
+    lists_splitter_->addWidget(calls_view_);
+    lists_splitter_->setStretchFactor(0, 3);
+    lists_splitter_->setStretchFactor(1, 1);
+    lists_splitter_->setSizes({920, 440});  // pixels
 
-    auto* splitter = new QSplitter(Qt::Vertical);
-    splitter->addWidget(waterfall_);
-    splitter->addWidget(lists);
-    splitter->setStretchFactor(0, 3);
-    splitter->setStretchFactor(1, 1);
-    splitter->setSizes({600, 260});  // pixels; the list starts with room for about nine tracks
-    setCentralWidget(splitter);
+    main_splitter_ = new QSplitter(Qt::Vertical);
+    main_splitter_->addWidget(waterfall_);
+    main_splitter_->addWidget(lists_splitter_);
+    main_splitter_->setStretchFactor(0, 3);
+    main_splitter_->setStretchFactor(1, 1);
+    main_splitter_->setSizes({600, 260});  // pixels; the list starts with room for about nine tracks
+    setCentralWidget(main_splitter_);
 
     build_transport();
     build_scale_controls();
     build_radio_controls();
-    serial_box_->setText(radio.serial);
-    center_box_->setValue(radio.center_khz);
-    rate_box_->setCurrentIndex(std::max(0, rate_box_->findData(radio.sample_rate)));
-    if_gain_box_->setValue(radio.if_gain_reduction_db);
-    lna_box_->setValue(radio.lna_state);
+    serial_box_->setText(QString::fromStdString(start.radio_serial));
+    center_box_->setValue(start.center_khz);
+    rate_box_->setCurrentIndex(std::max(0, rate_box_->findData(start.sample_rate_hz)));
+    if_gain_box_->setValue(start.if_gain_reduction_db);
+    lna_box_->setValue(start.lna_state);
+    // The color scale: the range, then the floor by hand if the automatic one was off.
+    range_slider_->setValue(static_cast<int>(std::lround(start.range_db)));
+    floor_slider_->setValue(static_cast<int>(std::lround(start.floor_dbfs)));
+    auto_floor_->setChecked(start.auto_floor);
+    if (!start.auto_floor) {
+        waterfall_->set_floor_dbfs(start.floor_dbfs);
+        floor_label_->setText(tr("Floor %1 dBFS").arg(start.floor_dbfs, 0, 'f', 0));
+    }
     build_call_controls();
     build_status_bar();
     update_transport();
     update_radio_controls();
-    // The call controls' first values. A list given on the command line has been read already (main.cpp).
-    set_known_calls(known_calls_, known_path_,
-                    known_calls_ ? tr("%1 calls from %2").arg(known_calls_->size()).arg(QFileInfo(known_path_).fileName()) : QString());
-    list_box_->setCurrentIndex(calls.signed_only ? 1 : 0);
-    set_signed_only(calls.signed_only);
+    // The call controls' first values. A list given on the command line has been read already (main.cpp); a saved one is read here,
+    // from disk only, unless the run starts in decoder-only mode, which has none: then on going to skimmer mode.
+    set_known_calls(nullptr, {}, {}, KnownKind::None);
+    if (startup_.given_known) {
+        const QString path = QString::fromStdString(start.known.path);
+        set_known_calls(startup_.given_known, path, tr("%1 calls from %2").arg(startup_.given_known->size()).arg(QFileInfo(path).fileName()));
+    } else if (start.known.kind != KnownKind::None) {
+        if (decoder_only_) {
+            pending_known_ = start.known;
+        } else {
+            restore_known_calls_from(start.known);
+        }
+    }
+    list_box_->setCurrentIndex(start.signed_only ? 1 : 0);
+    set_signed_only(start.signed_only);
     mode_box_->setCurrentIndex(decoder_only_ ? 1 : 0);
     set_decoder_only(decoder_only_);
+    restore_layout();
+    // On quit, however it comes: the window closed, or a script's quit.
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this] { save_settings(); });
 
     timer_ = new QTimer(this);
     connect(timer_, &QTimer::timeout, this, &MainWindow::on_tick);
@@ -166,8 +188,10 @@ void MainWindow::build_transport() {
     open->setShortcut(QKeySequence::Open);
     connect(open, &QAction::triggered, this, [this] {
         const QString path =
-            QFileDialog::getOpenFileName(this, tr("Open an I/Q recording"), {}, tr("I/Q recordings (*.wav);;All files (*)"));
-        if (!path.isEmpty() && may_end_recording(tr("Opening a recording"))) open_recording(path);
+            QFileDialog::getOpenFileName(this, tr("Open an I/Q recording"), recording_folder_, tr("I/Q recordings (*.wav);;All files (*)"));
+        if (path.isEmpty()) return;
+        recording_folder_ = QFileInfo(path).absolutePath();
+        if (may_end_recording(tr("Opening a recording"))) open_recording(path);
     });
     play_pause_ = bar->addAction(tr("Pause"));
     play_pause_->setShortcut(Qt::Key_Space);
@@ -331,7 +355,7 @@ void MainWindow::build_call_controls() {
     skimmer_controls_.push_back(known_download_);
     QAction* none = bar->addAction(tr("No list"));
     none->setToolTip(tr("Search calls without a known-call list"));
-    connect(none, &QAction::triggered, this, [this] { set_known_calls(nullptr, {}, {}); });
+    connect(none, &QAction::triggered, this, [this] { set_known_calls(nullptr, {}, {}, KnownKind::None); });
     skimmer_controls_.push_back(none);
     // Last on the row, so that a long status or error never pushes the buttons out of sight; the whole of it is in the tooltip.
     known_label_ = new QLabel;
@@ -344,6 +368,12 @@ void MainWindow::set_decoder_only(bool on) {
     for (QAction* action : skimmer_controls_) action->setVisible(!on);
     calls_view_->setVisible(!on);
     if (calls_label_) calls_label_->setVisible(!on);
+    if (!on && pending_known_) {
+        // The saved list of a run that started in decoder-only mode.
+        const KnownChoice saved = *pending_known_;
+        pending_known_.reset();
+        restore_known_calls_from(saved);
+    }
     if (on) {
         calls_->stop();
     } else if (calls_->search() == nullptr) {
@@ -369,12 +399,79 @@ void MainWindow::show_known_status(const QString& text, bool problem) {
     if (problem || !text.isEmpty()) transport_log_ << QStringLiteral("known calls: %1").arg(text);
 }
 
-void MainWindow::set_known_calls(std::shared_ptr<const callsign::KnownCalls> known, const QString& path, const QString& status) {
+void MainWindow::set_known_calls(std::shared_ptr<const callsign::KnownCalls> known, const QString& path, const QString& status, KnownKind kind) {
     known_calls_ = std::move(known);
     known_path_ = known_calls_ ? path : QString();
+    known_kind_ = known_calls_ ? kind : KnownKind::None;
+    pending_known_.reset();  // a choice made now replaces the saved one
     calls_->set_known(known_calls_);
     known_status_ = known_calls_ ? status : tr("none");
     show_known_status(known_status_, false);
+}
+
+void MainWindow::restore_known_calls_from(const KnownChoice& choice) {
+    const RestoredKnown r = restore_known_calls(choice, QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation));
+    if (r.list) {
+        set_known_calls(r.list, r.path, r.status, choice.kind);
+    } else {
+        // No list, and the reason in the controls' status: never a dialog.
+        set_known_calls(nullptr, {}, {}, KnownKind::None);
+        show_known_status(r.status, r.problem);
+    }
+    std::fprintf(stderr, "kz4ap-skimmer: saved known-call list: %s\n", r.status.toLocal8Bit().constData());
+}
+
+void MainWindow::restore_layout() {
+    const SettingsStore& store = startup_.store;
+    if (!store.enabled()) return;
+    if (const QByteArray g = store.read_layout(QStringLiteral("geometry")); !g.isEmpty()) restoreGeometry(g);
+    if (const QByteArray s = store.read_layout(QStringLiteral("main_splitter")); !s.isEmpty()) main_splitter_->restoreState(s);
+    if (const QByteArray s = store.read_layout(QStringLiteral("lists_splitter")); !s.isEmpty()) lists_splitter_->restoreState(s);
+    if (const QByteArray s = store.read_layout(QStringLiteral("track_columns")); !s.isEmpty()) table_view_->horizontalHeader()->restoreState(s);
+    if (const QByteArray s = store.read_layout(QStringLiteral("call_columns")); !s.isEmpty()) {
+        QHeaderView* header = calls_view_->horizontalHeader();
+        header->restoreState(s);
+        calls_view_->sortByColumn(header->sortIndicatorSection(), header->sortIndicatorOrder());
+    }
+}
+
+UserChoices MainWindow::choices_now() const {
+    UserChoices c;
+    c.decoder_only = decoder_only_;
+    c.signed_only = calls_->signed_only();
+    if (pending_known_) {
+        c.known = *pending_known_;
+    } else if (known_kind_ == KnownKind::File) {
+        // Absolute, so that a run started elsewhere finds it; the command line's own form when unchanged (choices_to_save).
+        c.known = {KnownKind::File, startup_.given.known && known_path_ == QString::fromStdString(startup_.given.known->path)
+                                        ? startup_.given.known->path
+                                        : QFileInfo(known_path_).absoluteFilePath().toStdString()};
+    } else {
+        c.known = {known_kind_, {}};
+    }
+    c.speed = speed_box_->currentData().toDouble();
+    c.radio_serial = serial_box_->text().trimmed().toStdString();
+    c.center_khz = center_box_->value();
+    c.sample_rate_hz = rate_box_->currentData().toInt();
+    c.if_gain_reduction_db = if_gain_box_->value();
+    c.lna_state = lna_box_->value();
+    c.auto_floor = auto_floor_->isChecked();
+    c.floor_dbfs = floor_slider_->value();
+    c.range_db = range_slider_->value();
+    c.recording_folder = recording_folder_.toStdString();
+    return c;
+}
+
+void MainWindow::save_settings() {
+    const SettingsStore& store = startup_.store;
+    if (settings_saved_ || !store.enabled()) return;
+    settings_saved_ = true;
+    store.write_choices(choices_to_save(startup_.saved, startup_.start, choices_now(), startup_.given));
+    store.write_layout(QStringLiteral("geometry"), saveGeometry());
+    store.write_layout(QStringLiteral("main_splitter"), main_splitter_->saveState());
+    store.write_layout(QStringLiteral("lists_splitter"), lists_splitter_->saveState());
+    store.write_layout(QStringLiteral("track_columns"), table_view_->horizontalHeader()->saveState());
+    store.write_layout(QStringLiteral("call_columns"), calls_view_->horizontalHeader()->saveState());
 }
 
 bool MainWindow::load_known_calls(const QString& path, const QString& how) {
@@ -418,7 +515,8 @@ void MainWindow::download_known_calls() {
                     if (decoder_only_) return;  // the mode changed while it downloaded: kept, not used
                     set_known_calls(list, path,
                                     fresh ? tr("%1 calls, downloaded %2").arg(list->size()).arg(when)
-                                          : tr("%1 calls from %2 (unchanged on the server, %3)").arg(list->size()).arg(QFileInfo(path).fileName(), when));
+                                          : tr("%1 calls from %2 (unchanged on the server, %3)").arg(list->size()).arg(QFileInfo(path).fileName(), when),
+                                    KnownKind::Downloaded);
                 });
     }
     if (downloader_->busy()) return;
@@ -474,9 +572,14 @@ void MainWindow::toggle_recording() {
     }
     const std::string name = recording_file_name(center_box_->value() * 1000.0, rate_box_->currentData().toInt(),
                                                   QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")).toStdString());
-    const QString suggested = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + QLatin1Char('/') + QString::fromStdString(name);
+    const QString folder = !recording_folder_.isEmpty() && QFileInfo(recording_folder_).isDir()
+                               ? recording_folder_
+                               : QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    const QString suggested = folder + QLatin1Char('/') + QString::fromStdString(name);
     const QString path = QFileDialog::getSaveFileName(this, tr("Save the radio's I/Q"), suggested, tr("I/Q recordings (*.wav)"));
-    if (!path.isEmpty()) begin_recording(path);
+    if (path.isEmpty()) return;
+    recording_folder_ = QFileInfo(path).absolutePath();
+    begin_recording(path);
 }
 
 void MainWindow::begin_recording(const QString& path) {
@@ -960,7 +1063,7 @@ void MainWindow::run_transport_steps(const StreamStatus& status) {
         } else if (action.startsWith(QStringLiteral("known="))) {
             load_known_calls(action.mid(6), tr("from"));
         } else if (action == QStringLiteral("noknown")) {
-            set_known_calls(nullptr, {}, {});
+            set_known_calls(nullptr, {}, {}, KnownKind::None);
         } else if (action == QStringLiteral("download")) {
             known_download_->trigger();
         } else if (action == QStringLiteral("quit")) {
@@ -1058,6 +1161,7 @@ void MainWindow::write_report(const StreamStatus& status) {
     out << "per_track_ms_per_channel_s: " << number(whole.per_track_ms_per_channel_s) << "\n";
     out << "realtime_factor: " << number(whole.speed) << "\n";
     out << "threads: " << threads_ << "\n";
+    out << "settings: " << (startup_.store.enabled() ? QDir::toNativeSeparators(startup_.store.path()) : QStringLiteral("none")) << "\n";
     const double process_s = process_cpu_seconds();
     out << "process_cpu_s: " << process_s << "\n";
     out << "process_cpu_ms_per_channel_s: "
