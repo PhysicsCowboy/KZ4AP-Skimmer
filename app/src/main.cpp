@@ -143,6 +143,14 @@ int main(int argc, char* argv[]) {
     const QCommandLineOption known_calls_option(QStringLiteral("known-calls"),
                                                 QStringLiteral("A known-call list in MASTER.SCP's format: one call a line. The call list works without one."),
                                                 QStringLiteral("path"));
+    const QCommandLineOption decoder_only_option(
+        QStringLiteral("decoder-only"),
+        QStringLiteral("A plain CW decoder: the waterfall and the decoded text, with no call search, call list or known-call list "
+                       "(the Mode box's Decoder only)."));
+    const QCommandLineOption signed_only_option(
+        QStringLiteral("signed-only"),
+        QStringLiteral("The call list shows only the calls sent at least once after DE, CQ or TEST, or before K, KN or AR (the List "
+                       "box's Signed calls only); by default it shows every call."));
     const QCommandLineOption radio_option(QStringLiteral("radio"), QStringLiteral("Start the SDRplay radio at once."));
     const QCommandLineOption serial_option(
         QStringLiteral("sdrplay-serial"),
@@ -167,7 +175,8 @@ int main(int argc, char* argv[]) {
                        "signal's true frequency is the center minus the file's offset."));
     parser.addOption(mirror_option);
     parser.addOptions({decoder_option, speed_option, screenshot_option, screenshot_at_option, report_option,
-                       quit_at_end_option, quit_at_option, transport_option, threads_option, decoded_option, calls_option, known_calls_option, radio_option,
+                       quit_at_end_option, quit_at_option, transport_option, threads_option, decoded_option, calls_option, known_calls_option,
+                       decoder_only_option, signed_only_option, radio_option,
                        serial_option, list_option, center_option, rate_option, gain_option, lna_option});
     parser.process(app);
 
@@ -213,18 +222,22 @@ int main(int argc, char* argv[]) {
     radio.if_gain_reduction_db = parser.value(gain_option).toInt();
     radio.lna_state = parser.value(lna_option).toInt();
 
-    std::shared_ptr<const kz4ap::callsign::KnownCalls> known_calls;
+    kz4ap::app::CallSettings calls;
+    calls.decoder_only = parser.isSet(decoder_only_option);
+    calls.signed_only = parser.isSet(signed_only_option);
+    if (calls.decoder_only && (parser.isSet(known_calls_option) || parser.isSet(calls_option)))
+        return usage_error(QStringLiteral("--decoder-only runs no call search: it takes no --known-calls or --calls"), quiet);
     if (parser.isSet(known_calls_option)) {
         try {
-            known_calls = std::make_shared<const kz4ap::callsign::KnownCalls>(kz4ap::callsign::KnownCalls::read_file(parser.value(known_calls_option).toStdString()));
-            std::fprintf(stderr, "kz4ap-skimmer: known-call list: %zu calls from %s\n", known_calls->size(),
-                         parser.value(known_calls_option).toLocal8Bit().constData());
+            calls.known_path = parser.value(known_calls_option);
+            calls.known = std::make_shared<const kz4ap::callsign::KnownCalls>(kz4ap::callsign::KnownCalls::read_file(calls.known_path.toStdString()));
+            std::fprintf(stderr, "kz4ap-skimmer: known-call list: %zu calls from %s\n", calls.known->size(), calls.known_path.toLocal8Bit().constData());
         } catch (const std::exception& e) {
             return usage_error(QString::fromUtf8(e.what()), quiet);
         }
     }
 
-    kz4ap::app::MainWindow window(decoder, *speed, threads, radio, automation, known_calls);
+    kz4ap::app::MainWindow window(decoder, *speed, threads, radio, automation, calls);
     window.show();
     if (parser.isSet(radio_option)) {
         window.start_radio();

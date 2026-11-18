@@ -30,6 +30,8 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
+class QNetworkAccessManager;
+class QNetworkReply;
 class QSlider;
 class QSpinBox;
 class QTableView;
@@ -43,7 +45,8 @@ struct TransportStep {
     double at_wall_s = 0;  // s of wall clock since the first stream started
     // pause, play, restart, quit, speed=X (X as the speed box offers it: 1, 2, 5, 10 or max), seek=S (s into the recording),
     // radio (starts it at the controls' settings), radiostop, serial=SERIAL (the radio's serial number), center=KHZ, rate=HZ,
-    // gain=DB,STATE, record=PATH, stoprecord, shot=PATH (a picture of the window now)
+    // gain=DB,STATE, record=PATH, stoprecord, shot=PATH (a picture of the window now), mode=decoder or mode=skimmer, list=all or
+    // list=signed, known=PATH (a known-call list), noknown, download (presses Download MASTER.SCP)
     QString action;
 };
 
@@ -66,6 +69,18 @@ struct Automation {
     }
 };
 
+// The call stage's settings at the program's start, the controls' first values. They last for the session: the app keeps no
+// settings between runs yet (docs/backlog.md).
+struct CallSettings {
+    // The plain CW decoder: no call stage, call list or known-call list; the waterfall and the text as ever (the owner's ruling, 2026-11-18).
+    bool decoder_only = false;
+    // The list shows only the calls that signed (callsign::is_signed); by default every call, as CW Skimmer lists them.
+    bool signed_only = false;
+    // The operator's known-call list, or null, and the file it came from.
+    std::shared_ptr<const callsign::KnownCalls> known;
+    QString known_path;
+};
+
 // The radio's settings at the program's start, the controls' first values.
 struct RadioDefaults {
     // The serial number of the SDRplay radio to open (SdrplaySettings::serial): none opens none.
@@ -81,10 +96,9 @@ class MainWindow : public QMainWindow {
 
 public:
     // decoder_name: front_end_from_name's names; the caller has checked it. speed: stream seconds per second of wall
-    // clock for the next recording, kAsFastAsPossible for no pacing. threads: EngineConfig::worker_threads. known_calls: the
-    // operator's known-call list, or null.
-    MainWindow(std::string decoder_name, double speed, int threads, RadioDefaults radio, Automation automation,
-               std::shared_ptr<const callsign::KnownCalls> known_calls = nullptr);
+    // clock for the next recording, kAsFastAsPossible for no pacing. threads: EngineConfig::worker_threads. calls: the call stage's
+    // mode, filter and known-call list.
+    MainWindow(std::string decoder_name, double speed, int threads, RadioDefaults radio, Automation automation, CallSettings calls = {});
     ~MainWindow() override;
 
     // Opens the recording and starts it, start_s into it. False (having told the operator) if it cannot be opened.
@@ -98,7 +112,20 @@ private:
     void build_transport();
     void build_scale_controls();
     void build_radio_controls();
+    void build_call_controls();
     void build_status_bar();
+    // Decoder-only mode on or off: the stage goes or comes (a new one, reading the tracks born from then on), with its controls and list.
+    void set_decoder_only(bool on);
+    void set_signed_only(bool on);
+    // A known-call list from a file, or the reason it was refused (also in the controls' status). False if refused.
+    bool load_known_calls(const QString& path, const QString& how);
+    void set_known_calls(std::shared_ptr<const callsign::KnownCalls> known, const QString& path, const QString& status);
+    // The button: asks supercheckpartial.com for its list of files, then for MASTER.SCP (known_call_download.hpp).
+    void download_known_calls();
+    void listing_received(QNetworkReply* reply);
+    void file_received(QNetworkReply* reply);
+    void download_failed(const QString& message);
+    void show_known_status(const QString& text, bool problem);
     void report_failure(const QString& message);
     void update_radio_controls();
     void update_radio_status(const StreamStatus& status);
@@ -162,7 +189,19 @@ private:
     WaterfallWidget* waterfall_ = nullptr;
     TrackListModel* model_ = nullptr;
     CallListModel* calls_ = nullptr;
+    QTableView* calls_view_ = nullptr;
+    bool decoder_only_ = false;
     std::shared_ptr<const callsign::KnownCalls> known_calls_;
+    QString known_path_;
+    QString known_status_;  // what the controls say of the list: its size and origin, or why the last try failed
+    double call_stage_cpu_s_ = 0.0;  // s: the GUI thread's CPU inside the call stage and its list's model, this stream
+    QNetworkAccessManager* network_ = nullptr;  // made on the first download, never before
+    bool downloading_ = false;
+    QComboBox* mode_box_ = nullptr;
+    QComboBox* list_box_ = nullptr;
+    QLabel* known_label_ = nullptr;
+    QAction* known_download_ = nullptr;
+    std::vector<QAction*> skimmer_controls_;  // the toolbar's call controls, hidden in decoder-only mode
     QTableView* table_view_ = nullptr;
     QTimer* timer_ = nullptr;
     QAction* play_pause_ = nullptr;

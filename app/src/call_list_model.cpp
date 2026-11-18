@@ -13,20 +13,64 @@ CallListModel::CallListModel(QObject* parent)
 
 void CallListModel::start(std::shared_ptr<const callsign::KnownCalls> known, std::optional<double> center_hz) {
     beginResetModel();
-    search_ = std::make_unique<callsign::CallSearch>(callsign::CallSearchConfig{}, std::move(known));
+    known_ = std::move(known);
+    search_ = std::make_unique<callsign::CallSearch>(callsign::CallSearchConfig{}, known_);
     seen_version_ = search_->version();
+    shown_.clear();
     center_hz_ = center_hz;
     now_s_ = 0;
     endResetModel();
     emit headerDataChanged(Qt::Horizontal, kFrequency, kFrequency);
 }
 
+void CallListModel::stop() {
+    beginResetModel();
+    search_.reset();
+    shown_.clear();
+    endResetModel();
+}
+
+void CallListModel::set_known(std::shared_ptr<const callsign::KnownCalls> known) {
+    known_ = std::move(known);
+    if (search_) search_->set_known(known_);
+}
+
+void CallListModel::set_signed_only(bool on) {
+    if (on == signed_only_) return;
+    signed_only_ = on;
+    reset_rows();
+}
+
+std::vector<std::size_t> CallListModel::pick() const {
+    std::vector<std::size_t> out;
+    if (!search_) return out;
+    const std::vector<callsign::CallRow>& rows = search_->calls();
+    out.reserve(rows.size());
+    for (std::size_t i = 0; i < rows.size(); ++i)
+        if (!signed_only_ || callsign::is_signed(rows[i])) out.push_back(i);
+    return out;
+}
+
+void CallListModel::reset_rows() {
+    beginResetModel();
+    if (search_) seen_version_ = search_->version();
+    shown_ = pick();
+    endResetModel();
+}
+
+std::vector<callsign::CallRow> CallListModel::shown_rows() const {
+    std::vector<callsign::CallRow> out;
+    if (!search_) return out;
+    for (const std::size_t i : pick()) out.push_back(search_->calls()[i]);
+    return out;
+}
+
 void CallListModel::refresh(double now_s) {
     now_s_ = now_s;
-    if (search_->version() != seen_version_) {
-        beginResetModel();
-        seen_version_ = search_->version();
-        endResetModel();
+    if (!search_) return;
+    // A row can start to show without the stage adding one: a call that signs for the first time, with signed calls only.
+    if (search_->version() != seen_version_ || (signed_only_ && pick() != shown_)) {
+        reset_rows();
         shown_second_ = std::floor(now_s);
     } else if (rowCount() > 0 && std::floor(now_s) != shown_second_) {
         // The times since a call was heard read in whole seconds, and the counts go with them.
@@ -35,20 +79,22 @@ void CallListModel::refresh(double now_s) {
     }
 }
 
-int CallListModel::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(search_->calls().size()); }
+int CallListModel::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : static_cast<int>(shown_.size()); }
 
 int CallListModel::columnCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : kColumnCount; }
 
 QVariant CallListModel::data(const QModelIndex& index, int role) const {
-    if (!index.isValid() || index.row() >= rowCount()) return {};
-    const callsign::CallRow& row = search_->calls()[static_cast<std::size_t>(index.row())];
+    if (!index.isValid() || index.row() >= rowCount() || !search_) return {};
+    const std::size_t at = shown_[static_cast<std::size_t>(index.row())];
+    if (at >= search_->calls().size()) return {};
+    const callsign::CallRow& row = search_->calls()[at];
     if (role == Qt::UserRole) {  // what to sort by
         switch (index.column()) {
             case kCall: return QString::fromStdString(row.call);
             case kFrequency: return row.freq_hz;
             case kLastHeard: return -row.last_s;
             case kCount: return row.count;
-            default: return row.framed ? 0 : (row.heard ? 1 : 2);
+            default: return callsign::is_signed(row) ? 0 : (row.heard ? 1 : 2);
         }
     }
     if (role == Qt::DisplayRole) {
@@ -62,14 +108,14 @@ QVariant CallListModel::data(const QModelIndex& index, int role) const {
             }
             case kCount: return row.count;
             case kHow:
-                if (row.framed) return tr("signed");
+                if (callsign::is_signed(row)) return tr("signed");
                 return row.heard ? tr("bare") : tr("named");
             default: return {};
         }
     }
     if (role == Qt::ToolTipRole && index.column() == kHow)
-        return tr("signed: sent with DE or CQ, or before K or TEST. bare: the call alone. named: only by another station (before DE or 5NN), so "
-                  "the frequency is that station's.");
+        return tr("signed: sent at least once after DE, CQ or TEST, or before K, KN or AR. bare: the call alone, or sent twice. named: only by "
+                  "another station (before DE or 5NN), so the frequency is that station's.");
     if (role == Qt::TextAlignmentRole && index.column() != kCall && index.column() != kHow)
         return QVariant::fromValue(Qt::AlignRight | Qt::AlignVCenter);
     if (role == Qt::FontRole && index.column() == kCall) return fixed_font_;
