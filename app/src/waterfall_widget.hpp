@@ -7,7 +7,9 @@
 #include <QImage>
 #include <QLine>
 #include <QPixmap>
+#include <QRect>
 #include <QRegion>
+#include <QString>
 #include <QWidget>
 
 #include <array>
@@ -37,6 +39,17 @@ public:
     void start(double sample_rate_hz, int fft_bins, std::optional<double> center_hz = std::nullopt, double time_origin_s = 0.0);
     void add_rows(std::vector<WaterfallRow>&& rows);
     void set_markers(std::vector<Marker> markers);
+    // Calls written on the picture, each just right of its frequency at the top, most important first: lanes of labels without
+    // overlap (place_labels); what fits in none is left out. Empty in decoder-only mode.
+    struct CallLabel {
+        double freq_hz = 0;  // Hz from the center
+        QString text;
+        bool recent = true;  // heard lately: drawn brighter
+    };
+    void set_call_labels(std::vector<CallLabel> labels);
+    // Lanes of call labels, and the gap kept between two labels in a lane, pixels (heuristics).
+    static constexpr int kLabelLanes = 3;
+    static constexpr int kLabelGapPx = 6;
 
     // The color scale. In automatic mode the floor follows the noise (NoiseFloorTracker) and floorChanged says so.
     void set_floor_dbfs(double floor_dbfs);
@@ -89,6 +102,14 @@ private:
     bool markers_stale_ = true;
     std::array<std::vector<QLine>, 2> marker_lines_;  // into the plot: live, ended
     std::optional<QLine> selected_line_;
+    std::vector<CallLabel> call_labels_;
+    struct PlacedLabel {
+        QRect rect;  // in the widget
+        QString text;
+        bool recent = true;
+    };
+    std::vector<PlacedLabel> placed_labels_;  // laid out for the plot's present width; redone with the labels or a resize
+    void place_call_labels();
     QImage image_;       // the plot, used as a ring: head_ is the scan line of the newest row
     int head_ = 0;
     std::vector<float> scratch_;

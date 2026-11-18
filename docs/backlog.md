@@ -1497,7 +1497,9 @@ its own plan. Related item above: "Spectrum frames in linear power".
   decoder-only mode (section 4, the owner's rulings): done in `app-modes-1`, with the signed-only list and the known-call
   list's file and download button (`docs/signal-processing.md`, A.12, "The app's modes and list"). Listening to the
   selected station live through the sound card, picked by a click; the owner: a clip saved to a WAV file the user then
-  opens is not useful in a release. The survey's other display gaps: calls drawn on the waterfall; a one-signal text
+  opens is not useful in a release. The survey's other display gaps: calls drawn on the waterfall, done in
+  `app-settings-1` (README, "Calls on the waterfall"), without CW Skimmer's CQ or DE before a label, bold for a call
+  seen twice, QRL? and 599 labels or its label filter; a one-signal text
   pane, done in `app-settings-1` (README, "One signal"), still without CW Skimmer's colors by kind, pale low-SNR
   characters and » for a long pause (they need a per-character confidence and pause times the table does not keep), and
   following a click rather than the radio's tuned frequency until there is tuning; settings kept between runs, done in

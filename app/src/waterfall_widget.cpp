@@ -1,6 +1,7 @@
 #include "waterfall_widget.hpp"
 
 #include <QEvent>
+#include <QFontMetrics>
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
@@ -42,6 +43,8 @@ void WaterfallWidget::start(double sample_rate_hz, int fft_bins, std::optional<d
     started_ = true;
     history_.clear();
     markers_.clear();
+    call_labels_.clear();
+    placed_labels_.clear();
     floor_tracker_.reset();
     chrome_stale_ = true;
     markers_stale_ = true;
@@ -118,6 +121,43 @@ void WaterfallWidget::set_markers(std::vector<Marker> markers) {
     update(plot_rect());
 }
 
+void WaterfallWidget::set_call_labels(std::vector<CallLabel> labels) {
+    const auto same = [](const CallLabel& a, const CallLabel& b) {
+        return a.freq_hz == b.freq_hz && a.text == b.text && a.recent == b.recent;
+    };
+    if (std::equal(labels.begin(), labels.end(), call_labels_.begin(), call_labels_.end(), same)) return;
+    call_labels_ = std::move(labels);
+    place_call_labels();
+    update(plot_rect());
+}
+
+void WaterfallWidget::place_call_labels() {
+    placed_labels_.clear();
+    if (!started_ || call_labels_.empty()) return;
+    QFont small = font();
+    small.setPointSizeF(font().pointSizeF() * 0.9);
+    const QFontMetrics metrics(small);
+    const QRect plot = plot_rect();
+    const int height = metrics.height() + 2;  // pixels
+    std::vector<LabelSpan> spans;
+    std::vector<std::size_t> which;
+    for (std::size_t i = 0; i < call_labels_.size(); ++i) {
+        const double px = axis_.x_for_hz(call_labels_[i].freq_hz, plot.width());
+        if (px < 0 || px > plot.width()) continue;
+        // Just right of the trace, so that the trace itself stays in view.
+        spans.push_back({px + 3.0, static_cast<double>(metrics.horizontalAdvance(call_labels_[i].text) + 6)});
+        which.push_back(i);
+    }
+    const std::vector<std::optional<int>> lanes = place_labels(spans, kLabelLanes, kLabelGapPx);
+    for (std::size_t k = 0; k < spans.size(); ++k) {
+        if (!lanes[k]) continue;
+        const QRect rect(plot.left() + static_cast<int>(std::lround(spans[k].left_px)), plot.top() + 16 + *lanes[k] * (height + 1),
+                         static_cast<int>(std::lround(spans[k].width_px)), height);
+        if (rect.right() > plot.right()) continue;  // not cut at the edge
+        placed_labels_.push_back({rect, call_labels_[which[k]].text, call_labels_[which[k]].recent});
+    }
+}
+
 void WaterfallWidget::mousePressEvent(QMouseEvent* event) {
     QWidget::mousePressEvent(event);
     if (!started_ || event->button() != Qt::LeftButton) return;
@@ -173,6 +213,7 @@ void WaterfallWidget::resizeEvent(QResizeEvent* event) {
     chrome_stale_ = true;
     markers_stale_ = true;
     rebuild_image();
+    place_call_labels();
 }
 
 void WaterfallWidget::changeEvent(QEvent* event) {
@@ -326,6 +367,17 @@ void WaterfallWidget::paintEvent(QPaintEvent* event) {
         if (selected_line_) {
             p.setPen(QPen(QColor(255, 120, 60), 1, Qt::DashLine));
             p.drawLine(*selected_line_);
+        }
+        // The calls, below the markers' short lines, each on a dark box so it reads over any color.
+        if (!placed_labels_.empty()) {
+            QFont small = font();
+            small.setPointSizeF(font().pointSizeF() * 0.9);
+            p.setFont(small);
+            for (const PlacedLabel& label : placed_labels_) {
+                p.fillRect(label.rect, QColor(0, 0, 0, 170));
+                p.setPen(label.recent ? QColor(255, 255, 255) : QColor(170, 170, 170));
+                p.drawText(label.rect, Qt::AlignCenter, label.text);
+            }
         }
     }
 

@@ -64,6 +64,10 @@ constexpr int kTextEveryTicks = 3;
 constexpr int kStatusEveryTicks = 12;
 // The position slider's steps across a recording.
 constexpr int kPositionSteps = 1000;
+// The calls written on the waterfall: those heard within kCallLabelAgeS of stream, s, and brighter within kCallLabelRecentS, about the
+// picture's height at its first size (380 rows at 23.4 rows/s). Heuristics: a station that calls every half minute keeps its label.
+constexpr double kCallLabelAgeS = 60.0;
+constexpr double kCallLabelRecentS = 16.0;
 
 }  // namespace
 
@@ -169,16 +173,14 @@ MainWindow::MainWindow(std::string decoder_name, int threads, Automation automat
     update_radio_controls();
     // The call controls' first values. A list given on the command line has been read already (main.cpp); a saved one is read here,
     // from disk only, unless the run starts in decoder-only mode, which has none: then on going to skimmer mode.
-    set_known_calls(nullptr, {}, {}, KnownKind::None);
     if (startup_.given_known) {
         const QString path = QString::fromStdString(start.known.path);
         set_known_calls(startup_.given_known, path, tr("%1 calls from %2").arg(startup_.given_known->size()).arg(QFileInfo(path).fileName()));
-    } else if (start.known.kind != KnownKind::None) {
-        if (decoder_only_) {
-            pending_known_ = start.known;
-        } else {
-            restore_known_calls_from(start.known);
-        }
+    } else if (start.known.kind != KnownKind::None && !decoder_only_) {
+        restore_known_calls_from(start.known);
+    } else {
+        set_known_calls(nullptr, {}, {}, KnownKind::None);
+        if (start.known.kind != KnownKind::None) pending_known_ = start.known;
     }
     list_box_->setCurrentIndex(start.signed_only ? 1 : 0);
     set_signed_only(start.signed_only);
@@ -391,6 +393,7 @@ void MainWindow::set_decoder_only(bool on) {
     }
     if (on) {
         calls_->stop();
+        waterfall_->set_call_labels({});
     } else if (calls_->search() == nullptr) {
         calls_->start(known_calls_, stream_center_hz_);
     }
@@ -430,7 +433,12 @@ void MainWindow::restore_known_calls_from(const KnownChoice& choice) {
         set_known_calls(r.list, r.path, r.status, choice.kind);
     } else {
         // No list, and the reason in the controls' status: never a dialog.
-        set_known_calls(nullptr, {}, {}, KnownKind::None);
+        known_calls_.reset();
+        known_path_.clear();
+        known_kind_ = KnownKind::None;
+        pending_known_.reset();
+        calls_->set_known(nullptr);
+        known_status_ = tr("none");
         show_known_status(r.status, r.problem);
     }
     std::fprintf(stderr, "kz4ap-skimmer: saved known-call list: %s\n", r.status.toLocal8Bit().constData());
@@ -937,12 +945,28 @@ void MainWindow::on_tick() {
         }
         update_radio_status(status);  // first: the markers and the status show a radio that has stopped delivering
         update_markers();
+        update_call_labels(status.stream_s);
     }
     if (ticks_ % kStatusEveryTicks == 0 || ended) {
         update_status(status);
         update_position(status);
     }
     run_automation(status);
+}
+
+void MainWindow::update_call_labels(double now_s) {
+    std::vector<WaterfallWidget::CallLabel> labels;
+    if (calls_->search()) {
+        std::vector<callsign::CallRow> rows = calls_->shown_rows();
+        // The latest heard first: they take the first lanes, and the others what room is left.
+        std::sort(rows.begin(), rows.end(), [](const callsign::CallRow& a, const callsign::CallRow& b) { return a.last_s > b.last_s; });
+        for (const callsign::CallRow& row : rows) {
+            // A call only named by another station has that station's frequency (CallRow::freq_hz): no label there.
+            if (!row.heard || now_s - row.last_s > kCallLabelAgeS) continue;
+            labels.push_back({row.freq_hz, QString::fromStdString(row.call), now_s - row.last_s <= kCallLabelRecentS});
+        }
+    }
+    waterfall_->set_call_labels(std::move(labels));
 }
 
 void MainWindow::update_markers() {

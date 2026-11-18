@@ -72,6 +72,12 @@ panel shows the signal at the radio's tuned frequency instead; this one follows 
 click (there is no tuning yet), and has no colors for calls or reports, no pale characters at low
 SNR and no » for a long pause.
 
+**Calls on the waterfall.** In skimmer mode each call of the call list heard in the last 60 s of
+stream is written at the top of the picture, just right of its frequency, white if heard in the
+last 16 s and gray before that, in up to three rows of labels: the most recently heard take the
+first places, and a label with no room left beside the others is left out rather than drawn over
+them. A call only named by another station gets no label (its frequency is that station's).
+
 To keep the list, add `--calls calls.csv` (it is written when the stream ends; add
 `--quit-at-end` to leave after that). To give it a list of calls in MASTER.SCP's format, add
 `--known-calls MASTER.SCP`: a text file of one call a line, such as supercheckpartial.com's MASTER.SCP

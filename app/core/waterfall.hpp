@@ -67,6 +67,15 @@ private:
     std::optional<double> median_;
 };
 
+// Labels over the picture without overlap: each label is a stretch [left_px, left_px + width_px) across, and goes into the
+// first of `lanes` lanes (rows of labels) where it keeps at least gap_px from every label already there; the labels are
+// placed in the order given, most important first, and one that fits in no lane is left out (none).
+struct LabelSpan {
+    double left_px = 0;
+    double width_px = 0;
+};
+std::vector<std::optional<int>> place_labels(std::span<const LabelSpan> labels, int lanes, double gap_px);
+
 // Frequency against horizontal position, for a spectrum of fft_bins bins at sample_rate_hz drawn over width_px: bin i
 // is at (i - fft_bins/2) x sample_rate_hz / fft_bins Hz (SpectrumFrame), and occupies [i, i + 1) x width_px / fft_bins,
 // so its frequency falls at the center of that stretch.

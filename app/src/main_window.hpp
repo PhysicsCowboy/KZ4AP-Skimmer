@@ -136,6 +136,9 @@ private:
     void write_calls();
     void on_tick();
     void update_markers();
+    // The calls written on the waterfall: the list's calls heard at their own frequency lately, the latest first (none in
+    // decoder-only mode). now_s: the stream's clock, s.
+    void update_call_labels(double now_s);
     void update_status(const StreamStatus& status);
     void update_transport();
     void set_speed_from_combo();
