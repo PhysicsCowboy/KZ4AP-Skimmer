@@ -124,8 +124,8 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
 
 // ---- A known-call list
 
-// A set of calls, by base call. MASTER.SCP's format: one call a line; a line starting with # or ; or blank is skipped; case is ignored;
-// anything after the first white space on a line is ignored.
+// A set of calls, by base call. MASTER.SCP's format: one call a line; a line starting with # or ; or !! (a directive, "!!Order,1,1") or
+// blank is skipped; case is ignored; anything after the first white space on a line is ignored. size() counts every other first word.
 class KnownCalls {
 public:
     KnownCalls() = default;

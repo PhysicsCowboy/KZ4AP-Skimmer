@@ -464,7 +464,8 @@ KnownCalls KnownCalls::read(std::istream& in) {
         std::istringstream words(line);
         std::string first;
         if (!(words >> first)) continue;
-        if (first[0] == '#' || first[0] == ';') continue;
+        // A comment, or a directive to the logging programs (MASTER.SCP's first line, "!!Order,1,1"): not a call.
+        if (first[0] == '#' || first[0] == ';' || first.starts_with("!!")) continue;
         std::string upper = first;
         for (char& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         if (parse_form(upper)) ++calls;

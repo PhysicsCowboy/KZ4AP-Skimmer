@@ -206,6 +206,9 @@ TEST(KnownCallList, ReadsScpFormat) {
     EXPECT_FALSE(known.contains("N5JJ"));
     EXPECT_EQ(known.size(), 3u);
     EXPECT_THROW(KnownCalls::read_file("no such file.scp"), std::runtime_error);
+    // MASTER.SCP's header, as on 2026-11-18: the directive and the comments are not calls.
+    std::istringstream scp("!!Order,1,1\n#\n# Super Check Partial\n# Release 2026.11.18\nK1ABC\nW2XY\n");
+    EXPECT_EQ(KnownCalls::read(scp).size(), 2u);
 }
 
 TEST(KnownCallList, RefusesABinaryFileAndOneWithNoCall) {
