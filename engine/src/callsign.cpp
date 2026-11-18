@@ -753,7 +753,10 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
     const double mine = support(c, freq_hz, now_s, config_.variant_hz).points;
     for (auto& [base, other] : candidates_) {
         if (&other == &c || other.recent.empty()) continue;
-        if (std::abs(now_s - other.recent.back().end_s) > config_.variant_s && std::abs(now_s - other.recent.front().end_s) > config_.variant_s) continue;
+        // Its occurrences' span must come within variant_s of now, on either side (now is a loser's last reading when a withdrawal is judged).
+        const auto [oldest, newest] = std::minmax_element(other.recent.begin(), other.recent.end(),
+                                                          [](const Occurrence& a, const Occurrence& b) { return a.end_s < b.end_s; });
+        if (newest->end_s < now_s - config_.variant_s || oldest->end_s > now_s + config_.variant_s) continue;
         // A call of one letter after its digit and another with the same prefix and digit: two edits apart count (K1T, K1BX).
         const bool short_pair = config_.short_variant_ratio > 0.0 && (one_letter_suffix(c.base) || one_letter_suffix(other.base)) &&
                                 call_area(c.base) == call_area(other.base);
@@ -865,8 +868,11 @@ void CallSearch::update_row(const Candidate& c) {
 }
 
 void CallSearch::prune(double now_s) {
-    // What has not been reported and has aged out of every window goes; a live run's junk would otherwise grow without bound.
-    const double keep = std::max(config_.window_s, config_.variant_s);
+    // What has not been reported and has aged out of every window goes; a live run's junk would otherwise grow without bound. A
+    // withdrawal is judged as late as variant_s before now (a beaten call's readings reach that far) and counts rivals within
+    // window_s of that time, so a rival matters for window_s + variant_s after its last reading (derived): prune sooner and the
+    // result would depend on when prune ran.
+    const double keep = config_.window_s + config_.variant_s;
     for (auto it = candidates_.begin(); it != candidates_.end();) {
         Candidate& c = it->second;
         if (!c.reported && now_s - c.last_s > keep) {
