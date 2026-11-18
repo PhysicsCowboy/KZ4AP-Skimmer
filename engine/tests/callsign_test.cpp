@@ -464,6 +464,72 @@ TEST(CallSearch, AMisreadingLosesToItsBetterRival) {
     EXPECT_EQ(s.search.calls().size(), 1u);
 }
 
+// The 2026-11-17 80 m recording's WK0B: reported on its signed readings, then nothing of it for over 30 min, then a rival at its place
+// that would have beaten what was left of it in the window. It stays; a rival within 30 min of its readings still takes it off (above).
+TEST(CallSearch, AReportedCallDoesNotLeaveWhenItsReadingsAgeOutBeforeARivalComes) {
+    Stage s;
+    s.born(1, 1000.0);
+    for (int i = 0; i < 4; ++i) s.text(1, 1000.0, "DE WK0B ", 10.0 * i);
+    s.text(1, 1000.0, "DE WK0B ", 1000.0);
+    s.search.advance(1030.0);
+    ASSERT_NE(s.row("WK0B"), nullptr);
+    for (int i = 0; i < 3; ++i) s.text(1, 1000.0, "DE WK0V ", 2500.0 + 10.0 * i);  // one edit from it, at its place
+    s.search.advance(2560.0);
+    EXPECT_NE(s.row("WK0B"), nullptr);
+    EXPECT_NE(s.row("WK0V"), nullptr);  // and the rival's own row: two calls far apart in time
+    EXPECT_EQ(s.search.withdrawn(), 0u);
+}
+
+// A rival whose readings come within window_s (1 800 s) of the loser's last reading withdraws it; past that, it does not.
+TEST(CallSearch, ARivalWithdrawsAReportedCallOnlyWithinTheWindowOfItsLastReading) {
+    for (const double after : {1700.0, 1900.0}) {
+        Stage s;
+        s.born(1, 1000.0);
+        for (int i = 0; i < 4; ++i) s.text(1, 1000.0, "DE WK0B ", 10.0 * i);
+        s.search.advance(60.0);
+        ASSERT_NE(s.row("WK0B"), nullptr);
+        for (int i = 0; i < 6; ++i) s.text(1, 1000.0, "DE WK0V ", 30.0 + after + 10.0 * i);
+        s.search.advance(30.0 + after + 100.0);
+        if (after < 1800.0) {
+            EXPECT_EQ(s.row("WK0B"), nullptr) << after;
+            EXPECT_EQ(s.search.withdrawn(), 1u) << after;
+        } else {
+            EXPECT_NE(s.row("WK0B"), nullptr) << after;
+            EXPECT_EQ(s.search.withdrawn(), 0u) << after;
+        }
+        EXPECT_NE(s.row("WK0V"), nullptr) << after;
+    }
+}
+
+// The list does not depend on how often the stage is advanced: a rival that can count for a withdrawal judged at a loser's last
+// reading (within window_s of it, which may be variant_s before now) is not pruned first (review of stage-aging; its scenario).
+TEST(CallSearch, TheListDoesNotDependOnWhenUnreportedCallsArePruned) {
+    std::istringstream list("WK0V\n");
+    const auto known = std::make_shared<const KnownCalls>(KnownCalls::read(list));
+    std::vector<std::vector<std::string>> lists;
+    std::vector<std::size_t> withdrawn;
+    for (const bool extra : {false, true}) {
+        Stage s({}, known);
+        s.born(1, 1000.0);
+        s.born(2, 3000.0);
+        s.text(1, 1000.0, "DE WK0B ", 0.0);
+        s.text(1, 1000.0, "DE WK0B ", 10.0);
+        s.text(1, 1000.0, "WK0V ", 500.0);  // listed, once, bare: not reported, but it beats WK0B at 1 000 Hz
+        s.text(2, 3000.0, "DE WK0B ", 1000.0);
+        if (extra) s.search.advance(2400.0);
+        s.text(2, 3000.0, "DE WK0X ", 2450.0);
+        s.text(2, 3000.0, "DE WK0X ", 2460.0);
+        s.search.advance(2500.0);
+        std::vector<std::string> calls;
+        for (const CallRow& r : s.search.calls()) calls.push_back(r.base);
+        std::sort(calls.begin(), calls.end());
+        lists.push_back(calls);
+        withdrawn.push_back(s.search.withdrawn());
+    }
+    EXPECT_EQ(lists[0], lists[1]);
+    EXPECT_EQ(withdrawn[0], withdrawn[1]);
+}
+
 TEST(CallSearch, TwoNearCallsFarApartAreTwoStations) {
     Stage s;
     s.born(1, 1000.0);

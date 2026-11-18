@@ -691,7 +691,7 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
 CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, double now_s, double within_hz) const {
     Support s;
     for (const Occurrence& o : c.recent) {
-        if (std::abs(o.freq_hz - freq_hz) > within_hz || now_s - o.end_s > config_.window_s) continue;
+        if (std::abs(o.freq_hz - freq_hz) > within_hz || std::abs(now_s - o.end_s) > config_.window_s) continue;
         s.points += o.points;
         s.framed = s.framed || o.framed;
         s.named = s.named || (o.role == Role::Named && o.points >= 1.0);
@@ -728,7 +728,7 @@ CallSearch::Support CallSearch::pooled_support(const Candidate& c, double now_s)
     Support s;
     std::vector<const Occurrence*> counted;
     for (const Occurrence& o : c.recent) {
-        if (now_s - o.end_s > config_.window_s) continue;
+        if (std::abs(now_s - o.end_s) > config_.window_s) continue;
         if (held_at(c, o.freq_hz, now_s, nullptr, nullptr)) continue;
         counted.push_back(&o);
         s.framed = s.framed || o.framed;
@@ -761,7 +761,10 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
     const double mine = support(c, freq_hz, now_s, config_.variant_hz).points;
     for (auto& [base, other] : candidates_) {
         if (&other == &c || other.recent.empty()) continue;
-        if (now_s - other.recent.back().end_s > config_.variant_s) continue;
+        // Its occurrences' span must come within variant_s of now, on either side (now is a loser's last reading when a withdrawal is judged).
+        const auto [oldest, newest] = std::minmax_element(other.recent.begin(), other.recent.end(),
+                                                          [](const Occurrence& a, const Occurrence& b) { return a.end_s < b.end_s; });
+        if (newest->end_s < now_s - config_.variant_s || oldest->end_s > now_s + config_.variant_s) continue;
         // A call of one letter after its digit and another with the same prefix and digit: two edits apart count (K1T, K1BX).
         const bool short_pair = config_.short_variant_ratio > 0.0 && (one_letter_suffix(c.base) || one_letter_suffix(other.base)) &&
                                 call_area(c.base) == call_area(other.base);
@@ -806,8 +809,11 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
     // takes it off only if the rival is the better at its best, or the call stands nowhere else: a call doubled and signed at 1 kHz does
     // not leave because of a misreading at 2 kHz.
     const bool own_place = config_.withdraw_own_place != 0.0;
+    // Pooled, the loser is judged at its own last reading, against rivals within window_s of it either side: a call reported on its
+    // readings does not leave because they aged out of the window before a rival came (the 2026-11-17 80 m recording's WK0B, five signed
+    // readings, taken off at 2 647 s by W5FB's three at its place, when only its reading at 1 042 s was still within 30 min).
     const auto leaves = [&](Candidate& loser, double winner_best) {
-        if (pool) return !passes(loser, pooled_support(loser, now_s));
+        if (pool) return !passes(loser, pooled_support(loser, std::min(now_s, loser.last_s)));
         return !own_place || winner_best > loser.best_points || !stands_elsewhere(loser, freq_hz, now_s);
     };
     if (held) {
@@ -870,8 +876,11 @@ void CallSearch::update_row(const Candidate& c) {
 }
 
 void CallSearch::prune(double now_s) {
-    // What has not been reported and has aged out of every window goes; a live run's junk would otherwise grow without bound.
-    const double keep = std::max(config_.window_s, config_.variant_s);
+    // What has not been reported and has aged out of every window goes; a live run's junk would otherwise grow without bound. A
+    // withdrawal is judged as late as variant_s before now (a beaten call's readings reach that far) and counts rivals within
+    // window_s of that time, so a rival matters for window_s + variant_s after its last reading (derived): prune sooner and the
+    // result would depend on when prune ran.
+    const double keep = config_.window_s + config_.variant_s;
     for (auto it = candidates_.begin(); it != candidates_.end();) {
         Candidate& c = it->second;
         if (!c.reported && now_s - c.last_s > keep) {

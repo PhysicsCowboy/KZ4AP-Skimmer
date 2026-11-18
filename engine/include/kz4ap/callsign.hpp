@@ -325,13 +325,15 @@ private:
     void read_track(TrackText& track, bool all);
     void add(const CallReading& reading, double freq_hz);
     void evaluate(Candidate& candidate, double freq_hz, double now_s);
+    // Its occurrences within within_hz of this place and window_s of now_s, on either side: now_s is the stream's present, except when
+    // a withdrawal is judged at the loser's own last reading (evaluate), where a rival's later readings count up to window_s after it.
     Support support(const Candidate& candidate, double freq_hz, double now_s, double within_hz) const;
     bool passes(const Candidate& candidate, const Support& s) const;
     // Whether a better-supported near variant holds the call back at this place (CallSearchConfig::variant_hz); the best such rival's best
     // is added to rival_best, and the reported calls it beats here to beaten, when given.
     bool held_at(const Candidate& candidate, double freq_hz, double now_s, double* rival_best, std::vector<Candidate*>* beaten);
-    // The call's support over the whole band (CallSearchConfig::pool_places): its occurrences within window_s, one per transmission,
-    // leaving out those at places where it is held.
+    // The call's support over the whole band (CallSearchConfig::pool_places): its occurrences within window_s of now_s, one per
+    // transmission, leaving out those at places where it is held.
     Support pooled_support(const Candidate& candidate, double now_s);
     // Whether the call's readings more than variant_hz from this place pass by themselves, at any one place.
     bool stands_elsewhere(const Candidate& candidate, double freq_hz, double now_s) const;
