@@ -19,6 +19,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -27,6 +28,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPlainTextEdit>
+#include <QScrollBar>
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QSortFilterProxyModel>
@@ -39,6 +42,7 @@
 #include <QTextStream>
 #include <QTimer>
 #include <QToolBar>
+#include <QVBoxLayout>
 
 #include <algorithm>
 #include <cmath>
@@ -60,17 +64,22 @@ constexpr int kTextEveryTicks = 3;
 constexpr int kStatusEveryTicks = 12;
 // The position slider's steps across a recording.
 constexpr int kPositionSteps = 1000;
+// The calls written on the waterfall: those heard within kCallLabelAgeS of stream, s, and brighter within kCallLabelRecentS, about the
+// picture's height at its first size (380 rows at 23.4 rows/s). Heuristics: a station that calls every half minute keeps its label.
+constexpr double kCallLabelAgeS = 60.0;
+constexpr double kCallLabelRecentS = 16.0;
 
 }  // namespace
 
-MainWindow::MainWindow(std::string decoder_name, double speed, int threads, RadioDefaults radio, Automation automation, CallSettings calls)
+MainWindow::MainWindow(std::string decoder_name, int threads, Automation automation, Startup startup)
     : decoder_name_(std::move(decoder_name)),
-      speed_(speed),
+      speed_(startup.start.speed),
       threads_(threads),
       automation_(std::move(automation)),
-      decoder_only_(calls.decoder_only),
-      known_calls_(std::move(calls.known)),
-      known_path_(calls.known_path) {
+      startup_(std::move(startup)),
+      recording_folder_(QString::fromStdString(startup_.start.recording_folder)),
+      decoder_only_(startup_.start.decoder_only) {
+    const UserChoices& start = startup_.start;
     setWindowTitle(tr("KZ4AP Skimmer"));
     resize(1360, 900);
 
@@ -116,40 +125,75 @@ MainWindow::MainWindow(std::string decoder_name, double speed, int threads, Radi
     calls_view_->setColumnWidth(CallListModel::kLastHeard, 75);
     calls_view_->setColumnWidth(CallListModel::kCount, 65);
     calls_view_->setColumnWidth(CallListModel::kHow, 60);
-    auto* lists = new QSplitter(Qt::Horizontal);
-    lists->addWidget(table_view_);
-    lists->addWidget(calls_view_);
-    lists->setStretchFactor(0, 3);
-    lists->setStretchFactor(1, 1);
-    lists->setSizes({920, 440});  // pixels
+    lists_splitter_ = new QSplitter(Qt::Horizontal);
+    lists_splitter_->addWidget(table_view_);
+    lists_splitter_->addWidget(calls_view_);
+    lists_splitter_->setStretchFactor(0, 3);
+    lists_splitter_->setStretchFactor(1, 1);
+    lists_splitter_->setSizes({920, 440});  // pixels
 
-    auto* splitter = new QSplitter(Qt::Vertical);
-    splitter->addWidget(waterfall_);
-    splitter->addWidget(lists);
-    splitter->setStretchFactor(0, 3);
-    splitter->setStretchFactor(1, 1);
-    splitter->setSizes({600, 260});  // pixels; the list starts with room for about nine tracks
-    setCentralWidget(splitter);
+    // A click on a call follows the track nearest its frequency in the one-signal pane.
+    connect(calls_view_, &QAbstractItemView::clicked, this, [this, sorted_calls](const QModelIndex& index) {
+        // By the call shown on that row, looked up now: the stage's rows may have moved since the list was laid out.
+        const std::optional<std::string> base = calls_->base_at(sorted_calls->mapToSource(index).row());
+        if (!base) return;
+        if (const std::optional<double> freq_hz = calls_->freq_of(*base)) {
+            follow_frequency(*freq_hz, QString::fromStdString(*base));
+        } else {
+            statusBar()->showMessage(tr("%1 has just left the call list").arg(QString::fromStdString(*base)), 4000);  // ms
+        }
+    });
+    connect(waterfall_, &WaterfallWidget::trackClicked, this, [this](std::uint32_t id) { follow_track(id); });
+
+    // The waterfall, the one-signal pane under it, and the lists.
+    main_splitter_ = new QSplitter(Qt::Vertical);
+    main_splitter_->addWidget(waterfall_);
+    main_splitter_->addWidget(build_pane());
+    main_splitter_->addWidget(lists_splitter_);
+    main_splitter_->setStretchFactor(0, 3);
+    main_splitter_->setStretchFactor(1, 0);
+    main_splitter_->setStretchFactor(2, 1);
+    main_splitter_->setSizes({520, 110, 260});  // pixels; the pane has four lines of text, the list room for about nine tracks
+    setCentralWidget(main_splitter_);
 
     build_transport();
     build_scale_controls();
     build_radio_controls();
-    serial_box_->setText(radio.serial);
-    center_box_->setValue(radio.center_khz);
-    rate_box_->setCurrentIndex(std::max(0, rate_box_->findData(radio.sample_rate)));
-    if_gain_box_->setValue(radio.if_gain_reduction_db);
-    lna_box_->setValue(radio.lna_state);
+    serial_box_->setText(QString::fromStdString(start.radio_serial));
+    center_box_->setValue(start.center_khz);
+    rate_box_->setCurrentIndex(std::max(0, rate_box_->findData(start.sample_rate_hz)));
+    if_gain_box_->setValue(start.if_gain_reduction_db);
+    lna_box_->setValue(start.lna_state);
+    // The color scale: the range, then the floor by hand if the automatic one was off.
+    range_slider_->setValue(static_cast<int>(std::lround(start.range_db)));
+    floor_slider_->setValue(static_cast<int>(std::lround(start.floor_dbfs)));
+    auto_floor_->setChecked(start.auto_floor);
+    if (!start.auto_floor) {
+        waterfall_->set_floor_dbfs(start.floor_dbfs);
+        floor_label_->setText(tr("Floor %1 dBFS").arg(start.floor_dbfs, 0, 'f', 0));
+    }
     build_call_controls();
     build_status_bar();
     update_transport();
     update_radio_controls();
-    // The call controls' first values. A list given on the command line has been read already (main.cpp).
-    set_known_calls(known_calls_, known_path_,
-                    known_calls_ ? tr("%1 calls from %2").arg(known_calls_->size()).arg(QFileInfo(known_path_).fileName()) : QString());
-    list_box_->setCurrentIndex(calls.signed_only ? 1 : 0);
-    set_signed_only(calls.signed_only);
+    // The call controls' first values. A list given on the command line has been read already (main.cpp); a saved one is read here,
+    // from disk only, unless the run starts in decoder-only mode, which has none: then on going to skimmer mode.
+    if (startup_.given_known) {
+        const QString path = QString::fromStdString(start.known.path);
+        set_known_calls(startup_.given_known, path, tr("%1 calls from %2").arg(startup_.given_known->size()).arg(QFileInfo(path).fileName()));
+    } else if (start.known.kind != KnownKind::None && !decoder_only_) {
+        restore_known_calls_from(start.known);
+    } else {
+        set_known_calls(nullptr, {}, {}, KnownKind::None);
+        if (start.known.kind != KnownKind::None) pending_known_ = start.known;
+    }
+    list_box_->setCurrentIndex(start.signed_only ? 1 : 0);
+    set_signed_only(start.signed_only);
     mode_box_->setCurrentIndex(decoder_only_ ? 1 : 0);
     set_decoder_only(decoder_only_);
+    restore_layout();
+    // On quit, however it comes: the window closed, or a script's quit.
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this] { save_settings(); });
 
     timer_ = new QTimer(this);
     connect(timer_, &QTimer::timeout, this, &MainWindow::on_tick);
@@ -166,8 +210,10 @@ void MainWindow::build_transport() {
     open->setShortcut(QKeySequence::Open);
     connect(open, &QAction::triggered, this, [this] {
         const QString path =
-            QFileDialog::getOpenFileName(this, tr("Open an I/Q recording"), {}, tr("I/Q recordings (*.wav);;All files (*)"));
-        if (!path.isEmpty() && may_end_recording(tr("Opening a recording"))) open_recording(path);
+            QFileDialog::getOpenFileName(this, tr("Open an I/Q recording"), recording_folder_, tr("I/Q recordings (*.wav);;All files (*)"));
+        if (path.isEmpty()) return;
+        recording_folder_ = QFileInfo(path).absolutePath();
+        if (may_end_recording(tr("Opening a recording"))) open_recording(path);
     });
     play_pause_ = bar->addAction(tr("Pause"));
     play_pause_->setShortcut(Qt::Key_Space);
@@ -331,7 +377,7 @@ void MainWindow::build_call_controls() {
     skimmer_controls_.push_back(known_download_);
     QAction* none = bar->addAction(tr("No list"));
     none->setToolTip(tr("Search calls without a known-call list"));
-    connect(none, &QAction::triggered, this, [this] { set_known_calls(nullptr, {}, {}); });
+    connect(none, &QAction::triggered, this, [this] { set_known_calls(nullptr, {}, {}, KnownKind::None); });
     skimmer_controls_.push_back(none);
     // Last on the row, so that a long status or error never pushes the buttons out of sight; the whole of it is in the tooltip.
     known_label_ = new QLabel;
@@ -344,8 +390,15 @@ void MainWindow::set_decoder_only(bool on) {
     for (QAction* action : skimmer_controls_) action->setVisible(!on);
     calls_view_->setVisible(!on);
     if (calls_label_) calls_label_->setVisible(!on);
+    if (!on && pending_known_) {
+        // The saved list of a run that started in decoder-only mode.
+        const KnownChoice saved = *pending_known_;
+        pending_known_.reset();
+        restore_known_calls_from(saved);
+    }
     if (on) {
         calls_->stop();
+        waterfall_->set_call_labels({});
     } else if (calls_->search() == nullptr) {
         calls_->start(known_calls_, stream_center_hz_);
     }
@@ -369,12 +422,92 @@ void MainWindow::show_known_status(const QString& text, bool problem) {
     if (problem || !text.isEmpty()) transport_log_ << QStringLiteral("known calls: %1").arg(text);
 }
 
-void MainWindow::set_known_calls(std::shared_ptr<const callsign::KnownCalls> known, const QString& path, const QString& status) {
+void MainWindow::set_known_calls(std::shared_ptr<const callsign::KnownCalls> known, const QString& path, const QString& status, KnownKind kind) {
     known_calls_ = std::move(known);
     known_path_ = known_calls_ ? path : QString();
+    known_kind_ = known_calls_ ? kind : KnownKind::None;
+    pending_known_.reset();  // a choice made now replaces the saved one
+    missing_known_.reset();
     calls_->set_known(known_calls_);
     known_status_ = known_calls_ ? status : tr("none");
     show_known_status(known_status_, false);
+}
+
+void MainWindow::restore_known_calls_from(const KnownChoice& choice) {
+    const RestoredKnown r = restore_known_calls(choice, QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation));
+    if (r.list) {
+        set_known_calls(r.list, r.path, r.status, choice.kind);
+    } else {
+        // No list, and the reason in the controls' status: never a dialog.
+        known_calls_.reset();
+        known_path_.clear();
+        known_kind_ = KnownKind::None;
+        pending_known_.reset();
+        missing_known_ = choice;  // kept as saved until the user picks another list: the drive may be back next time
+        calls_->set_known(nullptr);
+        known_status_ = tr("none");
+        show_known_status(r.status, r.problem);
+    }
+    std::fprintf(stderr, "kz4ap-skimmer: saved known-call list: %s\n", r.status.toLocal8Bit().constData());
+}
+
+void MainWindow::restore_layout() {
+    const SettingsStore& store = startup_.store;
+    if (!store.enabled()) return;
+    if (const QByteArray g = store.read_layout(QStringLiteral("geometry")); !g.isEmpty()) restoreGeometry(g);
+    if (const QByteArray s = store.read_layout(QStringLiteral("main_splitter")); !s.isEmpty()) {
+        const QList<int> before = main_splitter_->sizes();
+        // A state saved with another number of parts, or one hiding the waterfall, is not taken.
+        if (!main_splitter_->restoreState(s) || main_splitter_->sizes().value(0) == 0) main_splitter_->setSizes(before);
+    }
+    if (const QByteArray s = store.read_layout(QStringLiteral("lists_splitter")); !s.isEmpty()) lists_splitter_->restoreState(s);
+    if (const QByteArray s = store.read_layout(QStringLiteral("track_columns")); !s.isEmpty()) table_view_->horizontalHeader()->restoreState(s);
+    if (const QByteArray s = store.read_layout(QStringLiteral("call_columns")); !s.isEmpty()) {
+        QHeaderView* header = calls_view_->horizontalHeader();
+        header->restoreState(s);
+        calls_view_->sortByColumn(header->sortIndicatorSection(), header->sortIndicatorOrder());
+    }
+}
+
+UserChoices MainWindow::choices_now() const {
+    UserChoices c;
+    c.decoder_only = decoder_only_;
+    c.signed_only = calls_->signed_only();
+    if (pending_known_) {
+        c.known = *pending_known_;
+    } else if (missing_known_) {
+        c.known = *missing_known_;
+    } else if (known_kind_ == KnownKind::File) {
+        // Absolute, so that a run started elsewhere finds it; the command line's own form when unchanged (choices_to_save).
+        c.known = {KnownKind::File, startup_.given.known && known_path_ == QString::fromStdString(startup_.given.known->path)
+                                        ? startup_.given.known->path
+                                        : QFileInfo(known_path_).absoluteFilePath().toStdString()};
+    } else {
+        c.known = {known_kind_, {}};
+    }
+    c.speed = speed_box_->currentData().toDouble();
+    c.radio_serial = serial_box_->text().trimmed().toStdString();
+    c.center_khz = std::round(center_box_->value() * 1000.0) / 1000.0;  // to the box's 1 Hz, as main.cpp rounds --center-khz
+    c.sample_rate_hz = rate_box_->currentData().toInt();
+    c.if_gain_reduction_db = if_gain_box_->value();
+    c.lna_state = lna_box_->value();
+    c.auto_floor = auto_floor_->isChecked();
+    c.floor_dbfs = floor_slider_->value();
+    c.range_db = range_slider_->value();
+    c.recording_folder = recording_folder_.toStdString();
+    return c;
+}
+
+void MainWindow::save_settings() {
+    const SettingsStore& store = startup_.store;
+    if (settings_saved_ || !store.enabled()) return;
+    settings_saved_ = true;
+    store.write_choices(choices_to_save(startup_.saved, startup_.start, choices_now(), startup_.given));
+    store.write_layout(QStringLiteral("geometry"), saveGeometry());
+    store.write_layout(QStringLiteral("main_splitter"), main_splitter_->saveState());
+    store.write_layout(QStringLiteral("lists_splitter"), lists_splitter_->saveState());
+    store.write_layout(QStringLiteral("track_columns"), table_view_->horizontalHeader()->saveState());
+    store.write_layout(QStringLiteral("call_columns"), calls_view_->horizontalHeader()->saveState());
 }
 
 bool MainWindow::load_known_calls(const QString& path, const QString& how) {
@@ -418,7 +551,8 @@ void MainWindow::download_known_calls() {
                     if (decoder_only_) return;  // the mode changed while it downloaded: kept, not used
                     set_known_calls(list, path,
                                     fresh ? tr("%1 calls, downloaded %2").arg(list->size()).arg(when)
-                                          : tr("%1 calls from %2 (unchanged on the server, %3)").arg(list->size()).arg(QFileInfo(path).fileName(), when));
+                                          : tr("%1 calls from %2 (unchanged on the server, %3)").arg(list->size()).arg(QFileInfo(path).fileName(), when),
+                                    KnownKind::Downloaded);
                 });
     }
     if (downloader_->busy()) return;
@@ -474,9 +608,14 @@ void MainWindow::toggle_recording() {
     }
     const std::string name = recording_file_name(center_box_->value() * 1000.0, rate_box_->currentData().toInt(),
                                                   QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")).toStdString());
-    const QString suggested = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + QLatin1Char('/') + QString::fromStdString(name);
+    const QString folder = !recording_folder_.isEmpty() && QFileInfo(recording_folder_).isDir()
+                               ? recording_folder_
+                               : QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    const QString suggested = folder + QLatin1Char('/') + QString::fromStdString(name);
     const QString path = QFileDialog::getSaveFileName(this, tr("Save the radio's I/Q"), suggested, tr("I/Q recordings (*.wav)"));
-    if (!path.isEmpty()) begin_recording(path);
+    if (path.isEmpty()) return;
+    recording_folder_ = QFileInfo(path).absolutePath();
+    begin_recording(path);
 }
 
 void MainWindow::begin_recording(const QString& path) {
@@ -526,7 +665,7 @@ void MainWindow::radio_stopped() {
     gain_problem_.clear();
     last_recording_ = RecordingStatus{};
     model_->table().end_of_stream();
-    model_->refresh();
+    refresh_track_views();
     update_markers();
     radio_label_->setText(tr("Radio stopped"));
     stream_label_->setText(tr("Stopped"));
@@ -719,7 +858,9 @@ void MainWindow::start_stream(std::unique_ptr<IqSource> source) {
     call_stage_cpu_s_ = 0.0;
     stream_center_hz_ = source->center_frequency_hz();
     stream_start_unix_ms_ = source->start_unix_ms();
-    selected_track_.reset();
+    // A new stream has new tracks: the pane starts empty.
+    follow_.clear();
+    update_pane();
     waterfall_->start(rate, fft_size, source->center_frequency_hz(), origin_s_);
     meter_ = CpuMeter{};
     stream_ended_ = false;
@@ -805,7 +946,7 @@ void MainWindow::on_tick() {
     }
 
     if (ticks_ % kTextEveryTicks == 0 || ended) {
-        model_->refresh();
+        refresh_track_views();
         if (calls_->search()) {
             const double from_s = thread_cpu_precise_seconds();
             calls_->refresh(status.stream_s);
@@ -813,6 +954,7 @@ void MainWindow::on_tick() {
         }
         update_radio_status(status);  // first: the markers and the status show a radio that has stopped delivering
         update_markers();
+        update_call_labels(status.stream_s);
     }
     if (ticks_ % kStatusEveryTicks == 0 || ended) {
         update_status(status);
@@ -821,10 +963,26 @@ void MainWindow::on_tick() {
     run_automation(status);
 }
 
+void MainWindow::update_call_labels(double now_s) {
+    std::vector<WaterfallWidget::CallLabel> labels;
+    if (calls_->search()) {
+        std::vector<callsign::CallRow> rows = calls_->shown_rows();
+        // By when the station itself was last heard where the row places it (CallRow::heard_s: its own readings, not those that name it,
+        // within the stage's same place of freq_hz); the latest first: they take the first lanes, and the others what room is left. A call
+        // only named by another station has none (its frequency is that station's): no label.
+        std::sort(rows.begin(), rows.end(), [](const callsign::CallRow& a, const callsign::CallRow& b) { return a.heard_s > b.heard_s; });
+        for (const callsign::CallRow& row : rows) {
+            if (row.heard_s < 0 || now_s - row.heard_s > kCallLabelAgeS) continue;
+            labels.push_back({row.freq_hz, QString::fromStdString(row.call), now_s - row.heard_s <= kCallLabelRecentS});
+        }
+    }
+    waterfall_->set_call_labels(std::move(labels));
+}
+
 void MainWindow::update_markers() {
     std::vector<WaterfallWidget::Marker> markers;
     for (const TrackRow& row : model_->table().rows())
-        markers.push_back({row.id, row.freq_hz, row.live() && !delivery_.stalled(), selected_track_ == row.id});
+        markers.push_back({row.id, row.freq_hz, row.live() && !delivery_.stalled(), follow_.row_id() == row.id});
     waterfall_->set_markers(std::move(markers));
 }
 
@@ -878,20 +1036,107 @@ void MainWindow::update_status(const StreamStatus& status) {
     }
 }
 
+void MainWindow::refresh_track_views() {
+    // The pane first: the list's new layout selects the followed row again (restore_selection), which may now be another track's.
+    const std::optional<std::uint32_t> was = follow_.row_id();
+    const bool pane_changed = follow_.update(model_->table());
+    model_->refresh();
+    if (!pane_changed) return;
+    update_pane();
+    // The pane moved on to another row (a successor): the list's highlight and the waterfall's marker go with it now, not at the next
+    // change of the list's layout.
+    if (follow_.row_id() != was) {
+        restore_selection();
+        update_markers();
+    }
+}
+
 void MainWindow::selection_changed() {
+    // An empty selection leaves the pane as it is: it goes on following.
     const QModelIndexList rows = table_view_->selectionModel()->selectedRows();
-    selected_track_ = rows.isEmpty() ? std::nullopt : model_->track_at(rows.front().row());
-    update_markers();
+    if (rows.isEmpty()) return;
+    const std::optional<std::uint32_t> id = model_->track_at(rows.front().row());
+    if (!id) return;
+    const TrackTable& table = model_->table();
+    // The followed row itself, selected again after the list's layout changed: nothing to do.
+    if (const auto row = table.row_of(*id); row && follow_.is_row(table.rows()[*row])) return;
+    follow_track(*id);
 }
 
 void MainWindow::restore_selection() {
-    if (!selected_track_) return;
-    const std::optional<std::uint32_t> keep = selected_track_;
-    if (const auto row = model_->table().row_of(*keep)) {
-        table_view_->selectRow(static_cast<int>(*row));
-    } else {
-        selected_track_.reset();
+    const std::optional<std::uint32_t> id = follow_.row_id();
+    if (!id) return;
+    if (const auto row = model_->table().row_of(*id)) table_view_->selectRow(static_cast<int>(*row));
+}
+
+void MainWindow::follow_track(std::uint32_t id) {
+    if (!follow_.follow(model_->table(), id)) return;
+    pane_shown_.clear();
+    update_pane();
+    if (const auto row = model_->table().row_of(id); row && static_cast<int>(*row) < model_->rowCount()) {
+        table_view_->selectRow(static_cast<int>(*row));  // selection_changed finds the followed row and stops there
+        table_view_->scrollTo(model_->index(static_cast<int>(*row), 0));
     }
+    update_markers();
+}
+
+void MainWindow::follow_frequency(double freq_hz, const QString& what) {
+    if (const std::optional<std::uint32_t> id = row_near(model_->table(), freq_hz, TrackTable::kSamePlaceHz)) {
+        follow_track(*id);
+        return;
+    }
+    const QString message = tr("No track within %1 Hz of %2").arg(TrackTable::kSamePlaceHz, 0, 'f', 0).arg(what);
+    statusBar()->showMessage(message, 4000);  // ms
+    transport_log_ << QStringLiteral("follow: %1").arg(message);
+}
+
+QWidget* MainWindow::build_pane() {
+    auto* pane = new QWidget;
+    auto* layout = new QVBoxLayout(pane);
+    layout->setContentsMargins(4, 2, 4, 2);
+    layout->setSpacing(2);
+    pane_label_ = new QLabel;
+    pane_label_->setTextFormat(Qt::PlainText);
+    layout->addWidget(pane_label_);
+    pane_text_ = new QPlainTextEdit;
+    pane_text_->setReadOnly(true);
+    pane_text_->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    pane_text_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    pane_text_->setPlaceholderText(tr("Click a signal on the waterfall, in the track list or in the call list: its text comes here as it is decoded."));
+    pane_text_->setToolTip(tr("One signal's text as it is decoded, the newest at the bottom. It follows the station on through a new track at "
+                              "its place (within %1 Hz), after the old one ends.")
+                               .arg(TrackTable::kSamePlaceHz, 0, 'f', 0));
+    layout->addWidget(pane_text_, 1);
+    pane->setMinimumHeight(60);  // pixels
+    return pane;
+}
+
+void MainWindow::update_pane() {
+    if (pane_label_ == nullptr) return;
+    if (!follow_.active()) {
+        pane_label_->setText(tr("One signal: none followed"));
+        if (!pane_shown_.isEmpty() || !pane_text_->toPlainText().isEmpty()) pane_text_->clear();
+        pane_shown_.clear();
+        return;
+    }
+    const double freq_hz = follow_.freq_hz();
+    const QString frequency = stream_center_hz_ ? tr("%1 kHz").arg((*stream_center_hz_ + freq_hz) / 1000.0, 0, 'f', 3)
+                                                : tr("%1 kHz from the center").arg(QString::asprintf("%+.3f", freq_hz / 1000.0));
+    const QString speed = follow_.wpm() > 0 ? tr("%1 WPM").arg(follow_.wpm(), 0, 'f', 1) : tr("- WPM");
+    QString state = follow_.live() ? tr("live") : (follow_.row_id() ? tr("ended") : tr("ended, no longer listed"));
+    if (follow_.rows_followed() > 1) state += tr("; %1 rows followed at this place").arg(follow_.rows_followed());
+    const std::optional<std::uint32_t> id = follow_.row_id();
+    pane_label_->setText(id ? tr("One signal: track %1, %2, %3, %4").arg(*id).arg(frequency, speed, state)
+                            : tr("One signal: %1, %2, %3").arg(frequency, speed, state));
+    const QString text = QString::fromStdString(follow_.text());
+    if (text == pane_shown_) return;
+    // The newest text in view, unless the user has scrolled back to read: then the place read stays.
+    QScrollBar* bar = pane_text_->verticalScrollBar();
+    const bool at_end = bar->value() >= bar->maximum();
+    const int was = bar->value();
+    pane_text_->setPlainText(text);
+    bar->setValue(at_end ? bar->maximum() : was);
+    pane_shown_ = text;
 }
 
 void MainWindow::run_transport_steps(const StreamStatus& status) {
@@ -945,7 +1190,7 @@ void MainWindow::run_transport_steps(const StreamStatus& status) {
                 update_radio_controls();
             }
         } else if (action.startsWith(QStringLiteral("shot="))) {
-            model_->refresh();
+            refresh_track_views();
             update_markers();
             if (runner_) {
                 update_status(status);
@@ -960,9 +1205,12 @@ void MainWindow::run_transport_steps(const StreamStatus& status) {
         } else if (action.startsWith(QStringLiteral("known="))) {
             load_known_calls(action.mid(6), tr("from"));
         } else if (action == QStringLiteral("noknown")) {
-            set_known_calls(nullptr, {}, {});
+            set_known_calls(nullptr, {}, {}, KnownKind::None);
         } else if (action == QStringLiteral("download")) {
             known_download_->trigger();
+        } else if (action.startsWith(QStringLiteral("follow="))) {
+            const double hz = action.mid(7).toDouble() * 1000.0 - stream_center_hz_.value_or(0.0);
+            follow_frequency(hz, tr("%1 kHz").arg(action.mid(7)));
         } else if (action == QStringLiteral("quit")) {
             if (!automation_.report_path.isEmpty()) write_report(status);
             if (!automation_.decoded_path.isEmpty()) write_decoded();
@@ -978,7 +1226,7 @@ void MainWindow::run_automation(const StreamStatus& status) {
     if (!runner_) return;
     const bool ended = stream_ended_ || status.state == StreamStatus::State::Stopped;
     if (!automation_.screenshot_path.isEmpty() && !screenshot_done_ && (status.stream_s >= automation_.screenshot_at_s || ended)) {
-        model_->refresh();
+        refresh_track_views();
         update_markers();
         update_status(status);
         QApplication::processEvents();
@@ -1058,6 +1306,7 @@ void MainWindow::write_report(const StreamStatus& status) {
     out << "per_track_ms_per_channel_s: " << number(whole.per_track_ms_per_channel_s) << "\n";
     out << "realtime_factor: " << number(whole.speed) << "\n";
     out << "threads: " << threads_ << "\n";
+    out << "settings: " << (startup_.store.enabled() ? QDir::toNativeSeparators(startup_.store.path()) : QStringLiteral("none")) << "\n";
     const double process_s = process_cpu_seconds();
     out << "process_cpu_s: " << process_s << "\n";
     out << "process_cpu_ms_per_channel_s: "
@@ -1081,6 +1330,13 @@ void MainWindow::write_report(const StreamStatus& status) {
     out << "call_stage_cpu_s: " << QString::number(call_stage_cpu_s_, 'f', 4) << "\n";
     out << "call_stage_ms_per_channel_s: "
         << (status.channel_seconds > 0 ? QString::number(1000.0 * call_stage_cpu_s_ / status.channel_seconds, 'f', 4) : QStringLiteral("none")) << "\n";
+    // The one-signal pane, when it follows one: where, how many rows it has followed there, and its text.
+    if (follow_.active()) {
+        out << "pane_freq_hz: " << QString::number(follow_.freq_hz(), 'f', 1) << "\n";
+        out << "pane_wpm: " << QString::number(follow_.wpm(), 'f', 1) << "\n";
+        out << "pane_rows_followed: " << follow_.rows_followed() << "\n";
+        out << "pane_text: " << QString::fromStdString(follow_.text()) << "\n";
+    }
     out << "rows_skipped: " << rows_dropped_ << "\n";
     if (runner_) out << "pipeline_lost_samples: " << runner_->source().dropped_samples() << "\n";
     if (runner_ && runner_->source().radio() != nullptr) {

@@ -61,6 +61,28 @@ to sort; drag the bar between the tables to widen it. The status bar's "Calls" c
 call shows at least 10 s after it is read a second time: on `band30.wav` all 30 calls are
 there by about 24 s of stream (derived: their second readings end by 13.5 s, measured).
 
+**One signal.** Click a signal: its marker above the waterfall (the nearest within 8 pixels), its
+row in the track list, or a call in the call list (the live track nearest the call's frequency
+within 30 Hz, or, with none live there, the nearest ended one: a live track wins over a nearer
+ended one). The pane under the waterfall then shows that signal's text as it is decoded, the newest at
+the bottom, with its frequency in kHz, its speed in WPM and whether it is still live; scroll back
+and the place you read stays put. It keeps following the station when its track ends and a new one
+starts within 30 Hz of it: with the default decoder the track list already goes on in the same row,
+and with the others the pane moves to the new row and keeps the text it had. CW Skimmer's decoder
+panel shows the signal at the radio's tuned frequency instead; this one follows the signal you
+click (there is no tuning yet), and has no colors for calls or reports, no pale characters at low
+SNR and no » for a long pause.
+
+**Calls on the waterfall.** In skimmer mode each call of the call list (as its List filter shows
+it) whose station was itself heard at the list's frequency for it in the last 60 s of stream is
+written at the top of the picture, just right of that frequency, white if heard there in the last
+16 s and gray before that, in up to three rows of labels. "Heard there" means a reading of the call
+that was not another station naming it (before DE or 5NN), within 300 Hz (the call stage's same
+place) of the frequency the list shows; a station naming it elsewhere does not refresh the label.
+The most recently heard take the first places, a label with no room left beside the others is left
+out rather than drawn over them, and one near the right edge is moved left to end there. A call
+only named by another station gets no label (its frequency is that station's).
+
 To keep the list, add `--calls calls.csv` (it is written when the stream ends; add
 `--quit-at-end` to leave after that). To give it a list of calls in MASTER.SCP's format, add
 `--known-calls MASTER.SCP`: a text file of one call a line, such as supercheckpartial.com's MASTER.SCP
@@ -87,8 +109,9 @@ again (an unchanged file is not sent twice); *No list* goes without. The program
 only on that button. Its requests carry only the program's name and version (`User-Agent:
 KZ4AP-Skimmer/0.1.0`), `Accept-Language: *` and `Accept-Encoding: identity` besides the host and
 connection headers every request has, and the kept copy's ETag when there is one: no language, cookie
-or name of yours. The choices last until the program closes; `--decoder-only` cannot be combined
-with `--known-calls` or `--signed-only`.
+or name of yours. The choices are kept for the next run ("Settings kept between runs", below);
+`--decoder-only` cannot be combined with `--known-calls` or `--signed-only`, and either of those
+starts in skimmer mode.
 
 The radio needs the SDRplay API (below).
 
@@ -135,6 +158,24 @@ decoder (default `segmental`), `--speed` the pace (a factor, or `max`) and
 lists the rest. The Position slider seeks in a recording: the decoders start
 afresh from there.
 
+**Settings kept between runs.** When the program quits it saves, per user, in
+`%LOCALAPPDATA%\kz4ap-skimmer\settings.ini` on Windows (`~/.config/kz4ap-skimmer/settings.ini`
+on Linux; `--help` prints the path): the Mode, the List filter, the known-call list (the path of
+your file, or "downloaded", which reads the copy of MASTER.SCP the Download button kept beside
+it, from disk only: starting the program never reaches the network), the Speed, the radio's
+serial, center, rate, IF gain reduction and LNA state, the waterfall's automatic floor, floor
+and range, the window's size and place, the splitters, the lists' columns and the call list's
+sort, and the folder the last recording was opened from or saved to. A saved list that is gone
+or refused leaves no list, and the Known calls line says why. The decoder and the threads are
+chosen only on the command line and are not kept. **An option on the command line sets its
+choice for that run only and is not saved:** the saved value stays, unless you change that
+control during the run, and then the new value is saved. `--no-settings` reads and writes none.
+Runs without an operator (`--screenshot`, `--report`, `--decoded`, `--calls`, `--quit-at-end`,
+`--quit-at`, `--transport`) and offscreen runs (`-platform offscreen`, `QT_QPA_PLATFORM=offscreen`)
+behave as with `--no-settings`, so that scripted measurements start from the program's defaults
+as they always have; `--settings FILE` keeps the settings in that file instead, in any run.
+Deleting the file restores the defaults.
+
 **Other programs' recordings.** It reads I/Q WAV files of 16-, 24- or 32-bit
 integers or 32-bit floats. The center frequency comes from `--center-khz`, else
 the file's `auxi` chunk (SpectraVue, HDSDR, CWSL_File), else the file name
@@ -173,8 +214,9 @@ machine with two SDRplay radios it can never take the wrong one. With no serial
 it opens none, even when only one radio is plugged in: Start radio then lists
 the serial numbers it found. `kz4ap-skimmer --list-sdrplay` prints each radio's
 serial number and model, a line each, without opening any, and quits (started
-with no console, it shows them in a window). The serial is not remembered
-between runs.
+with no console, it shows them in a window). The serial typed in the box is kept
+for the next run with the other settings; the radio still starts only when you
+press Start radio (or give `--radio`).
 
 To record a band: set Radio serial, Center, Rate (96, 192, 384 or 768 kHz), IF gain
 reduction and LNA state; press Start radio; check the waterfall, with no "ADC

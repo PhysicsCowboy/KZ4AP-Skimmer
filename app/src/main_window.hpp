@@ -1,5 +1,5 @@
-// The main window: the transport, the radio's controls, the waterfall, the track list and the status bar, around one stream
-// at a time. start_stream takes any IqSource: a recording, or the live radio.
+// The main window: the transport, the radio's controls, the waterfall, the one-signal pane, the track and call lists and the status
+// bar, around one stream at a time. start_stream takes any IqSource: a recording, or the live radio.
 #pragma once
 
 #include "cpu_meter.hpp"
@@ -7,6 +7,8 @@
 #include "display_feed.hpp"
 #include "call_list_model.hpp"
 #include "known_call_downloader.hpp"
+#include "settings_store.hpp"
+#include "signal_follow.hpp"
 #include "track_list_model.hpp"
 #include "waterfall_widget.hpp"
 
@@ -31,8 +33,10 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
+class QPlainTextEdit;
 class QSlider;
 class QSpinBox;
+class QSplitter;
 class QTableView;
 class QTimer;
 
@@ -45,7 +49,8 @@ struct TransportStep {
     // pause, play, restart, quit, speed=X (X as the speed box offers it: 1, 2, 5, 10 or max), seek=S (s into the recording),
     // radio (starts it at the controls' settings), radiostop, serial=SERIAL (the radio's serial number), center=KHZ, rate=HZ,
     // gain=DB,STATE, record=PATH, stoprecord, shot=PATH (a picture of the window now), mode=decoder or mode=skimmer, list=all or
-    // list=signed, known=PATH (a known-call list), noknown, download (presses Download MASTER.SCP)
+    // list=signed, known=PATH (a known-call list), noknown, download (presses Download MASTER.SCP), follow=KHZ (the one-signal pane
+    // follows the track nearest that frequency, as a click on a call there does: kHz as the track list shows it)
     QString action;
 };
 
@@ -68,36 +73,27 @@ struct Automation {
     }
 };
 
-// The call stage's settings at the program's start, the controls' first values. They last for the session: the app keeps no
-// settings between runs yet (docs/backlog.md).
-struct CallSettings {
-    // The plain CW decoder: no call stage, call list or known-call list; the waterfall and the text as ever (the owner's ruling, 2026-11-18).
-    bool decoder_only = false;
-    // The list shows only the calls that signed (callsign::is_signed); by default every call, as CW Skimmer lists them.
-    bool signed_only = false;
-    // The operator's known-call list, or null, and the file it came from.
-    std::shared_ptr<const callsign::KnownCalls> known;
-    QString known_path;
-};
-
-// The radio's settings at the program's start, the controls' first values.
-struct RadioDefaults {
-    // The serial number of the SDRplay radio to open (SdrplaySettings::serial): none opens none.
-    QString serial;
-    double center_khz = 7031.5;
-    int sample_rate = 192000;
-    int if_gain_reduction_db = 40;
-    int lna_state = 0;
+// The run's start: the choices the controls take first, where they came from, and where they are kept (README, "Settings kept
+// between runs"; core/app_settings.hpp). Decoder-only mode (decoder_only) is the plain CW decoder: no call stage, call list or
+// known-call list (the owner's ruling, 2026-11-18). The list shows only the calls that signed with signed_only (callsign::is_signed).
+// The radio's serial number (SdrplaySettings::serial): none opens none.
+struct Startup {
+    SettingsStore store;  // disabled: nothing read, nothing written
+    UserChoices saved;    // what the store held at the start
+    GivenChoices given;   // what the command line gave
+    UserChoices start;    // the run's first choices: start_choices(saved, given)
+    // The known-call list --known-calls read (main.cpp), or null: then the window reads start.known's from disk itself.
+    std::shared_ptr<const callsign::KnownCalls> given_known;
 };
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
-    // decoder_name: front_end_from_name's names; the caller has checked it. speed: stream seconds per second of wall
-    // clock for the next recording, kAsFastAsPossible for no pacing. threads: EngineConfig::worker_threads. calls: the call stage's
-    // mode, filter and known-call list.
-    MainWindow(std::string decoder_name, double speed, int threads, RadioDefaults radio, Automation automation, CallSettings calls = {});
+    // decoder_name: front_end_from_name's names; the caller has checked it. threads: EngineConfig::worker_threads. The speed (stream
+    // seconds per second of wall clock, kAsFastAsPossible for no pacing), the radio's controls and the call stage's mode, filter and
+    // known-call list come from startup.start.
+    MainWindow(std::string decoder_name, int threads, Automation automation, Startup startup);
     ~MainWindow() override;
 
     // Opens the recording and starts it, start_s into it. False (having told the operator) if it cannot be opened.
@@ -118,7 +114,15 @@ private:
     void set_signed_only(bool on);
     // A known-call list from a file, or the reason it was refused (also in the controls' status). False if refused, as in decoder-only mode.
     bool load_known_calls(const QString& path, const QString& how);
-    void set_known_calls(std::shared_ptr<const callsign::KnownCalls> known, const QString& path, const QString& status);
+    // kind: where the list came from, for the settings (KnownKind::None with a null list).
+    void set_known_calls(std::shared_ptr<const callsign::KnownCalls> known, const QString& path, const QString& status,
+                         KnownKind kind = KnownKind::File);
+    // The saved known-call list, read from disk (never the network); one that is gone or refused gives none, said in the status.
+    void restore_known_calls_from(const KnownChoice& choice);
+    // The window's layout and the choices as they are now; written when the program quits (save_settings), if the store is enabled.
+    void restore_layout();
+    UserChoices choices_now() const;
+    void save_settings();
     // The button: asks supercheckpartial.com for its list of files, then for MASTER.SCP (KnownCallDownloader). Refused in decoder-only mode.
     void download_known_calls();
     void show_known_status(const QString& text, bool problem);
@@ -132,6 +136,9 @@ private:
     void write_calls();
     void on_tick();
     void update_markers();
+    // The calls written on the waterfall: the list's calls heard at their own frequency lately, the latest first (none in
+    // decoder-only mode). now_s: the stream's clock, s.
+    void update_call_labels(double now_s);
     void update_status(const StreamStatus& status);
     void update_transport();
     void set_speed_from_combo();
@@ -146,13 +153,30 @@ private:
     void write_report(const StreamStatus& status);
     void run_automation(const StreamStatus& status);
     void run_transport_steps(const StreamStatus& status);
+    // The pane's signal looked up again, then the track list told what changed.
+    void refresh_track_views();
     void selection_changed();
     void restore_selection();
+    // The one-signal pane: follow the row holding this track (a click on the waterfall, the track list or the call list), and show it.
+    void follow_track(std::uint32_t id);
+    // The listed row nearest to this frequency, Hz from the span's center, within TrackTable::kSamePlaceHz (a call's or a script's);
+    // what = what is followed, for the status bar's message when none is that near.
+    void follow_frequency(double freq_hz, const QString& what);
+    QWidget* build_pane();
+    void update_pane();
 
     std::string decoder_name_;
     double speed_;
     int threads_;
     Automation automation_;
+    Startup startup_;
+    bool settings_saved_ = false;
+    // A saved known-call list not read yet: the run started in decoder-only mode, which has none; it is read on going to skimmer mode.
+    std::optional<KnownChoice> pending_known_;
+    // A saved known-call list that was gone or refused at the start: saved again as it was until the user picks another (or none).
+    std::optional<KnownChoice> missing_known_;
+    KnownKind known_kind_ = KnownKind::None;
+    QString recording_folder_;  // where the Open and Record dialogs start; empty for their defaults
     bool screenshot_done_ = false;
     bool report_done_ = false;
     QElapsedTimer automation_clock_;
@@ -180,9 +204,15 @@ private:
     std::uint64_t ticks_ = 0;
     std::uint64_t rows_dropped_ = 0;
     std::size_t most_live_ = 0;  // the most live tracks so far
-    std::optional<std::uint32_t> selected_track_;
+    // The one-signal pane: the signal it follows (core/signal_follow.hpp), its header and its text, and the text it last showed.
+    SignalFollow follow_;
+    QLabel* pane_label_ = nullptr;
+    QPlainTextEdit* pane_text_ = nullptr;
+    QString pane_shown_;
 
     WaterfallWidget* waterfall_ = nullptr;
+    QSplitter* main_splitter_ = nullptr;   // the waterfall above, the lists below
+    QSplitter* lists_splitter_ = nullptr;  // the track list, the call list
     TrackListModel* model_ = nullptr;
     CallListModel* calls_ = nullptr;
     QTableView* calls_view_ = nullptr;

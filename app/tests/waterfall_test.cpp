@@ -154,3 +154,25 @@ TEST(FramesPerRow, RoundsToAWholeNumberOfHops) {
     EXPECT_EQ(frames_per_row_for(0.04, 1024.0 / 48000.0), 2);  // 42.67 ms
     EXPECT_EQ(frames_per_row_for(0.04, 0.5), 1);
 }
+
+TEST(PlaceLabels, OverlappingLabelsGoToTheNextLaneAndTheRestAreLeftOut) {
+    using kz4ap::app::LabelSpan;
+    const std::vector<LabelSpan> labels = {
+        {100, 50},  // first: lane 0
+        {120, 50},  // overlaps it: lane 1
+        {140, 50},  // overlaps both: left out with two lanes
+        {155, 40},  // 5 px after the first ends: lane 0 with a gap of 4 px
+        {400, 30},  // far away: lane 0
+    };
+    const auto lanes = kz4ap::app::place_labels(labels, 2, 4.0);
+    ASSERT_EQ(lanes.size(), 5u);
+    EXPECT_EQ(lanes[0], 0);
+    EXPECT_EQ(lanes[1], 1);
+    EXPECT_FALSE(lanes[2]);
+    EXPECT_EQ(lanes[3], 0);
+    EXPECT_EQ(lanes[4], 0);
+    // A gap of 6 px: the fourth no longer fits beside the first, nor beside the second (which ends at 170).
+    const auto wider = kz4ap::app::place_labels(labels, 2, 6.0);
+    EXPECT_FALSE(wider[3]);
+    EXPECT_TRUE(kz4ap::app::place_labels(labels, 0, 4.0)[0] == std::nullopt);
+}

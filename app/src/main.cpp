@@ -10,11 +10,14 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
+#include <QFileInfo>
+#include <QGuiApplication>
 #include <QMessageBox>
 #include <QPalette>
 #include <QStyleFactory>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <exception>
 #include <memory>
@@ -104,7 +107,15 @@ int main(int argc, char* argv[]) {
     QApplication::setPalette(dark_palette());
 
     QCommandLineParser parser;
-    parser.setApplicationDescription(QStringLiteral("KZ4AP Skimmer: a waterfall and decoded text from I/Q recordings or an SDRplay radio."));
+    parser.setApplicationDescription(
+        QStringLiteral("KZ4AP Skimmer: a waterfall and decoded text from I/Q recordings or an SDRplay radio.\n\n"
+                       "Settings kept between runs: the mode, the list's filter, the known-call list (your file, or the downloaded "
+                       "MASTER.SCP, read from disk only), the speed, the radio's serial, center, rate and gains, the waterfall's scale, "
+                       "the window's size and layout, and the last recording folder, in %1. An option given here sets its choice for "
+                       "this run only and is not saved: the saved value stays unless you change that control during the run. "
+                       "--no-settings reads and writes none; so do runs without an operator (--screenshot, --report, --decoded, --calls, "
+                       "--quit-at-end, --quit-at, --transport) and offscreen runs (-platform offscreen), unless --settings names a file.")
+            .arg(QDir::toNativeSeparators(kz4ap::app::user_settings_path())));
     parser.addHelpOption();
     parser.addPositionalArgument(QStringLiteral("recording"),
                                  QStringLiteral("An I/Q recording to open (stereo WAV: 16-, 24- or 32-bit integer, or 32-bit float)."),
@@ -113,8 +124,14 @@ int main(int argc, char* argv[]) {
         QStringLiteral("decoder"), QStringLiteral("The decoder: envelope, matched, bank, viterbi or segmental."), QStringLiteral("name"),
         QString::fromUtf8(kz4ap::kDefaultDecoderName.data(), static_cast<qsizetype>(kz4ap::kDefaultDecoderName.size())));
     const QCommandLineOption speed_option(QStringLiteral("speed"),
-                                          QStringLiteral("Stream seconds per second of wall clock, or max."),
-                                          QStringLiteral("x"), QStringLiteral("1"));
+                                          QStringLiteral("Stream seconds per second of wall clock, or max (default: the saved speed, else 1)."),
+                                          QStringLiteral("x"));
+    const QCommandLineOption no_settings_option(QStringLiteral("no-settings"),
+                                                QStringLiteral("Read no saved settings and save none: every choice starts at the program's default."));
+    const QCommandLineOption settings_option(
+        QStringLiteral("settings"),
+        QStringLiteral("Keep the settings in this INI file instead of your own, in any run (also without an operator or offscreen)."),
+        QStringLiteral("path"));
     const QCommandLineOption screenshot_option(QStringLiteral("screenshot"),
                                                QStringLiteral("Save a picture of the window to this file."),
                                                QStringLiteral("path"));
@@ -164,14 +181,18 @@ int main(int argc, char* argv[]) {
                                          QStringLiteral("List the SDRplay radios' serial numbers and models, opening none, and quit."));
     const QCommandLineOption center_option(
         QStringLiteral("center-khz"),
-        QStringLiteral("The radio's center frequency, kHz. With a recording, it overrides what the recording's header or file name says."),
-        QStringLiteral("kHz"), QStringLiteral("7031.5"));
-    const QCommandLineOption rate_option(QStringLiteral("rate"), QStringLiteral("The radio's sample rate: 96000, 192000, 384000 or 768000 Hz."),
-                                         QStringLiteral("Hz"), QStringLiteral("192000"));
-    const QCommandLineOption gain_option(QStringLiteral("gain-reduction"), QStringLiteral("The radio's IF gain reduction, 20 to 59 dB."),
-                                         QStringLiteral("dB"), QStringLiteral("40"));
-    const QCommandLineOption lna_option(QStringLiteral("lna-state"), QStringLiteral("The radio's LNA state, 0 (the most gain) to 9."),
-                                        QStringLiteral("n"), QStringLiteral("0"));
+        QStringLiteral("The radio's center frequency, kHz (default: the saved one, else 7031.5). With a recording, it overrides what the "
+                       "recording's header or file name says."),
+        QStringLiteral("kHz"));
+    const QCommandLineOption rate_option(
+        QStringLiteral("rate"), QStringLiteral("The radio's sample rate: 96000, 192000, 384000 or 768000 Hz (default: the saved one, else 192000)."),
+        QStringLiteral("Hz"));
+    const QCommandLineOption gain_option(QStringLiteral("gain-reduction"),
+                                         QStringLiteral("The radio's IF gain reduction, 20 to 59 dB (default: the saved one, else 40)."),
+                                         QStringLiteral("dB"));
+    const QCommandLineOption lna_option(QStringLiteral("lna-state"),
+                                        QStringLiteral("The radio's LNA state, 0 (the most gain) to 9 (default: the saved one, else 0)."),
+                                        QStringLiteral("n"));
     const QCommandLineOption mirror_option(
         QStringLiteral("mirror"),
         QStringLiteral("The recording's spectrum is mirrored (an SDR on a transceiver's IF output): conjugate its samples, so a "
@@ -180,7 +201,7 @@ int main(int argc, char* argv[]) {
     parser.addOptions({decoder_option, speed_option, screenshot_option, screenshot_at_option, report_option,
                        quit_at_end_option, quit_at_option, transport_option, threads_option, decoded_option, calls_option, known_calls_option,
                        decoder_only_option, signed_only_option, radio_option,
-                       serial_option, list_option, center_option, rate_option, gain_option, lna_option});
+                       serial_option, list_option, center_option, rate_option, gain_option, lna_option, no_settings_option, settings_option});
     parser.process(app);
 
     if (parser.isSet(list_option)) return list_radios();
@@ -204,47 +225,89 @@ int main(int argc, char* argv[]) {
     const std::string decoder = parser.value(decoder_option).toStdString();
     if (!kz4ap::front_end_from_name(decoder))
         return usage_error(QStringLiteral("unknown decoder: %1").arg(parser.value(decoder_option)), quiet);
-    const std::optional<double> speed = parse_speed(parser.value(speed_option));
-    if (!speed) return usage_error(QStringLiteral("bad speed: %1").arg(parser.value(speed_option)), quiet);
+    kz4ap::app::GivenChoices given;
+    if (parser.isSet(speed_option)) {
+        given.speed = parse_speed(parser.value(speed_option));
+        if (!given.speed) return usage_error(QStringLiteral("bad speed: %1").arg(parser.value(speed_option)), quiet);
+    }
 
     bool threads_ok = false;
     const int threads = parser.value(threads_option).toInt(&threads_ok);
     if (!threads_ok || threads < 1) return usage_error(QStringLiteral("bad thread count: %1").arg(parser.value(threads_option)), quiet);
 
-    kz4ap::app::RadioDefaults radio;
-    radio.serial = parser.value(serial_option).trimmed();
-    radio.center_khz = parser.value(center_option).toDouble();
+    if (parser.isSet(serial_option)) given.radio_serial = parser.value(serial_option).trimmed().toStdString();
     if (parser.isSet(center_option)) {
-        if (!(radio.center_khz > 0))
-            return usage_error(QStringLiteral("bad center frequency: %1 kHz").arg(parser.value(center_option)), quiet);
-        automation.recording_center_hz = radio.center_khz * 1000.0;
+        // The Center box's range, kHz; its 3 decimals (1 Hz) are what it keeps.
+        const double center_khz = std::round(parser.value(center_option).toDouble() * 1000.0) / 1000.0;
+        if (!(center_khz >= 1.0 && center_khz <= 2000000.0))
+            return usage_error(QStringLiteral("the center frequency must be 1 to 2 000 000 kHz, not %1 kHz").arg(parser.value(center_option)), quiet);
+        given.center_khz = center_khz;
+        automation.recording_center_hz = parser.value(center_option).toDouble() * 1000.0;  // a recording's, as given
     }
-    radio.sample_rate = parser.value(rate_option).toInt();
-    if (radio.sample_rate != 96000 && radio.sample_rate != 192000 && radio.sample_rate != 384000 && radio.sample_rate != 768000)
-        return usage_error(QStringLiteral("the radio's sample rate must be 96000, 192000, 384000 or 768000 Hz, not %1").arg(parser.value(rate_option)), quiet);
-    radio.if_gain_reduction_db = parser.value(gain_option).toInt();
-    radio.lna_state = parser.value(lna_option).toInt();
+    if (parser.isSet(rate_option)) {
+        const int rate = parser.value(rate_option).toInt();
+        if (rate != 96000 && rate != 192000 && rate != 384000 && rate != 768000)
+            return usage_error(QStringLiteral("the radio's sample rate must be 96000, 192000, 384000 or 768000 Hz, not %1").arg(parser.value(rate_option)), quiet);
+        given.sample_rate_hz = rate;
+    }
+    // Refused outside what the boxes take, rather than clamped by them: a clamped value would differ from the option's, and so be saved.
+    if (parser.isSet(gain_option)) {
+        bool ok = false;
+        const int db = parser.value(gain_option).toInt(&ok);
+        if (!ok || db < 20 || db > 59)
+            return usage_error(QStringLiteral("the IF gain reduction must be a whole number from 20 to 59 dB, not %1").arg(parser.value(gain_option)), quiet);
+        given.if_gain_reduction_db = db;
+    }
+    if (parser.isSet(lna_option)) {
+        bool ok = false;
+        const int state = parser.value(lna_option).toInt(&ok);
+        if (!ok || state < 0 || state > 9)
+            return usage_error(QStringLiteral("the LNA state must be a whole number from 0 to 9, not %1").arg(parser.value(lna_option)), quiet);
+        given.lna_state = state;
+    }
 
-    kz4ap::app::CallSettings calls;
-    calls.decoder_only = parser.isSet(decoder_only_option);
-    calls.signed_only = parser.isSet(signed_only_option);
     // The options set the start. --known-calls and --signed-only configure a call list that decoder-only mode does not have, so they
-    // are refused with it; a transport step (mode=skimmer, then known=PATH, list=signed) sets them later. --calls is an output, written
-    // at the end as the list then stands: the header alone if the run ends in decoder-only mode.
-    if (calls.decoder_only && (parser.isSet(known_calls_option) || calls.signed_only))
+    // are refused with it, and without it they start in skimmer mode whatever was saved; a transport step (mode=skimmer, then
+    // known=PATH, list=signed) sets them later. --calls is an output, written at the end as the list then stands: the header alone if the
+    // run ends in decoder-only mode.
+    const bool decoder_only = parser.isSet(decoder_only_option);
+    if (decoder_only && (parser.isSet(known_calls_option) || parser.isSet(signed_only_option)))
         return usage_error(QStringLiteral("--decoder-only runs no call search: it takes no --known-calls or --signed-only"), quiet);
+    if (decoder_only) given.decoder_only = true;
+    if (parser.isSet(known_calls_option) || parser.isSet(signed_only_option)) given.decoder_only = false;
+    if (parser.isSet(signed_only_option)) given.signed_only = true;
+
+    kz4ap::app::Startup startup;
     if (parser.isSet(known_calls_option)) {
         try {
-            calls.known_path = parser.value(known_calls_option);
-            calls.known = kz4ap::app::read_known_calls(calls.known_path);
-            std::fprintf(stderr, "kz4ap-skimmer: known-call list: %zu calls from %s\n", calls.known->size(),
-                         QDir::toNativeSeparators(calls.known_path).toLocal8Bit().constData());
+            const QString path = parser.value(known_calls_option);
+            startup.given_known = kz4ap::app::read_known_calls(path);
+            // As given: it is saved only if the user changes the list during the run, and then as the new one.
+            given.known = kz4ap::app::KnownChoice{kz4ap::app::KnownKind::File, path.toStdString()};
+            std::fprintf(stderr, "kz4ap-skimmer: known-call list: %zu calls from %s\n", startup.given_known->size(),
+                         QDir::toNativeSeparators(path).toLocal8Bit().constData());
         } catch (const std::exception& e) {
             return usage_error(QString::fromUtf8(e.what()), quiet);
         }
     }
 
-    kz4ap::app::MainWindow window(decoder, *speed, threads, radio, automation, calls);
+    // Where the settings are kept: none with --no-settings, and none by default in a run without an operator or offscreen, so that
+    // scripted runs start from the program's defaults whatever the user has saved; --settings names a file for any run.
+    const bool unattended = quiet || QGuiApplication::platformName() == QStringLiteral("offscreen");
+    if (parser.isSet(no_settings_option) && parser.isSet(settings_option))
+        return usage_error(QStringLiteral("--no-settings and --settings exclude each other"), quiet);
+    QString settings_path;
+    if (parser.isSet(settings_option)) {
+        settings_path = QFileInfo(parser.value(settings_option)).absoluteFilePath();
+    } else if (!parser.isSet(no_settings_option) && !unattended) {
+        settings_path = kz4ap::app::user_settings_path();
+    }
+    startup.store = kz4ap::app::SettingsStore(settings_path);
+    startup.saved = startup.store.read_choices();
+    startup.given = given;
+    startup.start = kz4ap::app::start_choices(startup.saved, given);
+
+    kz4ap::app::MainWindow window(decoder, threads, automation, std::move(startup));
     window.show();
     if (parser.isSet(radio_option)) {
         window.start_radio();

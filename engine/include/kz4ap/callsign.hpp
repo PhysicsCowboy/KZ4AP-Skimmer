@@ -239,6 +239,10 @@ struct CallRow {
     double first_s = 0;       // s, stream time of its first reading
     double reported_s = 0;    // s, stream time of the end of the reading that reported it; the list shows it at least settle_s later
     double last_s = 0;        // s, stream time of its latest reading
+    // s, stream time of the end of its latest occurrence with a reading not named by another (Role::Named) within same_place_hz of
+    // freq_hz: when the station itself was last heard where the row places it; -1 for none within the evidence window (window_s). The
+    // app's calls on the waterfall go by it, since a reading that names the call elsewhere moves last_s but not freq_hz.
+    double heard_s = -1;
     std::uint32_t count = 0;  // readings, one per transmission
     double points = 0;        // the best support it has had at one place
     bool known = false;       // on the known-call list
@@ -289,6 +293,7 @@ private:
         double points = 0;
         Role role = Role::Unknown;
         bool framed = false;
+        bool own = false;   // some reading of it was not Role::Named: the station itself was heard here (CallRow::heard_s)
         double margin = 0;  // nats: the best of the margins of the readings it holds that are whole or glued words (CallReading::margin_nats)
     };
     struct Candidate {
@@ -328,6 +333,8 @@ private:
     // Its occurrences within within_hz of this place and window_s of now_s, on either side: now_s is the stream's present, except when
     // a withdrawal is judged at the loser's own last reading (evaluate), where a rival's later readings count up to window_s after it.
     Support support(const Candidate& candidate, double freq_hz, double now_s, double within_hz) const;
+    // CallRow::heard_s for this candidate.
+    double heard_at_place_s(const Candidate& candidate) const;
     bool passes(const Candidate& candidate, const Support& s) const;
     // Whether a better-supported near variant holds the call back at this place (CallSearchConfig::variant_hz); the best such rival's best
     // is added to rival_best, and the reported calls it beats here to beaten, when given.

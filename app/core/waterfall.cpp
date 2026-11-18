@@ -159,3 +159,26 @@ int frames_per_row_for(double row_period_s, double hop_s) {
 }
 
 }  // namespace kz4ap::app
+
+namespace kz4ap::app {
+
+std::vector<std::optional<int>> place_labels(std::span<const LabelSpan> labels, int lanes, double gap_px) {
+    std::vector<std::optional<int>> out(labels.size());
+    std::vector<std::vector<LabelSpan>> placed(static_cast<std::size_t>(std::max(0, lanes)));
+    for (std::size_t i = 0; i < labels.size(); ++i) {
+        const LabelSpan& l = labels[i];
+        for (std::size_t lane = 0; lane < placed.size(); ++lane) {
+            const bool free = std::none_of(placed[lane].begin(), placed[lane].end(), [&](const LabelSpan& p) {
+                return l.left_px < p.left_px + p.width_px + gap_px && p.left_px < l.left_px + l.width_px + gap_px;
+            });
+            if (free) {
+                placed[lane].push_back(l);
+                out[i] = static_cast<int>(lane);
+                break;
+            }
+        }
+    }
+    return out;
+}
+
+}  // namespace kz4ap::app

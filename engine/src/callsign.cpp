@@ -667,6 +667,7 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
         if (r.start_s < o.end_s && o.start_s < r.end_s && std::abs(o.freq_hz - freq_hz) <= config_.same_place_hz) {
             if (points > o.points) o.points = points;
             if (framed) o.framed = true;
+            if (r.role != Role::Named) o.own = true;
             if (r.role != Role::Unknown && o.role == Role::Unknown) o.role = r.role;
             o.margin = std::max(o.margin, margin);
             evaluate(c, freq_hz, r.end_s);
@@ -680,6 +681,7 @@ void CallSearch::add(const CallReading& r, double freq_hz) {
     o.points = points;
     o.role = r.role;
     o.framed = framed;
+    o.own = r.role != Role::Named;
     o.margin = margin;
     c.recent.push_back(o);
     while (!c.recent.empty() && r.end_s - c.recent.front().end_s > config_.window_s) c.recent.pop_front();
@@ -854,6 +856,14 @@ void CallSearch::withdraw(Candidate& c) {
     ++version_;
 }
 
+double CallSearch::heard_at_place_s(const Candidate& c) const {
+    double latest = -1.0;
+    for (const Occurrence& o : c.recent) {
+        if (o.own && std::abs(o.freq_hz - c.freq_hz) <= config_.same_place_hz) latest = std::max(latest, o.end_s);
+    }
+    return latest;
+}
+
 void CallSearch::update_row(const Candidate& c) {
     const auto it = std::find_if(rows_.begin(), rows_.end(), [&](const CallRow& r) { return r.base == c.base; });
     if (it == rows_.end()) return;
@@ -869,6 +879,7 @@ void CallSearch::update_row(const Candidate& c) {
     it->first_s = c.first_s;
     it->reported_s = c.reported_s;
     it->last_s = c.last_s;
+    it->heard_s = heard_at_place_s(c);
     it->count = c.count;
     it->points = c.best_points;
     it->known = c.known;
@@ -902,6 +913,7 @@ std::vector<CallRow> CallSearch::candidates() const {
         r.first_s = c.first_s;
         r.reported_s = c.reported ? c.reported_s : -1.0;
         r.last_s = c.last_s;
+        r.heard_s = heard_at_place_s(c);
         r.count = c.count;
         r.points = c.best_points;
         r.known = c.known;
