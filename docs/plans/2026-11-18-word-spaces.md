@@ -31,8 +31,12 @@ and 3% for the 137 calls both reported, which were 74% whole words. So the decod
 `joined_points` 1: 163 / 115 / 136 against 159 / 82 / 102, rejected. A sign-off tail rule: at most +1, rejected (branch
 `tail-rule-experiment`). `gap_stretch_prior` 0.02: 163 / 79 / 104; 0.1: 162 / 75 / 108, the decoder 7.3 against 5.2 ms per
 channel-second (three decodes at once; contention inflates both). The stage's withdrawal fix (`stage-aging`): 160 / 82 / 102.
+On the development set (both seeds) 0.02 and 0.1 make C2, B2, A2, G2 and H2 worse and S2 no better: rejected. The word-gap-scale
+fist (branch `word-gap-1`): 163 in a form that favored any precise sender (review 22), 158 corrected: rejected, branch kept.
 
-**Next.**
+**Next** (items 1 and 2 done, both rejected; decision log 2026-11-18). A fixed fist cannot pay its prior from one over's
+word gaps; the next form to try is a per-sender estimate of the word gap, carried across overs, after the owner's app
+items (decoder-only mode, signed-only option, list download).
 1. A variant of the segmental decoder's fist with a word-gap scale of its own (word gaps 7 g w T_s, w below 1 for compressed
    spacing), beside the gap stretch; measured on the seven recordings against the RBN, and on the development set's
    seeds (CER and its fist cells) before any default changes, with its CPU against the bar.
