@@ -206,6 +206,9 @@ TEST(KnownCallList, ReadsScpFormat) {
     EXPECT_FALSE(known.contains("N5JJ"));
     EXPECT_EQ(known.size(), 3u);
     EXPECT_THROW(KnownCalls::read_file("no such file.scp"), std::runtime_error);
+    // MASTER.SCP's header, as on 2026-11-18: the directive and the comments are not calls.
+    std::istringstream scp("!!Order,1,1\n#\n# Super Check Partial\n# Release 2026.11.18\nK1ABC\nW2XY\n");
+    EXPECT_EQ(KnownCalls::read(scp).size(), 2u);
 }
 
 TEST(KnownCallList, RefusesABinaryFileAndOneWithNoCall) {
@@ -1185,4 +1188,76 @@ TEST(CallSearch, ANeighborsTextIsReadByDefault) {
     stage.died(1);
     stage.search.finish();
     EXPECT_TRUE(std::any_of(read.begin(), read.end(), [](const auto& r) { return r.first == "W1AW" && r.second == 2045.0; }));
+}
+
+TEST(CallSearch, SignedIsASendersReadingOnly) {
+    // The list's option "signed calls only" (the owner's ruling, 2026-11-18) shows the rows with a reading in the role Sender; a call
+    // sent twice is framed for the report test but has not signed, nor has a call only named by another.
+    Stage s;
+    s.born(1, 1000.0);
+    s.born(2, 3000.0);
+    s.born(3, 5000.0);
+    s.born(4, 7000.0);
+    for (const double t : {0.0, 40.0}) {
+        s.text(1, 1000.0, "CQ DE K1ABC ", t);
+        s.text(2, 3000.0, "W2XY ", t);
+        s.text(3, 5000.0, "N5JJ N5JJ ", t);
+        s.text(4, 7000.0, "VE3ABC 5NN ", t);
+    }
+    s.search.advance(70.0);
+    ASSERT_NE(s.row("K1ABC"), nullptr);
+    ASSERT_NE(s.row("W2XY"), nullptr);
+    ASSERT_NE(s.row("N5JJ"), nullptr);
+    ASSERT_NE(s.row("VE3ABC"), nullptr);
+    EXPECT_TRUE(is_signed(*s.row("K1ABC")));
+    EXPECT_FALSE(is_signed(*s.row("W2XY")));    // bare
+    EXPECT_FALSE(is_signed(*s.row("N5JJ")));    // sent twice: framed for the report test, not signed
+    EXPECT_FALSE(is_signed(*s.row("VE3ABC")));  // named only
+    EXPECT_FALSE(s.row("VE3ABC")->heard);
+    EXPECT_EQ(std::count_if(s.search.calls().begin(), s.search.calls().end(), is_signed), 1);
+    // One signed reading among bare ones is enough, and it stays.
+    s.text(2, 3000.0, "TEST W2XY ", 80.0);
+    s.text(2, 3000.0, "W2XY ", 120.0);
+    s.search.advance(150.0);
+    EXPECT_TRUE(is_signed(*s.row("W2XY")));
+}
+
+TEST(CallSearch, ANewKnownCallListMarksTheCallsHeld) {
+    CallSearchConfig config;
+    config.points_framed = 3.0;  // so that a listed call (points_known 1) passes where an unlisted one does not
+    auto list = std::make_shared<KnownCalls>();
+    list->add("W2XY");
+    list->add("K1ABC");
+    const auto run = [&](bool give_list) {
+        Stage s(config);
+        s.born(1, 1000.0);
+        s.born(2, 5000.0);
+        s.text(1, 1000.0, "CQ DE W2XY ", 0.0);
+        s.text(2, 5000.0, "CQ DE K1ABC CQ DE K1ABC CQ DE K1ABC ", 0.0);
+        s.search.advance(30.0);
+        EXPECT_EQ(s.row("W2XY"), nullptr);
+        EXPECT_NE(s.row("K1ABC"), nullptr);
+        if (give_list) {
+            s.search.set_known(list);
+            EXPECT_EQ(s.search.known(), list);
+            const std::vector<CallRow> held = s.search.candidates();
+            const auto w = std::find_if(held.begin(), held.end(), [](const CallRow& r) { return r.base == "W2XY"; });
+            EXPECT_TRUE(w != held.end() && w->known);  // marked now, judged at its next reading
+            EXPECT_EQ(s.row("W2XY"), nullptr);
+            EXPECT_TRUE(s.row("K1ABC")->known);  // a reported row too
+        }
+        s.text(1, 1000.0, "DE W2XY ", 40.0);
+        s.search.advance(70.0);
+        return s.row("W2XY") != nullptr;
+    };
+    EXPECT_FALSE(run(false));
+    EXPECT_TRUE(run(true));
+    Stage s(config, list);
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "CQ DE K1ABC ", 0.0);
+    s.search.advance(30.0);
+    ASSERT_NE(s.row("K1ABC"), nullptr);
+    EXPECT_TRUE(s.row("K1ABC")->known);
+    s.search.set_known(nullptr);
+    EXPECT_FALSE(s.row("K1ABC")->known);  // the list taken away: the row stays, unlisted
 }

@@ -559,18 +559,18 @@ with the least evidence closing first (A.9b). A radio silent 5 s is flagged.
 
 ## 11. Callsign stage
 
-`CallSearch` reads any decoder's track and text events, beside the track list, and
-changes neither. Values are heuristics unless marked. Appendix: A.12.
+`CallSearch` reads any decoder's track and text events and changes neither. The app's
+decoder-only mode runs none. Values are heuristics unless marked. Appendix: A.12.
 
-**Words.** Each whole stream-second it reads text 10 s old. A later correction has its change
-read again, within 200 s (A.12); old readings stay. A word space,
-prosign or punctuation ends a word. Every symbol is read, a neighbor's too (A.12).
+**Words.** Each whole stream-second it reads text 10 s old. A later correction's change is
+read again, within 200 s; old readings stay. A word space,
+prosign or punctuation ends a word. Every symbol is read, a neighbor's too.
 
 **Readings.** A call's form (RR 19.68; sourced): an allocated prefix (Appendix 42) of one
 or two characters, one digit, one to four letters; /P, /M or a prefix keep the base call. 1
 point: a whole word, or one glued to a keyword or itself (DEK1ABC; K1ABCK1ABC: two readings). 0.75 point: short words
 joined (K X 9 F). 0.5 point: a stray E, T, I before or E, T, K after. Refused: words of CW with
-this form (G5RV, R5NN; exact), locators (EL96UD); calls of E T I S H A N M U 5 alone unless whole words.
+this form (G5RV, R5NN; exact), locators (EL96UD).
 
 **Role.** Before DE or 5NN: *named*. After DE, CQ or TEST, or before K: *signed*. Else *bare*.
 
@@ -578,8 +578,8 @@ this form (G5RV, R5NN; exact), locators (EL96UD); calls of E T I S H A N M U 5 a
 over the band within 30 min, readings chained by overlaps in time once wherever they lie,
 none where a better variant holds the call. Reported at 2 points, a named word no
 exception (CW Skimmer's practice); listed, 1 if framed (signed, named or sent twice), else 2
-(a variant: 1 also for a word of high margin, A.12). A list that is binary or holds no call
-is refused. A call of E T I S H A N M U 5 alone: 2 whole words, listed or not. Two or more
+(a variant: 1 also for a word of high margin, A.12). A call of E T I S H A N M U 5
+alone: only whole words, 2 of them, listed or not. Two or more
 digits (W100AW): from a list only.
 
 **Variants.** A call within edit distance 1 of a better-supported call within 150 Hz, or the
@@ -590,6 +590,7 @@ row leaves when its points without those places no longer pass, judged at its ow
 against rivals within 30 min of it either side.
 
 **List.** One row per base call, at its latest signed, else bare, else named place.
+*Signed*: some reading signed; the app can list these alone.
 
 # A. Appendix: derivations, provenance, limitations, parameters, definitions
 
@@ -4852,6 +4853,10 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: known-call list | text, one call a line; NUL bytes or no line with a call's form refused | `KnownCalls::read` | interface choice |
 | Callsign stage: short pairs | one letter after the digit, same prefix and digit, distance 2: held at over 2 times the points | `short_variant_ratio` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: locators | six characters, AA00AA with letters A–R, A–X: no reading | `is_locator` | heuristic |
+| Callsign stage: signed | some reading had the role signed, at any place and time; never undone | `is_signed` (`CallRow::framed`) | heuristic (A.12) |
+| App: decoder-only mode | off by default; on, no stage runs | `CallSettings::decoder_only`, `--decoder-only` | owner (2026-11-18) |
+| App: call list | every call by default; signed calls only an option | `CallSettings::signed_only`, `--signed-only` | owner (2026-11-18) |
+| App: known-call download | on the button only; file 16 MiB at most, listing 1 MiB; fails after 30 s without data | `kMaxListBytes`, `kMaxListingBytes`, `kTransferTimeoutMs` | owner (the button); limits heuristic |
 | Segmental: margins | off (0); a variant: a merge's runner-up within R (measured at 16 nats; at most 16.6); symbols matched by time (30 ms or half the shorter's length; 2 ms; 3 agreeing; 24 steps); published at half-nat steps | `rival_margin_nats`; `note_rival`, `confidence_level` | the update derived (soft-output Viterbi); the constants heuristic (A.8e) |
 
 ## A.11 Definitions used in tests and the benchmark
@@ -5432,7 +5437,7 @@ an unlisted call at a third of its points; an unlisted rival a listed call at th
 reading 1). `call` is the base, or the most common form with a slash seen at least twice and more often than any other. A candidate not reported
 and older than the longest window is dropped, each 30 s of stream.
 
-**The list and the tools.** `kz4ap-skimmer --known-calls PATH` takes MASTER.SCP's format: one call a line, # and ; lines skipped, case ignored,
+**The list and the tools.** `kz4ap-skimmer --known-calls PATH` takes MASTER.SCP's format: one call a line, lines starting with #, ; or !! (a directive to logging programs, MASTER.SCP's `!!Order,1,1`) skipped, case ignored,
 whatever follows white space ignored. A file with a NUL byte (a binary one: CW Skimmer's MASTER.DTA) or with no line whose first word has
 a call's form is refused with a message naming the file, since it would match nothing and, with `named_listed_only`, refuse every call
 named once (W3OA: 107 calls with no list, 74 with MASTER.DTA given as it is, before the check; review 10); the file is read in binary
@@ -5446,6 +5451,56 @@ day file only the spots of given skimmers, a continent, a UTC window, a span and
 reports precision and recall, and how many calls found are within 100 Hz of their station. Its reader takes ADIF, telnet spot lines, CSV with a
 header (`dx` ahead of `callsign`, as in the Reverse Beacon Network's files) and, failing those, the first word of a call's form on each line,
 and prints which it used: CW Skimmer's export format is not known here. Calls compare by base call. A telnet spot's word is kept as it stands where the reader's grammar has no form for it (D4C, LZ1SPACE): a spot is the spotter's test, and dropping it would flatter this decoder.
+
+**Signed (`is_signed`).** A row is *signed* when `CallRow::framed` is true: some reading of the call, at any place and time since its
+first, had the role *signed* (`Role::Sender`, the rule above), whether or not a variant held the call where it was read; once true it
+stays. It is not the report test's *framed* of an occurrence: a call sent twice, or one named by another, is framed there but not
+signed. A heuristic, a choice made here (2026-11-18): it reuses the Role rule unchanged, since its word lists are what the stage
+already calls signed (the list's How column showed it before); every reading counts, not only those the pooled points count, so that a
+row never leaves the signed list again. The cost (a conjecture, not measured): a reading that signs at a place where a better-supported
+variant holds the call still marks the call signed, so when that reading is a misreading of the variant's own signing (DE K1ABD read for
+DE K1ABC), the misread call shows as signed wherever it is reported.
+
+**The app's modes and list.** `CallSettings` (`app/src/main_window.hpp`), the controls of the toolbar's third row; they last for the
+session, as the app keeps no settings between runs.
+- *Mode:* Skimmer, the default, runs the stage. Decoder only (`--decoder-only`) builds none (`CallListModel::stop`): no `CallSearch`
+  exists, no event reaches one, and the call list, its controls and its status are hidden; the waterfall, the track list and its text are
+  as in skimmer mode, since the stage changes nothing they read. Back in skimmer mode a new stage starts, reading the tracks born from then
+  on: a track's earlier text is not given to it, since a correction's `from_index` counts from the track's first symbol and a stage begun
+  mid-track could not place it. In decoder-only mode the known-call list's actions are refused, from the controls (hidden) and from
+  the automation steps `known=` and `download` (the status says so). The command line sets the start: `--decoder-only` refuses
+  `--known-calls` and `--signed-only`, which configure a list it does not have (the steps `mode=skimmer`, then `known=`, `list=signed`
+  set them later); `--calls` is an output and is taken, written at the end as the list then stands, the header alone in decoder-only mode.
+- *List:* all calls, the default (every reported row, signed, bare or named, as CW Skimmer lists every call; the owner's ruling,
+  2026-11-18), or signed calls only (`--signed-only`): the rows with `is_signed`. The filter is the list's, not the stage's: the stage
+  reports the same rows either way, and `--calls` writes the rows shown. The status bar reads "Calls N signed of M".
+- *Known calls:* none by default, and none ships with the program. Open list... and `--known-calls PATH` read the user's file in
+  MASTER.SCP's format the same way (`read_known_calls`: the file through memory into `KnownCalls::read`, so any path the system takes
+  is read). Download MASTER.SCP (`KnownCallDownloader`, `app/src/known_call_downloader.hpp`) asks supercheckpartial.com, as its guide
+  for developers says (read 2026-11-18):
+  1. GET `https://supercheckpartial.com/api/v1/files`, a JSON array of name, size, etag, modified; an answer over 1 MiB is stopped.
+  2. GET `https://supercheckpartial.com/downloads/<name>` for the entry named MASTER.SCP (case ignored; a name other than letters,
+     digits, `.`, `-`, `_` is refused, so a listing names no path or query), with `If-None-Match` set to the ETag kept from the last
+     download when the copy is still there. An answer over 16 MiB is stopped.
+  3. HTTP 304: the kept copy is read; if it no longer reads, its ETag is deleted and step 2 runs once more without `If-None-Match`, so
+     a damaged copy cannot be held in place by its 304s. HTTP 200: the body's size must equal its Content-Length, or with none the
+     listing's size, else it was cut short (a closed connection ends an answer with no error) and nothing is kept; then it is read as a
+     list (a page of HTML or a file of no calls is refused, and the list in use stays), and only then saved atomically (`QSaveFile`) to
+     `QStandardPaths::AppLocalDataLocation`/MASTER.SCP (Windows: `%LOCALAPPDATA%\kz4ap-skimmer\MASTER.SCP`), its ETag beside it in
+     `MASTER.SCP.etag`.
+  Every request carries exactly these headers, checked by test against a local server: `Host`, `Connection` (Qt's), `User-Agent:
+  KZ4AP-Skimmer/<version>` (the program's version, 0.1.0), `Accept-Language: *` (set, so that Qt does not send the system's languages),
+  `Accept-Encoding: identity` (so that Content-Length is the file's size), and on a conditional request `If-None-Match`. No cookie is sent
+  or kept. A redirect is followed only to the same scheme, host and port (`SameOriginRedirectPolicy`); any other is refused. Limits,
+  heuristic: 16 MiB for the file (MASTER.SCP was 359 821 bytes on 2026-11-18), 1 MiB for the listing (2 166 bytes), and a request that
+  moves no data for 30 s fails as such; each answer is checked against its limit while it comes and again when it ends. The program
+  reaches the network only on that button (or the automation step `download`), and makes its network manager on the first press. The
+  status beside the buttons shows the list's size and origin, or why the last try failed. A new list, or none, takes effect at once (`CallSearch::set_known`): every call
+  held is marked listed or not, its row too, and is judged so at its next reading; reported rows stay until a reading takes them back,
+  and a special form (W100AW) refused before is not read again.
+- *CPU:* the stage runs on the GUI's thread. The report's `call_stage_cpu_s` is that thread's CPU (`thread_cpu_precise_seconds`) inside
+  the stage's `apply`, `advance` and `finish` and the list model's refresh, painting not included; `call_stage_ms_per_channel_s` divides it
+  by the stream's channel-seconds. `process_cpu_ms_per_channel_s` is the whole process's.
 
 ### Provenance
 
@@ -5554,6 +5609,10 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
 - A correction that reaches what has been read adds its readings and does not take back the old ones, so a misreading it replaces can stay beside it, unless the arbitration rules on them. Beyond `history_s` it is not read.
 - A row can hang on one transient reading: K6QOP's second point on real 40 m is a word the decoder corrects away 10.30 s after its end, and `settle_s` from 10.5 to 14 s loses it. So what is listed near such a word depends on `settle_s` to the second (measured, review 5), though no longer on the app's pace.
 - Points are heuristic weights, not probabilities. Segmental's margins (A.8e, a variant) are a ranking, not a calibrated posterior, and no default rule reads them; a posterior on the call would need calibrated ones. The bank's and viterbi's symbols say 1, so their readings' margins are unknown; Envelope's and Matched's carry the product of their elements' confidences, which the stage reads as a margin too, untested as one.
+
+- A known-call list's size counts every first word of a line that is not skipped (#, ;, !!, blank), a word with no call's form
+  included, so a list with stray lines reads a little larger than its calls (MASTER.SCP of 2026-11-18: 50 021, its header skipped).
+- Leaving decoder-only mode mid-stream finds no call in a track already running until a new track starts there.
 
 ## A.13 Listening clips (`kz4ap-listen`)
 

@@ -76,6 +76,20 @@ form for those, and does not read them (`docs/backlog.md`).
 
     build\windows\app\Release\kz4ap-skimmer.exe build\recordings\band30.wav --speed max --calls calls.csv --quit-at-end
 
+The toolbar's third row holds the same choices while the app runs. **Mode:** *Skimmer*, or
+*Decoder only*, a plain CW decoder: the waterfall and the text, with no call search, call list or
+known-call list (`--decoder-only`). **List:** *All calls*, the default, as CW Skimmer lists them,
+or *Signed calls only*, those sent at least once after DE, CQ or TEST, or before K, KN or AR
+(`--signed-only`). **Known calls:** *Open list...* takes your own file; *Download MASTER.SCP*
+fetches Super Check Partial's list from supercheckpartial.com into the app's folder
+(`%LOCALAPPDATA%\kz4ap-skimmer` on Windows) and uses it, and asks for it again only when you press it
+again (an unchanged file is not sent twice); *No list* goes without. The program reaches the network
+only on that button. Its requests carry only the program's name and version (`User-Agent:
+KZ4AP-Skimmer/0.1.0`), `Accept-Language: *` and `Accept-Encoding: identity` besides the host and
+connection headers every request has, and the kept copy's ETag when there is one: no language, cookie
+or name of yours. The choices last until the program closes; `--decoder-only` cannot be combined
+with `--known-calls` or `--signed-only`.
+
 The radio needs the SDRplay API (below).
 
 ## Project documents

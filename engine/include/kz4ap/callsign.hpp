@@ -124,8 +124,8 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
 
 // ---- A known-call list
 
-// A set of calls, by base call. MASTER.SCP's format: one call a line; a line starting with # or ; or blank is skipped; case is ignored;
-// anything after the first white space on a line is ignored.
+// A set of calls, by base call. MASTER.SCP's format: one call a line; a line starting with # or ; or !! (a directive, "!!Order,1,1") or
+// blank is skipped; case is ignored; anything after the first white space on a line is ignored. size() counts every other first word.
 class KnownCalls {
 public:
     KnownCalls() = default;
@@ -243,12 +243,24 @@ struct CallRow {
     double points = 0;        // the best support it has had at one place
     bool known = false;       // on the known-call list
     bool heard = false;       // some reading was not named by another: the station itself was heard
-    bool framed = false;      // some reading was framed: it signed with DE, called CQ or the like
+    // Some reading had the role Sender (signed): after DE, CQ, TEST and the like, or before K, KN, AR and the like (Role). Unlike an
+    // occurrence's framing, a word named by another or sent twice does not set it. Every reading counts, at any place and time, held by
+    // a variant or not, so that it never goes back to false. The CSV's column `framed`; is_signed reads it.
+    bool framed = false;
 };
+
+// Whether the call signed: some reading of it had the role Sender (CallRow::framed). The list's option "signed calls only" shows these
+// rows alone; by default every row is shown, signed, bare or named, as CW Skimmer lists every call (the owner's ruling, 2026-11-18).
+inline bool is_signed(const CallRow& row) { return row.framed; }
 
 class CallSearch {
 public:
     explicit CallSearch(CallSearchConfig config = {}, std::shared_ptr<const KnownCalls> known = nullptr);
+
+    // A new known-call list, or none, from now on: every call held is marked listed or not by it (its rows too), and is judged so at its
+    // next reading. What has been reported stays until a reading takes it back; a special form refused before is not read again.
+    void set_known(std::shared_ptr<const KnownCalls> known);
+    const std::shared_ptr<const KnownCalls>& known() const { return known_; }
 
     void apply(const TrackEvent& event);
     void apply(const DecodedTextEvent& event);
