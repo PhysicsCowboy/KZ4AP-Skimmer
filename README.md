@@ -309,6 +309,7 @@ each track's final text (`text`, corrections applied) and its immediate text
 
 ## License
 
-GPL-3.0; see `LICENSE`, with an additional permission under its section 7 for
-linking closed-source SDR driver libraries such as the SDRplay API; see
+GPL-3.0-or-later: version 3 of the GNU General Public License or, at your
+option, any later version; see `LICENSE`. An additional permission under its
+section 7 allows linking closed-source radio driver libraries; see
 `LICENSE-EXCEPTION.md`.
