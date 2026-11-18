@@ -62,8 +62,9 @@ call shows at least 10 s after it is read a second time: on `band30.wav` all 30 
 there by about 24 s of stream (derived: their second readings end by 13.5 s, measured).
 
 **One signal.** Click a signal: its marker above the waterfall (the nearest within 8 pixels), its
-row in the track list, or a call in the call list (the track nearest the call's frequency, within
-30 Hz). The pane under the waterfall then shows that signal's text as it is decoded, the newest at
+row in the track list, or a call in the call list (the live track nearest the call's frequency
+within 30 Hz, or, with none live there, the nearest ended one: a live track wins over a nearer
+ended one). The pane under the waterfall then shows that signal's text as it is decoded, the newest at
 the bottom, with its frequency in kHz, its speed in WPM and whether it is still live; scroll back
 and the place you read stays put. It keeps following the station when its track ends and a new one
 starts within 30 Hz of it: with the default decoder the track list already goes on in the same row,
@@ -72,11 +73,15 @@ panel shows the signal at the radio's tuned frequency instead; this one follows 
 click (there is no tuning yet), and has no colors for calls or reports, no pale characters at low
 SNR and no » for a long pause.
 
-**Calls on the waterfall.** In skimmer mode each call of the call list heard in the last 60 s of
-stream is written at the top of the picture, just right of its frequency, white if heard in the
-last 16 s and gray before that, in up to three rows of labels: the most recently heard take the
-first places, and a label with no room left beside the others is left out rather than drawn over
-them. A call only named by another station gets no label (its frequency is that station's).
+**Calls on the waterfall.** In skimmer mode each call of the call list (as its List filter shows
+it) whose station was itself heard at the list's frequency for it in the last 60 s of stream is
+written at the top of the picture, just right of that frequency, white if heard there in the last
+16 s and gray before that, in up to three rows of labels. "Heard there" means a reading of the call
+that was not another station naming it (before DE or 5NN), within 300 Hz (the call stage's same
+place) of the frequency the list shows; a station naming it elsewhere does not refresh the label.
+The most recently heard take the first places, a label with no room left beside the others is left
+out rather than drawn over them, and one near the right edge is moved left to end there. A call
+only named by another station gets no label (its frequency is that station's).
 
 To keep the list, add `--calls calls.csv` (it is written when the stream ends; add
 `--quit-at-end` to leave after that). To give it a list of calls in MASTER.SCP's format, add

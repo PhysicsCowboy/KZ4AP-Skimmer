@@ -4804,7 +4804,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Segmental: publishing | every 0.25 s; last 64 symbols compared | `kPublishEveryS`, `kPublishTailSymbols` | heuristic |
 | Segmental: speed sent | median of 1.2 s × u / d over the last 16 published letters (A.9b, "Speed sent") | `kSpeedLetters`, `letter_wpm`, `text_wpm` | formula derived (PARIS); 16 heuristic |
 | App: default decoder | segmental | `kDefaultDecoderName` | coordinator's choice |
-| App: default center | 7031.5 kHz | `RadioDefaults::center_khz`, `SdrplaySettings::center_hz`, `--center-khz` | heuristic |
+| App: default center | 7031.5 kHz, until a saved one (README, "Settings kept between runs") | `UserChoices::center_khz`, `SdrplaySettings::center_hz`, `--center-khz` | heuristic |
 | Local floor, segmental's path (off elsewhere) | ±1 kHz, lower quartile, 7 dB above it | `DetectorConfig::local_floor_radius_hz`; signal_detector.cpp | heuristic |
 | One track per peak, segmental's path (off elsewhere) | D = 30 Hz | `DetectorConfig::one_track_per_peak` | heuristic |
 | DC guard | none (0 Hz) | `DetectorConfig::dc_guard_hz` | heuristic |
@@ -4854,9 +4854,15 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: short pairs | one letter after the digit, same prefix and digit, distance 2: held at over 2 times the points | `short_variant_ratio` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: locators | six characters, AA00AA with letters A–R, A–X: no reading | `is_locator` | heuristic |
 | Callsign stage: signed | some reading had the role signed, at any place and time; never undone | `is_signed` (`CallRow::framed`) | heuristic (A.12) |
-| App: decoder-only mode | off by default; on, no stage runs | `CallSettings::decoder_only`, `--decoder-only` | owner (2026-11-18) |
-| App: call list | every call by default; signed calls only an option | `CallSettings::signed_only`, `--signed-only` | owner (2026-11-18) |
+| App: decoder-only mode | off by default; on, no stage runs | `UserChoices::decoder_only`, `--decoder-only` | owner (2026-11-18) |
+| App: call list | every call by default; signed calls only an option | `UserChoices::signed_only`, `--signed-only` | owner (2026-11-18) |
 | App: known-call download | on the button only; file 16 MiB at most, listing 1 MiB; fails after 30 s without data | `kMaxListBytes`, `kMaxListingBytes`, `kTransferTimeoutMs` | owner (the button); limits heuristic |
+| App: settings kept | per user, an INI file; none read or written with `--no-settings`, without an operator or offscreen (unless `--settings`); a command-line option not saved unless changed in the run | `SettingsStore`, `start_choices`, `choices_to_save` | interface choices (README, "Settings kept between runs") |
+| App: pane's pick on the waterfall | the nearest marker within 8 px | `WaterfallWidget::kPickPx` | heuristic (the marker is 8 px wide) |
+| App: pane's pick from a call; its follow distance | the nearest listed row within 30 Hz, a live one first; a successor within 30 Hz | `row_near`, `TrackTable::kSamePlaceHz` | the list's own same place (the segmental path's D), reused; heuristic for this use |
+| App: pane's successor | a live row, first track born after the followed signal's newest, started no earlier than 2 s before it was last heard (its latest symbol's end) | `SignalFollow::kSuccessorOverlapS` | heuristic (about the engine's 2 s replay) |
+| App: pane's earlier text | 16 384 bytes, the oldest cut at a word space | `SignalFollow::kMaxEarlierBytes` | heuristic (about 20 min at 30 WPM) |
+| App: calls on the waterfall | heard at their place (`CallRow::heard_s`) within 60 s of stream; white within 16 s; 3 lanes, 6 px between labels | `kCallLabelAgeS`, `kCallLabelRecentS`, `WaterfallWidget::kLabelLanes`, `kLabelGapPx` | heuristics (16 s: the picture's height at its first size, 380 rows at 23.4 rows/s, derived) |
 | Segmental: margins | off (0); a variant: a merge's runner-up within R (measured at 16 nats; at most 16.6); symbols matched by time (30 ms or half the shorter's length; 2 ms; 3 agreeing; 24 steps); published at half-nat steps | `rival_margin_nats`; `note_rival`, `confidence_level` | the update derived (soft-output Viterbi); the constants heuristic (A.8e) |
 
 ## A.11 Definitions used in tests and the benchmark
@@ -5460,6 +5466,11 @@ already calls signed (the list's How column showed it before); every reading cou
 row never leaves the signed list again. The cost (a conjecture, not measured): a reading that signs at a place where a better-supported
 variant holds the call still marks the call signed, so when that reading is a misreading of the variant's own signing (DE K1ABD read for
 DE K1ABC), the misread call shows as signed wherever it is reported.
+
+**Heard at its place (`CallRow::heard_s`).** The end, s of stream, of the latest occurrence within `window_s` that holds a reading
+of the call not in the role Named, within `same_place_hz` (300 Hz) of the row's `freq_hz`; −1 for none. `last_s` counts every reading,
+named ones too, while `freq_hz` stays where the best reading put it (signed, then bare, then named), so a call named elsewhere moves
+`last_s` and not its place; the app's calls on the waterfall go by `heard_s`. Bookkeeping only: nothing the stage decides reads it.
 
 **The app's modes and list.** `Startup::start` (`app/src/main_window.hpp`), the controls of the toolbar's third row; they are kept
 between runs with the app's other settings (README, "Settings kept between runs"; a saved list is read from disk only).

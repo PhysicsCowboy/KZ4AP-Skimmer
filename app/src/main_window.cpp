@@ -134,9 +134,14 @@ MainWindow::MainWindow(std::string decoder_name, int threads, Automation automat
 
     // A click on a call follows the track nearest its frequency in the one-signal pane.
     connect(calls_view_, &QAbstractItemView::clicked, this, [this, sorted_calls](const QModelIndex& index) {
-        const QModelIndex source = sorted_calls->mapToSource(index);
-        if (const std::optional<double> freq_hz = calls_->freq_at(source.row()))
-            follow_frequency(*freq_hz, calls_->data(calls_->index(source.row(), CallListModel::kCall)).toString());
+        // By the call shown on that row, looked up now: the stage's rows may have moved since the list was laid out.
+        const std::optional<std::string> base = calls_->base_at(sorted_calls->mapToSource(index).row());
+        if (!base) return;
+        if (const std::optional<double> freq_hz = calls_->freq_of(*base)) {
+            follow_frequency(*freq_hz, QString::fromStdString(*base));
+        } else {
+            statusBar()->showMessage(tr("%1 has just left the call list").arg(QString::fromStdString(*base)), 4000);  // ms
+        }
     });
     connect(waterfall_, &WaterfallWidget::trackClicked, this, [this](std::uint32_t id) { follow_track(id); });
 
@@ -422,6 +427,7 @@ void MainWindow::set_known_calls(std::shared_ptr<const callsign::KnownCalls> kno
     known_path_ = known_calls_ ? path : QString();
     known_kind_ = known_calls_ ? kind : KnownKind::None;
     pending_known_.reset();  // a choice made now replaces the saved one
+    missing_known_.reset();
     calls_->set_known(known_calls_);
     known_status_ = known_calls_ ? status : tr("none");
     show_known_status(known_status_, false);
@@ -437,6 +443,7 @@ void MainWindow::restore_known_calls_from(const KnownChoice& choice) {
         known_path_.clear();
         known_kind_ = KnownKind::None;
         pending_known_.reset();
+        missing_known_ = choice;  // kept as saved until the user picks another list: the drive may be back next time
         calls_->set_known(nullptr);
         known_status_ = tr("none");
         show_known_status(r.status, r.problem);
@@ -468,6 +475,8 @@ UserChoices MainWindow::choices_now() const {
     c.signed_only = calls_->signed_only();
     if (pending_known_) {
         c.known = *pending_known_;
+    } else if (missing_known_) {
+        c.known = *missing_known_;
     } else if (known_kind_ == KnownKind::File) {
         // Absolute, so that a run started elsewhere finds it; the command line's own form when unchanged (choices_to_save).
         c.known = {KnownKind::File, startup_.given.known && known_path_ == QString::fromStdString(startup_.given.known->path)
@@ -478,7 +487,7 @@ UserChoices MainWindow::choices_now() const {
     }
     c.speed = speed_box_->currentData().toDouble();
     c.radio_serial = serial_box_->text().trimmed().toStdString();
-    c.center_khz = center_box_->value();
+    c.center_khz = std::round(center_box_->value() * 1000.0) / 1000.0;  // to the box's 1 Hz, as main.cpp rounds --center-khz
     c.sample_rate_hz = rate_box_->currentData().toInt();
     c.if_gain_reduction_db = if_gain_box_->value();
     c.lna_state = lna_box_->value();
@@ -958,12 +967,13 @@ void MainWindow::update_call_labels(double now_s) {
     std::vector<WaterfallWidget::CallLabel> labels;
     if (calls_->search()) {
         std::vector<callsign::CallRow> rows = calls_->shown_rows();
-        // The latest heard first: they take the first lanes, and the others what room is left.
-        std::sort(rows.begin(), rows.end(), [](const callsign::CallRow& a, const callsign::CallRow& b) { return a.last_s > b.last_s; });
+        // By when the station itself was last heard where the row places it (CallRow::heard_s: its own readings, not those that name it,
+        // within the stage's same place of freq_hz); the latest first: they take the first lanes, and the others what room is left. A call
+        // only named by another station has none (its frequency is that station's): no label.
+        std::sort(rows.begin(), rows.end(), [](const callsign::CallRow& a, const callsign::CallRow& b) { return a.heard_s > b.heard_s; });
         for (const callsign::CallRow& row : rows) {
-            // A call only named by another station has that station's frequency (CallRow::freq_hz): no label there.
-            if (!row.heard || now_s - row.last_s > kCallLabelAgeS) continue;
-            labels.push_back({row.freq_hz, QString::fromStdString(row.call), now_s - row.last_s <= kCallLabelRecentS});
+            if (row.heard_s < 0 || now_s - row.heard_s > kCallLabelAgeS) continue;
+            labels.push_back({row.freq_hz, QString::fromStdString(row.call), now_s - row.heard_s <= kCallLabelRecentS});
         }
     }
     waterfall_->set_call_labels(std::move(labels));
@@ -1028,9 +1038,17 @@ void MainWindow::update_status(const StreamStatus& status) {
 
 void MainWindow::refresh_track_views() {
     // The pane first: the list's new layout selects the followed row again (restore_selection), which may now be another track's.
+    const std::optional<std::uint32_t> was = follow_.row_id();
     const bool pane_changed = follow_.update(model_->table());
     model_->refresh();
-    if (pane_changed) update_pane();
+    if (!pane_changed) return;
+    update_pane();
+    // The pane moved on to another row (a successor): the list's highlight and the waterfall's marker go with it now, not at the next
+    // change of the list's layout.
+    if (follow_.row_id() != was) {
+        restore_selection();
+        update_markers();
+    }
 }
 
 void MainWindow::selection_changed() {

@@ -19,15 +19,14 @@ std::optional<std::uint32_t> row_near(const TrackTable& table, double freq_hz, d
 }
 
 bool SignalFollow::follow(const TrackTable& table, std::uint32_t track_id) {
-    clear();
-    key_ = track_id;
-    const TrackRow* row = find(table);
-    if (row == nullptr) {
-        key_.reset();
-        return false;
-    }
-    take(*row);
-    rows_followed_ = 1;
+    // Looked up first: a track no listed row holds leaves what is followed as it was.
+    SignalFollow next;
+    next.key_ = track_id;
+    const TrackRow* row = next.find(table);
+    if (row == nullptr) return false;
+    next.take(*row);
+    next.rows_followed_ = 1;
+    *this = std::move(next);
     return true;
 }
 
@@ -54,6 +53,10 @@ void SignalFollow::take(const TrackRow& row) {
     if (row.wpm > 0) wpm_ = row.wpm;
     live_ = row.live();
     revision_ = row.revision;
+    // When the signal was last heard: its latest symbol's end (a word space the table adds has none), else its start.
+    double last = row.start_s;
+    for (const double end_s : row.ends) last = std::max(last, end_s);
+    last_heard_s_ = std::max(last_heard_s_, last);
 }
 
 bool SignalFollow::update(const TrackTable& table) {
@@ -69,10 +72,12 @@ bool SignalFollow::update(const TrackTable& table) {
         changed = true;
     }
     if (live_) return changed;
-    // Ended or gone: a live row whose first track was born after the followed signal's newest, at its place, goes on with it.
+    // Ended or gone: a live row at its place whose first track was born after the followed signal's newest and which started when the
+    // signal had fallen silent (kSuccessorOverlapS) goes on with it; a neighbor that started while the signal was still keyed does not.
     const TrackRow* next = nullptr;
     for (const TrackRow& r : table.rows()) {
         if (!r.live() || r.track_ids.empty() || r.track_ids.front() <= newest_track_) continue;
+        if (r.start_s < last_heard_s_ - kSuccessorOverlapS) continue;
         const double distance = std::abs(r.freq_hz - freq_hz_);
         if (distance < TrackTable::kSamePlaceHz && (next == nullptr || distance < std::abs(next->freq_hz - freq_hz_))) next = &r;
     }

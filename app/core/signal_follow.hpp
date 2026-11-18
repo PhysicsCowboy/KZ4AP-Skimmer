@@ -1,8 +1,9 @@
 // The one-signal pane's rule, free of Qt: which signal it follows through the track table, and the text it shows. The pane follows the
 // row that holds the chosen track. A table that keeps to plausible text already goes on in the same row when a new track starts within
 // TrackTable::kSamePlaceHz of an ended one (TrackTable::apply), so the row's tracks change under the same row. Every other table lists
-// the new track as a row of its own: then, once the followed row has ended, the pane moves on to a live row born after the followed
-// track, within kSamePlaceHz of its last frequency, the nearest if several, and keeps the text it had before that row's.
+// the new track as a row of its own: then, once the followed row has ended, the pane moves on to a live row whose first track was born
+// after the followed signal's newest and which started once that signal had fallen silent (kSuccessorOverlapS), within kSamePlaceHz of
+// its last frequency, the nearest if several, and keeps the text it had before that row's.
 #pragma once
 
 #include "track_table.hpp"
@@ -22,8 +23,15 @@ class SignalFollow {
 public:
     // The text kept from rows followed before the current one, bytes at most (heuristic: about 20 min at 30 WPM); its oldest part goes.
     static constexpr std::size_t kMaxEarlierBytes = 16384;
+    // A successor row must have started (TrackRow::start_s) no earlier than this before the followed signal was last heard (its latest
+    // symbol's end), s. Heuristic: the engine's replay, 2 s (EngineConfig::replay_s), lets a new track's text begin up to that much
+    // before its birth, so one station's old and new tracks can overlap by about that; a neighbor keyed alongside it overlaps by more.
+    // The followed row's end (TrackRow::ended_at_s) is not used: a track is retired seconds to tens of seconds after its station
+    // stops (the judge's quiet tests), and a new track of that station is often born before.
+    static constexpr double kSuccessorOverlapS = 2.0;
 
-    // Follows the row holding this track from now on, forgetting the signal followed before. False if no listed row holds it.
+    // Follows the row holding this track from now on, forgetting the signal followed before. False if no listed row holds it: then what
+    // was followed stays as it was.
     bool follow(const TrackTable& table, std::uint32_t track_id);
     void clear();
     bool active() const { return key_.has_value(); }
@@ -50,6 +58,7 @@ private:
 
     std::optional<std::uint32_t> key_;  // a track of the followed row, the newest known
     std::uint32_t newest_track_ = 0;    // the newest track id the followed signal has had
+    double last_heard_s_ = -1e300;      // s of stream: its latest symbol's end, or its start before any
     bool listed_ = false;
     std::string earlier_;
     std::string current_;

@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace kz4ap::app {
@@ -42,8 +43,11 @@ public:
     // The rows shown, in the stage's order, and how many the stage has reported (shown or not).
     std::vector<callsign::CallRow> shown_rows() const;
     std::size_t shown_count() const { return shown_.size(); }
-    // The frequency of the call on this row of the model, Hz from the span's center (CallRow::freq_hz); none for no such row.
-    std::optional<double> freq_at(int row) const;
+    // The call on this row as the list was last laid out (CallRow::base), none for no such row; and a call's frequency now, Hz from the
+    // span's center (CallRow::freq_hz), none if the stage no longer lists it. A click goes by the call, not the row's index into the
+    // stage's rows: those change at every tick (a withdrawal), the layout only at refresh.
+    std::optional<std::string> base_at(int row) const;
+    std::optional<double> freq_of(const std::string& base) const;
     std::size_t reported_count() const { return search_ ? search_->calls().size() : 0; }
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -59,6 +63,7 @@ private:
     std::unique_ptr<callsign::CallSearch> search_;
     std::shared_ptr<const callsign::KnownCalls> known_;
     std::vector<std::size_t> shown_;  // indices into search_->calls() of the rows shown, in order
+    std::vector<std::string> shown_bases_;  // their calls (CallRow::base), as laid out
     bool signed_only_ = false;
     std::uint64_t seen_version_ = 0;
     std::optional<double> center_hz_;

@@ -17,6 +17,7 @@ void CallListModel::start(std::shared_ptr<const callsign::KnownCalls> known, std
     search_ = std::make_unique<callsign::CallSearch>(callsign::CallSearchConfig{}, known_);
     seen_version_ = search_->version();
     shown_.clear();
+    shown_bases_.clear();
     center_hz_ = center_hz;
     now_s_ = 0;
     endResetModel();
@@ -27,6 +28,7 @@ void CallListModel::stop() {
     beginResetModel();
     search_.reset();
     shown_.clear();
+    shown_bases_.clear();
     endResetModel();
 }
 
@@ -55,6 +57,8 @@ void CallListModel::reset_rows() {
     beginResetModel();
     if (search_) seen_version_ = search_->version();
     shown_ = pick();
+    shown_bases_.clear();
+    for (const std::size_t i : shown_) shown_bases_.push_back(search_->calls()[i].base);
     endResetModel();
 }
 
@@ -65,9 +69,16 @@ std::vector<callsign::CallRow> CallListModel::shown_rows() const {
     return out;
 }
 
-std::optional<double> CallListModel::freq_at(int row) const {
-    if (!search_ || row < 0 || static_cast<std::size_t>(row) >= shown_.size()) return std::nullopt;
-    return search_->calls()[shown_[static_cast<std::size_t>(row)]].freq_hz;
+std::optional<std::string> CallListModel::base_at(int row) const {
+    if (row < 0 || static_cast<std::size_t>(row) >= shown_bases_.size()) return std::nullopt;
+    return shown_bases_[static_cast<std::size_t>(row)];
+}
+
+std::optional<double> CallListModel::freq_of(const std::string& base) const {
+    if (!search_) return std::nullopt;
+    for (const callsign::CallRow& r : search_->calls())
+        if (r.base == base) return r.freq_hz;
+    return std::nullopt;
 }
 
 void CallListModel::refresh(double now_s) {

@@ -17,6 +17,7 @@
 #include <QStyleFactory>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <exception>
 #include <memory>
@@ -236,10 +237,12 @@ int main(int argc, char* argv[]) {
 
     if (parser.isSet(serial_option)) given.radio_serial = parser.value(serial_option).trimmed().toStdString();
     if (parser.isSet(center_option)) {
-        const double center_khz = parser.value(center_option).toDouble();
-        if (!(center_khz > 0)) return usage_error(QStringLiteral("bad center frequency: %1 kHz").arg(parser.value(center_option)), quiet);
+        // The Center box's range, kHz; its 3 decimals (1 Hz) are what it keeps.
+        const double center_khz = std::round(parser.value(center_option).toDouble() * 1000.0) / 1000.0;
+        if (!(center_khz >= 1.0 && center_khz <= 2000000.0))
+            return usage_error(QStringLiteral("the center frequency must be 1 to 2 000 000 kHz, not %1 kHz").arg(parser.value(center_option)), quiet);
         given.center_khz = center_khz;
-        automation.recording_center_hz = center_khz * 1000.0;
+        automation.recording_center_hz = parser.value(center_option).toDouble() * 1000.0;  // a recording's, as given
     }
     if (parser.isSet(rate_option)) {
         const int rate = parser.value(rate_option).toInt();
@@ -247,8 +250,21 @@ int main(int argc, char* argv[]) {
             return usage_error(QStringLiteral("the radio's sample rate must be 96000, 192000, 384000 or 768000 Hz, not %1").arg(parser.value(rate_option)), quiet);
         given.sample_rate_hz = rate;
     }
-    if (parser.isSet(gain_option)) given.if_gain_reduction_db = parser.value(gain_option).toInt();
-    if (parser.isSet(lna_option)) given.lna_state = parser.value(lna_option).toInt();
+    // Refused outside what the boxes take, rather than clamped by them: a clamped value would differ from the option's, and so be saved.
+    if (parser.isSet(gain_option)) {
+        bool ok = false;
+        const int db = parser.value(gain_option).toInt(&ok);
+        if (!ok || db < 20 || db > 59)
+            return usage_error(QStringLiteral("the IF gain reduction must be a whole number from 20 to 59 dB, not %1").arg(parser.value(gain_option)), quiet);
+        given.if_gain_reduction_db = db;
+    }
+    if (parser.isSet(lna_option)) {
+        bool ok = false;
+        const int state = parser.value(lna_option).toInt(&ok);
+        if (!ok || state < 0 || state > 9)
+            return usage_error(QStringLiteral("the LNA state must be a whole number from 0 to 9, not %1").arg(parser.value(lna_option)), quiet);
+        given.lna_state = state;
+    }
 
     // The options set the start. --known-calls and --signed-only configure a call list that decoder-only mode does not have, so they
     // are refused with it, and without it they start in skimmer mode whatever was saved; a transport step (mode=skimmer, then

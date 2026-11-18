@@ -428,6 +428,29 @@ TEST(CallSearch, TheSameStationOnANearbyFrequencyIsOneRow) {
     EXPECT_DOUBLE_EQ(s.search.calls()[0].freq_hz, 1040.0);
 }
 
+TEST(CallSearch, HeardSIsTheLatestOwnReadingAtTheRowsPlace) {
+    // K1ABC signs at 1 000 Hz at 0 s and 40 s; at 80 s W2XYZ names him 2 kHz away. last_s moves to the naming, freq_hz and heard_s do
+    // not: the app draws the call at 1 000 Hz by when he was last heard there.
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "DE K1ABC K ", 0.0);
+    s.text(1, 1000.0, "DE K1ABC K ", 40.0);
+    s.search.advance(70.0);
+    const CallRow* row = s.row("K1ABC");
+    ASSERT_NE(row, nullptr);
+    const double heard_s = row->heard_s;
+    EXPECT_GE(heard_s, 40.0);
+    EXPECT_LT(heard_s, 80.0);
+    s.born(2, 3000.0);
+    s.text(2, 3000.0, "K1ABC DE W2XYZ K ", 80.0);
+    s.search.advance(110.0);
+    row = s.row("K1ABC");
+    ASSERT_NE(row, nullptr);
+    EXPECT_GE(row->last_s, 80.0);
+    EXPECT_DOUBLE_EQ(row->freq_hz, 1000.0);
+    EXPECT_DOUBLE_EQ(row->heard_s, heard_s);
+}
+
 TEST(CallSearch, APartnersCallIsNotGivenTheSendersTrack) {
     Stage s;
     s.born(1, 1000.0);

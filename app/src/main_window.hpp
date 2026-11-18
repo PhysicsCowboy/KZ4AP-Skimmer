@@ -173,6 +173,8 @@ private:
     bool settings_saved_ = false;
     // A saved known-call list not read yet: the run started in decoder-only mode, which has none; it is read on going to skimmer mode.
     std::optional<KnownChoice> pending_known_;
+    // A saved known-call list that was gone or refused at the start: saved again as it was until the user picks another (or none).
+    std::optional<KnownChoice> missing_known_;
     KnownKind known_kind_ = KnownKind::None;
     QString recording_folder_;  // where the Open and Record dialogs start; empty for their defaults
     bool screenshot_done_ = false;

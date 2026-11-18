@@ -144,8 +144,9 @@ void WaterfallWidget::place_call_labels() {
     for (std::size_t i = 0; i < call_labels_.size(); ++i) {
         const double px = axis_.x_for_hz(call_labels_[i].freq_hz, plot.width());
         if (px < 0 || px > plot.width()) continue;
-        // Just right of the trace, so that the trace itself stays in view.
-        spans.push_back({px + 3.0, static_cast<double>(metrics.horizontalAdvance(call_labels_[i].text) + 6)});
+        // Just right of the trace, so that the trace itself stays in view; near the right edge, moved left to end there.
+        const double width = metrics.horizontalAdvance(call_labels_[i].text) + 6;
+        spans.push_back({std::max(0.0, std::min(px + 3.0, plot.width() - width)), width});
         which.push_back(i);
     }
     const std::vector<std::optional<int>> lanes = place_labels(spans, kLabelLanes, kLabelGapPx);
@@ -153,7 +154,6 @@ void WaterfallWidget::place_call_labels() {
         if (!lanes[k]) continue;
         const QRect rect(plot.left() + static_cast<int>(std::lround(spans[k].left_px)), plot.top() + 16 + *lanes[k] * (height + 1),
                          static_cast<int>(std::lround(spans[k].width_px)), height);
-        if (rect.right() > plot.right()) continue;  // not cut at the edge
         placed_labels_.push_back({rect, call_labels_[which[k]].text, call_labels_[which[k]].recent});
     }
 }
