@@ -570,7 +570,7 @@ prosign or punctuation ends a word. Every symbol is read, a neighbor's too.
 or two characters, one digit, one to four letters; /P, /M or a prefix keep the base call. 1
 point: a whole word, or one glued to a keyword or itself (DEK1ABC; K1ABCK1ABC: two readings). 0.75 point: short words
 joined (K X 9 F). 0.5 point: a stray E, T, I before or E, T, K after. Refused: words of CW with
-this form (G5RV, R5NN; exact), locators (EL96UD); calls of E T I S H A N M U 5 alone unless whole words.
+this form (G5RV, R5NN; exact), locators (EL96UD).
 
 **Role.** Before DE or 5NN: *named*. After DE, CQ or TEST, or before K: *signed*. Else *bare*.
 
@@ -578,8 +578,8 @@ this form (G5RV, R5NN; exact), locators (EL96UD); calls of E T I S H A N M U 5 a
 over the band within 30 min, readings chained by overlaps in time once wherever they lie,
 none where a better variant holds the call. Reported at 2 points, a named word no
 exception (CW Skimmer's practice); listed, 1 if framed (signed, named or sent twice), else 2
-(a variant: 1 also for a word of high margin, A.12). A binary list, or one without calls,
-is refused. A call of E T I S H A N M U 5 alone: 2 whole words, listed or not. Two or more
+(a variant: 1 also for a word of high margin, A.12). A call of E T I S H A N M U 5
+alone: only whole words, 2 of them, listed or not. Two or more
 digits (W100AW): from a list only.
 
 **Variants.** A call within edit distance 1 of a better-supported call within 150 Hz, or the
