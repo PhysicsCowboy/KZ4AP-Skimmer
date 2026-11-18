@@ -181,11 +181,13 @@ and coarser (CQ and DE lumped; no running or S&P). Nothing shows signed calls on
 2026-11-17 recordings our live call lists (`build/recordings/spare/*-calls.csv`, git-ignored) class CW Skimmer's 287
 never-marked calls as 31 signed, 54 bare, 3 named, and lack 199, CW Skimmer's misreadings among them (measured).
 
-The owner's rule: a call counts as heard only when CQ, DE or TEST precedes it. It is neither `CqOnly` (CQ only, on
-telnet) nor the RBN's rule (CQ or TEST anywhere in the transmission, no DE), and narrower than our signed role
-(which also takes a call before K, or after QRZ or POTA). CW Skimmer's DE marker means "sends its own call", not
-"DE before it", so the table bounds the effect roughly: about the calls CW Skimmer never marks (59%) would drop,
-less those our stage signs (31 of the 287); in a contest mostly S&P callers, who send their call bare (inference).
+The owner first proposed counting a call as heard only when CQ, DE or TEST precedes it. That rule is neither
+`CqOnly` (CQ only, on telnet) nor the RBN's rule (CQ or TEST anywhere in the transmission, no DE), and narrower than
+our signed role (which also takes a call before K, or after QRZ or POTA). CW Skimmer's DE marker means "sends its own
+call", not "DE before it", so the table bounds the effect roughly: about the calls CW Skimmer never marks (59%) would
+drop, less those our stage signs (31 of the 287); in a contest mostly S&P callers, who send their call bare
+(inference). Given this survey, the owner ruled (2026-11-18) that the list keeps every call by default, as CW Skimmer
+does, so that the program can one day feed the RBN, with an option to show signed calls only.
 
 For the plain decoder none of this applies. The known-call list is optional (`--known-calls`), but the call stage
 always runs and its list is always shown.
@@ -194,12 +196,13 @@ always runs and its list is always shown.
 
 **Skimmer**, most important first:
 
-1. Telnet spot server: SNR, WPM, CQ or DE marker, `SH/DX`, password, and an optional role filter (`CqOnly`, or the
-   owner's rule).
+1. Telnet spot server: SNR, WPM, CQ or DE marker, `SH/DX`, password, and an optional role filter (`CqOnly`, or
+   signed only).
 2. Calls drawn on the waterfall at their frequencies (CW Skimmer's band map), not track numbers.
 3. Tuning: CAT through OmniRig (Hamlib on Linux), click to tune, next or previous station.
 4. Call aging (10 min), spot updates on a change of role, running told from S&P.
-5. Validation choices: levels, a watch list, MASTER.DTA read, a pattern table.
+5. Validation choices: levels, a watch list, MASTER.DTA read, a pattern table; a button that downloads MASTER.SCP
+   for the user (the owner's request, 2026-11-18: the program never ships a list).
 6. QRL? and 599 labels, band plan, CW segments only, SNR in the call list, spectrum over UDP.
 
 **Plain decoder**, most important first:

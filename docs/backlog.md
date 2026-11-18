@@ -1493,6 +1493,11 @@ signal (design spec §3, feature A; §4.1). This is the owner's first goal: a
 live, single-band, waterfall-style operator view like CW Skimmer's. It gets
 its own plan. Related item above: "Spectrum frames in linear power".
 
+- **From the CW Skimmer survey and the owner (2026-11-18):** the owner's GUI changes, which he will list. A
+  decoder-only mode (section 4, the owner's rulings). Listening to the selected station live through the sound card,
+  picked by a click; the owner: a clip saved to a WAV file the user then opens is not useful in a release. The
+  survey's other display gaps: calls drawn on the waterfall, a one-signal text pane, settings kept between runs.
+
 - **A channel that follows a QSO turnover** (owner, 2026-09-29): with the
   channel distance (milestone 2, part 1), one channel follows both stations
   of a QSO within 47 Hz of each other. When it decodes "DE <call>", its
@@ -1565,6 +1570,20 @@ that must land before it are in section 1 ("Wrong or missing first
 characters"). A channel that follows a QSO turnover carries two stations'
 calls in turn; relabel it when it decodes "DE <call>" (section 2, owner
 2026-09-29).
+
+### The owner's rulings of 2026-11-18 (after the CW Skimmer survey)
+
+The survey is `docs/research/2026-11-18-cw-skimmer-survey.md`. Its section 3 lists the candidate gaps for each
+purpose.
+- **Two purposes.** The program is a skimmer that acts a lot like CW Skimmer, and also a plain CW decoder, which
+  "has nothing to do with callsign identification". So the app needs a decoder-only mode: no call stage, call list
+  or known-call list. Today the call stage always runs.
+- **Which calls are listed.** Every call by default, bare and named included, as CW Skimmer does, so that the
+  program can one day feed the RBN. An option shows signed calls only.
+- **The known-call list.** Optional and skimmer only; the program never ships one. The user either names their own
+  file or presses a button that downloads MASTER.SCP for them; the app reaches the network only then.
+- **Extras.** Features CW Skimmer lacks are welcome. The survey's purpose is that nothing of CW Skimmer's that we
+  want is left out.
 
 ### Input to the design session: manta's callsign acceptance rules
 
