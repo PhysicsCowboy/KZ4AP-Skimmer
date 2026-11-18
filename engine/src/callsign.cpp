@@ -488,6 +488,14 @@ KnownCalls KnownCalls::read_file(const std::string& path) {
 
 CallSearch::CallSearch(CallSearchConfig config, std::shared_ptr<const KnownCalls> known) : config_(config), known_(std::move(known)) {}
 
+void CallSearch::set_known(std::shared_ptr<const KnownCalls> known) {
+    known_ = std::move(known);
+    for (auto& [base, c] : candidates_) {
+        c.known = known_ && known_->contains(c.base);
+        if (c.reported) update_row(c);
+    }
+}
+
 void CallSearch::apply(const TrackEvent& event) {
     if (event.kind == TrackEvent::Kind::Born) {
         TrackText t;
