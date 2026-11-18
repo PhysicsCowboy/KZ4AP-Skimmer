@@ -41,13 +41,13 @@ std::optional<ListedFile> find_listed_file(std::string_view listing_json, std::s
     return std::nullopt;
 }
 
-std::string download_url(const ListedFile& file) {
+std::string download_url(const ListedFile& file, std::string_view base) {
     const bool plain = !file.name.empty() && file.name.size() <= 64 && file.name.front() != '.' &&
                        std::all_of(file.name.begin(), file.name.end(), [](char c) {
                            return std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '-' || c == '_';
                        });
     if (!plain) throw std::runtime_error("the server's list of files gives a name that is not a plain file name: " + file.name);
-    return std::string(kScpDownloadBase) + file.name;
+    return std::string(base) + file.name;
 }
 
 }  // namespace kz4ap::app

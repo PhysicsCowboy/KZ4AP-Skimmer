@@ -40,6 +40,15 @@ if(NOT Qt6Widgets_FOUND OR NOT Qt6Network_FOUND)
 endif()
 message(STATUS "Qt ${Qt6Widgets_VERSION} found: building kz4ap-skimmer")
 
+# The parts with Qt but no window: the known-call list's download (tested below against a local server, no internet).
+add_library(kz4ap_app_qt STATIC
+  src/known_call_downloader.cpp
+  src/known_call_downloader.hpp
+)
+set_target_properties(kz4ap_app_qt PROPERTIES AUTOMOC ON)
+target_include_directories(kz4ap_app_qt PUBLIC src)
+target_link_libraries(kz4ap_app_qt PUBLIC kz4ap_app_core Qt6::Network)
+
 add_executable(kz4ap-skimmer
   src/main.cpp
   src/main_window.cpp
@@ -52,12 +61,22 @@ add_executable(kz4ap-skimmer
   src/waterfall_widget.hpp
 )
 set_target_properties(kz4ap-skimmer PROPERTIES AUTOMOC ON WIN32_EXECUTABLE ON)
-target_link_libraries(kz4ap-skimmer PRIVATE kz4ap_app_core Qt6::Widgets Qt6::Network)
-if(MSVC)
-  target_compile_options(kz4ap-skimmer PRIVATE /W4 /permissive- /utf-8)
-else()
-  target_compile_options(kz4ap-skimmer PRIVATE -Wall -Wextra -Wpedantic)
-endif()
+target_link_libraries(kz4ap-skimmer PRIVATE kz4ap_app_qt Qt6::Widgets)
+
+add_executable(kz4ap_app_qt_tests tests/known_call_downloader_test.cpp)
+set_target_properties(kz4ap_app_qt_tests PROPERTIES AUTOMOC ON)
+target_link_libraries(kz4ap_app_qt_tests PRIVATE kz4ap_app_qt GTest::gtest)
+# It runs beside kz4ap-skimmer, whose build puts Qt's DLLs there; its tests are listed when ctest runs, after that.
+add_dependencies(kz4ap_app_qt_tests kz4ap-skimmer)
+gtest_discover_tests(kz4ap_app_qt_tests DISCOVERY_MODE PRE_TEST)
+
+foreach(target kz4ap_app_qt kz4ap-skimmer kz4ap_app_qt_tests)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+endforeach()
 
 # Windows: Qt's DLLs next to the program, so that it runs from the build tree with no change to PATH.
 if(WIN32)

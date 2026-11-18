@@ -1,6 +1,7 @@
 // kz4ap-skimmer: the desktop app. Opens an I/Q recording or an SDRplay radio, shows the band as a waterfall and each signal's
 // decoded text, and saves a radio's raw I/Q.
 #include "main_window.hpp"
+#include "known_call_downloader.hpp"
 
 #include "kz4ap/decoder_name.hpp"
 #include "kz4ap/file_iq_source.hpp"
@@ -8,6 +9,7 @@
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QDir>
 #include <QMessageBox>
 #include <QPalette>
 #include <QStyleFactory>
@@ -145,8 +147,9 @@ int main(int argc, char* argv[]) {
                                                 QStringLiteral("path"));
     const QCommandLineOption decoder_only_option(
         QStringLiteral("decoder-only"),
-        QStringLiteral("A plain CW decoder: the waterfall and the decoded text, with no call search, call list or known-call list "
-                       "(the Mode box's Decoder only)."));
+        QStringLiteral("Start as a plain CW decoder: the waterfall and the decoded text, with no call search, call list or known-call "
+                       "list (the Mode box's Decoder only). Not with --known-calls or --signed-only; --calls then writes the list as "
+                       "it stands at the end (the header alone if still in decoder-only mode)."));
     const QCommandLineOption signed_only_option(
         QStringLiteral("signed-only"),
         QStringLiteral("The call list shows only the calls sent at least once after DE, CQ or TEST, or before K, KN or AR (the List "
@@ -225,13 +228,17 @@ int main(int argc, char* argv[]) {
     kz4ap::app::CallSettings calls;
     calls.decoder_only = parser.isSet(decoder_only_option);
     calls.signed_only = parser.isSet(signed_only_option);
-    if (calls.decoder_only && (parser.isSet(known_calls_option) || parser.isSet(calls_option)))
-        return usage_error(QStringLiteral("--decoder-only runs no call search: it takes no --known-calls or --calls"), quiet);
+    // The options set the start. --known-calls and --signed-only configure a call list that decoder-only mode does not have, so they
+    // are refused with it; a transport step (mode=skimmer, then known=PATH, list=signed) sets them later. --calls is an output, written
+    // at the end as the list then stands: the header alone if the run ends in decoder-only mode.
+    if (calls.decoder_only && (parser.isSet(known_calls_option) || calls.signed_only))
+        return usage_error(QStringLiteral("--decoder-only runs no call search: it takes no --known-calls or --signed-only"), quiet);
     if (parser.isSet(known_calls_option)) {
         try {
             calls.known_path = parser.value(known_calls_option);
-            calls.known = std::make_shared<const kz4ap::callsign::KnownCalls>(kz4ap::callsign::KnownCalls::read_file(calls.known_path.toStdString()));
-            std::fprintf(stderr, "kz4ap-skimmer: known-call list: %zu calls from %s\n", calls.known->size(), calls.known_path.toLocal8Bit().constData());
+            calls.known = kz4ap::app::read_known_calls(calls.known_path);
+            std::fprintf(stderr, "kz4ap-skimmer: known-call list: %zu calls from %s\n", calls.known->size(),
+                         QDir::toNativeSeparators(calls.known_path).toLocal8Bit().constData());
         } catch (const std::exception& e) {
             return usage_error(QString::fromUtf8(e.what()), quiet);
         }

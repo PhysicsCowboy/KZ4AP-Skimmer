@@ -6,7 +6,6 @@
 #include "kz4ap/file_iq_source.hpp"
 #include "kz4ap/sdrplay_source.hpp"
 #include "kz4ap/utc_time.hpp"
-#include "known_call_download.hpp"
 #include "recording_name.hpp"
 
 #include <QAction>
@@ -28,10 +27,6 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
-#include <QSaveFile>
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QSortFilterProxyModel>
@@ -50,7 +45,6 @@
 #include <cstdio>
 #include <exception>
 #include <filesystem>
-#include <sstream>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -331,7 +325,8 @@ void MainWindow::build_call_controls() {
     skimmer_controls_.push_back(open);
     known_download_ = bar->addAction(tr("Download MASTER.SCP"));
     known_download_->setToolTip(tr("Download Super Check Partial's MASTER.SCP from supercheckpartial.com and use it as the known-call list. "
-                                   "The program reaches the network only when this is pressed, and sends nothing about you."));
+                                   "The program reaches the network only when this is pressed. It sends the program's name and version, "
+                                   "and no language, cookie or name of yours."));
     connect(known_download_, &QAction::triggered, this, [this] { download_known_calls(); });
     skimmer_controls_.push_back(known_download_);
     QAction* none = bar->addAction(tr("No list"));
@@ -383,130 +378,52 @@ void MainWindow::set_known_calls(std::shared_ptr<const callsign::KnownCalls> kno
 }
 
 bool MainWindow::load_known_calls(const QString& path, const QString& how) {
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        show_known_status(tr("Cannot read %1: %2").arg(QDir::toNativeSeparators(path), file.errorString()), true);
+    if (decoder_only_) {
+        show_known_status(tr("no known-call list in decoder-only mode"), true);
         return false;
     }
-    // Through memory, so that any path the system takes is read (KnownCalls::read_file takes a narrow string).
-    std::istringstream in(file.readAll().toStdString());
     try {
-        auto list = std::make_shared<const callsign::KnownCalls>(callsign::KnownCalls::read(in));
+        std::shared_ptr<const callsign::KnownCalls> list = read_known_calls(path);
         set_known_calls(list, path, tr("%1 calls %2 %3").arg(list->size()).arg(how, QFileInfo(path).fileName()));
         return true;
     } catch (const std::exception& e) {
-        show_known_status(tr("%1: %2").arg(QString::fromStdString(e.what()), QDir::toNativeSeparators(path)), true);
+        show_known_status(QString::fromStdString(e.what()), true);
         return false;
     }
 }
 
-namespace {
-
-// Where the downloaded MASTER.SCP is kept, and beside it the ETag it came with.
-QString downloaded_list_path() {
-    return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QLatin1Char('/') +
-           QString::fromUtf8(kScpFileName.data(), static_cast<qsizetype>(kScpFileName.size()));
-}
-QString etag_path() { return downloaded_list_path() + QStringLiteral(".etag"); }
-
-QNetworkRequest list_request(const QUrl& url) {
-    QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader, QString::fromStdString(user_agent()));
-    request.setTransferTimeout(kTransferTimeoutMs);
-    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-    // No cookie is sent or kept.
-    request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
-    request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
-    return request;
-}
-
-QString reply_error(QNetworkReply* reply) {
-    const QVariant status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
-    return status.isValid() ? QStringLiteral("%1 (HTTP %2)").arg(reply->errorString()).arg(status.toInt()) : reply->errorString();
-}
-
-}  // namespace
-
 void MainWindow::download_known_calls() {
-    if (downloading_) return;
-    if (network_ == nullptr) network_ = new QNetworkAccessManager(this);
-    downloading_ = true;
-    known_download_->setEnabled(false);
-    show_known_status(tr("asking supercheckpartial.com for its files..."), false);
-    QNetworkReply* reply = network_->get(list_request(QUrl(QString::fromUtf8(kScpFilesUrl.data(), static_cast<qsizetype>(kScpFilesUrl.size())))));
-    connect(reply, &QNetworkReply::finished, this, [this, reply] { listing_received(reply); });
-}
-
-void MainWindow::download_failed(const QString& message) {
-    downloading_ = false;
-    known_download_->setEnabled(true);
-    // The list in use, if any, stays.
-    show_known_status(tr("Download failed: %1%2").arg(message, known_calls_ ? tr("; still using %1").arg(known_status_) : QString()), true);
-}
-
-void MainWindow::listing_received(QNetworkReply* reply) {
-    reply->deleteLater();
-    if (reply->error() != QNetworkReply::NoError) return download_failed(reply_error(reply));
-    const QByteArray body = reply->read(1 << 20);  // the listing is about 2 kB
-    try {
-        const std::optional<ListedFile> file = find_listed_file(std::string_view(body.constData(), static_cast<std::size_t>(body.size())), kScpFileName);
-        if (!file) return download_failed(tr("supercheckpartial.com lists no %1").arg(QString::fromUtf8(kScpFileName.data(), static_cast<qsizetype>(kScpFileName.size()))));
-        if (file->size_bytes > kMaxListBytes) return download_failed(tr("the file is %1 bytes, more than a list of calls can be").arg(file->size_bytes));
-        QNetworkRequest request = list_request(QUrl(QString::fromStdString(download_url(*file))));
-        // The copy kept from the last download is sent back as its ETag: unchanged, the server says so (304) and sends nothing.
-        QFile etag(etag_path());
-        if (QFileInfo::exists(downloaded_list_path()) && etag.open(QIODevice::ReadOnly)) request.setRawHeader("If-None-Match", etag.readAll().trimmed());
-        show_known_status(tr("downloading %1...").arg(QString::fromStdString(file->name)), false);
-        QNetworkReply* next = network_->get(request);
-        connect(next, &QNetworkReply::downloadProgress, this, [next](qint64 received, qint64) {
-            if (received > kMaxListBytes) next->abort();
-        });
-        connect(next, &QNetworkReply::finished, this, [this, next] { file_received(next); });
-    } catch (const std::exception& e) {
-        download_failed(QString::fromStdString(e.what()));
-    }
-}
-
-void MainWindow::file_received(QNetworkReply* reply) {
-    reply->deleteLater();
-    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    const QString path = downloaded_list_path();
-    if (reply->error() == QNetworkReply::OperationCanceledError) return download_failed(tr("more than %1 bytes: stopped").arg(kMaxListBytes));
-    if (reply->error() != QNetworkReply::NoError) return download_failed(reply_error(reply));
-    const QString when = QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyy-MM-dd HH:mm 'UTC'"));
-    if (status == 304) {
-        downloading_ = false;
-        known_download_->setEnabled(true);
-        transport_log_ << QStringLiteral("download: HTTP 304, the copy kept is current: %1").arg(QDir::toNativeSeparators(path));
-        if (load_known_calls(path, tr("from"))) show_known_status(tr("%1 (unchanged on the server, %2)").arg(known_status_, when), false);
+    if (decoder_only_) {
+        show_known_status(tr("no download in decoder-only mode"), true);
         return;
     }
-    const QByteArray body = reply->readAll();
-    if (body.size() > kMaxListBytes) return download_failed(tr("more than %1 bytes").arg(kMaxListBytes));
-    // Read before it is kept: a page of HTML or a file of no calls leaves the copy kept and the list in use as they were.
-    std::shared_ptr<const callsign::KnownCalls> list;
-    try {
-        std::istringstream in(body.toStdString());
-        list = std::make_shared<const callsign::KnownCalls>(callsign::KnownCalls::read(in));
-    } catch (const std::exception& e) {
-        return download_failed(QString::fromStdString(e.what()));
+    if (downloader_ == nullptr) {
+        // Made on the first press: nothing reaches the network before.
+        downloader_ = new KnownCallDownloader(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation), this);
+        connect(downloader_, &KnownCallDownloader::progress, this, [this](const QString& text) { show_known_status(text, false); });
+        connect(downloader_, &KnownCallDownloader::failed, this, [this](const QString& message) {
+            known_download_->setEnabled(true);
+            // The list in use, if any, stays.
+            show_known_status(tr("Download failed: %1%2").arg(message, known_calls_ ? tr("; still using %1").arg(known_status_) : QString()), true);
+        });
+        connect(downloader_, &KnownCallDownloader::done, this,
+                [this](std::shared_ptr<const callsign::KnownCalls> list, bool fresh, qint64 bytes) {
+                    known_download_->setEnabled(true);
+                    const QString path = downloader_->list_path();
+                    const QString when = QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyy-MM-dd HH:mm 'UTC'"));
+                    transport_log_ << QStringLiteral("download: %1, %2 bytes: %3")
+                                          .arg(fresh ? QStringLiteral("HTTP 200, saved") : QStringLiteral("HTTP 304, the copy kept is current"))
+                                          .arg(bytes)
+                                          .arg(QDir::toNativeSeparators(path));
+                    if (decoder_only_) return;  // the mode changed while it downloaded: kept, not used
+                    set_known_calls(list, path,
+                                    fresh ? tr("%1 calls, downloaded %2").arg(list->size()).arg(when)
+                                          : tr("%1 calls from %2 (unchanged on the server, %3)").arg(list->size()).arg(QFileInfo(path).fileName(), when));
+                });
     }
-    if (!QDir().mkpath(QFileInfo(path).path())) return download_failed(tr("cannot make the folder %1").arg(QDir::toNativeSeparators(QFileInfo(path).path())));
-    QSaveFile save(path);
-    if (!save.open(QIODevice::WriteOnly) || save.write(body) != body.size() || !save.commit())
-        return download_failed(tr("cannot save %1: %2").arg(QDir::toNativeSeparators(path), save.errorString()));
-    QSaveFile etag(etag_path());
-    const QByteArray tag = reply->rawHeader("ETag");
-    if (!tag.isEmpty() && etag.open(QIODevice::WriteOnly)) {
-        etag.write(tag);
-        etag.commit();
-    } else {
-        QFile::remove(etag_path());
-    }
-    downloading_ = false;
-    known_download_->setEnabled(true);
-    transport_log_ << QStringLiteral("download: HTTP %1, %2 bytes, saved to %3").arg(status).arg(body.size()).arg(QDir::toNativeSeparators(path));
-    set_known_calls(list, path, tr("%1 calls, downloaded %2").arg(list->size()).arg(when));
+    if (downloader_->busy()) return;
+    known_download_->setEnabled(false);
+    downloader_->start();
 }
 
 bool MainWindow::start_radio() {

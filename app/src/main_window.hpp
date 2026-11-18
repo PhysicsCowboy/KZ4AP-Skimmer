@@ -6,6 +6,7 @@
 #include "delivery_watch.hpp"
 #include "display_feed.hpp"
 #include "call_list_model.hpp"
+#include "known_call_downloader.hpp"
 #include "track_list_model.hpp"
 #include "waterfall_widget.hpp"
 
@@ -30,8 +31,6 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
-class QNetworkAccessManager;
-class QNetworkReply;
 class QSlider;
 class QSpinBox;
 class QTableView;
@@ -117,14 +116,11 @@ private:
     // Decoder-only mode on or off: the stage goes or comes (a new one, reading the tracks born from then on), with its controls and list.
     void set_decoder_only(bool on);
     void set_signed_only(bool on);
-    // A known-call list from a file, or the reason it was refused (also in the controls' status). False if refused.
+    // A known-call list from a file, or the reason it was refused (also in the controls' status). False if refused, as in decoder-only mode.
     bool load_known_calls(const QString& path, const QString& how);
     void set_known_calls(std::shared_ptr<const callsign::KnownCalls> known, const QString& path, const QString& status);
-    // The button: asks supercheckpartial.com for its list of files, then for MASTER.SCP (known_call_download.hpp).
+    // The button: asks supercheckpartial.com for its list of files, then for MASTER.SCP (KnownCallDownloader). Refused in decoder-only mode.
     void download_known_calls();
-    void listing_received(QNetworkReply* reply);
-    void file_received(QNetworkReply* reply);
-    void download_failed(const QString& message);
     void show_known_status(const QString& text, bool problem);
     void report_failure(const QString& message);
     void update_radio_controls();
@@ -195,8 +191,7 @@ private:
     QString known_path_;
     QString known_status_;  // what the controls say of the list: its size and origin, or why the last try failed
     double call_stage_cpu_s_ = 0.0;  // s: the GUI thread's CPU inside the call stage and its list's model, this stream
-    QNetworkAccessManager* network_ = nullptr;  // made on the first download, never before
-    bool downloading_ = false;
+    KnownCallDownloader* downloader_ = nullptr;  // made on the first download, never before
     QComboBox* mode_box_ = nullptr;
     QComboBox* list_box_ = nullptr;
     QLabel* known_label_ = nullptr;

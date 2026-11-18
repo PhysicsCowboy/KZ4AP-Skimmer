@@ -20,6 +20,8 @@ std::string user_agent();
 // bytes: a larger answer is refused, as no list of calls is that large (MASTER.SCP was 359 821 bytes on 2026-11-18). Heuristic, a
 // guard against an answer without end.
 inline constexpr std::int64_t kMaxListBytes = 16 * 1024 * 1024;
+// bytes: the list of files likewise (2 166 bytes on 2026-11-18). Heuristic.
+inline constexpr std::int64_t kMaxListingBytes = 1024 * 1024;
 // ms: a request that moves no data for this long fails. Heuristic.
 inline constexpr int kTransferTimeoutMs = 30000;
 
@@ -34,8 +36,9 @@ struct ListedFile {
 // The entry called `name` (case ignored) in /api/v1/files' answer, a JSON array of objects with name, size, etag and modified; none if
 // it is not there. Throws std::runtime_error when the answer is not such an array.
 std::optional<ListedFile> find_listed_file(std::string_view listing_json, std::string_view name);
-// The address to download a listed file from. Throws std::runtime_error for a name that is not a plain file name (letters, digits, dot,
-// hyphen and underscore), so that a listing cannot send the request elsewhere.
-std::string download_url(const ListedFile& file);
+// The address to download a listed file from: base, then the name. Throws std::runtime_error for a name that is not a plain file name
+// (letters, digits, dot, hyphen and underscore), so that a listing cannot name a path or a query; the request then goes to base's host,
+// and a redirect only to that host (KnownCallDownloader).
+std::string download_url(const ListedFile& file, std::string_view base = kScpDownloadBase);
 
 }  // namespace kz4ap::app

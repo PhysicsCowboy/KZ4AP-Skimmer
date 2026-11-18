@@ -1579,15 +1579,15 @@ The survey is `docs/research/2026-11-18-cw-skimmer-survey.md`. Its section 3 lis
 purpose.
 - **Two purposes.** The program is a skimmer that acts a lot like CW Skimmer, and also a plain CW decoder, which
   "has nothing to do with callsign identification". So the app needs a decoder-only mode: no call stage, call list
-  or known-call list. Today the call stage always runs.
+  or known-call list. Until `app-modes-1` the call stage always ran.
 - **Which calls are listed.** Every call by default, bare and named included, as CW Skimmer does, so that the
   program can one day feed the RBN. An option shows signed calls only.
 - **The known-call list.** Optional and skimmer only; the program never ships one. The user either names their own
   file or presses a button that downloads MASTER.SCP for them; the app reaches the network only then.
-- *Done in `app-modes-1` (2026-11-18):* the first three, in the app (Mode, List and Known calls on the toolbar's third row;
-  `--decoder-only`, `--signed-only`).
 - **Extras.** Features CW Skimmer lacks are welcome. The survey's purpose is that nothing of CW Skimmer's that we
   want is left out.
+- *Done in `app-modes-1` (2026-11-18):* the first three, in the app (Mode, List and Known calls on the toolbar's third row;
+  `--decoder-only`, `--signed-only`).
 
 ### Input to the design session: manta's callsign acceptance rules
 
