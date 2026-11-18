@@ -19,6 +19,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -27,6 +28,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPlainTextEdit>
+#include <QScrollBar>
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QSortFilterProxyModel>
@@ -39,6 +42,7 @@
 #include <QTextStream>
 #include <QTimer>
 #include <QToolBar>
+#include <QVBoxLayout>
 
 #include <algorithm>
 #include <cmath>
@@ -124,12 +128,23 @@ MainWindow::MainWindow(std::string decoder_name, int threads, Automation automat
     lists_splitter_->setStretchFactor(1, 1);
     lists_splitter_->setSizes({920, 440});  // pixels
 
+    // A click on a call follows the track nearest its frequency in the one-signal pane.
+    connect(calls_view_, &QAbstractItemView::clicked, this, [this, sorted_calls](const QModelIndex& index) {
+        const QModelIndex source = sorted_calls->mapToSource(index);
+        if (const std::optional<double> freq_hz = calls_->freq_at(source.row()))
+            follow_frequency(*freq_hz, calls_->data(calls_->index(source.row(), CallListModel::kCall)).toString());
+    });
+    connect(waterfall_, &WaterfallWidget::trackClicked, this, [this](std::uint32_t id) { follow_track(id); });
+
+    // The waterfall, the one-signal pane under it, and the lists.
     main_splitter_ = new QSplitter(Qt::Vertical);
     main_splitter_->addWidget(waterfall_);
+    main_splitter_->addWidget(build_pane());
     main_splitter_->addWidget(lists_splitter_);
     main_splitter_->setStretchFactor(0, 3);
-    main_splitter_->setStretchFactor(1, 1);
-    main_splitter_->setSizes({600, 260});  // pixels; the list starts with room for about nine tracks
+    main_splitter_->setStretchFactor(1, 0);
+    main_splitter_->setStretchFactor(2, 1);
+    main_splitter_->setSizes({520, 110, 260});  // pixels; the pane has four lines of text, the list room for about nine tracks
     setCentralWidget(main_splitter_);
 
     build_transport();
@@ -425,7 +440,11 @@ void MainWindow::restore_layout() {
     const SettingsStore& store = startup_.store;
     if (!store.enabled()) return;
     if (const QByteArray g = store.read_layout(QStringLiteral("geometry")); !g.isEmpty()) restoreGeometry(g);
-    if (const QByteArray s = store.read_layout(QStringLiteral("main_splitter")); !s.isEmpty()) main_splitter_->restoreState(s);
+    if (const QByteArray s = store.read_layout(QStringLiteral("main_splitter")); !s.isEmpty()) {
+        const QList<int> before = main_splitter_->sizes();
+        // A state saved with another number of parts, or one hiding the waterfall, is not taken.
+        if (!main_splitter_->restoreState(s) || main_splitter_->sizes().value(0) == 0) main_splitter_->setSizes(before);
+    }
     if (const QByteArray s = store.read_layout(QStringLiteral("lists_splitter")); !s.isEmpty()) lists_splitter_->restoreState(s);
     if (const QByteArray s = store.read_layout(QStringLiteral("track_columns")); !s.isEmpty()) table_view_->horizontalHeader()->restoreState(s);
     if (const QByteArray s = store.read_layout(QStringLiteral("call_columns")); !s.isEmpty()) {
@@ -629,7 +648,7 @@ void MainWindow::radio_stopped() {
     gain_problem_.clear();
     last_recording_ = RecordingStatus{};
     model_->table().end_of_stream();
-    model_->refresh();
+    refresh_track_views();
     update_markers();
     radio_label_->setText(tr("Radio stopped"));
     stream_label_->setText(tr("Stopped"));
@@ -822,7 +841,9 @@ void MainWindow::start_stream(std::unique_ptr<IqSource> source) {
     call_stage_cpu_s_ = 0.0;
     stream_center_hz_ = source->center_frequency_hz();
     stream_start_unix_ms_ = source->start_unix_ms();
-    selected_track_.reset();
+    // A new stream has new tracks: the pane starts empty.
+    follow_.clear();
+    update_pane();
     waterfall_->start(rate, fft_size, source->center_frequency_hz(), origin_s_);
     meter_ = CpuMeter{};
     stream_ended_ = false;
@@ -908,7 +929,7 @@ void MainWindow::on_tick() {
     }
 
     if (ticks_ % kTextEveryTicks == 0 || ended) {
-        model_->refresh();
+        refresh_track_views();
         if (calls_->search()) {
             const double from_s = thread_cpu_precise_seconds();
             calls_->refresh(status.stream_s);
@@ -927,7 +948,7 @@ void MainWindow::on_tick() {
 void MainWindow::update_markers() {
     std::vector<WaterfallWidget::Marker> markers;
     for (const TrackRow& row : model_->table().rows())
-        markers.push_back({row.id, row.freq_hz, row.live() && !delivery_.stalled(), selected_track_ == row.id});
+        markers.push_back({row.id, row.freq_hz, row.live() && !delivery_.stalled(), follow_.row_id() == row.id});
     waterfall_->set_markers(std::move(markers));
 }
 
@@ -981,20 +1002,99 @@ void MainWindow::update_status(const StreamStatus& status) {
     }
 }
 
+void MainWindow::refresh_track_views() {
+    // The pane first: the list's new layout selects the followed row again (restore_selection), which may now be another track's.
+    const bool pane_changed = follow_.update(model_->table());
+    model_->refresh();
+    if (pane_changed) update_pane();
+}
+
 void MainWindow::selection_changed() {
+    // An empty selection leaves the pane as it is: it goes on following.
     const QModelIndexList rows = table_view_->selectionModel()->selectedRows();
-    selected_track_ = rows.isEmpty() ? std::nullopt : model_->track_at(rows.front().row());
-    update_markers();
+    if (rows.isEmpty()) return;
+    const std::optional<std::uint32_t> id = model_->track_at(rows.front().row());
+    if (!id) return;
+    const TrackTable& table = model_->table();
+    // The followed row itself, selected again after the list's layout changed: nothing to do.
+    if (const auto row = table.row_of(*id); row && follow_.is_row(table.rows()[*row])) return;
+    follow_track(*id);
 }
 
 void MainWindow::restore_selection() {
-    if (!selected_track_) return;
-    const std::optional<std::uint32_t> keep = selected_track_;
-    if (const auto row = model_->table().row_of(*keep)) {
-        table_view_->selectRow(static_cast<int>(*row));
-    } else {
-        selected_track_.reset();
+    const std::optional<std::uint32_t> id = follow_.row_id();
+    if (!id) return;
+    if (const auto row = model_->table().row_of(*id)) table_view_->selectRow(static_cast<int>(*row));
+}
+
+void MainWindow::follow_track(std::uint32_t id) {
+    if (!follow_.follow(model_->table(), id)) return;
+    pane_shown_.clear();
+    update_pane();
+    if (const auto row = model_->table().row_of(id); row && static_cast<int>(*row) < model_->rowCount()) {
+        table_view_->selectRow(static_cast<int>(*row));  // selection_changed finds the followed row and stops there
+        table_view_->scrollTo(model_->index(static_cast<int>(*row), 0));
     }
+    update_markers();
+}
+
+void MainWindow::follow_frequency(double freq_hz, const QString& what) {
+    if (const std::optional<std::uint32_t> id = row_near(model_->table(), freq_hz, TrackTable::kSamePlaceHz)) {
+        follow_track(*id);
+        return;
+    }
+    const QString message = tr("No track within %1 Hz of %2").arg(TrackTable::kSamePlaceHz, 0, 'f', 0).arg(what);
+    statusBar()->showMessage(message, 4000);  // ms
+    transport_log_ << QStringLiteral("follow: %1").arg(message);
+}
+
+QWidget* MainWindow::build_pane() {
+    auto* pane = new QWidget;
+    auto* layout = new QVBoxLayout(pane);
+    layout->setContentsMargins(4, 2, 4, 2);
+    layout->setSpacing(2);
+    pane_label_ = new QLabel;
+    pane_label_->setTextFormat(Qt::PlainText);
+    layout->addWidget(pane_label_);
+    pane_text_ = new QPlainTextEdit;
+    pane_text_->setReadOnly(true);
+    pane_text_->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    pane_text_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    pane_text_->setPlaceholderText(tr("Click a signal on the waterfall, in the track list or in the call list: its text comes here as it is decoded."));
+    pane_text_->setToolTip(tr("One signal's text as it is decoded, the newest at the bottom. It follows the station on through a new track at "
+                              "its place (within %1 Hz), after the old one ends.")
+                               .arg(TrackTable::kSamePlaceHz, 0, 'f', 0));
+    layout->addWidget(pane_text_, 1);
+    pane->setMinimumHeight(60);  // pixels
+    return pane;
+}
+
+void MainWindow::update_pane() {
+    if (pane_label_ == nullptr) return;
+    if (!follow_.active()) {
+        pane_label_->setText(tr("One signal: none followed"));
+        if (!pane_shown_.isEmpty() || !pane_text_->toPlainText().isEmpty()) pane_text_->clear();
+        pane_shown_.clear();
+        return;
+    }
+    const double freq_hz = follow_.freq_hz();
+    const QString frequency = stream_center_hz_ ? tr("%1 kHz").arg((*stream_center_hz_ + freq_hz) / 1000.0, 0, 'f', 3)
+                                                : tr("%1 kHz from the center").arg(QString::asprintf("%+.3f", freq_hz / 1000.0));
+    const QString speed = follow_.wpm() > 0 ? tr("%1 WPM").arg(follow_.wpm(), 0, 'f', 1) : tr("- WPM");
+    QString state = follow_.live() ? tr("live") : (follow_.row_id() ? tr("ended") : tr("ended, no longer listed"));
+    if (follow_.rows_followed() > 1) state += tr("; %1 rows followed at this place").arg(follow_.rows_followed());
+    const std::optional<std::uint32_t> id = follow_.row_id();
+    pane_label_->setText(id ? tr("One signal: track %1, %2, %3, %4").arg(*id).arg(frequency, speed, state)
+                            : tr("One signal: %1, %2, %3").arg(frequency, speed, state));
+    const QString text = QString::fromStdString(follow_.text());
+    if (text == pane_shown_) return;
+    // The newest text in view, unless the user has scrolled back to read: then the place read stays.
+    QScrollBar* bar = pane_text_->verticalScrollBar();
+    const bool at_end = bar->value() >= bar->maximum();
+    const int was = bar->value();
+    pane_text_->setPlainText(text);
+    bar->setValue(at_end ? bar->maximum() : was);
+    pane_shown_ = text;
 }
 
 void MainWindow::run_transport_steps(const StreamStatus& status) {
@@ -1048,7 +1148,7 @@ void MainWindow::run_transport_steps(const StreamStatus& status) {
                 update_radio_controls();
             }
         } else if (action.startsWith(QStringLiteral("shot="))) {
-            model_->refresh();
+            refresh_track_views();
             update_markers();
             if (runner_) {
                 update_status(status);
@@ -1066,6 +1166,9 @@ void MainWindow::run_transport_steps(const StreamStatus& status) {
             set_known_calls(nullptr, {}, {}, KnownKind::None);
         } else if (action == QStringLiteral("download")) {
             known_download_->trigger();
+        } else if (action.startsWith(QStringLiteral("follow="))) {
+            const double hz = action.mid(7).toDouble() * 1000.0 - stream_center_hz_.value_or(0.0);
+            follow_frequency(hz, tr("%1 kHz").arg(action.mid(7)));
         } else if (action == QStringLiteral("quit")) {
             if (!automation_.report_path.isEmpty()) write_report(status);
             if (!automation_.decoded_path.isEmpty()) write_decoded();
@@ -1081,7 +1184,7 @@ void MainWindow::run_automation(const StreamStatus& status) {
     if (!runner_) return;
     const bool ended = stream_ended_ || status.state == StreamStatus::State::Stopped;
     if (!automation_.screenshot_path.isEmpty() && !screenshot_done_ && (status.stream_s >= automation_.screenshot_at_s || ended)) {
-        model_->refresh();
+        refresh_track_views();
         update_markers();
         update_status(status);
         QApplication::processEvents();
@@ -1185,6 +1288,13 @@ void MainWindow::write_report(const StreamStatus& status) {
     out << "call_stage_cpu_s: " << QString::number(call_stage_cpu_s_, 'f', 4) << "\n";
     out << "call_stage_ms_per_channel_s: "
         << (status.channel_seconds > 0 ? QString::number(1000.0 * call_stage_cpu_s_ / status.channel_seconds, 'f', 4) : QStringLiteral("none")) << "\n";
+    // The one-signal pane, when it follows one: where, how many rows it has followed there, and its text.
+    if (follow_.active()) {
+        out << "pane_freq_hz: " << QString::number(follow_.freq_hz(), 'f', 1) << "\n";
+        out << "pane_wpm: " << QString::number(follow_.wpm(), 'f', 1) << "\n";
+        out << "pane_rows_followed: " << follow_.rows_followed() << "\n";
+        out << "pane_text: " << QString::fromStdString(follow_.text()) << "\n";
+    }
     out << "rows_skipped: " << rows_dropped_ << "\n";
     if (runner_) out << "pipeline_lost_samples: " << runner_->source().dropped_samples() << "\n";
     if (runner_ && runner_->source().radio() != nullptr) {

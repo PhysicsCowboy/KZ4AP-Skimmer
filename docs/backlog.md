@@ -1498,9 +1498,11 @@ its own plan. Related item above: "Spectrum frames in linear power".
   list's file and download button (`docs/signal-processing.md`, A.12, "The app's modes and list"). Listening to the
   selected station live through the sound card, picked by a click; the owner: a clip saved to a WAV file the user then
   opens is not useful in a release. The survey's other display gaps: calls drawn on the waterfall; a one-signal text
-  pane; settings kept between runs, done in `app-settings-1` (README, "Settings kept between runs"). Not kept: the
-  decoder and the threads, which the window does not offer (only `--decoder` and `--threads`); a choice of decoder in the
-  window would be kept too.
+  pane, done in `app-settings-1` (README, "One signal"), still without CW Skimmer's colors by kind, pale low-SNR
+  characters and » for a long pause (they need a per-character confidence and pause times the table does not keep), and
+  following a click rather than the radio's tuned frequency until there is tuning; settings kept between runs, done in
+  `app-settings-1` (README, "Settings kept between runs"). Not kept: the decoder and the threads, which the window does
+  not offer (only `--decoder` and `--threads`); a choice of decoder in the window would be kept too.
 
 - **A channel that follows a QSO turnover** (owner, 2026-09-29): with the
   channel distance (milestone 2, part 1), one channel follows both stations

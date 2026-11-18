@@ -7,6 +7,7 @@ add_library(kz4ap_app_core
   core/known_call_download.cpp
   core/track_table.cpp
   core/recording_name.cpp
+  core/signal_follow.cpp
   core/waterfall.cpp
 )
 target_include_directories(kz4ap_app_core PUBLIC core)
@@ -28,6 +29,7 @@ add_executable(kz4ap_app_tests
   tests/recording_name_test.cpp
   tests/known_call_download_test.cpp
   tests/app_settings_test.cpp
+  tests/signal_follow_test.cpp
 )
 target_link_libraries(kz4ap_app_tests PRIVATE kz4ap_app_core GTest::gtest_main)
 gtest_discover_tests(kz4ap_app_tests)

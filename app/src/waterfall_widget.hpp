@@ -1,5 +1,5 @@
 // The waterfall: newest row at the top, frequency across in kHz from the center, stream time down the left, the color
-// scale on the right in dBFS, and a marker per track. The arithmetic is in core/waterfall.hpp.
+// scale on the right in dBFS, and a marker per track, which a click picks (trackClicked). The arithmetic is in core/waterfall.hpp.
 #pragma once
 
 #include "waterfall.hpp"
@@ -44,11 +44,17 @@ public:
     void set_auto_floor(bool on);
     const DbScale& scale() const { return scale_; }
 
+    // A click picks the marker nearest to it across, within this, pixels (heuristic: the marker's triangle is 8 pixels wide).
+    static constexpr int kPickPx = 8;
+
 signals:
     void floorChanged(double floor_dbfs);
+    // A click on the picture or the markers' band at a marker: that track.
+    void trackClicked(std::uint32_t id);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void changeEvent(QEvent* event) override;
 

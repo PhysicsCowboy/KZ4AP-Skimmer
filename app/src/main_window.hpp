@@ -1,5 +1,5 @@
-// The main window: the transport, the radio's controls, the waterfall, the track list and the status bar, around one stream
-// at a time. start_stream takes any IqSource: a recording, or the live radio.
+// The main window: the transport, the radio's controls, the waterfall, the one-signal pane, the track and call lists and the status
+// bar, around one stream at a time. start_stream takes any IqSource: a recording, or the live radio.
 #pragma once
 
 #include "cpu_meter.hpp"
@@ -8,6 +8,7 @@
 #include "call_list_model.hpp"
 #include "known_call_downloader.hpp"
 #include "settings_store.hpp"
+#include "signal_follow.hpp"
 #include "track_list_model.hpp"
 #include "waterfall_widget.hpp"
 
@@ -32,6 +33,7 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
+class QPlainTextEdit;
 class QSlider;
 class QSpinBox;
 class QSplitter;
@@ -47,7 +49,8 @@ struct TransportStep {
     // pause, play, restart, quit, speed=X (X as the speed box offers it: 1, 2, 5, 10 or max), seek=S (s into the recording),
     // radio (starts it at the controls' settings), radiostop, serial=SERIAL (the radio's serial number), center=KHZ, rate=HZ,
     // gain=DB,STATE, record=PATH, stoprecord, shot=PATH (a picture of the window now), mode=decoder or mode=skimmer, list=all or
-    // list=signed, known=PATH (a known-call list), noknown, download (presses Download MASTER.SCP)
+    // list=signed, known=PATH (a known-call list), noknown, download (presses Download MASTER.SCP), follow=KHZ (the one-signal pane
+    // follows the track nearest that frequency, as a click on a call there does: kHz as the track list shows it)
     QString action;
 };
 
@@ -147,8 +150,17 @@ private:
     void write_report(const StreamStatus& status);
     void run_automation(const StreamStatus& status);
     void run_transport_steps(const StreamStatus& status);
+    // The pane's signal looked up again, then the track list told what changed.
+    void refresh_track_views();
     void selection_changed();
     void restore_selection();
+    // The one-signal pane: follow the row holding this track (a click on the waterfall, the track list or the call list), and show it.
+    void follow_track(std::uint32_t id);
+    // The listed row nearest to this frequency, Hz from the span's center, within TrackTable::kSamePlaceHz (a call's or a script's);
+    // what = what is followed, for the status bar's message when none is that near.
+    void follow_frequency(double freq_hz, const QString& what);
+    QWidget* build_pane();
+    void update_pane();
 
     std::string decoder_name_;
     double speed_;
@@ -187,7 +199,11 @@ private:
     std::uint64_t ticks_ = 0;
     std::uint64_t rows_dropped_ = 0;
     std::size_t most_live_ = 0;  // the most live tracks so far
-    std::optional<std::uint32_t> selected_track_;
+    // The one-signal pane: the signal it follows (core/signal_follow.hpp), its header and its text, and the text it last showed.
+    SignalFollow follow_;
+    QLabel* pane_label_ = nullptr;
+    QPlainTextEdit* pane_text_ = nullptr;
+    QString pane_shown_;
 
     WaterfallWidget* waterfall_ = nullptr;
     QSplitter* main_splitter_ = nullptr;   // the waterfall above, the lists below

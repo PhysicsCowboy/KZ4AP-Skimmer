@@ -61,6 +61,17 @@ to sort; drag the bar between the tables to widen it. The status bar's "Calls" c
 call shows at least 10 s after it is read a second time: on `band30.wav` all 30 calls are
 there by about 24 s of stream (derived: their second readings end by 13.5 s, measured).
 
+**One signal.** Click a signal: its marker above the waterfall (the nearest within 8 pixels), its
+row in the track list, or a call in the call list (the track nearest the call's frequency, within
+30 Hz). The pane under the waterfall then shows that signal's text as it is decoded, the newest at
+the bottom, with its frequency in kHz, its speed in WPM and whether it is still live; scroll back
+and the place you read stays put. It keeps following the station when its track ends and a new one
+starts within 30 Hz of it: with the default decoder the track list already goes on in the same row,
+and with the others the pane moves to the new row and keeps the text it had. CW Skimmer's decoder
+panel shows the signal at the radio's tuned frequency instead; this one follows the signal you
+click (there is no tuning yet), and has no colors for calls or reports, no pale characters at low
+SNR and no » for a long pause.
+
 To keep the list, add `--calls calls.csv` (it is written when the stream ends; add
 `--quit-at-end` to leave after that). To give it a list of calls in MASTER.SCP's format, add
 `--known-calls MASTER.SCP`: a text file of one call a line, such as supercheckpartial.com's MASTER.SCP

@@ -65,6 +65,11 @@ std::vector<callsign::CallRow> CallListModel::shown_rows() const {
     return out;
 }
 
+std::optional<double> CallListModel::freq_at(int row) const {
+    if (!search_ || row < 0 || static_cast<std::size_t>(row) >= shown_.size()) return std::nullopt;
+    return search_->calls()[shown_[static_cast<std::size_t>(row)]].freq_hz;
+}
+
 void CallListModel::refresh(double now_s) {
     now_s_ = now_s;
     if (!search_) return;

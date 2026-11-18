@@ -1,6 +1,7 @@
 #include "waterfall_widget.hpp"
 
 #include <QEvent>
+#include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -115,6 +116,28 @@ void WaterfallWidget::set_markers(std::vector<Marker> markers) {
     markers_stale_ = true;
     update(marker_band_rect());
     update(plot_rect());
+}
+
+void WaterfallWidget::mousePressEvent(QMouseEvent* event) {
+    QWidget::mousePressEvent(event);
+    if (!started_ || event->button() != Qt::LeftButton) return;
+    const QRect plot = plot_rect();
+    const QPoint at = event->position().toPoint();
+    if (at.x() < plot.left() || at.x() > plot.right() || at.y() < marker_band_rect().top() || at.y() > plot.bottom()) return;
+    const int x = at.x() - plot.left();
+    std::optional<std::uint32_t> best;
+    int best_px = kPickPx + 1;
+    for (std::size_t i = 0; i < markers_.size() && i < marker_x_.size(); ++i) {
+        if (marker_x_[i] < 0) continue;
+        const int px = std::abs(marker_x_[i] - x);
+        // The nearer; at the same distance a live one. (marker_x_ is set with the markers, at most a tick after a resize.)
+        const bool better = px < best_px || (px == best_px && best && markers_[i].live);
+        if (better) {
+            best_px = px;
+            best = markers_[i].id;
+        }
+    }
+    if (best) emit trackClicked(*best);
 }
 
 void WaterfallWidget::set_floor_dbfs(double floor_dbfs) {

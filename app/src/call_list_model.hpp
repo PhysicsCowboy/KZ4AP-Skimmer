@@ -42,6 +42,8 @@ public:
     // The rows shown, in the stage's order, and how many the stage has reported (shown or not).
     std::vector<callsign::CallRow> shown_rows() const;
     std::size_t shown_count() const { return shown_.size(); }
+    // The frequency of the call on this row of the model, Hz from the span's center (CallRow::freq_hz); none for no such row.
+    std::optional<double> freq_at(int row) const;
     std::size_t reported_count() const { return search_ ? search_->calls().size() : 0; }
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
