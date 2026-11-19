@@ -37,11 +37,17 @@ struct ParsedCall {
     std::string base;     // the station's own call: K1ABC for K1ABC/P, DL/K1ABC and K1ABC/DL
     std::string full;     // as read, with what is around the slash
     bool special = false;  // two or more digits after the prefix (W100AW, TM100TF): a special-event form, spotted from a list only
+    // Four letters after its one digit (VK3FABC, 8N3ACAF): a form RR 19.68 allows but few administrations issue, CW Skimmer's
+    // "unusual pattern"; by default spotted from a list only (CallSearchConfig::unusual_listed_only).
+    bool unusual = false;
 };
 
 // A call, or nothing. The form is the ITU's for amateur stations (Radio Regulations 19.68): an allocated prefix of one or two
-// characters (three for a digit first: 3DA0, 3XY1), one digit, then one to four letters. A slash adds /P, /M, /MM, /AM, /QRP, a digit
-// or a prefix on either side. Words of CW that have this form are refused (is_cw_word). Upper case.
+// characters, or three in a half series (19.68.1: 3DA0RU, three letters at most after its digit), one digit, then one to four
+// letters. A call of the United States' series (K, N, W, AA to AL) has the FCC's forms: one to three letters after the digit, two
+// at most after AA to AL and NA to NZ (the FEMA stations AF#EMA and NF#EMA excepted), and a 1x1 never ends in X. A slash adds /P,
+// /M, /MM, /AM, /QRP, a digit or a prefix on either side. Words of CW that have this form are refused (is_cw_word). Upper case.
+// docs/signal-processing.md, A.12, "Form", has the sources.
 std::optional<ParsedCall> parse_call(std::string_view word);
 // The form alone, before the refusal of words of CW.
 std::optional<ParsedCall> parse_form(std::string_view word);
@@ -98,6 +104,7 @@ struct CallReading {
     std::string base;
     std::string full;
     bool special = false;
+    bool unusual = false;  // ParsedCall::unusual
     Reading reading = Reading::Whole;
     Role role = Role::Unknown;
     bool doubled = false;  // the same word is right before or after it
@@ -142,6 +149,10 @@ struct SegmentationCosts {
     double sign_off_nats = 1.5;
     // When 0, a K or KN after a call that would also make it a longer call (AK4J K, AK4JK) gives no evidence; 1 counts it as any.
     double ambiguous_sign_off = 0.0;
+    // When 0, a copy of a call right after a keyword that would also make it a longer call (TTW7QKW7Q: W7Q K W7Q, or W7Q KW7Q)
+    // gains no evidence as a repeat: which it is, the costs decide by a few nats, and the station is as likely the longer call
+    // (KW7Q, the K of its first copy garbled). 1 counts it as any repeat. Heuristic, the ambiguous K's rule turned around (call-form-1).
+    double ambiguous_repeat = 0.0;
     // nats: a call on the path is believed when its evidence (its copies after the first, the DE beside them, the K after them;
     // a call's first copy is none, since noise text has many call forms) reaches this, and the whole path's gain (the word against
     // noise) reaches word_min_nats. A DE before it is enough, a DE after it only with an unambiguous K, a repeat always. Heuristic.
@@ -179,6 +190,10 @@ struct ReadOptions {
     // is a call, gives both readings, each stripped (0.5 point), for the stage to choose between.
     int segment_alternatives = 0;
     SegmentationCosts costs;
+    // When not 0, a joined reading is refused when its characters, continued through the words after it, repeat with a period
+    // shorter than the call over at least two periods and the whole call (L 9 6LL 9 6LL: L96LL; 5RE 5RE: 5RE5RE): periodic text, no
+    // call, as in segment_word. A call sent twice (N 5 JJ N 5 JJ) has the call's own period and stays. Heuristic (call-form-1).
+    int joined_periodic = 0;
 };
 
 // Every reading of a call that begins in the words [from, to). A word can give several: they are alternatives, and the evidence
@@ -307,6 +322,14 @@ struct CallSearchConfig {
     // 1, the default.
     double segment_alternatives = 1.0;
     SegmentationCosts segmentation;
+    // A call of four letters after its digit (ParsedCall::unusual) is reported only from a list, as a special form is, when not 0.
+    // CW Skimmer's practice in kind (an unusual pattern needs more: 5 repeats at its Normal level, against 2 or 3; RBN 2021); list
+    // only is a choice. Heuristic, chosen by measurement (call-form-1; appendix A.12): of the base calls three or more RBN
+    // skimmers spotted on 2026-11-17, 11 of 4 366 (0.25%) have this form, most of them busts (SD6MCWT, IK4EATX, W0RAUW), while on
+    // the seven 2026-11-17 recordings all 8 such calls the stage reported were false (EE4EEEE, TE7TTTD, GA5NNON).
+    double unusual_listed_only = 1.0;
+    // ReadOptions::joined_periodic; on since call-form-1.
+    double joined_periodic = 1.0;
 };
 
 // One line of the list.

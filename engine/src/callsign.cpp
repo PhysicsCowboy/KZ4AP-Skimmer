@@ -25,33 +25,67 @@ bool any_of_word(std::string_view w, std::initializer_list<std::string_view> lis
     return std::find(list.begin(), list.end(), w) != list.end();
 }
 
-// A base call, no slash: prefix, one digit (or, a special form, several), one to four letters.
-bool parse_base(std::string_view s, bool& special) {
+// The United States' series for amateurs: K, N, W and AA to AL (ITU Appendix 42: AAA-ALZ, KAA-KZZ, NAA-NZZ, WAA-WZZ; the FCC issues
+// amateur calls in no other).
+bool us_prefix(std::string_view prefix) {
+    if (prefix.size() == 1) return prefix[0] == 'K' || prefix[0] == 'N' || prefix[0] == 'W';
+    if (prefix.size() != 2 || !is_letter(prefix[1])) return false;
+    if (prefix[0] == 'K' || prefix[0] == 'N' || prefix[0] == 'W') return true;
+    return prefix[0] == 'A' && prefix[1] <= 'L';
+}
+
+// Whether a regular call (one digit) of this prefix and suffix is a form the FCC issues (47 CFR 97.3(a)(11), its call sign systems):
+// 1 to 3 letters after the digit, 1x2 to 2x3 in the sequential and vanity systems; after a two-letter prefix starting with A or N,
+// 1 or 2 letters (Groups A and B: AA-AL and NA-NZ take 2x1 and 2x2 only), the FEMA stations ?F#EMA excepted; a 1x1 (K, N or W, a
+// digit, one letter) only in the special event system, whose letter is A to W, Y or Z, never X. Derived; checked against the FCC's
+// HD.dat of 2026-11-15: of 1 607 237 calls ever issued, 1 607 236 have 1 to 3 letters (WB4MZ0 the exception), and the 20 of A or N
+// with two prefix letters and 3 letters are AF0EMA to AF9EMA and NF0EMA to NF9EMA (1x1 calls are not in it: their coordinators
+// keep them).
+bool us_form(std::string_view prefix, std::string_view suffix) {
+    if (suffix.size() > 3) return false;
+    if (prefix.size() == 2 && (prefix[0] == 'A' || prefix[0] == 'N') && suffix.size() == 3) return prefix[1] == 'F' && suffix == "EMA";
+    if (prefix.size() == 1 && suffix == "X") return false;
+    return true;
+}
+
+// Three characters before the digit (RR 19.68.1): a half series of Appendix 42, whose first two characters are allocated to more
+// than one Member State, 3DA-3DM Eswatini and 3DN-3DZ Fiji (3DA0RU; derived). Appendix 42's other half series, SSA-SSM Egypt and
+// SSN-SSZ Sudan, is not taken: no amateur call uses it (MASTER.SCP holds none; Egypt's amateurs sign SU, Sudan's ST). And Guinea's
+// 3XY, outside the rule but issued to its DXpeditions (3XY7C 2002, 3XY1D 2011, 3XY1T 2016, 3XY3D 2017; GDXF and ARRL records).
+bool three_character_prefix(std::string_view s) {
+    return s.size() >= 3 && s[0] == '3' && (s[1] == 'D' || (s[1] == 'X' && s[2] == 'Y'));
+}
+
+// A base call, no slash: prefix, one digit (or, a special form, several), one to four letters (RR 19.68).
+bool parse_base(std::string_view s, bool& special, bool& unusual) {
     if (s.size() < 3 || s.size() > 9) return false;
     if (!allocated_pair(s[0], s[1])) return false;
     if (s.substr(0, 2) == "DE") return false;  // the word DE glued to what follows: no amateur series uses it
-    // The prefix's lengths to try: one character only if the series is a whole letter's; two; three for a digit first.
+    // The prefix's lengths to try: one character only if the series is a whole letter's; two; three only in a half series (RR 19.68.1)
+    // and Guinea's 3XY.
     const bool whole_letter = is_letter(s[0]) && is_digit(s[1]) && std::string_view("BFGIKMNRW").find(s[0]) != std::string_view::npos;
     std::array<std::size_t, 3> lengths{};
     std::size_t tries = 0;
     if (whole_letter) lengths[tries++] = 1;
     lengths[tries++] = 2;
-    if (is_digit(s[0])) lengths[tries++] = 3;
+    if (three_character_prefix(s)) lengths[tries++] = 3;
     for (std::size_t t = 0; t < tries; ++t) {
         const std::size_t p = lengths[t];
         if (p >= s.size() || !is_digit(s[p])) continue;
         if (p == 2 && is_digit(s[1]) && whole_letter) continue;  // K12A: tried as K, 1, then a digit
-        if (p == 3 && !is_letter(s[1])) continue;
         if (p == 3 && !is_letter(s[2])) continue;
         std::size_t d = p;
         while (d < s.size() && is_digit(s[d])) ++d;
         const std::size_t digits = d - p;
         const std::size_t letters = s.size() - d;
         if (digits > 4 || letters < 1 || letters > 4) continue;
+        if (p == 3 && letters > 3) continue;  // RR 19.68.1: after three characters and the digit, three at most
         bool all_letters = true;
         for (std::size_t i = d; i < s.size(); ++i) all_letters = all_letters && is_letter(s[i]);
         if (!all_letters) continue;
+        if (digits == 1 && us_prefix(s.substr(0, p)) && !us_form(s.substr(0, p), s.substr(d))) continue;
         special = digits > 1;
+        unusual = digits == 1 && letters == 4;
         return true;
     }
     return false;
@@ -195,8 +229,9 @@ double noise_char_nats(char c) {
 }
 
 double call_form_nats(std::size_t n) {
-    // -ln of the share of random strings of n letters and digits parse_call takes (2 000 000 a length, JoinedWords.FormGains); 9 for more.
-    static constexpr std::array<double, 10> form = {0, 0, 0, 3.00, 1.63, 1.56, 1.77, 2.17, 3.23, 4.60};
+    // -ln of the share of random strings of n letters and digits parse_call takes (2 000 000 a length, JoinedWords.FormGains with
+    // FORM_TABLE set); 9 for more. Remade in call-form-1 for its grammar (before: 3.00, 1.63, 1.56, 1.77, 2.17, 3.23, 4.60).
+    static constexpr std::array<double, 10> form = {0, 0, 0, 3.01, 1.63, 1.68, 1.98, 2.40, 3.66, 5.05};
     return n >= 3 ? form[std::min(n, form.size() - 1)] : std::numeric_limits<double>::infinity();
 }
 
@@ -274,28 +309,31 @@ std::optional<ParsedCall> parse_form(std::string_view word) {
     const std::size_t slash = word.find('/');
     ParsedCall out;
     out.full = std::string(word);
-    bool special = false;
+    bool special = false, unusual = false;
     if (slash == std::string_view::npos) {
-        if (!parse_base(word, special)) return std::nullopt;
+        if (!parse_base(word, special, unusual)) return std::nullopt;
         out.base = std::string(word);
         out.special = special;
+        out.unusual = unusual;
         return out;
     }
     if (word.find('/', slash + 1) != std::string_view::npos) return std::nullopt;
     const std::string_view left = word.substr(0, slash), right = word.substr(slash + 1);
     if (left.empty() || right.empty()) return std::nullopt;
-    if (parse_base(left, special)) {
+    if (parse_base(left, special, unusual)) {
         const bool modifier = any_of_word(right, {"P", "M", "MM", "AM", "QRP", "QRPP", "A"}) || (right.size() == 1 && is_digit(right[0]));
         if (modifier || is_prefix_like(right)) {
             out.base = std::string(left);
             out.special = special;
+            out.unusual = unusual;
             return out;
         }
         return std::nullopt;
     }
-    if (is_prefix_like(left) && parse_base(right, special)) {
+    if (is_prefix_like(left) && parse_base(right, special, unusual)) {
         out.base = std::string(right);
         out.special = special;
+        out.unusual = unusual;
         return out;
     }
     return std::nullopt;
@@ -468,7 +506,13 @@ std::vector<Segment> segment_word(std::string_view w, const SegmentationCosts& c
             out.back().text += text;  // strays in a row are one segment
             continue;
         }
-        out.push_back({text, b.kind, false, b.kind == Segment::Kind::Call ? b.evidence : 0.0});
+        double evidence = b.kind == Segment::Kind::Call ? b.evidence : 0.0;
+        // A copy right after a keyword with which it is a longer call (W7Q K W7Q, or W7Q KW7Q): its repeat is no evidence
+        // (costs.ambiguous_repeat). A keyword other than DE before a call adds nothing else to its evidence, so all of it goes.
+        if (b.kind == Segment::Kind::Call && costs.ambiguous_repeat == 0.0 && !out.empty() && out.back().kind == Segment::Kind::Keyword &&
+            out.back().text != "DE" && parse_call(out.back().text + text).has_value())
+            evidence = 0.0;
+        out.push_back({text, b.kind, false, evidence});
         if (b.to_previous != 0.0 && out.size() >= 2) {
             // A K or KN that would also end the call before it as a longer call (AK4J K, AK4JK) is no evidence: which it is, the
             // segmentation's score decides by fractions of a nat (costs.ambiguous_sign_off).
@@ -595,6 +639,7 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
         // A tiny call only as a word by itself: glued, stripped or joined, such letters are what a decoder scatters.
         if (!p || (only_tiny_pieces(p->base) && how != Reading::Whole)) return;
         CallReading r;
+        r.unusual = p->unusual;
         r.base = p->base;
         r.full = p->full;
         r.special = p->special;
@@ -728,6 +773,18 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 if (parse_call(rest)) emit(rest, Reading::Stripped, i, i + 1, role_of(rest, i, i + 1));
             }
         }
+        // Whether the characters of words [first, last), continued through the words after them, repeat with a period shorter than
+        // their own length over at least two periods and all of them (ReadOptions::joined_periodic).
+        const auto periodic_text = [&](const std::string& joined, std::size_t last) {
+            std::string t = joined;
+            for (std::size_t j = last; j < words.size() && t.size() < 3 * joined.size() && !is_prosign(words[j].text); ++j) t += words[j].text;
+            for (std::size_t p = 1; p < joined.size(); ++p) {
+                std::size_t k = p;
+                while (k < t.size() && t[k] == t[k - p]) ++k;
+                if (k >= std::max(joined.size(), 2 * p)) return true;
+            }
+            return false;
+        };
         // Short words that make a call together.
         if (w.size() <= 4 && !is_cw_word(w)) {
             std::string joined = w;
@@ -737,7 +794,9 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 if ((is_keyword(next) && next != "K" && next != "R") || is_cw_word(next)) break;
                 joined += next;
                 if (joined.size() > 9) break;
-                if (parse_call(joined)) emit(joined, Reading::Joined, i, j + 1, role_of(joined, i, j + 1));
+                if (!parse_call(joined)) continue;
+                if (options.joined_periodic != 0 && periodic_text(joined, j + 1)) continue;
+                emit(joined, Reading::Joined, i, j + 1, role_of(joined, i, j + 1));
             }
         }
     }
@@ -918,6 +977,7 @@ void CallSearch::read_track(TrackText& t, bool all) {
     options.segment_min_chars = static_cast<std::size_t>(std::max(0.0, config_.segment_min_chars));
     options.segment_alternatives = static_cast<int>(config_.segment_alternatives);
     options.costs = config_.segmentation;
+    options.joined_periodic = static_cast<int>(config_.joined_periodic);
     for (CallReading& r : read_calls(words, from, to, timed_by, options)) {
         const std::size_t a = words[r.first_word].first, b = words[r.last_word - 1].last;
         // The least margin; an unknown one (-1) wins the minimum, so that a reading is sure only if every symbol says so.
@@ -941,7 +1001,8 @@ void CallSearch::read_track(TrackText& t, bool all) {
 
 void CallSearch::add(const CallReading& r, double freq_hz) {
     if (reading_log_) reading_log_(r, freq_hz);
-    if (r.special && !(known_ && known_->contains(r.base))) return;
+    // A special form, and by default an unusual one (four letters after the digit), from a list only.
+    if ((r.special || (r.unusual && config_.unusual_listed_only != 0.0)) && !(known_ && known_->contains(r.base))) return;
     if (only_tiny_pieces(r.base) && !(config_.tiny_points > 0.0)) return;
     auto [it, fresh] = candidates_.try_emplace(r.base);
     Candidate& c = it->second;
