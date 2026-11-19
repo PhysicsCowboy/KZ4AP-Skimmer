@@ -1594,6 +1594,13 @@ purpose.
   want is left out.
 - *Done in `app-modes-1` (2026-11-18):* the first three, in the app (Mode, List and Known calls on the toolbar's third row;
   `--decoder-only`, `--signed-only`).
+- **The plain decoder is its own window (owner, 2026-11-19).** "The 'decoder-only' mode is intended almost as an
+  entirely separate window/app, paired with audiocard decoding instead of SDR. ... As a CW decoder-only thing, we would
+  be interested in decoding the audio from my K3, for example. The interface for that mode would then be far more
+  spartan and would focus only on decoding one or a very small number of signals." So the skimmer window's
+  decoder-only mode is not that product; the plain decoder is a separate, spartan window on receiver audio (section 3
+  above), one or a few signals. GUI work stays after the decoder's quality in the priorities; testing on a sound device
+  needs the owner's say each time.
 
 ### Input to the design session: manta's callsign acceptance rules
 
