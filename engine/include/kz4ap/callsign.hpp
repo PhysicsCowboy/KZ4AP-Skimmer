@@ -171,7 +171,8 @@ std::vector<Segment> segment_word(std::string_view word, const SegmentationCosts
 
 // How read_calls reads a word that is not a call by itself.
 struct ReadOptions {
-    // 0: split_glued only (the defaults); 1: segment_word when split_glued finds no split; 2: segment_word in place of split_glued.
+    // 0: split_glued only (read_calls's own default; the stage's, CallSearchConfig::segment_joined, is 1); 1: segment_word
+    // when split_glued finds no split; 2: segment_word in place of split_glued.
     int segment_joined = 0;
     std::size_t segment_min_chars = 6;  // words shorter than this are not segmented (heuristic)
     // When not 0, a believed call ending in E, I or K that is a call without it, or followed by a stray E or I or a K with which it
@@ -296,13 +297,15 @@ struct CallSearchConfig {
     // counts readings that overlap in time within same_place_hz once (copy-2, review 18; appendix A.12). 25 ms is the duplicate rule's.
     double skip_neighbors_text = 0.0;
     double neighbor_twin_s = 0.025;
-    // Joined words read by segmentation (segment_word): 0 off, the default; 1 for a word split_glued cannot split; 2 for every word
-    // of segment_min_chars or more that is not a call by itself, in place of split_glued. A believed call's copies are Glued
-    // readings with the roles their neighbors on the path give. A variant (branch joined-words-1; appendix A.12).
-    double segment_joined = 0.0;
+    // Joined words read by segmentation (segment_word): 1, the default, for a word split_glued cannot split; 2 for every word of
+    // segment_min_chars or more that is not a call by itself, in place of split_glued (a variant); 0 off. A believed call's copies
+    // are Glued readings with the roles their neighbors on the path give. On since joined-words-1: 8 more window-confirmed calls on
+    // the 2026-11-17 recordings, and the calls it adds checked against the FCC's license file (appendix A.12).
+    double segment_joined = 1.0;
     double segment_min_chars = 6.0;
-    // Both readings of a call whose last E, I or K the segmentation cannot place, each stripped (ReadOptions::segment_alternatives).
-    double segment_alternatives = 0.0;
+    // Both readings of a call whose last E, I or K the segmentation cannot place, each stripped (ReadOptions::segment_alternatives);
+    // 1, the default.
+    double segment_alternatives = 1.0;
     SegmentationCosts segmentation;
 };
 

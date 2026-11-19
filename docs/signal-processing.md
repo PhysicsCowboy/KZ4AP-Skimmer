@@ -559,19 +559,20 @@ with the least evidence closing first (A.9b). A radio silent 5 s is flagged.
 
 ## 11. Callsign stage
 
-`CallSearch` reads any decoder's track and text events and changes neither. The app's
-decoder-only mode runs none. Values are heuristics unless marked. Appendix: A.12.
+`CallSearch` reads any decoder's track and text events and changes neither. Values are
+heuristics unless marked. Appendix: A.12.
 
 **Words.** Each whole stream-second it reads text 10 s old. A later correction's change is
 read again, within 200 s; old readings stay. A word space,
-prosign or punctuation ends a word. Every symbol is read, a neighbor's too.
+prosign or punctuation ends a word.
 
 **Readings.** A call's form (RR 19.68; sourced): an allocated prefix (Appendix 42) of one
 or two characters, one digit, one to four letters; /P, /M or a prefix keep the base call. 1
 point: a whole word, or one glued to a keyword or itself (DEK1ABC; K1ABCK1ABC: two readings). 0.75: short words
 joined (K X 9 F). 0.5: a stray E, T, I before or E, T, K after. Refused: CW words of
-this form (G5RV, R5NN; exact), locators (EL96UD). Variant `segment_joined` (off): Viterbi cuts unsplit words
-(DEK8DXK8DXK8DXK) into keywords, calls and strays; calls need a repeat or preceding DE (A.12).
+this form (G5RV, R5NN; exact), locators (EL96UD). Words still unsplit (DEK8DXK8DXK8DXK) a Viterbi cuts into
+keywords, calls and strays; a call there, 1 point, needs a repeat, a DE before, or a DE after and a K; a last E, I or K it
+cannot place gives both readings, 0.5 each (A.12).
 
 **Role.** Before DE or 5NN: *named*. After DE, CQ or TEST, or before K: *signed*. Else *bare*.
 
@@ -587,8 +588,7 @@ digits (W100AW): from a list only.
 start of one or starting with one, is held back there; distance 2 (4 characters or more) needs over twice the points, and
 counts between one letter after a digit and its prefix and digit (K1T, K1BX). Ties
 at distance 1: the earlier call; beginning within 1 s, the later. A listed call weighs by 3. A reported
-row leaves when its points without those places no longer pass, judged at its last reading
-against rivals within ±30 min.
+row leaves when its pooled points no longer pass (A.12).
 
 **List.** One row per base call, at its latest signed, else bare, else named place.
 *Signed*: some reading signed; the app can list these alone.
@@ -4843,7 +4843,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: places pooled | a call's readings add over the band, one per transmission (overlap in time), leaving out places where a variant holds it; the same support decides report and withdrawal | `pool_places` 1 | heuristic motivated by the evidence rule (readings at several places are not independent when a misreading is systematic); scope (the band, `window_s`) a choice; on by measurement (A.12) |
 | Callsign stage: glued pieces | each piece of a glued word has its own characters' times (K1ABCK1ABC: two readings) | `glued_pieces_timed` 1 | derived from the evidence rule (A.12) |
 | Callsign stage: a neighbor's text | every symbol read (default); a variant skips a stretch with `heard_from` that is whole words and whose neighbor's track holds every symbol of it within 25 ms | `skip_neighbors_text` 0, `neighbor_twin_s` 0.025 s | chosen by measurement: the variant changed 12 calls' fields, no call (A.12) |
-| Callsign stage: joined words segmented | off; a variant: 1 a word of 6 characters or more that rule 2 cannot split, 2 every such word; a Viterbi cuts it into keywords, calls and strays (gains in nats against noise text); a call is believed at 2.5 nats of evidence (repeats; DE before 2.77, DE after 1.0, an unambiguous K after 1.5) on a word at least as likely the protocol's text as noise; at most 64 characters | `segment_joined` 0, `segment_min_chars` 6, `segment_alternatives` 0 (1: both readings, stripped, of a call whose last E, I or K the segmentation cannot place), `CallSearchConfig::segmentation` (`SegmentationCosts`) | off: +8 window-confirmed calls for +1 misreading on the 2026-11-17 recordings, none gained and 4 misreadings added held out (A.12); keyword shares, call lengths and `call_nats` measured, the form's gain derived, the rest heuristic |
+| Callsign stage: joined words segmented | on (1): a word of 6 characters or more that rule 2 cannot split (2, a variant: every such word; 0 off); a Viterbi cuts it into keywords, calls and strays (gains in nats against noise text); a call is believed at 2.5 nats of evidence (repeats; DE before 2.77, DE after 1.0, an unambiguous K after 1.5) on a word at least as likely the protocol's text as noise; at most 64 characters | `segment_joined` 1, `segment_min_chars` 6, `segment_alternatives` 1 (both readings, stripped, of a call whose last E, I or K the segmentation cannot place; 0 the segmentation's alone), `CallSearchConfig::segmentation` (`SegmentationCosts`) | on by measurement and a license check: +8 window-confirmed calls for +1 RBN misreading on the 2026-11-17 recordings, none the RBN can see held out (it spots CQ only), the calls added checked in the FCC's license file, about 12 real for 2 false (A.12); keyword shares, call lengths and `call_nats` measured, the form's gain derived, the rest heuristic |
 | Callsign stage: tiny calls | whole words only, 2 of them, listed or not; 0 leaves them unread | `tiny_points` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a call that starts another | held as a variant at distance 1 (0: by edit distance alone) | `prefix_held` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: withdrawal | pooled (the default): when its pooled support no longer passes; with `pool_places` 0: by a rival better at its best, or a local defeat with no pass elsewhere beyond 150 Hz (0: any local defeat) | `withdraw_own_place` | heuristic, by a hand test and measurement (A.12) |
@@ -5416,9 +5416,9 @@ track. A rereading after a correction is triggered by a change of text only, not
 3. *Stripped:* one or two characters of E, T, I off the front, while what is left parses; one of E, T, K off the back.
 4. *Joined:* from a word of at most 4 characters, up to five following words of at most 4 characters, not a prosign, keyword (K and R
    excepted) or refused word, up to 9 characters: each concatenation that parses. K and R may start a join, not a whole reading.
-5. *Segmented* (the variant `segment_joined`, 0 by default; `segment_word`): with 1, a word of at least `segment_min_chars` (6)
-   characters that is no call itself and that rule 2 cannot split; with 2, every such word, before rule 2, which then reads it only if
-   no call on it is believed. The word w (at most 64 characters) is cut into tokens by a Viterbi over its split points that maximizes
+5. *Segmented* (`segment_joined`, 1 by default since `joined-words-1`; `segment_word`): with 1, a word of at least
+   `segment_min_chars` (6) characters that is no call itself and that rule 2 cannot split; with 2 (a variant), every such word,
+   before rule 2, which then reads it only if no call on it is believed; with 0, none. The word w (at most 64 characters) is cut into tokens by a Viterbi over its split points that maximizes
    the sum of the tokens' gains G, log probability ratios in nats against noise text, whose characters cost ν(c) = e(c) ln 2 + ln 4.09375
    each, e(c) the character's count of dots and dashes (p(c) ∝ 2^−e over the 36 letters and digits and the slash, whose sum is
    4.09375: E and T 2.10 nats, I A N M 2.80, a digit 4.87):
@@ -5446,7 +5446,7 @@ track. A rereading after a correction is triggered by a change of text only, not
    word's ends. Examples (`JoinedWords` tests): DEK8DXK8DXK8DXK is DE K8DX K8DX K8DX K, E = 2.77 + 2 × 14.4 = 31.6 nats (K8DXK is
    a call); CQCQPOTADENA9M is CQ CQ POTA DE NA9M, E = 2.77; N5JJDEWA0QZK is N5JJ DE WA0QZ K, N5JJ 1.0 (not believed), WA0QZ 2.77;
    CQCQDXCQDXCQDXDEK8DXK8DK reads K8DX once (the last copy, K8DK, is a new call of no evidence).
-   With `segment_alternatives` 1 (0 by default; a further option of the variant), a believed copy whose last E, I or K the
+   With `segment_alternatives` 1 (the default since `joined-words-1`; 0 reads the segmentation's choice alone, glued), a believed copy whose last E, I or K the
    segmentation cannot place gives both readings, each *stripped* (0.5 point), for the stage's repeats and arbitration to choose
    between: a call ending in E, I or K that is a call without it (73DEWN4ATI: WN4AT and WN4ATI), and a call followed by a stray
    beginning with E or I, or by the keyword K, that is a call with it (K5NUDEAK4JK73: AK4JK and AK4J). The segmentation's own choice
@@ -5645,7 +5645,7 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   also took W7QDM's role of sender (KC2LRC-2, "TEST W7QDM" with "TES" given to a track 27 Hz away). Off: chosen by measurement; the
   stage already counts readings that overlap in time within 300 Hz once.
 
-- `segment_joined` 0 (`joined-words-1`, 2026-11-19), a variant, off: on the seven 2026-11-17 recordings, 42 calls the RBN spotted in the
+- `segment_joined` 1 and `segment_alternatives` 1 (`joined-words-1`, 2026-11-19): on the seven 2026-11-17 recordings, 42 calls the RBN spotted in the
   window and the defaults did not report appear inside a decoded word of 7 characters or more within 0.5 kHz of a spot (about 35
   stations; the gate before building). On their decoded text (the defaults' decodes again, with the clock lines: calls equal to the
   earlier decodes' and the replays equal to the decodes, byte for byte), mode 1 gave 168 / 83 / 103 (window-confirmed / misread /
@@ -5657,12 +5657,22 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   file of 2026-11-18) 576 / 309 / 212 at the defaults, 576 / 313 / 215 with mode 1, 576 / 312 / 212 at `believe_nats` 3 (AK4JK lost as
   AK4J K from K5NUDEAK4JK73; misreadings WN4ATI from 73DEWN4ATI, W7Q and B3FW beside KW7Q and KB3FW; unknown W3QRE from ES73DEW3QRE,
   KC4HCH, AC0BU); the four 2017 recordings (review 18's logs) 200 / 56 / 54 to 200 / 56 / 55 (L99E from a grid square, EL99, sent
-  over and over). So it is no win held out: off by default. With `segment_alternatives` 1 as well (one iteration, no value retuned):
+  over and over). By the RBN it is no win held out. With `segment_alternatives` 1 as well (one iteration, no value retuned):
   2026-11-17 168 / 83 / 103 (exact; WA9TOP, spotted that day, lost: GMDEWA9TOPK's readings split between WA9TOP and WA9TOPK);
   2026-11-18 576 / 310 / 214 (AK4JK kept; WN4ATI, B3FW, AK4J and W3QRE gone; W7Q, KC4HCH and AC0BU stay); 2017 200 / 56 / 55. The
-  rule for a default (the coordinating session's, 2026-11-19: window-confirmed calls up on 2026-11-17, and on no held-out set more than one
-  new misreading per window-confirmed call gained) fails on 2026-11-18 (none gained, one new misreading, W7Q): off. The clean
-  held-out set (the 2026-11-19 recordings) waits for the RBN's day file, not posted at 14:03Z on 2026-11-19. The ambiguous-K rule (`ambiguous_sign_off` 0) came from AK4J and changes
+  rule first set for a default (window-confirmed calls up on 2026-11-17, and on no held-out set more than one new misreading per
+  window-confirmed call gained) failed on 2026-11-18 (none gained, one new misreading, W7Q). It was set aside on better evidence, and
+  both options are on by default since `joined-words-1`: (1) the RBN cannot see this variant's gains, since it spots stations that
+  call CQ: 99.9% of its non-beacon spots on 2026-11-17 are type CQ (423 137 against 305 DX), and "DE call" joined words come from
+  contacts, where a station signs without calling CQ; (2) every call the variant adds or changes was looked up in the FCC's amateur
+  license file (l_amat.zip of 2026-11-15, HD.dat: 822 120 active calls, 1 607 238 ever issued): active licenses are the 8
+  window-confirmed calls gained, KD5Z (judged a misreading by the RBN, from S73DEKD5ZCQ), WA7WKY, KC4HCH, AC0BU, AK4JK, WA9TOP,
+  WN4AT, AK4J and KB3FW; never issued are W7Q, W3QRE and WN4ATI (the last two gone with the alternatives), and L99E is a grid square.
+  Net against the old defaults, about 12 likely real calls for 2 false ones (W7Q, L99E). "Active" is weak evidence alone: a one-edit
+  garble of a confirmed US call is an active license 38.1% of the time (measured over every one-edit variant of US form of the 284
+  confirmed US calls of 2026-11-17); "never issued" is conclusive. At the new defaults the seven 2026-11-17 recordings read
+  168 / 83 / 103, exact replays equal to the mode 1 and alternatives column call for call. The clean held-out set (the 2026-11-19
+  recordings) waits for the RBN's day file, not posted at 14:03Z on 2026-11-19. The ambiguous-K rule (`ambiguous_sign_off` 0) came from AK4J and changes
   nothing at 2.5 nats on any of these sets. An earlier form (keywords equally likely, a call's first copy counted as evidence,
   repeats across strays, `believe_nats` 3) gave 168 / 90 / 106 on 2026-11-17: N0TAR lost as N0T AR, OO0O and W1BR from garbled
   repeats; and until strings repeated within themselves were refused, 3J3J from periodic garbage. On 2 000 words of noise text (12 to
@@ -5685,7 +5695,10 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
 - Withdrawal judged at a loser's last reading (stage-aging): a misreading reported early stays when its true call comes more than `window_s` after its last reading, and a reported call that survives a defeat once cannot leave later, since a rival's support at that time only falls as its old occurrences age out.
 - Pooled points let a misreading the decoder makes the same way at several places through, where only one place's points would not: on real30 (30 min of real 40 m) K0HBN and K6QO, misreadings of IK0HBN and IK6QOP that drop the I, come back to the list (`withdraw_own_place` had taken them off), as do IK0I and K6T. Without a list the arbitration cannot tell which of two near calls is the station when both are read often (backlog: spellings of one station).
 - With the variant `known_margin_nats`, a listed misreading the decoder was sure of passes on one bare word (on the generated contest EA5V, JA3E, ZL9XMP, the list's decoys).
-- The segmentation (variant `segment_joined`): a call ending in K beside a sign-off is a choice the lengths' shares and the K's bigram
+- The segmentation (`segment_joined`, on by default): a known false call, W7Q (never issued), is KW7Q with its K read as a
+  keyword, the repeats deciding (W7Q K W7Q); the alternatives do not touch a K before a call. The RBN cannot judge the variant's
+  gains (it spots stations calling CQ), and an active license is weak evidence (38.1% of one-edit garbles of confirmed US calls are
+  active). A call ending in K beside a sign-off is a choice the lengths' shares and the K's bigram
   make by fractions of a nat (K8DX K over K8DXK by 0.2 nats), and the RBN's skimmers split the same way (K9IHK and K9IH, WA5DTK and
   WA5DT; AK4JK read as AK4J K); a stray E or I behind a call after DE is taken into it (WN4ATI, W3QRE), since a fifth character costs
   less than a stray; a call before DE with nothing after it is not believed (N5JJ DE ...); a repeat with a garbled copy (K3BFQK3BF)

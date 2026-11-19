@@ -1457,10 +1457,8 @@ TEST(JoinedWords, FormGains) {
     EXPECT_NEAR(sum, 1.0, 0.01);
 }
 
-TEST(JoinedWords, TheStageReportsEK8DXOnlyWithTheVariant) {
-    const auto run = [](double mode) {
-        CallSearchConfig config;
-        config.segment_joined = mode;
+TEST(JoinedWords, TheStageReportsEK8DXByDefaultAndNotWithTheSegmentationOff) {
+    const auto run = [](CallSearchConfig config) {
         Stage s(config);
         s.born(1, 1000.0);
         s.text(1, 1000.0, "CQCQCQDXCQDXCQDXDEK8DXK8DXK8DXK ", 0.0);
@@ -1468,9 +1466,14 @@ TEST(JoinedWords, TheStageReportsEK8DXOnlyWithTheVariant) {
         const CallRow* r = s.row("K8DX");
         return r != nullptr && is_signed(*r) && r->count == 3;
     };
-    EXPECT_FALSE(run(0.0));
-    EXPECT_TRUE(run(1.0));
-    EXPECT_TRUE(run(2.0));
+    EXPECT_EQ(CallSearchConfig{}.segment_joined, 1.0);
+    EXPECT_EQ(CallSearchConfig{}.segment_alternatives, 1.0);
+    EXPECT_TRUE(run(CallSearchConfig{}));
+    for (double mode : {0.0, 1.0, 2.0}) {
+        CallSearchConfig config;
+        config.segment_joined = mode;
+        EXPECT_EQ(run(config), mode != 0.0) << mode;
+    }
 }
 
 TEST(JoinedWords, ALastLetterTheSegmentationCannotPlaceGivesBothReadingsStripped) {
