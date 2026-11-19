@@ -56,14 +56,33 @@ bool three_character_prefix(std::string_view s) {
     return s.size() >= 3 && s[0] == '3' && (s[1] == 'D' || (s[1] == 'X' && s[2] == 'Y'));
 }
 
-// A base call, no slash: prefix, one digit (or, a special form, several), one to four letters (RR 19.68).
-bool parse_base(std::string_view s, bool& special, bool& unusual) {
+// What a base call's form says beyond its being one (ParsedCall).
+struct BaseForm {
+    bool special = false;
+    bool unusual = false;
+    bool prefix_digit = false;
+};
+
+// A base call, no slash: prefix, one digit (or, a special form, several), one to four letters (RR 19.68); or a letter-digit prefix
+// and one to four letters (prefix_digit).
+bool parse_base(std::string_view s, BaseForm& form) {
     if (s.size() < 3 || s.size() > 9) return false;
     if (!allocated_pair(s[0], s[1])) return false;
     if (s.substr(0, 2) == "DE") return false;  // the word DE glued to what follows: no amateur series uses it
     // The prefix's lengths to try: one character only if the series is a whole letter's; two; three only in a half series (RR 19.68.1)
     // and Guinea's 3XY.
     const bool whole_letter = is_letter(s[0]) && is_digit(s[1]) && std::string_view("BFGIKMNRW").find(s[0]) != std::string_view::npos;
+    // A letter and a digit outside the whole-letter series (C6, E7, J6, P3), then letters only: the prefix's digit is the call's
+    // (C6AGU, E7DX, D4C). Not in RR 19.68's words, which put a digit after two characters, but issued (MASTER.SCP of 2026-11-18
+    // holds 92 such calls, the RBN spots C8K, E6DX, T2DE; docs/signal-processing.md, A.12). A digit-letter prefix (9H, 3B) has no
+    // such form: its calls have a digit after it (9H1, 3B8). Four letters are unusual, as after any digit.
+    if (!whole_letter && is_letter(s[0]) && is_digit(s[1]) && s.size() <= 6 &&
+        std::all_of(s.begin() + 2, s.end(), [](char c) { return is_letter(c); })) {
+        form = BaseForm{};
+        form.prefix_digit = true;
+        form.unusual = s.size() == 6;
+        return true;
+    }
     std::array<std::size_t, 3> lengths{};
     std::size_t tries = 0;
     if (whole_letter) lengths[tries++] = 1;
@@ -84,11 +103,18 @@ bool parse_base(std::string_view s, bool& special, bool& unusual) {
         for (std::size_t i = d; i < s.size(); ++i) all_letters = all_letters && is_letter(s[i]);
         if (!all_letters) continue;
         if (digits == 1 && us_prefix(s.substr(0, p)) && !us_form(s.substr(0, p), s.substr(d))) continue;
-        special = digits > 1;
-        unusual = digits == 1 && letters == 4;
+        form = BaseForm{};
+        form.special = digits > 1;
+        form.unusual = digits == 1 && letters == 4;
         return true;
     }
     return false;
+}
+
+// A location written as a call's form beside a call: two characters of an allocated pair, a digit and one letter, outside the
+// United States' series (VP2V, VP2E, VK9X, 3D2R, CE0Y, PJ2T). A US call of that length (W1AW, KH6A) and a 1x1 (K1A, N4A) are calls.
+bool location_form(std::string_view s) {
+    return s.size() == 4 && allocated_pair(s[0], s[1]) && is_digit(s[2]) && is_letter(s[3]) && !us_prefix(s.substr(0, 2));
 }
 
 bool is_prefix_like(std::string_view s) {
@@ -230,8 +256,9 @@ double noise_char_nats(char c) {
 
 double call_form_nats(std::size_t n) {
     // -ln of the share of random strings of n letters and digits parse_call takes (2 000 000 a length, JoinedWords.FormGains with
-    // FORM_TABLE set); 9 for more. Remade in call-form-1 for its grammar (before: 3.00, 1.63, 1.56, 1.77, 2.17, 3.23, 4.60).
-    static constexpr std::array<double, 10> form = {0, 0, 0, 3.01, 1.63, 1.68, 1.98, 2.40, 3.66, 5.05};
+    // FORM_TABLE set); 9 for more. Remade in call-form-1 for its grammar (before: 3.00, 1.63, 1.56, 1.77, 2.17, 3.23, 4.60), and in
+    // call-form-2 for the calls whose only digit is the prefix's and the words of CW, both taken now (before: 3.01, 1.63, 1.68, 1.98).
+    static constexpr std::array<double, 10> form = {0, 0, 0, 2.29, 1.45, 1.54, 1.85, 2.40, 3.66, 5.05};
     return n >= 3 ? form[std::min(n, form.size() - 1)] : std::numeric_limits<double>::infinity();
 }
 
@@ -291,8 +318,9 @@ bool only_tiny_pieces(std::string_view base) {
 }
 
 bool is_cw_word(std::string_view base) {
-    // Glued to 5NN: exact, so that DJ5NN stays a call.
-    if (any_of_word(base, {"R5NN", "K5NN", "E5NN", "T5NN", "N5NN", "TU5NN", "UR5NN", "ES5NN", "EE5NN", "TT5NN", "ET5NN", "TE5NN"})) return true;
+    // One or two letters glued to 5NN (R5NN, TU5NN, FN5NN): the report run onto a word, or a call of that form (DJ5NN, W5NN).
+    if ((base.size() == 4 || base.size() == 5) && base.ends_with("5NN") && is_letter(base[0]) && (base.size() == 4 || is_letter(base[1])))
+        return true;
     // Rigs, antennas and software that have a call's form.
     return any_of_word(base, {"G5RV", "K3S", "K4D", "N1MM", "K1EL", "K9AY", "TH7DX", "TH6DX", "TH5DX", "TH3JR", "TH2MK", "HF5B", "HF6V", "HF9V", "HF2V", "FT8DX", "FT5DX", "FT3DX", "W2DU", "W8JK", "W3DZZ"});
 }
@@ -309,39 +337,44 @@ std::optional<ParsedCall> parse_form(std::string_view word) {
     const std::size_t slash = word.find('/');
     ParsedCall out;
     out.full = std::string(word);
-    bool special = false, unusual = false;
-    if (slash == std::string_view::npos) {
-        if (!parse_base(word, special, unusual)) return std::nullopt;
-        out.base = std::string(word);
-        out.special = special;
-        out.unusual = unusual;
+    const auto take = [&](std::string_view base, const BaseForm& form) {
+        out.base = std::string(base);
+        out.special = form.special;
+        out.unusual = form.unusual;
+        out.prefix_digit = form.prefix_digit;
         return out;
+    };
+    BaseForm form;
+    if (slash == std::string_view::npos) {
+        if (!parse_base(word, form)) return std::nullopt;
+        return take(word, form);
     }
     if (word.find('/', slash + 1) != std::string_view::npos) return std::nullopt;
     const std::string_view left = word.substr(0, slash), right = word.substr(slash + 1);
     if (left.empty() || right.empty()) return std::nullopt;
-    if (parse_base(left, special, unusual)) {
-        const bool modifier = any_of_word(right, {"P", "M", "MM", "AM", "QRP", "QRPP", "A"}) || (right.size() == 1 && is_digit(right[0]));
-        if (modifier || is_prefix_like(right)) {
-            out.base = std::string(left);
-            out.special = special;
-            out.unusual = unusual;
-            return out;
-        }
-        return std::nullopt;
+    // Either side may be the base call: the left one before a modifier or a prefix (K1ABC/P, K1ABC/VE3, K1ABC/VP2V), the right one
+    // after a prefix (DL/K1ABC, VP2V/K1ABC). A prefix can itself have a call's form (VP2V, VK9X, 3D2R). When both sides can be the
+    // base: the side that is not a location form (location_form: VP2V, VK9X, 3D2R) when exactly one is, else the left (W1AW/VP2V and
+    // VK9X/W1AW give W1AW, K1A/W1AW and N4A/K4SV the left); the other side is kept (ParsedCall::other_base) for the stage, which takes
+    // it when it alone is on the known-call list. A heuristic (call-form-2's review).
+    BaseForm left_form, right_form;
+    const bool modifier = any_of_word(right, {"P", "M", "MM", "AM", "QRP", "QRPP", "A"}) || (right.size() == 1 && is_digit(right[0]));
+    const bool left_base = parse_base(left, left_form) && (modifier || is_prefix_like(right));
+    const bool right_base = !modifier && is_prefix_like(left) && parse_base(right, right_form);
+    if (left_base && right_base) {
+        const bool right_first = location_form(left) && !location_form(right);
+        ParsedCall p = right_first ? take(right, right_form) : take(left, left_form);
+        p.other_base = std::string(right_first ? left : right);
+        return p;
     }
-    if (is_prefix_like(left) && parse_base(right, special, unusual)) {
-        out.base = std::string(right);
-        out.special = special;
-        out.unusual = unusual;
-        return out;
-    }
+    if (left_base) return take(left, left_form);
+    if (right_base) return take(right, right_form);
     return std::nullopt;
 }
 
 std::optional<ParsedCall> parse_call(std::string_view word) {
     auto p = parse_form(word);
-    if (!p || is_cw_word(p->base)) return std::nullopt;
+    if (p) p->cw_word = is_cw_word(p->base);
     return p;
 }
 
@@ -640,6 +673,9 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
         if (!p || (only_tiny_pieces(p->base) && how != Reading::Whole)) return;
         CallReading r;
         r.unusual = p->unusual;
+        r.prefix_digit = p->prefix_digit;
+        r.cw_word = p->cw_word;
+        r.other_base = p->other_base;
         r.base = p->base;
         r.full = p->full;
         r.special = p->special;
@@ -999,10 +1035,25 @@ void CallSearch::read_track(TrackText& t, bool all) {
     }
 }
 
-void CallSearch::add(const CallReading& r, double freq_hz) {
+void CallSearch::add(const CallReading& reading, double freq_hz) {
+    // Around a slash with a call on both sides, the list decides when it holds exactly one of them (N4A/K4SV, K1A/W1AW).
+    CallReading r = reading;
+    if (!r.other_base.empty() && known_ && known_->contains(r.other_base) && !known_->contains(r.base)) {
+        if (const auto other = parse_call(r.other_base)) {
+            r.other_base = r.base;
+            r.base = other->base;
+            r.special = other->special;
+            r.unusual = other->unusual;
+            r.prefix_digit = other->prefix_digit;
+            r.cw_word = other->cw_word;
+        }
+    }
     if (reading_log_) reading_log_(r, freq_hz);
-    // A special form, and by default an unusual one (four letters after the digit), from a list only.
-    if ((r.special || (r.unusual && config_.unusual_listed_only != 0.0)) && !(known_ && known_->contains(r.base))) return;
+    // A special form and a word of CW, and by default an unusual one (four letters after the digit) and one whose only digit is its
+    // prefix's, from a list only.
+    const bool listed_only = r.special || r.cw_word || (r.unusual && config_.unusual_listed_only != 0.0) ||
+                             (r.prefix_digit && config_.prefix_digit_listed_only != 0.0);
+    if (listed_only && !(known_ && known_->contains(r.base))) return;
     if (only_tiny_pieces(r.base) && !(config_.tiny_points > 0.0)) return;
     auto [it, fresh] = candidates_.try_emplace(r.base);
     Candidate& c = it->second;

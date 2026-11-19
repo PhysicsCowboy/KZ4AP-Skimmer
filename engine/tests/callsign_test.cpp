@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 using namespace kz4ap;
@@ -93,12 +94,109 @@ TEST(CallGrammar, NotCalls) {
         EXPECT_FALSE(is_call(word)) << word;
 }
 
-TEST(CallGrammar, WordsOfCwWithACallsFormAreRefused) {
-    for (const char* word : {"G5RV", "K3S", "N1MM", "R5NN", "UR5NN", "TU5NN", "K5NN"}) {
-        EXPECT_TRUE(parse_form(word).has_value()) << word;
-        EXPECT_FALSE(is_call(word)) << word;
+TEST(CallGrammar, WordsOfCwWithACallsFormAreMarked) {
+    // Rigs, antennas and software (exact), and one or two letters glued to 5NN: calls' forms, some of them issued (K9AY, N1MM,
+    // K5NN, DJ5NN, W5NN), so marked to be spotted from a list only, not refused.
+    for (const char* word : {"G5RV", "K3S", "N1MM", "K9AY", "K1EL", "W2DU", "W8JK", "W3DZZ", "R5NN", "UR5NN", "TU5NN", "K5NN", "N5NN",
+                             "DJ5NN", "FN5NN", "NN5NN", "W5NN", "E5NN"}) {
+        const auto p = parse_call(word);
+        ASSERT_TRUE(p.has_value()) << word;
+        EXPECT_TRUE(p->cw_word) << word;
+        EXPECT_TRUE(is_cw_word(word)) << word;
     }
-    EXPECT_TRUE(is_call("DJ5NN"));  // exact matches only: manta's lesson
+    // Exact matches and the 5NN form only: manta's lesson. A longer suffix, another digit or three letters before it are calls.
+    for (const char* call : {"K9AYA", "N1MMX", "DJ5NNA", "DJ5NA", "K5NA", "W5NNX", "KC5NNA", "K1ABC"}) {
+        const auto p = parse_call(call);
+        ASSERT_TRUE(p.has_value()) << call;
+        EXPECT_FALSE(p->cw_word) << call;
+    }
+    EXPECT_FALSE(is_cw_word("5NN"));
+    EXPECT_FALSE(is_cw_word("ABC5NN"));
+    EXPECT_FALSE(is_cw_word("K15NN"));
+}
+
+TEST(CallGrammar, APrefixsDigitCanBeTheCallsDigit) {
+    // A letter and a digit outside the whole-letter series, then letters only: the prefix's digit is the call's (MASTER.SCP holds
+    // C6AGU, E7DX, J6M, P3X, D4C, T8TT, V3A, Z3A; the RBN spots C8K, E6DX, T2DE, A6BB). Four letters are unusual, as after any digit.
+    for (const char* call : {"C6AGU", "E7DX", "J6M", "P3X", "D4C", "T8TT", "V3A", "Z3A", "A2NEW", "E2QRP", "S0S", "C8K", "E6DX", "T2DE",
+                             "A6BB", "E7DXAB"}) {
+        const auto p = parse_call(call);
+        ASSERT_TRUE(p.has_value()) << call;
+        EXPECT_TRUE(p->prefix_digit) << call;
+        EXPECT_FALSE(p->special) << call;
+        EXPECT_EQ(p->unusual, std::string_view(call).size() == 6) << call;
+        EXPECT_EQ(p->base, call);
+    }
+    // A digit after the prefix, a whole-letter series or a digit-letter prefix: as before, no mark.
+    for (const char* call : {"E73A", "V31XX", "T88AA", "C6AGU1A", "3B8CF", "9H1A", "K4A", "G3Z", "S58W", "A61AA"}) {
+        const auto p = parse_call(call);
+        if (std::string_view(call) == "C6AGU1A") {
+            EXPECT_FALSE(p.has_value());
+            continue;
+        }
+        ASSERT_TRUE(p.has_value()) << call;
+        EXPECT_FALSE(p->prefix_digit) << call;
+    }
+    // Unallocated pairs, a digit-letter prefix with no digit after it, five letters: no call.
+    for (const char* word : {"O8FN", "U1BD", "H5AB", "E8AB", "9HABC", "3BABC", "E7ABCDE", "C6"})
+        EXPECT_FALSE(is_call(word)) << word;
+}
+
+TEST(CallGrammar, EitherSideOfASlashCanBeTheBaseCall) {
+    // A prefix with a call's form (VP2V, VK9X) before the call: the call is the base (callsign.cpp's parse_form once took the
+    // left side whenever it parsed, and then refused VP2V/K1ABC).
+    EXPECT_EQ(parse_call("VP2V/K1ABC")->base, "K1ABC");
+    EXPECT_EQ(parse_call("VP2V/K1ABC")->full, "VP2V/K1ABC");
+    EXPECT_EQ(parse_call("VP2E/DL1ABC")->base, "DL1ABC");
+    EXPECT_EQ(parse_call("K1ABC/VP2V")->base, "K1ABC");
+    // Both sides can be the base: the one that is not a location form (two characters, a digit, one letter, not a US series),
+    // when exactly one is; else the left, as before (a 1x1 signed with its operator's call, N4A/K4SV, is N4A).
+    for (const auto& [word, base, other] : std::vector<std::tuple<std::string, std::string, std::string>>{
+             {"W1AW/VP2V", "W1AW", "VP2V"}, {"VP2V/W1AW", "W1AW", "VP2V"}, {"VK9X/W1AW", "W1AW", "VK9X"}, {"W1AW/VK9X", "W1AW", "VK9X"},
+             {"K1AB/VP2E", "K1AB", "VP2E"}, {"W1AW/3D2R", "W1AW", "3D2R"}, {"CE0Y/K1A", "K1A", "CE0Y"}, {"K1A/W1AW", "K1A", "W1AW"},
+             {"N4A/K4SV", "N4A", "K4SV"}, {"KH6A/W1AW", "KH6A", "W1AW"}, {"VP2V/VK9X", "VP2V", "VK9X"},
+             {"DL1A/W1AW", "W1AW", "DL1A"}}) {  // the last a limitation: a call of the location form is taken for one
+        const auto p = parse_call(word);
+        ASSERT_TRUE(p.has_value()) << word;
+        EXPECT_EQ(p->base, base) << word;
+        EXPECT_EQ(p->other_base, other) << word;
+    }
+    EXPECT_TRUE(parse_call("VP2V/K1ABC")->other_base.empty());
+    // As before.
+    for (const auto& [word, base] : std::vector<std::pair<std::string, std::string>>{
+             {"DL/K1ABC", "K1ABC"}, {"K1ABC/P", "K1ABC"}, {"K1ABC/4", "K1ABC"}, {"W1/DL1ABC", "DL1ABC"}, {"VE3/K1ABC", "K1ABC"},
+             {"KH6/K1ABC", "K1ABC"}, {"K1ABC/KH6", "K1ABC"}, {"DL1ABC/P", "DL1ABC"}, {"K1ABC/MM", "K1ABC"}, {"K1ABC/QRP", "K1ABC"},
+             {"4U1ITU/HB9", "4U1ITU"}}) {
+        const auto p = parse_call(word);
+        ASSERT_TRUE(p.has_value()) << word;
+        EXPECT_EQ(p->base, base) << word;
+    }
+    EXPECT_FALSE(is_call("K1ABC/VE3XYZ"));  // two calls: neither side is a prefix
+    EXPECT_FALSE(is_call("VP2V/K1ABC/P"));
+    EXPECT_FALSE(is_call("VP2V/K9STPL"));
+}
+
+TEST(CallSearch, ACallOnBothSidesOfASlashIsTheListedOne) {
+    // N4A/K4SV: N4A by the grammar; with K4SV listed and N4A not, K4SV; with both or neither listed, N4A.
+    const auto run = [](std::vector<std::string> listed) {
+        std::shared_ptr<KnownCalls> known;
+        if (!listed.empty()) {
+            known = std::make_shared<KnownCalls>();
+            for (const std::string& c : listed) known->add(c);
+        }
+        Stage s(CallSearchConfig{}, known);
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "CQ DE N4A/K4SV N4A/K4SV K ", 0.0);
+        s.search.advance(30.0);
+        std::vector<std::string> out;
+        for (const CallRow& r : s.search.calls()) out.push_back(r.base);
+        return out;
+    };
+    EXPECT_EQ(run({}), std::vector<std::string>{"N4A"});
+    EXPECT_EQ(run({"K4SV"}), std::vector<std::string>{"K4SV"});
+    EXPECT_EQ(run({"N4A"}), std::vector<std::string>{"N4A"});
+    EXPECT_EQ(run({"N4A", "K4SV"}), std::vector<std::string>{"N4A"});
+    EXPECT_EQ(run({"W1AW"}), std::vector<std::string>{"N4A"});
 }
 
 TEST(CallGrammar, SpecialFormsAreMarked) {
@@ -932,15 +1030,66 @@ TEST(CallSearch, ACallOfTinyPiecesNeedsTwoWholeWordsListedOrNot) {
     EXPECT_EQ(s.row("N5AU"), nullptr);
 }
 
-TEST(CallSearch, ACallWithNoDigitAfterALetterDigitPrefixIsNotReadEvenListed) {
-    // A limit, stated in callsign.hpp and appendix A.12: these have no form in the grammar.
+TEST(CallSearch, ACallWhoseOnlyDigitIsItsPrefixsIsReportedFromAListOnly) {
+    // D4C, E7DX, C6AGU (call-form-2): read, and by default reported only when listed; with prefix_digit_listed_only 0, as any call.
+    const auto run = [](CallSearchConfig config, std::shared_ptr<const KnownCalls> known) {
+        Stage s(config, std::move(known));
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "DE D4C D4C K DE E7DX E7DX K DE C6AGU C6AGU K ", 0.0);
+        s.search.advance(30.0);
+        std::vector<std::string> out;
+        for (const CallRow& r : s.search.calls()) out.push_back(r.base);
+        std::sort(out.begin(), out.end());
+        return out;
+    };
+    EXPECT_EQ(CallSearchConfig{}.prefix_digit_listed_only, 1.0);
+    EXPECT_TRUE(run(CallSearchConfig{}, nullptr).empty());
     auto known = std::make_shared<KnownCalls>();
-    for (const char* call : {"D4C", "E7DX", "C6AGU"}) known->add(call);
-    Stage s(CallSearchConfig{}, known);
+    for (const char* call : {"D4C", "E7DX"}) known->add(call);
+    EXPECT_EQ(run(CallSearchConfig{}, known), (std::vector<std::string>{"D4C", "E7DX"}));
+    CallSearchConfig any;
+    any.prefix_digit_listed_only = 0.0;
+    EXPECT_EQ(run(any, nullptr), (std::vector<std::string>{"C6AGU", "D4C", "E7DX"}));
+    // The readings carry the mark.
+    const auto r = readings("DE C6AGU K");
+    const auto it = std::find_if(r.begin(), r.end(), [](const CallReading& x) { return x.base == "C6AGU"; });
+    ASSERT_NE(it, r.end());
+    EXPECT_TRUE(it->prefix_digit);
+}
+
+TEST(CallSearch, AWordOfCwWithACallsFormIsReportedFromAListOnly) {
+    // K9AY and N1MM (MASTER.SCP holds both; the FCC's file has them active), DJ5NN (listed): from a list only, always. FN5NN, a
+    // prefix glued to 5NN that no list holds, is never reported, and with no list neither is any of them.
+    const auto run = [](std::shared_ptr<const KnownCalls> known) {
+        Stage s(CallSearchConfig{}, std::move(known));
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "DE K9AY K9AY K DE N1MM N1MM K DE DJ5NN DJ5NN K TU FN5NN FN5NN K ", 0.0);
+        s.search.advance(30.0);
+        std::vector<std::string> out;
+        for (const CallRow& r : s.search.calls()) out.push_back(r.base);
+        std::sort(out.begin(), out.end());
+        return out;
+    };
+    EXPECT_TRUE(run(nullptr).empty());
+    auto known = std::make_shared<KnownCalls>();
+    for (const char* call : {"K9AY", "N1MM", "DJ5NN"}) known->add(call);
+    EXPECT_EQ(run(known), (std::vector<std::string>{"DJ5NN", "K9AY", "N1MM"}));
+    const auto r = readings("DE K9AY K");
+    const auto it = std::find_if(r.begin(), r.end(), [](const CallReading& x) { return x.base == "K9AY"; });
+    ASSERT_NE(it, r.end());
+    EXPECT_TRUE(it->cw_word);
+}
+
+TEST(CallSearch, AFullCallAfterAPrefixOfACallsFormIsReportedAsTheBase) {
+    // VP2V/K1ABC: once refused, now K1ABC's reading, shown with its slash once seen twice.
+    Stage s;
     s.born(1, 1000.0);
-    s.text(1, 1000.0, "DE D4C D4C K DE E7DX E7DX K DE C6AGU C6AGU K ", 0.0);
+    s.text(1, 1000.0, "CQ DE VP2V/K1ABC VP2V/K1ABC K ", 0.0);
     s.search.advance(30.0);
-    EXPECT_TRUE(s.search.calls().empty());
+    const CallRow* r = s.row("K1ABC");
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->call, "VP2V/K1ABC");
+    EXPECT_EQ(s.row("VP2V"), nullptr);
 }
 
 TEST(CallSearch, AWordNamedOnceIsNotEnoughByDefault) {

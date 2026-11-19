@@ -566,10 +566,11 @@ heuristics unless marked. Appendix: A.12.
 every symbol is read, a neighbor's too.
 
 **Readings.** A call's form (RR 19.68; sourced): an allocated prefix of one or two
-characters (three: 3DA0), one digit, one to four letters (US: one to three), four only
-listed; /P or a prefix keep the base call. 1 point: a whole word, or one glued to a keyword or
+characters (three: 3DA0), one digit, one to four letters (US: one to three); /P or a
+prefix keep the base call. Only listed: four letters, lone prefix digit (C6AGU), CW words
+(N1MM, R5NN). 1 point: a whole word, or one glued to a keyword or
 itself. 0.75: short words joined (K X 9 F), not periodic text. 0.5: a stray E, T, I
-before or E, T, K after. Refused: CW words of this form (G5RV; exact), locators (EL96UD). A
+before or E, T, K after. Refused: locators (EL96UD). A
 Viterbi cuts unsplit words (DEK8DXK8DXK8DXK) into keywords, calls and strays; a call there
 (1 point) needs a repeat (not after a keyword it joins), a DE before, or DE after and K; an
 unplaceable last E, I or K gives both readings, 0.5 each (A.12).
@@ -580,7 +581,7 @@ unplaceable last E, I or K gives both readings, 0.5 each (A.12).
 over the band within 30 min, readings chained by overlaps in time once wherever they lie,
 none where a better variant holds the call. Reported at 2 points, a named word no
 exception; listed, 1 if framed (signed, named or sent twice), else 2
-(a variant: 1 for a high-margin word, A.12). A call of E T I S H A N M U 5
+(a variant: 1 for a high-margin word). A call of E T I S H A N M U 5
 alone: 2 whole words, listed or not.
 
 **Variants.** A call within edit distance 1 of a better-supported call within 150 Hz, or a
@@ -4939,8 +4940,10 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: known-call list | text, one call a line; NUL bytes or no line with a call's form refused | `KnownCalls::read` | interface choice |
 | Callsign stage: short pairs | one letter after the digit, same prefix and digit, distance 2: held at over 2 times the points | `short_variant_ratio` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: locators | six characters, AA00AA with letters A–R, A–X: no reading | `is_locator` | heuristic |
-| Callsign stage: call forms | three characters before the digit only for 3D? (a half series) and 3XY, then three letters at most; US series (K, N, W, AA–AL): one to three letters, two after AA–AL and NA–NZ (AF#EMA, NF#EMA excepted), no 1x1 ending in X | `parse_form` (`three_character_prefix`, `us_form`) | derived: RR 19.68 and 19.68.1, Appendix 42; 47 CFR 97.3(a)(11) and the FCC's HD.dat of 2026-11-15; 3XY sourced (Guinea's DXpeditions) (A.12) |
+| Callsign stage: call forms | three characters before the digit only for 3D? (a half series) and 3XY, then three letters at most; US series (K, N, W, AA–AL): one to three letters, two after AA–AL and NA–NZ (AF#EMA, NF#EMA excepted), no 1x1 ending in X; a letter-digit prefix (C6, E7) and 1 to 4 letters, its digit the call's; around a slash both sides tried as the base, and when both can: the listed one, else the one that is not a location form (VP2V), else the left | `parse_form` (`three_character_prefix`, `us_form`, `location_form`), `CallSearch::add` | derived: RR 19.68 and 19.68.1, Appendix 42; 47 CFR 97.3(a)(11) and the FCC's HD.dat of 2026-11-15; 3XY sourced (Guinea's DXpeditions); the prefix-digit form measured (MASTER.SCP, the RBN); the slash's choice heuristic (A.12) |
 | Callsign stage: unusual forms | four letters after one digit: from a list only (0: as any call) | `unusual_listed_only` 1 | heuristic, CW Skimmer's practice in kind (an unusual pattern needs more), chosen by measurement (A.12) |
+| Callsign stage: prefix-digit forms | no digit but the prefix's (C6AGU): from a list only (0: as any call) | `prefix_digit_listed_only` 1 | heuristic, chosen by measurement (A.12) |
+| Callsign stage: words of CW | rigs, antennas, software (21, exact) and one or two letters before 5NN: from a list only, always | `is_cw_word`, `ParsedCall::cw_word` | heuristic (manta's exact matches); list only, not refused, since `call-form-2` (A.12) |
 | Callsign stage: joined periodic text | a joined reading whose text, run on through the next words, repeats with a period shorter than the call over max(n, 2p) characters is refused (0: read) | `joined_periodic` 1 | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a repeat after a joinable keyword | no evidence in the segmentation (1: a repeat as any) | `SegmentationCosts::ambiguous_repeat` 0 | heuristic, the ambiguous K's rule turned around; chosen on one case (W7Q) and measured (A.12) |
 | Callsign stage: signed | some reading had the role signed, at any place and time; never undone | `is_signed` (`CallRow::framed`) | heuristic (A.12) |
@@ -5471,11 +5474,25 @@ most 2 after AA to AL and NA to NZ, except AF#EMA and NF#EMA; and a 1x1 (K, N or
 of those series (W100AW) are as any other's. `allocated_pair` is the ITU's table: no Q; no pair of two digits; no 0
 first, 1 only in 1A; a digit and a letter except 4N; two letters except YZ; a letter and a digit by the table (A2-A9, C2-C9, D2-D9, E2-E7,
 H2-H4, H6-H9, J2-J8, L2-L9, P2-P9, S2, S3, S5-S9, T2-T8, V2-V8, Y2-Y9, Z2, Z3, Z8), with S0 and Z6, which amateurs use outside it. DE
-as a prefix is refused: it is the word DE glued on. Around a slash: `base/P`, /M, /MM, /AM, /QRP, /QRPP, /A, a digit, a prefix; or
-`prefix/base`.
+as a prefix is refused: it is the word DE glued on. A *prefix-digit* form (`ParsedCall::prefix_digit`, since `call-form-2`): an
+allocated pair of a letter and a digit outside the whole-letter series (C6, E7, J6, P3, D4, T8, V3, Z3, A6, S0), then 1 to 4 letters and
+nothing else, the prefix's digit standing for the call's (C6AGU, E7DX, J6M; 3 to 6 characters); with 4 letters it is unusual too. A
+digit-letter pair (3B, 9H) has no such form: its calls have a digit after it (3B8CF, 9H1A). Around a slash: `base/P`, /M, /MM, /AM, /QRP,
+/QRPP, /A, a digit, or a prefix-like word (`is_prefix_like`: a whole-letter series' letter, or at most 4 characters opening with an
+allocated pair); or `prefix/base`, the left side prefix-like. A prefix can itself be a base call (VP2V, VK9X, 3D2R). When both sides
+can be the base (a heuristic, the review's ruling in `call-form-2`), in order: (a) in the stage (`CallSearch::add`), the side the
+known-call list holds, when it holds exactly one (`ParsedCall::other_base` carries the other side); (b) the side that is not a
+*location form* (`location_form`: exactly four characters, an allocated pair, a digit and one letter, outside the United States'
+series: VP2V, VP2E, VK9X, 3D2R, CE0Y, PJ2T), when exactly one is; (c) the left. So VP2V/K1ABC and K1ABC/VP2V give K1ABC (one side only
+can be the base), W1AW/VP2V, VP2V/W1AW and VK9X/W1AW W1AW, K1A/W1AW K1A and N4A/K4SV N4A (a 1x1 or a US call of four characters, KH6A,
+is no location), and with K4SV alone listed, K4SV. Before `call-form-2` the left side was the base whenever it parsed, and VP2V/K1ABC
+was refused. `training/kz4ap_proto/calls_score.py`'s `base_call` takes rules (b) and (c), with no list.
 
-**Refused words.** `is_cw_word`, exact: {R, K, E, T, N, TU, UR, ES, EE, TT, ET, TE}5NN, G5RV, K3S, K4D, N1MM, K1EL, K9AY, TH7DX, TH6DX, TH5DX,
-TH3JR, TH2MK, HF5B, HF6V, HF9V, HF2V, FT8DX, FT5DX, FT3DX, W2DU, W8JK, W3DZZ. `only_tiny_pieces`: every character in E T I S H A N M U 5:
+**Words of CW.** `is_cw_word`: exact, G5RV, K3S, K4D, N1MM, K1EL, K9AY, TH7DX, TH6DX, TH5DX, TH3JR, TH2MK, HF5B, HF6V, HF9V, HF2V,
+FT8DX, FT5DX, FT3DX, W2DU, W8JK, W3DZZ; and any base of one or two letters before 5NN (R5NN, TU5NN, FN5NN, DJ5NN, W5NN), which
+takes in the exact list it replaces, {R, K, E, T, N, TU, UR, ES, EE, TT, ET, TE}5NN. Since `call-form-2` such a word is not refused:
+`parse_call` marks it (`ParsedCall::cw_word`), every reading rule treats it as a call, and the stage drops its readings before they
+reach a candidate unless the list holds it. A joined reading (rule 4 below) neither starts at one nor runs through one. `only_tiny_pieces`: every character in E T I S H A N M U 5:
 read only as a whole word. `is_locator`: a word of six characters, two letters A to R, two digits, two letters A to X (a Maidenhead
 locator, FN31PR), gives no reading at all, whole, glued, stripped or joined.
 
@@ -5485,8 +5502,6 @@ below 1 with their margins' variant: A.8e, "Margins"). An occurrence keeps the b
 margin is read once, when the word is read (`settle_s` after it), and a correction that changes only margins reads nothing again, so a
 margin that falls later is not seen (W3OA: 484 of 12 639 falls from 8 nats or more to below 8 nats come more than 11 s after the symbol;
 review 10). Only the variant `known_margin_nats` reads it.
-
-**No form.** A call with no digit after a letter-digit prefix (D4C, E7DX, C6AGU, P3F, T6A, J6M) does not parse, and so is never read, with a list or without. About 90 calls of MASTER.SCP have this form, among them busy contest and expedition stations (review 5; on the backlog).
 
 **A neighbor's text.** By default (`skip_neighbors_text` 0) every symbol is read, `heard_from` or not. With the variant 1, in `read_track`, a *stretch* (consecutive symbols with a
 `heard_from`, no word space among them; A.6, "A neighbor's text") is skipped when every symbol of it has a twin in the named
@@ -5523,10 +5538,12 @@ track. A rereading after a correction is triggered by a change of text only, not
    - a stray character: G = −`stray_nats` (2.30);
    - a new call C of m characters (`parse_call`, not tiny, not a shorter string twice or more, 3 to 12 characters):
      G = Σ ν(c) − m ln 36 + φ(m) + ln π(m) − `call_nats` (2.4), φ(m) = −ln of the share of random strings of m letters and digits that
-     parse (`call_form_nats`: 3.01, 1.63, 1.68, 1.98, 2.40, 3.66 and 5.05 nats for m = 3 to 9, derived, remade for the grammar of
-   `call-form-1`; 10 to 12 reuse 9's, a heuristic), π(m) the share of calls of m
-     characters (`call_length_nats`: 0.63%, 20.0%, 41.1%, 37.3%, 0.65% for 3 to 7, 0.07% each for 8 to 12): K8DX gains −0.68 nats,
-     NA9M −3.45;
+     parse (`call_form_nats`: 2.29, 1.45, 1.54, 1.85, 2.40, 3.66 and 5.05 nats for m = 3 to 9, derived, remade for the grammar of
+   `call-form-2`, which takes the prefix-digit forms and the words of CW; 10 to 12 reuse 9's, a heuristic; φ counts the forms reported
+   from a list only too, a modeling choice that costs every regular call 0.72, 0.18, 0.14 and 0.13 nats at 3 to 6 characters against
+   the table of `call-form-1`, with no effect on the three replay sets), π(m) the share of calls of m
+     characters (`call_length_nats`: 0.63%, 20.0%, 41.1%, 37.3%, 0.65% for 3 to 7, 0.07% each for 8 to 12): K8DX gains −0.86 nats,
+     NA9M −3.63;
    - the call in the cache again: G = Σ ν(c) − `repeat_nats` (1.61): K8DX 14.4 nats;
    - after a DE, a call gains `de_before_nats` (2.77) more; after a call, a DE gains `de_after_nats` (1.0), a K or KN `sign_off_nats`
      (1.5).
@@ -5568,7 +5585,7 @@ counting each chain of occurrences connected by overlaps in time once, at the la
 any counted o. A candidate's first time is its earliest reading, which a correction can move back.
 
 **Report test** (a named word no exception: CW Skimmer's practice, provenance below; a special form, two or more digits as in
-W100AW, from a list only, and with `unusual_listed_only` 1, the default since `call-form-1`, an unusual one, four letters after one digit as in VK3FABC: a reading of either form off the list is dropped before it reaches a candidate), on the pooled points when `pool_places` is 1 (the default: the same test then reports and withdraws, so a row does not come and go; review 15), else on the local points; in order. A tiny call: `tiny_points`. Any occurrence that is a whole or glued word with the role *named*: `points_named` (2 by default, so no exception; 1 a variant), with a list for a listed call only (`named_listed_only`). On a list: `points_known` if framed, or, with `known_margin_nats` above 0 (a variant; 0 by default), if an occurrence of 1 point has a margin of at least that (*sure*); else `points_known_bare`. Off it: `points_framed` if framed, else `points_bare`.
+W100AW, and a word of CW (N1MM, DJ5NN), from a list only; with `unusual_listed_only` 1, the default since `call-form-1`, an unusual one, four letters after one digit as in VK3FABC; and with `prefix_digit_listed_only` 1, the default since `call-form-2`, a prefix-digit one (C6AGU): a reading of any of these forms off the list is dropped before it reaches a candidate), on the pooled points when `pool_places` is 1 (the default: the same test then reports and withdraws, so a row does not come and go; review 15), else on the local points; in order. A tiny call: `tiny_points`. Any occurrence that is a whole or glued word with the role *named*: `points_named` (2 by default, so no exception; 1 a variant), with a list for a listed call only (`named_listed_only`). On a list: `points_known` if framed, or, with `known_margin_nats` above 0 (a variant; 0 by default), if an occurrence of 1 point has a margin of at least that (*sure*); else `points_known_bare`. Off it: `points_framed` if framed, else `points_bare`.
 
 **Arbitration.** Against every other candidate with a reading within `variant_hz` of this one and whose occurrences span to within `variant_s` of the judgment time on either side (now, or a loser's last reading, below), by base-call edit distance d,
 the limit being 2 for a shorter call of 4 characters or more, else 1, and 2 also for a *short pair* (`short_variant_ratio` not 0): one of the two has one letter after its last digit and both have the same characters up to their last digit (K1T and K1BX); a call that is the start of the other, or starts with it, counts as d = 1 at any distance (`prefix_held`). A rival beats a call if both are on or off the list and its points
@@ -5594,7 +5611,7 @@ day file only the spots of given skimmers, a continent, a UTC window, a span and
 `--khz`, `--tx-mode`); `truth` reads a run and a recording's labels and
 reports precision and recall, and how many calls found are within 100 Hz of their station. Its reader takes ADIF, telnet spot lines, CSV with a
 header (`dx` ahead of `callsign`, as in the Reverse Beacon Network's files) and, failing those, the first word of a call's form on each line,
-and prints which it used: CW Skimmer's export format is not known here. Calls compare by base call. A telnet spot's word is kept as it stands where the reader's grammar has no form for it (D4C, LZ1SPACE): a spot is the spotter's test, and dropping it would flatter this decoder.
+and prints which it used: CW Skimmer's export format is not known here. Calls compare by base call. A telnet spot's word is kept as it stands where the reader's grammar has no form for it (D4C, LZ1SPACE; the Python reader has no prefix-digit form): a spot is the spotter's test, and dropping it would flatter this decoder.
 
 **Signed (`is_signed`).** A row is *signed* when `CallRow::framed` is true: some reading of the call, at any place and time since its
 first, had the role *signed* (`Role::Sender`, the rule above), whether or not a variant held the call where it was read; once true it
@@ -5733,7 +5750,7 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   contest +1 true); a transmission read as two near calls counted for the better reading only (`shadow_alternatives`: 200 to 199
   confirmed, misreadings 54 to 57, OH2J false on H2; it did take K0HBN off real30).
 
-**Heuristics not tuned:** `stripped_points`, the keyword sets, the refused words and characters.
+**Heuristics not tuned:** `stripped_points`, the keyword sets, the words of CW (listed only) and the refused characters.
 
 **Not taken:** `near_factor` (a call's near variants adding to its points: 217 true and 3 to 11 false on the contest, but 24 to 76 rows on real 40 m); a call before UP at 1 point (does not bring E51MWA back when the word is lost); CW Skimmer's 1 repetition for a listed call on real MASTER.SCP (1 true for 3 false on real 40 m; review 5). In `call-2`, on the two tuned 2017 recordings without a list (int-1's rules 97 / 49, `call-2`'s 97 / 45): a word named once to pass only at a margin of 0.05, 0.1, 0.2, 0.5 or 1 nat (0.5 nat: 95 / 36, and on the contest 216 / 4 against 220 / 6; 0.05 nat: the contest 219 / 5, but W4BOH, confirmed, lost on W3OA); a whole word of margin under 0.2, 0.5, 1 or 2 nats scoring 0.5 or 0.75 point (0.5 nat at 0.5 point, without the short pairs: 92 / 29, the contest 206 / 3); no word named alone at all (85 / 22, the contest 210 / 2; taken in `rob-1` with pooled points, above); a call named once held while a reported call one edit from it stands anywhere in the band (96 / 42: one confirmed call fewer, three misreadings fewer). Each takes confirmed calls with the misreadings: the margin of a correct named word is often under 0.5 nat too (W4BOH 0.00, N1XI 0.22), and wrong ones can be sure (K8VC, W6UM).
 
@@ -5831,6 +5848,32 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   before and 1.28 ms after (fewer candidates), against the bar's 40 ms and the goal's 8 ms.
   The decoders are untouched: on live2.wav every decoded symbol's event is the same byte for byte with and without the change.
 
+- Call forms (`call-form-2`, 2026-11-19), the real calls `call-form-1`'s review found refused. *Sources* (read 2026-11-19): RR 19.68
+  (ITU's copy, fxm-art19-sec3.pdf) asks two characters and a single digit, then the group: a call whose only digit is the second
+  character of its prefix (C6AGU) is outside its letter, so the form is *measured*, not derived: MASTER.SCP of 2026-11-18 holds 92
+  (C6 11, E7 12, D4 9, P3 9, C4 8, E2 7; none with four letters), and of the base calls three or more RBN skimmers spotted, 37 of 4 423
+  (0.84%) on 2026-11-17, 55 of 4 901 on 2026-11-18 and 8 of 3 513 on 2017-08-21 have it, real by their spots (C8K by 136 skimmers in
+  2 282 spots on 2026-11-18, E6DX by 41, T2DE by 19, T7LW by 11, A6BB by 7) though MASTER.SCP holds only 1, 4 and 0 of them. The
+  slash rule is a heuristic (the review's ruling): the RBN's three days, MASTER.SCP and the FCC's file change no base against `main`
+  (a first rule, the longer side, made N4A/K4SV K4SV, which the RBN spotted as N4A/K4SV 10 times on 2017-08-21). *Grammar check* (every call of
+  each list through `main`'s `parse_call` and this one's; refused before and after): the FCC's calls ever issued (1 607 237) 9 to 1
+  (WB4MZ0), the 8 gained the words of CW K1EL, K5NN, K9AY, N1MM, N5NN, W2DU, W3DZZ, W8JK, now listed only; active (822 120) 7 to 0;
+  MASTER.SCP (50 028 lines) 107 to 13, 92 prefix-digit calls and N1MM, K9AY gained; the RBN's spotted calls 259 to 65 (8 976,
+  2026-11-17), 335 to 55 (10 179, 2026-11-18), 98 to 40 (6 600, 2017-08-21); no call refused that was not before. *Measured*
+  (exact replays of the logged events, no list, RBN judge with MASTER.SCP and HD.dat; tables in `build/cf-2/judge/`, git-ignored),
+  window-confirmed / spotted that day / misread / unknown, never-issued US calls in brackets: 2026-11-17 170 / 66 / 85 / 90 (13) to
+  170 / 66 / 84 / 90 (13); 2026-11-18 578 / 180 / 305 / 188 (99) to 578 / 180 / 304 / 186 (99); 2017 200 / 107 / 56 / 53 (31),
+  unchanged. Removed, all one or two letters before 5NN and junk by their text: NN5NN on two recordings (5 NN5NN NE; NALD 5 NN5NN AR),
+  FN5NN (GAAGN FN5NN NY), BK5NN (MOBK BK5NN 73). Gained: none. The prefix-digit form as any call (`prefix_digit_listed_only` 0,
+  measured with the form gains of `call-form-1`) gained no confirmed call and 35 calls on 2026-11-17 (misread 85 to 115, unknown 90 to
+  95: E5E, T5E, E4E, A9E, D4Y; D2OWJ for KD2OWJ) and 12 on 2017 (misread 56 to 61, unknown 53 to 60: A8DT, Y4EL, S5N), so it is
+  listed only. With MASTER.SCP as the list, against `main` with it: the same removals, and gained D4A (spotted that day; D4A ALEX 388N,
+  a CWT exchange), E2E (spotted that day; one whole word, E2E JIM 2216, and joined junk), E2M (spotted that day, but only joined
+  pieces, E 2M ETT) and E7A (a fragment of KE7AEO, K E 7AE O); of the listed words of CW only NR5NN was read, once (1 point, not
+  reported), and K5NN and N5NN, read 6 and 13 times, are on no list. The stage's CPU (`kz4ap-calls`, the stage's wall time over channel-seconds), the two builds side by side and
+  alone on the densest recording, the 2026-11-18 CWT on 20 m (566 219 channel-seconds): 1.31 ms per channel-second before, 1.29 after;
+  0.001 to 0.010 ms on the seven 2026-11-17 and four 2017 recordings either way; against the bar's 40 ms and the goal's 8 ms.
+
 - A call read only once, anywhere in the band, is not reported without a list: that is the rule (since `rob-1` named or not; before it, named words passed alone). On W3OA, of the 13 calls CW Skimmer lists that the RBN confirms and `main` (d44c7d6) did not, 5 were read as one transmission (K5LN after a fragment 5LN, N4KGL and NZ9Z signing, VE3KP bare, KQ2M on two tracks at once), W0OPW twice as joined letters (1.5 points), K9BGL glued to itself (two readings since `rob-1`), and 5 were never read whole (weak or garbled text: N0AIS as N0AI and 0AIS); CW Skimmer read both repeats where our decoder read one. Reading a fragment beside a whole call (5LN K5LN) as a repeat was tried and dropped (A.12, `rob-1`). On the generated contest it is not the largest loss of callers: of the 78 lost before the rules below (review 5), 45 were never decoded, every one overlapped by a keying station within 150 Hz over at least 30% of its bursts, and 33 were read: 28 once, 1 at 1.5 points, 4 refused before the evidence (SM5NU; N9AZ, EA7UPZ, KB8AKK glued inside a word). The generator's callers key at random over the runner and each other, where a real caller waits his turn, so this overlap is likely overstated (conjecture).
 - Since `rob-1` a word named once does not pass without a list: a caller whose own signal is never read loses his row (the contest 221 to 210 true calls; on the four 2017 recordings 18 confirmed calls and 36 the RBN spotted elsewhere that day, nearly all real callers). With `points_named` 1, as before, a misread call before 5NN was listed: most of the false calls the rules gained on the contest (6 of 7), and about half the misreadings on the 2017 recordings without a list. A row reached by naming shows the namer's frequency. With a list an unlisted caller named once is lost, as is one not on the list at all (the contest with a list of none of its callers: 206 true calls against 216).
 - Withdrawal judged at a loser's last reading (stage-aging): a misreading reported early stays when its true call comes more than `window_s` after its last reading, and a reported call that survives a defeat once cannot leave later, since a rival's support at that time only falls as its old occurrences age out.
@@ -5855,15 +5898,22 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   every call issued; other administrations' suffix rules (the UK's, Spain's) are not, so a string of three letters after its digit that
   breaks another country's rules (GA5NNO) passes. A run of dots read as a whole word (SH5SHI, three times on 20 m, 2026-11-17) has a real call's form, and real calls of
   dots alone exist (EE5E and SE5S, listed and spotted), so no form rule refuses it. A joined phase at the call's own period (EN5X
-  in N5 X E N5 X E, FK0X in K 0 X F K 0 X) is not refused. A call and 5NN glued (FN5NN, NN5NN) passes when the longer string that
-  held it back is refused; NN5NN is an active license. A call that repeats within itself (9A9A, 9K9K, 4K4K, 3Z3Z; 11 in
-  MASTER.SCP) is refused when read joined (9 A9A) by `joined_periodic`, though not as a whole word. `is_cw_word` refuses K5NN and N5NN, active licenses too. Without a list,
+  in N5 X E N5 X E, FK0X in K 0 X F K 0 X) is not refused. A call that repeats within itself (9A9A, 9K9K, 4K4K, 3Z3Z; 11 in
+  MASTER.SCP) is refused when read joined (9 A9A) by `joined_periodic`, though not as a whole word. Without a list,
   a real call of four letters after its digit (Australia's foundation calls, VK3FABC; Japan's specials, 8N3ACAF) is not reported.
+- Call forms (`call-form-2`), reported from a list only, so lost without one: a call whose only digit is its prefix's (C6AGU, E7DX; the
+  RBN spots many that MASTER.SCP lacks, C8K, E6DX, T2DE, A6BB, T7LW), the active US licenses that are words of CW (K1EL, K5NN, K9AY,
+  N1MM, N5NN, W2DU, W8JK; MASTER.SCP holds K9AY and N1MM), and every call of one or two letters before 5NN (the FCC's file holds 18
+  active: AA5NN, KE5NN, NN5NN, W5NN and others; MASTER.SCP 5: DJ5NN, DM5NN, NA5NN, NR5NN, W5NN). With a list, a fragment of a longer
+  call that is a listed prefix-digit call is reported (E7A, from K E 7AE O, KE7AEO, on 40 m, 2026-11-17). On a slash with a call on
+  both sides and no list to tell, the left is taken unless it alone is a location form, so a call of a non-US series with one letter
+  after its digit (DL1A, 9A1A) beside another call is taken for a location (DL1A/W1AW gives W1AW), and a US call of four characters
+  or a 1x1 written first (KH6A/W1AW, K1A/W1AW) is taken as the base.
   The derived rules hold as of their sources' dates: a new US call system or a new half series needs the code changed.
 - Who sent a call is known only from the words around it: a DX naming a caller twice with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
   is only as good as the decoder's reading of those words.
 - A misreading read twice, with its true call read less, is reported: on real 40 m IK0S beside IK0HBN (too many edits apart for the arbitration); IK6QOP, read exactly once, shows as K6QOP and IK6QO, the stray-letter reading of a word giving half a point to the shorter call. The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.
-- A tiny call needs 2 whole words with a list or without (a list does not lower that), and glued, stripped or joined tiny readings do not count. The refused words lose the few real calls of those forms (K5NN, K9AY), and a call with no form (D4C) is not read: a known-call list rescues none of these.
+- A tiny call needs 2 whole words with a list or without (a list does not lower that), and glued, stripped or joined tiny readings do not count.
 - The text reads a station's latest place: a station that moved shows there only.
 - A correction that reaches what has been read adds its readings and does not take back the old ones, so a misreading it replaces can stay beside it, unless the arbitration rules on them. Beyond `history_s` it is not read.
 - A row can hang on one transient reading: K6QOP's second point on real 40 m is a word the decoder corrects away 10.30 s after its end, and `settle_s` from 10.5 to 14 s loses it. So what is listed near such a word depends on `settle_s` to the second (measured, review 5), though no longer on the app's pace.

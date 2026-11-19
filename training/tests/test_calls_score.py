@@ -18,6 +18,21 @@ def test_base_call(word, base):
     assert base_call(word) == base
 
 
+@pytest.mark.parametrize("word, base", [
+    # Either side of a slash can be the base, as in the engine (call-form-2): the side that is not a location form when exactly
+    # one is, else the left.
+    ("VP2V/K1ABC", "K1ABC"), ("K1ABC/VP2V", "K1ABC"), ("W1AW/VP2V", "W1AW"), ("VP2V/W1AW", "W1AW"), ("VK9X/W1AW", "W1AW"),
+    ("W1AW/VK9X", "W1AW"), ("K1AB/VP2E", "K1AB"), ("W1AW/3D2R", "W1AW"), ("CE0Y/K1A", "K1A"), ("K1A/W1AW", "K1A"),
+    ("N4A/K4SV", "N4A"), ("KH6A/W1AW", "KH6A"), ("VP2V/VK9X", "VP2V"),
+    ("VE3/K1ABC", "K1ABC"), ("KH6/K1ABC", "K1ABC"), ("K1ABC/KH6", "K1ABC"), ("DL1ABC/P", "DL1ABC"), ("K1ABC/MM", "K1ABC"),
+    ("K1ABC/QRP", "K1ABC"), ("K1ABC/4", "K1ABC"), ("4U1ITU/HB9", "4U1ITU"), ("K1ABC/VE3XYZ", None),
+    # The reader has no prefix-digit form, unlike the engine: a spot of one is kept as it stands (rbn_judge).
+    ("D4C", None), ("C6AGU", None),
+])
+def test_base_call_around_a_slash(word, base):
+    assert base_call(word) == base
+
+
 def test_kz4ap_skimmer_csv():
     text = ("call,base,freq_hz,freq_khz,first_s,reported_s,last_s,count,points,known,heard,framed\n"
             "K1ABC/P,K1ABC,-1500.0,,1.0,2.0,3.0,4,3.0,0,1,1\nW2XY,W2XY,200.0,,1.0,2.0,3.0,2,2.0,0,1,0\n")
