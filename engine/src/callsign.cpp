@@ -354,9 +354,17 @@ std::vector<Segment> segment_word(std::string_view w, const SegmentationCosts& c
     std::vector<std::vector<Piece>> calls_at(n);
     std::vector<std::string> texts;
     std::vector<std::vector<std::size_t>> starts;  // each distinct call's places
+    std::vector<std::vector<std::size_t>> keywords_at(n);  // the keywords (their index) that start at each place
     for (std::size_t i = 0; i < n; ++i) {
+        for (std::size_t k = 0; k < kSegmentKeywords.size(); ++k) {
+            const std::string_view t = kSegmentKeywords[k].text;
+            if (i + t.size() <= n && w.compare(i, t.size(), t) == 0) keywords_at[i].push_back(k);
+        }
+        bool digit = false;  // every call has a digit: parse_call need not see a string without one
         for (std::size_t m = 3; m <= 12 && i + m <= n; ++m) {
             const std::string_view s = w.substr(i, m);
+            digit = digit || std::any_of(s.begin(), s.end(), is_digit);
+            if (!digit) continue;
             const auto p = parse_call(s);
             if (!p || only_tiny_pieces(p->base) || periodic(s)) continue;
             std::size_t id = 0;
@@ -412,9 +420,9 @@ std::vector<Segment> segment_word(std::string_view w, const SegmentationCosts& c
                 // A stray character; it ends a run of repeats (the cache empties), so that copies apart in garbled text do not count.
                 relax(at(i + 1, 0, 0), s - costs.stray_nats, {from, Segment::Kind::Stray, 1, -costs.stray_nats, 0.0, 0.0});
                 // A keyword.
-                for (const SegmentKeyword& kw : kSegmentKeywords) {
+                for (const std::size_t index : keywords_at[i]) {
+                    const SegmentKeyword& kw = kSegmentKeywords[index];
                     const std::string_view k = kw.text;
-                    if (i + k.size() > n || w.compare(i, k.size(), k) != 0) continue;
                     const double own = noise(i, k.size()) - kw.nats;
                     double to_previous = 0.0;
                     if (last == 2 && k == "DE") to_previous = costs.de_after_nats;
