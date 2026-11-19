@@ -337,7 +337,9 @@ struct CallSearchConfig {
     // the seven 2026-11-17 recordings all 8 such calls the stage reported were false (EE4EEEE, TE7TTTD, GA5NNON).
     double unusual_listed_only = 1.0;
     // A call whose only digit is its prefix's (ParsedCall::prefix_digit: C6AGU, E7DX) is reported only from a list, when not 0.
-    // A word of CW with a call's form (ParsedCall::cw_word: N1MM, K9AY, DJ5NN) is always, and a special form too.
+    // A word of CW with a call's form (ParsedCall::cw_word: N1MM, K9AY, DJ5NN) is always, and a special form too. Heuristic, chosen
+    // by measurement (call-form-2; appendix A.12): as any call, the form added only junk on the three replay sets (E5E, T5E, A9E;
+    // 2026-11-17 misread 85 to 115, no confirmed call gained), though the RBN spots real ones (C8K, E6DX, T2DE).
     double prefix_digit_listed_only = 1.0;
     // ReadOptions::joined_periodic; on since call-form-1.
     double joined_periodic = 1.0;
