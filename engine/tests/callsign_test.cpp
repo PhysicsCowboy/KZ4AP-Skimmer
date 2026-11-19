@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 using namespace kz4ap;
@@ -145,21 +146,57 @@ TEST(CallGrammar, EitherSideOfASlashCanBeTheBaseCall) {
     // A prefix with a call's form (VP2V, VK9X) before the call: the call is the base (callsign.cpp's parse_form once took the
     // left side whenever it parsed, and then refused VP2V/K1ABC).
     EXPECT_EQ(parse_call("VP2V/K1ABC")->base, "K1ABC");
-    EXPECT_EQ(parse_call("VK9X/W1AW")->base, "W1AW");
     EXPECT_EQ(parse_call("VP2V/K1ABC")->full, "VP2V/K1ABC");
-    EXPECT_EQ(parse_call("K1ABC/VP2V")->base, "K1ABC");
     EXPECT_EQ(parse_call("VP2E/DL1ABC")->base, "DL1ABC");
-    // Both sides of a call's form and of one length: the right one, the prefix written first (CEPT's and the ITU's order).
-    EXPECT_EQ(parse_call("VP2V/W1AW")->base, "W1AW");
-    EXPECT_EQ(parse_call("W1AW/VP2V")->base, "VP2V");
+    EXPECT_EQ(parse_call("K1ABC/VP2V")->base, "K1ABC");
+    // Both sides can be the base: the one that is not a location form (two characters, a digit, one letter, not a US series),
+    // when exactly one is; else the left, as before (a 1x1 signed with its operator's call, N4A/K4SV, is N4A).
+    for (const auto& [word, base, other] : std::vector<std::tuple<std::string, std::string, std::string>>{
+             {"W1AW/VP2V", "W1AW", "VP2V"}, {"VP2V/W1AW", "W1AW", "VP2V"}, {"VK9X/W1AW", "W1AW", "VK9X"}, {"W1AW/VK9X", "W1AW", "VK9X"},
+             {"K1AB/VP2E", "K1AB", "VP2E"}, {"W1AW/3D2R", "W1AW", "3D2R"}, {"CE0Y/K1A", "K1A", "CE0Y"}, {"K1A/W1AW", "K1A", "W1AW"},
+             {"N4A/K4SV", "N4A", "K4SV"}, {"KH6A/W1AW", "KH6A", "W1AW"}, {"VP2V/VK9X", "VP2V", "VK9X"},
+             {"DL1A/W1AW", "W1AW", "DL1A"}}) {  // the last a limitation: a call of the location form is taken for one
+        const auto p = parse_call(word);
+        ASSERT_TRUE(p.has_value()) << word;
+        EXPECT_EQ(p->base, base) << word;
+        EXPECT_EQ(p->other_base, other) << word;
+    }
+    EXPECT_TRUE(parse_call("VP2V/K1ABC")->other_base.empty());
     // As before.
-    EXPECT_EQ(parse_call("DL/K1ABC")->base, "K1ABC");
-    EXPECT_EQ(parse_call("K1ABC/P")->base, "K1ABC");
-    EXPECT_EQ(parse_call("K1ABC/4")->base, "K1ABC");
-    EXPECT_EQ(parse_call("W1/DL1ABC")->base, "DL1ABC");
+    for (const auto& [word, base] : std::vector<std::pair<std::string, std::string>>{
+             {"DL/K1ABC", "K1ABC"}, {"K1ABC/P", "K1ABC"}, {"K1ABC/4", "K1ABC"}, {"W1/DL1ABC", "DL1ABC"}, {"VE3/K1ABC", "K1ABC"},
+             {"KH6/K1ABC", "K1ABC"}, {"K1ABC/KH6", "K1ABC"}, {"DL1ABC/P", "DL1ABC"}, {"K1ABC/MM", "K1ABC"}, {"K1ABC/QRP", "K1ABC"},
+             {"4U1ITU/HB9", "4U1ITU"}}) {
+        const auto p = parse_call(word);
+        ASSERT_TRUE(p.has_value()) << word;
+        EXPECT_EQ(p->base, base) << word;
+    }
     EXPECT_FALSE(is_call("K1ABC/VE3XYZ"));  // two calls: neither side is a prefix
     EXPECT_FALSE(is_call("VP2V/K1ABC/P"));
     EXPECT_FALSE(is_call("VP2V/K9STPL"));
+}
+
+TEST(CallSearch, ACallOnBothSidesOfASlashIsTheListedOne) {
+    // N4A/K4SV: N4A by the grammar; with K4SV listed and N4A not, K4SV; with both or neither listed, N4A.
+    const auto run = [](std::vector<std::string> listed) {
+        std::shared_ptr<KnownCalls> known;
+        if (!listed.empty()) {
+            known = std::make_shared<KnownCalls>();
+            for (const std::string& c : listed) known->add(c);
+        }
+        Stage s(CallSearchConfig{}, known);
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "CQ DE N4A/K4SV N4A/K4SV K ", 0.0);
+        s.search.advance(30.0);
+        std::vector<std::string> out;
+        for (const CallRow& r : s.search.calls()) out.push_back(r.base);
+        return out;
+    };
+    EXPECT_EQ(run({}), std::vector<std::string>{"N4A"});
+    EXPECT_EQ(run({"K4SV"}), std::vector<std::string>{"K4SV"});
+    EXPECT_EQ(run({"N4A"}), std::vector<std::string>{"N4A"});
+    EXPECT_EQ(run({"N4A", "K4SV"}), std::vector<std::string>{"N4A"});
+    EXPECT_EQ(run({"W1AW"}), std::vector<std::string>{"N4A"});
 }
 
 TEST(CallGrammar, SpecialFormsAreMarked) {

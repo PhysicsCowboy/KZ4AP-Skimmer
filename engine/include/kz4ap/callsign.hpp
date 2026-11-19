@@ -45,6 +45,8 @@ struct ParsedCall {
     bool prefix_digit = false;
     // A word of CW that has a call's form (is_cw_word: N1MM, K9AY, R5NN, DJ5NN): spotted from a list only, always.
     bool cw_word = false;
+    // Around a slash, the other side when it too could be the base (K1A/W1AW: W1AW): the stage takes it when it alone is listed.
+    std::string other_base;
 };
 
 // A call, or nothing. The form is the ITU's for amateur stations (Radio Regulations 19.68): an allocated prefix of one or two
@@ -52,8 +54,8 @@ struct ParsedCall {
 // letters; or a prefix of a letter and a digit (outside the whole-letter series) directly followed by one to four letters, the
 // prefix's digit being the call's (prefix_digit). A call of the United States' series (K, N, W, AA to AL) has the FCC's forms: one
 // to three letters after the digit, two at most after AA to AL and NA to NZ (the FEMA stations AF#EMA and NF#EMA excepted), and a
-// 1x1 never ends in X. A slash adds /P, /M, /MM, /AM, /QRP, a digit or a prefix on either side; when both sides are base calls
-// (VP2V/K1ABC, K1ABC/VP2V), the longer is the base, and on a tie the right one. Words of CW that have this form are marked
+// 1x1 never ends in X. A slash adds /P, /M, /MM, /AM, /QRP, a digit or a prefix on either side; when both sides can be the base
+// (W1AW/VP2V, K1A/W1AW), the side that is not a location form (VP2V, VK9X) when exactly one is, else the left. Words of CW that have this form are marked
 // (is_cw_word), not refused. Upper case. docs/signal-processing.md, A.12, "Form", has the sources.
 std::optional<ParsedCall> parse_call(std::string_view word);
 // The form alone, without the mark of words of CW.
@@ -113,6 +115,7 @@ struct CallReading {
     bool unusual = false;  // ParsedCall::unusual
     bool prefix_digit = false;  // ParsedCall::prefix_digit
     bool cw_word = false;  // ParsedCall::cw_word
+    std::string other_base;  // ParsedCall::other_base
     Reading reading = Reading::Whole;
     Role role = Role::Unknown;
     bool doubled = false;  // the same word is right before or after it

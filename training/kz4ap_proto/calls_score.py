@@ -76,9 +76,24 @@ def base_call(word: str) -> str | None:
     if len(parts) != 2 or not parts[0] or not parts[1]:
         return None
     left, right = parts
-    if _is_base(left):
-        return left if right in _MODIFIERS or len(right) <= 4 else None
-    return right if _is_base(right) and len(left) <= 4 else None
+    # As the engine's parse_form (call-form-2): either side may be the base; when both can, the one that is not a location form
+    # (VP2V, VK9X, 3D2R) when exactly one is, else the left (W1AW/VP2V and VP2V/W1AW -> W1AW, K1A/W1AW -> K1A, N4A/K4SV -> N4A).
+    modifier = right in _MODIFIERS or (len(right) == 1 and right.isdigit())
+    left_base = _is_base(left) and (modifier or len(right) <= 4)
+    right_base = not modifier and _is_base(right) and len(left) <= 4
+    if left_base and right_base:
+        return right if _location_form(left) and not _location_form(right) else left
+    if left_base:
+        return left
+    return right if right_base else None
+
+
+def _location_form(word: str) -> bool:
+    """Two characters of an allocated pair, a digit and one letter, outside the United States' series: VP2V, VK9X, 3D2R."""
+    if len(word) != 4 or not (word[2].isdigit() and word[3].isalpha()) or not _prefix_ok(word[:2]):
+        return False
+    us = word[0] in "KNW" and word[1].isalpha() or word[0] == "A" and "A" <= word[1] <= "L"
+    return not us
 
 
 def _is_base(word: str) -> bool:

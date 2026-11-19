@@ -111,6 +111,12 @@ bool parse_base(std::string_view s, BaseForm& form) {
     return false;
 }
 
+// A location written as a call's form beside a call: two characters of an allocated pair, a digit and one letter, outside the
+// United States' series (VP2V, VP2E, VK9X, 3D2R, CE0Y, PJ2T). A US call of that length (W1AW, KH6A) and a 1x1 (K1A, N4A) are calls.
+bool location_form(std::string_view s) {
+    return s.size() == 4 && allocated_pair(s[0], s[1]) && is_digit(s[2]) && is_letter(s[3]) && !us_prefix(s.substr(0, 2));
+}
+
 bool is_prefix_like(std::string_view s) {
     // DL, VP9, W1, 3D2: a prefix with or without its digit.
     if (s.empty() || s.size() > 4) return false;
@@ -347,13 +353,21 @@ std::optional<ParsedCall> parse_form(std::string_view word) {
     const std::string_view left = word.substr(0, slash), right = word.substr(slash + 1);
     if (left.empty() || right.empty()) return std::nullopt;
     // Either side may be the base call: the left one before a modifier or a prefix (K1ABC/P, K1ABC/VE3, K1ABC/VP2V), the right one
-    // after a prefix (DL/K1ABC, VP2V/K1ABC). A prefix can itself have a call's form (VP2V, VK9X, 3D2R); when both sides can be the
-    // base, the longer is, and on a tie the right one, the prefix written before the call (CEPT's and the ITU's order).
+    // after a prefix (DL/K1ABC, VP2V/K1ABC). A prefix can itself have a call's form (VP2V, VK9X, 3D2R). When both sides can be the
+    // base: the side that is not a location form (location_form: VP2V, VK9X, 3D2R) when exactly one is, else the left (W1AW/VP2V and
+    // VK9X/W1AW give W1AW, K1A/W1AW and N4A/K4SV the left); the other side is kept (ParsedCall::other_base) for the stage, which takes
+    // it when it alone is on the known-call list. A heuristic (call-form-2's review).
     BaseForm left_form, right_form;
     const bool modifier = any_of_word(right, {"P", "M", "MM", "AM", "QRP", "QRPP", "A"}) || (right.size() == 1 && is_digit(right[0]));
     const bool left_base = parse_base(left, left_form) && (modifier || is_prefix_like(right));
     const bool right_base = !modifier && is_prefix_like(left) && parse_base(right, right_form);
-    if (left_base && (!right_base || left.size() > right.size())) return take(left, left_form);
+    if (left_base && right_base) {
+        const bool right_first = location_form(left) && !location_form(right);
+        ParsedCall p = right_first ? take(right, right_form) : take(left, left_form);
+        p.other_base = std::string(right_first ? left : right);
+        return p;
+    }
+    if (left_base) return take(left, left_form);
     if (right_base) return take(right, right_form);
     return std::nullopt;
 }
@@ -661,6 +675,7 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
         r.unusual = p->unusual;
         r.prefix_digit = p->prefix_digit;
         r.cw_word = p->cw_word;
+        r.other_base = p->other_base;
         r.base = p->base;
         r.full = p->full;
         r.special = p->special;
@@ -1020,7 +1035,19 @@ void CallSearch::read_track(TrackText& t, bool all) {
     }
 }
 
-void CallSearch::add(const CallReading& r, double freq_hz) {
+void CallSearch::add(const CallReading& reading, double freq_hz) {
+    // Around a slash with a call on both sides, the list decides when it holds exactly one of them (N4A/K4SV, K1A/W1AW).
+    CallReading r = reading;
+    if (!r.other_base.empty() && known_ && known_->contains(r.other_base) && !known_->contains(r.base)) {
+        if (const auto other = parse_call(r.other_base)) {
+            r.other_base = r.base;
+            r.base = other->base;
+            r.special = other->special;
+            r.unusual = other->unusual;
+            r.prefix_digit = other->prefix_digit;
+            r.cw_word = other->cw_word;
+        }
+    }
     if (reading_log_) reading_log_(r, freq_hz);
     // A special form and a word of CW, and by default an unusual one (four letters after the digit) and one whose only digit is its
     // prefix's, from a list only.

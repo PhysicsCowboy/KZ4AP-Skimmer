@@ -4940,7 +4940,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: known-call list | text, one call a line; NUL bytes or no line with a call's form refused | `KnownCalls::read` | interface choice |
 | Callsign stage: short pairs | one letter after the digit, same prefix and digit, distance 2: held at over 2 times the points | `short_variant_ratio` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: locators | six characters, AA00AA with letters A–R, A–X: no reading | `is_locator` | heuristic |
-| Callsign stage: call forms | three characters before the digit only for 3D? (a half series) and 3XY, then three letters at most; US series (K, N, W, AA–AL): one to three letters, two after AA–AL and NA–NZ (AF#EMA, NF#EMA excepted), no 1x1 ending in X; a letter-digit prefix (C6, E7) and 1 to 4 letters, its digit the call's; around a slash both sides tried as the base, the longer taken, on a tie the right | `parse_form` (`three_character_prefix`, `us_form`) | derived: RR 19.68 and 19.68.1, Appendix 42; 47 CFR 97.3(a)(11) and the FCC's HD.dat of 2026-11-15; 3XY sourced (Guinea's DXpeditions); the prefix-digit form measured (MASTER.SCP, the RBN); the slash's tie a heuristic, CEPT's and the ITU's order (A.12) |
+| Callsign stage: call forms | three characters before the digit only for 3D? (a half series) and 3XY, then three letters at most; US series (K, N, W, AA–AL): one to three letters, two after AA–AL and NA–NZ (AF#EMA, NF#EMA excepted), no 1x1 ending in X; a letter-digit prefix (C6, E7) and 1 to 4 letters, its digit the call's; around a slash both sides tried as the base, and when both can: the listed one, else the one that is not a location form (VP2V), else the left | `parse_form` (`three_character_prefix`, `us_form`, `location_form`), `CallSearch::add` | derived: RR 19.68 and 19.68.1, Appendix 42; 47 CFR 97.3(a)(11) and the FCC's HD.dat of 2026-11-15; 3XY sourced (Guinea's DXpeditions); the prefix-digit form measured (MASTER.SCP, the RBN); the slash's choice heuristic (A.12) |
 | Callsign stage: unusual forms | four letters after one digit: from a list only (0: as any call) | `unusual_listed_only` 1 | heuristic, CW Skimmer's practice in kind (an unusual pattern needs more), chosen by measurement (A.12) |
 | Callsign stage: prefix-digit forms | no digit but the prefix's (C6AGU): from a list only (0: as any call) | `prefix_digit_listed_only` 1 | heuristic, chosen by measurement (A.12) |
 | Callsign stage: words of CW | rigs, antennas, software (21, exact) and one or two letters before 5NN: from a list only, always | `is_cw_word`, `ParsedCall::cw_word` | heuristic (manta's exact matches); list only, not refused, since `call-form-2` (A.12) |
@@ -5479,10 +5479,14 @@ allocated pair of a letter and a digit outside the whole-letter series (C6, E7, 
 nothing else, the prefix's digit standing for the call's (C6AGU, E7DX, J6M; 3 to 6 characters); with 4 letters it is unusual too. A
 digit-letter pair (3B, 9H) has no such form: its calls have a digit after it (3B8CF, 9H1A). Around a slash: `base/P`, /M, /MM, /AM, /QRP,
 /QRPP, /A, a digit, or a prefix-like word (`is_prefix_like`: a whole-letter series' letter, or at most 4 characters opening with an
-allocated pair); or `prefix/base`, the left side prefix-like. A prefix can itself be a base call (VP2V, VK9X, 3D2R); when both sides can
-be the base, the longer is, and on a tie the right one, the prefix written first (CEPT's and the ITU's order): VP2V/K1ABC and K1ABC/VP2V
-give K1ABC, VP2V/W1AW W1AW, W1AW/VP2V VP2V. Before `call-form-2` the left side was the base whenever it parsed, and VP2V/K1ABC was
-refused.
+allocated pair); or `prefix/base`, the left side prefix-like. A prefix can itself be a base call (VP2V, VK9X, 3D2R). When both sides
+can be the base (a heuristic, the review's ruling in `call-form-2`), in order: (a) in the stage (`CallSearch::add`), the side the
+known-call list holds, when it holds exactly one (`ParsedCall::other_base` carries the other side); (b) the side that is not a
+*location form* (`location_form`: exactly four characters, an allocated pair, a digit and one letter, outside the United States'
+series: VP2V, VP2E, VK9X, 3D2R, CE0Y, PJ2T), when exactly one is; (c) the left. So VP2V/K1ABC and K1ABC/VP2V give K1ABC (one side only
+can be the base), W1AW/VP2V, VP2V/W1AW and VK9X/W1AW W1AW, K1A/W1AW K1A and N4A/K4SV N4A (a 1x1 or a US call of four characters, KH6A,
+is no location), and with K4SV alone listed, K4SV. Before `call-form-2` the left side was the base whenever it parsed, and VP2V/K1ABC
+was refused. `training/kz4ap_proto/calls_score.py`'s `base_call` takes rules (b) and (c), with no list.
 
 **Words of CW.** `is_cw_word`: exact, G5RV, K3S, K4D, N1MM, K1EL, K9AY, TH7DX, TH6DX, TH5DX, TH3JR, TH2MK, HF5B, HF6V, HF9V, HF2V,
 FT8DX, FT5DX, FT3DX, W2DU, W8JK, W3DZZ; and any base of one or two letters before 5NN (R5NN, TU5NN, FN5NN, DJ5NN, W5NN), which
@@ -5535,7 +5539,9 @@ track. A rereading after a correction is triggered by a change of text only, not
    - a new call C of m characters (`parse_call`, not tiny, not a shorter string twice or more, 3 to 12 characters):
      G = Σ ν(c) − m ln 36 + φ(m) + ln π(m) − `call_nats` (2.4), φ(m) = −ln of the share of random strings of m letters and digits that
      parse (`call_form_nats`: 2.29, 1.45, 1.54, 1.85, 2.40, 3.66 and 5.05 nats for m = 3 to 9, derived, remade for the grammar of
-   `call-form-2`, which takes the prefix-digit forms and the words of CW; 10 to 12 reuse 9's, a heuristic), π(m) the share of calls of m
+   `call-form-2`, which takes the prefix-digit forms and the words of CW; 10 to 12 reuse 9's, a heuristic; φ counts the forms reported
+   from a list only too, a modeling choice that costs every regular call 0.72, 0.18, 0.14 and 0.13 nats at 3 to 6 characters against
+   the table of `call-form-1`, with no effect on the three replay sets), π(m) the share of calls of m
      characters (`call_length_nats`: 0.63%, 20.0%, 41.1%, 37.3%, 0.65% for 3 to 7, 0.07% each for 8 to 12): K8DX gains −0.86 nats,
      NA9M −3.63;
    - the call in the cache again: G = Σ ν(c) − `repeat_nats` (1.61): K8DX 14.4 nats;
@@ -5605,7 +5611,7 @@ day file only the spots of given skimmers, a continent, a UTC window, a span and
 `--khz`, `--tx-mode`); `truth` reads a run and a recording's labels and
 reports precision and recall, and how many calls found are within 100 Hz of their station. Its reader takes ADIF, telnet spot lines, CSV with a
 header (`dx` ahead of `callsign`, as in the Reverse Beacon Network's files) and, failing those, the first word of a call's form on each line,
-and prints which it used: CW Skimmer's export format is not known here. Calls compare by base call. A telnet spot's word is kept as it stands where the reader's grammar has no form for it (LZ1SPACE): a spot is the spotter's test, and dropping it would flatter this decoder.
+and prints which it used: CW Skimmer's export format is not known here. Calls compare by base call. A telnet spot's word is kept as it stands where the reader's grammar has no form for it (D4C, LZ1SPACE; the Python reader has no prefix-digit form): a spot is the spotter's test, and dropping it would flatter this decoder.
 
 **Signed (`is_signed`).** A row is *signed* when `CallRow::framed` is true: some reading of the call, at any place and time since its
 first, had the role *signed* (`Role::Sender`, the rule above), whether or not a variant held the call where it was read; once true it
@@ -5848,7 +5854,8 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   (C6 11, E7 12, D4 9, P3 9, C4 8, E2 7; none with four letters), and of the base calls three or more RBN skimmers spotted, 37 of 4 423
   (0.84%) on 2026-11-17, 55 of 4 901 on 2026-11-18 and 8 of 3 513 on 2017-08-21 have it, real by their spots (C8K by 136 skimmers in
   2 282 spots on 2026-11-18, E6DX by 41, T2DE by 19, T7LW by 11, A6BB by 7) though MASTER.SCP holds only 1, 4 and 0 of them. The
-  slash rule is a heuristic: the RBN's three days and MASTER.SCP change one base (N4A/K4SV, now K4SV). *Grammar check* (every call of
+  slash rule is a heuristic (the review's ruling): the RBN's three days, MASTER.SCP and the FCC's file change no base against `main`
+  (a first rule, the longer side, made N4A/K4SV K4SV, which the RBN spotted as N4A/K4SV 10 times on 2017-08-21). *Grammar check* (every call of
   each list through `main`'s `parse_call` and this one's; refused before and after): the FCC's calls ever issued (1 607 237) 9 to 1
   (WB4MZ0), the 8 gained the words of CW K1EL, K5NN, K9AY, N1MM, N5NN, W2DU, W3DZZ, W8JK, now listed only; active (822 120) 7 to 0;
   MASTER.SCP (50 028 lines) 107 to 13, 92 prefix-digit calls and N1MM, K9AY gained; the RBN's spotted calls 259 to 65 (8 976,
@@ -5898,9 +5905,10 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   RBN spots many that MASTER.SCP lacks, C8K, E6DX, T2DE, A6BB, T7LW), the active US licenses that are words of CW (K1EL, K5NN, K9AY,
   N1MM, N5NN, W2DU, W8JK; MASTER.SCP holds K9AY and N1MM), and every call of one or two letters before 5NN (the FCC's file holds 18
   active: AA5NN, KE5NN, NN5NN, W5NN and others; MASTER.SCP 5: DJ5NN, DM5NN, NA5NN, NR5NN, W5NN). With a list, a fragment of a longer
-  call that is a listed prefix-digit call is reported (E7A, from K E 7AE O, KE7AEO, on 40 m, 2026-11-17). On a slash with a base call
-  of the same length on both sides the right one is taken, so a US-style call before a prefix of a call's form (W1AW/VP2V) gives the
-  prefix (VP2V); a 1x1 before a call (N4A/K4SV) gives the call.
+  call that is a listed prefix-digit call is reported (E7A, from K E 7AE O, KE7AEO, on 40 m, 2026-11-17). On a slash with a call on
+  both sides and no list to tell, the left is taken unless it alone is a location form, so a call of a non-US series with one letter
+  after its digit (DL1A, 9A1A) beside another call is taken for a location (DL1A/W1AW gives W1AW), and a US call of four characters
+  or a 1x1 written first (KH6A/W1AW, K1A/W1AW) is taken as the base.
   The derived rules hold as of their sources' dates: a new US call system or a new half series needs the code changed.
 - Who sent a call is known only from the words around it: a DX naming a caller twice with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
   is only as good as the decoder's reading of those words.
