@@ -33,10 +33,13 @@ and 3% for the 137 calls both reported, which were 74% whole words. So the decod
 channel-second (three decodes at once; contention inflates both). The stage's withdrawal fix (`stage-aging`): 160 / 82 / 102.
 On the development set (both seeds) 0.02 and 0.1 make C2, B2, A2, G2 and H2 worse and S2 no better: rejected. The word-gap-scale
 fist (branch `word-gap-1`): 163 in a form that favored any precise sender (review 22), 158 corrected: rejected, branch kept.
+A fist memory carried across overs (branch `fist-memory-1`, fixed share over the fist classes): 158 to 160 in five
+settings, none above the defaults' 160: rejected, branch kept. EK8DX's word gaps run from 3.5 dots, at or below the
+scaled fist's 4.20-dot boundary, so its words are joined in the signal itself, not by a prior.
 
-**Next** (items 1 and 2 done, both rejected; decision log 2026-11-18). A fixed fist cannot pay its prior from one over's
-word gaps; the next form to try is a per-sender estimate of the word gap, carried across overs, after the owner's app
-items (decoder-only mode, signed-only option, list download).
+**Next.** The decoder's spacing is left as it is; the joined words go to the call reader instead: a segmentation of a
+joined word into keywords and calls (repeats of one call as the evidence), measured on the seven recordings against the
+RBN. Items 1 and 2 below are done, both rejected (decision log 2026-11-18).
 1. A variant of the segmental decoder's fist with a word-gap scale of its own (word gaps 7 g w T_s, w below 1 for compressed
    spacing), beside the gap stretch; measured on the seven recordings against the RBN, and on the development set's
    seeds (CER and its fist cells) before any default changes, with its CPU against the bar.
