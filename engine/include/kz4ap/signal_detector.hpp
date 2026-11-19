@@ -85,6 +85,11 @@ struct DetectorConfig {
     float skirt_exclusion_db = 0.0f;
     double skirt_exclusion_hz = 30.0;
     double skirt_exclusion_radius_hz = 150.0;
+    // The receiver's passband, Hz from the span's center (the engine sets them from EngineConfig::passband_lo_hz and
+    // passband_hi_hz): when band_hi_hz > band_lo_hz, the floor (the median), the local floor and the peaks, new or followed,
+    // are taken over the bins whose centers lie within [band_lo_hz, band_hi_hz] only. Otherwise the whole span.
+    double band_lo_hz = 0.0;
+    double band_hi_hz = 0.0;
 };
 
 struct DetectorUpdate {
@@ -168,6 +173,8 @@ private:
     int local_floor_bins_ = 0;  // local_floor_radius_hz in bins
     int prominence_bins_ = 0;   // prominence_radius_hz in bins
     int sideband_bins_ = 0;     // sideband_radius_hz in bins
+    int band_first_ = 0;        // the passband's bins, first and last (band_lo_hz, band_hi_hz; else the whole span)
+    int band_last_ = 0;
     double alpha_;
     float floor_db_ = 0.0f;  // the last floor taken (floor_every_frames), dB re 1 FS^2 per bin
     std::uint64_t frames_seen_ = 0;

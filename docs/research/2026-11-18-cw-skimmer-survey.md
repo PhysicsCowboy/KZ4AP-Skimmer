@@ -213,3 +213,13 @@ always runs and its list is always shown.
 3. A one-signal text pane, picked on the waterfall, with doubtful characters shaded.
 4. Audio of the selected signal with a CW filter and AGC (feature C).
 5. Settings kept between runs; a choice of sound devices.
+
+## 4. Since the survey (status as of 2026-11-19; the tables above are left as written)
+
+- **Done on `main`:** skimmer gap 2 (calls drawn on the waterfall), the download button of gap 5, plain-decoder gaps 2
+  (a decoder-only mode in the skimmer window), 3 (the one-signal pane, without shaded characters) and 5 (settings
+  kept, without a choice of sound devices); also the signed-only option (section 2).
+- **The owner's ruling of 2026-11-19:** the plain decoder is a separate, spartan window on receiver audio (his K3, for
+  example) for one or a few signals, so plain-decoder gap 1 comes first for it and the skimmer window's decoder-only
+  mode is not that product (`docs/backlog.md` section 4). The engine side of gap 1 (receiver audio from a file) is
+  being built; GUI work follows the decoder's quality in the priorities.

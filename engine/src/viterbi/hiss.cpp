@@ -136,6 +136,16 @@ HissEstimator::HissEstimator(int sample_rate, int fft_size, const ViterbiConfig&
     const double settle = std::ceil(1.0 / alpha_) + std::ceil(kSettleNepers / (2.0 * decay)) + 1.0;
     settled_frames_ = static_cast<std::int64_t>(std::min(settle, 4.0e18));
     average_.assign(static_cast<std::size_t>(fft_size), 0.0);
+    sample_rate_ = sample_rate;
+    band_first_ = 0;
+    band_last_ = fft_size - 1;
+}
+
+void HissEstimator::set_band(double lo_hz, double hi_hz) {
+    if (!std::isfinite(lo_hz) || !std::isfinite(hi_hz)) throw std::invalid_argument("hiss: the passband's edges must be finite (Hz)");
+    const BinRange band = band_bins(lo_hz, hi_hz, sample_rate_, fft_size_);
+    band_first_ = band.first;
+    band_last_ = band.last;
 }
 
 void HissEstimator::advance(Weights& weights, double step) {
@@ -179,8 +189,13 @@ double HissEstimator::noise_density_fs2_per_hz(int center_bin) const {
         throw std::out_of_range("hiss: center_bin must lie in [-fft_size / 2, fft_size / 2) (channelizer bins)");
     const int index = center_bin + half;  // the frame's bin: bin i is at (i - fft_size / 2) bins from 0 Hz
     if (frames_ == 0) return 0.0;
-    const int first = std::max(0, index - half_bins_);
-    const int last = std::min(fft_size_ - 1, index + half_bins_);
+    int first = std::max(band_first_, index - half_bins_);
+    int last = std::min(band_last_, index + half_bins_);
+    if (last < first) {
+        // A channel outside the passband (set_band): the passband's own bins.
+        first = band_first_;
+        last = band_last_;
+    }
     const int count = last - first + 1;
     // The rank from the smallest, ceil(fraction x count); the 1e-9 guards a product a rounding above a whole number.
     const int rank = std::clamp(static_cast<int>(std::ceil(fraction_ * count - 1.0e-9)), 1, count);

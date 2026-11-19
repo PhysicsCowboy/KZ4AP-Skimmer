@@ -161,6 +161,38 @@ TEST_F(ListenTest, StationComesOutAtTheToneAndItsLevel) {
         }
 }
 
+// A receiver's filter (ListenConfig::filter_center_hz): 2400 Hz wide centered on 1500 Hz of the audio, the station at a
+// 600 Hz tone within it at its level, a neighbor 1 kHz above the station heard at 1600 Hz at its level too, one 1 kHz below
+// it (outside the filter, which ends at -6 dB at 300 Hz) not.
+TEST_F(ListenTest, AReceiversFilterHoldsTheStationAndItsNeighbors) {
+    for (const auto& [neighbor_hz, heard_hz, passes] : {std::tuple{4000.0, 1600.0, true}, std::tuple{2000.0, -400.0, false}}) {
+        std::vector<Sample> x(3 * kRate);
+        add_tone(x, kRate, neighbor_hz, 0.25);
+        ListenConfig c;
+        c.offset_hz = 3000.0;
+        c.tone_hz = 600.0;
+        c.bandwidth_hz = 2400.0;
+        c.filter_center_hz = 1500.0;
+        const ListenClip out = clip(x, kRate, c, 0.5, 2.0);
+        if (passes) {
+            EXPECT_NEAR(frequency_of(out.audio, c.audio_rate), heard_hz, 0.05);
+            EXPECT_NEAR(db20(amplitude_of(out.audio) / 0.25), 0.0, 0.05);
+        } else {
+            EXPECT_LT(db20(amplitude_of(out.audio) / 0.25), -80.0);
+        }
+    }
+    std::vector<Sample> x(3 * kRate);
+    add_tone(x, kRate, 3000.0, 0.25);
+    ListenConfig c;
+    c.offset_hz = 3000.0;
+    c.tone_hz = 600.0;
+    c.bandwidth_hz = 2400.0;
+    c.filter_center_hz = 1500.0;
+    const ListenClip out = clip(x, kRate, c, 0.5, 2.0);
+    EXPECT_NEAR(frequency_of(out.audio, c.audio_rate), 600.0, 0.05);
+    EXPECT_NEAR(db20(amplitude_of(out.audio) / 0.25), 0.0, 0.05);
+}
+
 // Neighbors 1 kHz either side of the station, 0.5 FS each, with no station: at least 80 dB below their level through the
 // listening filter (its stopband from 350 Hz) and 74 dB below it through the track's (its stopband from about 279 Hz). The side below
 // is the image a real mixer would fold onto the tone's other side.

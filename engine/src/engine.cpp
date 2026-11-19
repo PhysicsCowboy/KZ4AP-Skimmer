@@ -45,6 +45,8 @@ DetectorConfig detector_config(const EngineConfig& c) {
     if (d.fft_factor < 1 || (d.fft_factor & (d.fft_factor - 1)) != 0) throw std::invalid_argument("invalid signal detector config");
     d.fft_size = c.fft_size * d.fft_factor;
     d.hop = d.fft_size / 2;
+    d.band_lo_hz = c.passband_lo_hz;
+    d.band_hi_hz = c.passband_hi_hz;
     return d;
 }
 
@@ -195,6 +197,7 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
         if (!config_.viterbi_genie.empty() && config_.viterbi_genie.size() != config_.oracle_frequencies_hz.size())
             throw std::invalid_argument("viterbi_genie needs oracle mode and one entry per oracle frequency");
         hiss_ = std::make_unique<viterbi::HissEstimator>(config_.sample_rate, config_.fft_size, config_.viterbi);
+        hiss_->set_band(config_.passband_lo_hz, config_.passband_hi_hz);
         std::vector<viterbi::ViterbiConfig> configs = {config_.viterbi};
         for (const viterbi::ViterbiGenie& genie : config_.viterbi_genie)
             configs.push_back(viterbi::with_genie(config_.viterbi, genie));
@@ -206,6 +209,7 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
         // The hiss estimator and a channel that follows the detector, as the new decoder; its own shared parts.
         if (!config_.viterbi_genie.empty()) throw std::invalid_argument("viterbi_genie needs FrontEnd::Viterbi");
         hiss_ = std::make_unique<viterbi::HissEstimator>(config_.sample_rate, config_.fft_size, config_.segmental.model);
+        hiss_->set_band(config_.passband_lo_hz, config_.passband_hi_hz);
         segmental_shared_ = std::make_shared<const SegmentalShared>(
             config_.segmental, ChannelizerConfig{config_.sample_rate, config_.fft_size, config_.channel_bins,
                                                  config_.channel_cutoff_hz});

@@ -788,8 +788,11 @@ void MainWindow::build_status_bar() {
 bool MainWindow::open_recording(const QString& path, double start_s) {
     try {
         // The file first: one that cannot be opened leaves whatever is running as it is.
+        // I/Q only, a one-channel file refused as before: receiver audio needs its passband, which the app does not set yet
+        // (backlog section 3).
         std::unique_ptr<FileIqSource> source = std::make_unique<FileIqSource>(
-            std::filesystem::path(path.toStdWString()), start_s, automation_.recording_center_hz, RecordingOptions{.mirror = automation_.mirror});
+            std::filesystem::path(path.toStdWString()), start_s, automation_.recording_center_hz,
+            RecordingOptions{.mirror = automation_.mirror, .input = RecordingInput::Iq});
         input_note_ = QStringLiteral("file_rate_hz: %1\nresampled_to_hz: %2\nmirrored: %3\n")
                           .arg(source->recording().file_rate())
                           .arg(source->recording().resampled() ? QString::number(source->recording().sample_rate()) : QStringLiteral("none"))

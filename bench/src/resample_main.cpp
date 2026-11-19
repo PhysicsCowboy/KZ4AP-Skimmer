@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
         }
         if (in.empty() || out.empty()) throw std::runtime_error("usage: kz4ap-resample IN.wav OUT.wav [--mirror] [--center-khz KHZ] [--gain-db DB]");
         if (std::filesystem::exists(out) && std::filesystem::equivalent(in, out)) throw std::runtime_error("the copy would overwrite the recording");
-        RecordingReader reader(in, RecordingOptions{.mirror = mirror});
+        RecordingReader reader(in, RecordingOptions{.mirror = mirror, .input = RecordingInput::Iq});
         if (!center_hz) center_hz = reader.info().center_hz;
         if (!center_hz) center_hz = center_hz_from_file_name(path_text(std::filesystem::path(in).filename()), reader.file_rate());
         const std::uint64_t total = reader.total_samples();

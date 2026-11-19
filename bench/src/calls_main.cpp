@@ -3,12 +3,15 @@
 //   kz4ap-calls --replay EVENTS.jsonl --out CALLS.csv [--known MASTER.SCP] [--set NAME=VALUE]...
 // --log keeps the decoder's events, so that --replay can try the stage's settings in seconds, on the same text.
 // --dset sets the segmental decoder's settings, as kz4ap-bench's --set does; --set is the stage's.
+// Receiver audio (a one-channel WAV, or --audio): [--audio] [--audio-channel N] [--passband-hz LO,HI] [--dial-khz KHZ] [--pitch-hz HZ]
+// [--sideband usb|lsb] (audio_options.hpp); without --dial-khz the list's freq_hz are audio tone frequencies and freq_khz is empty.
 #include "kz4ap/callsign.hpp"
 #include "kz4ap/decoder_name.hpp"
 #include "kz4ap/engine.hpp"
 #include "kz4ap/event_bus.hpp"
 #include "kz4ap/recording_reader.hpp"
 #include "kz4ap/wav_reader.hpp"
+#include "audio_options.hpp"
 #include "viterbi_json.hpp"
 
 #include <nlohmann/json.hpp>
@@ -41,6 +44,7 @@ struct Options {
     CallSearchConfig config;
     std::vector<std::string> decoder_settings;  // --dset
     std::vector<std::string> detector_settings;  // --detector NAME=VALUE (kz4ap::bench::apply_detector_setting)
+    kz4ap::bench::AudioOptions audio;            // receiver audio (audio_options.hpp)
 };
 
 void set_value(CallSearchConfig& c, const std::string& assignment) {
@@ -96,10 +100,13 @@ Options parse(int argc, char** argv) {
         else if (a == "--set") set_value(o.config, next());
         else if (a == "--dset") o.decoder_settings.push_back(next());
         else if (a == "--detector") o.detector_settings.push_back(next());
+        else if (kz4ap::bench::parse_audio_option(a, next, o.audio)) {}
         else if (!a.empty() && a[0] != '-' && o.wav.empty()) o.wav = a;
         else throw std::runtime_error("unknown argument: " + a);
     }
     if (o.wav.empty() == o.replay.empty()) throw std::runtime_error("give one recording, or --replay with a log");
+    if (!o.replay.empty() && o.audio.given)
+        throw std::runtime_error("--replay takes receiver audio's RF center from the log's \"input\" line: give no receiver-audio options");
     return o;
 }
 
@@ -184,20 +191,33 @@ int main(int argc, char** argv) {
                         }
                     }
                     timed([&] { stage.apply(e); });
+                } else if (kind == "input") {
+                    // Receiver audio: the RF center its run used (dial and pitch), unless --center-khz overrides it.
+                    if (!o.center_hz && j.contains("center_hz")) center_hz = j["center_hz"].get<double>();
                 } else if (kind == "end") {
                     channel_seconds = j["channel_seconds"];
                 }
             }
         } else {
-            RecordingReader reader(o.wav, RecordingOptions{.mirror = o.mirror});
-            // As FileIqSource: the caller's center, else the header's, else the file name's.
-            center_hz = o.center_hz ? o.center_hz : reader.info().center_hz;
-            if (!center_hz) center_hz = center_hz_from_file_name(path_text(std::filesystem::path(o.wav).filename()), reader.file_rate());
+            RecordingReader reader(o.wav, kz4ap::bench::recording_options(o.audio, o.mirror));
+            kz4ap::bench::check_audio_options(o.audio, reader);
+            if (reader.is_audio()) {
+                // Receiver audio: no RF center in the file; with the dial frequency, RF = dial +/- (audio - pitch).
+                if (o.center_hz) throw std::runtime_error("receiver audio: give the radio's dial frequency with --dial-khz, not --center-khz");
+                if (o.mirror) throw std::runtime_error("receiver audio: give --sideband lsb, not --mirror");
+                center_hz = kz4ap::bench::audio_center_hz(o.audio);
+                std::fprintf(stderr, "%s\n", kz4ap::bench::describe_audio_input(reader, o.audio).c_str());
+            } else {
+                // As FileIqSource: the caller's center, else the header's, else the file name's.
+                center_hz = o.center_hz ? o.center_hz : reader.info().center_hz;
+                if (!center_hz) center_hz = center_hz_from_file_name(path_text(std::filesystem::path(o.wav).filename()), reader.file_rate());
+            }
             if (reader.resampled())
                 std::fprintf(stderr, "resampling %d to %d samples/s\n", reader.file_rate(), reader.sample_rate());
             start_unix_ms = reader.info().start_unix_ms;
             EngineConfig config = engine_config_for_decoder(o.decoder);
             config.sample_rate = reader.sample_rate();
+            if (reader.is_audio()) kz4ap::bench::apply_audio_passband(config, o.audio);
             config.worker_threads = o.threads;
             for (const std::string& setting : o.decoder_settings) kz4ap::bench::apply_segmental_setting(config.segmental, setting);
             if (!o.detector_settings.empty()) {
@@ -207,6 +227,15 @@ int main(int argc, char** argv) {
             }
             std::unique_ptr<std::ofstream> log;
             if (!o.log.empty()) log = std::make_unique<std::ofstream>(o.log);
+            if (log && reader.is_audio()) {
+                // What the log's frequencies and levels mean for receiver audio; --replay ignores it.
+                nlohmann::json j{{"k", "input"}, {"kind", "receiver audio"}, {"audio_rate", reader.file_rate()},
+                                 {"passband_hz", {o.audio.passband_lo_hz, o.audio.passband_hi_hz}},
+                                 {"sideband", o.audio.lower_sideband ? "lsb" : "usb"}, {"pitch_hz", o.audio.pitch_hz},
+                                 {"note", kz4ap::bench::describe_audio_input(reader, o.audio)}};
+                if (center_hz) j["center_hz"] = *center_hz;
+                *log << j.dump() << '\n';
+            }
             double next_mark = 0.0;
             double logged_second = -1.0;  // s: the whole second of the last frame logged
             EventBus bus;

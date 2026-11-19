@@ -1570,6 +1570,23 @@ same ring buffer).
   scale.
 - **Test:** record receiver audio and SDR I/Q of the same stations at the
   same time and compare decodes and SNRs.
+- **Done (branch `audio-input-1`, 2026-11-19), files only:** a one-channel WAV
+  (or `--audio`, `--audio-channel N`) is read as receiver audio, resampled to
+  48 kHz and made analytic by an FIR Hilbert transformer, its delays taken out
+  exactly; the receiver's passband (`--passband-hz`, default 300–3000 Hz)
+  bounds the detector's floor, peaks and the hiss estimator's bins; RF from
+  `--dial-khz`, `--pitch-hz` (default 600 Hz) and `--sideband usb|lsb`, RF =
+  dial ± (audio − pitch). `kz4ap-calls` and `kz4ap-bench` take it and label
+  its SNRs as receiver-audio values; `kz4ap-listen --filter-center-hz` makes
+  receiver-like clips (a 2.4 kHz filter with the station at a 600 Hz pitch).
+  `docs/signal-processing.md` section 1 and A.1, "Receiver audio".
+- **Still to do:** a sound-card source (live, needs the owner's say for any
+  device), the plain decoder's spartan window (one or a few signals) and the
+  app's use of the passband; the dial frequency from CAT; AGC and a real
+  receiver's filter (the clips so far are the SDR's, without AGC); recordings of
+  the K3's audio beside SDR I/Q of the same stations; a passband estimated from
+  the spectrum for a filter narrower than the stated passband; a real-input or
+  FFT-folded resampler (about 3.5 ms per s of stream at 8, 12 and 44.1 kHz).
 
 ## 4. Callsign matching
 
@@ -1594,6 +1611,17 @@ purpose.
   want is left out.
 - *Done in `app-modes-1` (2026-11-18):* the first three, in the app (Mode, List and Known calls on the toolbar's third row;
   `--decoder-only`, `--signed-only`).
+- **The plain decoder is its own window (owner, 2026-11-19).** "The 'decoder-only' mode is intended almost as an
+  entirely separate window/app, paired with audiocard decoding instead of SDR. ... As a CW decoder-only thing, we would
+  be interested in decoding the audio from my K3, for example. The interface for that mode would then be far more
+  spartan and would focus only on decoding one or a very small number of signals." So the skimmer window's
+  decoder-only mode is not that product; the plain decoder is a separate, spartan window on receiver audio (section 3
+  above), one or a few signals. GUI work stays after the decoder's quality in the priorities; testing on a sound device
+  needs the owner's say each time.
+- **Receiver audio for the skimmer too (owner, 2026-11-19).** "I guess we should implement the same kind of '3-kHz
+  Radio' receiver in skimmer mode, too": the skimmer runs on a radio's audio as on SDR I/Q, as CW Skimmer's 3-kHz
+  receiver does (the user sets the CW pitch; the dial frequency from CAT, or entered), every signal in the passband
+  decoded and its calls listed at RF = dial + (audio − pitch) in upper sideband.
 
 ### Input to the design session: manta's callsign acceptance rules
 

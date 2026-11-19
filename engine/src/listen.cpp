@@ -48,7 +48,7 @@ class FilterPath final : public Path {
 public:
     FilterPath(int input_rate, const ListenConfig& c)
         : mixer_(-c.offset_hz, input_rate), resampler_(input_rate, c.audio_rate) {
-        const std::vector<double> h = listen_filter_taps(c.bandwidth_hz, c.audio_rate);
+        const std::vector<double> h = listen_filter_taps(c.bandwidth_hz, c.audio_rate, c.filter_center_hz ? kReceiverTransitionHz : 0.0);
         taps_.assign(h.begin(), h.end());
         history_.assign(taps_.size() - 1, Sample(0.0f, 0.0f));
         delay_s_ = resampler_.delay_s() + 0.5 * static_cast<double>(taps_.size() - 1) / c.audio_rate;
@@ -155,12 +155,12 @@ void put_u32(std::string& b, std::uint32_t v) {
 
 }  // namespace
 
-std::vector<double> listen_filter_taps(double bandwidth_hz, int audio_rate) {
+std::vector<double> listen_filter_taps(double bandwidth_hz, int audio_rate, double transition_hz) {
     if (audio_rate <= 0 || !(bandwidth_hz >= kListenMinBandwidthHz) || !(bandwidth_hz <= 0.5 * audio_rate))
         throw std::invalid_argument("the listening bandwidth must be between " + std::to_string(kListenMinBandwidthHz) +
                                     " Hz and half the audio rate");
     const double cutoff = 0.5 * bandwidth_hz;                       // Hz, -6 dB re the passband
-    const double transition = kListenTransitionRatio * bandwidth_hz;  // Hz
+    const double transition = transition_hz > 0.0 ? transition_hz : kListenTransitionRatio * bandwidth_hz;  // Hz
     const double a = kListenAttenuationDb;
     // Kaiser's estimates (J. F. Kaiser, "Nonrecursive digital filter design using the I0-sinh window function", Proc. IEEE
     // Int. Symp. Circuits and Systems, 1974): beta for the attenuation, length (A - 7.95) / (2.285 x 2 pi x transition / rate)
@@ -186,13 +186,22 @@ std::vector<double> listen_filter_taps(double bandwidth_hz, int audio_rate) {
 }
 
 double listen_half_band_hz(const ListenConfig& config, int input_rate) {
-    if (!config.track_filter) return (0.5 + 0.5 * kListenTransitionRatio) * config.bandwidth_hz;
+    if (!config.track_filter)
+        return 0.5 * config.bandwidth_hz +
+               0.5 * (config.filter_center_hz ? kReceiverTransitionHz : kListenTransitionRatio * config.bandwidth_hz);
     // The channel filter's transition, about 5.5 x input_rate / taps wide (channel_filter_taps), centered on its cutoff.
     const ChannelizerConfig cc = TrackPath::channel_config(input_rate);
     return cc.cutoff_hz + 0.5 * 5.5 * input_rate / (cc.fft_size / 2 + 1);
 }
 
-ListenClip listen_clip(RecordingReader& reader, const ListenConfig& config, double start_s, double duration_s) {
+ListenClip listen_clip(RecordingReader& reader, const ListenConfig& given, double start_s, double duration_s) {
+    // A filter centered at C away from the tone: the same path centered on the frequency that comes out at C, offset + (C - tone),
+    // heard at C, so that the station at offset comes out at C - (C - tone) = tone (derived).
+    ListenConfig config = given;
+    if (config.filter_center_hz && !config.track_filter) {
+        config.offset_hz = given.offset_hz + (*given.filter_center_hz - given.tone_hz);
+        config.tone_hz = *given.filter_center_hz;
+    }
     const int fs = reader.sample_rate();
     const int fa = config.audio_rate;
     if (fa != 8000 && fa != 12000) throw std::invalid_argument("the audio rate must be 8000 or 12000 samples/s");
