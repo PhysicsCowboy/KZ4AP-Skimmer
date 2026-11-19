@@ -126,3 +126,41 @@ def test_main_with_a_known_list(tmp_path, capsys):
                            "--run", f"ours={ours}", "--known", str(scp), "--out", str(out)]) == 0
     assert "unknown 1, unknown_listed 1, unknown_unlisted 0, misread_listed 0" in capsys.readouterr().out
     assert out.read_text(encoding="utf-8").splitlines()[0].endswith("one_edit_from,in_known_list,ours")
+
+
+def test_us_licenses_two_sided_for_us_calls_only(tmp_path):
+    # HD.dat: field 5 the call, field 6 the status (A active); a call with an expired and an active license is active.
+    hd = tmp_path / "HD.dat"
+    hd.write_text("HD|1|x||K9BGL|A|HA|\nHD|2|x||W1AW|E|HA|\nHD|3|x||N4AA|C|HA|\nHD|4|x||N4AA|A|HA|\nEN|5|x||K1XYZ|A|\n",
+                  encoding="latin-1")
+    us = rbn_judge.read_us_licenses(hd)
+    assert us == {"K9BGL": "active", "W1AW": "expired", "N4AA": "active"}   # only HD records count
+    assert [rbn_judge.us_license(c, us) for c in ("K9BGL", "W1AW", "K1XYZ", "DL1ABC", "5NN5NN", "AM1ABC")] == \
+        ["active", "expired", "never", "", "", ""]                              # AM is Spain's, not the US form
+    spots = _day(tmp_path, [_spot("W2AXR", 7042.1, "K9BGL", "18:01:00")])
+    runs = {"ours": {"K9BGL", "K1XYZ", "DL1ABC", "N4AA"}}
+    table = rbn_judge.rows("rec", "test", runs, spots, WINDOW, us=us)
+    out = tmp_path / "calls.csv"
+    rbn_judge.write_rows(out, list(runs), table, us=True)
+    got = list(csv.DictReader(out.open(encoding="utf-8")))
+    assert list(got[0])[-2:] == ["us_license", "ours"]
+    assert {r["call"]: (r["class"], r["us_license"]) for r in got} == {
+        "DL1ABC": ("unknown", ""), "K1XYZ": ("unknown", "never"), "K9BGL": ("rbn_window", "active"), "N4AA": ("unknown", "active")}
+    c = rbn_judge.counts(got, "ours")
+    assert (c["us_never"], c["unknown_us_active"], c["unknown"]) == (1, 1, 3)
+
+
+def test_main_with_both_lists(tmp_path, capsys):
+    day = tmp_path / "day.csv"
+    day.write_text(HEADER + _spot("W2AXR", 7042.1, "K9BGL", "18:01:00") + "\n", encoding="utf-8")
+    ours = tmp_path / "ours.csv"
+    ours.write_text("call,base\nK9BGL,K9BGL\nK1XYZ,K1XYZ\n", encoding="utf-8")
+    scp = tmp_path / "MASTER.SCP"
+    scp.write_text("K1XYZ\n", encoding="utf-8")
+    hd = tmp_path / "HD.dat"
+    hd.write_text("HD|1|x||K9BGL|A|HA|\n", encoding="latin-1")
+    out = tmp_path / "calls.csv"
+    assert rbn_judge.main([str(day), "--recording", "r", "--start", "2017-08-21T18:00:00Z", "--seconds", "600", "--center-khz", "7096",
+                           "--run", f"ours={ours}", "--known", str(scp), "--us-licenses", str(hd), "--out", str(out)]) == 0
+    assert "misread_listed 0, us_never 1, unknown_us_active 0" in capsys.readouterr().out
+    assert out.read_text(encoding="utf-8").splitlines()[0].endswith("one_edit_from,in_known_list,us_license,ours")

@@ -1,7 +1,7 @@
 """The RBN judge of checkpoints 3 and 4: sorts the calls a skimmer reported from a recording by what the Reverse Beacon Network spotted.
 
     python -m kz4ap_proto.rbn_judge RBN_DAY.csv --recording NAME --role ROLE --start UTC --seconds S --center-khz KHZ
-        --run LABEL=FILE [--run LABEL=FILE ...] [--na-window] [--known MASTER.SCP] [--out CALLS.csv] [--append]
+        --run LABEL=FILE [--run LABEL=FILE ...] [--na-window] [--known MASTER.SCP] [--us-licenses HD.dat] [--out CALLS.csv] [--append]
 
 A heuristic, and results analysis only (CLAUDE.md, Languages); the product never matches calls against the RBN (design spec, section 6).
 Each reported base call (calls_score.base_call: /P and prefixes dropped) gets one class:
@@ -30,6 +30,14 @@ not spot at all: `unknown_listed` and `unknown_unlisted`, and `misread_listed` (
 one-sided (owner, 2026-11-19): a call in the list is likely a real station, since MASTER.SCP is built from contest logs; a call not in
 it is undecided, never a misreading, since many hams never contest. Membership leaves every class as it was.
 
+With `--us-licenses HD.dat` (the license file of the FCC's complete amateur database, l_amat.zip: `|`-separated, the call in field 5
+and the license status in field 6, A for active) the table gains `us_license` after them: for a call of the US form
+(`US_FORM`: A[A-L], K, N or W, one letter more at most, a digit, one to three letters) `active`, `expired` (issued, no longer
+active) or `never` (never issued), and empty for any other form. The database holds every US license, so this check is two-sided
+for US calls, though unequally: `never` is conclusive that a call is false, while `active` is weak alone, since a one-edit garble
+of a confirmed US call is an active license 38.1% of the time (2026-11-17's window calls; decision log, 2026-11-19). The counts gain
+`us_never` (over every class) and `unknown_us_active`. Membership leaves every class as it was.
+
 A spotted word with no base call's form (the RBN's own busts, W6SSEQP; S5S) is matched as spotted. With the windows of checkpoint 4's
 `windows.csv` this reproduces every class, skimmer count and one-edit list of checkpoint 3's `calls.csv` (1 020 rows).
 
@@ -53,6 +61,8 @@ ONE_EDIT_SHOWN = 3   # the table's one_edit_from holds the first three partners 
 CLASSES = ("rbn_window", "rbn_day", "misread_window", "misread_day", "unknown")
 COLUMNS = ("recording", "role", "call", "class", "rbn_skimmers_in_window", "one_edit_from")
 KNOWN_COLUMN = "in_known_list"
+US_COLUMN = "us_license"
+US_FORM = re.compile(r"^(A[A-L]|[KNW][A-Z]?)[0-9][A-Z]{1,3}$")
 MISREADS = ("misread_window", "misread_day")
 _SPOT_LINE = re.compile(r"^\s*(?:\d\d:\d\d:\d\d(?:\.\d+)?\s+)?DX\s+de\s+\S*\s+(-?\d+(?:\.\d+)?)\s+(\S+)", re.IGNORECASE)
 
@@ -150,9 +160,30 @@ def read_known(path: str | Path) -> set[str]:
     return calls
 
 
-def columns(run_labels: list[str], known: bool = False) -> list[str]:
-    """The table's header: with a known-call list, `in_known_list` after one_edit_from."""
-    return list(COLUMNS) + ([KNOWN_COLUMN] if known else []) + list(run_labels)
+def read_us_licenses(path: str | Path) -> dict[str, str]:
+    """Each call of the FCC's HD.dat with `active` if any of its licenses is active (status A), else `expired`."""
+    out: dict[str, str] = {}
+    with Path(path).open(encoding="latin-1", newline="") as f:
+        for line in f:
+            fields = line.split("|")
+            if len(fields) < 6 or fields[0] != "HD" or not fields[4].strip():
+                continue
+            call = fields[4].strip().upper()
+            if fields[5].strip().upper() == "A":
+                out[call] = "active"
+            else:
+                out.setdefault(call, "expired")
+    return out
+
+
+def us_license(call: str, licenses: dict[str, str]) -> str:
+    """`active`, `expired` or `never` for a call of the US form; empty for any other."""
+    return licenses.get(call, "never") if US_FORM.match(call) else ""
+
+
+def columns(run_labels: list[str], known: bool = False, us: bool = False) -> list[str]:
+    """The table's header: with a known-call list `in_known_list`, with the FCC's licenses `us_license`, after one_edit_from."""
+    return list(COLUMNS) + ([KNOWN_COLUMN] if known else []) + ([US_COLUMN] if us else []) + list(run_labels)
 
 
 def north_american_window_calls(spots: list[Spot], window: Window) -> set[str]:
@@ -175,8 +206,8 @@ def read_run(path: str | Path) -> set[str]:
 
 
 def rows(recording: str, role: str, runs: dict[str, set[str]], spots: list[Spot], window: Window,
-         na_window: bool = False, known: set[str] | None = None) -> list[list]:
-    """The table's rows for one recording, sorted by call; with `known`, each row's membership after one_edit_from."""
+         na_window: bool = False, known: set[str] | None = None, us: dict[str, str] | None = None) -> list[list]:
+    """The table's rows for one recording, sorted by call; with `known` and `us`, each row's membership after one_edit_from."""
     bases = set().union(*runs.values()) if runs else set()
     if na_window:
         bases |= north_american_window_calls(spots, window)
@@ -186,27 +217,32 @@ def rows(recording: str, role: str, runs: dict[str, set[str]], spots: list[Spot]
         out.append([recording, role, b, v.kind, v.skimmers if v.kind == "rbn_window" else "",
                     "/".join(v.one_edit_from[:ONE_EDIT_SHOWN])]
                    + ([int(b in known)] if known is not None else [])
+                   + ([us_license(b, us)] if us is not None else [])
                    + [int(b in calls) for calls in runs.values()])
     return out
 
 
-def write_rows(path: str | Path, run_labels: list[str], table: list[list], append: bool = False, known: bool = False) -> None:
+def write_rows(path: str | Path, run_labels: list[str], table: list[list], append: bool = False, known: bool = False,
+               us: bool = False) -> None:
     path = Path(path)
     new = not (append and path.exists())
     with path.open("w" if new else "a", encoding="utf-8", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         if new:
-            w.writerow(columns(run_labels, known))
+            w.writerow(columns(run_labels, known, us))
         w.writerows(table)
 
 
 def counts(table_rows: list[dict], column: str) -> dict[str, int]:
     """calls, confirmed (rbn_window), unconfirmed and each class, over the rows whose `column` is 1; with an `in_known_list` column
-    also unknown_listed, unknown_unlisted and misread_listed."""
+    also unknown_listed, unknown_unlisted and misread_listed; with a `us_license` column also us_never and unknown_us_active."""
     listed = bool(table_rows) and KNOWN_COLUMN in table_rows[0]
+    licensed = bool(table_rows) and US_COLUMN in table_rows[0]
     c = {"calls": 0, "confirmed": 0, "unconfirmed": 0, **{k: 0 for k in CLASSES}}
     if listed:
         c.update(unknown_listed=0, unknown_unlisted=0, misread_listed=0)
+    if licensed:
+        c.update(us_never=0, unknown_us_active=0)
     for r in table_rows:
         if str(r[column]) != "1":
             continue
@@ -219,6 +255,9 @@ def counts(table_rows: list[dict], column: str) -> dict[str, int]:
                 c["unknown_listed" if in_list else "unknown_unlisted"] += 1
             elif r["class"] in MISREADS and in_list:
                 c["misread_listed"] += 1
+        if licensed:
+            c["us_never"] += r[US_COLUMN] == "never"
+            c["unknown_us_active"] += r["class"] == "unknown" and r[US_COLUMN] == "active"
     return c
 
 
@@ -233,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--run", action="append", default=[], metavar="LABEL=FILE", help="a run's calls (repeatable, in column order)")
     p.add_argument("--na-window", action="store_true", help="add North American skimmers' window calls as rows")
     p.add_argument("--known", type=Path, help="a known-call list (MASTER.SCP's form): adds in_known_list and splits the counts")
+    p.add_argument("--us-licenses", type=Path, help="the FCC's HD.dat (l_amat.zip): adds us_license and its counts")
     p.add_argument("--out", type=Path)
     p.add_argument("--append", action="store_true", help="append to --out without a header if it exists")
     a = p.parse_args(argv)
@@ -244,10 +284,11 @@ def main(argv: list[str] | None = None) -> int:
         runs[label] = read_run(path)
     window = Window(parse_utc(a.start), a.seconds, a.center_khz)
     known = read_known(a.known) if a.known else None
-    table = rows(a.recording, a.role, runs, read_rbn(a.rbn), window, a.na_window, known)
+    us = read_us_licenses(a.us_licenses) if a.us_licenses else None
+    table = rows(a.recording, a.role, runs, read_rbn(a.rbn), window, a.na_window, known, us)
     if a.out:
-        write_rows(a.out, list(runs), table, a.append, known is not None)
-    named = [dict(zip(columns(list(runs), known is not None), map(str, r))) for r in table]
+        write_rows(a.out, list(runs), table, a.append, known is not None, us is not None)
+    named = [dict(zip(columns(list(runs), known is not None, us is not None), map(str, r))) for r in table]
     for label in runs:
         c = counts(named, label)
         print(f"{a.recording} {label}: " + ", ".join(f"{k} {v}" for k, v in c.items()))
